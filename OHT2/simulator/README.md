@@ -1,6 +1,6 @@
 # OHT2 Simulator
 
-SK하이닉스 M14 반도체 공장 OHT (Overhead Hoist Transport) 시스템 시뮬레이터
+
 
 ## 개요
 
@@ -135,3 +135,4 @@ simulator/
 ## 라이선스
 
 Internal Use Only - SK Hynix M14 Project
+
