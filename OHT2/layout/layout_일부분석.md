@@ -91,9 +91,16 @@ OHT2/
     │   ├── system.cfg              시스템 옵션
     │   ├── scheduler.cfg           스케줄러 설정
     │   ├── pio.cfg                 PIO 인터페이스
+    │   ├── cec.cfg                 CEC 설정
+    │   ├── event.cfg               이벤트 설정
+    │   ├── hmi_common.cfg          HMI 공통 설정
+    │   ├── log.cfg                 로그 설정
     │   ├── secs.cfg                SECS 통신 설정
+    │   ├── task.cfg                태스크 설정
+    │   ├── variable.cfg            변수 설정
     │   ├── vhl_speed.cfg           차량 속도 설정
-    │   └── ...
+    │   ├── watchdog.cfg            와치독 설정
+    │   └── HID_SETTING.xls         HID 설정 (Excel)
     └── layout/
         ├── layout.xml     (211MB)  메인 레이아웃
         └── route.xml      (22KB)   루트 학습 데이터
