@@ -1,0 +1,48 @@
+{
+    "project": {
+        "name": "M14-Pro",
+        "version": "1.22.2",
+        "client": "SK Hynix",
+        "description": "OHT2 System Simulator"
+    },
+    "system": {
+        "max_vehicles": 2000,
+        "max_stations": 23000,
+        "max_jobs": 4000,
+        "max_equipment": 4000,
+        "indirect_equipment": 1000
+    },
+    "scheduler": {
+        "mode": 3,
+        "mode_interval_ms": 100,
+        "hotlot_priority": 99,
+        "hotlot_timeout_sec": 120
+    },
+    "collision_avoidance": {
+        "bump_distance_mm": 19932,
+        "dispatch_distance_mm": 5779,
+        "branch_distance_mm": 4929
+    },
+    "communication": {
+        "timeout_ms": 30000,
+        "status_report_interval_ms": 10000
+    },
+    "layout": {
+        "width": 11389,
+        "height": 4769,
+        "scale": 30.0,
+        "junction_entry_offset_mm": 1900,
+        "junction_exit_offset_mm": 900
+    },
+    "simulation": {
+        "tick_interval_ms": 100,
+        "default_vehicle_speed_m_per_min": 200,
+        "loading_time_sec": 3,
+        "unloading_time_sec": 3
+    },
+    "server": {
+        "http_port": 8080,
+        "websocket_port": 8765,
+        "host": "localhost"
+    }
+}
