@@ -523,6 +523,15 @@ def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
                             if lane:
                                 out_lanes.append(lane)
 
+                    # 시뮬레이션용 임계값 조정 (원본 CSV 값은 37/35로 너무 높음)
+                    # OHT 수가 적을 때도 상태 변화가 보이도록 낮춤
+                    csv_max = int(row.get('Vehicle_Max', 37))
+                    csv_precaution = int(row.get('Vehicle_Precaution', 35))
+
+                    # 시뮬레이션용: 원본 값의 약 1/10로 조정 (최소 3/2)
+                    sim_max = max(3, csv_max // 10)
+                    sim_precaution = max(2, csv_precaution // 10)
+
                     zone = HIDZone(
                         zoneId=zone_id,
                         territory=int(row.get('Territory', 1)),
@@ -531,8 +540,8 @@ def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
                         outCount=int(row.get('OUT_Count', 0)),
                         inLanes=in_lanes,
                         outLanes=out_lanes,
-                        vehicleMax=int(row.get('Vehicle_Max', 37)),
-                        vehiclePrecaution=int(row.get('Vehicle_Precaution', 35))
+                        vehicleMax=sim_max,
+                        vehiclePrecaution=sim_precaution
                     )
                     zones[zone_id] = zone
 
