@@ -1465,6 +1465,7 @@ async def startup():
     # 백그라운드 태스크 시작
     asyncio.create_task(simulation_loop())
     asyncio.create_task(csv_save_loop())
+    asyncio.create_task(output_cleanup_loop())  # 10분마다 OUTPUT 파일 삭제
 
     print(f"\n서버 시작: http://localhost:8000")
     print(f"OHT {VEHICLE_COUNT}대 시뮬레이션 시작")
@@ -1484,6 +1485,32 @@ async def csv_save_loop():
     while is_running:
         await asyncio.sleep(CSV_SAVE_INTERVAL)
         engine.save_csv()
+
+async def output_cleanup_loop():
+    """OUTPUT 디렉토리 정리 루프 - 10분마다 파일 완전 삭제"""
+    global is_running
+    cleanup_interval = 600  # 10분 = 600초
+
+    while is_running:
+        await asyncio.sleep(cleanup_interval)
+        try:
+            deleted_count = 0
+            deleted_size = 0
+
+            if os.path.exists(OUTPUT_DIR):
+                for filename in os.listdir(OUTPUT_DIR):
+                    filepath = os.path.join(OUTPUT_DIR, filename)
+                    if os.path.isfile(filepath):
+                        file_size = os.path.getsize(filepath)
+                        os.remove(filepath)  # 완전 삭제 (휴지통 X)
+                        deleted_count += 1
+                        deleted_size += file_size
+
+            if deleted_count > 0:
+                size_mb = deleted_size / (1024 * 1024)
+                print(f"[OUTPUT 정리] {deleted_count}개 파일 삭제됨 ({size_mb:.2f} MB 확보)")
+        except Exception as e:
+            print(f"[OUTPUT 정리 오류] {e}")
 
 # WebSocket 연결 관리
 connections: List[WebSocket] = []
