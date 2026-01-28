@@ -35,6 +35,9 @@ import uvicorn
 import pathlib
 _SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 
+# 최적 경로 알고리즘 모듈
+from path_optimizer import PathOptimizer, PathStrategy, create_optimizer_from_engine, update_optimizer_from_engine
+
 LAYOUT_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.html")
 OUTPUT_DIR = str(_SCRIPT_DIR / "output")
 HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_구역.CSV")  # HID Zone 구성 파일
@@ -523,6 +526,16 @@ def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
                             if lane:
                                 out_lanes.append(lane)
 
+                    # 시뮬레이션용 임계값 조정
+                    # OHT 대수에 따라 적절한 Zone 용량 설정
+                    # 원본: 37/35, 시뮬레이션: 더 여유있게 설정
+                    csv_max = int(row.get('Vehicle_Max', 37))
+                    csv_precaution = int(row.get('Vehicle_Precaution', 35))
+
+                    # 시뮬레이션용: 원본 값의 약 1/3로 조정 (OHT 500대 기준)
+                    sim_max = max(10, csv_max // 3)  # 최소 10대
+                    sim_precaution = max(7, csv_precaution // 3)  # 최소 7대
+
                     zone = HIDZone(
                         zoneId=zone_id,
                         territory=int(row.get('Territory', 1)),
@@ -531,8 +544,8 @@ def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
                         outCount=int(row.get('OUT_Count', 0)),
                         inLanes=in_lanes,
                         outLanes=out_lanes,
-                        vehicleMax=int(row.get('Vehicle_Max', 37)),
-                        vehiclePrecaution=int(row.get('Vehicle_Precaution', 35))
+                        vehicleMax=sim_max,
+                        vehiclePrecaution=sim_precaution
                     )
                     zones[zone_id] = zone
 
@@ -656,6 +669,14 @@ class SimulationEngine:
         self.rail_buffer: Dict[Tuple[int,int], dict] = defaultdict(lambda: {'pass_cnt': 0, 'velocities': []})
         self.zone_buffer: List[dict] = []  # Zone 상태 버퍼
 
+        # ============================================================
+        # 최적 경로 알고리즘 초기화
+        # ============================================================
+        self.path_optimizer = PathOptimizer(self.nodes, edges, dict(self.graph))
+        self.path_optimizer.strategy = PathStrategy.BALANCED
+        self.reroute_check_interval = 10  # 10틱마다 경로 재탐색 체크
+        print(f"[PathOptimizer] 최적 경로 알고리즘 연동 완료")
+
         # 시작 시간
         self.start_time = datetime.now()
         self.simulation_tick = 0
@@ -723,30 +744,42 @@ class SimulationEngine:
                 v.udpState.hidId = zone.zoneId
 
     def _update_vehicle_zone(self, v: Vehicle, old_lane: Tuple[int, int], new_lane: Tuple[int, int]):
-        """차량이 이동할 때 Zone 업데이트"""
-        old_zone_id = self.vehicle_zone_map.get(v.vehicleId)
+        """차량이 이동할 때 Zone 업데이트
+        - IN Lane 진입 시: Zone에 추가 (카운터 증가)
+        - OUT Lane 이탈 시: Zone에서 제거 (카운터 감소)
+        """
+        current_zone_id = self.vehicle_zone_map.get(v.vehicleId)
 
-        # 새로운 Lane이 어느 Zone의 IN Lane인지 확인
-        new_zone_id = self.in_lane_to_zone.get(new_lane)
+        # 1. old_lane이 OUT Lane인 경우 -> Zone에서 나감 (카운터 감소)
+        out_zone_id = self.out_lane_to_zone.get(old_lane)
+        if out_zone_id is not None and out_zone_id == current_zone_id:
+            # OUT Lane을 통과해서 나가는 중 - Zone에서 제거
+            if current_zone_id in self.hid_zones:
+                self.hid_zones[current_zone_id].removeVehicle(v.vehicleId)
+            if v.vehicleId in self.vehicle_zone_map:
+                del self.vehicle_zone_map[v.vehicleId]
+            v.udpState.hidId = -1
+            current_zone_id = None  # 업데이트된 상태 반영
 
-        # IN Lane이 아니면 OUT Lane 확인
-        if new_zone_id is None:
-            new_zone_id = self.out_lane_to_zone.get(new_lane)
+        # 2. new_lane이 IN Lane인 경우 -> Zone에 들어감 (카운터 증가)
+        in_zone_id = self.in_lane_to_zone.get(new_lane)
+        if in_zone_id is not None:
+            # 이미 같은 Zone에 있으면 무시
+            if in_zone_id == current_zone_id:
+                return
 
-        # Zone이 바뀌었으면 업데이트
-        if new_zone_id is not None and new_zone_id != old_zone_id:
-            # 이전 Zone에서 제거
-            if old_zone_id is not None and old_zone_id in self.hid_zones:
-                self.hid_zones[old_zone_id].removeVehicle(v.vehicleId)
+            # 다른 Zone에 있었으면 먼저 제거
+            if current_zone_id is not None and current_zone_id in self.hid_zones:
+                self.hid_zones[current_zone_id].removeVehicle(v.vehicleId)
 
             # 새 Zone에 추가
-            if new_zone_id in self.hid_zones:
-                new_zone = self.hid_zones[new_zone_id]
+            if in_zone_id in self.hid_zones:
+                new_zone = self.hid_zones[in_zone_id]
                 if new_zone.addVehicle(v.vehicleId):
-                    self.vehicle_zone_map[v.vehicleId] = new_zone_id
-                    v.udpState.hidId = new_zone_id
+                    self.vehicle_zone_map[v.vehicleId] = in_zone_id
+                    v.udpState.hidId = in_zone_id
                 else:
-                    # Zone이 꽉 찬 경우 - 정체 발생 가능
+                    # Zone이 꽉 찬 경우 - 정체 발생
                     v.udpState.state = VHL_STATE.JAM
                     v.velocity = 0.0
 
@@ -757,10 +790,76 @@ class SimulationEngine:
             return self.hid_zones.get(zone_id)
         return None
 
-    def _find_path(self, start: int, end: int) -> List[int]:
+    def _get_blocking_vehicle_ahead(self, v: Vehicle) -> Tuple[Optional[Vehicle], float]:
+        """같은 엣지에서 앞에 정지/정체 중인 차량 확인 (체인 효과 포함)
+        Returns: (앞에 있는 정지 차량, 거리) 또는 (None, 0)
+        """
+        closest_blocking = None
+        min_distance = float('inf')
+
+        # 같은 엣지 (currentNode -> nextNode) 에 있는 다른 차량들 확인
+        for other_v in self.vehicles.values():
+            if other_v.vehicleId == v.vehicleId:
+                continue
+
+            # 같은 엣지에 있는지 확인
+            if other_v.currentNode == v.currentNode and other_v.nextNode == v.nextNode:
+                # 앞에 있는지 확인 (positionRatio가 더 큰 차량)
+                if other_v.positionRatio > v.positionRatio:
+                    distance = other_v.positionRatio - v.positionRatio
+
+                    # 정지 조건: JAM, STOP 상태이거나 속도가 매우 낮은 경우
+                    is_blocked = (
+                        other_v.udpState.state == VHL_STATE.JAM or
+                        other_v.udpState.state == VHL_STATE.STOP or
+                        other_v.velocity < 3.0  # 속도 3 미만이면 정지로 간주
+                    )
+
+                    # 앞에 정지 차량이 있으면 무조건 blocking (거리 무관)
+                    if is_blocked and distance < min_distance:
+                        min_distance = distance
+                        closest_blocking = other_v
+
+            # 다음 엣지에 정지 차량이 있는지 확인 (내가 곧 그 엣지에 진입할 때)
+            if v.positionRatio > 0.7:  # 현재 엣지 70% 이상 진행
+                if other_v.currentNode == v.nextNode:
+                    # 다음 엣지의 시작 부분 (30% 이내)에 정지 차량
+                    if other_v.positionRatio < 0.3:
+                        is_blocked = (
+                            other_v.udpState.state == VHL_STATE.JAM or
+                            other_v.udpState.state == VHL_STATE.STOP or
+                            other_v.velocity < 3.0
+                        )
+                        if is_blocked:
+                            # 가상 거리 계산
+                            virtual_distance = (1.0 - v.positionRatio) + other_v.positionRatio
+                            if virtual_distance < min_distance:
+                                min_distance = virtual_distance
+                                closest_blocking = other_v
+
+        return closest_blocking, min_distance if closest_blocking else 0
+
+    def _find_path(self, start: int, end: int, use_optimizer: bool = True) -> List[int]:
+        """경로 탐색 - PathOptimizer 사용 또는 기본 Dijkstra
+
+        Args:
+            start: 출발 노드
+            end: 도착 노드
+            use_optimizer: PathOptimizer 사용 여부 (기본 True)
+
+        Returns:
+            경로 노드 리스트
+        """
         if start == end or start not in self.nodes or end not in self.nodes:
             return []
 
+        # PathOptimizer 사용 (교통 상황 반영)
+        if use_optimizer and hasattr(self, 'path_optimizer'):
+            path = self.path_optimizer.find_optimal_path(start, end)
+            if path:
+                return path
+
+        # 기본 Dijkstra (fallback)
         dist = {start: 0}
         prev = {}
         pq = [(0, start)]
@@ -837,8 +936,62 @@ class SimulationEngine:
         self.simulation_tick += 1
         current_time_ms = int(datetime.now().timestamp() * 1000)
 
+        # 주기적으로 경로 최적화 교통 정보 업데이트
+        if self.simulation_tick % 5 == 0:  # 5틱마다
+            self._update_path_optimizer()
+
+        # 주기적으로 경로 재탐색 체크
+        if self.simulation_tick % self.reroute_check_interval == 0:
+            self._check_and_reroute_vehicles()
+
         for v in self.vehicles.values():
             self._update_vehicle(v, dt, current_time_ms)
+
+    def _update_path_optimizer(self):
+        """경로 최적화기에 실시간 교통 정보 업데이트"""
+        lane_to_zone = {}
+        lane_to_zone.update(self.in_lane_to_zone)
+        lane_to_zone.update(self.out_lane_to_zone)
+
+        self.path_optimizer.update_traffic(
+            rail_edge_map=self.rail_edge_map,
+            hid_zones=self.hid_zones,
+            vehicles=self.vehicles,
+            lane_to_zone=lane_to_zone
+        )
+
+    def _check_and_reroute_vehicles(self):
+        """막힌 경로의 차량들 재탐색"""
+        rerouted_count = 0
+
+        for v in self.vehicles.values():
+            if not v.path or v.udpState.state != VHL_STATE.RUN:
+                continue
+
+            # 경로 재탐색 필요 여부 확인
+            should_reroute, reason = self.path_optimizer.should_reroute(
+                v.vehicleId, v.path, v.pathIndex
+            )
+
+            if should_reroute:
+                # 현재 위치에서 목적지까지 새 경로 탐색
+                current_node = v.currentNode
+                destination = v.destination
+
+                new_path = self.path_optimizer.get_rerouted_path(
+                    current_node, destination, v.path
+                )
+
+                if new_path and len(new_path) > 1:
+                    v.path = new_path
+                    v.pathIndex = 0
+                    v.nextNode = new_path[1] if len(new_path) > 1 else current_node
+                    v.udpState.nextAddress = v.nextNode
+                    rerouted_count += 1
+                    # print(f"[재경로] {v.vehicleId}: {reason}")
+
+        if rerouted_count > 0:
+            print(f"[PathOptimizer] {rerouted_count}대 경로 재탐색 완료")
 
     def _check_velocity_conditions(self, v: Vehicle) -> bool:
         """
@@ -931,14 +1084,24 @@ class SimulationEngine:
         if v.udpState.state == VHL_STATE.JAM:
             edge_id = f"{FAB_ID}:RE:{MCP_NAME}:{v.currentNode}-{v.nextNode}"
             rail_edge = self.rail_edge_map.get(edge_id)
+
+            # JAM 복구 조건 완화 - 더 빨리 복구되도록
+            recovery_chance = 0.15  # 기본 15% 복구 확률
             if rail_edge:
                 density = rail_edge.getDensity()
-                # 밀도가 30% 이하로 떨어지면 복구 (5% 확률)
-                if density < 30 and random.random() < 0.05:
-                    v.udpState.state = VHL_STATE.RUN
-                    v.velocity = 50.0  # 저속으로 재출발
+                # 밀도가 낮을수록 복구 확률 증가
+                if density < 50:
+                    recovery_chance = 0.3  # 밀도 50% 미만이면 30%
+                if density < 30:
+                    recovery_chance = 0.5  # 밀도 30% 미만이면 50%
+
+            if random.random() < recovery_chance:
+                v.udpState.state = VHL_STATE.RUN
+                v.velocity = 50.0  # 저속으로 재출발
+                if rail_edge:
                     rail_edge.recordOut()  # 정체 해소 시 Out 기록
-            return  # JAM 상태면 이동 안함
+            else:
+                return  # JAM 상태 유지, 이동 안함
 
         # 정지 상태이면 일정 확률로 작업 할당
         if v.udpState.state != VHL_STATE.RUN or not v.path:
@@ -946,7 +1109,32 @@ class SimulationEngine:
                 self._assign_task(v)
             return
 
-        # 이전 상태 저장
+        # ============================================================
+        # 앞 차량 정지 시 뒤 차량도 정지 (충돌 방지 - 체인 효과)
+        # ============================================================
+        blocking_vehicle, distance_ratio = self._get_blocking_vehicle_ahead(v)
+        if blocking_vehicle:
+            # 거리에 따른 속도 조절 (체인 효과로 뒤 차량도 정지)
+            # 앞 차량이 정지/JAM이면 뒤 차량도 반드시 멈춰야 함
+            if distance_ratio < 0.1:  # 매우 가까우면 완전 정지
+                v.velocity = 0.0
+                return  # 이동 완전 중단
+            elif distance_ratio < 0.2:  # 가까우면 정지 (체인 효과 핵심)
+                v.velocity = 0.0
+                return  # 정지 - 앞 차가 움직일 때까지 대기
+            elif distance_ratio < 0.3:  # 근접하면 거의 정지
+                v.velocity = 1.0  # 아주 천천히
+                return
+            elif distance_ratio < 0.5:  # 어느 정도 거리면 서행
+                v.velocity = min(v.velocity, 10.0)
+            elif distance_ratio < 0.7:
+                v.velocity = min(v.velocity, 30.0)  # 속도 제한
+
+        # 이전 엣지 (상태 복사 전에 먼저 계산해야 함!)
+        last_edge_id = f"{FAB_ID}:RE:{MCP_NAME}:{v.lastUdpState.currentAddress}-{v.lastUdpState.nextAddress}"
+        last_rail_edge = self.rail_edge_map.get(last_edge_id)
+
+        # 이전 상태 저장 (last_edge_id 계산 후에 복사)
         v.copyCurrentVhlUdpStateToLast()
 
         # 현재 시간 기록
@@ -966,10 +1154,6 @@ class SimulationEngine:
         edge_id = f"{FAB_ID}:RE:{MCP_NAME}:{v.currentNode}-{v.nextNode}"
         rail_edge = self.rail_edge_map.get(edge_id)
 
-        # 이전 엣지
-        last_edge_id = f"{FAB_ID}:RE:{MCP_NAME}:{v.lastUdpState.currentAddress}-{v.lastUdpState.nextAddress}"
-        last_rail_edge = self.rail_edge_map.get(last_edge_id)
-
         # 이동 (m/min -> mm/update)
         # v.velocity (m/min) * dt (sec) / 60 (sec/min) * 1000 (mm/m) = mm 이동
         move_mm = v.velocity * (dt / 60.0) * 1000
@@ -988,9 +1172,13 @@ class SimulationEngine:
 
             # 이전 엣지에서 제거 + In/Out 기록
             if last_rail_edge and last_rail_edge.edgeId != rail_edge.edgeId:
+                # 엣지가 변경됨 - Out/In 기록
                 last_rail_edge.removeVhlId(v.vehicleId)
                 last_rail_edge.recordOut()  # 이전 엣지에서 진출
                 rail_edge.recordIn()        # 현재 엣지로 진입
+            elif last_rail_edge is None:
+                # 첫 이동 또는 이전 엣지 정보 없음 - In만 기록
+                rail_edge.recordIn()
 
         # Rail traffic 기록
         key = (v.currentNode, v.nextNode)
@@ -1002,27 +1190,28 @@ class SimulationEngine:
         # ============================================================
         current_zone = self.get_vehicle_zone(v)
         if current_zone:
-            # Zone이 주의 레벨 이상이면 속도 감소
+            # Zone이 주의 레벨 이상이면 속도 감소 (완만하게)
             if current_zone.isPrecautionLevel:
                 occupancy = current_zone.occupancyRate
-                # 점유율에 따른 속도 조절: 90%이면 10%로, 100%이면 0%로
-                speed_factor = max(0.1, 1.0 - (occupancy / 100.0))
+                # 점유율에 따른 속도 조절: 70%에서 시작, 100%이면 30%로
+                speed_factor = max(0.3, 1.0 - (occupancy - 70) / 100.0)
                 v.velocity *= speed_factor
 
-            # Zone이 꽉 찬 경우 정체 가능성
+            # Zone이 꽉 찬 경우 정체 가능성 (확률 낮춤)
             if current_zone.isFull:
-                if random.random() < 0.3:  # 30% 확률로 정체
+                if random.random() < 0.05:  # 5% 확률로 정체 (기존 30%)
                     v.udpState.state = VHL_STATE.JAM
                     v.velocity = 0.0
                     return
 
         # 자연스러운 데드락 발생 - 밀도 높고 In >> Out이면 JAM 상태로 전환
+        # (확률 대폭 낮춤 - 500대에서도 원활하게 동작하도록)
         if rail_edge:
             density = rail_edge.getDensity()
             in_out_ratio = rail_edge.getInOutRatio()
-            # 조건: 밀도 > 60% AND In/Out 비율 > 1.5 이면 정체 발생 (확률적)
-            if density > 60 and in_out_ratio > 1.5:
-                jam_probability = min(0.8, (density - 50) / 100 + (in_out_ratio - 1) * 0.2)
+            # 조건: 밀도 > 80% AND In/Out 비율 > 2.0 이면 정체 발생 (확률적)
+            if density > 80 and in_out_ratio > 2.0:
+                jam_probability = min(0.2, (density - 80) / 200 + (in_out_ratio - 2) * 0.05)
                 if random.random() < jam_probability:
                     v.udpState.state = VHL_STATE.JAM
                     v.velocity = 0.0
@@ -1387,6 +1576,7 @@ async def startup():
     # 백그라운드 태스크 시작
     asyncio.create_task(simulation_loop())
     asyncio.create_task(csv_save_loop())
+    asyncio.create_task(output_cleanup_loop())  # 10분마다 OUTPUT 파일 삭제
 
     print(f"\n서버 시작: http://localhost:8000")
     print(f"OHT {VEHICLE_COUNT}대 시뮬레이션 시작")
@@ -1406,6 +1596,32 @@ async def csv_save_loop():
     while is_running:
         await asyncio.sleep(CSV_SAVE_INTERVAL)
         engine.save_csv()
+
+async def output_cleanup_loop():
+    """OUTPUT 디렉토리 정리 루프 - 10분마다 파일 완전 삭제"""
+    global is_running
+    cleanup_interval = 600  # 10분 = 600초
+
+    while is_running:
+        await asyncio.sleep(cleanup_interval)
+        try:
+            deleted_count = 0
+            deleted_size = 0
+
+            if os.path.exists(OUTPUT_DIR):
+                for filename in os.listdir(OUTPUT_DIR):
+                    filepath = os.path.join(OUTPUT_DIR, filename)
+                    if os.path.isfile(filepath):
+                        file_size = os.path.getsize(filepath)
+                        os.remove(filepath)  # 완전 삭제 (휴지통 X)
+                        deleted_count += 1
+                        deleted_size += file_size
+
+            if deleted_count > 0:
+                size_mb = deleted_size / (1024 * 1024)
+                print(f"[OUTPUT 정리] {deleted_count}개 파일 삭제됨 ({size_mb:.2f} MB 확보)")
+        except Exception as e:
+            print(f"[OUTPUT 정리 오류] {e}")
 
 # WebSocket 연결 관리
 connections: List[WebSocket] = []
@@ -1511,6 +1727,153 @@ async def reset_inout():
         rail_edge.resetInOut()
     return {"status": "ok", "message": "In/Out counters reset"}
 
+@app.post("/api/reroute-all")
+async def reroute_all():
+    """모든 차량 경로 재탐색 (수동)"""
+    global engine
+    rerouted = 0
+
+    # 교통 정보 업데이트
+    engine._update_path_optimizer()
+
+    for v in engine.vehicles.values():
+        if not v.path or v.udpState.state != VHL_STATE.RUN:
+            continue
+
+        current_node = v.currentNode
+        destination = v.destination
+
+        new_path = engine.path_optimizer.get_rerouted_path(
+            current_node, destination, v.path
+        )
+
+        if new_path and len(new_path) > 1:
+            v.path = new_path
+            v.pathIndex = 0
+            v.nextNode = new_path[1] if len(new_path) > 1 else current_node
+            v.udpState.nextAddress = v.nextNode
+            rerouted += 1
+
+    return {
+        "status": "ok",
+        "message": f"{rerouted}대 경로 재탐색 완료",
+        "reroutedCount": rerouted
+    }
+
+@app.get("/api/path-info")
+async def get_path_info(start: int, end: int):
+    """두 노드 간 경로 정보 조회"""
+    global engine
+
+    # 교통 정보 업데이트
+    engine._update_path_optimizer()
+
+    # 최적 경로 탐색
+    path = engine.path_optimizer.find_optimal_path(start, end)
+    info = engine.path_optimizer.get_path_info(path)
+
+    # 대안 경로들
+    alternatives = engine.path_optimizer.find_alternative_paths(start, end, path, count=3)
+    alt_infos = [engine.path_optimizer.get_path_info(p) for p in alternatives]
+
+    return {
+        "status": "ok",
+        "optimal": info,
+        "alternatives": alt_infos
+    }
+
+@app.get("/api/jam-stats")
+async def get_jam_stats():
+    """JAM 통계 데이터"""
+    global engine
+
+    # 현재 JAM 상태 차량
+    jam_vehicles = [v for v in engine.vehicles.values() if v.udpState.state == VHL_STATE.JAM]
+
+    # 위험 구간 수
+    high_risk_edges = []
+    medium_risk_edges = []
+
+    for edge_id, rail_edge in engine.rail_edge_map.items():
+        density = rail_edge.getDensity()
+        in_cnt = rail_edge.inCount
+        out_cnt = rail_edge.outCount
+
+        if in_cnt > out_cnt * 1.5 and density > 50:
+            high_risk_edges.append({
+                'edgeId': edge_id,
+                'density': round(density, 2),
+                'inOut': f"{in_cnt}/{out_cnt}"
+            })
+        elif in_cnt > out_cnt and density > 30:
+            medium_risk_edges.append({
+                'edgeId': edge_id,
+                'density': round(density, 2),
+                'inOut': f"{in_cnt}/{out_cnt}"
+            })
+
+    return {
+        "status": "ok",
+        "jamVehicleCount": len(jam_vehicles),
+        "jamVehicles": [v.vehicleId for v in jam_vehicles[:20]],
+        "highRiskCount": len(high_risk_edges),
+        "mediumRiskCount": len(medium_risk_edges),
+        "highRiskEdges": high_risk_edges[:10],
+        "mediumRiskEdges": medium_risk_edges[:10]
+    }
+
+@app.post("/api/set-vehicle-count")
+async def set_vehicle_count(count: int):
+    """OHT 대수 변경"""
+    global engine
+    current_count = len(engine.vehicles)
+
+    if count < 1:
+        return {"status": "error", "message": "최소 1대 이상이어야 합니다"}
+    if count > 2000:
+        return {"status": "error", "message": "최대 2000대까지 가능합니다"}
+
+    if count > current_count:
+        # OHT 추가
+        added = 0
+        node_list = list(engine.nodes.keys())
+        for i in range(count - current_count):
+            new_id = f"V{current_count + i + 1:04d}"
+            if new_id not in engine.vehicles:
+                start_node = random.choice(node_list)
+                v = Vehicle(vehicleId=new_id, currentNode=start_node, x=0, y=0)
+                n = engine.nodes.get(start_node)
+                if n:
+                    v.x, v.y = n.x, n.y
+                # 인접 노드 찾기
+                if engine.graph[start_node]:
+                    v.nextNode = engine.graph[start_node][0][0]
+                else:
+                    v.nextNode = start_node
+                v.udpState.currentAddress = v.currentNode
+                v.udpState.nextAddress = v.nextNode
+                engine.vehicles[new_id] = v
+                engine._assign_vehicle_to_zone(v)
+                added += 1
+        return {"status": "ok", "message": f"{added}대 추가됨", "total": len(engine.vehicles)}
+
+    elif count < current_count:
+        # OHT 제거
+        removed = 0
+        vehicles_to_remove = list(engine.vehicles.keys())[count:]
+        for vid in vehicles_to_remove:
+            # Zone에서 제거
+            if vid in engine.vehicle_zone_map:
+                zone_id = engine.vehicle_zone_map[vid]
+                if zone_id in engine.hid_zones:
+                    engine.hid_zones[zone_id].removeVehicle(vid)
+                del engine.vehicle_zone_map[vid]
+            del engine.vehicles[vid]
+            removed += 1
+        return {"status": "ok", "message": f"{removed}대 제거됨", "total": len(engine.vehicles)}
+
+    return {"status": "ok", "message": "변경 없음", "total": current_count}
+
 # ============================================================
 # HTML 프론트엔드
 # ============================================================
@@ -1596,6 +1959,22 @@ canvas { display: block; }
 
 <div id="sidebar">
     <div class="section">
+        <h3>OHT 대수 설정</h3>
+        <div style="display:flex;gap:5px;align-items:center;">
+            <input type="number" id="inputVehicleCount" min="1" max="2000" value="50"
+                   style="flex:1;padding:6px 8px;background:#1a1a3e;color:#fff;border:1px solid #444;border-radius:4px;font-size:12px;width:80px;">
+            <span style="font-size:11px;color:#888;">대</span>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:5px;">
+            <button id="btnSetVehicles" style="flex:1;padding:6px 8px;background:#00d4ff;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">적용</button>
+            <button id="btnQuick50" style="padding:6px 8px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">50</button>
+            <button id="btnQuick100" style="padding:6px 8px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">100</button>
+            <button id="btnQuick500" style="padding:6px 8px;background:#333;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:10px;">500</button>
+        </div>
+        <div id="vehicleMsg" style="margin-top:6px;font-size:10px;color:#888;"></div>
+    </div>
+
+    <div class="section">
         <h3>실시간 통계</h3>
         <div class="stat-row"><span>총 OHT</span><span class="val" id="statTotal">-</span></div>
         <div class="stat-row"><span>운행중</span><span class="val" id="statRunning">-</span></div>
@@ -1642,6 +2021,13 @@ canvas { display: block; }
             <div style="font-size:10px;color:#888;margin-top:4px;">실선: IN Lane, 점선: OUT Lane</div>
         </div>
         <div id="zoneAlertList" style="margin-top:8px;font-size:10px;max-height:60px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="section">
+        <h3>정체(JAM) 현황</h3>
+        <div class="stat-row"><span>현재 JAM 차량</span><span class="val" id="jamStatVehicles" style="color:#ff0000">0</span></div>
+        <div class="stat-row"><span>HIGH 위험</span><span class="val" id="jamStatHigh" style="color:#ff3366">0</span></div>
+        <div class="stat-row"><span>MEDIUM 위험</span><span class="val" id="jamStatMedium" style="color:#ffaa00">0</span></div>
     </div>
 
     <div class="section">
@@ -1774,6 +2160,13 @@ ws.onmessage = (e) => {
         document.getElementById('statLoaded').textContent = stats.loaded;
         document.getElementById('statStopped').textContent = stats.stopped || 0;
         document.getElementById('statJammed').textContent = stats.jammed || 0;
+
+        // OHT 대수 입력란에 현재 값 반영 (첫 연결 시)
+        const inputEl = document.getElementById('inputVehicleCount');
+        if (inputEl && !inputEl.dataset.initialized) {
+            inputEl.value = stats.total;
+            inputEl.dataset.initialized = 'true';
+        }
 
         // 속도 통계 계산
         const runningVehicles = msg.data.vehicles.filter(v => v.state === 1 && v.velocity > 0);
@@ -1923,7 +2316,9 @@ function render() {
             ctx.globalAlpha = zoneAlpha;
             ctx.setLineDash([]);
 
-            zone.inLanes.forEach(lane => {
+            let firstLaneMid = null;  // 첫 번째 Lane 중간점 저장
+
+            zone.inLanes.forEach((lane, idx) => {
                 const from = nodeMap[lane.from];
                 const to = nodeMap[lane.to];
                 if (from && to) {
@@ -1931,6 +2326,14 @@ function render() {
                     ctx.moveTo(from.x, from.y);
                     ctx.lineTo(to.x, to.y);
                     ctx.stroke();
+
+                    // 첫 번째 Lane의 중간점 저장 (Zone ID 표시용)
+                    if (idx === 0) {
+                        firstLaneMid = {
+                            x: (from.x + to.x) / 2,
+                            y: (from.y + to.y) / 2
+                        };
+                    }
 
                     // 화살표 (진입 방향)
                     const angle = Math.atan2(to.y - from.y, to.x - from.x);
@@ -1958,6 +2361,53 @@ function render() {
                     ctx.stroke();
                 }
             });
+
+            // Zone ID 텍스트 표시
+            if (firstLaneMid) {
+                ctx.globalAlpha = 1.0;
+                ctx.setLineDash([]);
+
+                // 배경 박스
+                const fontSize = Math.max(10, 14 / scale);
+                const label = 'HID ' + zone.zoneId;
+                ctx.font = 'bold ' + fontSize + 'px sans-serif';
+                const textWidth = ctx.measureText(label).width;
+                const padding = 3 / scale;
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(
+                    firstLaneMid.x - textWidth/2 - padding,
+                    firstLaneMid.y - fontSize/2 - padding,
+                    textWidth + padding * 2,
+                    fontSize + padding * 2
+                );
+
+                // 텍스트
+                ctx.fillStyle = zoneColor;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, firstLaneMid.x, firstLaneMid.y);
+
+                // 차량 수 표시 (상태가 있으면)
+                if (status) {
+                    const countLabel = status.vehicleCount + '/' + zone.vehicleMax;
+                    const countY = firstLaneMid.y + fontSize + padding * 2;
+                    const countFontSize = Math.max(8, 11 / scale);
+                    ctx.font = countFontSize + 'px sans-serif';
+                    const countWidth = ctx.measureText(countLabel).width;
+
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(
+                        firstLaneMid.x - countWidth/2 - padding,
+                        countY - countFontSize/2 - padding,
+                        countWidth + padding * 2,
+                        countFontSize + padding * 2
+                    );
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(countLabel, firstLaneMid.x, countY);
+                }
+            }
         });
 
         ctx.globalAlpha = 1.0;
@@ -2259,6 +2709,93 @@ document.getElementById('btnToggleZones').addEventListener('click', () => {
         btn.style.color = '#fff';
     }
 });
+
+// OHT 대수 변경 기능
+async function setVehicleCount(count) {
+    const msgEl = document.getElementById('vehicleMsg');
+    const inputEl = document.getElementById('inputVehicleCount');
+    const btn = document.getElementById('btnSetVehicles');
+
+    btn.disabled = true;
+    btn.textContent = '처리중...';
+    msgEl.textContent = '요청 중...';
+    msgEl.style.color = '#888';
+
+    try {
+        const response = await fetch('/api/set-vehicle-count?count=' + count, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.status === 'ok') {
+            msgEl.textContent = data.message + ' (총 ' + data.total + '대)';
+            msgEl.style.color = '#00ff88';
+            inputEl.value = data.total;
+        } else {
+            msgEl.textContent = data.message;
+            msgEl.style.color = '#ff3366';
+        }
+    } catch (e) {
+        msgEl.textContent = '오류: ' + e.message;
+        msgEl.style.color = '#ff3366';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '적용';
+
+    setTimeout(() => {
+        msgEl.textContent = '';
+    }, 3000);
+}
+
+document.getElementById('btnSetVehicles').addEventListener('click', () => {
+    const count = parseInt(document.getElementById('inputVehicleCount').value);
+    if (count && count > 0) {
+        setVehicleCount(count);
+    }
+});
+
+document.getElementById('btnQuick50').addEventListener('click', () => {
+    document.getElementById('inputVehicleCount').value = 50;
+    setVehicleCount(50);
+});
+
+document.getElementById('btnQuick100').addEventListener('click', () => {
+    document.getElementById('inputVehicleCount').value = 100;
+    setVehicleCount(100);
+});
+
+document.getElementById('btnQuick500').addEventListener('click', () => {
+    document.getElementById('inputVehicleCount').value = 500;
+    setVehicleCount(500);
+});
+
+// Enter 키로 적용
+document.getElementById('inputVehicleCount').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        const count = parseInt(e.target.value);
+        if (count && count > 0) {
+            setVehicleCount(count);
+        }
+    }
+});
+
+// JAM 통계 로드
+async function loadJamStats() {
+    try {
+        const res = await fetch('/api/jam-stats');
+        const data = await res.json();
+        document.getElementById('jamStatVehicles').textContent = data.jam_vehicle_count || 0;
+        document.getElementById('jamStatHigh').textContent = data.high_risk_edges || 0;
+        document.getElementById('jamStatMedium').textContent = data.medium_risk_edges || 0;
+    } catch (e) {
+        console.error('JAM 통계 로드 실패:', e);
+    }
+}
+
+// 초기 JAM 통계 로드 및 5초마다 갱신
+loadJamStats();
+setInterval(loadJamStats, 5000);
 </script>
 </body>
 </html>
