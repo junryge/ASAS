@@ -1927,7 +1927,7 @@ canvas { display: block; }
 #right-sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
 
 /* OHT 리스트 스타일 */
-.oht-list { max-height: calc(100vh - 200px); overflow-y: auto; }
+.oht-list { max-height: 35vh; overflow-y: auto; }
 .oht-item {
     background: #1a1a2e; padding: 8px 10px; border-radius: 6px;
     margin-bottom: 6px; cursor: pointer; transition: all 0.2s ease;
@@ -1963,7 +1963,7 @@ canvas { display: block; }
 .zone-filter button.active:hover { background: #00b8e6; }
 
 /* Zone 리스트 */
-.zone-list { max-height: calc(100vh - 500px); overflow-y: auto; }
+.zone-list { max-height: 35vh; overflow-y: auto; }
 .zone-item {
     background: #1a1a2e; padding: 8px 10px; border-radius: 6px;
     margin-bottom: 6px; cursor: pointer; transition: all 0.2s ease;
