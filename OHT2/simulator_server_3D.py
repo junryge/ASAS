@@ -2806,256 +2806,151 @@ loadJamStats();
 setInterval(loadJamStats, 5000);
 
 // ============================================================
-// Three.js 아이소메트릭 2.5D (고정 시점 + 입체감)
+// Three.js 3D 뷰 (깔끔한 버전)
 // ============================================================
 let is3DMode = false;
-let scene, camera, renderer;
+let scene, camera, renderer, controls;
 let railMeshes = [];
 let ohtMeshes = {};
-let cameraTarget = { x: 0, z: 0 };
-let zoomLevel = 1;
-let isDragging3D = false;
-let lastMouse3D = { x: 0, y: 0 };
 
-// 상수
-const RAIL_HEIGHT = 120;
-const SCALE_FACTOR = 0.25;
-const CENTER_X = 10000;
-const CENTER_Y = 10000;
+const RAIL_H = 200;
+const SC = 0.2;
+const CX = 10000, CY = 10000;
 
-// 아이소메트릭 초기화
 function init3D() {
-    const container = document.getElementById('three-container');
-    const w = container.clientWidth;
-    const h = container.clientHeight;
+    const ct = document.getElementById('three-container');
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a1a);
+    scene.background = new THREE.Color(0x0d1117);
 
-    // Orthographic 카메라 (아이소메트릭)
-    const viewSize = 2500;
-    const aspect = w / h;
-    camera = new THREE.OrthographicCamera(
-        -viewSize * aspect, viewSize * aspect, viewSize, -viewSize, 1, 20000
-    );
-    // 아이소메트릭 각도 (30도)
-    camera.position.set(4000, 3000, 4000);
-    camera.lookAt(0, 0, 0);
+    camera = new THREE.PerspectiveCamera(45, ct.clientWidth / ct.clientHeight, 10, 30000);
+    camera.position.set(0, 4000, 4000);
 
-    // Renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(w, h);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.shadowMap.enabled = true;
-    container.appendChild(renderer.domElement);
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(ct.clientWidth, ct.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    ct.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.maxPolarAngle = Math.PI / 2.2;
+    controls.minDistance = 1000;
+    controls.maxDistance = 15000;
 
     // 조명
-    const ambient = new THREE.AmbientLight(0x6688aa, 0.7);
-    scene.add(ambient);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(3000, 4000, 2000);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
-    scene.add(dirLight);
+    scene.add(new THREE.AmbientLight(0x4466aa, 0.4));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+    sun.position.set(2000, 3000, 1500);
+    scene.add(sun);
+    scene.add(new THREE.HemisphereLight(0x4488ff, 0x002244, 0.3));
 
-    // 바닥
-    const floorGeom = new THREE.PlaneGeometry(10000, 10000);
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a1a });
-    const floor = new THREE.Mesh(floorGeom, floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    // 그리드
-    const grid = new THREE.GridHelper(10000, 50, 0x2a2a4a, 0x1a1a3a);
-    grid.position.y = 1;
+    // 바닥 그리드
+    const grid = new THREE.GridHelper(8000, 40, 0x1a3050, 0x0d1825);
     scene.add(grid);
 
-    // 레일 생성
-    createRailsIso();
-
-    // 마우스 이벤트
-    setupMouseIso(container);
-
+    createRails();
     animate3D();
-    console.log('아이소메트릭 2.5D 초기화 완료');
 }
 
-// 레일 생성 (발광 박스)
-function createRailsIso() {
-    if (!layout || !layout.edges) return;
+function createRails() {
+    if (!layout?.edges) return;
     railMeshes.forEach(m => scene.remove(m));
     railMeshes = [];
 
-    const railMat = new THREE.MeshStandardMaterial({
-        color: 0x00d4ff,
-        emissive: 0x003355,
-        emissiveIntensity: 0.5,
-        metalness: 0.7,
-        roughness: 0.3
-    });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, transparent: true, opacity: 0.7 });
 
-    layout.edges.forEach(edge => {
-        const fromNode = nodeMap[edge.from];
-        const toNode = nodeMap[edge.to];
-        if (!fromNode || !toNode) return;
+    layout.edges.forEach(e => {
+        const fn = nodeMap[e.from], tn = nodeMap[e.to];
+        if (!fn || !tn) return;
 
-        const x1 = (fromNode.x - CENTER_X) * SCALE_FACTOR;
-        const z1 = (fromNode.y - CENTER_Y) * SCALE_FACTOR;
-        const x2 = (toNode.x - CENTER_X) * SCALE_FACTOR;
-        const z2 = (toNode.y - CENTER_Y) * SCALE_FACTOR;
+        const x1 = (fn.x - CX) * SC, z1 = (fn.y - CY) * SC;
+        const x2 = (tn.x - CX) * SC, z2 = (tn.y - CY) * SC;
+        const len = Math.hypot(x2-x1, z2-z1);
+        if (len < 2) return;
 
-        const dx = x2 - x1, dz = z2 - z1;
-        const len = Math.sqrt(dx*dx + dz*dz);
-        if (len < 3) return;
-
-        const railGeom = new THREE.BoxGeometry(len, 6, 10);
-        const rail = new THREE.Mesh(railGeom, railMat);
-        rail.position.set((x1+x2)/2, RAIL_HEIGHT, (z1+z2)/2);
-        rail.rotation.y = -Math.atan2(dz, dx);
-        rail.castShadow = true;
-        scene.add(rail);
-        railMeshes.push(rail);
+        const g = new THREE.BoxGeometry(len, 4, 6);
+        const m = new THREE.Mesh(g, mat);
+        m.position.set((x1+x2)/2, RAIL_H, (z1+z2)/2);
+        m.rotation.y = -Math.atan2(z2-z1, x2-x1);
+        scene.add(m);
+        railMeshes.push(m);
     });
 }
 
-// OHT 생성
-function createOHTIso(color) {
+function createOHT(c) {
     const g = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: c });
 
     // 본체
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: color, emissive: color, emissiveIntensity: 0.4, metalness: 0.5
-    });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(40, 30, 60), bodyMat);
-    body.position.y = -20;
-    body.castShadow = true;
-    body.name = 'body';
+    const body = new THREE.Mesh(new THREE.BoxGeometry(30, 20, 45), mat);
+    body.position.y = -15;
+    body.name = 'b';
     g.add(body);
 
-    // 연결봉
-    const rod = new THREE.Mesh(
-        new THREE.CylinderGeometry(4, 4, 25, 8),
-        new THREE.MeshStandardMaterial({ color: 0x666688 })
-    );
-    rod.position.y = 0;
-    g.add(rod);
-
-    // 그림자 (바닥)
-    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 });
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(30, 16), shadowMat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = -RAIL_HEIGHT + 2;
-    g.add(shadow);
+    // 연결부
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 20, 6), new THREE.MeshBasicMaterial({color: 0x445566})));
 
     return g;
 }
 
-// OHT 업데이트
-function updateOHTsIso() {
+function updateOHTs() {
     if (!vehicles) return;
 
-    Object.entries(vehicles).forEach(([id, v]) => {
-        let color = 0x00ff88;
-        if (v.state === 'JAM') color = 0xff0000;
-        else if (v.state === 'STOP') color = 0xff3366;
-        else if (v.loaded) color = 0xff9900;
+    for (const [id, v] of Object.entries(vehicles)) {
+        let c = 0x00ff88;
+        if (v.state === 'JAM') c = 0xff2222;
+        else if (v.state === 'STOP') c = 0xff5588;
+        else if (v.loaded) c = 0xffaa00;
 
-        let oht = ohtMeshes[id];
-        if (!oht) {
-            oht = createOHTIso(color);
-            scene.add(oht);
-            ohtMeshes[id] = oht;
-        }
+        let o = ohtMeshes[id];
+        if (!o) { o = createOHT(c); scene.add(o); ohtMeshes[id] = o; }
 
-        const x = (v.x - CENTER_X) * SCALE_FACTOR;
-        const z = (v.y - CENTER_Y) * SCALE_FACTOR;
-        oht.position.set(x, RAIL_HEIGHT, z);
+        o.position.set((v.x - CX) * SC, RAIL_H, (v.y - CY) * SC);
+        const b = o.getObjectByName('b');
+        if (b) b.material.color.setHex(c);
+    }
 
-        const body = oht.getObjectByName('body');
-        if (body) {
-            body.material.color.setHex(color);
-            body.material.emissive.setHex(color);
-        }
-    });
-
-    Object.keys(ohtMeshes).forEach(id => {
-        if (!vehicles[id]) {
-            scene.remove(ohtMeshes[id]);
-            delete ohtMeshes[id];
-        }
-    });
+    for (const id of Object.keys(ohtMeshes)) {
+        if (!vehicles[id]) { scene.remove(ohtMeshes[id]); delete ohtMeshes[id]; }
+    }
 }
 
-// 마우스 컨트롤 (팬/줌)
-function setupMouseIso(container) {
-    container.addEventListener('mousedown', e => {
-        isDragging3D = true;
-        lastMouse3D = { x: e.clientX, y: e.clientY };
-    });
-    container.addEventListener('mousemove', e => {
-        if (!isDragging3D) return;
-        const dx = e.clientX - lastMouse3D.x;
-        const dy = e.clientY - lastMouse3D.y;
-        camera.position.x -= (dx + dy) * 1.5;
-        camera.position.z -= (-dx + dy) * 1.5;
-        lastMouse3D = { x: e.clientX, y: e.clientY };
-    });
-    container.addEventListener('mouseup', () => isDragging3D = false);
-    container.addEventListener('mouseleave', () => isDragging3D = false);
-    container.addEventListener('wheel', e => {
-        e.preventDefault();
-        zoomLevel *= e.deltaY > 0 ? 1.1 : 0.9;
-        zoomLevel = Math.max(0.3, Math.min(3, zoomLevel));
-        camera.zoom = 1 / zoomLevel;
-        camera.updateProjectionMatrix();
-    });
-}
-
-// 애니메이션
 function animate3D() {
     if (!is3DMode) return;
     requestAnimationFrame(animate3D);
-    updateOHTsIso();
+    controls.update();
+    updateOHTs();
     renderer.render(scene, camera);
 }
 
-// 2D/3D 전환
 function toggle3DMode() {
     is3DMode = !is3DMode;
-    const canvas2D = document.getElementById('canvas');
-    const container3D = document.getElementById('three-container');
+    const c2d = document.getElementById('canvas');
+    const c3d = document.getElementById('three-container');
     const btn = document.getElementById('btnToggle3D');
 
     if (is3DMode) {
-        canvas2D.style.display = 'none';
-        container3D.style.display = 'block';
-        btn.textContent = '2D 모드';
+        c2d.style.display = 'none';
+        c3d.style.display = 'block';
+        btn.textContent = '2D';
         btn.style.background = '#00d4ff';
-        if (!scene) init3D();
-        else { createRailsIso(); animate3D(); }
+        if (!scene) init3D(); else { createRails(); animate3D(); }
     } else {
-        canvas2D.style.display = 'block';
-        container3D.style.display = 'none';
-        btn.textContent = '3D 모드';
+        c2d.style.display = 'block';
+        c3d.style.display = 'none';
+        btn.textContent = '3D';
         btn.style.background = '#ff9900';
         render();
     }
 }
 
-// 리사이즈
 function resize3D() {
-    if (!renderer || !camera) return;
-    const container = document.getElementById('three-container');
-    const w = container.clientWidth, h = container.clientHeight;
-    const viewSize = 2500, aspect = w / h;
-    camera.left = -viewSize * aspect;
-    camera.right = viewSize * aspect;
-    camera.top = viewSize;
-    camera.bottom = -viewSize;
+    if (!renderer) return;
+    const ct = document.getElementById('three-container');
+    camera.aspect = ct.clientWidth / ct.clientHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    renderer.setSize(ct.clientWidth, ct.clientHeight);
 }
 
 document.getElementById('btnToggle3D').addEventListener('click', toggle3DMode);
