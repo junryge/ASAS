@@ -39,7 +39,7 @@ LAYOUT_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.html")
 OUTPUT_DIR = str(_SCRIPT_DIR / "output")
 HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_Zone_Master.csv")  # HID Zone 마스터 파일
 CSV_SAVE_INTERVAL = 10  # 10초마다 CSV 저장
-VEHICLE_COUNT = 50  # OHT 대수
+VEHICLE_COUNT = 450  # OHT 대수
 SIMULATION_INTERVAL = 0.5  # 0.5초마다 업데이트
 FAB_ID = "M14Q"
 MCP_NAME = "OHT"
@@ -1995,7 +1995,7 @@ canvas { display: block; }
     <div class="section">
         <h3>OHT 대수 설정</h3>
         <div style="display:flex;gap:5px;align-items:center;">
-            <input type="number" id="inputVehicleCount" min="1" max="2000" value="50"
+            <input type="number" id="inputVehicleCount" min="1" max="2000" value="450"
                    style="flex:1;padding:6px 8px;background:#1a1a3e;color:#fff;border:1px solid #444;border-radius:4px;font-size:12px;width:80px;">
             <span style="font-size:11px;color:#888;">대</span>
         </div>
