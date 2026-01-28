@@ -1947,10 +1947,10 @@ canvas { display: block; }
 <body>
 
 <div id="header">
-    <h1>SK Hynix M14 OHT Simulator <span style="font-size:14px;color:#00d4ff;">(3D)</span></h1>
+    <h1>SK Hynix M14 OHT Simulator <span style="font-size:14px;color:#00d4ff;">(Pseudo-3D)</span></h1>
     <div class="status">
         <div style="display:flex;align-items:center;gap:8px;">
-            <button id="btnToggle3D" style="padding:6px 14px;background:#ff9900;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">3D 모드</button>
+            <button id="btnToggle3D" style="padding:6px 14px;background:#00d4ff;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">3D 효과 ON</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;"><div class="live-dot"></div> LIVE</div>
         <div>노드: <span id="nodeCount">-</span></div>
@@ -2091,6 +2091,130 @@ let offsetX = 0, offsetY = 0, scale = 1;
 let isDragging = false, lastMouse = {x: 0, y: 0};
 let startTime = Date.now();
 let selectedVehicles = new Set();  // 더블클릭으로 선택된 OHT들 (여러개 가능)
+
+// ============================================================
+// Pseudo-3D 효과 설정
+// ============================================================
+let isPseudo3D = true;  // 기본값: pseudo-3D 효과 켜짐
+const ISO_ANGLE = Math.PI / 6;  // 30도 (isometric 각도)
+const ISO_SCALE_Y = 0.6;  // Y축 압축 비율
+const RAIL_HEIGHT = 8;  // 레일 높이 (3D 효과용)
+const OHT_HEIGHT = 12;  // OHT 높이 (3D 효과용)
+const LIGHT_ANGLE = -Math.PI / 4;  // 조명 각도 (좌상단에서)
+
+// Isometric 변환 함수 (2D 좌표를 pseudo-3D로 변환)
+function toIso(x, y, z = 0) {
+    if (!isPseudo3D) return { x: x, y: y };
+    const isoX = x;
+    const isoY = y * ISO_SCALE_Y - z * 0.7;
+    return { x: isoX, y: isoY };
+}
+
+// 색상을 밝게/어둡게 조절
+function adjustColor(hex, factor) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const nr = Math.min(255, Math.max(0, Math.round(r * factor)));
+    const ng = Math.min(255, Math.max(0, Math.round(g * factor)));
+    const nb = Math.min(255, Math.max(0, Math.round(b * factor)));
+    return '#' + [nr, ng, nb].map(c => c.toString(16).padStart(2, '0')).join('');
+}
+
+// 3D 박스 그리기 (OHT용)
+function draw3DBox(cx, cy, w, h, depth, color) {
+    const top = toIso(cx, cy, depth);
+    const halfW = w / 2;
+    const halfH = h / 2;
+
+    // 상단면 (밝은 색)
+    ctx.fillStyle = adjustColor(color, 1.3);
+    ctx.beginPath();
+    ctx.moveTo(top.x - halfW, top.y - halfH);
+    ctx.lineTo(top.x + halfW, top.y - halfH);
+    ctx.lineTo(top.x + halfW, top.y + halfH);
+    ctx.lineTo(top.x - halfW, top.y + halfH);
+    ctx.closePath();
+    ctx.fill();
+
+    // 앞면 (원래 색)
+    const front = toIso(cx, cy + halfH, 0);
+    const frontTop = toIso(cx, cy + halfH, depth);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(frontTop.x - halfW, frontTop.y);
+    ctx.lineTo(frontTop.x + halfW, frontTop.y);
+    ctx.lineTo(front.x + halfW, front.y);
+    ctx.lineTo(front.x - halfW, front.y);
+    ctx.closePath();
+    ctx.fill();
+
+    // 우측면 (어두운 색)
+    const right = toIso(cx + halfW, cy, 0);
+    const rightTop = toIso(cx + halfW, cy, depth);
+    ctx.fillStyle = adjustColor(color, 0.7);
+    ctx.beginPath();
+    ctx.moveTo(rightTop.x, rightTop.y - halfH);
+    ctx.lineTo(rightTop.x, rightTop.y + halfH);
+    ctx.lineTo(right.x, right.y + halfH);
+    ctx.lineTo(right.x, right.y - halfH);
+    ctx.closePath();
+    ctx.fill();
+
+    // 테두리
+    ctx.strokeStyle = adjustColor(color, 0.5);
+    ctx.lineWidth = 1 / scale;
+    ctx.stroke();
+}
+
+// 3D 레일 그리기 (두께감 있는 파이프 형태)
+function draw3DRail(fromX, fromY, toX, toY, railColor = '#2a4a6a') {
+    const width = isPseudo3D ? 4 / scale : 1.5 / scale;
+    const height = isPseudo3D ? RAIL_HEIGHT / scale : 0;
+
+    // 레일 방향 벡터
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+
+    const nx = -dy / len * width;  // 수직 벡터
+    const ny = dx / len * width;
+
+    if (isPseudo3D) {
+        // 상단면 (밝은 색)
+        const ft = toIso(fromX, fromY, height);
+        const tt = toIso(toX, toY, height);
+        ctx.fillStyle = adjustColor(railColor, 1.4);
+        ctx.beginPath();
+        ctx.moveTo(ft.x + nx, ft.y + ny * ISO_SCALE_Y);
+        ctx.lineTo(tt.x + nx, tt.y + ny * ISO_SCALE_Y);
+        ctx.lineTo(tt.x - nx, tt.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(ft.x - nx, ft.y - ny * ISO_SCALE_Y);
+        ctx.closePath();
+        ctx.fill();
+
+        // 측면 (그림자)
+        const fb = toIso(fromX, fromY, 0);
+        const tb = toIso(toX, toY, 0);
+        ctx.fillStyle = adjustColor(railColor, 0.6);
+        ctx.beginPath();
+        ctx.moveTo(ft.x - nx, ft.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(tt.x - nx, tt.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(tb.x - nx, tb.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(fb.x - nx, fb.y - ny * ISO_SCALE_Y);
+        ctx.closePath();
+        ctx.fill();
+    } else {
+        // 기본 2D 레일
+        ctx.strokeStyle = railColor;
+        ctx.lineWidth = 1.5 / scale;
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
+    }
+}
 
 // 캔버스 크기
 function resize() {
@@ -2274,26 +2398,39 @@ function render() {
     ctx.translate(offsetX, offsetY);
     ctx.scale(scale, scale);
 
-    // 엣지 (레일)
-    ctx.strokeStyle = '#2a2a4a';
-    ctx.lineWidth = 1.5 / scale;
+    // 엣지 (레일) - pseudo-3D 효과 적용
     layout.edges.forEach(e => {
         const from = nodeMap[e.from], to = nodeMap[e.to];
         if (from && to) {
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            ctx.lineTo(to.x, to.y);
-            ctx.stroke();
+            draw3DRail(from.x, from.y, to.x, to.y, '#2a4a6a');
         }
     });
 
-    // 노드 점
-    ctx.fillStyle = '#4a4a6a';
+    // 노드 점 (pseudo-3D 모드에서는 3D 효과 적용)
     const nodeSize = Math.max(1.5, 3 / scale);
     layout.nodes.forEach(n => {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, nodeSize, 0, Math.PI * 2);
-        ctx.fill();
+        if (isPseudo3D) {
+            // 3D 효과: 노드를 작은 원기둥처럼 표현
+            const pos = toIso(n.x, n.y, RAIL_HEIGHT / scale);
+            const posBase = toIso(n.x, n.y, 0);
+
+            // 그림자 (기둥)
+            ctx.fillStyle = '#1a2a3a';
+            ctx.beginPath();
+            ctx.ellipse(posBase.x, posBase.y, nodeSize, nodeSize * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 상단 원
+            ctx.fillStyle = '#4a6a8a';
+            ctx.beginPath();
+            ctx.ellipse(pos.x, pos.y, nodeSize, nodeSize * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#4a4a6a';
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, nodeSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
     });
 
     // ============================================================
@@ -2492,46 +2629,185 @@ function render() {
         ctx.stroke();
     });
 
-    // OHT
+    // OHT - pseudo-3D 효과 적용
     Object.values(vehicles).forEach(v => {
         let color = '#00ff88';
         if (v.state === 7) color = '#ff0000';  // JAM (정체) - 빨간색 깜빡임
         else if (v.state === 2) color = '#ff3366';  // 정지
         else if (v.isLoaded === 1) color = '#ff9900';  // 적재
 
-        // 그림자
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.beginPath();
-        ctx.arc(v.dispX + 2/scale, v.dispY + 2/scale, vehSize, 0, Math.PI * 2);
-        ctx.fill();
+        if (isPseudo3D) {
+            // ============================================================
+            // Pseudo-3D OHT 렌더링 (3D 박스 형태)
+            // ============================================================
+            const ohtW = vehSize * 2.5;  // OHT 너비
+            const ohtH = vehSize * 1.5;  // OHT 깊이
+            const ohtD = OHT_HEIGHT / scale;  // OHT 높이
 
-        // 본체
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(v.dispX, v.dispY, vehSize, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5 / scale;
-        ctx.stroke();
-
-        // JAM 상태 (정체) 깜빡임 효과
-        if (v.state === 7) {
-            const blinkAlpha = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() / 200));
-            ctx.fillStyle = `rgba(255, 0, 0, ${blinkAlpha})`;
+            // 바닥 그림자 (더 진하게)
+            const shadowPos = toIso(v.dispX + 3/scale, v.dispY + 3/scale, 0);
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.beginPath();
-            ctx.arc(v.dispX, v.dispY, vehSize + 3/scale, 0, Math.PI * 2);
+            ctx.ellipse(shadowPos.x, shadowPos.y, ohtW * 0.7, ohtH * 0.4, 0, 0, Math.PI * 2);
             ctx.fill();
-        }
 
-        // 적재 표시
-        if (v.isLoaded === 1) {
-            ctx.fillStyle = '#fff';
+            // 연결봉 (레일에서 OHT 본체로)
+            const railTop = toIso(v.dispX, v.dispY, RAIL_HEIGHT / scale);
+            const ohtBottom = toIso(v.dispX, v.dispY, RAIL_HEIGHT / scale + ohtD * 0.3);
+            ctx.strokeStyle = '#556677';
+            ctx.lineWidth = 3 / scale;
             ctx.beginPath();
-            ctx.arc(v.dispX, v.dispY, vehSize * 0.4, 0, Math.PI * 2);
-            ctx.fill();
-        }
+            ctx.moveTo(railTop.x, railTop.y);
+            ctx.lineTo(ohtBottom.x, ohtBottom.y);
+            ctx.stroke();
 
+            // OHT 본체 (3D 박스)
+            const baseZ = RAIL_HEIGHT / scale + ohtD * 0.3;
+
+            // 뒷면 (어두운 색) - 먼저 그려야 가려짐
+            const backTop = toIso(v.dispX, v.dispY - ohtH/2, baseZ + ohtD);
+            const backBot = toIso(v.dispX, v.dispY - ohtH/2, baseZ);
+            ctx.fillStyle = adjustColor(color, 0.5);
+            ctx.beginPath();
+            ctx.moveTo(backTop.x - ohtW/2, backTop.y);
+            ctx.lineTo(backTop.x + ohtW/2, backTop.y);
+            ctx.lineTo(backBot.x + ohtW/2, backBot.y);
+            ctx.lineTo(backBot.x - ohtW/2, backBot.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 왼쪽면
+            const leftTopF = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const leftTopB = toIso(v.dispX - ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            const leftBotF = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ);
+            const leftBotB = toIso(v.dispX - ohtW/2, v.dispY - ohtH/2, baseZ);
+            ctx.fillStyle = adjustColor(color, 0.8);
+            ctx.beginPath();
+            ctx.moveTo(leftTopF.x, leftTopF.y);
+            ctx.lineTo(leftTopB.x, leftTopB.y);
+            ctx.lineTo(leftBotB.x, leftBotB.y);
+            ctx.lineTo(leftBotF.x, leftBotF.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 상단면 (가장 밝은 색)
+            const topFL = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const topFR = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const topBR = toIso(v.dispX + ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            const topBL = toIso(v.dispX - ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            ctx.fillStyle = adjustColor(color, 1.3);
+            ctx.beginPath();
+            ctx.moveTo(topFL.x, topFL.y);
+            ctx.lineTo(topFR.x, topFR.y);
+            ctx.lineTo(topBR.x, topBR.y);
+            ctx.lineTo(topBL.x, topBL.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 앞면 (원래 색)
+            const frontTopL = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const frontTopR = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const frontBotL = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ);
+            const frontBotR = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ);
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(frontTopL.x, frontTopL.y);
+            ctx.lineTo(frontTopR.x, frontTopR.y);
+            ctx.lineTo(frontBotR.x, frontBotR.y);
+            ctx.lineTo(frontBotL.x, frontBotL.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 오른쪽면 (어두운 색)
+            const rightTopF = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const rightTopB = toIso(v.dispX + ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            const rightBotF = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ);
+            const rightBotB = toIso(v.dispX + ohtW/2, v.dispY - ohtH/2, baseZ);
+            ctx.fillStyle = adjustColor(color, 0.6);
+            ctx.beginPath();
+            ctx.moveTo(rightTopF.x, rightTopF.y);
+            ctx.lineTo(rightTopB.x, rightTopB.y);
+            ctx.lineTo(rightBotB.x, rightBotB.y);
+            ctx.lineTo(rightBotF.x, rightBotF.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 테두리
+            ctx.strokeStyle = adjustColor(color, 0.4);
+            ctx.lineWidth = 0.5 / scale;
+            ctx.stroke();
+
+            // JAM 상태 깜빡임 효과 (3D 글로우)
+            if (v.state === 7) {
+                const blinkAlpha = 0.3 + 0.5 * Math.abs(Math.sin(Date.now() / 200));
+                const glowPos = toIso(v.dispX, v.dispY, baseZ + ohtD/2);
+                ctx.fillStyle = `rgba(255, 50, 50, ${blinkAlpha})`;
+                ctx.beginPath();
+                ctx.ellipse(glowPos.x, glowPos.y, ohtW * 0.8, ohtH * 0.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 적재 표시 (상단에 작은 박스)
+            if (v.isLoaded === 1) {
+                const cargoZ = baseZ + ohtD + 3/scale;
+                const cargoPos = toIso(v.dispX, v.dispY, cargoZ);
+                const cargoW = ohtW * 0.6;
+                const cargoH = ohtH * 0.6;
+
+                // 화물 상자 (FOUP)
+                ctx.fillStyle = '#ffffff';
+                const cargoTopL = toIso(v.dispX - cargoW/2, v.dispY + cargoH/2, cargoZ + 5/scale);
+                const cargoTopR = toIso(v.dispX + cargoW/2, v.dispY + cargoH/2, cargoZ + 5/scale);
+                const cargoBotL = toIso(v.dispX - cargoW/2, v.dispY + cargoH/2, cargoZ);
+                const cargoBotR = toIso(v.dispX + cargoW/2, v.dispY + cargoH/2, cargoZ);
+                ctx.beginPath();
+                ctx.moveTo(cargoTopL.x, cargoTopL.y);
+                ctx.lineTo(cargoTopR.x, cargoTopR.y);
+                ctx.lineTo(cargoBotR.x, cargoBotR.y);
+                ctx.lineTo(cargoBotL.x, cargoBotL.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#dddddd';
+                ctx.fill();
+            }
+
+        } else {
+            // ============================================================
+            // 기존 2D OHT 렌더링
+            // ============================================================
+            // 그림자
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.beginPath();
+            ctx.arc(v.dispX + 2/scale, v.dispY + 2/scale, vehSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 본체
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(v.dispX, v.dispY, vehSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.5 / scale;
+            ctx.stroke();
+
+            // JAM 상태 (정체) 깜빡임 효과
+            if (v.state === 7) {
+                const blinkAlpha = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() / 200));
+                ctx.fillStyle = `rgba(255, 0, 0, ${blinkAlpha})`;
+                ctx.beginPath();
+                ctx.arc(v.dispX, v.dispY, vehSize + 3/scale, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 적재 표시
+            if (v.isLoaded === 1) {
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(v.dispX, v.dispY, vehSize * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
     });
 
     ctx.restore();
@@ -2924,37 +3200,22 @@ function animate3D() {
     renderer.render(scene, camera);
 }
 
+// Pseudo-3D 효과 토글 (Three.js 대신 2D 캔버스에서 3D 효과)
 function toggle3DMode() {
-    is3DMode = !is3DMode;
-    const c2d = document.getElementById('canvas');
-    const c3d = document.getElementById('three-container');
+    isPseudo3D = !isPseudo3D;
     const btn = document.getElementById('btnToggle3D');
 
-    if (is3DMode) {
-        c2d.style.display = 'none';
-        c3d.style.display = 'block';
-        btn.textContent = '2D';
+    if (isPseudo3D) {
+        btn.textContent = '3D 효과 ON';
         btn.style.background = '#00d4ff';
-        if (!scene) init3D(); else { createRails(); animate3D(); }
     } else {
-        c2d.style.display = 'block';
-        c3d.style.display = 'none';
-        btn.textContent = '3D';
+        btn.textContent = '3D 효과 OFF';
         btn.style.background = '#ff9900';
-        render();
     }
-}
-
-function resize3D() {
-    if (!renderer) return;
-    const ct = document.getElementById('three-container');
-    camera.aspect = ct.clientWidth / ct.clientHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(ct.clientWidth, ct.clientHeight);
+    render();
 }
 
 document.getElementById('btnToggle3D').addEventListener('click', toggle3DMode);
-window.addEventListener('resize', () => { if (is3DMode) resize3D(); });
 </script>
 </body>
 </html>
