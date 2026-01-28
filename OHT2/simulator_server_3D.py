@@ -2196,7 +2196,18 @@ function updateOhtList() {
         console.log('OHT 목록 요소를 찾을 수 없음');
         return;
     }
-    if (!vehicles || Object.keys(vehicles).length === 0) {
+
+    // vehicles 변수 접근 확인
+    if (typeof vehicles === 'undefined') {
+        console.log('vehicles 변수가 정의되지 않음');
+        listEl.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">초기화 중...</div>';
+        return;
+    }
+
+    const vehCount = Object.keys(vehicles).length;
+    console.log('updateOhtList 호출됨, vehicles 수:', vehCount);
+
+    if (vehCount === 0) {
         listEl.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">OHT 데이터 로딩 중...</div>';
         return;
     }
@@ -2507,6 +2518,7 @@ ws.onmessage = (e) => {
     }
     else if (msg.type === 'update') {
         // 부드러운 보간을 위해 타겟 위치 설정
+        const receivedCount = msg.data.vehicles ? msg.data.vehicles.length : 0;
         msg.data.vehicles.forEach(v => {
             if (!vehicles[v.vehicleId]) {
                 vehicles[v.vehicleId] = {...v, dispX: v.x, dispY: v.y};
@@ -2514,6 +2526,7 @@ ws.onmessage = (e) => {
                 Object.assign(vehicles[v.vehicleId], v);
             }
         });
+        console.log('WebSocket update - 수신:', receivedCount, '현재 vehicles:', Object.keys(vehicles).length);
 
         // 통계 업데이트
         const stats = msg.data.stats;
