@@ -1,223 +1,221 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-OHT Layout XML to HTML Visualizer
-SK Hynix M14 OHT System Layout Visualization
+layout_map_cre.py - layout.xml에서 layout.html 생성
+
+사용법:
+    python layout_map_cre.py [layout.zip 경로] [출력 layout.html 경로]
+
+기본값:
+    입력: layout/layout/layout.zip
+    출력: layout/layout/layout.html
 """
 
-import xml.etree.ElementTree as ET
-import json
-import re
+import os
 import sys
-from collections import defaultdict
+import re
+import json
+import zipfile
+from typing import Dict, List, Tuple
+from datetime import datetime
 
-def parse_layout_xml(xml_file):
-    """Parse layout.xml and extract addresses, connections, and stations"""
 
-    print("Loading XML file... (this may take a while for large files)")
+def parse_layout_xml(xml_content: str) -> Tuple[List[Dict], List[List]]:
+    """
+    layout.xml 파싱하여 노드와 연결 정보 추출 (라인 단위 파싱)
 
-    addresses = {}  # addr_no -> {x, y, stations: [], next_addrs: []}
-    stations = {}   # station_no -> {port_id, type, addr_no}
-    connections = []  # [(from_addr, to_addr)]
+    Returns:
+        nodes: [{'no': int, 'x': float, 'y': float, 'stations': []}, ...]
+        connections: [[from_no, to_no], ...]
+    """
+    print("XML 파싱 시작 (라인 단위)...")
 
-    context = ET.iterparse(xml_file, events=('start', 'end'))
+    nodes = {}
+    connections = []
 
+    # 상태 변수
     current_addr = None
-    current_addr_no = None
-    current_station = None
-    current_station_no = None
-    current_next_addr = None
+    current_addr_params = {}
+    in_next_addr = False
+    next_addr_params = {}
 
-    addr_data = {}
-    station_data = {}
-    next_addr_data = {}
-    count = 0
+    # 라인 단위로 처리
+    lines = xml_content.split('\n')
+    total_lines = len(lines)
+    print(f"  총 라인 수: {total_lines:,}")
 
-    for event, elem in context:
-        if event == 'start':
-            if elem.tag == 'group':
-                name = elem.get('name', '')
-                cls = elem.get('class', '')
+    for line_no, line in enumerate(lines):
+        if line_no % 500000 == 0:
+            print(f"  처리 중: {line_no:,}/{total_lines:,} ({line_no*100//total_lines}%)")
 
-                if 'Addr' in name and 'address.Addr' in cls and 'NextAddr' not in name:
-                    match = re.search(r'Addr(\d+)', name)
-                    if match:
-                        current_addr_no = int(match.group(1))
-                        addr_data = {'x': 0, 'y': 0, 'stations': [], 'next_addrs': []}
-                        current_addr = True
+        line = line.strip()
 
-                elif 'Station' in name and 'Station' in cls:
-                    match = re.search(r'Station(\d+)', name)
-                    if match:
-                        current_station_no = int(match.group(1))
-                        station_data = {'port_id': '', 'type': 0, 'addr_no': current_addr_no}
-                        current_station = True
+        # Addr 그룹 시작
+        if '<group name="Addr' in line and 'class=' in line and 'address.Addr"' in line:
+            # 이전 Addr 저장
+            if current_addr is not None and 'address' in current_addr_params:
+                addr_no = int(current_addr_params.get('address', 0))
+                if addr_no > 0:
+                    x = float(current_addr_params.get('draw-x', 0))
+                    y = float(current_addr_params.get('draw-y', 0))
+                    nodes[addr_no] = {
+                        'no': addr_no,
+                        'x': round(x, 2),
+                        'y': round(y, 2),
+                        'stations': []
+                    }
 
-                elif 'NextAddr' in name and 'NextAddr' in cls:
-                    current_next_addr = True
-                    next_addr_data = {'next_address': None}
+            # 새 Addr 시작
+            current_addr_params = {}
+            current_addr = line
+            in_next_addr = False
+            continue
 
-        elif event == 'end':
-            if elem.tag == 'param':
-                key = elem.get('key', '')
-                value = elem.get('value', '')
+        # NextAddr 그룹 시작
+        if '<group name="NextAddr' in line and 'class=' in line and 'NextAddr"' in line:
+            in_next_addr = True
+            next_addr_params = {}
+            continue
 
-                if current_addr and not current_station and not current_next_addr:
-                    if key == 'draw-x':
-                        try: addr_data['x'] = float(value)
-                        except: pass
-                    elif key == 'draw-y':
-                        try: addr_data['y'] = float(value)
-                        except: pass
+        # NextAddr 그룹 종료
+        if in_next_addr and '</group>' in line:
+            # 연결 정보 저장
+            if 'address' in current_addr_params and 'next-address' in next_addr_params:
+                from_addr = int(current_addr_params.get('address', 0))
+                to_addr_str = next_addr_params.get('next-address', '0')
+                try:
+                    to_addr = int(to_addr_str)
+                    if from_addr > 0 and to_addr > 0:
+                        connections.append([from_addr, to_addr])
+                except ValueError:
+                    pass
+            in_next_addr = False
+            continue
 
-                elif current_station:
-                    if key == 'port-id':
-                        station_data['port_id'] = value
-                    elif key == 'type':
-                        try: station_data['type'] = int(value)
-                        except: pass
-                    elif key == 'no':
-                        try: station_data['no'] = int(value)
-                        except: pass
+        # 파라미터 파싱
+        if '<param ' in line and 'key="' in line and 'value="' in line:
+            # key와 value 추출
+            key_match = re.search(r'key="([^"]+)"', line)
+            value_match = re.search(r'value="([^"]*)"', line)
 
-                elif current_next_addr:
-                    if key == 'next-address':
-                        try: next_addr_data['next_address'] = int(value)
-                        except: pass
+            if key_match and value_match:
+                key = key_match.group(1)
+                value = value_match.group(1)
 
-            elif elem.tag == 'group':
-                name = elem.get('name', '')
+                if in_next_addr:
+                    next_addr_params[key] = value
+                elif current_addr is not None:
+                    current_addr_params[key] = value
 
-                if current_next_addr and 'NextAddr' in name:
-                    if next_addr_data.get('next_address') is not None:
-                        addr_data['next_addrs'].append(next_addr_data['next_address'])
-                    current_next_addr = False
+    # 마지막 Addr 저장
+    if current_addr is not None and 'address' in current_addr_params:
+        addr_no = int(current_addr_params.get('address', 0))
+        if addr_no > 0:
+            x = float(current_addr_params.get('draw-x', 0))
+            y = float(current_addr_params.get('draw-y', 0))
+            nodes[addr_no] = {
+                'no': addr_no,
+                'x': round(x, 2),
+                'y': round(y, 2),
+                'stations': []
+            }
 
-                elif current_station and 'Station' in name:
-                    if current_station_no:
-                        stations[current_station_no] = station_data.copy()
-                        if current_addr_no:
-                            addr_data['stations'].append(current_station_no)
-                    current_station = False
-                    current_station_no = None
+    print(f"  총 노드: {len(nodes)}개")
+    print(f"  총 연결: {len(connections)}개")
 
-                elif current_addr and 'Addr' in name and 'NextAddr' not in name:
-                    if current_addr_no is not None:
-                        addresses[current_addr_no] = addr_data.copy()
-                        for next_addr in addr_data['next_addrs']:
-                            connections.append((current_addr_no, next_addr))
-                        count += 1
-                        if count % 1000 == 0:
-                            print(f"  Processed {count} addresses...")
-                    current_addr = False
-                    current_addr_no = None
+    # 딕셔너리를 리스트로 변환
+    nodes_list = list(nodes.values())
 
-            elem.clear()
-
-    print(f"Parsing complete: {len(addresses)} addresses, {len(stations)} stations, {len(connections)} connections")
-    return addresses, stations, connections
+    return nodes_list, connections
 
 
-def generate_html(addresses, stations, connections, output_file):
-    """Generate interactive HTML visualization"""
+def generate_layout_html(nodes: List[Dict], connections: List[List], output_path: str):
+    """
+    layout.html 생성
+    """
+    print(f"layout.html 생성: {output_path}")
 
-    min_x = min(a['x'] for a in addresses.values() if a['x'] != 0)
-    max_x = max(a['x'] for a in addresses.values())
-    min_y = min(a['y'] for a in addresses.values() if a['y'] != 0)
-    max_y = max(a['y'] for a in addresses.values())
+    # JSON 변환
+    nodes_json = json.dumps(nodes, ensure_ascii=False)
+    connections_json = json.dumps(connections, ensure_ascii=False)
 
-    print(f"Layout bounds: X({min_x:.1f} - {max_x:.1f}), Y({min_y:.1f} - {max_y:.1f})")
+    # HTML 템플릿
+    html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OHT Layout Data</title>
+    <script>
+// 노드 데이터: no(번지), x, y, stations
+const A={nodes_json};
 
-    addr_list = [{'no': no, 'x': d['x'], 'y': d['y'], 'stations': d['stations']}
-                 for no, d in addresses.items()]
-    station_list = [{'no': no, 'port_id': d.get('port_id',''), 'type': d.get('type',0)}
-                    for no, d in stations.items()]
-    valid_connections = [(f, t) for f, t in connections if f in addresses and t in addresses]
+// 연결 데이터: [from_no, to_no]
+const C={connections_json};
 
-    # HTML 템플릿 (JavaScript 포함)
-    html = f'''<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>OHT Layout</title>
-<style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{font-family:sans-serif;background:#1a1a2e;color:#eee;overflow:hidden}}
-#header{{position:fixed;top:0;left:0;right:0;background:#16213e;padding:10px 20px;z-index:1000;display:flex;justify-content:space-between}}
-#header h1{{font-size:18px;color:#00d4ff}}
-#controls{{position:fixed;top:50px;left:10px;background:rgba(22,33,62,0.95);padding:15px;border-radius:8px;z-index:1000;font-size:12px}}
-#controls label{{display:block;margin:5px 0;color:#00d4ff}}
-#controls button{{margin:5px 2px;padding:5px 10px;background:#0077b6;border:none;color:white;border-radius:4px;cursor:pointer}}
-#info{{position:fixed;bottom:10px;left:10px;background:rgba(22,33,62,0.95);padding:10px;border-radius:8px;z-index:1000;font-size:11px;max-width:280px}}
-canvas{{display:block}}
-</style></head><body>
-<div id="header"><h1>SK Hynix M14 OHT Layout</h1><span>Addr:{len(addresses):,} | Stn:{len(stations):,}</span></div>
-<div id="controls">
-<label>Zoom:<span id="zv">100%</span></label><input type="range" id="zoom" min="10" max="500" value="100" style="width:120px">
-<div><input type="checkbox" id="sr" checked>Rails <input type="checkbox" id="ss" checked>Stations</div>
-<button onclick="fit()">Fit</button><button onclick="reset()">Reset</button>
-<label>Search:</label><input id="q" style="width:100px;background:#1a1a2e;border:1px solid #0077b6;color:#fff" placeholder="ST-10001">
-<button onclick="search()">Find</button>
-</div>
-<div id="info"><b>Info</b><div id="ic">Drag to pan, scroll to zoom</div></div>
-<canvas id="c"></canvas>
-<script>
-const A={json.dumps(addr_list)};
-const S={json.dumps(station_list)};
-const C={json.dumps(valid_connections)};
-const AM=new Map();A.forEach(a=>AM.set(a.no,a));
-const SM=new Map();S.forEach(s=>SM.set(s.no,s));
-const B={{minX:{min_x},maxX:{max_x},minY:{min_y},maxY:{max_y}}};
-const c=document.getElementById('c'),x=c.getContext('2d');
-let w,h,sc=0.5,ox=0,oy=0,dr=false,lx,ly;
-function rs(){{w=innerWidth;h=innerHeight-50;c.width=w;c.height=h;rn()}}
-function w2s(px,py){{return{{x:(px-B.minX)*sc+ox,y:h-((py-B.minY)*sc+oy)}}}}
-function s2w(sx,sy){{return{{x:(sx-ox)/sc+B.minX,y:(h-sy-oy)/sc+B.minY}}}}
-function rn(){{
-x.fillStyle='#1a1a2e';x.fillRect(0,0,w,h);
-if(document.getElementById('sr').checked){{
-x.strokeStyle='#00ff8855';x.lineWidth=Math.max(1,sc*0.5);x.beginPath();
-for(const[f,t]of C){{const a=AM.get(f),b=AM.get(t);if(a&&b){{const p1=w2s(a.x,a.y),p2=w2s(b.x,b.y);x.moveTo(p1.x,p1.y);x.lineTo(p2.x,p2.y)}}}}
-x.stroke()}}
-if(document.getElementById('ss').checked){{
-for(const a of A){{if(a.stations&&a.stations.length){{const p=w2s(a.x,a.y);
-if(p.x>-20&&p.x<w+20&&p.y>-20&&p.y<h+20){{
-for(const sn of a.stations){{const st=SM.get(sn);if(st){{
-x.fillStyle=(st.type>=5&&st.type<=9)?'#ff6b6b':'#ffd93d';
-x.beginPath();x.arc(p.x,p.y,Math.max(2,sc*0.8),0,Math.PI*2);x.fill()}}}}}}}}}}}}}}
-function fit(){{const lw=B.maxX-B.minX,lh=B.maxY-B.minY;sc=Math.min((w-100)/lw,(h-100)/lh);ox=(w-lw*sc)/2;oy=(h-lh*sc)/2;document.getElementById('zoom').value=sc*100;document.getElementById('zv').textContent=Math.round(sc*100)+'%';rn()}}
-function reset(){{sc=0.5;ox=0;oy=0;document.getElementById('zoom').value=50;document.getElementById('zv').textContent='50%';rn()}}
-function search(){{const q=document.getElementById('q').value.trim().toUpperCase();if(!q)return;
-for(const s of S){{if(s.port_id&&s.port_id.toUpperCase().includes(q)){{
-for(const a of A){{if(a.stations&&a.stations.includes(s.no)){{
-const p=w2s(a.x,a.y);ox+=w/2-p.x;oy+=h/2-(h-p.y);
-document.getElementById('ic').innerHTML='<b>'+s.port_id+'</b><br>No:'+s.no+'<br>Type:'+s.type;rn();return}}}}}}}}
-document.getElementById('ic').innerHTML='Not found'}}
-c.onmousedown=e=>{{dr=true;lx=e.clientX;ly=e.clientY}};
-c.onmousemove=e=>{{if(dr){{ox+=e.clientX-lx;oy-=e.clientY-ly;lx=e.clientX;ly=e.clientY;rn()}}}};
-c.onmouseup=()=>{{dr=false}};
-c.onwheel=e=>{{e.preventDefault();const z=e.deltaY>0?0.9:1.1,mx=e.clientX,my=e.clientY-50;
-const wb=s2w(mx,my);sc*=z;sc=Math.max(0.05,Math.min(10,sc));const sa=w2s(wb.x,wb.y);
-ox+=mx-sa.x;oy-=my-(h-sa.y);document.getElementById('zoom').value=sc*100;document.getElementById('zv').textContent=Math.round(sc*100)+'%';rn()}};
-document.getElementById('zoom').oninput=e=>{{sc=e.target.value/100;document.getElementById('zv').textContent=Math.round(sc*100)+'%';rn()}};
-document.getElementById('sr').onchange=rn;document.getElementById('ss').onchange=rn;
-document.getElementById('q').onkeypress=e=>{{if(e.key==='Enter')search()}};
-onresize=rs;rs();fit();
-</script></body></html>'''
+// 레이아웃 정보
+const layoutInfo = {{
+    nodeCount: {len(nodes)},
+    connectionCount: {len(connections)},
+    generated: "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+}};
 
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(html)
-    print(f"HTML generated: {output_file}")
+console.log("Layout loaded:", layoutInfo);
+    </script>
+</head>
+<body>
+    <h1>OHT Layout Data</h1>
+    <p>Nodes: {len(nodes)}</p>
+    <p>Connections: {len(connections)}</p>
+</body>
+</html>
+'''
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    print(f"  완료: {os.path.getsize(output_path):,} bytes")
 
 
 def main():
-    # 경로 수정해서 사용하세요
-    xml_file = 'layout.xml'  # 입력 XML 파일
-    output_file = 'oht_layout_viewer.html'  # 출력 HTML 파일
+    # 기본 경로
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    default_zip = os.path.join(script_dir, 'layout', 'layout', 'layout.zip')
+    default_output = os.path.join(script_dir, 'layout', 'layout', 'layout.html')
 
-    print("=" * 50)
-    print("OHT Layout XML to HTML Visualizer")
-    print("=" * 50)
+    # 명령행 인자 처리
+    zip_path = sys.argv[1] if len(sys.argv) > 1 else default_zip
+    output_path = sys.argv[2] if len(sys.argv) > 2 else default_output
 
-    addresses, stations, connections = parse_layout_xml(xml_file)
-    generate_html(addresses, stations, connections, output_file)
-    print("\nDone! Open HTML in browser.")
+    print("=" * 60)
+    print("layout_map_cre.py - layout.xml에서 layout.html 생성")
+    print("=" * 60)
+    print(f"입력: {zip_path}")
+    print(f"출력: {output_path}")
+    print()
+
+    # ZIP 파일 확인
+    if not os.path.exists(zip_path):
+        print(f"오류: ZIP 파일을 찾을 수 없습니다: {zip_path}")
+        sys.exit(1)
+
+    # ZIP에서 layout.xml 추출
+    print("layout.xml 추출 중...")
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        with zf.open('layout.xml') as f:
+            xml_content = f.read().decode('utf-8')
+
+    print(f"  XML 크기: {len(xml_content):,} bytes")
+
+    # XML 파싱
+    nodes, connections = parse_layout_xml(xml_content)
+
+    # HTML 생성
+    generate_layout_html(nodes, connections, output_path)
+
+    print()
+    print("=" * 60)
+    print("완료!")
+    print("=" * 60)
 
 
 if __name__ == '__main__':
