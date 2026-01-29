@@ -3213,8 +3213,10 @@ function render() {
                 }
             });
 
-            // Zone ID 텍스트 표시
-            if (firstLaneMid) {
+            // Zone ID 텍스트 표시 (줌 55% 이상 또는 선택된 Zone)
+            const zoomPercent = scale * 100;
+            const isSelected = selectedZoneId === zone.zoneId;
+            if (firstLaneMid && (zoomPercent >= 55 || isSelected)) {
                 ctx.globalAlpha = 1.0;
                 ctx.setLineDash([]);
 
