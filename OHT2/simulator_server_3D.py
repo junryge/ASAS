@@ -3239,8 +3239,9 @@ function render() {
 
     // ============================================================
     // Station 표시 (pseudo-3D 변환 적용)
+    // Station, ID, 이름 중 하나라도 ON이면 마커 표시
     // ============================================================
-    if (window.stations && window.showStations) {
+    if (window.stations && (window.showStations || window.showStationIds || window.showStationNames)) {
         const stationZ = RAIL_HEIGHT / scale + 1;  // Station 높이
 
         window.stations.forEach(station => {
@@ -3797,42 +3798,13 @@ document.getElementById('btnToggleZones').addEventListener('click', () => {
     }
 });
 
-// Station 표시 토글 버튼
-window.showStations = false;  // 기본값: 숨김
+// Station 표시 토글 버튼 (각각 독립적으로 동작)
+// - Station: 마커만 표시
+// - ID: 마커 + ID 라벨 표시
+// - 이름: 마커 + 이름 라벨 표시
+window.showStations = false;
 window.showStationIds = false;
 window.showStationNames = false;
-
-// ID/이름 버튼 상태 업데이트 함수
-function updateStationSubButtons() {
-    const idBtn = document.getElementById('btnToggleStationIds');
-    const nameBtn = document.getElementById('btnToggleStationNames');
-
-    if (window.showStations) {
-        // Station ON: 버튼 활성화
-        idBtn.disabled = false;
-        nameBtn.disabled = false;
-        idBtn.style.opacity = '1';
-        nameBtn.style.opacity = '1';
-        idBtn.style.cursor = 'pointer';
-        nameBtn.style.cursor = 'pointer';
-    } else {
-        // Station OFF: 버튼 비활성화, 상태 리셋
-        window.showStationIds = false;
-        window.showStationNames = false;
-        idBtn.disabled = true;
-        nameBtn.disabled = true;
-        idBtn.style.opacity = '0.4';
-        nameBtn.style.opacity = '0.4';
-        idBtn.style.cursor = 'not-allowed';
-        nameBtn.style.cursor = 'not-allowed';
-        idBtn.textContent = 'ID OFF';
-        idBtn.style.background = '#555';
-        idBtn.style.color = '#fff';
-        nameBtn.textContent = '이름 OFF';
-        nameBtn.style.background = '#555';
-        nameBtn.style.color = '#fff';
-    }
-}
 
 document.getElementById('btnToggleStations').addEventListener('click', () => {
     const btn = document.getElementById('btnToggleStations');
@@ -3847,21 +3819,16 @@ document.getElementById('btnToggleStations').addEventListener('click', () => {
         btn.style.background = '#555';
         btn.style.color = '#fff';
     }
-    updateStationSubButtons();
 });
-
-// 초기 상태: ID/이름 버튼 비활성화
-setTimeout(updateStationSubButtons, 100);
 
 // Station ID 표시 토글 버튼
 document.getElementById('btnToggleStationIds').addEventListener('click', () => {
-    if (!window.showStations) return;  // Station OFF면 무시
     const btn = document.getElementById('btnToggleStationIds');
     window.showStationIds = !window.showStationIds;
 
     if (window.showStationIds) {
         btn.textContent = 'ID ON';
-        btn.style.background = '#00aaff';
+        btn.style.background = '#ffff00';
         btn.style.color = '#000';
     } else {
         btn.textContent = 'ID OFF';
@@ -3872,7 +3839,6 @@ document.getElementById('btnToggleStationIds').addEventListener('click', () => {
 
 // Station 이름 표시 토글 버튼
 document.getElementById('btnToggleStationNames').addEventListener('click', () => {
-    if (!window.showStations) return;  // Station OFF면 무시
     const btn = document.getElementById('btnToggleStationNames');
     window.showStationNames = !window.showStationNames;
 
