@@ -36,6 +36,7 @@ import pathlib
 _SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 
 LAYOUT_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.html")
+LAYOUT_ZIP_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.zip")  # layout.xml이 들어있는 ZIP
 OUTPUT_DIR = str(_SCRIPT_DIR / "output")
 HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_Zone_Master.csv")  # HID Zone 마스터 파일
 STATION_DAT_PATH = str(_SCRIPT_DIR / "station.dat")  # Station 데이터 파일
@@ -728,6 +729,153 @@ def build_lane_to_zone_map(zones: Dict[int, HIDZone]) -> Tuple[Dict[Tuple[int,in
             out_lane_map[(lane.fromNode, lane.toNode)] = zone_id
 
     return in_lane_map, out_lane_map
+
+
+# ============================================================
+# 레이아웃 자동 생성 (layout.xml -> layout.html)
+# ============================================================
+def ensure_layout_html(html_path: str, zip_path: str) -> None:
+    """
+    layout.html이 없거나 layout.zip보다 오래된 경우 자동 생성
+    """
+    import zipfile
+
+    need_generate = False
+
+    # layout.html 존재 확인
+    if not os.path.exists(html_path):
+        print(f"layout.html이 없습니다. 자동 생성합니다...")
+        need_generate = True
+    elif os.path.exists(zip_path):
+        # layout.zip이 더 최신인지 확인
+        html_mtime = os.path.getmtime(html_path)
+        zip_mtime = os.path.getmtime(zip_path)
+        if zip_mtime > html_mtime:
+            print(f"layout.zip이 더 최신입니다. layout.html을 재생성합니다...")
+            need_generate = True
+
+    if not need_generate:
+        return
+
+    if not os.path.exists(zip_path):
+        raise FileNotFoundError(f"layout.zip을 찾을 수 없습니다: {zip_path}")
+
+    print("=" * 60)
+    print("layout.xml에서 layout.html 자동 생성")
+    print("=" * 60)
+
+    # ZIP에서 layout.xml 추출
+    print("layout.xml 추출 중...")
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        with zf.open('layout.xml') as f:
+            xml_content = f.read().decode('utf-8')
+
+    print(f"  XML 크기: {len(xml_content):,} bytes")
+
+    # 라인 단위 파싱
+    print("XML 파싱 시작...")
+    nodes = {}
+    connections = []
+
+    current_addr = None
+    current_addr_params = {}
+    in_next_addr = False
+    next_addr_params = {}
+
+    lines = xml_content.split('\n')
+    total_lines = len(lines)
+    print(f"  총 라인 수: {total_lines:,}")
+
+    for line_no, line in enumerate(lines):
+        if line_no % 500000 == 0:
+            print(f"  처리 중: {line_no:,}/{total_lines:,} ({line_no*100//total_lines}%)")
+
+        line = line.strip()
+
+        # Addr 그룹 시작
+        if '<group name="Addr' in line and 'class=' in line and 'address.Addr"' in line:
+            if current_addr is not None and 'address' in current_addr_params:
+                addr_no = int(current_addr_params.get('address', 0))
+                if addr_no > 0:
+                    x = float(current_addr_params.get('draw-x', 0))
+                    y = float(current_addr_params.get('draw-y', 0))
+                    nodes[addr_no] = {'no': addr_no, 'x': round(x, 2), 'y': round(y, 2), 'stations': []}
+
+            current_addr_params = {}
+            current_addr = line
+            in_next_addr = False
+            continue
+
+        # NextAddr 그룹 시작
+        if '<group name="NextAddr' in line and 'class=' in line and 'NextAddr"' in line:
+            in_next_addr = True
+            next_addr_params = {}
+            continue
+
+        # NextAddr 그룹 종료
+        if in_next_addr and '</group>' in line:
+            if 'address' in current_addr_params and 'next-address' in next_addr_params:
+                from_addr = int(current_addr_params.get('address', 0))
+                try:
+                    to_addr = int(next_addr_params.get('next-address', '0'))
+                    if from_addr > 0 and to_addr > 0:
+                        connections.append([from_addr, to_addr])
+                except ValueError:
+                    pass
+            in_next_addr = False
+            continue
+
+        # 파라미터 파싱
+        if '<param ' in line and 'key="' in line and 'value="' in line:
+            key_match = re.search(r'key="([^"]+)"', line)
+            value_match = re.search(r'value="([^"]*)"', line)
+
+            if key_match and value_match:
+                key = key_match.group(1)
+                value = value_match.group(1)
+
+                if in_next_addr:
+                    next_addr_params[key] = value
+                elif current_addr is not None:
+                    current_addr_params[key] = value
+
+    # 마지막 Addr 저장
+    if current_addr is not None and 'address' in current_addr_params:
+        addr_no = int(current_addr_params.get('address', 0))
+        if addr_no > 0:
+            x = float(current_addr_params.get('draw-x', 0))
+            y = float(current_addr_params.get('draw-y', 0))
+            nodes[addr_no] = {'no': addr_no, 'x': round(x, 2), 'y': round(y, 2), 'stations': []}
+
+    print(f"  총 노드: {len(nodes)}개")
+    print(f"  총 연결: {len(connections)}개")
+
+    # HTML 생성
+    nodes_list = list(nodes.values())
+    nodes_json = json.dumps(nodes_list, ensure_ascii=False)
+    connections_json = json.dumps(connections, ensure_ascii=False)
+
+    html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OHT Layout Data</title>
+    <script>
+const A={nodes_json};
+const C={connections_json};
+    </script>
+</head>
+<body>
+    <p>Nodes: {len(nodes_list)}, Connections: {len(connections)}</p>
+</body>
+</html>
+'''
+
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    print(f"layout.html 생성 완료: {os.path.getsize(html_path):,} bytes")
+    print("=" * 60)
 
 
 # ============================================================
@@ -1653,6 +1801,9 @@ is_running = False
 @app.on_event("startup")
 async def startup():
     global engine, layout_data, is_running
+
+    # layout.html 자동 생성 (없거나 오래된 경우)
+    ensure_layout_html(LAYOUT_PATH, LAYOUT_ZIP_PATH)
 
     # 레이아웃 로드
     nodes, edges = parse_layout(LAYOUT_PATH)
