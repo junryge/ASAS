@@ -2247,6 +2247,7 @@ canvas { display: block; }
         <div class="stat-row"><span>총 Zone</span><span class="val" id="statTotalZones">187</span></div>
         <div class="stat-row"><span>정상</span><span class="val" id="statNormalZones" style="color:#00ff88">-</span></div>
         <div class="stat-row"><span>주의</span><span class="val" id="statPrecautionZones" style="color:#ffaa00">-</span></div>
+        <div class="stat-row"><span>포화</span><span class="val" id="statFullZones" style="color:#ff3366">-</span></div>
         <div class="stat-row"><span>전체 점유율</span><span class="val" id="statZoneOccupancy">- %</span></div>
         <div style="margin-top:10px;">
             <button id="btnToggleZones" style="width:100%;padding:6px 8px;background:#00d4ff;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">Zone 표시 ON</button>
@@ -2274,6 +2275,7 @@ canvas { display: block; }
             <div class="legend-item"><div style="width:8px;height:8px;background:#00aaff;margin-right:6px;border-radius:50%;"></div>UNIVERSAL (●)</div>
             <div class="legend-item"><div style="width:8px;height:8px;background:#00aaff;margin-right:6px;transform:rotate(45deg);"></div>기타 (◆)</div>
         </div>
+        <div id="zoneAlertList" style="margin-top:8px;font-size:10px;max-height:60px;overflow-y:auto;"></div>
     </div>
 
     <div class="section">
@@ -3019,7 +3021,28 @@ ws.onmessage = (e) => {
             document.getElementById('statTotalZones').textContent = zs.totalZones;
             document.getElementById('statNormalZones').textContent = zs.normalZones;
             document.getElementById('statPrecautionZones').textContent = zs.precautionZones;
+            document.getElementById('statFullZones').textContent = zs.fullZones;
             document.getElementById('statZoneOccupancy').textContent = zs.overallOccupancy + ' %';
+
+            // 주의/포화 Zone 목록 표시
+            const alertList = document.getElementById('zoneAlertList');
+            let alertHtml = '';
+
+            if (msg.data.fullZoneList && msg.data.fullZoneList.length > 0) {
+                alertHtml += '<div style="color:#ff3366;margin-bottom:4px;"><b>포화 Zone:</b></div>';
+                msg.data.fullZoneList.forEach(z => {
+                    alertHtml += `<div style="color:#ff3366;">Zone ${z.zoneId}: ${z.vehicleCount}/${z.vehicleMax}</div>`;
+                });
+            }
+
+            if (msg.data.precautionZoneList && msg.data.precautionZoneList.length > 0) {
+                alertHtml += '<div style="color:#ffaa00;margin-bottom:4px;margin-top:4px;"><b>주의 Zone:</b></div>';
+                msg.data.precautionZoneList.forEach(z => {
+                    alertHtml += `<div style="color:#ffaa00;">Zone ${z.zoneId}: ${z.vehicleCount}/${z.vehicleMax} (${z.occupancyRate}%)</div>`;
+                });
+            }
+
+            alertList.innerHTML = alertHtml || '<span style="color:#888;">정상 운영 중</span>';
         }
 
         // Zone 상태 맵 저장 (렌더링용)
