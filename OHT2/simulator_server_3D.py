@@ -3744,7 +3744,32 @@ canvas.addEventListener('wheel', e => {
     offsetX = mx - (mx - offsetX) * (newScale / scale);
     offsetY = my - (my - offsetY) * (newScale / scale);
     scale = newScale;
+
+    // 확대 50% 이상이면 Station ID 자동 ON, 미만이면 OFF
+    updateStationIdAutoToggle();
 });
+
+// Station ID 자동 토글 함수 (확대 50% 기준)
+function updateStationIdAutoToggle() {
+    const zoomPercent = scale * 100;
+    const btn = document.getElementById('btnToggleStationIds');
+
+    if (zoomPercent >= 50 && !window.showStationIds) {
+        window.showStationIds = true;
+        if (btn) {
+            btn.textContent = 'ID ON';
+            btn.style.background = '#00d4ff';
+            btn.style.color = '#000';
+        }
+    } else if (zoomPercent < 50 && window.showStationIds) {
+        window.showStationIds = false;
+        if (btn) {
+            btn.textContent = 'ID OFF';
+            btn.style.background = '#555';
+            btn.style.color = '#fff';
+        }
+    }
+}
 
 function updateTooltip(e) {
     const rect = canvas.getBoundingClientRect();
@@ -3814,6 +3839,9 @@ function fitView() {
 
     offsetX = pad - minX * scale + (canvas.width - pad * 2 - w * scale) / 2;
     offsetY = pad - minY * scale + (canvas.height - pad * 2 - h * scale) / 2;
+
+    // 확대 50% 기준 Station ID 자동 토글
+    updateStationIdAutoToggle();
 }
 
 // 데드락 상황 만들기 버튼
