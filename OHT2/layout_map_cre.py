@@ -4,42 +4,39 @@
 layout_map_cre.py - layout.xml에서 layout.html 생성
 
 사용법:
-    python layout_map_cre.py [layout.zip 경로] [출력 layout.html 경로]
+    1. 모듈로 import:
+       from layout_map_cre import ensure_layout_html
+       ensure_layout_html(html_path, zip_path)
 
-기본값:
-    입력: layout/layout/layout.zip
-    출력: layout/layout/layout.html
+    2. 직접 실행:
+       python layout_map_cre.py [layout.zip 경로] [출력 layout.html 경로]
 """
 
 import os
-import sys
 import re
 import json
 import zipfile
 from typing import Dict, List, Tuple
-from datetime import datetime
 
 
-def parse_layout_xml(xml_content: str) -> Tuple[List[Dict], List[List]]:
+def parse_layout_xml_content(xml_content: str) -> Tuple[List[Dict], List[List]]:
     """
-    layout.xml 파싱하여 노드와 연결 정보 추출 (라인 단위 파싱)
+    layout.xml 내용을 파싱하여 노드와 연결 정보 추출 (라인 단위 파싱)
 
     Returns:
         nodes: [{'no': int, 'x': float, 'y': float, 'stations': []}, ...]
         connections: [[from_no, to_no], ...]
     """
-    print("XML 파싱 시작 (라인 단위)...")
+    print("XML 파싱 시작...")
 
     nodes = {}
     connections = []
 
-    # 상태 변수
     current_addr = None
     current_addr_params = {}
     in_next_addr = False
     next_addr_params = {}
 
-    # 라인 단위로 처리
     lines = xml_content.split('\n')
     total_lines = len(lines)
     print(f"  총 라인 수: {total_lines:,}")
@@ -52,20 +49,13 @@ def parse_layout_xml(xml_content: str) -> Tuple[List[Dict], List[List]]:
 
         # Addr 그룹 시작
         if '<group name="Addr' in line and 'class=' in line and 'address.Addr"' in line:
-            # 이전 Addr 저장
             if current_addr is not None and 'address' in current_addr_params:
                 addr_no = int(current_addr_params.get('address', 0))
                 if addr_no > 0:
                     x = float(current_addr_params.get('draw-x', 0))
                     y = float(current_addr_params.get('draw-y', 0))
-                    nodes[addr_no] = {
-                        'no': addr_no,
-                        'x': round(x, 2),
-                        'y': round(y, 2),
-                        'stations': []
-                    }
+                    nodes[addr_no] = {'no': addr_no, 'x': round(x, 2), 'y': round(y, 2), 'stations': []}
 
-            # 새 Addr 시작
             current_addr_params = {}
             current_addr = line
             in_next_addr = False
@@ -79,12 +69,10 @@ def parse_layout_xml(xml_content: str) -> Tuple[List[Dict], List[List]]:
 
         # NextAddr 그룹 종료
         if in_next_addr and '</group>' in line:
-            # 연결 정보 저장
             if 'address' in current_addr_params and 'next-address' in next_addr_params:
                 from_addr = int(current_addr_params.get('address', 0))
-                to_addr_str = next_addr_params.get('next-address', '0')
                 try:
-                    to_addr = int(to_addr_str)
+                    to_addr = int(next_addr_params.get('next-address', '0'))
                     if from_addr > 0 and to_addr > 0:
                         connections.append([from_addr, to_addr])
                 except ValueError:
@@ -94,7 +82,6 @@ def parse_layout_xml(xml_content: str) -> Tuple[List[Dict], List[List]]:
 
         # 파라미터 파싱
         if '<param ' in line and 'key="' in line and 'value="' in line:
-            # key와 value 추출
             key_match = re.search(r'key="([^"]+)"', line)
             value_match = re.search(r'value="([^"]*)"', line)
 
@@ -113,59 +100,35 @@ def parse_layout_xml(xml_content: str) -> Tuple[List[Dict], List[List]]:
         if addr_no > 0:
             x = float(current_addr_params.get('draw-x', 0))
             y = float(current_addr_params.get('draw-y', 0))
-            nodes[addr_no] = {
-                'no': addr_no,
-                'x': round(x, 2),
-                'y': round(y, 2),
-                'stations': []
-            }
+            nodes[addr_no] = {'no': addr_no, 'x': round(x, 2), 'y': round(y, 2), 'stations': []}
 
     print(f"  총 노드: {len(nodes)}개")
     print(f"  총 연결: {len(connections)}개")
 
-    # 딕셔너리를 리스트로 변환
-    nodes_list = list(nodes.values())
-
-    return nodes_list, connections
+    return list(nodes.values()), connections
 
 
-def generate_layout_html(nodes: List[Dict], connections: List[List], output_path: str):
+def generate_layout_html(nodes: List[Dict], connections: List[List], output_path: str) -> None:
     """
-    layout.html 생성
+    layout.html 파일 생성
     """
     print(f"layout.html 생성: {output_path}")
 
-    # JSON 변환
     nodes_json = json.dumps(nodes, ensure_ascii=False)
     connections_json = json.dumps(connections, ensure_ascii=False)
 
-    # HTML 템플릿
     html_content = f'''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>OHT Layout Data</title>
     <script>
-// 노드 데이터: no(번지), x, y, stations
 const A={nodes_json};
-
-// 연결 데이터: [from_no, to_no]
 const C={connections_json};
-
-// 레이아웃 정보
-const layoutInfo = {{
-    nodeCount: {len(nodes)},
-    connectionCount: {len(connections)},
-    generated: "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-}};
-
-console.log("Layout loaded:", layoutInfo);
     </script>
 </head>
 <body>
-    <h1>OHT Layout Data</h1>
-    <p>Nodes: {len(nodes)}</p>
-    <p>Connections: {len(connections)}</p>
+    <p>Nodes: {len(nodes)}, Connections: {len(connections)}</p>
 </body>
 </html>
 '''
@@ -176,11 +139,66 @@ console.log("Layout loaded:", layoutInfo);
     print(f"  완료: {os.path.getsize(output_path):,} bytes")
 
 
+def ensure_layout_html(html_path: str, zip_path: str) -> None:
+    """
+    layout.html이 없거나 layout.zip보다 오래된 경우 자동 생성
+
+    Args:
+        html_path: 생성할 layout.html 경로
+        zip_path: layout.xml이 들어있는 layout.zip 경로
+    """
+    need_generate = False
+
+    # layout.html 존재 확인
+    if not os.path.exists(html_path):
+        print(f"layout.html이 없습니다. 자동 생성합니다...")
+        need_generate = True
+    elif os.path.exists(zip_path):
+        # layout.zip이 더 최신인지 확인
+        html_mtime = os.path.getmtime(html_path)
+        zip_mtime = os.path.getmtime(zip_path)
+        if zip_mtime > html_mtime:
+            print(f"layout.zip이 더 최신입니다. layout.html을 재생성합니다...")
+            need_generate = True
+
+    if not need_generate:
+        return
+
+    if not os.path.exists(zip_path):
+        raise FileNotFoundError(f"layout.zip을 찾을 수 없습니다: {zip_path}")
+
+    print("=" * 60)
+    print("layout.xml에서 layout.html 자동 생성")
+    print("=" * 60)
+
+    # ZIP에서 layout.xml 추출
+    print("layout.xml 추출 중...")
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        with zf.open('layout.xml') as f:
+            xml_content = f.read().decode('utf-8')
+
+    print(f"  XML 크기: {len(xml_content):,} bytes")
+
+    # XML 파싱
+    nodes, connections = parse_layout_xml_content(xml_content)
+
+    # HTML 생성
+    generate_layout_html(nodes, connections, html_path)
+
+    print("=" * 60)
+
+
 def main():
+    """
+    커맨드라인 실행용 메인 함수
+    """
+    import sys
+    import pathlib
+
     # 기본 경로
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    default_zip = os.path.join(script_dir, 'layout', 'layout', 'layout.zip')
-    default_output = os.path.join(script_dir, 'layout', 'layout', 'layout.html')
+    script_dir = pathlib.Path(__file__).parent.resolve()
+    default_zip = str(script_dir / 'layout' / 'layout' / 'layout.zip')
+    default_output = str(script_dir / 'layout' / 'layout' / 'layout.html')
 
     # 명령행 인자 처리
     zip_path = sys.argv[1] if len(sys.argv) > 1 else default_zip
@@ -193,7 +211,6 @@ def main():
     print(f"출력: {output_path}")
     print()
 
-    # ZIP 파일 확인
     if not os.path.exists(zip_path):
         print(f"오류: ZIP 파일을 찾을 수 없습니다: {zip_path}")
         sys.exit(1)
@@ -207,13 +224,12 @@ def main():
     print(f"  XML 크기: {len(xml_content):,} bytes")
 
     # XML 파싱
-    nodes, connections = parse_layout_xml(xml_content)
+    nodes, connections = parse_layout_xml_content(xml_content)
 
     # HTML 생성
     generate_layout_html(nodes, connections, output_path)
 
     print()
-    print("=" * 60)
     print("완료!")
     print("=" * 60)
 
