@@ -6,7 +6,7 @@ OHT 실시간 시뮬레이터 - FastAPI 웹서버
 - 속도 계산 5가지 조건 적용
 - WebSocket으로 프론트엔드에 전송
 - CSV 자동 저장 (ATLAS 테이블 형식)
-- HID Zone 기반 차량 관리 (HID_구역.CSV 연동)
+- HID Zone 기반 차량 관리 (HID_Zone_Master.csv 연동)
 """
 
 import os
@@ -28,6 +28,9 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
+# layout.xml -> layout.html 자동 생성 모듈
+from layout_map_cre import ensure_layout_html
+
 # ============================================================
 # 설정
 # ============================================================
@@ -35,14 +38,14 @@ import uvicorn
 import pathlib
 _SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 
-# 최적 경로 알고리즘 모듈
-from path_optimizer import PathOptimizer, PathStrategy, create_optimizer_from_engine, update_optimizer_from_engine
-
 LAYOUT_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.html")
+LAYOUT_XML_PATH = str(_SCRIPT_DIR / "layout" / "layout.xml")  # 실제 환경의 layout.xml
+LAYOUT_ZIP_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.zip")  # 백업용 ZIP (xml 없을 때)
 OUTPUT_DIR = str(_SCRIPT_DIR / "output")
-HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_구역.CSV")  # HID Zone 구성 파일
+HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_Zone_Master.csv")  # HID Zone 마스터 파일
+STATION_DAT_PATH = str(_SCRIPT_DIR / "station.dat")  # Station 데이터 파일
 CSV_SAVE_INTERVAL = 10  # 10초마다 CSV 저장
-VEHICLE_COUNT = 50  # OHT 대수
+VEHICLE_COUNT = 450  # OHT 대수
 SIMULATION_INTERVAL = 0.5  # 0.5초마다 업데이트
 FAB_ID = "M14Q"
 MCP_NAME = "OHT"
@@ -358,7 +361,7 @@ class RailEdge:
 
 
 # ============================================================
-# HID Zone 클래스 - HID_구역.CSV 기반
+# HID Zone 클래스 - HID_Zone_Master.csv 기반
 # ============================================================
 @dataclass
 class LanePair:
@@ -377,10 +380,14 @@ class LanePair:
 @dataclass
 class HIDZone:
     """
-    HID Zone 데이터 - HID_구역.CSV 기반
+    HID Zone 데이터 - HID_Zone_Master.csv 기반
 
     컬럼:
     - Zone_ID: Zone 고유 식별 번호
+    - HID_No: HID 장비 번호 (HID-OHT-001)
+    - Bay_Zone: Bay/구역 코드 (B01, M02, OS1 등)
+    - Sub_Region: 하위 구역 번호 (1, 2, 3...)
+    - Full_Name: 전체 명칭 (HID-B01-1(001))
     - Territory: 소속 영역 번호 (전체 1)
     - Type: Zone 유형 (HID = Hoist ID 구간)
     - IN_Count: 진입 Lane 개수
@@ -389,6 +396,9 @@ class HIDZone:
     - OUT_Lanes: 진출 Lane 노드 쌍 리스트
     - Vehicle_Max: Zone 내 최대 허용 OHT 대수
     - Vehicle_Precaution: 주의 알람 발생 기준 OHT 대수
+    - Project: 프로젝트명
+    - ZCU: ZCU 코드
+    - HID_Type: HID 타입 (HID4, MiniHID)
     """
     zoneId: int
     territory: int
@@ -399,6 +409,15 @@ class HIDZone:
     outLanes: List[LanePair] = field(default_factory=list)
     vehicleMax: int = 37
     vehiclePrecaution: int = 35
+
+    # 새로운 필드 (HID_Zone_Master.csv)
+    hidNo: str = ""           # HID-OHT-001
+    bayZone: str = ""         # B01, M02, OS1
+    subRegion: int = 0        # 하위 구역 번호
+    fullName: str = ""        # HID-B01-1(001)
+    project: str = ""         # M14 Project Ph-1
+    zcu: str = ""             # ZC504A
+    hidType: str = ""         # HID4, MiniHID
 
     # 실시간 상태
     currentVehicles: Set[str] = field(default_factory=set)
@@ -442,29 +461,40 @@ class HIDZone:
             return "PRECAUTION"
         return "NORMAL"
 
-    def addVehicle(self, vehicleId: str) -> bool:
-        """차량 추가 (성공 여부 반환)"""
+    def addVehicle(self, vehicleId: str, viaInLane: bool = True) -> bool:
+        """차량 추가 (성공 여부 반환)
+
+        Args:
+            vehicleId: 차량 ID
+            viaInLane: True면 IN Lane으로 진입, False면 OUT Lane으로 진입
+        """
         if self.isFull:
             return False
         self.currentVehicles.add(vehicleId)
-        self.totalInCount += 1
+        if viaInLane:
+            self.totalInCount += 1  # IN Lane 통한 진입
+        else:
+            self.totalOutCount += 1  # OUT Lane 통한 진입
         return True
 
     def removeVehicle(self, vehicleId: str):
-        """차량 제거"""
+        """차량 제거 (다른 Zone으로 이동 시)"""
         if vehicleId in self.currentVehicles:
             self.currentVehicles.discard(vehicleId)
-            self.totalOutCount += 1
 
     def hasVehicle(self, vehicleId: str) -> bool:
         """차량 존재 여부"""
         return vehicleId in self.currentVehicles
 
     def getInOutRatio(self) -> float:
-        """In/Out 비율"""
+        """IN Lane 진입 / OUT Lane 진입 비율"""
         if self.totalOutCount == 0:
             return float(self.totalInCount) if self.totalInCount > 0 else 1.0
         return self.totalInCount / self.totalOutCount
+
+    def getTotalEntries(self) -> int:
+        """총 진입 횟수 (IN + OUT)"""
+        return self.totalInCount + self.totalOutCount
 
     def resetStats(self):
         """통계 초기화"""
@@ -481,12 +511,113 @@ class HIDZone:
         return (isIn, isOut)
 
 
+@dataclass
+class Station:
+    """
+    Station 데이터 - station.dat 파일 기반
+
+    포맷: STATION = ID, "Type", ?, "Name", HexFlags, ?, NodeAddress, 0,0,0,0, ?, "EquipType", ...
+
+    타입:
+    - MAINTENANCE: 유지보수 스테이션
+    - DUAL_ACCESS: 양방향 접근 스테이션 (대부분)
+    - ACQUIRE: 캐리어 획득 스테이션
+    - DEPOSIT: 캐리어 적재 스테이션
+    - DUMMY: 더미 스테이션
+
+    장비타입:
+    - ZFS_RIGHT/ZFS_LEFT: ZFS 장비
+    - UNIVERSAL: 범용 장비
+    - MANUAL_ONLY: 수동 전용
+    - MTL_SWITCHBACK/MTL_ELEVATOR: MTL 관련
+    """
+    stationId: int
+    stationType: str          # MAINTENANCE, DUAL_ACCESS, etc.
+    stationName: str          # 4EBE0102_2, ST-00001, etc.
+    nodeAddress: int          # 노드 주소 (좌표 매핑용)
+    equipType: str            # UNIVERSAL, ZFS_RIGHT, etc.
+    hexFlags: int = 0
+    distance1: int = 0
+    distance2: int = 0
+
+    # 좌표 (노드에서 가져옴)
+    x: float = 0.0
+    y: float = 0.0
+    hasCoords: bool = False
+
+
+def parse_stations(filepath: str) -> Dict[int, Station]:
+    """
+    station.dat 파일 파싱
+
+    포맷: STATION = ID, "Type", ?, "Name", HexFlags, ?, NodeAddress, 0,0,0,0, ?, "EquipType", 0,0,0, Dist1, Dist2, ...
+    """
+    stations: Dict[int, Station] = {}
+
+    if not os.path.exists(filepath):
+        print(f"[경고] Station 파일 없음: {filepath}")
+        return stations
+
+    print(f"Station 파싱: {filepath}")
+
+    import re
+    pattern = re.compile(
+        r'STATION\s*=\s*(\d+)\s*,\s*"([^"]+)"\s*,\s*\d+\s*,\s*"([^"]+)"\s*,\s*(0x[0-9A-Fa-f]+|\d+)\s*,\s*\d+\s*,\s*(\d+)\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*"([^"]+)"'
+    )
+
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith(';'):
+                    continue
+
+                match = pattern.search(line)
+                if match:
+                    station_id = int(match.group(1))
+                    station_type = match.group(2)
+                    station_name = match.group(3)
+                    hex_flags_str = match.group(4)
+                    node_address = int(match.group(5))
+                    equip_type = match.group(6)
+
+                    # hex 플래그 파싱
+                    if hex_flags_str.startswith('0x'):
+                        hex_flags = int(hex_flags_str, 16)
+                    else:
+                        hex_flags = int(hex_flags_str)
+
+                    stations[station_id] = Station(
+                        stationId=station_id,
+                        stationType=station_type,
+                        stationName=station_name,
+                        nodeAddress=node_address,
+                        equipType=equip_type,
+                        hexFlags=hex_flags
+                    )
+
+        print(f"  -> {len(stations)}개 Station 로드됨")
+
+        # 타입별 통계
+        type_counts = {}
+        for s in stations.values():
+            type_counts[s.stationType] = type_counts.get(s.stationType, 0) + 1
+        for t, c in sorted(type_counts.items(), key=lambda x: -x[1]):
+            print(f"     - {t}: {c}개")
+
+    except Exception as e:
+        print(f"[오류] Station 파싱 실패: {e}")
+
+    return stations
+
+
 def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
     """
-    HID_구역.CSV 파일 파싱
+    HID_Zone_Master.csv 파일 파싱
 
     CSV 컬럼:
-    Zone_ID,Territory,Type,IN_Count,OUT_Count,IN_Lanes,OUT_Lanes,Vehicle_Max,Vehicle_Precaution
+    Zone_ID,HID_No,Bay_Zone,Sub_Region,Full_Name,Territory,Type,IN_Count,OUT_Count,
+    IN_Lanes,OUT_Lanes,Vehicle_Max,Vehicle_Precaution,Project,ZCU,HID_Type
     """
     zones: Dict[int, HIDZone] = {}
 
@@ -536,6 +667,10 @@ def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
                     sim_max = max(10, csv_max // 3)  # 최소 10대
                     sim_precaution = max(7, csv_precaution // 3)  # 최소 7대
 
+                    # Sub_Region 파싱 (빈 값이면 0)
+                    sub_region_str = row.get('Sub_Region', '')
+                    sub_region = int(sub_region_str) if sub_region_str else 0
+
                     zone = HIDZone(
                         zoneId=zone_id,
                         territory=int(row.get('Territory', 1)),
@@ -545,7 +680,15 @@ def parse_hid_zones(filepath: str) -> Dict[int, HIDZone]:
                         inLanes=in_lanes,
                         outLanes=out_lanes,
                         vehicleMax=sim_max,
-                        vehiclePrecaution=sim_precaution
+                        vehiclePrecaution=sim_precaution,
+                        # 새로운 필드 (HID_Zone_Master.csv)
+                        hidNo=row.get('HID_No', ''),
+                        bayZone=row.get('Bay_Zone', ''),
+                        subRegion=sub_region,
+                        fullName=row.get('Full_Name', ''),
+                        project=row.get('Project', ''),
+                        zcu=row.get('ZCU', ''),
+                        hidType=row.get('HID_Type', '')
                     )
                     zones[zone_id] = zone
 
@@ -572,10 +715,13 @@ def build_lane_to_zone_map(zones: Dict[int, HIDZone]) -> Tuple[Dict[Tuple[int,in
     """
     Lane -> Zone 매핑 테이블 생성
 
+    IN Lane과 OUT Lane 모두 해당 Zone으로의 진입 Lane임
+    (OUT은 퇴출이 아니라 다른 방향에서의 진입)
+
     Returns:
         (in_lane_map, out_lane_map):
-        - in_lane_map: {(fromNode, toNode): zoneId} - IN Lane이 속한 Zone
-        - out_lane_map: {(fromNode, toNode): zoneId} - OUT Lane이 속한 Zone
+        - in_lane_map: {(fromNode, toNode): zoneId} - IN 방향 진입 Lane
+        - out_lane_map: {(fromNode, toNode): zoneId} - OUT 방향 진입 Lane
     """
     in_lane_map = {}
     out_lane_map = {}
@@ -652,13 +798,25 @@ class SimulationEngine:
             )
 
         # ============================================================
-        # HID Zone 관리 - HID_구역.CSV 기반
+        # HID Zone 관리 - HID_Zone_Master.csv 기반
         # ============================================================
         self.hid_zones: Dict[int, HIDZone] = parse_hid_zones(HID_ZONE_CSV_PATH)
         self.in_lane_to_zone, self.out_lane_to_zone = build_lane_to_zone_map(self.hid_zones)
 
         # 차량 -> Zone 매핑 (현재 어느 Zone에 있는지)
         self.vehicle_zone_map: Dict[str, int] = {}
+
+        # Station 로드 및 좌표 매핑
+        self.stations: Dict[int, Station] = parse_stations(STATION_DAT_PATH)
+        self._map_station_coordinates()
+
+        # 노드 -> Station 매핑 (하나의 노드에 여러 Station이 있을 수 있음)
+        self.node_to_stations: Dict[int, List[Station]] = {}
+        for station in self.stations.values():
+            if station.nodeAddress not in self.node_to_stations:
+                self.node_to_stations[station.nodeAddress] = []
+            self.node_to_stations[station.nodeAddress].append(station)
+        print(f"Node-Station 매핑: {len(self.node_to_stations)}개 노드에 Station 존재")
 
         # 속도 설정 - MCP 속도 테이블 기반
         self.base_velocity = 180.0  # m/min 기본 속도
@@ -668,14 +826,6 @@ class SimulationEngine:
         self.vehicle_buffer: List[dict] = []
         self.rail_buffer: Dict[Tuple[int,int], dict] = defaultdict(lambda: {'pass_cnt': 0, 'velocities': []})
         self.zone_buffer: List[dict] = []  # Zone 상태 버퍼
-
-        # ============================================================
-        # 최적 경로 알고리즘 초기화
-        # ============================================================
-        self.path_optimizer = PathOptimizer(self.nodes, edges, dict(self.graph))
-        self.path_optimizer.strategy = PathStrategy.BALANCED
-        self.reroute_check_interval = 10  # 10틱마다 경로 재탐색 체크
-        print(f"[PathOptimizer] 최적 경로 알고리즘 연동 완료")
 
         # 시작 시간
         self.start_time = datetime.now()
@@ -743,41 +893,51 @@ class SimulationEngine:
                 self.vehicle_zone_map[v.vehicleId] = zone.zoneId
                 v.udpState.hidId = zone.zoneId
 
+    def _map_station_coordinates(self):
+        """Station의 nodeAddress를 기반으로 좌표 매핑"""
+        mapped_count = 0
+        for station in self.stations.values():
+            node = self.nodes.get(station.nodeAddress)
+            if node:
+                station.x = node.x
+                station.y = node.y
+                station.hasCoords = True
+                mapped_count += 1
+        print(f"Station 좌표 매핑: {mapped_count}/{len(self.stations)}개 성공")
+
     def _update_vehicle_zone(self, v: Vehicle, old_lane: Tuple[int, int], new_lane: Tuple[int, int]):
         """차량이 이동할 때 Zone 업데이트
-        - IN Lane 진입 시: Zone에 추가 (카운터 증가)
-        - OUT Lane 이탈 시: Zone에서 제거 (카운터 감소)
+
+        IN Lane과 OUT Lane 모두 해당 Zone으로의 진입 Lane임
+        - IN Lane 진입 시: Zone에 추가 (IN 카운터 증가)
+        - OUT Lane 진입 시: Zone에 추가 (OUT 카운터 증가)
+        - 다른 Zone 진입 시: 기존 Zone에서 제거
         """
         current_zone_id = self.vehicle_zone_map.get(v.vehicleId)
 
-        # 1. old_lane이 OUT Lane인 경우 -> Zone에서 나감 (카운터 감소)
-        out_zone_id = self.out_lane_to_zone.get(old_lane)
-        if out_zone_id is not None and out_zone_id == current_zone_id:
-            # OUT Lane을 통과해서 나가는 중 - Zone에서 제거
-            if current_zone_id in self.hid_zones:
-                self.hid_zones[current_zone_id].removeVehicle(v.vehicleId)
-            if v.vehicleId in self.vehicle_zone_map:
-                del self.vehicle_zone_map[v.vehicleId]
-            v.udpState.hidId = -1
-            current_zone_id = None  # 업데이트된 상태 반영
-
-        # 2. new_lane이 IN Lane인 경우 -> Zone에 들어감 (카운터 증가)
+        # new_lane이 IN 또는 OUT Lane인지 확인 -> 해당 Zone에 진입
         in_zone_id = self.in_lane_to_zone.get(new_lane)
-        if in_zone_id is not None:
+        out_zone_id = self.out_lane_to_zone.get(new_lane)
+
+        # IN 또는 OUT Lane을 통해 진입하는 Zone ID
+        new_zone_id = in_zone_id if in_zone_id is not None else out_zone_id
+        via_in_lane = in_zone_id is not None  # IN Lane 통한 진입 여부
+
+        if new_zone_id is not None:
             # 이미 같은 Zone에 있으면 무시
-            if in_zone_id == current_zone_id:
+            if new_zone_id == current_zone_id:
                 return
 
             # 다른 Zone에 있었으면 먼저 제거
             if current_zone_id is not None and current_zone_id in self.hid_zones:
                 self.hid_zones[current_zone_id].removeVehicle(v.vehicleId)
 
-            # 새 Zone에 추가
-            if in_zone_id in self.hid_zones:
-                new_zone = self.hid_zones[in_zone_id]
-                if new_zone.addVehicle(v.vehicleId):
-                    self.vehicle_zone_map[v.vehicleId] = in_zone_id
-                    v.udpState.hidId = in_zone_id
+            # 새 Zone에 추가 (IN/OUT 구분)
+            if new_zone_id in self.hid_zones:
+                new_zone = self.hid_zones[new_zone_id]
+                if new_zone.addVehicle(v.vehicleId, viaInLane=via_in_lane):
+                    self.vehicle_zone_map[v.vehicleId] = new_zone_id
+                    v.udpState.hidId = new_zone_id
                 else:
                     # Zone이 꽉 찬 경우 - 정체 발생
                     v.udpState.state = VHL_STATE.JAM
@@ -839,13 +999,12 @@ class SimulationEngine:
 
         return closest_blocking, min_distance if closest_blocking else 0
 
-    def _find_path(self, start: int, end: int, use_optimizer: bool = True) -> List[int]:
-        """경로 탐색 - PathOptimizer 사용 또는 기본 Dijkstra
+    def _find_path(self, start: int, end: int) -> List[int]:
+        """경로 탐색 - Dijkstra 알고리즘
 
         Args:
             start: 출발 노드
             end: 도착 노드
-            use_optimizer: PathOptimizer 사용 여부 (기본 True)
 
         Returns:
             경로 노드 리스트
@@ -853,13 +1012,7 @@ class SimulationEngine:
         if start == end or start not in self.nodes or end not in self.nodes:
             return []
 
-        # PathOptimizer 사용 (교통 상황 반영)
-        if use_optimizer and hasattr(self, 'path_optimizer'):
-            path = self.path_optimizer.find_optimal_path(start, end)
-            if path:
-                return path
-
-        # 기본 Dijkstra (fallback)
+        # Dijkstra 알고리즘
         dist = {start: 0}
         prev = {}
         pq = [(0, start)]
@@ -936,62 +1089,8 @@ class SimulationEngine:
         self.simulation_tick += 1
         current_time_ms = int(datetime.now().timestamp() * 1000)
 
-        # 주기적으로 경로 최적화 교통 정보 업데이트
-        if self.simulation_tick % 5 == 0:  # 5틱마다
-            self._update_path_optimizer()
-
-        # 주기적으로 경로 재탐색 체크
-        if self.simulation_tick % self.reroute_check_interval == 0:
-            self._check_and_reroute_vehicles()
-
         for v in self.vehicles.values():
             self._update_vehicle(v, dt, current_time_ms)
-
-    def _update_path_optimizer(self):
-        """경로 최적화기에 실시간 교통 정보 업데이트"""
-        lane_to_zone = {}
-        lane_to_zone.update(self.in_lane_to_zone)
-        lane_to_zone.update(self.out_lane_to_zone)
-
-        self.path_optimizer.update_traffic(
-            rail_edge_map=self.rail_edge_map,
-            hid_zones=self.hid_zones,
-            vehicles=self.vehicles,
-            lane_to_zone=lane_to_zone
-        )
-
-    def _check_and_reroute_vehicles(self):
-        """막힌 경로의 차량들 재탐색"""
-        rerouted_count = 0
-
-        for v in self.vehicles.values():
-            if not v.path or v.udpState.state != VHL_STATE.RUN:
-                continue
-
-            # 경로 재탐색 필요 여부 확인
-            should_reroute, reason = self.path_optimizer.should_reroute(
-                v.vehicleId, v.path, v.pathIndex
-            )
-
-            if should_reroute:
-                # 현재 위치에서 목적지까지 새 경로 탐색
-                current_node = v.currentNode
-                destination = v.destination
-
-                new_path = self.path_optimizer.get_rerouted_path(
-                    current_node, destination, v.path
-                )
-
-                if new_path and len(new_path) > 1:
-                    v.path = new_path
-                    v.pathIndex = 0
-                    v.nextNode = new_path[1] if len(new_path) > 1 else current_node
-                    v.udpState.nextAddress = v.nextNode
-                    rerouted_count += 1
-                    # print(f"[재경로] {v.vehicleId}: {reason}")
-
-        if rerouted_count > 0:
-            print(f"[PathOptimizer] {rerouted_count}대 경로 재탐색 완료")
 
     def _check_velocity_conditions(self, v: Vehicle) -> bool:
         """
@@ -1261,6 +1360,17 @@ class SimulationEngine:
             # 차량이 속한 Zone 정보
             zone_id = self.vehicle_zone_map.get(v.vehicleId, -1)
 
+            # 현재 노드에 있는 Station 정보
+            current_stations = []
+            if v.currentNode in self.node_to_stations:
+                for station in self.node_to_stations[v.currentNode]:
+                    current_stations.append({
+                        'stationId': station.stationId,
+                        'stationName': station.stationName,
+                        'stationType': station.stationType,
+                        'equipType': station.equipType
+                    })
+
             vehicles.append({
                 'vehicleId': v.vehicleId,
                 'x': round(v.x, 2),
@@ -1282,7 +1392,9 @@ class SimulationEngine:
                 'distance': round(v.udpState.distance, 2),
                 'detailState': v.udpState.detailState.name,
                 # HID Zone 정보
-                'hidZoneId': zone_id
+                'hidZoneId': zone_id,
+                # 현재 Station 정보
+                'currentStations': current_stations
             })
 
         # RailEdge In/Out 통계 계산
@@ -1547,6 +1659,9 @@ is_running = False
 async def startup():
     global engine, layout_data, is_running
 
+    # layout.html 자동 생성 (없거나 오래된 경우)
+    ensure_layout_html(LAYOUT_PATH, LAYOUT_XML_PATH, LAYOUT_ZIP_PATH)
+
     # 레이아웃 로드
     nodes, edges = parse_layout(LAYOUT_PATH)
 
@@ -1558,16 +1673,34 @@ async def startup():
     layout_data = {
         'nodes': [{'no': n.no, 'x': n.x, 'y': n.y} for n in nodes.values()],
         'edges': [{'from': e[0], 'to': e[1]} for e in edges],
-        # HID Zone Lane 정보
+        # HID Zone Lane 정보 (HID_Zone_Master.csv 기반)
         'hidZones': [
             {
                 'zoneId': z.zoneId,
+                'hidNo': z.hidNo,
+                'bayZone': z.bayZone,
+                'subRegion': z.subRegion,
+                'fullName': z.fullName,
+                'hidType': z.hidType,
                 'inLanes': [{'from': lane.fromNode, 'to': lane.toNode} for lane in z.inLanes],
                 'outLanes': [{'from': lane.fromNode, 'to': lane.toNode} for lane in z.outLanes],
                 'vehicleMax': z.vehicleMax,
                 'vehiclePrecaution': z.vehiclePrecaution
             }
             for z in engine.hid_zones.values()
+        ],
+        'stations': [
+            {
+                'stationId': s.stationId,
+                'stationType': s.stationType,
+                'stationName': s.stationName,
+                'nodeAddress': s.nodeAddress,
+                'equipType': s.equipType,
+                'x': s.x,
+                'y': s.y,
+                'hasCoords': s.hasCoords
+            }
+            for s in engine.stations.values() if s.hasCoords
         ]
     }
 
@@ -1580,7 +1713,8 @@ async def startup():
 
     print(f"\n서버 시작: http://localhost:8000")
     print(f"OHT {VEHICLE_COUNT}대 시뮬레이션 시작")
-    print(f"HID Zone {len(engine.hid_zones)}개 로드됨\n")
+    print(f"HID Zone {len(engine.hid_zones)}개 로드됨")
+    print(f"Station {len([s for s in engine.stations.values() if s.hasCoords])}개 로드됨 (좌표 있음)\n")
 
 async def simulation_loop():
     """시뮬레이션 메인 루프"""
@@ -1733,9 +1867,6 @@ async def reroute_all():
     global engine
     rerouted = 0
 
-    # 교통 정보 업데이트
-    engine._update_path_optimizer()
-
     for v in engine.vehicles.values():
         if not v.path or v.udpState.state != VHL_STATE.RUN:
             continue
@@ -1743,9 +1874,7 @@ async def reroute_all():
         current_node = v.currentNode
         destination = v.destination
 
-        new_path = engine.path_optimizer.get_rerouted_path(
-            current_node, destination, v.path
-        )
+        new_path = engine._find_path(current_node, destination)
 
         if new_path and len(new_path) > 1:
             v.path = new_path
@@ -1765,21 +1894,13 @@ async def get_path_info(start: int, end: int):
     """두 노드 간 경로 정보 조회"""
     global engine
 
-    # 교통 정보 업데이트
-    engine._update_path_optimizer()
-
-    # 최적 경로 탐색
-    path = engine.path_optimizer.find_optimal_path(start, end)
-    info = engine.path_optimizer.get_path_info(path)
-
-    # 대안 경로들
-    alternatives = engine.path_optimizer.find_alternative_paths(start, end, path, count=3)
-    alt_infos = [engine.path_optimizer.get_path_info(p) for p in alternatives]
+    # 경로 탐색
+    path = engine._find_path(start, end)
 
     return {
         "status": "ok",
-        "optimal": info,
-        "alternatives": alt_infos
+        "path": path,
+        "length": len(path)
     }
 
 @app.get("/api/jam-stats")
@@ -1908,7 +2029,19 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #444 #1a1a2e;
+    transition: transform 0.3s ease;
 }
+#sidebar.collapsed { transform: translateX(-240px); }
+#sidebar-toggle {
+    position: fixed; top: 55px; left: 240px; z-index: 950;
+    width: 24px; height: 50px; background: rgba(20, 20, 40, 0.95);
+    border: 1px solid #333; border-left: none;
+    border-radius: 0 8px 8px 0; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #00d4ff; font-size: 14px; transition: left 0.3s ease;
+}
+#sidebar-toggle:hover { background: rgba(0, 212, 255, 0.2); }
+#sidebar-toggle.collapsed { left: 0; }
 #sidebar::-webkit-scrollbar { width: 6px; }
 #sidebar::-webkit-scrollbar-track { background: #1a1a2e; }
 #sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
@@ -1922,8 +2055,109 @@ body { font-family: 'Segoe UI', sans-serif; background: #0a0a1a; color: #eee; ov
 .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 11px; }
 .legend-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; }
 
-#canvas-container { position: fixed; top: 50px; left: 240px; right: 0; bottom: 0; }
+#canvas-container { position: fixed; top: 50px; left: 240px; right: 280px; bottom: 0; transition: left 0.3s ease, right 0.3s ease; }
+#canvas-container.expanded { left: 0; }
+#canvas-container.right-expanded { right: 0; }
 canvas { display: block; }
+
+/* 오른쪽 사이드바 - OHT 상태 */
+#right-sidebar {
+    position: fixed; top: 50px; right: 0; bottom: 0; width: 280px;
+    background: rgba(20, 20, 40, 0.95); padding: 10px;
+    border-left: 1px solid #333; z-index: 900;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #444 #1a1a2e;
+    transition: transform 0.3s ease;
+}
+#right-sidebar.collapsed { transform: translateX(280px); }
+#right-sidebar-toggle {
+    position: fixed; top: 55px; right: 280px; z-index: 950;
+    width: 24px; height: 50px; background: rgba(20, 20, 40, 0.95);
+    border: 1px solid #333; border-right: none;
+    border-radius: 8px 0 0 8px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #00d4ff; font-size: 14px; transition: right 0.3s ease;
+}
+#right-sidebar-toggle:hover { background: rgba(0, 212, 255, 0.2); }
+#right-sidebar-toggle.collapsed { right: 0; }
+#right-sidebar h3 { color: #00d4ff; font-size: 13px; margin: 10px 0 8px; }
+#right-sidebar::-webkit-scrollbar { width: 6px; }
+#right-sidebar::-webkit-scrollbar-track { background: #1a1a2e; }
+#right-sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+/* 사이드바 탭 스타일 */
+.sidebar-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.sidebar-tab {
+    flex: 1; padding: 8px 4px; font-size: 12px; font-weight: bold;
+    background: #1a1a2e; color: #888; border: 1px solid #333;
+    border-radius: 6px; cursor: pointer; transition: all 0.2s ease;
+}
+.sidebar-tab:hover { background: #252550; color: #aaa; }
+.sidebar-tab.active { background: #00d4ff; color: #000; border-color: #00d4ff; }
+.tab-content { display: block; }
+
+/* OHT 리스트 스타일 */
+.oht-list { max-height: calc(100vh - 220px); overflow-y: auto; }
+.oht-item {
+    background: #1a1a2e; padding: 8px 10px; border-radius: 6px;
+    margin-bottom: 6px; cursor: pointer; transition: all 0.2s ease;
+    border-left: 3px solid #444;
+}
+.oht-item:hover { background: #252550; }
+.oht-item.selected { background: #1a3a5e; border-left-color: #00d4ff; }
+.oht-item.running { border-left-color: #00ff88; }
+.oht-item.loaded { border-left-color: #ff9900; }
+.oht-item.stopped { border-left-color: #ff3366; }
+.oht-item.jam { border-left-color: #ff0000; animation: blink 0.5s infinite; }
+.oht-item .oht-header { display: flex; justify-content: space-between; align-items: center; }
+.oht-item .oht-id { font-weight: bold; color: #00d4ff; font-size: 12px; }
+.oht-item .oht-state { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #333; }
+.oht-item .oht-detail { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; font-size: 11px; }
+.oht-item.expanded .oht-detail { display: block; }
+.oht-item .detail-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.oht-item .detail-row .label { color: #888; }
+.oht-item .detail-row .value { color: #fff; }
+
+/* OHT 필터 */
+.oht-filter { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.oht-filter button { padding: 4px 8px; font-size: 10px; background: #333; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+.oht-filter button.active { background: #00d4ff; color: #000; }
+.oht-filter button:hover { background: #444; }
+.oht-filter button.active:hover { background: #00b8e6; }
+
+/* Zone 필터 */
+.zone-filter { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.zone-filter button { padding: 4px 8px; font-size: 10px; background: #333; color: #fff; border: none; border-radius: 3px; cursor: pointer; }
+.zone-filter button.active { background: #00d4ff; color: #000; }
+.zone-filter button:hover { background: #444; }
+.zone-filter button.active:hover { background: #00b8e6; }
+
+/* Zone 리스트 */
+.zone-list { max-height: calc(100vh - 220px); overflow-y: auto; }
+.zone-item {
+    background: #1a1a2e; padding: 8px 10px; border-radius: 6px;
+    margin-bottom: 6px; cursor: pointer; transition: all 0.2s ease;
+    border-left: 3px solid #444;
+}
+.zone-item:hover { background: #252550; }
+.zone-item.selected { background: #1a3a5e; border-left-color: #00d4ff; }
+.zone-item.normal { border-left-color: #00ff88; }
+.zone-item.precaution { border-left-color: #ff9900; }
+.zone-item.full { border-left-color: #ff3366; animation: blink 0.5s infinite; }
+.zone-item .zone-header { display: flex; justify-content: space-between; align-items: center; }
+.zone-item .zone-id { font-weight: bold; color: #00d4ff; font-size: 12px; }
+.zone-item .zone-state { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #333; }
+.zone-item .zone-detail { display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; font-size: 11px; }
+.zone-item .zone-detail.show { display: block; }
+.zone-item .zone-info { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.zone-item .zone-info .label { color: #888; }
+.zone-item .zone-info .value { color: #fff; }
+.zone-item .zone-progress { height: 4px; background: #333; border-radius: 2px; margin-top: 6px; }
+.zone-item .zone-progress-bar { height: 100%; border-radius: 2px; transition: width 0.3s ease; }
+.zone-item.normal .zone-progress-bar { background: #00ff88; }
+.zone-item.precaution .zone-progress-bar { background: #ff9900; }
+.zone-item.full .zone-progress-bar { background: #ff3366; }
 
 #tooltip {
     position: fixed; background: rgba(0,20,40,0.95); border: 2px solid #00d4ff;
@@ -1947,10 +2181,10 @@ canvas { display: block; }
 <body>
 
 <div id="header">
-    <h1>SK Hynix M14 OHT Simulator <span style="font-size:14px;color:#00d4ff;">(3D)</span></h1>
+    <h1>SK Hynix M14 OHT Simulator <span style="font-size:14px;color:#00d4ff;">(Pseudo-3D)</span></h1>
     <div class="status">
         <div style="display:flex;align-items:center;gap:8px;">
-            <button id="btnToggle3D" style="padding:6px 14px;background:#ff9900;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">3D 모드</button>
+            <button id="btnToggle3D" style="padding:6px 14px;background:#ff9900;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:bold;">3D 효과 OFF</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;"><div class="live-dot"></div> LIVE</div>
         <div>노드: <span id="nodeCount">-</span></div>
@@ -1960,11 +2194,12 @@ canvas { display: block; }
     </div>
 </div>
 
-<div id="sidebar">
+<div id="sidebar-toggle" class="collapsed" onclick="toggleSidebar()" title="사이드바 접기/펼치기">▶</div>
+<div id="sidebar" class="collapsed">
     <div class="section">
         <h3>OHT 대수 설정</h3>
         <div style="display:flex;gap:5px;align-items:center;">
-            <input type="number" id="inputVehicleCount" min="1" max="2000" value="50"
+            <input type="number" id="inputVehicleCount" min="1" max="2000" value="450"
                    style="flex:1;padding:6px 8px;background:#1a1a3e;color:#fff;border:1px solid #444;border-radius:4px;font-size:12px;width:80px;">
             <span style="font-size:11px;color:#888;">대</span>
         </div>
@@ -2015,13 +2250,30 @@ canvas { display: block; }
         <div class="stat-row"><span>포화</span><span class="val" id="statFullZones" style="color:#ff3366">-</span></div>
         <div class="stat-row"><span>전체 점유율</span><span class="val" id="statZoneOccupancy">- %</span></div>
         <div style="margin-top:10px;">
-            <button id="btnToggleZones" style="width:100%;padding:6px 8px;background:#00d4ff;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">Zone 표시 ON</button>
+            <button id="btnToggleZones" style="width:100%;padding:6px 8px;background:#555;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">Zone 표시 OFF</button>
+        </div>
+        <div style="margin-top:6px;display:flex;gap:4px;">
+            <button id="btnToggleStations" style="flex:1;padding:5px 2px;background:#555;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:9px;">Station OFF</button>
+            <button id="btnToggleStationIds" style="flex:1;padding:5px 2px;background:#555;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:9px;">ID OFF</button>
+            <button id="btnToggleStationNames" style="flex:1;padding:5px 2px;background:#555;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:9px;">이름 OFF</button>
         </div>
         <div class="legend" style="margin-top:8px;">
             <div class="legend-item"><div style="width:20px;height:3px;background:#00ff88;margin-right:8px;"></div>정상 Zone</div>
             <div class="legend-item"><div style="width:20px;height:3px;background:#ffaa00;margin-right:8px;"></div>주의 Zone</div>
-            <div class="legend-item"><div style="width:20px;height:3px;background:#ff3366;margin-right:8px;"></div>포화 Zone</div>
             <div style="font-size:10px;color:#888;margin-top:4px;">실선: IN Lane, 점선: OUT Lane</div>
+        </div>
+        <!-- Station 범례 -->
+        <div class="legend" style="margin-top:8px;border-top:1px solid #333;padding-top:8px;">
+            <div style="font-size:10px;color:#00aaff;font-weight:bold;margin-bottom:4px;">Station 타입 (색상)</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#00aaff;margin-right:6px;border-radius:50%;"></div>DUAL_ACCESS</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#ff6600;margin-right:6px;border-radius:50%;"></div>MAINTENANCE</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#00ff00;margin-right:6px;border-radius:50%;"></div>ACQUIRE</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#ff00ff;margin-right:6px;border-radius:50%;"></div>DEPOSIT</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#666666;margin-right:6px;border-radius:50%;"></div>DUMMY</div>
+            <div style="font-size:10px;color:#00aaff;font-weight:bold;margin-top:6px;margin-bottom:4px;">장비 타입 (모양)</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#00aaff;margin-right:6px;"></div>ZFS (■)</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#00aaff;margin-right:6px;border-radius:50%;"></div>UNIVERSAL (●)</div>
+            <div class="legend-item"><div style="width:8px;height:8px;background:#00aaff;margin-right:6px;transform:rotate(45deg);"></div>기타 (◆)</div>
         </div>
         <div id="zoneAlertList" style="margin-top:8px;font-size:10px;max-height:60px;overflow-y:auto;"></div>
     </div>
@@ -2063,9 +2315,60 @@ canvas { display: block; }
     </div>
 </div>
 
-<div id="canvas-container">
+<div id="canvas-container" class="expanded right-expanded">
     <canvas id="canvas"></canvas>
     <div id="three-container" style="display:none;width:100%;height:100%;"></div>
+</div>
+
+<!-- 오른쪽 사이드바: OHT/Zone 상태 (기본 접힘) -->
+<div id="right-sidebar-toggle" class="collapsed" onclick="toggleRightSidebar()" title="목록 접기/펼치기">◀</div>
+<div id="right-sidebar" class="collapsed">
+    <!-- 탭 버튼 -->
+    <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="oht">OHT 상태</button>
+        <button class="sidebar-tab" data-tab="zone">HID Zone</button>
+    </div>
+
+    <!-- OHT 탭 콘텐츠 -->
+    <div class="tab-content" id="tab-oht">
+        <div class="oht-filter">
+            <button class="active" data-filter="all">전체</button>
+            <button data-filter="running">운행</button>
+            <button data-filter="loaded">적재</button>
+            <button data-filter="stopped">정지</button>
+            <button data-filter="jam">JAM</button>
+        </div>
+        <div style="margin-bottom:8px;">
+            <input type="text" id="ohtSearch" placeholder="OHT ID 검색..."
+                   style="width:100%;padding:6px 8px;background:#1a1a3e;color:#fff;border:1px solid #444;border-radius:4px;font-size:11px;">
+        </div>
+        <div class="oht-list" id="ohtList">
+            <!-- OHT 목록이 여기에 동적으로 추가됨 -->
+        </div>
+        <div style="margin-top:10px;padding:8px;background:#1a1a2e;border-radius:6px;font-size:10px;color:#888;">
+            <div>클릭: 선택/해제 | 더블클릭: 상세정보</div>
+        </div>
+    </div>
+
+    <!-- HID Zone 탭 콘텐츠 -->
+    <div class="tab-content" id="tab-zone" style="display:none;">
+        <div class="zone-filter">
+            <button class="active" data-zone-filter="all">전체</button>
+            <button data-zone-filter="full">포화</button>
+            <button data-zone-filter="precaution">주의</button>
+            <button data-zone-filter="normal">정상</button>
+        </div>
+        <div style="margin-bottom:8px;">
+            <input type="text" id="zoneSearch" placeholder="Zone ID 검색..."
+                   style="width:100%;padding:6px 8px;background:#1a1a3e;color:#fff;border:1px solid #444;border-radius:4px;font-size:11px;">
+        </div>
+        <div class="zone-list" id="zoneList">
+            <!-- Zone 목록이 여기에 동적으로 추가됨 -->
+        </div>
+        <div style="margin-top:10px;padding:8px;background:#1a1a2e;border-radius:6px;font-size:10px;color:#888;">
+            <div>클릭: 선택 | 더블클릭: 상세정보</div>
+        </div>
+    </div>
 </div>
 
 <div id="tooltip"></div>
@@ -2080,6 +2383,380 @@ canvas { display: block; }
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
+// 왼쪽 사이드바 토글 함수
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.getElementById('sidebar-toggle');
+    const container = document.getElementById('canvas-container');
+
+    sidebar.classList.toggle('collapsed');
+    toggle.classList.toggle('collapsed');
+    container.classList.toggle('expanded');
+
+    // 아이콘 변경
+    toggle.textContent = sidebar.classList.contains('collapsed') ? '▶' : '◀';
+
+    // 캔버스 리사이즈
+    setTimeout(resize, 350);
+}
+
+// 오른쪽 사이드바 토글 함수
+function toggleRightSidebar() {
+    const sidebar = document.getElementById('right-sidebar');
+    const toggle = document.getElementById('right-sidebar-toggle');
+    const container = document.getElementById('canvas-container');
+
+    sidebar.classList.toggle('collapsed');
+    toggle.classList.toggle('collapsed');
+    container.classList.toggle('right-expanded');
+
+    // 아이콘 변경
+    toggle.textContent = sidebar.classList.contains('collapsed') ? '◀' : '▶';
+
+    // 캔버스 리사이즈
+    setTimeout(resize, 350);
+}
+
+// OHT 목록 관련 변수
+let ohtFilter = 'all';
+let ohtSearchText = '';
+let expandedOhtId = null;
+
+// Zone 필터 및 검색 상태
+let zoneFilter = 'all';
+let zoneSearchText = '';
+let expandedZoneId = null;
+let selectedZoneId = null;
+
+// OHT 상태에 따른 클래스 반환
+// VHL_STATE enum: RUN="1", STOP="2", ABNORMAL="3", MANUAL="4", REMOVING="5", OBS_BZ_STOP="6", JAM="7"
+function getOhtStateClass(v) {
+    const state = String(v.state);
+    if (state === '7') return 'jam';  // JAM
+    if (state === '2' || state === '6' || state === '8') return 'stopped';  // STOP, OBS_BZ_STOP, HT_STOP
+    if (v.loaded) return 'loaded';
+    if (state === '1') return 'running';  // RUN
+    return 'stopped';  // 기타 상태는 정지로 표시
+}
+
+// OHT 상태 텍스트
+// VHL_STATE enum: RUN="1", STOP="2", ABNORMAL="3", MANUAL="4", REMOVING="5", OBS_BZ_STOP="6", JAM="7", HT_STOP="8", E84_TIMEOUT="9"
+function getOhtStateText(v) {
+    const states = {
+        '1': 'RUN', '2': 'STOP', '3': 'ABNORMAL', '4': 'MANUAL',
+        '5': 'REMOVING', '6': 'OBS_STOP', '7': 'JAM', '8': 'HT_STOP', '9': 'E84_TIMEOUT'
+    };
+    return states[String(v.state)] || 'UNKNOWN';
+}
+
+// OHT 목록 업데이트
+function updateOhtList() {
+    const listEl = document.getElementById('ohtList');
+    if (!listEl) {
+        console.log('OHT 목록 요소를 찾을 수 없음');
+        return;
+    }
+
+    // vehicles 변수 접근 확인
+    if (typeof vehicles === 'undefined') {
+        console.log('vehicles 변수가 정의되지 않음');
+        listEl.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">초기화 중...</div>';
+        return;
+    }
+
+    const vehCount = Object.keys(vehicles).length;
+    console.log('updateOhtList 호출됨, vehicles 수:', vehCount);
+
+    if (vehCount === 0) {
+        listEl.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">OHT 데이터 로딩 중...</div>';
+        return;
+    }
+
+    const vehArray = Object.values(vehicles);
+
+    // 필터링
+    let filtered = vehArray.filter(v => {
+        // 상태 필터
+        if (ohtFilter !== 'all') {
+            const stateClass = getOhtStateClass(v);
+            if (ohtFilter === 'running' && stateClass !== 'running') return false;
+            if (ohtFilter === 'loaded' && stateClass !== 'loaded') return false;
+            if (ohtFilter === 'stopped' && stateClass !== 'stopped') return false;
+            if (ohtFilter === 'jam' && stateClass !== 'jam') return false;
+        }
+        // 검색 필터
+        if (ohtSearchText && !v.vehicleId.toLowerCase().includes(ohtSearchText.toLowerCase())) {
+            return false;
+        }
+        return true;
+    });
+
+    // 정렬 (JAM 우선, 그 다음 ID 순)
+    filtered.sort((a, b) => {
+        const aJam = a.state === 5 ? 0 : 1;
+        const bJam = b.state === 5 ? 0 : 1;
+        if (aJam !== bJam) return aJam - bJam;
+        return a.vehicleId.localeCompare(b.vehicleId);
+    });
+
+    // HTML 생성
+    let html = '';
+    filtered.forEach(v => {
+        const stateClass = getOhtStateClass(v);
+        const isSelected = selectedVehicles.has(v.vehicleId);
+        const isExpanded = expandedOhtId === v.vehicleId;
+
+        html += '<div class="oht-item ' + stateClass + (isSelected ? ' selected' : '') + (isExpanded ? ' expanded' : '') + '" data-id="' + v.vehicleId + '">';
+        html += '  <div class="oht-header">';
+        html += '    <span class="oht-id">' + v.vehicleId + '</span>';
+        html += '    <span class="oht-state" style="background:' + (stateClass === 'jam' ? '#ff0000' : stateClass === 'stopped' ? '#ff3366' : stateClass === 'loaded' ? '#ff9900' : '#00ff88') + ';color:#000;">' + getOhtStateText(v) + '</span>';
+        html += '  </div>';
+        html += '  <div class="oht-detail">';
+        html += '    <div class="detail-row"><span class="label">속도</span><span class="value">' + (v.velocity || 0).toFixed(1) + ' m/min</span></div>';
+        html += '    <div class="detail-row"><span class="label">적재</span><span class="value">' + (v.loaded ? 'YES' : 'NO') + '</span></div>';
+        html += '    <div class="detail-row"><span class="label">현재 노드</span><span class="value">' + (v.currentNode || '-') + '</span></div>';
+        html += '    <div class="detail-row"><span class="label">목적지</span><span class="value">' + (v.destNode || '-') + '</span></div>';
+        html += '    <div class="detail-row"><span class="label">HID Zone</span><span class="value">' + (v.hidZoneId >= 0 ? 'HID ' + v.hidZoneId : '-') + '</span></div>';
+        html += '    <div class="detail-row"><span class="label">Station</span><span class="value" style="color:#ff9800;">' + (v.currentStations && v.currentStations.length > 0 ? v.currentStations.map(s => s.stationName).join(', ') : '-') + '</span></div>';
+        html += '    <div class="detail-row"><span class="label">RUN CYCLE</span><span class="value">' + (v.runCycle || '-') + '</span></div>';
+        html += '  </div>';
+        html += '</div>';
+    });
+
+    if (filtered.length === 0) {
+        html = '<div style="text-align:center;color:#888;padding:20px;">표시할 OHT가 없습니다</div>';
+    }
+
+    listEl.innerHTML = html;
+
+    // 클릭 이벤트 바인딩
+    listEl.querySelectorAll('.oht-item').forEach(item => {
+        const id = item.dataset.id;
+
+        // 클릭: 선택/해제
+        item.addEventListener('click', () => {
+            if (selectedVehicles.has(id)) {
+                selectedVehicles.delete(id);
+                item.classList.remove('selected');
+            } else {
+                selectedVehicles.add(id);
+                item.classList.add('selected');
+            }
+            draw();
+        });
+
+        // 더블클릭: 상세정보 토글
+        item.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            if (expandedOhtId === id) {
+                expandedOhtId = null;
+                item.classList.remove('expanded');
+            } else {
+                // 이전 확장된 항목 닫기
+                listEl.querySelectorAll('.oht-item.expanded').forEach(el => el.classList.remove('expanded'));
+                expandedOhtId = id;
+                item.classList.add('expanded');
+            }
+        });
+    });
+}
+
+// Zone 상태에 따른 클래스 반환
+function getZoneStateClass(zone) {
+    const count = zone.vehicleCount || 0;
+    const max = zone.vehicleMax || 1;
+    const precaution = zone.vehiclePrecaution || Math.ceil(max * 0.7);
+
+    if (count >= max) return 'full';
+    if (count >= precaution) return 'precaution';
+    return 'normal';
+}
+
+// Zone 상태 텍스트 반환
+function getZoneStateText(zone) {
+    const stateClass = getZoneStateClass(zone);
+    if (stateClass === 'full') return '포화';
+    if (stateClass === 'precaution') return '주의';
+    return '정상';
+}
+
+// Zone 리스트 업데이트
+function updateZoneList() {
+    const listEl = document.getElementById('zoneList');
+    if (!listEl) {
+        return;
+    }
+
+    if (!window.hidZones || window.hidZones.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">Zone 데이터 로딩 중...</div>';
+        return;
+    }
+
+    let filtered = window.hidZones.slice();
+
+    // 필터링
+    if (zoneFilter !== 'all') {
+        filtered = filtered.filter(z => {
+            const stateClass = getZoneStateClass(z);
+            return stateClass === zoneFilter;
+        });
+    }
+
+    // 검색 필터
+    if (zoneSearchText) {
+        const searchLower = zoneSearchText.toLowerCase();
+        filtered = filtered.filter(z => {
+            const name = (z.fullName || z.label || String(z.zoneId)).toLowerCase();
+            return name.includes(searchLower);
+        });
+    }
+
+    // 정렬 (포화 > 주의 > 정상, 같은 상태 내에서는 ID 순)
+    filtered.sort((a, b) => {
+        const aState = getZoneStateClass(a);
+        const bState = getZoneStateClass(b);
+        const stateOrder = { 'full': 0, 'precaution': 1, 'normal': 2 };
+        if (stateOrder[aState] !== stateOrder[bState]) {
+            return stateOrder[aState] - stateOrder[bState];
+        }
+        return (a.zoneId || 0) - (b.zoneId || 0);
+    });
+
+    // HTML 생성
+    let html = '';
+    filtered.forEach(z => {
+        const stateClass = getZoneStateClass(z);
+        const isSelected = selectedZoneId === z.zoneId;
+        const isExpanded = expandedZoneId === z.zoneId;
+        const displayName = z.fullName || z.label || 'Zone ' + z.zoneId;
+        const count = z.vehicleCount || 0;
+        const max = z.vehicleMax || 1;
+        const percent = Math.min(100, Math.round((count / max) * 100));
+        const precaution = z.vehiclePrecaution || Math.ceil(max * 0.7);
+
+        html += '<div class="zone-item ' + stateClass + (isSelected ? ' selected' : '') + '" data-id="' + z.zoneId + '">';
+        html += '  <div class="zone-header">';
+        html += '    <span class="zone-id">' + displayName + '</span>';
+        html += '    <span class="zone-state" style="background:' + (stateClass === 'full' ? '#ff3366' : stateClass === 'precaution' ? '#ff9900' : '#00ff88') + ';color:#000;">' + getZoneStateText(z) + '</span>';
+        html += '  </div>';
+        html += '  <div class="zone-progress"><div class="zone-progress-bar" style="width:' + percent + '%;"></div></div>';
+        html += '  <div class="zone-detail' + (isExpanded ? ' show' : '') + '">';
+        html += '    <div class="zone-info"><span class="label">현재 OHT:</span><span class="value">' + count + ' / ' + max + '</span></div>';
+        html += '    <div class="zone-info"><span class="label">주의 기준:</span><span class="value">' + precaution + '</span></div>';
+        if (z.bayZone) html += '    <div class="zone-info"><span class="label">Bay Zone:</span><span class="value">' + z.bayZone + '</span></div>';
+        if (z.subRegion) html += '    <div class="zone-info"><span class="label">Sub Region:</span><span class="value">' + z.subRegion + '</span></div>';
+        if (z.inCount || z.outCount) html += '    <div class="zone-info"><span class="label">IN/OUT:</span><span class="value">' + (z.inCount || 0) + ' / ' + (z.outCount || 0) + '</span></div>';
+        html += '  </div>';
+        html += '</div>';
+    });
+
+    if (filtered.length === 0) {
+        html = '<div style="text-align:center;color:#888;padding:20px;">표시할 Zone이 없습니다</div>';
+    }
+
+    listEl.innerHTML = html;
+
+    // 클릭 이벤트 바인딩
+    listEl.querySelectorAll('.zone-item').forEach(item => {
+        const id = parseInt(item.dataset.id);
+
+        // 클릭: 선택
+        item.addEventListener('click', () => {
+            // 선택된 zone 토글
+            if (selectedZoneId === id) {
+                selectedZoneId = null;
+                item.classList.remove('selected');
+            } else {
+                // 이전 선택 해제
+                listEl.querySelectorAll('.zone-item.selected').forEach(el => el.classList.remove('selected'));
+                selectedZoneId = id;
+                item.classList.add('selected');
+            }
+            draw();
+        });
+
+        // 더블클릭: 상세정보 토글
+        item.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            const detail = item.querySelector('.zone-detail');
+            if (expandedZoneId === id) {
+                expandedZoneId = null;
+                if (detail) detail.classList.remove('show');
+            } else {
+                // 이전 확장된 항목 닫기
+                listEl.querySelectorAll('.zone-detail.show').forEach(el => el.classList.remove('show'));
+                expandedZoneId = id;
+                if (detail) detail.classList.add('show');
+            }
+        });
+    });
+}
+
+// 필터 버튼 및 검색 이벤트 (DOM 로드 후)
+document.addEventListener('DOMContentLoaded', () => {
+    // 필터 버튼 이벤트
+    document.querySelectorAll('.oht-filter button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.oht-filter button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            ohtFilter = btn.dataset.filter;
+            updateOhtList();
+        });
+    });
+
+    // 검색 이벤트
+    const searchEl = document.getElementById('ohtSearch');
+    if (searchEl) {
+        searchEl.addEventListener('input', (e) => {
+            ohtSearchText = e.target.value;
+            updateOhtList();
+        });
+    }
+
+    // Zone 필터 버튼 이벤트
+    document.querySelectorAll('.zone-filter button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.zone-filter button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            zoneFilter = btn.dataset.zoneFilter;
+            updateZoneList();
+        });
+    });
+
+    // Zone 검색 이벤트
+    const zoneSearchEl = document.getElementById('zoneSearch');
+    if (zoneSearchEl) {
+        zoneSearchEl.addEventListener('input', (e) => {
+            zoneSearchText = e.target.value;
+            updateZoneList();
+        });
+    }
+
+    // 사이드바 탭 전환 이벤트
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            // 모든 탭 버튼 비활성화
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            // 클릭한 탭 활성화
+            tab.classList.add('active');
+
+            // 모든 탭 콘텐츠 숨기기
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+
+            // 선택한 탭 콘텐츠 보이기
+            const tabId = tab.dataset.tab;
+            const targetContent = document.getElementById('tab-' + tabId);
+            if (targetContent) {
+                targetContent.style.display = 'block';
+            }
+        });
+    });
+
+    console.log('OHT 목록 및 Zone 목록 이벤트 리스너 등록 완료');
+});
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -2091,6 +2768,130 @@ let offsetX = 0, offsetY = 0, scale = 1;
 let isDragging = false, lastMouse = {x: 0, y: 0};
 let startTime = Date.now();
 let selectedVehicles = new Set();  // 더블클릭으로 선택된 OHT들 (여러개 가능)
+
+// ============================================================
+// Pseudo-3D 효과 설정
+// ============================================================
+let isPseudo3D = false;  // 기본값: 3D 효과 꺼짐 (버튼 누르면 활성화)
+const ISO_ANGLE = Math.PI / 6;  // 30도 (isometric 각도)
+const ISO_SCALE_Y = 0.6;  // Y축 압축 비율
+const RAIL_HEIGHT = 8;  // 레일 높이 (3D 효과용)
+const OHT_HEIGHT = 12;  // OHT 높이 (3D 효과용)
+const LIGHT_ANGLE = -Math.PI / 4;  // 조명 각도 (좌상단에서)
+
+// Isometric 변환 함수 (2D 좌표를 pseudo-3D로 변환)
+function toIso(x, y, z = 0) {
+    if (!isPseudo3D) return { x: x, y: y };
+    const isoX = x;
+    const isoY = y * ISO_SCALE_Y - z * 0.7;
+    return { x: isoX, y: isoY };
+}
+
+// 색상을 밝게/어둡게 조절
+function adjustColor(hex, factor) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const nr = Math.min(255, Math.max(0, Math.round(r * factor)));
+    const ng = Math.min(255, Math.max(0, Math.round(g * factor)));
+    const nb = Math.min(255, Math.max(0, Math.round(b * factor)));
+    return '#' + [nr, ng, nb].map(c => c.toString(16).padStart(2, '0')).join('');
+}
+
+// 3D 박스 그리기 (OHT용)
+function draw3DBox(cx, cy, w, h, depth, color) {
+    const top = toIso(cx, cy, depth);
+    const halfW = w / 2;
+    const halfH = h / 2;
+
+    // 상단면 (밝은 색)
+    ctx.fillStyle = adjustColor(color, 1.3);
+    ctx.beginPath();
+    ctx.moveTo(top.x - halfW, top.y - halfH);
+    ctx.lineTo(top.x + halfW, top.y - halfH);
+    ctx.lineTo(top.x + halfW, top.y + halfH);
+    ctx.lineTo(top.x - halfW, top.y + halfH);
+    ctx.closePath();
+    ctx.fill();
+
+    // 앞면 (원래 색)
+    const front = toIso(cx, cy + halfH, 0);
+    const frontTop = toIso(cx, cy + halfH, depth);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(frontTop.x - halfW, frontTop.y);
+    ctx.lineTo(frontTop.x + halfW, frontTop.y);
+    ctx.lineTo(front.x + halfW, front.y);
+    ctx.lineTo(front.x - halfW, front.y);
+    ctx.closePath();
+    ctx.fill();
+
+    // 우측면 (어두운 색)
+    const right = toIso(cx + halfW, cy, 0);
+    const rightTop = toIso(cx + halfW, cy, depth);
+    ctx.fillStyle = adjustColor(color, 0.7);
+    ctx.beginPath();
+    ctx.moveTo(rightTop.x, rightTop.y - halfH);
+    ctx.lineTo(rightTop.x, rightTop.y + halfH);
+    ctx.lineTo(right.x, right.y + halfH);
+    ctx.lineTo(right.x, right.y - halfH);
+    ctx.closePath();
+    ctx.fill();
+
+    // 테두리
+    ctx.strokeStyle = adjustColor(color, 0.5);
+    ctx.lineWidth = 1 / scale;
+    ctx.stroke();
+}
+
+// 3D 레일 그리기 (두께감 있는 파이프 형태)
+function draw3DRail(fromX, fromY, toX, toY, railColor = '#2a4a6a') {
+    const width = isPseudo3D ? 4 / scale : 1.5 / scale;
+    const height = isPseudo3D ? RAIL_HEIGHT / scale : 0;
+
+    // 레일 방향 벡터
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+
+    const nx = -dy / len * width;  // 수직 벡터
+    const ny = dx / len * width;
+
+    if (isPseudo3D) {
+        // 상단면 (밝은 색)
+        const ft = toIso(fromX, fromY, height);
+        const tt = toIso(toX, toY, height);
+        ctx.fillStyle = adjustColor(railColor, 1.4);
+        ctx.beginPath();
+        ctx.moveTo(ft.x + nx, ft.y + ny * ISO_SCALE_Y);
+        ctx.lineTo(tt.x + nx, tt.y + ny * ISO_SCALE_Y);
+        ctx.lineTo(tt.x - nx, tt.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(ft.x - nx, ft.y - ny * ISO_SCALE_Y);
+        ctx.closePath();
+        ctx.fill();
+
+        // 측면 (그림자)
+        const fb = toIso(fromX, fromY, 0);
+        const tb = toIso(toX, toY, 0);
+        ctx.fillStyle = adjustColor(railColor, 0.6);
+        ctx.beginPath();
+        ctx.moveTo(ft.x - nx, ft.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(tt.x - nx, tt.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(tb.x - nx, tb.y - ny * ISO_SCALE_Y);
+        ctx.lineTo(fb.x - nx, fb.y - ny * ISO_SCALE_Y);
+        ctx.closePath();
+        ctx.fill();
+    } else {
+        // 기본 2D 레일
+        ctx.strokeStyle = railColor;
+        ctx.lineWidth = 1.5 / scale;
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
+    }
+}
 
 // 캔버스 크기
 function resize() {
@@ -2117,6 +2918,10 @@ ws.onmessage = (e) => {
         // HID Zone 정보 저장
         window.hidZones = layout.hidZones || [];
         console.log('HID Zones 로드:', window.hidZones.length + '개');
+
+        // Station 정보 저장
+        window.stations = layout.stations || [];
+        console.log('Stations 로드:', window.stations.length + '개');
 
         // 디버깅: Zone Lane 노드 존재 여부 확인
         if (window.hidZones.length > 0) {
@@ -2147,9 +2952,13 @@ ws.onmessage = (e) => {
         }
 
         fitView();
+
+        // Zone 목록 초기화
+        updateZoneList();
     }
     else if (msg.type === 'update') {
         // 부드러운 보간을 위해 타겟 위치 설정
+        const receivedCount = msg.data.vehicles ? msg.data.vehicles.length : 0;
         msg.data.vehicles.forEach(v => {
             if (!vehicles[v.vehicleId]) {
                 vehicles[v.vehicleId] = {...v, dispX: v.x, dispY: v.y};
@@ -2157,6 +2966,7 @@ ws.onmessage = (e) => {
                 Object.assign(vehicles[v.vehicleId], v);
             }
         });
+        console.log('WebSocket update - 수신:', receivedCount, '현재 vehicles:', Object.keys(vehicles).length);
 
         // 통계 업데이트
         const stats = msg.data.stats;
@@ -2237,6 +3047,24 @@ ws.onmessage = (e) => {
 
         // Zone 상태 맵 저장 (렌더링용)
         window.zoneStatusMap = msg.data.zoneStatusMap || {};
+
+        // HID Zone 데이터 실시간 업데이트 (zoneStatusMap 사용)
+        if (window.zoneStatusMap && window.hidZones) {
+            window.hidZones.forEach(zone => {
+                const statusInfo = window.zoneStatusMap[zone.zoneId];
+                if (statusInfo) {
+                    zone.vehicleCount = statusInfo.vehicleCount;
+                    zone.occupancyRate = statusInfo.occupancyRate;
+                    zone.status = statusInfo.status;
+                }
+            });
+        }
+
+        // OHT 목록 업데이트 (오른쪽 사이드바)
+        updateOhtList();
+
+        // Zone 목록 업데이트 (오른쪽 사이드바)
+        updateZoneList();
     }
 };
 
@@ -2274,36 +3102,64 @@ function render() {
     ctx.translate(offsetX, offsetY);
     ctx.scale(scale, scale);
 
-    // 엣지 (레일)
-    ctx.strokeStyle = '#2a2a4a';
-    ctx.lineWidth = 1.5 / scale;
+    // 엣지 (레일) - pseudo-3D 효과 적용
     layout.edges.forEach(e => {
         const from = nodeMap[e.from], to = nodeMap[e.to];
         if (from && to) {
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            ctx.lineTo(to.x, to.y);
-            ctx.stroke();
+            draw3DRail(from.x, from.y, to.x, to.y, '#2a4a6a');
         }
     });
 
-    // 노드 점
-    ctx.fillStyle = '#4a4a6a';
+    // 노드 점 (pseudo-3D 모드에서는 3D 효과 적용)
     const nodeSize = Math.max(1.5, 3 / scale);
     layout.nodes.forEach(n => {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, nodeSize, 0, Math.PI * 2);
-        ctx.fill();
+        if (isPseudo3D) {
+            // 3D 효과: 노드를 작은 원기둥처럼 표현
+            const pos = toIso(n.x, n.y, RAIL_HEIGHT / scale);
+            const posBase = toIso(n.x, n.y, 0);
+
+            // 그림자 (기둥)
+            ctx.fillStyle = '#1a2a3a';
+            ctx.beginPath();
+            ctx.ellipse(posBase.x, posBase.y, nodeSize, nodeSize * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 상단 원
+            ctx.fillStyle = '#4a6a8a';
+            ctx.beginPath();
+            ctx.ellipse(pos.x, pos.y, nodeSize, nodeSize * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#4a4a6a';
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, nodeSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
     });
 
     // ============================================================
-    // HID Zone Lane 표시
+    // HID Zone Lane 표시 (pseudo-3D 변환 적용)
     // ============================================================
-    if (window.hidZones && window.showZones !== false) {
+    if (window.hidZones) {
         const zoneStatusMap = window.zoneStatusMap || {};
+        const zoneZ = RAIL_HEIGHT / scale + 2;  // Zone 표시 높이
+        const zoomPercent = scale * 100;
 
         window.hidZones.forEach(zone => {
             const status = zoneStatusMap[zone.zoneId];
+            const isSelected = selectedZoneId === zone.zoneId;
+
+            // 선택된 Zone은 항상 표시
+            // showZones가 OFF이고 선택되지 않은 Zone은 건너뛰기
+            if (!isSelected && !window.showZones) {
+                return;
+            }
+
+            // showZones가 ON이어도 줌 55% 미만이고 선택되지 않은 Zone은 건너뛰기
+            if (!isSelected && zoomPercent < 55) {
+                return;
+            }
+
             let zoneColor, zoneAlpha;
 
             // 상태별 색상
@@ -2330,29 +3186,28 @@ function render() {
                 const from = nodeMap[lane.from];
                 const to = nodeMap[lane.to];
                 if (from && to) {
+                    const fromIso = toIso(from.x, from.y, zoneZ);
+                    const toIso_ = toIso(to.x, to.y, zoneZ);
                     ctx.beginPath();
-                    ctx.moveTo(from.x, from.y);
-                    ctx.lineTo(to.x, to.y);
+                    ctx.moveTo(fromIso.x, fromIso.y);
+                    ctx.lineTo(toIso_.x, toIso_.y);
                     ctx.stroke();
 
                     // 첫 번째 Lane의 중간점 저장 (Zone ID 표시용)
                     if (idx === 0) {
-                        firstLaneMid = {
-                            x: (from.x + to.x) / 2,
-                            y: (from.y + to.y) / 2
-                        };
+                        const midIso = toIso((from.x + to.x) / 2, (from.y + to.y) / 2, zoneZ);
+                        firstLaneMid = { x: midIso.x, y: midIso.y };
                     }
 
                     // 화살표 (진입 방향)
-                    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+                    const angle = Math.atan2(toIso_.y - fromIso.y, toIso_.x - fromIso.x);
                     const arrowLen = 15 / scale;
-                    const midX = (from.x + to.x) / 2;
-                    const midY = (from.y + to.y) / 2;
+                    const midIso = toIso((from.x + to.x) / 2, (from.y + to.y) / 2, zoneZ);
                     ctx.beginPath();
-                    ctx.moveTo(midX, midY);
-                    ctx.lineTo(midX - arrowLen * Math.cos(angle - 0.4), midY - arrowLen * Math.sin(angle - 0.4));
-                    ctx.moveTo(midX, midY);
-                    ctx.lineTo(midX - arrowLen * Math.cos(angle + 0.4), midY - arrowLen * Math.sin(angle + 0.4));
+                    ctx.moveTo(midIso.x, midIso.y);
+                    ctx.lineTo(midIso.x - arrowLen * Math.cos(angle - 0.4), midIso.y - arrowLen * Math.sin(angle - 0.4));
+                    ctx.moveTo(midIso.x, midIso.y);
+                    ctx.lineTo(midIso.x - arrowLen * Math.cos(angle + 0.4), midIso.y - arrowLen * Math.sin(angle + 0.4));
                     ctx.stroke();
                 }
             });
@@ -2363,9 +3218,11 @@ function render() {
                 const from = nodeMap[lane.from];
                 const to = nodeMap[lane.to];
                 if (from && to) {
+                    const fromIso = toIso(from.x, from.y, zoneZ);
+                    const toIso_ = toIso(to.x, to.y, zoneZ);
                     ctx.beginPath();
-                    ctx.moveTo(from.x, from.y);
-                    ctx.lineTo(to.x, to.y);
+                    ctx.moveTo(fromIso.x, fromIso.y);
+                    ctx.lineTo(toIso_.x, toIso_.y);
                     ctx.stroke();
                 }
             });
@@ -2375,17 +3232,22 @@ function render() {
                 ctx.globalAlpha = 1.0;
                 ctx.setLineDash([]);
 
-                // 배경 박스
-                const fontSize = Math.max(10, 14 / scale);
-                const label = 'HID ' + zone.zoneId;
+                // 배경 박스 - Station ID와 겹치지 않게 위쪽으로 오프셋
+                const fontSize = Math.max(8, 10 / scale);
+                const labelOffsetY = -20 / scale;  // 위쪽으로 오프셋
+                // Zone_ID 표시
+                let label = 'HID ' + zone.zoneId;
                 ctx.font = 'bold ' + fontSize + 'px sans-serif';
                 const textWidth = ctx.measureText(label).width;
                 const padding = 3 / scale;
 
+                const labelX = firstLaneMid.x;
+                const labelY = firstLaneMid.y + labelOffsetY;
+
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 ctx.fillRect(
-                    firstLaneMid.x - textWidth/2 - padding,
-                    firstLaneMid.y - fontSize/2 - padding,
+                    labelX - textWidth/2 - padding,
+                    labelY - fontSize/2 - padding,
                     textWidth + padding * 2,
                     fontSize + padding * 2
                 );
@@ -2394,26 +3256,78 @@ function render() {
                 ctx.fillStyle = zoneColor;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(label, firstLaneMid.x, firstLaneMid.y);
+                ctx.fillText(label, labelX, labelY);
 
                 // 차량 수 표시 (상태가 있으면)
                 if (status) {
                     const countLabel = status.vehicleCount + '/' + zone.vehicleMax;
-                    const countY = firstLaneMid.y + fontSize + padding * 2;
+                    const countY = labelY + fontSize + padding * 2;
                     const countFontSize = Math.max(8, 11 / scale);
                     ctx.font = countFontSize + 'px sans-serif';
                     const countWidth = ctx.measureText(countLabel).width;
 
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                     ctx.fillRect(
-                        firstLaneMid.x - countWidth/2 - padding,
+                        labelX - countWidth/2 - padding,
                         countY - countFontSize/2 - padding,
                         countWidth + padding * 2,
                         countFontSize + padding * 2
                     );
 
                     ctx.fillStyle = '#ffffff';
-                    ctx.fillText(countLabel, firstLaneMid.x, countY);
+                    ctx.fillText(countLabel, labelX, countY);
+                }
+            }
+
+            // 선택된 Zone 노란색 하이라이트 표시
+            if (isSelected) {
+                // Zone의 모든 노드 좌표 수집
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                const allLanes = [...zone.inLanes, ...zone.outLanes];
+                allLanes.forEach(lane => {
+                    const from = nodeMap[lane.from];
+                    const to = nodeMap[lane.to];
+                    if (from) {
+                        minX = Math.min(minX, from.x); maxX = Math.max(maxX, from.x);
+                        minY = Math.min(minY, from.y); maxY = Math.max(maxY, from.y);
+                    }
+                    if (to) {
+                        minX = Math.min(minX, to.x); maxX = Math.max(maxX, to.x);
+                        minY = Math.min(minY, to.y); maxY = Math.max(maxY, to.y);
+                    }
+                });
+
+                if (minX !== Infinity) {
+                    // 여유 공간 추가
+                    const padding = 50;
+                    minX -= padding; maxX += padding;
+                    minY -= padding; maxY += padding;
+
+                    // 4개 코너를 isometric 변환
+                    const topLeft = toIso(minX, minY, zoneZ);
+                    const topRight = toIso(maxX, minY, zoneZ);
+                    const bottomRight = toIso(maxX, maxY, zoneZ);
+                    const bottomLeft = toIso(minX, maxY, zoneZ);
+
+                    // 노란색 사각형 그리기
+                    ctx.strokeStyle = '#ffff00';
+                    ctx.lineWidth = Math.max(3, 4 / scale);
+                    ctx.globalAlpha = 1.0;
+                    ctx.setLineDash([10/scale, 5/scale]);
+
+                    ctx.beginPath();
+                    ctx.moveTo(topLeft.x, topLeft.y);
+                    ctx.lineTo(topRight.x, topRight.y);
+                    ctx.lineTo(bottomRight.x, bottomRight.y);
+                    ctx.lineTo(bottomLeft.x, bottomLeft.y);
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    // 내부 반투명 노란색 채우기
+                    ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
+                    ctx.fill();
+
+                    ctx.setLineDash([]);
                 }
             }
         });
@@ -2422,10 +3336,109 @@ function render() {
         ctx.setLineDash([]);
     }
 
+    // ============================================================
+    // Station 표시 (pseudo-3D 변환 적용)
+    // Station, ID, 이름 중 하나라도 ON이면 마커 표시
+    // ============================================================
+    if (window.stations && (window.showStations || window.showStationIds || window.showStationNames)) {
+        const stationZ = RAIL_HEIGHT / scale + 1;  // Station 높이
+
+        window.stations.forEach(station => {
+            if (!station.hasCoords) return;
+
+            const pos = toIso(station.x, station.y, stationZ);
+            const size = Math.max(3, 5 / scale);
+
+            // 타입별 색상
+            let stationColor;
+            switch (station.stationType) {
+                case 'MAINTENANCE': stationColor = '#ff6600'; break;
+                case 'ACQUIRE': stationColor = '#00ff00'; break;
+                case 'DEPOSIT': stationColor = '#ff00ff'; break;
+                case 'DUMMY': stationColor = '#666666'; break;
+                default: stationColor = '#00aaff';  // DUAL_ACCESS 등
+            }
+
+            // 장비 타입에 따른 마커 모양
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = stationColor;
+
+            if (station.equipType === 'ZFS_RIGHT' || station.equipType === 'ZFS_LEFT') {
+                // ZFS: 작은 사각형
+                ctx.fillRect(pos.x - size/2, pos.y - size/2, size, size);
+            } else if (station.equipType === 'UNIVERSAL') {
+                // UNIVERSAL: 작은 원
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, size/2, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // 기타: 다이아몬드
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y - size/2);
+                ctx.lineTo(pos.x + size/2, pos.y);
+                ctx.lineTo(pos.x, pos.y + size/2);
+                ctx.lineTo(pos.x - size/2, pos.y);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // ID 또는 이름 라벨 표시
+            if (window.showStationIds || window.showStationNames) {
+                ctx.globalAlpha = 1.0;
+                const fontSize = Math.max(8, 10 / scale);
+                ctx.font = fontSize + 'px sans-serif';
+                const padding = 2 / scale;
+                let offsetY = size/2 + 2/scale;
+
+                // ID 표시
+                if (window.showStationIds) {
+                    const idLabel = String(station.stationId);
+                    const idWidth = ctx.measureText(idLabel).width;
+
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(
+                        pos.x - idWidth/2 - padding,
+                        pos.y + offsetY,
+                        idWidth + padding * 2,
+                        fontSize + padding * 2
+                    );
+
+                    ctx.fillStyle = '#ffff00';  // ID는 노란색
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(idLabel, pos.x, pos.y + offsetY + padding);
+
+                    offsetY += fontSize + padding * 2 + 1/scale;
+                }
+
+                // 이름 표시
+                if (window.showStationNames) {
+                    const nameLabel = station.stationName;
+                    const nameWidth = ctx.measureText(nameLabel).width;
+
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(
+                        pos.x - nameWidth/2 - padding,
+                        pos.y + offsetY,
+                        nameWidth + padding * 2,
+                        fontSize + padding * 2
+                    );
+
+                    ctx.fillStyle = stationColor;  // 이름은 타입 색상
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(nameLabel, pos.x, pos.y + offsetY + padding);
+                }
+            }
+        });
+
+        ctx.globalAlpha = 1.0;
+    }
+
     // OHT 크기
     const vehSize = Math.max(4, 7 / scale);
 
-    // 선택된 OHT들 경로 표시 (여러개)
+    // 선택된 OHT들 경로 표시 (여러개) - pseudo-3D 변환 적용
     const colors = ['#00ffff', '#ff00ff', '#ffff00', '#00ff00', '#ff8800', '#8800ff'];
     let colorIdx = 0;
     selectedVehicles.forEach(vid => {
@@ -2435,6 +3448,7 @@ function render() {
         const path = sv.path || [];
         const color = colors[colorIdx % colors.length];
         colorIdx++;
+        const pathZ = RAIL_HEIGHT / scale + 5;  // 경로 표시 높이
 
         if (path.length > 0) {
             // 현재 위치에서 시작하는 경로선
@@ -2442,13 +3456,15 @@ function render() {
             ctx.lineWidth = 4 / scale;
             ctx.setLineDash([8/scale, 4/scale]);
             ctx.beginPath();
-            ctx.moveTo(sv.dispX, sv.dispY);
+            const startIso = toIso(sv.dispX, sv.dispY, pathZ);
+            ctx.moveTo(startIso.x, startIso.y);
 
             // 경로의 각 노드를 따라 선 그리기
             path.forEach(nodeNo => {
                 const node = nodeMap[nodeNo];
                 if (node) {
-                    ctx.lineTo(node.x, node.y);
+                    const nodeIso = toIso(node.x, node.y, pathZ);
+                    ctx.lineTo(nodeIso.x, nodeIso.y);
                 }
             });
             ctx.stroke();
@@ -2459,8 +3475,9 @@ function render() {
             path.forEach((nodeNo, idx) => {
                 const node = nodeMap[nodeNo];
                 if (node) {
+                    const nodeIso = toIso(node.x, node.y, pathZ);
                     ctx.beginPath();
-                    ctx.arc(node.x, node.y, 4 / scale, 0, Math.PI * 2);
+                    ctx.arc(nodeIso.x, nodeIso.y, 4 / scale, 0, Math.PI * 2);
                     ctx.fill();
                 }
             });
@@ -2468,9 +3485,10 @@ function render() {
             // 목적지 마커 (마지막 노드)
             const destNode = nodeMap[sv.destination];
             if (destNode) {
+                const destIso = toIso(destNode.x, destNode.y, pathZ);
                 ctx.fillStyle = '#ff0066';
                 ctx.beginPath();
-                ctx.arc(destNode.x, destNode.y, 12 / scale, 0, Math.PI * 2);
+                ctx.arc(destIso.x, destIso.y, 12 / scale, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 2 / scale;
@@ -2480,58 +3498,203 @@ function render() {
                 ctx.fillStyle = '#fff';
                 ctx.font = `bold ${14/scale}px sans-serif`;
                 ctx.textAlign = 'center';
-                ctx.fillText(vid, destNode.x, destNode.y - 18/scale);
+                ctx.fillText(vid, destIso.x, destIso.y - 18/scale);
             }
         }
 
         // 선택된 OHT 강조 테두리
+        const ohtZ = RAIL_HEIGHT / scale + OHT_HEIGHT / scale;
+        const svIso = toIso(sv.dispX, sv.dispY, ohtZ);
         ctx.strokeStyle = color;
         ctx.lineWidth = 3 / scale;
         ctx.beginPath();
-        ctx.arc(sv.dispX, sv.dispY, vehSize + 5/scale, 0, Math.PI * 2);
+        if (isPseudo3D) {
+            ctx.ellipse(svIso.x, svIso.y, vehSize + 8/scale, (vehSize + 8/scale) * 0.6, 0, 0, Math.PI * 2);
+        } else {
+            ctx.arc(sv.dispX, sv.dispY, vehSize + 5/scale, 0, Math.PI * 2);
+        }
         ctx.stroke();
     });
 
-    // OHT
+    // OHT - pseudo-3D 효과 적용
     Object.values(vehicles).forEach(v => {
         let color = '#00ff88';
         if (v.state === 7) color = '#ff0000';  // JAM (정체) - 빨간색 깜빡임
         else if (v.state === 2) color = '#ff3366';  // 정지
         else if (v.isLoaded === 1) color = '#ff9900';  // 적재
 
-        // 그림자
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.beginPath();
-        ctx.arc(v.dispX + 2/scale, v.dispY + 2/scale, vehSize, 0, Math.PI * 2);
-        ctx.fill();
+        if (isPseudo3D) {
+            // ============================================================
+            // Pseudo-3D OHT 렌더링 (3D 박스 형태)
+            // ============================================================
+            const ohtW = vehSize * 2.5;  // OHT 너비
+            const ohtH = vehSize * 1.5;  // OHT 깊이
+            const ohtD = OHT_HEIGHT / scale;  // OHT 높이
 
-        // 본체
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(v.dispX, v.dispY, vehSize, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5 / scale;
-        ctx.stroke();
-
-        // JAM 상태 (정체) 깜빡임 효과
-        if (v.state === 7) {
-            const blinkAlpha = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() / 200));
-            ctx.fillStyle = `rgba(255, 0, 0, ${blinkAlpha})`;
+            // 바닥 그림자 (더 진하게)
+            const shadowPos = toIso(v.dispX + 3/scale, v.dispY + 3/scale, 0);
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.beginPath();
-            ctx.arc(v.dispX, v.dispY, vehSize + 3/scale, 0, Math.PI * 2);
+            ctx.ellipse(shadowPos.x, shadowPos.y, ohtW * 0.7, ohtH * 0.4, 0, 0, Math.PI * 2);
             ctx.fill();
-        }
 
-        // 적재 표시
-        if (v.isLoaded === 1) {
-            ctx.fillStyle = '#fff';
+            // 연결봉 (레일에서 OHT 본체로)
+            const railTop = toIso(v.dispX, v.dispY, RAIL_HEIGHT / scale);
+            const ohtBottom = toIso(v.dispX, v.dispY, RAIL_HEIGHT / scale + ohtD * 0.3);
+            ctx.strokeStyle = '#556677';
+            ctx.lineWidth = 3 / scale;
             ctx.beginPath();
-            ctx.arc(v.dispX, v.dispY, vehSize * 0.4, 0, Math.PI * 2);
-            ctx.fill();
-        }
+            ctx.moveTo(railTop.x, railTop.y);
+            ctx.lineTo(ohtBottom.x, ohtBottom.y);
+            ctx.stroke();
 
+            // OHT 본체 (3D 박스)
+            const baseZ = RAIL_HEIGHT / scale + ohtD * 0.3;
+
+            // 뒷면 (어두운 색) - 먼저 그려야 가려짐
+            const backTop = toIso(v.dispX, v.dispY - ohtH/2, baseZ + ohtD);
+            const backBot = toIso(v.dispX, v.dispY - ohtH/2, baseZ);
+            ctx.fillStyle = adjustColor(color, 0.5);
+            ctx.beginPath();
+            ctx.moveTo(backTop.x - ohtW/2, backTop.y);
+            ctx.lineTo(backTop.x + ohtW/2, backTop.y);
+            ctx.lineTo(backBot.x + ohtW/2, backBot.y);
+            ctx.lineTo(backBot.x - ohtW/2, backBot.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 왼쪽면
+            const leftTopF = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const leftTopB = toIso(v.dispX - ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            const leftBotF = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ);
+            const leftBotB = toIso(v.dispX - ohtW/2, v.dispY - ohtH/2, baseZ);
+            ctx.fillStyle = adjustColor(color, 0.8);
+            ctx.beginPath();
+            ctx.moveTo(leftTopF.x, leftTopF.y);
+            ctx.lineTo(leftTopB.x, leftTopB.y);
+            ctx.lineTo(leftBotB.x, leftBotB.y);
+            ctx.lineTo(leftBotF.x, leftBotF.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 상단면 (가장 밝은 색)
+            const topFL = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const topFR = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const topBR = toIso(v.dispX + ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            const topBL = toIso(v.dispX - ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            ctx.fillStyle = adjustColor(color, 1.3);
+            ctx.beginPath();
+            ctx.moveTo(topFL.x, topFL.y);
+            ctx.lineTo(topFR.x, topFR.y);
+            ctx.lineTo(topBR.x, topBR.y);
+            ctx.lineTo(topBL.x, topBL.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 앞면 (원래 색)
+            const frontTopL = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const frontTopR = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const frontBotL = toIso(v.dispX - ohtW/2, v.dispY + ohtH/2, baseZ);
+            const frontBotR = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ);
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(frontTopL.x, frontTopL.y);
+            ctx.lineTo(frontTopR.x, frontTopR.y);
+            ctx.lineTo(frontBotR.x, frontBotR.y);
+            ctx.lineTo(frontBotL.x, frontBotL.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 오른쪽면 (어두운 색)
+            const rightTopF = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ + ohtD);
+            const rightTopB = toIso(v.dispX + ohtW/2, v.dispY - ohtH/2, baseZ + ohtD);
+            const rightBotF = toIso(v.dispX + ohtW/2, v.dispY + ohtH/2, baseZ);
+            const rightBotB = toIso(v.dispX + ohtW/2, v.dispY - ohtH/2, baseZ);
+            ctx.fillStyle = adjustColor(color, 0.6);
+            ctx.beginPath();
+            ctx.moveTo(rightTopF.x, rightTopF.y);
+            ctx.lineTo(rightTopB.x, rightTopB.y);
+            ctx.lineTo(rightBotB.x, rightBotB.y);
+            ctx.lineTo(rightBotF.x, rightBotF.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 테두리
+            ctx.strokeStyle = adjustColor(color, 0.4);
+            ctx.lineWidth = 0.5 / scale;
+            ctx.stroke();
+
+            // JAM 상태 깜빡임 효과 (3D 글로우)
+            if (v.state === 7) {
+                const blinkAlpha = 0.3 + 0.5 * Math.abs(Math.sin(Date.now() / 200));
+                const glowPos = toIso(v.dispX, v.dispY, baseZ + ohtD/2);
+                ctx.fillStyle = `rgba(255, 50, 50, ${blinkAlpha})`;
+                ctx.beginPath();
+                ctx.ellipse(glowPos.x, glowPos.y, ohtW * 0.8, ohtH * 0.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 적재 표시 (상단에 작은 박스)
+            if (v.isLoaded === 1) {
+                const cargoZ = baseZ + ohtD + 3/scale;
+                const cargoPos = toIso(v.dispX, v.dispY, cargoZ);
+                const cargoW = ohtW * 0.6;
+                const cargoH = ohtH * 0.6;
+
+                // 화물 상자 (FOUP)
+                ctx.fillStyle = '#ffffff';
+                const cargoTopL = toIso(v.dispX - cargoW/2, v.dispY + cargoH/2, cargoZ + 5/scale);
+                const cargoTopR = toIso(v.dispX + cargoW/2, v.dispY + cargoH/2, cargoZ + 5/scale);
+                const cargoBotL = toIso(v.dispX - cargoW/2, v.dispY + cargoH/2, cargoZ);
+                const cargoBotR = toIso(v.dispX + cargoW/2, v.dispY + cargoH/2, cargoZ);
+                ctx.beginPath();
+                ctx.moveTo(cargoTopL.x, cargoTopL.y);
+                ctx.lineTo(cargoTopR.x, cargoTopR.y);
+                ctx.lineTo(cargoBotR.x, cargoBotR.y);
+                ctx.lineTo(cargoBotL.x, cargoBotL.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#dddddd';
+                ctx.fill();
+            }
+
+        } else {
+            // ============================================================
+            // 기존 2D OHT 렌더링
+            // ============================================================
+            // 그림자
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.beginPath();
+            ctx.arc(v.dispX + 2/scale, v.dispY + 2/scale, vehSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 본체
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(v.dispX, v.dispY, vehSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.5 / scale;
+            ctx.stroke();
+
+            // JAM 상태 (정체) 깜빡임 효과
+            if (v.state === 7) {
+                const blinkAlpha = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() / 200));
+                ctx.fillStyle = `rgba(255, 0, 0, ${blinkAlpha})`;
+                ctx.beginPath();
+                ctx.arc(v.dispX, v.dispY, vehSize + 3/scale, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 적재 표시
+            if (v.isLoaded === 1) {
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(v.dispX, v.dispY, vehSize * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
     });
 
     ctx.restore();
@@ -2555,17 +3718,25 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseup', () => isDragging = false);
 canvas.addEventListener('mouseleave', () => { isDragging = false; document.getElementById('tooltip').style.display = 'none'; });
 
-// 더블클릭 - OHT 선택 토글 (여러개 선택 가능)
+// 더블클릭 - OHT 선택 토글 (여러개 선택 가능) - pseudo-3D 좌표 변환 적용
 canvas.addEventListener('dblclick', e => {
     const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left - offsetX) / scale;
     const my = (e.clientY - rect.top - offsetY) / scale;
 
     let clicked = null;
-    let minDist = 20 / scale;
+    let minDist = 25 / scale;
     Object.values(vehicles).forEach(v => {
-        const d = Math.hypot(v.dispX - mx, v.dispY - my);
-        if (d < minDist) { minDist = d; clicked = v.vehicleId; }
+        // pseudo-3D 모드에서는 변환된 좌표로 비교
+        if (isPseudo3D) {
+            const ohtZ = RAIL_HEIGHT / scale + OHT_HEIGHT / scale * 0.5;
+            const vIso = toIso(v.dispX, v.dispY, ohtZ);
+            const d = Math.hypot(vIso.x - mx, vIso.y - my);
+            if (d < minDist) { minDist = d; clicked = v.vehicleId; }
+        } else {
+            const d = Math.hypot(v.dispX - mx, v.dispY - my);
+            if (d < minDist) { minDist = d; clicked = v.vehicleId; }
+        }
     });
 
     if (clicked) {
@@ -2591,7 +3762,37 @@ canvas.addEventListener('wheel', e => {
     offsetX = mx - (mx - offsetX) * (newScale / scale);
     offsetY = my - (my - offsetY) * (newScale / scale);
     scale = newScale;
+
+    // 확대 50% 이상이면 Station ID 자동 ON, 미만이면 OFF
+    updateStationIdAutoToggle();
+    // 확대 55% 기준 Zone 표시 자동 토글
+    updateZoneAutoToggle();
 });
+
+// Station ID 자동 토글 함수 (확대 50% 기준)
+// 사용자가 수동으로 OFF하면 자동 ON 안함
+function updateStationIdAutoToggle() {
+    const zoomPercent = scale * 100;
+    const btn = document.getElementById('btnToggleStationIds');
+
+    // 수동 OFF 상태면 자동 ON 하지 않음
+    if (zoomPercent >= 50 && !window.showStationIds && !window.stationIdManualOff) {
+        window.showStationIds = true;
+        if (btn) {
+            btn.textContent = 'ID ON';
+            btn.style.background = '#00d4ff';
+            btn.style.color = '#000';
+        }
+    } else if (zoomPercent < 50 && window.showStationIds) {
+        window.showStationIds = false;
+        window.stationIdManualOff = false;  // 줌 아웃 시 수동 OFF 리셋
+        if (btn) {
+            btn.textContent = 'ID OFF';
+            btn.style.background = '#555';
+            btn.style.color = '#fff';
+        }
+    }
+}
 
 function updateTooltip(e) {
     const rect = canvas.getBoundingClientRect();
@@ -2600,8 +3801,16 @@ function updateTooltip(e) {
 
     let closest = null, minDist = 20 / scale;
     Object.values(vehicles).forEach(v => {
-        const d = Math.hypot(v.dispX - mx, v.dispY - my);
-        if (d < minDist) { minDist = d; closest = v; }
+        // pseudo-3D 모드에서는 변환된 좌표로 비교
+        if (isPseudo3D) {
+            const ohtZ = RAIL_HEIGHT / scale + OHT_HEIGHT / scale * 0.5;
+            const vIso = toIso(v.dispX, v.dispY, ohtZ);
+            const d = Math.hypot(vIso.x - mx, vIso.y - my);
+            if (d < minDist) { minDist = d; closest = v; }
+        } else {
+            const d = Math.hypot(v.dispX - mx, v.dispY - my);
+            if (d < minDist) { minDist = d; closest = v; }
+        }
     });
 
     const tooltip = document.getElementById('tooltip');
@@ -2622,7 +3831,7 @@ function updateTooltip(e) {
             <div class="row"><span class="label">다음번지</span><span class="value">${closest.nextNode || '-'}</span></div>
             <div class="row"><span class="label">거리</span><span class="value">${distanceDisplay}</span></div>
             <div class="row"><span class="label">목적지</span><span class="value">${closest.destination || '-'}</span></div>
-            <div class="row"><span class="label">HID Zone</span><span class="value" style="color:#00d4ff;">${closest.hidZoneId >= 0 ? 'Zone ' + closest.hidZoneId : '-'}</span></div>
+            <div class="row"><span class="label">HID Zone</span><span class="value" style="color:#00d4ff;">${closest.hidZoneId >= 0 ? 'HID ' + closest.hidZoneId : '-'}</span></div>
             <hr style="border:none;border-top:1px solid #444;margin:6px 0;">
             <div class="row"><span class="label">RunCycle</span><span class="value">${closest.runCycleName || closest.runCycle}</span></div>
             <div class="row"><span class="label">VhlCycle</span><span class="value">${closest.vhlCycleName || closest.vhlCycle}</span></div>
@@ -2653,6 +3862,11 @@ function fitView() {
 
     offsetX = pad - minX * scale + (canvas.width - pad * 2 - w * scale) / 2;
     offsetY = pad - minY * scale + (canvas.height - pad * 2 - h * scale) / 2;
+
+    // 확대 50% 기준 Station ID 자동 토글
+    updateStationIdAutoToggle();
+    // 확대 55% 기준 Zone 표시 자동 토글
+    updateZoneAutoToggle();
 }
 
 // 데드락 상황 만들기 버튼
@@ -2702,7 +3916,7 @@ document.getElementById('btnResetInOut').addEventListener('click', async () => {
 });
 
 // Zone 표시 토글 버튼
-window.showZones = true;  // 기본값: 표시
+window.showZones = false;  // 기본값: OFF
 document.getElementById('btnToggleZones').addEventListener('click', () => {
     const btn = document.getElementById('btnToggleZones');
     window.showZones = !window.showZones;
@@ -2713,6 +3927,85 @@ document.getElementById('btnToggleZones').addEventListener('click', () => {
         btn.style.color = '#000';
     } else {
         btn.textContent = 'Zone 표시 OFF';
+        btn.style.background = '#555';
+        btn.style.color = '#fff';
+    }
+});
+
+// Zone 표시 자동 토글 함수 (확대 55% 기준)
+function updateZoneAutoToggle() {
+    const zoomPercent = scale * 100;
+    const btn = document.getElementById('btnToggleZones');
+    if (zoomPercent >= 55 && !window.showZones) {
+        window.showZones = true;
+        if (btn) {
+            btn.textContent = 'Zone 표시 ON';
+            btn.style.background = '#00d4ff';
+            btn.style.color = '#000';
+        }
+    } else if (zoomPercent < 55 && window.showZones) {
+        window.showZones = false;
+        if (btn) {
+            btn.textContent = 'Zone 표시 OFF';
+            btn.style.background = '#555';
+            btn.style.color = '#fff';
+        }
+    }
+}
+
+// Station 표시 토글 버튼 (각각 독립적으로 동작)
+// - Station: 마커만 표시
+// - ID: 마커 + ID 라벨 표시
+// - 이름: 마커 + 이름 라벨 표시
+window.showStations = false;
+window.showStationIds = false;
+window.showStationNames = false;
+
+document.getElementById('btnToggleStations').addEventListener('click', () => {
+    const btn = document.getElementById('btnToggleStations');
+    window.showStations = !window.showStations;
+
+    if (window.showStations) {
+        btn.textContent = 'Station ON';
+        btn.style.background = '#00aaff';
+        btn.style.color = '#000';
+    } else {
+        btn.textContent = 'Station OFF';
+        btn.style.background = '#555';
+        btn.style.color = '#fff';
+    }
+});
+
+// Station ID 표시 토글 버튼
+window.stationIdManualOff = false;  // 수동 OFF 플래그
+document.getElementById('btnToggleStationIds').addEventListener('click', () => {
+    const btn = document.getElementById('btnToggleStationIds');
+    window.showStationIds = !window.showStationIds;
+
+    if (window.showStationIds) {
+        btn.textContent = 'ID ON';
+        btn.style.background = '#ffff00';
+        btn.style.color = '#000';
+        window.stationIdManualOff = false;  // ON하면 수동 OFF 해제
+    } else {
+        btn.textContent = 'ID OFF';
+        btn.style.background = '#555';
+        btn.style.color = '#fff';
+        window.stationIdManualOff = true;  // 수동으로 OFF함
+    }
+});
+
+// Station 이름 표시 토글 버튼
+document.getElementById('btnToggleStationNames').addEventListener('click', () => {
+    const btn = document.getElementById('btnToggleStationNames');
+    window.showStationNames = !window.showStationNames;
+
+    if (window.showStationNames) {
+        btn.textContent = '이름 ON';
+        btn.style.background = '#00aaff';
+        btn.style.color = '#000';
+    } else {
+        btn.textContent = '이름 OFF';
         btn.style.background = '#555';
         btn.style.color = '#fff';
     }
@@ -2924,37 +4217,22 @@ function animate3D() {
     renderer.render(scene, camera);
 }
 
+// Pseudo-3D 효과 토글 (Three.js 대신 2D 캔버스에서 3D 효과)
 function toggle3DMode() {
-    is3DMode = !is3DMode;
-    const c2d = document.getElementById('canvas');
-    const c3d = document.getElementById('three-container');
+    isPseudo3D = !isPseudo3D;
     const btn = document.getElementById('btnToggle3D');
 
-    if (is3DMode) {
-        c2d.style.display = 'none';
-        c3d.style.display = 'block';
-        btn.textContent = '2D';
+    if (isPseudo3D) {
+        btn.textContent = '3D 효과 ON';
         btn.style.background = '#00d4ff';
-        if (!scene) init3D(); else { createRails(); animate3D(); }
     } else {
-        c2d.style.display = 'block';
-        c3d.style.display = 'none';
-        btn.textContent = '3D';
+        btn.textContent = '3D 효과 OFF';
         btn.style.background = '#ff9900';
-        render();
     }
-}
-
-function resize3D() {
-    if (!renderer) return;
-    const ct = document.getElementById('three-container');
-    camera.aspect = ct.clientWidth / ct.clientHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(ct.clientWidth, ct.clientHeight);
+    render();
 }
 
 document.getElementById('btnToggle3D').addEventListener('click', toggle3DMode);
-window.addEventListener('resize', () => { if (is3DMode) resize3D(); });
 </script>
 </body>
 </html>
