@@ -3286,7 +3286,7 @@ function render() {
                 ctx.globalAlpha = 1.0;
                 const fontSize = Math.max(8, 10 / scale);
                 ctx.font = fontSize + 'px sans-serif';
-                const label = station.stationName;
+                const label = String(station.stationId);
                 const textWidth = ctx.measureText(label).width;
                 const padding = 2 / scale;
 
