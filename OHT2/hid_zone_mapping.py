@@ -1,273 +1,254 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-hid_zone_mapping.py - 원본 HID_Zone_Master.csv와 layout.xml 매핑
+layout_map_cre.py - layout.xml에서 layout.html 생성
 
-원본 CSV의 IN_Lanes를 기준으로 layout.xml의 McpZone ID를 찾아 매핑
+사용법:
+    1. 모듈로 import:
+       from layout_map_cre import ensure_layout_html
+       ensure_layout_html(html_path, zip_path)
+
+    2. 직접 실행:
+       python layout_map_cre.py [layout.zip 경로] [출력 layout.html 경로]
 """
 
 import os
 import re
-import csv
+import json
 import zipfile
-from pathlib import Path
+from typing import Dict, List, Tuple
 
 
-def parse_lanes_from_csv(lanes_str):
-    """CSV의 IN_Lanes/OUT_Lanes 문자열을 파싱"""
-    if not lanes_str:
-        return set()
-    lanes = set()
-    for lane in lanes_str.split('; '):
-        lane = lane.strip()
-        if '→' in lane:
-            parts = lane.split('→')
-            if len(parts) == 2:
-                lanes.add((parts[0].strip(), parts[1].strip()))
-    return lanes
+def parse_layout_xml_content(xml_content: str) -> Tuple[List[Dict], List[List]]:
+    """
+    layout.xml 내용을 파싱하여 노드와 연결 정보 추출 (라인 단위 파싱)
 
+    Returns:
+        nodes: [{'no': int, 'x': float, 'y': float, 'stations': []}, ...]
+        connections: [[from_no, to_no], ...]
+    """
+    print("XML 파싱 시작...")
 
-def parse_mcp_zones_from_xml(xml_content):
-    """layout.xml에서 McpZone 정보 추출"""
-    print("McpZone 파싱 중...")
+    nodes = {}
+    connections = []
 
-    zones = {}
-    current_zone = None
-    current_zone_id = None
-    current_zone_no = None
-    current_entries = []
-    current_exits = []
-    in_entry = False
-    in_exit = False
-    entry_start = None
-    entry_end = None
-    exit_start = None
-    exit_end = None
+    current_addr = None
+    current_addr_params = {}
+    in_next_addr = False
+    next_addr_params = {}
 
     lines = xml_content.split('\n')
-    total = len(lines)
+    total_lines = len(lines)
+    print(f"  총 라인 수: {total_lines:,}")
 
-    for i, line in enumerate(lines):
-        if i % 500000 == 0:
-            print(f"  {i:,}/{total:,} ({i*100//total}%)")
+    for line_no, line in enumerate(lines):
+        if line_no % 500000 == 0:
+            print(f"  처리 중: {line_no:,}/{total_lines:,} ({line_no*100//total_lines}%)")
 
         line = line.strip()
 
-        # McpZone 시작
-        if '<group name="McpZone' in line and 'mcpzone.McpZone"' in line:
-            # 이전 zone 저장
-            if current_zone_id is not None:
-                zones[current_zone_id] = {
-                    'id': current_zone_id,
-                    'no': current_zone_no,
-                    'entries': current_entries.copy(),
-                    'exits': current_exits.copy()
-                }
+        # Addr 그룹 시작
+        if '<group name="Addr' in line and 'class=' in line and 'address.Addr"' in line:
+            if current_addr is not None and 'address' in current_addr_params:
+                addr_no = int(current_addr_params.get('address', 0))
+                if addr_no > 0:
+                    x = float(current_addr_params.get('draw-x', 0))
+                    y = float(current_addr_params.get('draw-y', 0))
+                    nodes[addr_no] = {'no': addr_no, 'x': round(x, 2), 'y': round(y, 2), 'stations': []}
 
-            current_zone = line
-            current_zone_id = None
-            current_zone_no = None
-            current_entries = []
-            current_exits = []
-            in_entry = False
-            in_exit = False
+            current_addr_params = {}
+            current_addr = line
+            in_next_addr = False
             continue
 
-        # Zone id/no 파라미터
-        if current_zone and '<param ' in line:
-            if 'key="id"' in line:
-                match = re.search(r'value="([^"]*)"', line)
-                if match:
-                    try:
-                        current_zone_id = int(match.group(1))
-                    except:
-                        current_zone_id = None
-            elif 'key="no"' in line:
-                match = re.search(r'value="([^"]*)"', line)
-                if match:
-                    try:
-                        current_zone_no = int(match.group(1))
-                    except:
-                        current_zone_no = None
-
-        # Entry 시작
-        if current_zone and '<group name="Entry' in line and 'mcpzone.Entry"' in line:
-            in_entry = True
-            entry_start = None
-            entry_end = None
+        # NextAddr 그룹 시작
+        if '<group name="NextAddr' in line and 'class=' in line and 'NextAddr"' in line:
+            in_next_addr = True
+            next_addr_params = {}
             continue
 
-        # Exit 시작
-        if current_zone and '<group name="Exit' in line and 'mcpzone.Exit"' in line:
-            in_exit = True
-            exit_start = None
-            exit_end = None
+        # NextAddr 그룹 종료
+        if in_next_addr and '</group>' in line:
+            if 'address' in current_addr_params and 'next-address' in next_addr_params:
+                from_addr = int(current_addr_params.get('address', 0))
+                try:
+                    to_addr = int(next_addr_params.get('next-address', '0'))
+                    if from_addr > 0 and to_addr > 0:
+                        connections.append([from_addr, to_addr])
+                except ValueError:
+                    pass
+            in_next_addr = False
             continue
 
-        # Entry/Exit 파라미터
-        if in_entry and '<param ' in line:
-            if 'key="start"' in line:
-                match = re.search(r'value="([^"]*)"', line)
-                if match:
-                    entry_start = match.group(1)
-            elif 'key="end"' in line:
-                match = re.search(r'value="([^"]*)"', line)
-                if match:
-                    entry_end = match.group(1)
+        # 파라미터 파싱
+        if '<param ' in line and 'key="' in line and 'value="' in line:
+            key_match = re.search(r'key="([^"]+)"', line)
+            value_match = re.search(r'value="([^"]*)"', line)
 
-        if in_exit and '<param ' in line:
-            if 'key="start"' in line:
-                match = re.search(r'value="([^"]*)"', line)
-                if match:
-                    exit_start = match.group(1)
-            elif 'key="end"' in line:
-                match = re.search(r'value="([^"]*)"', line)
-                if match:
-                    exit_end = match.group(1)
+            if key_match and value_match:
+                key = key_match.group(1)
+                value = value_match.group(1)
 
-        # 그룹 종료
-        if '</group>' in line:
-            if in_entry and entry_start and entry_end:
-                current_entries.append((entry_start, entry_end))
-                in_entry = False
-            elif in_exit and exit_start and exit_end:
-                current_exits.append((exit_start, exit_end))
-                in_exit = False
+                if in_next_addr:
+                    next_addr_params[key] = value
+                elif current_addr is not None:
+                    current_addr_params[key] = value
 
-    # 마지막 zone 저장
-    if current_zone_id is not None:
-        zones[current_zone_id] = {
-            'id': current_zone_id,
-            'no': current_zone_no,
-            'entries': current_entries.copy(),
-            'exits': current_exits.copy()
-        }
+    # 마지막 Addr 저장
+    if current_addr is not None and 'address' in current_addr_params:
+        addr_no = int(current_addr_params.get('address', 0))
+        if addr_no > 0:
+            x = float(current_addr_params.get('draw-x', 0))
+            y = float(current_addr_params.get('draw-y', 0))
+            nodes[addr_no] = {'no': addr_no, 'x': round(x, 2), 'y': round(y, 2), 'stations': []}
 
-    print(f"  총 {len(zones)}개 McpZone 파싱 완료")
-    return zones
+    print(f"  총 노드: {len(nodes)}개")
+    print(f"  총 연결: {len(connections)}개")
+
+    return list(nodes.values()), connections
 
 
-def find_matching_zone(csv_in_lanes, xml_zones):
-    """CSV의 IN_Lanes와 매칭되는 XML Zone 찾기"""
-    csv_lanes = parse_lanes_from_csv(csv_in_lanes)
-    if not csv_lanes:
-        return None, 0
+def generate_layout_html(nodes: List[Dict], connections: List[List], output_path: str) -> None:
+    """
+    layout.html 파일 생성
+    """
+    print(f"layout.html 생성: {output_path}")
 
-    best_match = None
-    best_score = 0
+    nodes_json = json.dumps(nodes, ensure_ascii=False)
+    connections_json = json.dumps(connections, ensure_ascii=False)
 
-    for zone_id, zone_data in xml_zones.items():
-        xml_lanes = set(zone_data['entries'])
+    html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OHT Layout Data</title>
+    <script>
+const A={nodes_json};
+const C={connections_json};
+    </script>
+</head>
+<body>
+    <p>Nodes: {len(nodes)}, Connections: {len(connections)}</p>
+</body>
+</html>
+'''
 
-        if not xml_lanes:
-            continue
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
 
-        # 교집합 크기로 매칭 점수 계산
-        intersection = csv_lanes & xml_lanes
-        if len(intersection) > best_score:
-            best_score = len(intersection)
-            best_match = zone_id
-
-        # 완전 일치하면 바로 반환
-        if csv_lanes == xml_lanes:
-            return zone_id, len(intersection)
-
-    return best_match, best_score
+    print(f"  완료: {os.path.getsize(output_path):,} bytes")
 
 
-def create_mapping_csv():
-    """매핑 CSV 생성"""
-    script_dir = Path(__file__).parent.resolve()
+def ensure_layout_html(html_path: str, xml_path: str, zip_path: str = None) -> None:
+    """
+    layout.html이 없거나 layout.xml보다 오래된 경우 자동 생성
 
-    # 원본 CSV 읽기
-    original_csv = script_dir / 'HID_Zone_Master.csv'
-    if not original_csv.exists():
-        print(f"오류: {original_csv} 파일을 찾을 수 없습니다")
+    Args:
+        html_path: 생성할 layout.html 경로
+        xml_path: layout.xml 파일 경로 (우선)
+        zip_path: layout.xml이 들어있는 layout.zip 경로 (xml 없을 때 사용)
+    """
+    need_generate = False
+    source_path = None
+    source_mtime = 0
+
+    # layout.xml 또는 layout.zip 중 존재하는 것 찾기
+    if os.path.exists(xml_path):
+        source_path = xml_path
+        source_mtime = os.path.getmtime(xml_path)
+        print(f"layout.xml 발견: {xml_path}")
+    elif zip_path and os.path.exists(zip_path):
+        source_path = zip_path
+        source_mtime = os.path.getmtime(zip_path)
+        print(f"layout.zip 발견: {zip_path}")
+    else:
+        raise FileNotFoundError(f"layout.xml 또는 layout.zip을 찾을 수 없습니다")
+
+    # layout.html 존재 확인
+    if not os.path.exists(html_path):
+        print(f"layout.html이 없습니다. 자동 생성합니다...")
+        need_generate = True
+    else:
+        # 소스 파일이 더 최신인지 확인
+        html_mtime = os.path.getmtime(html_path)
+        if source_mtime > html_mtime:
+            print(f"소스 파일이 더 최신입니다. layout.html을 재생성합니다...")
+            need_generate = True
+
+    if not need_generate:
         return
 
-    print(f"원본 CSV 읽는 중: {original_csv}")
-    original_zones = []
-    with open(original_csv, 'r', encoding='utf-8-sig') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            original_zones.append(row)
-    print(f"  {len(original_zones)}개 Zone 로드")
+    print("=" * 60)
+    print("layout.xml에서 layout.html 자동 생성")
+    print("=" * 60)
 
-    # layout.xml 읽기
-    xml_path = script_dir / 'layout' / 'layout.xml'
-    zip_path = script_dir / 'layout' / 'layout' / 'layout.zip'
-
-    if xml_path.exists():
+    # XML 내용 읽기 (xml 파일 우선, 없으면 zip에서 추출)
+    if os.path.exists(xml_path):
         print(f"layout.xml 읽는 중: {xml_path}")
         with open(xml_path, 'r', encoding='utf-8') as f:
             xml_content = f.read()
-    elif zip_path.exists():
-        print(f"layout.zip에서 추출 중: {zip_path}")
+    else:
+        print("layout.zip에서 layout.xml 추출 중...")
         with zipfile.ZipFile(zip_path, 'r') as zf:
             with zf.open('layout.xml') as f:
                 xml_content = f.read().decode('utf-8')
-    else:
-        print("오류: layout.xml 또는 layout.zip을 찾을 수 없습니다")
-        return
 
     print(f"  XML 크기: {len(xml_content):,} bytes")
 
     # XML 파싱
-    xml_zones = parse_mcp_zones_from_xml(xml_content)
+    nodes, connections = parse_layout_xml_content(xml_content)
 
-    # 매핑 수행
-    print("\n매핑 수행 중...")
-    results = []
-    matched = 0
+    # HTML 생성
+    generate_layout_html(nodes, connections, html_path)
 
-    for orig in original_zones:
-        csv_zone_id = orig.get('Zone_ID', '')
-        in_lanes = orig.get('IN_Lanes', '')
+    print("=" * 60)
 
-        xml_zone_id, score = find_matching_zone(in_lanes, xml_zones)
 
-        if xml_zone_id:
-            matched += 1
-            status = 'MATCHED'
-        else:
-            status = 'NOT_FOUND'
+def main():
+    """
+    커맨드라인 실행용 메인 함수
+    """
+    import sys
+    import pathlib
 
-        results.append({
-            'CSV_Zone_ID': csv_zone_id,
-            'HID_No': orig.get('HID_No', ''),
-            'XML_Zone_ID': xml_zone_id if xml_zone_id else '',
-            'Match_Score': score,
-            'Status': status,
-            'Bay_Zone': orig.get('Bay_Zone', ''),
-            'Full_Name': orig.get('Full_Name', ''),
-            'IN_Lanes': in_lanes,
-            'OUT_Lanes': orig.get('OUT_Lanes', ''),
-            'Vehicle_Max': orig.get('Vehicle_Max', ''),
-            'Vehicle_Precaution': orig.get('Vehicle_Precaution', ''),
-            'ZCU': orig.get('ZCU', '')
-        })
+    # 기본 경로
+    script_dir = pathlib.Path(__file__).parent.resolve()
+    default_zip = str(script_dir / 'layout' / 'layout' / 'layout.zip')
+    default_output = str(script_dir / 'layout' / 'layout' / 'layout.html')
 
-    print(f"  매칭 완료: {matched}/{len(original_zones)}")
+    # 명령행 인자 처리
+    zip_path = sys.argv[1] if len(sys.argv) > 1 else default_zip
+    output_path = sys.argv[2] if len(sys.argv) > 2 else default_output
 
-    # 결과 CSV 저장
-    output_path = script_dir / 'HID_Zone_Mapping.csv'
-    print(f"\n결과 저장 중: {output_path}")
+    print("=" * 60)
+    print("layout_map_cre.py - layout.xml에서 layout.html 생성")
+    print("=" * 60)
+    print(f"입력: {zip_path}")
+    print(f"출력: {output_path}")
+    print()
 
-    headers = ['CSV_Zone_ID', 'HID_No', 'XML_Zone_ID', 'Match_Score', 'Status',
-               'Bay_Zone', 'Full_Name', 'IN_Lanes', 'OUT_Lanes',
-               'Vehicle_Max', 'Vehicle_Precaution', 'ZCU']
+    if not os.path.exists(zip_path):
+        print(f"오류: ZIP 파일을 찾을 수 없습니다: {zip_path}")
+        sys.exit(1)
 
-    with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        writer.writerows(results)
+    # ZIP에서 layout.xml 추출
+    print("layout.xml 추출 중...")
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        with zf.open('layout.xml') as f:
+            xml_content = f.read().decode('utf-8')
 
-    print(f"  완료! {os.path.getsize(output_path):,} bytes")
-    print(f"\n=== 요약 ===")
-    print(f"원본 Zone: {len(original_zones)}개")
-    print(f"매칭 성공: {matched}개")
-    print(f"매칭 실패: {len(original_zones) - matched}개")
+    print(f"  XML 크기: {len(xml_content):,} bytes")
+
+    # XML 파싱
+    nodes, connections = parse_layout_xml_content(xml_content)
+
+    # HTML 생성
+    generate_layout_html(nodes, connections, output_path)
+
+    print()
+    print("완료!")
+    print("=" * 60)
 
 
 if __name__ == '__main__':
-    create_mapping_csv()
+    main()
