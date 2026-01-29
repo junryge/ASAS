@@ -3253,6 +3253,58 @@ function render() {
                     ctx.fillText(countLabel, firstLaneMid.x, countY);
                 }
             }
+
+            // 선택된 Zone 노란색 하이라이트 표시
+            if (selectedZoneId === zone.zoneId) {
+                // Zone의 모든 노드 좌표 수집
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                const allLanes = [...zone.inLanes, ...zone.outLanes];
+                allLanes.forEach(lane => {
+                    const from = nodeMap[lane.from];
+                    const to = nodeMap[lane.to];
+                    if (from) {
+                        minX = Math.min(minX, from.x); maxX = Math.max(maxX, from.x);
+                        minY = Math.min(minY, from.y); maxY = Math.max(maxY, from.y);
+                    }
+                    if (to) {
+                        minX = Math.min(minX, to.x); maxX = Math.max(maxX, to.x);
+                        minY = Math.min(minY, to.y); maxY = Math.max(maxY, to.y);
+                    }
+                });
+
+                if (minX !== Infinity) {
+                    // 여유 공간 추가
+                    const padding = 50;
+                    minX -= padding; maxX += padding;
+                    minY -= padding; maxY += padding;
+
+                    // 4개 코너를 isometric 변환
+                    const topLeft = toIso(minX, minY, zoneZ);
+                    const topRight = toIso(maxX, minY, zoneZ);
+                    const bottomRight = toIso(maxX, maxY, zoneZ);
+                    const bottomLeft = toIso(minX, maxY, zoneZ);
+
+                    // 노란색 사각형 그리기
+                    ctx.strokeStyle = '#ffff00';
+                    ctx.lineWidth = Math.max(3, 4 / scale);
+                    ctx.globalAlpha = 1.0;
+                    ctx.setLineDash([10/scale, 5/scale]);
+
+                    ctx.beginPath();
+                    ctx.moveTo(topLeft.x, topLeft.y);
+                    ctx.lineTo(topRight.x, topRight.y);
+                    ctx.lineTo(bottomRight.x, bottomRight.y);
+                    ctx.lineTo(bottomLeft.x, bottomLeft.y);
+                    ctx.closePath();
+                    ctx.stroke();
+
+                    // 내부 반투명 노란색 채우기
+                    ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
+                    ctx.fill();
+
+                    ctx.setLineDash([]);
+                }
+            }
         });
 
         ctx.globalAlpha = 1.0;
