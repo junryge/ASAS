@@ -41,16 +41,168 @@ from hid_zone_csv_cre import create_hid_zone_csv
 import pathlib
 _SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 
-LAYOUT_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.html")
-LAYOUT_XML_PATH = str(_SCRIPT_DIR / "layout" / "layout.xml")  # 실제 환경의 layout.xml
-LAYOUT_ZIP_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.zip")  # 백업용 ZIP (xml 없을 때)
-OUTPUT_DIR = str(_SCRIPT_DIR / "output")
-HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_Zone_Master.csv")  # HID Zone 마스터 파일
-STATION_DAT_PATH = str(_SCRIPT_DIR / "station.dat")  # Station 데이터 파일
+# ============================================================
+# FAB 설정 - FAB별 다른 레이아웃/스테이션 파일 사용
+# ============================================================
+# 사용 가능한 FAB 목록 (실제 환경에 맞게 수정)
+AVAILABLE_FABS = ["M14", "M16", "P3"]
+
+# 현재 사용할 FAB (변경하여 다른 FAB 선택)
+FAB_NAME = "M14"
+
+# 레이아웃 파일 선택 (FAB 내 여러 레이아웃 중 선택)
+# 예: "A", "BR", "E" 등 (A.LAYOUT.ZIP, BR.LAYOUT.ZIP, ELAYOUT.ZIP)
+LAYOUT_PREFIX = "A"
+
+# 기본 디렉토리 설정
+MAP_BASE_DIR = _SCRIPT_DIR / "MAP"  # 레이아웃 파일 기본 디렉토리
+MPA_BASE_DIR = _SCRIPT_DIR / "MPA"  # 스테이션 데이터 기본 디렉토리
+
+def get_fab_paths(fab_name: str, layout_prefix: str = "A"):
+    """
+    FAB별 파일 경로를 반환
+
+    Args:
+        fab_name: FAB 이름 (예: "M14", "M16")
+        layout_prefix: 레이아웃 파일 접두사 (예: "A", "BR", "E")
+
+    Returns:
+        dict: 각 파일 경로를 담은 딕셔너리
+    """
+    fab_map_dir = MAP_BASE_DIR / fab_name
+    fab_mpa_dir = MPA_BASE_DIR / fab_name
+
+    # 레이아웃 파일명 결정
+    if layout_prefix.upper() == "E":
+        layout_zip_name = "ELAYOUT.ZIP"
+    else:
+        layout_zip_name = f"{layout_prefix.upper()}.LAYOUT.ZIP"
+
+    return {
+        # MAP/{FAB}/ 경로 (레이아웃 파일들)
+        "layout_zip": str(fab_map_dir / layout_zip_name),
+        "layout_xml": str(fab_map_dir / f"{layout_prefix.upper()}.LAYOUT.XML"),
+        "layout_html": str(fab_map_dir / f"{layout_prefix.upper()}.LAYOUT.HTML"),
+
+        # MPA/{FAB}/ 경로 (스테이션 데이터)
+        "station_dat": str(fab_mpa_dir / f"LAYOUT {layout_prefix.upper()}.STATION.DAT"),
+
+        # HID Zone 마스터 파일 (FAB별)
+        "hid_zone_csv": str(fab_mpa_dir / f"HID_Zone_Master_{fab_name}.csv"),
+
+        # 출력 디렉토리 (FAB별)
+        "output_dir": str(_SCRIPT_DIR / "output" / fab_name),
+    }
+
+def list_available_layouts(fab_name: str):
+    """
+    특정 FAB의 사용 가능한 레이아웃 파일 목록 반환
+
+    Args:
+        fab_name: FAB 이름
+
+    Returns:
+        list: 사용 가능한 레이아웃 접두사 목록
+    """
+    fab_map_dir = MAP_BASE_DIR / fab_name
+    layouts = []
+
+    if fab_map_dir.exists():
+        for f in fab_map_dir.iterdir():
+            if f.suffix.upper() == ".ZIP" and "LAYOUT" in f.name.upper():
+                # A.LAYOUT.ZIP -> "A", ELAYOUT.ZIP -> "E"
+                name = f.stem.upper()
+                if name.endswith(".LAYOUT"):
+                    prefix = name.replace(".LAYOUT", "")
+                elif name.startswith("ELAYOUT"):
+                    prefix = "E"
+                else:
+                    prefix = name.split(".")[0] if "." in name else name
+                layouts.append(prefix)
+
+    return sorted(set(layouts))
+
+def switch_fab(fab_name: str, layout_prefix: str = None):
+    """
+    FAB 전환 (런타임에서 호출)
+
+    Args:
+        fab_name: 전환할 FAB 이름
+        layout_prefix: 레이아웃 접두사 (None이면 첫 번째 사용 가능한 것)
+    """
+    global FAB_NAME, LAYOUT_PREFIX, LAYOUT_PATH, LAYOUT_XML_PATH, LAYOUT_ZIP_PATH
+    global OUTPUT_DIR, HID_ZONE_CSV_PATH, STATION_DAT_PATH
+
+    if fab_name not in AVAILABLE_FABS:
+        print(f"경고: {fab_name}은 AVAILABLE_FABS에 없습니다. 추가 후 사용하세요.")
+        AVAILABLE_FABS.append(fab_name)
+
+    FAB_NAME = fab_name
+
+    # 레이아웃 접두사 결정
+    if layout_prefix is None:
+        available = list_available_layouts(fab_name)
+        layout_prefix = available[0] if available else "A"
+
+    LAYOUT_PREFIX = layout_prefix
+
+    # 경로 업데이트
+    paths = get_fab_paths(fab_name, layout_prefix)
+    LAYOUT_PATH = paths["layout_html"]
+    LAYOUT_XML_PATH = paths["layout_xml"]
+    LAYOUT_ZIP_PATH = paths["layout_zip"]
+    OUTPUT_DIR = paths["output_dir"]
+    HID_ZONE_CSV_PATH = paths["hid_zone_csv"]
+    STATION_DAT_PATH = paths["station_dat"]
+
+    # 출력 디렉토리 생성
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    print(f"FAB 전환: {fab_name} (레이아웃: {layout_prefix})")
+    print(f"  - Layout ZIP: {LAYOUT_ZIP_PATH}")
+    print(f"  - Station DAT: {STATION_DAT_PATH}")
+    print(f"  - HID Zone CSV: {HID_ZONE_CSV_PATH}")
+
+    return paths
+
+# 초기 FAB 경로 설정
+_initial_paths = get_fab_paths(FAB_NAME, LAYOUT_PREFIX)
+LAYOUT_PATH = _initial_paths["layout_html"]
+LAYOUT_XML_PATH = _initial_paths["layout_xml"]
+LAYOUT_ZIP_PATH = _initial_paths["layout_zip"]
+OUTPUT_DIR = _initial_paths["output_dir"]
+HID_ZONE_CSV_PATH = _initial_paths["hid_zone_csv"]
+STATION_DAT_PATH = _initial_paths["station_dat"]
+
+# 기존 호환용 (로컬 테스트용 - MAP/MPA 폴더가 없을 때 폴백)
+_LEGACY_LAYOUT_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.html")
+_LEGACY_LAYOUT_XML_PATH = str(_SCRIPT_DIR / "layout" / "layout.xml")
+_LEGACY_LAYOUT_ZIP_PATH = str(_SCRIPT_DIR / "layout" / "layout" / "layout.zip")
+_LEGACY_STATION_DAT_PATH = str(_SCRIPT_DIR / "station.dat")
+_LEGACY_HID_ZONE_CSV_PATH = str(_SCRIPT_DIR / "HID_Zone_Master.csv")
+
+def use_legacy_paths():
+    """기존 경로 사용 (MAP/MPA 폴더가 없는 환경용)"""
+    global LAYOUT_PATH, LAYOUT_XML_PATH, LAYOUT_ZIP_PATH, OUTPUT_DIR
+    global HID_ZONE_CSV_PATH, STATION_DAT_PATH
+
+    LAYOUT_PATH = _LEGACY_LAYOUT_PATH
+    LAYOUT_XML_PATH = _LEGACY_LAYOUT_XML_PATH
+    LAYOUT_ZIP_PATH = _LEGACY_LAYOUT_ZIP_PATH
+    OUTPUT_DIR = str(_SCRIPT_DIR / "output")
+    HID_ZONE_CSV_PATH = _LEGACY_HID_ZONE_CSV_PATH
+    STATION_DAT_PATH = _LEGACY_STATION_DAT_PATH
+
+    print("기존 경로 사용 (레거시 모드)")
+
+# MAP 폴더가 없으면 레거시 모드 사용
+if not MAP_BASE_DIR.exists():
+    use_legacy_paths()
+
 CSV_SAVE_INTERVAL = 10  # 10초마다 CSV 저장
 VEHICLE_COUNT = 450  # OHT 대수
 SIMULATION_INTERVAL = 0.5  # 0.5초마다 업데이트
-FAB_ID = "M14Q"
+FAB_ID = f"{FAB_NAME}Q"  # FAB_NAME 기반 FAB_ID 생성
 MCP_NAME = "OHT"
 
 # ============================================================
@@ -1795,6 +1947,102 @@ async def index():
 @app.get("/api/layout")
 async def get_layout():
     return layout_data
+
+@app.get("/api/fab/list")
+async def get_fab_list():
+    """사용 가능한 FAB 목록 조회"""
+    fab_info = {}
+    for fab in AVAILABLE_FABS:
+        layouts = list_available_layouts(fab)
+        fab_info[fab] = {
+            "name": fab,
+            "available_layouts": layouts,
+            "is_current": fab == FAB_NAME
+        }
+    return {
+        "current_fab": FAB_NAME,
+        "current_layout": LAYOUT_PREFIX,
+        "fabs": fab_info
+    }
+
+@app.get("/api/fab/current")
+async def get_current_fab():
+    """현재 FAB 정보 조회"""
+    return {
+        "fab_name": FAB_NAME,
+        "layout_prefix": LAYOUT_PREFIX,
+        "fab_id": FAB_ID,
+        "paths": {
+            "layout_zip": LAYOUT_ZIP_PATH,
+            "layout_xml": LAYOUT_XML_PATH,
+            "layout_html": LAYOUT_PATH,
+            "station_dat": STATION_DAT_PATH,
+            "hid_zone_csv": HID_ZONE_CSV_PATH,
+            "output_dir": OUTPUT_DIR
+        }
+    }
+
+@app.post("/api/fab/switch")
+async def switch_fab_api(fab_name: str, layout_prefix: str = None):
+    """
+    FAB 전환 API
+
+    주의: 서버 재시작 없이 FAB을 전환합니다.
+    시뮬레이션 데이터가 초기화됩니다.
+    """
+    global engine, layout_data
+
+    try:
+        # FAB 전환
+        paths = switch_fab(fab_name, layout_prefix)
+
+        # 레이아웃 파일 존재 확인
+        if not os.path.exists(LAYOUT_ZIP_PATH) and not os.path.exists(LAYOUT_XML_PATH):
+            return {
+                "status": "error",
+                "message": f"FAB {fab_name}의 레이아웃 파일을 찾을 수 없습니다: {LAYOUT_ZIP_PATH}"
+            }
+
+        # 엔진 재초기화 (새 FAB 데이터로)
+        # layout.html 자동 생성 (없거나 오래된 경우)
+        ensure_layout_html(LAYOUT_PATH, LAYOUT_XML_PATH, LAYOUT_ZIP_PATH)
+
+        # 새 레이아웃 로드
+        nodes, edges = parse_layout(LAYOUT_PATH)
+        engine = OHTSimulationEngine(nodes, edges, VEHICLE_COUNT)
+
+        # HID Zone 로드
+        if os.path.exists(HID_ZONE_CSV_PATH):
+            engine.load_hid_zones(HID_ZONE_CSV_PATH)
+        elif os.path.exists(LAYOUT_XML_PATH):
+            print(f"HID_Zone_Master.csv 없음 - layout.xml에서 자동 생성 중...")
+            create_hid_zone_csv(LAYOUT_XML_PATH, HID_ZONE_CSV_PATH)
+            engine.load_hid_zones(HID_ZONE_CSV_PATH)
+
+        # Station 로드
+        if os.path.exists(STATION_DAT_PATH):
+            engine.load_stations(STATION_DAT_PATH)
+
+        # 레이아웃 데이터 갱신
+        layout_data = {
+            'nodes': [{'no': n.no, 'x': n.x, 'y': n.y, 'stations': n.stations} for n in nodes.values()],
+            'edges': [[f, t, d] for f, t, d in edges],
+            'hidZones': engine.hid_zones,
+            'stations': engine.stations
+        }
+
+        return {
+            "status": "ok",
+            "message": f"FAB 전환 완료: {fab_name} (레이아웃: {LAYOUT_PREFIX})",
+            "fab_name": FAB_NAME,
+            "layout_prefix": LAYOUT_PREFIX,
+            "paths": paths
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 @app.get("/api/state")
 async def get_state():
