@@ -2161,6 +2161,8 @@ async def startup():
                 'hidType': z.hidType,
                 'inLanes': [{'from': lane.fromNode, 'to': lane.toNode} for lane in z.inLanes],
                 'outLanes': [{'from': lane.fromNode, 'to': lane.toNode} for lane in z.outLanes],
+                'inCount': z.inCount,
+                'outCount': z.outCount,
                 'vehicleMax': z.vehicleMax,
                 'vehiclePrecaution': z.vehiclePrecaution
             }
@@ -2345,6 +2347,8 @@ async def switch_fab_api(fab_name: str, layout_prefix: str = None):
                     'hidType': z.hidType,
                     'inLanes': [{'from': lane.fromNode, 'to': lane.toNode} for lane in z.inLanes],
                     'outLanes': [{'from': lane.fromNode, 'to': lane.toNode} for lane in z.outLanes],
+                    'inCount': z.inCount,
+                    'outCount': z.outCount,
                     'vehicleMax': z.vehicleMax,
                     'vehiclePrecaution': z.vehiclePrecaution
                 } for z in engine.hid_zones.values()
