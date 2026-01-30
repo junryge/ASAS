@@ -271,11 +271,14 @@ DEFAULT_FAB_CONFIG = {
 
 def load_fab_config() -> dict:
     """FAB 설정 파일 로드 (없으면 기본값 생성)"""
+    print(f"FAB 설정 파일 경로: {FAB_CONFIG_PATH}")
     if FAB_CONFIG_PATH.exists():
         try:
             with open(FAB_CONFIG_PATH, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            print(f"FAB 설정 로드 완료: {FAB_CONFIG_PATH}")
+            print(f"FAB 설정 로드 완료!")
+            for fab, settings in config.items():
+                print(f"  - {fab}: OHT {settings.get('vehicle_count', '?')}대")
             # 새로운 FAB이 추가된 경우 기본값 적용
             for fab, default in DEFAULT_FAB_CONFIG.items():
                 if fab not in config:
@@ -283,6 +286,8 @@ def load_fab_config() -> dict:
             return config
         except Exception as e:
             print(f"FAB 설정 로드 실패: {e}, 기본값 사용")
+    else:
+        print(f"FAB 설정 파일 없음 - 기본값으로 생성")
 
     # 기본 설정 파일 생성
     save_fab_config(DEFAULT_FAB_CONFIG)
