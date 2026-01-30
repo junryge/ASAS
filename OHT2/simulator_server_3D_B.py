@@ -3406,9 +3406,6 @@ function updateZoneList() {
         html += '  </div>';
         html += '  <div class="zone-progress"><div class="zone-progress-bar" style="width:' + percent + '%;"></div></div>';
         html += '  <div class="zone-detail' + (isExpanded ? ' show' : '') + '">';
-        html += '    <div class="zone-info"><span class="label">Zone ID:</span><span class="value">' + z.zoneId + '</span></div>';
-        if (z.hidNo) html += '    <div class="zone-info"><span class="label">HID No:</span><span class="value">' + z.hidNo + '</span></div>';
-        if (z.hidType) html += '    <div class="zone-info"><span class="label">HID Type:</span><span class="value">' + z.hidType + '</span></div>';
         html += '    <div class="zone-info"><span class="label">현재 OHT:</span><span class="value">' + count + ' / ' + max + '</span></div>';
         html += '    <div class="zone-info"><span class="label">주의 기준:</span><span class="value">' + precaution + '</span></div>';
         if (z.bayZone) html += '    <div class="zone-info"><span class="label">Bay Zone:</span><span class="value">' + z.bayZone + '</span></div>';
