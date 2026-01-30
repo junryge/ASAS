@@ -575,31 +575,31 @@ def get_fab_paths(script_dir, fab_name: str, layout_prefix: str = "A"):
     """
     FAB별 파일 경로를 반환
 
+    실제 폴더 구조:
+        MAP/{FAB}/{prefix}.layout.zip
+        MAP/{FAB}/{prefix}.layout.xml
+        MAP/{FAB}/{prefix}.station.dat
+        MAP/{FAB}/HID_Zone_Master_{FAB}_{prefix}.csv
+
     Args:
         script_dir: 스크립트 디렉토리
-        fab_name: FAB 이름 (예: "M14", "M16")
-        layout_prefix: 레이아웃 파일 접두사 (예: "A", "BR", "E")
+        fab_name: FAB 이름 (예: "M14A", "M16A", "M16B")
+        layout_prefix: 레이아웃 파일 접두사 (예: "A", "BR", "E", "B")
 
     Returns:
         dict: 각 파일 경로를 담은 딕셔너리
     """
     map_base_dir = script_dir / "MAP"
-    mpa_base_dir = script_dir / "MPA"
-    fab_map_dir = map_base_dir / fab_name
-    fab_mpa_dir = mpa_base_dir / fab_name
-
-    # 레이아웃 파일명 결정
-    if layout_prefix.upper() == "E":
-        layout_zip_name = "ELAYOUT.ZIP"
-    else:
-        layout_zip_name = f"{layout_prefix.upper()}.LAYOUT.ZIP"
+    fab_dir = map_base_dir / fab_name
+    prefix = layout_prefix.upper()
 
     return {
-        # MAP/{FAB}/ 경로 (레이아웃 파일들)
-        "layout_zip": str(fab_map_dir / layout_zip_name),
-        "layout_xml": str(fab_map_dir / f"{layout_prefix.upper()}.LAYOUT.XML"),
-        # MPA/{FAB}/ 경로 (HID Zone 출력)
-        "hid_zone_csv": str(fab_mpa_dir / f"HID_Zone_Master_{fab_name}.csv"),
+        # MAP/{FAB}/ 경로 - 모든 파일이 여기에 있음
+        "layout_zip": str(fab_dir / f"{prefix}.layout.zip"),
+        "layout_xml": str(fab_dir / f"{prefix}.layout.xml"),
+        "station_dat": str(fab_dir / f"{prefix}.station.dat"),
+        # HID Zone 마스터 파일 (FAB별, 같은 폴더에 생성)
+        "hid_zone_csv": str(fab_dir / f"HID_Zone_Master_{fab_name}_{prefix}.csv"),
     }
 
 
