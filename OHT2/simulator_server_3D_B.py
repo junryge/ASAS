@@ -298,9 +298,11 @@ def save_fab_config(config: dict):
     try:
         with open(FAB_CONFIG_PATH, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
-        print(f"FAB 설정 저장 완료: {FAB_CONFIG_PATH}")
+        print(f"[CONFIG 저장] {FAB_CONFIG_PATH}")
+        for fab, settings in config.items():
+            print(f"  - {fab}: OHT {settings.get('vehicle_count', '?')}대")
     except Exception as e:
-        print(f"FAB 설정 저장 실패: {e}")
+        print(f"[CONFIG 저장 실패] {e}")
 
 # 설정 로드
 FAB_CONFIG = load_fab_config()
