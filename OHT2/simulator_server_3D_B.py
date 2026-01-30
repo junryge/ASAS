@@ -1303,8 +1303,7 @@ class SimulationEngine:
 
         # 모든 Zone 차량 수 초기화
         for zone in self.hid_zones.values():
-            zone.vehicleSet.clear()
-            zone.vehicleCount = 0
+            zone.currentVehicles.clear()
 
         print(f"OHT {count}대 초기화 중...")
 
