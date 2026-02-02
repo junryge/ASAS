@@ -3,15 +3,64 @@
 ## 개요
 HID IN/OUT 엣지 기반 집계 기능을 **기존 코드에 추가**합니다.
 - 기존: HID별 VHL 카운트 (유지)
-- 추가: FROM_HIDID → TO_HIDID 엣지 전환 집계 (약 2009개 엣지)
+- 추가: FROM_HIDID → TO_HIDID 엣지 전환 집계 (2009개 엣지)
 
-### 테이블 구성
+---
 
-| 테이블명 | 상태 | 용도 |
-|----------|------|------|
-| `ATLAS_INFO_HID_INOUT_MAS` | 신규 | 엣지 마스터 (FROM/TO HID) |
-| `ATLAS_HID_INFO_MAS` | 신규 | HID 상세 정보 |
-| `ATLAS_{FAB}_HID_INOUT` | 신규 | 엣지 전환 집계 (1분 배치) |
+# 테이블 스키마 정의
+
+## 테이블 1: ATLAS_INFO_HID_INOUT_MAS
+
+**용도**: HID Zone 진입/진출 엣지 마스터 데이터 (기준 정보) — 하루 1회 업데이트
+
+| 컬럼명 | 타입 | 설명 | 활용 |
+|--------|------|------|------|
+| `FROM_HIDID` | INT | 출발 HID Zone ID | OHT가 떠나는 HID |
+| `TO_HIDID` | INT | 도착 HID Zone ID | OHT가 진입하는 HID |
+| `EDGE_ID` | STRING | 엣지 고유 ID (FROM:TO) | 엣지 식별 키 |
+| `FROM_HID_NM` | STRING | 출발 HID Zone 이름 | 화면 표시용 |
+| `TO_HID_NM` | STRING | 도착 HID Zone 이름 | 화면 표시용 |
+| `MCP_ID` | STRING | MCP ID | MCP별 그룹핑 |
+| `ZONE_ID` | STRING | Zone ID | Zone별 그룹핑 |
+| `EDGE_TYPE` | STRING | 엣지 유형 | IN(진입)/OUT(진출)/INTERNAL(내부이동) |
+| `UPDATE_DT` | STRING | 마지막 업데이트 일시 | 데이터 신선도 확인 |
+
+---
+
+## 테이블 2: ATLAS_HID_INFO_MAS
+
+**용도**: HID 상세 정보 마스터 데이터 — 레일 길이, FREE FLOW 속도, 포트 개수 등
+
+| 컬럼명 | 타입 | 설명 | 활용 |
+|--------|------|------|------|
+| `HID_ID` | INT | HID Zone ID (PK) | 조인 키, HID 식별 |
+| `HID_NM` | STRING | HID Zone 이름 | 화면 표시용 |
+| `MCP_ID` | STRING | MCP ID | MCP별 그룹핑 |
+| `ZONE_ID` | STRING | Zone ID | Zone별 그룹핑 |
+| `RAIL_LEN_TOTAL` | DOUBLE | 레일 길이 총합 (mm) | 통과 시간 = RAIL_LEN / 속도, 혼잡도 분석 |
+| `FREE_FLOW_SPEED` | DOUBLE | FREE FLOW 속도 (mm/s) | 이론적 최소 통과 시간 산출, 지연 감지 |
+| `PORT_CNT_TOTAL` | INT | 포트 개수 총합 | 작업 부하 = 포트수 × 작업빈도, 병목 구간 식별 |
+| `IN_CNT` | INT | IN Lane 개수 | 진입 용량 판단 |
+| `OUT_CNT` | INT | OUT Lane 개수 | 진출 용량 판단 |
+| `VHL_MAX` | INT | 최대 허용 차량 수 | 과밀 알람 기준, 진입 제어 판단 |
+| `ZCU_ID` | STRING | ZCU ID | ZCU별 그룹핑 |
+| `UPDATE_DT` | STRING | 마지막 업데이트 일시 | 데이터 신선도 확인 |
+
+---
+
+## 테이블 3: ATLAS_{FAB}_HID_INOUT
+
+**용도**: HID IN/OUT 1분 집계 데이터 — FABID별 테이블 분리 (M14, M16, M17...)
+
+| 컬럼명 | 타입 | 설명 | 활용 |
+|--------|------|------|------|
+| `EVENT_DATE` | STRING | 이벤트 날짜 | 파티션 키, 일별 조회 |
+| `EVENT_DT` | STRING | 집계 시간 (1분 단위) | 시간대별 분석 |
+| `FROM_HIDID` | INT | 출발 HID Zone ID | OHT가 떠나는 HID |
+| `TO_HIDID` | INT | 도착 HID Zone ID | OHT가 진입하는 HID |
+| `TRANS_CNT` | INT | 1분간 전환 횟수 | 트래픽 볼륨 분석 |
+| `MCP_NM` | STRING | MCP 이름 | MCP별 그룹핑 |
+| `ENV` | STRING | 환경 구분 | PROD/DEV 구분 |
 
 ---
 
