@@ -510,14 +510,3 @@ public void updateAllHidMasterTables() {
 | 신규 테이블 | `ATLAS_INFO_HID_INOUT_MAS`, `ATLAS_HID_INFO_MAS` |
 
 ---
-
-# 필요한 Import 추가
-
-```java
-// OhtMsgWorkerRunnable.java
-import java.util.concurrent.atomic.AtomicInteger;
-
-// HidMasterBatchJob.java
-import java.util.HashMap;
-import java.util.Map;
-```
