@@ -770,11 +770,12 @@
             </div>
             <pre><code><span class="comment">// HID 엣지별 전환 카운트 집계 (1분간 모아서 배치 저장)</span>
 <span class="comment">// Key: "fromHidId:toHidId", Value: 전환 횟수</span>
-<span class="keyword">private static</span> ConcurrentMap&lt;String, AtomicInteger&gt; hidEdgeBuffer =
+<span class="keyword">private static</span> ConcurrentMap&lt;String, Integer&gt; hidEdgeBuffer =
     <span class="keyword">new</span> ConcurrentHashMap&lt;&gt;();
 <span class="keyword">private static long</span> lastFlushTime = System.currentTimeMillis();
 <span class="keyword">private static final long</span> FLUSH_INTERVAL = <span class="number">60000</span>; <span class="comment">// 1분</span>
-<span class="keyword">private static final</span> Object flushLock = <span class="keyword">new</span> Object();</code></pre>
+<span class="keyword">private static final</span> Object flushLock = <span class="keyword">new</span> Object();
+<span class="keyword">private static final</span> Object bufferLock = <span class="keyword">new</span> Object();</code></pre>
 
             <h3>Step 2: _calculatedVhlCnt() 수정 (엣지 기반)</h3>
             <div class="code-header">
@@ -800,8 +801,9 @@
 
         <span class="comment">// ===== 추가: 엣지 전환 카운트 증가 =====</span>
         String edgeKey = String.format(<span class="string">"%03d:%03d"</span>, previousHidId, currentHidId);
-        hidEdgeBuffer.computeIfAbsent(edgeKey, k -> <span class="keyword">new</span> AtomicInteger(<span class="number">0</span>))
-                     .incrementAndGet();
+        <span class="keyword">synchronized</span> (bufferLock) {
+            hidEdgeBuffer.merge(edgeKey, <span class="number">1</span>, Integer::sum);
+        }
 
         vehicle.setHidId(currentHidId);
     }
@@ -833,11 +835,14 @@
 
     <span class="comment">// 버퍼 스냅샷 생성 및 초기화</span>
     Map&lt;String, Integer&gt; snapshot = <span class="keyword">new</span> HashMap&lt;&gt;();
-    <span class="keyword">for</span> (Map.Entry&lt;String, AtomicInteger&gt; entry : hidEdgeBuffer.entrySet()) {
-        <span class="keyword">int</span> count = entry.getValue().getAndSet(<span class="number">0</span>);
-        <span class="keyword">if</span> (count > <span class="number">0</span>) {
-            snapshot.put(entry.getKey(), count);
+    <span class="keyword">synchronized</span> (bufferLock) {
+        <span class="keyword">for</span> (Map.Entry&lt;String, Integer&gt; entry : hidEdgeBuffer.entrySet()) {
+            <span class="keyword">int</span> count = entry.getValue();
+            <span class="keyword">if</span> (count > <span class="number">0</span>) {
+                snapshot.put(entry.getKey(), count);
+            }
         }
+        hidEdgeBuffer.clear();
     }
 
     <span class="comment">// 현재 시간 (1분 단위로 정렬)</span>

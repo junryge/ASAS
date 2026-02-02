@@ -69,17 +69,16 @@ HID IN/OUT 엣지 기반 집계 기능을 **기존 코드에 추가**합니다.
 ## 1.1 클래스 필드 추가
 
 ```java
-import java.util.concurrent.atomic.AtomicInteger;
-
 // ===== 기존 코드 유지 =====
 
 // ===== 신규 추가: HID 엣지별 전환 카운트 집계 (1분간 모아서 배치 저장) =====
 // Key: "fromHidId:toHidId", Value: 전환 횟수
-private static ConcurrentMap<String, AtomicInteger> hidEdgeBuffer =
+private static ConcurrentMap<String, Integer> hidEdgeBuffer =
     new ConcurrentHashMap<>();
 private static long lastHidEdgeFlushTime = System.currentTimeMillis();
 private static final long HID_EDGE_FLUSH_INTERVAL = 60000; // 1분
 private static final Object hidEdgeFlushLock = new Object();
+private static final Object hidEdgeBufferLock = new Object();
 ```
 
 ---
@@ -141,8 +140,9 @@ private void _calculatedVhlCnt(int currentHidId, String key, Vhl vehicle) {
 
         // ===== 신규 추가: 엣지 전환 카운트 집계 =====
         String edgeKey = String.format("%03d:%03d", previousHidId, currentHidId);
-        hidEdgeBuffer.computeIfAbsent(edgeKey, k -> new AtomicInteger(0))
-                     .incrementAndGet();
+        synchronized (hidEdgeBufferLock) {
+            hidEdgeBuffer.merge(edgeKey, 1, Integer::sum);
+        }
         // ===== 신규 추가 끝 =====
 
         vehicle.setHidId(currentHidId);
@@ -192,11 +192,14 @@ private void flushHidEdgeBuffer() {
 
     // 버퍼 스냅샷 생성 및 초기화
     Map<String, Integer> snapshot = new HashMap<>();
-    for (Map.Entry<String, AtomicInteger> entry : hidEdgeBuffer.entrySet()) {
-        int count = entry.getValue().getAndSet(0);
-        if (count > 0) {
-            snapshot.put(entry.getKey(), count);
+    synchronized (hidEdgeBufferLock) {
+        for (Map.Entry<String, Integer> entry : hidEdgeBuffer.entrySet()) {
+            int count = entry.getValue();
+            if (count > 0) {
+                snapshot.put(entry.getKey(), count);
+            }
         }
+        hidEdgeBuffer.clear();
     }
 
     // 현재 시간 (1분 단위로 정렬)
