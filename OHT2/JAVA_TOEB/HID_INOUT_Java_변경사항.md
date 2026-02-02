@@ -1,205 +1,127 @@
 # HID IN/OUT 처리 Java 코드 변경 사항
 
 ## 개요
-HID IN/OUT 처리를 엣지 기반으로 변경하여 부하를 최적화합니다.
-- 기존: HID별 IN/OUT 카운트 개별 저장
-- 변경: FROM_HIDID → TO_HIDID 엣지 전환만 추적 (약 2010개 엣지)
+HID IN/OUT 엣지 기반 집계 기능을 **기존 코드에 추가**합니다.
+- 기존: HID별 VHL 카운트 (유지)
+- 추가: FROM_HIDID → TO_HIDID 엣지 전환 집계 (약 2010개 엣지)
 
-### 테이블 변경 요약
+### 테이블 구성
 
 | 테이블명 | 상태 | 용도 |
 |----------|------|------|
-| `ATLAS_INFO_HID_INOUT` | 삭제 | 기존 HID 마스터 |
 | `ATLAS_INFO_HID_INOUT_MAS` | 신규 | 엣지 마스터 (FROM/TO HID) |
 | `ATLAS_HID_INFO_MAS` | 신규 | HID 상세 정보 |
-| `ATLAS_{FAB}_HID_INOUT` | 변경 | 엣지 전환 집계 (1분 배치) |
+| `ATLAS_{FAB}_HID_INOUT` | 신규 | 엣지 전환 집계 (1분 배치) |
 
 ---
 
 # Part 1: OhtMsgWorkerRunnable.java 변경
 
-## 1.1 클래스 필드 변경
+## 1.1 클래스 필드 추가
 
-### 기존 코드 (삭제)
-```java
-// HID별 IN/OUT 카운트 집계 (1분간 모아서 배치 저장)
-// Key: HID_ID, Value: [IN_CNT, OUT_CNT]
-private static ConcurrentMap<Integer, int[]> hidCountBuffer =
-    new ConcurrentHashMap<>();
-```
-
-### 변경 코드 (추가)
 ```java
 import java.util.concurrent.atomic.AtomicInteger;
 
-// HID 엣지별 전환 카운트 집계 (1분간 모아서 배치 저장)
+// ===== 기존 코드 유지 =====
+
+// ===== 신규 추가: HID 엣지별 전환 카운트 집계 (1분간 모아서 배치 저장) =====
 // Key: "fromHidId:toHidId", Value: 전환 횟수
 private static ConcurrentMap<String, AtomicInteger> hidEdgeBuffer =
     new ConcurrentHashMap<>();
-private static long lastFlushTime = System.currentTimeMillis();
-private static final long FLUSH_INTERVAL = 60000; // 1분
-private static final Object flushLock = new Object();
+private static long lastHidEdgeFlushTime = System.currentTimeMillis();
+private static final long HID_EDGE_FLUSH_INTERVAL = 60000; // 1분
+private static final Object hidEdgeFlushLock = new Object();
 ```
 
 ---
 
 ## 1.2 _calculatedVhlCnt() 메소드 수정
 
-### 기존 코드
+### 기존 코드 (OhtMsgWorkerRunnable.java:357-382)
 ```java
 private void _calculatedVhlCnt(int currentHidId, String key, Vhl vehicle) {
     long timer = System.currentTimeMillis();
     int previousHidId = vehicle.getHidId();
 
     if (previousHidId != currentHidId) {
-        // HID 구간 IN (새로운 HID 구간 진입)
         if (currentHidId > 0) {
             String v = String.format("%03d", currentHidId);
             DataService.getDataSet().increaseHidVehicleCnt(key + ":" + v);
-
-            // IN 카운트 증가
-            hidCountBuffer.computeIfAbsent(currentHidId, k -> new int[2]);
-            synchronized (hidCountBuffer.get(currentHidId)) {
-                hidCountBuffer.get(currentHidId)[0]++; // IN_CNT 증가
-            }
         }
 
-        // HID 구간 OUT (이전 HID 구간 이탈)
         if (previousHidId > 0) {
             String v = String.format("%03d", previousHidId);
             DataService.getDataSet().decreaseHidVehicleCnt(key + ":" + v);
-
-            // OUT 카운트 증가
-            hidCountBuffer.computeIfAbsent(previousHidId, k -> new int[2]);
-            synchronized (hidCountBuffer.get(previousHidId)) {
-                hidCountBuffer.get(previousHidId)[1]++; // OUT_CNT 증가
-            }
         }
 
         vehicle.setHidId(currentHidId);
     }
 
-    // 1분마다 버퍼 플러시
-    if (timer - lastFlushTime >= FLUSH_INTERVAL) {
-        synchronized (flushLock) {
-            if (timer - lastFlushTime >= FLUSH_INTERVAL) {
-                flushHidCountBuffer();
-                lastFlushTime = timer;
-            }
-        }
+    long checkingTime = System.currentTimeMillis() - timer;
+
+    if (checkingTime >= 60000) {
+        logger.info("... `number of vehicles per hid section` process took more than 1 minute to complete [elapsed time: {}min]", checkingTime / 60000);
     }
 }
 ```
 
-### 변경 코드
+### 변경 코드 (기존 유지 + 엣지 집계 추가)
 ```java
+/**
+ * HID 구간별 VHL 재적수
+ * @param currentHidId 현재 vehicle 이 위치한 railEdge 의 hid 값
+ * @param key DataSet 에서 특정 데이터를 호출하기 위한 key 값
+ * @param vehicle vehicle 객체
+ */
 private void _calculatedVhlCnt(int currentHidId, String key, Vhl vehicle) {
     long timer = System.currentTimeMillis();
     int previousHidId = vehicle.getHidId();
 
     if (previousHidId != currentHidId) {
-        // HID 전환 감지 (엣지 이벤트)
-
-        // 기존 HID VHL 카운트 업데이트
+        // ===== 기존 코드 유지: HID VHL 카운트 =====
         if (currentHidId > 0) {
             String v = String.format("%03d", currentHidId);
             DataService.getDataSet().increaseHidVehicleCnt(key + ":" + v);
         }
+
         if (previousHidId > 0) {
             String v = String.format("%03d", previousHidId);
             DataService.getDataSet().decreaseHidVehicleCnt(key + ":" + v);
         }
+        // ===== 기존 코드 유지 끝 =====
 
-        // ===== 변경: 엣지 전환 카운트 증가 =====
+        // ===== 신규 추가: 엣지 전환 카운트 집계 =====
         String edgeKey = String.format("%03d:%03d", previousHidId, currentHidId);
         hidEdgeBuffer.computeIfAbsent(edgeKey, k -> new AtomicInteger(0))
                      .incrementAndGet();
+        // ===== 신규 추가 끝 =====
 
         vehicle.setHidId(currentHidId);
     }
 
-    // 1분마다 버퍼 플러시
-    if (timer - lastFlushTime >= FLUSH_INTERVAL) {
-        synchronized (flushLock) {
-            if (timer - lastFlushTime >= FLUSH_INTERVAL) {
-                flushHidEdgeBuffer();  // 메소드명 변경
-                lastFlushTime = timer;
+    // ===== 신규 추가: 1분마다 버퍼 플러시 =====
+    if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
+        synchronized (hidEdgeFlushLock) {
+            if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
+                flushHidEdgeBuffer();
+                lastHidEdgeFlushTime = timer;
             }
         }
+    }
+    // ===== 신규 추가 끝 =====
+
+    long checkingTime = System.currentTimeMillis() - timer;
+
+    if (checkingTime >= 60000) {
+        logger.info("... `number of vehicles per hid section` process took more than 1 minute to complete [elapsed time: {}min]", checkingTime / 60000);
     }
 }
 ```
 
 ---
 
-## 1.3 flushHidCountBuffer() → flushHidEdgeBuffer() 변경
+## 1.3 flushHidEdgeBuffer() 메소드 신규 추가
 
-### 기존 코드 (삭제)
-```java
-private void flushHidCountBuffer() {
-    if (hidCountBuffer.isEmpty()) {
-        return;
-    }
-
-    Map<Integer, int[]> snapshot = new HashMap<>();
-    for (Map.Entry<Integer, int[]> entry : hidCountBuffer.entrySet()) {
-        synchronized (entry.getValue()) {
-            snapshot.put(entry.getKey(),
-                new int[]{entry.getValue()[0], entry.getValue()[1]});
-            entry.getValue()[0] = 0;
-            entry.getValue()[1] = 0;
-        }
-    }
-
-    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:00");
-    SimpleDateFormat dateOnlyFormat = new SimpleDateFormat("yyyy-MM-dd");
-    Date now = new Date();
-    String eventDt = dateFormat.format(now);
-    String eventDate = dateOnlyFormat.format(now);
-
-    List<Tuple> tuples = new ArrayList<>();
-
-    for (Map.Entry<Integer, int[]> entry : snapshot.entrySet()) {
-        int hidId = entry.getKey();
-        int inCnt = entry.getValue()[0];
-        int outCnt = entry.getValue()[1];
-
-        if (inCnt == 0 && outCnt == 0) {
-            continue;
-        }
-
-        String hidKey = this.fabId + ":" + this.mcpName
-                      + ":" + String.format("%03d", hidId);
-        int vhlCnt = DataService.getDataSet().getHidVehicleCnt(hidKey);
-
-        Tuple tuple = new Tuple();
-        tuple.put("EVENT_DATE", eventDate);
-        tuple.put("EVENT_DT", eventDt);
-        tuple.put("HID_ID", hidId);
-        tuple.put("IN_CNT", inCnt);
-        tuple.put("OUT_CNT", outCnt);
-        tuple.put("VHL_CNT", vhlCnt);
-        tuple.put("MCP_NM", this.mcpName);
-        tuple.put("ENV", Env.getEnv());
-
-        tuples.add(tuple);
-    }
-
-    if (tuples.isEmpty()) {
-        return;
-    }
-
-    String tableName = "ATLAS_" + this.fabId + "_HID_INOUT";
-    boolean success = LogpressoAPI.setInsertTuples(tableName, tuples, 100);
-
-    if (success) {
-        logger.info("HID IN/OUT aggregated: {} - {} records",
-                    tableName, tuples.size());
-    }
-}
-```
-
-### 변경 코드 (추가)
 ```java
 /**
  * HID 엣지 전환 집계 데이터를 Logpresso에 1분 배치 저장
@@ -246,9 +168,9 @@ private void flushHidEdgeBuffer() {
         Tuple tuple = new Tuple();
         tuple.put("EVENT_DATE", eventDate);
         tuple.put("EVENT_DT", eventDt);
-        tuple.put("FROM_HIDID", fromHidId);   // 신규 컬럼
-        tuple.put("TO_HIDID", toHidId);       // 신규 컬럼
-        tuple.put("TRANS_CNT", transCnt);     // 컬럼명 변경 (IN_CNT/OUT_CNT → TRANS_CNT)
+        tuple.put("FROM_HIDID", fromHidId);
+        tuple.put("TO_HIDID", toHidId);
+        tuple.put("TRANS_CNT", transCnt);
         tuple.put("MCP_NM", this.mcpName);
         tuple.put("ENV", Env.getEnv());
 
@@ -273,25 +195,9 @@ private void flushHidEdgeBuffer() {
 
 ---
 
-# Part 2: HidMasterBatchJob.java 변경
+# Part 2: HidMasterBatchJob.java 신규 메소드 추가
 
-## 2.1 테이블명 변경
-
-### 기존
-```java
-LogpressoAPI.truncateTable("ATLAS_INFO_HID_INOUT");
-LogpressoAPI.setInsertTuples("ATLAS_INFO_HID_INOUT", tuples, 100);
-```
-
-### 변경
-```java
-LogpressoAPI.truncateTable("ATLAS_INFO_HID_INOUT_MAS");
-LogpressoAPI.setInsertTuples("ATLAS_INFO_HID_INOUT_MAS", tuples, 100);
-```
-
----
-
-## 2.2 updateHidEdgeMasterInfo() 메소드 (엣지 기반 마스터)
+## 2.1 updateHidEdgeMasterInfo() 메소드 추가
 
 ```java
 /**
@@ -406,7 +312,7 @@ public void updateHidEdgeMasterInfo() {
 
 ---
 
-## 2.3 updateHidInfoMaster() 메소드 (신규 - HID 상세 정보)
+## 2.2 updateHidInfoMaster() 메소드 추가
 
 ```java
 /**
@@ -516,7 +422,7 @@ public void updateHidInfoMaster() {
 
 ---
 
-## 2.4 스케줄러 통합 (선택사항)
+## 2.3 스케줄러 통합 (선택사항)
 
 ```java
 @Scheduled(cron = "0 0 0 * * ?")
@@ -539,26 +445,24 @@ public void updateAllHidMasterTables() {
 
 ## OhtMsgWorkerRunnable.java
 
-| 구분 | 기존 | 변경 |
-|------|------|------|
-| 버퍼 타입 | `ConcurrentMap<Integer, int[]>` | `ConcurrentMap<String, AtomicInteger>` |
-| 버퍼 Key | HID_ID (정수) | "fromHidId:toHidId" (문자열) |
-| 저장 컬럼 | HID_ID, IN_CNT, OUT_CNT, VHL_CNT | FROM_HIDID, TO_HIDID, TRANS_CNT |
-| 데이터 볼륨 | HID 개수 × 2 (IN/OUT) | 엣지 개수 (약 2010개) |
-| 부하 | 높음 | 낮음 (5~10% 수준) |
+| 구분 | 내용 |
+|------|------|
+| 기존 코드 | **유지** (HID VHL 카운트) |
+| 신규 필드 | `hidEdgeBuffer`, `lastHidEdgeFlushTime`, `hidEdgeFlushLock` |
+| 신규 메소드 | `flushHidEdgeBuffer()` |
+| 수정 메소드 | `_calculatedVhlCnt()` (엣지 집계 로직 추가) |
 
 ## HidMasterBatchJob.java
 
-| 구분 | 기존 | 변경 |
-|------|------|------|
-| 마스터 테이블 | `ATLAS_INFO_HID_INOUT` | `ATLAS_INFO_HID_INOUT_MAS` |
-| 신규 테이블 | - | `ATLAS_HID_INFO_MAS` |
-| 신규 컬럼 | - | RAIL_LEN_TOTAL, FREE_FLOW_SPEED, PORT_CNT_TOTAL |
-| 엣지 컬럼 | - | FROM_HIDID, TO_HIDID, EDGE_TYPE |
+| 구분 | 내용 |
+|------|------|
+| 신규 메소드 | `updateHidEdgeMasterInfo()` - 엣지 마스터 |
+| 신규 메소드 | `updateHidInfoMaster()` - HID 상세 정보 |
+| 신규 테이블 | `ATLAS_INFO_HID_INOUT_MAS`, `ATLAS_HID_INFO_MAS` |
 
 ---
 
-# 필요한 Import
+# 필요한 Import 추가
 
 ```java
 // OhtMsgWorkerRunnable.java
