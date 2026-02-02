@@ -1,0 +1,18 @@
+{
+  "M14A": {
+    "vehicle_count": 450,
+    "layout_prefix": "A"
+  },
+  "M14B": {
+    "vehicle_count": 450,
+    "layout_prefix": "A"
+  },
+  "M16A": {
+    "vehicle_count": 300,
+    "layout_prefix": "A"
+  },
+  "M16B": {
+    "vehicle_count": 300,
+    "layout_prefix": "A"
+  }
+}
