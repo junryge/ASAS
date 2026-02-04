@@ -5423,11 +5423,46 @@ async def dispatch_vehicle(request: dict):
     # 비동기로 MCS에 상태 업데이트
     asyncio.create_task(update_mcs_status(request_id, "DISPATCHED", vehicle.vehicleId))
 
+    # Transport 시뮬레이션 시작 (상태 변경 → MCS → SECS/GEM)
+    asyncio.create_task(simulate_transport(request_id, vehicle.vehicleId, from_station, to_station))
+
     return {
         "success": True,
         "vehicleId": vehicle.vehicleId,
         "status": "DISPATCHED"
     }
+
+async def simulate_transport(request_id: str, vehicle_id: str, from_station: int, to_station: int):
+    """
+    Transport 시뮬레이션 (배차 → 픽업 → 운반 → 완료)
+    각 단계에서 MCS에 상태 업데이트 전송 → MCS가 SECS/GEM 호출
+    """
+    try:
+        print(f"[SIM] Transport 시작: {request_id} | {vehicle_id}")
+
+        # 1. 픽업 위치로 이동 중 (3초)
+        await asyncio.sleep(3)
+        print(f"[SIM] {vehicle_id}: 픽업 위치 도착 (Station {from_station})")
+        await update_mcs_status(request_id, "PICKING", vehicle_id)
+
+        # 2. 픽업 중 (SECS/GEM Load 발생) (2초)
+        await asyncio.sleep(2)
+        print(f"[SIM] {vehicle_id}: 픽업 완료, 운반 시작")
+        await update_mcs_status(request_id, "CARRYING", vehicle_id)
+
+        # 3. 목적지로 이동 중 (4초)
+        await asyncio.sleep(4)
+        print(f"[SIM] {vehicle_id}: 목적지 도착 (Station {to_station})")
+
+        # 4. 언로드 완료
+        await asyncio.sleep(1)
+        print(f"[SIM] {vehicle_id}: 언로드 완료")
+        await update_mcs_status(request_id, "COMPLETE", vehicle_id)
+
+        print(f"[SIM] Transport 완료: {request_id}")
+
+    except Exception as e:
+        print(f"[SIM] Transport 오류: {e}")
 
 # MCS 배차 카운터
 mcs_vehicle_counter = 0
