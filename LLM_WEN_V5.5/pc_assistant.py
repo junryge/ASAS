@@ -1804,7 +1804,8 @@ def process_chat(user_message: str) -> str:
         amhs_keywords = ["amhs", "amos", "구성도", "시스템 구성", "oht", "mcs", "stk", "cnv", "lft", "inv",
                          "foup", "pdt", "rtc", "fio", "반송", "스토커", "컨베이어", "리프트", "인버터",
                          "통신", "프로토콜", "atlas", "smartstar", "logpresso", "tibco",
-                         "아키텍처", "컬럼사전", "예측모델", "hubroom", "hid"]
+                         "아키텍처", "컬럼사전", "예측모델", "hubroom", "hid",
+                         "접속", "url", "시뮬레이션", "컬럼", "m14", "m16", "모니터링"]
         msg_lower = user_message.lower()
         amhs_matched = [kw for kw in amhs_keywords if kw in msg_lower]
         if amhs_matched:
