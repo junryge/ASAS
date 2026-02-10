@@ -614,11 +614,16 @@ def scan_and_parse_map(map_dir, output_base_dir):
             print(f"  Parsing FAB: {fab_name}")
             print(f"{'='*60}")
 
-            result = parse_from_zip(zip_path, fab_data_dir, fab_name)
+            # FAB별 독립 디렉토리: fab_data/{fab_name}/
+            fab_output_dir = os.path.join(fab_data_dir, fab_name)
+            os.makedirs(fab_output_dir, exist_ok=True)
+
+            result = parse_from_zip(zip_path, fab_output_dir, fab_name)
             if result:
                 results.append({
                     'fab_name': fab_name,
-                    'json_path': os.path.join(fab_data_dir, f'{fab_name}.json'),
+                    'json_path': os.path.join(fab_output_dir, f'{fab_name}.json'),
+                    'csv_dir': os.path.join(fab_output_dir, 'master_csv'),
                     'nodes': result.get('total_nodes', 0),
                     'edges': result.get('total_edges', 0),
                     'stations': result.get('total_stations', 0),
@@ -691,12 +696,16 @@ def auto_detect_and_parse(base_dir=None):
                 zip_path = os.path.join(base_dir, zf)
                 prefix = zf.split('.')[0]
                 fab_name = prefix
+                # FAB별 독립 디렉토리
+                fab_output_dir = os.path.join(fab_data_dir, fab_name)
+                os.makedirs(fab_output_dir, exist_ok=True)
                 print(f"\n  [감지] ZIP 파일: {zf} → FAB: {fab_name}")
-                result = parse_from_zip(zip_path, fab_data_dir, fab_name)
+                result = parse_from_zip(zip_path, fab_output_dir, fab_name)
                 if result:
                     results.append({
                         'fab_name': fab_name,
-                        'json_path': os.path.join(fab_data_dir, f'{fab_name}.json'),
+                        'json_path': os.path.join(fab_output_dir, f'{fab_name}.json'),
+                        'csv_dir': os.path.join(fab_output_dir, 'master_csv'),
                         'nodes': result.get('total_nodes', 0),
                         'edges': result.get('total_edges', 0),
                         'stations': result.get('total_stations', 0),
@@ -728,9 +737,10 @@ def auto_detect_and_parse(base_dir=None):
                     xml_files = [fn for fn in z.namelist() if fn.lower().endswith('layout.xml')]
                     if xml_files:
                         print(f"\n  [감지] {zf} 안에 layout.xml 발견")
-                        os.makedirs(fab_data_dir, exist_ok=True)
                         fab_name = zf.split('.')[0]
-                        parse_from_zip(zip_path, fab_data_dir, fab_name)
+                        fab_output_dir = os.path.join(fab_data_dir, fab_name)
+                        os.makedirs(fab_output_dir, exist_ok=True)
+                        parse_from_zip(zip_path, fab_output_dir, fab_name)
                         found = True
             except zipfile.BadZipFile:
                 continue

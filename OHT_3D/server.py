@@ -124,25 +124,66 @@ def load_layout_data():
 
 # ===== Load FAB Data Registry (multi-FAB support) =====
 def load_fab_registry():
-    """Scan fab_data/ directory for available FAB JSON files"""
+    """
+    Scan fab_data/ directory for available FAB data.
+
+    Expected structure (FAB별 독립 디렉토리):
+        fab_data/
+            _fab_registry.json
+            M14A/
+                M14A.json
+                master_csv/M14A_HID_Zone_Master.csv
+            M14B/
+                M14B.json
+                master_csv/M14B_HID_Zone_Master.csv
+            ...
+    Also supports legacy flat structure (fab_data/*.json).
+    """
     global fab_data_registry
     if not FAB_DATA_DIR.exists():
         return
 
-    for f in sorted(FAB_DATA_DIR.glob('*.json')):
-        if f.name.startswith('_'):
+    # 1) FAB별 하위 디렉토리 탐색: fab_data/{fab_name}/{fab_name}.json
+    for d in sorted(FAB_DATA_DIR.iterdir()):
+        if not d.is_dir() or d.name.startswith('_'):
             continue
-        fab_name = f.stem  # e.g. M14A.json -> M14A
+        fab_name = d.name
+        json_file = d / f'{fab_name}.json'
+        if not json_file.exists():
+            # 디렉토리 안에 아무 .json이라도 있으면
+            json_files = list(d.glob('*.json'))
+            if json_files:
+                json_file = json_files[0]
+            else:
+                continue
+        csv_dir = d / 'master_csv'
         fab_data_registry[fab_name] = {
-            'json_path': str(f),
-            'json_size': f.stat().st_size,
+            'json_path': str(json_file),
+            'csv_dir': str(csv_dir) if csv_dir.exists() else '',
+            'json_size': json_file.stat().st_size,
             'total_nodes': 0,
             'total_edges': 0,
             'total_stations': 0,
             'total_mcp_zones': 0,
         }
 
-    # Try to load metadata from registry file
+    # 2) 레거시: fab_data/*.json (flat 구조)
+    if not fab_data_registry:
+        for f in sorted(FAB_DATA_DIR.glob('*.json')):
+            if f.name.startswith('_'):
+                continue
+            fab_name = f.stem
+            fab_data_registry[fab_name] = {
+                'json_path': str(f),
+                'csv_dir': str(FAB_DATA_DIR / 'master_csv'),
+                'json_size': f.stat().st_size,
+                'total_nodes': 0,
+                'total_edges': 0,
+                'total_stations': 0,
+                'total_mcp_zones': 0,
+            }
+
+    # 3) _fab_registry.json 에서 메타데이터 보강
     registry_file = FAB_DATA_DIR / '_fab_registry.json'
     if registry_file.exists():
         try:
@@ -157,6 +198,8 @@ def load_fab_registry():
                         'total_stations': entry.get('stations', 0),
                         'total_mcp_zones': entry.get('mcp_zones', 0),
                     })
+                    if entry.get('csv_dir'):
+                        fab_data_registry[name]['csv_dir'] = entry['csv_dir']
         except Exception as e:
             print(f"[Warning] Failed to read fab registry: {e}")
 
@@ -192,9 +235,13 @@ def switch_fab_internal(fab_name):
         })
 
     # Also register in fab_registry (legacy)
+    # CSV 경로: FAB별 디렉토리 또는 기본 master_csv
+    fab_csv_dir = fab_data_registry.get(fab_name, {}).get('csv_dir', '')
+    if not fab_csv_dir:
+        fab_csv_dir = str(Path(json_path).parent / 'master_csv')
     fab_registry[fab_name] = {
         'json_path': json_path,
-        'csv_dir': str(MASTER_CSV_DIR),
+        'csv_dir': fab_csv_dir,
         'loaded_at': datetime.now().isoformat(),
         'total_nodes': layout_data.get('total_nodes', 0),
         'total_edges': layout_data.get('total_edges', 0),
@@ -434,6 +481,9 @@ async def list_fabs():
     """등록된 FAB 목록 + 현재 선택된 FAB"""
     fabs = []
     for name, info in fab_data_registry.items():
+        # CSV 파일 수 확인
+        csv_dir = Path(info.get('csv_dir', ''))
+        csv_count = len(list(csv_dir.glob('*.csv'))) if csv_dir.exists() else 0
         fabs.append({
             'fab_name': name,
             'total_nodes': info.get('total_nodes', 0),
@@ -441,6 +491,7 @@ async def list_fabs():
             'total_stations': info.get('total_stations', 0),
             'total_mcp_zones': info.get('total_mcp_zones', 0),
             'json_size_mb': round(info.get('json_size', 0) / (1024 * 1024), 1),
+            'csv_count': csv_count,
         })
     # Legacy single layout_data.json (no fab_data)
     if not fabs and layout_data:
@@ -521,11 +572,16 @@ async def list_master_data():
 
 @app.get("/api/master/{fab_name}/csv/{filename}")
 async def download_csv(fab_name: str, filename: str):
-    """CSV 파일 다운로드"""
+    """CSV 파일 다운로드 (FAB별 디렉토리에서 탐색)"""
+    # 1) FAB별 디렉토리: fab_data/{fab_name}/master_csv/
+    fab_csv_dir = FAB_DATA_DIR / fab_name / "master_csv"
+    csv_path = fab_csv_dir / filename
+    if csv_path.exists():
+        return FileResponse(csv_path, media_type="text/csv", filename=filename)
+    # 2) 레거시: master_csv/
     csv_path = MASTER_CSV_DIR / filename
     if csv_path.exists():
-        return FileResponse(csv_path, media_type="text/csv",
-                            filename=filename)
+        return FileResponse(csv_path, media_type="text/csv", filename=filename)
     raise HTTPException(status_code=404, detail=f"CSV file not found: {filename}")
 
 
@@ -533,11 +589,19 @@ async def download_csv(fab_name: str, filename: str):
 async def download_all_csv(fab_name: str):
     """FAB의 모든 CSV 파일 목록 (개별 다운로드 링크)"""
     csv_files = []
-    if MASTER_CSV_DIR.exists():
+    # 1) FAB별 디렉토리
+    fab_csv_dir = FAB_DATA_DIR / fab_name / "master_csv"
+    if fab_csv_dir.exists():
+        for f in fab_csv_dir.glob('*.csv'):
+            csv_files.append({
+                "name": f.name, "size": f.stat().st_size,
+                "url": f"/api/master/{fab_name}/csv/{f.name}"
+            })
+    # 2) 레거시 폴더
+    if not csv_files and MASTER_CSV_DIR.exists():
         for f in MASTER_CSV_DIR.glob(f'{fab_name}_*.csv'):
             csv_files.append({
-                "name": f.name,
-                "size": f.stat().st_size,
+                "name": f.name, "size": f.stat().st_size,
                 "url": f"/api/master/{fab_name}/csv/{f.name}"
             })
     return {"fab_name": fab_name, "files": csv_files}

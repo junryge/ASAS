@@ -2582,12 +2582,15 @@ function showFabSelector(fabs) {
         const nodes = f.total_nodes ? f.total_nodes.toLocaleString() : '?';
         const edges = f.total_edges ? f.total_edges.toLocaleString() : '?';
         const stations = f.total_stations ? f.total_stations.toLocaleString() : '?';
+        const zones = f.total_mcp_zones ? f.total_mcp_zones.toLocaleString() : '0';
         const size = f.json_size_mb ? f.json_size_mb + ' MB' : '';
+        const csv = f.csv_count ? f.csv_count + ' CSV' : '';
         card.innerHTML = `
             <div class="fab-card-name">${f.fab_name}</div>
             <div class="fab-card-info">
                 노드: <span>${nodes}</span> | 레일: <span>${edges}</span><br>
-                스테이션: <span>${stations}</span> ${size ? '| ' + size : ''}
+                스테이션: <span>${stations}</span> | Zone: <span>${zones}</span><br>
+                ${size ? size : ''} ${csv ? '| ' + csv : ''}
             </div>
         `;
         card.onclick = async () => {
