@@ -13,6 +13,200 @@
 
 ---
 
+## LLM 3D 개발 기법
+
+### 개요
+
+본 프로젝트는 **LLM(Large Language Model)을 활용한 3D 코드 생성 기법**으로 개발되었습니다.
+기존 3D 개발은 Unity, Unreal Engine 등 전문 엔진이나 수동 Three.js 코딩이 필요하지만,
+본 시스템은 **LLM에 프롬프트를 입력하여 전체 3D 시각화 코드를 자동 생성**하는 방식을 사용합니다.
+
+### LLM 3D 개발 vs 기존 개발 비교
+
+| 구분 | 기존 3D 개발 | LLM 3D 개발 (본 프로젝트) |
+|------|-------------|-------------------------|
+| **도구** | Unity, Unreal, Blender + 코딩 | LLM 프롬프트 + 브라우저 |
+| **언어** | C#, C++, GLSL | 자연어 → Three.js 자동 생성 |
+| **개발 기간** | 수주 ~ 수개월 | 수시간 ~ 수일 |
+| **3D 모델링** | 3D 모델러가 수작업 | LLM이 코드로 프로시저럴 생성 |
+| **배포** | 빌드 + 설치 필요 | HTML 1개 파일 (브라우저) |
+| **수정** | 소스 분석 후 수정 | 프롬프트로 즉시 변경 요청 |
+| **전문성** | 3D 그래픽스 전문 지식 필요 | 도메인 지식만 있으면 가능 |
+
+### LLM 3D 코드 생성 프로세스
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   LLM 3D 개발 워크플로우                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  [1] 요구사항 프롬프트                                        │
+│  "OHT 레일 시스템을 3D로 시각화해줘.                            │
+│   노드는 구체, 레일은 선로, 차량은 주황색 캐리지로..."            │
+│      │                                                      │
+│      ▼                                                      │
+│  [2] LLM 3D 코드 생성                                        │
+│  - Three.js Scene/Camera/Renderer 구성                       │
+│  - InstancedMesh 기반 대규모 오브젝트 렌더링                    │
+│  - 차량 지오메트리 프로시저럴 생성 (Box/Cylinder 조합)           │
+│  - 애니메이션 루프, 상태 머신, 물리 시뮬레이션                   │
+│      │                                                      │
+│      ▼                                                      │
+│  [3] 검증 및 반복 수정                                        │
+│  "차량에 FOUP 추가해줘" → LLM이 코드 수정                      │
+│  "Zone 혼잡도 색상 바꿔줘" → LLM이 즉시 반영                    │
+│  "미니맵 추가해줘" → LLM이 Canvas 2D 미니맵 생성                │
+│      │                                                      │
+│      ▼                                                      │
+│  [4] 완성된 단일 HTML 파일                                    │
+│  - 2,500+ 줄의 통합 코드                                     │
+│  - 추가 빌드/컴파일 불필요                                    │
+│  - 브라우저에서 바로 실행                                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### LLM이 생성한 3D 요소 상세
+
+#### 1) 프로시저럴 3D 모델링 (코드로 형상 생성)
+
+LLM은 3D 모델 파일(FBX, OBJ 등) 없이 **순수 코드로 모든 3D 오브젝트를 생성**합니다.
+
+```
+OHT 차량 = LLM 프롬프트로 생성된 프로시저럴 모델
+
+        ◆ Beacon (CylinderGeometry)
+        │
+    ════╧════  Carriage (BoxGeometry 24×6×10)
+    ●       ●  Wheels (CylinderGeometry r=3) × 2
+    ┃ Motor ┃  Motor (BoxGeometry 12×3×8)
+    ┃       ┃  Cables (CylinderGeometry r=0.3) × 2
+    ┗━━━━━━━┛  Gripper (BoxGeometry 16×1.5×8)
+    ┌───────┐
+    │ FOUP  │  FOUP Body (BoxGeometry 14×12×14)
+    │       │  FOUP Lid (BoxGeometry 15×1×15)
+    └───────┘
+    ○ Ring (TorusGeometry) - 회전 애니메이션
+    ◉ Lights (SphereGeometry r=0.8) × 2
+```
+
+> 기존 방식: 3D 모델러가 Maya/Blender에서 모델링 → FBX 내보내기 → 로더로 임포트
+> LLM 방식: "OHT 차량을 만들어줘. 주황색 캐리지에 바퀴, 케이블, FOUP, 비콘 포함" → 코드 자동 생성
+
+#### 2) InstancedMesh 대규모 렌더링
+
+LLM이 성능을 고려하여 **InstancedMesh 패턴을 자동 적용**:
+
+```javascript
+// LLM이 생성한 InstancedMesh 코드 패턴
+// 45,000개 노드를 단일 드로우 콜로 렌더링
+
+const nodeGeo = new THREE.SphereGeometry(nodeRadius, 8, 6);
+const nodeMat = new THREE.MeshPhongMaterial({ color: 0x00d4ff });
+const nodeMesh = new THREE.InstancedMesh(nodeGeo, nodeMat, nodeCount);
+
+nodes.forEach((n, i) => {
+    matrix.setPosition(n.x, height, n.y);
+    nodeMesh.setMatrixAt(i, matrix);
+});
+```
+
+> 일반 Mesh: 45,000개 → 45,000 드로우 콜 → 5 FPS
+> InstancedMesh: 45,000개 → 1 드로우 콜 → 60 FPS
+
+#### 3) 실시간 물리/애니메이션
+
+LLM이 생성한 차량 애니메이션 시스템:
+
+```
+프레임 루프 (requestAnimationFrame)
+    │
+    ├── 차량 이동: CatmullRomCurve3 경로 따라 이동
+    │     └── Zone 혼잡도에 따른 속도 감소
+    │
+    ├── 케이블 하강/상승: scale.y 동적 변경
+    │     └── 스테이션 도착 시 그리퍼 내려감
+    │
+    ├── FOUP 표시/숨김: visible 토글
+    │     └── 적재/비적재 상태 반영
+    │
+    ├── 비콘 회전: rotation.y += dt
+    │
+    └── Zone 통계 갱신: 1초마다 차량 위치 집계
+```
+
+#### 4) 반응형 UI 생성
+
+LLM이 생성한 단일 HTML에 포함된 UI 컴포넌트:
+
+| UI 요소 | LLM 생성 방식 |
+|---------|--------------|
+| 좌측 통계 패널 | CSS Grid + 실시간 DOM 업데이트 |
+| 플로팅 컨트롤 | 드래그 가능 패널 (mousedown/mousemove) |
+| 미니맵 | Canvas 2D 별도 렌더링 |
+| OHT 리스트 | innerHTML 동적 생성 + 이벤트 위임 |
+| 색상 피커 | CSS 그라데이션 버튼 + Material 교체 |
+| 뷰 프리셋 | 카메라 position/target 프리셋 전환 |
+
+### LLM 3D 개발의 장점
+
+```
+┌────────────────────────────────────────────────────┐
+│                 LLM 3D 개발 장점                     │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│  1. 빠른 프로토타이핑                                │
+│     "레일 색상 바꿔줘" → 즉시 코드 수정               │
+│     "차량에 비콘 추가해줘" → 즉시 지오메트리 추가      │
+│                                                    │
+│  2. 도메인 전문가가 직접 개발 가능                    │
+│     반도체 FAB 엔지니어가 3D 지식 없이               │
+│     "OHT 레일이 이렇게 생겼으니 이렇게 보여줘"        │
+│     → LLM이 Three.js 코드로 변환                    │
+│                                                    │
+│  3. 제로 빌드 배포                                   │
+│     - 컴파일/빌드 과정 없음                          │
+│     - HTML 1개 + 서버 1개 = 끝                      │
+│     - CDN import로 의존성 자동 해결                   │
+│                                                    │
+│  4. 반복 수정 용이                                   │
+│     기존: 코드 분석 → 수정 → 빌드 → 테스트           │
+│     LLM: "이거 바꿔줘" → 자동 수정 → 브라우저 새로고침│
+│                                                    │
+│  5. 대규모 데이터 처리                               │
+│     LLM이 InstancedMesh, 공간 인덱싱 등              │
+│     성능 최적화 패턴을 자동으로 적용                   │
+│                                                    │
+└────────────────────────────────────────────────────┘
+```
+
+### LLM 프롬프트 예시
+
+실제 개발 시 사용한 프롬프트 패턴:
+
+| 단계 | 프롬프트 | LLM 결과 |
+|------|---------|---------|
+| 기본 구조 | "layout.xml을 파싱해서 3D로 보여줘" | parse_layout.py + Three.js 초기 코드 |
+| 차량 추가 | "OHT 차량을 레일 위에 달리게 해줘" | spawnVehicles + updateVehicles 애니메이션 |
+| 상태 시뮬 | "차량에 JAM, 정지, 적재 상태 넣어줘" | 상태 머신 + 시나리오 생성 |
+| Zone 시스템 | "MCP Zone별 혼잡도 표시해줘" | Zone 통계 + 속도 감소 로직 |
+| UI 패널 | "좌측에 통계, 우측에 차량 리스트" | CSS Grid 레이아웃 + 탭 UI |
+| 미니맵 | "우하단에 미니맵 추가해줘" | Canvas 2D 미니맵 |
+| Multi-FAB | "여러 FAB 전환 가능하게 해줘" | FAB 드롭다운 + 서버 API |
+| 설정 저장 | "OHT 대수 FAB별로 저장되게 해줘" | _fab_settings.json + API |
+
+### 기술적 제약 및 해결
+
+| 제약 | 해결 방법 |
+|------|----------|
+| LLM 컨텍스트 한계 (2,500줄+) | 단일 HTML 파일 구조로 전체 코드 관리 |
+| 3D 모델 파일 사용 불가 | 프로시저럴 지오메트리 (BoxGeometry, CylinderGeometry 조합) |
+| 대규모 데이터 성능 | LLM이 InstancedMesh + 공간 인덱싱 자동 적용 |
+| 브라우저 호환성 | ES Module + Import Map으로 CDN 로딩 |
+| 실시간 업데이트 | requestAnimationFrame 루프 + 디바운싱 |
+
+---
+
 ## 시스템 아키텍처
 
 ```
