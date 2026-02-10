@@ -6,89 +6,124 @@
 |------|------|
 | **프로젝트명** | AMOS MAP SYSTEM PRO - OHT FAB Simulator |
 | **목적** | 반도체 FAB OHT(Overhead Hoist Transport) 레일 시스템 3D 시각화 |
-| **개발 방식** | **3D LLM (3D Large Language Model)** - LLM이 3D 엔진 역할 |
+| **개발 방식** | **3D LLM + LL3M** (3D Large Language Model + Large Language 3D Modelers) |
 | **버전** | 2.0.0 |
 | **포트** | 10003 |
 | **개발자** | John Prestige |
 
 ---
 
-## 3D LLM (3D Large Language Model) 개발 기법
+## 3D LLM + LL3M 개발 기법
 
-### 핵심 개념: 3D LLM이란?
+### 핵심 개념: 3D LLM + LL3M이란?
 
-**3D LLM = Large Language Model이 3D 엔진 역할을 수행하는 개발 패러다임**
+본 프로젝트는 두 가지 LLM 기반 3D 기술을 결합하여 개발되었습니다.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│   기존 3D 개발:  사람 → 3D 엔진 (Unity/Unreal) → 결과물     │
+│  ◆ 3D LLM (3D Large Language Model)                        │
+│    = LLM이 3D 엔진 역할 수행                                │
+│    = 씬 구성, 렌더링, 애니메이션, 최적화, UI 전체 설계       │
 │                                                             │
-│   3D LLM 개발:   사람 → LLM (= 3D 엔진) → 결과물            │
+│  ◆ LL3M (Large Language 3D Modelers)                        │
+│    = LLM이 3D 모델러 역할 수행                               │
+│    = 프로시저럴 지오메트리로 3D 오브젝트 직접 모델링          │
+│    = 외부 모델 파일(FBX/OBJ) 없이 코드만으로 형상 생성       │
 │                                                             │
-│   LLM 자체가 3D 씬 구성, 모델링, 애니메이션, 물리,           │
-│   최적화를 모두 수행하는 "지능형 3D 엔진"                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   기존 3D 개발:                                              │
+│     사람 → 3D 엔진 (Unity) + 3D 모델러 (Blender) → 결과물   │
+│                                                             │
+│   3D LLM + LL3M 개발:                                       │
+│     사람 → LLM (= 3D 엔진 + 3D 모델러) → 결과물              │
+│                                                             │
+│   LLM 하나가 엔진 + 모델러를 모두 겸하는                     │
+│   "지능형 3D 풀스택 개발 시스템"                              │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-본 프로젝트는 **3D LLM 기법**을 적용하여 개발되었습니다.
-LLM이 단순 코드 보조가 아니라, **3D 씬 설계 → 모델링 → 렌더링 → 애니메이션 → 최적화**의
-전 과정을 직접 수행하는 **3D 생성 엔진** 역할을 합니다.
+| 기술 | 정식 명칭 | 역할 |
+|------|----------|------|
+| **3D LLM** | 3D Large Language Model | 3D **엔진** — 씬/카메라/조명/렌더링/애니메이션/최적화/UI 전체 |
+| **LL3M** | Large Language 3D Modelers | 3D **모델러** — 코드로 오브젝트 형상 직접 생성 (프로시저럴) |
 
-기존 3D 개발은 Unity, Unreal Engine, Blender 등 전문 도구와
-3D 그래픽스 프로그래머가 필수였지만, 3D LLM 방식에서는
+기존 3D 개발은 **엔진**(Unity, Unreal)과 **모델러**(Maya, Blender)가
+별도의 전문 도구로 분리되어 있고, 각각 전문 인력이 필요했습니다.
+
+**3D LLM + LL3M** 방식에서는 LLM이 **엔진과 모델러를 동시에 수행**하며,
 **자연어 프롬프트만으로 완전한 3D 시스템을 생성**합니다.
 
-### 3D LLM vs 기존 3D 엔진 비교
+### 3D LLM + LL3M vs 기존 개발 비교
 
-| 구분 | 기존 3D 엔진 | **3D LLM** (본 프로젝트) |
-|------|-------------|-------------------------|
-| **엔진** | Unity, Unreal, Godot | **LLM 자체가 엔진** |
+| 구분 | 기존 방식 | **3D LLM + LL3M** (본 프로젝트) |
+|------|----------|-------------------------------|
+| **3D 엔진** | Unity, Unreal, Godot | **3D LLM** — LLM 자체가 엔진 |
+| **3D 모델러** | Maya, Blender, 3ds Max | **LL3M** — LLM이 코드로 모델링 |
 | **입력** | C#/C++ 코드, 에디터 GUI | **자연어 프롬프트** |
-| **3D 모델** | Maya/Blender → FBX/OBJ 임포트 | **LLM이 코드로 직접 생성** |
+| **모델 포맷** | FBX, OBJ, glTF 파일 | **프로시저럴 코드** (파일 없음) |
 | **애니메이션** | 키프레임, 본 리깅 | **LLM이 상태 머신 + 물리 생성** |
 | **최적화** | 개발자가 수동 프로파일링 | **LLM이 InstancedMesh 등 자동 적용** |
 | **렌더링** | 엔진 내장 렌더러 | **Three.js WebGL (LLM이 구성)** |
 | **배포** | 빌드 → 설치 파일 | **HTML 1개 (브라우저)** |
 | **수정** | 소스 분석 → 수정 → 빌드 | **"이거 바꿔줘" → 즉시 반영** |
 | **개발 기간** | 수주 ~ 수개월 | **수시간 ~ 수일** |
-| **전문성** | 3D 그래픽스 전문 지식 필요 | **도메인 지식만 있으면 가능** |
+| **필요 인력** | 3D 프로그래머 + 3D 아티스트 | **도메인 전문가 1명** |
 
-### 3D LLM이 수행하는 역할
+### 3D LLM + LL3M 역할 분담
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              3D LLM = 통합 3D 엔진                           │
+│                                                             │
+│  ◆ 3D LLM 영역 (3D 엔진 역할)                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │ 씬 설계     │  │ 렌더링 구성  │  │ 성능 최적화  │        │
+│  │             │  │             │  │             │        │
+│  │ Scene       │  │ WebGL       │  │ InstancedMesh│       │
+│  │ Camera      │  │ Shader      │  │ Spatial Index│       │
+│  │ Lighting    │  │ Post-FX     │  │ LOD/Culling  │       │
+│  │ Fog         │  │ Anti-alias  │  │ Draw Call    │       │
+│  └─────────────┘  └─────────────┘  └─────────────┘        │
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│  │ 애니메이션   │  │ 물리/시뮬   │  │ UI 생성     │        │
+│  │             │  │             │  │             │        │
+│  │ State Machine│  │ Path Follow │  │ CSS Layout  │       │
+│  │ Curve Interp│  │ Zone Logic  │  │ DOM Control │       │
+│  │ Tween       │  │ Collision   │  │ Event Mgmt  │       │
+│  └─────────────┘  └─────────────┘  └─────────────┘        │
+│                                                             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
+│  ◆ LL3M 영역 (3D 모델러 역할)                                │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │ 씬 설계     │  │ 3D 모델링   │  │ 렌더링 구성  │        │
+│  │ OHT 차량    │  │ 레일 트랙   │  │ 스테이션     │        │
+│  │ 모델링      │  │ 모델링      │  │ 모델링       │        │
 │  │             │  │             │  │             │        │
-│  │ Scene       │  │ Procedural  │  │ WebGL       │        │
-│  │ Camera      │  │ Geometry    │  │ Shader      │        │
-│  │ Lighting    │  │ Material    │  │ Post-FX     │        │
-│  │ Fog         │  │ Texture     │  │ Anti-alias  │        │
+│  │ BoxGeometry │  │ InstancedMesh│ │ Octahedron  │        │
+│  │ Cylinder    │  │ 좌/우 레일   │  │ Marker      │        │
+│  │ Torus       │  │ 크로스 타이  │  │ Sprite Label│        │
+│  │ Sphere      │  │ 베이스 플레이│  │ Vertical Bar│        │
 │  └─────────────┘  └─────────────┘  └─────────────┘        │
 │                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │ 애니메이션   │  │ 물리/시뮬   │  │ 성능 최적화  │        │
+│  │ 지지 구조물  │  │ 바닥면      │  │ Zone 레인   │        │
+│  │ 모델링      │  │ 모델링      │  │ 모델링       │        │
 │  │             │  │             │  │             │        │
-│  │ State Machine│  │ Path Follow │  │ InstancedMesh│       │
-│  │ Curve Interp│  │ Collision   │  │ Spatial Index│       │
-│  │ Tween       │  │ Zone Logic  │  │ LOD/Culling  │       │
+│  │ 기둥 Pillar │  │ PlaneGeo    │  │ Line        │        │
+│  │ 빔 Beam    │  │ Grid 텍스처  │  │ IN/OUT 경로  │        │
+│  │ InstancedMesh│ │ 그라데이션   │  │ 색상 구분    │        │
 │  └─────────────┘  └─────────────┘  └─────────────┘        │
 │                                                             │
-│  ┌─────────────┐  ┌─────────────┐                          │
-│  │ UI 생성     │  │ 데이터 연동  │                          │
-│  │             │  │             │                          │
-│  │ CSS Layout  │  │ REST API    │                          │
-│  │ DOM Control │  │ JSON Parse  │                          │
-│  │ Event Mgmt  │  │ WebSocket   │                          │
-│  └─────────────┘  └─────────────┘                          │
+├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  입력: 자연어 "OHT 레일 시스템을 3D로 보여줘"                  │
 │  출력: 완전한 3D 애플리케이션 (2,500줄 HTML)                  │
+│                                                             │
+│  3D LLM = 엔진/시스템/로직 담당                               │
+│  LL3M   = 오브젝트/형상/모델 담당                             │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -137,37 +172,55 @@ LLM이 단순 코드 보조가 아니라, **3D 씬 설계 → 모델링 → 렌�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3D LLM이 생성한 결과물 상세
+### 3D LLM + LL3M 결과물 상세
 
-#### 1) 프로시저럴 3D 모델링
+#### 1) LL3M: 프로시저럴 3D 모델링
 
-3D LLM은 외부 모델 파일(FBX, OBJ) 없이 **코드만으로 모든 3D 형상을 생성**합니다.
+**LL3M (Large Language 3D Modelers)** 은 외부 3D 모델 파일(FBX, OBJ, glTF) 없이
+**자연어 → 코드로 모든 3D 형상을 직접 모델링**합니다.
+
+기존에는 3D 아티스트가 Maya, Blender 등에서 수작업으로 모델링한 후
+파일을 내보내고 로더로 임포트하는 과정이 필요했지만,
+LL3M은 **프로시저럴 지오메트리(BoxGeometry, CylinderGeometry 등)를
+조합하여 코드만으로 오브젝트를 생성**합니다.
 
 ```
-OHT 차량 = 3D LLM이 자연어에서 생성한 프로시저럴 모델
+OHT 차량 = LL3M이 자연어에서 생성한 프로시저럴 모델
 
   프롬프트: "OHT 차량 만들어줘. 주황색 캐리지, 바퀴 2개,
            케이블로 FOUP 내리는 구조, 비콘등 포함"
 
-  3D LLM 출력:
-        ◆ Beacon (CylinderGeometry)          ← LLM이 생성
+  LL3M 출력:
+        ◆ Beacon (CylinderGeometry)          ← LL3M 모델링
         │
-    ════╧════  Carriage (BoxGeometry 24×6×10)  ← LLM이 생성
-    ●       ●  Wheels (CylinderGeometry) × 2   ← LLM이 생성
-    ┃ Motor ┃  Motor (BoxGeometry 12×3×8)      ← LLM이 생성
-    ┃       ┃  Cables (CylinderGeometry) × 2   ← LLM이 생성 + 동적 스케일
-    ┗━━━━━━━┛  Gripper (BoxGeometry)           ← LLM이 생성
+    ════╧════  Carriage (BoxGeometry 24×6×10)  ← LL3M 모델링
+    ●       ●  Wheels (CylinderGeometry) × 2   ← LL3M 모델링
+    ┃ Motor ┃  Motor (BoxGeometry 12×3×8)      ← LL3M 모델링
+    ┃       ┃  Cables (CylinderGeometry) × 2   ← LL3M 모델링 + 3D LLM 동적 스케일
+    ┗━━━━━━━┛  Gripper (BoxGeometry)           ← LL3M 모델링
     ┌───────┐
-    │ FOUP  │  FOUP Body + Lid                 ← LLM이 생성 + 상태별 표시
+    │ FOUP  │  FOUP Body + Lid                 ← LL3M 모델링 + 3D LLM 상태 토글
     └───────┘
-    ○ Ring (TorusGeometry)                     ← LLM이 생성 + 회전 애니메이션
-    ◉ Lights × 2                               ← LLM이 생성 (전방 노랑/후방 빨강)
+    ○ Ring (TorusGeometry)                     ← LL3M 모델링 + 3D LLM 회전 애니메이션
+    ◉ Lights × 2                               ← LL3M 모델링 (전방 노랑/후방 빨강)
 ```
 
-> 기존: 3D 아티스트가 Maya/Blender에서 모델링 → FBX 내보내기 → 로더 코드 작성 → 임포트
-> 3D LLM: "OHT 차량 만들어줘" → **LLM이 지오메트리 조합으로 즉시 생성**
+**LL3M이 모델링한 전체 오브젝트 목록:**
 
-#### 2) 대규모 렌더링 최적화
+| 오브젝트 | LL3M 지오메트리 | 개수 |
+|---------|----------------|------|
+| OHT 차량 (캐리지+바퀴+모터+케이블+그리퍼+FOUP+비콘+링+라이트) | Box/Cylinder/Torus/Sphere 조합 | 1,500+ |
+| 레일 트랙 (좌레일+우레일+크로스타이+베이스) | InstancedMesh | 52,000+ |
+| 주소 노드 | SphereGeometry InstancedMesh | 45,000+ |
+| 스테이션 마커 | OctahedronGeometry InstancedMesh | 3,200+ |
+| 지지 기둥 + 빔 | CylinderGeometry InstancedMesh | 수천 |
+| 바닥면 | PlaneGeometry + 그리드 텍스처 | 1 |
+| Zone IN/OUT 레인 | LineGeometry | 수백 |
+
+> **기존**: 3D 아티스트가 Maya/Blender에서 수작업 모델링 → FBX 내보내기 → 로더 코드 → 임포트
+> **LL3M**: "OHT 차량 만들어줘" → **LLM이 지오메트리 조합으로 즉시 모델링 + 코드 생성**
+
+#### 2) 3D LLM: 대규모 렌더링 최적화
 
 3D LLM이 데이터 규모를 인지하고 **자동으로 최적화 패턴을 적용**:
 
@@ -185,7 +238,7 @@ const nodeMesh = new THREE.InstancedMesh(geometry, material, 45000);
 | 52,000 엣지 | 메모리 초과 | InstancedMesh로 처리 |
 | 1,500 차량 | 프레임 드랍 | Material 공유로 최적화 |
 
-#### 3) 실시간 시뮬레이션
+#### 3) 3D LLM: 실시간 시뮬레이션
 
 3D LLM이 생성한 차량 상태 머신 + 물리 애니메이션:
 
@@ -209,7 +262,7 @@ const nodeMesh = new THREE.InstancedMesh(geometry, material, 45000);
     └── Zone 통계: 1초마다 차량 위치 집계 → UI 반영
 ```
 
-#### 4) 반응형 UI 자동 생성
+#### 4) 3D LLM: 반응형 UI 자동 생성
 
 | UI 요소 | 3D LLM 생성 방식 |
 |---------|-----------------|
@@ -220,32 +273,39 @@ const nodeMesh = new THREE.InstancedMesh(geometry, material, 45000);
 | 색상 피커 | CSS 그라데이션 버튼 + Material 교체 |
 | 뷰 프리셋 | 카메라 position/target 프리셋 전환 |
 
-### 3D LLM 개발의 핵심 장점
+### 3D LLM + LL3M 핵심 장점
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│               3D LLM 핵심 장점 5가지                        │
+│            3D LLM + LL3M 핵심 장점 6가지                    │
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
-│  1. LLM = 3D 엔진                                         │
-│     별도 엔진(Unity/Unreal) 설치 불필요                     │
-│     LLM 자체가 씬 설계 → 모델링 → 렌더링 → 최적화 수행     │
+│  1. LLM = 3D 엔진 + 3D 모델러 통합                         │
+│     3D LLM: 엔진(Unity/Unreal) 대체                       │
+│     LL3M:   모델러(Maya/Blender) 대체                      │
+│     → 두 전문 도구를 LLM 하나로 통합                       │
 │                                                            │
 │  2. 자연어 → 3D 직접 변환                                   │
-│     "OHT가 레일 위를 달려" → 3D 차량 경로 추적 코드 생성    │
+│     "OHT가 레일 위를 달려" → 3D 차량 모델링(LL3M)          │
+│                             + 경로 추적(3D LLM) 동시 생성  │
 │     3D 프로그래밍 지식 없이 도메인 전문가가 직접 개발        │
 │                                                            │
-│  3. 실시간 반복 수정                                        │
-│     "차량 색상 바꿔줘" → 즉시 Material 수정                 │
-│     "Zone 표시 추가해줘" → 즉시 시각화 로직 추가            │
-│     빌드/컴파일 과정 없이 브라우저 새로고침만으로 확인       │
+│  3. 모델 파일 없는 3D 개발 (LL3M)                           │
+│     FBX, OBJ, glTF 파일 불필요                             │
+│     LL3M이 코드로 프로시저럴 모델링 → 즉시 렌더링           │
+│     모델러 인력, 라이선스 비용 제로                          │
 │                                                            │
-│  4. 자동 성능 최적화                                        │
-│     LLM이 데이터 규모를 인지하고 InstancedMesh,             │
-│     공간 인덱싱, Material 공유 등을 자동으로 적용           │
-│     개발자가 프로파일링하지 않아도 60 FPS 달성              │
+│  4. 실시간 반복 수정                                        │
+│     "차량 색상 바꿔줘" → LL3M이 Material 수정               │
+│     "Zone 표시 추가해줘" → 3D LLM이 로직 추가              │
+│     빌드/컴파일 없이 브라우저 새로고침만으로 확인            │
 │                                                            │
-│  5. 제로 빌드 배포                                          │
+│  5. 자동 성능 최적화 (3D LLM)                               │
+│     데이터 규모 인지 → InstancedMesh 자동 적용              │
+│     공간 인덱싱, Material 공유 자동 적용                    │
+│     개발자 프로파일링 없이 60 FPS 달성                      │
+│                                                            │
+│  6. 제로 빌드 배포                                          │
 │     HTML 1개 파일 = 완전한 3D 애플리케이션                  │
 │     서버 1개 실행 → 브라우저 접속 → 끝                     │
 │     CDN import로 의존성 자동 해결                           │
@@ -253,30 +313,32 @@ const nodeMesh = new THREE.InstancedMesh(geometry, material, 45000);
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 3D LLM 프롬프트 히스토리
+### 3D LLM + LL3M 프롬프트 히스토리
 
-본 프로젝트에서 실제 사용된 3D LLM 프롬프트:
+본 프로젝트에서 실제 사용된 프롬프트와 역할 분담:
 
-| 단계 | 프롬프트 (자연어 입력) | 3D LLM 출력 |
-|------|----------------------|------------|
-| 3D 씬 생성 | "layout.xml을 파싱해서 3D로 보여줘" | Three.js Scene + Camera + Renderer + 데이터 로더 |
-| 모델링 | "OHT 차량을 레일 위에 달리게 해줘" | 프로시저럴 차량 모델 + 경로 추적 애니메이션 |
-| 시뮬레이션 | "JAM, 정지, 적재 상태 넣어줘" | 상태 머신 + 시나리오 생성 + 시각적 피드백 |
-| Zone 물리 | "Zone별 혼잡도 표시해줘" | Zone 집계 + 속도 감소 물리 + UI 표시 |
-| UI | "좌측에 통계, 우측에 차량 리스트" | CSS Grid 레이아웃 + 탭 UI + 이벤트 위임 |
-| 미니맵 | "우하단에 미니맵 추가해줘" | Canvas 2D 미니맵 + 뷰포트 인디케이터 |
-| Multi-FAB | "여러 FAB 전환 가능하게 해줘" | FAB 드롭다운 + REST API + 캐시 무효화 |
-| 설정 저장 | "OHT 대수 FAB별로 저장되게 해줘" | JSON 파일 영구 저장 + 자동 복원 |
+| 단계 | 프롬프트 (자연어 입력) | 담당 | 출력 |
+|------|----------------------|------|-----|
+| 3D 씬 생성 | "layout.xml을 파싱해서 3D로 보여줘" | **3D LLM** | Scene + Camera + Renderer + 로더 |
+| 차량 모델링 | "OHT 차량을 레일 위에 달리게 해줘" | **LL3M** + 3D LLM | 프로시저럴 차량 모델 + 경로 추적 |
+| 레일 모델링 | "레일 트랙 좌우 레일에 크로스타이" | **LL3M** | InstancedMesh 레일 모델 |
+| 시뮬레이션 | "JAM, 정지, 적재 상태 넣어줘" | **3D LLM** | 상태 머신 + 시나리오 생성 |
+| Zone 물리 | "Zone별 혼잡도 표시해줘" | **3D LLM** | Zone 집계 + 속도 감소 물리 |
+| 스테이션 | "스테이션 위치에 마커 표시해줘" | **LL3M** | Octahedron 마커 + Sprite 라벨 |
+| UI | "좌측에 통계, 우측에 차량 리스트" | **3D LLM** | CSS Grid + 탭 UI + 이벤트 위임 |
+| 미니맵 | "우하단에 미니맵 추가해줘" | **3D LLM** | Canvas 2D 미니맵 |
+| Multi-FAB | "여러 FAB 전환 가능하게 해줘" | **3D LLM** | FAB 드롭다운 + REST API |
+| 설정 저장 | "OHT 대수 FAB별로 저장되게 해줘" | **3D LLM** | JSON 영구 저장 + 자동 복원 |
 
-### 3D LLM 기술적 한계 및 해결
+### 기술적 한계 및 해결
 
-| 한계 | 3D LLM 해결 방법 |
-|------|-----------------|
-| 3D 모델 파일 생성 불가 | 프로시저럴 지오메트리 (Box/Cylinder/Sphere 조합) |
-| 컨텍스트 윈도우 한계 | 단일 HTML 파일 구조 (빌드 없이 전체 코드 관리) |
-| 텍스처/PBR 한계 | MeshPhongMaterial + 색상 기반 시각 구분 |
-| 복잡한 물리 엔진 없음 | 경로 추적 + 상태 머신으로 시뮬레이션 근사 |
-| GPU 셰이더 직접 작성 한계 | Three.js 내장 렌더러 + InstancedMesh 최적화 활용 |
+| 한계 | 해결 기술 | 담당 |
+|------|----------|------|
+| 3D 모델 파일 생성 불가 | 프로시저럴 지오메트리 조합 | **LL3M** |
+| 컨텍스트 윈도우 한계 | 단일 HTML 파일 구조 | **3D LLM** |
+| 텍스처/PBR 한계 | MeshPhongMaterial + 색상 구분 | **LL3M** |
+| 복잡한 물리 엔진 없음 | 경로 추적 + 상태 머신 근사 | **3D LLM** |
+| GPU 셰이더 한계 | Three.js 내장 렌더러 + InstancedMesh | **3D LLM** |
 
 ---
 
