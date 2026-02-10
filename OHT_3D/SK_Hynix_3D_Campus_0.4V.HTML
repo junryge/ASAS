@@ -443,7 +443,7 @@ function toggleTimePanel() {
     <div class="building-type" id="bType">캠퍼스 전경</div>
   </div>
   <div class="panel-body" id="panelBody">
-    <div class="building-detail" id="bDetail">건물을 클릭하면<br>생산 공정 & 이동 정보를 볼 수 있습니다</div>
+    <div class="building-detail" id="bDetail">건물을 클릭하면<br>생산 공정 & 이동 정보를 볼 수 있습니다<br><br><span style="color:#00d4ff;">더블클릭</span> → OHT 레이아웃 이동</div>
   </div>
 </div>
 
@@ -474,25 +474,29 @@ const buildings = [
     processFlow: ['포토리소그래피', '식각(Etching)', '증착(Deposition)', 'CMP 연마', '이온주입'],
     routes: [{ to: 'M16A/B', method: 'OHT 컨베이어 → 레일 → 리프터', desc: 'M10B 왼쪽 우회, 공중 23m 높이 연결' }],
     flowRole: 'STEP 1 -웨이퍼 FAB (회로 형성)',
-    chimneys: { count: 1, height: 50, radius: 8 }
+    chimneys: { count: 1, height: 50, radius: 8 },
+    fabNames: ['M14A', 'M14B']
   },
   { name: 'M10A', x: 160, z: 520, w: 200, d: 120, h: 65, color: 0x63b3ed, type: '생산동', detail: 'M10A FAB동\nDRAM 생산',
     specs: { floors: '5F', process: 'DRAM', size: '200m × 120m', height: '32.5m' },
     processFlow: ['웨이퍼 투입', 'DRAM 생산 공정', '웨이퍼 검사', '다음 공정 이송'],
     routes: [],
-    flowRole: 'STEP 2 -FAB 생산 (멀티 FAB 운영)'
+    flowRole: 'STEP 2 -FAB 생산 (멀티 FAB 운영)',
+    fabNames: ['M10A']
   },
   { name: 'M10B/R3', x: 500, z: 300, w: 140, d: 100, h: 60, color: 0x63b3ed, type: '생산동', detail: 'M10B/R3 FAB동\nDRAM 생산',
     specs: { floors: '5F', process: 'DRAM', size: '140m × 100m', height: '30m' },
     processFlow: ['웨이퍼 투입', 'DRAM 생산 공정', '품질 검사'],
     routes: [],
-    flowRole: 'STEP 2 -FAB 생산 (멀티 FAB 운영)'
+    flowRole: 'STEP 2 -FAB 생산 (멀티 FAB 운영)',
+    fabNames: ['M10B']
   },
   { name: 'M10C', x: 700, z: 200, w: 160, d: 100, h: 60, color: 0x63b3ed, type: '생산동', detail: 'M10C FAB동\nDRAM 생산',
     specs: { floors: '5F', process: 'DRAM', size: '160m × 100m', height: '30m' },
     processFlow: ['웨이퍼 투입', 'DRAM 생산 공정', '품질 검사'],
     routes: [],
-    flowRole: 'STEP 2 -FAB 생산 (멀티 FAB 운영)'
+    flowRole: 'STEP 2 -FAB 생산 (멀티 FAB 운영)',
+    fabNames: ['M10C']
   },
   { name: 'M16A/B', x: 530, z: 520, w: 230, d: 120, h: 132, color: 0x48bb78, type: 'DRAM 생산동', detail: 'M16A/B FAB동\nDRAM 생산동\nAMHS 물류 시스템 운영\n11층(옥상)',
     specs: { floors: '11F (옥상)', logistics: 'AMHS', size: '230m × 120m', height: '66m' },
@@ -503,7 +507,8 @@ const buildings = [
       { to: 'P&T5', method: 'OHT 컨베이어(2층→3층)', desc: 'M16 우측→P&T4 바깥 우회→P&T5' }
     ],
     flowRole: 'STEP 3 -최신 FAB (대형 생산동)',
-    chimneys: { count: 1, height: 60, radius: 9 }
+    chimneys: { count: 1, height: 60, radius: 9 },
+    fabNames: ['M16A', 'M16B']
   },
   { name: 'DRAM_WT', x: 420, z: 730, w: 150, d: 70, h: 45, color: 0xe07098, type: '웨이퍼 테스트', detail: 'DRAM 웨이퍼 테스트동\n웨이퍼 검사 및 테스트',
     specs: { floors: '4F', role: '웨이퍼 검사', size: '150m × 70m', height: '22.5m' },
@@ -2552,6 +2557,12 @@ renderer.domElement.addEventListener('click', e => {
         html += '</div>';
       }
       // 전체 흐름 보기 버튼
+      // OHT 이동 버튼
+      if (d.fabNames && d.fabNames.length > 0) {
+        d.fabNames.forEach(fab => {
+          html += '<button class="flow-btn" onclick="goToFab(\'' + fab + '\')" style="background:rgba(0,212,255,0.15);border-color:rgba(0,212,255,0.3);color:#00d4ff;margin-bottom:6px;">' + fab + ' OHT 레이아웃 보기 →</button>';
+        });
+      }
       html += '<button class="flow-btn" onclick="showFullFlow()">전체 생산 흐름 보기</button>';
 
       document.getElementById('panelBody').innerHTML = html;
@@ -2569,16 +2580,108 @@ renderer.domElement.addEventListener('click', e => {
   }
 });
 
+// ── 건물 더블클릭 → 해당 FAB OHT 페이지로 이동 ──
+renderer.domElement.addEventListener('dblclick', e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  for (const group of buildingMeshes) {
+    const intersects = raycaster.intersectObjects(group.children, true);
+    if (intersects.length > 0) {
+      const d = group.userData;
+      if (!d.fabNames || d.fabNames.length === 0) {
+        // FAB 매핑 없는 건물은 알림만
+        showFabNotice(d.name + ' - OHT 데이터 없음');
+        return;
+      }
+      // FAB이 1개면 바로 이동, 2개 이상이면 선택 UI
+      if (d.fabNames.length === 1) {
+        goToFab(d.fabNames[0]);
+      } else {
+        showFabSelector(d.name, d.fabNames);
+      }
+      return;
+    }
+  }
+});
+
+// FAB 선택 오버레이 (M14A/B 같이 2개인 경우)
+function showFabSelector(buildingName, fabList) {
+  let existing = document.getElementById('fabSelectorOverlay');
+  if (existing) existing.remove();
+
+  let html = '<div id="fabSelectorOverlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:500;display:flex;align-items:center;justify-content:center;">';
+  html += '<div style="background:rgba(15,15,30,0.95);border:1px solid rgba(0,212,255,0.3);border-radius:16px;padding:30px 40px;text-align:center;min-width:320px;">';
+  html += '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:6px;">' + buildingName + '</div>';
+  html += '<div style="font-size:12px;color:#888;margin-bottom:20px;">OHT 레이아웃을 볼 FAB을 선택하세요</div>';
+  fabList.forEach(fab => {
+    html += '<button onclick="goToFab(\'' + fab + '\')" style="display:block;width:100%;padding:14px 20px;margin:8px 0;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:10px;color:#00d4ff;font-size:16px;font-weight:700;cursor:pointer;transition:all 0.2s;font-family:inherit;" onmouseover="this.style.background=\'rgba(0,212,255,0.25)\'" onmouseout="this.style.background=\'rgba(0,212,255,0.1)\'">' + fab + ' FAB →</button>';
+  });
+  html += '<button onclick="document.getElementById(\'fabSelectorOverlay\').remove()" style="margin-top:12px;padding:8px 24px;background:none;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#666;font-size:12px;cursor:pointer;font-family:inherit;">취소</button>';
+  html += '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// FAB 전환 후 OHT 페이지로 이동
+function goToFab(fabName) {
+  // 로딩 표시
+  let existing = document.getElementById('fabSelectorOverlay');
+  if (existing) existing.remove();
+
+  let loadHtml = '<div id="fabLoadOverlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;">';
+  loadHtml += '<div style="font-size:28px;font-weight:900;color:#00d4ff;margin-bottom:10px;">' + fabName + '</div>';
+  loadHtml += '<div style="font-size:14px;color:#888;margin-bottom:20px;">OHT 레이아웃 로딩 중...</div>';
+  loadHtml += '<div style="width:200px;height:4px;background:#1a1a3a;border-radius:2px;overflow:hidden;"><div id="fabLoadBar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#7b2fff);transition:width 0.3s;"></div></div>';
+  loadHtml += '</div>';
+  document.body.insertAdjacentHTML('beforeend', loadHtml);
+
+  setTimeout(() => { document.getElementById('fabLoadBar').style.width = '40%'; }, 100);
+
+  // FAB 전환 API 호출
+  fetch('/api/fab/switch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fab_name: fabName })
+  }).then(resp => resp.json()).then(data => {
+    document.getElementById('fabLoadBar').style.width = '80%';
+    setTimeout(() => {
+      document.getElementById('fabLoadBar').style.width = '100%';
+      setTimeout(() => {
+        window.location.href = '/oht';
+      }, 300);
+    }, 200);
+  }).catch(err => {
+    // FAB 전환 실패해도 OHT 페이지로 이동 시도
+    console.warn('FAB switch failed:', err);
+    document.getElementById('fabLoadBar').style.width = '100%';
+    setTimeout(() => { window.location.href = '/oht'; }, 500);
+  });
+}
+window.goToFab = goToFab;
+
+// 알림 표시
+function showFabNotice(msg) {
+  let n = document.getElementById('fabNotice');
+  if (n) n.remove();
+  const html = '<div id="fabNotice" style="position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(15,15,30,0.9);border:1px solid rgba(255,150,50,0.3);border-radius:10px;padding:12px 24px;color:#ffaa44;font-size:13px;z-index:300;pointer-events:none;">' + msg + '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(() => { const el = document.getElementById('fabNotice'); if (el) el.remove(); }, 2500);
+}
+
 // ESC로 info 패널 초기화
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    // FAB 선택 오버레이 닫기
+    const fabSel = document.getElementById('fabSelectorOverlay');
+    if (fabSel) { fabSel.remove(); return; }
     // 전체 흐름 오버레이 닫기
     const overlay = document.getElementById('fullFlowOverlay');
     if (overlay) { overlay.remove(); return; }
     // info 패널 초기화
     document.getElementById('bName').innerHTML = '<span class="color-badge" id="bBadge" style="background:#4af;"></span>SK hynix 이천';
     document.getElementById('bType').textContent = '캠퍼스 전경';
-    document.getElementById('panelBody').innerHTML = '<div class="building-detail">건물을 클릭하면<br>생산 공정 & 이동 정보를 볼 수 있습니다</div>';
+    document.getElementById('panelBody').innerHTML = '<div class="building-detail">건물을 클릭하면<br>생산 공정 & 이동 정보를 볼 수 있습니다<br><br><span style="color:#00d4ff;">더블클릭</span> → OHT 레이아웃 이동</div>';
   }
 });
 
