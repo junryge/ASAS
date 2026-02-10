@@ -11,8 +11,11 @@ import json
 import csv
 import sys
 import os
+import zipfile
+import tempfile
+from datetime import datetime
 
-def parse_layout_xml(xml_path, output_dir, fab_name='M14-Pro'):
+def parse_layout_xml(xml_path, output_dir, fab_name='M14-Pro', json_filename=None):
     """
     Parse layout XML and generate JSON + CSV master data files.
 
@@ -483,7 +486,7 @@ def parse_layout_xml(xml_path, output_dir, fab_name='M14-Pro'):
         'zone_addr_map': zone_addr_map
     }
 
-    json_path = os.path.join(output_dir, 'layout_data.json')
+    json_path = os.path.join(output_dir, json_filename or 'layout_data.json')
     print(f"\nWriting JSON to {json_path}...")
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(result, f)
@@ -525,17 +528,151 @@ def parse_layout_xml(xml_path, output_dir, fab_name='M14-Pro'):
     return result
 
 
+def parse_from_zip(zip_path, output_dir, fab_name=None):
+    """
+    Extract layout.xml from a zip file and parse it.
+
+    Args:
+        zip_path: Path to *.layout.zip file
+        output_dir: Directory to save output files
+        fab_name: FAB name (auto-detected from filename if None)
+    """
+    if fab_name is None:
+        fab_name = os.path.splitext(os.path.basename(zip_path))[0]
+
+    print(f"\n  ZIP: {zip_path}")
+
+    with zipfile.ZipFile(zip_path, 'r') as z:
+        xml_files = [f for f in z.namelist() if f.lower().endswith('layout.xml')]
+        if not xml_files:
+            print(f"  [ERROR] No layout.xml found in {zip_path}")
+            print(f"  Files in zip: {z.namelist()[:10]}")
+            return None
+
+        xml_name = xml_files[0]
+        print(f"  Found: {xml_name}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            z.extract(xml_name, tmp)
+            xml_full_path = os.path.join(tmp, xml_name)
+            return parse_layout_xml(
+                xml_full_path, output_dir, fab_name,
+                json_filename=f'{fab_name}.json'
+            )
+
+
+def scan_and_parse_map(map_dir, output_base_dir):
+    """
+    Scan MAP directory structure and parse all FABs.
+
+    Expected structure:
+        MAP/
+            M14A/  ->  A.layout.zip (layout.xml inside)
+            M14B/  ->  A.layout.zip
+            M16A/  ->  A.layout.zip, BR.layout.zip, E.layout.zip
+            M16B/  ->  B.layout.zip
+
+    Args:
+        map_dir: Path to MAP directory
+        output_base_dir: Base output directory (fab_data/ will be created inside)
+    """
+    fab_data_dir = os.path.join(output_base_dir, 'fab_data')
+    os.makedirs(fab_data_dir, exist_ok=True)
+
+    print(f"\n{'='*60}")
+    print(f"  MAP Directory Scanner")
+    print(f"  Scanning: {map_dir}")
+    print(f"  Output:   {fab_data_dir}")
+    print(f"{'='*60}")
+
+    results = []
+
+    for entry in sorted(os.listdir(map_dir)):
+        fab_path = os.path.join(map_dir, entry)
+        if not os.path.isdir(fab_path):
+            continue
+
+        zip_files = sorted([
+            f for f in os.listdir(fab_path)
+            if f.lower().endswith('.layout.zip')
+        ])
+
+        if not zip_files:
+            print(f"\n  [SKIP] {entry}: no *.layout.zip found")
+            continue
+
+        for zf in zip_files:
+            prefix = zf.split('.')[0]  # A.layout.zip -> A
+            # If multiple zip files in same dir, use prefix as subsystem
+            if len(zip_files) > 1:
+                fab_name = f"{entry}-{prefix}"
+            else:
+                fab_name = entry
+
+            zip_path = os.path.join(fab_path, zf)
+            print(f"\n{'='*60}")
+            print(f"  Parsing FAB: {fab_name}")
+            print(f"{'='*60}")
+
+            result = parse_from_zip(zip_path, fab_data_dir, fab_name)
+            if result:
+                results.append({
+                    'fab_name': fab_name,
+                    'json_path': os.path.join(fab_data_dir, f'{fab_name}.json'),
+                    'nodes': result.get('total_nodes', 0),
+                    'edges': result.get('total_edges', 0),
+                    'stations': result.get('total_stations', 0),
+                    'mcp_zones': result.get('total_mcp_zones', 0),
+                })
+
+    # Save FAB registry
+    registry_path = os.path.join(fab_data_dir, '_fab_registry.json')
+    registry = {
+        'fabs': results,
+        'parsed_at': datetime.now().isoformat(),
+        'map_dir': map_dir,
+    }
+    with open(registry_path, 'w', encoding='utf-8') as f:
+        json.dump(registry, f, indent=2, ensure_ascii=False)
+
+    print(f"\n{'='*60}")
+    print(f"  Scan Complete: {len(results)} FABs parsed")
+    for r in results:
+        print(f"    {r['fab_name']}: {r['nodes']:,} nodes, {r['edges']:,} edges")
+    print(f"  Registry: {registry_path}")
+    print(f"{'='*60}\n")
+
+    return results
+
+
 if __name__ == '__main__':
-    xml_path = r'F:\M14_Q\oht_xml\oht_layout\layout\layout\layout.xml'
-    output_dir = r'F:\M14_Q\oht_xml\oht_layout'
-    fab_name = 'M14-Pro'
+    if len(sys.argv) > 1 and sys.argv[1] == '--scan':
+        # Scan MAP directory mode
+        # Usage: python parse_layout.py --scan [MAP_DIR] [OUTPUT_DIR]
+        map_dir = sys.argv[2] if len(sys.argv) > 2 else '.'
+        output_dir = sys.argv[3] if len(sys.argv) > 3 else '.'
+        scan_and_parse_map(map_dir, output_dir)
 
-    # Command line args: python parse_layout.py [xml_path] [output_dir] [fab_name]
-    if len(sys.argv) > 1:
-        xml_path = sys.argv[1]
-    if len(sys.argv) > 2:
-        output_dir = sys.argv[2]
-    if len(sys.argv) > 3:
-        fab_name = sys.argv[3]
+    elif len(sys.argv) > 1 and sys.argv[1].lower().endswith('.zip'):
+        # Single zip file mode
+        # Usage: python parse_layout.py file.layout.zip [OUTPUT_DIR] [FAB_NAME]
+        zip_path = sys.argv[1]
+        output_dir = sys.argv[2] if len(sys.argv) > 2 else '.'
+        fab_name = sys.argv[3] if len(sys.argv) > 3 else None
+        parse_from_zip(zip_path, output_dir, fab_name)
 
-    parse_layout_xml(xml_path, output_dir, fab_name)
+    else:
+        # Original single XML file mode
+        # Usage: python parse_layout.py [xml_path] [output_dir] [fab_name]
+        xml_path = r'F:\M14_Q\oht_xml\oht_layout\layout\layout\layout.xml'
+        output_dir = r'F:\M14_Q\oht_xml\oht_layout'
+        fab_name = 'M14-Pro'
+
+        if len(sys.argv) > 1:
+            xml_path = sys.argv[1]
+        if len(sys.argv) > 2:
+            output_dir = sys.argv[2]
+        if len(sys.argv) > 3:
+            fab_name = sys.argv[3]
+
+        parse_layout_xml(xml_path, output_dir, fab_name)
