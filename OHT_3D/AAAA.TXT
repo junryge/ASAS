@@ -1,0 +1,155 @@
+다른 FAB을 실행하려면 필요한 것:
+
+필요한 파일
+필수 1개:
+
+layout.xml - 해당 FAB의 OHT 레이아웃 XML 파일
+이것만 있으면 됩니다. 나머지는 자동 생성됩니다.
+
+실행 방법 2가지
+방법 1: 커맨드라인 파싱
+python parse_layout.py [layout.xml 경로] [출력 디렉토리] [FAB 이름]
+
+# 예시:
+python parse_layout.py "F:\M15\layout.xml" "F:\M14_Q\oht_xml\oht_layout" "M15-Pro"
+
+방법 2: 서버 API로 파싱
+서버 실행 중에 API 호출:
+
+POST http://localhost:10003/api/parse
+Body: { "xml_path": "F:\\M15\\layout.xml", "fab_name": "M15-Pro" }
+
+또는 XML 파일 업로드:
+
+POST http://localhost:10003/api/parse/upload
+Form: file=layout.xml, fab_name=M15-Pro
+
+자동 생성되는 파일
+parse_layout.py가 layout.xml로부터 자동 생성:
+
+layout_data.json - 3D 시각화용 JSON (노드, 엣지, 스테이션, Zone 등)
+master_csv/{FAB}_HID_Zone_Master.csv - HID Zone 마스터 CSV
+서버가 layout_data.json을 읽어서 3D 화면에 표시하고, 헤더의 FAB 이름도 JSON 안의 fab_name 값으로 자동 표시됩니다.
+
+parse_layout.py,server.py 이거 2개만 있스면??
+
+
+
+아니요, 파일 3개 필요합니다:
+
+layout.xml - 해당 FAB의 레이아웃 데이터 (필수 입력)
+parse_layout.py - XML 파싱해서 JSON + CSV 생성
+server.py - 웹서버 + 3D 시각화
+실행 순서:
+
+# 1단계: XML 파싱 (layout_data.json + CSV 자동 생성)
+python parse_layout.py "새FAB_layout.xml" "." "새FAB이름"
+
+# 2단계: 서버 실행
+python server.py
+
+oht_3d_layout.html은 server.py가 서빙하는 프론트엔드인데, 이것도 같은 폴더에 있어야 합니다. 그래서 정확히는:
+
+layout.xml (입력 데이터)
+parse_layout.py (파서)
+server.py (서버)
+oht_3d_layout.html (3D 화면)
+이 4개가 한 폴더에 있으면 어떤 FAB이든 돌릴 수 있습니다.
+
+layout.xml 이거는 MAP데이터가 아마 있어야되껄야 추가될꺼야 parse_layout.py (파서)
+server.py (서버)
+oht_3d_layout.html (3D 화면)기본적으로 이런게 있어야 한다는거네?? 실행은 SERVER.PY로 하고?
+
+
+
+맞습니다.
+
+기본 구성 파일 3개:
+
+parse_layout.py - XML 파서
+server.py - 웹서버
+oht_3d_layout.html - 3D 화면
+실행:
+
+# 새 FAB layout.xml 받으면 먼저 파싱
+python parse_layout.py "layout.xml경로" "." "FAB이름"
+
+# 서버 실행
+python server.py
+
+server.py로 실행하면 oht_3d_layout.html을 자동으로 서빙하고, layout_data.json(파싱 결과)을 읽어서 3D 화면에 뿌려줍니다. layout.xml은 MAP 데이터 추가될 때마다 parse_layout.py로 파싱하면 됩니다.
+
+그게 힘들껀데;; 오타 D:\하이닉스\6.연구_항목\CODE\OUT_VHL속도분석\레이아웃_20260123\MAP 디렉터리
+
+2026-01-30 오후 12:32 <DIR> .
+2026-01-30 오후 12:32 <DIR> ..
+2026-01-30 오전 09:46 <DIR> M14A
+2026-01-30 오전 09:46 <DIR> M14B
+2026-01-30 오전 09:46 <DIR> M16A
+2026-01-30 오전 09:46 <DIR> M16B
+0개 파일 0 바이트
+
+D:\하이닉스\6.연구_항목\CODE\OUT_VHL속도분석\레이아웃_20260123\MAP\M14A 디렉터리
+
+2026-01-30 오전 09:46 <DIR> .
+2026-01-30 오전 09:46 <DIR> ..
+2025-07-29 오전 08:59 650 A.lanecut.dat
+2025-07-29 오전 08:59 7,584,080 A.layout.zip
+2025-07-29 오전 08:59 6,965,791 A.mcp75.cfg
+2025-07-29 오전 08:59 2,189,371 A.route.dat
+2025-07-29 오전 08:59 3,539,480 A.station.dat
+5개 파일 20,279,372 바이트
+
+D:\하이닉스\6.연구_항목\CODE\OUT_VHL속도분석\레이아웃_20260123\MAP\M14B 디렉터리
+
+2026-01-30 오전 09:46 <DIR> .
+2026-01-30 오전 09:46 <DIR> ..
+2025-07-29 오전 08:59 980 A.lanecut.dat
+2025-07-29 오전 08:59 8,792,299 A.layout.zip
+2025-07-29 오전 08:59 7,753,907 A.mcp75.cfg
+2025-07-29 오전 08:59 610,987 A.route.dat
+2025-07-29 오전 08:59 3,856,857 A.station.dat
+5개 파일 21,015,030 바이트
+
+D:\하이닉스\6.연구_항목\CODE\OUT_VHL속도분석\레이아웃_20260123\MAP\M16A 디렉터리
+
+2026-01-30 오전 09:46 <DIR> .
+2026-01-30 오전 09:46 <DIR> ..
+2025-07-29 오전 08:59 546 A.lanecut.dat
+2025-07-29 오전 08:59 11,536,252 A.layout.zip
+2025-07-29 오전 08:59 9,394,255 A.mcp75.cfg
+2025-07-29 오전 08:59 1,013,951 A.route.dat
+2025-07-29 오전 08:59 4,109,925 A.station.dat
+2025-07-29 오전 08:59 471 BR.lanecut.dat
+2025-07-29 오전 08:59 1,210,536 BR.layout.zip
+2025-07-29 오전 08:59 996,522 BR.mcp75.cfg
+2025-07-29 오전 08:59 1,440 BR.route.dat
+2025-07-29 오전 08:59 113,515 BR.station.dat
+2025-07-29 오전 08:59 470 E.lanecut.dat
+2025-07-29 오전 08:59 1,363,078 E.layout.zip
+2025-07-29 오전 08:59 1,269,122 E.mcp75.cfg
+2025-07-29 오전 08:59 16,031 E.route.dat
+2025-07-29 오전 08:59 306,236 E.station.dat
+15개 파일 31,332,350 바이트
+
+D:\하이닉스\6.연구_항목\CODE\OUT_VHL속도분석\레이아웃_20260123\MAP\M16B 디렉터리
+
+2026-01-30 오전 09:46 <DIR> .
+2026-01-30 오전 09:46 <DIR> ..
+2025-07-29 오전 08:59 1,700 B.lanecut.dat
+2025-07-29 오전 08:59 11,658,568 B.layout.zip
+2025-07-29 오전 08:59 6,825,698 B.mcp75.cfg
+2025-07-29 오전 08:59 665,761 B.route.dat
+2025-07-29 오전 08:59 3,845,494 B.station.dat
+5개 파일 22,997,221 바이트 이런게 되어 있어 simulator_server_3D_B.py 이거 누르면 자동으로 FAB 마다 해서 UI화면이 나오게 해줘 구조가 이모양이야 LAYOUT.ZIP 안에 XML 파일이 있어;;그래서;;
+
+Show less
+
+
+알겠습니다. 구조를 정리하면:
+
+A.layout.zip → 안에 layout.xml 있음
+FAB별 디렉토리: M14A, M14B, M16A, M16B
+M16A는 A, BR, E 3개 서브시스템 있음
+server.py 실행하면 FAB 선택 UI → 3D 화면 나오게
+이건 좀 큰 작업이라 계획부터 세우겠습니다.
