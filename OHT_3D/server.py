@@ -43,22 +43,31 @@ CAMPUS_GITHUB_URL = "https://raw.githubusercontent.com/junryge/ASAS/claude/revie
 
 def _find_or_download_campus():
     local = BASE_DIR / CAMPUS_FILENAME
-    # 1) 로컬에 있으면 바로 사용
+    # 1) 정확한 이름으로 체크
     if local.exists():
         print(f"[Campus] Found: {local}")
         return local
-    # 2) 상위 폴더 검색
-    for level in range(1, 4):
+    # 2) 디렉토리 안에서 Campus 포함 파일 직접 검색 (파일명 인코딩/대소문자 문제 대응)
+    print(f"[Campus] 정확한 이름 못 찾음, 디렉토리 검색 중... ({BASE_DIR})")
+    try:
+        for f in BASE_DIR.iterdir():
+            if f.is_file() and "campus" in f.name.lower() and f.suffix.lower() in ('.html', '.htm'):
+                print(f"[Campus] Found (유사): {f}")
+                return f
+    except Exception:
+        pass
+    # 3) 상위 폴더 검색
+    for level in range(1, 3):
         search_root = BASE_DIR
         for _ in range(level):
             search_root = search_root.parent
         try:
-            for f in search_root.rglob(CAMPUS_FILENAME):
-                print(f"[Campus] Found: {f}")
+            for f in search_root.rglob("*ampus*.[hH][tT][mM]*"):
+                print(f"[Campus] Found (rglob): {f}")
                 return f
         except Exception:
             pass
-    # 3) 없으면 GitHub에서 자동 다운로드
+    # 4) 없으면 GitHub에서 자동 다운로드
     print(f"[Campus] 로컬에 없음 → GitHub에서 다운로드 중...")
     try:
         import urllib.request
