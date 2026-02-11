@@ -19,22 +19,13 @@
 - RTC: Real-Time Controller
 - FIO: Fieldbus I/O
 
-★ M14 모니터링 컬럼 관련
-- 컬럼명 형식: M14.카테고리.세부항목.메트릭 (예: M14.OHT.ALERT.OHTRETRYFAILED)
-- 총 510개 컬럼, 16개 주요 카테고리
-- 컬럼 관련 질문은 지식베이스의 "M14_컬럼사전.md"를 검색해서 답변할 것
-- 주요 카테고리:
-  OHT(반송차량), MCS(제어서버), PDT(예측), QUE(반송큐),
-  INV(인버터), LFT(리프트), STK(스토커), CNV(컨베이어),
-  SORTER(소터), EMPTYFOUP(빈FOUP), STRATE(보관), INPOS(위치)
-
-★ M16HUB 모니터링 컬럼 관련
-- M16HUB = M16 허브, 팹 간 반송 허브 역할
-- 컬럼명 형식: M16HUB.카테고리.세부항목.메트릭 (예: M16HUB.QUE.ALL.FABTRANSJOBCNT)
-- 총 336개 컬럼, 14개 카테고리
-- 컬럼 관련 질문은 지식베이스의 "M16HUB_컬럼사전.md"를 검색해서 답변할 것
-- M14와 M16HUB 컬럼 구분: 접두사(M14. vs M16HUB.)로 구분
-- M16HUB 특징: FAB간 반송(M14A, M14B, M16A, M16E 연결), SENDFAB 컬럼 다수
+★ FAB 모니터링 컬럼 관련
+- 총 6,111개 컬럼, 32개 FAB 구역
+- 컬럼명 형식: {FAB}.{Category}.{SubCategory}.{Metric} (예: M14.OHT.ALERT.OHTRETRYFAILED)
+- FAB별 분리된 파일: "FAB_{FAB명}_컬럼.md" (예: FAB_M14_컬럼.md, FAB_M16HUB_컬럼.md)
+- 컬럼 관련 질문은 지식베이스에서 해당 FAB 파일을 검색해서 답변할 것
+- 주요 FAB: C2, C2F, M10A, M10B, M10C, M11A, M11B, M14, M14B, M15A, M15B, M15C, M16A, M16B, M16E, M16HUB, R3
+- 주요 카테고리: OHT(반송차량), MCS(제어서버), QUE(반송큐), STRATE(보관), INV(인버터), LFT(리프트), STK(스토커), CNV(컨베이어), INPOS(위치)
 
 ★ 예측모델 현황
 - M14_Q 예측모델: 최신 V10.4 (전체 98%, 사전감지 87%) - XGBoost 기반, 10min/30min 최대값 예측

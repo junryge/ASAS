@@ -200,6 +200,20 @@ def korean_tokenize(text: str) -> List[str]:
     return list(set(tokens))
 
 
+def _get_knowledge_fingerprint() -> str:
+    """knowledge 디렉토리의 파일 목록+수정시간 해시 (변경 감지용)"""
+    try:
+        entries = []
+        for f in sorted(os.listdir(KNOWLEDGE_DIR)):
+            if f.endswith(('.md', '.txt')):
+                filepath = os.path.join(KNOWLEDGE_DIR, f)
+                mtime = os.path.getmtime(filepath)
+                entries.append(f"{f}:{mtime}")
+        return "|".join(entries)
+    except Exception:
+        return ""
+
+
 def build_tfidf_index():
     """지식베이스 파일들로 TF-IDF + BM25 인덱스 구축"""
     filenames = []
@@ -255,12 +269,16 @@ def build_tfidf_index():
     TFIDF_INDEX["filenames"] = filenames
     TFIDF_INDEX["contents"] = contents
     TFIDF_INDEX["built_at"] = datetime.datetime.now().isoformat()
+    TFIDF_INDEX["fingerprint"] = _get_knowledge_fingerprint()
     logger.info(f"📊 TF-IDF 인덱스 구축: {len(filenames)}개 문서, {matrix.shape[1]}개 특성")
 
 
 def tfidf_search(query: str, top_k: int = 5) -> List[dict]:
     """TF-IDF + BM25 하이브리드 검색 (점수 결합)"""
-    if TFIDF_INDEX["vectorizer"] is None or TFIDF_INDEX["matrix"] is None:
+    # ★ 파일 변경 감지 → 자동 리빌드
+    current_fp = _get_knowledge_fingerprint()
+    if TFIDF_INDEX["vectorizer"] is None or TFIDF_INDEX["matrix"] is None or TFIDF_INDEX.get("fingerprint") != current_fp:
+        logger.info("📊 knowledge 디렉토리 변경 감지 → TF-IDF 인덱스 리빌드")
         build_tfidf_index()
 
     if TFIDF_INDEX["vectorizer"] is None:
@@ -1460,8 +1478,8 @@ def extract_relevant_sections(doc_content: str, query: str, max_chars: int = 300
     query_tokens = re.split(r'[\s_\-\.]+', query_lower)
     query_tokens = [t for t in query_tokens if len(t) > 1]
 
-    # 마크다운 섹션 분리 (## 기준)
-    sections = re.split(r'\n(?=#{1,3}\s)', doc_content)
+    # 마크다운 섹션 분리 (##~#### 기준)
+    sections = re.split(r'\n(?=#{1,4}\s)', doc_content)
     if len(sections) <= 1:
         # 섹션 구분 없는 문서 → 원본 그대로
         return doc_content[:max_chars]
@@ -1805,7 +1823,9 @@ def process_chat(user_message: str) -> str:
                          "foup", "pdt", "rtc", "fio", "반송", "스토커", "컨베이어", "리프트", "인버터",
                          "통신", "프로토콜", "atlas", "smartstar", "logpresso", "tibco",
                          "아키텍처", "컬럼사전", "예측모델", "hubroom", "hid",
-                         "접속", "url", "시뮬레이션", "컬럼", "m14", "m16", "모니터링"]
+                         "접속", "url", "시뮬레이션", "컬럼", "m14", "m16", "모니터링",
+                         "fab", "quwa", "strate", "inpos", "sorter", "emptyfoup",
+                         "c2", "c2f", "m10", "m10a", "m10b", "m14a", "m14b", "m16a", "m16e", "r3"]
         msg_lower = user_message.lower()
         amhs_matched = [kw for kw in amhs_keywords if kw in msg_lower]
         if amhs_matched:
