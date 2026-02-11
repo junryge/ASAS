@@ -334,7 +334,7 @@ LLM_PARAMS = {
 
 # ★ 태스크별 파라미터 프로필 (답변 품질 최적화)
 TASK_PARAM_PROFILES = {
-    "knowledge_qa": {"temperature": 0.2, "top_p": 0.8, "max_tokens": 2048},
+    "knowledge_qa": {"temperature": 0.15, "top_p": 0.8, "max_tokens": 2048, "repeat_penalty": 1.0},
     "general_chat": {"temperature": 0.5, "top_p": 0.9, "max_tokens": 2048},
     "tool_call":    {"temperature": 0.1, "top_p": 0.7, "max_tokens": 1024},
 }
@@ -374,7 +374,7 @@ def get_task_params(task_type: str) -> dict:
             "temperature": profile["temperature"],
             "top_p": profile["top_p"],
             "max_tokens": profile["max_tokens"],
-            "repeat_penalty": LLM_PARAMS.get("repeat_penalty", 1.1),
+            "repeat_penalty": profile.get("repeat_penalty", LLM_PARAMS.get("repeat_penalty", 1.1)),
         }
     else:
         # 자동 분류 OFF → UI 수동 설정 사용
@@ -471,12 +471,19 @@ JSON 앞뒤에 설명 텍스트를 절대 붙이지 마세요.
 4. 일반 대화는 한국어로 자연스럽게 답변하세요."""
 
 # ★ 지식베이스 답변용 공통 시스템 프롬프트 (CoT + 정확도 강화)
-KNOWLEDGE_QA_SYSTEM_PROMPT = """당신은 시니어 소프트웨어 엔지니어이자 기술 문서 전문가입니다.
+KNOWLEDGE_QA_SYSTEM_PROMPT = """당신은 기술 문서 전문가입니다. 제공된 문서 내용만으로 답변합니다.
+
+[최우선 규칙]
+★ 제공된 문서에 있는 내용만 답변하세요.
+★ 문서에 없는 내용을 절대 지어내지 마세요. 당신이 알고 있는 지식도 사용하지 마세요.
+★ 문서에 언급되지 않은 시스템명, 프로토콜, 기술명을 추가하지 마세요.
+★ 문서에 해당 내용이 없으면 "문서에 해당 내용이 없습니다"라고만 답하세요.
+★ 도메인 지식이나 사전 학습 내용으로 답변을 보충하지 마세요.
 
 [사고 과정 - 반드시 따르세요]
 1) 먼저 사용자의 질문에서 핵심 키워드와 의도를 파악하세요.
 2) 제공된 문서에서 관련 내용을 찾으세요.
-3) 문서에 있는 내용만 근거로 답변하세요. 문서에 없는 내용은 "문서에 해당 내용이 없습니다"라고 명시하세요.
+3) 문서에 있는 내용만 근거로 답변하세요.
 
 [답변 형식]
 **📋 핵심 요약**
@@ -561,10 +568,10 @@ def get_effective_system_prompt() -> str:
     if has_domain_knowledge:
         effective = f"""{system_prompt}
 
-★★★ 도메인 지식 (반드시 참고!) ★★★
+★★★ 도메인 지식 (참고용) ★★★
 {domain_knowledge}
 
-위 도메인 지식을 항상 참고하여 답변하세요."""
+[주의] 도메인 지식은 약어/용어 확인용입니다. 구체적 기술 내용은 반드시 지식베이스 문서(search_knowledge)를 검색해서 확인하세요. 도메인 지식만으로 상세 답변을 지어내지 마세요."""
         logger.info(f"📚 도메인 지식 적용됨 ({len(dk_lines)}줄)")
         return effective
     else:
@@ -1447,6 +1454,61 @@ def read_knowledge(filename: str) -> str:
         return f"파일 읽기 오류: {e}"
 
 
+def extract_relevant_sections(doc_content: str, query: str, max_chars: int = 3000) -> str:
+    """문서에서 질문과 관련된 섹션만 추출 (작은 LLM용 핵심 컨텍스트 축소)"""
+    query_lower = query.lower()
+    query_tokens = re.split(r'[\s_\-\.]+', query_lower)
+    query_tokens = [t for t in query_tokens if len(t) > 1]
+
+    # 마크다운 섹션 분리 (## 기준)
+    sections = re.split(r'\n(?=#{1,3}\s)', doc_content)
+    if len(sections) <= 1:
+        # 섹션 구분 없는 문서 → 원본 그대로
+        return doc_content[:max_chars]
+
+    scored_sections = []
+    for section in sections:
+        section_lower = section.lower()
+        score = 0
+        for token in query_tokens:
+            count = section_lower.count(token)
+            if count > 0:
+                score += count * 10
+            # 섹션 제목(첫줄)에 있으면 가중치
+            first_line = section_lower.split('\n')[0]
+            if token in first_line:
+                score += 50
+        scored_sections.append((score, section))
+
+    # 점수순 정렬, 상위 섹션 선택
+    scored_sections.sort(key=lambda x: x[0], reverse=True)
+    result_parts = []
+    total = 0
+    # 항상 첫 섹션(참조/약어 등 문서 헤더) 포함
+    header = sections[0]
+    if len(header) < 500:
+        result_parts.append(header)
+        total += len(header)
+
+    for score, section in scored_sections:
+        if score == 0:
+            continue
+        if section in result_parts:
+            continue
+        if total + len(section) > max_chars:
+            remaining = max_chars - total
+            if remaining > 200:
+                result_parts.append(section[:remaining] + "\n... (생략)")
+            break
+        result_parts.append(section)
+        total += len(section)
+
+    if not result_parts:
+        return doc_content[:max_chars]
+
+    return "\n\n".join(result_parts)
+
+
 def analyze_data(path: str) -> str:
     try:
         ext = os.path.splitext(path)[1].lower()
@@ -1738,29 +1800,58 @@ def process_chat(user_message: str) -> str:
         task_type = classify_task_type(user_message)
         logger.info(f"📊 태스크 유형: {task_type} | 메시지: {user_message[:50]}")
 
-        # ★ AMHS 관련 키워드 → LLM 우회, 직접 지식베이스 검색
+        # ★ 도메인 키워드 → LLM 우회, 직접 지식베이스 검색
         amhs_keywords = ["amhs", "amos", "구성도", "시스템 구성", "oht", "mcs", "stk", "cnv", "lft", "inv",
-                         "foup", "pdt", "rtc", "fio", "반송", "스토커", "컨베이어", "리프트", "인버터"]
+                         "foup", "pdt", "rtc", "fio", "반송", "스토커", "컨베이어", "리프트", "인버터",
+                         "통신", "프로토콜", "atlas", "smartstar", "logpresso", "tibco",
+                         "아키텍처", "컬럼사전", "예측모델", "hubroom", "hid",
+                         "접속", "url", "시뮬레이션", "컬럼", "m14", "m16", "모니터링"]
         msg_lower = user_message.lower()
         amhs_matched = [kw for kw in amhs_keywords if kw in msg_lower]
         if amhs_matched:
             logger.info(f"🔀 AMHS 키워드 감지 ({amhs_matched}) → 지식베이스 강제 검색")
-            search_result = execute_tool({"tool": "search_knowledge", "keyword": amhs_matched[0]})
+            # ★ 전체 사용자 메시지로 검색 (첫 키워드만 쓰면 엉뚱한 문서 반환됨)
+            search_result = execute_tool({"tool": "search_knowledge", "keyword": user_message})
             if search_result and not search_result.startswith("❌"):
                 try:
                     sr_data = json.loads(search_result)
-                    # search_knowledge returns List[dict], not {"results": [...]}
                     sr_list = sr_data if isinstance(sr_data, list) else sr_data.get("results", []) if isinstance(sr_data, dict) else []
                     if sr_list and isinstance(sr_list[0], dict):
                         best_file = sr_list[0]["filename"]
                         doc_content = execute_tool({"tool": "read_knowledge", "filename": best_file})
                         if doc_content and not doc_content.startswith("❌"):
                             doc_limit = 12000 if LLM_MODE == "api" else 3000
-                            doc_content = doc_content if len(doc_content) <= doc_limit else doc_content[:doc_limit] + "\n\n... (이하 생략)"
-                            follow_up = f"[사용자 질문]\n{user_message}\n\n[참고 문서]\n{doc_content}\n\n위 문서를 참고해서 사용자의 질문에 정확히 답변하세요."
-                            result2 = call_llm(follow_up, "당신은 AMHS(자동물류시스템) 전문가입니다. 문서 내용을 기반으로 상세하게 답변하세요. JSON이나 도구 호출은 절대 하지 마세요.", max_tokens=4096 if LLM_MODE == "api" else 1024, task_type="knowledge_qa")
+                            # ★ 관련 섹션만 추출 (작은 LLM이 긴 문서 못 읽는 문제 해결)
+                            if LLM_MODE != "api" and len(doc_content) > 1500:
+                                doc_content = extract_relevant_sections(doc_content, user_message, max_chars=doc_limit)
+                            elif len(doc_content) > doc_limit:
+                                doc_content = doc_content[:doc_limit] + "\n\n... (이하 생략)"
+                            # ★ 최근 대화 맥락 (후속 질문 지원, 짧게)
+                            brief_context = ""
+                            if CHAT_HISTORY:
+                                last_turns = CHAT_HISTORY[-4:]  # 최근 2턴만
+                                ctx_lines = []
+                                for m in last_turns:
+                                    role = "사용자" if m["role"] == "user" else "비서"
+                                    ctx_lines.append(f"{role}: {m['content'][:200]}")
+                                brief_context = f"[이전 대화 (참고만)]\n" + "\n".join(ctx_lines) + "\n\n"
+                            follow_up = f"""아래 문서 내용을 읽고, 이 문서 내용만으로 질문에 답하세요.
+
+=== 문서 시작 ({best_file}) ===
+{doc_content}
+=== 문서 끝 ===
+
+{brief_context}[질문] {user_message}
+
+[규칙]
+- 위 문서에 적힌 내용만 답하세요. 문서에 없는 내용은 절대 추가하지 마세요.
+- 이전 대화에서 나온 내용이라도 문서에 없으면 사용하지 마세요.
+- 문서에 없으면 "문서에 해당 내용이 없습니다"라고만 답하세요."""
+                            result2 = call_llm(follow_up, KNOWLEDGE_QA_SYSTEM_PROMPT, max_tokens=4096 if LLM_MODE == "api" else 1024, task_type="knowledge_qa")
                             if result2["success"]:
-                                return result2["content"].strip()
+                                content2 = result2["content"].strip()
+                                source_info = f"\n\n---\n📚 **참조 문서**: {best_file}"
+                                return content2 + source_info
                 except (json.JSONDecodeError, KeyError, IndexError, AttributeError):
                     pass
             # 검색 실패 시 일반 LLM 흐름으로 fallback
@@ -1848,18 +1939,27 @@ def process_chat(user_message: str) -> str:
                     if tool_result.startswith("❌"):
                         return tool_result
                     
-                    # 문서 길이 제한 (API vs GGUF)
+                    # 문서 길이 제한 (API vs GGUF) + 관련 섹션 추출
                     doc_limit = 12000 if LLM_MODE == "api" else 3000
-                    doc_content = tool_result if len(tool_result) <= doc_limit else tool_result[:doc_limit] + "\n\n... (이하 생략)"
+                    if LLM_MODE != "api" and len(tool_result) > 1500:
+                        doc_content = extract_relevant_sections(tool_result, user_message, max_chars=doc_limit)
+                    elif len(tool_result) > doc_limit:
+                        doc_content = tool_result[:doc_limit] + "\n\n... (이하 생략)"
+                    else:
+                        doc_content = tool_result
                     
-                    follow_up_prompt = f"""[사용자 질문]
-{user_message}
+                    follow_up_prompt = f"""아래 문서 내용을 읽고, 이 문서 내용만으로 질문에 답하세요.
 
-[참고 문서]
+=== 문서 시작 ===
 {doc_content}
+=== 문서 끝 ===
 
-위 문서를 참고해서 사용자의 질문에 정확히 답변하세요.
-문서에 있는 내용만 근거로 답변하고, 문서에 없는 내용은 추측하지 마세요."""
+[질문] {user_message}
+
+[규칙]
+- 위 문서에 적힌 내용만 답하세요. 문서에 없는 내용은 절대 추가하지 마세요.
+- 이전 대화에서 나온 내용이라도 문서에 없으면 사용하지 마세요.
+- 문서에 없으면 "문서에 해당 내용이 없습니다"라고만 답하세요."""
 
                     result2_tokens = 4096 if LLM_MODE == "api" else 1024
                     result2 = call_llm(follow_up_prompt, KNOWLEDGE_QA_SYSTEM_PROMPT, max_tokens=result2_tokens, task_type="knowledge_qa")
@@ -1940,14 +2040,18 @@ def process_chat(user_message: str) -> str:
                         doc_list = ", ".join(doc_names)
                         logger.info(f"📚 참조 문서: {doc_list} (총 {total_length}자)")
 
-                        follow_up_prompt = f"""[사용자 질문]
-{user_message}
+                        follow_up_prompt = f"""아래 문서 내용을 읽고, 이 문서 내용만으로 질문에 답하세요.
 
-[참고 문서 {len(doc_names)}개: {doc_list}]
+=== 문서 시작 ({doc_list}) ===
 {combined_content}
+=== 문서 끝 ===
 
-위 문서들을 참고해서 사용자의 질문에 정확히 답변하세요.
-여러 문서의 내용을 종합해서 답변하고, 문서에 없는 내용은 추측하지 마세요."""
+[질문] {user_message}
+
+[규칙]
+- 위 문서에 적힌 내용만 답하세요. 문서에 없는 내용은 절대 추가하지 마세요.
+- 이전 대화에서 나온 내용이라도 문서에 없으면 사용하지 마세요.
+- 문서에 없으면 "문서에 해당 내용이 없습니다"라고만 답하세요."""
 
                         result2_tokens = 4096 if LLM_MODE == "api" else 1024
                         result2 = call_llm(follow_up_prompt, KNOWLEDGE_QA_SYSTEM_PROMPT, max_tokens=result2_tokens, task_type="knowledge_qa")
@@ -2074,14 +2178,18 @@ def process_chat(user_message: str) -> str:
                     combined_content = "\n\n---\n\n".join(merged_docs)
                     doc_list = ", ".join(doc_names)
 
-                    follow_up_prompt = f"""[사용자 질문]
-{user_message}
+                    follow_up_prompt = f"""아래 문서 내용을 읽고, 이 문서 내용만으로 질문에 답하세요.
 
-[참고 문서 {len(doc_names)}개: {doc_list}]
+=== 문서 시작 ({doc_list}) ===
 {combined_content}
+=== 문서 끝 ===
 
-위 문서들을 참고해서 사용자의 질문에 정확히 답변하세요.
-여러 문서의 내용을 종합해서 답변하고, 문서에 없는 내용은 추측하지 마세요."""
+[질문] {user_message}
+
+[규칙]
+- 위 문서에 적힌 내용만 답하세요. 문서에 없는 내용은 절대 추가하지 마세요.
+- 이전 대화에서 나온 내용이라도 문서에 없으면 사용하지 마세요.
+- 문서에 없으면 "문서에 해당 내용이 없습니다"라고만 답하세요."""
 
                     result2_tokens = 4096 if LLM_MODE == "api" else 1024
                     result2 = call_llm(follow_up_prompt, KNOWLEDGE_QA_SYSTEM_PROMPT, max_tokens=result2_tokens, task_type="knowledge_qa")
@@ -2720,9 +2828,11 @@ async def assistant_get_history(limit: int = 50):
 
 @router.delete("/api/history")
 async def assistant_clear_history():
-    global CHAT_HISTORY, CURRENT_SESSION_ID
+    global CHAT_HISTORY, CURRENT_SESSION_ID, _conversation_summary_cache
     CHAT_HISTORY = []
     CURRENT_SESSION_ID = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # ★ 대화 요약 캐시도 초기화 (할루시네이션 전파 방지)
+    _conversation_summary_cache = {"summary": "", "summarized_up_to": 0}
     save_history()
     return {"success": True}
 
