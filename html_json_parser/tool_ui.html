@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML-JSON Parser Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0e1a; --card: #111827; --border: #1e293b;
+            --text: #e2e8f0; --muted: #64748b; --blue: #3b82f6;
+            --cyan: #06b6d4; --purple: #8b5cf6; --amber: #f59e0b;
+            --emerald: #10b981; --rose: #f43f5e; --orange: #f97316;
+        }
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh;
+        }
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background: linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+            background-size: 40px 40px; pointer-events: none; z-index: 0;
+        }
+
+        /* 상단 헤더 */
+        .top-header {
+            background: rgba(17,24,39,0.95); border-bottom: 1px solid var(--border);
+            padding: 16px 24px; display: flex; align-items: center; gap: 16px;
+            position: sticky; top: 0; z-index: 100; backdrop-filter: blur(12px);
+        }
+        .top-header h1 {
+            font-size: 1.4rem; font-weight: 700;
+            background: linear-gradient(135deg, #3b82f6, #06b6d4);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .top-header .badge {
+            padding: 4px 12px; background: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.3); border-radius: 12px;
+            font-size: 11px; color: var(--blue); font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* 탭 */
+        .tabs {
+            display: flex; gap: 0; background: var(--card);
+            border-bottom: 1px solid var(--border); padding: 0 24px;
+            position: sticky; top: 65px; z-index: 99;
+        }
+        .tab {
+            padding: 14px 24px; font-size: 14px; font-weight: 500;
+            color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+            transition: all 0.2s; user-select: none;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+        /* 메인 영역 */
+        .main { padding: 24px; position: relative; z-index: 1; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* 공통 UI */
+        .card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 16px; padding: 24px; margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 1rem; font-weight: 700; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .btn {
+            padding: 10px 20px; border-radius: 10px; font-size: 13px;
+            font-weight: 600; cursor: pointer; border: none; transition: all 0.2s;
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .btn-primary { background: var(--blue); color: white; }
+        .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+        .btn-success { background: var(--emerald); color: white; }
+        .btn-success:hover { background: #059669; }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+        .btn-amber { background: var(--amber); color: #000; }
+        .btn-amber:hover { background: #d97706; }
+        .btn-rose { background: var(--rose); color: white; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+
+        textarea, input[type="text"], select {
+            width: 100%; padding: 12px 16px; background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+            font-family: 'JetBrains Mono', monospace; font-size: 13px;
+            resize: vertical; transition: border-color 0.2s;
+        }
+        textarea:focus, input:focus, select:focus { outline: none; border-color: var(--blue); }
+        label { font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 6px; display: block; }
+
+        .drop-zone {
+            border: 2px dashed var(--border); border-radius: 16px;
+            padding: 60px 24px; text-align: center; cursor: pointer;
+            transition: all 0.3s; margin-bottom: 20px;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--blue); background: rgba(59,130,246,0.05);
+        }
+        .drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
+        .drop-zone p { color: var(--muted); font-size: 14px; }
+
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px; margin-top: 16px;
+        }
+        .stat-item {
+            padding: 16px; background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+            border-radius: 10px; text-align: center;
+        }
+        .stat-value { font-size: 1.8rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+        .json-tree { font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.8; }
+        .json-tree .key { color: var(--cyan); }
+        .json-tree .string { color: var(--emerald); }
+        .json-tree .number { color: var(--amber); }
+        .json-tree .bool { color: var(--rose); }
+        .json-tree .null { color: var(--muted); }
+        .json-tree .bracket { color: var(--muted); }
+        .json-tree details { margin-left: 20px; }
+        .json-tree summary { cursor: pointer; list-style: none; }
+        .json-tree summary::before { content: ''; margin-right: 4px; color: var(--muted); }
+
+        /* 미리보기 */
+        .preview-frame {
+            width: 100%; min-height: 600px; border: 1px solid var(--border);
+            border-radius: 12px; background: white;
+        }
+
+        /* 섹션 편집기 */
+        .editor-section { margin-bottom: 24px; }
+        .editor-section h3 {
+            font-size: 14px; font-weight: 600; color: var(--blue);
+            margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+        }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .form-group { margin-bottom: 12px; }
+
+        .comp-editor-card {
+            padding: 14px; background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border); border-radius: 10px;
+            margin-bottom: 10px; display: grid; grid-template-columns: 60px 1fr 1fr 1fr auto; gap: 10px; align-items: center;
+        }
+        .comp-editor-card input { padding: 8px 12px; font-size: 12px; }
+        .remove-btn { background: none; border: none; color: var(--rose); cursor: pointer; font-size: 18px; padding: 4px; }
+
+        .flow-editor-node {
+            display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
+            background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
+            border-radius: 8px; margin: 4px; font-size: 12px;
+        }
+        .flow-editor-arrow { display: inline-block; color: var(--muted); margin: 0 4px; font-size: 16px; }
+
+        .toast {
+            position: fixed; bottom: 24px; right: 24px; padding: 14px 24px;
+            background: var(--emerald); color: white; border-radius: 12px;
+            font-size: 14px; font-weight: 500; z-index: 999;
+            transform: translateY(100px); opacity: 0; transition: all 0.3s;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div class="top-header">
+    <h1>HTML-JSON Parser Tool</h1>
+    <div class="badge">v1.0</div>
+    <div style="flex:1"></div>
+    <div style="font-size:12px;color:var(--muted);">HTML &harr; JSON &harr; HTML</div>
+</div>
+
+<div class="tabs">
+    <div class="tab active" onclick="switchTab('parse')">HTML &rarr; JSON 파싱</div>
+    <div class="tab" onclick="switchTab('edit')">JSON 편집기</div>
+    <div class="tab" onclick="switchTab('generate')">JSON &rarr; HTML 생성</div>
+    <div class="tab" onclick="switchTab('preview')">미리보기</div>
+</div>
+
+<div class="main">
+
+    <!-- ========= 탭 1: HTML → JSON 파싱 ========= -->
+    <div class="panel active" id="panel-parse">
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+            <div class="icon">📂</div>
+            <p><strong>HTML 파일을 드래그하거나 클릭하여 업로드</strong></p>
+            <p style="margin-top:8px;font-size:12px;">.html, .htm 파일 지원</p>
+        </div>
+        <input type="file" id="fileInput" accept=".html,.htm,.HTML,.HTM" style="display:none" onchange="handleFile(this.files[0])">
+
+        <div class="card">
+            <div class="card-title">또는 HTML 직접 입력</div>
+            <textarea id="htmlInput" rows="12" placeholder="HTML 코드를 여기에 붙여넣기..."></textarea>
+            <div class="btn-row">
+                <button class="btn btn-primary" onclick="parseHTML()">파싱 실행</button>
+                <button class="btn btn-secondary" onclick="loadSample()">샘플 로드</button>
+                <button class="btn btn-secondary" onclick="clearInput()">초기화</button>
+            </div>
+        </div>
+
+        <div id="parseResult" style="display:none;">
+            <div class="card">
+                <div class="card-title">파싱 결과 통계</div>
+                <div class="stats-grid" id="statsGrid"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">JSON 데이터
+                    <span style="flex:1"></span>
+                    <button class="btn btn-secondary" style="font-size:11px;padding:6px 12px;" onclick="copyJSON()">복사</button>
+                    <button class="btn btn-success" style="font-size:11px;padding:6px 12px;margin-left:6px;" onclick="downloadJSON()">JSON 다운로드</button>
+                </div>
+                <div id="jsonTreeView" class="json-tree" style="max-height:500px;overflow:auto;padding:16px;background:rgba(0,0,0,0.3);border-radius:10px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========= 탭 2: JSON 편집기 ========= -->
+    <div class="panel" id="panel-edit">
+        <div class="card">
+            <div class="card-title">메타데이터</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>페이지 제목</label>
+                    <input type="text" id="editTitle" placeholder="예: SK Hynix 3D Campus 0.4V">
+                </div>
+                <div class="form-group">
+                    <label>언어</label>
+                    <select id="editLang">
+                        <option value="ko">한국어 (ko)</option>
+                        <option value="en">English (en)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>상단 배지 텍스트</label>
+                    <input type="text" id="editBadge" placeholder="예: SK Hynix AMHS Architecture">
+                </div>
+                <div class="form-group">
+                    <label>부제목</label>
+                    <input type="text" id="editSubtitle" placeholder="설명 텍스트">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">섹션 (FAB 영역 등)
+                <span style="flex:1"></span>
+                <button class="btn btn-secondary" style="font-size:11px;padding:6px 12px;" onclick="addSection()">+ 섹션 추가</button>
+            </div>
+            <div id="sectionsEditor"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">컴포넌트 카드
+                <span style="flex:1"></span>
+                <button class="btn btn-secondary" style="font-size:11px;padding:6px 12px;" onclick="addComponent()">+ 컴포넌트 추가</button>
+            </div>
+            <div id="componentsEditor"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">플로우 다이어그램
+                <span style="flex:1"></span>
+                <button class="btn btn-secondary" style="font-size:11px;padding:6px 12px;" onclick="addFlowNode()">+ 노드 추가</button>
+            </div>
+            <div class="form-group">
+                <label>플로우 제목</label>
+                <input type="text" id="editFlowTitle" placeholder="예: FOUP 반송 흐름">
+            </div>
+            <div id="flowEditor" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">상세 설명 데이터 (JS details)</div>
+            <textarea id="editDetails" rows="10" placeholder='JSON 형식으로 입력...'></textarea>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="applyEdits()">편집 내용 적용 → JSON 갱신</button>
+            <button class="btn btn-secondary" onclick="loadFromParsed()">파싱 결과에서 불러오기</button>
+        </div>
+    </div>
+
+    <!-- ========= 탭 3: JSON → HTML 생성 ========= -->
+    <div class="panel" id="panel-generate">
+        <div class="card">
+            <div class="card-title">HTML 생성 옵션</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>출력 파일명</label>
+                    <input type="text" id="genFilename" value="SK_Hynix_3D_Campus_0.4V.HTML">
+                </div>
+                <div class="form-group">
+                    <label>테마</label>
+                    <select id="genTheme" onchange="applyThemePreset()">
+                        <option value="dark">다크 (기본)</option>
+                        <option value="light">라이트</option>
+                        <option value="hynix-blue">SK Hynix 블루</option>
+                        <option value="hynix-green">SK Hynix 그린</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">JSON 데이터 (편집 가능)</div>
+            <textarea id="genJsonInput" rows="20" placeholder="JSON 데이터를 입력하거나, 파싱 탭에서 자동 채워집니다..."></textarea>
+            <div class="btn-row">
+                <button class="btn btn-primary" onclick="generateHTML()">HTML 생성</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('genJsonInput').value=JSON.stringify(currentData,null,2)">현재 데이터 불러오기</button>
+            </div>
+        </div>
+
+        <div id="genResult" style="display:none;">
+            <div class="card">
+                <div class="card-title">생성된 HTML
+                    <span style="flex:1"></span>
+                    <button class="btn btn-secondary" style="font-size:11px;padding:6px 12px;" onclick="copyGeneratedHTML()">복사</button>
+                    <button class="btn btn-success" style="font-size:11px;padding:6px 12px;margin-left:6px;" onclick="downloadHTML()">HTML 다운로드</button>
+                    <button class="btn btn-amber" style="font-size:11px;padding:6px 12px;margin-left:6px;" onclick="previewGenerated()">미리보기</button>
+                </div>
+                <textarea id="genHtmlOutput" rows="15" readonly style="background:rgba(0,0,0,0.3);"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========= 탭 4: 미리보기 ========= -->
+    <div class="panel" id="panel-preview">
+        <div class="card">
+            <div class="card-title">HTML 미리보기
+                <span style="flex:1"></span>
+                <button class="btn btn-secondary" style="font-size:11px;padding:6px 12px;" onclick="refreshPreview()">새로고침</button>
+            </div>
+            <iframe id="previewFrame" class="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 전역 상태 =====
+let currentData = {};
+let currentHTML = '';
+
+// ===== 탭 전환 =====
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('panel-' + name).classList.add('active');
+}
+
+// ===== 토스트 =====
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ===== 파일 드래그 & 드롭 =====
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('htmlInput').value = e.target.result;
+        showToast(`파일 로드 완료: ${file.name}`);
+        parseHTML();
+    };
+    reader.readAsText(file, 'UTF-8');
+}
+
+// ===== HTML 파싱 (브라우저 내장 DOMParser 사용) =====
+function parseHTML() {
+    const html = document.getElementById('htmlInput').value.trim();
+    if (!html) { showToast('HTML 내용을 입력하세요'); return; }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const result = {
+        source_file: 'input.html',
+        metadata: extractMetadata(doc, html),
+        css_variables: extractCSSVariables(html),
+        css_classes: extractCSSClasses(html),
+        components: extractComponents(doc),
+        flow_diagram: extractFlowDiagram(doc),
+        js_data_objects: extractJSData(html),
+        text_content: extractTextContent(doc),
+        statistics: {}
+    };
+
+    result.statistics = computeStats(result);
+    currentData = result;
+
+    // UI 업데이트
+    renderStats(result.statistics);
+    renderJsonTree(result);
+    document.getElementById('parseResult').style.display = 'block';
+    document.getElementById('genJsonInput').value = JSON.stringify(result, null, 2);
+
+    loadFromParsed();
+    showToast('파싱 완료!');
+}
+
+function extractMetadata(doc, html) {
+    const meta = {};
+    const htmlEl = doc.querySelector('html');
+    if (htmlEl) meta.lang = htmlEl.getAttribute('lang') || '';
+    meta.title = doc.title || '';
+    meta.meta_tags = [];
+    doc.querySelectorAll('meta').forEach(m => {
+        const attrs = {};
+        for (const a of m.attributes) attrs[a.name] = a.value;
+        if (Object.keys(attrs).length) meta.meta_tags.push(attrs);
+    });
+    meta.external_links = [...doc.querySelectorAll('link[href]')].map(l => l.getAttribute('href'));
+    meta.external_scripts = [...doc.querySelectorAll('script[src]')].map(s => s.getAttribute('src'));
+    return meta;
+}
+
+function extractCSSVariables(html) {
+    const vars = {};
+    const rootMatch = html.match(/:root\s*\{([^}]+)\}/s);
+    if (rootMatch) {
+        const matches = rootMatch[1].matchAll(/--([\w-]+)\s*:\s*([^;]+);/g);
+        for (const m of matches) vars[m[1].trim()] = m[2].trim();
+    }
+    return vars;
+}
+
+function extractCSSClasses(html) {
+    const styleMatch = html.match(/<style[^>]*>(.*?)<\/style>/s);
+    if (!styleMatch) return [];
+    const classes = [...styleMatch[1].matchAll(/\.([\w-]+)\s*[{,:]/g)].map(m => m[1]);
+    return [...new Set(classes)].sort();
+}
+
+function extractComponents(doc) {
+    const cards = [];
+    const seen = new Set();
+    doc.querySelectorAll('.comp-card[data-cat]').forEach(el => {
+        const cat = el.dataset.cat;
+        const name = el.querySelector('.comp-name')?.textContent?.trim() || '';
+        const key = cat + '_' + name;
+        if (!seen.has(key)) {
+            seen.add(key);
+            cards.push({
+                category: cat,
+                name: name,
+                full_name: el.querySelector('.comp-full')?.textContent?.trim() || '',
+                emoji: el.querySelector('.comp-emoji')?.textContent?.trim() || '',
+            });
+        }
+    });
+
+    const sections = [];
+    doc.querySelectorAll('.fab-section').forEach(el => {
+        const name = el.querySelector('.fab-name')?.textContent?.trim() || '';
+        const badge = el.querySelector('.fab-badge')?.textContent?.trim() || '';
+        const comps = [...el.querySelectorAll('[data-cat]')].map(c => c.dataset.cat);
+        if (name) sections.push({ name, badge, components: comps });
+    });
+
+    return { cards, sections };
+}
+
+function extractFlowDiagram(doc) {
+    const flow = { title: '', nodes: [], arrow_count: 0 };
+    const titleEl = doc.querySelector('.flow-title');
+    if (titleEl) flow.title = titleEl.textContent.trim();
+
+    doc.querySelectorAll('.flow-node').forEach(el => {
+        const classes = [...el.classList].filter(c => c !== 'flow-node');
+        const smallEl = el.querySelector('small');
+        const subLabel = smallEl?.textContent?.trim() || '';
+        let mainText = el.textContent.replace(subLabel, '').trim();
+        flow.nodes.push({ type: classes[0] || '', main_text: mainText, sub_label: subLabel });
+    });
+
+    flow.arrow_count = doc.querySelectorAll('.flow-arrow').length;
+    return flow;
+}
+
+function extractJSData(html) {
+    const data = {};
+    const scriptMatch = html.match(/<script[^>]*>([\s\S]*?)<\/script>/);
+    if (!scriptMatch) return data;
+    const script = scriptMatch[1];
+
+    // const/let/var 객체 추출
+    const objMatches = script.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*(\{)/g);
+    for (const m of objMatches) {
+        const name = m[1];
+        const startIdx = m.index + m[0].length - 1;
+        const objStr = extractBalanced(script, startIdx, '{', '}');
+        if (objStr) {
+            try {
+                // JS -> JSON 변환
+                let jsonStr = objStr
+                    .replace(/,\s*([}\]])/g, '$1')
+                    .replace(/(?<=[\{,])\s*(\w+)\s*:/g, ' "$1":')
+                    .replace(/'([^']*)'/g, '"$1"');
+                jsonStr = jsonStr.replace(/`([^`]*)`/g, (_, s) => '"' + s.replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"');
+                jsonStr = jsonStr.replace(/\$\{([^}]+)\}/g, '[EXPR:$1]');
+                data[name] = JSON.parse(jsonStr);
+            } catch(e) {
+                // 수동 파싱
+                data[name] = { _raw: 'parse_failed', _length: objStr.length };
+            }
+        }
+    }
+
+    // 함수 목록
+    const funcs = [...script.matchAll(/function\s+(\w+)\s*\(([^)]*)\)/g)];
+    if (funcs.length) data._functions = funcs.map(f => ({ name: f[1], params: f[2].trim() }));
+
+    return data;
+}
+
+function extractBalanced(text, start, open, close) {
+    let depth = 0, inStr = false, strChar = '';
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (inStr) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === strChar) inStr = false;
+        } else {
+            if ("'\"`".includes(ch)) { inStr = true; strChar = ch; }
+            else if (ch === open) depth++;
+            else if (ch === close) { depth--; if (depth === 0) return text.slice(start, i+1); }
+        }
+    }
+    return null;
+}
+
+function extractTextContent(doc) {
+    const items = [];
+    doc.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(el => {
+        const text = el.textContent.trim();
+        if (text) items.push({ type: el.tagName.toLowerCase(), text });
+    });
+    doc.querySelectorAll('p').forEach(el => {
+        const text = el.textContent.trim();
+        if (text) items.push({ type: 'p', text });
+    });
+    return items;
+}
+
+function computeStats(r) {
+    return {
+        total_css_variables: Object.keys(r.css_variables || {}).length,
+        total_css_classes: (r.css_classes || []).length,
+        total_components: (r.components?.cards || []).length,
+        total_sections: (r.components?.sections || []).length,
+        total_flow_nodes: (r.flow_diagram?.nodes || []).length,
+        total_js_objects: Object.keys(r.js_data_objects || {}).length,
+        total_text_items: (r.text_content || []).length,
+    };
+}
+
+// ===== UI 렌더링 =====
+function renderStats(stats) {
+    const grid = document.getElementById('statsGrid');
+    const items = [
+        { label: 'CSS 변수', value: stats.total_css_variables, color: 'var(--blue)' },
+        { label: 'CSS 클래스', value: stats.total_css_classes, color: 'var(--purple)' },
+        { label: '컴포넌트', value: stats.total_components, color: 'var(--cyan)' },
+        { label: '섹션', value: stats.total_sections, color: 'var(--amber)' },
+        { label: '플로우 노드', value: stats.total_flow_nodes, color: 'var(--emerald)' },
+        { label: 'JS 객체', value: stats.total_js_objects, color: 'var(--orange)' },
+        { label: '텍스트 항목', value: stats.total_text_items, color: 'var(--rose)' },
+    ];
+    grid.innerHTML = items.map(i => `
+        <div class="stat-item">
+            <div class="stat-value" style="color:${i.color}">${i.value}</div>
+            <div class="stat-label">${i.label}</div>
+        </div>
+    `).join('');
+}
+
+function renderJsonTree(obj) {
+    document.getElementById('jsonTreeView').innerHTML = '<pre style="margin:0;">' + syntaxHighlight(JSON.stringify(obj, null, 2)) + '</pre>';
+}
+
+function syntaxHighlight(json) {
+    return json.replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        function(match) {
+            let cls = 'number';
+            if (/^"/.test(match)) {
+                cls = /:$/.test(match) ? 'key' : 'string';
+            } else if (/true|false/.test(match)) {
+                cls = 'bool';
+            } else if (/null/.test(match)) {
+                cls = 'null';
+            }
+            return '<span class="' + cls + '">' + match + '</span>';
+        });
+}
+
+// ===== 편집기 =====
+function loadFromParsed() {
+    if (!currentData.metadata) return;
+    const m = currentData.metadata;
+    document.getElementById('editTitle').value = m.title || '';
+    document.getElementById('editLang').value = m.lang || 'ko';
+    document.getElementById('editBadge').value = m.badge || 'SK Hynix System Architecture';
+    document.getElementById('editSubtitle').value = m.subtitle || '';
+
+    renderSectionsEditor();
+    renderComponentsEditor();
+    renderFlowEditor();
+
+    if (currentData.js_data_objects?.details) {
+        document.getElementById('editDetails').value = JSON.stringify(currentData.js_data_objects.details, null, 2);
+    }
+}
+
+function renderSectionsEditor() {
+    const sections = currentData.components?.sections || [];
+    const container = document.getElementById('sectionsEditor');
+    container.innerHTML = sections.map((s, i) => `
+        <div class="comp-editor-card" style="grid-template-columns:1fr 1fr auto;">
+            <input type="text" value="${s.name}" placeholder="섹션명" onchange="currentData.components.sections[${i}].name=this.value">
+            <input type="text" value="${s.badge}" placeholder="배지" onchange="currentData.components.sections[${i}].badge=this.value">
+            <button class="remove-btn" onclick="currentData.components.sections.splice(${i},1);renderSectionsEditor();">&times;</button>
+        </div>
+    `).join('');
+}
+
+function addSection() {
+    if (!currentData.components) currentData.components = { cards: [], sections: [] };
+    currentData.components.sections.push({ name: 'New Section', badge: '', components: [] });
+    renderSectionsEditor();
+}
+
+function renderComponentsEditor() {
+    const cards = currentData.components?.cards || [];
+    const container = document.getElementById('componentsEditor');
+    container.innerHTML = cards.map((c, i) => `
+        <div class="comp-editor-card">
+            <input type="text" value="${c.emoji || ''}" placeholder="이모지" style="text-align:center;font-size:18px;"
+                   onchange="currentData.components.cards[${i}].emoji=this.value">
+            <input type="text" value="${c.category || ''}" placeholder="카테고리 ID"
+                   onchange="currentData.components.cards[${i}].category=this.value">
+            <input type="text" value="${c.name || ''}" placeholder="이름"
+                   onchange="currentData.components.cards[${i}].name=this.value">
+            <input type="text" value="${c.full_name || ''}" placeholder="전체 이름"
+                   onchange="currentData.components.cards[${i}].full_name=this.value">
+            <button class="remove-btn" onclick="currentData.components.cards.splice(${i},1);renderComponentsEditor();">&times;</button>
+        </div>
+    `).join('');
+}
+
+function addComponent() {
+    if (!currentData.components) currentData.components = { cards: [], sections: [] };
+    currentData.components.cards.push({ category: 'new', name: 'NEW', full_name: '새 컴포넌트', emoji: '' });
+    renderComponentsEditor();
+}
+
+function renderFlowEditor() {
+    const flow = currentData.flow_diagram || {};
+    document.getElementById('editFlowTitle').value = flow.title || '';
+    const container = document.getElementById('flowEditor');
+    const nodes = flow.nodes || [];
+    let html = '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;">';
+    nodes.forEach((n, i) => {
+        if (i > 0) html += '<span class="flow-editor-arrow">&rarr;</span>';
+        html += `<div class="flow-editor-node">
+            <input type="text" value="${n.main_text}" style="width:80px;padding:4px 6px;font-size:11px;"
+                   onchange="currentData.flow_diagram.nodes[${i}].main_text=this.value">
+            <input type="text" value="${n.sub_label}" style="width:60px;padding:4px 6px;font-size:11px;"
+                   onchange="currentData.flow_diagram.nodes[${i}].sub_label=this.value">
+            <button class="remove-btn" style="font-size:14px;" onclick="currentData.flow_diagram.nodes.splice(${i},1);renderFlowEditor();">&times;</button>
+        </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function addFlowNode() {
+    if (!currentData.flow_diagram) currentData.flow_diagram = { title: '', nodes: [] };
+    currentData.flow_diagram.nodes.push({ type: 'new', main_text: 'Node', sub_label: '' });
+    renderFlowEditor();
+}
+
+function applyEdits() {
+    currentData.metadata = currentData.metadata || {};
+    currentData.metadata.title = document.getElementById('editTitle').value;
+    currentData.metadata.lang = document.getElementById('editLang').value;
+    currentData.metadata.badge = document.getElementById('editBadge').value;
+    currentData.metadata.subtitle = document.getElementById('editSubtitle').value;
+
+    if (currentData.flow_diagram) {
+        currentData.flow_diagram.title = document.getElementById('editFlowTitle').value;
+    }
+
+    try {
+        const detailsStr = document.getElementById('editDetails').value.trim();
+        if (detailsStr) {
+            currentData.js_data_objects = currentData.js_data_objects || {};
+            currentData.js_data_objects.details = JSON.parse(detailsStr);
+        }
+    } catch(e) { showToast('Details JSON 형식 오류: ' + e.message); return; }
+
+    currentData.statistics = computeStats(currentData);
+    document.getElementById('genJsonInput').value = JSON.stringify(currentData, null, 2);
+    renderJsonTree(currentData);
+    showToast('편집 적용 완료!');
+}
+
+// ===== HTML 생성 =====
+function generateHTML() {
+    let jsonStr = document.getElementById('genJsonInput').value.trim();
+    if (!jsonStr) { showToast('JSON 데이터를 입력하세요'); return; }
+
+    let data;
+    try { data = JSON.parse(jsonStr); }
+    catch(e) { showToast('JSON 파싱 에러: ' + e.message); return; }
+
+    const theme = document.getElementById('genTheme').value;
+    const colors = getThemeColors(theme);
+    const meta = data.metadata || {};
+    const title = meta.title || document.getElementById('editTitle')?.value || 'Generated Layout';
+
+    currentHTML = buildHTML(data, title, colors, meta);
+
+    document.getElementById('genHtmlOutput').value = currentHTML;
+    document.getElementById('genResult').style.display = 'block';
+    showToast(`HTML 생성 완료! (${(currentHTML.length/1024).toFixed(1)}KB)`);
+}
+
+function getThemeColors(theme) {
+    const themes = {
+        dark: { bg:'#0a0e1a', card:'#111827', border:'#1e293b', text:'#e2e8f0', muted:'#64748b' },
+        light: { bg:'#f8fafc', card:'#ffffff', border:'#e2e8f0', text:'#1e293b', muted:'#64748b' },
+        'hynix-blue': { bg:'#0c1222', card:'#0f1a2e', border:'#1a2744', text:'#e2e8f0', muted:'#64748b', blue:'#0078d4' },
+        'hynix-green': { bg:'#0a1a0e', card:'#0f2816', border:'#1a3b22', text:'#e2e8f0', muted:'#64748b', blue:'#10b981' },
+    };
+    return themes[theme] || themes.dark;
+}
+
+function buildHTML(data, title, themeColors, meta) {
+    const colors = { ...{ bg:'#0a0e1a',card:'#111827',border:'#1e293b',text:'#e2e8f0',muted:'#64748b',
+        blue:'#3b82f6',cyan:'#06b6d4',purple:'#8b5cf6',amber:'#f59e0b',emerald:'#10b981',
+        rose:'#f43f5e',orange:'#f97316',sky:'#0ea5e9' }, ...(data.css_variables||{}), ...themeColors };
+
+    const catColors = {
+        oht:'blue', mcs:'purple', stk:'emerald', cnv:'sky', lft:'orange',
+        inv:'rose', que:'amber', rtc:'#a78bfa', foup:'#34d399', pdt:'#fb923c', fio:'#94a3b8'
+    };
+
+    const cssVars = Object.entries(colors).map(([k,v]) => `--${k}:${v};`).join('\n            ');
+    const badge = meta.badge || 'SK Hynix System Architecture';
+    const subtitle = meta.subtitle || '';
+    const components = data.components || {};
+    const cards = components.cards || [];
+    const sections = components.sections || [];
+    const flow = data.flow_diagram || {};
+    const jsDetails = data.js_data_objects?.details;
+
+    // 카드를 카테고리별로 매핑
+    const cardMap = {};
+    cards.forEach(c => cardMap[c.category] = c);
+
+    // 섹션 HTML 생성
+    let sectionsHTML = '';
+    if (sections.length) {
+        let innerSections = '';
+        sections.forEach((sec, idx) => {
+            const nameColor = idx === 0 ? 'var(--cyan)' : 'var(--amber)';
+            const badgeBg = idx === 0 ? 'rgba(6,182,212,0.15)' : 'rgba(249,158,11,0.15)';
+            const badgeColor = idx === 0 ? 'var(--cyan)' : 'var(--amber)';
+
+            let cardsHTML = '';
+            (sec.components || []).forEach(cat => {
+                const c = cardMap[cat] || { name: cat.toUpperCase(), full_name: '', emoji: '' };
+                const cc = catColors[cat] || 'blue';
+                const barColor = cc.startsWith('#') ? cc : `var(--${cc})`;
+                cardsHTML += `
+                        <div class="comp-card" data-cat="${cat}" onclick="showDetail('${cat}')">
+                            <div style="position:absolute;top:0;left:0;width:3px;height:100%;background:${barColor};border-radius:3px 0 0 3px;"></div>
+                            <div class="comp-emoji">${c.emoji||''}</div>
+                            <div class="comp-name">${c.name||cat.toUpperCase()}</div>
+                            <div class="comp-full">${c.full_name||''}</div>
+                        </div>`;
+            });
+
+            innerSections += `
+                <div class="fab-section">
+                    <div class="fab-header">
+                        <span class="fab-name" style="color:${nameColor}">${sec.name}</span>
+                        <span class="fab-badge" style="background:${badgeBg};color:${badgeColor};border:1px solid ${badgeColor}40;">${sec.badge}</span>
+                    </div>
+                    <div class="comp-grid">${cardsHTML}
+                    </div>
+                </div>`;
+        });
+
+        sectionsHTML = `
+        <div class="amos-wrapper">
+            <div class="fab-grid">${innerSections}
+            </div>
+        </div>`;
+    } else if (cards.length) {
+        let cardsHTML = '';
+        cards.forEach(c => {
+            const cc = catColors[c.category] || 'blue';
+            const barColor = cc.startsWith('#') ? cc : `var(--${cc})`;
+            cardsHTML += `
+                <div class="comp-card" data-cat="${c.category}" onclick="showDetail('${c.category}')">
+                    <div style="position:absolute;top:0;left:0;width:3px;height:100%;background:${barColor};border-radius:3px 0 0 3px;"></div>
+                    <div class="comp-emoji">${c.emoji||''}</div>
+                    <div class="comp-name">${c.name||''}</div>
+                    <div class="comp-full">${c.full_name||''}</div>
+                </div>`;
+        });
+        sectionsHTML = `
+        <div class="amos-wrapper">
+            <div class="comp-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">${cardsHTML}
+            </div>
+        </div>`;
+    }
+
+    // 상세 패널
+    let detailHTML = '';
+    if (jsDetails) {
+        detailHTML = `
+        <div class="detail-panel hidden" id="detailPanel">
+            <div class="detail-header">
+                <div class="detail-icon" id="detailIcon"></div>
+                <div>
+                    <div class="detail-title" id="detailTitle"></div>
+                    <div class="detail-subtitle" id="detailSubtitle"></div>
+                </div>
+            </div>
+            <div class="detail-body" id="detailBody"></div>
+        </div>`;
+    }
+
+    // 플로우 다이어그램
+    let flowHTML = '';
+    if (flow.nodes?.length) {
+        let nodesHTML = '';
+        flow.nodes.forEach((n, i) => {
+            const cc = catColors[n.type] || 'blue';
+            const color = cc.startsWith('#') ? cc : `var(--${cc})`;
+            nodesHTML += `
+                <div class="flow-node" style="background:${color}26;border:1px solid ${color}66;color:${color};">
+                    ${n.main_text}<small>${n.sub_label}</small>
+                </div>`;
+            if (i < flow.nodes.length - 1) nodesHTML += '<div class="flow-arrow">&rarr;</div>';
+        });
+        flowHTML = `
+        <div class="flow-section">
+            <div class="flow-title">${flow.title||'Flow'}</div>
+            <div class="flow-diagram">${nodesHTML}
+            </div>
+        </div>`;
+    }
+
+    // JS
+    let scriptHTML = '';
+    if (jsDetails) {
+        scriptHTML = `
+    <script>
+        const details = ${JSON.stringify(jsDetails, null, 8)};
+        function showDetail(cat) {
+            const panel = document.getElementById('detailPanel');
+            const d = details[cat]; if (!d) return;
+            document.querySelectorAll('.comp-card').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.comp-card[data-cat="'+cat+'"]').forEach(c => c.classList.add('active'));
+            document.getElementById('detailIcon').textContent = d.emoji || '';
+            document.getElementById('detailIcon').style.background = (d.color||'#3b82f6') + '20';
+            document.getElementById('detailTitle').textContent = d.name || cat;
+            document.getElementById('detailTitle').style.color = d.color || '#3b82f6';
+            document.getElementById('detailSubtitle').textContent = d.full || '';
+            const body = document.getElementById('detailBody');
+            body.innerHTML = (d.items||[]).map(item =>
+                '<div class="detail-item"><div class="detail-item-label">'+item.label+'</div><div class="detail-item-value">'+item.value+'</div></div>'
+            ).join('');
+            panel.classList.remove('hidden');
+            panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    <\/script>`;
+    }
+
+    return `<!DOCTYPE html>
+<html lang="${meta.lang||'ko'}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { ${cssVars} }
+        body { font-family: 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        body::before { content:''; position:fixed; inset:0; background: linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
+        .container { max-width:1200px; margin:0 auto; padding:40px 20px; position:relative; z-index:1; }
+        .header { text-align:center; margin-bottom:50px; }
+        .header-badge { display:inline-block; padding:6px 16px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); border-radius:20px; font-size:12px; font-weight:500; color:var(--blue); letter-spacing:2px; text-transform:uppercase; margin-bottom:16px; font-family:'JetBrains Mono',monospace; }
+        .header h1 { font-size:2.8rem; font-weight:900; background:linear-gradient(135deg,#3b82f6,#06b6d4,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:12px; }
+        .header p { color:var(--muted); font-size:1rem; font-weight:300; }
+        .amos-wrapper { background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(139,92,246,0.08)); border:1px solid rgba(59,130,246,0.2); border-radius:20px; padding:30px; margin-bottom:30px; }
+        .fab-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:24px; }
+        .fab-section { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; transition:all 0.3s; }
+        .fab-section:hover { border-color:rgba(59,130,246,0.4); box-shadow:0 0 30px rgba(59,130,246,0.1); }
+        .fab-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+        .fab-name { font-size:1.3rem; font-weight:700; font-family:'JetBrains Mono',monospace; }
+        .fab-badge { padding:4px 12px; border-radius:12px; font-size:11px; font-weight:600; font-family:'JetBrains Mono',monospace; }
+        .comp-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .comp-card { padding:14px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:all 0.25s; position:relative; overflow:hidden; }
+        .comp-card:hover { transform:translateY(-2px); background:rgba(255,255,255,0.04); }
+        .comp-card.active { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.15); }
+        .comp-emoji { font-size:22px; margin-bottom:6px; }
+        .comp-name { font-size:13px; font-weight:700; font-family:'JetBrains Mono',monospace; margin-bottom:2px; }
+        .comp-full { font-size:10px; color:var(--muted); font-weight:300; }
+        .detail-panel { margin-top:30px; background:var(--card); border:1px solid var(--border); border-radius:16px; overflow:hidden; transition:all 0.3s; }
+        .detail-panel.hidden { opacity:0; max-height:0; margin-top:0; border:none; }
+        .detail-header { padding:20px 24px; display:flex; align-items:center; gap:16px; border-bottom:1px solid var(--border); }
+        .detail-icon { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:24px; }
+        .detail-title { font-size:1.2rem; font-weight:700; font-family:'JetBrains Mono',monospace; }
+        .detail-subtitle { font-size:0.85rem; color:var(--muted); }
+        .detail-body { padding:24px; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+        .detail-item { padding:14px; background:rgba(255,255,255,0.02); border-radius:10px; border:1px solid var(--border); }
+        .detail-item-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+        .detail-item-value { font-size:14px; font-weight:500; line-height:1.6; }
+        .flow-section { margin-top:30px; padding:28px; background:var(--card); border:1px solid var(--border); border-radius:16px; }
+        .flow-title { font-size:1rem; font-weight:700; margin-bottom:20px; }
+        .flow-diagram { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; padding:20px; }
+        .flow-node { padding:12px 20px; border-radius:10px; font-size:13px; font-weight:600; text-align:center; min-width:100px; }
+        .flow-node small { display:block; font-size:10px; font-weight:400; opacity:0.7; margin-top:2px; }
+        .flow-arrow { font-size:20px; color:var(--muted); animation:fp 2s ease-in-out infinite; }
+        @keyframes fp { 0%,100%{opacity:0.4} 50%{opacity:1} }
+        .footer { text-align:center; margin-top:40px; padding:20px; color:var(--muted); font-size:12px; }
+        @media(max-width:768px) { .fab-grid{grid-template-columns:1fr;} .detail-body{grid-template-columns:1fr;} .header h1{font-size:2rem;} .flow-diagram{flex-direction:column;} .flow-arrow{transform:rotate(90deg);} }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-badge">${badge}</div>
+            <h1>${title}</h1>
+            <p>${subtitle}</p>
+        </div>
+        ${sectionsHTML}
+        ${detailHTML}
+        ${flowHTML}
+        <div class="footer">${title} &middot; Generated by HTML-JSON Parser Tool</div>
+    </div>
+    ${scriptHTML}
+</body>
+</html>`;
+}
+
+// ===== 미리보기 =====
+function previewGenerated() {
+    if (!currentHTML) { showToast('먼저 HTML을 생성하세요'); return; }
+    switchTab('preview');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab')[3].classList.add('active');
+    const frame = document.getElementById('previewFrame');
+    frame.srcdoc = currentHTML;
+}
+
+function refreshPreview() {
+    const frame = document.getElementById('previewFrame');
+    if (currentHTML) frame.srcdoc = currentHTML;
+}
+
+// ===== 다운로드 / 복사 =====
+function downloadJSON() {
+    const json = JSON.stringify(currentData, null, 2);
+    download(json, (currentData.metadata?.title || 'parsed') + '.json', 'application/json');
+}
+
+function downloadHTML() {
+    const filename = document.getElementById('genFilename').value || 'generated.html';
+    download(currentHTML, filename, 'text/html');
+}
+
+function download(content, filename, type) {
+    const blob = new Blob([content], { type: type + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`다운로드: ${filename}`);
+}
+
+function copyJSON() {
+    navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
+    showToast('JSON 복사 완료');
+}
+
+function copyGeneratedHTML() {
+    navigator.clipboard.writeText(currentHTML);
+    showToast('HTML 복사 완료');
+}
+
+// ===== 샘플 =====
+function loadSample() {
+    document.getElementById('htmlInput').value = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>SK Hynix 3D Campus 0.4V</title>
+    <style>
+        :root { --bg:#0a0e1a; --card:#111827; --border:#1e293b; --text:#e2e8f0; --blue:#3b82f6; --cyan:#06b6d4; --purple:#8b5cf6; --amber:#f59e0b; --emerald:#10b981; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:sans-serif; background:var(--bg); color:var(--text); }
+        .comp-card { padding:14px; border:1px solid var(--border); border-radius:10px; cursor:pointer; }
+        .comp-emoji { font-size:22px; }
+        .comp-name { font-size:13px; font-weight:700; }
+        .comp-full { font-size:10px; color:#64748b; }
+        .fab-section { background:var(--card); padding:24px; border-radius:16px; }
+        .fab-name { font-size:1.3rem; font-weight:700; }
+        .fab-badge { font-size:11px; }
+        .comp-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .fab-header { display:flex; justify-content:space-between; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+        .flow-title { font-size:1rem; font-weight:700; margin-bottom:16px; }
+        .flow-node { padding:12px; border-radius:10px; }
+        .flow-node small { display:block; font-size:10px; }
+        .flow-arrow { font-size:20px; color:#64748b; }
+        .flow-diagram { display:flex; align-items:center; gap:8px; justify-content:center; padding:20px; }
+    </style>
+</head>
+<body>
+    <div class="fab-section">
+        <div class="fab-header">
+            <span class="fab-name">3D NAND FAB</span>
+            <span class="fab-badge">128 Layer</span>
+        </div>
+        <div class="comp-grid">
+            <div class="comp-card" data-cat="oht" onclick="showDetail('oht')">
+                <div class="comp-emoji">&#x1f69f;</div>
+                <div class="comp-name">OHT</div>
+                <div class="comp-full">Overhead Hoist</div>
+            </div>
+            <div class="comp-card" data-cat="mcs" onclick="showDetail('mcs')">
+                <div class="comp-emoji">&#x1f5a5;&#xfe0f;</div>
+                <div class="comp-name">MCS</div>
+                <div class="comp-full">Material Control</div>
+            </div>
+            <div class="comp-card" data-cat="stk" onclick="showDetail('stk')">
+                <div class="comp-emoji">&#x1f3d7;&#xfe0f;</div>
+                <div class="comp-name">STK</div>
+                <div class="comp-full">Stocker</div>
+            </div>
+            <div class="comp-card" data-cat="lft" onclick="showDetail('lft')">
+                <div class="comp-emoji">⬆️</div>
+                <div class="comp-name">LFT</div>
+                <div class="comp-full">Lifter</div>
+            </div>
+        </div>
+    </div>
+    <div class="flow-title">FOUP Transport Flow</div>
+    <div class="flow-diagram">
+        <div class="flow-node foup">FOUP<small>25 wafers</small></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-node stk">STK<small>Storage</small></div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-node oht">OHT<small>Transport</small></div>
+    </div>
+    <script>
+        const details = {
+            oht: { emoji:'\\ud83d\\ude9f', name:'OHT', full:'Overhead Hoist Transport', color:'#3b82f6',
+                items: [{ label:'Description', value:'Ceiling rail transport vehicle for FOUP' }, { label:'Role', value:'Inter-equipment FOUP delivery' }] },
+            mcs: { emoji:'\\ud83d\\udda5\\ufe0f', name:'MCS', full:'Material Control System', color:'#8b5cf6',
+                items: [{ label:'Description', value:'Central logistics control server' }, { label:'Role', value:'Transport scheduling and optimization' }] },
+            stk: { emoji:'\\ud83c\\udfd7\\ufe0f', name:'STK', full:'Stocker', color:'#10b981',
+                items: [{ label:'Description', value:'Automated FOUP storage unit' }, { label:'Role', value:'Buffer storage and inventory management' }] },
+            lft: { emoji:'⬆️', name:'LFT', full:'Lifter', color:'#f97316',
+                items: [{ label:'Description', value:'Vertical FOUP transport between floors' }, { label:'Role', value:'Inter-floor material movement' }] }
+        };
+        function showDetail(cat) { console.log('Detail:', cat); }
+    </script>
+</body>
+</html>`;
+    showToast('샘플 HTML 로드 완료');
+}
+
+function clearInput() {
+    document.getElementById('htmlInput').value = '';
+    document.getElementById('parseResult').style.display = 'none';
+    currentData = {};
+    showToast('초기화 완료');
+}
+
+function applyThemePreset() { /* 테마 변경 시 재생성 안내 */ }
+</script>
+</body>
+</html>
