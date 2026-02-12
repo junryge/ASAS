@@ -297,6 +297,14 @@ canvas#threeCanvas { display: block; }
 }
 .modal-btn.primary { background: #00d4ff; color: #000; font-weight: 700; }
 .modal-btn.secondary { background: #333; color: #aaa; }
+
+/* 헤더 FAB 드롭다운 */
+#fabSelect {
+    background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.3);
+    color: #00d4ff; padding: 3px 8px; border-radius: 4px; font-size: 12px;
+    cursor: pointer; outline: none;
+}
+#fabSelect option { background: #1a1a2e; color: #fff; }
 </style>
 </head>
 <body>
@@ -304,6 +312,7 @@ canvas#threeCanvas { display: block; }
 <div id="loading">
     <h1>AMOS MAP SYSTEM PRO</h1>
     <div class="subtitle">OHT RAIL SYSTEM</div>
+    <div id="loadFabName" style="font-size:20px;color:#00d4ff;font-weight:700;margin:8px 0;letter-spacing:2px;"></div>
     <div class="author">Created by John Prestige</div>
     <div class="bar-bg"><div class="bar-fill" id="loadBar"></div></div>
     <div class="status" id="loadStatus">초기화 중...</div>
@@ -319,6 +328,9 @@ canvas#threeCanvas { display: block; }
         AMOS MAP SYSTEM PRO
         <span class="badge">LIVE</span>
         <span class="fab-name" id="fabName"></span>
+        <select id="fabSelect" style="display:none"></select>
+        <button id="fabGoBtn" style="display:none;background:#00d4ff;color:#000;border:none;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px;" onclick="onFabGo()">이동</button>
+        <button style="background:rgba(255,255,255,0.1);color:#aaa;border:1px solid rgba(255,255,255,0.15);padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;margin-left:8px;" onclick="window.location.href='/'">캠퍼스</button>
     </h1>
     <div class="header-right">
         <span class="brand">Creator: John Prestige</span>
@@ -695,15 +707,24 @@ window.toggleControls = function() {
 })();
 
 // ===== OHT QUICK SET =====
+function saveOhtSettings(count) {
+    fetch('/api/fab/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({oht_count: count})
+    }).catch(() => {});
+}
 window.applyOhtCount = function() {
     const val = parseInt(document.getElementById('ohtCountInput').value) || 35;
     document.getElementById('ohtCount').value = val;
     document.getElementById('ohtCount').dispatchEvent(new Event('input'));
+    saveOhtSettings(val);
 };
 window.setOhtQuick = function(n) {
     document.getElementById('ohtCountInput').value = n;
     document.getElementById('ohtCount').value = n;
     document.getElementById('ohtCount').dispatchEvent(new Event('input'));
+    saveOhtSettings(n);
 };
 
 // ===== MASTER DATA MODAL =====
@@ -1069,7 +1090,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function init() {
     setLoadProgress(5, '레이아웃 데이터 로딩 중...');
     try {
-        const resp = await fetch('layout_data.json');
+        const resp = await fetch('layout_data.json?t=' + Date.now());
         layoutData = await resp.json();
     } catch(e) {
         setLoadProgress(0, 'layout_data.json 로딩 오류: ' + e.message);
@@ -1153,6 +1174,16 @@ async function init() {
 
     setLoadProgress(90, 'OHT 차량 배치 중...'); await sleep(10);
     buildPaths();
+    // FAB별 저장된 OHT 대수 로드
+    try {
+        const settingsResp = await fetch('/api/fab/settings');
+        const settingsData = await settingsResp.json();
+        if (settingsData.settings && settingsData.settings.oht_count != null) {
+            const savedCount = settingsData.settings.oht_count;
+            document.getElementById('ohtCountInput').value = savedCount;
+            document.getElementById('ohtCount').value = savedCount;
+        }
+    } catch(e) {}
     spawnVehicles(parseInt(document.getElementById('ohtCount').value));
 
     setLoadProgress(95, '마무리 중...');
@@ -1186,6 +1217,9 @@ async function init() {
         document.getElementById('ohtCountInput').value = e.target.value;
         respawnVehicles(parseInt(e.target.value));
         setTimeout(updateOhtList, 100);
+        // Debounced save
+        clearTimeout(window._ohtSaveTimer);
+        window._ohtSaveTimer = setTimeout(() => saveOhtSettings(parseInt(e.target.value)), 500);
     });
     document.getElementById('searchInput').addEventListener('keydown', onSearch);
     document.getElementById('ohtSearchInput').addEventListener('input', () => updateOhtList());
@@ -2486,7 +2520,64 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-init();
+// ===== Multi-FAB Boot =====
+async function boot() {
+    try {
+        const resp = await fetch('/api/fabs');
+        const data = await resp.json();
+        window._fabList = data.fabs || [];
+        window._currentFab = data.current_fab;
+
+        // 로딩 화면에 현재 FAB 표시
+        if (data.current_fab) {
+            document.getElementById('loadFabName').textContent = '[ ' + data.current_fab + ' ]';
+        }
+
+        // 헤더 FAB 드롭다운 (다중 FAB)
+        if (data.fabs && data.fabs.length > 1) {
+            populateFabSelector(data.fabs, data.current_fab);
+        }
+    } catch(e) {}
+
+    // 기본 FAB 바로 로딩
+    init();
+}
+
+async function switchFab(fabName) {
+    const resp = await fetch('/api/fab/switch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({fab_name: fabName})
+    });
+    return await resp.json();
+}
+
+function populateFabSelector(fabs, currentFab) {
+    const sel = document.getElementById('fabSelect');
+    sel.innerHTML = '';
+    fabs.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.fab_name;
+        opt.textContent = f.fab_name;
+        if (f.fab_name === currentFab) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    sel.style.display = 'inline-block';
+    document.getElementById('fabGoBtn').style.display = 'inline-block';
+}
+
+window.onFabGo = function() {
+    const sel = document.getElementById('fabSelect');
+    const fabName = sel.value;
+    if (!fabName) return;
+    document.getElementById('fabGoBtn').textContent = '전환중...';
+    document.getElementById('fabGoBtn').disabled = true;
+    switchFab(fabName).then(() => {
+        window.location.reload();
+    });
+}
+
+boot();
 </script>
 </body>
 </html>
