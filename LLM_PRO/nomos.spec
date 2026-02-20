@@ -65,6 +65,9 @@ a = Analysis(
         'llama_cpp',
         # aider
         'aider',
+        # 이미지
+        'PIL',
+        'PIL.Image',
     ],
     hookspath=[],
     hooksconfig={},
@@ -88,7 +91,7 @@ a = Analysis(
         'spacy', 'thinc', 'nltk', 'langcodes', 'srsly',
         'sympy',
         # 이미지/미디어
-        'PIL', 'Pillow', 'cv2', 'opencv',
+        'cv2', 'opencv',
         'sounddevice', 'soundfile',
         # Google/Cloud
         'google.cloud', 'google.api_core', 'googleapiclient',
