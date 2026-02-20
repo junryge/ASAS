@@ -2758,33 +2758,11 @@ function updateMinimap() {{
     );
   }});
 
-  // Camera position
+  // Camera position (red dot only)
   ctx.fillStyle = '#ff4444';
   ctx.beginPath();
   ctx.arc(cx + camera.position.x * scale, cy + camera.position.z * scale, 3, 0, Math.PI * 2);
   ctx.fill();
-
-  // Camera view direction indicator
-  ctx.strokeStyle = '#ff6666';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  const camDirX = cx + camera.position.x * scale;
-  const camDirZ = cy + camera.position.z * scale;
-  const lookX = cx + camTarget.x * scale;
-  const lookZ = cy + camTarget.z * scale;
-  ctx.moveTo(camDirX, camDirZ);
-  ctx.lineTo(lookX, lookZ);
-  ctx.stroke();
-
-  // Camera target crosshair
-  ctx.strokeStyle = '#ffaa00';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(lookX - 4, lookZ);
-  ctx.lineTo(lookX + 4, lookZ);
-  ctx.moveTo(lookX, lookZ - 4);
-  ctx.lineTo(lookX, lookZ + 4);
-  ctx.stroke();
 }}
 
 // ========== Minimap click navigation ==========
