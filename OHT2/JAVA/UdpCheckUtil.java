@@ -29,13 +29,10 @@ public class UdpCheckUtil {
                     String ip = packet.getAddress().getHostAddress();
                     String msg = new String(packet.getData(), 0, packet.getLength()).trim();
 
-                    // 메시지 앞 100자만 출력
-                    String preview = msg.length() > 100 ? msg.substring(0, 100) + "..." : msg;
-
-                    System.out.println("[UDP Check] #" + count
-                            + " | from: " + ip + ":" + packet.getPort()
-                            + " | len: " + packet.getLength()
-                            + " | data: " + preview);
+                    System.out.println("──────────────────────────────────────────────────");
+                    System.out.println("[UDP #" + count + "] from: " + ip + ":" + packet.getPort() + " | len: " + packet.getLength());
+                    System.out.println(msg);
+                    System.out.println("──────────────────────────────────────────────────");
 
                 } catch (java.net.SocketTimeoutException e) {
                     System.out.println("[UDP Check] NO DATA for 10s (total received: " + count + ")");
