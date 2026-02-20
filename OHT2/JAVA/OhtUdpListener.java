@@ -11,6 +11,12 @@ public class OhtUdpListener {
     Thread receiveThread = null;
     DatagramSocket socket = null;
 
+    // UDP 수신 모니터링 (30초 간격 로그)
+    private volatile long lastUdpRecvTime = 0L;
+    private volatile long udpRecvCount = 0L;
+    private volatile long lastUdpLogTime = System.currentTimeMillis();
+    private static final long UDP_LOG_INTERVAL = 30_000L;
+
     public OhtUdpListener(String fabId, String mcpName, int port) {
         this.fabId         = fabId;
         this.mcpName     = mcpName;
@@ -117,9 +123,46 @@ public class OhtUdpListener {
         }
 
         receiveThread.start();
+
+        // UDP 수신 상태 모니터링 쓰레드 (30초 간격)
+        Thread udpMonitor = new Thread(() -> {
+            while (isRunning) {
+                try {
+                    Thread.sleep(UDP_LOG_INTERVAL);
+                } catch (InterruptedException e) {
+                    break;
+                }
+
+                long now = System.currentTimeMillis();
+                long elapsed = lastUdpRecvTime > 0 ? now - lastUdpRecvTime : -1;
+
+                if (lastUdpRecvTime == 0) {
+                    logger.warn("[UDP Monitor] NO DATA YET [fab: {} | mcp: {} | port: {}] - waiting for first packet",
+                            fabId, mcpName, port);
+                } else if (elapsed > UDP_LOG_INTERVAL) {
+                    logger.warn("[UDP Monitor] NO DATA [fab: {} | mcp: {} | port: {} | last recv: {}s ago]",
+                            fabId, mcpName, port, elapsed / 1000);
+                }
+            }
+        }, "UDP-Monitor-" + fabId + "-" + mcpName);
+        udpMonitor.setDaemon(true);
+        udpMonitor.start();
     }
 
     private void _addMessageInAtlasMemory(String fabId, String mcpName, String message) {
+        long now = System.currentTimeMillis();
+
+        // UDP 수신 모니터링
+        lastUdpRecvTime = now;
+        udpRecvCount++;
+
+        if (now - lastUdpLogTime >= UDP_LOG_INTERVAL) {
+            logger.info("[UDP Monitor] RECEIVING [fab: {} | mcp: {} | port: {} | count: {} | last: {}ms ago]",
+                    fabId, mcpName, port, udpRecvCount, now - lastUdpRecvTime);
+            udpRecvCount = 0L;
+            lastUdpLogTime = now;
+        }
+
         Msg data = new Msg(
                 fabId,
                 MSG_TYP.OHT,
