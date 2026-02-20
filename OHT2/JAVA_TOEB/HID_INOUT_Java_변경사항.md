@@ -252,51 +252,44 @@ private void flushHidEdgeBuffer() {
 
 ---
 
-# Part 2: OhtMsgWorkerRunnable.java 마스터 테이블 업데이트 (통합)
+# Part 2: HidMasterBatchJob.java (신규 — Quartz Job)
 
-> ※ 별도 HidMasterBatchJob.java 없이 **OhtMsgWorkerRunnable 내부에서 하루 1회 실행**
-> ※ `_calculatedVhlCnt()` 에서 날짜 비교 → `_updateHidMasterTables()` 호출
+> ※ TrafficBatch.java 패턴 참조 — `Env.getSwitchMap()` 순회, FAB별 처리
+> ※ Quartz 스케줄러에 등록하여 하루 1회 실행 (예: `0 0 1 * * ?`)
 > ※ `map/{FAB}/*.layout.zip` 없으면 SKIP + `logger.warn`
 
-## 2.1 _updateHidMasterTables() — 마스터 업데이트 오케스트레이터
+## 2.1 구조 (TrafficBatch 패턴)
 
 ```java
-/**
- * HID 마스터 테이블 업데이트 (하루 1회)
- * 데이터 소스: map/{FAB}/*.layout.zip 내 layout.xml
- */
-private void _updateHidMasterTables() {
-    logger.info("Starting HID Master Tables update [fab: {}]", this.fabId);
-
-    FabProperties fabProperties = DataService.getInstance().getFabPropertiesMap().get(this.fabId);
-    String mapDir = fabProperties.getMapDir();  // DataService.java:295
-    File mapDirFile = new File(mapDir);
-
-    if (!mapDirFile.exists() || !mapDirFile.isDirectory()) {
-        logger.warn("[HID Master] map directory not found, SKIP [fab: {} | path: {}]", this.fabId, mapDir);
-        return;
+public class HidMasterBatchJob implements Job {
+    @Override
+    public void execute(JobExecutionContext arg0) throws JobExecutionException {
+        if (Util.isCurrentIC()) {
+            for (Map.Entry<String, FunctionItem> entry : Env.getSwitchMap().entrySet()) {
+                FunctionItem functionItem = entry.getValue();
+                if (functionItem != null) {
+                    String fabId   = functionItem.getFabId();
+                    String mcpName = functionItem.getMcpName();
+                    _run(fabId, mcpName);
+                }
+            }
+        }
     }
-
-    File[] layoutZipFiles = mapDirFile.listFiles((dir, name) -> name.endsWith(".layout.zip"));
-
-    if (layoutZipFiles == null || layoutZipFiles.length == 0) {
-        logger.warn("[HID Master] *.layout.zip not found, SKIP [fab: {} | path: {}]", this.fabId, mapDir);
-        return;
-    }
-
-    File layoutZipFile = layoutZipFiles[0];
-    logger.info("[HID Master] layout.zip found [fab: {} | file: {}]", this.fabId, layoutZipFile.getName());
-
-    _updateHidEdgeMasterInfo(layoutZipFile);   // 테이블 1
-    _updateHidInfoMaster();                     // 테이블 2
-
-    logger.info("HID Master Tables update completed [fab: {}]", this.fabId);
 }
 ```
 
----
+## 2.2 _run() — FAB별 마스터 테이블 업데이트
 
-## 2.2 _updateHidEdgeMasterInfo() — 테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS
+```java
+private void _run(String fabId, String mcpName) {
+    // 1. layout.zip 경로 확인 — fabProperties.getMapDir() (DataService.java:295)
+    // 2. map/{FAB}/*.layout.zip 찾기 — 없으면 SKIP + logger.warn
+    // 3. _updateHidEdgeMasterInfo() → 테이블 1
+    // 4. _updateHidInfoMaster()     → 테이블 2
+}
+```
+
+## 2.3 _updateHidEdgeMasterInfo() — 테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS
 
 ```java
 /**
@@ -305,18 +298,18 @@ private void _updateHidMasterTables() {
  *
  * 데이터 소스: DataService.getDataSet().getEdgeMap() → RailEdge HID 전환 감지
  */
-private void _updateHidEdgeMasterInfo(File layoutZipFile) {
-    // ... RailEdge 순회하며 HID 전환 엣지 추출 ...
-    // 테이블명: this.fabId + "_ATLAS_INFO_HID_INOUT_MAS"
+private void _updateHidEdgeMasterInfo(String fabId, String mcpName, File layoutZipFile) {
+    // ... RailEdge 순회하며 FAB별 HID 전환 엣지 추출 ...
+    // 테이블명: fabId + "_ATLAS_INFO_HID_INOUT_MAS"
     // Full Refresh: truncateTable() → setInsertTuples()
 }
 ```
 
-> ※ 상세 구현 코드: `JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java` 참조 (Line 261~357)
+> ※ 상세 구현 코드: `JAVA_TOEB/SRC/HidMasterBatchJob.java` 참조
 
 ---
 
-## 2.3 _updateHidInfoMaster() — 테이블 2: {FAB}_ATLAS_HID_INFO_MAS
+## 2.4 _updateHidInfoMaster() — 테이블 2: {FAB}_ATLAS_HID_INFO_MAS
 
 ```java
 /**
@@ -328,31 +321,37 @@ private void _updateHidEdgeMasterInfo(File layoutZipFile) {
  *   FREE_FLOW_SPEED → RailEdge.getMaxVelocity() HID별 평균
  *   PORT_CNT_TOTAL  → RailEdge.getPortIdList().size() 합계
  */
-private void _updateHidInfoMaster() {
-    // ... RailEdge 순회하며 HID별 집계 ...
-    // 테이블명: this.fabId + "_ATLAS_HID_INFO_MAS"
+private void _updateHidInfoMaster(String fabId, String mcpName) {
+    // ... RailEdge 순회하며 FAB별 HID 집계 ...
+    // 테이블명: fabId + "_ATLAS_HID_INFO_MAS"
     // Full Refresh: truncateTable() → setInsertTuples()
 }
 ```
 
-> ※ 상세 구현 코드: `JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java` 참조 (Line 384~479)
+> ※ 상세 구현 코드: `JAVA_TOEB/SRC/HidMasterBatchJob.java` 참조
 
 ---
 
 # 변경 요약
 
-## OhtMsgWorkerRunnable.java (모든 코드 통합)
+## OhtMsgWorkerRunnable.java
 
 | 구분 | 내용 |
 |------|------|
 | 기존 코드 | **유지** (HID VHL 카운트) |
 | 신규 필드 | `hidEdgeBuffer`, `lastHidEdgeFlushTime`, `hidEdgeFlushLock`, `hidEdgeBufferLock` |
-| 신규 필드 | `hidMasterUpdatedToday`, `hidMasterLastUpdateDate`, `hidMasterUpdateLock` |
-| 수정 메소드 | `_calculatedVhlCnt()` (엣지 집계 + 1분 플러시 + 하루 1회 마스터 업데이트) |
+| 수정 메소드 | `_calculatedVhlCnt()` (엣지 집계 + 1분 플러시) |
 | 신규 메소드 | `flushHidEdgeBuffer()` → `{FAB}_ATLAS_HID_INOUT` 저장 |
-| 신규 메소드 | `_updateHidMasterTables()` → 마스터 업데이트 오케스트레이터 |
-| 신규 메소드 | `_updateHidEdgeMasterInfo()` → `{FAB}_ATLAS_INFO_HID_INOUT_MAS` 저장 |
-| 신규 메소드 | `_updateHidInfoMaster()` → `{FAB}_ATLAS_HID_INFO_MAS` 저장 |
+
+## HidMasterBatchJob.java (신규 — Quartz Job)
+
+| 구분 | 내용 |
+|------|------|
+| 패턴 | TrafficBatch.java 패턴 (`Env.getSwitchMap()` 순회) |
+| 스케줄 | Quartz — 하루 1회 실행 |
+| 신규 메소드 | `_updateHidEdgeMasterInfo()` → `{FAB}_ATLAS_INFO_HID_INOUT_MAS` |
+| 신규 메소드 | `_updateHidInfoMaster()` → `{FAB}_ATLAS_HID_INFO_MAS` |
+| ZIP 처리 | `map/{FAB}/*.layout.zip` 없으면 SKIP + `logger.warn` |
 
 ## 신규 테이블 (FAB prefix)
 
@@ -364,6 +363,7 @@ private void _updateHidInfoMaster() {
 
 ## 참고 소스 코드
 
-상세 구현 코드: `JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java`
+- 실시간 집계: `JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java`
+- 마스터 배치: `JAVA_TOEB/SRC/HidMasterBatchJob.java`
 
 ---

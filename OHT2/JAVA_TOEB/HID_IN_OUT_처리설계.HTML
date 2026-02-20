@@ -543,7 +543,7 @@
                 <div class="flow-section">
                     <!-- 마스터 데이터 흐름 -->
                     <div class="flow-group">
-                        <div class="flow-group-title">📁 마스터 데이터 (하루 1회) — OhtMsgWorkerRunnable 내부 실행</div>
+                        <div class="flow-group-title">📁 마스터 데이터 (하루 1회) — HidMasterBatchJob (Quartz Job)</div>
                         <div class="flow-row">
                             <div class="flow-box source">map/{FAB}/*.layout.zip</div>
                             <span class="flow-arrow">→</span>
@@ -600,7 +600,7 @@
             <h2>테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS</h2>
 
             <h3>용도</h3>
-            <p>HID Zone 진입/진출 엣지 마스터 데이터 (기준 정보) — <code>map/{FAB}/*.layout.zip</code> 기반, 하루 1회 업데이트 (OhtMsgWorkerRunnable 내부)</p>
+            <p>HID Zone 진입/진출 엣지 마스터 데이터 (기준 정보) — <code>map/{FAB}/*.layout.zip</code> 기반, 하루 1회 업데이트 (HidMasterBatchJob — Quartz Job)</p>
             <p style="color: var(--accent-cyan); margin-top: 0.3rem;">예: <code>M14A_ATLAS_INFO_HID_INOUT_MAS</code>, <code>M16A_ATLAS_INFO_HID_INOUT_MAS</code></p>
             <p style="color: var(--accent-orange); margin-top: 0.5rem;">※ 부하 최적화: 진입/진출 구간 <strong>2009개</strong> 엣지만 관리</p>
 
@@ -620,7 +620,7 @@
                     <tr><td><code>EDGE_ID</code></td><td>STRING</td><td>엣지 고유 ID (FROM:TO)</td><td><code>String.format("%03d:%03d")</code></td></tr>
                     <tr><td><code>FROM_HID_NM</code></td><td>STRING</td><td>출발 HID Zone 이름</td><td><code>"HID_" + String.format("%03d", hidId)</code></td></tr>
                     <tr><td><code>TO_HID_NM</code></td><td>STRING</td><td>도착 HID Zone 이름</td><td><code>"HID_" + String.format("%03d", hidId)</code></td></tr>
-                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>this.mcpName</code> (OhtMsgWorkerRunnable.java:9)</td></tr>
+                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>mcpName</code> 파라미터 (HidMasterBatchJob.java)</td></tr>
                     <tr><td><code>ZONE_ID</code></td><td>STRING</td><td>Zone ID</td><td>추후 매핑 가능</td></tr>
                     <tr><td><code>EDGE_TYPE</code></td><td>STRING</td><td>엣지 유형</td><td><code>fromHid==0?"IN":toHid==0?"OUT":"INTERNAL"</code></td></tr>
                     <tr><td><code>UPDATE_DT</code></td><td>STRING</td><td>업데이트 일시</td><td><code>SimpleDateFormat</code></td></tr>
@@ -679,7 +679,7 @@
                 <tbody>
                     <tr><td><code>HID_ID</code></td><td>INT</td><td>HID Zone ID (PK)</td><td><code>RailEdge.getHIDId()</code> (RaileEdge.java:324)</td></tr>
                     <tr><td><code>HID_NM</code></td><td>STRING</td><td>HID Zone 이름</td><td><code>"HID_" + String.format("%03d", hidId)</code></td></tr>
-                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>this.mcpName</code> (OhtMsgWorkerRunnable.java:9)</td></tr>
+                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>mcpName</code> 파라미터 (HidMasterBatchJob.java)</td></tr>
                     <tr><td><code>ZONE_ID</code></td><td>STRING</td><td>Zone ID</td><td>추후 매핑 가능</td></tr>
                     <tr class="new-col"><td><code>RAIL_LEN_TOTAL</code></td><td>DOUBLE</td><td>레일 길이 총합 (mm)</td><td><code>RailEdge.getLength()</code> HID별 합계 (AbstractEdge 상속)</td></tr>
                     <tr class="new-col"><td><code>FREE_FLOW_SPEED</code></td><td>DOUBLE</td><td>FREE FLOW 속도 (mm/s)</td><td><code>RailEdge.getMaxVelocity()</code> HID별 평균 (RaileEdge.java:270)</td></tr>
@@ -991,23 +991,30 @@ table M14A_ATLAS_HID_INOUT duration=1d
             </div>
 
             <div class="highlight-box">
-                <h4>📝 OhtMsgWorkerRunnable.java (모든 코드 통합)</h4>
+                <h4>📝 OhtMsgWorkerRunnable.java (실시간 1분 집계)</h4>
                 <ul class="highlight-list">
-                    <li><strong>신규 필드</strong>: <code>hidEdgeBuffer</code>, <code>hidEdgeFlushLock</code>, <code>hidEdgeBufferLock</code>, <code>hidMasterUpdateLock</code></li>
-                    <li><strong>수정</strong>: <code>_calculatedVhlCnt()</code> — 엣지 집계 + 1분 플러시 + 하루 1회 마스터 업데이트</li>
+                    <li><strong>신규 필드</strong>: <code>hidEdgeBuffer</code>, <code>hidEdgeFlushLock</code>, <code>hidEdgeBufferLock</code></li>
+                    <li><strong>수정</strong>: <code>_calculatedVhlCnt()</code> — 엣지 집계 + 1분 플러시</li>
                     <li><strong>추가</strong>: <code>flushHidEdgeBuffer()</code> → <code>{FAB}_ATLAS_HID_INOUT</code> 저장</li>
-                    <li><strong>추가</strong>: <code>_updateHidMasterTables()</code> → 마스터 업데이트 오케스트레이터</li>
-                    <li><strong>추가</strong>: <code>_updateHidEdgeMasterInfo()</code> → <code>{FAB}_ATLAS_INFO_HID_INOUT_MAS</code></li>
-                    <li><strong>추가</strong>: <code>_updateHidInfoMaster()</code> → <code>{FAB}_ATLAS_HID_INFO_MAS</code></li>
+                </ul>
+            </div>
+
+            <div class="highlight-box">
+                <h4>📝 HidMasterBatchJob.java (신규 — Quartz Job, 하루 1회)</h4>
+                <ul class="highlight-list">
+                    <li><strong>패턴</strong>: <code>TrafficBatch.java</code> 참조 — <code>implements Job</code>, <code>Env.getSwitchMap()</code> 순회</li>
+                    <li><strong>메소드</strong>: <code>_updateHidEdgeMasterInfo()</code> → <code>{FAB}_ATLAS_INFO_HID_INOUT_MAS</code></li>
+                    <li><strong>메소드</strong>: <code>_updateHidInfoMaster()</code> → <code>{FAB}_ATLAS_HID_INFO_MAS</code></li>
+                    <li><strong>데이터 소스</strong>: <code>map/{FAB}/*.layout.zip</code> + <code>RailEdge</code> 런타임 데이터</li>
                 </ul>
             </div>
 
             <div class="highlight-box">
                 <h4>📁 참고 소스 코드</h4>
                 <ul class="highlight-list">
-                    <li>상세 구현 코드: <code>JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java</code></li>
+                    <li>실시간 집계: <code>JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java</code></li>
+                    <li>마스터 배치: <code>JAVA_TOEB/SRC/HidMasterBatchJob.java</code></li>
                     <li><code>map/{FAB}/*.layout.zip</code> 없으면 SKIP + <code>logger.warn</code></li>
-                    <li>별도 HidMasterBatchJob 없이 OhtMsgWorkerRunnable 내부에서 하루 1회 실행</li>
                 </ul>
             </div>
         </section>
