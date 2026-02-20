@@ -28,6 +28,7 @@ import os
 import math
 import webbrowser
 import uuid
+import base64
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
 
@@ -263,6 +264,24 @@ class TransportLine:
 
 
 @dataclass
+class GroundBox:
+    """3D 바닥 박스 - 에셋 아래 큰 플랫폼"""
+    id: str = ""
+    name: str = "바닥 플랫폼"
+    x: float = 0
+    z: float = 0
+    width: float = 200
+    depth: float = 200
+    height: float = 5
+    color: str = "#334455"
+    opacity: float = 0.9
+
+    def __post_init__(self):
+        if not self.id:
+            self.id = str(uuid.uuid4())[:8]
+
+
+@dataclass
 class CampusProject:
     name: str = "SK Hynix 3D Campus"
     version: str = "1.0"
@@ -270,6 +289,9 @@ class CampusProject:
     ground_depth: float = 600
     ground_color: str = "#4a7c59"
     sky_color: str = "#87CEEB"
+    background_image: str = ""  # base64 인코딩된 배경 이미지
+    background_image_path: str = ""  # 원본 파일 경로 (참조용)
+    background_image_opacity: float = 0.7  # 배경 이미지 투명도
     buildings: List[Dict] = field(default_factory=list)
     roads: List[Dict] = field(default_factory=list)
     trees: List[Dict] = field(default_factory=list)
@@ -283,6 +305,7 @@ class CampusProject:
     walls: List[Dict] = field(default_factory=list)
     trucks: List[Dict] = field(default_factory=list)
     transport_lines: List[Dict] = field(default_factory=list)
+    ground_boxes: List[Dict] = field(default_factory=list)
     label_scale: float = 1.5  # 이름표 크기 배율 (기본 1.5배)
 
 
@@ -306,6 +329,9 @@ def generate_html(project: CampusProject) -> str:
     walls_json = json.dumps(project.walls, ensure_ascii=False)
     trucks_json = json.dumps(project.trucks, ensure_ascii=False)
     transport_lines_json = json.dumps(project.transport_lines, ensure_ascii=False)
+    ground_boxes_json = json.dumps(project.ground_boxes, ensure_ascii=False)
+    background_image_data = json.dumps(project.background_image, ensure_ascii=False) if project.background_image else '""'
+    background_image_opacity = project.background_image_opacity
     label_scale = project.label_scale
 
     html = f'''<!DOCTYPE html>
@@ -845,6 +871,9 @@ const chimneysData = {chimneys_json};
 const wallsData = {walls_json};
 const trucksData = {trucks_json};
 const transportLinesData = {transport_lines_json};
+const groundBoxesData = {ground_boxes_json};
+const backgroundImageData = {background_image_data};
+const backgroundImageOpacity = {background_image_opacity};
 let smokeParticles = [];
 let movingTrucks = [];
 let roadSegments = [];
@@ -1090,6 +1119,66 @@ function setupEnvironment() {{
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
 
+  // 배경 이미지 (지도/도면) - 지면 위에 텍스처로 표시
+  if (backgroundImageData && backgroundImageData.length > 10) {{
+    const bgLoader = new THREE.TextureLoader();
+    const bgTex = bgLoader.load(backgroundImageData, function(texture) {{
+      const bgGeo = new THREE.PlaneGeometry(GROUND_W * 2, GROUND_D * 2);
+      const bgMat = new THREE.MeshBasicMaterial({{
+        map: texture,
+        transparent: true,
+        opacity: backgroundImageOpacity,
+        depthWrite: false,
+      }});
+      const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+      bgMesh.rotation.x = -Math.PI / 2;
+      bgMesh.position.y = 0.2;
+      scene.add(bgMesh);
+    }});
+  }}
+
+  // 바닥 박스 (3D 플랫폼)
+  groundBoxesData.forEach(gb => {{
+    const boxGeo = new THREE.BoxGeometry(gb.width, gb.height, gb.depth);
+    const boxMat = new THREE.MeshStandardMaterial({{
+      color: gb.color || '#334455',
+      roughness: 0.8,
+      metalness: 0.1,
+      transparent: true,
+      opacity: gb.opacity || 0.9,
+    }});
+    const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+    boxMesh.position.set(gb.x, gb.height / 2, gb.z);
+    boxMesh.castShadow = true;
+    boxMesh.receiveShadow = true;
+    boxMesh.userData = {{ ...gb, objectType: 'ground_box' }};
+    scene.add(boxMesh);
+    allMeshes.push(boxMesh);
+
+    // 이름 라벨
+    const labelCanvas = document.createElement('canvas');
+    const labelCtx = labelCanvas.getContext('2d');
+    labelCtx.font = 'bold 24px Noto Sans KR, sans-serif';
+    const tw = labelCtx.measureText(gb.name || '').width + 20;
+    labelCanvas.width = tw;
+    labelCanvas.height = 36;
+    labelCtx.fillStyle = 'rgba(10,10,20,0.7)';
+    labelCtx.fillRect(0, 0, tw, 36);
+    labelCtx.font = 'bold 24px Noto Sans KR, sans-serif';
+    labelCtx.fillStyle = '#ffffff';
+    labelCtx.textAlign = 'center';
+    labelCtx.textBaseline = 'middle';
+    labelCtx.fillText(gb.name || '', tw / 2, 18);
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    labelTex.minFilter = THREE.LinearFilter;
+    const labelMat = new THREE.SpriteMaterial({{ map: labelTex, transparent: true, depthTest: false }});
+    const labelSprite = new THREE.Sprite(labelMat);
+    const scale = Math.max(15, gb.width * 0.2);
+    labelSprite.scale.set(scale, scale * (36 / tw), 1);
+    labelSprite.position.set(gb.x, gb.height + scale * 0.2, gb.z);
+    scene.add(labelSprite);
+  }});
+
   // Grid
   const gridSize = Math.max(GROUND_W, GROUND_D) * 2;
   gridHelper = new THREE.GridHelper(gridSize, 60, 0x555555, 0x333333);
@@ -1197,14 +1286,45 @@ function createBuildings() {{
       openMesh.position.y = b.height + 0.75;
       group.add(openMesh);
     }} else {{
-      // === Standard box building ===
-      const geo = new THREE.BoxGeometry(b.width, b.height, b.depth);
-      const mat = createGradientMaterial(b.color, b.height);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.y = b.height / 2;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      group.add(mesh);
+      // === Standard box building - 층별 분리 렌더링 ===
+      const floorCount = Math.max(1, b.floors || 1);
+      const floorH = b.height / floorCount;
+      const baseColor = new THREE.Color(b.color);
+
+      for (let fl = 0; fl < floorCount; fl++) {{
+        const floorY = fl * floorH + floorH / 2;
+        // 층별 약간의 색상 변화 (위로 갈수록 밝아짐)
+        const floorColor = baseColor.clone().offsetHSL(0, 0, fl * 0.02);
+        const floorGeo = new THREE.BoxGeometry(b.width - 0.3, floorH - 0.3, b.depth - 0.3);
+        const floorMat = new THREE.MeshStandardMaterial({{
+          color: floorColor,
+          roughness: 0.65,
+          metalness: 0.15,
+        }});
+        const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+        floorMesh.position.y = floorY;
+        floorMesh.castShadow = true;
+        floorMesh.receiveShadow = true;
+        // 층별 클릭 이벤트용 userData
+        floorMesh.userData = {{
+          isFloor: true,
+          floorNumber: fl + 1,
+          totalFloors: floorCount,
+          buildingName: b.name,
+          floorHeight: floorH,
+          buildingId: b.id,
+        }};
+        group.add(floorMesh);
+
+        // 층 구분선 (각 층 바닥에 가느다란 선)
+        if (fl > 0) {{
+          const lineGeo = new THREE.BoxGeometry(b.width + 0.5, 0.15, b.depth + 0.5);
+          const lineMat = new THREE.MeshStandardMaterial({{ color: 0x222233, roughness: 0.9 }});
+          const lineMesh = new THREE.Mesh(lineGeo, lineMat);
+          lineMesh.position.y = fl * floorH;
+          group.add(lineMesh);
+        }}
+      }}
 
       // Windows (4면 전체, 층별 유리 패널)
       if (b.floors > 0) {{
@@ -2205,7 +2325,7 @@ function setupControls() {{
 
   el.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  // Click to select building
+  // Click to select building (with floor-level detection)
   el.addEventListener('click', (e) => {{
     if (Math.abs(e.clientX - lastMouse.x) > 3 || Math.abs(e.clientY - lastMouse.y) > 3) return;
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -2214,7 +2334,18 @@ function setupControls() {{
 
     const intersects = raycaster.intersectObjects(scene.children, true);
     let found = null;
+    let clickedFloor = null;
     for (const hit of intersects) {{
+      // 층별 클릭 체크
+      if (hit.object.userData && hit.object.userData.isFloor) {{
+        clickedFloor = hit.object.userData;
+        let obj = hit.object;
+        while (obj.parent && obj.parent !== scene) obj = obj.parent;
+        if (obj.userData && obj.userData.objectType === 'building') {{
+          found = obj;
+          break;
+        }}
+      }}
       let obj = hit.object;
       while (obj.parent && obj.parent !== scene) obj = obj.parent;
       if (obj.userData && obj.userData.objectType === 'building') {{
@@ -2223,8 +2354,9 @@ function setupControls() {{
       }}
     }}
 
-    if (found) selectBuilding(found);
-    else deselectBuilding();
+    if (found) {{
+      selectBuilding(found, clickedFloor);
+    }} else deselectBuilding();
   }});
 
   // Keyboard
@@ -2266,7 +2398,7 @@ function resetCamera() {{
 }}
 
 // ========== Selection ==========
-function selectBuilding(mesh) {{
+function selectBuilding(mesh, clickedFloor) {{
   deselectBuilding();
   selectedMesh = mesh;
 
@@ -2275,6 +2407,11 @@ function selectBuilding(mesh) {{
       child.userData.origEmissive = child.material.emissive ? child.material.emissive.clone() : null;
       if (child.material.emissive) {{
         child.material.emissive.set(0x334466);
+      }}
+      // 클릭한 층 강조
+      if (clickedFloor && child.userData.isFloor &&
+          child.userData.floorNumber === clickedFloor.floorNumber) {{
+        if (child.material.emissive) child.material.emissive.set(0x886644);
       }}
     }}
   }});
@@ -2300,6 +2437,29 @@ function selectBuilding(mesh) {{
     <div class="spec-item"><div class="spec-label">DEPTH</div><div class="spec-value">${{d.depth}}m</div></div>
     <div class="spec-item"><div class="spec-label">HEIGHT</div><div class="spec-value">${{d.height}}m</div></div>
   </div>`;
+
+  // 층별 클릭 정보 표시
+  if (clickedFloor) {{
+    panelHTML += `<div style="background:rgba(255,180,50,0.1);border:1px solid rgba(255,180,50,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">
+      <div style="font-size:11px;color:#ff9;font-weight:700;margin-bottom:4px;">선택된 층</div>
+      <div style="font-size:16px;color:#fff;font-weight:800;">${{clickedFloor.floorNumber}}F / ${{clickedFloor.totalFloors}}F</div>
+      <div style="font-size:10px;color:#aaa;margin-top:3px;">층 높이: ${{clickedFloor.floorHeight.toFixed(1)}}m</div>
+    </div>`;
+  }}
+
+  // 층별 버튼 목록
+  if (d.floors > 1) {{
+    panelHTML += `<div style="font-size:10px;color:#666;letter-spacing:1px;margin-bottom:6px;">FLOOR MAP</div>`;
+    panelHTML += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:3px;margin-bottom:10px;">`;
+    const flH = d.height / d.floors;
+    for (let i = d.floors; i >= 1; i--) {{
+      const isActive = clickedFloor && clickedFloor.floorNumber === i;
+      const bg = isActive ? 'rgba(255,180,50,0.3)' : 'rgba(255,255,255,0.04)';
+      const border = isActive ? '1px solid rgba(255,180,50,0.5)' : '1px solid rgba(255,255,255,0.06)';
+      panelHTML += `<div style="background:${{bg}};border:${{border}};border-radius:4px;padding:4px 6px;text-align:center;cursor:pointer;font-size:11px;color:#ddd;" title="${{i}}층 (높이: ${{(flH).toFixed(1)}}m)">${{i}}F</div>`;
+    }}
+    panelHTML += `</div>`;
+  }}
 
   document.getElementById('panelBody').innerHTML = panelHTML;
   document.getElementById('infoPanel').classList.add('visible');
@@ -2808,6 +2968,7 @@ class CampusBuilderApp:
     TOOL_WALL = "wall"
     TOOL_TRUCK = "truck"
     TOOL_TRANSPORT = "transport"
+    TOOL_GROUND_BOX = "ground_box"
 
     BUILDING_TYPES = [
         ("office", "오피스"),
@@ -2863,7 +3024,10 @@ class CampusBuilderApp:
         self.walls: List[Wall] = []
         self.trucks: List[Truck] = []
         self.transport_lines: List[TransportLine] = []
+        self.ground_boxes: List[GroundBox] = []
         self.current_file = None
+        self.bg_image_tk = None  # 캔버스 배경 이미지 (PhotoImage)
+        self.bg_image_original = None  # PIL Image 원본
 
         # 캔버스 상태
         self.current_tool = self.TOOL_SELECT
@@ -2930,13 +3094,23 @@ class CampusBuilderApp:
 
         # 추가 메뉴
         add_menu = tk.Menu(menubar, tearoff=0)
-        add_menu.add_command(label="건물 추가", command=lambda: self.add_object("building"))
-        add_menu.add_command(label="도로 추가", command=lambda: self.add_object("road"))
-        add_menu.add_command(label="나무 추가", command=lambda: self.add_object("tree"))
-        add_menu.add_command(label="주차장 추가", command=lambda: self.add_object("parking"))
-        add_menu.add_command(label="호수 추가", command=lambda: self.add_object("lake"))
+        add_menu.add_command(label="건물 추가", command=lambda: self._quick_add_asset("building"))
+        add_menu.add_command(label="도로 추가", command=lambda: self._quick_add_asset("road"))
+        add_menu.add_command(label="나무 추가", command=lambda: self._quick_add_asset("tree"))
+        add_menu.add_command(label="주차장 추가", command=lambda: self._quick_add_asset("parking"))
+        add_menu.add_command(label="호수 추가", command=lambda: self._quick_add_asset("lake"))
+        add_menu.add_command(label="사람 추가", command=lambda: self._quick_add_asset("person"))
+        add_menu.add_command(label="게이트 추가", command=lambda: self._quick_add_asset("gate"))
+        add_menu.add_command(label="물탱크 추가", command=lambda: self._quick_add_asset("water_tank"))
+        add_menu.add_command(label="LPG탱크 추가", command=lambda: self._quick_add_asset("lpg_tank"))
+        add_menu.add_command(label="굴뚝 추가", command=lambda: self._quick_add_asset("chimney"))
+        add_menu.add_command(label="벽 추가", command=lambda: self._quick_add_asset("wall"))
+        add_menu.add_command(label="트럭 추가", command=lambda: self._quick_add_asset("truck"))
+        add_menu.add_command(label="바닥박스 추가", command=lambda: self._quick_add_asset("ground_box"))
         add_menu.add_separator()
         add_menu.add_command(label="나무 10개 랜덤 추가", command=self.add_random_trees)
+        add_menu.add_separator()
+        add_menu.add_command(label="배경 이미지 로드...", command=self.load_background_image)
         menubar.add_cascade(label="추가", menu=add_menu)
 
         # 뷰 메뉴
@@ -2995,6 +3169,7 @@ class CampusBuilderApp:
             (self.TOOL_WALL, "🧱 벽"),
             (self.TOOL_TRUCK, "🚛 트럭"),
             (self.TOOL_TRANSPORT, "🔗 연결통로"),
+            (self.TOOL_GROUND_BOX, "📦 바닥박스"),
         ]
 
         for tool_id, label in tools:
@@ -3002,6 +3177,12 @@ class CampusBuilderApp:
                              command=lambda t=tool_id: self.set_tool(t))
             btn.pack(side=tk.LEFT, padx=2)
             self.tool_buttons[tool_id] = btn
+
+        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+
+        # 배경 이미지 버튼
+        ttk.Button(toolbar, text="🖼️ 배경이미지", style="Tool.TButton",
+                   command=self.load_background_image).pack(side=tk.LEFT, padx=2)
 
         ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
@@ -3028,6 +3209,81 @@ class CampusBuilderApp:
             else:
                 btn.configure(style="Tool.TButton")
         self.update_status(f"도구: {tool}")
+
+    # ========================
+    # 배경 이미지
+    # ========================
+    def load_background_image(self):
+        """배경 이미지(jpg/png)를 로드하여 캔버스에 표시"""
+        path = filedialog.askopenfilename(
+            filetypes=[("이미지 파일", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All Files", "*.*")],
+            title="배경 이미지 선택 (지도/도면 등)"
+        )
+        if not path:
+            return
+        try:
+            from PIL import Image, ImageTk
+            img = Image.open(path)
+            self.bg_image_original = img
+            self.project.background_image_path = path
+            # base64 인코딩하여 프로젝트에 저장 (HTML 내보내기용)
+            import io
+            buf = io.BytesIO()
+            fmt = 'PNG' if path.lower().endswith('.png') else 'JPEG'
+            img.save(buf, format=fmt)
+            b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+            mime = 'image/png' if fmt == 'PNG' else 'image/jpeg'
+            self.project.background_image = f"data:{mime};base64,{b64}"
+            self._update_bg_image_for_canvas()
+            self.redraw_canvas()
+            self.update_status(f"배경 이미지 로드: {os.path.basename(path)}")
+        except ImportError:
+            messagebox.showwarning("PIL 필요",
+                "배경 이미지 기능은 Pillow 라이브러리가 필요합니다.\n"
+                "pip install Pillow 로 설치해주세요.")
+        except Exception as e:
+            messagebox.showerror("오류", f"이미지를 열 수 없습니다:\n{e}")
+
+    def _update_bg_image_for_canvas(self):
+        """배경 이미지를 현재 캔버스 크기/줌에 맞게 PhotoImage로 변환"""
+        if self.bg_image_original is None:
+            self.bg_image_tk = None
+            return
+        try:
+            from PIL import Image, ImageTk
+            cw = max(1, self.canvas.winfo_width())
+            ch = max(1, self.canvas.winfo_height())
+            # 지면 경계에 맞게 이미지 크기 결정
+            gw = self.project.ground_width * 2 * self.canvas_scale
+            gd = self.project.ground_depth * 2 * self.canvas_scale
+            img = self.bg_image_original.copy()
+            img = img.resize((max(1, int(gw)), max(1, int(gd))), Image.LANCZOS)
+            # 투명도 적용
+            opacity = int(self.project.background_image_opacity * 255)
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            alpha = img.split()[3]
+            from PIL import ImageEnhance
+            alpha = alpha.point(lambda p: min(p, opacity))
+            img.putalpha(alpha)
+            # 캔버스 크기에 맞는 배경 생성
+            bg = Image.new('RGBA', (cw, ch), (42, 58, 42, 255))  # #2a3a2a
+            # 지면 좌상단 캔버스 좌표 계산
+            gx1, gy1 = self.world_to_canvas(-self.project.ground_width, -self.project.ground_depth)
+            paste_x, paste_y = int(gx1), int(gy1)
+            bg.paste(img, (paste_x, paste_y), img)
+            self.bg_image_tk = ImageTk.PhotoImage(bg.convert('RGB'))
+        except Exception:
+            self.bg_image_tk = None
+
+    def remove_background_image(self):
+        """배경 이미지 제거"""
+        self.bg_image_original = None
+        self.bg_image_tk = None
+        self.project.background_image = ""
+        self.project.background_image_path = ""
+        self.redraw_canvas()
+        self.update_status("배경 이미지 제거됨")
 
     # ========================
     # 메인 영역 (캔버스 + 패널)
@@ -3098,7 +3354,8 @@ class CampusBuilderApp:
                  f"나무: {len(self.trees)} | 주차장: {len(self.parking_lots)} | 호수: {len(self.lakes)} | "
                  f"사람: {len(self.persons)} | 게이트: {len(self.gates)} | "
                  f"물탱크: {len(self.water_tanks)} | LPG: {len(self.lpg_tanks)} | 굴뚝: {len(self.chimneys)} | "
-                 f"벽: {len(self.walls)} | 트럭: {len(self.trucks)} | 연결: {len(self.transport_lines)}"
+                 f"벽: {len(self.walls)} | 트럭: {len(self.trucks)} | 연결: {len(self.transport_lines)} | "
+                 f"바닥: {len(self.ground_boxes)}"
         )
 
     # ========================
@@ -3122,6 +3379,24 @@ class CampusBuilderApp:
         self.canvas.delete("all")
         cw = self.canvas.winfo_width()
         ch = self.canvas.winfo_height()
+
+        # 배경 이미지 그리기 (그리드 뒤에)
+        if self.bg_image_original is not None:
+            self._update_bg_image_for_canvas()
+            if self.bg_image_tk:
+                self.canvas.create_image(0, 0, anchor="nw", image=self.bg_image_tk)
+
+        # 바닥 박스 (지면 위, 다른 에셋 뒤에)
+        for gb in self.ground_boxes:
+            cx, cy = self.world_to_canvas(gb.x, gb.z)
+            hw = gb.width / 2 * self.canvas_scale
+            hd = gb.depth / 2 * self.canvas_scale
+            is_sel = self.selected_item == gb or self._is_in_multi_selection(gb)
+            self.canvas.create_rectangle(cx - hw, cy - hd, cx + hw, cy + hd,
+                                         fill=gb.color, outline="#ffff44" if is_sel else "#556677",
+                                         width=3 if is_sel else 2, stipple="gray50")
+            self.canvas.create_text(cx, cy, text=f"{gb.name}\n(H:{gb.height})",
+                                    fill="white", font=("Arial", 9, "bold"))
 
         # 그리드
         grid_spacing = 50
@@ -3755,6 +4030,11 @@ class CampusBuilderApp:
                 dist = math.sqrt((wx - px) ** 2 + (wz - pz) ** 2)
             if dist <= 5:
                 return tl, "transport"
+        # 바닥 박스 (가장 낮은 우선순위)
+        for gb in reversed(self.ground_boxes):
+            if (gb.x - gb.width / 2 <= wx <= gb.x + gb.width / 2 and
+                    gb.z - gb.depth / 2 <= wz <= gb.z + gb.depth / 2):
+                return (gb, "ground_box")
         return None
 
     def _place_object(self, wx, wz):
@@ -3797,6 +4077,9 @@ class CampusBuilderApp:
         elif self.current_tool == self.TOOL_TRUCK:
             obj = Truck(name=f"트럭 {len(self.trucks) + 1}", x=round(wx), z=round(wz))
             self.trucks.append(obj)
+        elif self.current_tool == self.TOOL_GROUND_BOX:
+            obj = GroundBox(name=f"바닥 {len(self.ground_boxes) + 1}", x=round(wx), z=round(wz))
+            self.ground_boxes.append(obj)
         else:
             return
 
@@ -3880,6 +4163,12 @@ class CampusBuilderApp:
                 self.object_tree.insert(transport_parent, "end", text=tl.name, values=(tl.transport_type,),
                                         tags=(f"transport_{tl.id}",))
 
+        if self.ground_boxes:
+            gb_parent = self.object_tree.insert("", "end", text="📦 바닥박스", open=True, values=("",))
+            for gb in self.ground_boxes:
+                self.object_tree.insert(gb_parent, "end", text=gb.name, values=("바닥박스",),
+                                        tags=(f"ground_box_{gb.id}",))
+
     def _on_tree_select(self, event):
         sel = self.object_tree.selection()
         if not sel:
@@ -3888,10 +4177,20 @@ class CampusBuilderApp:
         if not tags:
             return
         tag = tags[0]
-        parts = tag.split("_", 1)
-        if len(parts) != 2:
-            return
-        obj_type, obj_id = parts
+        # 복합 타입 처리 (ground_box, water_tank, lpg_tank 등)
+        known_prefixes = ["ground_box", "water_tank", "lpg_tank", "transport"]
+        obj_type = None
+        obj_id = None
+        for prefix in known_prefixes:
+            if tag.startswith(prefix + "_"):
+                obj_type = prefix
+                obj_id = tag[len(prefix) + 1:]
+                break
+        if obj_type is None:
+            parts = tag.split("_", 1)
+            if len(parts) != 2:
+                return
+            obj_type, obj_id = parts
 
         obj = None
         if obj_type == "building":
@@ -3910,6 +4209,12 @@ class CampusBuilderApp:
             obj = next((g for g in self.gates if g.id == obj_id), None)
         elif obj_type == "transport":
             obj = next((tl for tl in self.transport_lines if tl.id == obj_id), None)
+        elif obj_type == "ground_box":
+            obj = next((gb for gb in self.ground_boxes if gb.id == obj_id), None)
+        elif obj_type == "water_tank":
+            obj = next((wt for wt in self.water_tanks if wt.id == obj_id), None)
+        elif obj_type == "lpg_tank":
+            obj = next((lt for lt in self.lpg_tanks if lt.id == obj_id), None)
 
         if obj:
             self.selected_item = obj
@@ -4013,6 +4318,137 @@ class CampusBuilderApp:
                 pass
         ls_var.trace_add('write', _update_ls)
 
+        # 배경 이미지 설정
+        ttk.Separator(self.props_frame).pack(fill=tk.X, pady=8)
+        ttk.Label(self.props_frame, text="🖼️ 배경 이미지 (지도/도면)",
+                  font=("Arial", 10, "bold")).pack(anchor="w")
+        bg_status = "로드됨" if self.project.background_image else "없음"
+        ttk.Label(self.props_frame, text=f"상태: {bg_status}").pack(anchor="w", pady=2)
+        if self.project.background_image_path:
+            ttk.Label(self.props_frame, text=f"파일: {os.path.basename(self.project.background_image_path)}",
+                      wraplength=200).pack(anchor="w")
+
+        bg_btn_frame = ttk.Frame(self.props_frame)
+        bg_btn_frame.pack(fill=tk.X, pady=3)
+        ttk.Button(bg_btn_frame, text="이미지 로드",
+                   command=self.load_background_image).pack(side=tk.LEFT, padx=2)
+        ttk.Button(bg_btn_frame, text="이미지 제거",
+                   command=self.remove_background_image).pack(side=tk.LEFT, padx=2)
+
+        # 배경 투명도
+        f = ttk.Frame(self.props_frame)
+        f.pack(fill=tk.X, pady=3)
+        ttk.Label(f, text="배경 투명도:").pack(side=tk.LEFT)
+        bgo_var = tk.DoubleVar(value=self.project.background_image_opacity)
+        bgo_label = ttk.Label(f, text=f"{self.project.background_image_opacity:.1f}")
+        bgo_label.pack(side=tk.RIGHT)
+        bgo_scale = ttk.Scale(f, from_=0.1, to=1.0, variable=bgo_var, orient=tk.HORIZONTAL)
+        bgo_scale.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(5, 5))
+        def _update_bgo(*a):
+            try:
+                val = bgo_var.get()
+                self.project.background_image_opacity = round(val, 2)
+                bgo_label.config(text=f"{val:.1f}")
+                self.redraw_canvas()
+            except (tk.TclError, ValueError):
+                pass
+        bgo_var.trace_add('write', _update_bgo)
+
+        # 신규 에셋 추가 UI
+        ttk.Separator(self.props_frame).pack(fill=tk.X, pady=8)
+        ttk.Label(self.props_frame, text="➕ 빠른 에셋 추가",
+                  font=("Arial", 10, "bold")).pack(anchor="w")
+        asset_grid = ttk.Frame(self.props_frame)
+        asset_grid.pack(fill=tk.X, pady=4)
+        quick_assets = [
+            ("🏢 건물", "building"), ("🛣️ 도로", "road"),
+            ("🌳 나무", "tree"), ("🅿️ 주차장", "parking"),
+            ("💧 호수", "lake"), ("🚶 사람", "person"),
+            ("🚪 게이트", "gate"), ("🏗 물탱크", "water_tank"),
+            ("⛽ LPG탱크", "lpg_tank"), ("🏭 굴뚝", "chimney"),
+            ("🧱 벽", "wall"), ("🚛 트럭", "truck"),
+            ("📦 바닥박스", "ground_box"),
+        ]
+        for i, (label, asset_type) in enumerate(quick_assets):
+            btn = ttk.Button(asset_grid, text=label, width=10,
+                             command=lambda t=asset_type: self._quick_add_asset(t))
+            btn.grid(row=i // 2, column=i % 2, padx=2, pady=1, sticky="ew")
+        asset_grid.columnconfigure(0, weight=1)
+        asset_grid.columnconfigure(1, weight=1)
+
+    def _quick_add_asset(self, asset_type):
+        """프로젝트 속성 패널에서 빠르게 에셋 추가 (캔버스 중앙에 배치)"""
+        wx, wz = self.canvas_to_world(
+            self.canvas.winfo_width() / 2,
+            self.canvas.winfo_height() / 2
+        )
+        wx, wz = round(wx), round(wz)
+
+        if asset_type == "building":
+            obj = Building(name=f"건물 {len(self.buildings) + 1}", x=wx, z=wz)
+            self.buildings.append(obj)
+            self.selected_type = "building"
+        elif asset_type == "road":
+            obj = Road(name=f"도로 {len(self.roads) + 1}", x=wx, z=wz)
+            self.roads.append(obj)
+            self.selected_type = "road"
+        elif asset_type == "tree":
+            obj = Tree(name=f"나무 {len(self.trees) + 1}", x=wx, z=wz)
+            self.trees.append(obj)
+            self.selected_type = "tree"
+        elif asset_type == "parking":
+            obj = ParkingLot(name=f"주차장 {len(self.parking_lots) + 1}", x=wx, z=wz)
+            self.parking_lots.append(obj)
+            self.selected_type = "parking"
+        elif asset_type == "lake":
+            obj = Lake(name=f"호수 {len(self.lakes) + 1}", x=wx, z=wz)
+            self.lakes.append(obj)
+            self.selected_type = "lake"
+        elif asset_type == "person":
+            import random
+            obj = Person(name=f"사람 {len(self.persons) + 1}", x=wx, z=wz,
+                        shirt_color=random.choice(["#3366cc", "#cc3333", "#33aa33"]),
+                        pants_color=random.choice(["#333333", "#444466"]))
+            self.persons.append(obj)
+            self.selected_type = "person"
+        elif asset_type == "gate":
+            obj = Gate(name=f"게이트 {len(self.gates) + 1}", x=wx, z=wz)
+            self.gates.append(obj)
+            self.selected_type = "gate"
+        elif asset_type == "water_tank":
+            obj = WaterTank(name=f"물탱크 {len(self.water_tanks) + 1}", x=wx, z=wz)
+            self.water_tanks.append(obj)
+            self.selected_type = "water_tank"
+        elif asset_type == "lpg_tank":
+            obj = LPGTank(name=f"LPG탱크 {len(self.lpg_tanks) + 1}", x=wx, z=wz)
+            self.lpg_tanks.append(obj)
+            self.selected_type = "lpg_tank"
+        elif asset_type == "chimney":
+            obj = Chimney(name=f"굴뚝 {len(self.chimneys) + 1}", x=wx, z=wz)
+            self.chimneys.append(obj)
+            self.selected_type = "chimney"
+        elif asset_type == "wall":
+            obj = Wall(name=f"벽 {len(self.walls) + 1}", x=wx, z=wz)
+            self.walls.append(obj)
+            self.selected_type = "wall"
+        elif asset_type == "truck":
+            obj = Truck(name=f"트럭 {len(self.trucks) + 1}", x=wx, z=wz)
+            self.trucks.append(obj)
+            self.selected_type = "truck"
+        elif asset_type == "ground_box":
+            obj = GroundBox(name=f"바닥 {len(self.ground_boxes) + 1}", x=wx, z=wz)
+            self.ground_boxes.append(obj)
+            self.selected_type = "ground_box"
+        else:
+            return
+
+        self.selected_item = obj
+        self._update_object_tree()
+        self._update_counts()
+        self.redraw_canvas()
+        self._show_item_properties(obj, self.selected_type)
+        self.update_status(f"{asset_type} 추가됨: ({wx}, {wz})")
+
     def _pick_project_color(self, attr, btn):
         color = colorchooser.askcolor(getattr(self.project, attr))[1]
         if color:
@@ -4036,6 +4472,7 @@ class CampusBuilderApp:
             "wall": "🧱 벽 속성",
             "truck": "🚛 트럭 속성",
             "transport": "🔗 연결통로 속성",
+            "ground_box": "📦 바닥박스 속성",
         }
         ttk.Label(self.props_frame, text=type_labels.get(item_type, "속성"),
                   font=("Arial", 12, "bold")).pack(anchor="w", pady=(0, 10))
@@ -4198,6 +4635,41 @@ class CampusBuilderApp:
             make_entry("높이", "height", tk.DoubleVar)
             make_combo("유형", "transport_type", [("conveyor", "컨베이어"), ("lifter", "리프터"), ("rail", "레일")])
 
+        elif item_type == "ground_box":
+            make_entry("너비(W)", "width", tk.DoubleVar)
+            make_entry("깊이(D)", "depth", tk.DoubleVar)
+            make_entry("높이(H)", "height", tk.DoubleVar)
+            # 투명도
+            f = ttk.Frame(self.props_frame)
+            f.pack(fill=tk.X, pady=2)
+            ttk.Label(f, text="투명도:").pack(side=tk.LEFT)
+            op_var = tk.DoubleVar(value=getattr(item, 'opacity', 0.9))
+            op_label = ttk.Label(f, text=f"{getattr(item, 'opacity', 0.9):.1f}")
+            op_label.pack(side=tk.RIGHT)
+            op_scale = ttk.Scale(f, from_=0.1, to=1.0, variable=op_var, orient=tk.HORIZONTAL)
+            op_scale.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(5, 5))
+            def _update_op(*a):
+                try:
+                    val = op_var.get()
+                    item.opacity = round(val, 2)
+                    op_label.config(text=f"{val:.1f}")
+                except (tk.TclError, ValueError):
+                    pass
+            op_var.trace_add('write', _update_op)
+
+        # 건물 층별 분리 뷰 (building 타입일 때)
+        if item_type == "building" and hasattr(item, 'floors') and item.floors > 1:
+            ttk.Separator(self.props_frame).pack(fill=tk.X, pady=8)
+            ttk.Label(self.props_frame, text="🏗️ 층별 구조 (3D 뷰에서 클릭 가능)",
+                      font=("Arial", 9, "bold")).pack(anchor="w")
+            floor_frame = ttk.Frame(self.props_frame)
+            floor_frame.pack(fill=tk.X, pady=4)
+            floor_h = item.height / item.floors
+            for fl in range(item.floors, 0, -1):
+                fl_btn = ttk.Button(floor_frame, text=f"{fl}F (H:{floor_h:.0f})",
+                                    command=lambda f=fl: self._on_floor_click(item, f))
+                fl_btn.pack(fill=tk.X, pady=1)
+
         # 빠른 색상 팔레트
         ttk.Separator(self.props_frame).pack(fill=tk.X, pady=8)
         ttk.Label(self.props_frame, text="빠른 색상:").pack(anchor="w")
@@ -4226,6 +4698,19 @@ class CampusBuilderApp:
         item.color = color
         self._show_item_properties(item, self.selected_type)
         self.redraw_canvas()
+
+    def _on_floor_click(self, building, floor_num):
+        """건물 층 클릭 이벤트 - 해당 층 정보 표시"""
+        floor_h = building.height / building.floors
+        messagebox.showinfo(
+            f"{building.name} - {floor_num}층",
+            f"건물: {building.name}\n"
+            f"층: {floor_num}F / {building.floors}F\n"
+            f"층 높이: {floor_h:.1f}m\n"
+            f"바닥 Y: {(floor_num - 1) * floor_h:.1f}m\n"
+            f"천장 Y: {floor_num * floor_h:.1f}m\n\n"
+            f"(3D HTML에서 각 층을 클릭하면 해당 층 정보가 표시됩니다)"
+        )
 
     # ========================
     # 오브젝트 조작
@@ -4287,6 +4772,7 @@ class CampusBuilderApp:
             self.lakes, self.persons, self.gates,
             self.water_tanks, self.lpg_tanks, self.chimneys,
             self.walls, self.trucks, self.transport_lines,
+            self.ground_boxes,
         ]
         for lst in all_lists:
             if item in lst:
@@ -4315,7 +4801,7 @@ class CampusBuilderApp:
             ParkingLot: self.parking_lots, Lake: self.lakes, Person: self.persons,
             Gate: self.gates, WaterTank: self.water_tanks, LPGTank: self.lpg_tanks,
             Chimney: self.chimneys, Wall: self.walls, Truck: self.trucks,
-            TransportLine: self.transport_lines,
+            TransportLine: self.transport_lines, GroundBox: self.ground_boxes,
         }
         for cls, lst in type_list_map.items():
             if isinstance(item, cls):
@@ -4355,6 +4841,7 @@ class CampusBuilderApp:
         self.project.walls = [asdict(w) for w in self.walls]
         self.project.trucks = [asdict(t) for t in self.trucks]
         self.project.transport_lines = [asdict(tl) for tl in self.transport_lines]
+        self.project.ground_boxes = [asdict(gb) for gb in self.ground_boxes]
         return asdict(self.project)
 
     def _from_project_data(self, data):
@@ -4387,6 +4874,22 @@ class CampusBuilderApp:
                        for t in (self.project.trucks if hasattr(self.project, 'trucks') and self.project.trucks else [])]
         self.transport_lines = [TransportLine(**{k: v for k, v in tl.items() if k in TransportLine.__dataclass_fields__})
                                 for tl in (self.project.transport_lines if hasattr(self.project, 'transport_lines') and self.project.transport_lines else [])]
+        self.ground_boxes = [GroundBox(**{k: v for k, v in gb.items() if k in GroundBox.__dataclass_fields__})
+                             for gb in (self.project.ground_boxes if hasattr(self.project, 'ground_boxes') and self.project.ground_boxes else [])]
+        # 배경 이미지 복원
+        if self.project.background_image:
+            try:
+                from PIL import Image
+                import io
+                # data:image/...;base64,... 형식에서 데이터 추출
+                header, b64data = self.project.background_image.split(',', 1)
+                img_data = base64.b64decode(b64data)
+                self.bg_image_original = Image.open(io.BytesIO(img_data))
+            except Exception:
+                self.bg_image_original = None
+        else:
+            self.bg_image_original = None
+            self.bg_image_tk = None
 
     def new_project(self):
         if messagebox.askyesno("새 프로젝트", "현재 프로젝트를 초기화할까요?"):
@@ -4403,6 +4906,9 @@ class CampusBuilderApp:
             self.walls = []
             self.trucks = []
             self.transport_lines = []
+            self.ground_boxes = []
+            self.bg_image_original = None
+            self.bg_image_tk = None
             self.project = CampusProject()
             self.name_var.set(self.project.name)
             self.current_file = None
@@ -4816,6 +5322,12 @@ export default function {name.replace(' ', '').replace('-', '')}Scene() {{
         for p in data.get('persons', []):
             add_box(p.get('name', 'Person'), p['x'], 2.5, p['z'],
                     1.5, 5, 1.5, p.get('shirt_color', '#3366cc'))
+
+        # Ground boxes
+        for gb in data.get('ground_boxes', []):
+            add_box(gb.get('name', 'GroundBox'), gb['x'], gb.get('height', 5)/2, gb['z'],
+                    gb.get('width', 200), gb.get('height', 5), gb.get('depth', 200),
+                    gb.get('color', '#334455'))
 
         return '\n'.join(obj_lines), '\n'.join(mtl_lines)
 
