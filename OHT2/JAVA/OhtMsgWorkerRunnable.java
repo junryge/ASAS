@@ -8,6 +8,24 @@ public class OhtMsgWorkerRunnable implements Runnable {
     private final String facId;
     private final String mcpName;
 
+    // ========================================================================================
+    // [신규 필드] 테이블 3: {FAB}_ATLAS_HID_INOUT — 실시간 1분 집계
+    // Key: "fabId:mcpName:fromHidId:toHidId", Value: 전환 횟수
+    // ========================================================================================
+    private static final ConcurrentMap<String, Integer> hidEdgeBuffer = new ConcurrentHashMap<>();
+    private static volatile long lastHidEdgeFlushTime = System.currentTimeMillis();
+    private static final long HID_EDGE_FLUSH_INTERVAL = 60_000L; // 1분
+    private static final Object hidEdgeFlushLock = new Object();
+    private static final Object hidEdgeBufferLock = new Object();
+
+    // ========================================================================================
+    // [신규 필드] 테이블 1,2: 24시간 간격 마스터 업데이트
+    // ========================================================================================
+    private static volatile long lastMasterUpdateTime = 0L; // 0: 서버 시작 시 즉시 실행
+    private static final long MASTER_UPDATE_INTERVAL = 24L * 60 * 60 * 1000; // 24시간
+    private static final Object masterUpdateLock = new Object();
+    private static volatile boolean masterUpdateInProgress = false;
+
     public OhtMsgWorkerRunnable(
             String fabId,
             String message,
@@ -359,6 +377,7 @@ public class OhtMsgWorkerRunnable implements Runnable {
         int previousHidId = vehicle.getHidId();
 
         if (previousHidId != currentHidId) {
+            // ===== 기존 코드 유지: HID VHL 카운트 =====
             if (currentHidId > 0) {
                 String v = String.format("%03d", currentHidId);
 
@@ -370,9 +389,54 @@ public class OhtMsgWorkerRunnable implements Runnable {
 
                 DataService.getDataSet().decreaseHidVehicleCnt(key + ":" + v);
             }
+            // ===== 기존 코드 유지 끝 =====
+
+            // ===== [신규] 엣지 전환 카운트 집계 → 테이블 3: {FAB}_ATLAS_HID_INOUT =====
+            // 데이터 소스: previousHidId = vehicle.getHidId() (Vhl.java:517)
+            //             currentHidId  = railEdge.getHIDId() (RaileEdge.java:324)
+            String edgeKey = this.fabId + ":" + this.mcpName + ":"
+                    + String.format("%03d", previousHidId) + ":" + String.format("%03d", currentHidId);
+            synchronized (hidEdgeBufferLock) {
+                hidEdgeBuffer.merge(edgeKey, 1, Integer::sum);
+            }
+            // ===== [신규] 끝 =====
 
             vehicle.setHidId(currentHidId);
         }
+
+        // ===== [신규] 1분마다 버퍼 플러시 → 테이블 3 저장 =====
+        if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
+            synchronized (hidEdgeFlushLock) {
+                if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
+                    flushHidEdgeBuffer();
+                    lastHidEdgeFlushTime = timer;
+                }
+            }
+        }
+        // ===== [신규] 끝 =====
+
+        // ===== [신규] 24시간마다 마스터 업데이트 → 테이블 1, 2 저장 =====
+        if (timer - lastMasterUpdateTime >= MASTER_UPDATE_INTERVAL) {
+            synchronized (masterUpdateLock) {
+                if (timer - lastMasterUpdateTime >= MASTER_UPDATE_INTERVAL && !masterUpdateInProgress) {
+                    masterUpdateInProgress = true;
+                    lastMasterUpdateTime = timer;
+
+                    Thread masterThread = new Thread(() -> {
+                        try {
+                            _runDailyMasterUpdate();
+                        } catch (Exception e) {
+                            logger.error("[HID Master] Daily master update failed", e);
+                        } finally {
+                            masterUpdateInProgress = false;
+                        }
+                    }, "HID-Master-Update");
+                    masterThread.setDaemon(true);
+                    masterThread.start();
+                }
+            }
+        }
+        // ===== [신규] 끝 =====
 
         long checkingTime = System.currentTimeMillis() - timer;
 
@@ -381,6 +445,346 @@ public class OhtMsgWorkerRunnable implements Runnable {
         }
     }
     //~HID 구간별 VHL 재적수
+
+
+    // ========================================================================================
+    // [신규 메소드] flushHidEdgeBuffer()
+    //   → 테이블 3: {FAB}_ATLAS_HID_INOUT 에 1분 집계 데이터 저장
+    //
+    // [컬럼 데이터 소스]
+    //   EVENT_DATE  → SimpleDateFormat("yyyy-MM-dd")
+    //   EVENT_DT    → SimpleDateFormat("yyyy-MM-dd HH:mm:00")  1분 단위 정렬
+    //   FROM_HIDID  → vehicle.getHidId() (Vhl.java:517)
+    //   TO_HIDID    → currentHidId 파라미터 (railEdge.getHIDId())
+    //   TRANS_CNT   → hidEdgeBuffer 집계값
+    //   MCP_NM      → this.mcpName (버퍼 키에서 추출)
+    //   ENV         → Env.getEnv()
+    // ========================================================================================
+    private static void flushHidEdgeBuffer() {
+        if (hidEdgeBuffer.isEmpty()) {
+            return;
+        }
+
+        Map<String, Integer> snapshot;
+        synchronized (hidEdgeBufferLock) {
+            snapshot = new HashMap<>(hidEdgeBuffer);
+            hidEdgeBuffer.clear();
+        }
+
+        if (snapshot.isEmpty()) {
+            return;
+        }
+
+        SimpleDateFormat dtFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:00");
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        Date now = new Date();
+        String eventDt = dtFormat.format(now);
+        String eventDate = dateFormat.format(now);
+        String env = Env.getEnv();
+
+        Map<String, List<Tuple>> fabTupleMap = new HashMap<>();
+
+        for (Map.Entry<String, Integer> entry : snapshot.entrySet()) {
+            String[] parts = entry.getKey().split(":");
+            if (parts.length != 4) {
+                logger.warn("[HID Edge Flush] Invalid buffer key: {}", entry.getKey());
+                continue;
+            }
+
+            String fabId = parts[0];
+            String mcpName = parts[1];
+            int fromHidId = Integer.parseInt(parts[2]);
+            int toHidId = Integer.parseInt(parts[3]);
+            int transCnt = entry.getValue();
+
+            if (transCnt <= 0) continue;
+
+            Tuple tuple = new Tuple();
+            tuple.put("EVENT_DATE", eventDate);
+            tuple.put("EVENT_DT", eventDt);
+            tuple.put("FROM_HIDID", fromHidId);
+            tuple.put("TO_HIDID", toHidId);
+            tuple.put("TRANS_CNT", transCnt);
+            tuple.put("MCP_NM", mcpName);
+            tuple.put("ENV", env);
+
+            fabTupleMap.computeIfAbsent(fabId, k -> new ArrayList<>()).add(tuple);
+        }
+
+        for (Map.Entry<String, List<Tuple>> fabEntry : fabTupleMap.entrySet()) {
+            String tableName = fabEntry.getKey() + "_ATLAS_HID_INOUT";
+            List<Tuple> tuples = fabEntry.getValue();
+
+            boolean success = LogpressoAPI.setInsertTuples(tableName, tuples, 100);
+
+            if (success) {
+                logger.info("[HID Edge Flush] {} - {} records written", tableName, tuples.size());
+            } else {
+                logger.error("[HID Edge Flush] Failed to write {} records to {}", tuples.size(), tableName);
+            }
+        }
+    }
+
+
+    // ========================================================================================
+    // [신규 메소드] _runDailyMasterUpdate()
+    //   → 테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS  (엣지 마스터)
+    //   → 테이블 2: {FAB}_ATLAS_HID_INFO_MAS         (HID 상세 정보)
+    //   → TrafficBatch.java 패턴: Env.getSwitchMap() 순회
+    // ========================================================================================
+    private static void _runDailyMasterUpdate() {
+        if (!Util.isCurrentIC()) {
+            logger.info("[HID Master] Not current IC, skipping master update");
+            return;
+        }
+
+        for (Map.Entry<String, FunctionItem> entry : Env.getSwitchMap().entrySet()) {
+            FunctionItem functionItem = entry.getValue();
+
+            if (functionItem == null) continue;
+
+            String fabId = functionItem.getFabId();
+            String mcpName = functionItem.getMcpName();
+
+            logger.info("[HID Master] Daily master update started [fab: {} | mcp: {}]", fabId, mcpName);
+            long timer = System.currentTimeMillis();
+
+            try {
+                FabProperties fabProperties = DataService.getInstance().getFabPropertiesMap().get(fabId);
+
+                if (fabProperties == null) {
+                    logger.warn("[HID Master] FabProperties not found, SKIP [fab: {}]", fabId);
+                    continue;
+                }
+
+                String mapDir = fabProperties.getMapDir();
+                File mapDirFile = new File(mapDir);
+
+                if (!mapDirFile.exists() || !mapDirFile.isDirectory()) {
+                    logger.warn("[HID Master] map directory not found, SKIP [fab: {} | path: {}]", fabId, mapDir);
+                    continue;
+                }
+
+                File[] layoutZipFiles = mapDirFile.listFiles((dir, name) -> name.endsWith(".layout.zip"));
+
+                if (layoutZipFiles == null || layoutZipFiles.length == 0) {
+                    logger.warn("[HID Master] *.layout.zip not found, SKIP [fab: {} | path: {}]", fabId, mapDir);
+                    continue;
+                }
+
+                File layoutZipFile = layoutZipFiles[0];
+                logger.info("[HID Master] layout.zip found [fab: {} | file: {}]", fabId, layoutZipFile.getName());
+
+                _updateHidEdgeMasterInfo(fabId, mcpName, layoutZipFile);
+                _updateHidInfoMaster(fabId, mcpName);
+
+            } catch (Exception e) {
+                logger.error("[HID Master] Failed [fab: {} | mcp: {}]", fabId, mcpName, e);
+            }
+
+            long elapsed = System.currentTimeMillis() - timer;
+            logger.info("[HID Master] Daily master update finished [fab: {} | mcp: {}] [elapsed: {}ms]", fabId, mcpName, elapsed);
+        }
+    }
+
+
+    // ========================================================================================
+    // [신규 메소드] _updateHidEdgeMasterInfo()
+    //   → 테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS
+    //   → HID Zone 진입/진출 엣지 마스터 (Full Refresh: truncate + insert)
+    //
+    // [컬럼 데이터 소스]
+    //   FROM_HIDID   → RailEdge.getHIDId() 현재 엣지 (RaileEdge.java:324)
+    //   TO_HIDID     → 다음 RailEdge.getHIDId() (toNode 연결)
+    //   EDGE_ID      → String.format("%03d:%03d", fromHidId, toHidId)
+    //   FROM_HID_NM  → "HID_" + "%03d" 또는 "OUTSIDE"
+    //   TO_HID_NM    → "HID_" + "%03d" 또는 "OUTSIDE"
+    //   MCP_ID       → mcpName 파라미터
+    //   ZONE_ID      → 추후 매핑
+    //   EDGE_TYPE    → "IN" / "OUT" / "INTERNAL"
+    //   UPDATE_DT    → SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    // ========================================================================================
+    private static void _updateHidEdgeMasterInfo(String fabId, String mcpName, File layoutZipFile) {
+        List<Tuple> tuples = new ArrayList<>();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        String updateDt = dateFormat.format(new Date());
+
+        try {
+            ConcurrentMap<String, AbstractEdge> edgeMap = DataService.getDataSet().getEdgeMap();
+            Map<Integer, String> hidNameMap = new HashMap<>();
+            Set<String> processedEdges = new HashSet<>();
+
+            // 1단계: FAB 소속 RailEdge에서 HID 이름 수집
+            for (Map.Entry<String, AbstractEdge> entry : edgeMap.entrySet()) {
+                if (!(entry.getValue() instanceof RailEdge)) continue;
+                RailEdge railEdge = (RailEdge) entry.getValue();
+                if (!railEdge.getFabId().equals(fabId)) continue;
+
+                int hidId = railEdge.getHIDId();
+                if (hidId > 0) {
+                    hidNameMap.putIfAbsent(hidId, "HID_" + String.format("%03d", hidId));
+                }
+            }
+
+            // 2단계: 인접 RailEdge 간 HID 전환 감지
+            for (Map.Entry<String, AbstractEdge> entry : edgeMap.entrySet()) {
+                if (!(entry.getValue() instanceof RailEdge)) continue;
+                RailEdge railEdge = (RailEdge) entry.getValue();
+                if (!railEdge.getFabId().equals(fabId)) continue;
+
+                int fromHidId = railEdge.getHIDId();
+                String toNodeId = railEdge.getToNodeId();
+
+                for (Map.Entry<String, AbstractEdge> nextEntry : edgeMap.entrySet()) {
+                    if (!(nextEntry.getValue() instanceof RailEdge)) continue;
+                    RailEdge nextRailEdge = (RailEdge) nextEntry.getValue();
+                    if (!nextRailEdge.getFabId().equals(fabId)) continue;
+
+                    if (nextRailEdge.getFromNodeId().equals(toNodeId)) {
+                        int toHidId = nextRailEdge.getHIDId();
+
+                        if (fromHidId != toHidId && (fromHidId > 0 || toHidId > 0)) {
+                            String edgeKey = fromHidId + ":" + toHidId;
+                            if (processedEdges.contains(edgeKey)) continue;
+                            processedEdges.add(edgeKey);
+
+                            Tuple tuple = new Tuple();
+                            tuple.put("FROM_HIDID", fromHidId);
+                            tuple.put("TO_HIDID", toHidId);
+                            tuple.put("EDGE_ID", String.format("%03d:%03d", fromHidId, toHidId));
+                            tuple.put("FROM_HID_NM", fromHidId == 0 ? "OUTSIDE"
+                                    : hidNameMap.getOrDefault(fromHidId, "HID_" + String.format("%03d", fromHidId)));
+                            tuple.put("TO_HID_NM", toHidId == 0 ? "OUTSIDE"
+                                    : hidNameMap.getOrDefault(toHidId, "HID_" + String.format("%03d", toHidId)));
+                            tuple.put("MCP_ID", mcpName);
+                            tuple.put("ZONE_ID", "");
+
+                            String edgeType;
+                            if (fromHidId == 0) {
+                                edgeType = "IN";
+                            } else if (toHidId == 0) {
+                                edgeType = "OUT";
+                            } else {
+                                edgeType = "INTERNAL";
+                            }
+                            tuple.put("EDGE_TYPE", edgeType);
+                            tuple.put("UPDATE_DT", updateDt);
+
+                            tuples.add(tuple);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("[HID Master] Failed to build edge master info [fab: {}]", fabId, e);
+            return;
+        }
+
+        if (tuples.isEmpty()) {
+            logger.warn("[HID Master] No edge data found [fab: {}]", fabId);
+            return;
+        }
+
+        String tableName = fabId + "_ATLAS_INFO_HID_INOUT_MAS";
+        LogpressoAPI.truncateTable(tableName);
+        LogpressoAPI.setInsertTuples(tableName, tuples, 100);
+        logger.info("[HID Master] Edge Master updated: {} - {} records", tableName, tuples.size());
+    }
+
+
+    // ========================================================================================
+    // [신규 메소드] _updateHidInfoMaster()
+    //   → 테이블 2: {FAB}_ATLAS_HID_INFO_MAS
+    //   → HID 상세 정보 마스터 (Full Refresh: truncate + insert)
+    //
+    // [컬럼 데이터 소스]
+    //   HID_ID          → RailEdge.getHIDId()                    (RaileEdge.java:324)
+    //   HID_NM          → "HID_" + String.format("%03d", hidId)
+    //   MCP_ID          → mcpName 파라미터
+    //   ZONE_ID         → 추후 매핑
+    //   RAIL_LEN_TOTAL  → RailEdge.getLength() HID별 합계
+    //   FREE_FLOW_SPEED → RailEdge.getMaxVelocity() HID별 평균    (RaileEdge.java:270)
+    //   PORT_CNT_TOTAL  → RailEdge.getPortIdList().size() 합계    (RaileEdge.java:226)
+    //   IN_CNT, OUT_CNT, VHL_MAX, ZCU_ID → 추후 layout.xml McpZone 매핑
+    //   UPDATE_DT       → SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    // ========================================================================================
+    private static void _updateHidInfoMaster(String fabId, String mcpName) {
+        List<Tuple> tuples = new ArrayList<>();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        String updateDt = dateFormat.format(new Date());
+
+        try {
+            ConcurrentMap<String, AbstractEdge> edgeMap = DataService.getDataSet().getEdgeMap();
+
+            Map<Integer, Double> railLenMap = new HashMap<>();
+            Map<Integer, List<Double>> maxVelMap = new HashMap<>();
+            Map<Integer, Integer> portCntMap = new HashMap<>();
+
+            for (Map.Entry<String, AbstractEdge> entry : edgeMap.entrySet()) {
+                if (!(entry.getValue() instanceof RailEdge)) continue;
+                RailEdge railEdge = (RailEdge) entry.getValue();
+                if (!railEdge.getFabId().equals(fabId)) continue;
+
+                int hidId = railEdge.getHIDId();
+                if (hidId <= 0) continue;
+
+                railLenMap.merge(hidId, railEdge.getLength(), Double::sum);
+
+                double maxVelocity = railEdge.getMaxVelocity();
+                if (maxVelocity > 0) {
+                    maxVelMap.computeIfAbsent(hidId, k -> new ArrayList<>()).add(maxVelocity);
+                }
+
+                List<String> portList = railEdge.getPortIdList();
+                if (portList != null && !portList.isEmpty()) {
+                    portCntMap.merge(hidId, portList.size(), Integer::sum);
+                }
+            }
+
+            for (Integer hidId : railLenMap.keySet()) {
+                Tuple tuple = new Tuple();
+                tuple.put("HID_ID", hidId);
+                tuple.put("HID_NM", "HID_" + String.format("%03d", hidId));
+                tuple.put("MCP_ID", mcpName);
+                tuple.put("ZONE_ID", "");
+                tuple.put("RAIL_LEN_TOTAL", railLenMap.getOrDefault(hidId, 0.0));
+
+                List<Double> velocities = maxVelMap.get(hidId);
+                double avgSpeed = 0.0;
+                if (velocities != null && !velocities.isEmpty()) {
+                    double sum = 0.0;
+                    for (Double v : velocities) {
+                        sum += v;
+                    }
+                    avgSpeed = sum / velocities.size();
+                }
+                tuple.put("FREE_FLOW_SPEED", avgSpeed);
+
+                tuple.put("PORT_CNT_TOTAL", portCntMap.getOrDefault(hidId, 0));
+                tuple.put("IN_CNT", 0);
+                tuple.put("OUT_CNT", 0);
+                tuple.put("VHL_MAX", 0);
+                tuple.put("ZCU_ID", "");
+                tuple.put("UPDATE_DT", updateDt);
+
+                tuples.add(tuple);
+            }
+        } catch (Exception e) {
+            logger.error("[HID Master] Failed to build HID info [fab: {}]", fabId, e);
+            return;
+        }
+
+        if (tuples.isEmpty()) {
+            logger.warn("[HID Master] No HID info data found [fab: {}]", fabId);
+            return;
+        }
+
+        String tableName = fabId + "_ATLAS_HID_INFO_MAS";
+        LogpressoAPI.truncateTable(tableName);
+        LogpressoAPI.setInsertTuples(tableName, tuples, 100);
+        logger.info("[HID Master] HID Info Master updated: {} - {} records", tableName, tuples.size());
+    }
+
 
     /**
      * HID OFF

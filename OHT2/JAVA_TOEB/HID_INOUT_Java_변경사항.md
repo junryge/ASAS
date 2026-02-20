@@ -9,48 +9,53 @@ HID IN/OUT 엣지 기반 집계 기능을 **기존 코드에 추가**합니다.
 
 # 테이블 스키마 정의
 
-## 테이블 1: ATLAS_INFO_HID_INOUT_MAS
+## 테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS
 
 **용도**: HID Zone 진입/진출 엣지 마스터 데이터 (기준 정보) — 하루 1회 업데이트
+**테이블명 예시**: `M14A_ATLAS_INFO_HID_INOUT_MAS`, `M16A_ATLAS_INFO_HID_INOUT_MAS`
+**데이터 원본**: `map/{FAB}/*.layout.zip` → `layout.xml` (McpZone Entry/Exit 파싱)
 
 | 컬럼명 | 타입 | 설명 | 데이터 소스 |
 |--------|------|------|-------------|
-| `FROM_HIDID` | INT | 출발 HID Zone ID | `HID_Zone_Master.csv` → `IN_Lanes` 파싱 (예: "3048→3023") |
-| `TO_HIDID` | INT | 도착 HID Zone ID | `HID_Zone_Master.csv` → `OUT_Lanes` 파싱 |
+| `FROM_HIDID` | INT | 출발 HID Zone ID | `layout.xml` McpZone Entry start/end 주소 → HID 매핑 |
+| `TO_HIDID` | INT | 도착 HID Zone ID | `layout.xml` McpZone Exit start/end 주소 → HID 매핑 |
 | `EDGE_ID` | STRING | 엣지 고유 ID (FROM:TO) | `String.format("%03d:%03d", fromHidId, toHidId)` |
-| `FROM_HID_NM` | STRING | 출발 HID Zone 이름 | `HID_Zone_Master.csv` → `Full_Name` |
-| `TO_HID_NM` | STRING | 도착 HID Zone 이름 | `HID_Zone_Master.csv` → `Full_Name` |
-| `MCP_ID` | STRING | MCP ID | `mcp75ConfigMap.keySet()` 순회 |
-| `ZONE_ID` | STRING | Zone ID | `HID_Zone_Master.csv` → `Bay_Zone` |
+| `FROM_HID_NM` | STRING | 출발 HID Zone 이름 | HID명 매핑 (`"HID_" + String.format("%03d", hidId)`) |
+| `TO_HID_NM` | STRING | 도착 HID Zone 이름 | HID명 매핑 (`"HID_" + String.format("%03d", hidId)`) |
+| `MCP_ID` | STRING | MCP ID | `this.mcpName` (OhtMsgWorkerRunnable.java:9) |
+| `ZONE_ID` | STRING | Zone ID | 추후 매핑 가능 |
 | `EDGE_TYPE` | STRING | 엣지 유형 | `fromHidId==0 ? "IN" : toHidId==0 ? "OUT" : "INTERNAL"` |
 | `UPDATE_DT` | STRING | 마지막 업데이트 일시 | `SimpleDateFormat("yyyy-MM-dd HH:mm:ss")` |
 
 ---
 
-## 테이블 2: ATLAS_HID_INFO_MAS
+## 테이블 2: {FAB}_ATLAS_HID_INFO_MAS
 
 **용도**: HID 상세 정보 마스터 데이터 — 레일 길이, FREE FLOW 속도, 포트 개수 등
+**테이블명 예시**: `M14A_ATLAS_HID_INFO_MAS`, `M16A_ATLAS_HID_INFO_MAS`
+**데이터 원본**: RailEdge 런타임 데이터 집계 + `map/{FAB}/*.layout.zip`
 
 | 컬럼명 | 타입 | 설명 | 데이터 소스 |
 |--------|------|------|-------------|
-| `HID_ID` | INT | HID Zone ID (PK) | `HID_Zone_Master.csv` → `Zone_ID` |
-| `HID_NM` | STRING | HID Zone 이름 | `HID_Zone_Master.csv` → `Full_Name` |
-| `MCP_ID` | STRING | MCP ID | `mcp75ConfigMap.keySet()` 순회 |
-| `ZONE_ID` | STRING | Zone ID | `HID_Zone_Master.csv` → `Bay_Zone` |
-| `RAIL_LEN_TOTAL` | DOUBLE | 레일 길이 총합 (mm) | `RailEdge.getLength()` HID별 합계 (DataService.java:691) |
+| `HID_ID` | INT | HID Zone ID (PK) | `RailEdge.getHIDId()` (RaileEdge.java:324) |
+| `HID_NM` | STRING | HID Zone 이름 | `"HID_" + String.format("%03d", hidId)` |
+| `MCP_ID` | STRING | MCP ID | `this.mcpName` (OhtMsgWorkerRunnable.java:9) |
+| `ZONE_ID` | STRING | Zone ID | 추후 매핑 가능 |
+| `RAIL_LEN_TOTAL` | DOUBLE | 레일 길이 총합 (mm) | `RailEdge.getLength()` HID별 합계 (AbstractEdge 상속) |
 | `FREE_FLOW_SPEED` | DOUBLE | FREE FLOW 속도 (mm/s) | `RailEdge.getMaxVelocity()` HID별 평균 (RaileEdge.java:270) |
-| `PORT_CNT_TOTAL` | INT | 포트 개수 총합 | `RailEdge.getPortIdList().size()` HID별 합계 |
-| `IN_CNT` | INT | IN Lane 개수 | `HID_Zone_Master.csv` → `IN_Count` |
-| `OUT_CNT` | INT | OUT Lane 개수 | `HID_Zone_Master.csv` → `OUT_Count` |
-| `VHL_MAX` | INT | 최대 허용 차량 수 | `HID_Zone_Master.csv` → `Vehicle_Max` |
-| `ZCU_ID` | STRING | ZCU ID | `HID_Zone_Master.csv` → `ZCU` |
+| `PORT_CNT_TOTAL` | INT | 포트 개수 총합 | `RailEdge.getPortIdList().size()` HID별 합계 (RaileEdge.java:19) |
+| `IN_CNT` | INT | IN Lane 개수 | `layout.xml` McpZone Entry 개수 (추후 매핑) |
+| `OUT_CNT` | INT | OUT Lane 개수 | `layout.xml` McpZone Exit 개수 (추후 매핑) |
+| `VHL_MAX` | INT | 최대 허용 차량 수 | `layout.xml` McpZone vehicle-max (추후 매핑) |
+| `ZCU_ID` | STRING | ZCU ID | `layout.xml` Entry stop-zcu (추후 매핑) |
 | `UPDATE_DT` | STRING | 마지막 업데이트 일시 | `SimpleDateFormat("yyyy-MM-dd HH:mm:ss")` |
 
 ---
 
-## 테이블 3: ATLAS_{FAB}_HID_INOUT
+## 테이블 3: {FAB}_ATLAS_HID_INOUT
 
-**용도**: HID IN/OUT 1분 집계 데이터 — FABID별 테이블 분리 (M14, M16, M17...)
+**용도**: HID IN/OUT 1분 집계 데이터 — FABID별 테이블 분리
+**테이블명 예시**: `M14A_ATLAS_HID_INOUT`, `M16A_ATLAS_HID_INOUT`
 
 | 컬럼명 | 타입 | 설명 | 데이터 소스 |
 |--------|------|------|-------------|
@@ -174,7 +179,7 @@ private void _calculatedVhlCnt(int currentHidId, String key, Vhl vehicle) {
 ```java
 /**
  * HID 엣지 전환 집계 데이터를 Logpresso에 1분 배치 저장
- * 테이블: ATLAS_{FABID}_HID_INOUT
+ * 테이블: {FAB}_ATLAS_HID_INOUT (예: M14A_ATLAS_HID_INOUT)
  *
  * 컬럼:
  *   - EVENT_DATE: 이벤트 날짜 (파티션 키)
@@ -233,8 +238,8 @@ private void flushHidEdgeBuffer() {
         return;
     }
 
-    // FABID별 테이블에 저장
-    String tableName = "ATLAS_" + this.fabId + "_HID_INOUT";
+    // FABID별 테이블에 저장 (예: M14A_ATLAS_HID_INOUT)
+    String tableName = this.fabId + "_ATLAS_HID_INOUT";
 
     boolean success = LogpressoAPI.setInsertTuples(tableName, tuples, 100);
 
@@ -247,249 +252,83 @@ private void flushHidEdgeBuffer() {
 
 ---
 
-# Part 2: HidMasterBatchJob.java 신규 메소드 추가
+# Part 2: HidMasterBatchJob.java (신규 — Quartz Job)
 
-## 2.1 updateHidEdgeMasterInfo() 메소드 추가
+> ※ TrafficBatch.java 패턴 참조 — `Env.getSwitchMap()` 순회, FAB별 처리
+> ※ Quartz 스케줄러에 등록하여 하루 1회 실행 (예: `0 0 1 * * ?`)
+> ※ `map/{FAB}/*.layout.zip` 없으면 SKIP + `logger.warn`
+
+## 2.1 구조 (TrafficBatch 패턴)
+
+```java
+public class HidMasterBatchJob implements Job {
+    @Override
+    public void execute(JobExecutionContext arg0) throws JobExecutionException {
+        if (Util.isCurrentIC()) {
+            for (Map.Entry<String, FunctionItem> entry : Env.getSwitchMap().entrySet()) {
+                FunctionItem functionItem = entry.getValue();
+                if (functionItem != null) {
+                    String fabId   = functionItem.getFabId();
+                    String mcpName = functionItem.getMcpName();
+                    _run(fabId, mcpName);
+                }
+            }
+        }
+    }
+}
+```
+
+## 2.2 _run() — FAB별 마스터 테이블 업데이트
+
+```java
+private void _run(String fabId, String mcpName) {
+    // 1. layout.zip 경로 확인 — fabProperties.getMapDir() (DataService.java:295)
+    // 2. map/{FAB}/*.layout.zip 찾기 — 없으면 SKIP + logger.warn
+    // 3. _updateHidEdgeMasterInfo() → 테이블 1
+    // 4. _updateHidInfoMaster()     → 테이블 2
+}
+```
+
+## 2.3 _updateHidEdgeMasterInfo() — 테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS
 
 ```java
 /**
  * HID Zone 진입/진출 엣지 마스터 데이터 업데이트
- * 테이블: ATLAS_INFO_HID_INOUT_MAS
+ * 테이블: {FAB}_ATLAS_INFO_HID_INOUT_MAS (예: M14A_ATLAS_INFO_HID_INOUT_MAS)
  *
- * 컬럼:
- *   - FROM_HIDID: 출발 HID Zone ID
- *   - TO_HIDID: 도착 HID Zone ID
- *   - EDGE_ID: 엣지 고유 ID (FROM:TO)
- *   - FROM_HID_NM: 출발 HID Zone 이름
- *   - TO_HID_NM: 도착 HID Zone 이름
- *   - MCP_ID: MCP ID
- *   - ZONE_ID: Zone ID
- *   - EDGE_TYPE: 엣지 유형 (IN/OUT/INTERNAL)
- *   - UPDATE_DT: 마지막 업데이트 일시
+ * 데이터 소스: DataService.getDataSet().getEdgeMap() → RailEdge HID 전환 감지
  */
-@Scheduled(cron = "0 0 0 * * ?")
-public void updateHidEdgeMasterInfo() {
-    String xmlPath = "/path/to/LAYOUT.XML";
-    List<Tuple> tuples = new ArrayList<>();
-    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    String updateDt = dateFormat.format(new Date());
-
-    try {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        DocumentBuilder builder = factory.newDocumentBuilder();
-        Document doc = builder.parse(new File(xmlPath));
-        doc.getDocumentElement().normalize();
-
-        // HID 정보 맵 구성
-        Map<Integer, Element> hidMap = new HashMap<>();
-        NodeList hidList = doc.getElementsByTagName("HID");
-        for (int i = 0; i < hidList.getLength(); i++) {
-            Element hid = (Element) hidList.item(i);
-            int hidId = Integer.parseInt(hid.getAttribute("id"));
-            hidMap.put(hidId, hid);
-        }
-
-        // 엣지 정보 파싱 (HID 간 연결)
-        NodeList edgeList = doc.getElementsByTagName("EDGE");
-        for (int i = 0; i < edgeList.getLength(); i++) {
-            Element edge = (Element) edgeList.item(i);
-
-            int fromHidId = Integer.parseInt(edge.getAttribute("fromHidId"));
-            int toHidId = Integer.parseInt(edge.getAttribute("toHidId"));
-
-            Tuple tuple = new Tuple();
-            tuple.put("FROM_HIDID", fromHidId);
-            tuple.put("TO_HIDID", toHidId);
-            tuple.put("EDGE_ID", String.format("%03d:%03d", fromHidId, toHidId));
-
-            // FROM HID 이름
-            if (fromHidId == 0) {
-                tuple.put("FROM_HID_NM", "OUTSIDE");
-            } else if (hidMap.containsKey(fromHidId)) {
-                tuple.put("FROM_HID_NM", hidMap.get(fromHidId).getAttribute("name"));
-            } else {
-                tuple.put("FROM_HID_NM", "HID_" + String.format("%03d", fromHidId));
-            }
-
-            // TO HID 이름
-            if (toHidId == 0) {
-                tuple.put("TO_HID_NM", "OUTSIDE");
-            } else if (hidMap.containsKey(toHidId)) {
-                tuple.put("TO_HID_NM", hidMap.get(toHidId).getAttribute("name"));
-            } else {
-                tuple.put("TO_HID_NM", "HID_" + String.format("%03d", toHidId));
-            }
-
-            // MCP_ID, ZONE_ID (TO HID 기준)
-            if (toHidId > 0 && hidMap.containsKey(toHidId)) {
-                Element toHid = hidMap.get(toHidId);
-                tuple.put("MCP_ID", toHid.getAttribute("mcpId"));
-                tuple.put("ZONE_ID", toHid.getAttribute("zoneId"));
-            } else if (fromHidId > 0 && hidMap.containsKey(fromHidId)) {
-                Element fromHid = hidMap.get(fromHidId);
-                tuple.put("MCP_ID", fromHid.getAttribute("mcpId"));
-                tuple.put("ZONE_ID", fromHid.getAttribute("zoneId"));
-            } else {
-                tuple.put("MCP_ID", "");
-                tuple.put("ZONE_ID", "");
-            }
-
-            // 엣지 유형 결정
-            String edgeType;
-            if (fromHidId == 0) {
-                edgeType = "IN";       // 외부에서 HID로 진입
-            } else if (toHidId == 0) {
-                edgeType = "OUT";      // HID에서 외부로 진출
-            } else {
-                edgeType = "INTERNAL"; // HID 간 이동
-            }
-            tuple.put("EDGE_TYPE", edgeType);
-
-            tuple.put("UPDATE_DT", updateDt);
-
-            tuples.add(tuple);
-        }
-    } catch (Exception e) {
-        logger.error("Failed to parse LAYOUT.XML for edge info", e);
-        return;
-    }
-
-    // Full Refresh
-    LogpressoAPI.truncateTable("ATLAS_INFO_HID_INOUT_MAS");
-    LogpressoAPI.setInsertTuples("ATLAS_INFO_HID_INOUT_MAS", tuples, 100);
-
-    logger.info("HID Edge Master Info updated from LAYOUT.XML: {} records", tuples.size());
+private void _updateHidEdgeMasterInfo(String fabId, String mcpName, File layoutZipFile) {
+    // ... RailEdge 순회하며 FAB별 HID 전환 엣지 추출 ...
+    // 테이블명: fabId + "_ATLAS_INFO_HID_INOUT_MAS"
+    // Full Refresh: truncateTable() → setInsertTuples()
 }
 ```
 
+> ※ 상세 구현 코드: `JAVA_TOEB/SRC/HidMasterBatchJob.java` 참조
+
 ---
 
-## 2.2 updateHidInfoMaster() 메소드 추가
+## 2.4 _updateHidInfoMaster() — 테이블 2: {FAB}_ATLAS_HID_INFO_MAS
 
 ```java
 /**
  * HID 상세 정보 마스터 데이터 업데이트
- * 테이블: ATLAS_HID_INFO_MAS
+ * 테이블: {FAB}_ATLAS_HID_INFO_MAS (예: M14A_ATLAS_HID_INFO_MAS)
  *
- * 컬럼:
- *   - HID_ID: HID Zone ID
- *   - HID_NM: HID Zone 이름
- *   - MCP_ID: MCP ID
- *   - ZONE_ID: Zone ID
- *   - RAIL_LEN_TOTAL: 레일 길이 총합 (mm)
- *   - FREE_FLOW_SPEED: FREE FLOW 속도 (mm/s)
- *   - PORT_CNT_TOTAL: 포트 개수 총합
- *   - IN_CNT: IN Lane 개수
- *   - OUT_CNT: OUT Lane 개수
- *   - VHL_MAX: 최대 허용 차량 수
- *   - ZCU_ID: ZCU ID
- *   - UPDATE_DT: 마지막 업데이트 일시
+ * 데이터 소스:
+ *   RAIL_LEN_TOTAL  → RailEdge.getLength() HID별 합계
+ *   FREE_FLOW_SPEED → RailEdge.getMaxVelocity() HID별 평균
+ *   PORT_CNT_TOTAL  → RailEdge.getPortIdList().size() 합계
  */
-@Scheduled(cron = "0 0 0 * * ?")
-public void updateHidInfoMaster() {
-    String xmlPath = "/path/to/LAYOUT.XML";
-    List<Tuple> tuples = new ArrayList<>();
-    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-    String updateDt = dateFormat.format(new Date());
-
-    try {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        DocumentBuilder builder = factory.newDocumentBuilder();
-        Document doc = builder.parse(new File(xmlPath));
-        doc.getDocumentElement().normalize();
-
-        // HID별 레일, 포트 정보 집계용 맵
-        Map<Integer, Double> railLengthMap = new HashMap<>();
-        Map<Integer, Integer> portCountMap = new HashMap<>();
-
-        // RAIL 정보 집계
-        NodeList railList = doc.getElementsByTagName("RAIL");
-        for (int i = 0; i < railList.getLength(); i++) {
-            Element rail = (Element) railList.item(i);
-            int hidId = Integer.parseInt(rail.getAttribute("hidId"));
-            double length = Double.parseDouble(rail.getAttribute("length"));
-
-            railLengthMap.merge(hidId, length, Double::sum);
-        }
-
-        // PORT 정보 집계
-        NodeList portList = doc.getElementsByTagName("PORT");
-        for (int i = 0; i < portList.getLength(); i++) {
-            Element port = (Element) portList.item(i);
-            int hidId = Integer.parseInt(port.getAttribute("hidId"));
-
-            portCountMap.merge(hidId, 1, Integer::sum);
-        }
-
-        // HID 정보 파싱
-        NodeList hidList = doc.getElementsByTagName("HID");
-
-        for (int i = 0; i < hidList.getLength(); i++) {
-            Element hid = (Element) hidList.item(i);
-            int hidId = Integer.parseInt(hid.getAttribute("id"));
-
-            Tuple tuple = new Tuple();
-
-            tuple.put("HID_ID", hidId);
-            tuple.put("HID_NM", hid.getAttribute("name"));
-            tuple.put("MCP_ID", hid.getAttribute("mcpId"));
-            tuple.put("ZONE_ID", hid.getAttribute("zoneId"));
-
-            // 레일 길이 총합
-            double railLenTotal = railLengthMap.getOrDefault(hidId, 0.0);
-            tuple.put("RAIL_LEN_TOTAL", railLenTotal);
-
-            // FREE FLOW 속도 (XML에서 가져오거나 기본값)
-            double freeFlowSpeed = 2000.0; // 기본값 2000 mm/s
-            if (hid.hasAttribute("freeFlowSpeed")) {
-                freeFlowSpeed = Double.parseDouble(hid.getAttribute("freeFlowSpeed"));
-            }
-            tuple.put("FREE_FLOW_SPEED", freeFlowSpeed);
-
-            // 포트 개수 총합
-            int portCntTotal = portCountMap.getOrDefault(hidId, 0);
-            tuple.put("PORT_CNT_TOTAL", portCntTotal);
-
-            // 기존 컬럼
-            tuple.put("IN_CNT", Integer.parseInt(hid.getAttribute("inCnt")));
-            tuple.put("OUT_CNT", Integer.parseInt(hid.getAttribute("outCnt")));
-            tuple.put("VHL_MAX", Integer.parseInt(hid.getAttribute("vhlMax")));
-            tuple.put("ZCU_ID", hid.getAttribute("zcuId"));
-            tuple.put("UPDATE_DT", updateDt);
-
-            tuples.add(tuple);
-        }
-    } catch (Exception e) {
-        logger.error("Failed to parse LAYOUT.XML for HID info", e);
-        return;
-    }
-
-    // Full Refresh
-    LogpressoAPI.truncateTable("ATLAS_HID_INFO_MAS");
-    LogpressoAPI.setInsertTuples("ATLAS_HID_INFO_MAS", tuples, 100);
-
-    logger.info("HID Info Master updated from LAYOUT.XML: {} records", tuples.size());
+private void _updateHidInfoMaster(String fabId, String mcpName) {
+    // ... RailEdge 순회하며 FAB별 HID 집계 ...
+    // 테이블명: fabId + "_ATLAS_HID_INFO_MAS"
+    // Full Refresh: truncateTable() → setInsertTuples()
 }
 ```
 
----
-
-## 2.3 스케줄러 통합 (선택사항)
-
-```java
-@Scheduled(cron = "0 0 0 * * ?")
-public void updateAllHidMasterTables() {
-    logger.info("Starting HID Master Tables update...");
-
-    // 1. 엣지 마스터 업데이트
-    updateHidEdgeMasterInfo();
-
-    // 2. HID 상세 정보 업데이트
-    updateHidInfoMaster();
-
-    logger.info("HID Master Tables update completed.");
-}
-```
+> ※ 상세 구현 코드: `JAVA_TOEB/SRC/HidMasterBatchJob.java` 참조
 
 ---
 
@@ -500,16 +339,31 @@ public void updateAllHidMasterTables() {
 | 구분 | 내용 |
 |------|------|
 | 기존 코드 | **유지** (HID VHL 카운트) |
-| 신규 필드 | `hidEdgeBuffer`, `lastHidEdgeFlushTime`, `hidEdgeFlushLock` |
-| 신규 메소드 | `flushHidEdgeBuffer()` |
-| 수정 메소드 | `_calculatedVhlCnt()` (엣지 집계 로직 추가) |
+| 신규 필드 | `hidEdgeBuffer`, `lastHidEdgeFlushTime`, `hidEdgeFlushLock`, `hidEdgeBufferLock` |
+| 수정 메소드 | `_calculatedVhlCnt()` (엣지 집계 + 1분 플러시) |
+| 신규 메소드 | `flushHidEdgeBuffer()` → `{FAB}_ATLAS_HID_INOUT` 저장 |
 
-## HidMasterBatchJob.java
+## HidMasterBatchJob.java (신규 — Quartz Job)
 
 | 구분 | 내용 |
 |------|------|
-| 신규 메소드 | `updateHidEdgeMasterInfo()` - 엣지 마스터 |
-| 신규 메소드 | `updateHidInfoMaster()` - HID 상세 정보 |
-| 신규 테이블 | `ATLAS_INFO_HID_INOUT_MAS`, `ATLAS_HID_INFO_MAS` |
+| 패턴 | TrafficBatch.java 패턴 (`Env.getSwitchMap()` 순회) |
+| 스케줄 | Quartz — 하루 1회 실행 |
+| 신규 메소드 | `_updateHidEdgeMasterInfo()` → `{FAB}_ATLAS_INFO_HID_INOUT_MAS` |
+| 신규 메소드 | `_updateHidInfoMaster()` → `{FAB}_ATLAS_HID_INFO_MAS` |
+| ZIP 처리 | `map/{FAB}/*.layout.zip` 없으면 SKIP + `logger.warn` |
+
+## 신규 테이블 (FAB prefix)
+
+| 테이블 | 테이블명 | 예시 |
+|--------|---------|------|
+| 테이블 1 | `{FAB}_ATLAS_INFO_HID_INOUT_MAS` | `M14A_ATLAS_INFO_HID_INOUT_MAS` |
+| 테이블 2 | `{FAB}_ATLAS_HID_INFO_MAS` | `M14A_ATLAS_HID_INFO_MAS` |
+| 테이블 3 | `{FAB}_ATLAS_HID_INOUT` | `M14A_ATLAS_HID_INOUT` |
+
+## 참고 소스 코드
+
+- 실시간 집계: `JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java`
+- 마스터 배치: `JAVA_TOEB/SRC/HidMasterBatchJob.java`
 
 ---

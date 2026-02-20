@@ -484,22 +484,24 @@
             <div class="arch-diagram">
                 <div class="arch-title">Logpresso 테이블 구조</div>
 
-                <h3 style="color: var(--accent-green); margin-bottom: 1rem;">마스터 테이블</h3>
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem;">마스터 테이블 (FAB별)</h3>
                 <div class="table-grid" style="margin-bottom: 2rem;">
                     <div class="table-box master">
-                        <div class="table-name">ATLAS_INFO_HID_INOUT_MAS</div>
-                        <div class="table-desc">• HID Zone 마스터 정보</div>
-                        <div class="table-desc">• LAYOUT.XML 기반</div>
+                        <div class="table-name">{FAB}_ATLAS_INFO_HID_INOUT_MAS</div>
+                        <div class="table-desc">• HID Zone 엣지 마스터 정보</div>
+                        <div class="table-desc">• map/{FAB}/*.layout.zip 기반</div>
                         <div class="table-desc">• 하루 1회 업데이트</div>
                         <div class="table-desc">• <strong>FROM_HIDID, TO_HIDID</strong> 컬럼 포함</div>
+                        <div class="table-desc">• 예: M14A_ATLAS_INFO_HID_INOUT_MAS</div>
                         <div class="table-tag">기초정보 / 마스터 / 엣지 정보</div>
                     </div>
                     <div class="table-box info">
-                        <div class="table-name">ATLAS_HID_INFO_MAS</div>
+                        <div class="table-name">{FAB}_ATLAS_HID_INFO_MAS</div>
                         <div class="table-desc">• HID 상세 정보</div>
                         <div class="table-desc">• 레일 길이 총합</div>
                         <div class="table-desc">• FREE FLOW 속도</div>
                         <div class="table-desc">• 포트 개수 총합</div>
+                        <div class="table-desc">• 예: M14A_ATLAS_HID_INFO_MAS</div>
                         <div class="table-tag">HID 상세 정보 / 마스터</div>
                     </div>
                 </div>
@@ -507,25 +509,25 @@
                 <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">실시간 테이블 (FAB별)</h3>
                 <div class="table-grid-3">
                     <div class="table-box realtime">
-                        <div class="table-name">ATLAS_M14_HID_INOUT</div>
+                        <div class="table-name">M14A_ATLAS_HID_INOUT</div>
                         <div class="table-desc">• HID IN/OUT 이벤트 로그</div>
                         <div class="table-desc">• 1분 단위 배치 저장</div>
                         <div class="table-desc">• FROM/TO HID 기록</div>
-                        <div class="table-tag">M14 실시간 데이터</div>
+                        <div class="table-tag">M14A 실시간 데이터</div>
                     </div>
                     <div class="table-box realtime">
-                        <div class="table-name">ATLAS_M16_HID_INOUT</div>
+                        <div class="table-name">M16A_ATLAS_HID_INOUT</div>
                         <div class="table-desc">• HID IN/OUT 이벤트 로그</div>
                         <div class="table-desc">• 1분 단위 배치 저장</div>
                         <div class="table-desc">• FROM/TO HID 기록</div>
-                        <div class="table-tag">M16 실시간 데이터</div>
+                        <div class="table-tag">M16A 실시간 데이터</div>
                     </div>
                     <div class="table-box realtime">
-                        <div class="table-name">ATLAS_M17_HID_INOUT</div>
+                        <div class="table-name">M14B_ATLAS_HID_INOUT</div>
                         <div class="table-desc">• HID IN/OUT 이벤트 로그</div>
                         <div class="table-desc">• 1분 단위 배치 저장</div>
                         <div class="table-desc">• FROM/TO HID 기록</div>
-                        <div class="table-tag">M17 실시간 데이터</div>
+                        <div class="table-tag">M14B 실시간 데이터</div>
                     </div>
                 </div>
             </div>
@@ -541,20 +543,20 @@
                 <div class="flow-section">
                     <!-- 마스터 데이터 흐름 -->
                     <div class="flow-group">
-                        <div class="flow-group-title">📁 마스터 데이터 (하루 1회)</div>
+                        <div class="flow-group-title">📁 마스터 데이터 (하루 1회) — HidMasterBatchJob (Quartz Job)</div>
                         <div class="flow-row">
-                            <div class="flow-box source">LAYOUT.XML</div>
+                            <div class="flow-box source">map/{FAB}/*.layout.zip</div>
                             <span class="flow-arrow">→</span>
-                            <span class="flow-label">하루 1회</span>
+                            <span class="flow-label">_updateHidEdgeMasterInfo()</span>
                             <span class="flow-arrow">→</span>
-                            <div class="flow-box target">ATLAS_INFO_HID_INOUT_MAS</div>
+                            <div class="flow-box target">{FAB}_ATLAS_INFO_HID_INOUT_MAS</div>
                         </div>
                         <div class="flow-row" style="margin-top: 0.5rem;">
-                            <div class="flow-box source">LAYOUT.XML</div>
+                            <div class="flow-box source">RailEdge 런타임 데이터</div>
                             <span class="flow-arrow">→</span>
-                            <span class="flow-label">HID 상세 정보 집계</span>
+                            <span class="flow-label">_updateHidInfoMaster()</span>
                             <span class="flow-arrow">→</span>
-                            <div class="flow-box target">ATLAS_HID_INFO_MAS</div>
+                            <div class="flow-box target">{FAB}_ATLAS_HID_INFO_MAS</div>
                         </div>
                     </div>
 
@@ -577,16 +579,16 @@
                             <span class="flow-label">1분 경과 시</span>
                         </div>
                         <div class="flow-row" style="margin-left: 2rem;">
-                            <div class="flow-box process">flushHidCountBuffer()</div>
+                            <div class="flow-box process">flushHidEdgeBuffer()</div>
                         </div>
                         <div class="flow-row" style="margin-left: 2rem; margin-top: 0.5rem;">
                             <span class="flow-arrow">↓</span>
                             <span class="flow-label">FROM_HIDID, TO_HIDID, TRANS_CNT 저장</span>
                         </div>
                         <div class="target-tables" style="margin-left: 2rem;">
-                            <div class="target-table">ATLAS_M14_HID_INOUT<br><small style="color: var(--text-secondary);">1분 집계</small></div>
-                            <div class="target-table">ATLAS_M16_HID_INOUT<br><small style="color: var(--text-secondary);">1분 집계</small></div>
-                            <div class="target-table">ATLAS_M17_HID_INOUT<br><small style="color: var(--text-secondary);">1분 집계</small></div>
+                            <div class="target-table">M14A_ATLAS_HID_INOUT<br><small style="color: var(--text-secondary);">1분 집계</small></div>
+                            <div class="target-table">M16A_ATLAS_HID_INOUT<br><small style="color: var(--text-secondary);">1분 집계</small></div>
+                            <div class="target-table">M14B_ATLAS_HID_INOUT<br><small style="color: var(--text-secondary);">1분 집계</small></div>
                         </div>
                     </div>
                 </div>
@@ -595,10 +597,11 @@
 
         <!-- 테이블 1: 기초정보 (이름 변경) -->
         <section id="master-table">
-            <h2>테이블 1: ATLAS_INFO_HID_INOUT_MAS</h2>
+            <h2>테이블 1: {FAB}_ATLAS_INFO_HID_INOUT_MAS</h2>
 
             <h3>용도</h3>
-            <p>HID Zone 진입/진출 엣지 마스터 데이터 (기준 정보) — <code>LAYOUT.XML</code> 기반, 하루 1회 업데이트 (새벽 배치)</p>
+            <p>HID Zone 진입/진출 엣지 마스터 데이터 (기준 정보) — <code>map/{FAB}/*.layout.zip</code> 기반, 하루 1회 업데이트 (HidMasterBatchJob — Quartz Job)</p>
+            <p style="color: var(--accent-cyan); margin-top: 0.3rem;">예: <code>M14A_ATLAS_INFO_HID_INOUT_MAS</code>, <code>M16A_ATLAS_INFO_HID_INOUT_MAS</code></p>
             <p style="color: var(--accent-orange); margin-top: 0.5rem;">※ 부하 최적화: 진입/진출 구간 <strong>2009개</strong> 엣지만 관리</p>
 
             <h3>테이블 스키마</h3>
@@ -612,13 +615,13 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="new-col"><td><code>FROM_HIDID</code></td><td>INT</td><td>출발 HID Zone ID</td><td><code>HID_Zone_Master.csv</code> → IN_Lanes 파싱</td></tr>
-                    <tr class="new-col"><td><code>TO_HIDID</code></td><td>INT</td><td>도착 HID Zone ID</td><td><code>HID_Zone_Master.csv</code> → OUT_Lanes 파싱</td></tr>
+                    <tr class="new-col"><td><code>FROM_HIDID</code></td><td>INT</td><td>출발 HID Zone ID</td><td><code>layout.xml</code> McpZone Entry start/end → HID 매핑</td></tr>
+                    <tr class="new-col"><td><code>TO_HIDID</code></td><td>INT</td><td>도착 HID Zone ID</td><td><code>layout.xml</code> McpZone Exit start/end → HID 매핑</td></tr>
                     <tr><td><code>EDGE_ID</code></td><td>STRING</td><td>엣지 고유 ID (FROM:TO)</td><td><code>String.format("%03d:%03d")</code></td></tr>
-                    <tr><td><code>FROM_HID_NM</code></td><td>STRING</td><td>출발 HID Zone 이름</td><td><code>HID_Zone_Master.csv</code> → Full_Name</td></tr>
-                    <tr><td><code>TO_HID_NM</code></td><td>STRING</td><td>도착 HID Zone 이름</td><td><code>HID_Zone_Master.csv</code> → Full_Name</td></tr>
-                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>mcp75ConfigMap.keySet()</code></td></tr>
-                    <tr><td><code>ZONE_ID</code></td><td>STRING</td><td>Zone ID</td><td><code>HID_Zone_Master.csv</code> → Bay_Zone</td></tr>
+                    <tr><td><code>FROM_HID_NM</code></td><td>STRING</td><td>출발 HID Zone 이름</td><td><code>"HID_" + String.format("%03d", hidId)</code></td></tr>
+                    <tr><td><code>TO_HID_NM</code></td><td>STRING</td><td>도착 HID Zone 이름</td><td><code>"HID_" + String.format("%03d", hidId)</code></td></tr>
+                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>mcpName</code> 파라미터 (HidMasterBatchJob.java)</td></tr>
+                    <tr><td><code>ZONE_ID</code></td><td>STRING</td><td>Zone ID</td><td>추후 매핑 가능</td></tr>
                     <tr><td><code>EDGE_TYPE</code></td><td>STRING</td><td>엣지 유형</td><td><code>fromHid==0?"IN":toHid==0?"OUT":"INTERNAL"</code></td></tr>
                     <tr><td><code>UPDATE_DT</code></td><td>STRING</td><td>업데이트 일시</td><td><code>SimpleDateFormat</code></td></tr>
                 </tbody>
@@ -647,10 +650,11 @@
 
         <!-- 테이블 2: HID 상세 정보 (신규 추가) -->
         <section id="hid-info-table">
-            <h2>테이블 2: ATLAS_HID_INFO_MAS (신규)</h2>
+            <h2>테이블 2: {FAB}_ATLAS_HID_INFO_MAS (신규)</h2>
 
             <h3>용도</h3>
             <p>HID 상세 정보 마스터 데이터 — 레일 길이 총합, FREE FLOW 속도, 포트 개수 등 HID 성능/용량 정보</p>
+            <p style="color: var(--accent-cyan); margin-top: 0.3rem;">예: <code>M14A_ATLAS_HID_INFO_MAS</code>, <code>M16A_ATLAS_HID_INFO_MAS</code></p>
 
             <div class="highlight-box">
                 <h4>📊 주요 컬럼 활용 목적</h4>
@@ -673,17 +677,17 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td><code>HID_ID</code></td><td>INT</td><td>HID Zone ID (PK)</td><td><code>HID_Zone_Master.csv</code> → Zone_ID</td></tr>
-                    <tr><td><code>HID_NM</code></td><td>STRING</td><td>HID Zone 이름</td><td><code>HID_Zone_Master.csv</code> → Full_Name</td></tr>
-                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>mcp75ConfigMap.keySet()</code></td></tr>
-                    <tr><td><code>ZONE_ID</code></td><td>STRING</td><td>Zone ID</td><td><code>HID_Zone_Master.csv</code> → Bay_Zone</td></tr>
-                    <tr class="new-col"><td><code>RAIL_LEN_TOTAL</code></td><td>DOUBLE</td><td>레일 길이 총합 (mm)</td><td><code>RailEdge.getLength()</code> HID별 합계</td></tr>
-                    <tr class="new-col"><td><code>FREE_FLOW_SPEED</code></td><td>DOUBLE</td><td>FREE FLOW 속도 (mm/s)</td><td><code>RailEdge.getMaxVelocity()</code> HID별 평균</td></tr>
-                    <tr class="new-col"><td><code>PORT_CNT_TOTAL</code></td><td>INT</td><td>포트 개수 총합</td><td><code>RailEdge.getPortIdList().size()</code> 합계</td></tr>
-                    <tr><td><code>IN_CNT</code></td><td>INT</td><td>IN Lane 개수</td><td><code>HID_Zone_Master.csv</code> → IN_Count</td></tr>
-                    <tr><td><code>OUT_CNT</code></td><td>INT</td><td>OUT Lane 개수</td><td><code>HID_Zone_Master.csv</code> → OUT_Count</td></tr>
-                    <tr><td><code>VHL_MAX</code></td><td>INT</td><td>최대 허용 차량 수</td><td><code>HID_Zone_Master.csv</code> → Vehicle_Max</td></tr>
-                    <tr><td><code>ZCU_ID</code></td><td>STRING</td><td>ZCU ID</td><td><code>HID_Zone_Master.csv</code> → ZCU</td></tr>
+                    <tr><td><code>HID_ID</code></td><td>INT</td><td>HID Zone ID (PK)</td><td><code>RailEdge.getHIDId()</code> (RaileEdge.java:324)</td></tr>
+                    <tr><td><code>HID_NM</code></td><td>STRING</td><td>HID Zone 이름</td><td><code>"HID_" + String.format("%03d", hidId)</code></td></tr>
+                    <tr><td><code>MCP_ID</code></td><td>STRING</td><td>MCP ID</td><td><code>mcpName</code> 파라미터 (HidMasterBatchJob.java)</td></tr>
+                    <tr><td><code>ZONE_ID</code></td><td>STRING</td><td>Zone ID</td><td>추후 매핑 가능</td></tr>
+                    <tr class="new-col"><td><code>RAIL_LEN_TOTAL</code></td><td>DOUBLE</td><td>레일 길이 총합 (mm)</td><td><code>RailEdge.getLength()</code> HID별 합계 (AbstractEdge 상속)</td></tr>
+                    <tr class="new-col"><td><code>FREE_FLOW_SPEED</code></td><td>DOUBLE</td><td>FREE FLOW 속도 (mm/s)</td><td><code>RailEdge.getMaxVelocity()</code> HID별 평균 (RaileEdge.java:270)</td></tr>
+                    <tr class="new-col"><td><code>PORT_CNT_TOTAL</code></td><td>INT</td><td>포트 개수 총합</td><td><code>RailEdge.getPortIdList().size()</code> 합계 (RaileEdge.java:19)</td></tr>
+                    <tr><td><code>IN_CNT</code></td><td>INT</td><td>IN Lane 개수</td><td><code>layout.xml</code> McpZone Entry 개수 (추후 매핑)</td></tr>
+                    <tr><td><code>OUT_CNT</code></td><td>INT</td><td>OUT Lane 개수</td><td><code>layout.xml</code> McpZone Exit 개수 (추후 매핑)</td></tr>
+                    <tr><td><code>VHL_MAX</code></td><td>INT</td><td>최대 허용 차량 수</td><td><code>layout.xml</code> McpZone vehicle-max (추후 매핑)</td></tr>
+                    <tr><td><code>ZCU_ID</code></td><td>STRING</td><td>ZCU ID</td><td><code>layout.xml</code> Entry stop-zcu (추후 매핑)</td></tr>
                     <tr><td><code>UPDATE_DT</code></td><td>STRING</td><td>업데이트 일시</td><td><code>SimpleDateFormat</code></td></tr>
                 </tbody>
             </table>
@@ -711,10 +715,11 @@
 
         <!-- 테이블 3: 실시간 데이터 -->
         <section id="realtime-table">
-            <h2>테이블 3: ATLAS_{FABID}_HID_INOUT</h2>
+            <h2>테이블 3: {FAB}_ATLAS_HID_INOUT</h2>
 
             <h3>용도</h3>
-            <p>HID IN/OUT 1분 집계 데이터 — FABID별 테이블 분리 (M14, M16, M17...), 엣지 기반 전환 카운트</p>
+            <p>HID IN/OUT 1분 집계 데이터 — FABID별 테이블 분리, 엣지 기반 전환 카운트</p>
+            <p style="color: var(--accent-cyan); margin-top: 0.3rem;">예: <code>M14A_ATLAS_HID_INOUT</code>, <code>M16A_ATLAS_HID_INOUT</code></p>
 
             <h3>테이블 스키마</h3>
             <table class="schema-table">
@@ -737,7 +742,7 @@
                 </tbody>
             </table>
 
-            <h3>샘플 데이터 (ATLAS_M14_HID_INOUT)</h3>
+            <h3>샘플 데이터 (M14A_ATLAS_HID_INOUT)</h3>
             <table class="schema-table">
                 <thead>
                     <tr>
@@ -825,7 +830,7 @@
             </div>
             <pre><code><span class="comment">/**
  * HID 엣지 전환 집계 데이터를 Logpresso에 1분 배치 저장
- * 테이블: ATLAS_{FABID}_HID_INOUT
+ * 테이블: {FAB}_ATLAS_HID_INOUT (예: M14A_ATLAS_HID_INOUT)
  */</span>
 <span class="keyword">private void</span> <span class="function">flushHidEdgeBuffer</span>() {
     <span class="keyword">if</span> (hidEdgeBuffer.isEmpty()) {
@@ -875,8 +880,8 @@
         <span class="keyword">return</span>;
     }
 
-    <span class="comment">// FABID별 테이블에 저장</span>
-    String tableName = <span class="string">"ATLAS_"</span> + <span class="keyword">this</span>.fabId + <span class="string">"_HID_INOUT"</span>;
+    <span class="comment">// FABID별 테이블에 저장 (예: M14A_ATLAS_HID_INOUT)</span>
+    String tableName = <span class="keyword">this</span>.fabId + <span class="string">"_ATLAS_HID_INOUT"</span>;
 
     <span class="keyword">boolean</span> success = LogpressoAPI.setInsertTuples(tableName, tuples, <span class="number">100</span>);
 
@@ -892,41 +897,41 @@
             <h2>Logpresso 쿼리 예시</h2>
 
             <h3>기초정보 조회 (MAS)</h3>
-            <pre><code><span class="comment">// HID Zone 엣지 마스터 정보 전체 조회</span>
-table ATLAS_INFO_HID_INOUT_MAS
+            <pre><code><span class="comment">// HID Zone 엣지 마스터 정보 전체 조회 (M14A 예시)</span>
+table M14A_ATLAS_INFO_HID_INOUT_MAS
 | sort FROM_HIDID, TO_HIDID
 
-<span class="comment">// HID 상세 정보 조회</span>
-table ATLAS_HID_INFO_MAS
+<span class="comment">// HID 상세 정보 조회 (M14A 예시)</span>
+table M14A_ATLAS_HID_INFO_MAS
 | sort HID_ID</code></pre>
 
-            <h3>M14 일별 엣지 전환 통계</h3>
-            <pre><code><span class="comment">// M14 특정 날짜 엣지별 전환 합계</span>
-table ATLAS_M14_HID_INOUT duration=1d
+            <h3>M14A 일별 엣지 전환 통계</h3>
+            <pre><code><span class="comment">// M14A 특정 날짜 엣지별 전환 합계</span>
+table M14A_ATLAS_HID_INOUT duration=1d
 | search EVENT_DATE == <span class="string">"2026-01-30"</span>
 | stats sum(TRANS_CNT) as TOTAL_TRANS by FROM_HIDID, TO_HIDID
 | sort -TOTAL_TRANS</code></pre>
 
             <h3>특정 HID 진입/진출 분석</h3>
             <pre><code><span class="comment">// HID_ID=99 진입 (IN) 현황</span>
-table ATLAS_M14_HID_INOUT duration=1d
+table M14A_ATLAS_HID_INOUT duration=1d
 | search TO_HIDID == <span class="number">99</span> and EVENT_DATE == <span class="string">"2026-01-30"</span>
 | stats sum(TRANS_CNT) as IN_TOTAL by FROM_HIDID
 | sort -IN_TOTAL
 
 <span class="comment">// HID_ID=99 진출 (OUT) 현황</span>
-table ATLAS_M14_HID_INOUT duration=1d
+table M14A_ATLAS_HID_INOUT duration=1d
 | search FROM_HIDID == <span class="number">99</span> and EVENT_DATE == <span class="string">"2026-01-30"</span>
 | stats sum(TRANS_CNT) as OUT_TOTAL by TO_HIDID
 | sort -OUT_TOTAL</code></pre>
 
             <h3>HID 상세 정보와 조인</h3>
             <pre><code><span class="comment">// 레일 길이, FREE FLOW 속도 기반 분석</span>
-table ATLAS_M14_HID_INOUT duration=1d
+table M14A_ATLAS_HID_INOUT duration=1d
 | search EVENT_DATE == <span class="string">"2026-01-30"</span>
 | stats sum(TRANS_CNT) as TOTAL_IN by TO_HIDID
 | join TO_HIDID [
-    table ATLAS_HID_INFO_MAS
+    table M14A_ATLAS_HID_INFO_MAS
     | fields HID_ID as TO_HIDID, HID_NM, RAIL_LEN_TOTAL, FREE_FLOW_SPEED, PORT_CNT_TOTAL
   ]
 | eval THROUGHPUT = TOTAL_IN / (RAIL_LEN_TOTAL / FREE_FLOW_SPEED)
@@ -939,7 +944,7 @@ table ATLAS_M14_HID_INOUT duration=1d
 
             <div class="summary-grid">
                 <div class="summary-card">
-                    <h4>ATLAS_INFO_HID_INOUT_MAS</h4>
+                    <h4>{FAB}_ATLAS_INFO_HID_INOUT_MAS</h4>
                     <div class="summary-item">
                         <span class="summary-label">용도</span>
                         <span class="summary-value">엣지 마스터 (진입/진출)</span>
@@ -954,7 +959,7 @@ table ATLAS_M14_HID_INOUT duration=1d
                     </div>
                 </div>
                 <div class="summary-card">
-                    <h4>ATLAS_HID_INFO_MAS</h4>
+                    <h4>{FAB}_ATLAS_HID_INFO_MAS</h4>
                     <div class="summary-item">
                         <span class="summary-label">용도</span>
                         <span class="summary-value">HID 상세 정보</span>
@@ -969,7 +974,7 @@ table ATLAS_M14_HID_INOUT duration=1d
                     </div>
                 </div>
                 <div class="summary-card">
-                    <h4>ATLAS_{FAB}_HID_INOUT</h4>
+                    <h4>{FAB}_ATLAS_HID_INOUT</h4>
                     <div class="summary-item">
                         <span class="summary-label">용도</span>
                         <span class="summary-value">엣지 전환 집계</span>
@@ -986,21 +991,30 @@ table ATLAS_M14_HID_INOUT duration=1d
             </div>
 
             <div class="highlight-box">
-                <h4>📝 수정 파일: OhtMsgWorkerRunnable.java</h4>
+                <h4>📝 OhtMsgWorkerRunnable.java (실시간 1분 집계)</h4>
                 <ul class="highlight-list">
-                    <li><strong>변경</strong>: <code>hidCountBuffer</code> → <code>hidEdgeBuffer</code> (엣지 기반)</li>
-                    <li><strong>추가</strong>: <code>FROM_HIDID</code>, <code>TO_HIDID</code> 컬럼 처리</li>
-                    <li><strong>추가</strong>: <code>flushHidEdgeBuffer()</code> 메소드 (엣지 집계 저장)</li>
-                    <li><strong>수정</strong>: <code>_calculatedVhlCnt()</code> 메소드 (엣지 전환 감지)</li>
+                    <li><strong>신규 필드</strong>: <code>hidEdgeBuffer</code>, <code>hidEdgeFlushLock</code>, <code>hidEdgeBufferLock</code></li>
+                    <li><strong>수정</strong>: <code>_calculatedVhlCnt()</code> — 엣지 집계 + 1분 플러시</li>
+                    <li><strong>추가</strong>: <code>flushHidEdgeBuffer()</code> → <code>{FAB}_ATLAS_HID_INOUT</code> 저장</li>
                 </ul>
             </div>
 
             <div class="highlight-box">
-                <h4>📝 신규 배치: HidMasterBatchJob.java</h4>
+                <h4>📝 HidMasterBatchJob.java (신규 — Quartz Job, 하루 1회)</h4>
                 <ul class="highlight-list">
-                    <li><strong>추가</strong>: <code>updateHidInfoMaster()</code> 메소드 (ATLAS_HID_INFO_MAS 업데이트)</li>
-                    <li><strong>변경</strong>: 테이블명 <code>ATLAS_INFO_HID_INOUT</code> → <code>ATLAS_INFO_HID_INOUT_MAS</code></li>
-                    <li><strong>추가</strong>: 레일 길이, FREE FLOW 속도, 포트 개수 집계 로직</li>
+                    <li><strong>패턴</strong>: <code>TrafficBatch.java</code> 참조 — <code>implements Job</code>, <code>Env.getSwitchMap()</code> 순회</li>
+                    <li><strong>메소드</strong>: <code>_updateHidEdgeMasterInfo()</code> → <code>{FAB}_ATLAS_INFO_HID_INOUT_MAS</code></li>
+                    <li><strong>메소드</strong>: <code>_updateHidInfoMaster()</code> → <code>{FAB}_ATLAS_HID_INFO_MAS</code></li>
+                    <li><strong>데이터 소스</strong>: <code>map/{FAB}/*.layout.zip</code> + <code>RailEdge</code> 런타임 데이터</li>
+                </ul>
+            </div>
+
+            <div class="highlight-box">
+                <h4>📁 참고 소스 코드</h4>
+                <ul class="highlight-list">
+                    <li>실시간 집계: <code>JAVA_TOEB/SRC/OhtMsgWorkerRunnable.java</code></li>
+                    <li>마스터 배치: <code>JAVA_TOEB/SRC/HidMasterBatchJob.java</code></li>
+                    <li><code>map/{FAB}/*.layout.zip</code> 없으면 SKIP + <code>logger.warn</code></li>
                 </ul>
             </div>
         </section>
