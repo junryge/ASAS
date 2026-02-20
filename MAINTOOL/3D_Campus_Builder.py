@@ -3048,6 +3048,7 @@ class CampusBuilderApp:
         self.is_box_selecting = False    # 사각형 선택 중?
         # 연결통로 도구
         self.transport_start = None      # (wx, wz) - 연결통로 시작점
+        self.show_grid = False               # 캔버스 격자 표시 여부
 
         # UI 구축 (의존성 순서: status_bar → toolbar → main_area → example_campus)
         self._build_menu()
@@ -3118,6 +3119,8 @@ class CampusBuilderApp:
         view_menu.add_command(label="캔버스 리셋  Home", command=self.reset_canvas_view)
         view_menu.add_command(label="확대  +", command=lambda: self.zoom_canvas(1.2))
         view_menu.add_command(label="축소  -", command=lambda: self.zoom_canvas(0.8))
+        view_menu.add_separator()
+        view_menu.add_command(label="격자 표시/숨김  G", command=self.toggle_grid)
         menubar.add_cascade(label="보기", menu=view_menu)
 
         # 도움말
@@ -3140,6 +3143,8 @@ class CampusBuilderApp:
         self.root.bind('<Home>', lambda e: self.reset_canvas_view())
         self.root.bind('<plus>', lambda e: self.zoom_canvas(1.2))
         self.root.bind('<minus>', lambda e: self.zoom_canvas(0.8))
+        self.root.bind('<g>', lambda e: self.toggle_grid())
+        self.root.bind('<G>', lambda e: self.toggle_grid())
 
     # ========================
     # 툴바
@@ -3398,21 +3403,22 @@ class CampusBuilderApp:
             self.canvas.create_text(cx, cy, text=f"{gb.name}\n(H:{gb.height})",
                                     fill="white", font=("Arial", 9, "bold"))
 
-        # 그리드
-        grid_spacing = 50
-        gs = grid_spacing * self.canvas_scale
-        if gs > 5:
-            ox = (cw / 2 + self.canvas_offset_x * self.canvas_scale) % gs
-            oy = (ch / 2 + self.canvas_offset_y * self.canvas_scale) % gs
-            for x in range(int(-gs), cw + int(gs), max(1, int(gs))):
-                self.canvas.create_line(x + ox, 0, x + ox, ch, fill="#354535", width=1)
-            for y in range(int(-gs), ch + int(gs), max(1, int(gs))):
-                self.canvas.create_line(0, y + oy, cw, y + oy, fill="#354535", width=1)
+        # 그리드 (토글로 표시/숨김)
+        if self.show_grid:
+            grid_spacing = 50
+            gs = grid_spacing * self.canvas_scale
+            if gs > 5:
+                ox = (cw / 2 + self.canvas_offset_x * self.canvas_scale) % gs
+                oy = (ch / 2 + self.canvas_offset_y * self.canvas_scale) % gs
+                for x in range(int(-gs), cw + int(gs), max(1, int(gs))):
+                    self.canvas.create_line(x + ox, 0, x + ox, ch, fill="#354535", width=1)
+                for y in range(int(-gs), ch + int(gs), max(1, int(gs))):
+                    self.canvas.create_line(0, y + oy, cw, y + oy, fill="#354535", width=1)
 
-        # 축선
-        origin_x, origin_y = self.world_to_canvas(0, 0)
-        self.canvas.create_line(origin_x, 0, origin_x, ch, fill="#446644", width=1)
-        self.canvas.create_line(0, origin_y, cw, origin_y, fill="#446644", width=1)
+            # 축선
+            origin_x, origin_y = self.world_to_canvas(0, 0)
+            self.canvas.create_line(origin_x, 0, origin_x, ch, fill="#446644", width=1)
+            self.canvas.create_line(0, origin_y, cw, origin_y, fill="#446644", width=1)
 
         # 지면 경계 표시 (하얀색 테두리)
         gw = self.project.ground_width
@@ -3877,6 +3883,11 @@ class CampusBuilderApp:
         self.canvas_offset_y = 0
         self.canvas_scale = 1.0
         self.redraw_canvas()
+
+    def toggle_grid(self):
+        self.show_grid = not self.show_grid
+        self.redraw_canvas()
+        self.update_status(f"격자 {'표시' if self.show_grid else '숨김'}")
 
     def _on_resize_check(self, event):
         """Check if mouse is near a resize handle of selected item"""
