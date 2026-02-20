@@ -26,6 +26,7 @@ from tkinter import ttk, messagebox, filedialog, colorchooser
 import json
 import os
 import math
+import re
 import webbrowser
 import uuid
 import base64
@@ -2757,12 +2758,45 @@ function updateMinimap() {{
     );
   }});
 
-  // Camera position
+  // Camera position (red dot only)
   ctx.fillStyle = '#ff4444';
   ctx.beginPath();
   ctx.arc(cx + camera.position.x * scale, cy + camera.position.z * scale, 3, 0, Math.PI * 2);
   ctx.fill();
 }}
+
+// ========== Minimap click navigation ==========
+(function() {{
+  const minimapCanvas = document.getElementById('minimapCanvas');
+  if (!minimapCanvas) return;
+
+  function minimapNavigate(e) {{
+    const rect = minimapCanvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) / rect.width * 160;
+    const my = (e.clientY - rect.top) / rect.height * 140;
+    const scale = Math.min(160 / (GROUND_W * 2), 140 / (GROUND_D * 2));
+    const worldX = (mx - 80) / scale;
+    const worldZ = (my - 70) / scale;
+    flyTo(worldX, worldZ, targetSpherical.radius);
+  }}
+
+  minimapCanvas.style.cursor = 'crosshair';
+  minimapCanvas.addEventListener('click', minimapNavigate);
+
+  // Drag navigation on minimap
+  let minimapDragging = false;
+  minimapCanvas.addEventListener('mousedown', function(e) {{
+    minimapDragging = true;
+    minimapNavigate(e);
+    e.preventDefault();
+  }});
+  window.addEventListener('mousemove', function(e) {{
+    if (minimapDragging) minimapNavigate(e);
+  }});
+  window.addEventListener('mouseup', function() {{
+    minimapDragging = false;
+  }});
+}})();
 
 // Export functions moved to Python GUI
 
@@ -3046,8 +3080,11 @@ class CampusBuilderApp:
         self.selected_items = []        # [(item, type), ...]
         self.selection_rect_start = None # 선택 사각형 시작 화면좌표
         self.is_box_selecting = False    # 사각형 선택 중?
+        # 클립보드 (Ctrl+C/V)
+        self.clipboard_items = []       # 복사된 아이템 리스트
         # 연결통로 도구
         self.transport_start = None      # (wx, wz) - 연결통로 시작점
+        self.show_grid = False               # 캔버스 격자 표시 여부
 
         # UI 구축 (의존성 순서: status_bar → toolbar → main_area → example_campus)
         self._build_menu()
@@ -3072,6 +3109,7 @@ class CampusBuilderApp:
         file_menu.add_command(label="새 프로젝트  Ctrl+N", command=self.new_project)
         file_menu.add_separator()
         file_menu.add_command(label="열기  Ctrl+O", command=self.open_project)
+        file_menu.add_command(label="HTML 불러오기...", command=self.import_html)
         file_menu.add_command(label="저장  Ctrl+S", command=self.save_project)
         file_menu.add_command(label="다른 이름으로 저장...", command=self.save_project_as)
         file_menu.add_separator()
@@ -3086,8 +3124,11 @@ class CampusBuilderApp:
 
         # 편집 메뉴
         edit_menu = tk.Menu(menubar, tearoff=0)
-        edit_menu.add_command(label="선택 삭제  Delete", command=self.delete_selected)
+        edit_menu.add_command(label="복사  Ctrl+C", command=self.copy_selected)
+        edit_menu.add_command(label="붙여넣기  Ctrl+V", command=self.paste_clipboard)
         edit_menu.add_command(label="선택 복제  Ctrl+D", command=self.duplicate_selected)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="선택 삭제  Delete", command=self.delete_selected)
         edit_menu.add_separator()
         edit_menu.add_command(label="전체 선택 해제  Esc", command=self.deselect_all)
         menubar.add_cascade(label="편집", menu=edit_menu)
@@ -3118,6 +3159,8 @@ class CampusBuilderApp:
         view_menu.add_command(label="캔버스 리셋  Home", command=self.reset_canvas_view)
         view_menu.add_command(label="확대  +", command=lambda: self.zoom_canvas(1.2))
         view_menu.add_command(label="축소  -", command=lambda: self.zoom_canvas(0.8))
+        view_menu.add_separator()
+        view_menu.add_command(label="격자 표시/숨김  G", command=self.toggle_grid)
         menubar.add_cascade(label="보기", menu=view_menu)
 
         # 도움말
@@ -3135,11 +3178,15 @@ class CampusBuilderApp:
         self.root.bind('<Control-e>', lambda e: self.export_html())
         self.root.bind('<Control-E>', lambda e: self.export_and_open())
         self.root.bind('<Control-d>', lambda e: self.duplicate_selected())
+        self.root.bind('<Control-c>', lambda e: self.copy_selected())
+        self.root.bind('<Control-v>', lambda e: self.paste_clipboard())
         self.root.bind('<Delete>', lambda e: self.delete_selected())
         self.root.bind('<Escape>', lambda e: self.deselect_all())
         self.root.bind('<Home>', lambda e: self.reset_canvas_view())
         self.root.bind('<plus>', lambda e: self.zoom_canvas(1.2))
         self.root.bind('<minus>', lambda e: self.zoom_canvas(0.8))
+        self.root.bind('<g>', lambda e: self.toggle_grid())
+        self.root.bind('<G>', lambda e: self.toggle_grid())
 
     # ========================
     # 툴바
@@ -3398,21 +3445,22 @@ class CampusBuilderApp:
             self.canvas.create_text(cx, cy, text=f"{gb.name}\n(H:{gb.height})",
                                     fill="white", font=("Arial", 9, "bold"))
 
-        # 그리드
-        grid_spacing = 50
-        gs = grid_spacing * self.canvas_scale
-        if gs > 5:
-            ox = (cw / 2 + self.canvas_offset_x * self.canvas_scale) % gs
-            oy = (ch / 2 + self.canvas_offset_y * self.canvas_scale) % gs
-            for x in range(int(-gs), cw + int(gs), max(1, int(gs))):
-                self.canvas.create_line(x + ox, 0, x + ox, ch, fill="#354535", width=1)
-            for y in range(int(-gs), ch + int(gs), max(1, int(gs))):
-                self.canvas.create_line(0, y + oy, cw, y + oy, fill="#354535", width=1)
+        # 그리드 (토글로 표시/숨김)
+        if self.show_grid:
+            grid_spacing = 50
+            gs = grid_spacing * self.canvas_scale
+            if gs > 5:
+                ox = (cw / 2 + self.canvas_offset_x * self.canvas_scale) % gs
+                oy = (ch / 2 + self.canvas_offset_y * self.canvas_scale) % gs
+                for x in range(int(-gs), cw + int(gs), max(1, int(gs))):
+                    self.canvas.create_line(x + ox, 0, x + ox, ch, fill="#354535", width=1)
+                for y in range(int(-gs), ch + int(gs), max(1, int(gs))):
+                    self.canvas.create_line(0, y + oy, cw, y + oy, fill="#354535", width=1)
 
-        # 축선
-        origin_x, origin_y = self.world_to_canvas(0, 0)
-        self.canvas.create_line(origin_x, 0, origin_x, ch, fill="#446644", width=1)
-        self.canvas.create_line(0, origin_y, cw, origin_y, fill="#446644", width=1)
+            # 축선
+            origin_x, origin_y = self.world_to_canvas(0, 0)
+            self.canvas.create_line(origin_x, 0, origin_x, ch, fill="#446644", width=1)
+            self.canvas.create_line(0, origin_y, cw, origin_y, fill="#446644", width=1)
 
         # 지면 경계 표시 (하얀색 테두리)
         gw = self.project.ground_width
@@ -3735,11 +3783,23 @@ class CampusBuilderApp:
                 return
             if self.selected_items:
                 for item, _ in self.selected_items:
-                    item.x = round(item.x + dx, 1)
-                    item.z = round(item.z + dz, 1)
+                    if isinstance(item, TransportLine):
+                        item.x1 = round(item.x1 + dx, 1)
+                        item.z1 = round(item.z1 + dz, 1)
+                        item.x2 = round(item.x2 + dx, 1)
+                        item.z2 = round(item.z2 + dz, 1)
+                    else:
+                        item.x = round(item.x + dx, 1)
+                        item.z = round(item.z + dz, 1)
             elif self.selected_item:
-                self.selected_item.x = round(self.selected_item.x + dx, 1)
-                self.selected_item.z = round(self.selected_item.z + dz, 1)
+                if isinstance(self.selected_item, TransportLine):
+                    self.selected_item.x1 = round(self.selected_item.x1 + dx, 1)
+                    self.selected_item.z1 = round(self.selected_item.z1 + dz, 1)
+                    self.selected_item.x2 = round(self.selected_item.x2 + dx, 1)
+                    self.selected_item.z2 = round(self.selected_item.z2 + dz, 1)
+                else:
+                    self.selected_item.x = round(self.selected_item.x + dx, 1)
+                    self.selected_item.z = round(self.selected_item.z + dz, 1)
             self.move_start = (wx, wz)
             self.redraw_canvas()
 
@@ -3786,10 +3846,33 @@ class CampusBuilderApp:
                 for g in self.gates:
                     if min_wx <= g.x <= max_wx and min_wz <= g.z <= max_wz:
                         self.selected_items.append((g, "gate"))
+                for wt in self.water_tanks:
+                    if min_wx <= wt.x <= max_wx and min_wz <= wt.z <= max_wz:
+                        self.selected_items.append((wt, "water_tank"))
+                for lt in self.lpg_tanks:
+                    if min_wx <= lt.x <= max_wx and min_wz <= lt.z <= max_wz:
+                        self.selected_items.append((lt, "lpg_tank"))
+                for ch in self.chimneys:
+                    if min_wx <= ch.x <= max_wx and min_wz <= ch.z <= max_wz:
+                        self.selected_items.append((ch, "chimney"))
+                for w in self.walls:
+                    if min_wx <= w.x <= max_wx and min_wz <= w.z <= max_wz:
+                        self.selected_items.append((w, "wall"))
+                for tr in self.trucks:
+                    if min_wx <= tr.x <= max_wx and min_wz <= tr.z <= max_wz:
+                        self.selected_items.append((tr, "truck"))
+                for tl in self.transport_lines:
+                    mid_x = (tl.x1 + tl.x2) / 2
+                    mid_z = (tl.z1 + tl.z2) / 2
+                    if min_wx <= mid_x <= max_wx and min_wz <= mid_z <= max_wz:
+                        self.selected_items.append((tl, "transport"))
+                for gb in self.ground_boxes:
+                    if min_wx <= gb.x <= max_wx and min_wz <= gb.z <= max_wz:
+                        self.selected_items.append((gb, "ground_box"))
                 if self.selected_items:
                     self.selected_item = self.selected_items[0][0]
                     self.selected_type = self.selected_items[0][1]
-                    self.update_status(f"{len(self.selected_items)}개 선택됨")
+                    self.update_status(f"{len(self.selected_items)}개 선택됨 (Delete 키로 일괄 삭제)")
                 else:
                     self.deselect_all()
 
@@ -3842,6 +3925,11 @@ class CampusBuilderApp:
         self.canvas_offset_y = 0
         self.canvas_scale = 1.0
         self.redraw_canvas()
+
+    def toggle_grid(self):
+        self.show_grid = not self.show_grid
+        self.redraw_canvas()
+        self.update_status(f"격자 {'표시' if self.show_grid else '숨김'}")
 
     def _on_resize_check(self, event):
         """Check if mouse is near a resize handle of selected item"""
@@ -4546,8 +4634,10 @@ class CampusBuilderApp:
 
         # 공통
         make_entry("이름", "name")
-        make_entry("X 위치", "x", tk.DoubleVar)
-        make_entry("Z 위치", "z", tk.DoubleVar)
+        if hasattr(item, 'x'):
+            make_entry("X 위치", "x", tk.DoubleVar)
+        if hasattr(item, 'z'):
+            make_entry("Z 위치", "z", tk.DoubleVar)
         if hasattr(item, 'color'):
             make_color_btn("색상", "color")
             make_hex_color_entry("HEX 코드", "color")
@@ -4764,9 +4854,6 @@ class CampusBuilderApp:
         self.redraw_canvas()
 
     def delete_selected(self):
-        if not self.selected_item:
-            return
-        item = self.selected_item
         all_lists = [
             self.buildings, self.roads, self.trees, self.parking_lots,
             self.lakes, self.persons, self.gates,
@@ -4774,6 +4861,28 @@ class CampusBuilderApp:
             self.walls, self.trucks, self.transport_lines,
             self.ground_boxes,
         ]
+
+        # 다중 선택 삭제
+        if self.selected_items and len(self.selected_items) > 0:
+            items_to_delete = [item for item, _ in self.selected_items]
+            for item in items_to_delete:
+                for lst in all_lists:
+                    if item in lst:
+                        lst.remove(item)
+                        break
+            self.selected_items = []
+            self.selected_item = None
+            self.selected_type = None
+            self._update_object_tree()
+            self._update_counts()
+            self.redraw_canvas()
+            self._show_project_properties()
+            return
+
+        # 단일 선택 삭제
+        if not self.selected_item:
+            return
+        item = self.selected_item
         for lst in all_lists:
             if item in lst:
                 lst.remove(item)
@@ -4786,14 +4895,83 @@ class CampusBuilderApp:
         self.redraw_canvas()
         self._show_project_properties()
 
+    def copy_selected(self):
+        """Ctrl+C: 선택된 아이템(들)을 클립보드에 복사"""
+        import copy as copy_module
+        if self.selected_items and len(self.selected_items) > 1:
+            # 다중 선택 복사
+            self.clipboard_items = [(copy_module.deepcopy(item), t) for item, t in self.selected_items]
+            self.update_status(f"📋 {len(self.clipboard_items)}개 오브젝트 복사됨 (Ctrl+V로 붙여넣기)")
+        elif self.selected_item:
+            # 단일 선택 복사
+            self.clipboard_items = [(copy_module.deepcopy(self.selected_item), self.selected_type)]
+            self.update_status(f"📋 '{self.selected_item.name}' 복사됨 (Ctrl+V로 붙여넣기)")
+        else:
+            self.update_status("⚠️ 복사할 오브젝트를 먼저 선택하세요")
+
+    def paste_clipboard(self):
+        """Ctrl+V: 클립보드의 아이템(들)을 붙여넣기"""
+        import copy as copy_module
+        if not self.clipboard_items:
+            self.update_status("⚠️ 클립보드가 비어있습니다 (먼저 Ctrl+C로 복사하세요)")
+            return
+
+        type_list_map = {
+            Building: self.buildings, Road: self.roads, Tree: self.trees,
+            ParkingLot: self.parking_lots, Lake: self.lakes, Person: self.persons,
+            Gate: self.gates, WaterTank: self.water_tanks, LPGTank: self.lpg_tanks,
+            Chimney: self.chimneys, Wall: self.walls, Truck: self.trucks,
+            TransportLine: self.transport_lines, GroundBox: self.ground_boxes,
+        }
+
+        pasted = []
+        for orig_item, item_type in self.clipboard_items:
+            item = copy_module.deepcopy(orig_item)
+            item.id = str(uuid.uuid4())[:8]
+            if isinstance(item, TransportLine):
+                item.x1 += 30
+                item.z1 += 30
+                item.x2 += 30
+                item.z2 += 30
+            else:
+                item.x += 30
+                item.z += 30
+
+            for cls, lst in type_list_map.items():
+                if isinstance(item, cls):
+                    lst.append(item)
+                    pasted.append((item, item_type))
+                    break
+
+        if len(pasted) == 1:
+            self.selected_item = pasted[0][0]
+            self.selected_type = pasted[0][1]
+            self.selected_items = [pasted[0]]
+            self._show_item_properties(pasted[0][0], pasted[0][1])
+        elif len(pasted) > 1:
+            self.selected_items = pasted
+            self.selected_item = pasted[-1][0]
+            self.selected_type = pasted[-1][1]
+
+        self._update_object_tree()
+        self._update_counts()
+        self.redraw_canvas()
+        self.update_status(f"📋 {len(pasted)}개 오브젝트 붙여넣기 완료")
+
     def duplicate_selected(self):
         if not self.selected_item:
             return
         import copy
         item = copy.deepcopy(self.selected_item)
         item.id = str(uuid.uuid4())[:8]
-        item.x += 20
-        item.z += 20
+        if isinstance(item, TransportLine):
+            item.x1 += 20
+            item.z1 += 20
+            item.x2 += 20
+            item.z2 += 20
+        else:
+            item.x += 20
+            item.z += 20
         item.name = item.name + " (복사)"
 
         type_list_map = {
@@ -4937,6 +5115,178 @@ class CampusBuilderApp:
             self.update_status(f"프로젝트 로드: {os.path.basename(path)}")
         except Exception as e:
             messagebox.showerror("오류", f"프로젝트를 열 수 없습니다:\n{e}")
+
+    def import_html(self):
+        """내보낸 HTML 파일에서 프로젝트 데이터를 역파싱하여 불러오기"""
+        path = filedialog.askopenfilename(
+            filetypes=[("HTML Files", "*.html *.htm"), ("All Files", "*.*")],
+            title="HTML 불러오기"
+        )
+        if not path:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+
+            # JavaScript 변수에서 JSON 배열/값 추출 헬퍼 (bracket counting 방식)
+            def extract_json_array(var_name):
+                # 1차: bracket counting으로 정확한 배열 범위 추출
+                pattern = rf'const\s+{var_name}\s*=\s*\['
+                m = re.search(pattern, html_content)
+                if m:
+                    start = m.end() - 1  # '[' 위치
+                    depth = 0
+                    in_string = False
+                    escape = False
+                    end = start
+                    for i in range(start, min(start + 500000, len(html_content))):
+                        ch = html_content[i]
+                        if escape:
+                            escape = False
+                            continue
+                        if ch == '\\' and in_string:
+                            escape = True
+                            continue
+                        if ch == '"' and not escape:
+                            in_string = not in_string
+                            continue
+                        if in_string:
+                            continue
+                        if ch == '[':
+                            depth += 1
+                        elif ch == ']':
+                            depth -= 1
+                            if depth == 0:
+                                end = i + 1
+                                break
+                    if end > start:
+                        try:
+                            return json.loads(html_content[start:end])
+                        except json.JSONDecodeError:
+                            pass
+                # 2차: 기존 regex 방식 fallback
+                pattern2 = rf'const\s+{var_name}\s*=\s*(\[.*?\]);'
+                m2 = re.search(pattern2, html_content, re.DOTALL)
+                if m2:
+                    try:
+                        return json.loads(m2.group(1))
+                    except json.JSONDecodeError:
+                        return []
+                return []
+
+            def extract_string(var_name):
+                pattern = rf'const\s+{var_name}\s*=\s*["\']([^"\']*)["\'];'
+                m = re.search(pattern, html_content)
+                return m.group(1) if m else ""
+
+            def extract_number(var_name):
+                pattern = rf'const\s+{var_name}\s*=\s*([\d.]+);'
+                m = re.search(pattern, html_content)
+                return float(m.group(1)) if m else 600
+
+            # 프로젝트 기본 정보
+            campus_name = extract_string("CAMPUS_NAME")
+            if not campus_name:
+                # JSON.dumps 된 문자열 형태도 시도
+                m = re.search(r'const\s+CAMPUS_NAME\s*=\s*(".*?");', html_content)
+                if m:
+                    try:
+                        campus_name = json.loads(m.group(1))
+                    except json.JSONDecodeError:
+                        campus_name = "Imported Campus"
+            ground_w = extract_number("GROUND_W")
+            ground_d = extract_number("GROUND_D")
+            sky_color = extract_string("SKY_COLOR") or "#87CEEB"
+
+            # 각 오브젝트 데이터 추출
+            buildings = extract_json_array("buildingsData")
+            roads = extract_json_array("roadsData")
+            trees = extract_json_array("treesData")
+            parkings = extract_json_array("parkingsData")
+            lakes = extract_json_array("lakesData")
+            persons = extract_json_array("personsData")
+            gates = extract_json_array("gatesData")
+            water_tanks = extract_json_array("waterTanksData")
+            lpg_tanks = extract_json_array("lpgTanksData")
+            chimneys = extract_json_array("chimneysData")
+            walls = extract_json_array("wallsData")
+            trucks = extract_json_array("trucksData")
+            transport_lines = extract_json_array("transportLinesData")
+            ground_boxes = extract_json_array("groundBoxesData")
+
+            # 배경 이미지
+            bg_image = ""
+            m = re.search(r'const\s+backgroundImageData\s*=\s*("data:image[^"]*");', html_content)
+            if m:
+                try:
+                    bg_image = json.loads(m.group(1))
+                except json.JSONDecodeError:
+                    bg_image = ""
+
+            total_objects = (len(buildings) + len(roads) + len(trees) + len(parkings) +
+                           len(lakes) + len(persons) + len(gates) + len(water_tanks) +
+                           len(lpg_tanks) + len(chimneys) + len(walls) + len(trucks) +
+                           len(transport_lines) + len(ground_boxes))
+
+            if total_objects == 0:
+                # 디버깅: 어떤 변수가 HTML에 존재하는지 확인
+                found_vars = []
+                missing_vars = []
+                for vname in ["buildingsData", "roadsData", "treesData", "parkingsData",
+                              "lakesData", "personsData", "gatesData", "waterTanksData",
+                              "lpgTanksData", "chimneysData", "wallsData", "trucksData",
+                              "transportLinesData", "groundBoxesData"]:
+                    if re.search(rf'const\s+{vname}\s*=', html_content):
+                        found_vars.append(vname)
+                    else:
+                        missing_vars.append(vname)
+                detail = ""
+                if found_vars:
+                    detail = f"\n\n발견된 변수: {', '.join(found_vars[:5])}..."
+                    detail += "\n(변수는 있지만 파싱에 실패했을 수 있습니다)"
+                else:
+                    detail = "\n\nHTML에서 데이터 변수를 전혀 찾을 수 없습니다."
+                messagebox.showwarning("경고", f"HTML에서 오브젝트 데이터를 찾을 수 없습니다.\n이 도구에서 내보낸 HTML 파일인지 확인해주세요.{detail}")
+                return
+
+            # 프로젝트 데이터 구성
+            project_data = {
+                "name": campus_name or "Imported Campus",
+                "ground_width": ground_w,
+                "ground_depth": ground_d,
+                "sky_color": sky_color,
+                "buildings": buildings,
+                "roads": roads,
+                "trees": trees,
+                "parking_lots": parkings,
+                "lakes": lakes,
+                "persons": persons,
+                "gates": gates,
+                "water_tanks": water_tanks,
+                "lpg_tanks": lpg_tanks,
+                "chimneys": chimneys,
+                "walls": walls,
+                "trucks": trucks,
+                "transport_lines": transport_lines,
+                "ground_boxes": ground_boxes,
+                "background_image": bg_image,
+            }
+
+            self._from_project_data(project_data)
+            self.current_file = None  # HTML이므로 저장 경로 초기화
+            self._update_object_tree()
+            self._update_counts()
+            self.redraw_canvas()
+            self._show_project_properties()
+            self.update_status(f"HTML 불러오기 완료: {os.path.basename(path)} ({total_objects}개 오브젝트)")
+            messagebox.showinfo("성공", f"HTML에서 {total_objects}개 오브젝트를 불러왔습니다.\n\n"
+                               f"건물: {len(buildings)}, 도로: {len(roads)}, 나무: {len(trees)}\n"
+                               f"주차장: {len(parkings)}, 호수: {len(lakes)}, 사람: {len(persons)}\n"
+                               f"게이트: {len(gates)}, 물탱크: {len(water_tanks)}, LPG탱크: {len(lpg_tanks)}\n"
+                               f"굴뚝: {len(chimneys)}, 벽: {len(walls)}, 트럭: {len(trucks)}\n"
+                               f"연결통로: {len(transport_lines)}, 바닥박스: {len(ground_boxes)}")
+        except Exception as e:
+            messagebox.showerror("오류", f"HTML 불러오기 실패:\n{e}")
 
     def save_project(self):
         if self.current_file:
@@ -5476,6 +5826,12 @@ export default function {name.replace(' ', '').replace('-', '')}Scene() {{
 [속성 패널]
 • 선택된 오브젝트의 속성을 편집합니다
 • 빠른 색상 팔레트로 빠르게 색상 변경
+
+[편집]
+• Ctrl+C: 선택 복사
+• Ctrl+V: 붙여넣기
+• Ctrl+D: 선택 복제
+• Delete: 선택 삭제
 
 [파일]
 • Ctrl+S: 프로젝트 저장 (JSON)
