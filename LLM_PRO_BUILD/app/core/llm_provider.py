@@ -94,24 +94,26 @@ class LLMProvider:
         return self.load_local_model()
 
     def call(self, prompt: str, system_prompt: str = "", max_tokens: int = 0,
-             session=None) -> dict:
+             session=None, history=None) -> dict:
         """LLM 호출 (모드에 따라 자동 선택)
         Args:
             session: 외부 requests.Session 객체 (취소 지원용, 선택)
                      session.close() 호출 시 진행 중인 요청 즉시 중단
+            history: 이전 대화 히스토리 [{"role": "user"|"assistant", "content": str}, ...]
         """
         if max_tokens <= 0:
             max_tokens = self.config.get_max_tokens()
         if self.config.llm_mode == "local":
-            return self._call_gguf(prompt, system_prompt, max_tokens)
+            return self._call_gguf(prompt, system_prompt, max_tokens, history=history)
         else:
-            return self._call_api(prompt, system_prompt, max_tokens, session=session)
+            return self._call_api(prompt, system_prompt, max_tokens, session=session, history=history)
 
     def _call_api(self, prompt: str, system_prompt: str = "",
-                  max_tokens: int = 4096, session=None) -> dict:
+                  max_tokens: int = 4096, session=None, history=None) -> dict:
         """SK Hynix API 호출
         Args:
             session: 외부 requests.Session (취소 시 session.close()로 즉시 중단)
+            history: 이전 대화 히스토리 [{"role": "user"|"assistant", "content": str}, ...]
         """
         if not HAS_REQUESTS:
             return {"success": False, "error": "requests 미설치 (pip install requests)"}
@@ -126,6 +128,11 @@ class LLMProvider:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+        # 이전 대화 히스토리 추가
+        if history:
+            for msg in history:
+                if msg.get("role") in ("user", "assistant"):
+                    messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": prompt})
 
         data = {
@@ -152,17 +159,22 @@ class LLMProvider:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _call_gguf(self, prompt: str, system_prompt: str = "", max_tokens: int = 4096) -> dict:
+    def _call_gguf(self, prompt: str, system_prompt: str = "", max_tokens: int = 4096,
+                   history=None) -> dict:
         """GGUF 로컬 모델 호출"""
         if self.local_llm is None:
             return {"success": False, "error": "로컬 모델이 로드되지 않았습니다"}
 
-        # Qwen3 ChatML 포맷
-        full_prompt = (
-            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
-            f"<|im_start|>user\n{prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
+        # Qwen3 ChatML 포맷 - 히스토리 포함
+        full_prompt = f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+        if history:
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant"):
+                    full_prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        full_prompt += f"<|im_start|>user\n{prompt}<|im_end|>\n"
+        full_prompt += "<|im_start|>assistant\n"
 
         try:
             logger.info(f"GGUF 추론 시작 (prompt {len(full_prompt)}자, max_tokens={max_tokens})")

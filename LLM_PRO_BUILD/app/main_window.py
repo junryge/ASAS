@@ -192,14 +192,18 @@ class MainWindow(QMainWindow):
     def _on_chat_send(self, message: str, use_sc: bool):
         """일반/생성 모드 전송"""
         mode = self.current_mode
+        chat = self._get_active_chat()
         prompt = build_prompt(mode, message, "", "python")
         system_prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["general"])
 
-        self.chat_panel.show_loading("LLM 처리 중...")
+        # 이전 대화 히스토리 (마지막 user 메시지는 prompt로 전달되므로 제외)
+        history = chat.get_history_for_llm()[:-1]
+
+        chat.show_loading("LLM 처리 중...")
         self.header.set_busy(True)
 
         self.current_worker = LLMWorker(
-            self.llm_provider, prompt, system_prompt, use_sc
+            self.llm_provider, prompt, system_prompt, use_sc, history=history
         )
         self.current_worker.finished.connect(self._on_llm_result)
         self.current_worker.progress.connect(self._on_progress)
@@ -293,8 +297,9 @@ class MainWindow(QMainWindow):
                 self.header.set_busy(True)
 
                 system_prompt = SYSTEM_PROMPTS.get("general", "")
+                history = chat.get_history_for_llm()[:-1]
                 self.current_worker = LLMWorker(
-                    self.llm_provider, enriched_message, system_prompt, False
+                    self.llm_provider, enriched_message, system_prompt, False, history=history
                 )
                 self.current_worker.finished.connect(self._on_llm_result)
                 self.current_worker.progress.connect(self._on_progress)
