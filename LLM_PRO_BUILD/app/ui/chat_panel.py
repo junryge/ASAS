@@ -424,6 +424,14 @@ class ChatPanel(QWidget):
         self._add_message("error", error)
         self._render_history()
 
+    def get_history_for_llm(self) -> list:
+        """LLM에 전달할 대화 히스토리 반환 (error 제외, 최근 대화만)"""
+        return [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in self._messages
+            if msg["role"] in ("user", "assistant")
+        ]
+
     def clear_history(self):
         """대화 히스토리 초기화"""
         self._messages.clear()

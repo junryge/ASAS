@@ -17,12 +17,13 @@ class LLMWorker(QThread):
     finished = Signal(dict)
     progress = Signal(str)
 
-    def __init__(self, llm_provider, prompt, system_prompt, use_sc=False, parent=None):
+    def __init__(self, llm_provider, prompt, system_prompt, use_sc=False, history=None, parent=None):
         super().__init__(parent)
         self.llm_provider = llm_provider
         self.prompt = prompt
         self.system_prompt = system_prompt
         self.use_sc = use_sc
+        self.history = history or []
         self._cancelled = False
         self._session = requests.Session()  # 취소 가능한 세션
 
@@ -55,7 +56,8 @@ class LLMWorker(QThread):
             else:
                 self.progress.emit("LLM 호출 중...")
                 result = self.llm_provider.call(
-                    self.prompt, self.system_prompt, session=self._session
+                    self.prompt, self.system_prompt, session=self._session,
+                    history=self.history
                 )
 
                 if self._cancelled:

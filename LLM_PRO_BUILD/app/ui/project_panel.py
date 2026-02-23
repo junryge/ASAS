@@ -204,7 +204,10 @@ class ProjectPanel(QWidget):
             self.project_changed.emit(self.current_project_id)
 
     def update_files(self, files: list):
-        """파일 트리 업데이트 (체크박스 포함)"""
+        """파일 트리 업데이트 (체크박스 포함, 기존 체크 상태 보존)"""
+        # 기존 체크 상태 저장
+        previously_checked = set(self.get_checked_files())
+
         self.file_tree.blockSignals(True)
         self.file_tree.clear()
         folders = {}
@@ -227,14 +230,32 @@ class ProjectPanel(QWidget):
                 file_item = QTreeWidgetItem(["📄 " + parts[-1], self._format_size(f["size"])])
                 file_item.setData(0, Qt.UserRole, {"type": "file", "path": path})
                 file_item.setFlags(file_item.flags() | Qt.ItemIsUserCheckable)
-                file_item.setCheckState(0, Qt.Unchecked)
+                # 이전에 체크되어 있었으면 체크 상태 복원
+                checked = Qt.Checked if path in previously_checked else Qt.Unchecked
+                file_item.setCheckState(0, checked)
+                if checked == Qt.Checked:
+                    self._update_item_color(file_item)
                 parent.addChild(file_item)
             else:
                 file_item = QTreeWidgetItem(["📄 " + path, self._format_size(f["size"])])
                 file_item.setData(0, Qt.UserRole, {"type": "file", "path": path})
                 file_item.setFlags(file_item.flags() | Qt.ItemIsUserCheckable)
-                file_item.setCheckState(0, Qt.Unchecked)
+                checked = Qt.Checked if path in previously_checked else Qt.Unchecked
+                file_item.setCheckState(0, checked)
+                if checked == Qt.Checked:
+                    self._update_item_color(file_item)
                 self.file_tree.addTopLevelItem(file_item)
+
+        # 폴더 체크 상태 동기화 (하위 파일이 모두 체크되면 폴더도 체크)
+        for folder_path, folder_item in folders.items():
+            all_checked = True
+            for i in range(folder_item.childCount()):
+                if folder_item.child(i).checkState(0) != Qt.Checked:
+                    all_checked = False
+                    break
+            if all_checked and folder_item.childCount() > 0:
+                folder_item.setCheckState(0, Qt.Checked)
+                self._update_item_color(folder_item)
 
         self.file_tree.expandAll()
         self.file_tree.blockSignals(False)
