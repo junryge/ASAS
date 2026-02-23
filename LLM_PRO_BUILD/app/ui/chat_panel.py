@@ -1,0 +1,560 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+채팅 패널 - AI 응답 표시 + 입력 (모던 UI)
+멀티라인 입력 지원: Enter=전송, Shift+Enter=줄바꿈
+"""
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser, QTextEdit,
+    QPushButton, QCheckBox, QLabel, QMenu, QApplication
+)
+from PySide6.QtCore import Signal, Qt, QSize
+from PySide6.QtGui import QAction, QKeyEvent, QTextOption
+from .theme import COLORS
+
+
+def _make_korean_menu_style():
+    return f"""
+        QMenu {{
+            background-color: {COLORS['surface']};
+            color: {COLORS['text']};
+            border: 1px solid {COLORS['border']};
+            border-radius: 6px;
+            padding: 4px;
+            font-size: 12px;
+        }}
+        QMenu::item {{
+            padding: 6px 24px;
+            border-radius: 4px;
+        }}
+        QMenu::item:selected {{
+            background-color: {COLORS['primary']};
+            color: white;
+        }}
+        QMenu::item:disabled {{
+            color: {COLORS['text_muted']};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {COLORS['border']};
+            margin: 4px 8px;
+        }}
+    """
+
+
+class KoreanTextInput(QTextEdit):
+    """멀티라인 한글 입력 위젯
+    - Enter: 전송
+    - Shift+Enter: 줄바꿈
+    - 내용에 따라 높이 자동 조절 (최소 38px ~ 최대 200px)
+    """
+    enter_pressed = Signal()  # Enter 키로 전송 요청
+
+    MIN_HEIGHT = 38
+    MAX_HEIGHT = 200
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptRichText(False)  # 일반 텍스트만
+        self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFixedHeight(self.MIN_HEIGHT)
+        self.document().contentsChanged.connect(self._adjust_height)
+        self._placeholder = ""
+
+    def setPlaceholderText(self, text: str):
+        """플레이스홀더 텍스트 설정"""
+        self._placeholder = text
+        super().setPlaceholderText(text)
+
+    def text(self) -> str:
+        """QLineEdit 호환: 텍스트 반환"""
+        return self.toPlainText()
+
+    def clear(self):
+        """텍스트 초기화 및 높이 리셋"""
+        super().clear()
+        self.setFixedHeight(self.MIN_HEIGHT)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Enter=전송, Shift+Enter=줄바꿈"""
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if event.modifiers() & Qt.ShiftModifier:
+                # Shift+Enter → 줄바꿈
+                super().keyPressEvent(event)
+            else:
+                # Enter → 전송
+                self.enter_pressed.emit()
+                return
+        else:
+            super().keyPressEvent(event)
+
+    def _adjust_height(self):
+        """내용에 따라 높이 자동 조절"""
+        doc_height = int(self.document().size().height()) + 12  # 패딩
+        new_height = max(self.MIN_HEIGHT, min(doc_height, self.MAX_HEIGHT))
+        if new_height != self.height():
+            self.setFixedHeight(new_height)
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        menu.setStyleSheet(_make_korean_menu_style())
+
+        undo_act = menu.addAction("되돌리기")
+        undo_act.setEnabled(self.document().isUndoAvailable())
+        undo_act.triggered.connect(self.undo)
+
+        redo_act = menu.addAction("다시실행")
+        redo_act.setEnabled(self.document().isRedoAvailable())
+        redo_act.triggered.connect(self.redo)
+
+        menu.addSeparator()
+
+        cut_act = menu.addAction("잘라내기")
+        cut_act.setEnabled(self.textCursor().hasSelection())
+        cut_act.triggered.connect(self.cut)
+
+        copy_act = menu.addAction("복사")
+        copy_act.setEnabled(self.textCursor().hasSelection())
+        copy_act.triggered.connect(self.copy)
+
+        paste_act = menu.addAction("붙여넣기")
+        clipboard = QApplication.clipboard()
+        paste_act.setEnabled(bool(clipboard and clipboard.text()))
+        paste_act.triggered.connect(self.paste)
+
+        delete_act = menu.addAction("삭제")
+        delete_act.setEnabled(self.textCursor().hasSelection())
+        delete_act.triggered.connect(lambda: self.textCursor().removeSelectedText())
+
+        menu.addSeparator()
+
+        select_all_act = menu.addAction("전체선택")
+        select_all_act.setEnabled(bool(self.toPlainText()))
+        select_all_act.triggered.connect(self.selectAll)
+
+        menu.exec(event.globalPos())
+
+
+class KoreanTextBrowser(QTextBrowser):
+    """한글 우클릭 메뉴 QTextBrowser"""
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        menu.setStyleSheet(_make_korean_menu_style())
+
+        copy_act = menu.addAction("복사")
+        copy_act.setEnabled(self.textCursor().hasSelection())
+        copy_act.triggered.connect(self.copy)
+
+        menu.addSeparator()
+
+        select_all_act = menu.addAction("전체선택")
+        select_all_act.triggered.connect(self.selectAll)
+
+        menu.exec(event.globalPos())
+
+
+class ChatPanel(QWidget):
+    """채팅 패널 (대화 히스토리 누적)"""
+    send_requested = Signal(str, bool)  # (메시지, SC 사용여부)
+
+    MAX_HISTORY = 100  # 최대 보관 메시지 수
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._messages = []  # 대화 히스토리: [{"role": "user"|"assistant"|"error", "content": str}]
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        # 응답 영역
+        self.response_view = KoreanTextBrowser()
+        self.response_view.setOpenExternalLinks(True)
+        self.response_view.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: {COLORS['darker']};
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 12px;
+                padding: 20px;
+                font-size: 13px;
+            }}
+        """)
+        self.response_view.setHtml(self._welcome_html())
+        layout.addWidget(self.response_view, stretch=1)
+
+        # SC 결과 뱃지 (숨김 상태로 시작)
+        self.sc_badge = QLabel()
+        self.sc_badge.setVisible(False)
+        self.sc_badge.setStyleSheet(f"""
+            background-color: {COLORS['surface']};
+            color: {COLORS['text_dim']};
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 11px;
+        """)
+        layout.addWidget(self.sc_badge)
+
+        # 입력 영역 컨테이너
+        input_container = QWidget()
+        input_container.setStyleSheet(f"""
+            QWidget {{
+                background-color: {COLORS['surface']};
+                border-radius: 12px;
+                border: 1px solid {COLORS['border']};
+            }}
+        """)
+        input_layout = QVBoxLayout(input_container)
+        input_layout.setContentsMargins(8, 8, 8, 8)
+        input_layout.setSpacing(6)
+
+        # 멀티라인 입력 필드
+        self.input_field = KoreanTextInput()
+        self.input_field.setPlaceholderText("질문이나 요청을 입력하세요... (Shift+Enter: 줄바꿈)")
+        self.input_field.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: transparent;
+                color: {COLORS['text']};
+                border: none;
+                padding: 4px 8px;
+                font-size: 14px;
+                font-family: "Segoe UI", "맑은 고딕", sans-serif;
+            }}
+            QScrollBar:vertical {{
+                width: 6px;
+                background: transparent;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {COLORS['border']};
+                border-radius: 3px;
+                min-height: 20px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+        """)
+        self.input_field.enter_pressed.connect(self._on_send)
+        input_layout.addWidget(self.input_field)
+
+        # 하단 버튼 바
+        btn_bar = QHBoxLayout()
+        btn_bar.setSpacing(8)
+
+        # 힌트 텍스트
+        hint_label = QLabel("Enter 전송 · Shift+Enter 줄바꿈")
+        hint_label.setStyleSheet(f"""
+            font-size: 10px;
+            color: {COLORS['text_muted']};
+            padding-left: 4px;
+        """)
+        btn_bar.addWidget(hint_label)
+
+        btn_bar.addStretch()
+
+        # SC 토글
+        self.sc_check = QCheckBox("자기교정")
+        self.sc_check.setToolTip("Self-Correction: 생성된 코드를 자동 검증")
+        self.sc_check.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLORS['text_muted']};
+                font-size: 11px;
+                font-weight: 600;
+                spacing: 4px;
+            }}
+            QCheckBox::indicator {{
+                width: 14px;
+                height: 14px;
+                border: 2px solid {COLORS['border_light']};
+                border-radius: 3px;
+                background: {COLORS['darker']};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {COLORS['primary']};
+                border-color: {COLORS['primary']};
+            }}
+        """)
+        btn_bar.addWidget(self.sc_check)
+
+        # 전송 버튼
+        self.send_btn = QPushButton("전송")
+        self.send_btn.setObjectName("primaryBtn")
+        self.send_btn.setFixedSize(70, 32)
+        self.send_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLORS['primary']};
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['primary_hover']};
+            }}
+            QPushButton:disabled {{
+                background-color: {COLORS['surface']};
+                color: {COLORS['text_muted']};
+            }}
+        """)
+        self.send_btn.clicked.connect(self._on_send)
+        btn_bar.addWidget(self.send_btn)
+
+        input_layout.addLayout(btn_bar)
+        layout.addWidget(input_container)
+
+    def _on_send(self):
+        text = self.input_field.text().strip()
+        if text:
+            use_sc = self.sc_check.isChecked()
+            # 사용자 메시지를 히스토리에 추가
+            self._add_message("user", text)
+            self.send_requested.emit(text, use_sc)
+            self.input_field.clear()
+
+    def _add_message(self, role: str, content: str):
+        """히스토리에 메시지 추가 (최대 MAX_HISTORY)"""
+        self._messages.append({"role": role, "content": content})
+        if len(self._messages) > self.MAX_HISTORY:
+            self._messages = self._messages[-self.MAX_HISTORY:]
+
+    def _render_history(self):
+        """전체 대화 히스토리를 HTML로 렌더링"""
+        if not self._messages:
+            self.response_view.setHtml(self._welcome_html())
+            return
+
+        html_parts = []
+        for msg in self._messages:
+            if msg["role"] == "user":
+                html_parts.append(f"""
+                    <div style="margin:8px 0; padding:12px 16px; background:{COLORS['surface']};
+                                border-radius:10px; border:1px solid {COLORS['border']};">
+                        <span style="color:{COLORS['primary']}; font-weight:bold; font-size:12px;">You</span>
+                        <p style="margin:4px 0 0 0; color:{COLORS['text']}; font-size:13px;">{msg['content'].replace('<', '&lt;').replace('>', '&gt;').replace(chr(10), '<br>')}</p>
+                    </div>
+                """)
+            elif msg["role"] == "error":
+                html_parts.append(f"""
+                    <div style="margin:8px 0; padding:12px 16px; background:{COLORS['red_dim']};
+                                border:1px solid {COLORS['red']}; border-radius:10px;">
+                        <p style="color:{COLORS['red']}; font-weight:bold; font-size:12px;">Error</p>
+                        <p style="margin:4px 0 0 0; color:{COLORS['text']}; font-size:13px;">{msg['content']}</p>
+                    </div>
+                """)
+            else:
+                # assistant - 마크다운 변환
+                converted = self._markdown_to_html_body(msg["content"])
+                html_parts.append(f"""
+                    <div style="margin:8px 0; padding:12px 16px;">
+                        <span style="color:{COLORS['green']}; font-weight:bold; font-size:12px;">Nomos</span>
+                        <div style="margin:4px 0 0 0;">{converted}</div>
+                    </div>
+                """)
+
+        styled = self._wrap_with_style("\n".join(html_parts))
+        self.response_view.setHtml(styled)
+
+        # 스크롤을 맨 아래로 이동
+        scrollbar = self.response_view.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def show_response(self, result: dict):
+        """LLM 응답 표시 (히스토리 누적)"""
+        answer = result.get("answer", result.get("content", ""))
+
+        # SC 정보 표시
+        if result.get("use_sc"):
+            retry = result.get("retry_count", 0)
+            is_valid = result.get("is_valid", False)
+            badge_color = COLORS['green'] if is_valid else COLORS['red']
+            badge_text = "통과" if is_valid else "실패"
+            self.sc_badge.setText(f"자기교정: {badge_text} (시도 {retry}회)")
+            self.sc_badge.setStyleSheet(f"""
+                background-color: {badge_color}22;
+                color: {badge_color};
+                border: 1px solid {badge_color};
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            """)
+            self.sc_badge.setVisible(True)
+        else:
+            self.sc_badge.setVisible(False)
+
+        # 응답을 히스토리에 추가하고 전체 렌더링
+        self._add_message("assistant", answer)
+        self._render_history()
+
+    def show_loading(self, text: str = "처리 중..."):
+        """로딩 표시 (히스토리 위에 로딩 인디케이터 추가)"""
+        self.send_btn.setEnabled(False)
+        self.input_field.setEnabled(False)
+
+        # 기존 히스토리 + 로딩 표시
+        self._render_history()
+        current_html = self.response_view.toHtml()
+        loading_html = f"""
+            <div style="text-align:center; padding:20px; color:{COLORS['text_muted']};">
+                <p style="font-size:16px; color:{COLORS['primary']};">...</p>
+                <p style="font-size:12px; margin-top:4px;">{text}</p>
+            </div>
+        """
+        # 간단하게 append
+        self.response_view.append(loading_html)
+        scrollbar = self.response_view.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def show_ready(self):
+        """입력 가능 상태로 복원"""
+        self.send_btn.setEnabled(True)
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+        # 로딩 인디케이터 제거 → 히스토리만 표시
+        self._render_history()
+
+    def show_error(self, error: str):
+        """에러 표시 (히스토리에 추가)"""
+        self._add_message("error", error)
+        self._render_history()
+
+    def clear_history(self):
+        """대화 히스토리 초기화"""
+        self._messages.clear()
+        self.response_view.setHtml(self._welcome_html())
+
+    def _markdown_to_html_body(self, text: str) -> str:
+        """마크다운 텍스트를 HTML body로 변환 (스타일 없이)"""
+        try:
+            import markdown
+            return markdown.markdown(
+                text,
+                extensions=['fenced_code', 'tables', 'nl2br']
+            )
+        except ImportError:
+            import re
+            html = text.replace('\n', '<br>')
+            html = re.sub(
+                r'```(\w*)\n(.*?)```',
+                lambda m: f'<pre style="background:{COLORS["surface"]};padding:14px;border-radius:8px;'
+                          f'overflow-x:auto;border:1px solid {COLORS["border"]};"><code>{m.group(2)}</code></pre>',
+                html, flags=re.DOTALL
+            )
+            return html
+
+    def _wrap_with_style(self, html_body: str) -> str:
+        """HTML body에 스타일을 감싸서 반환"""
+        return f"""
+        <style>
+            body {{
+                color: {COLORS['text']};
+                font-family: "Segoe UI", "맑은 고딕", sans-serif;
+                font-size: 13px;
+                line-height: 1.7;
+                margin: 0;
+                padding: 0;
+            }}
+            pre {{
+                background: {COLORS['darkest']};
+                padding: 16px;
+                border-radius: 10px;
+                border: 1px solid {COLORS['border']};
+                overflow-x: auto;
+                font-family: "Consolas", "D2Coding", "Cascadia Code", monospace;
+                font-size: 12px;
+                line-height: 1.5;
+                margin: 12px 0;
+            }}
+            code {{
+                font-family: "Consolas", "D2Coding", "Cascadia Code", monospace;
+                background: {COLORS['surface']};
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 12px;
+                color: {COLORS['peach']};
+            }}
+            pre code {{
+                background: transparent;
+                padding: 0;
+                color: {COLORS['text']};
+            }}
+            table {{
+                border-collapse: collapse;
+                width: 100%;
+                margin: 12px 0;
+            }}
+            th, td {{
+                border: 1px solid {COLORS['border']};
+                padding: 10px 12px;
+                text-align: left;
+            }}
+            th {{
+                background: {COLORS['surface']};
+                font-weight: 600;
+            }}
+            h1, h2, h3, h4 {{
+                color: {COLORS['primary_hover']};
+                margin-top: 16px;
+            }}
+            h1 {{ font-size: 20px; }}
+            h2 {{ font-size: 17px; }}
+            h3 {{ font-size: 15px; }}
+            a {{
+                color: {COLORS['blue']};
+                text-decoration: none;
+            }}
+            a:hover {{
+                text-decoration: underline;
+            }}
+            blockquote {{
+                border-left: 3px solid {COLORS['primary']};
+                padding-left: 14px;
+                color: {COLORS['text_dim']};
+                margin: 12px 0;
+            }}
+            ul, ol {{
+                padding-left: 24px;
+            }}
+            li {{
+                margin: 4px 0;
+            }}
+            p {{
+                margin: 8px 0;
+            }}
+        </style>
+        {html_body}
+        """
+
+    def _markdown_to_html(self, text: str) -> str:
+        """마크다운을 스타일 포함 HTML로 변환 (하위 호환)"""
+        return self._wrap_with_style(self._markdown_to_html_body(text))
+
+    def _welcome_html(self) -> str:
+        return f"""
+        <div style="text-align:center; padding:80px 20px; color:{COLORS['text_muted']};">
+            <p style="font-size:36px; color:{COLORS['primary']}; font-weight:bold;
+                       letter-spacing:-1px;">Nomos LLM</p>
+            <p style="font-size:14px; margin-top:8px; color:{COLORS['text_dim']};">
+                코드 개발 / 수정 / 데이터 분석 도우미</p>
+            <br><br>
+            <div style="display:inline-block; text-align:left; background:{COLORS['surface']};
+                        padding:20px 28px; border-radius:12px; border:1px solid {COLORS['border']};">
+                <p style="font-size:12px; color:{COLORS['text_dim']}; margin:6px 0;">
+                    💬 <b style="color:{COLORS['text']};">대화</b> — 일반 질문, 코드 설명</p>
+                <p style="font-size:12px; color:{COLORS['text_dim']}; margin:6px 0;">
+                    ⚡ <b style="color:{COLORS['text']};">코드 생성</b> — 새 코드 작성</p>
+                <p style="font-size:12px; color:{COLORS['text_dim']}; margin:6px 0;">
+                    🔧 <b style="color:{COLORS['text']};">코드 수정</b> — 프로젝트 코드 수정</p>
+                <p style="font-size:12px; color:{COLORS['text_dim']}; margin:6px 0;">
+                    📊 <b style="color:{COLORS['text']};">분석</b> — 코드 분석 / 데이터 분석</p>
+            </div>
+            <p style="font-size:11px; margin-top:20px; color:{COLORS['text_muted']};">
+                왼쪽에서 모드를 선택하고 질문을 입력하세요</p>
+        </div>
+        """
