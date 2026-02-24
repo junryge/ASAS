@@ -23,6 +23,14 @@ import logpresso_alarm
 
 app = Flask(__name__)
 
+# CORS 허용 (3D 캠퍼스 등 다른 포트에서 /api 접근 허용)
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
 # 데이터 매니저 (280분 윈도우, data 폴더에 저장)
 data_manager = m14_data.M14DataManager(window_minutes=280, data_dir='data')
 
