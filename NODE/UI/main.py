@@ -216,17 +216,17 @@ def get_data():
         status_prediction = predict_based_status
     elif current_status in ['양호예상', '관찰']:
         # 쿨타임 확인
-        # 병목 쿨타임 확인 (30분)
+        # 병목 쿨타임 확인 (60분)
         if last_bottleneck_time:
             elapsed = (now - last_bottleneck_time).total_seconds() / 60
-            if elapsed < 30:
-                cooldown_mins = int(30 - elapsed)
+            if elapsed < 60:
+                cooldown_mins = int(60 - elapsed)
                 status_prediction = f'병목 쿨타임 {cooldown_mins}분'
-        # 위험 쿨타임 확인 (30분) - 병목 쿨타임이 없을 때만
+        # 위험 쿨타임 확인 (60분) - 병목 쿨타임이 없을 때만
         if '쿨타임' not in status_prediction and last_danger_time:
             elapsed = (now - last_danger_time).total_seconds() / 60
-            if elapsed < 30:
-                cooldown_mins = int(30 - elapsed)
+            if elapsed < 60:
+                cooldown_mins = int(60 - elapsed)
                 status_prediction = f'위험 쿨타임 {cooldown_mins}분'
     
     return jsonify({
@@ -249,6 +249,24 @@ def get_data():
         'warning_count': warning_count,
         'danger_count': danger_count
     })
+
+
+@app.route('/api/bottleneck_release', methods=['POST'])
+def bottleneck_release():
+    """병목 수동 해제 - 쿨타임 즉시 시작"""
+    import os
+    from datetime import datetime
+
+    now = datetime.now()
+    status_cooldown_file = os.path.join(data_manager.data_dir, 'm14_status_cooldown.csv')
+
+    cooldown_data = {
+        'last_danger_time': [''],
+        'last_bottleneck_time': [now.strftime('%Y%m%d%H%M')]
+    }
+    pd.DataFrame(cooldown_data).to_csv(status_cooldown_file, index=False)
+
+    return jsonify({'status': 'released', 'time': now.strftime('%Y-%m-%d %H:%M')})
 
 
 @app.route('/api/next')
@@ -451,17 +469,17 @@ def get_history():
             status_pred = current_status
             
             if current_status in ['양호예상', '관찰'] and curr_time:
-                # 병목 쿨타임 확인 (30분)
+                # 병목 쿨타임 확인 (60분)
                 if last_bottleneck_time:
                     elapsed = (curr_time - last_bottleneck_time).total_seconds() / 60
-                    if elapsed < 30 and elapsed > 0:
-                        cooldown_mins = int(30 - elapsed)
+                    if elapsed < 60 and elapsed > 0:
+                        cooldown_mins = int(60 - elapsed)
                         status_pred = f'병목 쿨타임 {cooldown_mins}분'
-                # 위험 쿨타임 확인 (30분) - 병목 쿨타임이 없을 때만
+                # 위험 쿨타임 확인 (60분) - 병목 쿨타임이 없을 때만
                 if '쿨타임' not in status_pred and last_danger_time:
                     elapsed = (curr_time - last_danger_time).total_seconds() / 60
-                    if elapsed < 30 and elapsed > 0:
-                        cooldown_mins = int(30 - elapsed)
+                    if elapsed < 60 and elapsed > 0:
+                        cooldown_mins = int(60 - elapsed)
                         status_pred = f'위험 쿨타임 {cooldown_mins}분'
             
             status_prediction_list.append(status_pred)
