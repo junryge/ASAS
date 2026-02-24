@@ -344,6 +344,457 @@
     60% { transform: translate(-50%, -130%) scale(1.1); opacity: 1; }
     100% { transform: translate(-50%, -130%) scale(1); opacity: 1; }
   }
+
+  /* ============================================================ */
+  /* 반도체 칩 캐릭터 (Chip Guide) */
+  /* ============================================================ */
+  #chipGuide {
+    position: fixed;
+    bottom: -300px;
+    right: 40px;
+    z-index: 200;
+    transition: bottom 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: auto;
+    cursor: grab;
+    filter: drop-shadow(0 10px 40px rgba(0,150,255,0.3));
+  }
+  #chipGuide.dragging {
+    cursor: grabbing;
+    transition: none;
+  }
+  #chipGuide.show {
+    bottom: 20px;
+  }
+  /* 화려한 등장 */
+  #chipGuide.entrance {
+    animation: chipEntrance 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  @keyframes chipEntrance {
+    0% { transform: scale(0) rotate(-180deg); opacity: 0; filter: drop-shadow(0 0 0 transparent) brightness(3); }
+    40% { transform: scale(1.3) rotate(10deg); opacity: 1; filter: drop-shadow(0 0 60px rgba(68,170,255,0.8)) brightness(2); }
+    60% { transform: scale(0.9) rotate(-5deg); filter: drop-shadow(0 0 40px rgba(68,170,255,0.5)) brightness(1.5); }
+    80% { transform: scale(1.1) rotate(2deg); filter: drop-shadow(0 0 25px rgba(68,170,255,0.4)) brightness(1.2); }
+    100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 10px 40px rgba(0,150,255,0.3)) brightness(1); }
+  }
+  /* 퇴장 */
+  #chipGuide.exit {
+    animation: chipExit 0.6s ease-in forwards;
+  }
+  @keyframes chipExit {
+    0% { transform: scale(1) rotate(0deg); opacity: 1; }
+    50% { transform: scale(1.2) rotate(10deg); opacity: 0.8; filter: brightness(2); }
+    100% { transform: scale(0) rotate(180deg); opacity: 0; filter: brightness(3); }
+  }
+  #chipGuide .chip-body {
+    width: 90px;
+    height: 90px;
+    background: linear-gradient(135deg, #1a1a3e 0%, #2d2d6b 40%, #1a1a3e 100%);
+    border: 2px solid #4af;
+    border-radius: 16px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 15px rgba(68,170,255,0.25), inset 0 0 15px rgba(68,170,255,0.08);
+    animation: chipFloat 3s ease-in-out infinite;
+  }
+  @keyframes chipFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  /* 칩 핀들 */
+  .chip-pins-top, .chip-pins-bottom, .chip-pins-left, .chip-pins-right {
+    position: absolute;
+    display: flex;
+    gap: 5px;
+  }
+  .chip-pins-top, .chip-pins-bottom { left: 50%; transform: translateX(-50%); flex-direction: row; }
+  .chip-pins-left, .chip-pins-right { top: 50%; transform: translateY(-50%); flex-direction: column; }
+  .chip-pins-top { top: -8px; }
+  .chip-pins-bottom { bottom: -8px; }
+  .chip-pins-left { left: -8px; }
+  .chip-pins-right { right: -8px; }
+  .chip-pin {
+    width: 5px; height: 8px; background: #6ac; border-radius: 1px;
+    box-shadow: 0 0 4px rgba(100,170,200,0.4);
+  }
+  .chip-pins-left .chip-pin, .chip-pins-right .chip-pin {
+    width: 8px; height: 5px;
+  }
+  /* 칩 얼굴 */
+  .chip-face {
+    text-align: center;
+    position: relative;
+  }
+  .chip-forehead {
+    font-size: 7px;
+    font-weight: 900;
+    color: rgba(68,170,255,0.7);
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+    margin-top: -14px;
+    text-shadow: 0 0 6px rgba(68,170,255,0.4);
+  }
+  .chip-eyes {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    margin-bottom: 6px;
+  }
+  .chip-eye {
+    width: 14px; height: 16px;
+    background: #4af;
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 0 8px rgba(68,170,255,0.6);
+    animation: chipBlink 4s ease-in-out infinite;
+  }
+  @keyframes chipBlink {
+    0%, 42%, 48%, 100% { transform: scaleY(1); }
+    45% { transform: scaleY(0.1); }
+  }
+  .chip-eye::after {
+    content: '';
+    position: absolute;
+    width: 6px; height: 6px;
+    background: #fff;
+    border-radius: 50%;
+    top: 3px; left: 3px;
+    animation: chipLookAround 5s ease-in-out infinite;
+  }
+  @keyframes chipLookAround {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(4px, -2px); }
+    50% { transform: translate(-3px, 2px); }
+    75% { transform: translate(2px, 0); }
+  }
+  .chip-mouth {
+    width: 20px; height: 8px;
+    border: 2px solid #4af;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    margin: 0 auto;
+    box-shadow: 0 3px 8px rgba(68,170,255,0.3);
+    transition: all 0.3s;
+  }
+  .chip-mouth.talking {
+    animation: chipTalk 0.3s ease-in-out infinite alternate;
+  }
+  @keyframes chipTalk {
+    0% { height: 5px; width: 16px; }
+    100% { height: 10px; width: 22px; }
+  }
+  /* 칩 라벨 */
+  .chip-label {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+    color: rgba(68,170,255,0.5);
+    letter-spacing: 2px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  /* 반짝이는 회로 패턴 */
+  .chip-circuit {
+    position: absolute;
+    width: 100%; height: 100%;
+    top: 0; left: 0;
+    pointer-events: none;
+    opacity: 0.15;
+  }
+  .chip-circuit::before, .chip-circuit::after {
+    content: '';
+    position: absolute;
+    background: #4af;
+  }
+  .chip-circuit::before {
+    width: 20px; height: 1px;
+    top: 15px; left: 10px;
+    box-shadow: 0 12px 0 #4af, 30px 20px 0 #4af, 10px 30px 0 #4af;
+  }
+  .chip-circuit::after {
+    width: 1px; height: 15px;
+    top: 12px; right: 15px;
+    box-shadow: -10px 20px 0 #4af, -25px 10px 0 #4af;
+  }
+
+  /* 말풍선 (캐릭터용) */
+  #chipSpeech {
+    position: fixed;
+    bottom: 120px;
+    right: 30px;
+    z-index: 201;
+    max-width: 280px;
+    min-width: 200px;
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+  }
+  #chipSpeech.show {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  .chip-speech-inner {
+    background: rgba(15, 20, 45, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1.5px solid rgba(68,170,255,0.3);
+    border-radius: 14px;
+    padding: 12px 14px;
+    color: #e8e8f0;
+    font-size: 11px;
+    line-height: 1.6;
+    position: relative;
+    box-shadow: 0 8px 32px rgba(0,100,255,0.15);
+  }
+  .chip-speech-inner::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    right: 50px;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid rgba(15, 20, 45, 0.95);
+  }
+  .chip-speech-name {
+    font-size: 9px;
+    font-weight: 800;
+    color: #4af;
+    letter-spacing: 2px;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip-speech-name .typing-dot {
+    display: inline-block;
+    width: 4px; height: 4px;
+    background: #4af;
+    border-radius: 50%;
+    animation: typingDot 1.4s ease-in-out infinite;
+  }
+  .chip-speech-name .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .chip-speech-name .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typingDot {
+    0%, 100% { opacity: 0.3; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-3px); }
+  }
+  #chipSpeechText {
+    min-height: 14px;
+  }
+  .chip-speech-close {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #556;
+    font-size: 12px;
+    cursor: pointer;
+    pointer-events: auto;
+    padding: 4px;
+    transition: color 0.2s;
+  }
+  .chip-speech-close:hover { color: #aaa; }
+  /* 자동 소개 버튼 */
+  #chipAutoTour {
+    position: fixed;
+    bottom: 110px;
+    right: 40px;
+    z-index: 199;
+    background: rgba(68,170,255,0.12);
+    border: 1px solid rgba(68,170,255,0.3);
+    color: #4af;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    pointer-events: auto;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+    display: none;
+  }
+  #chipAutoTour:hover {
+    background: rgba(68,170,255,0.25);
+    transform: scale(1.05);
+  }
+  #chipAutoTour.show { display: block; animation: fadeInUp 0.5s ease; }
+  @keyframes fadeInUp {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 병목 시 CHIP JUN 빨간 펄스 */
+  #chipGuide.bottleneck .chip-body {
+    border-color: #ff3322;
+    animation: chipFloat 3s ease-in-out infinite, chipRedPulse 1.2s ease-in-out infinite;
+    box-shadow: 0 0 20px rgba(255,50,30,0.4), inset 0 0 15px rgba(255,50,30,0.15);
+  }
+  @keyframes chipRedPulse {
+    0%, 100% { background: linear-gradient(135deg, #3e1a1a 0%, #6b2d2d 40%, #3e1a1a 100%); }
+    50% { background: linear-gradient(135deg, #5a1010 0%, #992222 40%, #5a1010 100%); }
+  }
+  /* 짜증남 (노란색) */
+  #chipGuide.annoyed .chip-body {
+    border-color: #eec900;
+    animation: chipFloat 3s ease-in-out infinite, chipYellowShake 0.3s ease-in-out infinite;
+    box-shadow: 0 0 20px rgba(238,200,0,0.5), inset 0 0 15px rgba(238,200,0,0.15);
+    background: linear-gradient(135deg, #3e3a1a 0%, #6b6020 40%, #3e3a1a 100%);
+  }
+  @keyframes chipYellowShake {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-2px) rotate(-3deg); }
+    75% { transform: translateY(-2px) rotate(3deg); }
+  }
+  #chipGuide.annoyed .chip-eye {
+    background: #eec900;
+    box-shadow: 0 0 10px rgba(238,200,0,0.8);
+    transform: scaleY(0.6);
+  }
+  #chipGuide.annoyed .chip-mouth {
+    border-color: #eec900;
+    border-radius: 10px 10px 0 0;
+    border-top: 2px solid #eec900;
+    border-bottom: none;
+  }
+  #chipGuide.annoyed .chip-pin {
+    background: #cc9;
+    box-shadow: 0 0 4px rgba(238,200,0,0.5);
+  }
+
+  /* 잠옷 모드 (21시~06시) - 보라색 톤, 졸린 눈 */
+  #chipGuide.pajama .chip-body {
+    background: linear-gradient(135deg, #2a1a3e 0%, #4a2d6b 40%, #2a1a3e 100%);
+    border-color: #b088dd;
+    box-shadow: 0 0 15px rgba(176,136,221,0.3), inset 0 0 15px rgba(176,136,221,0.1);
+  }
+  #chipGuide.pajama .chip-eye {
+    background: #b088dd;
+    box-shadow: 0 0 8px rgba(176,136,221,0.5);
+    transform: scaleY(0.5);
+    animation: chipSleepyBlink 5s ease-in-out infinite;
+  }
+  @keyframes chipSleepyBlink {
+    0%, 30%, 40%, 100% { transform: scaleY(0.5); }
+    35% { transform: scaleY(0.1); }
+  }
+  #chipGuide.pajama .chip-mouth {
+    border-color: #b088dd;
+    width: 12px; height: 6px;
+    border-radius: 0 0 6px 6px;
+  }
+  #chipGuide.pajama .chip-pin {
+    background: #8a6aaa;
+    box-shadow: 0 0 4px rgba(176,136,221,0.3);
+  }
+  /* 잠옷 모자 (ZZZ) */
+  .chip-pajama-hat {
+    display: none;
+    position: absolute;
+    top: -22px;
+    right: -5px;
+    font-size: 14px;
+    animation: chipZzz 2s ease-in-out infinite;
+  }
+  @keyframes chipZzz {
+    0%, 100% { transform: translateY(0); opacity: 0.5; }
+    50% { transform: translateY(-8px); opacity: 1; }
+  }
+  #chipGuide.pajama .chip-pajama-hat { display: block; }
+  /* 잠옷 별 무늬 */
+  .chip-pajama-stars {
+    display: none;
+    position: absolute;
+    width: 100%; height: 100%;
+    top: 0; left: 0;
+    pointer-events: none;
+  }
+  #chipGuide.pajama .chip-pajama-stars { display: block; }
+  .chip-pajama-stars span {
+    position: absolute;
+    font-size: 7px;
+    animation: chipStarTwinkle 2s ease-in-out infinite;
+  }
+  .chip-pajama-stars span:nth-child(1) { top: 15px; left: 12px; animation-delay: 0s; }
+  .chip-pajama-stars span:nth-child(2) { top: 55px; right: 12px; animation-delay: 0.7s; }
+  .chip-pajama-stars span:nth-child(3) { bottom: 20px; left: 20px; animation-delay: 1.3s; }
+  @keyframes chipStarTwinkle {
+    0%, 100% { opacity: 0.3; } 50% { opacity: 1; }
+  }
+
+  /* 작업복 모드 (07시~17시) - 오렌지/그린 톤, 활기찬 눈 */
+  #chipGuide.workwear .chip-body {
+    background: linear-gradient(135deg, #1a2e1a 0%, #2d5b2d 40%, #1a2e1a 100%);
+    border-color: #4aaf4a;
+    box-shadow: 0 0 15px rgba(74,175,74,0.3), inset 0 0 15px rgba(74,175,74,0.1);
+  }
+  #chipGuide.workwear .chip-eye {
+    background: #4aaf4a;
+    box-shadow: 0 0 8px rgba(74,175,74,0.6);
+  }
+  #chipGuide.workwear .chip-mouth {
+    border-color: #4aaf4a;
+  }
+  #chipGuide.workwear .chip-pin {
+    background: #6a8;
+    box-shadow: 0 0 4px rgba(74,175,74,0.4);
+  }
+  /* 안전모 */
+  .chip-hardhat {
+    display: none;
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+  }
+  #chipGuide.workwear .chip-hardhat { display: block; }
+  /* 작업복 라벨 */
+  .chip-work-badge {
+    display: none;
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 5px;
+    color: rgba(74,175,74,0.7);
+    font-weight: 900;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  #chipGuide.workwear .chip-work-badge { display: block; }
+
+  #chipGuide.bottleneck .chip-eye {
+    background: #ff4433;
+    box-shadow: 0 0 10px rgba(255,50,30,0.8);
+  }
+  #chipGuide.bottleneck .chip-mouth {
+    border-color: #ff4433;
+  }
+  #chipGuide.bottleneck .chip-forehead {
+    color: rgba(255,80,60,0.9);
+    text-shadow: 0 0 8px rgba(255,50,30,0.6);
+  }
+  #chipGuide.bottleneck .chip-pin {
+    background: #c44;
+    box-shadow: 0 0 4px rgba(255,50,30,0.5);
+  }
+  #chipSpeech.bottleneck .chip-speech-inner {
+    border-color: rgba(255,50,30,0.5);
+    box-shadow: 0 8px 32px rgba(255,30,0,0.2);
+  }
+  #chipSpeech.bottleneck .chip-speech-name {
+    color: #ff4433;
+  }
+  #chipSpeech.bottleneck .chip-speech-name .typing-dot {
+    background: #ff4433;
+  }
+  #chipSpeech.bottleneck .chip-speech-inner::after {
+    border-top-color: rgba(15, 20, 45, 0.95);
+  }
 </style>
 </head>
 <body>
@@ -463,6 +914,42 @@ function toggleTimePanel() {
 
 <div id="tooltip"></div>
 <div id="speechBubble"><div class="bubble-inner" id="speechText"></div></div>
+<!-- 반도체 칩 가이드 캐릭터 -->
+<div id="chipGuide">
+  <div class="chip-body">
+    <div class="chip-circuit"></div>
+    <div class="chip-pins-top"><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span></div>
+    <div class="chip-pins-bottom"><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span></div>
+    <div class="chip-pins-left"><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span></div>
+    <div class="chip-pins-right"><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span><span class="chip-pin"></span></div>
+    <div class="chip-pajama-hat">💤</div>
+    <div class="chip-pajama-stars"><span>⭐</span><span>✨</span><span>⭐</span></div>
+    <div class="chip-hardhat">⛑️</div>
+    <div class="chip-face">
+      <div class="chip-eyes">
+        <div class="chip-eye"></div>
+        <div class="chip-eye"></div>
+      </div>
+      <div class="chip-mouth" id="chipMouth"></div>
+    </div>
+    <div class="chip-work-badge">ENGINEER</div>
+  </div>
+</div>
+
+<!-- 칩 캐릭터 말풍선 -->
+<div id="chipSpeech">
+  <div class="chip-speech-inner">
+    <button class="chip-speech-close" onclick="hideChipGuide()">✕</button>
+    <div class="chip-speech-name">
+      CHIP JUN <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+    </div>
+    <div id="chipSpeechText"></div>
+  </div>
+</div>
+
+<!-- 투어 버튼 -->
+<button id="chipAutoTour" onclick="startAutoTour()">🤖 캠퍼스 자동 투어</button>
+
 <div id="canvas-container"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -769,6 +1256,20 @@ function updateSky() {
       }
     });
   });
+
+  // CHIP JUN 의상 전환 (시간대별)
+  const chipEl = document.getElementById('chipGuide');
+  if (chipEl) {
+    chipEl.classList.remove('pajama', 'workwear');
+    if (hours >= 21 || hours < 7) {
+      // 밤 21시~06시: 잠옷
+      chipEl.classList.add('pajama');
+    } else if (hours >= 7 && hours < 17) {
+      // 아침~오후 07시~17시: 작업복
+      chipEl.classList.add('workwear');
+    }
+    // 17시~21시: 기본 (퇴근 후 평상복)
+  }
 }
 
 // ============================================================
@@ -1211,19 +1712,19 @@ addTank(-295, 40, 9, 20, '산소 탱크');
   // 배치 영역 (캠퍼스 내부 도로/건물 사이 + 외곽)
   const zones = [
     // 캠퍼스 내부 (메인 영역) - 많이
-    { xMin: -190, xMax: 240, zMin: -30, zMax: 350, count: 180 },
+    { xMin: -190, xMax: 240, zMin: -30, zMax: 350, count: 100 },
     // 정문 근처
-    { xMin: -30, xMax: 60, zMin: 350, zMax: 400, count: 25 },
+    { xMin: -30, xMax: 60, zMin: 350, zMax: 400, count: 15 },
     // 외곽 왼쪽
-    { xMin: -300, xMax: -220, zMin: -60, zMax: 330, count: 25 },
+    { xMin: -300, xMax: -220, zMin: -60, zMax: 330, count: 15 },
     // 외곽 오른쪽
-    { xMin: 280, xMax: 380, zMin: -60, zMax: 330, count: 25 },
+    { xMin: 280, xMax: 380, zMin: -60, zMax: 330, count: 15 },
     // 외곽 아래
-    { xMin: -180, xMax: 220, zMin: -120, zMax: -40, count: 20 },
+    { xMin: -180, xMax: 220, zMin: -120, zMax: -40, count: 10 },
     // 고속도로 주변 인도
-    { xMin: 460, xMax: 490, zMin: -100, zMax: 400, count: 15 },
+    { xMin: 460, xMax: 490, zMin: -100, zMax: 400, count: 10 },
     // 아파트 동 근처
-    { xMin: 380, xMax: 460, zMin: -120, zMax: -20, count: 15 },
+    { xMin: 380, xMax: 460, zMin: -120, zMax: -20, count: 10 },
   ];
 
   zones.forEach(zone => {
@@ -1284,7 +1785,7 @@ addTank(-295, 40, 9, 20, '산소 탱크');
   });
 })();
 
-// ── 안내센터 앞 줄 서있는 사람 20명 ──
+// ── 안내센터 앞 줄 서있는 사람 5명 ──
 (function() {
   const queueX = -230, queueZ = 483; // 안내센터 앞
   const skinColors = [0xffccaa, 0xf5c09a, 0xeebb88, 0xdda878, 0xf0c8a0];
@@ -1295,7 +1796,7 @@ addTank(-295, 40, 9, 20, '산소 탱크');
   const legGeo = new THREE.BoxGeometry(1, 1, 1);
   const hairGeo = new THREE.SphereGeometry(1, 4, 3);
 
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 5; i++) {
     const scale = 0.7 + Math.random() * 0.3;
     const g = new THREE.Group();
     const skinC = skinColors[Math.floor(Math.random() * skinColors.length)];
@@ -2608,6 +3109,30 @@ renderer.domElement.addEventListener('click', e => {
           setTimeout(() => { child.material.emissiveIntensity = origIntensity; }, 400);
         }
       });
+
+      // 칩 캐릭터 등장 & 건물 소개
+      if (chipDialogs && chipDialogs[d.name]) {
+        if (chipTourActive) {
+          chipTourActive = false;
+          if (chipCurrentTimeout) { clearTimeout(chipCurrentTimeout); chipCurrentTimeout = null; }
+          chipAutoTourBtn.textContent = '🤖 캠퍼스 자동 투어';
+        }
+        // 병목 모드일 때는 건물 소개 대신 병목 경고만!
+        if (bottleneckActive) {
+          const bottleneckOnlyMsgs = [
+            '⚠️ 지금은 병목 상태야! 다른 건물 구경은 나중에~ 병목부터 확인해!!',
+            '🚨 병목 해결이 먼저야! M14A/B, M16A/B 상태 확인해줘!!',
+            '😤 야! 지금 병목이라고!! 딴 데 클릭하지 말고 병목 확인해!!',
+            '🔴 병목 비상! 생산라인 점검이 우선이야! 병목 해결하자!!',
+            '⛔ 지금은 병목 모드! 건물 투어는 병목 해결 후에~'
+          ];
+          const rIdx = Math.floor(Math.random() * bottleneckOnlyMsgs.length);
+          showChipGuide(null, bottleneckOnlyMsgs[rIdx]);
+        } else {
+          showChipGuide(d.name);
+        }
+      }
+
       break;
     }
   }
@@ -2704,7 +3229,41 @@ function showFabNotice(msg) {
 
 // ESC로 info 패널 초기화
 document.addEventListener('keydown', e => {
+  if (e.key === 'F1') {
+    e.preventDefault();
+    const guide = document.getElementById('chipGuide');
+    const tourBtn = document.getElementById('chipAutoTour');
+    if (guide.classList.contains('show')) {
+      // 퇴장
+      guide.classList.add('exit');
+      chipSpeechEl.classList.remove('show');
+      tourBtn.classList.remove('show');
+      setTimeout(() => {
+        guide.classList.remove('show', 'exit', 'entrance');
+        // 위치 초기화
+        guide.style.left = ''; guide.style.top = '';
+        guide.style.right = '40px'; guide.style.bottom = '-300px';
+        chipSpeechEl.style.left = ''; chipSpeechEl.style.top = '';
+        chipSpeechEl.style.right = '30px'; chipSpeechEl.style.bottom = '120px';
+      }, 600);
+    } else {
+      // 위치 초기화 후 화려한 등장
+      guide.style.left = ''; guide.style.top = '';
+      guide.style.right = '40px'; guide.style.bottom = '';
+      chipSpeechEl.style.left = ''; chipSpeechEl.style.top = '';
+      chipSpeechEl.style.right = '30px'; chipSpeechEl.style.bottom = '120px';
+      guide.classList.add('entrance');
+      showChipWelcome();
+      setTimeout(() => { guide.classList.remove('entrance'); }, 1200);
+    }
+    return;
+  }
   if (e.key === 'Escape') {
+    // 투어 중이면 투어 중지
+    if (chipTourActive) {
+      stopAutoTour();
+      return;
+    }
     // FAB 선택 오버레이 닫기
     const fabSel = document.getElementById('fabSelectorOverlay');
     if (fabSel) { fabSel.remove(); return; }
@@ -2960,6 +3519,24 @@ window.toggleBottleneckTest = toggleBottleneckTest;
 
 function startBottleneck() {
   bottleneckActive = true;
+
+  // CHIP JUN 강제 등장 + 병목 반응
+  if (chipTourActive) {
+    chipTourActive = false;
+    if (chipCurrentTimeout) { clearTimeout(chipCurrentTimeout); chipCurrentTimeout = null; }
+  }
+  // 인라인 스타일 초기화 (드래그/퇴장 후 남아있을 수 있음)
+  chipGuideEl.style.left = ''; chipGuideEl.style.top = '';
+  chipGuideEl.style.right = '40px'; chipGuideEl.style.bottom = '';
+  chipSpeechEl.style.left = ''; chipSpeechEl.style.top = '';
+  chipSpeechEl.style.right = '30px'; chipSpeechEl.style.bottom = '120px';
+  // 클래스 정리 후 등장
+  chipGuideEl.classList.remove('exit', 'entrance');
+  chipGuideEl.classList.add('show', 'bottleneck', 'entrance');
+  chipSpeechEl.classList.add('show', 'bottleneck');
+  setTimeout(() => { chipGuideEl.classList.remove('entrance'); }, 1200);
+  typeChipText('🚨 <b style="color:#ff4433">긴급 병목 경고!!</b> 🚨<br><br><b style="color:#ff6644">M14A/B</b>와 <b style="color:#ff6644">M16A/B</b>에서<br>QUE 대기열 과부하가 예측돼요!<br><br>빨리 확인해주세요!! 처리량 초과로<br>OHT 물류가 지연될 수 있어요! 😱');
+
   document.getElementById('btnBottleneck').textContent = '병목 해제';
   document.getElementById('btnBottleneck').style.background = 'linear-gradient(135deg,rgba(255,30,30,0.4),rgba(200,0,0,0.3))';
   document.getElementById('btnBottleneck').style.borderColor = 'rgba(255,50,50,0.6)';
@@ -3091,6 +3668,12 @@ function startBottleneck() {
 
 function clearBottleneck() {
   bottleneckActive = false;
+
+  // CHIP JUN 병목 해제 반응
+  chipGuideEl.classList.remove('bottleneck');
+  chipSpeechEl.classList.remove('bottleneck');
+  typeChipText('😮‍💨 <b style="color:#4af">병목 해제!</b><br><br>M14A/B, M16A/B 대기열이<br>정상으로 돌아왔어요!<br>물류 흐름이 안정화됐습니다~ ✅');
+
   document.getElementById('btnBottleneck').textContent = '병목 테스트';
   document.getElementById('btnBottleneck').style.background = 'linear-gradient(135deg,rgba(255,50,30,0.2),rgba(255,100,0,0.15))';
   document.getElementById('btnBottleneck').style.borderColor = 'rgba(255,80,40,0.4)';
@@ -3252,6 +3835,9 @@ function animate() {
     });
   });
 
+  // 투어 버스 업데이트
+  if (typeof updateTourBus === 'function') updateTourBus();
+
   renderer.render(scene, camera);
 
   // Update minimap
@@ -3272,6 +3858,503 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   setupMinimap();
 });
+
+// ============================================================
+// 반도체 칩 가이드 캐릭터 시스템
+// ============================================================
+const chipGuideEl = document.getElementById('chipGuide');
+const chipSpeechEl = document.getElementById('chipSpeech');
+const chipSpeechText = document.getElementById('chipSpeechText');
+const chipMouth = document.getElementById('chipMouth');
+const chipAutoTourBtn = document.getElementById('chipAutoTour');
+let chipTypingTimer = null;
+let chipTourActive = false;
+let chipTourIndex = 0;
+let chipCurrentTimeout = null;
+
+// 건물별 캐릭터 대사
+const chipDialogs = {
+  'M14A/B': {
+    greeting: '안녕하세요! 저는 CHIP JUN이에요! 🤖',
+    intro: '여기는 <b style="color:#ecc94b">M14A/B FAB동</b>이에요!',
+    detail: '최신 <b>1a/1b nm DRAM</b>을 만드는 곳이죠. 8층 규모의 초대형 클린룸에서 웨이퍼에 회로를 새겨넣어요. 포토리소그래피부터 식각, 증착까지... 저 같은 칩이 태어나는 첫 번째 단계랍니다! ✨'
+  },
+  'M10A': {
+    greeting: '또 만나서 반가워요!',
+    intro: '이곳은 <b style="color:#63b3ed">M10A 생산동</b>이에요.',
+    detail: 'DRAM 생산의 핵심 시설이에요. 웨이퍼가 투입되면 여러 공정을 거쳐 검사 단계로 넘어가죠. M14와 OHT 레일로 연결되어 있어서 웨이퍼가 자동으로 이동해요! 🚃'
+  },
+  'M10B/R3': {
+    greeting: '어서오세요~',
+    intro: '여기는 <b style="color:#63b3ed">M10B/R3 FAB동</b>!',
+    detail: 'M10A와 함께 DRAM 멀티 FAB 운영을 담당하는 곳이에요. 5층 건물에서 웨이퍼 투입부터 품질 검사까지 진행해요. 여러 FAB이 동시에 돌아가야 대량 생산이 가능하거든요! 🏭'
+  },
+  'M10C': {
+    greeting: '반가워요!',
+    intro: '<b style="color:#63b3ed">M10C FAB동</b>에 오신 걸 환영해요!',
+    detail: 'DRAM 생산 라인 중 하나로, 멀티 FAB 체제의 한 축을 담당하고 있어요. 웨이퍼 투입 → 생산 공정 → 품질 검사의 흐름을 따라 제가 점점 완성되어 가는 거죠! 🔬'
+  },
+  'M16A/B': {
+    greeting: '와! 여기 진짜 대단해요!',
+    intro: '이곳은 <b style="color:#48bb78">M16A/B FAB동</b>이에요!',
+    detail: '무려 <b>11층</b> 규모! 캠퍼스에서 가장 큰 최신 DRAM 생산동이에요. <b>AMHS 자동물류 시스템</b>이 운영되고, Class 1 클린룸에서 최신 DRAM을 양산해요. P&T4, P&T5와 OHT로 연결되어 있죠! 🚀'
+  },
+  'DRAM_WT': {
+    greeting: '긴장되는 곳이에요...',
+    intro: '여기는 <b style="color:#e07098">DRAM 웨이퍼 테스트동</b>!',
+    detail: '제가 제대로 만들어졌는지 검사받는 곳이에요! 😅 프로브 테스트로 전기적 특성을 측정하고, 수율(Yield)을 판정해요. 불량 다이는 여기서 마킹되죠. 통과하면 패키지 공정으로 GO! ✅'
+  },
+  'P&T1': {
+    greeting: '드디어 완성 단계!',
+    intro: '<b style="color:#c4956a">P&T1 패키지 및 테스트동</b>이에요.',
+    detail: '웨이퍼를 잘라서(다이싱) 하나하나의 칩으로 만드는 곳! 다이 어태치 → 와이어 본딩 → 몰딩 → 최종 테스트를 거치면... 드디어 저 같은 완성된 칩이 탄생해요! 그리고 정문을 통해 세상으로 나가죠! 📦'
+  },
+  'P&T4': {
+    greeting: '여기도 중요한 곳이에요!',
+    intro: '<b style="color:#c4956a">P&T4 패키지 및 테스트동</b>!',
+    detail: '8층 규모의 대형 패키지 시설이에요. M16과 OHT(5층↔3층)로 직접 연결되어 있어서 웨이퍼가 바로 넘어와요. 다이싱부터 최종 테스트와 마킹까지, 대량 패키지가 가능한 곳이죠! 💪'
+  },
+  'P&T5': {
+    greeting: '마지막 패키지 동이에요!',
+    intro: '<b style="color:#c4956a">P&T5 패키지 및 테스트동</b>입니다.',
+    detail: '4층 규모로, M16과 OHT(3층↔2층)로 연결되어 있어요. 웨이퍼 다이싱 → 패키지 조립 → 최종 품질 검증을 마치면 출하 대기 상태가 됩니다. 여기서 완성품이 세상에 나갈 준비를 해요! 🌍'
+  }
+};
+
+// 기본 환영 메시지
+const chipWelcomeMsg = {
+  greeting: '안녕하세요! 저는 <b style="color:#4af">CHIP JUN</b>이에요! 🤖',
+  detail: 'SK하이닉스 이천캠퍼스를 안내해 드릴게요!<br><br>👆 <b>건물을 클릭</b>하면 제가 소개해 드려요<br>🎯 아래 <b>자동 투어</b> 버튼으로 전체 투어도 가능해요!'
+};
+
+// 타이핑 효과로 텍스트 표시
+function typeChipText(text, callback) {
+  chipMouth.classList.add('talking');
+  chipSpeechText.innerHTML = '';
+  let i = 0;
+  const plainText = text.replace(/<[^>]+>/g, '');
+  const tags = [];
+  let tagMatch;
+  const tagRegex = /<[^>]+>/g;
+  while ((tagMatch = tagRegex.exec(text)) !== null) {
+    tags.push({ index: tagMatch.index, tag: tagMatch[0], length: tagMatch[0].length });
+  }
+
+  // 빠른 타이핑 효과
+  let htmlPos = 0;
+  let displayed = '';
+
+  if (chipTypingTimer) clearInterval(chipTypingTimer);
+  chipTypingTimer = setInterval(() => {
+    if (htmlPos >= text.length) {
+      clearInterval(chipTypingTimer);
+      chipTypingTimer = null;
+      chipMouth.classList.remove('talking');
+      if (callback) callback();
+      return;
+    }
+
+    if (text[htmlPos] === '<') {
+      const closeIdx = text.indexOf('>', htmlPos);
+      if (closeIdx !== -1) {
+        displayed += text.substring(htmlPos, closeIdx + 1);
+        htmlPos = closeIdx + 1;
+      } else {
+        displayed += text[htmlPos];
+        htmlPos++;
+      }
+    } else {
+      displayed += text[htmlPos];
+      htmlPos++;
+    }
+
+    chipSpeechText.innerHTML = displayed;
+  }, 25);
+}
+
+// 캐릭터 표시
+function showChipGuide(buildingName, customMsg) {
+  // 커스텀 메시지가 있으면 그것만 표시 (병목 모드 등)
+  if (customMsg) {
+    chipGuideEl.classList.add('show');
+    chipSpeechEl.classList.add('show');
+    typeChipText(customMsg);
+    return;
+  }
+
+  const dialog = chipDialogs[buildingName];
+  if (!dialog) return;
+
+  chipGuideEl.classList.add('show');
+  chipSpeechEl.classList.add('show');
+
+  // 인사 → 소개 → 상세 순서로 표시
+  typeChipText(dialog.greeting + '<br>' + dialog.intro + '<br><br>' + dialog.detail);
+}
+
+// 환영 메시지 표시
+function showChipWelcome() {
+  chipGuideEl.classList.add('show');
+  chipSpeechEl.classList.add('show');
+  chipAutoTourBtn.classList.add('show');
+  typeChipText(chipWelcomeMsg.greeting + '<br><br>' + chipWelcomeMsg.detail);
+}
+
+// 캐릭터 숨기기
+function hideChipGuide() {
+  if (chipTypingTimer) { clearInterval(chipTypingTimer); chipTypingTimer = null; }
+  chipMouth.classList.remove('talking');
+  chipSpeechEl.classList.remove('show');
+  setTimeout(() => {
+    chipGuideEl.classList.remove('show');
+  }, 300);
+  // 투어 중이면 중지
+  if (chipTourActive) {
+    chipTourActive = false;
+    tourPhase = 'idle';
+    if (chipCurrentTimeout) { clearTimeout(chipCurrentTimeout); chipCurrentTimeout = null; }
+    chipAutoTourBtn.textContent = '🤖 캠퍼스 자동 투어';
+    chipAutoTourBtn.classList.add('show');
+    if (tourBus) tourBus.visible = false;
+  }
+}
+
+// ============================================================
+// 자동 투어 (도로 기반 버스 이동 + 카메라 추적 + CHIP JUN 설명)
+// ============================================================
+
+// 투어 버스
+let tourBus = null;
+let tourPhase = 'idle';      // 'moving' | 'explaining' | 'idle'
+let tourWpIdx = 0;           // 현재 waypoint 인덱스
+let tourSegProgress = 0;     // 현재 구간 0~1
+let tourSegSpeed = 0.012;    // 구간 이동 속도
+
+// 도로 교차점 좌표 (계산 완료)
+// 가로도로: z=275(상), z=175(중), z=70(하)
+// 세로도로: x=-175(좌), x=-40(중좌), x=100(중우), x=250(우)
+// 외곽: x=-210, x=260, z=360(최상), z=-30(최하)
+
+// 도로를 따라가는 waypoints (stop: 건물이름이면 정차해서 설명)
+const tourWaypoints = [
+  { x: -210, z: 175, stop: null },       // 출발 (외곽 도로)
+  { x: -175, z: 175, stop: 'M14A/B' },   // 1. M14A/B 앞
+  { x: -175, z: 70,  stop: 'M10A' },     // 2. M10A 앞 (세로도로 남하)
+  { x: -40,  z: 70,  stop: null },       // 교차점 이동
+  { x: -40,  z: 175, stop: 'M10B/R3' },  // 3. M10B/R3 앞
+  { x: -40,  z: 275, stop: null },       // 교차점 북상
+  { x: 100,  z: 275, stop: null },       // 교차점 우회전
+  { x: 100,  z: 360, stop: 'M10C' },     // 4. M10C 앞
+  { x: 100,  z: 275, stop: null },       // 교차점 남하
+  { x: 100,  z: 70,  stop: 'M16A/B' },   // 5. M16A/B 앞
+  { x: -40,  z: 70,  stop: null },       // 교차점 좌회전
+  { x: -40,  z: -30, stop: 'DRAM_WT' },  // 6. DRAM_WT 앞
+  { x: -40,  z: 70,  stop: null },       // 교차점 복귀
+  { x: -40,  z: 275, stop: null },       // 교차점 북상
+  { x: -40,  z: 360, stop: 'P&T1' },     // 7. P&T1 앞
+  { x: -40,  z: 275, stop: null },       // 교차점 남하
+  { x: 100,  z: 275, stop: null },       // 교차점 우회전
+  { x: 250,  z: 275, stop: null },       // 교차점 우회전
+  { x: 250,  z: 175, stop: 'P&T4' },     // 8. P&T4 앞
+  { x: 250,  z: 70,  stop: null },       // 교차점 남하
+  { x: 100,  z: 70,  stop: 'P&T5' },     // 9. P&T5 앞
+  { x: 260,  z: 70,  stop: null },       // 외곽으로 나감
+  { x: 260,  z: -30, stop: 'END' },      // 투어 종료
+];
+
+function createTourBus() {
+  if (tourBus) return;
+  const g = new THREE.Group();
+  const bodyGeo = new THREE.BoxGeometry(6, 5, 16);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.3, metalness: 0.3, emissive: 0x441111, emissiveIntensity: 0.3 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 4; body.castShadow = true; g.add(body);
+  const roofGeo = new THREE.BoxGeometry(6.2, 0.5, 16.2);
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+  const roof = new THREE.Mesh(roofGeo, roofMat);
+  roof.position.y = 6.6; g.add(roof);
+  for (let side = -1; side <= 1; side += 2) {
+    for (let i = 0; i < 5; i++) {
+      const winGeo = new THREE.PlaneGeometry(2, 2.5);
+      const winMat = new THREE.MeshStandardMaterial({ color: 0x88ccee, emissive: 0x224466, emissiveIntensity: 0.2, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+      const win = new THREE.Mesh(winGeo, winMat);
+      win.position.set(side * 3.05, 4.5, -6 + i * 3); win.rotation.y = Math.PI / 2; g.add(win);
+    }
+  }
+  const wheelGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.9, 8);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+  [[-2.8,1.2,5],[2.8,1.2,5],[-2.8,1.2,-5],[2.8,1.2,-5]].forEach(([wx,wy,wz]) => {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI/2; w.position.set(wx,wy,wz); g.add(w);
+  });
+  const lc = document.createElement('canvas');
+  lc.width = 256; lc.height = 48;
+  const cx = lc.getContext('2d');
+  cx.fillStyle = 'rgba(255,255,255,0.9)'; cx.fillRect(0,0,256,48);
+  cx.font = 'bold 28px Noto Sans KR'; cx.fillStyle = '#cc0000';
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.fillText('CHIP JUN TOUR', 128, 24);
+  const tex = new THREE.CanvasTexture(lc); tex.minFilter = THREE.LinearFilter;
+  const spMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sp = new THREE.Sprite(spMat);
+  sp.scale.set(12, 12*(48/256), 1); sp.position.set(0, 9, 0); g.add(sp);
+  const busLight = new THREE.PointLight(0xff4444, 0.8, 80);
+  busLight.position.set(0, 8, 0); g.add(busLight);
+  scene.add(g);
+  tourBus = g;
+}
+
+function startAutoTour() {
+  if (chipTourActive) { stopAutoTour(); return; }
+
+  chipTourActive = true;
+  chipAutoTourBtn.textContent = '⏹ 투어 중지';
+  tourWpIdx = 0;
+  tourSegProgress = 0;
+  tourPhase = 'moving';
+
+  // 투어 버스 생성 & 시작 위치
+  createTourBus();
+  const start = tourWaypoints[0];
+  tourBus.position.set(start.x, 0, start.z);
+  tourBus.visible = true;
+
+  // CHIP JUN 등장
+  chipGuideEl.style.left = ''; chipGuideEl.style.top = '';
+  chipGuideEl.style.right = '40px'; chipGuideEl.style.bottom = '';
+  chipSpeechEl.style.left = ''; chipSpeechEl.style.top = '';
+  chipSpeechEl.style.right = '30px'; chipSpeechEl.style.bottom = '120px';
+  chipGuideEl.classList.remove('exit', 'entrance');
+  chipGuideEl.classList.add('show', 'entrance');
+  chipSpeechEl.classList.add('show');
+  setTimeout(() => { chipGuideEl.classList.remove('entrance'); }, 1200);
+
+  typeChipText('🚌 <b style="color:#ff4444">CHIP JUN 투어버스</b> 출발!<br><br>캠퍼스 도로를 따라 건물들을<br>하나하나 소개해 드릴게요! 🎉');
+}
+
+function stopAutoTour() {
+  chipTourActive = false;
+  tourPhase = 'idle';
+  if (chipCurrentTimeout) { clearTimeout(chipCurrentTimeout); chipCurrentTimeout = null; }
+  chipAutoTourBtn.textContent = '🤖 캠퍼스 자동 투어';
+  if (tourBus) tourBus.visible = false;
+  typeChipText('투어를 종료합니다! 👋<br>건물을 직접 클릭해서 알아볼 수도 있어요!');
+}
+
+function tourResumeMoving() {
+  if (!chipTourActive) return;
+  tourPhase = 'moving';
+  // 다음 정차 건물 찾기
+  let nextStop = null;
+  for (let i = tourWpIdx + 1; i < tourWaypoints.length; i++) {
+    if (tourWaypoints[i].stop) { nextStop = tourWaypoints[i].stop; break; }
+  }
+  if (nextStop && nextStop !== 'END') {
+    typeChipText('🚌 다음 목적지: <b style="color:#4af">' + nextStop + '</b><br>이동 중...');
+  }
+}
+
+function tourOnArrival(stopName) {
+  if (stopName === 'END') {
+    // 투어 완료
+    chipTourActive = false;
+    tourPhase = 'idle';
+    chipAutoTourBtn.textContent = '🤖 캠퍼스 자동 투어';
+    if (tourBus) tourBus.visible = false;
+    typeChipText('캠퍼스 투어가 끝났어요! 🎉<br><br>웨이퍼 → FAB → 테스트 → 패키지<br>전 과정을 둘러봤습니다!<br><br>궁금한 건물을 직접 클릭해 보세요! 👆');
+    return;
+  }
+
+  tourPhase = 'explaining';
+
+  // 건물 하이라이트
+  buildingMeshes.forEach(group => {
+    if (group.userData.name === stopName) {
+      group.children.forEach(child => {
+        if (child.material && child.material.emissive) {
+          const orig = child.material.emissiveIntensity;
+          child.material.emissiveIntensity = 1.5;
+          setTimeout(() => { child.material.emissiveIntensity = orig; }, 3000);
+        }
+      });
+    }
+  });
+
+  // CHIP JUN 설명
+  showChipGuide(stopName);
+
+  // 7초 후 다시 출발
+  chipCurrentTimeout = setTimeout(() => {
+    tourResumeMoving();
+  }, 7000);
+}
+
+// animate 루프에서 호출
+function updateTourBus() {
+  if (!chipTourActive || tourPhase !== 'moving' || !tourBus) return;
+  if (tourWpIdx >= tourWaypoints.length - 1) return;
+
+  const from = tourWaypoints[tourWpIdx];
+  const to = tourWaypoints[tourWpIdx + 1];
+
+  // 구간 거리에 따라 속도 조절 (짧으면 빠르게, 길면 천천히)
+  const dist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
+  const speed = dist > 0 ? Math.min(0.025, Math.max(0.008, 3.0 / dist)) : 0.02;
+  tourSegProgress += speed;
+
+  // 부드러운 ease
+  const t = tourSegProgress < 0.5
+    ? 2 * tourSegProgress * tourSegProgress
+    : 1 - Math.pow(-2 * tourSegProgress + 2, 2) / 2;
+
+  // 버스 위치 보간
+  tourBus.position.x = from.x + (to.x - from.x) * t;
+  tourBus.position.z = from.z + (to.z - from.z) * t;
+
+  // 버스 방향
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  if (Math.abs(dx) > 0.1 || Math.abs(dz) > 0.1) {
+    const targetRot = -Math.atan2(dz, dx) + Math.PI / 2;
+    // 부드러운 회전
+    let diff = targetRot - tourBus.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    tourBus.rotation.y += diff * 0.1;
+  }
+
+  // 카메라 따라가기
+  target.x += (tourBus.position.x - target.x) * 0.04;
+  target.z += (tourBus.position.z - target.z) * 0.04;
+  spherical.radius += (220 - spherical.radius) * 0.02;
+  spherical.phi += (0.75 - spherical.phi) * 0.02;
+  updateCamera();
+
+  // 구간 도착
+  if (tourSegProgress >= 1) {
+    tourSegProgress = 0;
+    tourWpIdx++;
+
+    if (tourWpIdx >= tourWaypoints.length - 1) {
+      // 마지막
+      const lastWp = tourWaypoints[tourWaypoints.length - 1];
+      if (lastWp.stop) tourOnArrival(lastWp.stop);
+      return;
+    }
+
+    const arrivedWp = tourWaypoints[tourWpIdx];
+    if (arrivedWp.stop) {
+      // 정차 지점 → 설명
+      tourOnArrival(arrivedWp.stop);
+    }
+    // stop이 null이면 그냥 계속 이동
+  }
+}
+
+// 로딩 시 캐릭터 숨김 (F1으로 등장)
+
+// ============================================================
+// CHIP JUN 드래그 이동
+// ============================================================
+(function() {
+  const chip = document.getElementById('chipGuide');
+  const speech = document.getElementById('chipSpeech');
+  let isDragging = false, offsetX = 0, offsetY = 0;
+  let dragCount = 0;
+  let dragResetTimer = null;
+
+  function onDragStart() {
+    dragCount++;
+    // 리셋 타이머 (10초 안 움직이면 카운트 초기화)
+    if (dragResetTimer) clearTimeout(dragResetTimer);
+    dragResetTimer = setTimeout(() => { dragCount = 0; chip.classList.remove('annoyed'); }, 10000);
+
+    if (dragCount >= 5 && !chip.classList.contains('annoyed')) {
+      chip.classList.add('annoyed');
+      chipSpeechEl.classList.add('show');
+      const msgs = [
+        '😤 야!! 고만좀 옮겨라!!<br>어지러워 죽겠어!!',
+        '🫨 아 진짜... 그만 좀!!<br>나 로봇이지 장난감 아니거든?!',
+        '😵 헉헉... 3번째인데?!<br>제발 가만히 좀 놔둬!!',
+        '🤢 멀미난다고!!<br>반도체한테 이러는 거 아니야!!'
+      ];
+      typeChipText(msgs[Math.floor(Math.random() * msgs.length)]);
+      // 5초 후 노란색 해제
+      setTimeout(() => {
+        chip.classList.remove('annoyed');
+        dragCount = 0;
+      }, 5000);
+    }
+  }
+
+  chip.addEventListener('mousedown', function(e) {
+    isDragging = true;
+    chip.classList.add('dragging');
+    onDragStart();
+    const rect = chip.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+    // position을 top/left 기반으로 전환
+    chip.style.left = rect.left + 'px';
+    chip.style.top = rect.top + 'px';
+    chip.style.right = 'auto';
+    chip.style.bottom = 'auto';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    const x = e.clientX - offsetX;
+    const y = e.clientY - offsetY;
+    chip.style.left = x + 'px';
+    chip.style.top = y + 'px';
+    // 말풍선도 따라가기
+    speech.style.left = (x - 200) + 'px';
+    speech.style.top = (y - speech.offsetHeight - 15) + 'px';
+    speech.style.right = 'auto';
+    speech.style.bottom = 'auto';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (isDragging) {
+      isDragging = false;
+      chip.classList.remove('dragging');
+    }
+  });
+
+  // 터치 지원
+  chip.addEventListener('touchstart', function(e) {
+    isDragging = true;
+    chip.classList.add('dragging');
+    onDragStart();
+    const rect = chip.getBoundingClientRect();
+    offsetX = e.touches[0].clientX - rect.left;
+    offsetY = e.touches[0].clientY - rect.top;
+    chip.style.left = rect.left + 'px';
+    chip.style.top = rect.top + 'px';
+    chip.style.right = 'auto';
+    chip.style.bottom = 'auto';
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!isDragging) return;
+    const x = e.touches[0].clientX - offsetX;
+    const y = e.touches[0].clientY - offsetY;
+    chip.style.left = x + 'px';
+    chip.style.top = y + 'px';
+    speech.style.left = (x - 200) + 'px';
+    speech.style.top = (y - speech.offsetHeight - 15) + 'px';
+    speech.style.right = 'auto';
+    speech.style.bottom = 'auto';
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (isDragging) {
+      isDragging = false;
+      chip.classList.remove('dragging');
+    }
+  });
+})();
 </script>
 </body>
 </html>
