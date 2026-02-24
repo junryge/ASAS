@@ -155,8 +155,9 @@
   }
   .info-panel .flow-btn:hover { background: rgba(68,170,255,0.15); }
 
-  /* Legend */
+  /* Legend - 숨김 처리 (미니맵 가림 방지) */
   .legend {
+    display: none;
     position: fixed;
     top: 24px;
     right: 24px;
@@ -899,7 +900,7 @@
 </div>
 
 <!-- M14A 실시간 상태예상 패널 -->
-<div id="bottleneckPanel" style="position:fixed;top:280px;right:24px;z-index:100;background:rgba(10,10,20,0.92);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:16px 20px;min-width:220px;">
+<div id="bottleneckPanel" style="display:none;position:fixed;top:24px;right:24px;z-index:100;background:rgba(10,10,20,0.92);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:16px 20px;min-width:220px;">
   <div style="font-size:9px;color:#556;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">M14A QUEUE STATUS</div>
   <div id="statusPrediction" style="font-size:20px;font-weight:800;color:#22c55e;text-align:center;margin-bottom:4px;transition:color 0.5s;">양호예상</div>
   <div id="statusDetail" style="font-size:10px;color:#555;text-align:center;margin-bottom:10px;">경고 0 / 위험 0</div>
@@ -3199,6 +3200,9 @@ renderer.domElement.addEventListener('click', e => {
 
       document.getElementById('panelBody').innerHTML = html;
 
+      // 건물 클릭 시 M14 QUEUE STATUS 패널 표시
+      document.getElementById('bottleneckPanel').style.display = 'block';
+
       // Highlight animation
       group.children.forEach(child => {
         if (child.material && child.material.emissive) {
@@ -3372,6 +3376,8 @@ document.addEventListener('keydown', e => {
     document.getElementById('bName').innerHTML = '<span class="color-badge" id="bBadge" style="background:#4af;"></span>SK hynix 이천';
     document.getElementById('bType').textContent = '캠퍼스 전경';
     document.getElementById('panelBody').innerHTML = '<div class="building-detail">건물을 클릭하면<br>생산 공정 & 이동 정보를 볼 수 있습니다<br><br><span style="color:#00d4ff;">더블클릭</span> → OHT 레이아웃 이동</div>';
+    // M14 QUEUE STATUS 패널 숨기기
+    document.getElementById('bottleneckPanel').style.display = 'none';
   }
 });
 
@@ -3790,6 +3796,9 @@ function startBottleneck(statusText) {
   const msgs = chipStatusMessages[currentBottleneckLevel] || chipStatusMessages['bottleneck'];
   const bannerColor = statusBannerColors[currentBottleneckLevel] || statusBannerColors['bottleneck'];
   const bubbleColor = npcBubbleColors[currentBottleneckLevel] || npcBubbleColors['bottleneck'];
+
+  // 병목 발생 시 M14 QUEUE STATUS 패널 강제 표시
+  document.getElementById('bottleneckPanel').style.display = 'block';
 
   // 병목 해제 버튼 표시
   const releaseBtn = document.getElementById('btnBottleneckRelease');
