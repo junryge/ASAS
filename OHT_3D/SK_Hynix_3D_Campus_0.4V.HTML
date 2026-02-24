@@ -795,6 +795,78 @@
   #chipSpeech.bottleneck .chip-speech-inner::after {
     border-top-color: rgba(15, 20, 45, 0.95);
   }
+
+  /* 병목예상 시 CHIP JUN 주황 펄스 */
+  #chipGuide.bottleneck-warning .chip-body {
+    border-color: #f97316;
+    animation: chipFloat 3s ease-in-out infinite, chipOrangePulse 1.5s ease-in-out infinite;
+    box-shadow: 0 0 20px rgba(249,115,22,0.4), inset 0 0 15px rgba(249,115,22,0.15);
+  }
+  @keyframes chipOrangePulse {
+    0%, 100% { background: linear-gradient(135deg, #3e2a1a 0%, #6b4520 40%, #3e2a1a 100%); }
+    50% { background: linear-gradient(135deg, #5a3010 0%, #994422 40%, #5a3010 100%); }
+  }
+  #chipGuide.bottleneck-warning .chip-eye {
+    background: #f97316;
+    box-shadow: 0 0 10px rgba(249,115,22,0.8);
+  }
+  #chipGuide.bottleneck-warning .chip-mouth {
+    border-color: #f97316;
+  }
+  #chipGuide.bottleneck-warning .chip-forehead {
+    color: rgba(249,140,60,0.9);
+    text-shadow: 0 0 8px rgba(249,115,22,0.6);
+  }
+  #chipGuide.bottleneck-warning .chip-pin {
+    background: #c84;
+    box-shadow: 0 0 4px rgba(249,115,22,0.5);
+  }
+  #chipSpeech.bottleneck-warning .chip-speech-inner {
+    border-color: rgba(249,115,22,0.5);
+    box-shadow: 0 8px 32px rgba(249,115,22,0.2);
+  }
+  #chipSpeech.bottleneck-warning .chip-speech-name {
+    color: #f97316;
+  }
+  #chipSpeech.bottleneck-warning .chip-speech-name .typing-dot {
+    background: #f97316;
+  }
+
+  /* 관찰 시 CHIP JUN 노란 펄스 */
+  #chipGuide.observation .chip-body {
+    border-color: #eab308;
+    animation: chipFloat 3s ease-in-out infinite, chipYellowObsPulse 2s ease-in-out infinite;
+    box-shadow: 0 0 20px rgba(234,179,8,0.4), inset 0 0 15px rgba(234,179,8,0.15);
+  }
+  @keyframes chipYellowObsPulse {
+    0%, 100% { background: linear-gradient(135deg, #3e3a1a 0%, #6b5e20 40%, #3e3a1a 100%); }
+    50% { background: linear-gradient(135deg, #5a5010 0%, #998822 40%, #5a5010 100%); }
+  }
+  #chipGuide.observation .chip-eye {
+    background: #eab308;
+    box-shadow: 0 0 10px rgba(234,179,8,0.8);
+  }
+  #chipGuide.observation .chip-mouth {
+    border-color: #eab308;
+  }
+  #chipGuide.observation .chip-forehead {
+    color: rgba(234,200,30,0.9);
+    text-shadow: 0 0 8px rgba(234,179,8,0.6);
+  }
+  #chipGuide.observation .chip-pin {
+    background: #cc9;
+    box-shadow: 0 0 4px rgba(234,179,8,0.5);
+  }
+  #chipSpeech.observation .chip-speech-inner {
+    border-color: rgba(234,179,8,0.5);
+    box-shadow: 0 8px 32px rgba(234,179,8,0.2);
+  }
+  #chipSpeech.observation .chip-speech-name {
+    color: #eab308;
+  }
+  #chipSpeech.observation .chip-speech-name .typing-dot {
+    background: #eab308;
+  }
 </style>
 </head>
 <body>
@@ -853,6 +925,10 @@
   </div>
   <div id="statusTime" style="font-size:9px;color:#444;text-align:center;margin-top:8px;">-</div>
   <div id="connectionStatus" style="font-size:8px;color:#333;text-align:center;margin-top:4px;">● 연결 대기</div>
+  <div style="display:flex;gap:6px;margin-top:10px;">
+    <button id="btnBottleneckTest" onclick="testBottleneckToggle()" style="flex:1;padding:6px 0;border:1px solid rgba(239,68,68,0.4);border-radius:6px;cursor:pointer;font-size:10px;font-weight:700;background:rgba(239,68,68,0.1);color:#ef4444;transition:all 0.3s;font-family:inherit;">병목 테스트</button>
+    <button id="btnBottleneckRelease" onclick="manualBottleneckRelease()" style="flex:1;padding:6px 0;border:1px solid rgba(34,197,94,0.4);border-radius:6px;cursor:pointer;font-size:10px;font-weight:700;background:rgba(34,197,94,0.1);color:#22c55e;transition:all 0.3s;font-family:inherit;display:none;">병목 해제</button>
+  </div>
 </div>
 
 <div id="timeToggle" style="position:fixed;top:75px;left:24px;z-index:200;background:rgba(10,10,20,0.85);border-radius:10px;border:1px solid rgba(255,255,255,0.1);backdrop-filter:blur(8px);user-select:none;">
@@ -3530,21 +3606,50 @@ let bottleneckWarnings = [];
 let bottleneckBubbles = [];
 let bottleneckInterval = null;
 let lastStatusPrediction = '양호예상';
+let currentBottleneckLevel = null; // 'bottleneck' | 'bottleneck-warning' | 'observation'
+let manualReleaseActive = false;   // 수동 해제 상태
 
-// 상태예상 기반으로 병목 여부 판단
+// CHIP JUN 활성화 대상 상태 (병목, 병목예상, 관찰)
 function isBottleneckStatus(status) {
   if (!status) return false;
   return status === '병목예상' ||
          status.startsWith('병목(1700예측') ||
-         status === '위험예상';
+         status === '관찰';
 }
 
-// 상태별 색상
+// 상태 → CHIP JUN CSS 클래스 매핑
+// 병목 = 빨간색, 병목예상 = 주황색, 관찰 = 노란색
+function getStatusChipClass(status) {
+  if (!status) return null;
+  if (status.startsWith('병목(1700예측')) return 'bottleneck';     // 빨간색
+  if (status === '병목예상') return 'bottleneck-warning';          // 주황색
+  if (status === '관찰') return 'observation';                     // 노란색
+  return null;
+}
+
+// 상태 → 건물 색상 (3D)
+function getStatusBuildingColor(status) {
+  if (!status) return 0xecc94b;
+  if (status.startsWith('병목(1700예측')) return 0xff2200;         // 빨간색
+  if (status === '병목예상') return 0xf97316;                      // 주황색
+  if (status === '관찰') return 0xeab308;                          // 노란색
+  return 0xecc94b;
+}
+
+// 상태 → 건물 발광 색상
+function getStatusEmissiveColor(status) {
+  if (!status) return 0x000000;
+  if (status.startsWith('병목(1700예측')) return 0xff2200;
+  if (status === '병목예상') return 0xf97316;
+  if (status === '관찰') return 0xeab308;
+  return 0x000000;
+}
+
+// 상태별 색상 (UI 패널)
 function getStatusColor(status) {
   if (!status) return '#22c55e';
-  if (status.startsWith('병목(1700예측')) return '#7c3aed';
-  if (status === '병목예상') return '#ef4444';
-  if (status === '위험예상') return '#f97316';
+  if (status.startsWith('병목(1700예측')) return '#ef4444';
+  if (status === '병목예상') return '#f97316';
   if (status === '관찰') return '#eab308';
   if (status.includes('병목 쿨타임')) return '#ef4444';
   if (status.includes('위험 쿨타임')) return '#f97316';
@@ -3600,24 +3705,97 @@ function updateStatusPanel(data) {
 
   // 패널 테두리 상태 반영
   const panel = document.getElementById('bottleneckPanel');
+  const releaseBtn = document.getElementById('btnBottleneckRelease');
   if (isBottleneckStatus(status)) {
     panel.style.borderColor = 'rgba(239,68,68,0.4)';
     panel.style.boxShadow = '0 0 20px rgba(239,68,68,0.15)';
-  } else if (status === '관찰' || status.includes('쿨타임')) {
+    releaseBtn.style.display = 'block';
+  } else if (status.includes('쿨타임')) {
     panel.style.borderColor = 'rgba(234,179,8,0.3)';
     panel.style.boxShadow = 'none';
+    releaseBtn.style.display = 'none';
   } else {
     panel.style.borderColor = 'rgba(255,255,255,0.08)';
     panel.style.boxShadow = 'none';
+    releaseBtn.style.display = 'none';
   }
 }
 
-// 병목 경고 3D 효과 시작 (M14A/B 건물)
+// 상태별 CHIP JUN 대사
+const chipStatusMessages = {
+  'bottleneck': {
+    start: '🚨 <b style="color:#ff4433">긴급 병목 경고!!</b> 🚨<br><br><b style="color:#ff6644">M14A</b> QUE 대기열 과부하가 예측돼요!<br><br>빨리 확인해주세요!! 처리량 초과로<br>OHT 물류가 지연될 수 있어요! 😱',
+    clear: '😮‍💨 <b style="color:#4af">병목 해제!</b><br><br>M14A 대기열이<br>정상으로 돌아왔어요!<br>물류 흐름이 안정화됐습니다~ ✅'
+  },
+  'bottleneck-warning': {
+    start: '⚠️ <b style="color:#f97316">병목 예상 경고!</b><br><br><b style="color:#ff9944">M14A</b> QUE에 병목 징후가 보여요!<br><br>지금 조치하면 막을 수 있어요!<br>상황을 주시해 주세요! 🔶',
+    clear: '😌 <b style="color:#4af">병목예상 해제!</b><br><br>M14A 상태가 안정되었어요!<br>다행히 병목으로 이어지진 않았네요~ ✅'
+  },
+  'observation': {
+    start: '👀 <b style="color:#eab308">관찰 모드 진입!</b><br><br><b style="color:#eedd44">M14A</b> QUE에 급증 징후가 감지됐어요.<br><br>아직 위험 수준은 아니지만<br>주의 깊게 살펴봐 주세요! 🟡',
+    clear: '🙂 <b style="color:#4af">관찰 해제!</b><br><br>M14A 급증 징후가 사라졌어요.<br>정상 상태로 돌아왔습니다~ ✅'
+  }
+};
+
+// 상태별 NPC 대사 (3명)
+const npcStatusGossips = {
+  'bottleneck': [
+    'M14A QUE 병목이 예측된대...',
+    '대기열 과부하래! OHT 지연되면 큰일이야;;',
+    '빨리 조치해야 라인 스탑 안 되지...'
+  ],
+  'bottleneck-warning': [
+    'M14A에 병목 징후 보인대...',
+    '아직 괜찮은데 주시해야 된대.',
+    '병목으로 이어지면 곤란한데...'
+  ],
+  'observation': [
+    'M14A 급증 감지됐대.',
+    '관찰 모드래, 아직 위험은 아니래.',
+    '혹시 모르니까 지켜보자...'
+  ]
+};
+
+// 상태별 건물 위 경고 텍스트
+const statusWarningText = {
+  'bottleneck': 'QUE 병목 예측',
+  'bottleneck-warning': '병목 예상',
+  'observation': '관찰 모드'
+};
+
+// 상태별 경고판 색상
+const statusBannerColors = {
+  'bottleneck':         { bg: 'rgba(180,20,10,0.85)', border: '#ff3300', text: '#ffcccc', sub: '#ff8866' },
+  'bottleneck-warning': { bg: 'rgba(180,100,10,0.85)', border: '#f97316', text: '#fff3cc', sub: '#ffaa44' },
+  'observation':        { bg: 'rgba(150,140,10,0.85)', border: '#eab308', text: '#fffde0', sub: '#ddc844' }
+};
+
+// NPC 말풍선 스타일
+const npcBubbleColors = {
+  'bottleneck':         { bg: 'rgba(180,20,10,0.9)', border: '#ff4444', color: '#ffcccc', shadow: 'rgba(255,50,30,0.4)' },
+  'bottleneck-warning': { bg: 'rgba(180,100,10,0.9)', border: '#f97316', color: '#fff3cc', shadow: 'rgba(249,115,22,0.4)' },
+  'observation':        { bg: 'rgba(150,140,10,0.9)', border: '#eab308', color: '#fffde0', shadow: 'rgba(234,179,8,0.4)' }
+};
+
+// 병목 경고 3D 효과 시작 (M14A/B 건물) - 상태별 색상 분기
 function startBottleneck(statusText) {
   if (bottleneckActive) return;
   bottleneckActive = true;
+  manualReleaseActive = false;
 
-  // CHIP JUN 강제 등장 + 병목 반응
+  const chipClass = getStatusChipClass(statusText);
+  currentBottleneckLevel = chipClass || 'bottleneck';
+  const buildingHex = getStatusBuildingColor(statusText);
+  const emissiveHex = getStatusEmissiveColor(statusText);
+  const msgs = chipStatusMessages[currentBottleneckLevel] || chipStatusMessages['bottleneck'];
+  const bannerColor = statusBannerColors[currentBottleneckLevel] || statusBannerColors['bottleneck'];
+  const bubbleColor = npcBubbleColors[currentBottleneckLevel] || npcBubbleColors['bottleneck'];
+
+  // 병목 해제 버튼 표시
+  const releaseBtn = document.getElementById('btnBottleneckRelease');
+  if (releaseBtn) releaseBtn.style.display = 'block';
+
+  // CHIP JUN 강제 등장 + 상태별 반응
   if (typeof chipTourActive !== 'undefined' && chipTourActive) {
     chipTourActive = false;
     if (chipCurrentTimeout) { clearTimeout(chipCurrentTimeout); chipCurrentTimeout = null; }
@@ -3627,13 +3805,15 @@ function startBottleneck(statusText) {
     chipGuideEl.style.right = '40px'; chipGuideEl.style.bottom = '';
     chipSpeechEl.style.left = ''; chipSpeechEl.style.top = '';
     chipSpeechEl.style.right = '30px'; chipSpeechEl.style.bottom = '120px';
-    chipGuideEl.classList.remove('exit', 'entrance');
-    chipGuideEl.classList.add('show', 'bottleneck', 'entrance');
-    chipSpeechEl.classList.add('show', 'bottleneck');
+    chipGuideEl.classList.remove('exit', 'entrance', 'bottleneck', 'bottleneck-warning', 'observation');
+    chipGuideEl.classList.add('show', currentBottleneckLevel, 'entrance');
+    chipSpeechEl.classList.remove('bottleneck', 'bottleneck-warning', 'observation');
+    chipSpeechEl.classList.add('show', currentBottleneckLevel);
     setTimeout(() => { chipGuideEl.classList.remove('entrance'); }, 1200);
-    typeChipText('\uD83D\uDEA8 <b style="color:#ff4433">\uAE34\uAE09 \uBCD1\uBAA9 \uACBD\uACE0!!</b> \uD83D\uDEA8<br><br><b style="color:#ff6644">M14A</b> QUE \uB300\uAE30\uC5F4 \uACFC\uBD80\uD558\uAC00 \uC608\uCE21\uB3FC\uC694!<br><br>\uBE68\uB9AC \uD655\uC778\uD574\uC8FC\uC138\uC694!! \uCC98\uB9AC\uB7C9 \uCD08\uACFC\uB85C<br>OHT \uBB3C\uB958\uAC00 \uC9C0\uC5F0\uB420 \uC218 \uC788\uC5B4\uC694! \uD83D\uDE31');
+    typeChipText(msgs.start);
   }
 
+  // M14A/B 건물 색상 변경
   const targetNames = ['M14A/B'];
   const targetBuildings = buildingMeshes.filter(g => targetNames.includes(g.userData.name));
 
@@ -3647,16 +3827,17 @@ function startBottleneck(statusText) {
       }
     });
 
+    // 건물 위 경고 배너
     const b = group.userData;
     const h = b.h * SCALE;
     const warnCanvas = document.createElement('canvas');
     warnCanvas.width = 512; warnCanvas.height = 256;
     const ctx = warnCanvas.getContext('2d');
-    ctx.fillStyle = 'rgba(180,20,10,0.85)';
+    ctx.fillStyle = bannerColor.bg;
     ctx.beginPath();
     ctx.roundRect(10, 10, 492, 236, 16);
     ctx.fill();
-    ctx.strokeStyle = '#ff3300';
+    ctx.strokeStyle = bannerColor.border;
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.roundRect(10, 10, 492, 236, 16);
@@ -3667,13 +3848,13 @@ function startBottleneck(statusText) {
     ctx.fillText('\u26A0', 256, 80);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 36px sans-serif';
-    ctx.fillText(statusText || 'QUE \uBCD1\uBAA9 \uC608\uCE21', 256, 140);
-    ctx.fillStyle = '#ff8866';
+    ctx.fillText(statusWarningText[currentBottleneckLevel] || statusText, 256, 140);
+    ctx.fillStyle = bannerColor.sub;
     ctx.font = '24px sans-serif';
-    ctx.fillText(b.name + ' \uB300\uAE30\uC5F4 \uACFC\uBD80\uD558', 256, 185);
-    ctx.fillStyle = '#ffaa88';
+    ctx.fillText(b.name + ' 대기열 상태', 256, 185);
+    ctx.fillStyle = bannerColor.text;
     ctx.font = '18px sans-serif';
-    ctx.fillText('\uCC98\uB9AC\uB7C9 \uCD08\uACFC \xB7 \uC9C0\uC5F0 \uBC1C\uC0DD \uC608\uC0C1', 256, 220);
+    ctx.fillText(currentBottleneckLevel === 'bottleneck' ? '처리량 초과 · 지연 발생 예상' : currentBottleneckLevel === 'bottleneck-warning' ? '병목 징후 감지 · 주의 필요' : '급증 감지 · 관찰 중', 256, 220);
 
     const tex = new THREE.CanvasTexture(warnCanvas);
     const spMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
@@ -3683,33 +3864,30 @@ function startBottleneck(statusText) {
     group.add(sp);
     bottleneckWarnings.push({ sprite: sp, group: group });
 
-    const fireLight = new THREE.PointLight(0xff2200, 2.0, 100);
+    const lightColor = buildingHex;
+    const lightIntensity = currentBottleneckLevel === 'bottleneck' ? 2.0 : currentBottleneckLevel === 'bottleneck-warning' ? 1.5 : 1.0;
+    const fireLight = new THREE.PointLight(lightColor, lightIntensity, 100);
     fireLight.position.set(0, h + 5, 0);
     group.add(fireLight);
     bottleneckWarnings.push({ light: fireLight, group: group });
   });
 
-  // 말풍선
+  // NPC 말풍선 (3명)
   const allPersons = scene.children.filter(c => c.userData && c.userData.isPerson);
-  const nearby = allPersons.slice(0, Math.min(5, allPersons.length));
-  const gossips = [
-    'M14A QUE \uBCD1\uBAA9\uC774 \uC608\uCE21\uB41C\uB300...',
-    '\uB300\uAE30\uC5F4 \uACFC\uBD80\uD558\uB798!',
-    '\uBCD1\uBAA9 \uC2EC\uD558\uBA74 \uBB3C\uB958 \uBA48\uCD98\uB2E4\uB358\uB370...',
-    'OHT \uC9C0\uC5F0\uB418\uBA74 \uD070\uC77C\uC774\uC57C;;',
-    'QUE \uD130\uC9C0\uBA74 \uB77C\uC778 \uC2A4\uD1B1\uC774\uB798...'
-  ];
+  const nearby = allPersons.slice(0, Math.min(3, allPersons.length));
+  const gossips = npcStatusGossips[currentBottleneckLevel] || npcStatusGossips['bottleneck'];
 
   nearby.forEach((person, i) => {
     const bubble = document.createElement('div');
     bubble.className = 'bottleneck-bubble';
-    bubble.style.cssText = 'position:fixed;z-index:350;pointer-events:none;background:rgba(180,20,10,0.9);border:1px solid #ff4444;border-radius:12px;padding:8px 14px;font-size:11px;color:#ffcccc;font-weight:600;white-space:nowrap;box-shadow:0 0 15px rgba(255,50,30,0.4);display:none;font-family:inherit;';
+    bubble.style.cssText = 'position:fixed;z-index:350;pointer-events:none;background:' + bubbleColor.bg + ';border:1px solid ' + bubbleColor.border + ';border-radius:12px;padding:8px 14px;font-size:11px;color:' + bubbleColor.color + ';font-weight:600;white-space:nowrap;box-shadow:0 0 15px ' + bubbleColor.shadow + ';display:none;font-family:inherit;';
     bubble.textContent = gossips[i % gossips.length];
     document.body.appendChild(bubble);
     bottleneckBubbles.push({ el: bubble, person: person, delay: i * 800 });
     setTimeout(() => { bubble.style.display = 'block'; }, i * 800);
   });
 
+  // 건물 색상 + 발광 애니메이션
   bottleneckInterval = setInterval(() => {
     bottleneckBubbles.forEach(bb => {
       if (bb.el.style.display === 'none') return;
@@ -3724,19 +3902,20 @@ function startBottleneck(statusText) {
     });
 
     const t = Date.now() * 0.005;
+    const pulseSpeed = currentBottleneckLevel === 'bottleneck' ? 1.0 : currentBottleneckLevel === 'bottleneck-warning' ? 0.7 : 0.5;
     buildingMeshes.forEach(group => {
       group.traverse(child => {
         if (child.userData && child.userData._isBottleneck && child.isMesh && child.material.emissive) {
-          const flicker = 0.3 + Math.sin(t + Math.random()) * 0.3;
-          child.material.emissive.setHex(0xff2200);
+          const flicker = 0.2 + Math.sin(t * pulseSpeed + Math.random()) * 0.25;
+          child.material.emissive.setHex(emissiveHex);
           child.material.emissiveIntensity = flicker;
-          child.material.color.lerp(new THREE.Color(0xff3311), 0.15);
+          child.material.color.lerp(new THREE.Color(buildingHex), 0.1);
         }
       });
     });
     bottleneckWarnings.forEach(w => {
       if (w.light) {
-        w.light.intensity = 1.0 + Math.sin(t * 2) * 1.5;
+        w.light.intensity = 0.8 + Math.sin(t * 2) * 1.2;
       }
     });
   }, 50);
@@ -3747,12 +3926,20 @@ function clearBottleneck() {
   if (!bottleneckActive) return;
   bottleneckActive = false;
 
-  // CHIP JUN 병목 해제 반응
+  const msgs = chipStatusMessages[currentBottleneckLevel] || chipStatusMessages['bottleneck'];
+
+  // CHIP JUN 해제 반응
   if (typeof chipGuideEl !== 'undefined' && chipGuideEl) {
-    chipGuideEl.classList.remove('bottleneck');
-    chipSpeechEl.classList.remove('bottleneck');
-    typeChipText('\uD83D\uDE2E\u200D\uD83D\uDCA8 <b style="color:#4af">\uBCD1\uBAA9 \uD574\uC81C!</b><br><br>M14A \uB300\uAE30\uC5F4\uC774<br>\uC815\uC0C1\uC73C\uB85C \uB3CC\uC544\uC654\uC5B4\uC694!<br>\uBB3C\uB958 \uD750\uB984\uC774 \uC548\uC815\uD654\uB410\uC2B5\uB2C8\uB2E4~ \u2705');
+    chipGuideEl.classList.remove('bottleneck', 'bottleneck-warning', 'observation');
+    chipSpeechEl.classList.remove('bottleneck', 'bottleneck-warning', 'observation');
+    typeChipText(msgs.clear);
   }
+
+  currentBottleneckLevel = null;
+
+  // 병목 해제 버튼 숨기기
+  const releaseBtn = document.getElementById('btnBottleneckRelease');
+  if (releaseBtn) releaseBtn.style.display = 'none';
 
   if (bottleneckInterval) { clearInterval(bottleneckInterval); bottleneckInterval = null; }
 
@@ -3762,6 +3949,7 @@ function clearBottleneck() {
   });
   bottleneckWarnings = [];
 
+  // 건물 색상 원래대로
   buildingMeshes.forEach(group => {
     group.traverse(child => {
       if (child.userData && child.userData._isBottleneck && child.isMesh) {
@@ -3782,6 +3970,39 @@ function clearBottleneck() {
   bottleneckBubbles = [];
 }
 
+// 병목 테스트 토글
+function testBottleneckToggle() {
+  if (bottleneckActive) {
+    clearBottleneck();
+  } else {
+    startBottleneck('병목(1700예측-10분)');
+  }
+}
+
+// 수동 병목 해제 (확인 후 쿨타임 시작)
+async function manualBottleneckRelease() {
+  if (!bottleneckActive) return;
+  clearBottleneck();
+  manualReleaseActive = true;
+
+  // 서버에 수동 해제 알림 (쿨타임 시작)
+  try {
+    await fetch(M14_API_URL.replace('/api/data', '/api/bottleneck_release'), { method: 'POST' });
+  } catch (e) {
+    console.warn('병목 해제 API 실패:', e);
+  }
+
+  // CHIP JUN 해제 확인 메시지
+  if (typeof chipGuideEl !== 'undefined' && chipGuideEl) {
+    chipGuideEl.classList.add('show');
+    chipSpeechEl.classList.add('show');
+    typeChipText('✅ <b style="color:#22c55e">병목 수동 해제 완료!</b><br><br>담당자 확인 완료!<br>1시간 쿨타임이 시작됩니다.<br>수고하셨습니다! 👏');
+  }
+
+  // 60분간 자동 재활성화 방지
+  setTimeout(() => { manualReleaseActive = false; }, 60 * 60 * 1000);
+}
+
 // /api/data 에서 실시간 데이터 가져오기 (M14A 서버: 5000 포트)
 const M14_API_URL = 'http://10.139.31.203:5000/api/data';
 let fetchRetryCount = 0;
@@ -3795,6 +4016,12 @@ async function fetchM14Data() {
 
     // UI 패널 업데이트
     updateStatusPanel(data);
+
+    // 수동 해제 중이면 자동 재활성화 방지
+    if (manualReleaseActive) {
+      lastStatusPrediction = data.status_prediction || '양호예상';
+      return;
+    }
 
     // 상태예상 기반 자동 병목 효과
     const status = data.status_prediction || '양호예상';
