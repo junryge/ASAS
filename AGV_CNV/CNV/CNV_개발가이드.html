@@ -1,0 +1,2312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CNV (Conveyor) 개발 가이드</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: linear-gradient(135deg, #1a4a3a 0%, #0d2f26 100%);
+            color: white;
+            overflow-y: auto;
+            padding: 20px 0;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .sidebar-header p {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.4;
+        }
+
+        .toc {
+            list-style: none;
+        }
+
+        .toc > li {
+            margin: 0;
+        }
+
+        .toc > li > a {
+            display: block;
+            padding: 12px 20px;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            font-size: 14px;
+            border-left: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .toc > li > a:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-left-color: #4a9d7e;
+            color: white;
+        }
+
+        .toc > li.active > a {
+            background-color: rgba(74, 157, 126, 0.2);
+            border-left-color: #4a9d7e;
+            color: white;
+            font-weight: 600;
+        }
+
+        .toc-sub {
+            list-style: none;
+            margin-left: 10px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .toc > li.active .toc-sub {
+            max-height: 500px;
+        }
+
+        .toc-sub a {
+            display: block;
+            padding: 8px 20px;
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            font-size: 13px;
+            border-left: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .toc-sub a:hover {
+            color: rgba(255, 255, 255, 0.9);
+            border-left-color: #4a9d7e;
+            padding-left: 25px;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            padding: 40px;
+            background-color: white;
+        }
+
+        .header-section {
+            margin-bottom: 50px;
+            padding: 30px;
+            background: linear-gradient(135deg, #f0f9f7 0%, #e8f5f2 100%);
+            border-left: 5px solid #1a4a3a;
+            border-radius: 8px;
+        }
+
+        .header-section h1 {
+            font-size: 32px;
+            color: #1a4a3a;
+            margin-bottom: 15px;
+        }
+
+        .header-section > blockquote {
+            color: #555;
+            font-style: italic;
+            margin-left: 20px;
+            border-left: 3px solid #4a9d7e;
+            padding-left: 15px;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-bottom: 50px;
+            scroll-margin-top: 100px;
+        }
+
+        h2 {
+            font-size: 26px;
+            color: #1a4a3a;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #4a9d7e;
+        }
+
+        h3 {
+            font-size: 20px;
+            color: #2d5f50;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        h4 {
+            font-size: 16px;
+            color: #3d7060;
+            margin-top: 20px;
+            margin-bottom: 12px;
+        }
+
+        p {
+            margin-bottom: 15px;
+            color: #444;
+            line-height: 1.8;
+        }
+
+        /* Highlight for CNV-specific items */
+        .cnv-highlight {
+            color: #2d7f68;
+            font-weight: 600;
+        }
+
+        /* Code blocks */
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-x: auto;
+            margin-bottom: 20px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        code {
+            font-family: 'Courier New', 'Monaco', monospace;
+            color: #333;
+        }
+
+        pre code {
+            color: #333;
+        }
+
+        /* C# syntax highlighting */
+        .keyword {
+            color: #0000ff;
+            font-weight: 600;
+        }
+
+        .string {
+            color: #a31515;
+        }
+
+        .comment {
+            color: #008000;
+        }
+
+        .class-name {
+            color: #2b91af;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        thead {
+            background-color: #1a4a3a;
+            color: white;
+        }
+
+        th {
+            padding: 14px;
+            text-align: left;
+            font-weight: 600;
+            border: 1px solid #0d2f26;
+        }
+
+        td {
+            padding: 12px 14px;
+            border: 1px solid #e0e0e0;
+            color: #333;
+        }
+
+        tbody tr:nth-child(odd) {
+            background-color: #f8faf9;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: white;
+        }
+
+        tbody tr:hover {
+            background-color: #f0f7f5;
+            transition: background-color 0.2s ease;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+
+        li {
+            margin-bottom: 8px;
+            line-height: 1.8;
+        }
+
+        .checklist {
+            list-style: none;
+            margin-left: 0;
+        }
+
+        .checklist li {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .checklist input[type="checkbox"] {
+            margin-right: 12px;
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            accent-color: #4a9d7e;
+        }
+
+        /* Collapsible sections */
+        .collapsible-group {
+            margin-bottom: 20px;
+        }
+
+        .collapsible-header {
+            background-color: #e8f5f2;
+            border-left: 4px solid #4a9d7e;
+            padding: 14px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-radius: 6px;
+            font-weight: 600;
+            color: #1a4a3a;
+            user-select: none;
+            transition: all 0.3s ease;
+        }
+
+        .collapsible-header:hover {
+            background-color: #d4eee8;
+        }
+
+        .collapsible-header.active {
+            background-color: #4a9d7e;
+            color: white;
+        }
+
+        .collapsible-toggle {
+            font-size: 16px;
+            transition: transform 0.3s ease;
+        }
+
+        .collapsible-header.active .collapsible-toggle {
+            transform: rotate(180deg);
+        }
+
+        .collapsible-content {
+            display: none;
+            padding: 20px;
+            background-color: #f9fdfb;
+            border: 1px solid #e0e0e0;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+        }
+
+        .collapsible-content.active {
+            display: block;
+        }
+
+        /* Architecture diagrams */
+        .diagram {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre;
+            overflow-x: auto;
+            color: #333;
+        }
+
+        /* Special message boxes */
+        .info-box {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .info-box strong {
+            color: #1565c0;
+        }
+
+        /* Print styles */
+        @media print {
+            .sidebar {
+                display: none;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .collapsible-content {
+                display: block !important;
+            }
+
+            .collapsible-header {
+                background-color: #f0f0f0;
+                border: 1px solid #ddd;
+            }
+
+            table {
+                page-break-inside: avoid;
+            }
+
+            .section {
+                page-break-inside: avoid;
+            }
+
+            body {
+                background-color: white;
+            }
+        }
+
+        /* Responsive design */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 250px;
+            }
+
+            .main-content {
+                margin-left: 250px;
+                padding: 30px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                position: relative;
+                width: 100%;
+                height: auto;
+                border-bottom: 2px solid #ddd;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .toc {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            .toc > li > a {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+
+            .toc-sub {
+                display: none !important;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            h2 {
+                font-size: 20px;
+            }
+
+            h3 {
+                font-size: 16px;
+            }
+
+            pre {
+                font-size: 11px;
+            }
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 50px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>📋 CNV 개발가이드</h1>
+                <p>SK Hynix Fab 환경 — Atlas 서버 UDP 수신 기반</p>
+            </div>
+            <nav>
+                <ul class="toc" id="toc">
+                    <li>
+                        <a href="#section1">1. 시스템 아키텍처</a>
+                    </li>
+                    <li>
+                        <a href="#section2">2. UDP 통신 사양</a>
+                        <ul class="toc-sub">
+                            <li><a href="#section2-1">2.1 프로토콜 기본 정보</a></li>
+                            <li><a href="#section2-2">2.2 Atlas 서버 구조</a></li>
+                            <li><a href="#section2-3">2.3 패킷 파싱</a></li>
+                            <li><a href="#section2-4">2.4 텍스트 ID 범위</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#section3">3. SysView계 메시지</a>
+                        <ul class="toc-sub">
+                            <li><a href="#section3-1">3.1 Text ID:1</a></li>
+                            <li><a href="#section3-2">3.2 Text ID:4</a></li>
+                            <li><a href="#section3-3">3.3 Text ID:201</a></li>
+                            <li><a href="#section3-4">3.4 Text ID:202</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#section4">4. MSS계 메시지</a>
+                        <ul class="toc-sub">
+                            <li><a href="#section4-1">4.1 Text ID:1</a></li>
+                            <li><a href="#section4-2">4.2 Text ID:3</a></li>
+                            <li><a href="#section4-3">4.3 Text ID:13</a></li>
+                            <li><a href="#section4-4">4.4 Text ID:21</a></li>
+                            <li><a href="#section4-5">4.5 Text ID:203</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#section5">5. AMP Remote Interface</a>
+                        <ul class="toc-sub">
+                            <li><a href="#section5-1">5.1 초기화 및 연결</a></li>
+                            <li><a href="#section5-2">5.2 데이터 수집</a></li>
+                            <li><a href="#section5-3">5.3 조작 명령</a></li>
+                            <li><a href="#section5-4">5.4 Transfer 클래스</a></li>
+                            <li><a href="#section5-5">5.5 Unit Kind</a></li>
+                            <li><a href="#section5-6">5.6 상태값</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#section6">6. Enum 정리</a>
+                    </li>
+                    <li>
+                        <a href="#section7">7. 개발 체크리스트</a>
+                    </li>
+                    <li>
+                        <a href="#section8">8. Atlas Server / Logpresso</a>
+                        <ul class="toc-sub">
+                            <li><a href="#section8-1">8.1 OhtUdpListener (UDP)</a></li>
+                            <li><a href="#section8-2">8.2 Message Parsing</a></li>
+                            <li><a href="#section8-3">8.3 CnvEdge Model</a></li>
+                            <li><a href="#section8-4">8.4 Logpresso Storage</a></li>
+                            <li><a href="#section8-5">8.5 TrafficBatch</a></li>
+                            <li><a href="#section8-6">8.6 Table Structure</a></li>
+                            <li><a href="#section8-7">8.7 API Summary</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <div class="header-section">
+                <h1>CNV (Conveyor) 개발 가이드</h1>
+                <blockquote>SK Hynix Fab 환경 — Atlas 서버 UDP 수신 기반 CNV 시스템 개발 레퍼런스</blockquote>
+            </div>
+
+            <!-- Section 1: System Architecture -->
+            <div class="section" id="section1">
+                <h2>1. 시스템 아키텍처</h2>
+                <p>CNV 시스템의 전체 구조는 다음과 같습니다:</p>
+                <div class="diagram">┌──────────┐   SECS/GEM   ┌──────────────┐   UDP/IP    ┌───────────────┐
+│   HOST   │◄────────────►│   FabScope   │◄──────────►│  STK MCP7     │
+│ (MES/ERP)│              │ (SysView+MSS)│  3600/3500  │  (CNV 제어)   │
+└──────────┘              └──────┬───────┘            └───────┬───────┘
+                                 │                            │
+                           UDP/IP│                     TCP/IP │ AMP Remote.DLL
+                                 │                            │
+                          ┌──────▼───────┐            ┌───────▼───────┐
+                          │ Atlas 서버   │            │   CNV 설비    │
+                          │ (UDP 수신)   │            │  프로그램     │
+                          └──────────────┘            └───────────────┘</div>
+                <p>시스템은 크게 다음과 같이 구성됩니다:</p>
+                <ul>
+                    <li><strong>HOST (MES/ERP)</strong>: 상위 시스템</li>
+                    <li><strong>FabScope (SysView+MSS)</strong>: 제어 및 모니터링 시스템</li>
+                    <li><strong>STK MCP7</strong>: CNV 제어 장비</li>
+                    <li><strong>Atlas 서버</strong>: UDP 패킷 수신 및 처리</li>
+                    <li><strong>CNV 설비 프로그램</strong>: AMP Remote.DLL을 통한 제어</li>
+                </ul>
+            </div>
+
+            <!-- Section 2: UDP Communication Specifications -->
+            <div class="section" id="section2">
+                <h2>2. UDP 통신 사양</h2>
+
+                <div id="section2-1" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>2.1 프로토콜 기본 정보</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>UDP 통신을 위한 기본 사양은 다음과 같습니다:</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>항목</th>
+                                    <th>SysView계</th>
+                                    <th>MSS계</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>프로토콜</td>
+                                    <td>UDP/IP</td>
+                                    <td>UDP/IP</td>
+                                </tr>
+                                <tr>
+                                    <td>포트 번호</td>
+                                    <td>3600 (기본)</td>
+                                    <td>3500 (기본)</td>
+                                </tr>
+                                <tr>
+                                    <td>메시지 형식</td>
+                                    <td>CSV (콤마 구분)</td>
+                                    <td>CSV (콤마 구분)</td>
+                                </tr>
+                                <tr>
+                                    <td>문자 코드</td>
+                                    <td>ASCII</td>
+                                    <td>ASCII</td>
+                                </tr>
+                                <tr>
+                                    <td>최대 크기</td>
+                                    <td>1500 byte (MTU)</td>
+                                    <td>1500 byte (MTU)</td>
+                                </tr>
+                                <tr>
+                                    <td>빈 항목 표기</td>
+                                    <td><code>,,</code></td>
+                                    <td><code>,,</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section2-2" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>2.2 Atlas 서버 UDP 수신 구조</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>Atlas 서버에서 STK MCP가 보내는 UDP 패킷을 수신하여 CNV 상태를 모니터링합니다.</p>
+                        <div class="diagram">[STK MCP7] ──UDP──► [Atlas 서버 (포트 3600/3500)]
+                                      │
+                                      ├── Text ID:1   MCP On-Line 보고 (5초 주기)
+                                      ├── Text ID:4   기기 상태 보고 ★ CNV 핵심
+                                      │
+                                      ├── Text ID:1   (MSS) 장비 상태 보고
+                                      ├── Text ID:3   (MSS) 이상/복구 보고
+                                      ├── Text ID:13  (MSS) 작업 데이터 보고
+                                      ├── Text ID:21  (MSS) Zone 정보 보고
+                                      ├── Text ID:201 (SysView) 반송기기 현재 위치 보고
+                                      └── Text ID:202 (SysView) 기기상 재하정보 보고</div>
+                    </div>
+                </div>
+
+                <div id="section2-3" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>2.3 UDP 패킷 파싱</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>수신된 UDP 패킷은 CSV 형태이므로 콤마로 분리하여 파싱합니다.</p>
+                        <div class="diagram">수신 패킷 예시 (기기 상태 보고):
+"4,STK_MCP01,303,CNV001,1,0000"
+
+파싱: Split(',') → fields[0]=텍스트ID, fields[1]=MCP명칭, fields[2]=기종번호, ...</div>
+                    </div>
+                </div>
+
+                <div id="section2-4" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>2.4 텍스트 ID 범위</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID 범위</th>
+                                    <th>용도</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>1 ~ 100</td>
+                                    <td>공용</td>
+                                </tr>
+                                <tr>
+                                    <td>101 ~ 200</td>
+                                    <td>CLW MCP, STBC 전용</td>
+                                </tr>
+                                <tr>
+                                    <td>201 ~ 300</td>
+                                    <td>STK MCP, SSS 전용</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 3: SysView Messages -->
+            <div class="section" id="section3">
+                <h2>3. CNV 관련 SysView계 메시지</h2>
+
+                <div id="section3-1" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>3.1 Text ID:1 — MCP On-Line 보고</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p><strong>보고 주기</strong>: 5초 / 상태변화 시 / 기동 시</p>
+                        <p><strong>Down 판정</strong>: 15초 이상 미수신 시 MCP Down 인식</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>1</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>MCP 명칭</td>
+                                    <td>유니크 명칭</td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>Control 상태</td>
+                                    <td><code>ON-LINE</code> / <code>OFF-LINE</code></td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>TSC 상태</td>
+                                    <td><code>AUTO</code> / <code>PAUSED</code> / <code>PAUSING</code></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>Alarm 상태</td>
+                                    <td><code>NO ALARMS</code> / <code>ALARMS</code></td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>MCP 상태 구분</td>
+                                    <td><code>0</code>:통상, <code>1</code>:선반 충진율 over</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section3-2" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>3.2 Text ID:4 — 기기 상태 보고 <span class="cnv-highlight">★ CNV 핵심</span></span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>MCP7 산하 기기(CNV 포함)의 상태를 보고합니다.</p>
+                        <p><strong>보고 조건</strong>: MCP 기동 / 상태 변화 / 상태보고요구 수신 (모든 기기에 대해 전송)</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>4</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>MCP 명칭</td>
+                                    <td>유니크 명칭</td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>기종번호</td>
+                                    <td>CNV 관련: 아래 표 참조</td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>기기명칭</td>
+                                    <td>기기 식별 이름</td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>상태</td>
+                                    <td><code>1</code>:정상, <code>2</code>:이상, <code>3</code>:유지보수, <code>4</code>:운전OFF(SSS), <code>5</code>:분리(SSS)</td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>Error Code</td>
+                                    <td><code>0000</code>~<code>FFFF</code> (상태≠2이면 <code>0000</code>)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>CNV 관련 기종번호</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>기종번호</th>
+                                    <th>기종</th>
+                                    <th>설명</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>100</code></td>
+                                    <td>STK MCP7</td>
+                                    <td>MCP 자체</td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong><code>303</code></strong></td>
+                                    <td><strong>CNV (CONV)</strong></td>
+                                    <td><strong>컨베이어</strong></td>
+                                </tr>
+                                <tr>
+                                    <td><code>320</code></td>
+                                    <td>PIO_IF</td>
+                                    <td>PI/O Interface Panel</td>
+                                </tr>
+                                <tr>
+                                    <td><code>324</code></td>
+                                    <td>IFP</td>
+                                    <td>Interface Panel</td>
+                                </tr>
+                                <tr>
+                                    <td><code>348</code></td>
+                                    <td>PIO_IF_THROUGH</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td><code>428</code></td>
+                                    <td>S_ARM_TFE_W_TPORT_CNV</td>
+                                    <td>단일 ARM TFE + 넓은 TPORT CNV</td>
+                                </tr>
+                                <tr>
+                                    <td><code>434</code></td>
+                                    <td>W_ARM_TFE_S_TPORT_CNV</td>
+                                    <td>넓은 ARM TFE + 좁은 TPORT CNV</td>
+                                </tr>
+                                <tr>
+                                    <td><code>437</code></td>
+                                    <td>S_ARM_TFE_S_TPORT_CNV</td>
+                                    <td>단일 ARM TFE + 좁은 TPORT CNV</td>
+                                </tr>
+                                <tr>
+                                    <td><code>808</code></td>
+                                    <td>CLL</td>
+                                    <td>Clean Lifter</td>
+                                </tr>
+                                <tr>
+                                    <td><code>871</code></td>
+                                    <td>SINGLE_LIFTER</td>
+                                    <td>단일 리프터</td>
+                                </tr>
+                                <tr>
+                                    <td><code>872</code></td>
+                                    <td>DOUBLE_LIFTER</td>
+                                    <td>이중 리프터</td>
+                                </tr>
+                                <tr>
+                                    <td><code>909</code></td>
+                                    <td>MIF</td>
+                                    <td>Middle Interface</td>
+                                </tr>
+                                <tr>
+                                    <td><code>1111</code></td>
+                                    <td>PNP</td>
+                                    <td>Picking & Place</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section3-3" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>3.3 Text ID:201 — 반송기기 현재 위치 보고</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>201</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>SC 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2+</td>
+                                    <td>기기 정보 (반복 MAX 10건)</td>
+                                    <td>기기명, 위치 좌표 등</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="info-box">
+                            <strong>참고:</strong> 패킷 사이즈 관계상 10대 이상인 경우 여러 번 전송
+                        </div>
+                    </div>
+                </div>
+
+                <div id="section3-4" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>3.4 Text ID:202 — 기기상 재하정보 보고</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>CONV 및 VC(Vertical Carousel)의 재하 정보를 보고합니다.</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>202</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>SC 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2+</td>
+                                    <td>기기 정보 (반복 MAX 10건)</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td>보고 구분</td>
+                                    <td><code>1</code>:CONV, <code>2</code>:VC</td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td>Mode</td>
+                                    <td><code>0</code>:None, <code>1</code>:입고, <code>2</code>:출고 (VC는 Empty)</td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td>최대 Buffer/Tray 수</td>
+                                    <td>CONV: Buffer 수, VC: Tray 수</td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td>실제 Buffer/Tray 수</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td>Full 발생시각</td>
+                                    <td><code>YYYY-MM-DD HH:MM:SS</code></td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td>Carrier ID 목록</td>
+                                    <td><code>|CST1|CST2|...</code> (BCR 미완료: Empty)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="info-box">
+                            <strong>참고:</strong> CONV: END-P부터 순서대로 보고 / VC: Tray No 순서로 보고
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 4: MSS Messages -->
+            <div class="section" id="section4">
+                <h2>4. CNV 관련 MSS계 메시지</h2>
+
+                <div id="section4-1" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>4.1 Text ID:1 — 장비 상태 보고</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>MCP가 관리하는 모든 장비 상태를 보고합니다. 10대 이상 시 여러 번 전송.</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>1</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>MCP 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2+</td>
+                                    <td>기기 정보 (반복 MAX 10건)</td>
+                                    <td>상태: <code>1</code>:정상, <code>2</code>:고장, <code>3</code>:유지보수, <code>4</code>:추출</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section4-2" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>4.2 Text ID:3 — 이상/복구 보고</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>3</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>MCP 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>기종번호</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>기기명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>상태 변화 일시</td>
+                                    <td><code>YYYY-MM-DD HH:MM:SS</code></td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>상태</td>
+                                    <td><code>1</code>:정상, <code>2</code>:고장, <code>3</code>:유지보수, <code>4</code>:추출</td>
+                                </tr>
+                                <tr>
+                                    <td>6</td>
+                                    <td>Error Code</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>7</td>
+                                    <td>도메인 명칭</td>
+                                    <td>RM이상시: From→To 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>8</td>
+                                    <td>포트 ID</td>
+                                    <td>PortID 또는 유닛ID</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section4-3" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>4.3 Text ID:13 — 작업 데이터 보고 (v2.0+)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>13</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>MCP 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>기종번호</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>기기명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>Carrier명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>반송 Priority</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>6</td>
+                                    <td>From 포트</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>7</td>
+                                    <td>To 포트</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>8</td>
+                                    <td>반송지시 수신일시</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>9</td>
+                                    <td>공Carrier 반송 개시</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>10</td>
+                                    <td>Unload 시작</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>11</td>
+                                    <td>실Carrier 반송 개시</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>12</td>
+                                    <td>Load 개시</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>13</td>
+                                    <td>반송 완료</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>14</td>
+                                    <td>반송 지연 요인</td>
+                                    <td><code>00010</code>:주회, <code>00100</code>:Paused</td>
+                                </tr>
+                                <tr>
+                                    <td>15</td>
+                                    <td>반송 중지 요인</td>
+                                    <td><code>2</code>:Unsuccessful, <code>3</code>:Alternate, <code>4</code>:수동중단, <code>5</code>:Intermediate</td>
+                                </tr>
+                                <tr>
+                                    <td>16</td>
+                                    <td>Command ID</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>17</td>
+                                    <td>MCP 내 Priority</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>18</td>
+                                    <td>Load 선반 정보</td>
+                                    <td>설정에 따라 보고</td>
+                                </tr>
+                                <tr>
+                                    <td>19</td>
+                                    <td>VLF 통과번지</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>20</td>
+                                    <td>Unload시 Tray 높이</td>
+                                    <td>예: <code>12270</code> (12.27mm)</td>
+                                </tr>
+                                <tr>
+                                    <td>21</td>
+                                    <td>이중격납시 Tray 높이</td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section4-4" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>4.4 Text ID:21 — Zone 정보 보고 (STK-MCP)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>21</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>MCP 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>Zone 구분</td>
+                                    <td><code>1</code>:MCP</td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>ZONE명칭/MCP명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>데이터 보고 일시</td>
+                                    <td><code>YYYY-MM-DD HH:MM:SS</code></td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>선반 총수</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>6</td>
+                                    <td>CST 수</td>
+                                    <td>금지 선반 CST 포함</td>
+                                </tr>
+                                <tr>
+                                    <td>7</td>
+                                    <td>유효 선반 수</td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section4-5" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>4.5 Text ID:203 — 정체 보고 (SSS)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>순번</th>
+                                    <th>필드</th>
+                                    <th>내용</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>텍스트 ID</td>
+                                    <td><code>203</code></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>SC 명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>보고일시</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>기종번호</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>기기명칭</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>보고 구분</td>
+                                    <td><code>1</code>:이재기, <code>2</code>:포트</td>
+                                </tr>
+                                <tr>
+                                    <td>6</td>
+                                    <td>상태</td>
+                                    <td><code>1</code>:정체 발생, <code>2</code>:정체 해제</td>
+                                </tr>
+                                <tr>
+                                    <td>7</td>
+                                    <td>최종 동작 일시</td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 5: AMP Remote Interface -->
+            <div class="section" id="section5">
+                <h2>5. AMP Remote Interface (설비 ↔ AMP)</h2>
+
+                <div id="section5-1" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>5.1 초기화 및 연결</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <pre><code><span class="class-name">CRemoteServer</span> m_RemoteServer = <span class="keyword">new</span> <span class="class-name">CRemoteServer</span>();
+
+<span class="comment">// 이벤트 등록</span>
+m_RemoteServer.MonitorGetData      = GetData;
+m_RemoteServer.ErrorEvent         += ErrorHandler;
+m_RemoteServer.OperationEvent     += OperationHandler;
+m_RemoteServer.CarrierEvent       += CarrierHandler;
+m_RemoteServer.TransferEvent      += TransferHandler;
+m_RemoteServer.ControlStatusEvent += ControlStatusHandler;
+m_RemoteServer.EQModeEvent        += EQModeHandler;
+
+<span class="comment">// 초기화 → 시작</span>
+m_RemoteServer.Initialize(<span class="string">"CNV_001"</span>, <span class="string">"CNV_EQP.exe"</span>, <span class="string">"v1.0.0.0"</span>, 10000, 500, 100);
+m_RemoteServer.Start();</code></pre>
+                    </div>
+                </div>
+
+                <div id="section5-2" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>5.2 CNV 데이터 수집 (MonitorGetData) <span class="cnv-highlight">★</span></span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <pre><code><span class="keyword">public void</span> GetData(<span class="keyword">string</span> EQPID, <span class="class-name">CRemoteObject</span> Obj)
+{
+    <span class="comment">// 필수: 상태</span>
+    Obj.ControlState = eControlState.ONLINE_LOCAL;
+    Obj.SCState      = eSCState.RUN;
+    Obj.EQMode       = eEqMode.OPERATOR;
+
+    <span class="comment">// 필수: Alarm</span>
+    Obj.AlarmInfo ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Alarm</span>&gt;();
+
+    <span class="comment">// 필수: Carrier / Transfer</span>
+    Obj.CarrierInfo ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Carrier</span>&gt;();
+    Obj.TrInfo      ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Transfer</span>&gt;();
+
+    <span class="comment">// ★ CNV 전용: Conveyor 정보</span>
+    Obj.ConveyorInfo ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Conveyor</span>&gt;();
+    <span class="comment">// → 각 Conveyor Unit의 상태, CarrierID, ProcessStatus 등</span>
+
+    <span class="comment">// 선택: Shelf, Port, Zone</span>
+    Obj.ShelfInfo ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Shelf</span>&gt;();
+    Obj.PortInfo  ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Port</span>&gt;();
+    Obj.ZoneInfo  ??= <span class="keyword">new</span> <span class="class-name">Dictionary</span>&lt;<span class="keyword">string</span>, <span class="class-name">Zone</span>&gt;();
+}</code></pre>
+                    </div>
+                </div>
+
+                <div id="section5-3" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>5.3 CNV 전용 조작 명령 <span class="cnv-highlight">★</span></span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>CNV는 AGV와 달리 Home, StepClear, DataClear 명령이 추가로 있습니다.</p>
+                        <pre><code><span class="class-name">eAckCode</span> OperationHandler(<span class="class-name">IPAddress</span> ip, eRemoteCommand cmd, <span class="keyword">string</span> unitID)
+{
+    <span class="keyword">switch</span> (cmd)
+    {
+        <span class="keyword">case</span> eRemoteCommand.Run:        <span class="comment">// 운전</span>
+        <span class="keyword">case</span> eRemoteCommand.Stop:       <span class="comment">// 정지</span>
+        <span class="keyword">case</span> eRemoteCommand.AlarmClear: <span class="comment">// 알람 해제</span>
+
+        <span class="comment">// ★ CNV 전용 명령</span>
+        <span class="keyword">case</span> eRemoteCommand.Home:       <span class="comment">// Servo Home</span>
+        <span class="keyword">case</span> eRemoteCommand.StepClear:  <span class="comment">// Step Clear</span>
+        <span class="keyword">case</span> eRemoteCommand.DataClear:  <span class="comment">// Data Clear</span>
+
+        <span class="keyword">case</span> eRemoteCommand.SetPMMode:  <span class="comment">// PM 모드</span>
+    }
+    <span class="keyword">return</span> eAckCode.Ack; <span class="comment">// 불가시 eAckCode.Nak</span>
+}</code></pre>
+                    </div>
+                </div>
+
+                <div id="section5-4" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>5.4 Transfer 클래스 — CNV 전용 필드 <span class="cnv-highlight">★</span></span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>Transfer 클래스에서 CNV에 특화된 필드:</p>
+                        <pre><code><span class="keyword">public class</span> <span class="class-name">Transfer</span>
+{
+    <span class="comment">// ... 공통 필드 생략 ...</span>
+
+    <span class="comment">// ★ CNV 전용</span>
+    <span class="keyword">public int</span> State;
+    <span class="comment">// State = 10 (Moving) → AGV/CNV 전용 상태</span>
+
+    <span class="keyword">public</span> <span class="class-name">DateTime</span> ArrivedTime;
+    <span class="comment">// 목적지 도착 시간 (PORT일 경우 PIO 전 단계)</span>
+    <span class="comment">// CNV / AGV 전용</span>
+
+    <span class="keyword">public</span> <span class="class-name">DateTime</span> LocationChangeTime;
+    <span class="comment">// 위치 변경 시간 기록</span>
+}</code></pre>
+
+                        <h4>Transfer.State — 반송 상태값 (CNV 주요)</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>값</th>
+                                    <th>상태</th>
+                                    <th>CNV 관련</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>None</td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>Queue</td>
+                                    <td>대기열</td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>Transfering</td>
+                                    <td>반송 중</td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>Complete</td>
+                                    <td>완료</td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>Alternate</td>
+                                    <td>대체</td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>Paused</td>
+                                    <td>일시정지</td>
+                                </tr>
+                                <tr>
+                                    <td>6</td>
+                                    <td>Cancelling</td>
+                                    <td>취소 중</td>
+                                </tr>
+                                <tr>
+                                    <td>7</td>
+                                    <td>Canceled</td>
+                                    <td>취소됨</td>
+                                </tr>
+                                <tr>
+                                    <td>8</td>
+                                    <td>Aborting</td>
+                                    <td>중단 중</td>
+                                </tr>
+                                <tr>
+                                    <td>9</td>
+                                    <td>Aborted</td>
+                                    <td>중단됨</td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>10</strong></td>
+                                    <td><strong>Moving</strong></td>
+                                    <td><span class="cnv-highlight">★ CNV/AGV 전용</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section5-5" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>5.5 Unit Kind — CNV 관련 Unit 종류 <span class="cnv-highlight">★</span></span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>값</th>
+                                    <th>종류</th>
+                                    <th>설명</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>Unknown</td>
+                                    <td>알 수 없음</td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>Lift</td>
+                                    <td>리프트</td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>Diverter</td>
+                                    <td>분기기</td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>3</strong></td>
+                                    <td><strong>Conveyor</strong></td>
+                                    <td><strong>컨베이어</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>4</td>
+                                    <td>DiverterInPort</td>
+                                    <td>분기기 입력 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>5</td>
+                                    <td>DiverterOutPort</td>
+                                    <td>분기기 출력 포트</td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>6</strong></td>
+                                    <td><strong>ConveyorInPort</strong></td>
+                                    <td><strong>컨베이어 입력 포트</strong></td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>7</strong></td>
+                                    <td><strong>ConveyorOutPort</strong></td>
+                                    <td><strong>컨베이어 출력 포트</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>8</td>
+                                    <td>Crain</td>
+                                    <td>크레인</td>
+                                </tr>
+                                <tr>
+                                    <td>9</td>
+                                    <td>Shelf</td>
+                                    <td>선반</td>
+                                </tr>
+                                <tr>
+                                    <td>10</td>
+                                    <td>Auto_In_Port</td>
+                                    <td>자동 입력 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>11</td>
+                                    <td>Auto_Out_Port</td>
+                                    <td>자동 출력 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>12</td>
+                                    <td>Auto_Both_Port</td>
+                                    <td>자동 양방향 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>13</td>
+                                    <td>Manual_In_Port</td>
+                                    <td>수동 입력 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>14</td>
+                                    <td>Manual_Out_Port</td>
+                                    <td>수동 출력 포트</td>
+                                </tr>
+                                <tr>
+                                    <td>15</td>
+                                    <td>Manual_Both_Port</td>
+                                    <td>수동 양방향 포트</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="section5-6" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>5.6 UnitState / ProcessStatus (공통)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>UnitState</th>
+                                    <th>상태</th>
+                                    <th>ProcessStatus</th>
+                                    <th>상태</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>0</td>
+                                    <td>Normal</td>
+                                    <td>0</td>
+                                    <td>Empty</td>
+                                </tr>
+                                <tr>
+                                    <td>1</td>
+                                    <td>Stop</td>
+                                    <td>1</td>
+                                    <td>Idle</td>
+                                </tr>
+                                <tr>
+                                    <td>2</td>
+                                    <td>Fault</td>
+                                    <td>2</td>
+                                    <td>Busy</td>
+                                </tr>
+                                <tr>
+                                    <td>3</td>
+                                    <td>Disable/PM</td>
+                                    <td>3</td>
+                                    <td>Pausing</td>
+                                </tr>
+                                <tr>
+                                    <td></td>
+                                    <td></td>
+                                    <td>4</td>
+                                    <td>Paused</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 6: Enum Summary -->
+            <div class="section" id="section6">
+                <h2>6. Enum 정리</h2>
+
+                <div class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>eRemoteCommand — CNV 관련 명령 <span class="cnv-highlight">★</span></span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>값</th>
+                                    <th>용도</th>
+                                    <th>대상 이벤트</th>
+                                    <th>CNV</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Run</td>
+                                    <td>운전</td>
+                                    <td>OperationEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>Stop</td>
+                                    <td>정지</td>
+                                    <td>OperationEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>AlarmClear</td>
+                                    <td>알람 해제</td>
+                                    <td>OperationEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>Home</strong></td>
+                                    <td><strong>Servo Home</strong></td>
+                                    <td><strong>OperationEvent</strong></td>
+                                    <td><span class="cnv-highlight">★ CNV</span></td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>StepClear</strong></td>
+                                    <td><strong>Step Clear</strong></td>
+                                    <td><strong>OperationEvent</strong></td>
+                                    <td><span class="cnv-highlight">★ CNV</span></td>
+                                </tr>
+                                <tr style="background-color: #e8f5f2;">
+                                    <td><strong>DataClear</strong></td>
+                                    <td><strong>Data Clear</strong></td>
+                                    <td><strong>OperationEvent</strong></td>
+                                    <td><span class="cnv-highlight">★ CNV</span></td>
+                                </tr>
+                                <tr>
+                                    <td>SetPMMode</td>
+                                    <td>PM 모드</td>
+                                    <td>OperationEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>Install</td>
+                                    <td>Carrier 설치</td>
+                                    <td>CarrierEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>Remove</td>
+                                    <td>Carrier 제거</td>
+                                    <td>CarrierEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>Creat</td>
+                                    <td>반송 생성</td>
+                                    <td>TransferEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>Cancel</td>
+                                    <td>반송 취소</td>
+                                    <td>TransferEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                                <tr>
+                                    <td>Abort</td>
+                                    <td>반송 중단</td>
+                                    <td>TransferEvent</td>
+                                    <td>공통</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 7: Development Checklist -->
+            <div class="section" id="section7">
+                <h2>7. CNV 개발 체크리스트</h2>
+
+                <h3>UDP 수신 (Atlas 서버)</h3>
+                <ul class="checklist">
+                    <li><input type="checkbox"> UDP 소켓 바인딩 (포트 3600 SysView / 3500 MSS)</li>
+                    <li><input type="checkbox"> CSV 패킷 파싱 모듈</li>
+                    <li><input type="checkbox"> Text ID별 핸들러 라우팅</li>
+                    <li><input type="checkbox"> MCP Down 감지 (15초 타임아웃)</li>
+                </ul>
+
+                <h3>AMP 연동 (설비)</h3>
+                <ul class="checklist">
+                    <li><input type="checkbox"> CRemoteServer 초기화/시작/종료</li>
+                    <li><input type="checkbox"> MonitorGetData: Conveyor, Alarm, Carrier, Transfer 수집</li>
+                    <li><input type="checkbox"> OperationEvent: Run/Stop/AlarmClear/Home/StepClear/DataClear/SetPMMode</li>
+                    <li><input type="checkbox"> TransferEvent: Creat/Cancel/Abort</li>
+                    <li><input type="checkbox"> CarrierEvent: Install/Remove</li>
+                    <li><input type="checkbox"> ControlStatusEvent / EQModeEvent</li>
+                </ul>
+
+                <h3>CNV 고유 관리</h3>
+                <ul class="checklist">
+                    <li><input type="checkbox"> Conveyor Unit 상태 관리 (Kind=3,6,7)</li>
+                    <li><input type="checkbox"> Transfer.State=10 (Moving) 처리</li>
+                    <li><input type="checkbox"> Transfer.ArrivedTime 도착 시간 관리</li>
+                    <li><input type="checkbox"> Zone 정보 관리 (Text ID:21)</li>
+                    <li><input type="checkbox"> 재하 정보 관리 (Text ID:202)</li>
+                    <li><input type="checkbox"> 정체 감지 및 보고 (Text ID:203)</li>
+                    <li><input type="checkbox"> Buffer Full 상태 모니터링</li>
+                </ul>
+
+                <h3>Atlas Server / Logpresso</h3>
+                <ul class="checklist">
+                    <li><input type="checkbox"> OhtUdpListener 구현 (UDP 수신)</li>
+                    <li><input type="checkbox"> Message Parsing (CSV 토큰 분석)</li>
+                    <li><input type="checkbox"> CnvEdge 모델 구현 (평균 이동 시간)</li>
+                    <li><input type="checkbox"> Logpresso Tuple API 저장 (ATLAS_HID_INFO)</li>
+                    <li><input type="checkbox"> TrafficBatch Job 스케줄링</li>
+                    <li><input type="checkbox"> Logpresso 테이블 설계 (ATLAS_RAIL_TRAFFIC)</li>
+                    <li><input type="checkbox"> Logpresso 쿼리 및 API 통합</li>
+                </ul>
+            </div>
+
+            <!-- Section 8: Atlas Server + Logpresso -->
+            <div class="section" id="section8">
+                <h2>8. Atlas Server — Java UDP 수신 및 Logpresso 저장</h2>
+                <p>Atlas 서버에서 STK MCP가 보내는 UDP 패킷을 수신하여 CNV 트래픽 데이터를 Logpresso 데이터베이스에 저장합니다. 이 섹션에서는 UDP 리스너, 메시지 파싱, CnvEdge 모델, Logpresso 저장 및 배치 처리에 대해 설명합니다.</p>
+
+                <div id="section8-1" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.1 OhtUdpListener (UDP Socket Code)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>UDP 패킷을 수신하는 메인 리스너 클래스입니다. 별도의 스레드에서 실행되며, 수신된 메시지를 DataService 큐에 추가합니다.</p>
+                        <pre><code><span class="keyword">public class</span> <span class="class-name">OhtUdpListener</span> <span class="keyword">implements</span> <span class="class-name">Runnable</span> {
+    <span class="keyword">private</span> <span class="class-name">DatagramSocket</span> socket;
+    <span class="keyword">private byte</span>[] buffer = <span class="keyword">new byte</span>[1500];
+
+    <span class="keyword">public void</span> run() {
+        <span class="keyword">while</span> (!<span class="class-name">Thread</span>.currentThread().isInterrupted()) {
+            <span class="class-name">DatagramPacket</span> packet = <span class="keyword">new</span> <span class="class-name">DatagramPacket</span>(buffer, buffer.length);
+            socket.receive(packet);
+            <span class="class-name">String</span> message = <span class="keyword">new</span> <span class="class-name">String</span>(packet.getData()).trim();
+
+            <span class="class-name">Msg</span> msg = <span class="keyword">new</span> <span class="class-name">Msg</span>();
+            msg.setFabId(fabId);
+            msg.setMcpName(mcpName);
+            msg.setMsg(message);
+
+            <span class="class-name">DataService</span>.getInstance().queue.add(msg);
+        }
+    }
+}</code></pre>
+                        <p><strong>주요 특징:</strong></p>
+                        <ul>
+                            <li>1500 byte MTU 버퍼로 UDP 패킷 수신</li>
+                            <li>수신 메시지를 Msg 객체로 래핑</li>
+                            <li>DataService 큐에 추가 (비동기 처리)</li>
+                            <li>Thread 인터럽션으로 안전한 종료</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="section8-2" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.2 Message Parsing</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>수신된 CSV 형식 메시지를 토큰으로 분석하고 Text ID별로 처리합니다.</p>
+                        <pre><code><span class="class-name">String</span>[] tokens = <span class="class-name">StringUtils</span>.splitPreserveAllTokens(msg.getMsg(), <span class="string">','</span>);
+
+<span class="keyword">switch</span> (tokens[0]) {
+    <span class="keyword">case</span> <span class="string">"1"</span>:
+        _processMcpOnline(tokens, msg);
+        <span class="keyword">break</span>;
+
+    <span class="keyword">case</span> <span class="string">"4"</span>:
+        <span class="comment">// ★ CNV 핵심: 기기 상태 보고</span>
+        _processDeviceStatus(tokens, msg);
+        <span class="keyword">break</span>;
+
+    <span class="keyword">case</span> <span class="string">"201"</span>:
+        _processCarrierLocation(tokens, msg);
+        <span class="keyword">break</span>;
+
+    <span class="keyword">case</span> <span class="string">"202"</span>:
+        _processCarrierReload(tokens, msg);
+        <span class="keyword">break</span>;
+
+    <span class="keyword">case</span> <span class="string">"203"</span>:
+        _processTraffic(tokens, msg);
+        <span class="keyword">break</span>;
+}</code></pre>
+                        <p><strong>파싱 규칙:</strong></p>
+                        <ul>
+                            <li>StringUtils.splitPreserveAllTokens() 사용 (빈 필드 보존)</li>
+                            <li>tokens[0]: Text ID (메시지 타입)</li>
+                            <li>tokens[1]: MCP 명칭</li>
+                            <li>tokens[2+]: 기종번호, 기기명, 상태 등</li>
+                            <li>Text ID별 핸들러로 라우팅</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="section8-3" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.3 CnvEdge Model (Conveyor-specific)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>컨베이어 간선의 이동 비용(평균 이동 시간)을 관리하는 모델입니다. 실시간 트래픽 데이터를 기반으로 동적으로 업데이트됩니다.</p>
+                        <pre><code><span class="keyword">public class</span> <span class="class-name">CnvEdge</span> <span class="keyword">extends</span> <span class="class-name">AbstractEdge</span> {
+    <span class="keyword">private long</span> avgTransferIntervalT = 150; <span class="comment">// 평균 이동 시간 (ms)</span>
+
+    <span class="keyword">public long</span> getCost(<span class="class-name">String</span> carrierId) {
+        <span class="keyword">return</span> avgTransferIntervalT;
+    }
+
+    <span class="keyword">public void</span> addCost(<span class="keyword">long</span> newCost) {
+        <span class="comment">// 범위 제한: 300ms ~ 30초</span>
+        newCost = <span class="class-name">Math</span>.max(300, <span class="class-name">Math</span>.min(newCost, 30000));
+
+        <span class="comment">// 가중 이동평균 적용</span>
+        <span class="keyword">double</span> w = <span class="class-name">PredictionPara</span>.getInstance().getLastHisWeight();
+        setAvgTransferIntervalT(
+            (<span class="keyword">long</span>)((avgTransferIntervalT * w) + ((1.0 - w) * newCost))
+        );
+    }
+
+    <span class="keyword">public void</span> setAvgTransferIntervalT(<span class="keyword">long</span> val) {
+        <span class="keyword">this</span>.avgTransferIntervalT = <span class="class-name">Math</span>.max(300, <span class="class-name">Math</span>.min(val, 30000));
+    }
+
+    <span class="keyword">public boolean</span> isAvailable() {
+        <span class="keyword">return</span> getFromNode().isAvailable() && getToNode().isAvailable();
+    }
+}</code></pre>
+                        <p><strong>주요 기능:</strong></p>
+                        <ul>
+                            <li>avgTransferIntervalT: 간선의 평균 이동 시간 (기본값 150ms)</li>
+                            <li>getCost(): 경로 계산용 비용 반환</li>
+                            <li>addCost(): 새로운 이동 시간 데이터로 평균 업데이트</li>
+                            <li>가중 이동평균(EMA) 적용으로 최신 데이터 반영</li>
+                            <li>범위 제한: 최소 300ms, 최대 30초</li>
+                            <li>isAvailable(): 양쪽 노드 상태 확인</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="section8-4" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.4 Logpresso Tuple API Storage</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>Logpresso 데이터베이스에 CNV 데이터를 저장하는 두 가지 방법입니다.</p>
+
+                        <h4>방법 1: 직접 삽입 (Direct Insert)</h4>
+                        <pre><code><span class="comment">// ATLAS_HID_INFO 테이블에 데이터 삽입</span>
+<span class="class-name">Tuple</span> tuple = <span class="keyword">new</span> <span class="class-name">Tuple</span>();
+tuple.put(<span class="string">"FAB_ID"</span>, fabId);
+tuple.put(<span class="string">"MCP_NM"</span>, mcpName);
+tuple.put(<span class="string">"HID_ID"</span>, hidId);
+tuple.put(<span class="string">"START"</span>, startAddr);
+tuple.put(<span class="string">"ADDRESS"</span>, <span class="string">"Port1"</span>);
+
+<span class="comment">// 20초 타임아웃으로 삽입</span>
+<span class="class-name">LogpressoAPI</span>.setInsertTuples(<span class="string">"ATLAS_HID_INFO"</span>, <span class="class-name">List</span>.of(tuple), 20);</code></pre>
+
+                        <h4>방법 2: 유틸리티 래퍼 (Utility Wrapper)</h4>
+                        <pre><code><span class="comment">// TrafficBatch 또는 다른 Job에서 사용</span>
+<span class="class-name">Util</span>.insertInLogpressoDatabase(
+    logpressoData,              <span class="comment">// List&lt;Tuple&gt;</span>
+    <span class="string">"ATLAS_RAIL_TRAFFIC"</span>,  <span class="comment">// 테이블명</span>
+    <span class="string">"TrafficBatch"</span>           <span class="comment">// 호출자 식별</span>
+);</code></pre>
+
+                        <div class="info-box" style="background-color: #ffebee; border-left-color: #f44336; margin-bottom: 20px;">
+                            <strong>중요: 데이터는 반드시 Logpresso DB에 저장해야 합니다. CSV 파일로 저장하지 마세요.</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="section8-5" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.5 TrafficBatch (1분 배치)</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>1분 주기로 실행되는 스케줄 Job입니다. 현재 Rail Edge 상태를 수집하여 Logpresso에 저장합니다.</p>
+                        <pre><code><span class="keyword">public class</span> <span class="class-name">TrafficBatch</span> <span class="keyword">implements</span> <span class="class-name">Job</span> {
+    @Override
+    <span class="keyword">public void</span> execute(<span class="class-name">JobExecutionContext</span> ctx) {
+        <span class="class-name">List</span>&lt;<span class="class-name">Tuple</span>&gt; logpressoData = <span class="keyword">new</span> <span class="class-name">ArrayList</span>&lt;&gt;();
+
+        <span class="comment">// 모든 Rail Edge 순회</span>
+        <span class="keyword">for</span> (<span class="class-name">RailEdge</span> edge : railEdges) {
+            <span class="class-name">Tuple</span> t = <span class="keyword">new</span> <span class="class-name">Tuple</span>();
+            t.put(<span class="string">"createTime"</span>, <span class="class-name">System</span>.currentTimeMillis());
+            t.put(<span class="string">"railEdgeId"</span>, edge.getId());
+            t.put(<span class="string">"velocity"</span>, edge.getVelocity());
+            t.put(<span class="string">"maxVelocity"</span>, edge.getMaxVelocity());
+            t.put(<span class="string">"vhlCnt"</span>, edge.getVehicleCount());
+            t.put(<span class="string">"HID_ID"</span>, edge.getHIDId());
+
+            logpressoData.add(t);
+        }
+
+        <span class="comment">// Logpresso 테이블에 배치 삽입</span>
+        <span class="class-name">Util</span>.insertInLogpressoDatabase(
+            logpressoData,
+            <span class="string">"ATLAS_RAIL_TRAFFIC"</span>,
+            <span class="string">"TrafficBatch"</span>
+        );
+    }
+}</code></pre>
+
+                        <p><strong>스케줄 설정:</strong></p>
+                        <pre><code><span class="comment">// Quartz Scheduler에서 1분 주기로 실행</span>
+CronScheduleBuilder.cronSchedule(<span class="string">"0 * * * * ?"</span>);  <span class="comment">// 매 분 정각</span></code></pre>
+
+                        <p><strong>주요 필드:</strong></p>
+                        <ul>
+                            <li>createTime: 데이터 수집 시점 (밀리초)</li>
+                            <li>railEdgeId: 간선 고유 ID</li>
+                            <li>velocity: 현재 속도</li>
+                            <li>maxVelocity: 최대 속도</li>
+                            <li>vhlCnt: 간선상 차량 수</li>
+                            <li>HID_ID: 하드웨어 식별자</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="section8-6" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.6 Logpresso Table Structure</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>Atlas 서버에서 사용하는 Logpresso 테이블 구조입니다.</p>
+
+                        <h4>테이블 1: ATLAS_HID_INFO (HID 정보 - 마스터)</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>필드명</th>
+                                    <th>타입</th>
+                                    <th>설명</th>
+                                    <th>예시</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>FAB_ID</td>
+                                    <td>String</td>
+                                    <td>Fab 고유 ID</td>
+                                    <td>FAB01</td>
+                                </tr>
+                                <tr>
+                                    <td>MCP_NM</td>
+                                    <td>String</td>
+                                    <td>MCP 명칭</td>
+                                    <td>STK_MCP01</td>
+                                </tr>
+                                <tr>
+                                    <td>HID_ID</td>
+                                    <td>String</td>
+                                    <td>하드웨어 ID</td>
+                                    <td>HID_001</td>
+                                </tr>
+                                <tr>
+                                    <td>START</td>
+                                    <td>String</td>
+                                    <td>시작 주소</td>
+                                    <td>Port1</td>
+                                </tr>
+                                <tr>
+                                    <td>ADDRESS</td>
+                                    <td>String</td>
+                                    <td>실제 주소</td>
+                                    <td>Zone_A_01</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>테이블 2: ATLAS_RAIL_TRAFFIC (철도 간선 트래픽 - 트랜잭션)</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>필드명</th>
+                                    <th>타입</th>
+                                    <th>설명</th>
+                                    <th>예시</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>createTime</td>
+                                    <td>long</td>
+                                    <td>생성 시간 (밀리초)</td>
+                                    <td>1708929600000</td>
+                                </tr>
+                                <tr>
+                                    <td>fabId</td>
+                                    <td>String</td>
+                                    <td>Fab ID</td>
+                                    <td>FAB01</td>
+                                </tr>
+                                <tr>
+                                    <td>railEdgeId</td>
+                                    <td>String</td>
+                                    <td>간선 고유 ID</td>
+                                    <td>EDGE_001</td>
+                                </tr>
+                                <tr>
+                                    <td>velocity</td>
+                                    <td>double</td>
+                                    <td>현재 속도 (m/s)</td>
+                                    <td>1.5</td>
+                                </tr>
+                                <tr>
+                                    <td>maxVelocity</td>
+                                    <td>double</td>
+                                    <td>최대 속도 (m/s)</td>
+                                    <td>2.0</td>
+                                </tr>
+                                <tr>
+                                    <td>vhlCnt</td>
+                                    <td>int</td>
+                                    <td>간선상 차량 수</td>
+                                    <td>3</td>
+                                </tr>
+                                <tr>
+                                    <td>HID_ID</td>
+                                    <td>int</td>
+                                    <td>하드웨어 ID</td>
+                                    <td>303</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <p><strong>테이블 설계 원칙:</strong></p>
+                        <ul>
+                            <li>ATLAS_HID_INFO: 마스터 데이터 (정적, 설정)</li>
+                            <li>ATLAS_RAIL_TRAFFIC: 트랜잭션 데이터 (동적, 1분마다 갱신)</li>
+                            <li>HID_ID는 두 테이블의 조인 키</li>
+                            <li>createTime 인덱싱으로 시계열 쿼리 성능 향상</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="section8-7" class="collapsible-group">
+                    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                        <span>8.7 Logpresso Query and API Summary</span>
+                        <span class="collapsible-toggle">▼</span>
+                    </div>
+                    <div class="collapsible-content">
+                        <p>Logpresso API 사용 및 쿼리 예시입니다.</p>
+
+                        <h4>Logpresso API 종합</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>API</th>
+                                    <th>용도</th>
+                                    <th>설명</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>LogpressoAPI.setInsertTuples(table, tuples, timeout)</code></td>
+                                    <td>데이터 삽입</td>
+                                    <td>Tuple 리스트를 테이블에 삽입. 타임아웃(초) 지정</td>
+                                </tr>
+                                <tr>
+                                    <td><code>Util.insertInLogpressoDatabase(tuples, table, caller)</code></td>
+                                    <td>삽입 래퍼</td>
+                                    <td>편의 함수로 caller 추적 가능</td>
+                                </tr>
+                                <tr>
+                                    <td><code>XmlUtil.selectLogpressoQuery(queryName)</code></td>
+                                    <td>쿼리 실행</td>
+                                    <td>XML 정의 쿼리 실행 후 결과 반환</td>
+                                </tr>
+                                <tr>
+                                    <td><code>XmlUtil.loadLogpressoParm(path)</code></td>
+                                    <td>파라미터 로드</td>
+                                    <td>설정 파일에서 Logpresso 파라미터 로드</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <h4>예시 쿼리</h4>
+                        <p><strong>간선별 최근 1시간 평균 트래픽 조회:</strong></p>
+                        <pre><code><span class="keyword">SELECT</span>
+    railEdgeId,
+    <span class="class-name">AVG</span>(velocity) <span class="keyword">AS</span> avg_velocity,
+    <span class="class-name">MAX</span>(vhlCnt) <span class="keyword">AS</span> max_vehicles,
+    <span class="class-name">COUNT</span>(*) <span class="keyword">AS</span> sample_count
+<span class="keyword">FROM</span> ATLAS_RAIL_TRAFFIC
+<span class="keyword">WHERE</span> createTime &gt;= now() - 3600000  <span class="comment">// 1시간</span>
+<span class="keyword">GROUP BY</span> railEdgeId
+<span class="keyword">ORDER BY</span> railEdgeId;</code></pre>
+
+                        <p><strong>정체 감지 쿼리:</strong></p>
+                        <pre><code><span class="keyword">SELECT</span>
+    railEdgeId,
+    velocity,
+    maxVelocity,
+    <span class="keyword">CASE</span>
+        <span class="keyword">WHEN</span> velocity / maxVelocity &lt; 0.5 <span class="keyword">THEN</span> <span class="string">'CONGESTION'</span>
+        <span class="keyword">WHEN</span> velocity / maxVelocity &lt; 0.8 <span class="keyword">THEN</span> <span class="string">'SLOW'</span>
+        <span class="keyword">ELSE</span> <span class="string">'NORMAL'</span>
+    <span class="keyword">END</span> <span class="keyword">AS</span> status
+<span class="keyword">FROM</span> ATLAS_RAIL_TRAFFIC
+<span class="keyword">WHERE</span> createTime = (
+    <span class="keyword">SELECT</span> <span class="class-name">MAX</span>(createTime) <span class="keyword">FROM</span> ATLAS_RAIL_TRAFFIC
+)
+<span class="keyword">ORDER BY</span> railEdgeId;</code></pre>
+
+                        <h4>Java 예시</h4>
+                        <pre><code><span class="comment">// 쿼리 실행</span>
+<span class="class-name">List</span>&lt;<span class="class-name">Map</span>&lt;<span class="class-name">String</span>, <span class="class-name">Object</span>&gt;&gt; result =
+    <span class="class-name">XmlUtil</span>.selectLogpressoQuery(<span class="string">"getLatestTraffic"</span>);
+
+<span class="comment">// 결과 처리</span>
+<span class="keyword">for</span> (<span class="class-name">Map</span>&lt;<span class="class-name">String</span>, <span class="class-name">Object</span>&gt; row : result) {
+    <span class="class-name">String</span> edgeId = (<span class="class-name">String</span>) row.get(<span class="string">"railEdgeId"</span>);
+    <span class="keyword">double</span> velocity = ((<span class="class-name">Number</span>) row.get(<span class="string">"velocity"</span>)).doubleValue();
+    <span class="class-name">System</span>.out.println(edgeId + <span class="string">": "</span> + velocity + <span class="string">" m/s"</span>);
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <footer>
+                <p>CNV (Conveyor) 개발 가이드 | SK Hynix Fab 환경 | Atlas 서버 UDP 수신 기반</p>
+                <p>문서 생성일: 2026-02-25</p>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        // Collapsible sections toggle
+        function toggleCollapsible(header) {
+            const content = header.nextElementSibling;
+            header.classList.toggle('active');
+            content.classList.toggle('active');
+        }
+
+        // Sidebar TOC highlighting
+        document.addEventListener('DOMContentLoaded', function() {
+            const tocLinks = document.querySelectorAll('.toc > li > a');
+            const sections = document.querySelectorAll('.section');
+
+            // Add click handlers to TOC links
+            tocLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    tocLinks.forEach(l => l.parentElement.classList.remove('active'));
+                    this.parentElement.classList.add('active');
+                });
+            });
+
+            // Highlight TOC based on scroll position
+            window.addEventListener('scroll', function() {
+                let current = '';
+                sections.forEach(section => {
+                    const sectionTop = section.offsetTop;
+                    if (pageYOffset >= sectionTop - 100) {
+                        current = section.getAttribute('id');
+                    }
+                });
+
+                tocLinks.forEach(link => {
+                    link.parentElement.classList.remove('active');
+                    if (link.getAttribute('href') === '#' + current) {
+                        link.parentElement.classList.add('active');
+                    }
+                });
+            });
+        });
+
+        // Smooth scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                const href = this.getAttribute('href');
+                if (href !== '#') {
+                    e.preventDefault();
+                    const target = document.querySelector(href);
+                    if (target) {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
