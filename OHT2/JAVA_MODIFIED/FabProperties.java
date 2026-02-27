@@ -31,19 +31,19 @@ public class FabProperties {
     String revMcsDaemon = "";
 
     public FabProperties() {}
-   
+
     public String getFabId() {
         return fabId;
     }
-   
+
     public void setFabId(String fabId) {
         this.fabId = fabId;
-    }    
-   
+    }
+
     public String getMapDir() {
         return mapDir;
     }
-   
+
     public void setMapDir(String mapDir) {
         this.mapDir = mapDir;
     }
@@ -51,24 +51,24 @@ public class FabProperties {
     public String getFacId() {
         return facId;
     }
-   
+
     public void setFacId(String facId) {
         this.facId = facId;
     }
 
-   
+
     public Map<String, Set<String>> getBridgeFromSet() {
         return bridgeFromSet;
     }
-   
+
     public Map<String, McpProperties> getMcpPropertiesMap() {
         return mcpPropertiesMap;
     }
-   
+
     public void setMcpPropertiesMap(Map<String, McpProperties> mcpPropertiesMap) {
         this.mcpPropertiesMap = mcpPropertiesMap;
     }
-   
+
     public Map<String, String> getMcpName2OhtNameMap() {
         return mcpName2OhtNameMap;
     }
@@ -103,7 +103,7 @@ public class FabProperties {
         this.revMcsGid = revMcsGid;
     }
     //~##1 gid
-   
+
     // ##2 service
     public String getSendStarService() {
         return sendStarService;
@@ -211,7 +211,7 @@ public class FabProperties {
     public String getMcpName() {
         return mcpName;
     }
-       
+
     public void setMcpName(String mcpName) {
         this.mcpName = mcpName;
     }
