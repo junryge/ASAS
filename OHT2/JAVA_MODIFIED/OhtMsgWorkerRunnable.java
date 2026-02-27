@@ -254,7 +254,7 @@ public class OhtMsgWorkerRunnable implements Runnable {
         FunctionItem functionItem = Env.getSwitchMap().get(requiredKey);
 
         // HID 구간 별 VHL 수 계산
-        if (functionItem.getUseFunction(FunctionType.VHL_CNT)) {
+        if (functionItem.getUseFunction(FunctionType.VHL_CNT) || functionItem.getUseFunction(FunctionType.HID_INOUT)) {
             this._calculatedVhlCnt(
                     hidId,
                     requiredKey,
@@ -383,14 +383,16 @@ public class OhtMsgWorkerRunnable implements Runnable {
 
         if (previousHidId != currentHidId) {
             // ===== 기존 코드: HID VHL 카운트 =====
-            if (currentHidId > 0) {
-                String v = String.format("%03d", currentHidId);
-                DataService.getDataSet().increaseHidVehicleCnt(key + ":" + v);
-            }
+            if (functionItem.getUseFunction(FunctionType.VHL_CNT)) {
+                if (currentHidId > 0) {
+                    String v = String.format("%03d", currentHidId);
+                    DataService.getDataSet().increaseHidVehicleCnt(key + ":" + v);
+                }
 
-            if (previousHidId > 0) {
-                String v = String.format("%03d", previousHidId);
-                DataService.getDataSet().decreaseHidVehicleCnt(key + ":" + v);
+                if (previousHidId > 0) {
+                    String v = String.format("%03d", previousHidId);
+                    DataService.getDataSet().decreaseHidVehicleCnt(key + ":" + v);
+                }
             }
             // ===== 기존 코드 끝 =====
 
