@@ -2,12 +2,17 @@
  * develop history
  * ...
  * 2025-11-27 변수에 대한 스위치 추가(absoluteVelocity, maxVelocity, passCnt, vhlCnt)
+ * 2026-02-27 HID_INOUT 스위치 추가
  */
 public class FunctionItem {
+
     private final Logger logger = LoggerFactory.getLogger(getClass());
+
     private final String fabId;
     private final String mcpName;
+
     private Boolean useHidOff = null;
+    private Boolean useHidInout = null;
     private Boolean useVhlOff = null;
     private Boolean useRailCut = null;
     private Boolean useMapFileRefresh = null;
@@ -54,6 +59,10 @@ public class FunctionItem {
 
     public boolean isUseHidOff() {
         return useHidOff != null && useHidOff;
+    }
+
+    public boolean isUseHidInout() {
+        return useHidInout != null && useHidInout;
     }
 
     public boolean isUseVhlOff() {
@@ -125,6 +134,9 @@ public class FunctionItem {
             case HID_OFF: {
                 this.useHidOff = isAvailable;
             } break;
+            case HID_INOUT: {
+                this.useHidInout = isAvailable;
+            } break;
             case VHL_OFF: {
                 this.useVhlOff = isAvailable;
             } break;
@@ -190,6 +202,13 @@ public class FunctionItem {
                     return useHidOff;
                 } else {
                     return isUseHidOff();
+                }
+            }
+            case HID_INOUT: {
+                if (nullable) {
+                    return useHidInout;
+                } else {
+                    return isUseHidInout();
                 }
             }
             case VHL_OFF: {
@@ -317,6 +336,7 @@ public class FunctionItem {
 
     public enum FunctionType {
         HID_OFF("HID_OFF"),
+        HID_INOUT("HID_INOUT"),
         VHL_OFF("VHL_OFF"),
         RAIL_CUT("RAIL_CUT"),
         MAP_FILE_REFRESH("MAP_FILE_REFRESH"),
@@ -326,9 +346,8 @@ public class FunctionItem {
         VHL_CNT_60("VHL_CNT_60"),
         STAGE_COMMAND_MONITORING("STAGE_COMMAND_MONITORING"),
         UDP_MESSAGE_MONITORING("UDP_MESSAGE_MONITORING"),
-        //        ITSM_SCHEDULE_MONITORING("ITSM_SCHEDULE_MONITORING"),
+//        ITSM_SCHEDULE_MONITORING("ITSM_SCHEDULE_MONITORING"),
         RAIL_VIBRATION("RAIL_VIBRATION"),
-
         RAIL_TRAFFIC("RAIL_TRAFFIC"),
         RAIL_TRAFFIC_SUB("RAIL_TRAFFIC_SUB"),
         RAIL_TRAFFIC_ABSOLUTE_VELOCITY("RAIL_TRAFFIC_ABSOLUTE_VELOCITY"),
