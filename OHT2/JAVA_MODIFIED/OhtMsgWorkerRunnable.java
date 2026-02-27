@@ -258,7 +258,8 @@ public class OhtMsgWorkerRunnable implements Runnable {
             this._calculatedVhlCnt(
                     hidId,
                     requiredKey,
-                    vehicle
+                    vehicle,
+                    functionItem
             );
         }
         //~HID 구간 별 VHL 수 계산
@@ -376,7 +377,7 @@ public class OhtMsgWorkerRunnable implements Runnable {
      * @param key DataSet 에서 특정 데이터를 호출하기 위한 key 값
      * @param vehicle vehicle 객체
      */
-    private void _calculatedVhlCnt(int currentHidId, String key, Vhl vehicle) {
+    private void _calculatedVhlCnt(int currentHidId, String key, Vhl vehicle, FunctionItem functionItem) {
         long timer = System.currentTimeMillis();
         int previousHidId = vehicle.getHidId();
 
@@ -394,18 +395,21 @@ public class OhtMsgWorkerRunnable implements Runnable {
             // ===== 기존 코드 끝 =====
 
             // ===== [신규 추가] 엣지 전환 카운트 집계 → 테이블 3 =====
-            // 데이터 소스: previousHidId = vehicle.getHidId() (Vhl.java:517)
-            //             currentHidId  = railEdge.getHIDId() (RaileEdge.java:324)
-            //             fabId, id, eqpId = vehicle (Vhl.java:5,6,9)
-            String vhlIdFull = vehicle.getId();
-            String vhlName = vhlIdFull.substring(vhlIdFull.lastIndexOf(':') + 1);
-            String eqpIdFull = vehicle.getEqpId();
-            String eqpName = eqpIdFull.substring(eqpIdFull.lastIndexOf(':') + 1);
-            String edgeKey = String.format("%03d:%03d:%s:%s:%s",
-                    previousHidId, currentHidId,
-                    vehicle.getFabId(), vhlName, eqpName);
-            synchronized (hidEdgeBufferLock) {
-                hidEdgeBuffer.merge(edgeKey, 1, Integer::sum);
+            // HID_INOUT 스위치가 켜져 있을 때만 수집
+            if (functionItem.getUseFunction(FunctionType.HID_INOUT)) {
+                // 데이터 소스: previousHidId = vehicle.getHidId() (Vhl.java:517)
+                //             currentHidId  = railEdge.getHIDId() (RaileEdge.java:324)
+                //             fabId, id, eqpId = vehicle (Vhl.java:5,6,9)
+                String vhlIdFull = vehicle.getId();
+                String vhlName = vhlIdFull.substring(vhlIdFull.lastIndexOf(':') + 1);
+                String eqpIdFull = vehicle.getEqpId();
+                String eqpName = eqpIdFull.substring(eqpIdFull.lastIndexOf(':') + 1);
+                String edgeKey = String.format("%03d:%03d:%s:%s:%s",
+                        previousHidId, currentHidId,
+                        vehicle.getFabId(), vhlName, eqpName);
+                synchronized (hidEdgeBufferLock) {
+                    hidEdgeBuffer.merge(edgeKey, 1, Integer::sum);
+                }
             }
             // ===== [신규 추가] 끝 =====
 
@@ -413,26 +417,30 @@ public class OhtMsgWorkerRunnable implements Runnable {
         }
 
         // ===== [신규 추가] 1분마다 버퍼 플러시 → 테이블 3 저장 =====
-        if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
-            synchronized (hidEdgeFlushLock) {
-                if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
-                    flushHidEdgeBuffer();
-                    lastHidEdgeFlushTime = timer;
+        if (functionItem.getUseFunction(FunctionType.HID_INOUT)) {
+            if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
+                synchronized (hidEdgeFlushLock) {
+                    if (timer - lastHidEdgeFlushTime >= HID_EDGE_FLUSH_INTERVAL) {
+                        flushHidEdgeBuffer();
+                        lastHidEdgeFlushTime = timer;
+                    }
                 }
             }
         }
         // ===== [신규 추가] 끝 =====
 
         // ===== [신규 추가] 하루 1회 마스터 테이블 업데이트 → 테이블 1, 2 =====
-        String today = new SimpleDateFormat("yyyy-MM-dd").format(new Date(timer));
-        if (!today.equals(hidMasterLastUpdateDate)) {
-            synchronized (hidMasterUpdateLock) {
-                if (!today.equals(hidMasterLastUpdateDate)) {
-                    try {
-                        _updateHidMasterTables();
-                        hidMasterLastUpdateDate = today;
-                    } catch (Exception e) {
-                        logger.error("HID Master Tables update failed", e);
+        if (functionItem.getUseFunction(FunctionType.HID_INOUT)) {
+            String today = new SimpleDateFormat("yyyy-MM-dd").format(new Date(timer));
+            if (!today.equals(hidMasterLastUpdateDate)) {
+                synchronized (hidMasterUpdateLock) {
+                    if (!today.equals(hidMasterLastUpdateDate)) {
+                        try {
+                            _updateHidMasterTables();
+                            hidMasterLastUpdateDate = today;
+                        } catch (Exception e) {
+                            logger.error("HID Master Tables update failed", e);
+                        }
                     }
                 }
             }
