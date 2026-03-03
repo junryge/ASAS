@@ -131,18 +131,24 @@ def analyze_spike_columns(df):
     return spike_columns, warning_count, danger_count
 
 # ============================================================================
-# 기존 상태 판정 (8.3.1 방식 - 예측값 기반)
+# 기존 상태 판정 (10.4평가 방식 - 투표 + 규칙 기반)
 # ============================================================================
-def get_status_info(value):
-    """예측값 기반 상태 판정 (8.3.1 동일)"""
-    if value < 900:
-        return 'LOW'
-    elif value < 1600:
-        return 'NORMAL'
-    elif value < 1700:
-        return 'CAUTION'
-    else:
+def get_status_v10_4(final_pred_danger, ensemble_pred, vote_sum, total_votes, prob_lgb_important, current_total):
+    """
+    V10.4 투표/규칙 기반 상태 판정
+    - CRITICAL: 최종판정 위험(1) = 투표+규칙으로 1700+ 돌파 예측
+    - CAUTION: 위험은 아니지만 앙상블 예측 1600+ 또는 투표 2+
+    - NORMAL: 일반 상태
+    - LOW: 낮은 상태
+    """
+    if final_pred_danger == 1:
         return 'CRITICAL'
+    elif ensemble_pred >= 1600 or (current_total >= 1500 and vote_sum >= 2):
+        return 'CAUTION'
+    elif ensemble_pred >= 900:
+        return 'NORMAL'
+    else:
+        return 'LOW'
 
 # ============================================================================
 # 상태 판정 (UI main.py 로직 - 10분 예측만)
@@ -402,9 +408,9 @@ def predict_latest():
             ensemble_pred = (pred_xgb_target + pred_xgb_important + pred_xgb_auxiliary) / 3
 
         # ============================================
-        # 기존 상태 판정 (8.3.1 방식 - 예측값 기반)
+        # 기존 상태 판정 (10.4평가 방식 - 투표 + 규칙 기반)
         # ============================================
-        base_status = get_status_info(ensemble_pred)
+        base_status = get_status_v10_4(final_pred_danger, ensemble_pred, vote_sum, total_votes, prob_lgb_important, current_total)
 
         # ============================================
         # 상태 판정 (UI 급증 로직 - 10분 예측만)
