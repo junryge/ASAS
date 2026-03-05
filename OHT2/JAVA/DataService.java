@@ -2855,6 +2855,19 @@ public class DataService {
 		return isInitialized;
 	}
 
+	/**
+	 * FabSet.properties 파일을 다시 읽어 스위치 상태를 런타임 중 갱신
+	 */
+	public void reloadSwitch() {
+		Properties properties = Env.loadFabSetDocument();
+		if (properties == null || properties.isEmpty()) {
+			logger.error("... failed to reload FabSet.properties for switch update");
+			return;
+		}
+		Util.reflectSwitch(properties);
+		logger.info("... function switch has been reloaded from FabSet.properties");
+	}
+
 	public ConcurrentMap<String, List<String>> getOhtAlarmCodeListMap() {
 		return ohtAlarmCodeListMap;
 	}
