@@ -1,0 +1,86 @@
+{
+  "id": "magi_api_all",
+  "name": "MAGI API 통합",
+  "description": "API 환경선택(DEV 480B/PROD 235B/COMMON 120B) → 파라미터설정 → 지식검색 → 설비프롬프트 → RAG조합 → API응답 → 출력 (올인원)",
+  "nodes": [
+    {
+      "id": "input_1",
+      "type": "input",
+      "label": "📥 질문 입력",
+      "config": {"value": ""},
+      "position": {"x": 60, "y": 280}
+    },
+
+    {
+      "id": "switch_env",
+      "type": "switch_env",
+      "label": "⚡ API 환경 선택",
+      "config": {"env": "common"},
+      "position": {"x": 320, "y": 60}
+    },
+    {
+      "id": "set_params",
+      "type": "set_params",
+      "label": "🎛️ API 파라미터",
+      "config": {"temperature": 0.3, "max_tokens": 8192, "repeat_penalty": 1.0},
+      "position": {"x": 320, "y": 200}
+    },
+
+    {
+      "id": "kb_search",
+      "type": "knowledge_search",
+      "label": "📚 지식베이스 검색",
+      "config": {"query": "{{input}}"},
+      "position": {"x": 320, "y": 370}
+    },
+    {
+      "id": "equip_info",
+      "type": "api_call",
+      "label": "🌐 설비 프롬프트 조회",
+      "config": {
+        "url": "http://localhost:10002/assistant/api/equip_prompts",
+        "method": "GET",
+        "headers": {},
+        "body": ""
+      },
+      "position": {"x": 320, "y": 520}
+    },
+
+    {
+      "id": "template_rag",
+      "type": "template",
+      "label": "📝 RAG 프롬프트 조합",
+      "config": {
+        "template": "아래 지식베이스 검색 결과를 참고해서 질문에 정확하고 상세하게 답변해주세요.\n\n[지식베이스 검색 결과]\n{{data}}\n\n[질문]\n{{input}}"
+      },
+      "position": {"x": 640, "y": 280}
+    },
+
+    {
+      "id": "api_llm",
+      "type": "llm_api",
+      "label": "☁️ API LLM 응답",
+      "config": {"prompt": "{{input}}", "env": "common"},
+      "position": {"x": 960, "y": 280}
+    },
+
+    {
+      "id": "output_1",
+      "type": "output",
+      "label": "📤 최종 답변",
+      "config": {"label": "API_답변"},
+      "position": {"x": 1280, "y": 280}
+    }
+  ],
+  "edges": [
+    {"id": "e1", "source": "input_1", "target": "switch_env", "sourceHandle": "output", "targetHandle": "input"},
+    {"id": "e2", "source": "input_1", "target": "set_params", "sourceHandle": "output", "targetHandle": "input"},
+    {"id": "e3", "source": "input_1", "target": "kb_search", "sourceHandle": "output", "targetHandle": "input"},
+    {"id": "e4", "source": "input_1", "target": "equip_info", "sourceHandle": "output", "targetHandle": "input"},
+    {"id": "e5", "source": "kb_search", "target": "template_rag", "sourceHandle": "output", "targetHandle": "input"},
+    {"id": "e6", "source": "template_rag", "target": "api_llm", "sourceHandle": "output", "targetHandle": "input"},
+    {"id": "e7", "source": "api_llm", "target": "output_1", "sourceHandle": "output", "targetHandle": "input"}
+  ],
+  "created": "2026-03-09T00:00:00",
+  "updated": "2026-03-09T00:00:00"
+}
