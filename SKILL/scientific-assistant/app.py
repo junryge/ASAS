@@ -158,6 +158,8 @@ SKILL_DESC_KO = {
     "hypogenic":"자동 가설 생성","dhdna-profiler":"텍스트 저자 분석",
     "offer-k-dense-web":"K-Dense Web 안내","denario":"AI 연구 자동화",
     "zarr-python":"청크 N-D 배열 저장",
+    "pyopenms":"질량분석 데이터 처리",
+    "scikit-survival":"생존 분석 ML",
 }
 
 # 분야별 스킬 매핑 (174개 전체 분류)
@@ -200,6 +202,7 @@ DOMAIN_SKILLS = {
             "bindingdb-database","zinc-database","hmdb-database",
             "clinpgx-database","brenda-database",
             "metabolomics-workbench-database","primekg","pytdc","rowan",
+            "pyopenms",
         ]
     },
     "materials-physics": {
@@ -222,7 +225,7 @@ DOMAIN_SKILLS = {
             "exploratory-data-analysis","torch-geometric",
             "stable-baselines3","pufferlib","transformers","simpy",
             "pymoo","pymc","aeon","timesfm-forecasting",
-            "geopandas","geomaster",
+            "geopandas","geomaster","scikit-survival",
         ]
     },
     "finance": {
@@ -293,19 +296,66 @@ DOMAIN_SKILLS = {
 # 스킬 파일 읽기
 # ============================================
 def scan_skills():
-    """scientific-skills 폴더를 스캔해서 사용 가능한 스킬 목록 반환"""
+    """scientific-skills 폴더를 스캔해서 사용 가능한 스킬 목록 반환 (scripts/references/assets 포함)"""
     result = {}
     if not os.path.isdir(SKILLS_DIR):
         return result
 
     for folder_name in os.listdir(SKILLS_DIR):
-        skill_md = os.path.join(SKILLS_DIR, folder_name, "SKILL.md")
-        if os.path.isfile(skill_md):
-            result[folder_name] = {
-                "name": folder_name,
-                "path": skill_md,
-                "has_content": True,
-            }
+        skill_dir = os.path.join(SKILLS_DIR, folder_name)
+        skill_md = os.path.join(skill_dir, "SKILL.md")
+        if not os.path.isfile(skill_md):
+            continue
+
+        # scripts 폴더 스캔
+        scripts = []
+        scripts_dir = os.path.join(skill_dir, "scripts")
+        if os.path.isdir(scripts_dir):
+            for root, dirs, files in os.walk(scripts_dir):
+                for fn in files:
+                    if fn.endswith(".py"):
+                        full = os.path.join(root, fn)
+                        rel = os.path.relpath(full, skill_dir)
+                        scripts.append({
+                            "name": fn,
+                            "path": rel,
+                            "size": os.path.getsize(full),
+                        })
+
+        # references 폴더 스캔
+        references = []
+        refs_dir = os.path.join(skill_dir, "references")
+        if os.path.isdir(refs_dir):
+            for fn in os.listdir(refs_dir):
+                full = os.path.join(refs_dir, fn)
+                if os.path.isfile(full):
+                    references.append({
+                        "name": fn,
+                        "path": os.path.join("references", fn),
+                        "size": os.path.getsize(full),
+                    })
+
+        # assets 폴더 스캔
+        assets = []
+        assets_dir = os.path.join(skill_dir, "assets")
+        if os.path.isdir(assets_dir):
+            for fn in os.listdir(assets_dir):
+                full = os.path.join(assets_dir, fn)
+                if os.path.isfile(full):
+                    assets.append({
+                        "name": fn,
+                        "path": os.path.join("assets", fn),
+                        "size": os.path.getsize(full),
+                    })
+
+        result[folder_name] = {
+            "name": folder_name,
+            "path": skill_md,
+            "has_content": True,
+            "scripts": scripts,
+            "references": references,
+            "assets": assets,
+        }
     return result
 
 
@@ -326,11 +376,15 @@ def get_skill_catalog():
     for domain_id, domain_info in DOMAIN_SKILLS.items():
         skills_list = []
         for skill_id in domain_info["skills"]:
+            info = available.get(skill_id, {})
             skills_list.append({
                 "id": skill_id,
                 "name": skill_id.replace("-", " ").title(),
                 "desc": SKILL_DESC_KO.get(skill_id, ""),
                 "available": skill_id in available,
+                "scripts": len(info.get("scripts", [])),
+                "references": len(info.get("references", [])),
+                "assets": len(info.get("assets", [])),
             })
         catalog[domain_id] = {
             "label": domain_info["label"],
@@ -347,11 +401,15 @@ def get_skill_catalog():
     extra = []
     for sid in available:
         if sid not in mapped_ids:
+            info = available[sid]
             extra.append({
                 "id": sid,
                 "name": sid.replace("-", " ").title(),
                 "desc": SKILL_DESC_KO.get(sid, ""),
                 "available": True,
+                "scripts": len(info.get("scripts", [])),
+                "references": len(info.get("references", [])),
+                "assets": len(info.get("assets", [])),
             })
 
     if extra:
@@ -458,9 +516,84 @@ def api_skills():
 
 @app.route("/api/skill/<skill_name>")
 def api_skill_content(skill_name):
-    """개별 스킬 내용 반환"""
+    """개별 스킬 상세 반환 (SKILL.md + scripts/references/assets 목록)"""
     content = load_skill_content(skill_name)
-    return jsonify({"name": skill_name, "content": content})
+    available = scan_skills()
+    info = available.get(skill_name, {})
+    return jsonify({
+        "name": skill_name,
+        "content": content,
+        "scripts": info.get("scripts", []),
+        "references": info.get("references", []),
+        "assets": info.get("assets", []),
+    })
+
+
+@app.route("/api/skill/<skill_name>/file")
+def api_skill_file(skill_name):
+    """스킬 내부 파일(scripts/references/assets) 내용 읽기"""
+    file_path = request.args.get("path", "")
+    if not file_path:
+        return jsonify({"error": "path 파라미터가 필요합니다."}), 400
+
+    # 보안: 상위 디렉토리 접근 차단
+    if ".." in file_path or file_path.startswith("/"):
+        return jsonify({"error": "잘못된 경로"}), 400
+
+    full_path = os.path.join(SKILLS_DIR, skill_name, file_path)
+    if not os.path.isfile(full_path):
+        return jsonify({"error": f"파일 없음: {file_path}"}), 404
+
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return jsonify({
+            "name": os.path.basename(file_path),
+            "path": file_path,
+            "content": content,
+            "size": os.path.getsize(full_path),
+        })
+    except UnicodeDecodeError:
+        return jsonify({"error": "바이너리 파일은 읽을 수 없습니다."}), 400
+
+
+@app.route("/api/skill/<skill_name>/run", methods=["POST"])
+def api_skill_run(skill_name):
+    """스킬 내부 파이썬 스크립트 실행"""
+    import subprocess
+
+    data = request.json or {}
+    script_path = data.get("script", "")
+    args = data.get("args", [])
+
+    if not script_path:
+        return jsonify({"error": "script 파라미터가 필요합니다."}), 400
+    if ".." in script_path or script_path.startswith("/"):
+        return jsonify({"error": "잘못된 경로"}), 400
+    if not script_path.endswith(".py"):
+        return jsonify({"error": "파이썬 파일만 실행 가능합니다."}), 400
+
+    full_path = os.path.join(SKILLS_DIR, skill_name, script_path)
+    if not os.path.isfile(full_path):
+        return jsonify({"error": f"스크립트 없음: {script_path}"}), 404
+
+    try:
+        result = subprocess.run(
+            [sys.executable, full_path] + args,
+            capture_output=True, text=True,
+            timeout=60,
+            cwd=os.path.join(SKILLS_DIR, skill_name),
+        )
+        return jsonify({
+            "stdout": result.stdout[-8000:] if len(result.stdout) > 8000 else result.stdout,
+            "stderr": result.stderr[-4000:] if len(result.stderr) > 4000 else result.stderr,
+            "returncode": result.returncode,
+            "script": script_path,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "스크립트 실행 시간 초과 (60초)"}), 504
+    except Exception as e:
+        return jsonify({"error": f"실행 오류: {str(e)}"}), 500
 
 
 @app.route("/api/upload_csv", methods=["POST"])
@@ -611,13 +744,29 @@ def api_chat():
     else:
         system_prompt = default_prompt
 
-    # 스킬 로드
+    # 스킬 로드 (SKILL.md + references 요약 + scripts 목록 포함)
     loaded = []
+    available = scan_skills()
     for sid in skill_ids:
         content = load_skill_content(sid)
         if content:
             system_prompt += f"=== SKILL: {sid} ===\n{content}\n\n"
             loaded.append(sid)
+
+            # scripts 목록 추가
+            info = available.get(sid, {})
+            scripts = info.get("scripts", [])
+            if scripts:
+                script_list = ", ".join([s["name"] for s in scripts])
+                system_prompt += f"[{sid} 실행 가능 스크립트: {script_list}]\n"
+
+            # references 요약 (파일명만)
+            refs = info.get("references", [])
+            if refs:
+                ref_list = ", ".join([r["name"] for r in refs])
+                system_prompt += f"[{sid} 참고 문서: {ref_list}]\n"
+
+            system_prompt += "\n"
 
     if loaded:
         system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
@@ -863,6 +1012,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .csv-preview table{border-collapse:collapse;width:100%}
 .csv-preview th,.csv-preview td{border:1px solid #e5e7eb;padding:3px 8px;text-align:left;white-space:nowrap}
 .csv-preview th{background:#f3f4f6;font-weight:600;position:sticky;top:0}
+/* Skill Detail Panel */
+.skill-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center}
+.skill-detail-panel{background:#fff;border-radius:16px;width:720px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.sdp-header{padding:18px 24px;border-bottom:1px solid #e5e3de;display:flex;justify-content:space-between;align-items:center}
+.sdp-header h2{font-size:18px;margin:0}.sdp-close{background:none;border:none;font-size:22px;cursor:pointer;color:#999;padding:4px 8px}
+.sdp-close:hover{color:#333}
+.sdp-tabs{display:flex;border-bottom:1px solid #e5e3de;padding:0 24px}
+.sdp-tab{padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;color:#888;transition:all .15s}
+.sdp-tab:hover{color:#333}.sdp-tab.active{color:#6366f1;border-bottom-color:#6366f1}
+.sdp-body{flex:1;overflow-y:auto;padding:18px 24px}
+.sdp-file-list{list-style:none;padding:0}
+.sdp-file-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid #e5e3de;border-radius:10px;margin-bottom:6px;transition:all .15s;cursor:pointer}
+.sdp-file-item:hover{border-color:#6366f1;background:#f8f7ff}
+.sdp-file-icon{font-size:18px}
+.sdp-file-name{font-weight:600;font-size:13px;flex:1}
+.sdp-file-size{font-size:11px;color:#999}
+.sdp-file-actions{display:flex;gap:4px}
+.sdp-btn{padding:4px 12px;border-radius:6px;border:1px solid #e5e3de;font-size:11px;cursor:pointer;background:#fff;transition:all .15s}
+.sdp-btn:hover{border-color:#6366f1;background:#eef2ff}
+.sdp-btn.run{background:#10b981;color:#fff;border-color:#10b981}.sdp-btn.run:hover{background:#059669}
+.sdp-btn.inject{background:#6366f1;color:#fff;border-color:#6366f1}.sdp-btn.inject:hover{background:#4f46e5}
+.sdp-code{background:#1e1e1e;color:#d4d4d4;padding:14px;border-radius:10px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.5;overflow:auto;max-height:400px;white-space:pre-wrap;word-break:break-all}
+.sdp-result{margin-top:12px;padding:12px;border-radius:10px;font-family:monospace;font-size:12px;line-height:1.4;overflow:auto;max-height:300px;white-space:pre-wrap}
+.sdp-result.ok{background:#ecfdf5;border:1px solid #a7f3d0}.sdp-result.err{background:#fef2f2;border:1px solid #fca5a5}
+.skill-card .extras{font-size:10px;color:#6366f1;margin-top:3px}
 /* Copy button */
 .copy-btn{position:absolute;top:4px;right:4px;background:#e5e3de;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;opacity:.7}
 .copy-btn:hover{opacity:1}
@@ -987,7 +1161,17 @@ pre{position:relative}
   </div>
 </div>
 
-<!-- 모달 제거 - 환경 선택 방식으로 변경됨 -->
+<!-- 스킬 상세 패널 -->
+<div id="skillDetailOverlay" class="skill-detail-overlay" style="display:none" onclick="if(event.target===this)closeSkillDetail()">
+  <div class="skill-detail-panel">
+    <div class="sdp-header">
+      <h2 id="sdpTitle">스킬 상세</h2>
+      <button class="sdp-close" onclick="closeSkillDetail()">✕</button>
+    </div>
+    <div class="sdp-tabs" id="sdpTabs"></div>
+    <div class="sdp-body" id="sdpBody">로딩중...</div>
+  </div>
+</div>
 
 <script>
 let envs = {};
@@ -1086,13 +1270,29 @@ function renderSkills(){
       c.className = 'skill-card' + (selSkills.includes(s.id)?' selected':'') + (!s.available?' unavailable':'');
       const desc = s.desc ? s.desc : '';
       const avail = s.available ? '✅' : '❌';
-      c.innerHTML = `<div class="sn">${avail} ${s.name}</div><div class="sd">${desc}</div>`;
+      // extras: 스크립트/레퍼런스 개수
+      let extras = [];
+      if(s.scripts > 0) extras.push(`🐍${s.scripts}`);
+      if(s.references > 0) extras.push(`📄${s.references}`);
+      if(s.assets > 0) extras.push(`📦${s.assets}`);
+      const extrasHtml = extras.length ? `<div class="extras">${extras.join(' ')}</div>` : '';
+      c.innerHTML = `<div class="sn">${avail} ${s.name}</div><div class="sd">${desc}</div>${extrasHtml}`;
       if(s.available){
-        c.onclick = ()=>{
+        c.onclick = (e)=>{
+          // Shift+클릭 = 상세 패널
+          if(e.shiftKey || (extras.length > 0 && e.detail === 2)){
+            openSkillDetail(s.id);
+            return;
+          }
           if(selSkills.includes(s.id)) selSkills=selSkills.filter(x=>x!==s.id);
           else selSkills.push(s.id);
           renderSkills();
           updateLoaded();
+        };
+        // 우클릭 = 상세 패널
+        c.oncontextmenu = (e)=>{
+          e.preventDefault();
+          openSkillDetail(s.id);
         };
       }
       grid.appendChild(c);
@@ -1231,6 +1431,155 @@ function resetSysPrompt(){
   updateSpBadge();
 }
 document.getElementById('systemPromptInput').addEventListener('input', updateSpBadge);
+
+// ===== Skill Detail Panel =====
+let currentSkillDetail = null;
+
+async function openSkillDetail(skillId){
+  const overlay = document.getElementById('skillDetailOverlay');
+  overlay.style.display = 'flex';
+  document.getElementById('sdpTitle').textContent = skillId;
+  document.getElementById('sdpBody').innerHTML = '⏳ 로딩중...';
+
+  try{
+    const resp = await fetch(`/api/skill/${skillId}`);
+    currentSkillDetail = await resp.json();
+    renderSdpTabs('scripts');
+  }catch(e){
+    document.getElementById('sdpBody').innerHTML = `❌ 로딩 실패: ${e.message}`;
+  }
+}
+
+function closeSkillDetail(){
+  document.getElementById('skillDetailOverlay').style.display = 'none';
+  currentSkillDetail = null;
+}
+
+function renderSdpTabs(active){
+  if(!currentSkillDetail) return;
+  const d = currentSkillDetail;
+  const tabsEl = document.getElementById('sdpTabs');
+  const tabs = [
+    {id:'scripts', label:`🐍 스크립트 (${d.scripts.length})`, show: true},
+    {id:'references', label:`📄 레퍼런스 (${d.references.length})`, show: true},
+    {id:'assets', label:`📦 에셋 (${d.assets.length})`, show: d.assets.length > 0},
+    {id:'skillmd', label:'📋 SKILL.md', show: true},
+  ];
+  tabsEl.innerHTML = '';
+  tabs.forEach(t=>{
+    if(!t.show) return;
+    const el = document.createElement('div');
+    el.className = 'sdp-tab' + (active===t.id?' active':'');
+    el.textContent = t.label;
+    el.onclick = ()=> renderSdpTabs(t.id);
+    tabsEl.appendChild(el);
+  });
+  renderSdpContent(active);
+}
+
+function renderSdpContent(tab){
+  const body = document.getElementById('sdpBody');
+  const d = currentSkillDetail;
+
+  if(tab === 'skillmd'){
+    body.innerHTML = `<div class="sdp-code">${esc(d.content || '(내용 없음)')}</div>
+      <button class="sdp-btn inject" style="margin-top:10px" onclick="injectToChat('skillmd','')">💬 채팅에 SKILL.md 주입</button>`;
+    return;
+  }
+
+  const files = d[tab] || [];
+  if(files.length === 0){
+    body.innerHTML = '<div style="text-align:center;color:#999;padding:40px">파일 없음</div>';
+    return;
+  }
+
+  const isPy = tab === 'scripts';
+  let html = '<ul class="sdp-file-list">';
+  files.forEach(f=>{
+    const icon = f.name.endsWith('.py') ? '🐍' : f.name.endsWith('.md') ? '📄' : '📎';
+    const sizeKb = (f.size / 1024).toFixed(1);
+    html += `<li class="sdp-file-item" onclick="viewSkillFile('${d.name}','${f.path}')">
+      <span class="sdp-file-icon">${icon}</span>
+      <span class="sdp-file-name">${esc(f.name)}</span>
+      <span class="sdp-file-size">${sizeKb} KB</span>
+      <div class="sdp-file-actions">
+        <button class="sdp-btn" onclick="event.stopPropagation();viewSkillFile('${d.name}','${f.path}')">👁️ 보기</button>
+        <button class="sdp-btn inject" onclick="event.stopPropagation();injectToChat('${tab}','${f.path}')">💬 주입</button>
+        ${isPy && f.name.endsWith('.py') ? `<button class="sdp-btn run" onclick="event.stopPropagation();runSkillScript('${d.name}','${f.path}')">▶ 실행</button>` : ''}
+      </div>
+    </li>`;
+  });
+  html += '</ul><div id="sdpFileContent"></div>';
+  body.innerHTML = html;
+}
+
+async function viewSkillFile(skillId, filePath){
+  const container = document.getElementById('sdpFileContent');
+  if(!container) return;
+  container.innerHTML = '⏳ 로딩중...';
+  try{
+    const resp = await fetch(`/api/skill/${skillId}/file?path=${encodeURIComponent(filePath)}`);
+    const data = await resp.json();
+    if(data.error){
+      container.innerHTML = `<div class="sdp-result err">${esc(data.error)}</div>`;
+    } else {
+      container.innerHTML = `<div style="font-size:12px;font-weight:700;margin:10px 0 6px">${esc(data.name)} (${(data.size/1024).toFixed(1)} KB)</div>
+        <div class="sdp-code">${esc(data.content)}</div>`;
+    }
+  }catch(e){
+    container.innerHTML = `<div class="sdp-result err">오류: ${e.message}</div>`;
+  }
+}
+
+async function runSkillScript(skillId, scriptPath){
+  const container = document.getElementById('sdpFileContent');
+  if(!container) return;
+  container.innerHTML = '⏳ 스크립트 실행 중... (최대 60초)';
+  try{
+    const resp = await fetch(`/api/skill/${skillId}/run`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({script: scriptPath})
+    });
+    const data = await resp.json();
+    if(data.error){
+      container.innerHTML = `<div class="sdp-result err">❌ ${esc(data.error)}</div>`;
+    } else {
+      const cls = data.returncode === 0 ? 'ok' : 'err';
+      let output = '';
+      if(data.stdout) output += `=== stdout ===\n${data.stdout}\n`;
+      if(data.stderr) output += `=== stderr ===\n${data.stderr}\n`;
+      output += `\n[종료 코드: ${data.returncode}]`;
+      container.innerHTML = `<div style="font-size:12px;font-weight:700;margin:10px 0 6px">▶ ${esc(scriptPath)} 실행 결과</div>
+        <div class="sdp-result ${cls}">${esc(output)}</div>`;
+    }
+  }catch(e){
+    container.innerHTML = `<div class="sdp-result err">실행 오류: ${e.message}</div>`;
+  }
+}
+
+async function injectToChat(type, filePath){
+  // 파일 내용을 채팅 입력에 주입
+  const input = document.getElementById('input');
+  const skillId = currentSkillDetail ? currentSkillDetail.name : '';
+
+  if(type === 'skillmd'){
+    input.value += `[${skillId} SKILL.md 참조 중]\n`;
+    closeSkillDetail();
+    return;
+  }
+
+  try{
+    const resp = await fetch(`/api/skill/${skillId}/file?path=${encodeURIComponent(filePath)}`);
+    const data = await resp.json();
+    if(data.content){
+      const preview = data.content.length > 500 ? data.content.substring(0,500) + '...' : data.content;
+      input.value += `\n--- ${data.name} ---\n${preview}\n---\n`;
+    }
+  }catch(e){}
+  closeSkillDetail();
+  input.focus();
+}
 
 // ===== CSV Upload =====
 let csvLoaded = false;
