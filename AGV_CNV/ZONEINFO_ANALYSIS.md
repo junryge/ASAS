@@ -11,16 +11,55 @@
 
 ---
 
-## 2. 맵 영역 (Map Area)
+## 2. 맵 영역 / 데이터 영역 구조
 
-### 2.1 전체 맵 좌표 범위
+맵 영역과 데이터 영역은 **분리되어 있지 않다.** 하나의 Zone 객체 안에 맵 정보와 데이터 정보가 함께 포함된 구조이다.
+
+```json
+{
+  // --- 맵 영역 (화면 표시용) ---
+  "Level": 1,
+  "posX": 2296,
+  "posY": 656,
+  "ZoneDrawCount": 1,
+  "RefDirection": 1,
+  "DisplayName": "Zone_10101",
+
+  // --- 데이터 영역 (제어/설정용) ---
+  "ZoneID": 10101,
+  "NextZone": 10102,
+  "PrevZone": 10526,
+  "EtherCATID": 0,
+  "EtherCATName": "a01",
+  "MotorReverse": 0,
+  "GearRatio": 400,
+  "PLCSlaveID": -1,
+  "PhysicalType": 0,
+  "Profile": { "MaintVel": 100, "RunFastVel": 800, ... }
+}
+```
+
+### 필드 분류
+
+| 구분 | 필드 | 용도 |
+|------|------|------|
+| **맵 영역** | `Level`, `posX`, `posY`, `ZoneDrawCount`, `RefDirection`, `DisplayName` | 화면에 어디에 어떻게 그릴지 |
+| **데이터 영역** | `ZoneID`, `NextZone`, `PrevZone`, `EtherCATID/Name`, `MotorReverse`, `GearRatio`, `PLCSlaveID`, `PhysicalType`, `Profile` | 실제 제어 파라미터 |
+
+> Zone 단위로 맵+데이터가 **1:1로 묶여 있는 flat 구조**이며, 별도 섹션이나 별도 파일로 분리되어 있지 않다.
+
+---
+
+## 3. 맵 영역 상세 (Map Area)
+
+### 3.1 전체 맵 좌표 범위
 
 | 축 | 최솟값 | 최댓값 | 범위 |
 |----|--------|--------|------|
 | posX | -47,888 | 2,460 | 50,348 |
 | posY | -12,136 | 2,050 | 14,186 |
 
-### 2.2 Level별 맵 영역
+### 3.2 Level별 맵 영역
 
 #### Level 1 (상위 레벨) - 203 zones
 | 축 | 최솟값 | 최댓값 | 범위 |
@@ -40,9 +79,9 @@
 
 ---
 
-## 3. 데이터 영역 (Data Fields)
+## 4. 데이터 영역 상세 (Data Fields)
 
-### 3.1 Zone 데이터 구조
+### 4.1 Zone 데이터 구조
 
 각 Zone 객체는 다음 16개 필드로 구성됨:
 
@@ -65,7 +104,7 @@
 | `RefDirection` | int | 기준 방향 (0~3) |
 | `DisplayName` | str | 표시 이름 |
 
-### 3.2 PhysicalType 분류
+### 4.2 PhysicalType 분류
 
 | PhysicalType | Zone 수 | GearRatio | 추정 용도 |
 |-------------|---------|-----------|-----------|
@@ -77,7 +116,7 @@
 | 5 | 4 | 1,625 | CVLH (수평 리프터) |
 | 11 | 6 | 400 | 특수 구간 |
 
-### 3.3 RefDirection (기준 방향)
+### 4.3 RefDirection (기준 방향)
 
 | RefDirection | Zone 수 | 비율 |
 |-------------|---------|------|
@@ -86,14 +125,14 @@
 | 2 | 684 | 32.8% |
 | 3 | 731 | 35.1% |
 
-### 3.4 MotorReverse
+### 4.4 MotorReverse
 
 | 값 | Zone 수 |
 |----|---------|
 | 0 (정방향) | 132 |
 | 1 (역방향) | 1,952 |
 
-### 3.5 EtherCAT 슬레이브
+### 4.5 EtherCAT 슬레이브
 
 - 총 39개 EtherCAT 슬레이브 (a01 ~ a39)
 - EtherCATID 범위: 0 ~ 38
@@ -101,7 +140,7 @@
 
 ---
 
-## 4. Zone 체인 분석 (NextZone / PrevZone)
+## 5. Zone 체인 분석 (NextZone / PrevZone)
 
 | 구분 | Zone 수 |
 |------|---------|
@@ -115,14 +154,14 @@
 
 ---
 
-## 5. 명명된 장비 (Named Zones)
+## 6. 명명된 장비 (Named Zones)
 
-### 5.1 4AFC3301A 설비
+### 6.1 4AFC3301A 설비
 - 109개 Zone이 `4AFC3301A_INxx`/`4AFC3301A_OUTxx` 패턴
 - PhysicalType: 0, 2, 3
 - 입출고 포트 관련 설비
 
-### 5.2 CVLH (수평 리프터)
+### 6.2 CVLH (수평 리프터)
 | 이름 | ZoneID | PhysicalType |
 |------|--------|-------------|
 | CVLH01 | 10411 | 5 |
@@ -134,7 +173,7 @@
 
 ---
 
-## 6. 모션 프로파일 (Profile)
+## 7. 모션 프로파일 (Profile)
 
 전체 2,084개 Zone이 동일한 프로파일 사용:
 
