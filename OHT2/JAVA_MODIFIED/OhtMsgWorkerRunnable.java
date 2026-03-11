@@ -252,6 +252,12 @@ public class OhtMsgWorkerRunnable implements Runnable {
         List<Map<String, String>> messageDataList = new ArrayList<>();
         FunctionItem functionItem = Env.getSwitchMap().get(requiredKey);
 
+        // HID IN/OUT 엣지 집계 (VHL_CNT 보다 먼저 실행 — vehicle.setHidId() 이전에 previousHidId 를 읽어야 함)
+        if (functionItem.getUseFunction(FunctionType.HID_INOUT)) {
+            this._processHidInout(hidId, vehicle, functionItem);
+        }
+        //~HID IN/OUT 엣지 집계
+
         // HID 구간 별 VHL 수 계산
         if (functionItem.getUseFunction(FunctionType.VHL_CNT)) {
             this._calculatedVhlCnt(
@@ -262,12 +268,6 @@ public class OhtMsgWorkerRunnable implements Runnable {
             );
         }
         //~HID 구간 별 VHL 수 계산
-
-        // HID IN/OUT 엣지 집계
-        if (functionItem.getUseFunction(FunctionType.HID_INOUT)) {
-            this._processHidInout(hidId, vehicle, functionItem);
-        }
-        //~HID IN/OUT 엣지 집계
 
         // Stage Command Monitoring
         if (functionItem.getUseFunction(FunctionType.MAP_FILE_REFRESH)) {
@@ -430,6 +430,9 @@ public class OhtMsgWorkerRunnable implements Runnable {
                     previousHidId, currentHidId,
                     vehicle.getFabId(), vhlName, eqpName);
             hidEdgeBuffer.merge(edgeKey, 1, Integer::sum);
+
+            // VHL_CNT 가 비활성인 Fab 에서도 hidId 가 갱신되도록 보장
+            vehicle.setHidId(currentHidId);
         }
 
         // 1분마다 버퍼 플러시 → 테이블 3 저장 (비동기)
