@@ -85,21 +85,39 @@ plt.show()
 # ==============================================================
 # 8. 상관관계 히트맵 및 주요 변수 추출
 # ==============================================================
-corr = df.corr()
 
-# TOTALCNT와 상관이 높은 상위 10개 변수
-top10 = corr["TOTALCNT"].abs().sort_values(ascending=False).head(11)  # 자기 자신 포함
-print("\nTOTALCNT와 가장 높은 상관을 보이는 10개 변수")
-print(top10[1:])  # 자기 자신 제외
+# 상관관계 분석을 위한 주요 변수 선택
+corr_variables = [
+    'TOTALCNT',
+    'M14.QUE.ALL.CURRENTQCNT',
+    'M14.QUE.OHT.OHTUTIL',
+    'M14.QUE.LOAD.AVGLOADTIME',
+    'M14.QUE.ALL.TRANSPORT4MINOVERCNT',
+    'M14.QUE.ALL.TRANSPORT4MINOVERRATIO',
+    'M14B.QUE.ALL.CURRENTQCNT',
+    'M14B.QUE.OHT.OHTUTIL',
+    'M14.QUE.SENDFAB.VERTICALQUEUECOUNT',
+    'M14.QUE.CNV.TOTALCNVCURRENTQCNT',
+]
 
-# 히트맵 (TOTALCNT와 연관된 변수만 시각화)
-plt.figure(figsize=(10, 8))
-sns.heatmap(corr.loc[top10.index, top10.index],
-            annot=True, fmt=".2f", cmap="RdBu_r", center=0)
-plt.title("TOTALCNT와 연관된 변수 상관관계")
+corr_matrix = df[corr_variables].corr()
+
+# 상관관계 히트맵 (하삼각 마스크 적용)
+plt.figure(figsize=(14, 12))
+mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+sns.heatmap(corr_matrix, mask=mask, annot=True, cmap='RdBu_r', center=0,
+            fmt='.3f', square=True, linewidths=0.5,
+            xticklabels=[v.split('.')[-1] if '.' in v else v for v in corr_variables],
+            yticklabels=[v.split('.')[-1] if '.' in v else v for v in corr_variables])
+plt.title("주요 변수 간 상관관계 행렬 (하삼각)")
 plt.tight_layout()
 plt.savefig("M14_상관관계.png", dpi=150)
 plt.show()
+
+# TOTALCNT와 상관이 높은 변수 출력
+top_corr = corr_matrix["TOTALCNT"].abs().sort_values(ascending=False)
+print("\nTOTALCNT와 가장 높은 상관을 보이는 변수")
+print(top_corr[1:])  # 자기 자신 제외
 
 # ==============================================================
 # 9. 병목 탐색 - OHT Util vs. Transport Overrun

@@ -1,5 +1,5 @@
 """
-Demos 데모스 프로젝트 베타 V0.2 - Flask 웹앱
+Domos(민중) 프로젝트 베타 V0.2 - Flask 웹앱
 =======================================
 사용법:
   1. scientific-skills 폴더를 이 파일과 같은 위치에 복사
@@ -53,19 +53,19 @@ TOKEN_FILE = os.path.join(BASE_DIR, "TOKEN.TXT")
 # 회사 LLM API 환경 설정
 ENV_CONFIG = {
     "dev": {
-        "url": "http://dev.assistant.llm.skhynix.com/v1/chat/completions",
-        "model": "Qwen3-Coder-30B-A3B-Instruct",
-        "name": "DEV (30B)"
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "model": "GLM-4.7",
+        "name": "4.7"
     },
     "prod": {
-        "url": "http://summary.llm.skhynix.com/v1/chat/completions",
-        "model": "Qwen3-Next-80B-A3B-Instruct",
-        "name": "PROD (80B)"
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "model": "Qwen3.5-397B-A17B",
+        "name": "PROD (397B)"
     },
     "common": {
-        "url": "http://common.llm.skhynix.com/v1/chat/completions",
-        "model": "gpt-oss-20b",
-        "name": "COMMON (20B)"
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "model": "gpt-oss-120b",
+        "name": "COMMON (120B)"
     },
     # gguf-local은 앱 시작 시 자동 감지되면 추가됨
 }
@@ -737,7 +737,7 @@ def api_chat():
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # 시스템 프롬프트 구성
-    default_prompt = "당신은 Demos(데모스) - 과학 연구를 돕는 전문 AI 어시스턴트입니다.\n반드시 한국어(한글)로 답변하세요. 코드 주석도 한글로 작성하세요.\n\n"
+    default_prompt = "당신은 Domos(민중) - 과학 연구를 돕는 전문 AI 어시스턴트입니다.\n반드시 한국어(한글)로 답변하세요. 코드 주석도 한글로 작성하세요.\n\n"
 
     if custom_system_prompt:
         system_prompt = custom_system_prompt + "\n\n" + default_prompt
@@ -885,7 +885,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Demos - 데모스 베타 V0.2</title>
+<title>Domos(민중) 베타 V0.2</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f7f4;color:#1a1a1a;display:flex;height:100vh}
@@ -903,15 +903,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .content{flex:1;overflow-y:auto;padding:24px 32px}
 .content-inner{max-width:800px;margin:0 auto}
 .section-label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:10px}
-/* Chat */
-.chat-box{background:#fff;border:2px solid #e5e3de;border-radius:16px;padding:16px;margin-bottom:24px;transition:border-color .2s}
-.chat-box:focus-within{border-color:#6366f1}
-.chat-input{width:100%;border:none;outline:none;font-size:15px;resize:none;min-height:48px;max-height:200px;font-family:inherit;line-height:1.5}
+/* Chat - Fixed Bottom */
+.chat-box-fixed{position:fixed;bottom:0;left:250px;right:0;background:#fff;border-top:2px solid #e5e3de;padding:12px 32px;z-index:100;box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+.chat-box-fixed:focus-within{border-top-color:#6366f1}
+.chat-box-fixed-inner{max-width:800px;margin:0 auto}
+.chat-input{width:100%;border:none;outline:none;font-size:15px;resize:none;min-height:40px;max-height:200px;font-family:inherit;line-height:1.5}
 .chat-input::placeholder{color:#aaa}
-.chat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.chat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
 .send-btn{width:40px;height:40px;border-radius:50%;border:none;background:#6366f1;color:#fff;cursor:pointer;font-size:18px;transition:background .15s}
 .send-btn:hover{background:#4f46e5}
 .send-btn:disabled{background:#ccc;cursor:not-allowed}
+.content{padding-bottom:100px!important}
 /* Tags */
 .tag-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
 .tag{padding:8px 18px;border-radius:20px;border:2px solid #e5e3de;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;background:#fff;user-select:none}
@@ -944,11 +946,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .quick-btn:hover{border-color:#6366f1;background:#eef2ff}
 /* Messages */
 .messages{margin-top:8px}
-.msg{margin-bottom:16px;padding:14px 18px;border-radius:14px;line-height:1.6;font-size:14px;white-space:pre-wrap;word-wrap:break-word}
-.msg.user{background:#6366f1;color:#fff;margin-left:60px;border-bottom-right-radius:4px}
+.msg{margin-bottom:16px;padding:14px 18px;border-radius:14px;line-height:1.6;font-size:14px;word-wrap:break-word}
+.msg.user{background:#6366f1;color:#fff;margin-left:60px;border-bottom-right-radius:4px;white-space:pre-wrap}
 .msg.assistant{background:#fff;border:1px solid #e5e3de;margin-right:60px;border-bottom-left-radius:4px}
-.msg pre{background:#f5f5f0;padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;font-size:13px}
+.msg pre{background:#f5f5f0;padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;font-size:13px;white-space:pre-wrap}
 .msg code{font-family:'SF Mono','Fira Code',monospace;font-size:13px}
+.msg p{margin:0 0 8px 0}.msg p:last-child{margin-bottom:0}
+.msg h1,.msg h2,.msg h3,.msg h4{margin:16px 0 8px 0;font-weight:700}
+.msg h1{font-size:1.4em;border-bottom:1px solid #e5e3de;padding-bottom:4px}
+.msg h2{font-size:1.2em;border-bottom:1px solid #eee;padding-bottom:3px}
+.msg h3{font-size:1.05em}.msg h4{font-size:1em}
+.msg ul,.msg ol{margin:6px 0 6px 20px;padding:0}.msg li{margin:2px 0}
+.msg table{border-collapse:collapse;margin:8px 0;width:100%;font-size:13px}
+.msg th,.msg td{border:1px solid #ddd;padding:6px 10px;text-align:left}
+.msg th{background:#f5f5f0;font-weight:600}
+.msg tr:nth-child(even){background:#fafaf8}
+.msg hr{border:none;border-top:1px solid #e5e3de;margin:12px 0}
+.msg blockquote{border-left:3px solid #6366f1;margin:8px 0;padding:4px 12px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:11px;font-weight:600;color:#999;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
 .msg .skill-info{font-size:11px;color:#6366f1;margin-top:6px}
@@ -1041,7 +1055,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .copy-btn{position:absolute;top:4px;right:4px;background:#e5e3de;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;opacity:.7}
 .copy-btn:hover{opacity:1}
 pre{position:relative}
-@media(max-width:768px){.sidebar{display:none}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}}
+@media(max-width:768px){.sidebar{display:none}.chat-box-fixed{left:0}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}}
 </style>
 </head>
 <body>
@@ -1058,13 +1072,13 @@ pre{position:relative}
     <strong>SKILL.md 파일이 있는 스킬</strong>만 ✅ 표시됩니다.
   </div>
   <div class="sidebar-footer">
-    <div class="credits">🔬 Demos 데모스 베타 V0.2</div>
+    <div class="credits">🔬 Domos(민중) 베타 V0.2</div>
   </div>
 </div>
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Demos 데모스 프로젝트</div>
+    <div class="project-title">📁 Domos(민중) 프로젝트</div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
       <span id="status" class="status off">⚪ 환경 미선택</span>
@@ -1092,14 +1106,6 @@ pre{position:relative}
           <input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCsvSelect(event)">
         </div>
         <div id="csvInfoPanel" style="display:none"></div>
-      </div>
-
-      <div class="chat-box">
-        <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
-        <div class="chat-footer">
-          <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
-          <button class="send-btn" onclick="send()" id="sendBtn">▶</button>
-        </div>
       </div>
 
       <div class="section-label">분야 선택</div>
@@ -1157,6 +1163,17 @@ pre{position:relative}
       </div>
 
       <div class="messages" id="msgs"></div>
+    </div>
+  </div>
+
+  <!-- 질문 입력 - 하단 고정 -->
+  <div class="chat-box-fixed">
+    <div class="chat-box-fixed-inner">
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <div class="chat-footer">
+        <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+        <button class="send-btn" onclick="send()" id="sendBtn">▶</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1369,17 +1386,74 @@ async function send(){
     addMsg('assistant','❌ 서버 연결 실패: '+e.message);
   }
   document.getElementById('sendBtn').disabled=false;
+  const inp=document.getElementById('input');
+  inp.focus();
+  inp.style.height='auto';
 }
 
+function renderMd(text){
+  // 1) escape HTML
+  let s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // 2) code blocks (```lang\n...``` 또는 ```lang코드...``` 모두 지원)
+  s=s.replace(/```(\w*)\s*([\s\S]*?)```/g,(_,lang,code)=>{
+    const cls=lang?` class="language-${lang}"`:'';
+    return `<pre><code${cls}>${code.trim()}</code></pre>`;
+  });
+  // 3) tables
+  s=s.replace(/((?:^\|.+\|[ ]*\n){2,})/gm, function(tbl){
+    const rows=tbl.trim().split('\n').filter(r=>r.trim());
+    if(rows.length<2) return tbl;
+    const parseRow=r=>r.replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+    const hdr=parseRow(rows[0]);
+    // skip separator row
+    let startIdx=1;
+    if(/^[\s|:-]+$/.test(rows[1])) startIdx=2;
+    let h='<table><thead><tr>'+hdr.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+    for(let i=startIdx;i<rows.length;i++){
+      const cells=parseRow(rows[i]);
+      h+='<tr>'+cells.map(c=>'<td>'+c+'</td>').join('')+'</tr>';
+    }
+    return h+'</tbody></table>';
+  });
+  // 4) headings
+  s=s.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+  s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  // 5) hr
+  s=s.replace(/^---+$/gm,'<hr>');
+  // 6) blockquote
+  s=s.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+  // 7) unordered list
+  s=s.replace(/(^[\-\*] .+\n?)+/gm, function(block){
+    const items=block.trim().split('\n').map(l=>l.replace(/^[\-\*] /,''));
+    return '<ul>'+items.map(i=>'<li>'+i+'</li>').join('')+'</ul>';
+  });
+  // 8) ordered list
+  s=s.replace(/(^\d+\. .+\n?)+/gm, function(block){
+    const items=block.trim().split('\n').map(l=>l.replace(/^\d+\. /,''));
+    return '<ol>'+items.map(i=>'<li>'+i+'</li>').join('')+'</ol>';
+  });
+  // 9) inline: bold, italic, code
+  s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\*(.+?)\*/g,'<em>$1</em>');
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  // 10) paragraphs: double newline -> <p>
+  s=s.split(/\n{2,}/).map(block=>{
+    const t=block.trim();
+    if(!t) return '';
+    if(/^<(pre|h[1-4]|ul|ol|table|hr|blockquote)/.test(t)) return t;
+    return '<p>'+t.replace(/\n/g,'<br>')+'</p>';
+  }).join('\n');
+  // single newlines inside remaining text
+  return s;
+}
 function addMsg(role,text){
   const c=document.getElementById('msgs');
   const d=document.createElement('div');
   d.className='msg '+role;
-  let html=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/```(\w*)\n([\s\S]*?)```/g,(_,l,code)=>`<pre><code>${code.trim()}</code></pre>`)
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-  d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
+  let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
+  d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Domos'}</div>${html}`;
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
     const btn=document.createElement('button');
@@ -1630,7 +1704,7 @@ async function uploadCsvFile(file){
     panel.innerHTML = `
       <div class="csv-info">
         <div class="fname">📊 ${esc(data.filename)}</div>
-        <div class="fstats">${data.rows}행 × ${data.cols}열 · 컬럼: ${data.headers.join(', ')}</div>
+        <div class="fstats">${data.rows}행 × ${data.cols}열</div>
         <button class="fremove" onclick="removeCsv()">✕ 제거</button>
         <div class="csv-preview">${tableHtml}</div>
       </div>`;
@@ -1664,7 +1738,7 @@ function resetCsvArea(){
 # ============================================
 if __name__ == "__main__":
     print("=" * 50)
-    print("  Demos 데모스 프로젝트 베타 V0.2")
+    print("  Domos(민중) 프로젝트 베타 V0.2")
     print("=" * 50)
 
     # 스킬 폴더 확인
