@@ -53,19 +53,19 @@ TOKEN_FILE = os.path.join(BASE_DIR, "TOKEN.TXT")
 # 회사 LLM API 환경 설정
 ENV_CONFIG = {
     "dev": {
-        "url": "http://dev.assistant.llm.skhynix.com/v1/chat/completions",
-        "model": "Qwen3-Coder-30B-A3B-Instruct",
-        "name": "DEV (30B)"
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "model": "GLM-4.7",
+        "name": "4.7"
     },
     "prod": {
-        "url": "http://summary.llm.skhynix.com/v1/chat/completions",
-        "model": "Qwen3-Next-80B-A3B-Instruct",
-        "name": "PROD (80B)"
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "model": "Qwen3.5-397B-A17B",
+        "name": "PROD (397B)"
     },
     "common": {
-        "url": "http://common.llm.skhynix.com/v1/chat/completions",
-        "model": "gpt-oss-20b",
-        "name": "COMMON (20B)"
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "model": "gpt-oss-120b",
+        "name": "COMMON (120B)"
     },
     # gguf-local은 앱 시작 시 자동 감지되면 추가됨
 }
