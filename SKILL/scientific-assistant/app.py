@@ -1,5 +1,5 @@
 """
-Demos 데모스 프로젝트 베타 V0.2 - Flask 웹앱
+Domos(민중) 프로젝트 베타 V0.2 - Flask 웹앱
 =======================================
 사용법:
   1. scientific-skills 폴더를 이 파일과 같은 위치에 복사
@@ -737,7 +737,7 @@ def api_chat():
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # 시스템 프롬프트 구성
-    default_prompt = "당신은 Demos(데모스) - 과학 연구를 돕는 전문 AI 어시스턴트입니다.\n반드시 한국어(한글)로 답변하세요. 코드 주석도 한글로 작성하세요.\n\n"
+    default_prompt = "당신은 Domos(민중) - 과학 연구를 돕는 전문 AI 어시스턴트입니다.\n반드시 한국어(한글)로 답변하세요. 코드 주석도 한글로 작성하세요.\n\n"
 
     if custom_system_prompt:
         system_prompt = custom_system_prompt + "\n\n" + default_prompt
@@ -885,7 +885,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Demos - 데모스 베타 V0.2</title>
+<title>Domos(민중) 베타 V0.2</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f7f4;color:#1a1a1a;display:flex;height:100vh}
@@ -1070,13 +1070,13 @@ pre{position:relative}
     <strong>SKILL.md 파일이 있는 스킬</strong>만 ✅ 표시됩니다.
   </div>
   <div class="sidebar-footer">
-    <div class="credits">🔬 Demos 데모스 베타 V0.2</div>
+    <div class="credits">🔬 Domos(민중) 베타 V0.2</div>
   </div>
 </div>
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Demos 데모스 프로젝트</div>
+    <div class="project-title">📁 Domos(민중) 프로젝트</div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
       <span id="status" class="status off">⚪ 환경 미선택</span>
@@ -1445,7 +1445,7 @@ function addMsg(role,text){
   const d=document.createElement('div');
   d.className='msg '+role;
   let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
-  d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
+  d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Domos'}</div>${html}`;
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
     const btn=document.createElement('button');
@@ -1730,7 +1730,7 @@ function resetCsvArea(){
 # ============================================
 if __name__ == "__main__":
     print("=" * 50)
-    print("  Demos 데모스 프로젝트 베타 V0.2")
+    print("  Domos(민중) 프로젝트 베타 V0.2")
     print("=" * 50)
 
     # 스킬 폴더 확인
