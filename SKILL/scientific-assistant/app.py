@@ -74,16 +74,20 @@ ENV_CONFIG = {
 def load_token():
     """TOKEN.TXT 파일에서 API 키 읽기"""
     if os.path.isfile(TOKEN_FILE):
-        with open(TOKEN_FILE, "r", encoding="utf-8") as f:
+        with open(TOKEN_FILE, "r", encoding="utf-8-sig") as f:
             token = f.read().strip()
-            if token:
-                # ASCII만 허용 (한글 플레이스홀더 무시)
-                try:
-                    token.encode("ascii")
-                    return token
-                except UnicodeEncodeError:
-                    print(f"  ⚠️  TOKEN.TXT에 비영문 문자 포함 - 실제 API 키로 교체하세요")
-                    return ""
+            if not token:
+                print(f"  ⚠️  TOKEN.TXT 파일이 비어있습니다 - API 키를 입력하세요: {TOKEN_FILE}")
+                return ""
+            # ASCII만 허용 (한글 플레이스홀더 무시)
+            try:
+                token.encode("ascii")
+                return token
+            except UnicodeEncodeError:
+                print(f"  ⚠️  TOKEN.TXT에 비영문 문자 포함 - 실제 API 키로 교체하세요")
+                return ""
+    else:
+        print(f"  ⚠️  TOKEN.TXT 파일을 찾을 수 없습니다: {TOKEN_FILE}")
     return ""
 
 
