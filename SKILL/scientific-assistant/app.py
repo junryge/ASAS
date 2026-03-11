@@ -903,15 +903,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .content{flex:1;overflow-y:auto;padding:24px 32px}
 .content-inner{max-width:800px;margin:0 auto}
 .section-label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:10px}
-/* Chat */
-.chat-box{background:#fff;border:2px solid #e5e3de;border-radius:16px;padding:16px;margin-bottom:24px;transition:border-color .2s}
-.chat-box:focus-within{border-color:#6366f1}
-.chat-input{width:100%;border:none;outline:none;font-size:15px;resize:none;min-height:48px;max-height:200px;font-family:inherit;line-height:1.5}
+/* Chat - Fixed Bottom */
+.chat-box-fixed{position:fixed;bottom:0;left:250px;right:0;background:#fff;border-top:2px solid #e5e3de;padding:12px 32px;z-index:100;box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+.chat-box-fixed:focus-within{border-top-color:#6366f1}
+.chat-box-fixed-inner{max-width:800px;margin:0 auto}
+.chat-input{width:100%;border:none;outline:none;font-size:15px;resize:none;min-height:40px;max-height:200px;font-family:inherit;line-height:1.5}
 .chat-input::placeholder{color:#aaa}
-.chat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.chat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
 .send-btn{width:40px;height:40px;border-radius:50%;border:none;background:#6366f1;color:#fff;cursor:pointer;font-size:18px;transition:background .15s}
 .send-btn:hover{background:#4f46e5}
 .send-btn:disabled{background:#ccc;cursor:not-allowed}
+.content{padding-bottom:100px!important}
 /* Tags */
 .tag-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
 .tag{padding:8px 18px;border-radius:20px;border:2px solid #e5e3de;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;background:#fff;user-select:none}
@@ -1053,7 +1055,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .copy-btn{position:absolute;top:4px;right:4px;background:#e5e3de;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;opacity:.7}
 .copy-btn:hover{opacity:1}
 pre{position:relative}
-@media(max-width:768px){.sidebar{display:none}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}}
+@media(max-width:768px){.sidebar{display:none}.chat-box-fixed{left:0}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}}
 </style>
 </head>
 <body>
@@ -1104,14 +1106,6 @@ pre{position:relative}
           <input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCsvSelect(event)">
         </div>
         <div id="csvInfoPanel" style="display:none"></div>
-      </div>
-
-      <div class="chat-box">
-        <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
-        <div class="chat-footer">
-          <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
-          <button class="send-btn" onclick="send()" id="sendBtn">▶</button>
-        </div>
       </div>
 
       <div class="section-label">분야 선택</div>
@@ -1169,6 +1163,17 @@ pre{position:relative}
       </div>
 
       <div class="messages" id="msgs"></div>
+    </div>
+  </div>
+
+  <!-- 질문 입력 - 하단 고정 -->
+  <div class="chat-box-fixed">
+    <div class="chat-box-fixed-inner">
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <div class="chat-footer">
+        <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+        <button class="send-btn" onclick="send()" id="sendBtn">▶</button>
+      </div>
     </div>
   </div>
 </div>
