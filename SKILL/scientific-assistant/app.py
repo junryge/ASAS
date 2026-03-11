@@ -944,11 +944,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .quick-btn:hover{border-color:#6366f1;background:#eef2ff}
 /* Messages */
 .messages{margin-top:8px}
-.msg{margin-bottom:16px;padding:14px 18px;border-radius:14px;line-height:1.6;font-size:14px;white-space:pre-wrap;word-wrap:break-word}
-.msg.user{background:#6366f1;color:#fff;margin-left:60px;border-bottom-right-radius:4px}
+.msg{margin-bottom:16px;padding:14px 18px;border-radius:14px;line-height:1.6;font-size:14px;word-wrap:break-word}
+.msg.user{background:#6366f1;color:#fff;margin-left:60px;border-bottom-right-radius:4px;white-space:pre-wrap}
 .msg.assistant{background:#fff;border:1px solid #e5e3de;margin-right:60px;border-bottom-left-radius:4px}
-.msg pre{background:#f5f5f0;padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;font-size:13px}
+.msg pre{background:#f5f5f0;padding:12px;border-radius:8px;overflow-x:auto;margin:8px 0;font-size:13px;white-space:pre-wrap}
 .msg code{font-family:'SF Mono','Fira Code',monospace;font-size:13px}
+.msg p{margin:0 0 8px 0}.msg p:last-child{margin-bottom:0}
+.msg h1,.msg h2,.msg h3,.msg h4{margin:16px 0 8px 0;font-weight:700}
+.msg h1{font-size:1.4em;border-bottom:1px solid #e5e3de;padding-bottom:4px}
+.msg h2{font-size:1.2em;border-bottom:1px solid #eee;padding-bottom:3px}
+.msg h3{font-size:1.05em}.msg h4{font-size:1em}
+.msg ul,.msg ol{margin:6px 0 6px 20px;padding:0}.msg li{margin:2px 0}
+.msg table{border-collapse:collapse;margin:8px 0;width:100%;font-size:13px}
+.msg th,.msg td{border:1px solid #ddd;padding:6px 10px;text-align:left}
+.msg th{background:#f5f5f0;font-weight:600}
+.msg tr:nth-child(even){background:#fafaf8}
+.msg hr{border:none;border-top:1px solid #e5e3de;margin:12px 0}
+.msg blockquote{border-left:3px solid #6366f1;margin:8px 0;padding:4px 12px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:11px;font-weight:600;color:#999;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
 .msg .skill-info{font-size:11px;color:#6366f1;margin-top:6px}
@@ -1369,16 +1381,70 @@ async function send(){
     addMsg('assistant','❌ 서버 연결 실패: '+e.message);
   }
   document.getElementById('sendBtn').disabled=false;
+  const inp=document.getElementById('input');
+  inp.focus();
+  inp.style.height='auto';
 }
 
+function renderMd(text){
+  // 1) escape HTML
+  let s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // 2) code blocks
+  s=s.replace(/```(\w*)\n([\s\S]*?)```/g,(_,lang,code)=>`<pre><code>${code.trim()}</code></pre>`);
+  // 3) tables
+  s=s.replace(/((?:^\|.+\|[ ]*\n){2,})/gm, function(tbl){
+    const rows=tbl.trim().split('\n').filter(r=>r.trim());
+    if(rows.length<2) return tbl;
+    const parseRow=r=>r.replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+    const hdr=parseRow(rows[0]);
+    // skip separator row
+    let startIdx=1;
+    if(/^[\s|:-]+$/.test(rows[1])) startIdx=2;
+    let h='<table><thead><tr>'+hdr.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+    for(let i=startIdx;i<rows.length;i++){
+      const cells=parseRow(rows[i]);
+      h+='<tr>'+cells.map(c=>'<td>'+c+'</td>').join('')+'</tr>';
+    }
+    return h+'</tbody></table>';
+  });
+  // 4) headings
+  s=s.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+  s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  // 5) hr
+  s=s.replace(/^---+$/gm,'<hr>');
+  // 6) blockquote
+  s=s.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+  // 7) unordered list
+  s=s.replace(/(^[\-\*] .+\n?)+/gm, function(block){
+    const items=block.trim().split('\n').map(l=>l.replace(/^[\-\*] /,''));
+    return '<ul>'+items.map(i=>'<li>'+i+'</li>').join('')+'</ul>';
+  });
+  // 8) ordered list
+  s=s.replace(/(^\d+\. .+\n?)+/gm, function(block){
+    const items=block.trim().split('\n').map(l=>l.replace(/^\d+\. /,''));
+    return '<ol>'+items.map(i=>'<li>'+i+'</li>').join('')+'</ol>';
+  });
+  // 9) inline: bold, italic, code
+  s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\*(.+?)\*/g,'<em>$1</em>');
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  // 10) paragraphs: double newline -> <p>
+  s=s.split(/\n{2,}/).map(block=>{
+    const t=block.trim();
+    if(!t) return '';
+    if(/^<(pre|h[1-4]|ul|ol|table|hr|blockquote)/.test(t)) return t;
+    return '<p>'+t.replace(/\n/g,'<br>')+'</p>';
+  }).join('\n');
+  // single newlines inside remaining text
+  return s;
+}
 function addMsg(role,text){
   const c=document.getElementById('msgs');
   const d=document.createElement('div');
   d.className='msg '+role;
-  let html=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/```(\w*)\n([\s\S]*?)```/g,(_,l,code)=>`<pre><code>${code.trim()}</code></pre>`)
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
   d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
