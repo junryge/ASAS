@@ -267,6 +267,7 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            padding-bottom: 70px;
         }
         
         /* Stats Row */
@@ -631,13 +632,34 @@
             color: var(--success);
         }
         
-        /* Quick Chat */
+        /* Quick Chat - Fixed Bottom */
+        .quick-chat-fixed {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 20px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .quick-chat-inner {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 1060px;
+        }
+
         .quick-chat {
             display: flex;
             gap: 10px;
         }
-        
-        .quick-chat input {
+
+        .quick-chat input, .quick-chat-inner input {
             flex: 1;
         }
         
@@ -1027,15 +1049,16 @@
                     </div>
                 </div>
                 
-                <!-- 빠른 질문 -->
-                <div class="card">
-                    <div class="card-title"><span class="icon">⚡</span> 빠른 질문</div>
-                    <div class="quick-chat">
-                        <input type="text" id="quick-question" placeholder="간단한 질문을 입력하세요..." onkeypress="if(event.key==='Enter') quickAsk()">
-                        <button class="btn btn-purple" onclick="quickAsk()">전송</button>
-                    </div>
-                </div>
             </div>
+        </div>
+    </div>
+
+    <!-- 빠른 질문 - 하단 고정 -->
+    <div class="quick-chat-fixed">
+        <div class="quick-chat-inner">
+            <span style="font-size: 14px; white-space: nowrap;">⚡ 빠른 질문</span>
+            <input type="text" id="quick-question" placeholder="질문을 입력하세요... (Enter로 전송)" onkeypress="if(event.key==='Enter') quickAsk()">
+            <button class="btn btn-purple" onclick="quickAsk()">전송</button>
         </div>
     </div>
 
