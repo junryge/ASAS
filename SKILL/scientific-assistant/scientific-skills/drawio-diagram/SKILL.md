@@ -425,3 +425,56 @@ AWS, Azure, GCP, Kubernetes 등의 공식 아이콘을 사용할 수 있습니�
 - `&` 문자는 반드시 `&amp;`로 이스케이프
 - 속성값 안의 `"` 는 `&quot;`로, `<`는 `&lt;`로, `>`는 `&gt;`로 이스케이프
 - 그룹/컨테이너의 자식 노드는 `parent="그룹id"`로 설정
+
+### 19. Python으로 Draw.io XML 생성 시 필수 규칙
+
+Python `xml.etree.ElementTree`로 Draw.io XML을 생성할 때 **반드시 지켜야 할 태그명 규칙**:
+
+| 올바른 태그 (필수) | 잘못된 태그 (Draw.io 인식 불가) |
+|---|---|
+| `mxCell` | ~~`cell`~~, ~~`Cell`~~, ~~`MxCell`~~ |
+| `mxGeometry` | ~~`Geometry`~~, ~~`geometry`~~, ~~`MxGeometry`~~ |
+| `mxGraphModel` | ~~`GraphModel`~~, ~~`graphModel`~~ |
+| `mxPoint` | ~~`Point`~~, ~~`point`~~ |
+
+#### 올바른 Python 코드 패턴:
+```python
+import xml.etree.ElementTree as ET
+
+# 노드(vertex) 생성
+cell = ET.SubElement(root, "mxCell")  # "cell" 아님!
+cell.set("id", "2")
+cell.set("value", "모듈명")
+cell.set("vertex", "1")
+cell.set("parent", "1")
+cell.set("style", "rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;")
+
+geo = ET.SubElement(cell, "mxGeometry")  # "Geometry" 아님!
+geo.set("x", "100")
+geo.set("y", "100")
+geo.set("width", "160")
+geo.set("height", "60")
+geo.set("as", "geometry")
+
+# 엣지(edge) 생성 - mxGeometry 필수!
+edge = ET.SubElement(root, "mxCell")
+edge.set("id", "10")
+edge.set("value", "")
+edge.set("edge", "1")
+edge.set("parent", "1")
+edge.set("source", "2")
+edge.set("target", "3")
+edge.set("style", "edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jetSize=auto;html=1;endArrow=blockThin;endFill=1;")
+
+edge_geo = ET.SubElement(edge, "mxGeometry")  # 엣지에도 geometry 필수!
+edge_geo.set("relative", "1")
+edge_geo.set("as", "geometry")
+```
+
+#### 흔한 실수와 결과:
+| 실수 | 결과 |
+|------|------|
+| `ET.SubElement(root, "cell")` | Draw.io에서 빈 화면 (노드 인식 불가) |
+| `ET.SubElement(cell, "Geometry")` | 노드 위치/크기 무시됨 (좌상단에 점으로 표시) |
+| edge에 mxGeometry 누락 | 연결선이 표시 안 됨 |
+| style에 `html=1` 누락 | HTML 텍스트 렌더링 안 됨 |
