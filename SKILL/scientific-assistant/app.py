@@ -1956,10 +1956,6 @@ def api_upload_file():
     if ext not in ALLOWED_EXTENSIONS:
         return jsonify({"error": f"지원하지 않는 파일 형식입니다: .{ext}"}), 400
 
-    # CSV/TSV는 기존 CSV 업로드로 리다이렉트
-    if ext in ('csv', 'tsv'):
-        return jsonify({"error": "CSV/TSV는 데이터 업로드 영역을 사용하세요.", "redirect": "csv"}), 400
-
     try:
         # 파일 저장
         import time as _time
@@ -2599,33 +2595,19 @@ pre{position:relative}
         <!-- JS에서 동적 생성 -->
       </div>
 
-      <!-- CSV 업로드 -->
+      <!-- 통합 파일 업로드 -->
       <div class="csv-section">
-        <div class="section-label">📎 데이터 업로드 (CSV/TSV)</div>
-        <div id="csvUploadArea" class="csv-upload-area" onclick="document.getElementById('csvFileInput').click()"
-             ondragover="event.preventDefault();this.classList.add('dragover')"
-             ondragleave="this.classList.remove('dragover')"
-             ondrop="event.preventDefault();this.classList.remove('dragover');handleCsvDrop(event)">
-          <div class="icon">📂</div>
-          <div class="label">CSV / TSV 파일을 끌어놓거나 클릭</div>
-          <div class="sub">최대 50MB · UTF-8/CP949 자동 인식</div>
-          <input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCsvSelect(event)">
-        </div>
-        <div id="csvInfoPanel" style="display:none"></div>
-      </div>
-
-      <!-- 범용 파일 업로드 -->
-      <div class="csv-section">
-        <div class="section-label">📁 파일 업로드 (문서/이미지/코드)</div>
+        <div class="section-label">📎 파일 업로드</div>
         <div id="fileUploadArea" class="csv-upload-area" onclick="document.getElementById('fileInput').click()"
              ondragover="event.preventDefault();this.classList.add('dragover')"
              ondragleave="this.classList.remove('dragover')"
-             ondrop="event.preventDefault();this.classList.remove('dragover');handleFileDrop(event)">
-          <div class="icon">📁</div>
+             ondrop="event.preventDefault();this.classList.remove('dragover');handleUnifiedDrop(event)">
+          <div class="icon">📂</div>
           <div class="label">파일을 끌어놓거나 클릭하여 업로드</div>
-          <div class="sub">docx · xlsx · pdf · pptx · md · 이미지 · 코드</div>
-          <input type="file" id="fileInput" accept=".docx,.xlsx,.pdf,.pptx,.md,.markdown,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat" style="display:none" onchange="handleFileSelect(event)" multiple>
+          <div class="sub">CSV · TSV · docx · xlsx · pdf · pptx · md · 이미지 · 코드</div>
+          <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.docx,.xlsx,.pdf,.pptx,.md,.markdown,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat" style="display:none" onchange="handleUnifiedSelect(event)" multiple>
         </div>
+        <div id="csvInfoPanel" style="display:none"></div>
         <div id="fileListPanel" style="display:none"></div>
       </div>
 
@@ -3715,17 +3697,26 @@ async function injectToChat(type, filePath){
 let csvLoaded = false;
 let csvFilename = '';
 
-function handleCsvDrop(e){
+function handleUnifiedDrop(e){
   const files = e.dataTransfer.files;
-  if(files.length > 0) uploadCsvFile(files[0]);
+  for(let i=0; i<files.length; i++) uploadUnifiedFile(files[i]);
 }
-function handleCsvSelect(e){
+function handleUnifiedSelect(e){
   const files = e.target.files;
-  if(files.length > 0) uploadCsvFile(files[0]);
-  e.target.value = ''; // 같은 파일 재업로드 가능
+  for(let i=0; i<files.length; i++) uploadUnifiedFile(files[i]);
+  e.target.value = '';
+}
+function uploadUnifiedFile(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(['csv','tsv','txt'].includes(ext) && !csvLoaded){
+    uploadCsvFile(file);
+  } else {
+    uploadGenericFile(file);
+  }
 }
 async function uploadCsvFile(file){
-  const area = document.getElementById('csvUploadArea');
+  const area = document.getElementById('fileUploadArea');
+  const origAreaHtml = area.innerHTML;
   area.innerHTML = '<div class="icon">⏳</div><div class="label">업로드 중...</div>';
 
   const formData = new FormData();
@@ -3737,13 +3728,12 @@ async function uploadCsvFile(file){
 
     if(data.error){
       area.innerHTML = `<div class="icon">❌</div><div class="label">${data.error}</div><div class="sub">다시 시도하세요</div>`;
-      setTimeout(()=>resetCsvArea(), 3000);
+      setTimeout(()=>{ area.innerHTML = origAreaHtml; }, 3000);
       return;
     }
 
     csvLoaded = true;
     csvFilename = data.filename;
-    area.style.display = 'none';
 
     // 미리보기 테이블 생성
     let tableHtml = '<table><tr>' + data.headers.map(h=>`<th>${esc(h)}</th>`).join('') + '</tr>';
@@ -3765,9 +3755,11 @@ async function uploadCsvFile(file){
         <div class="csv-preview">${tableHtml}</div>
       </div>`;
 
+    area.innerHTML = origAreaHtml;
+
   }catch(e){
     area.innerHTML = `<div class="icon">❌</div><div class="label">업로드 실패: ${e.message}</div>`;
-    setTimeout(()=>resetCsvArea(), 3000);
+    setTimeout(()=>{ area.innerHTML = origAreaHtml; }, 3000);
   }
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -3776,27 +3768,11 @@ async function removeCsv(){
   await fetch('/api/clear_csv', {method:'POST'});
   csvLoaded = false;
   csvFilename = '';
-  resetCsvArea();
   document.getElementById('csvInfoPanel').style.display = 'none';
-}
-function resetCsvArea(){
-  const area = document.getElementById('csvUploadArea');
-  area.style.display = '';
-  area.innerHTML = `<div class="icon">📂</div><div class="label">CSV / TSV 파일을 끌어놓거나 클릭</div><div class="sub">최대 50MB · UTF-8/CP949 자동 인식</div><input type="file" id="csvFileInput" accept=".csv,.tsv,.txt" style="display:none" onchange="handleCsvSelect(event)">`;
 }
 
 // ===== 범용 파일 업로드 =====
 let uploadedFilesList = [];
-
-function handleFileDrop(e){
-  const files = e.dataTransfer.files;
-  for(let i=0; i<files.length; i++) uploadGenericFile(files[i]);
-}
-function handleFileSelect(e){
-  const files = e.target.files;
-  for(let i=0; i<files.length; i++) uploadGenericFile(files[i]);
-  e.target.value = '';
-}
 
 async function uploadGenericFile(file){
   const area = document.getElementById('fileUploadArea');
