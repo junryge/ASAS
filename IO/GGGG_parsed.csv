@@ -1,0 +1,2053 @@
+﻿날짜-시간,이벤트유형,장비/상세,원본메시지
+2025-01-01-00-43,OPEN,4ABLD111,4ABLD111호기 AI Open 하겠습니다
+2025-01-01-02-37,CLOSE,4ABLD131,4ABLD131호기 작업위해 AI Close 하겠습니다
+2025-01-01-03-20,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111호기 Error 발생으로 AI Close 하겠습니다
+2025-01-01-03-49,OPEN,4ABLD131,4ABLD131호기 AI Open 하겠습니다
+2025-01-01-03-50,OPEN,4ABLD111,"4ABLD111호기 조치완료 되어 상단 Port(AI75, AI43) Close 후 AI Open 하겠습니다"
+2025-01-01-06-19,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 AI Close 하겠습니다
+2025-01-01-06-50,OPEN,4ABLD131,"4ABLD131 하단 PORT (AI47, AI77) CLOSE 후 AI43, AI75 OPEN 하였습니다."
+2025-01-01-08-58,ERROR,4ABLD122 Error 발생되어 -> CLOSE,4ABLD122호기 Error 발생되어 AI Close 했습니다.
+2025-01-01-09-06,OPEN,4ABLD122,4ABLD122호기 AI Open 하였습니다.
+2025-01-01-13-19,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121호기 Error 발생으로 AI Close 했습니다.
+2025-01-01-13-39,OPEN,4ABLD121,4ABLD121호기 AI Open 하였습니다.
+2025-01-02-07-22,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 Error 발생으로 인하여 4F, 7F AI Close 하겠습니다."
+2025-01-02-07-24,ERROR,-> OPEN,"Error 조치 되어 4F, 7F AI Open 하였습니다."
+2025-01-02-10-35,OPEN,,작업 완료되어 포트 오픈했습니다.
+2025-01-02-12-32,OPEN,4ABLD131,"안녕하세요 4ABLD131, 132호기 Conv 확인 작업 11:30분 부터 진행예정입니다. (이영재,이천AMHS운영/TL,2025-01-02 10:19:29) ┖ 작업 완료되어 AI Open 하였습니다."
+2025-01-02-15-32,CLOSE,4ABLD132,4ABLD132호기 점검작업 진행으로 4F/7F AI Port Close 하겠습니다.
+2025-01-02-15-55,OPEN,4ABLD132,"4ABLD132호기 1차 점검 후, Test 진행을 위하여 4F/7F AI Port Open 하였습니다."
+2025-01-02-16-04,CLOSE,4ABLD132,4ABLD132호기 점검 진행을 위하여 4F/7F AI Port Close 하겠습니다
+2025-01-02-16-09,OPEN,4ABLD132,"4ABLD132호기 2차 점검 후, 반송 Test 진행을 위하여 4F/7F AI Port Open 하였습니다."
+2025-01-02-16-15,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-02-16-34,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 & 작업 완료되어 AI Port Open 하였습니다. 수고하세요.
+2025-01-03-01-06,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD111 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-01-03-03-02,OPEN,4ABLD111,"4ABLD111 4F,7F AI Open 하였습니다."
+2025-01-04-00-12,ERROR,4ABLD121 -> CLOSE,"4ABLD121 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-04-00-21,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-04-05-26,ERROR,4ABLD111 -> CLOSE,"4ABLD111 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-04-05-43,ERROR,4ABLD111 -> OPEN,"4ABLD111 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-04-06-37,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-04-06-42,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-04-06-56,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122 Error 발생하여 AI Close 하겠습니다.
+2025-01-04-07-11,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4F, 7F AI Open 하였습니다"
+2025-01-04-12-25,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4F, 7F AI Close 하겠습니다."
+2025-01-04-12-35,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4F, 7F AI Open 하였습니다"
+2025-01-04-19-06,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요. 4ABLD131호기 Error 발생으로 4F, 7F AI Port Close 하겠습니다."
+2025-01-04-19-14,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치되어 4F, 7F AI Open 하였습니다. 수고하세요"
+2025-01-04-22-13,ERROR,4ABLD112 Error발생하여 -> CLOSE,"4ABLD112호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-01-04-22-36,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error조치 완료되어 4F, 7F AI Open했습니다"
+2025-01-05-03-10,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-05-03-51,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-05-07-08,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112 호기 Error 발생하여 AI Close 하겠습니다.
+2025-01-05-07-33,OPEN,4ABLD112,4ABLD112 호기 조치 완료되어 AI Open 하겠습니다.
+2025-01-05-16-25,CLOSE,4AFC3201,"4AFC3201 반송량이 밀려서 A_in80 ,81 CLOSE 실시 했습니다"
+2025-01-05-16-41,OPEN,4AFC3201,"4AFC3201 정체 해소되어  A_in80 ,81 OPEN 실시 했습니다"
+2025-01-05-22-05,ERROR,,안녕하세요 ~ Bridge Error 있나요 ?
+2025-01-06-00-02,CLOSE,4AFC3201,"4AFC3201 M16 -> M14 Foup 정체 심하여 A_in80 ,81 CLOSE 실시 했습니다"
+2025-01-06-00-22,OPEN,4AFC3201,"4AFC3201 정체 해소되어  A_in80 ,81 OPEN 실시 했습니다"
+2025-01-06-08-59,ERROR,4ABLD111 Error 발생하여 -> CLOSE,4ABLD111 Error 발생하여 AI Close 하겠습니다.
+2025-01-06-09-54,ERROR,4ABLD111 -> OPEN,4ABLD111 Error 조치 후 AI Open 하였습니다 4ABLD122 감속기 교체 작업 관련 잔여 반송 후 장비 Down 진행하겠습니다
+2025-01-06-14-29,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 4F,7F AI Close 하겠습니다."
+2025-01-06-14-40,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 후 AI OPEN하였습니다.
+2025-01-06-17-25,ERROR,4ALBD121 Error 발생으로 -> CLOSE,"4ALBD121호기 Error 발생으로 인하여 4F, 7F AI Close 하였습니다"
+2025-01-06-17-45,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치되어 4F, 7F Open 하였습니다."
+2025-01-07-06-24,ERROR,4ABLD131 -> CLOSE,"4ABLD131 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-07-06-34,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-07-10-02,ERROR,4AFC3301,"4AFC3301(북측 Conveyor) M14->M16 방향 Error 다발로 긴급 점검 진행하겠습니다. 소요 시간은 약 40분 이며, M16->M14 방향은 그대로 반송 됩니다."
+2025-01-07-10-20,CLOSE,4ABLD132,4ABLD132호기 4F Conv Full되어 임시로 4F AI Close하겠습니다.
+2025-01-07-10-22,OPEN,,132호기 4F AI Open 112호기 4F AI Close 하겠습니다.
+2025-01-07-10-24,OPEN,,112호기 4F AI Open 111호기 4F AI Close 하겠습니다.
+2025-01-07-10-28,OPEN,,111호기 4F AI Open 하겠습니다. 4F Conv Full 예상 될 경우 다시 대응하겠습니다.
+2025-01-07-10-28,OPEN,4AFC3301,4AFC3301(북측 Conveyor) M14->M16 완료하여 OPEN 했습니다
+2025-01-07-11-13,CLOSE,4ABLD111,4ABLD111호기 4F Conv Full되어 임시로 4F AI Close하겠습니다.
+2025-01-07-11-23,OPEN,,111호기 4F AI Open 하겠습니다.
+2025-01-07-11-45,CLOSE,4ABLD111,4ABLD111호기 4F AI Close하겠습니다.
+2025-01-07-11-57,OPEN,,111호기 4F AI Open 하였습니다.
+2025-01-07-13-04,CLOSE,4ABLD111,4ABLD111호기 4F AI Close하겠습니다.
+2025-01-07-13-13,OPEN,,111호기 4F AI Open 하였습니다.
+2025-01-07-13-52,ERROR,4AFC3301,"4AFC3301(북측 Conveyor) M16→M14A 방향 A_IN 85~89 Port  MAX CAPA  6->8 로 증가 및 Monitoring 하겠습니다 (13:30 변경, Total Max capa 10증가) 변경 근거로는 아래와 같으며 M16→M14A 방향 이동중 ZT 內 Looping 현상을 최소화 하고자 합니다. 근거 1 : Conveyor PIO Error 건수 7일간 0건 근거 2 : Conveyor 를 목적지이며 M16 ZT 재입고 및 출고 현상 발생 Daily 약 400건"
+2025-01-07-14-01,OPEN,4ABLD111,"4ABLD111, 4ABLD132 호기 4F AI 포트 open/close 한 것은 port가 꽉차면 OHT가 내려놓지 못하고 밀리니까 Full 인거 해소하려고 한것입니다"
+2025-01-07-14-13,CLOSE,4ABLD111,4ABLD111호기 4F Conv Full되어 임시로 4F AI Close하겠습니다.
+2025-01-07-14-22,OPEN,4ABLD111,4ABLD111호기 정체 해소되어 4F AI Open 했습니다.
+2025-01-07-19-36,ERROR,4ABLD111,4ABLD111 PIO Error 다발로 M16A->M14B 4ABLD111_AI47 Max CAPA = 6 에서 4로 줄였습니다 (M16 MCS메뉴)
+2025-01-07-22-06,CLOSE,4ABLD111,"{{@김지훈::10103}} M14B 리프트 특이사항 없습니다.(기존 4ABLD111, 4ABLD122 AI Close된 상태)"
+2025-01-07-22-08,CLOSE,4ABLD111,"{{@김지훈::10103}} M14B 리프트 특이사항 없습니다.(기존 4ABLD111, 4ABLD122 AI Close된 상태) (육양주,이천AMHS운영/TL,2025-01-07 22:06:53) ┖ 네 알겟습니다."
+2025-01-07-22-13,CLOSE,4ABLD111,4ABLD111호기 4F Auto Input으로 Que 몰려 All Close해서 타 호기로 Que받도록 AI Port Close 했습니다.
+2025-01-07-22-18,OPEN,4ABLD111,{{@김지훈::10103}} 4ABLD111호기 Open은 상황보면서 Open하도록 하겠습니다. 감사합니다.
+2025-01-07-22-23,OPEN,4ABLD111,"4ABLD111호기 AI47, AI77 Open 하였습니다."
+2025-01-07-23-05,OPEN,4ABLD111,"안녕하세요. 4ABLD111호기 AI47 Que 몰림 관련 Close 하겠습니다. 특이사항 발생 시, Inform 부탁 드리겠습니다. Que 해소되면 Open 후 Inform 드리겠습니다."
+2025-01-07-23-14,OPEN,4ABLD111,4ABLD111호기 AI47 Que 해소 되어 Port Open 하였습니다.
+2025-01-07-23-20,ERROR,,현재 M16 Brdige에서 OHT에러 발생하여 Delay중입니다.
+2025-01-07-23-26,CLOSE,4ABLD132,4ABLD132호기 7층 AI Close하겠습니다
+2025-01-07-23-27,ERROR,,OHT Error Clear되었으며 정체 해소중입니다.
+2025-01-07-23-29,OPEN,4ABLD132,4ABLD132호기 7층 AI OPEN 하겠습니다
+2025-01-07-23-38,ERROR,,안녕하세요 HUB 반송TIME 튀는데요 ERROR 있나요 ?
+2025-01-08-01-05,CLOSE,4ABLD111,4ABLD111호기 AI47 Que 몰림 관련 Port Close 하겠습니다.
+2025-01-08-01-12,OPEN,4ABLD111,4ABLD111호기 AI47 Que 해소 되어 Port Open 하였습니다.
+2025-01-08-04-33,ERROR,4AFC3301 -> CLOSE,4AFC3301 error로  M16->M14   A_in80~86 CLOSE 실시 했습니다
+2025-01-08-04-39,ERROR,4AFC3301 -> OPEN,4AFC3301 Error Clear 되었습니다. 현재 Conveyor 내부 정체가 심해 순차적으로 M16->M14 방향 Port Open 예정입니다.
+2025-01-08-04-47,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-05-01,OPEN,4AFC3301,4AFC3301정체 해소되어 순차적으로  A_in84~86 OPEN 실시 했습니다
+2025-01-08-05-01,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-01-08-05-06,OPEN,4AFC3301,4AFC3301   A_in80~83  OPEN 실시 했습니다
+2025-01-08-09-07,ERROR,4ABLD121 -> CLOSE,4ABLD121호기 ERROR 발생으로 AI PORT CLOSE 했습니다.
+2025-01-08-09-10,ERROR,4ABLD121 -> OPEN,4ABLD121호기 ERROR 처리완료되어 AI PORT OPEN 했습니다.
+2025-01-08-09-40,ERROR,4AFC3301,9:40~10:40 4AFC3301(북측 Conveyor) M14->M16 Conveyor Lift 1호기 Belt 점검(ERROR 발생)으로 A_OU80~84 출고량이 줄어듭니다.
+2025-01-08-11-00,ERROR,,10:45경 완료 되었으나 ERROR 발생으로 점검 중입니다.
+2025-01-08-11-20,ERROR,,"10:45경 완료 되었으나 ERROR 발생으로 점검 중입니다. (윤영찬,이천AMHS운영/TL,2025-01-08 11:00:52) ┖ CLEAR 및 AUTO UP 하였습니다"
+2025-01-08-12-24,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요 4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-12-47,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-01-08-17-52,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-18-07,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-01-08-18-09,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-18-17,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다. (표세환,이천AMHS운영/TL,2025-01-08 18:09:00) ┖ 조치 완료되어 AI Open 했습니다."
+2025-01-08-18-43,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-19-00,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-01-08 18:43:02) ┖ 조치 완료되어 AI Open 했습니다."
+2025-01-08-22-13,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-23-02,ERROR,4ABLD131 -> OPEN,안녕하세요. 4ABLD131호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-01-08-23-09,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-08-23-50,OPEN,4ABLD131,"4ABLD131호기 AI43, AI75 Port Open 하였습니다."
+2025-01-09-08-10,ERROR,4ABLD121 -> CLOSE,"4ABLD121호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-09-08-46,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-09-15-36,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131호기 Error 발생하여 AI Close 하겠습니다.
+2025-01-09-15-40,OPEN,4ABLD122,"4ABLD122호기 작업 완료 되어 4F,7F AI Open 하였습니다."
+2025-01-09-15-43,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131호기 Error 발생하여 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-01-09 15:36:22) ┖ 조치 완료되어 AI Open 했습니다."
+2025-01-09-15-59,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131호기 Error 발생하여 AI Close 하겠습니다.
+2025-01-09-16-49,OPEN,4ABLD131,"4ABLD131호기 4,7F 상단 AI Open 하였습니다"
+2025-01-09-17-34,OPEN,4ABLD111,"4ABLD111호기 AI47, AI77 Open 했습니다"
+2025-01-09-18-18,OPEN,4ABLD111,"4ABLD111호기 AI47, AI77 Open 했습니다"
+2025-01-09-19-03,OPEN,4ABLD111,"4ABLD111호기 AI47, AI77 Open 했습니다"
+2025-01-10-15-40,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close하겠습니다."
+2025-01-10-15-56,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open하였습니다 ."
+2025-01-10-16-15,CLOSE,4ABLD131,"4ABLD131 점검으로 4F,7F AI Close 하겠습니다 ."
+2025-01-10-19-32,OPEN,4ABLD131,"4ABLD131 점검 완료 후 4F,7F AI Open 하였습니다."
+2025-01-10-19-56,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-01-10-21-10,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 후 4F,7F AI Open 하였습니다"
+2025-01-11-15-00,CLOSE,4ABLD111,4ABLD111호기 점검으로 AI Close 하였습니다.
+2025-01-11-16-32,OPEN,4ABLD111,4ABLD111호기 점검 완료되어 AI Open 하였습니다.
+2025-01-12-05-04,CLOSE,4ABLD122,4ABLD122호기 Errro 발생으로 AI Close 했습니다.
+2025-01-12-05-09,OPEN,4ABLD122,"4ABLD122호기 Errro 발생으로 AI Close 했습니다. (이영재,이천AMHS운영/TL,2025-01-12 05:04:13) ┖ 조치완료되어 AI Open 했습니다."
+2025-01-13-04-47,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121호기 Error 발생으로 인하여 4F, 7F AI Close 하였습니다."
+2025-01-13-05-02,OPEN,,"조치되어 4F, 7F Open 하였습니다"
+2025-01-13-06-43,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131 Error 발생으로 AI Close 하겠습니다.
+2025-01-13-06-51,ERROR,4ABLD131 -> OPEN,안녕하세요. 4ABLD131 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-01-13-08-40,ERROR,4ABLD122 Error 발생으로 -> CLOSE,4ABLD122호기 AI47 Error 발생으로 Close 하겠습니다. -. 다른 Port 정상 가동 중입니다.
+2025-01-13-08-45,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI47 Open 하였습니다.
+2025-01-13-11-28,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-13-11-48,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 AF/7F AI Port 전체 Open 하였습니다.
+2025-01-13-13-25,ERROR,6ABL0112 Error 발생으로,6ABL0112호기 Error 발생으로 해당호기 반송 지연되고 있습니다. 업무에 참고부탁드립니다.
+2025-01-13-13-27,CLOSE,6ABL0112,6ABL0112호기 INPUT Close 하였습니다.
+2025-01-13-13-46,ERROR,6ABL0112 -> OPEN,6ABL0112호기 Error 조치되어 AI Port Open하였습니다.
+2025-01-14-02-26,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 4F, 7F AI Close 하겠습니다."
+2025-01-14-02-39,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치되어 4F, 7F AI Open 하였습니다."
+2025-01-14-04-48,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111호기 Error 발생으로 4F, 7F AI Close 하겠습니다."
+2025-01-14-04-52,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치되어 4F, 7F AI Open 하였습니다."
+2025-01-15-17-03,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 호기 Error 발생으로 4F, 7F AI Close 하겠습니다."
+2025-01-15-17-09,ERROR,4ABLD111 -> OPEN,"4ABLD111 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-16-02-43,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD112 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-01-16-03-20,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-01-17-00-12,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121 호기 Error 발생으로 4F, 7F AI Close 하겠습니다."
+2025-01-17-03-12,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-01-17-09-04,ERROR,4ABLD111 Error 발생하여 -> CLOSE,안녕하세요 4ABLD111호기 Error 발생하여 AI Close 하겠습니다.
+2025-01-17-09-41,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"안녕하세요 4ABLD111호기 Error 발생하여 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-01-17 09:04:01) ┖ Error 조치 완료되어 AI Open 하겠습니다."
+2025-01-17-15-26,ERROR,4ABLD131 -> CLOSE,"안녕하세요 4ABLD131 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-17-16-19,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-01-17-22-21,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-17-22-33,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-01-18-02-20,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-18-02-33,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-01-18-13-39,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131 Error 발생하여 AI Close 하겠습니다.
+2025-01-18-13-54,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-01-18 13:39:44) ┖ 조치 완료되어 AI Open 하겠습니다"
+2025-01-19-10-15,CLOSE,,INPUT PORT 12개 중.. 6개가 CLOSE 상태 인건가요?
+2025-01-19-10-31,CLOSE,4ABLD112,"4ABLD112호기 제외 (4ABLD111, 121, 122, 131, 132) 7F AI Close 하였습니다."
+2025-01-19-10-31,OPEN,,4F AO 물량 해소되면 다시 오픈하도록 하겠습니다.
+2025-01-19-10-35,OPEN,4ABLD122,4ABLD122호기 7F AI Open 하였습니다.
+2025-01-19-10-40,OPEN,4ABLD121,4ABLD121호기 7F AI Open 하였습니다.
+2025-01-19-10-41,OPEN,4ABLD111,4ABLD111호기 7F AI Open 하였습니다.
+2025-01-19-10-43,OPEN,4ABLD131,"4ABLD131, 132 7F AI Open 하였습니다. 4ABLD112 7F AI Close 하였습니다."
+2025-01-19-10-53,OPEN,4ABLD112,4ABLD112호기 7F AI Open 하였습니다.
+2025-01-19-10-57,CLOSE,4ABLD111,"4ABLD111, 131호기 7F AI Close 하였습니다."
+2025-01-19-11-03,CLOSE,4ABLD121,"4ABLD121, 122호기 7F AI Close 하였습니다."
+2025-01-19-11-06,CLOSE,4ABLD132,4ABLD132호기 7F AI Close 하였습니다.
+2025-01-19-11-10,OPEN,4ABLD111,"4ABLD111, 131 7F AI Open 하였습니다."
+2025-01-19-11-12,CLOSE,4ABLD112,4ABLD112호기 7F AI Close 하였습니다.
+2025-01-19-11-14,OPEN,4AFC3201,LD교체중 나사 2개가 마모되어 제거하는데 시간이 지체되었습니다. 작업 완료되어 4AFC3201 Input Port 전체 오픈  했습니다.
+2025-01-19-11-15,OPEN,,"121호기, 122호기, 132호기 7F AI Open 했습니다."
+2025-01-19-20-34,ERROR,4AFC3301,4AFC3301 작업구간 확인시 양방향 전체 Down으로 Line내 영향이 클 것으로 예상됩니다. Error가 당장 발생하는 상황은 아니라서 주간에 협의 후 진행예정입니다.
+2025-01-19-20-35,ERROR,Error 발생을,혹시 모를 Error 발생을 위해 작업준비 및 Monitoring 지속적으로 하겠습니다. 특이사항 발생시 공유드리겠습니다.
+2025-01-20-15-35,ERROR,4AFC3301,4AFC3301(북측 Conveyor) M16->M14 LD Motor 소음 발생 및 Error 로 긴급 교체 작업 진행 하겠습니다.
+2025-01-20-15-50,ERROR,4AFC3301,"4AFC3301(북측 Conveyor) M16->M14 LD Motor 소음 발생 및 Error 로 긴급 교체 작업 진행 하겠습니다. (윤영찬,이천AMHS운영/TL,2025-01-20 15:35:25) ┖ 긴급 작업 완료 하여 CAPA 원복하겠습니다."
+2025-01-20-17-31,ERROR,4ABLD111,1/21 (화) 09시~12시 M14B Lifter 4ABLD111호기 풉 위치 제어 Error 다발로 PC 긴급 교체 필요하여 작업 예정입니다 Lifter 6대 중 1대 Down 입니다. M14B-M16 물류량 30K미만시 1대 down 특이사항 없습니다. BM : 1/6 4ABLD122 감속기 교체로 DOWN 작업시 특이사항 없었습니다
+2025-01-20-22-09,ERROR,6ABL6032 Error 발생으로 -> CLOSE,ZT3-2호기 6ABL6032 Error 발생으로 INPUT Close 하였습니다.
+2025-01-21-02-25,ERROR,6ABL6032,zt 3-2호기 6ABL6032 ERROR 발생 이후 장비 AUTO-UP 불가 하여 DOWN 진행 하였습니다.
+2025-01-21-09-03,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요 4ABLD131호기 Error 발생으로 7F 4F AI Close 하겠습니다.
+2025-01-21-09-25,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 4F 7F AI Open 하겠습니다.
+2025-01-21-11-12,ERROR,4ABLD121 Error 발생하여 -> CLOSE,4ABLD121호기 Error 발생하여 AI Close하겠습니다.
+2025-01-21-11-34,ERROR,4ABLD121 -> OPEN,4ABLD121호기 Error 조치 완료되어 AI Open 하겠습니다.
+2025-01-21-12-57,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 7F 4F AI Close 하겠습니다.
+2025-01-21-13-07,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 4F 7F AI Open 하겠습니다.
+2025-01-21-13-22,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 7F 4F AI Close 하겠습니다.
+2025-01-21-13-38,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다"
+2025-01-21-16-04,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-01-21-15-36,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Open 하겠습니다.
+2025-01-21-16-04,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-01-21-16-11,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 AI Open 하겠습니다.
+2025-01-21-16-16,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-01-21-16-34,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 AI Open 하겠습니다. 수고하세요
+2025-01-21-17-35,OPEN,6ABL6032,6ABL6032(3-2호기) Err 조치되어 17시 30분경 Auto 전환 및 All Port Open 하였습니다.
+2025-01-21-19-29,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131_AO45 Error 발생으로 AI77 Port 만 Close 하도록 하겠습니다.
+2025-01-21-19-38,ERROR,-> OPEN,Error 조치 완료되어 AI77 Open 하겠습니다.
+2025-01-22-07-56,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-01-22-08-08,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-01-22-09-51,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD121 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-01-22-10-13,ERROR,4ABLD121 -> OPEN,"4ABLD121 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-01-22-10-22,OPEN,,"안녕하세요 금일 Conv Lift04호기 Cleaning 작업으로 인해 0900~1000까지 Down 예정입니다. 업무에 참고바랍니다. (양영석,이천AMHS운영/TL,2025-01-22 08:59:19) ┖ 작업완료되어 open 하겠습니다"
+2025-01-22-10-24,CLOSE,4ABLD111,"4ABLD111,122,132 7F OHT 정체 발생으로 7F AI Close 하겠습니다"
+2025-01-22-10-31,OPEN,4ABLD111,"4ABLD111,122,132 7 정체 해소 후 7F AI OPEN 하였습니다"
+2025-01-22-10-54,OPEN,,{{@최해용::1745}} HT-STOP이 Time 영향이 있다고 판단되시면 오후 작업은 Rail Cut 진행해도 될까요 ? 결정 시 한 대씩 순차적으로 Rail Cut -> Open 순으로 작업할까 합니다.
+2025-01-22-15-10,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"안녕하세요, 4ABLD122호기 Error 발생하여 AI Close 하겠습니다."
+2025-01-22-15-19,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"안녕하세요, 4ABLD122호기 Error 발생하여 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-01-22 15:10:12) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-01-22-17-38,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD111호기 Error 발생으로 인하여 4F, 7F AI Close 하였습니다."
+2025-01-22-17-53,OPEN,,"조치되어 4F, 7F Open 하였습니다."
+2025-01-23-13-19,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-01-23-13-51,OPEN,4ABLD131,"안녕하세요 4ABLD131호기 조치되어 4F, 7F Open 하였습니다."
+2025-01-23-13-52,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122호기 Error 발생으로 4F, 7F AI Close 하겠습니다."
+2025-01-23-15-05,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122호기 Error 발생으로 4F, 7F AI Close 하겠습니다. (박지훈,이천AMHS운영/TL,2025-01-23 13:52:05) ┖ 조치 완료되어 AI Open 했습니다."
+2025-01-23-15-29,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 AI Close 하겠습니다.
+2025-01-23-15-40,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132호기 Error 발생으로 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-01-23 15:29:52) ┖ 조치 완료되어 AI Oepn 하겠습니다."
+2025-01-23-20-49,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"안녕하세요, 4ABLD112호기 Error 발생하여 4F, 7F AI Close 하겠습니다."
+2025-01-23-20-58,OPEN,,조치 완료되어 Open 하였습니다.
+2025-01-24-04-18,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112_AO45 Error 발생으로 AI77 Close 하겠습니다.
+2025-01-24-04-23,ERROR,-> OPEN,Error 조치 완료되어 AI77 Open 하였습니다.
+2025-01-24-20-53,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"안녕하세요, 4ABLD112호기 Error 발생하여 4F, 7F AI Close 하겠습니다."
+2025-01-24-21-01,OPEN,,조치 완료되어 Open 하였습니다.
+2025-01-25-00-42,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-25-00-52,ERROR,-> OPEN,Error 조치 완료되어 Open 하였습니다.
+2025-01-25-03-55,ERROR,6ABL6011 Error 발생으로 -> CLOSE,6ABL6011 Error 발생으로 INPUT Close 하였습니다.
+2025-01-25-04-12,OPEN,,Open하였습니다.
+2025-01-25-05-39,ERROR,,ERROR발생 때문이였을까요?
+2025-01-26-14-26,ERROR,4ABLD111 -> CLOSE,"안녕하세요 4ABLD111 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-01-26-14-45,ERROR,4ABLD111 -> OPEN,"4ABLD111 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-01-27-07-46,ERROR,4ABLD132 -> CLOSE,"안녕하세요 4ABLD132 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-01-27-07-54,ERROR,4ABLD132 -> OPEN,"4ABLD132 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-01-27-22-17,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD112 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-01-27-22-39,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-01-28-07-47,ERROR,4ABLD111 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD111호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-28-08-39,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-01-28-13-45,ERROR,4AFC3301 Error 발생으로,4AFC3301 Error 발생으로 인해 A_IN Port80~86 Disable 하였습니다. M16->M14방향
+2025-01-28-13-46,ERROR,4AFC3301 Error 발생하여,4AFC3301 M14->M16 방향도 현재 Error 발생하여 조치 중입니다.
+2025-01-28-13-56,ERROR,4AFC3301,4AFC3301 M14->M16방향 Error 조치되었습니다.
+2025-01-28-16-02,ERROR,4AFC3301 -> OPEN,4AFC3301 Error Clear되어 A_IN Port 80~87 Open 하였습니다.
+2025-01-28-17-32,ERROR,6ABL0112,6ABL0112 Error로 AI Banned 변경했습니다.
+2025-01-28-17-50,ERROR,6ABL0112,6ABL0112 Error Clear 되어 Auto Up 했습니다.
+2025-01-29-19-49,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-29-19-54,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-01-30-06-19,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-30-06-39,OPEN,4ABLD111,4ABLD111호기 조치되어 Open 하였습니다.
+2025-01-30-07-52,ERROR,4ABLD111 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD111호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-01-30-08-00,OPEN,4ABLD111,4ABLD111호기 조치되어 Open 하였습니다.
+2025-01-30-08-33,ERROR,4ABLD111 Error발생하여 -> CLOSE,"4ABLD111호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-01-30-08-59,OPEN,4ABLD111,4ABLD111호기 조치 완료되어 Open했습니다
+2025-01-30-09-42,ERROR,,HUB 반송 TIME 떨어지다 다시 올라가는데요 ERROR 조치 된건지 재확인 부탁드립니다
+2025-01-30-18-46,ERROR,4ABLD131 Error발생하여 -> CLOSE,"안녕하세요 4ABLD131호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-01-30-18-58,OPEN,4ABLD131,4ABLD131호기 조치 완료되어 Open했습니다
+2025-01-30-20-45,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131호기 Error 발생으로 4F,7F AI Close하겠습니다."
+2025-01-30-20-54,OPEN,4ABLD131,4ABLD131 조치 후 AI Open 하였습니다.
+2025-01-31-19-11,ERROR,4ABLD112 Error발생하여 -> CLOSE,"안녕하세요 4ABLD112호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-01-31-19-42,OPEN,4ABLD112,4ABLD112호기 조치 완료되어 Open했습니다
+2025-02-01-11-56,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-02-01-11-57,CLOSE,,{{@김필희::212013}} 4F/7F AI Port Close 하면 어느 방향이 영향을 받나요 ?
+2025-02-01-12-11,ERROR,4ABLD111,"4ABLD111호기 Error 처리 완료되어 Lifter 내 Foup 반송 진행 하였으며, 장비 Program 렉 발생 관련 PC OFF -> ON 작업으로 5분정도 추가 Down 진행하겠습니다."
+2025-02-01-12-17,OPEN,4ABLD111,4ABLD111호기 Auto Up & 4F/7F AI Port Open 하였습니다.
+2025-02-01-19-11,ERROR,4AFC3201,4AFC3201 QS Sensor Error로  M16-->M14 IN_86~90  50% 차단 진행 하였습니다.
+2025-02-01-19-14,ERROR,4AFC3201 -> OPEN,4AFC3201 QS Sensor Error 처리 되어 M16-->M14 IN_86~90 Port open 했습니다.
+2025-02-02-05-09,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131호기 Error 발생으로 인하여 4F, 7F AI Close 하였습니다"
+2025-02-02-05-16,OPEN,4ABLD131,"4ABLD131호기 조치되어 4F, 7F AI Open 하였습니다."
+2025-02-02-20-02,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-02-02-20-15,ERROR,4ABLD131 -> OPEN,"4ABLD131 호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-02-02-21-27,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 호기 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-02-02-21-39,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-04-01-15,CLOSE,6ABL0112,6ABL0112(4-1)호기 Err 발생으로 AI Close 하겠습니다.
+2025-02-04-01-59,OPEN,,Open 했습니다.
+2025-02-05-10-22,ERROR,4ABLD111 Error 발생하여 -> CLOSE,4ABLD111호기 Error 발생하여 AI Close 하겠습니다.
+2025-02-05-10-25,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111호기 Error 발생하여 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-02-05 10:22:35) ┖ 조치 완료되어 AI Open 하겠습니다"
+2025-02-05-23-10,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD122 Error 발생으로 4F,7F AI Close 하겠습니다 ."
+2025-02-05-23-24,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-06-04-08,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-02-06-04-38,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-06-09-03,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 하겠습니다.
+2025-02-06-09-24,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-02-06 09:03:06) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-02-06-09-34,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 하겠습니다.
+2025-02-06-10-07,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-02-06 09:34:47) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-02-06-10-59,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 하겠습니다.
+2025-02-06-12-02,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-02-06 10:59:06) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-02-06-17-26,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"안녕하세요 4ABLD131 호기 Error 발생하여 4F, 7F AI CLOSE 했습니다"
+2025-02-06-17-33,OPEN,4ABLD131,"4ABLD131 호기 조치완료되어 4F, 7F AI OPEN 했습니다"
+2025-02-07-01-27,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-07-05-29,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-07-15-25,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121 Error 발생으로 AI Port Close 하겠습니다.
+2025-02-07-15-38,ERROR,4ABLD121 -> OPEN,4ABLD121호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-02-08-03-49,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-08-03-58,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-09-13-07,ERROR,6ABL0111 -> CLOSE,6ABL0111 Error로 AI Close 했습니다.
+2025-02-09-13-15,OPEN,6ABL0111,6ABL0111 조치 완료되어 AI Open 했습니다.
+2025-02-10-07-12,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"안녕하세요  4ABLD112 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-02-10-07-26,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-10-08-11,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"안녕하세요  4ABLD122 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-02-10-08-18,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-10-10-00,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111호기 Error 발생으로 AI Close 하겠습니다.
+2025-02-10-11-24,OPEN,4ABLD111,4ABLD111호기 조치 완료되어 AI Open 하겠습니다.
+2025-02-10-18-20,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-02-10-18-27,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-02-10-19-42,ERROR,Error발생하여,현재 Bridge OHT Error발생하여 조치중입니다.
+2025-02-10-20-12,ERROR,Error발생하여,"현재 Bridge OHT Error발생하여 조치중입니다. (김현진,이천AMHS운영/TL,2025-02-10 19:42:11) ┖ Error조치 완료되었습니다"
+2025-02-10-20-50,ERROR,,안녕하세요 Bridge OHT Error 말고 문제 없을까요 hub time 7분이 넘어서 차수 3->2차수로 변경 하긴 완료
+2025-02-10-21-03,ERROR,,"안녕하세요 Bridge OHT Error 말고 문제 없을까요 hub time 7분이 넘어서 차수 3->2차수로 변경 하긴 완료 (이점선,이천FAB제조2/TL,2025-02-10 20:50:33) ┖ OHT Alarm 전부터 Que. 는 증가한 상태였고, OFS 차수관련 인폼 드릴 내용이 있으니 유선통화 가능한 번호 적어주세요."
+2025-02-11-07-40,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD112 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-02-11-07-51,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치 후 AI Open 하였습니다.
+2025-02-11-09-56,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD112 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-02-11-11-07,OPEN,4ABLD112,4ABLD112호기 조치 완료되어 AI Open 하겠습니다.
+2025-02-11-16-27,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 AI Close 하겠습니다.
+2025-02-11-16-57,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131호기 Error 발생으로 AI Close 하겠습니다. (이영재,이천AMHS운영/TL,2025-02-11 16:27:45) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-02-11-18-43,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111호기 Error 발생으로 AI Close 하겠습니다
+2025-02-11-18-44,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121호기 Error 발생으로 AI Close 하겠습니다
+2025-02-11-18-49,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121호기 Error 발생으로 AI Close 하겠습니다 (이영재,이천AMHS운영/TL,2025-02-11 18:44:15) ┖ 조치 완료되어 AI Open 하겠습니다"
+2025-02-11-18-58,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111호기 Error 발생으로 AI Close 하겠습니다 (이영재,이천AMHS운영/TL,2025-02-11 18:43:40) ┖ 조치 완료되어 AI Open 하겠습니다"
+2025-02-12-09-55,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD121 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-12-11-00,ERROR,4ABLD121 -> OPEN,4ABLD121 Error 조치 후 AI Open하였습니다
+2025-02-13-09-38,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-13-10-50,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다"
+2025-02-14-16-09,OPEN,4AFC3201,4AFC3201 차단한 포트 오픈하겠습니다.
+2025-02-14-16-22,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 했습니다.
+2025-02-14-16-27,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 AI Close 했습니다. (이영재,이천AMHS운영/TL,2025-02-14 16:22:46) ┖ 조치되어 Open 했습니다."
+2025-02-14-23-42,ERROR,,현재 OHT Error로 반송 정체중입니다.
+2025-02-14-23-44,ERROR,4ABLD122 Error발생으로 -> CLOSE,4ABLD122호기 Error발생으로 AI Close하겠습니다
+2025-02-14-23-56,ERROR,,"현재 OHT Error로 반송 정체중입니다. (김현진,이천AMHS운영/TL,2025-02-14 23:42:28) ┖ Error 조치되었습니다."
+2025-02-15-00-01,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error조치되어 AI OPEN했습니다
+2025-02-15-00-18,ERROR,4ABLD122 Error 발생 -> CLOSE,4ABLD122호기 Error 발생 관련 AI Port Close 하겠습니다.
+2025-02-15-00-32,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-02-15-05-36,ERROR,,현재 OHT Error로 반송 정체중입니다.
+2025-02-15-05-41,ERROR,,"현재 OHT Error로 반송 정체중입니다. (박성연,이천AMHS운영/TL,2025-02-15 05:36:55) ┖ 조치되었습니다."
+2025-02-15-06-28,ERROR,,OHT Error로 반송 정체중입니다.
+2025-02-15-06-34,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-02-15-06-39,ERROR,,"OHT Error로 반송 정체중입니다. (박성연,이천AMHS운영/TL,2025-02-15 06:28:14) ┖ 조치 완료되었습니다"
+2025-02-15-06-45,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-02-15-11-14,ERROR,4ABLD121 -> CLOSE,"안녕하세요 4ABLD121 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-02-15-11-22,ERROR,4ABLD121 -> OPEN,4ABLD121 ERROR 조치 완료되어 AI OPEN 하겠습니다.
+2025-02-15-15-31,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 AI Close 하겠습니다
+2025-02-15-15-50,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112호기 Error 발생하여 AI Close 하겠습니다 (이영재,이천AMHS운영/TL,2025-02-15 15:31:59) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-02-16-05-01,ERROR,,OHT Error로 반송 정체중입니다.
+2025-02-16-05-09,ERROR,,"OHT Error로 반송 정체중입니다. (박성연,이천AMHS운영/TL,2025-02-16 05:01:34) ┖ Error조치됐습니다."
+2025-02-16-10-13,ERROR,4ABLD121 -> CLOSE,"안녕하세요 4ABLD121 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-02-16-10-30,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-02-16-16-35,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 AI Close 하겠습니다
+2025-02-16-16-47,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치되어 4F, 7F AI Open 하겠습니다"
+2025-02-17-13-08,ERROR,4ABLD111 -> CLOSE,"4ABLD111 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-02-17-13-38,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-02-17-17-55,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD111 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-17-18-36,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치 후 4F,7F AI Open하였습니다."
+2025-02-17-20-34,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131호기 Error 발생하여 AI Close 하겠습니다.
+2025-02-17-21-19,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 후 AI Open하였습니다.
+2025-02-18-05-10,ERROR,4ABLD122 Error발생으로 -> CLOSE,"안녕하세요 4ABLD122호기 Error발생으로 4F, 7F AI Close하겠습니다"
+2025-02-18-05-22,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error조치 완료되어 AI Open했습니다
+2025-02-18-08-52,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-02-18-09-03,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-18-10-58,ERROR,,현재부터 약 10분 소요 되며 FOUP Error 시 추가로 시간이 소요 될수 있습니다.
+2025-02-18-11-12,ERROR,,롤백 이후 FOUP Found Error 로 Manual 제거 작업 진행하겠습니다.
+2025-02-18-11-36,OPEN,,M14->M16 방향 복구 되어 우선 OPEN 하였습니다.
+2025-02-18-11-46,OPEN,,M16->M14A 방향도 복구되어 OPEN 하였습니다.
+2025-02-18-13-22,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-02-18-13-28,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-02-18-18-30,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122 Error 발생하여 AI Close하겠습니다.
+2025-02-18-20-05,OPEN,4ABLD122,4ABLD122 조치 완료되어 AI Open 하겠습니다.
+2025-02-18-22-34,ERROR,4ABLD122 Error 발생되어 -> CLOSE,"4ABLD122 Error 발생되어 4F,7F AI Close 하겠습니다."
+2025-02-19-01-24,OPEN,,22:47분경 Open 완료 하였습니다.
+2025-02-19-01-24,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI port Close 하겠습니다.
+2025-02-19-01-44,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치완료되어 AI Port Open 하였습니다.
+2025-02-19-01-53,ERROR,,OHT Error로 반송 정체중입니다.
+2025-02-19-01-57,ERROR,,"OHT Error로 반송 정체중입니다. (박성연,이천AMHS운영/TL,2025-02-19 01:53:53) ┖ 조치되었습니다."
+2025-02-19-08-58,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 호기 Error 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-02-19-11-45,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치 완료되어 4F, 7F Open 했습니다."
+2025-02-20-02-52,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131호기 Error 발생으로 4F,7F Close 하였습니다."
+2025-02-20-03-26,OPEN,4ABLD131,4ABLD131호기 Erro 조치 완료되어 AI Port Open 하였습니다.
+2025-02-20-08-58,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121 호기 Error 발생으로 4F, 7F CLOSE 하겠습니다."
+2025-02-20-09-40,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-02-20-09-52,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-20-11-08,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치 완료되어 4F, 7F Open 했습니다."
+2025-02-20-14-56,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 호기 Error 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-02-20-15-50,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치 완료되어 4F, 7F Open 했습니다."
+2025-02-20-21-05,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-02-20-21-18,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치 완료되어 4F, 7F Open 했습니다."
+2025-02-21-07-38,ERROR,4ABLD131 -> CLOSE,"안녕하세요. 4ABLD131 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-02-21-07-45,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-21-11-04,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-02-21-11-48,OPEN,4ABLD131,"4ABLD131호기 상단 AI43, AI77 Open 하였습니다."
+2025-02-21-15-30,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 Error 발생으로 AI43,AI77 Close 하였습니다"
+2025-02-21-16-14,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 AI Open 하겠습니다
+2025-02-21-18-46,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-21-19-11,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 후 4F,7F AI Open 하였습니다"
+2025-02-22-17-25,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD121 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-22-17-28,ERROR,4ABLD121,4ABLD121 Error 영향인건가요?
+2025-02-22-17-29,ERROR,Error 발생된지,Error 발생된지 아직 4분밖에 안지나서 관계 없을 것으로 보입니다.
+2025-02-22-17-39,ERROR,4ABLD121 -> OPEN,"4ABLD121 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-23-01-27,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122호기 Error 발생하여 4F, 7F AI Close 하였습니다."
+2025-02-23-01-49,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4F, 7F AI Open 하였습니다"
+2025-02-23-14-56,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-02-23-15-05,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-02-24-10-51,OPEN,,Soft Patch 완료. Input Port open 후 Monitoring 진행하겠습니다.
+2025-02-24-15-52,OPEN,6ABL0112,6ABL0112 Soft Patch 완료되어 Input Port Open하여 반송 모니터링 중입니다.
+2025-02-24-18-14,ERROR,4ABLD131 -> CLOSE,"4ABLD131 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다"
+2025-02-24-18-29,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치완료되어 4F,7F AI OPEN 하겠습니다."
+2025-02-25-08-45,ERROR,Error발생으로,OHT Error발생으로 정체중입니다.
+2025-02-25-08-55,ERROR,Error발생으로,"OHT Error발생으로 정체중입니다. (김현진,이천AMHS운영/TL,2025-02-25 08:45:50) ┖ 조치되었습니다."
+2025-02-25-10-03,ERROR,4ABLD121 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD121호기 Error 발생으로 4F/7F AI Port Close 하였습니다.
+2025-02-25-10-32,ERROR,4ABLD121 -> OPEN,4ABLD121호기 Error조치 완료되어 AI Open했습니다
+2025-02-25-13-05,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하였습니다.
+2025-02-25-13-38,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치 후, AI43 AI75 Open 하였습니다."
+2025-02-26-00-33,ERROR,Error발생으로,OHT Error발생으로 정체중입니다.
+2025-02-26-00-38,ERROR,Error발생으로,"OHT Error발생으로 정체중입니다. (최홍영,이천AMHS운영/TL,2025-02-26 00:33:48) ┖ Error 처리되었습니다"
+2025-02-26-00-44,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-02-26-01-13,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error조치 완료되어 AI Open했습니다
+2025-02-26-10-48,OPEN,,PATCH 작업 완료 되어 A_IN OPEN 하겠습니다
+2025-02-26-12-06,ERROR,4ABLD122 Error발생으로 -> CLOSE,4ABLD122호기 Error발생으로 AI75 Close하겠습니다
+2025-02-26-12-14,OPEN,4ABLD122,4ABLD122호기 조치 완료되어 AI Open했습니다
+2025-02-26-12-45,OPEN,,재기동 완료 하여 OPEN 하였습니다.
+2025-02-26-15-26,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112 호기 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-02-26-16-13,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-27-00-04,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 호기 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-02-27-00-25,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-27-05-59,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4F,7F AI Close 하겠습니다"
+2025-02-27-06-17,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-27-10-33,OPEN,4ABLD131,"안녕하세요 금일 10:00~10:30  4ABLD131호기 7층 RM  carriage 모터 shaft 파손으로 긴급 교체 예정입니다 작업위치는 HUB룸이 아닌 M14B 7층에서 작업합니다. 영향도는 4ABLD131호기 1대 down 됩니다. (조순완,이천AMHS운영/TL,2025-02-27 08:21:39) ┖ 위 작업 완료되어 AI Open 했습니다."
+2025-02-27-22-29,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-02-27-22-36,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-02-28-04-58,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 호기 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-02-28-06-08,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-02-28-09-20,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생으로 4F, 7F AI CLOSE 하였습니다."
+2025-02-28-09-40,ERROR,4ABLD131 -> OPEN,"4ABLD131 호기 ERROR 처리 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-28-11-03,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생으로 4F, 7F AI CLOSE 하였습니다."
+2025-02-28-11-24,OPEN,4ABLD131,"4ABLD131 호기 RM 하단 Close 상태로  4F, 7F AI 상단만 Open 하였습니다."
+2025-02-28-12-01,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121호기 Error 발생으로 AI Close 하겠습니다.
+2025-02-28-12-06,ERROR,Error발생으로,OHT Error발생으로 정체중입니다.
+2025-02-28-12-12,ERROR,Error발생으로,"OHT Error발생으로 정체중입니다. (서민혁,이천AMHS운영/TL,2025-02-28 12:06:02) ┖ 처리 완료 되었습니다."
+2025-02-28-12-33,OPEN,4ABLD121,4ABLD121호기 조치 완료되어 AI Open 하겠습니다.
+2025-02-28-12-35,ERROR,Error 발생 -> CLOSE,Error 발생 조치로 인해 4F/7F AI Close하였습니다.
+2025-02-28-15-34,OPEN,4ABLD131,"4ABLD131 호기 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-28-18-53,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-02-28-19-14,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-02-28-22-09,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다"
+2025-02-28-22-16,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-01-07-30,CLOSE,4AFC3201,4AFC3201 M16 -> M14 Foup 정체 심하여 A_IN 80~85 CLOSE 실시 했습니다
+2025-03-01-07-43,OPEN,4AFC3201,4AFC3201 M16 -> M14 Foup 정체 해소되어 A_IN 80~85 open 실시 했습니다
+2025-03-01-08-45,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131 Error 발생으로 AI Close 했습니다.
+2025-03-01-09-21,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 완료되어 AI Open 했습니다.
+2025-03-01-09-45,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131 Error 발생으로 AI Close 했습니다.
+2025-03-01-10-37,OPEN,4ABLD131,4ABLD131 RM하단 막고 AI Open 했습니다.
+2025-03-01-11-31,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132  Error 발생으로 AI Close했습니다.
+2025-03-01-12-12,ERROR,4ABLD132 -> OPEN,4ABLD132 Error 조치 완료되어 AI Open 했습니다.
+2025-03-01-13-14,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131 Error 발생으로 AI Close 했습니다.
+2025-03-01-13-18,ERROR,Error발생으로,Hub Room OHT Error발생으로 정체중입니다.
+2025-03-01-13-36,ERROR,Error발생으로,"Hub Room OHT Error발생으로 정체중입니다. (서민혁,이천AMHS운영/TL,2025-03-01 13:18:03) ┖ 처리 완료되었습니다."
+2025-03-01-13-42,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 Error 발생으로 AI Close 했습니다. (이영재,이천AMHS운영/TL,2025-03-01 13:14:29) ┖ 조치 완료되어 AI Open 했습니다."
+2025-03-01-14-38,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121 Error 발생으로 AI Close 했습니다.
+2025-03-01-14-55,ERROR,4ABLD121 -> OPEN,안녕하세요. 4ABLD121호기 Error 조치 완료되어 AI Port Open하겠습니다.
+2025-03-01-21-39,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121 Error 발생으로 AI Close 하였습니다.
+2025-03-01-21-53,ERROR,4ABLD121 -> OPEN,4ABLD121호기 Error 조치 완료되어 AI Port Open하겠습니다.
+2025-03-02-21-06,ERROR,4ABLD121 Error발생하여 -> CLOSE,4ABLD121호기 Error발생하여 AI Close하겠습니다
+2025-03-02-21-28,ERROR,4ABLD121 -> OPEN,4ABLD121호기 Error조치 완료되어 AI Open했습니다
+2025-03-02-23-12,ERROR,4ABLD122 Error 발생으로 -> CLOSE,4ABLD122 Error 발생으로 AI Close 했습니다.
+2025-03-02-23-19,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error조치 완료되어 AI Open했습니다
+2025-03-03-04-05,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 했습니다.
+2025-03-03-04-36,OPEN,4ABLD112,4ABLD112호기 AI Open 했습니다.
+2025-03-04-04-57,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-03-04-05-21,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-03-04-07-07,ERROR,4ABLD111 Error 발생되어 -> CLOSE,4ABLD111호기 Error 발생되어 4F / 7F AI Close 했습니다.
+2025-03-04-07-24,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error 조치되어 4F / 7F AI Open했습니다.
+2025-03-04-07-32,ERROR,4ABLD131 Error 발생되어 -> CLOSE,4ABLD131호기 Error 발생되어 AI Close 했습니다.
+2025-03-04-07-42,ERROR,4ABLD131 Error 발생되어 -> CLOSE,"4ABLD131호기 Error 발생되어 AI Close 했습니다. (이영재,이천AMHS운영/TL,2025-03-04 07:32:10) ┖ 조치 완료되어 AI Open 하겠습니다."
+2025-03-04-10-10,ERROR,4AFC3201,4AFC3201(남측 Conveyor)M14->M16 A_IN80~85 Error 로 Disable 하였습니다.
+2025-03-04-10-43,OPEN,,OPEN 했습니다.
+2025-03-04-20-36,ERROR,Error발생으로,Bridge OHT Error발생으로 정체중입니다.
+2025-03-04-22-15,ERROR,4ABLD132 Error발생으로 -> CLOSE,4ABLD132호기 Error발생으로 AI Close하겠습니다
+2025-03-04-22-27,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error조치 완료되어 AI Open했습니다
+2025-03-05-05-35,ERROR,Error발생으로,Bridge OHT Error발생으로 정체중입니다.
+2025-03-05-07-55,ERROR,,"안녕하세요 OHT ERROR  어떤 현상인거에요..? 전일 저녁,  금일 오전  2회 발생된것 같은데,,, OHT 자체 ERROR가 발생된건지요,,,?"
+2025-03-05-07-57,ERROR,,안녕하세요 OHT가 정위치 잡지 못한 OHT 자체 Error였습니다. 금일 오전 발생한 Error는 발생 후 6분뒤에 Error 처리되었습니다.
+2025-03-05-10-47,ERROR,Error 발생할,"{{@진호섭::9749}} TL님 안녕하세요 OHT PIO Error 발생할 경우 Lifter에서 알람 모니터링이 쉽지 않아서, OHT Error처리할 경우에 인폼해주시면 저희도 같이 4층 Lifter쪽 확인하도록 하겠습니다."
+2025-03-05-14-02,ERROR,4ABLD132 Error발생으로 -> CLOSE,4ABLD132호기 Error발생으로 AI Close하겠습니다
+2025-03-05-13-44,ERROR,Error발생으로,Bridge OHT BV0231호기 Error발생으로 정체 중이니 참고 부탁드립니다.
+2025-03-05-13-52,ERROR,,Bridge OHT Error로 14시 예정된 M16A ZT 2-2호기 Patch는 잠시 대기하겠습니다.
+2025-03-05-13-57,ERROR,Error발생으로,"Bridge OHT BV0231호기 Error발생으로 정체 중이니 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-03-05 13:44:05) ┖ Error 처리되어 정체 해소 중입니다."
+2025-03-05-14-02,OPEN,4ABLD132,4ABLD132호기 AI open 하겠습니다
+2025-03-05-14-20,ERROR,,"OHT ERROR 빈번한데   전일과 동일 사유인가요,,,?"
+2025-03-05-14-33,ERROR,Error 발생하여,ZT에서 FOUP Unload 中 Error 발생하여 처리 과정에서 반송 Delay 되었습니다.
+2025-03-05-14-57,CLOSE,6ABL6022,6ABL6022 M16A ZT 2-2호기 Patch로 INPUT Close하겠습니다.
+2025-03-05-15-12,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD132 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-03-05-15-43,ERROR,4ABLD132 -> OPEN,4ABLD132 Error 조치 후 AI Open 하였습니다.
+2025-03-05-17-06,ERROR,4ABLD122 Error발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error발생으로 AI Close하겠습니다.
+2025-03-05-17-22,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-03-05-20-35,ERROR,4ABLD121 -> CLOSE,안녕하세요 4ABLD121호기 error발생으로 AI Close하겠습니다
+2025-03-05-20-44,ERROR,4ABLD121 -> OPEN,4ABLD121호기 error조치 완료되어 AI Open했습니다
+2025-03-06-00-04,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-03-06-00-14,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-03-06-07-50,ERROR,,7차수로 운영 4분이하 TIME 안정적으로 나온긴 한데... ERROR 발생 등의 상황시 MLUD로 돌아 나오는것이 TIME 증가 억제에 대한 효과가 있는 수치들로 설정 된것인지 좀 보고 샆어서요...
+2025-03-06-09-24,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-03-06-10-46,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open(상단port) 하였습니다"
+2025-03-07-14-08,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 AI Close 하겠습니다.
+2025-03-07-14-38,OPEN,4ABLD131,4ABLD131호기 AI Open 하겠습니다.
+2025-03-08-05-18,ERROR,4ABLD131 -> CLOSE,"4ABLD131 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-03-08-05-44,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-03-08-06-31,ERROR,Error 발생으로,5시 15분 ~ 5시 35분 약 20분간 Bridge OHT Error 발생으로 정체 발생 하였었습니다.
+2025-03-08-06-50,ERROR,4ABLD121 -> CLOSE,"안녕하세요 4ABLD121 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-03-08-07-03,OPEN,4ABLD121,4ABLD121호기 AI Open했습니다.
+2025-03-08-12-39,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-03-08-13-30,OPEN,4ABLD122,4ABLD122호기 13:00 AI Open했습니다.
+2025-03-08-14-36,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-03-08-14-51,OPEN,4ABLD112,4ABLD112 조치 완료되어 AI Open 했습니다.
+2025-03-08-19-07,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122 Error 발생하여 AI Close 하겠습니다.
+2025-03-08-19-16,ERROR,4ABLD122 -> OPEN,4ABLD122 Error 조치 완료되어 AI Open 했습니다.
+2025-03-09-14-08,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-03-09-14-16,OPEN,4ABLD112,4ABLD112 조치 완료되어 AI Open 했습니다.
+2025-03-09-16-21,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112 Error 발생하여 AI Close 하겠습니다.
+2025-03-09-16-44,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치 완료되어 AI Open 하겠습니다.
+2025-03-09-16-58,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131 Error 발생하여 AI Close 하겠습니다.
+2025-03-09-17-06,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 완료되어 AI Open 하겠습니다.
+2025-03-09-23-40,ERROR,Error발생으로,Bridge OHT Error발생으로 정체중입니다.
+2025-03-09-23-47,CLOSE,4ABLD112,"Bridge OHT Err 관련 4ABLD112, 122, 132호기 반송 Dealy 발생으로 반송영향 하단 Port  AI77 Close 하겠습니다. 해당호기 AO45 Conv Full 상태입니다."
+2025-03-09-23-48,ERROR,Error발생으로,"Bridge OHT Error발생으로 정체중입니다. (박성연,이천AMHS운영/TL,2025-03-09 23:40:31) ┖ Error조치 완료되어 정체 해소중입니다."
+2025-03-09-23-48,OPEN,4ABLD112,"4ABLD112, 122, 132호기 Conv 반송 해소되어 AI77 Open 하겠습니다."
+2025-03-10-04-03,ERROR,6ABL0122 Error 발생하여 -> CLOSE,6ABL0122 Error 발생하여 Input Close 하겠습니다.
+2025-03-10-04-25,ERROR,-> OPEN,Error 처리 완료되어 Open하였습니다.
+2025-03-10-06-22,ERROR,4ABLD121 -> CLOSE,"안녕하세요 4ABLD121 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-03-10-06-29,OPEN,4ABLD121,4ABLD121 조치 완료되어 AI Open 했습니다.
+2025-03-10-08-51,ERROR,4ABLD121 Error 발생으로 -> CLOSE,안녕하세요  4ABLD121 Error 발생으로 AI Close 하겠습니다.
+2025-03-10-09-59,ERROR,4ABLD121 -> OPEN,4ABLD121 Error 조치 후 AI Open 하였습니다.
+2025-03-10-13-15,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요  4ABLD131 Error 발생으로 AI Close 하겠습니다.
+2025-03-10-13-30,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 후 AI Open 하였습니다.
+2025-03-10-20-20,ERROR,4ABLD122 Error 발생으로 -> CLOSE,4ABLD122 Error 발생으로 AI Close 했습니다.
+2025-03-10-20-29,ERROR,4ABLD122 -> OPEN,4ABLD122 Error 조치 완료되어 AI Open 했습니다.
+2025-03-11-08-59,CLOSE,4ABLD111,"4ABLD111호기 감속기 교체작업으로 4F, 7F AI Close 하겠습니다."
+2025-03-11-10-20,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-03-11-11-17,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-03-12-04-48,ERROR,4ABLD132 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD132호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-03-12-04-59,ERROR,4ABLD132 -> OPEN,4ABLD132 Error 조치 완료되어 AI Open 했습니다.
+2025-03-12-18-58,ERROR,6ABL6032 Error 발생으로 -> CLOSE,안녕하세요. 6ABL6032호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-03-12-19-10,ERROR,6ABL6032 -> OPEN,6ABL6032 Error 조치 완료되어 AI Open 했습니다.
+2025-03-12-19-54,OPEN,,작업 완료되어 포트 순차적 오픈하겠습니다.
+2025-03-12-19-59,OPEN,4AFC3301,4AFC3301은 오픈 완료입니다.
+2025-03-12-20-05,ERROR,4AFC3301 Error발생으로,4AFC3301 CVLH04 Error발생으로 점검중 입니다.
+2025-03-12-20-10,ERROR,4AFC3301,4AFC3301 CVLH04 Error 조치 완료되었습니다.
+2025-03-12-20-11,OPEN,4AFC3201,4AFC3201 포트 전체 Open했습니다.
+2025-03-13-04-15,ERROR,6ABL6032,6ABL6032_AO313 Conv Error 조치로 20분간 Driver 교체 진행하겠습니다.
+2025-03-13-19-58,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-03-13-20-12,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치 완료되어 AI Open 했습니다.
+2025-03-14-05-02,ERROR,4ABLD112 -> CLOSE,"안녕하세요. 4ABLD112 ERROR 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-03-14-05-16,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치 완료되어 AI Open 했습니다.
+2025-03-14-09-40,ERROR,4ABLD121 -> CLOSE,"4ABLD121 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다"
+2025-03-14-09-46,ERROR,4ABLD121 -> OPEN,"4ABLD121 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-03-14-11-55,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 4F, 7F AI CLOSE 하겠습니다"
+2025-03-14-12-02,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-14-21-39,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-03-14-21-53,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 완료되어 AI Open 했습니다.
+2025-03-15-04-59,ERROR,Error발생으로,Bridge OHT Error발생으로 정체중입니다.
+2025-03-15-05-02,ERROR,Error발생으로,"Bridge OHT Error발생으로 정체중입니다. (박성연,이천AMHS운영/TL,2025-03-15 04:59:07) ┖ 조치되었습니다."
+2025-03-15-05-37,ERROR,Error발생으로,Bridge OHT Error발생으로 정체중입니다
+2025-03-15-05-40,CLOSE,4ABLD131,"안녕하세요. 4ABLD131_AO41 - OHT 연계 Err 발생 관련 정체 발생 RAIL 121, 122, 131, 132 AO41 Conv Full 반송 지연관련 해당 4개장비 AI75 Close 하였습니다."
+2025-03-15-05-41,ERROR,Error발생으로,"Bridge OHT Error발생으로 정체중입니다 (김현진,이천AMHS운영/TL,2025-03-15 05:37:51) ┖ Error 조치 되었습니다"
+2025-03-15-05-45,OPEN,,정체 해소되어 4개 호기 AI75 Open 하였습니다.
+2025-03-15-10-53,ERROR,4ABLD132 -> CLOSE,"4ABLD132 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-03-15-10-59,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-03-15-13-15,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-03-15-13-20,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-03-16-08-15,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-03-16-08-24,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-16-11-58,ERROR,Error발생으로,Bridge OHT Error발생으로 정체중입니다.
+2025-03-16-12-37,ERROR,4ABLD111,"{{@민광기::285753}} 진행 사항 확인 부탁 드립니다. 4F 아래 장비에서 Foup 출고가 지연되고 있습니다. 4ABLD111_AO45, 4ABLD112_AO41,AO45, 4ABLD121_AO45, 4ABLD122_AO45 (오철민,이천AMHS운영/TL,2025-03-16 12:33:04) ┖ E:9600 발생하여 Error Reset 불가해 일단 ST.1580→1581 Rail Cut 후 ST.1581로 OHT 이동 시켰습니다. 해당 구역은 반송에 영향 없으며 점차 반송 정체 해소되고 있습니다."
+2025-03-16-13-10,ERROR,4ABLD131,"{{@오철민::8149}} Bridge에서 발생한 Error 관련 처리가 되지 않아 MTH로 빼기위해 St.2606~2607로 가는 직선 Rail의 Rail Cut 필요합니다. 시간은 약 10분정도면 될것 같습니다. Rail Cut 진행시 4ABLD131_AI43, AO43 Port 사용 불가입니다."
+2025-03-16-13-19,OPEN,,{{@오철민::8149}} 작업 완료되어 Rail Open했습니다.
+2025-03-18-06-42,ERROR,Error발생으로,OHT Error발생으로 정체중입니다.
+2025-03-18-06-59,ERROR,Error발생으로,"OHT Error발생으로 정체중입니다. (김현진,이천AMHS운영/TL,2025-03-18 06:42:46) ┖ Error조치되었습니다"
+2025-03-18-14-43,ERROR,4ABLD121,"M14B SFA Lifter 작업 내용 공유 3/18~3/21 4ABLD121 호기 감속기 교체 예정이었는데, 풉감지센서 Error 다발하여 운영에 어려움을 겪고 있어 감속기 교체 하지않고, 3/19~3/21 4ABLD121 호기 풉 감지 센서 Error 개선 프로그램 적용하고, 주간에만 장비 TEST 후 야간에 장비 AUTO UP 예정입니다"
+2025-03-18-15-29,CLOSE,,"ZT4-1 2F, 3F, 6F AI CLOSE 하였습니다."
+2025-03-18-19-02,OPEN,,"ZT4-1 2F, 3F, 6F AI OPEN 하였습니다."
+2025-03-18-20-56,ERROR,4AFC3301 Error 발생으로,안녕하세요 4AFC3301 Error 발생으로 A_IN80~89 차단하겠습니다.
+2025-03-18-21-18,ERROR,-> OPEN,Error 해결되어 A_IN80~89 OPEN 했습니다
+2025-03-19-08-30,ERROR,4ABLD121,"3/19~3/21 주간에 M14B lifter 센서 에러 다발로 개선적용 긴급하게 필요하여, 감속기 교체 작업 대신 4ABLD121호기 개선적용 진행예정입니다. 야간에는 장비 up하겠습니다"
+2025-03-19-09-00,CLOSE,4ABLD121,"4ABLD121 개선적용 관련 4F,7F AI Close 하겠습니다."
+2025-03-19-10-40,OPEN,4AFC3301,CVLH04점검완료되어 4AFC3301_IN85~89 Open 하겠습니다.
+2025-03-19-14-58,ERROR,4ABLD131 -> CLOSE,"4ABLD131 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-03-19-15-30,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-03-19-16-43,OPEN,4ABLD121,"4ABLD121 금일 개선작업 종료 후 4F,7F AI OPEN 하였습니다"
+2025-03-19-16-46,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-03-19-16-54,ERROR,4ABLD121 -> OPEN,"4ABLD121 Error 조치 후 4F,7F AI Open 하였습니다"
+2025-03-19-21-19,ERROR,4ABLD121 -> CLOSE,"4ABLD121 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-03-19-21-31,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-20-00-26,ERROR,4AFC3301 Error 발생으로,4AFC3301 Error 발생으로 16-> 14 INPUT 차단 하겠습니다.
+2025-03-20-00-52,ERROR,4AFC3301 -> OPEN,4AFC3301 Error 조치완료되어 전체포트 오픈 했습니다.
+2025-03-20-01-03,ERROR,4AFC3301,4AFC3301 CVLH4호기 Error로 input85~89 차단(50%) 했습니다.
+2025-03-20-01-11,ERROR,4AFC3301 -> OPEN,4AFC3301 CVLH4호기 Error 조치되어 Input85~89 Open했습니다.
+2025-03-20-07-56,ERROR,4ABLD121,"3/19~3/21 주간에 M14B lifter 센서 에러 다발로 개선적용 긴급하게 필요하여, 감속기 교체 작업 대신 4ABLD121호기 개선적용 진행예정입니다. 야간에는 장비 up하겠습니다 (조순완,이천AMHS운영/TL,2025-03-19 08:30:36) ┖ 안녕하세요."
+2025-03-20-09-00,CLOSE,4ABLD121,"4ABLD121 개선작업 관련 4F,7F AI Close 하겠습니다."
+2025-03-20-12-03,OPEN,4ABLD121,"4ABLD121 개선작업 완료 후 4F,7F AI OPEN 하였습니다"
+2025-03-20-14-09,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-03-20-14-27,CLOSE,4ABLD121,"4ABLD121 개선작업 추가 진행 위해 4F,7F AI Close 하겠습니다"
+2025-03-20-15-47,OPEN,4ABLD121,"4ABLD121 개선작업 완료 후 4F,7F AI Open 하였습니다."
+2025-03-21-11-22,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD112 Error 발생으로 4F,7F AI Close 하였습니다."
+2025-03-21-11-32,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-03-22-18-26,ERROR,4ABLD122 -> CLOSE,"4ABLD122 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-03-22-18-31,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-22-20-44,ERROR,4ABLD131 -> CLOSE,"4ABLD131 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-03-22-21-44,ERROR,4ABLD131 -> OPEN,"4ABLD131 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-22-21-24,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 호기 Error 발생하여 4F, 7F AI CLOSE 하겠습니다."
+2025-03-22-21-44,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-23-07-18,ERROR,4ABLD122 Error 발생 -> CLOSE,"4ABLD122호기 Error 발생 하여 4F,7F AI Close 하였습니다."
+2025-03-23-07-24,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-23-07-59,ERROR,Error발생하여,Bridge OHT BV0190 Error발생하여 조치중으로 현재 정체 발생하고 있습니다.
+2025-03-23-08-37,ERROR,Error발생하여,"Bridge OHT BV0190 Error발생하여 조치중으로 현재 정체 발생하고 있습니다. (김지훈,이천AMHS운영/TL,2025-03-23 07:59:01) ┖ 조치 완료되어 정체 해소중입니다."
+2025-03-23-08-58,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122 Error 발생하여 AI Close 했습니다.
+2025-03-23-08-59,ERROR,4ABLD122 -> OPEN,4ABLD122 ERROR 조치 완료되어 AI OPEN 하겠습니다.
+2025-03-23-09-11,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131 Error 발생하여 AI Close 했습니다
+2025-03-23-11-03,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 AI Close 했습니다 (이영재,이천AMHS운영/TL,2025-03-23 09:11:42) ┖ 09:40경에 하단 AI 막고, 상단 AI Open 했습니다."
+2025-03-23-18-37,OPEN,4AFC3301,4AFC3301 18:19 조치 되어 순차적으로 PORT OPEN 진행 중입니다.
+2025-03-23-18-49,OPEN,4AFC3301,18:36 4AFC3301 모든 PORT OPEN 하여 반송 소화중입니다.
+2025-03-23-22-40,ERROR,6ABL6031 -> CLOSE,"M16A ZT 3-1호기 6ABL6031 Error로 3F, 6F AI  Close 했습니다."
+2025-03-23-22-48,ERROR,-> OPEN,Error Clear 되어 Open 했습니다.
+2025-03-23-22-56,ERROR,6ABL6031 Error 발생으로 -> CLOSE,"6ABL6031 Error 발생으로 3F, 6F AI Close 했습니다."
+2025-03-24-09-33,ERROR,4ABLD111 Error 발생으로 -> CLOSE,4ABLD111 Error 발생으로 AI Close 했습니다
+2025-03-24-09-54,ERROR,4ABLD111 -> OPEN,4ABLD111 Error 조치 완료되어 AI Open 했습니다.
+2025-03-24-11-04,CLOSE,4ABLD132,"안녕하세요 4ABLD132,111호기 4F AO Delay가 심한데 혹시 작업하고 있는거 있을까요? 4ABLD132,4ABLD112 4F AO Delay 발생중으로 7F AI Close 하겠습니다"
+2025-03-24-11-04,OPEN,,"132,112호기 Open 하였습니다."
+2025-03-24-14-26,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122 Error 발생하여 AI Close 했습니다.
+2025-03-24-14-38,ERROR,4ABLD122 -> OPEN,4ABLD122 Error 조치 후 AI Open 하였습니다.
+2025-03-24-15-26,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-03-24-15-36,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-24-15-38,CLOSE,6ABL0112,6ABL0112호기 Conv 커플링 확인 작업으로 인해 AI CLOSE 하겠습니다 ( E2403 대응 작업 )
+2025-03-24-16-43,OPEN,,해당 호기 작업 완료되어 AI OPEN 진행하였습니다
+2025-03-25-06-54,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112 Error 발생으로 AI Close 했습니다
+2025-03-25-07-06,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치 완료되어 AI Open 했습니다
+2025-03-25-09-04,CLOSE,4ABLD131,"안녕하세요 기존 인폼드린것과 같이 3/25~3/28 M14B Lifter 4ABLD131 호기 1대 감속기 교체작업 진행 위해 4F,7F AI Close 하겠습니다."
+2025-03-26-09-57,ERROR,,M14B LIFT 위 OHT 에서 ERROR 발생하여 지연되고 있습니다. 현재 긴급 조치 중입니다
+2025-03-26-09-57,ERROR,,M14B 7층 Bridge 에서 OHT error 로 조치중입니다
+2025-03-26-10-00,ERROR,,해당 ERROR 가 기본 RESET 으로 처리가 되지 않는 ALARM 이라 현재 OHT 를 수동으로 빼고 있어 지체 되고 있습니다. 5~10분안에 완료될 예정입니다
+2025-03-26-10-06,OPEN,,현재 4F 밀리는 QUE Open close 로 조치 진행하겠습니다.
+2025-03-26-16-00,CLOSE,4ABLD112,4ABLD112호기 4F AI Port Full / 7F AO Port Full 관련 4F AI Port Close 하겠습니다.
+2025-03-26-16-05,OPEN,4ABLD112,4ABLD112호기 4F AI Port Open 하였습니다.
+2025-03-27-07-04,ERROR,,"M14B SFA Lifter BOPFOP 센서 Error로 개선 작업 예정입니다. 4/1 10:00~12:00 111호기 down 4/2 10:00~12:00 122호기 down 4/3 10:00~12:00 132호기 down 4/4 10:00~12:00 112호기 down 개선 작업 중 다른 호기 down되어 que증가할 경우, 작업 중단하고 장비 UP 하도록 하겠습니다"
+2025-03-27-02-02,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112 Error 발생으로 AI Close 했습니다
+2025-03-27-02-42,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치 완료되어 AI Open 했습니다
+2025-03-27-05-20,ERROR,4ABLD111 -> CLOSE,4ABLD111 호기 ERROR 발생으로 AI PORT CLOSE 했습니다.
+2025-03-27-05-21,ERROR,Error 발생으로,M14 HUB OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다.
+2025-03-27-05-27,ERROR,Error 발생으로,"M14 HUB OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-03-27 05:21:47) ┖ 조치 완료되었습니다."
+2025-03-27-06-17,OPEN,4ABLD111,4ABLD111호기 05:33 AI Open 했습니다.
+2025-03-28-05-39,ERROR,4ABLD132 -> CLOSE,"안녕하세요 4ABLD132 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-03-28-05-45,ERROR,4ABLD132 -> OPEN,"4ABLD132 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-28-10-13,OPEN,4ABLD131,"4ABLD131 감속기 교체 작업 완료되어 3,7F 상단 AI Open 했습니다."
+2025-03-28-10-26,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131 Error 발생하여 AI Close 했습니다.
+2025-03-28-10-35,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 완료되어 AI Open 했습니다.
+2025-03-28-12-44,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122 Error 발생하여 AI Close 했습니다.
+2025-03-28-12-55,ERROR,4ABLD122 -> OPEN,4ABLD122 Error 조치 완료되어 AI Open 했습니다.
+2025-03-29-22-46,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-03-29-23-02,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-03-30-02-22,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-03-30-02-41,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-30-09-21,ERROR,6ABL0112 -> CLOSE,"6ABL0112 Error로 2F, 3F, 6F AI Close 했습니다."
+2025-03-30-09-40,ERROR,6ABL0112 -> OPEN,"6ABL0112 Error 조치완료로 2F, 3F, 6F AI Open 했습니다."
+2025-03-30-22-44,ERROR,4ABLD122 Error발생하여 -> CLOSE,"4ABLD122호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-03-30-22-59,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-03-31-12-55,ERROR,4ABLD131 -> CLOSE,"안녕하세요 4ABLD131 ERROR 발생으로 4F,7F AI Close 하겠습니다."
+2025-03-31-15-31,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다"
+2025-04-01-10-05,ERROR,4ABLD111 -> CLOSE,"4ABLD111호기 ERROR 발생으로 4F, 7F AI Close 하였습니다."
+2025-04-01-11-23,ERROR,4ABLD111 -> OPEN,"안녕하세요 4ABLD111 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-04-01-15-04,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132호기 Error 발생으로 4F,7F AI Close 하였습니다."
+2025-04-01-15-19,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치 되어 4F,7F AI Open 하였습니다."
+2025-04-01-15-28,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-04-01-15-50,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-04-01-20-00,ERROR,,"M14B-M16 Bridge  Lifter BOPFOP 센서 Error로 개선 작업 예정입니다. 4/2 10:00~12:00 122호기 down 4/3 10:00~12:00 132호기 down 4/4 10:00~12:00 112호기 down 개선 작업 중 다른 호기 down되어 que증가할 경우, 작업 중단하고 장비 UP 하도록 하겠습니다"
+2025-04-02-00-07,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111호기 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-04-02-09-39,ERROR,Error 발생으로,"금일 예정된 122호기는 센서 개선 작업하지 않고,  111호기 Error 발생으로 처리중입니다"
+2025-04-02-10-23,ERROR,4ABLD111 -> OPEN,"안녕하세요 4ABLD111 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-04-02-16-22,ERROR,4AFC3301,4AFC3301(북측 Conveyor) QS Error 로 교체 중에 있습니다. M16->M14 방향 4AF3301 內 FOUP 이 많이 싸여  A_IN MAX CAPA 1로 하향 하였습니다.
+2025-04-02-16-53,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error 발생으로 4F/7F Auto In Port 모두 Close 했습니다.
+2025-04-02-16-58,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-04-03-12-31,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD121호기 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-04-03-14-01,ERROR,4ABLD121 -> OPEN,"안녕하세요 4ABLD121 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-04-03-19-17,ERROR,4ABLD132 Error 발생하여 -> CLOSE,4ABLD132호기 Error 발생하여 AI Close 했습니다.
+2025-04-03-19-40,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-04-04-15-08,ERROR,,Error Reset 후 Auto up 했습니다.
+2025-04-04-18-36,ERROR,,Error Reset 후 Auto up 했습니다.
+2025-04-05-20-38,ERROR,4AFC3301,4AFC3301_Motor Error로 LD 교체작업 진행합니다. 4AFC3301 전체 포트 차단하겠습니다.
+2025-04-05-21-03,OPEN,4AFC3301,4AFC3301 LD 교체완료되어 포트 오픈 했습니다.
+2025-04-06-02-56,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-04-06-03-05,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error조치 완료되어 AI OPEN 했습니다
+2025-04-06-16-10,ERROR,6ABL0122,"안녕하세요 6ABL0122 Error로 2F, 3F, 6F AI Banned T 변경했습니다."
+2025-04-06-14-39,ERROR,6ABL0122 -> OPEN,6ABL0122 Error Clear 되어 AI Open 했습니다.
+2025-04-06-18-22,OPEN,6ABL0122,6ABL0122 작업 완료되어 AI Open 했습니다.
+2025-04-07-05-59,ERROR,4ABLD122 Error발생하여 -> CLOSE,안녕하세요 4ABLD122호기 Error발생하여 AI Close 하겠습니다
+2025-04-07-06-15,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error조치 완료되어 AI Open했습니다
+2025-04-08-09-39,ERROR,4AFC3201,4AFC3201 OHT ERROR (M14 FAB)  발생으로  M16 -->M14  IN_80~85  50%차단했습니다.
+2025-04-08-09-55,ERROR,4AFC3201 -> OPEN,4AFC3201 OHT ERROR (M14 FAB) 처리 완료 되어 M16 -->M14  IN_80~85 OPEN 했습니다.
+2025-04-08-13-39,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122호기 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-04-08-14-10,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-04-08-17-25,OPEN,,Rail CUT OPEN 했습니다.
+2025-04-09-14-22,OPEN,,{{@강준우::150369}} TL님  M14B-M16 hub lifter 는 작업완료되어 오픈 가능상태에요
+2025-04-09-15-56,OPEN,,OPEN 하는데 문제 안되도록 OPEN 전에 작업은 마무리 하겠습니다.
+2025-04-09-16-42,OPEN,,{{@진호섭::9749}}  {{@이정원::126514}} Bridge 정산 Open 되었을까요?
+2025-04-11-01-45,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-04-11-01-51,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치되어 4,7F AI Open 했습니다."
+2025-04-12-08-23,CLOSE,4AFC3201,4AFC3201 M16->M14  반송 정체로  Auto in 80_82 close 했습니다
+2025-04-12-08-43,OPEN,,AFC3201 M16->M14 반송 해소되어  Auto in 80_82 open  했습니다
+2025-04-14-12-23,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"안녕하세요. 4ABLD122호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-04-14-12-27,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4,7F AI Open 했습니다."
+2025-04-15-11-06,OPEN,4ABLD132,"안녕하세요 4ABLD132 점검 작업 완료 후 4F,7F AI open 하였습니다."
+2025-04-15-11-40,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-04-15-11-59,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치되어 4,7F AI 상단 Open 했습니다."
+2025-04-16-09-55,CLOSE,4ABLD111,"안녕하세요  4ABLD111 기존 Err 관련 불합리 검토 & 점검 작업으로 4F,7F AI Port Close 하겠습니다."
+2025-04-16-10-06,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 Error 발생으로 4F,7F AI Close 하였습니다 111호기 4F,7F AI Open 하였습니다"
+2025-04-16-10-32,ERROR,4ABLD131 -> CLOSE,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다. 4abld111 4F,7F AI 다시 Close 하겠습니다./"
+2025-04-16-11-28,OPEN,4ABLD111,"4ABLD111 점검 작업완료 후 4F,7F AI Open 하였습니다."
+2025-04-16-14-57,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 호기 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-04-16-15-13,OPEN,,작업완료되어 Rail Open 하였습니다
+2025-04-16-16-07,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치 완료되어 4F, 7F AI OPEN 했씁니다"
+2025-04-16-16-25,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112 호기 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-04-16-17-22,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-04-17-07-23,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-04-17-07-46,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치 완료되어 AI47 제외하고 4,7F AI Open 했습니다."
+2025-04-17-09-57,ERROR,4ABLD111 -> OPEN,4ABLD111 AI47 Error 조치 완료 되어 Open 했습니다.
+2025-04-17-11-05,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-04-17-11-59,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다"
+2025-04-18-03-17,ERROR,Error 발생으로,Bridge Hub OHT Error 발생으로 인한 반송 Delay 발생 할 수 있습니다.
+2025-04-18-03-36,ERROR,Error 발생으로,"Bridge Hub OHT Error 발생으로 인한 반송 Delay 발생 할 수 있습니다. (신우진,이천AMHS운영/TL,2025-04-18 03:17:34) ┖ Error Clear 되어 정체 해소 중입니다."
+2025-04-18-05-12,ERROR,4AFC3201,안녕하세요 4AFC3201 LD Error 로 인해 LD 교체 작업 진행예정입니다. (1시간 30분 예상) Down Port 3개 있으며 작업간 OHT 간섭될수있어 Rail 2개 HT-STOP 진행하겠습니다. - 4AFC3201A_OUT85 - 4AFC3201A_OUT86 - 4AFC3201A_OUT87
+2025-04-18-09-50,ERROR,4AFC3201 Error 발생으로,4AFC3201A_IN80~85 LD Error 발생으로 해당 Port disable 하였습니다.
+2025-04-18-09-56,ERROR,4AFC3201 Error 발생으로,"4AFC3201A_IN80~85 LD Error 발생으로 해당 Port disable 하였습니다. (윤영찬,이천AMHS운영/TL,2025-04-18 09:50:11) ┖ ERROR 조치 되어 OPEN 했습니다."
+2025-04-18-11-21,ERROR,Error 발생으로,"Bridge Hub OHT Error 발생으로 인한 반송 Delay 발생 할 수 있습니다. (신우진,이천AMHS운영/TL,2025-04-18 03:17:34) ┖ 이때"
+2025-04-18-11-23,ERROR,4AFC3201,4AFC3201 A_OUT88 포트에서 Error 였던것으로 확인했습니다
+2025-04-18-11-23,ERROR,4AFC3201 Error 발생으로,"Bridge Hub OHT Error 발생으로 인한 반송 Delay 발생 할 수 있습니다. (신우진,이천AMHS운영/TL,2025-04-18 03:17:34) ┖ 당시 4AFC3201A_OUT88에서 Foup이 정위치보다 앞으로 나와있어 Error 발생하였습니다."
+2025-04-18-12-43,ERROR,4AFC3201,"4AFC3201 A_OUT88 포트에서 Error 였던것으로 확인했습니다 (조순완,이천AMHS운영/TL,2025-04-18 11:23:03) ┖ 네.. 제가 착각했습니다."
+2025-04-18-14-13,ERROR,4AFC3201,4AFC3201 TCM504 Error로 14->16 전체 Input Port 차단했습니다.
+2025-04-23-01-13,ERROR,4ABLD132 -> CLOSE,"안녕하세요 4ABLD132 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-04-23-01-41,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-04-23-02-16,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 호기 Error 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-04-23-02-16,ERROR,4ABLD131 -> OPEN,"4ABLD131 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-04-23-12-51,ERROR,4ABLD132 -> CLOSE,"안녕하세요 4ABLD132 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-04-23-13-21,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-04-24-05-16,ERROR,4ABLD122 -> CLOSE,"4ABLD122 호기 ERROR 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-04-24-05-35,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치완료되어 4F,7F AI OPEN 했습니다."
+2025-04-24-09-47,CLOSE,4ABLD132,"안녕하세요  4ABLD132 기존 Err 관련 불합리 검토 & 점검 작업으로 4F,7F AI Port Close 하겠습니다."
+2025-04-24-10-29,OPEN,4ABLD132,"4ABLD132 점검 완료 후 4F,7F AI Open 하였습니다."
+2025-04-24-10-39,CLOSE,4ABLD112,"4ABLD112 기존 Err 관련 불합리 검토 & 점검 작업으로 4F,7F AI Port Close 하겠습니다."
+2025-04-24-10-58,OPEN,4ABLD112,"4ABLD112 점검 완료 후 4F,7F AI Open 하였습니다."
+2025-04-24-13-36,ERROR,6ABL0112 -> CLOSE,"6ABL0112 Error로 2F, 3F, 6F AI CLOSE 했습니다."
+2025-04-24-13-53,ERROR,6ABL0112 -> OPEN,"6ABL0112 Error Clear되어 2F, 3F, 6F AI OPEN 했습니다."
+2025-04-24-14-10,ERROR,6ABL6011 -> CLOSE,"6ABL6011 Error로 3F, 6F AI CLOSE 했습니다."
+2025-04-24-14-57,ERROR,6ABL6011 -> OPEN,"6ABL6011 Error Clear 되어 3F, 6F AI OPEN 했습니다."
+2025-04-24-16-26,ERROR,,M14 Hub Room 쪽에서 OHT Error로 조치 중 입니다.
+2025-04-24-17-37,CLOSE,4ABLD122,4ABLD122_7F Auto In Que 몰림 현상으로 Port Close 조치하였습니다.
+2025-04-24-19-01,OPEN,4ABLD122,4ABLD122 AUTO INPORT Open 했습니다.
+2025-04-25-12-33,ERROR,4AFC3301 Error 발생하여,"안녕하세요 4AFC3301 Error 발생하여 A_IN85~88, 80~84 Disable 하겠습니다"
+2025-04-25-12-54,ERROR,4AFC3301 Error 발생하여,안녕하세요 4AFC3301 Error 발생하여 현상 확인을 위해 HUB ROOM HT-STOP 진행하겠습니다. 5분 이내일 것으로 예상하나 추가로 필요할시 공지하겠습니다.
+2025-04-25-12-58,ERROR,4AFC3301 Error 발생하여,"안녕하세요 4AFC3301 Error 발생하여 A_IN85~88, 80~84 Disable 하겠습니다 (양영석,이천AMHS운영/TL,2025-04-25 12:33:38) ┖ 4AFC3301 A_IN80~84 Open 하겠습니다."
+2025-04-25-13-26,OPEN,,ST.2109→2563 숏컷구간 레일 오픈했습니다.
+2025-04-25-19-46,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122호기 Error 발생하여 4F,7F AI CLOSE 했습니다."
+2025-04-25-20-06,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-04-26-18-35,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112 Error 발생하여 4,7F AI Close 했습니다"
+2025-04-26-18-39,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 완료되어 4,7F AI Open 했습니다"
+2025-04-26-19-02,ERROR,4ABLD131 Error발생하여 -> CLOSE,4ABLD131 Error발생하여 4F/7F AI Close했습니다.
+2025-04-26-19-13,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치되어 4F/7F AI Open했습니다.
+2025-04-26-21-41,ERROR,4ABLD132 Error 발생하여 -> CLOSE,"4ABLD132 Error 발생하여 4,7F AI Close 했습니다."
+2025-04-26-21-55,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치되어 4,7F AI Open 했습니다."
+2025-04-26-23-36,ERROR,4ABLD112 Error 발생되어 -> CLOSE,"4ABLD112호기 Error 발생되어 4, 7F AI Close했습니다"
+2025-04-26-23-57,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error조치되어 4, 7F AI Open했습니다"
+2025-04-27-00-40,ERROR,4ABLD112 Error 발생되어 -> CLOSE,"4ABLD112호기 Error 발생되어 4, 7F AI Close했습니다."
+2025-04-27-01-04,OPEN,,D112호기 포트 하나 문제로 A_IN77 제외 후 오픈 했습니다. 수고하세요.
+2025-04-28-07-14,ERROR,4AFC3301,{{@정호석::9788}} TL 님 안녕하세요 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 Port 쪽 Error 로 인해 LD 교체 작업이 필요 합니다. 해당 구간이 OHT 집중 되는 구간이라 해당 시간 OFS 2차수로 변경 운용 요청 드립니다. 일시 : 4/28(월) 9:30~10:00 Error 구간  : 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 작업 내용 : Lost Alarm 관련 LD 교체 작업  / HUB ROOM 內 HT-STOP 작업 필요
+2025-04-28-15-00,ERROR,6ABL0112 Error 발생으로,"안녕하세요 M16A 6ABL0112 Error 발생으로 3F,6F AI BANNED T 변경했습니다."
+2025-04-28-16-55,ERROR,6ABL0112 Error 발생으로,"안녕하세요 M16A 6ABL0112 Error 발생으로 3F,6F AI BANNED T 변경했습니다. (최지호,이천AMHS운영/TL,2025-04-28 15:00:31) ┖ PORT OPEN 했습니다."
+2025-04-28-19-44,ERROR,6ABL6031 Error 발생으로,"안녕하세요 M16A 6ABL6031 Error 발생으로 3F,6F AI BANNED T 변경했습니다."
+2025-04-29-09-37,ERROR,6ABL0112 Error 발생,6ABL0112 Error 발생 대응 작업으로 Input port 차단했습니다.
+2025-04-29-14-00,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 호기 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-04-29-14-39,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다"
+2025-04-30-09-14,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-04-30-09-19,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-04-30-13-04,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 호기 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-04-30-13-13,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-04-30-15-38,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112 호기 Error 발생으로 AI Close 했습니다.
+2025-04-30-17-22,OPEN,4ABLD112,4ABLD112호기 조치 완료되어 AI Open 했습니다.
+2025-05-01-03-31,CLOSE,6ABL6032,M16A 6ABL6032 AO313 주행 Motor Cable 확인 작업으로 AI CLOSE 하겠습니다.
+2025-05-02-11-46,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다"
+2025-05-02-12-09,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-02-17-21,ERROR,4ABLD121 -> CLOSE,"4ABLD121 호기 ERROR 발생으로 4F, 7F AI PORT CLOSE 했습니다."
+2025-05-02-17-55,OPEN,4ABLD121,4ABLD121호기 AI Port open 했습니다.
+2025-05-02-18-35,ERROR,4ABLD121 -> CLOSE,4ABLD121호기 에러발생으로 AI Close 했습니다.
+2025-05-02-18-55,OPEN,4ABLD121,4ABLD121호기 AI Port open 했습니다.
+2025-05-03-04-51,ERROR,6ABL0121 Error 발생,6ABL0121 AO623 Error 발생 대응 작업으로 Input port 차단했습니다.
+2025-05-03-04-59,ERROR,6ABL0121 -> OPEN,6ABL0121 AO623 Error 조치 완료되어 AI Port Open 했습니다.
+2025-05-04-13-01,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-05-04-13-07,OPEN,4ABLD112,4ABLD112호기 AO45 Conv Motor 불량으로 한 개소 제외한 나머지 4F/7F AI Port Open 하였습니다.
+2025-05-04-16-04,ERROR,6ABL6012 -> CLOSE,"6ABL6012 Error로 3F, 6F AI Close 했습니다."
+2025-05-04-16-22,OPEN,6ABL6012,"6ABL6012 AI611 제외 3F, 6F AI Open 했습니다."
+2025-05-04-17-11,OPEN,6ABL6012,6ABL6012 AI611 Open 완료했습니다.
+2025-05-06-08-16,ERROR,Error 발생으로,Bridge OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다.
+2025-05-06-08-32,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-05-06 08:16:10) ┖ 조치되었습니다"
+2025-05-06-10-30,ERROR,4AFC3201 Error 발생으로,4AFC3201 Zone60611 Communication Error 발생으로 현재 조치중입니다. (M14A->M16E 방향)
+2025-05-06-10-34,ERROR,,Error Clear 불가 관련 LD 교체예정이며 작업시간은 30분~1시간 정도 예상됩니다.
+2025-05-06-11-07,ERROR,4AFC3201,4AFC3201 LD 교체 후 Error Clear 되었습니다.
+2025-05-06-11-27,ERROR,4AFC3301,4AFC3301  error 발생 정체로  A_IN80~89 MCS상 outservice 변경하였습니다
+2025-05-06-11-49,ERROR,4AFC3301,4AFC3301 error clear되어  A_IN80~89  inservice 변경하였습니다
+2025-05-06-23-56,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-07-00-09,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-07-03-50,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-07-04-07,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-07-08-58,CLOSE,4ABLD121,"4ABLD121 4,7F AI Close 했습니다."
+2025-05-07-10-06,CLOSE,4ABLD122,"4ABLD122 4,7F AI Close 및 작업 시작 하겠습니다."
+2025-05-07-11-27,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-07-12-02,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다. 가동중입니다."
+2025-05-07-13-23,ERROR,4AFC3201 Error 발생,4AFC3201 Zone50810 Error 발생 관련 A_IN80~85 구간 Down 진행하였습니다.
+2025-05-07-13-38,ERROR,4AFC3201 Error 발생,4AFC3201 Zone50810 Error 발생 관련 HUB Room 상부작업 (HT-STOP)이 필요합니다. 1차적으로 Foup 위치이동 (HT-STOP 30초)후 Clear 되지 않을시 2차적으로 Foup 제거(HT-STOP 1분)가 필요합니다. M14A에서 HUB Room HT-STOP 진행해도 될까요??
+2025-05-07-14-01,ERROR,,ERROR 조치완료로 HT-STOP 해제 하겠습니다
+2025-05-07-14-06,ERROR,4AFC3201,{{@이정원::126514}} TL 님 4AFC3201 Error 관련 4AFC3301 MAX CAPA 임시 상향건 원복 했습니다.
+2025-05-07-14-08,OPEN,4AFC3201,4AFC3201 A_IN80~85 구간 Open하였습니다.
+2025-05-08-13-18,OPEN,4ABLD112,4ABLD112호기 작업 완료되어 4F/7F AI Port Open 하였습니다.
+2025-05-08-15-14,CLOSE,4ABLD131,"4ABLD131호기 4F, 7F AI CLOSE 했습니다."
+2025-05-08-16-24,OPEN,4ABLD131,"4ABLD131호기 작업 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-10-11-21,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-10-11-28,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-10-16-05,ERROR,4ABLD131 -> CLOSE,"4ABLD131 ERROR 발생하여 4F, 7F AI CLOSE 했습니다"
+2025-05-10-16-11,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-11-21-28,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-05-11-21-46,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-05-12-00-58,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4F, 7F AI CLOSE 했습니다."
+2025-05-12-01-08,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-05-12-14-20,ERROR,4ABLD112,5/13 (화) 09:00~17:00 4ABLD112 호기 Lifter 풉 감지 센서 에러 다발하여 작업이 필요하여 1대 down 작업 예정입니다
+2025-05-12-15-15,ERROR,4ABLD132,"4ABLD132 ERROR 4F,7F AI 차단 하겠습니다."
+2025-05-12-15-15,ERROR,4ABLD132 Error발생으로 -> CLOSE,4ABLD132호기 Error발생으로 AI Close하겠습니다
+2025-05-12-15-19,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error조치 완료되어 AI Open 했습니다
+2025-05-12-15-31,CLOSE,4ABLD112,4ABLD112호기 RM/Conv 장비 점검으로  AI Port Close 하겠습니다
+2025-05-12-16-13,ERROR,Error발생하여,현재 OHT Error발생하여 조치중입니다.
+2025-05-12-16-35,OPEN,4ABLD112,4ABLD112호기 점검 완료되어 AI Port Open 하였습니다.
+2025-05-12-16-40,ERROR,Error발생하여,"현재 OHT Error발생하여 조치중입니다. (김현진,이천AMHS운영/TL,2025-05-12 16:13:25) ┖ 조치 완료 되었습니다"
+2025-05-13-08-59,CLOSE,4ABLD112,"4ABLD112호기 작업 시작하겠습니다. 4,7F AI Close 하겠습니다."
+2025-05-13-16-51,OPEN,4ABLD112,4ABLD112호기 작업 완료되어 4F/7F AI Port Open 하였습니다. 수고하세요.
+2025-05-14-08-02,CLOSE,4ABLD131,"4ABLD131호기 M14-M16 Hubroom Conv Port 확장 작업 관련 AI43,AI75 Close 했습니다."
+2025-05-14-13-02,OPEN,4ABLD131,"4ABLD131_AI43, AI75 Open했습니다."
+2025-05-15-10-44,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD132호기 Error 발생으로 인하여 4F, 7F AI Close하였습니다."
+2025-05-15-10-54,OPEN,4ABLD132,"조치완료되어 4ABLD132호기 4F, 7F AI Open 하였습니다."
+2025-05-16-12-52,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD111호기 Error 발생으로 인하여 4F, 7F AI Close하였습니다."
+2025-05-16-13-13,OPEN,4ABLD111,"조치완료되어 4ABLD111호기 4F, 7F AI Open 하였습니다."
+2025-05-18-19-38,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-18-19-44,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 완료되어 4,7F AI Open 했습니다."
+2025-05-19-04-11,ERROR,4ABLD122 -> CLOSE,"4ABLD122호기 ERROR 발생하어 4F, 7F AI CLOSE 했습니다."
+2025-05-19-04-19,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-19-07-18,ERROR,,해당 시간 M16 → M14로 반송되는 반송큐 증가로 인해 반송타임 늘어난 것으로 추정됩니다. Bridge OHT Error는 없었습니다.
+2025-05-20-07-17,ERROR,4ABLD112,"4ABLD112호기 ERROR 발생으로 4F, 7F INPUT PORT 차단 했습니다."
+2025-05-20-07-20,CLOSE,4ABLD131,"안녕하세요 4ABLD131호기 M14-M16 Hubroom Conv Port 확장 작업 관련 AI43,AI75 Close 했습니다."
+2025-05-20-07-28,OPEN,4ABLD112,"4ABLD112호기 조치 완료되어 4F,7F INPUT PORT OPEN 했습니다."
+2025-05-20-13-01,OPEN,4ABLD131,안녕하세요 4ABLD131호기 Open 하였습니다.
+2025-05-20-18-58,ERROR,6ABL0111 Error 발생,"안녕하세요 M16A 6ABL0111,6ABL0112,6ABL0121,6ABL0122 구역 Upper Rail OHT Driver Error 발생 및 처리중으로 반송 Delay 에 참고 부탁드립니다."
+2025-05-20-19-56,ERROR,-> OPEN,Error Clear 및 Rail Open 하겠습니다.
+2025-05-21-03-23,ERROR,Error 발생으로,Bridge OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다.
+2025-05-21-03-33,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-05-21 03:23:48) ┖ Error조치 되었습니다"
+2025-05-21-09-00,ERROR,4ABLD122 Error 발생으로 -> CLOSE,4ABLD122호기 Error 발생으로 AI Close 하겠습니다.
+2025-05-21-14-00,ERROR,4AFC3301 Error 발생하여,안녕하세요 4AFC3301 Conv Lift02쪽 LD Error 발생하여 Offline 상태입니다 4AFC3301 A_OUT85~89 PORT 반송 불가하니 참고 바랍니다. (4AFC3301A_OUT80~84 사용가능)
+2025-05-22-09-01,CLOSE,4ABLD132,"안녕하세요 4ABLD132 호기 불합리 발견으로 인한 조치관련 4F,7F AI CLOSE 하겠습니다."
+2025-05-22-15-04,OPEN,4ABLD132,"안녕하세요, 4ABLD132 4,7F AI Open 하겠습니다."
+2025-05-22-17-04,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4,7F AI Close 하겠습니다."
+2025-05-22-17-35,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-22-19-29,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111 Error 발생하여 4,7F AI Close 하겠습니다."
+2025-05-22-19-38,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-05-23-15-30,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생하여 4,7F AI CLOSE 하겠습니다."
+2025-05-23-15-40,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 되어  4,7F AI Open 했습니다."
+2025-05-23-15-45,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122 Error 발생하여 4,7F AI Close 하겠습니다."
+2025-05-23-15-48,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 되어  4,7F AI Open 했습니다."
+2025-05-23-15-55,ERROR,4ABLD132 Error 발생하여 -> CLOSE,"4ABLD132 Error 발생하여 4,7F AI Close 하겠습니다."
+2025-05-23-15-59,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 되어  4,7F AI Open 했습니다."
+2025-05-25-12-49,ERROR,4ABLD121 -> CLOSE,"4ABLD121호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-05-25-13-28,ERROR,4ABLD121 -> OPEN,"4ABLD121 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-26-05-12,ERROR,4ABLD111 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD111호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-05-26-05-35,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error 조최 완료되어 4F/7F AI Port Open 하였습니다.
+2025-05-26-09-53,ERROR,6ABL6031 Error 발생으로 -> CLOSE,6ABL6031 Error 발생으로 AI Port Close 했습니다
+2025-05-26-10-11,ERROR,6ABL6031 -> OPEN,6ABL6031 Error 조치 후 AI Port Open 했습니다
+2025-05-26-14-07,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI Port Close 했습니다."
+2025-05-26-14-21,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-27-08-34,ERROR,,안녕하세요 {{@진호섭::9749}} TL님  {{@정휘태::11678}} TL님 불합리 Error가 있어서 개선이 필요하여 작업 진행하도록 하겠습니다.
+2025-05-27-09-56,CLOSE,4ABLD111,"안녕하세요 4ABLD111 호기 불합리 개선작업 관련 4F,7F AI CLOSE 하겠습니다."
+2025-05-27-15-02,OPEN,,작업 완료되어 AI Open 했습니다.
+2025-05-27-20-41,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD122 호기 Error 발생으로 4F, 7F AI Port Close 했습니다."
+2025-05-27-20-43,OPEN,6ABL6032,작업 완료되어 ZT 3-2호기 Auto Up 했습니다. ※ 6ABL6032 AO313은 록타이트 경화 후 명일 Open 예정.
+2025-05-27-20-47,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-05-27-21-26,ERROR,6ABL0122 Error 발생해 -> CLOSE,"6ABL0122 M16A ZT 5-2호기 Error 발생해 2F, 3F, 6F AI Close 했습니다."
+2025-05-27-21-42,ERROR,6ABL0122 -> OPEN,"6ABL0122 M16A ZT 5-2호기 Error 조치 완료되어 2F, 3F, 6F AI Open했습니다."
+2025-05-28-06-03,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-28-06-10,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-28-06-22,ERROR,4ABLD132 Error 발생하여 -> CLOSE,"4ABLD132 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-28-06-33,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-28-10-44,CLOSE,4ABLD121,"안녕하세요 4ABLD121 호기 작업으로 4F, 7F AI Port Close 했습니다."
+2025-05-28-19-23,OPEN,6ABL6032,6ABL6032 AO313 작일 Conv Travel Motor 교체 후 록타이트 경화 완료되어 Open 했습니다.
+2025-05-28-21-13,OPEN,6ABL0121,"작업 완료되어 ZT 5-1호기 Auto Up 했습니다. ※ 6ABL0121 AO222, AI213은 록타이트 경화 후 명일 Open 예정."
+2025-05-29-10-11,CLOSE,4ABLD131,"안녕하세요. 4ABLD131호기 작업으로 4F, 7F AI Port Close 하겠습니다. (~17시 완료 예정입니다.)"
+2025-05-29-14-36,ERROR,4AFC3301 Error 발생으로,4AFC3301(북측 Conveyor) M14->M16 방향 內 LD Error 발생으로 LD 긴급 교체 작업 진행 하겠습니다.
+2025-05-29-14-51,OPEN,4ABLD131,안녕하세요. 4ABLD131호기 작업완료되어 AI Open 했습니다
+2025-05-29-19-26,OPEN,6ABL0121,"6ABL0121 AO222, AI213 Port Open 했습니다."
+2025-05-29-21-22,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"안녕하세요 4ABLD122호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-05-29-21-28,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4,7F AI Open 했습니다."
+2025-05-30-10-11,ERROR,4ABLD132 Error발생으로 -> CLOSE,"안녕하세요 4ABLD132호기 Error발생으로 3F, 7F AI Close하겠습니다"
+2025-05-30-10-24,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error조치 완료되어 AI Open했습니다
+2025-06-02-09-43,ERROR,4ABLD132 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-06-02-09-53,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-06-04-00-13,ERROR,Error 발생으로,Bridge M14 HUB ROOM OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다.
+2025-06-04-00-21,ERROR,Error 발생으로,"Bridge M14 HUB ROOM OHT Error 발생으로 조치 중입니다. 정체 발생 할 수 있으니 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-06-04 00:13:42) ┖ OHT Error 조치 완료되었습니다."
+2025-06-04-15-02,ERROR,4ABLD111 -> CLOSE,"안녕하세요 4ABLD111 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-06-04-15-11,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-06-04-16-13,ERROR,4AFC3301 Error 발생으로,안녕하세요 4AFC3301 CVLH02 (M16->M14 방향) Error 발생으로 현재 조치중에 있습니다. 참고 부탁드립니다
+2025-06-04-16-18,ERROR,4AFC3301 Error 발생으로,"안녕하세요 4AFC3301 CVLH02 (M16->M14 방향) Error 발생으로 현재 조치중에 있습니다. 참고 부탁드립니다 (정도헌,이천AMHS운영/TL,2025-06-04 16:13:23) ┖ 4AFC3301 A_OUT80~84 는 그대로 운용, A_85~89 만 Error 에 영향 받아 출고되지 않고 있습니다."
+2025-06-04-17-34,ERROR,-> OPEN,Error 조치 되어 Open 했습니다.
+2025-06-05-13-41,ERROR,4ABLD132 Error 발생하여 -> CLOSE,"4ABLD132 Error 발생하여 4,7F AI Close 했습니다."
+2025-06-05-14-31,OPEN,4ABLD132,"4ABLD132 조치 완료되어 4,7F AI Open 했습니다."
+2025-06-05-19-26,ERROR,4ALBD122 Error 발생으로 -> CLOSE,안녕하세요. 4ALBD122호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-06-05-19-32,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-06-06-08-12,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 4,7F AI Close 했습니다."
+2025-06-06-08-27,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치되어 4,7F AI Open 했습니다"
+2025-06-09-10-00,ERROR,,M14 HUB ROOM OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-06-09-10-06,ERROR,,"M14 HUB ROOM OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-06-09 10:00:44) ┖ 완료되었습니다."
+2025-06-09-13-18,ERROR,4ABLD131,"M14B lifter 4ABLD131 호기 센서 에러로 port down 상태입니다. 14:00~17:00 긴급 센서 점검 하도록하겠습니다 oht stop 하지않으며, 나머지 5대 다른 호기는 정상 반송됩니다"
+2025-06-09-14-43,OPEN,4ABLD131,안녕하세요. 4ABLD131호기 작업 완료되어 AI 상단 Port Open 하였습니다. -. 하단 RM Conv Motor 불량 Down.
+2025-06-09-14-43,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-06-09-14-50,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-06-10-10-32,ERROR,,M14 HUB ROOM OHT ERROR 발생으로 정체 발생 중입니다. 참고 부탁드립니다.
+2025-06-10-10-40,ERROR,,"M14 HUB ROOM OHT ERROR 발생으로 정체 발생 중입니다. 참고 부탁드립니다. (신우진,이천AMHS운영/TL,2025-06-10 10:32:39) ┖ Error Clear 되었습니다."
+2025-06-10-14-35,ERROR,4ABLD131,"안녕하세요 M14B Lifter 센서 Error 다발로 장비 down 발생되는 일이 잦아서 센서 위치 변경 작업 예정입니다. 6/11 (수) 10:00 ~ 11:00 : 4ABLD131 호기 RM CV BOP, FOP Sensor 위치 변경 작업 6/12 (목) 10:00 ~ 11:00 : 4ABLD112 호기 RM CV BOP, FOP Sensor 위치 변경 작업 6/13 (금) 10:00 ~ 11:00 : 4ABLD122 호기 RM CV BOP, FOP Sensor 위치 변경 작업"
+2025-06-11-01-19,ERROR,4AFC3201,4AFC3201 M16 -->M14  M14내부  TCM ERROR  발생으로 A_IN80~90까지 차단 했습니다.
+2025-06-11-01-42,ERROR,-> OPEN,AFC3201 M16 -->M14  M14내부  TCM ERROR 처리 완료 되어 A_IN80~90 OPEN  했습니다.
+2025-06-11-07-49,ERROR,,TCM ERROR가 어떤 고장 인가요..?
+2025-06-11-08-44,ERROR,,간단히 LD 와 QS 의 하나의 Module 단위로 묶어서 관리 되는 명칭이라고 생각하시면 됩니다. 내부 Error 는 다양하며 상기 건은 Zone60001~600004 사이에 FOUP 정지 및 motor error 로 인해 조치 했던 내용입니다.
+2025-06-11-09-47,CLOSE,4ABLD131,4ABLD131호기 Sensor 위치 변경 작업위해 AI Close 하겠습니다.
+2025-06-11-10-38,OPEN,4ABLD131,4ABLD131호기 작업 완료되어 AI Open 하겠습니다.
+2025-06-11-13-55,ERROR,,M14 HUB ROOM OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-06-11-14-00,ERROR,,"M14 HUB ROOM OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (최홍영,이천AMHS운영/TL,2025-06-11 13:55:09) ┖ Error 처리 되었습니다."
+2025-06-11-15-58,OPEN,,작업 완료되어 Port Open 했습니다.
+2025-06-11-17-05,ERROR,4AFC3201,(( 4AFC3201_Motor Error Zone[60002~60004] reason[65312] alarm 관련 하여 LD 교체 작업으로 Down 예정 ))입니다. Error 다발시 긴급 작업 진행될수 있는점 참고 부탁드립니다.
+2025-06-12-10-57,OPEN,4AFC3201,안녕하세요 4AFC3201 Conv 작업 완료되어 Port open 하겠습니다.
+2025-06-12-15-29,CLOSE,4ABLD112,"4ABLD112호기 RM CV BOP, FOP Sensor 위치 변경 작업  으로 4,7F AI Close 했습니다."
+2025-06-12-16-16,OPEN,4ABLD112,"4ABLD112호기 RM CV BOP, FOP Sensor 위치 변경 작업  완료 되어 4,7F AI Open 했습니다."
+2025-06-13-09-48,CLOSE,4ABLD122,4ABLD122호기 센서 이동 작업으로 Close 하겠습니다.
+2025-06-13-10-07,OPEN,4ABLD122,4ABLD122호기 작업 완료되어 Open 하겠습니다.
+2025-06-15-01-00,ERROR,4AFC3201 Error 발생으로,4AFC3201_60722 Turn Failed Error 발생으로 고소작업 진행중입니다..
+2025-06-15-01-06,ERROR,4AFC3201 -> CLOSE,4AFC3201 ERROR 발생으로 M14->M16 AUTO IN  14~21 Close 했습니다
+2025-06-15-01-47,ERROR,4AFC3201 -> OPEN,4AFC3201 ERROR 조치 되어 M14->M16 Auto AI  14~24 open 했습니다
+2025-06-16-02-26,ERROR,,M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-06-16-05-49,ERROR,6ABL6011 Error 발생으로 -> CLOSE,6ABL6011호기 Error 발생으로 AI Port Close 하겠습니다.
+2025-06-16-06-16,ERROR,6ABL6011 -> OPEN,6ABL6011호기 Error 조치되어 AI Port Open하였습니다.
+2025-06-16-06-23,ERROR,,"M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-06-16 02:26:37) ┖ 해당 Error 4시 30분에 조치되었습니다."
+2025-06-16-14-06,ERROR,4ABLD121 -> CLOSE,"안녕하세요 4ABLD121 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-06-16-14-21,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-06-17-13-30,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생으로 4F, 7F AI CLOSE 하겠습니다."
+2025-06-17-13-40,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-06-17-16-02,OPEN,,M16A ZT3-1 6F CONV AO621 BELT 교체 후 경화 완료되어 OPEN 했습니다.
+2025-06-18-05-36,ERROR,,M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-06-18-05-44,ERROR,,"M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-06-18 05:36:07) ┖ 조치되었습니다."
+2025-06-18-13-08,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 호기 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-06-18-13-49,ERROR,4ABLD131 -> OPEN,"4ABLD131 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다"
+2025-06-19-12-56,CLOSE,4ABLD131,"4ABLD131 호기 작업 관련 4F, 7F AI CLOSE 했습니다."
+2025-06-19-17-12,OPEN,4ABLD131,"4ABLD131 호기 작업 완료 되어 4F, 7F AI Open 했습니다."
+2025-06-20-09-55,ERROR,4ABLD132 -> CLOSE,"4ABLD132 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-06-20-11-09,ERROR,4ABLD132 -> OPEN,"4ABLD132 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-06-21-06-56,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-06-21-07-13,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Port Open 하였습니다
+2025-06-21-10-03,ERROR,4ABLD132 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-06-21-10-15,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 완료되어 AI Port Open 하였습니다
+2025-06-21-11-44,ERROR,4ABLD132 Error발생으로 -> CLOSE,4ABLD132호기 Error발생으로 4F/7F AI Close하겠습니다
+2025-06-21-14-42,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error조치되어 4F, 7F 하단 AI Port Open 했습니다 - 상단 RM Conv Motor 불량으로 Down 실시."
+2025-06-22-09-17,ERROR,6ABL6022 -> CLOSE,6ABL6022 ERROR 발생으로 AI PORT CLOSE 진행하겠습니다.
+2025-06-22-10-15,ERROR,-> OPEN,AI OPEN 하였습니다. -. AO323 CONV Error로 Down 상태
+2025-06-22-13-18,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-06-22-13-49,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 AI Port Open 하였습니다.
+2025-06-23-10-38,ERROR,,내일 M14B Lifter 작업 공유드립니다 6/24 (화) 10:00~12:00 작업 시간 : 호기당 30분씩 X 4대 횡전개 작업 내용 : BOP FOP Error (센서 에러) 다발로 불합리 개선 작업 영향도 : OHT STOP 없음. 1대씩만 down하며 나머지 5대는 정상 운영
+2025-06-23-12-50,CLOSE,4ABLD132,4ABLD132호기 RM Conv Motor 교체작업으로 4F/7F AI Close하겠습니다
+2025-06-23-15-00,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 호기 Error 발생으로 4F, 7FF AI CLOSE 했습니다."
+2025-06-23-15-13,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-06-23-15-52,OPEN,4ABLD132,"4ABLD132 호기 RM CONV Motor 개선품 교체작업 관련 작업완료되어 4F,7F AI OPEN 하겠습니다."
+2025-06-24-08-48,ERROR,4AFC3301 Error 발생,안녕하세요 Conveyor Lift Error 발생 관련 아래와 같이 점검 예정입니다. 작업 영향도는 미비하여 추가 Action 은 없습니다. 시간 : 10:00~11:00 내용 : 4AFC3301 북측 Conveyor M14->M16 방향 Conveyor Lift 2호기 Error 관련 Stopper 점검 (Down 작업) 영향 : 4AFC3301A_OUT85~89 반송 불가
+2025-06-24-08-50,ERROR,,안녕하세요 어제 공지된 M14B SFA Lifter 불합리 개선 관련 Patch작업 10:00부터 작업 예정입니다. 6/24 (화) 10:00~12:00 작업 시간 : 호기당 30분씩 X 4대 횡전개 작업 내용 : BOP FOP Error (센서 에러) 다발로 불합리 개선 작업 영향도 : OHT STOP 없음. 1대씩만 down하며 나머지 5대는 정상 운영
+2025-06-24-12-55,ERROR,,안녕하세요 어제 공지된 M14B SFA Lifter 불합리 개선 관련 Patch작업 10:00부터 작업 예정입니다. 6/24 (화) 13:00~ 작업 시간 : 호기당 30분씩 X 4대 횡전개 작업 내용 : BOP FOP Error (센서 에러) 다발로 불합리 개선 작업 영향도 : OHT STOP 없음. 1대씩만 down하며 나머지 5대는 정상 운영
+2025-06-24-13-09,OPEN,4ABLD111,"4ABLD111호기 작업 완료되어 AI 4,7 오픈했습니다."
+2025-06-24-13-28,OPEN,4ABLD112,"4ABLD112호기 작업 완료되어 AI 4,7 오픈했습니다."
+2025-06-24-14-02,OPEN,4ABLD121,"4ABLD121호기 4F, 7F AI Open했습니다"
+2025-06-24-14-14,CLOSE,4ABLD122,"4ABLD122호기 4, 7층 AI Close 하겠습니다"
+2025-06-24-14-26,OPEN,4ABLD122,"4ABLD122호기 4,7 AI OPEN했습니다 작업완료했습니다 수고하세요"
+2025-06-24-21-44,ERROR,4ABLD132 -> CLOSE,"4ABLD132 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-06-24-22-04,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 ERROR 조치 완료 후 4F, 7F AI OPEN 했습니다."
+2025-06-24-22-13,ERROR,4ABLD132 -> CLOSE,"4ABLD132호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-06-24-22-25,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-06-25-08-49,ERROR,4ABLD132 Error발생으로 -> CLOSE,"4ABLD132호기 Error발생으로 4F, 7F AI Close하겠습니다"
+2025-06-25-09-23,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-06-25-09-32,ERROR,Error 발생으로,Error 발생으로 반송 Time 증가 하네요  Bridge 현장 구성원들은   모니터링 강화 부탁 드립니다.
+2025-06-26-13-28,ERROR,6ABL6021,6ABL6021 ERROR 발생으로 AI CONV Colse 진행하겠습니다.
+2025-06-26-13-46,ERROR,6ABL6021 -> OPEN,6ABL6021 ERROR 조치되어 AI CONV Open하겠습니다.
+2025-06-26-14-13,ERROR,4ABLD121 Error발생하여 -> CLOSE,4ABLD121호기 Error발생하여 7층 Close하겠습니다 다른 포트는 정상운영중입니다.
+2025-06-26-14-06,ERROR,,M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-06-26-14-19,ERROR,,"M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-06-26 14:06:48) ┖ 조치되었습니다."
+2025-06-26-14-23,OPEN,4ABLD121,4ABLD121호기 조치 완료되어 7층 AI Open했습니다
+2025-06-26-18-59,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-06-26-19-17,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-06-27-07-26,ERROR,Error 발생,OHT Dead-Lock 발생 으로 저희쪽에서 Error 발생 시켜 강제 통과 시키는  부분입니다.
+2025-06-27-07-32,CLOSE,,확인하고 7F MCS Close하면서 대응하였습니다.
+2025-06-27-08-03,CLOSE,4ABLD132,06:40분경 M14B HMI 허브룸 정체 확인됨. 06:47분 4ABLD132호기 7F Load 계속 시도하는 현상이 있어 MCS 7F Close조치
+2025-06-27-08-03,CLOSE,,4F HUB Room Rail 정체 심각하여 순차적으로 SFA ZT 7F Close 조치하여 정체 해소 조치
+2025-06-27-08-03,ERROR,4ABLD132,원인: 4ABLD132_AO41 Foup Error 없이 Delay발생.
+2025-06-27-19-52,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다"
+2025-06-27-19-57,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-06-29-17-43,ERROR,4ABLD122,안녕하세요. 4ABLD122 ERROR AUTO_OUT 1 PORT 알람 발생하여 확인 중입니다.
+2025-06-29-17-48,ERROR,,"RM은 가동중이였고, 에러난 1개의 포트는 클리어 완료입니다. 수고하세요."
+2025-06-30-08-57,CLOSE,4ABLD111,"4ABLD111 AI 4F,7F  Close 하겠습니다"
+2025-06-30-09-33,OPEN,4ABLD111,"4ABLD111 4,7F AI Open 했습니다."
+2025-06-30-16-34,ERROR,4ABLD132 Error발생하여 -> CLOSE,"4ABLD132호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-06-30-16-38,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 완료되어 AI Open했습니다
+2025-06-30-21-04,ERROR,,M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-06-30-21-07,ERROR,,"M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-06-30 21:04:19) ┖ 조치되었습니다."
+2025-07-01-08-11,ERROR,Error발생,Bridge OHT BV327호기 Error발생 및 조치 입니다.
+2025-07-01-09-33,ERROR,4ABLD132 Error발생하여 -> CLOSE,"4ABLD132호기 Error발생하여 4F, 7F AI Close하였습니다."
+2025-07-01-09-36,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 완료되어 AI Open했습니다
+2025-07-01-12-04,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD132호기 Error 발생으로 4F,7F AI Close 하겠습니다 ."
+2025-07-01-12-09,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 후 4F,7F AI Open 하였습니다"
+2025-07-01-14-27,ERROR,4ABLD121 Error 발생하여 -> CLOSE,4ABLD121호기 Error 발생하여 4F/7F AI Close하였습니다.
+2025-07-01-14-56,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치되어 4F,7F AI Open 하였습니다."
+2025-07-02-21-33,ERROR,,M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다.
+2025-07-02-21-40,ERROR,,"M16-M14 Bridge OHT ERROR 발생하여 정체 발생 중이니 참고 부탁드립니다. (박성연,이천AMHS운영/TL,2025-07-02 21:33:56) ┖ 조치 되었습니다."
+2025-07-03-13-02,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD132 Error 발생으로 4F,7F AI close 하였습니다"
+2025-07-03-13-15,ERROR,-> OPEN,Error 처리 후 Open 하였습니다.
+2025-07-04-13-18,ERROR,4AFC3201,12:00~12:30분경 M16 -> M14A 방향 Conv Lift05호기 Alarm 발생하여 4AFC3201A_IN80~85 Offline 진행 후(A_IN86~90으로 정상 반송 가능) Error 조치 이력 外 M14A 특이사항 없습니다.
+2025-07-04-13-26,ERROR,Error 발생의,{{@양영석::248804}}  {{@정우영::11899}} TL 님 HUB ROOM 쪽 Error 발생의 경우 해당 창에 바로 공유 부탁드립니다. M14A FAB 內 는 PORT 도 많고 BAY 가 분산되어 있어 일부 PORT Down 되어도 큰 영향 없으나 HUB ROOM 內 Port 의 경우 영향이 크므로 꼭 부탁드립니다.
+2025-07-04-20-46,ERROR,4ABLD112 Error발생하여 -> CLOSE,"안녕하세요  4ABLD112호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-07-04-21-08,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error조치 완료되어 AI Open했습니다
+2025-07-05-12-45,ERROR,Error 발생하여,BV0330호기 Error 발생하여 처리 중입니다.
+2025-07-05-12-50,ERROR,Error 발생하여,"BV0330호기 Error 발생하여 처리 중입니다. (최민혁,이천AMHS운영/TL,2025-07-05 12:45:09) ┖ 처리 완료되었습니다."
+2025-07-06-06-27,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-07-06-06-32,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-07-06-06-48,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 Error 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-07-06-08-34,CLOSE,,SFA ZT 7층 INPUT PORT 전부 CLOSE 했습니다
+2025-07-06-08-55,OPEN,4ABLD111,SFA ZT 4ABLD111호기 제외 7F A_IN PORT OPEN 했습니다.
+2025-07-06-09-35,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-07-06-10-32,CLOSE,,M14B ZT 7F AI Full로 Close 중입니다.
+2025-07-06-13-33,CLOSE,,SFA ZT 4F A_OUT 에서 FOUP 을 OHT 가 가져가지 않고 있어서 7F A_IN 전부 CLOSE 했습니다.
+2025-07-06-13-41,OPEN,4ABLD111,"4ABLD111, 121,131, 112 7F A_IN OPEN 했습니다."
+2025-07-06-13-46,OPEN,,SFA ZT 7F A_IN PORT 전부 OPEN 했습니다.
+2025-07-06-16-36,ERROR,Error 발생으로,ConvLift05(CVLH05) Error 발생으로 확인중입니다.
+2025-07-06-16-37,ERROR,-> OPEN,에러 조치 완료되었으나 정체되어 있는 풉이 있어 해소후 차단 오픈할게요
+2025-07-06-16-40,OPEN,,포트 전체 오픈 했습니다.
+2025-07-06-17-00,ERROR,4AFC3201,ConvLift05(CVLH05) Error 재발생으로 4AFC3201 A_in80~85 차단 했습니다.
+2025-07-06-17-07,OPEN,,조치완료로 오픈했습니다.
+2025-07-06-17-23,ERROR,4AFC3201,ConvLift05(CVLH05) Error 다발생관련 센서 조정이 필요하여 4AFC3201 A_in80~85 차단 하겠습니다. 30분 소요 예정입니다.
+2025-07-06-18-06,OPEN,4AFC3201,점검 완료되어 4AFC3201 전체 포트 오픈합니다.
+2025-07-06-18-23,ERROR,4AFC3201,점검완료후에 ConvLift05(CVLH05) Error 재발생으로 센서 조정 재진행 하겠습니다. 4AFC3201 A_in80~85 차단 하겠습니다.
+2025-07-06-19-04,ERROR,,ConvLift05(CVLH05) Error 센서 조정으로 조치 불가하여 벨트 텐션 조정이 필요합니다. 예상 소요시간은 확인중입니다.
+2025-07-06-19-57,ERROR,4AFC3201,4AFC3201 CVLH05(Conveyor Lift) Belt 쪽 Sensor Error 로 Sensor 조정했으나 현상 동일 외부 인원 현재 입실하여 Belt 조정 작업 시작하였습니다 (예상 소요 시간 70분)
+2025-07-06-21-16,OPEN,4AFC3201,4AFC3201 조치완료로 전체 오픈 합니다
+2025-07-06-22-15,OPEN,4ABLD111,4ABLD111호기 / 112호기 AI Open했습니다.
+2025-07-06-22-17,OPEN,4ABLD122,4ABLD122호기 7F AI Port Open했습니다.
+2025-07-06-22-30,OPEN,,M14B 7F AI Port 모두 Open했습니다.
+2025-07-07-09-56,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD132 Error 발생으로 4F,7F AI Close 하겠습니다."
+2025-07-07-10-17,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-07-07-10-53,ERROR,4AFC3201 Error 발생했던,어제 Error 발생했던 Conveyor Lift 5호기 임시 복구하였으며 추가 Error 발생 우려가 있어  11:00~12:00 Belt Tension  재조정 작업 예정입니다. 4AFC3201(남측 Conveyor) M14->M16 A_IN 80~85 Down 예정이며 관련하여 86~90 MAX CAPA 3->8 로 임시 조정 하겠습니다.
+2025-07-07-11-44,ERROR,,M14 HUB ROOM OHT ERROR 발생하여 조치 중입니다. 정체 발생 중이니 참고 부탁드립니다
+2025-07-07-11-49,ERROR,,"M14 HUB ROOM OHT ERROR 발생하여 조치 중입니다. 정체 발생 중이니 참고 부탁드립니다 (최민혁,이천AMHS운영/TL,2025-07-07 11:44:06) ┖ 조치완료되었습니다."
+2025-07-07-17-13,CLOSE,,M14B 7F AI Port 모두 Close 했습니다.
+2025-07-07-17-34,OPEN,,M14B 7F AI Port 모두 Open 했습니다.
+2025-07-07-18-09,OPEN,4AFC3201,4AFC3201(남측 Conveyor)  M14->M16 A_IN 11~24 / 31~34 ==> 오픈완료 4AFC3301(북측 Conveyor) M14->M16 A_IN 41~58 ==> 오픈완료
+2025-07-08-11-23,ERROR,Error 발생으로,Bridge HUB OHT Error 발생으로 인해 반송 정체 중입니다.
+2025-07-08-11-39,ERROR,,OHT ERROR 난 곳이 MLUD Manual 운영에 영향을 주는 구간에서 난걸까요..?
+2025-07-08-11-39,ERROR,Error 발생으로,"Bridge HUB OHT Error 발생으로 인해 반송 정체 중입니다. (신우진,이천AMHS운영/TL,2025-07-08 11:23:16) ┖ 11:24 조치 완료되어 현재는 정상화 되었습니다."
+2025-07-08-11-40,ERROR,,"OHT ERROR 난 곳이 MLUD Manual 운영에 영향을 주는 구간에서 난걸까요..? (최해용,Y1 운영전략/TL,2025-07-08 11:39:27) ┖ HUB ROOM에서 ERROR 발생하면 MLUD까지 OHT가 정체되기 때문에 영향을 줍니다."
+2025-07-08-16-29,CLOSE,,4F HUB Room 정체 관련 7F AI Close 대응하겠습니다.
+2025-07-08-16-34,ERROR,,BV0323 호기 Error처리 관련 정체되고 있으니 참고 부탁드립니다.
+2025-07-08-16-45,ERROR,,OHT ERROR 처리 시간 걸리나요...?
+2025-07-08-16-46,ERROR,,Error 처리는 했는데여
+2025-07-08-16-46,ERROR,,우선 3F ERROR 처리가 우선인거 같구요..M16A 6F 상황 봐서 6F CAPA 조정 하겠습니다.
+2025-07-08-16-47,ERROR,,ERROR 처리가 우선시 되어야
+2025-07-08-16-55,ERROR,,{{@진호섭::9749}} OHT ERROR 가 어떤식으로 났을경으 dead lock으로 이어지는지 분석 및 자동화/제조 대응 방법 등이 준비 되어야 할것 같아 보입니다..
+2025-07-08-17-06,OPEN,,7F AI Port 다 Open했습니다.
+2025-07-08-17-35,ERROR,,김지훈 이천AMHS TL 2025/07/08 16:34:35 BV0323 호기 Error처리 관련 정체되고 있으니 참고 부탁드립니다. ========
+2025-07-08-17-36,ERROR,,위에 ERROR관련 HUB  ROOM 밀리는걸까요?
+2025-07-08-17-36,ERROR,,Bridge BV0323 E1911(Pickup Cycle - Load Presence ERROR 2) 발생 발생 시간 : 16 : 11분 완료 시간 : 16 : 20분
+2025-07-08-17-58,CLOSE,,M14B 7F AI 전부 Close 했습니다.
+2025-07-08-18-07,OPEN,,M14B 7F AI 전부 Open 했습니다.
+2025-07-09-18-21,ERROR,,2층에서는 Error Que. 대체반송 처리 부탁드립니다.
+2025-07-09-18-33,ERROR,,"2층에서는 Error Que. 대체반송 처리 부탁드립니다. (김병주,이천AMHS운영/TL,2025-07-09 18:21:09) ┖ 네 알겠습니다"
+2025-07-09-18-35,OPEN,,"1,2,3호기 3층 In Port 를 Open/Close를 실시간(상황보면서) 해주면서 정체없이 해소를 유도중에 있습니다. 참고바랍니다."
+2025-07-09-18-40,OPEN,,M16A 6F Rail Open 완료했습니다.
+2025-07-09-19-21,OPEN,,3층 VHL을 풀기위해 Port in을 Close/Open을 하다보니 저희Que.가 Stock이 많아져서 EQ Load Time이 높습니다. (M16A) 아무래도 지금물량으로 봐서는 잘 해소가 될지 모르겠습니다. Time 참조바랍니다.
+2025-07-09-19-59,CLOSE,,M14B 7F AI Close 대응 하고 있습니다.
+2025-07-09-20-20,OPEN,,"3층 Port를 저희가 Open/Close를 지금도 실시간으로 하고있는중이였는데 유지만되고 Que. 많이 줄지는 않기도하고, 계속 할수없기때문에 Open상태로 두겠습니다.(2층과 논의함) 이작업을 안하면 3층 OHT가 정체가 시작될것으로 보입니다."
+2025-07-09-20-25,CLOSE,,M14B 7F AI 전체 다 Close 했습니다.
+2025-07-09-20-41,OPEN,,M14B 7F 전체 Port Open 했습니다.
+2025-07-09-20-42,OPEN,,모니터링 하면서 M14B 7F AI Close/Open 대응 하겠습니다.
+2025-07-09-20-48,OPEN,,3층 VHL정체가 또시작되어~ Open / Close 다시 시작하겠습니다.
+2025-07-09-21-21,ERROR,-> CLOSE,"본환경에서 일단 3층 In을 Buffer상황대비 Port Open/Close를 수동으로 해줘야만 OHT가 다시 밀리지 않는다는게 확인이 되었고~ 그냥 두었을때 Test도 되었으니~ 진호섭TL님과 일단 야간까지는 계속 작업을 해주면서 가기로 하였습니다. (6층은 3층Port관리, 6층 Max Capa관리 및 6층ZT앞 정체관리, 2층은 Error Que. 대체반송처리) 대책마련이 되기를 기대하며 C조 2층6층인원 해당사항 참고바라며 이력은 여기에 계속남겨주세요~"
+2025-07-09-21-31,CLOSE,,M14B 7F AI 전체 Port Close 했습니다.
+2025-07-09-21-56,OPEN,,네 알겠습니다 Open상태 유지하겠습니다.
+2025-07-09-21-58,OPEN,,M14A/B =>M16 방향 PORT 50% OPEN 해주세요
+2025-07-09-21-59,OPEN,,{{@김종호::2439}}  {{@이상훈::15086}}  50% OPEN해주세요
+2025-07-09-22-00,OPEN,,M14B 7F AI 50% Open  했습니다.
+2025-07-09-22-01,OPEN,,M14A =>M16 방향 PORT 50% OPEN 했습니다.
+2025-07-09-22-15,OPEN,,M14A M14B PORT OPEN 해 주세요
+2025-07-09-22-16,OPEN,,M14B 7F AI Port 전체 Open 했습니다.
+2025-07-09-22-16,OPEN,4AFC3201,"M14A 4AFC3201,4AFC3301 AI Port 전체 Open 했습니다."
+2025-07-10-03-09,ERROR,,M14A Conveyor Error 및 특이사항 없습니다.
+2025-07-10-16-16,ERROR,Error 발생으로,OHT Error 발생으로 조치 중 입니다.
+2025-07-10-16-18,ERROR,Error 발생으로,"OHT Error 발생으로 조치 중 입니다. (정휘태,이천AMHS운영/TL,2025-07-10 16:16:39) ┖ 조치 완료 되었습니다."
+2025-07-10-16-20,ERROR,,방금도 이 ERROR 인가요...?
+2025-07-10-23-58,ERROR,Error 발생으로,M16A OHT Error 발생으로 조치중입니다.
+2025-07-11-00-01,ERROR,,M16A OHT Error 조치하였습니다.
+2025-07-13-08-11,ERROR,,{{@박형기::9353}} M16A 07:29~08:00 OHT Error 처리로 인해 OHT 이동에 Delay 발생되었습니다
+2025-07-13-09-41,ERROR,Error 발생으로,안녕하세요 Error 발생으로 인한 Delay 내용 정정드립니다 MCP Log 확인 시 Error 발생 전부터 ZT로 가는 루트에 OHT가 몰려 그리드 락이 발생되어 OHT 이동에 DELAY 된것으로 확인됩니다
+2025-07-13-12-24,ERROR,4ABLD122 -> CLOSE,안녕하세요 4ABLD122 ERROR 발생되어 AI CLOSE 했습니다.
+2025-07-13-12-33,OPEN,4ABLD122,조치 완료 되어 4ABLD122 AI OPEN 했습니다.
+2025-07-13-20-48,ERROR,4ABLD122 -> CLOSE,안녕하세요 4ABLD122 ERROR 발생되어 AI CLOSE 했습니다.
+2025-07-13-20-58,OPEN,4ABLD122,조치 완료 되어 4ABLD122 AI OPEN 했습니다.
+2025-07-15-16-51,CLOSE,6ABL0112,안녕하세요. 6ABL0112 Pod 반송 지연으로 AI Close 하겠습니다.
+2025-07-15-17-20,OPEN,,조치 후 Open 했습니다.
+2025-07-16-13-18,CLOSE,4ABLD111,"M14A 4ABLD111, 121, 131 호기 7F AI Port Close 하였습니다."
+2025-07-16-13-19,OPEN,,순차적로 Conv Full 해소되면 다른 호기 AI Open Close대응 하겠습니다.
+2025-07-16-13-32,OPEN,,M14B <-> M16 HUB 전체호기 분산 반송되어 현재 정체되는 Conv없어 AI Port 전체 Open 상태입니다.
+2025-07-16-14-49,ERROR,4ABLD122 -> CLOSE,안녕하세요 4ABLD122 ERROR 발생되어 AI CLOSE 했습니다.
+2025-07-16-14-53,ERROR,4ABLD122 -> OPEN,4ABLD122 ERROR 처리되어 AI OPEN 했습니다
+2025-07-17-15-37,ERROR,4AFC3301,"4AFC3301_ZONE 20807 LD Motor Error  다발관련 긴급 T-bolt 작업이 필요 하여 긴급 요청드립니다. 작업예상시간은 10분 정도 정도 예상되며, M14 ↔ M16 양방향  2차수 조절 요청드립니다."
+2025-07-18-17-12,ERROR,Error 발생으로,OHT Error 발생으로 조치중입니다.
+2025-07-18-17-15,ERROR,,Error 조치 완료 되었습니다.
+2025-07-18-22-28,ERROR,4ABLD131 -> CLOSE,"안녕하세요 4ABLD131 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-07-18-22-33,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-07-20-04-28,CLOSE,4ABLD111,안녕하세요 M14 <-> M16 반송 정체로 ZT AI Close 로 대응하겠습니다. -. 4ABLD111호기 AI75 Close
+2025-07-20-04-29,CLOSE,4ABLD112,4ABLD112호기 AI77 추가 Close 하겠습니다.
+2025-07-20-04-29,CLOSE,4ABLD121,4ABLD121호기 AI75 추가 Close 하겠습니다.
+2025-07-20-04-30,CLOSE,4ABLD122,4ABLD122호기 AI77 추가 Close 하겠습니다
+2025-07-20-04-31,CLOSE,4ABLD131,4ABLD131호기 AI77 추가 Close 하겠습니다.
+2025-07-20-04-33,CLOSE,4ABLD132,4ABLD132호기 AI77 추가 Close 하겠습니다.
+2025-07-20-04-35,CLOSE,4ABLD131,"4ABLD131, 4ABLD132 호기 M14B 7F AI 전체 Close 했습니다."
+2025-07-20-04-37,CLOSE,,전체호기 M14B 7F AI 전체 Close 했습니다.
+2025-07-20-04-43,OPEN,,FOUP 적은 호기 부터 Open 진행 하겠습니다.
+2025-07-20-04-44,OPEN,,"111호기 AI77, 132호기 AI77 Open했습니다."
+2025-07-20-04-46,OPEN,,112호기 AI75 Open 했습니다
+2025-07-20-04-47,OPEN,,112호기 AI77 Open 했습니다.
+2025-07-20-04-48,OPEN,,"121호기 AI75, 132호기 AI75 Open했습니다."
+2025-07-20-04-53,OPEN,,122호기 AI77 Open 하겠습니다.
+2025-07-20-04-55,OPEN,,111호기 AI75 Open 했습니다.
+2025-07-20-04-55,OPEN,,122호기 AI75 Open 했습니다
+2025-07-20-04-55,CLOSE,,121호기 전체 Port 다시 Close 하겠습니다.
+2025-07-20-04-56,CLOSE,,111호기 AI77 Close 하겠습니다.
+2025-07-20-04-57,OPEN,4AFC3201,안녕하세요 4AFC3201 A_IN31~38 Open했습니다. (M14->M16 방향 IN Port)
+2025-07-20-04-58,OPEN,,131호기 AI75 Open했습니다.
+2025-07-20-05-19,OPEN,,현재 CNV Full 일시 Close Open 대응중입니다.
+2025-07-20-05-23,OPEN,,전체 호기 AI Open 후 모니터링 중입니다.
+2025-07-20-07-01,ERROR,Error 발생으로,Bridge OHT Error 발생으로 조치중입니다.
+2025-07-20-07-04,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 조치중입니다. (박성연,이천AMHS운영/TL,2025-07-20 07:01:14) ┖ 조치되었습니다."
+2025-07-20-16-28,ERROR,4AFC3201,4AFC3201 M16-->M14 CVLH05호기 ERROR 발생으로 A_IN80~85까지 차단 했습니다.
+2025-07-20-17-26,ERROR,4AFC3201,"4AFC3201 M16-->M14 CVLH05호기 ERROR 발생으로 A_IN80~85까지 차단 했습니다. (홍석찬,이천AMHS운영/TL,2025-07-20 16:28:07) ┖ 진행 상황 알수 있을까요?"
+2025-07-20-19-26,ERROR,4AFC3201,안녕하세요 홍석찬 이천AMHS TL 2025/07/20 16:24:45 4AFC3201 M16-->M14 CVLH05호기 ERROR 발생으로 A_IN80~85까지 차단 했습니다.
+2025-07-20-20-37,ERROR,4AFC3201 -> OPEN,4AFC3201 Error 조치되어 A_IN80~85 Port OPEN 하였습니다.
+2025-07-21-07-17,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"안녕하세요, 4ABLD122 Error 발생하여 4,7F AI Close 하겠습니다."
+2025-07-21-07-25,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 처리 완료되어 4,7F AI Open 하겠습니다."
+2025-07-21-12-54,CLOSE,4ABLD112,4ABLD112호기 Alarm 발생하여 AI Port 모두 Close 했습니다.
+2025-07-21-13-32,ERROR,4ABLD112 -> OPEN,안녕하세요 4ABLD112 Error 조치 후 AI Open 하였습니다
+2025-07-21-17-41,OPEN,,3F AI는  OPEN 해주세요
+2025-07-21-17-41,OPEN,,"3F AI는  OPEN 해주세요 (진호섭,이천AMHS운영/TL,2025-07-21 17:41:08) ┖ 오픈햇습니다"
+2025-07-21-17-42,OPEN,,{{@진호섭::9749}} M14B 3F는 오픈완료했습니다.
+2025-07-21-18-09,OPEN,,M14 CON'V PORT OPEN
+2025-07-21-18-10,OPEN,,M14B 7F AI 전부 OPEN 했습니다.
+2025-07-21-18-11,OPEN,,M14A PORT OPEN 했습니다.
+2025-07-22-04-58,CLOSE,6ABL6032,안녕하세요. 6ABL6032(3-2)호기 Err 발생으로 AI Close 하겠습니다.
+2025-07-22-06-37,OPEN,,안녕하세요 M14 <-> M16 ZT 정체 발생하여 AI Close Open 대응하겠습니다.
+2025-07-22-06-40,OPEN,,정체 해소되어 전체 AI Open 했습니다.
+2025-07-22-08-29,ERROR,4AFC3301 Error 발생,안녕하세요 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 쪽 Error 발생 관련 LD 교체 작업 예정입니다. 시간 : 10:00~11:00 HT-STOP  : 필요 Down : 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 대응 : 4AFC3201(남측 Conveyor) M16->M14 A_IN MAX CAPA 상향
+2025-07-22-10-13,ERROR,4AFC3301 Error 발생,"안녕하세요 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 쪽 Error 발생 관련 LD 교체 작업 예정입니다. 시간 : 10:00~11:00 HT-STOP  : 필요 Down : 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 대응 : 4AFC3201(남측 Conveyor) M16->M14 A_IN MAX CAPA 상향  (윤영찬,이천AMHS운영/TL,2025-07-22 08:29:19) ┖ 작업 진행하겠습니다."
+2025-07-22-10-28,ERROR,4AFC3201 Error 발생으로,4AFC3201 A_IN80~85 쪽 Lift Error 발생으로 A_IN 잠시 Disable 하겠습니다.
+2025-07-22-10-38,OPEN,4AFC3301,4AFC3301 작업 마무리해서 OPEN 후 4AFC3201 이어서 처리 하도록 하겠습니다
+2025-07-22-10-46,OPEN,4AFC3201,4AFC3201(남측 Conveyor) M16->M14 A_IN 80~85 쪽 Sensor 문제로 LD 교체 작업 필요하여  4AFC3301(북측 Conveyor) Teaching 작업 및 Port open 완료 하는대로 이어서 진행 예정입니다
+2025-07-22-10-46,OPEN,,작업 완료되어 port open 했습니다.
+2025-07-22-10-48,CLOSE,,"121_AI75 Close ,AI77Close"
+2025-07-22-10-51,CLOSE,,131_AI75 Close 했습니다.
+2025-07-22-10-59,CLOSE,,"122_AI75, 77 Close했습니다."
+2025-07-22-11-04,CLOSE,,131_AI77 Close했습니다.
+2025-07-22-11-06,ERROR,4AFC3301 Error 발생으로,4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 쪽 Error 발생으로 MCS DISABLE 하였습니다.
+2025-07-22-11-10,ERROR,4AFC3201,4AFC3201(남측 Conveyor) M16->M14 A_IN 임시 조치 하여 일단 살리겠습니다. 4AFC3301(북측 Conveyor) M16->M14 A_IN 80~84 쪽과 중복 Error 로 hub room 악화 감소
+2025-07-22-11-38,OPEN,4ABLD121,"4ABLD121_AI75, 77 Open했습니다."
+2025-07-22-11-38,OPEN,4ABLD131,4ABLD131 Open 했습니다.
+2025-07-22-11-24,ERROR,4AFC3301 Error 발생관련,4AFC3301(북측 Conveyor) M16->M14 A_IN80~84 Error 발생관련 LD 재교체 작업 필요하며 HT-STOP 이 병행 되어야 합니다.
+2025-07-22-11-38,OPEN,4ABLD122,4ABLD122 Open했습니다.
+2025-07-22-12-04,CLOSE,4ABLD131,4ABLD131 7F Inport Close했습니다.
+2025-07-22-21-21,ERROR,4AFC3201,4AFC3201 M16  -->M14 CVLH05 LIFT ERROR 발생하여  A_IN80~85 OFF LINE 진행 했습니다.
+2025-07-22-21-25,ERROR,4AFC3201 -> OPEN,4AFC3201 M16  -->M14 CVLH05 LIFT ERROR 처리 되어 모두 OPEN 했습니다.
+2025-07-22-21-40,ERROR,4AFC3201,4AFC3201 재발생 M16  -->M14 CVLH05 LIFT ERROR 발생하여  A_IN80~85 OFF LINE 진행 했습니다.
+2025-07-22-22-04,ERROR,4AFC3201 -> OPEN,4AFC3201 M16  -->M14 CVLH05 LIFT ERROR 처리 되어 모두 OPEN 했습니다.
+2025-07-22-23-20,CLOSE,,M14B ZT AI Close 대응하겠습니다.
+2025-07-22-23-23,OPEN,,해소 확인되면 AI Open 하겠습니다
+2025-07-22-23-27,OPEN,,M14B ZT AI 전체 Open 했습니다.
+2025-07-22-23-38,OPEN,,M14B ZT OHT 정체로 AI Close Open 대응 하겠습니다
+2025-07-22-23-44,OPEN,,전체호기 AI Open 했습니다.
+2025-07-23-08-38,CLOSE,4ABLD112,"4ABLD112,122,132 7F AI Close 했습니다."
+2025-07-23-08-38,CLOSE,,M16 ZT 3F PORT 임시 CLOSE하시죠
+2025-07-23-08-42,ERROR,4AFC3201,4AFC3201 CVLH05 Error로 A_in80~85 차단 했습니다.
+2025-07-23-08-54,ERROR,-> OPEN,Error 처리되어 Port 오픈 했습니다.
+2025-07-23-09-03,OPEN,,M14A BAY / M14B 7F→ M16 가는 방향 OPEN 해주세요
+2025-07-23-09-04,OPEN,,Conveyor Open 했습니다.
+2025-07-23-09-05,OPEN,,M14B 7F Open했습니다.
+2025-07-24-04-03,OPEN,4AFC3301,"안녕하세요 M14A Convyor 정체로 4AFC3301 A_IN41~52, 4AFC3201 A_IN 11 ~ 15 / 20 ~ 24막았습니다 (M14->M16 A_IN 50%) (이주성,이천AMHS운영/TL,2025-07-24 03:37:33) ┖ 정체 해소되어 OPEN했습니다."
+2025-07-24-04-43,OPEN,4AFC3201,"4AFC3201_Lifter 5호기 Alarm 발생하여 4AFC3201 A_IN80~85 Port 차단하겠습니다. (양영석,이천AMHS운영/TL,2025-07-24 03:52:39) ┖ 조치 완료되어 PORT OPEN하겠습니다"
+2025-07-24-05-54,OPEN,4AFC3201,조치 완료되어 PORT OPEN하겠습니다 4AFC3201 A_IN86~90 MAX CAPA 원복 부탁드리겠습니다
+2025-07-24-05-55,OPEN,4AFC3201,"조치 완료되어 PORT OPEN하겠습니다 4AFC3201 A_IN86~90 MAX CAPA 원복 부탁드리겠습니다 (양영석,이천AMHS운영/TL,2025-07-24 05:54:02) ┖ 4AFC3201 A_IN86~90 MAX CAPA 원복하였습니다."
+2025-07-24-06-00,OPEN,,M14B SFA ZT Que 소폭 감소중으로 7F 전체 AI Open 하였습니다.
+2025-07-24-12-31,ERROR,4AFC3201 Error 발생으로,4AFC3201 Error 발생으로 A_in86~90(16->14) 차단했습니다.
+2025-07-24-12-34,ERROR,-> OPEN,Error 조치되어 Port Open 했습니다.
+2025-07-25-10-00,ERROR,4ABLD131 Error 발생하여 -> CLOSE,"4ABLD131 Error 발생하여 4,7F AI Close 하겠습니다."
+2025-07-25-10-31,ERROR,Error발생하여,Bridge OHT Error발생하여 처리 중입니다.
+2025-07-25-10-36,ERROR,Error발생하여,"Bridge OHT Error발생하여 처리 중입니다. (김지훈,이천AMHS운영/TL,2025-07-25 10:31:58) ┖ 처리 완료 되었습니다."
+2025-07-25-10-36,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치되어 4,7F AI Open 했습니다."
+2025-07-25-11-45,CLOSE,4ABLD131,4ABLD131 7F Auto In Port Close했습니다.
+2025-07-25-11-52,CLOSE,4ABLD132,4ABLD132 7F Auto In Port Close했습니다.
+2025-07-25-11-52,CLOSE,4ABLD121,4ABLD121 7F AI Close 했습니다.
+2025-07-25-11-54,CLOSE,4ABLD111,4ABLD111 7F AI Close 했습니다.
+2025-07-25-11-58,CLOSE,,M14B 7F AI 전체 Close 했습니다.
+2025-07-25-12-09,OPEN,,M14B 7F Auto In Port 상태보고 하나씩 Open하겠습니다.
+2025-07-25-12-11,OPEN,4ABLD111,"4ABLD111, 112 7F Open했습니다."
+2025-07-25-12-16,OPEN,4ABLD121,"4ABLD121, 122 Open했습니다."
+2025-07-25-12-24,OPEN,4ABLD131,"4ABLD131, 132 Open했습니다. M14B 7F Auto Inport 전체 Open 됐습니다."
+2025-07-25-22-15,ERROR,4ABLD112 Error발생하여 -> CLOSE,"안녕하세요 4ABLD112호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2025-07-25-22-31,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하겠습니다.
+2025-07-25-22-32,ERROR,Error발생하여,Bridge OHT Error발생하여 처리 중입니다.
+2025-07-25-22-42,ERROR,Error발생하여,"Bridge OHT Error발생하여 처리 중입니다. (박성연,이천AMHS운영/TL,2025-07-25 22:32:49) ┖ 조치되었습니다."
+2025-07-26-13-13,CLOSE,,7F MCS Close 대응하겠습니다.
+2025-07-26-14-09,OPEN,,7F MCS Open했습니다.
+2025-07-27-10-10,CLOSE,,SFA ZT 4F AO측 Delay 발생으로 AI Close하겠습니다.
+2025-07-27-10-27,OPEN,,AI 모두 Open 했으나 10시 이후 M14B ↔ M16E Que 급증된 상태로 모니터링 중입니다.
+2025-07-27-19-32,ERROR,4AFC3201,4AFC3201 CVLH05호기 Lift failed error 재발하여 4AFC3201 A_IN80~85 Down 하였습니다. 작업 완료되면 인폼 드리겠습니다.
+2025-07-27-22-03,OPEN,,M14B -> M16 반송 간 4F Conv Full 상태 지속 발생으로 7F AI Port Open <-> Close 대응 중입니다.
+2025-07-27-22-26,OPEN,,M14B -> M16 반송 간 4F AO Conv 전체 균등반송되어 7F AI Port 전체 Open 하겠습니다.
+2025-07-28-00-33,OPEN,4AFC3201,4AFC3201 CVLH05호기 Lift failed 조치 완료 되어 A_IN80~85 OPEN 했습니다.
+2025-07-28-12-50,OPEN,,안녕하세요 M14B -> M16 반송 정체로  ZT AI Close Open 대응하겠습니다.
+2025-07-28-12-35,OPEN,,정체 해소 되어 전체 Port Open 후 Monitoring 진행 하겠습니다.
+2025-07-28-17-06,OPEN,,{{@김종락::10041}} TL님  M14B->M16 방향 1대 더 open 부탁드립니다.
+2025-07-28-17-11,OPEN,,M14B->M16 방향 전체 open 부탁드립니다.  {{@김종락::10041}} TL님
+2025-07-28-17-13,OPEN,,open완료. 모니터링 할게요
+2025-07-29-14-38,CLOSE,,M14B 131호기 AI 상단 Close 했습니다.
+2025-07-29-14-42,OPEN,,M14B 131호기 AI 상단 다시 Open 했습니다.
+2025-07-31-08-25,ERROR,4AFC3201,안녕하세요 4AFC3201(남측 Conveyor) Lift 5호기 Error 자주 발생하여 정밀 점검 및 조정을 진행하고자 하오니 참고 부탁드립니다. (( 일정 QUE 상회시 차수는 자동으로 변경되나 사전 미변경시 Dead Lock 및 추가 정체 발생으로 사전에 변경 요청 )) 드립니다.
+2025-07-29-21-44,ERROR,4ABLD111 Error 발생되어 -> CLOSE,4ABLD111호기 Error 발생되어 4F / 7F AI Close했습니다.
+2025-07-29-22-24,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error 조치되어 4F / 7F AI Open했습니다.
+2025-07-29-23-12,ERROR,4AFC3201,4AFC3201 M14 --> M16 OUT PORT  FOUP이 거의 출고가 안되고 있습니다. ERROR 발생한거 있을까요?
+2025-07-29-23-14,ERROR,Error 발생,M16 ZT는 현재 따로 Error 발생 되지 않았습니다 6F Out Port에도 Foup이 밀린다던지 하는 특이사항은 없어보입니다
+2025-07-29-23-24,OPEN,4AFC3201,4AFC3201 M14--> M16 FOUP 정체 해소되어 전체 PORT OPEN 했습니다.
+2025-07-30-17-18,CLOSE,,안녕하세요 SFA 호기별 AI Close 대응 하겠습니다.
+2025-07-31-09-38,CLOSE,4AFC3201,4AFC3201_AI80~85 PORT MCS상에서 변경되지 않아 이재 시도 중입니다 MCS PORT CLOSE 부탁드립니다.
+2025-07-31-09-40,CLOSE,,M16 MCS에서 차단되지 않아 이재 시도 중이었습니다. M16 MCS에서 CLOSE 하겠습니다.
+2025-07-31-12-06,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 AI Close 하겠습니다
+2025-07-31-12-14,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치되어 AI Open 하겠습니다
+2025-07-31-17-08,ERROR,4ABLD111 -> CLOSE,4ABLD111호기 ERROR 발생으로 AI Close 했습니다.
+2025-07-31-17-28,OPEN,4ABLD111,4ABLD111호기 조치되어 AI Open했습니다.
+2025-08-01-07-28,ERROR,6ABL6011 -> CLOSE,6ABL6011 Error로 AI Close했습니다.
+2025-08-01-07-42,ERROR,6ABL6011 -> OPEN,6ABL6011 Error 조치 완료되어 AI Open 했습니다.
+2025-08-01-09-00,ERROR,4ABLD131 Error 발생으로 -> CLOSE,4ABLD131호기 Error 발생으로 AI Close 하겠습니다
+2025-08-01-11-09,OPEN,4ABLD131,4ABLD131호기 AI Open 했습니다.
+2025-08-01-11-14,CLOSE,4ABLD122,4ABLD122호기 불합리 해결 위해 AI Close 했습니다.
+2025-08-01-11-15,OPEN,4ABLD122,4ABLD122호기 AI Open 했습니다.
+2025-08-01-13-52,ERROR,4ABLD111,4ABLD111호기 Error 초치위해 14시에 HT Stop 1분정도 필요합니다. 진행해도 괜찮을까요?
+2025-08-02-10-48,ERROR,4AFC3301,안녕하세요. 4AFC3301 Zone20623 Motor Error 다발생관련 긴급 LD 교체 진행하겠습니다. 예상시간 30분이며 작업관련 4AFC3301 M14->M16 Max capa 50% 변경하겠습니다.
+2025-08-02-17-16,CLOSE,4ABLD122,4ABLD122_AI75 MCS Close했습니다.
+2025-08-02-17-20,CLOSE,4ABLD121,4ABLD121 7F AI Close했습니다.
+2025-08-02-17-25,OPEN,4ABLD122,4ABLD122_AI75 MCS Open했습니다.
+2025-08-03-01-38,ERROR,6ABL6031 Error 발생으로 -> CLOSE,6ABL6031 Conv Error 발생으로 INPUT Close 했습니다.
+2025-08-03-02-10,ERROR,-> OPEN,Error 처리 후 Open했습니다.
+2025-08-03-02-22,ERROR,6ABL6031 -> CLOSE,6ABL6031 _AI322 Error Conv 점검을 위해 해당 Conv Close 진행하겠습니다.
+2025-08-03-03-43,ERROR,6ABL6032 -> CLOSE,6ABL6032_AI322 Error Conv 확인 작업으로 AI Close 하겠습니다.
+2025-08-03-16-09,CLOSE,4ABLD122,4ABLD122 7F AI Close했습니다.
+2025-08-03-16-18,OPEN,4ALBLD122,4ALBLD122 AI Open했습니다.
+2025-08-03-16-20,CLOSE,4ABLD112,4ABLD112 7F AI Close했습니다.
+2025-08-03-16-22,OPEN,4ABLD112,4ABLD112 7F Open했습니다.
+2025-08-04-03-21,ERROR,4AFC3301,안녕하세요 4AFC3301_ Zone[20627] Error 다발 관련 긴급 LD교체 작업 진행하겠습니다. 작업 영향도 : 북측 M14->M16 구간 Down (남측은 정상 반송) 작업시간 :  LD 교체 30분 (03:40~04:10) 작업 전후 인폼드리겠습니다.
+2025-08-04-03-51,ERROR,,LD교체 전 T-bolt 작업 후 Error 재발시 LD교체 작업 진행하겠습다. T-bolt 고정작업 시간 10분 소요 예정입니다.
+2025-08-04-03-55,OPEN,4AFC3301,교체작업 완료되어 4AFC3301 M14->M16 Port Open하였습니다.
+2025-08-04-16-56,OPEN,,작업 완료되어 AO321 OPEN 했습니다. ※ AI322는 록타이트 경화 후 명일 Open 예정.
+2025-08-04-17-50,CLOSE,,7F HUB Room 정체 발생으로 AI Close 하겠습니다
+2025-08-04-17-48,OPEN,,조치 완료되어 AI 전체 Open 하였습니다.
+2025-08-05-14-28,ERROR,Error 발생시,M14B-M16 Lifter Error 발생시 log 발생하지 않는 긴급한 문제가 있어서 8/5 금일 Lifter 전체 호기 재부팅 작업 예정입니다. 1대당 30분씩 소요 예정입니다.
+2025-08-05-17-31,OPEN,6ABL6031,ZT 6ABL6031 AI322 경화 완료되어 OPEN 했습니댜.
+2025-08-05-22-41,ERROR,4ABLD121 -> CLOSE,4ABLD121호기 ERROR 발생으로 AI Close 했습니다.
+2025-08-05-22-47,OPEN,4ABLD121,4ABLD121호기 처리 완료 되어 AI Open 했습니다.
+2025-08-06-19-26,ERROR,Error 발생으로,Bridge OHT Error 발생으로 처리중입니다.
+2025-08-06-19-46,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 처리중입니다. (최홍영,이천AMHS운영/TL,2025-08-06 19:26:13) ┖ 처리되었습니다"
+2025-08-07-08-25,OPEN,,(( 안녕하세요 이천 AMHS 진호섭 TL 입니다.  M16↔M14 Bridge UTB 작업이 완료 되어 OPEN 공지 드립니다. )) 그동안 업무 도움 주신 모든  분들께  진심으로 감사 드립니다.
+2025-08-07-15-30,ERROR,Error 발생으로,Bridge OHT Error 발생으로 처리중입니다.
+2025-08-07-15-32,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 처리중입니다. (최홍영,이천AMHS운영/TL,2025-08-07 15:30:59) ┖ 처리되었습니다."
+2025-08-07-20-21,ERROR,4ABLD111 Error 발생으로 -> CLOSE,안녕하세요 4ABLD111호기 Error 발생으로 AI Close 하겠습니다.
+2025-08-07-20-31,ERROR,4ABLD111 -> OPEN,4ABLD111호기 Error 조치 완료되어 AI Open 하겠습니다.
+2025-08-09-05-37,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122호기 Error 발생하여 AI 모두 Close했습니다.
+2025-08-09-05-47,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4,7F AI Open 했습니다."
+2025-08-10-00-55,ERROR,4ABLD131 Error 발생되어 -> CLOSE,4ABLD131 호기 Error 발생되어 AI 모두 Close했습니다.
+2025-08-10-01-22,OPEN,,조치되어 오픈했습니다.
+2025-08-10-07-36,ERROR,4ABLD121 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD121호기 Error 발생으로 4F/7F AI Port Close 했습니다.
+2025-08-10-07-52,ERROR,-> OPEN,Error 조치 완료되어 4F/7F AI Port Open 했습니다.
+2025-08-10-17-24,ERROR,4ABLD121 Error 발생으로,"안녕하세요 . 4ABLD121 호기 Error 발생으로 4F, 7F AI POER CLOE 했습니다."
+2025-08-10-17-52,ERROR,-> OPEN,"Error 조치 완료되어 4F, 7F AI PORT OPEN 했습니다"
+2025-08-11-00-47,ERROR,4ABLD131 Error 발생되어 -> CLOSE,4ABLD131호기 Error 발생되어 AI 모두 Close했습니다.
+2025-08-11-00-52,OPEN,,조치되어 AI 모두 Open했습니다.
+2025-08-11-06-29,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-08-11-06-42,ERROR,-> OPEN,"Error 조치되어 4,7F AI Open 했습니다."
+2025-08-11-07-10,ERROR,4ABLD132 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD132호기 Error 발생으로 4F/7F AI Close 하겠습니다.
+2025-08-11-07-21,ERROR,-> OPEN,Error 조치되어 4F/7F AI Open 했습니다.
+2025-08-11-13-28,CLOSE,4ABLD121,4ABLD121호기 RM Conv Motor 작업 관련 4F/7F AI Port Close 하겠습니다.
+2025-08-11-15-35,OPEN,4ABLD121,"4ABLD121호기 작업 종료되어  4F, 7F AI OPEN 했습니다"
+2025-08-11-17-12,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-08-11-17-28,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR  조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-12-03-02,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122호기 Error 발생으로 4F,7F AI CLOSE 했습니다."
+2025-08-12-03-10,ERROR,4ABLD122 -> OPEN,"4ABLD122 ERROR  조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-12-10-26,ERROR,4AFC3201 Error 발생으로,4AFC3201(남측 Conveyor) M16->M14 방향 Error 발생으로 A_IN80~90  Disable 하였습니다.
+2025-08-12-10-29,ERROR,4AFC3201 Error 발생으로,"4AFC3201(남측 Conveyor) M16->M14 방향 Error 발생으로 A_IN80~90  Disable 하였습니다. (윤영찬,이천AMHS운영/TL,2025-08-12 10:26:23) ┖ 조치하여 open 했습니다."
+2025-08-12-12-54,OPEN,,M14B -> M16 4F AO Conv Full 관련 7F AI Port Open <-> Close 진행하여 Foup 분산 반송 진행 완료했습니다.
+2025-08-13-09-03,ERROR,4ABLD132 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-08-13-10-03,ERROR,4ABLD132,"4ABLD132호기 Error 조치 완료되어 1분 내로 Auto Up 하겠습니다.,"
+2025-08-13-10-04,OPEN,4ABLD132,4ABLD132호기 4F/7F AI Port Open 하였습니다.
+2025-08-13-10-15,OPEN,,M14B -> M16 4F AO Conv Full 관련 7F AI Port Open <-> Close 반송 분산 대응 진행하겠습니다.
+2025-08-13-14-02,CLOSE,,M16A ZT 3F AI PORT 잠시  CLOSE 하겠습니다.
+2025-08-13-14-05,OPEN,,3층 ZT Input 유동적으로 Close / Open 진행합니다.
+2025-08-13-22-35,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-08-13-22-47,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-13-23-05,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-08-13-23-32,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-14-06-03,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-08-14-06-27,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-14-09-59,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 Error 발생으로 4,7F AI Close 하겠습니다"
+2025-08-14-11-21,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-08-14-16-12,OPEN,6ABL6031,"6ABL6031, 6ABL6032 3층 Input Port 막고 VHL 정체 풀리면 Open하겠습니다."
+2025-08-14-16-17,OPEN,,{{@최해용::1745}} 3시45분에 완료 OPEN 된 상태입니다.
+2025-08-14-16-19,OPEN,6ABL6031,"6ABL6031, 6ABL6032 3층 Input Port 막고 VHL 정체 풀리면 Open하겠습니다. (박형기,이천AMHS운영/TL,2025-08-14 16:12:48) ┖ VHL정체는 해소 되어 Port Open했습니다."
+2025-08-14-16-20,OPEN,,3F PORT 모두 OPEN 해 주시고요
+2025-08-14-16-36,OPEN,,3F ZT PORT Close & OPEN 해 주세요
+2025-08-14-16-41,OPEN,,"M16 ZT 1,2호기 3층 Input Port 막고 정체 풀리면 Open하겠습니다."
+2025-08-14-16-46,OPEN,,"M16 ZT 1,2호기 3층 Input Port 막고 정체 풀리면 Open하겠습니다. (박형기,이천AMHS운영/TL,2025-08-14 16:41:48) ┖ Port Open 했습니다"
+2025-08-14-18-45,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112호기 ERROR 발생하여 4F,7F AI CLOSE 했습니다."
+2025-08-14-19-11,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-08-14-21-16,ERROR,6ABL6011 -> CLOSE,6ABL6011 Error로 Input Close 하겠습니다
+2025-08-14-21-45,ERROR,6ABL6011 -> OPEN,6ABL6011 Error Clear로 Input Open 하였습니다.
+2025-08-15-04-14,OPEN,,"※ AI222, AO213는 록타이트 경화 후 명일 Open 예정."
+2025-08-15-05-02,CLOSE,,M14B ZT 7F AI Close 했습니다.
+2025-08-15-05-20,OPEN,,"M14A CONV, M14B 7F ZT AI Port Open 부탁드리며, CAPA 50% 유지 부탁드립니다."
+2025-08-15-05-22,OPEN,,M14A->M16 방향 Conv Port 50% OPEN했습니다
+2025-08-15-05-22,OPEN,,M14B Capa 50%로 7F AI Open 했습니다.
+2025-08-16-01-48,ERROR,4ABLD112 -> CLOSE,"4ABLD112호기 ERROR 발생하여 4F,7F AI CLOSE 했습니다."
+2025-08-16-02-11,OPEN,4ABLD112,4ABLD112호기 AI Open 했습니다.
+2025-08-16-23-17,ERROR,4ABLD132 -> CLOSE,4ABLD132 호기 ERROR 발생으로 AI PORT CLOSE 했습니다.
+2025-08-16-23-33,ERROR,4ABLD132 -> OPEN,4ABLD132 호기 ERROR 조치 완료되어 AI PORT OPEN 했습니다.
+2025-08-16-23-34,ERROR,4ABLD122 -> CLOSE,4ABLD122 호기 ERROR 발생으로 AI PORT CLOSE 했습니다.
+2025-08-16-23-41,OPEN,4ABLD122,4ABLD122 호가 조치 완료되어 AI PORT OPEN 했습니다.
+2025-08-16-23-54,ERROR,4ABLD132 -> CLOSE,4ABLD132 호기 ERROR 재발하여 AI PORT CLOSE 했습니다
+2025-08-17-00-12,OPEN,4ABLD132,4ABLD132 호기 조치 완료되어 AI PORT OPEN 했습니다.
+2025-08-17-06-53,ERROR,4ABLD132 Error 발생하여 -> CLOSE,"4ABLD132호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-08-17-07-34,OPEN,4ABLD132,"4ABLD132호기 RM 하단만 4,7F AI Open 했습니다."
+2025-08-17-12-02,ERROR,4ABLD132 Error 발생하여 -> CLOSE,4ABLD132호기 Error 발생하여 4F AI Close 했습니다.
+2025-08-17-12-25,OPEN,4ABLD132,4ABLD132호기 RM 하단만 4F AI Open 했습니다.
+2025-08-17-17-49,ERROR,,Bridge OHT error 발생으로 처리중입니다.
+2025-08-17-17-57,CLOSE,4ABLD112,"M14B -> M16 층간 Lifter 7F AI & 4F AO Conv Full Delay Port 5구간 AI Port Close 하도록 하겠습니다. -. 4ABLD112 AI75, AI77 -. 4ABLD121 AI75, AI77 -. 4ABLD122 AI77"
+2025-08-17-18-01,ERROR,,"Bridge OHT error 발생으로 처리중입니다.  (백남선,이천AMHS운영/TL,2025-08-17 17:49:49) ┖ Error는 처리되었고 정체 해소중입니다."
+2025-08-17-18-02,OPEN,,M14B -> M16 층간 Lifter 7F AI 순차적으로 Open 하도록 하겠습니다.
+2025-08-17-18-08,OPEN,,M14B -> M16 층간 Lifter Que 전호기 균등 분배 완료하여 7F 전체 AI Port Open 하겠습니다.
+2025-08-18-01-52,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-08-18-01-55,OPEN,4ABLD122,4ABLD122호기 AI Open 했습니다.
+2025-08-18-03-39,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-08-18-03-55,ERROR,4ABLD111,4ABLD111호기 Error 처리 관련 Hub Room HT - STOP 진행하겠습니다. HT - STOP 약 2~3회 진행 1회당 1분정도 진행하겠습니다.
+2025-08-18-04-03,ERROR,,Error 처리 완료 되어 추후 HT - STOP은 진행하지 않겠습니다.
+2025-08-18-04-05,OPEN,4ABLD111,4ABLD111호기 AI Open 했습니다.
+2025-08-18-08-43,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 Error 발생으로 4,7F AI Close 했습니다."
+2025-08-18-10-06,OPEN,4ABLD132,4ABLD132 호기 조치 완료되어 AI PORT OPEN 했습니다.
+2025-08-18-10-31,CLOSE,4ABLD122,"4ABLD122호기 Soft Patch 작업으로 인하여 4F,7F AI Close 하였습니다. [4ABLD122 작업내용] ① [ beckhoff PC S/W 패치 ]  - 파일 close 기능 추가 ② [ Beckhoff PLC에서 Wait Ok Time Out  (FOUP  In Out confirm timeout) ] ③ wire shark 설치 소요시간 : 10:30~11:30"
+2025-08-18-11-45,OPEN,4ABLD122,"4ABLD122호기 Soft Patch 작업 완료 하여 4F,7F AI Open 하였습니다."
+2025-08-18-18-50,OPEN,,넵 전체 OPEN하였습니다.
+2025-08-18-22-53,OPEN,,"M16 Hub 정체로 St.2341-ST.2942 Rail Cut 대응합니다. (박성연,이천AMHS운영/TL,2025-08-18 21:56:12) ┖ Rail Open 했습니다."
+2025-08-19-01-52,OPEN,6ABL6032,6ABL6032 E84 TImeout 지속 발생으로 AI Port 잠시 막았다가 Open하겠습니다.
+2025-08-19-01-55,OPEN,,Open 했습니다
+2025-08-19-04-26,OPEN,6ABL6032,6ABL6032 E84 TImeout 지속 발생으로 AI Port 잠시 막았다가 Open하겠습니다.
+2025-08-19-04-29,OPEN,6ABL6032,"6ABL6032 E84 TImeout 지속 발생으로 AI Port 잠시 막았다가 Open하겠습니다. (민예준,이천AMHS운영/TL,2025-08-19 04:26:29) ┖ Open 했습니다."
+2025-08-19-05-54,OPEN,,"M14 Hub 정체로 인해 St.2617 → 2618 Rail Cut 했습니다. (박형기,이천AMHS운영/TL,2025-08-19 05:37:27) ┖ Rail Open 했습니다"
+2025-08-19-12-27,CLOSE,4ABLD131,4ABLD131호기 121호기 7F AI Close했습니다.
+2025-08-19-12-40,CLOSE,,7F AI 모두 Close했습니다.
+2025-08-19-12-49,OPEN,,M14B 7F AI 모두 Open했습니다.
+2025-08-19-13-01,ERROR,4ABLH401 Error 발생하여,현재 HUB ROOM에 M14 lifter 4ABLH401 Error 발생하여 조치중에 있습니다. 참고 부탁드립니다.
+2025-08-19-13-08,ERROR,Error 발생하여,"12시경 초기 Error 발생하여 조치는 완료 하였으나, A_IN Port에서 풉이 이동하지 않는 현상이 발견되었습니다. 현재 조치 완료 하여 정상가동 중입니다."
+2025-08-19-13-15,OPEN,,{{@진호섭::9749}} 변경후 AI OPEN 하나요?
+2025-08-19-13-16,ERROR,4ABLH401,{{@진호섭::9749}} 상기 4ABLH401 은 분석실 LIFT 인데 Error Point 가 하부로 OHT 와 연관 없는 작업입니다 참고 부탁드립니다.
+2025-08-19-13-16,OPEN,,{{@육양주::8905}} M14B는 전부 OPEN 부탁 드립니다.
+2025-08-19-13-16,OPEN,,OPEN 하세요
+2025-08-19-13-17,OPEN,,3으로 변경된 상태로 모두 Open했습니다.
+2025-08-19-19-21,ERROR,4ABLD121 Error발생하여 -> CLOSE,안녕하세요 4ABLD121 Error발생하여 AI Close하겠습니다
+2025-08-19-19-40,ERROR,4ABLD121 -> OPEN,4ABLD121 Error조치 완료되어 AI Open했습니다
+2025-08-20-00-00,ERROR,4ABLD131 -> CLOSE,"안녕하세요 4ABLD131 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-08-20-00-16,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-20-06-30,OPEN,,"Bridge Hub M14 방향 OHT 정체 발생하여 ST.2617→ST.2618 Lane Cut 실시하겠습니다. (민예준,이천AMHS운영/TL,2025-08-20 06:13:21) ┖ Open 했습니다."
+2025-08-20-06-32,ERROR,6ABL6011 -> CLOSE,M16A ZT 1-1호기(6ABL6011) Error로 AI Close 했습니다.
+2025-08-20-06-46,OPEN,,Clear로 Open 했습니다.
+2025-08-20-12-39,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-08-20-12-41,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-08-20-20-10,ERROR,6ABL6011 -> CLOSE,M16A ZT 1-1호기(6ABL6011)ERROR로 AI CLOSE하겠습니다.
+2025-08-20-20-33,ERROR,6ABL6011 -> OPEN,M16A ZT 1-1호기(6ABL6011)ERROR Clear되어 Open했습니다.
+2025-08-21-10-51,CLOSE,,허브룸 정체 발생으로 M14B ZT 7F AI Close 대응하겠습니다
+2025-08-21-10-59,OPEN,,7F AI Open 완료했습니다
+2025-08-21-11-36,CLOSE,4ABLD131,4ABLD131호기 7F AI Close 했습니다
+2025-08-21-11-42,OPEN,,7F AI Open 했습니다
+2025-08-21-12-15,CLOSE,,SFA ZT 7F AI 전체 Close 하겠습니다
+2025-08-21-12-39,OPEN,,SFA ZT 1Port 씩 Open 하겠습니다.
+2025-08-21-12-41,OPEN,,SFA ZT 7F AI 전체 Open 했습니다.
+2025-08-21-15-10,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-08-21-16-53,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 조치 완료되어 4F7FI AI Port Open 하였습니다.
+2025-08-21-16-21,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-08-21-16-53,ERROR,4ABLD132 -> OPEN,4ABLD132호기 Error 조치 완료되어 4F7FI AI Port Open 하였습니다.
+2025-08-22-04-23,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 4F/7F AI Port Close 하겠습니다.
+2025-08-22-04-24,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치하여 4F/7F AI Port Open 했습니다.
+2025-08-23-11-28,ERROR,Error 발생으로,M16 HUB OHT Error 발생으로 처리중입니다.
+2025-08-23-11-34,ERROR,Error 발생으로,"M16 HUB OHT Error 발생으로 처리중입니다. (신우진,이천AMHS운영/TL,2025-08-23 11:28:48) ┖ Error Clear 되었습니다"
+2025-08-24-16-35,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122호기 Error 발생하여 4F/7F AI Close 했습니다.
+2025-08-24-16-37,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 되어 4F/7F AI Open 했습니다.
+2025-08-25-14-35,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 AI Close 했습니다.
+2025-08-25-14-36,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122호기 Error 발생하여 AI Close 했습니다.
+2025-08-25-14-58,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 후 AI Open 했습니다.
+2025-08-25-15-36,OPEN,4ABLD112,"4ABLD112호기 RM 하단 Close 후 4,7F AI Open 했습니다."
+2025-08-25-15-59,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 AI Close 했습니다.
+2025-08-25-17-52,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치되어 AI Open 했습니다.
+2025-08-27-11-31,OPEN,4ABLH04,MCS 4ABLH04 Port Open 진행합니다.
+2025-08-27-11-41,ERROR,4ABLH401 Error 발생하여,4ABLH401 Error 발생하여 A_IN Port 다시 차단하였습니다.
+2025-08-28-09-56,ERROR,4ABLD132 -> CLOSE,"4ABLD132 호기 ERROR 로 인해4F, 7F AI CLOSE 했습니다."
+2025-08-28-12-35,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 Error 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-08-28-13-17,ERROR,4ABLD132 -> CLOSE,"4ABLD132 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-08-28-13-59,ERROR,4ABLD132,4ABLD132 호기 회전 stopper 모터측 문제로 Error 조치 중입니다
+2025-08-28-15-47,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 Error 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-08-28-23-22,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-08-28-23-31,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하겠습니다.
+2025-08-30-17-05,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122호기 Error 발생하여 AI Close 했습니다.
+2025-08-30-17-08,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 Error 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-08-31-09-06,ERROR,4ABLD121 -> CLOSE,"4ABLD121 ERROR 발생하여 07:46 4F,7F AI CLOSE 했습니다. 4ABLD121 ERROR 조치완료되어 4F,7F AI OPEN 했습니다."
+2025-09-01-06-03,ERROR,4AFC3301 Error 발생되어,4AFC3301 Error 발생되어 A_in80~89 차단했습니다.
+2025-09-01-06-07,ERROR,4AFC3301 -> OPEN,4AFC3301 Error 조치되어 A_in80~89 오픈했습니다.
+2025-09-01-06-37,ERROR,4ABLD122 Error 발생하여 -> CLOSE,"4ABLD122호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-09-01-06-45,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error 조치되어 4,7F AI Open 했습니다."
+2025-09-01-09-00,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-01-09-14,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 4F/7F AI Port Open 하겠습니다.
+2025-09-01-13-29,ERROR,,현재 OHT Error로 정체중입니다.
+2025-09-01-13-36,ERROR,,"현재 OHT Error로 정체중입니다. (김현진,이천AMHS운영/TL,2025-09-01 13:29:53) ┖ 조치되어 정상 반송중입니다."
+2025-09-01-15-06,OPEN,,{{@박경병::6346}} M163F ZT AI PORT CLOSE 및 OPEN 부탁 드립니다.
+2025-09-02-01-22,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121 Error 발생으로 4,7F AI Close 했습니다."
+2025-09-02-01-57,ERROR,4ABLD121 -> OPEN,"4ABLD121 Error 조치되어 4,7F AI Open 했습니다."
+2025-09-02-09-40,ERROR,6ABL0111 Error 발생으로 -> CLOSE,6ABL0111 Error 발생으로 AI CLOSE 진행했습니다.
+2025-09-02-09-48,ERROR,6ABL0111 Error 발생한,6ABL0111 Error 처리되어 AI Open했습니다. - Error 발생한 Conv(AO623) 제외
+2025-09-02-10-39,OPEN,4ABLH401,4ABLH401 ZT AIN OPEN하였습니다.
+2025-09-02-13-35,CLOSE,4ABLD131,4ABLD131 ALARM 으로 인해 4층 7층 AI CLOSE 하겠습니다.
+2025-09-02-16-07,ERROR,4ABLD131 -> OPEN,4ABLD131 Error조치 완료되어 AI Open 하겠습니다.
+2025-09-02-16-11,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131 Error 발생하여 AI Close 하겠습니다.
+2025-09-02-17-18,ERROR,4ABLD131 -> OPEN,4ABLD131 Error조치 완료되어 AI Open 하겠습니다.
+2025-09-02-17-38,OPEN,,AO623 조치 완료되어 OPEN 했습니다.
+2025-09-03-11-13,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-03-11-21,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치완료되어 AI Port Open 하였습니다.
+2025-09-04-09-50,OPEN,4ABLD111,"4ABLD111호기 AI43 작업을위해 HT STOP 30초~1분 단위로 진행하도록 하겠습니다. HUB Room Monitoring 부탁드리며, 특이사항 발생 시 Inform 부탁 드리겠습니다. 감사합니다. Tetra.1312 / Mobile.40847  (김필희,이천AMHS운영/TL,2025-09-04 09:12:59) ┖ open 했습니다."
+2025-09-04-11-17,OPEN,,{{@백남선::10154}} 3F ZT AI Close &Open 하시죠
+2025-09-04-11-59,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-04-12-09,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치 후, 4F/7F 하단 Port 만 Open 하였습니다. -. RM 상단 구동 상태 불량으로 점검 예정."
+2025-09-04-12-18,OPEN,,"Bridge OHT 정체로 2341-2942 Rail Cut 했습니다. (백남선,이천AMHS운영/TL,2025-09-04 11:17:41) ┖ Open 했습니다."
+2025-09-04-12-32,ERROR,,안녕하세요 ERROR관련  HUB 반송 튀는건가요
+2025-09-05-13-25,ERROR,,Bridge OHT Error로 정체중입니다.
+2025-09-05-13-34,ERROR,,"Bridge OHT Error로 정체중입니다. (박성연,이천AMHS운영/TL,2025-09-05 13:25:47) ┖ 조치되었습니다."
+2025-09-05-14-41,ERROR,,13:20 M16->Conveyor 목적지로 하는 Time 증가건은 OHT Error 시간대 영향으로 증가 이외 10분당 처리량 확인시 문제 없습니다.
+2025-09-05-20-02,OPEN,,"M14 Conv. 쪽 OHT 몰려 분기구간 2617-2618 Rail Cut 대응합니다.  (백남선,이천AMHS운영/TL,2025-09-05 13:57:12) ┖ 해당 구간 Open 했습니다."
+2025-09-06-01-59,OPEN,6ABL6032,M16 HUB VHL 정체로 인하여 6ABL6032_AI Port E84 Time Out 지속 발생으로 잠시 Close / Open 실시 하겠습니다.
+2025-09-06-09-05,ERROR,,Bridge OHT Error로 정체중입니다.
+2025-09-06-09-05,ERROR,,"Bridge OHT Error로 정체중입니다. (박성연,이천AMHS운영/TL,2025-09-06 09:05:00) ┖ 조치되었습니다."
+2025-09-06-09-06,ERROR,6ABL6011 Error 발생으로 -> CLOSE,6ABL6011 Error 발생으로 AI CLOSE 진행했습니다.
+2025-09-06-09-35,OPEN,,M14B -> M16 반송 4F Conv Full QUE Delay 관련 7F AI Port Open <-> Close 대응 진행 하겠습니다.
+2025-09-06-09-42,OPEN,,M14B -> M16 4F Conv Full 전체 호기 QUE 분배 완료되어 7F AI 전체 Open Monitoring 하겠습니다.
+2025-09-06-10-09,OPEN,,처리되어 Open 진행하였습니다.
+2025-09-06-10-42,ERROR,Error 발생으로,OHT랑 같이 Error 발생으로 반송 Que Delay 중입니다.
+2025-09-06-10-42,ERROR,,Error는 둘 다 조치되었습니다.
+2025-09-06-11-15,OPEN,,"Bridge M16 ZT 방향 정체 발생으로 ST.2341-ST.2942, ST.2329-ST.2944 Rail Cut 실시 하겠습니다. (박성연,이천AMHS운영/TL,2025-09-06 09:25:10) ┖ Rail Open 했습니다."
+2025-09-07-22-59,ERROR,Error 발생하여,Bridge OHT Error 발생하여 처리중입니다.
+2025-09-07-23-01,ERROR,Error 발생하여,"Bridge OHT Error 발생하여 처리중입니다. (최홍영,이천AMHS운영/TL,2025-09-07 22:59:16) ┖ 조치되었습니다."
+2025-09-08-11-02,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 4F/7F AI Close 했습니다.
+2025-09-08-12-12,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치되어 4F/7F AI OPEN 했습니다.
+2025-09-09-03-34,ERROR,Error 발생하여,Birdge OHT Error 발생하여 처리중입니다.
+2025-09-09-03-36,ERROR,Error 발생하여,"Birdge OHT Error 발생하여 처리중입니다. (신우진,이천AMHS운영/TL,2025-09-09 03:34:45) ┖ 조치되었습니다."
+2025-09-09-09-08,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112 Error 발생하여 4,7F AI Close 했습니다."
+2025-09-09-09-11,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111 Error 발생하여 4,7F AI Close 했습니다."
+2025-09-09-09-26,ERROR,4ABLD111 -> OPEN,4ABLD111 Error 조치되어 4F/7F AI Open 했습니다.
+2025-09-09-10-19,ERROR,4ABLD112 -> OPEN,4ABLD112 Error 조치되어 4F/7F AI Open 했습니다.
+2025-09-09-11-23,ERROR,,해당 FOUP 이력 확인시 ERROR 조치 시점과 매칭 되는거 같습니다
+2025-09-09-11-24,ERROR,6PDMB275,2025-09-09 08:56:30   6PDMB275   ERROR 발생 전 마지막 반송 했던 FOUP 이네요
+2025-09-09-11-55,OPEN,4ABLD112,"M14B lifter 4ABLD112 호기 풉 처리, 장비 재부팅 후 open하고 정상 반송 확인 했습니다"
+2025-09-09-11-56,ERROR,6ABL6012,6ABL6012 AO313 Foup 6PDML020 Error QUE로 표시되서 실물 제거 후 재입고 예정입니다.
+2025-09-09-17-25,OPEN,,M16 3F Bridge ZT AI PORT Close / OPEN 부탁 드립니다.
+2025-09-09-17-25,OPEN,,"M16 3F Bridge ZT AI PORT Close / OPEN 부탁 드립니다. (진호섭,이천AMHS운영/TL,2025-09-09 17:25:14) ┖ 대응중입니다."
+2025-09-09-17-31,ERROR,Error 발생도,Error 발생도 없었습니다.
+2025-09-09-17-34,OPEN,,"M16 3F Bridge ZT AI PORT Close / OPEN 부탁 드립니다. (진호섭,이천AMHS운영/TL,2025-09-09 17:25:14) ┖ OHT 한바퀴 돌렸으니  Monitoring 진행하겠습니다."
+2025-09-09-19-56,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-09-20-45,OPEN,4ABLD112,4ABLD112호기 4F/7F AI Port 하단 만 Open 하였습니다. 상단 - Motor Sharft 문제로 교체 예정.
+2025-09-10-09-25,OPEN,,M16 3F ZT AI PORT Close / Open 부탁 드립니다.
+2025-09-10-11-01,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 인하여 4F, 7F (하단) AI Close 하였습니다."
+2025-09-10-11-01,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치되어 4F, 7F (하단) AI Open 하였습니다. 상단 - Motor Sharft 문제로 교체 예정."
+2025-09-10-14-00,CLOSE,,"안녕하세요, 4,7F AI Close 후 해당작업 진행하겠습니다."
+2025-09-10-16-58,OPEN,4ABLD112,안녕하세요. 4ABLD112호기 4F/7F AI Port Open 하겠습니다.
+2025-09-11-04-13,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-09-11-04-30,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-11-09-51,ERROR,4ABLD122 -> CLOSE,"안녕하세요 4ABLD122 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-09-11-09-55,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-12-03-16,OPEN,,"M14 Conv 측 OHT 몰려 분기 구간 2617-2618 Rail Cut 대응하겠습니다. (민예준,이천AMHS운영/TL,2025-09-12 02:58:27) ┖ 정체 해소 되어 Rail Open 했습니다."
+2025-09-12-05-26,ERROR,4ABLD111 -> CLOSE,"안녕하세요 4ABLD111 호기 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다."
+2025-09-12-05-44,ERROR,4ABLD111 -> OPEN,"4ABLD111 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-13-11-20,OPEN,6ABL6032,M16 HUB VHL 정체로 인하여 6ABL6032_AI Port E84 Time Out 지속 발생으로 잠시 Close / Open 실시 하겠습니다.
+2025-09-14-17-40,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-09-14-17-55,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치 완료되어 4,7F AI Open 했습니다."
+2025-09-15-02-41,ERROR,4AFC3201 Error 발생으로,4AFC3201 Error 발생으로 16 -> 14 인포트 차단했습니다.
+2025-09-15-03-07,ERROR,-> OPEN,Error 클리어 되어 포트 오픈했습니다.
+2025-09-15-07-14,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-09-15-08-00,ERROR,4ABLD131 -> OPEN,"4ABLD131호기 Error 조치 완료되어 4,7F AI Open 했습니다."
+2025-09-15-17-11,OPEN,,M16 ZT AI PORT CLOSE 및 OPEN 해 주세요
+2025-09-15-17-29,OPEN,,M16 3F ZT PORT OPEN 해 주세요
+2025-09-15-17-30,OPEN,,"M16 3F ZT PORT OPEN 해 주세요 (진호섭,이천AMHS운영/TL,2025-09-15 17:29:54) ┖ Open완료 하엿습니다."
+2025-09-15-17-31,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기  Error 발생하여 4F/7F AI CLOSE 했습니다.
+2025-09-15-17-36,OPEN,6ABL6011,{{@김지훈::10103}} 6ABL6011 한번 더 Close /Open 부탁 할게요
+2025-09-15-17-40,OPEN,,{{@김지훈::10103}} 다시 OPEN 해 주세요
+2025-09-15-17-43,OPEN,4ABLD112,4ABLD112호기  조치 완료 되어4F/7F AI OPEN 했습니다.
+2025-09-15-17-43,OPEN,,"{{@김지훈::10103}} 다시 OPEN 해 주세요 (진호섭,이천AMHS운영/TL,2025-09-15 17:40:07) ┖ Open완료."
+2025-09-15-22-32,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-09-15-23-08,ERROR,4ABLD112 -> OPEN,안녕하세요. 4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하였습니다.
+2025-09-16-01-01,OPEN,4AFC3201,정체 해소되어 4AFC3201 A_IN80~85 Open 하였습니다.
+2025-09-16-10-01,OPEN,6ABL6032,"M16 3F ZT 6ABL6032 AI으로 반송 집중되어 정체 발생하여 6ABL6032_AI311,312 Close/OPEN으로 대응하겠습니다."
+2025-09-16-10-36,OPEN,6ABL6032,"6ABL6032_AI311,312, 322 Close/OPEN 하겠습니다."
+2025-09-16-21-13,ERROR,,M16A STORAGE FULL 이라 ERROR 발생 QUE만 M16B로 다시 올리겠습니다.
+2025-09-16-21-22,OPEN,,"M16A ZT 6F 상황봐가면서 Port Open/Close, Max capa 조정해가겠습니다."
+2025-09-16-21-35,OPEN,,1300 OVER 되면 1대 OPEN 예정
+2025-09-16-21-45,OPEN,,14 -> 16 넘어가는 컨베이어 AI Port 50% open 진행해도 될까요?
+2025-09-16-21-45,OPEN,,ZT 1대 OPEN실시.
+2025-09-16-22-09,OPEN,,네 M16B ZT 10F AI 전부 Open 하겠습니다.
+2025-09-16-22-18,OPEN,,M16B ZT 10F AI 전체 Port Open 했습니다.
+2025-09-16-22-20,OPEN,,M14B lifter ->M16  절반 open 해도 될까요?
+2025-09-16-22-27,OPEN,,{{@진호섭::9749}} 현재  M14B 7F Banned Close 상태 Open합니다.
+2025-09-16-22-28,OPEN,,M14B AI 전체 Open 했습니다.
+2025-09-16-22-40,OPEN,,{{@남부현::4488}} 절반만 OPEN 해주세요
+2025-09-16-22-56,OPEN,,{{@진호섭::9749}} 10분 단위로 OPEN합니다.
+2025-09-17-03-22,OPEN,,"1. 20:00분 경 M14B -> M16 HUB MAX CAPA ""3"" 변경. 2. 20:50분 경 M14B -> M16 HUB Close 실시. 3. 22:20분 경 M14B -> M16 HUB MAX CAPA ""3"" 인 상태로 Open. 4. 23:00분 경 M14B -> M16 HUB MAX CAPA 원복 후, 정상 가동 中. 이상입니다."
+2025-09-17-05-16,OPEN,4AFC3201,정체 해소되어 4AFC3201 A_IN 83~85 Open 하였습니다.
+2025-09-17-09-38,ERROR,4ABLD111 -> CLOSE,4ABLD111 ERROR 발생하여 4F 7F AI CLOSE 했습니다.
+2025-09-17-09-55,ERROR,4ABLD111 -> OPEN,"4ABLD111 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-17-17-51,ERROR,4ABLD111 Error 발생하여 -> CLOSE,4ABLD111호기 Error 발생하여 4F/7F AI 모두 Close했습니다.
+2025-09-17-18-06,OPEN,4ABLD111,4ABLD111호기 조치 되어 4F/7F AI 모두 OPEN 했습니다.
+2025-09-18-03-09,ERROR,Error 발생하여,Birdge OHT Error 발생하여 처리중입니다.
+2025-09-18-03-14,ERROR,Error 발생하여,"Birdge OHT Error 발생하여 처리중입니다. (박성연,이천AMHS운영/TL,2025-09-18 03:09:05) ┖ 조치되어 정체 해소중입니다."
+2025-09-19-09-55,ERROR,4ABLD131 Error 발생되어 -> CLOSE,"안녕하세요  4ABLD131 Error 발생되어 4F,7F AI Close 하겠습니다."
+2025-09-19-10-55,ERROR,4ABLD131 -> OPEN,4ABLD131 Error  조치 후 AI Open 하였습니다.
+2025-09-19-12-48,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-09-19-14-44,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-09-19-14-51,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-09-19-15-41,OPEN,4ABLD112,"4ABLD112   호기 조치 완료되어  4F, 7F AI OPEN  했습니다"
+2025-09-20-19-39,OPEN,6ABL6032,"M16 3F ZT 6ABL6032 AI으로 반송 집중되어 정체 발생하여 6ABL6032_AI311,312 Close/OPEN으로 대응하겠습니다."
+2025-09-21-18-50,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-09-21-19-35,OPEN,4ABLD112,"4ABLD112 호기 조치 완료되어  4F, 7F AI OPEN  했습니다"
+2025-09-22-01-51,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112호기 Error 발생하여 4F / 7F AI Close했습니다.
+2025-09-22-02-00,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 처리되어 AI 모두 Open했습니다.
+2025-09-22-06-36,ERROR,Error 발생하여,Bridge OHT Error 발생하여 처리중입니다.
+2025-09-22-06-42,ERROR,Error 발생하여,"Bridge OHT Error 발생하여 처리중입니다. (서민혁,이천AMHS운영/TL,2025-09-22 06:36:28) ┖ 처리 완료 되었습니다."
+2025-09-22-09-07,ERROR,4ABLD131 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD131호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-22-10-31,ERROR,4ABLD131,4ABLD131호기 Error 처리 완료 후 가동 중입니다.
+2025-09-22-12-59,ERROR,4ABLD131 Error 발생으로,4ABLD131호기 Error 발생으로 4F/7F AI Port Clsoe 하겠습니다.
+2025-09-22-13-30,ERROR,4ABLD131 -> CLOSE,4ABLD131호기 Error 조치 완료되어 4F/7F AI Port Open 하겠습니다. -. 7F AI75 Conv Sharft Motor 문제로 Close 상태.
+2025-09-22-21-41,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-09-22-22-07,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-23-13-52,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-23-13-54,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-09-23-19-34,ERROR,Error 발생하여,Bridge OHT Error 발생하여 처리중입니다.
+2025-09-23-19-42,ERROR,Error 발생하여,"Bridge OHT Error 발생하여 처리중입니다. (민예준,이천AMHS운영/TL,2025-09-23 19:34:59) ┖ 조치되었습니다."
+2025-09-23-19-53,OPEN,6ABL6032,"M16 3F ZT 6ABL6032 AI으로 반송 집중되어 정체 발생하여 6ABL6032_AI311,312,322 Close/OPEN으로 대응하겠습니다."
+2025-09-23-21-23,OPEN,6ABL6012,6ABL6012 ( ZT 1-2 호기 ) FOUP MANUAL 제거 후 PORT OPEN 하였습니다 1-1 호기 진행하겠습니다
+2025-09-23-21-49,OPEN,6ABL6011,6ABL6011 ( ZT 1-1 호기 ) FOUP MANUAL 제거 후 PORT OPEN 하였습니다
+2025-09-24-09-25,ERROR,4ABLD122 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD122호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-09-24-09-38,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-09-24-10-31,OPEN,,PATCH 완료되어 일부 PORT 부터 순차적 OPEN 하겠습니다
+2025-09-24-10-31,OPEN,,M16->M14 OPEN 완료
+2025-09-24-10-32,OPEN,,M14->M16 OPEN 완료 PATCH 관련 작업 정상적으로 모두 완료 되었습니다 협조에해주셔서 감사합니다.
+2025-09-24-12-01,OPEN,,완료 되어 M16->M14 방향 우선 OPEN 하였습니다.
+2025-09-24-12-04,OPEN,,M14->M16 방향 OPEN 완료 ALL OPEN 완료
+2025-09-24-13-25,ERROR,4ABLD131 Error 발생으로,4ABLD131호기 Error 발생으로 AI Port 차단 하겠습니다.
+2025-09-24-14-38,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132 Error 발생으로 4F/7F AI Close 하겠습니다.
+2025-09-24-14-51,ERROR,4ABLD131 -> OPEN,"4ABLD131, 132호기  Error 조치 완료되어 4F/7F AI PORT OPEN 하였습니다"
+2025-09-24-14-52,ERROR,4ABLD131 -> CLOSE,"4ABLD131호기 Error 조치 완료되어 4F/7F AI Port Open 하겠습니다. -. 7F AI75 Conv Sharft Motor 문제로 Close 상태. (김필희,이천AMHS운영/TL,2025-09-22 13:30:27) ┖ 해당 Port도 조치 완료되어 Open 하였습니다."
+2025-09-25-02-11,ERROR,4ABLD122,"4ABLD122 ERROR 발생으로 4F, 7F A_IN PORT 차단 하였습니다."
+2025-09-25-02-20,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-09-26-20-09,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-09-26-20-36,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-27-05-32,ERROR,4ABLD121 -> CLOSE,"4ABLD121 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-09-27-06-12,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-27-06-27,ERROR,4ABLD121 -> CLOSE,"4ABLD121 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-09-27-06-57,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치 완료되어 4,7F AI Open 했습니다."
+2025-09-27-07-38,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121호기 Error 발생으로 4,7F AI Close 했습니다."
+2025-09-27-08-02,OPEN,4ABLD121,"4ABLD121호기 4,7F 상단만 AI Open 했습니다."
+2025-09-27-09-06,OPEN,4ABLD121,"4ABLD121호기 4,7F 하단도 AI Open 했습니다."
+2025-09-27-18-27,ERROR,6ABL6011 Error 발생으로 -> CLOSE,6ABL6011 Error 발생으로 모든 AI Conv Close했습니다.
+2025-09-27-18-40,ERROR,6ABL6011 -> OPEN,6ABL6011 Error 조치되어 모든 AI Conv Open했습니다.
+2025-09-28-05-12,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112호기 Error 발생으로 4,7F AI Close 했습니다"
+2025-09-28-05-40,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치되어 4,7F AI Open 했습니다."
+2025-09-29-08-59,CLOSE,4ABLD121,"4ABLD121호기 7F, 4F AI Close 하겠습니다."
+2025-09-29-11-18,OPEN,4AFC3201,"안녕하세요 10:00~11:00 CVLH05 Cleaning 작업으로 인해 4AFC3201A_IN80~85 Down 하겠습니다 (이주성,이천AMHS운영/TL,2025-09-29 10:21:43) ┖ 작업 완료하여 port open 및 max capa 원복 하였습니다."
+2025-09-30-04-33,ERROR,4ABLD132 -> CLOSE,"안녕하세요 4ABLD132 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-09-30-04-57,ERROR,4ABLD132 -> OPEN,"4ABLD132 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-09-30-15-11,OPEN,4ABLD121,"안녕하세요 4ABLD121 작업종료 되어 4F,7F AI Open 하였습니다."
+2025-10-01-08-55,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD111 Error 발생으로 4F,7F AI Close 하겠습니다"
+2025-10-01-12-08,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치후 4F,7F AI open  하였습니다"
+2025-10-01-12-08,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112 Error 발생하여 4F,7F AI Close 하겠습니다."
+2025-10-01-12-21,ERROR,4ABLD112,4ABLD112 Error 처리를 위해 4F HUB Room 1~2분가량 HT - STOP 진행하겠습니다.
+2025-10-01-12-42,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치완료 되어 4F,7F AI Open 하겠습니다"
+2025-10-01-16-04,OPEN,4AFC3201,4AFC3201 Zone60629 Teaching 완료되어 차단구간 open하였습니다.
+2025-10-02-03-13,ERROR,4ABLD112 -> CLOSE,"4ABLD112호기 ERROR발생으로 4F, 7F AI CLOSE 했습니다."
+2025-10-02-03-13,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-10-03-06-59,ERROR,4ABLD111 -> CLOSE,"안녕하세요 4ABLD111호기 ERROR발생으로 4F, 7F AI CLOSE 했습니다."
+2025-10-03-07-06,ERROR,4ABLD111 -> OPEN,"4ABLD111 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-10-04-00-24,ERROR,6ABL6011,"6ABL6011(ZT 1호기) ERROR 발생 으로 3F, 6F AI PORT 차단 하였습니다."
+2025-10-04-05-32,ERROR,4ABLD111 -> CLOSE,"4ABLD111 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-10-04-05-47,ERROR,4ABLD111 -> OPEN,"4ABLD111 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다"
+2025-10-04-17-29,ERROR,4ABLD112 Error 발생되어 -> CLOSE,"4ABLD112호기 Error 발생되어 4F, 7F AI Close했습니다."
+2025-10-04-18-08,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치되어 4F, 7F AI Open했습니다."
+2025-10-06-14-08,ERROR,6ABL0112 Error 발생되어 -> CLOSE,6ABL0112호기 Error 발생되어 AI Close 했습니다
+2025-10-06-14-19,ERROR,6ABL0112 -> OPEN,6ABL0112호기 Error Clear 하여 Open 하였습니다
+2025-10-08-22-18,ERROR,4ABLD132 Error 발생하여 -> CLOSE,"4ABLD132 Error 발생하여 4,7F AI Close 했습니다."
+2025-10-08-22-31,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-10-09-23-11,CLOSE,4ABLD121,안녕하세요. 4ABLD121호기 AI75 Close 하겠습니다. 나머지 Port 정상적으로 사용되어 장비는 기동중입니다. -. AO41 Turn축 Timing BELT 끊어짐.
+2025-10-10-20-12,ERROR,4ABLD112 Error 발생하여 -> CLOSE,4ABLD112 Error 발생하여 AI Close 했습니다.
+2025-10-10-20-36,OPEN,4ABLD112,4ABLD112호기 조치 완료되어 AI Open 했습니다.
+2025-10-13-09-57,ERROR,4ABLD121 -> CLOSE,"4ABLD121 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-10-13-10-18,ERROR,4ABLD121,4ABLD121호기 ERROR 조치 완료 후 AUTO UP. 수고하세요.
+2025-10-13-15-35,ERROR,4ABLD121 -> CLOSE,"안녕하세요 4ABLD121 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-10-13-16-12,ERROR,4ABLD121 -> OPEN,"4ABLD121 호기 ERROR 조치 완료되어 4F,7F AI OPEN 하겠습니다."
+2025-10-14-09-58,CLOSE,4ABLD111,"4ABLD111호기 확인 작업으로 4F, 7F AI CLOSE 하겠습니다."
+2025-10-14-10-08,OPEN,4ABLD111,"4ABLD111호기 확인 작업 완료 4F, 7F AI OPEN 하겠습니다."
+2025-10-14-10-12,CLOSE,4ABLD121,"4ABLD121호기 확인 작업으로 4F, 7F AI CLOSE 하겠습니다."
+2025-10-14-10-17,OPEN,4ABLD121,"4ABLD121호기 확인 작업 완료 4F, 7F AI OPEN 하겠습니다."
+2025-10-14-10-20,CLOSE,4ABLD122,"4ABLD122호기 확인 작업으로 4F, 7F AI CLOSE 하겠습니다."
+2025-10-14-10-31,OPEN,4ABLD122,"4ABLD122호기 확인 작업 완료 4F, 7F AI OPEN 하겠습니다."
+2025-10-14-10-36,CLOSE,4ABLD131,"4ABLD131호기 확인 작업으로 4F, 7F AI CLOSE 하겠습니다."
+2025-10-14-10-47,OPEN,4ABLD131,"4ABLD131호기 확인 작업 완료 4F, 7F AI OPEN 하겠습니다."
+2025-10-14-10-51,CLOSE,4ABLD132,"4ABLD132호기 확인 작업으로 4F, 7F AI CLOSE 하겠습니다."
+2025-10-14-10-58,OPEN,4ABLD132,"4ABLD132호기 확인 작업 완료 4F, 7F AI OPEN 하겠습니다. 그럼 수고하세요."
+2025-10-15-01-10,ERROR,4ABLD112 Error 발생되어 -> CLOSE,4ABLD112호기 Error 발생되어 4F/7F AI Close했습니다.
+2025-10-15-01-22,ERROR,4ABLD112 -> OPEN,"4ABLD112호기 Error 조치되어 4,7F AI Open 하겠습니다"
+2025-10-15-16-06,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI CLOSE 하겠습니다"
+2025-10-15-16-23,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-10-15-20-38,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F,7F AI CLOSE 했습니다"
+2025-10-15-20-45,OPEN,,M14 Hub 쪽 St.2617 ->2618 Rail Open 하였습니다.
+2025-10-15-20-51,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-10-17-12-56,ERROR,4ABLD111 Error 발생하여 -> CLOSE,"4ABLD111호기 Error 발생하여 4,7F AI Close 했습니다."
+2025-10-17-13-04,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-10-18-03-44,ERROR,4ABLD111,"4ABLD111 호기 ERROR 발생으로 4F,7F A_IN PORT 차단 했습니다."
+2025-10-18-03-45,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-10-19-02-22,OPEN,,작업 완료로 Open 했습니다.
+2025-10-19-14-46,ERROR,4ABLD121 Error 발생하여 -> CLOSE,"4ABLD121 Error 발생하여 4,7F AI Close 했습니다."
+2025-10-19-15-07,ERROR,4ABLD121 -> OPEN,"4ABLD121 Error 조치 완료. 4,7F AI OPEN 했습니다. 수고하세요."
+2025-10-19-20-02,ERROR,4ABLD112 Error 발생하여 -> CLOSE,"4ABLD112 Error 발생하여 4, 7F AI Close 했습니다."
+2025-10-19-20-20,ERROR,4ABLD112 -> OPEN,"4ABLD112 Error 조치 완료. 4,7F AI OPEN 했습니다. 수고하세요."
+2025-10-20-07-52,ERROR,4ABLD121 Error 발생하여 -> CLOSE,"4ABLD121 Error 발생하여 4,7F AI Close 했습니다."
+2025-10-20-08-07,OPEN,4ABLD121,"4ABLD121 AI43 제외하고 4,7F AI Open 했습니다."
+2025-10-20-09-59,ERROR,4AFC3201,4AFC3201 Conveyor Error로 A_in80~85 차단 했습니다.
+2025-10-20-10-16,ERROR,4AFC3201 -> OPEN,"4AFC3201 Conveyor Error로 A_in80~85 차단 했습니다. (이상훈,이천AMHS운영/TL,2025-10-20 09:59:26) ┖ 조치 완료 되어 open 했습니다."
+2025-10-20-10-17,OPEN,,{{@이상훈::15086}} CON'V 언제쯤 OPEN 가능 하나요?
+2025-10-20-10-17,OPEN,,방금 open 했습니다
+2025-10-20-10-57,ERROR,,M16A ZT 작업은 완료 되었으나  ZT1-1호기 ERROR RESET이 되지 않아 확인 중입니다. ZT1-2호기는 AUTO UP 했습니다.
+2025-10-21-04-13,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F A_IN PORT CLOSE 했습니다."
+2025-10-21-04-38,OPEN,4ABLD112,4ABLD112호기 조치 완료되어 AI Open 했습니다.
+2025-10-21-08-36,CLOSE,4ABLD112,"4ABLD112 감속기 교체 관련 4F,7F  AI Close 하겠습니다."
+2025-10-21-15-25,ERROR,4ABLD122 -> CLOSE,"4ABLD122 ERROR 발생으로 4F,7F AI Close 하겠습니다."
+2025-10-21-15-25,OPEN,,작업 완료 후 PORT OPEN 하여 사용 중입니다.
+2025-10-21-15-37,ERROR,4ABLD122 -> OPEN,4ABLD122 Error 조치 후 AI Open 하였습니다.
+2025-10-22-09-28,ERROR,4ABLD111 Error 발생하여 -> CLOSE,안녕하세요 4ABLD111 Error 발생하여 AI Close 하겠습니다
+2025-10-22-09-28,ERROR,-> OPEN,"Error 조치 후 4F,7F AI Open 하였습니다."
+2025-10-23-11-04,OPEN,4ABLD112,4ABLD112호기 작업 완료되어 AI Open 하였습니다
+2025-10-23-11-50,OPEN,,{{@정호석::9788}} TL님 M14B HUB Lifter 감속기 교체작업 하루 앞당겨서 마무리 완료하여 open 했습니다.
+2025-10-23-15-49,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-10-23-16-04,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하였습니다.
+2025-10-23-21-05,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-10-23-22-09,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하였습니다.
+2025-10-23-23-11,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI Close 했습니다"
+2025-10-23-23-37,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI Open 했습니다"
+2025-10-24-03-19,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI Close 했습니다"
+2025-10-24-03-43,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI Open 했습니다"
+2025-10-25-23-59,OPEN,6ABL6031,6ABL6031 AI322 Conv belt 교체 후 Port Open 하였습니다
+2025-10-26-09-33,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F, 7F AI Close 했습니다"
+2025-10-26-09-42,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI Open 했습니다"
+2025-10-27-00-58,ERROR,4AFC3201,"안녕하세요 4AFC3201 ERROR 발생으로  OUT_PORT 85,87,88 FOUP 이 장기 대기하는 현상 발생으로 HUB룸 OHT HT STOP로 진행하여 제거하겠습니다."
+2025-10-27-01-20,ERROR,,해당 에러로 반송정체중이며 조치후 공유드리겠습니다.
+2025-10-27-01-36,ERROR,,BV238호기 에러조치되었습니다
+2025-10-27-08-52,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 했습니다
+2025-10-27-10-23,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F, 7F AI Open 했습니다"
+2025-10-27-11-02,ERROR,4ABLD112 Error 발생으로 -> CLOSE,4ABLD112호기 Error 발생으로 AI Close 했습니다
+2025-10-27-11-54,OPEN,4ABLD112,4ABLD112호기 조치 완료되어 AI Open 했습니다
+2025-10-28-10-55,OPEN,,TAGAP20 GBL(CELL) OPEN MASK INSP -> SOP 검증자재 측정 우선 부탁드려요
+2025-10-28-15-34,OPEN,,Conveyor Lift 5호기 작업 완료 하여 내부 동작 Test 후 이상 없어  Open 했으며 Monitoring 중입니다.
+2025-10-29-09-49,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-10-29-10-08,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 ERROR 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-10-29-20-10,ERROR,4ABLD131 Error 발생되어 -> CLOSE,4ABLD131호기 Error 발생되어 4F / 7F AI Close 했습니다.
+2025-10-29-20-10,ERROR,4ABLD131 -> OPEN,4ABLD131호기 Error 처리되어 4F / 7F AI Open 했습니다.
+2025-10-30-01-50,ERROR,,안녕하세요 M14A -> M14B B조 ERROR 영향으로 아직 안정화 안된건가요 ?
+2025-10-30-10-42,ERROR,4ABLD132 -> CLOSE,"4ABLD132 호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다."
+2025-10-30-15-07,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 Error 처리 완료되어 4F, 7F AI Open했습니다."
+2025-10-31-08-06,ERROR,,금일 M16A/브릿지 가는 엘레베이터 점검으로 DOWN일정.(10:00 ~11:30) 해당 엘베 없으면 M16에서 브릿지 이동 루트가 없어 혹시라도 ERROR 발생시 조치가 늦어 질수 있으니 참고 바랍니다.
+2025-10-31-11-17,ERROR,4ABLD122 -> CLOSE,"4ABLD122호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-10-31-11-22,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-10-31-16-22,ERROR,4ABLD121 -> CLOSE,"4ABLD121호기 ERROR 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-10-31-20-00,ERROR,4ABLD121 -> OPEN,"4ABLD121  호기  ERROR  조치 완료 되어  4F,7F AI OPEN했습니다."
+2025-11-01-12-55,ERROR,4AFC3201,4AFC3201 Conveyor Error로 A_in80~90 남측 전체  차단 하겠습니다.
+2025-11-01-12-57,OPEN,,조치 완료되어 open 했습니다.
+2025-11-01-13-51,ERROR,4AFC3201,안녕하세요~ 4AFC3201 Zone 60512 Error 다발생하여 TCM Reboot 진행하겠습니다. 작업관련 4AFC3201 14->16 A_IN Port 차단하겠습니다.
+2025-11-01-14-00,OPEN,4AFC3201,작업 완료되어 4AFC3201 A_IN Port Open 하였습니다.
+2025-11-01-14-10,ERROR,,Zone 60512 Error 재발생하여 LD 교체 진행하겠습니다.
+2025-11-01-15-20,ERROR,4AFC3201 Error 발생하여,안녕하세요 M14A內 4AFC3201 Error 발생하여 LD 교체 진행 예정입니다. M16->M14A 방향 4AFC3201 A_IN86~90 M14A->M16 방향 4AFC3201 A_IN11~24 Offline 진행하겠습니다.
+2025-11-01-16-08,OPEN,4AFC3201,LD 교체 완료되어 M16->M14A 방향 4AFC3201 A_IN86~90 M14A->M16 방향 4AFC3201 A_IN11~24 OPEN하겠습니다. 4AFC3201 A_IN80~85 MAX CAPA 원복 부탁 드리겠습니다.
+2025-11-01-16-25,ERROR,4AFC3201,Error 재발하여 M16->M14A 방향 4AFC3201 A_IN80~85 M14A->M16 방향 4AFC3201 A_IN Port all offline 진행하겠습니다
+2025-11-01-16-38,OPEN,4AFC3201,안녕하세요 M16->M14A 방향 4AFC3201 A_IN80~90 OPEN 하겠습니다
+2025-11-01-16-46,OPEN,4AFC3201,M14A -> M16 방향 4AFC3201 A_IN31~38 OPEN 하였습니다.
+2025-11-01-16-53,ERROR,-> OPEN,Error Clear 되어 전체 OPEN 하였습니다.
+2025-11-01-20-13,CLOSE,,4F 허브룸 정체로 인해 M14B 7F AI 일부 Close 대응하겠습니다.
+2025-11-01-20-32,OPEN,,해소 확인되어 7F AI Open 했습니다.
+2025-11-01-20-32,ERROR,,Bridge OHT Error 처리 완료 했습니다 M16 비상대피훈련으로 Error 처리 지연되었습니다.
+2025-11-01-21-00,OPEN,4AFC3201,CONV 정체 해소 되어 4AFC3201 A_IN PORT OPEN하겠습니다.
+2025-11-03-00-14,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 Error 발생으로 4,7F AI Close 했습니다."
+2025-11-03-00-15,ERROR,4ABLD122 -> OPEN,"4ABLD122 Error 조치되어 4,7F AI Open 했습니다."
+2025-11-03-02-11,ERROR,Error발생되어,Bridge BV0352호기 Error발생되어 정체 발생 중입니다.
+2025-11-03-02-17,ERROR,Error발생되어,"Bridge BV0352호기 Error발생되어 정체 발생 중입니다. (김지훈,이천AMHS운영/TL,2025-11-03 02:11:08) ┖ 처리 완료 되었습니다."
+2025-11-03-10-00,CLOSE,4ABLD112,안녕하세요 4ABLD112_AI47 점검으로 Close 하겠습니다.
+2025-11-03-10-39,OPEN,4ABLD112,4ABLD112_AI47 점검 후 Open 하였습니다
+2025-11-03-13-48,ERROR,4ABLD121 Error 발생으로 -> CLOSE,4ABLD121_AI75 Error 발생으로 AI75만 Close 진행하겠습니다.
+2025-11-03-16-11,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 Error 발생으로 4,7F AI Close 했습니다."
+2025-11-03-16-28,ERROR,4ABLD132 -> OPEN,4ABLD132 Error 조치 완료되어 AI Open 했습니다.
+2025-11-03-23-18,ERROR,4AFC3201 Error발생으로,4AFC3201 Conveyor Error발생으로 IN Port 전체 차단 했습니다.
+2025-11-03-23-37,OPEN,4AFC3201,4AFC3201 Conveyor A_in80~85(50%) Open 하겠습니다.
+2025-11-03-23-37,OPEN,4AFC3201,"4AFC3201 Down과련 하여   M16 -> M14 Capa 3 으로 조정 부탁드립니다. (김지훈,이천AMHS운영/TL,2025-11-03 23:37:04) ┖ 50%  Open이니 일단 유지 하시죠"
+2025-11-03-23-38,ERROR,4AFC3201,4AFC3201 장비 Error clear 했습니다.
+2025-11-03-23-39,OPEN,4AFC3201,4AFC3201 Conveyor A_in 전체 Open 했습니다.
+2025-11-04-10-25,ERROR,6ABL6032 Error 발생으로 -> CLOSE,6ABL6032 Error 발생으로 AI Close 하겠습니다.
+2025-11-04-10-29,OPEN,4ABLD121,4ABLD121_AI75 조치 후 Open 하였습니다.
+2025-11-04-10-49,OPEN,,Open 하였습니다.
+2025-11-04-16-25,OPEN,4AFC3201,[작업 계획 공유] (( 일시 : 11/5(수) 10:00~10:18 )) 대상 : 4AFC3201 [[ 목적 : PH5 A/B (B13~B18) 구간 OPEN 을 위한 일부 구간 5분 Down ]] Down : 4AFC3201 A_OUT31~38
+2025-11-05-09-53,ERROR,4ABLD122 Error 발생으로 -> CLOSE,4ABLD122 Error 발생으로 AI Close 하겠습니다.
+2025-11-05-11-00,ERROR,4ABLD122 Error 발생,4ABLD122 Error 발생 조치 완료. AI 오픈 하겠습니다.
+2025-11-05-21-45,ERROR,4AFC3201 Error발생으로 -> CLOSE,4AFC3201 Conveyor Error발생으로 A_OUT 85~89 Close 진행하겠습니다.
+2025-11-05-21-52,ERROR,4AFC3201 Error 발생하여,안녕하세요 4AFC3201 LD50502 Error 발생하여 HUB Room HT-STOP 하여 작업 진행하겠습니다. 완료될시 말씀드리겠습니다.
+2025-11-05-22-24,ERROR,4AFC3201 Error 발생하여,"안녕하세요 4AFC3201 LD50502 Error 발생하여 HUB Room HT-STOP 하여 작업 진행하겠습니다. 완료될시 말씀드리겠습니다. (이주성,이천AMHS운영/TL,2025-11-05 21:52:45) ┖ 현재 좀 밀려서 일단 해소하고 진행하시죠"
+2025-11-05-22-36,OPEN,,HUB Room정체로 작업중단 & A_OUT 85~89 PORT OPEN했습니다.
+2025-11-05-22-40,CLOSE,,7F HUB Room Rail Port  Close 하겠습니다.
+2025-11-05-22-46,CLOSE,,M14B 전체호기 7F AI Close 하겠습니다.
+2025-11-05-23-05,OPEN,4ABLD111,4ABLD111호기 Open했습니다.
+2025-11-05-23-07,OPEN,4ABLD132,4ABLD132호기 Open했습니다.
+2025-11-05-23-09,OPEN,4ABLD121,4ABLD121호기 Open했습니다.
+2025-11-05-23-10,OPEN,4ABLD112,4ABLD112호기 Open했습니다.
+2025-11-05-23-11,OPEN,,ABLD122호기 Open했습니다.
+2025-11-05-23-14,OPEN,4ABLD131,4ABLD131호기 Open했습니다.
+2025-11-06-02-01,ERROR,Error 발생하여,브릿지 BV0125호기 Error 발생하여 조치 중입니다.
+2025-11-06-02-11,ERROR,Error 발생하여,"브릿지 BV0125호기 Error 발생하여 조치 중입니다. (서민혁,이천AMHS운영/TL,2025-11-06 02:01:42) ┖ Error 조치 완료 되었습니다."
+2025-11-06-08-26,OPEN,,@이정원 데드락 해결 되었을까요?  M14B SFA 리프터 7F A IN 오픈하면 될까요?
+2025-11-06-08-28,OPEN,,{{@김종락::10041}} HUB Room Queue 안정화 되면 M14B 7F Auto In Open 할 수 있도록 공유 하겠습니다. 잠시 Hold 부탁 드립니다.
+2025-11-06-15-26,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132 Error 발생으로 AI Close 하겠습니다.
+2025-11-06-17-31,ERROR,4ABLD132 Error 발생,4ABLD132 Error 발생 조치 완료 되어 AI 오픈 하겠습니다.
+2025-11-07-19-56,ERROR,Error 발생으로,안녕하세요. BV0096 Error 발생으로 조치 중입니다.
+2025-11-07-20-20,ERROR,Error 발생으로,"안녕하세요. BV0096 Error 발생으로 조치 중입니다. (이성찬,이천AMHS운영/TL,2025-11-07 19:56:20) ┖ ERROR 조치 되었습니다"
+2025-11-07-20-36,OPEN,,"M14 Conv 측 OHT 몰려 분기 구간 2617-2618 Rail Cut 대응하겠습니다. (민예준,이천AMHS운영/TL,2025-11-07 20:20:05) ┖ 정체 해소되어 Rail Open 했습니다."
+2025-11-08-00-45,ERROR,Error발생되어,브릿지 BV0220 Error발생되어 조치중입니다.
+2025-11-08-00-49,ERROR,Error발생되어,"브릿지 BV0220 Error발생되어 조치중입니다. (김지훈,이천AMHS운영/TL,2025-11-08 00:45:44) ┖ 완료 되었습니다."
+2025-11-08-16-51,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다"
+2025-11-08-17-09,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-11-08-22-59,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체중입니다
+2025-11-08-23-00,ERROR,,Error Clear 되었습니다.
+2025-11-09-01-17,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체중입니다
+2025-11-09-01-34,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체중입니다 (최홍영,이천AMHS운영/TL,2025-11-09 01:17:23) ┖ Error Clear 되었습니다"
+2025-11-09-01-57,OPEN,4AFC3201,"M14A Hub Room Conv 정체 발생하여 M14A->M16 방향 4AFC3201 A_IN11~24 PORT Offline 변경했습니다. (양영석,이천AMHS운영/TL,2025-11-09 01:35:55) ┖ 정체 해소되어 PORT OPEN하겠습니다"
+2025-11-09-04-41,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체중입니다
+2025-11-09-04-50,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체중입니다 (최홍영,이천AMHS운영/TL,2025-11-09 04:41:40) ┖ Error Clear 되었습니다"
+2025-11-09-16-15,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체중입니다
+2025-11-09-16-16,CLOSE,,M14B 정체호기 7F AI Close 하겠습니다.
+2025-11-09-16-20,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체중입니다 (박형기,이천AMHS운영/TL,2025-11-09 16:15:15) ┖ Error Clear 되었습니다."
+2025-11-09-16-24,OPEN,,M14B 7F AI Open 했습니다.
+2025-11-10-08-11,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체중입니다
+2025-11-10-08-52,ERROR,4AFC3201 Error 발생,{{@정휘태::11678}} 4AFC3201A_OUT89는 Error 발생 이력이 없다고 하여 Open 하겠습니다.
+2025-11-10-11-38,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체중입니다
+2025-11-10-11-48,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체중입니다 (서민혁,이천AMHS운영/TL,2025-11-10 11:38:58) ┖ Error Clear 되었습니다."
+2025-11-11-09-22,ERROR,4AFC3201,4AFC3201 A_OUT85-89방향 Error 다발 관련 T-bolt 고정 작업 HT stop작업(total 5분) 10시에 진행 하겠습니다
+2025-11-11-09-23,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-11-11-09-39,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-11-11-09-59,ERROR,4ABLD112 -> CLOSE,"4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2025-11-11-10-07,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-11-11-19-34,ERROR,4ABLD112 Error 발생으로 -> CLOSE,"4ABLD112 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-11-11-19-36,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체 중입니다.
+2025-11-11-19-39,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체 중입니다. (민예준,이천AMHS운영/TL,2025-11-11 19:36:44) ┖ Error Clear 되었습니다."
+2025-11-11-19-42,ERROR,4ABLD112 -> OPEN,"4ABLD112 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-11-14-18-12,ERROR,4AFC3201 Error 발생으로,4AFC3201 Error 발생으로 M14A -> M16 방향 A_in Port 차단했습니다. (M16 -> M14A는 정상 가동중)
+2025-11-14-21-58,ERROR,Error발생하여,현재 OHT Error발생하여 조치중입니다.
+2025-11-14-22-34,ERROR,Error발생하여,"현재 OHT Error발생하여 조치중입니다. (김현진,이천AMHS운영/TL,2025-11-14 21:58:55) ┖ 조치되어 반송 진행중입니다."
+2025-11-14-22-36,ERROR,,OHT 에러 발생하여 조치중입니다.
+2025-11-14-22-58,ERROR,,"OHT 에러 발생하여 조치중입니다. (김현진,이천AMHS운영/TL,2025-11-14 22:36:24) ┖ 조치되어 정상 반송중입니다."
+2025-11-14-23-40,ERROR,4AFC3201 Error 발생,4AFC3201 Error 발생 관련 M16->M14A A_IN Port Down 진행하겠습니다. -4AFC3201 A_IN80~85)
+2025-11-14-23-44,ERROR,4AFC3201 Error 발생,"4AFC3201 Error 발생 관련 M16->M14A A_IN Port Down 진행하겠습니다. -4AFC3201 A_IN80~85) (이응빈,이천AMHS운영/TL,2025-11-14 23:40:32) ┖ Error 조치 완료되어 Open 하였습니다."
+2025-11-15-14-59,ERROR,4ABLD132 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-11-15-15-03,ERROR,-> OPEN,Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-11-15-15-21,ERROR,4ABLD132 Error 발생으로 -> CLOSE,4ABLD132호기 Error 발생으로 4F/7F AI Port Close 하겠습니다.
+2025-11-15-15-34,ERROR,-> OPEN,Error 조치 완료되어 AI Port Open 하겠습니다.
+2025-11-16-14-37,ERROR,4AFC3201 Error 발생,"안녕하세요 4AFC3201 Error 발생 관련 M14A->M16 방향 4AFC3201 A_IN31~38, 41~44, 51~54  Port 차단 진행하겠습니다. A_IN11~24(정상 반송중)"
+2025-11-17-04-03,ERROR,4ABLD112 -> CLOSE,"4ABLD112 호기 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다"
+2025-11-17-04-14,ERROR,4ABLD112 -> OPEN,"4ABLD112 호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-11-17-09-59,CLOSE,4ABLD132,"4ABLD132호기 작업 위해 AI Close 하겠습니다. 작업 내용: 감속기 & 승강 벨트, 풀리 교체 작업 일정: 11/17 09:00 ~ 11/20 17:30"
+2025-11-17-10-37,CLOSE,4AFC3201,4AFC3201정체로인해 A_IN80~85 CLOSE진행하겠습니다.
+2025-11-17-10-40,OPEN,,M16 ZT쪽 OHT 밀림현상으로 인해 ZT IN PORT Disable 및 재 OPEN 실시하겠습니다.
+2025-11-17-10-42,OPEN,,"86~90 추가로 LOSE 하였습니다. (윤영찬,이천AMHS운영/TL,2025-11-17 10:38:41) ┖ 모두 open 했습니다."
+2025-11-17-10-43,OPEN,4AFC3201,"4AFC3201정체로인해 A_IN80~85 CLOSE진행하겠습니다. (유병철,이천AMHS운영/TL,2025-11-17 10:37:28) ┖ open 했습니다"
+2025-11-18-15-35,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD131 Error 발생으로 4F,7F AI Close 하였습니다"
+2025-11-18-15-55,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치 후 4F,7F AI Open 하였습니다."
+2025-11-20-08-34,ERROR,Error 발생으로,Bridge OHT Error 발생으로 정체 발생 중입니다. 참고 부탁드립니다.
+2025-11-20-08-42,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체 발생 중입니다. 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-11-20 08:34:09) ┖ OHT Error 처리 중이며, 정체는 풀렸습니다. M14 → M16으로 가는 1차선은 OHT Error 로 인해 Rail CUT 중이며, 반송에 지장은 없습니다."
+2025-11-20-08-54,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 정체 발생 중입니다. 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-11-20 08:34:09) ┖ Error 발생 OHT Manual 이동이 필요하여 Handy Stop으로 진행 예정이니 참고 부탁드립니다."
+2025-11-20-10-05,ERROR,,"BV0221호기 OHT Error 관련 MTL까지 Manual 이동이 필요합니다. 13:00부터 진행 예정이며, 30분~1시간 정도 소요 예상입니다. 해당 시간 중 정체 발생될 수 있으니 참고 부탁드립니다. 감사합니다."
+2025-11-20-13-11,ERROR,,"BV0221호기 OHT Error 관련 MTL까지 Manual 이동이 필요합니다. 13:00부터 진행 예정이며, 30분~1시간 정도 소요 예상입니다. 해당 시간 중 정체 발생될 수 있으니 참고 부탁드립니다. 감사합니다. (최민혁,이천AMHS운영/TL,2025-11-20 10:05:38) ┖ 13:30분에 진행예정이며 작업 중 반송 정체 발생할 수 있습니다 참고부탁드립니다."
+2025-11-20-14-09,ERROR,-> OPEN,"BV0221호기 OHT Error 관련 MTL까지 Manual 이동이 필요합니다. 13:00부터 진행 예정이며, 30분~1시간 정도 소요 예상입니다. 해당 시간 중 정체 발생될 수 있으니 참고 부탁드립니다. 감사합니다. (최민혁,이천AMHS운영/TL,2025-11-20 10:05:38) ┖ OHT Take Out 및 Rail Open 완료했습니다."
+2025-11-21-09-56,ERROR,4ABLD111 Error 발생하여 -> CLOSE,안녕하세요 4ABLD111 Error 발생하여 AI Close 하겠습니다
+2025-11-21-10-06,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-11-21-10-12,ERROR,4ABLD111 -> CLOSE,4ABLD111 Error 재 발생하여 AI Close 하겠습니다
+2025-11-21-10-21,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 Error 조치되어 4,7F AI Open 하겠습니다."
+2025-11-22-06-10,OPEN,,M16 ZT쪽 OHT 밀림현상으로 인해 ZT IN PORT Disable 및 재 OPEN 실시하겠습니다.
+2025-11-22-06-14,OPEN,4AFC3201,"(M16->M14) 4AFC3201 A_in port  반송 해결될때까지 전체적으로  잠시  Disable 하겠습니다  (이동근,이천AMHS운영/TL,2025-11-22 05:44:01) ┖ M16->M14  컨베어구간 정체 해소되어  A_IN PORT 50%  OPEN 하겠습니다"
+2025-11-22-07-42,ERROR,4AFC3201,"4AFC3201, 4AFC3301 간 Conv 내 ERROR 발생으로 장비내 FOUP이 가득 차있는 상황입니다. M16  --> M14 in port down을 더 유지 해야 할 것 같습니다."
+2025-11-22-08-14,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132호기 Error 발생으로 4F, 7F AI CLOSE 했습니다"
+2025-11-22-08-25,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2025-11-22-08-28,OPEN,4AFC3201,4AFC3201(남측) M16->M14 A_IN ALL OPEN 하였습니다 4AFC3301(북측) 은 CLOSE 유지 합니다.
+2025-11-22-08-43,OPEN,4AFC3201,"4AFC3201(남측) M16->M14 A_IN ALL OPEN 하였습니다 4AFC3301(북측) 은 CLOSE 유지 합니다. (윤영찬,이천AMHS운영/TL,2025-11-22 08:28:44) ┖ 4AFC3301 도 OPEN 했습니다."
+2025-11-23-18-35,ERROR,4AFC3201,4AFC3201 ERROR발생으로 M14A->M16 ALL PORT Disable실시하였습니다.
+2025-11-23-18-36,ERROR,4AFC3201 -> OPEN,4AFC3201 ERROR처리 완료되어 IN PORT OPEN실시했습니다
+2025-11-24-04-24,ERROR,,Bridge OHT 에러 발생하여 조치중입니다.
+2025-11-24-04-28,ERROR,,"Bridge OHT 에러 발생하여 조치중입니다. (박성연,이천AMHS운영/TL,2025-11-24 04:24:12) ┖ 조치되었습니다."
+2025-11-24-15-08,ERROR,,ERROR 입니까  단순 QUE 증가 입니까..?
+2025-11-25-16-08,ERROR,4AFC3201,[작업 계획 공유] (( 일시 : 11/26(수) 09:00~10:00 )) 대상 : 4AFC3201 목적 : Error 다발 관련 PAMS 교체 작업 Down : 4AFC3201(남측 Conveyor) M14A->M16 불가
+2025-11-26-08-36,ERROR,4AFC3201,금일 Conveyor 작업 시간 변경되어 공유드립니다. 참고 부탁드립니다. 일시 : 11/26(수) 10:00~11:00 대상 : 4AFC3201 목적 : Error 다발 관련 PAMS 교체 작업 Down : 4AFC3201(남측 Conveyor) M14A->M16 불가
+2025-11-26-10-39,OPEN,,M16A ZT 1호기 FD 법정 점검 완료되어 IN PUT OPEN 하였습니다
+2025-11-26-10-41,OPEN,,M16A ZT FD 점검 완료 되어 OPEN실시 완료 되었습니다. 차수원복은 M14 작업 영향이 있을수 있으니 {{@이응빈::248831}} M14 작업 차수 변경 원복 여부 확인 하셔서  인폼 주식길 바랍니다.
+2025-11-27-10-44,ERROR,,BRIDGE OHT ERROR 발생으로 조치 중입니다. 정체 및 반송 지연이 있을 수 있으니 참고 부탁드립니다.
+2025-11-27-10-59,ERROR,,"BRIDGE OHT ERROR 발생으로 조치 중입니다. 정체 및 반송 지연이 있을 수 있으니 참고 부탁드립니다. (최민혁,이천AMHS운영/TL,2025-11-27 10:44:10) ┖ 조치 완료되었습니다."
+2025-11-27-12-54,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-11-27-14-45,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-11-28-08-57,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"안녕하세요. 4ABLD121호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-11-28-10-21,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2025-11-28-15-50,OPEN,,ZT 2-1호기 CLEAR 되어 OPEN 했습니다.
+2025-11-28-17-40,ERROR,,EUV VLF2호기 E:9500 정위치 에러 발생하여 현재 Error 처리중입니다. FAB 간 반송 중 반송 Delay 발생할 수 있습니다
+2025-11-28-18-02,ERROR,,"EUV VLF2호기 E:9500 정위치 에러 발생하여 현재 Error 처리중입니다. FAB 간 반송 중 반송 Delay 발생할 수 있습니다 (신우진,이천AMHS운영/TL,2025-11-28 17:40:21) ┖ Error 처리 완료되었습니다. 정체 해소 전까지 반송 Delay 발생할 수 있습니다."
+2025-11-29-00-01,ERROR,,M16A ZT 1~3 호기 Upper Rail 구역 OHT Error 로 인한 정체 발생 및 상부에서 Error 조치 필요로 업무에 참고 부탁드립니다.
+2025-11-29-00-10,ERROR,,Error 조치 됐습니다
+2025-11-29-00-14,ERROR,,Error 재발로 조치 중입니다
+2025-11-29-00-20,ERROR,,Error 조치 됐습니다
+2025-11-29-00-29,ERROR,,혹시 해당 ERROR관련 HUB가 밀리는걸까요?
+2025-11-29-00-31,ERROR,,ERROR 처리될때 까지 대기 했던 LOT 들이 몰리면서 일시적으로 HUB에 영향을 주는듯합니다.
+2025-11-30-13-38,ERROR,4ABLD112 Error 발생으로 -> CLOSE,안녕하세요. 4ABLD112호기 Error 발생으로 4F/7F AI Port Close 하였습니다.
+2025-11-30-13-49,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하였습니다.
+2025-11-30-23-11,ERROR,6ABL6011 Error 발생으로,M16A 6ABL6011 3층 AI322 Port Error 발생으로 조치 중이니 업무에 참고 부탁드립니다. (22:43 ~ )
+2025-12-01-09-02,CLOSE,4ABLD112,4ABLD112호기 하부 Pulley & Timing Belt 교체 작업으로 4F/7F AI Port Close 하겠습니다.
+2025-12-01-10-31,CLOSE,4ABLD121,"4ABLD121호기 QUE 몰림 현상으로 7F AI Port Close 후, 전체 Que 분산 하겠습니다."
+2025-12-01-10-39,OPEN,4ABLD121,7F 정체 해소 & 전체 호기 QUE 분산 확인되어 4ABLD121 7F AI Port Open 하겠습니다.
+2025-12-01-16-49,OPEN,,"브릿지 Center Line쪽 정체 관련 St.1096 → 2133 Rail Cut 진행 했습니다. (박형기,이천AMHS운영/TL,2025-12-01 16:46:25) ┖ Rail Open 했습니다."
+2025-12-02-10-29,OPEN,4ABLD112,4ABLD112호기 하부 Pulley & Timing Belt 교체작업 완료되어 4F/7F AI Port Open 하였습니다.
+2025-12-02-10-56,CLOSE,4ABLD121,4ABLD121호기 7F QUE 몰림 현상으로 7F AI Port Close 하겠습니다.
+2025-12-02-10-58,OPEN,,QUE 몰림 해소되어 AI Port Open 하였습니다.
+2025-12-03-08-56,ERROR,4ABLD131 -> CLOSE,4ABLD131 ERROR 발생으로AI CLOSE 하겠습니다.
+2025-12-03-10-18,ERROR,4ABLD131 -> OPEN,4ABLD131 Error 조치 완료되어 4F/7F AI Port Open 하였습니다.
+2025-12-04-08-52,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122호기 Error 발생으로 4,7F AI Close 하겠습니다."
+2025-12-04-09-27,ERROR,6ABL0111 Error 발생으로,M16A 6ABL0111_AO623 Error 발생으로 조치 중입니다.
+2025-12-04-09-49,ERROR,4ABLD122 -> OPEN,4ABLD122호기 Error 조치되어 4F/7F AI Open  했습니다.
+2025-12-04-12-23,OPEN,6ABL0111,M16A 6ABL0111_AO623 조치 후 Open 했습니다.
+2025-12-04-15-27,ERROR,4ABLD122 Error 발생으로 -> CLOSE,"4ABLD122 호기 Error 발생으로 4F, 7F AI Close 했습니다."
+2025-12-04-16-20,ERROR,4ABLD122 -> OPEN,"4ABLD122 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다"
+2025-12-04-17-13,ERROR,4ABLD131 -> CLOSE,"안녕하세요 4ABLD131 ERROR 발생하여 4F,7F AI CLOSE 하겠습니다 ."
+2025-12-04-17-34,ERROR,4ABLD131 -> OPEN,"4ABLD131 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2025-12-05-10-39,OPEN,,M16A FD 점검 완료 되어 OPEN 하겠습니다.
+2025-12-05-10-39,OPEN,,{{@최지호::248894}} OPEN 되면 인폼 남겨주세요
+2025-12-05-10-42,OPEN,6ABL0121,6ABL0121 0122 Open 했습니다
+2025-12-05-17-12,OPEN,6ABL6011,"6ABL6011-2, 6ABL6021-22 3층 Input Port 막고 VHL 정체 풀리면 Open하겠습니다."
+2025-12-08-08-59,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122호기 Error 발생하여 4F/7F AI Close 하겠습니다.
+2025-12-08-10-26,ERROR,4ABLD122 -> OPEN,4ABLD122호기  Error 조치되어 4F/7F AI Open 했습니다.
+2025-12-09-09-02,ERROR,4ABLD122 Error 발생하여 -> CLOSE,4ABLD122호기 Error 발생하여 4F/7F AI Close 하겠습니다.
+2025-12-09-10-19,ERROR,4ABLD122 -> OPEN,4ABLD122호기  Error 조치되어 4F/7F AI Open 했습니다.
+2025-12-10-01-08,ERROR,4AFC3301,M16-->M14 ERROR 발생  4AFC3301 CONV FOUP 밀리는 현상 발생으로  A_IN80 ~ 89 차단 했습니다.
+2025-12-10-01-15,ERROR,4AFC3301 -> OPEN,4AFC3301 ERROR 처리 완료 되어  A_IN80 ~ 89 OPEN 했습니다.
+2025-12-10-08-08,ERROR,4AFC3301 Error 발생하여,4AFC3301 Conv Error 발생하여 M16->M14A방향 4AFC3301A_IN80~89 Port 차단하겠습니다.
+2025-12-10-08-12,ERROR,4AFC3301 Error 발생하여,"4AFC3301 Conv Error 발생하여 M16->M14A방향 4AFC3301A_IN80~89 Port 차단하겠습니다. (양영석,이천AMHS운영/TL,2025-12-10 08:08:51) ┖ Error 조치되어 Port open하겠습니다."
+2025-12-10-09-04,ERROR,4ABLD132 Error 발생하여 -> CLOSE,안녕하세요 4ABLD132호기 Error 발생하여 4F/7F AI Close 하겠습니다.
+2025-12-10-10-49,OPEN,4ABLD132,4ABLD132호기 조치 완료되어 AI Open 하겠습니다.
+2025-12-11-08-52,ERROR,4ABLD121 Error 발생하여 -> CLOSE,안녕하세요 4ABLD121호기 Error 발생하여 4F/7F AI Close 하겠습니다.
+2025-12-11-09-49,CLOSE,6ABL6031,"M16A ZT 3호기(6ABL6031, 6ABL6032 ) FD 점검 관련 3F, 6F AI Close 했습니다."
+2025-12-11-10-08,OPEN,4ABLD121,4ABLD121호기 조치 완료 되어 4F/7F AI Open 하겠습니다.
+2025-12-13-13-35,OPEN,,M16 HUB쪽 VHL 몰림 현상으로 인해서 ZT AI IN Port Open/Clsoe 실시하겠습니다.
+2025-12-14-00-13,ERROR,4AFC3201,4AFC3201 ERROR 발생 CONV FOUP 밀리는 상항이라  M16→M14 A_IN80 ~ 90 차단했습니다.
+2025-12-14-00-27,ERROR,4AFC3201 -> OPEN,4AFC3201 ERROR 처리 되어서  M16→M14 A_IN80 ~ 90 OPEN 했습니다.
+2025-12-15-08-57,ERROR,6ABL6011 Error 발생으로 -> CLOSE,6ABL6011 Error 발생으로 AI Close 했습니다.
+2025-12-15-09-07,ERROR,6ABL6011 -> OPEN,6ABL6011 Error Clear로 AI Open 했습니다.
+2025-12-15-15-41,ERROR,4AFC3201 Error 발생,4AFC3201 A_OUT 85 FOUP 정위치 Error 발생 관련 조치 이후 Open 하였습니다.
+2025-12-15-21-58,ERROR,6ABL0112 Error 발생으로 -> CLOSE,M16A 6ABL0112 Error 발생으로 AI Close 했습니다.
+2025-12-15-22-29,ERROR,-> OPEN,ㄴ Error Clear 후 AI Open 했습니다.
+2025-12-17-08-52,CLOSE,4ABLD131,"안녕하세요 4ABLD131 하부 Pulley 교체 및 Timing Belt 교체 작업관련 4F,7F AI CLOSE 하겠습니다."
+2025-12-18-10-35,OPEN,4ABLD131,"4ABLD131 호기 하부 Pulley 교체 및 Timing Belt 교체 작업 완료 후 4F, 7F AI Open 했습니다."
+2025-12-20-08-11,ERROR,6ABL6011 Error 발생으로,6ABL6011 Error 발생으로 AI Port 차단하였습니다
+2025-12-20-10-04,ERROR,6ABL6011 -> OPEN,6ABL6011 Error 처리 후 AI port open 했습니다
+2025-12-22-02-05,ERROR,6ABL6032 Error 발생으로,M16A 6ABL6032 Error 발생으로 AI Banned T 변경했습니다.
+2025-12-22-02-15,ERROR,-> OPEN,Error Port 제외 Open 했습니다.
+2025-12-22-02-20,ERROR,-> OPEN,Error Port AI613도 Open 했습니다.
+2025-12-22-02-31,ERROR,4AFC3201 Error 발생으로,4AFC3201 Error 발생으로 A_in86~90 Port 차단 햇습니다.
+2025-12-22-02-45,ERROR,4AFC3201 -> OPEN,4AFC3201 Error 처리되어 A_in86~90 Port 오픈 했습니다.
+2025-12-22-09-00,CLOSE,4ABLD111,안녕하세요. 4ABLD111호기 작업 진행으로 4F/7F AI Port Close 하겠습니다.
+2025-12-22-21-47,CLOSE,6ABL6032,6ABL6032(3-2)호기 Err 발생으로 AI Close 했습니다.
+2025-12-22-22-07,OPEN,6ABL6032,6ABL6032(3-2)호기 Err Clear 후 Open 했습니다.
+2025-12-23-09-55,OPEN,4ABLD111,안녕하세요. 4ABLD111호기 작업 완료되어 4F/7F AI Port Open 하였습니다.
+2025-12-25-14-14,ERROR,,M16 ↔ M14 OHT Error 및 반송 정체 없었습니다.
+2025-12-26-02-33,CLOSE,6ABL0121,6ABL0121(5-1)호기 Err 발생으로 AI Close 했습니다.
+2025-12-26-03-21,OPEN,6ABL0121,6ABL0121(5-1)호기 조치완료되어 OPEN 했습니다.
+2025-12-27-14-36,ERROR,,{{@허미은::17237}} M14B는 리프터 Error나 특이사항 없습니다. 참고하시기 바랍니다.
+2025-12-29-13-10,ERROR,4AFC3201 Error 발생으로,4AFC3201 Error 발생으로 A_in86~90 차단 했습니다.(50%)
+2025-12-29-13-55,OPEN,,A_in86~90 오픈 했습니다.
+2025-12-29-14-44,ERROR,4AFC3201 Error발생,"4AFC3201 Conveyor Error발생 원인은 풉 바닦 깨진풉 입고로 발생 되었으며 풉은 제거 하였으나 TCM 연결불가 현상 발생중. M14A -> M16 방향 차단, M16->M14A 방향은 정상 가동중"
+2025-12-29-15-09,ERROR,4AFC3201 -> OPEN,4AFC3201 Conveyor Error 클리어 되어 M14 -> M16 방향 오픈 했습니다.
+2025-12-31-00-16,ERROR,6ABL6032 -> CLOSE,"6ABL6032 Error로 3F, 6F AI Close 했습니다."
+2025-12-31-00-38,OPEN,6ABL6032,"6ABL6032 3F, 6F AI Open 했습니다."
+2025-12-31-20-27,ERROR,6ABL0121 -> CLOSE,"M16A ZT 6ABL0121 Error 로 2F, 3F, 6F Close 되었습니다."
+2025-12-31-21-18,ERROR,6ABL0121 -> OPEN,"6ABL0121 Error Clear 되어 2F, 3F, 6F Open 했습니다."
+2026-01-01-03-13,OPEN,6ABL6032,6ABL6032 AO323 Test 결과 특이사항 없어 Open 했습니다.
+2026-01-01-02-59,CLOSE,6ABL6032,"6ABL6032 Err 발생으로 3F, 6F AI Close 했습니다."
+2026-01-01-03-16,OPEN,6ABL6032,"6ABL6032 3F, 6F AI Open 했습니다."
+2026-01-03-09-35,ERROR,4ABLD121 Error 발생하여 -> CLOSE,안녕하세요 4ABLD121호기 Error 발생하여 4F/7F AI Close 하겠습니다.
+2026-01-03-10-43,ERROR,4ABLD121 -> OPEN,4ABLD121호기 Error 조치 후 AI Open했습니다.
+2026-01-05-01-55,ERROR,6ABL0121 Error 발생으로 -> CLOSE,안녕하세요 M16A 6ABL0121 Error 발생으로 AI Close 했습니다.
+2026-01-05-02-17,ERROR,6ABL0121 -> OPEN,안녕하세요 M16A 6ABL0121 Error 조치완료하여 AI Open 했습니다.
+2026-01-05-04-25,OPEN,4AFC3301,4AFC3301 A_IN85~89 Open 진행하였습니다.
+2026-01-05-04-50,ERROR,4AFC3301 -> OPEN,4AFC3301 ERROR 처리되어 A_IN85~89 Open 진행하였습니다.
+2026-01-05-09-00,ERROR,4AFC3301,안녕하세요 Port Disable 관련 작업 진행 예정입니다. □ 4AFC3301_Zone 20227 통신 에러 관련 LD 교체 작업 ( 09:30 ~ 10:30 ) Down 범위 : 4AFC3301(북측)_IN 85~89
+2026-01-05-09-53,ERROR,4ABLD131 Error 발생하여 -> CLOSE,4ABLD131호기 Error 발생하여 AI Close 하겠습니다.
+2026-01-05-10-15,ERROR,4AFC3301,"안녕하세요 Port Disable 관련 작업 진행 예정입니다. □ 4AFC3301_Zone 20227 통신 에러 관련 LD 교체 작업 ( 09:30 ~ 10:30 ) Down 범위 : 4AFC3301(북측)_IN 85~89    (이주성,이천AMHS운영/TL,2026-01-05 09:00:38) ┖ 작업 지연되어 11시까지 진행예정입니다"
+2026-01-05-11-03,OPEN,4ABLD131,4ABLD131호기 조치 완료되어 AI Open 하겠습니다.
+2026-01-05-11-16,ERROR,4AFC3301 -> OPEN,"안녕하세요 Port Disable 관련 작업 진행 예정입니다. □ 4AFC3301_Zone 20227 통신 에러 관련 LD 교체 작업 ( 09:30 ~ 10:30 ) Down 범위 : 4AFC3301(북측)_IN 85~89    (이주성,이천AMHS운영/TL,2026-01-05 09:00:38) ┖ 작업 완료되어 A_IN 85~87 OPEN 실시하였습니다."
+2026-01-05-15-19,CLOSE,4ALBD131,4ALBD131호기 7F AI Close 하였습니다.
+2026-01-05-17-21,ERROR,Error 발생,물량이 많아15시 부터 M14B ZT FULL 발생 하여 PIO Error 발생 하여 터진 사항입니다.
+2026-01-05-17-33,ERROR,,PIO Error 현황 입니다.
+2026-01-06-01-35,ERROR,6ABL6032 Error 발생으로 -> CLOSE,M16A 6ABL6032 Error 발생으로 AI Close 했습니다
+2026-01-06-03-33,ERROR,6ABL6032 -> OPEN,M16A 6ABL6032 Error Clear 후 AI PORT OPEN 하였습니다
+2026-01-06-08-53,CLOSE,4ABLD122,4ABLD122호기 작업위해 AI Close 하겠습니다.
+2026-01-06-09-18,ERROR,,"{{@진호섭::9749}} M16A ZT3-2호기 RM UPPER ARM Disable 상태로 1 fork로 기동중인 상태입니다. ERROR  발생 관련...우선  ZT3-2호기만 3F,6F INPUT CAPA 50% DOWN 하고 브릿지 상황 봐서 1시간 정도 DOWN후 작업 진행 하겠습니다. 작업전에 사전 인폼 드리겠습니다."
+2026-01-07-00-46,ERROR,4ABLD112 -> CLOSE,"안녕하세요 4ABLD112 ERROR 발생으로 4F,7F AI CLOSE 하겠습니다."
+2026-01-07-01-43,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2026-01-07-13-08,ERROR,4ABL3304,안녕하세요 4ABL3304 MI103 단순에러로 조치 완료후 정상 가동중입니다.
+2026-01-08-09-16,ERROR,4ABLD121 Error 발생하여 -> CLOSE,4ABLD121호기 Error 발생하여 AI Close 하겠습니다.
+2026-01-08-09-59,ERROR,4ABLD121 -> OPEN,"4ABLD121 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2026-01-08-22-44,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 Error 발생으로 4,7F AI Close 했습니다."
+2026-01-08-23-11,ERROR,4ABLD132 -> OPEN,"4ABLD132호기 Error 조치 완료되어 4F/7F AI Port Open 하였습니다. -. AI75 : AO(OP)측 CONV 구동 불가로 Down. -> AI43, AI47, AI77 3개 Port 정상 운행 中."
+2026-01-09-08-39,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI Port Close 했습니다."
+2026-01-09-09-49,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 Error 조치 완료되어 4F, 7F AI Open 했습니다."
+2026-01-09-10-05,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI PORT Close 했습니다."
+2026-01-09-10-32,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 Error 조치 완료되어 4F, 7F AI OPEN 했습니다."
+2026-01-09-17-20,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI Port Close 했습니다."
+2026-01-09-17-27,ERROR,4ABLD132 -> OPEN,"4ABLD132 호기 Error 조치 완료되어 4F, 7F AI Open 하겠습니다."
+2026-01-10-10-32,ERROR,4ABLD121 -> CLOSE,"4ABLD121 ERROR 발생으로 4F,7F AI CLOSE 했습니다."
+2026-01-10-11-21,OPEN,4ABLD121,"4ABLD121호기 하단 Port(AI77, AI47) 제외 4F/7F AI Open 하였습니다."
+2026-01-10-14-51,CLOSE,4ABLD121,4ABLD121호기 RM Fork Timeing Belt 끊어짐 관련 Timeing Belt 교체작업으로 인해 4F/7F AI Close 했습니다. 작업 소요시간 : 1시간에서 1시간 30분 정도 소요. 4ABLD122호기 승강 속도 30%로 Auto Up 하였고 4ABLD121호기 작업 완료 되면 다시 Disable 진행 예정입니다.
+2026-01-10-16-43,OPEN,4ABLD121,"4ABLD121호기 교체 작업 완료되어 4,7F AI Open 했습니다. 4ABLD122호기는 다시 Disable 진행하겠습니다."
+2026-01-11-11-02,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"4ABLD132 호기 Error 발생으로 4F, 7F AI Close 했습니다"
+2026-01-11-11-48,ERROR,6ABL0121 Error 발생으로 -> CLOSE,안녕하세요. M16A 6ABL0121 Error 발생으로 AI Close 했습니다
+2026-01-11-11-51,ERROR,4ABLD132 -> OPEN,"4ABLD132 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2026-01-11-12-09,ERROR,6ABL0121 -> OPEN,M16A 6ABL0121 Error 조치 후 AI Open 했습니다.
+2026-01-12-09-44,CLOSE,4ABLD122,"4ABLD122 호기 Plate 교체 작업 관련 4F, 7F AI Close 실시했습니다."
+2026-01-12-13-10,ERROR,6ABL6032,안녕하세요 M16A 6ABL6032 AI613 지속 ERROR 발생으로 해당 PORT만 차단 하였습니다.
+2026-01-12-16-23,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 호기 Error 발생으로 4F, 7F AI Close 했습니다"
+2026-01-12-16-30,ERROR,4ABLD111 -> OPEN,"4ABLD111호기 ERROR 조치 완료되어 4F,7F AI OPEN 했습니다."
+2026-01-13-11-01,OPEN,4AFC3201,"4AFC3201 Exit Alarm 관련 LD 교체 예정입니다. (10:00~11:00) 남측 M14->M16 방향 50%로 운영예정입니다. -Down 범위 : 4AFC3201(남측)_IN41~44  , IN 51~54  , IN 61~64 , IN 71~74 (이응빈,이천AMHS운영/TL,2026-01-13 09:57:30) ┖ 작업 완료되어 Port Open 하였습니다."
+2026-01-13-15-34,OPEN,4ABLD122,"4ABLD122호기 작업 완료 되어 3F, 7F AI Open 하겠습니다."
+2026-01-13-16-35,ERROR,Error발생으로,Bridge OHT Error발생으로 정체발생중입니다
+2026-01-13-16-39,ERROR,Error발생으로,"Bridge OHT Error발생으로 정체발생중입니다 (최홍영,이천AMHS운영/TL,2026-01-13 16:35:44) ┖ Error Clear 되었습니다."
+2026-01-18-07-21,CLOSE,6ABL0121,안녕하세요 M16A ZT 5-1호기(6ABL0121) Door 마그네틱 센서 단순 점검으로 Auto IN Close 했습니다.
+2026-01-18-07-43,OPEN,,작업 완료되어 Auto IN Open했습니다.
+2026-01-18-09-54,ERROR,6ABL0121 Error 발생으로 -> CLOSE,M16A ZT 5-1호기(6ABL0121) Error 발생으로 A_IN Close 했습니다.
+2026-01-18-10-09,OPEN,,open했습니다.
+2026-01-19-23-14,CLOSE,6ABL6012,6ABL6012(1-2)호기 AI623 Err 발생으로 Close 하겠습니다.
+2026-01-20-22-50,OPEN,6ABL6012,6ABL6012 M16A ZT 1-2호기 AI623 Open 했습니다.
+2026-01-21-11-02,ERROR,4AFC3201,"2025/01/22(목) 10:00~11:00 작업 공지 드립니다. □ 4AFC3201_Zone 60511 Communication ERROR 조치 위한 LD 교체 작업 ( 10:00 ~ 11:00 ) Down 범위 : TCM 605 , 4AFC3201(남측)_IN 80~90 , IN41~44, IN31~38, IN11~24 4AFC3301 북측 정상 운영되며, 4AFC3201 남측 M16→M14A 방향은 해당 시간 동안 일시 중지 됩니다. 업무 참조 부탁합니다."
+2026-01-21-16-50,ERROR,4AFC3201 Error 발생으로,안녕하세요 4AFC3201 Error 발생으로 조치중입니다. 남측 M14A -> M16 50%로 운영 중입니다.
+2026-01-21-17-48,ERROR,4AFC3201,4AFC3201 Error 조치 17:35부로 완료되어 남측 M14A->M16 100%로 운영중입니다.
+2026-01-21-21-29,ERROR,4AFC3201,4AFC3201 TCM712 Communication Error관련 Cable 교체 작업 예정입니다. -4AFC3201 M14A->M16 50%로 운영 -작업시간 : 1시간 소요 예정
+2026-01-21-22-20,ERROR,4AFC3201,"4AFC3201 TCM712 Communication Error관련 Cable 교체 작업 예정입니다. -4AFC3201 M14A->M16 50%로 운영 -작업시간 : 1시간 소요 예정 (이응빈,이천AMHS운영/TL,2026-01-21 21:29:39) ┖ 작업 완료되어 M14A->M16 100%로 운영중입니다."
+2026-01-22-09-57,ERROR,4AFC3201,2025/01/22(목) 10:00~11:00 작업 관련 A_in 80~90 차단 하겠습니다. □ 4AFC3201_Zone 60511 Communication ERROR 조치 위한 LD 교체 작업 ( 10:00 ~ 11:00 )
+2026-01-22-10-24,ERROR,4AFC3201 Error 발생되어,4AFC3201 Error 발생되어 A_in86~90 차단했습니다.
+2026-01-22-10-34,ERROR,,Error처리되어 A_in86~90 Auto로 변경했습니다.
+2026-01-27-14-54,ERROR,,안녕하세요 오전에 HUB쪽 ERROR있었나요 ?
+2026-01-28-17-21,ERROR,,안녕하세요 HUB 물류 M14->M16으로 물류 지연시간 늘고 있는데요   ERROR있나요 ?
+2026-01-30-19-21,ERROR,4ABLD111 Error 발생으로 -> CLOSE,안녕하세요 4ABLD111호기 4F Error 발생으로 인하여 AI Close 진행하겠습니다.
+2026-01-30-19-36,ERROR,4ABLD111 -> OPEN,4ABLD111호기 4F Error 조치되어 AI Open 하였습니다.
+2026-01-31-20-00,ERROR,Error 발생하여,Bridge OHT Error 발생하여 정체 발생 중입니다.
+2026-01-31-20-10,CLOSE,,"안녕하세요, Hub Room Lifter 전호기 AI 7F Close 했습니다."
+2026-01-31-20-12,ERROR,Error 발생하여,"Bridge OHT Error 발생하여 정체 발생 중입니다.  (서민혁,이천AMHS운영/TL,2026-01-31 20:00:07) ┖ Error Clear 되었습니다."
+2026-01-31-20-14,OPEN,4ALBD112,4ALBD112호기 7F Open 하였습니다.
+2026-01-31-20-14,OPEN,4ALBD132,4ALBD132호기 7F Open 하였습니다.
+2026-01-31-20-15,OPEN,4ALBD111,4ALBD111호기 7F Open 하였습니다.
+2026-01-31-20-16,OPEN,4ALBD122,4ALBD122호기 7F Open 하였습니다.
+2026-01-31-20-17,OPEN,4ABLD121,"4ABLD121호기, 4ABLD131호기 7F Open 하였습니다."
+2026-02-03-23-24,ERROR,6ABL6032 Error 발생으로 -> CLOSE,6ABL6032 Error 발생으로 AI Close했습니다.
+2026-02-03-23-54,OPEN,,Err 처리되어 Port Open 했습니다.
+2026-02-04-03-11,ERROR,6ABL6032 Error 발생으로 -> CLOSE,6ABL6032 Error 발생으로 AI Close했습니다.
+2026-02-04-04-09,OPEN,,Open했습니다.
+2026-02-04-10-40,ERROR,6ABL6032 Error 발생하여,M16A 6ABL6032 호기 Error 발생하여 조치 중입니다. 참고부탁드립니다.
+2026-02-04-10-46,ERROR,6ABL6032,6ABL6032 호기 Error 조치완료하여 Auto up 하였습니다
+2026-02-04-11-26,OPEN,,"M16A ZT 4,5호기 6F Conv Open진행했습니다."
+2026-02-04-12-25,ERROR,,M16A ZT 3-2호기 ERROR 발생 하여 AI 차단 진행  하겠습니다
+2026-02-04-13-16,ERROR,-> OPEN,Error clear 후 AI Open 했습니다.
+2026-02-04-13-21,CLOSE,,"M16A ZT6호기 작업 관련하여 ZT 4,5호기 6F Conv Close진행하겠습니다."
+2026-02-04-16-18,OPEN,,"M16A ZT6호기 6F 금일 오후 작업 완료하여 ZT 4,5호기 6F Conv Open 진행하였습니다."
+2026-02-05-11-07,OPEN,,M16A ZT 6호기 6F 작업 완료하여 Upper port Open 완료했습니다.
+2026-02-05-16-06,OPEN,,ZT 6호기 관련 6F 작업 완료되어 6F Upper Port Open 완료했습니다.
+2026-02-08-22-34,ERROR,Error 발생,M16 Bridge 內 MLUD 사용 中 작업자 MISS로 인한 Error 발생 시 물류 TP님들이 임의로 설비 Alarm Reset 하는 경우가 빈번히 발생하고 있습니다. 안전 상의 문제로 장비 주체측에서 Alarm Clear 하지 않는 이상 임의로 Alarm Clear 하지말아달라고 인폼 부탁드립니다.
+2026-02-10-09-01,ERROR,,HUB ERROR있나요 ?
+2026-02-11-00-46,OPEN,,"IN71~74, 61~64, 51~54, 41~44 오픈했습니다."
+2026-02-11-10-57,ERROR,,안녕하세요 HUB ERROR 있나요 ?
+2026-02-11-10-58,ERROR,,"안녕하세요 HUB ERROR 있나요 ? (정민희,이천FAB제조1/TL,2026-02-11 10:57:45) ┖ OHT운영 특이사항 없습니다."
+2026-02-11-13-43,ERROR,4ABLD112 Error발생하여 -> CLOSE,"안녕하세요 4ABLD112호기 Error발생하여 4F, 7F AI Close하겠습니다"
+2026-02-11-13-31,ERROR,4ABLD112 -> OPEN,4ABLD112호기 Error 조치 완료되어 4F/7F AI Port Open 하였습니다.
+2026-02-12-10-40,OPEN,4AFC3301,"안녕하세요. 4AFC3301 장비 긴급 작업으로인해 4AFC3301_IN85~89 Down 진행 하겠습니다. 마무리후 인폼 드리겠습니다. (유지수,이천AMHS운영/TL,2026-02-12 10:16:56) ┖ 작업 마무리되어 OPEN하였습니다."
+2026-02-12-11-32,ERROR,,"ERROR 재발하여 추가 작업 진행 예정입니다. 작업 시간은 20분 정도 소요 될 예정이며, M16->M14A 방향 INPUT 전체 차단 예정입니다. 작업 시작 전 인폼 드리겠습니다."
+2026-02-12-11-24,OPEN,,조치 완료되어 open 하였습니다.
+2026-02-12-15-00,ERROR,4AFC3201 Error 발생하여,4AFC3201 Cable 교체간 Error 발생하여 M16->M14 방향 4AFC3201 A_IN80~90 Disable 했습니다.
+2026-02-12-15-19,OPEN,4AFC3201,4AFC3201 M16->M14 방향 A_IN80~90 Open 하였습니다.
+2026-02-15-08-08,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121호기 Error 발생으로 인하여 4F, 7F AI Close 진행하였습니다."
+2026-02-15-08-45,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치 완료되어 4F, 7F AI Open 하겠습니다."
+2026-02-17-06-47,OPEN,,"Bridge M14 HUB 정체 관련하여 M14 ZT 특정 PORT 반송 몰림으로 PORT Banned 설정으로 우회시키겠습니다 (최홍영,이천AMHS운영/TL,2026-02-17 06:43:29) ┖ 전체 OPEN 하였습니다"
+2026-02-17-13-47,ERROR,4ABLD121 Error 발생으로 -> CLOSE,"4ABLD121호기 Error 발생으로 인하여 4F, 7F AI Close 진행하였습니다."
+2026-02-17-14-05,ERROR,4ABLD121 -> OPEN,"4ABLD121호기 Error 조치되어 4F, 7F AI Open 했습니다. 감사합니다."
+2026-02-18-15-59,ERROR,4ABLD122 Error발생으로 -> CLOSE,"4ABLD122호기 Error발생으로 4F, 7F AI Close하겠습니다."
+2026-02-18-16-08,ERROR,4ABLD122 -> OPEN,"4ABLD122호기 Error조치 완료되어 4F, 7F AI OPEN했습니다"
+2026-02-23-08-50,ERROR,Error 발생으로,Bridge OHT Error 발생으로 인해 약간의 정체 발생할 수 있습니다.
+2026-02-23-08-55,ERROR,Error 발생으로,"Bridge OHT Error 발생으로 인해 약간의 정체 발생할 수 있습니다. (신우진,이천AMHS운영/TL,2026-02-23 08:50:17) ┖ Error 처리 완료하였습니다."
+2026-02-25-12-10,ERROR,4AFC3201 Error 발생으로,4AFC3201 Error 발생으로 조치중입니다
+2026-02-25-12-25,ERROR,4AFC3201 Error 발생으로,Error 발생으로 현재 4AFC3201 M14A<->M16 양방향 반송 불가 상태입니다
+2026-02-25-15-08,OPEN,,복구 되어 OPEN 하였습니다.
+2026-02-25-15-11,OPEN,,"복구 되어 OPEN 하였습니다. (윤영찬,이천AMHS운영/TL,2026-02-25 15:08:45) ┖ 현재까지 확인 내용 1. Cable 소손 확인되어 교체 2. Conveyor Log 분석 필요 3. MCS 긴급 PATCH 필요"
+2026-02-27-06-45,ERROR,4AFC3201,"4AFC3201 Zone 50210 Exit Error 관련 4AFC3201 A_IN11~24, 31~38 Disable 하였습니다. M14->M16 방향 4AFC3201 A_OUT80~89 중 85~89만 사용중입니다."
+2026-02-27-06-48,OPEN,,조치 완료되어 Open 하였습니다.
+2026-02-27-18-37,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 Error 발생으로 4,7F AI Close 했습니다."
+2026-02-27-18-57,ERROR,4ABLD111 -> OPEN,4ABLD111 Error 조치되어  47F AI Open 했습니다.
+2026-03-01-10-37,ERROR,4AFC3201,4AFC3201 ERROR 발생 CONV FOPUP 밀리는 상항이라  M16→M14 A_IN86 ~ 90 차단했습니다.
+2026-03-01-11-21,ERROR,4AFC3201 -> OPEN,4AFC3201 ERROR 처리 완료 되어  M16→M14 A_IN86 ~ 90 OPEN 했습니다.
+2026-03-04-01-58,ERROR,6ABL0122 Error 발생으로 -> CLOSE,6ABL0122 Error 발생으로 AI Close했습니다.
+2026-03-04-03-58,ERROR,6ABL0122 -> OPEN,6ABL0122 조치 완료되어 Open 완료했습니다.(Upper Fork Error 다발로 Upper Fork Disable)
+2026-03-04-07-49,ERROR,6ABL0122 -> OPEN,"6ABL0122 조치 완료되어 Open 완료했습니다.(Upper Fork Error 다발로 Upper Fork Disable) (홍성경,이천AMHS운영/TL,2026-03-04 03:58:18) ┖ 해당 호기 6ABL0122 3F,6F AI MAX CAPA ""3""으로 변경 했습니다."
+2026-03-04-17-51,OPEN,6ABL0122,M16A ZT 5-2호기 6ABL0122 작업 완료로 AI Open 했습니다. -. MaxCapa 3 > Default 원복.
+2026-03-04-17-54,CLOSE,6ABL0122,6ABL0122 Upper Fork Unload 진행이 되지않아 AI Close 했습니다.
+2026-03-05-02-47,OPEN,6ABL0122,02:00경 6ABL0122 작업 완료되어 Open 완료했습니다.(Upper&Lower 사용 중)
+2026-03-05-13-13,ERROR,6ABL0122 Error 발생으로,M16A 6ABL0122 Error 발생으로 AI Banned T 변경했습니다.
+2026-03-05-13-53,ERROR,6ABL0122,M16A 6ABL0122 Error 임시 Clear 및 Upper Fork Disable 후 Auto up (13:48)
+2026-03-05-15-38,CLOSE,6ABL0122,안녕하세요. 6ABL0122(5-2호기) 점검 작업으로 AI CLOSE 후 DOWN 진행 하겠습니다.
+2026-03-06-12-47,OPEN,6ABL6022,"6ABL6022(2-2) AO321 Conv Belt 교체 작업 완료되어 Auto up 했습니다. AO321 제외한 모든 Conv Open 상태이며, AO321 Conv는 고정 Bolt Loctite 경화 완료되면 Open 하겠습니다.(24Hr)"
+2026-03-06-22-55,ERROR,4ABLD111 Error 발생으로 -> CLOSE,"4ABLD111 Error 발생으로 4,7F AI Close 했습니다"
+2026-03-06-23-03,ERROR,4ABLD111 -> OPEN,"4ABLD111 Error 조치되어 4,7F AI Open 했습니다."
+2026-03-07-04-04,ERROR,4ABLD131 Error 발생으로 -> CLOSE,"4ABLD131 Error 발생으로 4,7F AI Close 했습니다."
+2026-03-07-04-13,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치되어 4,7F AI Open 했습니다."
+2026-03-07-16-30,OPEN,6ABL6022,6ABL6022 AO321 CONV 경화 완료되어 OPEN 하였습니다 업무 참고 부탁드립니다
+2026-03-08-11-56,ERROR,4ABLD131 Error발생으로 -> CLOSE,"4ABLD131 Error발생으로 4, 7F AI Close 하겠습니다"
+2026-03-08-12-09,ERROR,4ABLD131 -> OPEN,"4ABLD131 Error 조치되어 4, 7F AI Open했습니다."
+2026-03-10-10-55,ERROR,4ABLD132 Error 발생으로 -> CLOSE,"안녕하세요 4ABLD132 Error 발생으로 4F,7F AI Close 하겠습니다."
+2026-03-10-10-59,OPEN,4AFC3201,ZC276A Re conecting 작업 완료되어 4AFC3201 Port 전체 오픈 했습니다.
+2026-03-10-11-05,ERROR,4ABLD132 -> OPEN,"4ABLD132 Error 조치 후 4F,7F AI Open 하였습니다."
+2026-03-10-15-39,CLOSE,4ABLD111,"안녕하세요 4ABLD111 Teaching 관련 4F,7F AI Close 하겠습니다."
+2026-03-10-15-56,OPEN,4ABLD111,"4ABLD111 4F, 7F AI Open 했습니다."
+2026-03-11-04-34,ERROR,4AFC3201,안녕하세요 4AFC3201 16 >14 방향 CONV ERROR 발생하여 A_IN 86 ~ 90 차단했습니다.
+2026-03-11-04-54,ERROR,4AFC3201 -> OPEN,Error 처리 완료되어 4AFC3201 A_IN 81 ~ 90 Open 했습니다.
