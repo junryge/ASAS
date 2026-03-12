@@ -478,3 +478,58 @@ edge_geo.set("as", "geometry")
 | `ET.SubElement(cell, "Geometry")` | 노드 위치/크기 무시됨 (좌상단에 점으로 표시) |
 | edge에 mxGeometry 누락 | 연결선이 표시 안 됨 |
 | style에 `html=1` 누락 | HTML 텍스트 렌더링 안 됨 |
+
+### 20. mxCell 중첩 금지 (COULD NOT ADD OBJECT 에러 방지)
+
+**모든 mxCell은 반드시 `<root>`의 직접 자식이어야 합니다.** mxCell 안에 다른 mxCell을 중첩하면 Draw.io에서 `COULD NOT ADD OBJECT MXCELL` 에러가 발생합니다.
+
+#### 잘못된 예 (중첩 — 에러 발생):
+```xml
+<mxCell id="e1" edge="1" parent="1" source="a" target="b" style="...">
+  <mxGeometry relative="1" as="geometry"/>
+  <!-- 절대 금지: edge mxCell 안에 label mxCell 중첩 -->
+  <mxCell id="label1" value="Success" style="text;html=1;" vertex="1" parent="1">
+    <mxGeometry x="100" y="200" width="60" height="20" as="geometry"/>
+  </mxCell>
+</mxCell>
+```
+
+#### 올바른 예 (분리 — 정상 동작):
+```xml
+<!-- edge와 label을 root의 직접 자식으로 분리 -->
+<mxCell id="e1" edge="1" parent="1" source="a" target="b" style="...">
+  <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="label1" value="Success" style="text;html=1;" vertex="1" parent="1">
+  <mxGeometry x="100" y="200" width="60" height="20" as="geometry"/>
+</mxCell>
+```
+
+#### 규칙 요약:
+| 허용 | 금지 |
+|------|------|
+| `<root>` → `<mxCell>` | `<mxCell>` → `<mxCell>` (중첩) |
+| `<mxCell>` → `<mxGeometry>` (유일한 자식) | edge 안에 label mxCell 넣기 |
+| 라벨은 별도 mxCell로 root 아래 배치 | vertex 안에 다른 vertex 넣기 |
+
+### 21. 출력 형식 규칙
+
+Draw.io 다이어그램 요청 시 **XML을 텍스트로 직접 출력하지 말고, 반드시 `.drawio` 파일로 저장**해야 합니다.
+
+#### 잘못된 응답:
+```
+여기 XML입니다:
+<?xml version="1.0"?>
+<mxfile>...</mxfile>
+```
+
+#### 올바른 응답:
+```python
+# .drawio 파일로 저장
+with open("결과물.drawio", "w", encoding="utf-8") as f:
+    f.write(xml_string)
+```
+
+- 사용자가 Draw.io 다이어그램을 요청하면 Python 코드로 `.drawio` 파일을 생성
+- XML을 채팅에 텍스트로 붙여넣지 않음
+- 생성된 파일 경로를 안내
