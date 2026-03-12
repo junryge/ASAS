@@ -1,0 +1,53 @@
+<?xml version="1.0" ?>
+<mxfile host="app.diagrams.net" modified="2026-03-12T04:54:26.000Z" agent="Python Script" version="21.0.0" type="device">
+  <diagram id="ecb134ca-6c6e-49d1-9734-bb63c3a274d7" name="데이터취합_파이프라인">
+    <mxGraphModel dx="1169" dy="827" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="입력 CSV
+R3_20251101_20260131.CSV" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE4B5;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;">
+          <mxGeometry x="400" y="80" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="인코딩 감지
+utf-8 -&gt; cp949 -&gt; euc-kr" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ADD8E6;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;">
+          <mxGeometry x="400" y="200" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="컬럼 정리
+공백/특수문자 제거
+Unnamed 컬럼 제거" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ADD8E6;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;">
+          <mxGeometry x="400" y="320" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="CRT_TM 병합
+groupby + first()" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DDA0DD;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;">
+          <mxGeometry x="400" y="440" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="출력 CSV
+R3_20251101_20260131_ASP.csv" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFB6C1;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;">
+          <mxGeometry x="400" y="560" width="300" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="통계 정보
+- 원본 행 수
+- 유니크 CRT_TM 개수
+- 병합 후 행 수" vertex="1" parent="1" style="shape=note;whiteSpace=wrap;html=1;fillColor=#F0F0F0;strokeColor=#000000;fontColor=#000000;align=center;verticalAlign=middle;size=15;">
+          <mxGeometry x="800" y="440" width="200" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="파일 로드" edge="1" parent="1" source="2" target="3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jetSize=auto;html=1;endArrow=blockThin;endFill=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="DataFrame 생성" edge="1" parent="1" source="3" target="4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jetSize=auto;html=1;endArrow=blockThin;endFill=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="정제된 데이터" edge="1" parent="1" source="4" target="5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jetSize=auto;html=1;endArrow=blockThin;endFill=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="병합 결과 저장" edge="1" parent="1" source="5" target="6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jetSize=auto;html=1;endArrow=blockThin;endFill=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="14" value="로그 출력" edge="1" parent="1" source="5" target="7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jetSize=auto;html=1;endArrow=blockThin;endFill=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
