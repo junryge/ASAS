@@ -34,6 +34,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 제한
 
 # GGUF 모델 (llama-cpp-python)
 gguf_model = None  # Llama 인스턴스
+gguf_loaded_path = None  # 현재 로드된 모델 파일 경로
 
 # 업로드된 CSV 데이터 (세션별 - 단순 메모리 저장)
 uploaded_csv_data = {
@@ -75,7 +76,7 @@ ENV_CONFIG = {
         "model": "gpt-oss-120b",
         "name": "COMMON (120B)"
     },
-    # gguf-local은 앱 시작 시 자동 감지되면 추가됨
+    # gguf-N 환경은 앱 시작 시 .gguf 파일 자동 감지되면 추가됨
 }
 
 
@@ -999,7 +1000,7 @@ SKILL_KEYWORDS = {
     "latchbio-integration": ['LatchBio', '서버리스', '워크플로우', 'bioinformatics pipeline'],
     "latex-posters": ['LaTeX포스터', '학회포스터', 'poster', '연구포스터'],
     "lead-research-assistant": ['리드리서치', '연구보조', 'research assistant'],
-    "drawio-diagram": ['drawio', 'draw.io', '다이어그램', '플로우차트', '아키텍처', '구조도', 'UML', '클래스다이어그램', '시퀀스다이어그램', 'ERD', '흐름도'],
+    "drawio-diagram": ['drawio', 'draw.io', '드로우IO', '드로우io', '드로우아이오', 'DrawIO', '다이어그램', '플로우차트', '아키텍처', '구조도', 'UML', '클래스다이어그램', '시퀀스다이어그램', 'ERD', '흐름도', '시스템구조', '데이터흐름도', 'DFD', '배치도'],
     "markdown-mermaid-writing": ['마크다운', 'Mermaid', '다이어그램', 'flowchart', '시퀀스'],
     "market-research-reports": ['시장조사', 'market research', '산업분석', '보고서'],
     "markitdown": ['마크다운변환', '파일변환', '문서변환', 'markdown conversion'],
@@ -1132,13 +1133,53 @@ def context_aware_skill_select(query, history, max_skills=7):
         for sid in ["exploratory-data-analysis", "matplotlib", "statistical-analysis"]:
             combined[sid] = combined.get(sid, 0) + 3
             boosted.add(sid)
+    # Draw.io / 다이어그램 감지 (코드 작성보다 우선)
+    if any(kw in q for kw in ["drawio", "draw.io", "드로우io", "드로우IO", "드로우아이오", "다이어그램", "구조도", "흐름도", "아키텍처도", "배치도", "dfd"]):
+        combined["drawio-diagram"] = combined.get("drawio-diagram", 0) + 15
+        boosted.add("drawio-diagram")
     # 코드 작성 감지
     if any(kw in q for kw in ["코드", "함수", "클래스", "구현", "작성", "만들어", "코딩"]):
         for sid in ["agent-python-pro", "debugging"]:
             combined[sid] = combined.get(sid, 0) + 3
             boosted.add(sid)
 
-    # 5단계: 정렬 후 반환 (현재 질문 직접 매칭 우선)
+    # 5단계: 업로드 파일 기반 부스트
+    # 파일 확장자 → 관련 스킬 매핑
+    file_ext_skill_map = {
+        "py": [("agent-python-pro", 5), ("debugging", 3)],
+        "js": [("agent-nextjs-developer", 5)],
+        "csv": [("exploratory-data-analysis", 8), ("statistical-analysis", 5), ("matplotlib", 3)],
+        "tsv": [("exploratory-data-analysis", 8), ("statistical-analysis", 5)],
+        "xlsx": [("exploratory-data-analysis", 5)],
+        "docx": [("docx", 5)],
+        "pdf": [("pdf", 5)],
+        "pptx": [("pptx", 5)],
+        "drawio": [("drawio-diagram", 15)],
+        "md": [("markdown-mermaid-writing", 3)],
+        "html": [("web-artifacts-builder", 3)],
+        "json": [("agent-python-pro", 3)],
+        "xml": [("drawio-diagram", 5)],
+    }
+    for uf in uploaded_files:
+        ext = uf.get("ext", "").lower()
+        fname = uf.get("filename", "").lower()
+        # 확장자 매칭
+        if ext in file_ext_skill_map:
+            for sid, boost in file_ext_skill_map[ext]:
+                combined[sid] = combined.get(sid, 0) + boost
+                boosted.add(sid)
+        # 파일명에 키워드가 있으면 추가 매칭
+        fname_scores = _score_query(fname)
+        for sid, sc in fname_scores.items():
+            combined[sid] = combined.get(sid, 0) + sc * 0.5
+
+    # CSV 데이터가 로드되어 있으면 데이터 분석 스킬 부스트
+    if uploaded_csv_data.get("filename"):
+        for sid in ["exploratory-data-analysis", "statistical-analysis", "matplotlib"]:
+            combined[sid] = combined.get(sid, 0) + 5
+            boosted.add(sid)
+
+    # 6단계: 정렬 후 반환 (현재 질문 직접 매칭 우선)
     sorted_skills = sorted(combined.items(), key=lambda x: -x[1])
     result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
 
@@ -1271,11 +1312,24 @@ def find_gguf_files():
 
 
 def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
-    """llama-cpp-python으로 GGUF 모델 로드"""
-    global gguf_model
+    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)"""
+    global gguf_model, gguf_loaded_path
+
+    # 이미 같은 모델이 로드되어 있으면 스킵
+    if gguf_loaded_path == model_path and gguf_model is not None:
+        print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)}")
+        return True
+
     try:
         from llama_cpp import Llama
         print(f"     모델 로딩 중: {os.path.basename(model_path)}...")
+
+        # 기존 모델 해제
+        if gguf_model is not None:
+            print(f"     🔄 기존 모델 해제: {os.path.basename(gguf_loaded_path or '')}")
+            del gguf_model
+            gguf_model = None
+            gguf_loaded_path = None
 
         # Windows: llama.cpp C 라이브러리가 stdout/stderr 핸들을 건드려서
         # Flask(click/colorama) 콘솔 출력이 깨지는 문제 방지
@@ -1293,6 +1347,7 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
 
+        gguf_loaded_path = model_path
         return True
     except ImportError:
         print(f"     ❌ llama-cpp-python 패키지 없음")
@@ -1982,7 +2037,7 @@ def api_upload_file():
             "ext": ext,
             "size": file_size,
             "content_preview": preview,
-            "content_full": text[:30000],  # 시스템 프롬프트용 최대 30000자
+            "content_full": text[:60000],  # 시스템 프롬프트용 최대 60000자
             "path": filepath,
         }
         uploaded_files.append(file_info)
@@ -2134,7 +2189,7 @@ def api_chat():
     # ===== 토큰 예산 관리 =====
     # API 대형 모델 → 제한 거의 없음 (128K+ 컨텍스트)
     # GGUF 로컬 → 32K 컨텍스트이므로 스마트하게 제한
-    is_gguf = (env_id == "gguf-local")
+    is_gguf = env_id.startswith("gguf-")
     history_chars = sum(len(m.get("content", "")) for m in messages)
 
     if is_gguf:
@@ -2214,14 +2269,14 @@ def api_chat():
             system_prompt += f"\n--- 파일: {uf['filename']} ({uf['type']}, {uf['size']}바이트) ---\n"
             content = uf.get("content_full", "")
             if is_gguf:
-                # GGUF: 파일당 최대 2000자로 제한
-                content = content[:2000]
-                if len(uf.get("content_full", "")) > 2000:
-                    content += f"\n... (총 {len(uf['content_full'])}자 중 2000자 표시)"
+                # GGUF: 파일당 최대 8000자로 제한
+                content = content[:8000]
+                if len(uf.get("content_full", "")) > 8000:
+                    content += f"\n... (총 {len(uf['content_full'])}자 중 8000자 표시)"
             else:
-                content = content[:15000]  # API: 파일당 최대 15000자
-                if len(uf.get("content_full", "")) > 15000:
-                    content += f"\n... (총 {len(uf['content_full'])}자 중 15000자 표시)"
+                content = content[:50000]  # API: 파일당 최대 50000자
+                if len(uf.get("content_full", "")) > 50000:
+                    content += f"\n... (총 {len(uf['content_full'])}자 중 50000자 표시)"
             system_prompt += content + "\n"
         system_prompt += "\n사용자가 업로드된 파일에 대해 질문하면 위 내용을 기반으로 답변하세요.\n\n"
 
@@ -2250,7 +2305,12 @@ def api_chat():
     temperature_map = [0.1, 0.3, 0.5, 0.7]
 
     # ===== GGUF 로컬 모델: Python에서 직접 추론 =====
-    if env_id == "gguf-local":
+    if env_id.startswith("gguf-"):
+        # 선택된 환경의 모델 경로로 동적 로드/스왑
+        gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
+        if gguf_path:
+            if not load_gguf_model(gguf_path):
+                return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
         if gguf_model is None:
             return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
 
@@ -2390,6 +2450,14 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .send-btn{width:32px;height:32px;border-radius:50%;border:none;background:#6366f1;color:#fff;cursor:pointer;font-size:14px;transition:background .15s}
 .send-btn:hover{background:#4f46e5}
 .send-btn:disabled{background:#ccc;cursor:not-allowed}
+/* 채팅 첨부파일 */
+.attach-btn{width:32px;height:32px;border-radius:50%;border:none;background:transparent;color:#999;cursor:pointer;font-size:18px;transition:all .15s;display:flex;align-items:center;justify-content:center}
+.attach-btn:hover{background:#f0f0f0;color:#6366f1}
+.chat-attach-preview{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0}
+.chat-attach-badge{display:inline-flex;align-items:center;gap:4px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:3px 10px;font-size:11px;color:#4f46e5;max-width:200px}
+.chat-attach-badge .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-attach-badge .remove-attach{cursor:pointer;font-size:14px;color:#999;margin-left:2px;line-height:1}
+.chat-attach-badge .remove-attach:hover{color:#ef4444}
 .content{padding-bottom:80px!important}
 /* Tags */
 .tag-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
@@ -2400,6 +2468,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .skill-card{padding:10px 14px;border-radius:10px;border:2px solid #e5e3de;background:#fff;cursor:pointer;transition:all .15s;font-size:13px;position:relative}
 .skill-card:hover{border-color:#6366f1;transform:translateY(-1px)}
 .skill-card.selected{border-color:#6366f1;background:#eef2ff}
+.skill-card.auto-loaded{border-color:#f59e0b;background:#fffbeb;animation:autoPulse 1.5s ease-in-out}
+@keyframes autoPulse{0%{box-shadow:0 0 0 0 rgba(245,158,11,.4)}70%{box-shadow:0 0 0 8px rgba(245,158,11,0)}100%{box-shadow:none}}
 .skill-card.unavailable{opacity:.45;cursor:default}
 .skill-card .sn{font-weight:600;margin-bottom:2px}.skill-card .sd{font-size:11px;color:#888}
 .skill-card .badge{position:absolute;top:6px;right:8px;font-size:10px;background:#10b981;color:#fff;padding:1px 6px;border-radius:8px}
@@ -2505,9 +2575,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .sysprompt-preview:hover{max-height:200px;overflow-y:auto}
 /* CSV Upload */
 .csv-section{margin-bottom:24px}
-.csv-upload-area{border:2px dashed #d1d5db;border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .2s;background:#fafaf8}
-.csv-upload-area:hover{border-color:#6366f1;background:#eef2ff}
-.csv-upload-area.dragover{border-color:#6366f1;background:#eef2ff;border-style:solid}
+/* csv-upload-area 제거됨 → 채팅 📎 첨부로 대체 */
 .csv-upload-area .icon{font-size:28px;margin-bottom:6px}
 .csv-upload-area .label{font-size:13px;color:#888}
 .csv-upload-area .sub{font-size:11px;color:#bbb;margin-top:2px}
@@ -2621,21 +2689,9 @@ pre{position:relative}
         <!-- JS에서 동적 생성 -->
       </div>
 
-      <!-- 통합 파일 업로드 -->
-      <div class="csv-section">
-        <div class="section-label">📎 파일 업로드</div>
-        <div id="fileUploadArea" class="csv-upload-area" onclick="document.getElementById('fileInput').click()"
-             ondragover="event.preventDefault();this.classList.add('dragover')"
-             ondragleave="this.classList.remove('dragover')"
-             ondrop="event.preventDefault();this.classList.remove('dragover');handleUnifiedDrop(event)">
-          <div class="icon">📂</div>
-          <div class="label">파일을 끌어놓거나 클릭하여 업로드</div>
-          <div class="sub">CSV · TSV · docx · xlsx · pdf · pptx · md · 이미지 · 코드</div>
-          <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.docx,.xlsx,.pdf,.pptx,.md,.markdown,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat" style="display:none" onchange="handleUnifiedSelect(event)" multiple>
-        </div>
-        <div id="csvInfoPanel" style="display:none"></div>
-        <div id="fileListPanel" style="display:none"></div>
-      </div>
+      <!-- 업로드된 파일 목록 (채팅 입력 📎에서 추가됨) -->
+      <div id="csvInfoPanel" style="display:none"></div>
+      <div id="fileListPanel" style="display:none"></div>
 
       <div class="section-label">분야 선택</div>
       <div class="tag-row" id="tagRow"></div>
@@ -2715,9 +2771,14 @@ pre{position:relative}
   <!-- 질문 입력 - 하단 고정 -->
   <div class="chat-box-fixed">
     <div class="chat-box-fixed-inner">
+      <div class="chat-attach-preview" id="chatAttachPreview" style="display:none"></div>
       <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
-        <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="attach-btn" onclick="document.getElementById('chatFileInput').click()" title="파일 첨부">📎</button>
+          <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+        </div>
         <button class="send-btn" onclick="handleSendStop()" id="sendBtn">▶</button>
       </div>
     </div>
@@ -2801,7 +2862,9 @@ Promise.all([
 function renderEnvs(){
   const row = document.getElementById('envRow');
   row.innerHTML = '';
-  const icons = {'dev':'🧪','prod':'🚀','common':'🌐','gguf-local':'💻'};
+  const icons = {'dev':'🧪','prod':'🚀','common':'🌐'};
+  // GGUF 로컬 모델은 동적으로 아이콘 매핑
+  for(const id of Object.keys(envs)){ if(id.startsWith('gguf-')) icons[id]='💻'; }
   for(const [id, env] of Object.entries(envs)){
     const btn = document.createElement('div');
     btn.className = 'env-btn' + (selEnv===id?' selected':'');
@@ -2857,6 +2920,8 @@ function toggleDomain(id){
 }
 
 // ===== Skills =====
+let autoLoadedSkills = [];  // 자동 로드된 스킬 목록 (시각적 표시용)
+
 function renderSkills(){
   const grid = document.getElementById('skillGrid');
   grid.innerHTML = '';
@@ -2865,7 +2930,8 @@ function renderSkills(){
     if(!d) return;
     d.skills.forEach(s=>{
       const c = document.createElement('div');
-      c.className = 'skill-card' + (selSkills.includes(s.id)?' selected':'') + (!s.available?' unavailable':'');
+      const isAutoLoaded = autoLoadedSkills.includes(s.id);
+      c.className = 'skill-card' + (selSkills.includes(s.id)?' selected':'') + (isAutoLoaded?' auto-loaded':'') + (!s.available?' unavailable':'');
       const desc = s.desc ? s.desc : '';
       const avail = s.available ? '✅' : '❌';
       // extras: 스크립트/레퍼런스 개수
@@ -2874,7 +2940,8 @@ function renderSkills(){
       if(s.references > 0) extras.push(`📄${s.references}`);
       if(s.assets > 0) extras.push(`📦${s.assets}`);
       const extrasHtml = extras.length ? `<div class="extras">${extras.join(' ')}</div>` : '';
-      c.innerHTML = `<div class="sn">${avail} ${s.name}</div><div class="sd">${desc}</div>${extrasHtml}`;
+      const autoBadge = isAutoLoaded ? '<span class="badge" style="background:#f59e0b">🧠자동</span>' : '';
+      c.innerHTML = `<div class="sn">${avail} ${s.name}</div><div class="sd">${desc}</div>${extrasHtml}${autoBadge}`;
       if(s.available){
         c.onclick = (e)=>{
           // Shift+클릭 = 상세 패널
@@ -2994,8 +3061,14 @@ function stopGeneration(){
 async function send(){
   const el=document.getElementById('input');
   const text=el.value.trim();
-  if(!text) return;
+  if(!text && chatPendingFiles.length === 0) return;
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
+
+  // 첨부파일이 있으면 먼저 업로드
+  let attachedNames = [];
+  if(chatPendingFiles.length > 0){
+    attachedNames = await uploadChatPendingFiles();
+  }
 
   // 자동 스킬 모드: 수동 선택이 없으면 자동 추천 스킬 사용
   let skillsToUse = [...selSkills];
@@ -3011,13 +3084,22 @@ async function send(){
     }catch(e){}
   }
 
-  addMsg('user',text);
-  history.push({role:'user',content:text});
+  // 첨부파일 표시 + 메시지
+  let displayText = text || '';
+  if(attachedNames.length > 0){
+    const attachInfo = '📎 ' + attachedNames.join(', ');
+    displayText = displayText ? attachInfo + '\n' + displayText : attachInfo;
+  }
+  addMsg('user', displayText);
+  history.push({role:'user',content: displayText});
   el.value=''; el.style.height='auto';
   document.getElementById('autoSkillPreview').classList.remove('show');
 
-  // 자동 로드 안내
+  // 자동 로드 안내 + 사이드바 스킬 카드에 표시
   if(autoLoaded.length > 0){
+    autoLoadedSkills = autoLoaded;
+    renderSkills();
+    updateLoaded();
     addMsg('assistant', '🧠 자동 스킬 로드: ' + autoLoaded.join(', '));
   }
 
@@ -3112,10 +3194,43 @@ function renderMd(text){
       <pre class="drawio-preview"><code class="language-xml">${escapedXml}</code></pre>
     </div>`;
   });
-  // 2b) 일반 코드블록
+  // 2b) 일반 코드블록 — xml 블록 안에 mxfile이 있으면 drawio로 자동 변환
   s=s.replace(/```(\w*)\s*([\s\S]*?)```/g,(_,lang,code)=>{
+    const trimmed=code.trim();
+    // 코드블록 안에 <mxfile 또는 <mxGraphModel 있으면 drawio UI로 변환
+    if(trimmed.includes('&lt;mxfile') || trimmed.includes('&lt;mxGraphModel')){
+      const realXml=trimmed.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
+      const xmlB64=btoa(unescape(encodeURIComponent(realXml)));
+      return `<div class="drawio-block">
+        <div class="drawio-header">
+          <span>📐 Draw.io 다이어그램</span>
+          <div class="drawio-actions">
+            <button class="drawio-btn" onclick="copyDrawioXml(this)" data-xml="${xmlB64}">📋 XML 복사</button>
+            <button class="drawio-btn" onclick="downloadDrawio(this)" data-xml="${xmlB64}">💾 .drawio 저장</button>
+            <button class="drawio-btn" onclick="openInDrawio(this)" data-xml="${xmlB64}">🔗 Draw.io에서 열기</button>
+          </div>
+        </div>
+        <pre class="drawio-preview"><code class="language-xml">${trimmed}</code></pre>
+      </div>`;
+    }
     const cls=lang?` class="language-${lang}"`:'';
-    return `<pre><code${cls}>${code.trim()}</code></pre>`;
+    return `<pre><code${cls}>${trimmed}</code></pre>`;
+  });
+  // 2c) raw mxfile XML (코드블록 밖) 자동 감지 → drawio UI로 변환
+  s=s.replace(/(&lt;mxfile[\s\S]*?&lt;\/mxfile&gt;)/g,(_,xmlEsc)=>{
+    const realXml=xmlEsc.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
+    const xmlB64=btoa(unescape(encodeURIComponent(realXml)));
+    return `<div class="drawio-block">
+      <div class="drawio-header">
+        <span>📐 Draw.io 다이어그램 (자동 감지)</span>
+        <div class="drawio-actions">
+          <button class="drawio-btn" onclick="copyDrawioXml(this)" data-xml="${xmlB64}">📋 XML 복사</button>
+          <button class="drawio-btn" onclick="downloadDrawio(this)" data-xml="${xmlB64}">💾 .drawio 저장</button>
+          <button class="drawio-btn" onclick="openInDrawio(this)" data-xml="${xmlB64}">🔗 Draw.io에서 열기</button>
+        </div>
+      </div>
+      <pre class="drawio-preview"><code class="language-xml">${xmlEsc}</code></pre>
+    </div>`;
   });
   // 3) tables
   s=s.replace(/((?:^\|.+\|[ ]*\n){2,})/gm, function(tbl){
@@ -3160,7 +3275,7 @@ function renderMd(text){
   s=s.split(/\n{2,}/).map(block=>{
     const t=block.trim();
     if(!t) return '';
-    if(/^<(pre|h[1-4]|ul|ol|table|hr|blockquote)/.test(t)) return t;
+    if(/^<(pre|div|h[1-4]|ul|ol|table|hr|blockquote)/.test(t)) return t;
     return '<p>'+t.replace(/\n/g,'<br>')+'</p>';
   }).join('\n');
   // single newlines inside remaining text
@@ -3742,40 +3857,15 @@ async function injectToChat(type, filePath){
 let csvLoaded = false;
 let csvFilename = '';
 
-function handleUnifiedDrop(e){
-  const files = e.dataTransfer.files;
-  for(let i=0; i<files.length; i++) uploadUnifiedFile(files[i]);
-}
-function handleUnifiedSelect(e){
-  const files = e.target.files;
-  for(let i=0; i<files.length; i++) uploadUnifiedFile(files[i]);
-  e.target.value = '';
-}
-function uploadUnifiedFile(file){
-  const ext = file.name.split('.').pop().toLowerCase();
-  if(['csv','tsv','txt'].includes(ext) && !csvLoaded){
-    uploadCsvFile(file);
-  } else {
-    uploadGenericFile(file);
-  }
-}
+// handleUnifiedDrop/Select → 채팅 입력 📎 첨부로 대체됨
 async function uploadCsvFile(file){
-  const area = document.getElementById('fileUploadArea');
-  const origAreaHtml = area.innerHTML;
-  area.innerHTML = '<div class="icon">⏳</div><div class="label">업로드 중...</div>';
-
   const formData = new FormData();
   formData.append('file', file);
 
   try{
     const resp = await fetch('/api/upload_csv', {method:'POST', body:formData});
     const data = await resp.json();
-
-    if(data.error){
-      area.innerHTML = `<div class="icon">❌</div><div class="label">${data.error}</div><div class="sub">다시 시도하세요</div>`;
-      setTimeout(()=>{ area.innerHTML = origAreaHtml; }, 3000);
-      return;
-    }
+    if(data.error) return;
 
     csvLoaded = true;
     csvFilename = data.filename;
@@ -3800,12 +3890,7 @@ async function uploadCsvFile(file){
         <div class="csv-preview">${tableHtml}</div>
       </div>`;
 
-    area.innerHTML = origAreaHtml;
-
-  }catch(e){
-    area.innerHTML = `<div class="icon">❌</div><div class="label">업로드 실패: ${e.message}</div>`;
-    setTimeout(()=>{ area.innerHTML = origAreaHtml; }, 3000);
-  }
+  }catch(e){}
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -3813,8 +3898,81 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 function decodeDrawioXml(btn){
   return decodeURIComponent(escape(atob(btn.dataset.xml)));
 }
+
+// Draw.io XML 자동 수정 (LLM이 생성한 XML의 흔한 오류 교정)
+function sanitizeDrawioXml(xml){
+  // 허용되는 HTML 태그 목록 (Draw.io value 속성 안에서 허용)
+  const allowedHtmlTags = ['br','br/','br /','font','b','i','u','sub','sup','hr','span','div','p','strong','em'];
+  const allowedPattern = allowedHtmlTags.map(t => t.replace('/','\\/').replace(' ','')).join('|');
+
+  // value/label 속성값 안의 이스케이프 수정 함수
+  function fixAttrValue(val){
+    // Step 1: & 이스케이프 (이미 된 건 건드리지 않음)
+    let s = val.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g, '&amp;');
+    // Step 2: 모든 < > 를 임시 치환 후, 허용된 HTML 태그만 복원
+    s = s.replace(/</g, '\x00LT\x00').replace(/>/g, '\x00GT\x00');
+    // 허용된 여는 태그 복원: <font ...>, <br>, <br/>, <b>, etc.
+    for(const tag of allowedHtmlTags){
+      const base = tag.replace(/[\s\/]/g,'');
+      // 여는 태그 (속성 포함): <font style="...">
+      const openRe = new RegExp('\x00LT\x00(' + base + ')(\\s[^\\x00]*?)?\x00GT\x00', 'gi');
+      s = s.replace(openRe, '<$1$2>');
+      // 닫는 태그: </font>
+      const closeRe = new RegExp('\x00LT\x00/' + base + '\x00GT\x00', 'gi');
+      s = s.replace(closeRe, '</' + base + '>');
+    }
+    // self-closing: <br/>, <br />, <hr/>
+    s = s.replace(/\x00LT\x00(br|hr)\s*\/?\x00GT\x00/gi, '<$1/>');
+    // 남은 \x00LT\x00, \x00GT\x00 는 진짜 이스케이프 대상
+    s = s.replace(/\x00LT\x00/g, '&lt;').replace(/\x00GT\x00/g, '&gt;');
+    return s;
+  }
+
+  // 1) value="..." 속성 수정
+  xml = xml.replace(/(value|label)="([^"]*)"/g, (m, attr, val) => {
+    const fixed = fixAttrValue(val);
+    return fixed !== val ? `${attr}="${fixed}"` : m;
+  });
+
+  // 2) 중복 속성 제거: style="..." style="..." → 첫 번째만
+  xml = xml.replace(/(\w+="[^"]*")\s+\1/g, '$1');
+
+  // 3) 닫히지 않은 mxCell 태그 수정
+  xml = xml.replace(/<mxCell([^>]*[^\/])>(\s*<\/mxCell>)?/g, (m, attrs, close) => {
+    if (close) return m;
+    if (attrs.includes('<mxGeometry') || m.includes('</mxCell>')) return m;
+    return `<mxCell${attrs}/>`;
+  });
+
+  // 4) mxfile 래퍼가 없으면 추가
+  if (!xml.includes('<mxfile') && xml.includes('<mxGraphModel')) {
+    xml = `<mxfile host="app.diagrams.net" type="device">\n<diagram id="d1" name="Page-1">\n${xml}\n</diagram>\n</mxfile>`;
+  }
+  if (!xml.includes('<mxfile') && xml.includes('<mxCell')) {
+    xml = `<mxfile host="app.diagrams.net" type="device">\n<diagram id="d1" name="Page-1">\n<mxGraphModel dx="1422" dy="762" grid="1" pageWidth="1169" pageHeight="827">\n<root>\n<mxCell id="0"/>\n<mxCell id="1" parent="0"/>\n${xml}\n</root>\n</mxGraphModel>\n</diagram>\n</mxfile>`;
+  }
+
+  // 5) 최종 검증: DOMParser로 파싱 시도, 실패하면 브루트포스 수정
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'application/xml');
+    if (doc.querySelector('parsererror')) {
+      // 파싱 실패 — 모든 속성값에서 < > 를 강제 이스케이프
+      xml = xml.replace(/="([^"]*)"/g, (m, val) => {
+        if (val.includes('<') && !val.match(/^[^<]*<(mxGeometry|mxPoint|Array)/)) {
+          const forced = val.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `="${forced}"`;
+        }
+        return m;
+      });
+    }
+  } catch(e) {}
+
+  return xml;
+}
+
 function copyDrawioXml(btn){
-  const xml = decodeDrawioXml(btn);
+  const xml = sanitizeDrawioXml(decodeDrawioXml(btn));
   navigator.clipboard.writeText(xml).then(()=>{
     const orig = btn.textContent;
     btn.textContent = '✓ 복사됨';
@@ -3822,7 +3980,7 @@ function copyDrawioXml(btn){
   });
 }
 function downloadDrawio(btn){
-  const xml = decodeDrawioXml(btn);
+  const xml = sanitizeDrawioXml(decodeDrawioXml(btn));
   const blob = new Blob([xml], {type:'application/xml'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3834,7 +3992,7 @@ function downloadDrawio(btn){
   URL.revokeObjectURL(url);
 }
 function openInDrawio(btn){
-  const xml = decodeDrawioXml(btn);
+  const xml = sanitizeDrawioXml(decodeDrawioXml(btn));
   const encoded = encodeURIComponent(xml);
   window.open('https://app.diagrams.net/#R' + encoded, '_blank');
 }
@@ -3846,43 +4004,8 @@ async function removeCsv(){
   document.getElementById('csvInfoPanel').style.display = 'none';
 }
 
-// ===== 범용 파일 업로드 =====
+// ===== 파일 관리 =====
 let uploadedFilesList = [];
-
-async function uploadGenericFile(file){
-  const area = document.getElementById('fileUploadArea');
-  const origHtml = area.innerHTML;
-  area.innerHTML = `<div class="icon">⏳</div><div class="label">${esc(file.name)} 업로드 중...</div>`;
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try{
-    const resp = await fetch('/api/upload_file', {method:'POST', body:formData});
-    const data = await resp.json();
-
-    if(data.error){
-      area.innerHTML = `<div class="icon">❌</div><div class="label">${esc(data.error)}</div>`;
-      setTimeout(()=>{ area.innerHTML = origHtml; }, 2500);
-      return;
-    }
-
-    uploadedFilesList.push({
-      filename: data.filename,
-      type: data.type,
-      ext: data.ext,
-      size: data.size,
-      icon: data.icon,
-      preview: data.preview,
-    });
-    renderFileList();
-    area.innerHTML = origHtml;
-
-  }catch(e){
-    area.innerHTML = `<div class="icon">❌</div><div class="label">업로드 실패: ${e.message}</div>`;
-    setTimeout(()=>{ area.innerHTML = origHtml; }, 2500);
-  }
-}
 
 function renderFileList(){
   const panel = document.getElementById('fileListPanel');
@@ -3914,6 +4037,105 @@ async function clearAllFiles(){
   await fetch('/api/clear_files', {method:'POST'});
   uploadedFilesList = [];
   renderFileList();
+}
+
+// ===== 채팅 입력 첨부파일 =====
+let chatPendingFiles = [];  // [{file:File, name:string}]
+
+// 파일 확장자 → 추천 스킬 매핑 (프론트엔드용)
+const fileExtSkillHints = {
+  'py':['agent-python-pro'], 'js':['agent-nextjs-developer'],
+  'csv':['exploratory-data-analysis','statistical-analysis'],
+  'tsv':['exploratory-data-analysis'], 'xlsx':['exploratory-data-analysis'],
+  'docx':['docx'], 'pdf':['pdf'], 'pptx':['pptx'],
+  'drawio':['drawio-diagram'], 'xml':['drawio-diagram'],
+  'md':['markdown-mermaid-writing'], 'html':['web-artifacts-builder'],
+};
+
+function handleChatFileSelect(files){
+  let hintSkills = [];
+  for(const f of files){
+    chatPendingFiles.push({file:f, name:f.name});
+    // 파일 확장자로 추천 스킬 수집
+    const ext = f.name.split('.').pop().toLowerCase();
+    if(fileExtSkillHints[ext]){
+      hintSkills.push(...fileExtSkillHints[ext]);
+    }
+  }
+  renderChatAttach();
+  document.getElementById('chatFileInput').value = '';
+
+  // 추천 스킬을 사이드바에 표시
+  if(hintSkills.length > 0){
+    autoLoadedSkills = [...new Set(hintSkills)];
+    renderSkills();
+  }
+}
+
+function removeChatAttach(idx){
+  chatPendingFiles.splice(idx, 1);
+  renderChatAttach();
+}
+
+// 입력창 드래그앤드롭 파일 첨부
+(function(){
+  const box = document.querySelector('.chat-box-fixed');
+  if(!box) return;
+  box.addEventListener('dragover', e=>{e.preventDefault();e.stopPropagation();box.style.borderTopColor='#6366f1';});
+  box.addEventListener('dragleave', e=>{e.preventDefault();box.style.borderTopColor='';});
+  box.addEventListener('drop', e=>{
+    e.preventDefault();e.stopPropagation();box.style.borderTopColor='';
+    if(e.dataTransfer.files.length > 0) handleChatFileSelect(e.dataTransfer.files);
+  });
+})();
+
+function renderChatAttach(){
+  const wrap = document.getElementById('chatAttachPreview');
+  if(chatPendingFiles.length === 0){
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.style.display = 'flex';
+  wrap.innerHTML = chatPendingFiles.map((f,i)=>
+    `<span class="chat-attach-badge"><span class="fname">${esc(f.name)}</span><span class="remove-attach" onclick="removeChatAttach(${i})">✕</span></span>`
+  ).join('');
+}
+
+async function uploadChatPendingFiles(){
+  // 첨부된 파일들을 서버로 업로드 (CSV는 csv 엔드포인트, 나머지는 범용)
+  const results = [];
+  for(const pf of chatPendingFiles){
+    const ext = pf.name.split('.').pop().toLowerCase();
+    const formData = new FormData();
+    formData.append('file', pf.file);
+
+    // CSV/TSV → CSV 전용 엔드포인트 (데이터 분석용)
+    if(['csv','tsv'].includes(ext) && !csvLoaded){
+      try{
+        await uploadCsvFile(pf.file);
+        results.push(pf.name);
+      }catch(e){}
+      continue;
+    }
+
+    // 나머지 → 범용 파일 엔드포인트
+    try{
+      const resp = await fetch('/api/upload_file', {method:'POST', body:formData});
+      const data = await resp.json();
+      if(!data.error){
+        uploadedFilesList.push({
+          filename: data.filename, type: data.type, ext: data.ext,
+          size: data.size, icon: data.icon, preview: data.preview,
+        });
+        results.push(data.filename);
+      }
+    }catch(e){}
+  }
+  chatPendingFiles = [];
+  renderChatAttach();
+  renderFileList();
+  return results;
 }
 </script>
 </body>
@@ -3962,23 +4184,32 @@ if __name__ == "__main__":
         print(f"     → {TOKEN_FILE} 에 API 키를 넣어주세요")
 
     # ============================================
-    # GGUF 자동 감지 & Python으로 직접 로드
+    # GGUF 자동 감지 & Python으로 직접 로드 (다중 모델 지원)
     # ============================================
     gguf_files = find_gguf_files()
 
     if gguf_files:
-        # GGUF 파일 중 가장 큰 것 선택
-        best_gguf = max(gguf_files, key=lambda x: x["size_gb"])
-        print(f"\n  💻 GGUF 자동 감지!")
-        print(f"     모델: {best_gguf['name']} ({best_gguf['size_gb']} GB)")
+        # 크기 내림차순 정렬
+        gguf_files.sort(key=lambda x: x["size_gb"], reverse=True)
+        print(f"\n  💻 GGUF 자동 감지! ({len(gguf_files)}개 모델)")
 
-        if load_gguf_model(best_gguf["path"]):
-            ENV_CONFIG["gguf-local"] = {
+        for idx, gf in enumerate(gguf_files):
+            env_key = f"gguf-{idx}"
+            model_name = gf["name"].replace(".gguf", "")
+            ENV_CONFIG[env_key] = {
                 "url": "python://llama-cpp-python",
-                "model": best_gguf["name"].replace(".gguf", ""),
-                "name": f"LOCAL GGUF ({best_gguf['name']})"
+                "model": model_name,
+                "name": f"LOCAL ({model_name})",
+                "_gguf_path": gf["path"],  # 내부용: 모델 파일 경로
             }
-            print(f"     ✅ GGUF 모델 로드 완료!")
+            print(f"     [{env_key}] {gf['name']} ({gf['size_gb']} GB)")
+
+        # 첫 번째(가장 큰) 모델을 기본 로드
+        first_gguf = gguf_files[0]
+        if load_gguf_model(first_gguf["path"]):
+            print(f"     ✅ 기본 모델 로드 완료: {first_gguf['name']}")
+        else:
+            print(f"     ⚠️  기본 모델 로드 실패 (환경 전환 시 재시도)")
     else:
         print(f"\n  ℹ️  GGUF 파일 없음 → LOCAL GGUF 비활성")
 
