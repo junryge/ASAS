@@ -18,8 +18,9 @@ from .ui.header import HeaderWidget
 from .ui.chat_panel import ChatPanel
 from .ui.project_panel import ProjectPanel
 from .ui.diff_viewer import DiffViewer
+from .ui.code_assistant_panel import CodeAssistantPanel
 from .ui.dialogs import CreateProjectDialog
-from .ui.workers import LLMWorker, AiderWorker, NanobotWorker, RalphWorker, ModelLoadWorker
+from .ui.workers import LLMWorker, AiderWorker, NanobotWorker, RalphWorker, ModelLoadWorker, CodeAssistantWorker
 
 from .core.prompt_builder import SYSTEM_PROMPTS, build_prompt
 from .aider import project_manager
@@ -42,6 +43,7 @@ class MainWindow(QMainWindow):
         self.ralph_loop = ralph_loop
         self.current_mode = "general"
         self.current_worker = None
+        self.assistant_worker = None
 
         self.setWindowTitle("Nomos LLM - 코딩 어시스턴트")
         self.setMinimumSize(1100, 700)
@@ -58,19 +60,19 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 사이드바
+        # 왼쪽 사이드바
         self.sidebar = SidebarWidget()
         main_layout.addWidget(self.sidebar)
 
-        # 오른쪽 영역
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
+        # 센터 영역
+        center_widget = QWidget()
+        center_layout = QVBoxLayout(center_widget)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
 
         # 헤더
         self.header = HeaderWidget(self.config)
-        right_layout.addWidget(self.header)
+        center_layout.addWidget(self.header)
 
         # 콘텐츠 스택 (모드에 따라 전환)
         self.content_stack = QStackedWidget()
@@ -111,8 +113,13 @@ class MainWindow(QMainWindow):
         project_layout.addWidget(project_splitter)
         self.content_stack.addWidget(project_page)  # index 1
 
-        right_layout.addWidget(self.content_stack)
-        main_layout.addWidget(right_widget, stretch=1)
+        center_layout.addWidget(self.content_stack)
+        main_layout.addWidget(center_widget, stretch=1)
+
+        # 오른쪽 코드 어시스턴트 패널 (기본 숨김)
+        self.code_assistant = CodeAssistantPanel()
+        self.code_assistant.setVisible(False)
+        main_layout.addWidget(self.code_assistant)
 
     def _get_active_chat(self) -> ChatPanel:
         """현재 활성 채팅 패널 반환"""
@@ -149,6 +156,11 @@ class MainWindow(QMainWindow):
         # Diff 뷰어 → 승인/거절
         self.diff_viewer.approve_clicked.connect(self._on_approve)
         self.diff_viewer.reject_clicked.connect(self._on_reject)
+
+        # 코드 어시스턴트
+        self.sidebar.toggle_code_assistant.connect(self._toggle_code_assistant)
+        self.code_assistant.analysis_requested.connect(self._on_code_assistant_action)
+        self.code_assistant.context_injected.connect(self._on_code_context_injected)
 
     def set_mode(self, mode: str):
         """모드 전환"""
@@ -619,6 +631,52 @@ class MainWindow(QMainWindow):
                     "answer": "커밋 히스토리가 없습니다.",
                     "use_sc": False
                 })
+
+    # ===== 코드 어시스턴트 =====
+
+    def _toggle_code_assistant(self):
+        """코드 어시스턴트 패널 토글"""
+        visible = not self.code_assistant.isVisible()
+        self.code_assistant.setVisible(visible)
+        self.sidebar.set_assistant_active(visible)
+
+    def _on_code_assistant_action(self, action: str, code: str, file_path: str):
+        """퀵 액션 실행 → LLM 분석"""
+        chat = self._get_active_chat()
+        if not code.strip():
+            chat.show_error("분석할 코드가 없습니다. 파일을 먼저 선택하세요.")
+            return
+
+        chat.show_loading(f"코드 분석 중... ({action})")
+        self.header.set_busy(True)
+
+        self.assistant_worker = CodeAssistantWorker(
+            self.llm_provider, action, code, file_path
+        )
+        self.assistant_worker.finished.connect(self._on_code_assistant_result)
+        self.assistant_worker.progress.connect(self._on_progress)
+        self.assistant_worker.start()
+
+    def _on_code_assistant_result(self, result: dict):
+        """코드 분석 결과 처리"""
+        self.header.set_busy(False)
+        chat = self._get_active_chat()
+        chat.show_ready()
+
+        if result.get("success"):
+            chat.show_response(result)
+        else:
+            chat.show_error(result.get("answer", "코드 분석 오류"))
+
+    def _on_code_context_injected(self, file_path: str, code: str):
+        """코드를 채팅 입력에 주입"""
+        chat = self._get_active_chat()
+        file_name = file_path.split("/")[-1] if file_path else "선택된 코드"
+        # 코드 길이 제한
+        truncated = code[:3000] if len(code) > 3000 else code
+        prefix = f"다음 코드를 참고해주세요:\n\n파일: {file_name}\n```\n{truncated}\n```\n\n"
+        chat.input_field.setText(prefix)
+        chat.input_field.setFocus()
 
     # ===== 상태 =====
 

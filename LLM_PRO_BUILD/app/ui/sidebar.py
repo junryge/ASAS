@@ -47,6 +47,7 @@ class ModeButton(QPushButton):
 class SidebarWidget(QWidget):
     """사이드바 위젯"""
     mode_changed = Signal(str)
+    toggle_code_assistant = Signal()
 
     MODES = [
         ("general", "대화", "일반 질문 / Q&A"),
@@ -126,6 +127,42 @@ class SidebarWidget(QWidget):
 
         layout.addStretch()
 
+        # 코드 어시스턴트 토글 버튼
+        line2 = QFrame()
+        line2.setFrameShape(QFrame.HLine)
+        line2.setStyleSheet(f"background-color: {COLORS['border']}; max-height: 1px;")
+        layout.addWidget(line2)
+
+        self.assistant_toggle_btn = QPushButton("  🔍  Code Assistant")
+        self.assistant_toggle_btn.setCheckable(True)
+        self.assistant_toggle_btn.setFixedHeight(44)
+        self.assistant_toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                text-align: left;
+                padding: 8px 14px;
+                border-radius: 10px;
+                border: 1px solid transparent;
+                background: transparent;
+                color: {COLORS['text_muted']};
+                font-size: 13px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background: rgba(45, 212, 191, 0.08);
+                color: {COLORS['teal']};
+                border-color: {COLORS['teal']};
+            }}
+            QPushButton:checked {{
+                background: rgba(45, 212, 191, 0.15);
+                color: {COLORS['teal']};
+                border-color: {COLORS['teal']};
+                font-weight: bold;
+            }}
+        """)
+        self.assistant_toggle_btn.clicked.connect(self.toggle_code_assistant.emit)
+        layout.addWidget(self.assistant_toggle_btn)
+        layout.addSpacing(8)
+
         # 하단 정보
         version_label = QLabel("v1.0  |  GGUF + API")
         version_label.setStyleSheet(f"""
@@ -146,3 +183,7 @@ class SidebarWidget(QWidget):
         """모드 설정 (버튼 상태 업데이트)"""
         for key, btn in self.buttons.items():
             btn.setChecked(key == mode_key)
+
+    def set_assistant_active(self, active: bool):
+        """코드 어시스턴트 토글 버튼 상태 동기화"""
+        self.assistant_toggle_btn.setChecked(active)

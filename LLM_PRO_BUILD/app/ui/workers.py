@@ -189,6 +189,62 @@ class RalphWorker(QThread):
         self.progress.emit("취소 요청됨...")
 
 
+class CodeAssistantWorker(QThread):
+    """코드 어시스턴트 퀵 액션 워커"""
+    finished = Signal(dict)
+    progress = Signal(str)
+
+    def __init__(self, llm_provider, action, code, file_path, parent=None):
+        super().__init__(parent)
+        self.llm_provider = llm_provider
+        self.action = action
+        self.code = code
+        self.file_path = file_path
+        self._cancelled = False
+        self._session = requests.Session()
+
+    def run(self):
+        try:
+            if self._cancelled:
+                self.finished.emit({"success": False, "answer": "취소됨"})
+                return
+
+            from app.core.prompt_builder import SYSTEM_PROMPTS, ACTION_PROMPTS
+            action_key = f"ca_{self.action}"
+            action_prompt = ACTION_PROMPTS.get(action_key, "이 코드를 분석해주세요.")
+            system_prompt = SYSTEM_PROMPTS.get("code_assistant", SYSTEM_PROMPTS["general"])
+
+            # 코드 길이 제한 (8000자)
+            code = self.code[:8000] if len(self.code) > 8000 else self.code
+            prompt = f"{action_prompt}\n\n**파일:** `{self.file_path}`\n\n```\n{code}\n```"
+
+            self.progress.emit(f"코드 분석 중... ({self.action})")
+            result = self.llm_provider.call(prompt, system_prompt, session=self._session)
+
+            if self._cancelled:
+                self.finished.emit({"success": False, "answer": "취소됨"})
+                return
+
+            if result.get("success"):
+                self.finished.emit({
+                    "success": True,
+                    "answer": result["content"],
+                    "use_sc": False
+                })
+            else:
+                self.finished.emit({"success": False, "answer": result.get("error", "분석 오류")})
+        except Exception as e:
+            if not self._cancelled:
+                self.finished.emit({"success": False, "answer": str(e)})
+
+    def cancel(self):
+        self._cancelled = True
+        try:
+            self._session.close()
+        except Exception:
+            pass
+
+
 class ModelLoadWorker(QThread):
     """GGUF 모델 로딩 워커"""
     finished = Signal(bool, str)
