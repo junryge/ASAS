@@ -34,6 +34,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 제한
 
 # GGUF 모델 (llama-cpp-python)
 gguf_model = None  # Llama 인스턴스
+gguf_loaded_path = None  # 현재 로드된 모델 파일 경로
 
 # 업로드된 CSV 데이터 (세션별 - 단순 메모리 저장)
 uploaded_csv_data = {
@@ -1271,11 +1272,24 @@ def find_gguf_files():
 
 
 def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
-    """llama-cpp-python으로 GGUF 모델 로드"""
-    global gguf_model
+    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)"""
+    global gguf_model, gguf_loaded_path
+
+    # 이미 같은 모델이 로드되어 있으면 스킵
+    if gguf_loaded_path == model_path and gguf_model is not None:
+        print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)}")
+        return True
+
     try:
         from llama_cpp import Llama
         print(f"     모델 로딩 중: {os.path.basename(model_path)}...")
+
+        # 기존 모델 해제
+        if gguf_model is not None:
+            print(f"     🔄 기존 모델 해제: {os.path.basename(gguf_loaded_path or '')}")
+            del gguf_model
+            gguf_model = None
+            gguf_loaded_path = None
 
         # Windows: llama.cpp C 라이브러리가 stdout/stderr 핸들을 건드려서
         # Flask(click/colorama) 콘솔 출력이 깨지는 문제 방지
@@ -1293,6 +1307,7 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
 
+        gguf_loaded_path = model_path
         return True
     except ImportError:
         print(f"     ❌ llama-cpp-python 패키지 없음")
@@ -2134,7 +2149,7 @@ def api_chat():
     # ===== 토큰 예산 관리 =====
     # API 대형 모델 → 제한 거의 없음 (128K+ 컨텍스트)
     # GGUF 로컬 → 32K 컨텍스트이므로 스마트하게 제한
-    is_gguf = (env_id == "gguf-local")
+    is_gguf = env_id.startswith("gguf-")
     history_chars = sum(len(m.get("content", "")) for m in messages)
 
     if is_gguf:
@@ -2250,7 +2265,12 @@ def api_chat():
     temperature_map = [0.1, 0.3, 0.5, 0.7]
 
     # ===== GGUF 로컬 모델: Python에서 직접 추론 =====
-    if env_id == "gguf-local":
+    if env_id.startswith("gguf-"):
+        # 선택된 환경의 모델 경로로 동적 로드/스왑
+        gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
+        if gguf_path:
+            if not load_gguf_model(gguf_path):
+                return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
         if gguf_model is None:
             return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
 
@@ -2801,7 +2821,9 @@ Promise.all([
 function renderEnvs(){
   const row = document.getElementById('envRow');
   row.innerHTML = '';
-  const icons = {'dev':'🧪','prod':'🚀','common':'🌐','gguf-local':'💻'};
+  const icons = {'dev':'🧪','prod':'🚀','common':'🌐'};
+  // GGUF 로컬 모델은 동적으로 아이콘 매핑
+  for(const id of Object.keys(envs)){ if(id.startsWith('gguf-')) icons[id]='💻'; }
   for(const [id, env] of Object.entries(envs)){
     const btn = document.createElement('div');
     btn.className = 'env-btn' + (selEnv===id?' selected':'');
@@ -3962,23 +3984,31 @@ if __name__ == "__main__":
         print(f"     → {TOKEN_FILE} 에 API 키를 넣어주세요")
 
     # ============================================
-    # GGUF 자동 감지 & Python으로 직접 로드
+    # GGUF 자동 감지 & Python으로 직접 로드 (다중 모델 지원)
     # ============================================
     gguf_files = find_gguf_files()
 
     if gguf_files:
-        # GGUF 파일 중 가장 큰 것 선택
-        best_gguf = max(gguf_files, key=lambda x: x["size_gb"])
-        print(f"\n  💻 GGUF 자동 감지!")
-        print(f"     모델: {best_gguf['name']} ({best_gguf['size_gb']} GB)")
-
-        if load_gguf_model(best_gguf["path"]):
-            ENV_CONFIG["gguf-local"] = {
+        # 크기 내림차순 정렬
+        gguf_files.sort(key=lambda x: x["size_gb"], reverse=True)
+        print(f"\n  💻 GGUF 자동 감지! ({len(gguf_files)}개 모델)")
+        for idx, gf in enumerate(gguf_files):
+            env_key = f"gguf-{idx}"
+            model_name = gf["name"].replace(".gguf", "")
+            ENV_CONFIG[env_key] = {
                 "url": "python://llama-cpp-python",
-                "model": best_gguf["name"].replace(".gguf", ""),
-                "name": f"LOCAL GGUF ({best_gguf['name']})"
+                "model": model_name,
+                "name": f"LOCAL ({model_name})",
+                "_gguf_path": gf["path"],  # 내부용: 모델 파일 경로
             }
-            print(f"     ✅ GGUF 모델 로드 완료!")
+            print(f"     [{env_key}] {gf['name']} ({gf['size_gb']} GB)")
+
+        # 첫 번째(가장 큰) 모델을 기본 로드
+        first_gguf = gguf_files[0]
+        if load_gguf_model(first_gguf["path"]):
+            print(f"     ✅ 기본 모델 로드 완료: {first_gguf['name']}")
+        else:
+            print(f"     ⚠️  기본 모델 로드 실패 (환경 전환 시 재시도)")
     else:
         print(f"\n  ℹ️  GGUF 파일 없음 → LOCAL GGUF 비활성")
 
