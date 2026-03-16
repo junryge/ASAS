@@ -2621,6 +2621,13 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .chat-input{width:100%;border:none;outline:none;font-size:13px;resize:none;min-height:20px;max-height:100px;font-family:inherit;line-height:1.4}
 .chat-input::placeholder{color:#aaa;font-size:12px}
 .chat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:2px}
+.chat-input.dragover-input{border:2px dashed #6366f1!important;background:#eef2ff!important;border-radius:8px}
+.attach-btn{background:none;border:1px solid #e5e3de;border-radius:6px;padding:2px 8px;font-size:16px;cursor:pointer;transition:all .15s}
+.attach-btn:hover{background:#eef2ff;border-color:#6366f1}
+#attachPreview{display:flex;flex-wrap:wrap;gap:4px;padding:4px 0}
+.attach-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:12px;background:#f3f2ef;font-size:11px;color:#555;border:1px solid #e5e3de}
+.attach-chip button{background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:0 2px}
+.attach-chip button:hover{color:#e74c3c}
 .send-btn{width:32px;height:32px;border-radius:50%;border:none;background:#6366f1;color:#fff;cursor:pointer;font-size:14px;transition:background .15s}
 .send-btn:hover{background:#4f46e5}
 .send-btn:disabled{background:#ccc;cursor:not-allowed}
@@ -2901,22 +2908,6 @@ body.rp-open .ca-mode-badge{display:flex!important}
         <!-- JS에서 동적 생성 -->
       </div>
 
-      <!-- 통합 파일 업로드 -->
-      <div class="csv-section">
-        <div class="section-label">📎 파일 업로드</div>
-        <div id="fileUploadArea" class="csv-upload-area" onclick="document.getElementById('fileInput').click()"
-             ondragover="event.preventDefault();this.classList.add('dragover')"
-             ondragleave="this.classList.remove('dragover')"
-             ondrop="event.preventDefault();this.classList.remove('dragover');handleUnifiedDrop(event)">
-          <div class="icon">📂</div>
-          <div class="label">파일을 끌어놓거나 클릭하여 업로드</div>
-          <div class="sub">CSV · TSV · docx · xlsx · pdf · pptx · md · 이미지 · 코드</div>
-          <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.docx,.xlsx,.pdf,.pptx,.md,.markdown,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat" style="display:none" onchange="handleUnifiedSelect(event)" multiple>
-        </div>
-        <div id="csvInfoPanel" style="display:none"></div>
-        <div id="fileListPanel" style="display:none"></div>
-      </div>
-
       <div class="section-label">분야 선택</div>
       <div class="tag-row" id="tagRow"></div>
 
@@ -2999,11 +2990,20 @@ body.rp-open .ca-mode-badge{display:flex!important}
         <span>🔍 Code Assistant 모드</span>
         <span style="font-size:10px;color:#5eead4">업로드된 코드 기반으로 답변합니다</span>
       </div>
-      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <!-- 첨부 파일 미리보기 -->
+      <div id="attachPreview" style="display:none"></div>
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요... (파일을 여기에 끌어놓기 가능)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" ondragover="event.preventDefault();this.classList.add('dragover-input')" ondragleave="this.classList.remove('dragover-input')" ondrop="event.preventDefault();this.classList.remove('dragover-input');handleUnifiedDrop(event)"></textarea>
       <div class="chat-footer">
-        <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="파일 첨부">📎</button>
+          <span id="attachCount" style="font-size:11px;color:#6366f1;display:none"></span>
+          <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+        </div>
         <button class="send-btn" onclick="handleSendStop()" id="sendBtn">▶</button>
       </div>
+      <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.docx,.xlsx,.pdf,.pptx,.md,.markdown,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat" style="display:none" onchange="handleUnifiedSelect(event)" multiple>
+      <div id="csvInfoPanel" style="display:none"></div>
+      <div id="fileListPanel" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -4240,23 +4240,33 @@ async function uploadGenericFile(file){
 }
 
 function renderFileList(){
-  const panel = document.getElementById('fileListPanel');
+  // 하단 첨부 미리보기 (채팅 입력창 위)
+  const preview = document.getElementById('attachPreview');
+  const countEl = document.getElementById('attachCount');
+  // 기존 상단 패널도 숨기기
+  const oldPanel = document.getElementById('fileListPanel');
+  if(oldPanel) oldPanel.style.display='none';
+
   if(uploadedFilesList.length === 0){
-    panel.style.display = 'none';
+    preview.style.display = 'none';
+    countEl.style.display = 'none';
     return;
   }
-  panel.style.display = 'block';
-  let html = '<div class="uploaded-files-header"><span>📎 업로드된 파일 ('+uploadedFilesList.length+')</span><button onclick="clearAllFiles()" class="fremove" style="float:right">전체 제거</button></div>';
+  preview.style.display = 'flex';
+  countEl.style.display = '';
+  countEl.textContent = `${uploadedFilesList.length}개 첨부`;
+
+  let html = '';
   uploadedFilesList.forEach((f,i)=>{
-    const sizeStr = f.size > 1048576 ? (f.size/1048576).toFixed(1)+'MB' : (f.size/1024).toFixed(1)+'KB';
-    html += `<div class="uploaded-file-item">
-      <span class="ufi-icon">${f.icon}</span>
-      <span class="ufi-name" title="${esc(f.preview||'')}">${esc(f.filename)}</span>
-      <span class="ufi-size">${sizeStr}</span>
-      <button class="ufi-remove" onclick="removeFile('${esc(f.filename)}',${i})">✕</button>
-    </div>`;
+    html += `<span class="attach-chip">
+      ${f.icon} ${esc(f.filename)}
+      <button onclick="removeFile('${esc(f.filename)}',${i})" title="제거">✕</button>
+    </span>`;
   });
-  panel.innerHTML = html;
+  if(uploadedFilesList.length > 1){
+    html += `<span class="attach-chip" style="cursor:pointer;color:#e74c3c;border-color:#fca5a5" onclick="clearAllFiles()">전체 삭제</span>`;
+  }
+  preview.innerHTML = html;
 }
 
 async function removeFile(filename, idx){
