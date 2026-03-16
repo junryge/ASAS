@@ -4,11 +4,41 @@
 코드, 아키텍처, 데이터 흐름, 시스템 구조, 설비 배치 등을 분석하여 Draw.io (diagrams.net) 호환 XML을 생성합니다.
 생성된 다이어그램은 `.drawio` 파일로 저장하거나 Draw.io에서 직접 열 수 있습니다.
 
+## ⛔ 절대 금지 (이것을 위반하면 사용자에게 쓸모없는 결과물이 됩니다)
+
+1. **Python 래퍼 클래스/라이브러리 코드 금지** — `DrawIOXML()`, `drawio_xml`, `SystemArchitectureDrawIO` 같은 Python 클래스를 만들지 마세요. 이런 라이브러리는 존재하지 않으며, 사용자가 실행할 수도 없습니다.
+2. **추상 데이터 구조 금지** — `{"type":"shape", "id":"1", "name":"모듈"}` 같은 딕셔너리/JSON으로 다이어그램을 정의하지 마세요. Draw.io에서 열 수 없습니다.
+3. **반드시 실제 Draw.io XML을 출력** — `<mxfile>`, `<mxGraphModel>`, `<mxCell>` 태그가 포함된 실제 XML만 유효합니다. 이것만이 Draw.io에서 직접 열 수 있습니다.
+4. **⚠️ XML 속성값 이스케이프 필수** — value, label 속성 안에서 반드시:
+   - `&` → `&amp;`
+   - `<` → `&lt;` (HTML태그 `<br>`, `<font>` 등은 허용)
+   - `>` → `&gt;`
+   - `"` → `&quot;`
+   - 예: `value="A &amp; B"`, `value="x &lt; 10"`, `value="이름&lt;br&gt;설명"`
+   - **위반 시 Draw.io에서 "Unescaped '<' not allowed" 에러 발생!**
+
+**올바른 출력**: `<mxfile>...<mxCell id="2" value="Flask App" style="rounded=1;..." vertex="1" parent="1">...</mxCell>...</mxfile>`
+**잘못된 출력**: `class SystemArchitectureDrawIO: ...` / `diagram = {"elements": [...]}` / `from drawio_xml import DrawIOXML`
+
 ## 핵심 규칙
 
-### 1. 출력 형식
-- 반드시 ```drawio 코드블록 안에 XML을 출력하세요
+### 1. 출력 형식 (두 가지 모드)
+
+#### 모드 A: 코드블록 출력 (기본 — 채팅 내 미리보기)
+- ```drawio 코드블록 안에 **실제 Draw.io XML**을 출력
 - 프론트엔드가 자동으로 미리보기 + 복사 + 다운로드 버튼을 렌더링합니다
+- 빠른 확인이 필요할 때 적합
+
+#### 모드 B: .drawio 파일 저장 (대규모/정밀 다이어그램)
+- Python `xml.etree.ElementTree` 또는 문자열로 **실제 Draw.io XML**을 생성하여 `.drawio` 파일로 저장
+- 노드가 15개 이상이거나, 사용자가 "파일로 저장"을 요청한 경우 사용
+- 코드블록은 출력 길이 제한이 있으므로 대형 다이어그램은 반드시 파일로 저장
+- **중요**: 모드 B에서도 파일 내용은 반드시 `<mxfile>...</mxfile>` 형태의 실제 XML이어야 합니다
+
+#### 자동 판단 기준
+- 노드 15개 이하 → 모드 A (코드블록)
+- 노드 15개 초과 → 모드 B (파일 저장)
+- 사용자가 명시적으로 요청 → 해당 모드 사용
 
 ### 2. Draw.io XML 기본 구조
 ```drawio
@@ -102,7 +132,10 @@
 3. **반환** → 점선 화살표
 
 ### 6. 레이아웃 규칙 (강화)
-- **캔버스 범위**: 모든 노드는 x: 0~800px, y: 0~600px 범위 내에 배치
+- **캔버스 범위**: 기본 1169x827px (A4). 모든 노드는 이 범위 내에 배치
+  - 노드 10개 이하: 800x600 영역 내로도 충분
+  - 노드 10~20개: 1169x827 전체 활용
+  - 노드 20개 초과: pageWidth/pageHeight를 늘려서 확장
 - **수평 간격**: 최소 40px (겹침 절대 금지)
 - **수직 간격**: 최소 40px
 - **노드 크기**: 최소 width=120, height=60
@@ -413,9 +446,10 @@ AWS, Azure, GCP, Kubernetes 등의 공식 아이콘을 사용할 수 있습니�
 - [ ] **연결 완전성**: 모든 관계가 엣지로 연결되어 있는가?
 - [ ] **ID 고유성**: 모든 mxCell의 id가 고유한가?
 - [ ] **XML 유효성**: 모든 태그가 올바르게 닫혀 있는가?
-- [ ] **범위 내 배치**: 모든 노드가 캔버스 범위(800x600) 안에 있는가?
+- [ ] **범위 내 배치**: 모든 노드가 캔버스 범위(pageWidth x pageHeight) 안에 있는가?
 
 ## 주의사항
+- **출력은 반드시 실제 Draw.io XML (`<mxfile>...</mxfile>`)** — Python 래퍼 클래스, 가상 라이브러리, JSON/딕셔너리 정의 절대 금지
 - mxCell의 id는 반드시 고유해야 합니다 (0과 1은 root용 예약)
 - parent="1"은 기본 레이어입니다
 - vertex="1"은 노드, edge="1"은 연결선입니다
@@ -478,3 +512,90 @@ edge_geo.set("as", "geometry")
 | `ET.SubElement(cell, "Geometry")` | 노드 위치/크기 무시됨 (좌상단에 점으로 표시) |
 | edge에 mxGeometry 누락 | 연결선이 표시 안 됨 |
 | style에 `html=1` 누락 | HTML 텍스트 렌더링 안 됨 |
+
+### 20. mxCell 중첩 금지 (COULD NOT ADD OBJECT 에러 방지)
+
+**모든 mxCell은 반드시 `<root>`의 직접 자식이어야 합니다.** mxCell 안에 다른 mxCell을 중첩하면 Draw.io에서 `COULD NOT ADD OBJECT MXCELL` 에러가 발생합니다.
+
+#### 잘못된 예 (중첩 — 에러 발생):
+```xml
+<mxCell id="e1" edge="1" parent="1" source="a" target="b" style="...">
+  <mxGeometry relative="1" as="geometry"/>
+  <!-- 절대 금지: edge mxCell 안에 label mxCell 중첩 -->
+  <mxCell id="label1" value="Success" style="text;html=1;" vertex="1" parent="1">
+    <mxGeometry x="100" y="200" width="60" height="20" as="geometry"/>
+  </mxCell>
+</mxCell>
+```
+
+#### 올바른 예 (분리 — 정상 동작):
+```xml
+<!-- edge와 label을 root의 직접 자식으로 분리 -->
+<mxCell id="e1" edge="1" parent="1" source="a" target="b" style="...">
+  <mxGeometry relative="1" as="geometry"/>
+</mxCell>
+<mxCell id="label1" value="Success" style="text;html=1;" vertex="1" parent="1">
+  <mxGeometry x="100" y="200" width="60" height="20" as="geometry"/>
+</mxCell>
+```
+
+#### 규칙 요약:
+| 허용 | 금지 |
+|------|------|
+| `<root>` → `<mxCell>` | `<mxCell>` → `<mxCell>` (중첩) |
+| `<mxCell>` → `<mxGeometry>` (유일한 자식) | edge 안에 label mxCell 넣기 |
+| 라벨은 별도 mxCell로 root 아래 배치 | vertex 안에 다른 vertex 넣기 |
+
+### 21. 출력 형식 규칙 (모드별)
+
+섹션 1에서 정의한 모드 A / 모드 B를 따릅니다.
+
+#### 모드 A 예시 (코드블록 — 노드 15개 이하):
+````
+```drawio
+<mxfile host="app.diagrams.net" ...>
+  <diagram ...>
+    <mxGraphModel ...>
+      <root>...</root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+```
+````
+- 프론트엔드가 미리보기/복사/다운로드 UI를 자동 렌더링
+
+#### 모드 B 예시 (파일 저장 — 노드 15개 초과 또는 요청 시):
+```python
+import xml.etree.ElementTree as ET
+
+# 실제 Draw.io XML 구조를 직접 생성
+mxfile = ET.Element("mxfile", host="app.diagrams.net", type="device")
+diagram = ET.SubElement(mxfile, "diagram", id="d1", name="Page-1")
+model = ET.SubElement(diagram, "mxGraphModel", dx="1422", dy="762", grid="1",
+                      pageWidth="1169", pageHeight="827")
+root = ET.SubElement(model, "root")
+ET.SubElement(root, "mxCell", id="0")
+ET.SubElement(root, "mxCell", id="1", parent="0")
+
+# 노드 추가 (이런 식으로 실제 mxCell을 생성)
+node = ET.SubElement(root, "mxCell", id="2", value="Flask App",
+    style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;",
+    vertex="1", parent="1")
+geo = ET.SubElement(node, "mxGeometry", x="100", y="100", width="160", height="60")
+geo.set("as", "geometry")
+
+# .drawio 파일로 저장
+xml_str = ET.tostring(mxfile, encoding="unicode", xml_declaration=True)
+with open("결과물.drawio", "w", encoding="utf-8") as f:
+    f.write(xml_str)
+```
+- 생성된 파일 경로를 안내
+- ⛔ **절대 금지**: Python 래퍼 클래스, 가상 라이브러리 import, 딕셔너리 데이터 구조로 다이어그램 정의
+
+#### 금지: 생(raw) XML을 코드블록 없이 텍스트로 출력
+```
+# 이렇게 하면 안 됨
+여기 XML입니다:
+<?xml version="1.0"?>
+<mxfile>...</mxfile>
+```
