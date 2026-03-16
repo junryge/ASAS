@@ -2104,41 +2104,47 @@ CODE_ASSIST_ACTIONS = {
 
 @app.route("/api/code-assist/upload", methods=["POST"])
 def api_ca_upload():
-    """코드 어시스턴트용 파일 업로드"""
+    """코드 어시스턴트용 파일 업로드 (단일/다중 - 폴더 포함)"""
     global code_assistant_files
-    if "file" not in request.files:
+    files = request.files.getlist("file")
+    if not files:
         return jsonify({"error": "파일이 없습니다"}), 400
 
-    f = request.files["file"]
-    filename = f.filename or "unknown"
-    ext = os.path.splitext(filename)[1].lower()
+    results = []
+    skipped = []
+    for f in files:
+        filename = f.filename or "unknown"
+        ext = os.path.splitext(filename)[1].lower()
 
-    if ext not in CA_ALLOWED_EXTS:
-        return jsonify({"error": f"지원하지 않는 확장자: {ext}"}), 400
+        if ext not in CA_ALLOWED_EXTS:
+            skipped.append(filename)
+            continue
 
-    try:
-        content = f.read().decode("utf-8", errors="replace")
-    except Exception as e:
-        return jsonify({"error": f"파일 읽기 실패: {e}"}), 400
+        try:
+            content = f.read().decode("utf-8", errors="replace")
+        except Exception:
+            skipped.append(filename)
+            continue
 
-    # 중복 파일명 교체
-    code_assistant_files = [x for x in code_assistant_files if x["filename"] != filename]
+        # 중복 파일명 교체 (경로 포함)
+        code_assistant_files = [x for x in code_assistant_files if x["filename"] != filename]
 
-    language = CA_EXT_LANG.get(ext, "text")
-    file_info = {
-        "filename": filename,
-        "content": content,
-        "size": len(content.encode("utf-8")),
-        "language": language,
-    }
-    code_assistant_files.append(file_info)
+        language = CA_EXT_LANG.get(ext, "text")
+        file_info = {
+            "filename": filename,
+            "content": content,
+            "size": len(content.encode("utf-8")),
+            "language": language,
+        }
+        code_assistant_files.append(file_info)
+        results.append({
+            "filename": filename,
+            "size": file_info["size"],
+            "language": language,
+            "content": content,
+        })
 
-    return jsonify({
-        "filename": filename,
-        "size": file_info["size"],
-        "language": language,
-        "content": content,
-    })
+    return jsonify({"files": results, "skipped": skipped})
 
 
 @app.route("/api/code-assist/remove", methods=["POST"])
@@ -2226,7 +2232,23 @@ def api_ca_analyze():
     elif len(code) > 15000:
         code = code[:15000] + f"\n... (총 {len(target['content'])}자 중 15000자 표시)"
 
-    user_msg = f"{action_prompt}\n\n**파일:** `{filename}` ({target['language']})\n\n```{target['language']}\n{code}\n```"
+    user_msg = f"{action_prompt}\n\n**분석 대상 파일:** `{filename}` ({target['language']})\n\n```{target['language']}\n{code}\n```"
+
+    # 프로젝트 컨텍스트: 다른 파일들의 요약도 포함 (전체 이해를 위해)
+    other_files = [f for f in code_assistant_files if f["filename"] != filename]
+    if other_files:
+        ctx = "\n\n**프로젝트 내 다른 파일:**\n"
+        ctx_limit = 2000 if is_gguf else 8000
+        ctx_used = 0
+        for of in other_files:
+            snippet = of["content"][:500]
+            entry = f"\n`{of['filename']}` ({of['language']}, {of['size']}B):\n```{of['language']}\n{snippet}\n```\n"
+            if ctx_used + len(entry) > ctx_limit:
+                ctx += f"\n... 외 {len(other_files) - other_files.index(of)}개 파일 생략\n"
+                break
+            ctx += entry
+            ctx_used += len(entry)
+        user_msg += ctx
 
     # LLM 호출 (기존 api_chat 로직 재사용)
     messages = [{"role": "user", "content": user_msg}]
@@ -2974,24 +2996,28 @@ body.rp-open .chat-box-fixed{right:400px}
     <button class="rp-close" onclick="toggleRightPanel()">✕</button>
   </div>
 
-  <!-- 코드 파일 업로드 -->
+  <!-- 코드 파일/폴더 업로드 -->
   <div class="rp-section">
-    <div class="rp-section-label">코드 파일 업로드</div>
+    <div class="rp-section-label">프로젝트 업로드</div>
     <div class="rp-upload-area" id="rpUploadArea"
-      onclick="document.getElementById('rpFileInput').click()"
       ondragover="event.preventDefault();this.classList.add('dragover')"
       ondragleave="this.classList.remove('dragover')"
       ondrop="event.preventDefault();this.classList.remove('dragover');rpHandleDrop(event)">
-      <div style="font-size:24px">📄</div>
-      <div style="font-size:12px;color:#888">코드 파일을 끌어놓거나 클릭</div>
+      <div style="font-size:24px">📂</div>
+      <div style="font-size:12px;color:#888">폴더를 끌어놓거나 아래 버튼 클릭</div>
       <div style="font-size:10px;color:#bbb">.py .js .ts .java .cpp .go .rs 등</div>
+      <div style="display:flex;gap:6px;margin-top:8px;justify-content:center">
+        <button onclick="event.stopPropagation();document.getElementById('rpFolderInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #0d9488;background:#f0fdfa;color:#0d9488;font-size:12px;cursor:pointer;font-weight:600">📁 폴더 선택</button>
+        <button onclick="event.stopPropagation();document.getElementById('rpFileInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #e5e3de;background:#fff;color:#666;font-size:12px;cursor:pointer">📄 파일 선택</button>
+      </div>
+      <input type="file" id="rpFolderInput" webkitdirectory directory style="display:none" onchange="rpHandleSelect(event)">
       <input type="file" id="rpFileInput" accept=".py,.js,.ts,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat,.sql,.md,.txt" style="display:none" onchange="rpHandleSelect(event)" multiple>
     </div>
   </div>
 
   <!-- 업로드된 파일 목록 -->
-  <div class="rp-section" id="rpFileListSection" style="display:none">
-    <div class="rp-section-label">파일 목록 <button onclick="rpClearAll()" style="float:right;background:none;border:none;color:#e74c3c;font-size:11px;cursor:pointer">전체 삭제</button></div>
+  <div class="rp-section" id="rpFileListSection" style="display:none;max-height:250px;overflow-y:auto">
+    <div class="rp-section-label">파일 목록 <span id="rpFileCount" style="color:#0d9488;font-size:10px"></span> <button onclick="rpClearAll()" style="float:right;background:none;border:none;color:#e74c3c;font-size:11px;cursor:pointer">전체 삭제</button></div>
     <div id="rpFileList"></div>
   </div>
 
@@ -4231,38 +4257,124 @@ function toggleRightPanel(){
   if(isOpen) rpRenderSkills();
 }
 
-function rpHandleDrop(e){[...e.dataTransfer.files].forEach(rpUploadFile)}
-function rpHandleSelect(e){[...e.target.files].forEach(rpUploadFile);e.target.value=''}
+// 폴더 드롭: DataTransferItem API로 디렉토리 재귀 탐색
+async function rpHandleDrop(e){
+  const items = [...e.dataTransfer.items];
+  const files = [];
+  for(const item of items){
+    const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+    if(entry) await rpTraverseEntry(entry, '', files);
+    else if(item.kind==='file') files.push(item.getAsFile());
+  }
+  if(files.length>0) await rpUploadFiles(files);
+}
+async function rpTraverseEntry(entry, path, files){
+  if(entry.isFile){
+    const file = await new Promise(r=>entry.file(r));
+    Object.defineProperty(file,'webkitRelativePath',{value:path+entry.name});
+    files.push(file);
+  } else if(entry.isDirectory){
+    const reader = entry.createReader();
+    const entries = await new Promise(r=>reader.readEntries(r));
+    for(const e of entries) await rpTraverseEntry(e, path+entry.name+'/', files);
+  }
+}
+function rpHandleSelect(e){rpUploadFiles([...e.target.files]);e.target.value=''}
 
-async function rpUploadFile(file){
+const CA_ALLOWED = new Set(['.py','.js','.ts','.html','.css','.json','.xml','.yaml','.yml','.c','.cpp','.h','.java','.go','.rs','.sh','.bat','.sql','.md','.txt']);
+function rpGetExt(name){const i=name.lastIndexOf('.');return i>=0?name.substring(i).toLowerCase():''}
+
+async function rpUploadFiles(fileList){
+  // 코드 파일만 필터 + 숨김 파일/node_modules 등 제외
+  const filtered = fileList.filter(f=>{
+    const path = f.webkitRelativePath||f.name;
+    if(path.includes('node_modules/')||path.includes('__pycache__/')||path.includes('.git/')
+      ||path.includes('venv/')||path.includes('.env/')||path.includes('dist/')
+      ||path.includes('build/')||path.includes('.idea/')||path.includes('.vscode/')) return false;
+    const name = path.split('/').pop();
+    if(name.startsWith('.')) return false;
+    return CA_ALLOWED.has(rpGetExt(name));
+  });
+  if(filtered.length===0){alert('지원되는 코드 파일이 없습니다.');return}
+  if(filtered.length>200){alert(`파일이 너무 많습니다 (${filtered.length}개). 200개 이하의 폴더를 선택하세요.`);return}
+
   const formData = new FormData();
-  formData.append('file', file);
+  filtered.forEach(f=>{
+    const path = f.webkitRelativePath||f.name;
+    const blob = new File([f], path, {type:f.type});
+    formData.append('file', blob, path);
+  });
+
   try{
+    document.getElementById('rpUploadArea').innerHTML='<div style="padding:20px;color:#0d9488;font-weight:600">업로드 중... ('+filtered.length+'개 파일)</div>';
     const resp = await fetch('/api/code-assist/upload',{method:'POST',body:formData});
     const data = await resp.json();
-    if(data.error){alert(data.error);return}
-    caFiles = caFiles.filter(f=>f.filename!==data.filename);
-    caFiles.push(data);
+    if(data.error){alert(data.error);rpRestoreUploadArea();return}
+    // 기존 리스트에 추가
+    for(const f of data.files){
+      caFiles = caFiles.filter(x=>x.filename!==f.filename);
+      caFiles.push(f);
+    }
+    rpRestoreUploadArea();
     rpRenderFileList();
-    rpSelectFile(data.filename);
-  }catch(e){alert('업로드 실패: '+e.message)}
+    if(data.files.length>0) rpSelectFile(data.files[0].filename);
+    if(data.skipped.length>0) console.log('건너뛴 파일:', data.skipped);
+  }catch(e){rpRestoreUploadArea();alert('업로드 실패: '+e.message)}
+}
+
+function rpRestoreUploadArea(){
+  document.getElementById('rpUploadArea').innerHTML=`
+    <div style="font-size:24px">📂</div>
+    <div style="font-size:12px;color:#888">폴더를 끌어놓거나 아래 버튼 클릭</div>
+    <div style="font-size:10px;color:#bbb">.py .js .ts .java .cpp .go .rs 등</div>
+    <div style="display:flex;gap:6px;margin-top:8px;justify-content:center">
+      <button onclick="event.stopPropagation();document.getElementById('rpFolderInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #0d9488;background:#f0fdfa;color:#0d9488;font-size:12px;cursor:pointer;font-weight:600">📁 폴더 선택</button>
+      <button onclick="event.stopPropagation();document.getElementById('rpFileInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #e5e3de;background:#fff;color:#666;font-size:12px;cursor:pointer">📄 파일 선택</button>
+    </div>`;
 }
 
 function rpRenderFileList(){
   const section = document.getElementById('rpFileListSection');
   const list = document.getElementById('rpFileList');
-  if(caFiles.length===0){section.style.display='none';return}
+  if(caFiles.length===0){section.style.display='none';document.getElementById('rpFileCount').textContent='';return}
   section.style.display='block';
-  list.innerHTML = caFiles.map(f=>{
-    const sizeStr = f.size>1024?(f.size/1024).toFixed(1)+'KB':f.size+'B';
-    const active = f.filename===caActiveFile?' active':'';
-    return `<div class="rp-file-item${active}" onclick="rpSelectFile('${esc(f.filename)}')">
-      <span>📄</span>
-      <span class="rp-file-name">${esc(f.filename)}</span>
-      <span class="rp-file-size">${sizeStr}</span>
-      <button class="rp-file-remove" onclick="event.stopPropagation();rpRemoveFile('${esc(f.filename)}')">✕</button>
-    </div>`;
-  }).join('');
+  document.getElementById('rpFileCount').textContent=`(${caFiles.length}개)`;
+
+  // 폴더 트리 구조 빌드
+  const tree = {};
+  caFiles.forEach(f=>{
+    const parts = f.filename.split('/');
+    let node = tree;
+    for(let i=0;i<parts.length-1;i++){
+      if(!node[parts[i]]) node[parts[i]]={_isDir:true};
+      node = node[parts[i]];
+    }
+    node[parts[parts.length-1]] = f;
+  });
+
+  function renderNode(obj, prefix, depth){
+    let html='';
+    const dirs = Object.keys(obj).filter(k=>k!=='_isDir'&&obj[k]._isDir).sort();
+    const files = Object.keys(obj).filter(k=>k!=='_isDir'&&!obj[k]._isDir).sort();
+    for(const d of dirs){
+      html+=`<div style="padding:2px 0 2px ${depth*12}px;font-size:11px;color:#0d9488;font-weight:600;cursor:default">📁 ${esc(d)}</div>`;
+      html+=renderNode(obj[d], prefix?prefix+d+'/':d+'/', depth+1);
+    }
+    for(const name of files){
+      const f = obj[name];
+      const fullPath = f.filename;
+      const sizeStr = f.size>1024?(f.size/1024).toFixed(1)+'KB':f.size+'B';
+      const active = fullPath===caActiveFile?' active':'';
+      html+=`<div class="rp-file-item${active}" onclick="rpSelectFile('${esc(fullPath)}')" style="padding-left:${depth*12+8}px">
+        <span>📄</span>
+        <span class="rp-file-name">${esc(name)}</span>
+        <span class="rp-file-size">${sizeStr}</span>
+        <button class="rp-file-remove" onclick="event.stopPropagation();rpRemoveFile('${esc(fullPath)}')">✕</button>
+      </div>`;
+    }
+    return html;
+  }
+  list.innerHTML=renderNode(tree,'',0);
 }
 
 function rpSelectFile(filename){
