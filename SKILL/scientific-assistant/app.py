@@ -2817,14 +2817,27 @@ pre{position:relative}
 .rp-upload-area{border:2px dashed #d1d5db;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .2s;background:#fafaf8}
 .rp-upload-area:hover{border-color:#0d9488;background:#f0fdfa}
 .rp-upload-area.dragover{border-color:#0d9488;background:#f0fdfa;border-style:solid}
-.rp-file-item{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .12s}
+.rp-file-item{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:4px;cursor:pointer;font-size:12px;transition:all .12s}
 .rp-file-item:hover{background:#f0fdfa}
 .rp-file-item.active{background:#ccfbf1;color:#0d9488;font-weight:600}
 .rp-file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rp-file-size{color:#999;font-size:10px}
-.rp-file-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:12px}
+.rp-file-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:12px;padding:0 2px}
 .rp-file-remove:hover{color:#e74c3c}
-.rp-code-viewer{background:#1e1e1e;color:#d4d4d4;padding:14px;border-radius:10px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.5;overflow:auto;max-height:280px;white-space:pre-wrap;margin:0 16px;flex:1;min-height:100px}
+.rp-tree-section{flex:1;overflow-y:auto;border-bottom:1px solid #e5e3de;min-height:120px}
+.rp-tree-header{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:#f8fffe;border-bottom:1px solid #e5e3de;position:sticky;top:0;z-index:1}
+.rp-tree-header span{font-size:12px;font-weight:700;color:#0d9488}
+.rp-tree-content{padding:4px 8px}
+.rp-dir{padding:2px 0;cursor:pointer;user-select:none}
+.rp-dir-label{display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;font-size:12px;color:#555;font-weight:600}
+.rp-dir-label:hover{background:#f0fdfa}
+.rp-dir-label .arrow{font-size:9px;color:#999;transition:transform .15s;display:inline-block;width:10px}
+.rp-dir-label .arrow.open{transform:rotate(90deg)}
+.rp-dir-children{padding-left:12px}
+.rp-dir-children.collapsed{display:none}
+.rp-root-name{font-size:13px;font-weight:700;color:#0d9488}
+.rp-bottom{border-top:1px solid #e5e3de}
+.rp-code-viewer{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:8px;font-family:'SF Mono','Fira Code',monospace;font-size:11px;line-height:1.4;overflow:auto;max-height:200px;white-space:pre-wrap;margin:0 12px;min-height:60px}
 .rp-skill-select{width:100%;border:1px solid #e5e3de;border-radius:8px;padding:6px 8px;font-size:12px}
 .rp-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px 16px}
 .rp-action-btn{padding:8px 4px;border-radius:8px;border:1px solid #e5e3de;background:#fff;font-size:12px;cursor:pointer;transition:all .15s}
@@ -2835,6 +2848,8 @@ pre{position:relative}
 .rp-toggle:hover{background:#ccfbf1;border-color:#0d9488}
 .rp-toggle.active{background:#0d9488;color:#fff;border-color:#0d9488}
 body.rp-open .chat-box-fixed{right:400px}
+.ca-mode-badge{background:#0d9488;color:#fff;padding:4px 12px;border-radius:6px;margin-bottom:4px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+body.rp-open .ca-mode-badge{display:flex!important}
 @media(max-width:768px){.sidebar{display:none}.sidebar-toggle{display:none}.chat-box-fixed{left:0}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}.msg{font-size:12px}.right-panel{display:none!important}}
 </style>
 </head>
@@ -2980,6 +2995,10 @@ body.rp-open .chat-box-fixed{right:400px}
   <!-- 질문 입력 - 하단 고정 -->
   <div class="chat-box-fixed">
     <div class="chat-box-fixed-inner">
+      <div id="caModeBadge" class="ca-mode-badge" style="display:none">
+        <span>🔍 Code Assistant 모드</span>
+        <span style="font-size:10px;color:#5eead4">업로드된 코드 기반으로 답변합니다</span>
+      </div>
       <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
       <div class="chat-footer">
         <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
@@ -2996,57 +3015,56 @@ body.rp-open .chat-box-fixed{right:400px}
     <button class="rp-close" onclick="toggleRightPanel()">✕</button>
   </div>
 
-  <!-- 코드 파일/폴더 업로드 -->
-  <div class="rp-section">
-    <div class="rp-section-label">프로젝트 업로드</div>
-    <div class="rp-upload-area" id="rpUploadArea"
-      ondragover="event.preventDefault();this.classList.add('dragover')"
-      ondragleave="this.classList.remove('dragover')"
-      ondrop="event.preventDefault();this.classList.remove('dragover');rpHandleDrop(event)">
-      <div style="font-size:24px">📂</div>
-      <div style="font-size:12px;color:#888">폴더를 끌어놓거나 아래 버튼 클릭</div>
-      <div style="font-size:10px;color:#bbb">.py .js .ts .java .cpp .go .rs 등</div>
-      <div style="display:flex;gap:6px;margin-top:8px;justify-content:center">
-        <button onclick="event.stopPropagation();document.getElementById('rpFolderInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #0d9488;background:#f0fdfa;color:#0d9488;font-size:12px;cursor:pointer;font-weight:600">📁 폴더 선택</button>
-        <button onclick="event.stopPropagation();document.getElementById('rpFileInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #e5e3de;background:#fff;color:#666;font-size:12px;cursor:pointer">📄 파일 선택</button>
+  <!-- 프로젝트 트리 (메인 영역) -->
+  <div class="rp-tree-section" id="rpTreeSection"
+    ondragover="event.preventDefault();this.style.background='#f0fdfa'"
+    ondragleave="this.style.background=''"
+    ondrop="event.preventDefault();this.style.background='';rpHandleDrop(event)">
+    <div class="rp-tree-header">
+      <span id="rpTreeTitle">📂 프로젝트를 업로드하세요</span>
+      <div style="display:flex;gap:4px">
+        <button onclick="document.getElementById('rpFolderInput').click()" style="padding:3px 8px;border-radius:4px;border:1px solid #0d9488;background:#f0fdfa;color:#0d9488;font-size:11px;cursor:pointer;font-weight:600">📁 폴더</button>
+        <button onclick="document.getElementById('rpFileInput').click()" style="padding:3px 8px;border-radius:4px;border:1px solid #ddd;background:#fff;color:#666;font-size:11px;cursor:pointer">📄 파일</button>
+        <button onclick="rpClearAll()" id="rpClearBtn" style="display:none;padding:3px 8px;border-radius:4px;border:1px solid #fca5a5;background:#fff;color:#e74c3c;font-size:11px;cursor:pointer">삭제</button>
       </div>
-      <input type="file" id="rpFolderInput" webkitdirectory directory style="display:none" onchange="rpHandleSelect(event)">
-      <input type="file" id="rpFileInput" accept=".py,.js,.ts,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat,.sql,.md,.txt" style="display:none" onchange="rpHandleSelect(event)" multiple>
     </div>
+    <div class="rp-tree-content" id="rpTreeContent">
+      <div style="text-align:center;padding:40px 16px;color:#bbb;font-size:12px">
+        <div style="font-size:40px;margin-bottom:8px">📂</div>
+        폴더를 끌어놓거나 위 버튼으로 선택<br>
+        <span style="font-size:10px">.py .js .ts .java .cpp .go .rs .html .css 등</span>
+      </div>
+    </div>
+    <input type="file" id="rpFolderInput" webkitdirectory directory style="display:none" onchange="rpHandleSelect(event)">
+    <input type="file" id="rpFileInput" accept=".py,.js,.ts,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat,.sql,.md,.txt" style="display:none" onchange="rpHandleSelect(event)" multiple>
   </div>
 
-  <!-- 업로드된 파일 목록 -->
-  <div class="rp-section" id="rpFileListSection" style="display:none;max-height:250px;overflow-y:auto">
-    <div class="rp-section-label">파일 목록 <span id="rpFileCount" style="color:#0d9488;font-size:10px"></span> <button onclick="rpClearAll()" style="float:right;background:none;border:none;color:#e74c3c;font-size:11px;cursor:pointer">전체 삭제</button></div>
-    <div id="rpFileList"></div>
-  </div>
+  <!-- 하단: 코드 뷰어 + 액션 -->
+  <div class="rp-bottom">
+    <div style="padding:6px 12px 2px;font-size:11px;color:#0d9488;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+      <span id="rpViewerLabel">파일을 선택하세요</span>
+      <button onclick="rpCopyCode()" style="background:none;border:1px solid #ddd;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;color:#666" title="코드 복사">복사</button>
+    </div>
+    <pre class="rp-code-viewer" id="rpCodeViewer"><code id="rpCode">// 파일을 선택하면 코드가 여기에 표시됩니다</code></pre>
 
-  <!-- 코드 뷰어 -->
-  <div style="flex:1;display:flex;flex-direction:column;min-height:0;padding-top:8px">
-    <div style="padding:0 16px 4px;font-size:11px;color:#0d9488;font-weight:600" id="rpViewerLabel">파일을 업로드하세요</div>
-    <pre class="rp-code-viewer" id="rpCodeViewer"><code id="rpCode">// 코드가 여기에 표시됩니다</code></pre>
-  </div>
+    <!-- 퀵 액션 -->
+    <div class="rp-actions">
+      <button class="rp-action-btn" onclick="rpAction('explain')">💡 설명</button>
+      <button class="rp-action-btn" onclick="rpAction('find_bugs')">🐛 버그</button>
+      <button class="rp-action-btn" onclick="rpAction('improve')">✨ 개선</button>
+      <button class="rp-action-btn" onclick="rpAction('tests')">🧪 테스트</button>
+      <button class="rp-action-btn" onclick="rpAction('docstring')">📝 문서화</button>
+      <button class="rp-action-btn" onclick="rpAction('refactor')">♻️ 리팩토링</button>
+    </div>
 
-  <!-- 분석 스킬 선택 -->
-  <div class="rp-section">
-    <div class="rp-section-label">분석 스킬 (선택)</div>
-    <select class="rp-skill-select" id="rpSkillSelect" multiple size="3">
-    </select>
-    <div style="font-size:10px;color:#999;margin-top:4px">Ctrl+클릭으로 복수 선택. 스킬의 전문 지식이 분석에 활용됩니다.</div>
+    <!-- 스킬 + 채팅 전송 -->
+    <div style="padding:0 12px 4px">
+      <select class="rp-skill-select" id="rpSkillSelect" multiple size="2" style="font-size:11px">
+      </select>
+      <div style="font-size:9px;color:#bbb;margin-top:2px">Ctrl+클릭 추가 스킬 선택</div>
+    </div>
+    <button class="rp-send-btn" onclick="rpSendToChat()">💬 채팅에 코드 전송</button>
   </div>
-
-  <!-- 퀵 액션 -->
-  <div class="rp-actions">
-    <button class="rp-action-btn" onclick="rpAction('explain')">💡 코드 설명</button>
-    <button class="rp-action-btn" onclick="rpAction('find_bugs')">🐛 버그 찾기</button>
-    <button class="rp-action-btn" onclick="rpAction('improve')">✨ 개선 제안</button>
-    <button class="rp-action-btn" onclick="rpAction('tests')">🧪 테스트 생성</button>
-    <button class="rp-action-btn" onclick="rpAction('docstring')">📝 독스트링</button>
-    <button class="rp-action-btn" onclick="rpAction('refactor')">♻️ 리팩토링</button>
-  </div>
-
-  <!-- 채팅 전송 -->
-  <button class="rp-send-btn" onclick="rpSendToChat()">💬 채팅에 코드 전송</button>
 </div>
 
 <!-- 스킬 상세 패널 -->
@@ -3324,10 +3342,18 @@ async function send(){
   if(!text) return;
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
-  // 자동 스킬 모드: 수동 선택이 없으면 자동 추천 스킬 사용
+  // Code Assistant 모드: 패널 열려있고 파일이 있으면 code-assistant 스킬 전용
+  const isCAMode = document.body.classList.contains('rp-open') && caFiles.length > 0;
   let skillsToUse = [...selSkills];
   let autoLoaded = [];
-  if(autoSkillMode && skillsToUse.length === 0){
+
+  if(isCAMode){
+    // Code Assistant 전용 모드
+    skillsToUse = ['code-assistant'];
+    const rpExtraSkills = [...document.getElementById('rpSkillSelect').selectedOptions].map(o=>o.value);
+    skillsToUse.push(...rpExtraSkills);
+    autoLoaded = [];
+  } else if(autoSkillMode && skillsToUse.length === 0){
     try{
       const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:7,history:history})});
       const ad = await ar.json();
@@ -3343,8 +3369,10 @@ async function send(){
   el.value=''; el.style.height='auto';
   document.getElementById('autoSkillPreview').classList.remove('show');
 
-  // 자동 로드 안내
-  if(autoLoaded.length > 0){
+  // 로드 안내
+  if(isCAMode){
+    addMsg('assistant', '🔍 Code Assistant 모드: ' + skillsToUse.join(', '));
+  } else if(autoLoaded.length > 0){
     addMsg('assistant', '🧠 자동 스킬 로드: ' + autoLoaded.join(', '));
   }
 
@@ -4253,6 +4281,7 @@ function toggleRightPanel(){
   const isOpen = panel.classList.toggle('open');
   document.body.classList.toggle('rp-open', isOpen);
   btn.classList.toggle('active', isOpen);
+  document.getElementById('caModeBadge').style.display = isOpen?'':'none';
   localStorage.setItem('domos_rp_open', isOpen);
   if(isOpen) rpRenderSkills();
 }
@@ -4306,84 +4335,129 @@ async function rpUploadFiles(fileList){
   });
 
   try{
-    document.getElementById('rpUploadArea').innerHTML='<div style="padding:20px;color:#0d9488;font-weight:600">업로드 중... ('+filtered.length+'개 파일)</div>';
+    document.getElementById('rpTreeContent').innerHTML='<div style="text-align:center;padding:30px;color:#0d9488;font-weight:600">⏳ 업로드 중... ('+filtered.length+'개 파일)</div>';
     const resp = await fetch('/api/code-assist/upload',{method:'POST',body:formData});
     const data = await resp.json();
-    if(data.error){alert(data.error);rpRestoreUploadArea();return}
+    if(data.error){alert(data.error);rpRenderTree();return}
     // 기존 리스트에 추가
     for(const f of data.files){
       caFiles = caFiles.filter(x=>x.filename!==f.filename);
       caFiles.push(f);
     }
     rpRestoreUploadArea();
-    rpRenderFileList();
+    rpRenderTree();
     if(data.files.length>0) rpSelectFile(data.files[0].filename);
     if(data.skipped.length>0) console.log('건너뛴 파일:', data.skipped);
   }catch(e){rpRestoreUploadArea();alert('업로드 실패: '+e.message)}
 }
 
 function rpRestoreUploadArea(){
-  document.getElementById('rpUploadArea').innerHTML=`
-    <div style="font-size:24px">📂</div>
-    <div style="font-size:12px;color:#888">폴더를 끌어놓거나 아래 버튼 클릭</div>
-    <div style="font-size:10px;color:#bbb">.py .js .ts .java .cpp .go .rs 등</div>
-    <div style="display:flex;gap:6px;margin-top:8px;justify-content:center">
-      <button onclick="event.stopPropagation();document.getElementById('rpFolderInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #0d9488;background:#f0fdfa;color:#0d9488;font-size:12px;cursor:pointer;font-weight:600">📁 폴더 선택</button>
-      <button onclick="event.stopPropagation();document.getElementById('rpFileInput').click()" style="padding:5px 12px;border-radius:6px;border:1px solid #e5e3de;background:#fff;color:#666;font-size:12px;cursor:pointer">📄 파일 선택</button>
-    </div>`;
+  // 업로드 완료 후 트리를 렌더링하므로 별도 복원 불필요
+  rpRenderTree();
 }
 
-function rpRenderFileList(){
-  const section = document.getElementById('rpFileListSection');
-  const list = document.getElementById('rpFileList');
-  if(caFiles.length===0){section.style.display='none';document.getElementById('rpFileCount').textContent='';return}
-  section.style.display='block';
-  document.getElementById('rpFileCount').textContent=`(${caFiles.length}개)`;
+let rpCollapsed = {};  // 접힌 폴더 상태 기억
 
-  // 폴더 트리 구조 빌드
+function rpRenderTree(){
+  const content = document.getElementById('rpTreeContent');
+  const title = document.getElementById('rpTreeTitle');
+  const clearBtn = document.getElementById('rpClearBtn');
+  if(caFiles.length===0){
+    title.textContent='📂 프로젝트를 업로드하세요';
+    clearBtn.style.display='none';
+    content.innerHTML=`<div style="text-align:center;padding:40px 16px;color:#bbb;font-size:12px">
+      <div style="font-size:40px;margin-bottom:8px">📂</div>
+      폴더를 끌어놓거나 위 버튼으로 선택<br>
+      <span style="font-size:10px">.py .js .ts .java .cpp .go .rs .html .css 등</span>
+    </div>`;
+    return;
+  }
+
+  // 루트 폴더명 추출
+  const firstPath = caFiles[0].filename;
+  const rootDir = firstPath.includes('/')?firstPath.split('/')[0]:'Files';
+  title.innerHTML=`📂 <span class="rp-root-name">${esc(rootDir)}</span> <span style="font-size:10px;color:#888;font-weight:400">(${caFiles.length}개 파일)</span>`;
+  clearBtn.style.display='';
+
+  // 트리 구조 빌드
   const tree = {};
   caFiles.forEach(f=>{
     const parts = f.filename.split('/');
     let node = tree;
     for(let i=0;i<parts.length-1;i++){
-      if(!node[parts[i]]) node[parts[i]]={_isDir:true};
+      if(!node[parts[i]]) node[parts[i]]={__dir:true};
       node = node[parts[i]];
     }
     node[parts[parts.length-1]] = f;
   });
 
-  function renderNode(obj, prefix, depth){
+  function getIcon(lang){
+    const m={python:'🐍',javascript:'📜',typescript:'🔷',html:'🌐',css:'🎨',json:'📋',java:'☕',
+      c:'⚙️',cpp:'⚙️',go:'🔵',rust:'🦀',bash:'💲',sql:'🗄️',markdown:'📝'};
+    return m[lang]||'📄';
+  }
+
+  function renderNode(obj, path, depth){
     let html='';
-    const dirs = Object.keys(obj).filter(k=>k!=='_isDir'&&obj[k]._isDir).sort();
-    const files = Object.keys(obj).filter(k=>k!=='_isDir'&&!obj[k]._isDir).sort();
+    const dirs = Object.keys(obj).filter(k=>k!=='__dir'&&obj[k]&&obj[k].__dir).sort();
+    const files = Object.keys(obj).filter(k=>k!=='__dir'&&obj[k]&&!obj[k].__dir).sort();
+
     for(const d of dirs){
-      html+=`<div style="padding:2px 0 2px ${depth*12}px;font-size:11px;color:#0d9488;font-weight:600;cursor:default">📁 ${esc(d)}</div>`;
-      html+=renderNode(obj[d], prefix?prefix+d+'/':d+'/', depth+1);
+      const dirPath = path?path+'/'+d:d;
+      const isCollapsed = rpCollapsed[dirPath];
+      const arrowCls = isCollapsed?'arrow':'arrow open';
+      const childCls = isCollapsed?'rp-dir-children collapsed':'rp-dir-children';
+      // 하위 파일 수 세기
+      const countFiles = (o)=>{let c=0;for(const k of Object.keys(o)){if(k==='__dir')continue;if(o[k]&&o[k].__dir)c+=countFiles(o[k]);else c++}return c};
+      const cnt = countFiles(obj[d]);
+      html+=`<div class="rp-dir">
+        <div class="rp-dir-label" onclick="rpToggleDir('${esc(dirPath)}')" style="padding-left:${depth*14}px">
+          <span class="${arrowCls}">▶</span>📁 ${esc(d)} <span style="color:#bbb;font-size:10px;font-weight:400">(${cnt})</span>
+        </div>
+        <div class="${childCls}" id="rpDir_${dirPath.replace(/[^a-zA-Z0-9]/g,'_')}">
+          ${renderNode(obj[d], dirPath, depth+1)}
+        </div>
+      </div>`;
     }
+
     for(const name of files){
       const f = obj[name];
       const fullPath = f.filename;
       const sizeStr = f.size>1024?(f.size/1024).toFixed(1)+'KB':f.size+'B';
       const active = fullPath===caActiveFile?' active':'';
-      html+=`<div class="rp-file-item${active}" onclick="rpSelectFile('${esc(fullPath)}')" style="padding-left:${depth*12+8}px">
-        <span>📄</span>
+      const icon = getIcon(f.language);
+      html+=`<div class="rp-file-item${active}" onclick="rpSelectFile('${esc(fullPath)}')" style="padding-left:${depth*14+16}px">
+        <span style="font-size:11px">${icon}</span>
         <span class="rp-file-name">${esc(name)}</span>
         <span class="rp-file-size">${sizeStr}</span>
-        <button class="rp-file-remove" onclick="event.stopPropagation();rpRemoveFile('${esc(fullPath)}')">✕</button>
       </div>`;
     }
     return html;
   }
-  list.innerHTML=renderNode(tree,'',0);
+
+  content.innerHTML=renderNode(tree,'',0);
+}
+
+function rpToggleDir(dirPath){
+  rpCollapsed[dirPath]=!rpCollapsed[dirPath];
+  rpRenderTree();
 }
 
 function rpSelectFile(filename){
   const f = caFiles.find(x=>x.filename===filename);
   if(!f) return;
   caActiveFile = filename;
+  const shortName = filename.includes('/')?filename.split('/').slice(-2).join('/'):filename;
   document.getElementById('rpCode').textContent = f.content;
-  document.getElementById('rpViewerLabel').textContent = `📄 ${f.filename} (${f.language})`;
-  rpRenderFileList();
+  document.getElementById('rpViewerLabel').textContent = `📄 ${shortName} (${f.language})`;
+  rpRenderTree();
+}
+
+function rpCopyCode(){
+  const code = document.getElementById('rpCode').textContent;
+  navigator.clipboard.writeText(code).then(()=>{
+    const btn = event.target;btn.textContent='복사됨!';setTimeout(()=>btn.textContent='복사',1000);
+  });
 }
 
 async function rpRemoveFile(filename){
@@ -4393,18 +4467,18 @@ async function rpRemoveFile(filename){
   if(caActiveFile===filename){
     caActiveFile = caFiles.length>0?caFiles[0].filename:null;
     if(caActiveFile) rpSelectFile(caActiveFile);
-    else{document.getElementById('rpCode').textContent='// 코드가 여기에 표시됩니다';
-         document.getElementById('rpViewerLabel').textContent='파일을 업로드하세요'}
+    else{document.getElementById('rpCode').textContent='// 파일을 선택하면 코드가 여기에 표시됩니다';
+         document.getElementById('rpViewerLabel').textContent='파일을 선택하세요'}
   }
-  rpRenderFileList();
+  rpRenderTree();
 }
 
 async function rpClearAll(){
   await fetch('/api/code-assist/clear',{method:'POST'});
-  caFiles=[];caActiveFile=null;
-  document.getElementById('rpCode').textContent='// 코드가 여기에 표시됩니다';
-  document.getElementById('rpViewerLabel').textContent='파일을 업로드하세요';
-  rpRenderFileList();
+  caFiles=[];caActiveFile=null;rpCollapsed={};
+  document.getElementById('rpCode').textContent='// 파일을 선택하면 코드가 여기에 표시됩니다';
+  document.getElementById('rpViewerLabel').textContent='파일을 선택하세요';
+  rpRenderTree();
 }
 
 function rpRenderSkills(){
