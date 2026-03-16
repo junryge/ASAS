@@ -171,6 +171,7 @@ SKILL_DESC_KO = {
     "hypogenic":"자동 가설 생성","dhdna-profiler":"텍스트 저자 분석",
     "offer-k-dense-web":"K-Dense Web 안내","denario":"AI 연구 자동화",
     "drawio-diagram":"Draw.io 다이어그램 생성/저장",
+    "code-assistant":"코드 분석 전문 어시스턴트 (설명/버그/개선/테스트/문서화/리팩토링)",
     "zarr-python":"청크 N-D 배열 저장",
     "pyopenms":"질량분석 데이터 처리",
     "scikit-survival":"생존 분석 ML",
@@ -2073,6 +2074,197 @@ def api_clear_files():
     return jsonify({"success": True})
 
 
+# ===================== Code Assistant (오른쪽 패널) =====================
+# 코드 파일 업로드/분석 전용 - 기존 파일 업로드와 분리
+
+code_assistant_files = []  # [{filename, content, size, language}]
+
+# 코드 파일 확장자 → 언어 매핑
+CA_EXT_LANG = {
+    ".py": "python", ".js": "javascript", ".ts": "typescript",
+    ".html": "html", ".css": "css", ".json": "json",
+    ".xml": "xml", ".yaml": "yaml", ".yml": "yaml",
+    ".c": "c", ".cpp": "cpp", ".h": "c",
+    ".java": "java", ".go": "go", ".rs": "rust",
+    ".sh": "bash", ".bat": "batch", ".sql": "sql",
+    ".md": "markdown", ".txt": "text",
+}
+CA_ALLOWED_EXTS = set(CA_EXT_LANG.keys())
+
+# 액션별 프롬프트 (SKILL.md의 태그를 트리거)
+CODE_ASSIST_ACTIONS = {
+    "explain": "[EXPLAIN] 아래 코드를 분석하여 상세히 설명해주세요.",
+    "find_bugs": "[FIND_BUGS] 아래 코드에서 버그와 잠재적 문제를 찾아주세요.",
+    "improve": "[IMPROVE] 아래 코드의 개선점을 제안해주세요.",
+    "tests": "[TESTS] 아래 코드에 대한 단위 테스트를 작성해주세요.",
+    "docstring": "[DOCSTRING] 아래 코드에 docstring/주석을 추가해주세요.",
+    "refactor": "[REFACTOR] 아래 코드를 리팩토링해주세요.",
+}
+
+
+@app.route("/api/code-assist/upload", methods=["POST"])
+def api_ca_upload():
+    """코드 어시스턴트용 파일 업로드"""
+    global code_assistant_files
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다"}), 400
+
+    f = request.files["file"]
+    filename = f.filename or "unknown"
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in CA_ALLOWED_EXTS:
+        return jsonify({"error": f"지원하지 않는 확장자: {ext}"}), 400
+
+    try:
+        content = f.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        return jsonify({"error": f"파일 읽기 실패: {e}"}), 400
+
+    # 중복 파일명 교체
+    code_assistant_files = [x for x in code_assistant_files if x["filename"] != filename]
+
+    language = CA_EXT_LANG.get(ext, "text")
+    file_info = {
+        "filename": filename,
+        "content": content,
+        "size": len(content.encode("utf-8")),
+        "language": language,
+    }
+    code_assistant_files.append(file_info)
+
+    return jsonify({
+        "filename": filename,
+        "size": file_info["size"],
+        "language": language,
+        "content": content,
+    })
+
+
+@app.route("/api/code-assist/remove", methods=["POST"])
+def api_ca_remove():
+    """코드 어시스턴트 파일 제거"""
+    global code_assistant_files
+    data = request.json or {}
+    fname = data.get("filename", "")
+    code_assistant_files = [x for x in code_assistant_files if x["filename"] != fname]
+    return jsonify({"success": True})
+
+
+@app.route("/api/code-assist/clear", methods=["POST"])
+def api_ca_clear():
+    """코드 어시스턴트 파일 전체 제거"""
+    global code_assistant_files
+    code_assistant_files = []
+    return jsonify({"success": True})
+
+
+@app.route("/api/code-assist/analyze", methods=["POST"])
+def api_ca_analyze():
+    """코드 어시스턴트 퀵 액션 분석"""
+    global code_assistant_files
+    data = request.json or {}
+    action = data.get("action", "explain")
+    filename = data.get("filename", "")
+    extra_skills = data.get("skills", [])
+    env_id = data.get("env", "")
+
+    # 파일 찾기
+    target = None
+    for cf in code_assistant_files:
+        if cf["filename"] == filename:
+            target = cf
+            break
+    if not target:
+        return jsonify({"error": f"파일을 찾을 수 없습니다: {filename}"}), 404
+
+    # 환경 설정
+    if not env_id or env_id not in ENV_CONFIG:
+        return jsonify({"error": "LLM 환경을 선택해주세요"}), 400
+
+    api_url = ENV_CONFIG[env_id]["url"]
+    model = ENV_CONFIG[env_id]["model"]
+    api_key = API_TOKEN
+    is_gguf = env_id.startswith("gguf-")
+
+    # 시스템 프롬프트: code-assistant 스킬 자동 로드
+    system_prompt = """당신은 Demos(민중) 코드 어시스턴트입니다.
+업로드된 코드를 분석하여 전문적인 피드백을 제공합니다.
+
+[기본 규칙]
+- 반드시 한국어(한글)로 답변하세요
+- 코드는 ```언어명 블록으로 감싸세요
+- 마크다운 형식 사용
+- 줄번호를 참조하세요
+
+"""
+
+    # code-assistant 스킬 자동 로드
+    loaded = []
+    ca_skill = load_skill_content("code-assistant")
+    if ca_skill:
+        system_prompt += f"=== SKILL: code-assistant ===\n{ca_skill}\n\n"
+        loaded.append("code-assistant")
+
+    # 추가 스킬 로드
+    for sid in extra_skills:
+        content = load_skill_content(sid)
+        if content:
+            if is_gguf:
+                content = content[:3000]
+            system_prompt += f"=== SKILL: {sid} ===\n{content}\n\n"
+            loaded.append(sid)
+
+    if loaded:
+        system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
+
+    # 사용자 메시지 구성
+    action_prompt = CODE_ASSIST_ACTIONS.get(action, CODE_ASSIST_ACTIONS["explain"])
+    code = target["content"]
+    if is_gguf:
+        code = code[:4000]
+    elif len(code) > 15000:
+        code = code[:15000] + f"\n... (총 {len(target['content'])}자 중 15000자 표시)"
+
+    user_msg = f"{action_prompt}\n\n**파일:** `{filename}` ({target['language']})\n\n```{target['language']}\n{code}\n```"
+
+    # LLM 호출 (기존 api_chat 로직 재사용)
+    messages = [{"role": "user", "content": user_msg}]
+    max_tokens = 2048 if is_gguf else 4096
+
+    try:
+        if is_gguf:
+            # GGUF 로컬 모델
+            if gguf_model is None:
+                return jsonify({"error": "GGUF 모델이 로드되지 않았습니다"}), 500
+            response = gguf_model.create_chat_completion(
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                max_tokens=max_tokens,
+                temperature=0.3,
+            )
+            answer = response["choices"][0]["message"]["content"]
+        else:
+            # 회사 API
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            payload = {
+                "model": model,
+                "messages": [{"role": "system", "content": system_prompt}] + messages,
+                "max_tokens": max_tokens,
+                "temperature": 0.3,
+            }
+            resp = req.post(api_url, json=payload, headers=headers, timeout=120, verify=False)
+            resp.raise_for_status()
+            result = resp.json()
+            answer = result["choices"][0]["message"]["content"]
+
+        return jsonify({"content": answer, "loaded_skills": loaded})
+
+    except Exception as e:
+        return jsonify({"error": f"분석 오류: {str(e)}"}), 500
+
+
 # ===================== Draw.io 다운로드 =====================
 @app.route("/api/download_drawio", methods=["POST"])
 def api_download_drawio():
@@ -2591,7 +2783,37 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .think-box[open] summary{border-bottom:1px solid #d4c8f0}
 .think-content{padding:10px 14px;font-size:12px;color:#555;line-height:1.6;max-height:400px;overflow-y:auto}
 pre{position:relative}
-@media(max-width:768px){.sidebar{display:none}.sidebar-toggle{display:none}.chat-box-fixed{left:0}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}.msg{font-size:12px}}
+/* === 오른쪽 코드 어시스턴트 패널 === */
+.right-panel{width:400px;background:#fff;border-left:1px solid #e5e3de;display:none;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.right-panel.open{display:flex}
+.rp-header{padding:14px 16px;border-bottom:1px solid #e5e3de;display:flex;justify-content:space-between;align-items:center}
+.rp-header span{font-size:16px;font-weight:700;color:#0d9488}
+.rp-close{background:none;border:none;font-size:18px;cursor:pointer;color:#999}
+.rp-close:hover{color:#e74c3c}
+.rp-section{padding:12px 16px;border-bottom:1px solid #f0eeeb}
+.rp-section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#999;margin-bottom:8px}
+.rp-upload-area{border:2px dashed #d1d5db;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .2s;background:#fafaf8}
+.rp-upload-area:hover{border-color:#0d9488;background:#f0fdfa}
+.rp-upload-area.dragover{border-color:#0d9488;background:#f0fdfa;border-style:solid}
+.rp-file-item{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .12s}
+.rp-file-item:hover{background:#f0fdfa}
+.rp-file-item.active{background:#ccfbf1;color:#0d9488;font-weight:600}
+.rp-file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rp-file-size{color:#999;font-size:10px}
+.rp-file-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:12px}
+.rp-file-remove:hover{color:#e74c3c}
+.rp-code-viewer{background:#1e1e1e;color:#d4d4d4;padding:14px;border-radius:10px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.5;overflow:auto;max-height:280px;white-space:pre-wrap;margin:0 16px;flex:1;min-height:100px}
+.rp-skill-select{width:100%;border:1px solid #e5e3de;border-radius:8px;padding:6px 8px;font-size:12px}
+.rp-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px 16px}
+.rp-action-btn{padding:8px 4px;border-radius:8px;border:1px solid #e5e3de;background:#fff;font-size:12px;cursor:pointer;transition:all .15s}
+.rp-action-btn:hover{border-color:#0d9488;background:#f0fdfa;color:#0d9488}
+.rp-send-btn{margin:8px 16px 16px;padding:10px;border-radius:10px;border:none;background:#0d9488;color:#fff;font-weight:700;font-size:13px;cursor:pointer}
+.rp-send-btn:hover{background:#0f766e}
+.rp-toggle{width:100%;padding:8px 14px;border-radius:8px;border:1px solid #e5e3de;background:#f0fdfa;color:#0d9488;font-size:13px;font-weight:600;cursor:pointer;text-align:left;transition:all .15s;margin-bottom:4px}
+.rp-toggle:hover{background:#ccfbf1;border-color:#0d9488}
+.rp-toggle.active{background:#0d9488;color:#fff;border-color:#0d9488}
+body.rp-open .chat-box-fixed{right:400px}
+@media(max-width:768px){.sidebar{display:none}.sidebar-toggle{display:none}.chat-box-fixed{left:0}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}.msg{font-size:12px}.right-panel{display:none!important}}
 </style>
 </head>
 <body>
@@ -2618,6 +2840,7 @@ pre{position:relative}
     </div>
   </div>
   <div class="sidebar-footer">
+    <button class="rp-toggle" id="rpToggleBtn" onclick="toggleRightPanel()">🔍 Code Assistant</button>
     <div class="credits">🔬 Demos(민중) Alpha 0.8</div>
   </div>
   </div>
@@ -2742,6 +2965,62 @@ pre{position:relative}
       </div>
     </div>
   </div>
+</div>
+
+<!-- 오른쪽 코드 어시스턴트 패널 -->
+<div class="right-panel" id="rightPanel">
+  <div class="rp-header">
+    <span>🔍 Code Assistant</span>
+    <button class="rp-close" onclick="toggleRightPanel()">✕</button>
+  </div>
+
+  <!-- 코드 파일 업로드 -->
+  <div class="rp-section">
+    <div class="rp-section-label">코드 파일 업로드</div>
+    <div class="rp-upload-area" id="rpUploadArea"
+      onclick="document.getElementById('rpFileInput').click()"
+      ondragover="event.preventDefault();this.classList.add('dragover')"
+      ondragleave="this.classList.remove('dragover')"
+      ondrop="event.preventDefault();this.classList.remove('dragover');rpHandleDrop(event)">
+      <div style="font-size:24px">📄</div>
+      <div style="font-size:12px;color:#888">코드 파일을 끌어놓거나 클릭</div>
+      <div style="font-size:10px;color:#bbb">.py .js .ts .java .cpp .go .rs 등</div>
+      <input type="file" id="rpFileInput" accept=".py,.js,.ts,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat,.sql,.md,.txt" style="display:none" onchange="rpHandleSelect(event)" multiple>
+    </div>
+  </div>
+
+  <!-- 업로드된 파일 목록 -->
+  <div class="rp-section" id="rpFileListSection" style="display:none">
+    <div class="rp-section-label">파일 목록 <button onclick="rpClearAll()" style="float:right;background:none;border:none;color:#e74c3c;font-size:11px;cursor:pointer">전체 삭제</button></div>
+    <div id="rpFileList"></div>
+  </div>
+
+  <!-- 코드 뷰어 -->
+  <div style="flex:1;display:flex;flex-direction:column;min-height:0;padding-top:8px">
+    <div style="padding:0 16px 4px;font-size:11px;color:#0d9488;font-weight:600" id="rpViewerLabel">파일을 업로드하세요</div>
+    <pre class="rp-code-viewer" id="rpCodeViewer"><code id="rpCode">// 코드가 여기에 표시됩니다</code></pre>
+  </div>
+
+  <!-- 분석 스킬 선택 -->
+  <div class="rp-section">
+    <div class="rp-section-label">분석 스킬 (선택)</div>
+    <select class="rp-skill-select" id="rpSkillSelect" multiple size="3">
+    </select>
+    <div style="font-size:10px;color:#999;margin-top:4px">Ctrl+클릭으로 복수 선택. 스킬의 전문 지식이 분석에 활용됩니다.</div>
+  </div>
+
+  <!-- 퀵 액션 -->
+  <div class="rp-actions">
+    <button class="rp-action-btn" onclick="rpAction('explain')">💡 코드 설명</button>
+    <button class="rp-action-btn" onclick="rpAction('find_bugs')">🐛 버그 찾기</button>
+    <button class="rp-action-btn" onclick="rpAction('improve')">✨ 개선 제안</button>
+    <button class="rp-action-btn" onclick="rpAction('tests')">🧪 테스트 생성</button>
+    <button class="rp-action-btn" onclick="rpAction('docstring')">📝 독스트링</button>
+    <button class="rp-action-btn" onclick="rpAction('refactor')">♻️ 리팩토링</button>
+  </div>
+
+  <!-- 채팅 전송 -->
+  <button class="rp-send-btn" onclick="rpSendToChat()">💬 채팅에 코드 전송</button>
 </div>
 
 <!-- 스킬 상세 패널 -->
@@ -3937,6 +4216,152 @@ async function clearAllFiles(){
   uploadedFilesList = [];
   renderFileList();
 }
+
+// === Code Assistant (오른쪽 패널) ===
+let caFiles = [];
+let caActiveFile = null;
+
+function toggleRightPanel(){
+  const panel = document.getElementById('rightPanel');
+  const btn = document.getElementById('rpToggleBtn');
+  const isOpen = panel.classList.toggle('open');
+  document.body.classList.toggle('rp-open', isOpen);
+  btn.classList.toggle('active', isOpen);
+  localStorage.setItem('domos_rp_open', isOpen);
+  if(isOpen) rpRenderSkills();
+}
+
+function rpHandleDrop(e){[...e.dataTransfer.files].forEach(rpUploadFile)}
+function rpHandleSelect(e){[...e.target.files].forEach(rpUploadFile);e.target.value=''}
+
+async function rpUploadFile(file){
+  const formData = new FormData();
+  formData.append('file', file);
+  try{
+    const resp = await fetch('/api/code-assist/upload',{method:'POST',body:formData});
+    const data = await resp.json();
+    if(data.error){alert(data.error);return}
+    caFiles = caFiles.filter(f=>f.filename!==data.filename);
+    caFiles.push(data);
+    rpRenderFileList();
+    rpSelectFile(data.filename);
+  }catch(e){alert('업로드 실패: '+e.message)}
+}
+
+function rpRenderFileList(){
+  const section = document.getElementById('rpFileListSection');
+  const list = document.getElementById('rpFileList');
+  if(caFiles.length===0){section.style.display='none';return}
+  section.style.display='block';
+  list.innerHTML = caFiles.map(f=>{
+    const sizeStr = f.size>1024?(f.size/1024).toFixed(1)+'KB':f.size+'B';
+    const active = f.filename===caActiveFile?' active':'';
+    return `<div class="rp-file-item${active}" onclick="rpSelectFile('${esc(f.filename)}')">
+      <span>📄</span>
+      <span class="rp-file-name">${esc(f.filename)}</span>
+      <span class="rp-file-size">${sizeStr}</span>
+      <button class="rp-file-remove" onclick="event.stopPropagation();rpRemoveFile('${esc(f.filename)}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function rpSelectFile(filename){
+  const f = caFiles.find(x=>x.filename===filename);
+  if(!f) return;
+  caActiveFile = filename;
+  document.getElementById('rpCode').textContent = f.content;
+  document.getElementById('rpViewerLabel').textContent = `📄 ${f.filename} (${f.language})`;
+  rpRenderFileList();
+}
+
+async function rpRemoveFile(filename){
+  await fetch('/api/code-assist/remove',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({filename})});
+  caFiles = caFiles.filter(f=>f.filename!==filename);
+  if(caActiveFile===filename){
+    caActiveFile = caFiles.length>0?caFiles[0].filename:null;
+    if(caActiveFile) rpSelectFile(caActiveFile);
+    else{document.getElementById('rpCode').textContent='// 코드가 여기에 표시됩니다';
+         document.getElementById('rpViewerLabel').textContent='파일을 업로드하세요'}
+  }
+  rpRenderFileList();
+}
+
+async function rpClearAll(){
+  await fetch('/api/code-assist/clear',{method:'POST'});
+  caFiles=[];caActiveFile=null;
+  document.getElementById('rpCode').textContent='// 코드가 여기에 표시됩니다';
+  document.getElementById('rpViewerLabel').textContent='파일을 업로드하세요';
+  rpRenderFileList();
+}
+
+function rpRenderSkills(){
+  const sel = document.getElementById('rpSkillSelect');
+  sel.innerHTML='';
+  const codeKw=['code','review','debug','refactor','test','python','javascript',
+    'typescript','java','frontend','backend','sequential-thinking','problem-solving'];
+  for(const[did,d] of Object.entries(catalog)){
+    d.skills.forEach(s=>{
+      if(!s.available) return;
+      const isCode = codeKw.some(k=>s.id.includes(k)||s.name.toLowerCase().includes(k));
+      if(isCode){
+        const opt = document.createElement('option');
+        opt.value=s.id;opt.textContent=s.name;
+        sel.appendChild(opt);
+      }
+    });
+  }
+}
+
+async function rpAction(action){
+  if(!caActiveFile){alert('먼저 코드 파일을 업로드하세요.');return}
+  if(!selEnv){alert('먼저 LLM 환경을 선택해주세요.');return}
+
+  const skills=[...document.getElementById('rpSkillSelect').selectedOptions].map(o=>o.value);
+  const actionLabels={explain:'코드 설명',find_bugs:'버그 찾기',improve:'개선 제안',
+    tests:'테스트 생성',docstring:'독스트링 추가',refactor:'리팩토링'};
+
+  addMsg('user',`[Code Assistant] ${actionLabels[action]}: ${caActiveFile}`);
+  history.push({role:'user',content:`[Code Assistant] ${actionLabels[action]}: ${caActiveFile}`});
+  const typing = addTyping();
+
+  try{
+    const resp = await fetch('/api/code-assist/analyze',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action,filename:caActiveFile,skills,env:selEnv})
+    });
+    const data = await resp.json();
+    typing.remove();
+    if(data.error){addMsg('assistant','❌ '+data.error)}
+    else{
+      let info='';
+      if(data.loaded_skills&&data.loaded_skills.length>0)
+        info=`\n\n---\n*스킬: ${data.loaded_skills.join(', ')}*`;
+      addMsg('assistant',data.content+info);
+      history.push({role:'assistant',content:data.content});
+    }
+  }catch(e){typing.remove();addMsg('assistant','❌ 분석 실패: '+e.message)}
+  saveCurrentSession();
+}
+
+function rpSendToChat(){
+  if(!caActiveFile){alert('먼저 코드 파일을 업로드하세요.');return}
+  const f = caFiles.find(x=>x.filename===caActiveFile);
+  if(!f) return;
+  const preview = f.content.length>3000?f.content.substring(0,3000)+'...':f.content;
+  const input = document.getElementById('input');
+  input.value=`다음 코드를 참고해주세요:\n\n파일: ${f.filename}\n\`\`\`${f.language}\n${preview}\n\`\`\`\n\n`;
+  input.focus();
+  input.style.height='auto';
+  input.style.height=input.scrollHeight+'px';
+}
+
+// 패널 상태 복원
+(function(){
+  if(localStorage.getItem('domos_rp_open')==='true'){
+    setTimeout(()=>toggleRightPanel(),300);
+  }
+})();
 </script>
 </body>
 </html>
