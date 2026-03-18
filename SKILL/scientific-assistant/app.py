@@ -771,7 +771,7 @@ SKILL_KEYWORDS = {
     "docx": ["워드","Word","docx","문서작성"],
     "xlsx": ["엑셀","Excel","xlsx","스프레드시트","spreadsheet"],
     "pdf": ["PDF","pdf","문서변환"],
-    "pptx": ["파워포인트","PPT","pptx","프레젠테이션","발표","슬라이드"],
+    "pptx": ["파워포인트","PPT","pptx","프레젠테이션","발표","슬라이드","슬라이드 만들","PPT 만들","PPT 제작","PPT로","ppt로","발표자료","피피티","덱","deck","pitch deck","피치덱","발표 준비","슬라이드 제작"],
     "generate-image": ["이미지생성","AI그림","image generation","그림그려"],
     # === 가이드 ===
     "guide-python": ["Python가이드","코딩표준","PEP","파이썬스타일"],
@@ -1001,7 +1001,7 @@ SKILL_KEYWORDS = {
     "latex-posters": ['LaTeX포스터', '학회포스터', 'poster', '연구포스터'],
     "lead-research-assistant": ['리드리서치', '연구보조', 'research assistant'],
     "drawio-diagram": ['drawio', 'draw.io', '드로우IO', '드로우io', '드로우아이오', 'DrawIO', '다이어그램', '플로우차트', '아키텍처', '구조도', 'UML', '클래스다이어그램', '시퀀스다이어그램', 'ERD', '흐름도', '시스템구조', '데이터흐름도', 'DFD', '배치도'],
-    "markdown-mermaid-writing": ['마크다운', 'Mermaid', '다이어그램', 'flowchart', '시퀀스'],
+    "markdown-mermaid-writing": ['마크다운', 'Mermaid', '다이어그램', 'flowchart', '시퀀스', 'MD파일', 'MD 파일', 'md파일', '마크다운 보고서', '마크다운 문서', 'MD로', 'md로', '문서화', '보고서 작성', '정리해줘', '회의록', '미팅노트', '기술문서', 'MD 보고서', 'markdown report', 'markdown document', 'MD만들어', 'MD다운로드'],
     "market-research-reports": ['시장조사', 'market research', '산업분석', '보고서'],
     "markitdown": ['마크다운변환', '파일변환', '문서변환', 'markdown conversion'],
     "matlab": ['MATLAB', 'Octave', '매트랩', '행렬', '수치해석'],
@@ -1137,6 +1137,10 @@ def context_aware_skill_select(query, history, max_skills=7):
     if any(kw in q for kw in ["drawio", "draw.io", "드로우io", "드로우IO", "드로우아이오", "다이어그램", "구조도", "흐름도", "아키텍처도", "배치도", "dfd"]):
         combined["drawio-diagram"] = combined.get("drawio-diagram", 0) + 15
         boosted.add("drawio-diagram")
+    # PPT / 프레젠테이션 감지
+    if any(kw in q for kw in ["ppt", "피피티", "파워포인트", "슬라이드", "발표자료", "프레젠테이션", "발표 만들", "deck", "피치덱"]):
+        combined["pptx"] = combined.get("pptx", 0) + 12
+        boosted.add("pptx")
     # 코드 작성 감지
     if any(kw in q for kw in ["코드", "함수", "클래스", "구현", "작성", "만들어", "코딩"]):
         for sid in ["agent-python-pro", "debugging"]:
@@ -1413,8 +1417,12 @@ def api_auto_skills():
         results = auto_select_skills(query, max_skills=max_skills)
         boosted = []
 
+    # 실제 SKILL.md가 있는 스킬만 필터링
+    available = scan_skills()
     skills = []
     for sid, score in results:
+        if sid not in available:
+            continue  # SKILL.md 없는 스킬은 제외
         desc = SKILL_DESC_KO.get(sid, "")
         skills.append({
             "id": sid,
@@ -2113,6 +2121,76 @@ def api_clear_files():
     return jsonify({"success": True})
 
 
+# ===================== Draw.io XML 검증/수정 =====================
+def _sanitize_drawio_xml(xml_str: str) -> str:
+    """Draw.io XML의 흔한 오류를 자동 수정"""
+    import xml.etree.ElementTree as ET
+    import re as _re
+
+    if not xml_str or not xml_str.strip():
+        return xml_str
+
+    # 1) mxfile 래퍼가 없으면 추가
+    if '<mxfile' not in xml_str and '<mxGraphModel' in xml_str:
+        xml_str = f'<mxfile host="app.diagrams.net" type="device">\n<diagram id="d1" name="Page-1">\n{xml_str}\n</diagram>\n</mxfile>'
+    elif '<mxfile' not in xml_str and '<mxCell' in xml_str:
+        xml_str = (
+            '<mxfile host="app.diagrams.net" type="device">\n'
+            '<diagram id="d1" name="Page-1">\n'
+            '<mxGraphModel dx="1422" dy="762" grid="1" pageWidth="1169" pageHeight="827">\n'
+            '<root>\n<mxCell id="0"/>\n<mxCell id="1" parent="0"/>\n'
+            f'{xml_str}\n</root>\n</mxGraphModel>\n</diagram>\n</mxfile>'
+        )
+
+    # 2) XML 파싱 시도
+    try:
+        ET.fromstring(xml_str)
+        return xml_str  # 정상이면 그대로 반환
+    except ET.ParseError:
+        pass  # 파싱 실패 → 수정 시도
+
+    # 3) value/label 속성 안의 & 이스케이프
+    xml_str = _re.sub(
+        r'((?:value|label)=")([^"]*?)(")',
+        lambda m: m.group(1) + _re.sub(r'&(?!amp;|lt;|gt;|quot;|apos;|#)', '&amp;', m.group(2)) + m.group(3),
+        xml_str
+    )
+
+    # 4) 구조 재구성: <root>...</root> 안의 요소들을 추출해서 올바르게 재조립
+    try:
+        ET.fromstring(xml_str)
+        return xml_str
+    except ET.ParseError:
+        pass
+
+    # 5) 최후 수단: root 내부의 모든 완전한 mxCell/UserObject 요소만 추출하여 재조립
+    wrap_match = _re.search(r'([\s\S]*?<root\b[^>]*>)([\s\S]*?)(</root>[\s\S]*)', xml_str)
+    if wrap_match:
+        header, body, footer = wrap_match.group(1), wrap_match.group(2), wrap_match.group(3)
+        elements = []
+        # mxCell with children (mxGeometry 포함)
+        for m in _re.finditer(r'<mxCell\s[^>]*?>(?:\s*<(?:mxGeometry|Array|mxPoint)[\s\S]*?(?:/>|</(?:mxGeometry|Array|mxPoint)>))*\s*</mxCell>', body):
+            elements.append(m.group(0))
+        # self-closing mxCell
+        for m in _re.finditer(r'<mxCell\s[^>]*?/>', body):
+            if not any(m.group(0) in e for e in elements):
+                elements.append(m.group(0))
+        # UserObject
+        for m in _re.finditer(r'<UserObject[\s\S]*?</UserObject>', body):
+            elements.append(m.group(0))
+
+        if elements:
+            xml_str = header + '\n' + '\n'.join(elements) + '\n' + footer
+
+    # 최종 검증
+    try:
+        ET.fromstring(xml_str)
+    except ET.ParseError:
+        pass  # 최선을 다했으나 여전히 문제가 있으면 그냥 반환
+
+    return xml_str
+
+
 # ===================== Draw.io 다운로드 =====================
 @app.route("/api/download_drawio", methods=["POST"])
 def api_download_drawio():
@@ -2123,10 +2201,215 @@ def api_download_drawio():
     if not filename.endswith(".drawio"):
         filename += ".drawio"
 
+    # --- XML 구조 검증 및 자동 수정 ---
+    xml_content = _sanitize_drawio_xml(xml_content)
+
     from io import BytesIO
     buf = BytesIO(xml_content.encode("utf-8"))
     buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=filename, mimetype="application/xml")
+
+
+@app.route("/api/save_md", methods=["POST"])
+def api_save_md():
+    """마크다운 내용을 .md 파일로 다운로드"""
+    data = request.json
+    content = data.get("content", "")
+    filename = data.get("filename", "report.md")
+    if not filename.endswith(".md"):
+        filename += ".md"
+
+    from io import BytesIO
+    buf = BytesIO(content.encode("utf-8"))
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=filename, mimetype="text/markdown")
+
+
+# ===================== PPT 생성 (python-pptx) =====================
+@app.route("/api/generate_pptx", methods=["POST"])
+def api_generate_pptx():
+    """LLM이 생성한 python-pptx 코드를 실행해 .pptx 파일 반환"""
+    data = request.json
+    code = data.get("code", "")
+    filename = data.get("filename", "presentation.pptx") or "presentation.pptx"
+    if not filename.endswith(".pptx"):
+        filename += ".pptx"
+
+    try:
+        from pptx import Presentation as _PptxCheck
+    except ImportError:
+        return jsonify({"error": "python-pptx 패키지가 설치되어 있지 않습니다.\npip install python-pptx"}), 500
+
+    import tempfile, subprocess, json as _json
+
+    # --- LLM 생성 코드 자동 정리 (SyntaxError 방지) ---
+    import re as _re
+
+    # 1) 특수 따옴표 → ASCII 따옴표
+    _quote_map = {
+        '\u201c': '"', '\u201d': '"',   # " " (curly double)
+        '\u2018': "'", '\u2019': "'",   # ' ' (curly single)
+        '\u300c': "'", '\u300d': "'",   # 「 」
+        '\u300e': '"', '\u300f': '"',   # 『 』
+        '\uff02': '"', '\uff07': "'",   # ＂ ＇ (fullwidth)
+    }
+    for _old, _new in _quote_map.items():
+        code = code.replace(_old, _new)
+
+    # 2) 전각 문자 → 반각 (코드 안에서 자주 문제됨)
+    _fullwidth_map = {
+        '\uff08': '(', '\uff09': ')',   # （ ）
+        '\uff1a': ':', '\uff1b': ';',   # ： ；
+        '\uff0c': ',', '\uff0e': '.',   # ， ．
+        '\uff1d': '=', '\uff0b': '+',   # ＝ ＋
+    }
+    for _old, _new in _fullwidth_map.items():
+        code = code.replace(_old, _new)
+
+    # 3) 중첩 따옴표 패턴 수정: p.text = ""내용"" → p.text = "내용"
+    code = _re.sub(r'= ""([^"]*?)""', r"= '\1'", code)
+    code = _re.sub(r"= ''([^']*?)''", r"= '\1'", code)
+    # "text" 안에 이스케이프 안 된 "가 있는 패턴도 수정
+    code = _re.sub(r'""([^"]{2,}?)""', r"'\1'", code)
+
+    # 4) 괄호 불일치 자동 수정 (예: slide_layouts[6) → slide_layouts[6])
+    def _fix_bracket_mismatch(code_str):
+        lines = code_str.split('\n')
+        for i, line in enumerate(lines):
+            # 각 라인에서 괄호 스택 추적
+            stack = []
+            pairs = {'(': ')', '[': ']', '{': '}'}
+            reverse = {')': '(', ']': '[', '}': '{'}
+            in_str = None
+            chars = list(line)
+            fixed = False
+            for j, ch in enumerate(chars):
+                # 문자열 안에서는 괄호 무시
+                if ch in ('"', "'") and (j == 0 or chars[j-1] != '\\'):
+                    if in_str is None:
+                        in_str = ch
+                    elif in_str == ch:
+                        in_str = None
+                    continue
+                if in_str:
+                    continue
+                if ch in pairs:
+                    stack.append((ch, j))
+                elif ch in reverse:
+                    expected_open = reverse[ch]
+                    if stack and stack[-1][0] == expected_open:
+                        stack.pop()
+                    elif stack and stack[-1][0] != expected_open:
+                        # 불일치: 올바른 닫는 괄호로 교체
+                        chars[j] = pairs[stack[-1][0]]
+                        stack.pop()
+                        fixed = True
+            if fixed:
+                lines[i] = ''.join(chars)
+        return '\n'.join(lines)
+
+    # 5) 구문 검증 → 실패 시 추가 정리 시도
+    try:
+        compile(code, '<pptx_code>', 'exec')
+    except SyntaxError as _e:
+        # 괄호 불일치 자동 수정 시도
+        code = _fix_bracket_mismatch(code)
+        # 문자열 안 따옴표 충돌 최후 수단: 문제 라인의 바깥 따옴표를 삼중따옴표로 교체
+        lines = code.split('\n')
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # .text = "..." 또는 .text = '...' 패턴에서 내부 따옴표 충돌 수정
+            m = _re.match(r'''(.*(?:\.text|\.value)\s*=\s*)(['"])(.*)\2\s*$''', stripped)
+            if m:
+                prefix, quote, content = m.groups()
+                alt_quote = "'" if quote == '"' else '"'
+                if quote in content and alt_quote not in content:
+                    indent = line[:len(line) - len(stripped)]
+                    lines[i] = f"{indent}{prefix}{alt_quote}{content}{alt_quote}"
+                elif quote in content:
+                    content_escaped = content.replace(quote, '\\' + quote)
+                    indent = line[:len(line) - len(stripped)]
+                    lines[i] = f"{indent}{prefix}{quote}{content_escaped}{quote}"
+        code = '\n'.join(lines)
+        # 수정 후 재검증
+        try:
+            compile(code, '<pptx_code>', 'exec')
+        except SyntaxError:
+            pass  # 자동 수정 실패 — 원래 에러 그대로 출력될 것
+
+    # 임시 파일에 코드 작성 → 별도 프로세스에서 실행
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, filename)
+        # 코드에서 writeFile/save 경로를 out_path로 강제 교체
+        wrapped_code = (
+            "import sys, os\n"
+            f"_OUTPUT_PATH = {repr(out_path)}\n"
+            "# --- monkey-patch: auto-convert float to int for pptx coordinates ---\n"
+            "import pptx.oxml.simpletypes as _st\n"
+            "_orig_validate_int = _st.BaseSimpleType.validate_int\n"
+            "@classmethod\n"
+            "def _patched_validate_int(cls, value):\n"
+            "    if isinstance(value, float):\n"
+            "        value = int(round(value))\n"
+            "    return _orig_validate_int.__func__(cls, value)\n"
+            "_st.BaseSimpleType.validate_int = _patched_validate_int\n"
+            "# --- monkey-patch: fix vertical_anchor using PP_ALIGN instead of MSO_ANCHOR ---\n"
+            "import pptx.text.text as _pptx_text\n"
+            "_orig_va_setter = _pptx_text.TextFrame.vertical_anchor.fset\n"
+            "def _patched_va_setter(self, value):\n"
+            "    try:\n"
+            "        _orig_va_setter(self, value)\n"
+            "    except (ValueError, TypeError):\n"
+            "        from pptx.enum.text import MSO_ANCHOR\n"
+            "        _map = {0: MSO_ANCHOR.TOP, 1: MSO_ANCHOR.MIDDLE, 2: MSO_ANCHOR.MIDDLE, 3: MSO_ANCHOR.BOTTOM}\n"
+            "        v = _map.get(int(value), MSO_ANCHOR.MIDDLE) if hasattr(value, '__int__') else MSO_ANCHOR.MIDDLE\n"
+            "        _orig_va_setter(self, v)\n"
+            "_pptx_text.TextFrame.vertical_anchor = property(_pptx_text.TextFrame.vertical_anchor.fget, _patched_va_setter)\n"
+            "# --- user code ---\n"
+            f"{code}\n"
+        )
+        # .save() 호출이 없으면 자동 추가
+        if ".save(" not in code:
+            wrapped_code += f"\nprs.save(_OUTPUT_PATH)\n"
+        else:
+            # save 경로를 _OUTPUT_PATH로 교체
+            wrapped_code = wrapped_code.replace(
+                ".save(", f".save(_OUTPUT_PATH)  # "
+            )
+
+        script_path = os.path.join(tmpdir, "_gen_pptx.py")
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(wrapped_code)
+
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True, text=True, timeout=30,
+            cwd=tmpdir,
+            encoding="utf-8", errors="replace"
+        )
+
+        if result.returncode != 0:
+            err_msg = (result.stderr or "알 수 없는 오류")[-1000:]
+            return jsonify({
+                "error": f"PPT 생성 코드 실행 실패:\n{err_msg}"
+            }), 500
+
+        if not os.path.exists(out_path):
+            # save 경로가 다를 수 있으니 tmpdir에서 .pptx 파일 탐색
+            pptx_files = [f for f in os.listdir(tmpdir) if f.endswith(".pptx")]
+            if pptx_files:
+                out_path = os.path.join(tmpdir, pptx_files[0])
+            else:
+                return jsonify({"error": "PPT 파일이 생성되지 않았습니다."}), 500
+
+        from io import BytesIO
+        with open(out_path, "rb") as f:
+            buf = BytesIO(f.read())
+        buf.seek(0)
+        return send_file(
+            buf, as_attachment=True, download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
 
 
 # ===================== 응답 중지 =====================
@@ -2159,20 +2442,29 @@ def api_chat():
     output_format = data.get("format", "code")
     writing_style = data.get("writing_style", "")
     custom_system_prompt = data.get("system_prompt", "")
-    max_tokens = data.get("max_tokens", 4096)
+    max_tokens = data.get("max_tokens", 8192)
 
     if not api_url or not model:
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # 시스템 프롬프트 구성
-    default_prompt = """당신은 Demos(민중) Alpha 0.8 - 과학 연구와 소프트웨어 개발을 돕는 전문 AI 어시스턴트입니다.
+    # 출력 형식에 따라 기본 규칙 분기
+    non_code_formats = ("report", "analysis", "step-by-step")
+    if output_format in non_code_formats:
+        code_rules = """- 사용자가 코드를 명시적으로 요청한 경우에만 코드를 포함하세요
+- 기본적으로 자연어(글)로 설명, 분석, 보고하세요"""
+    else:
+        code_rules = """- 코드는 즉시 실행 가능하게 (import 포함, 필요 패키지 명시)
+- 에러 처리(try/except)를 포함하세요
+- 코드 주석은 반드시 ## 형식으로 작성하세요. 단일 #이 아니라 ##을 사용하고, 구간 설명용으로만 간결하게 작성하세요. 줄마다 주석을 달지 마세요. 예: ## 데이터 전처리, ## API 호출"""
+
+    default_prompt = f"""당신은 Demos(민중) Alpha 0.8 - 과학 연구와 소프트웨어 개발을 돕는 전문 AI 어시스턴트입니다.
 370개+ 전문 스킬(과학/개발/AI/인프라/비즈니스)을 활용할 수 있습니다.
 
 [기본 규칙]
 - 반드시 한국어(한글)로 답변하세요. 코드 주석도 한글로 작성하세요.
 - <think> 태그를 사용하여 사고할 때도 반드시 한국어로 작성하세요. 영어로 사고하지 마세요.
-- 코드는 즉시 실행 가능하게 (import 포함, 필요 패키지 명시)
-- 에러 처리(try/except)를 포함하세요
+{code_rules}
 
 [스킬 활용]
 - 아래에 로드된 SKILL 내용은 당신의 전문 지식입니다
@@ -2238,6 +2530,101 @@ def api_chat():
 
     if loaded:
         system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
+        # pptx 스킬이 로드됐으면 python-pptx 코드 생성 지시 추가
+        if "pptx" in loaded:
+            system_prompt += (
+                "=== PPT 생성 규칙 ===\n"
+                "사용자가 PPT/프레젠테이션/슬라이드 생성을 요청하면:\n"
+                "1. 반드시 ```python 코드블록 안에 python-pptx 코드를 작성하세요.\n"
+                "2. 코드는 `from pptx import Presentation`으로 시작하세요.\n"
+                "3. 대화 내용, 분석 결과, 업로드 파일 내용을 PPT에 반영하세요.\n"
+                "4. 각 슬라이드에 제목, 내용, 표, 차트 등을 포함하세요.\n"
+                "5. 마지막에 `prs.save('presentation.pptx')` 호출을 포함하세요.\n"
+                "6. 디자인 가이드: 볼드 색상 팔레트, 다양한 레이아웃, 데이터 시각화 활용.\n"
+                "7. 중요: 좌표/크기 값은 반드시 정수(int)로 전달하세요. "
+                "Inches(), Cm(), Pt(), Emu() 결과를 직접 사용하면 됩니다. "
+                "나눗셈(/) 등으로 float이 생기면 반드시 int()로 감싸세요.\n"
+                "8. 중요: tf.vertical_anchor에는 PP_ALIGN이 아니라 MSO_ANCHOR를 사용하세요. "
+                "예: `from pptx.enum.text import MSO_ANCHOR` 후 `tf.vertical_anchor = MSO_ANCHOR.MIDDLE`. "
+                "PP_ALIGN.CENTER를 vertical_anchor에 쓰면 에러가 납니다.\n"
+                "9. 중요: 문자열 안에 한국어 특수 따옴표(\u201c \u201d \u2018 \u2019 \u300c \u300d)를 절대 사용하지 마세요. "
+                "반드시 일반 ASCII 따옴표(\" ' )만 사용하세요. "
+                "인용문이 필요하면 작은따옴표(')로 감싸세요. 예: p.text = '기술은 훌륭하지만, 보안에 구멍이 많다.'\n"
+                "10. 코드 주석은 반드시 `## 설명내용` 형식으로 작성하세요. "
+                "단일 #이 아니라 ##을 사용하고, 구간 설명용으로만 간결하게 작성하세요. "
+                "예: `## 슬라이드 1: 표지`, `## 차트 데이터 설정`. 줄마다 주석을 달지 마세요.\n"
+                "11. 중요: 괄호 매칭에 극도로 주의하세요! "
+                "[인덱스]는 반드시 ]로 닫고, (함수호출)은 반드시 )로 닫으세요. "
+                "예: prs.slide_layouts[6] (O) / prs.slide_layouts[6) (X — SyntaxError). "
+                "코드 작성 후 모든 괄호 쌍([]/()/{})이 올바르게 매칭되는지 반드시 검증하세요.\n"
+                "12. 중요: 색상은 반드시 `from pptx.dml.color import RGBColor`를 사용하세요! "
+                "RgbColor(X), rgbColor(X) 등은 존재하지 않습니다. 반드시 RGBColor (대문자 RGB)만 사용하세요. "
+                "예: `from pptx.dml.color import RGBColor` → `fill.fore_color.rgb = RGBColor(0x1A, 0x73, 0xE8)` "
+                "또는 `run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)`. "
+                "절대 `from pptx.dml.color import RgbColor`를 쓰지 마세요 — ImportError가 발생합니다.\n"
+                "13. 중요: 대화에서 데이터/수치/통계가 있으면 반드시 python-pptx 차트로 시각화하세요! "
+                "텍스트만 나열하지 말고, 차트 슬라이드를 추가하세요.\n"
+                "python-pptx 차트 코드 예시:\n"
+                "```python\n"
+                "from pptx.chart.data import CategoryChartData\n"
+                "from pptx.enum.chart import XL_CHART_TYPE\n"
+                "from pptx.util import Inches\n"
+                "\n"
+                "## 차트 데이터 설정\n"
+                "chart_data = CategoryChartData()\n"
+                "chart_data.categories = ['1분기', '2분기', '3분기', '4분기']\n"
+                "chart_data.add_series('매출', (120, 190, 300, 250))\n"
+                "chart_data.add_series('비용', (80, 100, 150, 130))\n"
+                "\n"
+                "## 차트 슬라이드 추가\n"
+                "slide = prs.slides.add_slide(prs.slide_layouts[6])\n"
+                "chart_frame = slide.shapes.add_chart(\n"
+                "    XL_CHART_TYPE.COLUMN_CLUSTERED,\n"
+                "    Inches(1), Inches(1.5), Inches(8), Inches(5),\n"
+                "    chart_data\n"
+                ")\n"
+                "chart = chart_frame.chart\n"
+                "chart.has_legend = True\n"
+                "chart.legend.include_in_layout = False\n"
+                "```\n"
+                "지원 차트: XL_CHART_TYPE.COLUMN_CLUSTERED(세로막대), LINE(꺾은선), PIE(원형), "
+                "BAR_CLUSTERED(가로막대), DOUGHNUT(도넛), AREA(영역), RADAR(방사형), "
+                "XY_SCATTER(산점도), LINE_MARKERS(꺾은선+마커)\n"
+                "여러 시리즈 비교: chart_data.add_series()를 여러 번 호출\n"
+                "원형 차트: CategoryChartData에 시리즈 1개만 추가, XL_CHART_TYPE.PIE 사용\n"
+                "프론트엔드가 코드를 감지하여 '📽️ PPT 생성 & 다운로드' 버튼을 자동 표시합니다.\n\n"
+            )
+        # === 차트/그래프 생성 가이드 (항상 포함 - 스킬 불필요) ===
+        system_prompt += (
+            "=== 차트/그래프 생성 규칙 ===\n"
+            "사용자가 그래프, 차트, 시각화를 요청하거나 데이터 분석 결과를 보여줄 때:\n"
+            "1. ```chart 코드블록 안에 Chart.js JSON config를 작성하세요.\n"
+            "2. 프론트엔드가 자동으로 인터랙티브 차트를 렌더링합니다.\n"
+            "3. 지원 차트 유형: bar, line, pie, doughnut, radar, scatter, bubble, polarArea\n"
+            "4. JSON 형식 예시:\n"
+            "```chart\n"
+            '{\n'
+            '  "type": "bar",\n'
+            '  "data": {\n'
+            '    "labels": ["1월", "2월", "3월"],\n'
+            '    "datasets": [{\n'
+            '      "label": "매출",\n'
+            '      "data": [120, 190, 300],\n'
+            '      "backgroundColor": ["#6366f1", "#8b5cf6", "#a78bfa"]\n'
+            '    }]\n'
+            '  },\n'
+            '  "options": {\n'
+            '    "plugins": {"title": {"display": true, "text": "월별 매출"}}\n'
+            '  }\n'
+            '}\n'
+            "```\n"
+            "5. 여러 데이터셋 비교: datasets 배열에 여러 객체 추가\n"
+            "6. 색상: backgroundColor, borderColor 사용. 배열로 항목별 색상 지정 가능\n"
+            "7. 추천 색상 팔레트: #6366f1(인디고), #8b5cf6(보라), #ec4899(핑크), #f59e0b(앰버), #10b981(에메랄드), #3b82f6(블루), #ef4444(레드), #84cc16(라임)\n"
+            "8. 데이터 분석/CSV 분석 결과를 보여줄 때 적극 활용하세요.\n"
+            "9. 한 응답에 여러 ```chart 블록을 사용해 다양한 관점의 차트를 보여줄 수 있습니다.\n\n"
+        )
+
         # 멀티에이전트 오케스트레이션 (스킬 2개 이상)
         if len(loaded) >= 2:
             loaded_set = {sid: True for sid in loaded}
@@ -2290,13 +2677,18 @@ def api_chat():
     format_map = {
         "code": "답변을 Python 코드 중심으로 작성하세요. import 포함, 즉시 실행 가능하게.",
         "code-fix": "문제 진단 → 수정 전/후 비교 → 수정 이유 설명 순서로 답변하세요. 최소 변경 원칙.",
-        "analysis": "데이터 개요 → 분석 코드(pandas/matplotlib) → 시각화 → 인사이트 요약 순서로 답변하세요.",
-        "report": "답변을 보고서 형식으로 작성하세요. 제목, 요약, 본문, 결론 구조.",
-        "step-by-step": "답변을 단계별(1,2,3...)로 작성하세요. 각 단계마다 왜 필요한지 설명.",
+        "analysis": "데이터 분석 결과를 글로 설명하세요. 데이터 개요 → 핵심 인사이트 → 시각화 설명 → 결론/제안 순서. 코드가 아닌 분석 내용과 해석이 중심이어야 합니다. 코드는 꼭 필요한 경우에만 최소한으로 포함하세요.",
+        "report": "반드시 보고서 형식의 글(텍스트)로 작성하세요. 코드를 생성하지 마세요. 구조: 제목 → 요약(Executive Summary) → 배경/목적 → 본문(핵심 내용, 분석, 근거) → 결론 및 제언. 전문적이고 읽기 쉬운 문서 형태로 답변하세요.",
+        "step-by-step": "답변을 단계별(1,2,3...)로 작성하세요. 각 단계마다 무엇을 하는지, 왜 필요한지를 글로 설명하세요. 코드보다 설명과 이해를 우선하세요.",
     }
 
     system_prompt += effort_map[min(effort, 3)] + "\n"
-    system_prompt += format_map.get(output_format, "") + "\n"
+    fmt_instruction = format_map.get(output_format, "")
+    if fmt_instruction:
+        system_prompt += fmt_instruction + "\n"
+    # 코드가 아닌 출력 형식일 때는 코드 중심 답변을 억제
+    if output_format in ("report", "analysis", "step-by-step"):
+        system_prompt += "중요: 사용자가 코드를 명시적으로 요청하지 않는 한, 코드 블록 없이 자연어(글)로 답변하세요.\n"
     if writing_style:
         system_prompt += f"작성 스타일: {writing_style}\n"
 
@@ -2362,18 +2754,25 @@ def api_chat():
         result = resp.json()
 
         # 응답 추출
+        truncated = False
         if "choices" in result and len(result["choices"]) > 0:
             answer = result["choices"][0]["message"]["content"]
+            finish_reason = result["choices"][0].get("finish_reason", "")
+            if finish_reason == "length":
+                truncated = True
         elif "error" in result:
             answer = f"API 에러: {result['error']}"
         else:
             answer = f"예상치 못한 응답: {json.dumps(result, ensure_ascii=False, indent=2)}"
 
-        return jsonify({
+        resp_data = {
             "content": answer,
             "loaded_skills": loaded,
             "system_prompt_length": len(system_prompt),
-        })
+        }
+        if truncated:
+            resp_data["truncated"] = True
+        return jsonify(resp_data)
 
     except req.exceptions.Timeout:
         return jsonify({"error": "API 응답 시간 초과 (120초). max_tokens를 줄이거나 API 서버 상태를 확인하세요."}), 504
@@ -2383,7 +2782,20 @@ def api_chat():
         code = e.response.status_code if e.response is not None else 0
         if code == 401 or code == 403:
             return jsonify({"error": f"인증 실패 ({code}): TOKEN.TXT의 API 키를 확인하세요."}), code
-        return jsonify({"error": f"API HTTP 에러 ({code}): {str(e)}"}), code or 500
+        # 서버 에러 상세 내용 추출
+        detail = ""
+        if e.response is not None:
+            try:
+                body = e.response.json()
+                detail = json.dumps(body, ensure_ascii=False, indent=2)
+            except Exception:
+                detail = e.response.text[:500] if e.response.text else ""
+        prompt_chars = len(system_prompt) + sum(len(m.get("content","")) for m in api_messages)
+        err_msg = f"API HTTP 에러 ({code}): {str(e)}"
+        if detail:
+            err_msg += f"\n서버 응답: {detail}"
+        err_msg += f"\n[요청 크기: system_prompt={len(system_prompt)}자, 전체 메시지={prompt_chars}자, model={model}]"
+        return jsonify({"error": err_msg}), code or 500
     except Exception as e:
         return jsonify({"error": f"오류 발생: {str(e)}"}), 500
 
@@ -2397,6 +2809,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Demos(민중) Alpha 0.8</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f7f4;color:#1a1a1a;display:flex;height:100vh}
@@ -2453,6 +2866,9 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 /* 채팅 첨부파일 */
 .attach-btn{width:32px;height:32px;border-radius:50%;border:none;background:transparent;color:#999;cursor:pointer;font-size:18px;transition:all .15s;display:flex;align-items:center;justify-content:center}
 .attach-btn:hover{background:#f0f0f0;color:#6366f1}
+.chat-dropdown{padding:3px 6px;border-radius:8px;border:1.5px solid #e5e3de;font-size:11px;cursor:pointer;background:#fff;color:#555;outline:none;transition:all .15s;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M0 2l4 4 4-4z' fill='%23999'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center;padding-right:18px}
+.chat-dropdown:hover{border-color:#6366f1}.chat-dropdown:focus{border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.15)}
+.chat-dropdown option{font-size:12px}
 .chat-attach-preview{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0}
 .chat-attach-badge{display:inline-flex;align-items:center;gap:4px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:3px 10px;font-size:11px;color:#4f46e5;max-width:200px}
 .chat-attach-badge .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2573,6 +2989,17 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .prompt-chip.saved.active{background:#f59e0b;color:#fff}
 .sysprompt-preview{font-size:11px;color:#6366f1;background:#eef2ff;padding:6px 10px;border-radius:6px;margin-top:6px;max-height:60px;overflow:hidden;cursor:pointer}
 .sysprompt-preview:hover{max-height:200px;overflow-y:auto}
+/* PPT 생성 블록 */
+.pptx-gen-block{background:#f8f7ff;border:2px solid #a5b4fc;border-radius:12px;margin:12px 0;overflow:hidden}
+.pptx-gen-header{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:#eef2ff;border-bottom:1px solid #a5b4fc}
+.pptx-gen-header span{font-weight:600;font-size:13px;color:#4338ca}
+.pptx-gen-actions{display:flex;gap:6px;align-items:center}
+.pptx-gen-btn{background:#6366f1;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all .2s;font-weight:600}
+.pptx-gen-btn:hover{background:#4f46e5;transform:translateY(-1px)}
+.pptx-gen-btn:disabled{background:#d1d5db;cursor:not-allowed;transform:none}
+.pptx-gen-btn.secondary{background:#e0e7ff;color:#4338ca}
+.pptx-gen-btn.secondary:hover{background:#c7d2fe}
+.pptx-gen-status{font-size:11px;color:#6b7280}
 /* CSV Upload */
 .csv-section{margin-bottom:24px}
 /* csv-upload-area 제거됨 → 채팅 📎 첨부로 대체 */
@@ -2622,6 +3049,36 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .drawio-actions{display:flex;gap:6px;flex-wrap:wrap}
 .drawio-btn{background:#6366f1;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;transition:background .2s}
 .drawio-btn:hover{background:#4f46e5}
+.chart-block{border:2px solid #f59e0b;border-radius:10px;overflow:hidden;margin:10px 0;background:#fffbf0}
+.chart-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#fef3c7;border-bottom:1px solid #fcd34d;flex-wrap:wrap;gap:6px}
+.chart-header span{font-weight:600;font-size:13px;color:#92400e}
+.chart-actions{display:flex;gap:6px;flex-wrap:wrap}
+.chart-btn{background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;transition:background .2s}
+.chart-btn:hover{background:#d97706}
+.chart-canvas-wrap{padding:12px;background:#fff;display:flex;justify-content:center;align-items:center;min-height:250px;max-height:450px}
+.chart-canvas-wrap canvas{max-width:100%;max-height:420px}
+.chart-raw-toggle{padding:0 12px 8px}
+.chart-raw-toggle summary{font-size:11px;color:#999;cursor:pointer}
+.chart-raw-toggle pre{font-size:10px;max-height:120px;overflow:auto;background:#f5f5f0;padding:8px;border-radius:6px;margin-top:4px}
+.md-report-block{background:#f8faf8;border:2px solid #86efac;border-radius:12px;margin:12px 0;overflow:hidden}
+.md-report-header{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:#ecfdf5;border-bottom:1px solid #86efac}
+.md-report-header span{font-weight:600;font-size:13px;color:#166534}
+.md-report-actions{display:flex;gap:6px}
+.md-report-btn{background:#22c55e;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;transition:background .2s}
+.md-report-btn:hover{background:#16a34a}
+.md-report-btn.md-download{background:#6366f1}.md-report-btn.md-download:hover{background:#4f46e5}
+.md-report-preview{padding:14px 18px;font-size:13px;line-height:1.7;max-height:500px;overflow-y:auto}
+.md-report-preview h1{font-size:20px;margin:12px 0 8px;border-bottom:2px solid #e5e7eb;padding-bottom:4px}
+.md-report-preview h2{font-size:17px;margin:10px 0 6px;color:#374151}
+.md-report-preview h3{font-size:15px;margin:8px 0 4px;color:#4b5563}
+.md-report-preview table{border-collapse:collapse;width:100%;margin:8px 0}
+.md-report-preview th,.md-report-preview td{border:1px solid #d1d5db;padding:4px 8px;font-size:12px;text-align:left}
+.md-report-preview th{background:#f3f4f6;font-weight:600}
+.md-report-preview pre{background:#1e1e2e;color:#cdd6f4;padding:10px;border-radius:8px;overflow-x:auto;font-size:12px}
+.md-report-preview blockquote{border-left:3px solid #6366f1;padding-left:12px;color:#6b7280;margin:8px 0}
+.md-raw-toggle{margin:0;padding:4px 14px 8px}
+.md-raw-toggle summary{font-size:11px;color:#9ca3af;cursor:pointer}
+.md-raw-toggle pre{max-height:300px;overflow:auto;font-size:11px;margin-top:6px}
 .drawio-preview{max-height:200px;overflow:auto;margin:0;border-radius:0;border:none;font-size:11px}
 .drawio-preview code{font-size:11px}
 .send-btn.stop-mode{background:#e74c3c;animation:pulse-stop 1.2s infinite}
@@ -2669,13 +3126,62 @@ body.rp-collapsed .chat-box-fixed{right:0}
 .rp-run-btn{width:100%;padding:10px;border-radius:8px;border:none;background:#6366f1;color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-top:10px;transition:background .15s}
 .rp-run-btn:hover{background:#4f46e5}
 .rp-run-btn:disabled{background:#d1d5db;cursor:not-allowed}
-.rp-code-preview{background:#1e1e2e;color:#cdd6f4;border-radius:8px;padding:12px;font-family:'Fira Code',monospace;font-size:11px;max-height:200px;overflow:auto;margin-top:8px;white-space:pre-wrap;word-break:break-all;line-height:1.5}
-.rp-result{margin-top:12px;padding:12px;background:#f8f7f4;border-radius:8px;font-size:12px;line-height:1.6;max-height:300px;overflow-y:auto}
+.rp-result{margin-top:12px;padding:16px;background:#1e1e2e;color:#cdd6f4;border-radius:10px;font-size:13px;line-height:1.7;overflow-y:auto;display:none}
+.rp-result.expanded{max-height:none;position:fixed;top:8px;right:8px;bottom:8px;width:calc(var(--rp-width, 340px) - 16px);z-index:1100;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.rp-result h1,.rp-result h2,.rp-result h3{color:#cba6f7;margin:12px 0 6px}
+.rp-result h1{font-size:16px} .rp-result h2{font-size:14px} .rp-result h3{font-size:13px}
+.rp-result pre{background:#181825;border-radius:6px;padding:10px;overflow-x:auto;margin:8px 0}
+.rp-result code{font-family:'Fira Code',monospace;font-size:12px}
+.rp-result p{margin:6px 0}
+.rp-result ul,.rp-result ol{padding-left:20px;margin:6px 0}
+.rp-result table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}
+.rp-result th,.rp-result td{border:1px solid #45475a;padding:6px 8px;text-align:left}
+.rp-result th{background:#313244;color:#cba6f7}
+.rp-result-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #45475a}
+.rp-result-header .rp-result-title{font-weight:700;color:#a6e3a1;font-size:14px}
+.rp-result-header button{background:none;border:1px solid #45475a;color:#cdd6f4;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px}
+.rp-result-header button:hover{background:#313244}
 .rp-skill-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#eef2ff;color:#6366f1;margin-left:6px}
+.rp-tree{font-size:12px;max-height:250px;overflow-y:auto;border:1px solid #e5e3de;border-radius:8px;padding:8px;background:#fafaf9;margin-bottom:8px}
+.rp-tree-node{padding:2px 0;cursor:pointer;user-select:none;display:flex;align-items:center;gap:2px}
+.rp-tree-cb{width:14px;height:14px;cursor:pointer;accent-color:#6366f1;flex-shrink:0}
+.rp-select-bar{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.rp-select-btn{background:none;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;color:#666}
+.rp-select-btn:hover{border-color:#6366f1;color:#6366f1}
+.rp-checked-count{font-size:11px;color:#6366f1;font-weight:600}
+.rp-tree-node:hover{background:#eef2ff;border-radius:4px}
+.rp-tree-node-content{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rp-tree-folder{font-weight:600;color:#555}
+.rp-tree-file{color:#333}
+.rp-tree-file.active{background:#6366f1;color:#fff;border-radius:4px;padding:1px 4px}
+.rp-tree-children{padding-left:16px;border-left:1px solid #e5e3de;margin-left:6px}
+.rp-tree-toggle{display:inline-block;width:14px;font-size:10px;color:#999;text-align:center}
+.rp-tree-icon{margin-right:4px}
+.rp-tree-stats{font-size:11px;color:#888;padding:6px 8px;background:#f0f0ed;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between}
+.rp-tab-row{display:flex;gap:4px;margin-bottom:8px}
+.rp-tab{padding:4px 10px;border-radius:6px;border:1px solid #e5e3de;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#888;transition:all .15s}
+.rp-tab:hover{border-color:#6366f1;color:#6366f1}
+.rp-tab.active{background:#6366f1;color:#fff;border-color:#6366f1}
 @media(max-width:768px){.sidebar{display:none}.sidebar-toggle{display:none}.right-panel{display:none}.right-panel-toggle{display:none}.chat-box-fixed{left:0;right:0}.style-row{flex-direction:column}.msg.user{margin-left:16px}.msg.assistant{margin-right:16px}.msg{font-size:12px}}
+/* 인트로 비디오 오버레이 */
+#introOverlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity .6s ease}
+#introOverlay.fade-out{opacity:0;pointer-events:none}
+#introVideo{width:100%;height:100%;object-fit:cover}
+#introSkip{position:absolute;bottom:40px;right:40px;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.3);color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;cursor:pointer;transition:all .2s;z-index:10000}
+#introSkip:hover{background:rgba(255,255,255,.3)}
+#introProgress{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#6366f1,#a855f7);width:0;transition:width .1s linear}
 </style>
 </head>
 <body>
+<!-- 인트로 비디오 오버레이 -->
+<div id="introOverlay">
+  <video id="introVideo" autoplay muted playsinline>
+    <source src="/static/intro.mp4" type="video/mp4">
+  </video>
+  <div id="introProgress"></div>
+  <button id="introSkip" onclick="(function(b){var o=document.getElementById('introOverlay');if(!o)return;var v=document.getElementById('introVideo');if(v)v.pause();o.classList.add('fade-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o);},700);})(this)">건너뛰기 ▶</button>
+</div>
+
 <div class="sidebar" id="sidebar">
   <button class="sidebar-toggle-mini" onclick="toggleSidebar()" title="펼치기">☰</button>
   <div class="sidebar-inner">
@@ -2707,7 +3213,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Demos(민중) 프로젝트</div>
+    <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
       <span id="status" class="status off">⚪ 환경 미선택</span>
@@ -2760,21 +3266,16 @@ body.rp-collapsed .chat-box-fixed{right:0}
         </div>
       </div>
 
-      <div class="style-row">
-        <div class="style-group">
-          <label>작성 스타일</label>
-          <div id="styleChips" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px"></div>
-          <textarea id="writingStyle" placeholder="위 프리셋 클릭 또는 직접 입력..." style="min-height:28px;max-height:60px"></textarea>
-        </div>
-        <div class="style-group">
-          <label>출력 형식</label>
-          <div class="fmt-btns">
-            <div class="fmt-btn selected" data-f="code" onclick="selFmt(this)">💻 코드</div>
-            <div class="fmt-btn" data-f="code-fix" onclick="selFmt(this)">🔧 수정</div>
-            <div class="fmt-btn" data-f="analysis" onclick="selFmt(this)">📊 분석</div>
-            <div class="fmt-btn" data-f="report" onclick="selFmt(this)">📄 보고서</div>
-            <div class="fmt-btn" data-f="step-by-step" onclick="selFmt(this)">📝 단계별</div>
-          </div>
+      <!-- 작성스타일/출력형식: 채팅창 드롭다운으로 이동, 내부 상태 유지용 hidden -->
+      <div style="display:none">
+        <div id="styleChips"></div>
+        <textarea id="writingStyle"></textarea>
+        <div class="fmt-btns">
+          <div class="fmt-btn selected" data-f="code"></div>
+          <div class="fmt-btn" data-f="code-fix"></div>
+          <div class="fmt-btn" data-f="analysis"></div>
+          <div class="fmt-btn" data-f="report"></div>
+          <div class="fmt-btn" data-f="step-by-step"></div>
         </div>
       </div>
 
@@ -2808,9 +3309,27 @@ body.rp-collapsed .chat-box-fixed{right:0}
       <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
       <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
-        <div style="display:flex;align-items:center;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <button class="attach-btn" onclick="document.getElementById('chatFileInput').click()" title="파일 첨부">📎</button>
-          <span style="font-size:12px;color:#bbb">Enter 전송 / Shift+Enter 줄바꿈</span>
+          <select class="chat-dropdown" id="chatStyleDrop" onchange="applyChatStyle(this.value)" title="작성 스타일">
+            <option value="">✍️ 스타일</option>
+            <option value="간결하고 핵심만. 불필요한 설명 생략.">⚡ 간결</option>
+            <option value="상세하고 친절하게. 원리, 배경, 예시 포함.">📖 상세</option>
+            <option value="바로 복붙해서 쓸 수 있게. 실전 위주, 이론 최소화.">🔨 실용적</option>
+            <option value="학술적 톤. 정확한 용어, 인용, 근거 제시.">🎓 학술</option>
+            <option value="코드 주석을 상세한 한국어로. 변수명은 영어 유지.">💬 한글주석</option>
+            <option value="시니어 개발자 관점. 왜 이렇게 하는지, 대안은 뭔지, 주의점 포함.">👨‍💻 시니어</option>
+            <option value="에러 원인 분석 중심. traceback 해석, 재현 조건, 해결책 순서.">🐛 디버그</option>
+            <option value="데이터 스토리텔링. 숫자→의미→액션 순서로 해석.">📊 데이터</option>
+          </select>
+          <select class="chat-dropdown" id="chatFormatDrop" onchange="applyChatFormat(this.value)" title="출력 형식">
+            <option value="code">💻 코드</option>
+            <option value="code-fix">🔧 수정</option>
+            <option value="analysis">📊 분석</option>
+            <option value="report">📄 보고서</option>
+            <option value="step-by-step">📝 단계별</option>
+          </select>
+          <span style="font-size:11px;color:#bbb">Enter 전송</span>
         </div>
         <button class="send-btn" onclick="handleSendStop()" id="sendBtn">▶</button>
       </div>
@@ -2825,12 +3344,41 @@ body.rp-collapsed .chat-box-fixed{right:0}
   </div>
   <div class="rp-body">
     <div class="rp-section">
-      <div class="rp-section-title">코드 파일</div>
-      <div class="rp-file-drop" id="rpFileDrop" onclick="document.getElementById('rpFileInput').click()">
-        <div class="rp-file-drop-icon">📂</div>
-        <div class="rp-file-drop-text">클릭 또는 드래그하여 코드 파일 업로드<br><span style="font-size:10px;color:#bbb">.py .js .html .css .java .c .cpp .go .rs .sh .json .yaml .md</span></div>
+      <div class="rp-section-title">프로젝트 / 코드 파일</div>
+      <div class="rp-tab-row">
+        <button class="rp-tab active" onclick="switchUploadMode('folder',this)">📁 폴더 업로드</button>
+        <button class="rp-tab" onclick="switchUploadMode('files',this)">📄 파일 업로드</button>
       </div>
-      <input type="file" id="rpFileInput" multiple accept=".py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat,.md,.txt" style="display:none" onchange="handleRpFileSelect(this.files)">
+      <div id="rpFolderMode">
+        <div class="rp-file-drop" id="rpFolderDrop" onclick="document.getElementById('rpFolderInput').click()">
+          <div class="rp-file-drop-icon">📁</div>
+          <div class="rp-file-drop-text">클릭하여 <strong>프로젝트 폴더</strong> 통째로 업로드<br><span style="font-size:10px;color:#bbb">폴더 선택 시 하위 파일 전체가 트리로 표시됩니다</span></div>
+        </div>
+        <input type="file" id="rpFolderInput" webkitdirectory directory multiple style="display:none" onchange="handleRpFolderSelect(this.files)">
+      </div>
+      <div id="rpFileMode" style="display:none">
+        <div class="rp-file-drop" id="rpFileDrop" onclick="document.getElementById('rpFileInput').click()">
+          <div class="rp-file-drop-icon">📄</div>
+          <div class="rp-file-drop-text">클릭 또는 드래그하여 코드 파일 업로드<br><span style="font-size:10px;color:#bbb">.py .js .html .css .java .c .cpp .go .rs .sh .json .yaml .md</span></div>
+        </div>
+        <input type="file" id="rpFileInput" multiple accept=".py,.js,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.sh,.bat,.md,.txt" style="display:none" onchange="handleRpFileSelect(this.files)">
+      </div>
+      <div id="rpTreeStats" class="rp-tree-stats" style="display:none">
+        <span id="rpStatsInfo">0 파일 / 0 폴더</span>
+        <span id="rpStatsSize">0 KB</span>
+        <button onclick="clearRpProject()" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:11px;font-weight:600">전체 삭제</button>
+      </div>
+      <div id="rpLangDetect" style="display:none;padding:6px 10px;background:#f0f0ff;border-radius:6px;margin-bottom:6px;font-size:11px;">
+        <div style="font-weight:600;color:#4f46e5;margin-bottom:3px;">🔍 감지된 언어/도구</div>
+        <div id="rpLangTags" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+        <div id="rpAutoSkills" style="margin-top:4px;color:#6b7280;font-size:10px;"></div>
+      </div>
+      <div class="rp-select-bar" id="rpSelectBar" style="display:none">
+        <button class="rp-select-btn" onclick="rpCheckAll(true)">전체 선택</button>
+        <button class="rp-select-btn" onclick="rpCheckAll(false)">전체 해제</button>
+        <span class="rp-checked-count" id="rpCheckedCount">0개 선택</span>
+      </div>
+      <div class="rp-tree" id="rpTree" style="display:none"></div>
       <div class="rp-file-list" id="rpFileList"></div>
     </div>
 
@@ -2864,12 +3412,6 @@ body.rp-collapsed .chat-box-fixed{right:0}
       </div>
     </div>
 
-    <div class="rp-section">
-      <div class="rp-section-title">코드 미리보기</div>
-      <div class="rp-code-preview" id="rpCodePreview" style="display:none"></div>
-      <div id="rpNoFile" style="font-size:12px;color:#bbb;text-align:center;padding:16px">코드 파일을 업로드하면 미리보기가 표시됩니다</div>
-    </div>
-
     <button class="rp-run-btn" id="rpRunBtn" onclick="runCodeAssistant()" disabled>▶ 분석 실행</button>
     <div class="rp-result" id="rpResult" style="display:none"></div>
   </div>
@@ -2899,7 +3441,7 @@ let autoSkillMode = true;  // 기본 ON
 let selFormat = 'code';
 let effort = 2;
 let history = [];
-let maxTokens = 4096;
+let maxTokens = 8192;
 let currentSessionId = null;
 let sessions = {};
 
@@ -2922,6 +3464,15 @@ if(lastSessions.length > 0){
     if(s.selDomains && s.selDomains.length>0){ selDomains=s.selDomains; renderTags(); renderSkills(); }
     if(s.selSkills && s.selSkills.length>0){ selSkills=s.selSkills; renderSkills(); updateLoaded(); }
     renderSessionList();
+    // 페이지 로드 시 차트 재렌더링 (Chart.js 로드 대기)
+    const _initCharts=()=>{
+      document.querySelectorAll('#msgs canvas[data-chart-json]').forEach(cv=>{
+        try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
+        catch(e){cv.parentElement.innerHTML='<p style="color:red;padding:12px;">차트 렌더링 실패: '+e.message+'</p>';}
+      });
+    };
+    if(typeof Chart!=='undefined') _initCharts();
+    else setTimeout(_initCharts, 500);
   }, 100);
 } else {
   currentSessionId = 'sess_'+Date.now();
@@ -3057,8 +3608,96 @@ function renderSkills(){
   updateLoaded();
 }
 function updateLoaded(){
-  document.getElementById('loadedCount').textContent = selSkills.length;
-  document.getElementById('loadedSkillsList').innerHTML = selSkills.map(s=>`<div style="padding:2px 0">✅ ${s}</div>`).join('') || '<div style="color:#bbb">선택된 스킬 없음</div>';
+  const totalCount = selSkills.length + autoLoadedSkills.length;
+  document.getElementById('loadedCount').textContent = totalCount;
+  const el = document.getElementById('loadedSkillsList');
+  if(totalCount === 0 && dismissedAutoSkills.size === 0){
+    el.innerHTML = '<div style="color:#bbb">선택된 스킬 없음</div>';
+    return;
+  }
+  // 수동 선택 스킬 (체크박스로 해제 가능)
+  let html = selSkills.map(s =>
+    `<label style="display:flex;align-items:center;gap:4px;padding:2px 0;cursor:pointer;">
+      <input type="checkbox" checked onchange="unloadSkill('${s}')" style="accent-color:#4f46e5;cursor:pointer;">
+      <span style="font-size:12px">✅ ${s}</span>
+    </label>`
+  ).join('');
+  // 자동 추천 스킬 (1회성, 📌으로 수동 고정 / ✕로 해제)
+  if(autoLoadedSkills.length > 0){
+    html += autoLoadedSkills.map(s =>
+      `<div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0;opacity:.8;">
+        <span style="font-size:12px">🧠 ${s}</span>
+        <span style="display:flex;gap:2px;">
+          <button onclick="pinAutoSkill('${s}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#4f46e5;padding:0 2px;" title="수동 고정">📌</button>
+          <button onclick="dismissAutoSkill('${s}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#ef4444;padding:0 2px;" title="해제 (다시 추천 안함)">✕</button>
+        </span>
+      </div>`
+    ).join('');
+  }
+  // 해제된 자동 스킬 (블랙리스트) 표시
+  if(dismissedAutoSkills.size > 0){
+    html += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e5e3de;">
+      <div style="font-size:10px;color:#9ca3af;margin-bottom:3px;">🚫 해제됨 (자동추천 제외)</div>`;
+    html += [...dismissedAutoSkills].map(s =>
+      `<div style="display:flex;align-items:center;justify-content:space-between;padding:1px 0;opacity:.5;">
+        <span style="font-size:11px;text-decoration:line-through;color:#9ca3af;">${s}</span>
+        <button onclick="restoreDismissedSkill('${s}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#22c55e;padding:0 2px;" title="복구 (자동추천 허용)">♻️</button>
+      </div>`
+    ).join('');
+    if(dismissedAutoSkills.size >= 2){
+      html += `<button onclick="clearDismissed()" style="width:100%;margin-top:3px;padding:2px 0;font-size:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;cursor:pointer;color:#ef4444;">전체 복구</button>`;
+    }
+    html += `</div>`;
+  }
+  if(selSkills.length + autoLoadedSkills.length >= 2){
+    html += `<button onclick="unloadAllSkills()" style="width:100%;margin-top:4px;padding:3px 0;font-size:11px;background:#f5f5f0;border:1px solid #e5e3de;border-radius:4px;cursor:pointer;color:#888;">전체 해제</button>`;
+  }
+  el.innerHTML = html;
+}
+let dismissedAutoSkills = new Set();  // 사용자가 해제한 자동 스킬 (세션 내 재로드 방지)
+
+function unloadSkill(id){
+  selSkills = selSkills.filter(x => x !== id);
+  // 자동 스킬이면 해제 블랙리스트에 추가
+  if(autoLoadedSkills.includes(id)){
+    autoLoadedSkills = autoLoadedSkills.filter(x => x !== id);
+    dismissedAutoSkills.add(id);
+  }
+  renderSkills();
+  updateLoaded();
+}
+function unloadAllSkills(){
+  // 자동 스킬 모두 블랙리스트에 추가
+  autoLoadedSkills.forEach(id => dismissedAutoSkills.add(id));
+  selSkills = [];
+  autoLoadedSkills = [];
+  renderSkills();
+  updateLoaded();
+}
+function pinAutoSkill(id){
+  // 자동 스킬을 수동 고정으로 전환 → 블랙리스트에서 제거
+  autoLoadedSkills = autoLoadedSkills.filter(x => x !== id);
+  dismissedAutoSkills.delete(id);
+  if(!selSkills.includes(id)) selSkills.push(id);
+  renderSkills();
+  updateLoaded();
+}
+function dismissAutoSkill(id){
+  // 자동 스킬을 블랙리스트로 이동 (다시 추천 안함)
+  autoLoadedSkills = autoLoadedSkills.filter(x => x !== id);
+  dismissedAutoSkills.add(id);
+  renderSkills();
+  updateLoaded();
+}
+function restoreDismissedSkill(id){
+  // 블랙리스트에서 복구 (다음 자동 추천 허용)
+  dismissedAutoSkills.delete(id);
+  updateLoaded();
+}
+function clearDismissed(){
+  // 블랙리스트 전체 초기화
+  dismissedAutoSkills.clear();
+  updateLoaded();
 }
 
 // ===== Effort =====
@@ -3075,6 +3714,7 @@ function selFmt(el){
   document.querySelectorAll('.fmt-btn').forEach(b=>b.classList.remove('selected'));
   el.classList.add('selected');
   selFormat = el.dataset.f;
+  syncFormatDropToChat();
 }
 
 // ===== Quick prompt =====
@@ -3161,16 +3801,29 @@ async function send(){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 자동 스킬 모드: 수동 선택이 없으면 자동 추천 스킬 사용
+  // 스킬 구성: 수동 선택 + 파일 프리로드 + 질문 기반 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [];
-  if(autoSkillMode && skillsToUse.length === 0){
+  let autoLoaded = [...autoLoadedSkills];  // 파일 첨부/세션 로드로 프리로드된 스킬
+
+  // 프리로드 스킬 중 수동/해제 중복 제거
+  const manualSet = new Set(skillsToUse);
+  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !dismissedAutoSkills.has(id));
+  skillsToUse = [...skillsToUse, ...autoLoaded];
+
+  // 자동 스킬 모드: 질문 분석으로 추가 보충
+  if(autoSkillMode){
     try{
-      const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:7,history:history})});
-      const ad = await ar.json();
-      if(ad.skills && ad.skills.length > 0){
-        autoLoaded = ad.skills.map(s=>s.id);
-        skillsToUse = autoLoaded;
+      const currentCount = skillsToUse.length;
+      const maxAuto = currentCount === 0 ? 7 : Math.max(0, 10 - currentCount);
+      if(maxAuto > 0){
+        const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:maxAuto,history:history})});
+        const ad = await ar.json();
+        if(ad.skills && ad.skills.length > 0){
+          const usedSet = new Set(skillsToUse);
+          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !dismissedAutoSkills.has(id));
+          autoLoaded = [...autoLoaded, ...newAuto];
+          skillsToUse = [...skillsToUse, ...newAuto];
+        }
       }
     }catch(e){}
   }
@@ -3186,12 +3839,14 @@ async function send(){
   el.value=''; el.style.height='auto';
   document.getElementById('autoSkillPreview').classList.remove('show');
 
-  // 자동 로드 안내 + 사이드바 스킬 카드에 표시
+  // 자동 로드 안내 (selSkills에는 추가하지 않음 - 1회성 사용)
   if(autoLoaded.length > 0){
     autoLoadedSkills = autoLoaded;
     renderSkills();
     updateLoaded();
-    addMsg('assistant', '🧠 자동 스킬 로드: ' + autoLoaded.join(', '));
+    const manualCount = selSkills.length;
+    const info = manualCount > 0 ? ` (수동 ${manualCount}개 + 자동 ${autoLoaded.length}개)` : '';
+    addMsg('assistant', '🧠 자동 스킬: ' + autoLoaded.join(', ') + info);
   }
 
   const typing=addTyping();
@@ -3229,8 +3884,13 @@ async function send(){
         let mode = autoLoaded.length > 0 ? '🧠자동' : '✅수동';
         info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${envs[selEnv].name}] (${data.system_prompt_length}자)${extra}`;
       }
-      addMsg('assistant', data.content + info);
+      let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
+      addMsg('assistant', data.content + truncWarn + info);
       history.push({role:'assistant',content:data.content});
+      // markdown-mermaid-writing 스킬: ```markdown 블록이 없어도 전체 응답에 MD 다운로드 버튼 추가
+      if(selSkills.includes('markdown-mermaid-writing') && !data.content.includes('```markdown')){
+        appendMdDownloadBar(data.content);
+      }
     }
   }catch(e){
     typing.remove();
@@ -3272,7 +3932,7 @@ function renderMd(text){
     const escapedXml = code.trim();
     // HTML escape된 상태를 원본 XML로 복원 (btoa용)
     const realXml = escapedXml.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
-    const xmlB64 = btoa(unescape(encodeURIComponent(realXml)));
+    const xmlB64 = u2b(realXml);
     return `<div class="drawio-block">
       <div class="drawio-header">
         <span>📐 Draw.io 다이어그램</span>
@@ -3285,13 +3945,47 @@ function renderMd(text){
       <pre class="drawio-preview"><code class="language-xml">${escapedXml}</code></pre>
     </div>`;
   });
-  // 2b) 일반 코드블록 — xml 블록 안에 mxfile이 있으면 drawio로 자동 변환
+  // 2a-2) chart 코드블록 → Chart.js 인터랙티브 그래프 렌더링
+  s=s.replace(/```chart\s*([\s\S]*?)```/g,(_,code)=>{
+    const trimmed=code.trim();
+    const raw=trimmed.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
+    const chartId='chart_'+Math.random().toString(36).substr(2,9);
+    const b64=u2b(raw);
+    return `<div class="chart-block">
+      <div class="chart-header">
+        <span>📊 인터랙티브 차트</span>
+        <div class="chart-actions">
+          <button class="chart-btn" onclick="downloadChartPng('${chartId}')">📥 PNG 저장</button>
+          <button class="chart-btn" onclick="copyChartJson(this)" data-chart="${b64}">📋 JSON 복사</button>
+        </div>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="${chartId}" data-chart-json="${b64}"></canvas></div>
+      <details class="chart-raw-toggle"><summary>📝 원본 JSON 보기</summary><pre>${trimmed}</pre></details>
+    </div>`;
+  });
+  // 2b) markdown 코드블록 → MD 다운로드 UI
+  s=s.replace(/```markdown\s*([\s\S]*?)```/g,(_,code)=>{
+    const trimmed=code.trim();
+    const mdB64=u2b(trimmed.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"'));
+    return `<div class="md-report-block">
+      <div class="md-report-header">
+        <span>📋 마크다운 문서</span>
+        <div class="md-report-actions">
+          <button class="md-report-btn" onclick="copyMdContent(this)" data-md="${mdB64}">📋 복사</button>
+          <button class="md-report-btn md-download" onclick="downloadMarkdown(this)" data-md="${mdB64}">📥 MD 다운로드</button>
+        </div>
+      </div>
+      <div class="md-report-preview">${renderMdPreview(trimmed)}</div>
+      <details class="md-raw-toggle"><summary>📝 원본 마크다운 보기</summary><pre><code class="language-markdown">${trimmed}</code></pre></details>
+    </div>`;
+  });
+  // 2c) 일반 코드블록 — xml 블록 안에 mxfile이 있으면 drawio로 자동 변환
   s=s.replace(/```(\w*)\s*([\s\S]*?)```/g,(_,lang,code)=>{
     const trimmed=code.trim();
     // 코드블록 안에 <mxfile 또는 <mxGraphModel 있으면 drawio UI로 변환
     if(trimmed.includes('&lt;mxfile') || trimmed.includes('&lt;mxGraphModel')){
       const realXml=trimmed.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
-      const xmlB64=btoa(unescape(encodeURIComponent(realXml)));
+      const xmlB64=u2b(realXml);
       return `<div class="drawio-block">
         <div class="drawio-header">
           <span>📐 Draw.io 다이어그램</span>
@@ -3310,7 +4004,7 @@ function renderMd(text){
   // 2c) raw mxfile XML (코드블록 밖) 자동 감지 → drawio UI로 변환
   s=s.replace(/(&lt;mxfile[\s\S]*?&lt;\/mxfile&gt;)/g,(_,xmlEsc)=>{
     const realXml=xmlEsc.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
-    const xmlB64=btoa(unescape(encodeURIComponent(realXml)));
+    const xmlB64=u2b(realXml);
     return `<div class="drawio-block">
       <div class="drawio-header">
         <span>📐 Draw.io 다이어그램 (자동 감지)</span>
@@ -3386,6 +4080,13 @@ function addMsg(role,text){
     btn.className='copy-btn';btn.textContent='복사';
     btn.onclick=()=>{navigator.clipboard.writeText(pre.textContent.replace('복사',''));btn.textContent='✓';setTimeout(()=>btn.textContent='복사',1500);};
     pre.appendChild(btn);
+  });
+  // PPT 코드 블록 감지 → 생성 & 다운로드 버튼 삽입
+  if(role==='assistant') detectAndAddPptxButtons(d, text);
+  // Chart.js 차트 초기화 (data-chart-json 속성이 있는 canvas 탐색)
+  d.querySelectorAll('canvas[data-chart-json]').forEach(cv=>{
+    try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
+    catch(e){cv.parentElement.innerHTML='<p style="color:red;padding:12px;">차트 렌더링 실패: '+e.message+'</p>';}
   });
   c.scrollIntoView({behavior:'smooth',block:'end'});
 }
@@ -3517,8 +4218,12 @@ function deleteSelectedSessions(){
   });
   selectedSessions.clear();
   saveSessions();
-  if(deletedCurrent) createNewSession();
-  else renderSessionList();
+  if(deletedCurrent){
+    // createNewSession() 호출 시 saveCurrentSession()이 삭제된 세션을 복원하므로
+    // currentSessionId를 먼저 초기화한 후 새 세션 생성
+    currentSessionId = null;
+    createNewSession();
+  } else renderSessionList();
 }
 
 function archiveSelectedSessions(){
@@ -3532,8 +4237,10 @@ function archiveSelectedSessions(){
   });
   selectedSessions.clear();
   saveSessions();
-  if(archivedCurrent) createNewSession();
-  else renderSessionList();
+  if(archivedCurrent){
+    currentSessionId = null;
+    createNewSession();
+  } else renderSessionList();
 }
 
 // ===== 사이드바 전체 접기/펼치기 =====
@@ -3574,6 +4281,8 @@ function createNewSession(){
   currentSessionId = 'sess_'+Date.now();
   history=[];
   selSkills=[];
+  autoLoadedSkills=[];
+  dismissedAutoSkills.clear();
   document.getElementById('msgs').innerHTML='';
   document.getElementById('writingStyle').value='';
   document.getElementById('systemPromptInput').value='';
@@ -3606,7 +4315,33 @@ function loadSession(id){
   if(s.systemPrompt) document.getElementById('systemPromptInput').value=s.systemPrompt;
   if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); }
   if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; updateEffort(); }
+  // 저장된 수동 스킬 복원
+  if(s.selSkills && s.selSkills.length > 0){ selSkills = [...s.selSkills]; }
+  else { selSkills = []; }
+  // 대화 히스토리 기반 자동 스킬 프리로드
+  autoLoadedSkills = [];
+  if(autoSkillMode && history.length > 0){
+    const lastUser = [...history].reverse().find(m=>m.role==='user');
+    if(lastUser){
+      fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:lastUser.content,max_skills:5,history:history})})
+      .then(r=>r.json()).then(d=>{
+        if(d.skills && d.skills.length > 0){
+          const manualSet = new Set(selSkills);
+          autoLoadedSkills = d.skills.map(s=>s.id).filter(id=>!manualSet.has(id));
+          renderSkills();
+          updateLoaded();
+        }
+      }).catch(()=>{});
+    }
+  }
+  renderSkills();
+  updateLoaded();
   renderSessionList();
+  // 세션 복원 후 차트 재렌더링
+  document.querySelectorAll('#msgs canvas[data-chart-json]').forEach(cv=>{
+    try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
+    catch(e){cv.parentElement.innerHTML='<p style="color:red;padding:12px;">차트 렌더링 실패: '+e.message+'</p>';}
+  });
 }
 function deleteSession(id){
   delete sessions[id];
@@ -3755,7 +4490,7 @@ loadPromptList();
 const STYLE_PRESETS = [
   {id:'concise',    icon:'⚡', name:'간결', value:'간결하고 핵심만. 불필요한 설명 생략.'},
   {id:'detailed',   icon:'📖', name:'상세', value:'상세하고 친절하게. 원리, 배경, 예시 포함.'},
-  {id:'practical',  icon:'🔨', name:'실용적', value:'바로 복붙해서 쓸 수 있게. 실전 위주, 이론 최소화.'},
+  {id:'practical',  icon:'🔨', name:'실용적', value:'실전에서 바로 활용 가능하게. 핵심 요점과 구체적 방법 위주. 선택된 출력형식에 맞춰 답변하세요.'},
   {id:'academic',   icon:'🎓', name:'학술', value:'학술적 톤. 정확한 용어, 인용, 근거 제시.'},
   {id:'comment-kr', icon:'💬', name:'한글주석', value:'코드 주석을 상세한 한국어로. 변수명은 영어 유지.'},
   {id:'senior-dev', icon:'👨‍💻', name:'시니어', value:'시니어 개발자 관점. 왜 이렇게 하는지, 대안은 뭔지, 주의점 포함.'},
@@ -3787,6 +4522,43 @@ function renderStyleChips(){
   });
 }
 renderStyleChips();
+
+// ===== 채팅창 드롭다운 ↔ 사이드바 동기화 =====
+function applyChatStyle(val){
+  document.getElementById('writingStyle').value = val;
+  const match = STYLE_PRESETS.find(s => s.value === val);
+  activeStyleId = match ? match.id : null;
+  renderStyleChips();
+  if(val) syncStyleDropToSidebar();
+}
+function applyChatFormat(val){
+  selFormat = val;
+  // 사이드바 fmt-btn도 동기화
+  document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===val);});
+}
+function syncStyleDropToSidebar(){
+  // 사이드바 변경 → 채팅창 드롭다운 동기화
+  const drop = document.getElementById('chatStyleDrop');
+  if(!drop) return;
+  const val = document.getElementById('writingStyle').value.trim();
+  const opts = drop.options;
+  let found = false;
+  for(let i=0;i<opts.length;i++){
+    if(opts[i].value === val){ drop.selectedIndex = i; found = true; break; }
+  }
+  if(!found) drop.selectedIndex = 0;
+}
+function syncFormatDropToChat(){
+  const drop = document.getElementById('chatFormatDrop');
+  if(!drop) drop.value = selFormat;
+  else {
+    const opts = drop.options;
+    for(let i=0;i<opts.length;i++){
+      if(opts[i].value === selFormat){ drop.selectedIndex = i; break; }
+    }
+  }
+}
+
 document.getElementById('writingStyle').addEventListener('input', function(){
   // 수동 편집하면 active 해제
   const val = this.value.trim();
@@ -3985,9 +4757,23 @@ async function uploadCsvFile(file){
 }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ===== Unicode-safe Base64 유틸 (btoa/atob는 Latin1만 지원) =====
+function u2b(str){
+  var bytes=new TextEncoder().encode(str);
+  var bin='';
+  for(var i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b2u(b64){
+  var bin=atob(b64);
+  var bytes=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 // ===== Draw.io 기능 =====
 function decodeDrawioXml(btn){
-  return decodeURIComponent(escape(atob(btn.dataset.xml)));
+  return b2u(btn.dataset.xml);
 }
 
 // Draw.io XML 자동 수정 (LLM이 생성한 XML의 흔한 오류 교정)
@@ -4028,12 +4814,9 @@ function sanitizeDrawioXml(xml){
   // 2) 중복 속성 제거: style="..." style="..." → 첫 번째만
   xml = xml.replace(/(\w+="[^"]*")\s+\1/g, '$1');
 
-  // 3) 닫히지 않은 mxCell 태그 수정
-  xml = xml.replace(/<mxCell([^>]*[^\/])>(\s*<\/mxCell>)?/g, (m, attrs, close) => {
-    if (close) return m;
-    if (attrs.includes('<mxGeometry') || m.includes('</mxCell>')) return m;
-    return `<mxCell${attrs}/>`;
-  });
+  // 3) 중첩된 mxCell 분리 (mxCell 안에 mxCell이 있으면 평탄화)
+  //    주의: mxCell > mxGeometry 관계는 정상이므로 건드리지 않음
+  //    (기존 regex가 자식 mxGeometry 있는 mxCell을 self-closing으로 바꾸는 버그 수정)
 
   // 4) mxfile 래퍼가 없으면 추가
   if (!xml.includes('<mxfile') && xml.includes('<mxGraphModel')) {
@@ -4043,12 +4826,12 @@ function sanitizeDrawioXml(xml){
     xml = `<mxfile host="app.diagrams.net" type="device">\n<diagram id="d1" name="Page-1">\n<mxGraphModel dx="1422" dy="762" grid="1" pageWidth="1169" pageHeight="827">\n<root>\n<mxCell id="0"/>\n<mxCell id="1" parent="0"/>\n${xml}\n</root>\n</mxGraphModel>\n</diagram>\n</mxfile>`;
   }
 
-  // 5) 최종 검증: DOMParser로 파싱 시도, 실패하면 브루트포스 수정
+  // 5) 최종 검증: DOMParser로 파싱 시도, 실패하면 단계별 수정
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'application/xml');
+    let parser = new DOMParser();
+    let doc = parser.parseFromString(xml, 'application/xml');
     if (doc.querySelector('parsererror')) {
-      // 파싱 실패 — 모든 속성값에서 < > 를 강제 이스케이프
+      // 5a) 속성값 안의 이스케이프 안 된 < > 수정
       xml = xml.replace(/="([^"]*)"/g, (m, val) => {
         if (val.includes('<') && !val.match(/^[^<]*<(mxGeometry|mxPoint|Array)/)) {
           const forced = val.replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -4056,6 +4839,40 @@ function sanitizeDrawioXml(xml){
         }
         return m;
       });
+
+      // 5b) 재검증 - 여전히 실패하면 구조 수정 시도
+      doc = parser.parseFromString(xml, 'application/xml');
+      if (doc.querySelector('parsererror')) {
+        // mxCell 구조 재구성: 모든 mxCell/mxGeometry를 추출해서 올바른 구조로 재조립
+        const cellRe = /<mxCell\s[^>]*?\/>/g;
+        const cellWithChildRe = /<mxCell\s[^>]*?>[\s\S]*?<\/mxCell>/g;
+        const geoRe = /<mxGeometry\s[^>]*?\/>/g;
+        const geoWithChildRe = /<mxGeometry\s[^>]*?>[\s\S]*?<\/mxGeometry>/g;
+
+        // mxfile/diagram/mxGraphModel 래퍼 추출
+        const wrapMatch = xml.match(/([\s\S]*?<root>)([\s\S]*?)(<\/root>[\s\S]*)/);
+        if (wrapMatch) {
+          const [, header, body, footer] = wrapMatch;
+          // body에서 모든 완전한 요소 추출 (self-closing + with-children 모두)
+          const elements = [];
+          const allRe = /<(mxCell|mxGeometry|UserObject|Array|mxPoint)\s[^>]*?(?:\/>|>[\s\S]*?<\/\1>)/g;
+          // 먼저 mxCell+children 패턴 추출
+          const cellFullRe = /<mxCell\s[^>]*?>(?:\s*<mxGeometry[\s\S]*?(?:\/>|<\/mxGeometry>))*\s*<\/mxCell>/g;
+          const cellSelfRe = /<mxCell\s[^>]*?\/>/g;
+          let match;
+          while ((match = cellFullRe.exec(body)) !== null) elements.push(match[0]);
+          while ((match = cellSelfRe.exec(body)) !== null) {
+            if (!elements.some(e => e.includes(match[0]))) elements.push(match[0]);
+          }
+          // UserObject 패턴도 포함
+          const uoRe = /<UserObject[\s\S]*?<\/UserObject>/g;
+          while ((match = uoRe.exec(body)) !== null) elements.push(match[0]);
+
+          if (elements.length > 0) {
+            xml = header + '\n' + elements.join('\n') + '\n' + footer;
+          }
+        }
+      }
     }
   } catch(e) {}
 
@@ -4086,6 +4903,161 @@ function openInDrawio(btn){
   const xml = sanitizeDrawioXml(decodeDrawioXml(btn));
   const encoded = encodeURIComponent(xml);
   window.open('https://app.diagrams.net/#R' + encoded, '_blank');
+}
+
+// ===== Chart.js 인터랙티브 차트 =====
+const _chartInstances = {};
+
+function renderChartBlock(canvasId, jsonStr) {
+  // jsonStr은 이미 b2u()로 유니코드 디코딩된 상태
+  let raw = jsonStr;
+  // 한 줄 주석 제거
+  raw = raw.replace(/\/\/[^\n]*/g, '');
+  let config;
+  try {
+    config = JSON.parse(raw);
+  } catch(e) {
+    // JSON5 스타일 허용: trailing comma, 작은따옴표
+    raw = raw.replace(/,\s*([\]}])/g, '$1').replace(/'/g, '"');
+    config = JSON.parse(raw);
+  }
+
+  // 기본값 보강
+  if (!config.type) config.type = 'bar';
+  if (!config.options) config.options = {};
+  if (!config.options.responsive) config.options.responsive = true;
+  if (!config.options.maintainAspectRatio) config.options.maintainAspectRatio = true;
+  if (!config.options.plugins) config.options.plugins = {};
+
+  // 한글 폰트 기본 설정
+  if (!config.options.plugins.legend) config.options.plugins.legend = {};
+
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // 이전 인스턴스 정리
+  if (_chartInstances[canvasId]) {
+    _chartInstances[canvasId].destroy();
+  }
+  _chartInstances[canvasId] = new Chart(ctx, config);
+}
+
+function downloadChartPng(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const url = canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'chart.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function copyChartJson(btn) {
+  const b64 = btn.getAttribute('data-chart');
+  const json = b2u(b64);
+  navigator.clipboard.writeText(json).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ 복사됨';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+// ===== MD 다운로드/복사/미리보기 =====
+function decodeMdB64(btn){
+  const b64 = btn.getAttribute('data-md');
+  return b2u(b64);
+}
+function downloadMarkdown(btn){
+  const md = decodeMdB64(btn);
+  // 제목에서 파일명 추출
+  const titleMatch = md.match(/^#\s+(.+)$/m);
+  let filename = 'report.md';
+  if(titleMatch){
+    filename = titleMatch[1].replace(/[^\w가-힣\s-]/g,'').trim().replace(/\s+/g,'_').substring(0,50) + '.md';
+  }
+  const blob = new Blob([md], {type:'text/markdown;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function copyMdContent(btn){
+  const md = decodeMdB64(btn);
+  navigator.clipboard.writeText(md).then(()=>{
+    const orig = btn.textContent;
+    btn.textContent = '✅ 복사됨';
+    setTimeout(()=>btn.textContent=orig, 1500);
+  });
+}
+function renderMdPreview(escapedMd){
+  // HTML escaped 마크다운을 간단히 렌더링 (미리보기용)
+  let s = escapedMd;
+  // 헤딩
+  s = s.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+  s = s.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
+  s = s.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+  s = s.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  s = s.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+  // bold / italic
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // 체크리스트
+  s = s.replace(/^- \[x\]\s+(.+)$/gm, '<div>☑️ $1</div>');
+  s = s.replace(/^- \[ \]\s+(.+)$/gm, '<div>⬜ $1</div>');
+  // 리스트
+  s = s.replace(/^- (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
+  // 수평선
+  s = s.replace(/^---+$/gm, '<hr>');
+  // 블록쿼트
+  s = s.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
+  // 인라인 코드
+  s = s.replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+  // 테이블 (간단 처리)
+  s = s.replace(/((?:^\|.+\|[ ]*\n){2,})/gm, function(tbl){
+    const rows = tbl.trim().split('\n').filter(r=>r.trim());
+    if(rows.length < 2) return tbl;
+    const parseRow = r => r.replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+    const hdr = parseRow(rows[0]);
+    let startIdx = 1;
+    if(rows[1] && /^[\s|:-]+$/.test(rows[1])) startIdx = 2;
+    let html = '<table><thead><tr>' + hdr.map(h=>`<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+    for(let i=startIdx;i<rows.length;i++){
+      const cells = parseRow(rows[i]);
+      html += '<tr>' + cells.map(c=>`<td>${c}</td>`).join('') + '</tr>';
+    }
+    return html + '</tbody></table>';
+  });
+  // 줄바꿈
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
+// ===== 응답 전체를 MD 다운로드 가능하게 =====
+function appendMdDownloadBar(rawContent){
+  // 마지막 assistant 메시지에 MD 다운로드 바 추가
+  const msgs = document.querySelectorAll('.msg.assistant');
+  if(msgs.length === 0) return;
+  const lastMsg = msgs[msgs.length - 1];
+  const mdB64 = u2b(rawContent);
+  const bar = document.createElement('div');
+  bar.className = 'md-report-header';
+  bar.style.marginTop = '10px';
+  bar.style.borderRadius = '8px';
+  bar.innerHTML = `<span>📋 마크다운 문서로 저장</span>
+    <div class="md-report-actions">
+      <button class="md-report-btn" onclick="copyMdContent(this)" data-md="${mdB64}">📋 복사</button>
+      <button class="md-report-btn md-download" onclick="downloadMarkdown(this)" data-md="${mdB64}">📥 MD 다운로드</button>
+    </div>`;
+  lastMsg.appendChild(bar);
 }
 
 async function removeCsv(){
@@ -4156,10 +5128,12 @@ function handleChatFileSelect(files){
   renderChatAttach();
   document.getElementById('chatFileInput').value = '';
 
-  // 추천 스킬을 사이드바에 표시
+  // 파일 기반 추천 스킬 프리로드 (사이드바 표시 + 전송 시 자동 포함)
   if(hintSkills.length > 0){
-    autoLoadedSkills = [...new Set(hintSkills)];
+    const unique = [...new Set(hintSkills)].filter(id => !selSkills.includes(id));
+    autoLoadedSkills = [...new Set([...autoLoadedSkills, ...unique])];
     renderSkills();
+    updateLoaded();
   }
 }
 
@@ -4230,20 +5204,184 @@ async function uploadChatPendingFiles(){
 }
 
 // ===== 오른쪽 코드 어시스턴트 패널 =====
-let rpFiles = [];  // [{name, content, ext, size}]
+let rpFiles = [];  // [{name, path, content, ext, size}]
 let rpSelectedMode = null;
+let rpTreeData = null;  // 트리 구조 데이터
+let rpSelectedFile = null;  // 현재 선택된 파일 인덱스
 const rpModeLabels = {
   explain:'코드 설명', find_bugs:'버그 탐지', improve:'개선 제안',
   tests:'테스트 생성', docstring:'문서화', refactor:'리팩토링'
 };
 const rpModePrompts = {
-  explain:'[EXPLAIN] 이 코드를 분석하고 상세히 설명해주세요. 전체 목적, 구조, 실행 흐름, 핵심 알고리즘, 의존성을 한국어로 설명해주세요.',
-  find_bugs:'[FIND_BUGS] 이 코드에서 버그를 찾아주세요. 정적 분석, 로직 오류, 보안 취약점, 동시성 문제, 에러 처리를 검토하고 심각도와 수정 방안을 제시해주세요.',
-  improve:'[IMPROVE] 이 코드의 개선점을 제안해주세요. 가독성, 성능, 베스트 프랙티스, 유지보수성, 테스트 용이성 관점에서 분석해주세요.',
-  tests:'[TESTS] 이 코드에 대한 테스트 코드를 생성해주세요. 정상 케이스, 엣지 케이스, 에러 케이스를 포함하고 즉시 실행 가능한 코드를 작성해주세요.',
-  docstring:'[DOCSTRING] 이 코드에 독스트링과 문서를 추가해주세요. 함수, 클래스, 모듈 단위로 Google/NumPy 스타일의 한국어 독스트링을 작성해주세요.',
-  refactor:'[REFACTOR] 이 코드를 리팩토링해주세요. SOLID 원칙, 디자인 패턴, 코드 구조, 중복 제거, 네이밍을 개선하고 전후 코드를 비교해주세요.'
+  explain:'[EXPLAIN] 아래 코드를 분석해주세요.\n⚠️ 먼저 코드의 프로그래밍 언어와 프레임워크를 판별한 후, 해당 언어의 관점에서 분석하세요.\n1. 감지된 언어/프레임워크 명시\n2. 전체 목적과 아키텍처\n3. 주요 함수/클래스 구조\n4. 실행 흐름과 핵심 알고리즘\n5. 의존성 분석\n한국어로 설명해주세요.',
+  find_bugs:'[FIND_BUGS] 아래 코드에서 버그를 찾아주세요.\n⚠️ 먼저 코드의 프로그래밍 언어를 판별하고, 해당 언어 특유의 버그 패턴을 중점 검토하세요.\n1. 감지된 언어 명시\n2. 언어 특화 버그 패턴 (Python: 인덴트/타입, Java: NPE/동시성, C#: async/dispose, JS: 타입강제/this바인딩)\n3. 로직 오류, 보안 취약점\n4. 심각도 🔴🟡🟢 표시 + 수정 코드 제시\n한국어로 분석해주세요.',
+  improve:'[IMPROVE] 아래 코드의 개선점을 제안해주세요.\n⚠️ 먼저 코드의 프로그래밍 언어를 판별하고, 해당 언어의 베스트 프랙티스 기준으로 개선하세요.\n1. 감지된 언어 명시\n2. 언어별 관용적 표현 적용 (Python: PEP8/컴프리헨션, Java: Stream API, C#: LINQ, JS: ES6+)\n3. 가독성, 성능, 유지보수성 개선\n4. 개선 전/후 코드 비교\n한국어로 설명해주세요.',
+  tests:'[TESTS] 아래 코드에 대한 테스트 코드를 생성해주세요.\n⚠️ 먼저 코드의 프로그래밍 언어를 판별하고, 해당 언어의 표준 테스트 프레임워크를 사용하세요.\n(Python→pytest, Java→JUnit5, C#→xUnit, JS/TS→Jest, Go→go test, Rust→cargo test)\n1. 감지된 언어/프레임워크 명시\n2. 정상/엣지/에러 케이스\n3. 즉시 실행 가능한 코드\n한국어 주석으로 설명해주세요.',
+  docstring:'[DOCSTRING] 아래 코드에 문서화를 추가해주세요.\n⚠️ 먼저 코드의 프로그래밍 언어를 판별하고, 해당 언어의 표준 문서화 스타일을 적용하세요.\n(Python→Google/NumPy docstring, Java→Javadoc, C#→XML 주석, JS/TS→JSDoc)\n1. 감지된 언어 명시\n2. 함수/클래스별 문서화 (파라미터, 반환값, 예외, 예시)\n3. 핵심 로직 인라인 주석 (한국어)\n⚠️ 중요: 전체 파일 내용을 반복하지 말고, 문서화가 추가된 핵심 함수/클래스만 제시하세요.',
+  refactor:'[REFACTOR] 아래 코드를 리팩토링해주세요.\n⚠️ 먼저 코드의 프로그래밍 언어를 판별하고, 해당 언어의 디자인 패턴과 관례에 맞게 리팩토링하세요.\n1. 감지된 언어 명시\n2. SOLID 원칙 적용\n3. 언어별 관용 패턴 (Python: 데코레이터/컨텍스트매니저, Java: Builder/DI, C#: async패턴)\n4. 리팩토링 전/후 비교\n한국어로 설명해주세요.'
 };
+
+// 코드 어시스턴트 전용 언어/도구 감지 매핑
+const rpExtLangMap = {
+  'py':'Python','js':'JavaScript','ts':'TypeScript','tsx':'TypeScript(React)','jsx':'JavaScript(React)',
+  'java':'Java','c':'C','cpp':'C++','h':'C/C++ Header','cs':'C#',
+  'go':'Go','rs':'Rust','rb':'Ruby','php':'PHP','swift':'Swift','kt':'Kotlin',
+  'html':'HTML','css':'CSS','json':'JSON','xml':'XML','yaml':'YAML','yml':'YAML',
+  'sh':'Shell','bat':'Batch','sql':'SQL','r':'R','scala':'Scala','dart':'Dart',
+  'md':'Markdown','dockerfile':'Docker','makefile':'Make','toml':'TOML','cfg':'Config','ini':'Config'
+};
+const rpExtSkillMap = {
+  'py':['agent-python-pro'], 'js':['agent-javascript-pro','agent-nextjs-developer'],
+  'ts':['agent-javascript-pro','agent-nextjs-developer'], 'tsx':['agent-javascript-pro','agent-nextjs-developer'],
+  'jsx':['agent-javascript-pro','agent-nextjs-developer'],
+  'java':['code-assistant'], 'c':['code-assistant'], 'cpp':['code-assistant'], 'cs':['code-assistant'],
+  'go':['code-assistant'], 'rs':['code-assistant'], 'rb':['code-assistant'], 'php':['code-assistant'],
+  'swift':['code-assistant'], 'kt':['code-assistant'], 'html':['web-artifacts-builder'],
+  'css':['web-artifacts-builder'], 'sql':['code-assistant'], 'r':['code-assistant'],
+  'dart':['code-assistant'], 'scala':['code-assistant']
+};
+const rpLangColors = {
+  'Python':'#3776ab','JavaScript':'#f7df1e','TypeScript':'#3178c6','TypeScript(React)':'#3178c6',
+  'JavaScript(React)':'#61dafb','Java':'#b07219','C':'#555555','C++':'#f34b7d','C#':'#178600',
+  'Go':'#00add8','Rust':'#dea584','Ruby':'#701516','PHP':'#4f5d95','Swift':'#f05138','Kotlin':'#a97bff',
+  'HTML':'#e34c26','CSS':'#563d7c','Shell':'#89e051','SQL':'#e38c00','R':'#198ce7','Dart':'#00b4ab'
+};
+
+// 코드 요약: 큰 파일은 시그니처+핵심부분만 추출
+function summarizeCode(content, ext, maxLines){
+  maxLines = maxLines || 150;
+  const lines = content.split('\n');
+  if(lines.length <= maxLines) return content; // 작은 파일은 전체 전달
+
+  const result = [];
+  const sigPatterns = {
+    'py': /^\s*(class |def |async def |import |from .+ import|@)/,
+    'java': /^\s*(public |private |protected |class |interface |import |@|package )/,
+    'cs': /^\s*(public |private |protected |internal |class |interface |using |namespace |\[)/,
+    'js': /^\s*(function |const |let |var |class |export |import |async |module\.)/,
+    'ts': /^\s*(function |const |let |var |class |export |import |async |interface |type |module\.)/,
+    'tsx': /^\s*(function |const |let |var |class |export |import |async |interface |type )/,
+    'jsx': /^\s*(function |const |let |var |class |export |import |async )/,
+    'go': /^\s*(func |type |package |import |var |const )/,
+    'rs': /^\s*(fn |pub |struct |enum |impl |use |mod |trait )/,
+    'rb': /^\s*(class |def |module |require |include |attr_)/,
+    'php': /^\s*(function |class |namespace |use |public |private |protected )/,
+    'swift': /^\s*(func |class |struct |enum |protocol |import |var |let )/,
+    'kt': /^\s*(fun |class |object |interface |import |val |var |data class)/,
+    'c': /^\s*(#include |#define |typedef |struct |int |void |char |float |double |static )/,
+    'cpp': /^\s*(#include |#define |typedef |struct |class |template |namespace |int |void )/,
+    'h': /^\s*(#include |#define |#ifndef |typedef |struct |class |extern )/,
+  };
+  const pat = sigPatterns[ext] || /^\s*(function |class |def |import |export |public |private )/;
+
+  // 1) 첫 30줄 (imports, 설정)
+  result.push('// === 파일 시작 (첫 30줄) ===');
+  result.push(...lines.slice(0, 30));
+
+  // 2) 시그니처 라인 추출 (함수/클래스 정의 + 전후 2줄)
+  result.push('');
+  result.push('// === 주요 시그니처 & 구조 ===');
+  const added = new Set();
+  lines.forEach((line, i)=>{
+    if(i < 30) return; // 이미 포함됨
+    if(pat.test(line)){
+      for(let j=Math.max(30,i-1); j<=Math.min(lines.length-1,i+3); j++){
+        if(!added.has(j)){
+          added.add(j);
+          result.push(`[L${j+1}] ${lines[j]}`);
+        }
+      }
+      result.push('  ...');
+    }
+  });
+
+  // 3) 마지막 10줄
+  result.push('');
+  result.push('// === 파일 끝 (마지막 10줄) ===');
+  result.push(...lines.slice(-10));
+
+  result.push(`\n// [총 ${lines.length}줄 중 시그니처 요약 - 전체 코드 필요시 요청하세요]`);
+  return result.join('\n');
+}
+
+// catalog에 실제 존재하는 스킬인지 확인
+function isSkillInCatalog(skillId){
+  for(const did of Object.keys(catalog)){
+    const d = catalog[did];
+    if(d && d.skills && d.skills.some(s=>s.id===skillId && s.available)) return true;
+  }
+  return false;
+}
+
+function detectRpLanguages(){
+  const langCount = {};
+  const detectedSkills = new Set();
+
+  rpFiles.forEach(f=>{
+    const lang = rpExtLangMap[f.ext];
+    if(lang){
+      langCount[lang] = (langCount[lang]||0) + 1;
+    }
+    const skills = rpExtSkillMap[f.ext];
+    if(skills) skills.forEach(s=>detectedSkills.add(s));
+  });
+
+  const panel = document.getElementById('rpLangDetect');
+  const tagsEl = document.getElementById('rpLangTags');
+  const autoEl = document.getElementById('rpAutoSkills');
+
+  if(rpFiles.length === 0 || Object.keys(langCount).length === 0){
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+
+  // 감지된 언어 태그 렌더링 (파일 수 기준 내림차순)
+  const sorted = Object.entries(langCount).sort((a,b)=>b[1]-a[1]);
+  const primaryLang = sorted[0][0];
+  tagsEl.innerHTML = sorted.map(([lang, cnt])=>{
+    const color = rpLangColors[lang] || '#6b7280';
+    const isPrimary = lang === primaryLang;
+    return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:10px;background:${color}22;border:${isPrimary?'2':'1'}px solid ${color}${isPrimary?'':'55'};color:${color};font-weight:600;font-size:10px;">${isPrimary?'⭐ ':''}${lang} <span style="font-weight:400;color:#888">${cnt}</span></span>`;
+  }).join('');
+
+  // 자동 스킬 로드 - catalog에 실제 있는 것만
+  const newSkills = [];
+  const loadedNames = [];
+  // code-assistant 항상 먼저
+  if(isSkillInCatalog('code-assistant') && !selSkills.includes('code-assistant')){
+    selSkills.push('code-assistant');
+    newSkills.push('code-assistant');
+  }
+  if(selSkills.includes('code-assistant')) loadedNames.push('code-assistant');
+
+  detectedSkills.forEach(skill=>{
+    if(skill === 'code-assistant') return;
+    if(isSkillInCatalog(skill)){
+      if(!selSkills.includes(skill)){
+        selSkills.push(skill);
+        newSkills.push(skill);
+      }
+      loadedNames.push(skill);
+    }
+  });
+
+  // autoLoadedSkills 업데이트 (UI에서 🧠자동 배지 표시용)
+  autoLoadedSkills = [...new Set([...autoLoadedSkills, ...newSkills])];
+
+  if(newSkills.length > 0){
+    renderSkills();
+    updateLoaded();
+  }
+
+  // 상태 표시
+  const availableLoaded = loadedNames.filter(s=>s!=='code-assistant');
+  if(availableLoaded.length > 0){
+    autoEl.innerHTML = '✅ <b>자동 로드:</b> ' + availableLoaded.join(', ') + ' + code-assistant';
+  } else {
+    autoEl.innerHTML = '✅ <b>주 언어:</b> ' + primaryLang + ' → LLM이 자동 판별하여 분석합니다';
+  }
+}
 
 function toggleRightPanel(){
   const rp = document.getElementById('rightPanel');
@@ -4282,6 +5420,215 @@ function toggleRightPanel(){
   });
 })();
 
+function switchUploadMode(mode, btn){
+  document.querySelectorAll('.rp-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('rpFolderMode').style.display = mode==='folder' ? 'block' : 'none';
+  document.getElementById('rpFileMode').style.display = mode==='files' ? 'block' : 'none';
+}
+
+function handleRpFolderSelect(files){
+  const codeExts = ['py','js','html','css','json','xml','yaml','yml','c','cpp','h','java','go','rs','sh','bat','md','txt','ts','tsx','jsx','rb','php','swift','kt','toml','cfg','ini','env','gitignore','dockerfile','makefile'];
+  const skipDirs = ['node_modules','.git','__pycache__','.venv','venv','.next','dist','build','.idea','.vscode'];
+  let pending = 0;
+  let totalSize = 0;
+
+  for(const f of files){
+    const path = f.webkitRelativePath || f.name;
+    // 불필요한 디렉토리 스킵
+    const parts = path.split('/');
+    if(parts.some(p => skipDirs.includes(p))) continue;
+
+    const ext = f.name.split('.').pop().toLowerCase();
+    if(!codeExts.includes(ext) && f.name.indexOf('.') !== -1) continue;
+    if(f.size > 500000) continue; // 500KB 이상 파일 스킵
+
+    pending++;
+    totalSize += f.size;
+    const reader = new FileReader();
+    reader.onload = function(e){
+      rpFiles.push({name:f.name, path:path, content:e.target.result, ext:ext, size:f.size});
+      pending--;
+      if(pending === 0){
+        buildRpTree();
+        renderRpTree();
+        updateRpRunBtn();
+        detectRpLanguages();
+      }
+    };
+    reader.readAsText(f);
+  }
+  document.getElementById('rpFolderInput').value = '';
+}
+
+function buildRpTree(){
+  rpTreeData = {name:'root', children:{}, files:[]};
+  rpFiles.forEach((f,idx)=>{
+    const parts = (f.path || f.name).split('/');
+    let node = rpTreeData;
+    // 첫 번째 파트는 루트 폴더명
+    for(let i=0; i<parts.length-1; i++){
+      if(!node.children[parts[i]]){
+        node.children[parts[i]] = {name:parts[i], children:{}, files:[]};
+      }
+      node = node.children[parts[i]];
+    }
+    node.files.push({name:parts[parts.length-1], idx:idx, ext:f.ext, size:f.size});
+  });
+}
+
+let rpCheckedFiles = new Set();  // 체크된 파일 인덱스
+
+function renderRpTree(){
+  const container = document.getElementById('rpTree');
+  const stats = document.getElementById('rpTreeStats');
+  const selectBar = document.getElementById('rpSelectBar');
+  if(rpFiles.length === 0){
+    container.style.display = 'none';
+    stats.style.display = 'none';
+    selectBar.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  stats.style.display = 'flex';
+  selectBar.style.display = 'flex';
+
+  // 기본: 전체 체크
+  if(rpCheckedFiles.size === 0){
+    rpFiles.forEach((_,i)=>rpCheckedFiles.add(i));
+  }
+
+  // 통계
+  const folders = new Set();
+  rpFiles.forEach(f=>{
+    const parts = (f.path||f.name).split('/');
+    for(let i=1;i<parts.length;i++) folders.add(parts.slice(0,i).join('/'));
+  });
+  const totalSize = rpFiles.reduce((s,f)=>s+f.size,0);
+  const sizeStr = totalSize > 1048576 ? (totalSize/1048576).toFixed(1)+'MB' : (totalSize/1024).toFixed(1)+'KB';
+  document.getElementById('rpStatsInfo').textContent = rpFiles.length+' 파일 / '+folders.size+' 폴더';
+  document.getElementById('rpStatsSize').textContent = sizeStr;
+
+  container.innerHTML = renderTreeNode(rpTreeData, true);
+  updateCheckedCount();
+}
+
+function renderTreeNode(node, isRoot){
+  let html = '';
+  // 폴더들
+  const childKeys = Object.keys(node.children).sort();
+  childKeys.forEach(key=>{
+    const child = node.children[key];
+    const fileCount = countFiles(child);
+    const folderIdxs = collectFileIdxs(child);
+    const allChecked = folderIdxs.every(i=>rpCheckedFiles.has(i));
+    const someChecked = folderIdxs.some(i=>rpCheckedFiles.has(i));
+    html += `<div class="rp-tree-node rp-tree-folder">
+      <input type="checkbox" class="rp-tree-cb" data-folder-idxs="${folderIdxs.join(',')}" ${allChecked?'checked':''} ${!allChecked&&someChecked?'indeterminate':''} onclick="event.stopPropagation();toggleFolderCheck(this)" onchange="event.stopPropagation()">
+      <span class="rp-tree-node-content" onclick="toggleTreeFolder(this.parentElement)"><span class="rp-tree-toggle">▶</span><span class="rp-tree-icon">📁</span>${esc(key)} <span style="color:#bbb;font-weight:400">(${fileCount})</span></span>
+    </div><div class="rp-tree-children" style="display:none">${renderTreeNode(child, false)}</div>`;
+  });
+  // 파일들
+  node.files.sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
+    const langIcon = {py:'🐍',js:'📜',html:'🌐',css:'🎨',java:'☕',c:'⚙️',cpp:'⚙️',go:'🐹',rs:'🦀',sh:'💻',json:'📋',yaml:'📋',yml:'📋',md:'📄',ts:'📘',tsx:'📘'}[f.ext]||'📄';
+    const checked = rpCheckedFiles.has(f.idx);
+    html += `<div class="rp-tree-node rp-tree-file" data-idx="${f.idx}">
+      <input type="checkbox" class="rp-tree-cb" data-idx="${f.idx}" ${checked?'checked':''} onclick="event.stopPropagation();toggleFileCheck(${f.idx},this)">
+      <span class="rp-tree-node-content" onclick="selectTreeFile(${f.idx},this.parentElement)"><span class="rp-tree-toggle"> </span><span class="rp-tree-icon">${langIcon}</span>${esc(f.name)}</span>
+    </div>`;
+  });
+  return html;
+}
+
+function collectFileIdxs(node){
+  let idxs = node.files.map(f=>f.idx);
+  Object.values(node.children).forEach(ch=>{ idxs = idxs.concat(collectFileIdxs(ch)); });
+  return idxs;
+}
+
+function toggleFileCheck(idx, cb){
+  if(cb.checked) rpCheckedFiles.add(idx);
+  else rpCheckedFiles.delete(idx);
+  updateCheckedCount();
+  updateParentFolderChecks();
+}
+
+function toggleFolderCheck(cb){
+  const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number);
+  if(cb.checked) idxs.forEach(i=>rpCheckedFiles.add(i));
+  else idxs.forEach(i=>rpCheckedFiles.delete(i));
+  // 하위 파일 + 하위 폴더 체크박스 모두 동기화
+  const parent = cb.closest('.rp-tree-folder');
+  const childContainer = parent ? parent.nextElementSibling : null;
+  if(childContainer && childContainer.classList.contains('rp-tree-children')){
+    childContainer.querySelectorAll('input.rp-tree-cb').forEach(childCb=>{
+      childCb.checked = cb.checked;
+      childCb.indeterminate = false;
+    });
+  }
+  updateCheckedCount();
+  updateParentFolderChecks();
+}
+
+function updateParentFolderChecks(){
+  document.querySelectorAll('.rp-tree-cb[data-folder-idxs]').forEach(cb=>{
+    const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number);
+    const checkedCount = idxs.filter(i=>rpCheckedFiles.has(i)).length;
+    cb.checked = checkedCount === idxs.length;
+    cb.indeterminate = checkedCount > 0 && checkedCount < idxs.length;
+  });
+}
+
+function rpCheckAll(checked){
+  if(checked) rpFiles.forEach((_,i)=>rpCheckedFiles.add(i));
+  else rpCheckedFiles.clear();
+  document.querySelectorAll('.rp-tree-cb').forEach(cb=>{ cb.checked=checked; cb.indeterminate=false; });
+  updateCheckedCount();
+}
+
+function updateCheckedCount(){
+  const count = rpCheckedFiles.size;
+  document.getElementById('rpCheckedCount').textContent = count+'개 선택';
+  updateRpRunBtn();
+}
+
+function countFiles(node){
+  let c = node.files.length;
+  Object.values(node.children).forEach(ch=>{ c += countFiles(ch); });
+  return c;
+}
+
+function toggleTreeFolder(el){
+  const children = el.nextElementSibling;
+  const toggle = el.querySelector('.rp-tree-toggle');
+  if(children.style.display === 'none'){
+    children.style.display = 'block';
+    toggle.textContent = '▼';
+  } else {
+    children.style.display = 'none';
+    toggle.textContent = '▶';
+  }
+}
+
+function selectTreeFile(idx, el){
+  document.querySelectorAll('.rp-tree-file').forEach(e=>e.classList.remove('active'));
+  if(el) el.classList.add('active');
+  rpSelectedFile = idx;
+}
+
+function clearRpProject(){
+  rpFiles = [];
+  rpTreeData = null;
+  rpSelectedFile = null;
+  rpCheckedFiles.clear();
+  document.getElementById('rpTree').style.display = 'none';
+  document.getElementById('rpTreeStats').style.display = 'none';
+  document.getElementById('rpLangDetect').style.display = 'none';
+  document.getElementById('rpSelectBar').style.display = 'none';
+  document.getElementById('rpFileList').innerHTML = '';
+  updateRpRunBtn();
+}
+
 function handleRpFileSelect(files){
   const codeExts = ['py','js','html','css','json','xml','yaml','yml','c','cpp','h','java','go','rs','sh','bat','md','txt','ts','tsx','jsx','rb','php','swift','kt'];
   for(const f of files){
@@ -4291,14 +5638,8 @@ function handleRpFileSelect(files){
     reader.onload = function(e){
       rpFiles.push({name:f.name, content:e.target.result, ext:ext, size:f.size});
       renderRpFiles();
-      updateRpCodePreview();
       updateRpRunBtn();
-      // 자동으로 code-assistant 스킬 로드
-      if(!selSkills.includes('code-assistant')){
-        selSkills.push('code-assistant');
-        renderSkills();
-        updateLoaded();
-      }
+      detectRpLanguages();
     };
     reader.readAsText(f);
   }
@@ -4311,7 +5652,7 @@ function renderRpFiles(){
   list.innerHTML = rpFiles.map((f,i)=>{
     const sizeStr = f.size > 1048576 ? (f.size/1048576).toFixed(1)+'MB' : (f.size/1024).toFixed(1)+'KB';
     const langIcon = {py:'🐍',js:'📜',html:'🌐',css:'🎨',java:'☕',c:'⚙️',cpp:'⚙️',go:'🐹',rs:'🦀',sh:'💻',json:'📋',yaml:'📋',yml:'📋',md:'📄',ts:'📘',tsx:'📘'}[f.ext] || '📄';
-    return `<div class="rp-file-item" onclick="previewRpFile(${i})" style="cursor:pointer">
+    return `<div class="rp-file-item">
       <span>${langIcon}</span><span class="fname">${esc(f.name)}</span><span class="fsize">${sizeStr}</span>
       <button class="fremove" onclick="event.stopPropagation();removeRpFile(${i})">✕</button>
     </div>`;
@@ -4321,28 +5662,9 @@ function renderRpFiles(){
 function removeRpFile(idx){
   rpFiles.splice(idx, 1);
   renderRpFiles();
-  updateRpCodePreview();
   updateRpRunBtn();
 }
 
-function previewRpFile(idx){
-  const f = rpFiles[idx];
-  const preview = document.getElementById('rpCodePreview');
-  const noFile = document.getElementById('rpNoFile');
-  preview.style.display = 'block';
-  noFile.style.display = 'none';
-  const lines = f.content.split('\n').slice(0, 50);
-  preview.textContent = lines.join('\n') + (f.content.split('\n').length > 50 ? '\n... (더 많은 코드)' : '');
-}
-
-function updateRpCodePreview(){
-  if(rpFiles.length === 0){
-    document.getElementById('rpCodePreview').style.display = 'none';
-    document.getElementById('rpNoFile').style.display = 'block';
-  } else {
-    previewRpFile(rpFiles.length - 1);
-  }
-}
 
 function selectRpMode(btn){
   document.querySelectorAll('.rp-action-btn').forEach(b=>b.classList.remove('active'));
@@ -4353,9 +5675,13 @@ function selectRpMode(btn){
 
 function updateRpRunBtn(){
   const btn = document.getElementById('rpRunBtn');
-  if(rpFiles.length > 0 && rpSelectedMode){
+  const checkedCount = rpCheckedFiles.size;
+  if(rpFiles.length > 0 && rpSelectedMode && checkedCount > 0){
     btn.disabled = false;
-    btn.textContent = '▶ ' + rpModeLabels[rpSelectedMode] + ' 실행';
+    btn.textContent = '▶ ' + rpModeLabels[rpSelectedMode] + ' (' + checkedCount + '개 파일)';
+  } else if(rpFiles.length > 0 && checkedCount === 0){
+    btn.disabled = true;
+    btn.textContent = '▶ 분석할 파일을 선택하세요 (체크박스)';
   } else {
     btn.disabled = true;
     btn.textContent = rpFiles.length === 0 ? '▶ 코드 파일을 업로드하세요' : '▶ 분석 모드를 선택하세요';
@@ -4373,45 +5699,304 @@ async function runCodeAssistant(){
     updateLoaded();
   }
 
-  // 파일 내용을 합쳐서 프롬프트 구성
-  let codeContent = '';
-  rpFiles.forEach(f=>{
-    codeContent += `\n--- 파일: ${f.name} (${f.ext}) ---\n${f.content}\n`;
+  // 체크된 파일만 필터링
+  const selectedFiles = rpFiles.filter((_,i)=>rpCheckedFiles.has(i));
+  if(selectedFiles.length === 0){ alert('분석할 파일을 선택해주세요 (체크박스).'); return; }
+
+  // 프로젝트 트리 구조 생성
+  let treeText = '';
+  if(rpTreeData){
+    treeText = '=== 프로젝트 구조 ===\n' + buildTreeText(rpTreeData, '') + '\n';
+    treeText += `\n(전체 ${rpFiles.length}개 중 ${selectedFiles.length}개 파일 선택됨)\n`;
+  }
+
+  // 선택된 파일 내용을 스마트하게 추려서 구성
+  let codeContent = treeText;
+  const maxLinesPerFile = selectedFiles.length <= 3 ? 300 : selectedFiles.length <= 8 ? 150 : 80;
+
+  selectedFiles.forEach(f=>{
+    const summarized = summarizeCode(f.content, f.ext, maxLinesPerFile);
+    codeContent += `\n--- 파일: ${f.path||f.name} (${f.ext}) ---\n${summarized}\n`;
   });
 
   const prompt = rpModePrompts[rpSelectedMode] + '\n\n' + codeContent;
+  const modeLabel = rpModeLabels[rpSelectedMode] || rpSelectedMode;
 
-  // 채팅 입력창에 주입 후 전송
-  const input = document.getElementById('input');
-  input.value = prompt;
-  input.style.height = 'auto';
-  input.style.height = input.scrollHeight + 'px';
+  // 모든 분석 모드 → 채팅으로 전송 (대화 이어가기 위해)
+  {
+    const fileNames = selectedFiles.map(f=>f.name).join(', ');
+    const shortLabel = '\u{1f4ca} [' + modeLabel + '] ' + fileNames;
+    addMsg('user', shortLabel);
+    history.push({role:'user', content:prompt});
 
-  // 결과 영역 초기화
-  const result = document.getElementById('rpResult');
-  result.style.display = 'block';
-  result.innerHTML = '<span style="color:#6366f1">⏳ 분석 중...</span>';
+    const typing = addTyping();
+    isSending = true;
+    const btn = document.getElementById('sendBtn');
+    btn.textContent = '\u23f9';
+    btn.classList.add('stop-mode');
+    btn.disabled = false;
+    chatAbort = new AbortController();
 
-  // 전송
-  handleSendStop();
+    // 버튼 비활성화
+    const runBtn = document.getElementById('rpRunBtn');
+    runBtn.disabled = true;
+    runBtn.textContent = '\u23f3 분석 중...';
 
-  // 결과 추적 (마지막 메시지가 assistant일 때 업데이트)
-  const checkResult = setInterval(()=>{
-    const msgs = document.querySelectorAll('.msg.assistant');
-    if(msgs.length > 0){
-      const lastMsg = msgs[msgs.length - 1];
-      const txt = lastMsg.textContent.trim();
-      if(txt && txt !== '⏳' && txt.length > 20){
-        result.innerHTML = '<strong>✅ 분석 완료</strong> - 아래 채팅에서 결과를 확인하세요.';
-        clearInterval(checkResult);
+    try{
+      const resp = await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        signal: chatAbort.signal,
+        body:JSON.stringify({
+          env: selEnv,
+          messages: history,
+          skills: [...selSkills],
+          effort,
+          format: selFormat,
+          writing_style: document.getElementById('writingStyle').value.trim(),
+          system_prompt: document.getElementById('systemPromptInput').value.trim(),
+          max_tokens: maxTokens,
+        })
+      });
+      const data = await resp.json();
+      typing.remove();
+      if(data.error){
+        addMsg('assistant','\u274c '+data.error);
+      } else {
+        let info = '';
+        if(data.loaded_skills && data.loaded_skills.length > 0){
+          let extra = data.tokens_budget ? ' ['+data.tokens_budget+']' : '';
+          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+envs[selEnv].name+'] ('+data.system_prompt_length+'\uc790)'+extra;
+        }
+        let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
+        addMsg('assistant', data.content + truncWarn + info);
+        history.push({role:'assistant', content:data.content});
+      }
+    }catch(e){
+      typing.remove();
+      if(e.name !== 'AbortError'){
+        addMsg('assistant','\u274c 서버 연결 실패: '+e.message);
       }
     }
-  }, 1000);
-  setTimeout(()=>clearInterval(checkResult), 120000);
+    isSending = false;
+    chatAbort = null;
+    btn.textContent = '\u25b6';
+    btn.classList.remove('stop-mode');
+    btn.disabled = false;
+    document.getElementById('input').focus();
+    runBtn.disabled = false;
+    updateRpRunBtn();
+    saveCurrentSession();
+  }
+}
+
+let rpLastAnalysisContent = '';
+
+function toggleRpResultExpand(){
+  document.getElementById('rpResult').classList.toggle('expanded');
+}
+function copyRpResult(){
+  const body = document.querySelector('.rp-result-body');
+  if(body) navigator.clipboard.writeText(body.innerText).then(()=>alert('복사 완료!'));
+}
+function sendRpResultToChat(){
+  if(!rpLastAnalysisContent) return;
+  addMsg('assistant', rpLastAnalysisContent);
+  history.push({role:'assistant', content: rpLastAnalysisContent});
+  saveCurrentSession();
+}
+
+function buildTreeText(node, prefix){
+  let text = '';
+  const childKeys = Object.keys(node.children).sort();
+  const allItems = [...childKeys.map(k=>({type:'dir',name:k,node:node.children[k]})), ...node.files.map(f=>({type:'file',name:f.name}))];
+  allItems.forEach((item,i)=>{
+    const isLast = i === allItems.length - 1;
+    const connector = isLast ? '└── ' : '├── ';
+    const nextPrefix = prefix + (isLast ? '    ' : '│   ');
+    if(item.type === 'dir'){
+      text += prefix + connector + '📁 ' + item.name + '/\n';
+      text += buildTreeText(item.node, nextPrefix);
+    } else {
+      text += prefix + connector + item.name + '\n';
+    }
+  });
+  return text;
+}
+
+// 폴더 드래그앤드롭
+(function(){
+  const drop = document.getElementById('rpFolderDrop');
+  if(!drop) return;
+  drop.addEventListener('dragover', e=>{e.preventDefault();e.stopPropagation();drop.classList.add('dragover');});
+  drop.addEventListener('dragleave', e=>{e.preventDefault();drop.classList.remove('dragover');});
+  drop.addEventListener('drop', e=>{
+    e.preventDefault();e.stopPropagation();drop.classList.remove('dragover');
+    // 폴더 드롭은 DataTransferItem으로 처리
+    if(e.dataTransfer.items){
+      const items = [...e.dataTransfer.items];
+      const entries = items.map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+      if(entries.length > 0){
+        readEntriesRecursive(entries);
+        return;
+      }
+    }
+    if(e.dataTransfer.files.length > 0) handleRpFolderSelect(e.dataTransfer.files);
+  });
+})();
+
+function readEntriesRecursive(entries){
+  const codeExts = ['py','js','html','css','json','xml','yaml','yml','c','cpp','h','java','go','rs','sh','bat','md','txt','ts','tsx','jsx','rb','php','swift','kt','toml','cfg','ini'];
+  const skipDirs = ['node_modules','.git','__pycache__','.venv','venv','.next','dist','build','.idea','.vscode'];
+  let pending = 0;
+
+  function readEntry(entry, path){
+    if(entry.isFile){
+      const ext = entry.name.split('.').pop().toLowerCase();
+      if(!codeExts.includes(ext)) return;
+      pending++;
+      entry.file(f=>{
+        if(f.size > 500000){ pending--; return; }
+        const reader = new FileReader();
+        reader.onload = function(e){
+          rpFiles.push({name:f.name, path:path+f.name, content:e.target.result, ext:ext, size:f.size});
+          pending--;
+          if(pending===0){ buildRpTree(); renderRpTree(); updateRpRunBtn(); detectRpLanguages(); }
+        };
+        reader.readAsText(f);
+      });
+    } else if(entry.isDirectory){
+      if(skipDirs.includes(entry.name)) return;
+      const dirReader = entry.createReader();
+      dirReader.readEntries(entries=>{
+        entries.forEach(e=>readEntry(e, path+entry.name+'/'));
+      });
+    }
+  }
+  entries.forEach(e=>readEntry(e, ''));
 }
 
 // 초기 실행 버튼 상태
 updateRpRunBtn();
+
+// ==================== 인트로 비디오 자동 종료 ====================
+(function(){
+  var ov = document.getElementById('introOverlay');
+  var vi = document.getElementById('introVideo');
+  if(!ov) return;
+  function dismiss(){
+    if(ov._gone) return; ov._gone = true;
+    if(vi) vi.pause();
+    ov.classList.add('fade-out');
+    setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 700);
+  }
+  if(vi){
+    vi.addEventListener('ended', dismiss);
+    vi.addEventListener('error', dismiss);
+    var src = vi.querySelector('source');
+    if(src) src.addEventListener('error', dismiss);
+    // 진행률 바
+    var prog = document.getElementById('introProgress');
+    if(prog) vi.addEventListener('timeupdate', function(){
+      if(vi.duration) prog.style.width = (vi.currentTime/vi.duration*100)+'%';
+    });
+  }
+  // 안전장치: 4초 안에 재생 안 되면 자동 제거
+  setTimeout(function(){ if(vi && vi.readyState < 2) dismiss(); }, 4000);
+  // ESC 키
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismiss(); });
+})();
+
+// ==================== PPT 코드 감지 & 생성 ====================
+function detectAndAddPptxButtons(msgEl, rawText){
+  // python-pptx 코드 블록 감지 (from pptx import ... 또는 python-pptx 패턴)
+  const codeBlockRegex = /```python\n([\s\S]*?)```/g;
+  let match;
+  const pptxCodes = [];
+  while((match = codeBlockRegex.exec(rawText)) !== null){
+    const code = match[1];
+    if(code.includes('from pptx') || code.includes('import pptx') || code.includes('Presentation(') || code.includes('add_slide')){
+      pptxCodes.push(code.trim());
+    }
+  }
+  if(pptxCodes.length === 0) return;
+
+  // 각 PPT 코드 블록 아래에 생성 버튼 삽입
+  const allPre = msgEl.querySelectorAll('pre');
+  let codeIdx = 0;
+  allPre.forEach(pre => {
+    const preText = pre.textContent;
+    if((preText.includes('from pptx') || preText.includes('import pptx') || preText.includes('Presentation(') || preText.includes('add_slide')) && codeIdx < pptxCodes.length){
+      const code = pptxCodes[codeIdx];
+      codeIdx++;
+      const block = document.createElement('div');
+      block.className = 'pptx-gen-block';
+      block.innerHTML = `
+        <div class="pptx-gen-header">
+          <span>📽️ PowerPoint 생성</span>
+          <div class="pptx-gen-actions">
+            <span class="pptx-gen-status"></span>
+            <button class="pptx-gen-btn secondary" onclick="copyPptxCode(this)">📋 코드 복사</button>
+            <button class="pptx-gen-btn" onclick="generatePptx(this)">📽️ PPT 생성 & 다운로드</button>
+          </div>
+        </div>`;
+      block.dataset.pptxCode = u2b(code);
+      pre.parentNode.insertBefore(block, pre.nextSibling);
+    }
+  });
+}
+
+function copyPptxCode(btn){
+  const block = btn.closest('.pptx-gen-block');
+  const code = b2u(block.dataset.pptxCode);
+  navigator.clipboard.writeText(code);
+  btn.textContent = '✓ 복사됨';
+  setTimeout(()=>{ btn.textContent = '📋 코드 복사'; }, 1500);
+}
+
+async function generatePptx(btn){
+  const block = btn.closest('.pptx-gen-block');
+  const code = b2u(block.dataset.pptxCode);
+  const status = block.querySelector('.pptx-gen-status');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 생성 중...';
+  status.textContent = 'python-pptx 코드 실행 중...';
+
+  try{
+    const resp = await fetch('/api/generate_pptx', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, filename:'presentation.pptx'})
+    });
+
+    if(!resp.ok){
+      const err = await resp.json();
+      status.textContent = '❌ ' + (err.error || '생성 실패');
+      btn.textContent = '📽️ 재시도';
+      btn.disabled = false;
+      return;
+    }
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'presentation.pptx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    status.textContent = '✅ 다운로드 완료!';
+    btn.textContent = '📽️ 다시 생성';
+    btn.disabled = false;
+  }catch(e){
+    status.textContent = '❌ 네트워크 오류';
+    btn.textContent = '📽️ 재시도';
+    btn.disabled = false;
+  }
+}
 </script>
 </body>
 </html>
