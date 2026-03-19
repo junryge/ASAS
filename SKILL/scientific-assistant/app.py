@@ -201,6 +201,9 @@ SKILL_DESC_KO = {
     "theme-factory":"테마/스타일 생성","ui-styling":"UI 스타일링 가이드",
     "video-downloader":"비디오 다운로드","web-artifacts-builder":"웹 아티팩트 빌더",
     "web-frameworks":"웹 프레임워크 가이드","webapp-testing":"웹앱 테스팅",
+    "react-best-practices":"React/Next.js 성능 최적화 가이드",
+    "web-design-guidelines":"웹 UI 디자인 100+ 규칙",
+    "owasp-security":"OWASP Top 10 보안 코드리뷰 체크리스트",
     # ===== cla-main 에이전트 (117개) =====
     "agent-api-designer":"API 설계 전문가","agent-backend-developer":"백엔드 개발 전문가",
     "agent-electron-pro":"Electron 데스크톱 앱","agent-frontend-developer":"프론트엔드 개발 전문가",
@@ -424,6 +427,7 @@ DOMAIN_SKILLS = {
             "repomix","sequential-thinking","skill-creator","skill-share",
             "template-skill","theme-factory","ui-styling","web-artifacts-builder",
             "web-frameworks","webapp-testing",
+            "react-best-practices","web-design-guidelines","owasp-security",
             "common","debugging","problem-solving",
         ]
     },
@@ -1065,6 +1069,9 @@ SKILL_KEYWORDS = {
     "web-artifacts-builder": ['웹아티팩트', '웹앱생성', 'HTML생성', '인터랙티브'],
     "web-frameworks": ['웹프레임워크', 'Express', 'Next.js', 'Nuxt', 'SvelteKit'],
     "webapp-testing": ['웹테스트', 'E2E', 'Playwright', 'Cypress', '테스팅'],
+    "react-best-practices": ['React', 'Next.js', 'NextJS', '리액트', 'RSC', 'Server Component', 'SSR', 'CSR', 'App Router', 'hooks', '컴포넌트', 'useState', 'useEffect'],
+    "web-design-guidelines": ['웹디자인', 'UI설계', 'UX', '레이아웃', '타이포그래피', '색상', '반응형', 'responsive', '접근성', 'a11y', 'WCAG', '다크모드', 'dark mode'],
+    "owasp-security": ['보안', 'OWASP', 'XSS', 'SQL인젝션', 'CSRF', '취약점', 'vulnerability', '인증', '인가', 'authentication', 'authorization', 'injection', '보안점검', '코드보안', 'security'],
     "what-if-oracle": ['What-If', '시나리오', '가정분석', 'hypothetical'],
     "zarr-python": ['Zarr', '청크배열', 'N-D array', '대용량배열', 'cloud storage'],
 }
