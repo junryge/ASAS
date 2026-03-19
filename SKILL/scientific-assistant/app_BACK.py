@@ -1393,7 +1393,7 @@ def gguf_chat(messages, temperature=0.5, max_tokens=4096, stop_flag=None):
                 max_tokens=max_tokens,
             )
             if resp and "choices" in resp and len(resp["choices"]) > 0:
-                return resp["choices"][0]["message"]["content"], None
+                return resp["choices"][0].get("message", {}).get("content", ""), None
             return None, f"예상치 못한 응답: {resp}"
     except Exception as e:
         return None, f"GGUF 추론 오류: {str(e)}"
@@ -2437,9 +2437,12 @@ def api_generate_pptx():
         if ".save(" not in code:
             wrapped_code += f"\nprs.save(_OUTPUT_PATH)\n"
         else:
-            # save 경로를 _OUTPUT_PATH로 교체
-            wrapped_code = wrapped_code.replace(
-                ".save(", f".save(_OUTPUT_PATH)  # "
+            # save 경로를 _OUTPUT_PATH로 교체 (.save(...) 전체를 치환)
+            import re as _save_re
+            wrapped_code = _save_re.sub(
+                r'\.save\([^)]*\)',
+                '.save(_OUTPUT_PATH)',
+                wrapped_code
             )
 
         script_path = os.path.join(tmpdir, "_gen_pptx.py")
@@ -2718,7 +2721,7 @@ def api_chat():
         preview_limit = min(50, len(uploaded_csv_data["rows"]))
         csv_rows_text = ",".join(uploaded_csv_data["headers"]) + "\n"
         for row in uploaded_csv_data["rows"][:preview_limit]:
-            csv_rows_text += ",".join(row) + "\n"
+            csv_rows_text += ",".join(str(c) for c in row) + "\n"
         if len(uploaded_csv_data["rows"]) > preview_limit:
             csv_rows_text += f"... (총 {len(uploaded_csv_data['rows'])}행 중 {preview_limit}행만 표시)\n"
 
@@ -2832,7 +2835,7 @@ def api_chat():
         # 응답 추출
         truncated = False
         if "choices" in result and len(result["choices"]) > 0:
-            answer = result["choices"][0]["message"]["content"]
+            answer = result["choices"][0].get("message", {}).get("content", "")
             finish_reason = result["choices"][0].get("finish_reason", "")
             if finish_reason == "length":
                 truncated = True
@@ -3531,10 +3534,10 @@ if(lastSessions.length > 0){
   history = s.history || [];
   setTimeout(()=>{
     document.getElementById('msgs').innerHTML = s.msgsHtml || '';
-    if(s.writingStyle) document.getElementById('writingStyle').value = s.writingStyle;
+    if(s.writingStyle){ document.getElementById('writingStyle').value = s.writingStyle; syncStyleDropToSidebar(); }
     if(s.systemPrompt) document.getElementById('systemPromptInput').value = s.systemPrompt;
     if(s.systemPromptId){ currentPromptId=s.systemPromptId; renderPromptChips(); }
-    if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); }
+    if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
     if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; }
     if(s.selEnv){ selEnv=s.selEnv; renderEnvs(); updateStatus(); }
     if(s.selDomains && s.selDomains.length>0){ selDomains=s.selDomains; renderTags(); renderSkills(); }
@@ -4180,7 +4183,15 @@ function loadSessions(){
   try{ sessions = JSON.parse(localStorage.getItem('domos_sessions') || '{}'); }catch(e){ sessions={}; }
 }
 function saveSessions(){
-  localStorage.setItem('domos_sessions', JSON.stringify(sessions));
+  try {
+    localStorage.setItem('domos_sessions', JSON.stringify(sessions));
+  } catch(e){
+    console.warn('세션 저장 실패 (localStorage 용량 초과 가능):', e);
+    // 오래된 세션 자동 정리 후 재시도
+    const ids = Object.keys(sessions).sort((a,b)=>(sessions[a].updatedAt||0)-(sessions[b].updatedAt||0));
+    while(ids.length > 20){ const old=ids.shift(); delete sessions[old]; }
+    try { localStorage.setItem('domos_sessions', JSON.stringify(sessions)); } catch(e2){}
+  }
 }
 function saveCurrentSession(){
   if(!currentSessionId) return;
@@ -4377,8 +4388,8 @@ function createNewSession(){
   csvFilename = '';
   document.getElementById('csvInfoPanel').style.display = 'none';
   chatPendingFiles = [];
-  const chatFileWrap = document.getElementById('chatFilePreview');
-  if(chatFileWrap) chatFileWrap.innerHTML = '';
+  const chatFileWrap = document.getElementById('chatAttachPreview');
+  if(chatFileWrap){ chatFileWrap.innerHTML = ''; chatFileWrap.style.display='none'; }
   renderSkills();
   updateLoaded();
   renderStyleChips();
@@ -4397,10 +4408,10 @@ function loadSession(id){
   currentSessionId=id;
   history=s.history||[];
   document.getElementById('msgs').innerHTML=s.msgsHtml||'';
-  if(s.writingStyle) document.getElementById('writingStyle').value=s.writingStyle;
+  if(s.writingStyle){ document.getElementById('writingStyle').value=s.writingStyle; syncStyleDropToSidebar(); }
   if(s.writingStyleId){ activeStyleId=s.writingStyleId; renderStyleChips(); }
   if(s.systemPrompt) document.getElementById('systemPromptInput').value=s.systemPrompt;
-  if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); }
+  if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
   if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; updateEffort(); }
   // 저장된 수동 스킬 복원
   if(s.selSkills && s.selSkills.length > 0){ selSkills = [...s.selSkills]; }
@@ -4637,8 +4648,8 @@ function syncStyleDropToSidebar(){
 }
 function syncFormatDropToChat(){
   const drop = document.getElementById('chatFormatDrop');
-  if(!drop) drop.value = selFormat;
-  else {
+  if(!drop) return;
+  {
     const opts = drop.options;
     for(let i=0;i<opts.length;i++){
       if(opts[i].value === selFormat){ drop.selectedIndex = i; break; }
