@@ -1,108 +1,76 @@
 ---
-name: React Best Practices
-description: React and Next.js performance optimization guidelines from Vercel Engineering
-version: 1.0.0
-tags: [react, nextjs, frontend, performance, vercel]
+name: vercel-react-best-practices
+description: >
+  React and Next.js performance optimization guidelines from Vercel Engineering.
+  Use this skill when writing, reviewing, or refactoring React/Next.js code to ensure
+  optimal performance patterns. Triggers on tasks involving React components, Next.js pages,
+  data fetching, bundle optimization, or performance improvements.
+metadata:
+  author: vercel
+  version: "1.0.0"
+license: MIT
 ---
 
-# React & Next.js Best Practices
+# React Best Practices
 
-## Component Design
+React and Next.js performance optimization guidelines from Vercel Engineering. Contains 64 rules across 8 categories, prioritized by impact to guide automated refactoring and code generation.
 
-### 1. Server Components First
-- Default to React Server Components (RSC) for all new components
-- Only add `'use client'` when you need interactivity, browser APIs, or React hooks
-- Keep client components as leaf nodes in the component tree
-- Never import server-only modules in client components
+## When to Use
 
-### 2. Component Composition
-- Prefer composition over prop drilling: use `children` and render props
-- Extract shared logic into custom hooks, not wrapper components
-- Keep components under 200 lines; split into smaller pieces if larger
-- Use compound component pattern for related UI elements
+Reference these guidelines when:
 
-### 3. State Management
-- Use `useState` for local UI state only
-- Use `useReducer` for complex state logic with multiple sub-values
-- Avoid global state for server-fetchable data — use RSC or React Query
-- Colocate state as close to where it's used as possible
+- Writing new React components or Next.js pages
+- Implementing data fetching
+- Reviewing code for performance issues
+- Refactoring existing code
+- Optimizing bundle size or load times
 
-## Performance Rules
+## Rules Overview
 
-### 4. Rendering Optimization
-- Memoize expensive computations with `useMemo`
-- Memoize callback functions passed to children with `useCallback`
-- Use `React.memo()` only when profiling shows re-render issues
-- Never create components inside render functions
+Rules are prioritized by impact from critical (eliminating waterfalls, reducing bundle size) to incremental (advanced patterns). Each rule includes detailed explanations, real-world examples comparing incorrect vs. correct implementations, and specific impact metrics.
 
-### 5. Code Splitting
-- Use `next/dynamic` for heavy components not needed on initial load
-- Lazy load below-the-fold content
-- Use `Suspense` boundaries around lazy-loaded components
-- Split route-level code with Next.js App Router layouts
+### Categories (by impact level)
 
-### 6. Image & Media
-- Always use `next/image` instead of `<img>`
-- Set explicit `width` and `height` to prevent layout shift
-- Use `priority` for above-the-fold hero images
-- Use `loading="lazy"` for below-the-fold images
+1. **Async Patterns** (CRITICAL) — Eliminate waterfalls, the #1 performance killer. Each sequential `await` adds full network latency. Eliminating them yields the largest gains.
+2. **Bundle Size** (CRITICAL) — Reduce bundle size through proper imports and tree-shaking.
+3. **Server-Side Caching** (HIGH) — Optimize server-side data caching strategies.
+4. **Client-Side Data Fetching** (HIGH) — Efficient client-side data management.
+5. **Re-render Optimization** (MEDIUM) — Minimize unnecessary component re-renders.
+6. **Rendering Performance** (MEDIUM) — Improve rendering efficiency.
+7. **Advanced Patterns** (LOW) — Sophisticated optimization techniques.
+8. **JavaScript Efficiency** (LOW) — Micro-optimizations for JavaScript execution.
 
-### 7. Data Fetching
-- Fetch data in Server Components, not in `useEffect`
-- Use `fetch()` with proper `cache` and `revalidate` options
-- Implement optimistic updates for mutations
-- Use `Suspense` for streaming and progressive rendering
+## Key Rules
 
-## Next.js Specific
+### Waterfalls
 
-### 8. Routing & Layouts
-- Use App Router (`app/`) for all new projects
-- Place shared UI in `layout.tsx`, not duplicated across pages
-- Use `loading.tsx` for route-level loading states
-- Use `error.tsx` for route-level error boundaries
-- Use `not-found.tsx` for 404 pages
+Waterfalls are the #1 performance killer. Each sequential `await` adds full network latency, and eliminating them yields the largest gains.
 
-### 9. Metadata & SEO
-- Export `metadata` object or `generateMetadata()` from pages
-- Include `title`, `description`, `openGraph`, and `twitter` metadata
-- Use `robots.txt` and `sitemap.xml` via App Router conventions
-- Add structured data (JSON-LD) for rich search results
+### Caching
 
-### 10. API Routes
-- Use Route Handlers (`route.ts`) in App Router
-- Validate request bodies with Zod
-- Return proper HTTP status codes
-- Use Edge Runtime for low-latency endpoints
+`React.cache()` only works within one request. For data shared across sequential requests, use an LRU cache.
 
-## Styling
+### Server/Client Boundary
 
-### 11. CSS Best Practices
-- Use CSS Modules or Tailwind CSS (avoid CSS-in-JS in RSC)
-- Define design tokens as CSS custom properties
-- Use `clsx` or `cn()` for conditional class names
-- Keep responsive breakpoints consistent
+The React Server/Client boundary serializes all object properties into strings and embeds them in the HTML response. This serialized data directly impacts page weight and load time — only pass fields the client actually uses.
 
-## TypeScript
+### Library Optimization
 
-### 12. Type Safety
-- Enable `strict: true` in `tsconfig.json`
-- Type component props with interfaces, not `type` aliases for objects
-- Use `satisfies` operator for type-safe constants
-- Avoid `any` — use `unknown` and narrow with type guards
+Libraries commonly affected by bundle bloat include:
 
-## Testing
+- `lucide-react`
+- `@mui/material`
+- `@mui/icons-material`
+- `@tabler/icons-react`
+- `react-icons`
+- `@headlessui/react`
+- `@radix-ui/react-*`
+- `lodash`
+- `ramda`
+- `date-fns`
+- `rxjs`
+- `react-use`
 
-### 13. Testing Strategy
-- Write integration tests for user flows with Testing Library
-- Test Server Components with their data dependencies
-- Use Playwright for critical E2E paths
-- Mock external services, not internal modules
+## Full Guidelines
 
-## Accessibility
-
-### 14. A11y Requirements
-- Use semantic HTML elements (`button`, `nav`, `main`, `article`)
-- Add `aria-label` to icon-only buttons
-- Ensure keyboard navigation works for all interactive elements
-- Maintain 4.5:1 contrast ratio for text
-- Test with screen readers (VoiceOver, NVDA)
+For the complete set of 64 rules with code examples, refer to the companion `AGENTS.md` file which contains the full compiled ruleset organized by category and impact level.
