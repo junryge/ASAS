@@ -2344,6 +2344,13 @@ def api_generate_pptx():
         wrapped_code = (
             "import sys, os\n"
             f"_OUTPUT_PATH = {repr(out_path)}\n"
+            "# --- monkey-patch: fix default.pptx template path resolution ---\n"
+            "import pptx.api as _pptx_api\n"
+            "def _fixed_default_pptx_path():\n"
+            "    import pptx as _pptx_pkg\n"
+            "    _pkg_dir = os.path.dirname(_pptx_pkg.__file__)\n"
+            "    return os.path.join(_pkg_dir, 'templates', 'default.pptx')\n"
+            "_pptx_api._default_pptx_path = _fixed_default_pptx_path\n"
             "# --- monkey-patch: auto-convert float to int for pptx coordinates ---\n"
             "import pptx.oxml.simpletypes as _st\n"
             "_orig_validate_int = _st.BaseSimpleType.validate_int\n"
