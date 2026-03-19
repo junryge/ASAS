@@ -2281,6 +2281,47 @@ def api_generate_pptx():
         code
     )
 
+    # 3.5) 주석 형식 자동 수정: # === 내용 === 또는 === 내용 === → ## 내용
+    def _fix_comments(code_str):
+        lines = code_str.split('\n')
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # 패턴1: "=== 내용 ===" (주석 기호 없이 === 로만 된 줄)
+            m = _re.match(r'^([ \t]*)(=+\s*)(.+?)\s*=*\s*$', stripped)
+            if m and not any(kw in stripped for kw in ('import ', 'from ', 'def ', 'class ', '==='*3)):
+                content = m.group(3).strip().rstrip('=').strip()
+                if content and not '=' in content.replace('==', ''):
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+                    continue
+            # 패턴2: "# === 내용 ===" → "## 내용"
+            m = _re.match(r'^([ \t]*)#\s*(=+\s*)(.+?)\s*=*\s*$', stripped)
+            if m:
+                content = m.group(3).strip().rstrip('=').strip()
+                if content:
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+                    continue
+            # 패턴3: "# --- 내용 ---" → "## 내용"
+            m = _re.match(r'^([ \t]*)#\s*(-+\s*)(.+?)\s*-*\s*$', stripped)
+            if m:
+                content = m.group(3).strip().rstrip('-').strip()
+                if content:
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+                    continue
+            # 패턴4: 단일 "#" 주석을 "##"로 변환 (코드가 아닌 순수 주석 라인)
+            m = _re.match(r'^([ \t]*)#\s+([^#!].+)$', stripped)
+            if m and not stripped.startswith('#!'):
+                content = m.group(2)
+                # 코드 라인이 아닌 순수 주석인지 확인
+                if not any(kw in content for kw in ('coding:', 'type:', 'noqa', 'pylint', 'pragma')):
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+        return '\n'.join(lines)
+
+    code = _fix_comments(code)
+
     # 4) 중첩 따옴표 패턴 수정: p.text = ""내용"" → p.text = "내용"
     code = _re.sub(r'= ""([^"]*?)""', r"= '\1'", code)
     code = _re.sub(r"= ''([^']*?)''", r"= '\1'", code)
