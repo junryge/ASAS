@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-03-10T22:35:48.666637",
+  "os": {
+    "system": "Linux",
+    "release": "6.8.0-94-generic",
+    "version": "#96~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Fri Jan 16 13:19:05 UTC 2",
+    "machine": "x86_64",
+    "python_version": "3.10.12"
+  },
+  "cpu": {
+    "physical_cores": 1,
+    "logical_cores": 2,
+    "max_frequency_mhz": 0.0,
+    "architecture": "x86_64",
+    "processor": "x86_64",
+    "current_frequency_mhz": 3693.097
+  },
+  "memory": {
+    "total_gb": 3.82,
+    "available_gb": 2.88,
+    "used_gb": 0.94,
+    "percent_used": 24.6,
+    "swap_total_gb": 0.0,
+    "swap_available_gb": 0.0
+  },
+  "disk": {
+    "path": "/sessions/friendly-inspiring-shannon/mnt/CLOUD/scientific-assistant/scientific-skills/get-available-resources",
+    "total_gb": 231.47,
+    "available_gb": 19.56,
+    "used_gb": 211.91,
+    "percent_used": 91.6
+  },
+  "gpu": {
+    "nvidia_gpus": [],
+    "amd_gpus": [],
+    "apple_silicon": null,
+    "total_gpus": 0,
+    "available_backends": []
+  },
+  "recommendations": {
+    "parallel_processing": {
+      "strategy": "sequential",
+      "note": "Limited cores, prefer sequential processing"
+    },
+    "memory_strategy": {
+      "strategy": "memory_constrained",
+      "libraries": [
+        "zarr",
+        "dask",
+        "h5py"
+      ],
+      "note": "Use out-of-core processing for large datasets"
+    },
+    "gpu_acceleration": {
+      "available": false,
+      "note": "No GPU detected, use CPU-based libraries"
+    },
+    "large_data_handling": {
+      "strategy": "moderate_disk",
+      "libraries": [
+        "zarr",
+        "h5py",
+        "parquet"
+      ]
+    }
+  }
+}
