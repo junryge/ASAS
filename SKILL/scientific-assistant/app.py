@@ -2444,13 +2444,17 @@ def api_generate_pptx():
         if ".save(" not in code:
             wrapped_code += f"\nprs.save(_OUTPUT_PATH)\n"
         else:
-            # save 경로를 _OUTPUT_PATH로 교체 (.save(...) 전체를 치환)
+            # 사용자 코드 부분에서만 save 경로를 _OUTPUT_PATH로 교체
             import re as _save_re
-            wrapped_code = _save_re.sub(
-                r'\.save\([^)]*\)',
-                '.save(_OUTPUT_PATH)',
-                wrapped_code
-            )
+            marker = "# --- user code ---\n"
+            idx = wrapped_code.find(marker)
+            if idx >= 0:
+                prefix = wrapped_code[:idx + len(marker)]
+                user_part = wrapped_code[idx + len(marker):]
+                user_part = _save_re.sub(r'\.save\([^)]*\)', '.save(_OUTPUT_PATH)', user_part)
+                wrapped_code = prefix + user_part
+            else:
+                wrapped_code = _save_re.sub(r'\.save\([^)]*\)', '.save(_OUTPUT_PATH)', wrapped_code)
 
         script_path = os.path.join(tmpdir, "_gen_pptx.py")
         with open(script_path, "w", encoding="utf-8") as f:
@@ -4656,11 +4660,9 @@ function syncStyleDropToSidebar(){
 function syncFormatDropToChat(){
   const drop = document.getElementById('chatFormatDrop');
   if(!drop) return;
-  {
-    const opts = drop.options;
-    for(let i=0;i<opts.length;i++){
-      if(opts[i].value === selFormat){ drop.selectedIndex = i; break; }
-    }
+  const opts = drop.options;
+  for(let i=0;i<opts.length;i++){
+    if(opts[i].value === selFormat){ drop.selectedIndex = i; break; }
   }
 }
 
