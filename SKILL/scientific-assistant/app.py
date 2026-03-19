@@ -4368,6 +4368,17 @@ function createNewSession(){
   effort=2;
   document.getElementById('effortSlider').value=2;
   document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f==='code');});
+  // 업로드된 파일/CSV 초기화 (이전 세션 데이터 잔류 방지)
+  fetch('/api/clear_files', {method:'POST'});
+  fetch('/api/clear_csv', {method:'POST'});
+  uploadedFilesList = [];
+  renderFileList();
+  csvLoaded = false;
+  csvFilename = '';
+  document.getElementById('csvInfoPanel').style.display = 'none';
+  chatPendingFiles = [];
+  const chatFileWrap = document.getElementById('chatFilePreview');
+  if(chatFileWrap) chatFileWrap.innerHTML = '';
   renderSkills();
   updateLoaded();
   renderStyleChips();
