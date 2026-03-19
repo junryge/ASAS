@@ -3534,10 +3534,10 @@ if(lastSessions.length > 0){
   history = s.history || [];
   setTimeout(()=>{
     document.getElementById('msgs').innerHTML = s.msgsHtml || '';
-    if(s.writingStyle) document.getElementById('writingStyle').value = s.writingStyle;
+    if(s.writingStyle){ document.getElementById('writingStyle').value = s.writingStyle; syncStyleDropToSidebar(); }
     if(s.systemPrompt) document.getElementById('systemPromptInput').value = s.systemPrompt;
     if(s.systemPromptId){ currentPromptId=s.systemPromptId; renderPromptChips(); }
-    if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); }
+    if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
     if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; }
     if(s.selEnv){ selEnv=s.selEnv; renderEnvs(); updateStatus(); }
     if(s.selDomains && s.selDomains.length>0){ selDomains=s.selDomains; renderTags(); renderSkills(); }
@@ -4408,10 +4408,10 @@ function loadSession(id){
   currentSessionId=id;
   history=s.history||[];
   document.getElementById('msgs').innerHTML=s.msgsHtml||'';
-  if(s.writingStyle) document.getElementById('writingStyle').value=s.writingStyle;
+  if(s.writingStyle){ document.getElementById('writingStyle').value=s.writingStyle; syncStyleDropToSidebar(); }
   if(s.writingStyleId){ activeStyleId=s.writingStyleId; renderStyleChips(); }
   if(s.systemPrompt) document.getElementById('systemPromptInput').value=s.systemPrompt;
-  if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); }
+  if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
   if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; updateEffort(); }
   // 저장된 수동 스킬 복원
   if(s.selSkills && s.selSkills.length > 0){ selSkills = [...s.selSkills]; }
