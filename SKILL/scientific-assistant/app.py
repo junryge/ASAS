@@ -3049,6 +3049,18 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .auto-skill-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#eef2ff;color:#6366f1;border:1px solid #c7d2fe;margin:2px}
 .auto-skill-preview{margin-top:6px;padding:8px 12px;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:8px;font-size:12px;display:none}
 .auto-skill-preview.show{display:block}
+/* PPT Suggest Banner */
+.ppt-suggest-banner{position:relative;margin:0 auto 8px;max-width:760px;padding:14px 18px 14px 50px;background:linear-gradient(135deg,#eef2ff 0%,#f5f3ff 50%,#fdf2f8 100%);border:1px solid #c7d2fe;border-radius:14px;box-shadow:0 2px 12px rgba(99,102,241,.12);overflow:hidden;animation:pptBannerSlide .5s cubic-bezier(.16,1,.3,1);cursor:default;transition:opacity .4s,transform .4s}
+.ppt-suggest-banner.hiding{opacity:0;transform:translateY(-12px)}
+.ppt-suggest-banner .ppt-banner-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:22px;animation:pptIconPulse 2s ease-in-out infinite}
+.ppt-suggest-banner .ppt-banner-title{font-size:13px;font-weight:700;color:#4338ca;margin-bottom:4px}
+.ppt-suggest-banner .ppt-banner-hint{font-size:12px;color:#6b7280;line-height:1.5}
+.ppt-suggest-banner .ppt-banner-hint em{font-style:normal;color:#6366f1;font-weight:600;cursor:pointer;border-bottom:1px dashed #a5b4fc;transition:color .2s}
+.ppt-suggest-banner .ppt-banner-hint em:hover{color:#4338ca}
+.ppt-suggest-banner .ppt-banner-close{position:absolute;top:6px;right:10px;background:none;border:none;font-size:14px;color:#a5b4fc;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .2s}
+.ppt-suggest-banner .ppt-banner-close:hover{background:#e0e7ff;color:#4338ca}
+@keyframes pptBannerSlide{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pptIconPulse{0%,100%{transform:translateY(-50%) scale(1)}50%{transform:translateY(-50%) scale(1.15)}}
 /* Messages */
 .messages{margin-top:8px}
 .msg{margin-bottom:8px;padding:8px 12px;border-radius:10px;line-height:1.5;font-size:13px;word-wrap:break-word}
@@ -3429,6 +3441,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
         <button class="quick-btn" onclick="qp('논문 스타일로 정리해줘')">📝 논문 정리</button>
       </div>
 
+      <div id="pptSuggestArea"></div>
       <div class="messages" id="msgs"></div>
     </div>
   </div>
@@ -3920,10 +3933,61 @@ function stopGeneration(){
   saveCurrentSession();
 }
 
+/* ── PPT 제안 배너 ── */
+let _pptBannerShownCount = 0;
+const _pptSuggestItems = [
+  {icon:'📊', title:'차트/그래프를 포함할까요?', hint:'"매출 데이터를 막대 차트로 넣어줘"', example:'차트/그래프도 포함해서 PPT 만들어줘'},
+  {icon:'📋', title:'표(Table)를 넣어볼까요?', hint:'"비교 데이터를 표로 정리해서 넣어줘"', example:'데이터를 표로 정리해서 PPT에 넣어줘'},
+  {icon:'🖼️', title:'이미지/다이어그램도 가능해요!', hint:'"구조도를 슬라이드에 추가해줘"', example:'다이어그램도 포함해서 PPT 만들어줘'},
+  {icon:'📈', title:'데이터 시각화를 추가할까요?', hint:'"트렌드를 꺾은선 그래프로 보여줘"', example:'데이터를 시각화해서 PPT에 넣어줘'},
+  {icon:'🍩', title:'원형/도넛 차트는 어때요?', hint:'"비율을 도넛 차트로 만들어줘"', example:'비율 데이터를 원형 차트로 PPT에 넣어줘'},
+  {icon:'📉', title:'비교 차트를 넣어볼까요?', hint:'"전년 대비 성장률을 비교 차트로"', example:'비교 차트를 포함해서 PPT 만들어줘'},
+];
+
+function _showPptSuggestBanner(){
+  if(_pptBannerShownCount >= 3) return;
+  _pptBannerShownCount++;
+  const area = document.getElementById('pptSuggestArea');
+  if(!area) return;
+  const item = _pptSuggestItems[Math.floor(Math.random()*_pptSuggestItems.length)];
+  const banner = document.createElement('div');
+  banner.className = 'ppt-suggest-banner';
+  banner.innerHTML = `<span class="ppt-banner-icon">${item.icon}</span>`
+    + `<div class="ppt-banner-title">${item.title}</div>`
+    + `<div class="ppt-banner-hint"><em onclick="_usePptSuggestion(this,'${item.example.replace(/'/g,"\\'")}')">${item.hint}</em> 처럼 말해보세요!</div>`
+    + `<button class="ppt-banner-close" onclick="_closePptBanner(this)" title="닫기">✕</button>`;
+  area.innerHTML = '';
+  area.appendChild(banner);
+  setTimeout(()=>{
+    if(banner.parentNode){
+      banner.classList.add('hiding');
+      setTimeout(()=>{ if(banner.parentNode) banner.remove(); }, 400);
+    }
+  }, 8000);
+}
+
+function _closePptBanner(btn){
+  const banner = btn.closest('.ppt-suggest-banner');
+  if(banner){ banner.classList.add('hiding'); setTimeout(()=>banner.remove(), 400); }
+}
+
+function _usePptSuggestion(el, text){
+  const input = document.getElementById('input');
+  if(input){ input.value = text; input.focus(); input.style.height='auto'; input.style.height=input.scrollHeight+'px'; }
+  const banner = el.closest('.ppt-suggest-banner');
+  if(banner){ banner.classList.add('hiding'); setTimeout(()=>banner.remove(), 400); }
+}
+
+const _pptKeywords = /PPT|ppt|파워포인트|프레젠테이션|발표자료|슬라이드\s*만들|피피티/i;
+
 async function send(){
   const el=document.getElementById('input');
   const text=el.value.trim();
   if(!text && chatPendingFiles.length === 0) return;
+
+  if(text && _pptKeywords.test(text) && !/차트|그래프|표|table|chart|graph|시각화|도넛|원형/i.test(text)){
+    _showPptSuggestBanner();
+  }
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
   // 첨부파일이 있으면 먼저 업로드
