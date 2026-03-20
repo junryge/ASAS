@@ -3235,6 +3235,31 @@ def api_chat():
         if err:
             return jsonify({"error": err}), 500
 
+        # GGUF: <think> 사고만 있고 본문 없이 잘린 경우 재시도
+        import re as _re
+        if answer and answer.strip():
+            stripped = answer.strip()
+            has_open = "<think>" in stripped
+            has_close = "</think>" in stripped
+            think_only_gguf = False
+            if has_open and not has_close:
+                think_only_gguf = True
+            elif has_open and has_close:
+                after = _re.sub(r'<think>[\s\S]*?</think>\s*', '', stripped).strip()
+                if len(after) < 20:
+                    think_only_gguf = True
+            if think_only_gguf:
+                retry_max = min(actual_max_tokens * 2, safe_max)
+                if retry_max > actual_max_tokens:
+                    retry_answer, retry_err = gguf_chat(
+                        api_messages,
+                        temperature=temperature_map[min(effort, 3)],
+                        max_tokens=retry_max,
+                        stop_flag=chat_stop_flag,
+                    )
+                    if not retry_err and retry_answer:
+                        answer = retry_answer
+
         return jsonify({
             "content": answer,
             "loaded_skills": loaded,
