@@ -1898,7 +1898,7 @@ def api_list_prompts():
                         "type": "saved",
                         "preview": content[:80] + "..." if len(content) > 80 else content,
                     })
-                except:
+                except Exception:
                     pass
 
     return jsonify({"prompts": result})
@@ -1956,6 +1956,8 @@ def api_delete_prompt(prompt_id):
 
     if prompt_id.startswith("saved:"):
         name = prompt_id[6:]
+        if ".." in name or "/" in name or "\\" in name:
+            return jsonify({"error": "잘못된 프롬프트 ID입니다."}), 400
         fpath = os.path.join(PROMPTS_DIR, f"{name}.txt")
         if os.path.isfile(fpath):
             try:
@@ -2045,8 +2047,8 @@ def api_skill_run(skill_name):
             cwd=os.path.join(SKILLS_DIR, skill_name),
         )
         return jsonify({
-            "stdout": result.stdout[-8000:] if len(result.stdout) > 8000 else result.stdout,
-            "stderr": result.stderr[-4000:] if len(result.stderr) > 4000 else result.stderr,
+            "stdout": result.stdout[:8000] if len(result.stdout) > 8000 else result.stdout,
+            "stderr": result.stderr[:4000] if len(result.stderr) > 4000 else result.stderr,
             "returncode": result.returncode,
             "script": script_path,
         })
@@ -2250,7 +2252,7 @@ def extract_file_text(filepath, filename):
                             for c in row.findall('s:c', ns):
                                 v_el = c.find('s:v', ns)
                                 t_attr = c.get('t', '')
-                                if v_el is not None and v_el.text:
+                                if v_el is not None and v_el.text is not None:
                                     if t_attr == 's' and v_el.text.isdigit():
                                         idx = int(v_el.text)
                                         cells.append(shared[idx] if idx < len(shared) else v_el.text)
@@ -2435,7 +2437,7 @@ def api_remove_file():
             # 파일 삭제
             try:
                 os.remove(f["path"])
-            except:
+            except Exception:
                 pass
             removed = True
         else:
@@ -2451,7 +2453,7 @@ def api_clear_files():
     for f in uploaded_files:
         try:
             os.remove(f["path"])
-        except:
+        except Exception:
             pass
     uploaded_files = []
     return jsonify({"success": True})
@@ -2625,7 +2627,7 @@ def api_generate_pptx():
             stripped = line.strip()
             # 패턴1: "=== 내용 ===" (주석 기호 없이 === 로만 된 줄)
             m = _re.match(r'^([ \t]*)(=+\s*)(.+?)\s*=*\s*$', stripped)
-            if m and not any(kw in stripped for kw in ('import ', 'from ', 'def ', 'class ', '==='*3)):
+            if m and not any(kw in stripped for kw in ('import ', 'from ', 'def ', 'class ', '=========')):
                 content = m.group(3).strip().rstrip('=').strip()
                 if content and not '=' in content.replace('==', ''):
                     indent = line[:len(line) - len(line.lstrip())]
@@ -2678,7 +2680,7 @@ def api_generate_pptx():
             fixed = False
             for j, ch in enumerate(chars):
                 # 문자열 안에서는 괄호 무시
-                if ch in ('"', "'") and (j == 0 or chars[j-1] != '\\'):
+                if ch in ('"', "'") and (j == 0 or chars[j-1] != '\\' or (j >= 2 and chars[j-2] == '\\')):
                     if in_str is None:
                         in_str = ch
                     elif in_str == ch:
@@ -2846,7 +2848,7 @@ def api_generate_pptx():
         )
 
         if result.returncode != 0:
-            err_msg = (result.stderr or "알 수 없는 오류")[-1000:]
+            err_msg = (result.stderr.strip() if result.stderr else "알 수 없는 오류")[-1000:]
             return jsonify({
                 "error": f"PPT 생성 코드 실행 실패:\n{err_msg}"
             }), 500
@@ -2981,7 +2983,7 @@ def api_chat():
     # ===== 토큰 예산 관리 =====
     # API 대형 모델 → 제한 거의 없음 (128K+ 컨텍스트)
     # GGUF 로컬 → 32K 컨텍스트이므로 스마트하게 제한
-    is_gguf = env_id.startswith("gguf-")
+    is_gguf = env_id.startswith("gguf-") if env_id else False
     history_chars = sum(len(m.get("content", "")) for m in messages)
 
     if is_gguf:
@@ -3218,7 +3220,8 @@ def api_chat():
             return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
 
         # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정
-        gguf_ctx = getattr(gguf_model, 'n_ctx', lambda: 32768)()
+        gguf_ctx_attr = getattr(gguf_model, 'n_ctx', None)
+        gguf_ctx = gguf_ctx_attr() if callable(gguf_ctx_attr) else (gguf_ctx_attr if gguf_ctx_attr is not None else 32768)
         prompt_tokens_est = len(system_prompt) // 2 + sum(len(m.get("content","")) // 2 for m in messages)
         safe_max = max(256, gguf_ctx - prompt_tokens_est - 100)
         actual_max_tokens = min(max_tokens, safe_max)
@@ -3558,11 +3561,11 @@ def api_chat():
                     detail = json.dumps(body, ensure_ascii=False, indent=2)
                 except Exception:
                     detail = e.response.text[:500] if e.response.text else ""
-            prompt_chars = len(system_prompt) + sum(len(m.get("content","")) for m in api_messages)
+            prompt_chars = sum(len(m.get("content","")) for m in api_messages)
             err_msg = f"API HTTP 에러 ({code}): {str(e)}"
             if detail:
                 err_msg += f"\n서버 응답: {detail}"
-            err_msg += f"\n[요청 크기: system_prompt={len(system_prompt)}자, 전체 메시지={prompt_chars}자, model={model}]"
+            err_msg += f"\n[요청 크기: 전체 메시지={prompt_chars}자, model={model}]"
             return jsonify({"error": err_msg}), code or 500
         except Exception as e:
             return jsonify({"error": f"오류 발생: {str(e)}"}), 500
@@ -4665,7 +4668,7 @@ async function send(){
   if(text && _pptKeywords.test(text)){
     const hasVisual = /차트|그래프|표|table|chart|graph|시각화|도넛|원형/i.test(text);
     const hasNoVisual = /그래프\s*없|차트\s*없|텍스트\s*위주|텍스트만|심플하게/i.test(text);
-    _showPptSuggestBanner(hasVisual && !hasNoVisual ? 'no-visual' : hasNoVisual ? 'visual' : null);
+    _showPptSuggestBanner(hasVisual && !hasNoVisual ? 'visual' : hasNoVisual && !hasVisual ? 'no-visual' : null);
   }
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
@@ -5528,9 +5531,9 @@ function renderSdpTabs(active){
   const d = currentSkillDetail;
   const tabsEl = document.getElementById('sdpTabs');
   const tabs = [
-    {id:'scripts', label:`🐍 스크립트 (${d.scripts.length})`, show: true},
-    {id:'references', label:`📄 레퍼런스 (${d.references.length})`, show: true},
-    {id:'assets', label:`📦 에셋 (${d.assets.length})`, show: d.assets.length > 0},
+    {id:'scripts', label:`🐍 스크립트 (${(d.scripts||[]).length})`, show: true},
+    {id:'references', label:`📄 레퍼런스 (${(d.references||[]).length})`, show: true},
+    {id:'assets', label:`📦 에셋 (${(d.assets||[]).length})`, show: (d.assets||[]).length > 0},
     {id:'skillmd', label:'📋 SKILL.md', show: true},
   ];
   tabsEl.innerHTML = '';
@@ -5644,7 +5647,7 @@ async function injectToChat(type, filePath){
       const preview = data.content.length > 500 ? data.content.substring(0,500) + '...' : data.content;
       input.value += `\n--- ${data.name} ---\n${preview}\n---\n`;
     }
-  }catch(e){}
+  }catch(e){ console.warn('파일 주입 실패:', e); }
   closeSkillDetail();
   input.focus();
 }
@@ -6102,7 +6105,7 @@ function removeChatAttach(idx){
           // 파일명 생성: paste_날짜시간.확장자
           const ext = items[i].type.split('/')[1] || 'png';
           const now = new Date();
-          const ts = now.getFullYear()+''+(now.getMonth()+1+'').padStart(2,'0')+(now.getDate()+'').padStart(2,'0')+'_'+(now.getHours()+'').padStart(2,'0')+(now.getMinutes()+'').padStart(2,'0')+(now.getSeconds()+'').padStart(2,'0');
+          const ts = now.getFullYear()+String(now.getMonth()+1).padStart(2,'0')+String(now.getDate()).padStart(2,'0')+'_'+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0')+String(now.getSeconds()).padStart(2,'0');
           const fname = 'paste_'+ts+'.'+ext.replace('jpeg','jpg');
           const file = new File([blob], fname, {type: items[i].type});
           imageFiles.push(file);
@@ -6247,7 +6250,7 @@ function summarizeCode(content, ext, maxLines){
   lines.forEach((line, i)=>{
     if(i < 30) return; // 이미 포함됨
     if(pat.test(line)){
-      for(let j=Math.max(30,i-1); j<=Math.min(lines.length-1,i+3); j++){
+      for(let j=Math.max(i-1,30); j<=Math.min(lines.length-1,i+3); j++){
         if(!added.has(j)){
           added.add(j);
           result.push(`[L${j+1}] ${lines[j]}`);
@@ -6473,6 +6476,7 @@ function renderRpTree(){
 
   container.innerHTML = renderTreeNode(rpTreeData, true);
   updateCheckedCount();
+  updateParentFolderChecks();
 }
 
 function renderTreeNode(node, isRoot){
@@ -6486,7 +6490,7 @@ function renderTreeNode(node, isRoot){
     const allChecked = folderIdxs.every(i=>rpCheckedFiles.has(i));
     const someChecked = folderIdxs.some(i=>rpCheckedFiles.has(i));
     html += `<div class="rp-tree-node rp-tree-folder">
-      <input type="checkbox" class="rp-tree-cb" data-folder-idxs="${folderIdxs.join(',')}" ${allChecked?'checked':''} ${!allChecked&&someChecked?'indeterminate':''} onclick="event.stopPropagation();toggleFolderCheck(this)" onchange="event.stopPropagation()">
+      <input type="checkbox" class="rp-tree-cb" data-folder-idxs="${folderIdxs.join(',')}" ${allChecked?'checked':''} onclick="event.stopPropagation();toggleFolderCheck(this)" onchange="event.stopPropagation()">
       <span class="rp-tree-node-content" onclick="toggleTreeFolder(this.parentElement)"><span class="rp-tree-toggle">▶</span><span class="rp-tree-icon">📁</span>${esc(key)} <span style="color:#bbb;font-weight:400">(${fileCount})</span></span>
     </div><div class="rp-tree-children" style="display:none">${renderTreeNode(child, false)}</div>`;
   });
@@ -6516,7 +6520,7 @@ function toggleFileCheck(idx, cb){
 }
 
 function toggleFolderCheck(cb){
-  const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number);
+  const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number).filter(n=>!isNaN(n));
   if(cb.checked) idxs.forEach(i=>rpCheckedFiles.add(i));
   else idxs.forEach(i=>rpCheckedFiles.delete(i));
   // 하위 파일 + 하위 폴더 체크박스 모두 동기화
@@ -6534,7 +6538,7 @@ function toggleFolderCheck(cb){
 
 function updateParentFolderChecks(){
   document.querySelectorAll('.rp-tree-cb[data-folder-idxs]').forEach(cb=>{
-    const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number);
+    const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number).filter(n=>!isNaN(n));
     const checkedCount = idxs.filter(i=>rpCheckedFiles.has(i)).length;
     cb.checked = checkedCount === idxs.length;
     cb.indeterminate = checkedCount > 0 && checkedCount < idxs.length;
