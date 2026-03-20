@@ -2419,16 +2419,11 @@ def api_upload_file():
         # 텍스트 추출
         text, file_type = extract_file_text(filepath, fname)
 
-        # DRM 보호 파일 감지
+        # DRM 보호 파일 감지 → 업로드는 정상 진행, 경고만 추가
+        drm_warning = None
         if file_type == "drm_protected":
-            # DRM 파일은 업로드는 되지만 분석 불가 경고 반환
-            try:
-                os.remove(filepath)
-            except Exception:
-                pass
-            return jsonify({
-                "error": f"🔒 DRM 보호 파일: {fname}\n{text}\n\nDRM이 해제된 파일을 첨부해주세요."
-            }), 422
+            drm_warning = text  # DRM 안내 메시지
+            file_type = ext  # 원래 확장자를 타입으로 사용
 
         # 미리보기 (최대 3000자)
         preview = text[:3000]
@@ -2462,8 +2457,10 @@ def api_upload_file():
             "text": "📝", "image": "🖼️",
         }
         icon = icon_map.get(file_type, "📎")
+        if drm_warning:
+            icon = "🔒"
 
-        return jsonify({
+        resp = {
             "success": True,
             "filename": fname,
             "type": file_type,
@@ -2472,7 +2469,10 @@ def api_upload_file():
             "icon": icon,
             "preview": preview[:500],
             "total_files": len(uploaded_files),
-        })
+        }
+        if drm_warning:
+            resp["drm_warning"] = drm_warning
+        return jsonify(resp)
 
     except Exception as e:
         return jsonify({"error": f"파일 처리 오류: {str(e)}"}), 500
@@ -3948,6 +3948,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .ufi-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:12px;padding:0 2px}
 .ufi-remove:hover{color:#e74c3c}
 .ufi-pending{opacity:.6}
+.ufi-drm{opacity:.7;border-left:2px solid #e67e22;padding-left:4px}
+.ufi-drm .ufi-name{color:#e67e22}
 .think-box{margin:8px 0 12px;border:1px solid #d4c8f0;border-radius:8px;background:#f8f5ff;overflow:hidden}
 .think-box summary{cursor:pointer;padding:8px 12px;font-size:12px;font-weight:600;color:#7c5cbf;background:#f0ebfa;user-select:none}
 .think-box summary:hover{background:#e8e0f6}
@@ -6085,14 +6087,15 @@ function renderFileList(){
   let html = '<div class="uploaded-files-header"><span>📎 첨부 파일 ('+uploadedFilesList.length+')</span><button onclick="clearAllFiles()" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:10px;padding:0">전체 제거</button></div>';
   uploadedFilesList.forEach((f,i)=>{
     const sizeStr = f.size > 1048576 ? (f.size/1048576).toFixed(1)+'MB' : (f.size/1024).toFixed(1)+'KB';
-    const pendingCls = f.pending ? ' ufi-pending' : '';
-    const pendingLabel = f.pending ? ' ⏳' : '';
+    const pendingCls = f.pending ? ' ufi-pending' : (f.drm ? ' ufi-drm' : '');
+    const statusLabel = f.pending ? ' ⏳' : (f.drm ? ' 🔒' : '');
     const removeAction = f.pending
       ? `removeChatAttachByName('${esc(f.filename)}')`
       : `removeFile('${esc(f.filename)}',${i})`;
+    const titleText = f.drm ? 'DRM 보호 파일 - 내용 분석 불가' : esc(f.preview||'');
     html += `<div class="uploaded-file-item${pendingCls}">
       <span class="ufi-icon">${f.icon}</span>
-      <span class="ufi-name" title="${esc(f.preview||'')}">${esc(f.filename)}${pendingLabel}</span>
+      <span class="ufi-name" title="${titleText}">${esc(f.filename)}${statusLabel}</span>
       <span class="ufi-size">${sizeStr}</span>
       <button class="ufi-remove" onclick="${removeAction}">✕</button>
     </div>`;
@@ -6265,10 +6268,15 @@ async function uploadChatPendingFiles(){
         const updated = {
           filename: data.filename, type: data.type, ext: data.ext,
           size: data.size, icon: data.icon, preview: data.preview,
+          drm: !!data.drm_warning,
         };
         if(pendingIdx >= 0) uploadedFilesList[pendingIdx] = updated;
         else uploadedFilesList.push(updated);
         results.push(data.filename);
+        // DRM 보호 파일이면 채팅에 안내 메시지 표시
+        if(data.drm_warning){
+          addMsg('assistant', `🔒 **DRM 보호 파일 감지**: ${data.filename}\n${data.drm_warning}\n\n파일은 첨부되었지만, DRM 때문에 내용 분석이 불가능합니다.`);
+        }
       } else {
         // 업로드 실패 시 pending 제거 + 사용자에게 알림
         if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
