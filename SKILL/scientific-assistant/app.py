@@ -3324,6 +3324,47 @@ def api_chat():
                     if finish_reason == "length":
                         truncated = True
 
+                    # <think> 사고 과정만 있고 본문이 없이 잘린 경우 자동 재시도
+                    import re as _re
+                    think_only = False
+                    if truncated and answer.strip():
+                        # </think> 닫히지 않았거나, </think> 후 본문이 비어있는 경우
+                        stripped = answer.strip()
+                        has_open_think = "<think>" in stripped
+                        has_close_think = "</think>" in stripped
+                        if has_open_think and not has_close_think:
+                            think_only = True
+                        elif has_open_think and has_close_think:
+                            after_think = _re.sub(r'<think>[\s\S]*?</think>\s*', '', stripped).strip()
+                            if len(after_think) < 20:
+                                think_only = True
+
+                    if think_only and max_tokens < 32768:
+                        # 토큰 2배로 늘려서 재시도 (최대 32768)
+                        retry_max = min(max_tokens * 2, 32768)
+                        try:
+                            retry_resp = req.post(
+                                try_url,
+                                headers=headers,
+                                json={
+                                    "model": try_model,
+                                    "messages": try_msgs,
+                                    "temperature": temperature_map[min(effort, 3)],
+                                    "max_tokens": retry_max,
+                                    "stream": False,
+                                },
+                                timeout=180,
+                                verify=False,
+                            )
+                            retry_resp.raise_for_status()
+                            retry_result = retry_resp.json()
+                            if "choices" in retry_result and len(retry_result["choices"]) > 0:
+                                answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                                finish_reason = retry_result["choices"][0].get("finish_reason", "")
+                                truncated = finish_reason == "length"
+                        except Exception:
+                            pass  # 재시도 실패 시 원래 응답 사용
+
                     if attempt > 0:
                         fallback_used = True
                         fallback_from = models_tried[0]
@@ -3408,6 +3449,46 @@ def api_chat():
                 finish_reason = result["choices"][0].get("finish_reason", "")
                 if finish_reason == "length":
                     truncated = True
+
+                # <think> 사고 과정만 있고 본문이 없이 잘린 경우 자동 재시도
+                import re as _re
+                think_only = False
+                if truncated and answer.strip():
+                    stripped = answer.strip()
+                    has_open_think = "<think>" in stripped
+                    has_close_think = "</think>" in stripped
+                    if has_open_think and not has_close_think:
+                        think_only = True
+                    elif has_open_think and has_close_think:
+                        after_think = _re.sub(r'<think>[\s\S]*?</think>\s*', '', stripped).strip()
+                        if len(after_think) < 20:
+                            think_only = True
+
+                if think_only and max_tokens < 32768:
+                    retry_max = min(max_tokens * 2, 32768)
+                    try:
+                        retry_resp = req.post(
+                            api_url,
+                            headers=headers,
+                            json={
+                                "model": model,
+                                "messages": api_messages,
+                                "temperature": temperature_map[min(effort, 3)],
+                                "max_tokens": retry_max,
+                                "stream": False,
+                            },
+                            timeout=180,
+                            verify=False,
+                        )
+                        retry_resp.raise_for_status()
+                        retry_result = retry_resp.json()
+                        if "choices" in retry_result and len(retry_result["choices"]) > 0:
+                            answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                            finish_reason = retry_result["choices"][0].get("finish_reason", "")
+                            truncated = finish_reason == "length"
+                    except Exception:
+                        pass
+
             elif "error" in result:
                 answer = f"API 에러: {result['error']}"
             else:
