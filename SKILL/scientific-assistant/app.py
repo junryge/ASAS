@@ -2187,11 +2187,63 @@ ALLOWED_EXTENSIONS = {
 }
 
 
-def extract_file_text(filepath, filename):
+def _detect_drm(filepath, ext):
+    """파일의 DRM/암호화 보호 여부를 감지. 보호된 경우 설명 문자열 반환, 아니면 None."""
+    try:
+        if ext == 'pdf':
+            with open(filepath, 'rb') as f:
+                head = f.read(4096)
+            # PDF 암호화 플래그 감지
+            if b'/Encrypt' in head:
+                return "PDF 파일에 암호화(DRM)가 설정되어 있어 내용을 읽을 수 없습니다."
+
+        elif ext in ('docx', 'xlsx', 'pptx'):
+            import zipfile
+            # DRM 걸린 Office 파일은 ZIP이 아닌 OLE2(CFB) 형식인 경우가 많음
+            if not zipfile.is_zipfile(filepath):
+                with open(filepath, 'rb') as f:
+                    magic = f.read(8)
+                # Microsoft OLE2 Compound File (암호화된 Office)
+                if magic[:4] == b'\xd0\xcf\x11\xe0':
+                    return f"{ext.upper()} 파일에 DRM 또는 암호 보호가 설정되어 있어 내용을 읽을 수 없습니다."
+                return None
+            # ZIP 기반이어도 EncryptedPackage가 있으면 DRM
+            try:
+                with zipfile.ZipFile(filepath) as z:
+                    names = z.namelist()
+                    if 'EncryptedPackage' in names or 'EncryptedInfo' in names:
+                        return f"{ext.upper()} 파일에 DRM 또는 암호 보호가 설정되어 있어 내용을 읽을 수 없습니다."
+                    # Office 365 IRM(Information Rights Management) 감지
+                    if any('irm' in n.lower() or 'rights' in n.lower() for n in names):
+                        return f"{ext.upper()} 파일에 IRM(정보 권한 관리)이 설정되어 있어 내용을 읽을 수 없습니다."
+            except zipfile.BadZipFile:
+                pass
+
+        elif ext in ('epub',):
+            import zipfile
+            if zipfile.is_zipfile(filepath):
+                try:
+                    with zipfile.ZipFile(filepath) as z:
+                        names = z.namelist()
+                        if any('encryption.xml' in n.lower() or 'rights.xml' in n.lower() for n in names):
+                            return "EPUB 파일에 DRM이 설정되어 있어 내용을 읽을 수 없습니다."
+                except zipfile.BadZipFile:
+                    pass
+
+    except Exception:
+        pass
+    return None
+
+
     """파일에서 텍스트 추출 (가능한 경우)"""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     text = ""
     file_type = "unknown"
+
+    # DRM/암호화 보호 감지
+    drm_msg = _detect_drm(filepath, ext)
+    if drm_msg:
+        return drm_msg, "drm_protected"
 
     try:
         # 텍스트 기반 파일
@@ -2366,6 +2418,17 @@ def api_upload_file():
 
         # 텍스트 추출
         text, file_type = extract_file_text(filepath, fname)
+
+        # DRM 보호 파일 감지
+        if file_type == "drm_protected":
+            # DRM 파일은 업로드는 되지만 분석 불가 경고 반환
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+            return jsonify({
+                "error": f"🔒 DRM 보호 파일: {fname}\n{text}\n\nDRM이 해제된 파일을 첨부해주세요."
+            }), 422
 
         # 미리보기 (최대 3000자)
         preview = text[:3000]
@@ -6207,8 +6270,9 @@ async function uploadChatPendingFiles(){
         else uploadedFilesList.push(updated);
         results.push(data.filename);
       } else {
-        // 업로드 실패 시 pending 제거
+        // 업로드 실패 시 pending 제거 + 사용자에게 알림
         if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+        addMsg('assistant', data.error);
       }
     }catch(e){
       if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
