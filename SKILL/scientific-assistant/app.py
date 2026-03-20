@@ -5965,6 +5965,35 @@ function removeChatAttach(idx){
   });
 })();
 
+// Ctrl+V / Cmd+V 이미지 붙여넣기 (스크린샷, 클립보드 이미지)
+(function(){
+  const input = document.getElementById('input');
+  if(!input) return;
+  input.addEventListener('paste', function(e){
+    const items = e.clipboardData && e.clipboardData.items;
+    if(!items) return;
+    const imageFiles = [];
+    for(let i=0; i<items.length; i++){
+      if(items[i].type.startsWith('image/')){
+        const blob = items[i].getAsFile();
+        if(blob){
+          // 파일명 생성: paste_날짜시간.확장자
+          const ext = items[i].type.split('/')[1] || 'png';
+          const now = new Date();
+          const ts = now.getFullYear()+''+(now.getMonth()+1+'').padStart(2,'0')+(now.getDate()+'').padStart(2,'0')+'_'+(now.getHours()+'').padStart(2,'0')+(now.getMinutes()+'').padStart(2,'0')+(now.getSeconds()+'').padStart(2,'0');
+          const fname = 'paste_'+ts+'.'+ext.replace('jpeg','jpg');
+          const file = new File([blob], fname, {type: items[i].type});
+          imageFiles.push(file);
+        }
+      }
+    }
+    if(imageFiles.length > 0){
+      e.preventDefault();  // 텍스트로 붙여넣기 방지
+      handleChatFileSelect(imageFiles);
+    }
+  });
+})();
+
 function renderChatAttach(){
   const wrap = document.getElementById('chatAttachPreview');
   if(chatPendingFiles.length === 0){
