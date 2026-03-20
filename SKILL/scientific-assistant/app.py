@@ -3983,7 +3983,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 <script>
 let envs = {};
 let hasToken = false;
-let selEnv = '';
+let selEnv = 'auto';
 let catalog = {};
 let selDomains = ['bioinformatics','dev-tools','agent-data-ai'];
 let selSkills = [];
