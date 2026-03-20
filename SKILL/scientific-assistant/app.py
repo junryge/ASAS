@@ -1393,8 +1393,8 @@ def classify_and_route(query, history, uploaded_files_list):
     has_csv = any(f.get("ext", "").lower() in ("csv", "tsv", "xlsx") for f in uploaded_files_list)
     has_vision_kw = any(kw in q for kw in VISION_SIGNALS)
 
-    # 1순위: 이미지 첨부 또는 비전 키워드 → VL 모델
-    if has_images or (has_vision_kw and any(f.get("type") == "image" for f in uploaded_files_list)):
+    # 1순위: 이미지 첨부 → VL 모델
+    if has_images:
         # 복잡한 분석 요청 → 대형 VL
         if any(kw in q for kw in COMPLEX_SIGNALS) or len(q) > 200:
             return "vl-large", "이미지+복잡 분석 → VL-235B"
@@ -2823,7 +2823,7 @@ def api_chat():
     custom_system_prompt = data.get("system_prompt", "")
     max_tokens = data.get("max_tokens", 8192)
 
-    if not api_url or not model:
+    if (not api_url or not model) and not env_id.startswith("gguf-"):
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # 시스템 프롬프트 구성
