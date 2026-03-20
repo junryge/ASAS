@@ -2176,12 +2176,14 @@ def api_clear_csv():
 
 # ===================== 범용 파일 업로드 =====================
 ALLOWED_EXTENSIONS = {
-    'csv', 'tsv', 'txt',
+    'csv', 'tsv', 'txt', 'log', 'ini', 'cfg', 'conf', 'toml',
     'docx', 'xlsx', 'pdf', 'pptx',
-    'md', 'markdown',
+    'md', 'markdown', 'rst',
     'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg',
-    'py', 'js', 'html', 'css', 'json', 'xml', 'yaml', 'yml',
-    'c', 'cpp', 'h', 'java', 'go', 'rs', 'sh', 'bat',
+    'py', 'js', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
+    'html', 'css', 'scss', 'less', 'json', 'xml', 'yaml', 'yml',
+    'c', 'cpp', 'h', 'hpp', 'java', 'kt', 'scala', 'go', 'rs', 'sh', 'bat',
+    'rb', 'php', 'swift', 'r', 'sql', 'lua', 'dart', 'zig',
 }
 
 
@@ -2193,8 +2195,11 @@ def extract_file_text(filepath, filename):
 
     try:
         # 텍스트 기반 파일
-        if ext in ('md', 'markdown', 'txt', 'py', 'js', 'html', 'css', 'json',
-                    'xml', 'yaml', 'yml', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'sh', 'bat'):
+        if ext in ('md', 'markdown', 'rst', 'txt', 'log', 'ini', 'cfg', 'conf', 'toml',
+                    'py', 'js', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
+                    'html', 'css', 'scss', 'less', 'json', 'xml', 'yaml', 'yml',
+                    'c', 'cpp', 'h', 'hpp', 'java', 'kt', 'scala', 'go', 'rs', 'sh', 'bat',
+                    'rb', 'php', 'swift', 'r', 'sql', 'lua', 'dart', 'zig'):
             for enc in ["utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1"]:
                 try:
                     with open(filepath, "r", encoding=enc) as f:
@@ -3879,6 +3884,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .ufi-size{color:#999;font-size:10px;flex-shrink:0}
 .ufi-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:12px;padding:0 2px}
 .ufi-remove:hover{color:#e74c3c}
+.ufi-pending{opacity:.6}
 .think-box{margin:8px 0 12px;border:1px solid #d4c8f0;border-radius:8px;background:#f8f5ff;overflow:hidden}
 .think-box summary{cursor:pointer;padding:8px 12px;font-size:12px;font-weight:600;color:#7c5cbf;background:#f0ebfa;user-select:none}
 .think-box summary:hover{background:#e8e0f6}
@@ -6016,11 +6022,16 @@ function renderFileList(){
   let html = '<div class="uploaded-files-header"><span>📎 첨부 파일 ('+uploadedFilesList.length+')</span><button onclick="clearAllFiles()" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:10px;padding:0">전체 제거</button></div>';
   uploadedFilesList.forEach((f,i)=>{
     const sizeStr = f.size > 1048576 ? (f.size/1048576).toFixed(1)+'MB' : (f.size/1024).toFixed(1)+'KB';
-    html += `<div class="uploaded-file-item">
+    const pendingCls = f.pending ? ' ufi-pending' : '';
+    const pendingLabel = f.pending ? ' ⏳' : '';
+    const removeAction = f.pending
+      ? `removeChatAttachByName('${esc(f.filename)}')`
+      : `removeFile('${esc(f.filename)}',${i})`;
+    html += `<div class="uploaded-file-item${pendingCls}">
       <span class="ufi-icon">${f.icon}</span>
-      <span class="ufi-name" title="${esc(f.preview||'')}">${esc(f.filename)}</span>
+      <span class="ufi-name" title="${esc(f.preview||'')}">${esc(f.filename)}${pendingLabel}</span>
       <span class="ufi-size">${sizeStr}</span>
-      <button class="ufi-remove" onclick="removeFile('${esc(f.filename)}',${i})">✕</button>
+      <button class="ufi-remove" onclick="${removeAction}">✕</button>
     </div>`;
   });
   panel.innerHTML = html;
@@ -6043,7 +6054,7 @@ let chatPendingFiles = [];  // [{file:File, name:string}]
 
 // 파일 확장자 → 추천 스킬 매핑 (프론트엔드용)
 const fileExtSkillHints = {
-  'py':['agent-python-pro'], 'js':['agent-nextjs-developer'],
+  'py':['agent-python-pro'], 'js':['agent-nextjs-developer'], 'ts':['agent-nextjs-developer'], 'tsx':['agent-nextjs-developer'],
   'csv':['exploratory-data-analysis','statistical-analysis'],
   'tsv':['exploratory-data-analysis'], 'xlsx':['exploratory-data-analysis'],
   'docx':['docx'], 'pdf':['pdf'], 'pptx':['pptx'],
@@ -6053,6 +6064,10 @@ const fileExtSkillHints = {
 
 function handleChatFileSelect(files){
   let hintSkills = [];
+  const iconMap = {py:'🐍',js:'📜',ts:'📘',tsx:'📘',jsx:'📜',html:'🌐',css:'🎨',json:'📋',
+    yaml:'📋',yml:'📋',md:'📄',java:'☕',c:'⚙️',cpp:'⚙️',go:'🐹',rs:'🦀',sh:'💻',
+    png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',bmp:'🖼️',webp:'🖼️',svg:'🖼️',
+    docx:'📄',xlsx:'📊',pdf:'📕',pptx:'📽️',csv:'📊',txt:'📝',sql:'🗃️',rb:'💎',php:'🐘',vue:'💚',r:'📈'};
   for(const f of files){
     chatPendingFiles.push({file:f, name:f.name});
     // 파일 확장자로 추천 스킬 수집
@@ -6060,8 +6075,14 @@ function handleChatFileSelect(files){
     if(fileExtSkillHints[ext]){
       hintSkills.push(...fileExtSkillHints[ext]);
     }
+    // 즉시 사이드바에 pending 상태로 표시
+    uploadedFilesList.push({
+      filename: f.name, type: ext, ext: ext,
+      size: f.size, icon: iconMap[ext]||'📎', preview: '', pending: true
+    });
   }
   renderChatAttach();
+  renderFileList();
   document.getElementById('chatFileInput').value = '';
 
   // 파일 기반 추천 스킬 프리로드 (사이드바 표시 + 전송 시 자동 포함)
@@ -6074,8 +6095,22 @@ function handleChatFileSelect(files){
 }
 
 function removeChatAttach(idx){
-  chatPendingFiles.splice(idx, 1);
+  const removed = chatPendingFiles.splice(idx, 1);
+  // 사이드바 pending 항목도 함께 제거
+  if(removed.length > 0){
+    const pi = uploadedFilesList.findIndex(f => f.pending && f.filename === removed[0].name);
+    if(pi >= 0) uploadedFilesList.splice(pi, 1);
+    renderFileList();
+  }
   renderChatAttach();
+}
+function removeChatAttachByName(name){
+  const ci = chatPendingFiles.findIndex(f => f.name === name);
+  if(ci >= 0) chatPendingFiles.splice(ci, 1);
+  const pi = uploadedFilesList.findIndex(f => f.pending && f.filename === name);
+  if(pi >= 0) uploadedFilesList.splice(pi, 1);
+  renderChatAttach();
+  renderFileList();
 }
 
 // 입력창 드래그앤드롭 파일 첨부
@@ -6134,18 +6169,27 @@ function renderChatAttach(){
 
 async function uploadChatPendingFiles(){
   // 첨부된 파일들을 서버로 업로드 (CSV는 csv 엔드포인트, 나머지는 범용)
+  // pending 항목을 실제 업로드 결과로 교체
   const results = [];
   for(const pf of chatPendingFiles){
     const ext = pf.name.split('.').pop().toLowerCase();
     const formData = new FormData();
     formData.append('file', pf.file);
 
+    // pending 항목 찾기
+    const pendingIdx = uploadedFilesList.findIndex(f => f.pending && f.filename === pf.name);
+
     // CSV/TSV → CSV 전용 엔드포인트 (데이터 분석용)
     if(['csv','tsv'].includes(ext) && !csvLoaded){
       try{
         await uploadCsvFile(pf.file);
         results.push(pf.name);
-      }catch(e){}
+        // pending → 완료로 전환
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
+      }catch(e){
+        // 실패 시 pending 제거
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+      }
       continue;
     }
 
@@ -6154,13 +6198,21 @@ async function uploadChatPendingFiles(){
       const resp = await fetch('/api/upload_file', {method:'POST', body:formData});
       const data = await resp.json();
       if(!data.error){
-        uploadedFilesList.push({
+        // pending 항목을 실제 데이터로 교체
+        const updated = {
           filename: data.filename, type: data.type, ext: data.ext,
           size: data.size, icon: data.icon, preview: data.preview,
-        });
+        };
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx] = updated;
+        else uploadedFilesList.push(updated);
         results.push(data.filename);
+      } else {
+        // 업로드 실패 시 pending 제거
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
       }
-    }catch(e){}
+    }catch(e){
+      if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+    }
   }
   chatPendingFiles = [];
   renderChatAttach();
