@@ -4875,6 +4875,8 @@ function saveCurrentSession(){
     selDomains: selDomains,
     selSkills: selSkills,
     selFormat: selFormat,
+    formatManualOverride: formatManualOverride,
+    styleManualOverride: styleManualOverride,
     effort: effort,
     writingStyle: document.getElementById('writingStyle')?.value || '',
     writingStyleId: activeStyleId || '',
@@ -5084,8 +5086,9 @@ function loadSession(id){
   document.getElementById('msgs').innerHTML=s.msgsHtml||'';
   if(s.writingStyle){ document.getElementById('writingStyle').value=s.writingStyle; syncStyleDropToSidebar(); }
   if(s.writingStyleId){ activeStyleId=s.writingStyleId; renderStyleChips(); }
+  styleManualOverride = s.styleManualOverride !== undefined ? s.styleManualOverride : !!s.writingStyle;
   if(s.systemPrompt) document.getElementById('systemPromptInput').value=s.systemPrompt;
-  if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
+  if(s.selFormat){ selFormat=s.selFormat; formatManualOverride=(s.formatManualOverride!==undefined ? s.formatManualOverride : selFormat!=='auto'); document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
   if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; updateEffort(); }
   // 저장된 수동 스킬 복원
   if(s.selSkills && s.selSkills.length > 0){ selSkills = [...s.selSkills]; }
