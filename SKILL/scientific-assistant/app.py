@@ -1444,6 +1444,12 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     q = query.lower() if query else ""
     has_csv = any(f.get("ext", "").lower() in ("csv", "tsv", "xlsx") for f in uploaded_files_list)
     has_code_file = any(f.get("ext", "").lower() in ("py", "js", "java", "c", "cpp", "go", "rs", "html", "css") for f in uploaded_files_list)
+    has_image = any(f.get("type") == "image" for f in uploaded_files_list)
+
+    # 비전/이미지 키워드
+    vision_kw = ["이미지", "사진", "그림", "스크린샷", "screenshot", "화면", "figure",
+                 "diagram", "차트 읽", "캡처", "보이는", "보여주는"]
+    has_vision_kw = any(kw in q for kw in vision_kw)
 
     # 스킬 기반 힌트
     data_skills = {"exploratory-data-analysis", "statistical-analysis", "matplotlib",
@@ -1458,10 +1464,18 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     # === 출력형식 분류 ===
     fmt = "code"  # 기본값
 
+    # 이미지 분석 요청 → 코드 아닌 분석/설명으로 (최우선)
+    if has_image or has_vision_kw:
+        # 이미지 + 코드 요청이 명시적이면 코드
+        code_explicit = any(kw in q for kw in ["코드", "코딩", "구현", "스크립트", "import", "def "])
+        if code_explicit:
+            fmt = "code"
+        else:
+            fmt = "analysis"
+
     # 보고서/리포트 요청
-    report_kw = ["보고서", "리포트", "report", "요약해줘", "요약 작성", "정리해줘",
-                 "문서 작성", "문서화", "보고", "브리핑", "개요"]
-    if any(kw in q for kw in report_kw) or has_writing_skill:
+    elif any(kw in q for kw in ["보고서", "리포트", "report", "요약해줘", "요약 작성", "정리해줘",
+                 "문서 작성", "문서화", "보고", "브리핑", "개요"]) or has_writing_skill:
         fmt = "report"
 
     # 데이터 분석 요청
@@ -1477,16 +1491,24 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     elif has_debug_skill or has_code_file or any(kw in q for kw in ["에러", "error", "버그", "bug", "수정", "고쳐", "안돼", "안되", "traceback", "exception", "오류"]):
         fmt = "code-fix"
 
-    # 코드 작성 요청 (기본)
+    # 코드 작성 요청
     elif any(kw in q for kw in ["코드", "함수", "클래스", "구현", "작성", "코딩", "스크립트",
                                  "만들어", "프로그래밍", "import", "def ", "class "]):
         fmt = "code"
 
+    # 일반 질문/대화 → 단계별 (코드보다 설명 우선)
+    elif not any(kw in q for kw in ["코드", "코딩", "구현", "함수", "클래스"]):
+        fmt = "step-by-step"
+
     # === 스타일 분류 ===
     style = ""  # 기본값: 없음 (시스템 기본)
 
+    # 이미지 분석 모드
+    if (has_image or has_vision_kw) and fmt == "analysis":
+        style = "이미지 내용을 자연어로 설명하세요. 코드 없이 분석 결과만 제시. 핵심 내용→세부 관찰→해석 순서."
+
     # 디버깅 모드
-    if fmt == "code-fix" or has_debug_skill:
+    elif fmt == "code-fix" or has_debug_skill:
         style = "에러 원인 분석 중심. traceback 해석, 재현 조건, 해결책 순서."
 
     # 데이터 분석 모드
