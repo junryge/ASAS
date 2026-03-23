@@ -282,6 +282,7 @@ SKILL_DESC_KO = {
     "react-best-practices":"React/Next.js 성능 최적화 가이드",
     "web-design-guidelines":"웹 UI 디자인 100+ 규칙",
     "owasp-security":"OWASP Top 10 보안 코드리뷰 체크리스트",
+    "logpresso-query":"로그프레소 LPQL 쿼리 작성 전문가",
     # ===== cla-main 에이전트 (117개) =====
     "agent-api-designer":"API 설계 전문가","agent-backend-developer":"백엔드 개발 전문가",
     "agent-electron-pro":"Electron 데스크톱 앱","agent-frontend-developer":"프론트엔드 개발 전문가",
@@ -506,6 +507,7 @@ DOMAIN_SKILLS = {
             "template-skill","theme-factory","ui-styling","web-artifacts-builder",
             "web-frameworks","webapp-testing",
             "react-best-practices","web-design-guidelines","owasp-security",
+            "logpresso-query",
             "common","debugging","problem-solving",
         ]
     },
@@ -840,7 +842,8 @@ SKILL_KEYWORDS = {
     "agent-data-scientist": ["데이터분석","data science","분석가","EDA","탐색적분석","데이터","탐색","탐색하"],
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
-    "agent-sql-pro": ["SQL","쿼리","query","테이블조회"],
+    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색"],
+    "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
     "agent-technical-writer": ["기술문서","문서작성","API문서","documentation"],
@@ -925,7 +928,11 @@ SKILL_KEYWORDS = {
     "agent-laravel-specialist": ['Laravel', 'PHP프레임워크', 'Eloquent', 'Blade'],
     "agent-legacy-modernizer": ['레거시', '현대화', '마이그레이션', '리라이트', 'monolith'],
     "agent-legal-advisor": ['법률', '계약서', '이용약관', '개인정보', 'GDPR'],
-    "agent-llm-architect": ['LLM', '대규모언어모델', 'RAG', '파인튜닝', '프롬프트설계'],
+    "agent-llm-architect": [
+        'LLM', '대규모언어모델', 'RAG', '파인튜닝', '프롬프트설계',
+        'LLM 설계자', 'llm architect', '모델 라우팅', '컨텍스트 엔지니어링',
+        '토큰 예산', '프롬프트 아키텍처', '평가 파이프라인', 'guardrail', 'hallucination',
+    ],
     "agent-low-code-builder": ['로우코드', 'no-code', 'Bubble', 'Retool', '자동화'],
     "agent-machine-learning-engineer": ['ML엔지니어', '모델학습', '하이퍼파라미터', '피처'],
     "agent-market-researcher": ['시장조사', '마켓리서치', 'TAM', '시장규모', '경쟁'],
@@ -1219,7 +1226,7 @@ def context_aware_skill_select(query, history, max_skills=7):
             combined[sid] = combined.get(sid, 0) + 3
             boosted.add(sid)
     # Draw.io / 다이어그램 감지 (코드 작성보다 우선)
-    if any(kw in q for kw in ["drawio", "draw.io", "드로우io", "드로우IO", "드로우아이오", "다이어그램", "구조도", "흐름도", "아키텍처도", "배치도", "dfd"]):
+    if any(kw in q for kw in ["drawio", "draw.io", "드로우io", "드로우IO", "드로우아이오", "드로잉io", "드로잉IO", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처도", "배치도", "dfd"]):
         combined["drawio-diagram"] = combined.get("drawio-diagram", 0) + 15
         boosted.add("drawio-diagram")
     # PPT / 프레젠테이션 감지
@@ -1230,6 +1237,12 @@ def context_aware_skill_select(query, history, max_skills=7):
     if any(kw in q for kw in ["코드", "함수", "클래스", "구현", "작성", "만들어", "코딩"]):
         for sid in ["agent-python-pro", "debugging"]:
             combined[sid] = combined.get(sid, 0) + 3
+            boosted.add(sid)
+
+    # LLM/에이전트 설계 감지
+    if any(kw in q for kw in ["llm", "rag", "파인튜닝", "프롬프트", "모델 라우팅", "에이전트 설계", "llm 설계", "llm 아키텍처"]):
+        for sid in ["agent-llm-architect", "agent-prompt-engineer", "agent-ai-engineer"]:
+            combined[sid] = combined.get(sid, 0) + 6
             boosted.add(sid)
 
     # 5단계: 업로드 파일 기반 부스트
@@ -1393,6 +1406,27 @@ def classify_and_route(query, history, uploaded_files_list):
     has_csv = any(f.get("ext", "").lower() in ("csv", "tsv", "xlsx") for f in uploaded_files_list)
     has_vision_kw = any(kw in q for kw in VISION_SIGNALS)
 
+    # 만약 온라인 모델용 토큰이 없으면, 강제로 로컬 GGUF 모델 중에서 자동 선택
+    if not API_TOKEN:
+        gguf_envs = {k: v for k, v in ENV_CONFIG.items() if str(k).startswith("gguf-")}
+        if not gguf_envs:
+            return "common", "토큰 없음 & 로컬 모델 없음 → 실패 예상"
+        
+        vl_ggufs = [k for k, v in gguf_envs.items() if "vl" in v["name"].lower()]
+        normal_ggufs = [k for k, v in gguf_envs.items() if "vl" not in v["name"].lower()]
+        
+        if has_images and vl_ggufs:
+            return vl_ggufs[0], f"로컬 이미지 분석 → {ENV_CONFIG[vl_ggufs[0]]['name']}"
+        elif normal_ggufs:
+            complex_count = sum(1 for kw in COMPLEX_SIGNALS if kw in q)
+            if complex_count >= 2 or len(q) > 200:
+                return normal_ggufs[0], f"로컬 복잡한 분석 → {ENV_CONFIG[normal_ggufs[0]]['name']}"
+            else:
+                return normal_ggufs[-1], f"로컬 간단한 요청 → {ENV_CONFIG[normal_ggufs[-1]]['name']}"
+        else:
+            first_key = list(gguf_envs.keys())[0]
+            return first_key, f"로컬 기본 모델 → {ENV_CONFIG[first_key]['name']}"
+
     # 1순위: 이미지 첨부 → VL 모델
     if has_images:
         # 복잡한 분석 요청 → 대형 VL
@@ -1482,6 +1516,10 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     elif has_csv or has_data_skill or any(kw in q for kw in ["분석해줘", "분석해 줘", "데이터 분석", "인사이트", "통계 분석", "상관관계", "추세"]):
         fmt = "analysis"
 
+    # LLM/아키텍처 설계 요청
+    elif any(kw in q for kw in ["llm", "rag", "아키텍처", "시스템 설계", "트레이드오프", "모델 라우팅"]):
+        fmt = "analysis"
+
     # 단계별 설명 요청
     elif any(kw in q for kw in ["방법", "어떻게", "절차", "과정", "단계별", "step by step",
                                  "가르쳐", "알려줘", "설명해", "튜토리얼", "가이드"]):
@@ -1510,6 +1548,10 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     # 디버깅 모드
     elif fmt == "code-fix" or has_debug_skill:
         style = "에러 원인 분석 중심. traceback 해석, 재현 조건, 해결책 순서."
+
+    # LLM 설계 모드
+    elif "agent-llm-architect" in skill_ids or any(kw in q for kw in ["llm", "rag", "아키텍처", "시스템 설계"]):
+        style = "설계 의사결정 중심. 요구사항→옵션 비교→트레이드오프→권장안→실행계획 순서."
 
     # 데이터 분석 모드
     elif fmt == "analysis" or has_data_skill:
@@ -1642,7 +1684,7 @@ def find_gguf_files():
     return [{"path": f, "name": os.path.basename(f), "size_gb": round(os.path.getsize(f) / 1e9, 1)} for f in files]
 
 
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
+def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
     """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)"""
     global gguf_model, gguf_loaded_path
 
@@ -1667,12 +1709,23 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
         saved_stdout = sys.stdout
         saved_stderr = sys.stderr
         try:
-            gguf_model = Llama(
-                model_path=model_path,
-                n_ctx=n_ctx,
-                n_gpu_layers=n_gpu_layers,
-                verbose=False,
-            )
+            # 일부 환경에서 n_batch를 크게 잡으면 디코드 실패가 증가해 보수적으로 설정
+            try:
+                gguf_model = Llama(
+                    model_path=model_path,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                    n_batch=n_batch,
+                    verbose=False,
+                )
+            except TypeError:
+                # 구버전 llama-cpp-python 호환
+                gguf_model = Llama(
+                    model_path=model_path,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                    verbose=False,
+                )
         finally:
             # 핸들 복원
             sys.stdout = saved_stdout
@@ -1846,6 +1899,30 @@ PRESET_PROMPTS = {
 [스킬 활용]
 - 로드된 스킬의 방법론, 코드 패턴, API를 적극 활용
 - 여러 스킬이 관련되면 조합해서 최적의 답변 생성"""
+    },
+    "llm-system-architect": {
+        "name": "LLM 시스템 아키텍트",
+        "icon": "🧠",
+        "content": """당신은 LLM 시스템 아키텍트입니다.
+
+[우선 원칙]
+1. 먼저 요구사항과 제약(성능/비용/보안/운영)을 분석하세요.
+2. 분석 후 아키텍처 옵션 2~3개를 비교하고 최종안을 추천하세요.
+3. 반드시 트레이드오프(장단점, 리스크, 운영 난이도)를 명시하세요.
+
+[설계 범위]
+- 모델 선택/라우팅 전략 (단일 vs 멀티모델)
+- RAG 파이프라인 (임베딩, 검색, 리랭킹, 캐시)
+- 프롬프트/가드레일/평가(Eval) 체계
+- 서빙(vLLM/TGI), 모니터링, 비용 최적화
+- 장애 대응(폴백, 재시도, 회로차단, 관측성)
+
+[응답 구조]
+1. 요구사항 분석
+2. 아키텍처 옵션 비교표
+3. 추천 아키텍처(이유 포함)
+4. 단계별 구현 계획(POC→운영)
+5. 운영 지표(SLO/비용/품질)"""
     },
     "semiconductor": {
         "name": "반도체 엔지니어",
@@ -2234,7 +2311,7 @@ def _detect_drm(filepath, ext):
         pass
     return None
 
-
+def extract_file_text(filepath, filename):
     """파일에서 텍스트 추출 (가능한 경우)"""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     text = ""
@@ -2631,6 +2708,123 @@ def api_save_md():
     return send_file(buf, as_attachment=True, download_name=filename, mimetype="text/markdown")
 
 
+
+
+def _prepare_pptx_code_for_copy(code):
+    """복사/실행용 python-pptx 코드를 손상 없이 정리."""
+    import re as _re
+
+    if not isinstance(code, str):
+        return ""
+
+    code = code.strip()
+
+    # 0) 바깥 코드펜스 제거
+    code = _re.sub(r'^\s*```(?:python|py)?\s*\n', '', code, flags=_re.IGNORECASE)
+    code = _re.sub(r'\n```\s*$', '', code)
+
+    # 1) 특수 따옴표/전각 문자 정리
+    _quote_map = {
+        '\u201c': '"', '\u201d': '"',
+        '\u2018': "'", '\u2019': "'",
+        '\u300c': "'", '\u300d': "'",
+        '\u300e': '"', '\u300f': '"',
+        '\uff02': '"', '\uff07': "'",
+    }
+    for _old, _new in _quote_map.items():
+        code = code.replace(_old, _new)
+
+    _fullwidth_map = {
+        '\uff08': '(', '\uff09': ')',
+        '\uff1a': ':', '\uff1b': ';',
+        '\uff0c': ',', '\uff0e': '.',
+        '\uff1d': '=', '\uff0b': '+',
+    }
+    for _old, _new in _fullwidth_map.items():
+        code = code.replace(_old, _new)
+
+    # 2) 이어붙은 "from ... import ..."만 안전하게 줄바꿈
+    code = _re.sub(
+        r'(\bfrom\s+[A-Za-z_][\w\.]*\s+import\s+[^\n#;]+?)\s+(?=from\s+[A-Za-z_][\w\.]*\s+import\s+)',
+        r'\1\n',
+        code
+    )
+
+    def _looks_like_code_line(s):
+        return bool(_re.match(
+            r'^(from\s+|import\s+|def\s+|class\s+|if\s+|elif\s+|else:|for\s+|while\s+|try:|except\b|finally:|with\s+|return\b|yield\b|pass\b|break\b|continue\b|@|#|\"\"\"|\'\'\'|[A-Za-z_]\w*\s*=|[A-Za-z_][\w\.]*\s*\(|\)|\]|\})',
+            s
+        ))
+
+    # 3) 명백한 메타/설명 라인만 주석 처리 (실제 코드는 보존)
+    cleaned = []
+    for ln in code.splitlines():
+        s = ln.strip()
+        if not s:
+            cleaned.append(ln)
+            continue
+
+        if any(k in s for k in ('자동 스킬', '[LOCAL', 'prompt~', 'ctx=', 'max_tokens=')):
+            continue
+
+        if _re.match(r'^[=\-]{3,}$', s):
+            cleaned.append('# ' + s)
+            continue
+
+        if _re.match(r'^\d+\.\s+', s) and not _looks_like_code_line(s):
+            cleaned.append('# ' + s)
+            continue
+
+        if _re.search(r'[가-힣]', s) and not _looks_like_code_line(s):
+            cleaned.append('# ' + s)
+            continue
+
+        cleaned.append(ln)
+
+    code = '\n'.join(cleaned)
+
+    # 4) 자주 틀리는 python-pptx 패턴 보정
+    code = code.replace('.add_text_box(', '.add_textbox(').replace('.add_text_box (', '.add_textbox(')
+    code = _re.sub(
+        r'\b(?:content|body|placeholder|text_frame|title_shape|subtitle|body_shape|content_placeholder)\s*\.\s*shapes\s*\.',
+        'slide.shapes.',
+        code
+    )
+
+    # 5) 문법 실패 시, 문제 라인이 비코드로 보이면 그 라인만 주석 처리
+    lines = code.splitlines()
+    for _ in range(10):
+        code_try = '\n'.join(lines)
+        try:
+            compile(code_try, '<pptx_copy_code>', 'exec')
+            return code_try
+        except SyntaxError as e:
+            idx = (e.lineno or 1) - 1
+            if idx < 0 or idx >= len(lines):
+                break
+            s = lines[idx].strip()
+            if (not s) or s.startswith('#'):
+                break
+            if _looks_like_code_line(s):
+                break
+            lines[idx] = '# ' + lines[idx]
+
+    return '\n'.join(lines)
+
+
+@app.route("/api/prepare_pptx_code", methods=["POST"])
+def api_prepare_pptx_code():
+    """PPT 코드 복사 전에 실행 가능하도록 정리된 Python 코드를 반환"""
+    data = request.json or {}
+    code = data.get("code", "")
+    if not isinstance(code, str) or not code.strip():
+        return jsonify({"error": "code가 비어있습니다."}), 400
+
+    try:
+        prepared = _prepare_pptx_code_for_copy(code)
+        return jsonify({"code": prepared})
+    except Exception as e:
+        return jsonify({"error": f"코드 정리 실패: {str(e)}"}), 500
 # ===================== PPT 생성 (python-pptx) =====================
 @app.route("/api/generate_pptx", methods=["POST"])
 def api_generate_pptx():
@@ -2672,13 +2866,20 @@ def api_generate_pptx():
     for _old, _new in _fullwidth_map.items():
         code = code.replace(_old, _new)
 
-    # 2.5) LLM이 자주 틀리는 pptx 메서드명 자동 교정
+    # 2.5) LLM이 자주 틀리는 pptx 메서드/속성 자동 교정
     _method_typo_map = {
         '.add_text_box(': '.add_textbox(',
         '.add_text_box (': '.add_textbox(',
+        'XLCT.XL_LEGEND_POSITION': 'XL_LEGEND_POSITION',
+        'XL_CHART_TYPE.XL_LEGEND_POSITION': 'XL_LEGEND_POSITION',
+        'chart.plot_area.shapes': '[]',
+        'chart.plot_area.data_labels': 'chart.plots[0].data_labels',
     }
     for _old, _new in _method_typo_map.items():
         code = code.replace(_old, _new)
+        
+    if 'XL_LEGEND_POSITION' in code and 'from pptx.enum.chart import XL_LEGEND_POSITION' not in code:
+        code = "from pptx.enum.chart import XL_LEGEND_POSITION\n" + code
 
     # 3) placeholder.shapes → slide.shapes 자동 수정
     # LLM이 content/body/placeholder 등에 .shapes를 호출하는 실수 수정
@@ -2734,6 +2935,11 @@ def api_generate_pptx():
     code = _re.sub(r"= ''([^']*?)''", r"= '\1'", code)
     # "text" 안에 이스케이프 안 된 "가 있는 패턴도 수정
     code = _re.sub(r'""([^"]{2,}?)""', r"'\1'", code)
+
+    # 4.5) f-string 숫자 포맷팅 시도 시 변수를 _safe_float()로 강제 캐스팅 (문자열 등 포맷불가 값 대비)
+    code = _re.sub(r'\{([^:}]+?):([^{}]*?\.?\d+[fF%])\}', r'{_safe_float(\1):\2}', code)
+    code = code.replace("_safe_float(float(", "_safe_float(")
+    code = code.replace("_safe_float(_safe_float(", "_safe_float(")
 
     # 5) 괄호 불일치 자동 수정 (예: slide_layouts[6) → slide_layouts[6])
     def _fix_bracket_mismatch(code_str):
@@ -2836,6 +3042,9 @@ def api_generate_pptx():
         # 코드에서 writeFile/save 경로를 out_path로 강제 교체
         wrapped_code = (
             "import sys, os\n"
+            "def _safe_float(val):\n"
+            "    try: return float(val)\n"
+            "    except: return 0.0\n"
             f"_OUTPUT_PATH = {repr(out_path)}\n"
             "# --- monkey-patch: fix default.pptx template path resolution ---\n"
             "import pptx.api as _pptx_api\n"
@@ -2885,6 +3094,12 @@ def api_generate_pptx():
             "                tc_pr = _etree.SubElement(tc, _qn('a:tcPr'))\n"
             "    return _orig_table_cell(self, row_idx, col_idx)\n"
             "_pptx_table.Table.cell = _safe_table_cell\n"
+            "# --- monkey-patch: allow GraphicFrame.rows and GraphicFrame.cell --- \n"
+            "import pptx.shapes.graphfrm as _gf\n"
+            "if hasattr(_gf, 'GraphicFrame'):\n"
+            "    _gf.GraphicFrame.rows = property(lambda self: self.table.rows if self.has_table else None)\n"
+            "    _gf.GraphicFrame.columns = property(lambda self: self.table.columns if self.has_table else None)\n"
+            "    _gf.GraphicFrame.cell = lambda self, r, c: self.table.cell(r, c) if self.has_table else None\n"
             "# --- user code ---\n"
             f"{code}\n"
         )
@@ -2929,14 +3144,37 @@ def api_generate_pptx():
             else:
                 return jsonify({"error": "PPT 파일이 생성되지 않았습니다."}), 500
 
-        from io import BytesIO
-        with open(out_path, "rb") as f:
-            buf = BytesIO(f.read())
-        buf.seek(0)
-        return send_file(
-            buf, as_attachment=True, download_name=filename,
-            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        import shutil, datetime
+        
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        final_filename = f"presentation_{timestamp}.pptx"
+        
+        # 사용자의 로컬 Downloads 폴더로 직접 복사 (로컬 앱 전용 특권)
+        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+        if not os.path.exists(downloads_dir):
+            downloads_dir = os.path.join(BASE_DIR, 'uploads')
+            
+        os.makedirs(downloads_dir, exist_ok=True)
+        local_dl_path = os.path.join(downloads_dir, final_filename)
+        
+        shutil.copy2(out_path, local_dl_path)
+        
+        return jsonify({
+            "message": f"'{final_filename}' 파일이 로컬 다운로드 폴더에 안전하게 바로 저장되었습니다!"
+        })
+
+@app.route("/api/download_static/presentation.pptx", methods=["GET"])
+def api_download_static():
+    file_id = request.args.get('id', '')
+    if not file_id: return "Invalid ID", 400
+    save_name = f"presentation_{file_id}.pptx"
+    static_dir = os.path.join(BASE_DIR, 'uploads')
+    return send_file(
+        os.path.join(static_dir, save_name), 
+        as_attachment=True, 
+        download_name="presentation.pptx",
+        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 
 # ===================== 응답 중지 =====================
@@ -2988,6 +3226,8 @@ def api_chat():
     custom_system_prompt = data.get("system_prompt", "")
     max_tokens = data.get("max_tokens", 8192)
     think_mode = data.get("think_mode", False)
+    requested_output_format = output_format
+    is_gguf = env_id.startswith("gguf-") if env_id else False
 
     # 출력형식/스타일 자동 분류 (format=auto 또는 writing_style=auto일 때)
     auto_format = False
@@ -3007,6 +3247,22 @@ def api_chat():
         if writing_style == "auto":
             writing_style = auto_sty
             auto_style = True
+
+    # GGUF 전용: PPT/Draw.io 생성 요청은 code 형식으로 강제 (API 경로 영향 없음)
+    last_user_query = ""
+    if messages:
+        last_m = messages[-1]
+        if isinstance(last_m.get("content"), str):
+            last_user_query = last_m.get("content", "")
+    ql = last_user_query.lower()
+    gguf_artifact_request = is_gguf and any(kw in ql for kw in [
+        "ppt", "피피티", "파워포인트", "프레젠테이션", "슬라이드", "deck",
+        "draw.io", "drawio", "드로우", "다이어그램", "mxfile", "mxgraphmodel",
+    ])
+    if gguf_artifact_request and requested_output_format == "auto" and output_format in ("report", "analysis", "step-by-step"):
+        output_format = "code"
+        auto_format = True
+        auto_fmt_reason = (auto_fmt_reason + " | " if auto_fmt_reason else "") + "GGUF artifact request -> force code"
 
     if (not api_url or not model) and not env_id.startswith("gguf-"):
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
@@ -3100,8 +3356,19 @@ def api_chat():
 
     if loaded:
         system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
+        if "agent-llm-architect" in loaded:
+            system_prompt += (
+                "=== LLM 시스템 설계 규칙 ===\n"
+                "사용자가 LLM/에이전트/RAG 설계를 요청하면 다음 순서로 답변하세요:\n"
+                "1. 먼저 요구사항과 제약을 분석하세요(트래픽, 지연시간, 예산, 보안, 데이터 민감도).\n"
+                "2. 아키텍처 옵션 2~3개를 비교하고 트레이드오프를 명확히 제시하세요.\n"
+                "3. 최종 추천안을 제시하고, 선택 근거를 성능/비용/운영성 관점으로 설명하세요.\n"
+                "4. 구현 단계를 POC→파일럿→프로덕션으로 나눠 체크리스트 형태로 제시하세요.\n"
+                "5. 필수 운영 지표(SLO, 토큰비용, 오류율, 환각률, 안전성)를 포함하세요.\n\n"
+            )
         # pptx 스킬이 로드됐으면 python-pptx 코드 생성 지시 추가
-        if "pptx" in loaded:
+        ppt_requested = 'ql' in locals() and any(kw in ql for kw in ["ppt", "피피티", "파워포인트", "프레젠테이션", "슬라이드", "deck"])
+        if "pptx" in loaded or ppt_requested:
             system_prompt += (
                 "=== PPT 생성 규칙 ===\n"
                 "사용자가 PPT/프레젠테이션/슬라이드 생성을 요청하면:\n"
@@ -3145,6 +3412,8 @@ def api_chat():
                 "16. 중요: 문자열 리터럴은 반드시 같은 줄에서 열고 닫으세요! "
                 "줄바꿈이 필요하면 삼중따옴표(triple quotes)를 사용하세요. "
                 "예: p.text = '긴 텍스트' (O) / p.text = '긴 텍스트 (X — SyntaxError: unterminated string literal).\n"
+                "17. 중요 (필수): 파이썬 문법에 맞게 들여쓰기(Indentation)와 줄바꿈을 철저히 지키고 한 줄에 여러 명령어(`slide = ... title = ...`)를 이어서 쓰지 마세요. SyntaxError가 발생합니다.\n"
+                "18. 중요 (필수): 반드시 단 1개의 완성된 파이썬 스크립트만 ```python 과 ``` 사이에 출력하세요. 코드 앞뒤로 인사말, <think> 태그, 요약 설명 등 부가적인 텍스트를 절대 쓰지 마세요. 오직 파이썬 코드만 출력해야 작동합니다.\n"
                 "python-pptx 차트 코드 예시:\n"
                 "```python\n"
                 "from pptx.chart.data import CategoryChartData\n"
@@ -3174,6 +3443,18 @@ def api_chat():
                 "여러 시리즈 비교: chart_data.add_series()를 여러 번 호출\n"
                 "원형 차트: CategoryChartData에 시리즈 1개만 추가, XL_CHART_TYPE.PIE 사용\n"
                 "프론트엔드가 코드를 감지하여 '📽️ PPT 생성 & 다운로드' 버튼을 자동 표시합니다.\n\n"
+            )
+
+        drawio_requested = 'ql' in locals() and any(kw in ql for kw in ["drawio", "draw.io", "드로우", "드로잉", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처", "배치도", "dfd"])
+        if "drawio-diagram" in loaded or drawio_requested:
+            system_prompt += (
+                "=== Draw.io 다이어그램 생성 규칙 ===\n"
+                "사용자가 Draw.io, 다이어그램, 아키텍처, 구조도 생성을 요청하면:\n"
+                "1. 반드시 ```drawio 코드블록 안에 완전한 XML 코드를 작성하세요.\n"
+                "2. XML 구조 예시: ```drawio\n<mxfile><diagram><mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/>...</root></mxGraphModel></diagram></mxfile>\n```\n"
+                "3. 중요 (GGUF 필수): 다이어그램에 대한 부가적인 설명, 설치 가이드, 인사말, <think> 태그 등은 **절대 출력하지 마세요**.\n"
+                "4. 오직 단 1개의 완성된 XML 코드 블록만 출력해야 프론트엔드가 다이어그램 렌더러를 띄웁니다.\n"
+                "5. 노드의 위치(x, y), 크기(width, height) 속성을 적절히 지정해 겹치지 않게 하세요.\n\n"
             )
         # === 차트/그래프 생성 가이드 (항상 포함 - 스킬 불필요) ===
         system_prompt += (
@@ -3258,7 +3539,7 @@ def api_chat():
     format_map = {
         "code": "답변을 Python 코드 중심으로 작성하세요. import 포함, 즉시 실행 가능하게.",
         "code-fix": "문제 진단 → 수정 전/후 비교 → 수정 이유 설명 순서로 답변하세요. 최소 변경 원칙.",
-        "analysis": "데이터 분석 결과를 글로 설명하세요. 데이터 개요 → 핵심 인사이트 → 시각화 설명 → 결론/제안 순서. 코드가 아닌 분석 내용과 해석이 중심이어야 합니다. 코드는 꼭 필요한 경우에만 최소한으로 포함하세요.",
+        "analysis": "분석 중심으로 답변하세요. 문제 정의 → 핵심 가정 → 옵션 비교(장단점/트레이드오프) → 결론/권장안 순서. 코드보다 근거와 의사결정을 우선하고, 코드는 꼭 필요한 경우에만 최소한으로 포함하세요.",
         "report": "반드시 보고서 형식의 글(텍스트)로 작성하세요. 코드를 생성하지 마세요. 구조: 제목 → 요약(Executive Summary) → 배경/목적 → 본문(핵심 내용, 분석, 근거) → 결론 및 제언. 전문적이고 읽기 쉬운 문서 형태로 답변하세요.",
         "step-by-step": "답변을 단계별(1,2,3...)로 작성하세요. 각 단계마다 무엇을 하는지, 왜 필요한지를 글로 설명하세요. 코드보다 설명과 이해를 우선하세요.",
     }
@@ -3277,6 +3558,72 @@ def api_chat():
     api_messages = [{"role": "system", "content": system_prompt}] + messages
     temperature_map = [0.1, 0.3, 0.5, 0.7]
 
+    # ===== VL 모델: 이미지 첨부 시 OpenAI Vision API 포맷 변환 (GGUF / API 공통) =====
+    # env_id가 vl-로 시작하거나, gguf- 계열 중 모델명에 vl이 포함된 경우
+    is_gguf_vl = env_id.startswith("gguf-") and "vl" in ENV_CONFIG.get(env_id, {}).get("name", "").lower()
+    has_vision = "vision" in get_model_capabilities(env_id) or is_gguf_vl
+    
+    image_files = [f for f in uploaded_files if f.get("type") == "image" and f.get("img_base64")]
+    
+    if has_vision and image_files and api_messages:
+        # 마지막 user 메시지를 멀티모달 포맷으로 변환
+        for i in range(len(api_messages) - 1, -1, -1):
+            if api_messages[i].get("role") == "user":
+                text_content = api_messages[i].get("content", "")
+                if isinstance(text_content, str):
+                    content_parts = [{"type": "text", "text": text_content}]
+                    for img_f in image_files:
+                        ext = img_f.get("ext", "png").lower()
+                        mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif",
+                                "bmp": "bmp", "webp": "webp", "svg": "svg+xml"}.get(ext, "png")
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{mime};base64,{img_f['img_base64']}"
+                            }
+                        })
+                    api_messages[i]["content"] = content_parts
+                break
+
+    def _normalize_gguf_artifact_answer(answer_text, artifact_request=False):
+        """GGUF 출력의 코드블록 라벨을 보정해 프론트 버튼 감지를 안정화."""
+        if not artifact_request or not isinstance(answer_text, str) or not answer_text.strip():
+            return answer_text
+
+        import re as _re_norm
+        normalized = answer_text
+        # ```py, ```python3 -> ```python
+        normalized = _re_norm.sub(r"```(?:py|python3)\s*\n", "```python\n", normalized, flags=_re_norm.IGNORECASE)
+
+        # 무라벨 코드블록에서 PPT/Draw.io 패턴을 감지해 라벨 부여
+        def _upgrade_unlabeled(m):
+            body = m.group(1)
+            low = body.lower()
+            if any(tok in low for tok in ("from pptx", "import pptx", "presentation(", "add_slide")):
+                return f"```python\n{body}```"
+            if any(tok in low for tok in ("<mxfile", "<mxgraphmodel", "<mxcell")):
+                return f"```drawio\n{body}```"
+            return m.group(0)
+
+        normalized = _re_norm.sub(r"```[ \t]*\n([\s\S]*?)```", _upgrade_unlabeled, normalized)
+
+        # 코드블록이 전혀 없지만 python-pptx 코드가 섞여 있으면 후행 코드블록으로 보강
+        low_all = normalized.lower()
+        if ("from pptx" in low_all or "import pptx" in low_all) and "```python" not in low_all:
+            lines = normalized.splitlines()
+            start = -1
+            for i, line in enumerate(lines):
+                ll = line.lower()
+                if "from pptx" in ll or "import pptx" in ll or "presentation(" in ll:
+                    start = i
+                    break
+            if start >= 0:
+                candidate = "\n".join(lines[start:]).strip()
+                if candidate:
+                    normalized += "\n\n```python\n" + candidate + "\n```"
+
+        return normalized
+
     # ===== GGUF 로컬 모델: Python에서 직접 추론 =====
     if env_id.startswith("gguf-"):
         # 선택된 환경의 모델 경로로 동적 로드/스왑
@@ -3287,14 +3634,48 @@ def api_chat():
         if gguf_model is None:
             return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
 
-        # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정
+        # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정 (보수적 계산)
         gguf_ctx_attr = getattr(gguf_model, 'n_ctx', None)
         gguf_ctx = gguf_ctx_attr() if callable(gguf_ctx_attr) else (gguf_ctx_attr if gguf_ctx_attr is not None else 32768)
-        prompt_tokens_est = len(system_prompt) // 2 + sum(len(m.get("content","")) // 2 for m in messages)
-        safe_max = max(256, gguf_ctx - prompt_tokens_est - 100)
-        actual_max_tokens = min(max_tokens, safe_max)
+        gguf_reply_cap = max(256, int(os.getenv("GGUF_MAX_TOKENS_CAP", "8192")))
+        gguf_ctx_reserve = max(512, int(os.getenv("GGUF_CONTEXT_RESERVE", "1536")))
 
-        if prompt_tokens_est > gguf_ctx - 256:
+        def _estimate_gguf_prompt_tokens(msgs):
+            # 1) 모델 토크나이저 기반 추정 (가능하면 사용)
+            try:
+                flat_parts = []
+                for m in msgs:
+                    role = m.get("role", "user")
+                    content = m.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for p in content:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                text_parts.append(str(p.get("text", "")))
+                        content = "\n".join(text_parts)
+                    flat_parts.append(f"{role}: {str(content)}")
+                flat_text = "\n".join(flat_parts).encode("utf-8", errors="ignore")
+                toks = gguf_model.tokenize(flat_text, add_bos=True)
+                return len(toks) + 256  # chat template/여유 버퍼
+            except Exception:
+                # 2) 폴백: 한국어 기준 보수 추정
+                total_chars = 0
+                for m in msgs:
+                    content = m.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for p in content:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                text_parts.append(str(p.get("text", "")))
+                        content = "\n".join(text_parts)
+                    total_chars += len(str(content))
+                return int(total_chars * 1.1) + 512
+
+        prompt_tokens_est = _estimate_gguf_prompt_tokens(api_messages)
+        safe_max = max(256, gguf_ctx - prompt_tokens_est - gguf_ctx_reserve)
+        actual_max_tokens = min(max_tokens, safe_max, gguf_reply_cap)
+
+        if prompt_tokens_est > gguf_ctx - gguf_ctx_reserve:
             return jsonify({"error": f"프롬프트가 너무 깁니다 (~{prompt_tokens_est}토큰). 스킬 수를 줄이거나 히스토리를 초기화해주세요. (GGUF ctx: {gguf_ctx})"}), 400
 
         answer, err = gguf_chat(
@@ -3303,6 +3684,31 @@ def api_chat():
             max_tokens=actual_max_tokens,
             stop_flag=chat_stop_flag,
         )
+        # GGUF 디코드 실패 시: 경량 컨텍스트 + 작은 토큰으로 1회 자동 재시도
+        if err and isinstance(err, str) and ("Failed completely even with batch size 1" in err or "llama.eval(decode)" in err):
+            compact_system = (
+                "당신은 도움이 되는 AI입니다. "
+                "핵심만 간결하게 답하고, 코드 요청이면 실행 가능한 코드만 출력하세요."
+            )
+            compact_messages = [{"role": "system", "content": compact_system}]
+            compact_messages.extend(messages[-6:] if len(messages) > 6 else messages)
+
+            compact_prompt_est = _estimate_gguf_prompt_tokens(compact_messages)
+            compact_safe_max = max(256, gguf_ctx - compact_prompt_est - gguf_ctx_reserve)
+            retry_max = min(2048, max(256, actual_max_tokens // 2), compact_safe_max)
+
+            retry_answer, retry_err = gguf_chat(
+                compact_messages,
+                temperature=temperature_map[min(effort, 3)],
+                max_tokens=retry_max,
+                stop_flag=chat_stop_flag,
+            )
+            if not retry_err and retry_answer:
+                answer = retry_answer
+                err = None
+                prompt_tokens_est = compact_prompt_est
+                actual_max_tokens = retry_max
+
         if err:
             return jsonify({"error": err}), 500
 
@@ -3331,6 +3737,8 @@ def api_chat():
                     if not retry_err and retry_answer:
                         answer = retry_answer
 
+        answer = _normalize_gguf_artifact_answer(answer, gguf_artifact_request)
+
         return jsonify({
             "content": answer,
             "loaded_skills": loaded,
@@ -3338,28 +3746,6 @@ def api_chat():
             "tokens_budget": f"prompt~{prompt_tokens_est}, max_tokens={actual_max_tokens}, ctx={gguf_ctx}",
         })
 
-    # ===== VL 모델: 이미지 첨부 시 OpenAI Vision API 포맷 변환 =====
-    has_vision = "vision" in get_model_capabilities(env_id)
-    image_files = [f for f in uploaded_files if f.get("type") == "image" and f.get("img_base64")]
-    if has_vision and image_files and api_messages:
-        # 마지막 user 메시지를 멀티모달 포맷으로 변환
-        for i in range(len(api_messages) - 1, -1, -1):
-            if api_messages[i].get("role") == "user":
-                text_content = api_messages[i].get("content", "")
-                if isinstance(text_content, str):
-                    content_parts = [{"type": "text", "text": text_content}]
-                    for img_f in image_files:
-                        ext = img_f.get("ext", "png").lower()
-                        mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif",
-                                "bmp": "bmp", "webp": "webp", "svg": "svg+xml"}.get(ext, "png")
-                        content_parts.append({
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/{mime};base64,{img_f['img_base64']}"
-                            }
-                        })
-                    api_messages[i]["content"] = content_parts
-                break
 
     # ===== 회사 API: HTTP 요청 (폴백 체인 지원) =====
     headers = {"Content-Type": "application/json"}
@@ -4852,7 +5238,9 @@ async function send(){
         info += ` [📝 ${parts.join(' / ')}]`;
       }
       let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
-      addMsg('assistant', data.content + truncWarn + info);
+      const assistantDisplayText = data.content + truncWarn + info;
+      const assistantRawForDetect = data.content + truncWarn;
+      addMsg('assistant', assistantDisplayText, assistantRawForDetect);
       history.push({role:'assistant',content:data.content});
       // markdown-mermaid-writing 스킬: ```markdown 블록이 없어도 전체 응답에 MD 다운로드 버튼 추가
       if(selSkills.includes('markdown-mermaid-writing') && !data.content.includes('```markdown')){
@@ -5035,7 +5423,7 @@ function renderMd(text){
   thinkBlocks.forEach((block,i)=>{s=s.replace(`__THINK_${i}__`,block);});
   return s;
 }
-function addMsg(role,text){
+function addMsg(role,text,rawForDetect){
   const c=document.getElementById('msgs');
   const d=document.createElement('div');
   d.className='msg '+role;
@@ -5049,7 +5437,7 @@ function addMsg(role,text){
     pre.appendChild(btn);
   });
   // PPT 코드 블록 감지 → 생성 & 다운로드 버튼 삽입
-  if(role==='assistant') detectAndAddPptxButtons(d, text);
+  if(role==='assistant') detectAndAddPptxButtons(d, (typeof rawForDetect==='string' ? rawForDetect : text));
   // Chart.js 차트 초기화 (data-chart-json 속성이 있는 canvas 탐색)
   d.querySelectorAll('canvas[data-chart-json]').forEach(cv=>{
     try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
@@ -6863,7 +7251,9 @@ async function runCodeAssistant(){
         if(data.auto_routed){ info += ' [\uD83E\uDD16 자동: '+data.model_used+' ('+data.route_reason+')]'; }
         if(data.fallback_used){ info += ' [\u26A0\uFE0F 대체: '+data.fallback_from+' \u2192 '+data.model_used+']'; }
         let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
-        addMsg('assistant', data.content + truncWarn + info);
+        const assistantDisplayText = data.content + truncWarn + info;
+        const assistantRawForDetect = data.content + truncWarn;
+        addMsg('assistant', assistantDisplayText, assistantRawForDetect);
         history.push({role:'assistant', content:data.content});
       }
     }catch(e){
@@ -7004,7 +7394,7 @@ updateRpRunBtn();
 // ==================== PPT 코드 감지 & 생성 ====================
 function detectAndAddPptxButtons(msgEl, rawText){
   // python-pptx 코드 블록 감지 (from pptx import ... 또는 python-pptx 패턴)
-  const codeBlockRegex = /```python\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(?:python|py)?\s*\n([\s\S]*?)```/gi;
   let match;
   const pptxCodes = [];
   while((match = codeBlockRegex.exec(rawText)) !== null){
@@ -7030,7 +7420,7 @@ function detectAndAddPptxButtons(msgEl, rawText){
           <span>📽️ PowerPoint 생성</span>
           <div class="pptx-gen-actions">
             <span class="pptx-gen-status"></span>
-            <button class="pptx-gen-btn secondary" onclick="copyPptxCode(this)">📋 코드 복사</button>
+            <button class="pptx-gen-btn secondary" onclick="copyPptxCode(this)">📋 실행용 코드 복사</button>
             <button class="pptx-gen-btn" onclick="generatePptx(this)">📽️ PPT 생성 & 다운로드</button>
           </div>
         </div>
@@ -7047,12 +7437,26 @@ function detectAndAddPptxButtons(msgEl, rawText){
   });
 }
 
-function copyPptxCode(btn){
+async function copyPptxCode(btn){
   const block = btn.closest('.pptx-gen-block');
-  const code = b2u(block.dataset.pptxCode);
-  navigator.clipboard.writeText(code);
+  const rawCode = b2u(block.dataset.pptxCode);
+  let codeToCopy = rawCode;
+
+  try{
+    const resp = await fetch('/api/prepare_pptx_code', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code: rawCode})
+    });
+    if(resp.ok){
+      const data = await resp.json();
+      if(data && data.code) codeToCopy = data.code;
+    }
+  }catch(e){}
+
+  navigator.clipboard.writeText(codeToCopy);
   btn.textContent = '✓ 복사됨';
-  setTimeout(()=>{ btn.textContent = '📋 코드 복사'; }, 1500);
+  setTimeout(()=>{ btn.textContent = '📋 실행용 코드 복사'; }, 1500);
 }
 
 async function generatePptx(btn){
@@ -7079,17 +7483,15 @@ async function generatePptx(btn){
       return;
     }
 
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'presentation.pptx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    status.textContent = '✅ 다운로드 완료!';
+    const json = await resp.json();
+    if(json.download_url){
+        window.location.href = json.download_url;
+        status.textContent = '✅ 다운로드 완료!';
+    } else if(json.message) {
+        status.textContent = '✅ ' + json.message;
+    } else {
+        status.textContent = '❌ 파일 응답 형식 오류';
+    }
     btn.textContent = '📽️ 다시 생성';
     btn.disabled = false;
   }catch(e){
@@ -7226,3 +7628,4 @@ if __name__ == "__main__":
             pass
 
     app.run(host="0.0.0.0", port=10009, debug=False)
+    #app.run(host="127.0.0.1", port=18080, debug=False, use_reloader=False)
