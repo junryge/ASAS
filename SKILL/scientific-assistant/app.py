@@ -1657,6 +1657,24 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+@app.route("/uio")
+def uio_page():
+    """UIO 2D Pixel Office 페이지 서빙"""
+    uio_path = os.path.join(BASE_DIR, "UIO", "index.html")
+    if os.path.exists(uio_path):
+        with open(uio_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "UIO index.html not found", 404
+
+
+@app.route("/uio/<path:filename>")
+def uio_static(filename):
+    """UIO 정적 파일 서빙 (img, sound 등)"""
+    from flask import send_from_directory
+    uio_dir = os.path.join(BASE_DIR, "UIO")
+    return send_from_directory(uio_dir, filename)
+
+
 @app.route("/api/config")
 def api_config():
     """환경 설정 및 토큰 상태 반환"""
@@ -4416,6 +4434,22 @@ body.rp-collapsed .chat-box-fixed{right:0}
 #introSkip{position:absolute;bottom:40px;right:40px;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.3);color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;cursor:pointer;transition:all .2s;z-index:10000}
 #introSkip:hover{background:rgba(255,255,255,.3)}
 #introProgress{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#6366f1,#a855f7);width:0;transition:width .1s linear}
+/* 모드 선택 오버레이 */
+#modeSelector{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;background:radial-gradient(circle at 30% 40%,#1a1a2e,#0f0f1a 70%);display:none;align-items:center;justify-content:center;flex-direction:column;opacity:0;transition:opacity .5s ease}
+#modeSelector.visible{display:flex;opacity:1}
+#modeSelector h2{color:#fff;font-size:28px;margin-bottom:12px;font-weight:700;letter-spacing:-0.5px}
+#modeSelector p{color:rgba(255,255,255,.6);font-size:14px;margin-bottom:40px}
+.mode-cards{display:flex;gap:28px;flex-wrap:wrap;justify-content:center}
+.mode-card{width:280px;padding:36px 28px;border-radius:16px;border:2px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);backdrop-filter:blur(12px);cursor:pointer;text-align:center;transition:all .25s ease;position:relative;overflow:hidden}
+.mode-card:hover{border-color:#6366f1;background:rgba(99,102,241,.12);transform:translateY(-4px);box-shadow:0 12px 40px rgba(99,102,241,.2)}
+.mode-card .mode-icon{font-size:48px;margin-bottom:16px;display:block}
+.mode-card .mode-title{color:#fff;font-size:18px;font-weight:700;margin-bottom:8px}
+.mode-card .mode-desc{color:rgba(255,255,255,.55);font-size:13px;line-height:1.5}
+/* UIO 컨테이너 */
+#uioContainer{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9000;display:none;background:#0f151e}
+#uioContainer iframe{width:100%;height:100%;border:none}
+#uioBackBtn{position:fixed;top:16px;left:16px;z-index:9001;padding:10px 20px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(18,27,40,.85);backdrop-filter:blur(8px);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+#uioBackBtn:hover{background:rgba(99,102,241,.3);border-color:#6366f1}
 </style>
 </head>
 <body>
@@ -4425,7 +4459,31 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <source src="/static/intro.mp4" type="video/mp4">
   </video>
   <div id="introProgress"></div>
-  <button id="introSkip" onclick="(function(b){var o=document.getElementById('introOverlay');if(!o)return;var v=document.getElementById('introVideo');if(v)v.pause();o.classList.add('fade-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o);},700);})(this)">건너뛰기 ▶</button>
+  <button id="introSkip" onclick="dismissIntroAndShowMode()">건너뛰기 ▶</button>
+</div>
+
+<!-- 모드 선택 오버레이 -->
+<div id="modeSelector">
+  <h2>모드를 선택하세요</h2>
+  <p>원하는 인터페이스를 선택하여 시작합니다</p>
+  <div class="mode-cards">
+    <div class="mode-card" onclick="selectMode('default')">
+      <span class="mode-icon">💬</span>
+      <div class="mode-title">기본 구성</div>
+      <div class="mode-desc">Demos LLM 채팅 인터페이스<br>스킬 기반 AI 어시스턴트</div>
+    </div>
+    <div class="mode-card" onclick="selectMode('uio')">
+      <span class="mode-icon">🎮</span>
+      <div class="mode-title">UIO 2D 픽셀</div>
+      <div class="mode-desc">2D Pixel Office Live<br>픽셀 아트 사무실 시뮬레이션</div>
+    </div>
+  </div>
+</div>
+
+<!-- UIO 2D 픽셀 컨테이너 -->
+<div id="uioContainer">
+  <iframe id="uioFrame" src="about:blank"></iframe>
+  <button id="uioBackBtn" onclick="exitUioMode()">← 메인으로 돌아가기</button>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -7363,22 +7421,67 @@ function readEntriesRecursive(entries){
 // 초기 실행 버튼 상태
 updateRpRunBtn();
 
-// ==================== 인트로 비디오 자동 종료 ====================
+// ==================== 인트로 → 모드 선택 시스템 ====================
+function dismissIntroAndShowMode(){
+  var ov = document.getElementById('introOverlay');
+  if(!ov || ov._gone) return;
+  ov._gone = true;
+  var vi = document.getElementById('introVideo');
+  if(vi) vi.pause();
+  ov.classList.add('fade-out');
+  setTimeout(function(){
+    if(ov.parentNode) ov.parentNode.removeChild(ov);
+    showModeSelector();
+  }, 700);
+}
+
+function showModeSelector(){
+  var ms = document.getElementById('modeSelector');
+  if(ms){ ms.style.display='flex'; setTimeout(function(){ ms.classList.add('visible'); }, 30); }
+}
+
+function selectMode(mode){
+  var ms = document.getElementById('modeSelector');
+  if(ms){ ms.style.opacity='0'; setTimeout(function(){ ms.style.display='none'; }, 500); }
+  if(mode === 'uio'){
+    document.getElementById('uioContainer').style.display='block';
+    document.getElementById('uioFrame').src='/uio';
+    // 기본 UI 숨김
+    document.getElementById('sidebar').style.display='none';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='none';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='none';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='none';
+  }
+  // mode === 'default' → 기본 UI 그대로 표시 (아무것도 안 함)
+}
+
+function exitUioMode(){
+  document.getElementById('uioContainer').style.display='none';
+  document.getElementById('uioFrame').src='about:blank';
+  // 기본 UI 복원
+  document.getElementById('sidebar').style.display='';
+  var mainEl = document.querySelector('.main');
+  if(mainEl) mainEl.style.display='';
+  var chatBox = document.querySelector('.chat-box-fixed');
+  if(chatBox) chatBox.style.display='';
+  var sideToggle = document.querySelector('.sidebar-toggle');
+  if(sideToggle) sideToggle.style.display='';
+  // 모드 선택 다시 표시
+  showModeSelector();
+}
+
 (function(){
   var ov = document.getElementById('introOverlay');
   var vi = document.getElementById('introVideo');
   if(!ov) return;
-  function dismiss(){
-    if(ov._gone) return; ov._gone = true;
-    if(vi) vi.pause();
-    ov.classList.add('fade-out');
-    setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 700);
-  }
   if(vi){
-    vi.addEventListener('ended', dismiss);
-    vi.addEventListener('error', dismiss);
+    vi.addEventListener('ended', dismissIntroAndShowMode);
+    vi.addEventListener('error', dismissIntroAndShowMode);
     var src = vi.querySelector('source');
-    if(src) src.addEventListener('error', dismiss);
+    if(src) src.addEventListener('error', dismissIntroAndShowMode);
     // 진행률 바
     var prog = document.getElementById('introProgress');
     if(prog) vi.addEventListener('timeupdate', function(){
@@ -7386,9 +7489,9 @@ updateRpRunBtn();
     });
   }
   // 안전장치: 4초 안에 재생 안 되면 자동 제거
-  setTimeout(function(){ if(vi && vi.readyState < 2) dismiss(); }, 4000);
+  setTimeout(function(){ if(vi && vi.readyState < 2) dismissIntroAndShowMode(); }, 4000);
   // ESC 키
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismiss(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismissIntroAndShowMode(); });
 })();
 
 // ==================== PPT 코드 감지 & 생성 ====================
