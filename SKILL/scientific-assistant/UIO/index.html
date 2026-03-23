@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2D Pixel Office</title>
+  <style>
+    :root {
+      --bg-1: #1d2633;
+      --bg-2: #0f151e;
+      --panel: #243244;
+      --text: #eaf1ff;
+      --accent: #ff4d4d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 20%, var(--bg-1), var(--bg-2) 65%);
+      padding: 12px;
+    }
+
+    .stage {
+      width: min(96vw, 1200px);
+      aspect-ratio: 1536 / 1024;
+      border: 2px solid #48638a;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+      background: #111;
+      position: relative;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    .label {
+      position: absolute;
+      left: 15px;
+      top: 15px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      background: rgba(18, 27, 40, 0.85);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 14px;
+      font-weight: 600;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .strike-btn {
+      position: absolute;
+      right: 15px;
+      top: 15px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 2px solid #ff4d4d;
+      background: rgba(180, 30, 30, 0.85);
+      backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: all 0.2s;
+      z-index: 10;
+    }
+    .strike-btn:hover {
+      background: rgba(220, 40, 40, 0.95);
+      transform: scale(1.05);
+    }
+    .strike-btn.active {
+      background: rgba(30, 120, 60, 0.85);
+      border-color: #4dc46d;
+    }
+    .strike-btn.active:hover {
+      background: rgba(40, 150, 70, 0.95);
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
+    <div class="label">💼 2D Pixel Office Live</div>
+    <button class="strike-btn" id="strikeBtn" onclick="toggleStrike()">🪧 파업</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const world = { width: 1536, height: 1024 };
+    const map = new Image();
+    map.src = "img/office_background_final.png";
+
+    // Load sprite frames
+    function loadFrames(dir, count) {
+      const frames = [];
+      for(let i = 1; i <= count; i++) {
+        const img = new Image();
+        img.src = `img/${dir}/frame_0${i}_transparent.png`;
+        frames.push(img);
+      }
+      return frames;
+    }
+
+    const spriteGroups = [
+      loadFrames("man_fr", 6),
+      loadFrames("man_fr2", 6),
+      loadFrames("man_ft3", 6),
+      loadFrames("wow_fr", 6)
+    ];
+
+    const ceoImg = new Image();
+    ceoImg.src = "img/CEO_PO_transparent.png";
+
+    class Character {
+      constructor(frames, x, y, speed, scale, isStatic = false, bounds = null, pauseBehavior = 'normal', name = '') {
+        this.frames = frames;
+        this.x = x;
+        this.y = y;
+        this.speed = speed;
+        this.scale = scale;
+        this.frameIndex = 0;
+        this.frameTimer = 0;
+        this.frameDuration = 100 + Math.random() * 50;
+        this.isStatic = isStatic;
+        this.bounds = bounds || {minX: 150, maxX: world.width - 150, minY: 150, maxY: world.height - 150};
+        this.direction = Math.random() < 0.5 ? 1 : -1;
+        this.pauseBehavior = pauseBehavior;
+        this.name = name;
+
+        // Roaming state
+        this.isMoving = false;
+        this.targetX = this.x;
+        this.targetY = this.y;
+        this.idleTimer = Math.random() * 1000; 
+      }
+
+      setNewTarget() {
+        this.targetX = this.bounds.minX + Math.random() * (this.bounds.maxX - this.bounds.minX);
+        this.targetY = this.bounds.minY + Math.random() * (this.bounds.maxY - this.bounds.minY);
+        this.isMoving = true;
+        this.direction = this.targetX > this.x ? 1 : -1;
+      }
+
+      update(dt) {
+        if(this.isStatic) return;
+
+        if (!this.isMoving) {
+          this.idleTimer -= dt * 1000;
+          if (this.idleTimer <= 0) {
+            this.setNewTarget();
+          }
+          this.frameIndex = 0; // Stand still pose
+          return;
+        }
+
+        // Move towards target in 2D space
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist < 5) { // Reached destination
+          this.isMoving = false;
+          
+          if (this.pauseBehavior === 'strike') {
+             this.idleTimer = 300 + Math.random() * 600; // jitter in place
+          } else if (this.pauseBehavior === 'alwaysMove') {
+             this.idleTimer = Math.random() * 500;
+          } else if (this.pauseBehavior === 'oftenPause') {
+             this.idleTimer = 2000 + Math.random() * 4000; // 2~6 sec pause
+          } else {
+             this.idleTimer = 500 + Math.random() * 2000; // normal
+          }
+        } else {
+          // Adjust distance by standard 60fps movement delta
+          const moveDist = this.speed * (dt * 1000) / 16;
+          this.x += (dx / dist) * moveDist;
+          this.y += (dy / dist) * moveDist;
+
+          // Animate walking
+          this.frameTimer += dt * 1000;
+          if(this.frameTimer >= this.frameDuration) {
+            this.frameTimer = 0;
+            this.frameIndex = (this.frameIndex + 1) % this.frames.length;
+          }
+        }
+      }
+
+      draw(ctx) {
+        const img = this.isStatic ? this.frames : this.frames[this.frameIndex];
+        if(!img || !img.complete || img.naturalWidth === 0) return; // Safely return if image is not loaded
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        if(this.direction === -1 && !this.isStatic) {
+          ctx.scale(-1, 1); // Flip horizontally if walking left
+        }
+        
+        const w = img.width * this.scale;
+        const h = img.height * this.scale;
+        
+        ctx.drawImage(img, -w/2, -h, w, h);
+        ctx.restore();
+
+        // Name label
+        if (this.name) {
+          ctx.save();
+          ctx.font = 'bold 18px "Segoe UI", "Malgun Gothic", sans-serif';
+          ctx.textAlign = 'center';
+          const tw = ctx.measureText(this.name).width + 14;
+          const lx = this.x, ly = this.y + 10;
+          ctx.fillStyle = 'rgba(0,0,0,0.72)';
+          ctx.beginPath();
+          ctx.roundRect(lx - tw/2, ly - 14, tw, 22, 5);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText(this.name, lx, ly + 3);
+          ctx.restore();
+        }
+      }
+    }
+
+    // Initialize characters with specific zones to avoid crossing desks
+    const characters = [];
+    
+    // CEO sitting behind top-left desk (Fixed permanently in the middle of the blue carpet)
+    characters.push(new Character(ceoImg, 400, 310, 0, 1.0, true, null, 'normal', 'CEO Jiwon'));
+
+    characters.push(new Character(spriteGroups[0], 300, 950, 3.0, 1.0, false, {minX: 100, maxX: 500, minY: 850, maxY: 1000}, 'normal', 'Kim'));
+
+    characters.push(new Character(spriteGroups[3], 250, 450, 0.8, 1.0, false, {minX: 150, maxX: 450, minY: 400, maxY: 500}, 'oftenPause', 'Han'));
+
+    characters.push(new Character(spriteGroups[3], 300, 650, 1.8, 1.0, false, {minX: 50, maxX: 650, minY: 610, maxY: 720}, 'alwaysMove', 'Lee'));
+
+    characters.push(new Character(spriteGroups[1], 1100, 650, 1.4, 1.0, false, {minX: 750, maxX: 1350, minY: 610, maxY: 720}, 'normal', 'Park'));
+
+    characters.push(new Character(spriteGroups[2], 1250, 950, 2.5, 1.0, false, {minX: 1000, maxX: 1400, minY: 850, maxY: 1000}, 'alwaysMove', 'Choi'));
+
+    characters.push(new Character(spriteGroups[0], 1000, 350, 1.0, 1.0, false, {minX: 850, maxX: 1400, minY: 320, maxY: 480}, 'oftenPause', 'Yoon'));
+
+    characters.push(new Character(spriteGroups[3], 200, 350, 1.5, 1.0, false, {minX: 50, maxX: 250, minY: 280, maxY: 400}, 'normal', 'Seo'));
+
+    // ═══ Strike / Protest System ═══
+    let isOnStrike = false;
+    let strikeChantInterval = null;
+    const strikeSlogans = [
+      "힘들어!", "야근반대!", "워라밸!",
+      "우리도 쉬자!", "복지개선!", "재택근무!",
+      "주4일제!", "성과급!", "점심시간 연장!",
+      "공정한 평가!", "휴가 보장!", "쉬고싶다!",
+    ];
+
+    // ── Sound Effects ──
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Strike BGM (MP3)
+    const strikeBGM = new Audio('sound/The_Unyielding_March.mp3');
+    strikeBGM.loop = true;
+    strikeBGM.volume = 0.15;
+
+    function playStrikeHorn() {
+      // Protest horn / alarm sound
+      const now = audioCtx.currentTime;
+
+      // Horn 1
+      const osc1 = audioCtx.createOscillator();
+      const gain1 = audioCtx.createGain();
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(220, now);
+      osc1.frequency.linearRampToValueAtTime(330, now + 0.3);
+      osc1.frequency.linearRampToValueAtTime(220, now + 0.6);
+      gain1.gain.setValueAtTime(0.3, now);
+      gain1.gain.linearRampToValueAtTime(0, now + 0.8);
+      osc1.connect(gain1).connect(audioCtx.destination);
+      osc1.start(now); osc1.stop(now + 0.8);
+
+      // Horn 2 (delayed)
+      const osc2 = audioCtx.createOscillator();
+      const gain2 = audioCtx.createGain();
+      osc2.type = 'sawtooth';
+      osc2.frequency.setValueAtTime(280, now + 0.9);
+      osc2.frequency.linearRampToValueAtTime(400, now + 1.2);
+      osc2.frequency.linearRampToValueAtTime(280, now + 1.5);
+      gain2.gain.setValueAtTime(0, now);
+      gain2.gain.setValueAtTime(0.35, now + 0.9);
+      gain2.gain.linearRampToValueAtTime(0, now + 1.7);
+      osc2.connect(gain2).connect(audioCtx.destination);
+      osc2.start(now + 0.9); osc2.stop(now + 1.7);
+
+      // Big horn 3
+      const osc3 = audioCtx.createOscillator();
+      const gain3 = audioCtx.createGain();
+      osc3.type = 'sawtooth';
+      osc3.frequency.setValueAtTime(180, now + 1.8);
+      osc3.frequency.linearRampToValueAtTime(440, now + 2.5);
+      gain3.gain.setValueAtTime(0, now);
+      gain3.gain.setValueAtTime(0.4, now + 1.8);
+      gain3.gain.linearRampToValueAtTime(0, now + 3.0);
+      osc3.connect(gain3).connect(audioCtx.destination);
+      osc3.start(now + 1.8); osc3.stop(now + 3.0);
+    }
+
+    function speakSlogan(text) {
+      if (!window.speechSynthesis) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ko-KR';
+      utter.rate = 1.1;
+      utter.pitch = 1.2;
+      utter.volume = 1.0;
+      // Try to find Korean voice
+      const voices = speechSynthesis.getVoices();
+      const koVoice = voices.find(v => v.lang.startsWith('ko'));
+      if (koVoice) utter.voice = koVoice;
+      speechSynthesis.speak(utter);
+    }
+
+    function startStrikeChant() {
+      // Chant a slogan every 4 seconds
+      strikeChantInterval = setInterval(() => {
+        if (!isOnStrike) return;
+        const slogan = strikeSlogans[Math.floor(Math.random() * strikeSlogans.length)];
+        speakSlogan(slogan);
+        // Also update random character's sign
+        const movingChars = characters.filter(c => !c.isStatic && c._slogan);
+        if (movingChars.length > 0) {
+          const rc = movingChars[Math.floor(Math.random() * movingChars.length)];
+          rc._slogan = slogan;
+        }
+      }, 4000);
+    }
+
+    function stopStrikeChant() {
+      clearInterval(strikeChantInterval);
+      strikeChantInterval = null;
+      if (window.speechSynthesis) speechSynthesis.cancel();
+    }
+
+    // Strike line-up positions (below chalkboard, evenly spaced)
+    function getStrikePositions() {
+      const startX = 500, endX = 1350;
+      const y = 420;
+      const movingChars = characters.filter(c => !c.isStatic);
+      const gap = (endX - startX) / (movingChars.length - 1 || 1);
+      return movingChars.map((c, i) => ({
+        x: startX + gap * i,
+        y: y + (i % 2 === 0 ? 0 : 15) // slight zigzag
+      }));
+    }
+
+    function toggleStrike() {
+      isOnStrike = !isOnStrike;
+      const btn = document.getElementById('strikeBtn');
+      const movingChars = characters.filter(c => !c.isStatic);
+
+      if (isOnStrike) {
+        btn.textContent = '✅ 복귀';
+        btn.classList.add('active');
+        audioCtx.resume(); // unlock audio
+        playStrikeHorn();
+        strikeBGM.currentTime = 0;
+        strikeBGM.play().catch(() => {});
+        setTimeout(() => speakSlogan('파업! 힘들어! 야근 반대!'), 2500);
+        setTimeout(() => startStrikeChant(), 5000);
+
+        // Move all characters to strike line
+        const positions = getStrikePositions();
+        movingChars.forEach((c, i) => {
+          c._savedBounds = { ...c.bounds };
+          c._savedPause = c.pauseBehavior;
+          c.targetX = positions[i].x;
+          c.targetY = positions[i].y;
+          c.isMoving = true;
+          c.direction = c.targetX > c.x ? 1 : -1;
+          c.pauseBehavior = 'strike';
+          // Lock bounds to strike area
+          c.bounds = { minX: positions[i].x - 30, maxX: positions[i].x + 30, minY: positions[i].y - 15, maxY: positions[i].y + 15 };
+          // Assign slogan
+          c._slogan = strikeSlogans[Math.floor(Math.random() * strikeSlogans.length)];
+        });
+      } else {
+        btn.textContent = '🪧 파업';
+        btn.classList.remove('active');
+        stopStrikeChant();
+        strikeBGM.pause();
+        strikeBGM.currentTime = 0;
+
+        // Return to normal
+        movingChars.forEach(c => {
+          if (c._savedBounds) c.bounds = c._savedBounds;
+          if (c._savedPause) c.pauseBehavior = c._savedPause;
+          c._slogan = null;
+          c.isMoving = false;
+          c.idleTimer = 200 + Math.random() * 500;
+        });
+      }
+    }
+
+    // Draw protest sign above character
+    function drawProtestSign(ctx, char) {
+      if (!char._slogan) return;
+      const sx = char.x, sy = char.y - 145;
+
+      // Stick
+      ctx.save();
+      ctx.strokeStyle = '#8B6914';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy + 30);
+      ctx.lineTo(sx, sy - 10);
+      ctx.stroke();
+
+      // Sign board
+      ctx.font = 'bold 20px "Segoe UI", "Malgun Gothic", sans-serif';
+      const tw = ctx.measureText(char._slogan).width + 24;
+      const bh = 34;
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#cc2222';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(sx - tw/2, sy - 40, tw, bh, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = '#cc2222';
+      ctx.textAlign = 'center';
+      ctx.fillText(char._slogan, sx, sy - 17);
+      ctx.restore();
+    }
+
+    // ═══ Speech Bubble System ═══
+    const speeches = [
+      "모델 학습 진행률 87%입니다.",
+      "데이터셋 전처리 완료했습니다.",
+      "API 응답 속도가 개선됐어요.",
+      "새로운 파라미터 테스트 중...",
+      "배포 파이프라인 점검 완료.",
+      "오늘 스탠드업 10시입니다.",
+      "벤치마크 결과 정리 중이에요.",
+      "GPU 사용률 확인해볼게요.",
+      "커피 한잔 하고 올게요 ☕",
+      "코드 리뷰 부탁드립니다.",
+      "로그 분석 결과 이상 없습니다.",
+      "다음 스프린트 계획 잡았어요.",
+      "토크나이저 성능 올렸습니다.",
+      "테스트 케이스 추가했어요.",
+      "서버 모니터링 정상입니다.",
+      "회의실 예약 완료했습니다.",
+      "문서 업데이트 해야 해요.",
+      "이번 주 목표 달성률 92%!",
+      "새 데이터 수집 시작합니다.",
+      "RLHF 피드백 반영 중...",
+    ];
+
+    let activeBubble = null; // { char, text, timer }
+
+    function triggerRandomSpeech() {
+      // Pick a random non-CEO character
+      const movingChars = characters.filter(c => !c.isStatic);
+      if (movingChars.length === 0) return;
+      const char = movingChars[Math.floor(Math.random() * movingChars.length)];
+      const text = speeches[Math.floor(Math.random() * speeches.length)];
+      activeBubble = { char, text, timer: 3500 }; // show for 3.5 seconds
+    }
+
+    // Start speech every 5 seconds
+    setInterval(triggerRandomSpeech, 5000);
+    setTimeout(triggerRandomSpeech, 1500); // first one after 1.5s
+
+    function drawSpeechBubble(ctx, char, text) {
+      const bx = char.x;
+      const by = char.y - (char.isStatic ? 180 : 130);
+      const maxW = 280;
+      const pad = 12;
+      const lineH = 22;
+
+      ctx.save();
+      ctx.font = 'bold 16px "Segoe UI", "Malgun Gothic", sans-serif';
+
+      // Word wrap
+      const words = text.split('');
+      const lines = [];
+      let line = '';
+      for (const ch of words) {
+        const test = line + ch;
+        if (ctx.measureText(test).width > maxW - pad * 2) {
+          lines.push(line);
+          line = ch;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+
+      const boxW = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width)) + pad * 2 + 10);
+      const boxH = lines.length * lineH + pad * 2;
+      const boxX = bx - boxW / 2;
+      const boxY = by - boxH;
+
+      // Bubble background
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#2f3440';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Tail triangle
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#2f3440';
+      ctx.beginPath();
+      ctx.moveTo(bx - 10, boxY + boxH);
+      ctx.lineTo(bx, boxY + boxH + 14);
+      ctx.lineTo(bx + 10, boxY + boxH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Cover the tail top border
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(bx - 9, boxY + boxH - 2, 18, 4);
+
+      // Text
+      ctx.fillStyle = '#2e3440';
+      ctx.textAlign = 'left';
+      lines.forEach((l, i) => {
+        ctx.fillText(l, boxX + pad, boxY + pad + lineH * (i + 0.75));
+      });
+
+      ctx.restore();
+    }
+
+    // Sort by Y
+    function zSort() {
+      characters.sort((a,b) => a.y - b.y);
+    }
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.033);
+      lastTime = now;
+
+      // Draw office background
+      if (map.complete && map.naturalWidth > 0) {
+        ctx.drawImage(map, 0, 0, world.width, world.height);
+      } else {
+        ctx.fillStyle = "#101725";
+        ctx.fillRect(0, 0, world.width, world.height);
+      }
+
+      // Update & Draw chars
+      characters.forEach(c => c.update(dt));
+      zSort();
+      characters.forEach(c => c.draw(ctx));
+
+      // Strike protest signs + CEO cry
+      if (isOnStrike) {
+        characters.filter(c => !c.isStatic && c._slogan).forEach(c => drawProtestSign(ctx, c));
+
+        // CEO "살려줘" bubble
+        const ceoChar = characters.find(c => c.isStatic);
+        if (ceoChar) {
+          const cx = ceoChar.x, cy = ceoChar.y - 200;
+          const ceoMsgs = ['살려줘...', '제발...', '다 줄게...', '야근 없앨게!!', '월급 올려줄게ㅠ'];
+          const msg = ceoMsgs[Math.floor((Date.now() / 2000) % ceoMsgs.length)];
+          ctx.save();
+          ctx.font = 'bold 22px "Segoe UI", "Malgun Gothic", sans-serif';
+          const tw = ctx.measureText(msg).width + 24;
+          // Shaking effect
+          const shake = Math.sin(Date.now() / 80) * 3;
+          const bx = cx + shake, by = cy;
+          // Bubble
+          ctx.fillStyle = '#fff4f4';
+          ctx.strokeStyle = '#ff3333';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.roundRect(bx - tw/2, by - 32, tw, 40, 8);
+          ctx.fill();
+          ctx.stroke();
+          // Tail
+          ctx.fillStyle = '#fff4f4';
+          ctx.beginPath();
+          ctx.moveTo(bx - 8, by + 8);
+          ctx.lineTo(bx, by + 22);
+          ctx.lineTo(bx + 8, by + 8);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#ff3333';
+          ctx.stroke();
+          ctx.fillStyle = '#fff4f4';
+          ctx.fillRect(bx - 7, by + 6, 14, 4);
+          // Text
+          ctx.fillStyle = '#ff2222';
+          ctx.textAlign = 'center';
+          ctx.fillText(msg, bx, by);
+          ctx.restore();
+        }
+      }
+
+      // Speech bubble (not during strike)
+      if (activeBubble && !isOnStrike) {
+        activeBubble.timer -= dt * 1000;
+        if (activeBubble.timer > 0) {
+          drawSpeechBubble(ctx, activeBubble.char, activeBubble.text);
+        } else {
+          activeBubble = null;
+        }
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    // Start loop when background map is loaded
+    map.onload = () => requestAnimationFrame(loop);
+    map.onerror = () => requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
