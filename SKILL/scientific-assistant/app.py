@@ -1658,12 +1658,16 @@ def index():
 
 
 @app.route("/uio")
+@app.route("/uio/")
 def uio_page():
-    """UIO 2D Pixel Office 페이지 서빙"""
+    """UIO 2D Pixel Office 페이지 서빙 (base href 주입으로 상대경로 해결)"""
     uio_path = os.path.join(BASE_DIR, "UIO", "index.html")
     if os.path.exists(uio_path):
         with open(uio_path, "r", encoding="utf-8") as f:
-            return f.read()
+            html = f.read()
+        # <head> 바로 뒤에 <base href="/uio/"> 삽입 → 상대경로(img/, sound/)가 /uio/img/ 등으로 해석됨
+        html = html.replace("<head>", '<head>\n<base href="/uio/">', 1)
+        return html
     return "UIO index.html not found", 404
 
 
@@ -3163,22 +3167,19 @@ def api_generate_pptx():
                 return jsonify({"error": "PPT 파일이 생성되지 않았습니다."}), 500
 
         import shutil, datetime
-        
+
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         final_filename = f"presentation_{timestamp}.pptx"
-        
-        # 사용자의 로컬 Downloads 폴더로 직접 복사 (로컬 앱 전용 특권)
-        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-        if not os.path.exists(downloads_dir):
-            downloads_dir = os.path.join(BASE_DIR, 'uploads')
-            
-        os.makedirs(downloads_dir, exist_ok=True)
-        local_dl_path = os.path.join(downloads_dir, final_filename)
-        
-        shutil.copy2(out_path, local_dl_path)
-        
+
+        # uploads 폴더에 저장 후 브라우저 다운로드 URL 반환
+        uploads_dir = os.path.join(BASE_DIR, 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        save_path = os.path.join(uploads_dir, final_filename)
+        shutil.copy2(out_path, save_path)
+
         return jsonify({
-            "message": f"'{final_filename}' 파일이 로컬 다운로드 폴더에 안전하게 바로 저장되었습니다!"
+            "download_url": f"/api/download_static/presentation.pptx?id={timestamp}",
+            "message": f"'{final_filename}' PPT 생성 완료!"
         })
 
 @app.route("/api/download_static/presentation.pptx", methods=["GET"])
@@ -7437,15 +7438,15 @@ function dismissIntroAndShowMode(){
 
 function showModeSelector(){
   var ms = document.getElementById('modeSelector');
-  if(ms){ ms.style.display='flex'; setTimeout(function(){ ms.classList.add('visible'); }, 30); }
+  if(ms){ ms.style.display='flex'; ms.style.opacity=''; ms.classList.remove('visible'); setTimeout(function(){ ms.classList.add('visible'); }, 30); }
 }
 
 function selectMode(mode){
   var ms = document.getElementById('modeSelector');
-  if(ms){ ms.style.opacity='0'; setTimeout(function(){ ms.style.display='none'; }, 500); }
+  if(ms){ ms.classList.remove('visible'); setTimeout(function(){ ms.style.display='none'; ms.style.opacity=''; }, 500); }
   if(mode === 'uio'){
     document.getElementById('uioContainer').style.display='block';
-    document.getElementById('uioFrame').src='/uio';
+    document.getElementById('uioFrame').src='/uio/';
     // 기본 UI 숨김
     document.getElementById('sidebar').style.display='none';
     var mainEl = document.querySelector('.main');
