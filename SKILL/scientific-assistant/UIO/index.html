@@ -26,6 +26,10 @@
       font-family: "Segoe UI", "Malgun Gothic", sans-serif;
       color: var(--text);
       background: var(--bg-2);
+      transition: grid-template-columns 0.3s ease;
+    }
+    body.sidebar-collapsed {
+      grid-template-columns: 1fr 48px;
     }
 
     /* ── Sidebar ── */
@@ -34,9 +38,71 @@
       border-left: 2px solid var(--border);
       padding: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       display: flex;
       flex-direction: column;
+      position: relative;
+      transition: all 0.3s ease;
     }
+    body.sidebar-collapsed .sidebar .ceo-profile,
+    body.sidebar-collapsed .sidebar .agent-section,
+    body.sidebar-collapsed .sidebar .sidebar-footer {
+      display: none;
+    }
+
+    /* ── Mini icons (collapsed sidebar) ── */
+    .sidebar-mini {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 0;
+      gap: 4px;
+    }
+    body.sidebar-collapsed .sidebar-mini { display: flex; }
+
+    .mini-icon {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 13px; font-weight: 700; color: #fff;
+      cursor: pointer; transition: all 0.2s;
+      border: 2px solid transparent;
+      flex-shrink: 0;
+    }
+    .mini-icon:hover { transform: scale(1.15); border-color: rgba(255,255,255,0.3); }
+    .mini-icon.active { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.3); }
+
+    .mini-toggle {
+      width: 34px; height: 28px; border-radius: 6px;
+      display: grid; place-items: center;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--muted); font-size: 12px;
+      cursor: pointer; margin-bottom: 4px;
+      transition: all 0.2s;
+    }
+    .mini-toggle:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+    /* ── Sidebar toggle button (expanded) ── */
+    .sidebar-toggle {
+      position: absolute;
+      left: -14px;
+      top: 12px;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      display: grid; place-items: center;
+      z-index: 20;
+      transition: all 0.2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .sidebar-toggle:hover {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+    body.sidebar-collapsed .sidebar-toggle { display: none; }
 
     .ceo-profile {
       padding: 20px;
@@ -180,11 +246,46 @@
       transition: grid-template-columns 0.3s ease;
     }
     .main-area.split {
-      grid-template-columns: 65fr 35fr;
-      gap: 12px;
+      grid-template-columns: 65fr 8px 35fr;
+      gap: 0;
       place-items: stretch;
       align-items: center;
     }
+
+    /* ── Resizer handle ── */
+    .panel-resizer {
+      display: none;
+      width: 8px;
+      min-height: 100%;
+      cursor: col-resize;
+      background: var(--border);
+      position: relative;
+      transition: background 0.2s;
+      border-radius: 3px;
+      z-index: 10;
+      /* 넓은 클릭 영역 */
+      margin: 0 -6px;
+      padding: 0 6px;
+      background-clip: content-box;
+    }
+    .panel-resizer:hover, .panel-resizer.dragging {
+      background: var(--accent-blue);
+      background-clip: content-box;
+    }
+    .panel-resizer::after {
+      content: '⋮⋮';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--muted);
+      font-size: 16px;
+      letter-spacing: 2px;
+      pointer-events: none;
+    }
+    .panel-resizer:hover::after, .panel-resizer.dragging::after {
+      color: #fff;
+    }
+    .main-area.split .panel-resizer { display: block; }
     .main-area.split .stage {
       max-width: 100%;
       width: 100%;
@@ -214,25 +315,27 @@
     @keyframes chatFadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
     .chat-header {
-      padding: 16px 24px;
+      padding: 12px 16px;
       background: var(--panel);
       border-bottom: 2px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 10px;
     }
     .chat-header .ch-avatar {
-      width: 48px; height: 48px;
+      width: 36px; height: 36px;
       border-radius: 50%;
       display: grid; place-items: center;
-      font-size: 22px; font-weight: 700;
+      font-size: 17px; font-weight: 700;
+      flex-shrink: 0;
     }
-    .chat-header .ch-info h2 { font-size: 20px; font-weight: 700; }
-    .chat-header .ch-info p { font-size: 13px; color: var(--muted); }
+    .chat-header .ch-info { min-width: 0; }
+    .chat-header .ch-info h2 { font-size: 15px; font-weight: 700; white-space: nowrap; }
+    .chat-header .ch-info p { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-header .back-btn {
       margin-left: auto;
-      padding: 8px 16px;
-      border-radius: 8px;
+      padding: 5px 10px;
+      border-radius: 6px;
       border: 1px solid var(--border);
       background: var(--card);
       color: var(--text);
@@ -246,7 +349,7 @@
     .chat-panel .chat-area {
       flex: 1;
       overflow-y: auto;
-      padding: 24px;
+      padding: 14px;
     }
     .chat-panel .welcome-msg {
       text-align: center;
@@ -270,17 +373,22 @@
     }
     .quick-btn:hover { border-color: var(--accent-blue); background: rgba(0,180,216,0.1); }
 
-    .message { margin-bottom: 16px; display: flex; gap: 12px; }
+    .message { margin-bottom: 10px; display: flex; gap: 8px; }
     .message .msg-avatar {
-      width: 36px; height: 36px; border-radius: 50%;
+      width: 30px; height: 30px; border-radius: 50%;
       background: var(--card); display: grid; place-items: center;
-      font-size: 16px; flex-shrink: 0;
+      font-size: 14px; flex-shrink: 0;
     }
     .message .msg-body {
-      background: var(--card); border-radius: 12px;
-      padding: 12px 16px; max-width: 70%;
-      font-size: 14px; line-height: 1.6;
+      background: var(--card); border-radius: 10px;
+      padding: 10px 14px; max-width: 92%;
+      font-size: 13px; line-height: 1.55;
+      max-height: 70vh; overflow-y: auto;
     }
+    .message .msg-body::-webkit-scrollbar { width: 5px; }
+    .message .msg-body::-webkit-scrollbar-track { background: transparent; }
+    .message .msg-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .message .msg-body::-webkit-scrollbar-thumb:hover { background: var(--muted); }
     .message.user { flex-direction: row-reverse; }
     .message.user .msg-body { background: #0077b6; }
 
@@ -290,20 +398,109 @@
       border-top: 1px solid var(--border);
       display: flex; gap: 12px; align-items: center;
     }
-    .chat-panel .input-bar input {
+    .chat-panel .input-bar input[type="text"] {
       flex: 1; padding: 12px 16px;
       border-radius: 10px; border: 1px solid var(--border);
       background: var(--card); color: var(--text);
       font-size: 14px; font-family: inherit; outline: none;
       transition: border-color 0.2s;
     }
-    .chat-panel .input-bar input:focus { border-color: var(--accent-blue); }
-    .chat-panel .input-bar input::placeholder { color: var(--muted); }
-    .chat-panel .input-bar button {
+    .chat-panel .input-bar input[type="text"]:focus { border-color: var(--accent-blue); }
+    .chat-panel .input-bar input[type="text"]::placeholder { color: var(--muted); }
+    .chat-panel .input-bar > button#sendBtn {
       padding: 12px 20px; border-radius: 10px; border: none;
       color: #fff; font-size: 14px; font-weight: 600;
       cursor: pointer; font-family: inherit; transition: background 0.2s;
     }
+
+    /* ── Attachment ── */
+    .attach-btn {
+      width: 42px; height: 42px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--muted); font-size: 20px; cursor: pointer;
+      display: grid; place-items: center; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .attach-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+    .file-preview-bar {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      padding: 8px 24px 0; background: var(--panel);
+    }
+    .file-preview-bar:empty { display: none; }
+
+    .file-chip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 8px;
+      background: var(--card); border: 1px solid var(--border);
+      font-size: 12px; color: var(--text); max-width: 220px;
+    }
+    .file-chip .fc-icon { font-size: 16px; flex-shrink: 0; }
+    .file-chip .fc-name {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .file-chip .fc-size { color: var(--muted); flex-shrink: 0; }
+    .file-chip .fc-remove {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 14px; padding: 0 2px;
+      transition: color 0.2s;
+    }
+    .file-chip .fc-remove:hover { color: var(--accent); }
+
+    .msg-attachments { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .msg-attach-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px; border-radius: 6px;
+      background: rgba(255,255,255,0.06); font-size: 12px;
+    }
+    .msg-attach-item .ma-icon { font-size: 16px; }
+    .msg-attach-item .ma-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .msg-attach-item .ma-size { color: var(--muted); flex-shrink: 0; }
+    .msg-attach-thumb {
+      max-width: 200px; max-height: 140px; border-radius: 6px;
+      margin-top: 4px; cursor: pointer;
+    }
+
+    /* ── Typing indicator ── */
+    @keyframes dotBlink { 0%,20%{opacity:.2} 50%{opacity:1} 100%{opacity:.2} }
+    .typing-dots span { animation: dotBlink 1.4s infinite; font-size: 16px; }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* ── Markdown in chat ── */
+    .msg-body pre { background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 6px 0; font-size: 12px; }
+    .msg-body code { font-family: 'Consolas','Courier New',monospace; font-size: 12px; }
+    .msg-body :not(pre) > code { background: rgba(0,0,0,0.2); padding: 1px 5px; border-radius: 4px; }
+    .msg-body ul, .msg-body ol { padding-left: 18px; margin: 4px 0; }
+    .msg-body li { margin-bottom: 2px; }
+    .msg-body table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+    .msg-body th, .msg-body td { border: 1px solid var(--border); padding: 4px 8px; }
+    .msg-body h1 { font-size: 16px; margin: 10px 0 4px; }
+    .msg-body h2 { font-size: 14px; margin: 8px 0 3px; }
+    .msg-body h3 { font-size: 13px; margin: 6px 0 2px; }
+    .msg-body p { margin: 4px 0; }
+
+    /* ── Chart block ── */
+    .chart-block { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; margin: 8px 0; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; }
+    .chart-actions { display: flex; gap: 6px; }
+    .chart-btn {
+      padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text); font-size: 11px; cursor: pointer;
+    }
+    .chart-btn:hover { border-color: var(--accent-blue); }
+    .chart-canvas-wrap { background: #fff; border-radius: 6px; padding: 8px; }
+    .chart-raw-toggle { margin-top: 6px; font-size: 11px; color: var(--muted); }
+    .chart-raw-toggle pre { margin-top: 4px; font-size: 11px; max-height: 150px; overflow: auto; }
+
+    /* ── Model selector ── */
+    .env-select {
+      padding: 6px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 12px; font-family: inherit;
+      outline: none; cursor: pointer;
+    }
+    .env-select:focus { border-color: var(--accent-blue); }
 
 
     .stage {
@@ -347,6 +544,39 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
 
+    /* ── Top KPI bar ── */
+    .kpi-bar {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .kpi-item {
+      padding: 5px 10px;
+      border-radius: 6px;
+      background: rgba(18, 27, 40, 0.88);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.12);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .kpi-label { color: #7a8fa6; }
+    .kpi-value { font-weight: 700; font-size: 12px; }
+    .kpi-value.up { color: #4ade80; }
+    .kpi-value.down { color: #ff6b6b; }
+    .kpi-value.neutral { color: #fbbf24; }
+    .kpi-change { font-size: 10px; color: var(--muted); }
+    .kpi-change.up { color: #4ade80; }
+    .kpi-change.down { color: #ff6b6b; }
+    .kpi-change.neutral { color: #fbbf24; }
+
     .strike-btn {
       position: absolute;
       right: 15px;
@@ -377,6 +607,8 @@
       background: rgba(40, 150, 70, 0.95);
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -385,22 +617,69 @@
     <div class="stage" id="stageEl">
       <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
       <div class="label">CEO Multi-Agent Office</div>
+
+      <div class="kpi-bar" id="kpiBar">
+        <div class="kpi-item">
+          <span class="kpi-label">매출</span>
+          <span class="kpi-value up" id="kpiRevenue">₩2,847억</span>
+          <span class="kpi-change up">▲ 12.3%</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-label">영업이익</span>
+          <span class="kpi-value up" id="kpiProfit">₩412억</span>
+          <span class="kpi-change up">▲ 8.7%</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-label">생산량</span>
+          <span class="kpi-value neutral" id="kpiOutput">98.2K</span>
+          <span class="kpi-change neutral">● 0.3%</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-label">수율</span>
+          <span class="kpi-value up" id="kpiYield">96.7%</span>
+          <span class="kpi-change up">▲ 1.2%</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-label">에이전트</span>
+          <span class="kpi-value up" id="kpiAgents">6/6</span>
+          <span class="kpi-change up">● 가동중</span>
+        </div>
+      </div>
+
       <button class="strike-btn" id="strikeBtn" onclick="toggleStrike()">파업</button>
     </div>
 
     <!-- Chat Panel (hidden by default, overlays canvas) -->
+    <div class="panel-resizer" id="panelResizer"></div>
     <div id="chatPanel" class="chat-panel" style="display:none;">
       <div class="chat-header" id="chatHeader"></div>
       <div class="chat-area" id="chatArea"></div>
+      <div class="file-preview-bar" id="filePreviewBar"></div>
       <div class="input-bar">
+        <input type="file" id="fileInput" multiple hidden onchange="handleFileSelect(this)" accept=".csv,.tsv,.txt,.log,.ini,.cfg,.conf,.toml,.docx,.xlsx,.pdf,.pptx,.md,.markdown,.rst,.png,.jpg,.jpeg,.gif,.bmp,.webp,.svg,.py,.js,.ts,.tsx,.jsx,.vue,.svelte,.html,.css,.scss,.less,.json,.xml,.yaml,.yml,.c,.cpp,.h,.hpp,.java,.kt,.scala,.go,.rs,.sh,.bat,.rb,.php,.swift,.r,.sql,.lua,.dart,.zig" />
+        <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="파일 첨부">📎</button>
         <input type="text" id="userInput" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter') sendMsg()" />
-        <button onclick="sendMsg()" id="sendBtn" style="background:var(--accent-blue);">전송</button>
+        <button id="sendBtn" onclick="sendMsg()" style="background:var(--accent-blue);">전송</button>
       </div>
     </div>
   </div>
 
   <!-- ── Sidebar (Right) ── -->
   <div class="sidebar">
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="사이드바 접기">◀</button>
+
+    <!-- Mini icons when collapsed -->
+    <div class="sidebar-mini">
+      <div class="mini-toggle" onclick="toggleSidebar()" title="펼치기">▶</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)" onclick="openAgent('ceo')" title="CEO">J</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#00b4d8,#0077b6)" onclick="openAgent('seo')" title="SEO" data-mini="seo">S</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#c084fc,#9333ea)" onclick="openAgent('yoon')" title="YOON" data-mini="yoon">Y</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#4ade80,#16a34a)" onclick="openAgent('lee')" title="LEE" data-mini="lee">L</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#e2b714,#c9960c)" onclick="openAgent('park')" title="PARK" data-mini="park">P</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#ff6b6b,#ee5a24)" onclick="openAgent('kim')" title="KIM" data-mini="kim">K</div>
+      <div class="mini-icon" style="background:linear-gradient(135deg,#00e5ff,#0097a7)" onclick="openAgent('choi')" title="CHOI" data-mini="choi">C</div>
+    </div>
+
     <div class="ceo-profile" onclick="openAgent('ceo')" style="cursor:pointer;">
       <div class="ceo-avatar">J</div>
       <h2>CEO Jiwon</h2>
@@ -506,6 +785,7 @@
         this.x = x;
         this.y = y;
         this.speed = speed;
+        this._originalSpeed = speed;
         this.scale = scale;
         this.frameIndex = 0;
         this.frameTimer = 0;
@@ -533,15 +813,20 @@
       update(dt) {
         if(this.isStatic) return;
 
-        // Lineup freeze: 줄서기/보고 중이면 완전 정지 (이동만 허용)
-        if (this._reportPhase === 'lineUp' || this._reportPhase === 'reporting') {
+        // Lineup freeze: 줄서기/보고 중이면 완전 정지 (단, _reporting 보고 이동 중이면 허용)
+        if (!this._reporting && (this._reportPhase === 'lineUp' || this._reportPhase === 'reporting')) {
           this.frameIndex = 0;
           return;
         }
 
         if (!this.isMoving) {
+          // 보고 이동 중 멈춤 대기 (CEO 앞 도착 후 말풍선)
+          if (this._reporting) {
+            this.frameIndex = 0;
+            return;
+          }
           // 집으로 돌아간 직후 lineUpActive 중이면 돌아다니지 않음
-          if (lineUpActive && !this._reportPhase) {
+          if (lineUpActive && !this._reportPhase && !this._reporting) {
             this.frameIndex = 0;
             return;
           }
@@ -606,6 +891,7 @@
         const h = img.height * this.scale;
         
         ctx.drawImage(img, -w/2, -h, w, h);
+
         ctx.restore();
 
         // Name label
@@ -766,6 +1052,7 @@
         btn.classList.add('active');
         // Disable agent cards + red flash
         document.querySelectorAll('.agent-card').forEach(c => c.classList.add('on-strike'));
+        // KPI는 updateKpi()에서 자동 반영
         if (currentAgent) closeAgent();
         audioCtx.resume(); // unlock audio
         playStrikeHorn();
@@ -807,6 +1094,9 @@
         btn.classList.remove('active');
         // Re-enable agent cards
         document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('on-strike'));
+        // KPI 복구 (기준값으로 리셋)
+        kpiState.revenue = 2847; kpiState.profit = 412;
+        kpiState.output = 98.2; kpiState.yield = 96.7;
         stopStrikeChant();
         strikeBGM.pause();
         strikeBGM.currentTime = 0;
@@ -918,11 +1208,12 @@
       ctx.stroke();
 
       // Sign board
-      ctx.font = 'bold 20px "Segoe UI", "Malgun Gothic", sans-serif';
-      const tw = ctx.measureText(char._slogan).width + 24;
-      const bh = 34;
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#cc2222';
+      const sColor = char._sloganColor || '#cc2222';
+      ctx.font = 'bold 26px "Segoe UI", "Malgun Gothic", sans-serif';
+      const tw = ctx.measureText(char._slogan).width + 30;
+      const bh = 40;
+      ctx.fillStyle = char._sloganColor ? '#1a2535' : '#fff';
+      ctx.strokeStyle = sColor;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.roundRect(sx - tw/2, sy - 40, tw, bh, 4);
@@ -930,7 +1221,7 @@
       ctx.stroke();
 
       // Text
-      ctx.fillStyle = '#cc2222';
+      ctx.fillStyle = sColor;
       ctx.textAlign = 'center';
       ctx.fillText(char._slogan, sx, sy - 17);
       ctx.restore();
@@ -977,6 +1268,96 @@
     function triggerReport(agentKey, reportText) {
       // Store pending report (delivered when CEO calls "보고")
       pendingReports[agentKey] = reportText;
+    }
+
+    // 응답 완료 후 해당 에이전트가 CEO한테 걸어가서 보고
+    function walkToCeoAndReport(agentKey) {
+      if (isOnStrike) return;
+      const charName = agentKey.charAt(0).toUpperCase() + agentKey.slice(1);
+      const char = characters.find(c => c.name === charName);
+      if (!char || char.isStatic) return;
+      // 이미 보고 중이면 리셋하고 다시
+      if (char._reporting) {
+        char._reporting = false;
+        char._slogan = null;
+        char._sloganColor = null;
+      }
+
+      const ceoChar = characters.find(c => c.isStatic);
+      if (!ceoChar) return;
+
+      char._reporting = true;
+      char._reportPhase = null;
+      char._onArrive = null;
+
+      // CEO 앞 위치
+      const offsetX = (Math.random() - 0.5) * 120;
+      const reportX = ceoChar.x + offsetX;
+      const reportY = ceoChar.y + 100 + Math.random() * 40;
+
+      // 원래 상태 저장
+      const origBounds = { ...char.bounds };
+      const origPause = char.pauseBehavior;
+      const origSpeed = char._originalSpeed || char.speed;
+      const origX = char.x;
+      const origY = char.y;
+
+      // 이동 범위 완전 해제
+      char.bounds = { minX: -100, maxX: 2000, minY: -100, maxY: 1200 };
+      char.pauseBehavior = 'normal';
+      char.speed = 5.0;
+      char.idleTimer = 99999; // idle에서 setNewTarget 방지
+
+      // CEO 앞으로 직선 이동
+      char.targetX = reportX;
+      char.targetY = reportY;
+      char.isMoving = true;
+      char.direction = reportX > char.x ? 1 : -1;
+
+      char._onArrive = () => {
+        char.isMoving = false;
+        char.idleTimer = 99999;
+        char._slogan = '사장님, 보고자료입니다!';
+        char._sloganColor = '#15803d';
+        char.direction = char.x > ceoChar.x ? -1 : 1;
+
+        setTimeout(() => {
+          char._slogan = '보고 완료!';
+          setTimeout(() => {
+            char._slogan = null;
+            char._sloganColor = null;
+
+            // 원래 자리로 복귀
+            char.targetX = origX;
+            char.targetY = origY;
+            char.isMoving = true;
+            char.speed = 4.0;
+            char.direction = origX > char.x ? 1 : -1;
+            char.idleTimer = 99999;
+
+            char._onArrive = () => {
+              char.bounds = origBounds;
+              char.pauseBehavior = origPause;
+              char.speed = origSpeed;
+              char.isMoving = false;
+              char.idleTimer = 300 + Math.random() * 500;
+              char._reporting = false;
+              char._onArrive = null;
+            };
+          }, 1500);
+        }, 3000);
+      };
+    }
+
+    // CEO 응답 시 전 에이전트가 순차적으로 보고하러 옴
+    function allAgentsReportToCeo() {
+      if (isOnStrike || lineUpActive) return;
+      const agentKeys = ['seo', 'yoon', 'lee', 'park', 'kim', 'choi'];
+      agentKeys.forEach((key, i) => {
+        setTimeout(() => {
+          walkToCeoAndReport(key);
+        }, i * 2500); // 2.5초 간격으로 순차 출발 (겹치지 않게)
+      });
     }
 
     // ── 복도 시스템 (책상 절대 안 넘음) ──
@@ -1191,15 +1572,15 @@
     setInterval(triggerRandomSpeech, 5000);
     setTimeout(triggerRandomSpeech, 1500); // first one after 1.5s
 
-    function drawSpeechBubble(ctx, char, text) {
+    function drawSpeechBubble(ctx, char, text, textColor) {
       const bx = char.x;
       const by = char.y - (char.isStatic ? 180 : 130);
-      const maxW = 280;
-      const pad = 12;
-      const lineH = 22;
+      const maxW = 360;
+      const pad = 14;
+      const lineH = 28;
 
       ctx.save();
-      ctx.font = 'bold 16px "Segoe UI", "Malgun Gothic", sans-serif';
+      ctx.font = 'bold 22px "Segoe UI", "Malgun Gothic", sans-serif';
 
       // Word wrap
       const words = text.split('');
@@ -1245,10 +1626,10 @@
       ctx.fillRect(bx - 9, boxY + boxH - 2, 18, 4);
 
       // Text
-      ctx.fillStyle = '#2e3440';
+      ctx.fillStyle = textColor || '#111';
       ctx.textAlign = 'left';
       lines.forEach((l, i) => {
-        ctx.fillText(l, boxX + pad, boxY + pad + lineH * (i + 0.75));
+        ctx.fillText(l, boxX + pad, boxY + pad + lineH * (i + 0.78));
       });
 
       ctx.restore();
@@ -1314,15 +1695,23 @@
         }
       });
 
-      // Strike protest signs + CEO cry
+      // Slogan signs: 보고용은 말풍선, 파업용은 피켓
+      characters.filter(c => !c.isStatic && c._slogan && !c._fired).forEach(c => {
+        if (c._sloganColor && !isOnStrike) {
+          drawSpeechBubble(ctx, c, c._slogan, c._sloganColor);
+        } else {
+          drawProtestSign(ctx, c);
+        }
+      });
+
+      // CEO cry (파업 전용)
       if (isOnStrike) {
-        characters.filter(c => !c.isStatic && c._slogan && !c._fired).forEach(c => drawProtestSign(ctx, c));
 
         // CEO "살려줘" bubble
         const ceoChar = characters.find(c => c.isStatic);
         if (ceoChar) {
           const cx = ceoChar.x, cy = ceoChar.y - 200;
-          const ceoMsgs = ['왜 이러는겨!!', '사장이 다 해줬잖아!', '일해라!!', '파업은 없다!', '머니가 권리다!!', '다시 일하라고!!', '내가 밥을 굶겼나!', '복귀 안 하면 각오해!'];
+          const ceoMsgs = ['왜 이러는겨!!', '사장이 다 해줬잖아!', '일해라!!', '파업은 없다!', '변호사!!어디있어', '다시 일하라고!!', '내가 밥을 굶겼나!', '복귀 안 하면 각오해!'];
           const msg = ceoMsgs[Math.floor((Date.now() / 2000) % ceoMsgs.length)];
           ctx.save();
           ctx.font = 'bold 22px "Segoe UI", "Malgun Gothic", sans-serif';
@@ -1407,6 +1796,19 @@
       choi: 'logpresso',
     };
 
+    // Frontend skill → Backend skill ID mapping
+    const SKILL_BACKEND_MAP = {
+      data_analysis: ['agent-data-analyst'],
+      ppt: ['pptx'],
+      drawio: ['drawio-diagram'],
+      markdown: ['markdown-mermaid-writing'],
+      chart: ['agent-data-analyst'],
+      logpresso: ['logpresso-query'],
+      security: ['agent-security-engineer'],
+      code_review: ['code-review'],
+      translate: [],
+    };
+
     function getAgentData(key) {
       const skillKey = agentSkillMap[key];
       const skill = skillDefs[skillKey];
@@ -1457,6 +1859,14 @@
     };
 
     let currentAgent = null;
+    let selectedEnv = 'auto';
+    const agentHistory = {};
+    let chatAbortController = null;
+
+    function getRecentHistory(key, maxTurns = 10) {
+      const full = agentHistory[key] || [];
+      return full.slice(-maxTurns * 2);
+    }
 
     function openAgent(key) {
       if (isOnStrike) return;
@@ -1470,10 +1880,13 @@
       currentAgent = key;
       chatCollapsed = false;
 
-      // Highlight sidebar card
+      // Highlight sidebar card + mini icon
       document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('active'));
       const card = document.querySelector(`.agent-card.${key}`);
       if (card) card.classList.add('active');
+      document.querySelectorAll('.mini-icon').forEach(m => m.classList.remove('active'));
+      const mini = document.querySelector(`.mini-icon[data-mini="${key}"]`);
+      if (mini) mini.classList.add('active');
 
       // Header
       document.getElementById('chatHeader').innerHTML = `
@@ -1482,21 +1895,42 @@
           <h2>${agent.name}</h2>
           <p>${agent.title}</p>
         </div>
+        <select class="env-select" onchange="selectedEnv=this.value" title="모델 선택">
+          <option value="auto" ${selectedEnv==='auto'?'selected':''}>🤖 자동</option>
+          <option value="gguf-0" ${selectedEnv==='gguf-0'?'selected':''}>💻 로컬 GGUF</option>
+          <option value="dev" ${selectedEnv==='dev'?'selected':''}>⚡ DEV (4.7)</option>
+          <option value="common" ${selectedEnv==='common'?'selected':''}>🔷 COMMON (120B)</option>
+          <option value="prod" ${selectedEnv==='prod'?'selected':''}>🚀 PROD (397B)</option>
+        </select>
         <button class="back-btn" onclick="toggleChat()">← 접기</button>
       `;
 
-      // Chat area with welcome
-      const qbtns = agent.quickActions.map(q =>
-        `<button class="quick-btn" onclick="sendQuick('${q.replace(/'/g,"\\\'")}')">${q}</button>`
-      ).join('');
-      document.getElementById('chatArea').innerHTML = `
-        <div class="welcome-msg">
-          <div class="big-icon">${agent.icon}</div>
-          <h2>${agent.name} 에이전트</h2>
-          <p>${agent.desc}</p>
-          <div class="quick-actions">${qbtns}</div>
-        </div>
-      `;
+      // Chat area: restore history or show welcome
+      const history = agentHistory[key];
+      if (history && history.length > 0) {
+        let html = '';
+        for (const msg of history) {
+          if (msg.role === 'user') {
+            html += `<div class="message user"><div class="msg-avatar">👤</div><div class="msg-body">${escapeHtml(msg.content)}</div></div>`;
+          } else {
+            html += `<div class="message"><div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div><div class="msg-body">${renderMd(msg.content)}</div></div>`;
+          }
+        }
+        document.getElementById('chatArea').innerHTML = html;
+        setTimeout(() => initChartsInChat(), 100);
+      } else {
+        const qbtns = agent.quickActions.map(q =>
+          `<button class="quick-btn" onclick="sendQuick('${q.replace(/'/g,"\\\'")}')">${q}</button>`
+        ).join('');
+        document.getElementById('chatArea').innerHTML = `
+          <div class="welcome-msg">
+            <div class="big-icon">${agent.icon}</div>
+            <h2>${agent.name} 에이전트</h2>
+            <p>${agent.desc}</p>
+            <div class="quick-actions">${qbtns}</div>
+          </div>
+        `;
+      }
 
       // Send button color
       document.getElementById('sendBtn').style.background = agent.color1;
@@ -1535,30 +1969,220 @@
       document.querySelector('.main-area').classList.remove('split');
     }
 
-    function sendMsg() {
+    // ── Sidebar toggle ──
+    // ── Panel resizer (drag to resize canvas vs chat) ──
+    (function initResizer() {
+      const resizer = document.getElementById('panelResizer');
+      const mainArea = document.querySelector('.main-area');
+      let dragging = false;
+
+      resizer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        resizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const rect = mainArea.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const total = rect.width;
+        const pct = Math.max(20, Math.min(80, (x / total) * 100));
+        mainArea.style.gridTemplateColumns = `${pct}fr 8px ${100 - pct}fr`;
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      });
+    })();
+
+    function toggleSidebar() {
+      const btn = document.getElementById('sidebarToggle');
+      document.body.classList.toggle('sidebar-collapsed');
+      btn.textContent = document.body.classList.contains('sidebar-collapsed') ? '▶' : '◀';
+    }
+
+    // ── File upload to backend ──
+    async function uploadFiles(files) {
+      for (const f of files) {
+        const ext = f.name.split('.').pop().toLowerCase();
+
+        // CSV/TSV/TXT → 전용 CSV 파서도 호출 (행/열 분석용)
+        if (['csv', 'tsv', 'txt'].includes(ext)) {
+          const csvFd = new FormData();
+          csvFd.append('file', f);
+          await fetch('/api/upload_csv', { method: 'POST', body: csvFd }).catch(() => {});
+        }
+
+        // 범용 업로드 (모든 파일)
+        const fd = new FormData();
+        fd.append('file', f);
+        const resp = await fetch('/api/upload_file', { method: 'POST', body: fd });
+        if (!resp.ok) throw new Error(`${f.name} 업로드 실패`);
+      }
+    }
+
+    // ── Typing indicator ──
+    function showTyping(agent) {
+      const chatArea = document.getElementById('chatArea');
+      const el = document.createElement('div');
+      el.className = 'message typing-indicator';
+      el.id = 'typingMsg';
+      el.innerHTML = `
+        <div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div>
+        <div class="msg-body"><span class="typing-dots"><span>●</span><span>●</span><span>●</span></span> 응답 생성 중...</div>
+      `;
+      chatArea.appendChild(el);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+    function hideTyping() {
+      const t = document.getElementById('typingMsg');
+      if (t) t.remove();
+    }
+
+    // ── Send / Stop toggle ──
+    function setSendMode(mode) {
+      const btn = document.getElementById('sendBtn');
+      const input = document.getElementById('userInput');
+      btn.removeAttribute('onclick');
+      if (mode === 'stop') {
+        btn.textContent = '■ 중지';
+        btn.style.background = 'var(--accent)';
+        btn.onclick = stopChat;
+        input.disabled = true;
+      } else {
+        const agent = currentAgent ? ((currentAgent === 'ceo') ? agentBaseData['ceo'] : getAgentData(currentAgent)) : null;
+        btn.textContent = '전송';
+        btn.style.background = agent ? agent.color1 : 'var(--accent-blue)';
+        btn.onclick = () => sendMsg();
+        input.disabled = false;
+      }
+    }
+    function stopChat() {
+      if (chatAbortController) chatAbortController.abort();
+      fetch('/api/chat/stop', { method: 'POST' }).catch(() => {});
+    }
+
+    // ── Base64 encode/decode for chart JSON ──
+    function u2b(str) { return btoa(unescape(encodeURIComponent(str))); }
+    function b2u(b64) { return decodeURIComponent(escape(atob(b64))); }
+
+    // ── Chart.js instances ──
+    const _chartInstances = {};
+
+    function renderChartBlock(canvasId, jsonStr) {
+      let raw = jsonStr.replace(/\/\/[^\n]*/g, '');
+      // function 콜백 문자열 제거 (JSON.parse 호환)
+      raw = raw.replace(/"function\(.*?\)\s*\{[\s\S]*?\}"/g, 'null');
+      let config;
+      try { config = JSON.parse(raw); } catch(e) {
+        raw = raw.replace(/,\s*([\]}])/g, '$1').replace(/'/g, '"');
+        try { config = JSON.parse(raw); } catch(e2) { return; }
+      }
+      if (!config.type) config.type = 'bar';
+      if (!config.options) config.options = {};
+      config.options.responsive = true;
+      config.options.maintainAspectRatio = true;
+      if (!config.options.plugins) config.options.plugins = {};
+
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      if (_chartInstances[canvasId]) _chartInstances[canvasId].destroy();
+      _chartInstances[canvasId] = new Chart(canvas.getContext('2d'), config);
+    }
+
+    function downloadChartPng(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = 'chart.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+
+    function copyChartJson(btn) {
+      const json = b2u(btn.dataset.chart);
+      navigator.clipboard.writeText(json).then(() => { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '📋 JSON 복사', 1500); });
+    }
+
+    // ── Render markdown + chart/drawio blocks ──
+    function renderMd(text) {
+      // 1) ```chart 블록 → Chart.js 캔버스로 변환 (marked 처리 전)
+      let s = text.replace(/```chart\s*([\s\S]*?)```/g, (_, code) => {
+        const trimmed = code.trim();
+        const chartId = 'chart_' + Math.random().toString(36).substr(2, 9);
+        const b64 = u2b(trimmed);
+        return `<div class="chart-block">
+          <div class="chart-header">
+            <span>📊 인터랙티브 차트</span>
+            <div class="chart-actions">
+              <button class="chart-btn" onclick="downloadChartPng('${chartId}')">📥 PNG</button>
+              <button class="chart-btn" onclick="copyChartJson(this)" data-chart="${b64}">📋 JSON</button>
+            </div>
+          </div>
+          <div class="chart-canvas-wrap"><canvas id="${chartId}" data-chart-json="${b64}"></canvas></div>
+          <details class="chart-raw-toggle"><summary>📝 원본 JSON</summary><pre>${escapeHtml(trimmed)}</pre></details>
+        </div>`;
+      });
+
+      // 2) 나머지 마크다운 렌더링
+      if (typeof marked !== 'undefined') {
+        s = marked.parse(s);
+      } else {
+        s = escapeHtml(s);
+        s = s.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>');
+        s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/\n/g, '<br>');
+      }
+      return s;
+    }
+
+    // 메시지 렌더 후 차트 초기화
+    function initChartsInChat() {
+      document.querySelectorAll('#chatArea canvas[data-chart-json]').forEach(cv => {
+        if (cv.dataset.rendered) return;
+        cv.dataset.rendered = '1';
+        try { renderChartBlock(cv.id, b2u(cv.dataset.chartJson)); } catch(e) { console.warn('Chart render error:', e); }
+      });
+    }
+
+    // ── Main send function ──
+    async function sendMsg() {
       const input = document.getElementById('userInput');
       const text = input.value.trim();
-      if (!text || !currentAgent) return;
+      const hasFiles = pendingFiles.length > 0;
+      if ((!text && !hasFiles) || !currentAgent) return;
 
       const chatArea = document.getElementById('chatArea');
-      // Remove welcome message if present
       const welcome = chatArea.querySelector('.welcome-msg');
       if (welcome) welcome.remove();
 
-      // User message
+      // Snapshot attached files
+      const attachedFiles = [...pendingFiles];
+      const attachHtml = buildAttachmentHtml(attachedFiles);
+
+      // User message bubble
       chatArea.innerHTML += `
         <div class="message user">
           <div class="msg-avatar">👤</div>
-          <div class="msg-body">${escapeHtml(text)}</div>
+          <div class="msg-body">${text ? escapeHtml(text) : ''}${attachHtml}</div>
         </div>
       `;
       input.value = '';
+      pendingFiles = [];
+      renderFileChips();
+      chatArea.scrollTop = chatArea.scrollHeight;
 
-      // Check if CEO chat + "보고" command
+      // CEO "보고" command → frontend-only animation
       const isCeoReport = (currentAgent === 'ceo') && /보고/.test(text);
-
       if (isCeoReport) {
-        // CEO "보고" command → line up all employees
         const agent = agentBaseData['ceo'];
         setTimeout(() => {
           chatArea.innerHTML += `
@@ -1570,28 +2194,149 @@
           chatArea.scrollTop = chatArea.scrollHeight;
           startLineUpReport();
         }, 300);
+        return;
+      }
+
+      // ── Backend API call ──
+      const agent = (currentAgent === 'ceo') ? agentBaseData[currentAgent] : getAgentData(currentAgent);
+      const capturedAgent = currentAgent;
+      const capturedText = text;
+
+      // Init history
+      if (!agentHistory[capturedAgent]) agentHistory[capturedAgent] = [];
+      agentHistory[capturedAgent].push({ role: 'user', content: capturedText });
+
+      // Determine skills
+      const skillKey = agentSkillMap[capturedAgent];
+      const skills = (capturedAgent === 'ceo')
+        ? ['agent-llm-architect']
+        : (SKILL_BACKEND_MAP[skillKey] || []);
+
+      // UI: show typing, disable send
+      showTyping(agent);
+      setSendMode('stop');
+
+      // 캔버스: 해당 에이전트 캐릭터에 작업중 말풍선
+      if (capturedAgent !== 'ceo') {
+        const charName = capturedAgent.charAt(0).toUpperCase() + capturedAgent.slice(1);
+        const workChar = characters.find(c => c.name === charName);
+        if (workChar) {
+          workChar._slogan = '사장님 보고 작성중..';
+          workChar._sloganColor = '#15803d';
+        }
       } else {
-        // Normal agent response
-        const agent = (currentAgent === 'ceo') ? agentBaseData[currentAgent] : getAgentData(currentAgent);
-        const capturedAgent = currentAgent;
-        const capturedText = text;
-        setTimeout(() => {
-          const responseText = `요청을 접수했습니다: "${escapeHtml(capturedText)}"`;
+        // CEO 질문 시 전 에이전트 작업중
+        characters.filter(c => !c.isStatic && !c._fired).forEach(c => {
+          c._slogan = '보고 작성중..';
+          c._sloganColor = '#15803d';
+        });
+      }
+
+      try {
+        // Upload files first
+        if (attachedFiles.length > 0) {
+          await uploadFiles(attachedFiles);
+        }
+
+        // Fetch API
+        chatAbortController = new AbortController();
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: chatAbortController.signal,
+          body: JSON.stringify({
+            env: selectedEnv,
+            messages: getRecentHistory(capturedAgent),
+            skills: skills,
+            effort: 2,
+            format: 'auto',
+            writing_style: 'auto',
+            max_tokens: 4096,
+            think_mode: false,
+          }),
+        });
+
+        const data = await resp.json();
+        hideTyping();
+        // 캔버스 작업중 말풍선 제거
+        characters.filter(c => !c.isStatic).forEach(c => {
+          if (c._sloganColor === '#15803d' && c._slogan && c._slogan.includes('작성중')) {
+            c._slogan = null; c._sloganColor = null;
+          }
+        });
+
+        if (data.error) {
           chatArea.innerHTML += `
             <div class="message">
               <div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div>
-              <div class="msg-body">${responseText}<br><br>⏳ 백엔드 연결 후 실제 응답이 표시됩니다.</div>
+              <div class="msg-body" style="border-left:3px solid var(--accent);">❌ ${escapeHtml(data.error)}</div>
             </div>
           `;
-          chatArea.scrollTop = chatArea.scrollHeight;
-          // Store report for next CEO "보고" call
-          if (capturedAgent !== 'ceo') {
-            triggerReport(capturedAgent, capturedText);
+        } else {
+          const content = data.content || '(빈 응답)';
+          // Info line
+          let info = '';
+          const modelName = data.model_used || selectedEnv;
+          if (data.loaded_skills && data.loaded_skills.length > 0) {
+            info += `<div style="font-size:11px;color:var(--muted);margin-top:8px;">[스킬: ${data.loaded_skills.join(', ')}] [${modelName}]</div>`;
           }
-        }, 500);
-      }
+          if (data.auto_routed) {
+            info += `<div style="font-size:11px;color:var(--muted);">[🤖 자동: ${data.model_used} (${data.route_reason || ''})]</div>`;
+          }
 
-      chatArea.scrollTop = chatArea.scrollHeight;
+          chatArea.innerHTML += `
+            <div class="message">
+              <div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div>
+              <div class="msg-body">${renderMd(content)}${info}</div>
+            </div>
+          `;
+          agentHistory[capturedAgent].push({ role: 'assistant', content: content });
+          // 차트 렌더링
+          setTimeout(() => initChartsInChat(), 100);
+        }
+
+        // Clear uploaded files on server
+        if (attachedFiles.length > 0) {
+          fetch('/api/clear_files', { method: 'POST' }).catch(() => {});
+          fetch('/api/clear_csv', { method: 'POST' }).catch(() => {});
+        }
+
+        // Store report + walk to CEO
+        if (capturedAgent !== 'ceo') {
+          triggerReport(capturedAgent, capturedText);
+          walkToCeoAndReport(capturedAgent);
+        } else {
+          // CEO 응답 시 → 전 에이전트 보고하러 옴
+          allAgentsReportToCeo();
+        }
+
+      } catch (e) {
+        hideTyping();
+        characters.filter(c => !c.isStatic).forEach(c => {
+          if (c._sloganColor === '#15803d' && c._slogan && c._slogan.includes('작성중')) {
+            c._slogan = null; c._sloganColor = null;
+          }
+        });
+        if (e.name === 'AbortError') {
+          chatArea.innerHTML += `
+            <div class="message">
+              <div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div>
+              <div class="msg-body" style="color:var(--muted);">⏹ 응답이 취소되었습니다.</div>
+            </div>
+          `;
+        } else {
+          chatArea.innerHTML += `
+            <div class="message">
+              <div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div>
+              <div class="msg-body" style="border-left:3px solid var(--accent);">❌ 네트워크 오류: ${escapeHtml(e.message)}<br><small>서버가 실행 중인지 확인하세요.</small></div>
+            </div>
+          `;
+        }
+      } finally {
+        chatAbortController = null;
+        setSendMode('send');
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
     }
 
     function sendQuick(text) {
@@ -1603,6 +2348,154 @@
       const d = document.createElement('div');
       d.textContent = t;
       return d.innerHTML;
+    }
+
+    /* ── KPI 실시간 랜덤 업데이트 ── */
+    const kpiState = {
+      revenue: 2847, profit: 412, output: 98.2, yield: 96.7,
+    };
+    function updateKpi() {
+      // 해고된 인원 수
+      const firedCount = typeof firedCharacters !== 'undefined' ? firedCharacters.length : 0;
+      const activeCount = 6 - firedCount;
+
+      if (isOnStrike) {
+        // 파업 중: 매 틱마다 급락
+        kpiState.revenue -= (20 + Math.random() * 30);
+        kpiState.profit -= (8 + Math.random() * 15);
+        kpiState.output -= (0.5 + Math.random() * 1.2);
+        kpiState.yield = Math.max(50, kpiState.yield - (0.3 + Math.random() * 0.8));
+      } else if (firedCount > 0) {
+        // 해고 상태: 인원 부족으로 하락
+        const penalty = firedCount * 0.5;
+        kpiState.revenue -= (5 + Math.random() * 10) * penalty;
+        kpiState.profit -= (3 + Math.random() * 6) * penalty;
+        kpiState.output -= (0.2 + Math.random() * 0.5) * penalty;
+        kpiState.yield = Math.max(60, kpiState.yield - (0.1 + Math.random() * 0.3) * penalty);
+      } else {
+        // 정상: 소폭 랜덤 변동 (상승 편향)
+        kpiState.revenue += (Math.random() - 0.48) * 15;
+        kpiState.profit += (Math.random() - 0.48) * 5;
+        kpiState.output += (Math.random() - 0.5) * 0.8;
+        kpiState.yield = Math.min(99.9, Math.max(90, kpiState.yield + (Math.random() - 0.48) * 0.3));
+      }
+
+      // 최소값 클램프
+      kpiState.revenue = Math.max(0, kpiState.revenue);
+      kpiState.profit = Math.max(-500, kpiState.profit);
+      kpiState.output = Math.max(0, kpiState.output);
+
+      const rChg = ((kpiState.revenue - 2847) / 2847 * 100).toFixed(1);
+      const pChg = ((kpiState.profit - 412) / 412 * 100).toFixed(1);
+      const oChg = ((kpiState.output - 98.2) / 98.2 * 100).toFixed(1);
+      const yChg = (kpiState.yield - 96.7).toFixed(1);
+
+      setKpi('kpiRevenue', `₩${Math.round(kpiState.revenue).toLocaleString()}억`, rChg);
+      setKpi('kpiProfit', kpiState.profit >= 0 ? `₩${Math.round(kpiState.profit).toLocaleString()}억` : `▼₩${Math.abs(Math.round(kpiState.profit)).toLocaleString()}억`, pChg);
+      setKpi('kpiOutput', `${kpiState.output.toFixed(1)}K`, oChg);
+      setKpi('kpiYield', `${kpiState.yield.toFixed(1)}%`, yChg);
+
+      // 에이전트 수 업데이트
+      if (isOnStrike) {
+        document.getElementById('kpiAgents').textContent = '0/6';
+        document.getElementById('kpiAgents').className = 'kpi-value down';
+        document.getElementById('kpiAgents').nextElementSibling.textContent = '🪧 파업중';
+        document.getElementById('kpiAgents').nextElementSibling.className = 'kpi-change down';
+      } else {
+        document.getElementById('kpiAgents').textContent = `${activeCount}/6`;
+        document.getElementById('kpiAgents').className = activeCount >= 5 ? 'kpi-value up' : activeCount >= 3 ? 'kpi-value neutral' : 'kpi-value down';
+        const agChgEl = document.getElementById('kpiAgents').nextElementSibling;
+        if (firedCount > 0) {
+          agChgEl.textContent = `🔥 ${firedCount}명 해고`;
+          agChgEl.className = 'kpi-change down';
+        } else {
+          agChgEl.textContent = '● 가동중';
+          agChgEl.className = 'kpi-change up';
+        }
+      }
+    }
+    function setKpi(id, val, chg) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const n = parseFloat(chg);
+      const cls = n > 0 ? 'up' : n < 0 ? 'down' : 'neutral';
+      const arrow = n > 0 ? '▲' : n < 0 ? '▼' : '●';
+      el.textContent = val;
+      el.className = 'kpi-value ' + cls;
+      const chgEl = el.nextElementSibling;
+      if (chgEl) {
+        chgEl.textContent = `${arrow} ${Math.abs(n).toFixed(1)}%`;
+        chgEl.className = 'kpi-change ' + cls;
+      }
+    }
+    setInterval(updateKpi, 3000);
+
+    /* ── Attachment handling (frontend only) ── */
+    let pendingFiles = [];
+
+    function handleFileSelect(input) {
+      for (const f of input.files) {
+        if (pendingFiles.length >= 5) break; // max 5 files
+        pendingFiles.push(f);
+      }
+      input.value = '';
+      renderFileChips();
+    }
+
+    function removeFile(idx) {
+      pendingFiles.splice(idx, 1);
+      renderFileChips();
+    }
+
+    function renderFileChips() {
+      const bar = document.getElementById('filePreviewBar');
+      bar.innerHTML = pendingFiles.map((f, i) => `
+        <div class="file-chip">
+          <span class="fc-icon">${getFileIcon(f.name)}</span>
+          <span class="fc-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="fc-size">${formatSize(f.size)}</span>
+          <button class="fc-remove" onclick="removeFile(${i})">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    function getFileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const map = {
+        pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', csv: '📊',
+        ppt: '📽️', pptx: '📽️', txt: '📃', md: '📃',
+        png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️',
+        mp4: '🎬', mov: '🎬', mp3: '🎵', wav: '🎵',
+        zip: '📦', rar: '📦', '7z': '📦',
+        py: '🐍', js: '⚡', html: '🌐', css: '🎨', json: '📋',
+      };
+      return map[ext] || '📎';
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + 'B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB';
+      return (bytes / 1048576).toFixed(1) + 'MB';
+    }
+
+    function buildAttachmentHtml(files) {
+      if (!files.length) return '';
+      let html = '<div class="msg-attachments">';
+      for (const f of files) {
+        const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(f.name);
+        if (isImage) {
+          const url = URL.createObjectURL(f);
+          html += `<img class="msg-attach-thumb" src="${url}" alt="${escapeHtml(f.name)}" onclick="window.open(this.src)" />`;
+        }
+        html += `
+          <div class="msg-attach-item">
+            <span class="ma-icon">${getFileIcon(f.name)}</span>
+            <span class="ma-name">${escapeHtml(f.name)}</span>
+            <span class="ma-size">${formatSize(f.size)}</span>
+          </div>`;
+      }
+      html += '</div>';
+      return html;
     }
 
   </script>
