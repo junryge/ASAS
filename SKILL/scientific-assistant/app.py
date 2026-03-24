@@ -7716,5 +7716,5 @@ if __name__ == "__main__":
         except ImportError:
             pass
 
-    app.run(host="0.0.0.0", port=10009, debug=False)
-    #app.run(host="127.0.0.1", port=18080, debug=False, use_reloader=False)
+    #app.run(host="0.0.0.0", port=10009, debug=False)
+    app.run(host="127.0.0.1", port=18080, debug=False, use_reloader=False)
