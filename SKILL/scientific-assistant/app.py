@@ -4484,7 +4484,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 <!-- UIO 2D 픽셀 컨테이너 -->
 <div id="uioContainer">
   <iframe id="uioFrame" src="about:blank"></iframe>
-  <button id="uioBackBtn" onclick="exitUioMode()">← 메인으로 돌아가기</button>
+  <button id="uioBackBtn" onclick="toggleUioMode()">← 접기</button>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -7459,9 +7459,44 @@ function selectMode(mode){
   // mode === 'default' → 기본 UI 그대로 표시 (아무것도 안 함)
 }
 
+var uioCollapsed = false;
+
+function toggleUioMode(){
+  var btn = document.getElementById('uioBackBtn');
+  if(!uioCollapsed){
+    // 접기: UIO 숨기고 메인 UI 복원 (iframe 유지)
+    document.getElementById('uioContainer').style.display='none';
+    document.getElementById('sidebar').style.display='';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='';
+    btn.textContent='🎮 UIO 펼치기';
+    btn.style.position='fixed';
+    btn.style.display='block';
+    uioCollapsed = true;
+  } else {
+    // 펼치기: UIO 다시 전체화면
+    document.getElementById('uioContainer').style.display='block';
+    document.getElementById('sidebar').style.display='none';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='none';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='none';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='none';
+    btn.textContent='← 접기';
+    uioCollapsed = false;
+  }
+}
+
 function exitUioMode(){
   document.getElementById('uioContainer').style.display='none';
   document.getElementById('uioFrame').src='about:blank';
+  document.getElementById('uioBackBtn').style.display='';
+  uioCollapsed = false;
   // 기본 UI 복원
   document.getElementById('sidebar').style.display='';
   var mainEl = document.querySelector('.main');
