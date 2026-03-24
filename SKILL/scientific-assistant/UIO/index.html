@@ -149,10 +149,24 @@
     .main-area {
       position: relative;
       display: grid;
+      grid-template-columns: 1fr;
       place-items: center;
       padding: 12px;
       background: radial-gradient(circle at 30% 30%, var(--bg-1), var(--bg-2) 65%);
       overflow: hidden;
+      transition: grid-template-columns 0.3s ease;
+    }
+    .main-area.split {
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      place-items: stretch;
+      align-items: center;
+    }
+    .main-area.split .stage {
+      max-width: 100%;
+      width: 100%;
+      align-self: start;
+      margin-top: 0;
     }
 
     .agent-card.active {
@@ -163,13 +177,15 @@
 
     /* ── Chat Panel ── */
     .chat-panel {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
       display: flex;
       flex-direction: column;
-      background: var(--bg-2);
-      z-index: 20;
+      background: var(--bg-1);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      overflow: hidden;
       animation: chatFadeIn 0.25s ease;
+      min-height: 0;
+      height: 100%;
     }
     @keyframes chatFadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -1024,8 +1040,9 @@
       document.getElementById('sendBtn').style.background = agent.color1;
       document.getElementById('userInput').placeholder = `${agent.name}에게 질문하세요...`;
 
-      // Show chat, hide canvas
-      document.getElementById('stageEl').style.display = 'none';
+      // Show chat alongside canvas (split view)
+      document.querySelector('.main-area').classList.add('split');
+      document.getElementById('stageEl').style.display = '';
       document.getElementById('chatPanel').style.display = 'flex';
       document.getElementById('userInput').focus();
     }
@@ -1036,13 +1053,13 @@
       if (!currentAgent) return;
       chatCollapsed = !chatCollapsed;
       if (chatCollapsed) {
-        // 접기: 채팅 숨기고 캔버스 보이기 (에이전트 선택 유지)
+        // 접기: 채팅 숨기고 캔버스 전체로 복원
         document.getElementById('chatPanel').style.display = 'none';
-        document.getElementById('stageEl').style.display = '';
+        document.querySelector('.main-area').classList.remove('split');
       } else {
-        // 펼치기: 채팅 다시 보이기
+        // 펼치기: 채팅 다시 보이기 (캔버스와 나란히)
         document.getElementById('chatPanel').style.display = 'flex';
-        document.getElementById('stageEl').style.display = 'none';
+        document.querySelector('.main-area').classList.add('split');
         const backBtn = document.querySelector('.back-btn');
         if (backBtn) backBtn.textContent = '← 접기';
       }
@@ -1053,7 +1070,7 @@
       chatCollapsed = false;
       document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('active'));
       document.getElementById('chatPanel').style.display = 'none';
-      document.getElementById('stageEl').style.display = '';
+      document.querySelector('.main-area').classList.remove('split');
     }
 
     function sendMsg() {
