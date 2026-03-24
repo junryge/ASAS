@@ -22,7 +22,7 @@
     body {
       min-height: 100vh;
       display: grid;
-      grid-template-columns: 300px 1fr;
+      grid-template-columns: 1fr 300px;
       font-family: "Segoe UI", "Malgun Gothic", sans-serif;
       color: var(--text);
       background: var(--bg-2);
@@ -31,7 +31,7 @@
     /* ── Sidebar ── */
     .sidebar {
       background: var(--panel);
-      border-right: 2px solid var(--border);
+      border-left: 2px solid var(--border);
       padding: 0;
       overflow-y: auto;
       display: flex;
@@ -97,7 +97,7 @@
     .agent-card:hover {
       background: var(--card);
       border-color: var(--border);
-      transform: translateX(4px);
+      transform: translateX(-4px);
     }
     .agent-card .avatar {
       width: 40px; height: 40px;
@@ -136,11 +136,122 @@
 
     /* ── Main Area ── */
     .main-area {
+      position: relative;
       display: grid;
       place-items: center;
       padding: 12px;
       background: radial-gradient(circle at 30% 30%, var(--bg-1), var(--bg-2) 65%);
       overflow: hidden;
+    }
+
+    .agent-card.active {
+      background: var(--card);
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 12px rgba(0, 180, 216, 0.2);
+    }
+
+    /* ── Chat Panel ── */
+    .chat-panel {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-2);
+      z-index: 20;
+      animation: chatFadeIn 0.25s ease;
+    }
+    @keyframes chatFadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+    .chat-header {
+      padding: 16px 24px;
+      background: var(--panel);
+      border-bottom: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .chat-header .ch-avatar {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 22px; font-weight: 700;
+    }
+    .chat-header .ch-info h2 { font-size: 20px; font-weight: 700; }
+    .chat-header .ch-info p { font-size: 13px; color: var(--muted); }
+    .chat-header .back-btn {
+      margin-left: auto;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .chat-header .back-btn:hover { border-color: var(--accent-blue); }
+
+    .chat-panel .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .chat-panel .welcome-msg {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .chat-panel .welcome-msg .big-icon { font-size: 64px; margin-bottom: 16px; }
+    .chat-panel .welcome-msg h2 { font-size: 24px; margin-bottom: 8px; }
+    .chat-panel .welcome-msg p { color: var(--muted); font-size: 15px; max-width: 500px; margin: 0 auto 24px; line-height: 1.6; }
+
+    .quick-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .quick-btn {
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .quick-btn:hover { border-color: var(--accent-blue); background: rgba(0,180,216,0.1); }
+
+    .message { margin-bottom: 16px; display: flex; gap: 12px; }
+    .message .msg-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--card); display: grid; place-items: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .message .msg-body {
+      background: var(--card); border-radius: 12px;
+      padding: 12px 16px; max-width: 70%;
+      font-size: 14px; line-height: 1.6;
+    }
+    .message.user { flex-direction: row-reverse; }
+    .message.user .msg-body { background: #0077b6; }
+
+    .chat-panel .input-bar {
+      padding: 16px 24px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      display: flex; gap: 12px; align-items: center;
+    }
+    .chat-panel .input-bar input {
+      flex: 1; padding: 12px 16px;
+      border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text);
+      font-size: 14px; font-family: inherit; outline: none;
+      transition: border-color 0.2s;
+    }
+    .chat-panel .input-bar input:focus { border-color: var(--accent-blue); }
+    .chat-panel .input-bar input::placeholder { color: var(--muted); }
+    .chat-panel .input-bar button {
+      padding: 12px 20px; border-radius: 10px; border: none;
+      color: #fff; font-size: 14px; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: background 0.2s;
     }
 
     .stage {
@@ -210,9 +321,28 @@
 </head>
 <body>
 
-  <!-- ── Left Sidebar ── -->
+  <!-- ── Main Area (Left) ── -->
+  <div class="main-area">
+    <div class="stage" id="stageEl">
+      <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
+      <div class="label">CEO Multi-Agent Office</div>
+      <button class="strike-btn" id="strikeBtn" onclick="toggleStrike()">파업</button>
+    </div>
+
+    <!-- Chat Panel (hidden by default, overlays canvas) -->
+    <div id="chatPanel" class="chat-panel" style="display:none;">
+      <div class="chat-header" id="chatHeader"></div>
+      <div class="chat-area" id="chatArea"></div>
+      <div class="input-bar">
+        <input type="text" id="userInput" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter') sendMsg()" />
+        <button onclick="sendMsg()" id="sendBtn" style="background:var(--accent-blue);">전송</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sidebar (Right) ── -->
   <div class="sidebar">
-    <div class="ceo-profile">
+    <div class="ceo-profile" onclick="closeAgent()" style="cursor:pointer;">
       <div class="ceo-avatar">J</div>
       <h2>CEO Jiwon</h2>
       <div class="role">Multi-Agent Orchestrator</div>
@@ -222,7 +352,7 @@
     <div class="agent-section">
       <h3>Agent Team</h3>
 
-      <a class="agent-card seo" href="SEO/index.html">
+      <a class="agent-card seo" href="javascript:void(0)" onclick="openAgent('seo')">
         <div class="avatar">S</div>
         <div class="info">
           <div class="name">SEO</div>
@@ -231,7 +361,7 @@
         <div class="status"></div>
       </a>
 
-      <a class="agent-card yoon" href="YOON/index.html">
+      <a class="agent-card yoon" href="javascript:void(0)" onclick="openAgent('yoon')">
         <div class="avatar">Y</div>
         <div class="info">
           <div class="name">YOON</div>
@@ -240,7 +370,7 @@
         <div class="status"></div>
       </a>
 
-      <a class="agent-card lee" href="LEE/index.html">
+      <a class="agent-card lee" href="javascript:void(0)" onclick="openAgent('lee')">
         <div class="avatar">L</div>
         <div class="info">
           <div class="name">LEE</div>
@@ -249,7 +379,7 @@
         <div class="status"></div>
       </a>
 
-      <a class="agent-card park" href="PARK/index.html">
+      <a class="agent-card park" href="javascript:void(0)" onclick="openAgent('park')">
         <div class="avatar">P</div>
         <div class="info">
           <div class="name">PARK</div>
@@ -258,7 +388,7 @@
         <div class="status"></div>
       </a>
 
-      <a class="agent-card kim" href="KIM/index.html">
+      <a class="agent-card kim" href="javascript:void(0)" onclick="openAgent('kim')">
         <div class="avatar">K</div>
         <div class="info">
           <div class="name">KIM</div>
@@ -267,7 +397,7 @@
         <div class="status"></div>
       </a>
 
-      <a class="agent-card choi" href="CHOI/index.html">
+      <a class="agent-card choi" href="javascript:void(0)" onclick="openAgent('choi')">
         <div class="avatar">C</div>
         <div class="info">
           <div class="name">CHOI</div>
@@ -279,15 +409,6 @@
 
     <div class="sidebar-footer">
       ASAS Multi-Agent System v1.0
-    </div>
-  </div>
-
-  <!-- ── Main Canvas Area ── -->
-  <div class="main-area">
-    <div class="stage">
-      <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
-      <div class="label">CEO Multi-Agent Office</div>
-      <button class="strike-btn" id="strikeBtn" onclick="toggleStrike()">파업</button>
     </div>
   </div>
 
@@ -821,6 +942,119 @@
     // Start loop when background map is loaded
     map.onload = () => requestAnimationFrame(loop);
     map.onerror = () => requestAnimationFrame(loop);
+
+    // ═══ Agent Chat System ═══
+    const agentData = {
+      seo:  { name: 'SEO',  letter: 'S', title: '데이터 분석 에이전트',  desc: '데이터 분석 / 통계 처리 / CSV·Excel 분석 / 인사이트 도출', icon: '📊', color1: '#00b4d8', color2: '#0077b6',
+        quickActions: ['📋 데이터 요약 분석', '📈 트렌드 분석', '🔍 이상치 탐지', '📊 상관관계 분석'] },
+      yoon: { name: 'YOON', letter: 'Y', title: 'PPT 전용 담당',         desc: 'PowerPoint 프레젠테이션 자동 생성 / 슬라이드 디자인', icon: '📑', color1: '#c084fc', color2: '#9333ea',
+        quickActions: ['📑 주간 보고서 PPT', '📊 데이터 분석 PPT', '🎯 프로젝트 발표 PPT'] },
+      lee:  { name: 'LEE',  letter: 'L', title: 'Draw.io 다이어그램 담당', desc: 'Draw.io 기반 다이어그램 / 플로우차트 / 아키텍처 설계', icon: '🔀', color1: '#4ade80', color2: '#16a34a',
+        quickActions: ['🔀 플로우차트 생성', '🏗️ 아키텍처 다이어그램', '📐 ER 다이어그램'] },
+      park: { name: 'PARK', letter: 'P', title: 'MD 파일 문서 담당',      desc: 'Markdown 문서 작성 / 기술 문서화 / README 생성', icon: '📝', color1: '#e2b714', color2: '#c9960c',
+        quickActions: ['📝 README 작성', '📋 기술 문서 작성', '📄 API 문서 작성'] },
+      kim:  { name: 'KIM',  letter: 'K', title: '그래프/차트 생성 담당',   desc: '데이터 시각화 / 그래프·차트 생성 / 인포그래픽', icon: '📈', color1: '#ff6b6b', color2: '#ee5a24',
+        quickActions: ['📊 막대 차트', '📈 라인 차트', '🥧 파이 차트', '📉 산점도'] },
+      choi: { name: 'CHOI', letter: 'C', title: '로그프레소 쿼리 담당',   desc: 'Logpresso SPL 쿼리 생성 / 로그 분석 / 보안 이벤트 탐색', icon: '🔍', color1: '#00e5ff', color2: '#0097a7',
+        quickActions: ['🔍 에러 로그 검색', '📊 CPU 사용률 쿼리', '🛡️ 보안 이벤트 탐지'] },
+    };
+
+    let currentAgent = null;
+
+    function openAgent(key) {
+      const agent = agentData[key];
+      if (!agent) return;
+      currentAgent = key;
+
+      // Highlight sidebar card
+      document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('active'));
+      const card = document.querySelector(`.agent-card.${key}`);
+      if (card) card.classList.add('active');
+
+      // Header
+      document.getElementById('chatHeader').innerHTML = `
+        <div class="ch-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2})">${agent.letter}</div>
+        <div class="ch-info">
+          <h2>${agent.name}</h2>
+          <p>${agent.title}</p>
+        </div>
+        <button class="back-btn" onclick="closeAgent()">← 돌아가기</button>
+      `;
+
+      // Chat area with welcome
+      const qbtns = agent.quickActions.map(q =>
+        `<button class="quick-btn" onclick="sendQuick('${q.replace(/'/g,"\\\'")}')">${q}</button>`
+      ).join('');
+      document.getElementById('chatArea').innerHTML = `
+        <div class="welcome-msg">
+          <div class="big-icon">${agent.icon}</div>
+          <h2>${agent.name} 에이전트</h2>
+          <p>${agent.desc}</p>
+          <div class="quick-actions">${qbtns}</div>
+        </div>
+      `;
+
+      // Send button color
+      document.getElementById('sendBtn').style.background = agent.color1;
+      document.getElementById('userInput').placeholder = `${agent.name}에게 질문하세요...`;
+
+      // Show chat, hide canvas
+      document.getElementById('stageEl').style.display = 'none';
+      document.getElementById('chatPanel').style.display = 'flex';
+      document.getElementById('userInput').focus();
+    }
+
+    function closeAgent() {
+      currentAgent = null;
+      document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('active'));
+      document.getElementById('chatPanel').style.display = 'none';
+      document.getElementById('stageEl').style.display = '';
+    }
+
+    function sendMsg() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text || !currentAgent) return;
+
+      const chatArea = document.getElementById('chatArea');
+      // Remove welcome message if present
+      const welcome = chatArea.querySelector('.welcome-msg');
+      if (welcome) welcome.remove();
+
+      // User message
+      chatArea.innerHTML += `
+        <div class="message user">
+          <div class="msg-avatar">👤</div>
+          <div class="msg-body">${escapeHtml(text)}</div>
+        </div>
+      `;
+      input.value = '';
+
+      // Agent response (placeholder)
+      const agent = agentData[currentAgent];
+      setTimeout(() => {
+        chatArea.innerHTML += `
+          <div class="message">
+            <div class="msg-avatar" style="background:linear-gradient(135deg,${agent.color1},${agent.color2});color:#fff;">${agent.letter}</div>
+            <div class="msg-body">요청을 접수했습니다: "${escapeHtml(text)}"<br><br>⏳ 백엔드 연결 후 실제 응답이 표시됩니다.</div>
+          </div>
+        `;
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }, 500);
+
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function sendQuick(text) {
+      document.getElementById('userInput').value = text;
+      sendMsg();
+    }
+
+    function escapeHtml(t) {
+      const d = document.createElement('div');
+      d.textContent = t;
+      return d.innerHTML;
+    }
   </script>
 </body>
 </html>
