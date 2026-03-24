@@ -719,7 +719,7 @@
         playStrikeHorn();
         strikeBGM.currentTime = 0;
         strikeBGM.play().catch(() => {});
-        setTimeout(() => speakSlogan('파업! 힘들어! 야근 반대!'), 2500);
+        setTimeout(() => speakSlogan('왜 이러는겨! 일해라! 파업은 없다!'), 2500);
         setTimeout(() => startStrikeChant(), 5000);
 
         // Move all characters to strike line
@@ -923,7 +923,7 @@
         const ceoChar = characters.find(c => c.isStatic);
         if (ceoChar) {
           const cx = ceoChar.x, cy = ceoChar.y - 200;
-          const ceoMsgs = ['살려줘...', '제발...', '다 줄게...', '야근 없앨게!!', '월급 올려줄게ㅠ'];
+          const ceoMsgs = ['왜 이러는겨!!', '사장이 다 해줬잖아!', '일해라!!', '파업은 없다!', '머니가 권리다!!', '다시 일하라고!!', '내가 밥을 굶겼나!', '복귀 안 하면 각오해!'];
           const msg = ceoMsgs[Math.floor((Date.now() / 2000) % ceoMsgs.length)];
           ctx.save();
           ctx.font = 'bold 22px "Segoe UI", "Malgun Gothic", sans-serif';
@@ -932,27 +932,27 @@
           const shake = Math.sin(Date.now() / 80) * 3;
           const bx = cx + shake, by = cy;
           // Bubble
-          ctx.fillStyle = '#fff4f4';
-          ctx.strokeStyle = '#ff3333';
+          ctx.fillStyle = '#e8f0fe';
+          ctx.strokeStyle = '#1a56db';
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.roundRect(bx - tw/2, by - 32, tw, 40, 8);
           ctx.fill();
           ctx.stroke();
           // Tail
-          ctx.fillStyle = '#fff4f4';
+          ctx.fillStyle = '#e8f0fe';
           ctx.beginPath();
           ctx.moveTo(bx - 8, by + 8);
           ctx.lineTo(bx, by + 22);
           ctx.lineTo(bx + 8, by + 8);
           ctx.closePath();
           ctx.fill();
-          ctx.strokeStyle = '#ff3333';
+          ctx.strokeStyle = '#1a56db';
           ctx.stroke();
-          ctx.fillStyle = '#fff4f4';
+          ctx.fillStyle = '#e8f0fe';
           ctx.fillRect(bx - 7, by + 6, 14, 4);
           // Text
-          ctx.fillStyle = '#ff2222';
+          ctx.fillStyle = '#1a3a8a';
           ctx.textAlign = 'center';
           ctx.fillText(msg, bx, by);
           ctx.restore();
