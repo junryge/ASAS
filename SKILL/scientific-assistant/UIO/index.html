@@ -3,33 +3,149 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2D Pixel Office</title>
+  <title>CEO Multi-Agent Office</title>
   <style>
     :root {
       --bg-1: #1d2633;
       --bg-2: #0f151e;
-      --panel: #243244;
+      --panel: #1a2535;
+      --card: #223344;
       --text: #eaf1ff;
+      --muted: #7a8fa6;
       --accent: #ff4d4d;
+      --accent-blue: #00b4d8;
+      --border: #2a4a5a;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      margin: 0;
       min-height: 100vh;
       display: grid;
-      place-items: center;
+      grid-template-columns: 300px 1fr;
       font-family: "Segoe UI", "Malgun Gothic", sans-serif;
       color: var(--text);
-      background: radial-gradient(circle at 20% 20%, var(--bg-1), var(--bg-2) 65%);
+      background: var(--bg-2);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: var(--panel);
+      border-right: 2px solid var(--border);
+      padding: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .ceo-profile {
+      padding: 20px;
+      text-align: center;
+      background: linear-gradient(180deg, #1e3a5f 0%, var(--panel) 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .ceo-avatar {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff4d4d, #ff8c00);
+      margin: 0 auto 12px;
+      display: grid; place-items: center;
+      font-size: 32px;
+      box-shadow: 0 4px 16px rgba(255,77,77,0.3);
+    }
+    .ceo-profile h2 { font-size: 18px; font-weight: 700; }
+    .ceo-profile .role {
+      font-size: 12px;
+      color: var(--accent-blue);
+      margin-top: 4px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .ceo-profile .desc {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    .agent-section {
+      padding: 16px;
+      flex: 1;
+    }
+    .agent-section h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      padding-left: 4px;
+    }
+
+    .agent-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+      text-decoration: none;
+      color: var(--text);
+    }
+    .agent-card:hover {
+      background: var(--card);
+      border-color: var(--border);
+      transform: translateX(4px);
+    }
+    .agent-card .avatar {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      display: grid; place-items: center;
+      font-size: 18px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .agent-card .info { flex: 1; min-width: 0; }
+    .agent-card .name { font-size: 14px; font-weight: 600; }
+    .agent-card .task { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .agent-card .status {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #2ecc71;
+      flex-shrink: 0;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* Agent color themes */
+    .agent-card.seo .avatar  { background: linear-gradient(135deg, #00b4d8, #0077b6); }
+    .agent-card.yoon .avatar { background: linear-gradient(135deg, #c084fc, #9333ea); }
+    .agent-card.lee .avatar  { background: linear-gradient(135deg, #4ade80, #16a34a); }
+    .agent-card.park .avatar { background: linear-gradient(135deg, #e2b714, #c9960c); }
+    .agent-card.kim .avatar  { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
+    .agent-card.choi .avatar { background: linear-gradient(135deg, #00e5ff, #0097a7); }
+
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Main Area ── */
+    .main-area {
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      background: radial-gradient(circle at 30% 30%, var(--bg-1), var(--bg-2) 65%);
+      overflow: hidden;
     }
 
     .stage {
-      width: min(96vw, 1200px);
+      width: 100%;
+      max-width: 1100px;
       aspect-ratio: 1536 / 1024;
       border: 2px solid #48638a;
       border-radius: 14px;
@@ -93,10 +209,86 @@
   </style>
 </head>
 <body>
-  <div class="stage">
-    <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
-    <div class="label">💼 2D Pixel Office Live</div>
-    <button class="strike-btn" id="strikeBtn" onclick="toggleStrike()">🪧 파업</button>
+
+  <!-- ── Left Sidebar ── -->
+  <div class="sidebar">
+    <div class="ceo-profile">
+      <div class="ceo-avatar">J</div>
+      <h2>CEO Jiwon</h2>
+      <div class="role">Multi-Agent Orchestrator</div>
+      <div class="desc">6개 전문 에이전트를 총괄 관리하는<br>멀티에이전트 CEO</div>
+    </div>
+
+    <div class="agent-section">
+      <h3>Agent Team</h3>
+
+      <a class="agent-card seo" href="SEO/index.html">
+        <div class="avatar">S</div>
+        <div class="info">
+          <div class="name">SEO</div>
+          <div class="task">데이터 분석 에이전트</div>
+        </div>
+        <div class="status"></div>
+      </a>
+
+      <a class="agent-card yoon" href="YOON/index.html">
+        <div class="avatar">Y</div>
+        <div class="info">
+          <div class="name">YOON</div>
+          <div class="task">PPT 전용 담당</div>
+        </div>
+        <div class="status"></div>
+      </a>
+
+      <a class="agent-card lee" href="LEE/index.html">
+        <div class="avatar">L</div>
+        <div class="info">
+          <div class="name">LEE</div>
+          <div class="task">Draw.io 다이어그램 담당</div>
+        </div>
+        <div class="status"></div>
+      </a>
+
+      <a class="agent-card park" href="PARK/index.html">
+        <div class="avatar">P</div>
+        <div class="info">
+          <div class="name">PARK</div>
+          <div class="task">MD 파일 문서 담당</div>
+        </div>
+        <div class="status"></div>
+      </a>
+
+      <a class="agent-card kim" href="KIM/index.html">
+        <div class="avatar">K</div>
+        <div class="info">
+          <div class="name">KIM</div>
+          <div class="task">그래프/차트 생성 담당</div>
+        </div>
+        <div class="status"></div>
+      </a>
+
+      <a class="agent-card choi" href="CHOI/index.html">
+        <div class="avatar">C</div>
+        <div class="info">
+          <div class="name">CHOI</div>
+          <div class="task">로그프레소 쿼리 담당</div>
+        </div>
+        <div class="status"></div>
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      ASAS Multi-Agent System v1.0
+    </div>
+  </div>
+
+  <!-- ── Main Canvas Area ── -->
+  <div class="main-area">
+    <div class="stage">
+      <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
+      <div class="label">CEO Multi-Agent Office</div>
+      <button class="strike-btn" id="strikeBtn" onclick="toggleStrike()">파업</button>
+    </div>
   </div>
 
   <script>
