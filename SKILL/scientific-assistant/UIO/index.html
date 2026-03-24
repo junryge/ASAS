@@ -354,7 +354,7 @@
 
   <!-- ── Sidebar (Right) ── -->
   <div class="sidebar">
-    <div class="ceo-profile" onclick="closeAgent()" style="cursor:pointer;">
+    <div class="ceo-profile" onclick="openAgent('ceo')" style="cursor:pointer;">
       <div class="ceo-avatar">J</div>
       <h2>CEO Jiwon</h2>
       <div class="role">Multi-Agent Orchestrator</div>
@@ -962,6 +962,8 @@
 
     // ═══ Agent Chat System ═══
     const agentData = {
+      ceo:  { name: 'CEO',  letter: 'J', title: '멀티에이전트 총괄 CEO',  desc: '6개 전문 에이전트를 총괄 관리 / 업무 배분 / 종합 질의응답', icon: '👑', color1: '#f59e0b', color2: '#d97706',
+        quickActions: ['📋 업무 현황 종합', '🤝 에이전트 간 협업 요청', '💡 종합 분석 의뢰', '📊 전체 보고서'] },
       seo:  { name: 'SEO',  letter: 'S', title: '데이터 분석 에이전트',  desc: '데이터 분석 / 통계 처리 / CSV·Excel 분석 / 인사이트 도출', icon: '📊', color1: '#00b4d8', color2: '#0077b6',
         quickActions: ['📋 데이터 요약 분석', '📈 트렌드 분석', '🔍 이상치 탐지', '📊 상관관계 분석'] },
       yoon: { name: 'YOON', letter: 'Y', title: 'PPT 전용 담당',         desc: 'PowerPoint 프레젠테이션 자동 생성 / 슬라이드 디자인', icon: '📑', color1: '#c084fc', color2: '#9333ea',
