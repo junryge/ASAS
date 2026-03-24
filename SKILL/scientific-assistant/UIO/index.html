@@ -600,6 +600,9 @@
     // ═══ Strike / Protest System ═══
     let isOnStrike = false;
     let strikeChantInterval = null;
+    let fireInterval = null;
+    let firedCharacters = []; // stores { char, originalIndex }
+    let fireFlashText = null; // { text, x, y, startTime }
     const strikeSlogans = [
       "힘들어!", "야근반대!", "워라밸!",
       "우리도 쉬자!", "복지개선!", "재택근무!",
@@ -722,6 +725,19 @@
         setTimeout(() => speakSlogan('왜 이러는겨! 일해라! 파업은 없다!'), 2500);
         setTimeout(() => startStrikeChant(), 5000);
 
+        // Start firing employees every 5 seconds
+        fireInterval = setInterval(() => {
+          if (!isOnStrike) return;
+          const movingAlive = characters.filter(c => !c.isStatic && !c._fired);
+          if (movingAlive.length === 0) {
+            clearInterval(fireInterval);
+            fireInterval = null;
+            return;
+          }
+          const victim = movingAlive[Math.floor(Math.random() * movingAlive.length)];
+          fireEmployee(victim);
+        }, 5000);
+
         // Move all characters to strike line
         const positions = getStrikePositions();
         movingChars.forEach((c, i) => {
@@ -746,8 +762,26 @@
         strikeBGM.pause();
         strikeBGM.currentTime = 0;
 
-        // Return to normal
-        movingChars.forEach(c => {
+        // Stop firing timer
+        if (fireInterval) { clearInterval(fireInterval); fireInterval = null; }
+
+        // Restore fired employees
+        firedCharacters.forEach(fc => {
+          fc.char._fired = false;
+          fc.char._fireWalkOut = false;
+          fc.char.x = fc.origX;
+          fc.char.y = fc.origY;
+          if (fc.char._savedBounds) fc.char.bounds = fc.char._savedBounds;
+          if (fc.char._savedPause) fc.char.pauseBehavior = fc.char._savedPause;
+          fc.char._slogan = null;
+          fc.char.isMoving = false;
+          fc.char.idleTimer = 200 + Math.random() * 500;
+        });
+        firedCharacters = [];
+        fireFlashText = null;
+
+        // Return to normal (remaining chars)
+        characters.filter(c => !c.isStatic).forEach(c => {
           if (c._savedBounds) c.bounds = c._savedBounds;
           if (c._savedPause) c.pauseBehavior = c._savedPause;
           c._slogan = null;
@@ -755,6 +789,69 @@
           c.idleTimer = 200 + Math.random() * 500;
         });
       }
+    }
+
+    function fireEmployee(char) {
+      char._fired = true;
+      char._fireWalkOut = true;
+      char._slogan = null;
+      // Save original position for restore
+      firedCharacters.push({ char, origX: char._savedBounds ? (char._savedBounds.minX + char._savedBounds.maxX) / 2 : char.x, origY: char._savedBounds ? (char._savedBounds.minY + char._savedBounds.maxY) / 2 : char.y });
+
+      // Show big "해고!!" flash
+      fireFlashText = { text: '해고!!', name: char.name, x: char.x, y: char.y - 100, startTime: Date.now() };
+
+      // CEO shouts
+      speakSlogan(char.name + ' 해고! 너는 잘렸어!');
+
+      // Walk character off screen (to the right edge)
+      char.targetX = world.width + 200;
+      char.targetY = char.y;
+      char.isMoving = true;
+      char.direction = 1;
+      char.pauseBehavior = 'alwaysMove';
+      char.bounds = { minX: -200, maxX: world.width + 400, minY: 0, maxY: world.height };
+    }
+
+    function drawFireFlash(ctx) {
+      if (!fireFlashText) return;
+      const elapsed = Date.now() - fireFlashText.startTime;
+      if (elapsed > 3000) { fireFlashText = null; return; }
+
+      const progress = elapsed / 3000;
+      const alpha = progress < 0.1 ? progress / 0.1 : (1 - progress);
+      const scale = 1 + progress * 0.5;
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.translate(fireFlashText.x, fireFlashText.y - progress * 80);
+
+      // Big red "해고!!" text
+      ctx.font = `bold ${Math.round(72 * scale)}px "Segoe UI", "Malgun Gothic", sans-serif`;
+      ctx.textAlign = 'center';
+
+      // Red glow shadow
+      ctx.shadowColor = '#ff0000';
+      ctx.shadowBlur = 30;
+
+      // Outline
+      ctx.strokeStyle = '#8b0000';
+      ctx.lineWidth = 6;
+      ctx.strokeText('해 고 !!', 0, 0);
+
+      // Fill
+      ctx.fillStyle = '#ff1111';
+      ctx.fillText('해 고 !!', 0, 0);
+
+      // Name below
+      ctx.font = `bold ${Math.round(32 * scale)}px "Segoe UI", "Malgun Gothic", sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 4;
+      ctx.strokeText(fireFlashText.name, 0, 50);
+      ctx.fillText(fireFlashText.name, 0, 50);
+
+      ctx.restore();
     }
 
     // Draw protest sign above character
@@ -911,13 +1008,23 @@
       }
 
       // Update & Draw chars
-      characters.forEach(c => c.update(dt));
+      characters.forEach(c => {
+        // Skip drawing fired chars that walked off screen
+        if (c._fired && c.x > world.width + 100) { c._fireWalkOut = false; return; }
+        c.update(dt);
+      });
       zSort();
-      characters.forEach(c => c.draw(ctx));
+      characters.forEach(c => {
+        if (c._fired && c.x > world.width + 100) return;
+        c.draw(ctx);
+      });
+
+      // Draw fire flash text
+      drawFireFlash(ctx);
 
       // Strike protest signs + CEO cry
       if (isOnStrike) {
-        characters.filter(c => !c.isStatic && c._slogan).forEach(c => drawProtestSign(ctx, c));
+        characters.filter(c => !c.isStatic && c._slogan && !c._fired).forEach(c => drawProtestSign(ctx, c));
 
         // CEO "살려줘" bubble
         const ceoChar = characters.find(c => c.isStatic);
