@@ -4225,6 +4225,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .env-btn .env-name{font-weight:700;font-size:14px;margin-bottom:2px}
 .env-btn .env-model{font-size:11px;color:#888}
 .env-btn.selected .env-model{color:#6366f1}
+.uio-enter-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);text-decoration:none;cursor:pointer;transition:all .2s;border:none;box-shadow:0 2px 8px rgba(99,102,241,.3)}
+.uio-enter-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.5);background:linear-gradient(135deg,#818cf8,#a78bfa)}
 .token-status{font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:16px}
 .token-status.ok{background:#ecfdf5;color:#059669}
 .token-status.missing{background:#fef2f2;color:#dc2626}
@@ -4522,6 +4524,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
+      <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
       <span id="status" class="status off">⚪ 환경 미선택</span>
     </div>
   </div>
