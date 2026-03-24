@@ -4225,6 +4225,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .env-btn .env-name{font-weight:700;font-size:14px;margin-bottom:2px}
 .env-btn .env-model{font-size:11px;color:#888}
 .env-btn.selected .env-model{color:#6366f1}
+.uio-enter-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);text-decoration:none;cursor:pointer;transition:all .2s;border:none;box-shadow:0 2px 8px rgba(99,102,241,.3)}
+.uio-enter-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.5);background:linear-gradient(135deg,#818cf8,#a78bfa)}
 .token-status{font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:16px}
 .token-status.ok{background:#ecfdf5;color:#059669}
 .token-status.missing{background:#fef2f2;color:#dc2626}
@@ -4435,17 +4437,6 @@ body.rp-collapsed .chat-box-fixed{right:0}
 #introSkip{position:absolute;bottom:40px;right:40px;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.3);color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;cursor:pointer;transition:all .2s;z-index:10000}
 #introSkip:hover{background:rgba(255,255,255,.3)}
 #introProgress{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#6366f1,#a855f7);width:0;transition:width .1s linear}
-/* 모드 선택 오버레이 */
-#modeSelector{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;background:radial-gradient(circle at 30% 40%,#1a1a2e,#0f0f1a 70%);display:none;align-items:center;justify-content:center;flex-direction:column;opacity:0;transition:opacity .5s ease}
-#modeSelector.visible{display:flex;opacity:1}
-#modeSelector h2{color:#fff;font-size:28px;margin-bottom:12px;font-weight:700;letter-spacing:-0.5px}
-#modeSelector p{color:rgba(255,255,255,.6);font-size:14px;margin-bottom:40px}
-.mode-cards{display:flex;gap:28px;flex-wrap:wrap;justify-content:center}
-.mode-card{width:280px;padding:36px 28px;border-radius:16px;border:2px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);backdrop-filter:blur(12px);cursor:pointer;text-align:center;transition:all .25s ease;position:relative;overflow:hidden}
-.mode-card:hover{border-color:#6366f1;background:rgba(99,102,241,.12);transform:translateY(-4px);box-shadow:0 12px 40px rgba(99,102,241,.2)}
-.mode-card .mode-icon{font-size:48px;margin-bottom:16px;display:block}
-.mode-card .mode-title{color:#fff;font-size:18px;font-weight:700;margin-bottom:8px}
-.mode-card .mode-desc{color:rgba(255,255,255,.55);font-size:13px;line-height:1.5}
 /* UIO 컨테이너 */
 #uioContainer{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9000;display:none;background:#0f151e}
 #uioContainer iframe{width:100%;height:100%;border:none}
@@ -4463,28 +4454,11 @@ body.rp-collapsed .chat-box-fixed{right:0}
   <button id="introSkip" onclick="dismissIntroAndShowMode()">건너뛰기 ▶</button>
 </div>
 
-<!-- 모드 선택 오버레이 -->
-<div id="modeSelector">
-  <h2>모드를 선택하세요</h2>
-  <p>원하는 인터페이스를 선택하여 시작합니다</p>
-  <div class="mode-cards">
-    <div class="mode-card" onclick="selectMode('default')">
-      <span class="mode-icon">💬</span>
-      <div class="mode-title">기본 구성</div>
-      <div class="mode-desc">Demos LLM 채팅 인터페이스<br>스킬 기반 AI 어시스턴트</div>
-    </div>
-    <div class="mode-card" onclick="selectMode('uio')">
-      <span class="mode-icon">🎮</span>
-      <div class="mode-title">UIO 2D 픽셀</div>
-      <div class="mode-desc">2D Pixel Office Live<br>픽셀 아트 사무실 시뮬레이션</div>
-    </div>
-  </div>
-</div>
 
 <!-- UIO 2D 픽셀 컨테이너 -->
 <div id="uioContainer">
   <iframe id="uioFrame" src="about:blank"></iframe>
-  <button id="uioBackBtn" onclick="exitUioMode()">← 메인으로 돌아가기</button>
+  <button id="uioBackBtn" onclick="toggleUioMode()">← 접기</button>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -4522,6 +4496,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
+      <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
       <span id="status" class="status off">⚪ 환경 미선택</span>
     </div>
   </div>
@@ -7432,22 +7407,31 @@ function dismissIntroAndShowMode(){
   ov.classList.add('fade-out');
   setTimeout(function(){
     if(ov.parentNode) ov.parentNode.removeChild(ov);
-    showModeSelector();
+    // 모드 선택 없이 바로 기본 UI 표시
   }, 700);
 }
 
-function showModeSelector(){
-  var ms = document.getElementById('modeSelector');
-  if(ms){ ms.style.display='flex'; ms.style.opacity=''; ms.classList.remove('visible'); setTimeout(function(){ ms.classList.add('visible'); }, 30); }
-}
+var uioCollapsed = false;
 
-function selectMode(mode){
-  var ms = document.getElementById('modeSelector');
-  if(ms){ ms.classList.remove('visible'); setTimeout(function(){ ms.style.display='none'; ms.style.opacity=''; }, 500); }
-  if(mode === 'uio'){
+function toggleUioMode(){
+  var btn = document.getElementById('uioBackBtn');
+  if(!uioCollapsed){
+    // 접기: UIO 숨기고 메인 UI 복원 (iframe 유지)
+    document.getElementById('uioContainer').style.display='none';
+    document.getElementById('sidebar').style.display='';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='';
+    btn.textContent='🎮 UIO 펼치기';
+    btn.style.position='fixed';
+    btn.style.display='block';
+    uioCollapsed = true;
+  } else {
+    // 펼치기: UIO 다시 전체화면
     document.getElementById('uioContainer').style.display='block';
-    document.getElementById('uioFrame').src='/uio/';
-    // 기본 UI 숨김
     document.getElementById('sidebar').style.display='none';
     var mainEl = document.querySelector('.main');
     if(mainEl) mainEl.style.display='none';
@@ -7455,13 +7439,16 @@ function selectMode(mode){
     if(chatBox) chatBox.style.display='none';
     var sideToggle = document.querySelector('.sidebar-toggle');
     if(sideToggle) sideToggle.style.display='none';
+    btn.textContent='← 접기';
+    uioCollapsed = false;
   }
-  // mode === 'default' → 기본 UI 그대로 표시 (아무것도 안 함)
 }
 
 function exitUioMode(){
   document.getElementById('uioContainer').style.display='none';
   document.getElementById('uioFrame').src='about:blank';
+  document.getElementById('uioBackBtn').style.display='';
+  uioCollapsed = false;
   // 기본 UI 복원
   document.getElementById('sidebar').style.display='';
   var mainEl = document.querySelector('.main');
@@ -7470,8 +7457,6 @@ function exitUioMode(){
   if(chatBox) chatBox.style.display='';
   var sideToggle = document.querySelector('.sidebar-toggle');
   if(sideToggle) sideToggle.style.display='';
-  // 모드 선택 다시 표시
-  showModeSelector();
 }
 
 (function(){
@@ -7731,5 +7716,5 @@ if __name__ == "__main__":
         except ImportError:
             pass
 
-    app.run(host="0.0.0.0", port=10009, debug=False)
-    #app.run(host="127.0.0.1", port=18080, debug=False, use_reloader=False)
+    #app.run(host="0.0.0.0", port=10009, debug=False)
+    app.run(host="127.0.0.1", port=18080, debug=False, use_reloader=False)
