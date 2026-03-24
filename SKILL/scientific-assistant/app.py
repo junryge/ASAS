@@ -5277,7 +5277,8 @@ async function send(){
       addMsg('assistant', assistantDisplayText, assistantRawForDetect);
       history.push({role:'assistant',content:data.content});
       // markdown-mermaid-writing 스킬: ```markdown 블록이 없어도 전체 응답에 MD 다운로드 버튼 추가
-      if(selSkills.includes('markdown-mermaid-writing') && !data.content.includes('```markdown')){
+      // selSkills(수동) 또는 autoLoadedSkills(자동) 모두 체크
+      if((selSkills.includes('markdown-mermaid-writing') || autoLoadedSkills.includes('markdown-mermaid-writing')) && !data.content.includes('```markdown')){
         appendMdDownloadBar(data.content);
       }
     }
