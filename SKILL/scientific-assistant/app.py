@@ -2762,6 +2762,121 @@ def api_feedback():
     return jsonify({"ok": True})
 
 
+@app.route("/api/analyze_ppt_style", methods=["POST"])
+def api_analyze_ppt_style():
+    """참고 PPT에서 디자인 스타일(색상, 폰트, 레이아웃) 추출"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith(".pptx"):
+        return jsonify({"error": ".pptx 파일만 지원됩니다"}), 400
+
+    # 임시 저장
+    tmp_path = os.path.join(UPLOAD_DIR, f"_ppt_ref_{int(__import__('time').time())}.pptx")
+    f.save(tmp_path)
+
+    try:
+        colors = []
+        fonts = set()
+        bg_colors = []
+        slide_count = 0
+
+        with zipfile.ZipFile(tmp_path) as z:
+            # 1) 테마 색상 추출 (ppt/theme/theme1.xml)
+            theme_ns = {
+                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            }
+            for name in z.namelist():
+                if name.startswith('ppt/theme/') and name.endswith('.xml'):
+                    with z.open(name) as tf:
+                        tree = ET.parse(tf)
+                        root = tree.getroot()
+                        # 색상 스킴
+                        for scheme in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}clrScheme'):
+                            for child in scheme:
+                                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                                for sub in child:
+                                    val = sub.get('val') or sub.get('lastClr') or ''
+                                    if val and len(val) == 6:
+                                        colors.append((tag, f"#{val}"))
+                        # 폰트 스킴
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}latin'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-lt', '+mn-lt'):
+                                fonts.add(ft)
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}ea'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-ea', '+mn-ea'):
+                                fonts.add(ft)
+                    break  # 첫 번째 테마만
+
+            # 2) 슬라이드에서 배경색, 폰트, 폰트크기 샘플링
+            slide_fonts = set()
+            font_sizes = []
+            ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            ns_p = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+            for name in sorted(z.namelist()):
+                if name.startswith('ppt/slides/slide') and name.endswith('.xml'):
+                    slide_count += 1
+                    if slide_count > 5:
+                        break  # 최대 5슬라이드 샘플링
+                    with z.open(name) as sf:
+                        tree = ET.parse(sf)
+                        # 배경 색상
+                        for solid in tree.iter(f'{{{ns_a}}}solidFill'):
+                            for srgb in solid.iter(f'{{{ns_a}}}srgbClr'):
+                                val = srgb.get('val', '')
+                                if val and len(val) == 6:
+                                    bg_colors.append(f"#{val}")
+                        # 폰트 & 크기
+                        for rpr in tree.iter(f'{{{ns_a}}}rPr'):
+                            sz = rpr.get('sz')
+                            if sz:
+                                try:
+                                    font_sizes.append(int(sz) // 100)
+                                except ValueError:
+                                    pass
+                        for latin in tree.iter(f'{{{ns_a}}}latin'):
+                            ft = latin.get('typeface', '')
+                            if ft and not ft.startswith('+'):
+                                slide_fonts.add(ft)
+
+        # 결과 조합
+        fonts.update(slide_fonts)
+        unique_bg = list(dict.fromkeys(bg_colors))[:6]  # 중복 제거, 최대 6개
+
+        # 디자인 지시문 구성
+        parts = []
+        if colors:
+            color_str = ", ".join(f"{name}({hex_val})" for name, hex_val in colors[:10])
+            parts.append(f"테마 색상: {color_str}")
+        if unique_bg:
+            parts.append(f"슬라이드 배경/채우기 색상: {', '.join(unique_bg)}")
+        if fonts:
+            parts.append(f"폰트: {', '.join(sorted(fonts)[:5])}")
+        if font_sizes:
+            min_sz, max_sz = min(font_sizes), max(font_sizes)
+            parts.append(f"폰트 크기 범위: {min_sz}pt ~ {max_sz}pt")
+        parts.append(f"슬라이드 수: {slide_count}장")
+
+        design_prompt = "참고 PPT에서 추출한 디자인 스타일:\n" + "\n".join(f"- {p}" for p in parts)
+        design_prompt += "\n\n위 색상 팔레트, 폰트, 레이아웃 스타일을 최대한 동일하게 적용하여 새 PPT를 제작하세요."
+
+        summary = " / ".join(parts[:3])
+
+        return jsonify({"design": design_prompt, "summary": summary})
+
+    except Exception as e:
+        return jsonify({"error": f"PPT 분석 실패: {str(e)}"}), 500
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
 
 def _prepare_pptx_code_for_copy(code):
     """복사/실행용 python-pptx 코드를 손상 없이 정리."""
@@ -3494,6 +3609,20 @@ def api_chat():
                 "원형 차트: CategoryChartData에 시리즈 1개만 추가, XL_CHART_TYPE.PIE 사용\n"
                 "프론트엔드가 코드를 감지하여 '📽️ PPT 생성 & 다운로드' 버튼을 자동 표시합니다.\n\n"
             )
+            # PPT 디자인 스타일 주입 (참고PPT 우선, 없으면 프리셋)
+            ppt_ref_design = data.get("ppt_ref_design", "")
+            ppt_style = data.get("ppt_style", "")
+            if ppt_ref_design:
+                system_prompt += (
+                    "=== 참고 PPT 디자인 (반드시 이 스타일을 따르세요) ===\n"
+                    f"{ppt_ref_design}\n\n"
+                )
+            elif ppt_style:
+                system_prompt += (
+                    "=== PPT 디자인 스타일 ===\n"
+                    f"{ppt_style}\n"
+                    "이 디자인 가이드를 반드시 따라 모든 슬라이드를 제작하세요.\n\n"
+                )
 
         drawio_requested = 'ql' in locals() and any(kw in ql for kw in ["drawio", "draw.io", "드로우", "드로잉", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처", "배치도", "dfd"])
         if "drawio-diagram" in loaded or drawio_requested:
@@ -4314,6 +4443,9 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .pptx-remake-label{font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap}
 .pptx-remake-btn{background:#fff;color:#4338ca;border:1px solid #c7d2fe;border-radius:16px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all .2s;font-weight:500;white-space:nowrap}
 .pptx-remake-btn:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-1px)}
+/* PPT 스타일 드롭다운 */
+.ppt-style-drop{display:none}
+.ppt-ref-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:4px}
 /* CSV Upload */
 .csv-section{margin-bottom:24px}
 /* csv-upload-area 제거됨 → 채팅 📎 첨부로 대체 */
@@ -4653,7 +4785,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
   <div class="chat-box-fixed">
     <div class="chat-box-fixed-inner">
       <div class="chat-attach-preview" id="chatAttachPreview" style="display:none"></div>
-      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';checkPptStyleVisibility()"></textarea>
       <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -4677,6 +4809,16 @@ body.rp-collapsed .chat-box-fixed{right:0}
             <option value="report">📄 보고서</option>
             <option value="step-by-step">📝 단계별</option>
           </select>
+          <select class="chat-dropdown ppt-style-drop" id="pptStyleDrop" onchange="applyPptStyle(this.value)" title="PPT 디자인 스타일">
+            <option value="">📽️ PPT:자동</option>
+            <option value="minimal">⬜ 미니멀</option>
+            <option value="corporate">🏢 기업용</option>
+            <option value="colorful">🎨 컬러풀</option>
+            <option value="dark">🌙 다크</option>
+            <option value="academic">🎓 학술</option>
+            <option value="startup">🚀 스타트업</option>
+            <option value="ref">📎 참고PPT</option>
+          </select><span id="pptRefBadge" class="ppt-ref-badge" style="display:none">📎 참고스타일 적용중</span>
           <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="체크하면 모델이 답변 전에 깊이 사고합니다 (응답 느림)">
             <input type="checkbox" id="thinkToggle" style="margin:0;accent-color:#7c5cbf">💭사고
           </label>
@@ -5304,6 +5446,8 @@ async function send(){
         system_prompt:document.getElementById('systemPromptInput').value.trim(),
         max_tokens:maxTokens,
         think_mode: document.getElementById('thinkToggle').checked,
+        ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
+        ppt_ref_design: pptRefDesign,
       })
     });
     const data=await resp.json();
@@ -7735,6 +7879,62 @@ function _remakePpt(text){
   if(input){ input.value = text; input.focus(); input.style.height='auto'; input.style.height=input.scrollHeight+'px'; }
   // 자동 전송
   setTimeout(()=>send(), 100);
+}
+
+// ===== PPT 디자인 스타일 시스템 =====
+const PPT_STYLE_PROMPTS = {
+  minimal: '미니멀 디자인: 흰 배경(#FFFFFF), 검정/회색 텍스트, 여백 충분히, 장식 최소화, sans-serif 폰트(맑은 고딕/Arial), 깔끔한 선 구분. 색상은 #333333(제목), #666666(본문), #E0E0E0(구분선) 위주.',
+  corporate: '기업 프레젠테이션: 네이비(#1B2A4A) 상단 바 + 화이트 배경, 포인트 색상 #2563EB, 각 슬라이드에 상단 컬러 스트라이프, 표와 차트 적극 활용, 깔끔하고 전문적인 톤.',
+  colorful: '컬러풀 디자인: 슬라이드마다 다양한 밝은 배경 그라데이션, 색상 팔레트(#FF6B6B, #4ECDC4, #45B7D1, #FFA07A, #98D8C8, #F7DC6F), 둥근 도형과 카드형 레이아웃, 생동감 있는 구성.',
+  dark: '다크 테마: 어두운 배경(#1A1A2E 또는 #0F0F1F), 밝은 텍스트(#FFFFFF, #E0E0E0), 네온 포인트 컬러(#6366F1 메인, #A855F7 보조, #22D3EE 강조), 고급스럽고 세련된 느낌.',
+  academic: '학술 발표: 깔끔한 흰 배경, 보수적 배색(#2C3E50 제목, #34495E 본문), 번호 매긴 섹션 구조, 참고문헌 슬라이드 포함, 데이터는 차트/표 중심으로 시각화, 최소 장식.',
+  startup: '스타트업 피치덱: 대담한 헤드라인(큰 폰트), 핵심 숫자 크게 강조, 카드형 레이아웃, 모던 색상(#6366F1 메인, #EC4899 보조), 마지막에 CTA(Call-to-Action) 슬라이드 포함.',
+};
+var activePptStyle = '';
+var pptRefDesign = '';
+
+function applyPptStyle(val){
+  if(val === 'ref'){
+    var inp = document.createElement('input');
+    inp.type='file'; inp.accept='.pptx';
+    inp.onchange = function(){ if(inp.files[0]) uploadPptRef(inp.files[0]); };
+    inp.click();
+    document.getElementById('pptStyleDrop').value = activePptStyle;
+    return;
+  }
+  activePptStyle = val;
+  pptRefDesign = '';
+  document.getElementById('pptRefBadge').style.display = 'none';
+}
+
+async function uploadPptRef(file){
+  var fd = new FormData(); fd.append('file', file);
+  try{
+    var resp = await fetch('/api/analyze_ppt_style', {method:'POST', body:fd});
+    var data = await resp.json();
+    if(data.error){
+      addMsg('assistant', '❌ PPT 스타일 분석 실패: ' + data.error);
+      return;
+    }
+    if(data.design){
+      pptRefDesign = data.design;
+      activePptStyle = '';
+      document.getElementById('pptStyleDrop').value = '';
+      document.getElementById('pptRefBadge').style.display = 'inline-flex';
+      addMsg('assistant', '📎 참고 PPT 스타일 분석 완료: **' + file.name + '**\n' + data.summary + '\n\n새 PPT 생성 시 이 스타일을 반영합니다.');
+    }
+  }catch(e){
+    addMsg('assistant', '❌ PPT 스타일 분석 중 오류 발생');
+  }
+}
+
+function checkPptStyleVisibility(){
+  var drop = document.getElementById('pptStyleDrop');
+  if(!drop) return;
+  var text = (document.getElementById('input').value || '').toLowerCase();
+  var isPpt = /ppt|피피티|파워포인트|프레젠테이션|슬라이드|발표자료/.test(text);
+  var hasPptxSkill = selSkills.includes('pptx') || autoLoadedSkills.includes('pptx');
+  drop.style.display = (isPpt || hasPptxSkill) ? 'inline-block' : 'none';
 }
 </script>
 </body>
