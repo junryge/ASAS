@@ -2478,7 +2478,7 @@ def api_logpresso_query():
             result["execute_hint"] = "이 쿼리를 실행하려면 mode='execute'로 다시 요청하거나, lpql 파라미터에 직접 전달하세요."
         return jsonify(result)
 
-    # ── 모드 4: 직접 조회 (execute) ──
+    # ── 모드 4: 직접 조회 (execute) — 데이터 확인용 limit 5 ──
     lpql = direct_lpql
     llm_explanation = ""
 
@@ -2496,6 +2496,14 @@ def api_logpresso_query():
                 "error": "LLM 응답에서 LPQL 쿼리를 추출할 수 없습니다.",
                 "llm_response": llm_response,
             }), 400
+
+    # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
+    import re as _re
+    _EXEC_LIMIT = 5
+    if _re.search(r'\|\s*limit\s+\d+', lpql, _re.IGNORECASE):
+        lpql = _re.sub(r'(\|\s*limit\s+)\d+', rf'\g<1>{_EXEC_LIMIT}', lpql, flags=_re.IGNORECASE)
+    else:
+        lpql = lpql.rstrip() + f" | limit {_EXEC_LIMIT}"
 
     # 보안 검증
     sec_error = validate_lpql_readonly(lpql)
@@ -3765,12 +3773,22 @@ def api_chat():
                                 _lpq_content += "| " + " | ".join(str(row.get(c, "")) for c in cols) + " |\n"
                     else:
                         _lpq_content = "❌ 테이블명을 인식할 수 없습니다. 사용 가능: " + ", ".join(f"`{t}`" for t in LOGPRESSO_TABLES.keys())
-                else:  # execute
+                else:  # execute (데이터 확인용 — limit 5로 제한)
                     llm_response = _llm_generate_lpql(_lpq_user_q, _lpq_history)
                     lpql = extract_lpql_from_response(llm_response) if llm_response else None
                     if not lpql:
                         _lpq_content = None  # LLM에서 LPQL 추출 실패 → 일반 chat 폴백
                     else:
+                        # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
+                        import re as _re
+                        _EXEC_LIMIT = 5
+                        if _re.search(r'\|\s*limit\s+\d+', lpql, _re.IGNORECASE):
+                            lpql = _re.sub(r'(\|\s*limit\s+)\d+', rf'\g<1>{_EXEC_LIMIT}', lpql, flags=_re.IGNORECASE)
+                        else:
+                            lpql = lpql.rstrip() + f" | limit {_EXEC_LIMIT}"
+                        # 원본 쿼리(limit 없는 버전)를 쿼리 표시용으로 보존
+                        lpql_full = _re.sub(r'\s*\|\s*limit\s+\d+', '', lpql, flags=_re.IGNORECASE).strip()
+
                         sec_error = validate_lpql_readonly(lpql)
                         if sec_error:
                             _lpq_content = f"❌ 보안 검증 실패: {sec_error}\n\n생성된 LPQL: `{lpql}`"
@@ -3781,20 +3799,18 @@ def api_chat():
                             elif len(df) == 0:
                                 _lpq_content = f"✅ 결과 0건\n\n`{lpql}`\n\n_(데이터가 없습니다. duration을 늘려보세요.)_"
                             else:
-                                _DISPLAY_LIMIT = 5
                                 total = len(df)
                                 cols = list(df.columns)
-                                page_df = df.head(_DISPLAY_LIMIT)
                                 _lpq_content = f"✅ **Logpresso 조회 결과** (총 {total}건)\n\n```\n{lpql}\n```\n\n"
                                 _lpq_content += "| " + " | ".join(cols) + " |\n|" + "|".join(["---"]*len(cols)) + "|\n"
-                                for _, row in page_df.iterrows():
+                                for _, row in df.iterrows():
                                     vals = []
                                     for c in cols:
                                         v = str(row.get(c, "")) if row.get(c) is not None else ""
                                         vals.append(v[:50] + "..." if len(v) > 50 else v)
                                     _lpq_content += "| " + " | ".join(vals) + " |\n"
-                                if total > _DISPLAY_LIMIT:
-                                    _lpq_content += f"\n_(상위 {_DISPLAY_LIMIT}건만 표시)_"
+                                if total >= _EXEC_LIMIT:
+                                    _lpq_content += f"\n_(데이터가 더 있을 수 있습니다)_"
                                 if llm_response:
                                     _lpq_content += f"\n\n---\n📝 {llm_response}"
 
