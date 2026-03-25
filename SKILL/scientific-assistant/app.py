@@ -2310,12 +2310,17 @@ def _llm_generate_lpql(user_query, history=None):
 4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
 5. 결과가 너무 많을 수 있으니 적절히 limit을 걸어주세요 (기본 limit 500).
 6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
+7. **캐리어/장비 추적, 특정 키워드 검색, 여러 테이블 동시 조회 시 `fulltext`를 우선 사용하세요** (인덱스 기반 = 빠름).
+8. fulltext에서 여러 테이블 지정: `fulltext ... from 테이블1, 테이블2`
+9. fulltext 안에서 필드 조건 직접 사용 가능: `(LEVEL=="ERROR" or LEVEL=="WARN") and (CARRIER=="xxx")`
+10. limit에 오프셋 지정 가능: `limit 0 1000` (0번째부터 1000건)
+11. 행 순번: `eval No = seq() + 0`
 
 ## 사용 가능한 테이블
 {table_info}
 
 ## LPQL 문법 참고
-{skill_content[:4000]}
+{skill_content[:6000]}
 """
 
     messages = [{"role": "system", "content": system_prompt}]
