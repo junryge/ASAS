@@ -59,25 +59,103 @@ TOKEN_FILE = os.path.join(BASE_DIR, "TOKEN.TXT")
 PROMPTS_DIR = os.path.join(BASE_DIR, "saved-prompts")
 os.makedirs(PROMPTS_DIR, exist_ok=True)
 
-# 회사 LLM API 환경 설정
-ENV_CONFIG = {
-    "dev": {
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+# 멀티에이전트 모델 레지스트리 (capability 태그 기반 자동 라우팅)
+MODEL_REGISTRY = {
+    "glm-4.7": {
+        "env_id": "dev",
         "model": "GLM-4.7",
-        "name": "4.7"
-    },
-    "prod": {
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "4.7",
+        "capabilities": {"text", "code", "fast"},
+        "context_window": 128000,
+        "priority": 3,
+        "cost_tier": "low",
+    },
+    "qwen3.5-397b": {
+        "env_id": "prod",
         "model": "Qwen3.5-397B-A17B",
-        "name": "PROD (397B)"
-    },
-    "common": {
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "model": "gpt-oss-120b",
-        "name": "COMMON (120B)"
+        "name": "PROD (397B)",
+        "capabilities": {"text", "code", "analysis", "large"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "high",
     },
-    # gguf-N 환경은 앱 시작 시 .gguf 파일 자동 감지되면 추가됨
+    "gpt-oss-120b": {
+        "env_id": "common",
+        "model": "gpt-oss-120b",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "COMMON (120B)",
+        "capabilities": {"text", "code", "medium"},
+        "context_window": 128000,
+        "priority": 2,
+        "cost_tier": "medium",
+    },
+    "qwen3-vl-235b": {
+        "env_id": "vl-large",
+        "model": "Qwen3-VL-235B-A22B-Instruct",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "VL-235B (Vision)",
+        "capabilities": {"text", "code", "vision", "analysis", "large"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "high",
+    },
+    "qwen2.5-vl-72b": {
+        "env_id": "vl-medium",
+        "model": "Qwen2.5-VL-72B-Instruct",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "VL-72B (Vision)",
+        "capabilities": {"text", "vision", "medium"},
+        "context_window": 128000,
+        "priority": 2,
+        "cost_tier": "medium",
+    },
+    "qwen3-vl-30b": {
+        "env_id": "vl-fast",
+        "model": "Qwen3-VL-30B-A3B-Instruct",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "VL-30B (Vision/Fast)",
+        "capabilities": {"text", "vision", "fast"},
+        "context_window": 128000,
+        "priority": 3,
+        "cost_tier": "low",
+    },
+    "bge-reranker": {
+        "env_id": "reranker",
+        "model": "bge-reranker-v2-m3",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "Reranker",
+        "capabilities": {"rerank"},
+        "context_window": 8192,
+        "priority": 1,
+        "cost_tier": "low",
+    },
 }
+
+# MODEL_REGISTRY에서 ENV_CONFIG 자동 생성 (하위 호환)
+ENV_CONFIG = {
+    v["env_id"]: {"url": v["url"], "model": v["model"], "name": v["name"]}
+    for v in MODEL_REGISTRY.values()
+    if "rerank" not in v["capabilities"]
+}
+# gguf-N 환경은 앱 시작 시 .gguf 파일 자동 감지되면 추가됨
+
+# env_id → registry key 역매핑
+ENV_TO_REGISTRY = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
+
+# 폴백 체인: 모델 실패 시 순서대로 시도
+FALLBACK_CHAINS = {
+    "qwen3-vl-235b":  ["qwen2.5-vl-72b", "qwen3.5-397b", "gpt-oss-120b"],
+    "qwen3.5-397b":   ["gpt-oss-120b", "glm-4.7"],
+    "gpt-oss-120b":   ["glm-4.7"],
+    "glm-4.7":        ["gpt-oss-120b"],
+    "qwen2.5-vl-72b": ["qwen3-vl-30b", "gpt-oss-120b"],
+    "qwen3-vl-30b":   ["qwen2.5-vl-72b", "gpt-oss-120b"],
+}
+
+# Reranker 기능 플래그 (bge-reranker 엔드포인트 안정화 후 활성화)
+RERANKER_ENABLED = False
 
 
 def load_token():
@@ -201,6 +279,10 @@ SKILL_DESC_KO = {
     "theme-factory":"테마/스타일 생성","ui-styling":"UI 스타일링 가이드",
     "video-downloader":"비디오 다운로드","web-artifacts-builder":"웹 아티팩트 빌더",
     "web-frameworks":"웹 프레임워크 가이드","webapp-testing":"웹앱 테스팅",
+    "react-best-practices":"React/Next.js 성능 최적화 가이드",
+    "web-design-guidelines":"웹 UI 디자인 100+ 규칙",
+    "owasp-security":"OWASP Top 10 보안 코드리뷰 체크리스트",
+    "logpresso-query":"로그프레소 LPQL 쿼리 작성 전문가",
     # ===== cla-main 에이전트 (117개) =====
     "agent-api-designer":"API 설계 전문가","agent-backend-developer":"백엔드 개발 전문가",
     "agent-electron-pro":"Electron 데스크톱 앱","agent-frontend-developer":"프론트엔드 개발 전문가",
@@ -424,6 +506,8 @@ DOMAIN_SKILLS = {
             "repomix","sequential-thinking","skill-creator","skill-share",
             "template-skill","theme-factory","ui-styling","web-artifacts-builder",
             "web-frameworks","webapp-testing",
+            "react-best-practices","web-design-guidelines","owasp-security",
+            "logpresso-query",
             "common","debugging","problem-solving",
         ]
     },
@@ -758,7 +842,8 @@ SKILL_KEYWORDS = {
     "agent-data-scientist": ["데이터분석","data science","분석가","EDA","탐색적분석","데이터","탐색","탐색하"],
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
-    "agent-sql-pro": ["SQL","쿼리","query","테이블조회"],
+    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색"],
+    "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
     "agent-technical-writer": ["기술문서","문서작성","API문서","documentation"],
@@ -843,7 +928,11 @@ SKILL_KEYWORDS = {
     "agent-laravel-specialist": ['Laravel', 'PHP프레임워크', 'Eloquent', 'Blade'],
     "agent-legacy-modernizer": ['레거시', '현대화', '마이그레이션', '리라이트', 'monolith'],
     "agent-legal-advisor": ['법률', '계약서', '이용약관', '개인정보', 'GDPR'],
-    "agent-llm-architect": ['LLM', '대규모언어모델', 'RAG', '파인튜닝', '프롬프트설계'],
+    "agent-llm-architect": [
+        'LLM', '대규모언어모델', 'RAG', '파인튜닝', '프롬프트설계',
+        'LLM 설계자', 'llm architect', '모델 라우팅', '컨텍스트 엔지니어링',
+        '토큰 예산', '프롬프트 아키텍처', '평가 파이프라인', 'guardrail', 'hallucination',
+    ],
     "agent-low-code-builder": ['로우코드', 'no-code', 'Bubble', 'Retool', '자동화'],
     "agent-machine-learning-engineer": ['ML엔지니어', '모델학습', '하이퍼파라미터', '피처'],
     "agent-market-researcher": ['시장조사', '마켓리서치', 'TAM', '시장규모', '경쟁'],
@@ -1065,6 +1154,9 @@ SKILL_KEYWORDS = {
     "web-artifacts-builder": ['웹아티팩트', '웹앱생성', 'HTML생성', '인터랙티브'],
     "web-frameworks": ['웹프레임워크', 'Express', 'Next.js', 'Nuxt', 'SvelteKit'],
     "webapp-testing": ['웹테스트', 'E2E', 'Playwright', 'Cypress', '테스팅'],
+    "react-best-practices": ['React', 'Next.js', 'NextJS', '리액트', 'RSC', 'Server Component', 'SSR', 'CSR', 'App Router', 'hooks', '컴포넌트', 'useState', 'useEffect'],
+    "web-design-guidelines": ['웹디자인', 'UI설계', 'UX', '레이아웃', '타이포그래피', '색상', '반응형', 'responsive', '접근성', 'a11y', 'WCAG', '다크모드', 'dark mode'],
+    "owasp-security": ['보안', 'OWASP', 'XSS', 'SQL인젝션', 'CSRF', '취약점', 'vulnerability', '인증', '인가', 'authentication', 'authorization', 'injection', '보안점검', '코드보안', 'security'],
     "what-if-oracle": ['What-If', '시나리오', '가정분석', 'hypothetical'],
     "zarr-python": ['Zarr', '청크배열', 'N-D array', '대용량배열', 'cloud storage'],
 }
@@ -1134,7 +1226,7 @@ def context_aware_skill_select(query, history, max_skills=7):
             combined[sid] = combined.get(sid, 0) + 3
             boosted.add(sid)
     # Draw.io / 다이어그램 감지 (코드 작성보다 우선)
-    if any(kw in q for kw in ["drawio", "draw.io", "드로우io", "드로우IO", "드로우아이오", "다이어그램", "구조도", "흐름도", "아키텍처도", "배치도", "dfd"]):
+    if any(kw in q for kw in ["drawio", "draw.io", "드로우io", "드로우IO", "드로우아이오", "드로잉io", "드로잉IO", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처도", "배치도", "dfd"]):
         combined["drawio-diagram"] = combined.get("drawio-diagram", 0) + 15
         boosted.add("drawio-diagram")
     # PPT / 프레젠테이션 감지
@@ -1145,6 +1237,12 @@ def context_aware_skill_select(query, history, max_skills=7):
     if any(kw in q for kw in ["코드", "함수", "클래스", "구현", "작성", "만들어", "코딩"]):
         for sid in ["agent-python-pro", "debugging"]:
             combined[sid] = combined.get(sid, 0) + 3
+            boosted.add(sid)
+
+    # LLM/에이전트 설계 감지
+    if any(kw in q for kw in ["llm", "rag", "파인튜닝", "프롬프트", "모델 라우팅", "에이전트 설계", "llm 설계", "llm 아키텍처"]):
+        for sid in ["agent-llm-architect", "agent-prompt-engineer", "agent-ai-engineer"]:
+            combined[sid] = combined.get(sid, 0) + 6
             boosted.add(sid)
 
     # 5단계: 업로드 파일 기반 부스트
@@ -1185,9 +1283,67 @@ def context_aware_skill_select(query, history, max_skills=7):
 
     # 6단계: 정렬 후 반환 (현재 질문 직접 매칭 우선)
     sorted_skills = sorted(combined.items(), key=lambda x: -x[1])
-    result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
+
+    # 6.5단계: Reranker 선택적 적용 (feature flag)
+    if RERANKER_ENABLED:
+        top_candidates = [sid for sid, _ in sorted_skills[:20]]
+        try:
+            reranked = rerank_skills(query, top_candidates, top_k=max_skills)
+            result = reranked
+        except Exception:
+            result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
+    else:
+        result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
 
     return result, list(boosted)
+
+
+def rerank_skills(query, candidate_skill_ids, top_k=7):
+    """bge-reranker-v2-m3로 스킬 후보를 재정렬 (RERANKER_ENABLED=True일 때만 호출)
+
+    Returns:
+        [(skill_id, score), ...] 상위 top_k개
+    """
+    if not candidate_skill_ids:
+        return []
+    reg = MODEL_REGISTRY.get("bge-reranker")
+    if not reg:
+        return [(sid, 0) for sid in candidate_skill_ids[:top_k]]
+
+    # query-document 쌍 구성
+    pairs = []
+    for sid in candidate_skill_ids:
+        desc = SKILL_DESC_KO.get(sid, sid)
+        pairs.append({"text": [query, desc]})
+
+    headers = {"Content-Type": "application/json"}
+    if API_TOKEN:
+        headers["Authorization"] = f"Bearer {API_TOKEN}"
+
+    try:
+        resp = req.post(
+            reg["url"].replace("/chat/completions", "/rerank"),  # rerank 엔드포인트 시도
+            headers=headers,
+            json={
+                "model": reg["model"],
+                "query": query,
+                "documents": [SKILL_DESC_KO.get(sid, sid) for sid in candidate_skill_ids],
+                "top_n": top_k,
+            },
+            timeout=10,
+            verify=False,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        # reranker 응답 형식: {"results": [{"index": 0, "relevance_score": 0.95}, ...]}
+        if "results" in result:
+            ranked = sorted(result["results"], key=lambda x: -x.get("relevance_score", 0))
+            return [(candidate_skill_ids[r["index"]], r.get("relevance_score", 0))
+                    for r in ranked[:top_k] if r["index"] < len(candidate_skill_ids)]
+    except Exception:
+        pass  # 실패 시 caller에서 키워드 점수로 폴백
+
+    return [(sid, 0) for sid in candidate_skill_ids[:top_k]]
 
 
 def build_orchestration_prompt(query, skill_ids, loaded_skills_content):
@@ -1214,6 +1370,219 @@ def build_orchestration_prompt(query, skill_ids, loaded_skills_content):
 4. 각 SKILL에서 가져온 핵심 기법/코드를 명시하되, 자연스럽게 녹여내기
 """
     return orchestration
+
+
+# ===================== 멀티에이전트 라우터: 작업 분류 & 모델 자동 선택 =====================
+VISION_SIGNALS = [
+    "이미지", "사진", "그림 분석", "사진 속", "보이는", "스크린샷",
+    "screenshot", "그림에서", "화면", "figure", "diagram", "차트 읽",
+    "이 그림", "이 사진", "이미지에서", "사진에서", "이미지를", "사진을",
+    "이미지 속", "보여주는", "캡처", "화면에",
+]
+COMPLEX_SIGNALS = [
+    "분석", "비교", "설계", "아키텍처", "최적화", "리팩토링", "구현해줘",
+    "전체 코드", "시스템 설계", "파이프라인", "종합", "심층", "상세히",
+    "비교 분석", "장단점", "트레이드오프", "벤치마크",
+]
+PPT_SIGNALS = [
+    "ppt", "피피티", "파워포인트", "슬라이드", "발표자료", "프레젠테이션",
+    "발표 만들", "deck", "피치덱",
+]
+DATA_SIGNALS = [
+    "데이터 분석", "csv 분석", "통계 분석", "회귀", "상관관계",
+    "데이터셋", "데이터프레임", "pandas", "히스토그램", "분포",
+]
+SIMPLE_MAX_LEN = 50  # 이 길이 이하의 짧은 질문은 간단한 Q&A로 간주
+
+
+def classify_and_route(query, history, uploaded_files_list):
+    """작업 유형을 분류하고 최적 모델(env_id)을 자동 선택하는 휴리스틱 라우터
+
+    Returns:
+        (env_id, route_reason): 선택된 환경 ID와 선택 이유
+    """
+    q = query.lower() if query else ""
+    has_images = any(f.get("type") == "image" for f in uploaded_files_list)
+    has_csv = any(f.get("ext", "").lower() in ("csv", "tsv", "xlsx") for f in uploaded_files_list)
+    has_vision_kw = any(kw in q for kw in VISION_SIGNALS)
+
+    # 만약 온라인 모델용 토큰이 없으면, 강제로 로컬 GGUF 모델 중에서 자동 선택
+    if not API_TOKEN:
+        gguf_envs = {k: v for k, v in ENV_CONFIG.items() if str(k).startswith("gguf-")}
+        if not gguf_envs:
+            return "common", "토큰 없음 & 로컬 모델 없음 → 실패 예상"
+        
+        vl_ggufs = [k for k, v in gguf_envs.items() if "vl" in v["name"].lower()]
+        normal_ggufs = [k for k, v in gguf_envs.items() if "vl" not in v["name"].lower()]
+        
+        if has_images and vl_ggufs:
+            return vl_ggufs[0], f"로컬 이미지 분석 → {ENV_CONFIG[vl_ggufs[0]]['name']}"
+        elif normal_ggufs:
+            complex_count = sum(1 for kw in COMPLEX_SIGNALS if kw in q)
+            if complex_count >= 2 or len(q) > 200:
+                return normal_ggufs[0], f"로컬 복잡한 분석 → {ENV_CONFIG[normal_ggufs[0]]['name']}"
+            else:
+                return normal_ggufs[-1], f"로컬 간단한 요청 → {ENV_CONFIG[normal_ggufs[-1]]['name']}"
+        else:
+            first_key = list(gguf_envs.keys())[0]
+            return first_key, f"로컬 기본 모델 → {ENV_CONFIG[first_key]['name']}"
+
+    # 1순위: 이미지 첨부 → VL 모델
+    if has_images:
+        # 복잡한 분석 요청 → 대형 VL
+        if any(kw in q for kw in COMPLEX_SIGNALS) or len(q) > 200:
+            return "vl-large", "이미지+복잡 분석 → VL-235B"
+        # 보통 요청 → 중형 VL
+        elif len(q) > SIMPLE_MAX_LEN:
+            return "vl-medium", "이미지 분석 → VL-72B"
+        # 간단한 요청 → 소형 VL
+        else:
+            return "vl-fast", "간단 이미지 → VL-30B"
+
+    # 비전 키워드는 있지만 이미지가 없는 경우 (이미지 업로드 유도)
+    if has_vision_kw and not has_images:
+        return "vl-medium", "비전 키워드 감지 → VL-72B (이미지 업로드 권장)"
+
+    # 2순위: PPT 생성 → 중형 모델
+    if any(kw in q for kw in PPT_SIGNALS):
+        return "common", "PPT 생성 → 120B"
+
+    # 3순위: 복잡한 분석/코드/데이터 → 대형 모델
+    complex_count = sum(1 for kw in COMPLEX_SIGNALS if kw in q)
+    if complex_count >= 2 or (complex_count >= 1 and len(q) > 200):
+        return "prod", "복잡한 분석 → 397B"
+
+    # 4순위: 데이터 분석 (CSV 로드 + 분석 키워드)
+    if has_csv or any(kw in q for kw in DATA_SIGNALS):
+        return "prod", "데이터 분석 → 397B"
+
+    # 5순위: 코드 작성 요청 (중간~긴 쿼리)
+    code_kw = ["코드", "함수", "클래스", "구현", "작성", "코딩", "스크립트", "프로그래밍"]
+    if any(kw in q for kw in code_kw) and len(q) > 80:
+        return "prod", "코드 작성 → 397B"
+
+    # 6순위: 간단한 Q&A → 빠른 모델
+    if len(q) <= SIMPLE_MAX_LEN:
+        return "dev", "간단 Q&A → GLM-4.7 (fast)"
+
+    # 기본값: 중형 모델
+    return "common", "일반 요청 → 120B"
+
+
+def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
+    """채팅 내용을 분석하여 최적의 출력형식과 작성 스타일을 자동 선택
+
+    Returns:
+        (format_id, style_value, reason): 출력형식, 스타일 텍스트, 선택 이유
+    """
+    q = query.lower() if query else ""
+    has_csv = any(f.get("ext", "").lower() in ("csv", "tsv", "xlsx") for f in uploaded_files_list)
+    has_code_file = any(f.get("ext", "").lower() in ("py", "js", "java", "c", "cpp", "go", "rs", "html", "css") for f in uploaded_files_list)
+    has_image = any(f.get("type") == "image" for f in uploaded_files_list)
+
+    # 비전/이미지 키워드
+    vision_kw = ["이미지", "사진", "그림", "스크린샷", "screenshot", "화면", "figure",
+                 "diagram", "차트 읽", "캡처", "보이는", "보여주는"]
+    has_vision_kw = any(kw in q for kw in vision_kw)
+
+    # 스킬 기반 힌트
+    data_skills = {"exploratory-data-analysis", "statistical-analysis", "matplotlib",
+                   "seaborn", "plotly", "polars", "statsmodels", "scikit-learn"}
+    debug_skills = {"debugging", "agent-debugger", "agent-error-detective"}
+    writing_skills = {"scientific-writing", "literature-review", "peer-review",
+                      "research-grants", "clinical-reports"}
+    has_data_skill = bool(set(skill_ids) & data_skills)
+    has_debug_skill = bool(set(skill_ids) & debug_skills)
+    has_writing_skill = bool(set(skill_ids) & writing_skills)
+
+    # === 출력형식 분류 ===
+    fmt = "code"  # 기본값
+
+    # 이미지 분석 요청 → 코드 아닌 분석/설명으로 (최우선)
+    if has_image or has_vision_kw:
+        # 이미지 + 코드 요청이 명시적이면 코드
+        code_explicit = any(kw in q for kw in ["코드", "코딩", "구현", "스크립트", "import", "def "])
+        if code_explicit:
+            fmt = "code"
+        else:
+            fmt = "analysis"
+
+    # 보고서/리포트 요청
+    elif any(kw in q for kw in ["보고서", "리포트", "report", "요약해줘", "요약 작성", "정리해줘",
+                 "문서 작성", "문서화", "보고", "브리핑", "개요"]) or has_writing_skill:
+        fmt = "report"
+
+    # 데이터 분석 요청
+    elif has_csv or has_data_skill or any(kw in q for kw in ["분석해줘", "분석해 줘", "데이터 분석", "인사이트", "통계 분석", "상관관계", "추세"]):
+        fmt = "analysis"
+
+    # LLM/아키텍처 설계 요청
+    elif any(kw in q for kw in ["llm", "rag", "아키텍처", "시스템 설계", "트레이드오프", "모델 라우팅"]):
+        fmt = "analysis"
+
+    # 단계별 설명 요청
+    elif any(kw in q for kw in ["방법", "어떻게", "절차", "과정", "단계별", "step by step",
+                                 "가르쳐", "알려줘", "설명해", "튜토리얼", "가이드"]):
+        fmt = "step-by-step"
+
+    # 디버깅/코드 수정
+    elif has_debug_skill or has_code_file or any(kw in q for kw in ["에러", "error", "버그", "bug", "수정", "고쳐", "안돼", "안되", "traceback", "exception", "오류"]):
+        fmt = "code-fix"
+
+    # 코드 작성 요청
+    elif any(kw in q for kw in ["코드", "함수", "클래스", "구현", "작성", "코딩", "스크립트",
+                                 "만들어", "프로그래밍", "import", "def ", "class "]):
+        fmt = "code"
+
+    # 일반 질문/대화 → 단계별 (코드보다 설명 우선)
+    elif not any(kw in q for kw in ["코드", "코딩", "구현", "함수", "클래스"]):
+        fmt = "step-by-step"
+
+    # === 스타일 분류 ===
+    style = ""  # 기본값: 없음 (시스템 기본)
+
+    # 이미지 분석 모드
+    if (has_image or has_vision_kw) and fmt == "analysis":
+        style = "이미지 내용을 자연어로 설명하세요. 코드 없이 분석 결과만 제시. 핵심 내용→세부 관찰→해석 순서."
+
+    # 디버깅 모드
+    elif fmt == "code-fix" or has_debug_skill:
+        style = "에러 원인 분석 중심. traceback 해석, 재현 조건, 해결책 순서."
+
+    # LLM 설계 모드
+    elif "agent-llm-architect" in skill_ids or any(kw in q for kw in ["llm", "rag", "아키텍처", "시스템 설계"]):
+        style = "설계 의사결정 중심. 요구사항→옵션 비교→트레이드오프→권장안→실행계획 순서."
+
+    # 데이터 분석 모드
+    elif fmt == "analysis" or has_data_skill:
+        style = "데이터 스토리텔링. 숫자→의미→액션 순서로 해석."
+
+    # 학술/논문 모드
+    elif has_writing_skill or any(kw in q for kw in ["논문", "학술", "연구", "인용", "레퍼런스", "paper"]):
+        style = "학술적 톤. 정확한 용어, 인용, 근거 제시."
+
+    # 실용적 모드 (기본 코드 작성)
+    elif fmt in ("code", "code-fix"):
+        style = "실전에서 바로 활용 가능하게. 핵심 요점과 구체적 방법 위주. 선택된 출력형식에 맞춰 답변하세요."
+
+    reason = f"형식:{fmt}"
+    if style:
+        reason += " / 스타일 자동"
+
+    return fmt, style, reason
+
+
+def get_registry_key_for_env(env_id):
+    """env_id → MODEL_REGISTRY 키 반환. GGUF 등 미등록 환경은 None."""
+    return ENV_TO_REGISTRY.get(env_id)
+
+
+def get_model_capabilities(env_id):
+    """env_id의 capability set 반환"""
+    reg_key = get_registry_key_for_env(env_id)
+    if reg_key and reg_key in MODEL_REGISTRY:
+        return MODEL_REGISTRY[reg_key].get("capabilities", set())
+    return set()
 
 
 def load_skill_content(skill_name):
@@ -1288,6 +1657,28 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+@app.route("/uio")
+@app.route("/uio/")
+def uio_page():
+    """UIO 2D Pixel Office 페이지 서빙 (base href 주입으로 상대경로 해결)"""
+    uio_path = os.path.join(BASE_DIR, "UIO", "index.html")
+    if os.path.exists(uio_path):
+        with open(uio_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        # <head> 바로 뒤에 <base href="/uio/"> 삽입 → 상대경로(img/, sound/)가 /uio/img/ 등으로 해석됨
+        html = html.replace("<head>", '<head>\n<base href="/uio/">', 1)
+        return html
+    return "UIO index.html not found", 404
+
+
+@app.route("/uio/<path:filename>")
+def uio_static(filename):
+    """UIO 정적 파일 서빙 (img, sound 등)"""
+    from flask import send_from_directory
+    uio_dir = os.path.join(BASE_DIR, "UIO")
+    return send_from_directory(uio_dir, filename)
+
+
 @app.route("/api/config")
 def api_config():
     """환경 설정 및 토큰 상태 반환"""
@@ -1315,7 +1706,7 @@ def find_gguf_files():
     return [{"path": f, "name": os.path.basename(f), "size_gb": round(os.path.getsize(f) / 1e9, 1)} for f in files]
 
 
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
+def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
     """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)"""
     global gguf_model, gguf_loaded_path
 
@@ -1340,12 +1731,23 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99):
         saved_stdout = sys.stdout
         saved_stderr = sys.stderr
         try:
-            gguf_model = Llama(
-                model_path=model_path,
-                n_ctx=n_ctx,
-                n_gpu_layers=n_gpu_layers,
-                verbose=False,
-            )
+            # 일부 환경에서 n_batch를 크게 잡으면 디코드 실패가 증가해 보수적으로 설정
+            try:
+                gguf_model = Llama(
+                    model_path=model_path,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                    n_batch=n_batch,
+                    verbose=False,
+                )
+            except TypeError:
+                # 구버전 llama-cpp-python 호환
+                gguf_model = Llama(
+                    model_path=model_path,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                    verbose=False,
+                )
         finally:
             # 핸들 복원
             sys.stdout = saved_stdout
@@ -1520,6 +1922,30 @@ PRESET_PROMPTS = {
 - 로드된 스킬의 방법론, 코드 패턴, API를 적극 활용
 - 여러 스킬이 관련되면 조합해서 최적의 답변 생성"""
     },
+    "llm-system-architect": {
+        "name": "LLM 시스템 아키텍트",
+        "icon": "🧠",
+        "content": """당신은 LLM 시스템 아키텍트입니다.
+
+[우선 원칙]
+1. 먼저 요구사항과 제약(성능/비용/보안/운영)을 분석하세요.
+2. 분석 후 아키텍처 옵션 2~3개를 비교하고 최종안을 추천하세요.
+3. 반드시 트레이드오프(장단점, 리스크, 운영 난이도)를 명시하세요.
+
+[설계 범위]
+- 모델 선택/라우팅 전략 (단일 vs 멀티모델)
+- RAG 파이프라인 (임베딩, 검색, 리랭킹, 캐시)
+- 프롬프트/가드레일/평가(Eval) 체계
+- 서빙(vLLM/TGI), 모니터링, 비용 최적화
+- 장애 대응(폴백, 재시도, 회로차단, 관측성)
+
+[응답 구조]
+1. 요구사항 분석
+2. 아키텍처 옵션 비교표
+3. 추천 아키텍처(이유 포함)
+4. 단계별 구현 계획(POC→운영)
+5. 운영 지표(SLO/비용/품질)"""
+    },
     "semiconductor": {
         "name": "반도체 엔지니어",
         "icon": "🔬",
@@ -1571,7 +1997,7 @@ def api_list_prompts():
                         "type": "saved",
                         "preview": content[:80] + "..." if len(content) > 80 else content,
                     })
-                except:
+                except Exception:
                     pass
 
     return jsonify({"prompts": result})
@@ -1629,6 +2055,8 @@ def api_delete_prompt(prompt_id):
 
     if prompt_id.startswith("saved:"):
         name = prompt_id[6:]
+        if ".." in name or "/" in name or "\\" in name:
+            return jsonify({"error": "잘못된 프롬프트 ID입니다."}), 400
         fpath = os.path.join(PROMPTS_DIR, f"{name}.txt")
         if os.path.isfile(fpath):
             try:
@@ -1718,8 +2146,8 @@ def api_skill_run(skill_name):
             cwd=os.path.join(SKILLS_DIR, skill_name),
         )
         return jsonify({
-            "stdout": result.stdout[-8000:] if len(result.stdout) > 8000 else result.stdout,
-            "stderr": result.stderr[-4000:] if len(result.stderr) > 4000 else result.stderr,
+            "stdout": result.stdout[:8000] if len(result.stdout) > 8000 else result.stdout,
+            "stderr": result.stderr[:4000] if len(result.stderr) > 4000 else result.stderr,
             "returncode": result.returncode,
             "script": script_path,
         })
@@ -1837,6 +2265,217 @@ def api_upload_csv():
         return jsonify({"error": f"파일 처리 오류: {str(e)}"}), 500
 
 
+@app.route("/api/upload_xlsx", methods=["POST"])
+def api_upload_xlsx():
+    """XLSX 파일 업로드 — 시트별 파싱 + 이미지 추출"""
+    global uploaded_csv_data
+
+    if 'file' not in request.files:
+        return jsonify({"error": "파일이 없습니다."}), 400
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({"error": "파일명이 없습니다."}), 400
+
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import base64
+
+    raw_bytes = file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+    except zipfile.BadZipFile:
+        return jsonify({"error": "유효한 XLSX 파일이 아닙니다."}), 400
+
+    ns_s = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    ns_pr = 'http://schemas.openxmlformats.org/package/2006/relationships'
+
+    # ── shared strings ──
+    shared = []
+    if 'xl/sharedStrings.xml' in zf.namelist():
+        with zf.open('xl/sharedStrings.xml') as ss:
+            tree = ET.parse(ss)
+            for si in tree.findall(f'.//{{{ns_s}}}si'):
+                parts = []
+                for t_el in si.iter(f'{{{ns_s}}}t'):
+                    if t_el.text:
+                        parts.append(t_el.text)
+                shared.append(''.join(parts))
+
+    # ── 시트 목록 (workbook.xml + rels) ──
+    sheet_names = []
+    sheet_rids = []
+    if 'xl/workbook.xml' in zf.namelist():
+        with zf.open('xl/workbook.xml') as wb:
+            tree = ET.parse(wb)
+            for s in tree.findall(f'.//{{{ns_s}}}sheet'):
+                sheet_names.append(s.get('name', ''))
+                sheet_rids.append(s.get(f'{{{ns_r}}}id', ''))
+
+    # rid → 파일 매핑
+    rid_to_file = {}
+    rels_path = 'xl/_rels/workbook.xml.rels'
+    if rels_path in zf.namelist():
+        with zf.open(rels_path) as rf:
+            tree = ET.parse(rf)
+            for rel in tree.findall(f'{{{ns_pr}}}Relationship'):
+                rid_to_file[rel.get('Id', '')] = 'xl/' + rel.get('Target', '')
+
+    def _parse_sheet(sheet_file_path):
+        """시트 하나를 파싱하여 2D 리스트 반환"""
+        if sheet_file_path not in zf.namelist():
+            return []
+        with zf.open(sheet_file_path) as ws:
+            tree = ET.parse(ws)
+            all_rows = []
+            for row in tree.findall(f'.//{{{ns_s}}}row'):
+                if len(all_rows) >= 10000:
+                    break
+                cells = []
+                for c in row.findall(f'{{{ns_s}}}c'):
+                    v_el = c.find(f'{{{ns_s}}}v')
+                    t_attr = c.get('t', '')
+                    if v_el is not None and v_el.text is not None:
+                        if t_attr == 's' and v_el.text.isdigit():
+                            idx = int(v_el.text)
+                            cells.append(shared[idx] if idx < len(shared) else v_el.text)
+                        else:
+                            cells.append(v_el.text)
+                    else:
+                        is_el = c.find(f'{{{ns_s}}}is')
+                        if is_el is not None:
+                            parts = []
+                            for t_el in is_el.iter(f'{{{ns_s}}}t'):
+                                if t_el.text:
+                                    parts.append(t_el.text)
+                            cells.append(''.join(parts))
+                        else:
+                            cells.append('')
+                all_rows.append(cells)
+            return all_rows
+
+    # ── 시트별 요약 ──
+    sheets_data = []
+    for si, (sname, rid) in enumerate(zip(sheet_names, sheet_rids)):
+        sf = rid_to_file.get(rid, f'xl/worksheets/sheet{si+1}.xml')
+        rows = _parse_sheet(sf)
+        sheets_data.append({
+            "name": sname,
+            "rows": max(0, len(rows) - 1),  # 헤더 제외
+            "cols": max((len(r) for r in rows), default=0),
+        })
+
+    # ── 선택된 시트 상세 ──
+    active_sheet_idx = int(request.form.get('sheet', 0))
+    if active_sheet_idx >= len(sheet_names):
+        active_sheet_idx = 0
+
+    target_rid = sheet_rids[active_sheet_idx] if active_sheet_idx < len(sheet_rids) else ''
+    target_file = rid_to_file.get(target_rid, f'xl/worksheets/sheet{active_sheet_idx+1}.xml')
+    all_rows = _parse_sheet(target_file)
+
+    headers = all_rows[0] if all_rows else []
+    data_rows = all_rows[1:] if len(all_rows) > 1 else []
+
+    # ── 이미지 추출 ──
+    images_info = []
+    for name in zf.namelist():
+        if name.startswith('xl/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+            img_ext = name.rsplit('.', 1)[-1].lower()
+            with zf.open(name) as img_f:
+                img_data = img_f.read()
+                if len(img_data) <= 5 * 1024 * 1024:  # 5MB 제한
+                    b64 = base64.b64encode(img_data).decode('ascii')
+                    mime = {'jpg': 'jpeg', 'jpeg': 'jpeg'}.get(img_ext, img_ext)
+                    images_info.append({"name": name.split('/')[-1], "size": len(img_data), "mime": f"image/{mime}"})
+                    # VL 모델용으로 uploaded_files에 추가
+                    uploaded_files.append({
+                        "filename": f"{file.filename}/{name.split('/')[-1]}",
+                        "safe_name": name.split('/')[-1],
+                        "type": "image",
+                        "ext": img_ext,
+                        "size": len(img_data),
+                        "content_preview": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "content_full": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "img_base64": b64,
+                        "path": "",
+                    })
+
+    # ── 통계 ──
+    total_rows = len(data_rows)
+    total_cols = len(headers)
+    col_stats = []
+    for ci, h in enumerate(headers):
+        vals = [r[ci] for r in data_rows if ci < len(r) and r[ci].strip()]
+        nums = []
+        for v in vals:
+            try:
+                nums.append(float(v.replace(',', '')))
+            except ValueError:
+                pass
+        if len(nums) > len(vals) * 0.5 and nums:
+            col_stats.append(f"  {h}: 숫자형 ({len(vals)}건, 범위 {min(nums):.4g}~{max(nums):.4g}, 평균 {sum(nums)/len(nums):.4g})")
+        else:
+            unique = len(set(vals))
+            col_stats.append(f"  {h}: 문자형 ({len(vals)}건, 고유값 {unique}개)")
+
+    active_name = sheet_names[active_sheet_idx] if active_sheet_idx < len(sheet_names) else "Sheet1"
+
+    # 전체 시트 요약 (시스템 프롬프트용)
+    sheets_summary = ""
+    if len(sheet_names) > 1:
+        sheets_summary = f"\n전체 시트 목록 ({len(sheet_names)}개):\n"
+        for sd in sheets_data:
+            sheets_summary += f"  - {sd['name']}: {sd['rows']}행 × {sd['cols']}열\n"
+        sheets_summary += f"현재 분석 시트: {active_name}\n"
+
+    img_summary = ""
+    if images_info:
+        img_summary = f"\n내장 이미지: {len(images_info)}개\n"
+
+    summary = (
+        f"파일: {file.filename}\n"
+        f"시트: {active_name} ({len(sheet_names)}개 시트)\n"
+        f"행: {total_rows}개, 열: {total_cols}개\n"
+        f"컬럼:\n" + "\n".join(col_stats)
+        + sheets_summary + img_summary
+    )
+
+    preview_rows = data_rows[:5]
+    preview_text = '\t'.join(headers) + "\n"
+    for r in preview_rows:
+        preview_text += '\t'.join(r) + "\n"
+    if total_rows > 5:
+        preview_text += f"... ({total_rows - 5}행 더 있음)"
+
+    # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
+    uploaded_csv_data = {
+        "filename": file.filename,
+        "headers": headers,
+        "rows": data_rows,
+        "summary": summary,
+        "raw_preview": preview_text,
+    }
+
+    zf.close()
+
+    return jsonify({
+        "success": True,
+        "filename": file.filename,
+        "rows": total_rows,
+        "cols": total_cols,
+        "headers": headers,
+        "summary": summary,
+        "preview": preview_text,
+        "sample_rows": [dict(zip(headers, r)) for r in preview_rows[:3]],
+        "sheets": sheets_data,
+        "active_sheet": active_sheet_idx,
+        "active_sheet_name": active_name,
+        "images_count": len(images_info),
+        "images": images_info,
+    })
+
+
 @app.route("/api/clear_csv", methods=["POST"])
 def api_clear_csv():
     """업로드된 CSV 데이터 삭제"""
@@ -1847,14 +2486,63 @@ def api_clear_csv():
 
 # ===================== 범용 파일 업로드 =====================
 ALLOWED_EXTENSIONS = {
-    'csv', 'tsv', 'txt',
+    'csv', 'tsv', 'txt', 'log', 'ini', 'cfg', 'conf', 'toml',
     'docx', 'xlsx', 'pdf', 'pptx',
-    'md', 'markdown',
+    'md', 'markdown', 'rst',
     'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg',
-    'py', 'js', 'html', 'css', 'json', 'xml', 'yaml', 'yml',
-    'c', 'cpp', 'h', 'java', 'go', 'rs', 'sh', 'bat',
+    'py', 'js', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
+    'html', 'css', 'scss', 'less', 'json', 'xml', 'yaml', 'yml',
+    'c', 'cpp', 'h', 'hpp', 'java', 'kt', 'scala', 'go', 'rs', 'sh', 'bat',
+    'rb', 'php', 'swift', 'r', 'sql', 'lua', 'dart', 'zig',
 }
 
+
+def _detect_drm(filepath, ext):
+    """파일의 DRM/암호화 보호 여부를 감지. 보호된 경우 설명 문자열 반환, 아니면 None."""
+    try:
+        if ext == 'pdf':
+            with open(filepath, 'rb') as f:
+                head = f.read(4096)
+            # PDF 암호화 플래그 감지
+            if b'/Encrypt' in head:
+                return "PDF 파일에 암호화(DRM)가 설정되어 있어 내용을 읽을 수 없습니다."
+
+        elif ext in ('docx', 'xlsx', 'pptx'):
+            import zipfile
+            # DRM 걸린 Office 파일은 ZIP이 아닌 OLE2(CFB) 형식인 경우가 많음
+            if not zipfile.is_zipfile(filepath):
+                with open(filepath, 'rb') as f:
+                    magic = f.read(8)
+                # Microsoft OLE2 Compound File (암호화된 Office)
+                if magic[:4] == b'\xd0\xcf\x11\xe0':
+                    return f"{ext.upper()} 파일에 DRM 또는 암호 보호가 설정되어 있어 내용을 읽을 수 없습니다."
+                return None
+            # ZIP 기반이어도 EncryptedPackage가 있으면 DRM
+            try:
+                with zipfile.ZipFile(filepath) as z:
+                    names = z.namelist()
+                    if 'EncryptedPackage' in names or 'EncryptedInfo' in names:
+                        return f"{ext.upper()} 파일에 DRM 또는 암호 보호가 설정되어 있어 내용을 읽을 수 없습니다."
+                    # Office 365 IRM(Information Rights Management) 감지
+                    if any('irm' in n.lower() or 'rights' in n.lower() for n in names):
+                        return f"{ext.upper()} 파일에 IRM(정보 권한 관리)이 설정되어 있어 내용을 읽을 수 없습니다."
+            except zipfile.BadZipFile:
+                pass
+
+        elif ext in ('epub',):
+            import zipfile
+            if zipfile.is_zipfile(filepath):
+                try:
+                    with zipfile.ZipFile(filepath) as z:
+                        names = z.namelist()
+                        if any('encryption.xml' in n.lower() or 'rights.xml' in n.lower() for n in names):
+                            return "EPUB 파일에 DRM이 설정되어 있어 내용을 읽을 수 없습니다."
+                except zipfile.BadZipFile:
+                    pass
+
+    except Exception:
+        pass
+    return None
 
 def extract_file_text(filepath, filename):
     """파일에서 텍스트 추출 (가능한 경우)"""
@@ -1862,10 +2550,18 @@ def extract_file_text(filepath, filename):
     text = ""
     file_type = "unknown"
 
+    # DRM/암호화 보호 감지
+    drm_msg = _detect_drm(filepath, ext)
+    if drm_msg:
+        return drm_msg, "drm_protected"
+
     try:
         # 텍스트 기반 파일
-        if ext in ('md', 'markdown', 'txt', 'py', 'js', 'html', 'css', 'json',
-                    'xml', 'yaml', 'yml', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'sh', 'bat'):
+        if ext in ('md', 'markdown', 'rst', 'txt', 'log', 'ini', 'cfg', 'conf', 'toml',
+                    'py', 'js', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
+                    'html', 'css', 'scss', 'less', 'json', 'xml', 'yaml', 'yml',
+                    'c', 'cpp', 'h', 'hpp', 'java', 'kt', 'scala', 'go', 'rs', 'sh', 'bat',
+                    'rb', 'php', 'swift', 'r', 'sql', 'lua', 'dart', 'zig'):
             for enc in ["utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1"]:
                 try:
                     with open(filepath, "r", encoding=enc) as f:
@@ -1923,7 +2619,7 @@ def extract_file_text(filepath, filename):
                             for c in row.findall('s:c', ns):
                                 v_el = c.find('s:v', ns)
                                 t_attr = c.get('t', '')
-                                if v_el is not None and v_el.text:
+                                if v_el is not None and v_el.text is not None:
                                     if t_attr == 's' and v_el.text.isdigit():
                                         idx = int(v_el.text)
                                         cells.append(shared[idx] if idx < len(shared) else v_el.text)
@@ -1960,11 +2656,12 @@ def extract_file_text(filepath, filename):
                 text = f"(PDF 텍스트 추출 실패: {e})"
                 file_type = "pdf"
 
-        # PPTX
+        # PPTX (텍스트 + 이미지 추출)
         elif ext == 'pptx':
             try:
                 import zipfile
                 import xml.etree.ElementTree as ET
+                import base64 as _b64
                 with zipfile.ZipFile(filepath) as z:
                     slide_texts = []
                     for name in sorted(z.namelist()):
@@ -1979,6 +2676,30 @@ def extract_file_text(filepath, filename):
                                 if texts_in_slide:
                                     slide_num = name.split('slide')[-1].split('.')[0]
                                     slide_texts.append(f"[슬라이드 {slide_num}] {' | '.join(texts_in_slide)}")
+                    # 내장 이미지 추출 → uploaded_files에 추가 (VL 모델 분석용)
+                    img_count = 0
+                    for name in z.namelist():
+                        if name.startswith('ppt/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+                            with z.open(name) as img_f:
+                                img_data = img_f.read()
+                                if len(img_data) <= 5 * 1024 * 1024:
+                                    img_ext = name.rsplit('.', 1)[-1].lower()
+                                    b64 = _b64.b64encode(img_data).decode('ascii')
+                                    img_name = name.split('/')[-1]
+                                    uploaded_files.append({
+                                        "filename": f"{filename}/{img_name}",
+                                        "safe_name": img_name,
+                                        "type": "image",
+                                        "ext": img_ext,
+                                        "size": len(img_data),
+                                        "content_preview": f"(PPT 내장 이미지: {img_name})",
+                                        "content_full": f"(PPT 내장 이미지: {img_name})",
+                                        "img_base64": b64,
+                                        "path": "",
+                                    })
+                                    img_count += 1
+                    if img_count > 0:
+                        slide_texts.append(f"\n[내장 이미지 {img_count}개 추출됨 — VL 모델로 분석 가능]")
                     text = '\n'.join(slide_texts)
                 file_type = "pptx"
             except Exception as e:
@@ -1992,6 +2713,7 @@ def extract_file_text(filepath, filename):
                 img_data = base64.b64encode(f.read()).decode('ascii')
             text = f"[이미지 파일: {filename}, 크기: {os.path.getsize(filepath)}바이트, base64 길이: {len(img_data)}]"
             file_type = "image"
+            # img_data는 caller에서 file_info에 저장 (VL 모델용)
 
         else:
             text = f"(지원하지 않는 파일 형식: .{ext})"
@@ -2032,6 +2754,12 @@ def api_upload_file():
         # 텍스트 추출
         text, file_type = extract_file_text(filepath, fname)
 
+        # DRM 보호 파일 감지 → 업로드는 정상 진행, 경고만 추가
+        drm_warning = None
+        if file_type == "drm_protected":
+            drm_warning = text  # DRM 안내 메시지
+            file_type = ext  # 원래 확장자를 타입으로 사용
+
         # 미리보기 (최대 3000자)
         preview = text[:3000]
         if len(text) > 3000:
@@ -2048,6 +2776,14 @@ def api_upload_file():
             "content_full": text[:60000],  # 시스템 프롬프트용 최대 60000자
             "path": filepath,
         }
+        # VL 모델용: 이미지 base64 데이터 저장 (최대 10MB)
+        if file_type == "image" and ext in ('png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'):
+            import base64 as _b64
+            if file_size <= 10 * 1024 * 1024:  # 10MB 제한
+                with open(filepath, 'rb') as _imgf:
+                    file_info["img_base64"] = _b64.b64encode(_imgf.read()).decode('ascii')
+            else:
+                file_info["img_base64"] = None  # 너무 큰 이미지
         uploaded_files.append(file_info)
 
         # 아이콘 매핑
@@ -2056,8 +2792,10 @@ def api_upload_file():
             "text": "📝", "image": "🖼️",
         }
         icon = icon_map.get(file_type, "📎")
+        if drm_warning:
+            icon = "🔒"
 
-        return jsonify({
+        resp = {
             "success": True,
             "filename": fname,
             "type": file_type,
@@ -2066,7 +2804,10 @@ def api_upload_file():
             "icon": icon,
             "preview": preview[:500],
             "total_files": len(uploaded_files),
-        })
+        }
+        if drm_warning:
+            resp["drm_warning"] = drm_warning
+        return jsonify(resp)
 
     except Exception as e:
         return jsonify({"error": f"파일 처리 오류: {str(e)}"}), 500
@@ -2099,7 +2840,7 @@ def api_remove_file():
             # 파일 삭제
             try:
                 os.remove(f["path"])
-            except:
+            except Exception:
                 pass
             removed = True
         else:
@@ -2115,7 +2856,7 @@ def api_clear_files():
     for f in uploaded_files:
         try:
             os.remove(f["path"])
-        except:
+        except Exception:
             pass
     uploaded_files = []
     return jsonify({"success": True})
@@ -2225,6 +2966,269 @@ def api_save_md():
     return send_file(buf, as_attachment=True, download_name=filename, mimetype="text/markdown")
 
 
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """사용자 피드백 저장 (좋아요/싫어요 + 코멘트)"""
+    import json as _json
+    data = request.json
+    rating = data.get("rating", "")       # "good" or "bad"
+    comment = data.get("comment", "")
+    message = data.get("message", "")[:500]  # 해당 응답 내용 (앞 500자)
+    user_query = data.get("user_query", "")[:300]
+
+    if rating not in ("good", "bad"):
+        return jsonify({"error": "invalid rating"}), 400
+
+    feedback_dir = os.path.join(BASE_DIR, "feedback")
+    os.makedirs(feedback_dir, exist_ok=True)
+
+    from datetime import datetime
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "rating": rating,
+        "comment": comment.strip(),
+        "user_query": user_query,
+        "message_preview": message,
+    }
+
+    feedback_file = os.path.join(feedback_dir, "feedback.jsonl")
+    with open(feedback_file, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/analyze_ppt_style", methods=["POST"])
+def api_analyze_ppt_style():
+    """참고 PPT에서 디자인 스타일(색상, 폰트, 레이아웃) 추출"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith(".pptx"):
+        return jsonify({"error": ".pptx 파일만 지원됩니다"}), 400
+
+    # 임시 저장
+    tmp_path = os.path.join(UPLOAD_DIR, f"_ppt_ref_{int(__import__('time').time())}.pptx")
+    f.save(tmp_path)
+
+    try:
+        colors = []
+        fonts = set()
+        bg_colors = []
+        slide_count = 0
+
+        with zipfile.ZipFile(tmp_path) as z:
+            # 1) 테마 색상 추출 (ppt/theme/theme1.xml)
+            theme_ns = {
+                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            }
+            for name in z.namelist():
+                if name.startswith('ppt/theme/') and name.endswith('.xml'):
+                    with z.open(name) as tf:
+                        tree = ET.parse(tf)
+                        root = tree.getroot()
+                        # 색상 스킴
+                        for scheme in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}clrScheme'):
+                            for child in scheme:
+                                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                                for sub in child:
+                                    val = sub.get('val') or sub.get('lastClr') or ''
+                                    if val and len(val) == 6:
+                                        colors.append((tag, f"#{val}"))
+                        # 폰트 스킴
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}latin'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-lt', '+mn-lt'):
+                                fonts.add(ft)
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}ea'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-ea', '+mn-ea'):
+                                fonts.add(ft)
+                    break  # 첫 번째 테마만
+
+            # 2) 슬라이드에서 배경색, 폰트, 폰트크기 샘플링
+            slide_fonts = set()
+            font_sizes = []
+            ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            ns_p = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+            for name in sorted(z.namelist()):
+                if name.startswith('ppt/slides/slide') and name.endswith('.xml'):
+                    slide_count += 1
+                    if slide_count > 5:
+                        break  # 최대 5슬라이드 샘플링
+                    with z.open(name) as sf:
+                        tree = ET.parse(sf)
+                        # 배경 색상
+                        for solid in tree.iter(f'{{{ns_a}}}solidFill'):
+                            for srgb in solid.iter(f'{{{ns_a}}}srgbClr'):
+                                val = srgb.get('val', '')
+                                if val and len(val) == 6:
+                                    bg_colors.append(f"#{val}")
+                        # 폰트 & 크기
+                        for rpr in tree.iter(f'{{{ns_a}}}rPr'):
+                            sz = rpr.get('sz')
+                            if sz:
+                                try:
+                                    font_sizes.append(int(sz) // 100)
+                                except ValueError:
+                                    pass
+                        for latin in tree.iter(f'{{{ns_a}}}latin'):
+                            ft = latin.get('typeface', '')
+                            if ft and not ft.startswith('+'):
+                                slide_fonts.add(ft)
+
+        # 결과 조합
+        fonts.update(slide_fonts)
+        unique_bg = list(dict.fromkeys(bg_colors))[:6]  # 중복 제거, 최대 6개
+
+        # 디자인 지시문 구성
+        parts = []
+        if colors:
+            color_str = ", ".join(f"{name}({hex_val})" for name, hex_val in colors[:10])
+            parts.append(f"테마 색상: {color_str}")
+        if unique_bg:
+            parts.append(f"슬라이드 배경/채우기 색상: {', '.join(unique_bg)}")
+        if fonts:
+            parts.append(f"폰트: {', '.join(sorted(fonts)[:5])}")
+        if font_sizes:
+            min_sz, max_sz = min(font_sizes), max(font_sizes)
+            parts.append(f"폰트 크기 범위: {min_sz}pt ~ {max_sz}pt")
+        parts.append(f"슬라이드 수: {slide_count}장")
+
+        design_prompt = "참고 PPT에서 추출한 디자인 스타일:\n" + "\n".join(f"- {p}" for p in parts)
+        design_prompt += "\n\n위 색상 팔레트, 폰트, 레이아웃 스타일을 최대한 동일하게 적용하여 새 PPT를 제작하세요."
+
+        summary = " / ".join(parts[:3])
+
+        return jsonify({"design": design_prompt, "summary": summary})
+
+    except Exception as e:
+        return jsonify({"error": f"PPT 분석 실패: {str(e)}"}), 500
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+def _prepare_pptx_code_for_copy(code):
+    """복사/실행용 python-pptx 코드를 손상 없이 정리."""
+    import re as _re
+
+    if not isinstance(code, str):
+        return ""
+
+    code = code.strip()
+
+    # 0) 바깥 코드펜스 제거
+    code = _re.sub(r'^\s*```(?:python|py)?\s*\n', '', code, flags=_re.IGNORECASE)
+    code = _re.sub(r'\n```\s*$', '', code)
+
+    # 1) 특수 따옴표/전각 문자 정리
+    _quote_map = {
+        '\u201c': '"', '\u201d': '"',
+        '\u2018': "'", '\u2019': "'",
+        '\u300c': "'", '\u300d': "'",
+        '\u300e': '"', '\u300f': '"',
+        '\uff02': '"', '\uff07': "'",
+    }
+    for _old, _new in _quote_map.items():
+        code = code.replace(_old, _new)
+
+    _fullwidth_map = {
+        '\uff08': '(', '\uff09': ')',
+        '\uff1a': ':', '\uff1b': ';',
+        '\uff0c': ',', '\uff0e': '.',
+        '\uff1d': '=', '\uff0b': '+',
+    }
+    for _old, _new in _fullwidth_map.items():
+        code = code.replace(_old, _new)
+
+    # 2) 이어붙은 "from ... import ..."만 안전하게 줄바꿈
+    code = _re.sub(
+        r'(\bfrom\s+[A-Za-z_][\w\.]*\s+import\s+[^\n#;]+?)\s+(?=from\s+[A-Za-z_][\w\.]*\s+import\s+)',
+        r'\1\n',
+        code
+    )
+
+    def _looks_like_code_line(s):
+        return bool(_re.match(
+            r'^(from\s+|import\s+|def\s+|class\s+|if\s+|elif\s+|else:|for\s+|while\s+|try:|except\b|finally:|with\s+|return\b|yield\b|pass\b|break\b|continue\b|@|#|\"\"\"|\'\'\'|[A-Za-z_]\w*\s*=|[A-Za-z_][\w\.]*\s*\(|\)|\]|\})',
+            s
+        ))
+
+    # 3) 명백한 메타/설명 라인만 주석 처리 (실제 코드는 보존)
+    cleaned = []
+    for ln in code.splitlines():
+        s = ln.strip()
+        if not s:
+            cleaned.append(ln)
+            continue
+
+        if any(k in s for k in ('자동 스킬', '[LOCAL', 'prompt~', 'ctx=', 'max_tokens=')):
+            continue
+
+        if _re.match(r'^[=\-]{3,}$', s):
+            cleaned.append('# ' + s)
+            continue
+
+        if _re.match(r'^\d+\.\s+', s) and not _looks_like_code_line(s):
+            cleaned.append('# ' + s)
+            continue
+
+        if _re.search(r'[가-힣]', s) and not _looks_like_code_line(s):
+            cleaned.append('# ' + s)
+            continue
+
+        cleaned.append(ln)
+
+    code = '\n'.join(cleaned)
+
+    # 4) 자주 틀리는 python-pptx 패턴 보정
+    code = code.replace('.add_text_box(', '.add_textbox(').replace('.add_text_box (', '.add_textbox(')
+    code = _re.sub(
+        r'\b(?:content|body|placeholder|text_frame|title_shape|subtitle|body_shape|content_placeholder)\s*\.\s*shapes\s*\.',
+        'slide.shapes.',
+        code
+    )
+
+    # 5) 문법 실패 시, 문제 라인이 비코드로 보이면 그 라인만 주석 처리
+    lines = code.splitlines()
+    for _ in range(10):
+        code_try = '\n'.join(lines)
+        try:
+            compile(code_try, '<pptx_copy_code>', 'exec')
+            return code_try
+        except SyntaxError as e:
+            idx = (e.lineno or 1) - 1
+            if idx < 0 or idx >= len(lines):
+                break
+            s = lines[idx].strip()
+            if (not s) or s.startswith('#'):
+                break
+            if _looks_like_code_line(s):
+                break
+            lines[idx] = '# ' + lines[idx]
+
+    return '\n'.join(lines)
+
+
+@app.route("/api/prepare_pptx_code", methods=["POST"])
+def api_prepare_pptx_code():
+    """PPT 코드 복사 전에 실행 가능하도록 정리된 Python 코드를 반환"""
+    data = request.json or {}
+    code = data.get("code", "")
+    if not isinstance(code, str) or not code.strip():
+        return jsonify({"error": "code가 비어있습니다."}), 400
+
+    try:
+        prepared = _prepare_pptx_code_for_copy(code)
+        return jsonify({"code": prepared})
+    except Exception as e:
+        return jsonify({"error": f"코드 정리 실패: {str(e)}"}), 500
 # ===================== PPT 생성 (python-pptx) =====================
 @app.route("/api/generate_pptx", methods=["POST"])
 def api_generate_pptx():
@@ -2266,6 +3270,24 @@ def api_generate_pptx():
     for _old, _new in _fullwidth_map.items():
         code = code.replace(_old, _new)
 
+    # 2.5) LLM이 자주 틀리는 pptx 메서드/속성 자동 교정
+    _method_typo_map = {
+        '.add_text_box(': '.add_textbox(',
+        '.add_text_box (': '.add_textbox(',
+        'XLCT.XL_LEGEND_POSITION': 'XL_LEGEND_POSITION',
+        'XL_CHART_TYPE.XL_LEGEND_POSITION': 'XL_LEGEND_POSITION',
+        'chart.plot_area.shapes': '[]',
+        'chart.plot_area.data_labels': 'chart.plots[0].data_labels',
+    }
+    for _old, _new in _method_typo_map.items():
+        code = code.replace(_old, _new)
+        
+    if 'XL_LEGEND_POSITION' in code and 'from pptx.enum.chart import XL_LEGEND_POSITION' not in code:
+        code = "from pptx.enum.chart import XL_LEGEND_POSITION\n" + code
+
+    # 2.7~2.8) chart.title / slide.shapes.title 오류는 런타임 monkey-patch로 처리
+    # (wrapped_code 내 Chart.__getattr__ + SlideShapes.title property 패치)
+
     # 3) placeholder.shapes → slide.shapes 자동 수정
     # LLM이 content/body/placeholder 등에 .shapes를 호출하는 실수 수정
     code = _re.sub(
@@ -2274,11 +3296,57 @@ def api_generate_pptx():
         code
     )
 
+    # 3.5) 주석 형식 자동 수정: # === 내용 === 또는 === 내용 === → ## 내용
+    def _fix_comments(code_str):
+        lines = code_str.split('\n')
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # 패턴1: "=== 내용 ===" (주석 기호 없이 === 로만 된 줄)
+            m = _re.match(r'^([ \t]*)(=+\s*)(.+?)\s*=*\s*$', stripped)
+            if m and not any(kw in stripped for kw in ('import ', 'from ', 'def ', 'class ', '=========')):
+                content = m.group(3).strip().rstrip('=').strip()
+                if content and not '=' in content.replace('==', ''):
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+                    continue
+            # 패턴2: "# === 내용 ===" → "## 내용"
+            m = _re.match(r'^([ \t]*)#\s*(=+\s*)(.+?)\s*=*\s*$', stripped)
+            if m:
+                content = m.group(3).strip().rstrip('=').strip()
+                if content:
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+                    continue
+            # 패턴3: "# --- 내용 ---" → "## 내용"
+            m = _re.match(r'^([ \t]*)#\s*(-+\s*)(.+?)\s*-*\s*$', stripped)
+            if m:
+                content = m.group(3).strip().rstrip('-').strip()
+                if content:
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+                    continue
+            # 패턴4: 단일 "#" 주석을 "##"로 변환 (코드가 아닌 순수 주석 라인)
+            m = _re.match(r'^([ \t]*)#\s+([^#!].+)$', stripped)
+            if m and not stripped.startswith('#!'):
+                content = m.group(2)
+                # 코드 라인이 아닌 순수 주석인지 확인
+                if not any(kw in content for kw in ('coding:', 'type:', 'noqa', 'pylint', 'pragma')):
+                    indent = line[:len(line) - len(line.lstrip())]
+                    lines[i] = f"{indent}## {content}"
+        return '\n'.join(lines)
+
+    code = _fix_comments(code)
+
     # 4) 중첩 따옴표 패턴 수정: p.text = ""내용"" → p.text = "내용"
     code = _re.sub(r'= ""([^"]*?)""', r"= '\1'", code)
     code = _re.sub(r"= ''([^']*?)''", r"= '\1'", code)
     # "text" 안에 이스케이프 안 된 "가 있는 패턴도 수정
     code = _re.sub(r'""([^"]{2,}?)""', r"'\1'", code)
+
+    # 4.5) f-string 숫자 포맷팅 시도 시 변수를 _safe_float()로 강제 캐스팅 (문자열 등 포맷불가 값 대비)
+    code = _re.sub(r'\{([^:}]+?):([^{}]*?\.?\d+[fF%])\}', r'{_safe_float(\1):\2}', code)
+    code = code.replace("_safe_float(float(", "_safe_float(")
+    code = code.replace("_safe_float(_safe_float(", "_safe_float(")
 
     # 5) 괄호 불일치 자동 수정 (예: slide_layouts[6) → slide_layouts[6])
     def _fix_bracket_mismatch(code_str):
@@ -2293,7 +3361,7 @@ def api_generate_pptx():
             fixed = False
             for j, ch in enumerate(chars):
                 # 문자열 안에서는 괄호 무시
-                if ch in ('"', "'") and (j == 0 or chars[j-1] != '\\'):
+                if ch in ('"', "'") and (j == 0 or chars[j-1] != '\\' or (j >= 2 and chars[j-2] == '\\')):
                     if in_str is None:
                         in_str = ch
                     elif in_str == ch:
@@ -2381,6 +3449,9 @@ def api_generate_pptx():
         # 코드에서 writeFile/save 경로를 out_path로 강제 교체
         wrapped_code = (
             "import sys, os\n"
+            "def _safe_float(val):\n"
+            "    try: return float(val)\n"
+            "    except: return 0.0\n"
             f"_OUTPUT_PATH = {repr(out_path)}\n"
             "# --- monkey-patch: fix default.pptx template path resolution ---\n"
             "import pptx.api as _pptx_api\n"
@@ -2430,6 +3501,38 @@ def api_generate_pptx():
             "                tc_pr = _etree.SubElement(tc, _qn('a:tcPr'))\n"
             "    return _orig_table_cell(self, row_idx, col_idx)\n"
             "_pptx_table.Table.cell = _safe_table_cell\n"
+            "# --- monkey-patch: allow GraphicFrame.rows and GraphicFrame.cell --- \n"
+            "import pptx.shapes.graphfrm as _gf\n"
+            "if hasattr(_gf, 'GraphicFrame'):\n"
+            "    _gf.GraphicFrame.rows = property(lambda self: self.table.rows if self.has_table else None)\n"
+            "    _gf.GraphicFrame.columns = property(lambda self: self.table.columns if self.has_table else None)\n"
+            "    _gf.GraphicFrame.cell = lambda self, r, c: self.table.cell(r, c) if self.has_table else None\n"
+            "# --- monkey-patch: Chart.__getattr__ — chart.title → chart.chart_title 자동 변환 ---\n"
+            "from pptx.chart.chart import Chart as _Chart\n"
+            "_orig_chart_getattr = getattr(_Chart, '__getattr__', None)\n"
+            "def _chart_getattr(self, name):\n"
+            "    if name == 'title':\n"
+            "        self.has_title = True\n"
+            "        return self.chart_title\n"
+            "    if _orig_chart_getattr:\n"
+            "        return _orig_chart_getattr(self, name)\n"
+            "    raise AttributeError(f\"'Chart' object has no attribute '{name}'\")\n"
+            "_Chart.__getattr__ = _chart_getattr\n"
+            "# --- monkey-patch: slide.shapes.title이 None일 때 textbox로 대체 ---\n"
+            "from pptx.util import Inches as _Inches, Pt as _Pt\n"
+            "import pptx.shapes.shapetree as _st_mod\n"
+            "_orig_title_prop = _st_mod.SlideShapes.title.fget\n"
+            "def _safe_shapes_title(self):\n"
+            "    t = _orig_title_prop(self)\n"
+            "    if t is not None:\n"
+            "        return t\n"
+            "    txBox = self.add_textbox(_Inches(0.5), _Inches(0.2), _Inches(9), _Inches(0.8))\n"
+            "    txBox.text_frame.word_wrap = True\n"
+            "    return txBox\n"
+            "_st_mod.SlideShapes.title = property(_safe_shapes_title)\n"
+            "# --- helper: _safe_title (backward compat) ---\n"
+            "def _safe_title(slide):\n"
+            "    return slide.shapes.title\n"
             "# --- user code ---\n"
             f"{code}\n"
         )
@@ -2437,13 +3540,17 @@ def api_generate_pptx():
         if ".save(" not in code:
             wrapped_code += f"\nprs.save(_OUTPUT_PATH)\n"
         else:
-            # save 경로를 _OUTPUT_PATH로 교체 (.save(...) 전체를 치환)
+            # 사용자 코드 부분에서만 save 경로를 _OUTPUT_PATH로 교체
             import re as _save_re
-            wrapped_code = _save_re.sub(
-                r'\.save\([^)]*\)',
-                '.save(_OUTPUT_PATH)',
-                wrapped_code
-            )
+            marker = "# --- user code ---\n"
+            idx = wrapped_code.find(marker)
+            if idx >= 0:
+                prefix = wrapped_code[:idx + len(marker)]
+                user_part = wrapped_code[idx + len(marker):]
+                user_part = _save_re.sub(r'\.save\([^)]*\)', '.save(_OUTPUT_PATH)', user_part)
+                wrapped_code = prefix + user_part
+            else:
+                wrapped_code = _save_re.sub(r'\.save\([^)]*\)', '.save(_OUTPUT_PATH)', wrapped_code)
 
         script_path = os.path.join(tmpdir, "_gen_pptx.py")
         with open(script_path, "w", encoding="utf-8") as f:
@@ -2457,7 +3564,7 @@ def api_generate_pptx():
         )
 
         if result.returncode != 0:
-            err_msg = (result.stderr or "알 수 없는 오류")[-1000:]
+            err_msg = (result.stderr.strip() if result.stderr else "알 수 없는 오류")[-1000:]
             return jsonify({
                 "error": f"PPT 생성 코드 실행 실패:\n{err_msg}"
             }), 500
@@ -2470,14 +3577,34 @@ def api_generate_pptx():
             else:
                 return jsonify({"error": "PPT 파일이 생성되지 않았습니다."}), 500
 
-        from io import BytesIO
-        with open(out_path, "rb") as f:
-            buf = BytesIO(f.read())
-        buf.seek(0)
-        return send_file(
-            buf, as_attachment=True, download_name=filename,
-            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        import shutil, datetime
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        final_filename = f"presentation_{timestamp}.pptx"
+
+        # uploads 폴더에 저장 후 브라우저 다운로드 URL 반환
+        uploads_dir = os.path.join(BASE_DIR, 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        save_path = os.path.join(uploads_dir, final_filename)
+        shutil.copy2(out_path, save_path)
+
+        return jsonify({
+            "download_url": f"/api/download_static/presentation.pptx?id={timestamp}",
+            "message": f"'{final_filename}' PPT 생성 완료!"
+        })
+
+@app.route("/api/download_static/presentation.pptx", methods=["GET"])
+def api_download_static():
+    file_id = request.args.get('id', '')
+    if not file_id: return "Invalid ID", 400
+    save_name = f"presentation_{file_id}.pptx"
+    static_dir = os.path.join(BASE_DIR, 'uploads')
+    return send_file(
+        os.path.join(static_dir, save_name), 
+        as_attachment=True, 
+        download_name="presentation.pptx",
+        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 
 # ===================== 응답 중지 =====================
@@ -2496,7 +3623,24 @@ def api_chat():
     chat_stop_flag["stop"] = False  # 새 요청 시작 시 플래그 초기화
     data = request.json
     # 환경 선택 시 서버에서 URL/모델 결정, 토큰은 TOKEN.TXT에서 읽음
-    env_id = data.get("env", "")
+    user_env = data.get("env", "")
+    auto_routed = False
+    route_reason = ""
+
+    # AUTO 모드: 질문 분석 후 최적 모델 자동 선택
+    if user_env == "auto":
+        last_query = ""
+        msgs = data.get("messages", [])
+        if msgs:
+            last_msg = msgs[-1]
+            last_query = last_msg.get("content", "") if isinstance(last_msg.get("content"), str) else ""
+        env_id, route_reason = classify_and_route(last_query, msgs, uploaded_files)
+        auto_routed = True
+    elif user_env and user_env in ENV_CONFIG:
+        env_id = user_env
+    else:
+        env_id = user_env
+
     if env_id and env_id in ENV_CONFIG:
         api_url = ENV_CONFIG[env_id]["url"]
         model = ENV_CONFIG[env_id]["model"]
@@ -2511,8 +3655,46 @@ def api_chat():
     writing_style = data.get("writing_style", "")
     custom_system_prompt = data.get("system_prompt", "")
     max_tokens = data.get("max_tokens", 8192)
+    think_mode = data.get("think_mode", False)
+    requested_output_format = output_format
+    is_gguf = env_id.startswith("gguf-") if env_id else False
 
-    if not api_url or not model:
+    # 출력형식/스타일 자동 분류 (format=auto 또는 writing_style=auto일 때)
+    auto_format = False
+    auto_style = False
+    auto_fmt_reason = ""
+    if output_format == "auto" or writing_style == "auto":
+        last_q = ""
+        if messages:
+            last_m = messages[-1]
+            last_q = last_m.get("content", "") if isinstance(last_m.get("content"), str) else ""
+        auto_fmt, auto_sty, auto_fmt_reason = classify_format_and_style(
+            last_q, messages, uploaded_files, skill_ids
+        )
+        if output_format == "auto":
+            output_format = auto_fmt
+            auto_format = True
+        if writing_style == "auto":
+            writing_style = auto_sty
+            auto_style = True
+
+    # GGUF 전용: PPT/Draw.io 생성 요청은 code 형식으로 강제 (API 경로 영향 없음)
+    last_user_query = ""
+    if messages:
+        last_m = messages[-1]
+        if isinstance(last_m.get("content"), str):
+            last_user_query = last_m.get("content", "")
+    ql = last_user_query.lower()
+    gguf_artifact_request = is_gguf and any(kw in ql for kw in [
+        "ppt", "피피티", "파워포인트", "프레젠테이션", "슬라이드", "deck",
+        "draw.io", "drawio", "드로우", "다이어그램", "mxfile", "mxgraphmodel",
+    ])
+    if gguf_artifact_request and requested_output_format == "auto" and output_format in ("report", "analysis", "step-by-step"):
+        output_format = "code"
+        auto_format = True
+        auto_fmt_reason = (auto_fmt_reason + " | " if auto_fmt_reason else "") + "GGUF artifact request -> force code"
+
+    if (not api_url or not model) and not env_id.startswith("gguf-"):
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # 시스템 프롬프트 구성
@@ -2526,12 +3708,18 @@ def api_chat():
 - 에러 처리(try/except)를 포함하세요
 - 코드 주석은 반드시 ## 형식으로 작성하세요. 단일 #이 아니라 ##을 사용하고, 구간 설명용으로만 간결하게 작성하세요. 줄마다 주석을 달지 마세요. 예: ## 데이터 전처리, ## API 호출"""
 
+    # 사고 모드 on/off
+    if think_mode:
+        think_rule = "- 답변 전에 반드시 <think>...</think> 태그 안에서 충분히 사고한 후 답변하세요. 사고 내용도 반드시 한국어로 작성하세요."
+    else:
+        think_rule = "- <think> 태그를 사용하지 마세요. 사고 과정 없이 바로 답변하세요."
+
     default_prompt = f"""당신은 Demos(민중) Alpha 0.8 - 과학 연구와 소프트웨어 개발을 돕는 전문 AI 어시스턴트입니다.
 370개+ 전문 스킬(과학/개발/AI/인프라/비즈니스)을 활용할 수 있습니다.
 
 [기본 규칙]
 - 반드시 한국어(한글)로 답변하세요. 코드 주석도 한글로 작성하세요.
-- <think> 태그를 사용하여 사고할 때도 반드시 한국어로 작성하세요. 영어로 사고하지 마세요.
+{think_rule}
 {code_rules}
 
 [스킬 활용]
@@ -2549,7 +3737,7 @@ def api_chat():
     # ===== 토큰 예산 관리 =====
     # API 대형 모델 → 제한 거의 없음 (128K+ 컨텍스트)
     # GGUF 로컬 → 32K 컨텍스트이므로 스마트하게 제한
-    is_gguf = env_id.startswith("gguf-")
+    is_gguf = env_id.startswith("gguf-") if env_id else False
     history_chars = sum(len(m.get("content", "")) for m in messages)
 
     if is_gguf:
@@ -2598,8 +3786,19 @@ def api_chat():
 
     if loaded:
         system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
+        if "agent-llm-architect" in loaded:
+            system_prompt += (
+                "=== LLM 시스템 설계 규칙 ===\n"
+                "사용자가 LLM/에이전트/RAG 설계를 요청하면 다음 순서로 답변하세요:\n"
+                "1. 먼저 요구사항과 제약을 분석하세요(트래픽, 지연시간, 예산, 보안, 데이터 민감도).\n"
+                "2. 아키텍처 옵션 2~3개를 비교하고 트레이드오프를 명확히 제시하세요.\n"
+                "3. 최종 추천안을 제시하고, 선택 근거를 성능/비용/운영성 관점으로 설명하세요.\n"
+                "4. 구현 단계를 POC→파일럿→프로덕션으로 나눠 체크리스트 형태로 제시하세요.\n"
+                "5. 필수 운영 지표(SLO, 토큰비용, 오류율, 환각률, 안전성)를 포함하세요.\n\n"
+            )
         # pptx 스킬이 로드됐으면 python-pptx 코드 생성 지시 추가
-        if "pptx" in loaded:
+        ppt_requested = 'ql' in locals() and any(kw in ql for kw in ["ppt", "피피티", "파워포인트", "프레젠테이션", "슬라이드", "deck"])
+        if "pptx" in loaded or ppt_requested:
             system_prompt += (
                 "=== PPT 생성 규칙 ===\n"
                 "사용자가 PPT/프레젠테이션/슬라이드 생성을 요청하면:\n"
@@ -2643,6 +3842,8 @@ def api_chat():
                 "16. 중요: 문자열 리터럴은 반드시 같은 줄에서 열고 닫으세요! "
                 "줄바꿈이 필요하면 삼중따옴표(triple quotes)를 사용하세요. "
                 "예: p.text = '긴 텍스트' (O) / p.text = '긴 텍스트 (X — SyntaxError: unterminated string literal).\n"
+                "17. 중요 (필수): 파이썬 문법에 맞게 들여쓰기(Indentation)와 줄바꿈을 철저히 지키고 한 줄에 여러 명령어(`slide = ... title = ...`)를 이어서 쓰지 마세요. SyntaxError가 발생합니다.\n"
+                "18. 중요 (필수): 반드시 단 1개의 완성된 파이썬 스크립트만 ```python 과 ``` 사이에 출력하세요. 코드 앞뒤로 인사말, <think> 태그, 요약 설명 등 부가적인 텍스트를 절대 쓰지 마세요. 오직 파이썬 코드만 출력해야 작동합니다.\n"
                 "python-pptx 차트 코드 예시:\n"
                 "```python\n"
                 "from pptx.chart.data import CategoryChartData\n"
@@ -2672,6 +3873,32 @@ def api_chat():
                 "여러 시리즈 비교: chart_data.add_series()를 여러 번 호출\n"
                 "원형 차트: CategoryChartData에 시리즈 1개만 추가, XL_CHART_TYPE.PIE 사용\n"
                 "프론트엔드가 코드를 감지하여 '📽️ PPT 생성 & 다운로드' 버튼을 자동 표시합니다.\n\n"
+            )
+            # PPT 디자인 스타일 주입 (참고PPT 우선, 없으면 프리셋)
+            ppt_ref_design = data.get("ppt_ref_design", "")
+            ppt_style = data.get("ppt_style", "")
+            if ppt_ref_design:
+                system_prompt += (
+                    "=== 참고 PPT 디자인 (반드시 이 스타일을 따르세요) ===\n"
+                    f"{ppt_ref_design}\n\n"
+                )
+            elif ppt_style:
+                system_prompt += (
+                    "=== PPT 디자인 스타일 ===\n"
+                    f"{ppt_style}\n"
+                    "이 디자인 가이드를 반드시 따라 모든 슬라이드를 제작하세요.\n\n"
+                )
+
+        drawio_requested = 'ql' in locals() and any(kw in ql for kw in ["drawio", "draw.io", "드로우", "드로잉", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처", "배치도", "dfd"])
+        if "drawio-diagram" in loaded or drawio_requested:
+            system_prompt += (
+                "=== Draw.io 다이어그램 생성 규칙 ===\n"
+                "사용자가 Draw.io, 다이어그램, 아키텍처, 구조도 생성을 요청하면:\n"
+                "1. 반드시 ```drawio 코드블록 안에 완전한 XML 코드를 작성하세요.\n"
+                "2. XML 구조 예시: ```drawio\n<mxfile><diagram><mxGraphModel><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/>...</root></mxGraphModel></diagram></mxfile>\n```\n"
+                "3. 중요 (GGUF 필수): 다이어그램에 대한 부가적인 설명, 설치 가이드, 인사말, <think> 태그 등은 **절대 출력하지 마세요**.\n"
+                "4. 오직 단 1개의 완성된 XML 코드 블록만 출력해야 프론트엔드가 다이어그램 렌더러를 띄웁니다.\n"
+                "5. 노드의 위치(x, y), 크기(width, height) 속성을 적절히 지정해 겹치지 않게 하세요.\n\n"
             )
         # === 차트/그래프 생성 가이드 (항상 포함 - 스킬 불필요) ===
         system_prompt += (
@@ -2756,7 +3983,7 @@ def api_chat():
     format_map = {
         "code": "답변을 Python 코드 중심으로 작성하세요. import 포함, 즉시 실행 가능하게.",
         "code-fix": "문제 진단 → 수정 전/후 비교 → 수정 이유 설명 순서로 답변하세요. 최소 변경 원칙.",
-        "analysis": "데이터 분석 결과를 글로 설명하세요. 데이터 개요 → 핵심 인사이트 → 시각화 설명 → 결론/제안 순서. 코드가 아닌 분석 내용과 해석이 중심이어야 합니다. 코드는 꼭 필요한 경우에만 최소한으로 포함하세요.",
+        "analysis": "분석 중심으로 답변하세요. 문제 정의 → 핵심 가정 → 옵션 비교(장단점/트레이드오프) → 결론/권장안 순서. 코드보다 근거와 의사결정을 우선하고, 코드는 꼭 필요한 경우에만 최소한으로 포함하세요.",
         "report": "반드시 보고서 형식의 글(텍스트)로 작성하세요. 코드를 생성하지 마세요. 구조: 제목 → 요약(Executive Summary) → 배경/목적 → 본문(핵심 내용, 분석, 근거) → 결론 및 제언. 전문적이고 읽기 쉬운 문서 형태로 답변하세요.",
         "step-by-step": "답변을 단계별(1,2,3...)로 작성하세요. 각 단계마다 무엇을 하는지, 왜 필요한지를 글로 설명하세요. 코드보다 설명과 이해를 우선하세요.",
     }
@@ -2775,6 +4002,72 @@ def api_chat():
     api_messages = [{"role": "system", "content": system_prompt}] + messages
     temperature_map = [0.1, 0.3, 0.5, 0.7]
 
+    # ===== VL 모델: 이미지 첨부 시 OpenAI Vision API 포맷 변환 (GGUF / API 공통) =====
+    # env_id가 vl-로 시작하거나, gguf- 계열 중 모델명에 vl이 포함된 경우
+    is_gguf_vl = env_id.startswith("gguf-") and "vl" in ENV_CONFIG.get(env_id, {}).get("name", "").lower()
+    has_vision = "vision" in get_model_capabilities(env_id) or is_gguf_vl
+    
+    image_files = [f for f in uploaded_files if f.get("type") == "image" and f.get("img_base64")]
+    
+    if has_vision and image_files and api_messages:
+        # 마지막 user 메시지를 멀티모달 포맷으로 변환
+        for i in range(len(api_messages) - 1, -1, -1):
+            if api_messages[i].get("role") == "user":
+                text_content = api_messages[i].get("content", "")
+                if isinstance(text_content, str):
+                    content_parts = [{"type": "text", "text": text_content}]
+                    for img_f in image_files:
+                        ext = img_f.get("ext", "png").lower()
+                        mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif",
+                                "bmp": "bmp", "webp": "webp", "svg": "svg+xml"}.get(ext, "png")
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{mime};base64,{img_f['img_base64']}"
+                            }
+                        })
+                    api_messages[i]["content"] = content_parts
+                break
+
+    def _normalize_gguf_artifact_answer(answer_text, artifact_request=False):
+        """GGUF 출력의 코드블록 라벨을 보정해 프론트 버튼 감지를 안정화."""
+        if not artifact_request or not isinstance(answer_text, str) or not answer_text.strip():
+            return answer_text
+
+        import re as _re_norm
+        normalized = answer_text
+        # ```py, ```python3 -> ```python
+        normalized = _re_norm.sub(r"```(?:py|python3)\s*\n", "```python\n", normalized, flags=_re_norm.IGNORECASE)
+
+        # 무라벨 코드블록에서 PPT/Draw.io 패턴을 감지해 라벨 부여
+        def _upgrade_unlabeled(m):
+            body = m.group(1)
+            low = body.lower()
+            if any(tok in low for tok in ("from pptx", "import pptx", "presentation(", "add_slide")):
+                return f"```python\n{body}```"
+            if any(tok in low for tok in ("<mxfile", "<mxgraphmodel", "<mxcell")):
+                return f"```drawio\n{body}```"
+            return m.group(0)
+
+        normalized = _re_norm.sub(r"```[ \t]*\n([\s\S]*?)```", _upgrade_unlabeled, normalized)
+
+        # 코드블록이 전혀 없지만 python-pptx 코드가 섞여 있으면 후행 코드블록으로 보강
+        low_all = normalized.lower()
+        if ("from pptx" in low_all or "import pptx" in low_all) and "```python" not in low_all:
+            lines = normalized.splitlines()
+            start = -1
+            for i, line in enumerate(lines):
+                ll = line.lower()
+                if "from pptx" in ll or "import pptx" in ll or "presentation(" in ll:
+                    start = i
+                    break
+            if start >= 0:
+                candidate = "\n".join(lines[start:]).strip()
+                if candidate:
+                    normalized += "\n\n```python\n" + candidate + "\n```"
+
+        return normalized
+
     # ===== GGUF 로컬 모델: Python에서 직접 추론 =====
     if env_id.startswith("gguf-"):
         # 선택된 환경의 모델 경로로 동적 로드/스왑
@@ -2785,13 +4078,48 @@ def api_chat():
         if gguf_model is None:
             return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
 
-        # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정
-        gguf_ctx = getattr(gguf_model, 'n_ctx', lambda: 32768)()
-        prompt_tokens_est = len(system_prompt) // 2 + sum(len(m.get("content","")) // 2 for m in messages)
-        safe_max = max(256, gguf_ctx - prompt_tokens_est - 100)
-        actual_max_tokens = min(max_tokens, safe_max)
+        # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정 (보수적 계산)
+        gguf_ctx_attr = getattr(gguf_model, 'n_ctx', None)
+        gguf_ctx = gguf_ctx_attr() if callable(gguf_ctx_attr) else (gguf_ctx_attr if gguf_ctx_attr is not None else 32768)
+        gguf_reply_cap = max(256, int(os.getenv("GGUF_MAX_TOKENS_CAP", "8192")))
+        gguf_ctx_reserve = max(512, int(os.getenv("GGUF_CONTEXT_RESERVE", "1536")))
 
-        if prompt_tokens_est > gguf_ctx - 256:
+        def _estimate_gguf_prompt_tokens(msgs):
+            # 1) 모델 토크나이저 기반 추정 (가능하면 사용)
+            try:
+                flat_parts = []
+                for m in msgs:
+                    role = m.get("role", "user")
+                    content = m.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for p in content:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                text_parts.append(str(p.get("text", "")))
+                        content = "\n".join(text_parts)
+                    flat_parts.append(f"{role}: {str(content)}")
+                flat_text = "\n".join(flat_parts).encode("utf-8", errors="ignore")
+                toks = gguf_model.tokenize(flat_text, add_bos=True)
+                return len(toks) + 256  # chat template/여유 버퍼
+            except Exception:
+                # 2) 폴백: 한국어 기준 보수 추정
+                total_chars = 0
+                for m in msgs:
+                    content = m.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for p in content:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                text_parts.append(str(p.get("text", "")))
+                        content = "\n".join(text_parts)
+                    total_chars += len(str(content))
+                return int(total_chars * 1.1) + 512
+
+        prompt_tokens_est = _estimate_gguf_prompt_tokens(api_messages)
+        safe_max = max(256, gguf_ctx - prompt_tokens_est - gguf_ctx_reserve)
+        actual_max_tokens = min(max_tokens, safe_max, gguf_reply_cap)
+
+        if prompt_tokens_est > gguf_ctx - gguf_ctx_reserve:
             return jsonify({"error": f"프롬프트가 너무 깁니다 (~{prompt_tokens_est}토큰). 스킬 수를 줄이거나 히스토리를 초기화해주세요. (GGUF ctx: {gguf_ctx})"}), 400
 
         answer, err = gguf_chat(
@@ -2800,8 +4128,60 @@ def api_chat():
             max_tokens=actual_max_tokens,
             stop_flag=chat_stop_flag,
         )
+        # GGUF 디코드 실패 시: 경량 컨텍스트 + 작은 토큰으로 1회 자동 재시도
+        if err and isinstance(err, str) and ("Failed completely even with batch size 1" in err or "llama.eval(decode)" in err):
+            compact_system = (
+                "당신은 도움이 되는 AI입니다. "
+                "핵심만 간결하게 답하고, 코드 요청이면 실행 가능한 코드만 출력하세요."
+            )
+            compact_messages = [{"role": "system", "content": compact_system}]
+            compact_messages.extend(messages[-6:] if len(messages) > 6 else messages)
+
+            compact_prompt_est = _estimate_gguf_prompt_tokens(compact_messages)
+            compact_safe_max = max(256, gguf_ctx - compact_prompt_est - gguf_ctx_reserve)
+            retry_max = min(2048, max(256, actual_max_tokens // 2), compact_safe_max)
+
+            retry_answer, retry_err = gguf_chat(
+                compact_messages,
+                temperature=temperature_map[min(effort, 3)],
+                max_tokens=retry_max,
+                stop_flag=chat_stop_flag,
+            )
+            if not retry_err and retry_answer:
+                answer = retry_answer
+                err = None
+                prompt_tokens_est = compact_prompt_est
+                actual_max_tokens = retry_max
+
         if err:
             return jsonify({"error": err}), 500
+
+        # GGUF: <think> 사고만 있고 본문 없이 잘린 경우 재시도
+        import re as _re
+        if answer and answer.strip():
+            stripped = answer.strip()
+            has_open = "<think>" in stripped
+            has_close = "</think>" in stripped
+            think_only_gguf = False
+            if has_open and not has_close:
+                think_only_gguf = True
+            elif has_open and has_close:
+                after = _re.sub(r'<think>[\s\S]*?</think>\s*', '', stripped).strip()
+                if len(after) < 20:
+                    think_only_gguf = True
+            if think_only_gguf:
+                retry_max = min(actual_max_tokens * 2, safe_max)
+                if retry_max > actual_max_tokens:
+                    retry_answer, retry_err = gguf_chat(
+                        api_messages,
+                        temperature=temperature_map[min(effort, 3)],
+                        max_tokens=retry_max,
+                        stop_flag=chat_stop_flag,
+                    )
+                    if not retry_err and retry_answer:
+                        answer = retry_answer
+
+        answer = _normalize_gguf_artifact_answer(answer, gguf_artifact_request)
 
         return jsonify({
             "content": answer,
@@ -2810,73 +4190,283 @@ def api_chat():
             "tokens_budget": f"prompt~{prompt_tokens_est}, max_tokens={actual_max_tokens}, ctx={gguf_ctx}",
         })
 
-    # ===== 회사 API: HTTP 요청 =====
+
+    # ===== 회사 API: HTTP 요청 (폴백 체인 지원) =====
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    try:
-        resp = req.post(
-            api_url,
-            headers=headers,
-            json={
-                "model": model,
-                "messages": api_messages,
-                "temperature": temperature_map[min(effort, 3)],
-                "max_tokens": max_tokens,
-                "stream": False,
-            },
-            timeout=120,
-            verify=False,  # 폐쇄망 인증서 문제 대응
-        )
-        resp.raise_for_status()
-        result = resp.json()
+    # 폴백 체인 구성: 현재 모델 → 대체 모델들
+    primary_reg_key = get_registry_key_for_env(env_id)
+    if primary_reg_key:
+        fallback_keys = [primary_reg_key] + FALLBACK_CHAINS.get(primary_reg_key, [])
+    else:
+        fallback_keys = []  # GGUF 등은 폴백 없음
 
-        # 응답 추출
-        truncated = False
-        if "choices" in result and len(result["choices"]) > 0:
-            answer = result["choices"][0].get("message", {}).get("content", "")
-            finish_reason = result["choices"][0].get("finish_reason", "")
-            if finish_reason == "length":
-                truncated = True
-        elif "error" in result:
-            answer = f"API 에러: {result['error']}"
-        else:
-            answer = f"예상치 못한 응답: {json.dumps(result, ensure_ascii=False, indent=2)}"
+    # 이미지가 있으면 non-vision 폴백에서 이미지 제거 (텍스트만 전송)
+    def _prepare_messages_for_model(reg_key, msgs):
+        """VL 모델이 아닌 경우 멀티모달 content를 텍스트로 되돌리기"""
+        cap = MODEL_REGISTRY.get(reg_key, {}).get("capabilities", set())
+        if "vision" not in cap:
+            clean = []
+            for m in msgs:
+                if isinstance(m.get("content"), list):
+                    text_parts = [p["text"] for p in m["content"] if p.get("type") == "text"]
+                    clean.append({**m, "content": "\n".join(text_parts)})
+                else:
+                    clean.append(m)
+            return clean
+        return msgs
 
-        resp_data = {
-            "content": answer,
-            "loaded_skills": loaded,
-            "system_prompt_length": len(system_prompt),
-        }
-        if truncated:
-            resp_data["truncated"] = True
-        return jsonify(resp_data)
+    fallback_used = False
+    fallback_from = ""
+    actual_model_used = model
+    last_error = None
 
-    except req.exceptions.Timeout:
-        return jsonify({"error": "API 응답 시간 초과 (120초). max_tokens를 줄이거나 API 서버 상태를 확인하세요."}), 504
-    except req.exceptions.ConnectionError as e:
-        return jsonify({"error": f"API 연결 실패: {str(e)}. URL을 확인하세요."}), 502
-    except req.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response is not None else 0
-        if code == 401 or code == 403:
-            return jsonify({"error": f"인증 실패 ({code}): TOKEN.TXT의 API 키를 확인하세요."}), code
-        # 서버 에러 상세 내용 추출
-        detail = ""
-        if e.response is not None:
+    models_tried = []
+    if fallback_keys:
+        for attempt, reg_key in enumerate(fallback_keys[:3]):  # 최대 3회
+            reg = MODEL_REGISTRY[reg_key]
+            try_url = reg["url"]
+            try_model = reg["model"]
+            try_msgs = _prepare_messages_for_model(reg_key, api_messages)
+            models_tried.append(try_model)
+
             try:
-                body = e.response.json()
-                detail = json.dumps(body, ensure_ascii=False, indent=2)
-            except Exception:
-                detail = e.response.text[:500] if e.response.text else ""
-        prompt_chars = len(system_prompt) + sum(len(m.get("content","")) for m in api_messages)
-        err_msg = f"API HTTP 에러 ({code}): {str(e)}"
-        if detail:
-            err_msg += f"\n서버 응답: {detail}"
-        err_msg += f"\n[요청 크기: system_prompt={len(system_prompt)}자, 전체 메시지={prompt_chars}자, model={model}]"
-        return jsonify({"error": err_msg}), code or 500
-    except Exception as e:
-        return jsonify({"error": f"오류 발생: {str(e)}"}), 500
+                resp = req.post(
+                    try_url,
+                    headers=headers,
+                    json={
+                        "model": try_model,
+                        "messages": try_msgs,
+                        "temperature": temperature_map[min(effort, 3)],
+                        "max_tokens": max_tokens,
+                        "stream": False,
+                    },
+                    timeout=120,
+                    verify=False,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+
+                # 응답 추출
+                truncated = False
+                if "choices" in result and len(result["choices"]) > 0:
+                    answer = result["choices"][0].get("message", {}).get("content", "")
+                    finish_reason = result["choices"][0].get("finish_reason", "")
+                    if finish_reason == "length":
+                        truncated = True
+
+                    # <think> 사고 과정만 있고 본문이 없이 잘린 경우 자동 재시도
+                    import re as _re
+                    think_only = False
+                    if truncated and answer.strip():
+                        # </think> 닫히지 않았거나, </think> 후 본문이 비어있는 경우
+                        stripped = answer.strip()
+                        has_open_think = "<think>" in stripped
+                        has_close_think = "</think>" in stripped
+                        if has_open_think and not has_close_think:
+                            think_only = True
+                        elif has_open_think and has_close_think:
+                            after_think = _re.sub(r'<think>[\s\S]*?</think>\s*', '', stripped).strip()
+                            if len(after_think) < 20:
+                                think_only = True
+
+                    if think_only and max_tokens < 32768:
+                        # 토큰 2배로 늘려서 재시도 (최대 32768)
+                        retry_max = min(max_tokens * 2, 32768)
+                        try:
+                            retry_resp = req.post(
+                                try_url,
+                                headers=headers,
+                                json={
+                                    "model": try_model,
+                                    "messages": try_msgs,
+                                    "temperature": temperature_map[min(effort, 3)],
+                                    "max_tokens": retry_max,
+                                    "stream": False,
+                                },
+                                timeout=180,
+                                verify=False,
+                            )
+                            retry_resp.raise_for_status()
+                            retry_result = retry_resp.json()
+                            if "choices" in retry_result and len(retry_result["choices"]) > 0:
+                                answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                                finish_reason = retry_result["choices"][0].get("finish_reason", "")
+                                truncated = finish_reason == "length"
+                        except Exception:
+                            pass  # 재시도 실패 시 원래 응답 사용
+
+                    if attempt > 0:
+                        fallback_used = True
+                        fallback_from = models_tried[0]
+                        actual_model_used = try_model
+
+                    resp_data = {
+                        "content": answer,
+                        "loaded_skills": loaded,
+                        "system_prompt_length": len(system_prompt),
+                        "model_used": try_model,
+                    }
+                    if auto_routed:
+                        resp_data["auto_routed"] = True
+                        resp_data["route_reason"] = route_reason
+                    if auto_format or auto_style:
+                        resp_data["auto_format"] = output_format if auto_format else None
+                        resp_data["auto_style"] = writing_style if auto_style else None
+                        resp_data["auto_fmt_reason"] = auto_fmt_reason
+                    if fallback_used:
+                        resp_data["fallback_used"] = True
+                        resp_data["fallback_from"] = fallback_from
+                    if truncated:
+                        resp_data["truncated"] = True
+                    return jsonify(resp_data)
+
+                elif "error" in result:
+                    last_error = f"API 에러: {result['error']}"
+                    continue  # 다음 폴백 시도
+                else:
+                    last_error = f"예상치 못한 응답: {json.dumps(result, ensure_ascii=False, indent=2)}"
+                    continue
+
+            except req.exceptions.Timeout:
+                last_error = "API 응답 시간 초과 (120초)"
+                continue
+            except req.exceptions.ConnectionError as e:
+                last_error = f"API 연결 실패: {str(e)}"
+                continue
+            except req.exceptions.HTTPError as e:
+                code = e.response.status_code if e.response is not None else 0
+                if code == 401 or code == 403:
+                    return jsonify({"error": f"인증 실패 ({code}): TOKEN.TXT의 API 키를 확인하세요."}), code
+                last_error = f"HTTP {code}: {str(e)}"
+                if e.response is not None:
+                    try:
+                        detail = json.dumps(e.response.json(), ensure_ascii=False)
+                        last_error += f" - {detail[:300]}"
+                    except Exception:
+                        pass
+                continue
+            except Exception as e:
+                last_error = f"오류: {str(e)}"
+                continue
+
+        # 모든 폴백 실패
+        return jsonify({
+            "error": f"모든 모델 시도 실패 ({', '.join(models_tried)}): {last_error}"
+        }), 500
+
+    else:
+        # 폴백 체인 없는 경우 (GGUF 등) → 기존 단일 요청
+        try:
+            resp = req.post(
+                api_url,
+                headers=headers,
+                json={
+                    "model": model,
+                    "messages": api_messages,
+                    "temperature": temperature_map[min(effort, 3)],
+                    "max_tokens": max_tokens,
+                    "stream": False,
+                },
+                timeout=120,
+                verify=False,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+
+            truncated = False
+            if "choices" in result and len(result["choices"]) > 0:
+                answer = result["choices"][0].get("message", {}).get("content", "")
+                finish_reason = result["choices"][0].get("finish_reason", "")
+                if finish_reason == "length":
+                    truncated = True
+
+                # <think> 사고 과정만 있고 본문이 없이 잘린 경우 자동 재시도
+                import re as _re
+                think_only = False
+                if truncated and answer.strip():
+                    stripped = answer.strip()
+                    has_open_think = "<think>" in stripped
+                    has_close_think = "</think>" in stripped
+                    if has_open_think and not has_close_think:
+                        think_only = True
+                    elif has_open_think and has_close_think:
+                        after_think = _re.sub(r'<think>[\s\S]*?</think>\s*', '', stripped).strip()
+                        if len(after_think) < 20:
+                            think_only = True
+
+                if think_only and max_tokens < 32768:
+                    retry_max = min(max_tokens * 2, 32768)
+                    try:
+                        retry_resp = req.post(
+                            api_url,
+                            headers=headers,
+                            json={
+                                "model": model,
+                                "messages": api_messages,
+                                "temperature": temperature_map[min(effort, 3)],
+                                "max_tokens": retry_max,
+                                "stream": False,
+                            },
+                            timeout=180,
+                            verify=False,
+                        )
+                        retry_resp.raise_for_status()
+                        retry_result = retry_resp.json()
+                        if "choices" in retry_result and len(retry_result["choices"]) > 0:
+                            answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                            finish_reason = retry_result["choices"][0].get("finish_reason", "")
+                            truncated = finish_reason == "length"
+                    except Exception:
+                        pass
+
+            elif "error" in result:
+                answer = f"API 에러: {result['error']}"
+            else:
+                answer = f"예상치 못한 응답: {json.dumps(result, ensure_ascii=False, indent=2)}"
+
+            resp_data = {
+                "content": answer,
+                "loaded_skills": loaded,
+                "system_prompt_length": len(system_prompt),
+                "model_used": model,
+            }
+            if auto_routed:
+                resp_data["auto_routed"] = True
+                resp_data["route_reason"] = route_reason
+            if auto_format or auto_style:
+                resp_data["auto_format"] = output_format if auto_format else None
+                resp_data["auto_style"] = writing_style if auto_style else None
+                resp_data["auto_fmt_reason"] = auto_fmt_reason
+            if truncated:
+                resp_data["truncated"] = True
+            return jsonify(resp_data)
+
+        except req.exceptions.Timeout:
+            return jsonify({"error": "API 응답 시간 초과 (120초). max_tokens를 줄이거나 API 서버 상태를 확인하세요."}), 504
+        except req.exceptions.ConnectionError as e:
+            return jsonify({"error": f"API 연결 실패: {str(e)}. URL을 확인하세요."}), 502
+        except req.exceptions.HTTPError as e:
+            code = e.response.status_code if e.response is not None else 0
+            if code == 401 or code == 403:
+                return jsonify({"error": f"인증 실패 ({code}): TOKEN.TXT의 API 키를 확인하세요."}), code
+            detail = ""
+            if e.response is not None:
+                try:
+                    body = e.response.json()
+                    detail = json.dumps(body, ensure_ascii=False, indent=2)
+                except Exception:
+                    detail = e.response.text[:500] if e.response.text else ""
+            prompt_chars = sum(len(m.get("content","")) for m in api_messages)
+            err_msg = f"API HTTP 에러 ({code}): {str(e)}"
+            if detail:
+                err_msg += f"\n서버 응답: {detail}"
+            err_msg += f"\n[요청 크기: 전체 메시지={prompt_chars}자, model={model}]"
+            return jsonify({"error": err_msg}), code or 500
+        except Exception as e:
+            return jsonify({"error": f"오류 발생: {str(e)}"}), 500
 
 
 # ============================================
@@ -2895,6 +4485,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sidebar{width:250px;background:#fff;border-right:1px solid #e5e3de;padding:20px 16px;display:flex;flex-direction:column;overflow-y:auto;transition:width .2s ease,padding .2s ease;flex-shrink:0}
 .sidebar.collapsed{width:48px;padding:12px 6px;overflow:hidden}
 .sidebar.collapsed .sidebar-inner{display:none}
+.sidebar.collapsed .sidebar-file-panel{display:none!important}
 .sidebar.collapsed .sidebar-logo{display:none}
 .sidebar-toggle{position:absolute;top:12px;left:250px;width:24px;height:24px;border-radius:0 6px 6px 0;border:1px solid #e5e3de;border-left:none;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;color:#999;z-index:200;transition:left .2s ease}
 .sidebar-toggle:hover{background:#eef2ff;color:#6366f1}
@@ -2997,6 +4588,18 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .auto-skill-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#eef2ff;color:#6366f1;border:1px solid #c7d2fe;margin:2px}
 .auto-skill-preview{margin-top:6px;padding:8px 12px;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:8px;font-size:12px;display:none}
 .auto-skill-preview.show{display:block}
+/* PPT Suggest Banner */
+.ppt-suggest-banner{position:relative;margin:0 auto 8px;max-width:760px;padding:14px 18px 14px 50px;background:linear-gradient(135deg,#eef2ff 0%,#f5f3ff 50%,#fdf2f8 100%);border:1px solid #c7d2fe;border-radius:14px;box-shadow:0 2px 12px rgba(99,102,241,.12);overflow:hidden;animation:pptBannerSlide .5s cubic-bezier(.16,1,.3,1);cursor:default;transition:opacity .4s,transform .4s}
+.ppt-suggest-banner.hiding{opacity:0;transform:translateY(-12px)}
+.ppt-suggest-banner .ppt-banner-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:22px;animation:pptIconPulse 2s ease-in-out infinite}
+.ppt-suggest-banner .ppt-banner-title{font-size:13px;font-weight:700;color:#4338ca;margin-bottom:4px}
+.ppt-suggest-banner .ppt-banner-hint{font-size:12px;color:#6b7280;line-height:1.5}
+.ppt-suggest-banner .ppt-banner-hint em{font-style:normal;color:#6366f1;font-weight:600;cursor:pointer;border-bottom:1px dashed #a5b4fc;transition:color .2s}
+.ppt-suggest-banner .ppt-banner-hint em:hover{color:#4338ca}
+.ppt-suggest-banner .ppt-banner-close{position:absolute;top:6px;right:10px;background:none;border:none;font-size:14px;color:#a5b4fc;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .2s}
+.ppt-suggest-banner .ppt-banner-close:hover{background:#e0e7ff;color:#4338ca}
+@keyframes pptBannerSlide{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pptIconPulse{0%,100%{transform:translateY(-50%) scale(1)}50%{transform:translateY(-50%) scale(1.15)}}
 /* Messages */
 .messages{margin-top:8px}
 .msg{margin-bottom:8px;padding:8px 12px;border-radius:10px;line-height:1.5;font-size:13px;word-wrap:break-word}
@@ -3017,6 +4620,26 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg hr{border:none;border-top:1px solid #e5e3de;margin:6px 0}
 .msg blockquote{border-left:3px solid #6366f1;margin:4px 0;padding:2px 8px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+/* 피드백 버튼 */
+.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+.msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
+.msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
+.msg-feedback button.fb-selected-good{background:#e8f5e9;color:#2e7d32;border-color:#81c784}
+.msg-feedback button.fb-selected-bad{background:#fce4ec;color:#c62828;border-color:#ef9a9a}
+/* 피드백 모달 */
+#feedbackModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center}
+#feedbackModal.show{display:flex}
+.fb-modal{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:fbSlideIn .25s ease}
+@keyframes fbSlideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.fb-modal h3{margin:0 0 6px;font-size:18px;color:#333}
+.fb-modal .fb-rating-display{font-size:24px;margin-bottom:12px}
+.fb-modal textarea{width:100%;height:100px;border:1.5px solid #ddd;border-radius:10px;padding:10px 12px;font-size:13px;resize:vertical;font-family:inherit;transition:border-color .2s}
+.fb-modal textarea:focus{outline:none;border-color:#6366f1}
+.fb-modal .fb-hint{font-size:11px;color:#999;margin-top:4px}
+.fb-modal .fb-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.fb-modal .fb-btn{padding:8px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.fb-modal .fb-btn-cancel{background:#f0f0f0;color:#666}.fb-modal .fb-btn-cancel:hover{background:#e0e0e0}
+.fb-modal .fb-btn-submit{background:#6366f1;color:#fff}.fb-modal .fb-btn-submit:hover{background:#4f46e5}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
 .msg .skill-info{font-size:10px;color:#6366f1;margin-top:4px}
 .typing{display:inline-flex;gap:4px;padding:8px 14px}
@@ -3047,6 +4670,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .env-btn .env-name{font-weight:700;font-size:14px;margin-bottom:2px}
 .env-btn .env-model{font-size:11px;color:#888}
 .env-btn.selected .env-model{color:#6366f1}
+.uio-enter-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);text-decoration:none;cursor:pointer;transition:all .2s;border:none;box-shadow:0 2px 8px rgba(99,102,241,.3)}
+.uio-enter-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.5);background:linear-gradient(135deg,#818cf8,#a78bfa)}
 .token-status{font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:16px}
 .token-status.ok{background:#ecfdf5;color:#059669}
 .token-status.missing{background:#fef2f2;color:#dc2626}
@@ -3079,6 +4704,13 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .pptx-gen-btn.secondary{background:#e0e7ff;color:#4338ca}
 .pptx-gen-btn.secondary:hover{background:#c7d2fe}
 .pptx-gen-status{font-size:11px;color:#6b7280}
+.pptx-remake-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 10px 10px;flex-wrap:wrap}
+.pptx-remake-label{font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap}
+.pptx-remake-btn{background:#fff;color:#4338ca;border:1px solid #c7d2fe;border-radius:16px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all .2s;font-weight:500;white-space:nowrap}
+.pptx-remake-btn:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-1px)}
+/* PPT 스타일 드롭다운 */
+.ppt-style-drop{display:none}
+.ppt-ref-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:4px}
 /* CSV Upload */
 .csv-section{margin-bottom:24px}
 /* csv-upload-area 제거됨 → 채팅 📎 첨부로 대체 */
@@ -3162,13 +4794,17 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .drawio-preview code{font-size:11px}
 .send-btn.stop-mode{background:#e74c3c;animation:pulse-stop 1.2s infinite}
 @keyframes pulse-stop{0%,100%{opacity:1}50%{opacity:.7}}
-.uploaded-files-header{font-size:12px;font-weight:600;color:#555;padding:6px 0;border-bottom:1px solid #eee;margin-bottom:4px}
-.uploaded-file-item{display:flex;align-items:center;gap:6px;padding:5px 4px;border-bottom:1px solid #f0f0f0;font-size:12px}
-.ufi-icon{font-size:16px;flex-shrink:0}
+.sidebar-file-panel{margin-top:auto;padding:8px 8px 0;border-top:1px solid #e5e3de;max-height:220px;overflow-y:auto}
+.uploaded-files-header{font-size:11px;font-weight:600;color:#555;padding:4px 0;border-bottom:1px solid #eee;margin-bottom:2px;display:flex;align-items:center;justify-content:space-between}
+.uploaded-file-item{display:flex;align-items:center;gap:4px;padding:3px 2px;border-bottom:1px solid #f0f0f0;font-size:11px}
+.ufi-icon{font-size:14px;flex-shrink:0}
 .ufi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333;cursor:help}
 .ufi-size{color:#999;font-size:10px;flex-shrink:0}
-.ufi-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:13px;padding:0 2px}
+.ufi-remove{background:none;border:none;color:#ccc;cursor:pointer;font-size:12px;padding:0 2px}
 .ufi-remove:hover{color:#e74c3c}
+.ufi-pending{opacity:.6}
+.ufi-drm{opacity:.7;border-left:2px solid #e67e22;padding-left:4px}
+.ufi-drm .ufi-name{color:#e67e22}
 .think-box{margin:8px 0 12px;border:1px solid #d4c8f0;border-radius:8px;background:#f8f5ff;overflow:hidden}
 .think-box summary{cursor:pointer;padding:8px 12px;font-size:12px;font-weight:600;color:#7c5cbf;background:#f0ebfa;user-select:none}
 .think-box summary:hover{background:#e8e0f6}
@@ -3249,16 +4885,42 @@ body.rp-collapsed .chat-box-fixed{right:0}
 #introSkip{position:absolute;bottom:40px;right:40px;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.3);color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;cursor:pointer;transition:all .2s;z-index:10000}
 #introSkip:hover{background:rgba(255,255,255,.3)}
 #introProgress{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#6366f1,#a855f7);width:0;transition:width .1s linear}
+/* UIO 컨테이너 */
+#uioContainer{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9000;display:none;background:#0f151e}
+#uioContainer iframe{width:100%;height:100%;border:none}
+#uioBackBtn{position:fixed;top:16px;left:16px;z-index:9001;padding:10px 20px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(18,27,40,.85);backdrop-filter:blur(8px);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+#uioBackBtn:hover{background:rgba(99,102,241,.3);border-color:#6366f1}
 </style>
 </head>
 <body>
+<!-- 피드백 모달 -->
+<div id="feedbackModal">
+  <div class="fb-modal">
+    <h3 id="fbModalTitle">피드백</h3>
+    <div class="fb-rating-display" id="fbRatingDisplay"></div>
+    <textarea id="fbComment" placeholder="어떤 점이 좋았나요? 또는 어떤 점을 개선하면 좋을까요? (선택사항)"></textarea>
+    <div class="fb-hint">피드백은 서비스 개선에 활용됩니다</div>
+    <div class="fb-actions">
+      <button class="fb-btn fb-btn-cancel" onclick="closeFeedbackModal()">취소</button>
+      <button class="fb-btn fb-btn-submit" onclick="submitFeedback()">보내기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 인트로 비디오 오버레이 -->
 <div id="introOverlay">
   <video id="introVideo" autoplay muted playsinline>
     <source src="/static/intro.mp4" type="video/mp4">
   </video>
   <div id="introProgress"></div>
-  <button id="introSkip" onclick="(function(b){var o=document.getElementById('introOverlay');if(!o)return;var v=document.getElementById('introVideo');if(v)v.pause();o.classList.add('fade-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o);},700);})(this)">건너뛰기 ▶</button>
+  <button id="introSkip" onclick="dismissIntroAndShowMode()">건너뛰기 ▶</button>
+</div>
+
+
+<!-- UIO 2D 픽셀 컨테이너 -->
+<div id="uioContainer">
+  <iframe id="uioFrame" src="about:blank"></iframe>
+  <button id="uioBackBtn" onclick="toggleUioMode()">← 접기</button>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -3283,6 +4945,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
       <strong>SKILL.md</strong> 파일이 있는 스킬만 ✅ 표시됩니다.
     </div>
   </div>
+  <div id="fileListPanel" class="sidebar-file-panel" style="display:none"></div>
   <div class="sidebar-footer">
     <div class="credits">🔬 Demos(민중) Alpha 0.8</div>
   </div>
@@ -3295,6 +4958,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
+      <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
       <span id="status" class="status off">⚪ 환경 미선택</span>
     </div>
   </div>
@@ -3307,9 +4971,8 @@ body.rp-collapsed .chat-box-fixed{right:0}
         <!-- JS에서 동적 생성 -->
       </div>
 
-      <!-- 업로드된 파일 목록 (채팅 입력 📎에서 추가됨) -->
+      <!-- 업로드된 파일 목록은 사이드바 하단으로 이동 -->
       <div id="csvInfoPanel" style="display:none"></div>
-      <div id="fileListPanel" style="display:none"></div>
 
       <div class="section-label">분야 선택</div>
       <div class="tag-row" id="tagRow"></div>
@@ -3350,11 +5013,12 @@ body.rp-collapsed .chat-box-fixed{right:0}
         <div id="styleChips"></div>
         <textarea id="writingStyle"></textarea>
         <div class="fmt-btns">
-          <div class="fmt-btn selected" data-f="code"></div>
-          <div class="fmt-btn" data-f="code-fix"></div>
-          <div class="fmt-btn" data-f="analysis"></div>
-          <div class="fmt-btn" data-f="report"></div>
-          <div class="fmt-btn" data-f="step-by-step"></div>
+          <div class="fmt-btn selected" data-f="auto" onclick="selFmt(this)">🤖 자동</div>
+          <div class="fmt-btn" data-f="code" onclick="selFmt(this)">코드</div>
+          <div class="fmt-btn" data-f="code-fix" onclick="selFmt(this)">코드수정</div>
+          <div class="fmt-btn" data-f="analysis" onclick="selFmt(this)">분석</div>
+          <div class="fmt-btn" data-f="report" onclick="selFmt(this)">보고서</div>
+          <div class="fmt-btn" data-f="step-by-step" onclick="selFmt(this)">단계별</div>
         </div>
       </div>
 
@@ -3377,6 +5041,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
         <button class="quick-btn" onclick="qp('논문 스타일로 정리해줘')">📝 논문 정리</button>
       </div>
 
+      <div id="pptSuggestArea"></div>
       <div class="messages" id="msgs"></div>
     </div>
   </div>
@@ -3385,13 +5050,13 @@ body.rp-collapsed .chat-box-fixed{right:0}
   <div class="chat-box-fixed">
     <div class="chat-box-fixed-inner">
       <div class="chat-attach-preview" id="chatAttachPreview" style="display:none"></div>
-      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';checkPptStyleVisibility()"></textarea>
       <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <button class="attach-btn" onclick="document.getElementById('chatFileInput').click()" title="파일 첨부">📎</button>
           <select class="chat-dropdown" id="chatStyleDrop" onchange="applyChatStyle(this.value)" title="작성 스타일">
-            <option value="">✍️ 스타일</option>
+            <option value="">🤖 자동</option>
             <option value="간결하고 핵심만. 불필요한 설명 생략.">⚡ 간결</option>
             <option value="상세하고 친절하게. 원리, 배경, 예시 포함.">📖 상세</option>
             <option value="바로 복붙해서 쓸 수 있게. 실전 위주, 이론 최소화.">🔨 실용적</option>
@@ -3402,12 +5067,26 @@ body.rp-collapsed .chat-box-fixed{right:0}
             <option value="데이터 스토리텔링. 숫자→의미→액션 순서로 해석.">📊 데이터</option>
           </select>
           <select class="chat-dropdown" id="chatFormatDrop" onchange="applyChatFormat(this.value)" title="출력 형식">
+            <option value="auto">🤖 자동</option>
             <option value="code">💻 코드</option>
             <option value="code-fix">🔧 수정</option>
             <option value="analysis">📊 분석</option>
             <option value="report">📄 보고서</option>
             <option value="step-by-step">📝 단계별</option>
           </select>
+          <select class="chat-dropdown ppt-style-drop" id="pptStyleDrop" onchange="applyPptStyle(this.value)" title="PPT 디자인 스타일">
+            <option value="">📽️ PPT:자동</option>
+            <option value="minimal">⬜ 미니멀</option>
+            <option value="corporate">🏢 기업용</option>
+            <option value="colorful">🎨 컬러풀</option>
+            <option value="dark">🌙 다크</option>
+            <option value="academic">🎓 학술</option>
+            <option value="startup">🚀 스타트업</option>
+            <option value="ref">📎 참고PPT</option>
+          </select><span id="pptRefBadge" class="ppt-ref-badge" style="display:none">📎 참고스타일 적용중</span>
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="체크하면 모델이 답변 전에 깊이 사고합니다 (응답 느림)">
+            <input type="checkbox" id="thinkToggle" style="margin:0;accent-color:#7c5cbf">💭사고
+          </label>
           <span style="font-size:11px;color:#bbb">Enter 전송</span>
         </div>
         <button class="send-btn" onclick="handleSendStop()" id="sendBtn">▶</button>
@@ -3512,12 +5191,14 @@ body.rp-collapsed .chat-box-fixed{right:0}
 <script>
 let envs = {};
 let hasToken = false;
-let selEnv = '';
+let selEnv = 'auto';
 let catalog = {};
 let selDomains = ['bioinformatics','dev-tools','agent-data-ai'];
 let selSkills = [];
 let autoSkillMode = true;  // 기본 ON
-let selFormat = 'code';
+let selFormat = 'auto';
+let formatManualOverride = false;  // 사용자가 수동으로 출력형식을 변경했는지
+let styleManualOverride = false;   // 사용자가 수동으로 스타일을 변경했는지
 let effort = 2;
 let history = [];
 let maxTokens = 8192;
@@ -3537,7 +5218,8 @@ if(lastSessions.length > 0){
     if(s.writingStyle){ document.getElementById('writingStyle').value = s.writingStyle; syncStyleDropToSidebar(); }
     if(s.systemPrompt) document.getElementById('systemPromptInput').value = s.systemPrompt;
     if(s.systemPromptId){ currentPromptId=s.systemPromptId; renderPromptChips(); }
-    if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
+    if(s.thinkMode!==undefined) document.getElementById('thinkToggle').checked=s.thinkMode;
+    if(s.selFormat){ selFormat=s.selFormat; formatManualOverride=(selFormat!=='auto'); document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
     if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; }
     if(s.selEnv){ selEnv=s.selEnv; renderEnvs(); updateStatus(); }
     if(s.selDomains && s.selDomains.length>0){ selDomains=s.selDomains; renderTags(); renderSkills(); }
@@ -3583,9 +5265,16 @@ Promise.all([
 function renderEnvs(){
   const row = document.getElementById('envRow');
   row.innerHTML = '';
-  const icons = {'dev':'🧪','prod':'🚀','common':'🌐'};
+  const icons = {'dev':'🧪','prod':'🚀','common':'🌐','vl-large':'👁️','vl-medium':'👁️','vl-fast':'👁️'};
   // GGUF 로컬 모델은 동적으로 아이콘 매핑
   for(const id of Object.keys(envs)){ if(id.startsWith('gguf-')) icons[id]='💻'; }
+  // AUTO 버튼 (맨 앞에 추가)
+  const autoBtn = document.createElement('div');
+  autoBtn.className = 'env-btn' + (selEnv==='auto'?' selected':'');
+  autoBtn.innerHTML = '<div class="env-name">🤖 AUTO</div><div class="env-model">자동 모델 선택</div>';
+  autoBtn.onclick = ()=>{ selEnv='auto'; renderEnvs(); updateStatus(); };
+  autoBtn.style.borderColor = selEnv==='auto' ? '#6366f1' : '';
+  row.appendChild(autoBtn);
   for(const [id, env] of Object.entries(envs)){
     const btn = document.createElement('div');
     btn.className = 'env-btn' + (selEnv===id?' selected':'');
@@ -3611,7 +5300,10 @@ function renderTokenStatus(){
 }
 function updateStatus(){
   const st = document.getElementById('status');
-  if(selEnv && envs[selEnv]){
+  if(selEnv === 'auto'){
+    st.className='status on';
+    st.textContent='🤖 AUTO (자동 선택)';
+  } else if(selEnv && envs[selEnv]){
     st.className='status on';
     st.textContent='🟢 ' + envs[selEnv].name;
   } else {
@@ -3793,6 +5485,7 @@ function selFmt(el){
   document.querySelectorAll('.fmt-btn').forEach(b=>b.classList.remove('selected'));
   el.classList.add('selected');
   selFormat = el.dataset.f;
+  formatManualOverride = (selFormat !== 'auto');  // auto 선택 시 자동 모드로 복귀
   syncFormatDropToChat();
 }
 
@@ -3868,21 +5561,93 @@ function stopGeneration(){
   saveCurrentSession();
 }
 
+/* ── PPT 제안 배너 ── */
+let _pptBannerShownCount = 0;
+const _pptSuggestItems = [
+  {icon:'📊', title:'차트/그래프를 포함할까요?', hint:'"매출 데이터를 막대 차트로 넣어줘"', example:'차트/그래프도 포함해서 PPT 만들어줘'},
+  {icon:'📝', title:'그래프 없이 깔끔하게?', hint:'"그래프 없이 텍스트와 표로만 PPT 만들어줘"', example:'그래프 없이 텍스트와 표 위주로 PPT 만들어줘'},
+  {icon:'📋', title:'표(Table)를 넣어볼까요?', hint:'"비교 데이터를 표로 정리해서 넣어줘"', example:'데이터를 표로 정리해서 PPT에 넣어줘'},
+  {icon:'🖼️', title:'이미지/다이어그램도 가능해요!', hint:'"구조도를 슬라이드에 추가해줘"', example:'다이어그램도 포함해서 PPT 만들어줘'},
+  {icon:'📈', title:'데이터 시각화를 추가할까요?', hint:'"트렌드를 꺾은선 그래프로 보여줘"', example:'데이터를 시각화해서 PPT에 넣어줘'},
+  {icon:'🎨', title:'심플한 디자인으로?', hint:'"심플하게 핵심 내용만 PPT 만들어줘"', example:'디자인 심플하게 핵심만 PPT 만들어줘'},
+  {icon:'🍩', title:'원형/도넛 차트는 어때요?', hint:'"비율을 도넛 차트로 만들어줘"', example:'비율 데이터를 원형 차트로 PPT에 넣어줘'},
+  {icon:'📉', title:'비교 차트를 넣어볼까요?', hint:'"전년 대비 성장률을 비교 차트로"', example:'비교 차트를 포함해서 PPT 만들어줘'},
+];
+
+const _pptNoVisualItems = [
+  {icon:'📝', title:'그래프 없이도 만들 수 있어요!', hint:'"그래프 없이 텍스트와 표로만 PPT 만들어줘"', example:'그래프 없이 텍스트와 표 위주로 PPT 다시 만들어줘'},
+  {icon:'🎨', title:'심플한 PPT는 어때요?', hint:'"심플하게 핵심 내용만 PPT로"', example:'디자인 심플하게 핵심만 PPT 만들어줘'},
+];
+const _pptVisualItems = [
+  {icon:'📊', title:'그래프를 추가해볼까요?', hint:'"차트/그래프도 포함해서 PPT 만들어줘"', example:'차트/그래프도 포함해서 PPT 다시 만들어줘'},
+  {icon:'📈', title:'데이터 시각화는 어때요?', hint:'"데이터를 시각화해서 PPT에 넣어줘"', example:'데이터를 시각화해서 PPT에 넣어줘'},
+];
+
+function _showPptSuggestBanner(mode){
+  if(_pptBannerShownCount >= 3) return;
+  _pptBannerShownCount++;
+  const area = document.getElementById('pptSuggestArea');
+  if(!area) return;
+  let pool;
+  if(mode === 'no-visual') pool = _pptNoVisualItems;
+  else if(mode === 'visual') pool = _pptVisualItems;
+  else pool = _pptSuggestItems;
+  const item = pool[Math.floor(Math.random()*pool.length)];
+  const banner = document.createElement('div');
+  banner.className = 'ppt-suggest-banner';
+  banner.innerHTML = `<span class="ppt-banner-icon">${item.icon}</span>`
+    + `<div class="ppt-banner-title">${item.title}</div>`
+    + `<div class="ppt-banner-hint"><em onclick="_usePptSuggestion(this,'${item.example.replace(/'/g,"\\'")}')">${item.hint}</em> 처럼 말해보세요!</div>`
+    + `<button class="ppt-banner-close" onclick="_closePptBanner(this)" title="닫기">✕</button>`;
+  area.innerHTML = '';
+  area.appendChild(banner);
+  setTimeout(()=>{
+    if(banner.parentNode){
+      banner.classList.add('hiding');
+      setTimeout(()=>{ if(banner.parentNode) banner.remove(); }, 400);
+    }
+  }, 8000);
+}
+
+function _closePptBanner(btn){
+  const banner = btn.closest('.ppt-suggest-banner');
+  if(banner){ banner.classList.add('hiding'); setTimeout(()=>banner.remove(), 400); }
+}
+
+function _usePptSuggestion(el, text){
+  const input = document.getElementById('input');
+  if(input){ input.value = text; input.focus(); input.style.height='auto'; input.style.height=input.scrollHeight+'px'; }
+  const banner = el.closest('.ppt-suggest-banner');
+  if(banner){ banner.classList.add('hiding'); setTimeout(()=>banner.remove(), 400); }
+}
+
+const _pptKeywords = /PPT|ppt|파워포인트|프레젠테이션|발표자료|슬라이드\s*만들|피피티/i;
+
 async function send(){
   const el=document.getElementById('input');
   const text=el.value.trim();
   if(!text && chatPendingFiles.length === 0) return;
+
+  if(text && _pptKeywords.test(text)){
+    const hasVisual = /차트|그래프|표|table|chart|graph|시각화|도넛|원형/i.test(text);
+    const hasNoVisual = /그래프\s*없|차트\s*없|텍스트\s*위주|텍스트만|심플하게/i.test(text);
+    _showPptSuggestBanner(hasVisual && !hasNoVisual ? 'visual' : hasNoVisual && !hasVisual ? 'no-visual' : null);
+  }
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
-  // 첨부파일이 있으면 먼저 업로드
+  // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
+  autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
+
+  // 첨부파일이 있으면 먼저 업로드 (파일 확장자 기반 스킬이 autoLoadedSkills에 추가됨)
   let attachedNames = [];
   if(chatPendingFiles.length > 0){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 스킬 구성: 수동 선택 + 파일 프리로드 + 질문 기반 자동 추천
+  // 스킬 구성: 수동 선택 + 파일 기반 자동 + 질문 기반 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [...autoLoadedSkills];  // 파일 첨부/세션 로드로 프리로드된 스킬
+  let autoLoaded = [...autoLoadedSkills];  // 파일 업로드로 새로 감지된 스킬만
 
   // 프리로드 스킬 중 수동/해제 중복 제거
   const manualSet = new Set(skillsToUse);
@@ -3919,10 +5684,10 @@ async function send(){
   document.getElementById('autoSkillPreview').classList.remove('show');
 
   // 자동 로드 안내 (selSkills에는 추가하지 않음 - 1회성 사용)
+  autoLoadedSkills = autoLoaded;
+  renderSkills();
+  updateLoaded();
   if(autoLoaded.length > 0){
-    autoLoadedSkills = autoLoaded;
-    renderSkills();
-    updateLoaded();
     const manualCount = selSkills.length;
     const info = manualCount > 0 ? ` (수동 ${manualCount}개 + 자동 ${autoLoaded.length}개)` : '';
     addMsg('assistant', '🧠 자동 스킬: ' + autoLoaded.join(', ') + info);
@@ -3945,10 +5710,13 @@ async function send(){
       body:JSON.stringify({
         env: selEnv,
         messages:history, skills:skillsToUse, effort,
-        format:selFormat,
-        writing_style:document.getElementById('writingStyle').value.trim(),
+        format: formatManualOverride ? selFormat : 'auto',
+        writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
         system_prompt:document.getElementById('systemPromptInput').value.trim(),
         max_tokens:maxTokens,
+        think_mode: document.getElementById('thinkToggle').checked,
+        ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
+        ppt_ref_design: pptRefDesign,
       })
     });
     const data=await resp.json();
@@ -3958,16 +5726,37 @@ async function send(){
       addMsg('assistant','❌ '+data.error);
     } else {
       let info = '';
+      // 모델 이름 표시 (auto/수동)
+      let modelName = data.model_used || (envs[selEnv] ? envs[selEnv].name : selEnv);
       if(data.loaded_skills && data.loaded_skills.length > 0){
         let extra = data.tokens_budget ? ` [${data.tokens_budget}]` : '';
         let mode = autoLoaded.length > 0 ? '🧠자동' : '✅수동';
-        info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${envs[selEnv].name}] (${data.system_prompt_length}자)${extra}`;
+        info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${modelName}] (${data.system_prompt_length}자)${extra}`;
+      }
+      // 자동 라우팅 표시
+      if(data.auto_routed){
+        info += ` [🤖 자동: ${data.model_used} (${data.route_reason})]`;
+      }
+      // 폴백 표시
+      if(data.fallback_used){
+        info += ` [⚠️ 대체: ${data.fallback_from} → ${data.model_used}]`;
+      }
+      // 자동 형식/스타일 표시
+      if(data.auto_format || data.auto_style){
+        let fmtNames = {'code':'코드','code-fix':'코드수정','analysis':'분석','report':'보고서','step-by-step':'단계별'};
+        let parts = [];
+        if(data.auto_format) parts.push('형식:' + (fmtNames[data.auto_format]||data.auto_format));
+        if(data.auto_style) parts.push('스타일:자동');
+        info += ` [📝 ${parts.join(' / ')}]`;
       }
       let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
-      addMsg('assistant', data.content + truncWarn + info);
+      const assistantDisplayText = data.content + truncWarn + info;
+      const assistantRawForDetect = data.content + truncWarn;
+      addMsg('assistant', assistantDisplayText, assistantRawForDetect);
       history.push({role:'assistant',content:data.content});
       // markdown-mermaid-writing 스킬: ```markdown 블록이 없어도 전체 응답에 MD 다운로드 버튼 추가
-      if(selSkills.includes('markdown-mermaid-writing') && !data.content.includes('```markdown')){
+      // selSkills(수동) 또는 autoLoadedSkills(자동) 모두 체크
+      if((selSkills.includes('markdown-mermaid-writing') || autoLoadedSkills.includes('markdown-mermaid-writing')) && !data.content.includes('```markdown')){
         appendMdDownloadBar(data.content);
       }
     }
@@ -4147,7 +5936,7 @@ function renderMd(text){
   thinkBlocks.forEach((block,i)=>{s=s.replace(`__THINK_${i}__`,block);});
   return s;
 }
-function addMsg(role,text){
+function addMsg(role,text,rawForDetect){
   const c=document.getElementById('msgs');
   const d=document.createElement('div');
   d.className='msg '+role;
@@ -4161,12 +5950,19 @@ function addMsg(role,text){
     pre.appendChild(btn);
   });
   // PPT 코드 블록 감지 → 생성 & 다운로드 버튼 삽입
-  if(role==='assistant') detectAndAddPptxButtons(d, text);
+  if(role==='assistant') detectAndAddPptxButtons(d, (typeof rawForDetect==='string' ? rawForDetect : text));
   // Chart.js 차트 초기화 (data-chart-json 속성이 있는 canvas 탐색)
   d.querySelectorAll('canvas[data-chart-json]').forEach(cv=>{
     try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
     catch(e){cv.parentElement.innerHTML='<p style="color:red;padding:12px;">차트 렌더링 실패: '+e.message+'</p>';}
   });
+  // 피드백 버튼 (assistant 응답에만)
+  if(role==='assistant'){
+    const fbDiv=document.createElement('div');
+    fbDiv.className='msg-feedback';
+    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    d.appendChild(fbDiv);
+  }
   c.scrollIntoView({behavior:'smooth',block:'end'});
 }
 function addTyping(){
@@ -4203,11 +5999,14 @@ function saveCurrentSession(){
     selDomains: selDomains,
     selSkills: selSkills,
     selFormat: selFormat,
+    formatManualOverride: formatManualOverride,
+    styleManualOverride: styleManualOverride,
     effort: effort,
     writingStyle: document.getElementById('writingStyle')?.value || '',
     writingStyleId: activeStyleId || '',
     systemPrompt: document.getElementById('systemPromptInput')?.value || '',
     systemPromptId: currentPromptId || '',
+    thinkMode: document.getElementById('thinkToggle')?.checked || false,
     msgsHtml: document.getElementById('msgs').innerHTML,
     updatedAt: Date.now()
   };
@@ -4375,10 +6174,12 @@ function createNewSession(){
   document.getElementById('systemPromptInput').value='';
   activeStyleId=null;
   currentPromptId=null;
-  selFormat='code';
+  selFormat='auto';
+  formatManualOverride=false;
+  styleManualOverride=false;
   effort=2;
   document.getElementById('effortSlider').value=2;
-  document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f==='code');});
+  document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f==='auto');});
   // 업로드된 파일/CSV 초기화 (이전 세션 데이터 잔류 방지)
   fetch('/api/clear_files', {method:'POST'});
   fetch('/api/clear_csv', {method:'POST'});
@@ -4410,14 +6211,17 @@ function loadSession(id){
   document.getElementById('msgs').innerHTML=s.msgsHtml||'';
   if(s.writingStyle){ document.getElementById('writingStyle').value=s.writingStyle; syncStyleDropToSidebar(); }
   if(s.writingStyleId){ activeStyleId=s.writingStyleId; renderStyleChips(); }
+  styleManualOverride = s.styleManualOverride !== undefined ? s.styleManualOverride : !!s.writingStyle;
   if(s.systemPrompt) document.getElementById('systemPromptInput').value=s.systemPrompt;
-  if(s.selFormat){ selFormat=s.selFormat; document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
+  if(s.thinkMode!==undefined) document.getElementById('thinkToggle').checked=s.thinkMode;
+  if(s.selFormat){ selFormat=s.selFormat; formatManualOverride=(s.formatManualOverride!==undefined ? s.formatManualOverride : selFormat!=='auto'); document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
   if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; updateEffort(); }
   // 저장된 수동 스킬 복원
   if(s.selSkills && s.selSkills.length > 0){ selSkills = [...s.selSkills]; }
   else { selSkills = []; }
   // 대화 히스토리 기반 자동 스킬 프리로드
   autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
   if(autoSkillMode && history.length > 0){
     const lastUser = [...history].reverse().find(m=>m.role==='user');
     if(lastUser){
@@ -4601,6 +6405,18 @@ function renderStyleChips(){
   const container = document.getElementById('styleChips');
   if(!container) return;
   container.innerHTML = '';
+  // 🤖 자동 칩 (맨 앞)
+  const autoChip = document.createElement('span');
+  autoChip.className = 'prompt-chip' + (!styleManualOverride ? ' active' : '');
+  autoChip.innerHTML = '🤖 자동';
+  autoChip.title = '채팅 내용에 따라 자동 선택';
+  autoChip.onclick = () => {
+    activeStyleId = null;
+    styleManualOverride = false;
+    document.getElementById('writingStyle').value = '';
+    renderStyleChips();
+  };
+  container.appendChild(autoChip);
   STYLE_PRESETS.forEach(s => {
     const chip = document.createElement('span');
     chip.className = 'prompt-chip' + (activeStyleId===s.id ? ' active' : '');
@@ -4609,9 +6425,11 @@ function renderStyleChips(){
     chip.onclick = () => {
       if(activeStyleId === s.id){
         activeStyleId = null;
+        styleManualOverride = false;
         document.getElementById('writingStyle').value = '';
       } else {
         activeStyleId = s.id;
+        styleManualOverride = true;
         document.getElementById('writingStyle').value = s.value;
       }
       renderStyleChips();
@@ -4626,11 +6444,13 @@ function applyChatStyle(val){
   document.getElementById('writingStyle').value = val;
   const match = STYLE_PRESETS.find(s => s.value === val);
   activeStyleId = match ? match.id : null;
+  styleManualOverride = !!val;
   renderStyleChips();
   if(val) syncStyleDropToSidebar();
 }
 function applyChatFormat(val){
   selFormat = val;
+  formatManualOverride = (val !== 'auto');
   // 사이드바 fmt-btn도 동기화
   document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===val);});
 }
@@ -4649,11 +6469,9 @@ function syncStyleDropToSidebar(){
 function syncFormatDropToChat(){
   const drop = document.getElementById('chatFormatDrop');
   if(!drop) return;
-  {
-    const opts = drop.options;
-    for(let i=0;i<opts.length;i++){
-      if(opts[i].value === selFormat){ drop.selectedIndex = i; break; }
-    }
+  const opts = drop.options;
+  for(let i=0;i<opts.length;i++){
+    if(opts[i].value === selFormat){ drop.selectedIndex = i; break; }
   }
 }
 
@@ -4693,9 +6511,9 @@ function renderSdpTabs(active){
   const d = currentSkillDetail;
   const tabsEl = document.getElementById('sdpTabs');
   const tabs = [
-    {id:'scripts', label:`🐍 스크립트 (${d.scripts.length})`, show: true},
-    {id:'references', label:`📄 레퍼런스 (${d.references.length})`, show: true},
-    {id:'assets', label:`📦 에셋 (${d.assets.length})`, show: d.assets.length > 0},
+    {id:'scripts', label:`🐍 스크립트 (${(d.scripts||[]).length})`, show: true},
+    {id:'references', label:`📄 레퍼런스 (${(d.references||[]).length})`, show: true},
+    {id:'assets', label:`📦 에셋 (${(d.assets||[]).length})`, show: (d.assets||[]).length > 0},
     {id:'skillmd', label:'📋 SKILL.md', show: true},
   ];
   tabsEl.innerHTML = '';
@@ -4809,7 +6627,7 @@ async function injectToChat(type, filePath){
       const preview = data.content.length > 500 ? data.content.substring(0,500) + '...' : data.content;
       input.value += `\n--- ${data.name} ---\n${preview}\n---\n`;
     }
-  }catch(e){}
+  }catch(e){ console.warn('파일 주입 실패:', e); }
   closeSkillDetail();
   input.focus();
 }
@@ -4853,6 +6671,73 @@ async function uploadCsvFile(file){
 
   }catch(e){}
 }
+
+// ===== XLSX Upload (시트별 파싱 + 이미지) =====
+var _xlsxRawFile = null;  // 시트 변경 시 재업로드용
+
+async function uploadXlsxFile(file, sheetIdx){
+  _xlsxRawFile = file;
+  const formData = new FormData();
+  formData.append('file', file);
+  if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
+
+  try{
+    const resp = await fetch('/api/upload_xlsx', {method:'POST', body:formData});
+    const data = await resp.json();
+    if(data.error){ addMsg('assistant', '❌ ' + data.error); return; }
+
+    csvLoaded = true;
+    csvFilename = data.filename;
+
+    // 시트 선택 탭 (2개 이상일 때만)
+    let sheetTabs = '';
+    if(data.sheets && data.sheets.length > 1){
+      sheetTabs = '<div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">';
+      data.sheets.forEach(function(s, i){
+        var active = i === data.active_sheet;
+        sheetTabs += '<button style="padding:3px 10px;border-radius:12px;border:1.5px solid '+(active?'#6366f1':'#ddd')+';background:'+(active?'#6366f1':'#fff')+';color:'+(active?'#fff':'#333')+';font-size:11px;cursor:pointer;font-weight:'+(active?'600':'400')+'" onclick="switchXlsxSheet('+i+')">'+esc(s.name)+' <span style="color:'+(active?'rgba(255,255,255,.7)':'#999')+';font-size:10px">('+s.rows+'행)</span></button>';
+      });
+      sheetTabs += '</div>';
+    }
+
+    // 미리보기 테이블
+    let tableHtml = '<table><tr>' + data.headers.map(function(h){return '<th>'+esc(h)+'</th>';}).join('') + '</tr>';
+    if(data.sample_rows){
+      data.sample_rows.forEach(function(row){
+        tableHtml += '<tr>' + data.headers.map(function(h){return '<td>'+esc(row[h]||'')+'</td>';}).join('') + '</tr>';
+      });
+    }
+    tableHtml += '</table>';
+    if(data.rows > 3) tableHtml += '<div style="text-align:center;color:#999;font-size:10px;margin-top:4px">... 총 ' + data.rows + '행</div>';
+
+    // 이미지 안내
+    var imgInfo = '';
+    if(data.images_count > 0){
+      imgInfo = '<div style="margin-top:6px;padding:4px 8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">🖼️ 내장 이미지 ' + data.images_count + '개 감지 (VL 모델로 분석 가능)</div>';
+    }
+
+    var sheetInfo = data.sheets && data.sheets.length > 1 ? ' · ' + data.sheets.length + '시트' : '';
+
+    const panel = document.getElementById('csvInfoPanel');
+    panel.style.display = 'block';
+    panel.innerHTML =
+      '<div class="csv-info">' +
+        '<div class="fname">📊 ' + esc(data.filename) + ' [' + esc(data.active_sheet_name) + ']</div>' +
+        '<div class="fstats">' + data.rows + '행 × ' + data.cols + '열' + sheetInfo + '</div>' +
+        '<button class="fremove" onclick="removeCsv()">✕ 제거</button>' +
+        sheetTabs +
+        '<div class="csv-preview">' + tableHtml + '</div>' +
+        imgInfo +
+      '</div>';
+
+  }catch(e){ console.warn('XLSX 업로드 실패:', e); }
+}
+
+function switchXlsxSheet(idx){
+  if(!_xlsxRawFile) return;
+  uploadXlsxFile(_xlsxRawFile, idx);
+}
+
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ===== Unicode-safe Base64 유틸 (btoa/atob는 Latin1만 지원) =====
@@ -5139,6 +7024,73 @@ function renderMdPreview(escapedMd){
   return s;
 }
 
+// ===== 피드백 시스템 =====
+var _fbCurrentRating = '';
+var _fbCurrentBtn = null;
+
+function openFeedback(btn, rating){
+  _fbCurrentRating = rating;
+  _fbCurrentBtn = btn;
+  var modal = document.getElementById('feedbackModal');
+  var title = document.getElementById('fbModalTitle');
+  var display = document.getElementById('fbRatingDisplay');
+  var ta = document.getElementById('fbComment');
+  if(rating === 'good'){
+    title.textContent = '어떤 점이 좋았나요?';
+    display.textContent = '👍 좋아요';
+    ta.placeholder = '좋았던 점을 알려주세요 (선택사항)';
+  } else {
+    title.textContent = '어떤 점이 아쉬웠나요?';
+    display.textContent = '👎 별로예요';
+    ta.placeholder = '개선할 점을 알려주세요 (선택사항)';
+  }
+  ta.value = '';
+  modal.classList.add('show');
+  setTimeout(function(){ ta.focus(); }, 100);
+}
+
+function closeFeedbackModal(){
+  document.getElementById('feedbackModal').classList.remove('show');
+  _fbCurrentRating = '';
+  _fbCurrentBtn = null;
+}
+
+async function submitFeedback(){
+  var comment = document.getElementById('fbComment').value;
+  // 해당 메시지 내용 가져오기
+  var msgEl = _fbCurrentBtn ? _fbCurrentBtn.closest('.msg') : null;
+  var msgText = msgEl ? (msgEl.textContent || '').slice(0, 500) : '';
+  // 직전 유저 메시지
+  var userQuery = '';
+  if(msgEl){
+    var prev = msgEl.previousElementSibling;
+    while(prev){
+      if(prev.classList.contains('user')){ userQuery = (prev.textContent || '').slice(0, 300); break; }
+      prev = prev.previousElementSibling;
+    }
+  }
+  try{
+    await fetch('/api/feedback', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rating: _fbCurrentRating, comment: comment, message: msgText, user_query: userQuery })
+    });
+  }catch(e){}
+  // 버튼 시각 피드백
+  if(_fbCurrentBtn){
+    var fbDiv = _fbCurrentBtn.parentElement;
+    fbDiv.querySelectorAll('button').forEach(function(b){ b.classList.remove('fb-selected-good','fb-selected-bad'); });
+    _fbCurrentBtn.classList.add(_fbCurrentRating === 'good' ? 'fb-selected-good' : 'fb-selected-bad');
+  }
+  closeFeedbackModal();
+}
+
+// 모달 바깥 클릭으로 닫기
+document.addEventListener('click', function(e){
+  var modal = document.getElementById('feedbackModal');
+  if(e.target === modal) closeFeedbackModal();
+});
+
 // ===== 응답 전체를 MD 다운로드 가능하게 =====
 function appendMdDownloadBar(rawContent){
   // 마지막 assistant 메시지에 MD 다운로드 바 추가
@@ -5175,14 +7127,20 @@ function renderFileList(){
     return;
   }
   panel.style.display = 'block';
-  let html = '<div class="uploaded-files-header"><span>📎 업로드된 파일 ('+uploadedFilesList.length+')</span><button onclick="clearAllFiles()" class="fremove" style="float:right">전체 제거</button></div>';
+  let html = '<div class="uploaded-files-header"><span>📎 첨부 파일 ('+uploadedFilesList.length+')</span><button onclick="clearAllFiles()" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:10px;padding:0">전체 제거</button></div>';
   uploadedFilesList.forEach((f,i)=>{
     const sizeStr = f.size > 1048576 ? (f.size/1048576).toFixed(1)+'MB' : (f.size/1024).toFixed(1)+'KB';
-    html += `<div class="uploaded-file-item">
+    const pendingCls = f.pending ? ' ufi-pending' : (f.drm ? ' ufi-drm' : '');
+    const statusLabel = f.pending ? ' ⏳' : (f.drm ? ' 🔒' : '');
+    const removeAction = f.pending
+      ? `removeChatAttachByName('${esc(f.filename)}')`
+      : `removeFile('${esc(f.filename)}',${i})`;
+    const titleText = f.drm ? 'DRM 보호 파일 - 내용 분석 불가' : esc(f.preview||'');
+    html += `<div class="uploaded-file-item${pendingCls}">
       <span class="ufi-icon">${f.icon}</span>
-      <span class="ufi-name" title="${esc(f.preview||'')}">${esc(f.filename)}</span>
+      <span class="ufi-name" title="${titleText}">${esc(f.filename)}${statusLabel}</span>
       <span class="ufi-size">${sizeStr}</span>
-      <button class="ufi-remove" onclick="removeFile('${esc(f.filename)}',${i})">✕</button>
+      <button class="ufi-remove" onclick="${removeAction}">✕</button>
     </div>`;
   });
   panel.innerHTML = html;
@@ -5205,7 +7163,7 @@ let chatPendingFiles = [];  // [{file:File, name:string}]
 
 // 파일 확장자 → 추천 스킬 매핑 (프론트엔드용)
 const fileExtSkillHints = {
-  'py':['agent-python-pro'], 'js':['agent-nextjs-developer'],
+  'py':['agent-python-pro'], 'js':['agent-nextjs-developer'], 'ts':['agent-nextjs-developer'], 'tsx':['agent-nextjs-developer'],
   'csv':['exploratory-data-analysis','statistical-analysis'],
   'tsv':['exploratory-data-analysis'], 'xlsx':['exploratory-data-analysis'],
   'docx':['docx'], 'pdf':['pdf'], 'pptx':['pptx'],
@@ -5215,6 +7173,10 @@ const fileExtSkillHints = {
 
 function handleChatFileSelect(files){
   let hintSkills = [];
+  const iconMap = {py:'🐍',js:'📜',ts:'📘',tsx:'📘',jsx:'📜',html:'🌐',css:'🎨',json:'📋',
+    yaml:'📋',yml:'📋',md:'📄',java:'☕',c:'⚙️',cpp:'⚙️',go:'🐹',rs:'🦀',sh:'💻',
+    png:'🖼️',jpg:'🖼️',jpeg:'🖼️',gif:'🖼️',bmp:'🖼️',webp:'🖼️',svg:'🖼️',
+    docx:'📄',xlsx:'📊',pdf:'📕',pptx:'📽️',csv:'📊',txt:'📝',sql:'🗃️',rb:'💎',php:'🐘',vue:'💚',r:'📈'};
   for(const f of files){
     chatPendingFiles.push({file:f, name:f.name});
     // 파일 확장자로 추천 스킬 수집
@@ -5222,8 +7184,14 @@ function handleChatFileSelect(files){
     if(fileExtSkillHints[ext]){
       hintSkills.push(...fileExtSkillHints[ext]);
     }
+    // 즉시 사이드바에 pending 상태로 표시
+    uploadedFilesList.push({
+      filename: f.name, type: ext, ext: ext,
+      size: f.size, icon: iconMap[ext]||'📎', preview: '', pending: true
+    });
   }
   renderChatAttach();
+  renderFileList();
   document.getElementById('chatFileInput').value = '';
 
   // 파일 기반 추천 스킬 프리로드 (사이드바 표시 + 전송 시 자동 포함)
@@ -5236,8 +7204,22 @@ function handleChatFileSelect(files){
 }
 
 function removeChatAttach(idx){
-  chatPendingFiles.splice(idx, 1);
+  const removed = chatPendingFiles.splice(idx, 1);
+  // 사이드바 pending 항목도 함께 제거
+  if(removed.length > 0){
+    const pi = uploadedFilesList.findIndex(f => f.pending && f.filename === removed[0].name);
+    if(pi >= 0) uploadedFilesList.splice(pi, 1);
+    renderFileList();
+  }
   renderChatAttach();
+}
+function removeChatAttachByName(name){
+  const ci = chatPendingFiles.findIndex(f => f.name === name);
+  if(ci >= 0) chatPendingFiles.splice(ci, 1);
+  const pi = uploadedFilesList.findIndex(f => f.pending && f.filename === name);
+  if(pi >= 0) uploadedFilesList.splice(pi, 1);
+  renderChatAttach();
+  renderFileList();
 }
 
 // 입력창 드래그앤드롭 파일 첨부
@@ -5249,6 +7231,35 @@ function removeChatAttach(idx){
   box.addEventListener('drop', e=>{
     e.preventDefault();e.stopPropagation();box.style.borderTopColor='';
     if(e.dataTransfer.files.length > 0) handleChatFileSelect(e.dataTransfer.files);
+  });
+})();
+
+// Ctrl+V / Cmd+V 이미지 붙여넣기 (스크린샷, 클립보드 이미지)
+(function(){
+  const input = document.getElementById('input');
+  if(!input) return;
+  input.addEventListener('paste', function(e){
+    const items = e.clipboardData && e.clipboardData.items;
+    if(!items) return;
+    const imageFiles = [];
+    for(let i=0; i<items.length; i++){
+      if(items[i].type.startsWith('image/')){
+        const blob = items[i].getAsFile();
+        if(blob){
+          // 파일명 생성: paste_날짜시간.확장자
+          const ext = items[i].type.split('/')[1] || 'png';
+          const now = new Date();
+          const ts = now.getFullYear()+String(now.getMonth()+1).padStart(2,'0')+String(now.getDate()).padStart(2,'0')+'_'+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0')+String(now.getSeconds()).padStart(2,'0');
+          const fname = 'paste_'+ts+'.'+ext.replace('jpeg','jpg');
+          const file = new File([blob], fname, {type: items[i].type});
+          imageFiles.push(file);
+        }
+      }
+    }
+    if(imageFiles.length > 0){
+      e.preventDefault();  // 텍스트로 붙여넣기 방지
+      handleChatFileSelect(imageFiles);
+    }
   });
 })();
 
@@ -5267,18 +7278,37 @@ function renderChatAttach(){
 
 async function uploadChatPendingFiles(){
   // 첨부된 파일들을 서버로 업로드 (CSV는 csv 엔드포인트, 나머지는 범용)
+  // pending 항목을 실제 업로드 결과로 교체
   const results = [];
   for(const pf of chatPendingFiles){
     const ext = pf.name.split('.').pop().toLowerCase();
     const formData = new FormData();
     formData.append('file', pf.file);
 
+    // pending 항목 찾기
+    const pendingIdx = uploadedFilesList.findIndex(f => f.pending && f.filename === pf.name);
+
     // CSV/TSV → CSV 전용 엔드포인트 (데이터 분석용)
     if(['csv','tsv'].includes(ext) && !csvLoaded){
       try{
         await uploadCsvFile(pf.file);
         results.push(pf.name);
-      }catch(e){}
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
+      }catch(e){
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+      }
+      continue;
+    }
+
+    // XLSX → 전용 엔드포인트 (시트별 파싱 + 이미지 추출)
+    if(ext === 'xlsx' && !csvLoaded){
+      try{
+        await uploadXlsxFile(pf.file);
+        results.push(pf.name);
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
+      }catch(e){
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+      }
       continue;
     }
 
@@ -5287,13 +7317,27 @@ async function uploadChatPendingFiles(){
       const resp = await fetch('/api/upload_file', {method:'POST', body:formData});
       const data = await resp.json();
       if(!data.error){
-        uploadedFilesList.push({
+        // pending 항목을 실제 데이터로 교체
+        const updated = {
           filename: data.filename, type: data.type, ext: data.ext,
           size: data.size, icon: data.icon, preview: data.preview,
-        });
+          drm: !!data.drm_warning,
+        };
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx] = updated;
+        else uploadedFilesList.push(updated);
         results.push(data.filename);
+        // DRM 보호 파일이면 채팅에 안내 메시지 표시
+        if(data.drm_warning){
+          addMsg('assistant', `🔒 **DRM 보호 파일 감지**: ${data.filename}\n${data.drm_warning}\n\n파일은 첨부되었지만, DRM 때문에 내용 분석이 불가능합니다.`);
+        }
+      } else {
+        // 업로드 실패 시 pending 제거 + 사용자에게 알림
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+        addMsg('assistant', data.error);
       }
-    }catch(e){}
+    }catch(e){
+      if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+    }
   }
   chatPendingFiles = [];
   renderChatAttach();
@@ -5383,7 +7427,7 @@ function summarizeCode(content, ext, maxLines){
   lines.forEach((line, i)=>{
     if(i < 30) return; // 이미 포함됨
     if(pat.test(line)){
-      for(let j=Math.max(30,i-1); j<=Math.min(lines.length-1,i+3); j++){
+      for(let j=Math.max(i-1,30); j<=Math.min(lines.length-1,i+3); j++){
         if(!added.has(j)){
           added.add(j);
           result.push(`[L${j+1}] ${lines[j]}`);
@@ -5609,6 +7653,7 @@ function renderRpTree(){
 
   container.innerHTML = renderTreeNode(rpTreeData, true);
   updateCheckedCount();
+  updateParentFolderChecks();
 }
 
 function renderTreeNode(node, isRoot){
@@ -5622,7 +7667,7 @@ function renderTreeNode(node, isRoot){
     const allChecked = folderIdxs.every(i=>rpCheckedFiles.has(i));
     const someChecked = folderIdxs.some(i=>rpCheckedFiles.has(i));
     html += `<div class="rp-tree-node rp-tree-folder">
-      <input type="checkbox" class="rp-tree-cb" data-folder-idxs="${folderIdxs.join(',')}" ${allChecked?'checked':''} ${!allChecked&&someChecked?'indeterminate':''} onclick="event.stopPropagation();toggleFolderCheck(this)" onchange="event.stopPropagation()">
+      <input type="checkbox" class="rp-tree-cb" data-folder-idxs="${folderIdxs.join(',')}" ${allChecked?'checked':''} onclick="event.stopPropagation();toggleFolderCheck(this)" onchange="event.stopPropagation()">
       <span class="rp-tree-node-content" onclick="toggleTreeFolder(this.parentElement)"><span class="rp-tree-toggle">▶</span><span class="rp-tree-icon">📁</span>${esc(key)} <span style="color:#bbb;font-weight:400">(${fileCount})</span></span>
     </div><div class="rp-tree-children" style="display:none">${renderTreeNode(child, false)}</div>`;
   });
@@ -5652,7 +7697,7 @@ function toggleFileCheck(idx, cb){
 }
 
 function toggleFolderCheck(cb){
-  const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number);
+  const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number).filter(n=>!isNaN(n));
   if(cb.checked) idxs.forEach(i=>rpCheckedFiles.add(i));
   else idxs.forEach(i=>rpCheckedFiles.delete(i));
   // 하위 파일 + 하위 폴더 체크박스 모두 동기화
@@ -5670,7 +7715,7 @@ function toggleFolderCheck(cb){
 
 function updateParentFolderChecks(){
   document.querySelectorAll('.rp-tree-cb[data-folder-idxs]').forEach(cb=>{
-    const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number);
+    const idxs = cb.dataset.folderIdxs.split(',').filter(Boolean).map(Number).filter(n=>!isNaN(n));
     const checkedCount = idxs.filter(i=>rpCheckedFiles.has(i)).length;
     cb.checked = checkedCount === idxs.length;
     cb.indeterminate = checkedCount > 0 && checkedCount < idxs.length;
@@ -5850,10 +7895,11 @@ async function runCodeAssistant(){
           messages: history,
           skills: [...selSkills],
           effort,
-          format: selFormat,
-          writing_style: document.getElementById('writingStyle').value.trim(),
+          format: formatManualOverride ? selFormat : 'auto',
+          writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
           system_prompt: document.getElementById('systemPromptInput').value.trim(),
           max_tokens: maxTokens,
+          think_mode: document.getElementById('thinkToggle').checked,
         })
       });
       const data = await resp.json();
@@ -5864,10 +7910,15 @@ async function runCodeAssistant(){
         let info = '';
         if(data.loaded_skills && data.loaded_skills.length > 0){
           let extra = data.tokens_budget ? ' ['+data.tokens_budget+']' : '';
-          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+envs[selEnv].name+'] ('+data.system_prompt_length+'\uc790)'+extra;
+          let mName = data.model_used || (envs[selEnv] ? envs[selEnv].name : selEnv);
+          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+mName+'] ('+data.system_prompt_length+'\uc790)'+extra;
         }
+        if(data.auto_routed){ info += ' [\uD83E\uDD16 자동: '+data.model_used+' ('+data.route_reason+')]'; }
+        if(data.fallback_used){ info += ' [\u26A0\uFE0F 대체: '+data.fallback_from+' \u2192 '+data.model_used+']'; }
         let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
-        addMsg('assistant', data.content + truncWarn + info);
+        const assistantDisplayText = data.content + truncWarn + info;
+        const assistantRawForDetect = data.content + truncWarn;
+        addMsg('assistant', assistantDisplayText, assistantRawForDetect);
         history.push({role:'assistant', content:data.content});
       }
     }catch(e){
@@ -5977,22 +8028,77 @@ function readEntriesRecursive(entries){
 // 초기 실행 버튼 상태
 updateRpRunBtn();
 
-// ==================== 인트로 비디오 자동 종료 ====================
+// ==================== 인트로 → 모드 선택 시스템 ====================
+function dismissIntroAndShowMode(){
+  var ov = document.getElementById('introOverlay');
+  if(!ov || ov._gone) return;
+  ov._gone = true;
+  var vi = document.getElementById('introVideo');
+  if(vi) vi.pause();
+  ov.classList.add('fade-out');
+  setTimeout(function(){
+    if(ov.parentNode) ov.parentNode.removeChild(ov);
+    // 모드 선택 없이 바로 기본 UI 표시
+  }, 700);
+}
+
+var uioCollapsed = false;
+
+function toggleUioMode(){
+  var btn = document.getElementById('uioBackBtn');
+  if(!uioCollapsed){
+    // 접기: UIO 숨기고 메인 UI 복원 (iframe 유지)
+    document.getElementById('uioContainer').style.display='none';
+    document.getElementById('sidebar').style.display='';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='';
+    btn.textContent='🎮 UIO 펼치기';
+    btn.style.position='fixed';
+    btn.style.display='block';
+    uioCollapsed = true;
+  } else {
+    // 펼치기: UIO 다시 전체화면
+    document.getElementById('uioContainer').style.display='block';
+    document.getElementById('sidebar').style.display='none';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='none';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='none';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='none';
+    btn.textContent='← 접기';
+    uioCollapsed = false;
+  }
+}
+
+function exitUioMode(){
+  document.getElementById('uioContainer').style.display='none';
+  document.getElementById('uioFrame').src='about:blank';
+  document.getElementById('uioBackBtn').style.display='';
+  uioCollapsed = false;
+  // 기본 UI 복원
+  document.getElementById('sidebar').style.display='';
+  var mainEl = document.querySelector('.main');
+  if(mainEl) mainEl.style.display='';
+  var chatBox = document.querySelector('.chat-box-fixed');
+  if(chatBox) chatBox.style.display='';
+  var sideToggle = document.querySelector('.sidebar-toggle');
+  if(sideToggle) sideToggle.style.display='';
+}
+
 (function(){
   var ov = document.getElementById('introOverlay');
   var vi = document.getElementById('introVideo');
   if(!ov) return;
-  function dismiss(){
-    if(ov._gone) return; ov._gone = true;
-    if(vi) vi.pause();
-    ov.classList.add('fade-out');
-    setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 700);
-  }
   if(vi){
-    vi.addEventListener('ended', dismiss);
-    vi.addEventListener('error', dismiss);
+    vi.addEventListener('ended', dismissIntroAndShowMode);
+    vi.addEventListener('error', dismissIntroAndShowMode);
     var src = vi.querySelector('source');
-    if(src) src.addEventListener('error', dismiss);
+    if(src) src.addEventListener('error', dismissIntroAndShowMode);
     // 진행률 바
     var prog = document.getElementById('introProgress');
     if(prog) vi.addEventListener('timeupdate', function(){
@@ -6000,15 +8106,15 @@ updateRpRunBtn();
     });
   }
   // 안전장치: 4초 안에 재생 안 되면 자동 제거
-  setTimeout(function(){ if(vi && vi.readyState < 2) dismiss(); }, 4000);
+  setTimeout(function(){ if(vi && vi.readyState < 2) dismissIntroAndShowMode(); }, 4000);
   // ESC 키
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismiss(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismissIntroAndShowMode(); });
 })();
 
 // ==================== PPT 코드 감지 & 생성 ====================
 function detectAndAddPptxButtons(msgEl, rawText){
   // python-pptx 코드 블록 감지 (from pptx import ... 또는 python-pptx 패턴)
-  const codeBlockRegex = /```python\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(?:python|py)?\s*\n([\s\S]*?)```/gi;
   let match;
   const pptxCodes = [];
   while((match = codeBlockRegex.exec(rawText)) !== null){
@@ -6034,9 +8140,16 @@ function detectAndAddPptxButtons(msgEl, rawText){
           <span>📽️ PowerPoint 생성</span>
           <div class="pptx-gen-actions">
             <span class="pptx-gen-status"></span>
-            <button class="pptx-gen-btn secondary" onclick="copyPptxCode(this)">📋 코드 복사</button>
+            <button class="pptx-gen-btn secondary" onclick="copyPptxCode(this)">📋 실행용 코드 복사</button>
             <button class="pptx-gen-btn" onclick="generatePptx(this)">📽️ PPT 생성 & 다운로드</button>
           </div>
+        </div>
+        <div class="pptx-remake-bar">
+          <span class="pptx-remake-label">🔄 다시 만들기:</span>
+          <button class="pptx-remake-btn" onclick="_remakePpt('그래프/차트 없이 텍스트와 표 위주로 PPT 다시 만들어줘')">📝 그래프 없이</button>
+          <button class="pptx-remake-btn" onclick="_remakePpt('그래프와 차트를 포함해서 PPT 다시 만들어줘')">📊 그래프 포함</button>
+          <button class="pptx-remake-btn" onclick="_remakePpt('디자인을 더 심플하게 PPT 다시 만들어줘')">🎨 심플하게</button>
+          <button class="pptx-remake-btn" onclick="_remakePpt('슬라이드 수를 줄여서 핵심만 PPT 다시 만들어줘')">✂️ 핵심만</button>
         </div>`;
       block.dataset.pptxCode = u2b(code);
       pre.parentNode.insertBefore(block, pre.nextSibling);
@@ -6044,12 +8157,26 @@ function detectAndAddPptxButtons(msgEl, rawText){
   });
 }
 
-function copyPptxCode(btn){
+async function copyPptxCode(btn){
   const block = btn.closest('.pptx-gen-block');
-  const code = b2u(block.dataset.pptxCode);
-  navigator.clipboard.writeText(code);
+  const rawCode = b2u(block.dataset.pptxCode);
+  let codeToCopy = rawCode;
+
+  try{
+    const resp = await fetch('/api/prepare_pptx_code', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code: rawCode})
+    });
+    if(resp.ok){
+      const data = await resp.json();
+      if(data && data.code) codeToCopy = data.code;
+    }
+  }catch(e){}
+
+  navigator.clipboard.writeText(codeToCopy);
   btn.textContent = '✓ 복사됨';
-  setTimeout(()=>{ btn.textContent = '📋 코드 복사'; }, 1500);
+  setTimeout(()=>{ btn.textContent = '📋 실행용 코드 복사'; }, 1500);
 }
 
 async function generatePptx(btn){
@@ -6076,17 +8203,15 @@ async function generatePptx(btn){
       return;
     }
 
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'presentation.pptx';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    status.textContent = '✅ 다운로드 완료!';
+    const json = await resp.json();
+    if(json.download_url){
+        window.location.href = json.download_url;
+        status.textContent = '✅ 다운로드 완료!';
+    } else if(json.message) {
+        status.textContent = '✅ ' + json.message;
+    } else {
+        status.textContent = '❌ 파일 응답 형식 오류';
+    }
     btn.textContent = '📽️ 다시 생성';
     btn.disabled = false;
   }catch(e){
@@ -6094,6 +8219,69 @@ async function generatePptx(btn){
     btn.textContent = '📽️ 재시도';
     btn.disabled = false;
   }
+}
+
+function _remakePpt(text){
+  const input = document.getElementById('input');
+  if(input){ input.value = text; input.focus(); input.style.height='auto'; input.style.height=input.scrollHeight+'px'; }
+  // 자동 전송
+  setTimeout(()=>send(), 100);
+}
+
+// ===== PPT 디자인 스타일 시스템 =====
+const PPT_STYLE_PROMPTS = {
+  minimal: '미니멀 디자인: 흰 배경(#FFFFFF), 검정/회색 텍스트, 여백 충분히, 장식 최소화, sans-serif 폰트(맑은 고딕/Arial), 깔끔한 선 구분. 색상은 #333333(제목), #666666(본문), #E0E0E0(구분선) 위주.',
+  corporate: '기업 프레젠테이션: 네이비(#1B2A4A) 상단 바 + 화이트 배경, 포인트 색상 #2563EB, 각 슬라이드에 상단 컬러 스트라이프, 표와 차트 적극 활용, 깔끔하고 전문적인 톤.',
+  colorful: '컬러풀 디자인: 슬라이드마다 다양한 밝은 배경 그라데이션, 색상 팔레트(#FF6B6B, #4ECDC4, #45B7D1, #FFA07A, #98D8C8, #F7DC6F), 둥근 도형과 카드형 레이아웃, 생동감 있는 구성.',
+  dark: '다크 테마: 어두운 배경(#1A1A2E 또는 #0F0F1F), 밝은 텍스트(#FFFFFF, #E0E0E0), 네온 포인트 컬러(#6366F1 메인, #A855F7 보조, #22D3EE 강조), 고급스럽고 세련된 느낌.',
+  academic: '학술 발표: 깔끔한 흰 배경, 보수적 배색(#2C3E50 제목, #34495E 본문), 번호 매긴 섹션 구조, 참고문헌 슬라이드 포함, 데이터는 차트/표 중심으로 시각화, 최소 장식.',
+  startup: '스타트업 피치덱: 대담한 헤드라인(큰 폰트), 핵심 숫자 크게 강조, 카드형 레이아웃, 모던 색상(#6366F1 메인, #EC4899 보조), 마지막에 CTA(Call-to-Action) 슬라이드 포함.',
+};
+var activePptStyle = '';
+var pptRefDesign = '';
+
+function applyPptStyle(val){
+  if(val === 'ref'){
+    var inp = document.createElement('input');
+    inp.type='file'; inp.accept='.pptx';
+    inp.onchange = function(){ if(inp.files[0]) uploadPptRef(inp.files[0]); };
+    inp.click();
+    document.getElementById('pptStyleDrop').value = activePptStyle;
+    return;
+  }
+  activePptStyle = val;
+  pptRefDesign = '';
+  document.getElementById('pptRefBadge').style.display = 'none';
+}
+
+async function uploadPptRef(file){
+  var fd = new FormData(); fd.append('file', file);
+  try{
+    var resp = await fetch('/api/analyze_ppt_style', {method:'POST', body:fd});
+    var data = await resp.json();
+    if(data.error){
+      addMsg('assistant', '❌ PPT 스타일 분석 실패: ' + data.error);
+      return;
+    }
+    if(data.design){
+      pptRefDesign = data.design;
+      activePptStyle = '';
+      document.getElementById('pptStyleDrop').value = '';
+      document.getElementById('pptRefBadge').style.display = 'inline-flex';
+      addMsg('assistant', '📎 참고 PPT 스타일 분석 완료: **' + file.name + '**\n' + data.summary + '\n\n새 PPT 생성 시 이 스타일을 반영합니다.');
+    }
+  }catch(e){
+    addMsg('assistant', '❌ PPT 스타일 분석 중 오류 발생');
+  }
+}
+
+function checkPptStyleVisibility(){
+  var drop = document.getElementById('pptStyleDrop');
+  if(!drop) return;
+  var text = (document.getElementById('input').value || '').toLowerCase();
+  var isPpt = /ppt|피피티|파워포인트|프레젠테이션|슬라이드|발표자료/.test(text);
+  var hasPptxSkill = selSkills.includes('pptx') || autoLoadedSkills.includes('pptx');
+  drop.style.display = (isPpt || hasPptxSkill) ? 'inline-block' : 'none';
 }
 </script>
 </body>
@@ -6215,4 +8403,5 @@ if __name__ == "__main__":
         except ImportError:
             pass
 
-    app.run(host="0.0.0.0", port=10009, debug=False)
+    #app.run(host="0.0.0.0", port=10009, debug=False)
+    app.run(host="127.0.0.1", port=18080, debug=False, use_reloader=False)
