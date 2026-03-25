@@ -2265,6 +2265,218 @@ def api_upload_csv():
         return jsonify({"error": f"파일 처리 오류: {str(e)}"}), 500
 
 
+@app.route("/api/upload_xlsx", methods=["POST"])
+def api_upload_xlsx():
+    """XLSX 파일 업로드 — 시트별 파싱 + 이미지 추출"""
+    global uploaded_csv_data
+
+    if 'file' not in request.files:
+        return jsonify({"error": "파일이 없습니다."}), 400
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({"error": "파일명이 없습니다."}), 400
+
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import base64
+
+    raw_bytes = file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+    except zipfile.BadZipFile:
+        return jsonify({"error": "유효한 XLSX 파일이 아닙니다."}), 400
+
+    ns_s = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    ns_pr = 'http://schemas.openxmlformats.org/package/2006/relationships'
+
+    # ── shared strings ──
+    shared = []
+    if 'xl/sharedStrings.xml' in zf.namelist():
+        with zf.open('xl/sharedStrings.xml') as ss:
+            tree = ET.parse(ss)
+            for si in tree.findall(f'.//{{{ns_s}}}si'):
+                parts = []
+                for t_el in si.iter(f'{{{ns_s}}}t'):
+                    if t_el.text:
+                        parts.append(t_el.text)
+                shared.append(''.join(parts))
+
+    # ── 시트 목록 (workbook.xml + rels) ──
+    sheet_names = []
+    sheet_rids = []
+    if 'xl/workbook.xml' in zf.namelist():
+        with zf.open('xl/workbook.xml') as wb:
+            tree = ET.parse(wb)
+            for s in tree.findall(f'.//{{{ns_s}}}sheet'):
+                sheet_names.append(s.get('name', ''))
+                sheet_rids.append(s.get(f'{{{ns_r}}}id', ''))
+
+    # rid → 파일 매핑
+    rid_to_file = {}
+    rels_path = 'xl/_rels/workbook.xml.rels'
+    if rels_path in zf.namelist():
+        with zf.open(rels_path) as rf:
+            tree = ET.parse(rf)
+            for rel in tree.findall(f'{{{ns_pr}}}Relationship'):
+                rid_to_file[rel.get('Id', '')] = 'xl/' + rel.get('Target', '')
+
+    def _parse_sheet(sheet_file_path):
+        """시트 하나를 파싱하여 2D 리스트 반환"""
+        if sheet_file_path not in zf.namelist():
+            return []
+        with zf.open(sheet_file_path) as ws:
+            tree = ET.parse(ws)
+            all_rows = []
+            for row in tree.findall(f'.//{{{ns_s}}}row'):
+                if len(all_rows) >= 10000:
+                    break
+                cells = []
+                for c in row.findall(f'{{{ns_s}}}c'):
+                    v_el = c.find(f'{{{ns_s}}}v')
+                    t_attr = c.get('t', '')
+                    if v_el is not None and v_el.text is not None:
+                        if t_attr == 's' and v_el.text.isdigit():
+                            idx = int(v_el.text)
+                            cells.append(shared[idx] if idx < len(shared) else v_el.text)
+                        else:
+                            cells.append(v_el.text)
+                    else:
+                        is_el = c.find(f'{{{ns_s}}}is')
+                        if is_el is not None:
+                            parts = []
+                            for t_el in is_el.iter(f'{{{ns_s}}}t'):
+                                if t_el.text:
+                                    parts.append(t_el.text)
+                            cells.append(''.join(parts))
+                        else:
+                            cells.append('')
+                all_rows.append(cells)
+            return all_rows
+
+    # ── 시트별 요약 ──
+    sheets_data = []
+    for si, (sname, rid) in enumerate(zip(sheet_names, sheet_rids)):
+        sf = rid_to_file.get(rid, f'xl/worksheets/sheet{si+1}.xml')
+        rows = _parse_sheet(sf)
+        sheets_data.append({
+            "name": sname,
+            "rows": max(0, len(rows) - 1),  # 헤더 제외
+            "cols": max((len(r) for r in rows), default=0),
+        })
+
+    # ── 선택된 시트 상세 ──
+    active_sheet_idx = int(request.form.get('sheet', 0))
+    if active_sheet_idx >= len(sheet_names):
+        active_sheet_idx = 0
+
+    target_rid = sheet_rids[active_sheet_idx] if active_sheet_idx < len(sheet_rids) else ''
+    target_file = rid_to_file.get(target_rid, f'xl/worksheets/sheet{active_sheet_idx+1}.xml')
+    all_rows = _parse_sheet(target_file)
+
+    headers = all_rows[0] if all_rows else []
+    data_rows = all_rows[1:] if len(all_rows) > 1 else []
+
+    # ── 이미지 추출 ──
+    images_info = []
+    for name in zf.namelist():
+        if name.startswith('xl/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+            img_ext = name.rsplit('.', 1)[-1].lower()
+            with zf.open(name) as img_f:
+                img_data = img_f.read()
+                if len(img_data) <= 5 * 1024 * 1024:  # 5MB 제한
+                    import base64 as _b64
+                    b64 = _b64.b64encode(img_data).decode('ascii')
+                    mime = {'jpg': 'jpeg', 'jpeg': 'jpeg'}.get(img_ext, img_ext)
+                    images_info.append({"name": name.split('/')[-1], "size": len(img_data), "mime": f"image/{mime}"})
+                    # VL 모델용으로 uploaded_files에 추가
+                    uploaded_files.append({
+                        "filename": f"{file.filename}/{name.split('/')[-1]}",
+                        "safe_name": name.split('/')[-1],
+                        "type": "image",
+                        "ext": img_ext,
+                        "size": len(img_data),
+                        "content_preview": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "content_full": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "img_base64": b64,
+                        "path": "",
+                    })
+
+    # ── 통계 ──
+    total_rows = len(data_rows)
+    total_cols = len(headers)
+    col_stats = []
+    for ci, h in enumerate(headers):
+        vals = [r[ci] for r in data_rows if ci < len(r) and r[ci].strip()]
+        nums = []
+        for v in vals:
+            try:
+                nums.append(float(v.replace(',', '')))
+            except ValueError:
+                pass
+        if len(nums) > len(vals) * 0.5 and nums:
+            col_stats.append(f"  {h}: 숫자형 ({len(vals)}건, 범위 {min(nums):.4g}~{max(nums):.4g}, 평균 {sum(nums)/len(nums):.4g})")
+        else:
+            unique = len(set(vals))
+            col_stats.append(f"  {h}: 문자형 ({len(vals)}건, 고유값 {unique}개)")
+
+    active_name = sheet_names[active_sheet_idx] if active_sheet_idx < len(sheet_names) else "Sheet1"
+
+    # 전체 시트 요약 (시스템 프롬프트용)
+    sheets_summary = ""
+    if len(sheet_names) > 1:
+        sheets_summary = f"\n전체 시트 목록 ({len(sheet_names)}개):\n"
+        for sd in sheets_data:
+            sheets_summary += f"  - {sd['name']}: {sd['rows']}행 × {sd['cols']}열\n"
+        sheets_summary += f"현재 분석 시트: {active_name}\n"
+
+    img_summary = ""
+    if images_info:
+        img_summary = f"\n내장 이미지: {len(images_info)}개\n"
+
+    summary = (
+        f"파일: {file.filename}\n"
+        f"시트: {active_name} ({len(sheet_names)}개 시트)\n"
+        f"행: {total_rows}개, 열: {total_cols}개\n"
+        f"컬럼:\n" + "\n".join(col_stats)
+        + sheets_summary + img_summary
+    )
+
+    preview_rows = data_rows[:5]
+    preview_text = '\t'.join(headers) + "\n"
+    for r in preview_rows:
+        preview_text += '\t'.join(r) + "\n"
+    if total_rows > 5:
+        preview_text += f"... ({total_rows - 5}행 더 있음)"
+
+    # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
+    uploaded_csv_data = {
+        "filename": file.filename,
+        "headers": headers,
+        "rows": data_rows,
+        "summary": summary,
+        "raw_preview": preview_text,
+    }
+
+    zf.close()
+
+    return jsonify({
+        "success": True,
+        "filename": file.filename,
+        "rows": total_rows,
+        "cols": total_cols,
+        "headers": headers,
+        "summary": summary,
+        "preview": preview_text,
+        "sample_rows": [dict(zip(headers, r)) for r in preview_rows[:3]],
+        "sheets": sheets_data,
+        "active_sheet": active_sheet_idx,
+        "active_sheet_name": active_name,
+        "images_count": len(images_info),
+        "images": images_info,
+    })
+
+
 @app.route("/api/clear_csv", methods=["POST"])
 def api_clear_csv():
     """업로드된 CSV 데이터 삭제"""
@@ -6405,6 +6617,73 @@ async function uploadCsvFile(file){
 
   }catch(e){}
 }
+
+// ===== XLSX Upload (시트별 파싱 + 이미지) =====
+var _xlsxRawFile = null;  // 시트 변경 시 재업로드용
+
+async function uploadXlsxFile(file, sheetIdx){
+  _xlsxRawFile = file;
+  const formData = new FormData();
+  formData.append('file', file);
+  if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
+
+  try{
+    const resp = await fetch('/api/upload_xlsx', {method:'POST', body:formData});
+    const data = await resp.json();
+    if(data.error){ addMsg('assistant', '❌ ' + data.error); return; }
+
+    csvLoaded = true;
+    csvFilename = data.filename;
+
+    // 시트 선택 탭 (2개 이상일 때만)
+    let sheetTabs = '';
+    if(data.sheets && data.sheets.length > 1){
+      sheetTabs = '<div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">';
+      data.sheets.forEach(function(s, i){
+        var active = i === data.active_sheet;
+        sheetTabs += '<button style="padding:3px 10px;border-radius:12px;border:1.5px solid '+(active?'#6366f1':'#ddd')+';background:'+(active?'#6366f1':'#fff')+';color:'+(active?'#fff':'#333')+';font-size:11px;cursor:pointer;font-weight:'+(active?'600':'400')+'" onclick="switchXlsxSheet('+i+')">'+esc(s.name)+' <span style="color:'+(active?'rgba(255,255,255,.7)':'#999')+';font-size:10px">('+s.rows+'행)</span></button>';
+      });
+      sheetTabs += '</div>';
+    }
+
+    // 미리보기 테이블
+    let tableHtml = '<table><tr>' + data.headers.map(function(h){return '<th>'+esc(h)+'</th>';}).join('') + '</tr>';
+    if(data.sample_rows){
+      data.sample_rows.forEach(function(row){
+        tableHtml += '<tr>' + data.headers.map(function(h){return '<td>'+esc(row[h]||'')+'</td>';}).join('') + '</tr>';
+      });
+    }
+    tableHtml += '</table>';
+    if(data.rows > 3) tableHtml += '<div style="text-align:center;color:#999;font-size:10px;margin-top:4px">... 총 ' + data.rows + '행</div>';
+
+    // 이미지 안내
+    var imgInfo = '';
+    if(data.images_count > 0){
+      imgInfo = '<div style="margin-top:6px;padding:4px 8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">🖼️ 내장 이미지 ' + data.images_count + '개 감지 (VL 모델로 분석 가능)</div>';
+    }
+
+    var sheetInfo = data.sheets && data.sheets.length > 1 ? ' · ' + data.sheets.length + '시트' : '';
+
+    const panel = document.getElementById('csvInfoPanel');
+    panel.style.display = 'block';
+    panel.innerHTML =
+      '<div class="csv-info">' +
+        '<div class="fname">📊 ' + esc(data.filename) + ' [' + esc(data.active_sheet_name) + ']</div>' +
+        '<div class="fstats">' + data.rows + '행 × ' + data.cols + '열' + sheetInfo + '</div>' +
+        '<button class="fremove" onclick="removeCsv()">✕ 제거</button>' +
+        sheetTabs +
+        '<div class="csv-preview">' + tableHtml + '</div>' +
+        imgInfo +
+      '</div>';
+
+  }catch(e){ console.warn('XLSX 업로드 실패:', e); }
+}
+
+function switchXlsxSheet(idx){
+  if(!_xlsxRawFile) return;
+  uploadXlsxFile(_xlsxRawFile, idx);
+}
+
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ===== Unicode-safe Base64 유틸 (btoa/atob는 Latin1만 지원) =====
@@ -6960,10 +7239,20 @@ async function uploadChatPendingFiles(){
       try{
         await uploadCsvFile(pf.file);
         results.push(pf.name);
-        // pending → 완료로 전환
         if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
       }catch(e){
-        // 실패 시 pending 제거
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+      }
+      continue;
+    }
+
+    // XLSX → 전용 엔드포인트 (시트별 파싱 + 이미지 추출)
+    if(ext === 'xlsx' && !csvLoaded){
+      try{
+        await uploadXlsxFile(pf.file);
+        results.push(pf.name);
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
+      }catch(e){
         if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
       }
       continue;
