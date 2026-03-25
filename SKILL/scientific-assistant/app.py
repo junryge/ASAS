@@ -2385,8 +2385,7 @@ def api_upload_xlsx():
             with zf.open(name) as img_f:
                 img_data = img_f.read()
                 if len(img_data) <= 5 * 1024 * 1024:  # 5MB 제한
-                    import base64 as _b64
-                    b64 = _b64.b64encode(img_data).decode('ascii')
+                    b64 = base64.b64encode(img_data).decode('ascii')
                     mime = {'jpg': 'jpeg', 'jpeg': 'jpeg'}.get(img_ext, img_ext)
                     images_info.append({"name": name.split('/')[-1], "size": len(img_data), "mime": f"image/{mime}"})
                     # VL 모델용으로 uploaded_files에 추가
@@ -6168,6 +6167,7 @@ function loadSession(id){
   else { selSkills = []; }
   // 대화 히스토리 기반 자동 스킬 프리로드
   autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
   if(autoSkillMode && history.length > 0){
     const lastUser = [...history].reverse().find(m=>m.role==='user');
     if(lastUser){
