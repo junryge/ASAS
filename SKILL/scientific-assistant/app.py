@@ -2308,7 +2308,7 @@ def _llm_generate_lpql(user_query, history=None):
 2. 쿼리 앞뒤로 간단한 설명을 추가하세요.
 3. 오늘 날짜: {today} (시간 형식: yyyyMMddHHmmss)
 4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
-5. 결과가 너무 많을 수 있으니 적절히 limit을 걸어주세요 (기본 limit 500).
+5. **반드시 limit 5를 걸어주세요.** 사용자가 명시적으로 더 많은 건수를 요청하지 않는 한, 항상 `limit 5`를 사용하세요. 대량 조회는 시스템에 부하를 줍니다.
 6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
 7. **캐리어/장비 추적, 특정 키워드 검색, 여러 테이블 동시 조회 시 `fulltext`를 우선 사용하세요** (인덱스 기반 = 빠름).
 8. fulltext에서 여러 테이블 지정: `fulltext ... from 테이블1, 테이블2`
