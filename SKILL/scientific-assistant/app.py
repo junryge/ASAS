@@ -2265,6 +2265,217 @@ def api_upload_csv():
         return jsonify({"error": f"파일 처리 오류: {str(e)}"}), 500
 
 
+@app.route("/api/upload_xlsx", methods=["POST"])
+def api_upload_xlsx():
+    """XLSX 파일 업로드 — 시트별 파싱 + 이미지 추출"""
+    global uploaded_csv_data
+
+    if 'file' not in request.files:
+        return jsonify({"error": "파일이 없습니다."}), 400
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({"error": "파일명이 없습니다."}), 400
+
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import base64
+
+    raw_bytes = file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+    except zipfile.BadZipFile:
+        return jsonify({"error": "유효한 XLSX 파일이 아닙니다."}), 400
+
+    ns_s = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    ns_pr = 'http://schemas.openxmlformats.org/package/2006/relationships'
+
+    # ── shared strings ──
+    shared = []
+    if 'xl/sharedStrings.xml' in zf.namelist():
+        with zf.open('xl/sharedStrings.xml') as ss:
+            tree = ET.parse(ss)
+            for si in tree.findall(f'.//{{{ns_s}}}si'):
+                parts = []
+                for t_el in si.iter(f'{{{ns_s}}}t'):
+                    if t_el.text:
+                        parts.append(t_el.text)
+                shared.append(''.join(parts))
+
+    # ── 시트 목록 (workbook.xml + rels) ──
+    sheet_names = []
+    sheet_rids = []
+    if 'xl/workbook.xml' in zf.namelist():
+        with zf.open('xl/workbook.xml') as wb:
+            tree = ET.parse(wb)
+            for s in tree.findall(f'.//{{{ns_s}}}sheet'):
+                sheet_names.append(s.get('name', ''))
+                sheet_rids.append(s.get(f'{{{ns_r}}}id', ''))
+
+    # rid → 파일 매핑
+    rid_to_file = {}
+    rels_path = 'xl/_rels/workbook.xml.rels'
+    if rels_path in zf.namelist():
+        with zf.open(rels_path) as rf:
+            tree = ET.parse(rf)
+            for rel in tree.findall(f'{{{ns_pr}}}Relationship'):
+                rid_to_file[rel.get('Id', '')] = 'xl/' + rel.get('Target', '')
+
+    def _parse_sheet(sheet_file_path):
+        """시트 하나를 파싱하여 2D 리스트 반환"""
+        if sheet_file_path not in zf.namelist():
+            return []
+        with zf.open(sheet_file_path) as ws:
+            tree = ET.parse(ws)
+            all_rows = []
+            for row in tree.findall(f'.//{{{ns_s}}}row'):
+                if len(all_rows) >= 10000:
+                    break
+                cells = []
+                for c in row.findall(f'{{{ns_s}}}c'):
+                    v_el = c.find(f'{{{ns_s}}}v')
+                    t_attr = c.get('t', '')
+                    if v_el is not None and v_el.text is not None:
+                        if t_attr == 's' and v_el.text.isdigit():
+                            idx = int(v_el.text)
+                            cells.append(shared[idx] if idx < len(shared) else v_el.text)
+                        else:
+                            cells.append(v_el.text)
+                    else:
+                        is_el = c.find(f'{{{ns_s}}}is')
+                        if is_el is not None:
+                            parts = []
+                            for t_el in is_el.iter(f'{{{ns_s}}}t'):
+                                if t_el.text:
+                                    parts.append(t_el.text)
+                            cells.append(''.join(parts))
+                        else:
+                            cells.append('')
+                all_rows.append(cells)
+            return all_rows
+
+    # ── 시트별 요약 ──
+    sheets_data = []
+    for si, (sname, rid) in enumerate(zip(sheet_names, sheet_rids)):
+        sf = rid_to_file.get(rid, f'xl/worksheets/sheet{si+1}.xml')
+        rows = _parse_sheet(sf)
+        sheets_data.append({
+            "name": sname,
+            "rows": max(0, len(rows) - 1),  # 헤더 제외
+            "cols": max((len(r) for r in rows), default=0),
+        })
+
+    # ── 선택된 시트 상세 ──
+    active_sheet_idx = int(request.form.get('sheet', 0))
+    if active_sheet_idx >= len(sheet_names):
+        active_sheet_idx = 0
+
+    target_rid = sheet_rids[active_sheet_idx] if active_sheet_idx < len(sheet_rids) else ''
+    target_file = rid_to_file.get(target_rid, f'xl/worksheets/sheet{active_sheet_idx+1}.xml')
+    all_rows = _parse_sheet(target_file)
+
+    headers = all_rows[0] if all_rows else []
+    data_rows = all_rows[1:] if len(all_rows) > 1 else []
+
+    # ── 이미지 추출 ──
+    images_info = []
+    for name in zf.namelist():
+        if name.startswith('xl/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+            img_ext = name.rsplit('.', 1)[-1].lower()
+            with zf.open(name) as img_f:
+                img_data = img_f.read()
+                if len(img_data) <= 5 * 1024 * 1024:  # 5MB 제한
+                    b64 = base64.b64encode(img_data).decode('ascii')
+                    mime = {'jpg': 'jpeg', 'jpeg': 'jpeg'}.get(img_ext, img_ext)
+                    images_info.append({"name": name.split('/')[-1], "size": len(img_data), "mime": f"image/{mime}"})
+                    # VL 모델용으로 uploaded_files에 추가
+                    uploaded_files.append({
+                        "filename": f"{file.filename}/{name.split('/')[-1]}",
+                        "safe_name": name.split('/')[-1],
+                        "type": "image",
+                        "ext": img_ext,
+                        "size": len(img_data),
+                        "content_preview": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "content_full": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "img_base64": b64,
+                        "path": "",
+                    })
+
+    # ── 통계 ──
+    total_rows = len(data_rows)
+    total_cols = len(headers)
+    col_stats = []
+    for ci, h in enumerate(headers):
+        vals = [r[ci] for r in data_rows if ci < len(r) and r[ci].strip()]
+        nums = []
+        for v in vals:
+            try:
+                nums.append(float(v.replace(',', '')))
+            except ValueError:
+                pass
+        if len(nums) > len(vals) * 0.5 and nums:
+            col_stats.append(f"  {h}: 숫자형 ({len(vals)}건, 범위 {min(nums):.4g}~{max(nums):.4g}, 평균 {sum(nums)/len(nums):.4g})")
+        else:
+            unique = len(set(vals))
+            col_stats.append(f"  {h}: 문자형 ({len(vals)}건, 고유값 {unique}개)")
+
+    active_name = sheet_names[active_sheet_idx] if active_sheet_idx < len(sheet_names) else "Sheet1"
+
+    # 전체 시트 요약 (시스템 프롬프트용)
+    sheets_summary = ""
+    if len(sheet_names) > 1:
+        sheets_summary = f"\n전체 시트 목록 ({len(sheet_names)}개):\n"
+        for sd in sheets_data:
+            sheets_summary += f"  - {sd['name']}: {sd['rows']}행 × {sd['cols']}열\n"
+        sheets_summary += f"현재 분석 시트: {active_name}\n"
+
+    img_summary = ""
+    if images_info:
+        img_summary = f"\n내장 이미지: {len(images_info)}개\n"
+
+    summary = (
+        f"파일: {file.filename}\n"
+        f"시트: {active_name} ({len(sheet_names)}개 시트)\n"
+        f"행: {total_rows}개, 열: {total_cols}개\n"
+        f"컬럼:\n" + "\n".join(col_stats)
+        + sheets_summary + img_summary
+    )
+
+    preview_rows = data_rows[:5]
+    preview_text = '\t'.join(headers) + "\n"
+    for r in preview_rows:
+        preview_text += '\t'.join(r) + "\n"
+    if total_rows > 5:
+        preview_text += f"... ({total_rows - 5}행 더 있음)"
+
+    # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
+    uploaded_csv_data = {
+        "filename": file.filename,
+        "headers": headers,
+        "rows": data_rows,
+        "summary": summary,
+        "raw_preview": preview_text,
+    }
+
+    zf.close()
+
+    return jsonify({
+        "success": True,
+        "filename": file.filename,
+        "rows": total_rows,
+        "cols": total_cols,
+        "headers": headers,
+        "summary": summary,
+        "preview": preview_text,
+        "sample_rows": [dict(zip(headers, r)) for r in preview_rows[:3]],
+        "sheets": sheets_data,
+        "active_sheet": active_sheet_idx,
+        "active_sheet_name": active_name,
+        "images_count": len(images_info),
+        "images": images_info,
+    })
+
+
 @app.route("/api/clear_csv", methods=["POST"])
 def api_clear_csv():
     """업로드된 CSV 데이터 삭제"""
@@ -2445,11 +2656,12 @@ def extract_file_text(filepath, filename):
                 text = f"(PDF 텍스트 추출 실패: {e})"
                 file_type = "pdf"
 
-        # PPTX
+        # PPTX (텍스트 + 이미지 추출)
         elif ext == 'pptx':
             try:
                 import zipfile
                 import xml.etree.ElementTree as ET
+                import base64 as _b64
                 with zipfile.ZipFile(filepath) as z:
                     slide_texts = []
                     for name in sorted(z.namelist()):
@@ -2464,6 +2676,30 @@ def extract_file_text(filepath, filename):
                                 if texts_in_slide:
                                     slide_num = name.split('slide')[-1].split('.')[0]
                                     slide_texts.append(f"[슬라이드 {slide_num}] {' | '.join(texts_in_slide)}")
+                    # 내장 이미지 추출 → uploaded_files에 추가 (VL 모델 분석용)
+                    img_count = 0
+                    for name in z.namelist():
+                        if name.startswith('ppt/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+                            with z.open(name) as img_f:
+                                img_data = img_f.read()
+                                if len(img_data) <= 5 * 1024 * 1024:
+                                    img_ext = name.rsplit('.', 1)[-1].lower()
+                                    b64 = _b64.b64encode(img_data).decode('ascii')
+                                    img_name = name.split('/')[-1]
+                                    uploaded_files.append({
+                                        "filename": f"{filename}/{img_name}",
+                                        "safe_name": img_name,
+                                        "type": "image",
+                                        "ext": img_ext,
+                                        "size": len(img_data),
+                                        "content_preview": f"(PPT 내장 이미지: {img_name})",
+                                        "content_full": f"(PPT 내장 이미지: {img_name})",
+                                        "img_base64": b64,
+                                        "path": "",
+                                    })
+                                    img_count += 1
+                    if img_count > 0:
+                        slide_texts.append(f"\n[내장 이미지 {img_count}개 추출됨 — VL 모델로 분석 가능]")
                     text = '\n'.join(slide_texts)
                 file_type = "pptx"
             except Exception as e:
@@ -2730,6 +2966,152 @@ def api_save_md():
     return send_file(buf, as_attachment=True, download_name=filename, mimetype="text/markdown")
 
 
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """사용자 피드백 저장 (좋아요/싫어요 + 코멘트)"""
+    import json as _json
+    data = request.json
+    rating = data.get("rating", "")       # "good" or "bad"
+    comment = data.get("comment", "")
+    message = data.get("message", "")[:500]  # 해당 응답 내용 (앞 500자)
+    user_query = data.get("user_query", "")[:300]
+
+    if rating not in ("good", "bad"):
+        return jsonify({"error": "invalid rating"}), 400
+
+    feedback_dir = os.path.join(BASE_DIR, "feedback")
+    os.makedirs(feedback_dir, exist_ok=True)
+
+    from datetime import datetime
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "rating": rating,
+        "comment": comment.strip(),
+        "user_query": user_query,
+        "message_preview": message,
+    }
+
+    feedback_file = os.path.join(feedback_dir, "feedback.jsonl")
+    with open(feedback_file, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/analyze_ppt_style", methods=["POST"])
+def api_analyze_ppt_style():
+    """참고 PPT에서 디자인 스타일(색상, 폰트, 레이아웃) 추출"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith(".pptx"):
+        return jsonify({"error": ".pptx 파일만 지원됩니다"}), 400
+
+    # 임시 저장
+    tmp_path = os.path.join(UPLOAD_DIR, f"_ppt_ref_{int(__import__('time').time())}.pptx")
+    f.save(tmp_path)
+
+    try:
+        colors = []
+        fonts = set()
+        bg_colors = []
+        slide_count = 0
+
+        with zipfile.ZipFile(tmp_path) as z:
+            # 1) 테마 색상 추출 (ppt/theme/theme1.xml)
+            theme_ns = {
+                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            }
+            for name in z.namelist():
+                if name.startswith('ppt/theme/') and name.endswith('.xml'):
+                    with z.open(name) as tf:
+                        tree = ET.parse(tf)
+                        root = tree.getroot()
+                        # 색상 스킴
+                        for scheme in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}clrScheme'):
+                            for child in scheme:
+                                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                                for sub in child:
+                                    val = sub.get('val') or sub.get('lastClr') or ''
+                                    if val and len(val) == 6:
+                                        colors.append((tag, f"#{val}"))
+                        # 폰트 스킴
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}latin'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-lt', '+mn-lt'):
+                                fonts.add(ft)
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}ea'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-ea', '+mn-ea'):
+                                fonts.add(ft)
+                    break  # 첫 번째 테마만
+
+            # 2) 슬라이드에서 배경색, 폰트, 폰트크기 샘플링
+            slide_fonts = set()
+            font_sizes = []
+            ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            ns_p = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+            for name in sorted(z.namelist()):
+                if name.startswith('ppt/slides/slide') and name.endswith('.xml'):
+                    slide_count += 1
+                    if slide_count > 5:
+                        break  # 최대 5슬라이드 샘플링
+                    with z.open(name) as sf:
+                        tree = ET.parse(sf)
+                        # 배경 색상
+                        for solid in tree.iter(f'{{{ns_a}}}solidFill'):
+                            for srgb in solid.iter(f'{{{ns_a}}}srgbClr'):
+                                val = srgb.get('val', '')
+                                if val and len(val) == 6:
+                                    bg_colors.append(f"#{val}")
+                        # 폰트 & 크기
+                        for rpr in tree.iter(f'{{{ns_a}}}rPr'):
+                            sz = rpr.get('sz')
+                            if sz:
+                                try:
+                                    font_sizes.append(int(sz) // 100)
+                                except ValueError:
+                                    pass
+                        for latin in tree.iter(f'{{{ns_a}}}latin'):
+                            ft = latin.get('typeface', '')
+                            if ft and not ft.startswith('+'):
+                                slide_fonts.add(ft)
+
+        # 결과 조합
+        fonts.update(slide_fonts)
+        unique_bg = list(dict.fromkeys(bg_colors))[:6]  # 중복 제거, 최대 6개
+
+        # 디자인 지시문 구성
+        parts = []
+        if colors:
+            color_str = ", ".join(f"{name}({hex_val})" for name, hex_val in colors[:10])
+            parts.append(f"테마 색상: {color_str}")
+        if unique_bg:
+            parts.append(f"슬라이드 배경/채우기 색상: {', '.join(unique_bg)}")
+        if fonts:
+            parts.append(f"폰트: {', '.join(sorted(fonts)[:5])}")
+        if font_sizes:
+            min_sz, max_sz = min(font_sizes), max(font_sizes)
+            parts.append(f"폰트 크기 범위: {min_sz}pt ~ {max_sz}pt")
+        parts.append(f"슬라이드 수: {slide_count}장")
+
+        design_prompt = "참고 PPT에서 추출한 디자인 스타일:\n" + "\n".join(f"- {p}" for p in parts)
+        design_prompt += "\n\n위 색상 팔레트, 폰트, 레이아웃 스타일을 최대한 동일하게 적용하여 새 PPT를 제작하세요."
+
+        summary = " / ".join(parts[:3])
+
+        return jsonify({"design": design_prompt, "summary": summary})
+
+    except Exception as e:
+        return jsonify({"error": f"PPT 분석 실패: {str(e)}"}), 500
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def _prepare_pptx_code_for_copy(code):
@@ -2902,6 +3284,9 @@ def api_generate_pptx():
         
     if 'XL_LEGEND_POSITION' in code and 'from pptx.enum.chart import XL_LEGEND_POSITION' not in code:
         code = "from pptx.enum.chart import XL_LEGEND_POSITION\n" + code
+
+    # 2.7~2.8) chart.title / slide.shapes.title 오류는 런타임 monkey-patch로 처리
+    # (wrapped_code 내 Chart.__getattr__ + SlideShapes.title property 패치)
 
     # 3) placeholder.shapes → slide.shapes 자동 수정
     # LLM이 content/body/placeholder 등에 .shapes를 호출하는 실수 수정
@@ -3122,6 +3507,32 @@ def api_generate_pptx():
             "    _gf.GraphicFrame.rows = property(lambda self: self.table.rows if self.has_table else None)\n"
             "    _gf.GraphicFrame.columns = property(lambda self: self.table.columns if self.has_table else None)\n"
             "    _gf.GraphicFrame.cell = lambda self, r, c: self.table.cell(r, c) if self.has_table else None\n"
+            "# --- monkey-patch: Chart.__getattr__ — chart.title → chart.chart_title 자동 변환 ---\n"
+            "from pptx.chart.chart import Chart as _Chart\n"
+            "_orig_chart_getattr = getattr(_Chart, '__getattr__', None)\n"
+            "def _chart_getattr(self, name):\n"
+            "    if name == 'title':\n"
+            "        self.has_title = True\n"
+            "        return self.chart_title\n"
+            "    if _orig_chart_getattr:\n"
+            "        return _orig_chart_getattr(self, name)\n"
+            "    raise AttributeError(f\"'Chart' object has no attribute '{name}'\")\n"
+            "_Chart.__getattr__ = _chart_getattr\n"
+            "# --- monkey-patch: slide.shapes.title이 None일 때 textbox로 대체 ---\n"
+            "from pptx.util import Inches as _Inches, Pt as _Pt\n"
+            "import pptx.shapes.shapetree as _st_mod\n"
+            "_orig_title_prop = _st_mod.SlideShapes.title.fget\n"
+            "def _safe_shapes_title(self):\n"
+            "    t = _orig_title_prop(self)\n"
+            "    if t is not None:\n"
+            "        return t\n"
+            "    txBox = self.add_textbox(_Inches(0.5), _Inches(0.2), _Inches(9), _Inches(0.8))\n"
+            "    txBox.text_frame.word_wrap = True\n"
+            "    return txBox\n"
+            "_st_mod.SlideShapes.title = property(_safe_shapes_title)\n"
+            "# --- helper: _safe_title (backward compat) ---\n"
+            "def _safe_title(slide):\n"
+            "    return slide.shapes.title\n"
             "# --- user code ---\n"
             f"{code}\n"
         )
@@ -3463,6 +3874,20 @@ def api_chat():
                 "원형 차트: CategoryChartData에 시리즈 1개만 추가, XL_CHART_TYPE.PIE 사용\n"
                 "프론트엔드가 코드를 감지하여 '📽️ PPT 생성 & 다운로드' 버튼을 자동 표시합니다.\n\n"
             )
+            # PPT 디자인 스타일 주입 (참고PPT 우선, 없으면 프리셋)
+            ppt_ref_design = data.get("ppt_ref_design", "")
+            ppt_style = data.get("ppt_style", "")
+            if ppt_ref_design:
+                system_prompt += (
+                    "=== 참고 PPT 디자인 (반드시 이 스타일을 따르세요) ===\n"
+                    f"{ppt_ref_design}\n\n"
+                )
+            elif ppt_style:
+                system_prompt += (
+                    "=== PPT 디자인 스타일 ===\n"
+                    f"{ppt_style}\n"
+                    "이 디자인 가이드를 반드시 따라 모든 슬라이드를 제작하세요.\n\n"
+                )
 
         drawio_requested = 'ql' in locals() and any(kw in ql for kw in ["drawio", "draw.io", "드로우", "드로잉", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처", "배치도", "dfd"])
         if "drawio-diagram" in loaded or drawio_requested:
@@ -4195,6 +4620,26 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg hr{border:none;border-top:1px solid #e5e3de;margin:6px 0}
 .msg blockquote{border-left:3px solid #6366f1;margin:4px 0;padding:2px 8px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+/* 피드백 버튼 */
+.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+.msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
+.msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
+.msg-feedback button.fb-selected-good{background:#e8f5e9;color:#2e7d32;border-color:#81c784}
+.msg-feedback button.fb-selected-bad{background:#fce4ec;color:#c62828;border-color:#ef9a9a}
+/* 피드백 모달 */
+#feedbackModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center}
+#feedbackModal.show{display:flex}
+.fb-modal{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:fbSlideIn .25s ease}
+@keyframes fbSlideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.fb-modal h3{margin:0 0 6px;font-size:18px;color:#333}
+.fb-modal .fb-rating-display{font-size:24px;margin-bottom:12px}
+.fb-modal textarea{width:100%;height:100px;border:1.5px solid #ddd;border-radius:10px;padding:10px 12px;font-size:13px;resize:vertical;font-family:inherit;transition:border-color .2s}
+.fb-modal textarea:focus{outline:none;border-color:#6366f1}
+.fb-modal .fb-hint{font-size:11px;color:#999;margin-top:4px}
+.fb-modal .fb-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.fb-modal .fb-btn{padding:8px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.fb-modal .fb-btn-cancel{background:#f0f0f0;color:#666}.fb-modal .fb-btn-cancel:hover{background:#e0e0e0}
+.fb-modal .fb-btn-submit{background:#6366f1;color:#fff}.fb-modal .fb-btn-submit:hover{background:#4f46e5}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
 .msg .skill-info{font-size:10px;color:#6366f1;margin-top:4px}
 .typing{display:inline-flex;gap:4px;padding:8px 14px}
@@ -4263,6 +4708,9 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .pptx-remake-label{font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap}
 .pptx-remake-btn{background:#fff;color:#4338ca;border:1px solid #c7d2fe;border-radius:16px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all .2s;font-weight:500;white-space:nowrap}
 .pptx-remake-btn:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-1px)}
+/* PPT 스타일 드롭다운 */
+.ppt-style-drop{display:none}
+.ppt-ref-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:4px}
 /* CSV Upload */
 .csv-section{margin-bottom:24px}
 /* csv-upload-area 제거됨 → 채팅 📎 첨부로 대체 */
@@ -4445,6 +4893,20 @@ body.rp-collapsed .chat-box-fixed{right:0}
 </style>
 </head>
 <body>
+<!-- 피드백 모달 -->
+<div id="feedbackModal">
+  <div class="fb-modal">
+    <h3 id="fbModalTitle">피드백</h3>
+    <div class="fb-rating-display" id="fbRatingDisplay"></div>
+    <textarea id="fbComment" placeholder="어떤 점이 좋았나요? 또는 어떤 점을 개선하면 좋을까요? (선택사항)"></textarea>
+    <div class="fb-hint">피드백은 서비스 개선에 활용됩니다</div>
+    <div class="fb-actions">
+      <button class="fb-btn fb-btn-cancel" onclick="closeFeedbackModal()">취소</button>
+      <button class="fb-btn fb-btn-submit" onclick="submitFeedback()">보내기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 인트로 비디오 오버레이 -->
 <div id="introOverlay">
   <video id="introVideo" autoplay muted playsinline>
@@ -4588,7 +5050,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
   <div class="chat-box-fixed">
     <div class="chat-box-fixed-inner">
       <div class="chat-attach-preview" id="chatAttachPreview" style="display:none"></div>
-      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';checkPptStyleVisibility()"></textarea>
       <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -4612,6 +5074,16 @@ body.rp-collapsed .chat-box-fixed{right:0}
             <option value="report">📄 보고서</option>
             <option value="step-by-step">📝 단계별</option>
           </select>
+          <select class="chat-dropdown ppt-style-drop" id="pptStyleDrop" onchange="applyPptStyle(this.value)" title="PPT 디자인 스타일">
+            <option value="">📽️ PPT:자동</option>
+            <option value="minimal">⬜ 미니멀</option>
+            <option value="corporate">🏢 기업용</option>
+            <option value="colorful">🎨 컬러풀</option>
+            <option value="dark">🌙 다크</option>
+            <option value="academic">🎓 학술</option>
+            <option value="startup">🚀 스타트업</option>
+            <option value="ref">📎 참고PPT</option>
+          </select><span id="pptRefBadge" class="ppt-ref-badge" style="display:none">📎 참고스타일 적용중</span>
           <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="체크하면 모델이 답변 전에 깊이 사고합니다 (응답 느림)">
             <input type="checkbox" id="thinkToggle" style="margin:0;accent-color:#7c5cbf">💭사고
           </label>
@@ -5163,15 +5635,19 @@ async function send(){
   }
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
-  // 첨부파일이 있으면 먼저 업로드
+  // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
+  autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
+
+  // 첨부파일이 있으면 먼저 업로드 (파일 확장자 기반 스킬이 autoLoadedSkills에 추가됨)
   let attachedNames = [];
   if(chatPendingFiles.length > 0){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 스킬 구성: 수동 선택 + 파일 프리로드 + 질문 기반 자동 추천
+  // 스킬 구성: 수동 선택 + 파일 기반 자동 + 질문 기반 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [...autoLoadedSkills];  // 파일 첨부/세션 로드로 프리로드된 스킬
+  let autoLoaded = [...autoLoadedSkills];  // 파일 업로드로 새로 감지된 스킬만
 
   // 프리로드 스킬 중 수동/해제 중복 제거
   const manualSet = new Set(skillsToUse);
@@ -5208,10 +5684,10 @@ async function send(){
   document.getElementById('autoSkillPreview').classList.remove('show');
 
   // 자동 로드 안내 (selSkills에는 추가하지 않음 - 1회성 사용)
+  autoLoadedSkills = autoLoaded;
+  renderSkills();
+  updateLoaded();
   if(autoLoaded.length > 0){
-    autoLoadedSkills = autoLoaded;
-    renderSkills();
-    updateLoaded();
     const manualCount = selSkills.length;
     const info = manualCount > 0 ? ` (수동 ${manualCount}개 + 자동 ${autoLoaded.length}개)` : '';
     addMsg('assistant', '🧠 자동 스킬: ' + autoLoaded.join(', ') + info);
@@ -5239,6 +5715,8 @@ async function send(){
         system_prompt:document.getElementById('systemPromptInput').value.trim(),
         max_tokens:maxTokens,
         think_mode: document.getElementById('thinkToggle').checked,
+        ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
+        ppt_ref_design: pptRefDesign,
       })
     });
     const data=await resp.json();
@@ -5277,7 +5755,8 @@ async function send(){
       addMsg('assistant', assistantDisplayText, assistantRawForDetect);
       history.push({role:'assistant',content:data.content});
       // markdown-mermaid-writing 스킬: ```markdown 블록이 없어도 전체 응답에 MD 다운로드 버튼 추가
-      if(selSkills.includes('markdown-mermaid-writing') && !data.content.includes('```markdown')){
+      // selSkills(수동) 또는 autoLoadedSkills(자동) 모두 체크
+      if((selSkills.includes('markdown-mermaid-writing') || autoLoadedSkills.includes('markdown-mermaid-writing')) && !data.content.includes('```markdown')){
         appendMdDownloadBar(data.content);
       }
     }
@@ -5477,6 +5956,13 @@ function addMsg(role,text,rawForDetect){
     try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
     catch(e){cv.parentElement.innerHTML='<p style="color:red;padding:12px;">차트 렌더링 실패: '+e.message+'</p>';}
   });
+  // 피드백 버튼 (assistant 응답에만)
+  if(role==='assistant'){
+    const fbDiv=document.createElement('div');
+    fbDiv.className='msg-feedback';
+    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    d.appendChild(fbDiv);
+  }
   c.scrollIntoView({behavior:'smooth',block:'end'});
 }
 function addTyping(){
@@ -5735,6 +6221,7 @@ function loadSession(id){
   else { selSkills = []; }
   // 대화 히스토리 기반 자동 스킬 프리로드
   autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
   if(autoSkillMode && history.length > 0){
     const lastUser = [...history].reverse().find(m=>m.role==='user');
     if(lastUser){
@@ -6184,6 +6671,73 @@ async function uploadCsvFile(file){
 
   }catch(e){}
 }
+
+// ===== XLSX Upload (시트별 파싱 + 이미지) =====
+var _xlsxRawFile = null;  // 시트 변경 시 재업로드용
+
+async function uploadXlsxFile(file, sheetIdx){
+  _xlsxRawFile = file;
+  const formData = new FormData();
+  formData.append('file', file);
+  if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
+
+  try{
+    const resp = await fetch('/api/upload_xlsx', {method:'POST', body:formData});
+    const data = await resp.json();
+    if(data.error){ addMsg('assistant', '❌ ' + data.error); return; }
+
+    csvLoaded = true;
+    csvFilename = data.filename;
+
+    // 시트 선택 탭 (2개 이상일 때만)
+    let sheetTabs = '';
+    if(data.sheets && data.sheets.length > 1){
+      sheetTabs = '<div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">';
+      data.sheets.forEach(function(s, i){
+        var active = i === data.active_sheet;
+        sheetTabs += '<button style="padding:3px 10px;border-radius:12px;border:1.5px solid '+(active?'#6366f1':'#ddd')+';background:'+(active?'#6366f1':'#fff')+';color:'+(active?'#fff':'#333')+';font-size:11px;cursor:pointer;font-weight:'+(active?'600':'400')+'" onclick="switchXlsxSheet('+i+')">'+esc(s.name)+' <span style="color:'+(active?'rgba(255,255,255,.7)':'#999')+';font-size:10px">('+s.rows+'행)</span></button>';
+      });
+      sheetTabs += '</div>';
+    }
+
+    // 미리보기 테이블
+    let tableHtml = '<table><tr>' + data.headers.map(function(h){return '<th>'+esc(h)+'</th>';}).join('') + '</tr>';
+    if(data.sample_rows){
+      data.sample_rows.forEach(function(row){
+        tableHtml += '<tr>' + data.headers.map(function(h){return '<td>'+esc(row[h]||'')+'</td>';}).join('') + '</tr>';
+      });
+    }
+    tableHtml += '</table>';
+    if(data.rows > 3) tableHtml += '<div style="text-align:center;color:#999;font-size:10px;margin-top:4px">... 총 ' + data.rows + '행</div>';
+
+    // 이미지 안내
+    var imgInfo = '';
+    if(data.images_count > 0){
+      imgInfo = '<div style="margin-top:6px;padding:4px 8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">🖼️ 내장 이미지 ' + data.images_count + '개 감지 (VL 모델로 분석 가능)</div>';
+    }
+
+    var sheetInfo = data.sheets && data.sheets.length > 1 ? ' · ' + data.sheets.length + '시트' : '';
+
+    const panel = document.getElementById('csvInfoPanel');
+    panel.style.display = 'block';
+    panel.innerHTML =
+      '<div class="csv-info">' +
+        '<div class="fname">📊 ' + esc(data.filename) + ' [' + esc(data.active_sheet_name) + ']</div>' +
+        '<div class="fstats">' + data.rows + '행 × ' + data.cols + '열' + sheetInfo + '</div>' +
+        '<button class="fremove" onclick="removeCsv()">✕ 제거</button>' +
+        sheetTabs +
+        '<div class="csv-preview">' + tableHtml + '</div>' +
+        imgInfo +
+      '</div>';
+
+  }catch(e){ console.warn('XLSX 업로드 실패:', e); }
+}
+
+function switchXlsxSheet(idx){
+  if(!_xlsxRawFile) return;
+  uploadXlsxFile(_xlsxRawFile, idx);
+}
+
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ===== Unicode-safe Base64 유틸 (btoa/atob는 Latin1만 지원) =====
@@ -6470,6 +7024,73 @@ function renderMdPreview(escapedMd){
   return s;
 }
 
+// ===== 피드백 시스템 =====
+var _fbCurrentRating = '';
+var _fbCurrentBtn = null;
+
+function openFeedback(btn, rating){
+  _fbCurrentRating = rating;
+  _fbCurrentBtn = btn;
+  var modal = document.getElementById('feedbackModal');
+  var title = document.getElementById('fbModalTitle');
+  var display = document.getElementById('fbRatingDisplay');
+  var ta = document.getElementById('fbComment');
+  if(rating === 'good'){
+    title.textContent = '어떤 점이 좋았나요?';
+    display.textContent = '👍 좋아요';
+    ta.placeholder = '좋았던 점을 알려주세요 (선택사항)';
+  } else {
+    title.textContent = '어떤 점이 아쉬웠나요?';
+    display.textContent = '👎 별로예요';
+    ta.placeholder = '개선할 점을 알려주세요 (선택사항)';
+  }
+  ta.value = '';
+  modal.classList.add('show');
+  setTimeout(function(){ ta.focus(); }, 100);
+}
+
+function closeFeedbackModal(){
+  document.getElementById('feedbackModal').classList.remove('show');
+  _fbCurrentRating = '';
+  _fbCurrentBtn = null;
+}
+
+async function submitFeedback(){
+  var comment = document.getElementById('fbComment').value;
+  // 해당 메시지 내용 가져오기
+  var msgEl = _fbCurrentBtn ? _fbCurrentBtn.closest('.msg') : null;
+  var msgText = msgEl ? (msgEl.textContent || '').slice(0, 500) : '';
+  // 직전 유저 메시지
+  var userQuery = '';
+  if(msgEl){
+    var prev = msgEl.previousElementSibling;
+    while(prev){
+      if(prev.classList.contains('user')){ userQuery = (prev.textContent || '').slice(0, 300); break; }
+      prev = prev.previousElementSibling;
+    }
+  }
+  try{
+    await fetch('/api/feedback', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rating: _fbCurrentRating, comment: comment, message: msgText, user_query: userQuery })
+    });
+  }catch(e){}
+  // 버튼 시각 피드백
+  if(_fbCurrentBtn){
+    var fbDiv = _fbCurrentBtn.parentElement;
+    fbDiv.querySelectorAll('button').forEach(function(b){ b.classList.remove('fb-selected-good','fb-selected-bad'); });
+    _fbCurrentBtn.classList.add(_fbCurrentRating === 'good' ? 'fb-selected-good' : 'fb-selected-bad');
+  }
+  closeFeedbackModal();
+}
+
+// 모달 바깥 클릭으로 닫기
+document.addEventListener('click', function(e){
+  var modal = document.getElementById('feedbackModal');
+  if(e.target === modal) closeFeedbackModal();
+});
+
 // ===== 응답 전체를 MD 다운로드 가능하게 =====
 function appendMdDownloadBar(rawContent){
   // 마지막 assistant 메시지에 MD 다운로드 바 추가
@@ -6672,10 +7293,20 @@ async function uploadChatPendingFiles(){
       try{
         await uploadCsvFile(pf.file);
         results.push(pf.name);
-        // pending → 완료로 전환
         if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
       }catch(e){
-        // 실패 시 pending 제거
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+      }
+      continue;
+    }
+
+    // XLSX → 전용 엔드포인트 (시트별 파싱 + 이미지 추출)
+    if(ext === 'xlsx' && !csvLoaded){
+      try{
+        await uploadXlsxFile(pf.file);
+        results.push(pf.name);
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
+      }catch(e){
         if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
       }
       continue;
@@ -7595,6 +8226,62 @@ function _remakePpt(text){
   if(input){ input.value = text; input.focus(); input.style.height='auto'; input.style.height=input.scrollHeight+'px'; }
   // 자동 전송
   setTimeout(()=>send(), 100);
+}
+
+// ===== PPT 디자인 스타일 시스템 =====
+const PPT_STYLE_PROMPTS = {
+  minimal: '미니멀 디자인: 흰 배경(#FFFFFF), 검정/회색 텍스트, 여백 충분히, 장식 최소화, sans-serif 폰트(맑은 고딕/Arial), 깔끔한 선 구분. 색상은 #333333(제목), #666666(본문), #E0E0E0(구분선) 위주.',
+  corporate: '기업 프레젠테이션: 네이비(#1B2A4A) 상단 바 + 화이트 배경, 포인트 색상 #2563EB, 각 슬라이드에 상단 컬러 스트라이프, 표와 차트 적극 활용, 깔끔하고 전문적인 톤.',
+  colorful: '컬러풀 디자인: 슬라이드마다 다양한 밝은 배경 그라데이션, 색상 팔레트(#FF6B6B, #4ECDC4, #45B7D1, #FFA07A, #98D8C8, #F7DC6F), 둥근 도형과 카드형 레이아웃, 생동감 있는 구성.',
+  dark: '다크 테마: 어두운 배경(#1A1A2E 또는 #0F0F1F), 밝은 텍스트(#FFFFFF, #E0E0E0), 네온 포인트 컬러(#6366F1 메인, #A855F7 보조, #22D3EE 강조), 고급스럽고 세련된 느낌.',
+  academic: '학술 발표: 깔끔한 흰 배경, 보수적 배색(#2C3E50 제목, #34495E 본문), 번호 매긴 섹션 구조, 참고문헌 슬라이드 포함, 데이터는 차트/표 중심으로 시각화, 최소 장식.',
+  startup: '스타트업 피치덱: 대담한 헤드라인(큰 폰트), 핵심 숫자 크게 강조, 카드형 레이아웃, 모던 색상(#6366F1 메인, #EC4899 보조), 마지막에 CTA(Call-to-Action) 슬라이드 포함.',
+};
+var activePptStyle = '';
+var pptRefDesign = '';
+
+function applyPptStyle(val){
+  if(val === 'ref'){
+    var inp = document.createElement('input');
+    inp.type='file'; inp.accept='.pptx';
+    inp.onchange = function(){ if(inp.files[0]) uploadPptRef(inp.files[0]); };
+    inp.click();
+    document.getElementById('pptStyleDrop').value = activePptStyle;
+    return;
+  }
+  activePptStyle = val;
+  pptRefDesign = '';
+  document.getElementById('pptRefBadge').style.display = 'none';
+}
+
+async function uploadPptRef(file){
+  var fd = new FormData(); fd.append('file', file);
+  try{
+    var resp = await fetch('/api/analyze_ppt_style', {method:'POST', body:fd});
+    var data = await resp.json();
+    if(data.error){
+      addMsg('assistant', '❌ PPT 스타일 분석 실패: ' + data.error);
+      return;
+    }
+    if(data.design){
+      pptRefDesign = data.design;
+      activePptStyle = '';
+      document.getElementById('pptStyleDrop').value = '';
+      document.getElementById('pptRefBadge').style.display = 'inline-flex';
+      addMsg('assistant', '📎 참고 PPT 스타일 분석 완료: **' + file.name + '**\n' + data.summary + '\n\n새 PPT 생성 시 이 스타일을 반영합니다.');
+    }
+  }catch(e){
+    addMsg('assistant', '❌ PPT 스타일 분석 중 오류 발생');
+  }
+}
+
+function checkPptStyleVisibility(){
+  var drop = document.getElementById('pptStyleDrop');
+  if(!drop) return;
+  var text = (document.getElementById('input').value || '').toLowerCase();
+  var isPpt = /ppt|피피티|파워포인트|프레젠테이션|슬라이드|발표자료/.test(text);
+  var hasPptxSkill = selSkills.includes('pptx') || autoLoadedSkills.includes('pptx');
+  drop.style.display = (isPpt || hasPptxSkill) ? 'inline-block' : 'none';
 }
 </script>
 </body>
