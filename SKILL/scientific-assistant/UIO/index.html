@@ -2111,6 +2111,13 @@
       navigator.clipboard.writeText(json).then(() => { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '📋 JSON 복사', 1500); });
     }
 
+    function downloadLogpressoCsv(queryId) {
+      const a = document.createElement('a');
+      a.href = `/api/logpresso/query/download?query_id=${queryId}`;
+      a.download = `logpresso_${queryId}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+
     // ── Render markdown + chart/drawio blocks ──
     function renderMd(text) {
       // 1) ```chart 블록 → Chart.js 캔버스로 변환 (marked 처리 전)
@@ -2131,7 +2138,12 @@
         </div>`;
       });
 
-      // 2) 나머지 마크다운 렌더링
+      // 2) CSV 다운로드 마커 → 다운로드 버튼으로 변환
+      s = s.replace(/\[CSV_DOWNLOAD:(\w+):(\d+)\]/g, (_, qid, cnt) =>
+        `<button style="display:inline-flex;align-items:center;gap:6px;padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;margin:8px 0;" onmouseover="this.style.background='#4f46e5'" onmouseout="this.style.background='#6366f1'" onclick="downloadLogpressoCsv('${qid}')">📥 CSV 다운로드 (${cnt}건)</button>`
+      );
+
+      // 3) 나머지 마크다운 렌더링
       if (typeof marked !== 'undefined') {
         s = marked.parse(s);
       } else {
