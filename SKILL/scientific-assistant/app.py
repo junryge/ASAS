@@ -26,7 +26,13 @@ import io
 import csv
 import json
 import glob
+import re
+import math
+import time
+import uuid
+import urllib.parse
 import requests as req
+import warnings
 from flask import Flask, request, jsonify, render_template_string, send_file
 
 app = Flask(__name__)
@@ -49,6 +55,148 @@ uploaded_csv_data = {
 uploaded_files = []  # [{filename, type, size, summary, content_preview}]
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ============================================
+# 로그프레소 (Logpresso) 직접 조회 설정
+# ============================================
+LOGPRESSO_HOST = "10.40.42.27"
+LOGPRESSO_PORT = 8888
+LOGPRESSO_API_KEY = "db1d2335-49cf-e859-3519-1ca132922e38"
+LOGPRESSO_PAGE_SIZE = 50
+LOGPRESSO_CACHE_TTL = 600  # 10분
+LOGPRESSO_CACHE_MAX = 20
+
+# 알려진 테이블 메타데이터
+LOGPRESSO_TABLES = {
+    "ATLAS_OHT_HID_OFF": {
+        "desc": "HID Off 기록",
+        "columns": ["FAB_ID", "MCP_NM", "VHL_ID", "HID_ID", "OFF_TIME", "FROM_ADDRESS", "TO_ADDRESS"],
+    },
+    "ATLAS_HID_INFO": {
+        "desc": "HID 구간 정보",
+        "columns": ["FAB_ID", "MCP_NM", "HID_ID", "START", "ADDRESS"],
+    },
+    "ATLAS_RAIL_TRAFFIC": {
+        "desc": "Rail 교통 속력 데이터",
+        "columns": ["createTime", "fabId", "mcpName", "railEdgeId", "velocity", "maxVelocity", "absoluteVelocity", "vhlCnt", "passCnt", "HID_ID"],
+    },
+    "test_currentjob_predict": {
+        "desc": "알람 예측 데이터",
+        "columns": ["TIME", "ALARM_DESC", "ALARM_YN"],
+    },
+    "ts_data_view_m14a": {
+        "desc": "M14A 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+    "ts_data_view_m14b": {
+        "desc": "M14B 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+    "ts_data_view_m16": {
+        "desc": "M16 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+    "ts_data_view_m16b": {
+        "desc": "M16B 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+}
+
+# 쿼리 결과 캐시 {query_id: {"df": DataFrame, "ts": timestamp, "lpql": str}}
+_logpresso_cache = {}
+
+
+def _logpresso_cache_cleanup():
+    """만료된 캐시 제거"""
+    now = time.time()
+    expired = [k for k, v in _logpresso_cache.items() if now - v["ts"] > LOGPRESSO_CACHE_TTL]
+    for k in expired:
+        del _logpresso_cache[k]
+    # 최대 개수 초과 시 가장 오래된 것 삭제
+    while len(_logpresso_cache) > LOGPRESSO_CACHE_MAX:
+        oldest = min(_logpresso_cache, key=lambda k: _logpresso_cache[k]["ts"])
+        del _logpresso_cache[oldest]
+
+
+def classify_logpresso_intent(query):
+    """로그프레소 관련 질문의 의도를 4가지로 분류
+    Returns: 'table_list' | 'table_schema' | 'execute' | 'explain'
+    """
+    q = query.strip()
+
+    # 1) 테이블 탐색
+    table_list_kw = ["테이블 목록", "어떤 테이블", "테이블 뭐", "테이블 리스트", "테이블 종류",
+                     "테이블 있", "테이블 알려", "테이블 보여"]
+    if any(p in q for p in table_list_kw):
+        return "table_list"
+
+    # 2) 테이블 구조 확인
+    schema_kw = ["구조", "컬럼", "필드", "스키마", "뭐가 있", "어떤 데이터", "어떤 컬럼"]
+    if any(p in q for p in schema_kw):
+        return "table_schema"
+
+    # 3) 직접 조회 (실행 필요)
+    exec_kw = ["보여줘", "조회해", "찾아줘", "검색해", "확인해줘", "가져와", "뽑아",
+               "조회 해", "몇건", "몇개", "몇 건", "몇 개", "데이터 줘",
+               "로그 줘", "결과 줘", "실행해", "돌려"]
+    if any(p in q for p in exec_kw):
+        return "execute"
+
+    # 4) 쿼리 질문 (기본) - 쿼리 작성법/문법/설명
+    return "explain"
+
+
+def query_logpresso(query, timeout=180):
+    """로그프레소 LPQL 쿼리 실행 → pandas DataFrame 반환"""
+    import pandas as pd
+    from io import StringIO
+
+    query_clean = " ".join(query.split())
+    encoded = urllib.parse.quote(query_clean, safe="")
+    url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv?_apikey={LOGPRESSO_API_KEY}&_q={encoded}"
+
+    warnings.filterwarnings("ignore")
+    try:
+        resp = req.get(url, verify=False, timeout=timeout)
+        if resp.status_code == 200 and resp.text.strip() and not resp.text.startswith("<!"):
+            df = pd.read_csv(StringIO(resp.text))
+            return df
+        else:
+            return None
+    except Exception as e:
+        print(f"[Logpresso] 쿼리 예외: {e}")
+        return None
+
+
+# 보안: 읽기 전용 명령만 허용
+_LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
+
+
+def validate_lpql_readonly(lpql):
+    """LPQL 쿼리가 읽기 전용인지 검증. 위반 시 에러 메시지 반환, 통과 시 None"""
+    lower = lpql.lower().strip()
+    for cmd in _LPQL_BLOCKED_COMMANDS:
+        # 파이프라인 시작이나 | 뒤에 금지 명령이 오는지 체크
+        if lower.startswith(cmd) or f"| {cmd}" in lower or f"|{cmd}" in lower:
+            return f"보안 차단: '{cmd.strip()}' 명령은 실행할 수 없습니다. 읽기 전용 쿼리만 허용됩니다."
+    return None
+
+
+def extract_lpql_from_response(text):
+    """LLM 응답에서 ```lpql ... ``` 또는 ``` ... ``` 코드블록 추출"""
+    # ```lpql 블록 우선
+    m = re.search(r"```(?:lpql|LPQL)\s*\n(.*?)```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    # 일반 ``` 블록 (LPQL 키워드가 내용에 있으면)
+    m = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
+    if m:
+        candidate = m.group(1).strip()
+        lpql_indicators = ["table ", "fulltext ", "stream ", "| fields", "| search", "| sort", "| limit", "| eval", "| stats"]
+        if any(ind in candidate.lower() for ind in lpql_indicators):
+            return candidate
+    return None
+
 
 # ============================================
 # 설정
@@ -842,7 +990,7 @@ SKILL_KEYWORDS = {
     "agent-data-scientist": ["데이터분석","data science","분석가","EDA","탐색적분석","데이터","탐색","탐색하"],
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
-    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색"],
+    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색","로그프레소 조회","로그프레소 테이블","ATLAS_","ts_data_view","로그 검색","로그 보여","설비 로그","알람 조회","알람 데이터"],
     "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
@@ -2133,6 +2281,323 @@ def api_skill_run(skill_name):
         return jsonify({"error": "스크립트 실행 시간 초과 (60초)"}), 504
     except Exception as e:
         return jsonify({"error": f"실행 오류: {str(e)}"}), 500
+
+
+# ============================================
+# 로그프레소 자연어 쿼리 API
+# ============================================
+
+def _llm_generate_lpql(user_query, history=None):
+    """LLM을 호출하여 자연어 → LPQL 쿼리 생성"""
+    from datetime import datetime
+    today = datetime.now().strftime("%Y%m%d")
+
+    # 테이블 목록을 시스템 프롬프트에 포함
+    table_info = "\n".join(
+        f"- {name}: {info['desc']} (컬럼: {', '.join(info['columns'])})"
+        for name, info in LOGPRESSO_TABLES.items()
+    )
+
+    skill_content = load_skill_content("logpresso-query") or ""
+
+    system_prompt = f"""당신은 로그프레소 LPQL 쿼리 생성 전문가입니다.
+사용자의 자연어 요청을 실행 가능한 LPQL 쿼리로 변환하세요.
+
+## 규칙
+1. 반드시 ```lpql 코드블록 안에 쿼리만 출력하세요.
+2. 쿼리 앞뒤로 간단한 설명을 추가하세요.
+3. 오늘 날짜: {today} (시간 형식: yyyyMMddHHmmss)
+4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
+5. 결과가 너무 많을 수 있으니 적절히 limit을 걸어주세요 (기본 limit 500).
+6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
+
+## 사용 가능한 테이블
+{table_info}
+
+## LPQL 문법 참고
+{skill_content[:4000]}
+"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history[-4:])
+    messages.append({"role": "user", "content": user_query})
+
+    # LLM 호출 (dev 환경 = GLM-4.7 사용)
+    env = ENV_CONFIG.get("dev", {})
+    if not env:
+        env = list(ENV_CONFIG.values())[0]
+
+    headers = {"Content-Type": "application/json"}
+    if API_TOKEN:
+        headers["Authorization"] = f"Bearer {API_TOKEN}"
+
+    try:
+        resp = req.post(
+            env["url"],
+            headers=headers,
+            json={
+                "model": env["model"],
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 2048,
+                "stream": False,
+            },
+            timeout=60,
+            verify=False,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"[Logpresso LLM] 오류: {e}")
+    return None
+
+
+@app.route("/api/logpresso/query", methods=["POST"])
+def api_logpresso_query():
+    """로그프레소 자연어 쿼리 엔드포인트 (4가지 모드 자동 분류)
+
+    Input:
+      - query: 자연어 질문
+      - history: 대화 히스토리 (선택)
+      - mode: 강제 모드 지정 (선택: table_list, table_schema, execute, explain)
+      - lpql: 직접 LPQL 전달 시 LLM 스킵 (선택)
+      - page: 페이지 번호 (기본 1)
+
+    쿼리 실행 예문:
+      curl -X POST /api/logpresso/query -H "Content-Type: application/json" \\
+        -d '{"query": "어제 M14A ERROR 로그 보여줘"}'
+      curl -X POST /api/logpresso/query \\
+        -d '{"query": "ATLAS_RAIL_TRAFFIC 테이블 구조 알려줘"}'
+      curl -X POST /api/logpresso/query \\
+        -d '{"query": "어떤 테이블이 있어?"}'
+      curl -X POST /api/logpresso/query \\
+        -d '{"query": "M14A에서 최근 1시간 CARRIER별 로그 건수 조회해줘"}'
+      curl -X POST /api/logpresso/query \\
+        -d '{"lpql": "table duration=1h ts_data_view_m14a | stats count by CARRIER | sort count desc"}'
+    """
+    import pandas as pd
+
+    data = request.json or {}
+    user_query = data.get("query", "").strip()
+    history = data.get("history", [])
+    forced_mode = data.get("mode", "")
+    direct_lpql = data.get("lpql", "").strip()
+    page = max(1, data.get("page", 1))
+
+    if not user_query and not direct_lpql:
+        return jsonify({"error": "query 또는 lpql 파라미터가 필요합니다."}), 400
+
+    # 모드 결정
+    if forced_mode:
+        mode = forced_mode
+    elif direct_lpql:
+        mode = "execute"
+    else:
+        mode = classify_logpresso_intent(user_query)
+
+    # ── 모드 1: 테이블 목록 ──
+    if mode == "table_list":
+        tables = []
+        for name, info in LOGPRESSO_TABLES.items():
+            tables.append({
+                "table": name,
+                "desc": info["desc"],
+                "columns": info["columns"],
+                "column_count": len(info["columns"]),
+            })
+        return jsonify({
+            "mode": "table_list",
+            "tables": tables,
+            "total": len(tables),
+            "message": f"총 {len(tables)}개 테이블이 등록되어 있습니다.",
+            "examples": [
+                {"query": "ATLAS_RAIL_TRAFFIC 테이블 구조 알려줘", "desc": "테이블 상세 구조 확인"},
+                {"query": "ATLAS_RAIL_TRAFFIC에서 최근 1시간 데이터 보여줘", "desc": "직접 조회"},
+            ],
+        })
+
+    # ── 모드 2: 테이블 구조 확인 ──
+    if mode == "table_schema":
+        # 쿼리에서 테이블명 매칭
+        matched_table = None
+        for tname in LOGPRESSO_TABLES:
+            if tname.lower() in user_query.lower():
+                matched_table = tname
+                break
+
+        if not matched_table:
+            return jsonify({
+                "mode": "table_schema",
+                "error": "테이블명을 인식할 수 없습니다.",
+                "available_tables": list(LOGPRESSO_TABLES.keys()),
+                "hint": "질문에 테이블명을 포함해주세요. 예: 'ATLAS_RAIL_TRAFFIC 구조 알려줘'",
+            }), 400
+
+        info = LOGPRESSO_TABLES[matched_table]
+
+        # 샘플 데이터 조회 시도
+        sample_data = []
+        sample_lpql = f"table duration=5m {matched_table} | limit 5"
+        df = query_logpresso(sample_lpql, timeout=30)
+        if df is not None and len(df) > 0:
+            sample_data = df.head(5).to_dict("records")
+
+        return jsonify({
+            "mode": "table_schema",
+            "table": matched_table,
+            "desc": info["desc"],
+            "columns": info["columns"],
+            "column_count": len(info["columns"]),
+            "sample_data": sample_data,
+            "sample_lpql": sample_lpql,
+            "examples": [
+                {"query": f"{matched_table}에서 최근 1시간 데이터 보여줘", "desc": "직접 조회"},
+                {"query": f"{matched_table} 최근 데이터 10건 조회해줘", "desc": "최근 데이터"},
+            ],
+        })
+
+    # ── 모드 3: 쿼리 설명 (explain) ──
+    if mode == "explain":
+        llm_response = _llm_generate_lpql(user_query, history)
+        if not llm_response:
+            return jsonify({"mode": "explain", "error": "LLM 응답 실패"}), 500
+
+        lpql = extract_lpql_from_response(llm_response)
+        result = {
+            "mode": "explain",
+            "explanation": llm_response,
+            "lpql": lpql,
+            "examples": [
+                {"query": user_query + " 실행해줘", "desc": "이 쿼리를 직접 실행하려면"},
+            ],
+        }
+        if lpql:
+            result["execute_hint"] = "이 쿼리를 실행하려면 mode='execute'로 다시 요청하거나, lpql 파라미터에 직접 전달하세요."
+        return jsonify(result)
+
+    # ── 모드 4: 직접 조회 (execute) ──
+    lpql = direct_lpql
+    llm_explanation = ""
+
+    if not lpql:
+        llm_response = _llm_generate_lpql(user_query, history)
+        if not llm_response:
+            return jsonify({"mode": "execute", "error": "LLM에서 LPQL 생성 실패"}), 500
+
+        llm_explanation = llm_response
+        lpql = extract_lpql_from_response(llm_response)
+
+        if not lpql:
+            return jsonify({
+                "mode": "execute",
+                "error": "LLM 응답에서 LPQL 쿼리를 추출할 수 없습니다.",
+                "llm_response": llm_response,
+            }), 400
+
+    # 보안 검증
+    sec_error = validate_lpql_readonly(lpql)
+    if sec_error:
+        return jsonify({"mode": "execute", "error": sec_error, "lpql": lpql}), 403
+
+    # 쿼리 실행
+    df = query_logpresso(lpql, timeout=180)
+    if df is None:
+        return jsonify({
+            "mode": "execute",
+            "error": "Logpresso 서버 응답 없음 또는 쿼리 오류",
+            "lpql": lpql,
+            "explanation": llm_explanation,
+        }), 502
+
+    total_rows = len(df)
+    total_pages = max(1, math.ceil(total_rows / LOGPRESSO_PAGE_SIZE))
+    page = min(page, total_pages)
+
+    # 캐시에 저장
+    _logpresso_cache_cleanup()
+    query_id = str(uuid.uuid4())[:8]
+    _logpresso_cache[query_id] = {"df": df, "ts": time.time(), "lpql": lpql}
+
+    # 현재 페이지 데이터
+    start = (page - 1) * LOGPRESSO_PAGE_SIZE
+    end = start + LOGPRESSO_PAGE_SIZE
+    page_df = df.iloc[start:end]
+    page_data = page_df.to_dict("records")
+
+    return jsonify({
+        "mode": "execute",
+        "success": True,
+        "lpql": lpql,
+        "explanation": llm_explanation,
+        "query_id": query_id,
+        "columns": list(df.columns),
+        "data": page_data,
+        "page": page,
+        "page_size": LOGPRESSO_PAGE_SIZE,
+        "total_rows": total_rows,
+        "total_pages": total_pages,
+        "examples": [
+            {"query": f'{{"query_id": "{query_id}", "page": 2}}', "desc": "다음 페이지 조회 → /api/logpresso/query/page"},
+        ],
+    })
+
+
+@app.route("/api/logpresso/query/page", methods=["POST"])
+def api_logpresso_query_page():
+    """페이지네이션: 캐시된 결과에서 특정 페이지 반환 (50건씩)
+
+    Input:
+      - query_id: 이전 /api/logpresso/query 응답의 query_id
+      - page: 페이지 번호 (1부터 시작)
+
+    예문:
+      curl -X POST /api/logpresso/query/page -H "Content-Type: application/json" \\
+        -d '{"query_id": "abc12345", "page": 2}'
+    """
+    data = request.json or {}
+    query_id = data.get("query_id", "")
+    page = max(1, data.get("page", 1))
+
+    if not query_id or query_id not in _logpresso_cache:
+        return jsonify({
+            "error": "query_id가 유효하지 않거나 캐시가 만료되었습니다. 새로 조회해주세요.",
+        }), 404
+
+    cache = _logpresso_cache[query_id]
+    cache["ts"] = time.time()  # 접근 시 TTL 갱신
+
+    df = cache["df"]
+    total_rows = len(df)
+    total_pages = max(1, math.ceil(total_rows / LOGPRESSO_PAGE_SIZE))
+    page = min(page, total_pages)
+
+    start = (page - 1) * LOGPRESSO_PAGE_SIZE
+    end = start + LOGPRESSO_PAGE_SIZE
+    page_data = df.iloc[start:end].to_dict("records")
+
+    return jsonify({
+        "query_id": query_id,
+        "lpql": cache["lpql"],
+        "columns": list(df.columns),
+        "data": page_data,
+        "page": page,
+        "page_size": LOGPRESSO_PAGE_SIZE,
+        "total_rows": total_rows,
+        "total_pages": total_pages,
+        "row_range": f"{start + 1}~{min(end, total_rows)}",
+    })
+
+
+@app.route("/api/logpresso/tables", methods=["GET"])
+def api_logpresso_tables():
+    """등록된 테이블 목록 반환 (간단 API)"""
+    tables = []
+    for name, info in LOGPRESSO_TABLES.items():
+        tables.append({"table": name, "desc": info["desc"], "columns": info["columns"]})
+    return jsonify({"tables": tables, "total": len(tables)})
 
 
 @app.route("/api/upload_csv", methods=["POST"])
