@@ -2656,11 +2656,12 @@ def extract_file_text(filepath, filename):
                 text = f"(PDF 텍스트 추출 실패: {e})"
                 file_type = "pdf"
 
-        # PPTX
+        # PPTX (텍스트 + 이미지 추출)
         elif ext == 'pptx':
             try:
                 import zipfile
                 import xml.etree.ElementTree as ET
+                import base64 as _b64
                 with zipfile.ZipFile(filepath) as z:
                     slide_texts = []
                     for name in sorted(z.namelist()):
@@ -2675,6 +2676,30 @@ def extract_file_text(filepath, filename):
                                 if texts_in_slide:
                                     slide_num = name.split('slide')[-1].split('.')[0]
                                     slide_texts.append(f"[슬라이드 {slide_num}] {' | '.join(texts_in_slide)}")
+                    # 내장 이미지 추출 → uploaded_files에 추가 (VL 모델 분석용)
+                    img_count = 0
+                    for name in z.namelist():
+                        if name.startswith('ppt/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+                            with z.open(name) as img_f:
+                                img_data = img_f.read()
+                                if len(img_data) <= 5 * 1024 * 1024:
+                                    img_ext = name.rsplit('.', 1)[-1].lower()
+                                    b64 = _b64.b64encode(img_data).decode('ascii')
+                                    img_name = name.split('/')[-1]
+                                    uploaded_files.append({
+                                        "filename": f"{filename}/{img_name}",
+                                        "safe_name": img_name,
+                                        "type": "image",
+                                        "ext": img_ext,
+                                        "size": len(img_data),
+                                        "content_preview": f"(PPT 내장 이미지: {img_name})",
+                                        "content_full": f"(PPT 내장 이미지: {img_name})",
+                                        "img_base64": b64,
+                                        "path": "",
+                                    })
+                                    img_count += 1
+                    if img_count > 0:
+                        slide_texts.append(f"\n[내장 이미지 {img_count}개 추출됨 — VL 모델로 분석 가능]")
                     text = '\n'.join(slide_texts)
                 file_type = "pptx"
             except Exception as e:
