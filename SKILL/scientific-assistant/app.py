@@ -5370,15 +5370,19 @@ async function send(){
   }
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
-  // 첨부파일이 있으면 먼저 업로드
+  // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
+  autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
+
+  // 첨부파일이 있으면 먼저 업로드 (파일 확장자 기반 스킬이 autoLoadedSkills에 추가됨)
   let attachedNames = [];
   if(chatPendingFiles.length > 0){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 스킬 구성: 수동 선택 + 파일 프리로드 + 질문 기반 자동 추천
+  // 스킬 구성: 수동 선택 + 파일 기반 자동 + 질문 기반 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [...autoLoadedSkills];  // 파일 첨부/세션 로드로 프리로드된 스킬
+  let autoLoaded = [...autoLoadedSkills];  // 파일 업로드로 새로 감지된 스킬만
 
   // 프리로드 스킬 중 수동/해제 중복 제거
   const manualSet = new Set(skillsToUse);
@@ -5415,10 +5419,10 @@ async function send(){
   document.getElementById('autoSkillPreview').classList.remove('show');
 
   // 자동 로드 안내 (selSkills에는 추가하지 않음 - 1회성 사용)
+  autoLoadedSkills = autoLoaded;
+  renderSkills();
+  updateLoaded();
   if(autoLoaded.length > 0){
-    autoLoadedSkills = autoLoaded;
-    renderSkills();
-    updateLoaded();
     const manualCount = selSkills.length;
     const info = manualCount > 0 ? ` (수동 ${manualCount}개 + 자동 ${autoLoaded.length}개)` : '';
     addMsg('assistant', '🧠 자동 스킬: ' + autoLoaded.join(', ') + info);
