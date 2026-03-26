@@ -319,9 +319,23 @@ def extract_lpql_from_response(text):
 
 
 def _clean_lpql(lpql):
-    """LPQL에서 주석(#)과 빈 줄 제거"""
+    """LPQL에서 주석(#)과 빈 줄 제거 + table from=/to= → fulltext 자동 변환"""
+    # 주석 제거
     lines = [line for line in lpql.split('\n') if line.strip() and not line.strip().startswith('#')]
-    return ' '.join(lines).strip() if lines else lpql
+    cleaned = ' '.join(lines).strip() if lines else lpql
+
+    # table from=/to= → fulltext from=/to= 자동 변환
+    # table 명령은 from=/to=를 지원하지 않으므로 fulltext로 변환
+    m = re.match(
+        r'^table\s+from\s*=\s*(\d{14})\s+to\s*=\s*(\d{14})\s+(\S+)(.*)',
+        cleaned, re.IGNORECASE
+    )
+    if m:
+        from_ts, to_ts, table_name, rest = m.group(1), m.group(2), m.group(3), m.group(4)
+        cleaned = f"fulltext from={from_ts} to={to_ts} * from {table_name}{rest}"
+        print(f"[LPQL] table from/to → fulltext 자동 변환: {cleaned[:150]}")
+
+    return cleaned
 
 
 # ============================================
