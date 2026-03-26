@@ -50,14 +50,14 @@ LPQL은 유닉스 파이프와 동일한 구조다. 각 명령어의 출력이 �
 
 ### table — 테이블 조회 (가장 기본)
 ```
-table [duration=기간] [from=시작] [to=끝] 테이블명
+table duration=기간 테이블명
 ```
+
+> **주의: `table` 명령에서 `from=/to=`는 httpexport API에서 지원되지 않습니다. 반드시 `duration=`만 사용하세요.**
 
 | 옵션 | 설명 | 예시 |
 |------|------|------|
 | `duration` | 현재 기준 조회 기간 | `1h`, `30m`, `7d`, `1mon` |
-| `from` | 시작 시각 | `20240101000000` (yyyyMMddHHmmss) |
-| `to` | 종료 시각 | `20240131235959` |
 | 와일드카드 | 테이블명에 `*` 사용 가능 | `table sys_*` |
 
 시간 단위: `y`(연), `mon`(월), `w`(주), `d`(일), `h`(시), `m`(분), `s`(초)
@@ -66,47 +66,15 @@ table [duration=기간] [from=시작] [to=끝] 테이블명
 # 최근 1시간 웹 로그 조회
 table duration=1h web_access_log
 
-# 특정 기간 조회
-table from=20240301000000 to=20240331235959 firewall_log
+# 최근 30일 조회
+table duration=30d firewall_log
 
 # 와일드카드 - sys_로 시작하는 모든 테이블
 table sys_*
 ```
 
-### fulltext — 풀텍스트 검색 (고속 조회 핵심)
-```
-fulltext [duration=기간] [from=시작] [to=끝] [조건식] from 테이블1[, 테이블2, ...]
-```
-- 인덱스 기반으로 **table보다 빠르게** 대량 데이터를 검색할 수 있다
-- 필드 조건(`==`, `!=`, `and`, `or`)을 fulltext 안에 직접 사용 가능
-- `from 테이블명`으로 검색 대상 테이블을 명시적으로 지정 (여러 테이블 쉼표 구분)
-- 특정 키워드를 **TEXT 필드나 전체 텍스트에서 검색**하려면 큰따옴표로 감싸기
-
-```
-# 기본 풀텍스트 검색
-fulltext duration=24h "login failed"
-
-# 여러 조건 조합
-fulltext duration=1d src_ip == "10.0.0.1" and "denied"
-
-# 특정 테이블(들)에서 필드 조건 + 텍스트 검색 (★ 핵심 패턴)
-fulltext from=20260308000000 to=20260308235959 (LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and ((CARRIER=="4PDK2966") or (TEXT=="4PDK2966")) from ts_data_view_m14a, ts_data_view_m14b, ts_data_view_m16, ts_data_view_m16b
-
-# 여러 테이블 동시 검색 (duration 사용)
-fulltext duration=1h (LEVEL=="ERROR") from ts_data_view_m14a, ts_data_view_m14b
-
-# 특정 장비의 SECS 로그 검색 (CARRIER 또는 TEXT에서)
-fulltext duration=30m ((CARRIER=="캐리어ID") or (TEXT=="캐리어ID")) from secs_data_m14b
-```
-
-#### fulltext 뒤 파이프라인 조합 (실전 패턴)
-```
-fulltext from=20260308000000 to=20260308235959 (LEVEL=="ERROR") and (CARRIER=="4PDK2966") from ts_data_view_m14a, ts_data_view_m14b
-| fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
-| sort _time
-| limit 0 1000
-| eval No = seq() + 0
-```
+### fulltext — 사용 금지
+> **httpexport API에서 fulltext는 사용하지 마세요. 모든 조회는 `table duration=`을 사용하세요.**
 
 ### stream — 실시간 스트림
 ```
@@ -500,29 +468,23 @@ proc ip_check("10.0.0.100")
 
 ### 패턴 0: 반도체 팹 — 캐리어/장비 추적 (★ 핵심 실전 패턴)
 ```
-# 특정 캐리어의 전체 이력 추적 (여러 테이블 동시, fulltext 사용 = 빠름)
-fulltext from=20260308000000 to=20260308235959 (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and ((CARRIER=="4PDK2966") or (TEXT=="4PDK2966")) from ts_data_view_m14a, ts_data_view_m14b, ts_data_view_m16, ts_data_view_m16b
-| fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+# 특정 캐리어의 최근 1일 이력 추적
+table duration=1d ts_data_view_m14a
+| search (LEVEL == "WELL" or LEVEL == "WARN" or LEVEL == "ERROR" or LEVEL == "FATAL")
+| search CARRIER == "4PDK2966"
+| fields _time, TIME_EX, MACHINENAME, CARRIER, TEXT, LEVEL
 | sort _time
 | limit 0 1000
 | eval No = seq() + 0
 
-# SECS 데이터에서 특정 장비 에러 추적
-fulltext duration=1h (LEVEL=="ERROR") and (NAME=="4ACMD601") from secs_data_m14b
-| fields _time, CEID_TYPE, DATA, HOST, LEVEL, NAME, S_F, BSE, CSIISKEY, TEXT, TIME_EX
-| sort _time
-
-# 특정 기간 ERROR/FATAL만 조회 (table 사용)
-table from=20260308000000 to=20260308235959 ts_data_view_m14a
+# 특정 기간 ERROR/FATAL만 조회
+table duration=1d ts_data_view_m14a
 | search LEVEL == "ERROR" or LEVEL == "FATAL"
 | search CARRIER == "4PDK2966"
 | fields _time, MACHINENAME, CARRIER, TEXT, LEVEL
 | sort _time
 | limit 500
 ```
-
-> **tip**: 캐리어/장비 추적 시 `fulltext`를 쓰면 인덱스 기반이라 `table` + `search`보다 빠르다.
-> 여러 테이블을 `from 테이블1, 테이블2`로 한번에 검색할 수 있다.
 
 ### 패턴 1: 보안 — 브루트포스 탐지
 ```
