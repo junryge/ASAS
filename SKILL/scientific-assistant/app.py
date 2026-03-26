@@ -2385,38 +2385,54 @@ def _llm_generate_lpql(user_query, history=None):
         messages.extend(history[-4:])
     messages.append({"role": "user", "content": user_query})
 
-    # LLM 호출 (dev 환경 = GLM-4.7 사용)
-    env = ENV_CONFIG.get("dev", {})
-    if not env:
-        env = list(ENV_CONFIG.values())[0]
+    # LLM 호출 — AUTO 폴백: 첫 모델 실패 시 다음 모델로 자동 전환
+    # LPQL 생성에 적합한 텍스트 모델 우선순위 (vision/reranker/embedding 제외)
+    _LPQL_MODEL_CHAIN = [
+        "glm-4.7", "gpt-oss-120b", "qwen3.5-397b",
+        "qwen3-vl-30b", "qwen2.5-vl-72b", "qwen3-vl-235b",
+    ]
 
     headers = {"Content-Type": "application/json"}
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
 
-    try:
-        resp = req.post(
-            env["url"],
-            headers=headers,
-            json={
-                "model": env["model"],
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2048,
-                "stream": False,
-            },
-            timeout=60,
-            verify=False,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-    except req.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response is not None else 0
-        print(f"[Logpresso LLM] HTTP {code} 오류: {e} | env={env.get('name','')} model={env.get('model','')}")
-    except Exception as e:
-        print(f"[Logpresso LLM] 오류: {e} | env={env.get('name','')} model={env.get('model','')}")
+    for model_key in _LPQL_MODEL_CHAIN:
+        reg = MODEL_REGISTRY.get(model_key)
+        if not reg:
+            continue
+        try:
+            resp = req.post(
+                reg["url"],
+                headers=headers,
+                json={
+                    "model": reg["model"],
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 2048,
+                    "stream": False,
+                },
+                timeout=60,
+                verify=False,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"]["content"]
+                if content:
+                    print(f"[Logpresso LLM] 성공: {reg['model']}")
+                    return content
+        except req.exceptions.HTTPError as e:
+            code = e.response.status_code if e.response is not None else 0
+            print(f"[Logpresso LLM] HTTP {code} 오류 → 다음 모델 시도 | model={reg['model']}")
+            continue
+        except req.exceptions.Timeout:
+            print(f"[Logpresso LLM] 타임아웃 → 다음 모델 시도 | model={reg['model']}")
+            continue
+        except Exception as e:
+            print(f"[Logpresso LLM] 오류 → 다음 모델 시도 | model={reg['model']} err={e}")
+            continue
+
+    print(f"[Logpresso LLM] 모든 모델 실패 ({len(_LPQL_MODEL_CHAIN)}개 시도)")
     return None
 
 
