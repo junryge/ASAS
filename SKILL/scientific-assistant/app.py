@@ -26,13 +26,7 @@ import io
 import csv
 import json
 import glob
-import re
-import math
-import time
-import uuid
-import urllib.parse
 import requests as req
-import warnings
 from flask import Flask, request, jsonify, render_template_string, send_file
 
 app = Flask(__name__)
@@ -55,275 +49,6 @@ uploaded_csv_data = {
 uploaded_files = []  # [{filename, type, size, summary, content_preview}]
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# ============================================
-# 로그프레소 (Logpresso) 직접 조회 설정
-# ============================================
-LOGPRESSO_HOST = "10.40.42.27"
-LOGPRESSO_PORT = 8888
-LOGPRESSO_API_KEY = "db1d2335-49cf-e859-3519-1ca132922e38"
-LOGPRESSO_PAGE_SIZE = 50
-LOGPRESSO_CACHE_TTL = 600  # 10분
-LOGPRESSO_CACHE_MAX = 20
-
-# 알려진 테이블 메타데이터 (컬럼 정보가 있는 테이블)
-LOGPRESSO_TABLES = {
-    "ATLAS_OHT_HID_OFF": {
-        "desc": "HID Off 기록",
-        "columns": ["FAB_ID", "MCP_NM", "VHL_ID", "HID_ID", "OFF_TIME", "FROM_ADDRESS", "TO_ADDRESS"],
-    },
-    "ATLAS_HID_INFO": {
-        "desc": "HID 구간 정보",
-        "columns": ["FAB_ID", "MCP_NM", "HID_ID", "START", "ADDRESS"],
-    },
-    "ATLAS_RAIL_TRAFFIC": {
-        "desc": "Rail 교통 속력 데이터",
-        "columns": ["createTime", "fabId", "mcpName", "railEdgeId", "velocity", "maxVelocity", "absoluteVelocity", "vhlCnt", "passCnt", "HID_ID"],
-    },
-    "test_currentjob_predict": {
-        "desc": "알람 예측 데이터",
-        "columns": ["TIME", "ALARM_DESC", "ALARM_YN"],
-    },
-    "ts_data_view_m14a": {
-        "desc": "M14A 설비 로그",
-        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
-    },
-    "ts_data_view_m14b": {
-        "desc": "M14B 설비 로그",
-        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
-    },
-    "ts_data_view_m16": {
-        "desc": "M16 설비 로그",
-        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
-    },
-    "ts_data_view_m16b": {
-        "desc": "M16B 설비 로그",
-        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
-    },
-}
-
-# 로그프레소 서버에 등록된 전체 테이블 목록 (중복 제거)
-LOGPRESSO_ALL_TABLES = sorted(set([
-    "abnormal_detect_data", "ALERT_ABNORMAL_HIS", "AMOS_ALARM_PARAMETER",
-    "araqne_log", "araqne_query_logs", "araqne_query_logs_bak",
-    "ATLAS_AREA_TRAFFIC", "ATLAS_BRANCH_TRAFFIC", "ATLAS_COMMAND",
-    "ATLAS_HID_INFO", "ATLAS_HIS_BRG_CNV_DIR", "ATLAS_HIS_BRG_CNV_OUT",
-    "ATLAS_HIS_BRG_COST_PRED", "ATLAS_HIS_BRG_STK_DIR", "ATLAS_HIS_BRG_STK_IN",
-    "ATLAS_HIS_BRG_STK_OUT", "ATLAS_HIS_BRG_STK_RM", "ATLAS_HIS_CNV_LE_STATE",
-    "ATLAS_HIS_CNV_TASK", "ATLAS_HIS_EQP_STATUS", "ATLAS_HIS_PORT_STATUS",
-    "ATLAS_HIS_STB_GRP_STATUS", "ATLAS_HIS_STK_STATUS", "ATLAS_ITSM_SCHD_MNT",
-    "ATLAS_JOB", "ATLAS_JOB_AREA", "ATLAS_M14_LFT_RECOMMAND", "ATLAS_M15_LFT_RECOMMAND",
-    "ATLAS_MAP", "ATLAS_MAS_AREA", "ATLAS_MAS_BAY", "ATLAS_MAS_BRANCHJOINEDGE",
-    "ATLAS_MAS_EDGE", "ATLAS_MAS_EQP", "ATLAS_MAS_LONGEDGE", "ATLAS_MAS_NODE",
-    "ATLAS_MAS_STATION", "ATLAS_MAS_VHL", "ATLAS_MCP75CFG", "ATLAS_NEWPREDICT_LIST",
-    "ATLAS_OHT_HID_OFF", "ATLAS_OHT_PARA_REG_BJ_DATA", "ATLAS_OHT_PARA_REG_DATA",
-    "ATLAS_OHT_RAIL_CUT", "ATLAS_OHT_RAIL_VIBRATION", "ATLAS_OHT_STATS_HIS",
-    "ATLAS_OHT_STG_CMD_MNT", "ATLAS_OHT_VHL_CNT", "ATLAS_OHT_VHL_OFF",
-    "ATLAS_OHT_VHL_OFF_ONLY", "ATLAS_RAIL_TRAFFIC", "ATLAS_RAW_DATA",
-    "ATLAS_RAW_DATA_ACTIONTYPE", "ATLAS_ROUTE", "ATLAS_STA_TRANS_HIS",
-    "ATLAS_STA_TRANS_HIS_RAW", "ATLAS_STATISTICS", "ATLAS_STB_OCCUPY",
-    "ATLAS_STBGROUP", "ATLAS_STOCKER", "ATLAS_TIB_SEND_MSG_LOG",
-    "ATLAS_TS_PREDICT", "ATLAS_UDP", "ATLAS_UPDATE_EQP", "ATLAS_VEHICLE",
-    "ATLAS_VHL_COUNT", "ATLAS_VIB_PARA_DATA", "ATLAS_VIB_PARA_REG_DATA",
-    "bridge_judge_range", "bridge_layout_detail", "bridge_layout_test", "bridge_layout_tmp",
-    "cs_data", "cs_data_m14b", "cs_data_m15", "cs_data_m15b", "cs_data_m16", "cs_data_m16b",
-    "cs_raw", "cs_raw_m14b", "cs_raw_m15b", "cs_raw_m16", "cs_raw_m16b",
-    "ds_data", "ds_data_m14b", "ds_data_m15", "ds_data_m15b", "ds_data_m16", "ds_data_m16b",
-    "ds_raw", "ds_raw_m14b", "ds_raw_m15b", "ds_raw_m16", "ds_raw_m16b",
-    "ei_data", "ei_data_m14b", "ei_data_m15", "ei_data_m15b", "ei_data_m16", "ei_data_m16b",
-    "ei_raw", "ei_raw_m14b", "ei_raw_m15b", "ei_raw_m16", "ei_raw_m16b",
-    "empty", "fabscope_m14a", "fabscope_m14b",
-    "ICPKT_ATLAS_HID_INFO_MAS", "ICPKT_ATLAS_HID_INOUT",
-    "M14A_ATLAS_HID_INFO_MAS", "M14A_ATLAS_HID_INOUT", "M14A_ATLAS_INFO_HID_INOUT_MAS",
-    "M14B_ATLAS_HID_INFO_MAS", "M14B_ATLAS_HID_INOUT", "M14B_ATLAS_INFO_HID_INOUT_MAS",
-    "M16A_ATLAS_HID_INFO_MAS", "M16A_ATLAS_HID_INOUT",
-    "M16B_ATLAS_HID_INFO_MAS", "M16B_ATLAS_HID_INOUT",
-    "memory_monitor", "MYACCESS_AUTH_TABLE", "MYACCESS_USER_AUTH_TABLE", "MYACCESS_USER_TABLE",
-    "OHT_ALID_DEF", "oht_cmd_count",
-    "oht_data_m14a", "oht_data_m14b", "oht_data_m16a", "oht_data_m16e",
-    "oht_raw_m14a", "oht_raw_m14b", "oht_raw_m16a", "oht_raw_m16e",
-    "OHT_SECS_SIM_HISTORY", "oht_time_avg",
-    "qtransfer_dashboard", "realtime_chk_tibrv_result", "sbnon",
-    "secs_data", "secs_data_backup", "secs_data_m14b", "secs_data_m15", "secs_data_m15b",
-    "secs_data_m16", "secs_data_m16b", "secs_raw", "secs_raw_m14b", "secs_raw_m15b",
-    "secs_raw_m16", "secs_raw_m16b",
-    "server_resource_apm", "server_resource_predict", "SIM_OHT_PARA_REG_DATA",
-    "star_transport_view",
-    "table_msglog", "table_msglog_exception", "table_msglog_final",
-    "table_msglog_fromto", "table_msglog_prediction", "table_msglog_ui", "table_msglog_userInterface",
-    "test_currentjob_predict", "test_bridge_layout", "test_dup",
-    "test_hubroom_predict", "test_table", "test_tibrv", "test_transport_q", "test_transport_job",
-    "test_ts_raw", "TEST___ATLAS_OHT_PARA_REG_BJ_DATA", "TEST___ATLAS_OHT_PARA_REG_DATA",
-    "TEST_ATLAS_OHT_PERFORMANCE_TIME", "TEST_ATLAS_ROUTE", "test_sample_tbl", "test_tmp",
-    "tibrv_raw_m14a", "tibrv_raw_m15", "tibrv_raw_m15b", "tibrv_raw_m16", "tibrv_raw_m16b",
-    "ts_alarm_m14a", "ts_alarm_m15", "ts_alarm_m15b", "ts_alarm_m16", "ts_alarm_m16b",
-    "ts_current_job",
-    "ts_data_m14a", "ts_data_m14b", "ts_data_m15", "ts_data_m15b", "ts_data_m16", "ts_data_m16b",
-    "ts_data_view_m14a", "ts_data_view_m14b", "ts_data_view_m15", "ts_data_view_m15b",
-    "ts_data_view_m16", "ts_data_view_m16b",
-    "ts_elapsed_summary",
-    "ts_end_data_m14a", "ts_end_data_m14b", "ts_end_data_m15", "ts_end_data_m15b",
-    "ts_end_data_m16", "ts_end_data_m16b",
-    "ts_job_completed_m14a", "ts_job_completed_m15", "ts_job_completed_m15b",
-    "ts_job_completed_m16", "ts_job_completed_m16b",
-    "ts_log_pattern", "ts_machine_vw",
-    "ts_material_m14a", "ts_material_m15", "ts_material_m15b", "ts_material_m16", "ts_material_m16b",
-    "ts_raw_m14a", "ts_raw_m14b", "ts_raw_m15", "ts_raw_m15b",
-    "ts_raw_m16", "ts_raw_m16b",
-    "ts_resource_m14a", "ts_resource_m14b", "ts_resource_m15", "ts_resource_m15b",
-    "ts_resource_m16", "ts_resource_m16b",
-    "ts_tmp_recovery_p", "ts_tmp_recovery_s",
-    "ts_transport_m14a", "ts_transport_m14b", "ts_transport_m15", "ts_transport_m15b",
-    "ts_transport_m16", "ts_transport_m16b",
-    "ts_transportjob_summary", "user_count", "users",
-]))
-
-# 쿼리 결과 캐시 {query_id: {"df": DataFrame, "ts": timestamp, "lpql": str}}
-_logpresso_cache = {}
-
-
-def _logpresso_cache_cleanup():
-    """만료된 캐시 제거"""
-    now = time.time()
-    expired = [k for k, v in _logpresso_cache.items() if now - v["ts"] > LOGPRESSO_CACHE_TTL]
-    for k in expired:
-        del _logpresso_cache[k]
-    # 최대 개수 초과 시 가장 오래된 것 삭제
-    while len(_logpresso_cache) > LOGPRESSO_CACHE_MAX:
-        oldest = min(_logpresso_cache, key=lambda k: _logpresso_cache[k]["ts"])
-        del _logpresso_cache[oldest]
-
-
-def classify_logpresso_intent(query):
-    """로그프레소 관련 질문의 의도를 4가지로 분류
-    Returns: 'table_list' | 'table_schema' | 'execute' | 'explain'
-    """
-    q = query.strip()
-
-    # 1) 테이블 탐색
-    table_list_kw = ["테이블 목록", "어떤 테이블", "테이블 뭐", "테이블 리스트", "테이블 종류",
-                     "테이블 있", "테이블 알려", "테이블 보여"]
-    if any(p in q for p in table_list_kw):
-        return "table_list"
-
-    # 2) 테이블 구조 확인
-    schema_kw = ["구조", "컬럼", "필드", "스키마", "뭐가 있", "어떤 데이터", "어떤 컬럼"]
-    if any(p in q for p in schema_kw):
-        return "table_schema"
-
-    # 3) 직접 조회 (실행 필요)
-    exec_kw = ["보여줘", "조회해", "찾아줘", "검색해", "확인해줘", "가져와", "뽑아",
-               "조회 해", "몇건", "몇개", "몇 건", "몇 개", "데이터 줘",
-               "로그 줘", "결과 줘", "실행해", "돌려"]
-    if any(p in q for p in exec_kw):
-        return "execute"
-
-    # 4) 쿼리 질문 (기본) - 쿼리 작성법/문법/설명
-    return "explain"
-
-
-def query_logpresso(query, timeout=180):
-    """로그프레소 LPQL 쿼리 실행 → (DataFrame, None) 또는 (None, 에러상세)"""
-    import pandas as pd
-    from io import StringIO
-
-    query_clean = " ".join(query.split())
-    # safe에 = | 포함: LPQL 문법의 from=, to=, duration= 등이 깨지지 않도록
-    encoded = urllib.parse.quote(query_clean, safe="=|")
-    url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv?_apikey={LOGPRESSO_API_KEY}&_q={encoded}"
-    print(f"[Logpresso] URL: {url[:300]}")
-
-    warnings.filterwarnings("ignore")
-    try:
-        resp = req.get(url, verify=False, timeout=timeout)
-        # 인코딩 보정 (ISO-8859-1 기본값 → utf-8)
-        if not resp.encoding or resp.encoding.lower() == 'iso-8859-1':
-            resp.encoding = 'utf-8'
-        body = resp.text
-        # content가 있는데 text가 비어있으면 바이너리 디코딩 시도
-        if not body.strip() and resp.content and len(resp.content) > 0:
-            body = resp.content.decode('utf-8', errors='replace')
-        print(f"[Logpresso] 응답: status={resp.status_code} len={len(body)} encoding={resp.encoding} content_len={len(resp.content)} | 쿼리: {query_clean[:100]}")
-        if resp.status_code == 200 and body.strip() and not body.startswith("<!"):
-            df = pd.read_csv(StringIO(body))
-            return df, None
-        else:
-            # 상세 에러 정보 수집
-            detail = f"HTTP {resp.status_code}"
-            body_preview = body[:500].strip() if body else "(빈 응답)"
-            if body.startswith("<!"):
-                detail += " (HTML 에러 페이지 반환)"
-            elif not body.strip():
-                detail += f" (빈 응답, content_length={len(resp.content)})"
-            error_info = {
-                "reason": detail,
-                "response_preview": body_preview,
-                "query_sent": query_clean,
-            }
-            print(f"[Logpresso] 쿼리 실패: {detail} | 쿼리: {query_clean[:200]}")
-            return None, error_info
-    except req.exceptions.ConnectTimeout:
-        error_info = {"reason": "연결 타임아웃 (서버 응답 없음)", "query_sent": query_clean}
-        print(f"[Logpresso] 연결 타임아웃: {query_clean[:200]}")
-        return None, error_info
-    except req.exceptions.ReadTimeout:
-        error_info = {"reason": f"읽기 타임아웃 ({timeout}초 초과 — 쿼리가 너무 무거울 수 있음)", "query_sent": query_clean}
-        print(f"[Logpresso] 읽기 타임아웃: {query_clean[:200]}")
-        return None, error_info
-    except req.exceptions.ConnectionError as e:
-        error_info = {"reason": f"서버 연결 실패 ({e})", "query_sent": query_clean}
-        print(f"[Logpresso] 연결 실패: {e}")
-        return None, error_info
-    except Exception as e:
-        error_info = {"reason": f"예외 발생: {type(e).__name__}: {e}", "query_sent": query_clean}
-        print(f"[Logpresso] 쿼리 예외: {e}")
-        return None, error_info
-
-
-def _fallback_lpql_from_query(user_query):
-    """LLM 실패 시 사용자 쿼리에서 테이블명을 감지하여 기본 LPQL 생성"""
-    q = user_query.upper()
-    for tname in LOGPRESSO_TABLES:
-        if tname.upper() in q:
-            return f"table duration=1h {tname} | limit 5"
-    return None
-
-
-# 보안: 읽기 전용 명령만 허용
-_LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
-
-
-def validate_lpql_readonly(lpql):
-    """LPQL 쿼리가 읽기 전용인지 검증. 위반 시 에러 메시지 반환, 통과 시 None"""
-    lower = lpql.lower().strip()
-    for cmd in _LPQL_BLOCKED_COMMANDS:
-        # 파이프라인 시작이나 | 뒤에 금지 명령이 오는지 체크
-        if lower.startswith(cmd) or f"| {cmd}" in lower or f"|{cmd}" in lower:
-            return f"보안 차단: '{cmd.strip()}' 명령은 실행할 수 없습니다. 읽기 전용 쿼리만 허용됩니다."
-    return None
-
-
-def extract_lpql_from_response(text):
-    """LLM 응답에서 ```lpql ... ``` 또는 ``` ... ``` 코드블록 추출"""
-    # ```lpql 블록 우선
-    m = re.search(r"```(?:lpql|LPQL)\s*\n(.*?)```", text, re.DOTALL)
-    if m:
-        return _clean_lpql(m.group(1).strip())
-    # 일반 ``` 블록 (LPQL 키워드가 내용에 있으면)
-    m = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
-    if m:
-        candidate = m.group(1).strip()
-        lpql_indicators = ["table ", "fulltext ", "stream ", "| fields", "| search", "| sort", "| limit", "| eval", "| stats"]
-        if any(ind in candidate.lower() for ind in lpql_indicators):
-            return _clean_lpql(candidate)
-    return None
-
-
-def _clean_lpql(lpql):
-    """LPQL에서 주석(#)과 빈 줄 제거"""
-    lines = [line for line in lpql.split('\n') if line.strip() and not line.strip().startswith('#')]
-    return ' '.join(lines).strip() if lines else lpql
-
 
 # ============================================
 # 설정
@@ -1117,7 +842,7 @@ SKILL_KEYWORDS = {
     "agent-data-scientist": ["데이터분석","data science","분석가","EDA","탐색적분석","데이터","탐색","탐색하"],
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
-    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색","로그프레소 조회","로그프레소 테이블","ATLAS_","ts_data_view","로그 검색","로그 보여","설비 로그","알람 조회","알람 데이터"],
+    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색"],
     "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
@@ -2432,380 +2157,6 @@ def api_skill_run(skill_name):
         return jsonify({"error": f"실행 오류: {str(e)}"}), 500
 
 
-# ============================================
-# 로그프레소 자연어 쿼리 API
-# ============================================
-
-def _llm_generate_lpql(user_query, history=None):
-    """LLM을 호출하여 자연어 → LPQL 쿼리 생성"""
-    from datetime import datetime
-    today = datetime.now().strftime("%Y%m%d")
-
-    # 테이블 목록을 시스템 프롬프트에 포함
-    table_info = "\n".join(
-        f"- {name}: {info['desc']} (컬럼: {', '.join(info['columns'])})"
-        for name, info in LOGPRESSO_TABLES.items()
-    )
-
-    skill_content = load_skill_content("logpresso-query") or ""
-
-    system_prompt = f"""당신은 로그프레소 LPQL 쿼리 생성 전문가입니다.
-사용자의 자연어 요청을 실행 가능한 LPQL 쿼리로 변환하세요.
-
-## 규칙
-1. 반드시 ```lpql 코드블록 안에 **순수 LPQL 쿼리만** 출력하세요. 코드블록 안에 주석(#)이나 설명을 절대 넣지 마세요.
-2. 설명은 코드블록 **바깥에** 작성하세요.
-3. 오늘 날짜: {today} (시간 형식: yyyyMMddHHmmss)
-4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
-5. **반드시 limit 5를 걸어주세요.** 사용자가 명시적으로 더 많은 건수를 요청하지 않는 한, 항상 `limit 5`를 사용하세요. 대량 조회는 시스템에 부하를 줍니다.
-6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
-7. **기본 조회는 반드시 `table` 명령을 사용하세요.** `fulltext`는 사용자가 키워드 검색을 명시적으로 요청하거나, fulltext 인덱스가 있는 테이블에서 텍스트 검색할 때만 사용하세요. 단순 데이터 조회에 `fulltext`를 사용하지 마세요.
-8. limit에 오프셋 지정 가능: `limit 0 1000` (0번째부터 1000건)
-9. 행 순번: `eval No = seq() + 0`
-10. **사용자가 테이블명을 직접 지정하면 그 이름을 그대로 사용하세요.** 목록에 없는 테이블이라도 사용자가 명시한 테이블명은 변경하지 마세요.
-11. **`| fields`는 사용자가 특정 필드를 요청한 경우에만 사용하세요.** 컬럼 정보를 모르는 테이블에 필드를 임의로 추가하지 마세요. 필드 지정 없이 `table ... TABLE_NAME | limit 5`로 전체 컬럼을 조회하면 됩니다.
-12. **`| sort`도 사용자가 정렬을 요청한 경우에만 사용하세요.** 컬럼명을 모르면서 임의로 sort를 추가하지 마세요.
-
-## 컬럼 정보가 있는 테이블
-{table_info}
-
-## 서버에 등록된 전체 테이블 목록
-{', '.join(LOGPRESSO_ALL_TABLES)}
-
-## LPQL 문법 참고
-{skill_content[:6000]}
-"""
-
-    messages = [{"role": "system", "content": system_prompt}]
-    if history:
-        messages.extend(history[-4:])
-    messages.append({"role": "user", "content": user_query})
-
-    # LLM 호출 — AUTO 폴백: 좋은 모델 → 안 좋은 모델 순서로 시도
-    # LPQL 쿼리 생성(코드/텍스트) 성능 기준 내림차순
-    _LPQL_MODEL_CHAIN = [
-        "qwen3.5-397b", "qwen3-vl-235b", "gpt-oss-120b",
-        "qwen2.5-vl-72b", "qwen3-vl-30b", "glm-4.7",
-    ]
-
-    headers = {"Content-Type": "application/json"}
-    if API_TOKEN:
-        headers["Authorization"] = f"Bearer {API_TOKEN}"
-
-    for model_key in _LPQL_MODEL_CHAIN:
-        reg = MODEL_REGISTRY.get(model_key)
-        if not reg:
-            continue
-        try:
-            resp = req.post(
-                reg["url"],
-                headers=headers,
-                json={
-                    "model": reg["model"],
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 2048,
-                    "stream": False,
-                },
-                timeout=60,
-                verify=False,
-            )
-            resp.raise_for_status()
-            result = resp.json()
-            if "choices" in result and len(result["choices"]) > 0:
-                content = result["choices"][0]["message"]["content"]
-                if content:
-                    print(f"[Logpresso LLM] 성공: {reg['model']}")
-                    return content
-        except req.exceptions.HTTPError as e:
-            code = e.response.status_code if e.response is not None else 0
-            print(f"[Logpresso LLM] HTTP {code} 오류 → 다음 모델 시도 | model={reg['model']}")
-            continue
-        except req.exceptions.Timeout:
-            print(f"[Logpresso LLM] 타임아웃 → 다음 모델 시도 | model={reg['model']}")
-            continue
-        except Exception as e:
-            print(f"[Logpresso LLM] 오류 → 다음 모델 시도 | model={reg['model']} err={e}")
-            continue
-
-    print(f"[Logpresso LLM] 모든 모델 실패 ({len(_LPQL_MODEL_CHAIN)}개 시도)")
-    return None
-
-
-@app.route("/api/logpresso/query", methods=["POST"])
-def api_logpresso_query():
-    """로그프레소 자연어 쿼리 엔드포인트 (4가지 모드 자동 분류)
-
-    Input:
-      - query: 자연어 질문
-      - history: 대화 히스토리 (선택)
-      - mode: 강제 모드 지정 (선택: table_list, table_schema, execute, explain)
-      - lpql: 직접 LPQL 전달 시 LLM 스킵 (선택)
-      - page: 페이지 번호 (기본 1)
-
-    쿼리 실행 예문:
-      curl -X POST /api/logpresso/query -H "Content-Type: application/json" \\
-        -d '{"query": "어제 M14A ERROR 로그 보여줘"}'
-      curl -X POST /api/logpresso/query \\
-        -d '{"query": "ATLAS_RAIL_TRAFFIC 테이블 구조 알려줘"}'
-      curl -X POST /api/logpresso/query \\
-        -d '{"query": "어떤 테이블이 있어?"}'
-      curl -X POST /api/logpresso/query \\
-        -d '{"query": "M14A에서 최근 1시간 CARRIER별 로그 건수 조회해줘"}'
-      curl -X POST /api/logpresso/query \\
-        -d '{"lpql": "table duration=1h ts_data_view_m14a | stats count by CARRIER | sort count desc"}'
-    """
-    import pandas as pd
-
-    data = request.json or {}
-    user_query = data.get("query", "").strip()
-    history = data.get("history", [])
-    forced_mode = data.get("mode", "")
-    direct_lpql = data.get("lpql", "").strip()
-    page = max(1, data.get("page", 1))
-
-    if not user_query and not direct_lpql:
-        return jsonify({"error": "query 또는 lpql 파라미터가 필요합니다."}), 400
-
-    # 모드 결정
-    if forced_mode:
-        mode = forced_mode
-    elif direct_lpql:
-        mode = "execute"
-    else:
-        mode = classify_logpresso_intent(user_query)
-
-    # ── 모드 1: 테이블 목록 ──
-    if mode == "table_list":
-        tables = []
-        for name, info in LOGPRESSO_TABLES.items():
-            tables.append({
-                "table": name,
-                "desc": info["desc"],
-                "columns": info["columns"],
-                "column_count": len(info["columns"]),
-            })
-        return jsonify({
-            "mode": "table_list",
-            "tables": tables,
-            "total": len(tables),
-            "message": f"총 {len(tables)}개 테이블이 등록되어 있습니다.",
-            "examples": [
-                {"query": "ATLAS_RAIL_TRAFFIC 테이블 구조 알려줘", "desc": "테이블 상세 구조 확인"},
-                {"query": "ATLAS_RAIL_TRAFFIC에서 최근 1시간 데이터 보여줘", "desc": "직접 조회"},
-            ],
-        })
-
-    # ── 모드 2: 테이블 구조 확인 ──
-    if mode == "table_schema":
-        # 쿼리에서 테이블명 매칭
-        matched_table = None
-        for tname in LOGPRESSO_TABLES:
-            if tname.lower() in user_query.lower():
-                matched_table = tname
-                break
-
-        if not matched_table:
-            return jsonify({
-                "mode": "table_schema",
-                "error": "테이블명을 인식할 수 없습니다.",
-                "available_tables": list(LOGPRESSO_TABLES.keys()),
-                "hint": "질문에 테이블명을 포함해주세요. 예: 'ATLAS_RAIL_TRAFFIC 구조 알려줘'",
-            }), 400
-
-        info = LOGPRESSO_TABLES[matched_table]
-
-        # 샘플 데이터 조회 시도
-        sample_data = []
-        sample_lpql = f"table duration=5m {matched_table} | limit 5"
-        df, _err = query_logpresso(sample_lpql, timeout=30)
-        if df is not None and len(df) > 0:
-            sample_data = df.head(5).to_dict("records")
-
-        return jsonify({
-            "mode": "table_schema",
-            "table": matched_table,
-            "desc": info["desc"],
-            "columns": info["columns"],
-            "column_count": len(info["columns"]),
-            "sample_data": sample_data,
-            "sample_lpql": sample_lpql,
-            "examples": [
-                {"query": f"{matched_table}에서 최근 1시간 데이터 보여줘", "desc": "직접 조회"},
-                {"query": f"{matched_table} 최근 데이터 10건 조회해줘", "desc": "최근 데이터"},
-            ],
-        })
-
-    # ── 모드 3: 쿼리 설명 (explain) ──
-    if mode == "explain":
-        llm_response = _llm_generate_lpql(user_query, history)
-        if not llm_response:
-            fallback = _fallback_lpql_from_query(user_query)
-            if fallback:
-                return jsonify({
-                    "mode": "explain",
-                    "explanation": "⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다.",
-                    "lpql": fallback,
-                    "examples": [{"query": user_query + " 실행해줘", "desc": "이 쿼리를 직접 실행하려면"}],
-                })
-            return jsonify({
-                "mode": "explain",
-                "error": "LLM 연결 실패",
-                "available_tables": list(LOGPRESSO_TABLES.keys()),
-                "hint": "테이블명을 포함하여 다시 시도해주세요.",
-            }), 500
-
-        lpql = extract_lpql_from_response(llm_response)
-        result = {
-            "mode": "explain",
-            "explanation": llm_response,
-            "lpql": lpql,
-            "examples": [
-                {"query": user_query + " 실행해줘", "desc": "이 쿼리를 직접 실행하려면"},
-            ],
-        }
-        if lpql:
-            result["execute_hint"] = "이 쿼리를 실행하려면 mode='execute'로 다시 요청하거나, lpql 파라미터에 직접 전달하세요."
-        return jsonify(result)
-
-    # ── 모드 4: 직접 조회 (execute) — 데이터 확인용 limit 5 ──
-    lpql = direct_lpql
-    llm_explanation = ""
-
-    if not lpql:
-        llm_response = _llm_generate_lpql(user_query, history)
-        if llm_response:
-            llm_explanation = llm_response
-            lpql = extract_lpql_from_response(llm_response)
-
-        # LLM 실패 또는 LPQL 추출 실패 → 테이블명 기반 폴백
-        if not lpql:
-            lpql = _fallback_lpql_from_query(user_query)
-            if lpql:
-                llm_explanation = f"⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다.\n\n```lpql\n{lpql}\n```"
-            else:
-                return jsonify({
-                    "mode": "execute",
-                    "error": "LLM 연결 실패 및 테이블명을 인식할 수 없습니다.",
-                    "hint": "질문에 테이블명을 포함해주세요. 예: 'ATLAS_RAIL_TRAFFIC 조회해줘'",
-                    "available_tables": list(LOGPRESSO_TABLES.keys()),
-                }), 500
-
-    # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
-    import re as _re
-    _EXEC_LIMIT = 5
-    if _re.search(r'\|\s*limit\s+\d+', lpql, _re.IGNORECASE):
-        lpql = _re.sub(r'(\|\s*limit\s+)\d+', rf'\g<1>{_EXEC_LIMIT}', lpql, flags=_re.IGNORECASE)
-    else:
-        lpql = lpql.rstrip() + f" | limit {_EXEC_LIMIT}"
-
-    # 보안 검증
-    sec_error = validate_lpql_readonly(lpql)
-    if sec_error:
-        return jsonify({"mode": "execute", "error": sec_error, "lpql": lpql}), 403
-
-    # 쿼리 실행
-    df, err_detail = query_logpresso(lpql, timeout=180)
-    if df is None:
-        error_msg = "Logpresso 조회 실패"
-        if err_detail:
-            error_msg += f": {err_detail.get('reason', '알 수 없는 오류')}"
-        return jsonify({
-            "mode": "execute",
-            "error": error_msg,
-            "lpql": lpql,
-            "explanation": llm_explanation,
-            "error_detail": err_detail,
-        }), 502
-
-    total_rows = len(df)
-    total_pages = max(1, math.ceil(total_rows / LOGPRESSO_PAGE_SIZE))
-    page = min(page, total_pages)
-
-    # 캐시에 저장
-    _logpresso_cache_cleanup()
-    query_id = str(uuid.uuid4())[:8]
-    _logpresso_cache[query_id] = {"df": df, "ts": time.time(), "lpql": lpql}
-
-    # 현재 페이지 데이터
-    start = (page - 1) * LOGPRESSO_PAGE_SIZE
-    end = start + LOGPRESSO_PAGE_SIZE
-    page_df = df.iloc[start:end]
-    page_data = page_df.to_dict("records")
-
-    return jsonify({
-        "mode": "execute",
-        "success": True,
-        "lpql": lpql,
-        "explanation": llm_explanation,
-        "query_id": query_id,
-        "columns": list(df.columns),
-        "data": page_data,
-        "page": page,
-        "page_size": LOGPRESSO_PAGE_SIZE,
-        "total_rows": total_rows,
-        "total_pages": total_pages,
-        "examples": [
-            {"query": f'{{"query_id": "{query_id}", "page": 2}}', "desc": "다음 페이지 조회 → /api/logpresso/query/page"},
-        ],
-    })
-
-
-@app.route("/api/logpresso/query/page", methods=["POST"])
-def api_logpresso_query_page():
-    """페이지네이션: 캐시된 결과에서 특정 페이지 반환 (50건씩)
-
-    Input:
-      - query_id: 이전 /api/logpresso/query 응답의 query_id
-      - page: 페이지 번호 (1부터 시작)
-
-    예문:
-      curl -X POST /api/logpresso/query/page -H "Content-Type: application/json" \\
-        -d '{"query_id": "abc12345", "page": 2}'
-    """
-    data = request.json or {}
-    query_id = data.get("query_id", "")
-    page = max(1, data.get("page", 1))
-
-    if not query_id or query_id not in _logpresso_cache:
-        return jsonify({
-            "error": "query_id가 유효하지 않거나 캐시가 만료되었습니다. 새로 조회해주세요.",
-        }), 404
-
-    cache = _logpresso_cache[query_id]
-    cache["ts"] = time.time()  # 접근 시 TTL 갱신
-
-    df = cache["df"]
-    total_rows = len(df)
-    total_pages = max(1, math.ceil(total_rows / LOGPRESSO_PAGE_SIZE))
-    page = min(page, total_pages)
-
-    start = (page - 1) * LOGPRESSO_PAGE_SIZE
-    end = start + LOGPRESSO_PAGE_SIZE
-    page_data = df.iloc[start:end].to_dict("records")
-
-    return jsonify({
-        "query_id": query_id,
-        "lpql": cache["lpql"],
-        "columns": list(df.columns),
-        "data": page_data,
-        "page": page,
-        "page_size": LOGPRESSO_PAGE_SIZE,
-        "total_rows": total_rows,
-        "total_pages": total_pages,
-        "row_range": f"{start + 1}~{min(end, total_rows)}",
-    })
-
-
-@app.route("/api/logpresso/tables", methods=["GET"])
-def api_logpresso_tables():
-    """등록된 테이블 목록 반환 (간단 API)"""
-    tables = []
-    for name, info in LOGPRESSO_TABLES.items():
-        tables.append({"table": name, "desc": info["desc"], "columns": info["columns"]})
-    return jsonify({"tables": tables, "total": len(tables)})
-
-
 @app.route("/api/upload_csv", methods=["POST"])
 def api_upload_csv():
     """CSV 파일 업로드 및 파싱"""
@@ -2912,6 +2263,217 @@ def api_upload_csv():
 
     except Exception as e:
         return jsonify({"error": f"파일 처리 오류: {str(e)}"}), 500
+
+
+@app.route("/api/upload_xlsx", methods=["POST"])
+def api_upload_xlsx():
+    """XLSX 파일 업로드 — 시트별 파싱 + 이미지 추출"""
+    global uploaded_csv_data
+
+    if 'file' not in request.files:
+        return jsonify({"error": "파일이 없습니다."}), 400
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({"error": "파일명이 없습니다."}), 400
+
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import base64
+
+    raw_bytes = file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+    except zipfile.BadZipFile:
+        return jsonify({"error": "유효한 XLSX 파일이 아닙니다."}), 400
+
+    ns_s = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    ns_r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    ns_pr = 'http://schemas.openxmlformats.org/package/2006/relationships'
+
+    # ── shared strings ──
+    shared = []
+    if 'xl/sharedStrings.xml' in zf.namelist():
+        with zf.open('xl/sharedStrings.xml') as ss:
+            tree = ET.parse(ss)
+            for si in tree.findall(f'.//{{{ns_s}}}si'):
+                parts = []
+                for t_el in si.iter(f'{{{ns_s}}}t'):
+                    if t_el.text:
+                        parts.append(t_el.text)
+                shared.append(''.join(parts))
+
+    # ── 시트 목록 (workbook.xml + rels) ──
+    sheet_names = []
+    sheet_rids = []
+    if 'xl/workbook.xml' in zf.namelist():
+        with zf.open('xl/workbook.xml') as wb:
+            tree = ET.parse(wb)
+            for s in tree.findall(f'.//{{{ns_s}}}sheet'):
+                sheet_names.append(s.get('name', ''))
+                sheet_rids.append(s.get(f'{{{ns_r}}}id', ''))
+
+    # rid → 파일 매핑
+    rid_to_file = {}
+    rels_path = 'xl/_rels/workbook.xml.rels'
+    if rels_path in zf.namelist():
+        with zf.open(rels_path) as rf:
+            tree = ET.parse(rf)
+            for rel in tree.findall(f'{{{ns_pr}}}Relationship'):
+                rid_to_file[rel.get('Id', '')] = 'xl/' + rel.get('Target', '')
+
+    def _parse_sheet(sheet_file_path):
+        """시트 하나를 파싱하여 2D 리스트 반환"""
+        if sheet_file_path not in zf.namelist():
+            return []
+        with zf.open(sheet_file_path) as ws:
+            tree = ET.parse(ws)
+            all_rows = []
+            for row in tree.findall(f'.//{{{ns_s}}}row'):
+                if len(all_rows) >= 10000:
+                    break
+                cells = []
+                for c in row.findall(f'{{{ns_s}}}c'):
+                    v_el = c.find(f'{{{ns_s}}}v')
+                    t_attr = c.get('t', '')
+                    if v_el is not None and v_el.text is not None:
+                        if t_attr == 's' and v_el.text.isdigit():
+                            idx = int(v_el.text)
+                            cells.append(shared[idx] if idx < len(shared) else v_el.text)
+                        else:
+                            cells.append(v_el.text)
+                    else:
+                        is_el = c.find(f'{{{ns_s}}}is')
+                        if is_el is not None:
+                            parts = []
+                            for t_el in is_el.iter(f'{{{ns_s}}}t'):
+                                if t_el.text:
+                                    parts.append(t_el.text)
+                            cells.append(''.join(parts))
+                        else:
+                            cells.append('')
+                all_rows.append(cells)
+            return all_rows
+
+    # ── 시트별 요약 ──
+    sheets_data = []
+    for si, (sname, rid) in enumerate(zip(sheet_names, sheet_rids)):
+        sf = rid_to_file.get(rid, f'xl/worksheets/sheet{si+1}.xml')
+        rows = _parse_sheet(sf)
+        sheets_data.append({
+            "name": sname,
+            "rows": max(0, len(rows) - 1),  # 헤더 제외
+            "cols": max((len(r) for r in rows), default=0),
+        })
+
+    # ── 선택된 시트 상세 ──
+    active_sheet_idx = int(request.form.get('sheet', 0))
+    if active_sheet_idx >= len(sheet_names):
+        active_sheet_idx = 0
+
+    target_rid = sheet_rids[active_sheet_idx] if active_sheet_idx < len(sheet_rids) else ''
+    target_file = rid_to_file.get(target_rid, f'xl/worksheets/sheet{active_sheet_idx+1}.xml')
+    all_rows = _parse_sheet(target_file)
+
+    headers = all_rows[0] if all_rows else []
+    data_rows = all_rows[1:] if len(all_rows) > 1 else []
+
+    # ── 이미지 추출 ──
+    images_info = []
+    for name in zf.namelist():
+        if name.startswith('xl/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+            img_ext = name.rsplit('.', 1)[-1].lower()
+            with zf.open(name) as img_f:
+                img_data = img_f.read()
+                if len(img_data) <= 5 * 1024 * 1024:  # 5MB 제한
+                    b64 = base64.b64encode(img_data).decode('ascii')
+                    mime = {'jpg': 'jpeg', 'jpeg': 'jpeg'}.get(img_ext, img_ext)
+                    images_info.append({"name": name.split('/')[-1], "size": len(img_data), "mime": f"image/{mime}"})
+                    # VL 모델용으로 uploaded_files에 추가
+                    uploaded_files.append({
+                        "filename": f"{file.filename}/{name.split('/')[-1]}",
+                        "safe_name": name.split('/')[-1],
+                        "type": "image",
+                        "ext": img_ext,
+                        "size": len(img_data),
+                        "content_preview": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "content_full": f"(엑셀 내장 이미지: {name.split('/')[-1]})",
+                        "img_base64": b64,
+                        "path": "",
+                    })
+
+    # ── 통계 ──
+    total_rows = len(data_rows)
+    total_cols = len(headers)
+    col_stats = []
+    for ci, h in enumerate(headers):
+        vals = [r[ci] for r in data_rows if ci < len(r) and r[ci].strip()]
+        nums = []
+        for v in vals:
+            try:
+                nums.append(float(v.replace(',', '')))
+            except ValueError:
+                pass
+        if len(nums) > len(vals) * 0.5 and nums:
+            col_stats.append(f"  {h}: 숫자형 ({len(vals)}건, 범위 {min(nums):.4g}~{max(nums):.4g}, 평균 {sum(nums)/len(nums):.4g})")
+        else:
+            unique = len(set(vals))
+            col_stats.append(f"  {h}: 문자형 ({len(vals)}건, 고유값 {unique}개)")
+
+    active_name = sheet_names[active_sheet_idx] if active_sheet_idx < len(sheet_names) else "Sheet1"
+
+    # 전체 시트 요약 (시스템 프롬프트용)
+    sheets_summary = ""
+    if len(sheet_names) > 1:
+        sheets_summary = f"\n전체 시트 목록 ({len(sheet_names)}개):\n"
+        for sd in sheets_data:
+            sheets_summary += f"  - {sd['name']}: {sd['rows']}행 × {sd['cols']}열\n"
+        sheets_summary += f"현재 분석 시트: {active_name}\n"
+
+    img_summary = ""
+    if images_info:
+        img_summary = f"\n내장 이미지: {len(images_info)}개\n"
+
+    summary = (
+        f"파일: {file.filename}\n"
+        f"시트: {active_name} ({len(sheet_names)}개 시트)\n"
+        f"행: {total_rows}개, 열: {total_cols}개\n"
+        f"컬럼:\n" + "\n".join(col_stats)
+        + sheets_summary + img_summary
+    )
+
+    preview_rows = data_rows[:5]
+    preview_text = '\t'.join(headers) + "\n"
+    for r in preview_rows:
+        preview_text += '\t'.join(r) + "\n"
+    if total_rows > 5:
+        preview_text += f"... ({total_rows - 5}행 더 있음)"
+
+    # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
+    uploaded_csv_data = {
+        "filename": file.filename,
+        "headers": headers,
+        "rows": data_rows,
+        "summary": summary,
+        "raw_preview": preview_text,
+    }
+
+    zf.close()
+
+    return jsonify({
+        "success": True,
+        "filename": file.filename,
+        "rows": total_rows,
+        "cols": total_cols,
+        "headers": headers,
+        "summary": summary,
+        "preview": preview_text,
+        "sample_rows": [dict(zip(headers, r)) for r in preview_rows[:3]],
+        "sheets": sheets_data,
+        "active_sheet": active_sheet_idx,
+        "active_sheet_name": active_name,
+        "images_count": len(images_info),
+        "images": images_info,
+    })
 
 
 @app.route("/api/clear_csv", methods=["POST"])
@@ -3094,11 +2656,12 @@ def extract_file_text(filepath, filename):
                 text = f"(PDF 텍스트 추출 실패: {e})"
                 file_type = "pdf"
 
-        # PPTX
+        # PPTX (텍스트 + 이미지 추출)
         elif ext == 'pptx':
             try:
                 import zipfile
                 import xml.etree.ElementTree as ET
+                import base64 as _b64
                 with zipfile.ZipFile(filepath) as z:
                     slide_texts = []
                     for name in sorted(z.namelist()):
@@ -3113,6 +2676,30 @@ def extract_file_text(filepath, filename):
                                 if texts_in_slide:
                                     slide_num = name.split('slide')[-1].split('.')[0]
                                     slide_texts.append(f"[슬라이드 {slide_num}] {' | '.join(texts_in_slide)}")
+                    # 내장 이미지 추출 → uploaded_files에 추가 (VL 모델 분석용)
+                    img_count = 0
+                    for name in z.namelist():
+                        if name.startswith('ppt/media/') and any(name.lower().endswith(e) for e in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+                            with z.open(name) as img_f:
+                                img_data = img_f.read()
+                                if len(img_data) <= 5 * 1024 * 1024:
+                                    img_ext = name.rsplit('.', 1)[-1].lower()
+                                    b64 = _b64.b64encode(img_data).decode('ascii')
+                                    img_name = name.split('/')[-1]
+                                    uploaded_files.append({
+                                        "filename": f"{filename}/{img_name}",
+                                        "safe_name": img_name,
+                                        "type": "image",
+                                        "ext": img_ext,
+                                        "size": len(img_data),
+                                        "content_preview": f"(PPT 내장 이미지: {img_name})",
+                                        "content_full": f"(PPT 내장 이미지: {img_name})",
+                                        "img_base64": b64,
+                                        "path": "",
+                                    })
+                                    img_count += 1
+                    if img_count > 0:
+                        slide_texts.append(f"\n[내장 이미지 {img_count}개 추출됨 — VL 모델로 분석 가능]")
                     text = '\n'.join(slide_texts)
                 file_type = "pptx"
             except Exception as e:
@@ -3379,6 +2966,152 @@ def api_save_md():
     return send_file(buf, as_attachment=True, download_name=filename, mimetype="text/markdown")
 
 
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """사용자 피드백 저장 (좋아요/싫어요 + 코멘트)"""
+    import json as _json
+    data = request.json
+    rating = data.get("rating", "")       # "good" or "bad"
+    comment = data.get("comment", "")
+    message = data.get("message", "")[:500]  # 해당 응답 내용 (앞 500자)
+    user_query = data.get("user_query", "")[:300]
+
+    if rating not in ("good", "bad"):
+        return jsonify({"error": "invalid rating"}), 400
+
+    feedback_dir = os.path.join(BASE_DIR, "feedback")
+    os.makedirs(feedback_dir, exist_ok=True)
+
+    from datetime import datetime
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "rating": rating,
+        "comment": comment.strip(),
+        "user_query": user_query,
+        "message_preview": message,
+    }
+
+    feedback_file = os.path.join(feedback_dir, "feedback.jsonl")
+    with open(feedback_file, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/analyze_ppt_style", methods=["POST"])
+def api_analyze_ppt_style():
+    """참고 PPT에서 디자인 스타일(색상, 폰트, 레이아웃) 추출"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith(".pptx"):
+        return jsonify({"error": ".pptx 파일만 지원됩니다"}), 400
+
+    # 임시 저장
+    tmp_path = os.path.join(UPLOAD_DIR, f"_ppt_ref_{int(__import__('time').time())}.pptx")
+    f.save(tmp_path)
+
+    try:
+        colors = []
+        fonts = set()
+        bg_colors = []
+        slide_count = 0
+
+        with zipfile.ZipFile(tmp_path) as z:
+            # 1) 테마 색상 추출 (ppt/theme/theme1.xml)
+            theme_ns = {
+                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            }
+            for name in z.namelist():
+                if name.startswith('ppt/theme/') and name.endswith('.xml'):
+                    with z.open(name) as tf:
+                        tree = ET.parse(tf)
+                        root = tree.getroot()
+                        # 색상 스킴
+                        for scheme in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}clrScheme'):
+                            for child in scheme:
+                                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                                for sub in child:
+                                    val = sub.get('val') or sub.get('lastClr') or ''
+                                    if val and len(val) == 6:
+                                        colors.append((tag, f"#{val}"))
+                        # 폰트 스킴
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}latin'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-lt', '+mn-lt'):
+                                fonts.add(ft)
+                        for font_el in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}ea'):
+                            ft = font_el.get('typeface', '')
+                            if ft and ft not in ('+mj-ea', '+mn-ea'):
+                                fonts.add(ft)
+                    break  # 첫 번째 테마만
+
+            # 2) 슬라이드에서 배경색, 폰트, 폰트크기 샘플링
+            slide_fonts = set()
+            font_sizes = []
+            ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            ns_p = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+            for name in sorted(z.namelist()):
+                if name.startswith('ppt/slides/slide') and name.endswith('.xml'):
+                    slide_count += 1
+                    if slide_count > 5:
+                        break  # 최대 5슬라이드 샘플링
+                    with z.open(name) as sf:
+                        tree = ET.parse(sf)
+                        # 배경 색상
+                        for solid in tree.iter(f'{{{ns_a}}}solidFill'):
+                            for srgb in solid.iter(f'{{{ns_a}}}srgbClr'):
+                                val = srgb.get('val', '')
+                                if val and len(val) == 6:
+                                    bg_colors.append(f"#{val}")
+                        # 폰트 & 크기
+                        for rpr in tree.iter(f'{{{ns_a}}}rPr'):
+                            sz = rpr.get('sz')
+                            if sz:
+                                try:
+                                    font_sizes.append(int(sz) // 100)
+                                except ValueError:
+                                    pass
+                        for latin in tree.iter(f'{{{ns_a}}}latin'):
+                            ft = latin.get('typeface', '')
+                            if ft and not ft.startswith('+'):
+                                slide_fonts.add(ft)
+
+        # 결과 조합
+        fonts.update(slide_fonts)
+        unique_bg = list(dict.fromkeys(bg_colors))[:6]  # 중복 제거, 최대 6개
+
+        # 디자인 지시문 구성
+        parts = []
+        if colors:
+            color_str = ", ".join(f"{name}({hex_val})" for name, hex_val in colors[:10])
+            parts.append(f"테마 색상: {color_str}")
+        if unique_bg:
+            parts.append(f"슬라이드 배경/채우기 색상: {', '.join(unique_bg)}")
+        if fonts:
+            parts.append(f"폰트: {', '.join(sorted(fonts)[:5])}")
+        if font_sizes:
+            min_sz, max_sz = min(font_sizes), max(font_sizes)
+            parts.append(f"폰트 크기 범위: {min_sz}pt ~ {max_sz}pt")
+        parts.append(f"슬라이드 수: {slide_count}장")
+
+        design_prompt = "참고 PPT에서 추출한 디자인 스타일:\n" + "\n".join(f"- {p}" for p in parts)
+        design_prompt += "\n\n위 색상 팔레트, 폰트, 레이아웃 스타일을 최대한 동일하게 적용하여 새 PPT를 제작하세요."
+
+        summary = " / ".join(parts[:3])
+
+        return jsonify({"design": design_prompt, "summary": summary})
+
+    except Exception as e:
+        return jsonify({"error": f"PPT 분석 실패: {str(e)}"}), 500
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def _prepare_pptx_code_for_copy(code):
@@ -3551,6 +3284,9 @@ def api_generate_pptx():
         
     if 'XL_LEGEND_POSITION' in code and 'from pptx.enum.chart import XL_LEGEND_POSITION' not in code:
         code = "from pptx.enum.chart import XL_LEGEND_POSITION\n" + code
+
+    # 2.7~2.8) chart.title / slide.shapes.title 오류는 런타임 monkey-patch로 처리
+    # (wrapped_code 내 Chart.__getattr__ + SlideShapes.title property 패치)
 
     # 3) placeholder.shapes → slide.shapes 자동 수정
     # LLM이 content/body/placeholder 등에 .shapes를 호출하는 실수 수정
@@ -3771,6 +3507,32 @@ def api_generate_pptx():
             "    _gf.GraphicFrame.rows = property(lambda self: self.table.rows if self.has_table else None)\n"
             "    _gf.GraphicFrame.columns = property(lambda self: self.table.columns if self.has_table else None)\n"
             "    _gf.GraphicFrame.cell = lambda self, r, c: self.table.cell(r, c) if self.has_table else None\n"
+            "# --- monkey-patch: Chart.__getattr__ — chart.title → chart.chart_title 자동 변환 ---\n"
+            "from pptx.chart.chart import Chart as _Chart\n"
+            "_orig_chart_getattr = getattr(_Chart, '__getattr__', None)\n"
+            "def _chart_getattr(self, name):\n"
+            "    if name == 'title':\n"
+            "        self.has_title = True\n"
+            "        return self.chart_title\n"
+            "    if _orig_chart_getattr:\n"
+            "        return _orig_chart_getattr(self, name)\n"
+            "    raise AttributeError(f\"'Chart' object has no attribute '{name}'\")\n"
+            "_Chart.__getattr__ = _chart_getattr\n"
+            "# --- monkey-patch: slide.shapes.title이 None일 때 textbox로 대체 ---\n"
+            "from pptx.util import Inches as _Inches, Pt as _Pt\n"
+            "import pptx.shapes.shapetree as _st_mod\n"
+            "_orig_title_prop = _st_mod.SlideShapes.title.fget\n"
+            "def _safe_shapes_title(self):\n"
+            "    t = _orig_title_prop(self)\n"
+            "    if t is not None:\n"
+            "        return t\n"
+            "    txBox = self.add_textbox(_Inches(0.5), _Inches(0.2), _Inches(9), _Inches(0.8))\n"
+            "    txBox.text_frame.word_wrap = True\n"
+            "    return txBox\n"
+            "_st_mod.SlideShapes.title = property(_safe_shapes_title)\n"
+            "# --- helper: _safe_title (backward compat) ---\n"
+            "def _safe_title(slide):\n"
+            "    return slide.shapes.title\n"
             "# --- user code ---\n"
             f"{code}\n"
         )
@@ -3820,16 +3582,15 @@ def api_generate_pptx():
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         final_filename = f"presentation_{timestamp}.pptx"
 
-        # uploads 폴더에 저장 후 download_url 반환 → 브라우저가 사용자 PC로 다운로드
+        # uploads 폴더에 저장 후 브라우저 다운로드 URL 반환
         uploads_dir = os.path.join(BASE_DIR, 'uploads')
         os.makedirs(uploads_dir, exist_ok=True)
         save_path = os.path.join(uploads_dir, final_filename)
         shutil.copy2(out_path, save_path)
 
-        file_id = timestamp
         return jsonify({
-            "download_url": f"/api/download_static/presentation.pptx?id={file_id}",
-            "message": f"'{final_filename}' PPT 생성 완료! 다운로드가 시작됩니다."
+            "download_url": f"/api/download_static/presentation.pptx?id={timestamp}",
+            "message": f"'{final_filename}' PPT 생성 완료!"
         })
 
 @app.route("/api/download_static/presentation.pptx", methods=["GET"])
@@ -3844,39 +3605,6 @@ def api_download_static():
         download_name="presentation.pptx",
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-
-
-# ===================== 응답 피드백 =====================
-@app.route("/api/feedback", methods=["POST"])
-def api_feedback():
-    """사용자 피드백 저장 (좋아요/싫어요 + 코멘트)"""
-    import json as _json
-    data = request.json
-    rating = data.get("rating", "")       # "good" or "bad"
-    comment = data.get("comment", "")
-    message = data.get("message", "")[:500]  # 해당 응답 내용 (앞 500자)
-    user_query = data.get("user_query", "")[:300]
-
-    if rating not in ("good", "bad"):
-        return jsonify({"error": "invalid rating"}), 400
-
-    feedback_dir = os.path.join(BASE_DIR, "feedback")
-    os.makedirs(feedback_dir, exist_ok=True)
-
-    from datetime import datetime
-    entry = {
-        "timestamp": datetime.now().isoformat(),
-        "rating": rating,
-        "comment": comment.strip(),
-        "user_query": user_query,
-        "message_preview": message,
-    }
-
-    feedback_file = os.path.join(feedback_dir, "feedback.jsonl")
-    with open(feedback_file, "a", encoding="utf-8") as f:
-        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
-
-    return jsonify({"ok": True})
 
 
 # ===================== 응답 중지 =====================
@@ -3968,105 +3696,6 @@ def api_chat():
 
     if (not api_url or not model) and not env_id.startswith("gguf-"):
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
-
-    # ── Logpresso 자동 실행: logpresso-query 스킬 + 실행 의도이면 직접 조회 ──
-    if "logpresso-query" in skill_ids and last_user_query.strip():
-        _lpq_intent = classify_logpresso_intent(last_user_query)
-        if _lpq_intent in ("execute", "table_list", "table_schema"):
-            try:
-                import pandas as pd
-                _lpq_content = None
-                _lpq_user_q = last_user_query.strip()
-                _lpq_history = [{"role": m.get("role","user"), "content": m.get("content","")} for m in messages[-6:] if isinstance(m.get("content"), str)]
-
-                if _lpq_intent == "table_list":
-                    tables = []
-                    for name, info in LOGPRESSO_TABLES.items():
-                        tables.append(f"| `{name}` | {info['desc']} | {len(info['columns'])} |")
-                    _lpq_content = f"📋 **등록된 Logpresso 테이블 ({len(LOGPRESSO_TABLES)}개)**\n\n| 테이블명 | 설명 | 컬럼 수 |\n|---|---|---|\n" + "\n".join(tables)
-                elif _lpq_intent == "table_schema":
-                    matched_table = None
-                    for tname in LOGPRESSO_TABLES:
-                        if tname.lower() in _lpq_user_q.lower():
-                            matched_table = tname
-                            break
-                    if matched_table:
-                        info = LOGPRESSO_TABLES[matched_table]
-                        _lpq_content = f"🔍 **{matched_table}** — {info['desc']}\n\n**컬럼 ({len(info['columns'])}개):** " + ", ".join(f"`{c}`" for c in info["columns"])
-                        sample_lpql = f"table duration=5m {matched_table} | limit 5"
-                        df, _err = query_logpresso(sample_lpql, timeout=30)
-                        if df is not None and len(df) > 0:
-                            cols = list(df.columns)
-                            _lpq_content += f"\n\n**샘플 데이터:**\n\n| " + " | ".join(cols) + " |\n|" + "|".join(["---"]*len(cols)) + "|\n"
-                            for _, row in df.head(5).iterrows():
-                                _lpq_content += "| " + " | ".join(str(row.get(c, "")) for c in cols) + " |\n"
-                    else:
-                        _lpq_content = "❌ 테이블명을 인식할 수 없습니다. 사용 가능: " + ", ".join(f"`{t}`" for t in LOGPRESSO_TABLES.keys())
-                else:  # execute (데이터 확인용 — limit 5로 제한)
-                    llm_response = _llm_generate_lpql(_lpq_user_q, _lpq_history)
-                    lpql = extract_lpql_from_response(llm_response) if llm_response else None
-                    # LLM 실패 시 테이블명 기반 폴백
-                    if not lpql:
-                        lpql = _fallback_lpql_from_query(_lpq_user_q)
-                        if lpql:
-                            llm_response = f"⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다."
-                        else:
-                            _lpq_content = None  # 테이블명도 못 찾음 → 일반 chat 폴백
-                    if lpql and _lpq_content is None:
-                        # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
-                        import re as _re
-                        _EXEC_LIMIT = 5
-                        if _re.search(r'\|\s*limit\s+\d+', lpql, _re.IGNORECASE):
-                            lpql = _re.sub(r'(\|\s*limit\s+)\d+', rf'\g<1>{_EXEC_LIMIT}', lpql, flags=_re.IGNORECASE)
-                        else:
-                            lpql = lpql.rstrip() + f" | limit {_EXEC_LIMIT}"
-                        # 원본 쿼리(limit 없는 버전)를 쿼리 표시용으로 보존
-                        lpql_full = _re.sub(r'\s*\|\s*limit\s+\d+', '', lpql, flags=_re.IGNORECASE).strip()
-
-                        sec_error = validate_lpql_readonly(lpql)
-                        if sec_error:
-                            _lpq_content = f"❌ 보안 검증 실패: {sec_error}\n\n생성된 LPQL: `{lpql}`"
-                        else:
-                            df, err_detail = query_logpresso(lpql, timeout=180)
-                            if df is None:
-                                err_reason = err_detail.get("reason", "알 수 없는 오류") if err_detail else "알 수 없는 오류"
-                                resp_preview = err_detail.get("response_preview", "") if err_detail else ""
-                                _lpq_content = f"❌ Logpresso 조회 실패: **{err_reason}**\n\n**생성된 쿼리:**\n```lpql\n{lpql}\n```"
-                                if resp_preview:
-                                    _lpq_content += f"\n\n**서버 응답:**\n```\n{resp_preview[:300]}\n```"
-                            elif len(df) == 0:
-                                _lpq_content = f"✅ 결과 0건\n\n`{lpql}`\n\n_(데이터가 없습니다. duration을 늘려보세요.)_"
-                            else:
-                                total = len(df)
-                                cols = list(df.columns)
-                                _lpq_content = f"✅ **Logpresso 조회 결과** (총 {total}건)\n\n```\n{lpql}\n```\n\n"
-                                _lpq_content += "| " + " | ".join(cols) + " |\n|" + "|".join(["---"]*len(cols)) + "|\n"
-                                for _, row in df.iterrows():
-                                    vals = []
-                                    for c in cols:
-                                        v = str(row.get(c, "")) if row.get(c) is not None else ""
-                                        vals.append(v[:50] + "..." if len(v) > 50 else v)
-                                    _lpq_content += "| " + " | ".join(vals) + " |\n"
-                                if total >= _EXEC_LIMIT:
-                                    _lpq_content += f"\n_(데이터가 더 있을 수 있습니다)_"
-                                if llm_response:
-                                    _lpq_content += f"\n\n---\n📝 {llm_response}"
-
-                if _lpq_content is not None:
-                    return jsonify({
-                        "content": _lpq_content,
-                        "model_used": "Logpresso Direct",
-                        "loaded_skills": ["logpresso-query"],
-                        "system_prompt_length": 0,
-                        "auto_routed": auto_routed,
-                        "route_reason": "logpresso-execute",
-                        "auto_format": "analysis",
-                        "auto_style": True,
-                    })
-            except Exception as e:
-                # Logpresso 직접 조회 실패 → 일반 LLM chat으로 폴백
-                import traceback
-                traceback.print_exc()
 
     # 시스템 프롬프트 구성
     # 출력 형식에 따라 기본 규칙 분기
@@ -4245,6 +3874,20 @@ def api_chat():
                 "원형 차트: CategoryChartData에 시리즈 1개만 추가, XL_CHART_TYPE.PIE 사용\n"
                 "프론트엔드가 코드를 감지하여 '📽️ PPT 생성 & 다운로드' 버튼을 자동 표시합니다.\n\n"
             )
+            # PPT 디자인 스타일 주입 (참고PPT 우선, 없으면 프리셋)
+            ppt_ref_design = data.get("ppt_ref_design", "")
+            ppt_style = data.get("ppt_style", "")
+            if ppt_ref_design:
+                system_prompt += (
+                    "=== 참고 PPT 디자인 (반드시 이 스타일을 따르세요) ===\n"
+                    f"{ppt_ref_design}\n\n"
+                )
+            elif ppt_style:
+                system_prompt += (
+                    "=== PPT 디자인 스타일 ===\n"
+                    f"{ppt_style}\n"
+                    "이 디자인 가이드를 반드시 따라 모든 슬라이드를 제작하세요.\n\n"
+                )
 
         drawio_requested = 'ql' in locals() and any(kw in ql for kw in ["drawio", "draw.io", "드로우", "드로잉", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처", "배치도", "dfd"])
         if "drawio-diagram" in loaded or drawio_requested:
@@ -4977,7 +4620,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg hr{border:none;border-top:1px solid #e5e3de;margin:6px 0}
 .msg blockquote{border-left:3px solid #6366f1;margin:4px 0;padding:2px 8px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
-.msg.user .msg-label{color:rgba(255,255,255,.7)}
+/* 피드백 버튼 */
 .msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
 .msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
 .msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
@@ -4997,6 +4640,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .fb-modal .fb-btn{padding:8px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
 .fb-modal .fb-btn-cancel{background:#f0f0f0;color:#666}.fb-modal .fb-btn-cancel:hover{background:#e0e0e0}
 .fb-modal .fb-btn-submit{background:#6366f1;color:#fff}.fb-modal .fb-btn-submit:hover{background:#4f46e5}
+.msg.user .msg-label{color:rgba(255,255,255,.7)}
 .msg .skill-info{font-size:10px;color:#6366f1;margin-top:4px}
 .typing{display:inline-flex;gap:4px;padding:8px 14px}
 .typing span{width:8px;height:8px;border-radius:50%;background:#ccc;animation:blink 1.4s infinite both}
@@ -5064,6 +4708,9 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .pptx-remake-label{font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap}
 .pptx-remake-btn{background:#fff;color:#4338ca;border:1px solid #c7d2fe;border-radius:16px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all .2s;font-weight:500;white-space:nowrap}
 .pptx-remake-btn:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-1px)}
+/* PPT 스타일 드롭다운 */
+.ppt-style-drop{display:none}
+.ppt-ref-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;margin-left:4px}
 /* CSV Upload */
 .csv-section{margin-bottom:24px}
 /* csv-upload-area 제거됨 → 채팅 📎 첨부로 대체 */
@@ -5266,8 +4913,9 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <source src="/static/intro.mp4" type="video/mp4">
   </video>
   <div id="introProgress"></div>
-  <button id="introSkip" onclick="(function(b){var o=document.getElementById('introOverlay');if(!o)return;var v=document.getElementById('introVideo');if(v)v.pause();o.classList.add('fade-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o);},700);})(this)">건너뛰기 ▶</button>
+  <button id="introSkip" onclick="dismissIntroAndShowMode()">건너뛰기 ▶</button>
 </div>
+
 
 <!-- UIO 2D 픽셀 컨테이너 -->
 <div id="uioContainer">
@@ -5402,7 +5050,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
   <div class="chat-box-fixed">
     <div class="chat-box-fixed-inner">
       <div class="chat-attach-preview" id="chatAttachPreview" style="display:none"></div>
-      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';checkPptStyleVisibility()"></textarea>
       <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -5426,6 +5074,16 @@ body.rp-collapsed .chat-box-fixed{right:0}
             <option value="report">📄 보고서</option>
             <option value="step-by-step">📝 단계별</option>
           </select>
+          <select class="chat-dropdown ppt-style-drop" id="pptStyleDrop" onchange="applyPptStyle(this.value)" title="PPT 디자인 스타일">
+            <option value="">📽️ PPT:자동</option>
+            <option value="minimal">⬜ 미니멀</option>
+            <option value="corporate">🏢 기업용</option>
+            <option value="colorful">🎨 컬러풀</option>
+            <option value="dark">🌙 다크</option>
+            <option value="academic">🎓 학술</option>
+            <option value="startup">🚀 스타트업</option>
+            <option value="ref">📎 참고PPT</option>
+          </select><span id="pptRefBadge" class="ppt-ref-badge" style="display:none">📎 참고스타일 적용중</span>
           <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="체크하면 모델이 답변 전에 깊이 사고합니다 (응답 느림)">
             <input type="checkbox" id="thinkToggle" style="margin:0;accent-color:#7c5cbf">💭사고
           </label>
@@ -5977,15 +5635,19 @@ async function send(){
   }
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
-  // 첨부파일이 있으면 먼저 업로드
+  // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
+  autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
+
+  // 첨부파일이 있으면 먼저 업로드 (파일 확장자 기반 스킬이 autoLoadedSkills에 추가됨)
   let attachedNames = [];
   if(chatPendingFiles.length > 0){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 스킬 구성: 수동 선택 + 파일 프리로드 + 질문 기반 자동 추천
+  // 스킬 구성: 수동 선택 + 파일 기반 자동 + 질문 기반 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [...autoLoadedSkills];  // 파일 첨부/세션 로드로 프리로드된 스킬
+  let autoLoaded = [...autoLoadedSkills];  // 파일 업로드로 새로 감지된 스킬만
 
   // 프리로드 스킬 중 수동/해제 중복 제거
   const manualSet = new Set(skillsToUse);
@@ -6022,10 +5684,10 @@ async function send(){
   document.getElementById('autoSkillPreview').classList.remove('show');
 
   // 자동 로드 안내 (selSkills에는 추가하지 않음 - 1회성 사용)
+  autoLoadedSkills = autoLoaded;
+  renderSkills();
+  updateLoaded();
   if(autoLoaded.length > 0){
-    autoLoadedSkills = autoLoaded;
-    renderSkills();
-    updateLoaded();
     const manualCount = selSkills.length;
     const info = manualCount > 0 ? ` (수동 ${manualCount}개 + 자동 ${autoLoaded.length}개)` : '';
     addMsg('assistant', '🧠 자동 스킬: ' + autoLoaded.join(', ') + info);
@@ -6040,88 +5702,6 @@ async function send(){
 
   chatAbort = new AbortController();
 
-  // ── Logpresso 자동 실행: logpresso-query 스킬이 활성화되면 직접 조회 시도 ──
-  const _lpqActive = skillsToUse.includes('logpresso-query');
-  let _lpqHandled = false;
-  if(_lpqActive){
-    const _q = text.trim();
-    // 의도 분류 (백엔드 classify_logpresso_intent와 동일 로직)
-    const _tlKw = ['테이블 목록','어떤 테이블','테이블 뭐','테이블 리스트','테이블 종류','테이블 있','테이블 알려','테이블 보여'];
-    const _schKw = ['구조','컬럼','필드','스키마','뭐가 있','어떤 데이터','어떤 컬럼'];
-    const _exKw = ['보여줘','조회해','찾아줘','검색해','확인해줘','가져와','뽑아','조회 해','몇건','몇개','몇 건','몇 개','데이터 줘','로그 줘','결과 줘','실행해','돌려','조회해줘'];
-    let _lpqMode = 'explain';
-    if(_tlKw.some(k=>_q.includes(k))) _lpqMode='table_list';
-    else if(_schKw.some(k=>_q.includes(k))) _lpqMode='table_schema';
-    else if(_exKw.some(k=>_q.includes(k))) _lpqMode='execute';
-
-    if(_lpqMode !== 'explain'){
-      try{
-        const _lr = await fetch('/api/logpresso/query',{
-          method:'POST', headers:{'Content-Type':'application/json'},
-          signal: chatAbort.signal,
-          body:JSON.stringify({query:_q, mode:_lpqMode, history:history.slice(-6)})
-        });
-        const _ld = await _lr.json();
-        typing.remove();
-        _lpqHandled = true;
-
-        if(_ld.error){
-          let errMsg = '❌ Logpresso 조회 실패: ' + _ld.error;
-          if(_ld.lpql) errMsg += '\n\n**생성된 쿼리:**\n```lpql\n' + _ld.lpql + '\n```';
-          if(_ld.hint) errMsg += '\n\n💡 ' + _ld.hint;
-          if(_ld.available_tables) errMsg += '\n\n📋 사용 가능한 테이블: ' + _ld.available_tables.map(t=>'`'+t+'`').join(', ');
-          addMsg('assistant', errMsg);
-          history.push({role:'assistant',content:errMsg});
-        } else if(_ld.mode === 'table_list'){
-          let msg = '📋 **등록된 Logpresso 테이블 (' + _ld.total + '개)**\n\n';
-          msg += '| 테이블명 | 설명 | 컬럼 수 |\n|---|---|---|\n';
-          (_ld.tables||[]).forEach(t=>{ msg += '| `' + t.table + '` | ' + t.desc + ' | ' + t.column_count + ' |\n'; });
-          addMsg('assistant', msg);
-          history.push({role:'assistant',content:msg});
-        } else if(_ld.mode === 'table_schema'){
-          let msg = '🔍 **' + _ld.table + '** — ' + _ld.desc + '\n\n';
-          msg += '**컬럼 (' + _ld.column_count + '개):** ' + _ld.columns.map(c=>'`'+c+'`').join(', ') + '\n';
-          if(_ld.sample_data && _ld.sample_data.length > 0){
-            const cols = Object.keys(_ld.sample_data[0]);
-            msg += '\n**샘플 데이터 (최근 5분, ' + _ld.sample_data.length + '건):**\n\n';
-            msg += '| ' + cols.join(' | ') + ' |\n|' + cols.map(()=>'---').join('|') + '|\n';
-            _ld.sample_data.forEach(row=>{ msg += '| ' + cols.map(c=>String(row[c]||'')).join(' | ') + ' |\n'; });
-          }
-          addMsg('assistant', msg);
-          history.push({role:'assistant',content:msg});
-        } else if(_ld.mode === 'execute' && _ld.success){
-          let msg = '✅ **Logpresso 조회 결과**\n\n';
-          msg += '```\nLPQL: ' + _ld.lpql + '\n```\n\n';
-          msg += '📊 총 **' + _ld.total_rows + '**건 조회 (페이지 ' + _ld.page + '/' + _ld.total_pages + ')\n\n';
-          if(_ld.data && _ld.data.length > 0){
-            const cols = _ld.columns || Object.keys(_ld.data[0]);
-            msg += '| ' + cols.join(' | ') + ' |\n|' + cols.map(()=>'---').join('|') + '|\n';
-            _ld.data.forEach(row=>{ msg += '| ' + cols.map(c=>{ let v=String(row[c]!=null?row[c]:''); return v.length>50?v.slice(0,47)+'...':v; }).join(' | ') + ' |\n'; });
-            if(_ld.total_pages > 1) msg += '\n💡 다음 페이지: query_id=`' + _ld.query_id + '`';
-          } else {
-            msg += '_(데이터가 없습니다. duration을 늘려보세요.)_';
-          }
-          if(_ld.explanation) msg += '\n\n---\n📝 ' + _ld.explanation;
-          addMsg('assistant', msg);
-          history.push({role:'assistant',content:msg});
-        } else {
-          // execute 모드지만 success 아닌 경우
-          addMsg('assistant','❌ Logpresso 조회 실패: ' + JSON.stringify(_ld));
-        }
-      }catch(e){
-        if(e.name === 'AbortError'){
-          typing.remove();
-          _lpqHandled = true;
-        } else {
-          // Logpresso 호출 실패 → 에러 표시 후 일반 chat으로 폴백
-          console.warn('Logpresso direct query failed, falling back to chat:', e);
-          _lpqHandled = false;
-        }
-      }
-    }
-  }
-
-  if(!_lpqHandled){
   try{
     const resp=await fetch('/api/chat',{
       method:'POST',
@@ -6135,6 +5715,8 @@ async function send(){
         system_prompt:document.getElementById('systemPromptInput').value.trim(),
         max_tokens:maxTokens,
         think_mode: document.getElementById('thinkToggle').checked,
+        ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
+        ppt_ref_design: pptRefDesign,
       })
     });
     const data=await resp.json();
@@ -6173,7 +5755,8 @@ async function send(){
       addMsg('assistant', assistantDisplayText, assistantRawForDetect);
       history.push({role:'assistant',content:data.content});
       // markdown-mermaid-writing 스킬: ```markdown 블록이 없어도 전체 응답에 MD 다운로드 버튼 추가
-      if(selSkills.includes('markdown-mermaid-writing') && !data.content.includes('```markdown')){
+      // selSkills(수동) 또는 autoLoadedSkills(자동) 모두 체크
+      if((selSkills.includes('markdown-mermaid-writing') || autoLoadedSkills.includes('markdown-mermaid-writing')) && !data.content.includes('```markdown')){
         appendMdDownloadBar(data.content);
       }
     }
@@ -6185,7 +5768,6 @@ async function send(){
       addMsg('assistant','❌ 서버 연결 실패: '+e.message);
     }
   }
-  } // end if(!_lpqHandled)
   isSending = false;
   chatAbort = null;
   btn.textContent = '▶';
@@ -6360,13 +5942,6 @@ function addMsg(role,text,rawForDetect){
   d.className='msg '+role;
   let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
   d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
-  // 피드백 버튼 (assistant 응답에만)
-  if(role==='assistant'){
-    const fbDiv=document.createElement('div');
-    fbDiv.className='msg-feedback';
-    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
-    d.appendChild(fbDiv);
-  }
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
     const btn=document.createElement('button');
@@ -6381,6 +5956,13 @@ function addMsg(role,text,rawForDetect){
     try{renderChartBlock(cv.id, b2u(cv.dataset.chartJson));}
     catch(e){cv.parentElement.innerHTML='<p style="color:red;padding:12px;">차트 렌더링 실패: '+e.message+'</p>';}
   });
+  // 피드백 버튼 (assistant 응답에만)
+  if(role==='assistant'){
+    const fbDiv=document.createElement('div');
+    fbDiv.className='msg-feedback';
+    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    d.appendChild(fbDiv);
+  }
   c.scrollIntoView({behavior:'smooth',block:'end'});
 }
 function addTyping(){
@@ -6639,6 +6221,7 @@ function loadSession(id){
   else { selSkills = []; }
   // 대화 히스토리 기반 자동 스킬 프리로드
   autoLoadedSkills = [];
+  dismissedAutoSkills.clear();
   if(autoSkillMode && history.length > 0){
     const lastUser = [...history].reverse().find(m=>m.role==='user');
     if(lastUser){
@@ -7088,6 +6671,73 @@ async function uploadCsvFile(file){
 
   }catch(e){}
 }
+
+// ===== XLSX Upload (시트별 파싱 + 이미지) =====
+var _xlsxRawFile = null;  // 시트 변경 시 재업로드용
+
+async function uploadXlsxFile(file, sheetIdx){
+  _xlsxRawFile = file;
+  const formData = new FormData();
+  formData.append('file', file);
+  if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
+
+  try{
+    const resp = await fetch('/api/upload_xlsx', {method:'POST', body:formData});
+    const data = await resp.json();
+    if(data.error){ addMsg('assistant', '❌ ' + data.error); return; }
+
+    csvLoaded = true;
+    csvFilename = data.filename;
+
+    // 시트 선택 탭 (2개 이상일 때만)
+    let sheetTabs = '';
+    if(data.sheets && data.sheets.length > 1){
+      sheetTabs = '<div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">';
+      data.sheets.forEach(function(s, i){
+        var active = i === data.active_sheet;
+        sheetTabs += '<button style="padding:3px 10px;border-radius:12px;border:1.5px solid '+(active?'#6366f1':'#ddd')+';background:'+(active?'#6366f1':'#fff')+';color:'+(active?'#fff':'#333')+';font-size:11px;cursor:pointer;font-weight:'+(active?'600':'400')+'" onclick="switchXlsxSheet('+i+')">'+esc(s.name)+' <span style="color:'+(active?'rgba(255,255,255,.7)':'#999')+';font-size:10px">('+s.rows+'행)</span></button>';
+      });
+      sheetTabs += '</div>';
+    }
+
+    // 미리보기 테이블
+    let tableHtml = '<table><tr>' + data.headers.map(function(h){return '<th>'+esc(h)+'</th>';}).join('') + '</tr>';
+    if(data.sample_rows){
+      data.sample_rows.forEach(function(row){
+        tableHtml += '<tr>' + data.headers.map(function(h){return '<td>'+esc(row[h]||'')+'</td>';}).join('') + '</tr>';
+      });
+    }
+    tableHtml += '</table>';
+    if(data.rows > 3) tableHtml += '<div style="text-align:center;color:#999;font-size:10px;margin-top:4px">... 총 ' + data.rows + '행</div>';
+
+    // 이미지 안내
+    var imgInfo = '';
+    if(data.images_count > 0){
+      imgInfo = '<div style="margin-top:6px;padding:4px 8px;background:#fef3c7;border-radius:6px;font-size:11px;color:#92400e">🖼️ 내장 이미지 ' + data.images_count + '개 감지 (VL 모델로 분석 가능)</div>';
+    }
+
+    var sheetInfo = data.sheets && data.sheets.length > 1 ? ' · ' + data.sheets.length + '시트' : '';
+
+    const panel = document.getElementById('csvInfoPanel');
+    panel.style.display = 'block';
+    panel.innerHTML =
+      '<div class="csv-info">' +
+        '<div class="fname">📊 ' + esc(data.filename) + ' [' + esc(data.active_sheet_name) + ']</div>' +
+        '<div class="fstats">' + data.rows + '행 × ' + data.cols + '열' + sheetInfo + '</div>' +
+        '<button class="fremove" onclick="removeCsv()">✕ 제거</button>' +
+        sheetTabs +
+        '<div class="csv-preview">' + tableHtml + '</div>' +
+        imgInfo +
+      '</div>';
+
+  }catch(e){ console.warn('XLSX 업로드 실패:', e); }
+}
+
+function switchXlsxSheet(idx){
+  if(!_xlsxRawFile) return;
+  uploadXlsxFile(_xlsxRawFile, idx);
+}
+
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ===== Unicode-safe Base64 유틸 (btoa/atob는 Latin1만 지원) =====
@@ -7374,6 +7024,73 @@ function renderMdPreview(escapedMd){
   return s;
 }
 
+// ===== 피드백 시스템 =====
+var _fbCurrentRating = '';
+var _fbCurrentBtn = null;
+
+function openFeedback(btn, rating){
+  _fbCurrentRating = rating;
+  _fbCurrentBtn = btn;
+  var modal = document.getElementById('feedbackModal');
+  var title = document.getElementById('fbModalTitle');
+  var display = document.getElementById('fbRatingDisplay');
+  var ta = document.getElementById('fbComment');
+  if(rating === 'good'){
+    title.textContent = '어떤 점이 좋았나요?';
+    display.textContent = '👍 좋아요';
+    ta.placeholder = '좋았던 점을 알려주세요 (선택사항)';
+  } else {
+    title.textContent = '어떤 점이 아쉬웠나요?';
+    display.textContent = '👎 별로예요';
+    ta.placeholder = '개선할 점을 알려주세요 (선택사항)';
+  }
+  ta.value = '';
+  modal.classList.add('show');
+  setTimeout(function(){ ta.focus(); }, 100);
+}
+
+function closeFeedbackModal(){
+  document.getElementById('feedbackModal').classList.remove('show');
+  _fbCurrentRating = '';
+  _fbCurrentBtn = null;
+}
+
+async function submitFeedback(){
+  var comment = document.getElementById('fbComment').value;
+  // 해당 메시지 내용 가져오기
+  var msgEl = _fbCurrentBtn ? _fbCurrentBtn.closest('.msg') : null;
+  var msgText = msgEl ? (msgEl.textContent || '').slice(0, 500) : '';
+  // 직전 유저 메시지
+  var userQuery = '';
+  if(msgEl){
+    var prev = msgEl.previousElementSibling;
+    while(prev){
+      if(prev.classList.contains('user')){ userQuery = (prev.textContent || '').slice(0, 300); break; }
+      prev = prev.previousElementSibling;
+    }
+  }
+  try{
+    await fetch('/api/feedback', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rating: _fbCurrentRating, comment: comment, message: msgText, user_query: userQuery })
+    });
+  }catch(e){}
+  // 버튼 시각 피드백
+  if(_fbCurrentBtn){
+    var fbDiv = _fbCurrentBtn.parentElement;
+    fbDiv.querySelectorAll('button').forEach(function(b){ b.classList.remove('fb-selected-good','fb-selected-bad'); });
+    _fbCurrentBtn.classList.add(_fbCurrentRating === 'good' ? 'fb-selected-good' : 'fb-selected-bad');
+  }
+  closeFeedbackModal();
+}
+
+// 모달 바깥 클릭으로 닫기
+document.addEventListener('click', function(e){
+  var modal = document.getElementById('feedbackModal');
+  if(e.target === modal) closeFeedbackModal();
+});
+
 // ===== 응답 전체를 MD 다운로드 가능하게 =====
 function appendMdDownloadBar(rawContent){
   // 마지막 assistant 메시지에 MD 다운로드 바 추가
@@ -7576,10 +7293,20 @@ async function uploadChatPendingFiles(){
       try{
         await uploadCsvFile(pf.file);
         results.push(pf.name);
-        // pending → 완료로 전환
         if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
       }catch(e){
-        // 실패 시 pending 제거
+        if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
+      }
+      continue;
+    }
+
+    // XLSX → 전용 엔드포인트 (시트별 파싱 + 이미지 추출)
+    if(ext === 'xlsx' && !csvLoaded){
+      try{
+        await uploadXlsxFile(pf.file);
+        results.push(pf.name);
+        if(pendingIdx >= 0) uploadedFilesList[pendingIdx].pending = false;
+      }catch(e){
         if(pendingIdx >= 0) uploadedFilesList.splice(pendingIdx, 1);
       }
       continue;
@@ -8301,35 +8028,20 @@ function readEntriesRecursive(entries){
 // 초기 실행 버튼 상태
 updateRpRunBtn();
 
-// ==================== 인트로 비디오 자동 종료 ====================
-(function(){
+// ==================== 인트로 → 모드 선택 시스템 ====================
+function dismissIntroAndShowMode(){
   var ov = document.getElementById('introOverlay');
+  if(!ov || ov._gone) return;
+  ov._gone = true;
   var vi = document.getElementById('introVideo');
-  if(!ov) return;
-  function dismiss(){
-    if(ov._gone) return; ov._gone = true;
-    if(vi) vi.pause();
-    ov.classList.add('fade-out');
-    setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 700);
-  }
-  if(vi){
-    vi.addEventListener('ended', dismiss);
-    vi.addEventListener('error', dismiss);
-    var src = vi.querySelector('source');
-    if(src) src.addEventListener('error', dismiss);
-    // 진행률 바
-    var prog = document.getElementById('introProgress');
-    if(prog) vi.addEventListener('timeupdate', function(){
-      if(vi.duration) prog.style.width = (vi.currentTime/vi.duration*100)+'%';
-    });
-  }
-  // 안전장치: 4초 안에 재생 안 되면 자동 제거
-  setTimeout(function(){ if(vi && vi.readyState < 2) dismiss(); }, 4000);
-  // ESC 키
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismiss(); });
-})();
+  if(vi) vi.pause();
+  ov.classList.add('fade-out');
+  setTimeout(function(){
+    if(ov.parentNode) ov.parentNode.removeChild(ov);
+    // 모드 선택 없이 바로 기본 UI 표시
+  }, 700);
+}
 
-// ==================== UIO 2D 픽셀 오피스 ====================
 var uioCollapsed = false;
 
 function toggleUioMode(){
@@ -8377,6 +8089,27 @@ function exitUioMode(){
   var sideToggle = document.querySelector('.sidebar-toggle');
   if(sideToggle) sideToggle.style.display='';
 }
+
+(function(){
+  var ov = document.getElementById('introOverlay');
+  var vi = document.getElementById('introVideo');
+  if(!ov) return;
+  if(vi){
+    vi.addEventListener('ended', dismissIntroAndShowMode);
+    vi.addEventListener('error', dismissIntroAndShowMode);
+    var src = vi.querySelector('source');
+    if(src) src.addEventListener('error', dismissIntroAndShowMode);
+    // 진행률 바
+    var prog = document.getElementById('introProgress');
+    if(prog) vi.addEventListener('timeupdate', function(){
+      if(vi.duration) prog.style.width = (vi.currentTime/vi.duration*100)+'%';
+    });
+  }
+  // 안전장치: 4초 안에 재생 안 되면 자동 제거
+  setTimeout(function(){ if(vi && vi.readyState < 2) dismissIntroAndShowMode(); }, 4000);
+  // ESC 키
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismissIntroAndShowMode(); });
+})();
 
 // ==================== PPT 코드 감지 & 생성 ====================
 function detectAndAddPptxButtons(msgEl, rawText){
@@ -8495,68 +8228,61 @@ function _remakePpt(text){
   setTimeout(()=>send(), 100);
 }
 
-// ==================== 응답 피드백 (👍/👎 + 코멘트 모달) ====================
-var _fbCurrentRating = '';
-var _fbCurrentBtn = null;
+// ===== PPT 디자인 스타일 시스템 =====
+const PPT_STYLE_PROMPTS = {
+  minimal: '미니멀 디자인: 흰 배경(#FFFFFF), 검정/회색 텍스트, 여백 충분히, 장식 최소화, sans-serif 폰트(맑은 고딕/Arial), 깔끔한 선 구분. 색상은 #333333(제목), #666666(본문), #E0E0E0(구분선) 위주.',
+  corporate: '기업 프레젠테이션: 네이비(#1B2A4A) 상단 바 + 화이트 배경, 포인트 색상 #2563EB, 각 슬라이드에 상단 컬러 스트라이프, 표와 차트 적극 활용, 깔끔하고 전문적인 톤.',
+  colorful: '컬러풀 디자인: 슬라이드마다 다양한 밝은 배경 그라데이션, 색상 팔레트(#FF6B6B, #4ECDC4, #45B7D1, #FFA07A, #98D8C8, #F7DC6F), 둥근 도형과 카드형 레이아웃, 생동감 있는 구성.',
+  dark: '다크 테마: 어두운 배경(#1A1A2E 또는 #0F0F1F), 밝은 텍스트(#FFFFFF, #E0E0E0), 네온 포인트 컬러(#6366F1 메인, #A855F7 보조, #22D3EE 강조), 고급스럽고 세련된 느낌.',
+  academic: '학술 발표: 깔끔한 흰 배경, 보수적 배색(#2C3E50 제목, #34495E 본문), 번호 매긴 섹션 구조, 참고문헌 슬라이드 포함, 데이터는 차트/표 중심으로 시각화, 최소 장식.',
+  startup: '스타트업 피치덱: 대담한 헤드라인(큰 폰트), 핵심 숫자 크게 강조, 카드형 레이아웃, 모던 색상(#6366F1 메인, #EC4899 보조), 마지막에 CTA(Call-to-Action) 슬라이드 포함.',
+};
+var activePptStyle = '';
+var pptRefDesign = '';
 
-function openFeedback(btn, rating){
-  _fbCurrentRating = rating;
-  _fbCurrentBtn = btn;
-  var modal = document.getElementById('feedbackModal');
-  var title = document.getElementById('fbModalTitle');
-  var display = document.getElementById('fbRatingDisplay');
-  var ta = document.getElementById('fbComment');
-  if(rating === 'good'){
-    title.textContent = '어떤 점이 좋았나요?';
-    display.textContent = '👍 좋아요';
-    ta.placeholder = '좋았던 점을 알려주세요 (선택사항)';
-  } else {
-    title.textContent = '어떤 점이 아쉬웠나요?';
-    display.textContent = '👎 별로예요';
-    ta.placeholder = '개선할 점을 알려주세요 (선택사항)';
+function applyPptStyle(val){
+  if(val === 'ref'){
+    var inp = document.createElement('input');
+    inp.type='file'; inp.accept='.pptx';
+    inp.onchange = function(){ if(inp.files[0]) uploadPptRef(inp.files[0]); };
+    inp.click();
+    document.getElementById('pptStyleDrop').value = activePptStyle;
+    return;
   }
-  ta.value = '';
-  modal.classList.add('show');
-  setTimeout(function(){ ta.focus(); }, 100);
+  activePptStyle = val;
+  pptRefDesign = '';
+  document.getElementById('pptRefBadge').style.display = 'none';
 }
 
-function closeFeedbackModal(){
-  document.getElementById('feedbackModal').classList.remove('show');
-  _fbCurrentRating = '';
-  _fbCurrentBtn = null;
-}
-
-async function submitFeedback(){
-  var comment = document.getElementById('fbComment').value;
-  var msgEl = _fbCurrentBtn ? _fbCurrentBtn.closest('.msg') : null;
-  var msgText = msgEl ? (msgEl.textContent || '').slice(0, 500) : '';
-  var userQuery = '';
-  if(msgEl){
-    var prev = msgEl.previousElementSibling;
-    while(prev){
-      if(prev.classList.contains('user')){ userQuery = (prev.textContent || '').slice(0, 300); break; }
-      prev = prev.previousElementSibling;
-    }
-  }
+async function uploadPptRef(file){
+  var fd = new FormData(); fd.append('file', file);
   try{
-    await fetch('/api/feedback', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ rating: _fbCurrentRating, comment: comment, message: msgText, user_query: userQuery })
-    });
-  }catch(e){}
-  if(_fbCurrentBtn){
-    var fbDiv = _fbCurrentBtn.parentElement;
-    fbDiv.querySelectorAll('button').forEach(function(b){ b.classList.remove('fb-selected-good','fb-selected-bad'); });
-    _fbCurrentBtn.classList.add(_fbCurrentRating === 'good' ? 'fb-selected-good' : 'fb-selected-bad');
+    var resp = await fetch('/api/analyze_ppt_style', {method:'POST', body:fd});
+    var data = await resp.json();
+    if(data.error){
+      addMsg('assistant', '❌ PPT 스타일 분석 실패: ' + data.error);
+      return;
+    }
+    if(data.design){
+      pptRefDesign = data.design;
+      activePptStyle = '';
+      document.getElementById('pptStyleDrop').value = '';
+      document.getElementById('pptRefBadge').style.display = 'inline-flex';
+      addMsg('assistant', '📎 참고 PPT 스타일 분석 완료: **' + file.name + '**\n' + data.summary + '\n\n새 PPT 생성 시 이 스타일을 반영합니다.');
+    }
+  }catch(e){
+    addMsg('assistant', '❌ PPT 스타일 분석 중 오류 발생');
   }
-  closeFeedbackModal();
 }
 
-document.addEventListener('click', function(e){
-  var modal = document.getElementById('feedbackModal');
-  if(e.target === modal) closeFeedbackModal();
-});
+function checkPptStyleVisibility(){
+  var drop = document.getElementById('pptStyleDrop');
+  if(!drop) return;
+  var text = (document.getElementById('input').value || '').toLowerCase();
+  var isPpt = /ppt|피피티|파워포인트|프레젠테이션|슬라이드|발표자료/.test(text);
+  var hasPptxSkill = selSkills.includes('pptx') || autoLoadedSkills.includes('pptx');
+  drop.style.display = (isPpt || hasPptxSkill) ? 'inline-block' : 'none';
+}
 </script>
 </body>
 </html>
