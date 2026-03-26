@@ -194,6 +194,15 @@ def query_logpresso(query, timeout=180):
         return None, error_info
 
 
+def _fallback_lpql_from_query(user_query):
+    """LLM 실패 시 사용자 쿼리에서 테이블명을 감지하여 기본 LPQL 생성"""
+    q = user_query.upper()
+    for tname in LOGPRESSO_TABLES:
+        if tname.upper() in q:
+            return f"table duration=1h {tname} | limit 5"
+    return None
+
+
 # 보안: 읽기 전용 명령만 허용
 _LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
 
@@ -2403,8 +2412,11 @@ def _llm_generate_lpql(user_query, history=None):
         result = resp.json()
         if "choices" in result and len(result["choices"]) > 0:
             return result["choices"][0]["message"]["content"]
+    except req.exceptions.HTTPError as e:
+        code = e.response.status_code if e.response is not None else 0
+        print(f"[Logpresso LLM] HTTP {code} 오류: {e} | env={env.get('name','')} model={env.get('model','')}")
     except Exception as e:
-        print(f"[Logpresso LLM] 오류: {e}")
+        print(f"[Logpresso LLM] 오류: {e} | env={env.get('name','')} model={env.get('model','')}")
     return None
 
 
@@ -2516,7 +2528,20 @@ def api_logpresso_query():
     if mode == "explain":
         llm_response = _llm_generate_lpql(user_query, history)
         if not llm_response:
-            return jsonify({"mode": "explain", "error": "LLM 응답 실패"}), 500
+            fallback = _fallback_lpql_from_query(user_query)
+            if fallback:
+                return jsonify({
+                    "mode": "explain",
+                    "explanation": "⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다.",
+                    "lpql": fallback,
+                    "examples": [{"query": user_query + " 실행해줘", "desc": "이 쿼리를 직접 실행하려면"}],
+                })
+            return jsonify({
+                "mode": "explain",
+                "error": "LLM 연결 실패",
+                "available_tables": list(LOGPRESSO_TABLES.keys()),
+                "hint": "테이블명을 포함하여 다시 시도해주세요.",
+            }), 500
 
         lpql = extract_lpql_from_response(llm_response)
         result = {
@@ -2537,18 +2562,22 @@ def api_logpresso_query():
 
     if not lpql:
         llm_response = _llm_generate_lpql(user_query, history)
-        if not llm_response:
-            return jsonify({"mode": "execute", "error": "LLM에서 LPQL 생성 실패"}), 500
+        if llm_response:
+            llm_explanation = llm_response
+            lpql = extract_lpql_from_response(llm_response)
 
-        llm_explanation = llm_response
-        lpql = extract_lpql_from_response(llm_response)
-
+        # LLM 실패 또는 LPQL 추출 실패 → 테이블명 기반 폴백
         if not lpql:
-            return jsonify({
-                "mode": "execute",
-                "error": "LLM 응답에서 LPQL 쿼리를 추출할 수 없습니다.",
-                "llm_response": llm_response,
-            }), 400
+            lpql = _fallback_lpql_from_query(user_query)
+            if lpql:
+                llm_explanation = f"⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다.\n\n```lpql\n{lpql}\n```"
+            else:
+                return jsonify({
+                    "mode": "execute",
+                    "error": "LLM 연결 실패 및 테이블명을 인식할 수 없습니다.",
+                    "hint": "질문에 테이블명을 포함해주세요. 예: 'ATLAS_RAIL_TRAFFIC 조회해줘'",
+                    "available_tables": list(LOGPRESSO_TABLES.keys()),
+                }), 500
 
     # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
     import re as _re
@@ -3833,9 +3862,14 @@ def api_chat():
                 else:  # execute (데이터 확인용 — limit 5로 제한)
                     llm_response = _llm_generate_lpql(_lpq_user_q, _lpq_history)
                     lpql = extract_lpql_from_response(llm_response) if llm_response else None
+                    # LLM 실패 시 테이블명 기반 폴백
                     if not lpql:
-                        _lpq_content = None  # LLM에서 LPQL 추출 실패 → 일반 chat 폴백
-                    else:
+                        lpql = _fallback_lpql_from_query(_lpq_user_q)
+                        if lpql:
+                            llm_response = f"⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다."
+                        else:
+                            _lpq_content = None  # 테이블명도 못 찾음 → 일반 chat 폴백
+                    if lpql and _lpq_content is None:
                         # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
                         import re as _re
                         _EXEC_LIMIT = 5
@@ -5856,7 +5890,12 @@ async function send(){
         _lpqHandled = true;
 
         if(_ld.error){
-          addMsg('assistant','❌ Logpresso 조회 실패: ' + _ld.error + (_ld.hint ? '\n💡 ' + _ld.hint : ''));
+          let errMsg = '❌ Logpresso 조회 실패: ' + _ld.error;
+          if(_ld.lpql) errMsg += '\n\n**생성된 쿼리:**\n```lpql\n' + _ld.lpql + '\n```';
+          if(_ld.hint) errMsg += '\n\n💡 ' + _ld.hint;
+          if(_ld.available_tables) errMsg += '\n\n📋 사용 가능한 테이블: ' + _ld.available_tables.map(t=>'`'+t+'`').join(', ');
+          addMsg('assistant', errMsg);
+          history.push({role:'assistant',content:errMsg});
         } else if(_ld.mode === 'table_list'){
           let msg = '📋 **등록된 Logpresso 테이블 (' + _ld.total + '개)**\n\n';
           msg += '| 테이블명 | 설명 | 컬럼 수 |\n|---|---|---|\n';
