@@ -214,6 +214,7 @@
     .agent-card.park .avatar { background: linear-gradient(135deg, #e2b714, #c9960c); }
     .agent-card.kim .avatar  { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
     .agent-card.choi .avatar { background: linear-gradient(135deg, #00e5ff, #0097a7); }
+    .agent-card.jung .avatar { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
 
     /* Strike: disable agent cards */
     .agent-card.on-strike {
@@ -743,6 +744,15 @@
         </div>
         <div class="status"></div>
       </div>
+
+      <div class="agent-card jung" onclick="openAgent('jung')">
+        <div class="avatar">J</div>
+        <div class="info">
+          <div class="name">JUNG</div>
+          <select class="skill-select" data-agent="jung" onclick="event.stopPropagation()" onchange="changeAgentSkill('jung', this.value)"></select>
+        </div>
+        <div class="status"></div>
+      </div>
     </div>
 
     <div class="sidebar-footer">
@@ -931,6 +941,8 @@
     characters.push(new Character(spriteGroups[0], 1000, 350, 1.0, 1.0, false, {minX: 850, maxX: 1400, minY: 320, maxY: 480}, 'oftenPause', 'Yoon'));
 
     characters.push(new Character(spriteGroups[3], 200, 350, 1.5, 1.0, false, {minX: 50, maxX: 250, minY: 280, maxY: 400}, 'normal', 'Seo'));
+
+    characters.push(new Character(spriteGroups[1], 700, 450, 1.2, 1.0, false, {minX: 500, maxX: 900, minY: 400, maxY: 550}, 'oftenPause', 'Jung'));
 
     // ═══ Strike / Protest System ═══
     let isOnStrike = false;
@@ -1776,14 +1788,16 @@
         quickActions: ['📝 README 작성', '📋 기술 문서 작성', '📄 API 문서 작성'] },
       chart:          { title: '그래프/차트 생성 담당',     icon: '📈', desc: '데이터 시각화 / 그래프·차트 생성 / 인포그래픽',
         quickActions: ['📊 막대 차트', '📈 라인 차트', '🥧 파이 차트', '📉 산점도'] },
-      logpresso:      { title: '로그프레소 쿼리 담당',     icon: '🔍', desc: 'Logpresso SPL 쿼리 생성 / 로그 분석 / 보안 이벤트 탐색',
-        quickActions: ['🔍 에러 로그 검색', '📊 CPU 사용률 쿼리', '🛡️ 보안 이벤트 탐지'] },
+      logpresso:      { title: '로그프레소 쿼리/조회 담당',  icon: '🔍', desc: 'Logpresso LPQL 쿼리 생성 / 로그 조회 / 보안 이벤트 탐색',
+        quickActions: ['🔍 로그프레소 조회', '📊 로그프레소 쿼리 만들어줘', '🛡️ 보안 이벤트 탐지'] },
       security:       { title: '보안 분석 에이전트',        icon: '🛡️', desc: '보안 취약점 분석 / 위협 탐지 / 침해 사고 대응',
         quickActions: ['🛡️ 취약점 스캔', '🔐 보안 점검', '🚨 침해 분석'] },
       code_review:    { title: '코드 리뷰 에이전트',        icon: '💻', desc: '코드 품질 분석 / 리팩토링 제안 / 버그 탐지',
         quickActions: ['💻 코드 리뷰', '🐛 버그 탐지', '🔧 리팩토링 제안'] },
       translate:      { title: '번역 에이전트',             icon: '🌐', desc: '다국어 번역 / 기술 문서 번역 / 로컬라이제이션',
         quickActions: ['🌐 영한 번역', '🇯🇵 일한 번역', '📄 기술 문서 번역'] },
+      knowledge:      { title: '도메인 지식 검색 담당',     icon: '📚', desc: 'FAB 컬럼 정보 / 아키텍처 문서 / 도메인 지식 검색',
+        quickActions: ['📚 FAB 컬럼 정보', '🏗️ 아키텍처 검색', '🔍 도메인 지식 검색'] },
     };
 
     // Default skill assignment per agent
@@ -1794,6 +1808,7 @@
       park: 'markdown',
       kim: 'chart',
       choi: 'logpresso',
+      jung: 'knowledge',
     };
 
     // Frontend skill → Backend skill ID mapping
@@ -1803,10 +1818,11 @@
       drawio: ['drawio-diagram'],
       markdown: ['markdown-mermaid-writing'],
       chart: ['agent-data-analyst'],
-      logpresso: ['logpresso-query'],
+      logpresso: ['logpresso-query', 'logpresso-search'],
       security: ['agent-security-engineer'],
       code_review: ['code-review'],
       translate: [],
+      knowledge: ['knowledge-search'],
     };
 
     function getAgentData(key) {
@@ -1856,6 +1872,7 @@
       park: { name: 'PARK', letter: 'P', color1: '#e2b714', color2: '#c9960c' },
       kim:  { name: 'KIM',  letter: 'K', color1: '#ff6b6b', color2: '#ee5a24' },
       choi: { name: 'CHOI', letter: 'C', color1: '#00e5ff', color2: '#0097a7' },
+      jung: { name: 'JUNG', letter: 'J', color1: '#a78bfa', color2: '#7c3aed' },
     };
 
     let currentAgent = null;
@@ -2111,12 +2128,7 @@
       navigator.clipboard.writeText(json).then(() => { btn.textContent = '✅ 복사됨'; setTimeout(() => btn.textContent = '📋 JSON 복사', 1500); });
     }
 
-    function downloadLogpressoCsv(queryId) {
-      const a = document.createElement('a');
-      a.href = `/api/logpresso/query/download?query_id=${queryId}`;
-      a.download = `logpresso_${queryId}.csv`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }
+    // downloadLogpressoCsv 제거됨 (CSV 다운로드 기능 삭제)
 
     // ── Render markdown + chart/drawio blocks ──
     function renderMd(text) {
