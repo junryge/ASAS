@@ -2458,8 +2458,9 @@ def _llm_generate_lpql(user_query, history=None):
 4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
 5. **반드시 limit 5를 걸어주세요.** 사용자가 명시적으로 더 많은 건수를 요청하지 않는 한, 항상 `limit 5`를 사용하세요. 대량 조회는 시스템에 부하를 줍니다.
 6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
-7. **기본 조회는 반드시 `table` 명령을 사용하세요.** `fulltext`는 사용자가 키워드 검색을 명시적으로 요청하거나, fulltext 인덱스가 있는 테이블에서 텍스트 검색할 때만 사용하세요. 단순 데이터 조회에 `fulltext`를 사용하지 마세요.
-8. **기간 지정은 반드시 `duration=` 문법만 사용하세요. `from=`/`to=` 문법은 절대 사용하지 마세요.** httpexport API에서 지원하지 않습니다. 예: 최근 1시간 → `duration=1h`, 최근 7일 → `duration=7d`, 최근 30일 → `duration=30d`, 3월 1일~25일(약 25일) → `duration=25d`
+7. **`table` 명령은 기간을 `duration=`으로만 지정하세요.** `table`에서 `from=/to=`는 지원되지 않습니다. 예: `table duration=1h TABLE | limit 5`, `table duration=7d TABLE | limit 5`, `table duration=30d TABLE | limit 5`
+8. **`fulltext` 명령은 `from=/to=`로 기간 지정 가능합니다.** 키워드 검색, 특정 조건 검색, 여러 테이블 동시 조회 시 사용하세요. 예: `fulltext from=20260301000000 to=20260325235959 (CARRIER=="ABC") from ts_data_view_m14a, ts_data_view_m16 | limit 5`
+9. **단순 데이터 조회는 `table duration=`을 사용하고, 조건 검색이나 날짜 범위 지정이 필요하면 `fulltext from= to=`를 사용하세요.**
 9. limit에 오프셋 지정 가능: `limit 0 1000` (0번째부터 1000건)
 10. 행 순번: `eval No = seq() + 0`
 11. **사용자가 테이블명을 직접 지정하면 그 이름을 그대로 사용하세요.** 목록에 없는 테이블이라도 사용자가 명시한 테이블명은 변경하지 마세요.
