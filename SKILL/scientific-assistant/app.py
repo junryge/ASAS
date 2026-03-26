@@ -977,6 +977,9 @@ def scan_skills():
 
 
 # ============================================
+# 수동 전용 스킬 (자동 추천에서 제외, 사용자가 직접 선택해야 함)
+MANUAL_ONLY_SKILLS = {"knowledge-search"}
+
 # 오토 스킬 라우터 (키워드 매칭)
 # ============================================
 SKILL_KEYWORDS = {
@@ -1086,7 +1089,7 @@ SKILL_KEYWORDS = {
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
     "logpresso-query": ["로그프레소 쿼리","로그프레소쿼리","LPQL 쿼리","LPQL 만들","로그프레소 쿼리 만들","logpresso query","로그프레소"],
     "logpresso-search": ["로그프레소 조회","로그프레소조회","로그프레소 검색","logpresso search","로그프레소"],
-    "knowledge-search": ["컬럼 정보","컬럼정보","FAB 컬럼","도메인 지식","아키텍처","허브룸","HID","프로젝트 아키텍처","접속정보","예측모델","통신 방식","knowledge","지식 검색","FAB_M","FAB_C","FAB_IC"],
+    # knowledge-search: MANUAL_ONLY_SKILLS로 이동 (자동 추천 제외, 수동 선택 전용)
     "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
@@ -1428,7 +1431,7 @@ def auto_select_skills(query, max_skills=5):
     """사용자 질문을 분석하여 관련 스킬을 자동 선택"""
     scores = _score_query(query.lower())
     sorted_skills = sorted(scores.items(), key=lambda x: -x[1])
-    return [(sid, sc) for sid, sc in sorted_skills[:max_skills]]
+    return [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sid not in MANUAL_ONLY_SKILLS]
 
 
 def context_aware_skill_select(query, history, max_skills=7):
@@ -1535,9 +1538,9 @@ def context_aware_skill_select(query, history, max_skills=7):
             reranked = rerank_skills(query, top_candidates, top_k=max_skills)
             result = reranked
         except Exception:
-            result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
+            result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0 and sid not in MANUAL_ONLY_SKILLS]
     else:
-        result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
+        result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0 and sid not in MANUAL_ONLY_SKILLS]
 
     return result, list(boosted)
 
@@ -2067,6 +2070,8 @@ def api_auto_skills():
     available = scan_skills()
     skills = []
     for sid, score in results:
+        if sid in MANUAL_ONLY_SKILLS:
+            continue  # 수동 전용 스킬은 자동 추천에서 제외
         if sid not in available:
             continue  # SKILL.md 없는 스킬은 제외
         desc = SKILL_DESC_KO.get(sid, "")
@@ -4417,6 +4422,7 @@ def api_chat():
                         "loaded_skills": ["logpresso-search"],
                         "auto_routed": auto_routed,
                         "route_reason": "logpresso-search",
+                        "system_prompt_length": 0,
                     })
 
             # 시간 범위 없으면 오늘 하루 기본 적용
@@ -4440,6 +4446,7 @@ def api_chat():
                     "loaded_skills": ["logpresso-search"],
                     "auto_routed": auto_routed,
                     "route_reason": "logpresso-search-blocked",
+                    "system_prompt_length": 0,
                 })
 
             # 실제 로그프레소 서버에 쿼리 실행
@@ -4470,6 +4477,7 @@ def api_chat():
                     "loaded_skills": ["logpresso-search"],
                     "auto_routed": auto_routed,
                     "route_reason": "logpresso-search-failed",
+                    "system_prompt_length": 0,
                 })
 
             # 성공 → 결과 + 쿼리 표시
@@ -4497,6 +4505,7 @@ def api_chat():
                 "loaded_skills": ["logpresso-search"],
                 "auto_routed": auto_routed,
                 "route_reason": "logpresso-search-ok",
+                "system_prompt_length": 0,
             })
 
         except Exception as e:
@@ -4509,6 +4518,7 @@ def api_chat():
                 "loaded_skills": ["logpresso-search"],
                 "auto_routed": auto_routed,
                 "route_reason": "logpresso-search-exception",
+                "system_prompt_length": 0,
             })
 
     # 시스템 프롬프트 구성
@@ -6310,6 +6320,18 @@ function dismissAutoSkill(id){
   renderSkills();
   updateLoaded();
 }
+function dismissPreviewSkill(id, btn){
+  // 미리보기에서 자동 스킬 제외 (전송 시 사용 안함)
+  dismissedAutoSkills.add(id);
+  autoLoadedSkills = autoLoadedSkills.filter(x => x !== id);
+  const badge = btn.closest('.auto-skill-badge');
+  if(badge) badge.remove();
+  const prev = document.getElementById('autoSkillPreview');
+  if(prev && prev.querySelectorAll('.auto-skill-badge').length === 0){
+    prev.classList.remove('show');
+  }
+  updateLoaded();
+}
 function restoreDismissedSkill(id){
   // 블랙리스트에서 복구 (다음 자동 추천 허용)
   dismissedAutoSkills.delete(id);
@@ -6372,7 +6394,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const d = await r.json();
         const prev = document.getElementById('autoSkillPreview');
         if(d.skills && d.skills.length > 0){
-          prev.innerHTML = '🧠 자동 추천: ' + d.skills.map(s=>`<span class="auto-skill-badge" title="${s.desc}">${s.id} (${s.score})</span>`).join('');
+          prev.innerHTML = '🧠 자동 추천: ' + d.skills.filter(s=>!dismissedAutoSkills.has(s.id)).map(s=>`<span class="auto-skill-badge" title="${s.desc}">${s.id} (${s.score})<button onclick="dismissPreviewSkill('${s.id}',this)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#ef4444;padding:0 2px;margin-left:4px;" title="제외">✕</button></span>`).join('');
           prev.classList.add('show');
         } else {
           prev.classList.remove('show');
@@ -6488,6 +6510,8 @@ async function send(){
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
   // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
+  // 전송 전 사용자가 dismiss한 스킬을 보존 (✕ 클릭한 것 반영)
+  const currentDismissed = new Set(dismissedAutoSkills);
   autoLoadedSkills = [];
   dismissedAutoSkills.clear();
   updateLoaded();  // UI도 즉시 초기화
@@ -6504,7 +6528,7 @@ async function send(){
 
   // 프리로드 스킬 중 수동/해제 중복 제거
   const manualSet = new Set(skillsToUse);
-  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !dismissedAutoSkills.has(id));
+  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !currentDismissed.has(id));
   skillsToUse = [...skillsToUse, ...autoLoaded];
 
   // 자동 스킬 모드: 질문 분석으로 추가 보충
@@ -6517,7 +6541,7 @@ async function send(){
         const ad = await ar.json();
         if(ad.skills && ad.skills.length > 0){
           const usedSet = new Set(skillsToUse);
-          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !dismissedAutoSkills.has(id));
+          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !currentDismissed.has(id));
           autoLoaded = [...autoLoaded, ...newAuto];
           skillsToUse = [...skillsToUse, ...newAuto];
         }
@@ -6584,7 +6608,7 @@ async function send(){
       if(data.loaded_skills && data.loaded_skills.length > 0){
         let extra = data.tokens_budget ? ` [${data.tokens_budget}]` : '';
         let mode = autoLoaded.length > 0 ? '🧠자동' : '✅수동';
-        info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${modelName}] (${data.system_prompt_length}자)${extra}`;
+        info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${modelName}] (${data.system_prompt_length ?? 0}자)${extra}`;
       }
       // 자동 라우팅 표시
       if(data.auto_routed){
@@ -9169,7 +9193,7 @@ async function runCodeAssistant(){
         if(data.loaded_skills && data.loaded_skills.length > 0){
           let extra = data.tokens_budget ? ' ['+data.tokens_budget+']' : '';
           let mName = data.model_used || (envs[selEnv] ? envs[selEnv].name : selEnv);
-          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+mName+'] ('+data.system_prompt_length+'\uc790)'+extra;
+          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+mName+'] ('+(data.system_prompt_length ?? 0)+'\uc790)'+extra;
         }
         if(data.auto_routed){ info += ' [\uD83E\uDD16 자동: '+data.model_used+' ('+data.route_reason+')]'; }
         if(data.fallback_used){ info += ' [\u26A0\uFE0F 대체: '+data.fallback_from+' \u2192 '+data.model_used+']'; }
