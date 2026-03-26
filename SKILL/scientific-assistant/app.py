@@ -228,15 +228,14 @@ def query_logpresso(query, timeout=180):
     from io import StringIO
 
     query_clean = " ".join(query.split())
-    # 모든 특수문자를 URL 인코딩 (= → %3D, | → %7C 등)
-    # Logpresso httpexport API가 서버에서 자동 디코딩함
-    encoded = urllib.parse.quote(query_clean, safe="")
-    url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv?_apikey={LOGPRESSO_API_KEY}&_q={encoded}"
-    print(f"[Logpresso] URL: {url[:300]}")
+    # requests의 params로 전달하여 URL 인코딩을 라이브러리에 위임
+    base_url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv"
+    params = {"_apikey": LOGPRESSO_API_KEY, "_q": query_clean}
+    print(f"[Logpresso] 쿼리 전송: {query_clean[:200]}")
 
     warnings.filterwarnings("ignore")
     try:
-        resp = req.get(url, verify=False, timeout=timeout)
+        resp = req.get(base_url, params=params, verify=False, timeout=timeout)
         # 인코딩 보정 (ISO-8859-1 기본값 → utf-8)
         if not resp.encoding or resp.encoding.lower() == 'iso-8859-1':
             resp.encoding = 'utf-8'
