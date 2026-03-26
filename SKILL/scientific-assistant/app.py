@@ -234,17 +234,25 @@ def query_logpresso(query, timeout=180):
     warnings.filterwarnings("ignore")
     try:
         resp = req.get(url, verify=False, timeout=timeout)
-        if resp.status_code == 200 and resp.text.strip() and not resp.text.startswith("<!"):
-            df = pd.read_csv(StringIO(resp.text))
+        # 인코딩 보정 (ISO-8859-1 기본값 → utf-8)
+        if not resp.encoding or resp.encoding.lower() == 'iso-8859-1':
+            resp.encoding = 'utf-8'
+        body = resp.text
+        # content가 있는데 text가 비어있으면 바이너리 디코딩 시도
+        if not body.strip() and resp.content and len(resp.content) > 0:
+            body = resp.content.decode('utf-8', errors='replace')
+        print(f"[Logpresso] 응답: status={resp.status_code} len={len(body)} encoding={resp.encoding} content_len={len(resp.content)} | 쿼리: {query_clean[:100]}")
+        if resp.status_code == 200 and body.strip() and not body.startswith("<!"):
+            df = pd.read_csv(StringIO(body))
             return df, None
         else:
             # 상세 에러 정보 수집
             detail = f"HTTP {resp.status_code}"
-            body_preview = resp.text[:500].strip() if resp.text else "(빈 응답)"
-            if resp.text.startswith("<!"):
+            body_preview = body[:500].strip() if body else "(빈 응답)"
+            if body.startswith("<!"):
                 detail += " (HTML 에러 페이지 반환)"
-            elif not resp.text.strip():
-                detail += " (빈 응답)"
+            elif not body.strip():
+                detail += f" (빈 응답, content_length={len(resp.content)})"
             error_info = {
                 "reason": detail,
                 "response_preview": body_preview,
@@ -2443,16 +2451,18 @@ def _llm_generate_lpql(user_query, history=None):
 4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
 5. **반드시 limit 5를 걸어주세요.** 사용자가 명시적으로 더 많은 건수를 요청하지 않는 한, 항상 `limit 5`를 사용하세요. 대량 조회는 시스템에 부하를 줍니다.
 6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
-7. **캐리어/장비 추적, 특정 키워드 검색, 여러 테이블 동시 조회 시 `fulltext`를 우선 사용하세요** (인덱스 기반 = 빠름).
-8. fulltext에서 여러 테이블 지정: `fulltext ... from 테이블1, 테이블2`
-9. fulltext 안에서 필드 조건 직접 사용 가능: `(LEVEL=="ERROR" or LEVEL=="WARN") and (CARRIER=="xxx")`
-10. limit에 오프셋 지정 가능: `limit 0 1000` (0번째부터 1000건)
-11. 행 순번: `eval No = seq() + 0`
-12. **사용자가 테이블명을 직접 지정하면 그 이름을 그대로 사용하세요.** 아래 목록에 없는 테이블이라도 사용자가 명시한 테이블명은 변경하지 마세요.
-13. **`| fields`는 사용자가 특정 필드를 요청한 경우에만 사용하세요.** 컬럼 정보를 모르는 테이블에 필드를 임의로 추가하지 마세요. 필드 지정 없이 `table ... TABLE_NAME | limit 5`로 전체 컬럼을 조회하면 됩니다.
+7. **기본 조회는 반드시 `table` 명령을 사용하세요.** `fulltext`는 사용자가 키워드 검색을 명시적으로 요청하거나, fulltext 인덱스가 있는 테이블에서 텍스트 검색할 때만 사용하세요. 단순 데이터 조회에 `fulltext`를 사용하지 마세요.
+8. limit에 오프셋 지정 가능: `limit 0 1000` (0번째부터 1000건)
+9. 행 순번: `eval No = seq() + 0`
+10. **사용자가 테이블명을 직접 지정하면 그 이름을 그대로 사용하세요.** 목록에 없는 테이블이라도 사용자가 명시한 테이블명은 변경하지 마세요.
+11. **`| fields`는 사용자가 특정 필드를 요청한 경우에만 사용하세요.** 컬럼 정보를 모르는 테이블에 필드를 임의로 추가하지 마세요. 필드 지정 없이 `table ... TABLE_NAME | limit 5`로 전체 컬럼을 조회하면 됩니다.
+12. **`| sort`도 사용자가 정렬을 요청한 경우에만 사용하세요.** 컬럼명을 모르면서 임의로 sort를 추가하지 마세요.
 
-## 참고 테이블 (이 외에도 사용자가 지정한 테이블명을 그대로 사용 가능)
+## 컬럼 정보가 있는 테이블
 {table_info}
+
+## 서버에 등록된 전체 테이블 목록
+{', '.join(LOGPRESSO_ALL_TABLES)}
 
 ## LPQL 문법 참고
 {skill_content[:6000]}
