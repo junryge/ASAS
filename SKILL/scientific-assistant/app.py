@@ -26,6 +26,12 @@ import io
 import csv
 import json
 import glob
+import re
+import math
+import time
+import uuid
+import urllib.parse
+import warnings
 import requests as req
 from flask import Flask, request, jsonify, render_template_string, send_file
 
@@ -49,6 +55,164 @@ uploaded_csv_data = {
 uploaded_files = []  # [{filename, type, size, summary, content_preview}]
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ============================================
+# 로그프레소 (Logpresso) 직접 조회 설정
+# ============================================
+LOGPRESSO_HOST = "10.40.42.27"
+LOGPRESSO_PORT = 8888
+LOGPRESSO_API_KEY = "db1d2335-49cf-e859-3519-1ca132922e38"
+LOGPRESSO_PAGE_SIZE = 50
+LOGPRESSO_CACHE_TTL = 600  # 10분
+LOGPRESSO_CACHE_MAX = 20
+
+# 알려진 테이블 메타데이터
+LOGPRESSO_TABLES = {
+    "ATLAS_OHT_HID_OFF": {
+        "desc": "HID Off 기록",
+        "columns": ["FAB_ID", "MCP_NM", "VHL_ID", "HID_ID", "OFF_TIME", "FROM_ADDRESS", "TO_ADDRESS"],
+    },
+    "ATLAS_HID_INFO": {
+        "desc": "HID 구간 정보",
+        "columns": ["FAB_ID", "MCP_NM", "HID_ID", "START", "ADDRESS"],
+    },
+    "ATLAS_RAIL_TRAFFIC": {
+        "desc": "Rail 교통 속력 데이터",
+        "columns": ["createTime", "fabId", "mcpName", "railEdgeId", "velocity", "maxVelocity", "absoluteVelocity", "vhlCnt", "passCnt", "HID_ID"],
+    },
+    "test_currentjob_predict": {
+        "desc": "알람 예측 데이터",
+        "columns": ["TIME", "ALARM_DESC", "ALARM_YN"],
+    },
+    "ts_data_view_m14a": {
+        "desc": "M14A 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+    "ts_data_view_m14b": {
+        "desc": "M14B 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+    "ts_data_view_m16": {
+        "desc": "M16 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+    "ts_data_view_m16b": {
+        "desc": "M16B 설비 로그",
+        "columns": ["_time", "TIME_EX", "MACHINENAME", "LEVEL", "CARRIER", "TEXT"],
+    },
+}
+
+# 쿼리 결과 캐시 {query_id: {"df": DataFrame, "ts": timestamp, "lpql": str}}
+_logpresso_cache = {}
+
+
+def _logpresso_cache_cleanup():
+    """만료된 캐시 제거"""
+    now = time.time()
+    expired = [k for k, v in _logpresso_cache.items() if now - v["ts"] > LOGPRESSO_CACHE_TTL]
+    for k in expired:
+        del _logpresso_cache[k]
+    while len(_logpresso_cache) > LOGPRESSO_CACHE_MAX:
+        oldest = min(_logpresso_cache, key=lambda k: _logpresso_cache[k]["ts"])
+        del _logpresso_cache[oldest]
+
+
+def classify_logpresso_intent(query):
+    """로그프레소 관련 질문의 의도를 4가지로 분류
+    Returns: 'table_list' | 'table_schema' | 'execute' | 'explain'
+    """
+    q = query.strip()
+
+    table_list_kw = ["테이블 목록", "어떤 테이블", "테이블 뭐", "테이블 리스트", "테이블 종류",
+                     "테이블 있", "테이블 알려", "테이블 보여"]
+    if any(p in q for p in table_list_kw):
+        return "table_list"
+
+    schema_kw = ["구조", "컬럼", "필드", "스키마", "뭐가 있", "어떤 데이터", "어떤 컬럼"]
+    if any(p in q for p in schema_kw):
+        return "table_schema"
+
+    exec_kw = ["보여줘", "조회해", "찾아줘", "검색해", "확인해줘", "가져와", "뽑아",
+               "조회 해", "몇건", "몇개", "몇 건", "몇 개", "데이터 줘",
+               "로그 줘", "결과 줘", "실행해", "돌려"]
+    if any(p in q for p in exec_kw):
+        return "execute"
+
+    return "explain"
+
+
+def query_logpresso(query, timeout=180):
+    """로그프레소 LPQL 쿼리 실행 -> (DataFrame, None) 또는 (None, 에러상세)"""
+    import pandas as pd
+    from io import StringIO
+
+    query_clean = " ".join(query.split())
+    encoded = urllib.parse.quote(query_clean, safe="")
+    url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv?_apikey={LOGPRESSO_API_KEY}&_q={encoded}"
+
+    warnings.filterwarnings("ignore")
+    try:
+        resp = req.get(url, verify=False, timeout=timeout)
+        if resp.status_code == 200 and resp.text.strip() and not resp.text.startswith("<!"):
+            df = pd.read_csv(StringIO(resp.text))
+            return df, None
+        else:
+            detail = f"HTTP {resp.status_code}"
+            body_preview = resp.text[:500].strip() if resp.text else "(빈 응답)"
+            if resp.text.startswith("<!"):
+                detail += " (HTML 에러 페이지 반환)"
+            elif not resp.text.strip():
+                detail += " (빈 응답)"
+            error_info = {
+                "reason": detail,
+                "response_preview": body_preview,
+                "query_sent": query_clean,
+            }
+            print(f"[Logpresso] 쿼리 실패: {detail} | 쿼리: {query_clean[:200]}")
+            return None, error_info
+    except req.exceptions.ConnectTimeout:
+        error_info = {"reason": "연결 타임아웃 (서버 응답 없음)", "query_sent": query_clean}
+        print(f"[Logpresso] 연결 타임아웃: {query_clean[:200]}")
+        return None, error_info
+    except req.exceptions.ReadTimeout:
+        error_info = {"reason": f"읽기 타임아웃 ({timeout}초 초과)", "query_sent": query_clean}
+        print(f"[Logpresso] 읽기 타임아웃: {query_clean[:200]}")
+        return None, error_info
+    except req.exceptions.ConnectionError as e:
+        error_info = {"reason": f"서버 연결 실패 ({e})", "query_sent": query_clean}
+        print(f"[Logpresso] 연결 실패: {e}")
+        return None, error_info
+    except Exception as e:
+        error_info = {"reason": f"예외 발생: {type(e).__name__}: {e}", "query_sent": query_clean}
+        print(f"[Logpresso] 쿼리 예외: {e}")
+        return None, error_info
+
+
+_LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
+
+
+def validate_lpql_readonly(lpql):
+    """LPQL 쿼리가 읽기 전용인지 검증"""
+    lower = lpql.lower().strip()
+    for cmd in _LPQL_BLOCKED_COMMANDS:
+        if lower.startswith(cmd) or f"| {cmd}" in lower or f"|{cmd}" in lower:
+            return f"보안 차단: '{cmd.strip()}' 명령은 실행할 수 없습니다. 읽기 전용 쿼리만 허용됩니다."
+    return None
+
+
+def extract_lpql_from_response(text):
+    """LLM 응답에서 ```lpql ... ``` 또는 ``` ... ``` 코드블록 추출"""
+    m = re.search(r"```(?:lpql|LPQL)\s*\n(.*?)```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
+    if m:
+        candidate = m.group(1).strip()
+        lpql_indicators = ["table ", "fulltext ", "stream ", "| fields", "| search", "| sort", "| limit", "| eval", "| stats"]
+        if any(ind in candidate.lower() for ind in lpql_indicators):
+            return candidate
+    return None
+
 
 # ============================================
 # 설정
@@ -350,7 +514,9 @@ SKILL_DESC_KO = {
     "react-best-practices":"React/Next.js 성능 최적화 가이드",
     "web-design-guidelines":"웹 UI 디자인 100+ 규칙",
     "owasp-security":"OWASP Top 10 보안 코드리뷰 체크리스트",
-    "logpresso-query":"로그프레소 LPQL 쿼리 작성 전문가",
+    "logpresso-query":"로그프레소 LPQL 쿼리 생성 전문가",
+    "logpresso-search":"로그프레소 서버 직접 조회/검색",
+    "knowledge-search":"도메인 지식/FAB 컬럼/아키텍처 검색",
     # ===== cla-main 에이전트 (117개) =====
     "agent-api-designer":"API 설계 전문가","agent-backend-developer":"백엔드 개발 전문가",
     "agent-electron-pro":"Electron 데스크톱 앱","agent-frontend-developer":"프론트엔드 개발 전문가",
@@ -559,6 +725,14 @@ DOMAIN_SKILLS = {
             "offer-k-dense-web","zarr-python",
         ]
     },
+    "domain-knowledge": {
+        "label": "도메인 지식",
+        "icon": "📚",
+        "color": "#7c3aed",
+        "skills": [
+            "knowledge-search",
+        ]
+    },
     # ===== cla-main 확장 카테고리 =====
     "dev-tools": {
         "label": "개발 도구",
@@ -575,7 +749,7 @@ DOMAIN_SKILLS = {
             "template-skill","theme-factory","ui-styling","web-artifacts-builder",
             "web-frameworks","webapp-testing",
             "react-best-practices","web-design-guidelines","owasp-security",
-            "logpresso-query",
+            "logpresso-query","logpresso-search",
             "common","debugging","problem-solving",
         ]
     },
@@ -910,7 +1084,9 @@ SKILL_KEYWORDS = {
     "agent-data-scientist": ["데이터분석","data science","분석가","EDA","탐색적분석","데이터","탐색","탐색하"],
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
-    "logpresso-query": ["로그프레소","logpresso","LPQL","lpql","로그프레소쿼리","secs_data","M14_DATA","M14B","로그 조회","로그조회","로그검색"],
+    "logpresso-query": ["로그프레소 쿼리","로그프레소쿼리","LPQL 쿼리","LPQL 만들","로그프레소 쿼리 만들","logpresso query","로그프레소"],
+    "logpresso-search": ["로그프레소 조회","로그프레소조회","로그프레소 검색","logpresso search","로그프레소"],
+    "knowledge-search": ["컬럼 정보","컬럼정보","FAB 컬럼","도메인 지식","아키텍처","허브룸","HID","프로젝트 아키텍처","접속정보","예측모델","통신 방식","knowledge","지식 검색","FAB_M","FAB_C","FAB_IC"],
     "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
@@ -2223,6 +2399,412 @@ def api_skill_run(skill_name):
         return jsonify({"error": "스크립트 실행 시간 초과 (60초)"}), 504
     except Exception as e:
         return jsonify({"error": f"실행 오류: {str(e)}"}), 500
+
+
+# ============================================
+# 로그프레소 자연어 쿼리 API
+# ============================================
+
+def _llm_generate_lpql(user_query, history=None):
+    """LLM을 호출하여 자연어 -> LPQL 쿼리 생성"""
+    from datetime import datetime
+    today = datetime.now().strftime("%Y%m%d")
+
+    table_info = "\n".join(
+        f"- {name}: {info['desc']} (컬럼: {', '.join(info['columns'])})"
+        for name, info in LOGPRESSO_TABLES.items()
+    )
+
+    skill_content = load_skill_content("logpresso-query") or ""
+
+    system_prompt = f"""당신은 로그프레소 LPQL 쿼리 생성 전문가입니다.
+사용자의 자연어 요청을 실행 가능한 LPQL 쿼리로 변환하세요.
+
+## 규칙
+1. 반드시 ```lpql 코드블록 안에 쿼리만 출력하세요.
+2. 쿼리 앞뒤로 간단한 설명을 추가하세요.
+3. 오늘 날짜: {today} (시간 형식: yyyyMMddHHmmss)
+4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
+5. **기간은 from/to 형식을 기본으로 사용하세요.** 사용자가 기간을 지정하지 않으면 오늘 하루(from={today}000000 to={today}235959)를 기본값으로 사용하세요. 사용자가 "최근 1시간" 같이 말하면 duration=1h도 가능합니다.
+6. 읽기 전용 쿼리만 생성하세요 (INSERT/DELETE/DROP/CREATE 금지).
+7. **캐리어/장비 추적, 특정 키워드 검색, 여러 테이블 동시 조회 시 `fulltext`를 우선 사용하세요.**
+8. fulltext에서 여러 테이블 지정: `fulltext ... from 테이블1, 테이블2`
+9. fulltext 안에서 필드 조건 직접 사용 가능: `(LEVEL=="ERROR") and (CARRIER=="xxx")`
+10. limit에 오프셋 지정 가능: `limit 0 1000`
+11. 행 순번: `eval No = seq() + 0`
+
+## 사용 가능한 테이블
+{table_info}
+
+## LPQL 문법 참고
+{skill_content[:6000]}
+"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history[-4:])
+    messages.append({"role": "user", "content": user_query})
+
+    env = ENV_CONFIG.get("dev", {})
+    if not env:
+        env = list(ENV_CONFIG.values())[0]
+
+    headers = {"Content-Type": "application/json"}
+    if API_TOKEN:
+        headers["Authorization"] = f"Bearer {API_TOKEN}"
+
+    try:
+        resp = req.post(
+            env["url"],
+            headers=headers,
+            json={
+                "model": env["model"],
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 2048,
+                "stream": False,
+            },
+            timeout=60,
+            verify=False,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"[Logpresso LLM] 오류: {e}")
+    return None
+
+
+@app.route("/api/logpresso/query", methods=["POST"])
+def api_logpresso_query():
+    """로그프레소 자연어 쿼리 엔드포인트 (4가지 모드 자동 분류)
+
+    Input:
+      - query: 자연어 질문
+      - history: 대화 히스토리 (선택)
+      - mode: 강제 모드 지정 (선택: table_list, table_schema, execute, explain)
+      - lpql: 직접 LPQL 전달 시 LLM 스킵 (선택)
+    """
+    import pandas as pd
+
+    data = request.json or {}
+    user_query = data.get("query", "").strip()
+    history = data.get("history", [])
+    forced_mode = data.get("mode", "")
+    direct_lpql = data.get("lpql", "").strip()
+
+    if not user_query and not direct_lpql:
+        return jsonify({"error": "query 또는 lpql 파라미터가 필요합니다."}), 400
+
+    if forced_mode:
+        mode = forced_mode
+    elif direct_lpql:
+        mode = "execute"
+    else:
+        mode = classify_logpresso_intent(user_query)
+
+    # ── 모드 1: 테이블 목록 (서버에서 동적 조회, 실패 시 하드코딩 폴백) ──
+    if mode == "table_list":
+        # 서버에서 직접 테이블 목록 조회 시도
+        df, err = query_logpresso("system tables", timeout=30)
+        if df is not None and len(df) > 0:
+            server_tables = df.to_dict("records")
+            return jsonify({
+                "mode": "table_list",
+                "source": "server",
+                "tables": server_tables,
+                "total": len(server_tables),
+                "columns": list(df.columns),
+                "message": f"로그프레소 서버에서 조회: 총 {len(server_tables)}개 테이블",
+            })
+
+        # 서버 연결 실패 시 하드코딩 폴백
+        tables = []
+        for name, info in LOGPRESSO_TABLES.items():
+            tables.append({
+                "table": name,
+                "desc": info["desc"],
+                "columns": info["columns"],
+                "column_count": len(info["columns"]),
+            })
+        return jsonify({
+            "mode": "table_list",
+            "source": "local",
+            "tables": tables,
+            "total": len(tables),
+            "message": f"서버 연결 실패 - 로컬 등록 테이블: {len(tables)}개",
+        })
+
+    # ── 모드 2: 테이블 구조 확인 ──
+    if mode == "table_schema":
+        matched_table = None
+        for tname in LOGPRESSO_TABLES:
+            if tname.lower() in user_query.lower():
+                matched_table = tname
+                break
+
+        if not matched_table:
+            return jsonify({
+                "mode": "table_schema",
+                "error": "테이블명을 인식할 수 없습니다.",
+                "available_tables": list(LOGPRESSO_TABLES.keys()),
+            }), 400
+
+        info = LOGPRESSO_TABLES[matched_table]
+        sample_data = []
+        sample_lpql = f"table duration=5m {matched_table} | limit 5"
+        df, _err = query_logpresso(sample_lpql, timeout=30)
+        if df is not None and len(df) > 0:
+            sample_data = df.head(5).to_dict("records")
+
+        return jsonify({
+            "mode": "table_schema",
+            "table": matched_table,
+            "desc": info["desc"],
+            "columns": info["columns"],
+            "column_count": len(info["columns"]),
+            "sample_data": sample_data,
+            "sample_lpql": sample_lpql,
+        })
+
+    # ── 모드 3: 쿼리 설명 (explain) — 쿼리만 생성, 실행 안 함 ──
+    if mode == "explain":
+        llm_response = _llm_generate_lpql(user_query, history)
+        if not llm_response:
+            return jsonify({"mode": "explain", "error": "LLM 응답 실패"}), 500
+
+        lpql = extract_lpql_from_response(llm_response)
+        return jsonify({
+            "mode": "explain",
+            "explanation": llm_response,
+            "lpql": lpql,
+        })
+
+    # ── 모드 4: 직접 조회 (execute) — 무조건 5건만 미리보기 ──
+    lpql = direct_lpql
+    llm_explanation = ""
+
+    if not lpql:
+        llm_response = _llm_generate_lpql(user_query, history)
+        if not llm_response:
+            return jsonify({"mode": "execute", "error": "LLM에서 LPQL 생성 실패"}), 500
+
+        llm_explanation = llm_response
+        lpql = extract_lpql_from_response(llm_response)
+
+        if not lpql:
+            return jsonify({
+                "mode": "execute",
+                "error": "LLM 응답에서 LPQL 쿼리를 추출할 수 없습니다.",
+                "llm_response": llm_response,
+            }), 400
+
+    # 시간 범위 없으면 오늘 하루 기본 적용
+    if not re.search(r'(duration|from|to)\s*=', lpql, re.IGNORECASE):
+        from datetime import datetime
+        _today = datetime.now().strftime("%Y%m%d")
+        lpql = re.sub(r'^(table|fulltext)\s+', rf'\1 from={_today}000000 to={_today}235959 ', lpql, flags=re.IGNORECASE)
+
+    # limit 강제 5건 적용
+    lpql_lower = lpql.lower()
+    if "| limit" in lpql_lower or "| head" in lpql_lower:
+        lpql = re.sub(r'\|\s*(limit|head)\s+\d+(\s+\d+)?', '| limit 5', lpql, flags=re.IGNORECASE)
+    else:
+        lpql = lpql.rstrip() + " | limit 5"
+
+    # 보안 검증
+    sec_error = validate_lpql_readonly(lpql)
+    if sec_error:
+        return jsonify({"mode": "execute", "error": sec_error, "lpql": lpql}), 403
+
+    # 쿼리 실행
+    df, err_detail = query_logpresso(lpql, timeout=180)
+    if df is None:
+        error_msg = "Logpresso 조회 실패"
+        if err_detail:
+            error_msg += f": {err_detail.get('reason', '알 수 없는 오류')}"
+        return jsonify({
+            "mode": "execute",
+            "error": error_msg,
+            "lpql": lpql,
+            "explanation": llm_explanation,
+            "error_detail": err_detail,
+        }), 502
+
+    total_rows = len(df)
+
+    # 캐시에 저장 (전체 데이터)
+    _logpresso_cache_cleanup()
+    query_id = str(uuid.uuid4())[:8]
+    _logpresso_cache[query_id] = {"df": df, "ts": time.time(), "lpql": lpql}
+
+    # 미리보기: 5건만 반환
+    preview_data = df.head(5).to_dict("records")
+
+    return jsonify({
+        "mode": "execute",
+        "success": True,
+        "lpql": lpql,
+        "explanation": llm_explanation,
+        "query_id": query_id,
+        "columns": list(df.columns),
+        "total_rows": total_rows,
+        "preview_data": preview_data,
+        "preview_rows": min(5, total_rows),
+        "message": f"조회 완료: 총 {total_rows}건 (미리보기 {min(5, total_rows)}건)" if total_rows > 0 else "결과 0건 (데이터가 없습니다. duration을 늘려보세요.)",
+    })
+
+
+@app.route("/api/logpresso/query/page", methods=["POST"])
+def api_logpresso_query_page():
+    """페이지네이션: 캐시된 결과에서 특정 페이지 반환 (50건씩)"""
+    data = request.json or {}
+    query_id = data.get("query_id", "")
+    page = max(1, data.get("page", 1))
+
+    if not query_id or query_id not in _logpresso_cache:
+        return jsonify({"error": "query_id가 유효하지 않거나 캐시가 만료되었습니다."}), 404
+
+    cache = _logpresso_cache[query_id]
+    cache["ts"] = time.time()
+
+    df = cache["df"]
+    total_rows = len(df)
+    total_pages = max(1, math.ceil(total_rows / LOGPRESSO_PAGE_SIZE))
+    page = min(page, total_pages)
+
+    start = (page - 1) * LOGPRESSO_PAGE_SIZE
+    end = start + LOGPRESSO_PAGE_SIZE
+    page_data = df.iloc[start:end].to_dict("records")
+
+    return jsonify({
+        "query_id": query_id,
+        "lpql": cache["lpql"],
+        "columns": list(df.columns),
+        "data": page_data,
+        "page": page,
+        "page_size": LOGPRESSO_PAGE_SIZE,
+        "total_rows": total_rows,
+        "total_pages": total_pages,
+        "row_range": f"{start + 1}~{min(end, total_rows)}",
+    })
+
+
+@app.route("/api/logpresso/tables", methods=["GET"])
+def api_logpresso_tables():
+    """등록된 테이블 목록 반환"""
+    tables = []
+    for name, info in LOGPRESSO_TABLES.items():
+        tables.append({"table": name, "desc": info["desc"], "columns": info["columns"]})
+    return jsonify({"tables": tables, "total": len(tables)})
+
+
+# ============================================
+# 도메인 지식 검색 API
+# ============================================
+KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
+
+
+def search_knowledge(query, max_results=5, max_content_chars=8000):
+    """knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환"""
+    if not os.path.isdir(KNOWLEDGE_DIR):
+        return []
+
+    q_lower = query.lower()
+    # 검색 키워드 분리 (공백/쉼표 기준)
+    keywords = [w.strip() for w in re.split(r'[\s,]+', q_lower) if len(w.strip()) >= 2]
+
+    results = []
+    for fname in os.listdir(KNOWLEDGE_DIR):
+        if not fname.endswith('.md'):
+            continue
+        fpath = os.path.join(KNOWLEDGE_DIR, fname)
+        fname_lower = fname.lower()
+
+        # 파일명 매칭 점수
+        name_score = sum(2 for kw in keywords if kw in fname_lower)
+
+        # 내용 매칭 점수
+        try:
+            with open(fpath, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception:
+            continue
+
+        content_lower = content.lower()
+        content_score = sum(1 for kw in keywords if kw in content_lower)
+
+        total_score = name_score + content_score
+        if total_score > 0:
+            # 매칭된 키워드 주변 미리보기
+            preview_parts = []
+            for kw in keywords:
+                pos = content_lower.find(kw)
+                if pos != -1:
+                    start = max(0, pos - 50)
+                    end = min(len(content), pos + len(kw) + 50)
+                    snippet = content[start:end].replace('\n', ' ')
+                    if start > 0:
+                        snippet = '...' + snippet
+                    if end < len(content):
+                        snippet = snippet + '...'
+                    preview_parts.append(snippet)
+
+            results.append({
+                "filename": fname,
+                "score": total_score,
+                "content": content[:max_content_chars],
+                "content_length": len(content),
+                "preview": preview_parts[:3],
+            })
+
+    # 점수 높은 순 정렬
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:max_results]
+
+
+@app.route("/api/knowledge/search", methods=["POST"])
+def api_knowledge_search():
+    """도메인 지식 검색 API"""
+    data = request.json or {}
+    query = data.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "query 파라미터가 필요합니다."}), 400
+
+    results = search_knowledge(query)
+
+    if not results:
+        # 파일 목록이라도 반환
+        files = []
+        if os.path.isdir(KNOWLEDGE_DIR):
+            files = [f for f in os.listdir(KNOWLEDGE_DIR) if f.endswith('.md')]
+        return jsonify({
+            "query": query,
+            "results": [],
+            "total": 0,
+            "message": f"'{query}'에 매칭되는 문서가 없습니다.",
+            "available_files": files,
+        })
+
+    return jsonify({
+        "query": query,
+        "results": [{"filename": r["filename"], "score": r["score"], "preview": r["preview"], "content_length": r["content_length"]} for r in results],
+        "total": len(results),
+    })
+
+
+@app.route("/api/knowledge/files", methods=["GET"])
+def api_knowledge_files():
+    """knowledge 폴더 파일 목록 반환"""
+    files = []
+    if os.path.isdir(KNOWLEDGE_DIR):
+        for fname in sorted(os.listdir(KNOWLEDGE_DIR)):
+            if fname.endswith('.md'):
+                fpath = os.path.join(KNOWLEDGE_DIR, fname)
+                size = os.path.getsize(fpath)
+                files.append({"filename": fname, "size": size})
+    return jsonify({"files": files, "total": len(files)})
 
 
 @app.route("/api/upload_csv", methods=["POST"])
@@ -3765,6 +4347,170 @@ def api_chat():
     if (not api_url or not model) and not env_id.startswith("gguf-"):
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
+    # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
+    if "knowledge-search" in skill_ids and last_user_query.strip():
+        try:
+            kb_results = search_knowledge(last_user_query, max_results=3, max_content_chars=6000)
+            if kb_results:
+                # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
+                kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
+                kb_context += f"검색어: {last_user_query}\n\n"
+                for r in kb_results:
+                    kb_context += f"--- 📄 {r['filename']} (관련도: {r['score']}) ---\n"
+                    kb_context += r['content'][:6000] + "\n\n"
+                kb_context += "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
+
+                # messages에 검색 결과를 system 메시지로 추가
+                kb_system_msg = {"role": "system", "content": kb_context}
+                messages = [kb_system_msg] + messages
+
+                # 검색된 파일 목록을 응답에 포함하기 위해 저장
+                _kb_files = [r['filename'] for r in kb_results]
+        except Exception as e:
+            print(f"[Knowledge Search] 검색 오류: {e}")
+
+    # ── logpresso-search 스킬: 실제 서버 조회 실행 ──
+    # "쿼리 만들어줘" 등 쿼리 생성 요청이면 서버 실행 안 하고 LLM에게 넘김
+    _lpq_query_gen_kw = ["쿼리 만들", "쿼리 짜", "쿼리 작성", "쿼리 생성", "LPQL 만들", "LPQL 짜", "LPQL 작성"]
+    _lpq_is_query_gen = any(kw in last_user_query for kw in _lpq_query_gen_kw)
+    if "logpresso-search" in skill_ids and last_user_query.strip() and not _lpq_is_query_gen:
+        try:
+            import pandas as pd
+            from datetime import datetime as _dt
+
+            _lpq_user_q = last_user_query.strip()
+
+            # LLM으로 LPQL 생성
+            llm_response = _llm_generate_lpql(_lpq_user_q, [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in messages[-6:] if isinstance(m.get("content"), str)
+            ])
+            lpql = extract_lpql_from_response(llm_response) if llm_response else None
+
+            if not lpql:
+                # LLM 실패 → 사용자 질문에서 테이블명 추출하여 기본 쿼리 생성
+                _found_table = None
+                _q_lower = _lpq_user_q.lower()
+                # LOGPRESSO_TABLES에서 매칭 시도
+                for tname in LOGPRESSO_TABLES:
+                    if tname.lower() in _q_lower:
+                        _found_table = tname
+                        break
+                # 못 찾으면 질문에서 테이블명 후보 추출 (영문+숫자+언더스코어 패턴)
+                if not _found_table:
+                    _table_candidates = re.findall(r'[a-zA-Z][a-zA-Z0-9_]{3,}', _lpq_user_q)
+                    if _table_candidates:
+                        _found_table = _table_candidates[0]
+
+                if _found_table:
+                    _today_str = _dt.now().strftime("%Y%m%d")
+                    lpql = f"table from={_today_str}000000 to={_today_str}235959 {_found_table} | limit 5"
+                    # lpql이 생겼으니 아래 실행 로직으로 계속 진행
+                else:
+                    _content = "**LPQL 쿼리 생성 실패**\n\n"
+                    _content += "테이블명을 인식할 수 없습니다. 테이블명을 정확히 입력해주세요.\n"
+                    if llm_response:
+                        _content += f"\nLLM 응답:\n```\n{llm_response[:500]}\n```"
+                    return jsonify({
+                        "content": _content,
+                        "model_used": "Logpresso Search",
+                        "loaded_skills": ["logpresso-search"],
+                        "auto_routed": auto_routed,
+                        "route_reason": "logpresso-search",
+                    })
+
+            # 시간 범위 없으면 오늘 하루 기본 적용
+            if not re.search(r'(duration|from|to)\s*=', lpql, re.IGNORECASE):
+                _today = _dt.now().strftime("%Y%m%d")
+                lpql = re.sub(r'^(table|fulltext)\s+', rf'\1 from={_today}000000 to={_today}235959 ', lpql, flags=re.IGNORECASE)
+
+            # limit 강제 5건
+            lpql_lower = lpql.lower()
+            if "| limit" in lpql_lower or "| head" in lpql_lower:
+                lpql = re.sub(r'\|\s*(limit|head)\s+\d+(\s+\d+)?', '| limit 5', lpql, flags=re.IGNORECASE)
+            else:
+                lpql = lpql.rstrip() + " | limit 5"
+
+            # 보안 검증
+            sec_error = validate_lpql_readonly(lpql)
+            if sec_error:
+                return jsonify({
+                    "content": f"**보안 차단**: {sec_error}\n\n**생성된 쿼리:**\n```lpql\n{lpql}\n```",
+                    "model_used": "Logpresso Search",
+                    "loaded_skills": ["logpresso-search"],
+                    "auto_routed": auto_routed,
+                    "route_reason": "logpresso-search-blocked",
+                })
+
+            # 실제 로그프레소 서버에 쿼리 실행
+            df, err_detail = query_logpresso(lpql, timeout=180)
+
+            if df is None:
+                # 실패 → 에러 상세 + 쿼리 표시
+                err_reason = err_detail.get("reason", "알 수 없는 오류") if err_detail else "알 수 없는 오류"
+                resp_preview = err_detail.get("response_preview", "") if err_detail else ""
+                _content = f"**로그프레소 조회 실패**\n\n"
+                _content += f"**에러:** {err_reason}\n\n"
+                _content += f"**실행한 쿼리:**\n```lpql\n{lpql}\n```\n"
+                if resp_preview:
+                    _content += f"\n**서버 응답:**\n```\n{resp_preview[:300]}\n```\n"
+                _content += f"\n**원인 추정:** "
+                if "타임아웃" in err_reason or "연결" in err_reason:
+                    _content += "로그프레소 서버(`10.40.42.27:8888`)에 연결할 수 없습니다. 서버 상태 또는 네트워크를 확인하세요."
+                elif "HTML" in err_reason:
+                    _content += "서버가 에러 페이지를 반환했습니다. 테이블명이나 쿼리 문법을 확인하세요."
+                elif "빈 응답" in err_reason:
+                    _content += "서버가 빈 응답을 반환했습니다. 테이블명이 올바른지 확인하세요."
+                else:
+                    _content += "서버 연결 또는 쿼리 오류입니다."
+
+                return jsonify({
+                    "content": _content,
+                    "model_used": "Logpresso Search",
+                    "loaded_skills": ["logpresso-search"],
+                    "auto_routed": auto_routed,
+                    "route_reason": "logpresso-search-failed",
+                })
+
+            # 성공 → 결과 + 쿼리 표시
+            total = len(df)
+            cols = list(df.columns)
+            _content = f"**로그프레소 조회 완료** (총 {total}건, 미리보기 {min(5, total)}건)\n\n"
+            _content += f"**실행한 쿼리:**\n```lpql\n{lpql}\n```\n\n"
+            _content += f"**컬럼:** {', '.join(cols)}\n\n"
+
+            # 테이블 형태로 결과 표시
+            if total > 0:
+                display_cols = cols[:10]  # 컬럼 10개까지만 표시
+                _content += "| " + " | ".join(display_cols) + " |\n"
+                _content += "|" + "|".join(["---"] * len(display_cols)) + "|\n"
+                for _, row in df.head(5).iterrows():
+                    _content += "| " + " | ".join(str(row.get(c, ""))[:50] for c in display_cols) + " |\n"
+                if len(cols) > 10:
+                    _content += f"\n_(컬럼 {len(cols)}개 중 10개만 표시)_\n"
+            else:
+                _content += "결과 0건 (데이터가 없습니다. 기간을 늘려보세요.)\n"
+
+            return jsonify({
+                "content": _content,
+                "model_used": "Logpresso Search",
+                "loaded_skills": ["logpresso-search"],
+                "auto_routed": auto_routed,
+                "route_reason": "logpresso-search-ok",
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # 예외 발생 → 에러 표시 후 일반 LLM으로 폴백하지 않음
+            return jsonify({
+                "content": f"**로그프레소 조회 중 오류 발생**\n\n`{type(e).__name__}: {e}`",
+                "model_used": "Logpresso Search",
+                "loaded_skills": ["logpresso-search"],
+                "auto_routed": auto_routed,
+                "route_reason": "logpresso-search-exception",
+            })
+
     # 시스템 프롬프트 구성
     # 출력 형식에 따라 기본 규칙 분기
     non_code_formats = ("report", "analysis", "step-by-step")
@@ -4674,7 +5420,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 @keyframes pptIconPulse{0%,100%{transform:translateY(-50%) scale(1)}50%{transform:translateY(-50%) scale(1.15)}}
 /* Messages */
 .messages{margin-top:8px}
-.msg{margin-bottom:8px;padding:8px 12px;border-radius:10px;line-height:1.5;font-size:13px;word-wrap:break-word}
+.msg{margin-bottom:8px;padding:8px 12px;border-radius:10px;line-height:1.5;font-size:13px;word-wrap:break-word;position:relative}
 .msg.user{background:#6366f1;color:#fff;margin-left:120px;border-bottom-right-radius:4px;white-space:pre-wrap}
 .msg.assistant{background:#fff;border:1px solid #e5e3de;margin-right:120px;border-bottom-left-radius:4px}
 .msg pre{background:#f5f5f0;padding:8px;border-radius:6px;overflow-x:auto;margin:4px 0;font-size:12px;white-space:pre-wrap}
@@ -4693,6 +5439,9 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg blockquote{border-left:3px solid #6366f1;margin:4px 0;padding:2px 8px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
 /* 피드백 버튼 */
+.msg-del{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.8);border:1px solid #ddd;color:#aaa;cursor:pointer;font-size:10px;padding:1px 6px;border-radius:4px;opacity:0;transition:opacity .15s;z-index:5}
+.msg:hover .msg-del{opacity:1}
+.msg-del:hover{color:#ef4444;border-color:#ef4444;background:#fef2f2}
 .msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
 .msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
 .msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
@@ -4999,9 +5748,13 @@ body.rp-collapsed .chat-box-fixed{right:0}
   <button class="sidebar-toggle-mini" onclick="toggleSidebar()" title="펼치기">☰</button>
   <div class="sidebar-inner">
     <div class="sidebar-logo"><span>D</span>emos <span style="font-size:12px;color:#999">Alpha 0.8</span></div>
-    <button class="sidebar-btn active" onclick="createNewSession()">✨ 새 세션</button>
-    <div class="sidebar-section">세션 목록 <span class="skill-count" id="sessionCount">0</span></div>
-    <div id="sessionList" style="max-height:200px;overflow-y:auto;margin-bottom:4px;"></div>
+    <div style="display:flex;gap:4px;margin-bottom:4px;">
+      <button class="sidebar-btn active" onclick="createNewSession()" style="flex:1">✨ 새 세션</button>
+      <button class="sidebar-btn" onclick="selectAllSessions()" style="flex:0;padding:6px 10px;font-size:11px;" title="전체 선택">☑</button>
+      <button class="sidebar-btn" onclick="deleteAllSessions()" style="flex:0;padding:6px 10px;font-size:11px;color:#ef4444;" title="전체 삭제">🗑️</button>
+    </div>
+    <div class="sidebar-section" ondblclick="openSessionPopup()" style="cursor:pointer;" title="더블클릭으로 전체 보기">세션 목록 <span class="skill-count" id="sessionCount">0</span></div>
+    <div id="sessionList" style="max-height:250px;overflow-y:auto;margin-bottom:4px;"></div>
     <div class="session-actions" id="sessionActions" style="display:none">
       <button onclick="archiveSelectedSessions()">📦 보관</button>
       <button class="danger" onclick="deleteSelectedSessions()">🗑️ 삭제</button>
@@ -5009,11 +5762,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     </div>
     <div class="sidebar-section">불러온 스킬 <span class="skill-count" id="loadedCount">0</span></div>
     <div id="loadedSkillsList" style="font-size:12px;color:#666;padding:0 8px;"></div>
-    <div class="sidebar-section" style="margin-top:16px;">안내</div>
-    <div style="font-size:12px;color:#888;padding:0 8px;line-height:1.5;">
-      1. ⚙️ API 설정<br>
-      2. 분야/스킬 선택<br>
-      3. 질문 입력 후 전송<br><br>
+    <div style="font-size:11px;color:#999;padding:4px 8px;margin-top:8px;">
       <strong>SKILL.md</strong> 파일이 있는 스킬만 ✅ 표시됩니다.
     </div>
   </div>
@@ -5023,11 +5772,31 @@ body.rp-collapsed .chat-box-fixed{right:0}
   </div>
   </div>
 </div>
+<!-- 세션 목록 팝업 -->
+<div id="sessionPopupOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target===this)closeSessionPopup()">
+  <div style="background:#fff;border-radius:16px;width:90%;max-width:700px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:16px;font-weight:700;">세션 목록 <span id="popupSessionCount" style="font-size:13px;color:#6366f1;"></span></div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="selectAllSessionsPopup()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:12px;">☑ 전체선택</button>
+        <button onclick="deleteSelectedSessionsPopup()" style="padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#ef4444;cursor:pointer;font-size:12px;">🗑️ 선택삭제</button>
+        <button onclick="deleteAllSessionsPopup()" style="padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:12px;">전체삭제</button>
+        <button onclick="exportSessionsToMd()" style="padding:6px 12px;border:1px solid #86efac;border-radius:8px;background:#f0fdf4;color:#16a34a;cursor:pointer;font-size:12px;">📄 MD 저장</button>
+        <button onclick="closeSessionPopup()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>
+    <div style="padding:8px 20px;border-bottom:1px solid #f3f4f6;">
+      <input id="sessionSearchInput" type="text" placeholder="세션 내용 검색... (제목, 대화 내용)" oninput="searchSessionsPopup(this.value)" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;box-sizing:border-box;" />
+    </div>
+    <div id="sessionPopupBody" style="flex:1;overflow-y:auto;padding:12px 16px;"></div>
+  </div>
+</div>
+
 <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">◀</button>
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span></div>
+    <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span><span style="font-size:11px;color:#9ca3af;margin-left:6px;">2달에 한번 스킬 업데이트 | 사용을 많이 해줄수록 기능이 업데이트 됩니다</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
       <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
@@ -5046,11 +5815,19 @@ body.rp-collapsed .chat-box-fixed{right:0}
       <!-- 업로드된 파일 목록은 사이드바 하단으로 이동 -->
       <div id="csvInfoPanel" style="display:none"></div>
 
-      <div class="section-label">분야 선택</div>
-      <div class="tag-row" id="tagRow"></div>
+      <div class="section-label" style="cursor:pointer;user-select:none;" onclick="toggleSection('tagSection','tagArrow')">
+        <span class="arrow" id="tagArrow">▶</span> 분야 선택
+      </div>
+      <div id="tagSection" style="display:none">
+        <div class="tag-row" id="tagRow"></div>
+      </div>
 
-      <div class="section-label">스킬 선택 <span style="font-weight:400;color:#bbb">( ✅ = SKILL.md 로드됨 )</span></div>
-      <div class="skill-grid" id="skillGrid"></div>
+      <div class="section-label" style="cursor:pointer;user-select:none;" onclick="toggleSection('skillSection','skillArrow')">
+        <span class="arrow" id="skillArrow">▶</span> 스킬 선택 <span style="font-weight:400;color:#bbb">( ✅ = SKILL.md 로드됨 )</span>
+      </div>
+      <div id="skillSection" style="display:none">
+        <div class="skill-grid" id="skillGrid"></div>
+      </div>
 
       <div class="sysprompt-section">
         <div class="sysprompt-toggle" onclick="toggleSysPrompt()">
@@ -5265,7 +6042,7 @@ let envs = {};
 let hasToken = false;
 let selEnv = 'auto';
 let catalog = {};
-let selDomains = ['bioinformatics','dev-tools','agent-data-ai'];
+let selDomains = [];
 let selSkills = [];
 let autoSkillMode = true;  // 기본 ON
 let selFormat = 'auto';
@@ -5287,6 +6064,7 @@ if(lastSessions.length > 0){
   history = s.history || [];
   setTimeout(()=>{
     document.getElementById('msgs').innerHTML = s.msgsHtml || '';
+    injectDeleteButtons();
     if(s.writingStyle){ document.getElementById('writingStyle').value = s.writingStyle; syncStyleDropToSidebar(); }
     if(s.systemPrompt) document.getElementById('systemPromptInput').value = s.systemPrompt;
     if(s.systemPromptId){ currentPromptId=s.systemPromptId; renderPromptChips(); }
@@ -5696,6 +6474,8 @@ function _usePptSuggestion(el, text){
 const _pptKeywords = /PPT|ppt|파워포인트|프레젠테이션|발표자료|슬라이드\s*만들|피피티/i;
 
 async function send(){
+  if(isSending) return;  // 응답 중이면 중복 전송 차단
+
   const el=document.getElementById('input');
   const text=el.value.trim();
   if(!text && chatPendingFiles.length === 0) return;
@@ -5710,6 +6490,7 @@ async function send(){
   // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
   autoLoadedSkills = [];
   dismissedAutoSkills.clear();
+  updateLoaded();  // UI도 즉시 초기화
 
   // 첨부파일이 있으면 먼저 업로드 (파일 확장자 기반 스킬이 autoLoadedSkills에 추가됨)
   let attachedNames = [];
@@ -6035,7 +6816,34 @@ function addMsg(role,text,rawForDetect){
     fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
     d.appendChild(fbDiv);
   }
+  // 삭제 버튼 주입
+  d.style.position='relative';
+  d.insertAdjacentHTML('afterbegin','<button class="msg-del" onclick="event.stopPropagation();deleteMsg(this)">✕</button>');
   c.scrollIntoView({behavior:'smooth',block:'end'});
+}
+function injectDeleteButtons(){
+  // 옛날 버튼 강제 제거
+  document.querySelectorAll('.msg-delete-btn').forEach(el=>el.remove());
+  document.querySelectorAll('#msgs .msg').forEach(msg=>{
+    const existing = msg.querySelectorAll('.msg-del');
+    if(existing.length > 0){
+      for(let i=1;i<existing.length;i++) existing[i].remove();
+      return;
+    }
+    msg.style.position='relative';
+    msg.insertAdjacentHTML('afterbegin','<button class="msg-del" onclick="event.stopPropagation();deleteMsg(this)">✕</button>');
+  });
+}
+function deleteMsg(btn){
+  if(!confirm('이 메시지를 삭제할까요?')) return;
+  const msgEl = btn.closest('.msg');
+  if(!msgEl) return;
+  const msgIndex = Array.from(msgEl.parentElement.children).filter(c=>c.classList.contains('msg')).indexOf(msgEl);
+  msgEl.remove();
+  if(msgIndex >= 0 && msgIndex < history.length){
+    history.splice(msgIndex, 1);
+  }
+  saveCurrentSession();
 }
 function addTyping(){
   const c=document.getElementById('msgs');
@@ -6091,6 +6899,7 @@ function saveCurrentSession(){
   renderSessionList();
 }
 let selectedSessions = new Set();
+let _lastCheckedSessionId = null; // Shift+클릭용
 
 function renderSessionList(){
   const el=document.getElementById('sessionList');
@@ -6105,41 +6914,404 @@ function renderSessionList(){
     return;
   }
 
-  let html = sorted.map(s=>{
-    const checked = selectedSessions.has(s.id) ? 'checked' : '';
-    const isCurrent = s.id===currentSessionId;
-    const time = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString('ko',{month:'short',day:'numeric'}) : '';
-    return `<div class="session-item${isCurrent?' current':''}" onclick="loadSession('${s.id}')">
-      <input type="checkbox" class="session-cb" ${checked} onclick="event.stopPropagation();toggleSessionCheck('${s.id}',this)">
-      <span class="session-name">${s.name||'새 세션'}</span>
-      <span class="session-time">${time}</span>
-    </div>`;
-  }).join('');
+  // 날짜별 그룹핑
+  const dateGroups = {};
+  sorted.forEach(s=>{
+    const d = s.updatedAt ? new Date(s.updatedAt) : new Date();
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
+    let label;
+    if(d.toDateString()===today.toDateString()) label='오늘';
+    else if(d.toDateString()===yesterday.toDateString()) label='어제';
+    else label=d.toLocaleDateString('ko',{year:'numeric',month:'long',day:'numeric'});
+    if(!dateGroups[label]) dateGroups[label]=[];
+    dateGroups[label].push(s);
+  });
 
-  // 보관된 세션 (항상 펼쳐서 보여줌)
+  // 전체 세션 순서 배열 (shift+click 범위 선택용)
+  window._sessionOrder = sorted.map(s=>s.id);
+
+  let html = '';
+  for(const [dateLabel, items] of Object.entries(dateGroups)){
+    html += `<div style="font-size:10px;color:#999;padding:4px 8px 2px;font-weight:600;border-bottom:1px solid #f0f0f0;margin-top:4px;">${dateLabel} (${items.length})</div>`;
+    html += items.map(s=>{
+      const checked = selectedSessions.has(s.id) ? 'checked' : '';
+      const isCurrent = s.id===currentSessionId;
+      const time = s.updatedAt ? new Date(s.updatedAt).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}) : '';
+      return `<div class="session-item${isCurrent?' current':''}" onclick="sessionItemClick('${s.id}',event)">
+        <input type="checkbox" class="session-cb" ${checked} onclick="event.stopPropagation();toggleSessionCheck('${s.id}',this,event)">
+        <span class="session-name">${s.name||'새 세션'}</span>
+        <span class="session-time">${time}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // 보관된 세션
   if(archived.length > 0){
     html += `<div style="padding:4px 8px;margin-top:6px;border-top:1px solid #e5e3de;padding-top:8px;">
-      <div style="font-size:11px;color:#999;margin-bottom:4px">📦 보관함 (${archived.length})</div>
+      <div style="font-size:10px;color:#999;margin-bottom:4px;font-weight:600;cursor:pointer;" onclick="toggleSection('archivedSection','archivedArrow')">
+        <span class="arrow" id="archivedArrow">▶</span> 📦 보관함 (${archived.length})
+      </div>
+      <div id="archivedSection" style="display:none">
       ${archived.map(s=>{
         const checked = selectedSessions.has(s.id) ? 'checked' : '';
-        return `<div class="session-item" style="opacity:.7" onclick="loadSession('${s.id}')">
-          <input type="checkbox" class="session-cb" ${checked} onclick="event.stopPropagation();toggleSessionCheck('${s.id}',this)">
+        return `<div class="session-item" style="opacity:.7" onclick="sessionItemClick('${s.id}',event)">
+          <input type="checkbox" class="session-cb" ${checked} onclick="event.stopPropagation();toggleSessionCheck('${s.id}',this,event)">
           <span class="session-name">${s.name||'세션'}</span>
         </div>`;
       }).join('')}
+      </div>
     </div>`;
   }
 
   el.innerHTML = html;
-
-  // 체크된 게 있으면 액션 버튼 표시
   updateSessionActions();
 }
 
-function toggleSessionCheck(id, cb){
+function toggleSessionCheck(id, cb, event){
+  // Shift+클릭: 범위 선택
+  if(event && event.shiftKey && _lastCheckedSessionId && window._sessionOrder){
+    const order = window._sessionOrder;
+    const startIdx = order.indexOf(_lastCheckedSessionId);
+    const endIdx = order.indexOf(id);
+    if(startIdx !== -1 && endIdx !== -1){
+      const from = Math.min(startIdx, endIdx);
+      const to = Math.max(startIdx, endIdx);
+      for(let i=from; i<=to; i++){
+        selectedSessions.add(order[i]);
+      }
+      renderSessionList();
+      return;
+    }
+  }
   if(cb.checked) selectedSessions.add(id);
   else selectedSessions.delete(id);
+  _lastCheckedSessionId = id;
   updateSessionActions();
+}
+
+// ===== 세션 팝업 =====
+let _popupSelectedSessions = new Set();
+let _popupLastChecked = null;
+
+function openSessionPopup(){
+  _popupSelectedSessions = new Set(selectedSessions);
+  _popupLastChecked = null;
+  const overlay = document.getElementById('sessionPopupOverlay');
+  overlay.style.display = 'flex';
+  renderSessionPopup();
+}
+
+function closeSessionPopup(){
+  document.getElementById('sessionPopupOverlay').style.display = 'none';
+  selectedSessions = new Set(_popupSelectedSessions);
+  renderSessionList();
+}
+
+function renderSessionPopup(){
+  const body = document.getElementById('sessionPopupBody');
+  const sorted = Object.values(sessions).filter(s=>!s.archived).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const archived = Object.values(sessions).filter(s=>s.archived).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+
+  document.getElementById('popupSessionCount').textContent = `(${sorted.length}개)`;
+  window._popupSessionOrder = sorted.map(s=>s.id);
+
+  // 날짜별 그룹핑
+  const dateGroups = {};
+  sorted.forEach(s=>{
+    const d = s.updatedAt ? new Date(s.updatedAt) : new Date();
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
+    let label;
+    if(d.toDateString()===today.toDateString()) label='오늘';
+    else if(d.toDateString()===yesterday.toDateString()) label='어제';
+    else label=d.toLocaleDateString('ko',{year:'numeric',month:'long',day:'numeric'});
+    if(!dateGroups[label]) dateGroups[label]=[];
+    dateGroups[label].push(s);
+  });
+
+  let html = '';
+  for(const [dateLabel, items] of Object.entries(dateGroups)){
+    html += `<div style="font-size:12px;color:#6b7280;padding:8px 4px 4px;font-weight:700;border-bottom:2px solid #e5e7eb;margin-top:8px;">${dateLabel} <span style="color:#9ca3af;font-weight:400">(${items.length}개)</span></div>`;
+    html += items.map(s=>{
+      const checked = _popupSelectedSessions.has(s.id) ? 'checked' : '';
+      const isCurrent = s.id===currentSessionId;
+      const time = s.updatedAt ? new Date(s.updatedAt).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}) : '';
+      const msgCount = s.history ? s.history.length : 0;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #f3f4f6;cursor:pointer;${isCurrent?'background:#eef2ff;border-radius:6px;':''}" onclick="popupSessionClick('${s.id}',event)">
+        <input type="checkbox" ${checked} onclick="event.stopPropagation();popupToggleCheck('${s.id}',this,event)" style="width:16px;height:16px;cursor:pointer;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:${isCurrent?'700':'500'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isCurrent?'color:#4f46e5;':'color:#1f2937;'}">${s.name||'새 세션'}${isCurrent?' (현재)':''}</div>
+          <div style="font-size:11px;color:#9ca3af;">${msgCount}개 메시지</div>
+        </div>
+        <div style="font-size:11px;color:#9ca3af;white-space:nowrap;">${time}</div>
+      </div>`;
+    }).join('');
+  }
+
+  if(archived.length > 0){
+    html += `<div style="margin-top:12px;border-top:2px solid #e5e7eb;padding-top:8px;">
+      <div style="font-size:12px;color:#9ca3af;font-weight:700;padding:4px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none';this.querySelector('span').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
+        <span>▶</span> 📦 보관함 (${archived.length}개)
+      </div>
+      <div style="display:none">
+      ${archived.map(s=>{
+        const checked = _popupSelectedSessions.has(s.id) ? 'checked' : '';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;opacity:.6;border-bottom:1px solid #f3f4f6;">
+          <input type="checkbox" ${checked} onclick="event.stopPropagation();popupToggleCheck('${s.id}',this,event)" style="width:16px;height:16px;">
+          <span style="font-size:12px;flex:1;">${s.name||'세션'}</span>
+        </div>`;
+      }).join('')}
+      </div>
+    </div>`;
+  }
+
+  if(sorted.length===0 && archived.length===0){
+    html = '<div style="text-align:center;color:#9ca3af;padding:40px;">저장된 세션이 없습니다.</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+function popupSessionClick(id, event){
+  if(event.shiftKey && _popupLastChecked && window._popupSessionOrder){
+    event.preventDefault();
+    const order = window._popupSessionOrder;
+    const startIdx = order.indexOf(_popupLastChecked);
+    const endIdx = order.indexOf(id);
+    if(startIdx !== -1 && endIdx !== -1){
+      const from = Math.min(startIdx, endIdx);
+      const to = Math.max(startIdx, endIdx);
+      for(let i=from; i<=to; i++) _popupSelectedSessions.add(order[i]);
+      _popupLastChecked = id;
+      renderSessionPopup();
+      return;
+    }
+  }
+  // 일반 클릭: 세션 로드 후 팝업 닫기
+  selectedSessions = new Set(_popupSelectedSessions);
+  closeSessionPopup();
+  loadSession(id);
+}
+
+function popupToggleCheck(id, cb, event){
+  if(event && event.shiftKey && _popupLastChecked && window._popupSessionOrder){
+    const order = window._popupSessionOrder;
+    const startIdx = order.indexOf(_popupLastChecked);
+    const endIdx = order.indexOf(id);
+    if(startIdx !== -1 && endIdx !== -1){
+      const from = Math.min(startIdx, endIdx);
+      const to = Math.max(startIdx, endIdx);
+      for(let i=from; i<=to; i++) _popupSelectedSessions.add(order[i]);
+      renderSessionPopup();
+      return;
+    }
+  }
+  if(cb.checked) _popupSelectedSessions.add(id);
+  else _popupSelectedSessions.delete(id);
+  _popupLastChecked = id;
+}
+
+function selectAllSessionsPopup(){
+  const all = Object.values(sessions).filter(s=>!s.archived);
+  if(_popupSelectedSessions.size === all.length) _popupSelectedSessions.clear();
+  else all.forEach(s=> _popupSelectedSessions.add(s.id));
+  renderSessionPopup();
+}
+
+function deleteSelectedSessionsPopup(){
+  if(_popupSelectedSessions.size===0) return;
+  if(!confirm(`${_popupSelectedSessions.size}개 세션을 삭제할까요?`)) return;
+  let deletedCurrent = false;
+  _popupSelectedSessions.forEach(id=>{
+    if(id===currentSessionId) deletedCurrent = true;
+    delete sessions[id];
+  });
+  _popupSelectedSessions.clear();
+  saveSessions();
+  if(deletedCurrent){ currentSessionId = null; createNewSession(); }
+  renderSessionPopup();
+  renderSessionList();
+}
+
+function searchSessionsPopup(query){
+  const body = document.getElementById('sessionPopupBody');
+  const q = query.trim().toLowerCase();
+  if(!q){ renderSessionPopup(); return; }
+
+  const all = Object.values(sessions).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const results = [];
+
+  all.forEach(s=>{
+    const name = (s.name||'').toLowerCase();
+    let matchedMsgs = [];
+
+    // 제목 검색
+    const nameMatch = name.includes(q);
+
+    // 대화 내용 검색
+    if(s.history){
+      s.history.forEach((m, idx)=>{
+        const content = typeof m.content === 'string' ? m.content : '';
+        if(content.toLowerCase().includes(q)){
+          // 매칭된 부분 전후 50자 미리보기
+          const pos = content.toLowerCase().indexOf(q);
+          const start = Math.max(0, pos - 30);
+          const end = Math.min(content.length, pos + q.length + 30);
+          let preview = (start > 0 ? '...' : '') + content.slice(start, end) + (end < content.length ? '...' : '');
+          // 매칭 부분 하이라이트
+          preview = preview.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'), '<mark style="background:#fef08a;padding:0 1px;border-radius:2px;">$&</mark>');
+          matchedMsgs.push({ role: m.role, preview, idx });
+        }
+      });
+    }
+
+    if(nameMatch || matchedMsgs.length > 0){
+      results.push({ session: s, nameMatch, matchedMsgs });
+    }
+  });
+
+  if(results.length === 0){
+    body.innerHTML = `<div style="text-align:center;color:#9ca3af;padding:40px;">검색 결과 없음: "${query}"</div>`;
+    document.getElementById('popupSessionCount').textContent = `(0건)`;
+    return;
+  }
+
+  document.getElementById('popupSessionCount').textContent = `(${results.length}건 검색됨)`;
+
+  let html = results.map(r=>{
+    const s = r.session;
+    const isCurrent = s.id === currentSessionId;
+    const time = s.updatedAt ? new Date(s.updatedAt).toLocaleString('ko',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    const archived = s.archived ? ' 📦' : '';
+
+    let nameHtml = s.name || '새 세션';
+    if(r.nameMatch){
+      nameHtml = nameHtml.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'), '<mark style="background:#fef08a;padding:0 1px;border-radius:2px;">$&</mark>');
+    }
+
+    let msgHtml = '';
+    if(r.matchedMsgs.length > 0){
+      msgHtml = r.matchedMsgs.slice(0, 3).map(m=>{
+        const roleLabel = m.role === 'user' ? '사용자' : 'AI';
+        return `<div style="font-size:11px;color:#6b7280;padding:2px 0;"><span style="color:#4f46e5;font-weight:600;">[${roleLabel}]</span> ${m.preview}</div>`;
+      }).join('');
+      if(r.matchedMsgs.length > 3){
+        msgHtml += `<div style="font-size:10px;color:#9ca3af;">...외 ${r.matchedMsgs.length - 3}건 매칭</div>`;
+      }
+    }
+
+    return `<div style="padding:10px 8px;border-bottom:1px solid #f3f4f6;cursor:pointer;${isCurrent?'background:#eef2ff;border-radius:6px;':''}" onclick="closeSessionPopup();loadSession('${s.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:13px;font-weight:600;${isCurrent?'color:#4f46e5;':''}">${nameHtml}${archived}</div>
+        <div style="font-size:11px;color:#9ca3af;">${time}</div>
+      </div>
+      ${msgHtml}
+    </div>`;
+  }).join('');
+
+  body.innerHTML = html;
+}
+
+function exportSessionsToMd(){
+  // 선택된 세션이 있으면 선택된 것만, 없으면 전체
+  const targets = _popupSelectedSessions.size > 0
+    ? Object.values(sessions).filter(s=> _popupSelectedSessions.has(s.id))
+    : Object.values(sessions).filter(s=>!s.archived);
+  if(targets.length===0){ alert('저장할 세션이 없습니다.'); return; }
+
+  targets.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+
+  let md = `# 세션 대화 기록\n\n`;
+  md += `> 내보내기 날짜: ${new Date().toLocaleString('ko')}\n`;
+  md += `> 세션 수: ${targets.length}개\n\n---\n\n`;
+
+  targets.forEach((s, idx)=>{
+    const date = s.updatedAt ? new Date(s.updatedAt).toLocaleString('ko') : '날짜 없음';
+    const msgCount = s.history ? s.history.length : 0;
+    md += `## ${idx+1}. ${s.name||'새 세션'}\n\n`;
+    md += `- 날짜: ${date}\n`;
+    md += `- 메시지: ${msgCount}개\n\n`;
+
+    if(s.history && s.history.length > 0){
+      s.history.forEach(m=>{
+        const role = m.role === 'user' ? '**사용자**' : '**AI**';
+        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+        md += `### ${role}\n\n${content}\n\n`;
+      });
+    } else {
+      md += `_(대화 내용 없음)_\n\n`;
+    }
+    md += `---\n\n`;
+  });
+
+  // 다운로드
+  const blob = new Blob([md], {type:'text/markdown;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `sessions_${dateStr}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function deleteAllSessionsPopup(){
+  const all = Object.values(sessions).filter(s=>!s.archived);
+  if(all.length===0) return;
+  if(!confirm(`전체 ${all.length}개 세션을 삭제할까요?`)) return;
+  all.forEach(s=> delete sessions[s.id]);
+  _popupSelectedSessions.clear();
+  saveSessions();
+  currentSessionId = null;
+  createNewSession();
+  renderSessionPopup();
+  renderSessionList();
+}
+
+function sessionItemClick(id, event){
+  // Shift+클릭: 범위 선택
+  if(event.shiftKey && _lastCheckedSessionId && window._sessionOrder){
+    event.preventDefault();
+    const order = window._sessionOrder;
+    const startIdx = order.indexOf(_lastCheckedSessionId);
+    const endIdx = order.indexOf(id);
+    if(startIdx !== -1 && endIdx !== -1){
+      const from = Math.min(startIdx, endIdx);
+      const to = Math.max(startIdx, endIdx);
+      for(let i=from; i<=to; i++){
+        selectedSessions.add(order[i]);
+      }
+      _lastCheckedSessionId = id;
+      renderSessionList();
+      return;
+    }
+  }
+  // 일반 클릭: 세션 로드
+  loadSession(id);
+}
+
+function selectAllSessions(){
+  const all = Object.values(sessions).filter(s=>!s.archived);
+  if(selectedSessions.size === all.length){
+    // 전체 해제
+    selectedSessions.clear();
+  } else {
+    // 전체 선택
+    all.forEach(s=> selectedSessions.add(s.id));
+  }
+  renderSessionList();
+}
+
+function deleteAllSessions(){
+  const all = Object.values(sessions).filter(s=>!s.archived);
+  if(all.length===0) return;
+  if(!confirm(`전체 ${all.length}개 세션을 삭제할까요?`)) return;
+  all.forEach(s=> delete sessions[s.id]);
+  selectedSessions.clear();
+  saveSessions();
+  currentSessionId = null;
+  createNewSession();
 }
 
 function updateSessionActions(){
@@ -6281,6 +7453,7 @@ function loadSession(id){
   currentSessionId=id;
   history=s.history||[];
   document.getElementById('msgs').innerHTML=s.msgsHtml||'';
+  injectDeleteButtons();
   if(s.writingStyle){ document.getElementById('writingStyle').value=s.writingStyle; syncStyleDropToSidebar(); }
   if(s.writingStyleId){ activeStyleId=s.writingStyleId; renderStyleChips(); }
   styleManualOverride = s.styleManualOverride !== undefined ? s.styleManualOverride : !!s.writingStyle;
@@ -6336,6 +7509,19 @@ function restoreSelectedSessions(){
   renderSessionList();
 }
 function newSession(){ createNewSession(); }
+
+// ===== Section Toggle (분야/스킬 접기/펼치기) =====
+function toggleSection(sectionId, arrowId){
+  const section = document.getElementById(sectionId);
+  const arrow = document.getElementById(arrowId);
+  if(section.style.display === 'none'){
+    section.style.display = '';
+    arrow.textContent = '▼';
+  } else {
+    section.style.display = 'none';
+    arrow.textContent = '▶';
+  }
+}
 
 // ===== System Prompt =====
 function toggleSysPrompt(){
