@@ -319,21 +319,30 @@ def extract_lpql_from_response(text):
 
 
 def _clean_lpql(lpql):
-    """LPQL에서 주석(#)과 빈 줄 제거 + table from=/to= → fulltext 자동 변환"""
+    """LPQL에서 주석 제거 + table from=/to= → table duration=Nd 자동 변환"""
+    from datetime import datetime as _dt
+
     # 주석 제거
     lines = [line for line in lpql.split('\n') if line.strip() and not line.strip().startswith('#')]
     cleaned = ' '.join(lines).strip() if lines else lpql
 
-    # table from=/to= → fulltext from=/to= 자동 변환
-    # table 명령은 from=/to=를 지원하지 않으므로 fulltext로 변환
+    # table from=/to= → table duration=Nd 자동 변환
+    # table 명령은 from=/to=를 지원 안 함, duration=만 지원
     m = re.match(
         r'^table\s+from\s*=\s*(\d{14})\s+to\s*=\s*(\d{14})\s+(\S+)(.*)',
         cleaned, re.IGNORECASE
     )
     if m:
-        from_ts, to_ts, table_name, rest = m.group(1), m.group(2), m.group(3), m.group(4)
-        cleaned = f"fulltext from={from_ts} to={to_ts} * from {table_name}{rest}"
-        print(f"[LPQL] table from/to → fulltext 자동 변환: {cleaned[:150]}")
+        try:
+            from_dt = _dt.strptime(m.group(1), "%Y%m%d%H%M%S")
+            to_dt = _dt.strptime(m.group(2), "%Y%m%d%H%M%S")
+            days = max(1, (to_dt - from_dt).days + 1)
+            table_name = m.group(3)
+            rest = m.group(4)
+            cleaned = f"table duration={days}d {table_name}{rest}"
+            print(f"[LPQL] table from/to → duration={days}d 변환: {cleaned[:150]}")
+        except Exception:
+            pass
 
     return cleaned
 
