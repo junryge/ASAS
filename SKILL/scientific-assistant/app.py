@@ -3720,22 +3720,20 @@ def api_generate_pptx():
                 return jsonify({"error": "PPT 파일이 생성되지 않았습니다."}), 500
 
         import shutil, datetime
-        
+
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         final_filename = f"presentation_{timestamp}.pptx"
-        
-        # 사용자의 로컬 Downloads 폴더로 직접 복사 (로컬 앱 전용 특권)
-        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-        if not os.path.exists(downloads_dir):
-            downloads_dir = os.path.join(BASE_DIR, 'uploads')
-            
-        os.makedirs(downloads_dir, exist_ok=True)
-        local_dl_path = os.path.join(downloads_dir, final_filename)
-        
-        shutil.copy2(out_path, local_dl_path)
-        
+
+        # uploads 폴더에 저장 후 download_url 반환 → 브라우저가 사용자 PC로 다운로드
+        uploads_dir = os.path.join(BASE_DIR, 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        save_path = os.path.join(uploads_dir, final_filename)
+        shutil.copy2(out_path, save_path)
+
+        file_id = timestamp
         return jsonify({
-            "message": f"'{final_filename}' 파일이 로컬 다운로드 폴더에 안전하게 바로 저장되었습니다!"
+            "download_url": f"/api/download_static/presentation.pptx?id={file_id}",
+            "message": f"'{final_filename}' PPT 생성 완료! 다운로드가 시작됩니다."
         })
 
 @app.route("/api/download_static/presentation.pptx", methods=["GET"])
@@ -3750,6 +3748,38 @@ def api_download_static():
         download_name="presentation.pptx",
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
+
+
+# ===================== 응답 피드백 =====================
+FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback.jsonl")
+
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """응답 피드백 저장 (👍/👎)"""
+    import datetime
+    data = request.json or {}
+    feedback_type = data.get("type", "")  # "up" or "down"
+    message_preview = data.get("message", "")[:200]
+    session_id = data.get("session_id", "")
+
+    if feedback_type not in ("up", "down"):
+        return jsonify({"error": "type은 'up' 또는 'down'이어야 합니다."}), 400
+
+    entry = {
+        "ts": datetime.datetime.now().isoformat(),
+        "type": feedback_type,
+        "session_id": session_id,
+        "message_preview": message_preview,
+    }
+
+    try:
+        with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[Feedback] 저장 실패: {e}")
+        return jsonify({"error": "저장 실패"}), 500
+
+    return jsonify({"ok": True, "type": feedback_type})
 
 
 # ===================== 응답 중지 =====================
@@ -4851,6 +4881,12 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg blockquote{border-left:3px solid #6366f1;margin:4px 0;padding:2px 8px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
+.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+.msg-feedback button{background:none;border:1px solid #e5e3de;border-radius:6px;padding:2px 8px;font-size:14px;cursor:pointer;opacity:.5;transition:all .15s}
+.msg-feedback button:hover{opacity:1;background:#f5f5f0}
+.msg-feedback button.selected{opacity:1;border-color:#6366f1}
+.msg-feedback button.selected.up{background:#ecfdf5;border-color:#059669}
+.msg-feedback button.selected.down{background:#fef2f2;border-color:#dc2626}
 .msg .skill-info{font-size:10px;color:#6366f1;margin-top:4px}
 .typing{display:inline-flex;gap:4px;padding:8px 14px}
 .typing span{width:8px;height:8px;border-radius:50%;background:#ccc;animation:blink 1.4s infinite both}
@@ -6200,6 +6236,9 @@ function addMsg(role,text,rawForDetect){
   d.className='msg '+role;
   let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
   d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
+  if(role==='assistant'){
+    d.innerHTML += '<div class="msg-feedback"><button class="up" onclick="msgFeedback(this,\'up\')" title="좋아요">👍</button><button class="down" onclick="msgFeedback(this,\'down\')" title="아쉬워요">👎</button></div>';
+  }
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
     const btn=document.createElement('button');
@@ -8326,6 +8365,26 @@ function _remakePpt(text){
   if(input){ input.value = text; input.focus(); input.style.height='auto'; input.style.height=input.scrollHeight+'px'; }
   // 자동 전송
   setTimeout(()=>send(), 100);
+}
+
+// ==================== 응답 피드백 (👍/👎) ====================
+function msgFeedback(btn, type){
+  const wrap = btn.parentElement;
+  const buttons = wrap.querySelectorAll('button');
+  const already = btn.classList.contains('selected');
+  buttons.forEach(b=>b.classList.remove('selected'));
+  if(!already){
+    btn.classList.add('selected');
+    // 서버에 피드백 저장
+    const msgEl = btn.closest('.msg');
+    const msgText = msgEl ? msgEl.textContent.slice(0, 200) : '';
+    fetch('/api/feedback', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({type: type, message: msgText, session_id: currentSessionId||''})
+    }).catch(e=>console.warn('Feedback save failed:', e));
+  } else {
+    // 토글 해제 시 서버에 취소 알림 불필요 (로컬만 해제)
+  }
 }
 </script>
 </body>
