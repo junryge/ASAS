@@ -2385,11 +2385,11 @@ def _llm_generate_lpql(user_query, history=None):
         messages.extend(history[-4:])
     messages.append({"role": "user", "content": user_query})
 
-    # LLM 호출 — AUTO 폴백: 첫 모델 실패 시 다음 모델로 자동 전환
-    # LPQL 생성에 적합한 텍스트 모델 우선순위 (vision/reranker/embedding 제외)
+    # LLM 호출 — AUTO 폴백: 좋은 모델 → 안 좋은 모델 순서로 시도
+    # LPQL 쿼리 생성(코드/텍스트) 성능 기준 내림차순
     _LPQL_MODEL_CHAIN = [
-        "glm-4.7", "gpt-oss-120b", "qwen3.5-397b",
-        "qwen3-vl-30b", "qwen2.5-vl-72b", "qwen3-vl-235b",
+        "qwen3.5-397b", "qwen3-vl-235b", "gpt-oss-120b",
+        "qwen2.5-vl-72b", "qwen3-vl-30b", "glm-4.7",
     ]
 
     headers = {"Content-Type": "application/json"}
