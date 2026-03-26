@@ -121,6 +121,66 @@ MODEL_REGISTRY = {
         "priority": 3,
         "cost_tier": "low",
     },
+    "qwen3-coder-480b": {
+        "env_id": "coder-480b",
+        "model": "Qwen3-Coder-480B-A35B-Instruct",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "Coder-480B",
+        "capabilities": {"text", "code", "analysis", "large"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "high",
+    },
+    "qwen3.5-397b-fp8": {
+        "env_id": "prod-fp8",
+        "model": "Qwen3.5-397B-A17B-FP8",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "PROD-FP8 (397B)",
+        "capabilities": {"text", "code", "analysis", "large"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "high",
+    },
+    "qwen3-235b-2507": {
+        "env_id": "qwen3-235b",
+        "model": "Qwen3-235B-A22B-Instruct-2507",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "Qwen3-235B (2507)",
+        "capabilities": {"text", "code", "analysis", "large"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "high",
+    },
+    "qwen3-coder-next": {
+        "env_id": "coder-next",
+        "model": "Qwen3-Coder-Next",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "Coder-Next",
+        "capabilities": {"text", "code", "medium"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "medium",
+    },
+    "glm-4.7-fp8": {
+        "env_id": "dev-fp8",
+        "model": "GLM-4.7-FP8",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "GLM-4.7-FP8",
+        "capabilities": {"text", "code", "fast"},
+        "context_window": 128000,
+        "priority": 2,
+        "cost_tier": "low",
+    },
+    "qwen3.5-35b": {
+        "env_id": "qwen35-small",
+        "model": "Qwen3.5-35B-A3B",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "Qwen3.5-35B (Fast)",
+        "capabilities": {"text", "code", "fast"},
+        "context_window": 128000,
+        "priority": 3,
+        "cost_tier": "low",
+    },
     "bge-reranker": {
         "env_id": "reranker",
         "model": "bge-reranker-v2-m3",
@@ -144,14 +204,22 @@ ENV_CONFIG = {
 # env_id → registry key 역매핑
 ENV_TO_REGISTRY = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
 
-# 폴백 체인: 모델 실패 시 순서대로 시도
+# 폴백 체인: 모델 실패 시 순서대로 시도 (좋은 모델 우선)
 FALLBACK_CHAINS = {
-    "qwen3-vl-235b":  ["qwen2.5-vl-72b", "qwen3.5-397b", "gpt-oss-120b"],
-    "qwen3.5-397b":   ["gpt-oss-120b", "glm-4.7"],
-    "gpt-oss-120b":   ["glm-4.7"],
-    "glm-4.7":        ["gpt-oss-120b"],
-    "qwen2.5-vl-72b": ["qwen3-vl-30b", "gpt-oss-120b"],
-    "qwen3-vl-30b":   ["qwen2.5-vl-72b", "gpt-oss-120b"],
+    # ── 텍스트/코드 모델 ──
+    "qwen3.5-397b":      ["qwen3-coder-480b", "qwen3-235b-2507", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "glm-4.7-fp8", "qwen3.5-397b-fp8", "qwen3.5-35b"],
+    "qwen3-coder-480b":  ["qwen3.5-397b", "qwen3-235b-2507", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "qwen3-235b-2507":   ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "qwen3-coder-next":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "gpt-oss-120b":      ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-4.7", "glm-4.7-fp8", "qwen3.5-35b"],
+    "glm-4.7":           ["gpt-oss-120b", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-4.7-fp8", "qwen3.5-35b"],
+    "glm-4.7-fp8":       ["glm-4.7", "gpt-oss-120b", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "qwen3.5-35b"],
+    "qwen3.5-397b-fp8":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "qwen3.5-35b":       ["gpt-oss-120b", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507"],
+    # ── Vision 모델 (Vision → Vision → 텍스트) ──
+    "qwen3-vl-235b":     ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3.5-397b", "qwen3-coder-480b", "gpt-oss-120b"],
+    "qwen2.5-vl-72b":    ["qwen3-vl-235b", "qwen3-vl-30b", "qwen3.5-397b", "gpt-oss-120b", "glm-4.7"],
+    "qwen3-vl-30b":      ["qwen2.5-vl-72b", "qwen3-vl-235b", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
 }
 
 # Reranker 기능 플래그 (bge-reranker 엔드포인트 안정화 후 활성화)
@@ -4225,7 +4293,7 @@ def api_chat():
 
     models_tried = []
     if fallback_keys:
-        for attempt, reg_key in enumerate(fallback_keys[:3]):  # 최대 3회
+        for attempt, reg_key in enumerate(fallback_keys[:6]):  # 최대 6회
             reg = MODEL_REGISTRY[reg_key]
             try_url = reg["url"]
             try_model = reg["model"]
@@ -4325,21 +4393,23 @@ def api_chat():
 
                 elif "error" in result:
                     last_error = f"API 에러: {result['error']}"
+                    print(f"[Fallback] model={try_model} → error: {last_error} → trying next...")
                     continue  # 다음 폴백 시도
                 else:
                     last_error = f"예상치 못한 응답: {json.dumps(result, ensure_ascii=False, indent=2)}"
+                    print(f"[Fallback] model={try_model} → error: unexpected response → trying next...")
                     continue
 
             except req.exceptions.Timeout:
                 last_error = "API 응답 시간 초과 (120초)"
+                print(f"[Fallback] model={try_model} → error: {last_error} → trying next...")
                 continue
             except req.exceptions.ConnectionError as e:
-                last_error = f"API 연결 실패: {str(e)}"
+                last_error = f"API 연결 실패: {str(e)[:200]}"
+                print(f"[Fallback] model={try_model} → error: {last_error} → trying next...")
                 continue
             except req.exceptions.HTTPError as e:
                 code = e.response.status_code if e.response is not None else 0
-                if code == 401 or code == 403:
-                    return jsonify({"error": f"인증 실패 ({code}): TOKEN.TXT의 API 키를 확인하세요."}), code
                 last_error = f"HTTP {code}: {str(e)}"
                 if e.response is not None:
                     try:
@@ -4347,9 +4417,11 @@ def api_chat():
                         last_error += f" - {detail[:300]}"
                     except Exception:
                         pass
+                print(f"[Fallback] model={try_model} → error: HTTP {code} → trying next...")
                 continue
             except Exception as e:
                 last_error = f"오류: {str(e)}"
+                print(f"[Fallback] model={try_model} → error: {last_error} → trying next...")
                 continue
 
         # 모든 폴백 실패
