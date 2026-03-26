@@ -3751,35 +3751,36 @@ def api_download_static():
 
 
 # ===================== 응답 피드백 =====================
-FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback.jsonl")
-
 @app.route("/api/feedback", methods=["POST"])
 def api_feedback():
-    """응답 피드백 저장 (👍/👎)"""
-    import datetime
-    data = request.json or {}
-    feedback_type = data.get("type", "")  # "up" or "down"
-    message_preview = data.get("message", "")[:200]
-    session_id = data.get("session_id", "")
+    """사용자 피드백 저장 (좋아요/싫어요 + 코멘트)"""
+    import json as _json
+    data = request.json
+    rating = data.get("rating", "")       # "good" or "bad"
+    comment = data.get("comment", "")
+    message = data.get("message", "")[:500]  # 해당 응답 내용 (앞 500자)
+    user_query = data.get("user_query", "")[:300]
 
-    if feedback_type not in ("up", "down"):
-        return jsonify({"error": "type은 'up' 또는 'down'이어야 합니다."}), 400
+    if rating not in ("good", "bad"):
+        return jsonify({"error": "invalid rating"}), 400
 
+    feedback_dir = os.path.join(BASE_DIR, "feedback")
+    os.makedirs(feedback_dir, exist_ok=True)
+
+    from datetime import datetime
     entry = {
-        "ts": datetime.datetime.now().isoformat(),
-        "type": feedback_type,
-        "session_id": session_id,
-        "message_preview": message_preview,
+        "timestamp": datetime.now().isoformat(),
+        "rating": rating,
+        "comment": comment.strip(),
+        "user_query": user_query,
+        "message_preview": message,
     }
 
-    try:
-        with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print(f"[Feedback] 저장 실패: {e}")
-        return jsonify({"error": "저장 실패"}), 500
+    feedback_file = os.path.join(feedback_dir, "feedback.jsonl")
+    with open(feedback_file, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
 
-    return jsonify({"ok": True, "type": feedback_type})
+    return jsonify({"ok": True})
 
 
 # ===================== 응답 중지 =====================
@@ -4882,11 +4883,24 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
 .msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
-.msg-feedback button{background:none;border:1px solid #e5e3de;border-radius:6px;padding:2px 8px;font-size:14px;cursor:pointer;opacity:.5;transition:all .15s}
-.msg-feedback button:hover{opacity:1;background:#f5f5f0}
-.msg-feedback button.selected{opacity:1;border-color:#6366f1}
-.msg-feedback button.selected.up{background:#ecfdf5;border-color:#059669}
-.msg-feedback button.selected.down{background:#fef2f2;border-color:#dc2626}
+.msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
+.msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
+.msg-feedback button.fb-selected-good{background:#e8f5e9;color:#2e7d32;border-color:#81c784}
+.msg-feedback button.fb-selected-bad{background:#fce4ec;color:#c62828;border-color:#ef9a9a}
+/* 피드백 모달 */
+#feedbackModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center}
+#feedbackModal.show{display:flex}
+.fb-modal{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:fbSlideIn .25s ease}
+@keyframes fbSlideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.fb-modal h3{margin:0 0 6px;font-size:18px;color:#333}
+.fb-modal .fb-rating-display{font-size:24px;margin-bottom:12px}
+.fb-modal textarea{width:100%;height:100px;border:1.5px solid #ddd;border-radius:10px;padding:10px 12px;font-size:13px;resize:vertical;font-family:inherit;transition:border-color .2s}
+.fb-modal textarea:focus{outline:none;border-color:#6366f1}
+.fb-modal .fb-hint{font-size:11px;color:#999;margin-top:4px}
+.fb-modal .fb-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.fb-modal .fb-btn{padding:8px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.fb-modal .fb-btn-cancel{background:#f0f0f0;color:#666}.fb-modal .fb-btn-cancel:hover{background:#e0e0e0}
+.fb-modal .fb-btn-submit{background:#6366f1;color:#fff}.fb-modal .fb-btn-submit:hover{background:#4f46e5}
 .msg .skill-info{font-size:10px;color:#6366f1;margin-top:4px}
 .typing{display:inline-flex;gap:4px;padding:8px 14px}
 .typing span{width:8px;height:8px;border-radius:50%;background:#ccc;animation:blink 1.4s infinite both}
@@ -5136,6 +5150,20 @@ body.rp-collapsed .chat-box-fixed{right:0}
 </style>
 </head>
 <body>
+<!-- 피드백 모달 -->
+<div id="feedbackModal">
+  <div class="fb-modal">
+    <h3 id="fbModalTitle">피드백</h3>
+    <div class="fb-rating-display" id="fbRatingDisplay"></div>
+    <textarea id="fbComment" placeholder="어떤 점이 좋았나요? 또는 어떤 점을 개선하면 좋을까요? (선택사항)"></textarea>
+    <div class="fb-hint">피드백은 서비스 개선에 활용됩니다</div>
+    <div class="fb-actions">
+      <button class="fb-btn fb-btn-cancel" onclick="closeFeedbackModal()">취소</button>
+      <button class="fb-btn fb-btn-submit" onclick="submitFeedback()">보내기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 인트로 비디오 오버레이 -->
 <div id="introOverlay">
   <video id="introVideo" autoplay muted playsinline>
@@ -6236,8 +6264,12 @@ function addMsg(role,text,rawForDetect){
   d.className='msg '+role;
   let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
   d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
+  // 피드백 버튼 (assistant 응답에만)
   if(role==='assistant'){
-    d.innerHTML += '<div class="msg-feedback"><button class="up" onclick="msgFeedback(this,\'up\')" title="좋아요">👍</button><button class="down" onclick="msgFeedback(this,\'down\')" title="아쉬워요">👎</button></div>';
+    const fbDiv=document.createElement('div');
+    fbDiv.className='msg-feedback';
+    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    d.appendChild(fbDiv);
   }
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
@@ -8367,25 +8399,68 @@ function _remakePpt(text){
   setTimeout(()=>send(), 100);
 }
 
-// ==================== 응답 피드백 (👍/👎) ====================
-function msgFeedback(btn, type){
-  const wrap = btn.parentElement;
-  const buttons = wrap.querySelectorAll('button');
-  const already = btn.classList.contains('selected');
-  buttons.forEach(b=>b.classList.remove('selected'));
-  if(!already){
-    btn.classList.add('selected');
-    // 서버에 피드백 저장
-    const msgEl = btn.closest('.msg');
-    const msgText = msgEl ? msgEl.textContent.slice(0, 200) : '';
-    fetch('/api/feedback', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({type: type, message: msgText, session_id: currentSessionId||''})
-    }).catch(e=>console.warn('Feedback save failed:', e));
+// ==================== 응답 피드백 (👍/👎 + 코멘트 모달) ====================
+var _fbCurrentRating = '';
+var _fbCurrentBtn = null;
+
+function openFeedback(btn, rating){
+  _fbCurrentRating = rating;
+  _fbCurrentBtn = btn;
+  var modal = document.getElementById('feedbackModal');
+  var title = document.getElementById('fbModalTitle');
+  var display = document.getElementById('fbRatingDisplay');
+  var ta = document.getElementById('fbComment');
+  if(rating === 'good'){
+    title.textContent = '어떤 점이 좋았나요?';
+    display.textContent = '👍 좋아요';
+    ta.placeholder = '좋았던 점을 알려주세요 (선택사항)';
   } else {
-    // 토글 해제 시 서버에 취소 알림 불필요 (로컬만 해제)
+    title.textContent = '어떤 점이 아쉬웠나요?';
+    display.textContent = '👎 별로예요';
+    ta.placeholder = '개선할 점을 알려주세요 (선택사항)';
   }
+  ta.value = '';
+  modal.classList.add('show');
+  setTimeout(function(){ ta.focus(); }, 100);
 }
+
+function closeFeedbackModal(){
+  document.getElementById('feedbackModal').classList.remove('show');
+  _fbCurrentRating = '';
+  _fbCurrentBtn = null;
+}
+
+async function submitFeedback(){
+  var comment = document.getElementById('fbComment').value;
+  var msgEl = _fbCurrentBtn ? _fbCurrentBtn.closest('.msg') : null;
+  var msgText = msgEl ? (msgEl.textContent || '').slice(0, 500) : '';
+  var userQuery = '';
+  if(msgEl){
+    var prev = msgEl.previousElementSibling;
+    while(prev){
+      if(prev.classList.contains('user')){ userQuery = (prev.textContent || '').slice(0, 300); break; }
+      prev = prev.previousElementSibling;
+    }
+  }
+  try{
+    await fetch('/api/feedback', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rating: _fbCurrentRating, comment: comment, message: msgText, user_query: userQuery })
+    });
+  }catch(e){}
+  if(_fbCurrentBtn){
+    var fbDiv = _fbCurrentBtn.parentElement;
+    fbDiv.querySelectorAll('button').forEach(function(b){ b.classList.remove('fb-selected-good','fb-selected-bad'); });
+    _fbCurrentBtn.classList.add(_fbCurrentRating === 'good' ? 'fb-selected-good' : 'fb-selected-bad');
+  }
+  closeFeedbackModal();
+}
+
+document.addEventListener('click', function(e){
+  var modal = document.getElementById('feedbackModal');
+  if(e.target === modal) closeFeedbackModal();
+});
 </script>
 </body>
 </html>
