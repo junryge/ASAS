@@ -1831,6 +1831,28 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+@app.route("/uio")
+@app.route("/uio/")
+def uio_page():
+    """UIO 2D Pixel Office 페이지 서빙 (base href 주입으로 상대경로 해결)"""
+    uio_path = os.path.join(BASE_DIR, "UIO", "index.html")
+    if os.path.exists(uio_path):
+        with open(uio_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        # <head> 바로 뒤에 <base href="/uio/"> 삽입 → 상대경로(img/, sound/)가 /uio/img/ 등으로 해석됨
+        html = html.replace("<head>", '<head>\n<base href="/uio/">', 1)
+        return html
+    return "UIO index.html not found", 404
+
+
+@app.route("/uio/<path:filename>")
+def uio_static(filename):
+    """UIO 정적 파일 서빙 (img, sound 등)"""
+    from flask import send_from_directory
+    uio_dir = os.path.join(BASE_DIR, "UIO")
+    return send_from_directory(uio_dir, filename)
+
+
 @app.route("/api/config")
 def api_config():
     """환경 설정 및 토큰 상태 반환"""
@@ -4808,6 +4830,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .env-btn .env-name{font-weight:700;font-size:14px;margin-bottom:2px}
 .env-btn .env-model{font-size:11px;color:#888}
 .env-btn.selected .env-model{color:#6366f1}
+.uio-enter-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:600;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);text-decoration:none;cursor:pointer;transition:all .2s;border:none;box-shadow:0 2px 8px rgba(99,102,241,.3)}
+.uio-enter-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.5);background:linear-gradient(135deg,#818cf8,#a78bfa)}
 .token-status{font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:16px}
 .token-status.ok{background:#ecfdf5;color:#059669}
 .token-status.missing{background:#fef2f2;color:#dc2626}
@@ -5018,6 +5042,11 @@ body.rp-collapsed .chat-box-fixed{right:0}
 #introSkip{position:absolute;bottom:40px;right:40px;background:rgba(255,255,255,.15);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.3);color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;cursor:pointer;transition:all .2s;z-index:10000}
 #introSkip:hover{background:rgba(255,255,255,.3)}
 #introProgress{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#6366f1,#a855f7);width:0;transition:width .1s linear}
+/* UIO 컨테이너 */
+#uioContainer{position:fixed;top:0;left:0;width:100%;height:100%;z-index:9000;display:none;background:#0f151e}
+#uioContainer iframe{width:100%;height:100%;border:none}
+#uioBackBtn{position:fixed;top:16px;left:16px;z-index:9001;padding:10px 20px;border-radius:10px;border:2px solid rgba(255,255,255,.25);background:rgba(18,27,40,.85);backdrop-filter:blur(8px);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+#uioBackBtn:hover{background:rgba(99,102,241,.3);border-color:#6366f1}
 </style>
 </head>
 <body>
@@ -5028,6 +5057,12 @@ body.rp-collapsed .chat-box-fixed{right:0}
   </video>
   <div id="introProgress"></div>
   <button id="introSkip" onclick="(function(b){var o=document.getElementById('introOverlay');if(!o)return;var v=document.getElementById('introVideo');if(v)v.pause();o.classList.add('fade-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o);},700);})(this)">건너뛰기 ▶</button>
+</div>
+
+<!-- UIO 2D 픽셀 컨테이너 -->
+<div id="uioContainer">
+  <iframe id="uioFrame" src="about:blank"></iframe>
+  <button id="uioBackBtn" onclick="toggleUioMode()">← 접기</button>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -5065,6 +5100,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
+      <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
       <span id="status" class="status off">⚪ 환경 미선택</span>
     </div>
   </div>
@@ -8070,6 +8106,55 @@ updateRpRunBtn();
   // ESC 키
   document.addEventListener('keydown', function(e){ if(e.key==='Escape') dismiss(); });
 })();
+
+// ==================== UIO 2D 픽셀 오피스 ====================
+var uioCollapsed = false;
+
+function toggleUioMode(){
+  var btn = document.getElementById('uioBackBtn');
+  if(!uioCollapsed){
+    // 접기: UIO 숨기고 메인 UI 복원 (iframe 유지)
+    document.getElementById('uioContainer').style.display='none';
+    document.getElementById('sidebar').style.display='';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='';
+    btn.textContent='🎮 UIO 펼치기';
+    btn.style.position='fixed';
+    btn.style.display='block';
+    uioCollapsed = true;
+  } else {
+    // 펼치기: UIO 다시 전체화면
+    document.getElementById('uioContainer').style.display='block';
+    document.getElementById('sidebar').style.display='none';
+    var mainEl = document.querySelector('.main');
+    if(mainEl) mainEl.style.display='none';
+    var chatBox = document.querySelector('.chat-box-fixed');
+    if(chatBox) chatBox.style.display='none';
+    var sideToggle = document.querySelector('.sidebar-toggle');
+    if(sideToggle) sideToggle.style.display='none';
+    btn.textContent='← 접기';
+    uioCollapsed = false;
+  }
+}
+
+function exitUioMode(){
+  document.getElementById('uioContainer').style.display='none';
+  document.getElementById('uioFrame').src='about:blank';
+  document.getElementById('uioBackBtn').style.display='';
+  uioCollapsed = false;
+  // 기본 UI 복원
+  document.getElementById('sidebar').style.display='';
+  var mainEl = document.querySelector('.main');
+  if(mainEl) mainEl.style.display='';
+  var chatBox = document.querySelector('.chat-box-fixed');
+  if(chatBox) chatBox.style.display='';
+  var sideToggle = document.querySelector('.sidebar-toggle');
+  if(sideToggle) sideToggle.style.display='';
+}
 
 // ==================== PPT 코드 감지 & 생성 ====================
 function detectAndAddPptxButtons(msgEl, rawText){
