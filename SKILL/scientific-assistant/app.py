@@ -308,15 +308,21 @@ def extract_lpql_from_response(text):
     # ```lpql 블록 우선
     m = re.search(r"```(?:lpql|LPQL)\s*\n(.*?)```", text, re.DOTALL)
     if m:
-        return m.group(1).strip()
+        return _clean_lpql(m.group(1).strip())
     # 일반 ``` 블록 (LPQL 키워드가 내용에 있으면)
     m = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
     if m:
         candidate = m.group(1).strip()
         lpql_indicators = ["table ", "fulltext ", "stream ", "| fields", "| search", "| sort", "| limit", "| eval", "| stats"]
         if any(ind in candidate.lower() for ind in lpql_indicators):
-            return candidate
+            return _clean_lpql(candidate)
     return None
+
+
+def _clean_lpql(lpql):
+    """LPQL에서 주석(#)과 빈 줄 제거"""
+    lines = [line for line in lpql.split('\n') if line.strip() and not line.strip().startswith('#')]
+    return ' '.join(lines).strip() if lines else lpql
 
 
 # ============================================
