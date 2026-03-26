@@ -194,6 +194,15 @@ def query_logpresso(query, timeout=180):
         return None, error_info
 
 
+def _fallback_lpql_from_query(user_query):
+    """LLM 실패 시 사용자 쿼리에서 테이블명을 감지하여 기본 LPQL 생성"""
+    q = user_query.upper()
+    for tname in LOGPRESSO_TABLES:
+        if tname.upper() in q:
+            return f"table duration=1h {tname} | limit 5"
+    return None
+
+
 # 보안: 읽기 전용 명령만 허용
 _LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
 
@@ -2363,8 +2372,10 @@ def _llm_generate_lpql(user_query, history=None):
 9. fulltext 안에서 필드 조건 직접 사용 가능: `(LEVEL=="ERROR" or LEVEL=="WARN") and (CARRIER=="xxx")`
 10. limit에 오프셋 지정 가능: `limit 0 1000` (0번째부터 1000건)
 11. 행 순번: `eval No = seq() + 0`
+12. **사용자가 테이블명을 직접 지정하면 그 이름을 그대로 사용하세요.** 아래 목록에 없는 테이블이라도 사용자가 명시한 테이블명은 변경하지 마세요.
+13. **`| fields`는 사용자가 특정 필드를 요청한 경우에만 사용하세요.** 컬럼 정보를 모르는 테이블에 필드를 임의로 추가하지 마세요. 필드 지정 없이 `table ... TABLE_NAME | limit 5`로 전체 컬럼을 조회하면 됩니다.
 
-## 사용 가능한 테이블
+## 참고 테이블 (이 외에도 사용자가 지정한 테이블명을 그대로 사용 가능)
 {table_info}
 
 ## LPQL 문법 참고
@@ -2376,35 +2387,54 @@ def _llm_generate_lpql(user_query, history=None):
         messages.extend(history[-4:])
     messages.append({"role": "user", "content": user_query})
 
-    # LLM 호출 (dev 환경 = GLM-4.7 사용)
-    env = ENV_CONFIG.get("dev", {})
-    if not env:
-        env = list(ENV_CONFIG.values())[0]
+    # LLM 호출 — AUTO 폴백: 좋은 모델 → 안 좋은 모델 순서로 시도
+    # LPQL 쿼리 생성(코드/텍스트) 성능 기준 내림차순
+    _LPQL_MODEL_CHAIN = [
+        "qwen3.5-397b", "qwen3-vl-235b", "gpt-oss-120b",
+        "qwen2.5-vl-72b", "qwen3-vl-30b", "glm-4.7",
+    ]
 
     headers = {"Content-Type": "application/json"}
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
 
-    try:
-        resp = req.post(
-            env["url"],
-            headers=headers,
-            json={
-                "model": env["model"],
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2048,
-                "stream": False,
-            },
-            timeout=60,
-            verify=False,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[Logpresso LLM] 오류: {e}")
+    for model_key in _LPQL_MODEL_CHAIN:
+        reg = MODEL_REGISTRY.get(model_key)
+        if not reg:
+            continue
+        try:
+            resp = req.post(
+                reg["url"],
+                headers=headers,
+                json={
+                    "model": reg["model"],
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 2048,
+                    "stream": False,
+                },
+                timeout=60,
+                verify=False,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"]["content"]
+                if content:
+                    print(f"[Logpresso LLM] 성공: {reg['model']}")
+                    return content
+        except req.exceptions.HTTPError as e:
+            code = e.response.status_code if e.response is not None else 0
+            print(f"[Logpresso LLM] HTTP {code} 오류 → 다음 모델 시도 | model={reg['model']}")
+            continue
+        except req.exceptions.Timeout:
+            print(f"[Logpresso LLM] 타임아웃 → 다음 모델 시도 | model={reg['model']}")
+            continue
+        except Exception as e:
+            print(f"[Logpresso LLM] 오류 → 다음 모델 시도 | model={reg['model']} err={e}")
+            continue
+
+    print(f"[Logpresso LLM] 모든 모델 실패 ({len(_LPQL_MODEL_CHAIN)}개 시도)")
     return None
 
 
@@ -2516,7 +2546,20 @@ def api_logpresso_query():
     if mode == "explain":
         llm_response = _llm_generate_lpql(user_query, history)
         if not llm_response:
-            return jsonify({"mode": "explain", "error": "LLM 응답 실패"}), 500
+            fallback = _fallback_lpql_from_query(user_query)
+            if fallback:
+                return jsonify({
+                    "mode": "explain",
+                    "explanation": "⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다.",
+                    "lpql": fallback,
+                    "examples": [{"query": user_query + " 실행해줘", "desc": "이 쿼리를 직접 실행하려면"}],
+                })
+            return jsonify({
+                "mode": "explain",
+                "error": "LLM 연결 실패",
+                "available_tables": list(LOGPRESSO_TABLES.keys()),
+                "hint": "테이블명을 포함하여 다시 시도해주세요.",
+            }), 500
 
         lpql = extract_lpql_from_response(llm_response)
         result = {
@@ -2537,18 +2580,22 @@ def api_logpresso_query():
 
     if not lpql:
         llm_response = _llm_generate_lpql(user_query, history)
-        if not llm_response:
-            return jsonify({"mode": "execute", "error": "LLM에서 LPQL 생성 실패"}), 500
+        if llm_response:
+            llm_explanation = llm_response
+            lpql = extract_lpql_from_response(llm_response)
 
-        llm_explanation = llm_response
-        lpql = extract_lpql_from_response(llm_response)
-
+        # LLM 실패 또는 LPQL 추출 실패 → 테이블명 기반 폴백
         if not lpql:
-            return jsonify({
-                "mode": "execute",
-                "error": "LLM 응답에서 LPQL 쿼리를 추출할 수 없습니다.",
-                "llm_response": llm_response,
-            }), 400
+            lpql = _fallback_lpql_from_query(user_query)
+            if lpql:
+                llm_explanation = f"⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다.\n\n```lpql\n{lpql}\n```"
+            else:
+                return jsonify({
+                    "mode": "execute",
+                    "error": "LLM 연결 실패 및 테이블명을 인식할 수 없습니다.",
+                    "hint": "질문에 테이블명을 포함해주세요. 예: 'ATLAS_RAIL_TRAFFIC 조회해줘'",
+                    "available_tables": list(LOGPRESSO_TABLES.keys()),
+                }), 500
 
     # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
     import re as _re
@@ -3675,22 +3722,20 @@ def api_generate_pptx():
                 return jsonify({"error": "PPT 파일이 생성되지 않았습니다."}), 500
 
         import shutil, datetime
-        
+
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         final_filename = f"presentation_{timestamp}.pptx"
-        
-        # 사용자의 로컬 Downloads 폴더로 직접 복사 (로컬 앱 전용 특권)
-        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-        if not os.path.exists(downloads_dir):
-            downloads_dir = os.path.join(BASE_DIR, 'uploads')
-            
-        os.makedirs(downloads_dir, exist_ok=True)
-        local_dl_path = os.path.join(downloads_dir, final_filename)
-        
-        shutil.copy2(out_path, local_dl_path)
-        
+
+        # uploads 폴더에 저장 후 download_url 반환 → 브라우저가 사용자 PC로 다운로드
+        uploads_dir = os.path.join(BASE_DIR, 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        save_path = os.path.join(uploads_dir, final_filename)
+        shutil.copy2(out_path, save_path)
+
+        file_id = timestamp
         return jsonify({
-            "message": f"'{final_filename}' 파일이 로컬 다운로드 폴더에 안전하게 바로 저장되었습니다!"
+            "download_url": f"/api/download_static/presentation.pptx?id={file_id}",
+            "message": f"'{final_filename}' PPT 생성 완료! 다운로드가 시작됩니다."
         })
 
 @app.route("/api/download_static/presentation.pptx", methods=["GET"])
@@ -3705,6 +3750,39 @@ def api_download_static():
         download_name="presentation.pptx",
         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
+
+
+# ===================== 응답 피드백 =====================
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """사용자 피드백 저장 (좋아요/싫어요 + 코멘트)"""
+    import json as _json
+    data = request.json
+    rating = data.get("rating", "")       # "good" or "bad"
+    comment = data.get("comment", "")
+    message = data.get("message", "")[:500]  # 해당 응답 내용 (앞 500자)
+    user_query = data.get("user_query", "")[:300]
+
+    if rating not in ("good", "bad"):
+        return jsonify({"error": "invalid rating"}), 400
+
+    feedback_dir = os.path.join(BASE_DIR, "feedback")
+    os.makedirs(feedback_dir, exist_ok=True)
+
+    from datetime import datetime
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "rating": rating,
+        "comment": comment.strip(),
+        "user_query": user_query,
+        "message_preview": message,
+    }
+
+    feedback_file = os.path.join(feedback_dir, "feedback.jsonl")
+    with open(feedback_file, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+    return jsonify({"ok": True})
 
 
 # ===================== 응답 중지 =====================
@@ -3833,9 +3911,14 @@ def api_chat():
                 else:  # execute (데이터 확인용 — limit 5로 제한)
                     llm_response = _llm_generate_lpql(_lpq_user_q, _lpq_history)
                     lpql = extract_lpql_from_response(llm_response) if llm_response else None
+                    # LLM 실패 시 테이블명 기반 폴백
                     if not lpql:
-                        _lpq_content = None  # LLM에서 LPQL 추출 실패 → 일반 chat 폴백
-                    else:
+                        lpql = _fallback_lpql_from_query(_lpq_user_q)
+                        if lpql:
+                            llm_response = f"⚠️ LLM 연결 실패로 기본 쿼리를 자동 생성했습니다."
+                        else:
+                            _lpq_content = None  # 테이블명도 못 찾음 → 일반 chat 폴백
+                    if lpql and _lpq_content is None:
                         # 조회 모드: limit을 5로 강제 (데이터 존재 확인 용도)
                         import re as _re
                         _EXEC_LIMIT = 5
@@ -4801,6 +4884,25 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg blockquote{border-left:3px solid #6366f1;margin:4px 0;padding:2px 8px;color:#666;background:#fafaf8;border-radius:0 6px 6px 0}
 .msg-label{font-size:10px;font-weight:600;color:#999;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
 .msg.user .msg-label{color:rgba(255,255,255,.7)}
+.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+.msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
+.msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
+.msg-feedback button.fb-selected-good{background:#e8f5e9;color:#2e7d32;border-color:#81c784}
+.msg-feedback button.fb-selected-bad{background:#fce4ec;color:#c62828;border-color:#ef9a9a}
+/* 피드백 모달 */
+#feedbackModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center}
+#feedbackModal.show{display:flex}
+.fb-modal{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:fbSlideIn .25s ease}
+@keyframes fbSlideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.fb-modal h3{margin:0 0 6px;font-size:18px;color:#333}
+.fb-modal .fb-rating-display{font-size:24px;margin-bottom:12px}
+.fb-modal textarea{width:100%;height:100px;border:1.5px solid #ddd;border-radius:10px;padding:10px 12px;font-size:13px;resize:vertical;font-family:inherit;transition:border-color .2s}
+.fb-modal textarea:focus{outline:none;border-color:#6366f1}
+.fb-modal .fb-hint{font-size:11px;color:#999;margin-top:4px}
+.fb-modal .fb-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+.fb-modal .fb-btn{padding:8px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.fb-modal .fb-btn-cancel{background:#f0f0f0;color:#666}.fb-modal .fb-btn-cancel:hover{background:#e0e0e0}
+.fb-modal .fb-btn-submit{background:#6366f1;color:#fff}.fb-modal .fb-btn-submit:hover{background:#4f46e5}
 .msg .skill-info{font-size:10px;color:#6366f1;margin-top:4px}
 .typing{display:inline-flex;gap:4px;padding:8px 14px}
 .typing span{width:8px;height:8px;border-radius:50%;background:#ccc;animation:blink 1.4s infinite both}
@@ -5050,6 +5152,20 @@ body.rp-collapsed .chat-box-fixed{right:0}
 </style>
 </head>
 <body>
+<!-- 피드백 모달 -->
+<div id="feedbackModal">
+  <div class="fb-modal">
+    <h3 id="fbModalTitle">피드백</h3>
+    <div class="fb-rating-display" id="fbRatingDisplay"></div>
+    <textarea id="fbComment" placeholder="어떤 점이 좋았나요? 또는 어떤 점을 개선하면 좋을까요? (선택사항)"></textarea>
+    <div class="fb-hint">피드백은 서비스 개선에 활용됩니다</div>
+    <div class="fb-actions">
+      <button class="fb-btn fb-btn-cancel" onclick="closeFeedbackModal()">취소</button>
+      <button class="fb-btn fb-btn-submit" onclick="submitFeedback()">보내기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 인트로 비디오 오버레이 -->
 <div id="introOverlay">
   <video id="introVideo" autoplay muted playsinline>
@@ -5856,7 +5972,12 @@ async function send(){
         _lpqHandled = true;
 
         if(_ld.error){
-          addMsg('assistant','❌ Logpresso 조회 실패: ' + _ld.error + (_ld.hint ? '\n💡 ' + _ld.hint : ''));
+          let errMsg = '❌ Logpresso 조회 실패: ' + _ld.error;
+          if(_ld.lpql) errMsg += '\n\n**생성된 쿼리:**\n```lpql\n' + _ld.lpql + '\n```';
+          if(_ld.hint) errMsg += '\n\n💡 ' + _ld.hint;
+          if(_ld.available_tables) errMsg += '\n\n📋 사용 가능한 테이블: ' + _ld.available_tables.map(t=>'`'+t+'`').join(', ');
+          addMsg('assistant', errMsg);
+          history.push({role:'assistant',content:errMsg});
         } else if(_ld.mode === 'table_list'){
           let msg = '📋 **등록된 Logpresso 테이블 (' + _ld.total + '개)**\n\n';
           msg += '| 테이블명 | 설명 | 컬럼 수 |\n|---|---|---|\n';
@@ -6145,6 +6266,13 @@ function addMsg(role,text,rawForDetect){
   d.className='msg '+role;
   let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
   d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
+  // 피드백 버튼 (assistant 응답에만)
+  if(role==='assistant'){
+    const fbDiv=document.createElement('div');
+    fbDiv.className='msg-feedback';
+    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    d.appendChild(fbDiv);
+  }
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
     const btn=document.createElement('button');
@@ -8272,6 +8400,69 @@ function _remakePpt(text){
   // 자동 전송
   setTimeout(()=>send(), 100);
 }
+
+// ==================== 응답 피드백 (👍/👎 + 코멘트 모달) ====================
+var _fbCurrentRating = '';
+var _fbCurrentBtn = null;
+
+function openFeedback(btn, rating){
+  _fbCurrentRating = rating;
+  _fbCurrentBtn = btn;
+  var modal = document.getElementById('feedbackModal');
+  var title = document.getElementById('fbModalTitle');
+  var display = document.getElementById('fbRatingDisplay');
+  var ta = document.getElementById('fbComment');
+  if(rating === 'good'){
+    title.textContent = '어떤 점이 좋았나요?';
+    display.textContent = '👍 좋아요';
+    ta.placeholder = '좋았던 점을 알려주세요 (선택사항)';
+  } else {
+    title.textContent = '어떤 점이 아쉬웠나요?';
+    display.textContent = '👎 별로예요';
+    ta.placeholder = '개선할 점을 알려주세요 (선택사항)';
+  }
+  ta.value = '';
+  modal.classList.add('show');
+  setTimeout(function(){ ta.focus(); }, 100);
+}
+
+function closeFeedbackModal(){
+  document.getElementById('feedbackModal').classList.remove('show');
+  _fbCurrentRating = '';
+  _fbCurrentBtn = null;
+}
+
+async function submitFeedback(){
+  var comment = document.getElementById('fbComment').value;
+  var msgEl = _fbCurrentBtn ? _fbCurrentBtn.closest('.msg') : null;
+  var msgText = msgEl ? (msgEl.textContent || '').slice(0, 500) : '';
+  var userQuery = '';
+  if(msgEl){
+    var prev = msgEl.previousElementSibling;
+    while(prev){
+      if(prev.classList.contains('user')){ userQuery = (prev.textContent || '').slice(0, 300); break; }
+      prev = prev.previousElementSibling;
+    }
+  }
+  try{
+    await fetch('/api/feedback', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rating: _fbCurrentRating, comment: comment, message: msgText, user_query: userQuery })
+    });
+  }catch(e){}
+  if(_fbCurrentBtn){
+    var fbDiv = _fbCurrentBtn.parentElement;
+    fbDiv.querySelectorAll('button').forEach(function(b){ b.classList.remove('fb-selected-good','fb-selected-bad'); });
+    _fbCurrentBtn.classList.add(_fbCurrentRating === 'good' ? 'fb-selected-good' : 'fb-selected-bad');
+  }
+  closeFeedbackModal();
+}
+
+document.addEventListener('click', function(e){
+  var modal = document.getElementById('feedbackModal');
+  if(e.target === modal) closeFeedbackModal();
+});
 </script>
 </body>
 </html>
