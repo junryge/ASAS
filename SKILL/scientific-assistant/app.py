@@ -326,12 +326,21 @@ def _clean_lpql(lpql):
     lines = [line for line in lpql.split('\n') if line.strip() and not line.strip().startswith('#')]
     cleaned = ' '.join(lines).strip() if lines else lpql
 
-    # table from=/to= → table duration=Nd 자동 변환
-    # table 명령은 from=/to=를 지원 안 함, duration=만 지원
+    # table/fulltext from=/to= → table duration=Nd 자동 변환
+    # table은 from=/to= 미지원, fulltext는 조건 없이 사용 불가
+    # 패턴1: table from=... to=... TABLE
     m = re.match(
         r'^table\s+from\s*=\s*(\d{14})\s+to\s*=\s*(\d{14})\s+(\S+)(.*)',
         cleaned, re.IGNORECASE
     )
+    # 패턴2: fulltext from=... to=... from TABLE (조건 없는 fulltext)
+    if not m:
+        m2 = re.match(
+            r'^fulltext\s+from\s*=\s*(\d{14})\s+to\s*=\s*(\d{14})\s+from\s+(\S+)(.*)',
+            cleaned, re.IGNORECASE
+        )
+        if m2:
+            m = m2
     if m:
         try:
             from_dt = _dt.strptime(m.group(1), "%Y%m%d%H%M%S")
@@ -340,7 +349,7 @@ def _clean_lpql(lpql):
             table_name = m.group(3)
             rest = m.group(4)
             cleaned = f"table duration={days}d {table_name}{rest}"
-            print(f"[LPQL] table from/to → duration={days}d 변환: {cleaned[:150]}")
+            print(f"[LPQL] from/to → duration={days}d 변환: {cleaned[:150]}")
         except Exception:
             pass
 
