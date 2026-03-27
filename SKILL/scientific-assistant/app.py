@@ -34,6 +34,8 @@ import urllib.parse
 import warnings
 import requests as req
 from flask import Flask, request, jsonify, render_template_string, send_file
+from logpresso_client import query_logpresso  # 로그프레소 조회 (별도 모듈)
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 제한
@@ -102,6 +104,30 @@ LOGPRESSO_TABLES = {
     },
 }
 
+
+def _refresh_logpresso_tables():
+    """서버 시작 시 system tables 조회하여 LOGPRESSO_TABLES 자동 업데이트"""
+    try:
+        df, err = query_logpresso("system tables", timeout=15)
+        if df is None or len(df) == 0:
+            print(f"[Logpresso] ⚠️ 테이블 목록 조회 실패 → 하드코딩 {len(LOGPRESSO_TABLES)}개 사용")
+            return
+
+        added = 0
+        for _, row in df.iterrows():
+            tname = str(row.get("table", row.get("name", ""))).strip()
+            if not tname or tname in LOGPRESSO_TABLES:
+                continue
+            LOGPRESSO_TABLES[tname] = {
+                "desc": str(row.get("description", row.get("desc", tname))).strip(),
+                "columns": [],  # 컬럼은 실제 조회 시 확인
+            }
+            added += 1
+
+        print(f"[Logpresso] ✅ 테이블 목록 업데이트: 기존 8개 + 서버 {added}개 추가 → 총 {len(LOGPRESSO_TABLES)}개")
+    except Exception as e:
+        print(f"[Logpresso] ⚠️ 테이블 자동 업데이트 실패: {e} → 하드코딩 {len(LOGPRESSO_TABLES)}개 사용")
+
 # 쿼리 결과 캐시 {query_id: {"df": DataFrame, "ts": timestamp, "lpql": str}}
 _logpresso_cache = {}
 
@@ -141,51 +167,7 @@ def classify_logpresso_intent(query):
     return "explain"
 
 
-def query_logpresso(query, timeout=180):
-    """로그프레소 LPQL 쿼리 실행 -> (DataFrame, None) 또는 (None, 에러상세)"""
-    import pandas as pd
-    from io import StringIO
-
-    query_clean = " ".join(query.split())
-    encoded = urllib.parse.quote(query_clean, safe="")
-    url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv?_apikey={LOGPRESSO_API_KEY}&_q={encoded}"
-
-    warnings.filterwarnings("ignore")
-    try:
-        resp = req.get(url, verify=False, timeout=timeout)
-        if resp.status_code == 200 and resp.text.strip() and not resp.text.startswith("<!"):
-            df = pd.read_csv(StringIO(resp.text))
-            return df, None
-        else:
-            detail = f"HTTP {resp.status_code}"
-            body_preview = resp.text[:500].strip() if resp.text else "(빈 응답)"
-            if resp.text.startswith("<!"):
-                detail += " (HTML 에러 페이지 반환)"
-            elif not resp.text.strip():
-                detail += " (빈 응답)"
-            error_info = {
-                "reason": detail,
-                "response_preview": body_preview,
-                "query_sent": query_clean,
-            }
-            print(f"[Logpresso] 쿼리 실패: {detail} | 쿼리: {query_clean[:200]}")
-            return None, error_info
-    except req.exceptions.ConnectTimeout:
-        error_info = {"reason": "연결 타임아웃 (서버 응답 없음)", "query_sent": query_clean}
-        print(f"[Logpresso] 연결 타임아웃: {query_clean[:200]}")
-        return None, error_info
-    except req.exceptions.ReadTimeout:
-        error_info = {"reason": f"읽기 타임아웃 ({timeout}초 초과)", "query_sent": query_clean}
-        print(f"[Logpresso] 읽기 타임아웃: {query_clean[:200]}")
-        return None, error_info
-    except req.exceptions.ConnectionError as e:
-        error_info = {"reason": f"서버 연결 실패 ({e})", "query_sent": query_clean}
-        print(f"[Logpresso] 연결 실패: {e}")
-        return None, error_info
-    except Exception as e:
-        error_info = {"reason": f"예외 발생: {type(e).__name__}: {e}", "query_sent": query_clean}
-        print(f"[Logpresso] 쿼리 예외: {e}")
-        return None, error_info
+## query_logpresso → logpresso_client.py로 이동 (import 참조)
 
 
 _LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
@@ -204,14 +186,29 @@ def extract_lpql_from_response(text):
     """LLM 응답에서 ```lpql ... ``` 또는 ``` ... ``` 코드블록 추출"""
     m = re.search(r"```(?:lpql|LPQL)\s*\n(.*?)```", text, re.DOTALL)
     if m:
-        return m.group(1).strip()
+        return _clean_lpql(m.group(1).strip())
     m = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
     if m:
         candidate = m.group(1).strip()
         lpql_indicators = ["table ", "fulltext ", "stream ", "| fields", "| search", "| sort", "| limit", "| eval", "| stats"]
         if any(ind in candidate.lower() for ind in lpql_indicators):
-            return candidate
+            return _clean_lpql(candidate)
     return None
+
+
+def _clean_lpql(lpql):
+    """LPQL에서 주석(-- 또는 #) 제거 → 로그프레소 서버 500 에러 방지"""
+    lines = lpql.split("\n")
+    cleaned = []
+    for line in lines:
+        # -- 주석 제거
+        line = re.sub(r'\s*--.*$', '', line)
+        # # 주석 제거 (단, 문자열 안의 # 은 보존)
+        line = re.sub(r'\s*#(?!["\']).*$', '', line)
+        line = line.strip()
+        if line:
+            cleaned.append(line)
+    return " ".join(cleaned)
 
 
 # ============================================
@@ -226,13 +223,13 @@ os.makedirs(PROMPTS_DIR, exist_ok=True)
 # 멀티에이전트 모델 레지스트리 (capability 태그 기반 자동 라우팅)
 MODEL_REGISTRY = {
     "glm-4.7": {
-        "env_id": "dev",
+        "env_id": "dev-legacy",
         "model": "GLM-4.7",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "4.7",
+        "name": "GLM-4.7",
         "capabilities": {"text", "code", "fast"},
         "context_window": 128000,
-        "priority": 3,
+        "priority": 4,
         "cost_tier": "low",
     },
     "qwen3.5-397b": {
@@ -325,6 +322,16 @@ MODEL_REGISTRY = {
         "priority": 1,
         "cost_tier": "medium",
     },
+    "glm-5": {
+        "env_id": "dev",
+        "model": "GLM-5",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "GLM-5",
+        "capabilities": {"text", "code", "analysis", "fast"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "medium",
+    },
     "glm-4.7-fp8": {
         "env_id": "dev-fp8",
         "model": "GLM-4.7-FP8",
@@ -368,22 +375,24 @@ ENV_CONFIG = {
 # env_id → registry key 역매핑
 ENV_TO_REGISTRY = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
 
-# 폴백 체인: 모델 실패 시 순서대로 시도 (좋은 모델 우선)
+# 폴백 체인: 모델 실패 시 성능 높은 순서대로 시도
+# 성능 순서: 397B > Coder-480B > 235B > GLM-5 > 120B > Coder-Next > GLM-4.7/FP8 > 397B-FP8 > 35B
 FALLBACK_CHAINS = {
-    # ── 텍스트/코드 모델 ──
-    "qwen3.5-397b":      ["qwen3-coder-480b", "qwen3-235b-2507", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "glm-4.7-fp8", "qwen3.5-397b-fp8", "qwen3.5-35b"],
-    "qwen3-coder-480b":  ["qwen3.5-397b", "qwen3-235b-2507", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "qwen3-235b-2507":   ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "qwen3-coder-next":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "gpt-oss-120b":      ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-4.7", "glm-4.7-fp8", "qwen3.5-35b"],
-    "glm-4.7":           ["gpt-oss-120b", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-4.7-fp8", "qwen3.5-35b"],
-    "glm-4.7-fp8":       ["glm-4.7", "gpt-oss-120b", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "qwen3.5-35b"],
-    "qwen3.5-397b-fp8":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "qwen3.5-35b":       ["gpt-oss-120b", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507"],
-    # ── Vision 모델 (Vision → Vision → 텍스트) ──
-    "qwen3-vl-235b":     ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3.5-397b", "qwen3-coder-480b", "gpt-oss-120b"],
-    "qwen2.5-vl-72b":    ["qwen3-vl-235b", "qwen3-vl-30b", "qwen3.5-397b", "gpt-oss-120b", "glm-4.7"],
-    "qwen3-vl-30b":      ["qwen2.5-vl-72b", "qwen3-vl-235b", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    # ── 텍스트/코드 모델 (성능 내림차순) ──
+    "qwen3.5-397b":      ["qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "glm-4.7-fp8", "qwen3.5-397b-fp8", "qwen3.5-35b"],
+    "qwen3-coder-480b":  ["qwen3.5-397b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-35b"],
+    "qwen3-235b-2507":   ["qwen3.5-397b", "qwen3-coder-480b", "glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-35b"],
+    "glm-5":             ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-35b"],
+    "gpt-oss-120b":      ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "qwen3-coder-next", "glm-4.7", "glm-4.7-fp8", "qwen3.5-35b"],
+    "qwen3-coder-next":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "glm-4.7":           ["glm-5", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7-fp8", "qwen3.5-35b"],
+    "glm-4.7-fp8":       ["glm-5", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "qwen3.5-35b"],
+    "qwen3.5-397b-fp8":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "qwen3.5-35b":       ["glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507"],
+    # ── Vision 모델 (Vision 우선 → 텍스트 폴백, 성능 내림차순) ──
+    "qwen3-vl-235b":     ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3.5-397b", "qwen3-coder-480b", "glm-5", "gpt-oss-120b"],
+    "qwen2.5-vl-72b":    ["qwen3-vl-235b", "qwen3-vl-30b", "qwen3.5-397b", "glm-5", "gpt-oss-120b"],
+    "qwen3-vl-30b":      ["qwen2.5-vl-72b", "qwen3-vl-235b", "glm-5", "gpt-oss-120b", "qwen3.5-35b"],
 }
 
 # Reranker 기능 플래그 (bge-reranker 엔드포인트 안정화 후 활성화)
@@ -977,6 +986,9 @@ def scan_skills():
 
 
 # ============================================
+# 수동 전용 스킬 (자동 추천에서 제외, 사용자가 직접 선택해야 함)
+MANUAL_ONLY_SKILLS = {"knowledge-search"}
+
 # 오토 스킬 라우터 (키워드 매칭)
 # ============================================
 SKILL_KEYWORDS = {
@@ -1085,8 +1097,8 @@ SKILL_KEYWORDS = {
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
     "logpresso-query": ["로그프레소 쿼리","로그프레소쿼리","LPQL 쿼리","LPQL 만들","로그프레소 쿼리 만들","logpresso query","로그프레소"],
-    "logpresso-search": ["로그프레소 조회","로그프레소조회","로그프레소 검색","logpresso search","로그프레소"],
-    "knowledge-search": ["컬럼 정보","컬럼정보","FAB 컬럼","도메인 지식","아키텍처","허브룸","HID","프로젝트 아키텍처","접속정보","예측모델","통신 방식","knowledge","지식 검색","FAB_M","FAB_C","FAB_IC"],
+    "logpresso-search": ["로그프레소 조회","로그프레소조회","로그프레소 검색","logpresso search","로그프레소","테이블 조회","테이블 검색","테이블 데이터","로그 조회","로그 검색","설비 로그","ts_data_view","fulltext","LPQL","lpql"],
+    # knowledge-search: MANUAL_ONLY_SKILLS로 이동 (자동 추천 제외, 수동 선택 전용)
     "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
     "agent-debugger": ["디버그","traceback","스택트레이스","에러추적"],
@@ -1428,7 +1440,7 @@ def auto_select_skills(query, max_skills=5):
     """사용자 질문을 분석하여 관련 스킬을 자동 선택"""
     scores = _score_query(query.lower())
     sorted_skills = sorted(scores.items(), key=lambda x: -x[1])
-    return [(sid, sc) for sid, sc in sorted_skills[:max_skills]]
+    return [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sid not in MANUAL_ONLY_SKILLS]
 
 
 def context_aware_skill_select(query, history, max_skills=7):
@@ -1535,9 +1547,9 @@ def context_aware_skill_select(query, history, max_skills=7):
             reranked = rerank_skills(query, top_candidates, top_k=max_skills)
             result = reranked
         except Exception:
-            result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
+            result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0 and sid not in MANUAL_ONLY_SKILLS]
     else:
-        result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0]
+        result = [(sid, sc) for sid, sc in sorted_skills[:max_skills] if sc > 0 and sid not in MANUAL_ONLY_SKILLS]
 
     return result, list(boosted)
 
@@ -1614,6 +1626,154 @@ def build_orchestration_prompt(query, skill_ids, loaded_skills_content):
 4. 각 SKILL에서 가져온 핵심 기법/코드를 명시하되, 자연스럽게 녹여내기
 """
     return orchestration
+
+
+# ===================== 병렬 멀티에이전트 오케스트레이션 =====================
+
+# 관련 스킬끼리 같은 그룹으로 묶는 정의
+SKILL_GROUPS = {
+    "data": {"exploratory-data-analysis", "statistical-analysis", "matplotlib", "seaborn-bindaas"},
+    "code": {"agent-python-pro", "debugging", "code-review", "agent-debugger", "agent-code-reviewer"},
+    "logpresso": {"logpresso-query", "logpresso-search"},
+    "domain": {"knowledge-search"},
+    "document": {"pptx", "docx", "pdf", "markdown-mermaid-writing"},
+    "diagram": {"drawio-diagram"},
+    "web": {"web-artifacts-builder", "agent-nextjs-developer"},
+    "llm": {"agent-llm-architect", "agent-prompt-engineer", "agent-ai-engineer"},
+    "security": {"agent-security-engineer", "agent-compliance-auditor"},
+}
+
+
+def group_skills_for_parallel(skill_ids, max_groups=4):
+    """스킬을 독립 그룹으로 분류. 관련 스킬은 같은 그룹, max_groups 초과 시 병합."""
+    if len(skill_ids) <= 1:
+        return [{"name": "single", "skills": list(skill_ids)}] if skill_ids else []
+
+    groups = []
+    assigned = set()
+
+    # 미리 정의된 그룹에 배정
+    for gname, gskills in SKILL_GROUPS.items():
+        matched = [s for s in skill_ids if s in gskills and s not in assigned]
+        if matched:
+            groups.append({"name": gname, "skills": matched})
+            assigned.update(matched)
+
+    # 미배정 스킬 → 개별 그룹
+    for s in skill_ids:
+        if s not in assigned:
+            groups.append({"name": s, "skills": [s]})
+
+    # 그룹이 1개면 병렬 불필요
+    if len(groups) <= 1:
+        return groups
+
+    # 그룹 수 초과 시 작은 것부터 병합
+    groups.sort(key=lambda g: len(g["skills"]))
+    while len(groups) > max_groups:
+        smallest = groups.pop(0)
+        groups[0]["skills"].extend(smallest["skills"])
+        groups[0]["name"] += "+" + smallest["name"]
+
+    return groups
+
+
+def _agent_call_api(agent_id, skills, base_prompt, messages,
+                    api_url, model, headers, max_tokens, temperature):
+    """API 에이전트: 스킬별 시스템 프롬프트 → LLM API 호출"""
+    prompt = base_prompt + f"\n\n[에이전트 {agent_id}] 당신은 아래 스킬 전문가입니다. 해당 스킬 지식만 활용하여 답변하세요.\n\n"
+    for sid in skills:
+        content = load_skill_content(sid)
+        if content:
+            prompt += f"=== SKILL: {sid} ===\n{content}\n\n"
+
+    api_msgs = [{"role": "system", "content": prompt}] + messages
+    try:
+        resp = req.post(api_url, headers=headers, json={
+            "model": model, "messages": api_msgs,
+            "temperature": temperature, "max_tokens": max_tokens, "stream": False,
+        }, timeout=120, verify=False)
+        resp.raise_for_status()
+        result = resp.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            content = result["choices"][0].get("message", {}).get("content")
+            if content and content.strip():
+                return {"agent": agent_id, "skills": skills, "content": content, "error": None}
+            return {"agent": agent_id, "skills": skills, "content": "", "error": "빈 응답"}
+    except Exception as e:
+        return {"agent": agent_id, "skills": skills, "content": "", "error": str(e)[:200]}
+    return {"agent": agent_id, "skills": skills, "content": "", "error": "응답 없음"}
+
+
+def _agent_call_gguf(agent_id, skills, base_prompt, messages,
+                     max_tokens, temperature, stop_flag):
+    """GGUF 에이전트: 스킬별 시스템 프롬프트 → gguf_chat() 호출"""
+    prompt = base_prompt + f"\n\n[에이전트 {agent_id}] 당신은 아래 스킬 전문가입니다.\n\n"
+    for sid in skills:
+        content = load_skill_content(sid)
+        if content:
+            prompt += f"=== SKILL: {sid} ===\n{content[:3000]}\n\n"  # GGUF 토큰 한도
+    api_msgs = [{"role": "system", "content": prompt}] + messages
+    try:
+        answer, err = gguf_chat(api_msgs, temperature=temperature,
+                                max_tokens=max_tokens, stop_flag=stop_flag)
+        if err:
+            return {"agent": agent_id, "skills": skills, "content": "", "error": err}
+        return {"agent": agent_id, "skills": skills, "content": answer or "", "error": None}
+    except Exception as e:
+        return {"agent": agent_id, "skills": skills, "content": "", "error": str(e)[:200]}
+
+
+def _synthesize_responses_api(responses, query, api_url, model, headers, max_tokens):
+    """API 합성: 여러 에이전트 응답을 통합"""
+    MAX_SYNTH_INPUT = 12000
+    valid = [r for r in responses if r["content"]]
+    if not valid:
+        return ""
+    per_limit = MAX_SYNTH_INPUT // len(valid)
+
+    prompt = "당신은 멀티에이전트 합성 전문가입니다.\n"
+    prompt += "아래에 여러 전문 에이전트의 독립 분석 결과가 있습니다.\n"
+    prompt += "이들을 하나의 통합된 자연스러운 답변으로 합성하세요.\n"
+    prompt += "각 에이전트의 핵심 내용을 빠짐없이 포함하되 중복은 제거하세요.\n\n"
+    for r in valid:
+        prompt += f"--- [{', '.join(r['skills'])}] 에이전트 ---\n{r['content'][:per_limit]}\n\n"
+
+    try:
+        resp = req.post(api_url, headers=headers, json={
+            "model": model,
+            "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": query}],
+            "temperature": 0.3, "max_tokens": max_tokens, "stream": False,
+        }, timeout=120, verify=False)
+        resp.raise_for_status()
+        result = resp.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0].get("message", {}).get("content", "")
+    except Exception as e:
+        print(f"[Parallel] 합성 실패: {e}")
+    # 합성 실패 시 단순 연결
+    return "\n\n---\n\n".join(r["content"][:per_limit] for r in valid)
+
+
+def _synthesize_responses_gguf(responses, query, max_tokens, stop_flag):
+    """GGUF 합성: gguf_chat()으로 통합"""
+    valid = [r for r in responses if r["content"]]
+    if not valid:
+        return ""
+    per_limit = 6000 // len(valid)
+
+    prompt = "여러 전문 에이전트의 분석 결과를 하나의 통합 답변으로 합성하세요.\n\n"
+    for r in valid:
+        prompt += f"--- [{', '.join(r['skills'])}] ---\n{r['content'][:per_limit]}\n\n"
+
+    try:
+        msgs = [{"role": "system", "content": prompt}, {"role": "user", "content": query}]
+        answer, err = gguf_chat(msgs, temperature=0.3, max_tokens=max_tokens, stop_flag=stop_flag)
+        if not err and answer:
+            return answer
+    except Exception as e:
+        print(f"[Parallel GGUF] 합성 실패: {e}")
+    return "\n\n---\n\n".join(r["content"][:per_limit] for r in valid)
 
 
 # ===================== 멀티에이전트 라우터: 작업 분류 & 모델 자동 선택 =====================
@@ -1707,7 +1867,7 @@ def classify_and_route(query, history, uploaded_files_list):
 
     # 6순위: 간단한 Q&A → 빠른 모델
     if len(q) <= SIMPLE_MAX_LEN:
-        return "dev", "간단 Q&A → GLM-4.7 (fast)"
+        return "dev", "간단 Q&A → GLM-5"
 
     # 기본값: 중형 모델
     return "common", "일반 요청 → 120B"
@@ -2067,6 +2227,8 @@ def api_auto_skills():
     available = scan_skills()
     skills = []
     for sid, score in results:
+        if sid in MANUAL_ONLY_SKILLS:
+            continue  # 수동 전용 스킬은 자동 추천에서 제외
         if sid not in available:
             continue  # SKILL.md 없는 스킬은 제외
         desc = SKILL_DESC_KO.get(sid, "")
@@ -2421,8 +2583,8 @@ def _llm_generate_lpql(user_query, history=None):
 사용자의 자연어 요청을 실행 가능한 LPQL 쿼리로 변환하세요.
 
 ## 규칙
-1. 반드시 ```lpql 코드블록 안에 쿼리만 출력하세요.
-2. 쿼리 앞뒤로 간단한 설명을 추가하세요.
+1. 반드시 ```lpql 코드블록 안에 **순수 쿼리만** 출력하세요. **코드블록 안에 주석(--, #, //)을 절대 넣지 마세요.** 로그프레소 서버가 주석을 파싱하지 못해 오류가 발생합니다.
+2. 쿼리의 각 부분(테이블, 조건, 파이프 명령)에 대한 설명은 **코드블록 바깥에** 줄별로 적어주세요.
 3. 오늘 날짜: {today} (시간 형식: yyyyMMddHHmmss)
 4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
 5. **기간은 from/to 형식을 기본으로 사용하세요.** 사용자가 기간을 지정하지 않으면 오늘 하루(from={today}000000 to={today}235959)를 기본값으로 사용하세요. 사용자가 "최근 1시간" 같이 말하면 duration=1h도 가능합니다.
@@ -2432,6 +2594,23 @@ def _llm_generate_lpql(user_query, history=None):
 9. fulltext 안에서 필드 조건 직접 사용 가능: `(LEVEL=="ERROR") and (CARRIER=="xxx")`
 10. limit에 오프셋 지정 가능: `limit 0 1000`
 11. 행 순번: `eval No = seq() + 0`
+
+## 중요: 사용자가 요청한 것만 쿼리에 포함하세요
+- 사용자가 특정 컬럼을 요청하지 않았으면 `| fields`를 넣지 마세요 (전체 컬럼 반환).
+- 사용자가 필터 조건을 요청하지 않았으면 `| search`를 넣지 마세요.
+- 사용자가 정렬을 요청하지 않았으면 `| sort`를 넣지 마세요.
+- 최소한의 쿼리만 생성하세요. 불필요한 파이프 명령을 추가하지 마세요.
+
+## 출력 형식 예시
+아래처럼 쿼리와 설명을 분리하세요:
+
+```lpql
+table from=20260327000000 to=20260327235959 ts_data_view_m14a | limit 5
+```
+
+- `table from=... to=...`: 오늘 하루 기간 지정
+- `ts_data_view_m14a`: M14A 설비 로그 테이블
+- `| limit 5`: 최대 5건 조회
 
 ## 사용 가능한 테이블
 {table_info}
@@ -2445,34 +2624,52 @@ def _llm_generate_lpql(user_query, history=None):
         messages.extend(history[-4:])
     messages.append({"role": "user", "content": user_query})
 
-    env = ENV_CONFIG.get("dev", {})
-    if not env:
-        env = list(ENV_CONFIG.values())[0]
-
     headers = {"Content-Type": "application/json"}
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
 
-    try:
-        resp = req.post(
-            env["url"],
-            headers=headers,
-            json={
-                "model": env["model"],
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2048,
-                "stream": False,
-            },
-            timeout=60,
-            verify=False,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[Logpresso LLM] 오류: {e}")
+    # 기존 FALLBACK_CHAINS 활용: glm-5 → 체인 순서대로 폴백
+    primary_key = "glm-5"
+    chain_keys = [primary_key] + FALLBACK_CHAINS.get(primary_key, [])
+    # vision/reranker 모델 제외 (텍스트 전용만)
+    chain_keys = [k for k in chain_keys if k in MODEL_REGISTRY
+                  and "vision" not in MODEL_REGISTRY[k].get("capabilities", set())
+                  and "rerank" not in MODEL_REGISTRY[k].get("capabilities", set())]
+
+    tried = []
+    for reg_key in chain_keys:
+        reg = MODEL_REGISTRY[reg_key]
+        tried.append(reg["model"])
+        try:
+            resp = req.post(
+                reg["url"],
+                headers=headers,
+                json={
+                    "model": reg["model"],
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 2048,
+                    "stream": False,
+                },
+                timeout=60,
+                verify=False,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0].get("message", {}).get("content")
+                if content and content.strip():
+                    if reg_key != primary_key:
+                        print(f"[Logpresso LLM] 폴백 성공: {reg['model']}")
+                    return content
+                else:
+                    print(f"[Logpresso LLM] {reg['model']} → 빈 응답, 다음 모델 시도...")
+                    continue
+        except Exception as e:
+            print(f"[Logpresso LLM] {reg['model']} 오류: {e} → 다음 모델 시도...")
+            continue
+
+    print(f"[Logpresso LLM] 모든 모델 실패: {', '.join(tried)}")
     return None
 
 
@@ -2707,13 +2904,64 @@ KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
 
 
 def search_knowledge(query, max_results=5, max_content_chars=8000):
-    """knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환"""
+    """knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환
+
+    개선된 검색:
+    - 컬럼명(M14.QUE.OHT.OHTUTIL) → FAB 접두사 자동 추출 → 정확한 파일 매칭
+    - 키워드 빈도수 기반 점수 (TF)
+    - 한글 공백 무시 매칭 (디스크 사용률 → 디스크사용율)
+    - 원본 쿼리 구문 일치 보너스
+    - 한글 유사 문자 정규화 (률/율, 렬/열 등)
+    """
     if not os.path.isdir(KNOWLEDGE_DIR):
         return []
 
     q_lower = query.lower()
-    # 검색 키워드 분리 (공백/쉼표 기준)
-    keywords = [w.strip() for w in re.split(r'[\s,]+', q_lower) if len(w.strip()) >= 2]
+
+    # ── 1단계: 컬럼명 패턴 감지 (FAB.Category.Sub.Metric) ──
+    # 쿼리에서 컬럼명 패턴 추출 → FAB 접두사 + 전체 컬럼명
+    column_pattern = re.findall(r'([A-Za-z0-9]+(?:\.[A-Za-z0-9_]+){2,})', query)
+    fab_prefixes = set()  # FAB 접두사 (M14, M16HUB 등)
+    full_columns = []     # 전체 컬럼명 (검색용)
+    for col in column_pattern:
+        parts = col.split('.')
+        fab = parts[0].upper()
+        fab_prefixes.add(fab)
+        full_columns.append(col.lower())
+
+    # 한글 유사 문자 정규화
+    def normalize_kr(text):
+        pairs = [("률", "율"), ("렬", "열"), ("례", "예"), ("려", "여"),
+                 ("량", "양"), ("론", "논"), ("뇨", "요"), ("니", "이")]
+        for a, b in pairs:
+            text = text.replace(a, b).replace(b, a)
+        return text
+
+    # 키워드 추출 (1자 이상, 불용어 제외)
+    stopwords = {"은", "는", "이", "가", "을", "를", "의", "에", "와", "과", "도", "로", "으로",
+                 "에서", "부터", "까지", "한", "할", "하는", "된", "되는", "있는", "없는",
+                 "the", "a", "an", "is", "are", "in", "on", "at", "to", "for", "of", "and", "or",
+                 "것", "수", "등", "및", "중", "뭐", "좀", "해", "줘", "알려", "보여", "찾아",
+                 "que", "all", "cnv", "oht", "stk", "lft", "pdt", "sfab"}  # LPQL 구조 키워드 제외
+    raw_keywords = [w.strip() for w in re.split(r'[\s,?!·]+', q_lower) if w.strip()]
+    # 점(.)이 포함된 컬럼명은 분리하지 않고, 일반 텍스트만 키워드로
+    keywords = []
+    for w in raw_keywords:
+        if '.' in w and re.match(r'[a-z0-9]+\.[a-z0-9_.]+', w):
+            continue  # 컬럼명은 별도 처리 (full_columns에서)
+        keywords.append(w)
+    keywords = [w for w in keywords if w not in stopwords and len(w) >= 1]
+    # FAB 접두사도 키워드에 추가 (파일명 매칭용)
+    for fab in fab_prefixes:
+        fab_l = fab.lower()
+        if fab_l not in keywords:
+            keywords.append(fab_l)
+
+    # 원본 쿼리에서 공백 제거 버전 (구문 매칭용)
+    query_nospace = re.sub(r'\s+', '', q_lower)
+
+    if not keywords and not full_columns:
+        return []
 
     results = []
     for fname in os.listdir(KNOWLEDGE_DIR):
@@ -2721,11 +2969,8 @@ def search_knowledge(query, max_results=5, max_content_chars=8000):
             continue
         fpath = os.path.join(KNOWLEDGE_DIR, fname)
         fname_lower = fname.lower()
+        fname_nospace = re.sub(r'[_\-\s.]', '', fname_lower)
 
-        # 파일명 매칭 점수
-        name_score = sum(2 for kw in keywords if kw in fname_lower)
-
-        # 내용 매칭 점수
         try:
             with open(fpath, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -2733,18 +2978,68 @@ def search_knowledge(query, max_results=5, max_content_chars=8000):
             continue
 
         content_lower = content.lower()
-        content_score = sum(1 for kw in keywords if kw in content_lower)
+        content_nospace = re.sub(r'\s+', '', content_lower)
 
-        total_score = name_score + content_score
+        total_score = 0
+
+        # ── 컬럼명 직접 매칭 (최우선) ──
+        for col in full_columns:
+            if col in content_lower:
+                total_score += 30  # 컬럼명 정확히 존재 = 최고 점수
+
+        # ── FAB 접두사 → 파일명 매칭 (높은 가중치) ──
+        for fab in fab_prefixes:
+            fab_l = fab.lower()
+            # FAB_M14_컬럼.md → fab_m14_컬럼.md 에서 m14 매칭
+            if fab_l in fname_lower or fab_l in fname_nospace:
+                total_score += 20  # FAB 접두사가 파일명에 있으면 높은 점수
+
+        # 1. 파일명 매칭 (가중치 높음)
+        for kw in keywords:
+            if kw in fname_lower or kw in fname_nospace:
+                total_score += 10
+
+        # 2. 내용 빈도수 기반 점수 (TF)
+        for kw in keywords:
+            count = content_lower.count(kw)
+            if count > 0:
+                total_score += min(count, 10)
+            else:
+                count_nospace = content_nospace.count(kw)
+                if count_nospace > 0:
+                    total_score += min(count_nospace, 5)
+
+        # 3. 원본 쿼리 구문 일치 보너스
+        if len(keywords) >= 2:
+            for i in range(len(keywords) - 1):
+                bigram = keywords[i] + keywords[i + 1]
+                if bigram in content_nospace or bigram in fname_nospace:
+                    total_score += 15
+            if query_nospace in content_nospace or query_nospace in fname_nospace:
+                total_score += 20
+
+        # 4. 한글 유사 문자 매칭 (률↔율 등)
+        for kw in keywords:
+            for a, b in [("률", "율"), ("렬", "열"), ("례", "예")]:
+                alt_kw = kw.replace(a, b) if a in kw else kw.replace(b, a) if b in kw else None
+                if alt_kw and alt_kw != kw and alt_kw in content_lower:
+                    total_score += 3
+
         if total_score > 0:
-            # 매칭된 키워드 주변 미리보기
+            # 매칭된 키워드 주변 미리보기 (최고 점수 부분 우선)
             preview_parts = []
             for kw in keywords:
                 pos = content_lower.find(kw)
+                if pos == -1:
+                    # 공백 무시 매칭 시도
+                    pos_ns = content_nospace.find(kw)
+                    if pos_ns != -1:
+                        # 대략적 원본 위치 추정
+                        pos = min(pos_ns, len(content) - 1)
                 if pos != -1:
-                    start = max(0, pos - 50)
-                    end = min(len(content), pos + len(kw) + 50)
-                    snippet = content[start:end].replace('\n', ' ')
+                    start = max(0, pos - 80)
+                    end = min(len(content), pos + len(kw) + 80)
+                    snippet = content[start:end].replace('\n', ' ').strip()
                     if start > 0:
                         snippet = '...' + snippet
                     if end < len(content):
@@ -4348,9 +4643,13 @@ def api_chat():
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
+    # 수동 선택 또는 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 감지 시 자동 활성화
+    _has_column_pattern = bool(re.search(r'[A-Za-z0-9]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+', last_user_query))
+    if _has_column_pattern and "knowledge-search" not in skill_ids:
+        skill_ids = list(skill_ids) + ["knowledge-search"]
     if "knowledge-search" in skill_ids and last_user_query.strip():
         try:
-            kb_results = search_knowledge(last_user_query, max_results=3, max_content_chars=6000)
+            kb_results = search_knowledge(last_user_query, max_results=5, max_content_chars=6000)
             if kb_results:
                 # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                 kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
@@ -4368,6 +4667,27 @@ def api_chat():
                 _kb_files = [r['filename'] for r in kb_results]
         except Exception as e:
             print(f"[Knowledge Search] 검색 오류: {e}")
+
+    # ── logpresso-search 스킬: 테이블 목록 요청 감지 ──
+    _lpq_table_list_kw = ["테이블 목록", "어떤 테이블", "테이블 뭐", "테이블 리스트", "테이블 종류",
+                          "테이블 있", "테이블 알려", "테이블 보여", "테이블 전부", "테이블 전체"]
+    if "logpresso-search" in skill_ids and any(kw in last_user_query for kw in _lpq_table_list_kw):
+        _content = "**로그프레소 사용 가능한 테이블 목록**\n\n"
+        _content += f"총 **{len(LOGPRESSO_TABLES)}개** 테이블\n\n"
+        _content += "| # | 테이블명 | 설명 | 주요 컬럼 |\n"
+        _content += "|---|----------|------|----------|\n"
+        for idx, (tname, tinfo) in enumerate(sorted(LOGPRESSO_TABLES.items()), 1):
+            cols = ", ".join(tinfo["columns"][:6]) if tinfo["columns"] else "(조회 필요)"
+            if len(tinfo["columns"]) > 6:
+                cols += f" 외 {len(tinfo['columns'])-6}개"
+            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols} |\n"
+        _content += f"\n> 서버 시작 시 자동 업데이트됨. 특정 테이블 조회: `테이블명 조회해줘`"
+        return jsonify({
+            "content": _content,
+            "model_used": "Logpresso Tables",
+            "loaded_skills": ["logpresso-search"],
+            "system_prompt_length": 0,
+        })
 
     # ── logpresso-search 스킬: 실제 서버 조회 실행 ──
     # "쿼리 만들어줘" 등 쿼리 생성 요청이면 서버 실행 안 하고 LLM에게 넘김
@@ -4417,6 +4737,7 @@ def api_chat():
                         "loaded_skills": ["logpresso-search"],
                         "auto_routed": auto_routed,
                         "route_reason": "logpresso-search",
+                        "system_prompt_length": 0,
                     })
 
             # 시간 범위 없으면 오늘 하루 기본 적용
@@ -4440,9 +4761,11 @@ def api_chat():
                     "loaded_skills": ["logpresso-search"],
                     "auto_routed": auto_routed,
                     "route_reason": "logpresso-search-blocked",
+                    "system_prompt_length": 0,
                 })
 
             # 실제 로그프레소 서버에 쿼리 실행
+            print(f"[Logpresso Search] 최종 실행 쿼리: {lpql}")
             df, err_detail = query_logpresso(lpql, timeout=180)
 
             if df is None:
@@ -4470,6 +4793,7 @@ def api_chat():
                     "loaded_skills": ["logpresso-search"],
                     "auto_routed": auto_routed,
                     "route_reason": "logpresso-search-failed",
+                    "system_prompt_length": 0,
                 })
 
             # 성공 → 결과 + 쿼리 표시
@@ -4497,6 +4821,7 @@ def api_chat():
                 "loaded_skills": ["logpresso-search"],
                 "auto_routed": auto_routed,
                 "route_reason": "logpresso-search-ok",
+                "system_prompt_length": 0,
             })
 
         except Exception as e:
@@ -4509,6 +4834,7 @@ def api_chat():
                 "loaded_skills": ["logpresso-search"],
                 "auto_routed": auto_routed,
                 "route_reason": "logpresso-search-exception",
+                "system_prompt_length": 0,
             })
 
     # 시스템 프롬프트 구성
@@ -4812,9 +5138,93 @@ def api_chat():
     if writing_style:
         system_prompt += f"작성 스타일: {writing_style}\n"
 
-    # API 요청 구성
-    api_messages = [{"role": "system", "content": system_prompt}] + messages
+    # ===== 병렬 멀티에이전트 실행 (스킬 2개+ & 다른 그룹일 때) =====
     temperature_map = [0.1, 0.3, 0.5, 0.7]
+    _parallel_max = 4  # API/GGUF 모두 최대 4 에이전트
+    _skill_groups = group_skills_for_parallel(loaded, max_groups=_parallel_max)
+    _use_parallel = len(_skill_groups) >= 2
+
+    if _use_parallel and not is_gguf:
+        # ── API 병렬: ThreadPoolExecutor로 동시 LLM 호출 ──
+        print(f"[Parallel] API 병렬 모드: {len(_skill_groups)}개 에이전트 → {[g['name'] for g in _skill_groups]}")
+        _base_prompt = system_prompt.split("=== SKILL:")[0]  # 스킬 내용 전 기본 프롬프트
+
+        with ThreadPoolExecutor(max_workers=_parallel_max) as executor:
+            futures = {
+                executor.submit(
+                    _agent_call_api, f"Agent-{i+1}", g["skills"],
+                    _base_prompt, messages, api_url, model,
+                    {"Content-Type": "application/json", **({"Authorization": f"Bearer {api_key}"} if api_key else {})},
+                    max_tokens, temperature_map[min(effort, 3)]
+                ): g for i, g in enumerate(_skill_groups)
+            }
+            _agent_results = []
+            for future in as_completed(futures, timeout=180):
+                try:
+                    _agent_results.append(future.result())
+                except Exception as e:
+                    print(f"[Parallel] 에이전트 예외: {e}")
+
+        _valid = [r for r in _agent_results if r.get("content")]
+        _failed = [r for r in _agent_results if r.get("error")]
+        if _failed:
+            print(f"[Parallel] 실패 에이전트: {[f'{r[\"agent\"]}: {r[\"error\"]}' for r in _failed]}")
+
+        if len(_valid) >= 2:
+            _answer = _synthesize_responses_api(_valid, last_user_query, api_url, model,
+                {"Content-Type": "application/json", **({"Authorization": f"Bearer {api_key}"} if api_key else {})},
+                max_tokens)
+            _agent_info = [f"{r['agent']}({','.join(r['skills'])})" for r in _valid]
+            print(f"[Parallel] ✅ 합성 완료: {_agent_info}")
+            return jsonify({
+                "content": _answer, "loaded_skills": loaded,
+                "system_prompt_length": len(system_prompt), "model_used": model,
+                "parallel_agents": len(_valid), "agent_detail": _agent_info,
+            })
+        elif len(_valid) == 1:
+            print(f"[Parallel] 1개만 성공 → 단일 응답 반환")
+            return jsonify({
+                "content": _valid[0]["content"], "loaded_skills": loaded,
+                "system_prompt_length": len(system_prompt), "model_used": model,
+                "parallel_agents": 1,
+            })
+        else:
+            print(f"[Parallel] 모든 에이전트 실패 → 기존 단일 호출로 폴백")
+            _use_parallel = False
+
+    elif _use_parallel and is_gguf:
+        # ── GGUF 순차: GPU 독점이라 직렬 실행 (최대 4개) ──
+        print(f"[Parallel] GGUF 순차 모드: {len(_skill_groups[:4])}개 에이전트")
+        _base_prompt = system_prompt.split("=== SKILL:")[0]
+        _agent_results = []
+        for i, g in enumerate(_skill_groups[:4]):
+            result = _agent_call_gguf(
+                f"Agent-{i+1}", g["skills"], _base_prompt, messages,
+                max_tokens, temperature_map[min(effort, 3)], chat_stop_flag
+            )
+            _agent_results.append(result)
+
+        _valid = [r for r in _agent_results if r.get("content")]
+        if len(_valid) >= 2:
+            _answer = _synthesize_responses_gguf(_valid, last_user_query, max_tokens, chat_stop_flag)
+            print(f"[Parallel GGUF] ✅ 합성 완료")
+            return jsonify({
+                "content": _answer, "loaded_skills": loaded,
+                "system_prompt_length": len(system_prompt), "model_used": model or "GGUF",
+                "parallel_agents": len(_valid),
+            })
+        elif len(_valid) == 1:
+            return jsonify({
+                "content": _valid[0]["content"], "loaded_skills": loaded,
+                "system_prompt_length": len(system_prompt), "model_used": model or "GGUF",
+                "parallel_agents": 1,
+            })
+        else:
+            print(f"[Parallel GGUF] 모든 에이전트 실패 → 기존 방식 폴백")
+            _use_parallel = False
+
+    # ===== 기존 방식: 단일 LLM 호출 (스킬 1개 또는 병렬 폴백) =====
+    api_messages = [{"role": "system", "content": system_prompt}] + messages
 
     # ===== VL 모델: 이미지 첨부 시 OpenAI Vision API 포맷 변환 (GGUF / API 공통) =====
     # env_id가 vl-로 시작하거나, gguf- 계열 중 모델명에 vl이 포함된 경우
@@ -6310,6 +6720,18 @@ function dismissAutoSkill(id){
   renderSkills();
   updateLoaded();
 }
+function dismissPreviewSkill(id, btn){
+  // 미리보기에서 자동 스킬 제외 (전송 시 사용 안함)
+  dismissedAutoSkills.add(id);
+  autoLoadedSkills = autoLoadedSkills.filter(x => x !== id);
+  const badge = btn.closest('.auto-skill-badge');
+  if(badge) badge.remove();
+  const prev = document.getElementById('autoSkillPreview');
+  if(prev && prev.querySelectorAll('.auto-skill-badge').length === 0){
+    prev.classList.remove('show');
+  }
+  updateLoaded();
+}
 function restoreDismissedSkill(id){
   // 블랙리스트에서 복구 (다음 자동 추천 허용)
   dismissedAutoSkills.delete(id);
@@ -6372,7 +6794,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const d = await r.json();
         const prev = document.getElementById('autoSkillPreview');
         if(d.skills && d.skills.length > 0){
-          prev.innerHTML = '🧠 자동 추천: ' + d.skills.map(s=>`<span class="auto-skill-badge" title="${s.desc}">${s.id} (${s.score})</span>`).join('');
+          prev.innerHTML = '🧠 자동 추천: ' + d.skills.filter(s=>!dismissedAutoSkills.has(s.id)).map(s=>`<span class="auto-skill-badge" title="${s.desc}">${s.id} (${s.score})<button onclick="dismissPreviewSkill('${s.id}',this)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#ef4444;padding:0 2px;margin-left:4px;" title="제외">✕</button></span>`).join('');
           prev.classList.add('show');
         } else {
           prev.classList.remove('show');
@@ -6488,6 +6910,8 @@ async function send(){
   if(!selEnv){alert('먼저 위에서 LLM 환경을 선택해주세요.');return;}
 
   // 매 질문마다 이전 자동 스킬 초기화 → 새 질문/파일에 맞게 재감지
+  // 전송 전 사용자가 dismiss한 스킬을 보존 (✕ 클릭한 것 반영)
+  const currentDismissed = new Set(dismissedAutoSkills);
   autoLoadedSkills = [];
   dismissedAutoSkills.clear();
   updateLoaded();  // UI도 즉시 초기화
@@ -6504,7 +6928,7 @@ async function send(){
 
   // 프리로드 스킬 중 수동/해제 중복 제거
   const manualSet = new Set(skillsToUse);
-  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !dismissedAutoSkills.has(id));
+  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !currentDismissed.has(id));
   skillsToUse = [...skillsToUse, ...autoLoaded];
 
   // 자동 스킬 모드: 질문 분석으로 추가 보충
@@ -6517,7 +6941,7 @@ async function send(){
         const ad = await ar.json();
         if(ad.skills && ad.skills.length > 0){
           const usedSet = new Set(skillsToUse);
-          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !dismissedAutoSkills.has(id));
+          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !currentDismissed.has(id));
           autoLoaded = [...autoLoaded, ...newAuto];
           skillsToUse = [...skillsToUse, ...newAuto];
         }
@@ -6584,7 +7008,7 @@ async function send(){
       if(data.loaded_skills && data.loaded_skills.length > 0){
         let extra = data.tokens_budget ? ` [${data.tokens_budget}]` : '';
         let mode = autoLoaded.length > 0 ? '🧠자동' : '✅수동';
-        info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${modelName}] (${data.system_prompt_length}자)${extra}`;
+        info = `\n[${mode} 스킬: ${data.loaded_skills.join(', ')}] [${modelName}] (${data.system_prompt_length ?? 0}자)${extra}`;
       }
       // 자동 라우팅 표시
       if(data.auto_routed){
@@ -6593,6 +7017,11 @@ async function send(){
       // 폴백 표시
       if(data.fallback_used){
         info += ` [⚠️ 대체: ${data.fallback_from} → ${data.model_used}]`;
+      }
+      // 병렬 에이전트 표시
+      if(data.parallel_agents && data.parallel_agents > 1){
+        info += ` [🔀 병렬 ${data.parallel_agents}에이전트]`;
+        if(data.agent_detail) info += ` (${data.agent_detail.join(', ')})`;
       }
       // 자동 형식/스타일 표시
       if(data.auto_format || data.auto_style){
@@ -9169,10 +9598,11 @@ async function runCodeAssistant(){
         if(data.loaded_skills && data.loaded_skills.length > 0){
           let extra = data.tokens_budget ? ' ['+data.tokens_budget+']' : '';
           let mName = data.model_used || (envs[selEnv] ? envs[selEnv].name : selEnv);
-          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+mName+'] ('+data.system_prompt_length+'\uc790)'+extra;
+          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+mName+'] ('+(data.system_prompt_length ?? 0)+'\uc790)'+extra;
         }
         if(data.auto_routed){ info += ' [\uD83E\uDD16 자동: '+data.model_used+' ('+data.route_reason+')]'; }
         if(data.fallback_used){ info += ' [\u26A0\uFE0F 대체: '+data.fallback_from+' \u2192 '+data.model_used+']'; }
+        if(data.parallel_agents && data.parallel_agents > 1){ info += ' [\uD83D\uDD00 병렬 '+data.parallel_agents+'에이전트]'; }
         let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
         const assistantDisplayText = data.content + truncWarn + info;
         const assistantRawForDetect = data.content + truncWarn;
@@ -9586,6 +10016,9 @@ if __name__ == "__main__":
     else:
         print(f"  ⚠️  TOKEN.TXT: 없음 또는 비어있음")
         print(f"     → {TOKEN_FILE} 에 API 키를 넣어주세요")
+
+    # 로그프레소 테이블 목록 자동 업데이트
+    _refresh_logpresso_tables()
 
     # ============================================
     # GGUF 자동 감지 & Python으로 직접 로드 (다중 모델 지원)
