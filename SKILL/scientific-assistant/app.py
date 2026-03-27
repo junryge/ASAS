@@ -34,6 +34,7 @@ import urllib.parse
 import warnings
 import requests as req
 from flask import Flask, request, jsonify, render_template_string, send_file
+from logpresso_client import query_logpresso  # 로그프레소 조회 (별도 모듈)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 제한
@@ -102,6 +103,30 @@ LOGPRESSO_TABLES = {
     },
 }
 
+
+def _refresh_logpresso_tables():
+    """서버 시작 시 system tables 조회하여 LOGPRESSO_TABLES 자동 업데이트"""
+    try:
+        df, err = query_logpresso("system tables", timeout=15)
+        if df is None or len(df) == 0:
+            print(f"[Logpresso] ⚠️ 테이블 목록 조회 실패 → 하드코딩 {len(LOGPRESSO_TABLES)}개 사용")
+            return
+
+        added = 0
+        for _, row in df.iterrows():
+            tname = str(row.get("table", row.get("name", ""))).strip()
+            if not tname or tname in LOGPRESSO_TABLES:
+                continue
+            LOGPRESSO_TABLES[tname] = {
+                "desc": str(row.get("description", row.get("desc", tname))).strip(),
+                "columns": [],  # 컬럼은 실제 조회 시 확인
+            }
+            added += 1
+
+        print(f"[Logpresso] ✅ 테이블 목록 업데이트: 기존 8개 + 서버 {added}개 추가 → 총 {len(LOGPRESSO_TABLES)}개")
+    except Exception as e:
+        print(f"[Logpresso] ⚠️ 테이블 자동 업데이트 실패: {e} → 하드코딩 {len(LOGPRESSO_TABLES)}개 사용")
+
 # 쿼리 결과 캐시 {query_id: {"df": DataFrame, "ts": timestamp, "lpql": str}}
 _logpresso_cache = {}
 
@@ -141,51 +166,7 @@ def classify_logpresso_intent(query):
     return "explain"
 
 
-def query_logpresso(query, timeout=180):
-    """로그프레소 LPQL 쿼리 실행 -> (DataFrame, None) 또는 (None, 에러상세)"""
-    import pandas as pd
-    from io import StringIO
-
-    query_clean = " ".join(query.split())
-    encoded = urllib.parse.quote(query_clean, safe="")
-    url = f"http://{LOGPRESSO_HOST}:{LOGPRESSO_PORT}/logpresso/httpexport/query.csv?_apikey={LOGPRESSO_API_KEY}&_q={encoded}"
-
-    warnings.filterwarnings("ignore")
-    try:
-        resp = req.get(url, verify=False, timeout=timeout)
-        if resp.status_code == 200 and resp.text.strip() and not resp.text.startswith("<!"):
-            df = pd.read_csv(StringIO(resp.text))
-            return df, None
-        else:
-            detail = f"HTTP {resp.status_code}"
-            body_preview = resp.text[:500].strip() if resp.text else "(빈 응답)"
-            if resp.text.startswith("<!"):
-                detail += " (HTML 에러 페이지 반환)"
-            elif not resp.text.strip():
-                detail += " (빈 응답)"
-            error_info = {
-                "reason": detail,
-                "response_preview": body_preview,
-                "query_sent": query_clean,
-            }
-            print(f"[Logpresso] 쿼리 실패: {detail} | 쿼리: {query_clean[:200]}")
-            return None, error_info
-    except req.exceptions.ConnectTimeout:
-        error_info = {"reason": "연결 타임아웃 (서버 응답 없음)", "query_sent": query_clean}
-        print(f"[Logpresso] 연결 타임아웃: {query_clean[:200]}")
-        return None, error_info
-    except req.exceptions.ReadTimeout:
-        error_info = {"reason": f"읽기 타임아웃 ({timeout}초 초과)", "query_sent": query_clean}
-        print(f"[Logpresso] 읽기 타임아웃: {query_clean[:200]}")
-        return None, error_info
-    except req.exceptions.ConnectionError as e:
-        error_info = {"reason": f"서버 연결 실패 ({e})", "query_sent": query_clean}
-        print(f"[Logpresso] 연결 실패: {e}")
-        return None, error_info
-    except Exception as e:
-        error_info = {"reason": f"예외 발생: {type(e).__name__}: {e}", "query_sent": query_clean}
-        print(f"[Logpresso] 쿼리 예외: {e}")
-        return None, error_info
+## query_logpresso → logpresso_client.py로 이동 (import 참조)
 
 
 _LPQL_BLOCKED_COMMANDS = {"drop", "delete", "insert", "import", "create", "grant", "revoke", "update", "set "}
@@ -204,14 +185,29 @@ def extract_lpql_from_response(text):
     """LLM 응답에서 ```lpql ... ``` 또는 ``` ... ``` 코드블록 추출"""
     m = re.search(r"```(?:lpql|LPQL)\s*\n(.*?)```", text, re.DOTALL)
     if m:
-        return m.group(1).strip()
+        return _clean_lpql(m.group(1).strip())
     m = re.search(r"```\s*\n(.*?)```", text, re.DOTALL)
     if m:
         candidate = m.group(1).strip()
         lpql_indicators = ["table ", "fulltext ", "stream ", "| fields", "| search", "| sort", "| limit", "| eval", "| stats"]
         if any(ind in candidate.lower() for ind in lpql_indicators):
-            return candidate
+            return _clean_lpql(candidate)
     return None
+
+
+def _clean_lpql(lpql):
+    """LPQL에서 주석(-- 또는 #) 제거 → 로그프레소 서버 500 에러 방지"""
+    lines = lpql.split("\n")
+    cleaned = []
+    for line in lines:
+        # -- 주석 제거
+        line = re.sub(r'\s*--.*$', '', line)
+        # # 주석 제거 (단, 문자열 안의 # 은 보존)
+        line = re.sub(r'\s*#(?!["\']).*$', '', line)
+        line = line.strip()
+        if line:
+            cleaned.append(line)
+    return " ".join(cleaned)
 
 
 # ============================================
@@ -226,13 +222,13 @@ os.makedirs(PROMPTS_DIR, exist_ok=True)
 # 멀티에이전트 모델 레지스트리 (capability 태그 기반 자동 라우팅)
 MODEL_REGISTRY = {
     "glm-4.7": {
-        "env_id": "dev",
+        "env_id": "dev-legacy",
         "model": "GLM-4.7",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "4.7",
+        "name": "GLM-4.7",
         "capabilities": {"text", "code", "fast"},
         "context_window": 128000,
-        "priority": 3,
+        "priority": 4,
         "cost_tier": "low",
     },
     "qwen3.5-397b": {
@@ -325,6 +321,16 @@ MODEL_REGISTRY = {
         "priority": 1,
         "cost_tier": "medium",
     },
+    "glm-5": {
+        "env_id": "dev",
+        "model": "GLM-5",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "GLM-5",
+        "capabilities": {"text", "code", "analysis", "fast"},
+        "context_window": 128000,
+        "priority": 1,
+        "cost_tier": "medium",
+    },
     "glm-4.7-fp8": {
         "env_id": "dev-fp8",
         "model": "GLM-4.7-FP8",
@@ -368,22 +374,24 @@ ENV_CONFIG = {
 # env_id → registry key 역매핑
 ENV_TO_REGISTRY = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
 
-# 폴백 체인: 모델 실패 시 순서대로 시도 (좋은 모델 우선)
+# 폴백 체인: 모델 실패 시 성능 높은 순서대로 시도
+# 성능 순서: 397B > Coder-480B > 235B > GLM-5 > 120B > Coder-Next > GLM-4.7/FP8 > 397B-FP8 > 35B
 FALLBACK_CHAINS = {
-    # ── 텍스트/코드 모델 ──
-    "qwen3.5-397b":      ["qwen3-coder-480b", "qwen3-235b-2507", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "glm-4.7-fp8", "qwen3.5-397b-fp8", "qwen3.5-35b"],
-    "qwen3-coder-480b":  ["qwen3.5-397b", "qwen3-235b-2507", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "qwen3-235b-2507":   ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-coder-next", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "qwen3-coder-next":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "gpt-oss-120b":      ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-4.7", "glm-4.7-fp8", "qwen3.5-35b"],
-    "glm-4.7":           ["gpt-oss-120b", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-4.7-fp8", "qwen3.5-35b"],
-    "glm-4.7-fp8":       ["glm-4.7", "gpt-oss-120b", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "qwen3.5-35b"],
-    "qwen3.5-397b-fp8":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
-    "qwen3.5-35b":       ["gpt-oss-120b", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507"],
-    # ── Vision 모델 (Vision → Vision → 텍스트) ──
-    "qwen3-vl-235b":     ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3.5-397b", "qwen3-coder-480b", "gpt-oss-120b"],
-    "qwen2.5-vl-72b":    ["qwen3-vl-235b", "qwen3-vl-30b", "qwen3.5-397b", "gpt-oss-120b", "glm-4.7"],
-    "qwen3-vl-30b":      ["qwen2.5-vl-72b", "qwen3-vl-235b", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    # ── 텍스트/코드 모델 (성능 내림차순) ──
+    "qwen3.5-397b":      ["qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "glm-4.7-fp8", "qwen3.5-397b-fp8", "qwen3.5-35b"],
+    "qwen3-coder-480b":  ["qwen3.5-397b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-35b"],
+    "qwen3-235b-2507":   ["qwen3.5-397b", "qwen3-coder-480b", "glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-35b"],
+    "glm-5":             ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-35b"],
+    "gpt-oss-120b":      ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "qwen3-coder-next", "glm-4.7", "glm-4.7-fp8", "qwen3.5-35b"],
+    "qwen3-coder-next":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "glm-4.7":           ["glm-5", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "glm-4.7-fp8", "qwen3.5-35b"],
+    "glm-4.7-fp8":       ["glm-5", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "gpt-oss-120b", "qwen3.5-35b"],
+    "qwen3.5-397b-fp8":  ["qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507", "glm-5", "gpt-oss-120b", "glm-4.7", "qwen3.5-35b"],
+    "qwen3.5-35b":       ["glm-5", "gpt-oss-120b", "qwen3-coder-next", "glm-4.7", "qwen3.5-397b", "qwen3-coder-480b", "qwen3-235b-2507"],
+    # ── Vision 모델 (Vision 우선 → 텍스트 폴백, 성능 내림차순) ──
+    "qwen3-vl-235b":     ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3.5-397b", "qwen3-coder-480b", "glm-5", "gpt-oss-120b"],
+    "qwen2.5-vl-72b":    ["qwen3-vl-235b", "qwen3-vl-30b", "qwen3.5-397b", "glm-5", "gpt-oss-120b"],
+    "qwen3-vl-30b":      ["qwen2.5-vl-72b", "qwen3-vl-235b", "glm-5", "gpt-oss-120b", "qwen3.5-35b"],
 }
 
 # Reranker 기능 플래그 (bge-reranker 엔드포인트 안정화 후 활성화)
@@ -1088,7 +1096,7 @@ SKILL_KEYWORDS = {
     "agent-ml-engineer": ["MLOps","모델배포","학습파이프라인"],
     "agent-fullstack-developer": ["풀스택","fullstack","웹앱","web app"],
     "logpresso-query": ["로그프레소 쿼리","로그프레소쿼리","LPQL 쿼리","LPQL 만들","로그프레소 쿼리 만들","logpresso query","로그프레소"],
-    "logpresso-search": ["로그프레소 조회","로그프레소조회","로그프레소 검색","logpresso search","로그프레소"],
+    "logpresso-search": ["로그프레소 조회","로그프레소조회","로그프레소 검색","logpresso search","로그프레소","테이블 조회","테이블 검색","테이블 데이터","로그 조회","로그 검색","설비 로그","ts_data_view","fulltext","LPQL","lpql"],
     # knowledge-search: MANUAL_ONLY_SKILLS로 이동 (자동 추천 제외, 수동 선택 전용)
     "agent-sql-pro": ["SQL","테이블조회"],
     "agent-code-reviewer": ["코드검토","리팩토링","코드품질"],
@@ -1710,7 +1718,7 @@ def classify_and_route(query, history, uploaded_files_list):
 
     # 6순위: 간단한 Q&A → 빠른 모델
     if len(q) <= SIMPLE_MAX_LEN:
-        return "dev", "간단 Q&A → GLM-4.7 (fast)"
+        return "dev", "간단 Q&A → GLM-5"
 
     # 기본값: 중형 모델
     return "common", "일반 요청 → 120B"
@@ -2426,8 +2434,8 @@ def _llm_generate_lpql(user_query, history=None):
 사용자의 자연어 요청을 실행 가능한 LPQL 쿼리로 변환하세요.
 
 ## 규칙
-1. 반드시 ```lpql 코드블록 안에 쿼리만 출력하세요.
-2. 쿼리 앞뒤로 간단한 설명을 추가하세요.
+1. 반드시 ```lpql 코드블록 안에 **순수 쿼리만** 출력하세요. **코드블록 안에 주석(--, #, //)을 절대 넣지 마세요.** 로그프레소 서버가 주석을 파싱하지 못해 오류가 발생합니다.
+2. 쿼리의 각 부분(테이블, 조건, 파이프 명령)에 대한 설명은 **코드블록 바깥에** 줄별로 적어주세요.
 3. 오늘 날짜: {today} (시간 형식: yyyyMMddHHmmss)
 4. 어제 = {today} 기준 하루 전, 이번 주 = 최근 7일
 5. **기간은 from/to 형식을 기본으로 사용하세요.** 사용자가 기간을 지정하지 않으면 오늘 하루(from={today}000000 to={today}235959)를 기본값으로 사용하세요. 사용자가 "최근 1시간" 같이 말하면 duration=1h도 가능합니다.
@@ -2437,6 +2445,23 @@ def _llm_generate_lpql(user_query, history=None):
 9. fulltext 안에서 필드 조건 직접 사용 가능: `(LEVEL=="ERROR") and (CARRIER=="xxx")`
 10. limit에 오프셋 지정 가능: `limit 0 1000`
 11. 행 순번: `eval No = seq() + 0`
+
+## 중요: 사용자가 요청한 것만 쿼리에 포함하세요
+- 사용자가 특정 컬럼을 요청하지 않았으면 `| fields`를 넣지 마세요 (전체 컬럼 반환).
+- 사용자가 필터 조건을 요청하지 않았으면 `| search`를 넣지 마세요.
+- 사용자가 정렬을 요청하지 않았으면 `| sort`를 넣지 마세요.
+- 최소한의 쿼리만 생성하세요. 불필요한 파이프 명령을 추가하지 마세요.
+
+## 출력 형식 예시
+아래처럼 쿼리와 설명을 분리하세요:
+
+```lpql
+table from=20260327000000 to=20260327235959 ts_data_view_m14a | limit 5
+```
+
+- `table from=... to=...`: 오늘 하루 기간 지정
+- `ts_data_view_m14a`: M14A 설비 로그 테이블
+- `| limit 5`: 최대 5건 조회
 
 ## 사용 가능한 테이블
 {table_info}
@@ -2450,34 +2475,52 @@ def _llm_generate_lpql(user_query, history=None):
         messages.extend(history[-4:])
     messages.append({"role": "user", "content": user_query})
 
-    env = ENV_CONFIG.get("dev", {})
-    if not env:
-        env = list(ENV_CONFIG.values())[0]
-
     headers = {"Content-Type": "application/json"}
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
 
-    try:
-        resp = req.post(
-            env["url"],
-            headers=headers,
-            json={
-                "model": env["model"],
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 2048,
-                "stream": False,
-            },
-            timeout=60,
-            verify=False,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[Logpresso LLM] 오류: {e}")
+    # 기존 FALLBACK_CHAINS 활용: glm-5 → 체인 순서대로 폴백
+    primary_key = "glm-5"
+    chain_keys = [primary_key] + FALLBACK_CHAINS.get(primary_key, [])
+    # vision/reranker 모델 제외 (텍스트 전용만)
+    chain_keys = [k for k in chain_keys if k in MODEL_REGISTRY
+                  and "vision" not in MODEL_REGISTRY[k].get("capabilities", set())
+                  and "rerank" not in MODEL_REGISTRY[k].get("capabilities", set())]
+
+    tried = []
+    for reg_key in chain_keys:
+        reg = MODEL_REGISTRY[reg_key]
+        tried.append(reg["model"])
+        try:
+            resp = req.post(
+                reg["url"],
+                headers=headers,
+                json={
+                    "model": reg["model"],
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 2048,
+                    "stream": False,
+                },
+                timeout=60,
+                verify=False,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0].get("message", {}).get("content")
+                if content and content.strip():
+                    if reg_key != primary_key:
+                        print(f"[Logpresso LLM] 폴백 성공: {reg['model']}")
+                    return content
+                else:
+                    print(f"[Logpresso LLM] {reg['model']} → 빈 응답, 다음 모델 시도...")
+                    continue
+        except Exception as e:
+            print(f"[Logpresso LLM] {reg['model']} 오류: {e} → 다음 모델 시도...")
+            continue
+
+    print(f"[Logpresso LLM] 모든 모델 실패: {', '.join(tried)}")
     return None
 
 
@@ -2712,13 +2755,64 @@ KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
 
 
 def search_knowledge(query, max_results=5, max_content_chars=8000):
-    """knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환"""
+    """knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환
+
+    개선된 검색:
+    - 컬럼명(M14.QUE.OHT.OHTUTIL) → FAB 접두사 자동 추출 → 정확한 파일 매칭
+    - 키워드 빈도수 기반 점수 (TF)
+    - 한글 공백 무시 매칭 (디스크 사용률 → 디스크사용율)
+    - 원본 쿼리 구문 일치 보너스
+    - 한글 유사 문자 정규화 (률/율, 렬/열 등)
+    """
     if not os.path.isdir(KNOWLEDGE_DIR):
         return []
 
     q_lower = query.lower()
-    # 검색 키워드 분리 (공백/쉼표 기준)
-    keywords = [w.strip() for w in re.split(r'[\s,]+', q_lower) if len(w.strip()) >= 2]
+
+    # ── 1단계: 컬럼명 패턴 감지 (FAB.Category.Sub.Metric) ──
+    # 쿼리에서 컬럼명 패턴 추출 → FAB 접두사 + 전체 컬럼명
+    column_pattern = re.findall(r'([A-Za-z0-9]+(?:\.[A-Za-z0-9_]+){2,})', query)
+    fab_prefixes = set()  # FAB 접두사 (M14, M16HUB 등)
+    full_columns = []     # 전체 컬럼명 (검색용)
+    for col in column_pattern:
+        parts = col.split('.')
+        fab = parts[0].upper()
+        fab_prefixes.add(fab)
+        full_columns.append(col.lower())
+
+    # 한글 유사 문자 정규화
+    def normalize_kr(text):
+        pairs = [("률", "율"), ("렬", "열"), ("례", "예"), ("려", "여"),
+                 ("량", "양"), ("론", "논"), ("뇨", "요"), ("니", "이")]
+        for a, b in pairs:
+            text = text.replace(a, b).replace(b, a)
+        return text
+
+    # 키워드 추출 (1자 이상, 불용어 제외)
+    stopwords = {"은", "는", "이", "가", "을", "를", "의", "에", "와", "과", "도", "로", "으로",
+                 "에서", "부터", "까지", "한", "할", "하는", "된", "되는", "있는", "없는",
+                 "the", "a", "an", "is", "are", "in", "on", "at", "to", "for", "of", "and", "or",
+                 "것", "수", "등", "및", "중", "뭐", "좀", "해", "줘", "알려", "보여", "찾아",
+                 "que", "all", "cnv", "oht", "stk", "lft", "pdt", "sfab"}  # LPQL 구조 키워드 제외
+    raw_keywords = [w.strip() for w in re.split(r'[\s,?!·]+', q_lower) if w.strip()]
+    # 점(.)이 포함된 컬럼명은 분리하지 않고, 일반 텍스트만 키워드로
+    keywords = []
+    for w in raw_keywords:
+        if '.' in w and re.match(r'[a-z0-9]+\.[a-z0-9_.]+', w):
+            continue  # 컬럼명은 별도 처리 (full_columns에서)
+        keywords.append(w)
+    keywords = [w for w in keywords if w not in stopwords and len(w) >= 1]
+    # FAB 접두사도 키워드에 추가 (파일명 매칭용)
+    for fab in fab_prefixes:
+        fab_l = fab.lower()
+        if fab_l not in keywords:
+            keywords.append(fab_l)
+
+    # 원본 쿼리에서 공백 제거 버전 (구문 매칭용)
+    query_nospace = re.sub(r'\s+', '', q_lower)
+
+    if not keywords and not full_columns:
+        return []
 
     results = []
     for fname in os.listdir(KNOWLEDGE_DIR):
@@ -2726,11 +2820,8 @@ def search_knowledge(query, max_results=5, max_content_chars=8000):
             continue
         fpath = os.path.join(KNOWLEDGE_DIR, fname)
         fname_lower = fname.lower()
+        fname_nospace = re.sub(r'[_\-\s.]', '', fname_lower)
 
-        # 파일명 매칭 점수
-        name_score = sum(2 for kw in keywords if kw in fname_lower)
-
-        # 내용 매칭 점수
         try:
             with open(fpath, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -2738,18 +2829,68 @@ def search_knowledge(query, max_results=5, max_content_chars=8000):
             continue
 
         content_lower = content.lower()
-        content_score = sum(1 for kw in keywords if kw in content_lower)
+        content_nospace = re.sub(r'\s+', '', content_lower)
 
-        total_score = name_score + content_score
+        total_score = 0
+
+        # ── 컬럼명 직접 매칭 (최우선) ──
+        for col in full_columns:
+            if col in content_lower:
+                total_score += 30  # 컬럼명 정확히 존재 = 최고 점수
+
+        # ── FAB 접두사 → 파일명 매칭 (높은 가중치) ──
+        for fab in fab_prefixes:
+            fab_l = fab.lower()
+            # FAB_M14_컬럼.md → fab_m14_컬럼.md 에서 m14 매칭
+            if fab_l in fname_lower or fab_l in fname_nospace:
+                total_score += 20  # FAB 접두사가 파일명에 있으면 높은 점수
+
+        # 1. 파일명 매칭 (가중치 높음)
+        for kw in keywords:
+            if kw in fname_lower or kw in fname_nospace:
+                total_score += 10
+
+        # 2. 내용 빈도수 기반 점수 (TF)
+        for kw in keywords:
+            count = content_lower.count(kw)
+            if count > 0:
+                total_score += min(count, 10)
+            else:
+                count_nospace = content_nospace.count(kw)
+                if count_nospace > 0:
+                    total_score += min(count_nospace, 5)
+
+        # 3. 원본 쿼리 구문 일치 보너스
+        if len(keywords) >= 2:
+            for i in range(len(keywords) - 1):
+                bigram = keywords[i] + keywords[i + 1]
+                if bigram in content_nospace or bigram in fname_nospace:
+                    total_score += 15
+            if query_nospace in content_nospace or query_nospace in fname_nospace:
+                total_score += 20
+
+        # 4. 한글 유사 문자 매칭 (률↔율 등)
+        for kw in keywords:
+            for a, b in [("률", "율"), ("렬", "열"), ("례", "예")]:
+                alt_kw = kw.replace(a, b) if a in kw else kw.replace(b, a) if b in kw else None
+                if alt_kw and alt_kw != kw and alt_kw in content_lower:
+                    total_score += 3
+
         if total_score > 0:
-            # 매칭된 키워드 주변 미리보기
+            # 매칭된 키워드 주변 미리보기 (최고 점수 부분 우선)
             preview_parts = []
             for kw in keywords:
                 pos = content_lower.find(kw)
+                if pos == -1:
+                    # 공백 무시 매칭 시도
+                    pos_ns = content_nospace.find(kw)
+                    if pos_ns != -1:
+                        # 대략적 원본 위치 추정
+                        pos = min(pos_ns, len(content) - 1)
                 if pos != -1:
-                    start = max(0, pos - 50)
-                    end = min(len(content), pos + len(kw) + 50)
-                    snippet = content[start:end].replace('\n', ' ')
+                    start = max(0, pos - 80)
+                    end = min(len(content), pos + len(kw) + 80)
+                    snippet = content[start:end].replace('\n', ' ').strip()
                     if start > 0:
                         snippet = '...' + snippet
                     if end < len(content):
@@ -4353,9 +4494,13 @@ def api_chat():
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
+    # 수동 선택 또는 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 감지 시 자동 활성화
+    _has_column_pattern = bool(re.search(r'[A-Za-z0-9]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+', last_user_query))
+    if _has_column_pattern and "knowledge-search" not in skill_ids:
+        skill_ids = list(skill_ids) + ["knowledge-search"]
     if "knowledge-search" in skill_ids and last_user_query.strip():
         try:
-            kb_results = search_knowledge(last_user_query, max_results=3, max_content_chars=6000)
+            kb_results = search_knowledge(last_user_query, max_results=5, max_content_chars=6000)
             if kb_results:
                 # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                 kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
@@ -4373,6 +4518,27 @@ def api_chat():
                 _kb_files = [r['filename'] for r in kb_results]
         except Exception as e:
             print(f"[Knowledge Search] 검색 오류: {e}")
+
+    # ── logpresso-search 스킬: 테이블 목록 요청 감지 ──
+    _lpq_table_list_kw = ["테이블 목록", "어떤 테이블", "테이블 뭐", "테이블 리스트", "테이블 종류",
+                          "테이블 있", "테이블 알려", "테이블 보여", "테이블 전부", "테이블 전체"]
+    if "logpresso-search" in skill_ids and any(kw in last_user_query for kw in _lpq_table_list_kw):
+        _content = "**로그프레소 사용 가능한 테이블 목록**\n\n"
+        _content += f"총 **{len(LOGPRESSO_TABLES)}개** 테이블\n\n"
+        _content += "| # | 테이블명 | 설명 | 주요 컬럼 |\n"
+        _content += "|---|----------|------|----------|\n"
+        for idx, (tname, tinfo) in enumerate(sorted(LOGPRESSO_TABLES.items()), 1):
+            cols = ", ".join(tinfo["columns"][:6]) if tinfo["columns"] else "(조회 필요)"
+            if len(tinfo["columns"]) > 6:
+                cols += f" 외 {len(tinfo['columns'])-6}개"
+            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols} |\n"
+        _content += f"\n> 서버 시작 시 자동 업데이트됨. 특정 테이블 조회: `테이블명 조회해줘`"
+        return jsonify({
+            "content": _content,
+            "model_used": "Logpresso Tables",
+            "loaded_skills": ["logpresso-search"],
+            "system_prompt_length": 0,
+        })
 
     # ── logpresso-search 스킬: 실제 서버 조회 실행 ──
     # "쿼리 만들어줘" 등 쿼리 생성 요청이면 서버 실행 안 하고 LLM에게 넘김
@@ -4450,6 +4616,7 @@ def api_chat():
                 })
 
             # 실제 로그프레소 서버에 쿼리 실행
+            print(f"[Logpresso Search] 최종 실행 쿼리: {lpql}")
             df, err_detail = query_logpresso(lpql, timeout=180)
 
             if df is None:
@@ -9610,6 +9777,9 @@ if __name__ == "__main__":
     else:
         print(f"  ⚠️  TOKEN.TXT: 없음 또는 비어있음")
         print(f"     → {TOKEN_FILE} 에 API 키를 넣어주세요")
+
+    # 로그프레소 테이블 목록 자동 업데이트
+    _refresh_logpresso_tables()
 
     # ============================================
     # GGUF 자동 감지 & Python으로 직접 로드 (다중 모델 지원)
