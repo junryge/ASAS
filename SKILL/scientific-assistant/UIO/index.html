@@ -1912,10 +1912,18 @@
     let currentAgent = null;
     let selectedEnv = 'auto';
     let availableEnvs = {};  // 서버에서 받아올 환경 목록
+    let userMaxTokens = 8192;    // 개별 에이전트 응답 토큰
+    let userSynthMaxTokens = 16384; // CEO 합성 응답 토큰
+    let userNCtx = 32768;       // 백엔드 GGUF 컨텍스트 윈도우
     const agentHistory = {};
     let chatAbortController = null;
     let parallelStatus = {};  // {agentKey: 'idle'|'working'|'done'|'error'}
     let activeSkills = {};    // {agentKey: ['skill1','skill2']}
+
+    function toggleTokenSettings(){
+      const panel = document.getElementById('tokenSettingsPanel');
+      if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
 
     function getRecentHistory(key, maxTurns = 10) {
       const full = agentHistory[key] || [];
@@ -2003,6 +2011,39 @@
                   <select id="ceoEnvSelect" onchange="selectedEnv=this.value" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;">
                     <option value="auto">🤖 AUTO (자동 선택)</option>
                   </select>
+                </div>
+                <div style="margin-bottom:8px;">
+                  <button onclick="toggleTokenSettings()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 0;">⚙️ 토큰 설정 ▾</button>
+                  <div id="tokenSettingsPanel" style="display:none;margin-top:6px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:8px;">
+                    <div style="margin-bottom:8px;">
+                      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">에이전트 max_tokens (응답 길이)</label>
+                      <select id="agentMaxTokens" onchange="userMaxTokens=parseInt(this.value)" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-1);color:var(--text);font-size:12px;">
+                        <option value="2048">2048 (짧게)</option>
+                        <option value="4096">4096 (보통)</option>
+                        <option value="8192" selected>8192 (길게)</option>
+                        <option value="16384">16384 (매우 길게)</option>
+                      </select>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CEO 합성 max_tokens (보고서 길이)</label>
+                      <select id="synthMaxTokens" onchange="userSynthMaxTokens=parseInt(this.value)" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-1);color:var(--text);font-size:12px;">
+                        <option value="4096">4096 (짧게)</option>
+                        <option value="8192">8192 (보통)</option>
+                        <option value="16384" selected>16384 (길게)</option>
+                        <option value="32768">32768 (매우 길게)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우 (GGUF)</label>
+                      <select id="nCtxSelect" onchange="userNCtx=parseInt(this.value)" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-1);color:var(--text);font-size:12px;">
+                        <option value="16384">16384 (기본)</option>
+                        <option value="32768" selected>32768 (권장)</option>
+                        <option value="65536">65536 (대용량)</option>
+                        <option value="131072">131072 (최대)</option>
+                      </select>
+                    </div>
+                    <div style="margin-top:6px;font-size:10px;color:var(--muted);">* n_ctx가 클수록 긴 보고서 가능하나 VRAM 사용 증가</div>
+                  </div>
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;gap:8px;max-width:300px;">
@@ -3104,7 +3145,7 @@
               effort: 2,
               format: 'auto',
               writing_style: 'auto',
-              max_tokens: 8192,
+              max_tokens: userMaxTokens,
               think_mode: false,
             })
           });
@@ -3165,7 +3206,8 @@
             effort: 3,
             format: 'report',
             writing_style: 'auto',
-            max_tokens: 16384,
+            max_tokens: userSynthMaxTokens,
+            n_ctx: userNCtx,
             think_mode: false,
             system_prompt: `당신은 CEO입니다. 아래 ${successes.length}명의 에이전트가 분석한 결과를 통합하여 최종 보고서를 작성하세요.\n반드시 한국어로 작성하세요.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요. 절대 중간에 끊지 마세요.\n\n${synthParts}\n\n[통합 원칙]\n1. 모든 에이전트의 핵심 내용 포함\n2. 중복 제거, 하나의 자연스러운 보고서로 통합\n3. 제목 → 요약 → 본문 → 결론 구조\n4. 보고서를 끝까지 완성하세요`
           })
@@ -3476,7 +3518,7 @@
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
               env:[selectedEnv], messages:[{role:'user',content:prompt}],
-              skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:4096, think_mode:false,
+              skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:userMaxTokens, think_mode:false,
             })
           });
           const data = await resp.json();
@@ -3506,7 +3548,7 @@
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
             env:[selectedEnv], messages:[{role:'user',content:researchState.task}],
-            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:16384, think_mode:false,
+            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
             system_prompt: `CEO로서 수정된 분석 결과를 통합 보고서로 작성하세요.\n한국어로 작성.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
           })
         });
@@ -3826,7 +3868,7 @@
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
               env:[selectedEnv], messages:[{role:'user',content:prompt}],
-              skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:4096, think_mode:false,
+              skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:userMaxTokens, think_mode:false,
             })
           });
           const data = await resp.json();
@@ -3876,7 +3918,7 @@
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
             env:[selectedEnv], messages:[{role:'user',content:researchState.task}],
-            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:16384, think_mode:false,
+            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
             system_prompt:`CEO로서 ${successes.length}명 에이전트 분석을 통합 보고서로 작성.\n한국어.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
           })
         });
