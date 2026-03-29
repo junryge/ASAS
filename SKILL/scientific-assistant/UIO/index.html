@@ -449,6 +449,39 @@
     }
     .file-chip .fc-remove:hover { color: var(--accent); }
 
+    /* ── Mode Dropzone (리서치 모드 내부 파일 첨부) ── */
+    .mode-dropzone {
+      border: 2px dashed var(--border); border-radius: 12px;
+      background: var(--card); cursor: pointer; transition: all 0.2s;
+      min-height: 90px; display: flex; align-items: center; justify-content: center;
+    }
+    .mode-dropzone:hover { border-color: var(--accent-blue); background: rgba(99,102,241,0.05); }
+    .mode-dropzone.dragover { border-color: #6366f1; background: rgba(99,102,241,0.1); box-shadow: 0 0 12px rgba(99,102,241,0.2); }
+    .mode-file-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .server-file-section {
+      background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+      border-radius: 10px; padding: 10px; margin-bottom: 10px;
+    }
+    .server-file-section .sf-title { font-size: 12px; font-weight: 700; color: #f59e0b; margin-bottom: 6px; }
+    .server-file-item {
+      display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+      border-radius: 6px; font-size: 12px; background: rgba(255,255,255,0.04);
+      margin-bottom: 4px;
+    }
+    .server-file-item .sf-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .server-file-item .sf-del {
+      background: none; border: none; color: #ef4444; cursor: pointer;
+      font-size: 12px; padding: 2px 4px; border-radius: 4px;
+    }
+    .server-file-item .sf-del:hover { background: rgba(239,68,68,0.15); }
+    .sf-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .sf-actions button {
+      padding: 4px 10px; font-size: 11px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+    }
+    .sf-actions button.sf-clear { color: #ef4444; border-color: rgba(239,68,68,0.3); }
+    .sf-actions button.sf-clear:hover { background: rgba(239,68,68,0.1); }
+
     .msg-attachments { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
     .msg-attach-item {
       display: flex; align-items: center; gap: 6px;
@@ -2585,6 +2618,134 @@
       return html;
     }
 
+    // ===== 서버 기존 파일 관리 =====
+    async function loadServerFiles(){
+      try {
+        const r = await fetch('/api/uploaded_files');
+        const d = await r.json();
+        return d.files || [];
+      } catch(e){ return []; }
+    }
+
+    function renderServerFilesHtml(files){
+      if(!files || files.length === 0) return '';
+      let items = files.map(f => `
+        <div class="server-file-item">
+          <span>${getFileIcon(f.filename||f.name||'')}</span>
+          <span class="sf-name" title="${escapeHtml(f.filename||f.name||'')}">${escapeHtml(f.filename||f.name||'')}</span>
+          <span style="color:var(--muted);font-size:11px;">${f.size ? formatSize(f.size) : ''}</span>
+          <button class="sf-del" onclick="removeServerFile('${escapeHtml(f.safe_name||f.filename||f.name||'')}',this)" title="삭제">&times;</button>
+        </div>`).join('');
+      return `<div class="server-file-section">
+        <div class="sf-title">⚠️ 서버에 이전 첨부파일이 남아있습니다 (${files.length}개)</div>
+        ${items}
+        <div class="sf-actions">
+          <button class="sf-clear" onclick="clearAllServerFiles()">🗑️ 전체 삭제</button>
+          <button onclick="document.querySelector('.server-file-section').style.display='none'">접기</button>
+        </div>
+      </div>`;
+    }
+
+    async function removeServerFile(safeName, btn){
+      try {
+        await fetch('/api/remove_file', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({safe_name:safeName})});
+        const item = btn.closest('.server-file-item');
+        if(item) item.remove();
+        const section = document.querySelector('.server-file-section');
+        if(section && section.querySelectorAll('.server-file-item').length === 0) section.remove();
+      } catch(e){}
+    }
+
+    async function clearAllServerFiles(){
+      try {
+        await Promise.all([
+          fetch('/api/clear_files', {method:'POST'}),
+          fetch('/api/clear_csv', {method:'POST'})
+        ]);
+        const section = document.querySelector('.server-file-section');
+        if(section) section.remove();
+      } catch(e){}
+    }
+
+    // ===== 모드 내부 파일 첨부 =====
+    function renderModeFileAttachment(mode){
+      const acceptMap = {
+        'data-analysis': '.csv,.tsv,.txt,.xlsx,.xls,.json,.log',
+        'code-analysis': '.py,.js,.ts,.tsx,.jsx,.vue,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.rb,.php,.sh,.bat,.sql,.md,.txt',
+        'research': '.csv,.tsv,.txt,.log,.docx,.xlsx,.pdf,.pptx,.md,.png,.jpg,.jpeg,.gif,.webp,.svg,.py,.js,.json,.xml,.yaml',
+        'program': '.py,.js,.ts,.tsx,.jsx,.vue,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.rb,.php,.sh,.bat,.sql,.md,.txt,.csv'
+      };
+      const hintMap = {
+        'data-analysis': '📊 CSV, Excel 또는 데이터 파일을 드래그하거나 클릭하여 첨부 (최대 5개)',
+        'code-analysis': '🔍 소스코드 파일을 드래그하거나 클릭하여 첨부 (최대 5개)',
+        'research': '📁 참고 자료 파일을 드래그하거나 클릭하여 첨부 (선택, 최대 5개)',
+        'program': '📁 참고 자료 파일을 드래그하거나 클릭하여 첨부 (선택, 최대 5개)'
+      };
+      const accept = acceptMap[mode] || '';
+      const hint = hintMap[mode] || '파일을 첨부하세요';
+      return `
+        <div class="mode-dropzone" id="modeDropzone"
+          onclick="document.getElementById('modeFileInput').click()"
+          ondragover="event.preventDefault();this.classList.add('dragover')"
+          ondragleave="this.classList.remove('dragover')"
+          ondrop="event.preventDefault();this.classList.remove('dragover');handleModeFileDrop(event)">
+          <input type="file" id="modeFileInput" multiple hidden accept="${accept}" onchange="handleModeFileSelect(this)" onclick="event.stopPropagation()">
+          <div style="padding:16px;text-align:center;">
+            <div id="modeDropIcon" style="font-size:28px;margin-bottom:6px;">📁</div>
+            <div id="modeDropHint" style="color:var(--muted);font-size:12px;">${hint}</div>
+          </div>
+        </div>
+        <div class="mode-file-list" id="modeFileList"></div>`;
+    }
+
+    function handleModeFileSelect(input){
+      for(const f of input.files){
+        if(pendingFiles.length >= 5) break;
+        pendingFiles.push(f);
+      }
+      input.value = '';
+      renderModeFileChips();
+    }
+
+    function handleModeFileDrop(event){
+      const files = event.dataTransfer.files;
+      for(const f of files){
+        if(pendingFiles.length >= 5) break;
+        pendingFiles.push(f);
+      }
+      renderModeFileChips();
+    }
+
+    function renderModeFileChips(){
+      const list = document.getElementById('modeFileList');
+      if(!list) return;
+      list.innerHTML = pendingFiles.map((f,i) => `
+        <div class="file-chip">
+          <span class="fc-icon">${getFileIcon(f.name)}</span>
+          <span class="fc-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="fc-size">${formatSize(f.size)}</span>
+          <button class="fc-remove" onclick="event.stopPropagation();removeModeFile(${i})">&times;</button>
+        </div>`).join('');
+      const icon = document.getElementById('modeDropIcon');
+      const hint = document.getElementById('modeDropHint');
+      if(icon && hint && pendingFiles.length > 0){
+        icon.textContent = '✅';
+        hint.textContent = `${pendingFiles.length}개 파일 첨부됨 (클릭하여 추가)`;
+      }
+      renderFileChips();
+    }
+
+    function removeModeFile(idx){
+      pendingFiles.splice(idx, 1);
+      renderModeFileChips();
+      const icon = document.getElementById('modeDropIcon');
+      const hint = document.getElementById('modeDropHint');
+      if(icon && hint && pendingFiles.length === 0){
+        icon.textContent = '📁';
+        hint.textContent = '파일을 드래그하거나 클릭하여 첨부';
+      }
+    }
+
     // ===== 서버 환경 목록 동적 로드 =====
     async function loadEnvList(){
       try {
@@ -2762,38 +2923,50 @@
       }
     };
 
-    function startResearchMode(mode){
+    async function startResearchMode(mode){
       // GGUF 모델 경고 (테스트는 가능, 모델 1개로 순차 실행)
       if(selectedEnv.startsWith('gguf-')){
         if(!confirm('GGUF 모델은 1개로 순차 실행됩니다.\n품질이 낮을 수 있습니다. 계속하시겠습니까?')) return;
       }
-      // 데이터 분석/소스코드 모드: 첨부파일 체크
-      if(mode === 'data-analysis' && (!pendingFiles || pendingFiles.length === 0)){
-        alert('데이터 분석 모드는 CSV 또는 데이터 파일이 필요합니다.\n먼저 파일을 첨부해주세요.');
-        return;
-      }
-      if(mode === 'code-analysis' && (!pendingFiles || pendingFiles.length === 0)){
-        alert('소스코드 분석 모드는 소스 파일이 필요합니다.\n분석할 코드 파일을 첨부해주세요.');
-        return;
-      }
-      // 소스코드 모드: 파일 선택 UI 표시
+
+      // 소스코드 모드: 파일이 있으면 파일 선택 UI, 없으면 파일 첨부 UI
       if(mode === 'code-analysis'){
-        showCodeFileSelector();
+        if(pendingFiles && pendingFiles.length > 0){
+          showCodeFileSelector();
+        } else {
+          showCodeFileAttachment();
+        }
         return;
       }
+
       const modeDef = RESEARCH_MODES[mode];
       const chatArea = document.getElementById('chatArea');
+      const serverFiles = await loadServerFiles();
+      const serverHtml = renderServerFilesHtml(serverFiles);
+
+      // 모드별 색상/라벨
+      const modeColors = {
+        'research': {grad:'#6366f1,#8b5cf6', label:'연구 시작'},
+        'program': {grad:'#0891b2,#06b6d4', label:'개발 시작'},
+        'data-analysis': {grad:'#ea580c,#f97316', label:'분석 시작'},
+      };
+      const mc = modeColors[mode] || modeColors['research'];
+      const fileRequired = mode === 'data-analysis';
+      const execFn = mode === 'data-analysis' ? 'executeDataAnalysis' : `executeResearchWithFiles('${mode}')`;
+
       chatArea.innerHTML = `
         <div class="welcome-msg">
           <div class="big-icon">${modeDef.name.split(' ')[0]}</div>
           <h2>${modeDef.name}</h2>
           <p>참여 에이전트: ${Object.keys(modeDef.agents).map(k=>agentBaseData[k]?.name||k).join(', ')}</p>
-          <div style="margin-top:12px;width:100%;max-width:400px;">
+          <div style="margin-top:12px;width:100%;max-width:420px;">
+            <div id="serverFileArea">${serverHtml}</div>
+            ${renderModeFileAttachment(mode)}
             <textarea id="researchTaskInput" placeholder="연구 과제를 입력하세요..."
-              style="width:100%;min-height:80px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;resize:vertical;"></textarea>
-            <button onclick="executeResearch('${mode}')"
-              style="width:100%;margin-top:8px;padding:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">
-              🚀 연구 시작
+              style="width:100%;min-height:80px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;resize:vertical;margin-top:10px;"></textarea>
+            <button onclick="${execFn}"
+              style="width:100%;margin-top:8px;padding:12px;background:linear-gradient(135deg,${mc.grad});color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">
+              🚀 ${mc.label}
             </button>
             <button onclick="openAgent('ceo')"
               style="width:100%;margin-top:4px;padding:8px;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">
@@ -2802,7 +2975,65 @@
           </div>
         </div>
       `;
+      if(pendingFiles.length > 0) renderModeFileChips();
       document.getElementById('researchTaskInput').focus();
+    }
+
+    // ===== 모드별 실행 래퍼 (파일 업로드 포함) =====
+    async function executeResearchWithFiles(mode){
+      const taskInput = document.getElementById('researchTaskInput');
+      const task = taskInput ? taskInput.value.trim() : '';
+      if(!task){ alert('연구 과제를 입력해주세요.'); return; }
+      if(pendingFiles && pendingFiles.length > 0){
+        try { await uploadFiles(pendingFiles); } catch(e){ alert('파일 업로드 실패: '+e.message); return; }
+      }
+      executeResearch(mode);
+    }
+
+    async function executeDataAnalysis(){
+      if(!pendingFiles || pendingFiles.length === 0){
+        alert('데이터 파일을 첨부해주세요.\n드롭존에 CSV, Excel 등 데이터 파일을 첨부하세요.');
+        return;
+      }
+      const taskInput = document.getElementById('researchTaskInput');
+      const task = taskInput ? taskInput.value.trim() : '';
+      if(!task){ alert('연구 과제를 입력해주세요.'); return; }
+      try { await uploadFiles(pendingFiles); } catch(e){ alert('파일 업로드 실패: '+e.message); return; }
+      executeResearch('data-analysis');
+    }
+
+    async function showCodeFileAttachment(){
+      const chatArea = document.getElementById('chatArea');
+      const serverFiles = await loadServerFiles();
+      const serverHtml = renderServerFilesHtml(serverFiles);
+      chatArea.innerHTML = `
+        <div class="welcome-msg">
+          <div class="big-icon">🔍</div>
+          <h2>소스코드 분석/추가</h2>
+          <p style="color:var(--muted);font-size:12px;">분석할 소스 파일을 첨부하세요</p>
+          <div style="margin-top:12px;width:100%;max-width:420px;">
+            <div id="serverFileArea">${serverHtml}</div>
+            ${renderModeFileAttachment('code-analysis')}
+            <button onclick="proceedToCodeFileSelector()"
+              style="width:100%;margin-top:12px;padding:12px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">
+              📂 파일 선택으로 진행
+            </button>
+            <button onclick="openAgent('ceo')"
+              style="width:100%;margin-top:4px;padding:8px;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">
+              ← 돌아가기
+            </button>
+          </div>
+        </div>
+      `;
+      if(pendingFiles.length > 0) renderModeFileChips();
+    }
+
+    function proceedToCodeFileSelector(){
+      if(!pendingFiles || pendingFiles.length === 0){
+        alert('소스 파일을 먼저 첨부해주세요.');
+        return;
+      }
+      showCodeFileSelector();
     }
 
     async function executeResearch(mode){
@@ -2873,7 +3104,7 @@
               effort: 2,
               format: 'auto',
               writing_style: 'auto',
-              max_tokens: 4096,
+              max_tokens: 8192,
               think_mode: false,
             })
           });
@@ -2912,11 +3143,13 @@
         return;
       }
 
-      // 합성 프롬프트
+      // 합성 프롬프트 (에이전트 결과 길이 제한으로 컨텍스트 확보)
+      const maxPerAgent = Math.min(4000, Math.floor(20000 / successes.length));
       let synthParts = successes.map(r => {
         const name = agentBaseData[r.agent]?.name || r.agent;
         const role = modeDef.agents[r.agent]?.role || '';
-        return `=== [${name}] ${role} ===\n${r.content}`;
+        const content = r.content.length > maxPerAgent ? r.content.substring(0, maxPerAgent) + '\n...(이하 생략)' : r.content;
+        return `=== [${name}] ${role} ===\n${content}`;
       }).join('\n\n');
 
       chatArea.innerHTML += `<div style="padding:12px;color:#f59e0b;">🔄 CEO 통합 보고서 작성 중...</div>`;
@@ -2932,9 +3165,9 @@
             effort: 3,
             format: 'report',
             writing_style: 'auto',
-            max_tokens: 8192,
+            max_tokens: 16384,
             think_mode: false,
-            system_prompt: `당신은 CEO입니다. 아래 ${successes.length}명의 에이전트가 분석한 결과를 통합하여 최종 보고서를 작성하세요.\n반드시 한국어로 작성하세요.\n\n${synthParts}\n\n[통합 원칙]\n1. 모든 에이전트의 핵심 내용 포함\n2. 중복 제거, 하나의 자연스러운 보고서로 통합\n3. 제목 → 요약 → 본문 → 결론 구조`
+            system_prompt: `당신은 CEO입니다. 아래 ${successes.length}명의 에이전트가 분석한 결과를 통합하여 최종 보고서를 작성하세요.\n반드시 한국어로 작성하세요.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요. 절대 중간에 끊지 마세요.\n\n${synthParts}\n\n[통합 원칙]\n1. 모든 에이전트의 핵심 내용 포함\n2. 중복 제거, 하나의 자연스러운 보고서로 통합\n3. 제목 → 요약 → 본문 → 결론 구조\n4. 보고서를 끝까지 완성하세요`
           })
         });
         const synthData = await synthResp.json();
@@ -3258,12 +3491,14 @@
 
       await Promise.all(promises);
 
-      // 다시 합성
+      // 다시 합성 (에이전트 결과 길이 제한)
       const successes = Object.entries(researchState.results).filter(([k,r])=>r.content && !r.error);
+      const maxPerAgent2 = Math.min(4000, Math.floor(20000 / successes.length));
       let synthParts = successes.map(([ak,r]) => {
         const name = agentBaseData[ak]?.name || ak;
         const role = modeDef.agents[ak]?.role || '';
-        return `=== [${name}] ${role} ===\n${r.content}`;
+        const content = r.content.length > maxPerAgent2 ? r.content.substring(0, maxPerAgent2) + '\n...(이하 생략)' : r.content;
+        return `=== [${name}] ${role} ===\n${content}`;
       }).join('\n\n');
 
       try {
@@ -3271,8 +3506,8 @@
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
             env:[selectedEnv], messages:[{role:'user',content:researchState.task}],
-            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:8192, think_mode:false,
-            system_prompt: `CEO로서 수정된 분석 결과를 통합 보고서로 작성하세요.\n한국어로 작성.\n\n${synthParts}`
+            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:16384, think_mode:false,
+            system_prompt: `CEO로서 수정된 분석 결과를 통합 보고서로 작성하세요.\n한국어로 작성.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
           })
         });
         const sd = await synthResp.json();
@@ -3474,9 +3709,11 @@
         <div class="welcome-msg" style="text-align:left;">
           <h2 style="text-align:center;">🔍 소스코드 분석/추가</h2>
           <p style="text-align:center;color:var(--muted);font-size:12px;">분석할 파일을 선택하세요 (전체 선택 X, 필요한 파일만)</p>
-          <div style="margin:12px 0;display:flex;gap:6px;">
+          <div style="margin:12px 0;display:flex;gap:6px;flex-wrap:wrap;">
             <button onclick="selectAllCodeFiles(true)" style="padding:4px 10px;font-size:11px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;">전체 선택</button>
             <button onclick="selectAllCodeFiles(false)" style="padding:4px 10px;font-size:11px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;">전체 해제</button>
+            <button onclick="addMoreCodeFiles()" style="padding:4px 10px;font-size:11px;background:var(--card);color:#22c55e;border:1px solid rgba(34,197,94,0.3);border-radius:6px;cursor:pointer;">+ 파일 추가</button>
+            <input type="file" id="codeAddFileInput" multiple hidden accept=".py,.js,.ts,.tsx,.jsx,.vue,.html,.css,.json,.xml,.yaml,.yml,.c,.cpp,.h,.java,.go,.rs,.rb,.php,.sh,.bat,.sql,.md,.txt" onchange="handleCodeAddFiles(this)">
             <span id="codeFileCount" style="font-size:11px;color:#6366f1;line-height:28px;margin-left:auto;">0개 선택</span>
           </div>
           <div style="max-height:250px;overflow-y:auto;background:var(--card);border-radius:10px;padding:8px;border:1px solid var(--border);">
@@ -3519,11 +3756,27 @@
       selectedCodeFiles.delete(-1);
     }
 
+    function addMoreCodeFiles(){
+      document.getElementById('codeAddFileInput').click();
+    }
+
+    function handleCodeAddFiles(input){
+      for(const f of input.files){
+        if(pendingFiles.length >= 5) break;
+        pendingFiles.push(f);
+      }
+      input.value = '';
+      showCodeFileSelector(); // 파일 트리 다시 그리기
+    }
+
     async function executeCodeAnalysis(){
       if(selectedCodeFiles.size === 0){ alert('분석할 파일을 선택해주세요.'); return; }
       const taskInput = document.getElementById('researchTaskInput');
       const task = taskInput ? taskInput.value.trim() : '';
       if(!task){ alert('분석/추가 요청을 입력해주세요.'); return; }
+
+      // 파일 업로드
+      try { await uploadFiles(pendingFiles); } catch(e){ alert('파일 업로드 실패: '+e.message); return; }
 
       // 선택된 파일 내용 수집
       const files = pendingFiles || [];
@@ -3607,11 +3860,13 @@
         return;
       }
 
-      // 합성
+      // 합성 (에이전트 결과 길이 제한)
+      const maxPerAgent3 = Math.min(4000, Math.floor(20000 / successes.length));
       let synthParts = successes.map(([ak,r]) => {
         const name = agentBaseData[ak]?.name || ak;
         const role = researchState.assignments[ak]?.role || '';
-        return `=== [${name}] ${role} ===\n${r.content}`;
+        const content = r.content.length > maxPerAgent3 ? r.content.substring(0, maxPerAgent3) + '\n...(이하 생략)' : r.content;
+        return `=== [${name}] ${role} ===\n${content}`;
       }).join('\n\n');
 
       chatArea.innerHTML += `<div style="padding:12px;color:#f59e0b;">🔄 CEO 통합 보고서 작성 중...</div>`;
@@ -3621,8 +3876,8 @@
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
             env:[selectedEnv], messages:[{role:'user',content:researchState.task}],
-            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:8192, think_mode:false,
-            system_prompt:`CEO로서 ${successes.length}명 에이전트 분석을 통합 보고서로 작성.\n한국어.\n\n${synthParts}`
+            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:16384, think_mode:false,
+            system_prompt:`CEO로서 ${successes.length}명 에이전트 분석을 통합 보고서로 작성.\n한국어.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
           })
         });
         const sd = await synthResp.json();

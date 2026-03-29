@@ -2704,7 +2704,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
     )
 
     try:
-        llama_synth = _pool_get_or_load(synthesis_model_path, n_ctx=16384)
+        llama_synth = _pool_get_or_load(synthesis_model_path, n_ctx=32768)
         messages = [
             {"role": "system", "content": synthesis_system},
             {"role": "user", "content": query},
@@ -2713,7 +2713,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         resp = llama_synth.create_chat_completion(
             messages=messages,
             temperature=temperature,
-            max_tokens=4096,
+            max_tokens=8192,
         )
         _pool_release(synthesis_model_path)
 
@@ -5879,7 +5879,7 @@ def api_chat():
                                     history=messages[-6:],
                                     n_ctx=16384,
                                     temperature=temperature_map[min(effort, 3)],
-                                    max_tokens=2048,
+                                    max_tokens=4096,
                                     csv_data=uploaded_csv_data if uploaded_csv_data.get("filename") else None,
                                     uploaded_files_data=uploaded_files if uploaded_files else None,
                                 )
