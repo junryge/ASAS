@@ -150,6 +150,8 @@ public class HidEdgeInOutUpdateMasterBatch implements Job {
         // 테이블명: {FAB}_ATLAS_INFO_HID_INOUT_MAS (예: M14A_ATLAS_INFO_HID_INOUT_MAS)
         String tableName = fabId + "_ATLAS_INFO_HID_INOUT_MAS";
 
+        // Full Refresh: 기존 데이터 삭제 후 전체 재적재
+        LogpressoAPI.truncateTable(tableName);
         LogpressoAPI.setInsertTuples(tableName, tuples, 100);
 
         logger.info("[HID Master] Edge Master updated: {} - {} records", tableName, tuples.size());
@@ -256,6 +258,8 @@ public class HidEdgeInOutUpdateMasterBatch implements Job {
         // 테이블명: {FAB}_ATLAS_HID_INFO_MAS (예: M14A_ATLAS_HID_INFO_MAS)
         String tableName = fabId + "_ATLAS_HID_INFO_MAS";
 
+        // Full Refresh: 기존 데이터 삭제 후 전체 재적재
+        LogpressoAPI.truncateTable(tableName);
         LogpressoAPI.setInsertTuples(tableName, tuples, 100);
 
         logger.info("[HID Master] HID Info Master updated: {} - {} records", tableName, tuples.size());
