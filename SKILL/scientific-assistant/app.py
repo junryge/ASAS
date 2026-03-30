@@ -7968,9 +7968,11 @@ body.rp-collapsed .chat-box-fixed{right:0}
           <button onclick="downloadGeneratedSkill()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📥 다운로드 (.zip)</button>
         </div>
         <div id="scGenStatus" style="font-size:12px;color:#6366f1;display:none;margin-bottom:8px;">⏳ 생성 중... (최대 2분)</div>
-        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">SKILL.md 내용 (LLM 생성 후 편집 가능)</label>
-        <textarea id="scGenContent" rows="20" placeholder="🤖 LLM으로 생성 버튼을 클릭하면 여기에 SKILL.md 초안이 생성됩니다.&#10;직접 입력해도 됩니다." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
-        <div id="scGenValidateResult" style="margin-top:10px;"></div>
+        <div id="scGenResult" style="display:none;">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">SKILL.md 내용 (LLM 생성 후 편집 가능)</label>
+          <textarea id="scGenContent" rows="20" placeholder="🤖 LLM으로 생성 버튼을 클릭하면 여기에 SKILL.md 초안이 생성됩니다.&#10;직접 입력해도 됩니다." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+          <div id="scGenValidateResult" style="margin-top:10px;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -10305,8 +10307,8 @@ async function generateSkillLLM(){
   const details = document.getElementById('scDetails').value.trim();
   document.getElementById('scGenStatus').style.display = 'block';
   document.getElementById('scGenBtn').disabled = true;
-  document.getElementById('scGenResult').style.display = 'none';
   try{
+  document.getElementById('scGenResult').style.display = 'none';
     const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details})});
     const data = await resp.json();
     document.getElementById('scGenStatus').style.display = 'none';
