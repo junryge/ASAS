@@ -1603,22 +1603,78 @@
       });
     }
 
-    let activeBubble = null; // { char, text, timer }
+    let activeBubble = null; // { char, text, timer, isLlm }
+    let llmConversation = [];  // [{agent, text}, ...] LLM 대화 큐
+    let llmFetching = false;
+
+    // ═══ LLM 에이전트 간 대화 생성 ═══
+    async function fetchAgentConversation() {
+      if(llmFetching || llmConversation.length > 0) return;
+      llmFetching = true;
+      const agentKeys = ['seo','yoon','lee','park','kim','choi','jung'];
+      const shuffled = [...agentKeys].sort(()=>Math.random()-0.5);
+      const a1 = shuffled[0], a2 = shuffled[1];
+      const n1 = agentBaseData[a1]?.name || a1;
+      const n2 = agentBaseData[a2]?.name || a2;
+      const t1 = agentBaseData[a1]?.title || '';
+      const t2 = agentBaseData[a2]?.title || '';
+      try {
+        const resp = await fetch('/api/chat', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            env:['auto'],
+            messages:[{role:'user', content:
+              `당신들은 AI 에이전트(LLM)입니다. 본인이 LLM이라는 것을 인지하고 있습니다.\n`+
+              `${n1}(${t1})과 ${n2}(${t2})가 자유롭게 주제를 정해서 짧게 대화하세요.\n`+
+              `AI/기술/업무/일상 등 아무 주제나 LLM답게 자연스럽게.\n`+
+              `4줄. 형식: "이름: 대사" (각 줄 25자 이내)`
+            }],
+            skills:[], effort:1, format:'auto', writing_style:'auto',
+            max_tokens:256, think_mode:false
+          })
+        });
+        const data = await resp.json();
+        if(data.content){
+          data.content.split('\n').map(l=>l.trim()).filter(l=>l.includes(':')).forEach(line=>{
+            const colonIdx = line.indexOf(':');
+            if(colonIdx < 1) return;
+            const speaker = line.substring(0, colonIdx).trim();
+            const text = line.substring(colonIdx+1).trim();
+            if(!text || text.length < 2) return;
+            const agent = Object.keys(agentBaseData).find(k=>
+              agentBaseData[k]?.name === speaker) || (speaker.includes(n1)?a1:a2);
+            llmConversation.push({agent, text: text.substring(0,35)});
+          });
+        }
+      } catch(e){}
+      llmFetching = false;
+    }
 
     function triggerRandomSpeech() {
-      // Pick a random non-CEO character
+      if(llmConversation.length > 0){
+        const item = llmConversation.shift();
+        const charName = item.agent.charAt(0).toUpperCase() + item.agent.slice(1);
+        const char = characters.find(c=>c.name===charName);
+        if(char){
+          activeBubble = {char, text:'💬 '+item.text, timer:4500, isLlm:true};
+          return;
+        }
+      }
+      // 폴백: 기존 하드코딩
       const movingChars = characters.filter(c => !c.isStatic);
       if (movingChars.length === 0) return;
       const char = movingChars[Math.floor(Math.random() * movingChars.length)];
       const text = speeches[Math.floor(Math.random() * speeches.length)];
-      activeBubble = { char, text, timer: 3500 }; // show for 3.5 seconds
+      activeBubble = { char, text, timer: 3500 };
     }
 
-    // Start speech every 5 seconds
+    // Start speech every 5 seconds + LLM conversation every 20 seconds
     setInterval(triggerRandomSpeech, 5000);
-    setTimeout(triggerRandomSpeech, 1500); // first one after 1.5s
+    setTimeout(triggerRandomSpeech, 1500);
+    setInterval(fetchAgentConversation, 20000);
+    setTimeout(fetchAgentConversation, 5000);
 
-    function drawSpeechBubble(ctx, char, text, textColor) {
+    function drawSpeechBubble(ctx, char, text, textColor, isLlm) {
       const bx = char.x;
       const by = char.y - (char.isStatic ? 180 : 130);
       const maxW = 360;
@@ -1648,9 +1704,11 @@
       const boxX = bx - boxW / 2;
       const boxY = by - boxH;
 
-      // Bubble background
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#2f3440';
+      // Bubble background (LLM 대화는 파란색 배경)
+      const bgColor = isLlm ? '#e8f4fd' : '#fff';
+      const borderColor = isLlm ? '#4a9eff' : '#2f3440';
+      ctx.fillStyle = bgColor;
+      ctx.strokeStyle = borderColor;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.roundRect(boxX, boxY, boxW, boxH, 8);
@@ -1658,8 +1716,8 @@
       ctx.stroke();
 
       // Tail triangle
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#2f3440';
+      ctx.fillStyle = bgColor;
+      ctx.strokeStyle = borderColor;
       ctx.beginPath();
       ctx.moveTo(bx - 10, boxY + boxH);
       ctx.lineTo(bx, boxY + boxH + 14);
@@ -1668,7 +1726,7 @@
       ctx.fill();
       ctx.stroke();
       // Cover the tail top border
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = bgColor;
       ctx.fillRect(bx - 9, boxY + boxH - 2, 18, 4);
 
       // Text
@@ -1797,7 +1855,7 @@
       if (activeBubble && !isOnStrike) {
         activeBubble.timer -= dt * 1000;
         if (activeBubble.timer > 0) {
-          drawSpeechBubble(ctx, activeBubble.char, activeBubble.text);
+          drawSpeechBubble(ctx, activeBubble.char, activeBubble.text, null, activeBubble.isLlm);
         } else {
           activeBubble = null;
         }
@@ -2310,6 +2368,10 @@
 
     // ── Main send function ──
     async function sendMsg() {
+      // 사용자 질문 시 에이전트 잡담 중단
+      llmConversation = [];
+      activeBubble = null;
+
       const input = document.getElementById('userInput');
       const text = input.value.trim();
       const hasFiles = pendingFiles.length > 0;
