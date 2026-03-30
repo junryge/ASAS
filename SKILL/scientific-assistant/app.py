@@ -2659,7 +2659,7 @@ def _agent_call_gguf(model_path, skill_ids, skill_contents, query, history,
         _pool_release(model_path)
 
 
-def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, temperature=0.3):
+def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, temperature=0.3, n_ctx=32768, synth_max_tokens=8192):
     """여러 에이전트 응답을 가장 큰 모델로 합성.
 
     Returns:
@@ -2704,7 +2704,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
     )
 
     try:
-        llama_synth = _pool_get_or_load(synthesis_model_path, n_ctx=32768)
+        llama_synth = _pool_get_or_load(synthesis_model_path, n_ctx=n_ctx)
         messages = [
             {"role": "system", "content": synthesis_system},
             {"role": "user", "content": query},
@@ -2713,7 +2713,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         resp = llama_synth.create_chat_completion(
             messages=messages,
             temperature=temperature,
-            max_tokens=8192,
+            max_tokens=synth_max_tokens,
         )
         _pool_release(synthesis_model_path)
 
@@ -5185,6 +5185,7 @@ def api_chat():
     writing_style = data.get("writing_style", "")
     custom_system_prompt = data.get("system_prompt", "")
     max_tokens = data.get("max_tokens", 8192)
+    user_n_ctx = data.get("n_ctx", 0)  # 프론트엔드에서 요청한 n_ctx (0이면 기본값 사용)
     think_mode = data.get("think_mode", False)
     requested_output_format = output_format
     is_gguf = env_id.startswith("gguf-") if env_id else False
@@ -5877,7 +5878,7 @@ def api_chat():
                                     skill_contents=_group_skill_contents[pg["group"]],
                                     query=_last_query,
                                     history=messages[-6:],
-                                    n_ctx=16384,
+                                    n_ctx=user_n_ctx if user_n_ctx > 0 else 16384,
                                     temperature=temperature_map[min(effort, 3)],
                                     max_tokens=4096,
                                     csv_data=uploaded_csv_data if uploaded_csv_data.get("filename") else None,
@@ -5909,6 +5910,8 @@ def api_chat():
                         _answer, _synth_err, _meta = _synthesize_responses_gguf(
                             _agent_results, _last_query, _synth_path,
                             temperature=temperature_map[min(effort, 3)],
+                            n_ctx=user_n_ctx if user_n_ctx > 0 else 32768,
+                            synth_max_tokens=max_tokens if max_tokens > 8192 else 8192,
                         )
 
                         if _answer and not _synth_err:
@@ -5943,8 +5946,9 @@ def api_chat():
         # ── 기존 단일모델 경로 (폴백 포함) ──
         # 선택된 환경의 모델 경로로 동적 로드/스왑
         gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
+        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
         if gguf_path:
-            if not load_gguf_model(gguf_path):
+            if not load_gguf_model(gguf_path, n_ctx=_load_n_ctx):
                 return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
         if gguf_model is None:
             return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
@@ -5952,7 +5956,7 @@ def api_chat():
         # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정 (보수적 계산)
         gguf_ctx_attr = getattr(gguf_model, 'n_ctx', None)
         gguf_ctx = gguf_ctx_attr() if callable(gguf_ctx_attr) else (gguf_ctx_attr if gguf_ctx_attr is not None else 32768)
-        gguf_reply_cap = max(256, int(os.getenv("GGUF_MAX_TOKENS_CAP", "8192")))
+        gguf_reply_cap = max(256, int(os.getenv("GGUF_MAX_TOKENS_CAP", "16384")))
         gguf_ctx_reserve = max(512, int(os.getenv("GGUF_CONTEXT_RESERVE", "1536")))
 
         def _estimate_gguf_prompt_tokens(msgs):
