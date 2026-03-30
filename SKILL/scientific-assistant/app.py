@@ -3435,13 +3435,27 @@ def api_logpresso_query():
     # 미리보기: 5건만 반환
     preview_data = df.head(5).to_dict("records")
 
+    # 쿼리에서 테이블명 추출 → 필드 정보 포함
+    _exec_table = None
+    _exec_table_match = re.search(r'(?:table|fulltext)\s+(?:\S+=\S+\s+)*(\S+)', lpql, re.IGNORECASE)
+    if _exec_table_match:
+        _exec_table = _exec_table_match.group(1).strip()
+    _exec_fields = list(df.columns)
+    if _exec_table and _exec_table in LOGPRESSO_TABLES:
+        if not LOGPRESSO_TABLES[_exec_table]["columns"] and _exec_fields:
+            LOGPRESSO_TABLES[_exec_table]["columns"] = _exec_fields
+        elif LOGPRESSO_TABLES[_exec_table]["columns"]:
+            _exec_fields = LOGPRESSO_TABLES[_exec_table]["columns"]
+
     return jsonify({
         "mode": "execute",
         "success": True,
         "lpql": lpql,
         "explanation": llm_explanation,
         "query_id": query_id,
+        "table": _exec_table,
         "columns": list(df.columns),
+        "table_fields": _exec_fields,
         "total_rows": total_rows,
         "preview_data": preview_data,
         "preview_rows": min(5, total_rows),
@@ -5427,12 +5441,31 @@ def api_chat():
                     "system_prompt_length": 0,
                 })
 
-            # 성공 → 결과 + 쿼리 표시
+            # 성공 → 결과 + 쿼리 + 테이블 필드 정보 표시
             total = len(df)
             cols = list(df.columns)
+
+            # 쿼리에서 테이블명 추출 → 해당 테이블의 전체 필드 정보 표시
+            _queried_table = None
+            _table_match = re.search(r'(?:table|fulltext)\s+(?:\S+=\S+\s+)*(\S+)', lpql, re.IGNORECASE)
+            if _table_match:
+                _queried_table = _table_match.group(1).strip()
+
             _content = f"**로그프레소 조회 완료** (총 {total}건, 미리보기 {min(5, total)}건)\n\n"
             _content += f"**실행한 쿼리:**\n```lpql\n{lpql}\n```\n\n"
-            _content += f"**컬럼:** {', '.join(cols)}\n\n"
+
+            # 테이블 필드 정보
+            if _queried_table:
+                _all_fields = cols  # 실제 조회 결과의 컬럼이 가장 정확
+                # LOGPRESSO_TABLES 캐시 업데이트
+                if _queried_table in LOGPRESSO_TABLES:
+                    if not LOGPRESSO_TABLES[_queried_table]["columns"] and _all_fields:
+                        LOGPRESSO_TABLES[_queried_table]["columns"] = _all_fields
+                    elif LOGPRESSO_TABLES[_queried_table]["columns"]:
+                        _all_fields = LOGPRESSO_TABLES[_queried_table]["columns"]
+                _content += f"**테이블 `{_queried_table}` 필드** ({len(_all_fields)}개): `{'`, `'.join(_all_fields)}`\n\n"
+            else:
+                _content += f"**결과 컬럼:** {', '.join(cols)}\n\n"
 
             # 테이블 형태로 결과 표시
             if total > 0:
