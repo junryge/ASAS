@@ -1880,8 +1880,10 @@
         quickActions: ['📝 README 작성', '📋 기술 문서 작성', '📄 API 문서 작성'] },
       chart:          { title: '그래프/차트 생성 담당',     icon: '📈', desc: '데이터 시각화 / 그래프·차트 생성 / 인포그래픽',
         quickActions: ['📊 막대 차트', '📈 라인 차트', '🥧 파이 차트', '📉 산점도'] },
-      logpresso:      { title: '로그프레소 쿼리/조회 담당',  icon: '🔍', desc: 'Logpresso LPQL 쿼리 생성 / 로그 조회 / 보안 이벤트 탐색',
-        quickActions: ['🔍 로그프레소 조회', '📊 로그프레소 쿼리 만들어줘', '🛡️ 보안 이벤트 탐지'] },
+      logpresso:      { title: '로그프레소 쿼리 담당',        icon: '📝', desc: 'Logpresso LPQL 쿼리 생성 / 쿼리 작성 도우미',
+        quickActions: ['📝 로그프레소 쿼리 만들어줘', '📋 LPQL 문법 알려줘', '🔍 쿼리 최적화'] },
+      logpresso_search: { title: '로그프레소 조회 담당',      icon: '🔍', desc: '로그프레소 서버 직접 조회 / 테이블 목록 / 필드 확인 / 로그 검색',
+        quickActions: ['🔍 테이블 목록 보여줘', '📊 ATLAS_OHT_HID_OFF 조회', '🗄️ 테이블 구조 확인'] },
       security:       { title: '보안 분석 에이전트',        icon: '🛡️', desc: '보안 취약점 분석 / 위협 탐지 / 침해 사고 대응',
         quickActions: ['🛡️ 취약점 스캔', '🔐 보안 점검', '🚨 침해 분석'] },
       code_review:    { title: '코드 리뷰 에이전트',        icon: '💻', desc: '코드 품질 분석 / 리팩토링 제안 / 버그 탐지',
@@ -1890,6 +1892,8 @@
         quickActions: ['🌐 영한 번역', '🇯🇵 일한 번역', '📄 기술 문서 번역'] },
       knowledge:      { title: '도메인 지식 검색 담당',     icon: '📚', desc: 'FAB 컬럼 정보 / 아키텍처 문서 / 도메인 지식 검색',
         quickActions: ['📚 FAB 컬럼 정보', '🏗️ 아키텍처 검색', '🔍 도메인 지식 검색'] },
+      knowledge_logpresso: { title: '도메인 지식 + 로그프레소', icon: '📚🔍', desc: '도메인 지식 검색 + 로그프레소 서버 조회 (통합)',
+        quickActions: ['📚 FAB 컬럼 정보', '🔍 테이블 목록 보여줘', '📊 로그 조회'] },
     };
 
     // Default skill assignment per agent
@@ -1910,11 +1914,13 @@
       drawio: ['drawio-diagram'],
       markdown: ['markdown-mermaid-writing'],
       chart: ['agent-data-analyst'],
-      logpresso: ['logpresso-query', 'logpresso-search'],
+      logpresso: ['logpresso-query'],
+      logpresso_search: ['logpresso-search'],
       security: ['agent-security-engineer'],
       code_review: ['code-review'],
       translate: [],
       knowledge: ['knowledge-search'],
+      knowledge_logpresso: ['knowledge-search', 'logpresso-search'],
     };
 
     function getAgentData(key) {
