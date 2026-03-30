@@ -1986,7 +1986,18 @@
 
     function toggleTokenSettings(){
       const panel = document.getElementById('tokenSettingsPanel');
-      if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if(!panel) return;
+      const show = panel.style.display === 'none';
+      panel.style.display = show ? 'block' : 'none';
+      if(show){
+        // 현재 값으로 셀렉트 동기화
+        panel.querySelectorAll('select').forEach(sel => {
+          const onChange = sel.getAttribute('onchange') || '';
+          if(onChange.includes('userMaxTokens')) sel.value = String(userMaxTokens);
+          else if(onChange.includes('userSynthMaxTokens')) sel.value = String(userSynthMaxTokens);
+          else if(onChange.includes('userNCtx')) sel.value = String(userNCtx);
+        });
+      }
     }
 
     function syncTokenToServer(){
@@ -2036,10 +2047,10 @@
           <h2>${agent.name}</h2>
           <p>${agent.title}</p>
         </div>
-        ${tokenSettingsBtn}
         <select class="env-select" id="envSelect" onchange="selectedEnv=this.value" title="모델 선택">
           <option value="auto">🤖 자동</option>
         </select>
+        ${tokenSettingsBtn}
         <button class="back-btn" onclick="toggleChat()">← 접기</button>
       `;
       // 토큰 설정 드롭다운 (모든 에이전트 공통, chatHeader 아래 고정)
@@ -2877,6 +2888,13 @@
         const d = await r.json();
         availableEnvs = d.envs || {};
         updateEnvSelect();
+        // 서버 토큰 설정 자동 로드
+        if(d.token_settings){
+          const ts = d.token_settings;
+          if(ts.agent_max_tokens) userMaxTokens = ts.agent_max_tokens;
+          if(ts.synth_max_tokens) userSynthMaxTokens = ts.synth_max_tokens;
+          if(ts.default_n_ctx) userNCtx = ts.default_n_ctx;
+        }
       } catch(e){ console.log('env load fail:', e); }
     }
     function updateEnvSelect(){
