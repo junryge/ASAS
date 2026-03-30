@@ -112,6 +112,18 @@ LOGPRESSO_TABLES = {
 }
 
 
+def _fetch_table_fields(table_name, timeout=5):
+    """테이블에서 샘플 1건을 조회하여 필드(컬럼) 목록을 추출."""
+    try:
+        lpql = f"table duration=5m {table_name} | limit 1"
+        df, err = query_logpresso(lpql, timeout=timeout)
+        if df is not None and len(df.columns) > 0:
+            return list(df.columns)
+    except Exception:
+        pass
+    return []
+
+
 def _refresh_logpresso_tables():
     """서버 시작 시 system tables 조회하여 LOGPRESSO_TABLES 자동 업데이트.
     로그프레소 서버 접속 불가 시 조용히 스킵 (집에서 테스트 등).
@@ -128,9 +140,10 @@ def _refresh_logpresso_tables():
             tname = str(row.get("table", row.get("name", ""))).strip()
             if not tname or tname in LOGPRESSO_TABLES:
                 continue
+            # 새 테이블 등록 — 필드는 나중에 조회 시 동적으로 가져옴
             LOGPRESSO_TABLES[tname] = {
                 "desc": str(row.get("description", row.get("desc", tname))).strip(),
-                "columns": [],  # 컬럼은 실제 조회 시 확인
+                "columns": [],
             }
             added += 1
 
@@ -1206,7 +1219,7 @@ def scan_skills():
 
 # ============================================
 # 수동 전용 스킬 (자동 추천에서 제외, 사용자가 직접 선택해야 함)
-MANUAL_ONLY_SKILLS = {"knowledge-search"}
+MANUAL_ONLY_SKILLS = {"knowledge-search", "logpresso-search"}
 
 # 오토 스킬 라우터 (키워드 매칭)
 # ============================================
@@ -2276,7 +2289,7 @@ def gguf_chat(messages, temperature=0.5, max_tokens=4096, stop_flag=None):
                 max_tokens=max_tokens,
             )
             if resp and "choices" in resp and len(resp["choices"]) > 0:
-                return resp["choices"][0].get("message", {}).get("content", ""), None
+                return resp["choices"][0].get("message", {}).get("content") or "", None
             return None, f"예상치 못한 응답: {resp}"
     except Exception as e:
         return None, f"GGUF 추론 오류: {str(e)}"
@@ -2630,7 +2643,7 @@ def _agent_call_gguf(model_path, skill_ids, skill_contents, query, history,
         )
 
         if resp and "choices" in resp and len(resp["choices"]) > 0:
-            answer = resp["choices"][0].get("message", {}).get("content", "")
+            answer = resp["choices"][0].get("message", {}).get("content") or ""
             # <think> 태그 제거 (완전 쌍 + 불완전 태그 모두)
             answer = re.sub(r'<think>[\s\S]*?</think>\s*', '', answer)
             answer = re.sub(r'</?think>', '', answer).strip()
@@ -2718,7 +2731,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         _pool_release(synthesis_model_path)
 
         if resp and "choices" in resp and len(resp["choices"]) > 0:
-            answer = resp["choices"][0].get("message", {}).get("content", "")
+            answer = resp["choices"][0].get("message", {}).get("content") or ""
             answer = re.sub(r'<think>[\s\S]*?</think>\s*', '', answer)
             answer = re.sub(r'</?think>', '', answer).strip()
             meta = {
@@ -3264,30 +3277,53 @@ def api_logpresso_query():
         df, err = query_logpresso("system tables", timeout=5)
         if df is not None and len(df) > 0:
             server_tables = df.to_dict("records")
+            # 각 테이블의 필드값도 함께 조회 (빈 columns인 테이블만)
+            for st in server_tables:
+                tname = st.get("table", st.get("name", ""))
+                if tname and tname in LOGPRESSO_TABLES:
+                    cached_cols = LOGPRESSO_TABLES[tname].get("columns", [])
+                    if cached_cols:
+                        st["fields"] = cached_cols
+                    else:
+                        fields = _fetch_table_fields(tname, timeout=3)
+                        if fields:
+                            LOGPRESSO_TABLES[tname]["columns"] = fields
+                        st["fields"] = fields
+                    st["field_count"] = len(st.get("fields", []))
+                elif tname:
+                    fields = _fetch_table_fields(tname, timeout=3)
+                    st["fields"] = fields
+                    st["field_count"] = len(fields)
             return jsonify({
                 "mode": "table_list",
                 "source": "server",
                 "tables": server_tables,
                 "total": len(server_tables),
                 "columns": list(df.columns),
-                "message": f"로그프레소 서버에서 조회: 총 {len(server_tables)}개 테이블",
+                "message": f"로그프레소 서버에서 조회: 총 {len(server_tables)}개 테이블 (필드 포함)",
             })
 
-        # 서버 연결 실패 시 하드코딩 폴백
+        # 서버 연결 실패 시 하드코딩 폴백 (필드 정보 포함)
         tables = []
         for name, info in LOGPRESSO_TABLES.items():
+            cols = info["columns"]
+            # 빈 columns → 서버에서 동적 조회 시도
+            if not cols:
+                cols = _fetch_table_fields(name, timeout=3)
+                if cols:
+                    info["columns"] = cols
             tables.append({
                 "table": name,
                 "desc": info["desc"],
-                "columns": info["columns"],
-                "column_count": len(info["columns"]),
+                "columns": cols,
+                "column_count": len(cols),
             })
         return jsonify({
             "mode": "table_list",
             "source": "local",
             "tables": tables,
             "total": len(tables),
-            "message": f"서버 연결 실패 - 로컬 등록 테이블: {len(tables)}개",
+            "message": f"로컬 등록 테이블: {len(tables)}개 (필드 포함)",
         })
 
     # ── 모드 2: 테이블 구조 확인 ──
@@ -3311,6 +3347,9 @@ def api_logpresso_query():
         df, _err = query_logpresso(sample_lpql, timeout=30)
         if df is not None and len(df) > 0:
             sample_data = df.head(5).to_dict("records")
+            # 빈 columns → 샘플 조회 결과에서 필드 자동 보충
+            if not info["columns"] and len(df.columns) > 0:
+                info["columns"] = list(df.columns)
 
         return jsonify({
             "mode": "table_schema",
@@ -3396,13 +3435,27 @@ def api_logpresso_query():
     # 미리보기: 5건만 반환
     preview_data = df.head(5).to_dict("records")
 
+    # 쿼리에서 테이블명 추출 → 필드 정보 포함
+    _exec_table = None
+    _exec_table_match = re.search(r'(?:table|fulltext)\s+(?:\S+=\S+\s+)*(\S+)', lpql, re.IGNORECASE)
+    if _exec_table_match:
+        _exec_table = _exec_table_match.group(1).strip()
+    _exec_fields = list(df.columns)
+    if _exec_table and _exec_table in LOGPRESSO_TABLES:
+        if not LOGPRESSO_TABLES[_exec_table]["columns"] and _exec_fields:
+            LOGPRESSO_TABLES[_exec_table]["columns"] = _exec_fields
+        elif LOGPRESSO_TABLES[_exec_table]["columns"]:
+            _exec_fields = LOGPRESSO_TABLES[_exec_table]["columns"]
+
     return jsonify({
         "mode": "execute",
         "success": True,
         "lpql": lpql,
         "explanation": llm_explanation,
         "query_id": query_id,
+        "table": _exec_table,
         "columns": list(df.columns),
+        "table_fields": _exec_fields,
         "total_rows": total_rows,
         "preview_data": preview_data,
         "preview_rows": min(5, total_rows),
@@ -5260,14 +5313,20 @@ def api_chat():
     if "logpresso-search" in skill_ids and any(kw in last_user_query for kw in _lpq_table_list_kw):
         _content = "**로그프레소 사용 가능한 테이블 목록**\n\n"
         _content += f"총 **{len(LOGPRESSO_TABLES)}개** 테이블\n\n"
-        _content += "| # | 테이블명 | 설명 | 주요 컬럼 |\n"
+        _content += "| # | 테이블명 | 설명 | 필드(컬럼) |\n"
         _content += "|---|----------|------|----------|\n"
         for idx, (tname, tinfo) in enumerate(sorted(LOGPRESSO_TABLES.items()), 1):
-            cols = ", ".join(tinfo["columns"][:6]) if tinfo["columns"] else "(조회 필요)"
-            if len(tinfo["columns"]) > 6:
-                cols += f" 외 {len(tinfo['columns'])-6}개"
-            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols} |\n"
-        _content += f"\n> 서버 시작 시 자동 업데이트됨. 특정 테이블 조회: `테이블명 조회해줘`"
+            cols = tinfo["columns"]
+            # 빈 columns → 서버에서 필드 동적 조회
+            if not cols:
+                cols = _fetch_table_fields(tname, timeout=3)
+                if cols:
+                    tinfo["columns"] = cols
+            cols_str = ", ".join(cols[:8]) if cols else "(서버 미접속)"
+            if len(cols) > 8:
+                cols_str += f" 외 {len(cols)-8}개"
+            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols_str} |\n"
+        _content += f"\n> 총 {len(LOGPRESSO_TABLES)}개 테이블. 특정 테이블 구조 확인: `테이블명 구조 보여줘`"
         return jsonify({
             "content": _content,
             "model_used": "Logpresso Tables",
@@ -5382,12 +5441,31 @@ def api_chat():
                     "system_prompt_length": 0,
                 })
 
-            # 성공 → 결과 + 쿼리 표시
+            # 성공 → 결과 + 쿼리 + 테이블 필드 정보 표시
             total = len(df)
             cols = list(df.columns)
+
+            # 쿼리에서 테이블명 추출 → 해당 테이블의 전체 필드 정보 표시
+            _queried_table = None
+            _table_match = re.search(r'(?:table|fulltext)\s+(?:\S+=\S+\s+)*(\S+)', lpql, re.IGNORECASE)
+            if _table_match:
+                _queried_table = _table_match.group(1).strip()
+
             _content = f"**로그프레소 조회 완료** (총 {total}건, 미리보기 {min(5, total)}건)\n\n"
             _content += f"**실행한 쿼리:**\n```lpql\n{lpql}\n```\n\n"
-            _content += f"**컬럼:** {', '.join(cols)}\n\n"
+
+            # 테이블 필드 정보
+            if _queried_table:
+                _all_fields = cols  # 실제 조회 결과의 컬럼이 가장 정확
+                # LOGPRESSO_TABLES 캐시 업데이트
+                if _queried_table in LOGPRESSO_TABLES:
+                    if not LOGPRESSO_TABLES[_queried_table]["columns"] and _all_fields:
+                        LOGPRESSO_TABLES[_queried_table]["columns"] = _all_fields
+                    elif LOGPRESSO_TABLES[_queried_table]["columns"]:
+                        _all_fields = LOGPRESSO_TABLES[_queried_table]["columns"]
+                _content += f"**테이블 `{_queried_table}` 필드** ({len(_all_fields)}개): `{'`, `'.join(_all_fields)}`\n\n"
+            else:
+                _content += f"**결과 컬럼:** {', '.join(cols)}\n\n"
 
             # 테이블 형태로 결과 표시
             if total > 0:
@@ -6138,7 +6216,7 @@ def api_chat():
                             resp.raise_for_status()
                             result = resp.json()
                             if "choices" in result and len(result["choices"]) > 0:
-                                answer = result["choices"][0].get("message", {}).get("content", "")
+                                answer = result["choices"][0].get("message", {}).get("content") or ""
                                 return {"group": group_name, "skills": skill_ids, "response": answer,
                                         "error": None, "model": api_info["model"]}
                             return {"group": group_name, "skills": skill_ids, "response": "",
@@ -6212,7 +6290,7 @@ def api_chat():
                             sr.raise_for_status()
                             sr_data = sr.json()
                             if "choices" in sr_data and len(sr_data["choices"]) > 0:
-                                synth_answer = sr_data["choices"][0].get("message", {}).get("content", "")
+                                synth_answer = sr_data["choices"][0].get("message", {}).get("content") or ""
                                 return jsonify({
                                     "content": synth_answer,
                                     "loaded_skills": loaded,
@@ -6304,7 +6382,7 @@ def api_chat():
                 # 응답 추출
                 truncated = False
                 if "choices" in result and len(result["choices"]) > 0:
-                    answer = result["choices"][0].get("message", {}).get("content", "")
+                    answer = result["choices"][0].get("message", {}).get("content") or ""
                     finish_reason = result["choices"][0].get("finish_reason", "")
                     if finish_reason == "length":
                         truncated = True
@@ -6344,7 +6422,7 @@ def api_chat():
                             retry_resp.raise_for_status()
                             retry_result = retry_resp.json()
                             if "choices" in retry_result and len(retry_result["choices"]) > 0:
-                                answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                                answer = retry_result["choices"][0].get("message", {}).get("content") or ""
                                 finish_reason = retry_result["choices"][0].get("finish_reason", "")
                                 truncated = finish_reason == "length"
                         except Exception:
@@ -6434,7 +6512,7 @@ def api_chat():
 
             truncated = False
             if "choices" in result and len(result["choices"]) > 0:
-                answer = result["choices"][0].get("message", {}).get("content", "")
+                answer = result["choices"][0].get("message", {}).get("content") or ""
                 finish_reason = result["choices"][0].get("finish_reason", "")
                 if finish_reason == "length":
                     truncated = True
@@ -6472,7 +6550,7 @@ def api_chat():
                         retry_resp.raise_for_status()
                         retry_result = retry_resp.json()
                         if "choices" in retry_result and len(retry_result["choices"]) > 0:
-                            answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                            answer = retry_result["choices"][0].get("message", {}).get("content") or ""
                             finish_reason = retry_result["choices"][0].get("finish_reason", "")
                             truncated = finish_reason == "length"
                     except Exception:
