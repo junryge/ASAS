@@ -2276,7 +2276,7 @@ def gguf_chat(messages, temperature=0.5, max_tokens=4096, stop_flag=None):
                 max_tokens=max_tokens,
             )
             if resp and "choices" in resp and len(resp["choices"]) > 0:
-                return resp["choices"][0].get("message", {}).get("content", ""), None
+                return resp["choices"][0].get("message", {}).get("content") or "", None
             return None, f"예상치 못한 응답: {resp}"
     except Exception as e:
         return None, f"GGUF 추론 오류: {str(e)}"
@@ -2630,7 +2630,7 @@ def _agent_call_gguf(model_path, skill_ids, skill_contents, query, history,
         )
 
         if resp and "choices" in resp and len(resp["choices"]) > 0:
-            answer = resp["choices"][0].get("message", {}).get("content", "")
+            answer = resp["choices"][0].get("message", {}).get("content") or ""
             # <think> 태그 제거 (완전 쌍 + 불완전 태그 모두)
             answer = re.sub(r'<think>[\s\S]*?</think>\s*', '', answer)
             answer = re.sub(r'</?think>', '', answer).strip()
@@ -2718,7 +2718,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         _pool_release(synthesis_model_path)
 
         if resp and "choices" in resp and len(resp["choices"]) > 0:
-            answer = resp["choices"][0].get("message", {}).get("content", "")
+            answer = resp["choices"][0].get("message", {}).get("content") or ""
             answer = re.sub(r'<think>[\s\S]*?</think>\s*', '', answer)
             answer = re.sub(r'</?think>', '', answer).strip()
             meta = {
@@ -6138,7 +6138,7 @@ def api_chat():
                             resp.raise_for_status()
                             result = resp.json()
                             if "choices" in result and len(result["choices"]) > 0:
-                                answer = result["choices"][0].get("message", {}).get("content", "")
+                                answer = result["choices"][0].get("message", {}).get("content") or ""
                                 return {"group": group_name, "skills": skill_ids, "response": answer,
                                         "error": None, "model": api_info["model"]}
                             return {"group": group_name, "skills": skill_ids, "response": "",
@@ -6212,7 +6212,7 @@ def api_chat():
                             sr.raise_for_status()
                             sr_data = sr.json()
                             if "choices" in sr_data and len(sr_data["choices"]) > 0:
-                                synth_answer = sr_data["choices"][0].get("message", {}).get("content", "")
+                                synth_answer = sr_data["choices"][0].get("message", {}).get("content") or ""
                                 return jsonify({
                                     "content": synth_answer,
                                     "loaded_skills": loaded,
@@ -6304,7 +6304,7 @@ def api_chat():
                 # 응답 추출
                 truncated = False
                 if "choices" in result and len(result["choices"]) > 0:
-                    answer = result["choices"][0].get("message", {}).get("content", "")
+                    answer = result["choices"][0].get("message", {}).get("content") or ""
                     finish_reason = result["choices"][0].get("finish_reason", "")
                     if finish_reason == "length":
                         truncated = True
@@ -6344,7 +6344,7 @@ def api_chat():
                             retry_resp.raise_for_status()
                             retry_result = retry_resp.json()
                             if "choices" in retry_result and len(retry_result["choices"]) > 0:
-                                answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                                answer = retry_result["choices"][0].get("message", {}).get("content") or ""
                                 finish_reason = retry_result["choices"][0].get("finish_reason", "")
                                 truncated = finish_reason == "length"
                         except Exception:
@@ -6434,7 +6434,7 @@ def api_chat():
 
             truncated = False
             if "choices" in result and len(result["choices"]) > 0:
-                answer = result["choices"][0].get("message", {}).get("content", "")
+                answer = result["choices"][0].get("message", {}).get("content") or ""
                 finish_reason = result["choices"][0].get("finish_reason", "")
                 if finish_reason == "length":
                     truncated = True
@@ -6472,7 +6472,7 @@ def api_chat():
                         retry_resp.raise_for_status()
                         retry_result = retry_resp.json()
                         if "choices" in retry_result and len(retry_result["choices"]) > 0:
-                            answer = retry_result["choices"][0].get("message", {}).get("content", "")
+                            answer = retry_result["choices"][0].get("message", {}).get("content") or ""
                             finish_reason = retry_result["choices"][0].get("finish_reason", "")
                             truncated = finish_reason == "length"
                     except Exception:
