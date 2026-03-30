@@ -166,6 +166,17 @@ public class HidEdgeInOutUpdateMasterBatch implements Job {
             Map<Integer, List<Double>> maxVelMap = new HashMap<>();   // HID → maxVelocity 목록
             Map<Integer, Integer> portCntMap = new HashMap<>();       // HID → 포트 수 합계
 
+            // RawHidMap에서 VHL_COUNT_LIMIT, VHL_PRECAUTION 조회
+            Map<Integer, Integer> vhlCountLimitMap = new HashMap<>();  // HID → vhlMax
+            Map<Integer, Integer> vhlPrecautionMap = new HashMap<>();  // HID → vhlPreCaution
+            McpProperties mcpProperties = DataService.getInstance().getFabPropertiesMap().get(fabId).getMcpPropertiesMap().get(mcpName);
+            if (mcpProperties != null && mcpProperties.getMcp75Config() != null) {
+                for (RawHid rawHid : mcpProperties.getMcp75Config().getRawHidMap().values()) {
+                    vhlCountLimitMap.put(rawHid.getId(), rawHid.getVhlMax());
+                    vhlPrecautionMap.put(rawHid.getId(), rawHid.getVhlPreCaution());
+                }
+            }
+
             // RailEdge 순회하며 FAB에 해당하는 HID별 데이터 집계
             for (Map.Entry<String, AbstractEdge> entry : edgeMap.entrySet()) {
                 RailEdge railEdge = (RailEdge) entry.getValue();
@@ -223,6 +234,10 @@ public class HidEdgeInOutUpdateMasterBatch implements Job {
                 tuple.put("OUT_CNT", 0);
                 tuple.put("VHL_MAX", 0);
                 tuple.put("ZCU_ID", "");
+
+                // VHL_COUNT_LIMIT, VHL_PRECAUTION → RawHid (layout.xml VEHICLE_MAX, VEHICLE_PRECAUTION)
+                tuple.put("VHL_COUNT_LIMIT", vhlCountLimitMap.getOrDefault(hidId, 0));
+                tuple.put("VHL_PRECAUTION", vhlPrecautionMap.getOrDefault(hidId, 0));
 
                 tuple.put("UPDATE_DT", updateDt);
 
