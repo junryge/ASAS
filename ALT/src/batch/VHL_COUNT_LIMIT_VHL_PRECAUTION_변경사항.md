@@ -1,56 +1,39 @@
 # ATLAS_HID_INFO_MAS 테이블 - VHL_COUNT_LIMIT / VHL_PRECAUTION 컬럼 추가
 
-## 변경 파일
-- `ALT/src/batch/HidEdgeInOutUpdateMasterBatch.java`
+## 변경 목적
+
+`{FAB}_ATLAS_HID_INFO_MAS` 테이블에 HID별 차량 제한/경고 기준값이 없어서
+layout.xml의 `VEHICLE_MAX`, `VEHICLE_PRECAUTION` 값을 신규 컬럼으로 추가한다.
+
+- `VHL_COUNT_LIMIT`: HID 구간 내 최대 허용 차량 수 (이 값 초과 시 진입 제한)
+- `VHL_PRECAUTION`: HID 구간 내 차량 경고 임계값 (이 값 도달 시 주의 상태)
 
 ---
 
-## 추가된 컬럼
+## 수정 파일 목록
 
-| 컬럼명 | 타입 | 설명 | 데이터 출처 |
-|--------|------|------|------------|
-| `VHL_COUNT_LIMIT` | INT | HID 내 최대 허용 차량 수 | `RawHid.getVhlMax()` ← layout.xml `VEHICLE_MAX` |
-| `VHL_PRECAUTION` | INT | HID 내 차량 경고 임계값 | `RawHid.getVhlPreCaution()` ← layout.xml `VEHICLE_PRECAUTION` |
-
----
-
-## 컬럼 의미 상세
-
-### VHL_COUNT_LIMIT (= VEHICLE_MAX)
-- HID 구간에 **동시에 진입할 수 있는 차량의 최대 수**
-- 이 값을 초과하면 해당 HID로의 차량 진입이 제한됨
-- layout.xml에서 `VEHICLE_MAX=N` 형태로 설정
-
-### VHL_PRECAUTION (= VEHICLE_PRECAUTION)
-- HID 구간 내 차량 수가 이 값에 도달하면 **경고(주의) 상태** 진입
-- VHL_COUNT_LIMIT보다 작은 값으로 설정하여 사전 경고 역할
-- layout.xml에서 `VEHICLE_PRECAUTION=N` 형태로 설정
-- 예: VHL_PRECAUTION=3, VHL_COUNT_LIMIT=5이면 → 차량 3대부터 주의, 5대 초과 시 진입 제한
+| 파일 | 수정 내용 |
+|------|-----------|
+| `src/batch/HidEdgeInOutUpdateMasterBatch.java` | `_updateHidInfoMaster()`에 VHL_COUNT_LIMIT, VHL_PRECAUTION 추가 + truncate 추가 |
+| `src/HidMasterBatchJob.java` (OHT2/JAVA_TOEB/SRC) | `_updateHidInfoMaster()`에 VHL_COUNT_LIMIT, VHL_PRECAUTION 추가 |
+| `src/OhtMsgWorkerRunnable.java` (OHT2/JAVA_MODIFIED) | `_updateHidInfoMaster()`에 VHL_COUNT_LIMIT, VHL_PRECAUTION 추가 |
+| `src/OhtMsgWorkerRunnable.java` (OHT2/JAVA) | 위와 동일 (JAVA_MODIFIED 복사본) |
 
 ---
 
-## 데이터 흐름
+## 수정 내용 상세
 
-```
-layout.xml (VEHICLE_MAX, VEHICLE_PRECAUTION)
-    ↓ 파싱
-Mcp75Config.getRawHidMap() → RawHid 객체
-    ↓ 배치 조회
-HidEdgeInOutUpdateMasterBatch._updateHidInfoMaster()
-    ↓ 테이블 저장
-{FAB}_ATLAS_HID_INFO_MAS (VHL_COUNT_LIMIT, VHL_PRECAUTION)
-```
+### 1. RawHidMap 조회 로직 추가
 
----
+`_updateHidInfoMaster()` 메서드 내부, HID별 집계 맵 선언부 아래에 추가.
 
-## 변경 내용 (HidEdgeInOutUpdateMasterBatch.java)
-
-### 1. RawHidMap 조회 로직 추가 (169~178행)
+**왜**: layout.xml에서 파싱된 VEHICLE_MAX, VEHICLE_PRECAUTION 값이 `RawHid` 객체에 있으므로
+`Mcp75Config.getRawHidMap()`을 통해 HID ID별로 맵에 담아놓는다.
 
 ```java
 // RawHidMap에서 VHL_COUNT_LIMIT, VHL_PRECAUTION 조회
-Map<Integer, Integer> vhlCountLimitMap = new HashMap<>();  // HID → vhlMax
-Map<Integer, Integer> vhlPrecautionMap = new HashMap<>();  // HID → vhlPreCaution
+Map<Integer, Integer> vhlCountLimitMap = new HashMap<>();
+Map<Integer, Integer> vhlPrecautionMap = new HashMap<>();
 McpProperties mcpProperties = DataService.getInstance()
     .getFabPropertiesMap().get(fabId)
     .getMcpPropertiesMap().get(mcpName);
@@ -62,17 +45,48 @@ if (mcpProperties != null && mcpProperties.getMcp75Config() != null) {
 }
 ```
 
-### 2. Tuple에 값 세팅 (238~240행)
+### 2. tuple.put() 추가
+
+HID별 Tuple 생성 루프 내부, `ZCU_ID` 아래 / `UPDATE_DT` 위에 추가.
+
+**왜**: 위에서 조회한 맵에서 현재 HID ID에 해당하는 값을 꺼내서 테이블에 넣는다.
 
 ```java
-// VHL_COUNT_LIMIT, VHL_PRECAUTION → RawHid (layout.xml VEHICLE_MAX, VEHICLE_PRECAUTION)
 tuple.put("VHL_COUNT_LIMIT", vhlCountLimitMap.getOrDefault(hidId, 0));
 tuple.put("VHL_PRECAUTION", vhlPrecautionMap.getOrDefault(hidId, 0));
 ```
 
+### 3. truncateTable() 추가 (src/batch/HidEdgeInOutUpdateMasterBatch.java만 해당)
+
+`LogpressoAPI.setInsertTuples()` 호출 전에 추가.
+
+**왜**: 기존 코드에 truncate가 빠져 있어서 배치 실행 시 데이터가 중복 적재되었음.
+설계 문서 기준 Full Refresh (삭제 후 재적재) 방식이므로 truncate 추가.
+
+```java
+LogpressoAPI.truncateTable(tableName);
+LogpressoAPI.setInsertTuples(tableName, tuples, 100);
+```
+
 ---
 
-## 기존 테이블 컬럼 구조 (변경 후)
+## 데이터 흐름
+
+```
+layout.xml (VEHICLE_MAX, VEHICLE_PRECAUTION)
+    ↓ 파싱
+src/Mcp75Config.java → RawHid 객체 (vhlMax, vhlPreCaution)
+    ↓ 배치 조회
+src/HidEdgeInOutUpdateMasterBatch.java → _updateHidInfoMaster()
+src/HidMasterBatchJob.java             → _updateHidInfoMaster()
+src/OhtMsgWorkerRunnable.java          → _updateHidInfoMaster()
+    ↓ 테이블 저장
+{FAB}_ATLAS_HID_INFO_MAS (VHL_COUNT_LIMIT, VHL_PRECAUTION)
+```
+
+---
+
+## 변경 후 테이블 컬럼 구조
 
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -90,14 +104,3 @@ tuple.put("VHL_PRECAUTION", vhlPrecautionMap.getOrDefault(hidId, 0));
 | **`VHL_COUNT_LIMIT`** | **INT** | **최대 허용 차량 수 (신규)** |
 | **`VHL_PRECAUTION`** | **INT** | **차량 경고 임계값 (신규)** |
 | `UPDATE_DT` | STRING | 업데이트 일시 |
-
----
-
-## 관련 클래스
-
-| 클래스 | 위치 | 역할 |
-|--------|------|------|
-| `RawHid` | `ALT/src/data/raw/RawHid.java` | HID 원시 데이터 (vhlMax, vhlPreCaution 필드 보유) |
-| `Mcp75Config` | `ALT/src/data/raw/Mcp75Config.java` | layout.xml 파싱, rawHidMap 관리 |
-| `McpProperties` | `ALT/src/data/McpProperties.java` | MCP 설정, getMcp75Config() 제공 |
-| `HidEdgeInOutUpdateMasterBatch` | `ALT/src/batch/HidEdgeInOutUpdateMasterBatch.java` | 배치 잡, ATLAS_HID_INFO_MAS 테이블 업데이트 |
