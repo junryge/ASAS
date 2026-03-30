@@ -723,7 +723,13 @@
     </div>
 
     <div class="agent-section">
-      <h3>Agent Team</h3>
+      <h3 style="display:flex;align-items:center;justify-content:space-between;">Agent Team
+        <div style="display:flex;gap:4px;">
+          <button onclick="openAddAgentModal()" style="background:#2ecc71;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;" title="에이전트 입사">🎉 입사</button>
+          <button onclick="exportAgentsJson()" style="background:#243244;color:#eaf1ff;border:1px solid #3a4a5a;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;" title="내보내기">📥</button>
+          <button onclick="importAgentsJson()" style="background:#243244;color:#eaf1ff;border:1px solid #3a4a5a;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;" title="가져오기">📤</button>
+        </div>
+      </h3>
 
       <div class="agent-card seo" onclick="openAgent('seo')">
         <div class="avatar">S</div>
@@ -793,6 +799,41 @@
       ASAS Multi-Agent System v1.0
     </div>
   </div>
+
+<!-- 우클릭 컨텍스트 메뉴 -->
+<div id="agentCtxMenu" style="display:none;position:fixed;z-index:9999;background:#1a2535;border:1px solid #3a4a5a;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:170px;padding:4px 0;">
+  <div class="ctx-item" onclick="openAddAgentModal()" style="padding:8px 14px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#eaf1ff;">🎉 입사 (에이전트 추가)</div>
+  <div id="ctxEditItem" style="display:none;padding:8px 14px;font-size:13px;cursor:pointer;align-items:center;gap:8px;color:#eaf1ff;" onclick="editCtxAgent()">✏️ 편집</div>
+  <div id="ctxDeleteItem" style="display:none;padding:8px 14px;font-size:13px;cursor:pointer;align-items:center;gap:8px;color:#eaf1ff;" onclick="deleteCtxAgent()">🔥 해고</div>
+  <div id="ctxPageItem" style="display:none;padding:8px 14px;font-size:13px;cursor:pointer;align-items:center;gap:8px;color:#eaf1ff;" onclick="openCtxAgentPage()">🔗 페이지 열기</div>
+</div>
+
+<!-- 에이전트 추가/편집 모달 -->
+<div id="agentEditModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.6);place-items:center;" onclick="if(event.target===this)closeAgentModal()">
+  <div style="background:#1a2535;border-radius:12px;padding:24px;width:400px;max-height:80vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.5);color:#eaf1ff;font-family:'Segoe UI',sans-serif;">
+    <h3 id="agentModalTitle" style="margin-bottom:16px;font-size:17px;">🎉 신규 입사</h3>
+    <input type="hidden" id="agEditKey" value="">
+    <label style="font-size:12px;font-weight:600;display:block;margin:10px 0 4px;">이름 *</label>
+    <input id="agEditName" placeholder="예: KIM" style="width:100%;padding:8px;border-radius:6px;border:1px solid #3a4a5a;background:#0f151e;color:#eaf1ff;font-size:13px;box-sizing:border-box;">
+    <label style="font-size:12px;font-weight:600;display:block;margin:10px 0 4px;">역할 / 설명</label>
+    <input id="agEditRole" placeholder="예: 데이터 분석 에이전트" style="width:100%;padding:8px;border-radius:6px;border:1px solid #3a4a5a;background:#0f151e;color:#eaf1ff;font-size:13px;box-sizing:border-box;">
+    <label style="font-size:12px;font-weight:600;display:block;margin:10px 0 4px;">스프라이트</label>
+    <select id="agEditSprite" style="width:100%;padding:8px;border-radius:6px;border:1px solid #3a4a5a;background:#0f151e;color:#eaf1ff;font-size:13px;">
+      <option value="0">👤 남성 A</option><option value="1">👤 남성 B</option><option value="2">👤 남성 C</option><option value="3">👩 여성</option>
+    </select>
+    <label style="font-size:12px;font-weight:600;display:block;margin:10px 0 4px;">색상</label>
+    <div style="display:flex;gap:4px;">
+      <input type="color" id="agEditColor1" value="#ff6b6b" style="width:50%;height:32px;border:none;border-radius:4px;cursor:pointer;">
+      <input type="color" id="agEditColor2" value="#ee5a24" style="width:50%;height:32px;border:none;border-radius:4px;cursor:pointer;">
+    </div>
+    <label style="font-size:12px;font-weight:600;display:block;margin:10px 0 4px;">전용 페이지 URL (선택)</label>
+    <input id="agEditPageUrl" placeholder="/uio/KIM/" style="width:100%;padding:8px;border-radius:6px;border:1px solid #3a4a5a;background:#0f151e;color:#eaf1ff;font-size:13px;box-sizing:border-box;">
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button onclick="closeAgentModal()" style="flex:1;padding:8px;border-radius:6px;border:none;font-size:13px;cursor:pointer;background:#243244;color:#eaf1ff;">취소</button>
+      <button onclick="saveAgentFromModal()" style="flex:1;padding:8px;border-radius:6px;border:none;font-size:13px;cursor:pointer;background:#ff4d4d;color:#fff;font-weight:600;">저장</button>
+    </div>
+  </div>
+</div>
 
   <script>
     const canvas = document.getElementById("game");
@@ -2496,7 +2537,6 @@
             effort: 2,
             format: 'auto',
             writing_style: 'auto',
-            max_tokens: 4096,
             think_mode: false,
           }),
         });
@@ -4109,6 +4149,368 @@
         if(i < keys.length) c._key = keys[i];
       });
     }, 500);
+
+    // ═══ 에이전트 관리 시스템 (CRUD + 우클릭 + localStorage) ═══
+    const AG_STORAGE_KEY = 'uio_custom_agents';
+    let _ctxAgentKey = null; // 우클릭 대상 에이전트 키
+
+    // --- 우클릭 컨텍스트 메뉴 ---
+    document.querySelectorAll('.agent-card').forEach(card => {
+      card.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const agKey = card.querySelector('.skill-select')?.dataset?.agent || card.className.match(/agent-card (\w+)/)?.[1];
+        showAgentCtxMenu(e.clientX, e.clientY, agKey);
+      });
+    });
+    // 캔버스 우클릭
+    canvas.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      // 캐릭터 히트테스트
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width * world.width;
+      const my = (e.clientY - rect.top) / rect.height * world.height;
+      let hitKey = null;
+      for(let i = characters.length - 1; i >= 0; i--){
+        const c = characters[i];
+        if(c._key && c.hitTest){
+          // 간단한 히트테스트: 캐릭터 주변 50px
+          const dx = mx - c.x, dy = my - c.y;
+          if(Math.abs(dx) < 50 && dy > -120 && dy < 10){
+            hitKey = c._key;
+            break;
+          }
+        }
+      }
+      showAgentCtxMenu(e.clientX, e.clientY, hitKey);
+    });
+
+    let _ctxMenuOpen = false;
+    function showAgentCtxMenu(x, y, agKey){
+      _ctxAgentKey = agKey;
+      const menu = document.getElementById('agentCtxMenu');
+      const editEl = document.getElementById('ctxEditItem');
+      const delEl = document.getElementById('ctxDeleteItem');
+      const pageEl = document.getElementById('ctxPageItem');
+      editEl.style.display = agKey ? 'flex' : 'none';
+      delEl.style.display = agKey ? 'flex' : 'none';
+      const agData = agKey ? agentBaseData[agKey] : null;
+      pageEl.style.display = (agData && agData.pageUrl) ? 'flex' : 'none';
+      menu.style.left = x + 'px';
+      menu.style.top = y + 'px';
+      menu.style.display = 'block';
+      _ctxMenuOpen = true;
+      setTimeout(()=>{ _ctxMenuOpen = false; }, 100);
+    }
+    document.addEventListener('click', (e) => {
+      if(_ctxMenuOpen) return;
+      const menu = document.getElementById('agentCtxMenu');
+      if(menu && !menu.contains(e.target)){
+        menu.style.display = 'none';
+      }
+    });
+
+    function editCtxAgent(){
+      document.getElementById('agentCtxMenu').style.display = 'none';
+      if(!_ctxAgentKey || !agentBaseData[_ctxAgentKey]) return;
+      openEditAgentModal(_ctxAgentKey);
+    }
+    function deleteCtxAgent(){
+      document.getElementById('agentCtxMenu').style.display = 'none';
+      if(!_ctxAgentKey) return;
+      const ag = agentBaseData[_ctxAgentKey];
+      if(!ag) return;
+      if(!confirm(`🔥 ${ag.name}을(를) 해고하시겠습니까?`)) return;
+      const firedKey = _ctxAgentKey;
+      const firedName = ag.name;
+      const firedColor = ag.color1 || '#ff4d4d';
+      // 🔥 해고 연출: 캐릭터가 화면 오른쪽 밖으로 걸어나감
+      const ch = characters.find(c => c._key === firedKey);
+      if(ch){
+        ch.targetX = world.width + 200; // 화면 밖으로
+        ch.targetY = ch.y;
+        ch.isMoving = true;
+        ch.direction = 1; // 오른쪽으로
+        ch.speed = 4.0; // 빠르게 나감
+        ch.bounds = {minX:-500, maxX:world.width+500, minY:0, maxY:world.height};
+        ch._isFired = true;
+        // 일정 시간 후 제거
+        setTimeout(()=>{
+          const ci = characters.findIndex(c => c._key === firedKey);
+          if(ci >= 0) characters.splice(ci, 1);
+        }, 3000);
+      }
+      // 사이드바 카드 페이드아웃
+      const card = document.querySelector(`.agent-card.${firedKey}`);
+      if(card){
+        card.style.transition = 'opacity .5s, transform .5s';
+        card.style.opacity = '0';
+        card.style.transform = 'translateX(100%)';
+        setTimeout(()=> card.remove(), 500);
+      }
+      // 데이터 제거 (약간 지연)
+      setTimeout(()=>{
+        delete agentBaseData[firedKey];
+        delete agentSkillMap[firedKey];
+        const mini = document.querySelector(`.mini-icons [data-key="${firedKey}"]`);
+        if(mini) mini.remove();
+        saveCustomAgents();
+      }, 500);
+      showOfficeToast(`🔥 ${firedName} 해고! 안녕히 가세요...`, firedColor);
+    }
+    function openCtxAgentPage(){
+      document.getElementById('agentCtxMenu').style.display = 'none';
+      if(!_ctxAgentKey) return;
+      const ag = agentBaseData[_ctxAgentKey];
+      if(ag && ag.pageUrl) window.open(ag.pageUrl, '_blank');
+    }
+
+    // --- 에이전트 추가/편집 모달 ---
+    function openAddAgentModal(){
+      document.getElementById('agentCtxMenu').style.display = 'none';
+      document.getElementById('agentModalTitle').textContent = '🎉 신규 입사';
+      document.getElementById('agEditKey').value = '';
+      document.getElementById('agEditName').value = '';
+      document.getElementById('agEditRole').value = '';
+      document.getElementById('agEditSprite').value = '0';
+      document.getElementById('agEditColor1').value = '#ff6b6b';
+      document.getElementById('agEditColor2').value = '#ee5a24';
+      document.getElementById('agEditPageUrl').value = '';
+      document.getElementById('agentEditModal').style.display = 'grid';
+    }
+    function openEditAgentModal(key){
+      const ag = agentBaseData[key];
+      if(!ag) return;
+      document.getElementById('agentModalTitle').textContent = '✏️ 에이전트 편집: ' + ag.name;
+      document.getElementById('agEditKey').value = key;
+      document.getElementById('agEditName').value = ag.name || '';
+      document.getElementById('agEditRole').value = ag.title || ag.desc || '';
+      document.getElementById('agEditSprite').value = ag._spriteIdx != null ? ag._spriteIdx : '0';
+      document.getElementById('agEditColor1').value = ag.color1 || '#ff6b6b';
+      document.getElementById('agEditColor2').value = ag.color2 || '#ee5a24';
+      document.getElementById('agEditPageUrl').value = ag.pageUrl || '';
+      document.getElementById('agentEditModal').style.display = 'grid';
+    }
+    function closeAgentModal(){
+      document.getElementById('agentEditModal').style.display = 'none';
+    }
+
+    function saveAgentFromModal(){
+      const editKey = document.getElementById('agEditKey').value;
+      const name = document.getElementById('agEditName').value.trim();
+      if(!name){ alert('이름을 입력하세요.'); return; }
+      const role = document.getElementById('agEditRole').value.trim();
+      const spriteIdx = parseInt(document.getElementById('agEditSprite').value);
+      const color1 = document.getElementById('agEditColor1').value;
+      const color2 = document.getElementById('agEditColor2').value;
+      const pageUrl = document.getElementById('agEditPageUrl').value.trim();
+      // 한글 입력 차단
+      if(/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(name)){
+        alert('이름은 영문+숫자만 가능합니다. (예: SUYEON, Agent01)');
+        return;
+      }
+      const key = editKey || name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'') || ('agent_' + Date.now());
+
+      if(editKey){
+        // 편집
+        const ag = agentBaseData[key];
+        if(ag){
+          ag.name = name; ag.letter = name[0].toUpperCase();
+          ag.title = role; ag.desc = role;
+          ag.color1 = color1; ag.color2 = color2;
+          ag.pageUrl = pageUrl; ag._spriteIdx = spriteIdx;
+          // 사이드바 카드 업데이트
+          const card = document.querySelector(`.agent-card.${key}`);
+          if(card){
+            card.querySelector('.name').textContent = name;
+            card.querySelector('.avatar').textContent = ag.letter;
+            card.querySelector('.avatar').style.background = `linear-gradient(135deg, ${color1}, ${color2})`;
+          }
+          // 캐릭터 스프라이트 교체
+          const ch = characters.find(c => c._key === key);
+          if(ch){
+            ch.frames = spriteGroups[spriteIdx] || spriteGroups[0];
+            ch.name = name;
+          }
+        }
+      } else {
+        // 새 에이전트 추가
+        if(agentBaseData[key]){ alert('같은 이름의 에이전트가 이미 있습니다.'); return; }
+        agentBaseData[key] = {
+          name, letter: name[0].toUpperCase(), title: role, desc: role,
+          color1, color2, pageUrl, _spriteIdx: spriteIdx,
+          quickActions: []
+        };
+        agentSkillMap[key] = 'none';
+        // 🎉 입사 연출: 화면 왼쪽 밖에서 걸어 들어옴
+        const destX = 200 + Math.random() * 1000;
+        const destY = 300 + Math.random() * 500;
+        const ch = new Character(spriteGroups[spriteIdx]||spriteGroups[0], -100, destY,
+          3.0, 1.0, false,
+          {minX:Math.max(50,destX-200), maxX:Math.min(world.width-50,destX+200),
+           minY:Math.max(100,destY-100), maxY:Math.min(world.height-50,destY+100)},
+          'alwaysMove', name);
+        ch._key = key;
+        ch.direction = 1; // 오른쪽으로 걸어옴
+        ch.targetX = destX; ch.targetY = destY; ch.isMoving = true;
+        ch._isEntering = true; // 입사 중 플래그
+        characters.push(ch);
+        // 환영 메시지 표시
+        showOfficeToast(`🎉 ${name} 입사! 환영합니다!`, color1);
+        // 사이드바 카드 추가
+        addAgentCardToSidebar(key);
+      }
+      saveCustomAgents();
+      closeAgentModal();
+    }
+
+    function addAgentCardToSidebar(key){
+      const ag = agentBaseData[key];
+      if(!ag) return;
+      const section = document.querySelector('.agent-section');
+      const card = document.createElement('div');
+      card.className = `agent-card ${key}`;
+      card.onclick = () => openAgent(key);
+      card.oncontextmenu = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        showAgentCtxMenu(e.clientX, e.clientY, key);
+      };
+      card.innerHTML = `
+        <div class="avatar" style="background:linear-gradient(135deg,${ag.color1},${ag.color2})">${ag.letter}</div>
+        <div class="info">
+          <div class="name">${ag.name}</div>
+          <select class="skill-select" data-agent="${key}" onclick="event.stopPropagation()" onchange="changeAgentSkill('${key}', this.value)"></select>
+        </div>
+        <div style="display:flex;gap:2px;flex-shrink:0;">
+          <button onclick="event.stopPropagation();_ctxAgentKey='${key}';editCtxAgent();" style="background:none;border:none;cursor:pointer;font-size:12px;padding:2px;" title="편집">✏️</button>
+          <button onclick="event.stopPropagation();_ctxAgentKey='${key}';deleteCtxAgent();" style="background:none;border:none;cursor:pointer;font-size:12px;padding:2px;" title="해고">🔥</button>
+        </div>
+        <div class="status"></div>`;
+      section.appendChild(card);
+      // 스킬 셀렉트 초기화
+      const sel = card.querySelector('.skill-select');
+      if(sel && typeof populateSkillSelect === 'function'){
+        populateSkillSelect(sel, key);
+      } else if(sel){
+        sel.innerHTML = '<option value="none">스킬 없음</option>';
+      }
+    }
+
+    // 스킬 셀렉트 초기화 헬퍼
+    function populateSkillSelect(sel, agKey){
+      sel.innerHTML = '<option value="none">스킬 없음</option>';
+      if(typeof skillDefs !== 'undefined'){
+        Object.keys(skillDefs).forEach(sk => {
+          const opt = document.createElement('option');
+          opt.value = sk; opt.textContent = skillDefs[sk].title || sk;
+          if(agentSkillMap[agKey] === sk) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      }
+    }
+
+    // --- 오피스 토스트 메시지 ---
+    function showOfficeToast(msg, color){
+      const toast = document.createElement('div');
+      toast.style.cssText = `position:fixed;top:20px;left:50%;transform:translateX(-50%);
+        background:${color||'#ff4d4d'};color:#fff;padding:12px 24px;border-radius:10px;
+        font-size:15px;font-weight:700;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.4);
+        animation:toastIn .4s ease-out;pointer-events:none;`;
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(()=>{
+        toast.style.transition = 'opacity .5s, transform .5s';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(-20px)';
+        setTimeout(()=> toast.remove(), 500);
+      }, 2500);
+    }
+
+    // --- localStorage 저장/불러오기 ---
+    function saveCustomAgents(){
+      const data = {};
+      Object.keys(agentBaseData).forEach(key => {
+        if(key === 'ceo') return; // CEO는 기본값 유지
+        const ag = agentBaseData[key];
+        const ch = characters.find(c => c._key === key);
+        data[key] = {
+          name: ag.name, letter: ag.letter, title: ag.title, desc: ag.desc,
+          color1: ag.color1, color2: ag.color2, pageUrl: ag.pageUrl || '',
+          _spriteIdx: ag._spriteIdx != null ? ag._spriteIdx : 0,
+          skill: agentSkillMap[key] || 'none',
+          x: ch ? ch.x : 500, y: ch ? ch.y : 500,
+          bounds: ch ? ch.bounds : null,
+          speed: ch ? ch.speed : 1.4,
+          behavior: ch ? ch.pauseBehavior : 'normal',
+        };
+      });
+      localStorage.setItem(AG_STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function loadCustomAgents(){
+      try{
+        const raw = localStorage.getItem(AG_STORAGE_KEY);
+        if(!raw) return;
+        const data = JSON.parse(raw);
+        Object.keys(data).forEach(key => {
+          const d = data[key];
+          // 이미 있으면 업데이트, 없으면 추가
+          if(!agentBaseData[key]){
+            agentBaseData[key] = {
+              name: d.name, letter: d.letter, title: d.title, desc: d.desc,
+              color1: d.color1, color2: d.color2, pageUrl: d.pageUrl || '',
+              _spriteIdx: d._spriteIdx || 0, quickActions: []
+            };
+            agentSkillMap[key] = d.skill || 'none';
+            // 캐릭터 추가
+            const ch = new Character(
+              spriteGroups[d._spriteIdx||0]||spriteGroups[0],
+              d.x||500, d.y||500, d.speed||1.4, 1.0, false,
+              d.bounds||{minX:100,maxX:1400,minY:200,maxY:900},
+              d.behavior||'normal', d.name);
+            ch._key = key;
+            characters.push(ch);
+            // 사이드바 카드
+            addAgentCardToSidebar(key);
+          } else {
+            // 기존 에이전트 스킬 복원
+            if(d.skill) agentSkillMap[key] = d.skill;
+            if(d.pageUrl) agentBaseData[key].pageUrl = d.pageUrl;
+          }
+        });
+      }catch(e){ console.warn('에이전트 로드 실패:', e); }
+    }
+    // 페이지 로드 시 저장된 에이전트 복원
+    setTimeout(loadCustomAgents, 600);
+
+    // --- 내보내기/가져오기 ---
+    function exportAgentsJson(){
+      saveCustomAgents();
+      const raw = localStorage.getItem(AG_STORAGE_KEY) || '{}';
+      const blob = new Blob([raw], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'uio_agents.json'; a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    function importAgentsJson(){
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.json';
+      input.onchange = e => {
+        const file = e.target.files[0]; if(!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          try{
+            const data = JSON.parse(ev.target.result);
+            localStorage.setItem(AG_STORAGE_KEY, JSON.stringify(data));
+            alert('가져오기 완료! 페이지를 새로고침합니다.');
+            location.reload();
+          }catch(err){ alert('파일 파싱 실패: ' + err.message); }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }
 
   </script>
 </body>
