@@ -46,6 +46,8 @@ HID IN/OUT 엣지 기반 집계 기능을 **기존 코드에 추가**합니다.
 | `OUT_CNT` | INT | OUT Lane 개수 | `HID_Zone_Master.csv` → `OUT_Count` |
 | `VHL_MAX` | INT | 최대 허용 차량 수 | `HID_Zone_Master.csv` → `Vehicle_Max` |
 | `ZCU_ID` | STRING | ZCU ID | `HID_Zone_Master.csv` → `ZCU` |
+| `VHL_COUNT_LIMIT` | INT | 최대 허용 차량 수 (HID) | `RawHid.getVhlMax()` ← layout.xml `VEHICLE_MAX` |
+| `VHL_PRECAUTION` | INT | 차량 경고 임계값 (HID) | `RawHid.getVhlPreCaution()` ← layout.xml `VEHICLE_PRECAUTION` |
 | `UPDATE_DT` | STRING | 마지막 업데이트 일시 | `SimpleDateFormat("yyyy-MM-dd HH:mm:ss")` |
 
 ---
@@ -385,6 +387,8 @@ public void updateHidEdgeMasterInfo() {
  *   - OUT_CNT: OUT Lane 개수
  *   - VHL_MAX: 최대 허용 차량 수
  *   - ZCU_ID: ZCU ID
+ *   - VHL_COUNT_LIMIT: 최대 허용 차량 수 (RawHid.vhlMax)
+ *   - VHL_PRECAUTION: 차량 경고 임계값 (RawHid.vhlPreCaution)
  *   - UPDATE_DT: 마지막 업데이트 일시
  */
 @Scheduled(cron = "0 0 0 * * ?")
