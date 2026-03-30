@@ -112,6 +112,18 @@ LOGPRESSO_TABLES = {
 }
 
 
+def _fetch_table_fields(table_name, timeout=5):
+    """테이블에서 샘플 1건을 조회하여 필드(컬럼) 목록을 추출."""
+    try:
+        lpql = f"table duration=5m {table_name} | limit 1"
+        df, err = query_logpresso(lpql, timeout=timeout)
+        if df is not None and len(df.columns) > 0:
+            return list(df.columns)
+    except Exception:
+        pass
+    return []
+
+
 def _refresh_logpresso_tables():
     """서버 시작 시 system tables 조회하여 LOGPRESSO_TABLES 자동 업데이트.
     로그프레소 서버 접속 불가 시 조용히 스킵 (집에서 테스트 등).
@@ -128,9 +140,10 @@ def _refresh_logpresso_tables():
             tname = str(row.get("table", row.get("name", ""))).strip()
             if not tname or tname in LOGPRESSO_TABLES:
                 continue
+            # 새 테이블 등록 — 필드는 나중에 조회 시 동적으로 가져옴
             LOGPRESSO_TABLES[tname] = {
                 "desc": str(row.get("description", row.get("desc", tname))).strip(),
-                "columns": [],  # 컬럼은 실제 조회 시 확인
+                "columns": [],
             }
             added += 1
 
@@ -1206,7 +1219,7 @@ def scan_skills():
 
 # ============================================
 # 수동 전용 스킬 (자동 추천에서 제외, 사용자가 직접 선택해야 함)
-MANUAL_ONLY_SKILLS = {"knowledge-search"}
+MANUAL_ONLY_SKILLS = {"knowledge-search", "logpresso-search"}
 
 # 오토 스킬 라우터 (키워드 매칭)
 # ============================================
@@ -3264,30 +3277,53 @@ def api_logpresso_query():
         df, err = query_logpresso("system tables", timeout=5)
         if df is not None and len(df) > 0:
             server_tables = df.to_dict("records")
+            # 각 테이블의 필드값도 함께 조회 (빈 columns인 테이블만)
+            for st in server_tables:
+                tname = st.get("table", st.get("name", ""))
+                if tname and tname in LOGPRESSO_TABLES:
+                    cached_cols = LOGPRESSO_TABLES[tname].get("columns", [])
+                    if cached_cols:
+                        st["fields"] = cached_cols
+                    else:
+                        fields = _fetch_table_fields(tname, timeout=3)
+                        if fields:
+                            LOGPRESSO_TABLES[tname]["columns"] = fields
+                        st["fields"] = fields
+                    st["field_count"] = len(st.get("fields", []))
+                elif tname:
+                    fields = _fetch_table_fields(tname, timeout=3)
+                    st["fields"] = fields
+                    st["field_count"] = len(fields)
             return jsonify({
                 "mode": "table_list",
                 "source": "server",
                 "tables": server_tables,
                 "total": len(server_tables),
                 "columns": list(df.columns),
-                "message": f"로그프레소 서버에서 조회: 총 {len(server_tables)}개 테이블",
+                "message": f"로그프레소 서버에서 조회: 총 {len(server_tables)}개 테이블 (필드 포함)",
             })
 
-        # 서버 연결 실패 시 하드코딩 폴백
+        # 서버 연결 실패 시 하드코딩 폴백 (필드 정보 포함)
         tables = []
         for name, info in LOGPRESSO_TABLES.items():
+            cols = info["columns"]
+            # 빈 columns → 서버에서 동적 조회 시도
+            if not cols:
+                cols = _fetch_table_fields(name, timeout=3)
+                if cols:
+                    info["columns"] = cols
             tables.append({
                 "table": name,
                 "desc": info["desc"],
-                "columns": info["columns"],
-                "column_count": len(info["columns"]),
+                "columns": cols,
+                "column_count": len(cols),
             })
         return jsonify({
             "mode": "table_list",
             "source": "local",
             "tables": tables,
             "total": len(tables),
-            "message": f"서버 연결 실패 - 로컬 등록 테이블: {len(tables)}개",
+            "message": f"로컬 등록 테이블: {len(tables)}개 (필드 포함)",
         })
 
     # ── 모드 2: 테이블 구조 확인 ──
@@ -3311,6 +3347,9 @@ def api_logpresso_query():
         df, _err = query_logpresso(sample_lpql, timeout=30)
         if df is not None and len(df) > 0:
             sample_data = df.head(5).to_dict("records")
+            # 빈 columns → 샘플 조회 결과에서 필드 자동 보충
+            if not info["columns"] and len(df.columns) > 0:
+                info["columns"] = list(df.columns)
 
         return jsonify({
             "mode": "table_schema",
@@ -5260,14 +5299,20 @@ def api_chat():
     if "logpresso-search" in skill_ids and any(kw in last_user_query for kw in _lpq_table_list_kw):
         _content = "**로그프레소 사용 가능한 테이블 목록**\n\n"
         _content += f"총 **{len(LOGPRESSO_TABLES)}개** 테이블\n\n"
-        _content += "| # | 테이블명 | 설명 | 주요 컬럼 |\n"
+        _content += "| # | 테이블명 | 설명 | 필드(컬럼) |\n"
         _content += "|---|----------|------|----------|\n"
         for idx, (tname, tinfo) in enumerate(sorted(LOGPRESSO_TABLES.items()), 1):
-            cols = ", ".join(tinfo["columns"][:6]) if tinfo["columns"] else "(조회 필요)"
-            if len(tinfo["columns"]) > 6:
-                cols += f" 외 {len(tinfo['columns'])-6}개"
-            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols} |\n"
-        _content += f"\n> 서버 시작 시 자동 업데이트됨. 특정 테이블 조회: `테이블명 조회해줘`"
+            cols = tinfo["columns"]
+            # 빈 columns → 서버에서 필드 동적 조회
+            if not cols:
+                cols = _fetch_table_fields(tname, timeout=3)
+                if cols:
+                    tinfo["columns"] = cols
+            cols_str = ", ".join(cols[:8]) if cols else "(서버 미접속)"
+            if len(cols) > 8:
+                cols_str += f" 외 {len(cols)-8}개"
+            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols_str} |\n"
+        _content += f"\n> 총 {len(LOGPRESSO_TABLES)}개 테이블. 특정 테이블 구조 확인: `테이블명 구조 보여줘`"
         return jsonify({
             "content": _content,
             "model_used": "Logpresso Tables",
