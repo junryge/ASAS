@@ -121,6 +121,92 @@ LOGPRESSO_TABLES = {
     },
 }
 
+# 테이블 카테고리 그룹 (접두사 기반 자동 분류)
+LOGPRESSO_TABLE_GROUPS = [
+    {"id": "atlas",    "label": "🚀 ATLAS 물류",     "prefix": ["ATLAS_", "ICPKT_ATLAS_"]},
+    {"id": "fab-hid",  "label": "🏭 FAB HID",        "prefix": ["M14A_", "M14B_", "M16A_", "M16B_"]},
+    {"id": "ts",       "label": "📦 Transfer(TS)",    "prefix": ["ts_"]},
+    {"id": "oht",      "label": "🚗 OHT",             "prefix": ["oht_"]},
+    {"id": "cs",       "label": "💻 CS 데이터",       "prefix": ["cs_"]},
+    {"id": "ds",       "label": "📊 DS 데이터",       "prefix": ["ds_"]},
+    {"id": "ei",       "label": "⚡ EI 데이터",       "prefix": ["ei_"]},
+    {"id": "secs",     "label": "🔌 SECS",            "prefix": ["secs_"]},
+    {"id": "tibrv",    "label": "📡 TIBRV",           "prefix": ["tibrv_"]},
+    {"id": "bridge",   "label": "🌉 브리지",          "prefix": ["bridge_"]},
+    {"id": "sys",      "label": "⚙️ 시스템",          "prefix": ["sys_"]},
+    {"id": "alarm",    "label": "🔔 알람/이상감지",   "prefix": ["ALERT_", "AMOS_", "abnormal_"]},
+    {"id": "msglog",   "label": "📝 메시지로그",      "prefix": ["table_msglog"]},
+    {"id": "test",     "label": "🧪 테스트",          "prefix": ["test_"]},
+]
+
+# FAB별 필터 (접미사/포함 기반 — 카테고리와 별도로 교차 필터 가능)
+LOGPRESSO_FAB_FILTERS = [
+    {"id": "m14",  "label": "M14 (전체)",  "keywords": ["m14a", "m14b", "m14"]},
+    {"id": "m14a", "label": "M14A",        "keywords": ["m14a"]},
+    {"id": "m14b", "label": "M14B",        "keywords": ["m14b"]},
+    {"id": "m16",  "label": "M16 (전체)",  "keywords": ["m16a", "m16b", "m16e", "m16"]},
+    {"id": "m16a", "label": "M16A",        "keywords": ["m16a"]},
+    {"id": "m16b", "label": "M16B",        "keywords": ["m16b"]},
+]
+
+
+def _get_table_group(table_name):
+    """테이블명으로 카테고리 그룹 ID 반환"""
+    for grp in LOGPRESSO_TABLE_GROUPS:
+        for pfx in grp["prefix"]:
+            if table_name.startswith(pfx):
+                return grp["id"]
+    return "etc"
+
+
+def _get_table_fabs(table_name):
+    """테이블명에 포함된 FAB ID 목록 반환 (예: ['m14a'])"""
+    tl = table_name.lower()
+    matched = []
+    for fab in LOGPRESSO_FAB_FILTERS:
+        if fab["id"] in ("m14", "m16"):
+            continue  # 상위 그룹은 스킵, 개별 FAB만 태깅
+        for kw in fab["keywords"]:
+            if kw in tl:
+                matched.append(fab["id"])
+                break
+    return matched
+
+
+def _filter_tables_by_groups(group_ids, fab_ids=None):
+    """선택된 그룹/FAB에 해당하는 테이블만 반환. 둘 다 빈 리스트면 전체 반환."""
+    if not group_ids and not fab_ids:
+        return dict(LOGPRESSO_TABLES)
+
+    # FAB 키워드 목록 구축 (예: ["m14a", "m14b", "m14"])
+    fab_keywords = []
+    for fid in (fab_ids or []):
+        for fab in LOGPRESSO_FAB_FILTERS:
+            if fab["id"] == fid:
+                fab_keywords.extend(fab["keywords"])
+
+    result = {}
+    for tname, tinfo in LOGPRESSO_TABLES.items():
+        tl = tname.lower()
+
+        # 조건1: 카테고리 그룹 매칭
+        group_ok = _get_table_group(tname) in group_ids if group_ids else True
+        # 조건2: FAB 키워드 매칭 (테이블명에 m14, m14a 등 포함)
+        fab_ok = any(kw in tl for kw in fab_keywords) if fab_keywords else True
+
+        # 둘 다 지정되면 AND, 하나만 지정되면 해당 조건만
+        if group_ids and fab_keywords:
+            if group_ok and fab_ok:
+                result[tname] = tinfo
+        elif group_ids:
+            if group_ok:
+                result[tname] = tinfo
+        elif fab_keywords:
+            if fab_ok:
+                result[tname] = tinfo
+
+    return result
+
 
 def _fetch_table_fields(table_name, timeout=5):
     """테이블에서 샘플 1건을 조회하여 필드(컬럼) 목록을 추출."""
@@ -3193,6 +3279,27 @@ def api_skill_run(skill_name):
 # 스킬 생성 / 검증 / 다운로드 API
 # ============================================
 
+def _clean_skill_content(raw):
+    """LLM 생성 결과에서 SKILL.md 본문만 추출 (코드블록/설명문 제거)"""
+    if not raw or not raw.strip():
+        return raw
+    text = raw.strip()
+    # ```markdown ... ``` 또는 ``` ... ``` 코드블록 추출
+    md_match = re.search(r'```(?:markdown|yaml|md)?\s*\n(.*?)```', text, re.DOTALL)
+    if md_match:
+        text = md_match.group(1).strip()
+    # 앞쪽 설명 텍스트 제거: --- 이전의 비-frontmatter 텍스트 스킵
+    if not text.startswith("---"):
+        idx = text.find("\n---\n")
+        if idx >= 0:
+            text = text[idx + 1:]
+        else:
+            idx = text.find("---\n")
+            if idx >= 0:
+                text = text[idx:]
+    return text.strip()
+
+
 def _validate_skill_content(content_text):
     """SKILL.md 내용을 검증 (quick_validate.py 인라인 버전). returns (valid, errors[], warnings[])"""
     errors = []
@@ -3200,6 +3307,9 @@ def _validate_skill_content(content_text):
 
     if not content_text or not content_text.strip():
         return False, ["SKILL.md 내용이 비어 있습니다."], []
+
+    # LLM 출력 자동 정리
+    content_text = _clean_skill_content(content_text)
 
     if not content_text.strip().startswith("---"):
         return False, ["YAML frontmatter가 없습니다. '---'로 시작해야 합니다."], []
@@ -3339,7 +3449,7 @@ def api_skill_apply():
 
     # content가 있으면 그대로 사용, 없으면 name/desc/body로 조합
     if content.strip():
-        skill_md = content.strip()
+        skill_md = _clean_skill_content(content)
         # content에서 name 추출
         m = re.search(r'name:\s*(.+)', skill_md)
         if m:
@@ -3448,6 +3558,7 @@ def api_skill_generate():
     topic = data.get("topic", "").strip()
     skill_type = data.get("skill_type", "도구")  # 도구/에이전트/가이드
     details = data.get("details", "").strip()
+    lang = data.get("lang", "ko").strip()  # ko 또는 en
 
     if not topic:
         return jsonify({"error": "스킬 주제를 입력하세요."}), 400
@@ -3464,7 +3575,27 @@ def api_skill_generate():
             except Exception:
                 pass
 
-    system_prompt = f"""당신은 Claude Code 스킬 제작 전문가입니다.
+    if lang == "en":
+        system_prompt = f"""You are an expert Claude Code skill creator.
+Refer to the 3 meta-skill guidelines below to generate a high-quality SKILL.md.
+
+{meta_instructions}
+
+## Output Rules
+1. Must start with YAML frontmatter (--- delimiters)
+2. name: lowercase + hyphens only (e.g., my-new-skill)
+3. description: Clearly describe the skill's purpose and trigger conditions (minimum 50 characters)
+4. Body: Markdown-formatted instructions, include a "When to Use" section
+5. Maximum 500 lines total
+6. Output only SKILL.md content (no explanations)
+7. Write ALL content in English
+"""
+        user_msg = f"Topic: {topic}\nType: {skill_type}\n"
+        if details:
+            user_msg += f"Detailed requirements: {details}\n"
+        user_msg += "\nPlease create a Claude Code SKILL.md based on the above. Write everything in English."
+    else:
+        system_prompt = f"""당신은 Claude Code 스킬 제작 전문가입니다.
 아래 3개 메타스킬의 지침을 참고하여 고품질 SKILL.md를 생성하세요.
 
 {meta_instructions}
@@ -3476,12 +3607,12 @@ def api_skill_generate():
 4. 본문: 마크다운 형식의 지시문, "When to Use" 섹션 포함
 5. 전체 500줄 이내
 6. SKILL.md 내용만 출력 (설명 없이)
+7. 모든 내용을 한글로 작성
 """
-
-    user_msg = f"주제: {topic}\n유형: {skill_type}\n"
-    if details:
-        user_msg += f"상세 요구사항: {details}\n"
-    user_msg += "\n위 내용으로 Claude Code SKILL.md를 작성해주세요."
+        user_msg = f"주제: {topic}\n유형: {skill_type}\n"
+        if details:
+            user_msg += f"상세 요구사항: {details}\n"
+        user_msg += "\n위 내용으로 Claude Code SKILL.md를 한글로 작성해주세요."
 
     # 첫 번째 사용 가능한 API 환경 찾기
     api_url = ""
@@ -3539,9 +3670,32 @@ def _llm_generate_lpql(user_query, history=None):
     from datetime import datetime
     today = datetime.now().strftime("%Y%m%d")
 
+    # 사용자 질문에서 관련 테이블 그룹 자동 감지
+    _q_lower = user_query.lower()
+    _auto_groups = []
+    for grp in LOGPRESSO_TABLE_GROUPS:
+        _kws = [grp["id"]] + [p.rstrip("_").lower() for p in grp["prefix"]]
+        if any(kw in _q_lower for kw in _kws):
+            _auto_groups.append(grp["id"])
+    # FAB 필터 감지 (M14, M16, M14A, M16B 등)
+    _auto_fabs = []
+    for fab in LOGPRESSO_FAB_FILTERS:
+        if fab["id"] in _q_lower or fab["label"].lower() in _q_lower:
+            _auto_fabs.append(fab["id"])
+    # 테이블명이 직접 언급된 경우도 감지
+    _direct_tables = {}
+    for tname, tinfo in LOGPRESSO_TABLES.items():
+        if tname.lower() in _q_lower:
+            _direct_tables[tname] = tinfo
+    # 관련 그룹 테이블 + FAB 필터 + 직접 언급 테이블 합치기
+    _relevant = _filter_tables_by_groups(_auto_groups, _auto_fabs)
+    _relevant.update(_direct_tables)
+    # 관련 테이블이 없으면 전체 사용 (빈 columns 제외하지 않음)
+    _target_tables = _relevant if _relevant else LOGPRESSO_TABLES
+
     table_info = "\n".join(
         f"- {name}: {info['desc']} (컬럼: {', '.join(info['columns'])})"
-        for name, info in LOGPRESSO_TABLES.items()
+        for name, info in _target_tables.items()
     )
 
     skill_content = load_skill_content("logpresso-query") or ""
@@ -3897,11 +4051,21 @@ def api_logpresso_query_page():
 
 @app.route("/api/logpresso/tables", methods=["GET"])
 def api_logpresso_tables():
-    """등록된 테이블 목록 반환"""
+    """등록된 테이블 목록 반환 (카테고리/FAB 필터: ?groups=atlas,ts&fabs=m14a,m16)"""
+    group_filter = request.args.get("groups", "").strip()
+    fab_filter = request.args.get("fabs", "").strip()
+    group_ids = [g.strip() for g in group_filter.split(",") if g.strip()] if group_filter else []
+    fab_ids = [f.strip() for f in fab_filter.split(",") if f.strip()] if fab_filter else []
+    filtered = _filter_tables_by_groups(group_ids, fab_ids)
     tables = []
-    for name, info in LOGPRESSO_TABLES.items():
-        tables.append({"table": name, "desc": info["desc"], "columns": info["columns"]})
-    return jsonify({"tables": tables, "total": len(tables)})
+    for name, info in filtered.items():
+        tables.append({"table": name, "desc": info["desc"], "columns": info["columns"], "group": _get_table_group(name), "fabs": _get_table_fabs(name)})
+    groups = [{"id": g["id"], "label": g["label"], "count": sum(1 for t in LOGPRESSO_TABLES if _get_table_group(t) == g["id"])} for g in LOGPRESSO_TABLE_GROUPS]
+    etc_count = sum(1 for t in LOGPRESSO_TABLES if _get_table_group(t) == "etc")
+    if etc_count:
+        groups.append({"id": "etc", "label": "📁 기타", "count": etc_count})
+    fabs = [{"id": f["id"], "label": f["label"]} for f in LOGPRESSO_FAB_FILTERS]
+    return jsonify({"tables": tables, "total": len(tables), "total_all": len(LOGPRESSO_TABLES), "groups": groups, "fabs": fabs})
 
 
 # ============================================
@@ -5722,22 +5886,74 @@ def api_chat():
     _lpq_table_list_kw = ["테이블 목록", "어떤 테이블", "테이블 뭐", "테이블 리스트", "테이블 종류",
                           "테이블 있", "테이블 알려", "테이블 보여", "테이블 전부", "테이블 전체"]
     if "logpresso-search" in skill_ids and any(kw in last_user_query for kw in _lpq_table_list_kw):
-        _content = "**로그프레소 사용 가능한 테이블 목록**\n\n"
-        _content += f"총 **{len(LOGPRESSO_TABLES)}개** 테이블\n\n"
-        _content += "| # | 테이블명 | 설명 | 필드(컬럼) |\n"
-        _content += "|---|----------|------|----------|\n"
-        for idx, (tname, tinfo) in enumerate(sorted(LOGPRESSO_TABLES.items()), 1):
-            cols = tinfo["columns"]
-            # 빈 columns → 서버에서 필드 동적 조회
-            if not cols:
-                cols = _fetch_table_fields(tname, timeout=3)
-                if cols:
-                    tinfo["columns"] = cols
-            cols_str = ", ".join(cols[:8]) if cols else "(서버 미접속)"
-            if len(cols) > 8:
-                cols_str += f" 외 {len(cols)-8}개"
-            _content += f"| {idx} | `{tname}` | {tinfo['desc']} | {cols_str} |\n"
-        _content += f"\n> 총 {len(LOGPRESSO_TABLES)}개 테이블. 특정 테이블 구조 확인: `테이블명 구조 보여줘`"
+        # 사용자 질문에서 카테고리 키워드 감지하여 필터링
+        _q_lower = last_user_query.lower()
+        _matched_groups = []
+        for grp in LOGPRESSO_TABLE_GROUPS:
+            # 그룹 라벨 키워드 매칭 (예: "ATLAS", "OHT", "TS", "시스템" 등)
+            _grp_keywords = [grp["id"], grp["label"].split(" ")[-1].lower()]
+            _grp_keywords += [p.rstrip("_").lower() for p in grp["prefix"]]
+            if any(kw in _q_lower for kw in _grp_keywords):
+                _matched_groups.append(grp["id"])
+
+        # FAB 필터 감지 (M14, M16, M14A, M16B 등)
+        _matched_fabs = []
+        for fab in LOGPRESSO_FAB_FILTERS:
+            if fab["id"] in _q_lower or fab["label"].lower() in _q_lower:
+                _matched_fabs.append(fab["id"])
+
+        _filtered = _filter_tables_by_groups(_matched_groups, _matched_fabs)
+        _filter_label = ""
+        _labels = []
+        if _matched_groups:
+            _labels += [g["label"] for g in LOGPRESSO_TABLE_GROUPS if g["id"] in _matched_groups]
+        if _matched_fabs:
+            _labels += [f["label"] for f in LOGPRESSO_FAB_FILTERS if f["id"] in _matched_fabs]
+        if _labels:
+            _filter_label = f" [{', '.join(_labels)}]"
+
+        _content = f"**로그프레소 테이블 목록{_filter_label}**\n\n"
+        if _matched_groups or _matched_fabs:
+            _content += f"🔍 필터 적용: 카테고리={_matched_groups or '없음'}, FAB={_matched_fabs or '없음'} → **{len(_filtered)}개** 매칭\n\n"
+        _content += f"총 **{len(LOGPRESSO_TABLES)}개** 중 **{len(_filtered)}개** 표시\n\n"
+
+        # 카테고리별로 그룹화하여 표시
+        _grouped = {}
+        for tname in sorted(_filtered.keys()):
+            gid = _get_table_group(tname)
+            if gid not in _grouped:
+                _grouped[gid] = []
+            _grouped[gid].append(tname)
+
+        # 그룹 순서 유지
+        _grp_order = [g["id"] for g in LOGPRESSO_TABLE_GROUPS] + ["etc"]
+        _grp_labels_map = {g["id"]: g["label"] for g in LOGPRESSO_TABLE_GROUPS}
+        _grp_labels_map["etc"] = "📁 기타"
+
+        _idx = 0
+        for gid in _grp_order:
+            if gid not in _grouped:
+                continue
+            _content += f"\n### {_grp_labels_map[gid]} ({len(_grouped[gid])}개)\n\n"
+            _content += "| # | 테이블명 | 설명 | 필드(컬럼) |\n"
+            _content += "|---|----------|------|----------|\n"
+            for tname in _grouped[gid]:
+                _idx += 1
+                tinfo = LOGPRESSO_TABLES[tname]
+                cols = tinfo["columns"]
+                if not cols:
+                    cols = _fetch_table_fields(tname, timeout=3)
+                    if cols:
+                        tinfo["columns"] = cols
+                cols_str = ", ".join(cols[:8]) if cols else "(서버 미접속)"
+                if len(cols) > 8:
+                    cols_str += f" 외 {len(cols)-8}개"
+                _content += f"| {_idx} | `{tname}` | {tinfo['desc']} | {cols_str} |\n"
+
+        _content += f"\n> **카테고리 필터**: `ATLAS 테이블 목록`, `OHT 테이블 목록`, `TS 테이블 보여줘`, `시스템 테이블 목록`\n"
+        _content += f"> **FAB 필터**: `M14 테이블 목록`, `M14A 테이블 보여줘`, `M16B 테이블 목록`\n"
+        _content += f"> **조합 가능**: `M14A TS 테이블 목록` (Transfer + M14A만)\n"
+        _content += f"> 카테고리: {' / '.join(g['label'] for g in LOGPRESSO_TABLE_GROUPS)}"
         return jsonify({
             "content": _content,
             "model_used": "Logpresso Tables",
@@ -7696,10 +7912,14 @@ body.rp-collapsed .chat-box-fixed{right:0}
       </div>
 
       <div class="section-label" style="cursor:pointer;user-select:none;" onclick="toggleSection('comboSection','comboArrow')">
-        <span class="arrow" id="comboArrow">▶</span> 스킬 조합 <span style="font-weight:400;color:#bbb">( 클릭하면 추천 스킬이 자동 선택됩니다 )</span>
+        <span class="arrow" id="comboArrow">▶</span> 스킬 조합 <span style="font-weight:400;color:#bbb">( 여러 조합을 동시에 선택할 수 있습니다 )</span>
       </div>
       <div id="comboSection" style="display:none;padding:4px 0;">
+        <div id="comboActiveMsg" style="display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;background:#6366f110;border:1px solid #6366f130;font-size:12px;color:#6366f1;"></div>
         <div id="comboGrid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        <div id="comboClearWrap" style="display:none;margin-top:8px;text-align:right;">
+          <button onclick="clearAllCombos()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;">🗑️ 전체 해제</button>
+        </div>
       </div>
 
       <div class="sysprompt-section">
@@ -7961,6 +8181,14 @@ body.rp-collapsed .chat-box-fixed{right:0}
           <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">상세 요구사항 (선택)</label>
           <textarea id="scDetails" rows="4" placeholder="스킬에 포함할 기능, 특수 요구사항 등..." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
         </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">생성 언어</label>
+          <div style="display:flex;gap:6px;">
+            <button id="scLangKo" onclick="setScLang('ko')" style="padding:6px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:2px solid #6366f1;background:#6366f1;color:#fff;font-weight:700;">🇰🇷 한글</button>
+            <button id="scLangEn" onclick="setScLang('en')" style="padding:6px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:2px solid #e2e8f0;background:#fff;color:#333;font-weight:700;">🇺🇸 English</button>
+          </div>
+          <input type="hidden" id="scLang" value="ko">
+        </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           <button onclick="generateSkillLLM()" id="scGenBtn" style="background:#8b5cf6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">🤖 LLM으로 생성</button>
           <button onclick="validateGenerated()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">🔍 검증</button>
@@ -8100,6 +8328,7 @@ function renderCombos(){
       <div style="line-height:1.8;">${skillTags}</div>`;
     grid.appendChild(card);
   });
+  updateComboActiveMsg();
 }
 // 스킬 ID → 짧은 한국어 이름 매핑
 const _comboSkillNames = {
@@ -8123,13 +8352,15 @@ const _comboSkillNames = {
 };
 
 function applyCombo(combo){
-  // 같은 조합 다시 클릭 → 해제
-  const allSelected = combo.skills.every(sid=>selSkills.includes(sid)) && selSkills.length === combo.skills.length;
+  const allSelected = combo.skills.every(sid=>selSkills.includes(sid));
   if(allSelected){
-    selSkills = [];
+    // 이 조합의 스킬만 제거 (다른 조합 스킬은 유지)
+    selSkills = selSkills.filter(sid=>!combo.skills.includes(sid));
   } else {
-    // 기존 전부 교체 → 이 조합만 선택
-    selSkills = [...combo.skills];
+    // 이 조합의 스킬을 기존에 추가 (중복 제거)
+    combo.skills.forEach(sid=>{
+      if(!selSkills.includes(sid)) selSkills.push(sid);
+    });
   }
   // 자동 스킬 선택 OFF
   if(autoSkillMode){
@@ -8147,6 +8378,29 @@ function applyCombo(combo){
     });
     renderTags();
   }
+  renderSkills();
+  updateLoaded();
+  renderCombos();
+  updateComboActiveMsg();
+}
+function updateComboActiveMsg(){
+  const msgEl = document.getElementById('comboActiveMsg');
+  const clearWrap = document.getElementById('comboClearWrap');
+  if(!msgEl) return;
+  const active = SKILL_COMBOS.filter(c=>c.skills.every(sid=>selSkills.includes(sid)));
+  const hasAny = selSkills.length > 0;
+  if(clearWrap) clearWrap.style.display = hasAny ? 'block' : 'none';
+  if(active.length === 0){
+    msgEl.style.display = hasAny ? 'block' : 'none';
+    if(hasAny) msgEl.innerHTML = `🔗 총 <b>${selSkills.length}개</b> 스킬 선택됨`;
+    return;
+  }
+  const labels = active.map(c=>c.label).join(' + ');
+  msgEl.innerHTML = `🔗 <b>${active.length}개 조합 활성:</b> ${labels} — 총 <b>${selSkills.length}개</b> 스킬 선택됨`;
+  msgEl.style.display = 'block';
+}
+function clearAllCombos(){
+  selSkills = [];
   renderSkills();
   updateLoaded();
   renderCombos();
@@ -10300,16 +10554,29 @@ async function downloadSkill(){
     alert('다운로드 실패: '+e.message);
   }
 }
+function setScLang(lang){
+  document.getElementById('scLang').value = lang;
+  const ko = document.getElementById('scLangKo');
+  const en = document.getElementById('scLangEn');
+  if(lang==='ko'){
+    ko.style.background='#6366f1'; ko.style.color='#fff'; ko.style.borderColor='#6366f1';
+    en.style.background='#fff'; en.style.color='#333'; en.style.borderColor='#e2e8f0';
+  } else {
+    en.style.background='#6366f1'; en.style.color='#fff'; en.style.borderColor='#6366f1';
+    ko.style.background='#fff'; ko.style.color='#333'; ko.style.borderColor='#e2e8f0';
+  }
+}
 async function generateSkillLLM(){
   const topic = document.getElementById('scTopic').value.trim();
   if(!topic){ alert('스킬 주제를 입력하세요.'); return; }
   const skill_type = document.getElementById('scType').value;
   const details = document.getElementById('scDetails').value.trim();
+  const lang = document.getElementById('scLang').value || 'ko';
   document.getElementById('scGenStatus').style.display = 'block';
   document.getElementById('scGenBtn').disabled = true;
   try{
   document.getElementById('scGenResult').style.display = 'none';
-    const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details})});
+    const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details,lang})});
     const data = await resp.json();
     document.getElementById('scGenStatus').style.display = 'none';
     document.getElementById('scGenBtn').disabled = false;
