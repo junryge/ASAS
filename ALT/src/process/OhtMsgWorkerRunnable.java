@@ -295,6 +295,7 @@ public class OhtMsgWorkerRunnable implements Runnable {
         }
         //~VHLOFF
 
+        // HIDOFF & VHLOFF Tibrv 송신
         if (!messageDataList.isEmpty()) {
             for (String tibrvKey : DataService.getInstance().getTibrvSenderLikeMap(fabId + ":send:").keySet()) {
                 // 위의 과정을 통해 구성한 Map 데이터로 tib/rv 메세지를 만든 후 송신
@@ -411,8 +412,37 @@ public class OhtMsgWorkerRunnable implements Runnable {
                     previousHidId, currentHidId, this.fabId, this.mcpName,
                     vehicle.getFabId(), vhlName, eqpName);
             
-            DataService.getDataSet().getEdgeInOutCountMap()
-            	.merge(edgeKey, 1, Integer::sum);
+            int transCnt = DataService.getDataSet().getEdgeInOutCountMap()
+            		.merge(edgeKey, 1, Integer::sum);
+            
+            // add tib                        
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:00");
+            SimpleDateFormat dateOnlyFormat = new SimpleDateFormat("yyyy-MM-dd");
+            Date now = new Date();
+            String eventDt = dateFormat.format(now);
+            String eventDate = dateOnlyFormat.format(now);
+            String type = MSG_TYP.OHT.toString() + ".HID.INOUT";
+            Map<String, Object> dataMap = new HashMap<>();
+            
+            dataMap.put("TYPE", type);
+            dataMap.put("FAB_ID", this.fabId);
+            dataMap.put("EVENT_DT", eventDt);
+            dataMap.put("EVENT_DATE", eventDate);  
+            dataMap.put("FROM_HIDID", previousHidId);  
+            dataMap.put("TO_HIDID", currentHidId);  
+            dataMap.put("VHL_ID", vhlName);  
+            dataMap.put("EQP_ID", eqpName);
+            dataMap.put("TRANS_CNT", transCnt);
+            dataMap.put("MCP_NM", this.mcpName);
+            dataMap.put("ENV", Env.getEnv());
+            
+            for (String tibrvKey : DataService.getInstance().getTibrvSenderLikeMap(fabId + ":send:amos").keySet()) {
+    			DataService.getInstance().addTibrvMessageQueue(
+    					tibrvKey,
+    					type,
+    					dataMap
+    			);
+    		}
         }
     }
 
