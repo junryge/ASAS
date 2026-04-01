@@ -38,6 +38,8 @@ public class HidEdgeInOutQueueFlushBatch implements Job {
             String vhlFabId = parts[4];
             String vhlId = parts[5];
             String eqpId = parts[6];
+            int vhlCountLimit = Integer.parseInt(parts[7]);
+            int vhlPrecaution = Integer.parseInt(parts[8]);
             int transCnt = entry.getValue();
 
             Tuple tuple = new Tuple();
@@ -51,6 +53,8 @@ public class HidEdgeInOutQueueFlushBatch implements Job {
             tuple.put("EQP_ID", eqpId);
             tuple.put("MCP_NM", mcpName);
             tuple.put("ENV", Env.getEnv());
+            tuple.put("VHL_COUNT_LIMIT", vhlCountLimit);
+            tuple.put("VHL_PRECAUTION", vhlPrecaution);
 
             if (fabIdTuples.get(fabId) == null) {
             	fabIdTuples.put(fabId, new ArrayList<Tuple>());
