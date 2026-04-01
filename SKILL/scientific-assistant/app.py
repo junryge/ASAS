@@ -38,6 +38,13 @@ import requests as req
 from flask import Flask, request, jsonify, render_template_string, send_file
 from logpresso_client import query_logpresso  # 로그프레소 조회 (별도 모듈)
 
+# 하네스 브릿지 연결 (스킬 레지스트리, 세션 저장, 라우팅 강화)
+try:
+    from harness_bridge import init_harness, register_harness_routes, log_event, save_chat_session
+    HARNESS_AVAILABLE = True
+except ImportError:
+    HARNESS_AVAILABLE = False
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 제한
 
@@ -2934,6 +2941,27 @@ def api_auto_skills():
     else:
         results = auto_select_skills(query, max_skills=max_skills)
         boosted = []
+
+    # 하네스 라우터 결과 병합 (기존 키워드 매칭 + 하네스 토큰 매칭 + 조합 추천)
+    if HARNESS_AVAILABLE:
+        try:
+            from harness_bridge import harness_route, suggest_skill_combinations
+            # 1) 하네스 라우터로 추가 매칭
+            harness_matches = harness_route(query, limit=5)
+            existing_ids = {sid for sid, _ in results}
+            for hm in harness_matches:
+                if hm['name'] not in existing_ids and hm['name'] not in MANUAL_ONLY_SKILLS:
+                    results.append((hm['name'], hm['score']))
+                    boosted.append(hm['name'])
+            # 2) 선택된 스킬과 함께 쓰면 좋을 보조 스킬 추천
+            selected = [sid for sid, _ in results]
+            combos = suggest_skill_combinations(query, selected, limit=2)
+            for combo_sid in combos:
+                if combo_sid not in existing_ids and combo_sid not in MANUAL_ONLY_SKILLS:
+                    results.append((combo_sid, 1))
+                    boosted.append(combo_sid)
+        except Exception:
+            pass
 
     # 실제 SKILL.md가 있는 스킬만 필터링
     available = scan_skills()
@@ -7256,6 +7284,19 @@ def api_chat():
                 resp_data["auto_fmt_reason"] = auto_fmt_reason
             if truncated:
                 resp_data["truncated"] = True
+
+            # 하네스: 세션 자동 저장 + 이벤트 로깅
+            if HARNESS_AVAILABLE:
+                try:
+                    save_chat_session(
+                        messages=messages,
+                        skills_used=loaded,
+                        metadata={"model": model, "format": output_format},
+                    )
+                    log_event('chat', f'model={model} skills={len(loaded)} prompt_len={len(system_prompt)}')
+                except Exception:
+                    pass
+
             return jsonify(resp_data)
 
         except req.exceptions.Timeout:
@@ -7778,6 +7819,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
         <button onclick="deleteSelectedSessionsPopup()" style="padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#ef4444;cursor:pointer;font-size:12px;">🗑️ 선택삭제</button>
         <button onclick="deleteAllSessionsPopup()" style="padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:12px;">전체삭제</button>
         <button onclick="exportSessionsToMd()" style="padding:6px 12px;border:1px solid #86efac;border-radius:8px;background:#f0fdf4;color:#16a34a;cursor:pointer;font-size:12px;">📄 MD 저장</button>
+        <button onclick="openHarnessSessionTab()" style="padding:6px 12px;border:1px solid #c7d2fe;border-radius:8px;background:#eef2ff;color:#6366f1;cursor:pointer;font-size:12px;font-weight:600">💾 하네스 저장</button>
         <button onclick="closeSessionPopup()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:16px;">✕</button>
       </div>
     </div>
@@ -7847,6 +7889,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <div class="project-title">📁 Demos(민중) 프로젝트 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span><button onclick="toggleMainTokenSettings()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:2px 10px;border-radius:10px;margin-left:6px;cursor:pointer;font-weight:500;" title="토큰/컨텍스트 설정">⚙️ 토큰 설정</button><span style="font-size:11px;color:#9ca3af;margin-left:6px;">2달에 한번 스킬 업데이트 | 사용을 많이 해줄수록 기능이 업데이트 됩니다</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
+      <button onclick="openHarnessSessionTab()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:4px 12px;border-radius:8px;cursor:pointer;font-weight:500;">💾 저장 세션</button>
       <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
       <span id="status" class="status off">⚪ 환경 미선택</span>
     </div>
@@ -12395,6 +12438,66 @@ function checkPptStyleVisibility(){
   var hasPptxSkill = selSkills.includes('pptx') || autoLoadedSkills.includes('pptx');
   drop.style.display = (isPpt || hasPptxSkill) ? 'inline-block' : 'none';
 }
+
+/* ── 하네스 저장 세션 (기존 팝업에 통합) ── */
+function openHarnessSessionTab(){
+  const overlay=document.getElementById('sessionPopupOverlay');
+  overlay.style.display='flex';
+  /* 하네스 탭 내용을 팝업 body에 로드 */
+  const body=document.getElementById('sessionPopupBody');
+  if(!body)return;
+  body.innerHTML='<div style="text-align:center;color:#999;padding:20px">하네스 저장 세션 불러오는 중...</div>';
+  fetch('/api/harness/session/list')
+    .then(r=>r.json())
+    .then(data=>{
+      if(!data.sessions||data.sessions.length===0){
+        body.innerHTML='<div style="text-align:center;color:#999;padding:30px">하네스 저장 세션이 없습니다.</div>';
+        return;
+      }
+      let html='<div style="padding:4px 0;font-size:12px;color:#6366f1;font-weight:600;margin-bottom:8px;">💾 하네스 자동 저장 세션 ('+data.sessions.length+'개)</div>';
+      data.sessions.forEach(s=>{
+        const d=new Date(s.timestamp*1000);
+        const dateStr=d.toLocaleDateString('ko-KR',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+        const skills=s.skills_used&&s.skills_used.length>0?s.skills_used.slice(0,2).join(', '):'';
+        const preview=s.first_message||'';
+        const previewText=preview.length>40?preview.substring(0,40)+'...':preview;
+        html+=`<div style="padding:6px 10px;border:1px solid #e5e3de;border-radius:8px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:#999;flex-shrink:0">${dateStr}</span>
+            <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${previewText||skills||s.message_count+'개 메시지'}</span>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button onclick="harnessRestore('${s.session_id}')" style="padding:2px 8px;background:#6366f1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px">복원</button>
+            <button onclick="harnessDelete('${s.session_id}')" style="padding:2px 6px;color:#ef4444;border:1px solid #fca5a5;background:none;border-radius:4px;cursor:pointer;font-size:11px">x</button>
+          </div>
+        </div>`;
+      });
+      body.innerHTML=html;
+    })
+    .catch(()=>{body.innerHTML='<div style="color:#ef4444;text-align:center;padding:20px">하네스 브릿지 미연결</div>';});
+}
+
+function harnessRestore(sid){
+  fetch('/api/harness/session/load/'+sid).then(r=>r.json()).then(data=>{
+    if(!data.messages||!data.messages.length){alert('복원할 메시지 없음');return;}
+    const ct=document.querySelector('.content-inner')||document.querySelector('.content');
+    if(!ct)return;
+    ct.querySelectorAll('.msg').forEach(m=>m.remove());
+    data.messages.forEach(msg=>{
+      const div=document.createElement('div');
+      div.className='msg '+(msg.role==='user'?'user':'assistant');
+      div.innerHTML='<div class="msg-text">'+msg.content.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>';
+      ct.appendChild(div);
+    });
+    ct.scrollTop=ct.scrollHeight;
+    closeSessionPopup();
+  }).catch(()=>alert('복원 실패'));
+}
+
+function harnessDelete(sid){
+  if(!confirm('삭제할까요?'))return;
+  fetch('/api/harness/session/delete/'+sid,{method:'DELETE'}).then(()=>openHarnessSessionTab()).catch(()=>alert('삭제 실패'));
+}
 </script>
 </body>
 </html>
@@ -12440,6 +12543,18 @@ if __name__ == "__main__":
     else:
         print(f"  ⚠️  TOKEN.TXT: 없음 또는 비어있음")
         print(f"     → {TOKEN_FILE} 에 API 키를 넣어주세요")
+
+    # 하네스 브릿지 초기화 (스킬 레지스트리 + API 엔드포인트)
+    if HARNESS_AVAILABLE:
+        try:
+            harness_reg = init_harness(SKILLS_DIR, SKILL_KEYWORDS)
+            register_harness_routes(app)
+            print(f"  🔧 하네스: {len(harness_reg.list_all())}개 스킬 레지스트리 등록 완료")
+            print(f"     → /api/harness/skills, /api/harness/session/*, /api/harness/status")
+        except Exception as e:
+            print(f"  ⚠️  하네스 초기화 실패: {e}")
+    else:
+        print(f"  ℹ️  하네스 브릿지 미설치 (harness_bridge.py 없음 → 기존 모드)")
 
     # 로그프레소 테이블 목록 자동 업데이트
     _refresh_logpresso_tables()
