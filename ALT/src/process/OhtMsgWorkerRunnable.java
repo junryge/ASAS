@@ -408,9 +408,24 @@ public class OhtMsgWorkerRunnable implements Runnable {
             String vhlName = vhlIdFull.substring(vhlIdFull.lastIndexOf(':') + 1);
             String eqpIdFull = vehicle.getEqpId();
             String eqpName = eqpIdFull.substring(eqpIdFull.lastIndexOf(':') + 1);
-            String edgeKey = String.format("%03d:%03d:%s:%s:%s:%s:%s",
+            
+            // VHL_COUNT_LIMIT, VHL_PRECAUTION → RawHid (layout.xml VEHICLE_MAX, VEHICLE_PRECAUTION) (추가)
+            int vhlCountLimit = 0;
+            int vhlPrecaution = 0;
+            McpProperties mcpProperties = DataService.getInstance().getFabPropertiesMap().get(this.fabId).getMcpPropertiesMap().get(this.mcpName);
+            if (mcpProperties != null && mcpProperties.getMcp75Config() != null) {
+                for (RawHid rawHid : mcpProperties.getMcp75Config().getRawHidMap().values()) {
+                    if (rawHid.getId() == currentHidId) {
+                        vhlCountLimit = rawHid.getVhlMax();
+                        vhlPrecaution = rawHid.getVhlPreCaution();
+                        break;
+                    }
+                }
+            }
+            
+            String edgeKey = String.format("%03d:%03d:%s:%s:%s:%s:%s:%s:%s",
                     previousHidId, currentHidId, this.fabId, this.mcpName,
-                    vehicle.getFabId(), vhlName, eqpName);
+                    vehicle.getFabId(), vhlName, eqpName, vhlCountLimit, vhlPrecaution);
             
             int transCnt = DataService.getDataSet().getEdgeInOutCountMap()
             		.merge(edgeKey, 1, Integer::sum);
@@ -435,7 +450,9 @@ public class OhtMsgWorkerRunnable implements Runnable {
             dataMap.put("TRANS_CNT", transCnt);
             dataMap.put("MCP_NM", this.mcpName);
             dataMap.put("ENV", Env.getEnv());
-            
+            dataMap.put("VHL_COUNT_LIMIT", vhlCountLimit); //추가 MCP72,layout.xml 설정에서 들고옴
+            dataMap.put("VHL_PRECAUTION", vhlPrecaution);  //추가 MCP72,layout.xml 설정에서 들고옴
+
             for (String tibrvKey : DataService.getInstance().getTibrvSenderLikeMap(fabId + ":send:amos").keySet()) {
     			DataService.getInstance().addTibrvMessageQueue(
     					tibrvKey,
