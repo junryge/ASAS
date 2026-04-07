@@ -79,7 +79,7 @@ def make_message(v):
     return (
         f"2,OHT,{v['id']},{v['state']},{v['isFull']},0000,1,"
         f"{v['cur']},{v['dist']},{v['next']},"
-        f"4,4,{v['equipId']},{v['equipNo']},00000000,0000,"
+        f"4,4,{v['equipId']},{v['dst']},00000000,0000,"
         f"{v['src']},{v['dst']},{v['vel']},0,0"
     )
 

@@ -22,6 +22,7 @@ from collections import defaultdict
 from enum import Enum
 import heapq
 import csv
+import time
 import zipfile
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -2340,6 +2341,7 @@ layout_data: dict = None
 is_running = False
 real_oht_parser_inst: Optional[RealOHTParser] = None
 real_vehicle_state: list = []   # WebSocket 전송용 차량 목록
+real_vehicle_timestamps: dict = {}  # {vehicleId: last_update_time}
 
 @app.on_event("startup")
 async def startup():
@@ -2414,6 +2416,7 @@ async def startup():
     # 백그라운드 태스크 시작 (이동은 real_oht_parser.py가 담당)
     asyncio.create_task(csv_save_loop())
     asyncio.create_task(output_cleanup_loop())  # 10분마다 OUTPUT 파일 삭제
+    asyncio.create_task(stale_vehicle_cleanup_loop())  # 5초 타임아웃 차량 제거
 
     print(f"\n서버 시작: http://localhost:8000")
     print(f"차량 대기 중 (data_sender.py 로 데이터 전송 필요)")
@@ -2495,6 +2498,24 @@ async def output_cleanup_loop():
         except Exception as e:
             print(f"[OUTPUT 정리 오류] {e}")
 
+async def stale_vehicle_cleanup_loop():
+    """5초 이상 업데이트가 없는 차량을 제거하는 주기적 루프"""
+    global real_vehicle_state, real_vehicle_timestamps, is_running
+    while is_running:
+        await asyncio.sleep(2.0)
+        if not real_vehicle_timestamps:
+            continue
+        now = time.time()
+        stale_cutoff = now - 5.0
+        stale_ids = [vid for vid, ts in real_vehicle_timestamps.items() if ts < stale_cutoff]
+        if stale_ids:
+            state_map = {v["vehicleId"]: v for v in real_vehicle_state}
+            for vid in stale_ids:
+                state_map.pop(vid, None)
+                real_vehicle_timestamps.pop(vid, None)
+            real_vehicle_state = list(state_map.values())
+            print(f"[stale cleanup] {len(stale_ids)}대 제거: {stale_ids[:5]}{'...' if len(stale_ids) > 5 else ''}")
+
 # real_oht_parser.py 외부 실행 시 차량 데이터 수신
 from fastapi import Request as FastAPIRequest
 
@@ -2512,7 +2533,7 @@ async def receive_oht_raw(request: FastAPIRequest):
     raw OHT 메시지 수신 → 파싱 → 차량 위치 업데이트
     body: {"messages": ["2,OHT,V00795,...", ...]}
     """
-    global real_vehicle_state
+    global real_vehicle_state, real_vehicle_timestamps
     if real_oht_parser_inst is None:
         return {"status": "error", "message": "parser not ready"}
     body = await request.json()
@@ -2524,8 +2545,18 @@ async def receive_oht_raw(request: FastAPIRequest):
         updated = real_oht_parser_inst.to_map_json(results)["vehicles"]
         # 기존 차량 상태에 merge (없는 차량은 추가)
         state_map = {v["vehicleId"]: v for v in real_vehicle_state}
+        now = time.time()
         for v in updated:
             state_map[v["vehicleId"]] = v
+            real_vehicle_timestamps[v["vehicleId"]] = now
+        # 5초 이상 업데이트 없는 차량 제거
+        stale_cutoff = now - 5.0
+        stale_ids = [vid for vid, ts in real_vehicle_timestamps.items() if ts < stale_cutoff]
+        for vid in stale_ids:
+            state_map.pop(vid, None)
+            del real_vehicle_timestamps[vid]
+        if stale_ids:
+            print(f"[oht-raw] 타임아웃 차량 제거: {stale_ids}")
         real_vehicle_state = list(state_map.values())
         # 디버그: 첫 차량 좌표 출력
         v0 = updated[0]
@@ -4398,6 +4429,7 @@ ws.onmessage = (e) => {
     else if (msg.type === 'update') {
         // 부드러운 보간을 위해 타겟 위치 설정
         const receivedCount = msg.data.vehicles ? msg.data.vehicles.length : 0;
+        const receivedIds = new Set(msg.data.vehicles.map(v => v.vehicleId));
         msg.data.vehicles.forEach(v => {
             if (!vehicles[v.vehicleId]) {
                 vehicles[v.vehicleId] = {...v, dispX: v.x, dispY: v.y};
@@ -4405,6 +4437,12 @@ ws.onmessage = (e) => {
                 Object.assign(vehicles[v.vehicleId], v);
             }
         });
+        // 서버에 없는 차량 제거 (5초 타임아웃된 차량)
+        for (const id of Object.keys(vehicles)) {
+            if (!receivedIds.has(id)) {
+                delete vehicles[id];
+            }
+        }
         console.log('WebSocket update - 수신:', receivedCount, '현재 vehicles:', Object.keys(vehicles).length);
 
         // 통계 업데이트
@@ -6209,7 +6247,7 @@ function updateTooltip(e) {
             <div class="row"><span class="label">현재번지</span><span class="value">${closest.currentNode}</span></div>
             <div class="row"><span class="label">다음번지</span><span class="value">${closest.nextNode || '-'}</span></div>
             <div class="row"><span class="label">거리</span><span class="value">${distanceDisplay}</span></div>
-            <div class="row"><span class="label">목적지</span><span class="value">${closest.destination || '-'}</span></div>
+            <div class="row"><span class="label">목적지</span><span class="value">${closest.destPort || closest.destination || '-'}</span></div>
             <div class="row"><span class="label">HID Zone</span><span class="value" style="color:#00d4ff;">${closest.hidZoneId >= 0 ? 'HID ' + closest.hidZoneId : '-'}</span></div>
             <hr style="border:none;border-top:1px solid #444;margin:6px 0;">
             <div class="row"><span class="label">RunCycle</span><span class="value">${closest.runCycleName || closest.runCycle}</span></div>
