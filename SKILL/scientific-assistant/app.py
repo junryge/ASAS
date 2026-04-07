@@ -4102,6 +4102,33 @@ def api_logpresso_tables():
 KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
 
 
+def _build_knowledge_triggers():
+    """knowledge/ 파일명에서 자동으로 트리거 키워드 추출 (스킬 자동 활성화용)"""
+    static_triggers = [
+        "아키텍처", "architecture", "허브룸", "hubroom", "아틀라스", "atlas",
+        "데드락", "deadlock", "급증", "amhs", "산출물", "컬럼", "접속정보",
+        "통신방식", "예측모델", "변경사항", "변경상황", "도메인", "지식",
+    ]
+    dynamic_triggers = set()
+    if os.path.isdir(KNOWLEDGE_DIR):
+        for fname in os.listdir(KNOWLEDGE_DIR):
+            if not fname.lower().endswith('.md'):
+                continue
+            name = fname.rsplit('.', 1)[0]
+            parts = re.split(r'[_\-\s]+', name)
+            for p in parts:
+                p_lower = p.lower()
+                if re.match(r'^\d{8}$', p_lower):  # 날짜 prefix 스킵
+                    continue
+                if p_lower in ('fab', 'md') or len(p_lower) < 2:
+                    continue
+                dynamic_triggers.add(p_lower)
+    return list(set(static_triggers) | dynamic_triggers)
+
+
+KNOWLEDGE_TRIGGERS = _build_knowledge_triggers()
+
+
 def search_knowledge(query, max_results=5, max_content_chars=8000):
     """knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환
 
@@ -4163,7 +4190,7 @@ def search_knowledge(query, max_results=5, max_content_chars=8000):
                  "에서", "부터", "까지", "한", "할", "하는", "된", "되는", "있는", "없는",
                  "the", "a", "an", "is", "are", "in", "on", "at", "to", "for", "of", "and", "or",
                  "것", "수", "등", "및", "중", "뭐", "좀", "해", "줘", "알려", "보여", "찾아",
-                 "que", "all", "cnv", "oht", "stk", "lft", "pdt", "sfab"}  # LPQL 구조 키워드 제외
+                 "que", "all", "stk", "lft", "pdt", "sfab"}  # LPQL 구조 키워드 제외
     raw_keywords = [w.strip() for w in re.split(r'[\s,?!·]+', q_lower) if w.strip()]
     # 점(.)이 포함된 컬럼명은 분리하지 않고, 일반 텍스트만 키워드로
     keywords = []
@@ -5911,9 +5938,11 @@ def api_chat():
         return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
     # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
-    # 수동 선택 또는 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 감지 시 자동 활성화
+    # 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 또는 도메인 키워드 감지 시 자동 활성화
     _has_column_pattern = bool(re.search(r'[A-Za-z0-9]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+', last_user_query))
-    if _has_column_pattern and "knowledge-search" not in skill_ids:
+    _ql = last_user_query.lower()
+    _has_knowledge_keyword = any(kw in _ql for kw in KNOWLEDGE_TRIGGERS)
+    if (_has_column_pattern or _has_knowledge_keyword) and "knowledge-search" not in skill_ids:
         skill_ids = list(skill_ids) + ["knowledge-search"]
     if "knowledge-search" in skill_ids and last_user_query.strip():
         try:
