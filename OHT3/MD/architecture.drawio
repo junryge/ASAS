@@ -1,0 +1,187 @@
+<mxfile host="app.diagrams.net" modified="2026-04-07" agent="OHT MAP System" version="24.0">
+  <diagram id="oht-arch" name="System Architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ========== 타이틀 ========== -->
+        <mxCell id="title" value="OHT MAP System Architecture v0.8" style="text;html=1;fontSize=24;fontStyle=1;fillColor=none;align=center;fontColor=#4FC3F7;" vertex="1" parent="1">
+          <mxGeometry x="500" y="10" width="500" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== 실제 OHT 시스템 ========== -->
+        <mxCell id="oht-system" value="&lt;b&gt;Real OHT System&lt;/b&gt;&lt;br&gt;&lt;br&gt;실제 반도체 FAB&lt;br&gt;OHT 차량 ~450대&lt;br&gt;0.5초 간격 UDP 전송&lt;br&gt;VHL_STATE_REPORT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2E7D32;strokeColor=#4CAF50;fontColor=#FFFFFF;fontSize=11;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="200" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== data_sender.py ========== -->
+        <mxCell id="data-sender" value="&lt;b&gt;data_sender.py&lt;/b&gt;&lt;br&gt;&lt;font size=&quot;1&quot; color=&quot;#aaa&quot;&gt;데이터 전송 클라이언트 (247 lines)&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;자동 모드:&lt;/b&gt; 레이아웃 기반 5대 자동 이동&lt;br&gt;&lt;b&gt;붙여넣기 모드:&lt;/b&gt; OHT 메시지 직접 입력&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;fetch_layout()&lt;br&gt;make_message(v)&lt;br&gt;send(messages)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1565C0;strokeColor=#2196F3;fontColor=#FFFFFF;fontSize=11;arcSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="270" width="240" height="200" as="geometry"/>
+        </mxCell>
+
+        <!-- OHT → data_sender 화살표 -->
+        <mxCell id="arrow-oht-sender" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#4CAF50;strokeWidth=2;dashed=1;dashPattern=8 4;fontColor=#4CAF50;fontSize=10;" edge="1" parent="1" source="oht-system" target="data-sender">
+          <mxGeometry relative="1" as="geometry"/>
+          <Array as="points"/>
+        </mxCell>
+        <mxCell id="arrow-oht-sender-label" value="UDP VHL_STATE_REPORT" style="edgeLabel;html=1;align=center;fontSize=10;fontColor=#4CAF50;" vertex="1" connectable="0" parent="arrow-oht-sender">
+          <mxGeometry x="-0.2" relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ========== sim_server (큰 컨테이너) ========== -->
+        <mxCell id="sim-server-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A0A2E;strokeColor=#9C27B0;strokeWidth=2;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="380" y="70" width="560" height="520" as="geometry"/>
+        </mxCell>
+        <mxCell id="sim-server-title" value="&lt;b&gt;sim_server_3d_D5_D7.py&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#aaa&quot;&gt;FastAPI Server (port 10003) | 6,680 lines&lt;/font&gt;" style="text;html=1;fontSize=13;fontColor=#CE93D8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="395" y="75" width="400" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- API Endpoints 박스 -->
+        <mxCell id="api-box" value="&lt;b&gt;API Endpoints&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#FF9800&quot;&gt;POST&lt;/font&gt; /api/oht-raw — raw OHT 메시지 수신&lt;br&gt;&lt;font color=&quot;#FF9800&quot;&gt;POST&lt;/font&gt; /api/real-vehicles — 파싱된 차량 dict&lt;br&gt;&lt;font color=&quot;#66BB6A&quot;&gt;GET&lt;/font&gt;&amp;nbsp;&amp;nbsp; /api/layout — 노드/엣지 데이터&lt;br&gt;&lt;font color=&quot;#66BB6A&quot;&gt;GET&lt;/font&gt;&amp;nbsp;&amp;nbsp; /api/fab/list — FAB 목록&lt;br&gt;&lt;font color=&quot;#FF9800&quot;&gt;POST&lt;/font&gt; /api/fab/switch — FAB 전환&lt;br&gt;&lt;font color=&quot;#AB47BC&quot;&gt;WS&lt;/font&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp; /ws — 실시간 차량 상태 (0.5초)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A1A2E;strokeColor=#7B1FA2;fontColor=#FFFFFF;fontSize=11;arcSize=8;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="400" y="120" width="340" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- SimulationEngine -->
+        <mxCell id="sim-engine" value="&lt;b&gt;SimulationEngine&lt;/b&gt;&lt;br&gt;&lt;br&gt;nodes, edges&lt;br&gt;HID zones, stations, STK&lt;br&gt;pathfinding (A*)&lt;br&gt;vehicle state management" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#311B92;strokeColor=#7C4DFF;fontColor=#FFFFFF;fontSize=11;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="760" y="120" width="160" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- Background Tasks -->
+        <mxCell id="bg-tasks" value="&lt;b&gt;Background Tasks&lt;/b&gt;&lt;br&gt;&lt;br&gt;csv_save_loop (10초)&lt;br&gt;output_cleanup_loop (10분)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A1A2E;strokeColor=#7B1FA2;fontColor=#FFFFFF;fontSize=11;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="760" y="270" width="160" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- real_vehicle_state 변수 -->
+        <mxCell id="rvs" value="&lt;b&gt;real_vehicle_state[]&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#aaa&quot;&gt;전역 변수 — 현재 차량 상태&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0D47A1;strokeColor=#42A5F5;fontColor=#FFFFFF;fontSize=11;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="430" y="310" width="280" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- real_oht_parser (sim_server 내부) -->
+        <mxCell id="parser" value="&lt;b&gt;real_oht_parser.py&lt;/b&gt;&lt;font size=&quot;1&quot; color=&quot;#aaa&quot;&gt;&lt;br&gt;OHT 메시지 파서 + 좌표 변환 (706 lines) — import&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;parse_oht_message(line)&lt;/font&gt; → 23필드 파싱&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;get_vehicle_position()&lt;/font&gt; → x,y 보간 계산&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;parse_messages(lines)&lt;/font&gt; → 다건 처리&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;to_map_json(results)&lt;/font&gt; → UI 호환 JSON&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;save_csv(results, path)&lt;/font&gt; → CSV 저장" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#006064;strokeColor=#00BCD4;fontColor=#FFFFFF;fontSize=11;arcSize=8;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="400" y="390" width="350" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- data_sender → sim_server 화살표 -->
+        <mxCell id="arrow-sender-server" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2196F3;strokeWidth=2.5;fontColor=#2196F3;fontSize=10;" edge="1" parent="1" source="data-sender" target="api-box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-sender-server-label" value="POST /api/oht-raw&lt;br&gt;{&quot;messages&quot;: [...]}" style="edgeLabel;html=1;align=center;fontSize=10;fontColor=#2196F3;" vertex="1" connectable="0" parent="arrow-sender-server">
+          <mxGeometry x="-0.1" relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- sim_server → data_sender (layout) -->
+        <mxCell id="arrow-layout-back" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FF9800;strokeWidth=1.5;dashed=1;dashPattern=5 3;fontColor=#FF9800;fontSize=10;" edge="1" parent="1" source="api-box" target="data-sender">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="350" y="200"/>
+              <mxPoint x="350" y="340"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow-layout-back-label" value="GET /api/layout" style="edgeLabel;html=1;align=center;fontSize=10;fontColor=#FF9800;" vertex="1" connectable="0" parent="arrow-layout-back">
+          <mxGeometry x="0.3" relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- API → real_vehicle_state -->
+        <mxCell id="arrow-api-rvs" style="rounded=1;strokeColor=#42A5F5;strokeWidth=1.5;fontSize=10;fontColor=#42A5F5;" edge="1" parent="1" source="api-box" target="rvs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-api-rvs-label" value="update" style="edgeLabel;html=1;fontSize=10;fontColor=#42A5F5;" vertex="1" connectable="0" parent="arrow-api-rvs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- real_vehicle_state → parser -->
+        <mxCell id="arrow-rvs-parser" style="rounded=1;strokeColor=#00BCD4;strokeWidth=1.5;fontSize=10;fontColor=#00BCD4;" edge="1" parent="1" source="api-box" target="parser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-rvs-parser-label" value="parse_messages()" style="edgeLabel;html=1;fontSize=10;fontColor=#00BCD4;" vertex="1" connectable="0" parent="arrow-rvs-parser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== Browser UI ========== -->
+        <mxCell id="browser" value="&lt;b&gt;Browser MAP UI&lt;/b&gt;&lt;br&gt;&lt;br&gt;http://localhost:10003&lt;br&gt;실시간 차량 위치 표시&lt;br&gt;HID Zone + STK + Station" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B71C1C;strokeColor=#F44336;fontColor=#FFFFFF;fontSize=12;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="90" width="220" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- sim_server → Browser -->
+        <mxCell id="arrow-server-browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#F44336;strokeWidth=2.5;fontColor=#F44336;fontSize=10;" edge="1" parent="1" source="sim-engine" target="browser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-server-browser-label" value="WebSocket /ws&lt;br&gt;(0.5초 간격)" style="edgeLabel;html=1;align=center;fontSize=10;fontColor=#F44336;" vertex="1" connectable="0" parent="arrow-server-browser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== CSV Output ========== -->
+        <mxCell id="csv-output" value="&lt;b&gt;CSV Output&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#aaa&quot;&gt;output/M14A/A/&lt;/font&gt;&lt;br&gt;&lt;br&gt;ATLAS_VEHICLE_{ts}.csv&lt;br&gt;ATLAS_RAIL_TRAFFIC_{ts}.csv" style="shape=document;whiteSpace=wrap;html=1;fillColor=#33691E;strokeColor=#CDDC39;fontColor=#FFFFFF;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="280" width="220" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- Background Tasks → CSV -->
+        <mxCell id="arrow-tasks-csv" style="rounded=1;strokeColor=#CDDC39;strokeWidth=1.5;fontColor=#CDDC39;fontSize=10;" edge="1" parent="1" source="bg-tasks" target="csv-output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-tasks-csv-label" value="csv_save_loop&lt;br&gt;(10초 간격)" style="edgeLabel;html=1;fontSize=10;fontColor=#CDDC39;" vertex="1" connectable="0" parent="arrow-tasks-csv">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== Layout Files ========== -->
+        <mxCell id="layout-files" value="&lt;b&gt;Layout Files&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#aaa&quot;&gt;MAP/M14A/&lt;/font&gt;&lt;br&gt;&lt;br&gt;A.layout.zip (211MB)&lt;br&gt;layout.xml (~9,404 nodes)&lt;br&gt;A.layout.html (생성됨)&lt;br&gt;A.station.dat" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#E65100;strokeColor=#FF9800;fontColor=#FFFFFF;fontSize=11;size=10;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="460" width="220" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- Layout Files → parser -->
+        <mxCell id="arrow-layout-parser" style="rounded=1;strokeColor=#FF9800;strokeWidth=1.5;dashed=1;dashPattern=5 3;fontColor=#FF9800;fontSize=10;" edge="1" parent="1" source="layout-files" target="parser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-layout-parser-label" value="nodes, edges&lt;br&gt;(startup 시 로딩)" style="edgeLabel;html=1;fontSize=10;fontColor=#FF9800;" vertex="1" connectable="0" parent="arrow-layout-parser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== layout_map_cre.py ========== -->
+        <mxCell id="layout-cre" value="&lt;b&gt;layout_map_cre.py&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#aaa&quot;&gt;349 lines&lt;/font&gt;&lt;br&gt;&lt;br&gt;XML → HTML 변환&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;parse_layout_xml_content()&lt;br&gt;ensure_layout_html()&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E65100;strokeColor=#FF9800;fontColor=#FFFFFF;fontSize=11;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="770" y="430" width="200" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- layout_map_cre → Layout Files -->
+        <mxCell id="arrow-cre-files" style="rounded=1;strokeColor=#FF9800;strokeWidth=1.5;fontColor=#FF9800;fontSize=10;" edge="1" parent="1" source="layout-cre" target="layout-files">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== hid_zone_csv_cre.py ========== -->
+        <mxCell id="hid-cre" value="&lt;b&gt;hid_zone_csv_cre.py&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#aaa&quot;&gt;756 lines&lt;/font&gt;&lt;br&gt;&lt;br&gt;HID Zone CSV 생성&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;create_hid_zone_csv()&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#880E4F;strokeColor=#E91E63;fontColor=#FFFFFF;fontSize=11;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="770" y="600" width="200" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- hid_zone → Layout Files -->
+        <mxCell id="arrow-hid-files" style="rounded=1;strokeColor=#E91E63;strokeWidth=1.5;dashed=1;fontColor=#E91E63;fontSize=10;" edge="1" parent="1" source="layout-files" target="hid-cre">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="arrow-hid-label" value="XML 파싱" style="edgeLabel;html=1;fontSize=10;fontColor=#E91E63;" vertex="1" connectable="0" parent="arrow-hid-files">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== HID Zone Master CSV ========== -->
+        <mxCell id="hid-csv" value="&lt;b&gt;HID_Zone_Master&lt;/b&gt;&lt;br&gt;_M14A_A.csv" style="shape=document;whiteSpace=wrap;html=1;fillColor=#880E4F;strokeColor=#E91E63;fontColor=#FFFFFF;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="620" width="180" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- hid_cre → HID CSV -->
+        <mxCell id="arrow-hid-csv" style="rounded=1;strokeColor=#E91E63;strokeWidth=1.5;fontSize=10;" edge="1" parent="1" source="hid-cre" target="hid-csv">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== fab_config.json ========== -->
+        <mxCell id="fab-config" value="&lt;b&gt;fab_config.json&lt;/b&gt;&lt;br&gt;FAB별 차량 수 설정&lt;br&gt;M14A: 450, M16A: 300" style="shape=note;whiteSpace=wrap;html=1;fillColor=#37474F;strokeColor=#607D8B;fontColor=#FFFFFF;fontSize=10;size=12;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="10" width="180" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ========== 좌표 보간 설명 박스 ========== -->
+        <mxCell id="interp-box" value="&lt;b&gt;좌표 보간 (Interpolation)&lt;/b&gt;&lt;br&gt;&lt;br&gt;CurrentAddr(12340) ——Distance(1400mm)——→ NextAddr(12341)&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;(x1, y1)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;(x2, y2)&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8BE9FD&quot;&gt;ratio = dist_mm / (edge_dist * 1000)&lt;br&gt;x = x1 + (x2 - x1) * ratio&lt;br&gt;y = y1 + (y2 - y1) * ratio&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A237E;strokeColor=#3F51B5;fontColor=#FFFFFF;fontSize=11;arcSize=8;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="40" y="530" width="520" height="180" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
