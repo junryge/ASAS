@@ -3,7 +3,7 @@ name: knowledge-search
 description: >
   도메인 지식 검색 스킬. knowledge/ 폴더의 FAB 컬럼 정보, 아키텍처 문서,
   도메인 지식을 검색하여 정확한 답변을 생성한다.
-  수동 전용 스킬 — 사용자가 직접 선택해야 활성화된다.
+  컬럼 패턴 또는 도메인 키워드 감지 시 자동 활성화된다.
 metadata:
   author: Demos
   version: "2.0.0"
@@ -18,7 +18,7 @@ metadata:
 # 도메인 지식 검색 스킬
 
 이 스킬은 `knowledge/` 폴더에 저장된 도메인 지식 문서를 검색하여 답변한다.
-**수동 전용**: 자동 추천되지 않으며, 사용자가 직접 선택해야 활성화된다.
+**자동 활성화**: 컬럼 패턴(`M14.QUE.OHT.xxx`) 또는 도메인 키워드(아키텍처, 데드락, 산출물 등) 감지 시 자동 활성화된다. 파일명에서 키워드를 동적으로 추출하므로 새 MD 파일 추가 시 자동 반영된다.
 
 ---
 
@@ -37,7 +37,23 @@ metadata:
 | C2/CJ/IC | FAB_C2_컬럼, FAB_C2F_컬럼, FAB_CJPKG_FRONT_컬럼, FAB_CJPKG_MBS_컬럼, FAB_CJPRB_컬럼, FAB_CJPRB_WLP3_컬럼, FAB_ICPKG_PNT4_1F_컬럼, FAB_ICPKG_PNT4_5F_컬럼, FAB_ICPRB_컬럼 |
 | 기타 | FAB_R3_컬럼, FAB_TSV_컬럼 |
 
-### 아키텍처/시스템 문서 (11개)
+### 작업 산출물/변경 문서 (12개)
+| 파일 | 내용 |
+|------|------|
+| 20260401_수정_FREE_FLOW_SPEED_HID_VALUE.md | FREE FLOW SPEED HID VALUE 수정 |
+| 20260401_수정_FREE_FLOW_SPEED_HID_VALUE_변경사항.md | 위 수정 변경사항 |
+| 20260401_수정_VHL_COUNT_LIMIT_PRECAUTION.md | VHL COUNT LIMIT PRECAUTION 수정 |
+| 20260401_수정_VHL_COUNT_LIMIT_PRECAUTION_변경사항.md | 위 수정 변경사항 |
+| 20260402_산출물_ML데드락감지.md | ML 데드락 감지 산출물 |
+| 20260402_산출물_룰베이스데드락감지.md | 룰베이스 데드락 감지 산출물 |
+| 20260402_산출물_초호기데드락감지.md | 초호기 데드락 감지 산출물 |
+| 20260402_재정의_스마트아틀라스Architecture 정의서.md | 스마트 아틀라스 아키텍처 재정의 |
+| 20260402_추가_VHL_하네스추가.md | VHL 하네스 추가 |
+| 20260406_계획_아틀라스PYTHON_예측_분리_계획.md | 아틀라스 Python 예측 분리 계획 |
+| 20260406_제작_AGV_ICPKT_MAP.md | AGV ICPKT MAP 제작 |
+| 20260406_제작_CNV_ICPKT_MAP.MD | CNV ICPKT MAP 제작 |
+
+### 아키텍처/시스템 문서 (7개)
 | 파일 | 내용 |
 |------|------|
 | SK_Hynix_Domain_Knowledge.md | FAB 구조, AMHS, 급증, 운영지표 종합 |
@@ -47,6 +63,8 @@ metadata:
 | 내부시스템_접속정보.md | 내부 시스템 접속 정보 |
 | 예측모델_개발히스토리.md | 예측 모델 개발 이력 |
 | 프로젝트별_통신_방식.md | 프로젝트 통신 방식 |
+
+> **참고**: 새 MD 파일을 `knowledge/` 폴더에 추가하면 파일명에서 키워드가 자동 추출되어 검색 트리거에 반영됩니다. 별도 설정 변경 불필요.
 
 ---
 
