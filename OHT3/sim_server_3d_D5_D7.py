@@ -2670,8 +2670,7 @@ async def switch_fab_api(fab_name: str, layout_prefix: str = None):
 
         # 엔진 생성 (HID Zone, Station 자동 로드됨)
         engine = SimulationEngine(nodes, edges)
-        fab_vehicle_count = get_vehicle_count_for_fab(fab_name)
-        engine.init_vehicles(fab_vehicle_count)
+        engine.init_vehicles(0)  # 가짜 차량 생성 안 함 - data_sender.py가 실데이터 전송
 
         # 레이아웃 데이터 갱신
         layout_data = {
@@ -2708,12 +2707,17 @@ async def switch_fab_api(fab_name: str, layout_prefix: str = None):
             ]
         }
 
+        # RealOHTParser 재초기화
+        layout_src = LAYOUT_ZIP_PATH if os.path.exists(LAYOUT_ZIP_PATH) else LAYOUT_XML_PATH
+        real_oht_parser_inst = RealOHTParser(layout_src)
+        real_vehicle_state = []
+        real_vehicle_timestamps = {}
+
         return {
             "status": "ok",
-            "message": f"FAB 전환 완료: {fab_name} (레이아웃: {LAYOUT_PREFIX}, OHT: {fab_vehicle_count}대)",
+            "message": f"FAB 전환 완료: {fab_name} (레이아웃: {LAYOUT_PREFIX}, data_sender.py 대기 중)",
             "fab_name": FAB_NAME,
             "layout_prefix": LAYOUT_PREFIX,
-            "vehicle_count": fab_vehicle_count,
             "paths": paths
         }
     except Exception as e:
@@ -2724,27 +2728,18 @@ async def switch_fab_api(fab_name: str, layout_prefix: str = None):
 
 @app.post("/api/fab/vehicle-count")
 async def set_fab_vehicle_count(fab_name: str, count: int):
-    """FAB별 OHT 대수 설정 및 즉시 적용"""
+    """FAB별 OHT 대수 설정 (실데이터 모드에서는 data_sender.py가 차량 관리)"""
     global engine, VEHICLE_COUNT
-
-    if count < 1 or count > 2000:
-        return {"status": "error", "message": "OHT 대수는 1~2000 사이여야 합니다"}
 
     # 설정 저장 (fab_config.json에 영구 저장됨)
     set_vehicle_count_for_fab(fab_name, count)
 
-    # 현재 FAB이면 즉시 재시작
-    if fab_name == FAB_NAME and engine:
-        VEHICLE_COUNT = count
-        engine.init_vehicles(count)
-        print(f"[OHT 대수 변경] {fab_name}: {count}대로 재시작됨")
-
     return {
         "status": "ok",
-        "message": f"{fab_name} OHT {count}대로 재시작됨 (설정 저장됨)",
+        "message": f"{fab_name} OHT 설정 저장됨 (실데이터 모드: data_sender.py가 차량 관리)",
         "fab_name": fab_name,
         "vehicle_count": count,
-        "current_vehicle_count": len(engine.vehicles) if engine else 0,
+        "current_vehicle_count": len(real_vehicle_state),
         "fab_config": FAB_CONFIG
     }
 
@@ -2990,55 +2985,12 @@ def _save_stk_csv(stk_list):
 
 @app.post("/api/set-vehicle-count")
 async def set_vehicle_count(count: int):
-    """OHT 대수 변경"""
-    global engine
-    current_count = len(engine.vehicles)
-
-    if count < 1:
-        return {"status": "error", "message": "최소 1대 이상이어야 합니다"}
-    if count > 2000:
-        return {"status": "error", "message": "최대 2000대까지 가능합니다"}
-
-    if count > current_count:
-        # OHT 추가
-        added = 0
-        node_list = list(engine.nodes.keys())
-        for i in range(count - current_count):
-            new_id = f"V{current_count + i + 1:04d}"
-            if new_id not in engine.vehicles:
-                start_node = random.choice(node_list)
-                v = Vehicle(vehicleId=new_id, currentNode=start_node, x=0, y=0)
-                n = engine.nodes.get(start_node)
-                if n:
-                    v.x, v.y = n.x, n.y
-                # 인접 노드 찾기
-                if engine.graph[start_node]:
-                    v.nextNode = engine.graph[start_node][0][0]
-                else:
-                    v.nextNode = start_node
-                v.udpState.currentAddress = v.currentNode
-                v.udpState.nextAddress = v.nextNode
-                engine.vehicles[new_id] = v
-                engine._assign_vehicle_to_zone(v)
-                added += 1
-        return {"status": "ok", "message": f"{added}대 추가됨", "total": len(engine.vehicles)}
-
-    elif count < current_count:
-        # OHT 제거
-        removed = 0
-        vehicles_to_remove = list(engine.vehicles.keys())[count:]
-        for vid in vehicles_to_remove:
-            # Zone에서 제거
-            if vid in engine.vehicle_zone_map:
-                zone_id = engine.vehicle_zone_map[vid]
-                if zone_id in engine.hid_zones:
-                    engine.hid_zones[zone_id].removeVehicle(vid)
-                del engine.vehicle_zone_map[vid]
-            del engine.vehicles[vid]
-            removed += 1
-        return {"status": "ok", "message": f"{removed}대 제거됨", "total": len(engine.vehicles)}
-
-    return {"status": "ok", "message": "변경 없음", "total": current_count}
+    """OHT 대수 변경 (실데이터 모드에서는 data_sender.py가 차량 관리)"""
+    return {
+        "status": "ok",
+        "message": "실데이터 모드: data_sender.py가 차량을 관리합니다",
+        "current_vehicle_count": len(real_vehicle_state)
+    }
 
 # ============================================================
 # HTML 프론트엔드
