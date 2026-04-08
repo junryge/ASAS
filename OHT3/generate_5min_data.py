@@ -3,17 +3,20 @@
 """
 generate_5min_data.py - OHT 이동 데이터 TXT 생성
 
-MAP/M14A/A.layout/layout.xml 에서 레이아웃을 읽어
-5대 차량의 이동 데이터를 0.5초 간격으로 생성합니다.
+최초 1회: layout.xml 파싱 → layout_cache.json 저장 (느림)
+이후:     layout_cache.json 로드 (즉시)
+→ oht_5v_data.txt 생성
 
 사용법:
     python generate_5min_data.py       → 5분 데이터 생성
     python generate_5min_data.py 10    → 10분 데이터 생성
+    python generate_5min_data.py --rebuild  → JSON 캐시 재생성
 
 생성 후:
     python data_sender.py → 1번 선택하면 0.5초마다 재생
 """
 
+import json
 import math
 import os
 import random
@@ -23,8 +26,8 @@ import zipfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_FILE = os.path.join(SCRIPT_DIR, "oht_5v_data.txt")
+CACHE_JSON = os.path.join(SCRIPT_DIR, "layout_cache.json")
 
-# sim_server 규칙과 동일한 경로
 FAB_NAME = "M14A"
 LAYOUT_PREFIX = "A"
 MAP_DIR = os.path.join(SCRIPT_DIR, "MAP")
@@ -57,36 +60,60 @@ def make_msg(v):
     )
 
 
-def parse_layout_xml(xml_path):
-    """
-    layout.xml 파싱 - sim_server_3d_D5_D7.py 의 parse_layout_xml_direct 와 동일 로직
+# ============================================================
+# JSON 캐시 저장/로드
+# ============================================================
+def save_cache(node_xy, adj, edge_dist):
+    """파싱 결과를 JSON으로 저장 (이후 즉시 로드)"""
+    data = {
+        "nodes": {str(k): list(v) for k, v in node_xy.items()},
+        "adj": {str(k): v for k, v in adj.items()},
+        "edges": {f"{k[0]},{k[1]}": v for k, v in edge_dist.items()},
+    }
+    with open(CACHE_JSON, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    size_kb = os.path.getsize(CACHE_JSON) / 1024
+    print(f"  JSON 캐시 저장: {CACHE_JSON} ({size_kb:.0f} KB)")
 
-    <group name="Addr..."> 안에서:
-      key="address"  → 노드 번호
-      key="draw-x"   → X 좌표
-      key="draw-y"   → Y 좌표
-    <group name="NextAddr..."> 안에서:
-      key="next-address" → 연결 노드
-    """
+
+def load_cache():
+    """JSON 캐시에서 즉시 로드"""
+    print(f"  JSON 캐시 로드: {CACHE_JSON}")
+    with open(CACHE_JSON, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    node_xy = {int(k): tuple(v) for k, v in data["nodes"].items()}
+    adj = {int(k): v for k, v in data["adj"].items()}
+    edge_dist = {}
+    for k, v in data["edges"].items():
+        parts = k.split(",")
+        edge_dist[(int(parts[0]), int(parts[1]))] = v
+
+    print(f"  노드: {len(node_xy)}개  엣지: {len(edge_dist)}개")
+    return node_xy, adj, edge_dist
+
+
+# ============================================================
+# XML 파싱 (최초 1회만)
+# ============================================================
+def parse_layout_xml(xml_path):
+    """layout.xml → (node_xy, adj, edge_dist)"""
     node_xy = {}
     connections = []
-
     current_addr = None
     current_addr_params = {}
     in_next_addr = False
     next_addr_params = {}
 
-    print(f"  XML 파싱: {xml_path}")
+    print(f"  XML 파싱: {xml_path} (최초 1회...)")
     with open(xml_path, 'r', encoding='utf-8') as f:
         line_count = 0
         for line in f:
             line_count += 1
             if line_count % 500000 == 0:
                 print(f"    {line_count:,} 라인...")
-
             line = line.strip()
 
-            # Addr 그룹 시작
             if '<group name="Addr' in line and 'class=' in line and 'address.Addr"' in line:
                 if current_addr is not None and 'address' in current_addr_params:
                     addr_no = int(current_addr_params.get('address', 0))
@@ -99,13 +126,11 @@ def parse_layout_xml(xml_path):
                 in_next_addr = False
                 continue
 
-            # NextAddr 그룹 시작
             if '<group name="NextAddr' in line and 'class=' in line and 'NextAddr"' in line:
                 in_next_addr = True
                 next_addr_params = {}
                 continue
 
-            # NextAddr 그룹 종료
             if in_next_addr and '</group>' in line:
                 if 'address' in current_addr_params and 'next-address' in next_addr_params:
                     from_addr = int(current_addr_params.get('address', 0))
@@ -118,7 +143,6 @@ def parse_layout_xml(xml_path):
                 in_next_addr = False
                 continue
 
-            # 파라미터 파싱
             if '<param ' in line and 'key="' in line and 'value="' in line:
                 key_match = re.search(r'key="([^"]+)"', line)
                 value_match = re.search(r'value="([^"]*)"', line)
@@ -130,7 +154,6 @@ def parse_layout_xml(xml_path):
                     elif current_addr is not None:
                         current_addr_params[key] = value
 
-    # 마지막 Addr 저장
     if current_addr is not None and 'address' in current_addr_params:
         addr_no = int(current_addr_params.get('address', 0))
         if addr_no > 0:
@@ -138,7 +161,6 @@ def parse_layout_xml(xml_path):
             y = float(current_addr_params.get('draw-y', 0))
             node_xy[addr_no] = (x, y)
 
-    # 인접맵 + 엣지 거리
     adj = {}
     edge_dist = {}
     for from_n, to_n in connections:
@@ -153,39 +175,44 @@ def parse_layout_xml(xml_path):
     return node_xy, adj, edge_dist
 
 
-def load_layout():
-    """레이아웃 로드 - sim_server 규칙"""
-
-    # 1) layout.xml 직접
+def ensure_xml_exists():
+    """XML이 없으면 ZIP에서 추출"""
     if os.path.exists(LAYOUT_XML):
-        return parse_layout_xml(LAYOUT_XML)
-
-    # 2) A.layout.zip 에서 추출
+        return
     if os.path.exists(LAYOUT_ZIP):
-        print(f"  A.layout.zip 추출 중...")
         extract_dir = os.path.join(MAP_DIR, FAB_NAME, f"{LAYOUT_PREFIX}.layout")
         with zipfile.ZipFile(LAYOUT_ZIP, 'r') as z:
             z.extractall(extract_dir)
-        xml_in_zip = os.path.join(extract_dir, "layout", "layout.xml")
-        if os.path.exists(xml_in_zip):
-            return parse_layout_xml(xml_in_zip)
-        if os.path.exists(LAYOUT_XML):
-            return parse_layout_xml(LAYOUT_XML)
-
-    # 3) MAP.zip 풀기
+        return
     if os.path.exists(MAP_ZIP):
         print(f"  MAP.zip 추출 중...")
         with zipfile.ZipFile(MAP_ZIP, 'r') as z:
             z.extractall(MAP_DIR)
-        if os.path.exists(LAYOUT_XML):
-            return parse_layout_xml(LAYOUT_XML)
 
-    print("오류: 레이아웃 파일 없음")
-    sys.exit(1)
+
+# ============================================================
+# 레이아웃 로드 (JSON 우선, 없으면 XML → JSON 캐시)
+# ============================================================
+def load_layout(force_rebuild=False):
+    # JSON 캐시가 있으면 즉시 로드
+    if not force_rebuild and os.path.exists(CACHE_JSON):
+        return load_cache()
+
+    # XML 파싱 → JSON 캐시 저장
+    ensure_xml_exists()
+    if not os.path.exists(LAYOUT_XML):
+        print("오류: 레이아웃 파일 없음")
+        sys.exit(1)
+
+    node_xy, adj, edge_dist = parse_layout_xml(LAYOUT_XML)
+    save_cache(node_xy, adj, edge_dist)
+    return node_xy, adj, edge_dist
 
 
 def main():
-    duration_min = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    force_rebuild = "--rebuild" in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    duration_min = int(args[0]) if args else 5
     duration_sec = duration_min * 60
     total_ticks = int(duration_sec / INTERVAL)
 
@@ -193,9 +220,8 @@ def main():
     print(f"OHT 데이터 생성: {duration_min}분 ({total_ticks}틱, {INTERVAL}초 간격)")
     print("=" * 50)
 
-    node_xy, adj, edge_dist = load_layout()
+    node_xy, adj, edge_dist = load_layout(force_rebuild)
 
-    # 차량 초기화
     vehicles = []
     for v in VEHICLES:
         vv = dict(v)
@@ -209,7 +235,6 @@ def main():
         vehicles.append(vv)
         print(f"  {vv['id']}: {vv['cur']}→{vv['next']} edge={vv['edge_max']}")
 
-    # 데이터 생성
     print(f"\n생성 중...")
     batches = []
     for tick in range(total_ticks):
