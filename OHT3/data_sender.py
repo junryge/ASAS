@@ -6,12 +6,14 @@ data_sender.py - OHT 데이터 전송
 sim_server에서 레이아웃을 받아 실제 존재하는 노드로 차량을 이동시킵니다.
 
 사용법:
-    python data_sender.py        → 자동 모드
-    python data_sender.py paste  → 붙여넣기 모드
+    python data_sender.py              → 메뉴 선택
+    python data_sender.py paste        → 붙여넣기 모드
+    python data_sender.py file [파일]  → 파일 모드 (기본: oht_5v_data.txt, 5분 이동)
 """
 
 import json
 import math
+import os
 import sys
 import time
 import random
@@ -215,6 +217,109 @@ def paste_mode():
 
 
 # ============================================================
+# 파일 모드: TXT 파일에서 읽어 레이아웃 기반 5분 이동
+# ============================================================
+DEFAULT_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "oht_5v_data.txt")
+FILE_MODE_DURATION = 300  # 5분 = 300초
+
+def parse_raw_line(line):
+    """raw OHT 메시지에서 차량 정보 추출"""
+    fields = line.strip().split(",")
+    if len(fields) < 19 or fields[1] != "OHT":
+        return None
+    return {
+        "id": fields[2],
+        "state": int(fields[3]),
+        "isFull": int(fields[4]),
+        "cur": int(fields[7]),
+        "dist": int(fields[8]),
+        "next": int(fields[9]),
+        "equipId": fields[12],
+        "src": fields[16],
+        "dst": fields[17],
+        "vel": int(fields[18]),
+    }
+
+
+def file_mode(filepath=None):
+    """TXT 파일에서 5대 데이터 읽어 레이아웃 기반 5분 이동"""
+    if filepath is None:
+        filepath = DEFAULT_DATA_FILE
+
+    # 파일 읽기
+    print(f"데이터 파일: {filepath}")
+    with open(filepath, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip() and "2,OHT," in l]
+
+    if not lines:
+        print("오류: OHT 메시지가 없습니다")
+        return
+
+    vehicles = []
+    for line in lines:
+        v = parse_raw_line(line)
+        if v:
+            vehicles.append(v)
+    print(f"  차량 {len(vehicles)}대 로드")
+
+    # sim_server 레이아웃 가져오기
+    while True:
+        try:
+            nodes, adj, edge_dist = fetch_layout()
+            break
+        except Exception as e:
+            print(f"sim_server 연결 실패: {e}")
+            print("2초 후 재시도...")
+            time.sleep(2)
+
+    # 엣지 최대 거리 설정
+    for v in vehicles:
+        v["edge_max"] = edge_dist.get((v["cur"], v["next"]), 100)
+
+    total_ticks = int(FILE_MODE_DURATION / INTERVAL)
+    print()
+    print(f"파일 모드: {len(vehicles)}대 × {FILE_MODE_DURATION}초 ({total_ticks} ticks)")
+    print("Ctrl+C 종료")
+    print("-" * 50)
+
+    start_time = time.time()
+    tick = 0
+    while tick < total_ticks:
+        messages = []
+
+        for v in vehicles:
+            v["dist"] += 5
+
+            if v["dist"] >= v["edge_max"]:
+                v["dist"] = 0
+                v["cur"] = v["next"]
+                neighbors = adj.get(v["cur"], [])
+                if neighbors:
+                    v["next"] = random.choice(neighbors)
+                    v["edge_max"] = edge_dist.get((v["cur"], v["next"]), 100)
+
+            messages.append(make_message(v))
+
+        result = send(messages)
+        tick += 1
+
+        elapsed = time.time() - start_time
+        remaining = FILE_MODE_DURATION - elapsed
+
+        if tick % 10 == 0 or tick <= 3:
+            v0 = vehicles[0]
+            print(f"[tick {tick:3d}/{total_ticks}] 남은시간 {int(remaining)}초  "
+                  f"{v0['id']}: {v0['cur']}→{v0['next']} dist={v0['dist']}/{v0['edge_max']}")
+
+        if remaining <= 0:
+            break
+
+        time.sleep(INTERVAL)
+
+    print(f"\n완료! {tick} ticks, {int(time.time()-start_time)}초 경과")
+
+
+# ============================================================
 def main():
     print("=" * 50)
     print(f"OHT data_sender → {SERVER_URL}")
@@ -224,18 +329,26 @@ def main():
         paste_mode()
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "file":
+        fp = sys.argv[2] if len(sys.argv) > 2 else None
+        file_mode(fp)
+        return
+
     print()
-    print("  1. 자동 (레이아웃 기반 이동)")
+    print("  1. 자동 (레이아웃 기반 이동, 무한)")
     print("  2. 붙여넣기 (직접 입력)")
+    print("  3. 파일 (TXT에서 읽어 5분 이동)")
     print()
     try:
-        sel = input("선택 (1 or 2): ").strip()
+        sel = input("선택 (1/2/3): ").strip()
     except EOFError:
         return
 
     print()
     if sel == "2":
         paste_mode()
+    elif sel == "3":
+        file_mode()
     else:
         auto_mode()
 
