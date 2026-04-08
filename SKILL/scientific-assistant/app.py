@@ -2467,6 +2467,7 @@ def _pool_get_or_load(model_path, n_ctx=16384):
 
     with _gguf_pool_lock:
         # 1) 이미 풀에 같은 path가 있으면 재사용 (n_ctx 다르더라도)
+        _wait_entry = None
         for entry in _gguf_pool:
             if entry["path"] == model_path and entry["model"] is not None:
                 if not entry["in_use"]:
@@ -2477,15 +2478,8 @@ def _pool_get_or_load(model_path, n_ctx=16384):
                 else:
                     # 같은 모델이 사용 중 → 대기 후 재시도 (합성 단계 등)
                     _safe_print(f"     [POOL] waiting for: {os.path.basename(model_path)}...")
-                    # 락 해제하고 대기
+                    _wait_entry = entry
                     break
-
-        # 사용 중인 같은 모델이 있으면 락 밖에서 대기
-        _wait_entry = None
-        for entry in _gguf_pool:
-            if entry["path"] == model_path and entry["in_use"] and entry["model"] is not None:
-                _wait_entry = entry
-                break
 
     # 락 밖에서 대기 (최대 120초)
     if _wait_entry is not None:
@@ -2497,12 +2491,25 @@ def _pool_get_or_load(model_path, n_ctx=16384):
                     _wait_entry["last_used"] = time.time()
                     _safe_print(f"     [POOL] reuse after wait: {os.path.basename(model_path)}")
                     return _wait_entry["model"]
-        # 타임아웃 → 그냥 사용 (위험하지만 데드락 방지)
+        # 타임아웃 → 새 인스턴스를 로드 (비 thread-safe 객체 공유 방지)
+        _safe_print(f"     [POOL] timeout, loading NEW instance: {os.path.basename(model_path)}")
+        try:
+            llama_new = Llama(
+                model_path=model_path, n_ctx=n_ctx,
+                n_gpu_layers=99, n_batch=128, verbose=False,
+            )
+        except TypeError:
+            llama_new = Llama(
+                model_path=model_path, n_ctx=n_ctx,
+                n_gpu_layers=99, verbose=False,
+            )
+        new_entry = {
+            "model": llama_new, "path": model_path, "size_gb": size_gb,
+            "n_ctx": n_ctx, "in_use": True, "last_used": time.time(),
+        }
         with _gguf_pool_lock:
-            _wait_entry["in_use"] = True
-            _wait_entry["last_used"] = time.time()
-            _safe_print(f"     [POOL] timeout, force reuse: {os.path.basename(model_path)}")
-            return _wait_entry["model"]
+            _gguf_pool.append(new_entry)
+        return llama_new
 
     with _gguf_pool_lock:
 
@@ -2614,6 +2621,13 @@ def _assign_models_to_groups(parallel_groups, gguf_paths_by_size):
             if gguf_paths_by_size[candidate][0] not in assigned_paths:
                 best_idx = candidate
                 break
+        else:
+            # 모든 모델이 이미 할당됨 → 중복 할당 불가피 (로깅)
+            try:
+                print(f"     [ASSIGN] no unique model for [{pg['group']}], "
+                      f"reusing {os.path.basename(gguf_paths_by_size[best_idx][0])}")
+            except Exception:
+                pass
 
         assignments[pg["group"]] = gguf_paths_by_size[best_idx][0]
 
@@ -6485,7 +6499,7 @@ def api_chat():
 
         # 멀티에이전트 오케스트레이션 (스킬 2개 이상)
         if len(loaded) >= 2:
-            loaded_set = {sid: True for sid in loaded}
+            loaded_set = {sid: load_skill_content(sid) or "" for sid in loaded}
             orch_prompt = build_orchestration_prompt(
                 messages[-1].get("content", "") if messages else "",
                 loaded, loaded_set
@@ -6635,6 +6649,7 @@ def api_chat():
 
         # ── 병렬 멀티에이전트 판단 ──
         # 스킬 2개+ & 다른 그룹이면 병렬 (AUTO든 수동 선택이든)
+        _parallel_fallback_reason = None
         if len(loaded) >= 2:
             _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
 
@@ -6758,12 +6773,14 @@ def api_chat():
                                 "tokens_budget": f"parallel {_meta.get('agents', 0)} agents",
                             })
                         else:
+                            _parallel_fallback_reason = f"synthesis_failed: {_synth_err}"
                             try:
                                 print(f"  [PARALLEL] synthesis failed, fallback: {_synth_err}")
                             except Exception:
                                 pass
 
                 except Exception as _par_ex:
+                    _parallel_fallback_reason = f"parallel_error: {_par_ex}"
                     try:
                         print(f"  [PARALLEL] error, fallback: {_par_ex}")
                     except Exception:
@@ -6887,12 +6904,15 @@ def api_chat():
 
         answer = _normalize_gguf_artifact_answer(answer, gguf_artifact_request)
 
-        return jsonify({
+        _resp = {
             "content": answer,
             "loaded_skills": loaded,
             "system_prompt_length": len(system_prompt),
             "tokens_budget": f"prompt~{prompt_tokens_est}, max_tokens={actual_max_tokens}, ctx={gguf_ctx}",
-        })
+        }
+        if _parallel_fallback_reason:
+            _resp["parallel_fallback"] = _parallel_fallback_reason
+        return jsonify(_resp)
 
 
     # ===== 회사 API: HTTP 요청 (폴백 체인 지원) =====
@@ -6947,7 +6967,7 @@ def api_chat():
                             h = {"Content-Type": "application/json"}
                             if api_key:
                                 h["Authorization"] = f"Bearer {api_key}"
-                            _temp = temperature_map[min(effort, 3)] if 'temperature_map' in dir() else 0.5
+                            _temp = temperature_map[min(effort, 3)]
                             resp = req.post(
                                 api_info["url"],
                                 headers=h,
