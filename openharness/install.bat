@@ -1,64 +1,71 @@
 @echo off
-chcp 65001 >nul 2>&1
 title OpenHarness Installer v0.1.0
 
-echo ╔══════════════════════════════════════════╗
-echo ║  OpenHarness Installer v0.1.0            ║
-echo ╚══════════════════════════════════════════╝
+echo.
+echo  ==========================================
+echo   OpenHarness Installer v0.1.0
+echo  ==========================================
 echo.
 
 set "SCRIPT_DIR=%~dp0"
 set "OH_HOME=%USERPROFILE%\.openharness"
 
-:: 1. Create user config directory
-echo → Creating config directory: %OH_HOME%
+rem 1. Create user config directory
+echo [1/4] Creating config directory: %OH_HOME%
 if not exist "%OH_HOME%" mkdir "%OH_HOME%"
 if not exist "%OH_HOME%\skills" mkdir "%OH_HOME%\skills"
 if not exist "%OH_HOME%\plugins" mkdir "%OH_HOME%\plugins"
 if not exist "%OH_HOME%\sessions" mkdir "%OH_HOME%\sessions"
+echo       OK
 
-:: 2. Create TOKEN.TXT if not exists
+rem 2. Create TOKEN.TXT if not exists
+echo [2/4] Checking TOKEN.TXT...
 if not exist "%OH_HOME%\TOKEN.TXT" (
     type nul > "%OH_HOME%\TOKEN.TXT"
-    echo → Created TOKEN.TXT (empty)
-    echo   ⚠  Place your API key in: %OH_HOME%\TOKEN.TXT
+    echo       Created TOKEN.TXT (empty)
+    echo       ** Place your API key in: %OH_HOME%\TOKEN.TXT
 ) else (
-    echo → TOKEN.TXT already exists
+    echo       TOKEN.TXT already exists
 )
 
-:: 3. Install package
-echo → Installing OpenHarness...
-pip install -e "%SCRIPT_DIR%" 2>nul
+rem 3. Install package
+echo [3/4] Installing OpenHarness...
+pip install -e "%SCRIPT_DIR%" >nul 2>&1
 if errorlevel 1 (
-    echo   pip install failed. Trying with --user flag...
-    pip install -e "%SCRIPT_DIR%" --user 2>nul
+    echo       pip install failed. Trying --user...
+    pip install -e "%SCRIPT_DIR%" --user >nul 2>&1
 )
 if errorlevel 1 (
-    echo   ⚠  pip install failed. Use PYTHONPATH method instead:
-    echo      set PYTHONPATH=%SCRIPT_DIR%src;%%PYTHONPATH%%
-    echo      python -m openharness
+    echo       [WARN] pip install failed.
+    echo       Use PYTHONPATH method instead:
+    echo         set PYTHONPATH=%SCRIPT_DIR%src;%%PYTHONPATH%%
+    echo         python -m openharness
+) else (
+    echo       OK
 )
 
-:: 4. Verify
-echo.
-echo → Verifying installation...
+rem 4. Verify
+echo [4/4] Verifying installation...
 where oh >nul 2>&1
 if %errorlevel%==0 (
-    echo   ✅ 'oh' command installed successfully
+    echo       [OK] 'oh' command is available
 ) else (
-    echo   ⚠  'oh' command not found in PATH
-    echo      Try: python -m openharness
-    echo      Or add Python Scripts to PATH
+    echo       [WARN] 'oh' not found in PATH
+    echo       Try: python -m openharness
 )
 
 echo.
-echo ╔══════════════════════════════════════════╗
-echo ║  Installation Complete!                  ║
-echo ║                                          ║
-echo ║  1. Add API key:                         ║
-echo ║     %OH_HOME%\TOKEN.TXT                  ║
-echo ║  2. Run: oh                              ║
-echo ║  3. Help: oh --help                      ║
-echo ╚══════════════════════════════════════════╝
+echo  ==========================================
+echo   Installation Complete!
+echo.
+echo   1. Add API key:
+echo      notepad %OH_HOME%\TOKEN.TXT
+echo.
+echo   2. Run:
+echo      oh
+echo.
+echo   3. Help:
+echo      oh --help
+echo  ==========================================
 echo.
 pause
