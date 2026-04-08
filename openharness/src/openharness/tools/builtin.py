@@ -82,25 +82,52 @@ def _glob_search(payload: str) -> str:
 
 
 def _grep_search(payload: str) -> str:
-    """Search file contents for a pattern. Format: pattern [path]"""
+    """Search file contents for a pattern. Format: pattern [path]
+
+    Pure Python implementation (works on Windows/Linux/Mac).
+    """
     parts = payload.strip().split(None, 1)
     if not parts:
         return "Error: no search pattern"
     pattern = parts[0]
     search_path = parts[1] if len(parts) > 1 else "."
+
+    import re
+    EXTENSIONS = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".js", ".ts", ".html", ".css"}
+    matched_files: list[str] = []
+
     try:
-        result = subprocess.run(
-            ["grep", "-rn", "--include=*.py", "--include=*.md", "--include=*.txt",
-             "--include=*.json", "--include=*.yaml", "--include=*.yml",
-             "-l", pattern, search_path],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.stdout:
-            files = result.stdout.strip().split("\n")
-            return f"Found in {len(files)} files:\n" + "\n".join(files[:30])
-        return f"No matches for: {pattern}"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        regex = re.compile(re.escape(pattern), re.IGNORECASE)
+
+    root = Path(search_path).expanduser()
+    if not root.exists():
+        return f"Error: path not found: {search_path}"
+
+    try:
+        for fpath in root.rglob("*"):
+            if len(matched_files) >= 50:
+                break
+            if not fpath.is_file():
+                continue
+            if fpath.suffix.lower() not in EXTENSIONS:
+                continue
+            try:
+                text = fpath.read_text(encoding="utf-8", errors="ignore")
+                if regex.search(text):
+                    matched_files.append(str(fpath))
+            except OSError:
+                continue
+    except Exception:
         return f"Search error for: {pattern}"
+
+    if matched_files:
+        result = f"Found in {len(matched_files)} files:\n" + "\n".join(matched_files[:30])
+        if len(matched_files) > 30:
+            result += f"\n... ({len(matched_files)} total)"
+        return result
+    return f"No matches for: {pattern}"
 
 
 # ── Shell Tool ──
