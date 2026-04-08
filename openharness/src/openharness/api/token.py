@@ -10,8 +10,10 @@ from pathlib import Path
 
 # Token search order
 TOKEN_SEARCH_PATHS = [
-    Path.home() / ".openharness" / "TOKEN.TXT",   # User home (primary)
-    Path.cwd() / "TOKEN.TXT",                      # Current working directory
+    Path("D:/openharness/TOKEN.TXT"),               # D:\openharness (primary)
+    Path.home() / ".openharness" / "TOKEN.TXT",     # User home
+    Path.cwd() / "TOKEN.TXT",                       # Current working directory
+    Path(__file__).parent.parent.parent.parent / "TOKEN.TXT",  # Package root
 ]
 
 
