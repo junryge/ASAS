@@ -30,6 +30,7 @@ from demos_v1.skills import (
     scan_skills, auto_select_skills, context_aware_skill_select,
     load_skill_content, get_skill_catalog,
     group_skills_for_parallel, apply_hierarchical_delegation,
+    get_registry_key_for_env, get_model_capabilities,
 )
 from demos_v1.router import (
     classify_and_route, classify_format_and_style,
