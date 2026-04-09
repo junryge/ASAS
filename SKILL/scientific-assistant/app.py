@@ -1,5 +1,5 @@
 """
-Scientific Assistant V1.0 - Flask 웹앱
+Demos V1.0 - Flask 웹앱
 =====================================================
 cla-main + zircote/.claude 통합: 355개 스킬 (과학 174 + 개발도구 52 + 에이전트 117 + 가이드 12)
 
@@ -6594,7 +6594,7 @@ def api_chat():
     else:
         think_rule = "- <think> 태그를 사용하지 마세요. 사고 과정 없이 바로 답변하세요."
 
-    default_prompt = f"""당신은 Scientific Assistant V1.0 - 과학 연구와 소프트웨어 개발을 돕는 전문 AI 어시스턴트입니다.
+    default_prompt = f"""당신은 Demos V1.0 - 과학 연구와 소프트웨어 개발을 돕는 전문 AI 어시스턴트입니다.
 370개+ 전문 스킬(과학/개발/AI/인프라/비즈니스)을 활용할 수 있습니다.
 
 [기본 규칙]
@@ -7903,7 +7903,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scientific Assistant V1.0</title>
+<title>Demos V1.0</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -8360,7 +8360,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 <div class="sidebar" id="sidebar">
   <button class="sidebar-toggle-mini" onclick="toggleSidebar()" title="펼치기">☰</button>
   <div class="sidebar-inner">
-    <div class="sidebar-logo"><span>S</span>ci-Assistant <span style="font-size:12px;color:#999">V1.0</span></div>
+    <div class="sidebar-logo"><span>D</span>emos <span style="font-size:12px;color:#999">V1.0</span></div>
     <div style="display:flex;gap:4px;margin-bottom:4px;">
       <button class="sidebar-btn active" onclick="createNewSession()" style="flex:1">✨ 새 세션</button>
       <button class="sidebar-btn" onclick="selectAllSessions()" style="flex:0;padding:6px 10px;font-size:11px;" title="전체 선택">☑</button>
@@ -8376,7 +8376,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
   </div>
   <div id="fileListPanel" class="sidebar-file-panel" style="display:none"></div>
   <div class="sidebar-footer">
-    <div class="credits">🔬 Scientific Assistant V1.0</div>
+    <div class="credits">🔬 Demos V1.0</div>
   </div>
   </div>
 </div>
@@ -8457,7 +8457,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Scientific Assistant V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span><button onclick="toggleMainTokenSettings()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:2px 10px;border-radius:10px;margin-left:6px;cursor:pointer;font-weight:500;" title="토큰/컨텍스트 설정">⚙️ 토큰 설정</button><span style="font-size:11px;color:#9ca3af;margin-left:6px;">2달에 한번 스킬 업데이트 | 사용을 많이 해줄수록 기능이 업데이트 됩니다</span></div>
+    <div class="project-title">📁 Demos V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 사용중</span><button onclick="toggleMainTokenSettings()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:2px 10px;border-radius:10px;margin-left:6px;cursor:pointer;font-weight:500;" title="토큰/컨텍스트 설정">⚙️ 토큰 설정</button><span style="font-size:11px;color:#9ca3af;margin-left:6px;">2달에 한번 스킬 업데이트 | 사용을 많이 해줄수록 기능이 업데이트 됩니다</span></div>
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="tokenBadge" class="status off">⏳ 로딩중...</span>
       <button onclick="openHarnessSessionTab()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:4px 12px;border-radius:8px;cursor:pointer;font-weight:500;">💾 저장 세션</button>
@@ -10020,7 +10020,7 @@ function addMsg(role,text,rawForDetect){
   const d=document.createElement('div');
   d.className='msg '+role;
   let html = role==='user' ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : renderMd(text);
-  d.innerHTML=`<div class="msg-label">${role==='user'?'나':'AI'}</div>${html}`;
+  d.innerHTML=`<div class="msg-label">${role==='user'?'나':'Demos'}</div>${html}`;
   c.appendChild(d);
   d.querySelectorAll('pre').forEach(pre=>{
     const btn=document.createElement('button');
@@ -13092,7 +13092,7 @@ if __name__ == "__main__":
         os.environ.setdefault("TERM", "dumb")
 
     print("=" * 50)
-    print("  Scientific Assistant V1.0")
+    print("  Demos V1.0")
     print("=" * 50)
 
     # 스킬 폴더 확인
