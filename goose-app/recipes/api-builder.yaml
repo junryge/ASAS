@@ -1,0 +1,25 @@
+name: "REST API Builder"
+description: "Generate a complete REST API with models, routes, validation, and tests."
+model: auto
+max_tokens: 8192
+parameters:
+  - name: "framework"
+    description: "Web framework (Flask, FastAPI, Express, Django)"
+  - name: "resource"
+    description: "Resource name (e.g., users, products, orders)"
+  - name: "fields"
+    description: "Fields with types (e.g., name:string, price:float, active:bool)"
+instructions: |
+  Create a complete REST API for the {{resource}} resource using {{framework}}.
+
+  Fields: {{fields}}
+
+  Generate:
+  1. **Model/Schema** - Data model with validation
+  2. **CRUD Routes** - GET (list/detail), POST, PUT, DELETE
+  3. **Input Validation** - Request body validation
+  4. **Error Handling** - Proper HTTP status codes and error responses
+  5. **Tests** - Unit tests for each endpoint
+  6. **Documentation** - API endpoint documentation
+
+  Follow best practices for the chosen framework.
