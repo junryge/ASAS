@@ -3451,6 +3451,47 @@ def _fix_response_issues(answer, issues):
     return fixed
 
 
+def _sanitize_knowledge_content(content):
+    """knowledge 파일 내용을 LLM에 주입하기 전에 raw 데이터를 사전 정제.
+
+    정제 대상:
+    - 제로패딩 (000...30자+) → 요약
+    - 반복 문자 (같은 문자 50자+) → 요약
+    - 과도한 콤마구분 raw 메시지 → 필드 수 요약
+    """
+    if not content:
+        return content
+
+    # 제로패딩 30자+ → 요약
+    cleaned = re.sub(
+        r'0{30,}',
+        lambda m: '0' * 8 + f'...({len(m.group())}자리 제로패딩)',
+        content
+    )
+
+    # 같은 문자 50자+ 반복 → 요약
+    cleaned = re.sub(
+        r'(.)\1{49,}',
+        lambda m: m.group(1) * 5 + f'...({len(m.group())}자 반복)',
+        cleaned
+    )
+
+    # 한 줄에 콤마구분 필드가 20개+ 넘는 raw 메시지 라인 → 요약
+    lines = cleaned.split('\n')
+    sanitized_lines = []
+    for line in lines:
+        commas = line.count(',')
+        if commas > 20 and len(line) > 300:
+            # raw 메시지 라인 → 처음 200자 + 요약
+            sanitized_lines.append(
+                line[:200] + f'... (총 {commas+1}개 필드, {len(line)}자 → 생략)'
+            )
+        else:
+            sanitized_lines.append(line)
+
+    return '\n'.join(sanitized_lines)
+
+
 def _api_agent_call(api_info, skill_ids, skill_contents, query, hist,
                     api_key, temperature, max_tokens=4096,
                     csv_data=None, uploaded_files_data=None):
@@ -6544,7 +6585,7 @@ def api_chat():
                 kb_context += f"검색어: {last_user_query}\n\n"
                 total_chars = 0
                 for r in kb_results:
-                    chunk = r['content'][:4000]
+                    chunk = _sanitize_knowledge_content(r['content'][:4000])
                     if total_chars + len(chunk) > 12000:
                         chunk = chunk[:max(0, 12000 - total_chars)]
                         if not chunk:
@@ -6552,7 +6593,10 @@ def api_chat():
                     kb_context += f"--- 📄 {r['filename']} (관련도: {r['score']}) ---\n"
                     kb_context += chunk + "\n\n"
                     total_chars += len(chunk)
-                kb_context += "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
+                kb_context += (
+                    "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
+                    "중요: 프로토콜 메시지, raw 데이터, hex/binary는 절대 그대로 복사하지 마세요. 반드시 표(table) 또는 필드별 설명으로 변환하세요.\n"
+                )
 
                 # messages에 검색 결과를 system 메시지로 추가
                 kb_system_msg = {"role": "system", "content": kb_context}
