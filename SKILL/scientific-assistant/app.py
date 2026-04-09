@@ -2215,9 +2215,11 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     debug_skills = {"debugging", "agent-debugger", "agent-error-detective"}
     writing_skills = {"scientific-writing", "literature-review", "peer-review",
                       "research-grants", "clinical-reports"}
+    knowledge_skills = {"knowledge-search", "logpresso-search"}
     has_data_skill = bool(set(skill_ids) & data_skills)
     has_debug_skill = bool(set(skill_ids) & debug_skills)
     has_writing_skill = bool(set(skill_ids) & writing_skills)
+    has_knowledge_skill = bool(set(skill_ids) & knowledge_skills)
 
     # === 출력형식 분류 ===
     fmt = "code"  # 기본값
@@ -2230,6 +2232,14 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
             fmt = "code"
         else:
             fmt = "analysis"
+
+    # 도메인 지식 조회 (knowledge-search) → 코드가 아닌 설명/보고 형식
+    elif has_knowledge_skill:
+        code_explicit = any(kw in q for kw in ["코드", "코딩", "구현", "스크립트", "import", "def "])
+        if code_explicit:
+            fmt = "code"
+        else:
+            fmt = "report"
 
     # 보고서/리포트 요청
     elif any(kw in q for kw in ["보고서", "리포트", "report", "요약해줘", "요약 작성", "정리해줘",
@@ -2272,6 +2282,10 @@ def classify_format_and_style(query, history, uploaded_files_list, skill_ids):
     # 디버깅 모드
     elif fmt == "code-fix" or has_debug_skill:
         style = "에러 원인 분석 중심. traceback 해석, 재현 조건, 해결책 순서."
+
+    # 도메인 지식 조회 모드
+    elif has_knowledge_skill:
+        style = "문서 내용을 구조화하여 설명. 표(table), 필드별 설명, 핵심 요약 순서. raw 데이터는 표로 변환."
 
     # LLM 설계 모드
     elif "agent-llm-architect" in skill_ids or any(kw in q for kw in ["llm", "rag", "아키텍처", "시스템 설계"]):
