@@ -2352,13 +2352,4 @@ def register_api_routes(app):
         )
 
 
-    # ===================== 응답 중지 =====================
-    chat_stop_flag = {"stop": False}
-
-    @app.route("/api/chat/stop", methods=["POST"])
-    def api_chat_stop():
-        """진행 중인 LLM 응답을 중지"""
-        chat_stop_flag["stop"] = True
-        return jsonify({"stopped": True})
-
 
