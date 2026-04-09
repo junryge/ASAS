@@ -2867,12 +2867,98 @@ def _extract_skill_context(content, max_chars=800):
     return result[:max_chars] if len(result) > max_chars else result
 
 
+# ============================================
+# 품질 프레임워크 (agent-skills 패턴 적용)
+# ============================================
+
+# 도메인 페르소나: 그룹별 전문가 역할 정의
+DOMAIN_PERSONAS = {
+    "scientific": {
+        "role": "과학 분석 전문가",
+        "instruction": "실험 데이터와 논문 기반으로 분석하세요. 가설→방법→결과→해석 구조를 따르세요.",
+    },
+    "data-analysis": {
+        "role": "데이터 분석 전문가",
+        "instruction": "실제 데이터의 컬럼명과 값만 사용하세요. 통계적 근거를 제시하세요.",
+    },
+    "code": {
+        "role": "소프트웨어 엔지니어",
+        "instruction": "즉시 실행 가능한 코드를 작성하세요. 에러 처리와 엣지 케이스를 고려하세요.",
+    },
+    "infrastructure": {
+        "role": "인프라/DevOps 전문가",
+        "instruction": "보안과 가용성을 최우선으로 고려하세요. 구체적인 명령어와 설정을 제시하세요.",
+    },
+    "writing-docs": {
+        "role": "기술 문서 작성 전문가",
+        "instruction": "명확하고 구조화된 문서를 작성하세요. 대상 독자 수준에 맞추세요.",
+    },
+    "ai-business": {
+        "role": "AI/비즈니스 전략가",
+        "instruction": "비용, 성능, 운영성 트레이드오프를 분석하세요. 실행 가능한 로드맵을 제시하세요.",
+    },
+}
+
+# Anti-Rationalization: 에이전트가 자주 하는 변명과 강제 반박
+ANTI_RATIONALIZATION = """
+[변명 방지 규칙 - 절대 아래 행동을 하지 마세요]
+| 에이전트가 하려는 것 | 왜 안 되는지 |
+|---|---|
+| 가짜 샘플 데이터로 분석 | 실제 업로드된 데이터만 사용. 없으면 "데이터를 업로드해주세요"라고 요청 |
+| "나중에 테스트하겠습니다" | 코드를 제시하면 즉시 검증 가능한 형태로 제공 |
+| 영어로 답변 | 반드시 한국어. 코드 주석도 한국어 |
+| 존재하지 않는 컬럼명 사용 | 업로드된 CSV의 실제 headers만 참조 |
+| 불완전한 코드 제시 | import부터 실행까지 완성된 코드만 제공 |
+| "간단하니까 설명 생략" | 핵심 로직은 반드시 설명 |
+| 출처 없이 주장 | 스킬 지식 또는 데이터 근거를 명시 |
+| raw 프로토콜 데이터를 그대로 출력 | 원본 hex/binary/제로패딩 데이터를 절대 그대로 붙여넣지 마세요. 반드시 표(테이블) 또는 요약 형태로 변환하세요 |
+| 의미 없는 반복 문자열 출력 | 0000...이나 같은 문자 반복은 "N자리 제로패딩" 등으로 요약하세요 |
+| 로그/메시지 전체 덤프 | 핵심 필드만 추출하여 표로 정리하세요. 전체 raw 메시지를 복사하지 마세요 |
+
+[데이터 포맷 규칙]
+- 프로토콜 메시지, 로그, 통신 데이터는 반드시 **표(table)** 또는 **필드별 설명** 형태로 변환
+- raw 바이너리/hex/제로패딩은 절대 그대로 출력 금지 → 길이와 의미만 요약
+- 예시) "E/M상태: 1024바이트 제로패딩 (정상)" ← OK
+- 예시) "00000000000000000000..." ← 절대 금지
+"""
+
+# Verification Gate: 응답 완료 전 자가 체크리스트
+VERIFICATION_GATE = """
+[응답 완료 전 자가 검증]
+- [ ] 한국어로 작성했는가?
+- [ ] 가짜/샘플 데이터를 만들지 않았는가?
+- [ ] 코드가 있다면 import부터 실행까지 완전한가?
+- [ ] 코드블록(```)을 모두 닫았는가?
+- [ ] 사용자가 요청한 내용에만 답변했는가?
+- [ ] 핵심 내용을 먼저 제시했는가?
+- [ ] raw 데이터(000..., hex dump, 로그 전체)를 그대로 붙여넣지 않았는가?
+- [ ] 프로토콜/메시지 데이터를 표 또는 요약으로 변환했는가?
+위 항목 중 하나라도 미충족이면 답변을 수정한 후 출력하세요.
+"""
+
+# 분석 라이프사이클: 복잡한 질문에 대한 단계별 사고 프레임워크
+ANALYSIS_LIFECYCLE = """
+[분석 프레임워크 - 복잡한 질문은 이 순서로 접근]
+1. 이해(Understand): 사용자의 실제 의도와 맥락을 파악
+2. 탐색(Explore): 관련 데이터/지식/스킬에서 핵심 정보 수집
+3. 분석(Analyze): 수집된 정보를 기반으로 깊이 있는 분석 수행
+4. 검증(Verify): 결과의 정확성, 완전성, 일관성 확인
+5. 보고(Report): 핵심 결론 → 근거 → 추가 제안 순서로 구조화
+간단한 질문은 바로 답변하되, 분석이 필요한 질문은 위 단계를 따르세요.
+"""
+
+
 def _build_agent_system_prompt(skill_ids, skill_contents, n_ctx=16384, csv_data=None, uploaded_files_data=None):
     """병렬 에이전트용 컴팩트 시스템 프롬프트 생성."""
     max_skill_chars = int(n_ctx * 0.3 / max(1, len(skill_ids)))  # 컨텍스트의 30%를 스킬에 할당
 
+    # 도메인 페르소나 결정 (첫 번째 스킬의 그룹 기반)
+    _agent_group = _SKILL_TO_GROUP.get(skill_ids[0], "general") if skill_ids else "general"
+    _persona = DOMAIN_PERSONAS.get(_agent_group, {"role": "전문 AI 어시스턴트", "instruction": ""})
+
     parts = [
-        "당신은 전문 AI 어시스턴트입니다. 아래 전문 지식을 활용하여 질문에 답하세요.",
+        f"당신은 [{_persona['role']}]입니다. 아래 전문 지식을 활용하여 질문에 답하세요.",
+        _persona['instruction'],
         "반드시 한국어로 답변하세요.",
         "",
         "[필수 규칙]",
@@ -2882,6 +2968,10 @@ def _build_agent_system_prompt(skill_ids, skill_contents, n_ctx=16384, csv_data=
         "4. 존재하지 않는 컬럼명(Score1, Score2 등)을 지어내지 마세요.",
         "5. 차트 데이터는 실제 데이터 기반으로 24개 이하로 요약하세요.",
         "6. 응답이 길어질 것 같으면 핵심만 먼저 보여주고 '추가 분석이 필요하면 말씀해주세요'로 마무리하세요.",
+        "",
+        ANTI_RATIONALIZATION,
+        ANALYSIS_LIFECYCLE,
+        VERIFICATION_GATE,
         "",
     ]
 
@@ -3115,9 +3205,13 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         "2. 각 전문가의 핵심 내용을 빠짐없이 포함\n"
         "3. 중복 내용은 한 번만 언급\n"
         "4. 하나의 자연스러운 답변으로 통합 (전문가별로 분리하지 말 것)\n"
-        "5. 영어로 된 분석 과정이나 전략 설명을 하지 마세요\n"
-        "6. 코드가 있으면 통합된 하나의 코드로 합쳐서 제공\n"
-        "7. 가짜 데이터를 만들지 마세요. 실제 데이터만 사용하세요"
+        "5. 코드가 있으면 통합된 하나의 코드로 합쳐서 제공\n"
+        "6. 가짜 데이터를 만들지 마세요. 실제 데이터만 사용하세요\n\n"
+        "[통합 보고 구조]\n"
+        "핵심 결론 → 분석 근거 → 코드/시각화 → 추가 제안 순서로 작성하세요.\n"
+        "각 전문가 영역의 기여를 자연스럽게 녹여내되, 출처는 명시하세요.\n\n"
+        + ANTI_RATIONALIZATION +
+        VERIFICATION_GATE
     )
 
     try:
@@ -3222,8 +3316,110 @@ def _validate_response(answer, query):
     if "<think>" in answer or "</think>" in answer:
         issues.append("exposed_thinking")
 
+    # 6) 과도한 반복 문자열 감지 (예: 000000..., aaaa... 50자 이상 연속)
+    if re.search(r'(.)\1{49,}', answer):
+        issues.append("repeated_chars")
+
+    # 7) 고정길이 제로패딩 데이터 감지 (프로토콜 raw dump 방지)
+    zero_runs = re.findall(r'0{20,}', answer)
+    total_zeros = sum(len(z) for z in zero_runs)
+    if total_zeros > 200:
+        issues.append("raw_protocol_dump")
+
     is_valid = len(issues) == 0
     return is_valid, issues
+
+
+def _calculate_quality_score(answer, query, issues=None):
+    """응답 품질을 0~100 점수로 계산.
+
+    채점 기준 (100점 만점):
+      - 한국어 비율 (20점): 코드 제외 텍스트의 한국어 비율
+      - 응답 충실도 (20점): 질문 길이 대비 응답 길이 비율
+      - 코드 완성도 (20점): 코드블록 열고 닫기 매칭
+      - 구조화 (20점): 마크다운 헤딩/리스트/코드블록 사용
+      - 이슈 감점 (20점): _validate_response 이슈당 -5점
+
+    Returns:
+        dict: {"score": int, "breakdown": dict, "grade": str}
+    """
+    if not answer or not answer.strip():
+        return {"score": 0, "breakdown": {}, "grade": "F", "issues": issues or []}
+
+    breakdown = {}
+
+    # 1) 한국어 비율 (20점)
+    text_only = re.sub(r'```[\s\S]*?```', '', answer)
+    text_only = re.sub(r'`[^`]+`', '', text_only)
+    korean_chars = len(re.findall(r'[\uac00-\ud7af]', text_only))
+    alpha_chars = len(re.findall(r'[a-zA-Z]', text_only))
+    total_lang = korean_chars + alpha_chars
+    if total_lang > 0:
+        kr_ratio = korean_chars / total_lang
+        breakdown["korean"] = min(20, int(kr_ratio * 25))  # 80%이상이면 20점
+    else:
+        breakdown["korean"] = 20  # 텍스트 없으면 만점 (코드만 있는 경우)
+
+    # 2) 응답 충실도 (20점) - 질문 대비 응답 비율
+    q_len = max(len(query.strip()), 1)
+    a_len = len(answer.strip())
+    ratio = a_len / q_len
+    if ratio >= 3:
+        breakdown["completeness"] = 20
+    elif ratio >= 1.5:
+        breakdown["completeness"] = 15
+    elif ratio >= 0.5:
+        breakdown["completeness"] = 10
+    else:
+        breakdown["completeness"] = 5
+
+    # 3) 코드 완성도 (20점)
+    code_blocks = answer.count("```")
+    if code_blocks == 0:
+        breakdown["code_quality"] = 20  # 코드 없는 답변은 만점
+    elif code_blocks % 2 == 0:
+        breakdown["code_quality"] = 20  # 모든 블록 닫힘
+    else:
+        breakdown["code_quality"] = 5   # 미완성 블록 있음
+
+    # 4) 구조화 (20점) - 마크다운 구조 사용 여부
+    struct_score = 0
+    if re.search(r'^#{1,3}\s', answer, re.MULTILINE):
+        struct_score += 7   # 헤딩 사용
+    if re.search(r'^[-*]\s', answer, re.MULTILINE):
+        struct_score += 5   # 리스트 사용
+    if "```" in answer:
+        struct_score += 5   # 코드블록 사용
+    if len(answer) > 200:
+        struct_score += 3   # 충분한 길이
+    breakdown["structure"] = min(20, struct_score)
+
+    # 5) 이슈 감점 (20점에서 이슈당 -5점)
+    issue_list = issues if issues is not None else []
+    issue_penalty = len(issue_list) * 5
+    breakdown["no_issues"] = max(0, 20 - issue_penalty)
+
+    score = sum(breakdown.values())
+    score = max(0, min(100, score))
+
+    # 등급 판정
+    if score >= 90:
+        grade = "A"
+    elif score >= 75:
+        grade = "B"
+    elif score >= 60:
+        grade = "C"
+    elif score >= 40:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return {
+        "score": score,
+        "breakdown": breakdown,
+        "grade": grade,
+        "issues": issue_list,
+    }
 
 
 def _fix_response_issues(answer, issues):
@@ -3243,6 +3439,14 @@ def _fix_response_issues(answer, issues):
     if "unclosed_code_block" in issues:
         if fixed.count("```") % 2 != 0:
             fixed = fixed.rstrip() + "\n```"
+
+    # 과도한 반복 문자열 절단 (000000..., aaaa... → 요약으로 대체)
+    if "repeated_chars" in issues:
+        fixed = re.sub(r'(.)\1{49,}', lambda m: m.group(1) * 10 + f'... ({len(m.group())}자 반복, 생략)', fixed)
+
+    # raw 프로토콜 제로패딩 데이터 절단
+    if "raw_protocol_dump" in issues:
+        fixed = re.sub(r'0{30,}', lambda m: '0' * 8 + f'... ({len(m.group())}자리 제로패딩, 생략)', fixed)
 
     return fixed
 
@@ -7272,11 +7476,18 @@ def api_chat():
 
         answer = _normalize_gguf_artifact_answer(answer, gguf_artifact_request)
 
+        _q_valid, _q_issues = _validate_response(answer, last_user_query)
+        _quality = _calculate_quality_score(answer, last_user_query, _q_issues)
+        try:
+            print(f"  [QUALITY] score={_quality['score']}, grade={_quality['grade']}, issues={_q_issues}")
+        except Exception:
+            pass
         _resp = {
             "content": answer,
             "loaded_skills": loaded,
             "system_prompt_length": len(system_prompt),
             "tokens_budget": f"prompt~{prompt_tokens_est}, max_tokens={actual_max_tokens}, ctx={gguf_ctx}",
+            "quality": _quality,
         }
         if _parallel_fallback_reason:
             _resp["parallel_fallback"] = _parallel_fallback_reason
@@ -7372,9 +7583,12 @@ def api_chat():
                             snames = ", ".join(SKILL_DESC_KO.get(s, s) for s in r["skills"])
                             expert_sections.append(f"=== [{r['group']}] ({snames}) ===\n{r['response']}")
                         synth_system = (
-                            f"여러 전문가의 분석을 통합하세요.\n\n"
+                            f"여러 전문가의 분석을 통합하는 수석 연구원입니다.\n"
+                            f"반드시 한국어로만 작성하세요.\n\n"
                             + "\n\n".join(expert_sections) +
-                            "\n\n[통합 원칙] 핵심 포함, 중복 제거, 한국어, 코드 통합"
+                            "\n\n[통합 원칙] 핵심 포함, 중복 제거, 한국어, 코드 통합\n"
+                            "[보고 구조] 핵심 결론 → 분석 근거 → 코드/시각화 → 추가 제안\n"
+                            + ANTI_RATIONALIZATION
                         )
                         synth_api = _api_models[0]
                         try:
@@ -7513,6 +7727,11 @@ def api_chat():
                 failures = [r for r in _auto_api_results if r.get("error")]
 
                 if len(successes) == 1:
+                    _sq = _calculate_quality_score(successes[0]["response"], _last_query)
+                    try:
+                        print(f"  [QUALITY] score={_sq['score']}, grade={_sq['grade']}")
+                    except Exception:
+                        pass
                     return jsonify({
                         "content": successes[0]["response"],
                         "loaded_skills": loaded,
@@ -7523,6 +7742,7 @@ def api_chat():
                         "parallel_synthesis": "",
                         "auto_routed": auto_routed, "route_reason": route_reason,
                         "auto_multi_agent": True,
+                        "quality": _sq,
                     })
                 elif len(successes) >= 2:
                     # 합성 모델 결정: low cost tier → 대형 모델로 업그레이드
@@ -7550,7 +7770,12 @@ def api_chat():
                         "3. 중복 내용은 한 번만 언급\n"
                         "4. 하나의 자연스러운 답변으로 통합 (전문가별로 분리하지 말 것)\n"
                         "5. 코드가 있으면 통합된 하나의 코드로 합쳐서 제공\n"
-                        "6. 가짜 데이터를 만들지 마세요"
+                        "6. 가짜 데이터를 만들지 마세요\n\n"
+                        "[통합 보고 구조]\n"
+                        "핵심 결론 → 분석 근거 → 코드/시각화 → 추가 제안 순서로 작성하세요.\n"
+                        "각 전문가 영역의 기여를 자연스럽게 녹여내되, 출처는 명시하세요.\n\n"
+                        + ANTI_RATIONALIZATION +
+                        VERIFICATION_GATE
                     )
 
                     try:
@@ -7577,9 +7802,11 @@ def api_chat():
                                     print(f"  [EVAL] issues={_issues}, auto-fixed")
                                 except Exception:
                                     pass
+                            _sq = _calculate_quality_score(synth_answer, _last_query, _issues if _issues else [])
                             try:
                                 print(f"  [API AUTO-PARALLEL] done: {len(successes)} agents, "
                                       f"synthesis={_synth_reg['model']}")
+                                print(f"  [QUALITY] score={_sq['score']}, grade={_sq['grade']}")
                             except Exception:
                                 pass
                             return jsonify({
@@ -7593,6 +7820,7 @@ def api_chat():
                                 "parallel_synthesis": _synth_reg["model"],
                                 "auto_routed": auto_routed, "route_reason": route_reason,
                                 "auto_multi_agent": True,
+                                "quality": _sq,
                             })
                     except Exception as _synth_ex:
                         try:
@@ -7868,11 +8096,22 @@ def api_chat():
             else:
                 answer = f"예상치 못한 응답: {json.dumps(result, ensure_ascii=False, indent=2)}"
 
+            # 품질 점수 계산
+            _q_valid, _q_issues = _validate_response(answer, last_user_query)
+            if _q_issues:
+                answer = _fix_response_issues(answer, _q_issues)
+            _quality = _calculate_quality_score(answer, last_user_query, _q_issues)
+            try:
+                print(f"  [QUALITY] score={_quality['score']}, grade={_quality['grade']}, issues={_q_issues}")
+            except Exception:
+                pass
+
             resp_data = {
                 "content": answer,
                 "loaded_skills": loaded,
                 "system_prompt_length": len(system_prompt),
                 "model_used": model,
+                "quality": _quality,
             }
             if auto_routed:
                 resp_data["auto_routed"] = True
