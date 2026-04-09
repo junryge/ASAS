@@ -14,7 +14,7 @@ import base64
 from flask import request, jsonify, render_template_string, send_file
 
 from demos_v1.utils import (
-    BASE_DIR, SKILLS_DIR, UPLOAD_DIR, PROMPTS_DIR,
+    BASE_DIR, SKILLS_DIR, UPLOAD_DIR, PROMPTS_DIR, TOKEN_FILE,
     uploaded_csv_data, uploaded_files,
     HARNESS_AVAILABLE, chat_stop_flag,
 )
