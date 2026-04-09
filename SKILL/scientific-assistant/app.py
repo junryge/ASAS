@@ -3305,6 +3305,16 @@ def _validate_response(answer, query):
     if "<think>" in answer or "</think>" in answer:
         issues.append("exposed_thinking")
 
+    # 6) 과도한 반복 문자열 감지 (예: 000000..., aaaa... 50자 이상 연속)
+    if re.search(r'(.)\1{49,}', answer):
+        issues.append("repeated_chars")
+
+    # 7) 고정길이 제로패딩 데이터 감지 (프로토콜 raw dump 방지)
+    zero_runs = re.findall(r'0{20,}', answer)
+    total_zeros = sum(len(z) for z in zero_runs)
+    if total_zeros > 200:
+        issues.append("raw_protocol_dump")
+
     is_valid = len(issues) == 0
     return is_valid, issues
 
@@ -3418,6 +3428,14 @@ def _fix_response_issues(answer, issues):
     if "unclosed_code_block" in issues:
         if fixed.count("```") % 2 != 0:
             fixed = fixed.rstrip() + "\n```"
+
+    # 과도한 반복 문자열 절단 (000000..., aaaa... → 요약으로 대체)
+    if "repeated_chars" in issues:
+        fixed = re.sub(r'(.)\1{49,}', lambda m: m.group(1) * 10 + f'... ({len(m.group())}자 반복, 생략)', fixed)
+
+    # raw 프로토콜 제로패딩 데이터 절단
+    if "raw_protocol_dump" in issues:
+        fixed = re.sub(r'0{30,}', lambda m: '0' * 8 + f'... ({len(m.group())}자리 제로패딩, 생략)', fixed)
 
     return fixed
 
