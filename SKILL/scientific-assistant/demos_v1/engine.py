@@ -1,0 +1,436 @@
+"""
+demos_v1/engine.py - Agent system prompt building, GGUF/API agent calls,
+                     response synthesis, model assignment to groups
+"""
+import os
+import re
+import time
+import requests as req
+from demos_v1.utils import BASE_DIR
+from demos_v1.config import (
+    _gguf_pool, _gguf_pool_lock, MAX_POOL_SIZE, VRAM_BUDGET_GB,
+    TOKEN_SETTINGS, API_TOKEN
+)
+from demos_v1.models import MODEL_REGISTRY, API_MODEL_TIERS
+from demos_v1.skills import SKILL_DESC_KO, _SKILL_TO_GROUP, SKILL_GROUPS
+from demos_v1.quality import (
+    DOMAIN_PERSONAS, ANTI_RATIONALIZATION, VERIFICATION_GATE, ANALYSIS_LIFECYCLE,
+    _extract_skill_context, _detect_repetition, _validate_response, _fix_response_issues
+)
+
+def _build_agent_system_prompt(skill_ids, skill_contents, n_ctx=16384, csv_data=None, uploaded_files_data=None):
+    """병렬 에이전트용 컴팩트 시스템 프롬프트 생성."""
+    max_skill_chars = int(n_ctx * 0.3 / max(1, len(skill_ids)))  # 컨텍스트의 30%를 스킬에 할당
+
+    # 도메인 페르소나 결정 (첫 번째 스킬의 그룹 기반)
+    _agent_group = _SKILL_TO_GROUP.get(skill_ids[0], "general") if skill_ids else "general"
+    _persona = DOMAIN_PERSONAS.get(_agent_group, {"role": "전문 AI 어시스턴트", "instruction": ""})
+
+    parts = [
+        f"당신은 [{_persona['role']}]입니다. 아래 전문 지식을 활용하여 질문에 답하세요.",
+        _persona['instruction'],
+        "반드시 한국어로 답변하세요.",
+        "",
+        "[필수 규칙]",
+        "1. 반드시 한국어로만 답변하세요. 영어로 답변하지 마세요. 코드 주석도 한국어로.",
+        "2. <think> 태그를 절대 사용하지 마세요. 바로 답변만 출력하세요.",
+        "3. 가짜 데이터를 만들지 마세요! 업로드된 CSV/파일의 실제 컬럼명과 값만 사용하세요.",
+        "4. 존재하지 않는 컬럼명(Score1, Score2 등)을 지어내지 마세요.",
+        "5. 차트 데이터는 실제 데이터 기반으로 24개 이하로 요약하세요.",
+        "6. 응답이 길어질 것 같으면 핵심만 먼저 보여주고 '추가 분석이 필요하면 말씀해주세요'로 마무리하세요.",
+        "",
+        ANTI_RATIONALIZATION,
+        ANALYSIS_LIFECYCLE,
+        VERIFICATION_GATE,
+        "",
+    ]
+
+    for sid in skill_ids:
+        content = skill_contents.get(sid, "")
+        if content:
+            skill_name = SKILL_DESC_KO.get(sid, sid)
+            # Structured Context: 전체 텍스트 대신 구조화된 요약 사용 (토큰 절약)
+            summary = _extract_skill_context(content, max_chars=max_skill_chars)
+            if summary:
+                parts.append(f"=== [{skill_name}] ===")
+                parts.append(summary)
+                parts.append("")
+            else:
+                # 요약 추출 실패 시 기존 방식 폴백
+                truncated = content[:max_skill_chars]
+                if len(content) > max_skill_chars:
+                    truncated += "\n... (truncated)"
+                parts.append(f"=== [{skill_name}] 전문 지식 ===")
+                parts.append(truncated)
+                parts.append("")
+
+    # CSV 데이터 포함
+    if csv_data and csv_data.get("filename"):
+        csv_budget = int(n_ctx * 0.15)  # 컨텍스트의 15%
+        csv_info = csv_data.get("summary", "")
+        csv_rows = csv_data.get("headers", [])
+        csv_preview = ",".join(csv_rows) + "\n"
+        for row in csv_data.get("rows", [])[:30]:
+            csv_preview += ",".join(str(c) for c in row) + "\n"
+        csv_text = f"=== 업로드된 CSV: {csv_data['filename']} ===\n{csv_info}\n\n데이터:\n{csv_preview}"
+        parts.append(csv_text[:csv_budget])
+        parts.append("\n이 CSV 데이터를 기반으로 실제 컬럼명과 값을 사용해 분석하세요.\n")
+
+    # 업로드 파일 포함
+    if uploaded_files_data:
+        file_budget = int(n_ctx * 0.1)  # 컨텍스트의 10%
+        file_text = ""
+        for uf in uploaded_files_data:
+            content = uf.get("content_full", uf.get("content_preview", ""))
+            file_text += f"\n--- 파일: {uf['filename']} ---\n{content[:3000]}\n"
+        if file_text:
+            parts.append(f"=== 업로드된 파일 ===\n{file_text[:file_budget]}")
+
+    return "\n".join(parts)
+
+
+def _trim_history_for_context(history, n_ctx, system_len):
+    """히스토리를 컨텍스트에 맞게 자름. 최근 3턴만 유지."""
+    budget_chars = int((n_ctx - system_len * 0.7) / 0.7 * 0.3)  # 컨텍스트의 30%
+    trimmed = []
+    total = 0
+    for msg in reversed(history[-6:]):  # 최근 6개 메시지 (3턴)
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+        msg_len = len(str(content))
+        if total + msg_len > budget_chars:
+            break
+        trimmed.insert(0, msg)
+        total += msg_len
+    return trimmed
+
+
+
+
+def _agent_call_gguf(model_path, skill_ids, skill_contents, query, history,
+                     n_ctx=16384, temperature=0.5, max_tokens=2048,
+                     csv_data=None, uploaded_files_data=None):
+    """단일 GGUF 에이전트: 풀에서 모델 acquire → 추론 → release.
+    Thread-safe: 각 스레드가 독립 Llama 인스턴스 사용.
+    """
+    group_name = _SKILL_TO_GROUP.get(skill_ids[0], "general") if skill_ids else "general"
+
+    try:
+        llama_instance = _pool_get_or_load(model_path, n_ctx=n_ctx)
+    except Exception as e:
+        return {
+            "group": group_name, "skills": skill_ids, "response": "",
+            "error": f"모델 로드 실패: {e}", "model": os.path.basename(model_path),
+        }
+
+    try:
+        system_prompt = _build_agent_system_prompt(skill_ids, skill_contents, n_ctx,
+                                                    csv_data=csv_data, uploaded_files_data=uploaded_files_data)
+        trimmed_history = _trim_history_for_context(history, n_ctx, len(system_prompt))
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(trimmed_history)
+        messages.append({"role": "user", "content": query})
+
+        # 논스트리밍 추론 (병렬 에이전트)
+        resp = llama_instance.create_chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        if resp and "choices" in resp and len(resp["choices"]) > 0:
+            answer = resp["choices"][0].get("message", {}).get("content") or ""
+            # <think> 태그 제거 (완전 쌍 + 불완전 태그 모두)
+            answer = re.sub(r'<think>[\s\S]*?</think>\s*', '', answer)
+            answer = re.sub(r'</?think>', '', answer).strip()
+            # 반복 루프 감지 및 절단
+            answer, was_repetitive = _detect_repetition(answer)
+            if was_repetitive:
+                try:
+                    print(f"     [WARN] [{group_name}] repetition detected, truncated")
+                except Exception:
+                    pass
+            return {
+                "group": group_name, "skills": skill_ids, "response": answer,
+                "error": None, "model": os.path.basename(model_path),
+            }
+
+        return {
+            "group": group_name, "skills": skill_ids, "response": "",
+            "error": "빈 응답", "model": os.path.basename(model_path),
+        }
+    except Exception as e:
+        return {
+            "group": group_name, "skills": skill_ids, "response": "",
+            "error": str(e), "model": os.path.basename(model_path),
+        }
+    finally:
+        _pool_release(model_path)
+
+
+def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, temperature=0.3, n_ctx=32768, synth_max_tokens=8192):
+    """여러 에이전트 응답을 가장 큰 모델로 합성.
+
+    Returns:
+        (answer: str|None, error: str|None, meta: dict)
+    """
+    successes = [r for r in agent_results if r.get("response") and not r.get("error")]
+    failures = [r for r in agent_results if r.get("error")]
+
+    if not successes:
+        error_summary = "; ".join(f"[{r['group']}] {r['error']}" for r in failures)
+        return None, f"모든 에이전트 실패: {error_summary}", {}
+
+    if len(successes) == 1:
+        r = successes[0]
+        return r["response"], None, {
+            "agents": 1, "failed": len(failures),
+            "groups": [r["group"]], "models": [r["model"]],
+        }
+
+    # 합성 프롬프트 구성
+    expert_sections = []
+    for r in successes:
+        skill_names = ", ".join(SKILL_DESC_KO.get(s, s) for s in r["skills"])
+        expert_sections.append(
+            f"=== [{r['group']}] 전문가 ({skill_names}) ===\n{r['response']}"
+        )
+
+    synthesis_system = (
+        f"당신은 여러 전문가의 분석을 통합하는 수석 연구원입니다.\n"
+        f"중요: 반드시 모든 내용을 한국어로만 작성하세요. 영어를 사용하지 마세요.\n"
+        f"<think> 태그를 사용하지 마세요.\n\n"
+        f"아래 {len(successes)}명의 전문가가 각자의 전문 영역에서 답변했습니다.\n\n"
+        + "\n\n".join(expert_sections) +
+        "\n\n[통합 원칙]\n"
+        "1. 반드시 한국어로만 답변하세요 (코드 주석도 한국어)\n"
+        "2. 각 전문가의 핵심 내용을 빠짐없이 포함\n"
+        "3. 중복 내용은 한 번만 언급\n"
+        "4. 하나의 자연스러운 답변으로 통합 (전문가별로 분리하지 말 것)\n"
+        "5. 코드가 있으면 통합된 하나의 코드로 합쳐서 제공\n"
+        "6. 가짜 데이터를 만들지 마세요. 실제 데이터만 사용하세요\n\n"
+        "[통합 보고 구조]\n"
+        "핵심 결론 → 분석 근거 → 코드/시각화 → 추가 제안 순서로 작성하세요.\n"
+        "각 전문가 영역의 기여를 자연스럽게 녹여내되, 출처는 명시하세요.\n\n"
+        + ANTI_RATIONALIZATION +
+        VERIFICATION_GATE
+    )
+
+    try:
+        llama_synth = _pool_get_or_load(synthesis_model_path, n_ctx=n_ctx)
+        messages = [
+            {"role": "system", "content": synthesis_system},
+            {"role": "user", "content": query},
+        ]
+
+        resp = llama_synth.create_chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=synth_max_tokens,
+        )
+        _pool_release(synthesis_model_path)
+
+        if resp and "choices" in resp and len(resp["choices"]) > 0:
+            answer = resp["choices"][0].get("message", {}).get("content") or ""
+            answer = re.sub(r'<think>[\s\S]*?</think>\s*', '', answer)
+            answer = re.sub(r'</?think>', '', answer).strip()
+            # Self-evaluation: 합성 응답 품질 검증
+            _valid, _issues = _validate_response(answer, query)
+            if _issues:
+                answer = _fix_response_issues(answer, _issues)
+                try:
+                    print(f"  [EVAL-GGUF] issues={_issues}, auto-fixed")
+                except Exception:
+                    pass
+            meta = {
+                "agents": len(successes),
+                "failed": len(failures),
+                "groups": [r["group"] for r in successes],
+                "models": list(set(r["model"] for r in successes)),
+                "synthesis": "model",
+            }
+            return answer, None, meta
+
+        # 합성 모델이 빈 응답 → 폴백
+        raise ValueError("합성 모델 빈 응답")
+
+    except Exception as e:
+        try:
+            _pool_release(synthesis_model_path)
+        except Exception:
+            pass
+        # 폴백: 응답 단순 연결
+        try:
+            print(f"     [SYNTH] fallback concat: {e}")
+        except Exception:
+            pass
+        fallback_parts = []
+        for r in successes:
+            skill_names = ", ".join(SKILL_DESC_KO.get(s, s) for s in r["skills"])
+            fallback_parts.append(f"### {skill_names}\n{r['response']}")
+        fallback = "\n\n---\n\n".join(fallback_parts)
+        return fallback, None, {
+            "agents": len(successes), "failed": len(failures),
+            "groups": [r["group"] for r in successes],
+            "models": list(set(r["model"] for r in successes)),
+            "synthesis": "fallback_concat",
+        }
+
+
+
+def _api_agent_call(api_info, skill_ids, skill_contents, query, hist,
+                    api_key, temperature, max_tokens=4096,
+                    csv_data=None, uploaded_files_data=None):
+    """단일 API 에이전트 호출 (수동/자동 병렬 공용).
+
+    Args:
+        api_info: {"url": str, "model": str} - API 엔드포인트 정보
+        skill_ids: list[str] - 이 에이전트가 담당할 스킬 ID 목록
+        skill_contents: dict - {skill_id: content_text}
+        query: str - 사용자 질문
+        hist: list[dict] - 대화 히스토리
+        api_key: str - API 인증 키
+        temperature: float - 생성 온도
+        max_tokens: int - 최대 응답 토큰
+        csv_data: dict|None - 업로드된 CSV 데이터
+        uploaded_files_data: list|None - 업로드된 파일 목록
+    """
+    group_name = _SKILL_TO_GROUP.get(skill_ids[0], "general") if skill_ids else "general"
+    try:
+        agent_system = _build_agent_system_prompt(skill_ids, skill_contents, 32768,
+                                                  csv_data=csv_data, uploaded_files_data=uploaded_files_data)
+        agent_msgs = [{"role": "system", "content": agent_system}]
+        agent_msgs.extend(hist[-6:])
+        agent_msgs.append({"role": "user", "content": query})
+        h = {"Content-Type": "application/json"}
+        if api_key:
+            h["Authorization"] = f"Bearer {api_key}"
+        resp = req.post(
+            api_info["url"],
+            headers=h,
+            json={
+                "model": api_info["model"],
+                "messages": agent_msgs,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": False, "tool_choice": "none",
+            },
+            timeout=120,
+            verify=False,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            answer = result["choices"][0].get("message", {}).get("content") or ""
+            return {"group": group_name, "skills": skill_ids, "response": answer,
+                    "error": None, "model": api_info["model"]}
+        return {"group": group_name, "skills": skill_ids, "response": "",
+                "error": "empty", "model": api_info["model"]}
+    except Exception as e:
+        return {"group": group_name, "skills": skill_ids, "response": "",
+                "error": str(e), "model": api_info.get("model", "?")}
+
+
+
+def _assign_models_to_groups(parallel_groups, gguf_paths_by_size):
+    """그룹별 선호 크기에 따라 GGUF 모델 할당.
+
+    Args:
+        parallel_groups: [{"group": name, "preferred_model_size": "large"|"medium"|"small"}]
+        gguf_paths_by_size: [(path, size_gb)] 크기 내림차순
+
+    Returns:
+        dict: {group_name: model_path}
+    """
+    if not gguf_paths_by_size:
+        return {}
+
+    n = len(gguf_paths_by_size)
+    assignments = {}
+
+    for pg in parallel_groups:
+        pref = pg["preferred_model_size"]
+        if pref == "large":
+            idx = 0  # 가장 큰 모델
+        elif pref == "small":
+            idx = n - 1  # 가장 작은 모델
+        else:  # medium
+            idx = n // 2  # 중간
+
+        # 이미 할당된 모델과 겹치면 다른 모델 시도
+        assigned_paths = set(assignments.values())
+        best_idx = idx
+        for offset in range(n):
+            candidate = (idx + offset) % n
+            if gguf_paths_by_size[candidate][0] not in assigned_paths:
+                best_idx = candidate
+                break
+        else:
+            # 모든 모델이 이미 할당됨 → 중복 할당 불가피 (로깅)
+            try:
+                print(f"     [ASSIGN] no unique model for [{pg['group']}], "
+                      f"reusing {os.path.basename(gguf_paths_by_size[best_idx][0])}")
+            except Exception:
+                pass
+
+        assignments[pg["group"]] = gguf_paths_by_size[best_idx][0]
+
+    return assignments
+
+
+def _assign_api_models_to_groups(parallel_groups, primary_reg_key=None):
+    """그룹별 preferred_model_size에 따라 API 모델 할당 (서버사이드 병렬).
+
+    Args:
+        parallel_groups: [{"group": name, "preferred_model_size": "large"|"medium"|"small"}]
+        primary_reg_key: str|None - auto-routed primary model의 registry key
+
+    Returns:
+        dict: {group_name: {"url": str, "model": str, "reg_key": str}}
+    """
+    used_keys = set()
+    assignments = {}
+    # 인접 티어 폴백 순서
+    _tier_fallback = {
+        "large": ["medium", "small"],
+        "medium": ["large", "small"],
+        "small": ["medium", "large"],
+    }
+
+    for pg in parallel_groups:
+        pref = pg.get("preferred_model_size", "medium")
+        assigned = False
+
+        # 선호 티어 → 인접 티어 순으로 시도
+        tiers_to_try = [pref] + _tier_fallback.get(pref, [])
+        for tier in tiers_to_try:
+            candidates = API_MODEL_TIERS.get(tier, [])
+            for reg_key in candidates:
+                if reg_key not in used_keys and reg_key in MODEL_REGISTRY:
+                    reg = MODEL_REGISTRY[reg_key]
+                    assignments[pg["group"]] = {
+                        "url": reg["url"], "model": reg["model"], "reg_key": reg_key,
+                    }
+                    used_keys.add(reg_key)
+                    assigned = True
+                    break
+            if assigned:
+                break
+
+        if not assigned:
+            # 모든 모델 소진 → 첫 번째 large 모델 재사용
+            fallback_key = API_MODEL_TIERS["large"][0]
+            reg = MODEL_REGISTRY[fallback_key]
+            assignments[pg["group"]] = {
+                "url": reg["url"], "model": reg["model"], "reg_key": fallback_key,
+            }
+            try:
+                print(f"     [API-ASSIGN] no unique model for [{pg['group']}], "
+                      f"reusing {reg['model']}")
+            except Exception:
+                pass
+
+    return assignments
+
