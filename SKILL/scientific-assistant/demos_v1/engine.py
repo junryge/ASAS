@@ -11,6 +11,7 @@ from demos_v1.config import (
     _gguf_pool, _gguf_pool_lock, MAX_POOL_SIZE, VRAM_BUDGET_GB,
     TOKEN_SETTINGS, API_TOKEN
 )
+from demos_v1.gguf import _pool_get_or_load, _pool_release
 from demos_v1.models import MODEL_REGISTRY, API_MODEL_TIERS
 from demos_v1.skills import SKILL_DESC_KO, _SKILL_TO_GROUP, SKILL_GROUPS
 from demos_v1.quality import (
