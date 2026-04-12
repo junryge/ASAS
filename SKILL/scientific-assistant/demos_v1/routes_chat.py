@@ -1638,22 +1638,11 @@ def register_chat_routes(app):
                         # 반복 루프 감지 및 절단 (API 응답 보호)
                         answer, _was_rep = _detect_repetition(answer)
 
-                        # 품질 검증 및 점수 계산
-                        _q_valid, _q_issues = _validate_response(answer, last_user_query)
-                        if _q_issues:
-                            answer = _fix_response_issues(answer, _q_issues)
-                        _quality = _calculate_quality_score(answer, last_user_query, _q_issues)
-                        try:
-                            print(f"  [QUALITY] score={_quality['score']}, grade={_quality['grade']}, issues={_q_issues}")
-                        except Exception:
-                            pass
-
                         resp_data = {
                             "content": answer,
                             "loaded_skills": loaded,
                             "system_prompt_length": len(system_prompt),
                             "model_used": try_model,
-                            "quality": _quality,
                         }
                         if auto_routed:
                             resp_data["auto_routed"] = True
