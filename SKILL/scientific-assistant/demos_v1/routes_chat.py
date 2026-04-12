@@ -62,6 +62,94 @@ from demos_v1.logpresso import (
 )
 
 
+def _auto_save_feedback(loaded, quality, last_user_query):
+    """응답 품질 점수를 피드백으로 자동 저장 (하네스 피드백 루프)"""
+    try:
+        from harness_bridge import _feedback_store
+        if not _feedback_store or not loaded:
+            return
+        import time as _time
+        from harness import FeedbackEntry
+        score = quality.get('score', 0) if isinstance(quality, dict) else 0
+        approved = score >= 60
+        for sid in loaded[:5]:  # 상위 5개 스킬만
+            _feedback_store.add(FeedbackEntry(
+                timestamp=_time.time(),
+                skill_id=sid,
+                agent='app',
+                quality_score=score,
+                approved=approved,
+                rejection_reason=None if approved else f"품질 점수 {score}/100 미달",
+                query_context=(last_user_query or '')[:100],
+            ))
+    except Exception:
+        pass
+
+
+def _maybe_generate_md_html(answer, loaded, resp_data):
+    """md-to-html 스킬이 로드되었으면 MD/HTML 파일을 생성하고 다운로드 URL을 resp_data에 추가"""
+    if "md-to-html" not in loaded:
+        return resp_data
+
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    uploads_dir = os.path.join(BASE_DIR, 'uploads')
+    os.makedirs(uploads_dir, exist_ok=True)
+
+    # 제목 자동 추출: 첫 번째 # 헤딩에서 가져옴
+    title = "문서"
+    for line in answer.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("# ") and not stripped.startswith("## "):
+            title = stripped.lstrip("# ").strip()
+            break
+
+    # 1) MD 파일 저장
+    md_filename = f"document_{timestamp}.md"
+    md_path = os.path.join(uploads_dir, md_filename)
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(answer)
+
+    # 2) HTML 파일 생성
+    try:
+        import markdown as md_lib
+        extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
+        body_html = md_lib.markdown(answer, extensions=extensions)
+        full_html = (
+            '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<title>{title}</title><style>'
+            'body{font-family:"Pretendard","Noto Sans KR",sans-serif;max-width:900px;margin:2rem auto;padding:0 1.5rem;color:#1a1a2e;line-height:1.7}'
+            'h1,h2,h3{color:#16213e;border-bottom:2px solid #e2e8f0;padding-bottom:.3em}'
+            'table{border-collapse:collapse;width:100%;margin:1em 0}'
+            'th,td{border:1px solid #cbd5e1;padding:.6em 1em;text-align:left}'
+            'th{background:#f1f5f9;font-weight:700}'
+            'code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:.9em}'
+            'pre{background:#1e293b;color:#e2e8f0;padding:1em;border-radius:8px;overflow-x:auto}'
+            'pre code{background:none;color:inherit;padding:0}'
+            'blockquote{border-left:4px solid #6366f1;margin:1em 0;padding:.5em 1em;background:#f8fafc}'
+            'a{color:#6366f1}img{max-width:100%;border-radius:8px}'
+            '</style></head><body>'
+            f'{body_html}</body></html>'
+        )
+        html_filename = f"document_{timestamp}.html"
+        html_path = os.path.join(uploads_dir, html_filename)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(full_html)
+        html_url = f"/api/download_static/document.html?id={timestamp}"
+    except Exception:
+        html_url = None
+
+    md_url = f"/api/download_static/document.md?id={timestamp}"
+
+    resp_data["md_download_url"] = md_url
+    if html_url:
+        resp_data["html_download_url"] = html_url
+    resp_data["doc_download_id"] = timestamp
+
+    return resp_data
+
+
 def register_chat_routes(app):
     """Register chat routes on the Flask app."""
 
@@ -204,7 +292,9 @@ def register_chat_routes(app):
             skill_ids = list(skill_ids) + ["knowledge-search"]
         if "knowledge-search" in skill_ids and last_user_query.strip():
             try:
-                kb_results = search_knowledge(last_user_query, max_results=3, max_content_chars=4000)
+                _chat_user_id = data.get("user_id", None)
+                print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
+                kb_results = search_knowledge(last_user_query, max_results=3, max_content_chars=4000, user_id=_chat_user_id)
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
@@ -594,6 +684,16 @@ def register_chat_routes(app):
 
         if loaded:
             system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
+            # 하네스 피드백 힌트: 이전 피드백 기반 주의사항 자동 삽입
+            if HARNESS_AVAILABLE:
+                try:
+                    from harness_bridge import _feedback_store
+                    if _feedback_store:
+                        _fb_hint = _feedback_store.build_prompt_hint(loaded)
+                        if _fb_hint:
+                            system_prompt += _fb_hint
+                except Exception:
+                    pass
             if "agent-llm-architect" in loaded:
                 system_prompt += (
                     "=== LLM 시스템 설계 규칙 ===\n"
@@ -696,6 +796,23 @@ def register_chat_routes(app):
                         f"{ppt_style}\n"
                         "이 디자인 가이드를 반드시 따라 모든 슬라이드를 제작하세요.\n\n"
                     )
+
+            # MD/HTML 문서 변환 감지
+            md_html_requested = 'ql' in locals() and any(kw in ql for kw in [
+                "html로", "html 로", "html변환", "html 변환", "html로 만들", "html 다운",
+                "md로", "md 로", "md변환", "md 변환", "md 다운", "마크다운으로", "마크다운 다운",
+                "문서로 저장", "문서로 만들", "보고서 다운", "보고서로 저장",
+            ])
+            if "md-to-html" in loaded or md_html_requested:
+                system_prompt += (
+                    "=== MD/HTML 문서 생성 규칙 ===\n"
+                    "사용자가 MD, HTML, 문서 저장/다운로드를 요청하면:\n"
+                    "1. 보고서 내용을 잘 구조화된 Markdown 형식으로 작성하세요.\n"
+                    "2. 제목(#), 소제목(##), 표(|---|), 목록(- ), 코드블록(```) 등 Markdown 문법을 적극 활용하세요.\n"
+                    "3. 시스템이 자동으로 MD 파일과 HTML 파일을 생성하여 다운로드 링크를 제공합니다.\n"
+                    "4. 별도의 코드 작성은 불필요합니다. 보고서 내용에만 집중하세요.\n"
+                    "5. 중요: 보고서 제목에 '(HTML 형식)', '(MD 형식)' 등 파일 형식을 언급하지 마세요. 순수한 보고서 제목만 작성하세요.\n\n"
+                )
 
             drawio_requested = 'ql' in locals() and any(kw in ql for kw in ["drawio", "draw.io", "드로우", "드로잉", "drawingio", "다이어그램", "구조도", "흐름도", "아키텍처", "배치도", "dfd"])
             if "drawio-diagram" in loaded or drawio_requested:
@@ -890,9 +1007,10 @@ def register_chat_routes(app):
         if env_id.startswith("gguf-"):
 
             # ── 병렬 멀티에이전트 판단 ──
-            # 스킬 2개+ & 다른 그룹이면 병렬 (AUTO든 수동 선택이든)
+            # 스킬 2개+ & 다른 그룹이면 병렬 (다중 모델 선택 시에만)
+            # 단일 GGUF 선택 시 병렬 안 함 (VRAM 부족 방지)
             _parallel_fallback_reason = None
-            if len(loaded) >= 2:
+            if len(loaded) >= 2 and (multi_model_parallel or len(user_envs) >= 2):
                 _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
 
                 if _use_parallel:
@@ -1161,6 +1279,8 @@ def register_chat_routes(app):
             }
             if _parallel_fallback_reason:
                 _resp["parallel_fallback"] = _parallel_fallback_reason
+            _resp = _maybe_generate_md_html(answer, loaded, _resp)
+            _auto_save_feedback(loaded, _quality, last_user_query)
             return jsonify(_resp)
 
 
@@ -1237,6 +1357,7 @@ def register_chat_routes(app):
                         if len(successes) == 0:
                             pass  # 전부 실패 → 폴백
                         elif len(successes) == 1:
+                            _sq = _calculate_quality_score(successes[0]["response"], _last_query)
                             return jsonify({
                                 "content": successes[0]["response"],
                                 "loaded_skills": loaded,
@@ -1245,6 +1366,7 @@ def register_chat_routes(app):
                                 "parallel_groups": [successes[0]["group"]],
                                 "parallel_models": [successes[0]["model"]],
                                 "parallel_synthesis": "",
+                                "quality": _sq,
                             })
                         else:
                             # 합성 프롬프트
@@ -1275,6 +1397,7 @@ def register_chat_routes(app):
                                 sr_data = sr.json()
                                 if "choices" in sr_data and len(sr_data["choices"]) > 0:
                                     synth_answer = sr_data["choices"][0].get("message", {}).get("content") or ""
+                                    _sq = _calculate_quality_score(synth_answer, _last_query)
                                     return jsonify({
                                         "content": synth_answer,
                                         "loaded_skills": loaded,
@@ -1283,6 +1406,7 @@ def register_chat_routes(app):
                                         "parallel_groups": [r["group"] for r in successes],
                                         "parallel_models": list(set(r["model"] for r in successes)),
                                         "parallel_synthesis": "model",
+                                        "quality": _sq,
                                     })
                             except Exception:
                                 pass
@@ -1291,6 +1415,7 @@ def register_chat_routes(app):
                                 f"### {', '.join(SKILL_DESC_KO.get(s,s) for s in r['skills'])}\n{r['response']}"
                                 for r in successes
                             )
+                            _sq = _calculate_quality_score(fallback, _last_query)
                             return jsonify({
                                 "content": fallback,
                                 "loaded_skills": loaded,
@@ -1299,6 +1424,7 @@ def register_chat_routes(app):
                                 "parallel_groups": [r["group"] for r in successes],
                                 "parallel_models": list(set(r["model"] for r in successes)),
                                 "parallel_synthesis": "fallback_concat",
+                                "quality": _sq,
                             })
                 except Exception as e:
                     try:
@@ -1503,6 +1629,7 @@ def register_chat_routes(app):
                             f"### {', '.join(SKILL_DESC_KO.get(s, s) for s in r['skills'])}\n{r['response']}"
                             for r in successes
                         )
+                        _sq = _calculate_quality_score(fallback, _last_query)
                         return jsonify({
                             "content": fallback,
                             "loaded_skills": loaded,
@@ -1514,6 +1641,7 @@ def register_chat_routes(app):
                             "parallel_synthesis": "fallback_concat",
                             "auto_routed": auto_routed, "route_reason": route_reason,
                             "auto_multi_agent": True,
+                            "quality": _sq,
                         })
                     # else: 전부 실패 → 아래 단일모델 경로로 폴백
 
@@ -1638,11 +1766,22 @@ def register_chat_routes(app):
                         # 반복 루프 감지 및 절단 (API 응답 보호)
                         answer, _was_rep = _detect_repetition(answer)
 
+                        # 품질 검증 및 점수 계산
+                        _q_valid, _q_issues = _validate_response(answer, last_user_query)
+                        if _q_issues:
+                            answer = _fix_response_issues(answer, _q_issues)
+                        _quality = _calculate_quality_score(answer, last_user_query, _q_issues)
+                        try:
+                            print(f"  [QUALITY] score={_quality['score']}, grade={_quality['grade']}, issues={_q_issues}")
+                        except Exception:
+                            pass
+
                         resp_data = {
                             "content": answer,
                             "loaded_skills": loaded,
                             "system_prompt_length": len(system_prompt),
                             "model_used": try_model,
+                            "quality": _quality,
                         }
                         if auto_routed:
                             resp_data["auto_routed"] = True
@@ -1656,6 +1795,8 @@ def register_chat_routes(app):
                             resp_data["fallback_from"] = fallback_from
                         if truncated:
                             resp_data["truncated"] = True
+                        resp_data = _maybe_generate_md_html(answer, loaded, resp_data)
+                        _auto_save_feedback(loaded, _quality, last_user_query)
                         return jsonify(resp_data)
 
                     elif "error" in result:
@@ -1805,6 +1946,8 @@ def register_chat_routes(app):
                     except Exception:
                         pass
 
+                resp_data = _maybe_generate_md_html(answer, loaded, resp_data)
+                _auto_save_feedback(loaded, _quality, last_user_query)
                 return jsonify(resp_data)
 
             except req.exceptions.Timeout:
