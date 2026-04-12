@@ -156,6 +156,7 @@ def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None)
         fm_fabs = []
         fm_category = ""
         fm_desc = ""
+        fm_text = ""
         body = content
         if content.startswith('---'):
             parts = content.split('---', 2)
