@@ -164,6 +164,7 @@ def register_chat_routes(app):
     def api_chat():
         """LLM API 프록시 - 스킬을 시스템 프롬프트에 넣어서 회사 API로 전달"""
         chat_stop_flag["stop"] = False  # 새 요청 시작 시 플래그 초기화
+        _quality = None  # 품질 점수 초기화 (fallback 체인 UnboundLocalError 방지)
         data = request.json
         # 환경 선택: 배열 또는 문자열 → 배열로 통일
         raw_env = data.get("env", "auto")
