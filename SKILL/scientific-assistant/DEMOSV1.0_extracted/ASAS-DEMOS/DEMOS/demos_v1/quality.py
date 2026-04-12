@@ -1,0 +1,424 @@
+"""
+demos_v1/quality.py - Quality framework: personas, anti-rationalization, verification,
+                      response validation, scoring, and content sanitization
+"""
+import re
+
+def _extract_skill_context(content, max_chars=800):
+    """SKILL.md 전체 텍스트에서 구조화된 요약만 추출 (토큰 90% 절약).
+
+    추출 항목:
+    1. YAML frontmatter (name, description)
+    2. H2/H3 섹션 제목 목록 (능력 파악용)
+    3. 핵심 코드 패턴 (첫 2개 코드블록만)
+
+    Returns:
+        str: 구조화된 요약 (약 200~800자)
+    """
+    if not content:
+        return ""
+
+    parts = []
+
+    # 1) YAML frontmatter 추출
+    fm_match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+    if fm_match:
+        fm_text = fm_match.group(1).strip()
+        # name, description만 추출
+        for line in fm_text.split("\n"):
+            line = line.strip()
+            if line.startswith("name:") or line.startswith("description:"):
+                parts.append(line)
+            elif parts and not line.startswith(("-", " ")) is False and line:
+                # multiline description 이어붙이기
+                if not any(line.startswith(k) for k in ("name:", "description:", "---")):
+                    parts.append(f"  {line}")
+
+    # 2) H2/H3 섹션 제목 추출 (능력 목록)
+    headings = re.findall(r'^(#{2,3})\s+(.+)$', content, re.MULTILINE)
+    if headings:
+        parts.append("\n[capabilities]")
+        for level, title in headings[:15]:  # 최대 15개 섹션
+            indent = "  " if level == "###" else ""
+            parts.append(f"{indent}- {title.strip()}")
+
+    # 3) 핵심 코드 패턴 (첫 2개 코드블록, 각 최대 300자)
+    code_blocks = re.findall(r'```(\w*)\n(.*?)```', content, re.DOTALL)
+    if code_blocks:
+        parts.append("\n[code_patterns]")
+        for lang, code in code_blocks[:2]:
+            snippet = code.strip()[:300]
+            if len(code.strip()) > 300:
+                snippet += "\n# ... (truncated)"
+            parts.append(f"```{lang}\n{snippet}\n```")
+
+    result = "\n".join(parts)
+    return result[:max_chars] if len(result) > max_chars else result
+
+
+# ============================================
+# 품질 프레임워크 (agent-skills 패턴 적용)
+# ============================================
+
+# 도메인 페르소나: 그룹별 전문가 역할 정의
+DOMAIN_PERSONAS = {
+    "scientific": {
+        "role": "과학 분석 전문가",
+        "instruction": "실험 데이터와 논문 기반으로 분석하세요. 가설→방법→결과→해석 구조를 따르세요.",
+    },
+    "data-analysis": {
+        "role": "데이터 분석 전문가",
+        "instruction": "실제 데이터의 컬럼명과 값만 사용하세요. 통계적 근거를 제시하세요.",
+    },
+    "code": {
+        "role": "소프트웨어 엔지니어",
+        "instruction": "즉시 실행 가능한 코드를 작성하세요. 에러 처리와 엣지 케이스를 고려하세요.",
+    },
+    "infrastructure": {
+        "role": "인프라/DevOps 전문가",
+        "instruction": "보안과 가용성을 최우선으로 고려하세요. 구체적인 명령어와 설정을 제시하세요.",
+    },
+    "writing-docs": {
+        "role": "기술 문서 작성 전문가",
+        "instruction": "명확하고 구조화된 문서를 작성하세요. 대상 독자 수준에 맞추세요.",
+    },
+    "ai-business": {
+        "role": "AI/비즈니스 전략가",
+        "instruction": "비용, 성능, 운영성 트레이드오프를 분석하세요. 실행 가능한 로드맵을 제시하세요.",
+    },
+}
+
+# Anti-Rationalization: 에이전트가 자주 하는 변명과 강제 반박
+ANTI_RATIONALIZATION = """
+[변명 방지 규칙 - 절대 아래 행동을 하지 마세요]
+| 에이전트가 하려는 것 | 왜 안 되는지 |
+|---|---|
+| 가짜 샘플 데이터로 분석 | 실제 업로드된 데이터만 사용. 없으면 "데이터를 업로드해주세요"라고 요청 |
+| "나중에 테스트하겠습니다" | 코드를 제시하면 즉시 검증 가능한 형태로 제공 |
+| 영어로 답변 | 반드시 한국어. 코드 주석도 한국어 |
+| 존재하지 않는 컬럼명 사용 | 업로드된 CSV의 실제 headers만 참조 |
+| 불완전한 코드 제시 | import부터 실행까지 완성된 코드만 제공 |
+| "간단하니까 설명 생략" | 핵심 로직은 반드시 설명 |
+| 출처 없이 주장 | 스킬 지식 또는 데이터 근거를 명시 |
+| raw 프로토콜 데이터를 그대로 출력 | 원본 hex/binary/제로패딩 데이터를 절대 그대로 붙여넣지 마세요. 반드시 표(테이블) 또는 요약 형태로 변환하세요 |
+| 의미 없는 반복 문자열 출력 | 0000...이나 같은 문자 반복은 "N자리 제로패딩" 등으로 요약하세요 |
+| 로그/메시지 전체 덤프 | 핵심 필드만 추출하여 표로 정리하세요. 전체 raw 메시지를 복사하지 마세요 |
+
+[데이터 포맷 규칙]
+- 프로토콜 메시지, 로그, 통신 데이터는 반드시 **표(table)** 또는 **필드별 설명** 형태로 변환
+- raw 바이너리/hex/제로패딩은 절대 그대로 출력 금지 → 길이와 의미만 요약
+- 예시) "E/M상태: 1024바이트 제로패딩 (정상)" ← OK
+- 예시) "00000000000000000000..." ← 절대 금지
+"""
+
+# Verification Gate: 응답 완료 전 자가 체크리스트
+VERIFICATION_GATE = """
+[응답 완료 전 자가 검증]
+- [ ] 한국어로 작성했는가?
+- [ ] 가짜/샘플 데이터를 만들지 않았는가?
+- [ ] 코드가 있다면 import부터 실행까지 완전한가?
+- [ ] 코드블록(```)을 모두 닫았는가?
+- [ ] 사용자가 요청한 내용에만 답변했는가?
+- [ ] 핵심 내용을 먼저 제시했는가?
+- [ ] raw 데이터(000..., hex dump, 로그 전체)를 그대로 붙여넣지 않았는가?
+- [ ] 프로토콜/메시지 데이터를 표 또는 요약으로 변환했는가?
+위 항목 중 하나라도 미충족이면 답변을 수정한 후 출력하세요.
+"""
+
+# 분석 라이프사이클: 복잡한 질문에 대한 단계별 사고 프레임워크
+ANALYSIS_LIFECYCLE = """
+[분석 프레임워크 - 복잡한 질문은 이 순서로 접근]
+1. 이해(Understand): 사용자의 실제 의도와 맥락을 파악
+2. 탐색(Explore): 관련 데이터/지식/스킬에서 핵심 정보 수집
+3. 분석(Analyze): 수집된 정보를 기반으로 깊이 있는 분석 수행
+4. 검증(Verify): 결과의 정확성, 완전성, 일관성 확인
+5. 보고(Report): 핵심 결론 → 근거 → 추가 제안 순서로 구조화
+간단한 질문은 바로 답변하되, 분석이 필요한 질문은 위 단계를 따르세요.
+"""
+
+
+def _detect_repetition(text, min_chunk=20, max_repeats=3):
+    """소형 GGUF 모델의 반복 루프 감지 및 절단.
+
+    3단계 감지:
+    1) 구조적 반복: </think>, 코드블록 등 같은 마커가 여러 번 등장
+    2) 줄 단위 반복: 같은 줄이 N번 이상 반복
+    3) 청크 반복: 같은 문자열이 N번 이상 연속
+    """
+    if not text or len(text) < 200:
+        return text, False
+
+    # 1) 구조적 반복: 특정 마커가 과도하게 등장
+    structural_markers = ["</think>", "```python", "데이터 분석", "import pandas",
+                          ".pivot(", ".compute()", ".rename(columns"]
+    for marker in structural_markers:
+        count = text.count(marker)
+        if count >= 3:
+            # 두 번째 등장까지만 유지
+            first = text.find(marker)
+            second = text.find(marker, first + len(marker))
+            if second > 0:
+                # 두 번째 마커 포함한 적당한 끝점 찾기
+                end = text.find("\n", second + len(marker))
+                if end < 0:
+                    end = second + len(marker)
+                clean = text[:end].rstrip()
+                clean += f"\n\n⚠️ (반복 패턴 감지: '{marker}' {count}회 → 출력 절단)"
+                return clean, True
+
+    # 2) 줄 단위 반복: 같은 줄이 5번 이상
+    lines = text.split("\n")
+    if len(lines) > 10:
+        line_counts = {}
+        for line in lines:
+            stripped = line.strip()
+            if len(stripped) > 15:  # 짧은 줄은 무시
+                line_counts[stripped] = line_counts.get(stripped, 0) + 1
+        for line_text, cnt in line_counts.items():
+            if cnt >= 5:
+                # 첫 번째 등장 + 약간까지만 유지
+                try:
+                    first_idx = next(i for i, l in enumerate(lines) if l.strip() == line_text)
+                except StopIteration:
+                    continue
+                keep_to = min(first_idx + 10, len(lines))
+                clean = "\n".join(lines[:keep_to]).rstrip()
+                clean += f"\n\n⚠️ (줄 반복 감지: {cnt}회 → 출력 절단)"
+                return clean, True
+
+    # 3) 청크 반복: 연속된 동일 문자열
+    for chunk_size in range(min_chunk, min(200, len(text) // max(max_repeats, 1)), 5):
+        for start in range(0, min(len(text) - chunk_size * max_repeats, 2000)):
+            chunk = text[start:start + chunk_size]
+            if not chunk.strip():
+                continue
+            count = 1
+            pos = start + chunk_size
+            while pos + chunk_size <= len(text) and text[pos:pos + chunk_size] == chunk:
+                count += 1
+                pos += chunk_size
+            if count >= max_repeats:
+                clean = text[:start + chunk_size].rstrip()
+                clean += "\n\n⚠️ (반복 패턴 감지 → 출력 절단)"
+                return clean, True
+
+    return text, False
+
+
+
+def _validate_response(answer, query):
+    """합성 응답의 품질을 빠르게 검증.
+
+    Returns:
+        (is_valid: bool, issues: list[str])
+    """
+    if not answer or not answer.strip():
+        return False, ["empty_response"]
+
+    issues = []
+
+    # 1) 반복 감지 (이미 _detect_repetition이 있지만, 추가 패턴 체크)
+    lines = answer.split("\n")
+    if len(lines) > 5:
+        unique_lines = set(l.strip() for l in lines if len(l.strip()) > 15)
+        if len(unique_lines) < len(lines) * 0.3:
+            issues.append("excessive_repetition")
+
+    # 2) 언어 일관성 - 한국어 비율 체크 (코드블록 제외)
+    text_only = re.sub(r'```[\s\S]*?```', '', answer)
+    text_only = re.sub(r'`[^`]+`', '', text_only)
+    if text_only.strip():
+        korean_chars = len(re.findall(r'[\uac00-\ud7af]', text_only))
+        alpha_chars = len(re.findall(r'[a-zA-Z]', text_only))
+        total_chars = korean_chars + alpha_chars
+        if total_chars > 50 and korean_chars / max(total_chars, 1) < 0.15:
+            issues.append("low_korean_ratio")
+
+    # 3) 응답 길이 체크 (너무 짧으면 불완전)
+    if len(answer.strip()) < 50 and len(query) > 30:
+        issues.append("too_short")
+
+    # 4) 미완성 코드블록 감지
+    open_blocks = answer.count("```")
+    if open_blocks % 2 != 0:
+        issues.append("unclosed_code_block")
+
+    # 5) 사고 과정 노출 감지
+    if "<think>" in answer or "</think>" in answer:
+        issues.append("exposed_thinking")
+
+    # 6) 과도한 반복 문자열 감지 (예: 000000..., aaaa... 50자 이상 연속)
+    if re.search(r'(.)\1{49,}', answer):
+        issues.append("repeated_chars")
+
+    # 7) 고정길이 제로패딩 데이터 감지 (프로토콜 raw dump 방지)
+    zero_runs = re.findall(r'0{20,}', answer)
+    total_zeros = sum(len(z) for z in zero_runs)
+    if total_zeros > 200:
+        issues.append("raw_protocol_dump")
+
+    is_valid = len(issues) == 0
+    return is_valid, issues
+
+
+def _calculate_quality_score(answer, query, issues=None):
+    """응답 품질을 0~100 점수로 계산.
+
+    채점 기준 (100점 만점):
+      - 한국어 비율 (20점): 코드 제외 텍스트의 한국어 비율
+      - 응답 충실도 (20점): 질문 길이 대비 응답 길이 비율
+      - 코드 완성도 (20점): 코드블록 열고 닫기 매칭
+      - 구조화 (20점): 마크다운 헤딩/리스트/코드블록 사용
+      - 이슈 감점 (20점): _validate_response 이슈당 -5점
+
+    Returns:
+        dict: {"score": int, "breakdown": dict, "grade": str}
+    """
+    if not answer or not answer.strip():
+        return {"score": 0, "breakdown": {}, "grade": "F", "issues": issues or []}
+
+    breakdown = {}
+
+    # 1) 한국어 비율 (20점)
+    text_only = re.sub(r'```[\s\S]*?```', '', answer)
+    text_only = re.sub(r'`[^`]+`', '', text_only)
+    korean_chars = len(re.findall(r'[\uac00-\ud7af]', text_only))
+    alpha_chars = len(re.findall(r'[a-zA-Z]', text_only))
+    total_lang = korean_chars + alpha_chars
+    if total_lang > 0:
+        kr_ratio = korean_chars / total_lang
+        breakdown["korean"] = min(20, int(kr_ratio * 25))  # 80%이상이면 20점
+    else:
+        breakdown["korean"] = 20  # 텍스트 없으면 만점 (코드만 있는 경우)
+
+    # 2) 응답 충실도 (20점) - 질문 대비 응답 비율
+    q_len = max(len(query.strip()), 1)
+    a_len = len(answer.strip())
+    ratio = a_len / q_len
+    if ratio >= 3:
+        breakdown["completeness"] = 20
+    elif ratio >= 1.5:
+        breakdown["completeness"] = 15
+    elif ratio >= 0.5:
+        breakdown["completeness"] = 10
+    else:
+        breakdown["completeness"] = 5
+
+    # 3) 코드 완성도 (20점)
+    code_blocks = answer.count("```")
+    if code_blocks == 0:
+        breakdown["code_quality"] = 20  # 코드 없는 답변은 만점
+    elif code_blocks % 2 == 0:
+        breakdown["code_quality"] = 20  # 모든 블록 닫힘
+    else:
+        breakdown["code_quality"] = 5   # 미완성 블록 있음
+
+    # 4) 구조화 (20점) - 마크다운 구조 사용 여부
+    struct_score = 0
+    if re.search(r'^#{1,3}\s', answer, re.MULTILINE):
+        struct_score += 7   # 헤딩 사용
+    if re.search(r'^[-*]\s', answer, re.MULTILINE):
+        struct_score += 5   # 리스트 사용
+    if "```" in answer:
+        struct_score += 5   # 코드블록 사용
+    if len(answer) > 200:
+        struct_score += 3   # 충분한 길이
+    breakdown["structure"] = min(20, struct_score)
+
+    # 5) 이슈 감점 (20점에서 이슈당 -5점)
+    issue_list = issues if issues is not None else []
+    issue_penalty = len(issue_list) * 5
+    breakdown["no_issues"] = max(0, 20 - issue_penalty)
+
+    score = sum(breakdown.values())
+    score = max(0, min(100, score))
+
+    # 등급 판정
+    if score >= 90:
+        grade = "A"
+    elif score >= 75:
+        grade = "B"
+    elif score >= 60:
+        grade = "C"
+    elif score >= 40:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return {
+        "score": score,
+        "breakdown": breakdown,
+        "grade": grade,
+        "issues": issue_list,
+    }
+
+
+def _fix_response_issues(answer, issues):
+    """검증에서 발견된 이슈를 자동 수정 가능한 것만 수정.
+
+    Returns:
+        str: 수정된 응답
+    """
+    fixed = answer
+
+    # think 태그 제거
+    if "exposed_thinking" in issues:
+        fixed = re.sub(r'<think>[\s\S]*?</think>\s*', '', fixed)
+        fixed = re.sub(r'</?think>', '', fixed).strip()
+
+    # 미완성 코드블록 닫기
+    if "unclosed_code_block" in issues:
+        if fixed.count("```") % 2 != 0:
+            fixed = fixed.rstrip() + "\n```"
+
+    # 과도한 반복 문자열 절단 (000000..., aaaa... → 요약으로 대체)
+    if "repeated_chars" in issues:
+        fixed = re.sub(r'(.)\1{49,}', lambda m: m.group(1) * 10 + f'... ({len(m.group())}자 반복, 생략)', fixed)
+
+    # raw 프로토콜 제로패딩 데이터 절단
+    if "raw_protocol_dump" in issues:
+        fixed = re.sub(r'0{30,}', lambda m: '0' * 8 + f'... ({len(m.group())}자리 제로패딩, 생략)', fixed)
+
+    return fixed
+
+
+def _sanitize_knowledge_content(content):
+    """knowledge 파일 내용을 LLM에 주입하기 전에 raw 데이터를 사전 정제.
+
+    정제 대상:
+    - 제로패딩 (000...30자+) → 요약
+    - 반복 문자 (같은 문자 50자+) → 요약
+    - 과도한 콤마구분 raw 메시지 → 필드 수 요약
+    """
+    if not content:
+        return content
+
+    # 제로패딩 30자+ → 요약
+    cleaned = re.sub(
+        r'0{30,}',
+        lambda m: '0' * 8 + f'...({len(m.group())}자리 제로패딩)',
+        content
+    )
+
+    # 같은 문자 50자+ 반복 → 요약
+    cleaned = re.sub(
+        r'(.)\1{49,}',
+        lambda m: m.group(1) * 5 + f'...({len(m.group())}자 반복)',
+        cleaned
+    )
+
+    # 한 줄에 콤마구분 필드가 20개+ 넘는 raw 메시지 라인 → 요약
+    lines = cleaned.split('\n')
+    sanitized_lines = []
+    for line in lines:
+        commas = line.count(',')
+        if commas > 20 and len(line) > 300:
+            # raw 메시지 라인 → 처음 200자 + 요약
+            sanitized_lines.append(
+                line[:200] + f'... (총 {commas+1}개 필드, {len(line)}자 → 생략)'
+            )
+        else:
+            sanitized_lines.append(line)
+
+    return '\n'.join(sanitized_lines)
+
