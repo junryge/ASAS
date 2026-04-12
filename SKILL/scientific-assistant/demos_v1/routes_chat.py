@@ -10,6 +10,7 @@ import requests as req
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import request, jsonify
 
+import demos_v1.utils as _utils_mod
 from demos_v1.utils import (
     BASE_DIR, SKILLS_DIR, UPLOAD_DIR,
     uploaded_csv_data, uploaded_files,
@@ -1034,11 +1035,11 @@ def register_chat_routes(app):
             if gguf_path:
                 if not load_gguf_model(gguf_path, n_ctx=_load_n_ctx):
                     return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
-            if gguf_model is None:
+            if _utils_mod.gguf_model is None:
                 return jsonify({"error": "GGUF 모델이 로드되지 않았습니다. .gguf 파일과 llama-cpp-python이 필요합니다."}), 400
 
             # GGUF 컨텍스트 한도 내에서 max_tokens 자동 조정 (보수적 계산)
-            gguf_ctx_attr = getattr(gguf_model, 'n_ctx', None)
+            gguf_ctx_attr = getattr(_utils_mod.gguf_model, 'n_ctx', None)
             gguf_ctx = gguf_ctx_attr() if callable(gguf_ctx_attr) else (gguf_ctx_attr if gguf_ctx_attr is not None else 32768)
             gguf_reply_cap = max(256, TOKEN_SETTINGS["gguf_reply_cap"])
             gguf_ctx_reserve = max(512, TOKEN_SETTINGS["gguf_ctx_reserve"])
@@ -1058,7 +1059,7 @@ def register_chat_routes(app):
                             content = "\n".join(text_parts)
                         flat_parts.append(f"{role}: {str(content)}")
                     flat_text = "\n".join(flat_parts).encode("utf-8", errors="ignore")
-                    toks = gguf_model.tokenize(flat_text, add_bos=True)
+                    toks = _utils_mod.gguf_model.tokenize(flat_text, add_bos=True)
                     return len(toks) + 256  # chat template/여유 버퍼
                 except Exception:
                     # 2) 폴백: 한국어 기준 보수 추정
