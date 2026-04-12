@@ -1,0 +1,346 @@
+"""
+demos_v1/knowledge.py - Domain knowledge search, triggers, and API routes
+"""
+import os
+import re
+from flask import request, jsonify
+from demos_v1.utils import BASE_DIR
+
+# ============================================
+# 도메인 지식 검색 API
+# ============================================
+KNOWLEDGE_DIR = os.path.join(BASE_DIR, "knowledge")
+
+
+def _get_user_knowledge_dir(user_id=None):
+    """사용자별 지식 폴더 경로 반환"""
+    if user_id:
+        udir = os.path.join(KNOWLEDGE_DIR, user_id)
+        os.makedirs(udir, exist_ok=True)
+        return udir
+    return KNOWLEDGE_DIR
+
+
+def _build_knowledge_triggers():
+    """knowledge/ 전체 하위 폴더에서 트리거 키워드 추출"""
+    static_triggers = [
+        "아키텍처", "architecture", "허브룸", "hubroom", "아틀라스", "atlas",
+        "데드락", "deadlock", "급증", "amhs", "산출물", "컬럼", "접속정보",
+        "통신방식", "예측모델", "변경사항", "변경상황", "도메인", "지식",
+    ]
+    dynamic_triggers = set()
+    if os.path.isdir(KNOWLEDGE_DIR):
+        for root, dirs, files in os.walk(KNOWLEDGE_DIR):
+            for fname in files:
+                if not fname.lower().endswith('.md'):
+                    continue
+                name = fname.rsplit('.', 1)[0]
+                parts = re.split(r'[_\-\s]+', name)
+                for p in parts:
+                    p_lower = p.lower()
+                    if re.match(r'^\d{8}$', p_lower):
+                        continue
+                    if p_lower in ('fab', 'md') or len(p_lower) < 2:
+                        continue
+                    dynamic_triggers.add(p_lower)
+    return list(set(static_triggers) | dynamic_triggers)
+
+
+KNOWLEDGE_TRIGGERS = _build_knowledge_triggers()
+
+
+def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None):
+    """사용자별 knowledge 폴더에서 키워드 검색 → 매칭된 파일 목록 + 내용 반환
+
+    개선된 검색:
+    - 컬럼명(M14.QUE.OHT.OHTUTIL) → FAB 접두사 자동 추출 → 정확한 파일 매칭
+    - 키워드 빈도수 기반 점수 (TF)
+    - 한글 공백 무시 매칭 (디스크 사용률 → 디스크사용율)
+    - 원본 쿼리 구문 일치 보너스
+    - 한글 유사 문자 정규화 (률/율, 렬/열 등)
+    """
+    # 사용자별 폴더 검색 (user_id 없으면 전체 검색 - 하위호환)
+    search_dir = os.path.join(KNOWLEDGE_DIR, user_id) if user_id else KNOWLEDGE_DIR
+    if not os.path.isdir(search_dir):
+        return []
+
+    q_lower = query.lower()
+
+    # ── 1단계: 컬럼명 패턴 감지 (FAB.Category.Sub.Metric) ──
+    # 쿼리에서 컬럼명 패턴 추출 → FAB 접두사 + 전체 컬럼명
+    column_pattern = re.findall(r'([A-Za-z0-9]+(?:\.[A-Za-z0-9_]+){2,})', query)
+    fab_prefixes = set()  # FAB 접두사 (M14, M16HUB 등)
+    full_columns = []     # 전체 컬럼명 (검색용)
+    for col in column_pattern:
+        parts = col.split('.')
+        fab = parts[0].upper()
+        fab_prefixes.add(fab)
+        full_columns.append(col.lower())
+
+    # ── 1.5단계: 자연어 날짜 → YYYYMMDD 변환 ──
+    from datetime import datetime, timedelta
+    today = datetime.now()
+    date_keywords = []
+
+    # "오늘" → 현재 날짜 YYYYMMDD
+    if "오늘" in q_lower:
+        date_keywords.append(today.strftime("%Y%m%d"))
+
+    # "어제" → 전날 YYYYMMDD
+    if "어제" in q_lower:
+        date_keywords.append((today - timedelta(days=1)).strftime("%Y%m%d"))
+
+    # "N월 D일" 패턴 → YYYYMMDD (올해 기준)
+    date_patterns = re.findall(r'(\d{1,2})\s*월\s*(\d{1,2})\s*일', query)
+    for month, day in date_patterns:
+        try:
+            dt = datetime(today.year, int(month), int(day))
+            date_keywords.append(dt.strftime("%Y%m%d"))
+        except ValueError:
+            pass
+
+    # 한글 유사 문자 정규화
+    def normalize_kr(text):
+        pairs = [("률", "율"), ("렬", "열"), ("례", "예"), ("려", "여"),
+                 ("량", "양"), ("론", "논"), ("뇨", "요"), ("니", "이")]
+        for a, b in pairs:
+            text = text.replace(a, b).replace(b, a)
+        return text
+
+    # 키워드 추출 (1자 이상, 불용어 제외)
+    stopwords = {"은", "는", "이", "가", "을", "를", "의", "에", "와", "과", "도", "로", "으로",
+                 "에서", "부터", "까지", "한", "할", "하는", "된", "되는", "있는", "없는",
+                 "the", "a", "an", "is", "are", "in", "on", "at", "to", "for", "of", "and", "or",
+                 "것", "수", "등", "및", "중", "뭐", "좀", "해", "줘", "알려", "보여", "찾아",
+                 "que", "all", "stk", "lft", "pdt", "sfab"}  # LPQL 구조 키워드 제외
+    raw_keywords = [w.strip() for w in re.split(r'[\s,?!·]+', q_lower) if w.strip()]
+    # 점(.)이 포함된 컬럼명은 분리하지 않고, 일반 텍스트만 키워드로
+    keywords = []
+    for w in raw_keywords:
+        if '.' in w and re.match(r'[a-z0-9]+\.[a-z0-9_.]+', w):
+            continue  # 컬럼명은 별도 처리 (full_columns에서)
+        keywords.append(w)
+    keywords = [w for w in keywords if w not in stopwords and len(w) >= 1]
+    # FAB 접두사도 키워드에 추가 (파일명 매칭용)
+    for fab in fab_prefixes:
+        fab_l = fab.lower()
+        if fab_l not in keywords:
+            keywords.append(fab_l)
+    # 자연어 날짜 변환 결과를 키워드에 추가
+    for dk in date_keywords:
+        if dk not in keywords:
+            keywords.append(dk)
+
+    # 원본 쿼리에서 공백 제거 버전 (구문 매칭용)
+    query_nospace = re.sub(r'\s+', '', q_lower)
+
+    if not keywords and not full_columns:
+        return []
+
+    results = []
+    for fname in os.listdir(search_dir):
+        if not fname.endswith('.md'):
+            continue
+        fpath = os.path.join(search_dir, fname)
+        fname_lower = fname.lower()
+        fname_nospace = re.sub(r'[_\-\s.]', '', fname_lower)
+
+        try:
+            with open(fpath, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception:
+            continue
+
+        # ── 프론트매터 파싱 ──
+        fm_tags = []
+        fm_fabs = []
+        fm_category = ""
+        fm_desc = ""
+        body = content
+        if content.startswith('---'):
+            parts = content.split('---', 2)
+            if len(parts) >= 3:
+                fm_text = parts[1]
+                body = parts[2]
+                for line in fm_text.split('\n'):
+                    line = line.strip()
+                    if line.startswith('tags:'):
+                        fm_tags = [t.strip().lower() for t in re.findall(r'[\w가-힣]+', line.split(':', 1)[1])]
+                    elif line.startswith('fab:'):
+                        fm_fabs = [f.strip().lower() for f in re.findall(r'[\w]+', line.split(':', 1)[1])]
+                    elif line.startswith('category:'):
+                        fm_category = line.split(':', 1)[1].strip().lower()
+                    elif line.startswith('description:'):
+                        fm_desc = line.split(':', 1)[1].strip().strip('"').lower()
+
+        content_lower = content.lower()
+        content_nospace = re.sub(r'\s+', '', content_lower)
+
+        total_score = 0
+
+        # ── 프론트매터 날짜 매칭 ──
+        fm_date = ""
+        if content.startswith('---'):
+            for line in fm_text.split('\n'):
+                line = line.strip()
+                if line.startswith('date:'):
+                    fm_date = line.split(':', 1)[1].strip()
+                    break
+        for dk in date_keywords:
+            # YYYYMMDD → YYYY-MM-DD 비교
+            dk_dash = f"{dk[:4]}-{dk[4:6]}-{dk[6:8]}" if len(dk) == 8 else dk
+            if dk in fname_lower or dk_dash == fm_date:
+                total_score += 25
+
+        # ── 프론트매터 태그 매칭 (높은 가중치) ──
+        for kw in keywords:
+            if kw in fm_tags:
+                total_score += 15  # 태그에 정확히 매칭
+        # ── 프론트매터 FAB 매칭 ──
+        for fab in fab_prefixes:
+            if fab.lower() in fm_fabs:
+                total_score += 20  # FAB 정확 매칭
+        for kw in keywords:
+            if kw in fm_fabs:
+                total_score += 15
+        # ── 카테고리 매칭 ──
+        cat_keywords = {"컬럼": "column_definition", "아키텍처": "architecture", "변경": "changelog",
+                        "산출물": "specification", "계획": "plan", "가이드": "guide"}
+        for kw in keywords:
+            if cat_keywords.get(kw) == fm_category:
+                total_score += 10
+        # ── description 매칭 ──
+        for kw in keywords:
+            if kw in fm_desc:
+                total_score += 10
+
+        # ── 컬럼명 직접 매칭 (최우선) ──
+        for col in full_columns:
+            if col in content_lower:
+                total_score += 30  # 컬럼명 정확히 존재 = 최고 점수
+
+        # ── FAB 접두사 → 파일명 매칭 (높은 가중치) ──
+        for fab in fab_prefixes:
+            fab_l = fab.lower()
+            # FAB_M14_컬럼.md → fab_m14_컬럼.md 에서 m14 매칭
+            if fab_l in fname_lower or fab_l in fname_nospace:
+                total_score += 20  # FAB 접두사가 파일명에 있으면 높은 점수
+
+        # 1. 파일명 매칭 (가중치 높음)
+        for kw in keywords:
+            if kw in fname_lower or kw in fname_nospace:
+                total_score += 10
+
+        # 2. 내용 빈도수 기반 점수 (TF)
+        for kw in keywords:
+            count = content_lower.count(kw)
+            if count > 0:
+                total_score += min(count, 10)
+            else:
+                count_nospace = content_nospace.count(kw)
+                if count_nospace > 0:
+                    total_score += min(count_nospace, 5)
+
+        # 3. 원본 쿼리 구문 일치 보너스
+        if len(keywords) >= 2:
+            for i in range(len(keywords) - 1):
+                bigram = keywords[i] + keywords[i + 1]
+                if bigram in content_nospace or bigram in fname_nospace:
+                    total_score += 15
+            if query_nospace in content_nospace or query_nospace in fname_nospace:
+                total_score += 20
+
+        # 4. 한글 유사 문자 매칭 (률↔율 등)
+        for kw in keywords:
+            for a, b in [("률", "율"), ("렬", "열"), ("례", "예")]:
+                alt_kw = kw.replace(a, b) if a in kw else kw.replace(b, a) if b in kw else None
+                if alt_kw and alt_kw != kw and alt_kw in content_lower:
+                    total_score += 3
+
+        if total_score > 0:
+            # 매칭된 키워드 주변 미리보기 (최고 점수 부분 우선)
+            preview_parts = []
+            for kw in keywords:
+                pos = content_lower.find(kw)
+                if pos == -1:
+                    # 공백 무시 매칭 시도
+                    pos_ns = content_nospace.find(kw)
+                    if pos_ns != -1:
+                        # 대략적 원본 위치 추정
+                        pos = min(pos_ns, len(content) - 1)
+                if pos != -1:
+                    start = max(0, pos - 80)
+                    end = min(len(content), pos + len(kw) + 80)
+                    snippet = content[start:end].replace('\n', ' ').strip()
+                    if start > 0:
+                        snippet = '...' + snippet
+                    if end < len(content):
+                        snippet = snippet + '...'
+                    preview_parts.append(snippet)
+
+            results.append({
+                "filename": fname,
+                "score": total_score,
+                "content": content[:max_content_chars],
+                "content_length": len(content),
+                "preview": preview_parts[:3],
+            })
+
+    # 점수 높은 순 정렬
+    results.sort(key=lambda x: x["score"], reverse=True)
+    # 최소 점수 필터: 1위의 30% 미만 또는 5점 미만 제외
+    if results:
+        top_score = results[0]["score"]
+        min_score = max(5, top_score * 0.3)
+        results = [r for r in results if r["score"] >= min_score]
+    return results[:max_results]
+
+
+
+
+def register_knowledge_routes(app):
+    """Register knowledge API routes."""
+
+    @app.route("/api/knowledge/search", methods=["POST"])
+    def api_knowledge_search():
+        """도메인 지식 검색 API"""
+        data = request.json or {}
+        query = data.get("query", "").strip()
+        if not query:
+            return jsonify({"error": "query 파라미터가 필요합니다."}), 400
+
+        results = search_knowledge(query)
+
+        if not results:
+            # 파일 목록이라도 반환
+            files = []
+            if os.path.isdir(KNOWLEDGE_DIR):
+                files = [f for f in os.listdir(KNOWLEDGE_DIR) if f.endswith('.md')]
+            return jsonify({
+                "query": query,
+                "results": [],
+                "total": 0,
+                "message": f"'{query}'에 매칭되는 문서가 없습니다.",
+                "available_files": files,
+            })
+
+        return jsonify({
+            "query": query,
+            "results": [{"filename": r["filename"], "score": r["score"], "preview": r["preview"], "content_length": r["content_length"]} for r in results],
+            "total": len(results),
+        })
+
+
+    @app.route("/api/knowledge/files", methods=["GET"])
+    def api_knowledge_files():
+        """knowledge 폴더 파일 목록 반환"""
+        files = []
+        if os.path.isdir(KNOWLEDGE_DIR):
+            for fname in sorted(os.listdir(KNOWLEDGE_DIR)):
+                if fname.endswith('.md'):
+                    fpath = os.path.join(KNOWLEDGE_DIR, fname)
+                    size = os.path.getsize(fpath)
+                    files.append({"filename": fname, "size": size})
+        return jsonify({"files": files, "total": len(files)})
+
+
