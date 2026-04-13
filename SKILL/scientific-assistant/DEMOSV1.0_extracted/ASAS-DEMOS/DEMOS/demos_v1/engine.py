@@ -219,6 +219,7 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         VERIFICATION_GATE
     )
 
+    llama_synth = None
     try:
         llama_synth = _pool_get_or_load(synthesis_model_path, n_ctx=n_ctx)
         messages = [
@@ -231,7 +232,6 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
             temperature=temperature,
             max_tokens=synth_max_tokens,
         )
-        _pool_release(synthesis_model_path)
 
         if resp and "choices" in resp and len(resp["choices"]) > 0:
             answer = resp["choices"][0].get("message", {}).get("content") or ""
@@ -258,10 +258,6 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
         raise ValueError("합성 모델 빈 응답")
 
     except Exception as e:
-        try:
-            _pool_release(synthesis_model_path)
-        except Exception:
-            pass
         # 폴백: 응답 단순 연결
         try:
             print(f"     [SYNTH] fallback concat: {e}")
@@ -278,6 +274,11 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
             "models": list(set(r["model"] for r in successes)),
             "synthesis": "fallback_concat",
         }
+    finally:
+        try:
+            _pool_release(synthesis_model_path)
+        except Exception:
+            pass
 
 
 

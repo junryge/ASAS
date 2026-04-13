@@ -29,7 +29,7 @@ def _extract_skill_context(content, max_chars=800):
             line = line.strip()
             if line.startswith("name:") or line.startswith("description:"):
                 parts.append(line)
-            elif parts and not line.startswith(("-", " ")) is False and line:
+            elif parts and line.startswith(("-", " ")) and line:
                 # multiline description 이어붙이기
                 if not any(line.startswith(k) for k in ("name:", "description:", "---")):
                     parts.append(f"  {line}")

@@ -287,6 +287,8 @@ def register_chat_routes(app):
         _ql_lower = last_user_query.lower()
         _is_weekly_ppt = ("주간보고" in _ql_lower or "주간 보고" in _ql_lower) and ("ppt" in _ql_lower or "PPT" in last_user_query or "피피티" in _ql_lower)
         if _is_weekly_ppt and ("weekly-report" in skill_ids or "knowledge-search" in skill_ids):
+            _projects = []
+            _weekly_docs = []
             try:
                 _chat_user_id = data.get("user_id", None)
                 _kb_results = search_knowledge(last_user_query, max_results=5, max_content_chars=8000, user_id=_chat_user_id)

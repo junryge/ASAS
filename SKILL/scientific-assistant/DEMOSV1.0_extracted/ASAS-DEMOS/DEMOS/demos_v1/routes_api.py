@@ -2512,7 +2512,7 @@ def register_api_routes(app):
         """주간보고 PPT 다운로드"""
         from flask import send_file
         file_id = request.args.get('id', '')
-        if not file_id:
+        if not file_id or not re.match(r'^[a-zA-Z0-9_]+$', file_id):
             return "Invalid ID", 400
         save_name = f"weekly_report_{file_id}.pptx"
         static_dir = os.path.join(BASE_DIR, 'uploads')
@@ -2520,6 +2520,9 @@ def register_api_routes(app):
         if not os.path.isfile(fpath):
             return "File not found", 404
         dl_name = request.args.get('filename', '주간보고.pptx')
+        dl_name = os.path.basename(dl_name)
+        if not dl_name:
+            dl_name = '주간보고.pptx'
         return send_file(fpath, as_attachment=True, download_name=dl_name,
                          mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
