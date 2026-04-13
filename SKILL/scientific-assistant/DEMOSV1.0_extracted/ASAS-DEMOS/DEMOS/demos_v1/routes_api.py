@@ -2371,6 +2371,158 @@ def register_api_routes(app):
             mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
 
+    # ── 주간보고 PPT 생성 API ──────────────────────────────────
+    @app.route("/api/weekly-report/generate", methods=["POST"])
+    def api_weekly_report_generate():
+        """주간보고 PPT 자동 생성 - JSON 데이터 → PPT 파일"""
+        import datetime
+        from flask import send_file
+
+        try:
+            from pptx import Presentation
+            from pptx.util import Inches, Pt, Cm
+            from pptx.dml.color import RGBColor
+            from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+        except ImportError:
+            return jsonify({"error": "python-pptx가 설치되지 않았습니다. pip install python-pptx"}), 500
+
+        data = request.get_json(force=True)
+        projects = data.get("projects", [])
+        filename = data.get("filename", "")
+        if not projects:
+            return jsonify({"error": "projects 데이터가 비어있습니다."}), 400
+
+        if not filename:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"주간보고_{timestamp}.pptx"
+
+        def _set_cell(table, row, col, text, bold=False, bg=None, align=PP_ALIGN.LEFT, size=10):
+            cell = table.cell(row, col)
+            cell.text = ""
+            p = cell.text_frame.paragraphs[0]
+            p.text = str(text)
+            p.font.size = Pt(size)
+            p.font.bold = bold
+            p.font.name = "맑은 고딕"
+            p.alignment = align
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            if bg is not None:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = bg
+
+        def _add_text(slide, left, top, width, height, text, size=10, bold=False, align=PP_ALIGN.LEFT):
+            box = slide.shapes.add_textbox(left, top, width, height)
+            tf = box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = str(text)
+            p.font.size = Pt(size)
+            p.font.bold = bold
+            p.font.name = "맑은 고딕"
+            p.alignment = align
+
+        try:
+            GRAY = RGBColor(0xD9, 0xD9, 0xD9)
+            LGRAY = RGBColor(0xF2, 0xF2, 0xF2)
+            RED = RGBColor(0xFF, 0x00, 0x00)
+            YELLOW = RGBColor(0xFF, 0xD7, 0x00)
+            BLUE = RGBColor(0x44, 0x72, 0xC4)
+
+            prs = Presentation()
+            prs.slide_width = Inches(13.33)
+            prs.slide_height = Inches(7.5)
+
+            for idx, proj in enumerate(projects):
+                slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+                _add_text(slide, Cm(1), Cm(0.5), Cm(20), Cm(1.2),
+                          f"{idx+1}. {proj['name']}", size=24, bold=True)
+
+                for i, c in enumerate([RED, YELLOW, BLUE]):
+                    bar = slide.shapes.add_shape(1, Cm(1 + 10.5 * i), Cm(2.0), Cm(10.5), Cm(0.25))
+                    bar.fill.solid()
+                    bar.fill.fore_color.rgb = c
+                    bar.line.fill.background()
+
+                n_cur = len(proj.get("current", []))
+                n_nxt = len(proj.get("next", []))
+                data_rows = max(n_cur, n_nxt, 1)
+                total_rows = 2 + data_rows + 1
+
+                ts = slide.shapes.add_table(total_rows, 6, Cm(1), Cm(2.5), Cm(31.5), Cm(1.2 * total_rows))
+                tbl = ts.table
+
+                tbl.columns[0].width = Cm(12)
+                tbl.columns[1].width = Cm(2.5)
+                tbl.columns[2].width = Cm(2.5)
+                tbl.columns[3].width = Cm(12)
+                tbl.columns[4].width = Cm(2.5)
+                tbl.columns[5].width = Cm(2.5)
+
+                tbl.cell(0, 0).merge(tbl.cell(0, 2))
+                tbl.cell(0, 3).merge(tbl.cell(0, 5))
+                _set_cell(tbl, 0, 0, "금주 실적", bold=True, bg=GRAY, align=PP_ALIGN.CENTER, size=12)
+                _set_cell(tbl, 0, 3, "차주 계획", bold=True, bg=GRAY, align=PP_ALIGN.CENTER, size=12)
+
+                for ci, h in enumerate(["추진 내용", "납기", "진척율", "추진 내용", "납기", "진척율"]):
+                    _set_cell(tbl, 1, ci, h, bold=True, bg=LGRAY, align=PP_ALIGN.CENTER)
+
+                for ri in range(data_rows):
+                    r = ri + 2
+                    if ri < n_cur:
+                        it = proj["current"][ri]
+                        _set_cell(tbl, r, 0, it.get("content", ""), size=9)
+                        _set_cell(tbl, r, 1, it.get("date", ""), align=PP_ALIGN.CENTER, size=9)
+                        _set_cell(tbl, r, 2, it.get("progress", ""), align=PP_ALIGN.CENTER, size=9)
+                    if ri < n_nxt:
+                        it = proj["next"][ri]
+                        _set_cell(tbl, r, 3, it.get("content", ""), size=9)
+                        _set_cell(tbl, r, 4, it.get("date", ""), align=PP_ALIGN.CENTER, size=9)
+                        _set_cell(tbl, r, 5, it.get("progress", ""), align=PP_ALIGN.CENTER, size=9)
+
+                ir = 2 + data_rows
+                tbl.cell(ir, 0).merge(tbl.cell(ir, 5))
+                itxt = "Issue 및 협의사항"
+                if proj.get("issues"):
+                    itxt = f"Issue 및 협의사항: {proj['issues']}"
+                _set_cell(tbl, ir, 0, itxt, bold=True, bg=GRAY)
+
+                _add_text(slide, Cm(1), Cm(17), Cm(20), Cm(0.8),
+                          "● : 완료  ○ : 계획  ▶ : 진행중  ※ : Issue/특이사항", size=9)
+                _add_text(slide, Cm(15), Cm(17.5), Cm(3), Cm(0.6),
+                          str(idx + 1), size=10, align=PP_ALIGN.CENTER)
+
+            uploads_dir = os.path.join(BASE_DIR, 'uploads')
+            os.makedirs(uploads_dir, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_name = f"weekly_report_{timestamp}.pptx"
+            save_path = os.path.join(uploads_dir, save_name)
+            prs.save(save_path)
+
+            return jsonify({
+                "download_url": f"/api/weekly-report/download?id={timestamp}",
+                "filename": filename,
+                "message": f"주간보고 PPT 생성 완료! ({len(projects)}개 프로젝트)"
+            })
+        except Exception as e:
+            return jsonify({"error": f"PPT 생성 실패: {str(e)}"}), 500
+
+    @app.route("/api/weekly-report/download", methods=["GET"])
+    def api_weekly_report_download():
+        """주간보고 PPT 다운로드"""
+        from flask import send_file
+        file_id = request.args.get('id', '')
+        if not file_id:
+            return "Invalid ID", 400
+        save_name = f"weekly_report_{file_id}.pptx"
+        static_dir = os.path.join(BASE_DIR, 'uploads')
+        fpath = os.path.join(static_dir, save_name)
+        if not os.path.isfile(fpath):
+            return "File not found", 404
+        dl_name = request.args.get('filename', '주간보고.pptx')
+        return send_file(fpath, as_attachment=True, download_name=dl_name,
+                         mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
     # ── Markdown → HTML 변환 ──────────────────────────────────
     @app.route("/api/generate_html", methods=["POST"])
     def api_generate_html():
