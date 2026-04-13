@@ -140,10 +140,10 @@ def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None)
         return []
 
     # 사용자별 폴더: 인덱스 캐시 (파일 수 변경 시에만 재빌드)
-    if user_id:
-        _user_file_count = len([f for f in os.listdir(search_dir) if f.endswith('.md')])
-        if _user_file_count != _BM25_N:
-            _build_bm25_index(search_dir)
+    _current_file_count = len([f for f in os.listdir(search_dir) if f.endswith('.md')])
+    _index_file_count = len(_BM25_INDEX)
+    if _current_file_count != _index_file_count:
+        _build_bm25_index(search_dir)
 
     q_lower = query.lower()
 
@@ -174,14 +174,6 @@ def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None)
             date_keywords.append(dt.strftime("%Y%m%d"))
         except ValueError:
             pass
-
-    # 한글 유사 문자 정규화
-    def normalize_kr(text):
-        pairs = [("률", "율"), ("렬", "열"), ("례", "예"), ("려", "여"),
-                 ("량", "양"), ("론", "논"), ("뇨", "요"), ("니", "이")]
-        for a, b in pairs:
-            text = text.replace(a, b).replace(b, a)
-        return text
 
     # 키워드 추출
     stopwords = {"은", "는", "이", "가", "을", "를", "의", "에", "와", "과", "도", "로", "으로",
