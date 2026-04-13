@@ -621,7 +621,7 @@ SKILL_GROUPS = {
             "venue-templates","latex-posters","pptx-posters",
             "infographics","markdown-mermaid-writing","paper-2-web",
             "pubmed-database","openalex-database",
-            "drawio-diagram","docx","xlsx","pdf","pptx","markitdown",
+            "drawio-diagram","docx","xlsx","pdf","pptx","weekly-report","markitdown",
             "agent-technical-writer","agent-documentation-engineer",
             "agent-content-marketer",
         },
