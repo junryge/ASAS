@@ -108,6 +108,44 @@ class FeedbackStore:
             return ""
         return "\n=== 이전 피드백 기반 주의사항 ===\n" + "\n".join(hints) + "\n\n"
 
+    # ── 오답 노트 자동화 ──
+
+    def _mistakes_path(self) -> Path:
+        return self._dir / "mistakes_log.json"
+
+    def add_mistake(self, query: str, error_pattern: str, skill_ids: list[str] | None = None) -> None:
+        """실수 패턴 자동 기록 (👎 또는 에러 발생 시 호출)"""
+        path = self._mistakes_path()
+        mistakes = self._load_raw(path)
+        mistakes.append({
+            "timestamp": time.time(),
+            "query": query[:200],
+            "error_pattern": error_pattern[:300],
+            "skill_ids": skill_ids or [],
+        })
+        # 최근 20개만 유지
+        if len(mistakes) > 20:
+            mistakes = mistakes[-20:]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(mistakes, f, ensure_ascii=False, indent=2)
+
+    def get_mistakes(self, limit: int = 10) -> list[dict]:
+        """최근 실수 목록 조회"""
+        path = self._mistakes_path()
+        raw = self._load_raw(path)
+        return raw[-limit:]
+
+    def build_mistakes_prompt(self) -> str:
+        """오답 노트를 시스템 프롬프트용 텍스트로 변환"""
+        mistakes = self.get_mistakes(10)
+        if not mistakes:
+            return ""
+        lines = ["\n=== 에이전트 오답 노트 (과거 실수 - 반복 금지) ==="]
+        for i, m in enumerate(mistakes, 1):
+            lines.append(f"- [{i}] {m['error_pattern']}")
+        lines.append("위 실수를 절대 반복하지 마시오.\n")
+        return "\n".join(lines)
+
     def _load_raw(self, path: Path) -> list[dict]:
         if not path.exists():
             return []

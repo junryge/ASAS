@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from .history import HistoryLog
 from .models import PermissionDenial, TurnResult, UsageSummary
-from .permissions import ToolPermissionContext
+from .permissions import ToolPermissionContext, CodeGuard
 from .registry import ToolRegistry
 from .router import ToolRouter
 from .session import StoredSession, load_session, save_session
@@ -203,3 +203,35 @@ class HarnessEngine:
             except (TypeError, ValueError):
                 return json.dumps({'results': ['structured output error'], 'session_id': self.session_id})
         return '\n'.join(parts)
+
+    # ── Pre-commit Hook: 코드 실행 전 안전성 검사 ──
+
+    def pre_commit_check(self, code: str, harness_map: str = "") -> dict:
+        """코드 실행/커밋 전 안전성 검사 (Pre-commit Hook)
+
+        Args:
+            code: 검사할 코드 문자열
+            harness_map: 프로젝트 하네스 맵 내용 (금지 규칙 포함)
+
+        Returns:
+            {"safe": bool, "violations": list, "message": str}
+        """
+        guard = CodeGuard()
+
+        # 하네스 맵에서 금지 규칙 로드
+        if harness_map:
+            guard.load_from_harness_map(harness_map)
+
+        violations = guard.check(code)
+        if violations:
+            reasons = [v["reason"] for v in violations[:5]]
+            return {
+                "safe": False,
+                "violations": violations,
+                "message": f"⚠️ 금지 패턴 감지 ({len(violations)}건): {', '.join(reasons)}",
+            }
+        return {
+            "safe": True,
+            "violations": [],
+            "message": "✅ 코드 검사 통과",
+        }
