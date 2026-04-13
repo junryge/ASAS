@@ -139,9 +139,11 @@ def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None)
     if not os.path.isdir(search_dir):
         return []
 
-    # 사용자별 폴더면 인덱스 재빌드
+    # 사용자별 폴더: 인덱스 캐시 (파일 수 변경 시에만 재빌드)
     if user_id:
-        _build_bm25_index(search_dir)
+        _user_file_count = len([f for f in os.listdir(search_dir) if f.endswith('.md')])
+        if _user_file_count != _BM25_N:
+            _build_bm25_index(search_dir)
 
     q_lower = query.lower()
 
