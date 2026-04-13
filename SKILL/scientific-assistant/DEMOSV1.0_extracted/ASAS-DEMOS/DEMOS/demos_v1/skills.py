@@ -69,7 +69,7 @@ SKILL_DESC_KO = {
     "hedgefundmonitor":"헤지펀드 리스크","usfiscaldata":"미국 재정 데이터",
     "market-research-reports":"시장조사 보고서","uspto-database":"특허/상표 검색",
     "docx":"Word 문서 처리","xlsx":"Excel 스프레드시트","pdf":"PDF 처리/OCR",
-    "pptx":"PowerPoint 처리","markitdown":"파일→마크다운","matlab":"MATLAB/Octave",
+    "pptx":"PowerPoint 처리","weekly-report":"주간보고 PPT 생성","markitdown":"파일→마크다운","matlab":"MATLAB/Octave",
     "modal":"클라우드 GPU 실행","generate-image":"AI 이미지 생성",
     "get-available-resources":"시스템 자원 감지","bgpt-paper-search":"논문/실험데이터 검색",
     "research-lookup":"연구 정보 검색","perplexity-search":"Perplexity 웹검색",
@@ -1007,6 +1007,7 @@ SKILL_KEYWORDS = {
     "xlsx": ["엑셀","Excel","xlsx","스프레드시트","spreadsheet"],
     "pdf": ["PDF","pdf","문서변환"],
     "pptx": ["파워포인트","PPT","pptx","프레젠테이션","발표","슬라이드","슬라이드 만들","PPT 만들","PPT 제작","PPT로","ppt로","발표자료","피피티","덱","deck","pitch deck","피치덱","발표 준비","슬라이드 제작"],
+    "weekly-report": ["주간보고","주간","보고","weekly","report","금주실적","차주계획","주간보고서","주간 보고","보고서 PPT"],
     "generate-image": ["이미지생성","AI그림","image generation","그림그려"],
     # === 가이드 ===
     "guide-python": ["Python가이드","코딩표준","PEP","파이썬스타일"],
