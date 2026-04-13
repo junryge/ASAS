@@ -283,6 +283,153 @@ def register_chat_routes(app):
         if (not api_url or not model) and not env_id.startswith("gguf-"):
             return jsonify({"error": "API URL과 모델 이름을 설정해주세요."}), 400
 
+        # ── 주간보고 PPT 직접 생성 (LLM 코드 생성 우회) ──
+        _ql_lower = last_user_query.lower()
+        _is_weekly_ppt = ("주간보고" in _ql_lower or "주간 보고" in _ql_lower) and ("ppt" in _ql_lower or "PPT" in last_user_query or "피피티" in _ql_lower)
+        if _is_weekly_ppt and ("weekly-report" in skill_ids or "knowledge-search" in skill_ids):
+            try:
+                _chat_user_id = data.get("user_id", None)
+                _kb_results = search_knowledge(last_user_query, max_results=5, max_content_chars=8000, user_id=_chat_user_id)
+                _weekly_docs = [r for r in _kb_results if "주간" in r.get("filename", "").lower() or "보고" in r.get("filename", "").lower()]
+                if _weekly_docs:
+                    # CSV 데이터 파싱 → projects 리스트 생성
+                    _projects = []
+                    for doc in _weekly_docs[:3]:
+                        _content = doc.get("content", "")
+                        _fname = doc.get("filename", "")
+                        # 프로젝트명 추출
+                        _proj_name = "프로젝트"
+                        for line in _content.split("\n"):
+                            line = line.strip()
+                            if line and not line.startswith("---") and not line.startswith("tags") and not line.startswith("date") and not line.startswith("category") and not line.startswith("description") and not line.startswith("owner") and not line.startswith("title") and not line.startswith("updated") and not line.startswith("fab"):
+                                if "주간" in line and "보고" in line:
+                                    _proj_name = line.replace("주간 보고", "").replace("주간보고", "").strip().rstrip("_").strip()
+                                    if "_" in _proj_name:
+                                        _proj_name = _proj_name.split("_")[0].strip()
+                                    if not _proj_name:
+                                        _proj_name = "프로젝트"
+                                    break
+                        # CSV 행 파싱
+                        _current = []
+                        _next = []
+                        _issues = ""
+                        _lines = _content.split("\n")
+                        _data_started = False
+                        for line in _lines:
+                            if "추진 내용" in line and "납기" in line:
+                                _data_started = True
+                                continue
+                            if not _data_started:
+                                continue
+                            if "Issue" in line and "협의" in line:
+                                _issues = ""
+                                continue
+                            parts = line.split(",")
+                            if len(parts) >= 4:
+                                _left_content = parts[0].strip()
+                                _left_date = ""
+                                _left_progress = ""
+                                _right_content = ""
+                                _right_date = ""
+                                _right_progress = ""
+                                # 왼쪽(금주 실적) 파싱
+                                for p in parts[1:4]:
+                                    p = p.strip()
+                                    if "월" in p and "일" in p:
+                                        _left_date = p
+                                    elif "%" in p:
+                                        _left_progress = p
+                                # 오른쪽(차주 계획) 파싱
+                                if len(parts) >= 5:
+                                    _right_content = parts[4].strip() if len(parts) > 4 else ""
+                                    for p in parts[5:]:
+                                        p = p.strip()
+                                        if "월" in p and "일" in p:
+                                            _right_date = p
+                                        elif "%" in p:
+                                            _right_progress = p
+                                if _left_content and _left_content.startswith("▶"):
+                                    _current.append({"content": _left_content, "date": _left_date, "progress": _left_progress})
+                                elif _left_content and _current:
+                                    _current[-1]["content"] += "\n   " + _left_content
+                                if _right_content and _right_content.startswith("▶"):
+                                    _next.append({"content": _right_content, "date": _right_date, "progress": _right_progress})
+                                elif _right_content and _next:
+                                    _next[-1]["content"] += "\n   " + _right_content
+                        if _current or _next:
+                            _projects.append({"name": _proj_name, "current": _current, "next": _next, "issues": _issues})
+
+                    if _projects:
+                        try:
+                            from pptx import Presentation as _Prs
+                            from pptx.util import Inches as _In, Pt as _Pt, Cm as _Cm
+                            from pptx.dml.color import RGBColor as _RGB
+                            from pptx.enum.text import PP_ALIGN as _AL, MSO_ANCHOR as _AN
+                            import datetime as _dt
+
+                            def __sc(tb, r, c, tx, b=False, bg=None, al=_AL.LEFT, sz=10):
+                                cl = tb.cell(r, c); cl.text = ""
+                                p = cl.text_frame.paragraphs[0]; p.text = str(tx)
+                                p.font.size = _Pt(sz); p.font.bold = b; p.font.name = "맑은 고딕"; p.alignment = al
+                                cl.vertical_anchor = _AN.MIDDLE
+                                if bg:
+                                    cl.fill.solid(); cl.fill.fore_color.rgb = bg
+
+                            def __tx(sl, l, t, w, h, tx, sz=10, b=False, al=_AL.LEFT):
+                                bx = sl.shapes.add_textbox(l, t, w, h)
+                                tf = bx.text_frame; tf.word_wrap = True
+                                p = tf.paragraphs[0]; p.text = str(tx)
+                                p.font.size = _Pt(sz); p.font.bold = b; p.font.name = "맑은 고딕"; p.alignment = al
+
+                            _GY = _RGB(0xD9, 0xD9, 0xD9); _LG = _RGB(0xF2, 0xF2, 0xF2)
+                            prs = _Prs(); prs.slide_width = _In(13.33); prs.slide_height = _In(7.5)
+                            for idx, pj in enumerate(_projects):
+                                sl = prs.slides.add_slide(prs.slide_layouts[6])
+                                __tx(sl, _Cm(1), _Cm(0.5), _Cm(20), _Cm(1.2), f"{idx+1}. {pj['name']}", sz=24, b=True)
+                                for i, c in enumerate([_RGB(0xFF,0,0), _RGB(0xFF,0xD7,0), _RGB(0x44,0x72,0xC4)]):
+                                    br = sl.shapes.add_shape(1, _Cm(1+10.5*i), _Cm(2.0), _Cm(10.5), _Cm(0.25))
+                                    br.fill.solid(); br.fill.fore_color.rgb = c; br.line.fill.background()
+                                nc = len(pj.get("current",[])); nn = len(pj.get("next",[])); dr = max(nc,nn,1); tr = 2+dr+1
+                                ts = sl.shapes.add_table(tr, 6, _Cm(1), _Cm(2.5), _Cm(31.5), _Cm(1.2*tr))
+                                tb = ts.table
+                                tb.columns[0].width=_Cm(12); tb.columns[1].width=_Cm(2.5); tb.columns[2].width=_Cm(2.5)
+                                tb.columns[3].width=_Cm(12); tb.columns[4].width=_Cm(2.5); tb.columns[5].width=_Cm(2.5)
+                                tb.cell(0,0).merge(tb.cell(0,2)); tb.cell(0,3).merge(tb.cell(0,5))
+                                __sc(tb, 0, 0, "금주 실적", b=True, bg=_GY, al=_AL.CENTER, sz=12)
+                                __sc(tb, 0, 3, "차주 계획", b=True, bg=_GY, al=_AL.CENTER, sz=12)
+                                for ci, h in enumerate(["추진 내용","납기","진척율","추진 내용","납기","진척율"]):
+                                    __sc(tb, 1, ci, h, b=True, bg=_LG, al=_AL.CENTER)
+                                for ri in range(dr):
+                                    r = ri+2
+                                    if ri<nc:
+                                        it=pj["current"][ri]; __sc(tb,r,0,it.get("content",""),sz=9); __sc(tb,r,1,it.get("date",""),al=_AL.CENTER,sz=9); __sc(tb,r,2,it.get("progress",""),al=_AL.CENTER,sz=9)
+                                    if ri<nn:
+                                        it=pj["next"][ri]; __sc(tb,r,3,it.get("content",""),sz=9); __sc(tb,r,4,it.get("date",""),al=_AL.CENTER,sz=9); __sc(tb,r,5,it.get("progress",""),al=_AL.CENTER,sz=9)
+                                ir=2+dr; tb.cell(ir,0).merge(tb.cell(ir,5))
+                                __sc(tb,ir,0,"Issue 및 협의사항"+(": "+pj["issues"] if pj.get("issues") else ""),b=True,bg=_GY)
+                                __tx(sl,_Cm(1),_Cm(17),_Cm(20),_Cm(0.8),"● : 완료  ○ : 계획  ▶ : 진행중  ※ : Issue/특이사항",sz=9)
+                                __tx(sl,_Cm(15),_Cm(17.5),_Cm(3),_Cm(0.6),str(idx+1),sz=10,al=_AL.CENTER)
+
+                            _ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            _udir = os.path.join(BASE_DIR, 'uploads'); os.makedirs(_udir, exist_ok=True)
+                            _spath = os.path.join(_udir, f"weekly_report_{_ts}.pptx")
+                            prs.save(_spath)
+                            _dl_url = f"/api/weekly-report/download?id={_ts}"
+                            _file_list = ", ".join(d.get("filename","") for d in _weekly_docs[:3])
+                            return jsonify({
+                                "content": f"주간보고 PPT를 생성했습니다.\n\n📄 참조 문서: {_file_list}\n📊 프로젝트: {len(_projects)}개\n\n📥 [PPT 다운로드]({_dl_url})",
+                                "loaded_skills": loaded,
+                                "system_prompt_length": 0,
+                                "model_used": "weekly-report-direct",
+                                "weekly_report_download": _dl_url,
+                            })
+                        except ImportError:
+                            pass  # python-pptx 없으면 LLM 경로로 진행
+                        except Exception as _ppt_err:
+                            print(f"  [WEEKLY-REPORT] PPT 생성 실패: {_ppt_err}")
+            except Exception as _wr_err:
+                print(f"  [WEEKLY-REPORT] error: {_wr_err}")
+
         # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
         # 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 또는 도메인 키워드 감지 시 자동 활성화
         _has_column_pattern = bool(re.search(r'[A-Za-z0-9]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+', last_user_query))
