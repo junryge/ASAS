@@ -309,10 +309,22 @@ def register_chat_routes(app):
                         kb_context += f"--- 📄 {r['filename']} (관련도: {r['score']}) ---\n"
                         kb_context += chunk + "\n\n"
                         total_chars += len(chunk)
-                    kb_context += (
-                        "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
-                        "중요: 프로토콜 메시지, raw 데이터, hex/binary는 절대 그대로 복사하지 마세요. 반드시 표(table) 또는 필드별 설명으로 변환하세요.\n"
-                    )
+                    # 검색 vs 내용 요청 구분
+                    _is_search_only = any(kw in _ql for kw in ["검색해", "검색 해", "찾아봐", "찾아 봐", "뭐있", "뭐 있", "목록", "리스트", "파일명", "문서 목록"])
+                    _is_content_request = any(kw in _ql for kw in ["내용", "관련", "알려", "설명", "분석", "요약", "만들어"])
+                    if _is_search_only and not _is_content_request:
+                        kb_context += (
+                            "사용자가 '검색'을 요청했습니다. 파일명 목록과 관련도 점수만 간단히 보여주세요.\n"
+                            "문서 내용을 분석하거나 요약하지 마세요. 파일명 리스트만 출력하세요.\n"
+                            "형식 예시:\n"
+                            "1. 📄 파일명.md (관련도: 75)\n"
+                            "2. 📄 파일명.md (관련도: 73)\n"
+                        )
+                    else:
+                        kb_context += (
+                            "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
+                            "중요: 프로토콜 메시지, raw 데이터, hex/binary는 절대 그대로 복사하지 마세요. 반드시 표(table) 또는 필드별 설명으로 변환하세요.\n"
+                        )
 
                     # messages에 검색 결과를 system 메시지로 추가
                     kb_system_msg = {"role": "system", "content": kb_context}
