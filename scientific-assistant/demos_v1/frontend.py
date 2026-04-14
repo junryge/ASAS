@@ -2103,32 +2103,36 @@ async function send(){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 스킬 구성: 수동 선택 + 파일 기반 자동 + 질문 기반 자동 추천
+  // 스킬 구성: 수동 선택 시 해당 스킬만 사용, 미선택 시 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [...autoLoadedSkills];  // 파일 업로드로 새로 감지된 스킬만
+  let autoLoaded = [];
 
-  // 프리로드 스킬 중 수동/해제 중복 제거
-  const manualSet = new Set(skillsToUse);
-  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !currentDismissed.has(id));
-  skillsToUse = [...skillsToUse, ...autoLoaded];
+  if(selSkills.length === 0){
+    // 수동 선택 없음 → 파일 기반 자동 + 질문 기반 자동 추천
+    autoLoaded = [...autoLoadedSkills];
+    const manualSet = new Set(skillsToUse);
+    autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !currentDismissed.has(id));
+    skillsToUse = [...skillsToUse, ...autoLoaded];
 
-  // 자동 스킬 모드: 질문 분석으로 추가 보충
-  if(autoSkillMode){
-    try{
-      const currentCount = skillsToUse.length;
-      const maxAuto = currentCount === 0 ? 7 : Math.max(0, 10 - currentCount);
-      if(maxAuto > 0){
-        const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:maxAuto,history:history})});
-        const ad = await ar.json();
-        if(ad.skills && ad.skills.length > 0){
-          const usedSet = new Set(skillsToUse);
-          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !currentDismissed.has(id));
-          autoLoaded = [...autoLoaded, ...newAuto];
-          skillsToUse = [...skillsToUse, ...newAuto];
+    // 자동 스킬 모드: 질문 분석으로 추가 보충
+    if(autoSkillMode){
+      try{
+        const currentCount = skillsToUse.length;
+        const maxAuto = currentCount === 0 ? 7 : Math.max(0, 10 - currentCount);
+        if(maxAuto > 0){
+          const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:maxAuto,history:history})});
+          const ad = await ar.json();
+          if(ad.skills && ad.skills.length > 0){
+            const usedSet = new Set(skillsToUse);
+            const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !currentDismissed.has(id));
+            autoLoaded = [...autoLoaded, ...newAuto];
+            skillsToUse = [...skillsToUse, ...newAuto];
+          }
         }
-      }
-    }catch(e){}
+      }catch(e){}
+    }
   }
+  // 수동 1개 선택 → 단일 에이전트, 수동 2개+ → 병렬 에이전트 (자동 추가 없음)
 
   // 첨부파일 표시 + 메시지
   let displayText = text || '';
