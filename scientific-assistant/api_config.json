@@ -26,8 +26,6 @@
   },
 
   "models": {
-    "_comment_hcp": "=== dev.hcp.llm.skhynix.com (6개) ===",
-
     "qwen3-coder-480b": {
       "env_id": "coder-480b",
       "model": "Qwen3-Coder-480B-A35B-Instruct",
@@ -89,8 +87,6 @@
       "cost_tier": "medium"
     },
 
-    "_comment_common": "=== dev.common.llm.skhynix.com (4개) ===",
-
     "qwen3-vl-30b-common": {
       "env_id": "vl-common",
       "model": "Qwen3-VL-30B-A3B-Instruct",
@@ -131,8 +127,6 @@
       "priority": 4,
       "cost_tier": "low"
     },
-
-    "_comment_summary": "=== dev.summary.llm.skhynix.com (1개 - 이것만 사용 가능) ===",
 
     "qwen3-next-80b": {
       "env_id": "summary",
