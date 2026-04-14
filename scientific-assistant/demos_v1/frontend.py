@@ -870,19 +870,13 @@ body.rp-collapsed .chat-box-fixed{right:0}
       <div style="min-width:140px;">
         <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우 (GGUF)</label>
         <select id="mainNCtx" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="16384">16384 (기본)</option><option value="32768">32768 (권장)</option><option value="65536">65536 (대용량)</option><option value="131072">131072 (최대)</option>
+          <option value="4096">4096 (빠름)</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768 (대용량)</option>
         </select>
       </div>
       <div style="min-width:140px;">
         <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">GGUF 응답 상한 (reply cap)</label>
         <select id="mainReplyCap" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
           <option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option>
-        </select>
-      </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">병렬 에이전트 max_tokens</label>
-        <select id="mainParallelTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="2048">2048</option><option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option>
         </select>
       </div>
     </div>

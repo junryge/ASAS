@@ -42,7 +42,7 @@ def _find_mmproj_file(model_path):
     return None
 
 
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
+def load_gguf_model(model_path, n_ctx=4096, n_gpu_layers=99, n_batch=512):
     """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)
     mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
     # 이미 같은 모델이 로드되어 있으면 스킵
