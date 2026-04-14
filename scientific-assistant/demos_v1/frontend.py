@@ -1236,7 +1236,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 <script>
 let envs = {};
 let hasToken = false;
-let selEnvs = ['auto'];  // 배열: ['auto'] 또는 ['gguf-0','gguf-1'] 또는 ['prod','common']
+let selEnvs = ['auto'];  // 배열: ['auto'] 또는 ['gguf-0','gguf-1'] 또는 ['coder-480b','dev']
 let catalog = {};
 let selDomains = [];
 let selSkills = [];
@@ -1628,7 +1628,7 @@ function renderEnvs(){
   const rowVl = document.getElementById('envRowVl');
   const rowGguf = document.getElementById('envRowGguf');
   rowAuto.innerHTML=''; rowHigh.innerHTML=''; rowMid.innerHTML=''; rowLow.innerHTML=''; rowVl.innerHTML=''; rowGguf.innerHTML='';
-  const icons = {'dev':'🧪','prod':'🚀','common':'🌐','vl-large':'👁️','vl-medium':'👁️','vl-fast':'👁️'};
+  const icons = {'dev':'🧪','coder-480b':'🚀','coder-next':'⚡','coder-next-common':'⚡','common':'🌐','summary':'📊','vl-medium':'👁️','vl-fast':'👁️','vl-common':'👁️','vl-common-30b':'👁️','vl-small':'👁️'};
   for(const id of Object.keys(envs)){ if(id.startsWith('gguf-')) icons[id]='💻'; }
   // AUTO 버튼
   const autoBtn = document.createElement('div');
@@ -1639,8 +1639,8 @@ function renderEnvs(){
   rowAuto.appendChild(autoBtn);
   // API / GGUF 분류
   // API 모델 tier 분류
-  const highIds = new Set(['prod','prod-fp8','coder-480b','qwen3-235b']);
-  const lowIds = new Set(['dev-legacy','dev-fp8','qwen35-small']);
+  const highIds = new Set(['coder-480b','summary']);
+  const lowIds = new Set(['common']);
   let hasApi=false, hasGguf=false, hasHigh=false, hasMid=false, hasLow=false, hasVl=false;
   for(const [id, env] of Object.entries(envs)){
     if(id.startsWith('gguf-')){
