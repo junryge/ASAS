@@ -1004,13 +1004,14 @@ def register_api_routes(app):
                 preview_text += f"... ({total_rows - 5}행 더 있음)"
 
             # 저장
-            uploaded_csv_data = {
+            uploaded_csv_data.clear()
+            uploaded_csv_data.update({
                 "filename": file.filename,
                 "headers": headers,
                 "rows": data_rows,
                 "summary": summary,
                 "raw_preview": preview_text,
-            }
+            })
 
             return jsonify({
                 "success": True,
@@ -1211,13 +1212,14 @@ def register_api_routes(app):
             preview_text += f"... ({total_rows - 5}행 더 있음)"
 
         # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
-        uploaded_csv_data = {
+        uploaded_csv_data.clear()
+        uploaded_csv_data.update({
             "filename": file.filename,
             "headers": headers,
             "rows": data_rows,
             "summary": summary,
             "raw_preview": preview_text,
-        }
+        })
 
         zf.close()
 
@@ -1242,7 +1244,8 @@ def register_api_routes(app):
     def api_clear_csv():
         """업로드된 CSV 데이터 삭제"""
         global uploaded_csv_data
-        uploaded_csv_data = {"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""}
+        uploaded_csv_data.clear()
+        uploaded_csv_data.update({"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""})
         return jsonify({"success": True})
 
 
@@ -1596,8 +1599,8 @@ def register_api_routes(app):
         data = request.json
         fname = data.get("filename", "")
 
-        new_files = []
         removed = False
+        new_files = []
         for f in uploaded_files:
             if f["filename"] == fname and not removed:
                 # 파일 삭제
@@ -1608,7 +1611,7 @@ def register_api_routes(app):
                 removed = True
             else:
                 new_files.append(f)
-        uploaded_files = new_files
+        uploaded_files[:] = new_files  # in-place 수정 (routes_chat과 공유 유지)
         return jsonify({"success": removed, "total_files": len(uploaded_files)})
 
 
@@ -1621,7 +1624,7 @@ def register_api_routes(app):
                 os.remove(f["path"])
             except Exception:
                 pass
-        uploaded_files = []
+        uploaded_files.clear()  # in-place 수정 (routes_chat과 공유 유지)
         return jsonify({"success": True})
 
 

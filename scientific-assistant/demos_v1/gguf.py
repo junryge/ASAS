@@ -29,8 +29,22 @@ def find_gguf_files():
     return [{"path": f, "name": os.path.basename(f), "size_gb": round(os.path.getsize(f) / 1e9, 1)} for f in files]
 
 
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
-    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)"""
+def _find_mmproj_file(model_path):
+    """GGUF 모델과 같은 폴더에서 mmproj 파일 자동 탐색"""
+    model_dir = os.path.dirname(model_path)
+    for p in glob.glob(os.path.join(model_dir, "*mmproj*.gguf")):
+        return p
+    # BASE_DIR에서도 탐색
+    for p in glob.glob(os.path.join(BASE_DIR, "*mmproj*.gguf")):
+        return p
+    for p in glob.glob(os.path.join(BASE_DIR, "models", "*mmproj*.gguf")):
+        return p
+    return None
+
+
+def load_gguf_model(model_path, n_ctx=4096, n_gpu_layers=99, n_batch=512):
+    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)
+    mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
     # 이미 같은 모델이 로드되어 있으면 스킵
     if _utils_mod.gguf_loaded_path == model_path and _utils_mod.gguf_model is not None:
         print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)}")
@@ -46,30 +60,67 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
             _utils_mod.gguf_model = None
             _utils_mod.gguf_loaded_path = None
 
-        # Windows: llama.cpp C 라이브러리가 stdout/stderr 핸들을 건드려서
-        # Flask(click/colorama) 콘솔 출력이 깨지는 문제 방지
+        # mmproj 비전 프로젝터 자동 탐색
+        mmproj_path = _find_mmproj_file(model_path)
+
         saved_stdout = sys.stdout
         saved_stderr = sys.stderr
         try:
-            # 일부 환경에서 n_batch를 크게 잡으면 디코드 실패가 증가해 보수적으로 설정
-            try:
-                _utils_mod.gguf_model = Llama(
-                    model_path=model_path,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                    n_batch=n_batch,
-                    verbose=False,
-                )
-            except TypeError:
-                # 구버전 llama-cpp-python 호환
-                _utils_mod.gguf_model = Llama(
-                    model_path=model_path,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                    verbose=False,
-                )
+            base_kwargs = {
+                "model_path": model_path,
+                "n_ctx": n_ctx,
+                "n_gpu_layers": n_gpu_layers,
+                "n_batch": n_batch,
+                "verbose": False,
+            }
+
+            if mmproj_path:
+                # 방법 1: clip_model_path 직접 전달 (llama-cpp-python 0.3+)
+                try:
+                    _utils_mod.gguf_model = Llama(**base_kwargs, clip_model_path=mmproj_path)
+                    print(f"     👁️ 비전 모드 (clip_model_path): {os.path.basename(mmproj_path)}")
+                except (TypeError, Exception) as e1:
+                    # 방법 2: 여러 ChatHandler 시도
+                    _handlers_to_try = []
+                    try:
+                        from llama_cpp.llama_chat_format import Gemma3ChatHandler
+                        _handlers_to_try.append(("Gemma3", Gemma3ChatHandler))
+                    except ImportError:
+                        pass
+                    try:
+                        from llama_cpp.llama_chat_format import Llava16ChatHandler
+                        _handlers_to_try.append(("Llava16", Llava16ChatHandler))
+                    except ImportError:
+                        pass
+                    try:
+                        from llama_cpp.llama_chat_format import Llava15ChatHandler
+                        _handlers_to_try.append(("Llava15", Llava15ChatHandler))
+                    except ImportError:
+                        pass
+
+                    loaded_vision = False
+                    for handler_name, HandlerClass in _handlers_to_try:
+                        try:
+                            chat_handler = HandlerClass(clip_model_path=mmproj_path)
+                            _utils_mod.gguf_model = Llama(**base_kwargs, chat_handler=chat_handler)
+                            print(f"     👁️ 비전 모드 ({handler_name}): {os.path.basename(mmproj_path)}")
+                            loaded_vision = True
+                            break
+                        except Exception:
+                            continue
+
+                    if not loaded_vision:
+                        # 모든 비전 방식 실패 → 텍스트 전용으로 로드
+                        print(f"     ⚠️ 비전 로드 실패, 텍스트 전용으로 로드")
+                        _utils_mod.gguf_model = Llama(**base_kwargs)
+            else:
+                # mmproj 없음 → 텍스트 전용
+                try:
+                    _utils_mod.gguf_model = Llama(**base_kwargs)
+                except TypeError:
+                    del base_kwargs["n_batch"]
+                    _utils_mod.gguf_model = Llama(**base_kwargs)
         finally:
-            # 핸들 복원
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
 

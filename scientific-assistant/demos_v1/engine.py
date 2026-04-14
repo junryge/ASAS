@@ -79,13 +79,14 @@ def _build_agent_system_prompt(skill_ids, skill_contents, n_ctx=16384, csv_data=
 
     # 업로드 파일 포함
     if uploaded_files_data:
-        file_budget = int(n_ctx * 0.1)  # 컨텍스트의 10%
+        file_budget = int(n_ctx * 0.3)  # 컨텍스트의 30%
+        per_file_limit = max(8000, file_budget // max(1, len(uploaded_files_data)))
         file_text = ""
         for uf in uploaded_files_data:
             content = uf.get("content_full", uf.get("content_preview", ""))
-            file_text += f"\n--- 파일: {uf['filename']} ---\n{content[:3000]}\n"
+            file_text += f"\n--- 파일: {uf['filename']} ({uf.get('type','')}, {uf.get('size',0)}바이트) ---\n{content[:per_file_limit]}\n"
         if file_text:
-            parts.append(f"=== 업로드된 파일 ===\n{file_text[:file_budget]}")
+            parts.append(f"=== 업로드된 파일 ({len(uploaded_files_data)}개) ===\n{file_text[:file_budget]}")
 
     return "\n".join(parts)
 

@@ -231,18 +231,20 @@ def register_chat_routes(app):
         requested_output_format = output_format
         is_gguf = env_id.startswith("gguf-") if env_id else False
 
-        # ── API 모델 자동 토큰 결정 (프론트엔드에서 지정 안 했으면) ──
-        _user_specified_tokens = "max_tokens" in (data or {})
-        if not _user_specified_tokens and not is_gguf:
-            # API 모델: context_window 128K → max_tokens를 모델 크기/용도에 맞게 자동 설정
+        # ── 토큰 자동 결정 (API/GGUF 모두) ──
+        if is_gguf:
+            # GGUF: 고정값 (로컬 GPU 최적화)
+            max_tokens = 4096
+            user_n_ctx = user_n_ctx if user_n_ctx > 0 else 4096
+        else:
+            # API: 모델 크기별 자동 설정
             _reg_key = ENV_TO_REGISTRY.get(env_id)
-            _model_ctx = MODEL_REGISTRY.get(_reg_key, {}).get("context_window", 128000) if _reg_key else 128000
             _cost_tier = MODEL_REGISTRY.get(_reg_key, {}).get("cost_tier", "medium") if _reg_key else "medium"
-            if _cost_tier == "high":      # 대형 모델 (397B, 480B, 235B)
+            if _cost_tier == "high":      # 대형 모델 (480B)
                 max_tokens = 16384
-            elif _cost_tier == "medium":  # 중형 모델 (120B, GLM-5)
+            elif _cost_tier == "medium":  # 중형 모델 (GLM-5, Coder-Next)
                 max_tokens = 8192
-            else:                         # 경량 모델 (GLM-4.7, 35B)
+            else:                         # 경량 모델 (gpt-oss-20b)
                 max_tokens = 4096
 
         # 출력형식/스타일 자동 분류 (format=auto 또는 writing_style=auto일 때)
@@ -433,12 +435,8 @@ def register_chat_routes(app):
                 print(f"  [WEEKLY-REPORT] error: {_wr_err}")
 
         # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
-        # 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 또는 도메인 키워드 감지 시 자동 활성화
-        _has_column_pattern = bool(re.search(r'[A-Za-z0-9]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+', last_user_query))
+        # 수동 선택 시에만 활성화 (자동 트리거 제거)
         _ql = last_user_query.lower()
-        _has_knowledge_keyword = any(kw in _ql for kw in KNOWLEDGE_TRIGGERS)
-        if (_has_column_pattern or _has_knowledge_keyword) and "knowledge-search" not in skill_ids:
-            skill_ids = list(skill_ids) + ["knowledge-search"]
         if "knowledge-search" in skill_ids and last_user_query.strip():
             try:
                 _chat_user_id = data.get("user_id", None)
@@ -1171,7 +1169,7 @@ def register_chat_routes(app):
             # 스킬 2개+ & 다른 그룹이면 병렬 (다중 모델 선택 시에만)
             # 단일 GGUF 선택 시 병렬 안 함 (VRAM 부족 방지)
             _parallel_fallback_reason = None
-            if len(loaded) >= 2 and (multi_model_parallel or len(user_envs) >= 2):
+            if False:  # 병렬 제거: 단일 에이전트만 사용
                 _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
 
                 if _use_parallel:
@@ -1190,7 +1188,7 @@ def register_chat_routes(app):
                                 key=lambda x: x[1], reverse=True,
                             )
 
-                        if len(_gguf_paths_by_size) >= 2:
+                        if False:  # 병렬 제거: 단일 에이전트만 사용
                             # 그룹별 모델 할당
                             _assignments = _assign_models_to_groups(_par_groups, _gguf_paths_by_size)
 
@@ -1448,7 +1446,7 @@ def register_chat_routes(app):
         # ===== 회사 API: HTTP 요청 (폴백 체인 지원) =====
 
         # ── API 다중 선택 병렬 ──
-        if multi_model_parallel and has_api and len(user_envs) >= 2 and len(loaded) >= 2:
+        if False:  # 병렬 제거: 단일 에이전트만 사용
             _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
             if _use_parallel:
                 try:
@@ -1594,10 +1592,7 @@ def register_chat_routes(app):
                         pass
 
         # ── API 자동 멀티에이전트 (AUTO 모드에서 스킬 2+개, 2+그룹) ──
-        if (not multi_model_parallel
-            and not env_id.startswith("gguf-")
-            and not env_id.startswith("vl-")
-            and len(loaded) >= 2):
+        if False:  # 병렬 제거: 단일 에이전트만 사용
             _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
             if _use_parallel:
                 try:

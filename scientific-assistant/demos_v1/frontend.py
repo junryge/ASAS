@@ -854,39 +854,47 @@ body.rp-collapsed .chat-box-fixed{right:0}
   </div>
   <!-- 토큰 설정 패널 (프로젝트 타이틀 아래 드롭다운) -->
   <div id="mainTokenPanel" style="display:none;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">에이전트 max_tokens (응답 길이)</label>
-        <select id="mainAgentMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="2048">2048 (짧게)</option><option value="4096">4096 (보통)</option><option value="8192">8192 (길게)</option><option value="16384">16384 (매우 길게)</option>
-        </select>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#6366f1;margin-bottom:6px;">🌐 API 설정</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">API max_tokens (응답 길이)</label>
+            <select id="mainAgentMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="2048">2048 (짧게)</option><option value="4096">4096 (보통)</option><option value="8192">8192 (길게)</option><option value="16384">16384 (매우 길게)</option>
+            </select>
+          </div>
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">CEO 합성 max_tokens (보고서)</label>
+            <select id="mainSynthMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="4096">4096 (짧게)</option><option value="8192">8192 (보통)</option><option value="16384">16384 (길게)</option><option value="32768">32768 (매우 길게)</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">CEO 합성 max_tokens (보고서)</label>
-        <select id="mainSynthMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="4096">4096 (짧게)</option><option value="8192">8192 (보통)</option><option value="16384">16384 (길게)</option><option value="32768">32768 (매우 길게)</option>
-        </select>
-      </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우 (GGUF)</label>
-        <select id="mainNCtx" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="16384">16384 (기본)</option><option value="32768">32768 (권장)</option><option value="65536">65536 (대용량)</option><option value="131072">131072 (최대)</option>
-        </select>
-      </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">GGUF 응답 상한 (reply cap)</label>
-        <select id="mainReplyCap" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option>
-        </select>
-      </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">병렬 에이전트 max_tokens</label>
-        <select id="mainParallelTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="2048">2048</option><option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option>
-        </select>
+      <div style="border-left:1px solid #e2e8f0;padding-left:24px;">
+        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:6px;">💻 GGUF 설정</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우</label>
+            <select id="mainNCtx" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="4096">4096 (빠름)</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768 (대용량)</option>
+            </select>
+          </div>
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">GGUF 응답 상한 (reply cap)</label>
+            <select id="mainReplyCap" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">* 변경 시 서버에 즉시 반영됩니다. n_ctx↑ = 긴 보고서 가능, VRAM 사용↑</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+      <button onclick="saveTokenSettings()" style="padding:6px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">💾 저장 및 적용</button>
+      <span id="tokenSaveStatus" style="font-size:11px;color:#22c55e;display:none;">✅ 저장 완료</span>
+      <span style="font-size:10px;color:#94a3b8;">API: max_tokens↑ = 긴 응답 | GGUF: n_ctx↑ = 긴 대화 가능, VRAM 사용↑</span>
+    </div>
   </div>
   <div class="content">
     <div class="content-inner">
@@ -1109,7 +1117,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     </div>
 
     <div class="rp-section">
-      <div class="rp-section-title">분석 모드 선택</div>
+      <div class="rp-section-title">분석 모드 선택 <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:6px;">🚀 Coder-480B 전용</span></div>
       <div class="rp-action-grid">
         <button class="rp-action-btn" data-mode="explain" onclick="selectRpMode(this)">
           <span class="rp-btn-icon">📖</span>
@@ -1389,7 +1397,8 @@ function applyCombo(combo){
       if(!selSkills.includes(sid)) selSkills.push(sid);
     });
   }
-  // 자동 스킬 선택 OFF
+  // 자동 스킬 선택 OFF + 자동 스킬 비우기
+  autoLoadedSkills = [];
   if(autoSkillMode){
     autoSkillMode = false;
     const toggle = document.getElementById('autoSkillToggle');
@@ -1606,16 +1615,14 @@ function _makeEnvBtn(id, env, icons){
   btn.style.position='relative';
   btn.innerHTML = `${badge}<div class="env-name">${icons[id]||'🔗'} ${env.name}</div><div class="env-model">${env.model}</div>`;
   btn.onclick = ()=>{
-    selEnvs = selEnvs.filter(x=>x!=='auto');
-    const clickType = _envType(id);
-    const curType = selEnvs.length > 0 ? _envType(selEnvs[0]) : clickType;
-    if(curType !== clickType) selEnvs = [];
+    // 단일 선택만 허용 (병렬 제거)
     if(selEnvs.includes(id)){
-      selEnvs = selEnvs.filter(x=>x!==id);
+      selEnvs = ['auto'];
     } else {
-      selEnvs.push(id);
+      selEnvs = [id];
     }
-    if(selEnvs.length===0) selEnvs=['auto'];
+    // 모델 타입에 따라 토큰 자동 설정
+    autoApplyTokenSettings(id);
     renderEnvs(); updateStatus();
   };
   return btn;
@@ -1761,6 +1768,8 @@ function renderSkills(){
           }
           if(selSkills.includes(s.id)) selSkills=selSkills.filter(x=>x!==s.id);
           else selSkills.push(s.id);
+          // 수동 선택 시 자동 스킬 전부 해제
+          if(selSkills.length > 0){ autoLoadedSkills = []; }
           renderSkills();
           updateLoaded();
         };
@@ -1935,7 +1944,6 @@ async function loadMainTokenSettings(){
       mainSynthMaxTokens: 'synth_max_tokens',
       mainNCtx: 'default_n_ctx',
       mainReplyCap: 'gguf_reply_cap',
-      mainParallelTokens: 'parallel_agent_max_tokens',
     };
     for(const [elId, key] of Object.entries(map)){
       const sel = document.getElementById(elId);
@@ -1944,14 +1952,48 @@ async function loadMainTokenSettings(){
   }catch(e){}
 }
 
-async function updateMainTokenSetting(){
+function updateMainTokenSetting(){
+  // 드롭다운 변경 시 UI만 업데이트 (저장 버튼 눌러야 서버 반영)
+  const status = document.getElementById('tokenSaveStatus');
+  if(status){ status.style.display='none'; }
+}
+
+async function saveTokenSettings(){
   const data = {
     agent_max_tokens: parseInt(document.getElementById('mainAgentMaxTokens')?.value || '8192'),
     synth_max_tokens: parseInt(document.getElementById('mainSynthMaxTokens')?.value || '16384'),
-    default_n_ctx: parseInt(document.getElementById('mainNCtx')?.value || '32768'),
-    gguf_reply_cap: parseInt(document.getElementById('mainReplyCap')?.value || '16384'),
-    parallel_agent_max_tokens: parseInt(document.getElementById('mainParallelTokens')?.value || '4096'),
+    default_n_ctx: parseInt(document.getElementById('mainNCtx')?.value || '4096'),
+    gguf_reply_cap: parseInt(document.getElementById('mainReplyCap')?.value || '4096'),
   };
+  try{
+    await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const status = document.getElementById('tokenSaveStatus');
+    if(status){ status.style.display='inline'; setTimeout(()=>{ status.style.display='none'; }, 3000); }
+  }catch(e){ alert('저장 실패: ' + e); }
+}
+
+// 모델 타입에 따라 토큰 자동 설정
+async function autoApplyTokenSettings(envId){
+  const isGguf = envId.startsWith('gguf-');
+  const isAuto = (envId === 'auto');
+  let data;
+  if(isGguf){
+    // GGUF: 빠른 설정 (RTX 3060 12GB 최적화)
+    data = { default_n_ctx: 4096, gguf_reply_cap: 4096 };
+    const nctx = document.getElementById('mainNCtx');
+    const cap = document.getElementById('mainReplyCap');
+    if(nctx) nctx.value = '4096';
+    if(cap) cap.value = '4096';
+  } else if(!isAuto){
+    // API: 기본 설정
+    data = { agent_max_tokens: 8192, synth_max_tokens: 16384 };
+    const agent = document.getElementById('mainAgentMaxTokens');
+    const synth = document.getElementById('mainSynthMaxTokens');
+    if(agent) agent.value = '8192';
+    if(synth) synth.value = '16384';
+  } else {
+    return; // auto는 변경 안 함
+  }
   try{
     await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   }catch(e){}
@@ -1962,7 +2004,7 @@ let autoSkillTimer = null;
 document.addEventListener('DOMContentLoaded', ()=>{
   const inp = document.getElementById('input');
   if(inp) inp.addEventListener('input', ()=>{
-    if(!autoSkillMode) return;
+    if(!autoSkillMode || selSkills.length > 0) return;
     clearTimeout(autoSkillTimer);
     autoSkillTimer = setTimeout(async ()=>{
       const q = inp.value.trim();
@@ -2103,32 +2145,36 @@ async function send(){
     attachedNames = await uploadChatPendingFiles();
   }
 
-  // 스킬 구성: 수동 선택 + 파일 기반 자동 + 질문 기반 자동 추천
+  // 스킬 구성: 수동 선택 시 해당 스킬만 사용, 미선택 시 자동 추천
   let skillsToUse = [...selSkills];
-  let autoLoaded = [...autoLoadedSkills];  // 파일 업로드로 새로 감지된 스킬만
+  let autoLoaded = [];
 
-  // 프리로드 스킬 중 수동/해제 중복 제거
-  const manualSet = new Set(skillsToUse);
-  autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !currentDismissed.has(id));
-  skillsToUse = [...skillsToUse, ...autoLoaded];
+  if(selSkills.length === 0){
+    // 수동 선택 없음 → 파일 기반 자동 + 질문 기반 자동 추천
+    autoLoaded = [...autoLoadedSkills];
+    const manualSet = new Set(skillsToUse);
+    autoLoaded = autoLoaded.filter(id => !manualSet.has(id) && !currentDismissed.has(id));
+    skillsToUse = [...skillsToUse, ...autoLoaded];
 
-  // 자동 스킬 모드: 질문 분석으로 추가 보충
-  if(autoSkillMode){
-    try{
-      const currentCount = skillsToUse.length;
-      const maxAuto = currentCount === 0 ? 7 : Math.max(0, 10 - currentCount);
-      if(maxAuto > 0){
-        const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:maxAuto,history:history})});
-        const ad = await ar.json();
-        if(ad.skills && ad.skills.length > 0){
-          const usedSet = new Set(skillsToUse);
-          const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !currentDismissed.has(id));
-          autoLoaded = [...autoLoaded, ...newAuto];
-          skillsToUse = [...skillsToUse, ...newAuto];
+    // 자동 스킬 모드: 질문 분석으로 추가 보충
+    if(autoSkillMode){
+      try{
+        const currentCount = skillsToUse.length;
+        const maxAuto = currentCount === 0 ? 7 : Math.max(0, 10 - currentCount);
+        if(maxAuto > 0){
+          const ar = await fetch('/api/auto-skills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:text,max_skills:maxAuto,history:history})});
+          const ad = await ar.json();
+          if(ad.skills && ad.skills.length > 0){
+            const usedSet = new Set(skillsToUse);
+            const newAuto = ad.skills.map(s=>s.id).filter(id=>!usedSet.has(id) && !currentDismissed.has(id));
+            autoLoaded = [...autoLoaded, ...newAuto];
+            skillsToUse = [...skillsToUse, ...newAuto];
+          }
         }
-      }
-    }catch(e){}
+      }catch(e){}
+    }
   }
+  // 수동 1개 선택 → 단일 에이전트, 수동 2개+ → 병렬 에이전트 (자동 추가 없음)
 
   // 첨부파일 표시 + 메시지
   let displayText = text || '';
@@ -4338,8 +4384,8 @@ function handleChatFileSelect(files){
   renderFileList();
   document.getElementById('chatFileInput').value = '';
 
-  // 파일 기반 추천 스킬 프리로드 (사이드바 표시 + 전송 시 자동 포함)
-  if(hintSkills.length > 0){
+  // 파일 기반 추천 스킬 프리로드 (수동 선택 없을 때만)
+  if(hintSkills.length > 0 && selSkills.length === 0){
     const unique = [...new Set(hintSkills)].filter(id => !selSkills.includes(id));
     autoLoadedSkills = [...new Set([...autoLoadedSkills, ...unique])];
     renderSkills();
@@ -5035,7 +5081,7 @@ async function runCodeAssistant(){
         headers:{'Content-Type':'application/json'},
         signal: chatAbort.signal,
         body:JSON.stringify({
-          env: selEnvs,
+          env: ['coder-480b'],
           messages: history,
           skills: [...selSkills],
           effort,
