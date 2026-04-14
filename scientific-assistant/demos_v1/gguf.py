@@ -62,40 +62,64 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
 
         # mmproj 비전 프로젝터 자동 탐색
         mmproj_path = _find_mmproj_file(model_path)
-        chat_handler = None
-        if mmproj_path:
-            try:
-                from llama_cpp.llama_chat_format import Llava15ChatHandler
-                chat_handler = Llava15ChatHandler(clip_model_path=mmproj_path)
-                print(f"     👁️ 비전 모드: {os.path.basename(mmproj_path)}")
-            except Exception as vh_err:
-                print(f"     ⚠️ 비전 핸들러 로드 실패 (텍스트 전용): {vh_err}")
-                chat_handler = None
 
         saved_stdout = sys.stdout
         saved_stderr = sys.stderr
         try:
-            try:
-                kwargs = {
-                    "model_path": model_path,
-                    "n_ctx": n_ctx,
-                    "n_gpu_layers": n_gpu_layers,
-                    "n_batch": n_batch,
-                    "verbose": False,
-                }
-                if chat_handler:
-                    kwargs["chat_handler"] = chat_handler
-                _utils_mod.gguf_model = Llama(**kwargs)
-            except TypeError:
-                kwargs = {
-                    "model_path": model_path,
-                    "n_ctx": n_ctx,
-                    "n_gpu_layers": n_gpu_layers,
-                    "verbose": False,
-                }
-                if chat_handler:
-                    kwargs["chat_handler"] = chat_handler
-                _utils_mod.gguf_model = Llama(**kwargs)
+            base_kwargs = {
+                "model_path": model_path,
+                "n_ctx": n_ctx,
+                "n_gpu_layers": n_gpu_layers,
+                "n_batch": n_batch,
+                "verbose": False,
+            }
+
+            if mmproj_path:
+                # 방법 1: clip_model_path 직접 전달 (llama-cpp-python 0.3+)
+                try:
+                    _utils_mod.gguf_model = Llama(**base_kwargs, clip_model_path=mmproj_path)
+                    print(f"     👁️ 비전 모드 (clip_model_path): {os.path.basename(mmproj_path)}")
+                except (TypeError, Exception) as e1:
+                    # 방법 2: 여러 ChatHandler 시도
+                    _handlers_to_try = []
+                    try:
+                        from llama_cpp.llama_chat_format import Gemma3ChatHandler
+                        _handlers_to_try.append(("Gemma3", Gemma3ChatHandler))
+                    except ImportError:
+                        pass
+                    try:
+                        from llama_cpp.llama_chat_format import Llava16ChatHandler
+                        _handlers_to_try.append(("Llava16", Llava16ChatHandler))
+                    except ImportError:
+                        pass
+                    try:
+                        from llama_cpp.llama_chat_format import Llava15ChatHandler
+                        _handlers_to_try.append(("Llava15", Llava15ChatHandler))
+                    except ImportError:
+                        pass
+
+                    loaded_vision = False
+                    for handler_name, HandlerClass in _handlers_to_try:
+                        try:
+                            chat_handler = HandlerClass(clip_model_path=mmproj_path)
+                            _utils_mod.gguf_model = Llama(**base_kwargs, chat_handler=chat_handler)
+                            print(f"     👁️ 비전 모드 ({handler_name}): {os.path.basename(mmproj_path)}")
+                            loaded_vision = True
+                            break
+                        except Exception:
+                            continue
+
+                    if not loaded_vision:
+                        # 모든 비전 방식 실패 → 텍스트 전용으로 로드
+                        print(f"     ⚠️ 비전 로드 실패, 텍스트 전용으로 로드")
+                        _utils_mod.gguf_model = Llama(**base_kwargs)
+            else:
+                # mmproj 없음 → 텍스트 전용
+                try:
+                    _utils_mod.gguf_model = Llama(**base_kwargs)
+                except TypeError:
+                    del base_kwargs["n_batch"]
+                    _utils_mod.gguf_model = Llama(**base_kwargs)
         finally:
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
