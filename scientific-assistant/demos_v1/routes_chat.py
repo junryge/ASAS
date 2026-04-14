@@ -1171,7 +1171,7 @@ def register_chat_routes(app):
             # 스킬 2개+ & 다른 그룹이면 병렬 (다중 모델 선택 시에만)
             # 단일 GGUF 선택 시 병렬 안 함 (VRAM 부족 방지)
             _parallel_fallback_reason = None
-            if len(loaded) >= 2 and (multi_model_parallel or len(user_envs) >= 2):
+            if False:  # 병렬 제거: 단일 에이전트만 사용
                 _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
 
                 if _use_parallel:
@@ -1190,7 +1190,7 @@ def register_chat_routes(app):
                                 key=lambda x: x[1], reverse=True,
                             )
 
-                        if len(_gguf_paths_by_size) >= 2:
+                        if False:  # 병렬 제거: 단일 에이전트만 사용
                             # 그룹별 모델 할당
                             _assignments = _assign_models_to_groups(_par_groups, _gguf_paths_by_size)
 
@@ -1448,7 +1448,7 @@ def register_chat_routes(app):
         # ===== 회사 API: HTTP 요청 (폴백 체인 지원) =====
 
         # ── API 다중 선택 병렬 ──
-        if multi_model_parallel and has_api and len(user_envs) >= 2 and len(loaded) >= 2:
+        if False:  # 병렬 제거: 단일 에이전트만 사용
             _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
             if _use_parallel:
                 try:
@@ -1594,10 +1594,7 @@ def register_chat_routes(app):
                         pass
 
         # ── API 자동 멀티에이전트 (AUTO 모드에서 스킬 2+개, 2+그룹) ──
-        if (not multi_model_parallel
-            and not env_id.startswith("gguf-")
-            and not env_id.startswith("vl-")
-            and len(loaded) >= 2):
+        if False:  # 병렬 제거: 단일 에이전트만 사용
             _pre_skills, _par_groups, _use_parallel = group_skills_for_parallel(loaded)
             if _use_parallel:
                 try:
