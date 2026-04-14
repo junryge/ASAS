@@ -5,10 +5,9 @@
   "token_settings": {
     "agent_max_tokens": 8192,
     "synth_max_tokens": 16384,
-    "default_n_ctx": 32768,
-    "gguf_reply_cap": 16384,
-    "gguf_ctx_reserve": 1536,
-    "parallel_agent_max_tokens": 4096
+    "default_n_ctx": 4096,
+    "gguf_reply_cap": 4096,
+    "gguf_ctx_reserve": 1536
   },
 
   "gguf": {

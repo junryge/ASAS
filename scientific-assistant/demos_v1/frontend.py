@@ -1938,7 +1938,6 @@ async function loadMainTokenSettings(){
       mainSynthMaxTokens: 'synth_max_tokens',
       mainNCtx: 'default_n_ctx',
       mainReplyCap: 'gguf_reply_cap',
-      mainParallelTokens: 'parallel_agent_max_tokens',
     };
     for(const [elId, key] of Object.entries(map)){
       const sel = document.getElementById(elId);
@@ -1951,9 +1950,8 @@ async function updateMainTokenSetting(){
   const data = {
     agent_max_tokens: parseInt(document.getElementById('mainAgentMaxTokens')?.value || '8192'),
     synth_max_tokens: parseInt(document.getElementById('mainSynthMaxTokens')?.value || '16384'),
-    default_n_ctx: parseInt(document.getElementById('mainNCtx')?.value || '32768'),
-    gguf_reply_cap: parseInt(document.getElementById('mainReplyCap')?.value || '16384'),
-    parallel_agent_max_tokens: parseInt(document.getElementById('mainParallelTokens')?.value || '4096'),
+    default_n_ctx: parseInt(document.getElementById('mainNCtx')?.value || '4096'),
+    gguf_reply_cap: parseInt(document.getElementById('mainReplyCap')?.value || '4096'),
   };
   try{
     await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
