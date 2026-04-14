@@ -138,55 +138,43 @@ ANALYSIS_LIFECYCLE = """
 
 
 def _detect_repetition(text, min_chunk=20, max_repeats=3):
-    """소형 GGUF 모델의 반복 루프 감지 및 절단.
+    """반복 패턴 감지 → 반복 부분만 제거하고 나머지 유지.
 
     3단계 감지:
-    1) 구조적 반복: </think>, 코드블록 등 같은 마커가 여러 번 등장
-    2) 줄 단위 반복: 같은 줄이 N번 이상 반복
-    3) 청크 반복: 같은 문자열이 N번 이상 연속
+    1) 줄 단위 반복: 같은 줄이 5번 이상 → 중복 줄만 제거
+    2) 청크 반복: 같은 문자열이 N번 이상 연속 → 연속 중복만 제거
+    3) 구조적 반복: </think> 등 마커 과다 → 중복 마커만 제거
     """
     if not text or len(text) < 200:
         return text, False
 
-    # 1) 구조적 반복: 특정 마커가 과도하게 등장
-    structural_markers = ["</think>", "```python", "데이터 분석", "import pandas",
-                          ".pivot(", ".compute()", ".rename(columns"]
-    for marker in structural_markers:
-        count = text.count(marker)
-        if count >= 3:
-            # 두 번째 등장까지만 유지
-            first = text.find(marker)
-            second = text.find(marker, first + len(marker))
-            if second > 0:
-                # 두 번째 마커 포함한 적당한 끝점 찾기
-                end = text.find("\n", second + len(marker))
-                if end < 0:
-                    end = second + len(marker)
-                clean = text[:end].rstrip()
-                clean += f"\n\n⚠️ (반복 패턴 감지: '{marker}' {count}회 → 출력 절단)"
-                return clean, True
+    was_cleaned = False
 
-    # 2) 줄 단위 반복: 같은 줄이 5번 이상
+    # 1) 줄 단위 반복: 같은 줄이 5번 이상 → 2번만 남기고 나머지 제거
     lines = text.split("\n")
     if len(lines) > 10:
         line_counts = {}
         for line in lines:
             stripped = line.strip()
-            if len(stripped) > 15:  # 짧은 줄은 무시
+            if len(stripped) > 15:
                 line_counts[stripped] = line_counts.get(stripped, 0) + 1
-        for line_text, cnt in line_counts.items():
-            if cnt >= 5:
-                # 첫 번째 등장 + 약간까지만 유지
-                try:
-                    first_idx = next(i for i, l in enumerate(lines) if l.strip() == line_text)
-                except StopIteration:
-                    continue
-                keep_to = min(first_idx + 10, len(lines))
-                clean = "\n".join(lines[:keep_to]).rstrip()
-                clean += f"\n\n⚠️ (줄 반복 감지: {cnt}회 → 출력 절단)"
-                return clean, True
+        repeated = {lt for lt, cnt in line_counts.items() if cnt >= 5}
+        if repeated:
+            new_lines = []
+            seen_counts = {}
+            for line in lines:
+                stripped = line.strip()
+                if stripped in repeated:
+                    seen_counts[stripped] = seen_counts.get(stripped, 0) + 1
+                    if seen_counts[stripped] <= 2:
+                        new_lines.append(line)
+                    # 3회 이상은 스킵
+                else:
+                    new_lines.append(line)
+            text = "\n".join(new_lines)
+            was_cleaned = True
 
-    # 3) 청크 반복: 연속된 동일 문자열
+    # 2) 청크 반복: 연속된 동일 문자열 → 1회만 남기고 나머지 제거
     for chunk_size in range(min_chunk, min(200, len(text) // max(max_repeats, 1)), 5):
         for start in range(0, min(len(text) - chunk_size * max_repeats, 2000)):
             chunk = text[start:start + chunk_size]
@@ -198,11 +186,15 @@ def _detect_repetition(text, min_chunk=20, max_repeats=3):
                 count += 1
                 pos += chunk_size
             if count >= max_repeats:
-                clean = text[:start + chunk_size].rstrip()
-                clean += "\n\n⚠️ (반복 패턴 감지 → 출력 절단)"
-                return clean, True
+                # 1회만 남기고 연속 중복 제거, 뒤 내용 유지
+                text = text[:start + chunk_size] + text[pos:]
+                was_cleaned = True
 
-    return text, False
+    # 3) 구조적 반복: </think> 태그 제거
+    text = re.sub(r'<think>[\s\S]*?</think>\s*', '', text)
+    text = re.sub(r'</?think>', '', text)
+
+    return text.strip(), was_cleaned
 
 
 
