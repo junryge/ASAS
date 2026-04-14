@@ -190,9 +190,12 @@ def _detect_repetition(text, min_chunk=20, max_repeats=3):
                 text = text[:start + chunk_size] + text[pos:]
                 was_cleaned = True
 
-    # 3) 구조적 반복: </think> 태그 제거
+    # 3) Thinking 태그 제거 (<think>, <|channel>thought 등)
     text = re.sub(r'<think>[\s\S]*?</think>\s*', '', text)
     text = re.sub(r'</?think>', '', text)
+    text = re.sub(r'<\|channel\>thought[\s\S]*?<channel\|\>\s*', '', text)
+    text = re.sub(r'<\|channel\>thought[\s\S]*?<\|/?channel\>?\s*', '', text)
+    text = re.sub(r'Thinking Process:[\s\S]*?(?=##\s|$)', '', text, count=1)
 
     return text.strip(), was_cleaned
 
