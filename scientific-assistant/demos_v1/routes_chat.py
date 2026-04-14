@@ -434,6 +434,7 @@ def register_chat_routes(app):
 
         # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
         # 수동 선택 시에만 활성화 (자동 트리거 제거)
+        _ql = last_user_query.lower()
         if "knowledge-search" in skill_ids and last_user_query.strip():
             try:
                 _chat_user_id = data.get("user_id", None)
