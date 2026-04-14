@@ -103,30 +103,30 @@ def classify_and_route(query, history, uploaded_files_list):
     if has_vision_kw and not has_images:
         return "vl-medium", "비전 키워드 감지 → VL-72B (이미지 업로드 권장)"
 
-    # 2순위: PPT 생성 → 중형 모델
+    # 2순위: PPT 생성 → GLM-5
     if any(kw in q for kw in PPT_SIGNALS):
-        return "coder-next", "PPT 생성 → Coder-Next"
+        return "dev", "PPT 생성 → GLM-5"
 
-    # 3순위: 복잡한 분석/코드/데이터 → 대형 모델
+    # 3순위: 복잡한 분석/코드/데이터 → GLM-5
     complex_count = sum(1 for kw in COMPLEX_SIGNALS if kw in q)
     if complex_count >= 2 or (complex_count >= 1 and len(q) > 200):
-        return "coder-480b", "복잡한 분석 → Coder-480B"
+        return "dev", "복잡한 분석 → GLM-5"
 
     # 4순위: 데이터 분석 (CSV 로드 + 분석 키워드)
     if has_csv or any(kw in q for kw in DATA_SIGNALS):
-        return "coder-480b", "데이터 분석 → Coder-480B"
+        return "dev", "데이터 분석 → GLM-5"
 
     # 5순위: 코드 작성 요청 (중간~긴 쿼리)
     code_kw = ["코드", "함수", "클래스", "구현", "작성", "코딩", "스크립트", "프로그래밍"]
     if any(kw in q for kw in code_kw) and len(q) > 80:
-        return "coder-480b", "코드 작성 → Coder-480B"
+        return "dev", "코드 작성 → GLM-5"
 
-    # 6순위: 간단한 Q&A → 빠른 모델
+    # 6순위: 간단한 Q&A → 가장 빠른 모델
     if len(q) <= SIMPLE_MAX_LEN:
-        return "dev", "간단 Q&A → GLM-5"
+        return "common", "간단 Q&A → gpt-oss-20b"
 
-    # 기본값: 중형 모델
-    return "coder-next", "일반 요청 → Coder-Next"
+    # 기본값: GLM-5
+    return "dev", "일반 요청 → GLM-5"
 
 
 def classify_format_and_style(query, history, uploaded_files_list, skill_ids):

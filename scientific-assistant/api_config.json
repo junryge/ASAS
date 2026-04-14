@@ -106,16 +106,6 @@
       "priority": 2,
       "cost_tier": "medium"
     },
-    "qwen3-coder-next-common": {
-      "env_id": "coder-next-common",
-      "model": "Qwen3-Coder-Next",
-      "url": "http://dev.common.llm.skhynix.com/v1/chat/completions",
-      "name": "Coder-Next (Common)",
-      "capabilities": ["text", "code", "medium"],
-      "context_window": 128000,
-      "priority": 3,
-      "cost_tier": "medium"
-    },
     "qwen3-vl-8b": {
       "env_id": "vl-small",
       "model": "Qwen3-VL-8B-Instruct",
@@ -141,21 +131,20 @@
 
   "api_model_tiers": {
     "large":  ["qwen3-coder-480b", "qwen3-next-80b"],
-    "medium": ["qwen3-coder-next", "glm-5", "qwen3-coder-next-common"],
+    "medium": ["qwen3-coder-next", "glm-5"],
     "small":  ["gpt-oss-20b"]
   },
 
   "fallback_chains": {
-    "qwen3-coder-480b":       ["qwen3-next-80b", "qwen3-coder-next", "glm-5", "gpt-oss-20b", "qwen3-coder-next-common"],
+    "qwen3-coder-480b":       ["qwen3-next-80b", "qwen3-coder-next", "glm-5", "gpt-oss-20b"],
     "qwen3-next-80b":         ["qwen3-coder-480b", "qwen3-coder-next", "glm-5", "gpt-oss-20b"],
-    "qwen3-coder-next":       ["qwen3-coder-480b", "qwen3-next-80b", "glm-5", "gpt-oss-20b", "qwen3-coder-next-common"],
+    "qwen3-coder-next":       ["qwen3-coder-480b", "qwen3-next-80b", "glm-5", "gpt-oss-20b"],
     "glm-5":                  ["qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b", "gpt-oss-20b"],
     "gpt-oss-20b":            ["glm-5", "qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b"],
-    "qwen2.5-vl-72b":         ["qwen3-vl-30b", "qwen3-vl-30b-instruct", "qwen3-vl-30b-common", "qwen3-vl-8b", "qwen3-coder-480b", "glm-5"],
-    "qwen3-vl-30b":           ["qwen2.5-vl-72b", "qwen3-vl-30b-instruct", "qwen3-vl-30b-common", "qwen3-vl-8b", "glm-5", "gpt-oss-20b"],
+    "qwen2.5-vl-72b":         ["qwen3-vl-30b", "qwen3-vl-30b-instruct", "qwen3-vl-30b-common", "qwen3-vl-8b", "glm-5"],
+    "qwen3-vl-30b":           ["qwen2.5-vl-72b", "qwen3-vl-30b-instruct", "qwen3-vl-30b-common", "qwen3-vl-8b", "glm-5"],
     "qwen3-vl-30b-instruct":  ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3-vl-30b-common", "qwen3-vl-8b", "glm-5"],
     "qwen3-vl-30b-common":    ["qwen3-vl-30b", "qwen2.5-vl-72b", "qwen3-vl-30b-instruct", "qwen3-vl-8b", "glm-5"],
-    "qwen3-vl-8b":            ["qwen3-vl-30b", "qwen3-vl-30b-common", "qwen2.5-vl-72b", "glm-5"],
-    "qwen3-coder-next-common":["qwen3-coder-next", "qwen3-coder-480b", "glm-5", "gpt-oss-20b"]
+    "qwen3-vl-8b":            ["qwen3-vl-30b", "qwen3-vl-30b-common", "qwen2.5-vl-72b", "glm-5"]
   }
 }

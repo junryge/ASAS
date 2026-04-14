@@ -1117,7 +1117,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     </div>
 
     <div class="rp-section">
-      <div class="rp-section-title">분석 모드 선택</div>
+      <div class="rp-section-title">분석 모드 선택 <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:6px;">🚀 Coder-480B 전용</span></div>
       <div class="rp-action-grid">
         <button class="rp-action-btn" data-mode="explain" onclick="selectRpMode(this)">
           <span class="rp-btn-icon">📖</span>
@@ -5081,7 +5081,7 @@ async function runCodeAssistant(){
         headers:{'Content-Type':'application/json'},
         signal: chatAbort.signal,
         body:JSON.stringify({
-          env: selEnvs,
+          env: ['coder-480b'],
           messages: history,
           skills: [...selSkills],
           effort,

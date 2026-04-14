@@ -3428,20 +3428,13 @@
         }
       }
 
-      // GGUF → 순차 실행 (1개씩), API → 병렬 실행
-      let results;
-      if (isGgufMode) {
-        updateProgress('② 에이전트 순차 실행 중 (GGUF)...');
-        results = [];
-        for (const ak of agentKeys) {
-          agentStages[ak] = 'working';
-          updateProgress(`② ${agentBaseData[ak]?.name||ak} 작업 중 (GGUF 순차)...`);
-          const r = await runAgent(ak);
-          results.push(r);
-        }
-      } else {
-        updateProgress('② 에이전트 병렬 실행 중 (API)...');
-        results = await Promise.all(agentKeys.map(ak => runAgent(ak)));
+      // 단일 에이전트 순차 실행 (병렬 제거)
+      let results = [];
+      for (const ak of agentKeys) {
+        agentStages[ak] = 'working';
+        updateProgress(`② ${agentBaseData[ak]?.name||ak} 작업 중...`);
+        const r = await runAgent(ak);
+        results.push(r);
       }
 
       // 디버그: 에러 상세 표시
