@@ -890,7 +890,11 @@ body.rp-collapsed .chat-box-fixed{right:0}
         </div>
       </div>
     </div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">* 변경 시 서버에 즉시 반영됩니다. API: max_tokens↑ = 긴 응답 | GGUF: n_ctx↑ = 긴 대화 가능, VRAM 사용↑</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+      <button onclick="saveTokenSettings()" style="padding:6px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">💾 저장 및 적용</button>
+      <span id="tokenSaveStatus" style="font-size:11px;color:#22c55e;display:none;">✅ 저장 완료</span>
+      <span style="font-size:10px;color:#94a3b8;">API: max_tokens↑ = 긴 응답 | GGUF: n_ctx↑ = 긴 대화 가능, VRAM 사용↑</span>
+    </div>
   </div>
   <div class="content">
     <div class="content-inner">
@@ -1946,7 +1950,13 @@ async function loadMainTokenSettings(){
   }catch(e){}
 }
 
-async function updateMainTokenSetting(){
+function updateMainTokenSetting(){
+  // 드롭다운 변경 시 UI만 업데이트 (저장 버튼 눌러야 서버 반영)
+  const status = document.getElementById('tokenSaveStatus');
+  if(status){ status.style.display='none'; }
+}
+
+async function saveTokenSettings(){
   const data = {
     agent_max_tokens: parseInt(document.getElementById('mainAgentMaxTokens')?.value || '8192'),
     synth_max_tokens: parseInt(document.getElementById('mainSynthMaxTokens')?.value || '16384'),
@@ -1955,7 +1965,9 @@ async function updateMainTokenSetting(){
   };
   try{
     await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  }catch(e){}
+    const status = document.getElementById('tokenSaveStatus');
+    if(status){ status.style.display='inline'; setTimeout(()=>{ status.style.display='none'; }, 3000); }
+  }catch(e){ alert('저장 실패: ' + e); }
 }
 
 // 입력 중 자동 스킬 미리보기 (디바운스)
