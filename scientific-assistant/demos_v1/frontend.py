@@ -854,33 +854,43 @@ body.rp-collapsed .chat-box-fixed{right:0}
   </div>
   <!-- 토큰 설정 패널 (프로젝트 타이틀 아래 드롭다운) -->
   <div id="mainTokenPanel" style="display:none;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">에이전트 max_tokens (응답 길이)</label>
-        <select id="mainAgentMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="2048">2048 (짧게)</option><option value="4096">4096 (보통)</option><option value="8192">8192 (길게)</option><option value="16384">16384 (매우 길게)</option>
-        </select>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#6366f1;margin-bottom:6px;">🌐 API 설정</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">API max_tokens (응답 길이)</label>
+            <select id="mainAgentMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="2048">2048 (짧게)</option><option value="4096">4096 (보통)</option><option value="8192">8192 (길게)</option><option value="16384">16384 (매우 길게)</option>
+            </select>
+          </div>
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">CEO 합성 max_tokens (보고서)</label>
+            <select id="mainSynthMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="4096">4096 (짧게)</option><option value="8192">8192 (보통)</option><option value="16384">16384 (길게)</option><option value="32768">32768 (매우 길게)</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">CEO 합성 max_tokens (보고서)</label>
-        <select id="mainSynthMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="4096">4096 (짧게)</option><option value="8192">8192 (보통)</option><option value="16384">16384 (길게)</option><option value="32768">32768 (매우 길게)</option>
-        </select>
-      </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우 (GGUF)</label>
-        <select id="mainNCtx" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="4096">4096 (빠름)</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768 (대용량)</option>
-        </select>
-      </div>
-      <div style="min-width:140px;">
-        <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">GGUF 응답 상한 (reply cap)</label>
-        <select id="mainReplyCap" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-          <option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option>
-        </select>
+      <div style="border-left:1px solid #e2e8f0;padding-left:24px;">
+        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:6px;">💻 GGUF 설정</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우</label>
+            <select id="mainNCtx" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="4096">4096 (빠름)</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768 (대용량)</option>
+            </select>
+          </div>
+          <div style="min-width:140px;">
+            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">GGUF 응답 상한 (reply cap)</label>
+            <select id="mainReplyCap" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
+              <option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">* 변경 시 서버에 즉시 반영됩니다. n_ctx↑ = 긴 보고서 가능, VRAM 사용↑</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">* 변경 시 서버에 즉시 반영됩니다. API: max_tokens↑ = 긴 응답 | GGUF: n_ctx↑ = 긴 대화 가능, VRAM 사용↑</div>
   </div>
   <div class="content">
     <div class="content-inner">
