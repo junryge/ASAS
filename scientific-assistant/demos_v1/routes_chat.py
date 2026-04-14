@@ -433,12 +433,7 @@ def register_chat_routes(app):
                 print(f"  [WEEKLY-REPORT] error: {_wr_err}")
 
         # ── knowledge-search 스킬: 도메인 지식 검색 후 LLM에게 전달 ──
-        # 컬럼명 패턴(M14.QUE.OHT.OHTUTIL 등) 또는 도메인 키워드 감지 시 자동 활성화
-        _has_column_pattern = bool(re.search(r'[A-Za-z0-9]+\.[A-Za-z0-9_]+\.[A-Za-z0-9_]+', last_user_query))
-        _ql = last_user_query.lower()
-        _has_knowledge_keyword = any(kw in _ql for kw in KNOWLEDGE_TRIGGERS)
-        if (_has_column_pattern or _has_knowledge_keyword) and "knowledge-search" not in skill_ids:
-            skill_ids = list(skill_ids) + ["knowledge-search"]
+        # 수동 선택 시에만 활성화 (자동 트리거 제거)
         if "knowledge-search" in skill_ids and last_user_query.strip():
             try:
                 _chat_user_id = data.get("user_id", None)
