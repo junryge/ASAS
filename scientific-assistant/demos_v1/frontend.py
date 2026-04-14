@@ -1389,7 +1389,8 @@ function applyCombo(combo){
       if(!selSkills.includes(sid)) selSkills.push(sid);
     });
   }
-  // 자동 스킬 선택 OFF
+  // 자동 스킬 선택 OFF + 자동 스킬 비우기
+  autoLoadedSkills = [];
   if(autoSkillMode){
     autoSkillMode = false;
     const toggle = document.getElementById('autoSkillToggle');
@@ -1761,6 +1762,8 @@ function renderSkills(){
           }
           if(selSkills.includes(s.id)) selSkills=selSkills.filter(x=>x!==s.id);
           else selSkills.push(s.id);
+          // 수동 선택 시 자동 스킬 전부 해제
+          if(selSkills.length > 0){ autoLoadedSkills = []; }
           renderSkills();
           updateLoaded();
         };
@@ -1962,7 +1965,7 @@ let autoSkillTimer = null;
 document.addEventListener('DOMContentLoaded', ()=>{
   const inp = document.getElementById('input');
   if(inp) inp.addEventListener('input', ()=>{
-    if(!autoSkillMode) return;
+    if(!autoSkillMode || selSkills.length > 0) return;
     clearTimeout(autoSkillTimer);
     autoSkillTimer = setTimeout(async ()=>{
       const q = inp.value.trim();
@@ -4342,8 +4345,8 @@ function handleChatFileSelect(files){
   renderFileList();
   document.getElementById('chatFileInput').value = '';
 
-  // 파일 기반 추천 스킬 프리로드 (사이드바 표시 + 전송 시 자동 포함)
-  if(hintSkills.length > 0){
+  // 파일 기반 추천 스킬 프리로드 (수동 선택 없을 때만)
+  if(hintSkills.length > 0 && selSkills.length === 0){
     const unique = [...new Set(hintSkills)].filter(id => !selSkills.includes(id));
     autoLoadedSkills = [...new Set([...autoLoadedSkills, ...unique])];
     renderSkills();
