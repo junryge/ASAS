@@ -1621,6 +1621,8 @@ function _makeEnvBtn(id, env, icons){
     } else {
       selEnvs = [id];
     }
+    // 모델 타입에 따라 토큰 자동 설정
+    autoApplyTokenSettings(id);
     renderEnvs(); updateStatus();
   };
   return btn;
@@ -1968,6 +1970,33 @@ async function saveTokenSettings(){
     const status = document.getElementById('tokenSaveStatus');
     if(status){ status.style.display='inline'; setTimeout(()=>{ status.style.display='none'; }, 3000); }
   }catch(e){ alert('저장 실패: ' + e); }
+}
+
+// 모델 타입에 따라 토큰 자동 설정
+async function autoApplyTokenSettings(envId){
+  const isGguf = envId.startsWith('gguf-');
+  const isAuto = (envId === 'auto');
+  let data;
+  if(isGguf){
+    // GGUF: 빠른 설정 (RTX 3060 12GB 최적화)
+    data = { default_n_ctx: 4096, gguf_reply_cap: 4096 };
+    const nctx = document.getElementById('mainNCtx');
+    const cap = document.getElementById('mainReplyCap');
+    if(nctx) nctx.value = '4096';
+    if(cap) cap.value = '4096';
+  } else if(!isAuto){
+    // API: 기본 설정
+    data = { agent_max_tokens: 8192, synth_max_tokens: 16384 };
+    const agent = document.getElementById('mainAgentMaxTokens');
+    const synth = document.getElementById('mainSynthMaxTokens');
+    if(agent) agent.value = '8192';
+    if(synth) synth.value = '16384';
+  } else {
+    return; // auto는 변경 안 함
+  }
+  try{
+    await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  }catch(e){}
 }
 
 // 입력 중 자동 스킬 미리보기 (디바운스)
