@@ -29,8 +29,22 @@ def find_gguf_files():
     return [{"path": f, "name": os.path.basename(f), "size_gb": round(os.path.getsize(f) / 1e9, 1)} for f in files]
 
 
+def _find_mmproj_file(model_path):
+    """GGUF 모델과 같은 폴더에서 mmproj 파일 자동 탐색"""
+    model_dir = os.path.dirname(model_path)
+    for p in glob.glob(os.path.join(model_dir, "*mmproj*.gguf")):
+        return p
+    # BASE_DIR에서도 탐색
+    for p in glob.glob(os.path.join(BASE_DIR, "*mmproj*.gguf")):
+        return p
+    for p in glob.glob(os.path.join(BASE_DIR, "models", "*mmproj*.gguf")):
+        return p
+    return None
+
+
 def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
-    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)"""
+    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)
+    mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
     # 이미 같은 모델이 로드되어 있으면 스킵
     if _utils_mod.gguf_loaded_path == model_path and _utils_mod.gguf_model is not None:
         print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)}")
@@ -46,30 +60,43 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=128):
             _utils_mod.gguf_model = None
             _utils_mod.gguf_loaded_path = None
 
-        # Windows: llama.cpp C 라이브러리가 stdout/stderr 핸들을 건드려서
-        # Flask(click/colorama) 콘솔 출력이 깨지는 문제 방지
+        # mmproj 비전 프로젝터 자동 탐색
+        mmproj_path = _find_mmproj_file(model_path)
+        chat_handler = None
+        if mmproj_path:
+            try:
+                from llama_cpp.llama_chat_format import Llava15ChatHandler
+                chat_handler = Llava15ChatHandler(clip_model_path=mmproj_path)
+                print(f"     👁️ 비전 모드: {os.path.basename(mmproj_path)}")
+            except Exception as vh_err:
+                print(f"     ⚠️ 비전 핸들러 로드 실패 (텍스트 전용): {vh_err}")
+                chat_handler = None
+
         saved_stdout = sys.stdout
         saved_stderr = sys.stderr
         try:
-            # 일부 환경에서 n_batch를 크게 잡으면 디코드 실패가 증가해 보수적으로 설정
             try:
-                _utils_mod.gguf_model = Llama(
-                    model_path=model_path,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                    n_batch=n_batch,
-                    verbose=False,
-                )
+                kwargs = {
+                    "model_path": model_path,
+                    "n_ctx": n_ctx,
+                    "n_gpu_layers": n_gpu_layers,
+                    "n_batch": n_batch,
+                    "verbose": False,
+                }
+                if chat_handler:
+                    kwargs["chat_handler"] = chat_handler
+                _utils_mod.gguf_model = Llama(**kwargs)
             except TypeError:
-                # 구버전 llama-cpp-python 호환
-                _utils_mod.gguf_model = Llama(
-                    model_path=model_path,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                    verbose=False,
-                )
+                kwargs = {
+                    "model_path": model_path,
+                    "n_ctx": n_ctx,
+                    "n_gpu_layers": n_gpu_layers,
+                    "verbose": False,
+                }
+                if chat_handler:
+                    kwargs["chat_handler"] = chat_handler
+                _utils_mod.gguf_model = Llama(**kwargs)
         finally:
-            # 핸들 복원
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
 
