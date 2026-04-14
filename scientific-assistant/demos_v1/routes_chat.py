@@ -231,18 +231,20 @@ def register_chat_routes(app):
         requested_output_format = output_format
         is_gguf = env_id.startswith("gguf-") if env_id else False
 
-        # ── API 모델 자동 토큰 결정 (프론트엔드에서 지정 안 했으면) ──
-        _user_specified_tokens = "max_tokens" in (data or {})
-        if not _user_specified_tokens and not is_gguf:
-            # API 모델: context_window 128K → max_tokens를 모델 크기/용도에 맞게 자동 설정
+        # ── 토큰 자동 결정 (API/GGUF 모두) ──
+        if is_gguf:
+            # GGUF: 고정값 (로컬 GPU 최적화)
+            max_tokens = 4096
+            user_n_ctx = user_n_ctx if user_n_ctx > 0 else 4096
+        else:
+            # API: 모델 크기별 자동 설정
             _reg_key = ENV_TO_REGISTRY.get(env_id)
-            _model_ctx = MODEL_REGISTRY.get(_reg_key, {}).get("context_window", 128000) if _reg_key else 128000
             _cost_tier = MODEL_REGISTRY.get(_reg_key, {}).get("cost_tier", "medium") if _reg_key else "medium"
-            if _cost_tier == "high":      # 대형 모델 (397B, 480B, 235B)
+            if _cost_tier == "high":      # 대형 모델 (480B)
                 max_tokens = 16384
-            elif _cost_tier == "medium":  # 중형 모델 (120B, GLM-5)
+            elif _cost_tier == "medium":  # 중형 모델 (GLM-5, Coder-Next)
                 max_tokens = 8192
-            else:                         # 경량 모델 (GLM-4.7, 35B)
+            else:                         # 경량 모델 (gpt-oss-20b)
                 max_tokens = 4096
 
         # 출력형식/스타일 자동 분류 (format=auto 또는 writing_style=auto일 때)
