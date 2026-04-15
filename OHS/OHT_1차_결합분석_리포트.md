@@ -235,7 +235,7 @@
 
 | 파일 | 설명 |
 |------|------|
-| `analyze_phase2.py` | 새 데이터 투입 시 재사용 가능한 분석 코드 |
+| `analyze_phase1_inject.py` | 새 데이터 투입 시 재사용 가능한 분석 코드 |
 
 2차 분석에서 추가되는 항목:
 - **CommandId 분석**: 23필드 수집 후 차량별 작업 매칭, 시간대별 작업/Idle 비율
@@ -261,7 +261,7 @@
 | 코드 | 용도 | 실행 방법 |
 |------|------|----------|
 | `analyze_combined.py` | **1차 결합 분석** (이 리포트 생성) | `python OHS/analyze_combined.py` |
-| `analyze_phase2.py` | **2차 분석** (다일자/CommandId 대응) | `python OHS/analyze_phase2.py` |
+| `analyze_phase1_inject.py` | **2차 분석** (다일자/CommandId 대응) | `python OHS/analyze_phase1_inject.py` |
 | `analyze_oht_xsohs.py` | M14_OHT 단독 분석 | `python OHS/analyze_oht_xsohs.py` |
 
 > XSOHS(스타), 로그프레소 데이터를 동일 시간대로 수집하여 위 코드에 투입하면
