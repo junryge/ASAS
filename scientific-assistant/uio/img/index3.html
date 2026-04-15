@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2D Pixel Office</title>
+  <style>
+    :root {
+      --bg-1: #1d2633;
+      --bg-2: #0f151e;
+      --panel: #243244;
+      --text: #eaf1ff;
+      --accent: #ff4d4d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 20%, var(--bg-1), var(--bg-2) 65%);
+      padding: 12px;
+    }
+
+    .stage {
+      width: min(96vw, 1200px);
+      aspect-ratio: 1536 / 1024;
+      border: 2px solid #48638a;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+      background: #111;
+      position: relative;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    .label {
+      position: absolute;
+      left: 15px;
+      top: 15px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      background: rgba(18, 27, 40, 0.85);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 14px;
+      font-weight: 600;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <canvas id="game" width="1536" height="1024" aria-label="moving pixel map"></canvas>
+    <div class="label">💼 2D Pixel Office Live</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const world = { width: 1536, height: 1024 };
+    const map = new Image();
+    map.src = "office_background_final.png";
+
+    // Load sprite frames
+    function loadFrames(dir, count) {
+      const frames = [];
+      for(let i = 1; i <= count; i++) {
+        const img = new Image();
+        img.src = `${dir}/frame_0${i}_transparent.png`;
+        frames.push(img);
+      }
+      return frames;
+    }
+
+    const spriteGroups = [
+      loadFrames("man_fr", 6),
+      loadFrames("man_fr2", 6),
+      loadFrames("man_ft3", 6),
+      loadFrames("wow_fr", 6)
+    ];
+
+    const ceoImg = new Image();
+    ceoImg.src = "CEO_PO_transparent.png";
+
+    class Character {
+      constructor(frames, x, y, speed, scale, isStatic = false, bounds = null, pauseBehavior = 'normal') {
+        this.frames = frames;
+        this.x = x;
+        this.y = y;
+        this.speed = speed;
+        this.scale = scale;
+        this.frameIndex = 0;
+        this.frameTimer = 0;
+        this.frameDuration = 100 + Math.random() * 50; 
+        this.isStatic = isStatic;
+        this.bounds = bounds || {minX: 150, maxX: world.width - 150, minY: 150, maxY: world.height - 150};
+        this.direction = Math.random() < 0.5 ? 1 : -1;
+        this.pauseBehavior = pauseBehavior; // 'alwaysMove', 'oftenPause', 'infrequentPause', 'normal'
+
+        // Roaming state
+        this.isMoving = false;
+        this.targetX = this.x;
+        this.targetY = this.y;
+        this.idleTimer = Math.random() * 1000; 
+      }
+
+      setNewTarget() {
+        this.targetX = this.bounds.minX + Math.random() * (this.bounds.maxX - this.bounds.minX);
+        this.targetY = this.bounds.minY + Math.random() * (this.bounds.maxY - this.bounds.minY);
+        this.isMoving = true;
+        this.direction = this.targetX > this.x ? 1 : -1;
+      }
+
+      update(dt) {
+        if(this.isStatic) return;
+
+        if (!this.isMoving) {
+          this.idleTimer -= dt * 1000;
+          if (this.idleTimer <= 0) {
+            this.setNewTarget();
+          }
+          this.frameIndex = 0; // Stand still pose
+          return;
+        }
+
+        // Move towards target in 2D space
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist < 5) { // Reached destination
+          this.isMoving = false;
+          
+          if (this.pauseBehavior === 'alwaysMove') {
+             this.idleTimer = Math.random() * 500; // bare minimum pause
+          } else if (this.pauseBehavior === 'oftenPause') {
+             this.idleTimer = 2000 + Math.random() * 4000; // 2~6 sec pause
+          } else {
+             this.idleTimer = 500 + Math.random() * 2000; // normal
+          }
+        } else {
+          // Adjust distance by standard 60fps movement delta
+          const moveDist = this.speed * (dt * 1000) / 16;
+          this.x += (dx / dist) * moveDist;
+          this.y += (dy / dist) * moveDist;
+
+          // Animate walking
+          this.frameTimer += dt * 1000;
+          if(this.frameTimer >= this.frameDuration) {
+            this.frameTimer = 0;
+            this.frameIndex = (this.frameIndex + 1) % this.frames.length;
+          }
+        }
+      }
+
+      draw(ctx) {
+        const img = this.isStatic ? this.frames : this.frames[this.frameIndex];
+        if(!img || !img.complete || img.naturalWidth === 0) return; // Safely return if image is not loaded
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        if(this.direction === -1 && !this.isStatic) {
+          ctx.scale(-1, 1); // Flip horizontally if walking left
+        }
+        
+        const w = img.width * this.scale;
+        const h = img.height * this.scale;
+        
+        ctx.drawImage(img, -w/2, -h, w, h);
+        ctx.restore();
+      }
+    }
+
+    // Initialize characters with specific zones to avoid crossing desks
+    const characters = [];
+    
+    // CEO sitting behind top-left desk (Fixed permanently in the middle of the blue carpet)
+    const ceo = new Character(ceoImg, 400, 310, 0, 1.0, true);
+    characters.push(ceo);
+
+    // Left Lounge worker 1 (man_fr) walking in front of the round table/sofa 
+    // Very fast speed, basic pause
+    characters.push(new Character(spriteGroups[0], 300, 950, 3.0, 1.0, false, {minX: 100, maxX: 500, minY: 850, maxY: 1000}, 'normal'));
+
+    // Left Lounge worker 2 (wow_fr) walking behind the round table
+    // Very slow speed, long pauses
+    characters.push(new Character(spriteGroups[3], 250, 450, 0.8, 1.0, false, {minX: 150, maxX: 450, minY: 400, maxY: 500}, 'oftenPause'));
+
+    // Desk line worker 1 - Female (wow_fr) walking in front of the left dark desks
+    // Medium speed, always moving (busy)
+    characters.push(new Character(spriteGroups[3], 300, 650, 1.8, 1.0, false, {minX: 50, maxX: 650, minY: 610, maxY: 720}, 'alwaysMove'));
+
+    // Desk line worker 2 - Male (man_fr2) walking in front of the right yellow desks
+    // Medium-slow speed
+    characters.push(new Character(spriteGroups[1], 1100, 650, 1.4, 1.0, false, {minX: 750, maxX: 1350, minY: 610, maxY: 720}, 'normal'));
+
+    // Bottom right area worker (man_ft3) pacing near the bottom right single desk
+    // Fast speed, constantly pacing
+    characters.push(new Character(spriteGroups[2], 1250, 950, 2.5, 1.0, false, {minX: 1000, maxX: 1400, minY: 850, maxY: 1000}, 'alwaysMove'));
+
+    // Top Right worker (man_fr) walking below the chalkboard
+    // Slow speed, often pauses to "read"
+    characters.push(new Character(spriteGroups[0], 1000, 350, 1.0, 1.0, false, {minX: 850, maxX: 1400, minY: 320, maxY: 480}, 'oftenPause'));
+
+    // Top Left worker (wow_fr) walking near the top-left blue carpet (CEO area)
+    // Moderate speed, normal pacing
+    characters.push(new Character(spriteGroups[3], 200, 350, 1.5, 1.0, false, {minX: 50, maxX: 250, minY: 280, maxY: 400}, 'normal'));
+
+    // Sort by Y so characters lower on the screen (higher Y) render on top of others
+    function zSort() {
+      characters.sort((a,b) => a.y - b.y);
+    }
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.033);
+      lastTime = now;
+
+      // Draw office background
+      if (map.complete && map.naturalWidth > 0) {
+        ctx.drawImage(map, 0, 0, world.width, world.height);
+      } else {
+        ctx.fillStyle = "#101725";
+        ctx.fillRect(0, 0, world.width, world.height);
+      }
+
+      // Update & Draw chars
+      characters.forEach(c => c.update(dt));
+      zSort();
+      characters.forEach(c => c.draw(ctx));
+
+      requestAnimationFrame(loop);
+    }
+
+    // Start loop when background map is loaded
+    map.onload = () => requestAnimationFrame(loop);
+    map.onerror = () => requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
