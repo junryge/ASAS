@@ -591,7 +591,7 @@ def analyze_summary(m14, quwa, hid, rail):
     lines.append("### 데이터 출처\n")
     lines.append("| 데이터 | 출처 시스템 | 파일 |")
     lines.append("|--------|-----------|------|")
-    lines.append("| M14_OHT | XSOHS (OHT 실시간 수집) | `OHS/XSOHS_extracted/raw.csv` |")
+    lines.append("| M14_OHT | OHT_UDP (OHT 실시간 수집) | `OHS/OHT_UDP_extracted/raw.csv` |")
     lines.append("| 스타 | 스타 (FAB 운영 지표) | `OHS/OHT_컬럼수집_DATA.CSV` |")
     lines.append("| HID_INOUT | 로그프레소 | `OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_*.csv` |")
     lines.append("| RAIL_CUT | 로그프레소 | `OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_*.csv` |")
@@ -602,7 +602,7 @@ def analyze_summary(m14, quwa, hid, rail):
     lines.append("| `analyze_phase1_inject.py` | **2차 분석** (다일자/CommandId 대응) | `python OHS/analyze_phase1_inject.py` |")
     lines.append("| `analyze_oht_xsohs.py` | M14_OHT 단독 분석 | `python OHS/analyze_oht_xsohs.py` |")
     lines.append("")
-    lines.append("> XSOHS(스타), 로그프레소 데이터를 동일 시간대로 수집하여 위 코드에 투입하면")
+    lines.append("> OHT_UDP(스타), 로그프레소 데이터를 동일 시간대로 수집하여 위 코드에 투입하면")
     lines.append("> 동일한 결합 분석 결과를 재현할 수 있습니다.")
 
     lines.append("")
@@ -649,7 +649,7 @@ def generate_report(m14_path, quwa_path, hid_path, rail_path, output_path):
 
 if __name__ == '__main__':
     generate_report(
-        m14_path='OHS/XSOHS_extracted/raw.csv',
+        m14_path='OHS/OHT_UDP_extracted/raw.csv',
         quwa_path='OHS/OHT_컬럼수집_DATA.CSV',
         hid_path='OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_202604140830_1700.csv',
         rail_path='OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_202604140830_202604141700.csv',

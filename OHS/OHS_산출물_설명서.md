@@ -19,7 +19,7 @@
 
 | 파일 | 내용 | 대상 |
 |------|------|------|
-| `XSOHS_ANALYSIS_REPORT.md` | M14_OHT 단독 분석 리포트 (11개 섹션) | 내부 |
+| `OHT_UDP_ANALYSIS_REPORT.md` | M14_OHT 단독 분석 리포트 (11개 섹션) | 내부 |
 | `CSV_ANALYSIS_METHOD.md` | CSV 데이터 구조 + 필드 매핑 + 분석 방법론 | 내부 |
 | `OHT_1차_결합분석_리포트.md` | 4개 데이터 결합 분석 결과 (11개 섹션) | 내부 |
 | `OHT_DIJKSTRA_ARCHITECTURE.md` | Dijkstra 경로 최적화 아키텍처 설명 | 내부 |
@@ -30,7 +30,7 @@
 
 | 데이터 | 파일 | 출처 | 건수 |
 |--------|------|------|------|
-| M14_OHT | `XSOHS_extracted/raw.csv` | XSOHS (스타) | 534,540건 |
+| M14_OHT | `OHT_UDP_extracted/raw.csv` | OHT_UDP (스타) | 534,540건 |
 | 스타 | `OHT_컬럼수집_DATA.CSV` | 스타 | 510건 |
 | HID_INOUT | `LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_*.csv` | 로그프레소 | 342,570건 |
 | RAIL_CUT | `LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_*.csv` | 로그프레소 | 16건 |
@@ -52,7 +52,7 @@ python OHS/analyze_oht_xsohs.py [CSV경로] [출력리포트경로]
 ```
 
 - 입력: M14_OHT raw.csv
-- 출력: `XSOHS_ANALYSIS_REPORT.md`
+- 출력: `OHT_UDP_ANALYSIS_REPORT.md`
 - 분석 항목: 데이터 개요, Fleet 현황, 차량 상태, 가동률/적재율, 속도, 운반 사이클, 스테이션, 시간대별 패턴, 이상 상태, IN_SERVICE, 월드 모델 파라미터
 - 외부 패키지 불필요 (표준 라이브러리만 사용)
 
@@ -83,7 +83,7 @@ python OHS/analyze_combined.py
 ```python
 if __name__ == '__main__':
     generate_report(
-        m14_path='OHS/XSOHS_extracted/raw.csv',
+        m14_path='OHS/OHT_UDP_extracted/raw.csv',
         quwa_path='OHS/OHT_컬럼수집_DATA.CSV',
         hid_path='OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_202604140830_1700.csv',
         rail_path='OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_202604140830_202604141700.csv',
@@ -108,7 +108,7 @@ python OHS/analyze_phase1_inject.py
 
 ## 3. MD 문서 상세
 
-### 3.1 XSOHS_ANALYSIS_REPORT.md
+### 3.1 OHT_UDP_ANALYSIS_REPORT.md
 - M14_OHT 단독 분석 결과
 - `analyze_oht_xsohs.py` 실행으로 자동 생성
 - 1,033대 V-Vehicle, 가동률 82.3%, 적재율 62.1%, 사이클 7.8분
@@ -198,7 +198,7 @@ OHS/
 ├── analyze_combined.py            ← 1차 결합 분석 (리포트 생성)
 ├── analyze_phase1_inject.py       ← 1차 데이터 주입 분석
 │
-├── XSOHS_ANALYSIS_REPORT.md       ← M14_OHT 단독 리포트
+├── OHT_UDP_ANALYSIS_REPORT.md       ← M14_OHT 단독 리포트
 ├── CSV_ANALYSIS_METHOD.md          ← CSV 구조/방법론
 ├── OHT_1차_결합분석_리포트.md       ← 결합 분석 리포트
 ├── OHT_DIJKSTRA_ARCHITECTURE.md   ← Dijkstra 아키텍처
@@ -206,8 +206,8 @@ OHS/
 ├── OHT_예측모델_검토보고서.md       ← 고객 보고서
 ├── OHS_산출물_설명서.md             ← 이 문서
 │
-├── XSOHS.zip                      ← M14_OHT 원본
-├── XSOHS_extracted/raw.csv        ← M14_OHT 데이터
+├── OHT_UDP.zip                      ← M14_OHT 원본
+├── OHT_UDP_extracted/raw.csv        ← M14_OHT 데이터
 ├── OHT_컬럼수집_DATA.CSV           ← 스타 데이터
 ├── LOGPRESSO.zip                  ← 로그프레소 원본
 └── LOGPRESSO_extracted/

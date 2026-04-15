@@ -1,6 +1,6 @@
 # OHT 월드 모델 및 예측 가능성 평가
 
-> 2026-04-14 XSOHS 데이터 분석 및 코드베이스 조사 결과 기반
+> 2026-04-14 OHT_UDP 데이터 분석 및 코드베이스 조사 결과 기반
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```
   ┌─────────────────────────────────────────────────┐
-  │  ✅ XSOHS 데이터 (VHL 상태 보고 534,540건)       │
+  │  ✅ OHT_UDP 데이터 (VHL 상태 보고 534,540건)       │
   │  ✅ Dijkstra 라우팅 코드 (LineCost 공식)          │
   │  ✅ RailEdge 비용 구조 (페널티 가중치)             │
   │  ✅ 현재 차량 상태 (1,033대 V-Vehicle)            │
@@ -179,4 +179,4 @@ CommandId는 **"향후 작업 명령"이라는 마지막 퍼즐 조각**을 채�
 | `ALT/src/data/PredictionPara.java` | 페널티 가중치 (3000/5000/5000) |
 | `OHT3/MAP_구축_가이드.MD` | 23개 필드 정의 (CommandId 포함) |
 | `OHS/OHT_DIJKSTRA_ARCHITECTURE.md` | Dijkstra 아키텍처 상세 |
-| `OHS/XSOHS_ANALYSIS_REPORT.md` | XSOHS 데이터 분석 리포트 |
+| `OHS/OHT_UDP_ANALYSIS_REPORT.md` | OHT_UDP 데이터 분석 리포트 |

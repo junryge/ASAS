@@ -251,7 +251,7 @@
 
 | 데이터 | 출처 시스템 | 파일 |
 |--------|-----------|------|
-| M14_OHT | XSOHS (OHT 실시간 수집) | `OHS/XSOHS_extracted/raw.csv` |
+| M14_OHT | OHT_UDP (OHT 실시간 수집) | `OHS/OHT_UDP_extracted/raw.csv` |
 | 스타 | 스타 (FAB 운영 지표) | `OHS/OHT_컬럼수집_DATA.CSV` |
 | HID_INOUT | 로그프레소 | `OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_*.csv` |
 | RAIL_CUT | 로그프레소 | `OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_*.csv` |
@@ -264,5 +264,5 @@
 | `analyze_phase1_inject.py` | **2차 분석** (다일자/CommandId 대응) | `python OHS/analyze_phase1_inject.py` |
 | `analyze_oht_xsohs.py` | M14_OHT 단독 분석 | `python OHS/analyze_oht_xsohs.py` |
 
-> XSOHS(스타), 로그프레소 데이터를 동일 시간대로 수집하여 위 코드에 투입하면
+> OHT_UDP(스타), 로그프레소 데이터를 동일 시간대로 수집하여 위 코드에 투입하면
 > 동일한 결합 분석 결과를 재현할 수 있습니다.

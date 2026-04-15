@@ -22,7 +22,7 @@ from pathlib import Path
 # 설정
 # ============================================================
 DEFAULT_CONFIG = {
-    "m14_oht_paths": ["OHS/XSOHS_extracted/raw.csv"],
+    "m14_oht_paths": ["OHS/OHT_UDP_extracted/raw.csv"],
     "quwa_paths": ["OHS/OHT_컬럼수집_DATA.CSV"],
     "hid_inout_paths": ["OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_202604140830_1700.csv"],
     "rail_cut_paths": ["OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_202604140830_202604141700.csv"],

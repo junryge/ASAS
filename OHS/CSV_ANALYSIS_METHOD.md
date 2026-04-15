@@ -1,4 +1,4 @@
-# OHT XSOHS CSV 데이터 분석 방법론
+# OHT OHT_UDP CSV 데이터 분석 방법론
 
 ## 1. 원본 데이터 구조
 
@@ -236,7 +236,7 @@ python OHS/analyze_oht_xsohs.py
 python OHS/analyze_oht_xsohs.py [CSV경로] [출력리포트경로]
 
 # 예시
-python OHS/analyze_oht_xsohs.py OHS/XSOHS_extracted/raw.csv OHS/XSOHS_ANALYSIS_REPORT.md
+python OHS/analyze_oht_xsohs.py OHS/OHT_UDP_extracted/raw.csv OHS/OHT_UDP_ANALYSIS_REPORT.md
 ```
 
 ### 의존성
