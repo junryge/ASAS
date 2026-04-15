@@ -477,27 +477,133 @@ def analyze_world_model_params(m14, quwa, hid):
     return '\n'.join(lines)
 
 
-def analyze_summary(m14, quwa, hid, rail):
-    """결론 및 2차 분석 방향"""
+def analyze_bottleneck(quwa):
+    """병목 여부 판단"""
     lines = []
-    lines.append("## 8. 결론 및 2차 분석 방향\n")
+    lines.append("## 8. 병목 여부 판단\n")
 
-    lines.append("### 1차 분석 핵심 발견\n")
-    lines.append("| # | 발견 | 근거 데이터 |")
-    lines.append("|---|------|-----------|")
-    lines.append("| 1 | 반송큐가 높을수록 OBS_BZ_STOP 증가 | QUWA 큐 vs OBS 상관관계 |")
-    lines.append("| 2 | 반송큐가 높을수록 반송시간 증가 | QUWA 큐 vs AVGLOADTIME |")
-    lines.append("| 3 | HID 구간별 속도 편차가 큼 | HID_INOUT FREE_FLOW_SPEED |")
-    lines.append("| 4 | 레일 차단은 하루 8개 구간으로 제한적 | RAIL_CUT 16건(중복 포함) |")
-    lines.append("| 5 | 10~11시에 큐가 급증하는 패턴 | QUWA 시간대별 추이 |")
+    # 시간대별 큐 평균
+    hourly_q = defaultdict(list)
+    hourly_obs = defaultdict(list)
+    hourly_lt = defaultdict(list)
+    hourly_spd_placeholder = defaultdict(list)
+    for r in quwa:
+        if r['minute'] is None:
+            continue
+        h = r['minute'].split(':')[0]
+        if r['queue_cnt'] is not None:
+            hourly_q[h].append(r['queue_cnt'])
+        if r['obs_stop'] is not None:
+            hourly_obs[h].append(r['obs_stop'])
+        if r['avg_load_time'] is not None:
+            hourly_lt[h].append(r['avg_load_time'])
 
-    lines.append("\n### 2차 분석에 필요한 추가 데이터\n")
+    # 큐 최대 시간대 찾기
+    peak_hour = max(hourly_q.keys(), key=lambda h: statistics.mean(hourly_q[h])) if hourly_q else None
+    if peak_hour:
+        peak_q = statistics.mean(hourly_q[peak_hour])
+        avg_q = statistics.mean([v for vals in hourly_q.values() for v in vals])
+        peak_obs = statistics.mean(hourly_obs.get(peak_hour, [0]))
+        avg_obs = statistics.mean([v for vals in hourly_obs.values() for v in vals])
+        peak_lt = statistics.mean(hourly_lt.get(peak_hour, [0]))
+        avg_lt = statistics.mean([v for vals in hourly_lt.values() for v in vals])
+
+        lines.append(f"큐 최대 시간대: **{peak_hour}시** (평균 {peak_q:.0f}개)\n")
+        lines.append("| 지표 | 큐 최대 시간대 | 전체 평균 | 판단 |")
+        lines.append("|------|-------------|----------|------|")
+
+        lt_diff = abs(peak_lt - avg_lt) / avg_lt * 100
+        obs_diff = abs(peak_obs - avg_obs) / avg_obs * 100 if avg_obs > 0 else 0
+
+        lt_judge = "차이 미미" if lt_diff < 5 else ("주의" if lt_diff < 15 else "병목 징후")
+        obs_judge = "차이 없음" if obs_diff < 5 else ("주의" if obs_diff < 15 else "병목 징후")
+
+        lines.append(f"| 반송시간 | {peak_lt:.2f}분 | {avg_lt:.2f}분 | {lt_judge} |")
+        lines.append(f"| OBS 정지 | {peak_obs:.0f}대 | {avg_obs:.0f}대 | {obs_judge} |")
+
+        is_bottleneck = lt_diff >= 15 or obs_diff >= 15
+        if is_bottleneck:
+            lines.append(f"\n> **병목 징후가 관측되었습니다.** 큐 급증 시 반송시간/OBS 정지가 유의미하게 증가합니다.")
+        else:
+            lines.append(f"\n> **병목 없이 정상 운영된 것으로 판단됩니다.**")
+            lines.append(f"> 시스템이 큐 증가를 충분히 소화하고 있으며, 병목 징후(반송시간 급증, OBS 폭증)는 관측되지 않았습니다.")
+            lines.append(f"> 병목을 확인하려면 큐 2,000 이상 또는 이상 이벤트 발생 날의 데이터가 필요합니다.")
+
+    lines.append("")
+    return '\n'.join(lines)
+
+
+def analyze_prediction_feasibility(m14, quwa):
+    """예측 가능 여부 판단"""
+    lines = []
+    lines.append("## 9. 예측 가능 여부\n")
+
+    dates = set(r.get('date', r['time'][:10]) for r in quwa if r.get('time'))
+    num_days = len(dates)
+
+    lines.append(f"현재 데이터: **{num_days}일치**\n")
+
+    if num_days < 5:
+        lines.append("```")
+        lines.append("  1일치 데이터 → \"이 날은 이랬다\" (사실 확인)")
+        lines.append("  예측을 하려면 → \"내일도 이럴 것이다\" (패턴 반복 확인 필요)")
+        lines.append("```\n")
+        lines.append("| 항목 | 현재 (1일) | 5일치 이상 확보 시 |")
+        lines.append("|------|-----------|------------------|")
+        lines.append("| 시간대별 큐 패턴 | 이 날만 그런지 모름 | 매일 반복이면 → 예측 가능 |")
+        lines.append("| 반송시간 평균 | 이 날 기준 | 일별 비교 → 정상 범위 확정 |")
+        lines.append("| HID 저속 구간 | 우연인지 모름 | 매일 느리면 → 구조적 병목 확정 |")
+        lines.append("| 요일별 물동량 | 알 수 없음 | 요일별 패턴 → 예측 가능 |")
+        lines.append(f"\n> **결론: 현재 {num_days}일치 데이터로는 '분석'까지만 가능하며, '예측'은 최소 5일치 데이터가 필요합니다.**")
+    else:
+        lines.append(f"> {num_days}일치 데이터로 패턴 반복 여부를 확인할 수 있습니다.")
+
+    lines.append("")
+    return '\n'.join(lines)
+
+
+def analyze_summary(m14, quwa, hid, rail):
+    """2차 분석 방향 및 데이터 출처"""
+    lines = []
+    lines.append("## 10. 2차 분석 방향\n")
+
+    lines.append("### 2차 분석에 필요한 추가 데이터\n")
     lines.append("| # | 데이터 | 이유 |")
     lines.append("|---|--------|------|")
     lines.append("| 1 | CommandId (23필드 전체) | 개별 차량 작업 매칭 |")
     lines.append("| 2 | layout.xml | 노드/엣지 공간 관계 |")
-    lines.append("| 3 | 수 일치 동일 데이터 | 일간 패턴 비교 |")
+    lines.append("| 3 | **최소 5일치 동일 데이터** | 일간 패턴 비교 → 예측 가능 여부 확인 |")
     lines.append("| 4 | HIDOFF 이벤트 (발생 시) | 구간 장애 분석 |")
+
+    lines.append("\n### 2차 분석 코드 (준비 완료)\n")
+    lines.append("| 파일 | 설명 |")
+    lines.append("|------|------|")
+    lines.append("| `analyze_phase2.py` | 새 데이터 투입 시 재사용 가능한 분석 코드 |")
+    lines.append("")
+    lines.append("2차 분석에서 추가되는 항목:")
+    lines.append("- **CommandId 분석**: 23필드 수집 후 차량별 작업 매칭, 시간대별 작업/Idle 비율")
+    lines.append("- **다일자 비교**: 수 일치 데이터로 일간 패턴 반복 여부 확인")
+    lines.append("- **HID 혼잡 패턴 심화**: 시간대별 속도 변동 구간, 큐 vs 특정 HID 속도 상관")
+    lines.append("- **차량별 운행 패턴**: OBS 빈번 차량, idle 비율 높은 차량 식별")
+
+    lines.append("\n---\n")
+    lines.append("## 11. 데이터 출처 및 분석 코드\n")
+    lines.append("### 데이터 출처\n")
+    lines.append("| 데이터 | 출처 시스템 | 파일 |")
+    lines.append("|--------|-----------|------|")
+    lines.append("| M14_OHT | XSOHS (OHT 실시간 수집) | `OHS/XSOHS_extracted/raw.csv` |")
+    lines.append("| QUWA | QUWA (FAB 운영 지표) | `OHS/OHT_컬럼수집_DATA.CSV` |")
+    lines.append("| HID_INOUT | 로그프레소 | `OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_*.csv` |")
+    lines.append("| RAIL_CUT | 로그프레소 | `OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_*.csv` |")
+    lines.append("\n### 분석 코드\n")
+    lines.append("| 코드 | 용도 | 실행 방법 |")
+    lines.append("|------|------|----------|")
+    lines.append("| `analyze_combined.py` | **1차 결합 분석** (이 리포트 생성) | `python OHS/analyze_combined.py` |")
+    lines.append("| `analyze_phase2.py` | **2차 분석** (다일자/CommandId 대응) | `python OHS/analyze_phase2.py` |")
+    lines.append("| `analyze_oht_xsohs.py` | M14_OHT 단독 분석 | `python OHS/analyze_oht_xsohs.py` |")
+    lines.append("")
+    lines.append("> XSOHS(스타), 로그프레소 데이터를 동일 시간대로 수집하여 위 코드에 투입하면")
+    lines.append("> 동일한 결합 분석 결과를 재현할 수 있습니다.")
 
     lines.append("")
     return '\n'.join(lines)
@@ -527,6 +633,8 @@ def generate_report(m14_path, quwa_path, hid_path, rail_path, output_path):
         ("HID+QUWA 결합", lambda: analyze_hid_quwa_correlation(hid, quwa)),
         ("RAIL_CUT", lambda: analyze_rail_cut(rail)),
         ("월드 모델 파라미터", lambda: analyze_world_model_params(m14, quwa, hid)),
+        ("병목 판단", lambda: analyze_bottleneck(quwa)),
+        ("예측 가능 여부", lambda: analyze_prediction_feasibility(m14, quwa)),
         ("결론", lambda: analyze_summary(m14, quwa, hid, rail)),
     ]
 
