@@ -110,7 +110,7 @@ class DataLoader:
 
     @staticmethod
     def load_quwa(paths):
-        """QUWA 로드"""
+        """스타 로드"""
         records = []
         for path in paths:
             if not os.path.exists(path):
@@ -132,7 +132,7 @@ class DataLoader:
                         'driving': int(row['M14.OHT.STATECNT.DRIVING']) if row.get('M14.OHT.STATECNT.DRIVING') else None,
                         'obs_stop': int(row['M14.OHT.STATECNT.OBSANDBZSTOP']) if row.get('M14.OHT.STATECNT.OBSANDBZSTOP') else None,
                     })
-        print(f"  QUWA 총 {len(records):,}건")
+        print(f"  스타 총 {len(records):,}건")
         return records
 
     @staticmethod
@@ -257,10 +257,10 @@ class Phase2Analyzer:
             obs = sum(1 for r in day_records if r['state'] == '6')
             lines.append(f"| {d} | {len(day_records):,} | {len(vhls)} | {obs/len(day_records)*100:.1f}% |")
 
-        # QUWA 일자별
+        # 스타 일자별
         quwa_dates = set(r['date'] for r in self.quwa if r['date'])
         if len(quwa_dates) > 1:
-            lines.append("\n### QUWA 일자별 평균\n")
+            lines.append("\n### 스타 일자별 평균\n")
             lines.append("| 일자 | 평균 큐 | 평균 완료 | 평균 반송시간 |")
             lines.append("|------|--------|---------|------------|")
             for d in sorted(quwa_dates):
@@ -299,7 +299,7 @@ class Phase2Analyzer:
         for hid_id, std, mean_spd in sorted(hid_variability, key=lambda x: -x[1])[:15]:
             lines.append(f"| {hid_id} | {std:.1f} | {mean_spd:.1f} |")
 
-        # QUWA 큐와 특정 HID 속도 상관
+        # 스타 큐와 특정 HID 속도 상관
         quwa_map = {r['minute']: r for r in self.quwa if r['minute']}
         hid_minute_speed = defaultdict(lambda: defaultdict(list))
         for r in self.hid:
@@ -385,7 +385,7 @@ class Phase2Analyzer:
         report = []
         report.append("# OHT 2차 분석 리포트\n")
         report.append(f"> 분석 일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        report.append(f"> M14_OHT: {len(self.m14):,}건 / QUWA: {len(self.quwa):,}건 / HID: {len(self.hid):,}건 / RAIL_CUT: {len(self.rail):,}건\n")
+        report.append(f"> M14_OHT: {len(self.m14):,}건 / 스타: {len(self.quwa):,}건 / HID: {len(self.hid):,}건 / RAIL_CUT: {len(self.rail):,}건\n")
         report.append("---\n")
 
         sections = [

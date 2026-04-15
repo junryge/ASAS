@@ -31,7 +31,7 @@
 | 데이터 | 파일 | 출처 | 건수 |
 |--------|------|------|------|
 | M14_OHT | `XSOHS_extracted/raw.csv` | XSOHS (스타) | 534,540건 |
-| QUWA | `OHT_컬럼수집_DATA.CSV` | QUWA | 510건 |
+| 스타 | `OHT_컬럼수집_DATA.CSV` | 스타 | 510건 |
 | HID_INOUT | `LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_*.csv` | 로그프레소 | 342,570건 |
 | RAIL_CUT | `LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_*.csv` | 로그프레소 | 16건 |
 
@@ -64,14 +64,14 @@ python OHS/analyze_oht_xsohs.py [CSV경로] [출력리포트경로]
 python OHS/analyze_combined.py
 ```
 
-- 입력: M14_OHT + QUWA + HID_INOUT + RAIL_CUT (4개)
+- 입력: M14_OHT + 스타 + HID_INOUT + RAIL_CUT (4개)
 - 출력: `OHT_1차_결합분석_리포트.md`
 - 분석 항목 (11개 섹션):
   1. 데이터 개요
-  2. QUWA 운영 지표 추이
-  3. M14_OHT + QUWA 결합 (큐 vs VHL 상태 상관)
+  2. 스타 운영 지표 추이
+  3. M14_OHT + 스타 결합 (큐 vs VHL 상태 상관)
   4. HID 구간 흐름 (통과량, 속도, 저속 구간)
-  5. HID + QUWA 결합 (큐 vs HID 속도 상관)
+  5. HID + 스타 결합 (큐 vs HID 속도 상관)
   6. RAIL_CUT 분석
   7. 월드 모델 파라미터
   8. **병목 여부 자동 판단**
@@ -142,7 +142,7 @@ python OHS/analyze_phase1_inject.py
 ### 3.6 OHT_예측모델_검토보고서.md
 - **고객 보고용** (기술 용어 최소화)
 - 예측 가능 여부, 시뮬레이션 조건
-- QUWA 수집 요청 데이터 17개 항목
+- 스타 수집 요청 데이터 17개 항목
 - 추진 로드맵
 - 요약 표
 
@@ -166,7 +166,7 @@ python OHS/analyze_combined.py
 ```python
 generate_report(
     m14_path='OHS/새날짜/raw.csv',
-    quwa_path='OHS/새날짜/QUWA.CSV',
+    quwa_path='OHS/새날짜/스타.CSV',
     hid_path='OHS/새날짜/HID_INOUT.csv',
     rail_path='OHS/새날짜/RAIL_CUT.csv',
     output_path='OHS/새날짜_결합분석_리포트.md',
@@ -208,7 +208,7 @@ OHS/
 │
 ├── XSOHS.zip                      ← M14_OHT 원본
 ├── XSOHS_extracted/raw.csv        ← M14_OHT 데이터
-├── OHT_컬럼수집_DATA.CSV           ← QUWA 데이터
+├── OHT_컬럼수집_DATA.CSV           ← 스타 데이터
 ├── LOGPRESSO.zip                  ← 로그프레소 원본
 └── LOGPRESSO_extracted/
     ├── M14A_ATLAS_HID_INOUT_*.csv ← HID_INOUT 데이터

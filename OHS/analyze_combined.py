@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 OHT 1차 결합 분석 스크립트
-- M14_OHT (VHL 상태) + QUWA (운영 지표) + HID_INOUT (구간 흐름) + RAIL_CUT (레일 차단)
+- M14_OHT (VHL 상태) + 스타 (운영 지표) + HID_INOUT (구간 흐름) + RAIL_CUT (레일 차단)
 - Usage: python analyze_combined.py
 """
 
@@ -87,8 +87,8 @@ def load_m14_oht(path):
 
 
 def load_quwa(path):
-    """QUWA 데이터 로드"""
-    print("[2/4] QUWA 로드 중...")
+    """스타 데이터 로드"""
+    print("[2/4] 스타 로드 중...")
     records = []
     with open(path, 'r') as f:
         reader = csv.DictReader(f)
@@ -164,7 +164,7 @@ def analyze_data_overview(m14, quwa, hid, rail):
     lines.append("| 데이터 | 건수 | 시간범위 | 설명 |")
     lines.append("|--------|------|---------|------|")
     lines.append(f"| M14_OHT | {len(m14):,} | 08:30~17:00 | VHL 개별 상태 (위치, 속도, 적재) |")
-    lines.append(f"| QUWA | {len(quwa):,} | 08:30~17:00 | 반송 큐, 가동률, 상태 집계 (1분) |")
+    lines.append(f"| 스타 | {len(quwa):,} | 08:30~17:00 | 반송 큐, 가동률, 상태 집계 (1분) |")
     lines.append(f"| HID_INOUT | {len(hid):,} | 08:30~17:00 | HID 구간별 차량 진입/이탈 |")
     lines.append(f"| RAIL_CUT | {len(rail):,} | 09:00:28 | 레일 차단 이벤트 |")
     lines.append("")
@@ -172,9 +172,9 @@ def analyze_data_overview(m14, quwa, hid, rail):
 
 
 def analyze_quwa_trends(quwa):
-    """QUWA 시간대별 추이 분석"""
+    """스타 시간대별 추이 분석"""
     lines = []
-    lines.append("## 2. QUWA 운영 지표 추이\n")
+    lines.append("## 2. 스타 운영 지표 추이\n")
 
     # 시간대별 평균
     hourly = defaultdict(lambda: defaultdict(list))
@@ -232,9 +232,9 @@ def analyze_quwa_trends(quwa):
 
 
 def analyze_m14_quwa_correlation(m14, quwa):
-    """M14_OHT와 QUWA 결합 분석"""
+    """M14_OHT와 스타 결합 분석"""
     lines = []
-    lines.append("## 3. M14_OHT + QUWA 결합 분석\n")
+    lines.append("## 3. M14_OHT + 스타 결합 분석\n")
 
     # 분 단위로 M14_OHT 집계
     m14_minute = defaultdict(lambda: {
@@ -259,11 +259,11 @@ def analyze_m14_quwa_correlation(m14, quwa):
         elif r['speed'] in ('80', '90', '99'):
             m14_minute[mk]['speed_80plus'] += 1
 
-    # QUWA와 매칭
+    # 스타와 매칭
     quwa_map = {r['minute']: r for r in quwa if r['minute']}
 
-    lines.append("### QUWA 반송큐 vs M14_OHT 상태 상관관계\n")
-    lines.append("| 반송큐 구간 | M14 OBS비율 | M14 적재율 | M14 속도0 비율 | QUWA OBS정지 |")
+    lines.append("### 스타 반송큐 vs M14_OHT 상태 상관관계\n")
+    lines.append("| 반송큐 구간 | M14 OBS비율 | M14 적재율 | M14 속도0 비율 | 스타 OBS정지 |")
     lines.append("|-----------|-----------|----------|-------------|------------|")
 
     brackets = [(1000, 1200), (1200, 1400), (1400, 1600), (1600, 1800), (1800, 2000)]
@@ -356,9 +356,9 @@ def analyze_hid_flow(hid):
 
 
 def analyze_hid_quwa_correlation(hid, quwa):
-    """HID 흐름 + QUWA 결합"""
+    """HID 흐름 + 스타 결합"""
     lines = []
-    lines.append("## 5. HID 흐름 + QUWA 결합 분석\n")
+    lines.append("## 5. HID 흐름 + 스타 결합 분석\n")
 
     # 분 단위 HID 집계
     hid_minute = defaultdict(lambda: {'count': 0, 'speeds': []})
@@ -436,7 +436,7 @@ def analyze_world_model_params(m14, quwa, hid):
     lines.append(f"| 표준편차 | {statistics.stdev(all_speeds):.1f} |")
 
     # 2. 큐 패턴
-    lines.append("\n### 7.2 반송큐 패턴 (QUWA 기준)\n")
+    lines.append("\n### 7.2 반송큐 패턴 (스타 기준)\n")
     queues = [r['queue_cnt'] for r in quwa if r['queue_cnt'] is not None]
     completed = [r['completed'] for r in quwa if r['completed'] is not None]
     lines.append("| 지표 | 반송큐 | 10분 완료 |")
@@ -592,7 +592,7 @@ def analyze_summary(m14, quwa, hid, rail):
     lines.append("| 데이터 | 출처 시스템 | 파일 |")
     lines.append("|--------|-----------|------|")
     lines.append("| M14_OHT | XSOHS (OHT 실시간 수집) | `OHS/XSOHS_extracted/raw.csv` |")
-    lines.append("| QUWA | QUWA (FAB 운영 지표) | `OHS/OHT_컬럼수집_DATA.CSV` |")
+    lines.append("| 스타 | 스타 (FAB 운영 지표) | `OHS/OHT_컬럼수집_DATA.CSV` |")
     lines.append("| HID_INOUT | 로그프레소 | `OHS/LOGPRESSO_extracted/M14A_ATLAS_HID_INOUT_*.csv` |")
     lines.append("| RAIL_CUT | 로그프레소 | `OHS/LOGPRESSO_extracted/ATLAS_OHT_RAIL_CUT_*.csv` |")
     lines.append("\n### 분석 코드\n")
@@ -622,15 +622,15 @@ def generate_report(m14_path, quwa_path, hid_path, rail_path, output_path):
     report.append("# OHT 1차 결합 분석 리포트\n")
     report.append(f"> 분석 일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     report.append(f"> 데이터 기간: 2026-04-14 08:30 ~ 17:00")
-    report.append(f"> 데이터: M14_OHT({len(m14):,}) + QUWA({len(quwa):,}) + HID_INOUT({len(hid):,}) + RAIL_CUT({len(rail)})\n")
+    report.append(f"> 데이터: M14_OHT({len(m14):,}) + 스타({len(quwa):,}) + HID_INOUT({len(hid):,}) + RAIL_CUT({len(rail)})\n")
     report.append("---\n")
 
     sections = [
         ("데이터 개요", lambda: analyze_data_overview(m14, quwa, hid, rail)),
-        ("QUWA 추이", lambda: analyze_quwa_trends(quwa)),
-        ("M14+QUWA 결합", lambda: analyze_m14_quwa_correlation(m14, quwa)),
+        ("스타 추이", lambda: analyze_quwa_trends(quwa)),
+        ("M14+스타 결합", lambda: analyze_m14_quwa_correlation(m14, quwa)),
         ("HID 흐름", lambda: analyze_hid_flow(hid)),
-        ("HID+QUWA 결합", lambda: analyze_hid_quwa_correlation(hid, quwa)),
+        ("HID+스타 결합", lambda: analyze_hid_quwa_correlation(hid, quwa)),
         ("RAIL_CUT", lambda: analyze_rail_cut(rail)),
         ("월드 모델 파라미터", lambda: analyze_world_model_params(m14, quwa, hid)),
         ("병목 판단", lambda: analyze_bottleneck(quwa)),
