@@ -43,7 +43,7 @@
 |--------|--------|------|------|-----------|
 | 0 | MessageId | int | 메시지 유형 (=2) | - |
 | 1 | McpName | str | MCP 이름 (=OHT) | - |
-| 2 | VehicleId | str | 차량 ID (V=운반, R=예비) | - |
+| 2 | VehicleId | str | 차량 ID (V=FOUP 반송, R=Reticle 반송) | - |
 | 3 | **State** | int | 차량 상태 | 아래 참조 |
 | 4 | **IsFull** | int | 적재 여부 (0=빈차, 1=적재) | - |
 | 5 | ErrorCode | str | 에러 코드 (0000=정상) | - |
@@ -59,7 +59,7 @@
 | 15 | GroupId | str | 그룹 ID | - |
 | 16 | **SourcePort** | str | 출발 스테이션 | - |
 | 17 | **DestPort** | str | 도착 스테이션 | - |
-| 18 | **Priority** | int | 우선순위/속도 (0,50,70,80,90,99) | - |
+| 18 | **Priority** | int | 우선순위 (MCP 일괄 50 부여, 속도 아님) | - |
 | 19 | **DetailState** | int | 상세 상태 | 아래 참조 |
 | 20 | RunDistance | int | 누적 주행 거리 | - |
 
@@ -148,7 +148,7 @@
 - `line` 첫 번째 필드(MessageId)별 빈도 집계
 
 ### 3.2 Fleet 현황
-- VehicleId 접두어로 분류: `V`=운반차량, `R`=예비차량
+- VehicleId 접두어로 분류: `V`=FOUP 반송 VHL, `R`=Reticle 반송 VHL
 - `set()`으로 고유 차량 수 산출
 - 시간대별(HH) 활성 차량: `_time`에서 시 추출 → 시간별 unique VehicleId 집합
 
@@ -174,7 +174,7 @@
 차량별 계산 후 전체 통계(평균, 중앙값, 표준편차, 분포) 산출.
 
 ### 3.5 속도 분석
-- Priority(필드18) 값을 속도로 사용 (0, 50, 70, 80, 90, 99)
+- Priority(필드18): 우선순위 값 (MCP에서 일괄 50 부여, 속도와 무관)
 - 전체 빈도 분포 및 State별 교차 분석
 - State=6(OBS_BZ_STOP) 시 속도 분포 → 앞차 감속 패턴 간접 확인
 

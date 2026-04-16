@@ -128,7 +128,7 @@ def analyze_fleet(type2):
     lines.append(f"| 항목 | 값 |")
     lines.append(f"|------|-----|")
     lines.append(f"| V-Vehicle (운반차량) | {len(v_set):,}대 |")
-    lines.append(f"| R-Vehicle (예비차량) | {len(r_set):,}대 |")
+    lines.append(f"| R-Vehicle (Reticle 반송) | {len(r_set):,}대 |")
     lines.append(f"| 총 차량 | {len(v_set) + len(r_set):,}대 |")
     lines.append("")
     lines.append("### 시간대별 활성 차량 수\n")
@@ -633,8 +633,8 @@ def analyze_world_model_params(type2):
     lines.append(f"| 101 | MOVING | {idle_moving:,} | 일반 idle 이동 |")
     lines.append(f"| 105 | BALANCE_MOVING | {balance_moving:,} | 밸런싱 이동 (idle 재배치) |")
 
-    lines.append("\n### Priority 분포 (속도 기반)\n")
-    lines.append("| Priority(속도) | 건수 | 비율 |")
+    lines.append("\n### Priority 분포 (MCP 일괄 50 부여, 속도와 무관)\n")
+    lines.append("| Priority | 건수 | 비율 |")
     lines.append("|---------------|------|------|")
     for p, cnt in priority_cnt.most_common():
         lines.append(f"| {p} | {cnt:,} | {cnt/total*100:.1f}% |")
