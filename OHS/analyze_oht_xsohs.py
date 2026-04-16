@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-OHT XSOHS 데이터 분석 스크립트
+OHT OHT_UDP 데이터 분석 스크립트
 - CSV 파일을 읽어 종합 분석 리포트(MD)를 생성
 - Usage: python analyze_oht_xsohs.py [csv_path] [output_report_path]
 """
@@ -663,7 +663,7 @@ def generate_report(csv_path, output_path):
     print(f"  총 {data['total']:,}행 로드 완료")
 
     report = []
-    report.append("# OHT XSOHS 데이터 분석 리포트\n")
+    report.append("# OHT OHT_UDP 데이터 분석 리포트\n")
     report.append(f"> 분석 대상: `{csv_path}`")
     report.append(f"> 분석 일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     report.append(f"> 데이터 수집 기간: 2026-04-14 08:30 ~ 17:00\n")
@@ -693,6 +693,6 @@ def generate_report(csv_path, output_path):
 
 
 if __name__ == '__main__':
-    csv_path = sys.argv[1] if len(sys.argv) > 1 else 'OHS/XSOHS_extracted/raw.csv'
-    output_path = sys.argv[2] if len(sys.argv) > 2 else 'OHS/XSOHS_ANALYSIS_REPORT.md'
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else 'OHS/OHT_UDP_extracted/raw.csv'
+    output_path = sys.argv[2] if len(sys.argv) > 2 else 'OHS/OHT_UDP_ANALYSIS_REPORT.md'
     generate_report(csv_path, output_path)
