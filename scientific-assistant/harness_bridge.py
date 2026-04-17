@@ -270,20 +270,61 @@ def get_history_events() -> list[dict]:
 # 5. 스킬 조합 보조 (기존 group_skills_for_parallel 강화)
 # ============================================================
 
+_META_SKILLS = {
+    "using-superpowers", "brainstorming", "writing-plans",
+    "test-driven-development", "systematic-debugging",
+    "verification-before-completion", "writing-skills",
+    "requesting-code-review",
+}
+
+
+def _pick_meta_for_query(query: str) -> str:
+    """쿼리 의도로 도메인 스킬에 짝지을 슈퍼파워 메타 스킬 1개 선정.
+
+    더 구체적인 패턴(예: '스킬 만들')을 일반 패턴('만들자')보다 먼저 검사한다.
+    """
+    q = query.lower()
+    if any(kw in q for kw in ["스킬 만들", "skill.md", "스킬 작성", "새 스킬"]):
+        return "writing-skills"
+    if any(kw in q for kw in ["버그", "에러", "왜 안 되", "디버깅", "이상해", "traceback"]):
+        return "systematic-debugging"
+    if any(kw in q for kw in ["tdd", "테스트 먼저", "레드그린"]):
+        return "test-driven-development"
+    if any(kw in q for kw in ["끝났어", "배포", "완료 선언", "검증"]):
+        return "verification-before-completion"
+    if any(kw in q for kw in ["리뷰", "pr", "코드리뷰", "코드 검토"]):
+        return "requesting-code-review"
+    if any(kw in q for kw in ["설계", "만들자", "새 기능", "아이디어", "브레인스토밍"]):
+        return "brainstorming"
+    if any(kw in q for kw in ["계획", "태스크", "분해", "쪼개"]):
+        return "writing-plans"
+    return "using-superpowers"
+
+
 def suggest_skill_combinations(query: str, selected_skills: list[str], limit: int = 3) -> list[str]:
     """선택된 스킬과 함께 쓰면 좋을 보조 스킬을 하네스 라우터로 추천.
 
-    기존 선택에 없는 스킬 중, 프롬프트에 매칭되는 것을 추가 추천.
+    1) 하네스 라우터 매칭 결과를 기본으로 사용한다.
+    2) selected_skills 에 도메인 스킬이 있으면 의도 기반 메타 스킬 1개를 앞쪽에 prepend.
     """
     router = get_router()
     matches = router.route(query, limit=limit + len(selected_skills))
     existing = set(s.lower() for s in selected_skills)
-    suggestions = []
+    suggestions: list[str] = []
     for m in matches:
         if m.name.lower() not in existing:
             suggestions.append(m.name)
         if len(suggestions) >= limit:
             break
+
+    # 도메인↔메타 페어링: 선택에 도메인 스킬이 있으면 메타 1개 앞에 붙임
+    has_domain = any(s.lower() not in _META_SKILLS for s in selected_skills)
+    if has_domain:
+        meta = _pick_meta_for_query(query)
+        if meta not in existing and meta not in {s.lower() for s in suggestions}:
+            suggestions.insert(0, meta)
+            if len(suggestions) > limit:
+                suggestions = suggestions[:limit]
     return suggestions
 
 

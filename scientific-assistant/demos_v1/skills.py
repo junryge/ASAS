@@ -193,6 +193,15 @@ SKILL_DESC_KO = {
     "cmd-git-sync":"Git 동기화 커맨드",
     "guide-opus-migration":"Opus 4.5 마이그레이션 가이드","guide-hooks":"Claude 훅 시스템 가이드",
     "guide-claude-md":"CLAUDE.md 글로벌 설정 가이드",
+    # ===== 슈퍼파워 메타 스킬 (8개, obra/superpowers Jon Edition) =====
+    "using-superpowers":"메타 스킬 — 매 응답 전 어떤 스킬을 발동할지 자문",
+    "brainstorming":"Socratic 설계 세션 — 코드 쓰기 전 질문 5개로 스펙 확정",
+    "writing-plans":"구현 계획 — 설계를 2-5분 단위 태스크로 분해(파일/라인/검증 명시)",
+    "test-driven-development":"TDD — RED→GREEN→REFACTOR 사이클 강제",
+    "systematic-debugging":"체계적 디버깅 — 4단계 루트코즈 조사 후에만 수정",
+    "verification-before-completion":"완료 전 검증 — '완료' 선언 전 실행 증거 확보",
+    "writing-skills":"스킬 작성법 — SKILL.md TDD(YAML/description/Progressive Disclosure)",
+    "requesting-code-review":"코드 리뷰 요청 — Self-checklist + 4섹션 요청 포맷",
 }
 
 # 분야별 스킬 매핑 (355개 전체 분류: 24개 카테고리)
@@ -504,6 +513,17 @@ DOMAIN_SKILLS = {
             "cmd-git-pr","cmd-git-prune","cmd-git-sync",
         ]
     },
+    "superpowers": {
+        "label": "슈퍼파워",
+        "icon": "⚡",
+        "color": "#eab308",
+        "skills": [
+            "using-superpowers","brainstorming","writing-plans",
+            "test-driven-development","systematic-debugging",
+            "verification-before-completion","writing-skills",
+            "requesting-code-review",
+        ]
+    },
 }
 
 
@@ -661,6 +681,15 @@ SKILL_GROUPS = {
             "perplexity-search","parallel-web","bgpt-paper-search","research-lookup",
         },
         "pre_process": True,
+        "preferred_model_size": "small",
+    },
+    "meta-behavioral": {
+        "skills": {
+            "using-superpowers","brainstorming","writing-plans",
+            "test-driven-development","systematic-debugging",
+            "verification-before-completion","writing-skills",
+            "requesting-code-review",
+        },
         "preferred_model_size": "small",
     },
 }
@@ -1310,6 +1339,15 @@ SKILL_KEYWORDS = {
     "owasp-security": ['보안', 'OWASP', 'XSS', 'SQL인젝션', 'CSRF', '취약점', 'vulnerability', '인증', '인가', 'authentication', 'authorization', 'injection', '보안점검', '코드보안', 'security'],
     "what-if-oracle": ['What-If', '시나리오', '가정분석', 'hypothetical'],
     "zarr-python": ['Zarr', '청크배열', 'N-D array', '대용량배열', 'cloud storage'],
+    # ===== 슈퍼파워 메타 스킬 트리거 (8개) =====
+    "using-superpowers": ['슈퍼파워', 'superpower', '스킬선택', '메타스킬', '스킬 발동'],
+    "brainstorming": ['만들자', '설계', '브레인스토밍', '아이디어', '새 기능', '어떻게 설계', '뭐부터'],
+    "writing-plans": ['계획', '태스크', '플랜', '분해', '쪼개', '구현 순서', '계획 짜'],
+    "test-driven-development": ['TDD', '테스트 먼저', 'RED', 'GREEN', 'REFACTOR', '레드그린', '테스트 주도'],
+    "systematic-debugging": ['디버깅', '버그', '왜 안 되', '에러', '루트코즈', 'traceback', '이상해', '테스트 실패'],
+    "verification-before-completion": ['끝났어', '완료', '배포해도', '검증', '증거', '완료 선언', '끝났다'],
+    "writing-skills": ['스킬 만들', 'SKILL.md', '스킬 작성', '새 스킬', 'skill 작성'],
+    "requesting-code-review": ['리뷰', 'PR', '코드리뷰', 'review 요청', 'self-check', '코드 검토', '체크 좀'],
 }
 
 def _score_query(query_lower):
@@ -1395,6 +1433,29 @@ def context_aware_skill_select(query, history, max_skills=3):
         for sid in ["agent-llm-architect", "agent-prompt-engineer", "agent-ai-engineer"]:
             combined[sid] = combined.get(sid, 0) + 6
             boosted.add(sid)
+
+    # 슈퍼파워 메타 스킬 자동 발동 (using-superpowers 는 매 응답 메타라 키워드 트리거 제외)
+    if any(kw in q for kw in ["만들자", "설계", "브레인스토밍", "아이디어", "새 기능", "어떻게 설계", "뭐부터"]):
+        combined["brainstorming"] = combined.get("brainstorming", 0) + 8
+        boosted.add("brainstorming")
+    if any(kw in q for kw in ["계획", "태스크", "플랜", "분해", "쪼개", "구현 순서", "계획 짜"]):
+        combined["writing-plans"] = combined.get("writing-plans", 0) + 6
+        boosted.add("writing-plans")
+    if any(kw in q for kw in ["tdd", "테스트 먼저", "레드그린", "테스트 주도", "red green refactor"]):
+        combined["test-driven-development"] = combined.get("test-driven-development", 0) + 7
+        boosted.add("test-driven-development")
+    if any(kw in q for kw in ["디버깅", "버그", "왜 안 되", "에러", "루트코즈", "traceback", "이상해", "테스트 실패"]):
+        combined["systematic-debugging"] = combined.get("systematic-debugging", 0) + 9
+        boosted.add("systematic-debugging")
+    if any(kw in q for kw in ["끝났어", "끝났다", "배포해도", "완료 선언", "검증해", "증거"]):
+        combined["verification-before-completion"] = combined.get("verification-before-completion", 0) + 9
+        boosted.add("verification-before-completion")
+    if any(kw in q for kw in ["스킬 만들", "skill.md", "스킬 작성", "새 스킬", "skill 작성"]):
+        combined["writing-skills"] = combined.get("writing-skills", 0) + 6
+        boosted.add("writing-skills")
+    if any(kw in q for kw in ["리뷰", "pr 올리", "코드리뷰", "코드 검토", "review 요청", "self-check"]):
+        combined["requesting-code-review"] = combined.get("requesting-code-review", 0) + 6
+        boosted.add("requesting-code-review")
 
     # 5단계: 업로드 파일 기반 부스트
     # 파일 확장자 → 관련 스킬 매핑
