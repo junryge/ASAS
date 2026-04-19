@@ -200,6 +200,10 @@ canvas.chart { width:100%; flex:1; }
         <span id="p-dl-badge" class="risk risk-NORMAL">정상</span>
       </div>
       <div id="p-dl-msg" style="font-size:11px;color:#9ca3af;margin-top:3px;"></div>
+      <div class="sr" style="margin-top:6px;"><span class="sl">현재 OBS</span><span class="sv" id="p-obs-now">-</span></div>
+      <div class="sr"><span class="sl">평균 OBS</span><span class="sv" id="p-obs-avg">-</span></div>
+      <div class="sr"><span class="sl">spike 횟수</span><span class="sv y" id="p-spike-cnt">0</span></div>
+      <button onclick="openSpikeModal()" style="margin-top:8px;width:100%;padding:6px;background:#0891b2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">📊 OBS 추이 상세보기</button>
     </div>
     <div class="panel">
       <h3>위험 Zone</h3>
@@ -365,6 +369,11 @@ function updateUI(d) {
   dlBadge.textContent = dlLabels[dr.level] || dr.level || '정상';
   dlBadge.className = 'risk risk-' + (dr.level||'NORMAL');
   setText('p-dl-msg', dr.message||'');
+
+  // OBS spike 추적 (client-side history)
+  const obsCurrent = dr.obs_current || 0;
+  trackOBSHistory(obsCurrent, d.time_short || '');
+  updateSpikePanel();
 
   // 데드락 알람 배너
   const banner = document.getElementById('alarm-banner');
@@ -943,6 +952,197 @@ function drawQueueChart() {
   ctx.fillText('💡 클릭 → 해당 시간 이동', w - 4, h - 4);
 }
 
+// ============================================================
+// OBS Spike 추적 (데드락 전조)
+// ============================================================
+const OBS_HISTORY_MAX = 60;       // 최근 60샘플 보관
+const OBS_SPIKE_SIGMA = 1.5;      // 평균 + 1.5σ를 spike로 판정
+let obsHistory = [];              // [{time, obs}, ...]
+let spikeEvents = [];             // [{time, obs, recovered}, ...]
+let _lastObsSampleTime = '';
+
+function trackOBSHistory(obs, timeStr) {
+  if (!timeStr || timeStr === _lastObsSampleTime) return;
+  _lastObsSampleTime = timeStr;
+  obsHistory.push({ time: timeStr, obs: obs });
+  if (obsHistory.length > OBS_HISTORY_MAX) obsHistory.shift();
+
+  // spike 판정
+  if (obsHistory.length >= 5) {
+    const vals = obsHistory.map(h => h.obs);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
+    const std = Math.sqrt(variance);
+    const threshold = mean + OBS_SPIKE_SIGMA * std;
+    if (obs > threshold && obs > mean * 1.2) {
+      // 마지막 spike와 너무 가까우면 합침
+      const lastSpike = spikeEvents[spikeEvents.length - 1];
+      if (!lastSpike || lastSpike.time !== timeStr) {
+        spikeEvents.push({ time: timeStr, obs: obs, threshold: Math.round(threshold) });
+        if (spikeEvents.length > 20) spikeEvents.shift();
+      }
+    }
+  }
+}
+
+function updateSpikePanel() {
+  if (!obsHistory.length) return;
+  const cur = obsHistory[obsHistory.length - 1].obs;
+  const vals = obsHistory.map(h => h.obs);
+  const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  setText('p-obs-now', cur);
+  setText('p-obs-avg', avg);
+  setText('p-spike-cnt', spikeEvents.length);
+
+  // 모달이 열려있으면 모달 내용도 갱신
+  if (document.getElementById('spike-modal').style.display === 'flex') {
+    renderSpikeModal();
+  }
+}
+
+function openSpikeModal() {
+  document.getElementById('spike-modal').style.display = 'flex';
+  renderSpikeModal();
+}
+
+function closeSpikeModal() {
+  document.getElementById('spike-modal').style.display = 'none';
+}
+
+function renderSpikeModal() {
+  if (!obsHistory.length) return;
+  const vals = obsHistory.map(h => h.obs);
+  const cur = vals[vals.length - 1];
+  const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  const max = Math.max(...vals);
+  setText('m-obs-now', cur);
+  setText('m-obs-avg', avg);
+  setText('m-obs-max', max);
+  setText('m-spike-cnt', spikeEvents.length);
+
+  // spike log
+  const logEl = document.getElementById('spike-log');
+  if (spikeEvents.length === 0) {
+    logEl.innerHTML = '<span style="color:#6b7280;">아직 spike 없음 (시스템 안정)</span>';
+  } else {
+    logEl.innerHTML = spikeEvents.slice().reverse().map(s =>
+      `<div>🔴 ${s.time} — OBS <b style="color:#ef4444;">${s.obs}</b> (임계 ${s.threshold} 초과)</div>`
+    ).join('');
+  }
+  drawSpikeChart();
+}
+
+function drawSpikeChart() {
+  const canvas = document.getElementById('spike-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(400, Math.floor(rect.width));
+  const h = Math.max(200, Math.floor(rect.height));
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#0a0e17';
+  ctx.fillRect(0, 0, w, h);
+
+  if (obsHistory.length < 2) {
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('데이터 누적 중... (재생하면 채워짐)', w / 2, h / 2);
+    return;
+  }
+
+  const vals = obsHistory.map(h => h.obs);
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
+  const threshold = mean + OBS_SPIKE_SIGMA * Math.sqrt(variance);
+  const yMax = Math.max(...vals, threshold) * 1.1;
+  const yMin = Math.min(...vals) * 0.9;
+
+  const px = 40, py = 20;
+  const pw = w - px - 10, ph = h - py - 30;
+
+  // 임계선
+  const thY = py + ph - ((threshold - yMin) / (yMax - yMin)) * ph;
+  ctx.strokeStyle = '#ef4444';
+  ctx.setLineDash([5, 3]);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(px, thY);
+  ctx.lineTo(px + pw, thY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ef4444';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`임계 ${Math.round(threshold)}`, px + 4, thY - 3);
+
+  // 평균선
+  const avgY = py + ph - ((mean - yMin) / (yMax - yMin)) * ph;
+  ctx.strokeStyle = '#60a5fa';
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.moveTo(px, avgY);
+  ctx.lineTo(px + pw, avgY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#60a5fa';
+  ctx.fillText(`평균 ${Math.round(mean)}`, px + 4, avgY - 3);
+
+  // 시계열 라인
+  ctx.strokeStyle = '#22c55e';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  obsHistory.forEach((h, i) => {
+    const x = px + (i / (obsHistory.length - 1)) * pw;
+    const y = py + ph - ((h.obs - yMin) / (yMax - yMin)) * ph;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // spike 마커
+  obsHistory.forEach((h, i) => {
+    if (h.obs > threshold) {
+      const x = px + (i / (obsHistory.length - 1)) * pw;
+      const y = py + ph - ((h.obs - yMin) / (yMax - yMin)) * ph;
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, 6.283);
+      ctx.fill();
+    }
+  });
+
+  // Y축 라벨
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.round(yMax), px - 4, py + 8);
+  ctx.fillText(Math.round(yMin), px - 4, py + ph);
+
+  // X축 (첫/끝 시간)
+  ctx.textAlign = 'left';
+  ctx.fillText(obsHistory[0].time, px, h - 8);
+  ctx.textAlign = 'right';
+  ctx.fillText(obsHistory[obsHistory.length - 1].time, px + pw, h - 8);
+}
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('spike-modal').style.display === 'flex') {
+    closeSpikeModal();
+  }
+});
+
+// 창 크기 변경 시 모달 차트 다시 그리기
+window.addEventListener('resize', () => {
+  if (document.getElementById('spike-modal').style.display === 'flex') {
+    drawSpikeChart();
+  }
+});
+
 // 차트 클릭 → 해당 시간으로 점프
 document.getElementById('chart-queue').addEventListener('click', function(e) {
   if (!starHistory.length) return;
@@ -1262,5 +1462,32 @@ drawMap();
   } catch(e) { console.error('날짜 목록 로드 실패:', e); }
 })();
 </script>
+<!-- OBS spike 추이 모달 -->
+<div id="spike-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='spike-modal')closeSpikeModal()">
+  <div style="background:#0a0e17;border:1px solid #06b6d4;border-radius:8px;padding:16px;width:90%;max-width:800px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#06b6d4;">데드락 전조 — OBS 추이 상세</h3>
+      <button onclick="closeSpikeModal()" style="background:none;border:1px solid #444;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;">✕ 닫기</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">현재 OBS</div><div id="m-obs-now" style="font-size:18px;font-weight:bold;color:#fff;">-</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">평균 (최근 30분)</div><div id="m-obs-avg" style="font-size:18px;font-weight:bold;color:#60a5fa;">-</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">최대값</div><div id="m-obs-max" style="font-size:18px;font-weight:bold;color:#f59e0b;">-</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">spike 횟수</div><div id="m-spike-cnt" style="font-size:18px;font-weight:bold;color:#ef4444;">0</div></div>
+    </div>
+    <div style="background:#1a1a2e;padding:8px;border-radius:4px;margin-bottom:8px;">
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">OBS 시계열 (최근 30분, 빨간 점선=spike 임계, 빨간 ●=spike 발생)</div>
+      <canvas id="spike-chart" style="width:100%;height:240px;"></canvas>
+    </div>
+    <div>
+      <div style="font-size:12px;color:#06b6d4;font-weight:bold;margin:8px 0 4px;">최근 spike 기록</div>
+      <div id="spike-log" style="background:#1a1a2e;padding:8px;border-radius:4px;font-size:11px;max-height:150px;overflow-y:auto;color:#cbd5e1;line-height:1.6;">아직 spike 없음</div>
+    </div>
+    <div style="font-size:10px;color:#6b7280;margin-top:8px;">
+      💡 spike 임계 = 평균 + 1.5σ. spike 후 1분 이내 회복하면 시스템이 자체 해소 중.
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
