@@ -283,6 +283,32 @@ class ReplayEngine:
             return self.data_loader.get_hid_speed_summary()
         return {}
 
+    def get_obs_jam_history(self) -> List[dict]:
+        """전체 OHT 타임라인에서 분 단위 OBS / JAM 카운트 집계.
+
+        UDP 누적 상태를 시간 흐름대로 따라가며 매 분마다
+        state=6(OBS_BZ_STOP) 차량 수와 state=7(JAM) 차량 수를 측정.
+        """
+        if not self.data_loader or not self.data_loader.oht_timeline:
+            return []
+
+        from collections import defaultdict
+        cumulative_state: Dict[str, dict] = {}
+        per_minute: Dict[str, dict] = {}
+
+        for t, updates in self.data_loader.oht_timeline:
+            for v in updates:
+                vid = v.get('vid', '')
+                if vid:
+                    cumulative_state[vid] = v
+            t_min = t.strftime('%H:%M')
+            obs_count = sum(1 for v in cumulative_state.values() if v.get('state') == 6)
+            jam_count = sum(1 for v in cumulative_state.values() if v.get('state') == 7)
+            # 같은 분에 여러 sample이 있으면 마지막 값 (분 끝)을 유지
+            per_minute[t_min] = {'time': t_min, 'obs': obs_count, 'jam': jam_count}
+
+        return list(per_minute.values())
+
     def get_ts_events(self) -> List[dict]:
         """ts_resource 분 단위 집계"""
         if not self.data_loader:

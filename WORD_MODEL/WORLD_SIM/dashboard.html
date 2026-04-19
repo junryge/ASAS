@@ -120,6 +120,8 @@ canvas.chart { width:100%; flex:1; }
 .ritem .rv { font-size:10px; margin-top:3px; font-weight:bold; }
 .ritem .rdetail { font-size:10px; margin-top:5px; padding:5px 6px; background:#0d1a2e; border-radius:3px; color:#cbd5e1; line-height:1.6; }
 .ritem .rdetail div { margin-bottom:1px; }
+.jam-entry { padding:3px 4px; border-radius:3px; cursor:help; transition:background 0.15s; }
+.jam-entry:hover { background:#252550; }
 .zone-bar { height:3px; background:#333; border-radius:2px; margin-top:4px; }
 .zone-bar-fill { height:100%; border-radius:2px; }
 .zone-normal .zone-bar-fill { background:#22c55e; }
@@ -197,12 +199,12 @@ canvas.chart { width:100%; flex:1; }
       <div class="sr"><span class="sl">물동량</span><span class="sv">~20,000건/시</span></div>
       <div style="margin-top:6px;">
         <span class="sl">데드락 위험:</span>
-        <span id="p-dl-badge" class="risk risk-NORMAL">정상</span>
+        <span id="p-dl-badge" class="risk risk-NORMAL" ondblclick="openRiskModal()" style="cursor:pointer;" title="더블클릭 → 과거 위험 이력 보기">정상</span>
       </div>
       <div id="p-dl-msg" style="font-size:11px;color:#9ca3af;margin-top:3px;"></div>
       <div class="sr" style="margin-top:6px;"><span class="sl">현재 OBS</span><span class="sv" id="p-obs-now">-</span></div>
       <div class="sr"><span class="sl">평균 OBS</span><span class="sv" id="p-obs-avg">-</span></div>
-      <div class="sr"><span class="sl">spike 횟수</span><span class="sv y" id="p-spike-cnt">0</span></div>
+      <div class="sr"><span class="sl">JAM 발생</span><span class="sv r" id="p-jam-cnt">0</span></div>
       <button onclick="openSpikeModal()" style="margin-top:8px;width:100%;padding:6px;background:#0891b2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">📊 OBS 추이 상세보기</button>
     </div>
     <div class="panel">
@@ -325,6 +327,11 @@ async function loadDate(dateKey) {
     const hidResp = await fetch('/api/hid-speeds');
     hidSpeeds = await hidResp.json();
     renderZoneList();
+    // OBS/JAM 전체 시계열 (재생과 무관, 데이터 로드 직후 한 번만)
+    const obsResp = await fetch('/api/obs-jam-history');
+    fullObsHistory = await obsResp.json();
+    // 누적 history/jamEvents 초기화 (날짜 변경 시)
+    obsHistory = []; jamEvents = []; _lastObsSampleTime = ''; _lastJamCount = 0;
     sendCmd('load', { date: dateKey });
   } catch(e) { console.error('Load failed:', e); }
   document.getElementById('loading-msg').style.display = 'none';
@@ -370,9 +377,11 @@ function updateUI(d) {
   dlBadge.className = 'risk risk-' + (dr.level||'NORMAL');
   setText('p-dl-msg', dr.message||'');
 
-  // OBS spike 추적 (client-side history)
+  // OBS + JAM 추적 (client-side history) — JAM 발생만 진짜 이벤트로 본다
   const obsCurrent = dr.obs_current || 0;
-  trackOBSHistory(obsCurrent, d.time_short || '');
+  const jamCount = (d.vehicleStats && d.vehicleStats.jam) || 0;
+  currentPlayTime = d.time_short || '';
+  trackOBSHistory(obsCurrent, currentPlayTime, jamCount);
   updateSpikePanel();
 
   // 데드락 알람 배너
@@ -958,46 +967,137 @@ function drawQueueChart() {
 const OBS_HISTORY_MAX = 60;       // 최근 60샘플 보관
 const OBS_SPIKE_SIGMA = 1.5;      // 평균 + 1.5σ를 spike로 판정
 let obsHistory = [];              // [{time, obs}, ...]
-let spikeEvents = [];             // [{time, obs, recovered}, ...]
+let jamEvents = [];               // [{time, obs, jam}] — 재생 누적 (호환성용)
+let fullObsHistory = [];          // 전체 데이터 시계열 [{time, obs, jam}, ...] — 데이터 로드 시 1회 채움
+let currentPlayTime = '';         // 현재 재생 시각 (HH:MM:SS) — 차트의 노란 세로선 위치
 let _lastObsSampleTime = '';
+let _lastJamCount = 0;
 
-function trackOBSHistory(obs, timeStr) {
+function trackOBSHistory(obs, timeStr, jamCount) {
   if (!timeStr || timeStr === _lastObsSampleTime) return;
   _lastObsSampleTime = timeStr;
-  obsHistory.push({ time: timeStr, obs: obs });
+  obsHistory.push({ time: timeStr, obs: obs, jam: jamCount });
   if (obsHistory.length > OBS_HISTORY_MAX) obsHistory.shift();
 
-  // spike 판정
-  if (obsHistory.length >= 5) {
-    const vals = obsHistory.map(h => h.obs);
-    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
-    const std = Math.sqrt(variance);
-    const threshold = mean + OBS_SPIKE_SIGMA * std;
-    if (obs > threshold && obs > mean * 1.2) {
-      // 마지막 spike와 너무 가까우면 합침
-      const lastSpike = spikeEvents[spikeEvents.length - 1];
-      if (!lastSpike || lastSpike.time !== timeStr) {
-        spikeEvents.push({ time: timeStr, obs: obs, threshold: Math.round(threshold) });
-        if (spikeEvents.length > 20) spikeEvents.shift();
-      }
-    }
+  // JAM 발생 (state=7 차량이 0→1 이상으로 새로 등장한 시점만)
+  if (jamCount > 0 && _lastJamCount === 0) {
+    jamEvents.push({ time: timeStr, obs: obs, jam: jamCount });
+    if (jamEvents.length > 50) jamEvents.shift();
   }
+  _lastJamCount = jamCount;
 }
 
 function updateSpikePanel() {
-  if (!obsHistory.length) return;
-  const cur = obsHistory[obsHistory.length - 1].obs;
-  const vals = obsHistory.map(h => h.obs);
-  const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  // 현재 OBS = 재생 시점 (최신)
+  const cur = obsHistory.length ? obsHistory[obsHistory.length - 1].obs : '-';
   setText('p-obs-now', cur);
-  setText('p-obs-avg', avg);
-  setText('p-spike-cnt', spikeEvents.length);
 
-  // 모달이 열려있으면 모달 내용도 갱신
+  // 평균 OBS / JAM 발생 = 전체 데이터 (재생과 무관)
+  if (fullObsHistory.length) {
+    const vals = fullObsHistory.map(h => h.obs);
+    const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+    const allJam = fullObsHistory.filter(h => h.jam && h.jam > 0).length;
+    setText('p-obs-avg', avg);
+    setText('p-jam-cnt', allJam);
+  } else {
+    setText('p-obs-avg', '-');
+    setText('p-jam-cnt', 0);
+  }
+
+  // 모달이 열려있으면 모달 내용도 갱신 (현재 시간 마커 이동)
   if (document.getElementById('spike-modal').style.display === 'flex') {
     renderSpikeModal();
   }
+}
+
+// ============================================================
+// 위험 레벨 이력 모달 (정상 제외)
+// ============================================================
+// macro_predictor 임계값과 동일
+const RISK_THRESHOLDS = { WARNING: 180, DANGER: 200, CRITICAL: 300 };
+
+function computeRiskLevel(avg_obs, trend) {
+  if (avg_obs >= RISK_THRESHOLDS.CRITICAL) return 'CRITICAL';
+  if (avg_obs >= RISK_THRESHOLDS.DANGER) return 'DANGER';
+  if (avg_obs >= RISK_THRESHOLDS.WARNING) return 'WARNING';
+  if (trend > 10) return 'WATCH';
+  return 'NORMAL';
+}
+
+function buildRiskHistory() {
+  // fullObsHistory 분당 데이터에서 위험 레벨 시계열 생성
+  // 같은 레벨이 연속되면 한 구간으로 묶음
+  if (!fullObsHistory.length) return [];
+  const segments = [];
+  let curSeg = null;
+  for (let i = 0; i < fullObsHistory.length; i++) {
+    const recent = fullObsHistory.slice(Math.max(0, i - 9), i + 1);
+    const avg = recent.reduce((s, h) => s + h.obs, 0) / recent.length;
+    let trend = 0;
+    if (recent.length >= 5) {
+      const half = Math.floor(recent.length / 2);
+      const f = recent.slice(0, half).reduce((s, h) => s + h.obs, 0) / half;
+      const sec = recent.slice(half).reduce((s, h) => s + h.obs, 0) / (recent.length - half);
+      trend = sec - f;
+    }
+    const level = computeRiskLevel(avg, trend);
+    if (level === 'NORMAL') {
+      if (curSeg) { segments.push(curSeg); curSeg = null; }
+    } else {
+      if (!curSeg || curSeg.level !== level) {
+        if (curSeg) segments.push(curSeg);
+        curSeg = { level: level, start: fullObsHistory[i].time, end: fullObsHistory[i].time, peak: fullObsHistory[i].obs };
+      } else {
+        curSeg.end = fullObsHistory[i].time;
+        if (fullObsHistory[i].obs > curSeg.peak) curSeg.peak = fullObsHistory[i].obs;
+      }
+    }
+  }
+  if (curSeg) segments.push(curSeg);
+  return segments;
+}
+
+function openRiskModal() {
+  document.getElementById('risk-modal').style.display = 'flex';
+  renderRiskModal();
+}
+
+function closeRiskModal() {
+  document.getElementById('risk-modal').style.display = 'none';
+}
+
+function renderRiskModal() {
+  const segments = buildRiskHistory();
+  const counts = { WATCH: 0, WARNING: 0, DANGER: 0, CRITICAL: 0 };
+  segments.forEach(s => { if (counts[s.level] !== undefined) counts[s.level]++; });
+  setText('r-cnt-watch', counts.WATCH);
+  setText('r-cnt-warning', counts.WARNING);
+  setText('r-cnt-danger', counts.DANGER);
+  setText('r-cnt-critical', counts.CRITICAL);
+
+  const lvlMeta = {
+    WATCH:    { label: '관찰',  color: '#60a5fa', icon: '👁️' },
+    WARNING:  { label: '주의',  color: '#f59e0b', icon: '⚠️' },
+    DANGER:   { label: '위험',  color: '#ef4444', icon: '🔴' },
+    CRITICAL: { label: '심각',  color: '#dc2626', icon: '🚨' },
+  };
+
+  const logEl = document.getElementById('risk-log');
+  if (segments.length === 0) {
+    logEl.innerHTML = '<span style="color:#22c55e;">정상 외 이벤트 없음 (전 시간 안정)</span>';
+    return;
+  }
+  // 최신순 정렬
+  const timeToSec = (s) => {
+    const p = (s || '').split(':');
+    return (parseInt(p[0])||0)*3600 + (parseInt(p[1])||0)*60;
+  };
+  const sorted = segments.slice().sort((a, b) => timeToSec(b.start) - timeToSec(a.start));
+  logEl.innerHTML = sorted.map(s => {
+    const m = lvlMeta[s.level] || { label: s.level, color: '#888', icon: '•' };
+    const dur = (s.start === s.end) ? '1분' : `${s.start}~${s.end}`;
+    return `<div class="jam-entry" title="${m.label}(${s.level}) — 최대 OBS ${s.peak}, 지속 ${dur}">${m.icon} <b style="color:${m.color};">${m.label}</b> ${s.start}${s.start !== s.end ? '~'+s.end : ''} (피크 OBS ${s.peak})</div>`;
+  }).join('');
 }
 
 function openSpikeModal() {
@@ -1010,24 +1110,51 @@ function closeSpikeModal() {
 }
 
 function renderSpikeModal() {
-  if (!obsHistory.length) return;
-  const vals = obsHistory.map(h => h.obs);
+  // 전체 데이터 우선 사용. 없으면 재생 누적 fallback.
+  const src = fullObsHistory.length ? fullObsHistory : obsHistory;
+  if (!src.length) return;
+  const vals = src.map(h => h.obs);
   const cur = vals[vals.length - 1];
   const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
   const max = Math.max(...vals);
+  // JAM 발생 시점 (전체 데이터 기준)
+  const allJam = src.filter(h => h.jam && h.jam > 0);
   setText('m-obs-now', cur);
   setText('m-obs-avg', avg);
   setText('m-obs-max', max);
-  setText('m-spike-cnt', spikeEvents.length);
+  setText('m-spike-cnt', allJam.length);
 
-  // spike log
+  // JAM 이벤트 표시 (시간 내림차순)
   const logEl = document.getElementById('spike-log');
-  if (spikeEvents.length === 0) {
-    logEl.innerHTML = '<span style="color:#6b7280;">아직 spike 없음 (시스템 안정)</span>';
+  const timeToSec = (s) => {
+    const p = (s || '').split(':');
+    return (parseInt(p[0])||0)*3600 + (parseInt(p[1])||0)*60 + (parseInt(p[2])||0);
+  };
+  const sorted = allJam.slice().sort((a, b) => timeToSec(b.time) - timeToSec(a.time));
+  if (sorted.length === 0) {
+    logEl.innerHTML = '<span style="color:#22c55e;">JAM 발생 없음 (시스템 안정)</span>';
   } else {
-    logEl.innerHTML = spikeEvents.slice().reverse().map(s =>
-      `<div>🔴 ${s.time} — OBS <b style="color:#ef4444;">${s.obs}</b> (임계 ${s.threshold} 초과)</div>`
-    ).join('');
+    logEl.innerHTML = sorted.map(e => {
+      // 데드락 여부 판정 (JAM 차량 수 기반)
+      let status, statusColor, icon, tooltip;
+      if (e.jam >= 5) {
+        status = '데드락 발생';
+        statusColor = '#ef4444';
+        icon = '🚨';
+        tooltip = `데드락 발생: ${e.jam}대가 동시에 JAM 상태. 다수 차량 동시 정지 = 진짜 데드락 의심. 즉시 운영 확인 필요.`;
+      } else if (e.jam >= 2) {
+        status = '주의 (다수 정지)';
+        statusColor = '#f59e0b';
+        icon = '⚠️';
+        tooltip = `주의: ${e.jam}대 동시 정지. 데드락 직전 가능성. 회복 양상 확인 필요.`;
+      } else {
+        status = '데드락 미발생 (경고)';
+        statusColor = '#fbbf24';
+        icon = '🟡';
+        tooltip = `데드락 미발생: 1대만 잠깐 JAM 후 즉시 회복. 단발성 경고. 시스템 정상.`;
+      }
+      return `<div class="jam-entry" title="${tooltip}">${icon} <b>${e.time}</b> — JAM (OBS ${e.obs}, ${e.jam}대) <span style="color:${statusColor};font-weight:bold;">— ${status}</span></div>`;
+    }).join('');
   }
   drawSpikeChart();
 }
@@ -1047,15 +1174,17 @@ function drawSpikeChart() {
   ctx.fillStyle = '#0a0e17';
   ctx.fillRect(0, 0, w, h);
 
-  if (obsHistory.length < 2) {
+  // 전체 데이터 우선. 없으면 재생 누적 fallback.
+  const data = fullObsHistory.length ? fullObsHistory : obsHistory;
+  if (data.length < 2) {
     ctx.fillStyle = '#6b7280';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('데이터 누적 중... (재생하면 채워짐)', w / 2, h / 2);
+    ctx.fillText('데이터 로드 대기 중...', w / 2, h / 2);
     return;
   }
 
-  const vals = obsHistory.map(h => h.obs);
+  const vals = data.map(h => h.obs);
   const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
   const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
   const threshold = mean + OBS_SPIKE_SIGMA * Math.sqrt(variance);
@@ -1064,6 +1193,24 @@ function drawSpikeChart() {
 
   const px = 40, py = 20;
   const pw = w - px - 10, ph = h - py - 30;
+
+  // JAM 발생 시점 빨간 세로선 (진짜 데드락만 강조)
+  data.forEach((h, i) => {
+    if (h.jam && h.jam > 0) {
+      const x = px + (i / Math.max(1, data.length - 1)) * pw;
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, py);
+      ctx.lineTo(x, py + ph);
+      ctx.stroke();
+      // JAM 라벨
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('JAM', x, py - 4);
+    }
+  });
 
   // 임계선
   const thY = py + ph - ((threshold - yMin) / (yMax - yMin)) * ph;
@@ -1092,28 +1239,38 @@ function drawSpikeChart() {
   ctx.fillStyle = '#60a5fa';
   ctx.fillText(`평균 ${Math.round(mean)}`, px + 4, avgY - 3);
 
-  // 시계열 라인
+  // 시계열 라인 (전체 데이터)
   ctx.strokeStyle = '#22c55e';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  obsHistory.forEach((h, i) => {
-    const x = px + (i / (obsHistory.length - 1)) * pw;
+  data.forEach((h, i) => {
+    const x = px + (i / (data.length - 1)) * pw;
     const y = py + ph - ((h.obs - yMin) / (yMax - yMin)) * ph;
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   });
   ctx.stroke();
 
-  // spike 마커
-  obsHistory.forEach((h, i) => {
-    if (h.obs > threshold) {
-      const x = px + (i / (obsHistory.length - 1)) * pw;
-      const y = py + ph - ((h.obs - yMin) / (yMax - yMin)) * ph;
-      ctx.fillStyle = '#ef4444';
+  // 현재 PLAY 위치 표시 (노란 세로선)
+  const curTime = (typeof currentPlayTime === 'string') ? currentPlayTime : '';
+  if (curTime) {
+    const curHM = curTime.substring(0, 5);  // "HH:MM"
+    const curIdx = data.findIndex(h => h.time === curHM);
+    if (curIdx >= 0) {
+      const x = px + (curIdx / Math.max(1, data.length - 1)) * pw;
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 2]);
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, 6.283);
-      ctx.fill();
+      ctx.moveTo(x, py);
+      ctx.lineTo(x, py + ph);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('▼ 현재', x, py + ph + 12);
     }
-  });
+  }
 
   // Y축 라벨
   ctx.fillStyle = '#6b7280';
@@ -1124,15 +1281,19 @@ function drawSpikeChart() {
 
   // X축 (첫/끝 시간)
   ctx.textAlign = 'left';
-  ctx.fillText(obsHistory[0].time, px, h - 8);
+  ctx.fillText(data[0].time, px, h - 8);
   ctx.textAlign = 'right';
-  ctx.fillText(obsHistory[obsHistory.length - 1].time, px + pw, h - 8);
+  ctx.fillText(data[data.length - 1].time, px + pw, h - 8);
 }
 
 // ESC 키로 모달 닫기
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && document.getElementById('spike-modal').style.display === 'flex') {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('spike-modal').style.display === 'flex') {
     closeSpikeModal();
+  }
+  if (document.getElementById('risk-modal').style.display === 'flex') {
+    closeRiskModal();
   }
 });
 
@@ -1462,6 +1623,29 @@ drawMap();
   } catch(e) { console.error('날짜 목록 로드 실패:', e); }
 })();
 </script>
+<!-- 위험 레벨 이력 모달 (NORMAL 제외 모든 이벤트) -->
+<div id="risk-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='risk-modal')closeRiskModal()">
+  <div style="background:#0a0e17;border:1px solid #06b6d4;border-radius:8px;padding:16px;width:90%;max-width:700px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#06b6d4;">데드락 위험 이력 — 정상 외 전부</h3>
+      <button onclick="closeRiskModal()" style="background:none;border:1px solid #444;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;">✕ 닫기</button>
+    </div>
+    <div id="risk-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">관찰 (WATCH)</div><div id="r-cnt-watch" style="font-size:18px;font-weight:bold;color:#60a5fa;">0</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">주의 (WARNING)</div><div id="r-cnt-warning" style="font-size:18px;font-weight:bold;color:#f59e0b;">0</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">위험 (DANGER)</div><div id="r-cnt-danger" style="font-size:18px;font-weight:bold;color:#ef4444;">0</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">심각 (CRITICAL)</div><div id="r-cnt-critical" style="font-size:18px;font-weight:bold;color:#dc2626;">0</div></div>
+    </div>
+    <div>
+      <div style="font-size:12px;color:#06b6d4;font-weight:bold;margin:8px 0 4px;">위험 구간 기록 (최신순, 정상 제외)</div>
+      <div id="risk-log" style="background:#1a1a2e;padding:8px;border-radius:4px;font-size:11px;max-height:400px;overflow-y:auto;color:#cbd5e1;line-height:1.6;">데이터 로드 대기 중...</div>
+    </div>
+    <div style="font-size:10px;color:#6b7280;margin-top:8px;">
+      💡 임계: WATCH(상승추세), WARNING(OBS≥180), DANGER(OBS≥200), CRITICAL(OBS≥300). 회복돼도 기록됨.
+    </div>
+  </div>
+</div>
+
 <!-- OBS spike 추이 모달 -->
 <div id="spike-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='spike-modal')closeSpikeModal()">
   <div style="background:#0a0e17;border:1px solid #06b6d4;border-radius:8px;padding:16px;width:90%;max-width:800px;max-height:85vh;overflow-y:auto;">
@@ -1473,18 +1657,18 @@ drawMap();
       <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">현재 OBS</div><div id="m-obs-now" style="font-size:18px;font-weight:bold;color:#fff;">-</div></div>
       <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">평균 (최근 30분)</div><div id="m-obs-avg" style="font-size:18px;font-weight:bold;color:#60a5fa;">-</div></div>
       <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">최대값</div><div id="m-obs-max" style="font-size:18px;font-weight:bold;color:#f59e0b;">-</div></div>
-      <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">spike 횟수</div><div id="m-spike-cnt" style="font-size:18px;font-weight:bold;color:#ef4444;">0</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;"><div style="font-size:10px;color:#888;">JAM 발생</div><div id="m-spike-cnt" style="font-size:18px;font-weight:bold;color:#ef4444;">0</div></div>
     </div>
     <div style="background:#1a1a2e;padding:8px;border-radius:4px;margin-bottom:8px;">
-      <div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">OBS 시계열 (최근 30분, 빨간 점선=spike 임계, 빨간 ●=spike 발생)</div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">OBS 시계열 (초록=OBS, 파란점선=평균, 빨간점선=spike 임계, <b style="color:#fbbf24;">노란 세로선=현재 PLAY 시각</b>, <b style="color:#ef4444;">빨간 세로선=JAM 발생</b>)</div>
       <canvas id="spike-chart" style="width:100%;height:240px;"></canvas>
     </div>
     <div>
-      <div style="font-size:12px;color:#06b6d4;font-weight:bold;margin:8px 0 4px;">최근 spike 기록</div>
-      <div id="spike-log" style="background:#1a1a2e;padding:8px;border-radius:4px;font-size:11px;max-height:150px;overflow-y:auto;color:#cbd5e1;line-height:1.6;">아직 spike 없음</div>
+      <div style="font-size:12px;color:#06b6d4;font-weight:bold;margin:8px 0 4px;">JAM 발생 기록 (진짜 데드락 사건)</div>
+      <div id="spike-log" style="background:#1a1a2e;padding:8px;border-radius:4px;font-size:11px;max-height:150px;overflow-y:auto;color:#cbd5e1;line-height:1.6;">JAM 발생 없음</div>
     </div>
     <div style="font-size:10px;color:#6b7280;margin-top:8px;">
-      💡 spike 임계 = 평균 + 1.5σ. spike 후 1분 이내 회복하면 시스템이 자체 해소 중.
+      💡 회복된 spike는 의미 없음 → 표시 X. JAM(state=7) 발생만 진짜 데드락 사건으로 기록.
     </div>
   </div>
 </div>

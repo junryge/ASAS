@@ -175,6 +175,12 @@ async def get_hid_speeds():
     return engine.get_hid_speed_summary()
 
 
+@app.get("/api/obs-jam-history")
+async def get_obs_jam_history():
+    """OBS/JAM 분 단위 시계열 (전체 데이터, 재생과 무관)"""
+    return engine.get_obs_jam_history()
+
+
 @app.get("/api/ts-events")
 async def get_ts_events():
     """ts_resource 분 단위 집계"""
