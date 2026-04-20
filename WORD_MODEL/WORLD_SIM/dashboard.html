@@ -539,6 +539,15 @@ let isDragging = false, dragStartX = 0, dragStartY = 0;
 let railGraph = null;
 let railCacheCanvas = null;
 let railCacheKey = '';
+// 캐시가 빌드된 시점의 pan — 드래그 중에는 캐시를 재생성하지 않고 offset 으로만 그림
+let railCachePanX = 0, railCachePanY = 0;
+// drawMap 중복 rAF 큐잉 방지 (PLAY + 드래그 시 프레임당 1회만)
+let drawMapPending = false;
+function scheduleDrawMap() {
+  if (drawMapPending) return;
+  drawMapPending = true;
+  requestAnimationFrame(() => { drawMapPending = false; drawMap(); });
+}
 
 // 표시 레이어 토글
 let showZone = true, showRailCut = true, showId = false, showName = false;
@@ -614,11 +623,15 @@ function drawMap() {
   const oy = 10 + mapPanY + (h-20-dataH*sc)/2;
   const toS = (x,y) => [ox+(x-b.min_x)*sc, oy+(y-b.min_y)*sc];
 
-  // 1. 레일 배경 (캐시)
-  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${mapPanX}_${mapPanY}`;
+  // 1. 레일 배경 (캐시) — pan 은 캐시 key 에서 제외. 드래그 중에도 캐시 재사용.
+  //    캐시 빌드 시 pan offset 만큼 여유 viewport 를 렌더 (드래그 여유)
+  const CACHE_PAD = 800;
+  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${showZone?1:0}`;
   if (!railCacheCanvas || railCacheKey !== cacheKey) {
     railCacheCanvas = document.createElement('canvas');
     railCacheCanvas.width = w; railCacheCanvas.height = h;
+    railCachePanX = mapPanX;
+    railCachePanY = mapPanY;
     const rc = railCacheCanvas.getContext('2d');
     rc.fillStyle = '#0a0e17'; rc.fillRect(0,0,w,h);
 
@@ -632,7 +645,8 @@ function drawMap() {
         const from=nodes[edges[i][0]], to=nodes[edges[i][1]];
         if (!from||!to) continue;
         const [fx,fy]=toS(from[0],from[1]), [tx,ty]=toS(to[0],to[1]);
-        if ((fx<-50&&tx<-50)||(fx>w+50&&tx>w+50)||(fy<-50&&ty<-50)||(fy>h+50&&ty>h+50)) continue;
+        // 드래그 여유를 위해 컬링 범위를 CACHE_PAD 만큼 넓힘
+        if ((fx<-CACHE_PAD&&tx<-CACHE_PAD)||(fx>w+CACHE_PAD&&tx>w+CACHE_PAD)||(fy<-CACHE_PAD&&ty<-CACHE_PAD)||(fy>h+CACHE_PAD&&ty>h+CACHE_PAD)) continue;
         rc.moveTo(fx,fy); rc.lineTo(tx,ty);
       }
       rc.stroke();
@@ -641,7 +655,7 @@ function drawMap() {
         rc.fillStyle = '#2a4a6a';
         for (const [nid, c] of Object.entries(nodes)) {
           const [sx,sy]=toS(c[0],c[1]);
-          if (sx<-5||sx>w+5||sy<-5||sy>h+5) continue;
+          if (sx<-CACHE_PAD||sx>w+CACHE_PAD||sy<-CACHE_PAD||sy>h+CACHE_PAD) continue;
           rc.fillRect(sx-0.5, sy-0.5, 1, 1);
         }
       }
@@ -653,7 +667,7 @@ function drawMap() {
         const visibleZones = [];
         for (const z of railGraph.zones) {
           const [cx,cy] = toS(z.cx, z.cy);
-          if (cx >= -100 && cx <= w+100 && cy >= -100 && cy <= h+100) {
+          if (cx >= -CACHE_PAD && cx <= w+CACHE_PAD && cy >= -CACHE_PAD && cy <= h+CACHE_PAD) {
             visibleZones.push({...z, _sx: cx, _sy: cy});
           }
         }
@@ -698,7 +712,10 @@ function drawMap() {
     }
     railCacheKey = cacheKey;
   }
-  mapCtx.drawImage(railCacheCanvas, 0, 0);
+  // 캐시는 railCachePanX/Y 시점 좌표계로 그려져 있음 → 현재 pan 과의 차이만큼 offset 으로 drawImage
+  const cacheDX = mapPanX - railCachePanX;
+  const cacheDY = mapPanY - railCachePanY;
+  mapCtx.drawImage(railCacheCanvas, cacheDX, cacheDY);
 
   // ===== 1.5. 레일 차단 edge 렌더링 (기존 모양 유지, 작고 투명하게) =====
   const blockedEdges = mapData.blockedEdges || {};
@@ -873,11 +890,20 @@ function drawMap() {
 mapCanvas.addEventListener('wheel', e => {
   e.preventDefault();
   mapZoom = Math.max(0.3, Math.min(20, mapZoom * (e.deltaY>0?0.9:1.1)));
+  // 줌 바뀌면 캐시 재생성 필요
   railCacheCanvas = null;
-  requestAnimationFrame(drawMap);
+  scheduleDrawMap();
 });
 mapCanvas.addEventListener('mousedown', e => { isDragging=true; dragStartX=e.clientX-mapPanX; dragStartY=e.clientY-mapPanY; });
-mapCanvas.addEventListener('mousemove', e => { if(!isDragging) return; mapPanX=e.clientX-dragStartX; mapPanY=e.clientY-dragStartY; railCacheCanvas=null; requestAnimationFrame(drawMap); });
+mapCanvas.addEventListener('mousemove', e => {
+  if(!isDragging) return;
+  mapPanX = e.clientX - dragStartX;
+  mapPanY = e.clientY - dragStartY;
+  // 드래그 여유(CACHE_PAD)를 벗어나면 캐시 재생성 트리거
+  const dx = mapPanX - railCachePanX, dy = mapPanY - railCachePanY;
+  if (Math.abs(dx) > 600 || Math.abs(dy) > 600) railCacheCanvas = null;
+  scheduleDrawMap();
+});
 mapCanvas.addEventListener('mouseup', () => isDragging=false);
 mapCanvas.addEventListener('mouseleave', () => isDragging=false);
 
