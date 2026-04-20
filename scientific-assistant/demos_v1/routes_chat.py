@@ -252,12 +252,14 @@ def register_chat_routes(app):
             if isinstance(_lm.get("content"), str):
                 _last_q_for_detect = _lm.get("content", "").lower()
         _srv_is_drawio = any(kw in _last_q_for_detect for kw in [
-            "drawio", "draw.io", "다이어그램", "mxfile", "mxgraphmodel",
-            "아키텍처도", "배치도", "흐름도", "구조도", "dfd"
+            "drawio", "draw.io", "드로잉", "드로우", "다이어그램", "mxfile",
+            "mxgraphmodel", "아키텍처도", "배치도", "흐름도", "구조도",
+            "플로우차트", "dfd"
         ])
         _srv_is_pptx = any(kw in _last_q_for_detect for kw in [
             "ppt", "피피티", "파워포인트", "슬라이드", "발표자료",
-            "프레젠테이션", "발표 만들", "deck", "피치덱"
+            "프레젠테이션", "발표 만들", "deck", "피치덱",
+            "파워파인트"
         ])
         if (_srv_is_drawio or _srv_is_pptx) and not is_gguf:
             _kind = "drawio" if _srv_is_drawio else "pptx"
