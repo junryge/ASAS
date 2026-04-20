@@ -31,7 +31,7 @@ else:
     MODEL_REGISTRY = {
     # === dev.hcp.llm.skhynix.com (4개) ===
     "glm-5": {
-        "env_id": "hcp-glm-5",
+        "env_id": "dev",
         "model": "GLM-5",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "GLM-5 (HCP)",
@@ -41,7 +41,7 @@ else:
         "cost_tier": "medium",
     },
     "qwen3-coder-480b": {
-        "env_id": "hcp-coder-480b",
+        "env_id": "coder-480b",
         "model": "Qwen3-Coder-480B-A35B-Instruct",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "Coder-480B (HCP)",
@@ -51,7 +51,7 @@ else:
         "cost_tier": "high",
     },
     "qwen3-coder-next": {
-        "env_id": "hcp-coder-next",
+        "env_id": "coder-next",
         "model": "Qwen3-Coder-Next",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "Coder-Next (HCP)",
@@ -61,7 +61,7 @@ else:
         "cost_tier": "medium",
     },
     "qwen3-vl-30b": {
-        "env_id": "hcp-vl-30b",
+        "env_id": "vl-fast",
         "model": "Qwen3-VL-30B-A3B-Instruct",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "VL-30B-A3B (Vision/HCP)",
@@ -72,7 +72,7 @@ else:
     },
     # === common.llm.skhynix.com (3개) ===
     "gpt-oss-20b": {
-        "env_id": "common-gpt-oss-20b",
+        "env_id": "common",
         "model": "gpt-oss-20b",
         "url": "http://common.llm.skhynix.com/v1/chat/completions",
         "name": "GPT-OSS (20B/Common)",
@@ -82,7 +82,7 @@ else:
         "cost_tier": "low",
     },
     "qwen3-next-80b": {
-        "env_id": "common-next-80b",
+        "env_id": "summary",
         "model": "Qwen3-Next-80B-A3B-Instruct",
         "url": "http://common.llm.skhynix.com/v1/chat/completions",
         "name": "Next-80B (Common)",
@@ -92,7 +92,7 @@ else:
         "cost_tier": "medium",
     },
     "qwen3-coder-30b": {
-        "env_id": "common-coder-30b",
+        "env_id": "coder-common",
         "model": "Qwen3-Coder-30B-A3B-Instruct",
         "url": "http://common.llm.skhynix.com/v1/chat/completions",
         "name": "Coder-30B-A3B (Common)",

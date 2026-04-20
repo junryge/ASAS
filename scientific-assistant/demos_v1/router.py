@@ -89,19 +89,19 @@ def classify_and_route(query, history, uploaded_files_list):
 
     # 1순위: 이미지 첨부 → VL 모델
     if has_images:
-        # 복잡한 분석 요청 → 최대 VL (72B가 현재 최대)
+        # 복잡한 분석 요청 → VL-30B (현재 유일 VL)
         if any(kw in q for kw in COMPLEX_SIGNALS) or len(q) > 200:
-            return "vl-medium", "이미지+복잡 분석 → VL-72B"
-        # 보통 요청 → 중형 VL
+            return "vl-fast", "이미지+복잡 분석 → VL-30B"
+        # 보통 요청
         elif len(q) > SIMPLE_MAX_LEN:
-            return "vl-medium", "이미지 분석 → VL-72B"
-        # 간단한 요청 → 소형 VL
+            return "vl-fast", "이미지 분석 → VL-30B"
+        # 간단한 요청
         else:
             return "vl-fast", "간단 이미지 → VL-30B"
 
     # 비전 키워드는 있지만 이미지가 없는 경우 (이미지 업로드 유도)
     if has_vision_kw and not has_images:
-        return "vl-medium", "비전 키워드 감지 → VL-72B (이미지 업로드 권장)"
+        return "vl-fast", "비전 키워드 감지 → VL-30B (이미지 업로드 권장)"
 
     # 2순위: PPT 생성 → GLM-5
     if any(kw in q for kw in PPT_SIGNALS):
