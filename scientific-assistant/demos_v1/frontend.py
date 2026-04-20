@@ -1332,6 +1332,11 @@ const SKILL_COMBOS = [
     desc:'로그프레소 서버 직접 조회/검색',
     skills:['logpresso-search']
   },
+  {
+    id:'superpowers', label:'⚡ 슈퍼파워', color:'#eab308',
+    desc:'8개 행동 메타 스킬 — 브레인스토밍/TDD/디버깅/검증/리뷰 세트',
+    skills:['using-superpowers','brainstorming','writing-plans','test-driven-development','systematic-debugging','verification-before-completion','writing-skills','requesting-code-review']
+  },
 ];
 
 function renderCombos(){

@@ -134,7 +134,7 @@ def register_api_routes(app):
         """사용자 질문에 맞는 스킬을 자동 추천 (컨텍스트 인식)"""
         data = request.json
         query = data.get("query", "")
-        max_skills = data.get("max_skills", 7)
+        max_skills = data.get("max_skills", 3)
         history = data.get("history", [])  # 대화 히스토리
 
         if not query:

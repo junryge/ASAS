@@ -27,11 +27,21 @@ def _build_model_registry_from_config(config_models):
 if _EXT_CONFIG.get("models"):
     MODEL_REGISTRY = _build_model_registry_from_config(_EXT_CONFIG["models"])
 else:
-    # 기본값 (api_config.json이 없을 때) - 2026-04-14 사용 가능한 모델만
+    # 기본값 (api_config.json이 없을 때) - 2026-04-19 사용 가능한 모델 7개만
     MODEL_REGISTRY = {
-    # === dev.hcp.llm.skhynix.com (6개) ===
+    # === dev.hcp.llm.skhynix.com (4개) ===
+    "glm-5": {
+        "env_id": "hcp-glm-5",
+        "model": "GLM-5",
+        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+        "name": "GLM-5 (HCP)",
+        "capabilities": {"text", "code", "analysis", "fast"},
+        "context_window": 128000,
+        "priority": 2,
+        "cost_tier": "medium",
+    },
     "qwen3-coder-480b": {
-        "env_id": "coder-480b",
+        "env_id": "hcp-coder-480b",
         "model": "Qwen3-Coder-480B-A35B-Instruct",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "Coder-480B (HCP)",
@@ -40,28 +50,8 @@ else:
         "priority": 1,
         "cost_tier": "high",
     },
-    "qwen2.5-vl-72b": {
-        "env_id": "vl-medium",
-        "model": "Qwen2.5-VL-72B-Instruct",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "VL-72B (Vision/HCP)",
-        "capabilities": {"text", "vision", "medium"},
-        "context_window": 128000,
-        "priority": 1,
-        "cost_tier": "medium",
-    },
-    "gpt-oss-20b": {
-        "env_id": "common",
-        "model": "gpt-oss-20b",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "GPT-OSS (20B/HCP)",
-        "capabilities": {"text", "code", "fast"},
-        "context_window": 128000,
-        "priority": 3,
-        "cost_tier": "low",
-    },
     "qwen3-coder-next": {
-        "env_id": "coder-next",
+        "env_id": "hcp-coder-next",
         "model": "Qwen3-Coder-Next",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "Coder-Next (HCP)",
@@ -71,7 +61,7 @@ else:
         "cost_tier": "medium",
     },
     "qwen3-vl-30b": {
-        "env_id": "vl-fast",
+        "env_id": "hcp-vl-30b",
         "model": "Qwen3-VL-30B-A3B-Instruct",
         "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
         "name": "VL-30B-A3B (Vision/HCP)",
@@ -80,74 +70,43 @@ else:
         "priority": 2,
         "cost_tier": "low",
     },
-    "glm-5": {
-        "env_id": "dev",
-        "model": "GLM-5",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "GLM-5 (HCP)",
-        "capabilities": {"text", "code", "analysis", "fast"},
-        "context_window": 128000,
-        "priority": 2,
-        "cost_tier": "medium",
-    },
-    # === dev.common.llm.skhynix.com (4개) ===
-    "qwen3-vl-30b-common": {
-        "env_id": "vl-common",
-        "model": "Qwen3-VL-30B-A3B-Instruct",
-        "url": "http://dev.common.llm.skhynix.com/v1/chat/completions",
-        "name": "VL-30B-A3B (Common)",
-        "capabilities": {"text", "vision", "fast"},
+    # === common.llm.skhynix.com (3개) ===
+    "gpt-oss-20b": {
+        "env_id": "common-gpt-oss-20b",
+        "model": "gpt-oss-20b",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "GPT-OSS (20B/Common)",
+        "capabilities": {"text", "code", "fast"},
         "context_window": 128000,
         "priority": 3,
         "cost_tier": "low",
     },
-    "qwen3-vl-30b-instruct": {
-        "env_id": "vl-common-30b",
-        "model": "Qwen3-VL-30B-Instruct",
-        "url": "http://dev.common.llm.skhynix.com/v1/chat/completions",
-        "name": "VL-30B (Common)",
-        "capabilities": {"text", "vision", "medium"},
-        "context_window": 128000,
-        "priority": 2,
-        "cost_tier": "medium",
-    },
-    "qwen3-coder-next-common": {
-        "env_id": "coder-next-common",
-        "model": "Qwen3-Coder-Next",
-        "url": "http://dev.common.llm.skhynix.com/v1/chat/completions",
-        "name": "Coder-Next (Common)",
-        "capabilities": {"text", "code", "medium"},
-        "context_window": 128000,
-        "priority": 3,
-        "cost_tier": "medium",
-    },
-    "qwen3-vl-8b": {
-        "env_id": "vl-small",
-        "model": "Qwen3-VL-8B-Instruct",
-        "url": "http://dev.common.llm.skhynix.com/v1/chat/completions",
-        "name": "VL-8B (Common)",
-        "capabilities": {"text", "vision", "fast"},
-        "context_window": 128000,
-        "priority": 4,
-        "cost_tier": "low",
-    },
-    # === dev.summary.llm.skhynix.com (1개) ===
     "qwen3-next-80b": {
-        "env_id": "summary",
+        "env_id": "common-next-80b",
         "model": "Qwen3-Next-80B-A3B-Instruct",
-        "url": "http://dev.summary.llm.skhynix.com/v1/chat/completions",
-        "name": "Next-80B (Summary)",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "Next-80B (Common)",
         "capabilities": {"text", "analysis", "medium"},
         "context_window": 128000,
         "priority": 2,
         "cost_tier": "medium",
+    },
+    "qwen3-coder-30b": {
+        "env_id": "common-coder-30b",
+        "model": "Qwen3-Coder-30B-A3B-Instruct",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "Coder-30B-A3B (Common)",
+        "capabilities": {"text", "code", "medium"},
+        "context_window": 128000,
+        "priority": 3,
+        "cost_tier": "low",
     },
 }
 
 # API 모델 크기 티어 (api_config.json > 기본값)
 API_MODEL_TIERS = _EXT_CONFIG.get("api_model_tiers", {
     "large": ["qwen3-coder-480b", "qwen3-next-80b"],
-    "medium": ["qwen3-coder-next", "glm-5", "qwen3-coder-next-common"],
+    "medium": ["qwen3-coder-next", "qwen3-coder-30b", "glm-5"],
     "small": ["gpt-oss-20b"],
 })
 
@@ -164,19 +123,14 @@ ENV_TO_REGISTRY = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
 
 # 폴백 체인 (api_config.json > 기본값)
 FALLBACK_CHAINS = _EXT_CONFIG.get("fallback_chains", {
-    "qwen3-coder-480b":       ["qwen3-next-80b", "qwen3-coder-next", "glm-5", "gpt-oss-20b", "qwen3-coder-next-common"],
-    "qwen3-next-80b":         ["qwen3-coder-480b", "qwen3-coder-next", "glm-5", "gpt-oss-20b"],
-    "qwen3-coder-next":       ["qwen3-coder-480b", "qwen3-next-80b", "glm-5", "gpt-oss-20b", "qwen3-coder-next-common"],
-    "glm-5":                  ["qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b", "gpt-oss-20b"],
-    "gpt-oss-20b":            ["glm-5", "qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b"],
-    "qwen2.5-vl-72b":         ["qwen3-vl-30b", "qwen3-vl-30b-instruct", "qwen3-vl-30b-common", "qwen3-vl-8b", "qwen3-coder-480b", "glm-5"],
-    "qwen3-vl-30b":           ["qwen2.5-vl-72b", "qwen3-vl-30b-instruct", "qwen3-vl-30b-common", "qwen3-vl-8b", "glm-5", "gpt-oss-20b"],
-    "qwen3-vl-30b-instruct":  ["qwen2.5-vl-72b", "qwen3-vl-30b", "qwen3-vl-30b-common", "qwen3-vl-8b", "glm-5"],
-    "qwen3-vl-30b-common":    ["qwen3-vl-30b", "qwen2.5-vl-72b", "qwen3-vl-30b-instruct", "qwen3-vl-8b", "glm-5"],
-    "qwen3-vl-8b":            ["qwen3-vl-30b", "qwen3-vl-30b-common", "qwen2.5-vl-72b", "glm-5"],
-    "qwen3-coder-next-common":["qwen3-coder-next", "qwen3-coder-480b", "glm-5", "gpt-oss-20b"],
+    "qwen3-coder-480b": ["qwen3-next-80b", "qwen3-coder-next", "glm-5", "qwen3-coder-30b", "gpt-oss-20b"],
+    "qwen3-next-80b":   ["qwen3-coder-480b", "qwen3-coder-next", "glm-5", "qwen3-coder-30b", "gpt-oss-20b"],
+    "qwen3-coder-next": ["qwen3-coder-480b", "qwen3-next-80b", "glm-5", "qwen3-coder-30b", "gpt-oss-20b"],
+    "glm-5":            ["qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b", "qwen3-coder-30b", "gpt-oss-20b"],
+    "gpt-oss-20b":      ["qwen3-coder-30b", "glm-5", "qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b"],
+    "qwen3-coder-30b":  ["qwen3-coder-next", "glm-5", "gpt-oss-20b", "qwen3-coder-480b", "qwen3-next-80b"],
+    "qwen3-vl-30b":     ["glm-5", "qwen3-coder-next", "qwen3-coder-480b"],
 })
 
 # Reranker 기능 플래그 (bge-reranker 엔드포인트 안정화 후 활성화)
 RERANKER_ENABLED = False
-

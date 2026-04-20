@@ -38,6 +38,7 @@ from demos_v1.router import (
     build_orchestration_prompt,
     VISION_SIGNALS, COMPLEX_SIGNALS, PPT_SIGNALS, DATA_SIGNALS,
 )
+from logpresso_client import query_logpresso
 from demos_v1.quality import (
     DOMAIN_PERSONAS, ANTI_RATIONALIZATION, VERIFICATION_GATE, ANALYSIS_LIFECYCLE,
     _extract_skill_context, _detect_repetition,
