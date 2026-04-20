@@ -206,6 +206,7 @@ canvas.chart { width:100%; flex:1; }
       <div class="sr"><span class="sl">평균 OBS</span><span class="sv" id="p-obs-avg">-</span></div>
       <div class="sr"><span class="sl">JAM 발생</span><span class="sv r" id="p-jam-cnt">0</span></div>
       <button onclick="openSpikeModal()" style="margin-top:8px;width:100%;padding:6px;background:#0891b2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">📊 OBS 추이 상세보기</button>
+      <button onclick="openBottleneckModal()" style="margin-top:6px;width:100%;padding:6px;background:#7c3aed;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:bold;">🔍 병목 분석 (UDP 독립)</button>
     </div>
     <div class="panel">
       <h3>위험 Zone</h3>
@@ -538,6 +539,15 @@ let isDragging = false, dragStartX = 0, dragStartY = 0;
 let railGraph = null;
 let railCacheCanvas = null;
 let railCacheKey = '';
+// 캐시가 빌드된 시점의 pan — 드래그 중에는 캐시를 재생성하지 않고 offset 으로만 그림
+let railCachePanX = 0, railCachePanY = 0;
+// drawMap 중복 rAF 큐잉 방지 (PLAY + 드래그 시 프레임당 1회만)
+let drawMapPending = false;
+function scheduleDrawMap() {
+  if (drawMapPending) return;
+  drawMapPending = true;
+  requestAnimationFrame(() => { drawMapPending = false; drawMap(); });
+}
 
 // 표시 레이어 토글
 let showZone = true, showRailCut = true, showId = false, showName = false;
@@ -613,11 +623,15 @@ function drawMap() {
   const oy = 10 + mapPanY + (h-20-dataH*sc)/2;
   const toS = (x,y) => [ox+(x-b.min_x)*sc, oy+(y-b.min_y)*sc];
 
-  // 1. 레일 배경 (캐시)
-  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${mapPanX}_${mapPanY}`;
+  // 1. 레일 배경 (캐시) — pan 은 캐시 key 에서 제외. 드래그 중에도 캐시 재사용.
+  //    캐시 빌드 시 pan offset 만큼 여유 viewport 를 렌더 (드래그 여유)
+  const CACHE_PAD = 800;
+  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${showZone?1:0}`;
   if (!railCacheCanvas || railCacheKey !== cacheKey) {
     railCacheCanvas = document.createElement('canvas');
     railCacheCanvas.width = w; railCacheCanvas.height = h;
+    railCachePanX = mapPanX;
+    railCachePanY = mapPanY;
     const rc = railCacheCanvas.getContext('2d');
     rc.fillStyle = '#0a0e17'; rc.fillRect(0,0,w,h);
 
@@ -631,7 +645,8 @@ function drawMap() {
         const from=nodes[edges[i][0]], to=nodes[edges[i][1]];
         if (!from||!to) continue;
         const [fx,fy]=toS(from[0],from[1]), [tx,ty]=toS(to[0],to[1]);
-        if ((fx<-50&&tx<-50)||(fx>w+50&&tx>w+50)||(fy<-50&&ty<-50)||(fy>h+50&&ty>h+50)) continue;
+        // 드래그 여유를 위해 컬링 범위를 CACHE_PAD 만큼 넓힘
+        if ((fx<-CACHE_PAD&&tx<-CACHE_PAD)||(fx>w+CACHE_PAD&&tx>w+CACHE_PAD)||(fy<-CACHE_PAD&&ty<-CACHE_PAD)||(fy>h+CACHE_PAD&&ty>h+CACHE_PAD)) continue;
         rc.moveTo(fx,fy); rc.lineTo(tx,ty);
       }
       rc.stroke();
@@ -640,7 +655,7 @@ function drawMap() {
         rc.fillStyle = '#2a4a6a';
         for (const [nid, c] of Object.entries(nodes)) {
           const [sx,sy]=toS(c[0],c[1]);
-          if (sx<-5||sx>w+5||sy<-5||sy>h+5) continue;
+          if (sx<-CACHE_PAD||sx>w+CACHE_PAD||sy<-CACHE_PAD||sy>h+CACHE_PAD) continue;
           rc.fillRect(sx-0.5, sy-0.5, 1, 1);
         }
       }
@@ -652,7 +667,7 @@ function drawMap() {
         const visibleZones = [];
         for (const z of railGraph.zones) {
           const [cx,cy] = toS(z.cx, z.cy);
-          if (cx >= -100 && cx <= w+100 && cy >= -100 && cy <= h+100) {
+          if (cx >= -CACHE_PAD && cx <= w+CACHE_PAD && cy >= -CACHE_PAD && cy <= h+CACHE_PAD) {
             visibleZones.push({...z, _sx: cx, _sy: cy});
           }
         }
@@ -697,7 +712,10 @@ function drawMap() {
     }
     railCacheKey = cacheKey;
   }
-  mapCtx.drawImage(railCacheCanvas, 0, 0);
+  // 캐시는 railCachePanX/Y 시점 좌표계로 그려져 있음 → 현재 pan 과의 차이만큼 offset 으로 drawImage
+  const cacheDX = mapPanX - railCachePanX;
+  const cacheDY = mapPanY - railCachePanY;
+  mapCtx.drawImage(railCacheCanvas, cacheDX, cacheDY);
 
   // ===== 1.5. 레일 차단 edge 렌더링 (기존 모양 유지, 작고 투명하게) =====
   const blockedEdges = mapData.blockedEdges || {};
@@ -872,11 +890,20 @@ function drawMap() {
 mapCanvas.addEventListener('wheel', e => {
   e.preventDefault();
   mapZoom = Math.max(0.3, Math.min(20, mapZoom * (e.deltaY>0?0.9:1.1)));
+  // 줌 바뀌면 캐시 재생성 필요
   railCacheCanvas = null;
-  requestAnimationFrame(drawMap);
+  scheduleDrawMap();
 });
 mapCanvas.addEventListener('mousedown', e => { isDragging=true; dragStartX=e.clientX-mapPanX; dragStartY=e.clientY-mapPanY; });
-mapCanvas.addEventListener('mousemove', e => { if(!isDragging) return; mapPanX=e.clientX-dragStartX; mapPanY=e.clientY-dragStartY; railCacheCanvas=null; requestAnimationFrame(drawMap); });
+mapCanvas.addEventListener('mousemove', e => {
+  if(!isDragging) return;
+  mapPanX = e.clientX - dragStartX;
+  mapPanY = e.clientY - dragStartY;
+  // 드래그 여유(CACHE_PAD)를 벗어나면 캐시 재생성 트리거
+  const dx = mapPanX - railCachePanX, dy = mapPanY - railCachePanY;
+  if (Math.abs(dx) > 600 || Math.abs(dy) > 600) railCacheCanvas = null;
+  scheduleDrawMap();
+});
 mapCanvas.addEventListener('mouseup', () => isDragging=false);
 mapCanvas.addEventListener('mouseleave', () => isDragging=false);
 
@@ -1709,6 +1736,184 @@ drawMap();
     </div>
   </div>
 </div>
+
+<!-- 병목 분석 모달 (HID_INOUT × ts_resource 교차, UDP 독립) -->
+<div id="bottleneck-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='bottleneck-modal')closeBottleneckModal()">
+  <div style="background:#0a0e17;border:1px solid #7c3aed;border-radius:8px;padding:16px;width:92%;max-width:1000px;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#a78bfa;">🔍 병목 분석 — HID 구간 × 작업 부하 교차</h3>
+      <button onclick="closeBottleneckModal()" style="background:none;border:1px solid #444;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;">✕ 닫기</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">분석 구간</div><div id="bn-section-cnt" style="font-size:18px;font-weight:bold;color:#fff;">-</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">병목 구간</div><div id="bn-bottleneck-cnt" style="font-size:18px;font-weight:bold;color:#ef4444;">-</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">외부 원인 (작업 몰림)</div><div id="bn-external-pct" style="font-size:18px;font-weight:bold;color:#60a5fa;">-</div></div>
+      <div style="padding:8px;background:#1a1a2e;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#888;">내부 원인 (구간 자체)</div><div id="bn-internal-pct" style="font-size:18px;font-weight:bold;color:#f59e0b;">-</div></div>
+    </div>
+    <div style="background:#1a1a2e;padding:8px;border-radius:4px;margin-bottom:8px;">
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">지도 히트맵 (초록=여유, 노랑=주의, 빨강=병목) · 원 크기 = bottleneck score</div>
+      <canvas id="bottleneck-heatmap" style="width:100%;height:260px;"></canvas>
+    </div>
+    <div>
+      <div style="font-size:12px;color:#a78bfa;font-weight:bold;margin:8px 0 4px;">TOP-20 병목 구간 (bottleneck_score 내림차순)</div>
+      <div id="bn-table" style="background:#1a1a2e;padding:8px;border-radius:4px;font-size:11px;max-height:280px;overflow-y:auto;color:#cbd5e1;">데이터 로드 중...</div>
+    </div>
+    <div style="font-size:10px;color:#6b7280;margin-top:8px;">
+      💡 <b>외부</b>: 전체 작업 부하 피크와 정합 + 상관계수 ≥ 0.5 → 작업이 몰려 이 구간도 혼잡.
+      <b>내부</b>: 작업 부하와 무관하게 혼잡 → 해당 구간 자체 문제 (레이아웃/보수 필요).
+      UDP 데이터 품질과 무관 (HID_INOUT·ts_resource 만 사용).
+    </div>
+  </div>
+</div>
+
+<script>
+let bottleneckCache = null;
+
+async function openBottleneckModal() {
+  document.getElementById('bottleneck-modal').style.display = 'flex';
+  const tbl = document.getElementById('bn-table');
+  if (!bottleneckCache) {
+    tbl.innerHTML = '<span style="color:#9ca3af;">분석 중...</span>';
+    try {
+      const resp = await fetch('/api/bottleneck-analysis');
+      bottleneckCache = await resp.json();
+    } catch (e) {
+      tbl.innerHTML = '<span style="color:#ef4444;">불러오기 실패: ' + e + '</span>';
+      return;
+    }
+  }
+  renderBottleneckModal(bottleneckCache);
+  drawBottleneckHeatmap(bottleneckCache);
+}
+
+function closeBottleneckModal() {
+  document.getElementById('bottleneck-modal').style.display = 'none';
+}
+
+function renderBottleneckModal(data) {
+  const s = data.summary || {};
+  setText('bn-section-cnt', s.section_count ?? '-');
+  setText('bn-bottleneck-cnt', s.bottleneck_count ?? '-');
+  setText('bn-external-pct', (s.external_pct ?? 0) + '%');
+  setText('bn-internal-pct', (s.internal_pct ?? 0) + '%');
+
+  const tbl = document.getElementById('bn-table');
+  const sections = data.sections || [];
+  if (!sections.length) {
+    tbl.innerHTML = '<span style="color:#22c55e;">병목 구간 없음 (모든 구간 여유)</span>';
+    return;
+  }
+
+  const badge = (cause) => {
+    if (cause === 'external') return '<span style="background:#1e3a8a;color:#93c5fd;padding:2px 6px;border-radius:3px;font-size:10px;">외부</span>';
+    if (cause === 'internal') return '<span style="background:#7f1d1d;color:#fca5a5;padding:2px 6px;border-radius:3px;font-size:10px;">내부</span>';
+    return '<span style="background:#713f12;color:#fcd34d;padding:2px 6px;border-radius:3px;font-size:10px;">혼합</span>';
+  };
+
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+  html += '<thead><tr style="border-bottom:1px solid #334155;color:#94a3b8;">';
+  html += '<th style="text-align:left;padding:4px;">#</th>';
+  html += '<th style="text-align:left;padding:4px;">구간</th>';
+  html += '<th style="text-align:right;padding:4px;">사용률 avg</th>';
+  html += '<th style="text-align:right;padding:4px;">사용률 peak</th>';
+  html += '<th style="text-align:right;padding:4px;">체류(초)</th>';
+  html += '<th style="text-align:right;padding:4px;">score</th>';
+  html += '<th style="text-align:right;padding:4px;">피크시각</th>';
+  html += '<th style="text-align:right;padding:4px;">상관</th>';
+  html += '<th style="text-align:center;padding:4px;">원인</th>';
+  html += '</tr></thead><tbody>';
+
+  sections.forEach((sec, i) => {
+    html += '<tr style="border-bottom:1px solid #1e293b;">';
+    html += `<td style="padding:4px;color:#64748b;">${i + 1}</td>`;
+    html += `<td style="padding:4px;">${sec.zone_name} <span style="color:#64748b;">(${sec.from_hid}→${sec.to_hid})</span></td>`;
+    html += `<td style="padding:4px;text-align:right;">${sec.usage_pct_avg.toFixed(1)}%</td>`;
+    html += `<td style="padding:4px;text-align:right;color:${sec.usage_pct_peak >= 80 ? '#f87171' : '#fbbf24'};">${sec.usage_pct_peak.toFixed(1)}%</td>`;
+    html += `<td style="padding:4px;text-align:right;">${sec.dwell_avg_sec.toFixed(1)}</td>`;
+    html += `<td style="padding:4px;text-align:right;color:#a78bfa;font-weight:bold;">${sec.bottleneck_score.toFixed(3)}</td>`;
+    html += `<td style="padding:4px;text-align:right;">${sec.peak_time}</td>`;
+    html += `<td style="padding:4px;text-align:right;">${sec.ts_correlation.toFixed(2)}</td>`;
+    html += `<td style="padding:4px;text-align:center;">${badge(sec.cause)}</td>`;
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  tbl.innerHTML = html;
+}
+
+function drawBottleneckHeatmap(data) {
+  const canvas = document.getElementById('bottleneck-heatmap');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(400, Math.floor(rect.width));
+  const h = Math.max(200, Math.floor(rect.height));
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#0a0e17';
+  ctx.fillRect(0, 0, w, h);
+
+  const sections = (data.sections || []).filter(s => s.cx && s.cy);
+  if (!sections.length || !mapData || !mapData.bounds) {
+    ctx.fillStyle = '#64748b';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('히트맵 데이터 부족', 12, 20);
+    return;
+  }
+
+  // 기존 맵 bounds 재사용
+  const b = mapData.bounds;
+  const pad = 12;
+  const scX = (w - pad * 2) / Math.max(1, b.max_x - b.min_x);
+  const scY = (h - pad * 2) / Math.max(1, b.max_y - b.min_y);
+  const sc = Math.min(scX, scY);
+  const ox = pad + ((w - pad * 2) - (b.max_x - b.min_x) * sc) / 2;
+  const oy = pad + ((h - pad * 2) - (b.max_y - b.min_y) * sc) / 2;
+  const toS = (x, y) => [ox + (x - b.min_x) * sc, oy + (y - b.min_y) * sc];
+
+  // 배경: 레이아웃 엣지 희미하게
+  if (mapData.edges && mapData.nodes) {
+    ctx.strokeStyle = 'rgba(100,116,139,0.15)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for (const e of mapData.edges) {
+      const a = mapData.nodes[e[0]], bn = mapData.nodes[e[1]];
+      if (!a || !bn) continue;
+      const [x1, y1] = toS(a[0], a[1]);
+      const [x2, y2] = toS(bn[0], bn[1]);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+  }
+
+  // 구간별 원
+  sections.forEach(s => {
+    const [sx, sy] = toS(s.cx, s.cy);
+    const score = Math.max(0, Math.min(1, s.bottleneck_score));
+    let color;
+    if (score >= 0.66) color = '#ef4444';
+    else if (score >= 0.33) color = '#fbbf24';
+    else color = '#22c55e';
+    const radius = 4 + score * 14;
+    ctx.fillStyle = color + 'cc';
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  // 범례
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '11px sans-serif';
+  ctx.fillText('● 초록=여유  ● 노랑=주의  ● 빨강=병목', 12, h - 8);
+}
+</script>
 
 </body>
 </html>
