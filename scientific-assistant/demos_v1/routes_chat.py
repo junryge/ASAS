@@ -217,8 +217,19 @@ def register_chat_routes(app):
             api_url = ENV_CONFIG[env_id]["url"]
             model = ENV_CONFIG[env_id]["model"]
         else:
-            api_url = data.get("api_url", "")
-            model = data.get("model", "")
+            # env_id 가 ENV_CONFIG 에 없는 경우(낡은 router.py 등) 첫 번째 API env 로 폴백
+            api_env_ids = [k for k in ENV_CONFIG.keys() if not str(k).startswith("gguf-")]
+            if api_env_ids:
+                fb = api_env_ids[0]
+                print(f"[AUTO fallback] env_id={env_id!r} 매칭 실패 → {fb} 사용")
+                env_id = fb
+                api_url = ENV_CONFIG[fb]["url"]
+                model = ENV_CONFIG[fb]["model"]
+                auto_routed = True
+                route_reason = (route_reason + " | " if route_reason else "") + f"env_id 폴백 → {fb}"
+            else:
+                api_url = data.get("api_url", "")
+                model = data.get("model", "")
         api_key = API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
         skill_ids = data.get("skills", [])
