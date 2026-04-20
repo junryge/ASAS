@@ -181,6 +181,12 @@ async def get_obs_jam_history():
     return engine.get_obs_jam_history()
 
 
+@app.get("/api/bottleneck-analysis")
+async def get_bottleneck_analysis():
+    """HID_INOUT × ts_resource 교차 병목 분석 (UDP 독립)"""
+    return engine.get_bottleneck_analysis()
+
+
 @app.get("/api/ts-events")
 async def get_ts_events():
     """ts_resource 분 단위 집계"""

@@ -320,6 +320,181 @@ class ReplayEngine:
             result.append(entry)
         return result
 
+    def get_bottleneck_analysis(self) -> dict:
+        """HID_INOUT 구간 통과 × ts_resource 작업 부하 교차 분석.
+
+        UDP 와 무관하게 HID_INOUT(구간 통과 이벤트) 과 ts_resource(작업 명령
+        타임라인) 만으로 병목 구간을 찾고, 원인이 외부(작업 몰림) 인지 내부
+        (그 구간 자체 문제) 인지 분류해 반환한다.
+        """
+        if not self.data_loader or not self.data_loader.hid_events:
+            return {"sections": [], "workload_timeline": [], "summary": {}}
+
+        from collections import defaultdict
+
+        # 1) HID 이벤트를 (from_hid, to_hid, 분) 으로 그룹핑
+        section_buckets: Dict[tuple, Dict[datetime, list]] = defaultdict(lambda: defaultdict(list))
+        section_limit: Dict[tuple, int] = {}
+        for t, ev in self.data_loader.hid_events:
+            fh, th = ev.get('from_hid'), ev.get('to_hid')
+            if not fh or not th:
+                continue
+            key = (fh, th)
+            t_min = t.replace(second=0, microsecond=0)
+            section_buckets[key][t_min].append((t, ev.get('vhl_id', '')))
+            lim = ev.get('vhl_count_limit')
+            if lim and lim > 0:
+                section_limit[key] = lim
+
+        # 2) ts_resource 분별 부하 timeline
+        ts_timeline: Dict[datetime, int] = {t_min: ev.get('total', 0) for t_min, ev in self.data_loader.ts_events}
+        if not ts_timeline:
+            return {"sections": [], "workload_timeline": [], "summary": {}}
+
+        ts_mins_sorted = sorted(ts_timeline.keys())
+        ts_values = [ts_timeline[t] for t in ts_mins_sorted]
+        ts_peak_time = ts_mins_sorted[ts_values.index(max(ts_values))]
+        ts_mean = sum(ts_values) / len(ts_values)
+
+        def _pearson(xs, ys):
+            n = len(xs)
+            if n < 2:
+                return 0.0
+            mx = sum(xs) / n
+            my = sum(ys) / n
+            num = sum((xi - mx) * (yi - my) for xi, yi in zip(xs, ys))
+            dx2 = sum((xi - mx) ** 2 for xi in xs)
+            dy2 = sum((yi - my) ** 2 for yi in ys)
+            if dx2 == 0 or dy2 == 0:
+                return 0.0
+            return num / ((dx2 ** 0.5) * (dy2 ** 0.5))
+
+        # 3) 구간별 분석
+        sections: List[dict] = []
+        for key, minute_map in section_buckets.items():
+            limit = section_limit.get(key, 0)
+            if limit <= 0:
+                continue
+
+            # 분별 사용률 + 차량별 이벤트 시각 (체류시간 proxy 계산용)
+            usage_series: Dict[datetime, float] = {}
+            vid_times: Dict[str, List[datetime]] = defaultdict(list)
+            for t_min, evs in minute_map.items():
+                usage_series[t_min] = (len(evs) / limit) * 100.0
+                for t, vid in evs:
+                    if vid:
+                        vid_times[vid].append(t)
+
+            # 같은 차량의 연속 이벤트 간격 = 구간 체류시간 proxy (초)
+            intervals: List[float] = []
+            for times in vid_times.values():
+                times.sort()
+                for i in range(1, len(times)):
+                    delta = (times[i] - times[i - 1]).total_seconds()
+                    if 1 <= delta <= 600:  # 1초~10분 범위만 유효 (노이즈 제거)
+                        intervals.append(delta)
+
+            usage_values = list(usage_series.values())
+            if not usage_values:
+                continue
+
+            usage_avg = sum(usage_values) / len(usage_values)
+            sv = sorted(usage_values)
+            p95_idx = min(int(len(sv) * 0.95), len(sv) - 1)
+            usage_p95 = sv[p95_idx]
+            if usage_p95 < 30:  # 병목 후보 아님 (사용률 너무 낮음)
+                continue
+
+            dwell_avg = (sum(intervals) / len(intervals)) if intervals else 0.0
+
+            # 구간 피크 시각
+            peak_time = max(usage_series, key=usage_series.get)
+
+            # ts 와 usage 시계열 상관 (공통 분에서만)
+            common_mins = sorted(set(usage_series.keys()) & set(ts_timeline.keys()))
+            if len(common_mins) >= 10:
+                u_arr = [usage_series[t] for t in common_mins]
+                t_arr = [ts_timeline[t] for t in common_mins]
+                corr = _pearson(u_arr, t_arr)
+            else:
+                corr = 0.0
+
+            # 원인 판정
+            time_diff_sec = abs((peak_time - ts_peak_time).total_seconds())
+            if time_diff_sec <= 600 and corr >= 0.5:
+                cause = "external"   # 작업 몰림과 정합 → 외부 원인
+            elif usage_p95 >= 70:
+                cause = "internal"   # 작업 몰림과 무관하게 혼잡 → 그 구간 자체 문제
+            else:
+                cause = "mixed"
+
+            # 좌표 (layout.nodes 에서 from/to 중 찾아지는 쪽 사용)
+            cx, cy = 0.0, 0.0
+            if key[0] in self.layout.nodes:
+                cx, cy = self.layout.nodes[key[0]]
+            elif key[1] in self.layout.nodes:
+                cx, cy = self.layout.nodes[key[1]]
+
+            # zone 이름 (있으면)
+            zone_id = self.hid_zones.in_lane_to_zone.get(key) or self.hid_zones.out_lane_to_zone.get(key)
+            zone_name = f"{key[0]}→{key[1]}"
+            if zone_id and zone_id in self.hid_zones.zones:
+                zone_name = self.hid_zones.zones[zone_id].get('fullName', zone_name)
+
+            # 병목 스코어: 사용률 P95 × 체류시간 (둘 다 0~1 정규화)
+            bottleneck_score = (usage_p95 / 100.0) * min(dwell_avg / 60.0, 1.0)
+
+            sections.append({
+                "from_hid": key[0],
+                "to_hid": key[1],
+                "zone_name": zone_name,
+                "count_total": sum(len(evs) for evs in minute_map.values()),
+                "usage_pct_avg": round(usage_avg, 1),
+                "usage_pct_peak": round(usage_p95, 1),
+                "dwell_avg_sec": round(dwell_avg, 1),
+                "bottleneck_score": round(bottleneck_score, 3),
+                "cause": cause,
+                "peak_time": peak_time.strftime("%H:%M"),
+                "ts_correlation": round(corr, 2),
+                "cx": round(cx, 1),
+                "cy": round(cy, 1),
+            })
+
+        # 4) 정렬 + TOP-20
+        sections.sort(key=lambda s: s["bottleneck_score"], reverse=True)
+        top_sections = sections[:20]
+
+        # 5) 요약
+        external_count = sum(1 for s in top_sections if s["cause"] == "external")
+        internal_count = sum(1 for s in top_sections if s["cause"] == "internal")
+        total_top = max(1, len(top_sections))
+
+        peak_end = ts_peak_time + timedelta(hours=1)
+        peak_hour_str = f"{ts_peak_time.strftime('%H:00')}-{peak_end.strftime('%H:00')}"
+
+        workload_timeline = [
+            {
+                "time": t_min.strftime("%H:%M"),
+                "total": ev.get('total', 0),
+                "unassigned": ev.get('unassigned', 0),
+            }
+            for t_min, ev in self.data_loader.ts_events
+        ]
+
+        return {
+            "sections": top_sections,
+            "workload_timeline": workload_timeline,
+            "summary": {
+                "section_count": len(section_buckets),
+                "bottleneck_count": len(top_sections),
+                "external_pct": round(external_count / total_top * 100),
+                "internal_pct": round(internal_count / total_top * 100),
+                "peak_hour": peak_hour_str,
+                "ts_peak_total": int(max(ts_values)),
+                "ts_avg_total": round(ts_mean, 1),
+            },
+        }
+
     async def replay_loop(self, on_frame: Callable):
         """비동기 리플레이 루프"""
         while True:
