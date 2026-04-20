@@ -243,41 +243,12 @@ def register_chat_routes(app):
         requested_output_format = output_format
         is_gguf = env_id.startswith("gguf-") if env_id else False
 
-        # ── drawio / pptx 서버측 안전장치 ──
-        # UI 에서 부스트 확인 안 받은 경우(직접 API 호출, 구버전 UI)에도 자동 상향.
-        # 구조적 결과물은 중간에 잘리면 복구 어려우므로 API 경로 한정으로 보호.
-        _last_q_for_detect = ""
-        if messages:
-            _lm = messages[-1]
-            if isinstance(_lm.get("content"), str):
-                _last_q_for_detect = _lm.get("content", "").lower()
-        _srv_is_drawio = any(kw in _last_q_for_detect for kw in [
-            "drawio", "draw.io", "드로잉", "드로우", "다이어그램", "mxfile",
-            "mxgraphmodel", "아키텍처도", "배치도", "흐름도", "구조도",
-            "플로우차트", "dfd"
-        ])
-        _srv_is_pptx = any(kw in _last_q_for_detect for kw in [
-            "ppt", "피피티", "파워포인트", "슬라이드", "발표자료",
-            "프레젠테이션", "발표 만들", "deck", "피치덱",
-            "파워파인트"
-        ])
-        # 이 요청에 쓸 API timeout (기본 120초, drawio/pptx 는 300초)
+        # ── drawio / pptx 서버측 안전장치 — 비활성화 ──
+        # 사용자 요청: 수동 스킬 선택 시 응답이 작아지므로 max_tokens 강제 부스트 불필요.
+        # 필요 시 UI 에서 max_tokens 명시적으로 넘기거나 모델 직접 선택.
+        _srv_is_drawio = False
+        _srv_is_pptx = False
         _api_timeout = 120
-        if (_srv_is_drawio or _srv_is_pptx) and not is_gguf:
-            _kind = "drawio" if _srv_is_drawio else "pptx"
-            # max_tokens 가 65k 미만이면 65536 로 부스트 (32k 로도 부족한 케이스 대응)
-            if max_tokens < 65536:
-                print(f"  [SERVER BOOST] {_kind} 감지 → max_tokens {max_tokens} → 65536")
-                max_tokens = 65536
-            # 대용량 응답 대응 위해 timeout 상향 (120s → 300s)
-            _api_timeout = 300
-            print(f"  [SERVER BOOST] {_kind} 감지 → timeout 120s → 300s")
-            # 대형 모델 미사용 시 경고 로그 (강제 전환은 안 함 — 사용자 선택 존중)
-            _model_lc = (model or "").lower()
-            _is_large_model = any(s in _model_lc for s in ["480b", "80b", "coder-next"])
-            if not _is_large_model:
-                print(f"  [SERVER WARN] {_kind} 요청인데 소형 모델 사용 중 ({model}). "
-                      f"결과 잘릴 가능성 높음. UI 에서 Coder-480B/Next-80B 권장")
 
         # ── 토큰 자동 결정 (API/GGUF 모두) ──
         if is_gguf:
