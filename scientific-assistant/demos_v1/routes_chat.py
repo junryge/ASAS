@@ -263,10 +263,10 @@ def register_chat_routes(app):
         ])
         if (_srv_is_drawio or _srv_is_pptx) and not is_gguf:
             _kind = "drawio" if _srv_is_drawio else "pptx"
-            # max_tokens 가 16k 미만이면 32k 로 부스트
-            if max_tokens < 16384:
-                print(f"  [SERVER BOOST] {_kind} 감지 → max_tokens {max_tokens} → 32768")
-                max_tokens = 32768
+            # max_tokens 가 65k 미만이면 65536 로 부스트 (32k 로도 부족한 케이스 대응)
+            if max_tokens < 65536:
+                print(f"  [SERVER BOOST] {_kind} 감지 → max_tokens {max_tokens} → 65536")
+                max_tokens = 65536
             # 대형 모델 미사용 시 경고 로그 (강제 전환은 안 함 — 사용자 선택 존중)
             _model_lc = (model or "").lower()
             _is_large_model = any(s in _model_lc for s in ["480b", "80b", "coder-next"])

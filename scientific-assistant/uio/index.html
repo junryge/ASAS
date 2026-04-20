@@ -2466,7 +2466,7 @@
       // ── drawio / pptx 감지 → 토큰 부스트 + 대형 모델 자동 스위치 (사용자 동의 시만 적용) ──
       // 이어서 작성이 구조상 깨지기 쉬운 두 케이스만 타겟. 다른 건 "계속 이어서 작성해줘" 사용.
       const _ql = text.toLowerCase();
-      const _isDrawio = /drawio|draw\.io|드로잉|드로우|다이어그램|mxfile|mxgraphmodel|아키텍처도|배치도|흐름도|구조도|플로우차트|dfd/.test(_ql);
+      const _isDrawio = /drawio|draw\.io|다이어그램|mxfile|mxgraphmodel|아키텍처도|배치도|흐름도|구조도|dfd/.test(_ql);
       const _isPptx   = /\bppt\b|피피티|파워파인트|파워포인트|슬라이드|발표자료|프레젠테이션|발표\s*만들|deck|피치덱/.test(_ql);
       let _overrideMaxTokens = null;
       let _overrideEnv = null;
