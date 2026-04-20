@@ -1130,28 +1130,65 @@ function renderSpikeModal() {
     const p = (s || '').split(':');
     return (parseInt(p[0])||0)*3600 + (parseInt(p[1])||0)*60 + (parseInt(p[2])||0);
   };
+
+  // 연속 구간(인접 분) 그룹핑: jam>=1 인 분들을 이어붙여 세그먼트 구성.
+  // 각 세그먼트에서 durationMin(지속 분 수), maxJam(최대 JAM 수),
+  // sustained10min(연속해서 jam>=10 이 유지된 최대 분 수) 을 계산.
+  const chrono = src.slice().sort((a, b) => timeToSec(a.time) - timeToSec(b.time));
+  const segments = [];
+  let curSeg = null;
+  for (const h of chrono) {
+    const hSec = timeToSec(h.time);
+    if (h.jam && h.jam > 0) {
+      if (curSeg && (hSec - curSeg.lastSec) <= 75) {
+        curSeg.entries.push(h);
+        curSeg.maxJam = Math.max(curSeg.maxJam, h.jam);
+        curSeg.lastSec = hSec;
+      } else {
+        curSeg = { entries: [h], maxJam: h.jam, lastSec: hSec };
+        segments.push(curSeg);
+      }
+    } else {
+      curSeg = null;
+    }
+  }
+  const segByTime = {};
+  for (const seg of segments) {
+    seg.durationMin = seg.entries.length;
+    let maxRun10 = 0, runLen = 0;
+    for (const h of seg.entries) {
+      if (h.jam >= 10) { runLen++; if (runLen > maxRun10) maxRun10 = runLen; }
+      else runLen = 0;
+    }
+    seg.sustained10min = maxRun10;
+    seg.startTime = seg.entries[0].time;
+    seg.endTime = seg.entries[seg.entries.length - 1].time;
+    for (const h of seg.entries) segByTime[h.time] = seg;
+  }
+
   const sorted = allJam.slice().sort((a, b) => timeToSec(b.time) - timeToSec(a.time));
   if (sorted.length === 0) {
     logEl.innerHTML = '<span style="color:#22c55e;">JAM 발생 없음 (시스템 안정)</span>';
   } else {
     logEl.innerHTML = sorted.map(e => {
-      // 데드락 여부 판정 (JAM 차량 수 기반)
+      const seg = segByTime[e.time] || { durationMin: 1, maxJam: e.jam, sustained10min: e.jam>=10?1:0, startTime: e.time, endTime: e.time };
+      // 판정: 지속 시간 + 최대 JAM 수 + 10대 이상 유지 기반
       let status, statusColor, icon, tooltip;
-      if (e.jam >= 5) {
+      if (seg.sustained10min >= 4) {
         status = '데드락 발생';
         statusColor = '#ef4444';
         icon = '🚨';
-        tooltip = `데드락 발생: ${e.jam}대가 동시에 JAM 상태. 다수 차량 동시 정지 = 진짜 데드락 의심. 즉시 운영 확인 필요.`;
-      } else if (e.jam >= 2) {
+        tooltip = `데드락 발생: ${seg.startTime}~${seg.endTime} 구간 ${seg.durationMin}분 지속, 최대 ${seg.maxJam}대. 10대 이상이 ${seg.sustained10min}분 연속 유지 = 풀리지 않는 잠금. 즉시 운영 개입 필요.`;
+      } else if (seg.durationMin >= 2 || e.jam >= 5) {
         status = '주의 (다수 정지)';
         statusColor = '#f59e0b';
         icon = '⚠️';
-        tooltip = `주의: ${e.jam}대 동시 정지. 데드락 직전 가능성. 회복 양상 확인 필요.`;
+        tooltip = `주의: ${seg.startTime}~${seg.endTime} 구간 ${seg.durationMin}분 지속, 최대 ${seg.maxJam}대. 다수 차량 동시 정지이나 자동 회복 범위. 회복 양상 확인 필요.`;
       } else {
         status = '데드락 미발생 (경고)';
         statusColor = '#fbbf24';
         icon = '🟡';
-        tooltip = `데드락 미발생: 1대만 잠깐 JAM 후 즉시 회복. 단발성 경고. 시스템 정상.`;
+        tooltip = `데드락 미발생: 1분 단발 ${e.jam}대 JAM 후 즉시 회복. 단발성 경고. 시스템 정상.`;
       }
       return `<div class="jam-entry" title="${tooltip}">${icon} <b>${e.time}</b> — JAM (OBS ${e.obs}, ${e.jam}대) <span style="color:${statusColor};font-weight:bold;">— ${status}</span></div>`;
     }).join('');
