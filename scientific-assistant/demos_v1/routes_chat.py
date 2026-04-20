@@ -217,8 +217,19 @@ def register_chat_routes(app):
             api_url = ENV_CONFIG[env_id]["url"]
             model = ENV_CONFIG[env_id]["model"]
         else:
-            api_url = data.get("api_url", "")
-            model = data.get("model", "")
+            # env_id 가 ENV_CONFIG 에 없는 경우(낡은 router.py 등) 첫 번째 API env 로 폴백
+            api_env_ids = [k for k in ENV_CONFIG.keys() if not str(k).startswith("gguf-")]
+            if api_env_ids:
+                fb = api_env_ids[0]
+                print(f"[AUTO fallback] env_id={env_id!r} 매칭 실패 → {fb} 사용")
+                env_id = fb
+                api_url = ENV_CONFIG[fb]["url"]
+                model = ENV_CONFIG[fb]["model"]
+                auto_routed = True
+                route_reason = (route_reason + " | " if route_reason else "") + f"env_id 폴백 → {fb}"
+            else:
+                api_url = data.get("api_url", "")
+                model = data.get("model", "")
         api_key = API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
         skill_ids = data.get("skills", [])
@@ -231,6 +242,35 @@ def register_chat_routes(app):
         think_mode = data.get("think_mode", False)
         requested_output_format = output_format
         is_gguf = env_id.startswith("gguf-") if env_id else False
+
+        # ── drawio / pptx 서버측 안전장치 ──
+        # UI 에서 부스트 확인 안 받은 경우(직접 API 호출, 구버전 UI)에도 자동 상향.
+        # 구조적 결과물은 중간에 잘리면 복구 어려우므로 API 경로 한정으로 보호.
+        _last_q_for_detect = ""
+        if messages:
+            _lm = messages[-1]
+            if isinstance(_lm.get("content"), str):
+                _last_q_for_detect = _lm.get("content", "").lower()
+        _srv_is_drawio = any(kw in _last_q_for_detect for kw in [
+            "drawio", "draw.io", "다이어그램", "mxfile", "mxgraphmodel",
+            "아키텍처도", "배치도", "흐름도", "구조도", "dfd"
+        ])
+        _srv_is_pptx = any(kw in _last_q_for_detect for kw in [
+            "ppt", "피피티", "파워포인트", "슬라이드", "발표자료",
+            "프레젠테이션", "발표 만들", "deck", "피치덱"
+        ])
+        if (_srv_is_drawio or _srv_is_pptx) and not is_gguf:
+            _kind = "drawio" if _srv_is_drawio else "pptx"
+            # max_tokens 가 16k 미만이면 32k 로 부스트
+            if max_tokens < 16384:
+                print(f"  [SERVER BOOST] {_kind} 감지 → max_tokens {max_tokens} → 32768")
+                max_tokens = 32768
+            # 대형 모델 미사용 시 경고 로그 (강제 전환은 안 함 — 사용자 선택 존중)
+            _model_lc = (model or "").lower()
+            _is_large_model = any(s in _model_lc for s in ["480b", "80b", "coder-next"])
+            if not _is_large_model:
+                print(f"  [SERVER WARN] {_kind} 요청인데 소형 모델 사용 중 ({model}). "
+                      f"결과 잘릴 가능성 높음. UI 에서 Coder-480B/Next-80B 권장")
 
         # ── 토큰 자동 결정 (API/GGUF 모두) ──
         if is_gguf:

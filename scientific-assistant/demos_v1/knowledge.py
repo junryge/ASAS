@@ -290,26 +290,32 @@ def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None)
             if fab_l in fname_lower or fab_l in fname_nospace:
                 total_score += 20
 
-        # 1. 파일명 매칭
+        # 1. 파일명 매칭 (긴 식별자는 큰 보너스 — FREE_FLOW_SPEED_HID_VALUE 같은 합성어 대응)
         for kw in keywords:
             if kw in fname_lower or kw in fname_nospace:
-                total_score += 10
+                # 8자 이상 언더스코어 포함 식별자는 확실한 타겟이므로 +40
+                if len(kw) >= 8 and '_' in kw:
+                    total_score += 40
+                else:
+                    total_score += 10
 
-        # 2. BM25 스코어 (TF 대체)
+        # 2. BM25 스코어 (토큰 일치 기반)
         if fname in _BM25_INDEX:
             doc_info = _BM25_INDEX[fname]
             bm25 = _bm25_score(query_tokens, doc_info["tokens"], doc_info["token_count"])
             total_score += int(bm25 * 10)  # 스케일링
-        else:
-            # 인덱스에 없으면 기존 TF 방식 폴백
-            for kw in keywords:
-                count = content_lower.count(kw)
-                if count > 0:
-                    total_score += min(count, 10)
-                else:
-                    count_nospace = content_nospace.count(kw)
-                    if count_nospace > 0:
-                        total_score += min(count_nospace, 5)
+
+        # 2-b. 부분문자열 TF (BM25 토크나이저가 놓치는 FREE_FLOW_SPEED_HID_VALUE 같은 합성어 대응)
+        # - BM25는 `_`로 연결된 긴 합성 토큰 vs 컨텐츠 내 분리된 짧은 토큰을 매칭 못함
+        # - 그래서 BM25 점수와 별개로 substring count도 항상 합산
+        for kw in keywords:
+            count = content_lower.count(kw)
+            if count > 0:
+                total_score += min(count, 10)
+            else:
+                count_nospace = content_nospace.count(kw)
+                if count_nospace > 0:
+                    total_score += min(count_nospace, 5)
 
         # 3. 구문 일치 보너스
         if len(keywords) >= 2:
