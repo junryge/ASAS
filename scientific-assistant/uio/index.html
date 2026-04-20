@@ -2463,6 +2463,26 @@
       const hasFiles = pendingFiles.length > 0;
       if ((!text && !hasFiles) || !currentAgent) return;
 
+      // ── drawio / pptx 감지 → 토큰 부스트 안내 (사용자 동의 시만 적용) ──
+      // 이어서 작성이 구조상 깨지기 쉬운 두 케이스만 타겟. 다른 건 "계속 이어서 작성해줘" 사용.
+      const _ql = text.toLowerCase();
+      const _isDrawio = /drawio|draw\.io|다이어그램|mxfile|mxgraphmodel|아키텍처도|배치도|흐름도|구조도|dfd/.test(_ql);
+      const _isPptx   = /\bppt\b|피피티|파워파인트|파워포인트|슬라이드|발표자료|프레젠테이션|발표\s*만들|deck|피치덱/.test(_ql);
+      let _overrideMaxTokens = null;
+      if (_isDrawio || _isPptx) {
+        const _kind = _isDrawio ? 'Draw.io 다이어그램' : 'PowerPoint 슬라이드';
+        const _ok = confirm(
+          `[${_kind}] 요청 감지됨.\n\n` +
+          `이런 구조적 결과물은 토큰이 모자라면 중간에 잘려 복구가 어렵습니다.\n` +
+          `max_tokens 를 이번 요청만 32768 로 늘릴까요?\n\n` +
+          `[확인] 늘려서 진행\n[취소] 기본값으로 진행 (토큰 부족 시 "계속 이어서 작성해줘" 로 연결)`
+        );
+        if (_ok) {
+          _overrideMaxTokens = 32768;
+          console.log(`[TOKEN BOOST] ${_kind} → max_tokens=32768`);
+        }
+      }
+
       const chatArea = document.getElementById('chatArea');
       const welcome = chatArea.querySelector('.welcome-msg');
       if (welcome) welcome.remove();
@@ -2546,19 +2566,21 @@
 
         // Fetch API
         chatAbortController = new AbortController();
+        const _chatBody = {
+          env: [selectedEnv],
+          messages: getRecentHistory(capturedAgent),
+          skills: skills,
+          effort: 2,
+          format: 'auto',
+          writing_style: 'auto',
+          think_mode: false,
+        };
+        if (_overrideMaxTokens) _chatBody.max_tokens = _overrideMaxTokens;
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: chatAbortController.signal,
-          body: JSON.stringify({
-            env: [selectedEnv],
-            messages: getRecentHistory(capturedAgent),
-            skills: skills,
-            effort: 2,
-            format: 'auto',
-            writing_style: 'auto',
-            think_mode: false,
-          }),
+          body: JSON.stringify(_chatBody),
         });
 
         const data = await resp.json();
