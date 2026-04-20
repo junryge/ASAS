@@ -261,12 +261,17 @@ def register_chat_routes(app):
             "프레젠테이션", "발표 만들", "deck", "피치덱",
             "파워파인트"
         ])
+        # 이 요청에 쓸 API timeout (기본 120초, drawio/pptx 는 300초)
+        _api_timeout = 120
         if (_srv_is_drawio or _srv_is_pptx) and not is_gguf:
             _kind = "drawio" if _srv_is_drawio else "pptx"
             # max_tokens 가 65k 미만이면 65536 로 부스트 (32k 로도 부족한 케이스 대응)
             if max_tokens < 65536:
                 print(f"  [SERVER BOOST] {_kind} 감지 → max_tokens {max_tokens} → 65536")
                 max_tokens = 65536
+            # 대용량 응답 대응 위해 timeout 상향 (120s → 300s)
+            _api_timeout = 300
+            print(f"  [SERVER BOOST] {_kind} 감지 → timeout 120s → 300s")
             # 대형 모델 미사용 시 경고 로그 (강제 전환은 안 함 — 사용자 선택 존중)
             _model_lc = (model or "").lower()
             _is_large_model = any(s in _model_lc for s in ["480b", "80b", "coder-next"])
@@ -1291,7 +1296,7 @@ def register_chat_routes(app):
 
                                 for future in as_completed(futures, timeout=180):
                                     try:
-                                        result = future.result(timeout=120)
+                                        result = future.result(timeout=_api_timeout)
                                         _agent_results.append(result)
                                     except Exception as e:
                                         _agent_results.append({
@@ -1547,7 +1552,7 @@ def register_chat_routes(app):
                                 futures[future] = pg["group"]
                             for future in as_completed(futures, timeout=180):
                                 try:
-                                    _api_results.append(future.result(timeout=120))
+                                    _api_results.append(future.result(timeout=_api_timeout))
                                 except Exception as e:
                                     _api_results.append({"group": futures[future], "skills": [],
                                                          "response": "", "error": str(e), "model": ""})
@@ -1594,7 +1599,7 @@ def register_chat_routes(app):
                                     "messages": [{"role": "system", "content": synth_system},
                                                  {"role": "user", "content": _last_query}],
                                     "temperature": 0.3, "max_tokens": 8192, "stream": False, "tool_choice": "none",
-                                }, timeout=120, verify=False)
+                                }, timeout=_api_timeout, verify=False)
                                 sr.raise_for_status()
                                 sr_data = sr.json()
                                 if "choices" in sr_data and len(sr_data["choices"]) > 0:
@@ -1701,7 +1706,7 @@ def register_chat_routes(app):
                             futures[future] = pg["group"]
                         for future in as_completed(futures, timeout=180):
                             try:
-                                _auto_api_results.append(future.result(timeout=120))
+                                _auto_api_results.append(future.result(timeout=_api_timeout))
                             except Exception as e:
                                 _auto_api_results.append({
                                     "group": futures[future], "skills": [],
@@ -1857,7 +1862,12 @@ def register_chat_routes(app):
         # 폴백 체인 구성: 현재 모델 → 대체 모델들
         primary_reg_key = get_registry_key_for_env(env_id)
         if primary_reg_key:
-            fallback_keys = [primary_reg_key] + FALLBACK_CHAINS.get(primary_reg_key, [])
+            # drawio/pptx 는 폴백 비활성 (모델 바뀌면 결과 완전히 달라져 처음부터 다시)
+            if _srv_is_drawio or _srv_is_pptx:
+                fallback_keys = [primary_reg_key]
+                print(f"  [SERVER BOOST] {('drawio' if _srv_is_drawio else 'pptx')} — 폴백 비활성 (primary only)")
+            else:
+                fallback_keys = [primary_reg_key] + FALLBACK_CHAINS.get(primary_reg_key, [])
         else:
             fallback_keys = []  # GGUF 등은 폴백 없음
 
@@ -1902,7 +1912,7 @@ def register_chat_routes(app):
                             "stream": False,
                             "tool_choice": "none",
                         },
-                        timeout=120,
+                        timeout=_api_timeout,
                         verify=False,
                     )
                     resp.raise_for_status()
@@ -2049,7 +2059,7 @@ def register_chat_routes(app):
                         "max_tokens": max_tokens,
                         "stream": False, "tool_choice": "none",
                     },
-                    timeout=120,
+                    timeout=_api_timeout,
                     verify=False,
                 )
                 resp.raise_for_status()
