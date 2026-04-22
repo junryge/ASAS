@@ -585,7 +585,7 @@ class DateDataLoader:
         }
 
     def _load_star(self) -> dict:
-        """스타 컬럼 CSV 로드"""
+        """스타 컬럼 CSV 로드 (프리픽스 자동 인식: M14 / M16HUB / 기타)"""
         filename = self.date_config.get('star')
         if not filename:
             return {'count': 0, 'status': 'no_file'}
@@ -597,6 +597,19 @@ class DateDataLoader:
         count = 0
         with open(filepath, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
+
+            anchor_suffix = '.QUE.ALL.CURRENTQCNT'
+            prefix = None
+            for col in (reader.fieldnames or []):
+                if col and col.endswith(anchor_suffix):
+                    prefix = col[: -len(anchor_suffix)]
+                    break
+            if not prefix:
+                return {'count': 0, 'status': 'prefix_not_found'}
+
+            def C(suffix: str) -> str:
+                return f"{prefix}{suffix}"
+
             for row in reader:
                 time_str = row.get('CRT_TM', '')
                 t = self._parse_time(time_str)
@@ -604,23 +617,23 @@ class DateDataLoader:
                     continue
 
                 star = {
-                    'queue_total': _safe_int(row.get('M14.QUE.ALL.CURRENTQCNT')),
-                    'queue_completed': _safe_int(row.get('M14.QUE.ALL.CURRENTQCOMPLETED')),
-                    'queue_oht': _safe_int(row.get('M14.QUE.OHT.CURRENTOHTQCNT')),
-                    'oht_util': _safe_float(row.get('M14.QUE.OHT.OHTUTIL')),
-                    'avg_load_time': _safe_float(row.get('M14.QUE.LOAD.AVGLOADTIME')),
-                    'transport_4min_over': _safe_int(row.get('M14.QUE.ALL.TRANSPORT4MINOVERCNT')),
-                    'driving': _safe_int(row.get('M14.OHT.STATECNT.DRIVING')),
-                    'obs_bz_stop': _safe_int(row.get('M14.OHT.STATECNT.OBSANDBZSTOP')),
-                    'congested': _safe_int(row.get('M14.OHT.STATECNT.CONGESTED')),
-                    'pause': _safe_int(row.get('M14.OHT.STATECNT.PAUSE')),
-                    'timeout': _safe_int(row.get('M14.OHT.STATECNT.TIMEOUT')),
+                    'queue_total': _safe_int(row.get(C('.QUE.ALL.CURRENTQCNT'))),
+                    'queue_completed': _safe_int(row.get(C('.QUE.ALL.CURRENTQCOMPLETED'))),
+                    'queue_oht': _safe_int(row.get(C('.QUE.OHT.CURRENTOHTQCNT'))),
+                    'oht_util': _safe_float(row.get(C('.QUE.OHT.OHTUTIL'))),
+                    'avg_load_time': _safe_float(row.get(C('.QUE.LOAD.AVGLOADTIME'))),
+                    'transport_4min_over': _safe_int(row.get(C('.QUE.ALL.TRANSPORT4MINOVERCNT'))),
+                    'driving': _safe_int(row.get(C('.OHT.STATECNT.DRIVING'))),
+                    'obs_bz_stop': _safe_int(row.get(C('.OHT.STATECNT.OBSANDBZSTOP'))),
+                    'congested': _safe_int(row.get(C('.OHT.STATECNT.CONGESTED'))),
+                    'pause': _safe_int(row.get(C('.OHT.STATECNT.PAUSE'))),
+                    'timeout': _safe_int(row.get(C('.OHT.STATECNT.TIMEOUT'))),
                 }
                 self.star_timeline.append((t, star))
                 count += 1
 
         self.star_timeline.sort(key=lambda x: x[0])
-        return {'count': count, 'status': 'loaded'}
+        return {'count': count, 'status': 'loaded', 'prefix': prefix}
 
     def _load_hid_inout(self) -> dict:
         """HID_INOUT CSV 로드"""
