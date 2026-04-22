@@ -997,10 +997,10 @@ function drawMap() {
 
   // 3. 정보 표시 (범례는 상단 배지로 이동됨)
   mapCtx.font = '11px sans-serif';
-  mapCtx.fillStyle='rgba(10,14,23,0.85)'; mapCtx.fillRect(w-130,4,126,18);
-  mapCtx.fillStyle='#60a5fa'; mapCtx.textAlign='right'; mapCtx.fillText(`차량 ${Object.keys(vehicleDisplay).length}대`, w-8, 16);
-  mapCtx.fillStyle='rgba(10,14,23,0.85)'; mapCtx.fillRect(w-180,24,176,16);
-  mapCtx.fillStyle='#4b5563'; mapCtx.fillText('스크롤:줌 | 드래그:이동', w-8, 36);
+  mapCtx.fillStyle='rgba(10,14,23,0.85)'; mapCtx.fillRect(w-150,4,130,18);
+  mapCtx.fillStyle='#60a5fa'; mapCtx.textAlign='right'; mapCtx.fillText(`OHT ${Object.keys(vehicleDisplay).length}대`, w-24, 16);
+  mapCtx.fillStyle='rgba(10,14,23,0.85)'; mapCtx.fillRect(w-200,24,180,16);
+  mapCtx.fillStyle='#4b5563'; mapCtx.fillText('스크롤:줌 | 드래그:이동', w-24, 36);
 }
 
 // 줌/팬
