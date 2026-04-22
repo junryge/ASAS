@@ -366,11 +366,59 @@ def _add_code_slide(prs, slide_data: dict):
     return slide
 
 
+def _make_presentation():
+    """python-pptx Presentation 생성. 내장 default.pptx 가 누락된 환경 대응.
+
+    python-pptx 설치가 깨져 default.pptx 가 없을 때 대비해:
+      1. 우리 번들 템플릿(corporate.pptx 등) 시도
+      2. 모두 실패하면 빈 상태로 수동 생성 시도
+      3. 그래도 안 되면 원본 에러 그대로 raise
+    """
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+    _TEMPLATE_CANDIDATES = [
+        os.path.join(_HERE, "ppt_templates", "corporate.pptx"),
+        os.path.join(_HERE, "ppt_templates", "minimal.pptx"),
+        os.path.join(_HERE, "ppt_templates", "academic.pptx"),
+        os.path.join(_HERE, "ppt_templates", "creative.pptx"),
+        os.path.join(_HERE, "ppt_templates", "dark.pptx"),
+    ]
+    # 1) python-pptx 기본 시도
+    try:
+        return Presentation()
+    except Exception as e0:
+        last_err = e0
+        print(f"[ppt_builder] Presentation() 기본값 실패: {e0}")
+    # 2) 번들 템플릿 순서대로 시도
+    for tpl in _TEMPLATE_CANDIDATES:
+        if not os.path.isfile(tpl):
+            continue
+        try:
+            prs = Presentation(tpl)
+            # 템플릿의 기존 슬라이드 제거 (샘플)
+            try:
+                xml_slides = prs.slides._sldIdLst
+                for sld in list(xml_slides):
+                    xml_slides.remove(sld)
+            except Exception:
+                pass
+            print(f"[ppt_builder] 템플릿 폴백 사용: {os.path.basename(tpl)}")
+            return prs
+        except Exception as et:
+            last_err = et
+            print(f"[ppt_builder] 템플릿 시도 실패 {os.path.basename(tpl)}: {et}")
+    # 3) 모두 실패 → 명확한 안내 메시지
+    raise RuntimeError(
+        "python-pptx 설치가 손상되어 default.pptx 가 없고 번들 템플릿도 로드 실패.\n"
+        "해결: pip uninstall python-pptx -y && pip install python-pptx\n"
+        f"원본 에러: {last_err}"
+    )
+
+
 def render_outline_to_pptx(outline: dict) -> bytes:
     """outline dict → .pptx bytes 반환."""
     if not _PPTX_AVAILABLE:
         raise RuntimeError("python-pptx 가 설치되지 않았습니다. pip install python-pptx")
-    prs = Presentation()
+    prs = _make_presentation()
     prs.slide_width = Inches(10)
     prs.slide_height = Inches(7.5)
 
