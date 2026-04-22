@@ -95,6 +95,62 @@
       "context_window": 128000,
       "priority": 3,
       "cost_tier": "low"
+    },
+
+    "hcpp-qwen35-397b": {
+      "env_id": "hcpp-qwen35-397b",
+      "model": "Qwen/Qwen3.5-397B-A17B-FP8",
+      "url": "http://llm-chat-backend-basic-prd.api.hcpp01.skhynix.com/api/chat/completions",
+      "auth_source": "HCPP_TOKEN",
+      "name": "NEW Qwen3.5-397B",
+      "capabilities": ["text", "code", "analysis", "large"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "hcpp-qwen35-397b-think": {
+      "env_id": "hcpp-qwen35-397b-think",
+      "model": "Qwen/Qwen3.5-397B-A17B-thinking",
+      "url": "http://llm-chat-backend-basic-prd.api.hcpp01.skhynix.com/api/chat/completions",
+      "auth_source": "HCPP_TOKEN",
+      "name": "NEW Qwen3.5-397B-Thinking",
+      "capabilities": ["text", "code", "analysis", "thinking", "large"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "hcpp-glm5-think": {
+      "env_id": "hcpp-glm5-think",
+      "model": "zai-org/GLM-5-thinking",
+      "url": "http://llm-chat-backend-basic-prd.api.hcpp01.skhynix.com/api/chat/completions",
+      "auth_source": "HCPP_TOKEN",
+      "name": "NEW GLM-5-Thinking",
+      "capabilities": ["text", "code", "analysis", "thinking"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "hcpp-kimi25": {
+      "env_id": "hcpp-kimi25",
+      "model": "Kimi-K2.5",
+      "url": "http://llm-chat-backend-basic-prd.api.hcpp01.skhynix.com/api/chat/completions",
+      "auth_source": "HCPP_TOKEN",
+      "name": "NEW Kimi-K2.5",
+      "capabilities": ["text", "code", "analysis"],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "high"
+    },
+    "hcpp-kimi25-think": {
+      "env_id": "hcpp-kimi25-think",
+      "model": "Kimi-K2.5-thinking",
+      "url": "http://llm-chat-backend-basic-prd.api.hcpp01.skhynix.com/api/chat/completions",
+      "auth_source": "HCPP_TOKEN",
+      "name": "NEW Kimi-K2.5-Thinking",
+      "capabilities": ["text", "code", "analysis", "thinking"],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "high"
     }
   },
 

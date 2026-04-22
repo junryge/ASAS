@@ -230,7 +230,21 @@ def register_chat_routes(app):
             else:
                 api_url = data.get("api_url", "")
                 model = data.get("model", "")
-        api_key = API_TOKEN or data.get("api_key", "")
+        # auth_source 분기: HCPP-PRD 모델은 별도 토큰(HCPP_TOKEN.TXT) 사용
+        _reg_key_for_auth = get_registry_key_for_env(env_id) if env_id else None
+        _auth_source = MODEL_REGISTRY.get(_reg_key_for_auth, {}).get("auth_source", "DEFAULT") if _reg_key_for_auth else "DEFAULT"
+        if _auth_source == "HCPP_TOKEN":
+            try:
+                from demos_v1.hcpp_token import load_hcpp_token
+                _hcpp_tok = load_hcpp_token()
+                api_key = _hcpp_tok or data.get("api_key", "")
+                if not _hcpp_tok:
+                    print("  [HCPP] HCPP_TOKEN.TXT 비어있음 — UI 에서 토큰 붙여넣기 필요")
+            except Exception as _he:
+                print(f"  [HCPP] 토큰 로드 에러: {_he}")
+                api_key = data.get("api_key", "")
+        else:
+            api_key = API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
         skill_ids = data.get("skills", [])
         effort = data.get("effort", 2)

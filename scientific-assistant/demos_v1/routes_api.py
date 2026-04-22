@@ -99,6 +99,26 @@ def register_api_routes(app):
         })
 
 
+    @app.route("/api/config/hcpp-token", methods=["GET", "POST"])
+    def api_config_hcpp_token():
+        """HCPP-PRD 전용 JWT 토큰 조회/저장.
+
+        GET  → 현재 저장된 토큰의 exp/남은시간 조회 (토큰 값 자체는 반환 안 함)
+        POST → { "token": "eyJ..." } 받아서 HCPP_TOKEN.TXT 에 저장
+        """
+        from demos_v1.hcpp_token import save_hcpp_token, get_hcpp_status
+        if request.method == "GET":
+            return jsonify(get_hcpp_status())
+        # POST
+        data = request.json or {}
+        token = data.get("token", "").strip()
+        if not token:
+            return jsonify({"saved": False, "error": "token 필드가 비어있습니다"}), 400
+        result = save_hcpp_token(token)
+        status = 200 if result.get("saved") else 500
+        return jsonify(result), status
+
+
     @app.route("/api/config/tokens", methods=["GET", "POST"])
     def api_config_tokens():
         """토큰/컨텍스트 설정 조회 및 변경"""
