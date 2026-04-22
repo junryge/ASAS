@@ -366,6 +366,51 @@ def _add_code_slide(prs, slide_data: dict):
     return slide
 
 
+def _purge_all_slides(prs):
+    """템플릿에서 상속받은 기존 슬라이드를 파트·관계·목록 전부 완전히 제거.
+
+    단순히 _sldIdLst 에서만 제거하면 실제 slide1.xml 파일은 패키지 안에 남아
+    저장 시 'Duplicate name' 경고 + PowerPoint 오픈 실패가 발생.
+    """
+    slides = prs.slides
+    sld_id_lst = slides._sldIdLst
+    # 모든 슬라이드 id 요소 수집
+    id_elems = list(sld_id_lst)
+    pres_part = prs.part
+    for sld_id in id_elems:
+        rId = sld_id.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+        # 1) sldIdLst 에서 제거
+        sld_id_lst.remove(sld_id)
+        if not rId:
+            continue
+        # 2) 관계 + 파트 완전 제거
+        try:
+            slide_part = pres_part.related_part(rId)
+        except Exception:
+            slide_part = None
+        # 관계 drop
+        try:
+            pres_part.rels.pop(rId, None)
+        except Exception:
+            try:
+                del pres_part.rels[rId]
+            except Exception:
+                pass
+        # 패키지에서 파트 drop
+        if slide_part is not None:
+            try:
+                slide_part.package.drop_part(slide_part)
+            except Exception:
+                # fallback: part 맵에서 제거
+                try:
+                    pkg = slide_part.package
+                    parts_map = getattr(pkg, "_parts", None)
+                    if parts_map is not None:
+                        parts_map.pop(slide_part.partname, None)
+                except Exception:
+                    pass
+
+
 def _safe_layout(prs, idx):
     """slide_layouts[idx] 를 안전하게 가져옴. 없으면 가능한 레이아웃 중 첫 번째."""
     try:
@@ -403,13 +448,7 @@ def _make_presentation():
             continue
         try:
             prs = Presentation(tpl)
-            # 템플릿의 기존 슬라이드 제거 (샘플)
-            try:
-                xml_slides = prs.slides._sldIdLst
-                for sld in list(xml_slides):
-                    xml_slides.remove(sld)
-            except Exception:
-                pass
+            _purge_all_slides(prs)
             print(f"[ppt_builder] 템플릿 폴백 사용: {os.path.basename(tpl)}")
             return prs
         except Exception as et:
