@@ -2085,93 +2085,61 @@
       }).catch(()=>{});
     }
 
-    // ===== HCPP-PRD 토큰 (2시간 JWT, 브라우저 sessionStorage 만) =====
-    // 서버 파일 저장 안 함. UI 가 보관 후 /api/chat 요청마다 body.hcpp_token 으로 전송.
-    function getHcppToken(){
-      try { return sessionStorage.getItem('hcpp_token') || ''; } catch(e){ return ''; }
-    }
-    function setHcppToken(tok){
-      try { sessionStorage.setItem('hcpp_token', tok || ''); } catch(e){}
-    }
-    function clearHcppToken(){
-      try { sessionStorage.removeItem('hcpp_token'); sessionStorage.removeItem('hcpp_token_exp'); } catch(e){}
-    }
-    function setHcppExp(exp){
-      try { sessionStorage.setItem('hcpp_token_exp', String(exp||0)); } catch(e){}
-    }
-    function getHcppExpRemaining(){
-      try {
-        const exp = parseInt(sessionStorage.getItem('hcpp_token_exp')||'0', 10);
-        if(!exp) return null;
-        const now = Math.floor(Date.now()/1000);
-        return Math.max(0, Math.floor((exp - now)/60));  // 남은 분
-      } catch(e){ return null; }
-    }
-
+    // ===== HCPP-PRD 토큰 (서버 메모리 보관, UI 는 입력·상태 표시만) =====
     async function saveHcppToken(){
       const ta = document.getElementById('hcppTokenInput');
       if(!ta) return;
-      let token = (ta.value || '').trim();
+      const token = (ta.value || '').trim();
       if(!token){ alert('JWT 를 붙여넣으세요'); return; }
-      // Bearer 접두어 자동 제거
-      if(token.toLowerCase().startsWith('bearer ')) token = token.slice(7).trim();
       const statusEl = document.getElementById('hcppTokenStatus');
       try {
-        // 서버 검증 (exp 파싱) — 토큰 저장 안 하고 파싱만
-        const r = await fetch('/api/config/hcpp-token/validate', {
+        const r = await fetch('/api/config/hcpp-token', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ token })
         });
         const d = await r.json();
-        // 브라우저에만 저장
-        setHcppToken(token);
-        if(d.exp) setHcppExp(d.exp);
-        ta.value = '';  // 보안: 저장 후 비움
-        if(d.valid_jwt && !d.expired){
-          const mins = d.remaining_minutes || 0;
-          const h = Math.floor(mins/60), m = mins%60;
-          const timeStr = h ? `${h}시간 ${m}분` : `${m}분`;
-          statusEl.innerHTML = `🟢 저장 완료 (세션 저장) — 남은 시간 <b>${timeStr}</b>`;
-          statusEl.style.color = '#16a34a';
-        } else if(d.expired){
-          statusEl.innerHTML = '🔴 저장됐으나 <b>이미 만료</b> — 새 토큰 필요';
+        if(!d.stored){
+          statusEl.textContent = '❌ 저장 실패: ' + (d.error || '');
           statusEl.style.color = '#ef4444';
-        } else {
-          statusEl.textContent = '🟡 저장됨 (JWT 형식 확인 불가)';
-          statusEl.style.color = '#eab308';
+          return;
         }
+        ta.value = '';  // 보안: 저장 후 비움
+        await refreshHcppStatus();  // 상태 즉시 갱신
       } catch(e){
         statusEl.textContent = '❌ 요청 실패: ' + e;
         statusEl.style.color = '#ef4444';
       }
     }
 
-    function refreshHcppStatus(){
+    async function refreshHcppStatus(){
       const statusEl = document.getElementById('hcppTokenStatus');
       if(!statusEl) return;
-      const tok = getHcppToken();
-      if(!tok){
-        statusEl.textContent = '⚪ HCPP 토큰 없음 — NEW 모델 사용 전 붙여넣기';
-        statusEl.style.color = 'var(--muted)';
-        return;
+      try {
+        const r = await fetch('/api/config/hcpp-token');
+        const d = await r.json();
+        if(!d.has_token){
+          statusEl.textContent = '⚪ HCPP 토큰 없음 — NEW 모델 사용 전 붙여넣기';
+          statusEl.style.color = 'var(--muted)';
+          return;
+        }
+        if(d.valid_jwt && !d.expired){
+          const mins = d.remaining_minutes || 0;
+          const h = Math.floor(mins/60), m = mins%60;
+          const timeStr = h ? `${h}시간 ${m}분` : `${m}분`;
+          const color = mins < 10 ? '#ef4444' : (mins < 30 ? '#eab308' : '#16a34a');
+          const icon = mins < 10 ? '🔴' : (mins < 30 ? '🟠' : '🟢');
+          statusEl.innerHTML = `${icon} 남은 시간 <b>${timeStr}</b>`;
+          statusEl.style.color = color;
+        } else if(d.expired){
+          statusEl.innerHTML = '🔴 <b>만료됨</b> — 새 토큰 붙여넣기 필요';
+          statusEl.style.color = '#ef4444';
+        } else {
+          statusEl.textContent = '🟡 토큰 있음 (JWT 파싱 실패)';
+          statusEl.style.color = '#eab308';
+        }
+      } catch(e) {
+        statusEl.textContent = '상태 확인 실패';
       }
-      const mins = getHcppExpRemaining();
-      if(mins === null){
-        statusEl.textContent = '🟡 토큰 있음 (만료시각 불명)';
-        statusEl.style.color = '#eab308';
-        return;
-      }
-      if(mins <= 0){
-        statusEl.innerHTML = '🔴 <b>만료됨</b> — 새 토큰 붙여넣기 필요';
-        statusEl.style.color = '#ef4444';
-        return;
-      }
-      const h = Math.floor(mins/60), m = mins%60;
-      const timeStr = h ? `${h}시간 ${m}분` : `${m}분`;
-      const color = mins < 10 ? '#ef4444' : (mins < 30 ? '#eab308' : '#16a34a');
-      const icon = mins < 10 ? '🔴' : (mins < 30 ? '🟠' : '🟢');
-      statusEl.innerHTML = `${icon} 남은 시간 <b>${timeStr}</b>`;
-      statusEl.style.color = color;
     }
     setInterval(() => { if(document.getElementById('hcppTokenStatus')) refreshHcppStatus(); }, 60000);
     setTimeout(() => { if(document.getElementById('hcppTokenStatus')) refreshHcppStatus(); }, 2000);
@@ -2713,12 +2681,7 @@
           think_mode: false,
         };
         if (_overrideMaxTokens) _chatBody.max_tokens = _overrideMaxTokens;
-        // NEW (hcpp-*) 모델이면 브라우저 세션의 HCPP 토큰 동봉
-        const _envForAuth = _overrideEnv || selectedEnv;
-        if (typeof _envForAuth === 'string' && _envForAuth.startsWith('hcpp-')) {
-          const _hcppTok = getHcppToken();
-          if (_hcppTok) _chatBody.hcpp_token = _hcppTok;
-        }
+        // HCPP 토큰은 서버 메모리에서 꺼내 쓰므로 body 에 동봉 불필요
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
