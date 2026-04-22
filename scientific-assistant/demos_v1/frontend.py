@@ -5264,6 +5264,9 @@ function showLoginScreen(){
   if(lo) lo.style.display='flex';
   var idInput = document.getElementById('loginId');
   if(idInput) idInput.focus();
+  // PPT 설계 버튼 숨김 (로그인 전)
+  var pptBtn = document.getElementById('pptBuilderBtn');
+  if(pptBtn) pptBtn.style.display='none';
 }
 
 function showMainUI(){
@@ -5279,6 +5282,9 @@ function showMainUI(){
   // 헤더 버튼 표시/숨김
   var hdAdmin = document.getElementById('hdAdminBtn');
   if(hdAdmin) hdAdmin.style.display = (currentUser && currentUser.role === 'admin') ? '' : 'none';
+  // PPT 설계 버튼 노출 (로그인 완료)
+  var pptBtn = document.getElementById('pptBuilderBtn');
+  if(pptBtn) pptBtn.style.display='flex';
 }
 
 async function doLogin(){
@@ -5814,13 +5820,13 @@ async function pptGenerateFromFile(file){
 })();
 </script>
 
-<!-- 📑 PPT 설계 플로팅 버튼 (좌측 하단 고정) -->
-<button onclick="openPptBuilder()"
+<!-- 📑 PPT 설계 플로팅 버튼 (로그인 후에만 노출) -->
+<button id="pptBuilderBtn" onclick="openPptBuilder()"
         title=".md 파일/텍스트 → .pptx 자동 변환 (LLM 미사용, 결정론적)"
         style="position:fixed;left:20px;bottom:20px;z-index:9998;padding:12px 18px;
                background:linear-gradient(135deg,#eab308,#d97706);color:#fff;border:none;
                border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;
-               box-shadow:0 4px 14px rgba(234,179,8,0.4);display:flex;align-items:center;gap:6px;">
+               box-shadow:0 4px 14px rgba(234,179,8,0.4);display:none;align-items:center;gap:6px;">
   📑 PPT 설계
 </button>
 
