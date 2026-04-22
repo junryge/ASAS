@@ -230,19 +230,17 @@ def register_chat_routes(app):
             else:
                 api_url = data.get("api_url", "")
                 model = data.get("model", "")
-        # auth_source 분기: HCPP-PRD 모델은 별도 토큰(HCPP_TOKEN.TXT) 사용
+        # auth_source 분기: HCPP-PRD 모델은 요청 body 의 hcpp_token 필드 사용
+        # (UI sessionStorage 가 보관, 서버는 파일 IO 없음)
         _reg_key_for_auth = get_registry_key_for_env(env_id) if env_id else None
         _auth_source = MODEL_REGISTRY.get(_reg_key_for_auth, {}).get("auth_source", "DEFAULT") if _reg_key_for_auth else "DEFAULT"
         if _auth_source == "HCPP_TOKEN":
-            try:
-                from demos_v1.hcpp_token import load_hcpp_token
-                _hcpp_tok = load_hcpp_token()
-                api_key = _hcpp_tok or data.get("api_key", "")
-                if not _hcpp_tok:
-                    print("  [HCPP] HCPP_TOKEN.TXT 비어있음 — UI 에서 토큰 붙여넣기 필요")
-            except Exception as _he:
-                print(f"  [HCPP] 토큰 로드 에러: {_he}")
-                api_key = data.get("api_key", "")
+            from demos_v1.hcpp_token import clean_token
+            _hcpp_tok = clean_token(data.get("hcpp_token", ""))
+            api_key = _hcpp_tok
+            if not _hcpp_tok:
+                print("  [HCPP] 요청에 hcpp_token 필드 비어있음 — UI 에서 토큰 붙여넣기 필요")
+                return jsonify({"error": "HCPP 토큰이 필요합니다. UI 토큰 설정에서 JWT 를 붙여넣으세요."}), 400
         else:
             api_key = API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
