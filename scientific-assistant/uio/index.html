@@ -797,6 +797,21 @@
       </div>
     </div>
 
+    <!-- 📑 PPT 설계 모드 (MD → PPT 결정론적 변환) -->
+    <div style="padding:12px;border-top:1px solid var(--border,#2a3a4a);">
+      <button onclick="openPptBuilder()"
+              style="width:100%;padding:10px;background:linear-gradient(135deg,#eab308,#d97706);
+                     color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;
+                     cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+                     box-shadow:0 2px 8px rgba(234,179,8,0.3);"
+              title=".md 파일/텍스트 → .pptx 자동 변환">
+        📑 PPT 설계
+      </button>
+      <div style="font-size:10px;color:#888;margin-top:4px;text-align:center;">
+        MD 파일·텍스트 → 자동 PPT
+      </div>
+    </div>
+
     <div class="sidebar-footer">
       ASAS Multi-Agent System v1.0
     </div>
@@ -2070,6 +2085,65 @@
       }).catch(()=>{});
     }
 
+    // ===== HCPP-PRD 토큰 (서버 메모리 보관, UI 는 입력·상태 표시만) =====
+    async function saveHcppToken(){
+      const ta = document.getElementById('hcppTokenInput');
+      if(!ta) return;
+      const token = (ta.value || '').trim();
+      if(!token){ alert('JWT 를 붙여넣으세요'); return; }
+      const statusEl = document.getElementById('hcppTokenStatus');
+      try {
+        const r = await fetch('/api/config/hcpp-token', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ token })
+        });
+        const d = await r.json();
+        if(!d.stored){
+          statusEl.textContent = '❌ 저장 실패: ' + (d.error || '');
+          statusEl.style.color = '#ef4444';
+          return;
+        }
+        ta.value = '';  // 보안: 저장 후 비움
+        await refreshHcppStatus();  // 상태 즉시 갱신
+      } catch(e){
+        statusEl.textContent = '❌ 요청 실패: ' + e;
+        statusEl.style.color = '#ef4444';
+      }
+    }
+
+    async function refreshHcppStatus(){
+      const statusEl = document.getElementById('hcppTokenStatus');
+      if(!statusEl) return;
+      try {
+        const r = await fetch('/api/config/hcpp-token');
+        const d = await r.json();
+        if(!d.has_token){
+          statusEl.textContent = '⚪ HCPP 토큰 없음 — NEW 모델 사용 전 붙여넣기';
+          statusEl.style.color = 'var(--muted)';
+          return;
+        }
+        if(d.valid_jwt && !d.expired){
+          const mins = d.remaining_minutes || 0;
+          const h = Math.floor(mins/60), m = mins%60;
+          const timeStr = h ? `${h}시간 ${m}분` : `${m}분`;
+          const color = mins < 10 ? '#ef4444' : (mins < 30 ? '#eab308' : '#16a34a');
+          const icon = mins < 10 ? '🔴' : (mins < 30 ? '🟠' : '🟢');
+          statusEl.innerHTML = `${icon} 남은 시간 <b>${timeStr}</b>`;
+          statusEl.style.color = color;
+        } else if(d.expired){
+          statusEl.innerHTML = '🔴 <b>만료됨</b> — 새 토큰 붙여넣기 필요';
+          statusEl.style.color = '#ef4444';
+        } else {
+          statusEl.textContent = '🟡 토큰 있음 (JWT 파싱 실패)';
+          statusEl.style.color = '#eab308';
+        }
+      } catch(e) {
+        statusEl.textContent = '상태 확인 실패';
+      }
+    }
+    setInterval(() => { if(document.getElementById('hcppTokenStatus')) refreshHcppStatus(); }, 60000);
+    setTimeout(() => { if(document.getElementById('hcppTokenStatus')) refreshHcppStatus(); }, 2000);
+
     function getRecentHistory(key, maxTurns = 10) {
       const full = agentHistory[key] || [];
       return full.slice(-maxTurns * 2);
@@ -2140,6 +2214,14 @@
               </div>
             </div>
             <div style="font-size:9px;color:var(--muted);margin-top:4px;">* n_ctx↑ = 긴 보고서 가능, VRAM↑</div>
+            <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+              <label style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;font-weight:600;">🆕 HCPP-PRD 토큰 (2시간 제한, NEW 모델 전용)</label>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <textarea id="hcppTokenInput" placeholder="F12 → Network → authorization 값 붙여넣기 (Bearer 포함 가능)" style="flex:1;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-1);color:var(--text);font-size:10px;height:42px;font-family:monospace;resize:vertical;"></textarea>
+                <button onclick="saveHcppToken()" style="padding:6px 10px;border-radius:6px;border:none;background:#eab308;color:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">💾 저장</button>
+              </div>
+              <div id="hcppTokenStatus" style="font-size:10px;color:var(--muted);margin-top:4px;">토큰 상태 확인 중...</div>
+            </div>
           `;
         const chatHeader = document.getElementById('chatHeader');
         chatHeader.parentElement.insertBefore(tokenPanel, chatHeader.nextSibling);
@@ -2599,6 +2681,7 @@
           think_mode: false,
         };
         if (_overrideMaxTokens) _chatBody.max_tokens = _overrideMaxTokens;
+        // HCPP 토큰은 서버 메모리에서 꺼내 쓰므로 body 에 동봉 불필요
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4848,6 +4931,210 @@
       input.click();
     }
 
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- 📑 PPT 설계 팝업 (MD → PPT 결정론적 변환)                        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div id="pptBuilderOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+       background:rgba(0,0,0,0.6);z-index:10000;justify-content:center;align-items:center;"
+       onclick="if(event.target===this)closePptBuilder()">
+    <div style="width:min(1100px,94vw);height:min(780px,90vh);background:#1a1a2e;border:1px solid #3a4a5a;
+         border-radius:12px;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+
+      <!-- 헤더 -->
+      <div style="padding:14px 20px;border-bottom:1px solid #3a4a5a;display:flex;
+           align-items:center;justify-content:space-between;background:linear-gradient(135deg,#2a2a3e,#1a1a2e);
+           border-radius:12px 12px 0 0;">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:#eab308;">📑 PPT 설계</div>
+          <div style="font-size:11px;color:#888;margin-top:2px;">
+            MD 파일 드롭 · 텍스트 붙여넣기 → .pptx 자동 변환 (LLM 안 거침, 결정론적)
+          </div>
+        </div>
+        <button onclick="closePptBuilder()" style="background:transparent;border:none;color:#888;
+                font-size:22px;cursor:pointer;padding:4px 10px;">✕</button>
+      </div>
+
+      <!-- 본문 (2단 레이아웃) -->
+      <div style="flex:1;display:flex;overflow:hidden;">
+
+        <!-- 좌: 입력 -->
+        <div style="flex:1;border-right:1px solid #3a4a5a;display:flex;flex-direction:column;padding:14px;">
+          <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <button id="pptTabMd" onclick="pptSwitchTab('md')"
+                    style="flex:1;padding:8px;background:#eab308;color:#fff;border:none;border-radius:6px;
+                           cursor:pointer;font-weight:700;font-size:12px;">📝 MD 텍스트</button>
+            <button id="pptTabFile" onclick="pptSwitchTab('file')"
+                    style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;
+                           cursor:pointer;font-weight:700;font-size:12px;">📎 파일 업로드</button>
+          </div>
+
+          <!-- MD 텍스트 탭 -->
+          <div id="pptTabMdContent" style="flex:1;display:flex;flex-direction:column;">
+            <label style="font-size:11px;color:#888;margin-bottom:4px;">
+              마크다운 입력 (# 제목 / ## 슬라이드 / - 불릿 / | 표 | / ```코드``` 지원)
+            </label>
+            <textarea id="pptMdInput"
+              style="flex:1;background:#0a0a1a;color:#eaf1ff;border:1px solid #3a4a5a;
+                     border-radius:6px;padding:10px;font-family:Consolas,monospace;font-size:12px;
+                     resize:none;min-height:300px;"
+              placeholder="# 발표 제목&#10;> 부제 또는 날짜&#10;&#10;## 첫 슬라이드&#10;- 요점 1&#10;- 요점 2&#10;  - 하위 항목&#10;&#10;## 표 슬라이드&#10;| 항목 | 값 |&#10;|---|---|&#10;| A | 1 |&#10;| B | 2 |&#10;&#10;## 코드 슬라이드&#10;```python&#10;def hello():&#10;    print('hi')&#10;```"></textarea>
+            <button onclick="pptGenerateFromMd()"
+                    style="margin-top:10px;padding:10px;background:linear-gradient(135deg,#eab308,#d97706);
+                           color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;">
+              🚀 PPT 만들기
+            </button>
+          </div>
+
+          <!-- 파일 업로드 탭 -->
+          <div id="pptTabFileContent" style="flex:1;display:none;flex-direction:column;">
+            <label style="font-size:11px;color:#888;margin-bottom:4px;">
+              .md / .markdown / .txt 파일 드래그-드롭 또는 클릭
+            </label>
+            <div id="pptDropZone"
+                 style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+                        border:2px dashed #3a4a5a;border-radius:8px;cursor:pointer;padding:40px;
+                        transition:all 0.2s;background:#0f0f1e;min-height:300px;"
+                 onclick="document.getElementById('pptFileInput').click()">
+              <div style="font-size:48px;margin-bottom:12px;">📎</div>
+              <div style="color:#eab308;font-size:14px;font-weight:700;">파일 드롭 또는 클릭</div>
+              <div style="color:#888;font-size:11px;margin-top:6px;">
+                .md · .markdown · .txt (UTF-8 / CP949 자동 감지)
+              </div>
+            </div>
+            <input type="file" id="pptFileInput" accept=".md,.markdown,.txt" style="display:none;"
+                   onchange="pptGenerateFromFile(this.files[0])"/>
+          </div>
+        </div>
+
+        <!-- 우: 결과 -->
+        <div style="flex:1;display:flex;flex-direction:column;padding:14px;overflow-y:auto;">
+          <label style="font-size:11px;color:#888;margin-bottom:4px;">결과</label>
+          <div id="pptResultPanel"
+               style="flex:1;background:#0a0a1a;border:1px solid #3a4a5a;border-radius:6px;
+                      padding:16px;color:#eaf1ff;font-size:12px;overflow-y:auto;min-height:300px;">
+            <div style="text-align:center;color:#666;padding-top:80px;">
+              <div style="font-size:36px;margin-bottom:10px;">⬅️</div>
+              왼쪽에서 MD 입력 또는 파일 업로드 후<br>결과가 여기 나옵니다
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ═══ PPT 설계 팝업 로직 ═══
+  function openPptBuilder() {
+    document.getElementById('pptBuilderOverlay').style.display = 'flex';
+  }
+  function closePptBuilder() {
+    document.getElementById('pptBuilderOverlay').style.display = 'none';
+  }
+  function pptSwitchTab(tab) {
+    const mdTab = document.getElementById('pptTabMd');
+    const fileTab = document.getElementById('pptTabFile');
+    const mdContent = document.getElementById('pptTabMdContent');
+    const fileContent = document.getElementById('pptTabFileContent');
+    if (tab === 'md') {
+      mdTab.style.background = '#eab308'; mdTab.style.color = '#fff';
+      fileTab.style.background = '#2a2a3e'; fileTab.style.color = '#888';
+      mdContent.style.display = 'flex';
+      fileContent.style.display = 'none';
+    } else {
+      fileTab.style.background = '#eab308'; fileTab.style.color = '#fff';
+      mdTab.style.background = '#2a2a3e'; mdTab.style.color = '#888';
+      fileContent.style.display = 'flex';
+      mdContent.style.display = 'none';
+    }
+  }
+  function pptShowLoading(msg) {
+    document.getElementById('pptResultPanel').innerHTML =
+      `<div style="text-align:center;padding-top:80px;color:#eab308;">
+         <div style="font-size:36px;margin-bottom:10px;">⏳</div>${msg || '변환 중...'}
+       </div>`;
+  }
+  function pptShowResult(data) {
+    const panel = document.getElementById('pptResultPanel');
+    if (data.error) {
+      panel.innerHTML =
+        `<div style="color:#ff6666;"><b>❌ 실패</b><br><br>${escapeHtml(data.error)}</div>`;
+      return;
+    }
+    const slidesHtml = (data.slides_summary || []).map((s, i) =>
+      `<div style="padding:6px 10px;background:#1a1a2e;border-radius:4px;margin-bottom:4px;
+             display:flex;justify-content:space-between;font-size:11px;">
+         <span style="color:#eab308;">Slide ${i+1}</span>
+         <span style="color:#888;">[${s.type}]</span>
+         <span style="flex:1;margin-left:8px;color:#eaf1ff;">${escapeHtml(s.title || '(제목 없음)')}</span>
+       </div>`).join('');
+    panel.innerHTML = `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:700;color:#22c55e;margin-bottom:8px;">✅ 변환 완료</div>
+        <div style="font-size:11px;color:#888;">파일명: ${escapeHtml(data.filename || '')}</div>
+        <div style="font-size:11px;color:#888;">슬라이드: ${data.slide_count || 0}개</div>
+        <div style="font-size:11px;color:#888;">크기: ${((data.size||0)/1024).toFixed(1)} KB</div>
+      </div>
+      <a href="${data.download_url}" download
+         style="display:block;padding:10px;background:linear-gradient(135deg,#22c55e,#16a34a);
+                color:#fff;text-decoration:none;border-radius:6px;font-weight:700;text-align:center;
+                margin-bottom:16px;font-size:13px;">
+        💾 .pptx 다운로드
+      </a>
+      <div style="font-size:11px;color:#888;margin-bottom:6px;">슬라이드 구성</div>
+      ${slidesHtml}`;
+  }
+  async function pptGenerateFromMd() {
+    const md = document.getElementById('pptMdInput').value.trim();
+    if (!md) { alert('MD 내용을 입력해주세요.'); return; }
+    pptShowLoading('MD → PPT 변환 중...');
+    try {
+      const resp = await fetch('/api/ppt/from-md', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({md: md})
+      });
+      const data = await resp.json();
+      pptShowResult(data);
+    } catch(e) {
+      pptShowResult({error: '네트워크 오류: ' + e.message});
+    }
+  }
+  async function pptGenerateFromFile(file) {
+    if (!file) return;
+    pptShowLoading('파일 업로드 + 변환 중... (' + file.name + ')');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const resp = await fetch('/api/ppt/from-md-file', {method:'POST', body: fd});
+      const data = await resp.json();
+      pptShowResult(data);
+    } catch(e) {
+      pptShowResult({error: '네트워크 오류: ' + e.message});
+    }
+  }
+  // 드래그-드롭 지원
+  (function(){
+    const zone = document.getElementById('pptDropZone');
+    if (!zone) return;
+    zone.addEventListener('dragover', e => {
+      e.preventDefault();
+      zone.style.borderColor = '#eab308';
+      zone.style.background = '#1a1a2e';
+    });
+    zone.addEventListener('dragleave', e => {
+      zone.style.borderColor = '#3a4a5a';
+      zone.style.background = '#0f0f1e';
+    });
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.style.borderColor = '#3a4a5a';
+      zone.style.background = '#0f0f1e';
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) pptGenerateFromFile(f);
+    });
+  })();
   </script>
 </body>
 </html>

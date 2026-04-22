@@ -23,11 +23,13 @@ def create_app():
     from demos_v1.routes_chat import register_chat_routes
     from demos_v1.logpresso import register_logpresso_routes
     from demos_v1.knowledge import register_knowledge_routes
+    from demos_v1.routes_ppt import register_ppt_routes
 
     register_api_routes(app)
     register_chat_routes(app)
     register_logpresso_routes(app)
     register_knowledge_routes(app)
+    register_ppt_routes(app)
 
     _routes_registered = True
     return app
