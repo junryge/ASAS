@@ -235,7 +235,7 @@ def _apply_korean_font(run, bold: bool = False, italic: bool = False,
 
 
 def _add_title_slide(prs, slide_data: dict):
-    layout = prs.slide_layouts[0]  # Title Slide
+    layout = _safe_layout(prs, 0)  # Title Slide
     slide = prs.slides.add_slide(layout)
     title = slide.shapes.title
     if title:
@@ -255,7 +255,7 @@ def _add_title_slide(prs, slide_data: dict):
 
 
 def _add_content_slide(prs, slide_data: dict):
-    layout = prs.slide_layouts[1]  # Title and Content
+    layout = _safe_layout(prs, 1)  # Title and Content
     slide = prs.slides.add_slide(layout)
     title = slide.shapes.title
     if title:
@@ -289,7 +289,7 @@ def _add_content_slide(prs, slide_data: dict):
 
 
 def _add_table_slide(prs, slide_data: dict):
-    layout = prs.slide_layouts[5]  # Title Only
+    layout = _safe_layout(prs, 5)  # Title Only
     slide = prs.slides.add_slide(layout)
     title = slide.shapes.title
     if title:
@@ -328,7 +328,7 @@ def _add_table_slide(prs, slide_data: dict):
 
 
 def _add_code_slide(prs, slide_data: dict):
-    layout = prs.slide_layouts[5]  # Title Only
+    layout = _safe_layout(prs, 5)  # Title Only
     slide = prs.slides.add_slide(layout)
     title = slide.shapes.title
     if title:
@@ -366,11 +366,107 @@ def _add_code_slide(prs, slide_data: dict):
     return slide
 
 
+def _purge_all_slides(prs):
+    """템플릿에서 상속받은 기존 슬라이드를 파트·관계·목록 전부 완전히 제거.
+
+    단순히 _sldIdLst 에서만 제거하면 실제 slide1.xml 파일은 패키지 안에 남아
+    저장 시 'Duplicate name' 경고 + PowerPoint 오픈 실패가 발생.
+    """
+    slides = prs.slides
+    sld_id_lst = slides._sldIdLst
+    # 모든 슬라이드 id 요소 수집
+    id_elems = list(sld_id_lst)
+    pres_part = prs.part
+    for sld_id in id_elems:
+        rId = sld_id.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+        # 1) sldIdLst 에서 제거
+        sld_id_lst.remove(sld_id)
+        if not rId:
+            continue
+        # 2) 관계 + 파트 완전 제거
+        try:
+            slide_part = pres_part.related_part(rId)
+        except Exception:
+            slide_part = None
+        # 관계 drop
+        try:
+            pres_part.rels.pop(rId, None)
+        except Exception:
+            try:
+                del pres_part.rels[rId]
+            except Exception:
+                pass
+        # 패키지에서 파트 drop
+        if slide_part is not None:
+            try:
+                slide_part.package.drop_part(slide_part)
+            except Exception:
+                # fallback: part 맵에서 제거
+                try:
+                    pkg = slide_part.package
+                    parts_map = getattr(pkg, "_parts", None)
+                    if parts_map is not None:
+                        parts_map.pop(slide_part.partname, None)
+                except Exception:
+                    pass
+
+
+def _safe_layout(prs, idx):
+    """slide_layouts[idx] 를 안전하게 가져옴. 없으면 가능한 레이아웃 중 첫 번째."""
+    try:
+        return prs.slide_layouts[idx]
+    except (IndexError, KeyError):
+        layouts = list(prs.slide_layouts)
+        return layouts[0] if layouts else None
+
+
+def _make_presentation():
+    """python-pptx Presentation 생성. 내장 default.pptx 가 누락된 환경 대응.
+
+    python-pptx 설치가 깨져 default.pptx 가 없을 때 대비해:
+      1. 우리 번들 템플릿(corporate.pptx 등) 시도
+      2. 모두 실패하면 빈 상태로 수동 생성 시도
+      3. 그래도 안 되면 원본 에러 그대로 raise
+    """
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+    _TEMPLATE_CANDIDATES = [
+        os.path.join(_HERE, "ppt_templates", "corporate.pptx"),
+        os.path.join(_HERE, "ppt_templates", "minimal.pptx"),
+        os.path.join(_HERE, "ppt_templates", "academic.pptx"),
+        os.path.join(_HERE, "ppt_templates", "creative.pptx"),
+        os.path.join(_HERE, "ppt_templates", "dark.pptx"),
+    ]
+    # 1) python-pptx 기본 시도
+    try:
+        return Presentation()
+    except Exception as e0:
+        last_err = e0
+        print(f"[ppt_builder] Presentation() 기본값 실패: {e0}")
+    # 2) 번들 템플릿 순서대로 시도
+    for tpl in _TEMPLATE_CANDIDATES:
+        if not os.path.isfile(tpl):
+            continue
+        try:
+            prs = Presentation(tpl)
+            _purge_all_slides(prs)
+            print(f"[ppt_builder] 템플릿 폴백 사용: {os.path.basename(tpl)}")
+            return prs
+        except Exception as et:
+            last_err = et
+            print(f"[ppt_builder] 템플릿 시도 실패 {os.path.basename(tpl)}: {et}")
+    # 3) 모두 실패 → 명확한 안내 메시지
+    raise RuntimeError(
+        "python-pptx 설치가 손상되어 default.pptx 가 없고 번들 템플릿도 로드 실패.\n"
+        "해결: pip uninstall python-pptx -y && pip install python-pptx\n"
+        f"원본 에러: {last_err}"
+    )
+
+
 def render_outline_to_pptx(outline: dict) -> bytes:
     """outline dict → .pptx bytes 반환."""
     if not _PPTX_AVAILABLE:
         raise RuntimeError("python-pptx 가 설치되지 않았습니다. pip install python-pptx")
-    prs = Presentation()
+    prs = _make_presentation()
     prs.slide_width = Inches(10)
     prs.slide_height = Inches(7.5)
 
@@ -386,7 +482,7 @@ def render_outline_to_pptx(outline: dict) -> bytes:
             fn(prs, slide_data)
         except Exception as e:
             # 에러 슬라이드로 대체 (전체 실패 방지)
-            err_slide = prs.slides.add_slide(prs.slide_layouts[5])
+            err_slide = prs.slides.add_slide(_safe_layout(prs, 5))
             if err_slide.shapes.title:
                 err_slide.shapes.title.text = f"[렌더링 실패] {slide_data.get('type', '?')}"
             print(f"[ppt_builder] slide render error: {e}")

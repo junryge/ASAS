@@ -230,18 +230,7 @@ def register_chat_routes(app):
             else:
                 api_url = data.get("api_url", "")
                 model = data.get("model", "")
-        # auth_source 분기: HCPP-PRD 모델은 서버 메모리(demos_v1.hcpp_token) 에서 JWT 읽음
-        _reg_key_for_auth = get_registry_key_for_env(env_id) if env_id else None
-        _auth_source = MODEL_REGISTRY.get(_reg_key_for_auth, {}).get("auth_source", "DEFAULT") if _reg_key_for_auth else "DEFAULT"
-        if _auth_source == "HCPP_TOKEN":
-            from demos_v1.hcpp_token import get_hcpp_token
-            _hcpp_tok = get_hcpp_token()
-            api_key = _hcpp_tok
-            if not _hcpp_tok:
-                print("  [HCPP] 서버 메모리에 HCPP 토큰 없음 — UI 에서 JWT 붙여넣기 필요")
-                return jsonify({"error": "HCPP 토큰이 설정되지 않았습니다. UI 토큰 설정 → HCPP-PRD 섹션에서 JWT 를 붙여넣어 주세요."}), 400
-        else:
-            api_key = API_TOKEN or data.get("api_key", "")
+        api_key = API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
         skill_ids = data.get("skills", [])
         effort = data.get("effort", 2)
