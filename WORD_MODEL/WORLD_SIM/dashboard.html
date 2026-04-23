@@ -54,6 +54,34 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 .risk-WARNING { background:#78350f; color:#fbbf24; }
 .risk-DANGER { background:#7f1d1d; color:#fca5a5; }
 .risk-CRITICAL { background:#ef4444; color:#fff; animation:blink .5s infinite; }
+
+/* 3단계 데드락 경보 */
+.ew-box { margin-top:10px; padding:8px; border:1px solid #334155; border-radius:4px; background:#0f172a; cursor:pointer; transition:border-color .2s; }
+.ew-box:hover { border-color:#60a5fa; }
+.ew-badge { display:inline-block; padding:2px 10px; border-radius:4px; font-size:11px; font-weight:bold; }
+.ew-NORMAL { background:#065f46; color:#6ee7b7; }
+.ew-S1_EARLY { background:#78350f; color:#fbbf24; }
+.ew-S2_WATCH { background:#9a3412; color:#fdba74; }
+.ew-S3_CONFIRMED { background:#ef4444; color:#fff; animation:blink .5s infinite; }
+.ew-rule { color:#6b7280; margin:3px 0; font-size:11px; display:flex; justify-content:space-between; }
+.ew-rule.active { color:#fbbf24; }
+.ew-rule .ew-dot { color:#6b7280; }
+.ew-rule.active .ew-dot { color:#ef4444; }
+.ew-rule .ew-val { color:#9ca3af; font-size:10px; }
+.ew-rule.active .ew-val { color:#fcd34d; }
+.ew-guide { font-size:11px; color:#fbbf24; margin-top:6px; font-weight:bold; display:none; line-height:1.4; }
+
+/* Early warning 모달 */
+.ew-modal-content { max-width:700px; width:90%; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:16px; max-height:85vh; overflow-y:auto; color:#cbd5e1; }
+.ew-modal-section { margin-bottom:14px; padding:8px; background:#1e293b; border-radius:4px; }
+.ew-modal-section h4 { margin:0 0 6px 0; color:#fbbf24; font-size:13px; }
+.ew-tl-row { display:grid; grid-template-columns:55px 135px 1fr; gap:8px; padding:4px 6px; font-size:11px; border-bottom:1px solid #334155; }
+.ew-tl-row:last-child { border:none; }
+.ew-tl-row.s1 { color:#fbbf24; }
+.ew-tl-row.s2 { color:#fdba74; }
+.ew-tl-row.s3 { background:#7f1d1d; color:#fca5a5; font-weight:bold; }
+.ew-tl-row.deadlock { background:#991b1b; color:#fff; font-weight:bold; }
+.ew-tl-row.normal { color:#6ee7b7; }
 @keyframes blink { 50%{opacity:.5} }
 @keyframes alarmBlink { 0%,100%{background:#ef4444;} 50%{background:#991b1b;} }
 @keyframes alarmWarn { 0%,100%{background:#f59e0b;} 50%{background:#92400e;} }
@@ -204,6 +232,22 @@ canvas.chart { width:100%; flex:1; }
         <span id="p-dl-badge" class="risk risk-NORMAL" ondblclick="openRiskModal()" style="cursor:pointer;" title="더블클릭 → 과거 위험 이력 보기">정상</span>
       </div>
       <div id="p-dl-msg" style="font-size:11px;color:#9ca3af;margin-top:3px;"></div>
+
+      <!-- 3단계 데드락 경보 박스 (클릭 시 타임라인 모달) -->
+      <div class="ew-box" onclick="openEarlyWarningModal()" title="클릭 → 경보 진행 타임라인 상세">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span class="sl" style="font-weight:bold;">데드락 경보</span>
+          <span id="ew-stage-badge" class="ew-badge ew-NORMAL">정상</span>
+        </div>
+        <div id="ew-message" style="font-size:11px;color:#9ca3af;margin-top:4px;">정상 운영 중</div>
+        <div style="margin-top:8px;">
+          <div class="ew-rule" id="ew-rule-a"><span><span class="ew-dot">●</span> R-A' 반송시간</span><span class="ew-val" id="ew-ra-val">-</span></div>
+          <div class="ew-rule" id="ew-rule-b"><span><span class="ew-dot">●</span> R-B FAB큐</span><span class="ew-val" id="ew-rb-val">-</span></div>
+          <div class="ew-rule" id="ew-rule-c"><span><span class="ew-dot">●</span> R-C' 리프터</span><span class="ew-val" id="ew-rc-val">-</span></div>
+        </div>
+        <div id="ew-guide" class="ew-guide"></div>
+      </div>
+
       <div class="sr" style="margin-top:6px;"><span class="sl">현재 OBS</span><span class="sv" id="p-obs-now">-</span></div>
       <div class="sr"><span class="sl">평균 OBS</span><span class="sv" id="p-obs-avg">-</span></div>
       <div class="sr"><span class="sl">JAM 발생</span><span class="sv r" id="p-jam-cnt">0</span></div>
@@ -415,6 +459,39 @@ function updateUI(d) {
   dlBadge.textContent = dlLabels[dr.level] || dr.level || '정상';
   dlBadge.className = 'risk risk-' + (dr.level||'NORMAL');
   setText('p-dl-msg', dr.message||'');
+
+  // 3단계 데드락 경보
+  const ew = pred.early_warning || {};
+  window.__latestEarlyWarning = ew;  // 모달에서 참조
+  const ewLabel = ew.label || 'NORMAL';
+  const ewStageBadge = document.getElementById('ew-stage-badge');
+  if (ewStageBadge) {
+    const stageNames = {NORMAL:'정상', S1_EARLY:'1단계 조기경보', S2_WATCH:'2단계 주의보', S3_CONFIRMED:'3단계 ⚠️확정'};
+    ewStageBadge.textContent = stageNames[ewLabel] || ewLabel;
+    ewStageBadge.className = 'ew-badge ew-' + ewLabel;
+  }
+  setText('ew-message', ew.message || '정상 운영 중');
+
+  const rules = ew.rules || {};
+  ['a','b','c'].forEach(k => {
+    const map = {a:'R-A_prime', b:'R-B', c:'R-C_prime'};
+    const rule = rules[map[k]] || {};
+    const el = document.getElementById('ew-rule-'+k);
+    if (el) el.classList.toggle('active', !!rule.triggered);
+  });
+  const ra = rules['R-A_prime'] || {};
+  const rb = rules['R-B'] || {};
+  const rc = rules['R-C_prime'] || {};
+  setText('ew-ra-val', ra.value != null ? ra.value.toFixed(2)+'분'+(ra.count?` (${ra.count}회)`:'') : '-');
+  setText('ew-rb-val', rb.diff_30min != null ? (rb.diff_30min>=0?'+':'')+rb.diff_30min : '-');
+  setText('ew-rc-val', rc.reverse_count != null ? `역증가 ${rc.reverse_count}개`+(rc.trend!=null?` (합${rc.trend>0?'+':''}${rc.trend})`:'') : '-');
+
+  const guideEl = document.getElementById('ew-guide');
+  if (guideEl) {
+    const stage = ew.stage || 0;
+    guideEl.style.display = stage >= 2 ? 'block' : 'none';
+    guideEl.textContent = ew.guide || '';
+  }
 
   // OBS + JAM 추적 (client-side history) — JAM 발생만 진짜 이벤트로 본다
   const obsCurrent = dr.obs_current || 0;
@@ -2263,8 +2340,140 @@ async function applyFab(fab, prefix) {
   </div>
 </div>
 
+<!-- 3단계 데드락 경보 상세 모달 (타임라인 중심) -->
+<div id="ew-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='ew-modal')closeEarlyWarningModal()">
+  <div class="ew-modal-content">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#ef4444;">🚨 데드락 경보 상세</h3>
+      <button onclick="closeEarlyWarningModal()" style="background:none;border:1px solid #444;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;">✕ 닫기</button>
+    </div>
+
+    <div class="ew-modal-section">
+      <h4>■ 경보 진행 타임라인</h4>
+      <div id="ew-m-timeline" style="max-height:350px;overflow-y:auto;background:#0f172a;border-radius:4px;padding:6px;">
+        <div style="color:#6b7280;padding:8px;text-align:center;">데이터 대기 중...</div>
+      </div>
+      <div id="ew-m-leadtime" style="font-size:11px;color:#fbbf24;margin-top:6px;text-align:right;"></div>
+    </div>
+
+    <div class="ew-modal-section">
+      <h4>■ 현재 상태</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;">
+        <div>단계: <span id="ew-m-stage" style="font-weight:bold;color:#fbbf24;">-</span></div>
+        <div>메시지: <span id="ew-m-msg" style="color:#cbd5e1;">-</span></div>
+      </div>
+    </div>
+
+    <div class="ew-modal-section">
+      <h4>■ 현재 룰 평가</h4>
+      <div id="ew-m-rules" style="font-size:12px;"></div>
+    </div>
+
+    <div class="ew-modal-section" id="ew-m-guide-box">
+      <h4>■ 대응 가이드</h4>
+      <div id="ew-m-guide" style="font-size:12px;color:#fbbf24;line-height:1.6;">-</div>
+    </div>
+
+    <div style="font-size:10px;color:#6b7280;margin-top:8px;">
+      📎 참고: <code>WORD_MODEL/OHS_DATA_MD/M16A_BR_데드락_예측_룰_20260423.md</code>,
+      <code>WORD_MODEL/OHS_DATA_MD/M16A_BR_데드락_시나리오_예시_20260423.md</code>
+    </div>
+  </div>
+</div>
+
 <script>
 let bottleneckCache = null;
+
+function closeEarlyWarningModal() {
+  document.getElementById('ew-modal').style.display = 'none';
+}
+
+function openEarlyWarningModal() {
+  const ew = window.__latestEarlyWarning || {};
+  document.getElementById('ew-modal').style.display = 'flex';
+
+  // 타임라인 렌더링
+  const tl = document.getElementById('ew-m-timeline');
+  const history = ew.history || [];
+  if (!history.length) {
+    tl.innerHTML = '<div style="color:#6b7280;padding:8px;text-align:center;">아직 경보 이력 없음 (정상 운영 중)</div>';
+  } else {
+    const stageIcons = {0:'✅', 1:'🔔', 2:'⚠️', 3:'🚨'};
+    const stageNames = {0:'정상화', 1:'1단계 조기경보', 2:'2단계 주의보', 3:'3단계 ⭐확정'};
+    const stageCls = {0:'normal', 1:'s1', 2:'s2', 3:'s3'};
+    tl.innerHTML = history.map(h => {
+      const cls = stageCls[h.stage] || '';
+      const icon = stageIcons[h.stage] || '•';
+      const name = stageNames[h.stage] || h.label || '-';
+      return `<div class="ew-tl-row ${cls}">
+        <div style="font-weight:bold;">${h.time}</div>
+        <div>${icon} ${name}</div>
+        <div style="color:#cbd5e1;">${h.reason || ''}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // 리드타임 계산 (S3 최초 발동 → 최근 데드락 /현재 시각)
+  const firstS3 = history.find(h => h.stage === 3);
+  if (firstS3) {
+    document.getElementById('ew-m-leadtime').textContent =
+      `⭐ 3단계 확정 (${firstS3.time}) → 데드락까지 목표 10분 확보`;
+  } else {
+    document.getElementById('ew-m-leadtime').textContent = '';
+  }
+
+  // 현재 상태
+  const stageNames2 = {NORMAL:'정상', S1_EARLY:'1단계 조기경보', S2_WATCH:'2단계 주의보', S3_CONFIRMED:'3단계 ⚠️확정'};
+  setText('ew-m-stage', stageNames2[ew.label] || ew.label || '정상');
+  setText('ew-m-msg', ew.message || '정상 운영 중');
+
+  // 룰 상세
+  const rules = ew.rules || {};
+  const ra = rules['R-A_prime'] || {};
+  const rb = rules['R-B'] || {};
+  const rc = rules['R-C_prime'] || {};
+  const rulesHtml = `
+    <div style="margin-bottom:6px;padding:6px;background:#0f172a;border-radius:4px;">
+      <div style="font-weight:bold;color:${ra.triggered?'#ef4444':'#6b7280'};">
+        ${ra.triggered?'●':'○'} R-A' AVGTOTAL1MIN (반송시간 1분 평균)
+      </div>
+      <div style="font-size:11px;color:#9ca3af;margin-left:14px;margin-top:3px;">
+        현재 값: ${ra.value!=null ? ra.value.toFixed(2)+'분':'-'} ·
+        10분창 ≥9분 카운트: ${ra.count||0}회 ·
+        기준: ${ra.threshold||'-'}
+      </div>
+    </div>
+    <div style="margin-bottom:6px;padding:6px;background:#0f172a;border-radius:4px;">
+      <div style="font-weight:bold;color:${rb.triggered?'#ef4444':'#6b7280'};">
+        ${rb.triggered?'●':'○'} R-B M14→M16 큐 (FAB 간 누적)
+      </div>
+      <div style="font-size:11px;color:#9ca3af;margin-left:14px;margin-top:3px;">
+        30분 전 대비: ${rb.diff_30min!=null ? (rb.diff_30min>=0?'+':'')+rb.diff_30min : '-'} ·
+        기준: ${rb.threshold||'-'}
+      </div>
+    </div>
+    <div style="padding:6px;background:#0f172a;border-radius:4px;">
+      <div style="font-weight:bold;color:${rc.triggered?'#ef4444':'#6b7280'};">
+        ${rc.triggered?'●':'○'} R-C' 리프터 역증가 (경로 병목)
+      </div>
+      <div style="font-size:11px;color:#9ca3af;margin-left:14px;margin-top:3px;">
+        전체 추세 (20분): ${rc.trend!=null ? (rc.trend>0?'+':'')+rc.trend : '-'} ·
+        역증가: ${rc.reverse_count||0}개 ${rc.reverse_lids && rc.reverse_lids.length ? '('+rc.reverse_lids.join(', ')+')' : ''} ·
+        기준: ${rc.threshold||'-'}
+      </div>
+    </div>`;
+  document.getElementById('ew-m-rules').innerHTML = rulesHtml;
+
+  // 가이드
+  const guideBox = document.getElementById('ew-m-guide-box');
+  const guide = ew.guide || '';
+  if (guide) {
+    guideBox.style.display = 'block';
+    document.getElementById('ew-m-guide').textContent = guide;
+  } else {
+    guideBox.style.display = 'none';
+  }
+}
 
 async function openBottleneckModal() {
   document.getElementById('bottleneck-modal').style.display = 'flex';
