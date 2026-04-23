@@ -33,6 +33,14 @@ class MacroPredictor:
         self.obs_history: deque = deque(maxlen=history_size)
         self.driving_history: deque = deque(maxlen=history_size)
 
+        # 3단계 데드락 경보용 히스토리 (M16A_BR 확장)
+        self.t1min_history: deque = deque(maxlen=20)         # AVGTOTAL1MIN
+        self.m14_history:   deque = deque(maxlen=35)         # M14→M16
+        self.lft_history:   deque = deque(maxlen=25)         # 리프터 10개 dict
+        self.mlud_history:  deque = deque(maxlen=30)         # MLUD Q
+        self.warning_log:   List[dict] = []                   # 단계 발동 이력 (타임라인용)
+        self._last_stage:   int = 0
+
         # 현재 값
         self.current_queue: int = 0
         self.current_obs: int = 0
@@ -65,6 +73,20 @@ class MacroPredictor:
             # 상관관계 데이터 축적
             if q > 0 and obs >= 0:
                 self.queue_obs_pairs.append((q, obs))
+
+            # 3단계 경보용 히스토리
+            t1min = star.get('avgtotal1min')
+            m14 = star.get('m14_to_m16')
+            lft = star.get('lft_list')
+            mlud = star.get('mlud_q')
+            if t1min is not None:
+                self.t1min_history.append((t, float(t1min)))
+            if m14 is not None and m14 > 0:
+                self.m14_history.append((t, int(m14)))
+            if isinstance(lft, dict) and lft:
+                self.lft_history.append((t, dict(lft)))
+            if mlud is not None:
+                self.mlud_history.append((t, int(mlud)))
         elif vehicle_stats:
             # STAR 없을 때 — 차량 상태 집계에서 OBS 추출
             obs = vehicle_stats.get('obs_bz_stop', 0)
@@ -86,6 +108,7 @@ class MacroPredictor:
             'tat': self._predict_tat(),
             'throughput': self._predict_throughput(),
             'deadlock_risk': self._predict_deadlock_risk(),
+            'early_warning': self._predict_early_warning(),
             'obs_trend': self._get_obs_trend(),
             'current': {
                 'queue': self.current_queue,
@@ -211,6 +234,135 @@ class MacroPredictor:
             {'time': t.strftime("%H:%M"), 'value': v}
             for t, v in self.obs_history
         ]
+
+    def _predict_early_warning(self) -> dict:
+        """3단계 데드락 경보 (M16A_BR 룰 — R-A' + R-B + R-C' AND).
+
+        검증 사례: 2026-04-21 14:00 데드락 체인 6대
+        - 13:50 시점에 3단계 확정 발동 (10분 전)
+        - 14:14 / 14:16 재발동 (진행 중 재확인)
+        - 16:00 false positive 구간 완벽 차단
+        """
+
+        # R-A': 최근 10분창에 AVGTOTAL1MIN ≥ 9분 이 몇 회
+        t1_values = [v for _, v in list(self.t1min_history)[-10:]]
+        ra_count = sum(1 for v in t1_values if v >= 9.0)
+        ra_latest = t1_values[-1] if t1_values else None
+        ra_triggered = ra_count >= 1
+
+        # R-B: M14→M16 30분 전 대비 +100 이상
+        rb_diff = 0
+        rb_triggered = False
+        if len(self.m14_history) >= 31:
+            rb_diff = self.m14_history[-1][1] - self.m14_history[-31][1]
+            rb_triggered = rb_diff >= 100
+
+        # R-C': 전체 리프터 합 20분 전 대비 감소 AND 역증가 2개+
+        rc_trend = 0
+        reverse_count = 0
+        reverse_lids: List[str] = []
+        rc_triggered = False
+        if len(self.lft_history) >= 21:
+            now_lft = self.lft_history[-1][1]
+            prev_lft = self.lft_history[-21][1]
+            rc_trend = sum(now_lft.values()) - sum(prev_lft.values())
+            for lid in now_lft:
+                if now_lft[lid] > prev_lft.get(lid, 0):
+                    reverse_lids.append(lid)
+                    reverse_count += 1
+            rc_triggered = rc_trend < 0 and reverse_count >= 2
+
+        # Stage 판정
+        s1 = ra_count >= 2                           # 1단계 조기경보
+        s2 = rb_triggered                            # 2단계 주의보
+        s3 = ra_triggered and rb_triggered and rc_triggered  # 3단계 확정
+
+        stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
+
+        labels = ['NORMAL', 'S1_EARLY', 'S2_WATCH', 'S3_CONFIRMED']
+        messages = [
+            '정상 운영 중',
+            '조기경보: 반송시간 급증 감지',
+            '주의보: FAB 간 큐 누적',
+            '⚠️ 확정: 데드락 10분 전 임박',
+        ]
+        guides = [
+            '',
+            '대시보드 확인 빈도 상향',
+            'FAB 간 물동량 점검, 관리자 알림',
+            '즉시 MLUD port capa 조정 검토 / SFA 리프터 상태 확인 / 10분 내 데드락 방지 윈도우',
+        ]
+
+        # 단계 변동 감지 → warning_log 기록
+        if self.current_time is not None:
+            # 단계가 올라갔을 때 (0→1, 1→2, 2→3 등) 기록
+            if stage > self._last_stage:
+                reasons = []
+                if stage == 1 and ra_count >= 2:
+                    reasons.append(f'1MIN ≥9분이 {ra_count}회')
+                if stage == 2 and rb_triggered:
+                    reasons.append(f'M14→M16 +{rb_diff}')
+                if stage == 3:
+                    reasons.append(f'R-A+R-B+R-C AND (1MIN {ra_latest:.2f}, +{rb_diff}, 역증가 {reverse_count})')
+                self.warning_log.append({
+                    'time': self.current_time.strftime('%H:%M'),
+                    'stage': stage,
+                    'label': labels[stage],
+                    'reason': '; '.join(reasons) or messages[stage],
+                })
+            # 단계가 유지되는 중이라도 3단계 재발동은 기록 (타임라인 명확화)
+            elif stage == 3 and self._last_stage == 3:
+                # 직전 기록이 3단계이고 10분 지나면 "재발동"
+                last_s3_time = None
+                for entry in reversed(self.warning_log):
+                    if entry['stage'] == 3:
+                        last_s3_time = entry['time']
+                        break
+                cur_hm = self.current_time.strftime('%H:%M')
+                if last_s3_time and cur_hm != last_s3_time:
+                    # 직전 S3 와 10분 이상 차이면 재발동으로 기록
+                    try:
+                        lh, lm = map(int, last_s3_time.split(':'))
+                        ch, cm = map(int, cur_hm.split(':'))
+                        diff = (ch * 60 + cm) - (lh * 60 + lm)
+                        if diff >= 10:
+                            self.warning_log.append({
+                                'time': cur_hm,
+                                'stage': 3,
+                                'label': 'S3_CONFIRMED',
+                                'reason': '재발동 (진행 중)',
+                            })
+                    except ValueError:
+                        pass
+            self._last_stage = stage
+
+        return {
+            'stage': stage,
+            'label': labels[stage],
+            'message': messages[stage],
+            'guide': guides[stage],
+            'rules': {
+                'R-A_prime': {
+                    'triggered': ra_triggered,
+                    'count': ra_count,
+                    'value': round(ra_latest, 2) if ra_latest is not None else None,
+                    'threshold': '≥9분 1회+ (S1: 2회+)',
+                },
+                'R-B': {
+                    'triggered': rb_triggered,
+                    'diff_30min': rb_diff,
+                    'threshold': '+100 이상',
+                },
+                'R-C_prime': {
+                    'triggered': rc_triggered,
+                    'reverse_count': reverse_count,
+                    'reverse_lids': reverse_lids,
+                    'trend': rc_trend,
+                    'threshold': '합 감소 + 역증가 2개+',
+                },
+            },
+            'history': list(self.warning_log[-20:]),  # 최근 20개 이력
+        }
 
     def get_correlations(self) -> dict:
         """데이터 간 상관관계 (MD 문서 검증 결과 반영)"""

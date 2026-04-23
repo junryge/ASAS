@@ -685,6 +685,17 @@ class DateDataLoader:
                     'congested': _safe_int(row.get(C('.OHT.STATECNT.CONGESTED'))),
                     'pause': _safe_int(row.get(C('.OHT.STATECNT.PAUSE'))),
                     'timeout': _safe_int(row.get(C('.OHT.STATECNT.TIMEOUT'))),
+                    # 3단계 데드락 경보용 신규 키 (M16A_BR 확장)
+                    'avgtotal1min': _safe_float(row.get(C('.QUE.TIME.AVGTOTALTIME1MIN'))),
+                    'm14_to_m16': _safe_int(row.get(C('.QUE.M14TOM16.MESCURRENTQCNT'))),
+                    'mlud_q': _safe_int(row.get(C('.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT'))),
+                    'fab_trans_job': _safe_int(row.get(C('.QUE.ALL.FABTRANSJOBCNT'))),
+                    'lft_list': {
+                        lid: _safe_int(row.get(C(f'.LFT.{lid}.TOTAL_CURRENTQCNT')))
+                        for lid in ('6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
+                                    '6ABL6031', '6ABL6032', '6ABL0111', '6ABL0112',
+                                    '6ABL0121', '6ABL0122')
+                    },
                 }
                 self.star_timeline.append((t, star))
                 count += 1
