@@ -5709,10 +5709,20 @@ function harnessDelete(sid){
 function openPptBuilder(){ document.getElementById('pptBuilderOverlay').style.display='flex'; }
 function closePptBuilder(){ document.getElementById('pptBuilderOverlay').style.display='none'; }
 function pptSwitchTab(tab){
-  const mdTab=document.getElementById('pptTabMd'), fileTab=document.getElementById('pptTabFile');
-  const mdC=document.getElementById('pptTabMdContent'), fileC=document.getElementById('pptTabFileContent');
-  if(tab==='md'){ mdTab.style.background='#eab308';mdTab.style.color='#fff';fileTab.style.background='#e5e7eb';fileTab.style.color='#6b7280';mdC.style.display='flex';fileC.style.display='none'; }
-  else { fileTab.style.background='#eab308';fileTab.style.color='#fff';mdTab.style.background='#e5e7eb';mdTab.style.color='#6b7280';fileC.style.display='flex';mdC.style.display='none'; }
+  const tabs={md:'pptTabMd', file:'pptTabFile', llm:'pptTabLlm'};
+  const conts={md:'pptTabMdContent', file:'pptTabFileContent', llm:'pptTabLlmContent'};
+  for(const k in tabs){
+    const tEl=document.getElementById(tabs[k]);
+    const cEl=document.getElementById(conts[k]);
+    if(!tEl||!cEl) continue;
+    if(k===tab){
+      tEl.style.background='#eab308'; tEl.style.color='#fff';
+      cEl.style.display='flex';
+    } else {
+      tEl.style.background='#e5e7eb'; tEl.style.color='#6b7280';
+      cEl.style.display='none';
+    }
+  }
 }
 function pptShowLoading(msg){
   document.getElementById('pptResultPanel').innerHTML =
@@ -5727,34 +5737,283 @@ function pptShowResult(data){
        <span style="color:#64748b;">[${s.type}]</span>
        <span style="flex:1;color:#334155;">${(s.title||'(제목 없음)').replace(/</g,'&lt;')}</span>
      </div>`).join('');
+  // LLM 모드일 때 디버깅 패널 (LLM이 받은 입력 / 뱉은 응답)
+  let debugHtml='';
+  if(data._debug && (data._debug.preprocessed_input || data._debug.raw_llm_response_preview)){
+    const esc=s=>(s||'').replace(/</g,'&lt;');
+    debugHtml=`
+      <details style="margin-top:14px;border:1px dashed #cbd5e1;border-radius:6px;padding:8px;background:#fffbeb;">
+        <summary style="cursor:pointer;font-size:11px;color:#a16207;font-weight:700;">🔍 LLM 디버깅 — 클릭해서 펼치기 (LLM이 본 입력 + 뱉은 응답)</summary>
+        <div style="font-size:10px;color:#64748b;margin-top:6px;font-weight:700;">📝 LLM이 받은 입력 (전처리 후)</div>
+        <pre style="font-size:10px;background:#f1f5f9;padding:6px;border-radius:4px;max-height:150px;overflow:auto;white-space:pre-wrap;">${esc(data._debug.preprocessed_input)}</pre>
+        <div style="font-size:10px;color:#64748b;margin-top:6px;font-weight:700;">🤖 LLM 원본 응답 (앞 800자)</div>
+        <pre style="font-size:10px;background:#f1f5f9;padding:6px;border-radius:4px;max-height:150px;overflow:auto;white-space:pre-wrap;">${esc(data._debug.raw_llm_response_preview)}</pre>
+      </details>`;
+  }
   panel.innerHTML = `
     <div style="margin-bottom:14px;">
       <div style="font-size:14px;font-weight:700;color:#16a34a;margin-bottom:6px;">✅ 변환 완료</div>
-      <div style="font-size:11px;color:#64748b;">파일명: ${data.filename||''}</div>
+      <div style="font-size:11px;color:#64748b;">파일명: ${data.filename||''}${data.model?' · 모델: '+data.model:''}</div>
       <div style="font-size:11px;color:#64748b;">슬라이드: ${data.slide_count||0}개 · 크기 ${((data.size||0)/1024).toFixed(1)} KB</div>
     </div>
     <a href="${data.download_url}" download
        style="display:block;padding:10px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;text-decoration:none;border-radius:6px;font-weight:700;text-align:center;margin-bottom:14px;font-size:13px;">💾 .pptx 다운로드</a>
-    <div style="font-size:11px;color:#64748b;margin-bottom:6px;">슬라이드 구성</div>${slides}`;
+    <div style="font-size:11px;color:#64748b;margin-bottom:6px;">슬라이드 구성</div>${slides}
+    ${debugHtml}`;
+}
+function pptSelectedTemplate(){
+  const sel=document.getElementById('pptTemplateSelect');
+  return (sel&&sel.value)?sel.value:'minimal';
+}
+// 🔄 PPT 설계 팝업 완전 초기화
+function pptResetAll(){
+  if(!confirm('모든 입력·선택·결과를 초기화할까요?')) return;
+  // 1) textarea 두 개 비우기
+  ['pptMdInput','pptLlmInput'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  // 2) 파일 input 비우기
+  const fi=document.getElementById('pptFileInput'); if(fi) fi.value='';
+  // 3) 모드 라디오 → 기본 (fast)
+  document.querySelectorAll('input[name="pptMdMode"][value="fast"]').forEach(r=>r.checked=true);
+  document.querySelectorAll('input[name="pptFileMode"][value="fast"]').forEach(r=>r.checked=true);
+  pptToggleMdMode(); pptToggleFileMode();
+  // 4) 테마 → minimal
+  const tplSel=document.getElementById('pptTemplateSelect');
+  if(tplSel) tplSel.value='minimal';
+  // 5) 모델 드롭다운 → 첫 번째
+  ['pptLlmModelSelect','pptMdLlmModelSelect','pptFileLlmModelSelect'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && el.options.length>0) el.selectedIndex=0;
+  });
+  // 6) 탭 → MD 텍스트로
+  pptSwitchTab('md');
+  // 7) 결과 패널 비우기
+  const panel=document.getElementById('pptResultPanel');
+  if(panel) panel.innerHTML=`
+    <div style="text-align:center;color:#94a3b8;padding-top:80px;">
+      <div style="font-size:36px;margin-bottom:10px;">⬅️</div>
+      왼쪽에서 MD 입력 또는 파일 업로드 후<br>결과가 여기 나옵니다
+    </div>`;
+}
+// MD ↔ LLM textarea 양방향 동기화 (한쪽 적으면 다른 쪽에도)
+function pptSyncInputs(source){
+  const mdEl=document.getElementById('pptMdInput');
+  const llmEl=document.getElementById('pptLlmInput');
+  if(!mdEl||!llmEl) return;
+  if(source==='md') llmEl.value=mdEl.value;
+  else if(source==='llm') mdEl.value=llmEl.value;
+}
+// 동기화 이벤트 자동 등록 (팝업 처음 열 때 1회)
+let _pptSyncBound=false;
+function pptBindSync(){
+  if(_pptSyncBound) return;
+  const mdEl=document.getElementById('pptMdInput');
+  const llmEl=document.getElementById('pptLlmInput');
+  if(mdEl) mdEl.addEventListener('input', ()=>pptSyncInputs('md'));
+  if(llmEl) llmEl.addEventListener('input', ()=>pptSyncInputs('llm'));
+  _pptSyncBound=true;
+}
+function pptToggleMdMode(){
+  const mode=(document.querySelector('input[name="pptMdMode"]:checked')||{}).value;
+  const row=document.getElementById('pptMdLlmModelRow');
+  if(!row) return;
+  row.style.display = (mode==='llm') ? 'flex' : 'none';
+  if(mode==='llm') pptLoadMdLlmModels();
+}
+async function pptLoadMdLlmModels(){
+  const sel=document.getElementById('pptMdLlmModelSelect');
+  if(!sel) return;
+  if(sel.dataset.loaded==='1') return;
+  sel.innerHTML='<option value="">(로딩 중...)</option>';
+  try{
+    const r=await fetch('/api/ppt/models');
+    const data=await r.json();
+    if(!data.ok || !data.models || !data.models.length){
+      sel.innerHTML='<option value="">(사용 가능 모델 없음)</option>'; return;
+    }
+    const ggufs=data.models.filter(m=>m.kind==='GGUF');
+    const apis=data.models.filter(m=>m.kind==='API');
+    let html='';
+    if(apis.length){
+      html+='<optgroup label="🌐 사내 API">';
+      apis.forEach(m=>{ html+=`<option value="${m.id}">${m.name}</option>`; });
+      html+='</optgroup>';
+    }
+    if(ggufs.length){
+      html+='<optgroup label="💻 로컬 GGUF">';
+      ggufs.forEach(m=>{
+        const sz=m.size_gb?` (${m.size_gb}GB)`:'';
+        html+=`<option value="${m.id}">${m.name}${sz}</option>`;
+      });
+      html+='</optgroup>';
+    }
+    sel.innerHTML=html;
+    sel.dataset.loaded='1';
+  }catch(e){ sel.innerHTML=`<option value="">로딩 실패: ${e.message}</option>`; }
 }
 async function pptGenerateFromMd(){
   const md=document.getElementById('pptMdInput').value.trim();
   if(!md){ alert('MD 내용을 입력해주세요'); return; }
-  pptShowLoading('MD → PPT 변환 중...');
+  const tpl=pptSelectedTemplate();
+  const mode=(document.querySelector('input[name="pptMdMode"]:checked')||{}).value || 'fast';
+
+  if(mode==='llm'){
+    const model=document.getElementById('pptMdLlmModelSelect').value;
+    if(!model){ alert('LLM 모드를 선택하셨는데 모델이 비어있습니다.'); return; }
+    pptShowLoading(`🤖 ${model} 가 디자인 중... (수십 초~수 분)`);
+    try{
+      const r=await fetch('/api/ppt/from-llm',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({input: md, model, template: tpl})
+      });
+      pptShowResult(await r.json());
+    }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
+    return;
+  }
+  // 빠른 변환 (결정론)
+  pptShowLoading(`MD → PPT 변환 중... (테마: ${tpl})`);
   try{
-    const r=await fetch('/api/ppt/from-md',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({md})});
+    const r=await fetch('/api/ppt/from-md',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({md, template: tpl})});
     pptShowResult(await r.json());
   }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
 }
+function pptToggleFileMode(){
+  const mode=(document.querySelector('input[name="pptFileMode"]:checked')||{}).value;
+  const row=document.getElementById('pptFileLlmModelRow');
+  if(!row) return;
+  row.style.display = (mode==='llm') ? 'flex' : 'none';
+  // LLM 모드 켜면 모델 목록 로드
+  if(mode==='llm') pptLoadFileLlmModels();
+}
+async function pptLoadFileLlmModels(){
+  const sel=document.getElementById('pptFileLlmModelSelect');
+  if(!sel) return;
+  if(sel.dataset.loaded==='1') return;  // 한 번만 로드
+  sel.innerHTML='<option value="">(로딩 중...)</option>';
+  try{
+    const r=await fetch('/api/ppt/models');
+    const data=await r.json();
+    if(!data.ok || !data.models || !data.models.length){
+      sel.innerHTML='<option value="">(사용 가능 모델 없음)</option>'; return;
+    }
+    const ggufs=data.models.filter(m=>m.kind==='GGUF');
+    const apis=data.models.filter(m=>m.kind==='API');
+    let html='';
+    if(apis.length){
+      html+='<optgroup label="🌐 사내 API">';
+      apis.forEach(m=>{ html+=`<option value="${m.id}">${m.name}</option>`; });
+      html+='</optgroup>';
+    }
+    if(ggufs.length){
+      html+='<optgroup label="💻 로컬 GGUF">';
+      ggufs.forEach(m=>{
+        const sz=m.size_gb?` (${m.size_gb}GB)`:'';
+        html+=`<option value="${m.id}">${m.name}${sz}</option>`;
+      });
+      html+='</optgroup>';
+    }
+    sel.innerHTML=html;
+    sel.dataset.loaded='1';
+  }catch(e){ sel.innerHTML=`<option value="">로딩 실패: ${e.message}</option>`; }
+}
 async function pptGenerateFromFile(file){
   if(!file) return;
-  pptShowLoading('파일 업로드 중... ('+file.name+')');
-  const fd=new FormData(); fd.append('file',file);
+  const tpl=pptSelectedTemplate();
+  // 파일 내용 미리 읽어 textarea 두 곳 채움
+  let text='';
+  try{
+    text=await file.text();
+    const mdEl=document.getElementById('pptMdInput');
+    const llmEl=document.getElementById('pptLlmInput');
+    if(mdEl) mdEl.value=text;
+    if(llmEl) llmEl.value=text;
+  }catch(_e){}
+
+  const mode=(document.querySelector('input[name="pptFileMode"]:checked')||{}).value || 'fast';
+
+  if(mode==='llm'){
+    const model=document.getElementById('pptFileLlmModelSelect').value;
+    if(!model){ alert('LLM 모드를 선택하셨는데 모델이 비어있습니다.'); return; }
+    pptShowLoading(`🤖 ${model} 가 디자인 중... (수십 초~수 분, 큰 모델일수록 좋음)`);
+    try{
+      const r=await fetch('/api/ppt/from-llm',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({input: text, model, template: tpl})
+      });
+      pptShowResult(await r.json());
+    }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
+    return;
+  }
+  // 빠른 변환 (결정론)
+  pptShowLoading(`파일 업로드 중... (${file.name}, 테마: ${tpl})`);
+  const fd=new FormData(); fd.append('file',file); fd.append('template',tpl);
   try{
     const r=await fetch('/api/ppt/from-md-file',{method:'POST',body:fd});
     pptShowResult(await r.json());
   }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
 }
+// 🤖 LLM 디자인 모드
+async function pptLoadLlmModels(){
+  const sel=document.getElementById('pptLlmModelSelect');
+  if(!sel) return;
+  sel.innerHTML='<option value="">(로딩 중...)</option>';
+  try{
+    const r=await fetch('/api/ppt/models');
+    const data=await r.json();
+    if(!data.ok || !data.models || !data.models.length){
+      sel.innerHTML='<option value="">(사용 가능한 모델 없음)</option>';
+      return;
+    }
+    // 그룹화: GGUF, API
+    const ggufs=data.models.filter(m=>m.kind==='GGUF');
+    const apis=data.models.filter(m=>m.kind==='API');
+    let html='';
+    if(apis.length){
+      html+='<optgroup label="🌐 사내 API (회사망)">';
+      apis.forEach(m=>{ html+=`<option value="${m.id}">${m.name}</option>`; });
+      html+='</optgroup>';
+    }
+    if(ggufs.length){
+      html+='<optgroup label="💻 로컬 GGUF (집·회사 모두)">';
+      ggufs.forEach(m=>{
+        const sz=m.size_gb?` (${m.size_gb}GB)`:'';
+        html+=`<option value="${m.id}">${m.name}${sz}</option>`;
+      });
+      html+='</optgroup>';
+    }
+    sel.innerHTML=html;
+  }catch(e){
+    sel.innerHTML=`<option value="">로딩 실패: ${e.message}</option>`;
+  }
+}
+async function pptGenerateFromLlm(){
+  const input=document.getElementById('pptLlmInput').value.trim();
+  if(!input){ alert('주제 또는 MD를 입력하세요'); return; }
+  const model=document.getElementById('pptLlmModelSelect').value;
+  if(!model){ alert('모델을 선택하세요'); return; }
+  const tpl=pptSelectedTemplate();
+  pptShowLoading(`🤖 ${model} 가 디자인 사양 생성 중... (수십 초~수 분)`);
+  try{
+    const r=await fetch('/api/ppt/from-llm',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({input, model, template: tpl})
+    });
+    pptShowResult(await r.json());
+  }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
+}
+// 팝업 열 때마다 모델 목록 갱신 + 동기화 이벤트 연결
+(function(){
+  const _origOpen=window.openPptBuilder;
+  window.openPptBuilder=function(){
+    if(typeof _origOpen==='function') _origOpen();
+    else document.getElementById('pptBuilderOverlay').style.display='flex';
+    pptLoadLlmModels();
+    pptLoadMdLlmModels();   // MD 텍스트 탭 모델 드롭다운
+    pptLoadFileLlmModels(); // 파일 업로드 탭 모델 드롭다운
+    pptBindSync();
+  };
+})();
 // 드롭존 이벤트
 (function(){
   const zone=document.getElementById('pptDropZone'); if(!zone) return;
@@ -5790,37 +6049,96 @@ async function pptGenerateFromFile(file){
       <div>
         <div style="font-size:16px;font-weight:700;color:#a16207;">📑 PPT 설계</div>
         <div style="font-size:11px;color:#78716c;margin-top:2px;">
-          MD 파일 드롭 · 텍스트 붙여넣기 → .pptx 자동 변환 (LLM 안 거침, 결정론적)
+          MD 입력 → 빠른 변환 또는 LLM 자동 디자인 → .pptx
         </div>
       </div>
-      <button onclick="closePptBuilder()" style="background:transparent;border:none;color:#78716c;font-size:22px;cursor:pointer;padding:4px 10px;">✕</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="pptResetAll()" title="모든 입력·선택·결과 초기화"
+                style="padding:6px 12px;background:#fff;color:#a16207;border:1px solid #fde68a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">
+          🔄 초기화
+        </button>
+        <button onclick="closePptBuilder()" style="background:transparent;border:none;color:#78716c;font-size:22px;cursor:pointer;padding:4px 10px;">✕</button>
+      </div>
     </div>
     <div style="flex:1;display:flex;overflow:hidden;">
       <div style="flex:1;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;padding:14px;">
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <!-- 🎨 테마 선택 -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <label style="font-size:11px;color:#64748b;white-space:nowrap;font-weight:700;">🎨 테마</label>
+          <select id="pptTemplateSelect"
+                  style="flex:1;padding:6px 10px;background:#f8fafc;color:#1e293b;
+                         border:1px solid #cbd5e1;border-radius:6px;font-size:12px;cursor:pointer;">
+            <option value="minimal">Minimal — 노란 액센트, 깔끔</option>
+            <option value="corporate">Corporate — 파란색, 정장</option>
+            <option value="academic">Academic — 와인색, 논문</option>
+            <option value="creative">Creative — 핑크, 화려</option>
+            <option value="dark">Dark — 다크모드, 네온</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;">
           <button id="pptTabMd" onclick="pptSwitchTab('md')"
                   style="flex:1;padding:8px;background:#eab308;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">📝 MD 텍스트</button>
           <button id="pptTabFile" onclick="pptSwitchTab('file')"
                   style="flex:1;padding:8px;background:#e5e7eb;color:#6b7280;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">📎 파일 업로드</button>
+          <button id="pptTabLlm" onclick="pptSwitchTab('llm')"
+                  style="flex:1;padding:8px;background:#e5e7eb;color:#6b7280;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">🤖 LLM 디자인</button>
         </div>
         <div id="pptTabMdContent" style="flex:1;display:flex;flex-direction:column;">
+          <!-- 처리 모드 선택 (모델 드롭다운 항상 표시) -->
+          <div style="margin-bottom:8px;padding:10px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;">
+            <div style="font-size:11px;color:#78716c;font-weight:700;margin-bottom:6px;">📋 변환 방식</div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1e293b;cursor:pointer;margin-bottom:4px;">
+              <input type="radio" name="pptMdMode" value="fast" checked onchange="pptToggleMdMode()"/>
+              <b>🚀 빠른 변환</b> <span style="color:#64748b;font-size:11px;">— 결정론, 1~2초, 단순 디자인</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1e293b;cursor:pointer;">
+              <input type="radio" name="pptMdMode" value="llm" onchange="pptToggleMdMode()"/>
+              <b>🤖 LLM 자동 디자인</b> <span style="color:#64748b;font-size:11px;">— 알아서 요약+도형 디자인, 30초~수분</span>
+            </label>
+            <div id="pptMdLlmModelRow" style="display:flex;margin-top:8px;align-items:center;gap:8px;">
+              <label style="font-size:11px;color:#64748b;font-weight:700;white-space:nowrap;">🧠 모델 (LLM 모드 시)</label>
+              <select id="pptMdLlmModelSelect"
+                      style="flex:1;padding:5px 8px;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;cursor:pointer;">
+                <option value="">(로딩 중...)</option>
+              </select>
+            </div>
+          </div>
           <label style="font-size:11px;color:#64748b;margin-bottom:4px;">
             마크다운 입력 (# 제목 / ## 슬라이드 / - 불릿 / | 표 | / ```코드``` 지원)
           </label>
           <textarea id="pptMdInput"
             style="flex:1;background:#f8fafc;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;
-                   padding:10px;font-family:Consolas,monospace;font-size:12px;resize:none;min-height:300px;"
+                   padding:10px;font-family:Consolas,monospace;font-size:12px;resize:none;min-height:240px;"
             placeholder="# 발표 제목&#10;> 부제 또는 날짜&#10;&#10;## 첫 슬라이드&#10;- 요점 1&#10;- 요점 2&#10;&#10;## 표 슬라이드&#10;| 항목 | 값 |&#10;|---|---|&#10;| A | 1 |&#10;&#10;## 코드 슬라이드&#10;```python&#10;def hello():&#10;    print('hi')&#10;```"></textarea>
           <button onclick="pptGenerateFromMd()"
                   style="margin-top:10px;padding:10px;background:linear-gradient(135deg,#eab308,#d97706);
                          color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;">🚀 PPT 만들기</button>
         </div>
         <div id="pptTabFileContent" style="flex:1;display:none;flex-direction:column;">
-          <label style="font-size:11px;color:#64748b;margin-bottom:4px;">.md / .markdown / .txt 파일 드래그-드롭 또는 클릭</label>
+          <!-- 처리 모드 선택 -->
+          <div style="margin-bottom:8px;padding:10px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;">
+            <div style="font-size:11px;color:#78716c;font-weight:700;margin-bottom:6px;">📋 파일 드롭 시 자동 처리 방식</div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1e293b;cursor:pointer;margin-bottom:4px;">
+              <input type="radio" name="pptFileMode" value="fast" checked onchange="pptToggleFileMode()"/>
+              <b>🚀 빠른 변환</b> <span style="color:#64748b;font-size:11px;">— 결정론, 1~2초, 단순 디자인</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#1e293b;cursor:pointer;">
+              <input type="radio" name="pptFileMode" value="llm" onchange="pptToggleFileMode()"/>
+              <b>🤖 LLM 자동 디자인</b> <span style="color:#64748b;font-size:11px;">— 알아서 요약+도형 디자인, 30초~수분</span>
+            </label>
+            <div id="pptFileLlmModelRow" style="display:flex;margin-top:8px;align-items:center;gap:8px;">
+              <label style="font-size:11px;color:#64748b;font-weight:700;white-space:nowrap;">🧠 모델 (LLM 모드 시)</label>
+              <select id="pptFileLlmModelSelect"
+                      style="flex:1;padding:5px 8px;background:#fff;color:#1e293b;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;cursor:pointer;">
+                <option value="">(로딩 중...)</option>
+              </select>
+            </div>
+          </div>
+          <label style="font-size:11px;color:#64748b;margin-bottom:4px;">.md / .markdown / .txt 파일 드래그-드롭 또는 클릭 → 위 방식으로 자동 실행</label>
           <div id="pptDropZone"
                style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
                       border:2px dashed #cbd5e1;border-radius:8px;cursor:pointer;padding:40px;
-                      transition:all .2s;background:#f8fafc;min-height:300px;"
+                      transition:all .2s;background:#f8fafc;min-height:240px;"
                onclick="document.getElementById('pptFileInput').click()">
             <div style="font-size:48px;margin-bottom:12px;">📎</div>
             <div style="color:#a16207;font-size:14px;font-weight:700;">파일 드롭 또는 클릭</div>
@@ -5828,6 +6146,29 @@ async function pptGenerateFromFile(file){
           </div>
           <input type="file" id="pptFileInput" accept=".md,.markdown,.txt" style="display:none;"
                  onchange="pptGenerateFromFile(this.files[0])"/>
+        </div>
+        <!-- 🤖 LLM 디자인 탭 -->
+        <div id="pptTabLlmContent" style="flex:1;display:none;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <label style="font-size:11px;color:#64748b;font-weight:700;white-space:nowrap;">🧠 모델</label>
+            <select id="pptLlmModelSelect"
+                    style="flex:1;padding:6px 10px;background:#f8fafc;color:#1e293b;
+                           border:1px solid #cbd5e1;border-radius:6px;font-size:12px;cursor:pointer;">
+              <option value="">(모델 로딩 중...)</option>
+            </select>
+            <button onclick="pptLoadLlmModels()" title="새로고침"
+                    style="padding:6px 10px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer;font-size:11px;">🔄</button>
+          </div>
+          <label style="font-size:11px;color:#64748b;margin-bottom:4px;">
+            주제 또는 MD 입력 (LLM이 디자인 사양 JSON으로 변환 → 도형 슬라이드 생성)
+          </label>
+          <textarea id="pptLlmInput"
+            style="flex:1;background:#f8fafc;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;
+                   padding:10px;font-family:Consolas,monospace;font-size:12px;resize:none;min-height:280px;"
+            placeholder="예시 1) 주제만:&#10;반도체 EUV 노광 공정 5분 발표용 슬라이드 5장&#10;&#10;예시 2) MD 던지기:&#10;# AI 도입 효과&#10;## 생산성&#10;- 코드 작성 30% 빨라짐&#10;- 회의록 자동화&#10;## 비용&#10;- 월 $20/인&#10;&#10;LLM이 도형(원/화살표/카드 등) 사양으로 직접 디자인합니다."></textarea>
+          <button onclick="pptGenerateFromLlm()"
+                  style="margin-top:10px;padding:10px;background:linear-gradient(135deg,#7c3aed,#5b21b6);
+                         color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;">🤖 LLM 디자인으로 만들기</button>
         </div>
       </div>
       <div style="flex:1;display:flex;flex-direction:column;padding:14px;overflow-y:auto;">
