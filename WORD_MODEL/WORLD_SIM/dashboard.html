@@ -192,6 +192,7 @@ canvas.chart { width:100%; flex:1; }
   <button id="btn-railcut" class="toggle-btn on" onclick="toggleLayer('railcut')">차단 표시</button>
   <button id="btn-id" class="toggle-btn" onclick="toggleLayer('id')">ID 표시</button>
   <button id="btn-name" class="toggle-btn" onclick="toggleLayer('name')">주소 표시</button>
+  <button id="btn-hotspot" class="toggle-btn on" onclick="toggleLayer('hotspot')" title="데드락 체인/클러스터 마커 ON/OFF">체인 표시</button>
 </div>
 
 <!-- 데드락 알람 배너 -->
@@ -669,16 +670,18 @@ function scheduleDrawMap() {
 }
 
 // 표시 레이어 토글
-let showZone = true, showRailCut = true, showId = false, showName = false;
+let showZone = true, showRailCut = true, showId = false, showName = false, showHotspot = true;
 function toggleLayer(layer) {
   if (layer==='zone') showZone = !showZone;
   if (layer==='railcut') showRailCut = !showRailCut;
   if (layer==='id') showId = !showId;
   if (layer==='name') showName = !showName;
+  if (layer==='hotspot') showHotspot = !showHotspot;
   document.getElementById('btn-zone').classList.toggle('on', showZone);
   document.getElementById('btn-railcut').classList.toggle('on', showRailCut);
   document.getElementById('btn-id').classList.toggle('on', showId);
   document.getElementById('btn-name').classList.toggle('on', showName);
+  document.getElementById('btn-hotspot').classList.toggle('on', showHotspot);
   railCacheCanvas = null;
   drawMap();
 }
@@ -1010,7 +1013,7 @@ function drawMap() {
   }
 
   // 2.65. 데드락 핫스팟 (실시간 주소 클러스터/체인)
-  if (mapData.hotspots && mapData.hotspots.length > 0) {
+  if (showHotspot && mapData.hotspots && mapData.hotspots.length > 0) {
     for (const hs of mapData.hotspots) {
       if (typeof hs.x !== 'number' || typeof hs.y !== 'number') continue;
       const [sx, sy] = toS(hs.x, hs.y);
