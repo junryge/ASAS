@@ -80,6 +80,10 @@ class ReplayEngine:
         self.data_loader = DateDataLoader(date_key, date_config)
         stats = self.data_loader.load_all()
 
+        # 새 예측기 (이전 날짜 히스토리 초기화) + 3단계 경보 타임라인 사전 계산
+        self.predictor = MacroPredictor()
+        self.predictor.precompute_timeline(self.data_loader.star_timeline)
+
         if self.data_loader.time_start:
             self.current_time = self.data_loader.time_start
 

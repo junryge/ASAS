@@ -40,6 +40,7 @@ class MacroPredictor:
         self.mlud_history:  deque = deque(maxlen=30)         # MLUD Q
         self.warning_log:   List[dict] = []                   # 단계 발동 이력 (타임라인용)
         self._last_stage:   int = 0
+        self.full_timeline: List[dict] = []                   # 사전 계산 전체 타임라인
 
         # 현재 값
         self.current_queue: int = 0
@@ -293,49 +294,6 @@ class MacroPredictor:
             '즉시 MLUD port capa 조정 검토 / SFA 리프터 상태 확인 / 10분 내 데드락 방지 윈도우',
         ]
 
-        # 단계 변동 감지 → warning_log 기록
-        if self.current_time is not None:
-            # 단계가 올라갔을 때 (0→1, 1→2, 2→3 등) 기록
-            if stage > self._last_stage:
-                reasons = []
-                if stage == 1 and ra_count >= 2:
-                    reasons.append(f'1MIN ≥9분이 {ra_count}회')
-                if stage == 2 and rb_triggered:
-                    reasons.append(f'M14→M16 +{rb_diff}')
-                if stage == 3:
-                    reasons.append(f'R-A+R-B+R-C AND (1MIN {ra_latest:.2f}, +{rb_diff}, 역증가 {reverse_count})')
-                self.warning_log.append({
-                    'time': self.current_time.strftime('%H:%M'),
-                    'stage': stage,
-                    'label': labels[stage],
-                    'reason': '; '.join(reasons) or messages[stage],
-                })
-            # 단계가 유지되는 중이라도 3단계 재발동은 기록 (타임라인 명확화)
-            elif stage == 3 and self._last_stage == 3:
-                # 직전 기록이 3단계이고 10분 지나면 "재발동"
-                last_s3_time = None
-                for entry in reversed(self.warning_log):
-                    if entry['stage'] == 3:
-                        last_s3_time = entry['time']
-                        break
-                cur_hm = self.current_time.strftime('%H:%M')
-                if last_s3_time and cur_hm != last_s3_time:
-                    # 직전 S3 와 10분 이상 차이면 재발동으로 기록
-                    try:
-                        lh, lm = map(int, last_s3_time.split(':'))
-                        ch, cm = map(int, cur_hm.split(':'))
-                        diff = (ch * 60 + cm) - (lh * 60 + lm)
-                        if diff >= 10:
-                            self.warning_log.append({
-                                'time': cur_hm,
-                                'stage': 3,
-                                'label': 'S3_CONFIRMED',
-                                'reason': '재발동 (진행 중)',
-                            })
-                    except ValueError:
-                        pass
-            self._last_stage = stage
-
         return {
             'stage': stage,
             'label': labels[stage],
@@ -361,8 +319,106 @@ class MacroPredictor:
                     'threshold': '합 감소 + 역증가 2개+',
                 },
             },
-            'history': list(self.warning_log[-20:]),  # 최근 20개 이력
+            'history': self.full_timeline,  # 사전 계산된 전체 타임라인 (replay 시각과 무관)
         }
+
+    def precompute_timeline(self, star_timeline: List[Tuple[datetime, dict]]) -> None:
+        """전체 star_timeline 을 미리 스캔해 경보 진행 타임라인 고정 생성.
+
+        데이터 로드 직후 1회 호출. replay 재생 시각과 무관하게 동일 결과 반환.
+        단계 전환 시점만 기록 (같은 단계 연속 유지는 무시, 하락 후 재발동은 기록).
+        """
+        self.full_timeline = []
+        if not star_timeline:
+            return
+
+        t1_hist: List[float] = []
+        m14_hist: List[int] = []
+        lft_hist: List[dict] = []
+        last_logged_stage = -1  # -1 = 아직 없음 (0 도 기록하기 위해)
+        last_s3_time: Optional[datetime] = None
+
+        for t, star in star_timeline:
+            t1 = star.get('avgtotal1min')
+            m14 = star.get('m14_to_m16')
+            lft = star.get('lft_list')
+
+            if t1 is not None:
+                t1_hist.append(float(t1))
+            if m14 is not None and m14 > 0:
+                m14_hist.append(int(m14))
+            if isinstance(lft, dict) and lft:
+                lft_hist.append(dict(lft))
+
+            # R-A'
+            recent_t1 = t1_hist[-10:]
+            ra_count = sum(1 for v in recent_t1 if v >= 9.0)
+            ra_value = recent_t1[-1] if recent_t1 else None
+            ra_trig = ra_count >= 1
+
+            # R-B
+            rb_diff = 0
+            rb_trig = False
+            if len(m14_hist) >= 31:
+                rb_diff = m14_hist[-1] - m14_hist[-31]
+                rb_trig = rb_diff >= 100
+
+            # R-C'
+            rc_trend = 0
+            rev_count = 0
+            rev_lids: List[str] = []
+            rc_trig = False
+            if len(lft_hist) >= 21:
+                now_l = lft_hist[-1]
+                prev_l = lft_hist[-21]
+                rc_trend = sum(now_l.values()) - sum(prev_l.values())
+                for lid in now_l:
+                    if now_l[lid] > prev_l.get(lid, 0):
+                        rev_lids.append(lid)
+                        rev_count += 1
+                rc_trig = rc_trend < 0 and rev_count >= 2
+
+            s1 = ra_count >= 2
+            s2 = rb_trig
+            s3 = ra_trig and rb_trig and rc_trig
+            stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
+
+            # 기록 규칙:
+            #  (a) 단계 상승 (last → stage, stage > last) → 기록
+            #  (b) stage==3 유지 중이나 직전 S3 와 10분 이상 차이 → 재발동 기록
+            #  (c) stage==0 으로 떨어질 때 정상화 기록 (최초 한 번)
+            record = False
+            reason = ''
+            if stage > last_logged_stage and stage > 0:
+                record = True
+                if stage == 1:
+                    reason = f'1MIN ≥9분이 {ra_count}회'
+                elif stage == 2:
+                    reason = f'M14→M16 +{rb_diff} (30분간)'
+                elif stage == 3:
+                    reason = f'R-A+R-B+R-C AND 만족 (1MIN {ra_value:.2f}, M14→M16 +{rb_diff}, 역증가 {rev_count}개)'
+                last_logged_stage = stage
+                if stage == 3:
+                    last_s3_time = t
+            elif stage == 3 and last_s3_time is not None:
+                diff_min = (t - last_s3_time).total_seconds() / 60.0
+                if diff_min >= 10:
+                    record = True
+                    reason = f'재발동 (진행 중 재확인, 역증가 {rev_count}개)'
+                    last_s3_time = t
+            elif stage == 0 and last_logged_stage >= 1:
+                record = True
+                reason = '정상화 완료'
+                last_logged_stage = 0
+                last_s3_time = None
+
+            if record:
+                self.full_timeline.append({
+                    'time': t.strftime('%H:%M'),
+                    'stage': stage,
+                    'label': ['NORMAL', 'S1_EARLY', 'S2_WATCH', 'S3_CONFIRMED'][stage],
+                    'reason': reason,
+                })
 
     def get_correlations(self) -> dict:
         """데이터 간 상관관계 (MD 문서 검증 결과 반영)"""
