@@ -659,6 +659,7 @@ def main():
     total_tp, total_fn, total_fp = [], [], []
     all_events_rows = []      # CSV 출력용 (전체 단계 전환 이벤트)
     all_incidents_rows = []   # CSV 출력용 (사건 단위)
+    all_xai_rows = []         # CSV 출력용 (이상 판단 근거 / XAI)
 
     for fp in files:
         if not os.path.exists(fp):
@@ -823,6 +824,48 @@ def main():
                 '⚠️ 대응만 있음' if has_operator_action else
                 '❓ 운영 로그 無' if ops_list else '-'
             )
+
+            # 🔍 이상 판단 근거 (설명가능성 XAI)
+            # 각 룰이 임계치를 얼마나 초과했는지 점수화 (초과 비율 %)
+            ra_val = float(i['max_1min']) if i['max_1min'] else 0
+            rb_val = int(i['max_rb_diff']) if i['max_rb_diff'] else 0
+            rc_val = int(i['max_rev']) if i['max_rev'] else 0
+            ra_score = round(100 * (ra_val / 9.0 - 1) * 100) / 100 if ra_val >= 9.0 else 0  # 9분 기준 초과 %
+            rb_score = round(100 * (rb_val / 100.0 - 1) * 100) / 100 if rb_val >= 100 else 0  # 100 기준
+            rc_score = round(100 * (rc_val / 2.0 - 1) * 100) / 100 if rc_val >= 2 else 0  # 2개 기준
+
+            contrib_list = [
+                ("R-A' 반송시간", ra_score, ra_val, f"{ra_val:.2f}분 (기준 9분)"),
+                ("R-B FAB큐",    rb_score, rb_val, f"+{rb_val} (기준 +100)"),
+                ("R-C' 리프터",  rc_score, rc_val, f"{rc_val}개 역증가 (기준 2개)"),
+            ]
+            # 임계 초과율 높은 순
+            contrib_list.sort(key=lambda x: -x[1])
+            primary_cause = contrib_list[0][0] if contrib_list[0][1] > 0 else '기준 미달'
+            contrib_breakdown = ' | '.join(f"{name} {desc}" for name, _, _, desc in contrib_list)
+
+            # 사람이 읽기 쉬운 설명 한 줄
+            if contrib_list[0][1] > 50:
+                impact = '매우 강함'
+            elif contrib_list[0][1] > 20:
+                impact = '강함'
+            elif contrib_list[0][1] > 0:
+                impact = '보통'
+            else:
+                impact = '약함'
+
+            explanation_parts = []
+            if ra_score > 0:
+                explanation_parts.append(f"반송시간 {ra_val:.1f}분")
+            if rb_score > 0:
+                explanation_parts.append(f"FAB간 큐 +{rb_val}")
+            if rc_score > 0:
+                explanation_parts.append(f"리프터 역증가 {rc_val}개")
+            if not explanation_parts:
+                anomaly_explanation = '3단계 조건 일부만 부분 충족'
+            else:
+                anomaly_explanation = f"{primary_cause} 주도 ({impact}): " + ", ".join(explanation_parts)
+
             all_incidents_rows.append({
                 'file': os.path.basename(fp),
                 'date': i['start'].strftime('%Y-%m-%d'),
@@ -835,6 +878,9 @@ def main():
                 'max_m14_diff': i['max_rb_diff'],
                 'max_reverse_lifters': i['max_rev'],
                 'severity': i['severity'],
+                'primary_cause': primary_cause,
+                'contrib_breakdown': contrib_breakdown,
+                'anomaly_explanation': anomaly_explanation,
                 'ops_count_window': op_cnt,
                 'ops_event_types': op_types_str,
                 'ops_sample_messages': op_msgs,
@@ -842,6 +888,27 @@ def main():
                 'lead_min_vs_op': lead_min_vs_op,
                 'prediction_type': pred_type,
                 'verdict': verdict,
+            })
+
+            # 이상 판단 근거 (별도 XAI CSV)
+            all_xai_rows.append({
+                'file': os.path.basename(fp),
+                'date': i['start'].strftime('%Y-%m-%d'),
+                'start_time': i['start'].strftime('%H:%M'),
+                'severity': i['severity'],
+                '주요_원인': primary_cause,
+                'R_A_반송시간_값': round(ra_val, 2),
+                'R_A_기준': '9분',
+                'R_A_초과율_pct': round(ra_score, 1),
+                'R_B_FAB큐_증가': rb_val,
+                'R_B_기준': '+100',
+                'R_B_초과율_pct': round(rb_score, 1),
+                'R_C_리프터_역증가': rc_val,
+                'R_C_기준': '2개',
+                'R_C_초과율_pct': round(rc_score, 1),
+                '영향도': impact,
+                '한줄_설명': anomaly_explanation,
+                '기여도_순위': contrib_breakdown,
             })
 
     # 종합 요약 + CSV 저장
@@ -936,6 +1003,7 @@ def main():
         out_incidents = f'검증결과_05_사건단위_{ts_suffix}.csv'
         out_summary = f'검증결과_06_파일별요약_{ts_suffix}.csv'
         out_metrics = f'검증결과_07_종합지표_{ts_suffix}.csv'
+        out_xai = f'검증결과_08_이상판단근거_{ts_suffix}.csv'
 
         def write_csv(path, rows, header=None):
             if not rows:
@@ -975,6 +1043,12 @@ def main():
             write_csv(out_metrics, [[k, v] for k, v in metrics.items()],
                       header=['metric', 'value'])
 
+        # 8. 이상 판단 근거 (XAI — 고객 설명용)
+        if all_xai_rows:
+            # severity 높은 순, 같으면 날짜순
+            all_xai_rows.sort(key=lambda r: (-{'★★★':3,'★★':2,'★':1,'-':0}.get(r['severity'], 0), r['date'], r['start_time']))
+            write_csv(out_xai, all_xai_rows)
+
         print('\n💾 CSV 저장 (용도별 분리):')
         if all_events_rows: print(f'   01 · {out_events}  ({len(all_events_rows)} 전체 이벤트)')
         if s3_all:  print(f'   02 · {out_s3_all}  ({len(s3_all)} S3 전체)')
@@ -986,6 +1060,8 @@ def main():
         print(f'   06 · {out_summary}  ({len(all_summary)} 파일)')
         if metrics:
             print(f'   07 · {out_metrics}  ({len(metrics)} 지표)')
+        if all_xai_rows:
+            print(f'   08 · {out_xai}  ({len(all_xai_rows)} 이상 판단 근거) ⭐ 신규')
         print(f'\n👉 이 CSV들을 전달해주세요.')
 
 
