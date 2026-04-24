@@ -612,53 +612,65 @@ def main():
                 print(f'  평균 선행시간: {avg_lead:.1f}분')
                 metrics['avg_lead_minutes'] = f'{avg_lead:.1f}'
 
-        # === CSV 4종 출력 ===
+        # === CSV 6종 출력 (각 용도별 분리) ===
         ts_suffix = datetime.now().strftime('%Y%m%d_%H%M%S')
-        out_events = f'검증결과_이벤트_{ts_suffix}.csv'
-        out_incidents = f'검증결과_사건단위_{ts_suffix}.csv'
-        out_summary = f'검증결과_파일별요약_{ts_suffix}.csv'
-        out_metrics = f'검증결과_종합지표_{ts_suffix}.csv'
+        out_events  = f'검증결과_01_전체이벤트_{ts_suffix}.csv'
+        out_s3_all  = f'검증결과_02_S3전체_{ts_suffix}.csv'
+        out_s3_new  = f'검증결과_03_S3신규만_{ts_suffix}.csv'
+        out_s3_ref  = f'검증결과_04_S3재발동만_{ts_suffix}.csv'
+        out_incidents = f'검증결과_05_사건단위_{ts_suffix}.csv'
+        out_summary = f'검증결과_06_파일별요약_{ts_suffix}.csv'
+        out_metrics = f'검증결과_07_종합지표_{ts_suffix}.csv'
 
-        # 1. 이벤트 CSV
-        if all_events_rows:
-            with open(out_events, 'w', encoding='utf-8-sig', newline='') as f:
-                w = csv.DictWriter(f, fieldnames=list(all_events_rows[0].keys()))
-                w.writeheader()
-                w.writerows(all_events_rows)
+        def write_csv(path, rows, header=None):
+            if not rows:
+                return
+            with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+                if header:
+                    w = csv.writer(f)
+                    w.writerows([header] + rows)
+                else:
+                    w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                    w.writeheader()
+                    w.writerows(rows)
 
-        # 2. 사건 단위 CSV (★ 등급 높은 순)
+        # 1. 전체 이벤트 (모든 단계 전환)
+        write_csv(out_events, all_events_rows)
+
+        # 2/3/4. S3 관련 분리
+        s3_all  = [r for r in all_events_rows if r['stage'] == 3]
+        s3_new  = [r for r in s3_all if 'AND 만족' in r['reason']]
+        s3_ref  = [r for r in s3_all if '재발동' in r['reason']]
+        write_csv(out_s3_all, s3_all)
+        write_csv(out_s3_new, s3_new)
+        write_csv(out_s3_ref, s3_ref)
+
+        # 5. 사건 단위 CSV (★ 등급 내림차순)
         if all_incidents_rows:
             sev_rank = {'★★★': 3, '★★': 2, '★': 1, '-': 0}
             all_incidents_rows.sort(key=lambda r: (-sev_rank.get(r['severity'], 0), r['date'], r['start_time']))
-            with open(out_incidents, 'w', encoding='utf-8-sig', newline='') as f:
-                w = csv.DictWriter(f, fieldnames=list(all_incidents_rows[0].keys()))
-                w.writeheader()
-                w.writerows(all_incidents_rows)
+            write_csv(out_incidents, all_incidents_rows)
 
-        # 3. 파일별 요약 CSV
-        with open(out_summary, 'w', encoding='utf-8-sig', newline='') as f:
-            w = csv.writer(f)
-            w.writerow(['file', 'date', 'transitions', 'S3_count', 'TP', 'FN', 'FP'])
-            for row in all_summary:
-                w.writerow(row)
+        # 6. 파일별 요약
+        write_csv(out_summary, [list(row) for row in all_summary],
+                  header=['file', 'date', 'transitions', 'S3_count', 'TP', 'FN', 'FP'])
 
-        # 4. 종합 지표 CSV
+        # 7. 종합 지표
         if metrics:
-            with open(out_metrics, 'w', encoding='utf-8-sig', newline='') as f:
-                w = csv.writer(f)
-                w.writerow(['metric', 'value'])
-                for k, v in metrics.items():
-                    w.writerow([k, v])
+            write_csv(out_metrics, [[k, v] for k, v in metrics.items()],
+                      header=['metric', 'value'])
 
-        print('\n💾 CSV 저장:')
-        if all_events_rows:
-            print(f'   · {out_events}  ({len(all_events_rows)} 이벤트)')
+        print('\n💾 CSV 저장 (용도별 분리):')
+        if all_events_rows: print(f'   01 · {out_events}  ({len(all_events_rows)} 전체 이벤트)')
+        if s3_all:  print(f'   02 · {out_s3_all}  ({len(s3_all)} S3 전체)')
+        if s3_new:  print(f'   03 · {out_s3_new}  ({len(s3_new)} S3 신규만)')
+        if s3_ref:  print(f'   04 · {out_s3_ref}  ({len(s3_ref)} S3 재발동만)')
         if all_incidents_rows:
             high = sum(1 for r in all_incidents_rows if r["severity"] in ("★★★", "★★"))
-            print(f'   · {out_incidents}  ({len(all_incidents_rows)} 사건, ★★ 이상 {high}건)')
-        print(f'   · {out_summary}  ({len(all_summary)} 파일)')
+            print(f'   05 · {out_incidents}  ({len(all_incidents_rows)} 사건, ★★ 이상 {high}건)')
+        print(f'   06 · {out_summary}  ({len(all_summary)} 파일)')
         if metrics:
-            print(f'   · {out_metrics}  ({len(metrics)} 지표)')
+            print(f'   07 · {out_metrics}  ({len(metrics)} 지표)')
         print(f'\n👉 이 CSV들을 전달해주세요.')
 
 
