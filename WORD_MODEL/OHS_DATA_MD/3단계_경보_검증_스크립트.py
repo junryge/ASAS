@@ -431,6 +431,7 @@ def evaluate_timeline(timeline):
                 'ra_value': ra_value,
                 'rb_diff': rb_diff,
                 'rev_count': rev_count,
+                'rev_lids': list(rev_lids),
             })
 
     return events
@@ -477,6 +478,7 @@ def build_incidents(events):
                 'max_1min': e.get('ra_value') or 0,
                 'max_rb_diff': e.get('rb_diff') or 0,
                 'max_rev': e.get('rev_count') or 0,
+                'rev_lids_union': set(e.get('rev_lids') or []),
                 'start_reason': e['reason'],
             }
         elif e['stage'] == 3 and e['reason'].startswith('재발동'):
@@ -484,6 +486,7 @@ def build_incidents(events):
                 cur['refire_count'] += 1
                 cur['end'] = e['time']
                 cur['max_rev'] = max(cur['max_rev'], e.get('rev_count') or 0)
+                cur['rev_lids_union'].update(e.get('rev_lids') or [])
         elif e['stage'] == 0 and cur is not None:
             # 정상화 → 사건 종료
             _finalize(cur, e['time'])
@@ -660,6 +663,7 @@ def main():
     all_events_rows = []      # CSV 출력용 (전체 단계 전환 이벤트)
     all_incidents_rows = []   # CSV 출력용 (사건 단위)
     all_xai_rows = []         # CSV 출력용 (이상 판단 근거 / XAI)
+    all_col_rows = []         # CSV 출력용 (입력 STAR 컬럼별 기여도)
 
     for fp in files:
         if not os.path.exists(fp):
@@ -911,6 +915,40 @@ def main():
                 '기여도_순위': contrib_breakdown,
             })
 
+            # 입력 STAR 컬럼별 기여도 (한 사건당 여러 행, 룰별)
+            # 초과율 높은 순으로 rank 부여
+            ranked = sorted(
+                [('R-A\'', '반송시간 스파이크', f'{prefix}.QUE.TIME.AVGTOTALTIME1MIN', f'{ra_val:.2f}분', '9분', ra_score),
+                 ('R-B', 'FAB 간 큐 누적', f'{prefix}.QUE.M14TOM16.MESCURRENTQCNT', f'+{rb_val}', '+100', rb_score),
+                 ('R-C\'', '리프터 역증가', f'{prefix}.LFT.6ABL*.TOTAL_CURRENTQCNT', f'{rc_val}개 역증가', '2개', rc_score)],
+                key=lambda x: -x[5]
+            )
+            rev_lids_str = ', '.join(sorted(i.get('rev_lids_union') or set()))
+            for rank_no, (rule, rule_meaning, column_name, value_str, threshold_str, score) in enumerate(ranked, 1):
+                contribution = (
+                    'Primary (주요)' if rank_no == 1 and score > 0 else
+                    'Secondary (보조)' if rank_no == 2 and score > 0 else
+                    'Minor (경미)' if rank_no == 3 and score > 0 else
+                    '-'
+                )
+                # R-C' 인 경우 구체 리프터 ID 를 value 에 포함
+                extra_info = rev_lids_str if rule == "R-C'" and rev_lids_str else ''
+                all_col_rows.append({
+                    'file': os.path.basename(fp),
+                    'date': i['start'].strftime('%Y-%m-%d'),
+                    'start_time': i['start'].strftime('%H:%M'),
+                    'severity': i['severity'],
+                    'rule': rule,
+                    'rule_meaning': rule_meaning,
+                    'STAR_컬럼': column_name,
+                    '관측값': value_str,
+                    '임계값': threshold_str,
+                    '초과율_pct': round(score, 1),
+                    '기여도_순위': rank_no,
+                    '기여도': contribution,
+                    '세부_리프터': extra_info,
+                })
+
     # 종합 요약 + CSV 저장
     if all_summary:
         print('\n' + '═' * 78)
@@ -1004,6 +1042,7 @@ def main():
         out_summary = f'검증결과_06_파일별요약_{ts_suffix}.csv'
         out_metrics = f'검증결과_07_종합지표_{ts_suffix}.csv'
         out_xai = f'검증결과_08_이상판단근거_{ts_suffix}.csv'
+        out_columns = f'검증결과_09_입력컬럼기여도_{ts_suffix}.csv'
 
         def write_csv(path, rows, header=None):
             if not rows:
@@ -1049,6 +1088,10 @@ def main():
             all_xai_rows.sort(key=lambda r: (-{'★★★':3,'★★':2,'★':1,'-':0}.get(r['severity'], 0), r['date'], r['start_time']))
             write_csv(out_xai, all_xai_rows)
 
+        # 9. 입력 STAR 컬럼별 기여도 (Primary/Secondary/Minor)
+        if all_col_rows:
+            write_csv(out_columns, all_col_rows)
+
         print('\n💾 CSV 저장 (용도별 분리):')
         if all_events_rows: print(f'   01 · {out_events}  ({len(all_events_rows)} 전체 이벤트)')
         if s3_all:  print(f'   02 · {out_s3_all}  ({len(s3_all)} S3 전체)')
@@ -1061,7 +1104,9 @@ def main():
         if metrics:
             print(f'   07 · {out_metrics}  ({len(metrics)} 지표)')
         if all_xai_rows:
-            print(f'   08 · {out_xai}  ({len(all_xai_rows)} 이상 판단 근거) ⭐ 신규')
+            print(f'   08 · {out_xai}  ({len(all_xai_rows)} 이상 판단 근거)')
+        if all_col_rows:
+            print(f'   09 · {out_columns}  ({len(all_col_rows)} 입력 STAR 컬럼 기여도) ⭐ 신규')
         print(f'\n👉 이 CSV들을 전달해주세요.')
 
 
