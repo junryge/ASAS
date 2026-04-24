@@ -315,12 +315,14 @@ class MacroPredictor:
                     'triggered': ra_triggered,
                     'count': ra_count,
                     'value': round(ra_latest, 2) if ra_latest is not None else None,
-                    'threshold': '≥9분 1회+ (S1: 2회+)',
+                    'sustained': ra_sustained,
+                    'threshold': '≥9분 1회+ / S1: 9분 2회+ 또는 6분 3회연속 (튜닝)',
                 },
                 'R-B': {
                     'triggered': rb_triggered,
                     'diff_30min': rb_diff,
-                    'threshold': '+100 이상',
+                    'fast': rb_fast,
+                    'threshold': '+100/30분 또는 +30/10분 (튜닝)',
                 },
                 'R-C_prime': {
                     'triggered': rc_triggered,
