@@ -712,7 +712,19 @@ def main():
             else:
                 lead_vs_op = ''
                 pred_tag = '❓' if ops_list else ''
-            predict_time_str = (e['time'] + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M') if e['stage'] == 3 else ''
+            if e['stage'] == 3:
+                cutoff = e['time'] - timedelta(minutes=60)
+                earliest_for_this = e['time']
+                for ev in events:
+                    if ev['time'] >= e['time']:
+                        break
+                    if ev['time'] < cutoff:
+                        continue
+                    if ev['stage'] in (1, 2) and ev['time'] < earliest_for_this:
+                        earliest_for_this = ev['time']
+                predict_time_str = earliest_for_this.strftime('%Y-%m-%d %H:%M')
+            else:
+                predict_time_str = ''
             all_events_rows.append({
                 'file': os.path.basename(fp),
                 'date': e['time'].strftime('%Y-%m-%d'),
@@ -734,6 +746,19 @@ def main():
 
         # 사건 단위 CSV (사건 시작 ~ 종료 구간에 걸친 운영 이벤트 집계)
         file_incidents = build_incidents(events)
+        # 각 사건의 "최초 인지 시각" 계산: 3단계 이전 60분 내 최초 S1/S2
+        def _find_earliest_signal(incident_start):
+            earliest = incident_start
+            cutoff = incident_start - timedelta(minutes=60)
+            for ev in events:
+                if ev['time'] >= incident_start:
+                    break
+                if ev['time'] < cutoff:
+                    continue
+                if ev['stage'] in (1, 2) and ev['time'] < earliest:
+                    earliest = ev['time']
+            return earliest
+
         for i in file_incidents:
             # 사건 기간 ±30분 윈도우
             win_ops = []
@@ -783,10 +808,11 @@ def main():
                 '⚠️ 대응만 있음' if has_operator_action else
                 '❓ 운영 로그 無' if ops_list else '-'
             )
+            earliest_sig = _find_earliest_signal(i['start'])
             all_incidents_rows.append({
                 'file': os.path.basename(fp),
                 'date': i['start'].strftime('%Y-%m-%d'),
-                'predict_time': (i['start'] + timedelta(minutes=10)).strftime('%H:%M'),
+                'predict_time': earliest_sig.strftime('%H:%M'),
                 'start_time': i['start'].strftime('%H:%M'),
                 'end_time': i['end'].strftime('%H:%M'),
                 'duration_min': i['duration_min'],
