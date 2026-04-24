@@ -784,6 +784,7 @@ def main():
             all_incidents_rows.append({
                 'file': os.path.basename(fp),
                 'date': i['start'].strftime('%Y-%m-%d'),
+                'predict_time': (i['start'] + timedelta(minutes=10)).strftime('%H:%M'),
                 'start_time': i['start'].strftime('%H:%M'),
                 'end_time': i['end'].strftime('%H:%M'),
                 'duration_min': i['duration_min'],
