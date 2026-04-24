@@ -712,9 +712,11 @@ def main():
             else:
                 lead_vs_op = ''
                 pred_tag = '❓' if ops_list else ''
+            predict_time_str = (e['time'] + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M') if e['stage'] == 3 else ''
             all_events_rows.append({
                 'file': os.path.basename(fp),
                 'date': e['time'].strftime('%Y-%m-%d'),
+                'predict_time': predict_time_str,
                 'time': e['time'].strftime('%H:%M'),
                 'datetime': e['time'].strftime('%Y-%m-%d %H:%M'),
                 'stage': e['stage'],
