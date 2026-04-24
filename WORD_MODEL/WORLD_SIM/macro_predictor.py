@@ -251,12 +251,23 @@ class MacroPredictor:
         ra_latest = t1_values[-1] if t1_values else None
         ra_triggered = ra_count >= 1
 
+        # ⚡ R-A' SUSTAINED (튜닝: S1 조기 인지용 — 6분이 5샘플 중 3회 이상)
+        ra_sustained = False
+        if len(t1_values) >= 5:
+            ra_sustained = sum(1 for v in t1_values[-5:] if v >= 6.0) >= 3
+
         # R-B: M14→M16 30분 전 대비 +100 이상
         rb_diff = 0
         rb_triggered = False
         if len(self.m14_history) >= 31:
             rb_diff = self.m14_history[-1][1] - self.m14_history[-31][1]
             rb_triggered = rb_diff >= 100
+
+        # ⚡ R-B FAST (튜닝: S2 조기 인지용 — 10분 +30)
+        rb_fast = False
+        if len(self.m14_history) >= 11:
+            rb_diff_fast = self.m14_history[-1][1] - self.m14_history[-11][1]
+            rb_fast = rb_diff_fast >= 30
 
         # R-C': 전체 리프터 합 20분 전 대비 감소 AND 역증가 2개+
         rc_trend = 0
@@ -273,10 +284,10 @@ class MacroPredictor:
                     reverse_count += 1
             rc_triggered = rc_trend < 0 and reverse_count >= 2
 
-        # Stage 판정
-        s1 = ra_count >= 2                           # 1단계 조기경보
-        s2 = rb_triggered                            # 2단계 주의보
-        s3 = ra_triggered and rb_triggered and rc_triggered  # 3단계 확정
+        # Stage 판정 (튜닝: S1/S2 조기 발동, S3 그대로 — 04-21 검증 보호)
+        s1 = (ra_count >= 2) or ra_sustained         # 9분 2회 OR 6분 3회 연속
+        s2 = rb_triggered or rb_fast                  # +100/30분 OR +30/10분
+        s3 = ra_triggered and rb_triggered and rc_triggered  # 3단계 확정 (그대로)
 
         stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
 
@@ -356,12 +367,22 @@ class MacroPredictor:
             ra_value = recent_t1[-1] if recent_t1 else None
             ra_trig = ra_count >= 1
 
+            # ⚡ R-A' SUSTAINED (튜닝)
+            ra_sustained = False
+            if len(recent_t1) >= 5:
+                ra_sustained = sum(1 for v in recent_t1[-5:] if v >= 6.0) >= 3
+
             # R-B
             rb_diff = 0
             rb_trig = False
             if len(m14_hist) >= 31:
                 rb_diff = m14_hist[-1] - m14_hist[-31]
                 rb_trig = rb_diff >= 100
+
+            # ⚡ R-B FAST (튜닝)
+            rb_fast = False
+            if len(m14_hist) >= 11:
+                rb_fast = (m14_hist[-1] - m14_hist[-11]) >= 30
 
             # R-C'
             rc_trend = 0
@@ -378,8 +399,8 @@ class MacroPredictor:
                         rev_count += 1
                 rc_trig = rc_trend < 0 and rev_count >= 2
 
-            s1 = ra_count >= 2
-            s2 = rb_trig
+            s1 = (ra_count >= 2) or ra_sustained
+            s2 = rb_trig or rb_fast
             s3 = ra_trig and rb_trig and rc_trig
             stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
 
@@ -392,9 +413,20 @@ class MacroPredictor:
             if stage > last_logged_stage and stage > 0:
                 record = True
                 if stage == 1:
-                    reason = f'1MIN ≥9분이 {ra_count}회'
+                    if ra_count >= 2:
+                        reason = f'1MIN ≥9분이 {ra_count}회'
+                    elif ra_sustained:
+                        reason = '1MIN ≥6분 지속 (튜닝 조기 인지)'
+                    else:
+                        reason = '1단계 조기경보'
                 elif stage == 2:
-                    reason = f'M14→M16 +{rb_diff} (30분간)'
+                    if rb_trig:
+                        reason = f'M14→M16 +{rb_diff} (30분간)'
+                    elif rb_fast:
+                        rb_d10 = m14_hist[-1] - m14_hist[-11] if len(m14_hist) >= 11 else 0
+                        reason = f'M14→M16 +{rb_d10} (10분간, 튜닝)'
+                    else:
+                        reason = '2단계 주의보'
                 elif stage == 3:
                     reason = f'R-A+R-B+R-C AND 만족 (1MIN {ra_value:.2f}, M14→M16 +{rb_diff}, 역증가 {rev_count}개)'
                 last_logged_stage = stage
