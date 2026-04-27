@@ -1269,23 +1269,23 @@ let maxTokens = 0;  // 0 = 서버 자동 결정 (모델에 맞게)
 const SKILL_COMBOS = [
   {
     id:'data-analysis', label:'📊 데이터 분석', color:'#6366f1',
-    desc:'CSV/엑셀 데이터 탐색, 통계, 시각화 풀세트',
-    skills:['exploratory-data-analysis','statistical-analysis','matplotlib','seaborn','plotly','polars','agent-data-scientist','xlsx']
+    desc:'CSV/엑셀 데이터 탐색·시각화 핵심',
+    skills:['exploratory-data-analysis','matplotlib','polars','agent-data-scientist']
   },
   {
     id:'coding', label:'💻 코딩 개발', color:'#10b981',
-    desc:'코드 작성, 리뷰, 디버깅 올인원',
-    skills:['agent-python-pro','agent-fullstack-developer','debugging','agent-debugger','code-review','agent-backend-developer','agent-frontend-developer']
+    desc:'코드 작성·디버깅·리뷰 핵심',
+    skills:['agent-python-pro','debugging','code-review','agent-fullstack-developer']
   },
   {
     id:'ml-ai', label:'🤖 ML/AI 제작', color:'#f59e0b',
-    desc:'머신러닝 모델 학습, 평가, 해석',
-    skills:['scikit-learn','pytorch-lightning','shap','umap-learn','statsmodels','agent-data-scientist','statistical-analysis','exploratory-data-analysis']
+    desc:'머신러닝 모델 학습·통계 핵심',
+    skills:['scikit-learn','pytorch-lightning','agent-data-scientist','statistical-analysis']
   },
   {
     id:'report-docs', label:'📝 보고서/문서', color:'#ef4444',
-    desc:'Word, PPT, PDF, 마크다운 보고서 생성',
-    skills:['docx','pptx','xlsx','pdf','scientific-writing','markdown-mermaid-writing','drawio-diagram']
+    desc:'마크다운 + HTML 변환',
+    skills:['markdown-mermaid-writing','md-to-html']
   },
   {
     id:'literature', label:'📚 논문/문헌', color:'#8b5cf6',
@@ -1419,16 +1419,9 @@ function applyCombo(combo){
     const toggle = document.getElementById('autoSkillToggle');
     if(toggle) toggle.classList.remove('on');
   }
-  // 관련 도메인 자동 활성화
-  if(catalog){
-    Object.keys(catalog).forEach(did=>{
-      const domainSkills = (catalog[did].skills||[]).map(s=>s.id);
-      if(combo.skills.some(sid=>domainSkills.includes(sid)) && !selDomains.includes(did)){
-        selDomains.push(did);
-      }
-    });
-    renderTags();
-  }
+  // 도메인 자동 펼침은 하지 않음 (조합 스킬만 명확히 보이도록).
+  // 도메인은 사용자가 직접 클릭한 것만 selDomains 에 유지.
+  renderTags();
   renderSkills();
   updateLoaded();
   renderCombos();
