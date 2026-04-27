@@ -822,38 +822,28 @@ def register_chat_routes(app):
             available_chars = int(gguf_ctx / 0.7) - len(system_prompt) - history_chars - 3000
             available_chars = max(available_chars, 3000)
         else:
-            # API 환경: 시스템 프롬프트가 응답 토큰 예산을 침범하지 않도록 캡 적용
-            # 모델별 max_tokens 의 50% 만 system prompt 에 할당 (한글 기준 4자/토큰)
-            _api_max = max(8192, int(TOKEN_SETTINGS.get("agent_max_tokens", 8192)))
-            available_chars = max(8000, int(_api_max * 0.5 * 4))
+            available_chars = 999999  # API는 사실상 무제한
 
         # 스킬 로드
         loaded = []
         available = scan_skills()
         total_skill_chars = 0
         num_skills = max(len(skill_ids), 1)
-        # API 도 per-skill 캡 적용 (스킬 많이 선택 시 응답 속도 보호)
-        if is_gguf:
-            per_skill_limit = available_chars // num_skills
-        else:
-            # API: 스킬당 최소 2000자 ~ available_chars/스킬수 중 큰 값
-            per_skill_limit = max(2000, available_chars // num_skills)
+        per_skill_limit = available_chars // num_skills if is_gguf else 999999
 
         for sid in skill_ids:
             content = load_skill_content(sid)
             if content:
-                # 총 한도 초과 시 잘라내기 (GGUF/API 공통)
-                if total_skill_chars + len(content) > available_chars:
+                # GGUF만 자르기, API는 전체 로드
+                if is_gguf and total_skill_chars + len(content) > available_chars:
                     remaining = available_chars - total_skill_chars
                     if remaining > 500:
                         content = content[:remaining] + f"\n... ({len(content)}자 중 {remaining}자 로드)\n"
                     else:
-                        env_label = "GGUF" if is_gguf else "API"
-                        system_prompt += f"[⚠️ {env_label} 시스템 프롬프트 한도 → 스킬 생략: {', '.join(skill_ids[len(loaded):])}]\n"
+                        system_prompt += f"[⚠️ GGUF 컨텍스트 한도 → 스킬 생략: {', '.join(skill_ids[len(loaded):])}]\n"
                         break
 
-                # per-skill 한도 초과 시 잘라내기 (GGUF/API 공통)
-                if len(content) > per_skill_limit:
+                if is_gguf and len(content) > per_skill_limit:
                     content = content[:per_skill_limit] + f"\n... ({len(content)}자 중 {per_skill_limit}자 로드)\n"
 
                 system_prompt += f"=== SKILL: {sid} ===\n{content}\n\n"
