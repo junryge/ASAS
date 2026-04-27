@@ -1123,6 +1123,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
     <div class="sdp-tabs" id="scTabs">
       <div class="sdp-tab active" onclick="switchScTab('manual')">✏️ 직접 작성</div>
       <div class="sdp-tab" onclick="switchScTab('llm')">🤖 LLM 자동 생성</div>
+      <div class="sdp-tab" onclick="switchScTab('wiki')">📚 LLM Wiki 생성</div>
     </div>
     <div class="sdp-body" id="scBody" style="overflow-y:auto;max-height:calc(90vh - 120px);">
       <!-- 직접 작성 탭 -->
@@ -1184,6 +1185,52 @@ body.rp-collapsed .chat-box-fixed{right:0}
           <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">SKILL.md 내용 (LLM 생성 후 편집 가능)</label>
           <textarea id="scGenContent" rows="20" placeholder="🤖 LLM으로 생성 버튼을 클릭하면 여기에 SKILL.md 초안이 생성됩니다.&#10;직접 입력해도 됩니다." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
           <div id="scGenValidateResult" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <!-- 📚 LLM Wiki 생성 탭 -->
+      <div id="scWiki" style="display:none;">
+        <div style="margin-bottom:10px;font-size:12px;color:#64748b;line-height:1.5;">
+          🎯 글(블로그·논문·노트·gist 등)을 붙여넣으면 <b>카파시 스타일</b>로 wiki MD 를 만들어줘요.
+          결과는 클립보드 복사 / 다운로드 / <b>📚 내 지식에 등록</b> 가능 (등록 시 <code>[WIKI]</code> 접두어로 검색·구분 쉬움).
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">원본 본문 <span style="color:#ef4444">*</span></label>
+          <textarea id="wikiSource" rows="8" placeholder="블로그/논문/노트/gist 등 어떤 글이든 그대로 붙여넣으세요..." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;resize:vertical;box-sizing:border-box;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div style="flex:1;min-width:180px;">
+            <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">제목 (선택)</label>
+            <input id="wikiTitle" type="text" placeholder="비워두면 LLM 이 자동 추출" style="width:100%;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;">
+          <div>
+            <label style="font-weight:700;display:block;margin-bottom:4px;">스타일</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;cursor:pointer;"><input type="radio" name="wikiStyle" value="karpathy" checked> 카파시</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;cursor:pointer;"><input type="radio" name="wikiStyle" value="preserve"> 원문 보존</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;"><input type="radio" name="wikiStyle" value="concise"> 핵심 요약</label>
+          </div>
+          <div>
+            <label style="font-weight:700;display:block;margin-bottom:4px;">언어</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;cursor:pointer;"><input type="radio" name="wikiLang" value="ko" checked> 한글</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;cursor:pointer;"><input type="radio" name="wikiLang" value="en"> English</label>
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;"><input type="radio" name="wikiLang" value="original"> 원문 그대로</label>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button id="wikiGenBtn" onclick="generateWiki()" style="background:#8b5cf6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">🤖 Wiki 로 변환</button>
+        </div>
+        <div style="margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+          <label style="font-size:12px;font-weight:700;">변환 결과 (편집 가능)</label>
+          <span id="wikiResultTitle" style="font-size:11px;color:#16a34a;"></span>
+          <span style="flex:1;"></span>
+          <span id="wikiFilename" style="font-size:11px;color:#64748b;font-family:monospace;"></span>
+        </div>
+        <textarea id="wikiResult" rows="14" placeholder="변환된 wiki 마크다운이 여기에 나옵니다 (편집 가능)" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <button id="wikiCopyBtn" onclick="copyWikiMd()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📋 MD 복사</button>
+          <button onclick="downloadWikiMd()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📥 다운로드 (.md)</button>
+          <button id="wikiSaveBtn" onclick="saveWikiToKnowledge()" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">📚 내 지식에 등록</button>
         </div>
       </div>
     </div>
@@ -3519,11 +3566,115 @@ function closeSkillCreate(){
   document.getElementById('skillCreateOverlay').style.display = 'none';
 }
 function switchScTab(tab){
+  const tabIdx = {manual:0, llm:1, wiki:2}[tab] ?? 0;
   document.querySelectorAll('#scTabs .sdp-tab').forEach((el,i)=>{
-    el.className = 'sdp-tab' + (i === (tab==='manual'?0:1) ? ' active' : '');
+    el.className = 'sdp-tab' + (i === tabIdx ? ' active' : '');
   });
   document.getElementById('scManual').style.display = tab==='manual' ? 'block' : 'none';
   document.getElementById('scLlm').style.display = tab==='llm' ? 'block' : 'none';
+  const wikiBox = document.getElementById('scWiki');
+  if(wikiBox) wikiBox.style.display = tab==='wiki' ? 'block' : 'none';
+}
+
+// ===== LLM Wiki (카파시 스타일 변환) =====
+async function generateWiki(){
+  const src = document.getElementById('wikiSource').value.trim();
+  if(!src){ alert('원본 본문을 붙여넣으세요'); return; }
+  const title = document.getElementById('wikiTitle').value.trim();
+  const style = document.querySelector('input[name="wikiStyle"]:checked')?.value || 'karpathy';
+  const language = document.querySelector('input[name="wikiLang"]:checked')?.value || 'ko';
+  const btn = document.getElementById('wikiGenBtn');
+  const out = document.getElementById('wikiResult');
+  const filenameEl = document.getElementById('wikiFilename');
+  const titleEl = document.getElementById('wikiResultTitle');
+  btn.disabled = true; btn.textContent = '⏳ LLM 변환 중...';
+  out.value = '';
+  filenameEl.textContent = '';
+  titleEl.textContent = '';
+  try{
+    const r = await fetch('/api/wiki/generate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ source: src, title, style, language })
+    });
+    const d = await r.json();
+    if(d.error){
+      out.value = '❌ 변환 실패: ' + d.error;
+    } else {
+      out.value = d.content || '';
+      filenameEl.textContent = d.suggested_filename || '';
+      titleEl.textContent = d.title || '';
+    }
+  } catch(e){
+    out.value = '❌ 네트워크 오류: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 Wiki 로 변환';
+  }
+}
+
+async function copyWikiMd(){
+  const out = document.getElementById('wikiResult');
+  if(!out.value.trim()){ alert('변환된 wiki 가 없습니다'); return; }
+  try{
+    await navigator.clipboard.writeText(out.value);
+    const btn = document.getElementById('wikiCopyBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ 복사됨';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }catch(e){
+    // fallback
+    out.select();
+    document.execCommand('copy');
+    alert('클립보드에 복사됨');
+  }
+}
+
+function downloadWikiMd(){
+  const content = document.getElementById('wikiResult').value;
+  if(!content.trim()){ alert('변환된 wiki 가 없습니다'); return; }
+  const filename = document.getElementById('wikiFilename').textContent.trim() || 'wiki.md';
+  const blob = new Blob([content], {type: 'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function saveWikiToKnowledge(){
+  const content = document.getElementById('wikiResult').value.trim();
+  if(!content){ alert('변환된 wiki 가 없습니다'); return; }
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
+  const rawTitle = document.getElementById('wikiResultTitle').textContent.trim()
+                 || document.getElementById('wikiTitle').value.trim()
+                 || 'wiki';
+  // [WIKI] 접두어로 검색·구분 용이
+  const finalTitle = rawTitle.startsWith('[WIKI]') ? rawTitle : `[WIKI] ${rawTitle}`;
+  const btn = document.getElementById('wikiSaveBtn');
+  btn.disabled = true; btn.textContent = '⏳ 저장 중...';
+  try{
+    const r = await fetch('/api/knowledge/manual', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        user_id: currentUser.id,
+        title: finalTitle,
+        category: 'wiki',
+        content: content,
+        tags: 'WIKI,llm-wiki,karpathy-style'
+      })
+    });
+    const d = await r.json();
+    if(d.error){
+      alert('❌ 저장 실패: ' + d.error);
+    } else {
+      btn.textContent = '✅ 등록 완료';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📚 내 지식에 등록'; }, 2500);
+    }
+  }catch(e){
+    alert('네트워크 오류: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '📚 내 지식에 등록';
+  }
 }
 function validateScName(){
   const name = document.getElementById('scName').value.trim();
