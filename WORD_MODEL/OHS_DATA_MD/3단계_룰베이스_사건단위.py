@@ -5,11 +5,11 @@
 
 목적:
   운영 환경 시뮬레이션. STAR CSV 한 줄씩 처리하면서 과거 90분 데이터만 보고
-  3단계 데드락 위험 사건을 사건 단위로 추출해 단일 CSV 출력.
+  3단계 데드락 위험 사건을 사건 단위로 추출해 CSV 출력.
 
 기존 `3단계_경보_검증_스크립트.py` 와 차이:
   - 검증 스크립트: 전체 CSV 일괄 분석 (10개 CSV 출력, 분석/검증용)
-  - 본 스크립트: 슬라이딩 윈도우 (1개 CSV 출력, 운영 시뮬용)
+  - 본 스크립트: 슬라이딩 윈도우 (운영 시뮬용)
 
 룰 (3차 검증된 것 — 변경 없음):
   R-A'         : 1MIN ≥ 9분이 10분창 1회+
@@ -22,17 +22,31 @@
   S2 = R-B OR rb_fast
   S3 = R-A' AND R-B AND R-C'  (불변 — 04-21 검증 보호)
 
-사용법:
-    python3 3단계_룰베이스_사건단위.py STAR.csv
-    python3 3단계_룰베이스_사건단위.py STAR.csv -o my_사건.csv
+출력 정책 (1분 단위 CSV 입력 가정):
+  · 발동이벤트 CSV: 매 분 1행 기록
+       - 이벤트 없음 → "이벤트 없음" 기입
+       - 1·2단계 → 단계 + 사유 기입
+       - 3단계   → 단계 + 사유 기입 (그리고 사건단위 CSV에도 누적)
+  · 사건단위 CSV: 진짜 위험한 사건(S3)만 사건 단위로 기록
 
-출력:
-    사건단위_<YYYYMMDD_HHMMSS>.csv (또는 -o 지정 경로)
+사용법:
+    # 일괄 처리 (기존 CSV 전체 분석)
+    python3 3단계_룰베이스_사건단위.py STAR.csv
+    python3 3단계_룰베이스_사건단위.py STAR.csv -o ./out
+
+    # 실시간 감시 모드 (1분마다 새 행 추가되는 CSV 폴링)
+    python3 3단계_룰베이스_사건단위.py STAR.csv --watch
+    python3 3단계_룰베이스_사건단위.py STAR.csv --watch --interval 60 -o ./out
+
+출력 (날짜별 파일 — 같은 날짜면 기존 파일에 append, 없으면 신규 생성):
+    <YYYYMMDD>_발동이벤트.csv   (매 분 1행, 이벤트 없는 분도 "이벤트없음"으로 기입)
+    <YYYYMMDD>_사건단위.csv     (S3 — 진짜 위험한 사건만)
 """
 
 import csv
 import os
 import sys
+import time
 from collections import deque
 from datetime import datetime, timedelta
 
@@ -234,9 +248,11 @@ class IncidentTracker:
         self.last_stage = 0
 
     def _record_event(self, t, stage, ctx):
-        if stage == self.last_stage:
-            return
-        if stage == 1:
+        """매 분 호출. 단계 무관하게 1행씩 기록 — 이벤트 없으면 '이벤트 없음'."""
+        is_transition = stage != self.last_stage
+        if stage == 0:
+            reason = "이벤트 없음"
+        elif stage == 1:
             if ctx.get('ra_count', 0) >= 2:
                 reason = f"1MIN ≥9분이 {ctx['ra_count']}회"
             elif ctx.get('ra_sustained'):
@@ -255,12 +271,20 @@ class IncidentTracker:
                       f"M14→M16 +{ctx.get('rb_diff', 0)}, "
                       f"역증가 {ctx.get('rev_count', 0)}개)")
         else:
-            reason = "정상화"
+            reason = "이벤트 없음"
         self.events.append({
             'time': t,
             'stage': stage,
             'prev_stage': self.last_stage,
             'reason': reason,
+            'is_transition': is_transition,
+            'ra_value': ctx.get('ra_value'),
+            'ra_count': ctx.get('ra_count', 0),
+            'ra_sustained': bool(ctx.get('ra_sustained')),
+            'rb_diff': ctx.get('rb_diff', 0),
+            'rb_diff_10': ctx.get('rb_diff_10', 0),
+            'rc_trend': ctx.get('rc_trend', 0),
+            'rev_count': ctx.get('rev_count', 0),
         })
         self.last_stage = stage
 
@@ -417,11 +441,101 @@ def incident_to_row(c, file_name):
     }
 
 
-# ====== 메인 ======
-def process(input_csv, output_csv=None):
-    if output_csv is None:
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_csv = f'사건단위_{ts}.csv'
+# ====== 발동이벤트 CSV 헬퍼 ======
+STAGE_LABEL = {0: '이벤트없음', 1: '1단계 조기경보', 2: '2단계 주의보', 3: '3단계 ⭐확정'}
+
+EVENT_FIELDS = [
+    'file', 'datetime', 'date', 'time',
+    'stage', 'stage_name', 'prev_stage', 'transition', 'reason',
+]
+
+INCIDENT_FIELDS = [
+    'file', 'date', 'predict_time', 'start_time', 'end_time',
+    'lead_min', 'duration_min', 'refire_count',
+    'max_1min', 'max_m14_diff', 'max_reverse_lifters',
+    'primary_cause', 'contrib_breakdown', 'anomaly_explanation', 'early_warning',
+]
+
+
+def event_to_row(ev, file_name):
+    """발동이벤트 1행. stage=0(이벤트없음)이면 stage/prev_stage/transition/reason 모두 빈칸."""
+    t_str = ev['time'].strftime('%Y-%m-%d %H:%M')
+    d_str = ev['time'].strftime('%Y-%m-%d')
+    hm = ev['time'].strftime('%H:%M')
+    stage_name = STAGE_LABEL.get(ev['stage'], '')
+    if ev['stage'] == 0:
+        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '']
+    transition = f"{ev['prev_stage']}→{ev['stage']}" if ev.get('is_transition') else ''
+    return [
+        file_name, t_str, d_str, hm,
+        ev['stage'], stage_name, ev['prev_stage'], transition, ev['reason'],
+    ]
+
+
+def append_rows_csv(path, fields, rows):
+    """헤더가 없는 신규 파일이면 헤더 작성 후 rows append. 있으면 그대로 append."""
+    new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+    with open(path, 'a', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(fields)
+        for r in rows:
+            w.writerow(r)
+
+
+def write_events_by_date(out_dir, events, file_name):
+    """이벤트들을 날짜별 <YYYYMMDD>_발동이벤트.csv 에 append. 파일 경로 리스트 반환."""
+    by_date = {}
+    for ev in events:
+        key = ev['time'].strftime('%Y%m%d')
+        by_date.setdefault(key, []).append(event_to_row(ev, file_name))
+    paths = []
+    for ymd in sorted(by_date):
+        path = os.path.join(out_dir, f'{ymd}_발동이벤트.csv')
+        append_rows_csv(path, EVENT_FIELDS, by_date[ymd])
+        paths.append(path)
+    return paths
+
+
+def write_incidents_by_date(out_dir, incidents, file_name):
+    """사건들을 날짜별 <YYYYMMDD>_사건단위.csv 에 append. 파일 경로 리스트 반환."""
+    by_date = {}
+    for c in incidents:
+        ymd = c['start_time'].strftime('%Y%m%d')
+        row = incident_to_row(c, file_name)
+        by_date.setdefault(ymd, []).append([row[k] for k in INCIDENT_FIELDS])
+    paths = []
+    for ymd in sorted(by_date):
+        path = os.path.join(out_dir, f'{ymd}_사건단위.csv')
+        append_rows_csv(path, INCIDENT_FIELDS, by_date[ymd])
+        paths.append(path)
+    return paths
+
+
+def append_event_row(out_dir, ev, file_name):
+    """발동이벤트 — 1행을 해당 날짜 CSV에 append (실시간/스트림 모드용)."""
+    ymd = ev['time'].strftime('%Y%m%d')
+    path = os.path.join(out_dir, f'{ymd}_발동이벤트.csv')
+    append_rows_csv(path, EVENT_FIELDS, [event_to_row(ev, file_name)])
+    return path
+
+
+def append_incident_row(out_dir, incident, file_name):
+    """사건단위 — 1건을 해당 날짜 CSV에 append (실시간/스트림 모드용)."""
+    ymd = incident['start_time'].strftime('%Y%m%d')
+    path = os.path.join(out_dir, f'{ymd}_사건단위.csv')
+    row = incident_to_row(incident, file_name)
+    append_rows_csv(path, INCIDENT_FIELDS, [[row[k] for k in INCIDENT_FIELDS]])
+    return path
+
+
+# ====== 메인 (일괄 처리) ======
+def process(input_csv, out_dir='.'):
+    """
+    입력 CSV 전체를 일괄 처리해서 날짜별 발동이벤트 / 사건단위 CSV에 append.
+    out_dir 안에 같은 날짜 파일 있으면 그 파일에 추가, 없으면 새로 생성.
+    """
+    os.makedirs(out_dir, exist_ok=True)
 
     # 90분 슬라이딩 윈도우
     t1_window = deque(maxlen=WINDOW_MIN)
@@ -435,81 +549,124 @@ def process(input_csv, output_csv=None):
     rules_evaluated = 0
 
     print(f'📥 입력: {input_csv}')
+    print(f'   출력 폴더: {os.path.abspath(out_dir)}')
     print(f'   윈도우: 과거 {WINDOW_MIN}분')
 
     for t, star, prefix in iter_star_rows(input_csv):
-        # ① 윈도우 push (None 도 그대로 — 평가 시 None 체크)
         t1_window.append(star.get('avgtotal1min'))
         m14_window.append(star.get('m14_to_m16'))
         lft_window.append(star.get('lft_list') or {})
         rows_processed += 1
         last_t = t
 
-        # ② 90분 안 채워지면 룰 평가 보류
-        if len(t1_window) < 31:  # R-B 평가 최소 (30분 전 비교 위해 31개)
+        # 90분 안 채워지면 룰 평가 보류 (R-B 30분 전 비교 위해 31개 필요)
+        if len(t1_window) < 31:
             continue
 
-        # ③ 룰 평가
         s1, s2, s3, ctx = evaluate_rules(t1_window, m14_window, lft_window)
         rules_evaluated += 1
-
-        # ④ FSM 갱신
         tracker.update(t, s1, s2, s3, ctx)
 
-    # 마지막 미해소 사건 강제 종료
     tracker.finalize(last_t)
 
-    # ── CSV 출력 ──
-    rows = [incident_to_row(c, file_name) for c in tracker.incidents]
-
-    if not rows:
-        print(f'\n⚠️ 사건 0건 — CSV 빈 헤더만 출력')
-        rows = [{
-            'file': '', 'date': '', 'predict_time': '', 'start_time': '',
-            'end_time': '', 'lead_min': '', 'duration_min': '', 'refire_count': '',
-            'max_1min': '', 'max_m14_diff': '', 'max_reverse_lifters': '',
-            'primary_cause': '',
-            'contrib_breakdown': '', 'anomaly_explanation': '', 'early_warning': '',
-        }]
-        header_only = True
-    else:
-        header_only = False
-
-    with open(output_csv, 'w', encoding='utf-8-sig', newline='') as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        if not header_only:
-            rows.sort(key=lambda r: (r['date'], r['start_time']))
-            w.writerows(rows)
-
-    # 발동 이벤트 타임라인 CSV (S1/S2/S3/정상화 매 전환 시점)
-    events_csv = output_csv.replace('.csv', '_발동이벤트.csv')
-    if not events_csv.endswith('.csv'):
-        events_csv = output_csv + '_발동이벤트.csv'
-    stage_label = {0: '정상', 1: '1단계 조기경보', 2: '2단계 주의보', 3: '3단계 ⭐확정'}
-    with open(events_csv, 'w', encoding='utf-8-sig', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['file', 'datetime', 'date', 'time', 'stage', 'stage_name',
-                    'prev_stage', 'transition', 'reason'])
-        for ev in tracker.events:
-            t_str = ev['time'].strftime('%Y-%m-%d %H:%M')
-            d_str = ev['time'].strftime('%Y-%m-%d')
-            hm = ev['time'].strftime('%H:%M')
-            transition = f"{ev['prev_stage']}→{ev['stage']}"
-            w.writerow([file_name, t_str, d_str, hm, ev['stage'],
-                        stage_label.get(ev['stage'], ''), ev['prev_stage'],
-                        transition, ev['reason']])
+    # ── 날짜별 CSV append ──
+    event_paths = write_events_by_date(out_dir, tracker.events, file_name)
+    incident_paths = write_incidents_by_date(out_dir, tracker.incidents, file_name)
 
     print()
     print(f'📊 처리 결과')
     print(f'   행 처리:    {rows_processed:,} 행')
     print(f'   룰 평가:    {rules_evaluated:,} 회 (90분 채워진 후)')
-    print(f'   사건 추출:  {len(tracker.incidents)} 건')
-    print(f'   발동 전환:  {len(tracker.events)} 회 (S1/S2/S3/정상화 합산)')
+    print(f'   사건 추출:  {len(tracker.incidents)} 건 (S3 — 진짜 위험)')
+    print(f'   발동 기록:  {len(tracker.events)} 분 (1분당 1행)')
     print()
-    print(f'💾 출력:')
-    print(f'   · {output_csv}                (사건 단위)')
-    print(f'   · {events_csv}  (S1/S2/S3 발동 타임라인)')
+    print(f'💾 발동이벤트 CSV ({len(event_paths)}개 날짜):')
+    for p in event_paths:
+        print(f'   · {p}')
+    if incident_paths:
+        print(f'💾 사건단위 CSV ({len(incident_paths)}개 날짜):')
+        for p in incident_paths:
+            print(f'   · {p}')
+    else:
+        print(f'💾 사건단위 CSV: 진짜 위험 사건 0건 (생성 없음)')
+
+
+# ====== 실시간 감시 모드 ======
+def watch(input_csv, out_dir='.', interval=60):
+    """
+    1분 간격(또는 interval초)으로 CSV 파일을 폴링해서 새로 추가된 행만 처리.
+    매 분마다 발동이벤트 CSV에 1행 append, 사건 종료 시 사건단위 CSV에 append.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    t1_window = deque(maxlen=WINDOW_MIN)
+    m14_window = deque(maxlen=WINDOW_MIN)
+    lft_window = deque(maxlen=WINDOW_MIN)
+    tracker = IncidentTracker()
+    file_name = os.path.basename(input_csv)
+
+    last_size = 0
+    last_event_count = 0
+    last_incident_count = 0
+    last_t = None
+
+    print(f'👁  실시간 감시 시작')
+    print(f'   입력: {input_csv}')
+    print(f'   출력 폴더: {os.path.abspath(out_dir)}')
+    print(f'   폴링 간격: {interval}초 (Ctrl+C로 종료)')
+    print()
+
+    while True:
+        try:
+            if os.path.exists(input_csv):
+                cur_size = os.path.getsize(input_csv)
+                if cur_size != last_size:
+                    # 파일 변화 감지 — 처음부터 다시 읽되 이미 본 행은 윈도우 상태로 흘려보냄
+                    seen = 0
+                    for t, star, _ in iter_star_rows(input_csv):
+                        seen += 1
+                        # 같은 시각이거나 이전 시각이면 스킵 (이미 처리)
+                        if last_t is not None and t <= last_t:
+                            continue
+                        t1_window.append(star.get('avgtotal1min'))
+                        m14_window.append(star.get('m14_to_m16'))
+                        lft_window.append(star.get('lft_list') or {})
+                        last_t = t
+
+                        if len(t1_window) < 31:
+                            continue
+
+                        s1, s2, s3, ctx = evaluate_rules(t1_window, m14_window, lft_window)
+                        tracker.update(t, s1, s2, s3, ctx)
+
+                        # 매 분 발동이벤트 1행 append
+                        if len(tracker.events) > last_event_count:
+                            for ev in tracker.events[last_event_count:]:
+                                p = append_event_row(out_dir, ev, file_name)
+                                stage_disp = STAGE_LABEL.get(ev['stage'], '')
+                                print(f'   [{ev["time"].strftime("%H:%M")}] {stage_disp} '
+                                      f'— {ev["reason"]} → {os.path.basename(p)}')
+                            last_event_count = len(tracker.events)
+
+                        # 신규 종료된 사건이 있으면 사건단위 append
+                        if len(tracker.incidents) > last_incident_count:
+                            for c in tracker.incidents[last_incident_count:]:
+                                p = append_incident_row(out_dir, c, file_name)
+                                print(f'   ⭐ 사건 확정 → {os.path.basename(p)}')
+                            last_incident_count = len(tracker.incidents)
+
+                    last_size = cur_size
+
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            print('\n👋 감시 종료')
+            # 미해소 사건 강제 종료
+            tracker.finalize(last_t)
+            if len(tracker.incidents) > last_incident_count:
+                for c in tracker.incidents[last_incident_count:]:
+                    p = append_incident_row(out_dir, c, file_name)
+                    print(f'   ⭐ 사건 확정 (종료 시) → {os.path.basename(p)}')
+            break
 
 
 def main():
@@ -518,19 +675,34 @@ def main():
         sys.exit(1)
 
     input_csv = sys.argv[1]
-    output_csv = None
+    out_dir = '.'
+    watch_mode = False
+    interval = 60
 
-    # -o <path> 옵션 파싱
-    if '-o' in sys.argv:
-        idx = sys.argv.index('-o')
-        if idx + 1 < len(sys.argv):
-            output_csv = sys.argv[idx + 1]
+    args = sys.argv[2:]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '-o' and i + 1 < len(args):
+            out_dir = args[i + 1]
+            i += 2
+        elif a == '--watch':
+            watch_mode = True
+            i += 1
+        elif a == '--interval' and i + 1 < len(args):
+            interval = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
 
-    if not os.path.exists(input_csv):
+    if not os.path.exists(input_csv) and not watch_mode:
         print(f'❌ 파일 없음: {input_csv}')
         sys.exit(1)
 
-    process(input_csv, output_csv)
+    if watch_mode:
+        watch(input_csv, out_dir, interval)
+    else:
+        process(input_csv, out_dir)
 
 
 if __name__ == '__main__':
