@@ -916,6 +916,130 @@ def register_api_routes(app):
 
 
     # ============================================
+    # LLM Wiki — 본문 복붙 → 카파시 스타일 마크다운
+    # ============================================
+    @app.route("/api/wiki/generate", methods=["POST"])
+    def api_wiki_generate():
+        """글 본문(아무 형식)을 카파시 스타일 wiki 마크다운으로 변환.
+
+        입력: { source: 본문 텍스트, title?: 제목힌트, style?: karpathy|preserve|concise, language?: ko|en|original }
+        출력: { content: 마크다운, suggested_filename: 슬러그.md }
+        """
+        data = request.get_json(force=True) or {}
+        source = (data.get("source") or "").strip()
+        title_hint = (data.get("title") or "").strip()
+        style = (data.get("style") or "karpathy").strip()
+        language = (data.get("language") or "ko").strip()
+        if not source:
+            return jsonify({"error": "원본 본문(source)이 비어 있습니다."}), 400
+        if len(source) > 60000:
+            source = source[:60000]  # 토큰 보호 (대략 15K 토큰)
+
+        # 카파시 스타일 시스템 프롬프트
+        if style == "concise":
+            style_rules = ("- 핵심만 요약 (300-600자)\n"
+                          "- 한 단락 3-5줄\n"
+                          "- 결론·핵심 차이만 짚어주기")
+        elif style == "preserve":
+            style_rules = ("- 원문 구조·내용 최대 유지\n"
+                          "- 헤딩만 깔끔히 정리 (## 위주)\n"
+                          "- 추가 해석 자제")
+        else:  # karpathy
+            style_rules = (
+                "1. First Principles: '왜?' → '어떻게?' → '무엇을?' 순서로 풀기\n"
+                "2. 짧은 단락 + 명확한 헤딩 (## 위주, 한 단락 3-5줄)\n"
+                "3. 비유로 직관 설명 (\"X 는 사실 Y 와 같다\")\n"
+                "4. 핵심 코드 스니펫만 (10-30줄, 주석으로 의도 설명)\n"
+                "5. 개인 노트 톤 (\"내가 이해한 대로는...\")\n"
+                "6. 사실성 유지 (원본에 없는 내용 만들지 말 것)"
+            )
+
+        if language == "en":
+            lang_inst = "Output the wiki in English."
+        elif language == "original":
+            lang_inst = "Output in the same language as the source."
+        else:
+            lang_inst = "출력은 한글로 작성."
+
+        system_prompt = (
+            "너는 Andrej Karpathy 스타일로 LLM/ML wiki 페이지를 작성하는 편집자다.\n"
+            "사용자가 던진 글(블로그·논문·노트·gist 등)을 받아 정리된 wiki 마크다운으로 재작성한다.\n\n"
+            f"## 스타일 규칙\n{style_rules}\n\n"
+            f"## 언어\n{lang_inst}\n\n"
+            "## 출력 형식\n"
+            "- 마크다운 본문만 출력 (코드블록으로 감싸지 말 것)\n"
+            "- 첫 줄은 `# 제목`\n"
+            "- 추가 설명·인사·메타코멘트 없이 바로 wiki 본문\n"
+        )
+        title_part = f"\n제안된 제목: {title_hint}\n" if title_hint else ""
+        user_msg = f"다음 글을 위 규칙대로 wiki 페이지로 정리해줘.{title_part}\n\n---\n{source}\n---"
+
+        # 첫 번째 사용 가능한 API 환경 찾기
+        api_url = ""
+        model = ""
+        for eid, ecfg in ENV_CONFIG.items():
+            if not eid.startswith("gguf-"):
+                api_url = ecfg["url"]
+                model = ecfg["model"]
+                break
+        if not api_url:
+            return jsonify({"error": "사용 가능한 LLM API가 없습니다."}), 500
+
+        try:
+            headers = {"Content-Type": "application/json"}
+            if API_TOKEN:
+                headers["Authorization"] = f"Bearer {API_TOKEN}"
+            resp = req.post(
+                api_url, headers=headers,
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 8192,
+                    "stream": False,
+                },
+                timeout=180, verify=False,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            content = ""
+            if "choices" in result and result["choices"]:
+                content = result["choices"][0].get("message", {}).get("content", "")
+            # ```markdown ... ``` 로 감싸졌으면 제거
+            md_match = re.search(r'```(?:markdown|md)?\s*\n(.*?)```', content, re.DOTALL)
+            if md_match:
+                content = md_match.group(1).strip()
+            content = content.strip()
+            if not content:
+                return jsonify({"error": "LLM 응답이 비어있습니다."}), 500
+
+            # 제목·슬러그 추출
+            title_line = ""
+            for ln in content.split("\n"):
+                ln = ln.strip()
+                if ln.startswith("# "):
+                    title_line = ln[2:].strip()
+                    break
+            if not title_line:
+                title_line = title_hint or "wiki"
+            slug = re.sub(r"[^\w\-가-힣 ]", "", title_line).strip()
+            slug = re.sub(r"\s+", "-", slug)[:60].lower() or "wiki"
+            suggested_filename = f"{slug}.md"
+
+            return jsonify({
+                "content": content,
+                "title": title_line,
+                "suggested_filename": suggested_filename,
+                "model": model,
+            })
+        except Exception as e:
+            return jsonify({"error": f"LLM 호출 실패: {str(e)}"}), 500
+
+
+    # ============================================
     # 로그프레소 자연어 쿼리 API
 
 
