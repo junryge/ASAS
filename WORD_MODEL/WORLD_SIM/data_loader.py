@@ -433,8 +433,65 @@ class DateDataLoader:
         stats['rail_cut'] = self._load_rail_cut()
         stats['ts_resource'] = self._load_ts_resource()
         stats['oht_time_avg'] = self._load_oht_time_avg()
+        stats['star_derived'] = self._derive_statecnt_from_oht()
         self.stats = stats
         return stats
+
+    def _derive_statecnt_from_oht(self) -> dict:
+        """star CSV 의 STATECNT 가 비었으면 OHT raw 의 state 로 복원.
+
+        M16A_BR 처럼 수집측이 OHT.STATECNT.* 를 안 내려주는 FAB 에서
+        oht_timeline 의 state 값을 분 단위 누적 카운트해 star_timeline 에 주입.
+
+        주입 키:
+          driving (state=1), pause (state=2), obs_bz_stop (state=6),
+          congested (state=7), timeout (state=9)
+        """
+        if not self.oht_timeline or not self.star_timeline:
+            return {'status': 'skip_no_data'}
+
+        # star 가 이미 수치 있으면 스킵 (정상 수집 FAB)
+        has_data = any(
+            s.get('driving') or s.get('obs_bz_stop') or s.get('congested')
+            for _, s in self.star_timeline
+        )
+        if has_data:
+            return {'status': 'skip_existing'}
+
+        # oht_timeline 을 분 단위로 state 카운트 (누적 상태 기반)
+        vstate: Dict[str, int] = {}
+        minute_counts: Dict[datetime, dict] = {}
+        for t, updates in self.oht_timeline:
+            for v in updates:
+                s = v.get('state')
+                if isinstance(s, int):
+                    vstate[v['vid']] = s
+            t_key = t.replace(second=0, microsecond=0)
+            minute_counts[t_key] = {
+                'driving':     sum(1 for s in vstate.values() if s == 1),
+                'pause':       sum(1 for s in vstate.values() if s == 2),
+                'obs_bz_stop': sum(1 for s in vstate.values() if s == 6),
+                'congested':   sum(1 for s in vstate.values() if s == 7),
+                'timeout':     sum(1 for s in vstate.values() if s == 9),
+            }
+
+        # star_timeline 에 주입: 기존 값이 falsy(0/None) 일 때만
+        filled = 0
+        for t, star in self.star_timeline:
+            key = t.replace(second=0, microsecond=0)
+            derived = minute_counts.get(key)
+            if not derived:
+                continue
+            for k, v in derived.items():
+                if not star.get(k):
+                    star[k] = v
+                    filled += 1
+
+        return {
+            'status': 'derived',
+            'minutes_computed': len(minute_counts),
+            'star_cells_filled': filled,
+        }
 
     def _parse_time(self, time_str: str) -> Optional[datetime]:
         """다양한 시간 형식 파싱"""
@@ -628,6 +685,17 @@ class DateDataLoader:
                     'congested': _safe_int(row.get(C('.OHT.STATECNT.CONGESTED'))),
                     'pause': _safe_int(row.get(C('.OHT.STATECNT.PAUSE'))),
                     'timeout': _safe_int(row.get(C('.OHT.STATECNT.TIMEOUT'))),
+                    # 3단계 데드락 경보용 신규 키 (M16A_BR 확장)
+                    'avgtotal1min': _safe_float(row.get(C('.QUE.TIME.AVGTOTALTIME1MIN'))),
+                    'm14_to_m16': _safe_int(row.get(C('.QUE.M14TOM16.MESCURRENTQCNT'))),
+                    'mlud_q': _safe_int(row.get(C('.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT'))),
+                    'fab_trans_job': _safe_int(row.get(C('.QUE.ALL.FABTRANSJOBCNT'))),
+                    'lft_list': {
+                        lid: _safe_int(row.get(C(f'.LFT.{lid}.TOTAL_CURRENTQCNT')))
+                        for lid in ('6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
+                                    '6ABL6031', '6ABL6032', '6ABL0111', '6ABL0112',
+                                    '6ABL0121', '6ABL0122')
+                    },
                 }
                 self.star_timeline.append((t, star))
                 count += 1
