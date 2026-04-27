@@ -813,9 +813,37 @@ def register_api_routes(app):
         skill_type = data.get("skill_type", "도구")  # 도구/에이전트/가이드
         details = data.get("details", "").strip()
         lang = data.get("lang", "ko").strip()  # ko 또는 en
+        tone = data.get("tone", "default").strip()  # default 또는 karpathy
 
         if not topic:
             return jsonify({"error": "스킬 주제를 입력하세요."}), 400
+
+        # 카파시 톤이면 본문 작성 규칙을 시스템 프롬프트에 추가
+        karpathy_rules_ko = ""
+        karpathy_rules_en = ""
+        if tone == "karpathy":
+            karpathy_rules_ko = (
+                "\n\n## 본문 톤 규칙 (Andrej Karpathy 스타일 — 강제)\n"
+                "- 'Instructions' 와 본문 섹션은 카파시 스타일로 작성:\n"
+                "  1. First Principles 부터 (왜? → 어떻게? → 무엇을?)\n"
+                "  2. 짧은 단락 + 명확한 헤딩 (한 단락 3-5줄)\n"
+                "  3. 비유로 직관 설명 (\"X 는 사실 Y 와 같다\")\n"
+                "  4. 핵심 코드 스니펫만 (10-30줄, 주석으로 의도)\n"
+                "  5. 개인 노트 톤 (\"내가 이해한 대로는...\")\n"
+                "- YAML frontmatter 필드(name/description) 는 정규 형식 유지\n"
+                "- 'When to Use' 섹션은 명령조 유지 (트리거 명확성)\n"
+            )
+            karpathy_rules_en = (
+                "\n\n## Body Tone Rules (Andrej Karpathy style — strict)\n"
+                "- Write 'Instructions' and body sections in Karpathy's voice:\n"
+                "  1. First principles (why? → how? → what?)\n"
+                "  2. Short paragraphs + clear headings (3-5 lines per para)\n"
+                "  3. Use analogies (\"X is essentially like Y\")\n"
+                "  4. Minimal code snippets (10-30 lines with intent comments)\n"
+                "  5. Personal note tone (\"my understanding is...\")\n"
+                "- Keep YAML frontmatter (name/description) in standard format\n"
+                "- Keep 'When to Use' section imperative (clear triggers)\n"
+            )
 
         # 3개 메타스킬 지침 로드
         meta_skills = ["skill-creator", "anthropic-prompt-engineer", "engineer-skill-creator"]
@@ -842,7 +870,7 @@ def register_api_routes(app):
     4. Body: Markdown-formatted instructions, include a "When to Use" section
     5. Maximum 500 lines total
     6. Output only SKILL.md content (no explanations)
-    7. Write ALL content in English
+    7. Write ALL content in English{karpathy_rules_en}
     """
             user_msg = f"Topic: {topic}\nType: {skill_type}\n"
             if details:
@@ -861,7 +889,7 @@ def register_api_routes(app):
     4. 본문: 마크다운 형식의 지시문, "When to Use" 섹션 포함
     5. 전체 500줄 이내
     6. SKILL.md 내용만 출력 (설명 없이)
-    7. 모든 내용을 한글로 작성
+    7. 모든 내용을 한글로 작성{karpathy_rules_ko}
     """
             user_msg = f"주제: {topic}\n유형: {skill_type}\n"
             if details:

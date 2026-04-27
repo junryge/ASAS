@@ -1174,6 +1174,20 @@ body.rp-collapsed .chat-box-fixed{right:0}
           </div>
           <input type="hidden" id="scLang" value="ko">
         </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">톤(서술 스타일)</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <label style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:1px solid #e2e8f0;cursor:pointer;font-size:13px;background:#f9fafb;">
+              <input type="radio" name="scTone" value="default" checked> 기본 (구조적 지시문)
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:1px solid #e2e8f0;cursor:pointer;font-size:13px;background:#f9fafb;">
+              <input type="radio" name="scTone" value="karpathy"> 🎯 카파시 톤 (First Principles + 비유)
+            </label>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:4px;line-height:1.4;">
+            카파시 톤: SKILL.md 의 본문(특히 Instructions 섹션) 을 카파시 스타일로 — 첫 원리부터, 비유 사용, 짧은 단락.
+          </div>
+        </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           <button onclick="generateSkillLLM()" id="scGenBtn" style="background:#8b5cf6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">🤖 LLM으로 생성</button>
           <button onclick="validateGenerated()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">🔍 검증</button>
@@ -3753,11 +3767,12 @@ async function generateSkillLLM(){
   const skill_type = document.getElementById('scType').value;
   const details = document.getElementById('scDetails').value.trim();
   const lang = document.getElementById('scLang').value || 'ko';
+  const tone = document.querySelector('input[name="scTone"]:checked')?.value || 'default';
   document.getElementById('scGenStatus').style.display = 'block';
   document.getElementById('scGenBtn').disabled = true;
   try{
   document.getElementById('scGenResult').style.display = 'none';
-    const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details,lang})});
+    const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details,lang,tone})});
     const data = await resp.json();
     document.getElementById('scGenStatus').style.display = 'none';
     document.getElementById('scGenBtn').disabled = false;
