@@ -56,7 +56,11 @@ def _build_bm25_index(search_dir=None):
         for t in tokens:
             tf[t] = tf.get(t, 0) + 1
 
-        index[fname] = {"tokens": tf, "token_count": token_count, "content": content}
+        try:
+            mtime = os.path.getmtime(fpath)
+        except OSError:
+            mtime = 0
+        index[fname] = {"tokens": tf, "token_count": token_count, "content": content, "mtime": mtime}
 
         # DF 계산 (각 토큰이 등장하는 문서 수)
         for t in set(tokens):
@@ -139,10 +143,16 @@ def search_knowledge(query, max_results=5, max_content_chars=8000, user_id=None)
     if not os.path.isdir(search_dir):
         return []
 
-    # 사용자별 폴더: 인덱스 캐시 (파일 수 변경 시에만 재빌드)
-    _current_file_count = len([f for f in os.listdir(search_dir) if f.endswith('.md')])
-    _index_file_count = len(_BM25_INDEX)
-    if _current_file_count != _index_file_count:
+    # 사용자별 폴더: 인덱스 캐시 (파일 추가/삭제 또는 수정시간 변경 시 재빌드)
+    _current_files = {}
+    for f in os.listdir(search_dir):
+        if f.endswith('.md'):
+            try:
+                _current_files[f] = os.path.getmtime(os.path.join(search_dir, f))
+            except OSError:
+                _current_files[f] = 0
+    _indexed_files = {f: info.get('mtime', 0) for f, info in _BM25_INDEX.items()}
+    if _current_files != _indexed_files:
         _build_bm25_index(search_dir)
 
     q_lower = query.lower()
