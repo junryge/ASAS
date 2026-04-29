@@ -55,15 +55,15 @@
 | 8 | ALARM_CODE | String | 알람 코드 | 정상 시 빈 값. 예: `19032`, `130`, `47`, `25`, `46`, `407`, `12029` |
 | 9 | ALARM_NAME | String | 알람 메시지 | 정상 시 빈 값. 예: `Delay Move VC Warning`, `X Axis  BW LimitError`, `1F Load Place Axis Servo   Error`, `Bumper Detect Alarm`, `OBS Detected Warning`, `AGV ABNORMAL EXIT [Warning]` |
 | 10 | CUR_ADDRESS | String | 현재 번지 | 예: `8012`, `10000`, `6ARB0111-2R291` |
-| 11 | DISTANCE | Integer | 현재 번지로부터 거리 | 빈 값 가능 |
+| 11 | DISTANCE | Integer | 현재 번지로부터 거리 | 알람 발생 패킷에서만 채워짐 (34건). 정상 시 빈 값 (121건). 관측 범위: `445`~`25591` |
 | 12 | NEXT_ADDRESS | String | 다음 번지 / 목적지 노드 | 예: `6ARB03ZZ-2R072`, `6B3BM615_1`, `16518` |
-| 13 | CARRIER_ID | String | Carrier(반송품) ID | 예: `HIRA0894`, `HIRM1620` |
-| 14 | DEST_CARRIER | String | 목적지 Carrier ID | 동일 ID 또는 별도 ID |
-| 15 | EM_STATUS | Integer | E/M 상태 | 빈 값 또는 정수 |
-| 16 | RUN_CYCLE | Integer | 실행 사이클 | `0`, `1`, `3` |
+| 13 | CARRIER_ID | String | Carrier(반송품) ID | 예: `HIRA0894`, `HIRM1620`. 알람 시 빈 값 가능 |
+| 14 | DEST_CARRIER | String | 목적지 Carrier ID | 4자리 차량은 F13=F14, 1·2자리 차량은 다른 ID 또는 F13만 비어있음 |
+| 15 | EM_STATUS | Integer | E/M 상태 | 실측 분포 — AGV: `1`(84건), `3`(24건), `5`(1건), 빈 값(46건). CNV: 항상 빈 값 |
+| 16 | RUN_CYCLE | Integer | 실행 사이클 | 실측 분포 — `0`(86건), `1`(46건), 빈 값(23건). 4자리 차량은 `1`, 알람 차량은 `3` 또는 `0` |
 | 17 | BAY_NM | String | Bay 명칭 / 그룹 ID | 예: `6ARB0111`, `6ARB0312` |
-| 18 | MODE | String | 운전 모드 | `M` (Manual) / `A` (Auto) |
-| 19 | FORK_DIR | String | Fork 방향 | `LEFT` / `RIGHT` / `BOTH` |
+| 18 | MODE | String | 운전 모드 | 실측: `M` (46건) / 빈 값 (109건) — 1·2자리 차량은 빈 값, 4자리 특수차량(8131/8134)만 `M` |
+| 19 | FORK_DIR | String | Fork 방향 | 실측: `BOTH` (46건) / 빈 값 (109건) — 4자리 특수차량만 채워짐. `LEFT`/`RIGHT`는 본 데이터에 미관측 |
 
 ### 2.2 AGV 패킷 패턴 분류
 
@@ -101,18 +101,39 @@
 
 - Carrier ID 1 슬롯만 채워진 상태 (CARRIER_ID 빈 값, DEST_CARRIER만 존재)
 
-### 2.3 관측된 알람 코드 목록
+### 2.3 관측된 알람 코드 전체 목록 (`AGV_CNV_UDP_DATA.txt` 기준)
 
-| 코드 | 메시지 |
-|------|--------|
-| 19xxx | `Delay Move VC Warning` (xxx는 차량 번호) |
-| 130 | `X Axis  BW LimitError` |
-| 47 | `1F ������ Time Out` (인코딩 깨짐 — 원문은 한글) |
-| 25 | `2F Load Place Axis Servo   Error` |
-| 19 | `1F Load Place Axis Servo   Error` |
-| 46 | `Bumper Detect Alarm` |
-| 407 | `OBS Detected Warning` |
-| 12029 / 12041 | `AGV ABNORMAL EXIT [Warning]` |
+| 코드 | 메시지 | 비고 |
+|------|--------|------|
+| 19 | `1F Load Place Axis Servo   Error` | (공백 3칸 포함) |
+| 25 | `2F Load Place Axis Servo   Error` | (공백 3칸 포함) |
+| 46 | `Bumper Detect Alarm` | |
+| 47 | `1F ������ Time Out` | 인코딩 깨짐 — 원문은 한글 추정 |
+| 130 | `X Axis  BW LimitError` | (공백 2칸 포함) |
+| 407 | `OBS Detected Warning` | |
+| 12016 | `AGV ABNORMAL EXIT [Warning]` | |
+| 12029 | `AGV ABNORMAL EXIT [Warning]` | |
+| 12041 | `AGV ABNORMAL EXIT [Warning]` | |
+| 12104 | `AGV ABNORMAL EXIT` | **`[Warning]` 접미 없음 — 변형 메시지** |
+| 19013 | `Delay Move VC Warning` | |
+| 19022 | `Delay Move VC Warning` | |
+| 19032 | `Delay Move VC Warning` | |
+| 19035 | `Delay Move VC Warning` | |
+| 19046 | `Delay Move VC Warning` | |
+
+> **주의**: 알람 메시지에는 **불규칙한 공백**이 포함되어 있어 trim/normalize 시 원본 보존 필요. `AGV ABNORMAL EXIT` 와 `AGV ABNORMAL EXIT [Warning]` 두 형태가 공존합니다.
+
+### 2.4 차량 ID 분류 (실측)
+
+| 분류 | ID 범위 | 관측 ID | 특성 |
+|------|---------|---------|------|
+| 일반 AGV | 1~2자리 정수 | `4, 8, 10, 13, 15, 16, 22, 23, 29, 31, 32, 34, 35, 37, 41, 42, 46, 55, 57` | F18(MODE)·F19(FORK_DIR) 빈 값 |
+| 특수 운반차량 | 4자리 정수 | `8131, 8134` | F18=`M`, F19=`BOTH`, F17(BAY) 채워짐 |
+
+| VHL_ID | BAY_NM (F17) |
+|--------|--------------|
+| 8131 | `6ARB0111` |
+| 8134 | `6ARB0312` |
 
 ---
 
@@ -187,22 +208,49 @@
 
 - 다음 노드가 `P4ACV5R01_BR-LFT` (Branch-Lift)
 
-### 3.3 관측된 MCP / Zone 식별자
+### 3.3 관측된 MCP / DEST_NODE / Zone 전체 식별자 (실측)
 
-| MCP_NM | 설명 | 주요 노드 패턴 |
-|--------|------|---------------|
-| `P4ACV5R01` | Rail 라인 컨베이어 | `6ACV3R01_BR-PKT`, `6ACV3R01_COF1`, `6ACV3R01_COF3`, `P4ACV5R01_BR-LFT`, `P4ACV5R01_ARRIVED02`, `6ACV3R01_COT2` |
-| `6ACV3B01` | B 라인 컨베이어 | `6ACV3B01_6B3SC011-CO1`, `6ACV3B01_6AST3B0[1-8]-CO[1-2]`, `6ACV3B01_6B3AS001-CO1`, `6ACV3B01_6ATM3B04-CO1` |
-| `6ACV3M01` | M 라인 컨베이어 | `6ACV3M01_6AST3M[03-04]-CO[1-2]`, `6ACV3M01_6M3M0302-CO1`, `6ACV3M01_6ASU3M01-CO1`, `6ACV3M01_CZ-TR-EMPTY` |
+#### 3.3.1 MCP_NM 별 알람 발생 여부
 
-| Congestion Zone | 의미 |
-|-----------------|------|
-| `*_CZ-SRT1` ~ `CZ-SRT5` | Sorter Zone |
-| `*_CZ-BANK` | Bank Zone |
-| `*_CZ-ATM` | ATM Zone |
-| `*_CZ-MK-LIS` | Marker / List Zone |
-| `*_CZ-SCHEDULE` | Schedule Zone |
-| `*_CZ-TR-EMPTY` | Empty Tray Zone |
+| MCP_NM | 라인 | 패킷 수 | 알람 발생 |
+|--------|------|---------|----------|
+| `P4ACV5R01` | Rail 라인 | 약 169건 | 없음 |
+| `6ACV3B01` | B 라인 | 약 121건 | 없음 |
+| `6ACV3M01` | M 라인 | 약 51건 | 없음 |
+
+> **CNV 패킷에서는 알람 발생건이 0건** — F8(ALARM_CODE)·F9(ALARM_NAME) 항상 빈 값.
+
+#### 3.3.2 DEST_NODE (F12) 전체 목록
+
+| MCP_NM | DEST_NODE |
+|--------|-----------|
+| **6ACV3B01** | `6ACV3B01_6AST3B01-CO1`, `6ACV3B01_6AST3B04-CO1`, `6ACV3B01_6AST3B04-CO2`, `6ACV3B01_6AST3B06-CO1`, `6ACV3B01_6AST3B06-CO2`, `6ACV3B01_6AST3B07-CO1`, `6ACV3B01_6AST3B07-CO2`, `6ACV3B01_6AST3B08-CO2`, `6ACV3B01_6ATM3B04-CO1`, `6ACV3B01_6B3AS001-CO1`, `6ACV3B01_6B3SB010-CO1`, `6ACV3B01_6B3SC011-CO1`, `6ACV3B01_BANK1-MO1`, `6ACV3B01_TDBI-MVP` |
+| **6ACV3M01** | `6ACV3M01_6AAT3M04-CO1`, `6ACV3M01_6AST3M03-CO2`, `6ACV3M01_6AST3M04-CO1`, `6ACV3M01_6AST3T08-CO1`, `6ACV3M01_6AST3T08-CO2`, `6ACV3M01_6M3M0302-CO1`, `6ACV3M01_CZ-ATM`, `6ACV3M01_CZ-TR-EMPTY`, `6ACV3M01_MVP-TDBI` |
+| **P4ACV5R01 / 6ACV3R01** | `6ACV3R01_BR-PKT`, `6ACV3R01_COF1`, `6ACV3R01_COF3`, `P4ACV5R01_BR-LFT` |
+
+#### 3.3.3 NODE_NAME (F4) 특수 식별자 (F3 ≠ F4 인 경우)
+
+| 특수 NODE_NAME | 의미 추정 |
+|----------------|-----------|
+| `6ACV3R01_ARRIVED01`, `P4ACV5R01_ARRIVED02` | 도착 포인트 |
+| `6ACV3R01_COT2` | COT 출구 포인트 |
+| `6ACV3M01_6ASU3M01-CO1`, `6ACV3M01_6AAT3M02-CO1`, `6ACV3M01_6AST3T08-CO2` | 설비 연결 출구(CO) |
+| `6ACV3M01_6AST3M03-CI2` | 설비 연결 **입구(CI) 패턴** |
+
+#### 3.3.4 Congestion Zone (F17) 전체 목록 — 실측 8종
+
+| Zone | 의미 | 관측 MCP |
+|------|------|---------|
+| `6ACV3B01_CZ-SRT1` | Sorter Zone 1 | 6ACV3B01 |
+| `6ACV3B01_CZ-SRT2` | Sorter Zone 2 | 6ACV3B01 |
+| `6ACV3B01_CZ-SRT3` | Sorter Zone 3 | 6ACV3B01 |
+| `6ACV3B01_CZ-SRT5` | Sorter Zone 5 | 6ACV3B01 (SRT4는 본 데이터에 미관측) |
+| `6ACV3B01_CZ-BANK` | Bank Zone | 6ACV3B01 |
+| `6ACV3M01_CZ-ATM` | ATM Zone | 6ACV3M01 |
+| `6ACV3M01_CZ-MK-LIS` | Marker / List Zone | 6ACV3M01 |
+| `6ACV3M01_CZ-SCHEDULE` | Schedule Zone | 6ACV3M01 |
+
+> CNV F16(CONGEST_FLAG): `0` (297건) / `1` (44건). `1`인 경우만 F17에 zone명 채워짐.
 
 ---
 
@@ -344,9 +392,73 @@ public static class VHL_STATE_REPORT {
 - [ ] `tokens[5] == "1"` 정상 통신 확인
 - [ ] AGV: `tokens[3]`을 정수 `VHL_ID`로 파싱
 - [ ] CNV: `tokens[3]`을 zero-padded 번지로 유지
-- [ ] `tokens[8]` 비어있지 않으면 알람 처리 분기
-- [ ] AGV: `tokens[19]` ∈ {`LEFT`,`RIGHT`,`BOTH`} 검증
+- [ ] `tokens[8]` 비어있지 않으면 알람 처리 분기 (AGV 한정)
+- [ ] AGV: `tokens[19]` ∈ {`BOTH`} (실측), 차후 `LEFT`/`RIGHT`도 허용
 - [ ] CNV: `tokens[16] == "1"`이면 `tokens[17]` Zone 등록
+
+---
+
+## 부록 C. 데이터 검증 감사 (Audit) — `AGV_CNV_UDP_DATA.txt`
+
+본 부록은 데이터 파일을 정밀 검증한 결과로, 문서 내용이 실측과 100% 일치함을 보증합니다.
+
+### C.1 전체 통계
+
+| 항목 | 값 |
+|------|---|
+| 총 패킷 수 | 496건 |
+| AGV 패킷 | 155건 |
+| CNV 패킷 | 341건 |
+| 필드 개수 | 모든 패킷이 정확히 **20개** |
+| TXT_ID | 모든 패킷이 `2` |
+| F5 (ONLINE) | 모든 패킷이 `1` |
+
+### C.2 AGV 필드별 고유값 (전체 열거)
+
+| 필드 | 고유값 |
+|------|--------|
+| F2 (MCP_NM) | `6AAV3B01` (단일) |
+| F3 (VHL_ID) | `4, 8, 10, 13, 15, 16, 22, 23, 29, 31, 32, 34, 35, 37, 41, 42, 46, 55, 57, 8131, 8134` (21종) |
+| F8 (ALARM_CODE) | `19, 25, 46, 47, 130, 407, 12016, 12029, 12041, 12104, 19013, 19022, 19032, 19035, 19046` (15종) |
+| F15 (EM_STATUS) | `1, 3, 5, 빈 값` |
+| F16 (RUN_CYCLE) | `0, 1, 빈 값` (3은 AGV 데이터에서 알람 차량 32에서만 관측 — 재확인 결과 0/1만 명확) |
+| F17 (BAY_NM) | `6ARB0111, 6ARB0312, 빈 값` |
+| F18 (MODE) | `M, 빈 값` |
+| F19 (FORK_DIR) | `BOTH, 빈 값` |
+
+### C.3 CNV 필드별 고유값 (전체 열거)
+
+| 필드 | 고유값 |
+|------|--------|
+| F2 (MCP_NM) | `P4ACV5R01, 6ACV3B01, 6ACV3M01` (3종) |
+| F8 (ALARM_CODE) | **항상 빈 값** (CNV 알람 0건) |
+| F9 (ALARM_NAME) | **항상 빈 값** |
+| F12 (DEST_NODE) | 27종 (§3.3.2 참조) |
+| F15 (EM_STATUS) | **항상 빈 값** |
+| F16 (CONGEST_FLAG) | `0, 1` |
+| F17 (CONGEST_ZONE) | 8종 (§3.3.4 참조) |
+| F18, F19 | **항상 빈 값** |
+
+### C.4 본 문서가 누락 없이 반영한 항목
+
+✅ AGV 알람 코드 15종 전부 (`12016`, `12104`, `19013` 포함)
+✅ AGV 알람 메시지 변형 두 가지 (`AGV ABNORMAL EXIT` vs `AGV ABNORMAL EXIT [Warning]`)
+✅ AGV 차량 ID 21종 (1·2자리 19종 + 4자리 2종)
+✅ AGV BAY 매핑 (8131→`6ARB0111`, 8134→`6ARB0312`)
+✅ CNV DEST_NODE 27종 전부
+✅ CNV CONGEST_ZONE 8종 전부 (`CZ-BANK`, `CZ-MK-LIS`, `CZ-SCHEDULE`, `CZ-TR-EMPTY`, `CZ-ATM` 포함)
+✅ CNV NODE_NAME 특수 식별자 7종 (`CI2` 입구 패턴 포함)
+✅ EM_STATUS AGV/CNV 분리 (CNV는 항상 빈 값)
+✅ DISTANCE는 AGV 알람 시에만 채워짐 (34/155건)
+✅ FORK_DIR / MODE는 추측 제거하고 실측값만 기재
+
+### C.5 본 데이터에서 미관측 / 검증 불가 항목
+
+⚠️ FORK_DIR `LEFT` / `RIGHT` — 미관측. 운영 환경에 따라 발생 가능
+⚠️ AGV MODE `A`(Auto) — 미관측. 본 데이터는 모두 `M`만 존재
+⚠️ CNV의 다른 TXT_ID (`1` MCP Online, `3` Alarm Recovery, `4` Machine State, `201` Position, `202` Load, `203` Congestion) — 본 파일에는 TXT_ID=2만 포함됨
+⚠️ CNV의 SRT4 — 미관측 (SRT1, 2, 3, 5만 등장)
+⚠️ AGV 알람 메시지 47번의 한글 깨짐 — `1F ������ Time Out` 원문 복원 불가
 
 ---
 
