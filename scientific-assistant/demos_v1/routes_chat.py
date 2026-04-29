@@ -1113,7 +1113,19 @@ def register_chat_routes(app):
             system_prompt += f"작성 스타일: {writing_style}\n"
 
         # API 요청 구성
-        api_messages = [{"role": "system", "content": system_prompt}] + messages
+        # 일부 모델 (Qwen3.5-397B 등) 은 system 메시지가 1개 + 맨 앞에만 허용 →
+        # messages 안의 모든 system 들을 system_prompt 에 통합
+        _sys_extras = []
+        _non_sys = []
+        for _m in messages:
+            if _m.get("role") == "system":
+                _sys_extras.append(_m.get("content", ""))
+            else:
+                _non_sys.append(_m)
+        _combined_system = system_prompt
+        if _sys_extras:
+            _combined_system = system_prompt + "\n\n" + "\n\n".join(_sys_extras)
+        api_messages = [{"role": "system", "content": _combined_system}] + _non_sys
         temperature_map = [0.1, 0.3, 0.5, 0.7]
 
         # ===== VL 모델: 이미지 첨부 시 OpenAI Vision API 포맷 변환 (GGUF / API 공통) =====
