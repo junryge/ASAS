@@ -4,6 +4,7 @@
 > - `scientific-assistant/app.py`를 실행해 **로컬 웹 채팅 UI를 띄운다.**
 > - 부팅 로그를 읽고 **각 컴포넌트가 정상인지 판별**할 수 있게 된다.
 > - 본격 진입 전 동작 원리를 이해하기 위해 **미니 데모(`hello_llm.py`)** 를 직접 만들어본다.
+> - 사내 LLM 엔드포인트(`http://common.llm.skhynix.com`)와 모델 `Qwen3-Coder-30B-A3B-Instruct`를 직접 호출해 본다.
 > - 자주 발생하는 **5가지 오류와 해결법**을 익힌다.
 
 ---
@@ -16,7 +17,7 @@ python app.py
    ├─ ① demos_v1 패키지 import → Flask app 객체 생성
    ├─ ② create_app() → 라우트(URL) 등록
    ├─ ③ scan_skills()  → scientific-skills 폴더 스캔
-   ├─ ④ TOKEN.TXT 로드 → Claude API 키 메모리 적재
+   ├─ ④ token.txt 로드 → 사내 LLM API 키 메모리 적재
    ├─ ⑤ 하니스 브릿지 초기화 (옵션)
    ├─ ⑥ Logpresso 테이블 갱신 (옵션)
    ├─ ⑦ GGUF 파일 자동 감지 → 가장 큰 모델 로드
@@ -48,12 +49,54 @@ pip install flask requests urllib3
 | `app.py` | ✅ | 진입점 |
 | `demos_v1/` | ✅ | 핵심 모듈 |
 | `scientific-skills/` | ⚠️ 권장 | 없으면 스킬 0개로 시작 |
-| `TOKEN.TXT` | ⚠️ 권장 | Claude API 사용 시 |
+| `token.txt` | ⚠️ 권장 | 사내 LLM 사용 시 (한 줄, Bearer 토큰) |
 | `*.gguf` | ⛔ 선택 | 5장에서 다룸 |
+
+### `token.txt` 형식
+
+```
+sk-skh-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+> **주의** — `token.txt`는 절대 git에 커밋하지 않는다. `.gitignore`에 반드시 포함할 것.
 
 ---
 
-## 2.3 첫 실행
+## 2.3 사내 LLM 엔드포인트 개요
+
+본 가이드는 SK하이닉스 공통 LLM 게이트웨이를 기본 백엔드로 사용한다.
+
+| 항목 | 값 |
+|------|---|
+| Base URL | `http://common.llm.skhynix.com` |
+| 인증 헤더 | `Authorization: Bearer <token.txt 내용>` |
+| 모델 목록 조회 | `GET /v1/models` |
+| 채팅 호출 | `POST /v1/chat/completions` (OpenAI 호환) |
+| 본 가이드 기본 모델 | **`Qwen3-Coder-30B-A3B-Instruct`** |
+
+### `curl` 한 줄로 토큰·연결 확인
+
+```bash
+TOKEN=$(cat token.txt)
+
+# 모델 목록
+curl -s http://common.llm.skhynix.com/v1/models \
+  -H "Authorization: Bearer $TOKEN" | head
+
+# 한 번 대화
+curl -s http://common.llm.skhynix.com/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"Qwen3-Coder-30B-A3B-Instruct",
+       "messages":[{"role":"user","content":"안녕"}],
+       "max_tokens":128}'
+```
+
+응답이 200으로 떨어지면 토큰·네트워크 OK다.
+
+---
+
+## 2.4 첫 실행
 
 ```bash
 cd scientific-assistant
@@ -73,13 +116,13 @@ python app.py
      - aesthetic
      ...
      ... 외 345개
-  🔑 TOKEN.TXT: 로드됨 (108자)
+  🔑 token.txt: 로드됨 (108자)
   🔧 하네스: 355개 스킬 레지스트리 등록 완료
      → /api/harness/skills, /api/harness/session/*, /api/harness/status
   ℹ️  GGUF 파일 없음 → LOCAL GGUF 비활성
 
   🖥️  사용 가능한 LLM 환경:
-     [claude] Claude (Anthropic) → https://api.anthropic.com/v1/messages
+     [skhynix] SKHynix Common LLM → http://common.llm.skhynix.com
 
   🌐 http://localhost:10009 에서 접속하세요
 ==================================================
@@ -93,14 +136,14 @@ python app.py
 |-----------|------|---------|
 | `📂 스킬 폴더` | 스킬 디렉터리 위치 | 경로 틀림 → 4장에서 수정 |
 | `✅ 발견된 스킬: N개` | 스킬 자동 스캔 결과 | 0개면 폴더 비어있음 |
-| `🔑 TOKEN.TXT: 로드됨` | API 키 OK | 없으면 Claude 호출 불가 |
+| `🔑 token.txt: 로드됨` | 사내 LLM 토큰 OK | 없으면 LLM 호출 불가 |
 | `🔧 하네스: N개 ... 등록` | 도구 연동 OK | 7장에서 다룸 |
 | `💻 GGUF 자동 감지!` | 로컬 모델 발견 | 5장에서 다룸 |
 | `🌐 http://localhost:10009` | 접속 주소 | 이 주소를 브라우저에서 열기 |
 
 ---
 
-## 2.4 브라우저 접속
+## 2.5 브라우저 접속
 
 <http://localhost:10009> 를 연다. Flask가 띄운 채팅 UI가 보이면 성공이다.
 
@@ -108,7 +151,7 @@ python app.py
 
 ### 첫 메시지 보내기
 
-1. 화면 상단의 **환경 선택** 드롭다운에서 `claude` 선택 (또는 GGUF 모델)
+1. 화면 상단의 **모델 선택** 드롭다운에서 `Qwen3-Coder-30B-A3B-Instruct` 선택
 2. 입력창에 다음을 입력
    ```
    안녕? 너는 누구야? 어떤 스킬들을 가지고 있어?
@@ -117,60 +160,51 @@ python app.py
 
 ---
 
-## 2.5 미니 데모 — `hello_llm.py` 직접 만들어보기
+## 2.6 미니 데모 — `hello_llm.py` 직접 만들어보기
 
-`app.py`는 기능이 많아서 처음에는 어렵다. 같은 패턴을 **70줄짜리 최소 코드**로 재현해 본다. 이 데모를 이해하면 `demos_v1/` 의 분리 구조도 자연스럽게 보인다.
+`app.py`는 기능이 많아서 처음에는 어렵다. 같은 패턴을 **100줄 남짓의 최소 코드**로 재현해 본다.
 
 > 아래 두 파일은 이미 `docs/examples/ch02/` 에 만들어 두었다. 바로 실행해 봐도 된다.
 
-### 2.5.1 `hello_llm.py` — 최소 채팅 서버
+### 2.6.1 핵심 호출 패턴 (참고용 30줄)
+
+사내 LLM은 OpenAI 호환이므로 `requests` 한 번이면 끝난다.
 
 ```python
-# docs/examples/ch02/hello_llm.py
-"""
-70줄짜리 미니 LLM 서버.
-- /         : 간단한 채팅 HTML
-- /api/chat : 메시지를 받아 Claude 또는 에코 응답
-실행:  python hello_llm.py  →  http://localhost:10010
-"""
-import os
-import json
-import urllib.request
-from flask import Flask, request, jsonify
+import requests
 
-app = Flask(__name__)
+with open("token.txt", "r") as f:
+    token = f.read().strip()
 
-# 1) 같은 폴더의 TOKEN.TXT 또는 상위 프로젝트의 키 사용
-def load_token():
-    for p in ("TOKEN.TXT", "../../../TOKEN.TXT"):
-        if os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
-                return f.read().strip()
-    return ""
-
-API_TOKEN = load_token()
-
-INDEX_HTML = """<!doctype html>
-<meta charset="utf-8"><title>Hello LLM</title>
-<h2>Hello LLM (mini)</h2>
-<textarea id=q rows=3 cols=60 placeholder="질문을 입력"></textarea><br>
-<button onclick="ask()">전송</button>
-<pre id=a style="white-space:pre-wrap;background:#f4f4f4;padding:8px"></pre>
-<script>
-async function ask(){
-  const q = document.getElementById('q').value;
-  const r = await fetch('/api/chat',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:q})});
-  const j = await r.json();
-  document.getElementById('a').innerText = j.reply || j.error;
+BASE = "http://common.llm.skhynix.com"
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json",
 }
-</script>
-"""
 
-@app.route("/")
-def index():
-    return INDEX_HTML
+# 1) 모델 목록
+models = requests.get(f"{BASE}/v1/models", headers=headers).json()
+models = models.get("data", models) if isinstance(models, dict) else models
+for i, m in enumerate(models):
+    name = m.get("id", m) if isinstance(m, dict) else m
+    print(f"  [{i}] {name}")
+
+# 2) 한 번 호출
+resp = requests.post(f"{BASE}/v1/chat/completions", headers=headers, json={
+    "model": "Qwen3-Coder-30B-A3B-Instruct",
+    "messages": [{"role": "user", "content": "안녕?"}],
+    "max_tokens": 1024,
+})
+print(resp.json()["choices"][0]["message"]["content"])
+```
+
+### 2.6.2 `hello_llm.py` — 미니 채팅 서버
+
+`docs/examples/ch02/hello_llm.py` 핵심 부분:
+
+```python
+BASE_URL = os.environ.get("LLM_BASE_URL", "http://common.llm.skhynix.com")
+DEFAULT_MODEL = os.environ.get("LLM_MODEL", "Qwen3-Coder-30B-A3B-Instruct")
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -178,94 +212,49 @@ def chat():
     if not msg:
         return jsonify({"error": "message is empty"}), 400
 
-    # 토큰 없으면 에코로 폴백 → 학습용
     if not API_TOKEN:
-        return jsonify({"reply": f"[ECHO] {msg}\n(TOKEN.TXT가 없어 에코 모드입니다)"})
+        return jsonify({"reply": f"[ECHO] {msg}\n(token.txt 가 없어 에코 모드)"})
 
-    # Claude API 호출 (Messages API)
-    payload = json.dumps({
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 512,
-        "messages": [{"role": "user", "content": msg}],
-    }).encode("utf-8")
+    HISTORY.append({"role": "user", "content": msg})
 
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=payload,
-        headers={
-            "x-api-key": API_TOKEN,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        method="POST",
+    resp = requests.post(
+        f"{BASE_URL}/v1/chat/completions",
+        headers={"Authorization": f"Bearer {API_TOKEN}",
+                 "Content-Type": "application/json"},
+        json={"model": DEFAULT_MODEL, "messages": HISTORY, "max_tokens": 1024},
+        timeout=120,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        text = "".join(b.get("text", "") for b in data.get("content", []))
-        return jsonify({"reply": text})
-    except Exception as e:
-        return jsonify({"error": f"API error: {e}"}), 500
+    if resp.status_code != 200:
+        HISTORY.pop()
+        return jsonify({"error": f"API {resp.status_code}: {resp.text[:300]}"}), 500
 
-
-if __name__ == "__main__":
-    print(f"🪄 Hello LLM 시작 → http://localhost:10010  (토큰: {'있음' if API_TOKEN else '없음 → 에코 모드'})")
-    app.run(host="0.0.0.0", port=10010, debug=False)
+    answer = resp.json()["choices"][0]["message"]["content"]
+    HISTORY.append({"role": "assistant", "content": answer})
+    return jsonify({"reply": answer})
 ```
 
-### 2.5.2 `smoke_test.py` — 서버 헬스체크
+특징:
+- **`token.txt`를 자동 탐색** (현재 폴더 → 프로젝트 루트)
+- **인메모리 대화 히스토리** 유지 (`/api/reset` 으로 초기화)
+- **환경변수**(`LLM_BASE_URL`, `LLM_MODEL`)로 모델·엔드포인트 변경 가능
+- 토큰이 없으면 **에코 모드**로 폴백 → 학습용
 
-`app.py` 또는 `hello_llm.py`가 정상인지 확인하는 30초짜리 스크립트.
+### 2.6.3 `smoke_test.py` — 헬스체크
 
-```python
-# docs/examples/ch02/smoke_test.py
-"""
-사용:
-  python smoke_test.py                # 기본: localhost:10009 (app.py)
-  python smoke_test.py 10010          # 포트 변경 (hello_llm.py)
-"""
-import sys
-import json
-import urllib.request
+`docs/examples/ch02/smoke_test.py` 는 **두 가지 모드**를 지원한다.
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 10009
-BASE = f"http://localhost:{PORT}"
+```bash
+# A. 로컬 서버 점검
+python smoke_test.py --port 10010      # hello_llm.py
+python smoke_test.py --port 10009      # 본 운영 app.py
 
-def get(path):
-    with urllib.request.urlopen(BASE + path, timeout=5) as r:
-        return r.status, r.read()[:200]
-
-def post_chat(msg):
-    req = urllib.request.Request(
-        BASE + "/api/chat",
-        data=json.dumps({"message": msg}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.status, json.loads(r.read().decode("utf-8"))
-
-print(f"[1/2] GET {BASE}/ ... ", end="")
-try:
-    status, body = get("/")
-    print(f"OK ({status}, {len(body)} bytes)")
-except Exception as e:
-    print(f"FAIL: {e}")
-    sys.exit(1)
-
-print(f"[2/2] POST /api/chat ... ", end="")
-try:
-    status, j = post_chat("ping?")
-    print(f"OK ({status})")
-    print("   응답:", (j.get("reply") or j.get("error") or "")[:120])
-except Exception as e:
-    print(f"FAIL: {e}")
-    sys.exit(1)
-
-print("✅ 헬스체크 통과")
+# B. 사내 LLM 엔드포인트 직접 점검 (token.txt 필요)
+python smoke_test.py --remote --list                          # 모델 목록만
+python smoke_test.py --remote                                 # 기본 모델로 ping
+python smoke_test.py --remote --model Qwen3-Coder-30B-A3B-Instruct
 ```
 
-### 2.5.3 실행 순서
+### 2.6.4 실행 순서
 
 ```bash
 # 터미널 1
@@ -274,15 +263,18 @@ python hello_llm.py
 # → http://localhost:10010
 
 # 터미널 2
-python smoke_test.py 10010
+python smoke_test.py --port 10010
 # → ✅ 헬스체크 통과
+
+# (옵션) 사내 엔드포인트가 직접 살아있는지
+python smoke_test.py --remote --list
 ```
 
 > 이 미니 데모는 **본 프로젝트의 어떤 파일도 수정하지 않는다.** 학습 전용이며, 본 운영 서버는 `scientific-assistant/app.py`다.
 
 ---
 
-## 2.6 자주 발생하는 오류 5가지
+## 2.7 자주 발생하는 오류 5가지
 
 ### 오류 1: `ModuleNotFoundError: No module named 'flask'`
 **원인** 가상환경 비활성 또는 패키지 미설치
@@ -306,50 +298,61 @@ taskkill /PID <PID> /F
 ```
 또는 `app.py` 167줄의 `port=10009`를 `10019` 등으로 변경.
 
-### 오류 3: `⚠️ TOKEN.TXT: 없음 또는 비어있음`
-**원인** API 키 파일 누락
-**해결** 1장 1.6.4 참고. 단, 5장의 GGUF 모델만 쓸 거라면 무시해도 된다.
+### 오류 3: `API 401 Unauthorized` 또는 `⚠️ token.txt 비어있음`
+**원인** 토큰 누락/만료
+**해결**
+- `token.txt` 가 같은 폴더에 있는지 확인
+- 파일 안에 **공백·개행 없이** 토큰만 있는지 확인 (`hello_llm.py`는 `strip()` 한다)
+- `curl ... /v1/models` 로 토큰이 살아있는지 직접 검증
 
-### 오류 4: `⚠️ 스킬 폴더 없음`
-**원인** `scientific-skills/`가 `app.py`와 같은 위치에 없음
-**해결** 스킬 ZIP을 풀어 `scientific-assistant/scientific-skills/`로 이동.
+### 오류 4: `API 404 Not Found: model ... is not available`
+**원인** 모델명이 사내 게이트웨이에 없음
+**해결**
+```bash
+python smoke_test.py --remote --list
+```
+로 사용 가능한 모델 ID를 확인 후 환경변수로 지정:
+```bash
+export LLM_MODEL=Qwen3-Coder-30B-A3B-Instruct
+python hello_llm.py
+```
 
 ### 오류 5: 브라우저에서 `이 사이트에 연결할 수 없음`
 **원인** 콘솔에 `Running on ...` 이 안 떴거나, 방화벽/프록시 차단
 **해결**
 - 콘솔 로그를 끝까지 확인 (다른 줄에서 멈췄다면 거기가 진짜 원인)
-- `127.0.0.1:10009` 와 `localhost:10009` 둘 다 시도
-- 사내망이면 회사 프록시 환경변수(`HTTP_PROXY`) 해제
+- `127.0.0.1:10010` 와 `localhost:10010` 둘 다 시도
+- 사내망에서 외부로 나가는 프록시 환경변수가 사내 LLM 호출까지 막을 수 있다 → `NO_PROXY=common.llm.skhynix.com` 설정
 
 ---
 
-## 2.7 종료 방법
+## 2.8 종료 방법
 
 - 콘솔에서 `Ctrl + C` 한 번 → Flask 정상 종료
 - GGUF 모델이 로드된 상태라면 메모리 해제까지 1~3초 대기
 
 ---
 
-## 2.8 2장 체크리스트
+## 2.9 2장 체크리스트
 
-- [ ] `python app.py` 실행 후 부팅 로그 확인
-- [ ] 콘솔의 8단계 로그 의미를 이해함
-- [ ] <http://localhost:10009> 에서 첫 응답 받음
-- [ ] `hello_llm.py` 를 직접 실행해 봄
-- [ ] `smoke_test.py` 가 ✅ 로 끝남
-- [ ] 5가지 오류 중 본인이 겪은 것을 해결함
+- [ ] `token.txt` 가 프로젝트 루트(또는 예제 폴더)에 존재
+- [ ] `curl ... /v1/models` 가 모델 목록을 200으로 반환
+- [ ] `python hello_llm.py` 실행 → <http://localhost:10010> 응답 확인
+- [ ] `python smoke_test.py --port 10010` → ✅ 통과
+- [ ] `python smoke_test.py --remote --list` → 모델 목록에 `Qwen3-Coder-30B-A3B-Instruct` 보임
+- [ ] `python app.py` 실행 → <http://localhost:10009> 에서 첫 응답 받음
 
 ---
 
-## 2.9 다음 장 예고
+## 2.10 다음 장 예고
 
-**제3장 — API 키와 모델 연결: Claude·GGUF·외부 모델 자유롭게 갈아끼우기**
+**제3장 — 모델·엔드포인트 자유롭게 갈아끼우기**
 - `api_config.json` 의 의미와 구조
-- 환경(`ENV_CONFIG`) 추가/제거하기
+- 사내 LLM 외 모델(다른 Qwen, Llama 등) 추가하기
 - 모델별 토큰 한도·온도(temperature) 튜닝
 - API 호출 디버깅 — `curl` 한 줄로 진단
 
 ---
 
-*문서 버전: v1.0 (2026-04-29)*
+*문서 버전: v1.1 (2026-04-29) — 사내 LLM(Qwen3-Coder-30B-A3B-Instruct) 기준으로 갱신*
 *브랜치: `claude/create-llm-guide-chapter-one-RDZ12`*

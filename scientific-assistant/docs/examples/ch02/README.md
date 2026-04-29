@@ -6,8 +6,15 @@
 
 | 파일 | 설명 | 포트 |
 |------|------|------|
-| `hello_llm.py` | 70줄짜리 미니 채팅 서버 | 10010 |
-| `smoke_test.py` | HTTP 헬스체크 스크립트 | - |
+| `hello_llm.py` | 사내 LLM(Qwen3-Coder-30B-A3B-Instruct) 호출 미니 채팅 서버 | 10010 |
+| `smoke_test.py` | 로컬 서버 / 사내 엔드포인트 헬스체크 | - |
+
+## 환경
+
+- **엔드포인트**: `http://common.llm.skhynix.com` (OpenAI 호환)
+- **기본 모델**: `Qwen3-Coder-30B-A3B-Instruct`
+- **인증**: `Authorization: Bearer <token.txt 내용>`
+- **토큰 파일**: `token.txt` (또는 `TOKEN.TXT`) — 같은 폴더 또는 프로젝트 루트
 
 ## 사용
 
@@ -16,18 +23,36 @@
 python hello_llm.py
 # → http://localhost:10010
 
-# 2) 다른 터미널에서 헬스체크
-python smoke_test.py 10010
+# 2) 로컬 서버 헬스체크
+python smoke_test.py --port 10010
 
-# 3) 본 운영 서버(app.py)도 같은 방식으로 점검 가능
-python smoke_test.py 10009
+# 3) 사내 LLM 엔드포인트 직접 점검 (token.txt 필요)
+python smoke_test.py --remote --list                       # 모델 목록
+python smoke_test.py --remote                              # ping 테스트
+python smoke_test.py --remote --model Qwen3-Coder-30B-A3B-Instruct
+```
+
+## 환경변수로 모델/엔드포인트 바꾸기
+
+```bash
+# Linux/macOS
+export LLM_BASE_URL=http://common.llm.skhynix.com
+export LLM_MODEL=Qwen3-Coder-30B-A3B-Instruct
+python hello_llm.py
+
+# Windows (PowerShell)
+$env:LLM_BASE_URL="http://common.llm.skhynix.com"
+$env:LLM_MODEL="Qwen3-Coder-30B-A3B-Instruct"
+python hello_llm.py
 ```
 
 ## 동작 모드
 
-- **TOKEN.TXT 있음** → Claude API(`claude-sonnet-4-6`) 호출
-- **TOKEN.TXT 없음** → 에코(echo) 응답 (학습용 폴백)
+- **token.txt 있음** → 사내 LLM (Qwen3-Coder-30B-A3B-Instruct) 호출
+- **token.txt 없음** → 에코(echo) 응답 (학습용 폴백)
 
-`TOKEN.TXT` 위치 탐색 순서:
-1. 현재 폴더 (`docs/examples/ch02/TOKEN.TXT`)
-2. 프로젝트 루트 (`scientific-assistant/TOKEN.TXT`)
+## 의존성
+
+```bash
+pip install flask requests
+```
