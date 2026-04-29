@@ -460,7 +460,8 @@ def register_chat_routes(app):
             try:
                 _chat_user_id = data.get("user_id", None)
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
-                kb_results = search_knowledge(last_user_query, max_results=3, max_content_chars=4000, user_id=_chat_user_id)
+                # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
+                kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
