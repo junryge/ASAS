@@ -42,13 +42,20 @@ def _find_mmproj_file(model_path):
     return None
 
 
-def load_gguf_model(model_path, n_ctx=4096, n_gpu_layers=99, n_batch=512):
-    """llama-cpp-python으로 GGUF 모델 로드 (이미 같은 모델이면 스킵)
+def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=512):
+    """llama-cpp-python으로 GGUF 모델 로드 (같은 모델 + 충분한 ctx면 스킵, 부족하면 재로드)
     mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
-    # 이미 같은 모델이 로드되어 있으면 스킵
+    # 이미 같은 모델 + n_ctx 충분 → 스킵 / ctx 부족하면 재로드
     if _utils_mod.gguf_loaded_path == model_path and _utils_mod.gguf_model is not None:
-        print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)}")
-        return True
+        try:
+            _cur_ctx_attr = getattr(_utils_mod.gguf_model, 'n_ctx', None)
+            _cur_ctx = _cur_ctx_attr() if callable(_cur_ctx_attr) else (_cur_ctx_attr if _cur_ctx_attr else 0)
+        except Exception:
+            _cur_ctx = 0
+        if _cur_ctx >= n_ctx:
+            print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)} (ctx={_cur_ctx})")
+            return True
+        print(f"     🔄 ctx 부족 ({_cur_ctx} < {n_ctx}) → 재로드")
 
     try:
         from llama_cpp import Llama
