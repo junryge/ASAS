@@ -36,6 +36,8 @@ from demos_v1.config import API_TOKEN
 from demos_v1.models import MODEL_REGISTRY, ENV_TO_REGISTRY
 from demos_v1.skills import load_skill_content
 from demos_v1.engine import _build_agent_system_prompt
+from demos_v1.knowledge import search_knowledge
+from demos_v1.quality import _sanitize_knowledge_content
 
 # requests SSL warning suppression (페쇄망 self-signed)
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
@@ -133,8 +135,67 @@ def register_chat_stream_routes(app):
         if user_system_prompt:
             agent_system = user_system_prompt + "\n\n" + agent_system
 
-        # 최종 메시지 구성: system 통합 + 기존 messages
+        # ── knowledge-search 스킬: 도메인 지식 BM25 검색 결과 주입 ──
+        # routes_chat.py 의 동작과 동일하게 (수동 선택 시 활성화)
+        kb_files_used = []
+        last_user_query = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                _c = m.get("content", "")
+                if isinstance(_c, str):
+                    last_user_query = _c
+                elif isinstance(_c, list):
+                    last_user_query = "\n".join(p.get("text", "") for p in _c if p.get("type") == "text")
+                break
+
+        kb_system_msg = None
+        if "knowledge-search" in loaded_skills and last_user_query.strip():
+            try:
+                _user_id = data.get("user_id", None)
+                kb_results = search_knowledge(
+                    last_user_query, max_results=10, max_content_chars=4000, user_id=_user_id
+                )
+                if kb_results:
+                    kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
+                    kb_context += f"검색어: {last_user_query}\n\n"
+                    total_chars = 0
+                    for r in kb_results:
+                        chunk = _sanitize_knowledge_content(r['content'][:4000])
+                        if total_chars + len(chunk) > 12000:
+                            chunk = chunk[:max(0, 12000 - total_chars)]
+                            if not chunk:
+                                break
+                        kb_context += f"--- 📄 {r['filename']} (관련도: {r['score']}) ---\n"
+                        kb_context += chunk + "\n\n"
+                        total_chars += len(chunk)
+                    _ql = last_user_query.lower()
+                    _is_search_only = any(kw in _ql for kw in [
+                        "검색해", "검색 해", "찾아봐", "찾아 봐",
+                        "뭐있", "뭐 있", "목록", "리스트", "파일명", "문서 목록"
+                    ])
+                    _is_content_request = any(kw in _ql for kw in [
+                        "내용", "관련", "알려", "설명", "분석", "요약", "만들어"
+                    ])
+                    if _is_search_only and not _is_content_request:
+                        kb_context += (
+                            "사용자가 '검색'을 요청했습니다. 파일명 목록과 관련도 점수만 간단히 보여주세요.\n"
+                            "문서 내용을 분석하거나 요약하지 마세요. 파일명 리스트만 출력하세요.\n"
+                        )
+                    else:
+                        kb_context += (
+                            "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. "
+                            "어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
+                        )
+                    kb_system_msg = {"role": "system", "content": kb_context}
+                    kb_files_used = [r['filename'] for r in kb_results]
+                    print(f"  [STREAM/KNOWLEDGE] {len(kb_results)}개 문서 주입, total_chars={total_chars}")
+            except Exception as e:
+                print(f"[STREAM/KNOWLEDGE] 검색 오류: {e}")
+
+        # 최종 메시지 구성: skills system + knowledge system + 기존 messages
         final_msgs = [{"role": "system", "content": agent_system}]
+        if kb_system_msg:
+            final_msgs.append(kb_system_msg)
         for m in messages:
             # 다중 system 회피: 사용자가 보낸 system 도 받지만 첫 system 뒤에 user 로 변환
             if m.get("role") == "system":
@@ -159,12 +220,13 @@ def register_chat_stream_routes(app):
         # disable_fallback=True 면 타임아웃 600s, 아니면 120s
         timeout_s = 600 if data.get("disable_fallback") else 120
 
-        sys_prompt_len = len(agent_system)
+        sys_prompt_len = len(agent_system) + (len(kb_system_msg["content"]) if kb_system_msg else 0)
         meta = {
             "model_used": model,
             "loaded_skills": loaded_skills,
             "system_prompt_length": sys_prompt_len,
             "env_id": env_id,
+            "knowledge_files": kb_files_used,
         }
 
         def generate():
