@@ -789,7 +789,7 @@ body.rp-collapsed .chat-box-fixed{right:0}
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Demos V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 하네스 사용중</span><button onclick="toggleMainTokenSettings()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:2px 10px;border-radius:10px;margin-left:6px;cursor:pointer;font-weight:500;" title="토큰/컨텍스트 설정">⚙️ 토큰 설정</button><span style="font-size:11px;color:#9ca3af;margin-left:6px;">2달에 한번 스킬 업데이트 | 사용을 많이 해줄수록 기능이 업데이트 됩니다</span></div>
+    <div class="project-title">📁 Demos V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 하네스 사용중</span><span style="font-size:11px;color:#9ca3af;margin-left:6px;">2달에 한번 스킬 업데이트 | 사용을 많이 해줄수록 기능이 업데이트 됩니다</span></div>
     <div style="display:flex;align-items:center;gap:6px;">
       <button id="hdKdBtn" onclick="openKnowledgePopup()" style="font-size:12px;color:#fff;background:#22c55e;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">📚 내 지식</button>
       <button id="hdAdminBtn" onclick="openAdminPopup()" style="display:none;font-size:12px;color:#000;background:#f59e0b;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">👑 사용자 관리</button>
@@ -799,50 +799,6 @@ body.rp-collapsed .chat-box-fixed{right:0}
       <button onclick="openHarnessSessionTab()" style="font-size:12px;color:#6366f1;background:#eef2ff;border:1px solid #c7d2fe;padding:4px 12px;border-radius:8px;cursor:pointer;font-weight:500;">💾 저장 세션</button>
       <a href="/uio" target="_blank" class="uio-enter-btn">🎮 2D 오피스</a>
       <span id="status" class="status off">⚪ 환경 미선택</span>
-    </div>
-  </div>
-  <!-- 토큰 설정 패널 (프로젝트 타이틀 아래 드롭다운) -->
-  <div id="mainTokenPanel" style="display:none;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
-    <div style="display:flex;gap:24px;flex-wrap:wrap;">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#6366f1;margin-bottom:6px;">🌐 API 설정</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-          <div style="min-width:140px;">
-            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">API max_tokens (응답 길이)</label>
-            <select id="mainAgentMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-              <option value="2048">2048 (짧게)</option><option value="4096">4096 (보통)</option><option value="8192">8192 (길게)</option><option value="16384">16384 (매우 길게)</option>
-            </select>
-          </div>
-          <div style="min-width:140px;">
-            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">CEO 합성 max_tokens (보고서)</label>
-            <select id="mainSynthMaxTokens" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-              <option value="4096">4096 (짧게)</option><option value="8192">8192 (보통)</option><option value="16384">16384 (길게)</option><option value="32768">32768 (매우 길게)</option>
-            </select>
-          </div>
-        </div>
-      </div>
-      <div style="border-left:1px solid #e2e8f0;padding-left:24px;">
-        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:6px;">💻 GGUF 설정</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-          <div style="min-width:140px;">
-            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">n_ctx 컨텍스트 윈도우</label>
-            <select id="mainNCtx" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-              <option value="4096">4096 (빠름)</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768 (대용량)</option>
-            </select>
-          </div>
-          <div style="min-width:140px;">
-            <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px;">GGUF 응답 상한 (reply cap)</label>
-            <select id="mainReplyCap" onchange="updateMainTokenSetting()" style="width:100%;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:12px;">
-              <option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
-      <button onclick="saveTokenSettings()" style="padding:6px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">💾 저장 및 적용</button>
-      <span id="tokenSaveStatus" style="font-size:11px;color:#22c55e;display:none;">✅ 저장 완료</span>
-      <span style="font-size:10px;color:#94a3b8;">API: max_tokens↑ = 긴 응답 | GGUF: n_ctx↑ = 긴 대화 가능, VRAM 사용↑</span>
     </div>
   </div>
   <div class="content">
@@ -1636,8 +1592,6 @@ function _makeEnvBtn(id, env, icons){
     } else {
       selEnvs = [id];
     }
-    // 모델 타입에 따라 토큰 자동 설정
-    autoApplyTokenSettings(id);
     renderEnvs(); updateStatus();
   };
   return btn;
@@ -1941,79 +1895,6 @@ function toggleAutoSkill(){
 setTimeout(()=>{
   document.getElementById('autoSkillToggle').classList.toggle('on', autoSkillMode);
 }, 200);
-
-// ── 토큰 설정 (메인 페이지) ──
-function toggleMainTokenSettings(){
-  const panel = document.getElementById('mainTokenPanel');
-  if(!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if(panel.style.display === 'block') loadMainTokenSettings();
-}
-
-async function loadMainTokenSettings(){
-  try{
-    const r = await fetch('/api/config/tokens');
-    const ts = await r.json();
-    const map = {
-      mainAgentMaxTokens: 'agent_max_tokens',
-      mainSynthMaxTokens: 'synth_max_tokens',
-      mainNCtx: 'default_n_ctx',
-      mainReplyCap: 'gguf_reply_cap',
-    };
-    for(const [elId, key] of Object.entries(map)){
-      const sel = document.getElementById(elId);
-      if(sel && ts[key]) sel.value = String(ts[key]);
-    }
-  }catch(e){}
-}
-
-function updateMainTokenSetting(){
-  // 드롭다운 변경 시 UI만 업데이트 (저장 버튼 눌러야 서버 반영)
-  const status = document.getElementById('tokenSaveStatus');
-  if(status){ status.style.display='none'; }
-}
-
-async function saveTokenSettings(){
-  const data = {
-    agent_max_tokens: parseInt(document.getElementById('mainAgentMaxTokens')?.value || '8192'),
-    synth_max_tokens: parseInt(document.getElementById('mainSynthMaxTokens')?.value || '16384'),
-    default_n_ctx: parseInt(document.getElementById('mainNCtx')?.value || '4096'),
-    gguf_reply_cap: parseInt(document.getElementById('mainReplyCap')?.value || '4096'),
-  };
-  try{
-    await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    const status = document.getElementById('tokenSaveStatus');
-    if(status){ status.style.display='inline'; setTimeout(()=>{ status.style.display='none'; }, 3000); }
-  }catch(e){ alert('저장 실패: ' + e); }
-}
-
-
-// 모델 타입에 따라 토큰 자동 설정
-async function autoApplyTokenSettings(envId){
-  const isGguf = envId.startsWith('gguf-');
-  const isAuto = (envId === 'auto');
-  let data;
-  if(isGguf){
-    // GGUF: 빠른 설정 (RTX 3060 12GB 최적화)
-    data = { default_n_ctx: 4096, gguf_reply_cap: 4096 };
-    const nctx = document.getElementById('mainNCtx');
-    const cap = document.getElementById('mainReplyCap');
-    if(nctx) nctx.value = '4096';
-    if(cap) cap.value = '4096';
-  } else if(!isAuto){
-    // API: 기본 설정
-    data = { agent_max_tokens: 8192, synth_max_tokens: 16384 };
-    const agent = document.getElementById('mainAgentMaxTokens');
-    const synth = document.getElementById('mainSynthMaxTokens');
-    if(agent) agent.value = '8192';
-    if(synth) synth.value = '16384';
-  } else {
-    return; // auto는 변경 안 함
-  }
-  try{
-    await fetch('/api/config/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  }catch(e){}
-}
 
 // 입력 중 자동 스킬 미리보기 (디바운스)
 let autoSkillTimer = null;
