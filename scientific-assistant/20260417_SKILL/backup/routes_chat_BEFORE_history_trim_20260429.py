@@ -232,17 +232,6 @@ def register_chat_routes(app):
                 model = data.get("model", "")
         api_key = API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
-        # ── 히스토리 자동 트림: 최근 6턴(12 메시지)만 유지 ──
-        # 응답 잘림·느림 방지: 입력 토큰 폭증 차단
-        # system 메시지는 보존, 그 외 user/assistant 만 최근 12개로 컷
-        MAX_HISTORY_MESSAGES = 12
-        _orig_msg_count = len(messages)
-        if _orig_msg_count > MAX_HISTORY_MESSAGES:
-            _sys_msgs = [m for m in messages if m.get("role") == "system"]
-            _non_sys = [m for m in messages if m.get("role") != "system"]
-            _recent = _non_sys[-MAX_HISTORY_MESSAGES:]
-            messages = _sys_msgs + _recent
-            print(f"  [HISTORY TRIM] {_orig_msg_count} → {len(messages)} 메시지 (최근 {MAX_HISTORY_MESSAGES} 턴 유지)")
         skill_ids = data.get("skills", [])
         effort = data.get("effort", 2)
         output_format = data.get("format", "code")
