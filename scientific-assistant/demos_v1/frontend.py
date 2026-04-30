@@ -5139,6 +5139,7 @@ async function runCodeAssistant(){
           system_prompt: document.getElementById('systemPromptInput').value.trim(),
           max_tokens: maxTokens,
           think_mode: document.getElementById('thinkToggle').checked,
+          disable_fallback: true,  // Code Assistant: 사용자가 선택한 대형 모델 고정, 폴백 금지
         })
       });
       const data = await resp.json();
