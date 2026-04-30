@@ -399,11 +399,6 @@ body.rp-collapsed .chat-box-fixed{right:0}
 .rp-result-header button{background:none;border:1px solid #45475a;color:#cdd6f4;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px}
 .rp-result-header button:hover{background:#313244}
 .rp-skill-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#eef2ff;color:#6366f1;margin-left:6px}
-.rp-model-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.rp-model-btn{flex:1;min-width:70px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#6b7280;transition:all 0.15s;text-align:center}
-.rp-model-btn:hover{border-color:#6366f1;color:#4f46e5}
-.rp-model-btn.active{background:#eef2ff;border-color:#6366f1;color:#4f46e5}
-.rp-model-btn .icon{font-size:14px;display:block;margin-bottom:2px}
 .rp-tree{font-size:12px;max-height:250px;overflow-y:auto;border:1px solid #e5e3de;border-radius:8px;padding:8px;background:#fafaf9;margin-bottom:8px}
 .rp-tree-node{padding:2px 0;cursor:pointer;user-select:none;display:flex;align-items:center;gap:2px}
 .rp-tree-cb{width:14px;height:14px;cursor:pointer;accent-color:#6366f1;flex-shrink:0}
@@ -1026,30 +1021,8 @@ body.rp-collapsed .chat-box-fixed{right:0}
       <div class="rp-file-list" id="rpFileList"></div>
     </div>
 
-    <!-- 분석 모델 선택 (API 대형 모델) -->
     <div class="rp-section">
-      <div class="rp-section-title">분석 모델 <span style="font-size:10px;color:#6b7280">(대형 API)</span></div>
-      <div class="rp-model-row" id="rpModelRow">
-        <button class="rp-model-btn active" data-model="kimi-k25" onclick="selectRpModel(this)">
-          <span class="icon">🔥</span>Kimi-K2.5
-        </button>
-        <button class="rp-model-btn" data-model="coder-480b" onclick="selectRpModel(this)">
-          <span class="icon">🚀</span>Coder-480B
-        </button>
-        <button class="rp-model-btn" data-model="qwen35-397b" onclick="selectRpModel(this)">
-          <span class="icon">🦣</span>Qwen3.5-397B
-        </button>
-        <button class="rp-model-btn" data-model="qwen35-397b-fp8" onclick="selectRpModel(this)">
-          <span class="icon">🦣</span>397B FP8
-        </button>
-        <button class="rp-model-btn" data-model="glm-5-1" onclick="selectRpModel(this)">
-          <span class="icon">💎</span>GLM-5.1
-        </button>
-      </div>
-    </div>
-
-    <div class="rp-section">
-      <div class="rp-section-title">분석 모드 선택 <span id="rpModelBadge" style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:6px;">🔥 Kimi-K2.5</span></div>
+      <div class="rp-section-title">분석 모드 선택 <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:6px;">🚀 Coder-480B 전용</span></div>
       <div class="rp-action-grid">
         <button class="rp-action-btn" data-mode="explain" onclick="selectRpMode(this)">
           <span class="rp-btn-icon">📖</span>
@@ -1238,7 +1211,6 @@ body.rp-collapsed .chat-box-fixed{right:0}
 let envs = {};
 let hasToken = false;
 let selEnvs = ['auto'];  // 배열: ['auto'] 또는 ['gguf-0','gguf-1'] 또는 ['coder-480b','dev']
-let selRpModel = 'kimi-k25';  // Code Assistant 패널 전용 모델 (기본: Kimi-K2.5)
 let catalog = {};
 let selDomains = [];
 let selSkills = [];
@@ -4782,21 +4754,6 @@ function toggleRightPanel(){
   });
 })();
 
-function selectRpModel(btn){
-  document.querySelectorAll('.rp-model-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  selRpModel = btn.dataset.model;
-  const badges = {
-    'kimi-k25':'🔥 Kimi-K2.5',
-    'coder-480b':'🚀 Coder-480B',
-    'qwen35-397b':'🦣 Qwen3.5-397B',
-    'qwen35-397b-fp8':'🦣 397B FP8',
-    'glm-5-1':'💎 GLM-5.1'
-  };
-  const badge = document.getElementById('rpModelBadge');
-  if(badge) badge.textContent = badges[selRpModel] || selRpModel;
-}
-
 function switchUploadMode(mode, btn){
   document.querySelectorAll('.rp-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
@@ -5126,7 +5083,7 @@ async function runCodeAssistant(){
         headers:{'Content-Type':'application/json'},
         signal: chatAbort.signal,
         body:JSON.stringify({
-          env: [selRpModel],
+          env: ['coder-480b'],
           messages: history,
           skills: [...selSkills],
           effort,
