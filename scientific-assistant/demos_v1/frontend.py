@@ -2216,6 +2216,11 @@ async function send(){
         } else {
           info = '\n['+modelName+']';
         }
+        if(_ssMeta && _ssMeta.knowledge_files && _ssMeta.knowledge_files.length > 0){
+          info += ' [\ud83d\udcda 지식: '+_ssMeta.knowledge_files.slice(0,3).join(', ');
+          if(_ssMeta.knowledge_files.length > 3) info += ' +'+(_ssMeta.knowledge_files.length-3);
+          info += ']';
+        }
         if(_ssMeta && _ssMeta.elapsed_ms) info += ' [\u23f1\ufe0f '+(_ssMeta.elapsed_ms/1000).toFixed(1)+'s]';
         info += ' [\u26a1 \uc2a4\ud2b8\ub9ac\ubc0d]';
         addMsg('assistant', _ssFullText + info, _ssFullText);
@@ -5338,6 +5343,11 @@ async function runCodeAssistant(){
             info += '\n['+_ssMeta.model_used+']';
           }
           if(_ssMeta.elapsed_ms) info += ' [\u23f1\ufe0f '+(_ssMeta.elapsed_ms/1000).toFixed(1)+'s]';
+          if(_ssMeta.knowledge_files && _ssMeta.knowledge_files.length > 0){
+            info += ' [\ud83d\udcda 지식: '+_ssMeta.knowledge_files.slice(0,3).join(', ');
+            if(_ssMeta.knowledge_files.length > 3) info += ' +'+(_ssMeta.knowledge_files.length-3);
+            info += ']';
+          }
         }
         addMsg('assistant', _ssFullText + info, _ssFullText);
         history.push({role:'assistant', content:_ssFullText});
