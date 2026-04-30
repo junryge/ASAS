@@ -260,6 +260,10 @@ def register_chat_routes(app):
         _srv_is_drawio = False
         _srv_is_pptx = False
         _api_timeout = 120
+        # Code Assistant 등 폴백 비활성 요청은 대형 모델로 큰 코드 분석 → 타임아웃 10분
+        if data.get("disable_fallback", False):
+            _api_timeout = 600
+            print(f"  [TIMEOUT BOOST] disable_fallback=True → _api_timeout=600s (10분)")
 
         # ── 토큰 자동 결정 (API/GGUF 모두) ──
         if is_gguf:
