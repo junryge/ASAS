@@ -5141,8 +5141,23 @@ async function runCodeAssistant(){
       runBtn.textContent = '\u23f3 ' + _rpModelLabel + ' 분석 중... ('+timeStr+')'+note;
     }, 1000);
 
+    // SSE 스트리밍 메시지 박스 준비
+    typing.remove();
+    const _ssMsgs = document.getElementById('msgs');
+    const _ssBox = document.createElement('div');
+    _ssBox.className = 'msg assistant streaming';
+    _ssBox.innerHTML = '<div class="msg-label">Demos <span style="font-size:10px;color:#6366f1;">\u23f5 스트리밍</span></div><div class="streaming-content" style="white-space:pre-wrap;word-break:break-word;"></div>';
+    _ssMsgs.appendChild(_ssBox);
+    const _ssContent = _ssBox.querySelector('.streaming-content');
+    const _ssScroller = document.querySelector('.content');
+    if(_ssScroller) _ssScroller.scrollTop = _ssScroller.scrollHeight;
+
+    let _ssFullText = '';
+    let _ssMeta = null;
+    let _ssError = null;
+
     try{
-      const resp = await fetch('/api/chat',{
+      const resp = await fetch('/api/chat/stream',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         signal: chatAbort.signal,
@@ -5151,45 +5166,75 @@ async function runCodeAssistant(){
           messages: history,
           skills: [...selSkills],
           effort,
-          format: formatManualOverride ? selFormat : 'auto',
-          writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
           system_prompt: document.getElementById('systemPromptInput').value.trim(),
           max_tokens: maxTokens,
-          think_mode: document.getElementById('thinkToggle').checked,
-          disable_fallback: true,  // Code Assistant: 사용자가 선택한 대형 모델 고정, 폴백 금지
+          disable_fallback: true,  // Code Assistant: 사용자 선택 모델 고정, 폴백 금지
         })
       });
-      const data = await resp.json();
-      typing.remove();
-      if(data.error){
-        addMsg('assistant','\u274c '+data.error);
+      if(!resp.ok || !resp.body){
+        _ssError = '서버 응답 실패: HTTP '+resp.status;
       } else {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        while(true){
+          const {value, done} = await reader.read();
+          if(done) break;
+          buffer += decoder.decode(value, {stream:true});
+          let idx;
+          while((idx = buffer.indexOf('\n\n')) !== -1){
+            const evRaw = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const lines = evRaw.split('\n');
+            for(const ln of lines){
+              if(!ln.startsWith('data:')) continue;
+              const payload = ln.slice(5).trim();
+              if(!payload) continue;
+              try{
+                const ev = JSON.parse(payload);
+                if(ev.error){
+                  _ssError = ev.error;
+                } else if(typeof ev.delta === 'string'){
+                  _ssFullText += ev.delta;
+                  _ssContent.textContent = _ssFullText;
+                  if(_ssScroller) _ssScroller.scrollTop = _ssScroller.scrollHeight;
+                } else if(ev.done){
+                  _ssMeta = ev;
+                }
+              }catch(_e){}
+            }
+          }
+        }
+      }
+
+      // 스트리밍 박스 제거 후 정식 마크다운 메시지로 다시 그림
+      _ssBox.remove();
+      if(_ssError){
+        addMsg('assistant','\u274c '+_ssError);
+      } else if(_ssFullText){
         let info = '';
-        if(data.loaded_skills && data.loaded_skills.length > 0){
-          let extra = data.tokens_budget ? ' ['+data.tokens_budget+']' : '';
-          let _se2 = selEnvs[0]||'auto';
-          let mName = data.model_used || (envs[_se2] ? envs[_se2].name : (selEnvs.length>=2 ? selEnvs.length+'개 병렬' : _se2));
-          info = '\n[\u2705 '+data.loaded_skills.join(', ')+'] ['+mName+'] ('+(data.system_prompt_length ?? 0)+'\uc790)'+extra;
+        if(_ssMeta){
+          if(_ssMeta.loaded_skills && _ssMeta.loaded_skills.length > 0){
+            info += '\n[\u2705 '+_ssMeta.loaded_skills.join(', ')+'] ['+(_ssMeta.model_used||selRpModel)+'] ('+(_ssMeta.system_prompt_length ?? 0)+'\uc790)';
+          } else if(_ssMeta.model_used){
+            info += '\n['+_ssMeta.model_used+']';
+          }
+          if(_ssMeta.elapsed_ms) info += ' [\u23f1\ufe0f '+(_ssMeta.elapsed_ms/1000).toFixed(1)+'s]';
         }
-        if(data.auto_routed){ info += ' [\uD83E\uDD16 자동: '+data.model_used+' ('+data.route_reason+')]'; }
-        if(data.fallback_used){ info += ' [\u26A0\uFE0F 대체: '+data.fallback_from+' \u2192 '+data.model_used+']'; }
-        if(data.parallel_agents && data.parallel_agents >= 2){
-          let pG = (data.parallel_groups||[]).join(', ');
-          let pM = (data.parallel_models||[]).join(', ');
-          let pS = data.parallel_synthesis==='fallback_concat'?'(단순연결)':'(합성)';
-          info += ' [🔀 병렬 '+data.parallel_agents+'에이전트: '+pG+'] [모델: '+pM+'] '+pS;
-          if(data.parallel_failed>0) info += ' [⚠️ '+data.parallel_failed+'개 실패]';
-        }
-        let truncWarn = data.truncated ? '\n\n⚠️ **응답이 토큰 한도('+maxTokens+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.' : '';
-        const assistantDisplayText = data.content + truncWarn + info;
-        const assistantRawForDetect = data.content + truncWarn;
-        addMsg('assistant', assistantDisplayText, assistantRawForDetect);
-        history.push({role:'assistant', content:data.content});
+        addMsg('assistant', _ssFullText + info, _ssFullText);
+        history.push({role:'assistant', content:_ssFullText});
+      } else {
+        addMsg('assistant','\u274c 빈 응답');
       }
     }catch(e){
-      typing.remove();
+      // 스트리밍 박스 잔존물 정리
+      if(_ssBox && _ssBox.parentElement) _ssBox.remove();
       if(e.name !== 'AbortError'){
         addMsg('assistant','\u274c 서버 연결 실패: '+e.message);
+      } else if(_ssFullText){
+        // 사용자 취소 — 지금까지 받은 부분 살려서 표시
+        addMsg('assistant', _ssFullText + '\n\n[\u23f9 사용자 취소]', _ssFullText);
+        history.push({role:'assistant', content:_ssFullText});
       }
     }
     clearInterval(_rpTimerInterval);
