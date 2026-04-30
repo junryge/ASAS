@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMOS MAP SYSTEM PRO - AGV Floor System</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { overflow:hidden; background:#050a18; font-family:'Malgun Gothic','맑은 고딕','Segoe UI',Arial,sans-serif; color:#fff; }
+
+/* === 로딩 === */
+#loading { position:fixed; top:0; left:0; width:100%; height:100%; background:#050a18; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; }
+#loading h1 { font-size:36px; color:#00d4ff; letter-spacing:3px; text-shadow:0 0 30px rgba(0,212,255,0.5); }
+#loading .sub { font-size:14px; color:#7b2fff; letter-spacing:5px; margin:6px 0; }
+#loading .author { font-size:11px; color:#445; margin-bottom:20px; }
+#loading .bar-bg { width:380px; height:5px; background:#111a30; border-radius:3px; overflow:hidden; }
+#loading .bar-fill { height:100%; width:0%; background:linear-gradient(90deg,#00d4ff,#7b2fff); transition:width .3s; }
+#loading .status { margin-top:10px; color:#667; font-size:13px; }
+
+/* === 헤더 === */
+#header { height:52px; background:linear-gradient(180deg,#0c1428 0%,#080e20 100%); border-bottom:2px solid rgba(0,212,255,0.25); display:flex; justify-content:space-between; align-items:center; padding:0 20px; flex-shrink:0; }
+#header h1 { font-size:17px; color:#00d4ff; display:flex; align-items:center; gap:10px; }
+.badge { background:linear-gradient(135deg,#ff6600,#cc5200); padding:3px 10px; border-radius:4px; font-size:10px; }
+.fab-name { background:rgba(0,212,255,0.08); padding:3px 10px; border-radius:4px; font-size:11px; border:1px solid rgba(0,212,255,0.25); }
+.header-right { display:flex; align-items:center; gap:16px; font-size:11px; color:#778; }
+.status-dot { width:8px; height:8px; border-radius:50%; background:#00ff88; box-shadow:0 0 8px #00ff88; display:inline-block; margin-right:4px; }
+.kpi-row { display:flex; gap:4px; align-items:center; }
+.kpi-label { font-size:10px; color:#889; margin-right:4px; }
+.kpi-digit { background:#0a1530; border:1px solid rgba(0,212,255,0.2); border-radius:3px; width:22px; height:28px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; color:#00d4ff; }
+
+/* === 메인 레이아웃 === */
+#app { display:flex; flex-direction:column; height:100vh; }
+#main-container { display:flex; flex:1; overflow:hidden; }
+.sidebar-toggle { width:24px; background:linear-gradient(180deg,#0c1428,#080e1a); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#00d4ff; font-size:13px; flex-shrink:0; writing-mode:vertical-rl; padding:8px 0; }
+.sidebar-toggle:hover { background:#151e38; }
+.sidebar-toggle .label { font-size:9px; color:#667; letter-spacing:2px; margin-top:6px; }
+#left-toggle { border-right:1px solid #0f1a30; }
+#right-toggle { border-left:1px solid #0f1a30; }
+
+/* === 좌측 패널 === */
+#left-panel { width:260px; min-width:0; background:linear-gradient(180deg,#0a0f20 0%,#070b18 100%); border-right:1px solid #0f1a30; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; transition:width .3s,min-width .3s; }
+#left-panel.collapsed { width:0; min-width:0; overflow:hidden; border-right:none; }
+#left-panel::-webkit-scrollbar { width:4px; }
+#left-panel::-webkit-scrollbar-thumb { background:#222; border-radius:2px; }
+.panel-section { padding:12px 14px; border-bottom:1px solid #0f1a30; }
+.panel-title { font-size:11px; color:#00d4ff; font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+.stat-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; }
+.stat-box { background:linear-gradient(135deg,#0c1830 0%,#0a1225 100%); border:1px solid #152040; border-radius:8px; padding:8px 6px; text-align:center; }
+.stat-box .icon { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:10px; margin-bottom:3px; }
+.stat-box .icon.green { background:rgba(0,200,100,0.2); color:#00cc66; }
+.stat-box .icon.yellow { background:rgba(255,200,0,0.2); color:#ffcc00; }
+.stat-box .icon.blue { background:rgba(0,150,255,0.2); color:#0099ff; }
+.stat-box .icon.gray { background:rgba(120,120,140,0.2); color:#888; }
+.stat-box .icon.red { background:rgba(255,50,50,0.2); color:#ff4444; }
+.stat-box .icon.orange { background:rgba(255,150,0,0.2); color:#ff9900; }
+.stat-box .num { font-size:22px; font-weight:700; color:#fff; }
+.stat-box .lbl { font-size:9px; color:#778; margin-top:2px; }
+.agv-detail { background:linear-gradient(135deg,#0c1830,#0a1225); border:1px solid #152040; border-radius:10px; padding:12px; }
+.agv-detail-header { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#889; margin-bottom:8px; }
+.agv-img-area { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+.agv-icon-box { width:80px; height:60px; background:radial-gradient(ellipse at center,#0d1a35,#080e20); border:1px solid #1a2545; border-radius:10px; display:flex; align-items:center; justify-content:center; }
+.agv-big-id { font-size:36px; font-weight:700; color:#fff; line-height:1; }
+.agv-info-row { display:flex; justify-content:space-between; font-size:11px; padding:3px 0; }
+.agv-info-row .k { color:#778; }
+.agv-info-row .v { color:#00d4ff; font-weight:600; }
+.agv-info-row .v.traffic { color:#ff9900; }
+.agv-info-row .v.running,.agv-info-row .v.run { color:#00cc66; }
+.agv-info-row .v.charging,.agv-info-row .v.charge { color:#ffcc00; }
+.agv-info-row .v.error,.agv-info-row .v.jam { color:#ff4444; }
+.battery-bar { width:60px; height:8px; background:#111a30; border-radius:4px; overflow:hidden; display:inline-block; vertical-align:middle; margin-left:4px; }
+.battery-fill { height:100%; background:linear-gradient(90deg,#ff4444,#ffcc00,#00cc66); border-radius:4px; }
+
+/* === 우측 패널 === */
+#right-panel { width:260px; min-width:0; background:linear-gradient(180deg,#0a0f20,#070b18); border-left:1px solid #0f1a30; display:flex; flex-direction:column; transition:width .3s,min-width .3s; }
+#right-panel.collapsed { width:0; min-width:0; overflow:hidden; border-left:none; }
+.right-tabs { display:flex; border-bottom:1px solid #0f1a30; }
+.right-tab { flex:1; padding:10px 8px; text-align:center; font-size:11px; font-weight:700; color:#667; cursor:pointer; background:#080e1a; border-bottom:2px solid transparent; transition:all .2s; }
+.right-tab:hover { color:#aab; }
+.right-tab.active { color:#00d4ff; border-bottom-color:#00d4ff; background:#0c1428; }
+.right-content { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.right-content>.tab-pane { display:none; flex:1; flex-direction:column; overflow:hidden; }
+.right-content>.tab-pane.active { display:flex; }
+.agv-filter-tabs { display:flex; gap:3px; padding:8px 10px; background:#080e1a; }
+.agv-ftab { padding:4px 8px; font-size:10px; border:1px solid #1a2545; background:#0c1428; color:#667; border-radius:4px; cursor:pointer; transition:all .2s; }
+.agv-ftab:hover { border-color:#335; color:#aab; }
+.agv-ftab.active { background:rgba(0,212,255,0.15); color:#00d4ff; border-color:#00d4ff; }
+#agvSearchInput { width:calc(100% - 20px); margin:6px 10px; padding:6px 10px; background:#0c1428; border:1px solid #1a2545; color:#fff; border-radius:5px; font-size:11px; }
+.agv-list { flex:1; overflow-y:auto; padding:6px 10px; }
+.agv-list::-webkit-scrollbar { width:4px; }
+.agv-list::-webkit-scrollbar-thumb { background:#222; border-radius:2px; }
+.agv-list-item { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; margin-bottom:4px; background:linear-gradient(135deg,#0c1830,#0a1225); border:1px solid #152040; border-radius:8px; border-left:3px solid #333; font-size:11px; cursor:pointer; transition:all .2s; }
+.agv-list-item:hover { background:#151e38; border-color:rgba(0,212,255,0.3); }
+.agv-badge { padding:2px 8px; border-radius:3px; font-size:9px; font-weight:700; }
+.agv-badge.run { background:#00cc55; color:#000; }
+.agv-badge.loaded { background:#ffaa00; color:#000; }
+.agv-badge.charge { background:#3399ff; color:#fff; }
+.agv-badge.stop { background:#555; color:#fff; }
+.agv-badge.jam { background:#ff2255; color:#fff; }
+
+/* === 3D 뷰 === */
+#view-container { flex:1; position:relative; overflow:hidden; background:#050a18; }
+#controls-float { position:absolute; top:12px; right:12px; z-index:50; background:rgba(8,14,30,0.92); border:1px solid rgba(123,47,255,0.25); border-radius:10px; backdrop-filter:blur(8px); min-width:190px; max-width:220px; }
+.ctrl-header { padding:8px 12px; cursor:move; display:flex; justify-content:space-between; align-items:center; }
+.ctrl-header h3 { font-size:12px; color:#7b2fff; }
+.ctrl-body { padding:0 12px 12px; max-height:55vh; overflow-y:auto; }
+.ctrl-body.collapsed { display:none; }
+.ctrl-body::-webkit-scrollbar { width:3px; }
+.ctrl-body::-webkit-scrollbar-thumb { background:#333; border-radius:2px; }
+.ctrl-group { margin-bottom:8px; }
+.ctrl-group label { font-size:10px; color:#778; display:block; margin-bottom:3px; }
+.ctrl-group input[type=range] { width:100%; -webkit-appearance:none; height:3px; background:#111a30; border-radius:2px; }
+.ctrl-group input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px; background:#7b2fff; border-radius:50%; cursor:pointer; }
+.btn { padding:4px 8px; border:1px solid rgba(0,212,255,0.35); background:rgba(0,212,255,0.08); color:#00d4ff; border-radius:4px; cursor:pointer; font-size:10px; transition:all .2s; }
+.btn:hover { background:rgba(0,212,255,0.2); }
+.btn.active { background:rgba(0,212,255,0.3); border-color:#00d4ff; }
+.btn-row { display:flex; gap:3px; flex-wrap:wrap; }
+.btn-green { background:rgba(0,200,100,0.1); border-color:rgba(0,200,100,0.35); color:#00cc66; }
+.btn-red { background:rgba(255,50,50,0.1); border-color:rgba(255,50,50,0.35); color:#ff4444; }
+#minimap { position:absolute; bottom:12px; left:12px; z-index:50; width:200px; height:100px; background:rgba(8,14,30,0.9); border:1px solid rgba(0,212,255,0.2); border-radius:6px; }
+#info-overlay { position:absolute; top:12px; left:12px; z-index:50; background:rgba(8,14,30,0.85); border:1px solid rgba(0,212,255,0.15); border-radius:6px; padding:6px 10px; font-size:11px; color:#667; backdrop-filter:blur(6px); }
+#info-overlay span { color:#00d4ff; font-weight:600; }
+#server-status { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); z-index:50; font-size:11px; color:#556; display:flex; align-items:center; gap:6px; }
+#tooltip { position:fixed; z-index:200; display:none; pointer-events:none; background:rgba(8,14,30,0.95); border:1px solid #00d4ff; border-radius:6px; padding:10px 14px; font-size:11px; max-width:280px; backdrop-filter:blur(6px); }
+#tooltip .tt-title { color:#00d4ff; font-weight:700; font-size:13px; margin-bottom:4px; }
+#tooltip .tt-row { color:#aab; line-height:1.6; }
+#tooltip .tt-row b { color:#fff; }
+</style>
+</head>
+<body>
+<div id="loading"><h1>AMOS MAP SYSTEM PRO</h1><div class="sub">AGV FLOOR SYSTEM</div><div class="author">Created by John Prestige</div><div class="bar-bg"><div class="bar-fill" id="loadBar"></div></div><div class="status" id="loadStatus">초기화 중...</div></div>
+<div id="app">
+<div id="header">
+    <h1><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg> AMOS MAP SYSTEM PRO <span class="badge">LIVE</span> <span class="fab-name">M14-Pro AGV</span></h1>
+    <div class="header-right">
+        <div class="kpi-row"><span class="kpi-label">Today's Transfer</span><span class="kpi-digit">0</span><span class="kpi-digit">5</span><span class="kpi-digit">5</span><span class="kpi-digit">1</span></div>
+        <span>Creator: John Prestige</span>
+        <span><span class="status-dot"></span>시스템 정상</span>
+        <span>FPS: <span id="fpsCounter" style="color:#00d4ff;font-weight:700">-</span></span>
+    </div>
+</div>
+<div id="main-container">
+<button class="sidebar-toggle" id="left-toggle" onclick="toggleSidebar('left')">◀ <span class="label">통계</span></button>
+<div id="left-panel">
+    <div class="panel-section">
+        <div class="panel-title">📊 AGV Statistics</div>
+        <div class="stat-grid">
+            <div class="stat-box"><div class="icon green">▶</div><div class="num" id="sRunning">005</div><div class="lbl">Running</div></div>
+            <div class="stat-box"><div class="icon yellow">⚡</div><div class="num" id="sCharging">001</div><div class="lbl">Charging</div></div>
+            <div class="stat-box"><div class="icon blue">◇</div><div class="num" id="sFree">001</div><div class="lbl">Free</div></div>
+            <div class="stat-box"><div class="icon gray">■</div><div class="num" id="sOffline">005</div><div class="lbl">Offline</div></div>
+        </div>
+        <div class="stat-grid" style="margin-top:6px">
+            <div class="stat-box"><div class="icon red">△</div><div class="num" id="sError">000</div><div class="lbl">Error</div></div>
+            <div class="stat-box"><div class="icon orange">⊘</div><div class="num" id="sTraffic">002</div><div class="lbl">In Traffic</div></div>
+            <div class="stat-box"><div class="icon gray">⏸</div><div class="num" id="sPause">000</div><div class="lbl">Pause</div></div>
+            <div class="stat-box"><div class="icon gray">✕</div><div class="num" id="sUnavail">000</div><div class="lbl">Unavail</div></div>
+        </div>
+    </div>
+    <div class="panel-section">
+        <div class="panel-title">🚗 AGV Status <span id="agvNavLabel" style="font-size:10px;color:#667;margin-left:auto">1/14</span></div>
+        <div class="agv-detail">
+            <div class="agv-img-area">
+                <div class="agv-icon-box"><svg viewBox="0 0 60 40" width="50" height="40"><ellipse cx="30" cy="28" rx="26" ry="10" fill="#1a2a4a" stroke="#2a4a6a"/><rect x="10" y="14" width="40" height="16" rx="8" fill="#3a5a8a" stroke="#5a8aba"/><circle cx="18" cy="22" r="4" fill="#2a4a6a" stroke="#5a8aba"/><circle cx="42" cy="22" r="4" fill="#2a4a6a" stroke="#5a8aba"/><rect x="24" y="8" width="12" height="8" rx="3" fill="#4a7aba"/><circle cx="30" cy="11" r="2" fill="#00d4ff"/></svg></div>
+                <div><div class="agv-big-id" id="detailId">001</div><div style="font-size:11px;color:#667">AGV-<span id="detailName">001</span></div></div>
+            </div>
+            <div class="agv-info-row"><span class="k">Status:</span><span class="v run" id="detailStatus">● Running</span></div>
+            <div class="agv-info-row"><span class="k">Battery Level:</span><span class="v" id="detailBattery">🔋 92%<div class="battery-bar"><div class="battery-fill" style="width:92%"></div></div></span></div>
+            <div class="agv-info-row"><span class="k">Position:</span><span class="v" id="detailPos">Bay-3</span></div>
+            <div class="agv-info-row"><span class="k">Speed:</span><span class="v" id="detailSpeed">1.2 m/s</span></div>
+            <div style="display:flex;gap:4px;margin-top:6px"><button class="btn" onclick="navAgvDetail(-1)" style="flex:1">◀ 이전</button><button class="btn" onclick="navAgvDetail(1)" style="flex:1">다음 ▶</button></div>
+        </div>
+    </div>
+    <div class="panel-section">
+        <div class="panel-title">⚙ AGV 대수 설정</div>
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+            <input type="number" id="agvCountInput" value="14" min="0" max="200" style="width:50px;padding:4px 6px;background:#0c1428;border:1px solid #1a2545;color:#fff;border-radius:4px;font-size:12px;text-align:center">
+            <span style="font-size:10px;color:#556">대</span>
+            <button class="btn" onclick="applyAgvCount()">적용</button>
+        </div>
+        <div class="btn-row"><button class="btn" onclick="setAgvQuick(5)">5</button><button class="btn" onclick="setAgvQuick(14)">14</button><button class="btn" onclick="setAgvQuick(30)">30</button><button class="btn" onclick="setAgvQuick(50)">50</button><button class="btn" onclick="setAgvQuick(100)">100</button></div>
+    </div>
+    <div class="panel-section">
+        <div class="panel-title">🎬 시뮬레이션</div>
+        <div class="btn-row"><button class="btn btn-green" onclick="createScenario()" style="flex:1;text-align:center">▶ 상황만들기</button><button class="btn btn-red" onclick="resetScenario()" style="flex:1;text-align:center">↺ 초기화</button></div>
+    </div>
+</div>
+<div id="view-container">
+    <div id="info-overlay"><span id="hoverInfo"></span></div>
+    <div id="controls-float">
+        <div class="ctrl-header" id="ctrlDragHandle"><h3>⚙ 컨트롤</h3><button class="btn" onclick="toggleCtrl()" id="ctrlTogBtn" style="padding:2px 6px">−</button></div>
+        <div class="ctrl-body" id="ctrlBody">
+            <div class="ctrl-group"><label>경로 밝기: <span id="pathBrightVal">100</span>%</label><input type="range" id="pathBright" min="0" max="100" value="100"></div>
+            <div class="ctrl-group"><label>노드 크기: <span id="nodeSizeVal">1.0</span></label><input type="range" id="nodeSize" min="5" max="30" value="10"></div>
+            <div class="ctrl-group"><label>시점</label><div class="btn-row"><button class="btn active" onclick="setView('3d',this)">3D</button><button class="btn" onclick="setView('top',this)">위</button><button class="btn" onclick="setView('front',this)">앞</button><button class="btn" onclick="setView('side',this)">옆</button></div></div>
+            <div class="ctrl-group"><label>레이어</label><div class="btn-row"><button class="btn active" onclick="togLayer(this,'paths')">경로</button><button class="btn active" onclick="togLayer(this,'nodes')">노드</button><button class="btn active" onclick="togLayer(this,'equip')">장비</button><button class="btn active" onclick="togLayer(this,'agv')">AGV</button><button class="btn active" onclick="togLayer(this,'charge')">충전</button></div></div>
+            <div class="ctrl-group"><label>바닥 색상</label><div class="btn-row"><button class="btn" onclick="setFloorColor('#050a18')">기본</button><button class="btn" onclick="setFloorColor('#0a1428')">슬레이트</button><button class="btn" onclick="setFloorColor('#e0e0e0')">밝음</button></div></div>
+        </div>
+    </div>
+    <canvas id="minimap" width="400" height="200"></canvas>
+    <div id="server-status"><span style="color:#00cc66">📶</span> Server is normal <span style="margin-left:20px">1Level</span></div>
+</div>
+<div id="right-panel" class="collapsed">
+    <div class="right-tabs"><div class="right-tab active" onclick="switchRTab(this,'agv')">🚗 AGV 차량 <span id="agvCountBadge" style="font-size:10px;color:#00d4ff">0</span></div><div class="right-tab" onclick="switchRTab(this,'charge')">⚡ 충전소</div></div>
+    <div class="right-content">
+        <div class="tab-pane active" id="agvPane">
+            <div class="agv-filter-tabs"><div class="agv-ftab active" onclick="filterAgv(this,'all')">전체</div><div class="agv-ftab" onclick="filterAgv(this,'run')">운행</div><div class="agv-ftab" onclick="filterAgv(this,'loaded')">적재</div><div class="agv-ftab" onclick="filterAgv(this,'charge')">충전</div><div class="agv-ftab" onclick="filterAgv(this,'jam')">JAM</div></div>
+            <input type="text" id="agvSearchInput" placeholder="AGV ID 검색...">
+            <div class="agv-list" id="agvList"></div>
+        </div>
+        <div class="tab-pane" id="chargePane"><div style="padding:10px" id="chargeList"></div></div>
+    </div>
+</div>
+<button class="sidebar-toggle" id="right-toggle" onclick="toggleSidebar('right')">▶ <span class="label">AGV</span></button>
+</div></div>
+<div id="tooltip"><div class="tt-title" id="ttTitle"></div><div class="tt-row" id="ttBody"></div></div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+let scene, camera, renderer, controls, clock;
+let pathGroup, nodeGroup, equipGroup, vehicleGroup, chargeGroup, floorGroup;
+let raycaster, mouse;
+let agvVehicles = [], paths = [];
+let layoutData, nodeById = {};
+let frameCount = 0, lastFpsTime = 0;
+const layers = { paths:true, nodes:true, equip:true, agv:true, charge:true };
+let agvFilter = 'all', detailIdx = 0, scenarioActive = false;
+
+function generateLayout() {
+    const nodes = [], edges = [];
+    let nid = 0;
+    const corrZ = [600, 1500, 2600, 3700, 4800];
+    const xStart = 300, xEnd = 11700, xStep = 120;
+    const corrStartIds = [];
+    for (let ci = 0; ci < corrZ.length; ci++) {
+        const z = corrZ[ci], sNid = nid;
+        corrStartIds.push(sNid);
+        for (let x = xStart; x <= xEnd; x += xStep) {
+            nodes.push({ id: nid, x, z, type: 'path', stations: [] });
+            if (nid > sNid) edges.push({ from: nid - 1, to: nid });
+            nid++;
+        }
+    }
+    const bayXs = [];
+    for (let i = 0; i < 18; i++) bayXs.push(800 + i * 620);
+    for (const bx of bayXs) {
+        for (let ci = 0; ci < corrZ.length - 1; ci++) {
+            const z1 = corrZ[ci], z2 = corrZ[ci + 1], sNid = nid;
+            for (let z = z1; z <= z2; z += 100) {
+                nodes.push({ id: nid, x: bx, z, type: 'path', stations: [] });
+                if (nid > sNid) edges.push({ from: nid - 1, to: nid });
+                nid++;
+            }
+            const ni1 = Math.round((bx - xStart) / xStep);
+            const ci1 = corrStartIds[ci], ci2 = corrStartIds[ci + 1];
+            if (ci1 + ni1 < nodes.length) edges.push({ from: sNid, to: ci1 + ni1 });
+            if (ci2 + ni1 < nodes.length) edges.push({ from: nid - 1, to: ci2 + ni1 });
+            for (let si = 0; si < 3; si++) {
+                const sz = z1 + (z2 - z1) * (si + 1) / 4;
+                const sx = bx + (si % 2 === 0 ? 70 : -70);
+                nodes.push({ id: nid, x: sx, z: sz, type: 'station', stations: [{ id: `EQ-${ci}${bayXs.indexOf(bx).toString().padStart(2,'0')}-${si}`, type: si % 3 === 0 ? 'PROCESS' : 'BUFFER' }] });
+                const bna = sNid + Math.round((sz - z1) / 100);
+                if (bna < nid) edges.push({ from: bna, to: nid });
+                nid++;
+            }
+        }
+    }
+    const chargePts = [[500,300],[500,5200],[6000,300],[6000,5200],[11500,300],[11500,5200],[6000,2700]];
+    const chargeNodes = [];
+    for (const [cx, cz] of chargePts) { nodes.push({ id: nid, x: cx, z: cz, type: 'charging', stations: [] }); chargeNodes.push(nid); nid++; }
+    const equipBays = [];
+    for (const bx of bayXs) {
+        for (let ci = 0; ci < corrZ.length - 1; ci++) {
+            const mz = (corrZ[ci] + corrZ[ci + 1]) / 2;
+            equipBays.push({ x: bx + 130, z: mz - 80, w: 80, h: 55, d: 55 });
+            equipBays.push({ x: bx - 130, z: mz + 80, w: 80, h: 40, d: 55 });
+            if (Math.random() > 0.5) equipBays.push({ x: bx + 220, z: mz, w: 55, h: 70, d: 45 });
+        }
+    }
+    return { nodes, edges, chargeNodes, equipBays, bounds: { minX: 0, maxX: 12000, minZ: 0, maxZ: 5500 } };
+}
+
+// UI handlers
+window.toggleSidebar = (s) => { const p = document.getElementById(s==='left'?'left-panel':'right-panel'), b = document.getElementById(s==='left'?'left-toggle':'right-toggle'); p.classList.toggle('collapsed'); const o = !p.classList.contains('collapsed'); if(s==='left') b.innerHTML=o?'◀ <span class="label">통계</span>':'▶ <span class="label">통계</span>'; else b.innerHTML=o?'▶ <span class="label">AGV</span>':'◀ <span class="label">AGV</span>'; setTimeout(()=>resizeRenderer(),350); };
+window.switchRTab = (btn,tab) => { btn.parentElement.querySelectorAll('.right-tab').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); document.querySelectorAll('.right-content>.tab-pane').forEach(p=>p.classList.remove('active')); document.getElementById(tab==='agv'?'agvPane':'chargePane').classList.add('active'); };
+window.toggleCtrl = () => { const b=document.getElementById('ctrlBody'); b.classList.toggle('collapsed'); document.getElementById('ctrlTogBtn').textContent=b.classList.contains('collapsed')?'+':'−'; };
+window.applyAgvCount = () => { respawnVehicles(parseInt(document.getElementById('agvCountInput').value)||14); };
+window.setAgvQuick = n => { document.getElementById('agvCountInput').value=n; respawnVehicles(n); };
+window.filterAgv = (el,f) => { agvFilter=f; el.parentElement.querySelectorAll('.agv-ftab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); updateAgvList(); };
+window.navAgvDetail = d => { if(!agvVehicles.length)return; detailIdx=(detailIdx+d+agvVehicles.length)%agvVehicles.length; updateAgvDetail(); };
+window.togLayer = (btn,k) => { layers[k]=!layers[k]; btn.classList.toggle('active',layers[k]); const m={paths:pathGroup,nodes:nodeGroup,equip:equipGroup,agv:vehicleGroup,charge:chargeGroup}; if(m[k])m[k].visible=layers[k]; };
+window.createScenario = () => { scenarioActive=true; agvVehicles.forEach(v=>{const r=Math.random();v.simState=r<.03?'jam':r<.08?'charge':r<.15?'stop':r<.35?'loaded':'run';}); updateAgvList(); };
+window.resetScenario = () => { scenarioActive=false; agvVehicles.forEach(v=>{v.simState='run';}); updateAgvList(); };
+
+// Drag
+(function(){let d=false,ox=0,oy=0;document.addEventListener('mousedown',e=>{if(!e.target.closest('#ctrlDragHandle'))return;const p=document.getElementById('controls-float'),r=p.getBoundingClientRect();d=true;ox=e.clientX-r.left;oy=e.clientY-r.top;p.style.transition='none';e.preventDefault();});document.addEventListener('mousemove',e=>{if(!d)return;const p=document.getElementById('controls-float'),c=document.getElementById('view-container').getBoundingClientRect();let x=e.clientX-ox-c.left,y=e.clientY-oy-c.top;x=Math.max(0,Math.min(c.width-p.offsetWidth,x));y=Math.max(0,Math.min(c.height-p.offsetHeight,y));p.style.left=x+'px';p.style.top=y+'px';p.style.right='auto';});document.addEventListener('mouseup',()=>{if(d){d=false;document.getElementById('controls-float').style.transition='';}});})();
+
+function setLoad(p,m){document.getElementById('loadBar').style.width=p+'%';document.getElementById('loadStatus').textContent=m;}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function init(){
+    setLoad(5,'레이아웃 데이터 생성 중...');
+    layoutData=generateLayout();
+    layoutData.nodes.forEach(n=>{nodeById[n.id]=n;});
+    setLoad(15,`${layoutData.nodes.length}개 노드, ${layoutData.edges.length}개 엣지`);
+    const b=layoutData.bounds,cx=(b.minX+b.maxX)/2,cz=(b.minZ+b.maxZ)/2;
+
+    scene=new THREE.Scene();
+    scene.background=new THREE.Color(0x0a1225);
+    scene.fog=new THREE.FogExp2(0x0a1225,0.00003);
+    camera=new THREE.PerspectiveCamera(50,1,1,80000);
+    camera.position.set(cx+2000,4000,cz+5000);
+    const container=document.getElementById('view-container');
+    renderer=new THREE.WebGLRenderer({antialias:true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    renderer.domElement.style.display='block';
+    container.appendChild(renderer.domElement);
+    resizeRenderer();
+    controls=new OrbitControls(camera,renderer.domElement);
+    controls.enableDamping=true;controls.dampingFactor=0.08;controls.target.set(cx,0,cz);controls.minDistance=50;controls.maxDistance=25000;controls.maxPolarAngle=Math.PI*0.85;
+
+    scene.add(new THREE.AmbientLight(0x6688aa,1.5));
+    const dl=new THREE.DirectionalLight(0xddeeff,1.6);dl.position.set(5000,8000,5000);dl.castShadow=true;scene.add(dl);
+    const dl2=new THREE.DirectionalLight(0xaaddff,0.8);dl2.position.set(-5000,6000,-3000);scene.add(dl2);
+    const pl=new THREE.PointLight(0x00d4ff,1.2,15000);pl.position.set(cx,300,cz);scene.add(pl);
+    const pl2=new THREE.PointLight(0x00ffaa,0.6,10000);pl2.position.set(cx-3000,200,cz-1500);scene.add(pl2);
+    const pl3=new THREE.PointLight(0x00ccff,0.6,10000);pl3.position.set(cx+3000,200,cz+1500);scene.add(pl3);
+    raycaster=new THREE.Raycaster();raycaster.params.Points={threshold:15};mouse=new THREE.Vector2(-999,-999);clock=new THREE.Clock();
+
+    setLoad(25,'바닥 생성...'); await sleep(10);
+    buildFloor(cx,cz);
+    setLoad(40,'경로 생성...'); await sleep(10);
+    buildPaths();
+    setLoad(55,'노드 생성...'); await sleep(10);
+    buildNodes();
+    setLoad(65,'장비 구조물...'); await sleep(10);
+    buildEquipment();
+    setLoad(75,'충전소...'); await sleep(10);
+    buildCharging();
+    setLoad(85,'AGV 배치...'); await sleep(10);
+    buildPathCurves();
+    spawnVehicles(parseInt(document.getElementById('agvCountInput').value));
+
+    window.addEventListener('resize',()=>resizeRenderer());
+    renderer.domElement.addEventListener('mousemove',onMouseMove);
+    document.getElementById('pathBright').addEventListener('input',e=>{document.getElementById('pathBrightVal').textContent=e.target.value;if(pathGroup)pathGroup.traverse(c=>{if(c.material&&c.material.opacity!==undefined)c.material.opacity=e.target.value/100;});});
+    document.getElementById('nodeSize').addEventListener('input',e=>{document.getElementById('nodeSizeVal').textContent=(e.target.value/10).toFixed(1);});
+    document.getElementById('agvSearchInput')?.addEventListener('input',()=>updateAgvList());
+
+    setLoad(100,'로딩 완료!'); await sleep(400);
+    document.getElementById('loading').style.display='none';
+    updateAgvList();updateAgvDetail();updateChargeList();drawMinimap();animate();
+}
+
+function resizeRenderer(){const c=document.getElementById('view-container');if(!c||!renderer)return;const w=c.clientWidth,h=c.clientHeight;renderer.setSize(w,h);if(camera){camera.aspect=w/h;camera.updateProjectionMatrix();}}
+
+function buildFloor(cx,cz){
+    floorGroup=new THREE.Group();scene.add(floorGroup);
+    const ts=512,cv=document.createElement('canvas');cv.width=ts;cv.height=ts;
+    const ct=cv.getContext('2d');ct.fillStyle='#0c1830';ct.fillRect(0,0,ts,ts);
+    ct.strokeStyle='rgba(0,200,255,0.25)';ct.lineWidth=1.5;const st=ts/8;
+    for(let i=0;i<=8;i++){ct.beginPath();ct.moveTo(i*st,0);ct.lineTo(i*st,ts);ct.stroke();ct.beginPath();ct.moveTo(0,i*st);ct.lineTo(ts,i*st);ct.stroke();}
+    ct.fillStyle='rgba(0,150,255,0.06)';for(let i=0;i<80;i++)ct.fillRect(Math.random()*ts,Math.random()*ts,1,1);
+    const tex=new THREE.CanvasTexture(cv);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(50,25);
+    const geo=new THREE.PlaneGeometry(16000,8000);const mat=new THREE.MeshPhongMaterial({map:tex,shininess:20});
+    const mesh=new THREE.Mesh(geo,mat);mesh.rotation.x=-Math.PI/2;mesh.position.set(cx,-2,cz);floorGroup.add(mesh);
+}
+
+function buildPaths(){
+    pathGroup=new THREE.Group();scene.add(pathGroup);
+    const ub=new THREE.BoxGeometry(1,1,1),dm=new THREE.Object3D();
+    const ed=[];
+    for(const e of layoutData.edges){const n1=nodeById[e.from],n2=nodeById[e.to];if(!n1||!n2)continue;const dx=n2.x-n1.x,dz=n2.z-n1.z,len=Math.sqrt(dx*dx+dz*dz);if(len<1||len>2000)continue;ed.push({n1,n2,dx,dz,len,isMain:Math.abs(dz)<Math.abs(dx)*0.5});}
+    const me=ed.filter(e=>e.isMain),be=ed.filter(e=>!e.isMain);
+    if(me.length){const mt=new THREE.MeshPhongMaterial({color:0x00ddff,emissive:0x0099dd,transparent:true,opacity:0.95});const im=new THREE.InstancedMesh(ub,mt,me.length);me.forEach((e,i)=>{dm.position.set((e.n1.x+e.n2.x)/2,0.5,(e.n1.z+e.n2.z)/2);dm.rotation.set(0,-Math.atan2(e.dz,e.dx),0);dm.scale.set(e.len,1.2,6);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);});im.instanceMatrix.needsUpdate=true;pathGroup.add(im);}
+    if(be.length){const mt=new THREE.MeshPhongMaterial({color:0x00aadd,emissive:0x005588,transparent:true,opacity:0.8});const im=new THREE.InstancedMesh(ub,mt,be.length);be.forEach((e,i)=>{dm.position.set((e.n1.x+e.n2.x)/2,0.3,(e.n1.z+e.n2.z)/2);dm.rotation.set(0,-Math.atan2(e.dz,e.dx),0);dm.scale.set(e.len,0.8,4);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);});im.instanceMatrix.needsUpdate=true;pathGroup.add(im);}
+    if(me.length){const gm=new THREE.MeshBasicMaterial({color:0x0088ff,transparent:true,opacity:0.25});const gi=new THREE.InstancedMesh(ub,gm,me.length);me.forEach((e,i)=>{dm.position.set((e.n1.x+e.n2.x)/2,0.1,(e.n1.z+e.n2.z)/2);dm.rotation.set(0,-Math.atan2(e.dz,e.dx),0);dm.scale.set(e.len+10,0.3,20);dm.updateMatrix();gi.setMatrixAt(i,dm.matrix);});gi.instanceMatrix.needsUpdate=true;pathGroup.add(gi);}
+}
+
+function buildNodes(){
+    nodeGroup=new THREE.Group();scene.add(nodeGroup);
+    const sg=new THREE.SphereGeometry(1,8,6),d=new THREE.Object3D();
+    const rn=layoutData.nodes.filter(n=>n.type==='path'),sn=layoutData.nodes.filter(n=>n.type==='station');
+    if(rn.length){const m=new THREE.MeshPhongMaterial({color:0x00aaff,emissive:0x003355});const im=new THREE.InstancedMesh(sg,m,rn.length);rn.forEach((n,i)=>{d.position.set(n.x,2,n.z);d.scale.setScalar(2.5);d.updateMatrix();im.setMatrixAt(i,d.matrix);});im.instanceMatrix.needsUpdate=true;im.userData={type:'path',nodes:rn};nodeGroup.add(im);}
+    if(sn.length){const m=new THREE.MeshPhongMaterial({color:0x00ff88,emissive:0x004422});const im=new THREE.InstancedMesh(sg,m,sn.length);sn.forEach((n,i)=>{d.position.set(n.x,2,n.z);d.scale.setScalar(4);d.updateMatrix();im.setMatrixAt(i,d.matrix);});im.instanceMatrix.needsUpdate=true;im.userData={type:'station',nodes:sn};nodeGroup.add(im);}
+    const pm=new THREE.MeshPhongMaterial({color:0x44cc88,transparent:true,opacity:0.5}),dm2=new THREE.MeshPhongMaterial({color:0x00ffaa,emissive:0x003322});
+    const pg=new THREE.CylinderGeometry(0.8,0.8,20,6),dg=new THREE.OctahedronGeometry(2.5,0);
+    if(sn.length){const pi=new THREE.InstancedMesh(pg,pm,sn.length),di=new THREE.InstancedMesh(dg,dm2,sn.length);sn.forEach((n,i)=>{d.position.set(n.x,12,n.z);d.scale.setScalar(1);d.updateMatrix();pi.setMatrixAt(i,d.matrix);d.position.set(n.x,24,n.z);d.updateMatrix();di.setMatrixAt(i,d.matrix);});pi.instanceMatrix.needsUpdate=true;di.instanceMatrix.needsUpdate=true;nodeGroup.add(pi);nodeGroup.add(di);}
+}
+
+function buildEquipment(){
+    equipGroup=new THREE.Group();scene.add(equipGroup);
+    const ub=new THREE.BoxGeometry(1,1,1),dm=new THREE.Object3D(),bays=layoutData.equipBays;
+    if(bays.length){
+        const m1=new THREE.MeshPhongMaterial({color:0x2a3a5a,emissive:0x0a1020,transparent:true,opacity:0.75});
+        const im=new THREE.InstancedMesh(ub,m1,bays.length);
+        bays.forEach((b,i)=>{dm.position.set(b.x,b.h/2,b.z);dm.scale.set(b.w,b.h,b.d);dm.rotation.set(0,0,0);dm.updateMatrix();im.setMatrixAt(i,dm.matrix);});
+        im.instanceMatrix.needsUpdate=true;equipGroup.add(im);
+    }
+    // FOUP boxes
+    const fp=[];for(let i=0;i<50;i++)fp.push({x:1000+Math.random()*10000,z:500+Math.random()*4500,s:14+Math.random()*10});
+    if(fp.length){const fm=new THREE.MeshPhongMaterial({color:0xd0d0d0,emissive:0x444444,shininess:80});const fi=new THREE.InstancedMesh(ub,fm,fp.length);fp.forEach((f,i)=>{dm.position.set(f.x,f.s/2,f.z);dm.scale.set(f.s*0.8,f.s,f.s*0.8);dm.updateMatrix();fi.setMatrixAt(i,dm.matrix);});fi.instanceMatrix.needsUpdate=true;equipGroup.add(fi);}
+}
+
+function buildCharging(){
+    chargeGroup=new THREE.Group();scene.add(chargeGroup);
+    const pg=new THREE.CylinderGeometry(12,12,35,12),pm=new THREE.MeshPhongMaterial({color:0xffaa00,emissive:0x664400});
+    const rg=new THREE.TorusGeometry(20,3,8,24),rm=new THREE.MeshPhongMaterial({color:0xffcc00,emissive:0xffaa00,transparent:true,opacity:0.7});
+    const gg=new THREE.CircleGeometry(30,16),gm=new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true,opacity:0.15,side:THREE.DoubleSide});
+    for(const cid of layoutData.chargeNodes){const n=nodeById[cid];if(!n)continue;
+        const p=new THREE.Mesh(pg,pm);p.position.set(n.x,17.5,n.z);chargeGroup.add(p);
+        const r=new THREE.Mesh(rg,rm);r.position.set(n.x,35,n.z);r.rotation.x=Math.PI/2;r.userData={animate:true};chargeGroup.add(r);
+        const g=new THREE.Mesh(gg,gm);g.rotation.x=-Math.PI/2;g.position.set(n.x,0.5,n.z);chargeGroup.add(g);
+    }
+}
+
+function buildPathCurves(){
+    const adj={};layoutData.edges.forEach(e=>{if(!adj[e.from])adj[e.from]=[];adj[e.from].push(e.to);});
+    const vis=new Set();paths=[];
+    layoutData.nodes.forEach(n=>{if(vis.has(n.id)||!adj[n.id])return;let cur=n.id;const p=[cur];vis.add(cur);
+        while(adj[cur]){const nx=adj[cur].find(x=>!vis.has(x)&&nodeById[x]);if(!nx)break;vis.add(nx);p.push(nx);cur=nx;}
+        if(p.length>=6)paths.push(p);
+    });paths.sort((a,b)=>b.length-a.length);
+}
+
+function spawnVehicles(count){
+    vehicleGroup=new THREE.Group();scene.add(vehicleGroup);agvVehicles=[];
+    if(!paths.length||!count)return;
+    const bg=new THREE.CylinderGeometry(18,20,10,16),tg=new THREE.CylinderGeometry(12,16,6,16),sg=new THREE.BoxGeometry(6,4,6),lg=new THREE.SphereGeometry(3,8,6),fg=new THREE.BoxGeometry(26,18,26),flg=new THREE.BoxGeometry(28,2,28);
+    const bm=new THREE.MeshPhongMaterial({color:0x3a5a8a,emissive:0x1a2a4a,shininess:60}),tm=new THREE.MeshPhongMaterial({color:0x4a7aba,emissive:0x2a4a6a,shininess:80}),sm=new THREE.MeshPhongMaterial({color:0x2a4a6a,emissive:0x0a1a2a}),fm=new THREE.MeshPhongMaterial({color:0xf0f0f0,emissive:0x555555,shininess:100}),flm=new THREE.MeshPhongMaterial({color:0xddddff,emissive:0x444466});
+    for(let i=0;i<count;i++){
+        const pi=i%paths.length,path=paths[pi];
+        const ss=Math.max(1,Math.floor(path.length/60)),pts=[];
+        for(let j=0;j<path.length;j+=ss){const n=nodeById[path[j]];if(n)pts.push(new THREE.Vector3(n.x,6,n.z));}
+        if(pts.length<2)continue;
+        const curve=new THREE.CatmullRomCurve3(pts,false,'catmullrom',0.15),vg=new THREE.Group();
+        vg.add(new THREE.Mesh(bg,bm));const top=new THREE.Mesh(tg,tm);top.position.y=8;vg.add(top);
+        const sen=new THREE.Mesh(sg,sm);sen.position.set(0,3,18);vg.add(sen);
+        const hf=Math.random()>0.4;
+        const lm=new THREE.MeshPhongMaterial({color:hf?0xffaa00:0x00ff44,emissive:hf?0xff6600:0x00aa22});
+        const led=new THREE.Mesh(lg,lm);led.position.y=hf?30:13;led.name='led';vg.add(led);
+        const fp=new THREE.Mesh(fg,fm);fp.position.y=20;fp.name='foup';fp.visible=hf;vg.add(fp);
+        const lid=new THREE.Mesh(flg,flm);lid.position.y=30;lid.name='lid';lid.visible=hf;vg.add(lid);
+        const t=Math.random();vg.position.copy(curve.getPointAt(t));vehicleGroup.add(vg);
+        agvVehicles.push({group:vg,curve,t,speed:0.00015+Math.random()*0.0004,direction:Math.random()>0.5?1:-1,state:'moving',simState:'run',stateTimer:0,hasFoup:hf,nextStopT:0.15+Math.random()*0.7,battery:50+Math.random()*50,pathNodeIds:path});
+    }
+}
+
+function respawnVehicles(c){if(vehicleGroup){vehicleGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});scene.remove(vehicleGroup);}spawnVehicles(c);vehicleGroup.visible=layers.agv;updateAgvList();updateAgvDetail();}
+
+function updateVehicles(dt){
+    agvVehicles.forEach(v=>{
+        if(v.state==='moving'){v.t+=v.speed*v.direction*dt*60;if(v.t>=1){v.t=1;v.direction=-1;}if(v.t<=0){v.t=0;v.direction=1;}if(Math.abs(v.t-v.nextStopT)<0.004){v.state='loading';v.stateTimer=0;}v.battery=Math.max(5,v.battery-dt*0.3);}
+        else if(v.state==='loading'){v.stateTimer+=dt;if(v.stateTimer>2.5){v.state='moving';v.hasFoup=!v.hasFoup;const f=v.group.getObjectByName('foup'),l=v.group.getObjectByName('lid');if(f)f.visible=v.hasFoup;if(l)l.visible=v.hasFoup;v.nextStopT=Math.random()*0.8+0.1;}}
+        const p=v.curve.getPointAt(Math.max(0,Math.min(1,v.t)));v.group.position.copy(p);
+        const lt=Math.min(1,Math.max(0,v.t+0.008*v.direction));v.group.lookAt(v.curve.getPointAt(lt));
+    });
+}
+
+function updateAgvList(){
+    const list=document.getElementById('agvList');if(!list)return;
+    const search=(document.getElementById('agvSearchInput')?.value||'').toUpperCase();
+    let html='',run=0,loaded=0,chg=0,stop=0,jam=0;
+    agvVehicles.forEach((v,i)=>{
+        const vid='AGV-'+String(i+1).padStart(3,'0');
+        const st=scenarioActive?(v.simState||'run'):(v.state==='moving'?(v.hasFoup?'loaded':'run'):'stop');
+        if(st==='run')run++;else if(st==='loaded'){loaded++;run++;}else if(st==='charge')chg++;else if(st==='jam')jam++;else stop++;
+        if(agvFilter!=='all'&&st!==agvFilter)return;if(search&&!vid.includes(search))return;
+        const bc=st==='run'?'run':st==='loaded'?'loaded':st==='charge'?'charge':st==='jam'?'jam':'stop';
+        const bt=st==='run'?'RUN':st==='loaded'?'LOAD':st==='charge'?'CHG':st==='jam'?'JAM':'STOP';
+        const lc=st==='jam'?'#ff2255':st==='loaded'?'#ffaa00':st==='charge'?'#3399ff':st==='stop'?'#555':'#00cc55';
+        html+=`<div class="agv-list-item" style="border-left-color:${lc}" onclick="focusVehicle(${i})"><div><span style="color:#ddd;font-weight:600">${vid}</span> <span style="color:#556;font-size:9px">BAT:${v.battery.toFixed(0)}%</span></div><span class="agv-badge ${bc}">${bt}</span></div>`;
+    });
+    list.innerHTML=html||'<div style="padding:20px;text-align:center;color:#445">AGV 없음</div>';
+    document.getElementById('agvCountBadge').textContent=agvVehicles.length;
+    document.getElementById('sRunning').textContent=String(run).padStart(3,'0');
+    document.getElementById('sCharging').textContent=String(chg).padStart(3,'0');
+    document.getElementById('sFree').textContent=String(stop).padStart(3,'0');
+    document.getElementById('sTraffic').textContent=String(jam).padStart(3,'0');
+}
+
+function updateAgvDetail(){
+    if(!agvVehicles.length)return;const v=agvVehicles[detailIdx],vid=String(detailIdx+1).padStart(3,'0');
+    document.getElementById('detailId').textContent=vid;document.getElementById('detailName').textContent=vid;
+    document.getElementById('agvNavLabel').textContent=`${detailIdx+1}/${agvVehicles.length}`;
+    const st=scenarioActive?(v.simState||'run'):(v.state==='moving'?'run':'stop');
+    const se=document.getElementById('detailStatus');
+    se.textContent=st==='run'?'● Running':st==='loaded'?'● Loaded':st==='charge'?'● Charging':st==='jam'?'● In Traffic':'● Stopped';
+    se.className='v '+(st==='jam'?'traffic':st);
+    document.getElementById('detailBattery').innerHTML=`🔋 ${v.battery.toFixed(0)}%<div class="battery-bar"><div class="battery-fill" style="width:${v.battery}%"></div></div>`;
+    document.getElementById('detailSpeed').textContent=(v.speed*60000).toFixed(1)+' m/s';
+}
+
+function updateChargeList(){
+    const el=document.getElementById('chargeList');let h='';
+    layoutData.chargeNodes.forEach((cid,i)=>{const n=nodeById[cid];h+=`<div style="background:#0c1830;border:1px solid #152040;border-radius:8px;padding:10px;margin-bottom:6px;border-left:3px solid #ffaa00"><div style="color:#ffcc00;font-weight:700;font-size:12px">충전소 ${i+1}</div><div style="font-size:10px;color:#667;margin-top:4px">위치: (${n?.x||0}, ${n?.z||0})</div><div style="font-size:10px;color:#00cc66;margin-top:2px">● 정상 가동</div></div>`;});
+    el.innerHTML=h;
+}
+
+window.focusVehicle=function(idx){if(idx>=agvVehicles.length)return;detailIdx=idx;updateAgvDetail();const v=agvVehicles[idx],p=v.curve.getPointAt(v.t);camera.position.set(p.x+200,250,p.z+200);controls.target.set(p.x,0,p.z);controls.update();};
+window.setView=function(type,btn){if(btn){btn.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}const b=layoutData.bounds,cx=(b.minX+b.maxX)/2,cz=(b.minZ+b.maxZ)/2,w=b.maxX-b.minX;if(type==='3d')camera.position.set(cx+w*.3,w*.4,cz+w*.4);else if(type==='top')camera.position.set(cx,w*.6,cz+10);else if(type==='front')camera.position.set(cx,w*.15,cz+w*.5);else camera.position.set(cx+w*.5,w*.15,cz);controls.target.set(cx,0,cz);controls.update();};
+window.setFloorColor=function(c){if(floorGroup){floorGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});scene.remove(floorGroup);}const b=layoutData.bounds;buildFloorColor(c,(b.minX+b.maxX)/2,(b.minZ+b.maxZ)/2);};
+function buildFloorColor(color,cx,cz){floorGroup=new THREE.Group();scene.add(floorGroup);const il=color==='#e0e0e0';const ts=512,cv=document.createElement('canvas');cv.width=ts;cv.height=ts;const ct=cv.getContext('2d');ct.fillStyle=color;ct.fillRect(0,0,ts,ts);ct.strokeStyle=il?'rgba(0,0,0,0.06)':'rgba(0,180,255,0.12)';ct.lineWidth=1;const st=ts/8;for(let i=0;i<=8;i++){ct.beginPath();ct.moveTo(i*st,0);ct.lineTo(i*st,ts);ct.stroke();ct.beginPath();ct.moveTo(0,i*st);ct.lineTo(ts,i*st);ct.stroke();}const tex=new THREE.CanvasTexture(cv);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(50,25);const geo=new THREE.PlaneGeometry(16000,8000);const mat=new THREE.MeshPhongMaterial({map:tex,shininess:il?30:20});const mesh=new THREE.Mesh(geo,mat);mesh.rotation.x=-Math.PI/2;mesh.position.set(cx,-2,cz);floorGroup.add(mesh);scene.background=new THREE.Color(il?0xe0e0e0:parseInt(color.replace('#',''),16));}
+
+function drawMinimap(){
+    const cv=document.getElementById('minimap'),ct=cv.getContext('2d'),w=cv.width,h=cv.height;
+    ct.fillStyle='rgba(5,10,24,0.9)';ct.fillRect(0,0,w,h);
+    const b=layoutData.bounds,sx=w/(b.maxX-b.minX+200),sy=h/(b.maxZ-b.minZ+200),s=Math.min(sx,sy)*0.9;
+    const ox=(w-(b.maxX-b.minX)*s)/2,oy=(h-(b.maxZ-b.minZ)*s)/2;
+    ct.strokeStyle='rgba(0,150,255,0.3)';ct.lineWidth=0.5;
+    layoutData.edges.forEach(e=>{const n1=nodeById[e.from],n2=nodeById[e.to];if(!n1||!n2)return;ct.beginPath();ct.moveTo(ox+(n1.x-b.minX)*s,oy+(n1.z-b.minZ)*s);ct.lineTo(ox+(n2.x-b.minX)*s,oy+(n2.z-b.minZ)*s);ct.stroke();});
+    ct.fillStyle='#00d4ff';agvVehicles.forEach(v=>{const p=v.curve.getPointAt(Math.max(0,Math.min(1,v.t)));ct.beginPath();ct.arc(ox+(p.x-b.minX)*s,oy+(p.z-b.minZ)*s,2,0,Math.PI*2);ct.fill();});
+    ct.strokeStyle='#ff4444';ct.lineWidth=1;const px=ox+(controls.target.x-b.minX)*s,py=oy+(controls.target.z-b.minZ)*s;ct.strokeRect(px-15,py-10,30,20);
+}
+
+function onMouseMove(event){
+    const c=document.getElementById('view-container'),r=c.getBoundingClientRect();
+    mouse.x=((event.clientX-r.left)/r.width)*2-1;mouse.y=-((event.clientY-r.top)/r.height)*2+1;
+    raycaster.setFromCamera(mouse,camera);const hits=raycaster.intersectObjects(nodeGroup?nodeGroup.children:[],true);
+    const tt=document.getElementById('tooltip');
+    if(hits.length>0&&hits[0].instanceId!==undefined){const ud=hits[0].object.userData,nd=ud?.nodes?.[hits[0].instanceId];
+        if(nd){tt.style.display='block';tt.style.left=(event.clientX+15)+'px';tt.style.top=(event.clientY+15)+'px';
+            document.getElementById('ttTitle').textContent=nd.stations?.length>0?nd.stations[0].id:`Node ${nd.id}`;
+            document.getElementById('ttBody').innerHTML=`<b>ID:</b> ${nd.id}<br><b>좌표:</b> (${nd.x.toFixed(0)}, ${nd.z.toFixed(0)})<br><b>유형:</b> ${nd.type}`;
+            document.getElementById('hoverInfo').textContent=nd.stations?.length>0?nd.stations[0].id:'Node '+nd.id;return;}}
+    tt.style.display='none';document.getElementById('hoverInfo').textContent='';
+}
+
+let listTimer=0;
+function animate(){
+    requestAnimationFrame(animate);const dt=clock.getDelta();
+    updateVehicles(dt);
+    chargeGroup?.traverse(c=>{if(c.userData?.animate)c.rotation.z+=dt*1.5;});
+    frameCount++;if(clock.elapsedTime-lastFpsTime>=1){document.getElementById('fpsCounter').textContent=frameCount;frameCount=0;lastFpsTime=clock.elapsedTime;listTimer++;if(listTimer%3===0){updateAgvList();updateAgvDetail();}}
+    controls.update();renderer.render(scene,camera);
+    if(frameCount%30===0)drawMinimap();
+}
+init();
+</script>
+</body>
+</html>

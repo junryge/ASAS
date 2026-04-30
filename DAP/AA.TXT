@@ -1,0 +1,18 @@
+CnvPortNode cnp = new CnvPortNode(fabId, id, rcz.displayName, eqpId, zoneNo,  
+                                        containingZoneId1, containingZoneId2, currentNodeId, prevNodeId, groupId,  
+                                        level, displayFabId, displayMcpName, drawX, drawY,  
+                                        type, dir, 1, rcz.state, true, isUpdate);
+                                if(StringUtils.isNotEmpty(id)) {
+                                    tmpNodeMap.put(id, cnp);
+                                    tmpCnvPortNodeNoMap.put(cnp.getEqpId()+":"+zoneNo, cnp);
+                                }else {
+                                    logger.warn("Check RawCnvZone! physicalType : {}, zoneId : {}, displayName : {}", rcz.physicalType, rcz.zoneId, rcz.displayName);
+ 
+                                }
+
+
+
+for(RawCnvZone rcz : csil.getRawCnvZoneMap().values())
+
+====>데이터 csil.getRawCnvZoneMap().values 여기로 안붙는다 문제점 찾아봐야한다.
+분석해보자

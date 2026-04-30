@@ -1,0 +1,10 @@
+{
+  "id": "database",
+  "name": "Database",
+  "icon": "🗄️",
+  "description": "Connect to databases, run SQL queries, manage schemas, and analyze data directly.",
+  "enabled": false,
+  "tools": ["sql_query", "describe_table", "list_tables", "create_table", "export_data"],
+  "version": "1.0.0",
+  "author": "Goose Team"
+}

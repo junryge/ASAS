@@ -1,0 +1,10 @@
+{
+  "id": "data-analysis",
+  "name": "Data Analysis",
+  "icon": "📊",
+  "description": "Analyze CSV/Excel data, generate statistics, create visualizations, and build ML models.",
+  "enabled": false,
+  "tools": ["analyze_csv", "plot_chart", "statistics", "correlation", "predict"],
+  "version": "1.0.0",
+  "author": "Goose Team"
+}

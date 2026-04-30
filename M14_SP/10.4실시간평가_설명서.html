@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V10.4 실시간 예측 시스템 - 코드 설명서</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', 'Malgun Gothic', sans-serif; background: #f4f6f9; color: #1a1a2e; line-height: 1.7; padding: 40px 20px; }
+  .container { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 28px; color: #0f3460; border-bottom: 3px solid #0f3460; padding-bottom: 12px; margin-bottom: 30px; }
+  h2 { font-size: 22px; color: #16213e; margin-top: 40px; margin-bottom: 16px; padding: 8px 12px; background: #e2e8f0; border-left: 4px solid #0f3460; border-radius: 0 6px 6px 0; }
+  h3 { font-size: 17px; color: #1a1a2e; margin-top: 24px; margin-bottom: 10px; }
+  p { margin-bottom: 12px; }
+  code { background: #e8ecf1; padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', 'D2Coding', monospace; font-size: 14px; color: #c0392b; }
+  pre { background: #1e293b; color: #e2e8f0; padding: 16px 20px; border-radius: 8px; overflow-x: auto; margin: 12px 0 20px; font-family: 'Consolas', 'D2Coding', monospace; font-size: 13px; line-height: 1.6; }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; }
+  th { background: #0f3460; color: #fff; padding: 10px 14px; text-align: left; font-size: 14px; }
+  td { padding: 9px 14px; border-bottom: 1px solid #d1d5db; font-size: 14px; }
+  tr:nth-child(even) { background: #f0f4f8; }
+  tr:hover { background: #dbeafe; }
+  .output-box { background: #1e293b; color: #38bdf8; padding: 16px 20px; border-radius: 8px; font-family: 'Consolas', 'D2Coding', monospace; font-size: 14px; line-height: 1.8; margin: 12px 0 20px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #fff; margin-right: 4px; }
+  .badge-critical { background: #dc2626; }
+  .badge-caution { background: #f59e0b; }
+  .badge-normal { background: #22c55e; }
+  .badge-low { background: #94a3b8; }
+  .badge-bottleneck { background: #7c3aed; }
+  .badge-danger-exp { background: #ea580c; }
+  .badge-observation { background: #0ea5e9; }
+  .flow-box { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 10px; padding: 20px; margin: 12px 0 20px; font-family: 'Consolas', 'D2Coding', monospace; font-size: 13px; line-height: 1.8; white-space: pre; overflow-x: auto; }
+  .highlight { background: #fef3c7; padding: 2px 6px; border-radius: 4px; }
+  ul { margin: 8px 0 16px 24px; }
+  li { margin-bottom: 4px; }
+  .section-note { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 18px; margin: 12px 0; font-size: 14px; }
+  strong { color: #0f3460; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>V10.4 실시간 예측 시스템 - 코드 설명서</h1>
+
+<h2>개요</h2>
+<p><code>10.4실시간평가.PY</code>는 M14 TOTALCNT 1700+ 돌파를 10분 전에 예측하는 실시간 시스템이다.<br>
+V10.4 모델(XGBoost 회귀 + LightGBM 분류 + 투표)과 UI 급증/상태 분석을 결합했다.</p>
+
+<h2>실행 방법</h2>
+<pre><code>python 10.4실시간평가.PY</code></pre>
+
+<h3>필요 파일</h3>
+<table>
+  <tr><th>파일</th><th>경로</th><th>설명</th></tr>
+  <tr><td>모델</td><td><code>models/v10_4_m14_model.pkl</code></td><td>V10.4 학습 모델 (XGB+LGBM+스케일러)</td></tr>
+  <tr><td>데이터</td><td><code>data/2025_DATA.CSV</code></td><td>실시간 CSV (8.3.1과 동일)</td></tr>
+</table>
+
+<h2>출력 형식</h2>
+<div class="output-box">
+prediction: 1,685<br>
+status: CRITICAL<br>
+status_Th: BOTTLENECK_EXPECTED<br>
+prediction_time: 2026-03-03 14:30<br>
+1700+ danger_probability: 75%<br>
+spike_info: D:M14AM14B +65, D:M14AM14BSUM +72<br>
+danger_count: 2, warning_count: 1
+</div>
+
+<h2>출력 필드 설명</h2>
+<table>
+  <tr><th>필드</th><th>설명</th></tr>
+  <tr><td><code>prediction</code></td><td>10분 후 TOTALCNT 예측값 (앙상블 평균)</td></tr>
+  <tr><td><code>status</code></td><td><strong>기존 판정</strong> - 10.4평가 투표+규칙 기반<br><span class="badge badge-low">LOW</span> <span class="badge badge-normal">NORMAL</span> <span class="badge badge-caution">CAUTION</span> <span class="badge badge-critical">CRITICAL</span></td></tr>
+  <tr><td><code>status_Th</code></td><td><strong>심층 판정</strong> - UI 급증+현재값+예측값 종합<br><span class="badge badge-normal">NORMAL</span> 양호예상 / <span class="badge badge-observation">OBSERVATION</span> 관찰 / <span class="badge badge-danger-exp">DANGER_EXPECTED</span> 위험예상 / <span class="badge badge-bottleneck">BOTTLENECK_EXPECTED</span> 병목예상 / <span class="badge badge-critical">BOTTLENECK(1700_PREDICT-10min)</span> 병목(1700예측-10분)</td></tr>
+  <tr><td><code>prediction_time</code></td><td>예측 대상 시점 (현재 + 10분)</td></tr>
+  <tr><td><code>danger_probability</code></td><td>1700+ 돌파 위험 확률 (0~100%)</td></tr>
+  <tr><td><code>spike_info</code></td><td>급증 컬럼 정보 (D=danger, W=warning)</td></tr>
+  <tr><td><code>danger_count</code></td><td>danger 급증 컬럼 수</td></tr>
+  <tr><td><code>warning_count</code></td><td>warning 급증 컬럼 수</td></tr>
+</table>
+
+<h2>코드 구조</h2>
+
+<h3>1. CONFIG (설정)</h3>
+<pre><code>CONFIG = {
+    'model_file': 'models/v10_4_m14_model.pkl',
+    'csv_file': 'data/2025_DATA.CSV',
+    'sequence_length': 280,    # 280분 시퀀스
+    'prediction_offset': 10,   # 10분 후 예측
+    'limit_value': 1700,       # 위험 기준값
+    'target_column': 'TOTALCNT',
+}</code></pre>
+
+<h3>2. 함수 목록</h3>
+<table>
+  <tr><th>함수</th><th>역할</th></tr>
+  <tr><td><code>create_sequence_features()</code></td><td>10.4평가와 동일한 시퀀스 피처 생성 (컬럼당 20개 통계)</td></tr>
+  <tr><td><code>analyze_spike_columns()</code></td><td>UI main.py 동일 - 10분 전 대비 급증 컬럼 분석</td></tr>
+  <tr><td><code>get_status_v10_4()</code></td><td>10.4평가 방식 - 투표+규칙 기반 상태 판정</td></tr>
+  <tr><td><code>get_status_with_spike()</code></td><td>UI 방식 - 급증+현재값+예측값 심층 판정</td></tr>
+  <tr><td><code>predict_latest()</code></td><td>메인 함수 - 데이터 로드 → 예측 → 결과 반환</td></tr>
+</table>
+
+<h2>status (기존 판정) - 10.4평가 투표+규칙 방식</h2>
+<p>V10.4 모델의 투표 결과와 5가지 규칙으로 판정한다.</p>
+
+<h3>투표 구성</h3>
+<ul>
+  <li>XGB 타겟 예측 >= 1700 → 1표</li>
+  <li>XGB 중요 예측 >= 1700 → 1표</li>
+  <li>XGB 보조 예측 >= 1700 → 1표</li>
+  <li>LGBM 타겟 분류 결과 (0 or 1)</li>
+  <li>LGBM 중요 분류 결과 (0 or 1)</li>
+  <li>LGBM 보조 분류 결과 (0 or 1)</li>
+  <li>(PDT 모델 있으면 +2표 추가)</li>
+</ul>
+
+<h3>최종 판정 규칙 (하나라도 충족 시 danger=1)</h3>
+<table>
+  <tr><th>규칙</th><th>조건</th></tr>
+  <tr><td>rule1</td><td>투표 합계 >= 3</td></tr>
+  <tr><td>rule2</td><td>LGBM 중요 확률 >= 0.50 AND 현재값 >= 1450</td></tr>
+  <tr><td>rule3</td><td>XGB 중요 예측 >= 1680 AND 현재값 >= 1500</td></tr>
+  <tr><td>rule4</td><td>현재값 >= 1600 AND 투표 합계 >= 2</td></tr>
+  <tr><td>rule5</td><td>XGB 중요 예측 >= 1700</td></tr>
+</table>
+
+<h3>status 판정</h3>
+<table>
+  <tr><th>status</th><th>조건</th></tr>
+  <tr><td><span class="badge badge-critical">CRITICAL</span></td><td>final_pred_danger == 1 (위 규칙 중 하나 이상 충족)</td></tr>
+  <tr><td><span class="badge badge-caution">CAUTION</span></td><td>앙상블 예측 >= 1600 또는 (현재값 >= 1500 AND 투표 2+)</td></tr>
+  <tr><td><span class="badge badge-normal">NORMAL</span></td><td>앙상블 예측 >= 900</td></tr>
+  <tr><td><span class="badge badge-low">LOW</span></td><td>그 외</td></tr>
+</table>
+
+<h2>status_Th (심층 판정) - UI 급증 로직</h2>
+<p>현재 TOTALCNT + 급증 컬럼 danger 수 + 10분 예측값을 종합해서 판정한다.</p>
+
+<h3>급증 분석 컬럼 (14개)</h3>
+<pre><code>M14AM10A, M10AM14A, M14AM10ASUM
+M14AM14B, M14BM14A, M14AM14BSUM
+M14AM16, M16M14A, M14AM16SUM
+M14.QUE.ALL.CURRENTQCREATED
+M14.QUE.ALL.CURRENTQCOMPLETED
+M14.QUE.OHT.OHTUTIL
+M14.QUE.ALL.TRANSPORT4MINOVERCNT
+M14B.QUE.SENDFAB.VERTICALQUEUECOUNT</code></pre>
+
+<h3>급증 임계값 (10분 전 대비 변화량)</h3>
+<table>
+  <tr><th>컬럼</th><th>warning</th><th>danger</th></tr>
+  <tr><td>CURRENTQCREATED, CURRENTQCOMPLETED</td><td>>= 60</td><td>>= 70</td></tr>
+  <tr><td>나머지 12개</td><td>>= 50</td><td>>= 60</td></tr>
+</table>
+
+<h3>status_Th 판정 (2단계)</h3>
+<p><strong>1단계: 현재값 + 급증 기반</strong></p>
+<table>
+  <tr><th>status_Th</th><th>한글</th><th>조건</th></tr>
+  <tr><td><span class="badge badge-bottleneck">BOTTLENECK_EXPECTED</span></td><td>병목예상</td><td>현재값 >= 1650 AND danger 급증 >= 3개</td></tr>
+  <tr><td><span class="badge badge-danger-exp">DANGER_EXPECTED</span></td><td>위험예상</td><td>현재값 >= 1550 AND danger 급증 >= 2개</td></tr>
+  <tr><td><span class="badge badge-observation">OBSERVATION</span></td><td>관찰</td><td>현재값 < 1550 AND danger 급증 >= 2개</td></tr>
+  <tr><td><span class="badge badge-normal">NORMAL</span></td><td>양호예상</td><td>그 외</td></tr>
+</table>
+
+<p><strong>2단계: 양호(NORMAL)일 때 예측값 추가 체크</strong></p>
+<table>
+  <tr><th>status_Th</th><th>한글</th><th>조건</th></tr>
+  <tr><td><span class="badge badge-critical">BOTTLENECK(1700_PREDICT-10min)</span></td><td>병목(1700예측-10분)</td><td>10분 예측 >= 1700</td></tr>
+  <tr><td><span class="badge badge-bottleneck">BOTTLENECK_EXPECTED</span></td><td>병목예상</td><td>10분 예측 >= 1650</td></tr>
+</table>
+
+<h2>danger_probability (위험 확률) 계산</h2>
+<p>6단계로 누적 계산되며, 각 단계는 확률을 올릴 수만 있다 (내릴 수 없음).</p>
+
+<h3>1단계: 앙상블 예측값 기반 (기본)</h3>
+<table>
+  <tr><th>예측값</th><th>확률</th></tr>
+  <tr><td>>= 1750</td><td>100%</td></tr>
+  <tr><td>>= 1700</td><td>95%</td></tr>
+  <tr><td>>= 1680</td><td>75%</td></tr>
+  <tr><td>>= 1650</td><td>50%</td></tr>
+  <tr><td>>= 1620</td><td>30%</td></tr>
+  <tr><td>>= 1600</td><td>15%</td></tr>
+  <tr><td>< 1600</td><td>5%</td></tr>
+</table>
+
+<h3>2단계: 투표 비율 보정</h3>
+<table>
+  <tr><th>투표 비율</th><th>추가</th></tr>
+  <tr><td>>= 75%</td><td>+25%</td></tr>
+  <tr><td>>= 50%</td><td>+15%</td></tr>
+  <tr><td>>= 30%</td><td>+5%</td></tr>
+</table>
+
+<h3>3단계: LGBM 확률 보정</h3>
+<table>
+  <tr><th>LGBM 중요 확률</th><th>추가</th></tr>
+  <tr><td>>= 0.80</td><td>+20%</td></tr>
+  <tr><td>>= 0.60</td><td>+15%</td></tr>
+  <tr><td>>= 0.50</td><td>+10%</td></tr>
+</table>
+
+<h3>4단계: 최종 판정 보정</h3>
+<table>
+  <tr><th>조건</th><th>최소값</th></tr>
+  <tr><td>final_pred_danger == 1</td><td>최소 80%</td></tr>
+</table>
+
+<h3>5단계: 현재값 보정</h3>
+<table>
+  <tr><th>현재 TOTALCNT</th><th>최소값</th></tr>
+  <tr><td>>= 1700</td><td>최소 85%</td></tr>
+  <tr><td>>= 1650</td><td>최소 60%</td></tr>
+  <tr><td>>= 1600</td><td>최소 30%</td></tr>
+</table>
+
+<h3>6단계: 심층 판정(status_Th) 보정</h3>
+<table>
+  <tr><th>status_Th</th><th>한글</th><th>최소값</th></tr>
+  <tr><td><span class="badge badge-critical">BOTTLENECK(1700_PREDICT-10min)</span></td><td>병목(1700예측-10분)</td><td>최소 90%</td></tr>
+  <tr><td><span class="badge badge-bottleneck">BOTTLENECK_EXPECTED</span></td><td>병목예상</td><td>최소 70%</td></tr>
+  <tr><td><span class="badge badge-danger-exp">DANGER_EXPECTED</span></td><td>위험예상</td><td>최소 55%</td></tr>
+  <tr><td><span class="badge badge-observation">OBSERVATION</span></td><td>관찰</td><td>최소 30%</td></tr>
+</table>
+
+<h2>피처 생성 (create_sequence_features)</h2>
+<p>10.4평가와 동일하게 각 컬럼에서 280분 시퀀스 기반 20개 통계를 추출한다.</p>
+<table>
+  <tr><th>#</th><th>피처</th><th>설명</th></tr>
+  <tr><td>1</td><td>mean</td><td>평균</td></tr>
+  <tr><td>2</td><td>std</td><td>표준편차</td></tr>
+  <tr><td>3</td><td>min</td><td>최솟값</td></tr>
+  <tr><td>4</td><td>max</td><td>최댓값</td></tr>
+  <tr><td>5</td><td>current</td><td>현재값</td></tr>
+  <tr><td>6</td><td>change</td><td>처음-끝 변화량</td></tr>
+  <tr><td>7</td><td>p25</td><td>25% 백분위</td></tr>
+  <tr><td>8</td><td>p75</td><td>75% 백분위</td></tr>
+  <tr><td>9</td><td>momentum</td><td>최근10 평균 - 초기10 평균</td></tr>
+  <tr><td>10</td><td>max_30</td><td>최근 30분 최대</td></tr>
+  <tr><td>11</td><td>diff_10</td><td>현재 - 10분전</td></tr>
+  <tr><td>12</td><td>diff_30</td><td>현재 - 30분전</td></tr>
+  <tr><td>13</td><td>diff_60</td><td>현재 - 60분전</td></tr>
+  <tr><td>14</td><td>rate_10</td><td>10분 변화율</td></tr>
+  <tr><td>15</td><td>rate_30</td><td>30분 변화율</td></tr>
+  <tr><td>16</td><td>range_10</td><td>최근 10분 범위</td></tr>
+  <tr><td>17</td><td>range_30</td><td>최근 30분 범위</td></tr>
+  <tr><td>18</td><td>gap_to_limit</td><td>1700 - 현재값</td></tr>
+  <tr><td>19</td><td>over_1500</td><td>1500 이상 여부 (0/1)</td></tr>
+  <tr><td>20</td><td>over_1600</td><td>1600 이상 여부 (0/1)</td></tr>
+</table>
+
+<h2>없는 컬럼 처리</h2>
+<p>모델의 <code>FEATURE_GROUPS</code>나 <code>ANALYSIS_COLS</code>에 있는 컬럼이 CSV에 없으면 자동으로 0으로 생성한다.<br>
+스케일러 차원을 유지하기 위해 컬럼을 제거하지 않고 0으로 채우는 방식이다 (10.4실시간.PY 동일).</p>
+<pre><code>if col not in df.columns:
+    df[col] = 0
+df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)</code></pre>
+
+<h2>데이터 흐름</h2>
+<div class="flow-box">data/2025_DATA.CSV (실시간 CSV)
+    ↓
+CURRTIME 파싱 + 정렬
+    ↓
+QUEUE_GAP 파생 (CREATED - COMPLETED)
+    ↓
+없는 컬럼 → 0 생성
+    ↓
+최근 280분 추출
+    ↓
+┌─────────────────────────┐
+│  10.4 모델 예측          │
+│  XGB 타겟/중요/보조      │
+│  LGBM 타겟/중요/보조     │
+│  (+PDT 있으면 추가)      │
+│  → 투표 + 규칙 판정      │
+│  → 앙상블 평균           │
+└─────────┬───────────────┘
+          ↓
+┌─────────────────────────┐
+│  급증 분석 (UI 로직)     │
+│  14개 컬럼 × 10분전 대비  │
+│  → danger/warning 카운트 │
+└─────────┬───────────────┘
+          ↓
+┌─────────────────────────┐
+│  결과 생성               │
+│  status: 투표+규칙 판정   │
+│  status_Th: 급증 심층판정 │
+│  danger_probability: 6단계│
+└─────────────────────────┘</div>
+
+<h2>버전 히스토리</h2>
+<table>
+  <tr><th>베이스</th><th>역할</th><th>반영 내용</th></tr>
+  <tr><td>8.3.1</td><td>데이터 소스</td><td>CSV 경로, CURRTIME 파싱, predict_latest() 출력 형식</td></tr>
+  <tr><td>10.4평가</td><td>모델 아키텍처</td><td>XGB+LGBM+투표, 시퀀스 피처 20개, 5가지 판정 규칙</td></tr>
+  <tr><td>10.4실시간</td><td>컬럼 처리</td><td>없는 컬럼 0 생성, QUEUE_GAP 파생, 전처리</td></tr>
+  <tr><td>UI main.py</td><td>급증/상태</td><td>14개 급증 컬럼, 임계값(50/60, 60/70), 관찰/병목 판정</td></tr>
+</table>
+
+</div>
+</body>
+</html>
