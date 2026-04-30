@@ -1417,6 +1417,10 @@ function applyCombo(combo){
   updateLoaded();
   renderCombos();
   updateComboActiveMsg();
+  try {
+    localStorage.setItem('demos_selSkills', JSON.stringify(selSkills));
+    localStorage.setItem('demos_autoSkillMode', autoSkillMode ? '1' : '0');
+  } catch(e){}
 }
 function updateComboActiveMsg(){
   const msgEl = document.getElementById('comboActiveMsg');
@@ -1765,8 +1769,19 @@ function renderSkills(){
           }
           if(selSkills.includes(s.id)) selSkills=selSkills.filter(x=>x!==s.id);
           else selSkills.push(s.id);
-          // 수동 선택 시 자동 스킬 전부 해제
-          if(selSkills.length > 0){ autoLoadedSkills = []; }
+          // 수동 선택 시 자동 스킬 전부 해제 + 자동 토글 OFF
+          if(selSkills.length > 0){
+            autoLoadedSkills = [];
+            if(autoSkillMode){
+              autoSkillMode = false;
+              const _t = document.getElementById('autoSkillToggle');
+              if(_t) _t.classList.remove('on');
+            }
+          }
+          try {
+            localStorage.setItem('demos_selSkills', JSON.stringify(selSkills));
+            localStorage.setItem('demos_autoSkillMode', autoSkillMode ? '1' : '0');
+          } catch(e){}
           renderSkills();
           updateLoaded();
         };
@@ -1918,9 +1933,21 @@ function toggleAutoSkill(){
     document.getElementById('autoSkillPreview').classList.remove('show');
     document.getElementById('autoSkillPreview').innerHTML = '';
   }
+  try { localStorage.setItem('demos_autoSkillMode', autoSkillMode ? '1' : '0'); } catch(e){}
 }
-// 초기 상태 반영
+// 초기 상태 반영 (+ localStorage에서 selSkills/autoSkillMode 복원)
 setTimeout(()=>{
+  try {
+    const _ss = JSON.parse(localStorage.getItem('demos_selSkills') || '[]');
+    if(Array.isArray(_ss)) selSkills = _ss;
+    const _am = localStorage.getItem('demos_autoSkillMode');
+    if(_am === '0') autoSkillMode = false;
+    else if(_am === '1') autoSkillMode = true;
+  } catch(e){}
+  if(typeof renderCombos === 'function') renderCombos();
+  if(typeof renderSkills === 'function') renderSkills();
+  if(typeof updateLoaded === 'function') updateLoaded();
+  if(typeof updateComboActiveMsg === 'function') updateComboActiveMsg();
   document.getElementById('autoSkillToggle').classList.toggle('on', autoSkillMode);
 }, 200);
 
