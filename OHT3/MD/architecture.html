@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>OHT MAP System Architecture v0.8</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background: #0a0e17; color: #e0e0e0; padding: 20px; }
+h1 { text-align: center; color: #4fc3f7; margin-bottom: 5px; font-size: 28px; }
+.version { text-align: center; color: #888; margin-bottom: 30px; font-size: 14px; }
+
+/* 전체 레이아웃 */
+.container { max-width: 1400px; margin: 0 auto; }
+
+/* 섹션 */
+.section { margin-bottom: 40px; }
+.section-title {
+    font-size: 20px; color: #4fc3f7; border-bottom: 2px solid #4fc3f7;
+    padding-bottom: 8px; margin-bottom: 20px;
+}
+
+/* 아키텍처 다이어그램 */
+.arch-diagram {
+    position: relative;
+    width: 100%;
+    min-height: 700px;
+    background: #111827;
+    border-radius: 12px;
+    padding: 30px;
+    overflow: hidden;
+}
+
+/* 박스 공통 */
+.box {
+    position: absolute;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    font-size: 13px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: default;
+}
+.box:hover { transform: scale(1.03); box-shadow: 0 0 20px rgba(79,195,247,0.3); }
+.box-title { font-weight: bold; font-size: 15px; margin-bottom: 8px; }
+.box-file { font-family: monospace; font-size: 12px; color: #aaa; margin-bottom: 6px; }
+.box-desc { font-size: 11px; line-height: 1.5; }
+.box-methods { font-size: 10px; font-family: monospace; color: #8be9fd; text-align: left; margin-top: 8px; line-height: 1.6; }
+
+/* 박스 색상 */
+.box-external { background: #1a3a2a; border: 2px solid #4caf50; }
+.box-sender { background: #1a2a3a; border: 2px solid #2196f3; }
+.box-server { background: #2a1a3a; border: 2px solid #9c27b0; width: 500px; min-height: 280px; }
+.box-parser { background: #1a2a2a; border: 2px solid #00bcd4; }
+.box-layout { background: #3a2a1a; border: 2px solid #ff9800; }
+.box-csv { background: #2a2a1a; border: 2px solid #cddc39; }
+.box-ui { background: #3a1a1a; border: 2px solid #f44336; }
+.box-file-store { background: #1a1a2a; border: 2px solid #607d8b; }
+.box-hid { background: #2a1a2a; border: 2px solid #e91e63; }
+
+/* 화살표 (SVG) */
+.arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* 범례 */
+.legend {
+    display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px;
+    background: #111827; border-radius: 8px; padding: 15px;
+}
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.legend-color { width: 20px; height: 14px; border-radius: 3px; border: 2px solid; }
+
+/* 상세 테이블 */
+.detail-table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 8px; overflow: hidden; }
+.detail-table th { background: #1a2744; color: #4fc3f7; padding: 12px; text-align: left; font-size: 13px; }
+.detail-table td { padding: 10px 12px; border-bottom: 1px solid #1a2744; font-size: 12px; }
+.detail-table tr:hover td { background: #1a2744; }
+.mono { font-family: monospace; color: #8be9fd; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; margin: 1px; }
+.tag-get { background: #1b5e20; color: #a5d6a7; }
+.tag-post { background: #e65100; color: #ffcc80; }
+.tag-ws { background: #4a148c; color: #ce93d8; }
+
+/* 데이터 흐름 */
+.flow-container { display: flex; gap: 20px; flex-wrap: wrap; }
+.flow-card {
+    flex: 1; min-width: 380px;
+    background: #111827; border-radius: 10px; padding: 20px;
+    border: 1px solid #1a2744;
+}
+.flow-title { color: #4fc3f7; font-size: 16px; margin-bottom: 15px; font-weight: bold; }
+.flow-step {
+    display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;
+    padding: 10px; background: #0d1117; border-radius: 8px;
+}
+.flow-num {
+    min-width: 28px; height: 28px; border-radius: 50%;
+    background: #4fc3f7; color: #000; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.flow-text { font-size: 12px; line-height: 1.6; }
+.flow-arrow { text-align: center; color: #4fc3f7; font-size: 18px; margin: 4px 0; }
+
+/* 메시지 포맷 */
+.msg-format {
+    background: #0d1117; border-radius: 8px; padding: 15px;
+    font-family: monospace; font-size: 12px; line-height: 2;
+    overflow-x: auto; border: 1px solid #1a2744;
+}
+.field { display: inline-block; padding: 2px 6px; border-radius: 4px; margin: 1px; }
+.field-id { background: #1b5e20; color: #a5d6a7; }
+.field-state { background: #b71c1c; color: #ef9a9a; }
+.field-pos { background: #1565c0; color: #90caf9; }
+.field-cargo { background: #4a148c; color: #ce93d8; }
+.field-port { background: #e65100; color: #ffcc80; }
+.field-other { background: #263238; color: #b0bec5; }
+
+/* 디렉토리 구조 */
+.dir-tree {
+    background: #0d1117; border-radius: 8px; padding: 20px;
+    font-family: monospace; font-size: 13px; line-height: 1.8;
+    border: 1px solid #1a2744;
+}
+.dir-folder { color: #4fc3f7; }
+.dir-file { color: #e0e0e0; }
+.dir-desc { color: #666; font-style: italic; }
+.dir-py { color: #8be9fd; }
+.dir-data { color: #f48fb1; }
+.dir-gen { color: #c5e1a5; }
+</style>
+</head>
+<body>
+
+<div class="container">
+<h1>OHT MAP System Architecture</h1>
+<p class="version">v0.8 | 2026-04-07 | sim_server + real_oht_parser + data_sender</p>
+
+<!-- ============================================================ -->
+<!-- 1. 시스템 아키텍처 다이어그램 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">1. System Architecture Diagram</div>
+<div class="arch-diagram" id="archDiagram">
+
+    <!-- SVG 화살표 -->
+    <svg class="arrows" id="arrowsSvg">
+        <defs>
+            <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#4caf50"/>
+            </marker>
+            <marker id="arrowBlue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#2196f3"/>
+            </marker>
+            <marker id="arrowPurple" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#9c27b0"/>
+            </marker>
+            <marker id="arrowOrange" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#ff9800"/>
+            </marker>
+            <marker id="arrowRed" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#f44336"/>
+            </marker>
+            <marker id="arrowCyan" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#00bcd4"/>
+            </marker>
+            <marker id="arrowYellow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#cddc39"/>
+            </marker>
+        </defs>
+
+        <!-- 실제 OHT --> data_sender -->
+        <line x1="120" y1="100" x2="120" y2="175" stroke="#4caf50" stroke-width="2" stroke-dasharray="8,4" marker-end="url(#arrowGreen)"/>
+        <text x="130" y="140" fill="#4caf50" font-size="10">UDP</text>
+
+        <!-- data_sender --> sim_server (oht-raw) -->
+        <line x1="200" y1="220" x2="370" y2="280" stroke="#2196f3" stroke-width="2.5" marker-end="url(#arrowBlue)"/>
+        <text x="240" y="240" fill="#2196f3" font-size="10">POST /api/oht-raw</text>
+
+        <!-- data_sender --> sim_server (layout) -->
+        <line x1="370" y1="260" x2="200" y2="200" stroke="#ff9800" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowOrange)"/>
+        <text x="240" y="218" fill="#ff9800" font-size="10">GET /api/layout</text>
+
+        <!-- sim_server 안에서 parser -->
+        <line x1="580" y1="430" x2="580" y2="480" stroke="#00bcd4" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+        <!-- layout.xml --> parser (내부) -->
+        <line x1="950" y1="400" x2="750" y2="520" stroke="#ff9800" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowOrange)"/>
+        <text x="860" y="445" fill="#ff9800" font-size="10">nodes, edges</text>
+
+        <!-- layout_map_cre --> layout.html -->
+        <line x1="950" y1="280" x2="950" y2="350" stroke="#ff9800" stroke-width="1.5" marker-end="url(#arrowOrange)"/>
+
+        <!-- sim_server --> Browser -->
+        <line x1="500" y1="195" x2="500" y2="50" stroke="#f44336" stroke-width="2.5" marker-end="url(#arrowRed)"/>
+        <text x="510" y="130" fill="#f44336" font-size="10">WebSocket /ws</text>
+        <text x="510" y="145" fill="#f44336" font-size="10">(0.5s interval)</text>
+
+        <!-- sim_server --> CSV -->
+        <line x1="700" y1="195" x2="850" y2="140" stroke="#cddc39" stroke-width="1.5" marker-end="url(#arrowYellow)"/>
+        <text x="740" y="155" fill="#cddc39" font-size="10">csv_save_loop</text>
+
+        <!-- hid_zone_csv_cre --> HID CSV -->
+        <line x1="1100" y1="530" x2="1100" y2="580" stroke="#e91e63" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+    </svg>
+
+    <!-- 실제 OHT 시스템 -->
+    <div class="box box-external" style="left:30px; top:30px; width:180px;">
+        <div class="box-title">Real OHT System</div>
+        <div class="box-desc">
+            실제 반도체 FAB<br>
+            OHT 차량 ~450대<br>
+            0.5초 간격 UDP 전송<br>
+            VHL_STATE_REPORT
+        </div>
+    </div>
+
+    <!-- data_sender.py -->
+    <div class="box box-sender" style="left:30px; top:175px; width:220px;">
+        <div class="box-title">data_sender.py</div>
+        <div class="box-file">데이터 전송 클라이언트</div>
+        <div class="box-desc">
+            <b>자동 모드:</b> 레이아웃 기반 5대 자동 이동<br>
+            <b>붙여넣기 모드:</b> OHT 메시지 직접 입력
+        </div>
+        <div class="box-methods">
+            fetch_layout()<br>
+            make_message(v)<br>
+            send(messages)
+        </div>
+    </div>
+
+    <!-- sim_server (큰 박스) -->
+    <div class="box box-server" style="left:350px; top:195px;">
+        <div class="box-title">sim_server_3d_D5_D7.py</div>
+        <div class="box-file">FastAPI Server (port 10003)</div>
+        <div class="box-desc" style="text-align:left; margin-top:10px;">
+            <b>API Endpoints:</b><br>
+            <span class="tag tag-post">POST</span> /api/oht-raw &nbsp; raw OHT 메시지 수신<br>
+            <span class="tag tag-post">POST</span> /api/real-vehicles &nbsp; 파싱된 차량 dict 수신<br>
+            <span class="tag tag-get">GET</span> /api/layout &nbsp; 노드/엣지 데이터<br>
+            <span class="tag tag-get">GET</span> /api/fab/list &nbsp; FAB 목록<br>
+            <span class="tag tag-post">POST</span> /api/fab/switch &nbsp; FAB 전환<br>
+            <span class="tag tag-ws">WS</span> /ws &nbsp; 실시간 차량 상태 전송
+        </div>
+        <div class="box-desc" style="text-align:left; margin-top:10px;">
+            <b>Background Tasks:</b><br>
+            csv_save_loop (10초 간격)<br>
+            output_cleanup_loop (10분 간격)
+        </div>
+    </div>
+
+    <!-- real_oht_parser.py (sim_server 내부) -->
+    <div class="box box-parser" style="left:400px; top:490px; width:320px;">
+        <div class="box-title">real_oht_parser.py</div>
+        <div class="box-file">OHT 메시지 파서 + 좌표 변환 (import)</div>
+        <div class="box-methods">
+            parse_oht_message(line) &rarr; 23필드 파싱<br>
+            get_vehicle_position() &rarr; x,y 보간 계산<br>
+            parse_messages(lines) &rarr; 다건 파싱<br>
+            to_map_json(results) &rarr; UI 호환 JSON<br>
+            save_csv(results, path) &rarr; CSV 저장
+        </div>
+    </div>
+
+    <!-- 브라우저 UI -->
+    <div class="box box-ui" style="left:380px; top:10px; width:260px; height:80px;">
+        <div class="box-title">Browser MAP UI</div>
+        <div class="box-desc">
+            http://localhost:10003<br>
+            실시간 차량 위치 + HID Zone + STK + Station
+        </div>
+    </div>
+
+    <!-- CSV 출력 -->
+    <div class="box box-csv" style="left:800px; top:80px; width:220px;">
+        <div class="box-title">CSV Output</div>
+        <div class="box-file">output/M14A/A/</div>
+        <div class="box-desc">
+            ATLAS_VEHICLE_{ts}.csv<br>
+            ATLAS_RAIL_TRAFFIC_{ts}.csv
+        </div>
+    </div>
+
+    <!-- layout_map_cre.py -->
+    <div class="box box-layout" style="left:870px; top:230px; width:190px;">
+        <div class="box-title">layout_map_cre.py</div>
+        <div class="box-file">XML &rarr; HTML 변환</div>
+        <div class="box-methods">
+            parse_layout_xml_content()<br>
+            generate_layout_html()<br>
+            ensure_layout_html()
+        </div>
+    </div>
+
+    <!-- layout.xml / ZIP -->
+    <div class="box box-file-store" style="left:870px; top:370px; width:190px;">
+        <div class="box-title">Layout Files</div>
+        <div class="box-file">MAP/M14A/</div>
+        <div class="box-desc">
+            A.layout.zip (211MB)<br>
+            layout.xml (~9,404 nodes)<br>
+            A.layout.html (생성됨)<br>
+            A.station.dat
+        </div>
+    </div>
+
+    <!-- hid_zone_csv_cre.py -->
+    <div class="box box-hid" style="left:1020px; top:490px; width:190px;">
+        <div class="box-title">hid_zone_csv_cre.py</div>
+        <div class="box-file">HID Zone CSV 생성</div>
+        <div class="box-desc">
+            layout.xml 파싱<br>
+            &darr;<br>
+            HID_Zone_Master.csv
+        </div>
+    </div>
+
+    <!-- HID Zone CSV -->
+    <div class="box box-file-store" style="left:1020px; top:590px; width:190px;">
+        <div class="box-title">HID_Zone_Master</div>
+        <div class="box-file">MAP/M14A/</div>
+        <div class="box-desc">HID_Zone_Master_M14A_A.csv</div>
+    </div>
+
+    <!-- fab_config.json -->
+    <div class="box box-file-store" style="left:680px; top:10px; width:130px; height:60px;">
+        <div class="box-title">fab_config.json</div>
+        <div class="box-desc" style="font-size:10px;">FAB별 차량 수 설정</div>
+    </div>
+
+</div>
+
+<!-- 범례 -->
+<div class="legend">
+    <div class="legend-item"><div class="legend-color" style="background:#1a3a2a;border-color:#4caf50;"></div> 외부 시스템</div>
+    <div class="legend-item"><div class="legend-color" style="background:#1a2a3a;border-color:#2196f3;"></div> 데이터 전송</div>
+    <div class="legend-item"><div class="legend-color" style="background:#2a1a3a;border-color:#9c27b0;"></div> 메인 서버</div>
+    <div class="legend-item"><div class="legend-color" style="background:#1a2a2a;border-color:#00bcd4;"></div> 파서/변환기</div>
+    <div class="legend-item"><div class="legend-color" style="background:#3a2a1a;border-color:#ff9800;"></div> 레이아웃 처리</div>
+    <div class="legend-item"><div class="legend-color" style="background:#3a1a1a;border-color:#f44336;"></div> UI</div>
+    <div class="legend-item"><div class="legend-color" style="background:#2a2a1a;border-color:#cddc39;"></div> CSV 출력</div>
+    <div class="legend-item"><div class="legend-color" style="background:#1a1a2a;border-color:#607d8b;"></div> 파일/데이터</div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 2. 데이터 흐름 상세 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">2. Data Flow Detail</div>
+<div class="flow-container">
+
+<!-- Flow A: 실데이터 -->
+<div class="flow-card">
+    <div class="flow-title">Flow A: OHT 메시지 &rarr; MAP UI 표시</div>
+
+    <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div class="flow-text">
+            <b>data_sender.py</b> (또는 실제 OHT 시스템)<br>
+            OHT 메시지를 생성/수신
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div class="flow-text">
+            <span class="tag tag-post">POST</span> <span class="mono">/api/oht-raw</span><br>
+            <span class="mono">{"messages": ["2,OHT,V00795,..."]}</span>
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div class="flow-text">
+            <b>real_oht_parser.parse_messages()</b><br>
+            23개 필드 파싱 &rarr; vehicleId, state, currentAddr, distance, nextAddr ...
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">4</div>
+        <div class="flow-text">
+            <b>real_oht_parser.get_vehicle_position()</b><br>
+            layout.xml 노드맵에서 좌표 보간<br>
+            <span class="mono">ratio = dist_mm / (edge_dist * 1000)</span><br>
+            <span class="mono">x = n1.x + (n2.x - n1.x) * ratio</span>
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">5</div>
+        <div class="flow-text">
+            <b>real_oht_parser.to_map_json()</b><br>
+            UI 호환 포맷으로 변환 &rarr; <span class="mono">real_vehicle_state[]</span> 업데이트
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">6</div>
+        <div class="flow-text">
+            <span class="tag tag-ws">WS</span> <span class="mono">/ws</span> (0.5초 간격)<br>
+            <span class="mono">state.vehicles = real_vehicle_state</span><br>
+            <span class="mono">state.dataSource = 'REAL'</span>
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">7</div>
+        <div class="flow-text">
+            <b>Browser MAP UI</b><br>
+            Canvas에 차량 아이콘 렌더링
+        </div>
+    </div>
+</div>
+
+<!-- Flow B: 서버 시작 -->
+<div class="flow-card">
+    <div class="flow-title">Flow B: Server Startup</div>
+
+    <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div class="flow-text">
+            <b>python sim_server_3d_D5_D7.py</b><br>
+            FAB 목록 자동 탐색 (MAP/ 폴더)
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div class="flow-text">
+            <b>ensure_layout_html()</b><br>
+            A.layout.zip &rarr; layout.xml 추출<br>
+            layout_map_cre.py로 HTML 생성
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div class="flow-text">
+            <b>parse_layout_xml_content()</b><br>
+            ~9,404개 노드, ~18,806개 연결 파싱
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">4</div>
+        <div class="flow-text">
+            <b>SimulationEngine 초기화</b><br>
+            nodes, edges, HID zones, stations, STK 로드
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">5</div>
+        <div class="flow-text">
+            <b>RealOHTParser 초기화</b><br>
+            layout.xml 로딩 + 노드맵 구축<br>
+            차량 0대 (data_sender 대기)
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">6</div>
+        <div class="flow-text">
+            <b>Background Tasks 시작</b><br>
+            csv_save_loop (10초)<br>
+            output_cleanup_loop (10분)
+        </div>
+    </div>
+    <div class="flow-arrow">&darr;</div>
+
+    <div class="flow-step">
+        <div class="flow-num">7</div>
+        <div class="flow-text">
+            <b>uvicorn.run(port=10003)</b><br>
+            서버 시작, WebSocket 대기
+        </div>
+    </div>
+</div>
+
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 3. OHT 메시지 포맷 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">3. OHT Message Format (VHL_STATE_REPORT)</div>
+<div class="msg-format">
+<span class="field field-id">[0] 2</span><span class="field field-id">[1] OHT</span><span class="field field-id">[2] V00795</span><span class="field field-state">[3] 1</span><span class="field field-cargo">[4] 1</span><span class="field field-other">[5] 0000</span><span class="field field-other">[6] 1</span><span class="field field-pos">[7] 12340</span><span class="field field-pos">[8] 14</span><span class="field field-pos">[9] 12341</span><span class="field field-other">[10] 4</span><span class="field field-other">[11] 4</span><span class="field field-cargo">[12] 4PDMV608</span><span class="field field-cargo">[13] 36073</span><span class="field field-other">[14] 00000000</span><span class="field field-other">[15] 0000</span><span class="field field-port">[16] 4ABL3301A_OUT04</span><span class="field field-port">[17] 4ANZ19-701</span><span class="field field-other">[18] 90</span><span class="field field-other">[19] 0</span><span class="field field-other">[20] 0</span>
+</div>
+<div style="margin-top:15px;">
+<table class="detail-table">
+<tr><th>Color</th><th>Fields</th><th>Description</th></tr>
+<tr><td><span class="field field-id">ID</span></td><td>[0] MessageId, [1] McpName, [2] VehicleId</td><td>메시지/차량 식별</td></tr>
+<tr><td><span class="field field-state">State</span></td><td>[3] State</td><td>1=RUN, 2=STOP, 3=ABNORMAL, 6=OBS_BZ_STOP, 7=JAM</td></tr>
+<tr><td><span class="field field-pos">Position</span></td><td>[7] CurrentAddress, [8] Distance(100mm), [9] NextAddress</td><td>현재 위치 (좌표 변환의 핵심)</td></tr>
+<tr><td><span class="field field-cargo">Cargo</span></td><td>[4] IsFull, [12] CarrierId, [13] Destination</td><td>적재 정보 + 목적지</td></tr>
+<tr><td><span class="field field-port">Port</span></td><td>[16] SourcePort, [17] DestPort</td><td>출발/도착 Port</td></tr>
+<tr><td><span class="field field-other">Other</span></td><td>[5][6][10][11][14][15][18][19][20]</td><td>ErrorCode, RunCycle, VhlCycle, Priority 등</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 4. API 엔드포인트 상세 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">4. API Endpoints</div>
+<table class="detail-table">
+<tr><th>Method</th><th>Endpoint</th><th>Request</th><th>Response</th><th>Description</th></tr>
+<tr>
+    <td><span class="tag tag-post">POST</span></td>
+    <td class="mono">/api/oht-raw</td>
+    <td class="mono" style="font-size:11px;">{"messages": ["2,OHT,..."]}</td>
+    <td class="mono" style="font-size:11px;">{"status":"ok","updated":["V00795"]}</td>
+    <td>raw OHT 메시지 수신 &rarr; 파싱 &rarr; 차량 위치 업데이트</td>
+</tr>
+<tr>
+    <td><span class="tag tag-post">POST</span></td>
+    <td class="mono">/api/real-vehicles</td>
+    <td class="mono" style="font-size:11px;">{"vehicles": [{...}]}</td>
+    <td class="mono" style="font-size:11px;">{"status":"ok","count":5}</td>
+    <td>파싱된 차량 dict 리스트 직접 수신</td>
+</tr>
+<tr>
+    <td><span class="tag tag-get">GET</span></td>
+    <td class="mono">/api/layout</td>
+    <td>-</td>
+    <td class="mono" style="font-size:11px;">{"nodes":[...],"edges":[...],"hidZones":[...]}</td>
+    <td>레이아웃 전체 데이터</td>
+</tr>
+<tr>
+    <td><span class="tag tag-get">GET</span></td>
+    <td class="mono">/api/fab/list</td>
+    <td>-</td>
+    <td class="mono" style="font-size:11px;">{"fabs":["M14A","M14B",...]}</td>
+    <td>사용 가능 FAB 목록</td>
+</tr>
+<tr>
+    <td><span class="tag tag-post">POST</span></td>
+    <td class="mono">/api/fab/switch</td>
+    <td class="mono" style="font-size:11px;">{"fab":"M14B","prefix":"A"}</td>
+    <td class="mono" style="font-size:11px;">{"status":"ok"}</td>
+    <td>FAB 런타임 전환</td>
+</tr>
+<tr>
+    <td><span class="tag tag-ws">WS</span></td>
+    <td class="mono">/ws</td>
+    <td>-</td>
+    <td class="mono" style="font-size:11px;">{"type":"update","data":{...}}</td>
+    <td>0.5초 간격 차량 상태 브로드캐스트</td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 5. 파일별 역할 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">5. File Roles</div>
+<table class="detail-table">
+<tr><th>File</th><th>Lines</th><th>Role</th><th>Key Functions</th></tr>
+<tr>
+    <td class="mono">sim_server_3d_D5_D7.py</td>
+    <td>6,680</td>
+    <td>MAP UI 서버 (FastAPI + WebSocket)</td>
+    <td class="mono" style="font-size:10px;">startup(), websocket_endpoint(), receive_oht_raw()</td>
+</tr>
+<tr>
+    <td class="mono">real_oht_parser.py</td>
+    <td>706</td>
+    <td>OHT 메시지 파싱 + 좌표 변환</td>
+    <td class="mono" style="font-size:10px;">parse_messages(), get_vehicle_position(), to_map_json()</td>
+</tr>
+<tr>
+    <td class="mono">data_sender.py</td>
+    <td>247</td>
+    <td>데이터 전송 클라이언트</td>
+    <td class="mono" style="font-size:10px;">auto_mode(), paste_mode(), fetch_layout()</td>
+</tr>
+<tr>
+    <td class="mono">layout_map_cre.py</td>
+    <td>349</td>
+    <td>layout.xml &rarr; layout.html 변환</td>
+    <td class="mono" style="font-size:10px;">parse_layout_xml_content(), ensure_layout_html()</td>
+</tr>
+<tr>
+    <td class="mono">hid_zone_csv_cre.py</td>
+    <td>756</td>
+    <td>HID Zone 마스터 CSV 생성</td>
+    <td class="mono" style="font-size:10px;">create_hid_zone_csv(), parse_mcp_zones()</td>
+</tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 6. 디렉토리 구조 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">6. Directory Structure</div>
+<div class="dir-tree">
+<span class="dir-folder">OHT2/</span><br>
+&nbsp;&nbsp;<span class="dir-py">sim_server_3d_D5_D7.py</span> <span class="dir-desc">-- FastAPI MAP UI 서버 (port 10003)</span><br>
+&nbsp;&nbsp;<span class="dir-py">real_oht_parser.py</span> <span class="dir-desc">-- OHT 메시지 파서 + 좌표 변환</span><br>
+&nbsp;&nbsp;<span class="dir-py">data_sender.py</span> <span class="dir-desc">-- 데이터 전송 클라이언트</span><br>
+&nbsp;&nbsp;<span class="dir-py">layout_map_cre.py</span> <span class="dir-desc">-- XML &rarr; HTML 변환</span><br>
+&nbsp;&nbsp;<span class="dir-py">hid_zone_csv_cre.py</span> <span class="dir-desc">-- HID Zone CSV 생성</span><br>
+&nbsp;&nbsp;<span class="dir-data">fab_config.json</span> <span class="dir-desc">-- FAB별 차량 수 설정</span><br>
+&nbsp;&nbsp;<span class="dir-data">oht_data.txt</span> <span class="dir-desc">-- 샘플 OHT 메시지</span><br>
+&nbsp;&nbsp;<span class="dir-data">MAP_구축_가이드.MD</span> <span class="dir-desc">-- 시스템 가이드 문서 (v0.8)</span><br>
+&nbsp;&nbsp;<span class="dir-gen">architecture.html</span> <span class="dir-desc">-- 이 파일 (아키텍처 다이어그램)</span><br>
+&nbsp;&nbsp;<br>
+&nbsp;&nbsp;<span class="dir-folder">MAP/</span> <span class="dir-desc">-- FAB별 레이아웃 데이터</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-folder">M14A/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-data">A.layout.zip</span> <span class="dir-desc">-- layout.xml 포함 (211MB)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-gen">A.layout.html</span> <span class="dir-desc">-- 자동 생성 (노드/연결 JSON)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-data">A.station.dat</span> <span class="dir-desc">-- Station 정보</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-gen">HID_Zone_Master_M14A_A.csv</span> <span class="dir-desc">-- 자동 생성</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-data">STK_Master_M14A.csv</span> <span class="dir-desc">-- STK 위치/용량</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-folder">M14B/</span> <span class="dir-desc">-- 동일 구조</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-folder">M16A/</span> <span class="dir-desc">-- 동일 구조</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-folder">M16B/</span> <span class="dir-desc">-- 동일 구조</span><br>
+&nbsp;&nbsp;<br>
+&nbsp;&nbsp;<span class="dir-folder">output/</span> <span class="dir-desc">-- CSV 출력 (FAB별)</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-folder">M14A/A/</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-gen">ATLAS_VEHICLE_{timestamp}.csv</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="dir-gen">ATLAS_RAIL_TRAFFIC_{timestamp}.csv</span><br>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 7. 좌표 변환 상세 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">7. Coordinate Interpolation Detail</div>
+<div style="background:#111827; border-radius:10px; padding:25px; text-align:center;">
+    <svg width="800" height="180" viewBox="0 0 800 180">
+        <!-- 노드 1 -->
+        <circle cx="100" cy="90" r="20" fill="#1565c0" stroke="#90caf9" stroke-width="2"/>
+        <text x="100" y="95" text-anchor="middle" fill="white" font-size="12" font-weight="bold">12340</text>
+        <text x="100" y="135" text-anchor="middle" fill="#888" font-size="11">(x1, y1)</text>
+        <text x="100" y="55" text-anchor="middle" fill="#4fc3f7" font-size="11">CurrentAddr</text>
+
+        <!-- 엣지 -->
+        <line x1="120" y1="90" x2="680" y2="90" stroke="#607d8b" stroke-width="3"/>
+
+        <!-- 차량 위치 -->
+        <circle cx="300" cy="90" r="12" fill="#f44336" stroke="#ef9a9a" stroke-width="2"/>
+        <text x="300" y="94" text-anchor="middle" fill="white" font-size="10">V</text>
+
+        <!-- distance 화살표 -->
+        <line x1="120" y1="60" x2="290" y2="60" stroke="#ff9800" stroke-width="2" marker-end="url(#arrowOrange)"/>
+        <text x="200" y="50" text-anchor="middle" fill="#ff9800" font-size="11">Distance = 14 (x100mm = 1400mm)</text>
+
+        <!-- edge_dist 화살표 -->
+        <line x1="120" y1="150" x2="680" y2="150" stroke="#4caf50" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="400" y="170" text-anchor="middle" fill="#4caf50" font-size="11">edge_dist (layout coordinate units)</text>
+
+        <!-- ratio 표시 -->
+        <text x="300" y="30" text-anchor="middle" fill="#8be9fd" font-size="11">ratio = dist_mm / (edge_dist * 1000)</text>
+
+        <!-- 노드 2 -->
+        <circle cx="700" cy="90" r="20" fill="#1565c0" stroke="#90caf9" stroke-width="2"/>
+        <text x="700" y="95" text-anchor="middle" fill="white" font-size="12" font-weight="bold">12341</text>
+        <text x="700" y="135" text-anchor="middle" fill="#888" font-size="11">(x2, y2)</text>
+        <text x="700" y="55" text-anchor="middle" fill="#4fc3f7" font-size="11">NextAddr</text>
+    </svg>
+    <div style="margin-top:15px; font-family:monospace; font-size:13px; color:#8be9fd; line-height:2;">
+        ratio = (14 * 100) / (edge_dist * 1000)<br>
+        x = x1 + (x2 - x1) * ratio<br>
+        y = y1 + (y2 - y1) * ratio
+    </div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 8. FAB 구성 -->
+<!-- ============================================================ -->
+<div class="section">
+<div class="section-title">8. FAB Configuration</div>
+<table class="detail-table">
+<tr><th>FAB</th><th>Vehicle Count</th><th>Layout Prefix</th><th>Nodes</th><th>Edges</th></tr>
+<tr><td>M14A</td><td>450</td><td>A</td><td>~9,404</td><td>~18,806</td></tr>
+<tr><td>M14B</td><td>450</td><td>A</td><td>-</td><td>-</td></tr>
+<tr><td>M16A</td><td>300</td><td>A</td><td>-</td><td>-</td></tr>
+<tr><td>M16B</td><td>300</td><td>A</td><td>-</td><td>-</td></tr>
+</table>
+</div>
+
+</div>
+</body>
+</html>

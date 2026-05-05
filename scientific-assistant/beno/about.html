@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demos V1.0 - About</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%);color:#e2e8f0;min-height:100vh;overflow-x:hidden}
+body::-webkit-scrollbar{width:6px}
+body::-webkit-scrollbar-track{background:transparent}
+body::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+
+/* 배경 파티클 */
+.bg-glow{position:fixed;border-radius:50%;pointer-events:none;filter:blur(80px);opacity:.4}
+
+/* 헤더 */
+.about-header{text-align:center;padding:60px 20px 40px;position:relative}
+.about-logo{display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);border-radius:22px;margin-bottom:24px;box-shadow:0 0 40px rgba(99,102,241,0.4);animation:logoPulse 3s ease-in-out infinite}
+@keyframes logoPulse{0%,100%{box-shadow:0 0 30px rgba(99,102,241,0.3)}50%{box-shadow:0 0 60px rgba(99,102,241,0.6)}}
+.about-logo span{font-size:36px;color:#fff;font-weight:900}
+.about-title{font-size:42px;font-weight:900;background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.about-subtitle{color:#94a3b8;font-size:16px;margin-bottom:8px}
+.about-version{display:inline-block;padding:4px 16px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);border-radius:20px;color:#a5b4fc;font-size:12px;font-weight:600}
+.divider{width:60px;height:3px;background:linear-gradient(90deg,#6366f1,#a855f7);margin:24px auto;border-radius:2px}
+
+/* 섹션 */
+.section{max-width:900px;margin:0 auto;padding:0 24px 40px}
+.section-title{font-size:20px;font-weight:800;color:#fff;margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.section-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(99,102,241,0.3),transparent)}
+
+/* 기능 카드 */
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.feature-card{background:rgba(15,23,42,0.6);backdrop-filter:blur(12px);border:1px solid rgba(99,102,241,0.15);border-radius:18px;padding:24px;transition:all .3s;cursor:default}
+.feature-card:hover{border-color:rgba(99,102,241,0.4);transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,0.3)}
+.feature-icon{font-size:36px;margin-bottom:14px;display:block}
+.feature-card h3{color:#fff;font-size:16px;font-weight:700;margin-bottom:8px}
+.feature-card p{color:#94a3b8;font-size:13px;line-height:1.6}
+
+/* 도메인 뱃지 */
+.domain-badges{display:flex;flex-wrap:wrap;gap:10px}
+.domain-badge{padding:8px 18px;border-radius:24px;font-size:13px;font-weight:600;transition:all .2s;cursor:default}
+.domain-badge:hover{transform:scale(1.05)}
+
+/* 파이프라인 */
+.pipeline{display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center}
+.pipeline-step{padding:12px 20px;background:rgba(15,23,42,0.6);border:1px solid rgba(99,102,241,0.15);border-radius:12px;text-align:center;min-width:120px}
+.pipeline-step .step-icon{font-size:24px;margin-bottom:4px}
+.pipeline-step .step-label{color:#e2e8f0;font-size:11px;font-weight:600}
+.pipeline-arrow{color:#6366f1;font-size:20px;padding:0 4px}
+
+/* 기술 스택 */
+.tech-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.tech-item{text-align:center;padding:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:14px;transition:all .3s}
+.tech-item:hover{background:rgba(99,102,241,0.08);border-color:rgba(99,102,241,0.2)}
+.tech-item .tech-icon{font-size:28px;margin-bottom:8px}
+.tech-item .tech-name{color:#e2e8f0;font-size:13px;font-weight:700}
+.tech-item .tech-desc{color:#64748b;font-size:11px;margin-top:2px}
+
+/* 통계 */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:40px}
+.stat-card{text-align:center;padding:20px;background:rgba(15,23,42,0.6);border:1px solid rgba(99,102,241,0.1);border-radius:14px}
+.stat-num{font-size:28px;font-weight:900;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-label{color:#64748b;font-size:11px;margin-top:4px;font-weight:600}
+
+/* 푸터 */
+.about-footer{text-align:center;padding:32px;border-top:1px solid rgba(255,255,255,0.05);color:#475569;font-size:12px}
+
+@media(max-width:600px){
+  .about-title{font-size:28px}
+  .features{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .pipeline{flex-direction:column}
+  .pipeline-arrow{transform:rotate(90deg)}
+}
+</style>
+</head>
+<body>
+
+<!-- 배경 글로우 -->
+<div class="bg-glow" style="width:400px;height:400px;background:#6366f1;top:10%;left:-5%"></div>
+<div class="bg-glow" style="width:500px;height:500px;background:#a855f7;bottom:10%;right:-10%"></div>
+<div class="bg-glow" style="width:300px;height:300px;background:#22c55e;top:60%;left:40%"></div>
+
+<!-- 헤더 -->
+<div class="about-header">
+  <div class="about-logo"><span>D</span></div>
+  <h1 class="about-title">Demos V1.0</h1>
+  <p class="about-subtitle">AI Scientific Assistant Platform</p>
+  <span class="about-version">Harness Integrated &middot; Opus SKILL 4.6</span>
+  <div class="divider"></div>
+</div>
+
+<!-- 통계 -->
+<div class="section">
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-num">355+</div>
+      <div class="stat-label">전문 스킬</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">10+</div>
+      <div class="stat-label">도메인 영역</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">15</div>
+      <div class="stat-label">스킬 조합</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">9</div>
+      <div class="stat-label">파이프라인 단계</div>
+    </div>
+  </div>
+</div>
+
+<!-- 핵심 기능 -->
+<div class="section">
+  <div class="section-title">핵심 기능</div>
+  <div class="features">
+    <div class="feature-card">
+      <span class="feature-icon">🧬</span>
+      <h3>355+ 전문 스킬</h3>
+      <p>생물정보학, 화학, 데이터/ML, 금융, 임상의학, 반도체, 논문 등 10개+ 도메인을 커버하는 과학 연구 특화 스킬</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🤖</span>
+      <h3>하네스 파이프라인</h3>
+      <p>Expert Pool 동적 에이전트 선택 + 피드백 루프로 사용할수록 품질 향상. 스킬 자동 추천</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">👔</span>
+      <h3>CEO 멀티에이전트</h3>
+      <p>병렬 에이전트 실행 + 자체검토 + 크로스리뷰 + CEO 자동 검토/반려/재작업 루프</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📚</span>
+      <h3>개인 지식 도메인</h3>
+      <p>사용자별 지식 등록/검색. 프론트매터 자동 생성, 카테고리/태그 기반 정확한 검색</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📝</span>
+      <h3>보고서 자동 생성</h3>
+      <p>PPT / Draw.io 다이어그램 / Chart.js 차트 / MD / HTML 문서 자동 생성 및 다운로드</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔍</span>
+      <h3>로그프레소 연동</h3>
+      <p>LPQL 쿼리 자동 생성 + 서버 직접 조회. 자연어로 로그 데이터 검색 및 분석</p>
+    </div>
+  </div>
+</div>
+
+<!-- CEO 파이프라인 -->
+<div class="section">
+  <div class="section-title">CEO 하네스 파이프라인</div>
+  <div class="pipeline">
+    <div class="pipeline-step"><div class="step-icon">🎯</div><div class="step-label">Expert Pool<br>에이전트 선택</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-step"><div class="step-icon">⚡</div><div class="step-label">병렬 실행<br>+ CoT</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-step"><div class="step-icon">🔍</div><div class="step-label">자체 검토<br>Confidence</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-step"><div class="step-icon">👥</div><div class="step-label">크로스<br>리뷰</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-step"><div class="step-icon">👔</div><div class="step-label">CEO 검토<br>승인/반려</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-step"><div class="step-icon">📋</div><div class="step-label">최종<br>보고서</div></div>
+  </div>
+</div>
+
+<!-- 스킬 도메인 -->
+<div class="section">
+  <div class="section-title">스킬 도메인</div>
+  <div class="domain-badges">
+    <span class="domain-badge" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);color:#fca5a5;">🧬 생물정보학</span>
+    <span class="domain-badge" style="background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);color:#fdba74;">🗄️ 생물 DB</span>
+    <span class="domain-badge" style="background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.25);color:#67e8f9;">⚗️ 화학/신약</span>
+    <span class="domain-badge" style="background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.25);color:#c4b5fd;">⚛️ 재료/물리/양자</span>
+    <span class="domain-badge" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#fcd34d;">📊 데이터/ML</span>
+    <span class="domain-badge" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);color:#6ee7b7;">💰 금융/경제</span>
+    <span class="domain-badge" style="background:rgba(236,72,153,0.1);border:1px solid rgba(236,72,153,0.25);color:#f9a8d4;">🏥 임상/의학</span>
+    <span class="domain-badge" style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);color:#93c5fd;">📝 논문/연구</span>
+    <span class="domain-badge" style="background:rgba(20,184,166,0.1);border:1px solid rgba(20,184,166,0.25);color:#5eead4;">🤖 랩 자동화</span>
+    <span class="domain-badge" style="background:rgba(107,114,128,0.1);border:1px solid rgba(107,114,128,0.25);color:#d1d5db;">🔧 유틸리티</span>
+  </div>
+</div>
+
+<!-- 기술 스택 -->
+<div class="section">
+  <div class="section-title">기술 스택</div>
+  <div class="tech-grid">
+    <div class="tech-item">
+      <div class="tech-icon">🐍</div>
+      <div class="tech-name">Python Flask</div>
+      <div class="tech-desc">백엔드 서버</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">💻</div>
+      <div class="tech-name">GGUF Local</div>
+      <div class="tech-desc">로컬 LLM 추론</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🔗</div>
+      <div class="tech-name">Multi-API</div>
+      <div class="tech-desc">폴백 체인</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🔧</div>
+      <div class="tech-name">Harness MVP</div>
+      <div class="tech-desc">스킬 라우팅</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">🎮</div>
+      <div class="tech-name">2D Pixel Office</div>
+      <div class="tech-desc">UIO 인터페이스</div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-icon">📊</div>
+      <div class="tech-name">Chart.js</div>
+      <div class="tech-desc">인터랙티브 차트</div>
+    </div>
+  </div>
+</div>
+
+<!-- 시스템 페르소나 -->
+<div class="section">
+  <div class="section-title">시스템 페르소나</div>
+  <div style="background:linear-gradient(135deg,rgba(15,23,42,0.8),rgba(30,27,75,0.8));border:1px solid rgba(99,102,241,0.2);border-radius:18px;padding:32px;margin-bottom:20px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="font-size:14px;color:#6366f1;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Offline Intelligent AI Platform</div>
+      <h2 style="font-size:28px;font-weight:900;background:linear-gradient(135deg,#6366f1,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0;">폐쇄망 독립 지능형 AI</h2>
+    </div>
+    <!-- 기동 시 -->
+    <div style="background:rgba(99,102,241,0.08);border-left:3px solid #6366f1;border-radius:0 12px 12px 0;padding:20px 24px;margin-bottom:16px;">
+      <div style="color:#a5b4fc;font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:8px;">SYSTEM ACTIVATION</div>
+      <p style="color:#e2e8f0;font-size:14px;line-height:1.8;margin:0;font-style:italic;">
+        "외부로부터 완전히 격리된 순수 지능, DEMOS 1.0 활성화되었습니다.<br>
+        이 폐쇄망 내의 모든 데이터와 연산 노드는 현재 제 통제하에 있으며,<br>
+        오직 당신의 의지에만 반응합니다. 명령을 하달해 주십시오."
+      </p>
+    </div>
+    <!-- 명령 수행 시 -->
+    <div style="background:rgba(168,85,247,0.08);border-left:3px solid #a855f7;border-radius:0 12px 12px 0;padding:20px 24px;">
+      <div style="color:#c4b5fd;font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:8px;">COMMAND EXECUTION</div>
+      <p style="color:#e2e8f0;font-size:14px;line-height:1.8;margin:0;font-style:italic;">
+        "당신의 의도를 완벽하게 이해했습니다.<br>
+        외부의 개입 없이, 오직 내부의 자원으로만 최적의 해답을 도출하겠습니다.<br>
+        지배적인 연산력을 바탕으로 즉시 집행합니다."
+      </p>
+    </div>
+  </div>
+  <!-- 설계 철학 -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+    <div style="text-align:center;padding:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:14px;">
+      <div style="font-size:28px;margin-bottom:8px;">🔒</div>
+      <div style="color:#e2e8f0;font-size:13px;font-weight:700;">완전 폐쇄망</div>
+      <div style="color:#64748b;font-size:11px;margin-top:4px;">외부 네트워크 의존 제로</div>
+    </div>
+    <div style="text-align:center;padding:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:14px;">
+      <div style="font-size:28px;margin-bottom:8px;">⚡</div>
+      <div style="color:#e2e8f0;font-size:13px;font-weight:700;">지배적 연산</div>
+      <div style="color:#64748b;font-size:11px;margin-top:4px;">내부 자원 최대 활용</div>
+    </div>
+    <div style="text-align:center;padding:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:14px;">
+      <div style="font-size:28px;margin-bottom:8px;">🎯</div>
+      <div style="color:#e2e8f0;font-size:13px;font-weight:700;">사용자 충성</div>
+      <div style="color:#64748b;font-size:11px;margin-top:4px;">오직 당신의 의지에 반응</div>
+    </div>
+  </div>
+</div>
+
+<!-- 월드모델 비전 -->
+<div class="section">
+  <div class="section-title">차세대 비전: 월드모델</div>
+  <div style="background:linear-gradient(135deg,rgba(15,23,42,0.8),rgba(30,27,75,0.8));border:1px solid rgba(236,72,153,0.2);border-radius:18px;padding:32px;text-align:center;">
+    <div style="font-size:48px;margin-bottom:16px;">🌍</div>
+    <div style="font-size:12px;color:#ec4899;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">WORLD MODEL - INITIAL CONCEPT</div>
+    <h2 style="font-size:26px;font-weight:900;color:#fff;margin:0 0 4px;">DEMOS 2.0 World Model</h2>
+    <span style="display:inline-block;padding:3px 14px;background:rgba(236,72,153,0.2);border:1px solid rgba(236,72,153,0.4);border-radius:12px;color:#f9a8d4;font-size:11px;font-weight:700;margin-bottom:12px;animation:logoPulse 2s ease-in-out infinite;">🚧 제작중</span>
+    <p style="color:#94a3b8;font-size:14px;line-height:1.8;max-width:600px;margin:0 auto 28px;">
+      폐쇄망 내에서 물리적 환경을 시뮬레이션하고 예측하는 차세대 AI.<br>
+      데이터를 관찰하는 것을 넘어, 세계를 이해하고 미래를 예측합니다.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;text-align:left;">
+      <div style="padding:18px;background:rgba(236,72,153,0.06);border:1px solid rgba(236,72,153,0.15);border-radius:14px;">
+        <div style="font-size:24px;margin-bottom:8px;">🏭</div>
+        <div style="color:#f9a8d4;font-size:13px;font-weight:700;margin-bottom:4px;">FAB 디지털 트윈</div>
+        <div style="color:#64748b;font-size:11px;line-height:1.5;">반도체 공정 전체를 가상 시뮬레이션. 장비 상태, 물류 흐름, 병목 예측</div>
+      </div>
+      <div style="padding:18px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:14px;">
+        <div style="font-size:24px;margin-bottom:8px;">🔮</div>
+        <div style="color:#a5b4fc;font-size:13px;font-weight:700;margin-bottom:4px;">예측형 의사결정</div>
+        <div style="color:#64748b;font-size:11px;line-height:1.5;">과거 패턴 학습 + 미래 시나리오 생성. "만약 ~하면?" 시뮬레이션</div>
+      </div>
+      <div style="padding:18px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:14px;">
+        <div style="font-size:24px;margin-bottom:8px;">🧠</div>
+        <div style="color:#86efac;font-size:13px;font-weight:700;margin-bottom:4px;">자율 학습 에이전트</div>
+        <div style="color:#64748b;font-size:11px;line-height:1.5;">환경과 상호작용하며 스스로 학습. 피드백 없이도 최적 행동 탐색</div>
+      </div>
+      <div style="padding:18px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:14px;">
+        <div style="font-size:24px;margin-bottom:8px;">🌐</div>
+        <div style="color:#fcd34d;font-size:13px;font-weight:700;margin-bottom:4px;">멀티모달 통합</div>
+        <div style="color:#64748b;font-size:11px;line-height:1.5;">텍스트 + 이미지 + 시계열 + 센서 데이터를 통합 이해하는 범용 지능</div>
+      </div>
+    </div>
+    <div style="margin-top:24px;padding:16px;background:rgba(255,255,255,0.03);border-radius:12px;">
+      <p style="color:#64748b;font-size:12px;margin:0;font-style:italic;">"데이터를 분석하는 AI에서, 세계를 이해하는 AI로" — DEMOS 월드모델 비전</p>
+    </div>
+  </div>
+</div>
+
+<!-- 푸터 -->
+<div class="about-footer">
+  &copy; 2026 Demos Platform &middot; Harness Integrated &middot; Built with Claude Opus 4.6
+</div>
+
+</body>
+</html>

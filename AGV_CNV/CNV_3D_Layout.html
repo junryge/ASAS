@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMOS MAP SYSTEM PRO - CNV Conveyor System</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { overflow:hidden; background:#050a18; font-family:'Malgun Gothic','맑은 고딕','Segoe UI',Arial,sans-serif; color:#fff; }
+
+/* === 로딩 === */
+#loading { position:fixed; top:0; left:0; width:100%; height:100%; background:#050a18; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; }
+#loading h1 { font-size:36px; color:#00d4ff; letter-spacing:3px; text-shadow:0 0 30px rgba(0,212,255,0.5); }
+#loading .sub { font-size:14px; color:#7b2fff; letter-spacing:5px; margin:6px 0; }
+#loading .author { font-size:11px; color:#445; margin-bottom:20px; }
+#loading .bar-bg { width:380px; height:5px; background:#111a30; border-radius:3px; overflow:hidden; }
+#loading .bar-fill { height:100%; width:0%; background:linear-gradient(90deg,#00d4ff,#7b2fff); transition:width .3s; }
+#loading .status { margin-top:10px; color:#667; font-size:13px; }
+
+/* === 헤더 === */
+#header { height:52px; background:linear-gradient(180deg,#0c1428 0%,#080e20 100%); border-bottom:2px solid rgba(0,212,255,0.25); display:flex; justify-content:space-between; align-items:center; padding:0 20px; flex-shrink:0; }
+#header h1 { font-size:17px; color:#00d4ff; display:flex; align-items:center; gap:10px; }
+.badge { background:linear-gradient(135deg,#00cc88,#009966); padding:3px 10px; border-radius:4px; font-size:10px; }
+.fab-name { background:rgba(0,212,255,0.08); padding:3px 10px; border-radius:4px; font-size:11px; border:1px solid rgba(0,212,255,0.25); }
+.header-right { display:flex; align-items:center; gap:16px; font-size:11px; color:#778; }
+.status-dot { width:8px; height:8px; border-radius:50%; background:#00ff88; box-shadow:0 0 8px #00ff88; display:inline-block; margin-right:4px; }
+.kpi-row { display:flex; gap:4px; align-items:center; }
+.kpi-label { font-size:10px; color:#889; margin-right:4px; }
+.kpi-digit { background:#0a1530; border:1px solid rgba(0,212,255,0.2); border-radius:3px; width:22px; height:28px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; color:#00d4ff; }
+
+/* === 메인 레이아웃 === */
+#app { display:flex; flex-direction:column; height:100vh; }
+#main-container { display:flex; flex:1; overflow:hidden; }
+.sidebar-toggle { width:24px; background:linear-gradient(180deg,#0c1428,#080e1a); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#00d4ff; font-size:13px; flex-shrink:0; writing-mode:vertical-rl; padding:8px 0; }
+.sidebar-toggle:hover { background:#151e38; }
+.sidebar-toggle .label { font-size:9px; color:#667; letter-spacing:2px; margin-top:6px; }
+#left-toggle { border-right:1px solid #0f1a30; }
+#right-toggle { border-left:1px solid #0f1a30; }
+
+/* === 좌측 패널 === */
+#left-panel { width:260px; min-width:0; background:linear-gradient(180deg,#0a0f20 0%,#070b18 100%); border-right:1px solid #0f1a30; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; transition:width .3s,min-width .3s; }
+#left-panel.collapsed { width:0; min-width:0; overflow:hidden; border-right:none; }
+#left-panel::-webkit-scrollbar { width:4px; }
+#left-panel::-webkit-scrollbar-thumb { background:#222; border-radius:2px; }
+.panel-section { padding:12px 14px; border-bottom:1px solid #0f1a30; }
+.panel-title { font-size:11px; color:#00d4ff; font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+.stat-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; }
+.stat-box { background:linear-gradient(135deg,#0c1830 0%,#0a1225 100%); border:1px solid #152040; border-radius:8px; padding:8px 6px; text-align:center; }
+.stat-box .icon { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:10px; margin-bottom:3px; }
+.stat-box .icon.green { background:rgba(0,200,100,0.2); color:#00cc66; }
+.stat-box .icon.yellow { background:rgba(255,200,0,0.2); color:#ffcc00; }
+.stat-box .icon.blue { background:rgba(0,150,255,0.2); color:#0099ff; }
+.stat-box .icon.gray { background:rgba(120,120,140,0.2); color:#888; }
+.stat-box .icon.red { background:rgba(255,50,50,0.2); color:#ff4444; }
+.stat-box .icon.orange { background:rgba(255,150,0,0.2); color:#ff9900; }
+.stat-box .icon.cyan { background:rgba(0,212,255,0.2); color:#00d4ff; }
+.stat-box .icon.purple { background:rgba(160,80,255,0.2); color:#aa55ff; }
+.stat-box .num { font-size:22px; font-weight:700; color:#fff; }
+.stat-box .lbl { font-size:9px; color:#778; margin-top:2px; }
+.cnv-detail { background:linear-gradient(135deg,#0c1830,#0a1225); border:1px solid #152040; border-radius:10px; padding:12px; }
+.cnv-detail-header { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#889; margin-bottom:8px; }
+.cnv-img-area { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+.cnv-icon-box { width:80px; height:60px; background:radial-gradient(ellipse at center,#0d1a35,#080e20); border:1px solid #1a2545; border-radius:10px; display:flex; align-items:center; justify-content:center; }
+.cnv-big-id { font-size:36px; font-weight:700; color:#fff; line-height:1; }
+.cnv-info-row { display:flex; justify-content:space-between; font-size:11px; padding:3px 0; }
+.cnv-info-row .k { color:#778; }
+.cnv-info-row .v { color:#00d4ff; font-weight:600; }
+.cnv-info-row .v.active { color:#00cc66; }
+.cnv-info-row .v.stopped { color:#ff4444; }
+.cnv-info-row .v.transfer { color:#ffcc00; }
+.load-bar { width:60px; height:8px; background:#111a30; border-radius:4px; overflow:hidden; display:inline-block; vertical-align:middle; margin-left:4px; }
+.load-fill { height:100%; background:linear-gradient(90deg,#00cc66,#00d4ff); border-radius:4px; }
+
+/* === 우측 패널 === */
+#right-panel { width:260px; min-width:0; background:linear-gradient(180deg,#0a0f20,#070b18); border-left:1px solid #0f1a30; display:flex; flex-direction:column; transition:width .3s,min-width .3s; }
+#right-panel.collapsed { width:0; min-width:0; overflow:hidden; border-left:none; }
+.right-tabs { display:flex; border-bottom:1px solid #0f1a30; }
+.right-tab { flex:1; padding:10px 8px; text-align:center; font-size:11px; font-weight:700; color:#667; cursor:pointer; background:#080e1a; border-bottom:2px solid transparent; transition:all .2s; }
+.right-tab:hover { color:#aab; }
+.right-tab.active { color:#00d4ff; border-bottom-color:#00d4ff; background:#0c1428; }
+.right-content { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.right-content>.tab-pane { display:none; flex:1; flex-direction:column; overflow:hidden; }
+.right-content>.tab-pane.active { display:flex; }
+.carrier-filter-tabs { display:flex; gap:3px; padding:8px 10px; background:#080e1a; }
+.carrier-ftab { padding:4px 8px; font-size:10px; border:1px solid #1a2545; background:#0c1428; color:#667; border-radius:4px; cursor:pointer; transition:all .2s; }
+.carrier-ftab:hover { border-color:#335; color:#aab; }
+.carrier-ftab.active { background:rgba(0,212,255,0.15); color:#00d4ff; border-color:#00d4ff; }
+#carrierSearchInput { width:calc(100% - 20px); margin:6px 10px; padding:6px 10px; background:#0c1428; border:1px solid #1a2545; color:#fff; border-radius:5px; font-size:11px; }
+.carrier-list { flex:1; overflow-y:auto; padding:6px 10px; }
+.carrier-list::-webkit-scrollbar { width:4px; }
+.carrier-list::-webkit-scrollbar-thumb { background:#222; border-radius:2px; }
+.carrier-list-item { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; margin-bottom:4px; background:linear-gradient(135deg,#0c1830,#0a1225); border:1px solid #152040; border-radius:8px; border-left:3px solid #333; font-size:11px; cursor:pointer; transition:all .2s; }
+.carrier-list-item:hover { background:#151e38; border-color:rgba(0,212,255,0.3); }
+.carrier-badge { padding:2px 8px; border-radius:3px; font-size:9px; font-weight:700; }
+.carrier-badge.active { background:#00cc55; color:#000; }
+.carrier-badge.transfer { background:#ffaa00; color:#000; }
+.carrier-badge.wait { background:#3399ff; color:#fff; }
+.carrier-badge.error { background:#ff4444; color:#fff; }
+.carrier-badge.stopped { background:#555; color:#ccc; }
+.stocker-list { flex:1; overflow-y:auto; padding:6px 10px; }
+.stocker-list::-webkit-scrollbar { width:4px; }
+.stocker-list::-webkit-scrollbar-thumb { background:#222; border-radius:2px; }
+.stocker-item { padding:8px 10px; margin-bottom:4px; background:linear-gradient(135deg,#0c1830,#0a1225); border:1px solid #152040; border-radius:8px; border-left:3px solid #00cc88; font-size:11px; cursor:pointer; }
+.stocker-item .stocker-name { font-weight:700; color:#fff; }
+.stocker-item .stocker-info { color:#778; font-size:10px; }
+
+/* === 3D 컨테이너 === */
+#three-container { flex:1; position:relative; }
+canvas { display:block; }
+
+/* === 미니맵 === */
+#minimap { position:absolute; bottom:10px; right:10px; width:180px; height:120px; background:rgba(5,10,24,0.9); border:1px solid rgba(0,212,255,0.3); border-radius:8px; z-index:10; }
+
+/* === 플로팅 컨트롤 === */
+#float-controls { position:absolute; top:10px; right:10px; z-index:10; background:rgba(8,14,30,0.9); border:1px solid #1a2545; border-radius:10px; padding:10px 14px; min-width:190px; cursor:move; }
+#float-controls .fc-title { font-size:10px; color:#00d4ff; font-weight:700; margin-bottom:6px; }
+.fc-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; font-size:11px; }
+.fc-row label { color:#889; }
+.fc-row input[type=range] { width:80px; accent-color:#00d4ff; }
+.fc-chk { display:flex; align-items:center; gap:5px; font-size:10px; color:#889; padding:2px 0; }
+.fc-chk input { accent-color:#00d4ff; }
+
+/* === 풋터 === */
+#footer { height:28px; background:#080e1a; border-top:1px solid #0f1a30; display:flex; justify-content:space-between; align-items:center; padding:0 14px; font-size:10px; color:#556; flex-shrink:0; }
+#fps-counter { color:#00cc66; font-weight:600; }
+
+/* === 툴팁 === */
+#tooltip { position:fixed; display:none; background:rgba(8,14,30,0.95); border:1px solid #00d4ff; border-radius:6px; padding:10px 14px; font-size:11px; color:#fff; pointer-events:none; z-index:100; min-width:160px; box-shadow:0 0 20px rgba(0,212,255,0.15); }
+#tooltip .tt-title { color:#00d4ff; font-weight:700; margin-bottom:4px; }
+#tooltip .tt-row { display:flex; justify-content:space-between; gap:16px; padding:2px 0; }
+#tooltip .tt-k { color:#778; }
+#tooltip .tt-v { color:#fff; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="loading">
+  <h1>AMOS MAP SYSTEM PRO</h1>
+  <div class="sub">CNV CONVEYOR SYSTEM</div>
+  <div class="author">SK Hynix M14-Pro FAB</div>
+  <div class="bar-bg"><div class="bar-fill" id="loadBar"></div></div>
+  <div class="status" id="loadStatus">Initializing...</div>
+</div>
+
+<div id="app">
+  <div id="header">
+    <h1>
+      <span>◆</span> AMOS MAP SYSTEM PRO
+      <span class="badge">CNV</span>
+      <span class="fab-name">SK Hynix M14-Pro</span>
+    </h1>
+    <div class="header-right">
+      <div class="kpi-row"><span class="kpi-label">캐리어</span><div class="kpi-digit" id="k1h">0</div><div class="kpi-digit" id="k1t">4</div><div class="kpi-digit" id="k1o">2</div></div>
+      <div class="kpi-row"><span class="kpi-label">이송완료</span><div class="kpi-digit" id="k2h">1</div><div class="kpi-digit" id="k2t">8</div><div class="kpi-digit" id="k2o">7</div></div>
+      <div class="kpi-row"><span class="kpi-label">스토커</span><div class="kpi-digit" id="k3h">0</div><div class="kpi-digit" id="k3t">1</div><div class="kpi-digit" id="k3o">6</div></div>
+      <span style="color:#445">|</span>
+      <span><span class="status-dot"></span>Server is normal</span>
+      <span id="clockDisp">--:--:--</span>
+    </div>
+  </div>
+
+  <div id="main-container">
+    <button id="left-toggle" class="sidebar-toggle" onclick="togglePanel('left')">◀<span class="label">MONITOR</span></button>
+    <div id="left-panel">
+      <div class="panel-section">
+        <div class="panel-title">■ 컨베이어 현황</div>
+        <div class="stat-grid">
+          <div class="stat-box"><div class="icon green">▶</div><div class="num" id="sRunning">28</div><div class="lbl">Running</div></div>
+          <div class="stat-box"><div class="icon yellow">⇄</div><div class="num" id="sTransfer">8</div><div class="lbl">Transfer</div></div>
+          <div class="stat-box"><div class="icon blue">◎</div><div class="num" id="sWait">4</div><div class="lbl">Waiting</div></div>
+          <div class="stat-box"><div class="icon gray">■</div><div class="num" id="sStopped">2</div><div class="lbl">Stopped</div></div>
+          <div class="stat-box"><div class="icon red">✕</div><div class="num" id="sError">0</div><div class="lbl">Error</div></div>
+          <div class="stat-box"><div class="icon orange">⚠</div><div class="num" id="sJam">1</div><div class="lbl">Jam</div></div>
+          <div class="stat-box"><div class="icon cyan">⬡</div><div class="num" id="sStorker">16</div><div class="lbl">Stocker</div></div>
+          <div class="stat-box"><div class="icon purple">◇</div><div class="num" id="sPort">24</div><div class="lbl">Port</div></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">■ 캐리어 상세정보</div>
+        <div class="cnv-detail" id="carrierDetail">
+          <div class="cnv-detail-header"><span>CARRIER</span><span id="detailCarrierId">CR-001</span></div>
+          <div class="cnv-img-area">
+            <div class="cnv-icon-box">
+              <svg viewBox="0 0 60 40" width="60" height="40">
+                <rect x="5" y="8" width="50" height="24" rx="4" fill="#0a2040" stroke="#00d4ff" stroke-width="1.5"/>
+                <rect x="10" y="12" width="40" height="16" rx="2" fill="#0d1a35" stroke="#00cc88" stroke-width="1"/>
+                <circle cx="15" cy="35" r="3" fill="#00d4ff"/>
+                <circle cx="45" cy="35" r="3" fill="#00d4ff"/>
+                <rect x="20" y="15" width="20" height="10" rx="1" fill="rgba(0,200,100,0.15)" stroke="#00cc88" stroke-width="0.5"/>
+                <text x="30" y="23" text-anchor="middle" fill="#00cc88" font-size="6" font-weight="700">FOUP</text>
+              </svg>
+            </div>
+            <div>
+              <div class="cnv-big-id" id="detailBigId">01</div>
+              <div style="font-size:10px;color:#667">Active - Trunk Line 3</div>
+            </div>
+          </div>
+          <div class="cnv-info-row"><span class="k">상태</span><span class="v active" id="detailStatus">Active</span></div>
+          <div class="cnv-info-row"><span class="k">현재위치</span><span class="v" id="detailPos">Bay-12 → Bay-13</span></div>
+          <div class="cnv-info-row"><span class="k">FOUP</span><span class="v" id="detailFoup">LOT-2025A-088</span></div>
+          <div class="cnv-info-row"><span class="k">속도</span><span class="v" id="detailSpeed">1.2 m/s</span></div>
+          <div class="cnv-info-row"><span class="k">적재율</span><span class="v" id="detailLoad">78%<span class="load-bar"><span class="load-fill" id="detailLoadBar" style="width:78%"></span></span></span></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">■ 캐리어 운영</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:11px;color:#889;">캐리어 수</span>
+          <button onclick="adjustCarriers(-5)" style="background:#1a2545;border:1px solid #2a3555;color:#ff6666;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;">-5</button>
+          <span id="carrierCountDisp" style="font-size:16px;font-weight:700;color:#00d4ff;min-width:30px;text-align:center;">42</span>
+          <button onclick="adjustCarriers(5)" style="background:#1a2545;border:1px solid #2a3555;color:#00cc66;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px;">+5</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="three-container">
+      <canvas id="mainCanvas"></canvas>
+      <canvas id="minimap"></canvas>
+      <div id="float-controls">
+        <div class="fc-title">◆ VIEW CONTROLS</div>
+        <div class="fc-row"><label>속도</label><input type="range" id="speedSlider" min="0" max="5" step="0.1" value="1"></div>
+        <div class="fc-row"><label>줌</label><input type="range" id="zoomSlider" min="500" max="8000" step="100" value="3000"></div>
+        <div class="fc-chk"><input type="checkbox" id="chkNodes" checked><label>노드</label></div>
+        <div class="fc-chk"><input type="checkbox" id="chkConveyor" checked><label>컨베이어</label></div>
+        <div class="fc-chk"><input type="checkbox" id="chkStocker" checked><label>스토커</label></div>
+        <div class="fc-chk"><input type="checkbox" id="chkEquip" checked><label>장비</label></div>
+        <div class="fc-chk"><input type="checkbox" id="chkGrid" checked><label>그리드</label></div>
+      </div>
+      <div id="tooltip"><div class="tt-title"></div><div class="tt-body"></div></div>
+    </div>
+
+    <button id="right-toggle" class="sidebar-toggle" onclick="togglePanel('right')"><span class="label">LIST</span>▶</button>
+    <div id="right-panel">
+      <div class="right-tabs">
+        <div class="right-tab active" onclick="switchRightTab(this,0)">캐리어</div>
+        <div class="right-tab" onclick="switchRightTab(this,1)">스토커</div>
+      </div>
+      <div class="right-content">
+        <div class="tab-pane active" id="tabCarrier">
+          <div class="carrier-filter-tabs">
+            <div class="carrier-ftab active" data-f="all">전체</div>
+            <div class="carrier-ftab" data-f="active">Active</div>
+            <div class="carrier-ftab" data-f="transfer">Transfer</div>
+            <div class="carrier-ftab" data-f="wait">Wait</div>
+            <div class="carrier-ftab" data-f="error">Error</div>
+          </div>
+          <input id="carrierSearchInput" placeholder="캐리어 검색...">
+          <div class="carrier-list" id="carrierListEl"></div>
+        </div>
+        <div class="tab-pane" id="tabStocker">
+          <div class="stocker-list" id="stockerListEl"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer">
+    <span><span class="status-dot"></span>CNV System Online | <span id="fps-counter">60 FPS</span></span>
+    <span>Node <span id="nodeCount">0</span> | Edge <span id="edgeCount">0</span> | Carrier <span id="carrierCount">0</span> | Stocker <span id="stockerCount">0</span></span>
+    <span>AMOS MAP SYSTEM PRO v3.2 | SK Hynix M14-Pro</span>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ========================================
+   1. 글로벌 상태
+======================================== */
+const S = {
+  nodes: [], edges: [], carriers: [], stockers: [], ports: [],
+  conveyorSegs: [], equipBays: [],
+  selectedCarrier: null, speedMul: 1, running: true,
+  showNodes: true, showConveyor: true, showStocker: true, showEquip: true, showGrid: true,
+  targetCount: 42
+};
+
+let scene, camera, renderer, controls, mmRenderer, mmCamera;
+let clock = new THREE.Clock();
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let frameCount = 0, fpsTime = 0;
+
+let floorMesh, gridHelper, nodeInst;
+let conveyorMeshes = [], stockerGroups = [], portMeshArr = [], equipInst;
+let carrierGroup;
+
+/* ========================================
+   2. FAB 레이아웃 생성
+======================================== */
+function generateLayout() {
+  const nodes = [], edges = [];
+  let nid = 0, eid = 0;
+
+  // 5 Trunk Lines (가로, Z 고정)
+  const trunkZ = [800, 1800, 2800, 3800, 4800];
+  const xStart = 400, xEnd = 11600, segs = 30;
+
+  trunkZ.forEach((z, ti) => {
+    const ln = [];
+    for (let i = 0; i <= segs; i++) {
+      const x = xStart + (xEnd - xStart) * (i / segs);
+      const n = { id: nid++, x, z, type: 'trunk', line: ti, seq: i };
+      nodes.push(n); ln.push(n);
+    }
+    for (let i = 0; i < ln.length - 1; i++) {
+      edges.push({ id: eid++, from: ln[i].id, to: ln[i+1].id, type: 'trunk', line: ti });
+    }
+  });
+
+  // 18 Branch Lines (세로)
+  const branchX = [];
+  for (let i = 0; i < 18; i++) branchX.push(800 + i * 620);
+
+  branchX.forEach((x, bi) => {
+    for (let ti = 0; ti < trunkZ.length - 1; ti++) {
+      const z1 = trunkZ[ti], z2 = trunkZ[ti+1], mz = (z1+z2)/2;
+      const n1 = { id: nid++, x, z: z1, type: 'bconn', line: ti, bay: bi };
+      const n2 = { id: nid++, x, z: mz, type: 'bmid', line: ti, bay: bi };
+      const n3 = { id: nid++, x, z: z2, type: 'bconn', line: ti+1, bay: bi };
+      nodes.push(n1, n2, n3);
+      edges.push({ id: eid++, from: n1.id, to: n2.id, type: 'branch', bay: bi });
+      edges.push({ id: eid++, from: n2.id, to: n3.id, type: 'branch', bay: bi });
+    }
+  });
+
+  // 스토커 16개
+  const stockers = [];
+  const sPos = [
+    [1400,800],[3200,800],[5600,800],[8000,800],
+    [1400,2800],[3800,2800],[6200,2800],[9400,2800],
+    [2000,4800],[4400,4800],[7000,4800],[9800,4800],
+    [1000,1800],[5000,1800],[7600,3800],[10600,3800]
+  ];
+  sPos.forEach((p,i) => {
+    stockers.push({ id:i, name:`STK-${String(i+1).padStart(2,'0')}`, x:p[0], z:p[1], cap:25, used:Math.floor(Math.random()*20), status: Math.random()>0.1?'active':'maint' });
+  });
+
+  // 포트 24개
+  const ports = [];
+  for (let i=0;i<24;i++){
+    const bx = branchX[i%18];
+    const bz = trunkZ[Math.floor(i/6)] + (i%2?200:-200);
+    ports.push({ id:i, name:`PORT-${String(i+1).padStart(2,'0')}`, x:bx+150, z:bz, type:['load','unload','buffer'][i%3] });
+  }
+
+  // 장비
+  const equipBays = [];
+  branchX.forEach((x,bi) => {
+    trunkZ.forEach((z,ti) => {
+      if(Math.random()>0.3) equipBays.push({ x:x+300, z:z-150, w:200, d:120, h:40+Math.random()*60, type:'process' });
+      if(Math.random()>0.4) equipBays.push({ x:x-300, z:z+150, w:180, d:100, h:30+Math.random()*50, type:'inspect' });
+    });
+  });
+
+  // 컨베이어 세그먼트
+  const convSegs = [];
+  edges.forEach(e => {
+    const fn = nodes.find(n=>n.id===e.from), tn = nodes.find(n=>n.id===e.to);
+    if(fn&&tn) convSegs.push({ fx:fn.x, fz:fn.z, tx:tn.x, tz:tn.z, type:e.type, line:e.line });
+  });
+
+  S.nodes=nodes; S.edges=edges; S.stockers=stockers; S.ports=ports;
+  S.equipBays=equipBays; S.conveyorSegs=convSegs;
+
+  document.getElementById('nodeCount').textContent=nodes.length;
+  document.getElementById('edgeCount').textContent=edges.length;
+  document.getElementById('stockerCount').textContent=stockers.length;
+}
+
+/* ========================================
+   3. Three.js 초기화
+======================================== */
+function initThree(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a1225);
+  scene.fog = new THREE.FogExp2(0x0a1225, 0.00004);
+
+  const canvas = document.getElementById('mainCanvas');
+  const cont = document.getElementById('three-container');
+  const w = cont.clientWidth, h = cont.clientHeight;
+
+  camera = new THREE.PerspectiveCamera(50, w/h, 10, 50000);
+  camera.position.set(6000, 4000, 8000);
+  camera.lookAt(6000, 0, 2800);
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.8;
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(6000, 0, 2800);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI * 0.48;
+  controls.minDistance = 500;
+  controls.maxDistance = 15000;
+  controls.update();
+
+  const mmC = document.getElementById('minimap');
+  mmRenderer = new THREE.WebGLRenderer({ canvas:mmC, antialias:false });
+  mmRenderer.setSize(180, 120);
+  mmCamera = new THREE.OrthographicCamera(-7000,7000,3500,-3500,1,20000);
+  mmCamera.position.set(6000,10000,2800);
+  mmCamera.lookAt(6000,0,2800);
+
+  scene.add(new THREE.AmbientLight(0x6688aa, 1.5));
+  const dl = new THREE.DirectionalLight(0xddeeff, 1.6);
+  dl.position.set(8000,8000,5000);
+  dl.castShadow=true;
+  dl.shadow.mapSize.set(2048,2048);
+  dl.shadow.camera.left=-10000; dl.shadow.camera.right=10000;
+  dl.shadow.camera.top=6000; dl.shadow.camera.bottom=-6000;
+  scene.add(dl);
+  const dl2 = new THREE.DirectionalLight(0xaaddff, 0.8);
+  dl2.position.set(-5000,6000,-3000);
+  scene.add(dl2);
+  const pl = new THREE.PointLight(0x00d4ff, 1.2, 15000);
+  pl.position.set(6000,3000,2800);
+  scene.add(pl);
+  const pl2 = new THREE.PointLight(0x00ffaa, 0.6, 10000);
+  pl2.position.set(3000,2000,1500);
+  scene.add(pl2);
+  const pl3 = new THREE.PointLight(0x00ccff, 0.6, 10000);
+  pl3.position.set(9000,2000,4000);
+  scene.add(pl3);
+}
+
+/* ========================================
+   4. 씬 구축
+======================================== */
+function buildScene(){
+  // 바닥
+  const fGeo = new THREE.PlaneGeometry(14000,7000);
+  const fMat = new THREE.MeshStandardMaterial({ color:0x0c1830, roughness:0.7, metalness:0.15 });
+  floorMesh = new THREE.Mesh(fGeo, fMat);
+  floorMesh.rotation.x = -Math.PI/2;
+  floorMesh.position.set(6000,-1,2800);
+  floorMesh.receiveShadow=true;
+  scene.add(floorMesh);
+
+  gridHelper = new THREE.GridHelper(14000, 70, 0x1a4570, 0x0f2a50);
+  gridHelper.position.set(6000, 0.5, 2800);
+  gridHelper.material.opacity=0.6; gridHelper.material.transparent=true;
+  scene.add(gridHelper);
+
+  // 바닥 글로우
+  const egMat = new THREE.MeshBasicMaterial({ color:0x00d4ff, transparent:true, opacity:0.06, side:THREE.DoubleSide });
+  const eg = new THREE.Mesh(new THREE.PlaneGeometry(14000,7000), egMat);
+  eg.rotation.x=-Math.PI/2; eg.position.set(6000,0.2,2800);
+  scene.add(eg);
+
+  // 노드
+  const nGeo = new THREE.SphereGeometry(12,8,6);
+  const nMat = new THREE.MeshStandardMaterial({ color:0x00eeff, emissive:0x0088cc, emissiveIntensity:0.8 });
+  nodeInst = new THREE.InstancedMesh(nGeo, nMat, S.nodes.length);
+  const nm = new THREE.Matrix4(), nc = new THREE.Color();
+  S.nodes.forEach((n,i) => {
+    nm.makeTranslation(n.x, 2, n.z);
+    nodeInst.setMatrixAt(i, nm);
+    nc.setHex(n.type==='trunk'?0x00d4ff:(n.type==='bmid'?0x00cc88:0x0088aa));
+    nodeInst.setColorAt(i, nc);
+  });
+  nodeInst.instanceMatrix.needsUpdate=true;
+  nodeInst.instanceColor.needsUpdate=true;
+  scene.add(nodeInst);
+
+  buildConveyors();
+  buildStockers();
+  buildPorts();
+  buildEquipment();
+
+  carrierGroup = new THREE.Group();
+  scene.add(carrierGroup);
+  initCarriers(S.targetCount);
+}
+
+function buildConveyors(){
+  const bGeo = new THREE.BoxGeometry(1,3,1);
+  const trunk = S.conveyorSegs.filter(s=>s.type==='trunk');
+  const branch = S.conveyorSegs.filter(s=>s.type==='branch');
+  const m = new THREE.Matrix4();
+
+  if(trunk.length){
+    const tMat = new THREE.MeshStandardMaterial({ color:0x00ffaa, emissive:0x00aa66, emissiveIntensity:1.0, roughness:0.2, metalness:0.5 });
+    const tInst = new THREE.InstancedMesh(bGeo, tMat, trunk.length);
+    trunk.forEach((s,i)=>{
+      const dx=s.tx-s.fx, dz=s.tz-s.fz, len=Math.sqrt(dx*dx+dz*dz);
+      const cx=(s.fx+s.tx)/2, cz=(s.fz+s.tz)/2, ang=Math.atan2(dz,dx);
+      m.identity(); m.makeScale(len,1,30);
+      m.premultiply(new THREE.Matrix4().makeRotationY(-ang));
+      m.premultiply(new THREE.Matrix4().makeTranslation(cx,1.5,cz));
+      tInst.setMatrixAt(i,m);
+    });
+    tInst.instanceMatrix.needsUpdate=true;
+    conveyorMeshes.push(tInst);
+    scene.add(tInst);
+
+    // 글로우
+    const gMat = new THREE.MeshBasicMaterial({ color:0x00ffaa, transparent:true, opacity:0.3 });
+    const gInst = new THREE.InstancedMesh(bGeo, gMat, trunk.length);
+    trunk.forEach((s,i)=>{
+      const dx=s.tx-s.fx, dz=s.tz-s.fz, len=Math.sqrt(dx*dx+dz*dz);
+      const cx=(s.fx+s.tx)/2, cz=(s.fz+s.tz)/2, ang=Math.atan2(dz,dx);
+      m.identity(); m.makeScale(len,0.5,60);
+      m.premultiply(new THREE.Matrix4().makeRotationY(-ang));
+      m.premultiply(new THREE.Matrix4().makeTranslation(cx,0.5,cz));
+      gInst.setMatrixAt(i,m);
+    });
+    gInst.instanceMatrix.needsUpdate=true;
+    conveyorMeshes.push(gInst);
+    scene.add(gInst);
+  }
+
+  if(branch.length){
+    const brMat = new THREE.MeshStandardMaterial({ color:0x00bbdd, emissive:0x0066aa, emissiveIntensity:0.8, roughness:0.3, metalness:0.5 });
+    const brInst = new THREE.InstancedMesh(bGeo, brMat, branch.length);
+    branch.forEach((s,i)=>{
+      const dx=s.tx-s.fx, dz=s.tz-s.fz, len=Math.sqrt(dx*dx+dz*dz);
+      const cx=(s.fx+s.tx)/2, cz=(s.fz+s.tz)/2, ang=Math.atan2(dz,dx);
+      m.identity(); m.makeScale(len,1,22);
+      m.premultiply(new THREE.Matrix4().makeRotationY(-ang));
+      m.premultiply(new THREE.Matrix4().makeTranslation(cx,1.5,cz));
+      brInst.setMatrixAt(i,m);
+    });
+    brInst.instanceMatrix.needsUpdate=true;
+    conveyorMeshes.push(brInst);
+    scene.add(brInst);
+  }
+}
+
+function buildStockers(){
+  S.stockers.forEach(stk=>{
+    const g = new THREE.Group();
+    const bGeo = new THREE.BoxGeometry(250,160,200);
+    const bMat = new THREE.MeshStandardMaterial({ color:0x2a4570, emissive:0x1a3050, emissiveIntensity:0.5, roughness:0.4, metalness:0.5, transparent:true, opacity:0.9 });
+    const body = new THREE.Mesh(bGeo, bMat);
+    body.position.y=80; body.castShadow=true;
+    g.add(body);
+
+    for(let r=0;r<4;r++){
+      for(let c=0;c<5;c++){
+        const filled = (r*5+c)<stk.used;
+        const sGeo = new THREE.BoxGeometry(35,8,30);
+        const sMat = new THREE.MeshStandardMaterial({ color:filled?0x00cc88:0x0a1225, emissive:filled?0x005533:0x000000, emissiveIntensity:0.4 });
+        const sl = new THREE.Mesh(sGeo, sMat);
+        sl.position.set(-70+c*35, 30+r*35, 0);
+        g.add(sl);
+      }
+    }
+
+    const ledGeo = new THREE.BoxGeometry(250,4,200);
+    const ledMat = new THREE.MeshBasicMaterial({ color:stk.status==='active'?0x00cc88:0xff6644, transparent:true, opacity:0.6 });
+    const led = new THREE.Mesh(ledGeo, ledMat);
+    led.position.y=162; g.add(led);
+
+    // 라벨
+    const lc = document.createElement('canvas');
+    lc.width=200; lc.height=40;
+    const ctx = lc.getContext('2d');
+    ctx.fillStyle='#0a1530'; ctx.fillRect(0,0,200,40);
+    ctx.fillStyle='#00d4ff'; ctx.font='bold 22px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(stk.name, 100, 28);
+    const lTex = new THREE.CanvasTexture(lc);
+    const lMat = new THREE.MeshBasicMaterial({ map:lTex, transparent:true });
+    const lMesh = new THREE.Mesh(new THREE.PlaneGeometry(100,20), lMat);
+    lMesh.position.set(0,170,101); g.add(lMesh);
+
+    g.position.set(stk.x,0,stk.z);
+    g.userData = { type:'stocker', data:stk };
+    stockerGroups.push(g);
+    scene.add(g);
+  });
+}
+
+function buildPorts(){
+  const pGeo = new THREE.CylinderGeometry(20,20,15,8);
+  S.ports.forEach(port=>{
+    const c = port.type==='load'?0x00cc66:(port.type==='unload'?0xff8800:0x3399ff);
+    const mat = new THREE.MeshStandardMaterial({ color:c, emissive:c, emissiveIntensity:0.8 });
+    const mesh = new THREE.Mesh(pGeo, mat);
+    mesh.position.set(port.x, 8, port.z);
+    mesh.castShadow=true;
+    mesh.userData = { type:'port', data:port };
+    portMeshArr.push(mesh);
+    scene.add(mesh);
+  });
+}
+
+function buildEquipment(){
+  const ct = S.equipBays.length;
+  if(!ct) return;
+  const eGeo = new THREE.BoxGeometry(1,1,1);
+  const eMat = new THREE.MeshStandardMaterial({ color:0x2a4060, roughness:0.5, metalness:0.4, transparent:true, opacity:0.75 });
+  equipInst = new THREE.InstancedMesh(eGeo, eMat, ct);
+  const m = new THREE.Matrix4(), c = new THREE.Color();
+  S.equipBays.forEach((eq,i)=>{
+    m.identity(); m.makeScale(eq.w, eq.h, eq.d);
+    m.premultiply(new THREE.Matrix4().makeTranslation(eq.x, eq.h/2, eq.z));
+    equipInst.setMatrixAt(i, m);
+    c.setHex(eq.type==='process'?0x1a2d50:0x162040);
+    equipInst.setColorAt(i, c);
+  });
+  equipInst.instanceMatrix.needsUpdate=true;
+  equipInst.instanceColor.needsUpdate=true;
+  equipInst.castShadow=true;
+  scene.add(equipInst);
+}
+
+/* ========================================
+   5. 캐리어 생성
+======================================== */
+function createCarrierMesh(){
+  const g = new THREE.Group();
+
+  // 본체 (박스형 캐리어)
+  const bodyGeo = new THREE.BoxGeometry(40,20,30);
+  const bodyMat = new THREE.MeshStandardMaterial({ color:0x3a5580, emissive:0x1a3050, emissiveIntensity:0.5, roughness:0.3, metalness:0.6 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y=10; body.castShadow=true;
+  g.add(body);
+
+  // FOUP 컨테이너
+  const foupGeo = new THREE.BoxGeometry(34,28,26);
+  const foupMat = new THREE.MeshStandardMaterial({ color:0x00ffaa, emissive:0x00aa55, emissiveIntensity:0.8, transparent:true, opacity:0.8, roughness:0.2, metalness:0.4 });
+  const foup = new THREE.Mesh(foupGeo, foupMat);
+  foup.position.y=24; g.add(foup);
+
+  // LED
+  const ledGeo = new THREE.BoxGeometry(10,3,10);
+  const ledMat = new THREE.MeshBasicMaterial({ color:0x00ff88 });
+  const led = new THREE.Mesh(ledGeo, ledMat);
+  led.position.y=39; g.add(led);
+  g._led = led;
+
+  // 롤러
+  const rGeo = new THREE.CylinderGeometry(4,4,32,8);
+  const rMat = new THREE.MeshStandardMaterial({ color:0x334455, metalness:0.8 });
+  [-12,12].forEach(xo=>{
+    const r = new THREE.Mesh(rGeo, rMat);
+    r.rotation.z=Math.PI/2; r.position.set(xo,2,0);
+    g.add(r);
+  });
+
+  return g;
+}
+
+function initCarriers(count){
+  while(carrierGroup.children.length>0) carrierGroup.remove(carrierGroup.children[0]);
+  S.carriers = [];
+
+  const tnodes = S.nodes.filter(n=>n.type==='trunk');
+  const statArr = ['active','active','active','active','transfer','transfer','wait','stopped'];
+
+  for(let i=0;i<count;i++){
+    const mesh = createCarrierMesh();
+    const sn = tnodes[Math.floor(Math.random()*tnodes.length)];
+    mesh.position.set(sn.x, 4, sn.z);
+
+    const st = statArr[Math.floor(Math.random()*statArr.length)];
+    const carrier = {
+      id:i, name:`CR-${String(i+1).padStart(3,'0')}`, mesh, status:st,
+      foup: Math.random()>0.3?`LOT-${String(Math.floor(Math.random()*999)).padStart(3,'0')}`:null,
+      speed: 0.8+Math.random()*0.8,
+      pathNodes:[], pathCurve:null, pathT:0, stateTimer:0
+    };
+    assignPath(carrier);
+    updateLED(carrier);
+    S.carriers.push(carrier);
+    carrierGroup.add(mesh);
+  }
+
+  document.getElementById('carrierCount').textContent=count;
+  document.getElementById('carrierCountDisp').textContent=count;
+  updateStats();
+  buildCarrierList();
+}
+
+function assignPath(carrier){
+  const pos = carrier.mesh.position;
+  let nearest=null, minD=Infinity;
+  S.nodes.forEach(n=>{
+    const d=(n.x-pos.x)**2+(n.z-pos.z)**2;
+    if(d<minD){minD=d;nearest=n;}
+  });
+  if(!nearest) return;
+
+  const pathLen = 5+Math.floor(Math.random()*11);
+  const visited = new Set(); visited.add(nearest.id);
+  const path = [nearest];
+  let cur = nearest;
+
+  for(let step=0;step<pathLen;step++){
+    const nb=[];
+    S.edges.forEach(e=>{
+      if(e.from===cur.id && !visited.has(e.to)) nb.push(e.to);
+      if(e.to===cur.id && !visited.has(e.from)) nb.push(e.from);
+    });
+    if(!nb.length) break;
+    const nxId = nb[Math.floor(Math.random()*nb.length)];
+    const nx = S.nodes.find(n=>n.id===nxId);
+    if(nx){ path.push(nx); visited.add(nxId); cur=nx; }
+  }
+
+  if(path.length<2){
+    const any = S.edges.find(e=>e.from===nearest.id||e.to===nearest.id);
+    if(any){
+      const oid = any.from===nearest.id?any.to:any.from;
+      const o = S.nodes.find(n=>n.id===oid);
+      if(o) path.push(o);
+    }
+  }
+
+  carrier.pathNodes=path;
+  if(path.length>=2){
+    carrier.pathCurve = new THREE.CatmullRomCurve3(path.map(n=>new THREE.Vector3(n.x,4,n.z)), false, 'catmullrom', 0.3);
+    carrier.pathT=0;
+  }
+}
+
+function updateLED(c){
+  const led=c.mesh._led; if(!led)return;
+  const cols={active:0x00ff88,transfer:0xffaa00,wait:0x3399ff,stopped:0x888888,error:0xff4444};
+  led.material.color.setHex(cols[c.status]||0x888888);
+}
+
+/* ========================================
+   6. 애니메이션
+======================================== */
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  frameCount++; fpsTime+=dt;
+  if(fpsTime>=0.5){
+    document.getElementById('fps-counter').textContent=Math.round(frameCount/fpsTime)+' FPS';
+    frameCount=0; fpsTime=0;
+  }
+
+  document.getElementById('clockDisp').textContent = new Date().toTimeString().slice(0,8);
+  controls.update();
+
+  if(S.running){
+    S.carriers.forEach(c=>{
+      if(c.status==='stopped'||c.status==='error') return;
+      if(!c.pathCurve){assignPath(c);return;}
+
+      if(c.status==='wait'){
+        c.stateTimer+=dt;
+        if(c.stateTimer>3){c.status='active';c.stateTimer=0;updateLED(c);}
+        return;
+      }
+
+      if(c.status==='transfer'){
+        c.stateTimer+=dt;
+        if(c.stateTimer>2){c.status='active';c.stateTimer=0;updateLED(c);}
+        c.pathT+=dt*c.speed*S.speedMul*0.02;
+      } else {
+        c.pathT+=dt*c.speed*S.speedMul*0.06;
+      }
+
+      if(c.pathT>=1){
+        const r=Math.random();
+        if(r<0.15){c.status='transfer';c.stateTimer=0;updateLED(c);}
+        else if(r<0.25){c.status='wait';c.stateTimer=0;updateLED(c);}
+        assignPath(c); return;
+      }
+
+      const pt = c.pathCurve.getPoint(c.pathT);
+      c.mesh.position.copy(pt);
+      const lt = Math.min(c.pathT+0.02,1);
+      const lp = c.pathCurve.getPoint(lt);
+      const dx=lp.x-pt.x, dz=lp.z-pt.z;
+      if(dx*dx+dz*dz>0.01) c.mesh.rotation.y=Math.atan2(dx,dz);
+    });
+
+    // 스토커 LED 깜빡임
+    stockerGroups.forEach((g,i)=>{
+      const led = g.children[g.children.length-2];
+      if(led&&led.material) led.material.opacity=0.4+0.3*Math.sin(elapsed*2+i);
+    });
+
+    // 포트 맥동
+    portMeshArr.forEach((m,i)=>{
+      const s=1+0.15*Math.sin(elapsed*3+i*0.5);
+      m.scale.set(s,1,s);
+    });
+
+    if(Math.floor(elapsed)%3===0) updateStats();
+  }
+
+  if(nodeInst) nodeInst.visible=S.showNodes;
+  conveyorMeshes.forEach(m=>m.visible=S.showConveyor);
+  stockerGroups.forEach(m=>m.visible=S.showStocker);
+  if(equipInst) equipInst.visible=S.showEquip;
+  if(gridHelper) gridHelper.visible=S.showGrid;
+
+  renderer.render(scene,camera);
+  mmRenderer.render(scene,mmCamera);
+}
+
+/* ========================================
+   7. UI
+======================================== */
+function updateStats(){
+  const ct={active:0,transfer:0,wait:0,stopped:0,error:0};
+  S.carriers.forEach(c=>{ct[c.status]=(ct[c.status]||0)+1;});
+  document.getElementById('sRunning').textContent=ct.active;
+  document.getElementById('sTransfer').textContent=ct.transfer;
+  document.getElementById('sWait').textContent=ct.wait;
+  document.getElementById('sStopped').textContent=ct.stopped;
+  document.getElementById('sError').textContent=ct.error;
+
+  const ts = String(S.carriers.length).padStart(3,'0');
+  document.getElementById('k1h').textContent=ts[0];
+  document.getElementById('k1t').textContent=ts[1];
+  document.getElementById('k1o').textContent=ts[2];
+}
+
+function buildCarrierList(){
+  const el=document.getElementById('carrierListEl');
+  el.innerHTML='';
+  S.carriers.forEach(c=>{
+    const item=document.createElement('div');
+    item.className='carrier-list-item';
+    const bc={active:'#00cc55',transfer:'#ffaa00',wait:'#3399ff',stopped:'#555',error:'#ff4444'};
+    item.style.borderLeftColor=bc[c.status]||'#333';
+    item.innerHTML=`<div><strong>${c.name}</strong><div style="font-size:9px;color:#667">${c.foup||'Empty'}</div></div><span class="carrier-badge ${c.status}">${c.status.toUpperCase()}</span>`;
+    item.onclick=()=>selectCarrier(c);
+    el.appendChild(item);
+  });
+}
+
+function buildStockerList(){
+  const el=document.getElementById('stockerListEl');
+  el.innerHTML='';
+  S.stockers.forEach(stk=>{
+    const item=document.createElement('div');
+    item.className='stocker-item';
+    if(stk.status!=='active') item.style.borderLeftColor='#ff6644';
+    item.innerHTML=`<div class="stocker-name">${stk.name}</div><div class="stocker-info">${stk.used}/${stk.cap} slots | ${stk.status}</div>`;
+    item.onclick=()=>{controls.target.set(stk.x,80,stk.z);camera.position.set(stk.x+500,400,stk.z+500);};
+    el.appendChild(item);
+  });
+}
+
+function selectCarrier(c){
+  S.selectedCarrier=c;
+  document.getElementById('detailCarrierId').textContent=c.name;
+  document.getElementById('detailBigId').textContent=String(c.id+1).padStart(2,'0');
+  const se=document.getElementById('detailStatus');
+  se.textContent=c.status.charAt(0).toUpperCase()+c.status.slice(1);
+  se.className='v '+c.status;
+  document.getElementById('detailPos').textContent=nearestName(c.mesh.position);
+  document.getElementById('detailFoup').textContent=c.foup||'Empty';
+  document.getElementById('detailSpeed').textContent=(c.speed*S.speedMul).toFixed(1)+' m/s';
+  const ld=c.foup?Math.floor(60+Math.random()*40):0;
+  document.getElementById('detailLoad').innerHTML=`${ld}%<span class="load-bar"><span class="load-fill" style="width:${ld}%"></span></span>`;
+  const p=c.mesh.position;
+  controls.target.set(p.x,p.y,p.z);
+}
+
+function nearestName(pos){
+  let best=null,minD=Infinity;
+  S.nodes.forEach(n=>{const d=(n.x-pos.x)**2+(n.z-pos.z)**2;if(d<minD){minD=d;best=n;}});
+  if(!best) return 'N/A';
+  if(best.type==='trunk') return `Trunk-${best.line+1} Bay-${best.seq+1}`;
+  if(best.bay!==undefined) return `Branch-${best.bay+1}`;
+  return `Node-${best.id}`;
+}
+
+window.adjustCarriers = function(delta){
+  S.targetCount=Math.max(5,Math.min(100,S.targetCount+delta));
+  initCarriers(S.targetCount);
+};
+
+window.togglePanel = function(side){
+  const p=document.getElementById(side==='left'?'left-panel':'right-panel');
+  p.classList.toggle('collapsed');
+  setTimeout(()=>onResize(),350);
+};
+
+window.switchRightTab = function(el,idx){
+  document.querySelectorAll('.right-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.right-content>.tab-pane').forEach((p,i)=>p.classList.toggle('active',i===idx));
+};
+
+// 필터 탭
+document.querySelectorAll('.carrier-ftab').forEach(tab=>{
+  tab.onclick=()=>{
+    document.querySelectorAll('.carrier-ftab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    const f=tab.dataset.f;
+    document.querySelectorAll('.carrier-list-item').forEach((item,i)=>{
+      const c=S.carriers[i]; if(!c) return;
+      item.style.display=(f==='all'||c.status===f)?'':'none';
+    });
+  };
+});
+
+document.getElementById('carrierSearchInput').addEventListener('input',e=>{
+  const q=e.target.value.toLowerCase();
+  document.querySelectorAll('.carrier-list-item').forEach((item,i)=>{
+    const c=S.carriers[i]; if(!c)return;
+    item.style.display=c.name.toLowerCase().includes(q)?'':'none';
+  });
+});
+
+/* ========================================
+   8. 컨트롤 바인딩
+======================================== */
+document.getElementById('speedSlider').oninput=e=>{S.speedMul=parseFloat(e.target.value);};
+document.getElementById('zoomSlider').oninput=e=>{
+  const v=parseFloat(e.target.value);
+  const dir=camera.position.clone().sub(controls.target).normalize();
+  camera.position.copy(controls.target).addScaledVector(dir,v);
+};
+document.getElementById('chkNodes').onchange=e=>{S.showNodes=e.target.checked;};
+document.getElementById('chkConveyor').onchange=e=>{S.showConveyor=e.target.checked;};
+document.getElementById('chkStocker').onchange=e=>{S.showStocker=e.target.checked;};
+document.getElementById('chkEquip').onchange=e=>{S.showEquip=e.target.checked;};
+document.getElementById('chkGrid').onchange=e=>{S.showGrid=e.target.checked;};
+
+// 드래그
+{
+  const fc=document.getElementById('float-controls');
+  let drag=false,ox,oy;
+  fc.onmousedown=e=>{
+    if(['INPUT','SELECT','LABEL'].includes(e.target.tagName))return;
+    drag=true;ox=e.clientX-fc.offsetLeft;oy=e.clientY-fc.offsetTop;
+  };
+  document.onmousemove=e=>{if(!drag)return;fc.style.left=(e.clientX-ox)+'px';fc.style.top=(e.clientY-oy)+'px';fc.style.right='auto';};
+  document.onmouseup=()=>{drag=false;};
+}
+
+// 툴팁
+const tooltip=document.getElementById('tooltip');
+document.getElementById('mainCanvas').addEventListener('mousemove',e=>{
+  const rect=e.target.getBoundingClientRect();
+  mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+  mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+
+  const cMeshes=S.carriers.map(c=>c.mesh.children[0]).filter(Boolean);
+  const cHits=raycaster.intersectObjects(cMeshes,false);
+  if(cHits.length>0){
+    const carrier=S.carriers.find(c=>c.mesh.children[0]===cHits[0].object);
+    if(carrier){
+      tooltip.style.display='block';
+      tooltip.style.left=(e.clientX+12)+'px';
+      tooltip.style.top=(e.clientY+12)+'px';
+      tooltip.querySelector('.tt-title').textContent=carrier.name;
+      tooltip.querySelector('.tt-body').innerHTML=`<div class="tt-row"><span class="tt-k">상태</span><span class="tt-v">${carrier.status}</span></div><div class="tt-row"><span class="tt-k">FOUP</span><span class="tt-v">${carrier.foup||'Empty'}</span></div><div class="tt-row"><span class="tt-k">속도</span><span class="tt-v">${carrier.speed.toFixed(1)} m/s</span></div>`;
+      return;
+    }
+  }
+
+  const sHits=raycaster.intersectObjects(stockerGroups.flatMap(g=>g.children),false);
+  if(sHits.length>0){
+    const pg=sHits[0].object.parent;
+    if(pg&&pg.userData.type==='stocker'){
+      const stk=pg.userData.data;
+      tooltip.style.display='block';
+      tooltip.style.left=(e.clientX+12)+'px';
+      tooltip.style.top=(e.clientY+12)+'px';
+      tooltip.querySelector('.tt-title').textContent=stk.name;
+      tooltip.querySelector('.tt-body').innerHTML=`<div class="tt-row"><span class="tt-k">용량</span><span class="tt-v">${stk.used}/${stk.cap}</span></div><div class="tt-row"><span class="tt-k">상태</span><span class="tt-v">${stk.status}</span></div>`;
+      return;
+    }
+  }
+
+  const pHits=raycaster.intersectObjects(portMeshArr,false);
+  if(pHits.length>0){
+    const port=pHits[0].object.userData.data;
+    if(port){
+      tooltip.style.display='block';
+      tooltip.style.left=(e.clientX+12)+'px';
+      tooltip.style.top=(e.clientY+12)+'px';
+      tooltip.querySelector('.tt-title').textContent=port.name;
+      tooltip.querySelector('.tt-body').innerHTML=`<div class="tt-row"><span class="tt-k">타입</span><span class="tt-v">${port.type}</span></div>`;
+      return;
+    }
+  }
+  tooltip.style.display='none';
+});
+
+document.getElementById('mainCanvas').addEventListener('click',e=>{
+  const rect=e.target.getBoundingClientRect();
+  mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+  mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const cMeshes=S.carriers.map(c=>c.mesh.children[0]).filter(Boolean);
+  const hits=raycaster.intersectObjects(cMeshes,false);
+  if(hits.length>0){
+    const carrier=S.carriers.find(c=>c.mesh.children[0]===hits[0].object);
+    if(carrier) selectCarrier(carrier);
+  }
+});
+
+/* ========================================
+   9. 리사이즈
+======================================== */
+function onResize(){
+  const cont=document.getElementById('three-container');
+  const w=cont.clientWidth, h=cont.clientHeight;
+  if(w<=0||h<=0) return;
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+}
+window.addEventListener('resize', onResize);
+
+/* ========================================
+   10. 로딩
+======================================== */
+async function startLoading(){
+  const bar=document.getElementById('loadBar');
+  const status=document.getElementById('loadStatus');
+  const steps=['Loading Three.js modules...','Generating conveyor layout...','Building scene geometry...','Creating conveyor belts...','Building stocker structures...','Initializing carriers...','Setting up lighting...','Starting simulation...'];
+
+  for(let i=0;i<steps.length;i++){
+    status.textContent=steps[i];
+    bar.style.width=((i+1)/steps.length*100)+'%';
+    await new Promise(r=>setTimeout(r,200));
+  }
+
+  generateLayout();
+  initThree();
+  buildScene();
+  buildStockerList();
+
+  status.textContent='Complete!';
+  bar.style.width='100%';
+  await new Promise(r=>setTimeout(r,300));
+
+  document.getElementById('loading').style.display='none';
+  onResize();
+  animate();
+}
+
+startLoading();
+</script>
+</body>
+</html>
