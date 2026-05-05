@@ -135,10 +135,15 @@ def aggregate_oht_csv(spec, max_rows=None):
         IDX_NEXT_ADDR   = 9
         IDX_DESTINATION = 13
 
+        t_scan = time.perf_counter()
         for row in reader:
             rows += 1
             if max_rows and rows > max_rows:
                 break
+            if rows % 1_000_000 == 0:
+                rate = rows / max(0.001, time.perf_counter() - t_scan)
+                print(f"      ... {rows:>10,} 행 처리  ({rate/1000:.0f}k row/s)",
+                      flush=True)
 
             if format_kind == 'parsed':
                 try:
