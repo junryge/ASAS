@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goose</title>
+<link rel="stylesheet" href="/static/css/goose.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+
+<!-- ═══ Onboarding ═══ -->
+<div id="onboarding">
+  <div class="onboard-card">
+    <div class="onboard-logo">🪿</div>
+    <div class="onboard-title">Welcome to Goose</div>
+    <div class="onboard-subtitle">Your autonomous AI agent. Choose a provider to get started.</div>
+    <label class="onboard-label">Provider</label>
+    <select id="obProvider" class="onboard-select">
+      <option value="">Select a provider...</option>
+    </select>
+    <label class="onboard-label">API Key (optional)</label>
+    <input id="obApiKey" class="onboard-input" type="password" placeholder="Enter API key if required">
+    <button id="obStartBtn" class="onboard-btn" disabled onclick="completeOnboarding()">Get Started</button>
+  </div>
+</div>
+
+<!-- ═══ Drop Overlay ═══ -->
+<div class="drop-overlay" id="dropOverlay">Drop files here to attach</div>
+
+<!-- ═══ Sidebar ═══ -->
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🪿</div>
+      <span>Goose</span>
+    </div>
+    <button class="sidebar-collapse-btn" onclick="toggleSidebar()"><span>◀</span></button>
+  </div>
+
+  <div class="sidebar-inner">
+    <button class="sidebar-new-btn" onclick="createSession()">
+      <span>+</span> New Session
+    </button>
+
+    <div class="sidebar-section-title">Sessions</div>
+    <div id="sessionList"></div>
+
+    <nav class="sidebar-nav">
+      <button class="sidebar-nav-item active" onclick="switchView('chat')" data-view="chat">
+        <span class="nav-icon">💬</span> Chat
+      </button>
+      <button class="sidebar-nav-item" onclick="switchView('extensions')" data-view="extensions">
+        <span class="nav-icon">🧩</span> Extensions
+      </button>
+      <button class="sidebar-nav-item" onclick="switchView('recipes')" data-view="recipes">
+        <span class="nav-icon">📋</span> Recipes
+      </button>
+      <button class="sidebar-nav-item" onclick="switchView('subagents')" data-view="subagents">
+        <span class="nav-icon">🤖</span> Subagents
+      </button>
+      <button class="sidebar-nav-item" onclick="openSettings()" data-view="settings">
+        <span class="nav-icon">⚙️</span> Settings
+      </button>
+    </nav>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="model-switcher" id="modelSwitcher" onclick="openModelPicker()">
+      <div class="model-dot"></div>
+      <div class="model-name" id="currentModelName">Auto</div>
+      <div class="model-switch-icon">▼</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Main Area ═══ -->
+<div class="main-area">
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-item active" id="tabChat" onclick="switchTab('chat')">Chat</button>
+    <button class="tab-item" id="tabExtensions" onclick="switchTab('extensions')">Extensions</button>
+    <button class="tab-item" id="tabRecipes" onclick="switchTab('recipes')">Recipes</button>
+    <button class="tab-item" id="tabSubagents" onclick="switchTab('subagents')">Subagents</button>
+    <div class="tab-spacer"></div>
+    <div class="tab-actions">
+      <button class="tab-action-btn" onclick="toggleRightPanel()" title="Toggle panel">☰</button>
+      <button class="tab-action-btn" onclick="exportCurrentSession()" title="Export session">📤</button>
+    </div>
+  </div>
+
+  <!-- Chat View -->
+  <div class="chat-view" id="viewChat">
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-messages-inner" id="chatMessagesInner">
+        <!-- Welcome screen (shown when no messages) -->
+        <div class="welcome-screen" id="welcomeScreen">
+          <div class="welcome-icon">🪿</div>
+          <div class="welcome-title">What can I help you with?</div>
+          <div class="welcome-subtitle">I'm Goose, an autonomous AI agent. I can help you write code, analyze data, automate tasks, and much more.</div>
+          <div class="welcome-suggestions">
+            <div class="welcome-suggestion" onclick="useSuggestion('Write a Python script to analyze CSV data')">📊 Analyze CSV data</div>
+            <div class="welcome-suggestion" onclick="useSuggestion('Help me debug this code')">🐛 Debug code</div>
+            <div class="welcome-suggestion" onclick="useSuggestion('Create a REST API with Flask')">🔧 Build REST API</div>
+            <div class="welcome-suggestion" onclick="useSuggestion('Write unit tests for my project')">🧪 Write tests</div>
+            <div class="welcome-suggestion" onclick="useSuggestion('Explain how transformers work in ML')">🤖 Explain ML concepts</div>
+            <div class="welcome-suggestion" onclick="useSuggestion('Review and improve this code')">✨ Code review</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Input -->
+    <div class="chat-input-area">
+      <div class="chat-input-inner">
+        <div class="chat-attachments" id="chatAttachments"></div>
+        <div class="chat-input-box">
+          <button class="chat-attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
+          <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(this.files)">
+          <textarea class="chat-textarea" id="chatInput" placeholder="Message Goose... (Enter to send, Shift+Enter for newline)" rows="1" oninput="autoResize(this)"></textarea>
+          <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()" disabled>▶</button>
+        </div>
+        <div class="chat-input-footer">
+          <span id="modelIndicator">Model: Auto</span>
+          <span>Ctrl+Enter to send</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Extensions View -->
+  <div class="chat-view hidden" id="viewExtensions" style="padding:24px 32px;overflow-y:auto;">
+    <h2 style="margin-bottom:8px;">Extensions</h2>
+    <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px;">Browse and manage MCP extensions to add new capabilities to Goose.</p>
+    <div id="extensionsList"></div>
+  </div>
+
+  <!-- Recipes View -->
+  <div class="chat-view hidden" id="viewRecipes" style="padding:24px 32px;overflow-y:auto;">
+    <h2 style="margin-bottom:8px;">Recipes</h2>
+    <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px;">Reusable AI workflows defined in YAML. Run recipes with custom parameters.</p>
+    <div id="recipesList"></div>
+    <button class="btn-primary mt-4" onclick="openRecipeCreator()">+ Create Recipe</button>
+  </div>
+
+  <!-- Subagents View -->
+  <div class="chat-view hidden" id="viewSubagents" style="padding:24px 32px;overflow-y:auto;">
+    <h2 style="margin-bottom:8px;">Subagents</h2>
+    <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px;">Spawn independent agents for parallel task execution with isolated contexts.</p>
+    <div id="subagentsList"></div>
+    <button class="btn-primary mt-4" onclick="openSubagentSpawner()">+ Spawn Subagent</button>
+  </div>
+</div>
+
+<!-- ═══ Right Panel ═══ -->
+<div class="right-panel" id="rightPanel">
+  <div class="rp-header">
+    <div class="rp-title">Details</div>
+    <button class="rp-close" onclick="toggleRightPanel()">✕</button>
+  </div>
+  <div class="rp-tabs">
+    <button class="rp-tab active" onclick="switchRpTab('info')" data-rptab="info">Info</button>
+    <button class="rp-tab" onclick="switchRpTab('tools')" data-rptab="tools">Tools</button>
+    <button class="rp-tab" onclick="switchRpTab('files')" data-rptab="files">Files</button>
+  </div>
+  <div class="rp-body" id="rpBody">
+    <div id="rpInfo">
+      <div class="settings-section">
+        <div class="settings-section-title">Session Info</div>
+        <div class="settings-row">
+          <span class="settings-row-label">Model</span>
+          <span class="settings-row-value" id="rpModel">Auto</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row-label">Messages</span>
+          <span class="settings-row-value" id="rpMsgCount">0</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row-label">Extensions</span>
+          <span class="settings-row-value" id="rpExtCount">0</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Active Extensions</div>
+        <div id="rpActiveExt" style="font-size:13px;color:var(--text-muted);">None</div>
+      </div>
+    </div>
+    <div id="rpTools" class="hidden"></div>
+    <div id="rpFiles" class="hidden">
+      <div id="rpFilesList" style="font-size:13px;color:var(--text-muted);">No files uploaded</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Settings Modal ═══ -->
+<div class="modal-overlay hidden" id="settingsModal">
+  <div class="modal" style="width:600px;">
+    <div class="modal-header">
+      <div class="modal-title">⚙️ Settings</div>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Provider</div>
+      <label class="modal-label">Model</label>
+      <select id="settingsModel" class="modal-select" onchange="updateModelSetting()"></select>
+      <label class="modal-label">API Key</label>
+      <input id="settingsApiKey" class="modal-input" type="password" placeholder="Enter API key">
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Generation</div>
+      <label class="modal-label">Max Tokens: <span id="settingsTokensVal">4096</span></label>
+      <input type="range" class="range-slider" id="settingsTokens" min="256" max="16384" value="4096" step="256" oninput="document.getElementById('settingsTokensVal').textContent=this.value">
+      <label class="modal-label">Temperature: <span id="settingsTempVal">0.7</span></label>
+      <input type="range" class="range-slider" id="settingsTemp" min="0" max="2" value="0.7" step="0.1" oninput="document.getElementById('settingsTempVal').textContent=this.value">
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Appearance</div>
+      <div class="settings-row">
+        <span class="settings-row-label">Dark Theme</span>
+        <button class="toggle on" id="settingsTheme" onclick="this.classList.toggle('on')"></button>
+      </div>
+      <div class="settings-row">
+        <span class="settings-row-label">Keyboard Shortcuts</span>
+        <button class="toggle on" id="settingsShortcuts" onclick="this.classList.toggle('on')"></button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Keyboard Shortcuts</div>
+      <div class="settings-row"><span class="settings-row-label">Send message</span><span class="settings-row-value"><kbd>Enter</kbd></span></div>
+      <div class="settings-row"><span class="settings-row-label">New line</span><span class="settings-row-value"><kbd>Shift+Enter</kbd></span></div>
+      <div class="settings-row"><span class="settings-row-label">New session</span><span class="settings-row-value"><kbd>Ctrl+N</kbd></span></div>
+      <div class="settings-row"><span class="settings-row-label">Toggle sidebar</span><span class="settings-row-value"><kbd>Ctrl+B</kbd></span></div>
+      <div class="settings-row"><span class="settings-row-label">Stop generation</span><span class="settings-row-value"><kbd>Esc</kbd></span></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeSettings()">Close</button>
+      <button class="btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Model Picker Modal ═══ -->
+<div class="modal-overlay hidden" id="modelPickerModal">
+  <div class="modal" style="width:450px;">
+    <div class="modal-header">
+      <div class="modal-title">Switch Model</div>
+      <button class="modal-close" onclick="closeModelPicker()">✕</button>
+    </div>
+    <div id="modelPickerList"></div>
+  </div>
+</div>
+
+<!-- ═══ Subagent Spawner Modal ═══ -->
+<div class="modal-overlay hidden" id="subagentModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🤖 Spawn Subagent</div>
+      <button class="modal-close" onclick="closeModal('subagentModal')">✕</button>
+    </div>
+    <label class="modal-label">Task Description</label>
+    <textarea id="subagentTask" class="modal-textarea" placeholder="Describe the task for the subagent..." rows="4"></textarea>
+    <label class="modal-label">Model</label>
+    <select id="subagentModel" class="modal-select"></select>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('subagentModal')">Cancel</button>
+      <button class="btn-primary" onclick="spawnSubagent()">Spawn Agent</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Recipe Creator Modal ═══ -->
+<div class="modal-overlay hidden" id="recipeModal">
+  <div class="modal" style="width:600px;">
+    <div class="modal-header">
+      <div class="modal-title">📋 Create Recipe</div>
+      <button class="modal-close" onclick="closeModal('recipeModal')">✕</button>
+    </div>
+    <label class="modal-label">Recipe Name</label>
+    <input id="recipeName" class="modal-input" placeholder="my-recipe">
+    <label class="modal-label">Description</label>
+    <input id="recipeDesc" class="modal-input" placeholder="What does this recipe do?">
+    <label class="modal-label">Instructions (use {{param}} for parameters)</label>
+    <textarea id="recipeInstructions" class="modal-textarea" rows="8" placeholder="Analyze the {{language}} code and provide..."></textarea>
+    <label class="modal-label">Parameters (comma-separated)</label>
+    <input id="recipeParams" class="modal-input" placeholder="language, framework">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('recipeModal')">Cancel</button>
+      <button class="btn-primary" onclick="createRecipe()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Recipe Runner Modal ═══ -->
+<div class="modal-overlay hidden" id="recipeRunModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">▶ Run Recipe</div>
+      <button class="modal-close" onclick="closeModal('recipeRunModal')">✕</button>
+    </div>
+    <div id="recipeRunParams"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('recipeRunModal')">Cancel</button>
+      <button class="btn-primary" onclick="executeRecipe()">Run</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/goose.js"></script>
+</body>
+</html>

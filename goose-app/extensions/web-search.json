@@ -1,0 +1,10 @@
+{
+  "id": "web-search",
+  "name": "Web Search",
+  "icon": "🔍",
+  "description": "Search the web for real-time information, documentation, and answers to technical questions.",
+  "enabled": false,
+  "tools": ["web_search", "fetch_url", "extract_text"],
+  "version": "1.0.0",
+  "author": "Goose Team"
+}

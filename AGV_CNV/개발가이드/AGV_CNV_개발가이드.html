@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AGV / CNV 통합 개발 가이드</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary-dark: #1a2942;
+            --primary-darker: #0f1929;
+            --accent-gold: #f4a600;
+            --accent-blue: #4a90e2;
+            --accent-teal: #0d9488;
+            --text-dark: #333;
+            --text-light: #666;
+            --bg-light: #f9fafb;
+            --bg-white: #ffffff;
+            --border-light: #e5e7eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Noto Sans KR', sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background-color: var(--bg-light);
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a2942 0%, #0d3b66 50%, #0f1929 100%);
+            color: white;
+            padding: 2rem 2.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 { font-size: 2rem; margin-bottom: 0.3rem; font-weight: 700; }
+        .header .subtitle { font-size: 0.95rem; opacity: 0.85; font-style: italic; }
+        .header .badges { margin-top: 0.6rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .header .badge {
+            display: inline-block; padding: 0.2rem 0.7rem; border-radius: 12px;
+            font-size: 0.75rem; font-weight: 600;
+        }
+        .badge-agv { background: var(--accent-gold); color: #333; }
+        .badge-cnv { background: var(--accent-teal); color: white; }
+        .badge-atlas { background: var(--info); color: white; }
+        .badge-logpresso { background: #7c3aed; color: white; }
+
+        /* Layout */
+        .container { display: flex; min-height: calc(100vh - 120px); max-width: 1700px; margin: 0 auto; }
+
+        /* Sidebar */
+        .sidebar {
+            width: 290px; min-width: 290px;
+            background: var(--primary-dark); color: white;
+            padding: 1.5rem 1rem; overflow-y: auto;
+            position: sticky; top: 120px; height: calc(100vh - 120px);
+            border-right: 3px solid var(--accent-gold);
+            font-size: 0.85rem;
+        }
+        .sidebar h3 {
+            text-transform: uppercase; letter-spacing: 0.1em;
+            font-size: 0.7rem; color: var(--accent-gold);
+            margin: 1.2rem 0 0.4rem; padding-bottom: 0.3rem;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+        }
+        .sidebar a {
+            display: block; color: rgba(255,255,255,0.8); text-decoration: none;
+            padding: 0.35rem 0.8rem; border-radius: 4px; margin-bottom: 1px;
+            transition: all 0.2s;
+        }
+        .sidebar a:hover { background: rgba(255,255,255,0.1); color: white; }
+        .sidebar a.sub { padding-left: 1.6rem; font-size: 0.8rem; color: rgba(255,255,255,0.6); }
+
+        /* Content */
+        .content { flex: 1; padding: 2rem 2.5rem; max-width: 1200px; }
+
+        /* Sections */
+        .section { background: var(--bg-white); border-radius: 10px; padding: 2rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid var(--border-light); }
+        .section h2 { font-size: 1.5rem; color: var(--primary-dark); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--accent-gold); }
+        .section h3 { font-size: 1.15rem; color: var(--primary-dark); margin: 1.5rem 0 0.7rem; }
+        .section h4 { font-size: 1rem; color: var(--accent-blue); margin: 1.2rem 0 0.5rem; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; font-size: 0.88rem; }
+        th { background: var(--primary-dark); color: white; padding: 0.6rem 0.8rem; text-align: left; font-weight: 600; }
+        td { padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border-light); }
+        tr:hover td { background: #f0f7ff; }
+
+        /* Code */
+        pre {
+            background: #1e293b; color: #e2e8f0; padding: 1.2rem; border-radius: 8px;
+            overflow-x: auto; font-size: 0.82rem; line-height: 1.55; margin: 0.8rem 0;
+            border-left: 4px solid var(--accent-gold);
+        }
+        code { font-family: 'Consolas', 'Monaco', 'Courier New', monospace; }
+        .inline-code { background: #f1f5f9; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.85em; color: #be185d; }
+
+        /* Info boxes */
+        .info-box {
+            padding: 1rem 1.2rem; border-radius: 8px; margin: 1rem 0;
+            border-left: 4px solid; font-size: 0.9rem;
+        }
+        .info-box.tip { background: #f0fdf4; border-color: var(--success); }
+        .info-box.warn { background: #fefce8; border-color: var(--warning); }
+        .info-box.danger { background: #fef2f2; border-color: var(--danger); }
+        .info-box.info { background: #eff6ff; border-color: var(--info); }
+        .info-box strong { display: block; margin-bottom: 0.3rem; }
+
+        /* Architecture diagram */
+        .arch-diagram {
+            background: #f8fafc; border: 2px solid var(--border-light);
+            border-radius: 8px; padding: 1.5rem; margin: 1rem 0;
+            font-family: 'Consolas', monospace; font-size: 0.85rem;
+            white-space: pre; overflow-x: auto; line-height: 1.7;
+        }
+
+        /* Checklist */
+        .checklist { list-style: none; padding: 0; }
+        .checklist li { padding: 0.4rem 0; padding-left: 1.8rem; position: relative; }
+        .checklist li::before { content: "☐"; position: absolute; left: 0; color: var(--accent-blue); font-size: 1.1rem; }
+
+        /* Tag */
+        .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.72rem; font-weight: 600; margin-right: 0.3rem; }
+        .tag-agv { background: #fef3c7; color: #92400e; }
+        .tag-cnv { background: #ccfbf1; color: #115e59; }
+        .tag-common { background: #e0e7ff; color: #3730a3; }
+        .tag-java { background: #fee2e2; color: #991b1b; }
+        .tag-logpresso { background: #ede9fe; color: #5b21b6; }
+
+        /* Tabs */
+        .tab-container { margin: 1rem 0; }
+        .tab-buttons { display: flex; gap: 0; border-bottom: 2px solid var(--border-light); }
+        .tab-btn {
+            padding: 0.6rem 1.2rem; background: none; border: none; cursor: pointer;
+            font-size: 0.88rem; font-weight: 600; color: var(--text-light);
+            border-bottom: 3px solid transparent; transition: all 0.2s;
+        }
+        .tab-btn.active { color: var(--primary-dark); border-bottom-color: var(--accent-gold); }
+        .tab-content { display: none; padding: 1rem 0; }
+        .tab-content.active { display: block; }
+
+        /* Print */
+        @media print {
+            .sidebar { display: none; }
+            .header { position: relative; }
+            .content { max-width: 100%; }
+            .section { break-inside: avoid; }
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .sidebar { display: none; }
+            .content { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <h1>AGV / CNV 통합 개발 가이드</h1>
+    <p class="subtitle">SK Hynix Fab — AGV(Automated Guided Vehicle) &amp; CNV(Conveyor) 시스템 통합 레퍼런스</p>
+    <div class="badges">
+        <span class="badge badge-agv">AGV / OHT</span>
+        <span class="badge badge-cnv">CNV / Conveyor</span>
+        <span class="badge badge-atlas">Atlas Server (Java)</span>
+        <span class="badge badge-logpresso">Logpresso DB</span>
+    </div>
+</div>
+
+<!-- CONTAINER -->
+<div class="container">
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+    <h3>시스템 아키텍처</h3>
+    <a href="#sec1">1. 아키텍처 개요</a>
+    <a href="#sec1-1" class="sub">1.1 전체 구조</a>
+    <a href="#sec1-2" class="sub">1.2 통신 계층별 역할</a>
+    <a href="#sec1-3" class="sub">1.3 메시지 흐름도</a>
+
+    <h3>AMP Remote Interface</h3>
+    <a href="#sec2">2. AMP 연동</a>
+    <a href="#sec2-1" class="sub">2.1 초기화 및 연결</a>
+    <a href="#sec2-2" class="sub">2.2 API 메서드</a>
+    <a href="#sec2-3" class="sub">2.3 이벤트 핸들러</a>
+
+    <h3>AMP 데이터 클래스</h3>
+    <a href="#sec3">3. 데이터 클래스</a>
+    <a href="#sec3-1" class="sub">3.1 CRemoteObject</a>
+    <a href="#sec3-2" class="sub">3.2 Car (AGV)</a>
+    <a href="#sec3-3" class="sub">3.3 Transfer</a>
+    <a href="#sec3-4" class="sub">3.4 Carrier</a>
+    <a href="#sec3-5" class="sub">3.5 Alarm / Zone</a>
+
+    <h3>FabScope 통신</h3>
+    <a href="#sec4">4. SysView계 메시지</a>
+    <a href="#sec4-3" class="sub">4.3 Text ID:1 MCP On-Line</a>
+    <a href="#sec4-4" class="sub">4.4 Text ID:2 Vehicle</a>
+    <a href="#sec4-5" class="sub">4.5 Text ID:4 기기 상태</a>
+    <a href="#sec4-6" class="sub">4.6 Text ID:15 주행 경로</a>
+    <a href="#sec5">5. MSS계 메시지</a>
+
+    <h3>FMS 메시지</h3>
+    <a href="#sec6">6. FMS 샘플</a>
+
+    <h3>Atlas Server (Java)</h3>
+    <a href="#sec7">7. UDP 수신 구현</a>
+    <a href="#sec7-1" class="sub">7.1 OhtUdpListener</a>
+    <a href="#sec7-2" class="sub">7.2 메시지 파싱</a>
+    <a href="#sec7-3" class="sub">7.3 Vehicle 상태 처리</a>
+
+    <h3>Logpresso 데이터 저장</h3>
+    <a href="#sec8">8. Logpresso DB</a>
+    <a href="#sec8-1" class="sub">8.1 Tuple API</a>
+    <a href="#sec8-2" class="sub">8.2 테이블 구조</a>
+    <a href="#sec8-3" class="sub">8.3 쿼리 조회</a>
+
+    <h3>Java 데이터 모델</h3>
+    <a href="#sec9">9. 데이터 모델</a>
+    <a href="#sec9-1" class="sub">9.1 RailEdge</a>
+    <a href="#sec9-2" class="sub">9.2 CnvEdge</a>
+    <a href="#sec9-3" class="sub">9.3 TrafficBatch</a>
+
+    <h3>Enum / 체크리스트</h3>
+    <a href="#sec10">10. 상태값 Enum</a>
+    <a href="#sec11">11. 개발 체크리스트</a>
+</nav>
+
+<!-- CONTENT -->
+<main class="content">
+
+<!-- ==================== Section 1 ==================== -->
+<div class="section" id="sec1">
+    <h2>1. 시스템 아키텍처 개요</h2>
+
+    <h3 id="sec1-1">1.1 전체 구조</h3>
+    <div class="arch-diagram">┌─────────┐     ┌──────────┐     ┌──────────────┐     ┌─────────┐
+│  HOST    │◄───►│ FabScope │◄───►│  MCP (CLW/   │◄───►│ AGV/CNV │
+│ (MES/ERP)│     │(SysView+ │     │  STK/STBC)   │     │ 설비    │
+│          │     │   MSS)   │     │              │     │         │
+└─────────┘     └──────────┘     └──────────────┘     └─────────┘
+     ▲               ▲                 ▲                    ▲
+     │               │                 │                    │
+  S6F11/12      UDP/IP 3600       TCP/IP (AMP)         하드웨어
+  SECS/GEM      UDP/IP 3500       Remote.DLL            제어
+
+                ┌──────────────┐
+                │ Atlas Server │◄─── UDP 수신 (Java)
+                │   (Java)     │───► Logpresso DB 저장
+                └──────────────┘</div>
+
+    <h3 id="sec1-2">1.2 통신 계층별 역할</h3>
+    <table>
+        <tr><th>계층</th><th>구성요소</th><th>프로토콜</th><th>역할</th></tr>
+        <tr><td><strong>상위</strong></td><td>HOST (MES/ERP)</td><td>SECS/GEM</td><td>반송 지시, 공정 관리</td></tr>
+        <tr><td><strong>중위-1</strong></td><td>FabScope</td><td>UDP/IP (3500/3600)</td><td>모니터링, 이상정보 수집</td></tr>
+        <tr><td><strong>중위-2</strong></td><td>AMP</td><td>TCP/IP (포트 지정)</td><td>설비 원격 제어/모니터링</td></tr>
+        <tr><td><strong>중위-3</strong></td><td>Atlas Server</td><td>UDP/IP (포트 지정)</td><td>데이터 수집 → Logpresso 저장</td></tr>
+        <tr><td><strong>하위</strong></td><td>MCP (CLW/STK)</td><td>TCP/IP → AMP Remote.DLL</td><td>반송 제어, 기기 관리</td></tr>
+        <tr><td><strong>설비</strong></td><td>AGV / CNV</td><td>직접 제어</td><td>물리적 반송 수행</td></tr>
+    </table>
+
+    <h3 id="sec1-3">1.3 메시지 흐름도</h3>
+    <div class="arch-diagram">[AGV/CNV 설비]
+    │
+    ├──► AMP (Remote.DLL) ──► 실시간 데이터 수집
+    │       ├── Car 정보 (AGV/OHT)
+    │       ├── Conveyor 정보 (CNV)
+    │       ├── Transfer / Carrier / Alarm 정보
+    │
+    ├──► MCP (CLW/STK) ──► FabScope (SysView계 :3600)
+    │       ├── Text ID:1  MCP On-Line 보고
+    │       ├── Text ID:2  Vehicle 상태 보고
+    │       ├── Text ID:4  기기 상태 보고
+    │       └── Text ID:15 대차 주행 경로 보고
+    │
+    ├──► MCP ──► FabScope (MSS계 :3500)
+    │       ├── Text ID:3  이상/복구 보고
+    │       ├── Text ID:13 작업 데이터 보고 (v2.0+)
+    │       └── Text ID:17 삽체/정체 보고
+    │
+    └──► MCP ──► Atlas Server (UDP)
+            ├── 메시지 수신 (OhtUdpListener)
+            ├── CSV 파싱 (OhtMsgWorkerRunnable)
+            ├── Vehicle/Edge 상태 업데이트
+            └── <strong style="color:#f4a600">Logpresso DB 저장 (Tuple API)</strong></div>
+</div>
+
+<!-- ==================== Section 2 ==================== -->
+<div class="section" id="sec2">
+    <h2>2. AMP Remote Interface (설비 ↔ AMP)</h2>
+    <p><span class="tag tag-common">공통</span> C# DLL (Remote.DLL v1.0.1.7) 기반의 설비↔AMP 통신</p>
+
+    <h3 id="sec2-1">2.1 초기화 및 연결</h3>
+    <pre><code>// 1. CRemoteServer 인스턴스 생성
+CRemoteServer m_RemoteServer = new CRemoteServer();
+
+// 2. 이벤트 핸들러 등록
+m_RemoteServer.MonitorGetData      = GetData;              // 데이터 수집
+m_RemoteServer.ErrorEvent         += ErrorHandler;          // 에러 처리
+m_RemoteServer.OperationEvent     += OperationHandler;      // 조작 명령
+m_RemoteServer.CarrierEvent       += CarrierHandler;        // Carrier 명령
+m_RemoteServer.TransferEvent      += TransferHandler;       // 반송 명령
+m_RemoteServer.ControlStatusEvent += ControlStatusHandler;  // Online 상태
+m_RemoteServer.EQModeEvent        += EQModeHandler;         // EQ Mode
+m_RemoteServer.ParameterEvent     += ParameterHandler;      // 파라미터
+m_RemoteServer.GlobalTransferEvent += GlobalTransferHandler;// 연계반송
+
+// 3. 초기화
+bool result = m_RemoteServer.Initialize(
+    EqpID: "AGV_001",        // 설비명
+    ExeName: "AGV_EQP.exe",  // 실행파일명
+    Version: "v1.0.0.0",     // 버전
+    PortNo: 10000,            // AMP TCP/IP 포트
+    MonitoringTime: 500,      // 데이터 전송 간격 (ms)
+    DelayTime: 100            // Thread 유휴 시간 (ms)
+);
+
+// 4. 통신 시작/종료
+m_RemoteServer.Start();
+m_RemoteServer.Stop();</code></pre>
+
+    <h3 id="sec2-2">2.2 API 메서드 요약</h3>
+    <table>
+        <tr><th>메서드</th><th>시그니처</th><th>설명</th></tr>
+        <tr><td><span class="inline-code">Initialize</span></td><td>bool Initialize(string EqpID, string ExeName, string Version, int PortNo, int MonitoringTime, int DelayTime)</td><td>AMP 통신 초기화</td></tr>
+        <tr><td><span class="inline-code">Start</span></td><td>bool Start()</td><td>통신 시작</td></tr>
+        <tr><td><span class="inline-code">Stop</span></td><td>bool Stop()</td><td>통신 종료</td></tr>
+    </table>
+
+    <h3 id="sec2-3">2.3 이벤트 핸들러 상세</h3>
+
+    <h4>2.3.1 MonitorGetData — 실시간 데이터 수집 (필수)</h4>
+    <pre><code>public void GetData(string EQPID, CRemoteObject Obj)
+{
+    // ═══ 필수 수집 항목 ═══
+    Obj.ControlState = eControlState.ONLINE_LOCAL;
+    Obj.SCState      = eSCState.RUN;
+    Obj.EQMode       = eEqMode.OPERATOR;
+
+    // Alarm / Carrier / Transfer 정보
+    if (Obj.AlarmInfo == null)   Obj.AlarmInfo   = new Dictionary&lt;string, Alarm&gt;();
+    if (Obj.CarrierInfo == null) Obj.CarrierInfo = new Dictionary&lt;string, Carrier&gt;();
+    if (Obj.TrInfo == null)      Obj.TrInfo      = new Dictionary&lt;string, Transfer&gt;();
+
+    // ═══ AGV 전용 ═══
+    if (Obj.CarInfo == null)      Obj.CarInfo      = new Dictionary&lt;string, Car&gt;();
+
+    // ═══ CNV 전용 ═══
+    if (Obj.ConveyorInfo == null) Obj.ConveyorInfo = new Dictionary&lt;string, Conveyor&gt;();
+}</code></pre>
+
+    <h4>2.3.2 OperationEvent — 원격 조작 명령</h4>
+    <pre><code>eAckCode OperationHandler(IPAddress IpAddress, eRemoteCommand Cmd, string UnitID)
+{
+    switch (Cmd)
+    {
+        case eRemoteCommand.Run:          // 운전 명령
+        case eRemoteCommand.Stop:         // 정지 명령
+        case eRemoteCommand.AlarmClear:   // Alarm Clear
+        case eRemoteCommand.Home:         // Servo Home (CNV용)
+        case eRemoteCommand.StepClear:    // Step Clear (CNV용)
+        case eRemoteCommand.DataClear:    // Data Clear (CNV용)
+        case eRemoteCommand.SetPMMode:    // PM Mode 설정
+    }
+    return eAckCode.Ack;
+}</code></pre>
+
+    <h4>2.3.3 TransferEvent — 반송 명령</h4>
+    <pre><code>eAckCode TransferHandler(IPAddress IpAddress, eRemoteCommand Cmd, Transfer Transfer)
+{
+    switch (Cmd)
+    {
+        case eRemoteCommand.Creat:   // 반송 명령 생성
+        case eRemoteCommand.Cancel:  // 반송 명령 취소 (실행 전)
+        case eRemoteCommand.Abort:   // 반송 명령 중지 (실행 중)
+    }
+    return eAckCode.Ack;
+}</code></pre>
+
+    <h4>2.3.4 CarrierEvent / ControlStatusEvent / EQModeEvent</h4>
+    <pre><code>// Carrier 관리
+eAckCode CarrierHandler(IPAddress IpAddress, eRemoteCommand Cmd, Carrier Carrier)
+{   // Cmd: Install(설치), Remove(제거)
+    return eAckCode.Ack;
+}
+
+// Online 상태 변경
+eAckCode ControlStatusHandler(IPAddress IpAddress, eRemoteCommand Cmd)
+{   // Cmd: OffLine, Local, Remote
+    return eAckCode.Ack;
+}
+
+// EQ Mode 변경
+eAckCode EQModeHandler(IPAddress IpAddress, eRemoteCommand Cmd, string UnitID)
+{   // Cmd: Operation, Engr, Maint
+    return eAckCode.Ack;
+}
+
+// 연계반송 (설비간)
+void GlobalTransferHandler(IPAddress IpAddress, string CarrierID,
+    string SourceEqpID, string SourceUnitID,
+    string DestEqpID, string DestUnitID)
+{
+    // HOST로 S6F11 Global Transfer 전송
+}</code></pre>
+</div>
+
+<!-- ==================== Section 3 ==================== -->
+<div class="section" id="sec3">
+    <h2>3. AMP 데이터 클래스 상세</h2>
+
+    <h3 id="sec3-1">3.1 CRemoteObject — 메인 데이터 객체</h3>
+    <pre><code>public class CRemoteObject
+{
+    // ── 상태 정보 ──
+    public eSCState      SCState;       // 가동 상태 (STOP/RUN)
+    public eControlState ControlState;  // OnLine 상태 (OFFLINE/LOCAL/REMOTE)
+    public eEqMode       EQMode;        // EQ Mode (OPERATOR/ENGR/MAINT)
+
+    // ── 필수 데이터 ──
+    public Dictionary&lt;string, Alarm&gt;    AlarmInfo;
+    public Dictionary&lt;string, Carrier&gt;  CarrierInfo;
+    public Dictionary&lt;string, Transfer&gt; TrInfo;
+
+    // ── AGV/OHT 전용 ──
+    public Dictionary&lt;string, Car&gt;      CarInfo;
+
+    // ── CNV 전용 ──
+    public Dictionary&lt;string, Conveyor&gt; ConveyorInfo;
+
+    // ── 공통 선택 ──
+    public Dictionary&lt;string, Shelf&gt;    ShelfInfo;
+    public Dictionary&lt;string, Port&gt;     PortInfo;
+    public Dictionary&lt;string, Zone&gt;     ZoneInfo;
+
+    // ── ACS 전용 ──
+    public Dictionary&lt;string, HostLocation&gt; HostLocationInfo;
+    public Dictionary&lt;string, Location&gt;     LocationInfo;
+    public Dictionary&lt;string, Node&gt;         NodeInfo;
+    public Dictionary&lt;string, RackBuffer&gt;   RackBufferInfo;
+}</code></pre>
+
+    <h3 id="sec3-2">3.2 Car 클래스 — AGV/OHT Vehicle 정보</h3>
+    <p><span class="tag tag-agv">AGV</span></p>
+    <pre><code>public class Car
+{
+    public string EqpID;       // 설비 ID
+    public string UnitID;      // 자체 관리 Unit ID
+    public string HostID;      // Host 관리 Unit ID
+    public string ZoneName;    // Host 관리 Zone Name
+    public int    FaultCode;   // Alarm Code (정상: 0)
+    public int    UnitState;   // 0:Normal, 1:Stop, 2:Fault, 3:Disable
+    public int    ProcessStatus; // 0:Empty, 1:Idle, 2:Busy, 3:Pausing, 4:Paused
+    public string CarrierID;   // 적재 Carrier ID
+    public int    Kind;        // Unit 종류
+    public string Location;    // 현재 위치
+    public int    XPosition;   // 화면 X 좌표
+    public int    YPosition;   // 화면 Y 좌표
+    public string FullPath;    // 전체 경로
+    public string RunPath;     // 지역 경로
+    public int    VehicleJob;      // 0:NONE, 1:SINGLE, 2:MULTI, 3:DOUBLE, 4:BATTERY
+    public int    VehicleState;    // 1:REMOVED ~ 14:AVOID (아래 표 참조)
+    public int    VehicleType;     // 0:BROADBAND, 1:LOCAL
+    public bool   AssignEnable;    // ASSIGN 가능 여부
+    public string GroupID;
+    public string BayID;
+}</code></pre>
+
+    <h4>Car.VehicleState</h4>
+    <table>
+        <tr><th>값</th><th>상태</th><th>설명</th></tr>
+        <tr><td>1</td><td>REMOVED</td><td>제거됨</td></tr>
+        <tr><td>2</td><td>NOTASSIGNED</td><td>미할당</td></tr>
+        <tr><td>3</td><td>ENROUTE</td><td>경로 이동 중</td></tr>
+        <tr><td>4</td><td>PARKED</td><td>주차</td></tr>
+        <tr><td>5</td><td>LOADING</td><td>적재 중</td></tr>
+        <tr><td>6</td><td>UNLOADING</td><td>하역 중</td></tr>
+        <tr><td>7</td><td>ERROR</td><td>에러</td></tr>
+        <tr><td>8</td><td>DOWN</td><td>다운</td></tr>
+        <tr><td>9</td><td>CHARGE</td><td>충전 중</td></tr>
+        <tr><td>10</td><td>MOVING</td><td>이동 중</td></tr>
+        <tr><td>14</td><td>AVOID</td><td>회피 중</td></tr>
+    </table>
+
+    <h4>Car.Kind — Unit 종류</h4>
+    <table>
+        <tr><th>값</th><th>종류</th><th>값</th><th>종류</th></tr>
+        <tr><td>0</td><td>Unknown</td><td>8</td><td>Crain</td></tr>
+        <tr><td>1</td><td>Lift</td><td>9</td><td>Shelf</td></tr>
+        <tr><td>2</td><td>Diverter</td><td>10</td><td>Auto_In_Port</td></tr>
+        <tr><td>3</td><td>Conveyor</td><td>11</td><td>Auto_Out_Port</td></tr>
+        <tr><td>4</td><td>DiverterInPort</td><td>12</td><td>Auto_Both_Port</td></tr>
+        <tr><td>5</td><td>DiverterOutPort</td><td>13</td><td>Manual_In_Port</td></tr>
+        <tr><td>6</td><td>ConveyorInPort</td><td>14</td><td>Manual_Out_Port</td></tr>
+        <tr><td>7</td><td>ConveyorOutPort</td><td>15</td><td>Manual_Both_Port</td></tr>
+    </table>
+
+    <h3 id="sec3-3">3.3 Transfer 클래스 — 반송 정보</h3>
+    <pre><code>public class Transfer
+{
+    public string EqpID;         // 설비 ID
+    public string CommandID;     // Command ID
+    public string CarrierID;     // Carrier ID
+    public string CarrierType;   // REAL / EMPTY
+    public string HostSourceID;  // Host Source ID
+    public string HostDestID;    // Host Dest ID
+    public int    Priority;      // 우선 순위
+    public int    State;         // 반송 상태 (0~10, 아래 표)
+    public DateTime CreateTime;
+    public DateTime InitiateTime;
+    public DateTime ArrivedTime;     // AGV/CNV 전용
+    // ... (상세는 AMP API GUIDE 참조)
+}</code></pre>
+
+    <h4>Transfer.State</h4>
+    <table>
+        <tr><th>값</th><th>상태</th><th>값</th><th>상태</th></tr>
+        <tr><td>0</td><td>None</td><td>6</td><td>Cancelling</td></tr>
+        <tr><td>1</td><td>Queue</td><td>7</td><td>Canceled</td></tr>
+        <tr><td>2</td><td>Transfering</td><td>8</td><td>Aborting</td></tr>
+        <tr><td>3</td><td>Complete</td><td>9</td><td>Aborted</td></tr>
+        <tr><td>4</td><td>Alternate</td><td style="background:#fef3c7"><strong>10</strong></td><td style="background:#fef3c7"><strong>Moving (AGV/CNV 전용)</strong></td></tr>
+        <tr><td>5</td><td>Paused</td><td></td><td></td></tr>
+    </table>
+
+    <h3 id="sec3-4">3.4 Carrier 클래스</h3>
+    <pre><code>public class Carrier
+{
+    public string CarrierID;      // Carrier ID
+    public string LotID;          // Lot ID
+    public string CarrierType;    // COVER / EMPTY / REAL
+    public int    CarrierState;   // 0:None ~ 7:Block
+    public int    HandOffType;    // 0:Auto, 1:Manual
+    public string Location;       // 현재 위치
+    public int    TrayCnt;        // Tray 수량
+    public string TType;          // 트레이타입 (예: 07.50X11.00)
+    public int    ChipCount;      // 제품수량
+}</code></pre>
+
+    <h4>Carrier.CarrierState</h4>
+    <table>
+        <tr><th>값</th><th>상태</th><th>값</th><th>상태</th></tr>
+        <tr><td>0</td><td>None</td><td>4</td><td>Alternate</td></tr>
+        <tr><td>1</td><td>WaitIn</td><td>5</td><td>WaitOut</td></tr>
+        <tr><td>2</td><td>Transferring</td><td>6</td><td>Install</td></tr>
+        <tr><td>3</td><td>Complete</td><td>7</td><td>Block</td></tr>
+    </table>
+
+    <h3 id="sec3-5">3.5 Alarm / Zone 클래스</h3>
+    <pre><code>public class Alarm
+{
+    public string   EqpID;           // 설비 ID
+    public int      AlarmCode;       // Alarm Code (정상: 0)
+    public int      AlarmLevel;      // 0: Warning, 1: Heavy Alarm
+    public string   HostID;          // 발생 Host Unit ID
+    public string   strAlarmText;    // Alarm 이름
+    public string   strAlarmComment; // 처리 방안
+    public DateTime OccurTime;       // 발생 시간
+}
+
+public class Zone
+{
+    public string EqpID;
+    public int    ZoneName;
+    public int    MaxCount;          // 최대 수량
+    public string CurrentCount;      // 현재 수량
+    public string IncommingCount;    // 예약 수량
+}</code></pre>
+</div>
+
+<!-- ==================== Section 4 ==================== -->
+<div class="section" id="sec4">
+    <h2>4. FabScope 통신 — SysView계 메시지</h2>
+
+    <h3>4.1 통신 프로토콜 기본 정보</h3>
+    <table>
+        <tr><th>항목</th><th>값</th></tr>
+        <tr><td>프로토콜</td><td>UDP/IP</td></tr>
+        <tr><td>포트 (SysView계)</td><td>3600 (기본)</td></tr>
+        <tr><td>포트 (MSS계)</td><td>3500 (기본)</td></tr>
+        <tr><td>메시지 형식</td><td>CSV (콤마 구분)</td></tr>
+        <tr><td>문자 코드</td><td>ASCII</td></tr>
+        <tr><td>최대 크기</td><td>Ethernet MTU <strong>1500byte</strong> 이하</td></tr>
+        <tr><td>빈 항목</td><td><span class="inline-code">,,</span> (콤마 두 개)</td></tr>
+    </table>
+
+    <h3>4.2 텍스트 ID 범위</h3>
+    <table>
+        <tr><th>ID 범위</th><th>용도</th></tr>
+        <tr><td>1 ~ 100</td><td>공용</td></tr>
+        <tr><td>101 ~ 200</td><td>CLW MCP, STBC 전용</td></tr>
+        <tr><td>201 ~ 300</td><td>STK MCP, SSS 전용</td></tr>
+    </table>
+
+    <h3 id="sec4-3">4.3 Text ID:1 — MCP On-Line 보고</h3>
+    <p><span class="tag tag-common">공통</span> 보고 조건: MCP 기동시 / 상태 변화시 / 상태보고요구 수신시 / <strong>5초 주기</strong></p>
+    <div class="info-box warn">
+        <strong>주의</strong>
+        FabScope는 등록된 MCP7로부터 <strong>15초 이상</strong> 어떤 메시지도 수신하지 않으면 해당 MCP7을 <strong>Down</strong>으로 인식합니다.
+    </div>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">1</span></td></tr>
+        <tr><td>MCP 명칭</td><td>각 MCP7의 유니크 명칭</td></tr>
+        <tr><td>Control 상태</td><td><span class="inline-code">ON-LINE</span> / <span class="inline-code">OFF-LINE</span></td></tr>
+        <tr><td>TSC 상태</td><td><span class="inline-code">AUTO</span> / <span class="inline-code">PAUSED</span> / <span class="inline-code">PAUSING</span> (ON-LINE일 때만)</td></tr>
+        <tr><td>Alarm 상태</td><td><span class="inline-code">NO ALARMS</span> / <span class="inline-code">ALARMS</span></td></tr>
+        <tr><td>MCP 상태 구분</td><td>0:통상 / 1:선반 충진율 over</td></tr>
+    </table>
+
+    <h3 id="sec4-4">4.4 Text ID:2 — Vehicle 상태 보고 (CLW MCP7)</h3>
+    <p><span class="tag tag-agv">AGV</span> 보고 조건: MCP 기동시 / 상태 변화시 / 상태보고요구 수신시 (Vehicle 수 만큼 전송)</p>
+    <table>
+        <tr><th>필드</th><th>내용</th><th>비고</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">2</span></td><td></td></tr>
+        <tr><td>MCP 명칭</td><td>유니크 명칭</td><td></td></tr>
+        <tr><td>Vehicle명</td><td>식별 명칭</td><td></td></tr>
+        <tr><td>상태</td><td>1:운전중 ~ 11:HT-STOP</td><td>아래 상세표</td></tr>
+        <tr><td>재하 정보</td><td>0:없음, 1:있음</td><td></td></tr>
+        <tr><td>Error Code</td><td>0000~FFFF</td><td>상태≠3이면 0000</td></tr>
+        <tr><td>통신 상태</td><td>1:정상, 2:통신 끊김</td><td></td></tr>
+        <tr><td>현재 번지</td><td>현재 번지</td><td></td></tr>
+        <tr><td>현재 번지 거리</td><td>100mm 단위</td><td></td></tr>
+        <tr><td>다음 번지</td><td></td><td></td></tr>
+        <tr><td>실행 Cycle</td><td>0:없음 ~ 3F:세차</td><td>상세 참조</td></tr>
+        <tr><td>Vehicle 실행 사이클</td><td>0:없음 ~ 10:Load도착</td><td></td></tr>
+        <tr><td>Carrier ID</td><td></td><td></td></tr>
+        <tr><td>Destination</td><td>목적지 Station</td><td></td></tr>
+        <tr><td>E/M 상태</td><td>Bit 배치</td><td></td></tr>
+        <tr><td>GroupID</td><td>없으면 0000</td><td></td></tr>
+        <tr><td>반송원/반송처 Port</td><td></td><td></td></tr>
+        <tr><td>반송 우선도</td><td>0:무효, 1~99</td><td>99가 최고</td></tr>
+        <tr><td>작업 상태 상세</td><td>0~113</td><td>상세 참조</td></tr>
+        <tr><td>대차 주행거리</td><td>mm 단위</td><td></td></tr>
+        <tr><td>Command ID</td><td></td><td></td></tr>
+        <tr><td>Bay 명칭</td><td></td><td></td></tr>
+        <tr><td>ETA</td><td>도착 예상 시간</td><td></td></tr>
+    </table>
+
+    <h4>Vehicle 상태 코드</h4>
+    <table>
+        <tr><th>코드</th><th>상태</th><th>코드</th><th>상태</th></tr>
+        <tr><td>1</td><td>운전중</td><td>7</td><td>삽체</td></tr>
+        <tr><td>2</td><td>정지</td><td>8</td><td>정체 (HT-STOP)</td></tr>
+        <tr><td>3</td><td>이상</td><td>9</td><td>E84 Timeout</td></tr>
+        <tr><td>4</td><td>수동</td><td>10</td><td>주회없음 E84 Timeout</td></tr>
+        <tr><td>5</td><td>추출중</td><td>11</td><td>HT-STOP</td></tr>
+        <tr><td>6</td><td>OBS-STOP/BZ-STOP</td><td></td><td></td></tr>
+    </table>
+
+    <h3 id="sec4-5">4.5 Text ID:4 — 기기 상태 보고</h3>
+    <p><span class="tag tag-common">공통</span></p>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">4</span></td></tr>
+        <tr><td>MCP 명칭</td><td></td></tr>
+        <tr><td>기종번호</td><td>기종 식별 (00:CLW MCP, 10:VHL, 50:BZ, 100:STK MCP 등)</td></tr>
+        <tr><td>기기명칭</td><td></td></tr>
+        <tr><td>상태</td><td>1:정상, 2:이상, 3:유지보수, 4:운전OFF, 5:분리</td></tr>
+        <tr><td>Error Code</td><td>0000~FFFF</td></tr>
+    </table>
+
+    <h4>기종번호 참조</h4>
+    <table>
+        <tr><th>CLW MCP7</th><th>STK MCP7</th><th>STBC</th></tr>
+        <tr><td>00 CLW MCP7</td><td>100 STK MCP7</td><td>R00 STBC</td></tr>
+        <tr><td>10 VHL</td><td>202 CLS Stocker</td><td>R10 RFC</td></tr>
+        <tr><td>50 BZ</td><td>260 CMS Stocker</td><td>R20 NPC</td></tr>
+        <tr><td>60 MTL</td><td>303 CNV(CONV)</td><td>R21 Purge선반</td></tr>
+        <tr><td>91 AD/FD</td><td>320 PIO_IF</td><td></td></tr>
+        <tr><td>92 HID</td><td>808 CLL</td><td></td></tr>
+        <tr><td>93 FFU</td><td>1111 PNP</td><td></td></tr>
+    </table>
+
+    <h3 id="sec4-6">4.6 Text ID:15 — 대차 주행 경로 보고 (CLW MCP7)</h3>
+    <p><span class="tag tag-agv">AGV</span></p>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">15</span></td></tr>
+        <tr><td>기종 코드</td><td></td></tr>
+        <tr><td>Machine ID</td><td></td></tr>
+        <tr><td>기본 분기 방향</td><td>0:왼쪽, 1:오른쪽</td></tr>
+        <tr><td>주행 플래그</td><td>0:정지, 1:주행중</td></tr>
+        <tr><td>시작/종료 번호</td><td></td></tr>
+        <tr><td>기본 외 분기 번지 수</td><td>0~300</td></tr>
+        <tr><td>기본 외 분기 번지</td><td>반대 방향 (쉼표 구분)</td></tr>
+        <tr><td>Command ID</td><td></td></tr>
+    </table>
+</div>
+
+<!-- ==================== Section 5 ==================== -->
+<div class="section" id="sec5">
+    <h2>5. FabScope 통신 — MSS계 메시지</h2>
+
+    <h3>5.1 Text ID:1 — 장비 상태 보고</h3>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">1</span></td></tr>
+        <tr><td>MCP 명칭</td><td></td></tr>
+        <tr><td>(반복) 기기 정보</td><td>상태: 1:정상, 2:고장, 3:유지보수, 4:추출중</td></tr>
+    </table>
+
+    <h3>5.2 Text ID:3 — 이상/복구 보고</h3>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">3</span></td></tr>
+        <tr><td>MCP 명칭</td><td></td></tr>
+        <tr><td>기종번호</td><td></td></tr>
+        <tr><td>기기명칭</td><td></td></tr>
+        <tr><td>상태 변화 일시</td><td>YYYY-MM-DD HH:MM:SS</td></tr>
+        <tr><td>상태</td><td>1:정상, 2:고장, 3:유지보수, 4:추출중</td></tr>
+        <tr><td>Error Code</td><td>고장 외 0000</td></tr>
+        <tr><td>도메인 명칭</td><td>RM 이상 시: From포트 To포트명</td></tr>
+        <tr><td>포트 ID</td><td></td></tr>
+    </table>
+
+    <h3>5.3 Text ID:13 — 작업 데이터 보고 (v2.0+)</h3>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">13</span></td></tr>
+        <tr><td>MCP 명칭</td><td></td></tr>
+        <tr><td>기종번호 / 기기명칭</td><td></td></tr>
+        <tr><td>Carrier명칭</td><td></td></tr>
+        <tr><td>반송 Priority</td><td></td></tr>
+        <tr><td>From/To 포트</td><td></td></tr>
+        <tr><td>반송지시~완료 일시</td><td>각 단계별 YYYY-MM-DD HH:MM:SS</td></tr>
+        <tr><td>반송 지연/중지 요인</td><td>비트 플래그</td></tr>
+        <tr><td>Command ID</td><td></td></tr>
+        <tr><td>Reroute 횟수</td><td>CLW-MCP만</td></tr>
+        <tr><td>VLF 통과번지</td><td>예: 2000|2100|5000</td></tr>
+    </table>
+
+    <h3>5.4 Text ID:17 — 삽체/정체 보고 (CLW MCP)</h3>
+    <p><span class="tag tag-agv">AGV</span></p>
+    <table>
+        <tr><th>필드</th><th>내용</th></tr>
+        <tr><td>텍스트 ID</td><td><span class="inline-code">17</span></td></tr>
+        <tr><td>MCP 명칭</td><td></td></tr>
+        <tr><td>기종번호 / 기기명칭</td><td></td></tr>
+        <tr><td>상태 변화 일시</td><td>YYYY-MM-DD HH:MM:SS</td></tr>
+        <tr><td>상태</td><td>1:정상, 2:삽체(Traffic jam), 3:정체</td></tr>
+        <tr><td>번지 / 거리 / 다음 번지</td><td></td></tr>
+    </table>
+</div>
+
+<!-- ==================== Section 6 ==================== -->
+<div class="section" id="sec6">
+    <h2>6. FMS 메시지 샘플 (Vehicle 상태 보고)</h2>
+
+    <h3>6.1 샘플 메시지</h3>
+    <pre><code>Message=2,OHT,V047,1,1,0000,1,1232,0,1202,4,4,PIN2702,20308,00000000,0000,IR5S005S_2,STB031-R08,50,0,0</code></pre>
+
+    <h3>6.2 필드 분석</h3>
+    <table>
+        <tr><th>번호</th><th>구분</th><th>값</th><th>의미</th></tr>
+        <tr><td>0</td><td>메시지 ID</td><td><span class="inline-code">2</span></td><td>Vehicle 상태 코드</td></tr>
+        <tr><td>1</td><td>MCP명칭</td><td>OHT</td><td></td></tr>
+        <tr><td>2</td><td>Vehicle 명칭</td><td>V047</td><td>V047 호기</td></tr>
+        <tr><td>3</td><td>상태</td><td><span class="inline-code">1</span></td><td>운전중</td></tr>
+        <tr><td>4</td><td>재하정보</td><td>1</td><td>Carrier 적재</td></tr>
+        <tr><td>5</td><td>Error Code</td><td>0000</td><td>정상</td></tr>
+        <tr><td>6</td><td>통신 상태</td><td>1</td><td>정상</td></tr>
+        <tr><td>7</td><td>현재 번지</td><td>1232</td><td></td></tr>
+        <tr><td>8</td><td>거리</td><td>0</td><td></td></tr>
+        <tr><td>9</td><td>다음 번지</td><td>1202</td><td></td></tr>
+        <tr><td>10</td><td>실행 Cycle</td><td>4</td><td>Load</td></tr>
+        <tr><td>11</td><td>Vehicle Cycle</td><td>4</td><td>Load 이동 중</td></tr>
+        <tr><td>12</td><td>Carrier ID</td><td>PIN2702</td><td></td></tr>
+        <tr><td>13</td><td>Destination</td><td>20308</td><td></td></tr>
+        <tr><td>16</td><td>반송원 Port</td><td>IR5S005S_2</td><td></td></tr>
+        <tr><td>17</td><td>반송처 Port</td><td>STB031-R08</td><td></td></tr>
+        <tr><td>18</td><td>반송 우선도</td><td>50</td><td></td></tr>
+    </table>
+
+    <div class="info-box tip">
+        <strong>해석</strong>
+        V047 호기가 PIN2702 Carrier를 적재하고 1232번지 → 1202번지로 이동 중이며, 최종 목적지는 Station 20308 (반송원: IR5S005S_2 → 반송처: STB031-R08)
+    </div>
+</div>
+
+<!-- ==================== Section 7 : Atlas Server ==================== -->
+<div class="section" id="sec7">
+    <h2>7. Atlas Server — UDP 수신 구현 (Java)</h2>
+    <p><span class="tag tag-java">Java</span> <span class="tag tag-logpresso">Logpresso</span> MCP에서 UDP로 전송되는 메시지를 수신하여 Vehicle 상태를 업데이트하고 Logpresso DB에 저장하는 서버 구현</p>
+
+    <h3 id="sec7-1">7.1 OhtUdpListener — UDP 소켓 수신</h3>
+    <div class="info-box info">
+        <strong>핵심 구조</strong>
+        <span class="inline-code">DatagramSocket</span>으로 지정된 포트에서 UDP 패킷을 수신하고, CSV 메시지를 파싱하여 <span class="inline-code">DataService</span> 큐에 적재합니다.
+    </div>
+    <pre><code>// OhtUdpListener.java — UDP 수신 스레드
+public class OhtUdpListener implements Runnable {
+    private DatagramSocket socket;
+    private byte[] buffer = new byte[1500];  // MTU 크기
+
+    public OhtUdpListener(int port, String fabId, String mcpName) {
+        this.socket = new DatagramSocket(port);
+        // fabId, mcpName 초기화
+    }
+
+    @Override
+    public void run() {
+        while (!Thread.currentThread().isInterrupted()) {
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            socket.receive(packet);
+
+            String message = new String(packet.getData()).trim();
+
+            // Atlas 메모리에 메시지 추가
+            _addMessageInAtlasMemory(fabId, mcpName, message);
+        }
+    }
+
+    private void _addMessageInAtlasMemory(String fabId, String mcpName, String message) {
+        Msg msg = new Msg();
+        msg.setFabId(fabId);
+        msg.setMcpName(mcpName);
+        msg.setMsg(message);
+        msg.setMillis(System.currentTimeMillis());
+
+        // DataService 큐에 적재 → Worker 스레드가 처리
+        DataService.getInstance().queue.add(msg);
+    }
+}</code></pre>
+
+    <div class="info-box tip">
+        <strong>Multi-IP/FAB 지원</strong>
+        설정에 따라 여러 포트/IP에서 동시 수신 가능. 각 리스너는 fabId + mcpName으로 식별됩니다.
+    </div>
+
+    <h3 id="sec7-2">7.2 OhtMsgWorkerRunnable — 메시지 파싱 처리</h3>
+    <pre><code>// OhtMsgWorkerRunnable.java — 큐에서 메시지를 꺼내 처리
+public class OhtMsgWorkerRunnable implements Runnable {
+    private static final int MSG_ID_IDX = 0;
+
+    @Override
+    public void run() {
+        while (true) {
+            Msg msg = DataService.getInstance().queue.poll();
+            if (msg == null) { Thread.sleep(10); continue; }
+
+            // CSV 파싱 (콤마 구분, 빈 값 보존)
+            String[] tokens = StringUtils.splitPreserveAllTokens(msg.getMsg(), ',');
+            String messageId = tokens[MSG_ID_IDX];
+
+            // 메시지 ID에 따라 분기 처리
+            switch (messageId) {
+                case "2":   // Vehicle 상태 보고
+                    _processOhtReport(tokens, msg);
+                    break;
+                case "1":   // MCP On-Line 보고
+                    _processMcpOnline(tokens, msg);
+                    break;
+                case "4":   // 기기 상태 보고
+                    _processDeviceStatus(tokens, msg);
+                    break;
+                // ... 기타 Text ID 처리
+            }
+        }
+    }
+}</code></pre>
+
+    <h3 id="sec7-3">7.3 Vehicle 상태 처리 및 업데이트</h3>
+    <pre><code>// Vehicle 상태 보고 처리 (Text ID: 2)
+private void _processOhtReport(String[] tokens, Msg msg) {
+    String vhlName  = tokens[2];   // Vehicle 명칭
+    String state    = tokens[3];   // 상태 (1~11)
+    String cargo    = tokens[4];   // 재하 정보
+    String errCode  = tokens[5];   // Error Code
+    String commStat = tokens[6];   // 통신 상태
+    String curAddr  = tokens[7];   // 현재 번지
+    String distance = tokens[8];   // 거리
+    String nextAddr = tokens[9];   // 다음 번지
+    String runCycle = tokens[10];  // 실행 Cycle
+    String vhlCycle = tokens[11];  // Vehicle Cycle
+    String carrier  = tokens[12];  // Carrier ID
+    String dest     = tokens[13];  // Destination
+
+    // Vhl 객체 업데이트
+    Vhl vhl = DataService.getDataSet().getVhlMap().get(vhlName);
+    if (vhl != null) {
+        vhl.setState(VHL_STATE.fromCode(state));
+        vhl.setDetailState(VHL_DET_STATE.fromCode(vhlCycle));
+        vhl.setRunCycle(RUN_CYCLE.fromCode(runCycle));
+        // ... 나머지 필드 업데이트
+
+        // RailEdge 속력 업데이트
+        RailEdge railEdge = findRailEdge(curAddr, nextAddr);
+        if (railEdge != null) {
+            railEdge.addVelocity(calculatedVelocity);
+            railEdge.addHistory();
+        }
+    }
+}</code></pre>
+</div>
+
+<!-- ==================== Section 8 : Logpresso ==================== -->
+<div class="section" id="sec8">
+    <h2>8. Logpresso 데이터 저장</h2>
+    <p><span class="tag tag-logpresso">Logpresso</span> <span class="tag tag-java">Java</span></p>
+
+    <div class="info-box danger">
+        <strong>중요: CSV 파일 저장 금지</strong>
+        데이터는 반드시 Logpresso DB에 저장해야 합니다. CSV 파일로 저장하지 마세요. Logpresso의 Tuple 기반 API를 사용합니다.
+    </div>
+
+    <h3 id="sec8-1">8.1 Logpresso Tuple API — 데이터 삽입</h3>
+
+    <h4>방법 1: LogpressoAPI.setInsertTuples() — 직접 삽입</h4>
+    <pre><code>// 직접 Logpresso 테이블에 삽입 (OhtMsgWorkerRunnable.java)
+private boolean _insertHidOffLogpresso(HidOffRecordItem recordItem, long currentMilli) {
+    // 1. Tuple 객체 생성
+    Tuple tuple = new Tuple();
+
+    // 2. 필드 설정
+    tuple.put("FAB_ID",        recordItem.getFabId());
+    tuple.put("MCP_NM",        recordItem.getMcpName());
+    tuple.put("VHL_ID",        recordItem.getVhlId());
+    tuple.put("HID_ID",        recordItem.getHidId());
+    tuple.put("OFF_TIME",      currentMilli);
+    tuple.put("FROM_ADDRESS",  recordItem.getFromAddress());
+    tuple.put("TO_ADDRESS",    recordItem.getToAddress());
+
+    // 3. Logpresso에 삽입 (테이블명, Tuple 리스트, 타임아웃)
+    return LogpressoAPI.setInsertTuples(
+        "ATLAS_OHT_HID_OFF",   // 테이블명
+        List.of(tuple),         // Tuple 리스트
+        20                      // 타임아웃 (초)
+    );
+}</code></pre>
+
+    <h4>방법 2: Util.insertInLogpressoDatabase() — 유틸리티 메서드</h4>
+    <pre><code>// Util 래퍼를 사용한 일괄 삽입 (TrafficBatch.java)
+List&lt;Tuple&gt; logpressoData = new ArrayList&lt;&gt;();
+
+// 여러 Tuple 추가
+for (RailEdge railEdge : railEdges) {
+    Tuple tuple = new Tuple();
+    tuple.put("fabId",       fabId);
+    tuple.put("mcpName",     mcpName);
+    tuple.put("railEdgeId",  railEdge.getId());
+    tuple.put("velocity",    railEdge.getVelocity());
+    tuple.put("maxVelocity", railEdge.getMaxVelocity());
+    tuple.put("vhlCnt",      railEdge.getVhlIdMap().size());
+    tuple.put("HID_ID",      railEdge.getHIDId());
+    tuple.put("createTime",  System.currentTimeMillis());
+    logpressoData.add(tuple);
+}
+
+// 일괄 삽입
+Util.insertInLogpressoDatabase(
+    logpressoData,                    // Tuple 리스트
+    "ATLAS_RAIL_TRAFFIC",             // 테이블명
+    this.getClass().getSimpleName()   // 호출자 (로그용)
+);</code></pre>
+
+    <h4>방법 3: HID 정보 삽입 (DataService.java)</h4>
+    <pre><code>// HID 정보를 Logpresso에 저장 (DataService.java)
+private void _insertHidDataIntoLogpresso(Map&lt;String, List&lt;String&gt;&gt; data) {
+    List&lt;Tuple&gt; logpressoData = new ArrayList&lt;&gt;();
+
+    for (Map.Entry&lt;String, List&lt;String&gt;&gt; entry : data.entrySet()) {
+        String hidId = entry.getKey();
+        List&lt;String&gt; addresses = entry.getValue();
+
+        Tuple tuple = new Tuple();
+        tuple.put("FAB_ID",  fabId);
+        tuple.put("MCP_NM",  mcpName);
+        tuple.put("HID_ID",  hidId);
+        tuple.put("START",   addresses.get(0));
+        tuple.put("ADDRESS", String.join(",", addresses));
+
+        logpressoData.add(tuple);
+    }
+
+    boolean isInserted = LogpressoAPI.setInsertTuples(
+        "ATLAS_HID_INFO",      // 테이블명
+        logpressoData,
+        20
+    );
+}</code></pre>
+
+    <h3 id="sec8-2">8.2 Logpresso 테이블 구조</h3>
+
+    <h4>ATLAS_OHT_HID_OFF — HID Off 기록</h4>
+    <table>
+        <tr><th>컬럼명</th><th>타입</th><th>설명</th></tr>
+        <tr><td>FAB_ID</td><td>String</td><td>Fab 식별자 (예: M14A)</td></tr>
+        <tr><td>MCP_NM</td><td>String</td><td>MCP 명칭</td></tr>
+        <tr><td>VHL_ID</td><td>String</td><td>Vehicle 식별자</td></tr>
+        <tr><td>HID_ID</td><td>int</td><td>HID 구간 ID</td></tr>
+        <tr><td>OFF_TIME</td><td>long</td><td>Off 시각 (밀리초)</td></tr>
+        <tr><td>FROM_ADDRESS</td><td>int</td><td>시작 번지</td></tr>
+        <tr><td>TO_ADDRESS</td><td>int</td><td>종료 번지</td></tr>
+    </table>
+
+    <h4>ATLAS_HID_INFO — HID 구간 정보</h4>
+    <table>
+        <tr><th>컬럼명</th><th>타입</th><th>설명</th></tr>
+        <tr><td>FAB_ID</td><td>String</td><td>Fab 식별자</td></tr>
+        <tr><td>MCP_NM</td><td>String</td><td>MCP 명칭</td></tr>
+        <tr><td>HID_ID</td><td>String</td><td>HID 식별자</td></tr>
+        <tr><td>START</td><td>String</td><td>시작 주소</td></tr>
+        <tr><td>ADDRESS</td><td>String</td><td>주소 목록 (콤마 구분)</td></tr>
+    </table>
+
+    <h4>ATLAS_RAIL_TRAFFIC — Rail 교통 속력 데이터</h4>
+    <table>
+        <tr><th>컬럼명</th><th>타입</th><th>설명</th></tr>
+        <tr><td>createTime</td><td>long</td><td>생성 시각 (밀리초)</td></tr>
+        <tr><td>fabId</td><td>String</td><td>Fab 식별자</td></tr>
+        <tr><td>mcpName</td><td>String</td><td>MCP 명칭</td></tr>
+        <tr><td>railEdgeId</td><td>String</td><td>Rail Edge ID</td></tr>
+        <tr><td>velocity</td><td>double</td><td>현재 속력 (m/min)</td></tr>
+        <tr><td>maxVelocity</td><td>double</td><td>최대 속력 (m/min)</td></tr>
+        <tr><td>absoluteVelocity</td><td>double</td><td>절대 속력 비율 (velocity/maxVelocity)</td></tr>
+        <tr><td>vhlCnt</td><td>int</td><td>구간 내 Vehicle 수</td></tr>
+        <tr><td>passCnt</td><td>long</td><td>통과 횟수 (기간 내)</td></tr>
+        <tr><td>HID_ID</td><td>int</td><td>HID 구간 ID</td></tr>
+        <tr><td>vhlStageWaitCnt</td><td>int</td><td>Stage 대기 수</td></tr>
+    </table>
+
+    <h3 id="sec8-3">8.3 Logpresso 데이터 조회</h3>
+    <pre><code>// XML 설정 파일에서 쿼리 파라미터 로드
+XmlUtil.loadLogpressoParm(FilePathUtil.LOGPRESSO_CUSTOM_QUERY);
+XmlUtil.loadLogpressoParm(FilePathUtil.LOGPRESSO_CUSTOM_QUERY2);
+
+// Logpresso 쿼리 실행 (예: 최근 속력 데이터 조회)
+List&lt;Map&lt;String, Object&gt;&gt; queryData =
+    XmlUtil.selectLogpressoQuery("FIND_RECENT_VELOCITY");
+
+// 조회 결과로 초기 속력 설정
+for (Map&lt;String, Object&gt; row : queryData) {
+    String railEdgeId = (String) row.get("railEdgeId");
+    double velocity   = (double) row.get("velocity");
+
+    RailEdge edge = DataService.getDataSet()
+                        .getRailEdgeMap().get(railEdgeId);
+    if (edge != null) {
+        edge.setVelocity(velocity);
+    }
+}</code></pre>
+
+    <div class="info-box info">
+        <strong>Logpresso API 요약</strong>
+        <table style="margin-top:0.5rem">
+            <tr><th>메서드</th><th>용도</th></tr>
+            <tr><td><span class="inline-code">LogpressoAPI.setInsertTuples(tableName, tuples, timeout)</span></td><td>테이블에 Tuple 리스트 삽입</td></tr>
+            <tr><td><span class="inline-code">Util.insertInLogpressoDatabase(tuples, tableName, caller)</span></td><td>삽입 래퍼 (로그 포함)</td></tr>
+            <tr><td><span class="inline-code">XmlUtil.selectLogpressoQuery(queryName)</span></td><td>XML 정의 쿼리 실행</td></tr>
+            <tr><td><span class="inline-code">XmlUtil.loadLogpressoParm(path)</span></td><td>쿼리 파라미터 로드</td></tr>
+        </table>
+    </div>
+</div>
+
+<!-- ==================== Section 9 : Java Data Models ==================== -->
+<div class="section" id="sec9">
+    <h2>9. Java 데이터 모델</h2>
+    <p><span class="tag tag-java">Java</span> Atlas Server 내부의 핵심 Edge/Vehicle 데이터 모델</p>
+
+    <h3 id="sec9-1">9.1 RailEdge — Rail 구간 정보</h3>
+    <pre><code>public class RailEdge extends AbstractEdge {
+    // ── 기본 속성 ──
+    private double maxVelocity   = -1;   // 최대 속력 (m/min)
+    private double velocity      = -1;   // 현재 속력 (m/min)
+    private double lastVelocity  = -1;   // 이전 속력 (m/min)
+    private long   hisCnt        = 0;    // 이력 카운트
+    private boolean changedVelocity = false; // 초기값 변화 여부
+
+    // ── 구간 정보 ──
+    private int    loopId   = -1;       // 루프 ID
+    private int    hidId    = -1;       // HID 구간 ID
+    private String zcuId    = "";       // ZCU ID
+    private int    fromAddress;          // 시작 번지
+    private int    toAddress;            // 종료 번지
+    private RAIL_DIRECTION railDir;      // LEFT / RIGHT
+
+    // ── Vehicle 관리 ──
+    private ConcurrentHashMap&lt;String, Integer&gt; vhlIdMap;
+
+    // ── 속력 업데이트 (가중 이동 평균) ──
+    public void addVelocity(double velocity) {
+        // 유효성 검사: NaN, Infinite 제외
+        if (Double.isNaN(velocity) || Double.isInfinite(velocity)) return;
+
+        // 범위 보정: 최소 1.5, 최대 maxVelocity
+        velocity = Math.max(1.5, Math.min(velocity, maxVelocity));
+
+        setLastVelocity(this.velocity);
+
+        if (hisCnt &gt; 0) {
+            // 가중 이동 평균: 이전 값 * weight + 새 값 * (1 - weight)
+            double weight = PredictionPara.getInstance().getLastHisWeight();
+            this.velocity = (this.velocity * weight) + (velocity * (1.0 - weight));
+        } else {
+            this.velocity = velocity;
+        }
+        this.changedVelocity = true;
+    }
+
+    // ── 비용 계산 (경로 탐색용) ──
+    public long getCost(String carrierId) {
+        if (velocity &lt;= 0) velocity = 1;
+        // 거리(mm) / 속도(m/min→mm/ms 변환)
+        return (long)(length / (velocity * 1000 / 60 / 1000));
+    }
+
+    // ── 밀도 계산 (%) ──
+    public float getDensity() {
+        float vhlLength = fabId.startsWith("M14") ? 1084f : 1243f; // 대차+간격
+        float railLen = Math.max((float)length - ((float)length % vhlLength), vhlLength);
+        return Math.min((vhlLength * vhlIdMap.size()) / railLen * 100f, 100f);
+    }
+}</code></pre>
+
+    <h3 id="sec9-2">9.2 CnvEdge — Conveyor 구간 정보</h3>
+    <p><span class="tag tag-cnv">CNV</span></p>
+    <pre><code>public class CnvEdge extends AbstractEdge {
+    private long avgTransferIntervalT = 150;  // 평균 반송 시간 (ms)
+
+    // ── 비용 = 평균 반송 시간 ──
+    public long getCost(String carrierId) {
+        return avgTransferIntervalT;
+    }
+
+    // ── 비용 업데이트 (가중 이동 평균, 300~30000ms 범위) ──
+    public void addCost(long newCost) {
+        newCost = Math.max(300, Math.min(newCost, 30000));
+        double weight = PredictionPara.getInstance().getLastHisWeight();
+        setAvgTransferIntervalT(
+            (long)((avgTransferIntervalT * weight) + ((1.0 - weight) * newCost))
+        );
+    }
+
+    // ── 범위 제한: 300ms ~ 30000ms ──
+    public void setAvgTransferIntervalT(long val) {
+        this.avgTransferIntervalT = Math.max(300, Math.min(val, 30000));
+    }
+
+    // ── 가용성: 양쪽 노드 모두 사용 가능해야 함 ──
+    public boolean isAvailable() {
+        return getFromNode().isAvailable() &amp;&amp; getToNode().isAvailable();
+    }
+}</code></pre>
+
+    <h3 id="sec9-3">9.3 TrafficBatch — 교통 데이터 배치 처리</h3>
+    <pre><code>// TrafficBatch.java — 1분 주기 배치 (Quartz Job)
+public class TrafficBatch implements Job {
+    private static ConcurrentMap&lt;String, Long&gt; lastHisCntMap = new ConcurrentHashMap&lt;&gt;();
+
+    @Override
+    public void execute(JobExecutionContext ctx) {
+        for (FunctionItem fi : Env.getSwitchMap().values()) {
+            if (!fi.isUseRailTraffic()) continue;
+
+            List&lt;Tuple&gt; logpressoData = new ArrayList&lt;&gt;();
+            double totalVelocity = 0; int count = 0;
+
+            for (RailEdge edge : DataService.getDataSet().getRailEdgeMap().values()) {
+                if (!edge.getFabId().equals(fi.getFabId())) continue;
+
+                // ── 속력 집계 ──
+                if (edge.isChangedVelocity()) {
+                    totalVelocity += edge.getVelocity();
+                    count++;
+                }
+
+                // ── 개별 Edge Tuple 생성 ──
+                Tuple t = new Tuple();
+                t.put("createTime",  System.currentTimeMillis());
+                t.put("railEdgeId",  edge.getId());
+                t.put("fabId",       fi.getFabId());
+                t.put("mcpName",     fi.getMcpName());
+                t.put("velocity",    edge.getVelocity());
+                t.put("HID_ID",      edge.getHIDId());
+
+                if (fi.isUseRailTrafficMaxVelocity())
+                    t.put("maxVelocity", edge.getMaxVelocity());
+                if (fi.isUseRailTrafficAbsoluteVelocity())
+                    t.put("absoluteVelocity", edge.getVelocity() / edge.getMaxVelocity());
+                if (fi.isUseRailTrafficVhlCnt())
+                    t.put("vhlCnt", edge.getVhlIdMap().size());
+                if (fi.isUseRailTrafficPassCnt()) {
+                    long passCnt = edge.getHisCnt() - lastHisCntMap.getOrDefault(edge.getId(), 0L);
+                    t.put("passCnt", Math.max(passCnt, 0));
+                }
+
+                logpressoData.add(t);
+                lastHisCntMap.put(edge.getId(), edge.getHisCnt());
+            }
+
+            // ── 평균 속력 Header Tuple ──
+            double avg = Math.round((totalVelocity / count) * 10) / 10.0;
+            logpressoData.add(buildHeader(fi, avg, "AVERAGE_PER_1MINUTES"));
+
+            // ── Logpresso DB에 일괄 저장 ──
+            Util.insertInLogpressoDatabase(
+                logpressoData, "ATLAS_RAIL_TRAFFIC", "TrafficBatch"
+            );
+        }
+    }
+}</code></pre>
+</div>
+
+<!-- ==================== Section 10 : Enums ==================== -->
+<div class="section" id="sec10">
+    <h2>10. 상태값 Enum 정리</h2>
+
+    <h3>10.1 AMP Enum (C#)</h3>
+    <table>
+        <tr><th>Enum</th><th>값</th></tr>
+        <tr><td><strong>eControlState</strong></td><td>OFFLINE / ONLINE_LOCAL / ONLINE_REMOTE</td></tr>
+        <tr><td><strong>eSCState</strong></td><td>STOP / RUN</td></tr>
+        <tr><td><strong>eEqMode</strong></td><td>OPERATOR / ENGR / MAINT</td></tr>
+        <tr><td><strong>eAckCode</strong></td><td>Ack / Nak</td></tr>
+    </table>
+
+    <h3>10.2 eRemoteCommand</h3>
+    <table>
+        <tr><th>값</th><th>용도</th><th>대상 이벤트</th></tr>
+        <tr><td>Run / Stop / AlarmClear</td><td>운전/정지/알람 해제</td><td>OperationEvent</td></tr>
+        <tr><td>Home / StepClear / DataClear</td><td>CNV 전용</td><td>OperationEvent</td></tr>
+        <tr><td>SetPMMode</td><td>PM 모드</td><td>OperationEvent</td></tr>
+        <tr><td>Install / Remove</td><td>Carrier 관리</td><td>CarrierEvent</td></tr>
+        <tr><td>Creat / Cancel / Abort</td><td>반송 관리</td><td>TransferEvent</td></tr>
+        <tr><td>OffLine / Local / Remote</td><td>상태 전환</td><td>ControlStatusEvent</td></tr>
+        <tr><td>Operation / Engr / Maint</td><td>모드 전환</td><td>EQModeEvent</td></tr>
+    </table>
+
+    <h3>10.3 Java Vehicle Enum (Atlas Server)</h3>
+
+    <h4>VHL_STATE</h4>
+    <table>
+        <tr><th>코드</th><th>상태</th><th>코드</th><th>상태</th></tr>
+        <tr><td>1</td><td>RUN (운전중)</td><td>6</td><td>OBS_BZ_STOP</td></tr>
+        <tr><td>2</td><td>STOP (정지)</td><td>7</td><td>JAM (삽체)</td></tr>
+        <tr><td>3</td><td>ABNORMAL (이상)</td><td>8</td><td>HT_STOP (정체)</td></tr>
+        <tr><td>4</td><td>MANUAL (수동)</td><td>9</td><td>E84_TIMEOUT</td></tr>
+        <tr><td>5</td><td>REMOVING (추출중)</td><td></td><td></td></tr>
+    </table>
+
+    <h4>VHL_DET_STATE (작업 상태 상세)</h4>
+    <table>
+        <tr><th>코드</th><th>상태</th><th>코드</th><th>상태</th></tr>
+        <tr><td>0</td><td>NONE</td><td>101</td><td>MOVING (이동중)</td></tr>
+        <tr><td>1</td><td>WAIT (대기)</td><td>102</td><td>PARKING_UTS_MOVING</td></tr>
+        <tr><td>2</td><td>STAGE_WAIT</td><td>103</td><td>STAGE_MOVING</td></tr>
+        <tr><td>3</td><td>STANDBY_WAIT</td><td>104</td><td>STANDBY_MOVING</td></tr>
+        <tr><td>4</td><td>DEPOSIT_SIG_WAIT</td><td>105</td><td>BALANCE_MOVING</td></tr>
+        <tr><td>5</td><td>ACQ_WAIT</td><td>106</td><td>PARKING_MOVING</td></tr>
+        <tr><td>6</td><td>MAP_WAIT</td><td></td><td></td></tr>
+    </table>
+
+    <h4>RUN_CYCLE (실행 Cycle)</h4>
+    <table>
+        <tr><th>코드</th><th>Cycle</th><th>코드</th><th>Cycle</th></tr>
+        <tr><td>0</td><td>NONE</td><td>21</td><td>WHEELDRIVE (주회주행)</td></tr>
+        <tr><td>1</td><td>POSITION_DETECT</td><td>22</td><td>MANUAL_CONTROL</td></tr>
+        <tr><td>2</td><td>MOVING</td><td>23</td><td>DRIVE_TEACHING</td></tr>
+        <tr><td>3</td><td>ACQUIRE (Unload)</td><td>24</td><td>TRANS_TEACHING</td></tr>
+        <tr><td>4</td><td>DEPOSIT (Load)</td><td>25~27</td><td>TEST_1~3</td></tr>
+        <tr><td>5</td><td>SAMPLING</td><td>2E</td><td>BUILDING_TRANS</td></tr>
+        <tr><td>9</td><td>FLOOR_TRANS</td><td>2F</td><td>EVACUATION</td></tr>
+    </table>
+
+    <h4>VHL_CYCLE (Vehicle Cycle)</h4>
+    <table>
+        <tr><th>코드</th><th>Cycle</th><th>코드</th><th>Cycle</th></tr>
+        <tr><td>0</td><td>NONE</td><td>5</td><td>DEPOSITING (Load이재)</td></tr>
+        <tr><td>1</td><td>MOVING (이동중)</td><td>6</td><td>MAINT_MOVING</td></tr>
+        <tr><td>2</td><td>ACQUIRE_MOVING (Unload이동)</td><td>7</td><td>WAITING (대기)</td></tr>
+        <tr><td>3</td><td>ACQUIRING (Unload이재)</td><td>8</td><td>INPUT (투입중)</td></tr>
+        <tr><td>4</td><td>DEPOSIT_MOVING (Load이동)</td><td></td><td></td></tr>
+    </table>
+</div>
+
+<!-- ==================== Section 11 : Checklist ==================== -->
+<div class="section" id="sec11">
+    <h2>11. AGV/CNV 개발 체크리스트</h2>
+
+    <h3>11.1 AMP 연동 필수 구현</h3>
+    <ul class="checklist">
+        <li>CRemoteServer 인스턴스 생성 및 이벤트 등록</li>
+        <li>Initialize() → Start() → Stop() 생명주기 관리</li>
+        <li>MonitorGetData — ControlState / SCState / EQMode 설정</li>
+        <li>MonitorGetData — AlarmInfo / CarrierInfo / TrInfo 관리</li>
+        <li>MonitorGetData — <strong>CarInfo (AGV)</strong> 또는 <strong>ConveyorInfo (CNV)</strong> 관리</li>
+        <li>OperationEvent 처리 (Run/Stop/AlarmClear/Home/StepClear/DataClear)</li>
+        <li>TransferEvent 처리 (Creat/Cancel/Abort)</li>
+        <li>CarrierEvent 처리 (Install/Remove)</li>
+        <li>ControlStatusEvent 처리 (OffLine/Local/Remote)</li>
+        <li>EQModeEvent 처리 (Operation/Engr/Maint)</li>
+        <li>ErrorEvent 로그/알람 처리</li>
+    </ul>
+
+    <h3>11.2 FabScope 연동 (UDP/MCP 통신)</h3>
+    <ul class="checklist">
+        <li>UDP/IP 송수신 모듈 구현</li>
+        <li>SysView계 포트 3600 / MSS계 포트 3500 설정</li>
+        <li>CSV 파싱/생성 모듈 구현 (1500byte MTU)</li>
+        <li>Text ID:1 MCP On-Line 보고 (5초 주기)</li>
+        <li>Text ID:2 Vehicle 상태 보고</li>
+        <li>Text ID:4 기기 상태 보고</li>
+        <li>Text ID:51 상태보고요구 수신 처리</li>
+        <li>Text ID:3 (MSS) 이상/복구 보고</li>
+        <li>Text ID:13 (MSS) 작업 데이터 보고</li>
+    </ul>
+
+    <h3>11.3 Atlas Server (Java) 구현</h3>
+    <ul class="checklist">
+        <li>OhtUdpListener — UDP 소켓 수신 (DatagramSocket, 1500byte 버퍼)</li>
+        <li>OhtMsgWorkerRunnable — CSV 메시지 파싱 (splitPreserveAllTokens)</li>
+        <li>Vehicle 상태 업데이트 (Vhl 객체, VHL_STATE/VHL_DET_STATE 매핑)</li>
+        <li>RailEdge 속력 업데이트 (addVelocity — 가중 이동 평균)</li>
+        <li>TrafficBatch — 1분 주기 배치 (평균 속력, 개별 Edge 데이터)</li>
+    </ul>
+
+    <h3>11.4 Logpresso 데이터 저장</h3>
+    <ul class="checklist">
+        <li>Logpresso Tuple API 연동 (LogpressoAPI.setInsertTuples)</li>
+        <li>ATLAS_OHT_HID_OFF 테이블 — HID Off 기록 저장</li>
+        <li>ATLAS_HID_INFO 테이블 — HID 구간 정보 저장</li>
+        <li>ATLAS_RAIL_TRAFFIC 테이블 — Rail 교통 속력 데이터 저장</li>
+        <li>XmlUtil.selectLogpressoQuery — 초기 속력 데이터 조회</li>
+        <li>Util.insertInLogpressoDatabase — 일괄 삽입 래퍼 사용</li>
+    </ul>
+
+    <h3>11.5 AGV 전용</h3>
+    <ul class="checklist">
+        <li>Car 클래스 데이터 관리 (위치, 경로, 상태)</li>
+        <li>VehicleState 상태 전이 관리 (1:REMOVED ~ 14:AVOID)</li>
+        <li>VehicleJob 작업 형태 관리 (SINGLE/MULTI/DOUBLE/BATTERY)</li>
+        <li>주행 경로 보고 (Text ID:15)</li>
+        <li>삽체/정체 감지 및 보고 (Text ID:17)</li>
+        <li>연계반송 (GlobalTransferEvent) 처리</li>
+        <li>RailEdge 밀도/비용 계산</li>
+    </ul>
+
+    <h3>11.6 CNV 전용</h3>
+    <ul class="checklist">
+        <li>Conveyor 클래스 데이터 관리</li>
+        <li>Home/StepClear/DataClear 명령 처리</li>
+        <li>CnvEdge avgTransferIntervalT 비용 관리 (300~30000ms)</li>
+        <li>Transfer.ArrivedTime 도착 시간 관리</li>
+        <li>Transfer.State=10 (Moving) 상태 관리</li>
+    </ul>
+</div>
+
+<!-- Footer -->
+<div style="text-align:center; padding:2rem; color:var(--text-light); font-size:0.85rem; border-top:1px solid var(--border-light); margin-top:1rem;">
+    <p>AGV / CNV 통합 개발 가이드</p>
+    <p style="margin-top:0.3rem">참조: AMP API GUIDE v1.0.1.7 | C_FABSCOPE-MCP 통신사양서 | SYSVIEW 통신사양서 v1.8.0 | FMS 샘플사양서 | Atlas Server Java 소스</p>
+    <p style="margin-top:0.3rem; color:var(--accent-gold)">데이터 저장: Logpresso DB (Tuple API)</p>
+</div>
+
+</main>
+</div>
+
+<script>
+// Smooth scroll for sidebar links
+document.querySelectorAll('.sidebar a').forEach(link => {
+    link.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    });
+});
+</script>
+
+</body>
+</html>

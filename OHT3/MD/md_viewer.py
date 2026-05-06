@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+md_viewer.py - Markdown → GitHub 스타일 HTML 변환 (데스크톱 UI)
+
+사용법:
+    python md_viewer.py              → UI 실행
+    python md_viewer.py 파일.md      → 바로 변환 + 브라우저 열기
+"""
+
+import os, re, sys, html, json, webbrowser
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+# ============================================================
+# CSS
+# ============================================================
+LIGHT_CSS = """
+body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6; color: #1f2328; background: #fff; max-width: 980px; margin: 0 auto; padding: 40px 30px; }
+h1,h2,h3,h4,h5,h6 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; color: #1f2328; }
+h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid #d1d9e0; }
+h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid #d1d9e0; }
+h3 { font-size: 1.25em; } h4 { font-size: 1em; }
+p { margin-top: 0; margin-bottom: 16px; }
+a { color: #0969da; text-decoration: none; } a:hover { text-decoration: underline; }
+code { font-family: "SFMono-Regular", Consolas, Menlo, monospace; font-size: 85%; padding: .2em .4em; background: #eff1f3; border-radius: 6px; color: #1f2328; }
+pre { font-family: "SFMono-Regular", Consolas, Menlo, monospace; font-size: 85%; line-height: 1.45; background: #f6f8fa; border-radius: 6px; padding: 16px; overflow: auto; margin-bottom: 16px; border: 1px solid #d1d9e0; }
+pre code { background: none; padding: 0; font-size: 100%; }
+blockquote { margin: 0 0 16px; padding: 0 1em; color: #656d76; border-left: .25em solid #d1d9e0; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+table th, table td { padding: 8px 13px; border: 1px solid #d1d9e0; font-size: 14px; }
+table th { background: #f6f8fa; font-weight: 600; } table tr:nth-child(2n) { background: #f6f8fa; }
+hr { height: .25em; padding: 0; margin: 24px 0; background: #d1d9e0; border: 0; }
+ul, ol { padding-left: 2em; margin-bottom: 16px; } li { margin-top: 4px; }
+img { max-width: 100%; } strong { font-weight: 600; }
+.lang-python .kw { color: #cf222e; } .lang-python .str { color: #0a3069; } .lang-python .com { color: #656d76; } .lang-python .fn { color: #8250df; } .lang-python .num { color: #0550ae; }
+.lang-bash .cmd { color: #0550ae; } .lang-bash .com { color: #656d76; }
+.lang-json .key { color: #116329; } .lang-json .str { color: #0a3069; } .lang-json .num { color: #0550ae; }
+.code-block { position: relative; } .copy-btn { position: absolute; top: 8px; right: 8px; background: #e1e4e8; color: #656d76; border: 1px solid #d1d9e0; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; opacity: 0; transition: opacity .2s; }
+.code-block:hover .copy-btn { opacity: 1; }
+.toc { background: #f6f8fa; border: 1px solid #d1d9e0; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; }
+.toc-title { font-weight: 600; color: #1f2328; margin-bottom: 8px; font-size: 14px; }
+.toc a { color: #0969da; font-size: 14px; display: block; padding: 2px 0; } .toc .toc-h3 { padding-left: 20px; } .toc .toc-h4 { padding-left: 40px; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; margin-bottom: 20px; border-bottom: 1px solid #d1d9e0; }
+.file-name { color: #0969da; font-size: 14px; font-weight: 600; } .file-info { color: #656d76; font-size: 12px; }
+"""
+
+DARK_CSS = """
+body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.6; color: #c9d1d9; background: #0d1117; max-width: 980px; margin: 0 auto; padding: 40px 30px; }
+h1,h2,h3,h4,h5,h6 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; color: #e6edf3; }
+h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid #21262d; }
+h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid #21262d; }
+h3 { font-size: 1.25em; } h4 { font-size: 1em; }
+p { margin-top: 0; margin-bottom: 16px; }
+a { color: #58a6ff; text-decoration: none; } a:hover { text-decoration: underline; }
+code { font-family: "SFMono-Regular", Consolas, Menlo, monospace; font-size: 85%; padding: .2em .4em; background: #161b22; border-radius: 6px; color: #e6edf3; }
+pre { font-family: "SFMono-Regular", Consolas, Menlo, monospace; font-size: 85%; line-height: 1.45; background: #161b22; border-radius: 6px; padding: 16px; overflow: auto; margin-bottom: 16px; border: 1px solid #30363d; }
+pre code { background: none; padding: 0; font-size: 100%; }
+blockquote { margin: 0 0 16px; padding: 0 1em; color: #8b949e; border-left: .25em solid #30363d; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+table th, table td { padding: 8px 13px; border: 1px solid #30363d; font-size: 14px; }
+table th { background: #161b22; font-weight: 600; color: #e6edf3; } table tr { background: #0d1117; } table tr:nth-child(2n) { background: #161b22; }
+hr { height: .25em; padding: 0; margin: 24px 0; background: #21262d; border: 0; }
+ul, ol { padding-left: 2em; margin-bottom: 16px; } li { margin-top: 4px; }
+img { max-width: 100%; } strong { font-weight: 600; color: #e6edf3; }
+.lang-python .kw { color: #ff7b72; } .lang-python .str { color: #a5d6ff; } .lang-python .com { color: #8b949e; } .lang-python .fn { color: #d2a8ff; } .lang-python .num { color: #79c0ff; }
+.lang-bash .cmd { color: #79c0ff; } .lang-bash .com { color: #8b949e; }
+.lang-json .key { color: #7ee787; } .lang-json .str { color: #a5d6ff; } .lang-json .num { color: #79c0ff; }
+.code-block { position: relative; } .copy-btn { position: absolute; top: 8px; right: 8px; background: #30363d; color: #8b949e; border: 1px solid #484f58; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; opacity: 0; transition: opacity .2s; }
+.code-block:hover .copy-btn { opacity: 1; }
+.toc { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; }
+.toc-title { font-weight: 600; color: #e6edf3; margin-bottom: 8px; font-size: 14px; }
+.toc a { color: #58a6ff; font-size: 14px; display: block; padding: 2px 0; } .toc .toc-h3 { padding-left: 20px; } .toc .toc-h4 { padding-left: 40px; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; margin-bottom: 20px; border-bottom: 1px solid #21262d; }
+.file-name { color: #58a6ff; font-size: 14px; font-weight: 600; } .file-info { color: #8b949e; font-size: 12px; }
+"""
+
+# ============================================================
+# 코드 하이라이트
+# ============================================================
+def esc(t): return html.escape(t)
+
+def hl_py(c):
+    kw = r'\b(def|class|import|from|return|if|else|elif|for|while|in|not|and|or|with|as|try|except|finally|raise|yield|lambda|pass|break|continue|global|None|True|False|self|print|async|await)\b'
+    c = esc(c)
+    c = re.sub(r'(#.*?)$', r'<span class="com">\1</span>', c, flags=re.MULTILINE)
+    c = re.sub(r'(".*?"|\'.*?\')', r'<span class="str">\1</span>', c)
+    c = re.sub(r'\b(\d+\.?\d*)\b', r'<span class="num">\1</span>', c)
+    c = re.sub(kw, r'<span class="kw">\1</span>', c)
+    c = re.sub(r'\b(def|class)\b\s+(\w+)', r'<span class="kw">\1</span> <span class="fn">\2</span>', c)
+    return c
+
+def hl_bash(c):
+    c = esc(c)
+    c = re.sub(r'(#.*?)$', r'<span class="com">\1</span>', c, flags=re.MULTILINE)
+    c = re.sub(r'^(\s*)(python|cd|pip|npm|git|ls|mkdir)\b', r'\1<span class="cmd">\2</span>', c, flags=re.MULTILINE)
+    return c
+
+def hl_json(c):
+    c = esc(c)
+    c = re.sub(r'(".*?")\s*:', r'<span class="key">\1</span>:', c)
+    c = re.sub(r':\s*(".*?")', r': <span class="str">\1</span>', c)
+    c = re.sub(r':\s*(\d+)', r': <span class="num">\1</span>', c)
+    return c
+
+def hl_xml(c):
+    c = esc(c)
+    c = re.sub(r'(&lt;\/?)([\w-]+)', r'\1<span class="kw">\2</span>', c)
+    return c
+
+def hl_code(code, lang):
+    l = (lang or '').lower().strip()
+    if l in ('python','py'): return hl_py(code), 'lang-python'
+    if l in ('bash','sh','shell'): return hl_bash(code), 'lang-bash'
+    if l in ('json',): return hl_json(code), 'lang-json'
+    if l in ('xml','html'): return hl_xml(code), 'lang-xml'
+    return esc(code), ''
+
+# ============================================================
+# Markdown → HTML
+# ============================================================
+def inline(t):
+    t = re.sub(r'\*\*\*(.*?)\*\*\*', r'<strong><em>\1</em></strong>', t)
+    t = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', t)
+    t = re.sub(r'\*(.*?)\*', r'<em>\1</em>', t)
+    t = re.sub(r'`([^`]+)`', r'<code>\1</code>', t)
+    t = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', t)
+    t = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1">', t)
+    return t
+
+def md_to_html(md):
+    lines = md.split('\n')
+    out, toc = [], []
+    in_code = False; clang = ''; cbuf = []
+    in_tbl = False; trows = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.strip().startswith('```'):
+            if in_code:
+                h, cl = hl_code('\n'.join(cbuf), clang)
+                out.append(f'<div class="code-block"><button class="copy-btn" onclick="copyCode(this)">Copy</button><pre><code class="{cl}">{h}</code></pre></div>')
+                in_code = False; cbuf = []; clang = ''
+            else: in_code = True; clang = ln.strip()[3:].strip()
+            i += 1; continue
+        if in_code: cbuf.append(ln); i += 1; continue
+
+        if '|' in ln and ln.strip().startswith('|'):
+            cells = [c.strip() for c in ln.strip().strip('|').split('|')]
+            if all(re.match(r'^[-:]+$', c) for c in cells): i += 1; continue
+            if not in_tbl: in_tbl = True; trows = []
+            trows.append(cells)
+            if i+1 >= len(lines) or '|' not in lines[i+1] or not lines[i+1].strip().startswith('|'):
+                t = '<table>\n'
+                for ri, r in enumerate(trows):
+                    tg = 'th' if ri == 0 else 'td'
+                    t += '<tr>' + ''.join(f'<{tg}>{inline(c)}</{tg}>' for c in r) + '</tr>\n'
+                t += '</table>'; out.append(t); in_tbl = False; trows = []
+            i += 1; continue
+        if not ln.strip(): out.append(''); i += 1; continue
+
+        hm = re.match(r'^(#{1,6})\s+(.*)', ln)
+        if hm:
+            lv = len(hm.group(1)); txt = hm.group(2).strip()
+            anc = re.sub(r'[^\w\s-]', '', txt).strip().replace(' ', '-').lower()
+            toc.append((lv, txt, anc))
+            out.append(f'<h{lv} id="{anc}">{inline(txt)}</h{lv}>'); i += 1; continue
+        if re.match(r'^---+$', ln.strip()): out.append('<hr>'); i += 1; continue
+
+        lm = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', ln)
+        if lm:
+            tg = 'ol' if lm.group(2)[0].isdigit() else 'ul'; items = []
+            while i < len(lines):
+                m = re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)', lines[i])
+                if not m: break
+                items.append(f'<li>{inline(m.group(3))}</li>'); i += 1
+            out.append(f'<{tg}>\n' + '\n'.join(items) + f'\n</{tg}>'); continue
+
+        if ln.startswith('>'):
+            ql = []
+            while i < len(lines) and lines[i].startswith('>'): ql.append(lines[i][1:].strip()); i += 1
+            out.append(f'<blockquote><p>{inline("<br>".join(ql))}</p></blockquote>'); continue
+
+        pl = []
+        while i < len(lines) and lines[i].strip() and not lines[i].startswith('#') and not lines[i].startswith('```') and not lines[i].startswith('---') and not (lines[i].strip().startswith('|') and '|' in lines[i]):
+            pl.append(lines[i]); i += 1
+        if pl: out.append(f'<p>{inline(" ".join(pl))}</p>'); continue
+        i += 1
+
+    toc_h = ''
+    if toc:
+        toc_h = '<div class="toc"><div class="toc-title">Table of Contents</div>\n'
+        for lv, txt, anc in toc:
+            cls = f'toc-h{lv}' if lv >= 3 else ''
+            toc_h += f'<a href="#{anc}" class="{cls}">{txt}</a>\n'
+        toc_h += '</div>\n'
+    return toc_h + '\n'.join(out)
+
+# ============================================================
+# 변환
+# ============================================================
+def convert(md_path, output_path=None, theme='light', open_browser=False):
+    with open(md_path, 'r', encoding='utf-8') as f: md = f.read()
+    fn = os.path.basename(md_path)
+    sz = os.path.getsize(md_path)
+    lc = md.count('\n') + 1
+    css = LIGHT_CSS if theme == 'light' else DARK_CSS
+
+    full = f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{esc(fn)}</title><style>{css}</style></head><body>
+<div class="top-bar"><span class="file-name">{esc(fn)}</span>
+<span class="file-info">{lc} lines | {sz:,} bytes</span></div>
+{md_to_html(md)}
+<script>function copyCode(b){{const c=b.parentElement.querySelector('code').textContent;navigator.clipboard.writeText(c).then(()=>{{b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',2000)}})}}</script>
+</body></html>"""
+
+    if not output_path:
+        output_path = md_path.rsplit('.', 1)[0] + '.html'
+    with open(output_path, 'w', encoding='utf-8') as f: f.write(full)
+    print(f"변환: {md_path} -> {output_path} ({theme})")
+    if open_browser: webbrowser.open(f'file://{os.path.abspath(output_path)}')
+    return output_path
+
+# ============================================================
+# tkinter UI
+# ============================================================
+class MDViewerApp:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("MD Viewer")
+        self.root.geometry("600x500")
+        self.root.configure(bg='#f6f8fa')
+
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.md_files = []
+
+        self._build_ui()
+        self._scan_files()
+
+    def _build_ui(self):
+        # 헤더
+        hdr = tk.Frame(self.root, bg='#ffffff', padx=20, pady=15)
+        hdr.pack(fill='x')
+        tk.Label(hdr, text="MD Viewer", font=('Segoe UI', 18, 'bold'),
+                 bg='#ffffff', fg='#1f2328').pack(side='left')
+        tk.Label(hdr, text="Markdown -> GitHub HTML", font=('Segoe UI', 11),
+                 bg='#ffffff', fg='#656d76').pack(side='left', padx=(15, 0))
+
+        # 구분선
+        tk.Frame(self.root, height=1, bg='#d1d9e0').pack(fill='x')
+
+        # 파일 리스트
+        list_frame = tk.Frame(self.root, bg='#f6f8fa', padx=20, pady=10)
+        list_frame.pack(fill='both', expand=True)
+
+        tk.Label(list_frame, text="MD Files", font=('Segoe UI', 11, 'bold'),
+                 bg='#f6f8fa', fg='#656d76', anchor='w').pack(fill='x', pady=(0, 5))
+
+        # Treeview
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('Treeview', background='#ffffff', foreground='#1f2328',
+                        fieldbackground='#ffffff', rowheight=28, font=('Segoe UI', 11))
+        style.configure('Treeview.Heading', background='#f6f8fa', foreground='#1f2328',
+                        font=('Segoe UI', 10, 'bold'))
+        style.map('Treeview', background=[('selected', '#ddf4ff')],
+                  foreground=[('selected', '#0969da')])
+
+        cols = ('size', 'path')
+        self.tree = ttk.Treeview(list_frame, columns=cols, show='headings', selectmode='browse')
+        self.tree.heading('size', text='Size')
+        self.tree.heading('path', text='File')
+        self.tree.column('size', width=80, anchor='e')
+        self.tree.column('path', width=400)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # 버튼 영역
+        btn_frame = tk.Frame(self.root, bg='#f6f8fa', padx=20, pady=15)
+        btn_frame.pack(fill='x')
+
+        # 테마 선택
+        theme_frame = tk.Frame(btn_frame, bg='#f6f8fa')
+        theme_frame.pack(side='left')
+        tk.Label(theme_frame, text="Theme:", font=('Segoe UI', 11),
+                 bg='#f6f8fa', fg='#656d76').pack(side='left')
+        self.theme_var = tk.StringVar(value='light')
+        ttk.Radiobutton(theme_frame, text='Light', variable=self.theme_var, value='light').pack(side='left', padx=(8, 4))
+        ttk.Radiobutton(theme_frame, text='Dark', variable=self.theme_var, value='dark').pack(side='left')
+
+        # 버튼들
+        style.configure('Export.TButton', font=('Segoe UI', 11))
+
+        btn_right = tk.Frame(btn_frame, bg='#f6f8fa')
+        btn_right.pack(side='right')
+
+        tk.Button(btn_right, text="Folder", command=self._open_folder,
+                  font=('Segoe UI', 11), bg='#e1e4e8', fg='#1f2328',
+                  relief='flat', padx=15, pady=5, cursor='hand2').pack(side='left', padx=4)
+
+        tk.Button(btn_right, text="Preview", command=self._preview,
+                  font=('Segoe UI', 11), bg='#0969da', fg='#ffffff',
+                  relief='flat', padx=15, pady=5, cursor='hand2').pack(side='left', padx=4)
+
+        tk.Button(btn_right, text="Export HTML", command=self._export,
+                  font=('Segoe UI', 11, 'bold'), bg='#1a7f37', fg='#ffffff',
+                  relief='flat', padx=15, pady=5, cursor='hand2').pack(side='left', padx=4)
+
+        # 상태 바
+        self.status_var = tk.StringVar(value="Ready")
+        status_bar = tk.Frame(self.root, bg='#e1e4e8')
+        status_bar.pack(fill='x')
+        tk.Label(status_bar, textvariable=self.status_var, font=('Segoe UI', 10),
+                 bg='#e1e4e8', fg='#656d76', anchor='w', padx=10, pady=4).pack(fill='x')
+
+        # 더블클릭
+        self.tree.bind('<Double-1>', lambda e: self._preview())
+
+    def _scan_files(self):
+        self.tree.delete(*self.tree.get_children())
+        self.md_files = []
+        skip = {'BACK', 'output', '.git', '__pycache__', 'node_modules', 'SIM_0.8'}
+        for root, dirs, fnames in os.walk(self.base_dir):
+            dirs[:] = [d for d in dirs if d not in skip]
+            for fn in sorted(fnames):
+                if fn.lower().endswith('.md'):
+                    fp = os.path.join(root, fn)
+                    sz = os.path.getsize(fp)
+                    s = f"{sz/1048576:.1f}MB" if sz > 1048576 else f"{sz/1024:.1f}KB" if sz > 1024 else f"{sz}B"
+                    rel = os.path.relpath(fp, self.base_dir)
+                    self.md_files.append(fp)
+                    self.tree.insert('', 'end', values=(s, rel), tags=(fp,))
+        self.status_var.set(f"{len(self.md_files)} MD files found in {os.path.basename(self.base_dir)}/")
+
+    def _get_selected(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("MD Viewer", "파일을 선택하세요")
+            return None
+        item = self.tree.item(sel[0])
+        return item['tags'][0]  # full path
+
+    def _open_folder(self):
+        d = filedialog.askdirectory(initialdir=self.base_dir, title="MD 파일 폴더 선택")
+        if d:
+            self.base_dir = d
+            self._scan_files()
+
+    def _preview(self):
+        fp = self._get_selected()
+        if not fp: return
+        theme = self.theme_var.get()
+        out = convert(fp, theme=theme, open_browser=True)
+        self.status_var.set(f"Preview: {os.path.basename(out)} ({theme})")
+
+    def _export(self):
+        fp = self._get_selected()
+        if not fp: return
+        theme = self.theme_var.get()
+
+        save_path = filedialog.asksaveasfilename(
+            initialdir=os.path.dirname(fp),
+            initialfile=os.path.basename(fp).rsplit('.', 1)[0] + '.html',
+            filetypes=[("HTML files", "*.html"), ("All files", "*.*")],
+            title="HTML 내보내기"
+        )
+        if not save_path: return
+
+        out = convert(fp, output_path=save_path, theme=theme)
+        self.status_var.set(f"Exported: {os.path.basename(out)} ({theme})")
+        messagebox.showinfo("MD Viewer", f"내보내기 완료!\n{out}")
+
+    def run(self):
+        self.root.mainloop()
+
+
+# ============================================================
+# main
+# ============================================================
+def main():
+    # 인수 있으면 바로 변환
+    if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
+        md_file = sys.argv[1]
+        if not os.path.exists(md_file):
+            print(f"파일 없음: {md_file}"); return
+        out_file = None
+        for i, a in enumerate(sys.argv):
+            if a == '-o' and i + 1 < len(sys.argv):
+                out_file = sys.argv[i + 1]
+        convert(md_file, out_file, open_browser=True)
+        return
+
+    # UI 실행
+    app = MDViewerApp()
+    app.run()
+
+
+if __name__ == '__main__':
+    main()

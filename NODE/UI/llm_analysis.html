@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>M14 LLM 분석</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #09090b;
+            --bg-secondary: #18181b;
+            --bg-card: #1f1f23;
+            --border: #27272a;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+            --purple: #8b5cf6;
+            --orange: #f97316;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Space Grotesk', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .app {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--purple), var(--accent));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        .logo-text {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .logo-text span {
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 12px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+        
+        .status-dot.api { background: var(--accent); }
+        .status-dot.local { background: var(--success); }
+        .status-dot.offline { background: var(--danger); }
+        
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            transition: all 0.2s;
+        }
+        
+        .btn:hover { background: var(--bg-card); border-color: var(--text-secondary); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: var(--success); border-color: var(--success); color: #000; }
+        .btn-purple { background: var(--purple); border-color: var(--purple); }
+        .btn-purple:hover { background: #7c3aed; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 1000px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .card-title .icon {
+            font-size: 16px;
+        }
+        
+        /* Form Controls */
+        .form-group {
+            margin-bottom: 12px;
+        }
+        
+        .form-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            display: block;
+        }
+        
+        input[type="date"], input[type="time"], select, textarea {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+        }
+        
+        input[type="date"]:focus, input[type="time"]:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="time"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        .date-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        /* Radio Group */
+        .radio-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .radio-label:hover {
+            border-color: var(--accent);
+        }
+        
+        .radio-label input {
+            accent-color: var(--accent);
+        }
+        
+        .radio-label.selected {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--accent);
+        }
+        
+        /* Quick Buttons */
+        .quick-btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .quick-btn {
+            padding: 6px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .quick-btn:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+        
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding-bottom: 70px;
+        }
+        
+        /* Stats Row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+        
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            text-align: center;
+        }
+        
+        .stat-card.highlight { border-color: var(--accent); }
+        .stat-card.danger { border-color: var(--danger); }
+        .stat-card.success { border-color: var(--success); }
+        .stat-card.warning { border-color: var(--warning); }
+        
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .stat-value.danger { color: var(--danger); }
+        .stat-value.warning { color: var(--warning); }
+        .stat-value.success { color: var(--success); }
+        
+        /* Result Section */
+        .result-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 400px;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .result-title {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .result-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        
+        .result-content {
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        
+        .result-content h1, .result-content h2, .result-content h3, .result-content h4 {
+            margin: 16px 0 8px 0;
+            color: var(--accent);
+        }
+        
+        .result-content h1 { font-size: 18px; }
+        .result-content h2 { font-size: 16px; }
+        .result-content h3 { font-size: 14px; }
+        .result-content h4 { font-size: 13px; color: var(--success); }
+        
+        .result-content ul, .result-content ol {
+            margin-left: 20px;
+            margin-bottom: 12px;
+        }
+        
+        .result-content li {
+            margin-bottom: 6px;
+        }
+        
+        .result-content code {
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+        }
+        
+        .result-content pre {
+            background: var(--bg-card);
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        
+        .result-content pre code {
+            padding: 0;
+            background: none;
+        }
+        
+        .result-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+        
+        .result-content th, .result-content td {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+        
+        .result-content th {
+            background: var(--bg-card);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        
+        .result-content tr:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+        
+        .result-content strong {
+            color: var(--warning);
+        }
+        
+        .result-content p {
+            margin-bottom: 12px;
+            line-height: 1.7;
+        }
+        
+        .result-content h1, .result-content h2, .result-content h3, .result-content h4 {
+            margin-top: 24px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+        
+        .result-content h1 { font-size: 20px; border-bottom: 2px solid var(--accent); padding-bottom: 8px; }
+        .result-content h2 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+        .result-content h3 { font-size: 16px; color: var(--accent); }
+        .result-content h4 { font-size: 14px; color: var(--success); }
+        
+        .result-content ul, .result-content ol {
+            margin: 12px 0;
+            padding-left: 24px;
+        }
+        
+        .result-content li {
+            margin-bottom: 6px;
+            line-height: 1.6;
+        }
+        
+        .result-content hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 20px 0;
+        }
+        
+        .result-content code {
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            color: var(--warning);
+        }
+        
+        .result-content pre {
+            background: var(--bg-card);
+            padding: 12px 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        
+        .result-content pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-primary);
+        }
+        
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .empty-text {
+            font-size: 14px;
+        }
+        
+        /* Loading */
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        /* Streaming Cursor */
+        .streaming-cursor {
+            display: inline-block;
+            color: var(--accent);
+            animation: blink-cursor 0.8s infinite;
+            font-weight: bold;
+        }
+        
+        @keyframes blink-cursor {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .modal-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        
+        .modal-close:hover {
+            color: var(--text-primary);
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .prompt-tab.active {
+            background: var(--accent) !important;
+            border-color: var(--accent) !important;
+            color: white !important;
+        }
+        
+        .template-textarea {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+            resize: vertical;
+        }
+        
+        /* Mode Toggle */
+        .mode-toggle {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        
+        .mode-btn:hover {
+            border-color: var(--text-secondary);
+        }
+        
+        .mode-btn.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        
+        .mode-btn.active.local {
+            background: rgba(34, 197, 94, 0.1);
+            border-color: var(--success);
+            color: var(--success);
+        }
+        
+        /* Quick Chat - Fixed Bottom */
+        .quick-chat-fixed {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px 20px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .quick-chat-inner {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 1060px;
+        }
+
+        .quick-chat {
+            display: flex;
+            gap: 10px;
+        }
+
+        .quick-chat input, .quick-chat-inner input {
+            flex: 1;
+        }
+        
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 15px;
+            background: var(--bg-card);
+            padding: 4px;
+            border-radius: 10px;
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+        
+        .tab-btn.active {
+            background: var(--accent);
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* File Upload */
+        .file-upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 30px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 15px;
+        }
+        
+        .file-upload-area:hover {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.05);
+        }
+        
+        .file-upload-area.dragover {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+        
+        .file-upload-area.uploaded {
+            border-color: var(--success);
+            background: rgba(34, 197, 94, 0.05);
+        }
+        
+        .upload-icon {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+        
+        .upload-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .upload-text strong {
+            color: var(--accent);
+        }
+        
+        .file-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--success);
+        }
+        
+        #file-input {
+            display: none;
+        }
+        
+        /* CSV Stats Grid */
+        .csv-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .csv-stat {
+            background: var(--bg-card);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .csv-stat-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        
+        .csv-stat-value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .csv-stat-value.success { color: var(--success); }
+        .csv-stat-value.danger { color: var(--danger); }
+        .csv-stat-value.warning { color: var(--warning); }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">AI</div>
+                <div class="logo-text">M14 <span>LLM 분석</span></div>
+            </div>
+            <div class="header-right">
+                <div class="status-badge">
+                    <div class="status-dot" id="status-dot"></div>
+                    <span id="status-text">연결 중...</span>
+                </div>
+                <button class="btn" onclick="openPromptModal()" style="background: var(--purple); border-color: var(--purple);">⚙️ 프롬프트 설정</button>
+                <button class="btn" onclick="location.href='/'">🔄 새로고침</button>
+            </div>
+        </header>
+        
+        <!-- 프롬프트 편집 모달 -->
+        <div class="modal-overlay" id="prompt-modal" style="display: none;">
+            <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h3>⚙️ 프롬프트 설정</h3>
+                    <button class="modal-close" onclick="closePromptModal()">×</button>
+                </div>
+                <div class="modal-body" style="padding: 20px;">
+                    <!-- 시스템 프롬프트 -->
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label class="form-label" style="font-size: 14px; font-weight: 600; color: var(--accent);">
+                            🤖 시스템 프롬프트 (LLM 역할 정의)
+                        </label>
+                        <textarea id="system-prompt" style="height: 200px; font-size: 12px; font-family: monospace;"></textarea>
+                    </div>
+                    
+                    <!-- 분석 프롬프트 탭 -->
+                    <div style="margin-bottom: 15px;">
+                        <label class="form-label" style="font-size: 14px; font-weight: 600; color: var(--success);">
+                            📝 분석 프롬프트 템플릿
+                        </label>
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <button class="quick-btn prompt-tab active" data-tab="summary" onclick="switchPromptTab('summary')">📋 요약 분석</button>
+                            <button class="quick-btn prompt-tab" data-tab="pattern" onclick="switchPromptTab('pattern')">📈 패턴 분석</button>
+                            <button class="quick-btn prompt-tab" data-tab="prediction" onclick="switchPromptTab('prediction')">🔮 예측 분석</button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <textarea id="template-summary" class="template-textarea" style="height: 180px; font-size: 12px; font-family: monospace;"></textarea>
+                        <textarea id="template-pattern" class="template-textarea" style="height: 180px; font-size: 12px; font-family: monospace; display: none;"></textarea>
+                        <textarea id="template-prediction" class="template-textarea" style="height: 180px; font-size: 12px; font-family: monospace; display: none;"></textarea>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button class="btn" onclick="resetPrompts()">🔄 기본값 복원</button>
+                        <button class="btn btn-primary" onclick="savePrompts()">💾 저장</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <!-- LLM 모드 -->
+                <div class="card">
+                    <div class="card-title"><span class="icon">🤖</span> LLM 모드</div>
+                    <div class="mode-toggle">
+                        <button class="mode-btn local" id="mode-local" onclick="setMode('local')">
+                            🖥️ 로컬 (GGUF)
+                        </button>
+                        <button class="mode-btn" id="mode-api" onclick="setMode('api')">
+                            ☁️ API (Qwen3)
+                        </button>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-secondary);" id="model-info">
+                        모델 정보 로딩 중...
+                    </div>
+                </div>
+                
+                <!-- 탭 네비게이션 -->
+                <div class="tab-nav">
+                    <button class="tab-btn active" onclick="switchTab('date')">📅 날짜 선택</button>
+                    <button class="tab-btn" onclick="switchTab('csv')">📄 CSV 업로드</button>
+                </div>
+                
+                <!-- 날짜 선택 탭 -->
+                <div class="tab-content active" id="tab-date">
+                    <div class="card">
+                        <div class="card-title"><span class="icon">📅</span> 기간 선택</div>
+                        <div class="date-row">
+                            <div class="form-group">
+                                <label class="form-label">시작일</label>
+                                <input type="date" id="date-start">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">종료일</label>
+                                <input type="date" id="date-end">
+                            </div>
+                        </div>
+                        <div class="date-row">
+                            <div class="form-group">
+                                <label class="form-label">시작 시간</label>
+                                <input type="time" id="time-start" value="00:00">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">종료 시간</label>
+                                <input type="time" id="time-end" value="23:59">
+                            </div>
+                        </div>
+                        <div class="quick-btns">
+                            <button class="quick-btn" onclick="setToday()">오늘</button>
+                            <button class="quick-btn" onclick="setYesterday()">어제</button>
+                            <button class="quick-btn" onclick="setLast3Days()">최근3일</button>
+                            <button class="quick-btn" onclick="setThisWeek()">이번주</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 분석 유형 -->
+                    <div class="card">
+                        <div class="card-title"><span class="icon">📊</span> 분석 유형</div>
+                        <div class="radio-group">
+                            <label class="radio-label selected" id="type-summary">
+                                <input type="radio" name="analysis-type" value="summary" checked>
+                                📋 요약 분석
+                            </label>
+                            <label class="radio-label" id="type-pattern">
+                                <input type="radio" name="analysis-type" value="pattern">
+                                📈 패턴 분석
+                            </label>
+                            <label class="radio-label" id="type-prediction">
+                                <input type="radio" name="analysis-type" value="prediction">
+                                🔮 예측 분석
+                            </label>
+                            <label class="radio-label" id="type-custom">
+                                <input type="radio" name="analysis-type" value="custom">
+                                💬 직접 질문
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 질문 입력 (직접 질문 시) -->
+                    <div class="card" id="question-card" style="display: none;">
+                        <div class="card-title"><span class="icon">💬</span> 질문 입력</div>
+                        <div class="form-group">
+                            <textarea id="question" placeholder="M14 데이터에 대해 궁금한 점을 입력하세요..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <!-- 분석 버튼 -->
+                    <button class="btn btn-primary" id="btn-analyze" onclick="runAnalysis()" style="width: 100%; padding: 12px;">
+                        🔍 분석 실행
+                    </button>
+                </div>
+                
+                <!-- CSV 업로드 탭 -->
+                <div class="tab-content" id="tab-csv">
+                    <div class="card">
+                        <div class="card-title"><span class="icon">📄</span> CSV 파일 업로드</div>
+                        <div class="file-upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
+                            <div class="upload-icon">📁</div>
+                            <div class="upload-text">
+                                클릭하거나 파일을 드래그하세요<br>
+                                <strong>.csv 파일</strong>
+                            </div>
+                            <div class="file-info" id="file-info" style="display: none;"></div>
+                        </div>
+                        <input type="file" id="file-input" accept=".csv" onchange="handleFileSelect(event)">
+                    </div>
+                    
+                    <!-- CSV 통계 (업로드 후 표시) -->
+                    <div class="card" id="csv-stats-card" style="display: none;">
+                        <div class="card-title"><span class="icon">📊</span> CSV 통계</div>
+                        <div class="csv-stats-grid" id="csv-stats-grid"></div>
+                    </div>
+                    
+                    <!-- CSV 분석 유형 -->
+                    <div class="card" id="csv-type-card" style="display: none;">
+                        <div class="card-title"><span class="icon">📊</span> 분석 유형</div>
+                        <div class="radio-group">
+                            <label class="radio-label selected" id="csv-type-summary">
+                                <input type="radio" name="csv-analysis-type" value="summary" checked>
+                                📋 요약 분석
+                            </label>
+                            <label class="radio-label" id="csv-type-pattern">
+                                <input type="radio" name="csv-analysis-type" value="pattern">
+                                📈 패턴 분석
+                            </label>
+                            <label class="radio-label" id="csv-type-prediction">
+                                <input type="radio" name="csv-analysis-type" value="prediction">
+                                🔮 예측 분석
+                            </label>
+                            <label class="radio-label" id="csv-type-custom">
+                                <input type="radio" name="csv-analysis-type" value="custom">
+                                💬 직접 질문
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- CSV 질문 입력 -->
+                    <div class="card" id="csv-question-card" style="display: none;">
+                        <div class="card-title"><span class="icon">💬</span> 질문 입력</div>
+                        <div class="form-group">
+                            <textarea id="csv-question" placeholder="CSV 데이터에 대해 궁금한 점을 입력하세요..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <!-- CSV 분석 버튼 -->
+                    <button class="btn btn-primary" id="btn-csv-analyze" onclick="runCsvAnalysis()" style="width: 100%; padding: 12px; display: none;">
+                        🔍 CSV 분석 실행
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="main-content">
+                <!-- 통계 -->
+                <div class="stats-row" id="stats-row" style="display: none;">
+                    <div class="stat-card highlight">
+                        <div class="stat-label">데이터 수</div>
+                        <div class="stat-value" id="stat-count">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">평균 TOTALCNT</div>
+                        <div class="stat-value" id="stat-avg">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">최대 TOTALCNT</div>
+                        <div class="stat-value" id="stat-max">-</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="stat-label">1700+ 초과</div>
+                        <div class="stat-value danger" id="stat-over">-</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-label">10분 알람</div>
+                        <div class="stat-value warning" id="stat-alert10">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">30분 알람</div>
+                        <div class="stat-value" id="stat-alert30">-</div>
+                    </div>
+                </div>
+                
+                <!-- 결과 -->
+                <div class="result-section">
+                    <div class="result-header">
+                        <div class="result-title">
+                            <span>📝</span> 분석 결과
+                        </div>
+                        <div class="result-meta" id="result-meta"></div>
+                    </div>
+                    <div id="result-container">
+                        <div class="empty-state">
+                            <div class="empty-icon">🤖</div>
+                            <div class="empty-text">
+                                기간을 선택하고 <strong>분석 실행</strong> 버튼을 누르세요<br>
+                                <span style="color: var(--text-secondary); font-size: 12px; margin-top: 8px; display: block;">
+                                    LLM이 M14 반송 큐 데이터를 분석합니다
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <!-- 빠른 질문 - 하단 고정 -->
+    <div class="quick-chat-fixed">
+        <div class="quick-chat-inner">
+            <span style="font-size: 14px; white-space: nowrap;">⚡ 빠른 질문</span>
+            <input type="text" id="quick-question" placeholder="질문을 입력하세요... (Enter로 전송)" onkeypress="if(event.key==='Enter') quickAsk()">
+            <button class="btn btn-purple" onclick="quickAsk()">전송</button>
+        </div>
+    </div>
+
+    <script>
+        // 전역 변수
+        let currentMode = 'local';
+        let isLoading = false;
+        
+        // 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            // 오늘 날짜 설정
+            const today = new Date();
+            document.getElementById('date-start').value = formatDate(today);
+            document.getElementById('date-end').value = formatDate(today);
+            
+            // 상태 확인
+            checkStatus();
+            
+            // 분석 유형 라디오 이벤트
+            document.querySelectorAll('input[name="analysis-type"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    updateTypeSelection();
+                });
+            });
+        });
+        
+        function formatDate(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        
+        // 상태 확인
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                const dot = document.getElementById('status-dot');
+                const text = document.getElementById('status-text');
+                const modelInfo = document.getElementById('model-info');
+                
+                currentMode = data.llm_mode;
+                
+                if (data.local_available || data.api_available) {
+                    dot.className = 'status-dot ' + currentMode;
+                    text.textContent = currentMode === 'api' ? 'API 연결됨' : '로컬 LLM';
+                    
+                    // 모드 버튼 업데이트
+                    document.getElementById('mode-local').classList.toggle('active', currentMode === 'local');
+                    document.getElementById('mode-api').classList.toggle('active', currentMode === 'api');
+                    
+                    modelInfo.innerHTML = `모델: ${data.model}<br>데이터: ${data.data_dir}`;
+                } else {
+                    dot.className = 'status-dot offline';
+                    text.textContent = 'LLM 없음';
+                    modelInfo.textContent = '⚠️ LLM을 사용할 수 없습니다';
+                }
+                
+                // API/로컬 버튼 활성화 상태
+                document.getElementById('mode-api').disabled = !data.api_available;
+                document.getElementById('mode-local').disabled = !data.local_available;
+                
+            } catch (e) {
+                console.error('상태 확인 실패:', e);
+                document.getElementById('status-dot').className = 'status-dot offline';
+                document.getElementById('status-text').textContent = '서버 오류';
+            }
+        }
+        
+        // ========================================
+        // 프롬프트 관리 함수들
+        // ========================================
+        const defaultPrompts = {
+            system: `당신은 M14 반송 큐 예측 모델 분석 전문가입니다.
+
+## 분석 원칙
+1. **결론 먼저** - 핵심 수치와 판단을 먼저 제시
+2. **간결하게** - 불필요한 설명 없이 핵심만
+3. **숫자 중심** - 정확한 수치와 비율 제시
+4. **문제점 명확히** - 무엇이 문제인지 직접적으로
+5. **개선안 구체적** - 실행 가능한 제안
+
+## 출력 형식
+- 테이블은 마크다운 형식, 최소한의 컬럼만
+- 이모지 적절히 사용 (📊 ✅ ⚠️ 🔴 💡)
+- 섹션은 ## 헤더로 구분
+- 긴 설명 대신 핵심 bullet point
+
+## M14 기준값
+- 위험 임계값: TOTALCNT >= 1700
+- 경고 임계값: TOTALCNT >= 1600
+- 예측 모델: XGB_타겟, XGB_중요, XGB_보조, XGB_PDT, XGB_Job
+- 성능 지표: TP(적중), TN(정상예측), FP(오탐), FN(놓침)`,
+            templates: {
+                summary: `위 데이터를 분석해주세요.
+
+다음 형식으로 출력:
+## 📊 핵심 요약
+- 정확도, 재현율, 정밀도 (테이블)
+- TP/TN/FP/FN 수치
+  - TP(적중): 1700+ 예측 → 실제 1700+
+  - TN(정상): 정상 예측 → 실제 정상
+  - FP(오탐): 1700+ 예측 → 실제 정상
+  - FN(놓침): 정상 예측 → 실제 1700+
+
+## ✅ 좋은 점
+- (1-2개)
+
+## ⚠️ 문제점
+- 핵심 문제 (수치 포함)
+- 원인 분석
+
+## 💡 개선 제안
+- 구체적 조치 (수치 기준 포함)`,
+                pattern: `시간대별/일별 패턴을 분석해주세요.
+
+다음 형식으로 출력:
+## 📈 패턴 분석
+- 피크 시간대 (몇시, 평균값)
+- 안정 시간대 (몇시, 평균값)
+
+## ⚠️ 주의 시간대
+- 1700+ 자주 발생하는 시간
+- 패턴의 원인 추정
+
+## 💡 운영 제안
+- 피크 시간 대응 방안
+- 모니터링 강화 시간대`,
+                prediction: `예측 모델 성능을 분석해주세요.
+
+다음 형식으로 출력:
+## 🎯 예측 성능
+| 지표 | 값 |
+- 정확도, 재현율, 정밀도
+
+## ⚠️ 예측 문제점
+- FN (놓침): 원인 분석
+- FP (오탐): 원인 분석
+
+## 💡 모델 개선 방향
+- threshold 조정 제안
+- 재학습 필요 여부`
+            }
+        };
+        
+        function openPromptModal() {
+            loadPrompts();
+            document.getElementById('prompt-modal').style.display = 'flex';
+        }
+        
+        function closePromptModal() {
+            document.getElementById('prompt-modal').style.display = 'none';
+        }
+        
+        async function loadPrompts() {
+            try {
+                const res = await fetch('/api/prompts');
+                const data = await res.json();
+                
+                document.getElementById('system-prompt').value = data.system_prompt || defaultPrompts.system;
+                document.getElementById('template-summary').value = data.templates?.summary || defaultPrompts.templates.summary;
+                document.getElementById('template-pattern').value = data.templates?.pattern || defaultPrompts.templates.pattern;
+                document.getElementById('template-prediction').value = data.templates?.prediction || defaultPrompts.templates.prediction;
+            } catch (e) {
+                console.error('프롬프트 로드 실패:', e);
+                // 기본값 사용
+                document.getElementById('system-prompt').value = defaultPrompts.system;
+                document.getElementById('template-summary').value = defaultPrompts.templates.summary;
+                document.getElementById('template-pattern').value = defaultPrompts.templates.pattern;
+                document.getElementById('template-prediction').value = defaultPrompts.templates.prediction;
+            }
+        }
+        
+        async function savePrompts() {
+            try {
+                const res = await fetch('/api/prompts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        system_prompt: document.getElementById('system-prompt').value,
+                        templates: {
+                            summary: document.getElementById('template-summary').value,
+                            pattern: document.getElementById('template-pattern').value,
+                            prediction: document.getElementById('template-prediction').value
+                        }
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert('✅ 프롬프트가 저장되었습니다!');
+                    closePromptModal();
+                } else {
+                    alert('❌ 저장 실패: ' + data.message);
+                }
+            } catch (e) {
+                console.error('프롬프트 저장 실패:', e);
+                alert('❌ 저장 실패');
+            }
+        }
+        
+        function switchPromptTab(tab) {
+            // 탭 버튼 활성화
+            document.querySelectorAll('.prompt-tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.prompt-tab[data-tab="${tab}"]`).classList.add('active');
+            
+            // textarea 표시/숨김
+            document.querySelectorAll('.template-textarea').forEach(ta => {
+                ta.style.display = 'none';
+            });
+            document.getElementById('template-' + tab).style.display = 'block';
+        }
+        
+        function resetPrompts() {
+            if (confirm('기본값으로 복원하시겠습니까?')) {
+                document.getElementById('system-prompt').value = defaultPrompts.system;
+                document.getElementById('template-summary').value = defaultPrompts.templates.summary;
+                document.getElementById('template-pattern').value = defaultPrompts.templates.pattern;
+                document.getElementById('template-prediction').value = defaultPrompts.templates.prediction;
+            }
+        }
+        
+        // 모드 전환
+        async function setMode(mode) {
+            try {
+                const res = await fetch('/api/set_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: mode })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    currentMode = mode;
+                    document.getElementById('mode-local').classList.toggle('active', mode === 'local');
+                    document.getElementById('mode-api').classList.toggle('active', mode === 'api');
+                    document.getElementById('status-dot').className = 'status-dot ' + mode;
+                    document.getElementById('status-text').textContent = mode === 'api' ? 'API 연결됨' : '로컬 LLM';
+                } else {
+                    alert(data.message);
+                }
+            } catch (e) {
+                console.error('모드 전환 실패:', e);
+            }
+        }
+        
+        // 분석 유형 선택 업데이트
+        function updateTypeSelection() {
+            const type = document.querySelector('input[name="analysis-type"]:checked').value;
+            
+            document.querySelectorAll('.radio-label').forEach(label => {
+                label.classList.remove('selected');
+            });
+            document.getElementById('type-' + type).classList.add('selected');
+            
+            // 직접 질문일 때만 질문 입력창 표시
+            document.getElementById('question-card').style.display = type === 'custom' ? 'block' : 'none';
+        }
+        
+        // 날짜 프리셋
+        function setToday() {
+            const today = new Date();
+            document.getElementById('date-start').value = formatDate(today);
+            document.getElementById('date-end').value = formatDate(today);
+        }
+        
+        function setYesterday() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            document.getElementById('date-start').value = formatDate(yesterday);
+            document.getElementById('date-end').value = formatDate(yesterday);
+        }
+        
+        function setLast3Days() {
+            const today = new Date();
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
+            document.getElementById('date-start').value = formatDate(threeDaysAgo);
+            document.getElementById('date-end').value = formatDate(today);
+        }
+        
+        function setThisWeek() {
+            const today = new Date();
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 6);
+            document.getElementById('date-start').value = formatDate(weekAgo);
+            document.getElementById('date-end').value = formatDate(today);
+        }
+        
+        // 분석 실행
+        async function runAnalysis() {
+            if (isLoading) return;
+            
+            const dateStart = document.getElementById('date-start').value.replace(/-/g, '');
+            const dateEnd = document.getElementById('date-end').value.replace(/-/g, '');
+            const timeStart = document.getElementById('time-start').value.replace(':', '');
+            const timeEnd = document.getElementById('time-end').value.replace(':', '');
+            const analysisType = document.querySelector('input[name="analysis-type"]:checked').value;
+            const question = document.getElementById('question').value;
+            
+            if (!dateStart || !dateEnd) {
+                alert('날짜를 선택해주세요');
+                return;
+            }
+            
+            if (analysisType === 'custom' && !question.trim()) {
+                alert('질문을 입력해주세요');
+                return;
+            }
+            
+            isLoading = true;
+            document.getElementById('btn-analyze').disabled = true;
+            document.getElementById('btn-analyze').textContent = '⏳ 분석 중...';
+            
+            document.getElementById('result-container').innerHTML = `
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">LLM이 데이터를 분석하고 있습니다...</div>
+                </div>
+            `;
+            
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date_start: dateStart,
+                        date_end: dateEnd,
+                        time_start: timeStart,
+                        time_end: timeEnd,
+                        analysis_type: analysisType,
+                        question: question
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    // 통계 표시
+                    if (data.stats) {
+                        document.getElementById('stats-row').style.display = 'grid';
+                        document.getElementById('stat-count').textContent = data.stats.total_count?.toLocaleString() || '-';
+                        document.getElementById('stat-avg').textContent = data.stats.avg_totalcnt || '-';
+                        document.getElementById('stat-max').textContent = data.stats.max_totalcnt || '-';
+                        document.getElementById('stat-over').textContent = data.stats.over_1700_count || '0';
+                        document.getElementById('stat-alert10').textContent = data.stats.alerts_10_count || '0';
+                        document.getElementById('stat-alert30').textContent = data.stats.alerts_30_count || '0';
+                    }
+                    
+                    // 결과 표시
+                    document.getElementById('result-meta').textContent = `${data.mode?.toUpperCase() || 'LLM'} | ${new Date().toLocaleTimeString()}`;
+                    document.getElementById('result-container').innerHTML = `
+                        <div class="result-content">${formatMarkdown(data.answer)}</div>
+                    `;
+                } else {
+                    document.getElementById('result-container').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">❌</div>
+                            <div class="empty-text">${data.answer || '분석 실패'}</div>
+                        </div>
+                    `;
+                }
+                
+            } catch (e) {
+                console.error('분석 실패:', e);
+                document.getElementById('result-container').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <div class="empty-text">서버 연결 오류</div>
+                    </div>
+                `;
+            } finally {
+                isLoading = false;
+                document.getElementById('btn-analyze').disabled = false;
+                document.getElementById('btn-analyze').textContent = '🔍 분석 실행';
+            }
+        }
+        
+        // 빠른 질문
+        async function quickAsk() {
+            const question = document.getElementById('quick-question').value.trim();
+            if (!question) return;
+            
+            if (isLoading) return;
+            isLoading = true;
+            
+            const today = document.getElementById('date-end').value.replace(/-/g, '');
+            
+            document.getElementById('result-container').innerHTML = `
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">답변 생성 중...</div>
+                </div>
+            `;
+            
+            try {
+                const res = await fetch('/api/quick_analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: question,
+                        date: today
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('result-meta').textContent = `빠른 질문 | ${new Date().toLocaleTimeString()}`;
+                    document.getElementById('result-container').innerHTML = `
+                        <div class="result-content">${formatMarkdown(data.answer)}</div>
+                    `;
+                    document.getElementById('quick-question').value = '';
+                } else {
+                    document.getElementById('result-container').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">❌</div>
+                            <div class="empty-text">${data.answer || '답변 실패'}</div>
+                        </div>
+                    `;
+                }
+                
+            } catch (e) {
+                console.error('빠른 질문 실패:', e);
+            } finally {
+                isLoading = false;
+            }
+        }
+        
+        // 간단한 마크다운 변환
+        function formatMarkdown(text) {
+            if (!text) return '';
+            
+            // 1. 전처리: 마크다운 형식 정리
+            let md = text;
+            
+            // ---와 ####가 붙어있는 경우 분리
+            md = md.replace(/---+(?=\s*#)/g, '---\n\n');
+            md = md.replace(/---+(?=\s*\d)/g, '---\n\n');
+            
+            // #### 앞에 줄바꿈 보장
+            md = md.replace(/([^\n])(\s*####)/g, '$1\n\n$2');
+            md = md.replace(/([^\n])(\s*###)/g, '$1\n\n$2');
+            
+            // | 로 시작하는 테이블 행 앞에 줄바꿈 보장
+            md = md.replace(/([^\n])(\s*\|)/g, '$1\n$2');
+            
+            // 2. marked.js 시도
+            try {
+                if (typeof marked !== 'undefined' && marked.parse) {
+                    marked.setOptions({ breaks: true, gfm: true });
+                    return marked.parse(md);
+                }
+            } catch (e) {
+                console.error('Marked error:', e);
+            }
+            
+            // 3. 폴백: 수동 파싱
+            let html = md;
+            
+            // 테이블 처리
+            const tableRegex = /(\|[^\n]+\|\n)(\|[-:\s|]+\|\n)((?:\|[^\n]+\|\n?)+)/g;
+            html = html.replace(tableRegex, function(match, headerRow, sepRow, bodyRows) {
+                const headers = headerRow.split('|').filter(c => c.trim());
+                const thRow = '<tr>' + headers.map(h => `<th>${h.trim()}</th>`).join('') + '</tr>';
+                
+                const rows = bodyRows.trim().split('\n').map(row => {
+                    const cells = row.split('|').filter(c => c.trim());
+                    return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+                }).join('');
+                
+                return `<table><thead>${thRow}</thead><tbody>${rows}</tbody></table>\n`;
+            });
+            
+            // 코드 블록
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            
+            // 헤더
+            html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            
+            // 수평선
+            html = html.replace(/^---+$/gm, '<hr>');
+            
+            // 볼드/이탤릭
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            
+            // 리스트
+            html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+            
+            // 줄바꿈
+            html = html.replace(/\n\n+/g, '</p><p>');
+            html = html.replace(/\n/g, '<br>');
+            
+            // p 태그
+            html = '<p>' + html + '</p>';
+            html = html.replace(/<p>\s*<\/p>/g, '');
+            html = html.replace(/<p>\s*(<h[1-4]>)/g, '$1');
+            html = html.replace(/(<\/h[1-4]>)\s*<\/p>/g, '$1');
+            html = html.replace(/<p>\s*(<table>)/g, '$1');
+            html = html.replace(/(<\/table>)\s*<\/p>/g, '$1');
+            html = html.replace(/<p>\s*(<hr>)/g, '$1');
+            html = html.replace(/<p><br>/g, '<p>');
+            
+            return html;
+        }
+        
+        // ========================================
+        // CSV 업로드 관련 함수
+        // ========================================
+        
+        let uploadedCsvData = null;
+        let uploadedCsvStats = null;
+        
+        // 탭 전환
+        function switchTab(tabName) {
+            // 탭 버튼 상태 변경
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 탭 컨텐츠 전환
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+        
+        // 파일 선택 처리
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const uploadArea = document.getElementById('upload-area');
+            const fileInfo = document.getElementById('file-info');
+            
+            // 로딩 표시
+            fileInfo.style.display = 'block';
+            fileInfo.innerHTML = '⏳ 파일 업로드 중...';
+            fileInfo.style.color = 'var(--text-secondary)';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const res = await fetch('/api/upload_csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    uploadedCsvData = data.data;
+                    uploadedCsvStats = data.stats;
+                    
+                    // UI 업데이트
+                    uploadArea.classList.add('uploaded');
+                    fileInfo.innerHTML = `✅ ${data.stats.filename} (${data.stats.row_count}행)`;
+                    fileInfo.style.color = 'var(--success)';
+                    
+                    // 통계 표시
+                    showCsvStats(data.stats);
+                    
+                    // 분석 버튼 및 옵션 표시
+                    document.getElementById('csv-stats-card').style.display = 'block';
+                    document.getElementById('csv-type-card').style.display = 'block';
+                    document.getElementById('btn-csv-analyze').style.display = 'block';
+                    
+                } else {
+                    fileInfo.innerHTML = `❌ ${data.error}`;
+                    fileInfo.style.color = 'var(--danger)';
+                }
+                
+            } catch (e) {
+                console.error('파일 업로드 실패:', e);
+                fileInfo.innerHTML = '❌ 업로드 실패';
+                fileInfo.style.color = 'var(--danger)';
+            }
+        }
+        
+        // CSV 통계 표시
+        function showCsvStats(stats) {
+            const grid = document.getElementById('csv-stats-grid');
+            
+            let html = `
+                <div class="csv-stat">
+                    <div class="csv-stat-label">데이터 수</div>
+                    <div class="csv-stat-value">${stats.row_count || 0}</div>
+                </div>
+            `;
+            
+            if (stats.avg_totalcnt !== undefined) {
+                html += `
+                    <div class="csv-stat">
+                        <div class="csv-stat-label">평균 TOTALCNT</div>
+                        <div class="csv-stat-value">${Math.round(stats.avg_totalcnt)}</div>
+                    </div>
+                    <div class="csv-stat">
+                        <div class="csv-stat-label">최대</div>
+                        <div class="csv-stat-value ${stats.max_totalcnt >= 1700 ? 'danger' : ''}">${stats.max_totalcnt}</div>
+                    </div>
+                `;
+            }
+            
+            if (stats.danger_count !== undefined) {
+                html += `
+                    <div class="csv-stat">
+                        <div class="csv-stat-label">실제 위험</div>
+                        <div class="csv-stat-value danger">${stats.danger_count}</div>
+                    </div>
+                `;
+            }
+            
+            if (stats.TP !== undefined) {
+                const total = stats.TP + stats.TN + stats.FP + stats.FN;
+                const accuracy = total > 0 ? Math.round((stats.TP + stats.TN) / total * 100) : 0;
+                html += `
+                    <div class="csv-stat">
+                        <div class="csv-stat-label">정확도</div>
+                        <div class="csv-stat-value success">${accuracy}%</div>
+                    </div>
+                    <div class="csv-stat">
+                        <div class="csv-stat-label">TP/TN/FP/FN</div>
+                        <div class="csv-stat-value" style="font-size: 12px;">${stats.TP}/${stats.TN}/${stats.FP}/${stats.FN}</div>
+                    </div>
+                `;
+            }
+            
+            grid.innerHTML = html;
+        }
+        
+        // CSV 분석 실행
+        async function runCsvAnalysis() {
+            if (!uploadedCsvData || uploadedCsvData.length === 0) {
+                alert('먼저 CSV 파일을 업로드하세요');
+                return;
+            }
+            
+            if (isLoading) return;
+            isLoading = true;
+            
+            const analysisType = document.querySelector('input[name="csv-analysis-type"]:checked').value;
+            const question = document.getElementById('csv-question').value;
+            
+            const typeNames = {
+                'summary': '요약 분석',
+                'pattern': '패턴 분석',
+                'prediction': '예측 분석',
+                'custom': '직접 질문'
+            };
+            
+            // 결과 영역 준비 (스트리밍용)
+            document.getElementById('result-meta').textContent = 
+                `CSV ${typeNames[analysisType]} | ${uploadedCsvStats.filename} | 스트리밍 중... | ${new Date().toLocaleTimeString()}`;
+            
+            document.getElementById('result-container').innerHTML = `
+                <div class="result-content" id="streaming-content" style="white-space: pre-wrap;"><span class="streaming-cursor">▌</span></div>
+            `;
+            
+            try {
+                const res = await fetch('/api/analyze_csv_stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data: uploadedCsvData,
+                        stats: uploadedCsvStats,
+                        analysis_type: analysisType,
+                        question: question
+                    })
+                });
+                
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+                const contentEl = document.getElementById('streaming-content');
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            
+                            if (data === '[DONE]') {
+                                // 완료 - 서버에 마크다운 변환 요청
+                                try {
+                                    const mdRes = await fetch('/api/markdown_to_html', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ text: fullText })
+                                    });
+                                    const mdData = await mdRes.json();
+                                    contentEl.style.whiteSpace = 'normal';
+                                    contentEl.innerHTML = mdData.html || formatMarkdown(fullText);
+                                } catch (e) {
+                                    // 폴백: 클라이언트 마크다운 파서
+                                    contentEl.style.whiteSpace = 'normal';
+                                    contentEl.innerHTML = formatMarkdown(fullText);
+                                }
+                                document.getElementById('result-meta').textContent = 
+                                    `CSV ${typeNames[analysisType]} | ${uploadedCsvStats.filename} | 완료 | ${new Date().toLocaleTimeString()}`;
+                            } else if (data.startsWith('[ERROR]')) {
+                                contentEl.innerHTML = `<span style="color: var(--danger);">${data}</span>`;
+                            } else {
+                                // 줄바꿈 복원
+                                fullText += data.replace(/⏎/g, '\n');
+                                // 스트리밍 중 - 일반 텍스트로 표시 (커서 포함)
+                                contentEl.textContent = fullText;
+                                contentEl.innerHTML = contentEl.textContent + '<span class="streaming-cursor">▌</span>';
+                                // 스크롤 아래로
+                                contentEl.scrollTop = contentEl.scrollHeight;
+                            }
+                        }
+                    }
+                }
+                
+            } catch (e) {
+                console.error('CSV 분석 실패:', e);
+                document.getElementById('result-container').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">❌</div>
+                        <div class="empty-text">서버 연결 오류: ${e.message}</div>
+                    </div>
+                `;
+            } finally {
+                isLoading = false;
+            }
+        }
+        
+        // CSV 분석 유형 라디오 이벤트
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('input[name="csv-analysis-type"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const type = this.value;
+                    
+                    // 라벨 선택 상태 업데이트
+                    document.querySelectorAll('#tab-csv .radio-label').forEach(label => {
+                        label.classList.remove('selected');
+                    });
+                    document.getElementById('csv-type-' + type).classList.add('selected');
+                    
+                    // 질문 입력창 표시/숨김
+                    document.getElementById('csv-question-card').style.display = 
+                        type === 'custom' ? 'block' : 'none';
+                });
+            });
+            
+            // 드래그 앤 드롭 지원
+            const uploadArea = document.getElementById('upload-area');
+            if (uploadArea) {
+                uploadArea.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    this.classList.add('dragover');
+                });
+                
+                uploadArea.addEventListener('dragleave', function(e) {
+                    e.preventDefault();
+                    this.classList.remove('dragover');
+                });
+                
+                uploadArea.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    this.classList.remove('dragover');
+                    
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0 && files[0].name.endsWith('.csv')) {
+                        document.getElementById('file-input').files = files;
+                        handleFileSelect({ target: { files: files } });
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

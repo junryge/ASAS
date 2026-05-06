@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>M14 Queue Monitor</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #09090b;
+            --bg-secondary: #18181b;
+            --bg-card: #1f1f23;
+            --border: #27272a;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Space Grotesk', system-ui, sans-serif;
+        }
+        
+        .app {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 16px 24px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        
+        .logo-text {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .logo-text span {
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .live-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 100px;
+            font-size: 12px;
+            color: var(--danger);
+        }
+        
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--danger);
+            border-radius: 50%;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .timestamp {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .main-section {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            padding: 16px 0;
+            flex-shrink: 0;
+        }
+        
+        .main-value-box {
+            text-align: center;
+        }
+        
+        .main-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 4px;
+        }
+        
+        .main-value {
+            font-size: 64px;
+            font-weight: 700;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .main-value.normal { color: var(--text-primary); }
+        .main-value.warning { color: var(--warning); }
+        .main-value.critical { color: var(--danger); animation: pulse-value 0.5s infinite; }
+        
+        @keyframes pulse-value {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .data-time {
+            font-size: 13px;
+            color: var(--accent);
+            margin-top: 4px;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 16px;
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 8px;
+        }
+        
+        .status-badge.normal {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        
+        .status-badge.warning {
+            background: rgba(234, 179, 8, 0.1);
+            color: var(--warning);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+        
+        .status-badge.critical {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .stats-row {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            text-align: center;
+        }
+        
+        .stat-label { font-size: 10px; color: var(--text-secondary); margin-bottom: 4px; }
+        .stat-value { font-size: 18px; font-weight: 600; }
+        
+        .alert-box {
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--danger);
+        }
+        .alert-box:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .alert-modal {
+            display: none;
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            z-index: 1002;
+            max-height: 70vh;
+            width: 500px;
+            overflow: hidden;
+        }
+        .alert-modal.active { display: block; }
+        .alert-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .alert-modal-title { font-size: 16px; font-weight: 600; color: var(--danger); }
+        .alert-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .alert-modal-close:hover { color: var(--text-primary); }
+        .alert-list {
+            max-height: 50vh;
+            overflow-y: auto;
+        }
+        .alert-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            background: var(--bg-secondary);
+        }
+        .alert-item-time { color: var(--text-secondary); font-size: 13px; }
+        .alert-item-value { color: var(--danger); font-weight: 600; font-size: 14px; }
+        .alert-empty { color: var(--text-secondary); text-align: center; padding: 20px; }
+        
+        .chart-section {
+            flex: 1;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+        
+        .chart-title { font-size: 14px; font-weight: 600; }
+        .chart-subtitle { font-size: 11px; color: var(--text-secondary); }
+        
+        .chart-legend {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+        }
+        
+        .legend-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        
+        .legend-toggle:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .legend-toggle input {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+        
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-line { width: 16px; height: 2px; border-radius: 1px; }
+        .legend-line.value { background: var(--accent); }
+        .legend-line.warning { background: var(--warning); }
+        .legend-line.critical { background: var(--danger); }
+        
+        #chart { flex: 1; width: 100%; min-height: 0; }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            padding-top: 12px;
+            flex-shrink: 0;
+        }
+        
+        .btn {
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .btn:hover { background: var(--bg-card); border-color: var(--text-secondary); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); }
+        .btn-danger { border-color: var(--danger); color: var(--danger); }
+        .btn-warning { border-color: var(--warning); color: var(--warning); }
+        .btn.running { background: var(--success); border-color: var(--success); color: #000; }
+        
+        .alarm-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(239, 68, 68, 0.15);
+            z-index: 1000;
+            animation: alarm-flash 0.5s infinite;
+        }
+        .alarm-overlay.active { display: block; }
+        
+        @keyframes alarm-flash {
+            0%, 100% { background: rgba(239, 68, 68, 0.15); }
+            50% { background: rgba(239, 68, 68, 0.3); }
+        }
+        
+        .alarm-modal {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            border: 2px solid var(--danger);
+            border-radius: 16px;
+            padding: 30px 50px;
+            text-align: center;
+            z-index: 1001;
+            display: none;
+        }
+        .alarm-modal.active { display: block; animation: shake 0.5s infinite; }
+        
+        @keyframes shake {
+            0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
+            25% { transform: translate(-50%, -50%) rotate(-1deg); }
+            75% { transform: translate(-50%, -50%) rotate(1deg); }
+        }
+        
+        .alarm-icon { font-size: 48px; margin-bottom: 12px; }
+        .alarm-title { font-size: 24px; font-weight: 700; color: var(--danger); margin-bottom: 8px; }
+        .alarm-value { font-size: 36px; font-weight: 700; margin-bottom: 8px; }
+        .alarm-dismiss {
+            background: var(--danger);
+            color: white;
+            border: none;
+            padding: 10px 30px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        /* 상세 분석 모달 스타일 */
+        .detail-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+        }
+        .detail-modal {
+            display: none;
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 800px;
+            max-height: 85vh;
+            overflow: hidden;
+            z-index: 2001;
+        }
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+        .detail-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .detail-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 28px;
+            cursor: pointer;
+        }
+        .detail-close:hover { color: var(--text-primary); }
+        .detail-body {
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(85vh - 60px);
+        }
+        .detail-header-info {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: 8px;
+        }
+        .detail-time-box {
+            flex: 1;
+            text-align: center;
+        }
+        .detail-time-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .detail-time-value {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .detail-totalcnt {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .detail-range-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .detail-range-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+        }
+        .detail-range-btn:hover { border-color: var(--accent); }
+        .detail-range-btn.active { background: var(--accent); border-color: var(--accent); }
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .detail-table th, .detail-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            text-align: right;
+        }
+        .detail-table th {
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-align: left;
+        }
+        .detail-table th:first-child, .detail-table td:first-child { text-align: left; }
+        .detail-table td:first-child { font-weight: 500; }
+        .detail-change-positive { color: var(--danger); }
+        .detail-change-negative { color: var(--success); }
+        .detail-spike { background: rgba(239, 68, 68, 0.15) !important; }
+        .detail-spike-icon { color: var(--danger); font-weight: bold; }
+        .detail-uncollected { color: var(--text-secondary); font-style: italic; }
+        .detail-uncollected-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(161, 161, 170, 0.2);
+            border-radius: 4px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-left: 5px;
+        }
+        .detail-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="alarm-overlay" id="alarm-overlay" onclick="onOverlayClick()"></div>
+    <div class="alarm-modal" id="alarm-modal">
+        <div class="alarm-icon">🚨</div>
+        <div class="alarm-title">LIMIT EXCEEDED!</div>
+        <div class="alarm-value" id="alarm-value">1700+</div>
+        <div class="alarm-time" id="alarm-time" style="font-size:18px; color:#a1a1aa; margin-bottom:20px;">--:--:--</div>
+        <button class="alarm-dismiss" onclick="dismissAlarm()">확인</button>
+    </div>
+    
+    <div class="alert-modal" id="alert-modal">
+        <div class="alert-modal-header">
+            <div class="alert-modal-title">🚨 1700+ 초과 기록</div>
+            <button class="alert-modal-close" onclick="closeAlertList()">×</button>
+        </div>
+        <div class="alert-list" id="alert-list">
+            <div class="alert-empty">초과 기록 없음</div>
+        </div>
+    </div>
+
+    <!-- 상세 분석 모달 -->
+    <div class="detail-overlay" id="detail-overlay" onclick="closeDetailModal()"></div>
+    <div class="detail-modal" id="detail-modal">
+        <div class="detail-header">
+            <h3>🔍 컬럼별 변화량 분석</h3>
+            <button class="detail-close" onclick="closeDetailModal()">&times;</button>
+        </div>
+        <div class="detail-body">
+            <div class="detail-header-info">
+                <div class="detail-time-box">
+                    <div class="detail-time-label">현재 시점</div>
+                    <div class="detail-time-value" id="detail-current-time">-</div>
+                    <div class="detail-totalcnt" id="detail-current-totalcnt" style="color: var(--accent);">-</div>
+                </div>
+                <div class="detail-time-box" style="display: flex; align-items: center; justify-content: center;">
+                    <span style="font-size: 24px; color: var(--text-secondary);">←</span>
+                </div>
+                <div class="detail-time-box">
+                    <div class="detail-time-label">이전 시점</div>
+                    <div class="detail-time-value" id="detail-prev-time">-</div>
+                    <div class="detail-totalcnt" id="detail-prev-totalcnt" style="color: var(--text-secondary);">-</div>
+                </div>
+                <div class="detail-time-box">
+                    <div class="detail-time-label">TOTALCNT 변화</div>
+                    <div class="detail-totalcnt" id="detail-totalcnt-change">-</div>
+                </div>
+            </div>
+            <div class="detail-range-selector">
+                <span style="color: var(--text-secondary); font-size: 13px; margin-right: 10px;">분석 범위:</span>
+                <button class="detail-range-btn" data-range="5" onclick="changeDetailRange(5)">5분</button>
+                <button class="detail-range-btn active" data-range="10" onclick="changeDetailRange(10)">10분</button>
+                <button class="detail-range-btn" data-range="20" onclick="changeDetailRange(20)">20분</button>
+                <button class="detail-range-btn" data-range="30" onclick="changeDetailRange(30)">30분</button>
+            </div>
+            <div id="detail-table-container">
+                <div class="detail-loading">데이터 로딩 중...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">M14</div>
+                <div class="logo-text">V10.4 Queue <span>Monitor</span></div>
+                <div style="margin-left: 12px; padding: 4px 10px; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: 6px; font-size: 11px; color: #eab308;">
+                    ⚠️ 일부 컬럼 수집불가(테스트용) 실시간예측률 떨어짐 30~40%
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="live-badge" id="status-live">
+                    <div class="live-dot" id="status-dot"></div>
+                    <span id="status-text">STOP</span>
+                </div>
+                <div class="timestamp" id="timestamp">--:--</div>
+            </div>
+        </header>
+        
+        <section class="main-section">
+            <div class="main-value-box">
+                <div class="main-label">Total Count</div>
+                <div class="main-value normal" id="main-value">---</div>
+                <div class="data-time" id="data-time">--:--</div>
+                <div class="status-badge normal" id="status-badge">
+                    <span>● NORMAL</span>
+                </div>
+            </div>
+            <div class="main-value-box">
+                <div class="main-label">예측 (10분 후)</div>
+                <div class="main-value normal" id="predict-10" style="font-size: 48px; color: var(--accent);">---</div>
+                <div class="predict-status" id="predict-10-status" style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">-</div>
+            </div>
+            <div class="main-value-box">
+                <div class="main-label">예측 (30분 후)</div>
+                <div class="main-value normal" id="predict-30" style="font-size: 48px; color: var(--accent);">---</div>
+                <div class="predict-status" id="predict-30-status" style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">-</div>
+            </div>
+            <div class="main-value-box" id="status-prediction-box">
+                <div class="main-label">상태 예상</div>
+                <div class="main-value normal" id="status-prediction" style="font-size: 28px; color: var(--success);">양호예상</div>
+                <div class="predict-status" id="status-prediction-detail" style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">경고 0 / 위험 0</div>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">Limit</div>
+                    <div class="stat-value" style="color: var(--danger);">1700</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Interval</div>
+                    <div class="stat-value">60s</div>
+                </div>
+                <div class="stat-card alert-box" id="alert-box-10" ondblclick="showAlertList('10')">
+                    <div class="stat-label">예측10분 1700+</div>
+                    <div class="stat-value" id="stat-over-10" style="color: var(--danger);">0</div>
+                    <div id="cooldown-text-10" style="font-size: 9px; color: var(--text-secondary); margin-top: 4px;">더블클릭</div>
+                </div>
+                <div class="stat-card alert-box" id="alert-box-30" ondblclick="showAlertList('30')">
+                    <div class="stat-label">예측30분 1700+</div>
+                    <div class="stat-value" id="stat-over-30" style="color: var(--danger);">0</div>
+                    <div id="cooldown-text-30" style="font-size: 9px; color: var(--text-secondary); margin-top: 4px;">더블클릭</div>
+                </div>
+                <div class="stat-card" id="spike-box" style="min-width: 120px;">
+                    <div class="stat-label">급증 컬럼</div>
+                    <div class="stat-value" id="spike-column" style="font-size: 12px; color: var(--warning);">-</div>
+                    <div id="spike-detail" style="font-size: 9px; color: var(--text-secondary); margin-top: 4px;">10분 대비</div>
+                </div>
+            </div>
+        </section>
+        
+        <section class="chart-section">
+            <div class="chart-header">
+                <div>
+                    <div class="chart-title">Queue Trend (1 Hour)</div>
+                    <div class="chart-subtitle">최근 60분 데이터 | <span id="chart-cooldown" style="color: var(--text-secondary);">알람 대기중</span></div>
+                </div>
+                <div class="chart-legend">
+                    <label class="legend-toggle">
+                        <input type="checkbox" id="toggle-total" checked onchange="updateChart()">
+                        <div class="legend-line value"></div>
+                        <span>TOTALCNT</span>
+                    </label>
+                    <label class="legend-toggle">
+                        <input type="checkbox" id="toggle-pred10" checked onchange="updateChart()">
+                        <div class="legend-line" style="background: #22c55e;"></div>
+                        <span>예측(10분)</span>
+                    </label>
+                    <label class="legend-toggle">
+                        <input type="checkbox" id="toggle-pred30" checked onchange="updateChart()">
+                        <div class="legend-line" style="background: #f97316;"></div>
+                        <span>예측(30분)</span>
+                    </label>
+                    <label class="legend-toggle">
+                        <input type="checkbox" id="toggle-limit" checked onchange="updateChart()">
+                        <div class="legend-line critical"></div>
+                        <span>Limit (1700)</span>
+                    </label>
+                </div>
+            </div>
+            <div id="chart"></div>
+        </section>
+        
+        <div class="controls">
+            <button class="btn btn-primary" id="btn-start" onclick="startUpdate()">▶ Start</button>
+            <button class="btn btn-danger" onclick="stopUpdate()">■ Stop</button>
+            <button class="btn" onclick="openMini()">📌 Mini</button>
+            <button class="btn" onclick="location.href='/history'">📊 History</button>
+            <button class="btn btn-warning" onclick="testAlarm()">🔔 Test Alarm</button>
+        </div>
+    </div>
+
+    <script>
+        let timer = null;
+        let isRunning = false;
+        let audioCtx = null;
+        let alarmInterval = null;
+        let alertHistory10 = [];  // 예측10분 1700 초과 기록
+        let alertHistory30 = [];  // 예측30분 1700 초과 기록
+        let lastAlarmTime = null;  // 마지막 알람 시간
+        let alarmCount = 0;  // 알람 발생 횟수
+        const ALARM_COOLDOWN = 60 * 60 * 1000;  // 쿨타임 1시간 (밀리초)
+
+        function playAlarm() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        }
+
+        function triggerAlarm(value, dataTime) {
+            document.getElementById('alarm-overlay').classList.add('active');
+            document.getElementById('alarm-modal').classList.add('active');
+            document.getElementById('alarm-value').textContent = value.toLocaleString();
+            document.getElementById('alarm-time').textContent = '발생 시간: ' + (dataTime || new Date().toLocaleTimeString('ko-KR', { hour12: false }));
+            playAlarm();
+            alarmInterval = setInterval(playAlarm, 1000);
+        }
+
+        function dismissAlarm() {
+            document.getElementById('alarm-overlay').classList.remove('active');
+            document.getElementById('alarm-modal').classList.remove('active');
+            if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; }
+        }
+
+        function getFormattedTime() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            return `${y}-${m}-${d} ${h}:${min}`;
+        }
+
+        function testAlarm() { triggerAlarm(1750, getFormattedTime()); }
+        
+        let miniWindow = null;
+        function openMini() {
+            // 이미 열려있으면 focus만
+            if (miniWindow && !miniWindow.closed) {
+                miniWindow.focus();
+                return;
+            }
+            miniWindow = window.open('/mini', 'M14_Mini', 'width=220,height=200,top=100,left=100,resizable=yes');
+        }
+        
+        function showAlertList(type) {
+            const listEl = document.getElementById('alert-list');
+            const titleEl = document.querySelector('.alert-modal-title');
+            const history = type === '10' ? alertHistory10 : alertHistory30;
+            
+            titleEl.textContent = `🚨 예측${type}분 1700+ 초과 기록`;
+            
+            if (history.length === 0) {
+                listEl.innerHTML = '<div class="alert-empty">초과 기록 없음</div>';
+            } else {
+                listEl.innerHTML = history.map((item, idx) => {
+                    let statusHtml = '';
+                    if (item.isAlarm) {
+                        statusHtml = `<span style="color:#ef4444; font-size:12px;">🔔 알람 ${item.alarmNo}번째 발생</span>`;
+                    } else {
+                        statusHtml = `<span style="color:#eab308; font-size:12px;">⏱ 알람 ${item.alarmNo}번째 후 쿨타임 ${item.cooldownMins}분</span>`;
+                    }
+                    return `
+                        <div class="alert-item" style="flex-direction:column; gap:4px;">
+                            <div style="display:flex; justify-content:space-between; width:100%;">
+                                <span class="alert-item-time">${idx + 1}. ${item.time}</span>
+                                <span class="alert-item-value">${item.value.toLocaleString()}</span>
+                            </div>
+                            <div style="text-align:right;">${statusHtml}</div>
+                        </div>
+                    `;
+                }).reverse().join('');
+            }
+            
+            document.getElementById('alert-modal').classList.add('active');
+            document.getElementById('alarm-overlay').classList.add('active');
+        }
+        
+        function closeAlertList() {
+            document.getElementById('alert-modal').classList.remove('active');
+            document.getElementById('alarm-overlay').classList.remove('active');
+        }
+        
+        function onOverlayClick() {
+            // alarm 모달이 열려있으면 무시 (alarm은 확인 버튼으로만 닫기)
+            if (document.getElementById('alarm-modal').classList.contains('active')) {
+                return;
+            }
+            closeAlertList();
+        }
+
+        const layout = {
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent',
+            font: { color: '#a1a1aa', family: 'Space Grotesk', size: 12 },
+            hoverlabel: {
+                bgcolor: '#1f1f23',
+                bordercolor: '#3b82f6',
+                font: { family: 'Space Grotesk', size: 12, color: '#fafafa' },
+                namelength: -1
+            },
+            hovermode: 'closest',
+            dragmode: false,
+            showlegend: false,
+            xaxis: {
+                gridcolor: '#27272a',
+                linecolor: '#27272a',
+                tickfont: { size: 11 },
+                tickangle: -45,
+                title: { text: 'Time', standoff: 20 },
+                type: 'category',
+                fixedrange: true
+            },
+            yaxis: {
+                gridcolor: '#27272a',
+                linecolor: '#27272a',
+                tickfont: { size: 11 },
+                range: [1000, 2000],
+                title: { text: 'Count', standoff: 10 },
+                fixedrange: true
+            },
+            margin: { t: 5, r: 15, b: 50, l: 50 },
+            shapes: []
+        };
+        
+        let chartData = null;
+
+        const trace = {
+            x: [], y: [],
+            type: 'scatter',
+            mode: 'lines+markers',
+            line: { color: '#3b82f6', width: 2 },
+            marker: { size: 4, color: '#3b82f6' },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(59, 130, 246, 0.08)'
+        };
+
+        Plotly.newPlot('chart', [trace], layout, { responsive: true, displayModeBar: false, doubleClick: false, scrollZoom: false });
+
+        function updateTime() {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('timestamp').textContent = `${y}-${m}-${d} ${h}:${min}`;
+            
+            // 쿨타임 표시 업데이트
+            updateCooldownText();
+        }
+        
+        function updateCooldownText() {
+            const cooldown10 = document.getElementById('cooldown-text-10');
+            const cooldown30 = document.getElementById('cooldown-text-30');
+            const chartCooldown = document.getElementById('chart-cooldown');
+            
+            if (!lastAlarmTime) {
+                cooldown10.textContent = '더블클릭';
+                cooldown30.textContent = '더블클릭';
+                cooldown10.style.color = 'var(--text-secondary)';
+                cooldown30.style.color = 'var(--text-secondary)';
+                chartCooldown.textContent = '알람 대기중';
+                chartCooldown.style.color = '#22c55e';
+                return;
+            }
+            
+            const now = Date.now();
+            const elapsed = now - lastAlarmTime;
+            const remaining = ALARM_COOLDOWN - elapsed;
+            
+            if (remaining > 0) {
+                const mins = Math.ceil(remaining / 60000);
+                const text = `⏱ 쿨타임 ${mins}분`;
+                cooldown10.textContent = text;
+                cooldown30.textContent = text;
+                cooldown10.style.color = '#eab308';
+                cooldown30.style.color = '#eab308';
+                chartCooldown.textContent = `알람 ${alarmCount}회 발생 | ⏱ 쿨타임 ${mins}분 남음`;
+                chartCooldown.style.color = '#eab308';
+            } else {
+                cooldown10.textContent = '더블클릭';
+                cooldown30.textContent = '더블클릭';
+                cooldown10.style.color = 'var(--text-secondary)';
+                cooldown30.style.color = 'var(--text-secondary)';
+                chartCooldown.textContent = `알람 ${alarmCount}회 발생 | 대기중`;
+                chartCooldown.style.color = '#22c55e';
+            }
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+        
+        // 급증 컬럼 표시 함수
+        function updateSpikeColumn(spikeColumns) {
+            const spikeEl = document.getElementById('spike-column');
+            const spikeDetail = document.getElementById('spike-detail');
+            const spikeBox = document.getElementById('spike-box');
+            
+            if (!spikeColumns || spikeColumns.length === 0) {
+                spikeEl.textContent = '-';
+                spikeEl.style.color = 'var(--text-secondary)';
+                spikeDetail.textContent = '10분 대비';
+                spikeDetail.style.color = 'var(--text-secondary)';
+                spikeBox.style.borderColor = 'var(--border)';
+            } else {
+                // 가장 급증한 컬럼 표시
+                const top = spikeColumns[0];
+                const isDanger = top.level === 'danger';
+                const color = isDanger ? 'var(--danger)' : 'var(--warning)';
+                const icon = isDanger ? '🔺' : '🔺';
+                
+                spikeEl.innerHTML = `<span style="color:${color}">${icon} ${top.column}</span>`;
+                spikeDetail.textContent = `+${top.change} 증가중`;
+                spikeDetail.style.color = color;
+                spikeBox.style.borderColor = color;
+                
+                // 여러개면 추가 표시
+                if (spikeColumns.length > 1) {
+                    // danger 개수 확인
+                    const dangerCount = spikeColumns.filter(s => s.level === 'danger').length;
+                    if (dangerCount > 0) {
+                        spikeDetail.innerHTML = `+${top.change} 외 <span style="color:var(--danger)">${dangerCount}개 위험</span>`;
+                    } else {
+                        spikeDetail.textContent = `+${top.change} 외 ${spikeColumns.length - 1}개`;
+                    }
+                }
+            }
+        }
+        
+        // 상태 예상 업데이트 함수
+        function updateStatusPrediction(statusPrediction, warningCount, dangerCount) {
+            const statusEl = document.getElementById('status-prediction');
+            const detailEl = document.getElementById('status-prediction-detail');
+            const boxEl = document.getElementById('status-prediction-box');
+            
+            statusEl.textContent = statusPrediction || '양호예상';
+            detailEl.textContent = `경고 ${warningCount || 0} / 위험 ${dangerCount || 0}`;
+            statusEl.style.opacity = '1';
+            
+            // 상태별 색상
+            if (statusPrediction && statusPrediction.startsWith('병목(1700예측')) {
+                statusEl.style.color = '#7c3aed';  // 진한 보라색
+                detailEl.style.color = '#7c3aed';
+            } else if (statusPrediction === '병목예상') {
+                statusEl.style.color = 'var(--danger)';
+                detailEl.style.color = 'var(--danger)';
+            } else if (statusPrediction === '위험예상') {
+                statusEl.style.color = '#f97316';  // orange
+                detailEl.style.color = '#f97316';
+            } else if (statusPrediction === '관찰') {
+                statusEl.style.color = 'var(--warning)';
+                detailEl.style.color = 'var(--warning)';
+            } else if (statusPrediction && statusPrediction.includes('병목 쿨타임')) {
+                statusEl.style.color = '#ef4444';
+                detailEl.style.color = '#ef4444';
+                statusEl.style.opacity = '0.7';
+            } else if (statusPrediction && statusPrediction.includes('위험 쿨타임')) {
+                statusEl.style.color = '#f97316';
+                detailEl.style.color = '#f97316';
+                statusEl.style.opacity = '0.7';
+            } else {
+                statusEl.style.color = 'var(--success)';
+                detailEl.style.color = 'var(--text-secondary)';
+            }
+        }
+
+        async function fetchData() {
+            try {
+                const res = await fetch('/api/data');
+                chartData = await res.json();
+                
+                // 서버에서 알람 상태 로드
+                if (chartData.alarm_state) {
+                    alarmCount = chartData.alarm_state.alarm_count || 0;
+                    if (chartData.alarm_state.last_alarm_time) {
+                        lastAlarmTime = new Date(chartData.alarm_state.last_alarm_time).getTime();
+                    }
+                }
+                
+                // 서버에서 알람 기록 로드
+                if (chartData.alert_10 && alertHistory10.length === 0) {
+                    alertHistory10 = chartData.alert_10.map(a => ({
+                        time: formatCurrtime(a.CURRTIME),
+                        value: a.VALUE,
+                        isAlarm: a.IS_ALARM,
+                        alarmNo: a.ALARM_NO,
+                        cooldownMins: a.COOLDOWN_MINS
+                    }));
+                    document.getElementById('stat-over-10').textContent = alertHistory10.length;
+                }
+                if (chartData.alert_30 && alertHistory30.length === 0) {
+                    alertHistory30 = chartData.alert_30.map(a => ({
+                        time: formatCurrtime(a.CURRTIME),
+                        value: a.VALUE,
+                        isAlarm: a.IS_ALARM,
+                        alarmNo: a.ALARM_NO,
+                        cooldownMins: a.COOLDOWN_MINS
+                    }));
+                    document.getElementById('stat-over-30').textContent = alertHistory30.length;
+                }
+                
+                // 급증 컬럼 표시
+                updateSpikeColumn(chartData.spike_columns);
+                
+                // 상태 예상 표시
+                updateStatusPrediction(chartData.status_prediction, chartData.warning_count, chartData.danger_count);
+                
+                updateCooldownText();
+                updateChart();
+                updateStatus(chartData.current, chartData.predict_10, chartData.predict_30, chartData.currtime, chartData.idx, chartData.total);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        function formatCurrtime(ct) {
+            const s = String(ct);
+            if (s.length >= 12) {
+                return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)} ${s.slice(8,10)}:${s.slice(10,12)}`;
+            }
+            return s;
+        }
+        
+        function updateChart() {
+            if (!chartData) return;
+            
+            const showTotal = document.getElementById('toggle-total').checked;
+            const showPred10 = document.getElementById('toggle-pred10').checked;
+            const showPred30 = document.getElementById('toggle-pred30').checked;
+            const showLimit = document.getElementById('toggle-limit').checked;
+            
+            const customData = chartData.y.map((v, i) => {
+                const total = chartData.y[i];
+                const p10 = chartData.predict_10_list[i];
+                const p30 = chartData.predict_30_list[i];
+                const currTime = chartData.x_full[i];  // 현재 시점
+                
+                // 예측 시점 계산
+                const pred10Time = addMinutesToTime(currTime, 10);
+                const pred30Time = addMinutesToTime(currTime, 30);
+                
+                const total_color = total >= 1700 ? '#ef4444' : (total >= 1600 ? '#eab308' : '#fafafa');
+                const p10_color = p10 >= 1700 ? '#ef4444' : (p10 >= 1600 ? '#eab308' : '#fafafa');
+                const p30_color = p30 >= 1700 ? '#ef4444' : (p30 >= 1600 ? '#eab308' : '#fafafa');
+                const total_str = `<span style="color:${total_color}">${total.toLocaleString()}</span>`;
+                const p10_str = `<span style="color:${p10_color}">${p10.toLocaleString()}</span>`;
+                const p30_str = `<span style="color:${p30_color}">${p30.toLocaleString()}</span>`;
+                
+                // 쿨타임 상태
+                let cooldownStr = '<span style="color:#22c55e">알람 대기중</span>';
+                if (lastAlarmTime) {
+                    const remaining = ALARM_COOLDOWN - (Date.now() - lastAlarmTime);
+                    if (remaining > 0) {
+                        const mins = Math.ceil(remaining / 60000);
+                        cooldownStr = `<span style="color:#eab308">알람 ${alarmCount}회 | ⏱ 쿨타임 ${mins}분</span>`;
+                    } else {
+                        cooldownStr = `<span style="color:#22c55e">알람 ${alarmCount}회 | 대기중</span>`;
+                    }
+                }
+                
+                return [
+                    p10_str, p30_str, currTime, total_str, cooldownStr, pred10Time, pred30Time
+                ];
+            });
+            
+            // 시간에 분 더하기
+            function addMinutesToTime(timeStr, mins) {
+                if (!timeStr) return '';
+                const [date, time] = timeStr.split(' ');
+                if (!time) return timeStr;
+                const [h, m] = time.split(':').map(Number);
+                const totalMins = h * 60 + m + mins;
+                const newH = Math.floor(totalMins / 60) % 24;
+                const newM = totalMins % 60;
+                return `${date} ${String(newH).padStart(2,'0')}:${String(newM).padStart(2,'0')}`;
+            }
+            
+            // 예측값용 x축 (미래로 shift)
+            const x_pred10 = chartData.x.map((t, i) => {
+                // 시간 문자열에서 10분 더하기
+                const [h, m] = t.split(':').map(Number);
+                const newM = m + 10;
+                const newH = h + Math.floor(newM / 60);
+                return `${String(newH % 24).padStart(2, '0')}:${String(newM % 60).padStart(2, '0')}`;
+            });
+            
+            const x_pred30 = chartData.x.map((t, i) => {
+                const [h, m] = t.split(':').map(Number);
+                const newM = m + 30;
+                const newH = h + Math.floor(newM / 60);
+                return `${String(newH % 24).padStart(2, '0')}:${String(newM % 60).padStart(2, '0')}`;
+            });
+            
+            const traces = [];
+            
+            if (showTotal) {
+                traces.push({
+                    x: chartData.x,
+                    y: chartData.y,
+                    customdata: customData,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'TOTALCNT',
+                    line: { color: '#3b82f6', width: 2 },
+                    marker: { size: 5, color: '#3b82f6' },
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(59, 130, 246, 0.08)',
+                    hovertemplate: '<b>📍 현재</b>: %{customdata[2]}<br>' +
+                                   '<b>TOTALCNT</b>: %{customdata[3]}<br>' +
+                                   '<b>🔮 %{customdata[5]} 예측</b>: %{customdata[0]}<br>' +
+                                   '<b>🔮 %{customdata[6]} 예측</b>: %{customdata[1]}<br>' +
+                                   '<b>알람</b>: %{customdata[4]}<br>' +
+                                   '<extra></extra>'
+                });
+            }
+            
+            // 예측10분 customdata
+            const pred10_custom = chartData.x_full.map((t, i) => {
+                const [date, time] = t.split(' ');
+                const [h, m] = time.split(':').map(Number);
+                const newM = m + 10;
+                const newH = h + Math.floor(newM / 60);
+                const predTime = `${date} ${String(newH % 24).padStart(2, '0')}:${String(newM % 60).padStart(2, '0')}`;
+                
+                const val = chartData.predict_10_list[i];
+                const color = val >= 1700 ? '#ef4444' : (val >= 1600 ? '#eab308' : '#fafafa');
+                const val_str = `<span style="color:${color}">${val.toLocaleString()}</span>`;
+                
+                let cooldownStr = '<span style="color:#22c55e">알람 대기중</span>';
+                if (lastAlarmTime) {
+                    const remaining = ALARM_COOLDOWN - (Date.now() - lastAlarmTime);
+                    if (remaining > 0) {
+                        const mins = Math.ceil(remaining / 60000);
+                        cooldownStr = `<span style="color:#eab308">알람 ${alarmCount}회 | ⏱ 쿨타임 ${mins}분</span>`;
+                    } else {
+                        cooldownStr = `<span style="color:#22c55e">알람 ${alarmCount}회 | 대기중</span>`;
+                    }
+                }
+                return [predTime, t, val_str, cooldownStr];
+            });
+            
+            // 예측30분 customdata
+            const pred30_custom = chartData.x_full.map((t, i) => {
+                const [date, time] = t.split(' ');
+                const [h, m] = time.split(':').map(Number);
+                const newM = m + 30;
+                const newH = h + Math.floor(newM / 60);
+                const predTime = `${date} ${String(newH % 24).padStart(2, '0')}:${String(newM % 60).padStart(2, '0')}`;
+                
+                const val = chartData.predict_30_list[i];
+                const color = val >= 1700 ? '#ef4444' : (val >= 1600 ? '#eab308' : '#fafafa');
+                const val_str = `<span style="color:${color}">${val.toLocaleString()}</span>`;
+                
+                let cooldownStr = '<span style="color:#22c55e">알람 대기중</span>';
+                if (lastAlarmTime) {
+                    const remaining = ALARM_COOLDOWN - (Date.now() - lastAlarmTime);
+                    if (remaining > 0) {
+                        const mins = Math.ceil(remaining / 60000);
+                        cooldownStr = `<span style="color:#eab308">알람 ${alarmCount}회 | ⏱ 쿨타임 ${mins}분</span>`;
+                    } else {
+                        cooldownStr = `<span style="color:#22c55e">알람 ${alarmCount}회 | 대기중</span>`;
+                    }
+                }
+                return [predTime, t, val_str, cooldownStr];
+            });
+            
+            if (showPred10) {
+                traces.push({
+                    x: x_pred10,
+                    y: chartData.predict_10_list,
+                    customdata: pred10_custom,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: '예측(10분)',
+                    line: { color: '#22c55e', width: 2, dash: 'dot' },
+                    hovertemplate: '<b>예측 시점</b>: %{customdata[0]}<br><b>예측값</b>: %{customdata[2]}<br><b>기준 시점</b>: %{customdata[1]}<br><b>알람</b>: %{customdata[3]}<extra></extra>'
+                });
+            }
+            
+            if (showPred30) {
+                traces.push({
+                    x: x_pred30,
+                    y: chartData.predict_30_list,
+                    customdata: pred30_custom,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: '예측(30분)',
+                    line: { color: '#f97316', width: 2, dash: 'dash' },
+                    hovertemplate: '<b>예측 시점</b>: %{customdata[0]}<br><b>예측값</b>: %{customdata[2]}<br><b>기준 시점</b>: %{customdata[1]}<br><b>알람</b>: %{customdata[3]}<extra></extra>'
+                });
+            }
+            
+            // Limit 라인
+            const shapes = [];
+            if (showLimit) {
+                shapes.push({
+                    type: 'line', y0: 1700, y1: 1700, x0: 0, x1: 1, xref: 'paper',
+                    line: { color: '#ef4444', width: 2, dash: 'solid' }
+                });
+            }
+            
+            const currentLayout = {...layout, shapes: shapes};
+            
+            Plotly.react('chart', traces, currentLayout, { responsive: true, displayModeBar: false, doubleClick: false, scrollZoom: false });
+        }
+
+        function updateStatus(value, predict10, predict30, currtime, idx, total) {
+            const mainVal = document.getElementById('main-value');
+            const badge = document.getElementById('status-badge');
+            const pred10El = document.getElementById('predict-10');
+            const pred30El = document.getElementById('predict-30');
+            const pred10Status = document.getElementById('predict-10-status');
+            const pred30Status = document.getElementById('predict-30-status');
+            
+            mainVal.textContent = value.toLocaleString();
+            pred10El.textContent = predict10.toLocaleString();
+            pred30El.textContent = predict30.toLocaleString();
+            document.getElementById('data-time').textContent = currtime;
+
+            // 10분 예측 상태
+            const diff10 = predict10 - value;
+            if (diff10 > 50) {
+                pred10Status.textContent = `▲ +${diff10}`;
+                pred10Status.style.color = '#ef4444';
+            } else if (diff10 < -50) {
+                pred10Status.textContent = `▼ ${diff10}`;
+                pred10Status.style.color = '#22c55e';
+            } else {
+                pred10Status.textContent = `→ 유지`;
+                pred10Status.style.color = '#a1a1aa';
+            }
+
+            // 30분 예측 상태
+            const diff30 = predict30 - value;
+            if (diff30 > 50) {
+                pred30Status.textContent = `▲ +${diff30}`;
+                pred30Status.style.color = '#ef4444';
+            } else if (diff30 < -50) {
+                pred30Status.textContent = `▼ ${diff30}`;
+                pred30Status.style.color = '#22c55e';
+            } else {
+                pred30Status.textContent = `→ 유지`;
+                pred30Status.style.color = '#a1a1aa';
+            }
+
+            // 예측값 색상
+            pred10El.style.color = predict10 >= 1700 ? '#ef4444' : predict10 >= 1600 ? '#eab308' : '#3b82f6';
+            pred30El.style.color = predict30 >= 1700 ? '#ef4444' : predict30 >= 1600 ? '#eab308' : '#3b82f6';
+
+            // 현재 쿨타임 상태 계산
+            const now = Date.now();
+            const canAlarm = !lastAlarmTime || (now - lastAlarmTime >= ALARM_COOLDOWN);
+            let cooldownMins = 0;
+            if (lastAlarmTime && !canAlarm) {
+                cooldownMins = Math.ceil((ALARM_COOLDOWN - (now - lastAlarmTime)) / 60000);
+            }
+
+            // 예측10분 1700 초과 기록
+            if (predict10 >= 1700) {
+                const last10 = alertHistory10[alertHistory10.length - 1];
+                if (!last10 || last10.time !== currtime) {
+                    alertHistory10.push({ 
+                        time: currtime, 
+                        value: predict10,
+                        isAlarm: canAlarm,
+                        alarmNo: canAlarm ? alarmCount + 1 : alarmCount,
+                        cooldownMins: canAlarm ? null : cooldownMins
+                    });
+                    document.getElementById('stat-over-10').textContent = alertHistory10.length;
+                }
+            }
+            
+            // 예측30분 1700 초과 기록
+            if (predict30 >= 1700) {
+                const last30 = alertHistory30[alertHistory30.length - 1];
+                if (!last30 || last30.time !== currtime) {
+                    alertHistory30.push({ 
+                        time: currtime, 
+                        value: predict30,
+                        isAlarm: canAlarm,
+                        alarmNo: canAlarm ? alarmCount + 1 : alarmCount,
+                        cooldownMins: canAlarm ? null : cooldownMins
+                    });
+                    document.getElementById('stat-over-30').textContent = alertHistory30.length;
+                }
+            }
+
+            mainVal.classList.remove('normal', 'warning', 'critical');
+            badge.classList.remove('normal', 'warning', 'critical');
+
+            if (value >= 1700) {
+                mainVal.classList.add('critical');
+                badge.classList.add('critical');
+                badge.innerHTML = '<span>🚨 LIMIT EXCEEDED</span>';
+                
+                // 쿨타임 체크 후 알람
+                if (!alarmInterval && canAlarm) {
+                    alarmCount++;
+                    lastAlarmTime = now;
+                    updateCooldownText();
+                    triggerAlarm(value, currtime);
+                }
+            } else if (value >= 1600) {
+                mainVal.classList.add('warning');
+                badge.classList.add('warning');
+                badge.innerHTML = '<span>⚠ WARNING</span>';
+            } else {
+                mainVal.classList.add('normal');
+                badge.classList.add('normal');
+                badge.innerHTML = '<span>● NORMAL</span>';
+            }
+        }
+
+        async function nextStep() {
+            try {
+                const res = await fetch('/api/next');
+                chartData = await res.json();
+                
+                // 서버에서 알람 상태 로드
+                if (chartData.alarm_state) {
+                    alarmCount = chartData.alarm_state.alarm_count || 0;
+                    if (chartData.alarm_state.last_alarm_time) {
+                        lastAlarmTime = new Date(chartData.alarm_state.last_alarm_time).getTime();
+                    }
+                }
+                
+                // 서버에서 알람 기록 로드
+                if (chartData.alert_10) {
+                    alertHistory10 = chartData.alert_10.map(a => ({
+                        time: formatCurrtime(a.CURRTIME),
+                        value: a.VALUE,
+                        isAlarm: a.IS_ALARM,
+                        alarmNo: a.ALARM_NO,
+                        cooldownMins: a.COOLDOWN_MINS
+                    }));
+                    document.getElementById('stat-over-10').textContent = alertHistory10.length;
+                }
+                if (chartData.alert_30) {
+                    alertHistory30 = chartData.alert_30.map(a => ({
+                        time: formatCurrtime(a.CURRTIME),
+                        value: a.VALUE,
+                        isAlarm: a.IS_ALARM,
+                        alarmNo: a.ALARM_NO,
+                        cooldownMins: a.COOLDOWN_MINS
+                    }));
+                    document.getElementById('stat-over-30').textContent = alertHistory30.length;
+                }
+                
+                // 급증 컬럼 표시
+                updateSpikeColumn(chartData.spike_columns);
+                
+                // 상태 예상 표시
+                updateStatusPrediction(chartData.status_prediction, chartData.warning_count, chartData.danger_count);
+                
+                updateCooldownText();
+                updateChart();
+                updateStatus(chartData.current, chartData.predict_10, chartData.predict_30, chartData.currtime, chartData.idx, chartData.total);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function startUpdate() {
+            if (isRunning) return;
+            isRunning = true;
+            document.getElementById('btn-start').classList.add('running');
+            document.getElementById('btn-start').textContent = '● Running';
+            
+            // 상태 표시 변경
+            document.getElementById('status-text').textContent = 'RUNNING';
+            document.getElementById('status-live').style.background = 'rgba(34, 197, 94, 0.1)';
+            document.getElementById('status-live').style.borderColor = 'rgba(34, 197, 94, 0.2)';
+            document.getElementById('status-live').style.color = 'var(--success)';
+            document.getElementById('status-dot').style.background = 'var(--success)';
+            document.getElementById('status-dot').style.animation = 'blink 1.5s infinite';
+            
+            timer = setInterval(nextStep, 60000);
+            nextStep();
+        }
+
+        function stopUpdate() {
+            isRunning = false;
+            document.getElementById('btn-start').classList.remove('running');
+            document.getElementById('btn-start').textContent = '▶ Start';
+            
+            // 상태 표시 변경
+            document.getElementById('status-text').textContent = 'STOP';
+            document.getElementById('status-live').style.background = 'rgba(239, 68, 68, 0.1)';
+            document.getElementById('status-live').style.borderColor = 'rgba(239, 68, 68, 0.2)';
+            document.getElementById('status-live').style.color = 'var(--danger)';
+            document.getElementById('status-dot').style.background = 'var(--danger)';
+            document.getElementById('status-dot').style.animation = 'none';
+            
+            if (timer) clearInterval(timer);
+            timer = null;
+        }
+
+        async function resetData() {
+            stopUpdate();
+            dismissAlarm();
+            alertHistory10 = [];
+            alertHistory30 = [];
+            lastAlarmTime = null;
+            alarmCount = 0;
+            document.getElementById('stat-over-10').textContent = '0';
+            document.getElementById('stat-over-30').textContent = '0';
+            updateCooldownText();
+            await fetch('/api/reset');
+            await fetchData();
+        }
+
+        // ========================================
+        // 상세 분석 모달 기능
+        // ========================================
+        let detailCurrentTime = null;
+        let detailRange = 10;
+        let lastClickTime = 0;
+        let lastClickPoint = null;
+
+        function openDetailModal(currtime) {
+            detailCurrentTime = currtime;
+            detailRange = 10;
+            
+            // 범위 버튼 초기화
+            document.querySelectorAll('.detail-range-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.range === '10');
+            });
+            
+            document.getElementById('detail-overlay').style.display = 'block';
+            document.getElementById('detail-modal').style.display = 'block';
+            loadDetailData();
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-overlay').style.display = 'none';
+            document.getElementById('detail-modal').style.display = 'none';
+        }
+
+        function changeDetailRange(range) {
+            detailRange = range;
+            
+            document.querySelectorAll('.detail-range-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.range) === range);
+            });
+            
+            loadDetailData();
+        }
+
+        async function loadDetailData() {
+            if (!detailCurrentTime) return;
+            
+            document.getElementById('detail-table-container').innerHTML = '<div class="detail-loading">데이터 로딩 중...</div>';
+            
+            try {
+                // 실시간 데이터용 API 호출
+                const res = await fetch(`/api/realtime_detail?time=${detailCurrentTime}&range=${detailRange}`);
+                const data = await res.json();
+                
+                if (data.error) {
+                    document.getElementById('detail-table-container').innerHTML = `
+                        <div class="detail-loading" style="color: var(--danger);">
+                            ⚠️ ${data.error}
+                        </div>
+                    `;
+                    return;
+                }
+                
+                renderDetailData(data);
+                
+            } catch (e) {
+                console.error('상세 데이터 로드 실패:', e);
+                document.getElementById('detail-table-container').innerHTML = `
+                    <div class="detail-loading" style="color: var(--danger);">
+                        ⚠️ 데이터 로드 실패: ${e.message}
+                    </div>
+                `;
+            }
+        }
+
+        function renderDetailData(data) {
+            const formatDetailTime = (t) => {
+                if (t && t.length >= 12) {
+                    return `${t.slice(4,6)}-${t.slice(6,8)} ${t.slice(8,10)}:${t.slice(10,12)}`;
+                }
+                return t || '-';
+            };
+            
+            document.getElementById('detail-current-time').textContent = formatDetailTime(data.current_time);
+            document.getElementById('detail-prev-time').textContent = formatDetailTime(data.previous_time);
+            document.getElementById('detail-current-totalcnt').textContent = (data.current.TOTALCNT || 0).toLocaleString();
+            document.getElementById('detail-prev-totalcnt').textContent = (data.previous.TOTALCNT || 0).toLocaleString();
+            
+            const totalcntChange = (data.current.TOTALCNT || 0) - (data.previous.TOTALCNT || 0);
+            const totalcntEl = document.getElementById('detail-totalcnt-change');
+            totalcntEl.textContent = (totalcntChange >= 0 ? '+' : '') + totalcntChange.toLocaleString();
+            totalcntEl.style.color = totalcntChange >= 50 ? 'var(--danger)' : (totalcntChange <= -50 ? 'var(--success)' : 'var(--text-primary)');
+            
+            let html = `
+                <table class="detail-table">
+                    <thead>
+                        <tr>
+                            <th>컬럼명</th>
+                            <th>이전값</th>
+                            <th>현재값</th>
+                            <th>변화량</th>
+                            <th>변화율</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.changes.forEach(item => {
+                const isSpike = item.change >= 50;
+                const rowClass = isSpike ? 'detail-spike' : '';
+                
+                let changeClass = '';
+                if (item.change > 0) changeClass = 'detail-change-positive';
+                else if (item.change < 0) changeClass = 'detail-change-negative';
+                
+                const changeText = item.change >= 0 ? '+' + item.change : item.change;
+                const rateText = item.change_rate >= 0 ? '+' + item.change_rate + '%' : item.change_rate + '%';
+                const spikeIcon = isSpike ? '<span class="detail-spike-icon">🔺</span> ' : '';
+                
+                let colName = item.column;
+                if (item.is_uncollected) {
+                    colName += '<span class="detail-uncollected-tag">미수집</span>';
+                }
+                
+                html += `
+                    <tr class="${rowClass}">
+                        <td>${colName}</td>
+                        <td class="${item.is_uncollected ? 'detail-uncollected' : ''}">${item.previous}</td>
+                        <td class="${item.is_uncollected ? 'detail-uncollected' : ''}">${item.current}</td>
+                        <td class="${changeClass}">${spikeIcon}${changeText}</td>
+                        <td class="${changeClass}">${rateText}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            html += `<div style="margin-top: 10px; font-size: 11px; color: var(--text-secondary);">
+                💡 변화량 절대값 기준 정렬 | 🔺 +50 이상 급상승 표시
+            </div>`;
+            
+            document.getElementById('detail-table-container').innerHTML = html;
+        }
+
+        // Plotly 차트 더블클릭 이벤트 설정
+        function setupChartDoubleClick() {
+            const chartEl = document.getElementById('chart');
+            
+            chartEl.on('plotly_click', function(data) {
+                const now = Date.now();
+                const point = data.points[0];
+                
+                // 300ms 이내 같은 점 클릭 = 더블클릭
+                if (now - lastClickTime < 300 && lastClickPoint === point.pointIndex) {
+                    // x_full에서 시간 가져오기 (YYYY-MM-DD HH:MM 형식)
+                    if (chartData && chartData.x_full && chartData.x_full[point.pointIndex]) {
+                        const timeStr = chartData.x_full[point.pointIndex]; // "2025-01-20 14:30"
+                        // YYYYMMDDHHMM 형식으로 변환
+                        const currtime = timeStr.replace(/-/g, '').replace(' ', '').replace(':', '');
+                        openDetailModal(currtime);
+                    }
+                }
+                
+                lastClickTime = now;
+                lastClickPoint = point.pointIndex;
+            });
+        }
+
+        // 페이지 로드 시 자동 시작
+        startUpdate();
+        
+        // 차트 이벤트 설정 (약간의 딜레이 후)
+        setTimeout(setupChartDoubleClick, 1000);
+    </script>
+</body>
+</html>

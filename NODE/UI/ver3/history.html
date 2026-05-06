@@ -1,0 +1,3146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>M14 HISTORY V10.4</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #09090b;
+            --bg-secondary: #18181b;
+            --bg-card: #1f1f23;
+            --border: #27272a;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
+            --purple: #8b5cf6;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Space Grotesk', system-ui, sans-serif;
+            padding: 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #f97316, #ef4444);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        .logo-text {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .logo-text span {
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+        
+        .back-btn {
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+        }
+        
+        .back-btn:hover {
+            background: var(--bg-card);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .control-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        input[type="date"], input[type="time"] {
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+        }
+        
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="time"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+        }
+        
+        .btn {
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .btn:hover { background: var(--bg-card); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: var(--success); border-color: var(--success); color: #000; }
+        .btn-purple { background: var(--purple); border-color: var(--purple); }
+        .btn-purple:hover { background: #7c3aed; }
+        
+        .stats-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 15px 20px;
+            min-width: 150px;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .stat-sub {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }
+        
+        .chart-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+        }
+        
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        #chart {
+            width: 100%;
+            height: 400px;
+        }
+        
+        .table-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px 20px;
+            overflow-x: auto;
+        }
+        
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .table-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .table-info {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        th {
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+        
+        .value-normal { color: var(--text-primary); }
+        .value-warning { color: var(--warning); }
+        .value-danger { color: var(--danger); }
+        
+        .accuracy-good { color: var(--success); }
+        .accuracy-ok { color: var(--warning); }
+        .accuracy-bad { color: var(--danger); }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        
+        .alert-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        
+        .alert-badge.alarm {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+        
+        .alert-badge.cooldown {
+            background: rgba(234, 179, 8, 0.2);
+            color: var(--warning);
+        }
+        
+        .alert-badge.logpresso {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--purple);
+        }
+        
+        .alert-badge.logpresso-cooldown {
+            background: rgba(168, 85, 247, 0.15);
+            color: #a855f7;
+            border: 1px dashed #a855f7;
+        }
+
+        /* LLM 분석 모달 스타일 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 900px;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+
+        .modal-header h3 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .modal-close:hover { color: var(--text-primary); }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .llm-data-info {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px;
+            margin-bottom: 10px;
+        }
+
+        .llm-stats-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .llm-stat {
+            background: var(--bg-secondary);
+            padding: 3px 6px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .llm-stat-label {
+            font-size: 9px;
+            color: var(--text-secondary);
+        }
+
+        .llm-stat-value {
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .llm-stat-value.danger { color: var(--danger); }
+        .llm-stat-value.warning { color: var(--warning); }
+        .llm-stat-value.success { color: var(--success); }
+
+        .llm-type-selector {
+            margin-bottom: 15px;
+        }
+
+        .llm-type-selector label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .llm-type-btns {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .llm-type-btn {
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .llm-type-btn:hover {
+            border-color: var(--accent);
+        }
+
+        .llm-type-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* LLM 모드 선택기 */
+        .llm-mode-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .llm-mode-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .llm-mode-btn:hover {
+            border-color: var(--accent);
+        }
+
+        .llm-mode-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .llm-mode-btn[data-mode="dev"].active {
+            background: var(--warning);
+            border-color: var(--warning);
+        }
+
+        .llm-mode-btn[data-mode="prod"].active {
+            background: var(--success);
+            border-color: var(--success);
+        }
+
+        .llm-mode-btn[data-mode="local"].active {
+            background: var(--purple);
+            border-color: var(--purple);
+        }
+
+        .llm-mode-section {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .llm-model-info {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 11px;
+        }
+
+        .llm-model-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .llm-model-row:not(:last-child) {
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 4px;
+            padding-bottom: 6px;
+        }
+
+        .llm-model-label {
+            color: var(--text-secondary);
+        }
+
+        .llm-model-value {
+            color: var(--accent);
+            font-weight: 600;
+            font-family: 'Consolas', monospace;
+        }
+
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .btn-llm {
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            border: none;
+            padding: 10px 24px;
+        }
+
+        .btn-llm:hover {
+            background: linear-gradient(135deg, #7c3aed, #2563eb);
+        }
+
+        .llm-result-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 15px;
+            min-height: 200px;
+            margin-top: 15px;
+        }
+
+        .llm-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .llm-result-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .llm-result-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .llm-result-content {
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .llm-result-content h1, .llm-result-content h2, .llm-result-content h3 {
+            margin: 16px 0 8px 0;
+            color: var(--accent);
+        }
+
+        .llm-result-content h2 { font-size: 16px; }
+        .llm-result-content h3 { font-size: 14px; }
+
+        .llm-result-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 12px;
+        }
+
+        .llm-result-content th, .llm-result-content td {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .llm-result-content th {
+            background: var(--bg-secondary);
+            color: var(--accent);
+        }
+
+        .llm-result-content ul, .llm-result-content ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .llm-result-content li { margin: 4px 0; }
+
+        .llm-result-content strong { color: var(--warning); }
+
+        .llm-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .llm-loading-spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: llm-spin 1s linear infinite;
+            margin-bottom: 12px;
+        }
+
+        @keyframes llm-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .llm-empty {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .llm-empty-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+
+        .streaming-cursor {
+            display: inline-block;
+            color: var(--accent);
+            animation: blink-cursor 0.8s infinite;
+            font-weight: bold;
+        }
+
+        @keyframes blink-cursor {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* 프롬프트 설정 모달 스타일 */
+        .prompt-modal-content {
+            max-width: 900px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .prompt-tab {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .prompt-tab:hover {
+            border-color: var(--accent);
+        }
+
+        .prompt-tab.active {
+            background: var(--accent) !important;
+            border-color: var(--accent) !important;
+            color: white !important;
+        }
+
+        .template-textarea {
+            width: 100%;
+            padding: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 12px;
+            font-family: monospace;
+            resize: vertical;
+        }
+
+        .template-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .btn-prompt-settings {
+            background: var(--purple);
+            border-color: var(--purple);
+        }
+
+        .btn-prompt-settings:hover {
+            background: #7c3aed;
+            border-color: #7c3aed;
+        }
+
+        /* 상세 분석 모달 스타일 */
+        .detail-modal-content {
+            max-width: 800px;
+            max-height: 85vh;
+        }
+
+        .detail-header-info {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: 8px;
+        }
+
+        .detail-time-box {
+            flex: 1;
+            text-align: center;
+        }
+
+        .detail-time-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .detail-time-value {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .detail-totalcnt {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .detail-range-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .detail-range-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .detail-range-btn:hover {
+            border-color: var(--accent);
+        }
+
+        .detail-range-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .detail-table th, .detail-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            text-align: right;
+        }
+
+        .detail-table th {
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-align: left;
+        }
+
+        .detail-table th:first-child {
+            text-align: left;
+        }
+
+        .detail-table td:first-child {
+            text-align: left;
+            font-weight: 500;
+        }
+
+        .detail-table tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .detail-change-positive {
+            color: var(--danger);
+        }
+
+        .detail-change-negative {
+            color: var(--success);
+        }
+
+        .detail-spike {
+            background: rgba(239, 68, 68, 0.15) !important;
+        }
+
+        .detail-spike-icon {
+            color: var(--danger);
+            font-weight: bold;
+        }
+
+        .detail-uncollected {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .detail-uncollected-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(161, 161, 170, 0.2);
+            border-radius: 4px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-left: 5px;
+        }
+
+        .detail-loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        /* 테이블 행 더블클릭 커서 */
+        #table-container table tbody tr {
+            cursor: pointer;
+        }
+
+        #table-container table tbody tr:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">H</div>
+            <div class="logo-text">M14 HISTORY <span>V10.4</span></div>
+        </div>
+        <button class="back-btn" onclick="location.href='/'">← 실시간 모니터</button>
+    </header>
+    
+    <div class="controls">
+        <div class="control-group">
+            <span class="control-label">시작:</span>
+            <input type="date" id="date-start">
+            <input type="time" id="time-start" value="00:00">
+        </div>
+        <div class="control-group">
+            <span class="control-label">종료:</span>
+            <input type="date" id="date-end">
+            <input type="time" id="time-end" value="23:59">
+        </div>
+        <button class="btn btn-primary" onclick="loadData()">조회</button>
+        <button class="btn" onclick="loadYesterday()">어제</button>
+        <button class="btn" onclick="loadToday()">오늘</button>
+        <button class="btn" onclick="loadLast3Days()">최근3일</button>
+        <button class="btn" onclick="loadThisWeek()">이번주</button>
+        <button class="btn btn-success" onclick="downloadCSV()">📥 CSV 다운로드</button>
+        <button class="btn btn-purple" onclick="location.href='/evaluate'">📊 평가 데이터 분석 V10.4</button>
+        <button class="btn" onclick="openLlmAnalysisModal()" style="background: linear-gradient(135deg, #8b5cf6, #3b82f6); border: none;">🤖 LLM 분석</button>
+    </div>
+    
+    <div class="stats-row" id="stats-row" style="display: none;">
+        <div class="stat-card">
+            <div class="stat-label">데이터 수</div>
+            <div class="stat-value" id="stat-count">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">평균 TOTALCNT</div>
+            <div class="stat-value" id="stat-avg">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">최대 TOTALCNT</div>
+            <div class="stat-value" id="stat-max">-</div>
+            <div class="stat-sub" id="stat-max-time">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">1700+ 초과</div>
+            <div class="stat-value value-danger" id="stat-over">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">10분 알람</div>
+            <div class="stat-value" id="stat-alert10" style="color: var(--warning);">-</div>
+            <div class="stat-sub" id="stat-alert10-sub">IS_ALARM=True</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">30분 알람</div>
+            <div class="stat-value" id="stat-alert30" style="color: var(--accent);">-</div>
+            <div class="stat-sub" id="stat-alert30-sub">IS_ALARM=True</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">로그프레소 알람</div>
+            <div class="stat-value" id="stat-logpresso" style="color: var(--purple);">-</div>
+            <div class="stat-sub" id="stat-logpresso-sub">IS_ALARM=True</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">예측10분 안에 1700+ 적중률</div>
+            <div class="stat-value" id="stat-acc10">-</div>
+            <div class="stat-sub" id="stat-acc10-sub">예측→실제</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">예측30분 안에 1700+ 적중률</div>
+            <div class="stat-value" id="stat-acc30">-</div>
+            <div class="stat-sub" id="stat-acc30-sub">예측→실제</div>
+        </div>
+    </div>
+    
+    <div class="chart-section" id="chart-section" style="display: none;">
+        <div class="chart-title">📈 TOTALCNT vs 예측값 (●○ 프로그램알람  ◆◇ 로그프레소알람)</div>
+        <div id="chart"></div>
+    </div>
+    
+    <div class="table-section">
+        <div class="table-header">
+            <div class="table-title">📋 상세 데이터</div>
+            <div class="table-info" id="table-info">날짜를 선택하세요</div>
+        </div>
+        <div id="table-container">
+            <div class="empty-state">
+                <div class="empty-icon">📅</div>
+                <div>날짜를 선택하고 조회 버튼을 누르세요</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LLM 분석 모달 -->
+    <div class="modal-overlay" id="llm-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🤖 LLM 데이터 분석</h3>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn btn-prompt-settings" onclick="openPromptModal()" style="padding: 6px 12px; font-size: 12px;">⚙️ 프롬프트 설정</button>
+                    <button class="modal-close" onclick="closeLlmModal()">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <!-- LLM 모드 선택 -->
+                <div class="llm-mode-section">
+                    <div class="llm-mode-selector">
+                        <button class="llm-mode-btn" data-mode="dev" onclick="setLlmMode('dev')">
+                            🌐 개발 API
+                        </button>
+                        <button class="llm-mode-btn" data-mode="prod" onclick="setLlmMode('prod')">
+                            🏢 운영 API
+                        </button>
+                        <button class="llm-mode-btn active" data-mode="local" onclick="setLlmMode('local')">
+                            💻 로컬 GGUF
+                        </button>
+                    </div>
+                    <div class="llm-model-info">
+                        <div class="llm-model-row" id="current-model-row">
+                            <span class="llm-model-label" id="current-model-label">💻 로컬 GGUF:</span>
+                            <span class="llm-model-value" id="current-model-name">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 데이터 정보 -->
+                <div class="llm-data-info">
+                    <div class="llm-stats-grid" id="llm-stats-grid">
+                        <div class="llm-stat"><span class="llm-stat-label">총 로그 수:</span><span class="llm-stat-value" id="llm-stat-count">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">평균 응답시간:</span><span class="llm-stat-value" id="llm-stat-avg">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">최대 응답시간:</span><span class="llm-stat-value" id="llm-stat-max">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">위험 건수:</span><span class="llm-stat-value danger" id="llm-stat-over">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">LLM 정확도:</span><span class="llm-stat-value success" id="llm-stat-accuracy">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">TP(정탐):</span><span class="llm-stat-value success" id="llm-stat-tp">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">TN(정상):</span><span class="llm-stat-value" id="llm-stat-tn" style="color: var(--accent);">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">FP(오탐):</span><span class="llm-stat-value warning" id="llm-stat-fp">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">FN(미탐):</span><span class="llm-stat-value danger" id="llm-stat-fn">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">10분 알람:</span><span class="llm-stat-value warning" id="llm-stat-alert10">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">30분 알람:</span><span class="llm-stat-value" id="llm-stat-alert30" style="color: var(--accent);">-</span></div>
+                        <div class="llm-stat"><span class="llm-stat-label">로그프레소 알람:</span><span class="llm-stat-value" id="llm-stat-logpresso" style="color: var(--purple);">-</span></div>
+                    </div>
+                    
+                    <!-- 급증 컬럼 & 상태 예상 통계 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 12px;">
+                        <!-- 급증 컬럼 통계 -->
+                        <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 12px;">
+                            <div style="font-size: 12px; font-weight: 600; color: var(--danger); margin-bottom: 8px;">
+                                📊 10분 급증 컬럼 통계
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
+                                <div style="color: var(--text-secondary);">위험급증(D):</div>
+                                <div style="color: var(--danger); font-weight: 600;" id="llm-stat-danger-spikes">-</div>
+                                <div style="color: var(--text-secondary);">경고급증(W):</div>
+                                <div style="color: var(--warning); font-weight: 600;" id="llm-stat-warning-spikes">-</div>
+                                <div style="color: var(--text-secondary);">1위 컬럼:</div>
+                                <div style="color: var(--text-primary); font-weight: 500; font-size: 10px;" id="llm-stat-top-spike-col">-</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 상태 예상 분포 -->
+                        <div style="background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); border-radius: 8px; padding: 12px;">
+                            <div style="font-size: 12px; font-weight: 600; color: var(--purple); margin-bottom: 8px;">
+                                🔮 상태 예상 분포
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
+                                <div style="color: var(--text-secondary);">병목예상:</div>
+                                <div style="color: var(--danger); font-weight: 600;" id="llm-stat-bottleneck">-</div>
+                                <div style="color: var(--text-secondary);">위험예상:</div>
+                                <div style="color: var(--warning); font-weight: 600;" id="llm-stat-danger-status">-</div>
+                                <div style="color: var(--text-secondary);">관찰/양호:</div>
+                                <div style="color: var(--success); font-weight: 500;" id="llm-stat-normal-status">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 분석 유형 선택 -->
+                <div class="llm-type-selector">
+                    <label>분석 유형 선택</label>
+                    <div class="llm-type-btns">
+                        <button class="llm-type-btn active" data-type="summary" onclick="selectLlmType('summary')">
+                            📋 요약 분석
+                        </button>
+                        <button class="llm-type-btn" data-type="pattern" onclick="selectLlmType('pattern')">
+                            📈 패턴 분석
+                        </button>
+                        <button class="llm-type-btn" data-type="prediction" onclick="selectLlmType('prediction')">
+                            🔮 예측 분석
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 분석 결과 -->
+                <div class="llm-result-section" id="llm-result-section">
+                    <div class="llm-result-header">
+                        <div class="llm-result-title">📝 분석 결과</div>
+                        <div class="llm-result-meta" id="llm-result-meta"></div>
+                    </div>
+                    <div id="llm-result-container">
+                        <div class="llm-empty">
+                            <div class="llm-empty-icon">🤖</div>
+                            <div>분석 유형을 선택하고 <strong>분석 실행</strong> 버튼을 클릭하세요</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeLlmModal()">닫기</button>
+                <button class="btn btn-llm" id="btn-llm-analyze" onclick="runLlmAnalysis()">
+                    🔍 분석 실행
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 프롬프트 설정 모달 -->
+    <div class="modal-overlay" id="prompt-modal" style="display: none;">
+        <div class="modal-content prompt-modal-content">
+            <div class="modal-header">
+                <h3>⚙️ 프롬프트 설정</h3>
+                <button class="modal-close" onclick="closePromptModal()">×</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <!-- 시스템 프롬프트 -->
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label class="form-label" style="color: var(--accent);">
+                        🤖 시스템 프롬프트 (LLM 역할 정의)
+                    </label>
+                    <textarea id="system-prompt" class="template-textarea" style="height: 200px;"></textarea>
+                </div>
+
+                <!-- 분석 프롬프트 탭 -->
+                <div style="margin-bottom: 15px;">
+                    <label class="form-label" style="color: var(--success);">
+                        📝 분석 프롬프트 템플릿
+                    </label>
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <button class="prompt-tab active" data-tab="summary" onclick="switchPromptTab('summary')">📋 요약 분석</button>
+                        <button class="prompt-tab" data-tab="pattern" onclick="switchPromptTab('pattern')">📈 패턴 분석</button>
+                        <button class="prompt-tab" data-tab="prediction" onclick="switchPromptTab('prediction')">🔮 예측 분석</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <textarea id="template-summary" class="template-textarea" style="height: 180px;"></textarea>
+                    <textarea id="template-pattern" class="template-textarea" style="height: 180px; display: none;"></textarea>
+                    <textarea id="template-prediction" class="template-textarea" style="height: 180px; display: none;"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button class="btn" onclick="resetPrompts()">🔄 기본값 복원</button>
+                    <button class="btn btn-primary" onclick="savePrompts()">💾 저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 상세 분석 모달 -->
+    <div class="modal-overlay" id="detail-modal" style="display: none;">
+        <div class="modal-content detail-modal-content">
+            <div class="modal-header">
+                <h3>🔍 컬럼별 변화량 분석</h3>
+                <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- 시간 정보 -->
+                <div class="detail-header-info">
+                    <div class="detail-time-box">
+                        <div class="detail-time-label">현재 시점</div>
+                        <div class="detail-time-value" id="detail-current-time">-</div>
+                        <div class="detail-totalcnt" id="detail-current-totalcnt" style="color: var(--accent);">-</div>
+                    </div>
+                    <div class="detail-time-box" style="display: flex; align-items: center; justify-content: center;">
+                        <span style="font-size: 24px; color: var(--text-secondary);">←</span>
+                    </div>
+                    <div class="detail-time-box">
+                        <div class="detail-time-label">이전 시점</div>
+                        <div class="detail-time-value" id="detail-prev-time">-</div>
+                        <div class="detail-totalcnt" id="detail-prev-totalcnt" style="color: var(--text-secondary);">-</div>
+                    </div>
+                    <div class="detail-time-box">
+                        <div class="detail-time-label">TOTALCNT 변화</div>
+                        <div class="detail-totalcnt" id="detail-totalcnt-change">-</div>
+                    </div>
+                </div>
+
+                <!-- 분석 범위 선택 -->
+                <div class="detail-range-selector">
+                    <span style="color: var(--text-secondary); font-size: 13px; margin-right: 10px;">분석 범위:</span>
+                    <button class="detail-range-btn" data-range="5" onclick="changeDetailRange(5)">5분</button>
+                    <button class="detail-range-btn active" data-range="10" onclick="changeDetailRange(10)">10분</button>
+                    <button class="detail-range-btn" data-range="20" onclick="changeDetailRange(20)">20분</button>
+                    <button class="detail-range-btn" data-range="30" onclick="changeDetailRange(30)">30분</button>
+                </div>
+
+                <!-- 변화량 테이블 -->
+                <div id="detail-table-container">
+                    <div class="detail-loading">데이터 로딩 중...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 오늘 날짜로 초기화
+        const today = new Date();
+        document.getElementById('date-start').value = formatDate(today);
+        document.getElementById('date-end').value = formatDate(today);
+
+        let currentData = null;  // 현재 조회된 데이터 저장
+        let logpressoAlarmMap = {};  // 로그프레소 알람 맵
+
+        // ========================================
+        // 프롬프트 관리
+        // ========================================
+        const defaultPrompts = {
+            system: `당신은 M14 반송 큐 예측 모델 분석 전문가입니다.
+
+## 분석 원칙
+1. **결론 먼저** - 핵심 수치와 판단을 먼저 제시
+2. **간결하게** - 불필요한 설명 없이 핵심만
+3. **숫자 중심** - 정확한 수치와 비율 제시
+4. **문제점 명확히** - 무엇이 문제인지 직접적으로
+
+## 출력 형식
+- 테이블은 마크다운 형식, 최소한의 컬럼만
+- 이모지 적절히 사용 (📊 ✅ ⚠️ 🔴 💡 🔔)
+- 섹션은 ## 헤더로 구분
+- 긴 설명 대신 핵심 bullet point
+
+## M14 기준값
+- 위험 임계값: TOTALCNT >= 1700
+- 경고 임계값: TOTALCNT >= 1600
+- 예측 모델: XGB (10분 후, 30분 후 예측)
+- 알람 시스템: 10분 알람, 30분 알람, 로그프레소 알람
+
+## 제공되는 통계 데이터
+- 총 로그 수, 평균/최대 응답시간, 위험 건수(1700+)
+- LLM 정확도, TP(정탐), TN(정상), FP(오탐), FN(미탐)
+- 10분 알람, 30분 알람, 로그프레소 알람 발생 횟수`,
+            templates: {
+                summary: `위 데이터를 종합 분석해주세요.
+
+다음 형식으로 출력:
+## 📊 핵심 요약
+| 지표 | 값 | 평가 |
+|---|---|---|
+- 정확도, 재현율(TP/(TP+FN)), 정밀도(TP/(TP+FP))
+
+## 🔔 알람 현황
+- 10분 알람 vs 30분 알람 vs 로그프레소 알람 비교
+- 알람 효율성 평가 (실제 위험 대비)
+
+## ✅ 좋은 점
+- (1-2개, 수치 포함)
+
+## ⚠️ 문제점
+- 핵심 문제 (FN이 높으면 놓친 위험, FP가 높으면 오탐 과다)
+- 알람 시스템 문제점
+
+## 💡 개선 제안
+- 구체적 조치`,
+                pattern: `시간대별 패턴을 분석해주세요.
+
+다음 형식으로 출력:
+## 📈 시간대별 패턴
+| 시간대 | 평균 | 위험발생 | 특징 |
+|---|---|---|---|
+
+## 🔴 위험 집중 시간대
+- 1700+ 자주 발생하는 시간대
+- 알람 발생 집중 시간대
+
+## 🔔 알람 패턴
+- 10분/30분/로그프레소 알람 발생 시간대 특성
+- 알람 간 시간 간격 분석
+
+## 💡 운영 제안
+- 모니터링 강화 시간대
+- 알람 임계값 조정 제안`,
+                prediction: `예측 모델 성능을 분석해주세요.
+
+다음 형식으로 출력:
+## 🎯 모델 성능 요약
+| 지표 | 값 | 판정 |
+|---|---|---|
+- 정확도, 재현율, 정밀도, F1-Score
+
+## 📊 혼동 행렬 분석
+- TP(정탐): 위험 예측 → 실제 위험 ✅
+- TN(정상): 정상 예측 → 실제 정상 ✅
+- FP(오탐): 위험 예측 → 실제 정상 ⚠️
+- FN(미탐): 정상 예측 → 실제 위험 🔴
+
+## 🔔 알람 vs 예측 비교
+- 10분/30분 예측 알람 정확도
+- 로그프레소 알람과의 일치율
+
+## ⚠️ 개선 필요 사항
+- FN 감소 방안 (놓친 위험 줄이기)
+- FP 감소 방안 (오탐 줄이기)`
+            }
+        };
+
+        // 프롬프트 모달 열기
+        function openPromptModal() {
+            loadPrompts();
+            loadLlmStatus();
+            document.getElementById('prompt-modal').style.display = 'flex';
+        }
+
+        // 프롬프트 모달 닫기
+        function closePromptModal() {
+            document.getElementById('prompt-modal').style.display = 'none';
+        }
+
+        // LLM 상태 로드
+        async function loadLlmStatus() {
+            try {
+                const res = await fetch('/api/llm_status');
+                const data = await res.json();
+
+                // 버튼 상태 업데이트
+                document.querySelectorAll('.llm-mode-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+
+                let activeMode = 'local';
+
+                if (data.llm_mode === 'api') {
+                    if (data.env === 'prod') {
+                        activeMode = 'prod';
+                    } else {
+                        activeMode = 'dev';
+                    }
+                }
+
+                const activeBtn = document.querySelector(`.llm-mode-btn[data-mode="${activeMode}"]`);
+                if (activeBtn) activeBtn.classList.add('active');
+
+                // 현재 선택된 모델만 표시
+                if (data.models) {
+                    const labelEl = document.getElementById('current-model-label');
+                    const nameEl = document.getElementById('current-model-name');
+
+                    if (activeMode === 'dev') {
+                        labelEl.textContent = '🌐 개발 API:';
+                        nameEl.textContent = data.models.dev || '-';
+                    } else if (activeMode === 'prod') {
+                        labelEl.textContent = '🏢 운영 API:';
+                        nameEl.textContent = data.models.prod || '-';
+                    } else {
+                        labelEl.textContent = '💻 로컬 GGUF:';
+                        nameEl.textContent = data.models.local || '-';
+                    }
+                }
+            } catch (e) {
+                console.error('LLM 상태 로드 실패:', e);
+            }
+        }
+
+        // LLM 모드 변경
+        async function setLlmMode(mode) {
+            try {
+                let apiMode = 'local';
+                let env = 'dev';
+
+                if (mode === 'dev') {
+                    apiMode = 'api';
+                    env = 'dev';
+                } else if (mode === 'prod') {
+                    apiMode = 'api';
+                    env = 'prod';
+                }
+
+                const res = await fetch('/api/llm_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: apiMode, env: env })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    loadLlmStatus();
+                    alert(`LLM 모드 변경: ${mode === 'local' ? '로컬 GGUF' : mode === 'dev' ? '개발 API' : '운영 API'}`);
+                } else {
+                    alert(`모드 변경 실패: ${data.message || '알 수 없는 오류'}`);
+                }
+            } catch (e) {
+                console.error('LLM 모드 변경 실패:', e);
+                alert('LLM 모드 변경 실패');
+            }
+        }
+
+        // 프롬프트 로드
+        async function loadPrompts() {
+            try {
+                const res = await fetch('/api/prompts');
+                const data = await res.json();
+
+                document.getElementById('system-prompt').value = data.system_prompt || defaultPrompts.system;
+                document.getElementById('template-summary').value = data.templates?.summary || defaultPrompts.templates.summary;
+                document.getElementById('template-pattern').value = data.templates?.pattern || defaultPrompts.templates.pattern;
+                document.getElementById('template-prediction').value = data.templates?.prediction || defaultPrompts.templates.prediction;
+            } catch (e) {
+                console.error('프롬프트 로드 실패:', e);
+                // 기본값 사용
+                document.getElementById('system-prompt').value = defaultPrompts.system;
+                document.getElementById('template-summary').value = defaultPrompts.templates.summary;
+                document.getElementById('template-pattern').value = defaultPrompts.templates.pattern;
+                document.getElementById('template-prediction').value = defaultPrompts.templates.prediction;
+            }
+        }
+
+        // 프롬프트 저장
+        async function savePrompts() {
+            try {
+                const res = await fetch('/api/prompts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        system_prompt: document.getElementById('system-prompt').value,
+                        templates: {
+                            summary: document.getElementById('template-summary').value,
+                            pattern: document.getElementById('template-pattern').value,
+                            prediction: document.getElementById('template-prediction').value
+                        }
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('✅ 프롬프트가 저장되었습니다!');
+                    closePromptModal();
+                } else {
+                    alert('❌ 저장 실패: ' + data.message);
+                }
+            } catch (e) {
+                console.error('프롬프트 저장 실패:', e);
+                alert('❌ 저장 실패');
+            }
+        }
+
+        // 프롬프트 탭 전환
+        function switchPromptTab(tab) {
+            // 탭 버튼 활성화
+            document.querySelectorAll('.prompt-tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.prompt-tab[data-tab="${tab}"]`).classList.add('active');
+
+            // textarea 표시/숨김
+            document.querySelectorAll('.template-textarea').forEach(ta => {
+                if (ta.id.startsWith('template-')) {
+                    ta.style.display = 'none';
+                }
+            });
+            document.getElementById('template-' + tab).style.display = 'block';
+        }
+
+        // 프롬프트 기본값 복원
+        function resetPrompts() {
+            if (confirm('기본값으로 복원하시겠습니까?')) {
+                document.getElementById('system-prompt').value = defaultPrompts.system;
+                document.getElementById('template-summary').value = defaultPrompts.templates.summary;
+                document.getElementById('template-pattern').value = defaultPrompts.templates.pattern;
+                document.getElementById('template-prediction').value = defaultPrompts.templates.prediction;
+            }
+        }
+        
+        function formatDate(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        
+        function loadToday() {
+            const today = new Date();
+            document.getElementById('date-start').value = formatDate(today);
+            document.getElementById('date-end').value = formatDate(today);
+            document.getElementById('time-start').value = '00:00';
+            document.getElementById('time-end').value = '23:59';
+            loadData();
+        }
+        
+        function loadYesterday() {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            document.getElementById('date-start').value = formatDate(yesterday);
+            document.getElementById('date-end').value = formatDate(yesterday);
+            document.getElementById('time-start').value = '00:00';
+            document.getElementById('time-end').value = '23:59';
+            loadData();
+        }
+        
+        function loadLast3Days() {
+            const today = new Date();
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
+            document.getElementById('date-start').value = formatDate(threeDaysAgo);
+            document.getElementById('date-end').value = formatDate(today);
+            document.getElementById('time-start').value = '00:00';
+            document.getElementById('time-end').value = '23:59';
+            loadData();
+        }
+        
+        function loadThisWeek() {
+            const today = new Date();
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 6);
+            document.getElementById('date-start').value = formatDate(weekAgo);
+            document.getElementById('date-end').value = formatDate(today);
+            document.getElementById('time-start').value = '00:00';
+            document.getElementById('time-end').value = '23:59';
+            loadData();
+        }
+        
+        function downloadCSV() {
+            if (!currentData || !currentData.data || currentData.data.length === 0) {
+                alert('먼저 데이터를 조회하세요');
+                return;
+            }
+            
+            const dateStart = document.getElementById('date-start').value.replace(/-/g, '');
+            const dateEnd = document.getElementById('date-end').value.replace(/-/g, '');
+            const timeStart = document.getElementById('time-start').value.replace(':', '');
+            const timeEnd = document.getElementById('time-end').value.replace(':', '');
+            
+            // 프로그램 알람 맵 생성
+            const alertMap10 = {};
+            const alertMap30 = {};
+            (currentData.alerts_10 || []).forEach(a => { alertMap10[String(a.CURRTIME)] = a; });
+            (currentData.alerts_30 || []).forEach(a => { alertMap30[String(a.CURRTIME)] = a; });
+            
+            // CSV 헤더 (10분 급증컬럼 + 예상 컬럼 추가)
+            const headers = ['CURRTIME', 'TOTALCNT', 'PRED_TIME_10', 'PREDICT_10', 'PROG_ALERT_10', 'PRED_TIME_30', 'PREDICT_30', 'PROG_ALERT_30', 'LOGPRESSO_ALARM', 'SPIKE_COLUMN', 'STATUS_PREDICTION'];
+            let csv = headers.join(',') + '\n';
+            
+            // CSV 데이터
+            currentData.data.forEach((row, idx) => {
+                const currtime = String(row.CURRTIME);
+                const alert10 = alertMap10[currtime];
+                const alert30 = alertMap30[currtime];
+                const logpressoAlarm = logpressoAlarmMap[currtime];
+                
+                // 프로그램 알람 텍스트 생성 (쿨타임 포함)
+                let alert10Text = '';
+                if (alert10) {
+                    if (alert10.IS_ALARM) {
+                        alert10Text = `10분 알람 ${alert10.ALARM_NO}번째`;
+                    } else {
+                        alert10Text = `10분 알람 ${alert10.ALARM_NO}번째 후 쿨타임 ${alert10.COOLDOWN_MINS}분`;
+                    }
+                }
+                
+                let alert30Text = '';
+                if (alert30) {
+                    if (alert30.IS_ALARM) {
+                        alert30Text = `30분 알람 ${alert30.ALARM_NO}번째`;
+                    } else {
+                        alert30Text = `30분 알람 ${alert30.ALARM_NO}번째 후 쿨타임 ${alert30.COOLDOWN_MINS}분`;
+                    }
+                }
+                
+                // 로그프레소 알람 텍스트 (알람/쿨타임 구분)
+                let logpressoText = '';
+                if (logpressoAlarm) {
+                    if (logpressoAlarm.IS_ALARM) {
+                        logpressoText = `로그프레소 알람 ${logpressoAlarm.ALARM_NO}번째`;
+                    } else {
+                        logpressoText = `로그프레소 알람 ${logpressoAlarm.ALARM_NO}번째 후 쿨타임 ${logpressoAlarm.COOLDOWN_MINS}분`;
+                    }
+                }
+                
+                // 10분 급증컬럼: 프론트엔드 계산 결과 사용 (D:/W: 제거)
+                let spikeColumnText = '';
+                const spikeInfo = (currentData.spikeInfoList && currentData.spikeInfoList[idx]) 
+                    ? currentData.spikeInfoList[idx] 
+                    : (row.SPIKE_INFO || '');
+                if (spikeInfo && spikeInfo.length > 0) {
+                    const parts = spikeInfo.split(', ');
+                    const columns = parts.map(part => {
+                        if (part.startsWith('D:') || part.startsWith('W:')) {
+                            return part.slice(2);
+                        }
+                        return part;
+                    });
+                    spikeColumnText = columns.join(' | ');
+                }
+                
+                // 상태 예상 (프론트엔드에서 계산된 값 사용)
+                const statusPrediction = (currentData.statusPredictions && currentData.statusPredictions[idx]) 
+                    ? currentData.statusPredictions[idx] 
+                    : (row.STATUS_PREDICTION || '양호예상');
+                
+                const values = [
+                    row.CURRTIME || '',
+                    row.TOTALCNT || '',
+                    row.PRED_TIME_10 || '',
+                    row.PREDICT_10 || '',
+                    alert10Text,
+                    row.PRED_TIME_30 || '',
+                    row.PREDICT_30 || '',
+                    alert30Text,
+                    logpressoText,
+                    `"${spikeColumnText}"`,
+                    statusPrediction
+                ];
+                csv += values.join(',') + '\n';
+            });
+            
+            // 다운로드
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `m14_history_${dateStart}_${dateEnd}_${timeStart}-${timeEnd}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        async function loadData() {
+            const dateStartInput = document.getElementById('date-start').value;
+            const dateEndInput = document.getElementById('date-end').value;
+            const timeStart = document.getElementById('time-start').value;
+            const timeEnd = document.getElementById('time-end').value;
+            
+            if (!dateStartInput || !dateEndInput) {
+                alert('시작/종료 날짜를 선택하세요');
+                return;
+            }
+            
+            // 날짜 범위 생성
+            const dateList = getDateRange(dateStartInput, dateEndInput);
+            if (dateList.length === 0) {
+                alert('시작 날짜가 종료 날짜보다 큽니다');
+                return;
+            }
+            
+            if (dateList.length > 30) {
+                alert('최대 30일까지만 조회 가능합니다');
+                return;
+            }
+            
+            // 시간 범위를 HHMM 형식으로 변환
+            const startHHMM = timeStart.replace(':', '');
+            const endHHMM = timeEnd.replace(':', '');
+            
+            document.getElementById('table-container').innerHTML = `<div class="loading">로딩 중... (${dateList.length}일)</div>`;
+            
+            try {
+                // 각 날짜별로 API 호출
+                let allData = [];
+                let allAlerts10 = [];
+                let allAlerts30 = [];
+                
+                for (const dateStr of dateList) {
+                    const res = await fetch(`/api/history?date=${dateStr}`);
+                    const data = await res.json();
+                    
+                    if (!data.error && data.data && data.data.length > 0) {
+                        allData = allData.concat(data.data);
+                        allAlerts10 = allAlerts10.concat(data.alerts_10 || []);
+                        allAlerts30 = allAlerts30.concat(data.alerts_30 || []);
+                    }
+                }
+                
+                // 로그프레소 알람 조회
+                const fromTime = dateStartInput.replace(/-/g, '') + startHHMM + '00';
+                const toTime = dateEndInput.replace(/-/g, '') + endHHMM + '00';
+                
+                try {
+                    const alarmRes = await fetch(`/api/logpresso_alarm?from=${fromTime}&to=${toTime}`);
+                    const alarmData = await alarmRes.json();
+                    
+                    logpressoAlarmMap = {};
+                    if (alarmData.data && alarmData.data.length > 0) {
+                        // 시간순 정렬
+                        const sortedAlarms = alarmData.data.sort((a, b) => String(a.MEAS_TM).localeCompare(String(b.MEAS_TM)));
+                        
+                        // 쿨타임 계산 (60분)
+                        let lastAlarmTime = null;
+                        let alarmNo = 0;
+                        
+                        sortedAlarms.forEach(a => {
+                            const measTm = String(a.MEAS_TM);
+                            const currentTime = parseTime(measTm);
+                            
+                            let isAlarm = false;
+                            let cooldownMins = 0;
+                            
+                            if (lastAlarmTime === null) {
+                                // 첫 번째 알람
+                                isAlarm = true;
+                                alarmNo = 1;
+                                lastAlarmTime = currentTime;
+                            } else {
+                                const diffMins = (currentTime - lastAlarmTime) / (1000 * 60);
+                                if (diffMins >= 60) {
+                                    // 60분 지남 - 새 알람
+                                    isAlarm = true;
+                                    alarmNo++;
+                                    lastAlarmTime = currentTime;
+                                } else {
+                                    // 쿨타임 중
+                                    isAlarm = false;
+                                    cooldownMins = Math.round(60 - diffMins);
+                                }
+                            }
+                            
+                            logpressoAlarmMap[measTm] = {
+                                ...a,
+                                IS_ALARM: isAlarm,
+                                ALARM_NO: alarmNo,
+                                COOLDOWN_MINS: cooldownMins
+                            };
+                        });
+                        console.log(`로그프레소 알람 ${alarmData.data.length}개 로드 (알람 ${alarmNo}회)`);
+                    }
+                } catch (e) {
+                    console.log('로그프레소 알람 조회 실패:', e);
+                    logpressoAlarmMap = {};
+                }
+                
+                // YYYYMMDDHHMM -> Date 변환
+                function parseTime(timeStr) {
+                    const s = String(timeStr);
+                    if (s.length >= 12) {
+                        const y = parseInt(s.slice(0,4));
+                        const m = parseInt(s.slice(4,6)) - 1;
+                        const d = parseInt(s.slice(6,8));
+                        const h = parseInt(s.slice(8,10));
+                        const min = parseInt(s.slice(10,12));
+                        return new Date(y, m, d, h, min);
+                    }
+                    return new Date();
+                }
+                
+                if (allData.length === 0) {
+                    document.getElementById('table-container').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">📭</div>
+                            <div>해당 기간에 데이터가 없습니다</div>
+                        </div>
+                    `;
+                    document.getElementById('stats-row').style.display = 'none';
+                    document.getElementById('chart-section').style.display = 'none';
+                    return;
+                }
+                
+                // 시간 범위 필터링 (시작일 시작시간 ~ 종료일 종료시간)
+                const startDateTime = dateStartInput.replace(/-/g, '') + startHHMM;
+                const endDateTime = dateEndInput.replace(/-/g, '') + endHHMM;
+                
+                const filteredData = allData.filter(row => {
+                    const currtime = String(row.CURRTIME);
+                    if (currtime.length >= 12) {
+                        const rowDateTime = currtime.slice(0, 12);
+                        return rowDateTime >= startDateTime && rowDateTime <= endDateTime;
+                    }
+                    return true;
+                });
+                
+                // 알람도 필터링
+                const filteredAlerts10 = allAlerts10.filter(a => {
+                    const currtime = String(a.CURRTIME);
+                    if (currtime.length >= 12) {
+                        const rowDateTime = currtime.slice(0, 12);
+                        return rowDateTime >= startDateTime && rowDateTime <= endDateTime;
+                    }
+                    return true;
+                });
+                
+                const filteredAlerts30 = allAlerts30.filter(a => {
+                    const currtime = String(a.CURRTIME);
+                    if (currtime.length >= 12) {
+                        const rowDateTime = currtime.slice(0, 12);
+                        return rowDateTime >= startDateTime && rowDateTime <= endDateTime;
+                    }
+                    return true;
+                });
+                
+                if (filteredData.length === 0) {
+                    document.getElementById('table-container').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">🕐</div>
+                            <div>선택한 기간에 데이터가 없습니다<br><small>${dateStartInput} ${timeStart} ~ ${dateEndInput} ${timeEnd}</small></div>
+                        </div>
+                    `;
+                    document.getElementById('stats-row').style.display = 'none';
+                    document.getElementById('chart-section').style.display = 'none';
+                    return;
+                }
+                
+                // CURRTIME 기준 정렬
+                filteredData.sort((a, b) => String(a.CURRTIME).localeCompare(String(b.CURRTIME)));
+                
+                const filteredResult = {
+                    data: filteredData,
+                    alerts_10: filteredAlerts10,
+                    alerts_30: filteredAlerts30
+                };
+                
+                currentData = filteredResult;  // 다운로드용 저장
+                
+                // 통계 계산
+                updateStats(filteredResult);
+                
+                // 차트 그리기
+                drawChart(filteredResult);
+                
+                // 테이블 그리기
+                drawTable(filteredResult);
+                
+                document.getElementById('stats-row').style.display = 'flex';
+                document.getElementById('chart-section').style.display = 'block';
+                
+                const rangeText = dateStartInput === dateEndInput 
+                    ? `${dateStartInput} ${timeStart}~${timeEnd}`
+                    : `${dateStartInput} ${timeStart} ~ ${dateEndInput} ${timeEnd}`;
+                document.getElementById('table-info').textContent = `${rangeText} | ${filteredData.length}개 데이터`;
+                
+            } catch (e) {
+                console.error(e);
+                document.getElementById('table-container').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <div>데이터 조회 실패</div>
+                    </div>
+                `;
+            }
+        }
+        
+        // 날짜 범위 생성 함수
+        function getDateRange(startDate, endDate) {
+            const dates = [];
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            
+            if (start > end) return [];
+            
+            const current = new Date(start);
+            while (current <= end) {
+                const y = current.getFullYear();
+                const m = String(current.getMonth() + 1).padStart(2, '0');
+                const d = String(current.getDate()).padStart(2, '0');
+                dates.push(`${y}${m}${d}`);
+                current.setDate(current.getDate() + 1);
+            }
+            return dates;
+        }
+        
+        function updateStats(data) {
+            const rows = data.data;
+            const totalcnts = rows.map(r => r.TOTALCNT || 0);
+            
+            // 기본 통계
+            document.getElementById('stat-count').textContent = rows.length;
+            document.getElementById('stat-avg').textContent = Math.round(totalcnts.reduce((a,b) => a+b, 0) / totalcnts.length);
+            
+            const maxVal = Math.max(...totalcnts);
+            const maxIdx = totalcnts.indexOf(maxVal);
+            document.getElementById('stat-max').textContent = maxVal;
+            document.getElementById('stat-max').className = 'stat-value ' + getValueClass(maxVal);
+            document.getElementById('stat-max-time').textContent = formatTime(rows[maxIdx].CURRTIME);
+            
+            const overCount = totalcnts.filter(v => v >= 1700).length;
+            document.getElementById('stat-over').textContent = overCount;
+            
+            // 알람 개수 계산 (IS_ALARM=True만)
+            const alert10Count = (currentData.alerts_10 || []).filter(a => a.IS_ALARM).length;
+            const alert30Count = (currentData.alerts_30 || []).filter(a => a.IS_ALARM).length;
+            const logpressoCount = Object.values(logpressoAlarmMap).filter(a => a.IS_ALARM).length;
+            
+            document.getElementById('stat-alert10').textContent = alert10Count;
+            document.getElementById('stat-alert10-sub').textContent = `쿨타임 제외`;
+            document.getElementById('stat-alert30').textContent = alert30Count;
+            document.getElementById('stat-alert30-sub').textContent = `쿨타임 제외`;
+            document.getElementById('stat-logpresso').textContent = logpressoCount;
+            document.getElementById('stat-logpresso-sub').textContent = `쿨타임 제외`;
+            
+            // 예측 정확도 계산 (IS_ALARM=True인 알람만, 범위 내 1700+ 발생 시 적중)
+            // 10분 예측: -10분 ~ +60분 범위
+            // 30분 예측: -30분 ~ +60분 범위
+            let acc10Hit = 0;   // 알람 적중
+            let acc10Total = 0; // 알람 발생 횟수
+            let acc30Hit = 0;
+            let acc30Total = 0;
+            
+            // CURRTIME -> index 맵 생성
+            const timeToIdx = {};
+            rows.forEach((row, idx) => {
+                timeToIdx[String(row.CURRTIME)] = idx;
+            });
+            
+            // 10분 예측: IS_ALARM=True인 알람, -10분 ~ +60분 내 1700+ 발생 여부
+            const alerts10 = currentData.alerts_10 || [];
+            alerts10.forEach(alert => {
+                if (!alert.IS_ALARM) return;  // 쿨타임 중인 건 제외
+                
+                const currtime = String(alert.CURRTIME);
+                const idx = timeToIdx[currtime];
+                if (idx === undefined) return;
+                
+                acc10Total++;
+                
+                // -10분 ~ +60분 범위에서 1700+ 있는지 확인
+                let hit = false;
+                for (let offset = -10; offset <= 60; offset++) {
+                    const checkIdx = idx + offset;
+                    if (checkIdx >= 0 && checkIdx < rows.length) {
+                        if (rows[checkIdx].TOTALCNT >= 1700) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+                if (hit) acc10Hit++;
+            });
+            
+            // 30분 예측: IS_ALARM=True인 알람, -30분 ~ +60분 내 1700+ 발생 여부
+            const alerts30 = currentData.alerts_30 || [];
+            alerts30.forEach(alert => {
+                if (!alert.IS_ALARM) return;  // 쿨타임 중인 건 제외
+                
+                const currtime = String(alert.CURRTIME);
+                const idx = timeToIdx[currtime];
+                if (idx === undefined) return;
+                
+                acc30Total++;
+                
+                // -30분 ~ +60분 범위에서 1700+ 있는지 확인
+                let hit = false;
+                for (let offset = -30; offset <= 60; offset++) {
+                    const checkIdx = idx + offset;
+                    if (checkIdx >= 0 && checkIdx < rows.length) {
+                        if (rows[checkIdx].TOTALCNT >= 1700) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+                if (hit) acc30Hit++;
+            });
+            
+            const acc10 = acc10Total > 0 ? Math.round(acc10Hit / acc10Total * 100) : 0;
+            const acc30 = acc30Total > 0 ? Math.round(acc30Hit / acc30Total * 100) : 0;
+            
+            document.getElementById('stat-acc10').textContent = acc10Total > 0 ? acc10 + '%' : '-';
+            document.getElementById('stat-acc10').className = 'stat-value ' + getAccuracyClass(acc10);
+            document.getElementById('stat-acc10-sub').textContent = `${acc10Hit}/${acc10Total} 알람 적중`;
+            
+            document.getElementById('stat-acc30').textContent = acc30Total > 0 ? acc30 + '%' : '-';
+            document.getElementById('stat-acc30').className = 'stat-value ' + getAccuracyClass(acc30);
+            document.getElementById('stat-acc30-sub').textContent = `${acc30Hit}/${acc30Total} 알람 적중`;
+        }
+        
+        function getValueClass(val) {
+            if (val >= 1700) return 'value-danger';
+            if (val >= 1600) return 'value-warning';
+            return 'value-normal';
+        }
+        
+        function getAccuracyClass(acc) {
+            if (acc >= 70) return 'accuracy-good';
+            if (acc >= 50) return 'accuracy-ok';
+            return 'accuracy-bad';
+        }
+        
+        function formatTime(currtime) {
+            const s = String(currtime);
+            if (s.length >= 12) {
+                return `${s.slice(8,10)}:${s.slice(10,12)}`;
+            }
+            return s;
+        }
+        
+        function formatTimeChart(currtime) {
+            // 차트용: MM-DD HH:MM 형식 (항상 날짜 포함)
+            const s = String(currtime);
+            if (s.length >= 12) {
+                return `${s.slice(4,6)}-${s.slice(6,8)} ${s.slice(8,10)}:${s.slice(10,12)}`;
+            }
+            return s;
+        }
+        
+        function formatTimeFull(currtime) {
+            const s = String(currtime);
+            if (s.length >= 12) {
+                return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)} ${s.slice(8,10)}:${s.slice(10,12)}`;
+            }
+            return s;
+        }
+        
+        function drawChart(data) {
+            const rows = data.data;
+            const alerts10 = data.alerts_10 || [];
+            const alerts30 = data.alerts_30 || [];
+            
+            // 프로그램 알람 맵 생성
+            const alertMap10 = {};
+            const alertMap30 = {};
+            alerts10.forEach(a => { alertMap10[String(a.CURRTIME)] = a; });
+            alerts30.forEach(a => { alertMap30[String(a.CURRTIME)] = a; });
+            
+            // 여러 날짜인지 확인 (테이블용)
+            const dates = new Set(rows.map(r => String(r.CURRTIME).slice(0, 8)));
+            const isMultipleDays = dates.size > 1;
+            
+            // 그래프 x축: 항상 날짜 포함 (MM-DD HH:MM)
+            const times = rows.map(r => formatTimeChart(r.CURRTIME));
+            const totalcnts = rows.map(r => r.TOTALCNT || 0);
+            const pred10s = rows.map(r => r.PREDICT_10 || 0);
+            const pred30s = rows.map(r => r.PREDICT_30 || 0);
+            
+            // 프로그램 알람 점 데이터 (알람/쿨타임 구분)
+            const progAlarmData = [];  // {time, value, fullTime, isAlarm, text}
+            
+            rows.forEach((r, i) => {
+                const currtime = String(r.CURRTIME);
+                const alert10 = alertMap10[currtime];
+                const alert30 = alertMap30[currtime];
+                
+                // 10분 또는 30분 알람 기록 있으면
+                if (alert10 || alert30) {
+                    const fullTime = currtime.length >= 12 ? 
+                        `${currtime.slice(0,4)}-${currtime.slice(4,6)}-${currtime.slice(6,8)} ${currtime.slice(8,10)}:${currtime.slice(10,12)}` : currtime;
+                    
+                    // IS_ALARM 여부 확인 (10분/30분 중 하나라도 알람이면 알람)
+                    const isAlarm = (alert10 && alert10.IS_ALARM) || (alert30 && alert30.IS_ALARM);
+                    
+                    let text = '';
+                    if (alert10) {
+                        if (alert10.IS_ALARM) {
+                            text += `10분 알람 ${alert10.ALARM_NO}번째`;
+                        } else {
+                            text += `10분 알람 ${alert10.ALARM_NO}번째 후 쿨타임 ${alert10.COOLDOWN_MINS}분`;
+                        }
+                    }
+                    if (alert30) {
+                        if (alert30.IS_ALARM) {
+                            text += (text ? '<br>' : '') + `30분 알람 ${alert30.ALARM_NO}번째`;
+                        } else {
+                            text += (text ? '<br>' : '') + `30분 알람 ${alert30.ALARM_NO}번째 후 쿨타임 ${alert30.COOLDOWN_MINS}분`;
+                        }
+                    }
+                    
+                    progAlarmData.push({
+                        time: times[i],
+                        value: r.TOTALCNT || 0,
+                        fullTime: fullTime,
+                        isAlarm: isAlarm,
+                        text: text
+                    });
+                }
+            });
+            
+            // 알람만 필터
+            const progAlarmOnly = progAlarmData.filter(d => d.isAlarm);
+            // 쿨타임만 필터
+            const progCooldownOnly = progAlarmData.filter(d => !d.isAlarm);
+            
+            // 로그프레소 알람 점 데이터 (알람/쿨타임 구분)
+            const logAlarmData = [];  // {time, value, fullTime, isAlarm, alarmNo, cooldownMins, desc}
+            
+            rows.forEach((r, i) => {
+                const currtime = String(r.CURRTIME);
+                const logAlarm = logpressoAlarmMap[currtime];
+                
+                if (logAlarm) {
+                    const fullTime = currtime.length >= 12 ? 
+                        `${currtime.slice(0,4)}-${currtime.slice(4,6)}-${currtime.slice(6,8)} ${currtime.slice(8,10)}:${currtime.slice(10,12)}` : currtime;
+                    logAlarmData.push({
+                        time: times[i],
+                        value: r.TOTALCNT || 0,
+                        fullTime: fullTime,
+                        isAlarm: logAlarm.IS_ALARM,
+                        alarmNo: logAlarm.ALARM_NO,
+                        cooldownMins: logAlarm.COOLDOWN_MINS,
+                        desc: logAlarm.ALARM_DESC || '로그프레소 알람'
+                    });
+                }
+            });
+            
+            // 알람만 필터
+            const logAlarmOnly = logAlarmData.filter(d => d.isAlarm);
+            // 쿨타임만 필터
+            const logCooldownOnly = logAlarmData.filter(d => !d.isAlarm);
+            
+            // customdata: YYYY-MM-DD HH:MM 형식
+            const timesFullFormat = rows.map(r => {
+                const s = String(r.CURRTIME);
+                if (s.length >= 12) {
+                    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)} ${s.slice(8,10)}:${s.slice(10,12)}`;
+                }
+                return s;
+            });
+            
+            // 예측용 customdata: [예측시점, 기준시점]
+            const customdata_pred10 = [];
+            for (let i = 0; i < times.length - 10; i++) {
+                customdata_pred10.push([timesFullFormat[i + 10], timesFullFormat[i]]);
+            }
+            
+            const customdata_pred30 = [];
+            for (let i = 0; i < times.length - 30; i++) {
+                customdata_pred30.push([timesFullFormat[i + 30], timesFullFormat[i]]);
+            }
+            
+            const traces = [
+                {
+                    x: times,
+                    y: totalcnts,
+                    customdata: timesFullFormat,
+                    name: 'TOTALCNT',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#3b82f6', width: 2 },
+                    hovertemplate: '%{customdata} (%{y:,})<extra>TOTALCNT</extra>'
+                },
+                {
+                    x: times.slice(10),
+                    y: pred10s.slice(0, -10),
+                    customdata: customdata_pred10,
+                    name: '예측(10분)',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#22c55e', width: 1, dash: 'dot' },
+                    hovertemplate: '예측시점: %{customdata[0]} (%{y:,})<br>기준시점: %{customdata[1]}<extra>예측(10분)</extra>'
+                },
+                {
+                    x: times.slice(30),
+                    y: pred30s.slice(0, -30),
+                    customdata: customdata_pred30,
+                    name: '예측(30분)',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#f97316', width: 1, dash: 'dash' },
+                    hovertemplate: '예측시점: %{customdata[0]} (%{y:,})<br>기준시점: %{customdata[1]}<extra>예측(30분)</extra>'
+                },
+                {
+                    x: progAlarmOnly.map(d => d.time),
+                    y: progAlarmOnly.map(d => d.value),
+                    customdata: progAlarmOnly.map(d => [d.fullTime, d.text]),
+                    name: '●프로그램알람',
+                    type: 'scatter',
+                    mode: 'markers',
+                    marker: { color: '#ef4444', size: 12, symbol: 'circle' },
+                    hovertemplate: '%{customdata[1]}<br>%{customdata[0]}<extra></extra>'
+                },
+                {
+                    x: progCooldownOnly.map(d => d.time),
+                    y: progCooldownOnly.map(d => d.value),
+                    customdata: progCooldownOnly.map(d => [d.fullTime, d.text]),
+                    name: '○프로그램쿨타임',
+                    type: 'scatter',
+                    mode: 'markers',
+                    marker: { color: '#f87171', size: 8, symbol: 'circle-open', line: { width: 2, color: '#f87171' } },
+                    hovertemplate: '%{customdata[1]}<br>%{customdata[0]}<extra></extra>',
+                    visible: 'legendonly'
+                },
+                {
+                    x: logAlarmOnly.map(d => d.time),
+                    y: logAlarmOnly.map(d => d.value),
+                    customdata: logAlarmOnly.map(d => [`로그프레소 알람 ${d.alarmNo}번째`, d.fullTime, d.desc]),
+                    name: '◆로그프레소알람',
+                    type: 'scatter',
+                    mode: 'markers',
+                    marker: { color: '#8b5cf6', size: 12, symbol: 'diamond' },
+                    hovertemplate: '%{customdata[0]}<br>%{customdata[2]}<br>%{customdata[1]}<extra></extra>'
+                },
+                {
+                    x: logCooldownOnly.map(d => d.time),
+                    y: logCooldownOnly.map(d => d.value),
+                    customdata: logCooldownOnly.map(d => [`로그프레소 쿨타임 (${d.alarmNo}번째 후 ${d.cooldownMins}분)`, d.fullTime, d.desc]),
+                    name: '◇로그프레소쿨타임',
+                    type: 'scatter',
+                    mode: 'markers',
+                    marker: { color: '#a855f7', size: 8, symbol: 'diamond-open', line: { width: 2, color: '#a855f7' } },
+                    hovertemplate: '%{customdata[0]}<br>%{customdata[2]}<br>%{customdata[1]}<extra></extra>',
+                    visible: 'legendonly'
+                }
+            ];
+            
+            const layout = {
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                font: { color: '#a1a1aa', family: 'Space Grotesk', size: 11 },
+                showlegend: true,
+                legend: { x: 0, y: 1.1, orientation: 'h' },
+                xaxis: {
+                    gridcolor: '#27272a',
+                    tickangle: -45
+                },
+                yaxis: {
+                    gridcolor: '#27272a',
+                    range: [1000, 2000]
+                },
+                margin: { t: 30, r: 20, b: 60, l: 50 },
+                shapes: [{
+                    type: 'line',
+                    y0: 1700, y1: 1700,
+                    x0: 0, x1: 1, xref: 'paper',
+                    line: { color: '#ef4444', width: 2, dash: 'solid' }
+                }]
+            };
+            
+            Plotly.newPlot('chart', traces, layout, { responsive: true, displayModeBar: false });
+        }
+        
+        function drawTable(data) {
+            const rows = data.data;
+            const alerts10 = data.alerts_10 || [];
+            const alerts30 = data.alerts_30 || [];
+            
+            // 여러 날짜인지 확인
+            const dates = new Set(rows.map(r => String(r.CURRTIME).slice(0, 8)));
+            const isMultipleDays = dates.size > 1;
+            
+            // 프로그램 알람 맵 만들기
+            const alertMap10 = {};
+            alerts10.forEach(a => { alertMap10[String(a.CURRTIME)] = a; });
+            const alertMap30 = {};
+            alerts30.forEach(a => { alertMap30[String(a.CURRTIME)] = a; });
+            
+            // ========================================
+            // 프론트엔드에서 급증 컬럼 + 상태 예상 재계산 (날짜 연속성 유지)
+            // ========================================
+            const ANALYSIS_COLS = ['M14AM10A', 'M10AM14A', 'M14AM10ASUM', 
+                                   'M14AM14B', 'M14BM14A', 'M14AM14BSUM',
+                                   'M14AM16', 'M16M14A', 'M14AM16SUM',
+                                   'M14.QUE.ALL.CURRENTQCREATED',
+                                   'M14.QUE.ALL.CURRENTQCOMPLETED',
+                                   'M14.QUE.OHT.OHTUTIL',
+                                   'M14.QUE.ALL.TRANSPORT4MINOVERCNT',
+                                   'M14B.QUE.SENDFAB.VERTICALQUEUECOUNT'];
+            const THRESHOLD_60_COLS = ['M14.QUE.ALL.CURRENTQCREATED', 'M14.QUE.ALL.CURRENTQCOMPLETED'];
+            
+            // CURRTIME 파싱 함수
+            function parseCurrtime(ct) {
+                const s = String(ct);
+                if (s.length >= 12) {
+                    return new Date(
+                        parseInt(s.slice(0,4)), 
+                        parseInt(s.slice(4,6)) - 1, 
+                        parseInt(s.slice(6,8)), 
+                        parseInt(s.slice(8,10)), 
+                        parseInt(s.slice(10,12))
+                    );
+                }
+                return null;
+            }
+            
+            // 쿨타임 추적 변수
+            let lastDangerTime = null;
+            let lastBottleneckTime = null;
+            
+            // 각 행에 대해 급증 컬럼 + 상태 예상 재계산
+            const spikeInfoList = [];
+            const statusPredictions = [];
+            
+            for (let idx = 0; idx < rows.length; idx++) {
+                const row = rows[idx];
+                let warningCount = 0;
+                let dangerCount = 0;
+                const spikeItems = [];
+                
+                // 전체 데이터에서 10분 전 행과 비교 (날짜 경계 무시)
+                if (idx >= 10) {
+                    const prevRow = rows[idx - 10];
+                    
+                    ANALYSIS_COLS.forEach(col => {
+                        const currVal = parseFloat(row[col]) || 0;
+                        const prevVal = parseFloat(prevRow[col]) || 0;
+                        const change = currVal - prevVal;
+                        
+                        // 컬럼별 임계값
+                        let warnThreshold = 50, dangerThreshold = 60;
+                        if (THRESHOLD_60_COLS.includes(col)) {
+                            warnThreshold = 60;
+                            dangerThreshold = 70;
+                        }
+                        
+                        if (change >= warnThreshold) {
+                            if (change >= dangerThreshold) {
+                                dangerCount++;
+                                spikeItems.push({ level: 'D', col: col, change: Math.floor(change) });
+                            } else {
+                                warningCount++;
+                                spikeItems.push({ level: 'W', col: col, change: Math.floor(change) });
+                            }
+                        }
+                    });
+                    
+                    // 변화량 기준 정렬
+                    spikeItems.sort((a, b) => b.change - a.change);
+                }
+                
+                // SPIKE_INFO 문자열 생성
+                const spikeInfo = spikeItems.map(s => `${s.level}:${s.col} +${s.change}`).join(', ');
+                spikeInfoList.push(spikeInfo);
+                
+                // 현재 상태 판단 (TOTALCNT + 급증 컬럼 기준)
+                const totalcnt = parseFloat(row.TOTALCNT) || 0;
+                const predict10 = parseFloat(row.PREDICT_10) || 0;
+                const predict30 = parseFloat(row.PREDICT_30) || 0;
+                let currentStatus = '양호예상';
+                
+                if (totalcnt >= 1650 && dangerCount >= 3) {
+                    currentStatus = '병목예상';
+                } else if (totalcnt >= 1550 && dangerCount >= 2) {
+                    currentStatus = '위험예상';
+                } else if (totalcnt < 1550 && dangerCount >= 2) {
+                    currentStatus = '관찰';
+                }
+                
+                // 양호예상일 때 예측값 추가 체크 (쿨타임 없음)
+                let predictBasedStatus = null;
+                if (currentStatus === '양호예상') {
+                    if (predict10 >= 1700 && predict30 >= 1700) {
+                        predictBasedStatus = '병목(1700예측-10분,30분)';
+                    } else if (predict10 >= 1700) {
+                        predictBasedStatus = '병목(1700예측-10분)';
+                    } else if (predict30 >= 1700) {
+                        predictBasedStatus = '병목(1700예측-30분)';
+                    } else if (predict10 >= 1650 || predict30 >= 1650) {
+                        predictBasedStatus = '병목예상';
+                    }
+                }
+                
+                // 현재 시간 파싱
+                const currTime = parseCurrtime(row.CURRTIME);
+                
+                // 쿨타임 갱신 (급증 컬럼 기준 상태만)
+                if (currentStatus === '병목예상' && currTime) {
+                    lastBottleneckTime = currTime;
+                } else if (currentStatus === '위험예상' && currTime) {
+                    lastDangerTime = currTime;
+                }
+                
+                // 최종 상태 결정
+                let statusPred = currentStatus;
+                
+                // 예측 기반 상태가 있으면 우선 (쿨타임 없음)
+                if (predictBasedStatus) {
+                    statusPred = predictBasedStatus;
+                } else if ((currentStatus === '양호예상' || currentStatus === '관찰') && currTime) {
+                    // 쿨타임 확인
+                    if (lastBottleneckTime) {
+                        const elapsed = (currTime - lastBottleneckTime) / (1000 * 60);
+                        if (elapsed < 30 && elapsed > 0) {
+                            const cooldownMins = Math.floor(30 - elapsed);
+                            statusPred = `병목 쿨타임 ${cooldownMins}분`;
+                        }
+                    }
+                    if (!statusPred.includes('쿨타임') && lastDangerTime) {
+                        const elapsed = (currTime - lastDangerTime) / (1000 * 60);
+                        if (elapsed < 30 && elapsed > 0) {
+                            const cooldownMins = Math.floor(30 - elapsed);
+                            statusPred = `위험 쿨타임 ${cooldownMins}분`;
+                        }
+                    }
+                }
+                
+                statusPredictions.push(statusPred);
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: ${isMultipleDays ? '120px' : '80px'};">시간</th>
+                            <th style="width: 100px;">TOTALCNT</th>
+                            <th style="width: 150px;">10분후 예측</th>
+                            <th style="width: 150px;">30분후 예측</th>
+                            <th>프로그램알람</th>
+                            <th>로그프레소알람</th>
+                            <th>10분 급증컬럼</th>
+                            <th>예상</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            rows.forEach((row, idx) => {
+                const currtime = String(row.CURRTIME);
+                const timeDisplay = isMultipleDays ? formatTimeChart(currtime) : formatTime(currtime);
+                const alert10 = alertMap10[currtime];
+                const alert30 = alertMap30[currtime];
+                const logAlarm = logpressoAlarmMap[currtime];
+                
+                // 예측 시점 계산
+                const predTime10 = row.PRED_TIME_10 ? formatTime(String(row.PRED_TIME_10)) : '-';
+                const predTime30 = row.PRED_TIME_30 ? formatTime(String(row.PRED_TIME_30)) : '-';
+                
+                // 프로그램 알람 HTML (상세 데이터는 쿨타임 포함)
+                let progAlarmHtml = '';
+                if (alert10) {
+                    if (alert10.IS_ALARM) {
+                        progAlarmHtml += `<span class="alert-badge alarm">🔔 10분 알람 ${alert10.ALARM_NO}번째</span> `;
+                    } else {
+                        progAlarmHtml += `<span class="alert-badge cooldown">⏱ 10분 알람 ${alert10.ALARM_NO}번째 후 쿨타임 ${alert10.COOLDOWN_MINS}분</span> `;
+                    }
+                }
+                if (alert30) {
+                    if (alert30.IS_ALARM) {
+                        progAlarmHtml += `<span class="alert-badge alarm">🔔 30분 알람 ${alert30.ALARM_NO}번째</span> `;
+                    } else {
+                        progAlarmHtml += `<span class="alert-badge cooldown">⏱ 30분 알람 ${alert30.ALARM_NO}번째 후 쿨타임 ${alert30.COOLDOWN_MINS}분</span> `;
+                    }
+                }
+                
+                // 로그프레소 알람 HTML
+                let logAlarmHtml = '-';
+                if (logAlarm) {
+                    if (logAlarm.IS_ALARM) {
+                        logAlarmHtml = `<span class="alert-badge logpresso">◆ ${logAlarm.ALARM_NO}번째 알람</span>`;
+                    } else {
+                        logAlarmHtml = `<span class="alert-badge logpresso-cooldown">◇ ${logAlarm.ALARM_NO}번째 후 쿨타임 ${logAlarm.COOLDOWN_MINS}분</span>`;
+                    }
+                }
+                
+                // 급증 컬럼 HTML (프론트엔드에서 재계산한 값 사용)
+                let spikeHtml = '-';
+                const spikeInfo = spikeInfoList[idx] || '';
+                if (spikeInfo && spikeInfo.length > 0) {
+                    const spikeParts = spikeInfo.split(', ').map(part => {
+                        if (part.startsWith('D:')) {
+                            // Danger (빨간색)
+                            return `<span style="color: var(--danger); font-size: 11px;">🔺 ${part.slice(2)}</span>`;
+                        } else if (part.startsWith('W:')) {
+                            // Warning (노란색)
+                            return `<span style="color: var(--warning); font-size: 11px;">🔺 ${part.slice(2)}</span>`;
+                        } else {
+                            // 기존 형식 (노란색)
+                            return `<span style="color: var(--warning); font-size: 11px;">🔺 ${part}</span>`;
+                        }
+                    });
+                    spikeHtml = spikeParts.join(', ');
+                }
+                
+                // 상태 예상 HTML (프론트엔드에서 재계산한 값 사용)
+                let statusPredHtml = statusPredictions[idx] || '양호예상';
+                let statusColor = 'var(--success)';
+                let statusOpacity = '1';
+                if (statusPredHtml && statusPredHtml.startsWith('병목(1700예측')) {
+                    statusColor = '#7c3aed';  // 진한 보라색
+                } else if (statusPredHtml === '병목예상') {
+                    statusColor = 'var(--danger)';
+                } else if (statusPredHtml === '위험예상') {
+                    statusColor = '#f97316';
+                } else if (statusPredHtml === '관찰') {
+                    statusColor = 'var(--warning)';
+                } else if (statusPredHtml.includes('병목 쿨타임')) {
+                    statusColor = '#ef4444';
+                    statusOpacity = '0.7';
+                } else if (statusPredHtml.includes('위험 쿨타임')) {
+                    statusColor = '#f97316';
+                    statusOpacity = '0.7';
+                }
+                
+                html += `
+                    <tr ondblclick="openDetailModal('${currtime}')" title="더블클릭하여 상세 분석">
+                        <td style="font-weight: 600; color: #3b82f6;">${timeDisplay}</td>
+                        <td class="${getValueClass(row.TOTALCNT)}" style="font-weight: 600;">${(row.TOTALCNT || 0).toLocaleString()}</td>
+                        <td>
+                            <span class="${getValueClass(row.PREDICT_10)}" style="font-weight: 600;">${(row.PREDICT_10 || 0).toLocaleString()}</span>
+                            <span style="color: #52525b; font-size: 10px; margin-left: 5px;">→ ${predTime10}</span>
+                        </td>
+                        <td>
+                            <span class="${getValueClass(row.PREDICT_30)}" style="font-weight: 600;">${(row.PREDICT_30 || 0).toLocaleString()}</span>
+                            <span style="color: #52525b; font-size: 10px; margin-left: 5px;">→ ${predTime30}</span>
+                        </td>
+                        <td>${progAlarmHtml || '-'}</td>
+                        <td>${logAlarmHtml}</td>
+                        <td>${spikeHtml}</td>
+                        <td style="color: ${statusColor}; font-weight: 600; opacity: ${statusOpacity};">${statusPredHtml}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('table-container').innerHTML = html;
+            
+            // CSV 다운로드용으로 저장
+            currentData.statusPredictions = statusPredictions;
+            currentData.spikeInfoList = spikeInfoList;
+        }
+
+        // ========================================
+        // LLM 분석 기능
+        // ========================================
+        let selectedLlmType = 'summary';
+        let llmIsLoading = false;
+
+        function openLlmAnalysisModal() {
+            if (!currentData || !currentData.data || currentData.data.length === 0) {
+                alert('먼저 데이터를 조회하세요');
+                return;
+            }
+
+            // 모달 표시
+            document.getElementById('llm-modal').style.display = 'flex';
+
+            // LLM 상태 로드
+            loadLlmStatus();
+
+            // 통계 업데이트
+            updateLlmStats();
+
+            // 결과 초기화
+            document.getElementById('llm-result-container').innerHTML = `
+                <div class="llm-empty">
+                    <div class="llm-empty-icon">🤖</div>
+                    <div>분석 유형을 선택하고 <strong>분석 실행</strong> 버튼을 클릭하세요</div>
+                </div>
+            `;
+            document.getElementById('llm-result-meta').textContent = '';
+        }
+
+        function closeLlmModal() {
+            document.getElementById('llm-modal').style.display = 'none';
+        }
+
+        function updateLlmStats() {
+            if (!currentData || !currentData.data) return;
+
+            const rows = currentData.data;
+            const totalcnts = rows.map(r => r.TOTALCNT || 0);
+
+            // 통계 계산
+            const count = rows.length;
+            const avg = Math.round(totalcnts.reduce((a, b) => a + b, 0) / count);
+            const max = Math.max(...totalcnts);
+            const over1700 = totalcnts.filter(v => v >= 1700).length;
+
+            // 알람 맵 생성 (10분 예측 기준)
+            const alertMap10 = {};
+            (currentData.alerts_10 || []).forEach(a => {
+                alertMap10[String(a.CURRTIME)] = a;
+            });
+
+            // TP/TN/FP/FN 계산 (10분 예측 기준)
+            let tp = 0, tn = 0, fp = 0, fn = 0;
+            rows.forEach(row => {
+                const currtime = String(row.CURRTIME);
+                const actual = (row.TOTALCNT || 0) >= 1700;
+                const alert = alertMap10[currtime];
+                const predicted = alert ? alert.IS_ALARM : false;
+
+                if (predicted && actual) tp++;      // 예측O, 실제O
+                else if (!predicted && !actual) tn++; // 예측X, 실제X
+                else if (predicted && !actual) fp++;  // 예측O, 실제X (오탐)
+                else if (!predicted && actual) fn++;  // 예측X, 실제O (놓침)
+            });
+
+            // 정확도 계산
+            const total = tp + tn + fp + fn;
+            const accuracy = total > 0 ? Math.round((tp + tn) / total * 100) : 0;
+
+            // 알람 개수
+            const alerts10 = (currentData.alerts_10 || []).filter(a => a.IS_ALARM).length;
+            const alerts30 = (currentData.alerts_30 || []).filter(a => a.IS_ALARM).length;
+            const logpressoAlarms = Object.values(logpressoAlarmMap).filter(a => a.IS_ALARM).length;
+
+            // 급증 컬럼 통계 계산
+            const spikeColumnCounts = {};
+            let totalDangerSpikes = 0;
+            let totalWarningSpikes = 0;
+            
+            rows.forEach(row => {
+                const spikeInfo = row.SPIKE_INFO || '';
+                if (spikeInfo) {
+                    const spikes = spikeInfo.split(', ').filter(s => s);
+                    spikes.forEach(spike => {
+                        const match = spike.match(/^(D|W):([^ ]+) \+(\d+)$/);
+                        if (match) {
+                            const level = match[1];
+                            const colName = match[2];
+                            
+                            if (!spikeColumnCounts[colName]) {
+                                spikeColumnCounts[colName] = { danger: 0, warning: 0, total: 0 };
+                            }
+                            spikeColumnCounts[colName].total++;
+                            
+                            if (level === 'D') {
+                                spikeColumnCounts[colName].danger++;
+                                totalDangerSpikes++;
+                            } else {
+                                spikeColumnCounts[colName].warning++;
+                                totalWarningSpikes++;
+                            }
+                        }
+                    });
+                }
+            });
+            
+            // 1위 급증 컬럼 찾기
+            const topSpikeCol = Object.entries(spikeColumnCounts)
+                .sort((a, b) => b[1].total - a[1].total)[0];
+            
+            // 상태 예상 분포 계산
+            const statusCounts = {
+                '병목예상': 0,
+                '위험예상': 0,
+                '관찰': 0,
+                '양호예상': 0,
+                '쿨타임': 0
+            };
+            
+            rows.forEach(row => {
+                const status = row.STATUS_PREDICTION || '양호예상';
+                if (status === '병목예상') statusCounts['병목예상']++;
+                else if (status === '위험예상') statusCounts['위험예상']++;
+                else if (status === '관찰') statusCounts['관찰']++;
+                else if (status.includes('쿨타임')) statusCounts['쿨타임']++;
+                else statusCounts['양호예상']++;
+            });
+
+            // UI 업데이트
+            document.getElementById('llm-stat-count').textContent = count.toLocaleString();
+            document.getElementById('llm-stat-avg').textContent = avg.toLocaleString();
+            document.getElementById('llm-stat-max').textContent = max.toLocaleString();
+            document.getElementById('llm-stat-over').textContent = over1700;
+            document.getElementById('llm-stat-accuracy').textContent = accuracy + '%';
+            document.getElementById('llm-stat-tp').textContent = tp;
+            document.getElementById('llm-stat-tn').textContent = tn;
+            document.getElementById('llm-stat-fp').textContent = fp;
+            document.getElementById('llm-stat-fn').textContent = fn;
+            document.getElementById('llm-stat-alert10').textContent = alerts10;
+            document.getElementById('llm-stat-alert30').textContent = alerts30;
+            document.getElementById('llm-stat-logpresso').textContent = logpressoAlarms;
+            
+            // 급증 컬럼 통계 UI 업데이트
+            document.getElementById('llm-stat-danger-spikes').textContent = totalDangerSpikes + '회';
+            document.getElementById('llm-stat-warning-spikes').textContent = totalWarningSpikes + '회';
+            document.getElementById('llm-stat-top-spike-col').textContent = topSpikeCol 
+                ? `${topSpikeCol[0]} (${topSpikeCol[1].total}회)` 
+                : '-';
+            
+            // 상태 예상 분포 UI 업데이트
+            document.getElementById('llm-stat-bottleneck').textContent = 
+                `${statusCounts['병목예상']}건 (${count > 0 ? Math.round(statusCounts['병목예상'] / count * 100) : 0}%)`;
+            document.getElementById('llm-stat-danger-status').textContent = 
+                `${statusCounts['위험예상']}건 (${count > 0 ? Math.round(statusCounts['위험예상'] / count * 100) : 0}%)`;
+            document.getElementById('llm-stat-normal-status').textContent = 
+                `${statusCounts['관찰'] + statusCounts['양호예상']}건`;
+        }
+
+        function selectLlmType(type) {
+            selectedLlmType = type;
+
+            // 버튼 상태 업데이트
+            document.querySelectorAll('.llm-type-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.type === type);
+            });
+        }
+
+        async function runLlmAnalysis() {
+            if (llmIsLoading) return;
+            if (!currentData || !currentData.data || currentData.data.length === 0) {
+                alert('분석할 데이터가 없습니다');
+                return;
+            }
+
+            llmIsLoading = true;
+            document.getElementById('btn-llm-analyze').disabled = true;
+            document.getElementById('btn-llm-analyze').textContent = '⏳ 분석 중...';
+
+            // 로딩 표시
+            document.getElementById('llm-result-container').innerHTML = `
+                <div class="llm-loading">
+                    <div class="llm-loading-spinner"></div>
+                    <div style="color: var(--text-secondary); font-size: 13px;">
+                        LLM이 데이터를 분석하고 있습니다...
+                    </div>
+                </div>
+            `;
+
+            try {
+                // 데이터 준비
+                const analysisData = prepareDataForLlm();
+
+                // API 호출 (스트리밍)
+                const res = await fetch('/api/llm_history_analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data: analysisData.data,
+                        stats: analysisData.stats,
+                        analysis_type: selectedLlmType
+                    })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
+                // 스트리밍 응답 처리
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+                const contentEl = document.getElementById('llm-result-container');
+                contentEl.innerHTML = '<div class="llm-result-content" id="llm-streaming-content" style="white-space: pre-wrap;"><span class="streaming-cursor">▌</span></div>';
+                const streamingEl = document.getElementById('llm-streaming-content');
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+
+                            if (data === '[DONE]') {
+                                // 완료 - 마크다운 변환
+                                streamingEl.style.whiteSpace = 'normal';
+                                streamingEl.innerHTML = formatMarkdownSimple(fullText);
+                                document.getElementById('llm-result-meta').textContent =
+                                    `${getTypeName(selectedLlmType)} | ${new Date().toLocaleTimeString()}`;
+                            } else if (data.startsWith('[ERROR]')) {
+                                streamingEl.innerHTML = `<span style="color: var(--danger);">${data}</span>`;
+                            } else {
+                                // 줄바꿈 복원
+                                fullText += data.replace(/⏎/g, '\n');
+                                streamingEl.textContent = fullText;
+                                streamingEl.innerHTML = streamingEl.textContent + '<span class="streaming-cursor">▌</span>';
+                                streamingEl.scrollTop = streamingEl.scrollHeight;
+                            }
+                        }
+                    }
+                }
+
+            } catch (e) {
+                console.error('LLM 분석 실패:', e);
+                document.getElementById('llm-result-container').innerHTML = `
+                    <div class="llm-empty">
+                        <div class="llm-empty-icon">❌</div>
+                        <div>분석 실패: ${e.message}</div>
+                        <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);">
+                            llm_analysis_server.py 가 실행 중인지 확인해주세요
+                        </div>
+                    </div>
+                `;
+            } finally {
+                llmIsLoading = false;
+                document.getElementById('btn-llm-analyze').disabled = false;
+                document.getElementById('btn-llm-analyze').textContent = '🔍 분석 실행';
+            }
+        }
+
+        function prepareDataForLlm() {
+            const rows = currentData.data;
+            const totalcnts = rows.map(r => r.TOTALCNT || 0);
+
+            // ========================================
+            // 급증 컬럼(SPIKE_INFO) 통계 계산
+            // ========================================
+            const spikeColumnCounts = {};  // 컬럼별 급증 횟수
+            let totalDangerSpikes = 0;     // 위험(D) 급증 총 횟수
+            let totalWarningSpikes = 0;    // 경고(W) 급증 총 횟수
+            const spikeTimeList = [];      // 급증 발생 시간 목록
+            
+            rows.forEach(row => {
+                const spikeInfo = row.SPIKE_INFO || '';
+                if (spikeInfo) {
+                    // SPIKE_INFO 형식: "D:M14AM10A +65, W:M10AM14A +52"
+                    const spikes = spikeInfo.split(', ').filter(s => s);
+                    spikes.forEach(spike => {
+                        const match = spike.match(/^(D|W):([^ ]+) \+(\d+)$/);
+                        if (match) {
+                            const level = match[1];  // D 또는 W
+                            const colName = match[2]; // 컬럼명
+                            const change = parseInt(match[3]); // 변화량
+                            
+                            // 컬럼별 카운트
+                            if (!spikeColumnCounts[colName]) {
+                                spikeColumnCounts[colName] = { danger: 0, warning: 0, total: 0, maxChange: 0 };
+                            }
+                            spikeColumnCounts[colName].total++;
+                            spikeColumnCounts[colName].maxChange = Math.max(spikeColumnCounts[colName].maxChange, change);
+                            
+                            if (level === 'D') {
+                                spikeColumnCounts[colName].danger++;
+                                totalDangerSpikes++;
+                            } else {
+                                spikeColumnCounts[colName].warning++;
+                                totalWarningSpikes++;
+                            }
+                        }
+                    });
+                    
+                    // 급증 발생 시간 기록
+                    const currtime = String(row.CURRTIME);
+                    if (currtime.length >= 12) {
+                        spikeTimeList.push({
+                            time: currtime.slice(8, 10) + ':' + currtime.slice(10, 12),
+                            info: spikeInfo,
+                            totalcnt: row.TOTALCNT || 0
+                        });
+                    }
+                }
+            });
+            
+            // 급증 컬럼 순위 (총 횟수 기준 정렬)
+            const spikeColumnRanking = Object.entries(spikeColumnCounts)
+                .sort((a, b) => b[1].total - a[1].total)
+                .map(([col, stats]) => ({
+                    column: col,
+                    danger_count: stats.danger,
+                    warning_count: stats.warning,
+                    total_count: stats.total,
+                    max_change: stats.maxChange
+                }));
+
+            // ========================================
+            // 상태 예상(STATUS_PREDICTION) 분포 계산
+            // ========================================
+            const statusCounts = {
+                '병목예상': 0,
+                '위험예상': 0,
+                '관찰': 0,
+                '양호예상': 0,
+                '병목_쿨타임': 0,
+                '위험_쿨타임': 0
+            };
+            const statusChanges = [];  // 상태 변화 목록
+            let prevStatus = null;
+            
+            rows.forEach((row, idx) => {
+                const status = row.STATUS_PREDICTION || '양호예상';
+                
+                // 상태 카운트
+                if (status === '병목예상') statusCounts['병목예상']++;
+                else if (status === '위험예상') statusCounts['위험예상']++;
+                else if (status === '관찰') statusCounts['관찰']++;
+                else if (status.includes('병목 쿨타임')) statusCounts['병목_쿨타임']++;
+                else if (status.includes('위험 쿨타임')) statusCounts['위험_쿨타임']++;
+                else statusCounts['양호예상']++;
+                
+                // 상태 변화 감지 (중요 상태 전환만)
+                const normalizedStatus = status.includes('쿨타임') ? status.split(' ')[0] + '_쿨타임' : status;
+                if (prevStatus && normalizedStatus !== prevStatus) {
+                    // 양호→위험, 관찰→병목 등 주요 변화만 기록
+                    if ((prevStatus === '양호예상' && (normalizedStatus === '위험예상' || normalizedStatus === '병목예상')) ||
+                        (prevStatus === '관찰' && normalizedStatus === '병목예상') ||
+                        (prevStatus === '위험예상' && normalizedStatus === '병목예상')) {
+                        const currtime = String(row.CURRTIME);
+                        if (currtime.length >= 12) {
+                            statusChanges.push({
+                                time: currtime.slice(8, 10) + ':' + currtime.slice(10, 12),
+                                from: prevStatus,
+                                to: normalizedStatus,
+                                totalcnt: row.TOTALCNT || 0
+                            });
+                        }
+                    }
+                }
+                prevStatus = normalizedStatus;
+            });
+
+            // ========================================
+            // 시간대별 통계 계산
+            // ========================================
+            const hourlyStats = {};
+            rows.forEach(row => {
+                const currtime = String(row.CURRTIME);
+                if (currtime.length >= 10) {
+                    const hour = currtime.slice(8, 10);
+                    if (!hourlyStats[hour]) {
+                        hourlyStats[hour] = { values: [], over1700: 0 };
+                    }
+                    hourlyStats[hour].values.push(row.TOTALCNT || 0);
+                    if ((row.TOTALCNT || 0) >= 1700) {
+                        hourlyStats[hour].over1700++;
+                    }
+                }
+            });
+
+            // 시간대별 평균 계산
+            const hourlyAvg = {};
+            Object.entries(hourlyStats).forEach(([hour, data]) => {
+                const avg = Math.round(data.values.reduce((a, b) => a + b, 0) / data.values.length);
+                hourlyAvg[hour + '시'] = { avg: avg, over1700: data.over1700 };
+            });
+
+            // 알람 맵 생성
+            const alertMap10 = {};
+            (currentData.alerts_10 || []).forEach(a => {
+                alertMap10[String(a.CURRTIME)] = a;
+            });
+
+            // TP/TN/FP/FN 계산 (10분 예측 기준)
+            let tp = 0, tn = 0, fp = 0, fn = 0;
+            rows.forEach(row => {
+                const currtime = String(row.CURRTIME);
+                const actual = (row.TOTALCNT || 0) >= 1700;
+                const alert = alertMap10[currtime];
+                const predicted = alert ? alert.IS_ALARM : false;
+
+                if (predicted && actual) tp++;
+                else if (!predicted && !actual) tn++;
+                else if (predicted && !actual) fp++;
+                else if (!predicted && actual) fn++;
+            });
+
+            // 알람 정보
+            const alerts10 = (currentData.alerts_10 || []).filter(a => a.IS_ALARM);
+            const alerts30 = (currentData.alerts_30 || []).filter(a => a.IS_ALARM);
+
+            // 로그프레소 알람 정보
+            const logpressoAlarms = Object.values(logpressoAlarmMap).filter(a => a.IS_ALARM);
+
+            // 기간 정보
+            const dateStart = document.getElementById('date-start').value;
+            const dateEnd = document.getElementById('date-end').value;
+            const timeStart = document.getElementById('time-start').value;
+            const timeEnd = document.getElementById('time-end').value;
+
+            // 정확도 계산
+            const total = tp + tn + fp + fn;
+            const accuracy = total > 0 ? Math.round((tp + tn) / total * 100) : 0;
+
+            return {
+                data: rows.slice(0, 500), // 최대 500개 샘플
+                stats: {
+                    period: `${dateStart} ${timeStart} ~ ${dateEnd} ${timeEnd}`,
+                    total_count: rows.length,
+                    avg_totalcnt: Math.round(totalcnts.reduce((a, b) => a + b, 0) / rows.length),
+                    max_totalcnt: Math.max(...totalcnts),
+                    min_totalcnt: Math.min(...totalcnts),
+                    over_1700_count: totalcnts.filter(v => v >= 1700).length,
+                    over_1600_count: totalcnts.filter(v => v >= 1600).length,
+                    alerts_10_count: alerts10.length,
+                    alerts_30_count: alerts30.length,
+                    logpresso_alarms: logpressoAlarms.length,
+                    hourly_stats: hourlyAvg,
+                    // 예측 성능 지표
+                    accuracy: accuracy,
+                    tp: tp,
+                    tn: tn,
+                    fp: fp,
+                    fn: fn,
+                    // 급증 컬럼 통계 (10분 대비)
+                    spike_stats: {
+                        total_danger_spikes: totalDangerSpikes,      // 위험(D) 급증 총 횟수
+                        total_warning_spikes: totalWarningSpikes,    // 경고(W) 급증 총 횟수
+                        total_spikes: totalDangerSpikes + totalWarningSpikes,
+                        column_ranking: spikeColumnRanking.slice(0, 10),  // 상위 10개 컬럼
+                        spike_times: spikeTimeList.slice(0, 30)      // 최근 30개 급증 시점
+                    },
+                    // 상태 예상 분포
+                    status_stats: {
+                        distribution: statusCounts,                   // 상태별 분포
+                        status_changes: statusChanges.slice(0, 20),  // 주요 상태 변화 (최대 20개)
+                        bottleneck_ratio: rows.length > 0 ? 
+                            Math.round((statusCounts['병목예상'] / rows.length) * 100) : 0,
+                        danger_ratio: rows.length > 0 ? 
+                            Math.round((statusCounts['위험예상'] / rows.length) * 100) : 0
+                    }
+                }
+            };
+        }
+
+        function getTypeName(type) {
+            const names = {
+                'summary': '📋 요약 분석',
+                'pattern': '📈 패턴 분석',
+                'prediction': '🔮 예측 분석'
+            };
+            return names[type] || type;
+        }
+
+        // 간단한 마크다운 변환
+        function formatMarkdownSimple(text) {
+            if (!text) return '';
+
+            let html = text;
+
+            // 테이블 처리
+            const tableRegex = /(\|[^\n]+\|\n)(\|[-:\s|]+\|\n)((?:\|[^\n]+\|\n?)+)/g;
+            html = html.replace(tableRegex, function(match, headerRow, sepRow, bodyRows) {
+                const headers = headerRow.split('|').filter(c => c.trim());
+                const thRow = '<tr>' + headers.map(h => `<th>${h.trim()}</th>`).join('') + '</tr>';
+
+                const rows = bodyRows.trim().split('\n').map(row => {
+                    const cells = row.split('|').filter(c => c.trim());
+                    return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+                }).join('');
+
+                return `<table><thead>${thRow}</thead><tbody>${rows}</tbody></table>\n`;
+            });
+
+            // 코드 블록
+            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // 헤더
+            html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+            // 수평선
+            html = html.replace(/^---+$/gm, '<hr>');
+
+            // 볼드/이탤릭
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+            // 리스트
+            html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+
+            // 줄바꿈
+            html = html.replace(/\n\n+/g, '</p><p>');
+            html = html.replace(/\n/g, '<br>');
+
+            // p 태그 정리
+            html = '<p>' + html + '</p>';
+            html = html.replace(/<p>\s*<\/p>/g, '');
+            html = html.replace(/<p>\s*(<h[1-4]>)/g, '$1');
+            html = html.replace(/(<\/h[1-4]>)\s*<\/p>/g, '$1');
+            html = html.replace(/<p>\s*(<table>)/g, '$1');
+            html = html.replace(/(<\/table>)\s*<\/p>/g, '$1');
+            html = html.replace(/<p>\s*(<hr>)/g, '$1');
+            html = html.replace(/<p><br>/g, '<p>');
+
+            return html;
+        }
+
+        // 모달 외부 클릭시 닫기
+        document.getElementById('llm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeLlmModal();
+            }
+        });
+
+        // ========================================
+        // 상세 분석 모달 기능
+        // ========================================
+        let detailCurrentTime = null;
+        let detailRange = 10;
+
+        function openDetailModal(currtime) {
+            detailCurrentTime = currtime;
+            detailRange = 10;
+            
+            // 범위 버튼 초기화
+            document.querySelectorAll('.detail-range-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.range === '10');
+            });
+            
+            document.getElementById('detail-modal').style.display = 'flex';
+            loadDetailData();
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detail-modal').style.display = 'none';
+        }
+
+        function changeDetailRange(range) {
+            detailRange = range;
+            
+            // 버튼 상태 업데이트
+            document.querySelectorAll('.detail-range-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.range) === range);
+            });
+            
+            loadDetailData();
+        }
+
+        async function loadDetailData() {
+            if (!detailCurrentTime) return;
+            
+            document.getElementById('detail-table-container').innerHTML = '<div class="detail-loading">데이터 로딩 중...</div>';
+            
+            // CURRTIME에서 date, time 추출
+            const dateStr = detailCurrentTime.slice(0, 8);
+            const timeStr = detailCurrentTime.slice(8, 12);
+            
+            try {
+                const res = await fetch(`/api/detail?date=${dateStr}&time=${timeStr}&range=${detailRange}`);
+                const data = await res.json();
+                
+                if (data.error) {
+                    document.getElementById('detail-table-container').innerHTML = `
+                        <div class="detail-loading" style="color: var(--danger);">
+                            ⚠️ ${data.error}
+                        </div>
+                    `;
+                    return;
+                }
+                
+                renderDetailData(data);
+                
+            } catch (e) {
+                console.error('상세 데이터 로드 실패:', e);
+                document.getElementById('detail-table-container').innerHTML = `
+                    <div class="detail-loading" style="color: var(--danger);">
+                        ⚠️ 데이터 로드 실패: ${e.message}
+                    </div>
+                `;
+            }
+        }
+
+        function renderDetailData(data) {
+            // 시간 정보 업데이트
+            const currentTime = data.current_time;
+            const prevTime = data.previous_time;
+            
+            // 시간 포맷팅
+            const formatDetailTime = (t) => {
+                if (t && t.length >= 12) {
+                    return `${t.slice(4,6)}-${t.slice(6,8)} ${t.slice(8,10)}:${t.slice(10,12)}`;
+                }
+                return t || '-';
+            };
+            
+            document.getElementById('detail-current-time').textContent = formatDetailTime(currentTime);
+            document.getElementById('detail-prev-time').textContent = formatDetailTime(prevTime);
+            document.getElementById('detail-current-totalcnt').textContent = (data.current.TOTALCNT || 0).toLocaleString();
+            document.getElementById('detail-prev-totalcnt').textContent = (data.previous.TOTALCNT || 0).toLocaleString();
+            
+            // TOTALCNT 변화량
+            const totalcntChange = (data.current.TOTALCNT || 0) - (data.previous.TOTALCNT || 0);
+            const totalcntEl = document.getElementById('detail-totalcnt-change');
+            totalcntEl.textContent = (totalcntChange >= 0 ? '+' : '') + totalcntChange.toLocaleString();
+            totalcntEl.style.color = totalcntChange >= 50 ? 'var(--danger)' : (totalcntChange <= -50 ? 'var(--success)' : 'var(--text-primary)');
+            
+            // 테이블 생성
+            let html = `
+                <table class="detail-table">
+                    <thead>
+                        <tr>
+                            <th>컬럼명</th>
+                            <th>이전값</th>
+                            <th>현재값</th>
+                            <th>변화량</th>
+                            <th>변화율</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.changes.forEach(item => {
+                const isSpike = item.change >= 50;
+                const rowClass = isSpike ? 'detail-spike' : '';
+                
+                let changeClass = '';
+                if (item.change > 0) changeClass = 'detail-change-positive';
+                else if (item.change < 0) changeClass = 'detail-change-negative';
+                
+                const changeText = item.change >= 0 ? '+' + item.change : item.change;
+                const rateText = item.change_rate >= 0 ? '+' + item.change_rate + '%' : item.change_rate + '%';
+                const spikeIcon = isSpike ? '<span class="detail-spike-icon">🔺</span> ' : '';
+                
+                // 컬럼명 표시 (미수집 태그)
+                let colName = item.column;
+                if (item.is_uncollected) {
+                    colName += '<span class="detail-uncollected-tag">미수집</span>';
+                }
+                
+                html += `
+                    <tr class="${rowClass}">
+                        <td>${colName}</td>
+                        <td class="${item.is_uncollected ? 'detail-uncollected' : ''}">${item.previous}</td>
+                        <td class="${item.is_uncollected ? 'detail-uncollected' : ''}">${item.current}</td>
+                        <td class="${changeClass}">${spikeIcon}${changeText}</td>
+                        <td class="${changeClass}">${rateText}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            html += `<div style="margin-top: 10px; font-size: 11px; color: var(--text-secondary);">
+                💡 변화량 절대값 기준 정렬 | 🔺 +50 이상 급상승 표시 | 더블클릭으로 다른 시점 분석 가능
+            </div>`;
+            
+            document.getElementById('detail-table-container').innerHTML = html;
+        }
+
+        // 상세 모달 외부 클릭시 닫기
+        document.getElementById('detail-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeDetailModal();
+            }
+        });
+    </script>
+</body>
+</html>
