@@ -44,12 +44,14 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 .fab-pill.M14A    { background:#22c55e; color:#000; }
 .fab-pill.M16A_BR { background:#3b82f6; color:#fff; }
 
-#mapwrap { flex:1; position:relative; background:#000; overflow:hidden; }
-#map { width:100%; height:100%; display:block; background:#000; }
-.hint { position:absolute; bottom:8px; left:12px; font-size:11px; color:#6b7280;
-        background:rgba(0,0,0,0.7); padding:4px 8px; border-radius:4px; z-index:5; }
-.legend { position:absolute; top:8px; right:12px; background:rgba(15,23,42,0.85);
-        border:1px solid #1f2937; border-radius:4px; padding:6px 10px; font-size:11px; z-index:5; }
+#mapwrap { flex:1; position:relative; background:#ffffff; overflow:hidden; }
+#map { width:100%; height:100%; display:block; background:#ffffff; }
+.hint { position:absolute; bottom:8px; left:12px; font-size:11px; color:#374151;
+        background:rgba(255,255,255,0.85); border:1px solid #d1d5db;
+        padding:4px 8px; border-radius:4px; z-index:5; }
+.legend { position:absolute; top:8px; right:12px; background:rgba(255,255,255,0.92);
+        border:1px solid #d1d5db; color:#1f2937;
+        border-radius:4px; padding:6px 10px; font-size:11px; z-index:5; }
 .legend .row { font-size:10px; }
 .legend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
 .disconn-banner { position:absolute; top:8px; left:50%; transform:translateX(-50%);
@@ -135,7 +137,7 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 
   <div id="mapwrap">
     <div id="disconn" class="disconn-banner">⚠ WebSocket 연결 끊김</div>
-    <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><rect id="bg" x="0" y="0" width="100%" height="100%" fill="#000"/></svg>
+    <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><rect id="bg" x="0" y="0" width="100%" height="100%" fill="#ffffff"/></svg>
     <div class="legend">
       <div class="row"><i style="background:#10b981"></i>RUN</div>
       <div class="row"><i style="background:#f59e0b"></i>WAIT/STANDBY</div>
@@ -229,9 +231,9 @@ function render() {
   const W = svg.clientWidth || svg.parentElement.clientWidth || 800;
   const H = svg.clientHeight || svg.parentElement.clientHeight || 600;
 
-  // bg
+  // bg (흰색)
   while (svg.firstChild) svg.removeChild(svg.firstChild);
-  svg.appendChild(svgEl('rect', {x:0, y:0, width:W, height:H, fill:'#000'}));
+  svg.appendChild(svgEl('rect', {x:0, y:0, width:W, height:H, fill:'#ffffff'}));
 
   if (layoutError) {
     const t = svgEl('text', {x:W/2, y:H/2, fill:'#fca5a5', 'font-size':14, 'text-anchor':'middle'});
@@ -257,13 +259,13 @@ function render() {
       if (!A || !B) continue;
       d += `M${px(A[0]).toFixed(1)},${py(A[1]).toFixed(1)}L${px(B[0]).toFixed(1)},${py(B[1]).toFixed(1)}`;
     }
-    if (d) svg.appendChild(svgEl('path', {d, stroke:'#1e3a5f', 'stroke-width':0.7, fill:'none', opacity:0.7}));
+    if (d) svg.appendChild(svgEl('path', {d, stroke:'#334155', 'stroke-width':0.8, fill:'none', opacity:0.9}));
   }
 
   // nodes
   if (layers.nodes && view.scale > 0.05) {
     const r = Math.max(0.6, 1.2*view.scale);
-    const g = svgEl('g', {fill:'#374151', opacity:0.6});
+    const g = svgEl('g', {fill:'#1f2937', opacity:0.7});
     for (const k in layoutData.nodes) {
       const [x,y] = layoutData.nodes[k];
       g.appendChild(svgEl('circle', {cx:px(x), cy:py(y), r}));
@@ -277,7 +279,7 @@ function render() {
       if (pts.length<2) continue;
       let d = `M${px(pts[0].x).toFixed(1)},${py(pts[0].y).toFixed(1)}`;
       for (let i=1;i<pts.length;i++) d += `L${px(pts[i].x).toFixed(1)},${py(pts[i].y).toFixed(1)}`;
-      svg.appendChild(svgEl('path', {d, stroke:'#fbbf24', 'stroke-width':1, fill:'none', opacity:0.35}));
+      svg.appendChild(svgEl('path', {d, stroke:'#ea580c', 'stroke-width':1.2, fill:'none', opacity:0.5}));
     }
   }
 
@@ -289,7 +291,7 @@ function render() {
     const stroke = v.fab==='M14A' ? '#22c55e' : '#3b82f6';
     svg.appendChild(svgEl('circle', {cx, cy, r:4.5, fill:color, stroke, 'stroke-width':1.5}));
     if (layers.id) {
-      const t = svgEl('text', {x:cx+6, y:cy-6, fill:'#cbd5e1', 'font-size':9});
+      const t = svgEl('text', {x:cx+6, y:cy-6, fill:'#1f2937', 'font-size':9});
       t.textContent = v.vid;
       svg.appendChild(t);
     }
