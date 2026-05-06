@@ -28,6 +28,11 @@ from config import (
 )
 from data_loader import LayoutData, HIDZoneData, get_available_dates, ensure_layout_cache
 from replay_engine import ReplayEngine, ReplayState
+from udp_ingest import UdpIngest
+
+# UDP 수신 포트 (OHT_UDP_SIM/sender.py 와 일치)
+UDP_PORT_M14A    = int(os.environ.get("UDP_PORT_M14A", 3710))
+UDP_PORT_M16A_BR = int(os.environ.get("UDP_PORT_M16A_BR", 3750))
 
 # ============================================================
 # 앱 초기화
@@ -67,6 +72,45 @@ engine = ReplayEngine(layout, hid_zones)
 
 # WebSocket 연결 관리
 ws_clients: list = []
+
+
+# ============================================================
+# UDP 수신 (OHT_UDP_SIM/sender.py 가 보낸 LOGPRESSO 행을 받아 월드모델에 주입)
+# ============================================================
+# FAB 이름 → 월드모델이 기대하는 prefix 매핑
+_FAB_PREFIX_MAP = {
+    "M14A":    "M14A",
+    "M16A_BR": "M16A_BR",
+}
+
+def _on_udp_packet(fab: str, ts, vehicles):
+    """UDP 한 묶음(같은 ts) 도착 → 현재 선택된 FAB 와 일치하면 월드모델 갱신."""
+    global current_fab
+    if not vehicles:
+        return
+    target_prefix = _FAB_PREFIX_MAP.get(fab)
+    if target_prefix and current_prefix and target_prefix != current_prefix:
+        # 다른 FAB 의 패킷은 통계만 쌓고 월드는 갱신하지 않음
+        return
+    try:
+        engine.world.load_vehicles_from_frame(vehicles, frame_time=ts)
+    except Exception as e:
+        print(f"[UDP] world inject 실패 ({fab} {len(vehicles)} veh): {e}")
+
+
+udp_ingest = UdpIngest(
+    port_m14a=UDP_PORT_M14A,
+    port_m16a_br=UDP_PORT_M16A_BR,
+    on_packet=_on_udp_packet,
+)
+
+@app.on_event("startup")
+async def _start_udp():
+    udp_ingest.start()
+
+@app.on_event("shutdown")
+async def _stop_udp():
+    udp_ingest.stop()
 
 
 # ============================================================
@@ -288,6 +332,12 @@ async def get_ts_events():
 async def get_hid_zones():
     """HID Zone 현황"""
     return engine.world.get_zone_status()
+
+
+@app.get("/api/udp/state")
+async def get_udp_state():
+    """UDP 수신 통계 (OHT_UDP_SIM 송신기 ↔ 본 시뮬레이터)"""
+    return udp_ingest.state()
 
 
 @app.get("/api/data-sources")

@@ -1,9 +1,34 @@
-# OHT_UDP_SIM
+# OHT_UDP_SIM (송신 전용)
 
-LOGPRESSO_OHT_DATA CSV 를 읽어 **UDP 로 리플레이 송신** 하고, **메인 수신기 UI** 에서
-실시간 표시하는 시뮬레이터.
+LOGPRESSO_OHT_DATA CSV → **UDP 송신** 시뮬레이터.
 
-> WORLD_SIM 과 폴더는 분리. 동작 방식 (UDP push, 단순 패스스루) 이 다르므로 **신규 폴더**.
+> 수신은 **`WORD_MODEL/WORLD_SIM`** (기존 시뮬) 에서 받음.
+> 본 폴더는 **송신기만** 제공.
+
+---
+
+## 동작 흐름
+
+```
+LOGPRESSO_OHT_DATA_20260429.CSV (M14A)  ─┐
+                                         ├─→ sender.py m14a    ─UDP 3710─┐
+LOGPRESSO_OHT_DATA_20260429.CSV (M16BR) ─┘                                 │
+                                                                           ▼
+                                            ┌──────────────────────────────┐
+                                            │  WORD_MODEL/WORLD_SIM        │
+                                            │  main.py (FastAPI)            │
+                                            │   - UDP listen 3710 / 3750   │
+                                            │   - engine.world 에 차량 주입  │
+                                            │   - dashboard 표시            │
+                                            └──────────────────────────────┘
+                                            ▲
+LOGPRESSO_OHT_DATA_20260429.CSV (M16BR) ──→ sender.py m16a_br ─UDP 3750──┘
+```
+
+- 송신측이 row 의 **`_time`** 차이만큼 sleep 하여 시간순 송신 (속도 배율 적용)
+- 같은 1초 안의 row 는 한 패킷 (200 row 초과 시 분할)
+- CSV 끝나면 자동 loop (cycle++)
+- WORLD_SIM 은 UDP 패킷이 들어올 때마다 `engine.world.load_vehicles_from_frame(...)` 호출
 
 ---
 
@@ -11,38 +36,13 @@ LOGPRESSO_OHT_DATA CSV 를 읽어 **UDP 로 리플레이 송신** 하고, **메�
 
 ```
 OHT_UDP_SIM/
-├── config.py           포트/경로/속도 설정
-├── csv_loader.py       LOGPRESSO_OHT_DATA CSV 파서 (시간순 정렬, 1초 그룹핑)
-├── sender.py           UDP 송신기 (m14a / m16a_br 모드)
-├── main.py             UDP 수신 메인 (3710 + 3750 동시 listen)
-├── templates/
-│   ├── sender.html     송신 제어 UI
-│   └── main.html       수신 라이브 UI
-├── start_all.sh        3개 프로세스 일괄 실행
-├── stop_all.sh         일괄 정지
+├── config.py           포트/경로/속도/기간
+├── csv_loader.py       LOGPRESSO_OHT_DATA CSV 파서
+├── sender.py           UDP 송신 (m14a / m16a_br 모드) + 송신 제어 UI
+├── templates/sender.html   송신 제어 UI 템플릿
 ├── M14A_DATA/          ← LOGPRESSO_OHT_DATA_20260429.CSV 배치
 └── M16A_BR_DATA/       ← LOGPRESSO_OHT_DATA_20260429.CSV 배치
 ```
-
----
-
-## 동작
-
-```
-┌──────────────┐   UDP 3710  ┌──────────────┐
-│ sender M14A  │ ──────────→ │              │       ┌────────────┐
-│ HTTP 11010   │             │  main.py     │ ─SSE→ │ 브라우저    │
-└──────────────┘             │  HTTP 11000  │       │ (main UI)  │
-┌──────────────┐   UDP 3750  │              │       └────────────┘
-│ sender M16BR │ ──────────→ │ 두 포트 listen │
-│ HTTP 11020   │             └──────────────┘
-└──────────────┘
-```
-
-- 송신측: 1초 묶음으로 row 들을 `JSON UDP 패킷` (기본) 으로 보냄
-- 패킷 = `{fab, ts, count, rows[]}`  → 패킷당 최대 200 row, 초과 시 분할
-- CSV 끝나면 자동으로 처음부터 (loop 토글로 끔/켬)
-- 송신 속도 기본 60× (1분당 1시간 압축), UI 에서 0.1~3600× 조정
 
 ---
 
@@ -56,48 +56,42 @@ WORD_MODEL/OHT_UDP_SIM/
 
 CSV 가 없으면 `config.py` 가 상위 폴더 (WORD_MODEL/, ASAS/) 까지 자동 탐색.
 
-CSV 헤더는 Logpresso 표준 — `_id`, `_table`, `_time`, `EVENT_DT`, `VHL_ID` 등.
-`_time` 컬럼을 자동 탐지해 시간순 정렬 + REPLAY_START~END 범위 필터.
-
 기간: **2026-04-29 11:00 ~ 2026-04-30 23:46** (config.py 의 `REPLAY_START/END` 변경 가능)
 
 ---
 
 ## 실행
 
-### 일괄
+### ① 수신측 (WORLD_SIM) 먼저 띄움
 
 ```bash
-./start_all.sh
+cd ../WORLD_SIM
+python3 main.py
 ```
 
-→ 3 프로세스 (main + 2 sender) 백그라운드 실행. 로그는 `logs/`.
+→ `[UDP] listen M14A:3710  M16A_BR:3750` 출력 확인.
+대시보드: <http://localhost:8000> (실제 SERVER_PORT 는 WORLD_SIM/config.py 참조)
 
-브라우저:
-
-- 메인 (수신 라이브)  : <http://127.0.0.1:11000>
-- M14A 송신 제어     : <http://127.0.0.1:11010>
-- M16A_BR 송신 제어  : <http://127.0.0.1:11020>
-
-세 화면을 모두 띄운 뒤 **각 송신 UI 에서 ▶ 시작 버튼**.
-
-### 개별
+### ② 송신측
 
 ```bash
-python3 main.py                 # 수신 메인 (먼저 실행)
-python3 sender.py m14a          # M14A 송신
-python3 sender.py m16a_br       # M16A_BR 송신
+cd OHT_UDP_SIM
+
+# 두 FAB 동시
+python3 sender.py m14a       &
+python3 sender.py m16a_br    &
 ```
 
-### 정지
+각 송신기는 자체 제어 UI 를 띄움 — **▶ 시작 버튼을 눌러야 송신**:
 
-```bash
-./stop_all.sh
-```
+| 송신기 | UDP 포트 | 제어 UI |
+|---|---|---|
+| M14A    | 3710 | <http://127.0.0.1:11010> |
+| M16A_BR | 3750 | <http://127.0.0.1:11020> |
 
 ---
 
-## 송신 UI
+## 송신 UI 기능
 
 | 컨트롤 | 동작 |
 |---|---|
@@ -110,34 +104,38 @@ python3 sender.py m16a_br       # M16A_BR 송신
 
 상태 표시: 전송 패킷/row/byte, 현재 ts, cycle, 진행률 바.
 
-## 메인 UI
-
-- 두 FAB (M14A, M16A_BR) 수신 통계 카드
-- 실시간 피드 (SSE) — 패킷 단위 라이브 로그, 샘플 row 미리보기
-- 필터 (M14A/M16A_BR 표시 토글), 자동 스크롤, 라인 수 제한
-- 통계 초기화 버튼
-
 ---
 
-## API
+## 송신 API (제어용)
 
-### Sender (`http://localhost:11010` 또는 `:11020`)
+각 sender 별 `http://127.0.0.1:11010` 또는 `:11020`
 
 ```
 GET  /api/status                           # 현재 상태
 POST /api/start  | /pause | /resume | /stop
 POST /api/speed  body: {"speed": 60}
 POST /api/loop   body: {"loop": true}
-POST /api/seek   body: {"ratio": 0.5}      # 0~1
+POST /api/seek   body: {"ratio": 0.5}
 ```
 
-### Main (`http://localhost:11000`)
+---
 
+## 수신측 (WORLD_SIM) UDP 통계 확인
+
+```bash
+curl http://localhost:8000/api/udp/state
 ```
-GET  /api/state                            # 두 FAB 통합 상태
-GET  /api/recent?fab=M14A&n=50             # 최근 50건
-GET  /api/stream                           # SSE 라이브 푸시
-POST /api/clear                            # 통계 초기화
+
+```json
+{
+  "running": true,
+  "host": "0.0.0.0",
+  "fabs": {
+    "M14A":    {"port": 3710, "rx_packets": ..., "rx_rows": ..., "last_ts": "..."},
+    "M16A_BR": {"port": 3750, "rx_packets": ..., "rx_rows": ..., "last_ts": "..."}
+  },
+  "last_error": null
+}
 ```
 
 ---
@@ -149,32 +147,18 @@ POST /api/clear                            # 통계 초기화
   "fab":   "M14A",
   "ts":    "2026-04-29T11:00:01+09:00",
   "count": 38,
-  "rows": [
-    { "_id": "1234", "_time": "...", "VHL_ID": "BV0103", ... },
-    ...
-  ]
+  "rows":  [ { "_id":"...", "_time":"...", "VHL_ID":"BV0103", ... }, ... ]
 }
 ```
 
-`config.PACKET_FORMAT = "csv"` 로 하면 CSV 형식으로 송신.
-한 패킷이 64KB 를 넘지 않게 `MAX_ROWS_PER_PACKET=200` 으로 분할 송신.
-
----
-
-## 트러블슈팅
-
-| 증상 | 원인 / 조치 |
-|---|---|
-| 송신 UI 에서 `CSV 없음 ⚠️` | `M14A_DATA/` 또는 `M16A_BR_DATA/` 에 CSV 가 없음 |
-| 메인 화면이 0 | 송신측 ▶ 시작 안 누름 / 방화벽 |
-| 포트 충돌 | `config.py` 또는 환경변수 `UDP_PORT_M14A`, `UDP_PORT_M16A_BR` 로 변경 |
-| 속도가 너무 느림 | 송신 UI 속도 ↑ (60 → 600) |
+`config.PACKET_FORMAT = "csv"` 로 하면 CSV 형식 송신.
+한 패킷이 64KB 를 넘지 않게 200 row 단위로 분할 송신.
 
 ---
 
 ## 한계
 
-- LAN 전제 (UDP 손실 보정 없음). 운영 배포 시 TCP/MQ 검토 권장
-- 패킷이 64KB 넘는 row 로는 분할되지만, **단일 row 가 이미 64KB 이상** 이면 실패
-- main 수신측이 죽어도 sender 는 계속 송신 (UDP 특성)
+- LAN 전제 (UDP 손실 보정 없음)
+- 단일 row 가 64KB 이상이면 송신 실패
+- 수신측이 죽어도 송신은 계속 (UDP 특성)
 - 시간순 정렬을 위해 CSV 전체를 메모리에 적재 — 수GB 급은 부적합
