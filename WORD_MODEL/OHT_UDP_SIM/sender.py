@@ -170,57 +170,74 @@ class SenderWorker:
             "last_error": self.last_error,
         }
 
-    # ── 송신 루프 ───────────────────────────────────
+    # ── 송신 루프 (스트리밍) ────────────────────────
     def _run(self):
-        rows = self.loader.rows
-        time_col = self.loader.time_col
-        if not time_col:
+        if not self.loader.time_col:
             self.last_error = "time column not detected"
             self.running = False
             return
 
-        n = len(rows)
+        total = self.loader.total_rows()
         try:
             while not self.stop_flag:
-                # seek
-                if self.seek_ratio is not None:
-                    self.cur_idx = int(self.seek_ratio * n)
-                    self.seek_ratio = None
+                # 이번 cycle 의 시작 위치 (seek 적용)
+                seek = self.seek_ratio
+                self.seek_ratio = None
+                start_idx = int(seek * total) if seek is not None and total > 0 else 0
+                self.cur_idx = start_idx
 
-                if self.cur_idx >= n:
-                    if not self.loop:
+                last_sent_ts: Optional[datetime] = None
+                consumed_any = False
+
+                # CSV 처음부터 스트리밍 (start_idx 만큼 건너뛰고 시작)
+                for ts0, batch, new_idx in self.loader.iter_groups(start_at_idx=start_idx):
+                    if self.stop_flag:
+                        return
+                    if self.seek_ratio is not None:
+                        # 새 seek → 안쪽 for 탈출 → 바깥 while 에서 재시작
                         break
-                    self.cycle += 1
-                    self.cur_idx = 0
 
-                # 한 1초 묶음 전송
-                ts0 = self.loader._row_time(rows[self.cur_idx])
-                batch: List[Dict[str, str]] = []
-                while self.cur_idx < n:
-                    r = rows[self.cur_idx]
-                    t = self.loader._row_time(r)
-                    if t is None or t.replace(microsecond=0) != ts0.replace(microsecond=0):
-                        break
-                    batch.append(r)
-                    self.cur_idx += 1
+                    # 다음 group 까지 대기 (현재 ts - 직전 ts)
+                    if last_sent_ts is not None:
+                        wait_sec = self._sleep_for(last_sent_ts, ts0)
+                        # pause/stop 처리
+                        while wait_sec > 0 and not self.stop_flag:
+                            if self.seek_ratio is not None:
+                                break
+                            if self.paused:
+                                time.sleep(0.1)
+                                continue
+                            chunk = min(0.1, wait_sec)
+                            time.sleep(chunk)
+                            wait_sec -= chunk
+                        if self.seek_ratio is not None:
+                            break
 
-                # 패킷 분할 송신 (200건/패킷)
-                self._send_batch(ts0, batch)
-
-                # 다음 batch 까지 대기
-                next_ts = self.loader._row_time(rows[self.cur_idx]) if self.cur_idx < n else None
-                wait_sec = self._sleep_for(ts0, next_ts)
-
-                # pause 처리
-                start_sleep = time.time()
-                while wait_sec > 0 and not self.stop_flag:
+                    if self.stop_flag:
+                        return
                     if self.paused:
-                        time.sleep(0.1)
-                        start_sleep = time.time()
-                        continue
-                    chunk = min(0.1, wait_sec)
-                    time.sleep(chunk)
-                    wait_sec -= chunk
+                        # paused 인 동안 송신 안 하고 대기
+                        while self.paused and not self.stop_flag and self.seek_ratio is None:
+                            time.sleep(0.1)
+                        if self.stop_flag:
+                            return
+                        if self.seek_ratio is not None:
+                            break
+
+                    self._send_batch(ts0, batch)
+                    self.cur_idx = new_idx
+                    last_sent_ts = ts0
+                    consumed_any = True
+
+                if self.stop_flag:
+                    return
+                if self.seek_ratio is not None:
+                    continue   # 새 seek 로 재시작
+                if not self.loop:
+                    break
+                # cycle 끝 → 처음부터
+                if consumed_any:
+                    self.cycle += 1
 
         except Exception as e:
             self.last_error = f"runtime: {e!r}"

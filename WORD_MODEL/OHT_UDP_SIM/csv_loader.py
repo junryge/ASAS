@@ -1,23 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-LOGPRESSO_OHT_DATA CSV 로더
+LOGPRESSO_OHT_DATA CSV 스트리밍 로더 — 메모리 O(1)
 
-파일 형식 (Logpresso 표준):
-    "_id","_table","_time", ...   <- 따옴표 포함 헤더
-    "1234","M16A_OHT_DATA","2026-04-29 11:00:01.123+0900",...
+전략:
+  1) load()           : 빠른 메타 스캔만 (행 수, 시작/끝 ts).  row 보관 안 함.
+  2) iter_groups()    : 호출 시점마다 CSV 를 처음부터 스트리밍.
+                        REPLAY 윈도우 안에서 1초 단위로 묶어 yield.
+  3) loop / seek 는 sender 측에서 iter_groups 를 다시 호출하는 방식.
 
-특징:
-  • _time 컬럼을 epoch (sec) 으로 정렬 후 시간순 정렬
-  • REPLAY_START ~ REPLAY_END 범위만 로드
-  • 컬럼 이름 그대로 보존 (UDP 송신 시 dict 그대로 직렬화)
-  • 1초 단위 그룹핑 (같은 _time → 한 batch)
+전제: LOGPRESSO CSV 는 _time 오름차순으로 이미 정렬되어 있음 (표준).
+      정렬이 흐트러져도 1초 그룹 단위라 큰 문제는 없음.
 """
 
 import csv
 import io
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Iterator, List, Optional, Tuple
 
 
@@ -47,14 +46,18 @@ def _parse_window(start: str, end: str) -> Tuple[Optional[datetime], Optional[da
 
 
 class OhtCsvLoader:
-    """LOGPRESSO_OHT_DATA CSV 로더"""
+    """LOGPRESSO_OHT_DATA CSV 스트리밍 로더 (전체 적재 X)"""
 
     def __init__(self, csv_path: str, replay_start: str = "", replay_end: str = ""):
         self.csv_path = csv_path
         self.replay_start, self.replay_end = _parse_window(replay_start, replay_end)
-        self.rows: List[Dict[str, str]] = []
         self.fieldnames: List[str] = []
-        self.time_col: Optional[str] = None
+        self.time_col:   Optional[str] = None
+        # 메타
+        self.row_count = 0
+        self.first_ts: Optional[datetime] = None
+        self.last_ts:  Optional[datetime] = None
+        self.file_bytes = 0
         self.loaded = False
 
     # ───────────────────────────────────────────────
@@ -62,32 +65,49 @@ class OhtCsvLoader:
         return os.path.exists(self.csv_path)
 
     def load(self) -> int:
-        """전체 CSV 파싱. _time 컬럼 자동 탐지 + 시간순 정렬."""
+        """빠른 메타 스캔 — row 는 보관 안 함, 카운트와 시작/끝 ts 만 저장."""
         if not self.exists():
-            self.rows = []
             self.fieldnames = []
+            self.time_col = None
+            self.row_count = 0
+            self.first_ts = self.last_ts = None
             self.loaded = False
             return 0
 
+        try:
+            self.file_bytes = os.path.getsize(self.csv_path)
+        except OSError:
+            self.file_bytes = 0
+
+        cnt = 0
+        first = None
+        last  = None
         with open(self.csv_path, "r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
             self.fieldnames = list(reader.fieldnames or [])
-            self.time_col = self._detect_time_col(self.fieldnames)
+            self.time_col   = self._detect_time_col(self.fieldnames)
+            if not self.time_col:
+                self.loaded = False
+                return 0
             for row in reader:
                 if not row:
                     continue
-                t = self._row_time(row)
+                t = _parse_time(row.get(self.time_col, ""))
                 if t is None:
                     continue
                 if self.replay_start and t < self._tz_align(t, self.replay_start):
                     continue
                 if self.replay_end and t > self._tz_align(t, self.replay_end):
                     continue
-                self.rows.append(row)
+                cnt += 1
+                if first is None or t < first: first = t
+                if last  is None or t > last:  last  = t
 
-        self.rows.sort(key=lambda r: self._row_time(r) or datetime.min)
-        self.loaded = True
-        return len(self.rows)
+        self.row_count = cnt
+        self.first_ts  = first
+        self.last_ts   = last
+        self.loaded    = True
+        return cnt
 
     # ───────────────────────────────────────────────
     @staticmethod
@@ -100,14 +120,8 @@ class OhtCsvLoader:
                 return c
         return None
 
-    def _row_time(self, row: Dict[str, str]) -> Optional[datetime]:
-        if not self.time_col:
-            return None
-        return _parse_time(row.get(self.time_col, ""))
-
     @staticmethod
     def _tz_align(target: datetime, ref: datetime) -> datetime:
-        """ref(naive/aware) 를 target 의 tz에 맞춰 비교 가능하게 만듦"""
         if target.tzinfo is None and ref.tzinfo is not None:
             return ref.replace(tzinfo=None)
         if target.tzinfo is not None and ref.tzinfo is None:
@@ -116,46 +130,63 @@ class OhtCsvLoader:
 
     # ───────────────────────────────────────────────
     def total_rows(self) -> int:
-        return len(self.rows)
+        return self.row_count
 
     def time_range(self) -> Tuple[Optional[datetime], Optional[datetime]]:
-        if not self.rows:
-            return None, None
-        return self._row_time(self.rows[0]), self._row_time(self.rows[-1])
+        return self.first_ts, self.last_ts
 
     def duration_sec(self) -> int:
-        a, b = self.time_range()
-        if not a or not b:
+        if not self.first_ts or not self.last_ts:
             return 0
-        return int((b - a).total_seconds())
+        return int((self.last_ts - self.first_ts).total_seconds())
 
     # ───────────────────────────────────────────────
-    def iter_groups(self, loop: bool = False) -> Iterator[Tuple[datetime, List[Dict[str, str]]]]:
+    def iter_groups(
+        self, start_at_idx: int = 0
+    ) -> Iterator[Tuple[datetime, List[Dict[str, str]], int]]:
         """
-        같은 1초 안의 row 들을 묶어서 yield.
-        loop=True 이면 끝에서 다시 처음으로 (사이 1초 휴식).
+        CSV 를 처음부터 스트리밍해서 1초 단위 그룹 yield.
+
+        yields: (group_ts, batch_rows, last_row_idx_after_emit)
+
+        start_at_idx > 0 이면 윈도우 안에서 그 만큼의 row 를 skip 후 시작.
+        호출 한 번 = 한 cycle. loop 처리는 caller 에서 다시 호출.
         """
-        if not self.rows:
+        if not self.exists() or not self.time_col:
             return
-        while True:
-            cur_t = None
-            buf: List[Dict[str, str]] = []
-            for row in self.rows:
-                t = self._row_time(row)
+
+        idx     = 0
+        cur_t:  Optional[datetime] = None
+        buf:    List[Dict[str, str]] = []
+
+        with open(self.csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if not row:
+                    continue
+                t = _parse_time(row.get(self.time_col, ""))
                 if t is None:
                     continue
+                if self.replay_start and t < self._tz_align(t, self.replay_start):
+                    continue
+                if self.replay_end and t > self._tz_align(t, self.replay_end):
+                    continue
+
+                idx += 1
+                if idx <= start_at_idx:
+                    continue
+
                 tsec = t.replace(microsecond=0)
                 if cur_t is None:
                     cur_t = tsec
                 if tsec != cur_t:
-                    yield cur_t, buf
+                    yield cur_t, buf, idx - 1
                     cur_t = tsec
                     buf = []
                 buf.append(row)
-            if buf and cur_t is not None:
-                yield cur_t, buf
-            if not loop:
-                break
+
+        if buf and cur_t is not None:
+            yield cur_t, buf, idx
 
 
 # ───────────────────────────────────────────────
