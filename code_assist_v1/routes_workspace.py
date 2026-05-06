@@ -77,12 +77,26 @@ def register_workspace_routes(app):
         f.stream.seek(0)
         if size > MAX_UPLOAD_MB * 1024 * 1024:
             return jsonify({"error": f"파일 크기 초과 ({MAX_UPLOAD_MB}MB)"}), 413
-        rel_dir = (request.form.get("dir") or "").strip().replace("\\", "/")
-        target_dir = _safe_join(WORKSPACE_DIR, rel_dir) if rel_dir else WORKSPACE_DIR
+        # relpath: 폴더 업로드 시 webkitRelativePath (예: "myproj/src/a.py")
+        # dir: 명시적 하위 디렉토리 (예: "subdir")
+        relpath = (request.form.get("relpath") or "").strip().replace("\\", "/")
+        rel_dir_form = (request.form.get("dir") or "").strip().replace("\\", "/")
+
+        if relpath:
+            # 컴포넌트별로 sanitize (구분자는 보존)
+            parts = [p for p in relpath.split("/") if p and p not in (".", "..")]
+            if not parts:
+                return jsonify({"error": "잘못된 relpath"}), 400
+            safe_parts = [secure_filename(p) or "_" for p in parts[:-1]]
+            target_name = secure_filename(parts[-1]) or "uploaded"
+            target_dir = _safe_join(WORKSPACE_DIR, *safe_parts) if safe_parts else WORKSPACE_DIR
+        else:
+            target_dir = _safe_join(WORKSPACE_DIR, rel_dir_form) if rel_dir_form else WORKSPACE_DIR
+            target_name = secure_filename(f.filename) or "uploaded"
+
         if not target_dir:
             return jsonify({"error": "잘못된 디렉토리"}), 400
         os.makedirs(target_dir, exist_ok=True)
-        target_name = secure_filename(f.filename) or "uploaded"
         target_path = os.path.join(target_dir, target_name)
         f.save(target_path)
         rel_path = os.path.relpath(target_path, WORKSPACE_DIR).replace("\\", "/")

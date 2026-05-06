@@ -97,12 +97,15 @@
     <div class="ws-head">
       <span class="title">📁 워크스페이스</span>
       <button class="ghost" id="btnWsRefresh" title="새로고침">⟳</button>
-      <button class="ghost" id="btnWsUpload" title="업로드">＋</button>
+      <button class="ghost" id="btnWsUploadFile" title="파일 업로드">＋파일</button>
+      <button class="ghost" id="btnWsUploadDir" title="폴더 업로드">＋폴더</button>
     </div>
     <div class="ws-tree" id="wsTree">
-      <div style="color:var(--muted);padding:14px;font-size:12px;">파일이 없습니다. ＋ 로 업로드하세요.</div>
+      <div style="color:var(--muted);padding:14px;font-size:12px;">파일이 없습니다. ＋파일 또는 ＋폴더로 업로드하세요.</div>
     </div>
     <div class="ws-preview" id="wsPreview"></div>
+    <input type="file" id="wsFileInput" multiple style="display:none">
+    <input type="file" id="wsDirInput" webkitdirectory directory multiple style="display:none">
   </aside>
 </div>
 
