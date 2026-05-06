@@ -127,6 +127,15 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
       <div id="state-bars"></div>
     </div>
 
+    <div class="panel">
+      <h3>진단 (현재 FAB)</h3>
+      <div class="row"><span class="l">파싱 성공/실패</span><span class="v" id="diag-parsed">-</span></div>
+      <div class="row"><span class="l">감지된 컬럼</span></div>
+      <div id="diag-cols" style="font-size:10px;color:#cbd5e1;background:#0a0e17;border:1px solid #1f2937;border-radius:3px;padding:4px;margin:4px 0;word-break:break-all;max-height:80px;overflow-y:auto;">—</div>
+      <div class="row"><span class="l">샘플 row</span></div>
+      <pre id="diag-sample" style="font-size:10px;color:#86efac;background:#0a0e17;border:1px solid #1f2937;border-radius:3px;padding:4px;margin:0;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;">—</pre>
+    </div>
+
     <div class="panel" style="font-size:11px; color:#6b7280; line-height:1.5;">
       송신 시작:<br>
       <code style="background:#1f2937;padding:2px 6px;border-radius:3px;color:#fbbf24;">
@@ -454,6 +463,18 @@ function updateStats(d) {
         <div style="height:100%;background:#60a5fa;width:${w}%;"></div></div></div>`;
   }
   $('state-bars').innerHTML = html || '<div style="font-size:11px;color:#6b7280">데이터 대기...</div>';
+
+  // 진단 패널 (현재 FAB)
+  const cur = currentFab === 'M14A' ? d.udp.M14A : d.udp.M16A_BR;
+  if (cur) {
+    const ok = cur.parsed_ok || 0, fail = cur.parsed_fail || 0;
+    $('diag-parsed').textContent = `${ok} / ${fail}` + (fail>0 && ok===0 ? '  ⚠ 모두 실패' : '');
+    $('diag-parsed').style.color = (fail>0 && ok===0) ? '#fca5a5' : (ok>0 ? '#86efac' : '#9ca3af');
+    const cols = cur.columns || [];
+    $('diag-cols').textContent = cols.length ? cols.join(', ') : '— (수신 대기)';
+    const raw = cur.last_raw_row;
+    $('diag-sample').textContent = raw ? JSON.stringify(raw, null, 2) : '— (수신 대기)';
+  }
 }
 
 window.addEventListener('resize', render);

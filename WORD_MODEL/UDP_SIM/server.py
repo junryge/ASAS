@@ -79,46 +79,74 @@ class Vehicle:
 
 # ─────────────────────────────────────────────────────
 # 행 → vehicle 변환 (LOGPRESSO 표준 + OHT_DATA_M14A 양식 모두 대응)
+# 컬럼 이름은 대소문자/언더바 무시 매칭 (LOGPRESSO 다양한 스키마 대응)
 # ─────────────────────────────────────────────────────
-def _i(row: dict, *keys, default: int = 0) -> int:
-    for k in keys:
-        v = row.get(k)
-        if v in (None, ""): continue
-        try:
-            return int(float(v))
-        except (TypeError, ValueError):
-            continue
-    return default
+def _norm(k: str) -> str:
+    return "".join(c.lower() for c in str(k) if c.isalnum())
 
 
-def _s(row: dict, *keys, default: str = "") -> str:
-    for k in keys:
-        v = row.get(k)
-        if v not in (None, ""):
-            return str(v)
-    return default
+def _build_lookup(row: dict) -> Dict[str, str]:
+    """row 의 키를 정규화된 alias 로 매핑. {정규화된키: 원본키}"""
+    return {_norm(k): k for k in row.keys()}
+
+
+def _get(row: dict, lookup: Dict[str, str], *aliases: str):
+    for a in aliases:
+        ak = _norm(a)
+        if ak in lookup:
+            v = row.get(lookup[ak])
+            if v not in (None, ""):
+                return v
+    return None
+
+
+def _i(row: dict, lookup: Dict[str, str], *aliases: str, default: int = 0) -> int:
+    v = _get(row, lookup, *aliases)
+    if v is None:
+        return default
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return default
+
+
+def _s(row: dict, lookup: Dict[str, str], *aliases: str, default: str = "") -> str:
+    v = _get(row, lookup, *aliases)
+    return str(v) if v is not None else default
 
 
 def parse_row(row: dict, fab: str) -> Optional[dict]:
-    vid = _s(row, "VHL_ID", "VEHICLE", "vid")
+    L = _build_lookup(row)
+
+    # vid: 다양한 컬럼명 모두 시도
+    vid = _s(row, L,
+             "VHL_ID", "VEHICLE", "VEHICLE_ID", "VEHICLEID",
+             "vid", "OHT_ID", "OHTID", "CARRIER_ID", "CARRIERID")
     if not vid:
         return None
-    cur = _i(row, "ADDRESS", "CURRENT_ADDR", "FROM_HIDID")
-    nxt = _i(row, "NEXT_ADDRESS", "NEXT_ADDR", "TO_HIDID")
-    if cur == 0 and nxt == 0:
-        return None
+
+    cur = _i(row, L,
+             "ADDRESS", "CURRENT_ADDRESS", "CURRENTADDRESS",
+             "CURRENT_ADDR", "CURRENT_NODE", "CURRENTNODE",
+             "FROM_HIDID", "FROM_NODE", "FROMNODE", "NODE_ID", "NODEID")
+    nxt = _i(row, L,
+             "NEXT_ADDRESS", "NEXTADDRESS",
+             "NEXT_ADDR", "NEXT_NODE", "NEXTNODE",
+             "TO_HIDID", "TO_NODE", "TONODE")
+    # cur/nxt 0 이어도 vehicle 자체는 만들어 둠 (나중에 위치 안 잡혀도 카운트는 됨)
+
     return {
         "vid": vid,
         "fab": fab,
-        "state":       _i(row, "STATUS", "STATE", default=1),
-        "is_full":     _i(row, "STOCK_INFO", "IS_FULL"),
+        "state":       _i(row, L, "STATUS", "STATE", default=1),
+        "is_full":     _i(row, L, "STOCK_INFO", "IS_FULL", "ISFULL"),
         "current_node": cur,
         "next_node":    nxt,
-        "distance":    _i(row, "DISTANCE", "DISTANCE_MM", "TRANS_CNT"),
-        "destination": _i(row, "DESTINATION"),
-        "speed":       _i(row, "SPEED", "FREE_FLOW_SPEED"),
-        "source_port": _s(row, "FROM_RETURN_PORT", "SOURCE_PORT"),
-        "dest_port":   _s(row, "DEST_RETURN_PORT", "DEST_PORT"),
+        "distance":    _i(row, L, "DISTANCE", "DISTANCE_MM", "DISTANCEMM", "TRANS_CNT"),
+        "destination": _i(row, L, "DESTINATION", "DEST"),
+        "speed":       _i(row, L, "SPEED", "FREE_FLOW_SPEED"),
+        "source_port": _s(row, L, "FROM_RETURN_PORT", "SOURCE_PORT", "SRC_PORT"),
+        "dest_port":   _s(row, L, "DEST_RETURN_PORT", "DEST_PORT"),
     }
 
 
@@ -143,6 +171,11 @@ class FabReceiver(threading.Thread):
         self.last_addr: Optional[Tuple[str, int]] = None
         self.last_error: Optional[str] = None
         self._bound = False
+        # 진단용: 마지막 패킷 raw 정보
+        self.last_columns: List[str] = []
+        self.last_raw_row: Optional[dict] = None
+        self.parsed_ok = 0
+        self.parsed_fail = 0
 
     def bind(self) -> bool:
         try:
@@ -163,6 +196,10 @@ class FabReceiver(threading.Thread):
             "last_ts":  self.last_ts,
             "last_addr": list(self.last_addr) if self.last_addr else None,
             "last_error": self.last_error,
+            "columns": self.last_columns,
+            "last_raw_row": self.last_raw_row,
+            "parsed_ok":   self.parsed_ok,
+            "parsed_fail": self.parsed_fail,
         }
 
     def run(self):
@@ -186,11 +223,17 @@ class FabReceiver(threading.Thread):
                 continue
             self.last_ts = pkt.get("ts")
             ts_dt = _parse_ts(pkt.get("ts") or "")
-            for row in pkt.get("rows") or []:
+            rows = pkt.get("rows") or []
+            if rows:
+                self.last_raw_row = rows[0]
+                self.last_columns = list(rows[0].keys())
+            for row in rows:
+                self.rx_rows += 1
                 vd = parse_row(row, self.fab)
                 if vd is None:
+                    self.parsed_fail += 1
                     continue
-                self.rx_rows += 1
+                self.parsed_ok += 1
                 self.store.update(vd, ts_dt, now)
 
     @staticmethod
