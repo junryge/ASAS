@@ -60,8 +60,9 @@
     <h2>데이터 정보</h2>
     <div class="row"><span>CSV 경로</span><b id="csv-path" style="font-size:11px; word-break:break-all;">—</b></div>
     <div class="row"><span>파일 존재</span><b id="csv-exists">—</b></div>
-    <div class="row"><span>전체 row</span><b id="rows-total">—</b></div>
-    <div class="row"><span>시간 범위</span><b id="time-range" style="font-size:11px;">—</b></div>
+    <div class="row"><span>파일 크기</span><b id="file-size">—</b></div>
+    <div class="row"><span>시간 컬럼</span><b id="time-col">—</b></div>
+    <div class="row"><span>첫 row ts</span><b id="first-ts" style="font-size:11px;">—</b></div>
     <div class="row"><span>UDP 포트</span><b>{{UDP_PORT}}</b></div>
   </div>
 
@@ -150,8 +151,10 @@ async function refresh() {
     $('csv-path').textContent   = s.csv;
     $('csv-exists').textContent = s.csv_exists ? '있음' : '없음 ⚠️';
     $('csv-exists').style.color = s.csv_exists ? '#86efac' : '#fca5a5';
-    $('rows-total').textContent = fmtNum(s.rows_total);
-    $('time-range').textContent = (s.rows_first_ts||'—') + '\n~ ' + (s.rows_last_ts||'—');
+    $('file-size').textContent  = fmtBytes(s.file_bytes||0);
+    $('time-col').textContent   = s.time_col || '⚠ 미감지';
+    $('time-col').style.color   = s.time_col ? '#cbd5e1' : '#fca5a5';
+    $('first-ts').textContent   = s.rows_first_ts || '—';
 
     $('tx-packets').textContent = fmtNum(s.tx_packets);
     $('tx-rows').textContent    = fmtNum(s.tx_rows);
@@ -160,11 +163,11 @@ async function refresh() {
     $('cycle').textContent      = s.cycle;
     $('elapsed').textContent    = fmtSec(s.elapsed_real_sec);
 
-    const tot = s.rows_total || 1, cur = s.cur_idx || 0;
+    const tot = s.file_bytes || 1, cur = s.cur_byte || 0;
     const pct = Math.min(100, (cur/tot*100));
     $('bar').style.width = pct + '%';
-    $('pos-cur').textContent = fmtNum(cur);
-    $('pos-tot').textContent = fmtNum(tot);
+    $('pos-cur').textContent = fmtBytes(cur);
+    $('pos-tot').textContent = fmtBytes(tot);
     $('pos-pct').textContent = pct.toFixed(1) + '%';
 
     const pill = $('state');

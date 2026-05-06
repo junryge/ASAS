@@ -90,7 +90,7 @@ class SenderWorker:
         self.tx_packets = 0
         self.tx_rows    = 0
         self.tx_bytes   = 0
-        self.cur_idx    = 0
+        self.cur_byte   = 0     # 파일 byte 오프셋 (진행률용)
         self.cur_ts: Optional[datetime] = None
         self.last_tx: Optional[datetime] = None
         self.cycle    = 0
@@ -109,13 +109,16 @@ class SenderWorker:
                 return False
             if not self.loader.loaded:
                 self.loader.load()
-            if self.loader.total_rows() == 0:
+            if not self.loader.exists() or self.loader.file_bytes == 0:
                 self.last_error = f"CSV not found or empty: {self.csv_path}"
+                return False
+            if not self.loader.time_col:
+                self.last_error = f"time column not detected. fieldnames={self.loader.fieldnames}"
                 return False
             self.running = True
             self.paused = False
             self.stop_flag = False
-            self.cur_idx = 0
+            self.cur_byte = 0
             self.tx_packets = 0
             self.tx_rows = 0
             self.tx_bytes = 0
@@ -150,9 +153,11 @@ class SenderWorker:
             "fab": self.fab,
             "csv": self.csv_path,
             "csv_exists": self.loader.exists(),
-            "rows_total": self.loader.total_rows(),
+            "file_bytes": self.loader.file_bytes,
+            "fieldnames": self.loader.fieldnames,
+            "time_col":   self.loader.time_col,
             "rows_first_ts": first,
-            "rows_last_ts": last,
+            "rows_last_ts": last,        # 대용량 모드는 None
             "udp_host": self.udp_host,
             "udp_port": self.udp_port,
             "running": self.running,
@@ -163,44 +168,41 @@ class SenderWorker:
             "tx_packets": self.tx_packets,
             "tx_rows": self.tx_rows,
             "tx_bytes": self.tx_bytes,
-            "cur_idx": self.cur_idx,
+            "cur_byte": self.cur_byte,
             "cur_ts": self.cur_ts.isoformat() if self.cur_ts else None,
             "last_tx": self.last_tx.isoformat() if self.last_tx else None,
             "elapsed_real_sec": (time.time() - self.start_real) if self.start_real else 0,
             "last_error": self.last_error,
         }
 
-    # ── 송신 루프 (스트리밍) ────────────────────────
+    # ── 송신 루프 (byte 스트리밍) ───────────────────
     def _run(self):
         if not self.loader.time_col:
             self.last_error = "time column not detected"
             self.running = False
             return
 
-        total = self.loader.total_rows()
+        total_bytes = self.loader.file_bytes
         try:
             while not self.stop_flag:
                 # 이번 cycle 의 시작 위치 (seek 적용)
                 seek = self.seek_ratio
                 self.seek_ratio = None
-                start_idx = int(seek * total) if seek is not None and total > 0 else 0
-                self.cur_idx = start_idx
+                start_byte = int(seek * total_bytes) if seek is not None and total_bytes > 0 else 0
+                self.cur_byte = start_byte
 
                 last_sent_ts: Optional[datetime] = None
                 consumed_any = False
 
-                # CSV 처음부터 스트리밍 (start_idx 만큼 건너뛰고 시작)
-                for ts0, batch, new_idx in self.loader.iter_groups(start_at_idx=start_idx):
+                for ts0, batch, byte_pos in self.loader.iter_groups(start_byte=start_byte):
                     if self.stop_flag:
                         return
                     if self.seek_ratio is not None:
-                        # 새 seek → 안쪽 for 탈출 → 바깥 while 에서 재시작
                         break
 
-                    # 다음 group 까지 대기 (현재 ts - 직전 ts)
+                    # 다음 group 까지 대기 (직전 ts → 현재 ts)
                     if last_sent_ts is not None:
                         wait_sec = self._sleep_for(last_sent_ts, ts0)
-                        # pause/stop 처리
                         while wait_sec > 0 and not self.stop_flag:
                             if self.seek_ratio is not None:
                                 break
@@ -216,7 +218,6 @@ class SenderWorker:
                     if self.stop_flag:
                         return
                     if self.paused:
-                        # paused 인 동안 송신 안 하고 대기
                         while self.paused and not self.stop_flag and self.seek_ratio is None:
                             time.sleep(0.1)
                         if self.stop_flag:
@@ -225,17 +226,16 @@ class SenderWorker:
                             break
 
                     self._send_batch(ts0, batch)
-                    self.cur_idx = new_idx
+                    self.cur_byte = byte_pos
                     last_sent_ts = ts0
                     consumed_any = True
 
                 if self.stop_flag:
                     return
                 if self.seek_ratio is not None:
-                    continue   # 새 seek 로 재시작
+                    continue
                 if not self.loop:
                     break
-                # cycle 끝 → 처음부터
                 if consumed_any:
                     self.cycle += 1
 
