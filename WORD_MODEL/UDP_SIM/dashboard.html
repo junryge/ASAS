@@ -370,7 +370,8 @@ function connectWs() {
 
 function onPush(d) {
   // 차량 (현재 FAB 만)
-  const list = (d.vehicles || []).filter(v => v.fab === currentFab);
+  // FAB 필터 안 함 — 모든 FAB 차량 동시 표시 (M14A 녹색 / M16BR 파랑 외곽선)
+  const list = (d.vehicles || []);
   lastVehicles = list;
 
   // UDP 통계 갱신
