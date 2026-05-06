@@ -438,21 +438,10 @@ class VehicleStore:
 # ─────────────────────────────────────────────────────
 app = FastAPI(title="UDP_SIM — 실시간 OHT 위치", version="1.0")
 
-# 캐시 디렉터리의 모든 layout 파일을 통합 (노드 ID 매칭률 ↑)
-def _all_caches() -> list:
-    cands = []
-    for d in [Path(__file__).parent / "cache",
-              Path(__file__).parent.parent / "OHT_MAP" / "cache"]:
-        if d.exists():
-            cands.extend(sorted(d.glob("*_layout_cache.json")))
-    return cands
-
-_CACHES = _all_caches()
-print(f"[layout] 발견된 캐시 파일: {[p.name for p in _CACHES]}")
-
+# FAB 별 자기 캐시 1개씩만 — 맵 깨끗하게 (3개 fab 겹치지 않게)
 LAYOUTS: Dict[str, Layout] = {
-    "M14A":    Layout("M14A",    _CACHES).load(),
-    "M16A_BR": Layout("M16A_BR", _CACHES).load(),
+    "M14A":    Layout("M14A",    config.LAYOUT_FILE_M14A).load(),
+    "M16A_BR": Layout("M16A_BR", config.LAYOUT_FILE_M16A_BR).load(),
 }
 STORE = VehicleStore()
 RECEIVERS: Dict[str, FabReceiver] = {

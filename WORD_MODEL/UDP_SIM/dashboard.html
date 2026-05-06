@@ -377,6 +377,21 @@ function onPush(d) {
   const now = performance.now();
   const list = (d.vehicles || []);
 
+  // 자동 FAB 전환: 차량이 들어오는 FAB 로 — 한 번만
+  if (!window._autoFab && list.length > 0) {
+    const fab = list[0].fab;
+    if (fab && fab !== currentFab) {
+      const sel = $('fab-select');
+      if (sel) {
+        sel.value = fab;
+        currentFab = fab;
+        $('cur-fab').textContent = fab;
+        loadLayout(fab);
+      }
+    }
+    window._autoFab = true;
+  }
+
   // 받은 차량들의 target 갱신
   const seen = new Set();
   for (const v of list) {
