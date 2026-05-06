@@ -115,10 +115,51 @@ def _s(row: dict, lookup: Dict[str, str], *aliases: str, default: str = "") -> s
     return str(v) if v is not None else default
 
 
-def parse_row(row: dict, fab: str) -> Optional[dict]:
-    L = _build_lookup(row)
+def parse_oht_line(line: str, fab: str) -> Optional[dict]:
+    """LOGPRESSO 의 line 컬럼 내부 raw OHT 메시지 파싱
+    형식: '2,OHT,VID,STATE,FULL,_,_,CUR,DIST,NEXT,RUN,VHL,CARRIER,DEST,_,_,SRC,DST,SPEED,...'
+    """
+    if not line:
+        return None
+    s = line.strip().strip('"').strip("'")
+    if "2,OHT," not in s:
+        return None
+    idx = s.index("2,OHT,")
+    s = s[idx:]
+    f = s.split(",")
+    if len(f) < 11 or f[1] != "OHT":
+        return None
+    try:
+        vid = f[2].strip()
+        if not vid:
+            return None
+        return {
+            "vid": vid,
+            "fab": fab,
+            "state":       int(f[3])  if f[3].strip().lstrip('-').isdigit() else 1,
+            "is_full":     int(f[4])  if f[4].strip().isdigit() else 0,
+            "current_node": int(f[7]) if f[7].strip().isdigit() else 0,
+            "distance":    int(f[8])  if f[8].strip().isdigit() else 0,
+            "next_node":   int(f[9])  if f[9].strip().isdigit() else 0,
+            "destination": int(f[13]) if len(f) > 13 and f[13].strip().lstrip('-').isdigit() else 0,
+            "source_port": f[16].strip() if len(f) > 16 else "",
+            "dest_port":   f[17].strip() if len(f) > 17 else "",
+            "speed":       int(f[18])  if len(f) > 18 and f[18].strip().lstrip('-').isdigit() else 0,
+        }
+    except (ValueError, IndexError):
+        return None
 
-    # vid: 다양한 컬럼명 모두 시도
+
+def parse_row(row: dict, fab: str) -> Optional[dict]:
+    # ① LOGPRESSO 'line' 컬럼 안에 raw OHT 메시지가 들어있는 형식 우선
+    L = _build_lookup(row)
+    line = _s(row, L, "line", "LINE", "MESSAGE", "MSG", "RAW")
+    if line and "2,OHT," in line:
+        v = parse_oht_line(line, fab)
+        if v:
+            return v
+
+    # ② 그 외: 컬럼이 평탄하게 펼쳐진 LOGPRESSO/CSV 형식
     vid = _s(row, L,
              "VHL_ID", "VEHICLE", "VEHICLE_ID", "VEHICLEID",
              "vid", "OHT_ID", "OHTID", "CARRIER_ID", "CARRIERID")
@@ -133,7 +174,6 @@ def parse_row(row: dict, fab: str) -> Optional[dict]:
              "NEXT_ADDRESS", "NEXTADDRESS",
              "NEXT_ADDR", "NEXT_NODE", "NEXTNODE",
              "TO_HIDID", "TO_NODE", "TONODE")
-    # cur/nxt 0 이어도 vehicle 자체는 만들어 둠 (나중에 위치 안 잡혀도 카운트는 됨)
 
     return {
         "vid": vid,
