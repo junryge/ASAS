@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{{FAB}} 송신 제어</title>
+<style>
+  :root { --c-accent: {{COLOR}}; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+         margin: 0; padding: 24px; background:#0b1220; color:#e5e7eb; }
+  h1 { margin: 0 0 16px; font-size: 22px; }
+  h1 .badge { display:inline-block; padding: 4px 12px; border-radius:6px;
+              background: var(--c-accent); color:#fff; font-size:14px; margin-right:8px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+  .card { background:#111827; border:1px solid #1f2937; border-radius:8px; padding:16px; }
+  .card h2 { margin:0 0 12px; font-size:14px; color:#9ca3af; text-transform:uppercase;
+             letter-spacing: 0.05em; }
+  .row { display:flex; justify-content:space-between; padding:6px 0; font-size:14px;
+         border-bottom:1px solid #1f2937; }
+  .row:last-child { border-bottom:0; }
+  .row b { color:#f3f4f6; font-weight:600; }
+  .row span { color:#9ca3af; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; }
+  button { background:#374151; color:#fff; border:0; padding:10px 16px;
+           border-radius:6px; cursor:pointer; font-size:14px; }
+  button:hover { background:#4b5563; }
+  button.primary { background: var(--c-accent); }
+  button.primary:hover { filter: brightness(1.1); }
+  button.danger { background:#dc2626; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  input[type=range] { width: 100%; }
+  input[type=number] { width: 80px; padding:6px; background:#1f2937; color:#fff;
+                       border:1px solid #374151; border-radius:4px; }
+  .status-pill { display:inline-block; padding:2px 10px; border-radius:10px;
+                 font-size:12px; margin-left:8px; }
+  .pill-on  { background:#15803d; color:#fff; }
+  .pill-off { background:#6b7280; color:#fff; }
+  .pill-pause { background:#d97706; color:#fff; }
+  .progress { height:8px; background:#1f2937; border-radius:4px; overflow:hidden; }
+  .progress > div { height:100%; background: var(--c-accent); width:0%; transition:width .3s; }
+  .stat-num { font-size:24px; font-weight:700; color:#f3f4f6; }
+  .stat-sub { font-size:12px; color:#6b7280; }
+  .err { color:#fca5a5; font-size:12px; margin-top:8px; }
+  code { background:#1f2937; padding:2px 6px; border-radius:3px; color:#fbbf24;
+         font-size:12px; }
+</style>
+</head>
+<body>
+
+<h1>
+  <span class="badge">{{FAB}}</span>
+  OHT 송신 제어
+  <span id="state" class="status-pill pill-off">대기</span>
+</h1>
+
+<div class="grid">
+
+  <!-- 1. 데이터 정보 -->
+  <div class="card">
+    <h2>데이터 정보</h2>
+    <div class="row"><span>CSV 경로</span><b id="csv-path" style="font-size:11px; word-break:break-all;">—</b></div>
+    <div class="row"><span>파일 존재</span><b id="csv-exists">—</b></div>
+    <div class="row"><span>전체 row</span><b id="rows-total">—</b></div>
+    <div class="row"><span>시간 범위</span><b id="time-range" style="font-size:11px;">—</b></div>
+    <div class="row"><span>UDP 포트</span><b>{{UDP_PORT}}</b></div>
+  </div>
+
+  <!-- 2. 송신 통계 -->
+  <div class="card">
+    <h2>송신 통계</h2>
+    <div class="row"><span>전송 패킷</span><b><span id="tx-packets" class="stat-num">0</span></b></div>
+    <div class="row"><span>전송 row</span><b id="tx-rows">0</b></div>
+    <div class="row"><span>전송 byte</span><b id="tx-bytes">0</b></div>
+    <div class="row"><span>현재 ts</span><b id="cur-ts" style="font-size:11px;">—</b></div>
+    <div class="row"><span>cycle</span><b id="cycle">0</b></div>
+    <div class="row"><span>실시간 경과</span><b id="elapsed">0초</b></div>
+  </div>
+
+  <!-- 3. 진행도 -->
+  <div class="card" style="grid-column: span 2;">
+    <h2>진행도</h2>
+    <div class="progress"><div id="bar"></div></div>
+    <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:6px; color:#6b7280;">
+      <span id="pos-cur">0</span>
+      <span id="pos-pct">0%</span>
+      <span id="pos-tot">0</span>
+    </div>
+  </div>
+
+  <!-- 4. 제어 -->
+  <div class="card" style="grid-column: span 2;">
+    <h2>제어</h2>
+    <div class="controls" style="margin-bottom: 12px;">
+      <button id="btn-start"  class="primary">▶ 시작</button>
+      <button id="btn-pause">  ⏸ 일시정지</button>
+      <button id="btn-resume"> ▶ 재개</button>
+      <button id="btn-stop" class="danger">■ 정지</button>
+    </div>
+    <div class="row">
+      <span>속도 (× 실시간)</span>
+      <span style="display:flex; gap:8px; align-items:center;">
+        <input type="number" id="speed-num" min="0.1" max="3600" step="0.1" value="60">
+        <button id="btn-speed">적용</button>
+      </span>
+    </div>
+    <div class="row">
+      <span>루프 (CSV 끝나면 처음부터)</span>
+      <span><label><input type="checkbox" id="loop-cb" checked> ON</label></span>
+    </div>
+    <div class="row">
+      <span>위치 점프</span>
+      <span style="display:flex; gap:8px; align-items:center; width:60%;">
+        <input type="range" id="seek-range" min="0" max="100" value="0">
+        <button id="btn-seek">이동</button>
+      </span>
+    </div>
+    <p class="err" id="err"></p>
+    <div style="margin-top:12px; font-size:12px; color:#6b7280;">
+      수신확인: <code>nc -ul {{UDP_PORT}}</code>
+      &nbsp;|&nbsp; 메인 UI: <code>http://127.0.0.1:11000</code>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
+  if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+  return r.json();
+}
+
+function fmtNum(n){ return (n||0).toLocaleString(); }
+function fmtBytes(b){
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(2) + ' MB';
+}
+function fmtSec(s){
+  s = Math.floor(s||0);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), x = s%60;
+  return (h?h+'시간 ':'') + (m?m+'분 ':'') + x + '초';
+}
+
+async function refresh() {
+  try {
+    const s = await api('/api/status');
+    $('csv-path').textContent   = s.csv;
+    $('csv-exists').textContent = s.csv_exists ? '있음' : '없음 ⚠️';
+    $('csv-exists').style.color = s.csv_exists ? '#86efac' : '#fca5a5';
+    $('rows-total').textContent = fmtNum(s.rows_total);
+    $('time-range').textContent = (s.rows_first_ts||'—') + '\n~ ' + (s.rows_last_ts||'—');
+
+    $('tx-packets').textContent = fmtNum(s.tx_packets);
+    $('tx-rows').textContent    = fmtNum(s.tx_rows);
+    $('tx-bytes').textContent   = fmtBytes(s.tx_bytes);
+    $('cur-ts').textContent     = s.cur_ts || '—';
+    $('cycle').textContent      = s.cycle;
+    $('elapsed').textContent    = fmtSec(s.elapsed_real_sec);
+
+    const tot = s.rows_total || 1, cur = s.cur_idx || 0;
+    const pct = Math.min(100, (cur/tot*100));
+    $('bar').style.width = pct + '%';
+    $('pos-cur').textContent = fmtNum(cur);
+    $('pos-tot').textContent = fmtNum(tot);
+    $('pos-pct').textContent = pct.toFixed(1) + '%';
+
+    const pill = $('state');
+    if (s.running && !s.paused) { pill.className='status-pill pill-on'; pill.textContent='송신 중'; }
+    else if (s.running && s.paused) { pill.className='status-pill pill-pause'; pill.textContent='일시정지'; }
+    else { pill.className='status-pill pill-off'; pill.textContent='대기'; }
+
+    $('err').textContent = s.last_error ? ('⚠ ' + s.last_error) : '';
+  } catch (e) {
+    $('err').textContent = '⚠ ' + e.message;
+  }
+}
+
+$('btn-start').onclick  = () => api('/api/start',  {method:'POST'}).then(refresh);
+$('btn-pause').onclick  = () => api('/api/pause',  {method:'POST'}).then(refresh);
+$('btn-resume').onclick = () => api('/api/resume', {method:'POST'}).then(refresh);
+$('btn-stop').onclick   = () => api('/api/stop',   {method:'POST'}).then(refresh);
+$('btn-speed').onclick  = () => api('/api/speed',  {method:'POST', body: JSON.stringify({speed:parseFloat($('speed-num').value)})}).then(refresh);
+$('loop-cb').onchange   = () => api('/api/loop',   {method:'POST', body: JSON.stringify({loop:$('loop-cb').checked})});
+$('btn-seek').onclick   = () => api('/api/seek',   {method:'POST', body: JSON.stringify({ratio:parseInt($('seek-range').value)/100})}).then(refresh);
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

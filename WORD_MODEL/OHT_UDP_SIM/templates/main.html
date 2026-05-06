@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>OHT UDP 수신 메인</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system,"Segoe UI","Malgun Gothic",sans-serif;
+         margin:0; padding:24px; background:#0b1220; color:#e5e7eb; }
+  h1 { margin:0 0 16px; font-size:22px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px; }
+  .card { background:#111827; border:1px solid #1f2937; border-radius:8px; padding:16px; }
+  .card.m14a { border-left:4px solid #22c55e; }
+  .card.m16a { border-left:4px solid #3b82f6; }
+  .card h2 { margin:0 0 12px; font-size:14px; color:#9ca3af;
+             text-transform:uppercase; letter-spacing:0.05em; }
+  .card h2 .badge { font-size:12px; padding:2px 8px; border-radius:4px;
+                    color:#fff; margin-left:6px; }
+  .m14a h2 .badge { background:#22c55e; }
+  .m16a h2 .badge { background:#3b82f6; }
+  .row { display:flex; justify-content:space-between; padding:6px 0; font-size:13px;
+         border-bottom:1px solid #1f2937; }
+  .row:last-child { border-bottom:0; }
+  .row b { color:#f3f4f6; font-weight:600; }
+  .row span { color:#9ca3af; }
+  .stat-num { font-size:22px; font-weight:700; }
+  .feed { height: 380px; overflow-y:auto; background:#0b1220;
+          border:1px solid #1f2937; border-radius:6px; padding:8px;
+          font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size:12px; }
+  .feed-line { padding:4px 6px; border-bottom:1px dotted #1f2937; }
+  .feed-line.m14a { border-left:3px solid #22c55e; padding-left:8px; }
+  .feed-line.m16a { border-left:3px solid #3b82f6; padding-left:8px; }
+  .feed-line .time { color:#6b7280; margin-right:8px; }
+  .feed-line .fab { font-weight:700; margin-right:6px; }
+  .feed-line .ts { color:#fbbf24; margin-right:8px; }
+  .feed-line .meta { color:#9ca3af; }
+  .feed-line .sample { color:#86efac; font-size:11px; margin-top:2px;
+                       white-space:pre-wrap; word-break:break-all; }
+  button { background:#374151; color:#fff; border:0; padding:8px 14px;
+           border-radius:6px; cursor:pointer; font-size:13px; }
+  button:hover { background:#4b5563; }
+  button.danger { background:#dc2626; }
+  .conn-on  { color:#86efac; }
+  .conn-off { color:#fca5a5; }
+  code { background:#1f2937; padding:2px 6px; border-radius:3px; color:#fbbf24; font-size:12px; }
+  .toolbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+  .toolbar label { font-size:12px; color:#9ca3af; }
+</style>
+</head>
+<body>
+
+<h1>
+  OHT UDP 수신 메인
+  <span id="conn" style="font-size:14px; margin-left:8px;" class="conn-off">● 연결 대기</span>
+</h1>
+
+<div class="grid">
+
+  <div class="card m14a">
+    <h2>M14A <span class="badge">UDP {{UDP_PORT_M14A}}</span></h2>
+    <div class="row"><span>수신 패킷</span><b><span id="m14-pkt" class="stat-num">0</span></b></div>
+    <div class="row"><span>수신 row</span>  <b id="m14-rows">0</b></div>
+    <div class="row"><span>수신 byte</span> <b id="m14-bytes">0</b></div>
+    <div class="row"><span>최근 ts</span>   <b id="m14-ts" style="font-size:11px;">—</b></div>
+    <div class="row"><span>최근 수신 시각</span><b id="m14-rx" style="font-size:11px;">—</b></div>
+    <div class="row"><span>송신 주소</span> <b id="m14-from" style="font-size:11px;">—</b></div>
+  </div>
+
+  <div class="card m16a">
+    <h2>M16A_BR <span class="badge">UDP {{UDP_PORT_M16A_BR}}</span></h2>
+    <div class="row"><span>수신 패킷</span><b><span id="m16-pkt" class="stat-num">0</span></b></div>
+    <div class="row"><span>수신 row</span>  <b id="m16-rows">0</b></div>
+    <div class="row"><span>수신 byte</span> <b id="m16-bytes">0</b></div>
+    <div class="row"><span>최근 ts</span>   <b id="m16-ts" style="font-size:11px;">—</b></div>
+    <div class="row"><span>최근 수신 시각</span><b id="m16-rx" style="font-size:11px;">—</b></div>
+    <div class="row"><span>송신 주소</span> <b id="m16-from" style="font-size:11px;">—</b></div>
+  </div>
+
+</div>
+
+<div class="card">
+  <h2>실시간 피드 (UDP 수신 라이브)</h2>
+  <div class="toolbar">
+    <label><input type="checkbox" id="filter-m14a" checked> M14A 표시</label>
+    <label><input type="checkbox" id="filter-m16a" checked> M16A_BR 표시</label>
+    <label><input type="checkbox" id="auto-scroll" checked> 자동 스크롤</label>
+    <label>최대 라인 <input type="number" id="max-lines" value="500" min="50" max="5000" style="width:80px; padding:4px; background:#1f2937; color:#fff; border:1px solid #374151; border-radius:4px;"></label>
+    <button id="btn-clear" class="danger">피드 비우기</button>
+    <button id="btn-clear-stats">통계 초기화</button>
+    <span style="margin-left:auto; font-size:12px; color:#6b7280;">
+      송신 시작: <code>python3 sender.py m14a</code> / <code>python3 sender.py m16a_br</code>
+    </span>
+  </div>
+  <div id="feed" class="feed"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function fmtNum(n){ return (n||0).toLocaleString(); }
+function fmtBytes(b){
+  if (b<1024) return b+' B';
+  if (b<1024*1024) return (b/1024).toFixed(1)+' KB';
+  return (b/1024/1024).toFixed(2)+' MB';
+}
+
+async function refreshState() {
+  try {
+    const s = await fetch('/api/state').then(r=>r.json());
+    const m14 = s.fabs.M14A, m16 = s.fabs.M16A_BR;
+    $('m14-pkt').textContent  = fmtNum(m14.rx_packets);
+    $('m14-rows').textContent = fmtNum(m14.rx_rows);
+    $('m14-bytes').textContent= fmtBytes(m14.rx_bytes);
+    $('m14-ts').textContent   = m14.last_ts || '—';
+    $('m14-rx').textContent   = m14.last_at || '—';
+    $('m14-from').textContent = m14.last_addr ? (m14.last_addr[0]+':'+m14.last_addr[1]) : '—';
+
+    $('m16-pkt').textContent  = fmtNum(m16.rx_packets);
+    $('m16-rows').textContent = fmtNum(m16.rx_rows);
+    $('m16-bytes').textContent= fmtBytes(m16.rx_bytes);
+    $('m16-ts').textContent   = m16.last_ts || '—';
+    $('m16-rx').textContent   = m16.last_at || '—';
+    $('m16-from').textContent = m16.last_addr ? (m16.last_addr[0]+':'+m16.last_addr[1]) : '—';
+  } catch(e) {}
+}
+
+function appendFeed(d) {
+  const showM14 = $('filter-m14a').checked;
+  const showM16 = $('filter-m16a').checked;
+  const isM14 = d.fab === 'M14A';
+  if (isM14 && !showM14) return;
+  if (!isM14 && !showM16) return;
+
+  const cls = isM14 ? 'm14a' : 'm16a';
+  const div = document.createElement('div');
+  div.className = 'feed-line ' + cls;
+
+  const time = new Date(d.rx_at).toLocaleTimeString();
+  const sample = (d.sample||[]).slice(0,2).map(r => {
+    const keys = Object.keys(r).slice(0,4);
+    return keys.map(k => r[k]).join('|');
+  }).join('\n');
+
+  div.innerHTML =
+    '<span class="time">'+time+'</span>'+
+    '<span class="fab">'+d.fab+'</span>'+
+    '<span class="ts">'+(d.ts||'-')+'</span>'+
+    '<span class="meta">rows='+d.count+' '+fmtBytes(d.size)+' from '+d.from+'</span>'+
+    (sample ? '<div class="sample">'+sample+'</div>' : '');
+
+  const feed = $('feed');
+  feed.appendChild(div);
+
+  const max = parseInt($('max-lines').value)||500;
+  while (feed.childElementCount > max) feed.removeChild(feed.firstChild);
+
+  if ($('auto-scroll').checked) feed.scrollTop = feed.scrollHeight;
+}
+
+let es = null;
+function connectSSE() {
+  if (es) try { es.close(); } catch(e){}
+  es = new EventSource('/api/stream');
+  es.onopen = () => {
+    $('conn').textContent = '● 연결됨';
+    $('conn').className = 'conn-on';
+  };
+  es.onerror = () => {
+    $('conn').textContent = '● 끊김 (재연결 시도)';
+    $('conn').className = 'conn-off';
+  };
+  es.onmessage = (ev) => {
+    try { appendFeed(JSON.parse(ev.data)); } catch(e){}
+  };
+}
+
+$('btn-clear').onclick = () => { $('feed').innerHTML = ''; };
+$('btn-clear-stats').onclick = async () => {
+  await fetch('/api/clear', {method:'POST'});
+  refreshState();
+};
+
+connectSSE();
+refreshState();
+setInterval(refreshState, 1000);
+</script>
+</body>
+</html>

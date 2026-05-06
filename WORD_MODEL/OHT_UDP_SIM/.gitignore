@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+logs/
+*.pid
+M14A_DATA/*.CSV
+M14A_DATA/*.csv
+M16A_BR_DATA/*.CSV
+M16A_BR_DATA/*.csv
+!M14A_DATA/.gitkeep
+!M16A_BR_DATA/.gitkeep
