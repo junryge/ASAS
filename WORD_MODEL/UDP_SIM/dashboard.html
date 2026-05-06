@@ -368,16 +368,57 @@ function connectWs() {
   setInterval(() => { try { ws && ws.readyState===1 && ws.send('ping'); } catch(e){} }, 5000);
 }
 
-function onPush(d) {
-  // 차량 (현재 FAB 만)
-  // FAB 필터 안 함 — 모든 FAB 차량 동시 표시 (M14A 녹색 / M16BR 파랑 외곽선)
-  const list = (d.vehicles || []);
-  lastVehicles = list;
+// ── 부드러운 이동 보간 (60fps) ───────────────
+// 차량별 prev (현재 보간 위치) / target (서버에서 받은 최신) / 마지막 push 시각
+const vState = new Map();   // vid -> {prevX, prevY, tgtX, tgtY, tStart, fab, state}
+const PUSH_INTERVAL_MS = 260;   // 서버 push 주기 (config.WS_PUSH_INTERVAL_S=0.25 보다 살짝 넉넉히)
 
-  // UDP 통계 갱신
+function onPush(d) {
+  const now = performance.now();
+  const list = (d.vehicles || []);
+
+  // 받은 차량들의 target 갱신
+  const seen = new Set();
+  for (const v of list) {
+    if (v.x == null || v.y == null) continue;
+    seen.add(v.vid);
+    let s = vState.get(v.vid);
+    if (s) {
+      // 직전 보간 위치를 prev 로 (자연스러운 연결)
+      const t = Math.min(1, (now - s.tStart) / PUSH_INTERVAL_MS);
+      s.prevX = s.prevX + (s.tgtX - s.prevX) * t;
+      s.prevY = s.prevY + (s.tgtY - s.prevY) * t;
+      s.tgtX = v.x; s.tgtY = v.y;
+      s.tStart = now;
+      s.fab = v.fab; s.state = v.state; s.vid = v.vid;
+    } else {
+      vState.set(v.vid, {
+        prevX:v.x, prevY:v.y, tgtX:v.x, tgtY:v.y,
+        tStart: now, fab:v.fab, state:v.state, vid:v.vid,
+      });
+    }
+  }
+
+  // 안 보이는 vid 정리
+  for (const k of vState.keys()) if (!seen.has(k)) vState.delete(k);
+
   updateStats(d);
-  render();
 }
+
+// 60fps 보간 렌더 루프
+function animLoop() {
+  const now = performance.now();
+  lastVehicles = [];
+  for (const s of vState.values()) {
+    const t = Math.min(1, (now - s.tStart) / PUSH_INTERVAL_MS);
+    const x = s.prevX + (s.tgtX - s.prevX) * t;
+    const y = s.prevY + (s.tgtY - s.prevY) * t;
+    lastVehicles.push({vid:s.vid, fab:s.fab, state:s.state, x, y});
+  }
+  render();
+  requestAnimationFrame(animLoop);
+}
+requestAnimationFrame(animLoop);
 
 function fmtBytes(b){ if(b<1024)return b+'B'; if(b<1048576)return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(2)+'MB'; }
 function fmtNum(n){ return (n||0).toLocaleString(); }

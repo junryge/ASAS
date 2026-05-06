@@ -302,11 +302,10 @@ class SenderWorker:
         self.cur_ts = ts
 
     def _sleep_for(self, cur_ts: datetime, next_ts: Optional[datetime]) -> float:
+        """ts 간격 만큼 sleep. CSV 가 descending 이어도 abs 로 동일 간격 유지."""
         if next_ts is None:
             return 0.0
-        delta = (next_ts - cur_ts).total_seconds()
-        if delta < 0:
-            delta = 0.0
+        delta = abs((next_ts - cur_ts).total_seconds())
         return max(0.0, delta / max(self.speed, 0.001))
 
 
