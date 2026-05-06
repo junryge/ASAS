@@ -16,10 +16,20 @@ UDP_BUFFER_SIZE  = 65535
 HTTP_HOST = os.environ.get("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.environ.get("HTTP_PORT", 12000))
 
-# ── 레이아웃 캐시 (WORD_MODEL/OHT_MAP/cache/ 읽기전용 공유) ──
-LAYOUT_CACHE_DIR = (PROJECT_ROOT.parent / "OHT_MAP" / "cache").resolve()
-LAYOUT_FILE_M14A    = LAYOUT_CACHE_DIR / "M14A_A_layout_cache.json"
-LAYOUT_FILE_M16A_BR = LAYOUT_CACHE_DIR / "M16A_BR_layout_cache.json"
+# ── 레이아웃 캐시 ──
+# 우선순위: ① UDP_SIM/cache/ (zip 내장)  ② WORD_MODEL/OHT_MAP/cache/  ③ ENV override
+def _resolve_layout(name: str) -> Path:
+    candidates = [
+        PROJECT_ROOT / "cache" / name,                                 # zip 내장 (Windows 친화)
+        PROJECT_ROOT.parent / "OHT_MAP" / "cache" / name,              # 원본 위치
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return candidates[0]   # 첫번째 후보 (없어도)
+
+LAYOUT_FILE_M14A    = Path(os.environ.get("LAYOUT_M14A",    str(_resolve_layout("M14A_A_layout_cache.json"))))
+LAYOUT_FILE_M16A_BR = Path(os.environ.get("LAYOUT_M16A_BR", str(_resolve_layout("M16A_BR_layout_cache.json"))))
 
 # ── 송신 주기 (브라우저로 차량 push) ──
 WS_PUSH_INTERVAL_S = 0.25      # 4 Hz

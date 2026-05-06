@@ -45,7 +45,7 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 .fab-pill.M16A_BR { background:#3b82f6; color:#fff; }
 
 #mapwrap { flex:1; position:relative; background:#000; overflow:hidden; }
-#map { width:100%; height:100%; }
+#map { width:100%; height:100%; display:block; background:#000; }
 .hint { position:absolute; bottom:8px; left:12px; font-size:11px; color:#6b7280;
         background:rgba(0,0,0,0.7); padding:4px 8px; border-radius:4px; z-index:5; }
 .legend { position:absolute; top:8px; right:12px; background:rgba(15,23,42,0.85);
@@ -135,7 +135,7 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 
   <div id="mapwrap">
     <div id="disconn" class="disconn-banner">⚠ WebSocket 연결 끊김</div>
-    <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><rect id="bg" x="0" y="0" width="100%" height="100%" fill="#000"/></svg>
     <div class="legend">
       <div class="row"><i style="background:#10b981"></i>RUN</div>
       <div class="row"><i style="background:#f59e0b"></i>WAIT/STANDBY</div>
@@ -214,62 +214,87 @@ const py = y => y*view.scale + view.y;
 // ── 잔상 ─────────────────────────────────────────
 const trail = new Map();   // vid -> [{x,y,t}, ...] (max 8)
 
-// ── 렌더 ─────────────────────────────────────────
+// ── 렌더 (SVG DOM 직접 조작 — innerHTML 안 씀) ───
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
 let lastVehicles = [];
+let layoutError = null;
+
 function render() {
-  const W = svg.clientWidth, H = svg.clientHeight;
-  let s = `<rect width="${W}" height="${H}" fill="#000"/>`;
+  const W = svg.clientWidth || svg.parentElement.clientWidth || 800;
+  const H = svg.clientHeight || svg.parentElement.clientHeight || 600;
+
+  // bg
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.appendChild(svgEl('rect', {x:0, y:0, width:W, height:H, fill:'#000'}));
+
+  if (layoutError) {
+    const t = svgEl('text', {x:W/2, y:H/2, fill:'#fca5a5', 'font-size':14, 'text-anchor':'middle'});
+    t.textContent = '⚠ 레이아웃 로드 실패: ' + layoutError;
+    svg.appendChild(t);
+    const t2 = svgEl('text', {x:W/2, y:H/2+22, fill:'#9ca3af', 'font-size':11, 'text-anchor':'middle'});
+    t2.textContent = 'UDP_SIM/cache/ 또는 OHT_MAP/cache/ 의 layout_cache.json 확인';
+    svg.appendChild(t2);
+    return;
+  }
   if (!layoutData) {
-    s += `<text x="${W/2}" y="${H/2}" fill="#6b7280" font-size="14" text-anchor="middle">레이아웃 로딩...</text>`;
-    svg.innerHTML = s; return;
+    const t = svgEl('text', {x:W/2, y:H/2, fill:'#6b7280', 'font-size':14, 'text-anchor':'middle'});
+    t.textContent = '레이아웃 로딩...';
+    svg.appendChild(t);
+    return;
   }
 
-  // edges
+  // edges (한 path 로 묶음)
   if (layers.edges) {
-    let path = '';
+    let d = '';
     for (const [a,b] of layoutData.edges) {
-      const A = layoutData.nodes[a]; const B = layoutData.nodes[b];
+      const A = layoutData.nodes[a], B = layoutData.nodes[b];
       if (!A || !B) continue;
-      path += `M${px(A[0])},${py(A[1])}L${px(B[0])},${py(B[1])}`;
+      d += `M${px(A[0]).toFixed(1)},${py(A[1]).toFixed(1)}L${px(B[0]).toFixed(1)},${py(B[1]).toFixed(1)}`;
     }
-    s += `<path d="${path}" stroke="#1e3a5f" stroke-width="0.5" fill="none" opacity="0.6"/>`;
+    if (d) svg.appendChild(svgEl('path', {d, stroke:'#1e3a5f', 'stroke-width':0.7, fill:'none', opacity:0.7}));
   }
+
   // nodes
   if (layers.nodes && view.scale > 0.05) {
     const r = Math.max(0.6, 1.2*view.scale);
-    let dots = '';
+    const g = svgEl('g', {fill:'#374151', opacity:0.6});
     for (const k in layoutData.nodes) {
       const [x,y] = layoutData.nodes[k];
-      dots += `<circle cx="${px(x)}" cy="${py(y)}" r="${r}" fill="#374151" opacity="0.6"/>`;
+      g.appendChild(svgEl('circle', {cx:px(x), cy:py(y), r}));
     }
-    s += dots;
+    svg.appendChild(g);
   }
+
   // trails
   if (layers.trail) {
-    let tp = '';
     for (const [vid, pts] of trail) {
       if (pts.length<2) continue;
-      let d = `M${px(pts[0].x)},${py(pts[0].y)}`;
-      for (let i=1;i<pts.length;i++) d += `L${px(pts[i].x)},${py(pts[i].y)}`;
-      tp += `<path d="${d}" stroke="#fbbf24" stroke-width="1" fill="none" opacity="0.35"/>`;
+      let d = `M${px(pts[0].x).toFixed(1)},${py(pts[0].y).toFixed(1)}`;
+      for (let i=1;i<pts.length;i++) d += `L${px(pts[i].x).toFixed(1)},${py(pts[i].y).toFixed(1)}`;
+      svg.appendChild(svgEl('path', {d, stroke:'#fbbf24', 'stroke-width':1, fill:'none', opacity:0.35}));
     }
-    s += tp;
   }
+
   // vehicles
   for (const v of lastVehicles) {
     if (v.x == null || v.y == null) continue;
     const cx = px(v.x), cy = py(v.y);
-    const color = STATE_COLOR[v.state] || '#6b7280';
-    const r = v.fab==='M14A' ? 4 : 4;
+    const color  = STATE_COLOR[v.state] || '#6b7280';
     const stroke = v.fab==='M14A' ? '#22c55e' : '#3b82f6';
-    s += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="${stroke}" stroke-width="1.2"/>`;
+    svg.appendChild(svgEl('circle', {cx, cy, r:4.5, fill:color, stroke, 'stroke-width':1.5}));
     if (layers.id) {
-      s += `<text x="${cx+6}" y="${cy-6}" fill="#cbd5e1" font-size="9">${escapeHtml(v.vid)}</text>`;
+      const t = svgEl('text', {x:cx+6, y:cy-6, fill:'#cbd5e1', 'font-size':9});
+      t.textContent = v.vid;
+      svg.appendChild(t);
     }
   }
-  svg.innerHTML = s;
 }
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 
 // ── FAB / 레이어 토글 ──────────────────────────
 async function onFabChange() {
@@ -286,17 +311,36 @@ function toggleLayer(k) {
 }
 
 async function loadLayout(fab) {
-  const r = await fetch('/api/layout?fab='+fab);
-  if (!r.ok) {
-    $('lo-nodes').textContent = '?';
-    $('lo-edges').textContent = '?';
-    layoutData = null; render(); return;
+  layoutError = null;
+  layoutData  = null;
+  $('lo-nodes').textContent = '...';
+  $('lo-edges').textContent = '...';
+  render();
+  try {
+    const r = await fetch('/api/layout?fab='+fab);
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch(e){}
+      layoutError = msg;
+      $('lo-nodes').textContent = '?';
+      $('lo-edges').textContent = '?';
+      render();
+      return;
+    }
+    const d = await r.json();
+    if (!d.nodes || Object.keys(d.nodes).length === 0) {
+      layoutError = '레이아웃 노드 0개 — JSON 캐시 비었음';
+      render();
+      return;
+    }
+    layoutData = d;
+    $('lo-nodes').textContent = Object.keys(d.nodes).length.toLocaleString();
+    $('lo-edges').textContent = d.edges.length.toLocaleString();
+    requestAnimationFrame(() => { resetView(); render(); });
+  } catch(e) {
+    layoutError = (e && e.message) || String(e);
+    render();
   }
-  const d = await r.json();
-  layoutData = d;
-  $('lo-nodes').textContent = Object.keys(d.nodes).length.toLocaleString();
-  $('lo-edges').textContent = d.edges.length.toLocaleString();
-  resetView();
 }
 
 // ── WebSocket ───────────────────────────────────
