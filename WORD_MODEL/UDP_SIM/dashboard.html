@@ -69,9 +69,6 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
     <option value="M14A">M14A</option>
     <option value="M16A_BR">M16A_BR</option>
   </select>
-  <button class="toggle-btn on" id="btn-edges"   onclick="toggleLayer('edges')">엣지</button>
-  <button class="toggle-btn"    id="btn-nodes"   onclick="toggleLayer('nodes')">노드</button>
-  <button class="toggle-btn"    id="btn-id"      onclick="toggleLayer('id')">차량ID</button>
   <button onclick="resetView()">전체보기</button>
   <span class="divider">|</span>
   <div class="udp-box">
@@ -163,7 +160,7 @@ const $ = id => document.getElementById(id);
 
 let currentFab = 'M14A';
 let layoutData = null;          // {nodes, edges, bounds}
-const layers = { edges:true, nodes:false, id:false };
+const layers = {};   // 모든 선 제거 — 차량 점만
 
 const STATE_COLOR = {
   1:'#10b981',  // RUN
@@ -256,40 +253,13 @@ function render() {
     return;
   }
 
-  // edges — 회색 레일 (맵 윤곽)
-  if (layers.edges) {
-    let d = '';
-    for (const [a,b] of layoutData.edges) {
-      const A = layoutData.nodes[a], B = layoutData.nodes[b];
-      if (!A || !B) continue;
-      d += `M${px(A[0]).toFixed(1)},${py(A[1]).toFixed(1)}L${px(B[0]).toFixed(1)},${py(B[1]).toFixed(1)}`;
-    }
-    if (d) svg.appendChild(svgEl('path', {d, stroke:'#334155', 'stroke-width':0.8, fill:'none', opacity:0.9}));
-  }
-
-  // nodes
-  if (layers.nodes && view.scale > 0.05) {
-    const r = Math.max(0.6, 1.2*view.scale);
-    const g = svgEl('g', {fill:'#1f2937', opacity:0.7});
-    for (const k in layoutData.nodes) {
-      const [x,y] = layoutData.nodes[k];
-      g.appendChild(svgEl('circle', {cx:px(x), cy:py(y), r}));
-    }
-    svg.appendChild(g);
-  }
-
-  // vehicles
+  // 차량 점만 (선 없음)
   for (const v of lastVehicles) {
     if (v.x == null || v.y == null) continue;
     const cx = px(v.x), cy = py(v.y);
     const color  = STATE_COLOR[v.state] || '#6b7280';
     const stroke = v.fab==='M14A' ? '#22c55e' : '#3b82f6';
-    svg.appendChild(svgEl('circle', {cx, cy, r:4.5, fill:color, stroke, 'stroke-width':1.5}));
-    if (layers.id) {
-      const t = svgEl('text', {x:cx+6, y:cy-6, fill:'#1f2937', 'font-size':9});
-      t.textContent = v.vid;
-      svg.appendChild(t);
-    }
+    svg.appendChild(svgEl('circle', {cx, cy, r:5, fill:color, stroke, 'stroke-width':1.5}));
   }
 }
 
