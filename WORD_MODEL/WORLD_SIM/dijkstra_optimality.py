@@ -13,9 +13,14 @@ dijkstra_optimality.py — Dijkstra가 OHT 그래프의 최적 알고리즘인�
 표준 라이브러리만 사용.
 
 사용 예:
+  # 정적 레이아웃만 (가중치 = 거리만)
   python dijkstra_optimality.py --layout cache\\M16A_BR_layout_cache.json
-  python dijkstra_optimality.py --layout ... --report opt_report.json
-  python dijkstra_optimality.py --layout ... --skip-allpairs    # V²가 너무 클 때
+
+  # ★ UDP CSV의 실측 트래픽까지 반영한 LineCost 그래프로 검증 (권장)
+  python dijkstra_optimality.py ^
+      --layout cache\\M16A_BR_layout_cache.json ^
+      --oht    DES\\20260429_UDP.CSV ^
+      --report opt_report.json
 """
 
 import argparse
@@ -25,6 +30,12 @@ import math
 import sys
 import time
 from collections import defaultdict, deque
+
+# 동일 폴더의 분석기에서 CSV 파서·railcut 로더·LineCost 빌더 재사용
+from dijkstra_analyzer import (
+    aggregate_oht_csv, load_railcut, build_linecost_graph,
+    LINECOST_IDLE_VHL_PENALTY, LINECOST_WORK_VHL_PENALTY,
+)
 
 
 # ============================================================
@@ -38,14 +49,14 @@ def load_layout(path):
     for k, dist in L.get('edges', {}).items():
         a, b = k.split(',')
         edges[(int(a), int(b))] = float(dist)
-    adj = defaultdict(list)
+    adj_static = defaultdict(list)
     for k, lst in L.get('adj', {}).items():
-        u = int(k)
+        adj_static[int(k)] = [int(x) for x in lst]
+    adj = defaultdict(list)
+    for u, lst in adj_static.items():
         for v in lst:
-            v = int(v)
-            w = edges.get((u, v), 1.0)
-            adj[u].append((v, w))
-    return coords, edges, adj
+            adj[u].append((v, edges.get((u, v), 1.0)))
+    return coords, edges, adj_static, adj
 
 
 # ============================================================
