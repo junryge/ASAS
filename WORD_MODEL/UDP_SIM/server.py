@@ -51,12 +51,18 @@ class Vehicle:
     speed: int = 0
     source_port: str = ""
     dest_port:   str = ""
+    raw_x:       Optional[float] = None        # CSV 직접 좌표 (있으면 우선)
+    raw_y:       Optional[float] = None
     last_ts:     Optional[datetime] = None      # CSV `_time`
     last_rx:     Optional[datetime] = None      # 우리 수신 시각
 
     def to_dict(self, layout: Layout) -> dict:
-        pos = layout.get_position(self.current_node, self.next_node, self.distance) \
-              if layout.loaded else None
+        # CSV 의 진짜 좌표가 있으면 그걸 그대로 사용 (가장 정확)
+        if self.raw_x is not None and self.raw_y is not None:
+            pos = (self.raw_x, self.raw_y)
+        else:
+            pos = layout.get_position(self.current_node, self.next_node, self.distance) \
+                  if layout.loaded else None
         return {
             "vid": self.vid,
             "fab": self.fab,
@@ -115,51 +121,107 @@ def _s(row: dict, lookup: Dict[str, str], *aliases: str, default: str = "") -> s
     return str(v) if v is not None else default
 
 
+def _to_float(s: str) -> Optional[float]:
+    try:
+        return float(s.strip())
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def parse_oht_line(line: str, fab: str) -> Optional[dict]:
-    """LOGPRESSO 의 line 컬럼 내부 raw OHT 메시지 파싱
-    형식: '2,OHT,VID,STATE,FULL,_,_,CUR,DIST,NEXT,RUN,VHL,CARRIER,DEST,_,_,SRC,DST,SPEED,...'
+    """LOGPRESSO 의 line 컬럼 내부 raw OHT 메시지 파싱.
+
+    포맷 자동 감지:
+      A) VHL_STATE_REPORT (21필드): 2,OHT,VID,STATE,FULL,err,onl,CUR,DIST,NEXT,...
+      B) WIDE format with X,Y: timestamp,VID,X,Y,coord,state,name,full,cur,next,dist,...
+      C) 기타 — VID 만 추출 + 가능한 필드 시도
+
+    좌표는 라인 안에 있으면 그대로 사용 (가장 확실).
     """
     if not line:
         return None
     s = line.strip().strip('"').strip("'")
-    if "2,OHT," not in s:
-        return None
-    idx = s.index("2,OHT,")
-    s = s[idx:]
+
+    # "2,OHT," 패턴 있으면 그 위치부터
+    if "2,OHT," in s:
+        s = s[s.index("2,OHT,"):]
     f = s.split(",")
-    if len(f) < 11 or f[1] != "OHT":
+    if len(f) < 4:
         return None
-    try:
+
+    # ── 포맷 추정 ──────────────────────────────
+    is_state_report = (f[0] == "2" and f[1] == "OHT")  # VHL_STATE_REPORT
+
+    if is_state_report:
+        # 2,OHT,VID,STATE,FULL,err,onl,CUR,DIST,NEXT,...
         vid = f[2].strip()
         if not vid:
             return None
-        return {
-            "vid": vid,
-            "fab": fab,
-            "state":       int(f[3])  if f[3].strip().lstrip('-').isdigit() else 1,
-            "is_full":     int(f[4])  if f[4].strip().isdigit() else 0,
-            "current_node": int(f[7]) if f[7].strip().isdigit() else 0,
-            "distance":    int(f[8])  if f[8].strip().isdigit() else 0,
-            "next_node":   int(f[9])  if f[9].strip().isdigit() else 0,
+        result = {
+            "vid": vid, "fab": fab,
+            "state":       int(f[3])  if len(f) > 3  and f[3].strip().lstrip('-').isdigit() else 1,
+            "is_full":     int(f[4])  if len(f) > 4  and f[4].strip().isdigit() else 0,
+            "current_node": int(f[7]) if len(f) > 7  and f[7].strip().isdigit() else 0,
+            "distance":    int(f[8])  if len(f) > 8  and f[8].strip().isdigit() else 0,
+            "next_node":   int(f[9])  if len(f) > 9  and f[9].strip().isdigit() else 0,
             "destination": int(f[13]) if len(f) > 13 and f[13].strip().lstrip('-').isdigit() else 0,
             "source_port": f[16].strip() if len(f) > 16 else "",
             "dest_port":   f[17].strip() if len(f) > 17 else "",
             "speed":       int(f[18])  if len(f) > 18 and f[18].strip().lstrip('-').isdigit() else 0,
+            "_x": None, "_y": None,
         }
-    except (ValueError, IndexError):
-        return None
+        # 21필드 너머 추가 필드에 x,y 가 있을 수 있음 — 큰 부동소수점 2개 연속이면 좌표 가정
+        for i in range(21, min(len(f), 30) - 1):
+            x = _to_float(f[i]); y = _to_float(f[i+1])
+            if x is not None and y is not None and abs(x) > 100 and abs(y) > 100:
+                result["_x"] = x
+                result["_y"] = y
+                break
+        return result
+
+    # ── B) WIDE format: timestamp,VID,X,Y,... ──
+    # 첫 필드가 시간형 문자열이면 wide 포맷일 가능성
+    vid = f[1].strip() if len(f) > 1 else ""
+    x = _to_float(f[2]) if len(f) > 2 else None
+    y = _to_float(f[3]) if len(f) > 3 else None
+    if vid and x is not None and y is not None and abs(x) > 100 and abs(y) > 100:
+        # state, name, full, cur, next, dist 추출 시도
+        state = int(f[5]) if len(f) > 5 and f[5].strip().lstrip('-').isdigit() else 1
+        is_full = int(f[7]) if len(f) > 7 and f[7].strip().isdigit() else 0
+        cur = int(f[8]) if len(f) > 8 and f[8].strip().isdigit() else 0
+        nxt = int(f[9]) if len(f) > 9 and f[9].strip().isdigit() else 0
+        dist = int(f[10]) if len(f) > 10 and f[10].strip().isdigit() else 0
+        return {
+            "vid": vid, "fab": fab,
+            "state": state, "is_full": is_full,
+            "current_node": cur, "next_node": nxt, "distance": dist,
+            "destination": 0, "source_port": "", "dest_port": "", "speed": 0,
+            "_x": x, "_y": y,
+        }
+
+    return None
 
 
 def parse_row(row: dict, fab: str) -> Optional[dict]:
-    # ① LOGPRESSO 'line' 컬럼 안에 raw OHT 메시지가 들어있는 형식 우선
     L = _build_lookup(row)
+
+    # 직접 X / Y 컬럼이 있으면 그 값 그대로 — 가장 정확
+    x_raw = _get(row, L, "x", "X", "POS_X", "POSX", "x_mm", "X_MM")
+    y_raw = _get(row, L, "y", "Y", "POS_Y", "POSY", "y_mm", "Y_MM")
+    rx = _to_float(str(x_raw)) if x_raw is not None else None
+    ry = _to_float(str(y_raw)) if y_raw is not None else None
+
+    # ① LOGPRESSO 'line' 컬럼 안에 raw OHT 메시지
     line = _s(row, L, "line", "LINE", "MESSAGE", "MSG", "RAW")
-    if line and "2,OHT," in line:
+    if line and ",OHT," in line:
         v = parse_oht_line(line, fab)
         if v:
+            # 컬럼에 따로 x/y 가 있으면 line 추정값보다 우선
+            if rx is not None and ry is not None:
+                v["_x"] = rx; v["_y"] = ry
             return v
 
-    # ② 그 외: 컬럼이 평탄하게 펼쳐진 LOGPRESSO/CSV 형식
+    # ② 평탄 컬럼 폴백
     vid = _s(row, L,
              "VHL_ID", "VEHICLE", "VEHICLE_ID", "VEHICLEID",
              "vid", "OHT_ID", "OHTID", "CARRIER_ID", "CARRIERID")
@@ -187,6 +249,7 @@ def parse_row(row: dict, fab: str) -> Optional[dict]:
         "speed":       _i(row, L, "SPEED", "FREE_FLOW_SPEED"),
         "source_port": _s(row, L, "FROM_RETURN_PORT", "SOURCE_PORT", "SRC_PORT"),
         "dest_port":   _s(row, L, "DEST_RETURN_PORT", "DEST_PORT"),
+        "_x": rx, "_y": ry,
     }
 
 
@@ -341,6 +404,9 @@ class VehicleStore:
             v.speed         = vd["speed"]
             v.source_port   = vd["source_port"]
             v.dest_port     = vd["dest_port"]
+            # CSV 직접 좌표 (있으면 layout lookup 안 거치고 바로 사용)
+            v.raw_x         = vd.get("_x")
+            v.raw_y         = vd.get("_y")
             v.last_ts       = ts
             v.last_rx       = rx_at
 
