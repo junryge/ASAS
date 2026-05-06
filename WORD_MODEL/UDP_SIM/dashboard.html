@@ -368,15 +368,66 @@ function connectWs() {
   setInterval(() => { try { ws && ws.readyState===1 && ws.send('ping'); } catch(e){} }, 5000);
 }
 
-function onPush(d) {
-  // 차량 (현재 FAB 만)
-  const list = (d.vehicles || []).filter(v => v.fab === currentFab);
-  lastVehicles = list;
+// ── 차량별 보간 상태 (60fps 부드러운 이동) ──────
+const vState = new Map();   // vid -> {prevX, prevY, tgtX, tgtY, tStart, fab, state}
+const PUSH_INTERVAL_MS = 260;
 
-  // UDP 통계 갱신
-  updateStats(d);
-  render();
+function onPush(d) {
+  // 자동 FAB 전환 — 들어오는 데이터의 FAB 로 1회 전환
+  const all = d.vehicles || [];
+  if (!window._autoFabDone && all.length > 0) {
+    const fab = all[0].fab;
+    if (fab && fab !== currentFab) {
+      const sel = $('fab-select');
+      if (sel) sel.value = fab;
+      currentFab = fab;
+      $('cur-fab').textContent = fab;
+      loadLayout(fab);
+    }
+    window._autoFabDone = true;
+  }
+
+  // 현재 FAB 차량만 보간 갱신
+  const now = performance.now();
+  const list = all.filter(v => v.fab === currentFab && v.x != null && v.y != null);
+  const seen = new Set();
+  for (const v of list) {
+    seen.add(v.vid);
+    const s = vState.get(v.vid);
+    if (s) {
+      // 직전 보간 위치 = 새 prev (자연스러운 연결)
+      const t = Math.min(1, (now - s.tStart) / PUSH_INTERVAL_MS);
+      s.prevX = s.prevX + (s.tgtX - s.prevX) * t;
+      s.prevY = s.prevY + (s.tgtY - s.prevY) * t;
+      s.tgtX = v.x; s.tgtY = v.y;
+      s.tStart = now;
+      s.fab = v.fab; s.state = v.state; s.vid = v.vid;
+    } else {
+      vState.set(v.vid, {
+        prevX:v.x, prevY:v.y, tgtX:v.x, tgtY:v.y,
+        tStart: now, fab:v.fab, state:v.state, vid:v.vid,
+      });
+    }
+  }
+  for (const k of vState.keys()) if (!seen.has(k)) vState.delete(k);
+
+  updateStats(d);   // render 는 animLoop 가 60fps 로 호출
 }
+
+// 60fps 보간 렌더 루프
+function animLoop() {
+  const now = performance.now();
+  lastVehicles = [];
+  for (const s of vState.values()) {
+    const t = Math.min(1, (now - s.tStart) / PUSH_INTERVAL_MS);
+    const x = s.prevX + (s.tgtX - s.prevX) * t;
+    const y = s.prevY + (s.tgtY - s.prevY) * t;
+    lastVehicles.push({vid:s.vid, fab:s.fab, state:s.state, x, y});
+  }
+  render();
+  requestAnimationFrame(animLoop);
+}
+requestAnimationFrame(animLoop);
 
 function fmtBytes(b){ if(b<1024)return b+'B'; if(b<1048576)return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(2)+'MB'; }
 function fmtNum(n){ return (n||0).toLocaleString(); }
