@@ -199,8 +199,8 @@ class OhtCsvLoader:
                 if self.replay_start and t < self._tz_align(t, self.replay_start):
                     continue
                 if self.replay_end and t > self._tz_align(t, self.replay_end):
-                    # 윈도우 끝 — 더 이상 처리 안 함
-                    break
+                    # CSV 가 descending 일 수도 있으므로 break 하지 않고 skip
+                    continue
 
                 # 패딩
                 if len(fields) < len(cols):

@@ -35,8 +35,10 @@ CSV_FILE_M14A    = _find_csv("M14A_DATA",    "LOGPRESSO_OHT_DATA_20260429.CSV")
 CSV_FILE_M16A_BR = _find_csv("M16A_BR_DATA", "LOGPRESSO_OHT_DATA_20260429.CSV")
 
 # ── 재생 시간창 (KST) ─────────────────────────────────
-REPLAY_START = "2026-04-29 11:00:00"
-REPLAY_END   = "2026-04-30 23:46:00"
+# 빈 문자열 = 필터 안 함 (CSV 전체 송신)
+# 필요 시 환경변수 REPLAY_START / REPLAY_END 또는 직접 지정.
+REPLAY_START = os.environ.get("REPLAY_START", "")
+REPLAY_END   = os.environ.get("REPLAY_END",   "")
 
 # ── 재생 속도 ────────────────────────────────────────
 # 1.0  = 실시간   |   60.0 = 1분에 1시간 압축
