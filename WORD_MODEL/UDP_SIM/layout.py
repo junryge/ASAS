@@ -27,8 +27,8 @@ class Layout:
         self.bounds = (0.0, 0.0, 0.0, 0.0)
         self.loaded = False
         self._missing_warned = False
-        # 임의 좌표 풀 (캐시에 없는 노드용)
-        self._fake_pos: Dict[int, Tuple[float, float]] = {}
+        # 진단용: 못 찾은 노드 ID 카운트
+        self._missing_nodes: Dict[int, int] = {}
 
     def load(self) -> "Layout":
         merged = 0
@@ -65,31 +65,11 @@ class Layout:
         print(f"[layout {self.fab}] {merged} 캐시 통합 → 노드 {len(self.nodes)}, 엣지 {len(self.edges)}")
         return self
 
-    # ── 미발견 노드용 결정적 가짜 좌표 ─────────────
-    def _fake(self, nid: int) -> Tuple[float, float]:
-        cached = self._fake_pos.get(nid)
-        if cached is not None:
-            return cached
-        # bounds 안에 균등 분포 (해시 기반, 노드 별 결정적)
-        if self.bounds == (0, 0, 0, 0):
-            xmin, ymin, xmax, ymax = 0, 0, 10000, 5000
-        else:
-            xmin, ymin, xmax, ymax = self.bounds
-        # 단순 해시
-        h1 = (nid * 2654435761) & 0xFFFFFFFF
-        h2 = (nid * 40503     ) & 0xFFFFFFFF
-        rx = (h1 % 100000) / 100000.0
-        ry = (h2 % 100000) / 100000.0
-        x = xmin + rx * (xmax - xmin)
-        y = ymin + ry * (ymax - ymin)
-        self._fake_pos[nid] = (x, y)
-        return (x, y)
-
     def get_position(self, current_node: int, next_node: int,
                      distance: float) -> Optional[Tuple[float, float]]:
+        """진짜 좌표만 반환. 캐시에 없으면 None (가짜 좌표 X)."""
         a = self.nodes.get(current_node)
         b = self.nodes.get(next_node)
-        # 한 쪽이라도 캐시에 있으면 그 좌표 사용
         if a is not None and b is not None:
             edge = self.edges.get((current_node, next_node))
             if edge is None or edge <= 0:
@@ -99,12 +79,9 @@ class Layout:
                     a[1] + (b[1] - a[1]) * ratio)
         if a is not None: return a
         if b is not None: return b
-
-        # 둘 다 없음 → 가짜 좌표 (차량이 무조건 보이도록)
+        # 캐시에 둘 다 없음 → None (차량 표시 안 됨)
         if current_node:
-            return self._fake(current_node)
-        if next_node:
-            return self._fake(next_node)
+            self._missing_nodes[current_node] = self._missing_nodes.get(current_node, 0) + 1
         return None
 
     def stats(self) -> dict:
@@ -115,6 +92,6 @@ class Layout:
             "nodes": len(self.nodes),
             "edges": len(self.edges),
             "bounds": list(self.bounds),
-            "fake_nodes": len(self._fake_pos),
+            "missing_nodes": len(self._missing_nodes),
         }
 
