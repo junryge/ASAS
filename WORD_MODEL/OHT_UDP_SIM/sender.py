@@ -175,6 +175,29 @@ class SenderWorker:
             "last_error": self.last_error,
         }
 
+    # ── 테스트 송신 (네트워크 검증용) ──────────────
+    def send_test(self) -> Dict:
+        """가짜 1 row 패킷을 즉시 송신 — 네트워크 연결 확인."""
+        try:
+            from datetime import datetime as _dt
+            ts = _dt.now()
+            row = {
+                "_id":     "TEST",
+                "_table":  f"{self.fab}_TEST",
+                "_time":   ts.isoformat(),
+                "line":    f"2,OHT,TEST{self.fab},1,1,0000,1,1,0,2,1,1,TESTCAR,999,SRC,DST,4,RUN,90,0,0",
+            }
+            pkt = serialize_json(self.fab, ts, [row])
+            self.sock.sendto(pkt, (self.udp_host, self.udp_port))
+            self.tx_packets += 1
+            self.tx_rows += 1
+            self.tx_bytes += len(pkt)
+            self.last_tx = _dt.now()
+            return {"ok": True, "bytes": len(pkt), "to": f"{self.udp_host}:{self.udp_port}"}
+        except Exception as e:
+            self.last_error = f"send_test: {e!r}"
+            return {"ok": False, "error": str(e)}
+
     # ── 송신 루프 (byte 스트리밍) ───────────────────
     def _run(self):
         if not self.loader.time_col:
@@ -183,6 +206,7 @@ class SenderWorker:
             return
 
         total_bytes = self.loader.file_bytes
+        print(f"[{self.fab}] _run 시작 — file={total_bytes/1024/1024:.0f}MB time_col={self.loader.time_col}")
         try:
             while not self.stop_flag:
                 # 이번 cycle 의 시작 위치 (seek 적용)
@@ -193,8 +217,13 @@ class SenderWorker:
 
                 last_sent_ts: Optional[datetime] = None
                 consumed_any = False
+                yielded = 0
 
+                print(f"[{self.fab}] iter_groups(start_byte={start_byte})...")
                 for ts0, batch, byte_pos in self.loader.iter_groups(start_byte=start_byte):
+                    yielded += 1
+                    if yielded == 1:
+                        print(f"[{self.fab}] 첫 group: ts={ts0} rows={len(batch)} byte_pos={byte_pos}")
                     if self.stop_flag:
                         return
                     if self.seek_ratio is not None:
@@ -230,6 +259,7 @@ class SenderWorker:
                     last_sent_ts = ts0
                     consumed_any = True
 
+                print(f"[{self.fab}] cycle 종료 — yielded={yielded} sent_packets={self.tx_packets} sent_rows={self.tx_rows}")
                 if self.stop_flag:
                     return
                 if self.seek_ratio is not None:
@@ -238,9 +268,15 @@ class SenderWorker:
                     break
                 if consumed_any:
                     self.cycle += 1
+                else:
+                    self.last_error = ("CSV 에서 유효한 row 가 한 개도 안 나옴. "
+                                       "REPLAY 윈도우/시간컬럼/파싱 설정 확인.")
+                    print(f"[{self.fab}] {self.last_error}")
+                    break
 
         except Exception as e:
             self.last_error = f"runtime: {e!r}"
+            print(f"[{self.fab}] 예외: {e!r}")
         finally:
             self.running = False
 
@@ -365,6 +401,10 @@ class SenderHandler(BaseHTTPRequestHandler):
         if path == "/api/seek":
             self.worker.seek(float(body.get("ratio", 0.0)))
             self._send_json(200, {"ok": True})
+            return
+        if path == "/api/test":
+            res = self.worker.send_test()
+            self._send_json(200, res)
             return
 
         self._send_json(404, {"error": "not_found", "path": path})

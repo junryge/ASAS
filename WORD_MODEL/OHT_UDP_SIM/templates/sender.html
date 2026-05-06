@@ -96,7 +96,9 @@
       <button id="btn-pause">  ⏸ 일시정지</button>
       <button id="btn-resume"> ▶ 재개</button>
       <button id="btn-stop" class="danger">■ 정지</button>
+      <button id="btn-test" style="background:#7c3aed;">🧪 테스트 송신 (1패킷)</button>
     </div>
+    <div id="test-result" style="font-size:11px;color:#86efac;margin-bottom:8px;"></div>
     <div class="row">
       <span>속도 (× 실시간)</span>
       <span style="display:flex; gap:8px; align-items:center;">
@@ -188,6 +190,17 @@ $('btn-stop').onclick   = () => api('/api/stop',   {method:'POST'}).then(refresh
 $('btn-speed').onclick  = () => api('/api/speed',  {method:'POST', body: JSON.stringify({speed:parseFloat($('speed-num').value)})}).then(refresh);
 $('loop-cb').onchange   = () => api('/api/loop',   {method:'POST', body: JSON.stringify({loop:$('loop-cb').checked})});
 $('btn-seek').onclick   = () => api('/api/seek',   {method:'POST', body: JSON.stringify({ratio:parseInt($('seek-range').value)/100})}).then(refresh);
+$('btn-test').onclick   = async () => {
+  $('test-result').textContent = '...';
+  try {
+    const r = await api('/api/test', {method:'POST', body:'{}'});
+    $('test-result').textContent = r.ok
+      ? `✅ 테스트 패킷 송신 (${r.bytes} byte → ${r.to}). 수신측에서 확인.`
+      : `⚠ ${r.error || 'fail'}`;
+    $('test-result').style.color = r.ok ? '#86efac' : '#fca5a5';
+  } catch(e) { $('test-result').textContent = '⚠ ' + e.message; }
+  refresh();
+};
 
 refresh();
 setInterval(refresh, 1000);
