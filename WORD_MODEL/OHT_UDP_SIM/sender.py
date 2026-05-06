@@ -141,6 +141,11 @@ class SenderWorker:
     def set_loop(self, b: bool):
         self.loop = bool(b)
 
+    def set_host(self, host: str):
+        h = (host or "").strip()
+        if h:
+            self.udp_host = h
+
     def seek(self, ratio: float):
         self.seek_ratio = max(0.0, min(1.0, ratio))
 
@@ -392,6 +397,10 @@ class SenderHandler(BaseHTTPRequestHandler):
         if path == "/api/speed":
             self.worker.set_speed(float(body.get("speed", config.DEFAULT_SPEED)))
             self._send_json(200, {"ok": True, "speed": self.worker.speed})
+            return
+        if path == "/api/host":
+            self.worker.set_host(str(body.get("host", "")))
+            self._send_json(200, {"ok": True, "host": self.worker.udp_host})
             return
         if path == "/api/loop":
             self.worker.set_loop(bool(body.get("loop", True)))

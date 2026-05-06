@@ -100,6 +100,18 @@
     </div>
     <div id="test-result" style="font-size:11px;color:#86efac;margin-bottom:8px;"></div>
     <div class="row">
+      <span>수신 IP (송신 대상)</span>
+      <span style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="host-input" placeholder="예: 127.0.0.1 또는 192.168.0.10"
+               style="width:180px;padding:6px;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:4px;">
+        <button id="btn-host">적용</button>
+      </span>
+    </div>
+    <div class="row">
+      <span>UDP 포트</span>
+      <span><b style="color:#cbd5e1">{{UDP_PORT}}</b></span>
+    </div>
+    <div class="row">
       <span>속도 (× 실시간)</span>
       <span style="display:flex; gap:8px; align-items:center;">
         <input type="number" id="speed-num" min="0.1" max="3600" step="0.1" value="1">
@@ -150,6 +162,10 @@ function fmtSec(s){
 async function refresh() {
   try {
     const s = await api('/api/status');
+    if (!$('host-input').dataset.touched && s.udp_host) {
+      $('host-input').value = s.udp_host;
+      $('host-input').dataset.touched = '1';
+    }
     $('csv-path').textContent   = s.csv;
     $('csv-exists').textContent = s.csv_exists ? '있음' : '없음 ⚠️';
     $('csv-exists').style.color = s.csv_exists ? '#86efac' : '#fca5a5';
@@ -188,6 +204,7 @@ $('btn-pause').onclick  = () => api('/api/pause',  {method:'POST'}).then(refresh
 $('btn-resume').onclick = () => api('/api/resume', {method:'POST'}).then(refresh);
 $('btn-stop').onclick   = () => api('/api/stop',   {method:'POST'}).then(refresh);
 $('btn-speed').onclick  = () => api('/api/speed',  {method:'POST', body: JSON.stringify({speed:parseFloat($('speed-num').value)})}).then(refresh);
+$('btn-host').onclick   = () => api('/api/host',   {method:'POST', body: JSON.stringify({host:$('host-input').value.trim()})}).then(refresh);
 $('loop-cb').onchange   = () => api('/api/loop',   {method:'POST', body: JSON.stringify({loop:$('loop-cb').checked})});
 $('btn-seek').onclick   = () => api('/api/seek',   {method:'POST', body: JSON.stringify({ratio:parseInt($('seek-range').value)/100})}).then(refresh);
 $('btn-test').onclick   = async () => {
