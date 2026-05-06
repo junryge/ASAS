@@ -71,7 +71,6 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
   </select>
   <button class="toggle-btn on" id="btn-edges"   onclick="toggleLayer('edges')">엣지</button>
   <button class="toggle-btn"    id="btn-nodes"   onclick="toggleLayer('nodes')">노드</button>
-  <button class="toggle-btn on" id="btn-trail"   onclick="toggleLayer('trail')">잔상</button>
   <button class="toggle-btn"    id="btn-id"      onclick="toggleLayer('id')">차량ID</button>
   <button onclick="resetView()">전체보기</button>
   <span class="divider">|</span>
@@ -164,7 +163,7 @@ const $ = id => document.getElementById(id);
 
 let currentFab = 'M14A';
 let layoutData = null;          // {nodes, edges, bounds}
-const layers = { edges:true, nodes:false, trail:true, id:false };
+const layers = { edges:true, nodes:false, id:false };
 
 const STATE_COLOR = {
   1:'#10b981',  // RUN
@@ -221,9 +220,6 @@ svg.addEventListener('dblclick', resetView);
 // ── 좌표 변환 ────────────────────────────────────
 const px = x => x*view.scale + view.x;
 const py = y => y*view.scale + view.y;
-
-// ── 잔상 ─────────────────────────────────────────
-const trail = new Map();   // vid -> [{x,y,t}, ...] (max 8)
 
 // ── 렌더 (SVG DOM 직접 조작 — innerHTML 안 씀) ───
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -282,16 +278,6 @@ function render() {
     svg.appendChild(g);
   }
 
-  // trails
-  if (layers.trail) {
-    for (const [vid, pts] of trail) {
-      if (pts.length<2) continue;
-      let d = `M${px(pts[0].x).toFixed(1)},${py(pts[0].y).toFixed(1)}`;
-      for (let i=1;i<pts.length;i++) d += `L${px(pts[i].x).toFixed(1)},${py(pts[i].y).toFixed(1)}`;
-      svg.appendChild(svgEl('path', {d, stroke:'#ea580c', 'stroke-width':1.2, fill:'none', opacity:0.5}));
-    }
-  }
-
   // vehicles
   for (const v of lastVehicles) {
     if (v.x == null || v.y == null) continue;
@@ -312,7 +298,6 @@ async function onFabChange() {
   const f = $('fab-select').value;
   currentFab = f;
   $('cur-fab').textContent = f;
-  trail.clear();
   await loadLayout(f);
 }
 function toggleLayer(k) {
@@ -386,17 +371,6 @@ function connectWs() {
 function onPush(d) {
   // 차량 (현재 FAB 만)
   const list = (d.vehicles || []).filter(v => v.fab === currentFab);
-  // 잔상 갱신
-  for (const v of list) {
-    if (v.x==null) continue;
-    const arr = trail.get(v.vid) || [];
-    const last = arr[arr.length-1];
-    if (!last || (last.x-v.x)*(last.x-v.x)+(last.y-v.y)*(last.y-v.y) > 1) {
-      arr.push({x:v.x, y:v.y});
-      if (arr.length > 8) arr.shift();
-      trail.set(v.vid, arr);
-    }
-  }
   lastVehicles = list;
 
   // UDP 통계 갱신
