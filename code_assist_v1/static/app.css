@@ -298,6 +298,22 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .composer .chip .x:hover { opacity: 1; }
 .composer .chip.kb { background: var(--chip-kb-bg); color: var(--accent-2); border-color: var(--chip-kb-border); }
 .composer .chip.file { background: var(--chip-file-bg); border-color: var(--chip-file-border); }
+.composer .chip.image { padding: 2px 8px 2px 2px; }
+.composer .chip .chip-thumb {
+  width: 28px; height: 28px; object-fit: cover;
+  border-radius: 6px; cursor: zoom-in; display: block;
+}
+.composer .chip .thumb-label { font-size: 10.5px; opacity: .85; }
+
+/* 메시지 안 이미지 갤러리 */
+.msg-image-gallery {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+}
+.msg-image-gallery img {
+  max-width: 220px; max-height: 220px;
+  border-radius: 8px; border: 1px solid var(--border);
+  cursor: zoom-in; display: block;
+}
 
 .composer .input-wrap {
   display: flex; gap: 8px; align-items: flex-end;

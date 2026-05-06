@@ -7,6 +7,7 @@ const State = {
   activeSkills: new Set(),       // skill_id
   enableKnowledge: false,        // 📚 토글
   workspaceFiles: [],            // [{filename, content}] 첨부
+  pastedImages: [],              // [{name, mime, dataUrl}] — 다음 전송 시 user 메시지에 multimodal 로 첨부
   messages: [],                  // [{role, content}]
   streaming: false,
   abortController: null,         // 스트리밍 중단용
@@ -114,7 +115,8 @@ function refreshMetaBar() {
   $("#metaModel").textContent = "model: " + (State.model || "-");
   $("#metaSkills").textContent = "skills: " + State.activeSkills.size;
   $("#metaKB").textContent = "KB: " + (State.enableKnowledge ? "ON" : "off");
-  $("#metaWS").textContent = "files: " + State.workspaceFiles.length;
+  $("#metaWS").textContent = "files: " + State.workspaceFiles.length
+    + (State.pastedImages.length ? `+🖼${State.pastedImages.length}` : "");
 }
 
 // ── 사이드바 탭 ──
@@ -276,6 +278,47 @@ composerInput.addEventListener("keydown", e => {
   } else if (e.key === "Escape" && State.streaming) {
     Chat.stop();
   }
+});
+
+// ── 클립보드 이미지 붙여넣기 (Ctrl/Cmd+V) → VLM multimodal 첨부 ──
+const MAX_PASTED_IMAGE_MB = 20;
+
+function _readImageItem(item) {
+  return new Promise((resolve, reject) => {
+    const blob = item.getAsFile();
+    if (!blob) { reject(new Error("blob 없음")); return; }
+    if (blob.size > MAX_PASTED_IMAGE_MB * 1024 * 1024) {
+      reject(new Error(`이미지가 ${MAX_PASTED_IMAGE_MB}MB 초과`));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      name: blob.name || `clip-${Date.now()}.${(blob.type.split("/")[1] || "png")}`,
+      mime: blob.type || "image/png",
+      dataUrl: reader.result,
+      size: blob.size,
+    });
+    reader.onerror = () => reject(reader.error || new Error("read 실패"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+composerInput.addEventListener("paste", async e => {
+  const items = e.clipboardData?.items || [];
+  const imageItems = [...items].filter(it => it.kind === "file" && it.type.startsWith("image/"));
+  if (!imageItems.length) return;  // 텍스트 paste 는 기본 동작
+  e.preventDefault();
+  for (const it of imageItems) {
+    try {
+      const img = await _readImageItem(it);
+      State.pastedImages.push(img);
+      toast(`🖼 이미지 첨부 (${(img.size / 1024).toFixed(0)}K)`, "ok");
+    } catch (err) {
+      toast("이미지 붙여넣기 실패: " + err.message, "error");
+    }
+  }
+  Chat.refreshChips();
+  refreshMetaBar();
 });
 
 $("#btnSend").addEventListener("click", () => {
