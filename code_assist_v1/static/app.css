@@ -388,6 +388,24 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .workspace .ws-node[data-depth="4"] { padding-left: 56px; }
 .workspace .ws-node[data-depth="5"] { padding-left: 70px; }
 .workspace .ws-node[data-depth="6"] { padding-left: 84px; }
+
+.workspace .ws-del {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  visibility: hidden;
+  margin-left: 4px;
+}
+.workspace .ws-node:hover .ws-del { visibility: visible; }
+.workspace .ws-del:hover {
+  background: var(--error, #c44);
+  color: #fff;
+  border-color: var(--error, #c44);
+}
 .workspace .ws-preview {
   border-top: 1px solid var(--border);
   background: var(--code-bg);
