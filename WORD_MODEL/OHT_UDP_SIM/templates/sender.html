@@ -149,8 +149,8 @@
       </span>
     </div>
     <div class="row">
-      <span>UDP 데이터 배수<br><span style="font-size:10px;color:#6b7280;">같은 패킷을 N번 반복 송신</span></span>
-      <span style="display:flex; gap:4px; flex-wrap:wrap; max-width:60%;">
+      <span>UDP 데이터 배수<br><span style="font-size:10px;color:#6b7280;">같은 패킷을 N번 반복 송신 (현재 <b id="rep-cur" style="color:#86efac;">x1</b>)</span></span>
+      <span style="display:flex; gap:4px; flex-wrap:wrap; max-width:60%; align-items:center;">
         <button class="rep-preset" data-r="1">x1</button>
         <button class="rep-preset" data-r="2">x2</button>
         <button class="rep-preset" data-r="4">x4</button>
@@ -167,6 +167,9 @@
         <button class="rep-preset" data-r="120">x120</button>
         <button class="rep-preset" data-r="150">x150</button>
         <button class="rep-preset" data-r="200">x200</button>
+        <input type="number" id="rep-num" min="1" max="10000" step="1" placeholder="직접 입력"
+               style="width:90px;padding:4px;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:4px;">
+        <button id="btn-rep">적용</button>
       </span>
     </div>
     <div class="row">
@@ -220,9 +223,11 @@ async function refresh() {
     document.querySelectorAll('.speed-preset').forEach(b => {
       b.classList.toggle('active', parseFloat(b.dataset.s) === s.speed);
     });
+    const rep = s.data_repeat || 1;
     document.querySelectorAll('.rep-preset').forEach(b => {
-      b.classList.toggle('active', parseInt(b.dataset.r) === (s.data_repeat||1));
+      b.classList.toggle('active', parseInt(b.dataset.r) === rep);
     });
+    if ($('rep-cur')) $('rep-cur').textContent = 'x' + rep;
     $('csv-path').textContent   = s.csv;
     $('csv-exists').textContent = s.csv_exists ? '있음' : '없음 ⚠️';
     $('csv-exists').style.color = s.csv_exists ? '#86efac' : '#fca5a5';
@@ -281,6 +286,13 @@ document.querySelectorAll('.rep-preset').forEach(b => {
     refresh();
   };
 });
+$('btn-rep').onclick = async () => {
+  const r = parseInt($('rep-num').value);
+  if (!r || r < 1) return;
+  await api('/api/data_repeat', {method:'POST', body: JSON.stringify({repeat:r})});
+  refresh();
+};
+$('rep-num').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-rep').click(); });
 $('loop-cb').onchange   = () => api('/api/loop',   {method:'POST', body: JSON.stringify({loop:$('loop-cb').checked})});
 $('btn-seek').onclick   = () => api('/api/seek',   {method:'POST', body: JSON.stringify({ratio:parseInt($('seek-range').value)/100})}).then(refresh);
 $('btn-test').onclick   = async () => {
