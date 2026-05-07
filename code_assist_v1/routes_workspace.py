@@ -3,6 +3,7 @@ code_assist_v1/routes_workspace.py - 워크스페이스 (user_id 없이 단일 �
 """
 from __future__ import annotations
 import os
+import re
 import shutil
 from flask import request, jsonify
 from werkzeug.utils import secure_filename
@@ -15,6 +16,21 @@ def _safe_join(root: str, *paths: str) -> str | None:
     if not target.startswith(os.path.normpath(root)):
         return None
     return target
+
+
+_BAD_NAME_CHARS = re.compile(r'[\x00-\x1f\x7f<>:"|?*\\/]')
+
+
+def _safe_name_unicode(name: str) -> str:
+    """secure_filename 대체: 한글·공백 등 유니코드는 보존하고
+    경로 구분자·NUL·제어문자·OS 금지 문자만 _ 로 치환.
+    빈 문자열·점만 있으면 'uploaded' 로 폴백.
+    """
+    name = (name or "").strip()
+    name = _BAD_NAME_CHARS.sub("_", name)
+    if not name or name in (".", ".."):
+        return "uploaded"
+    return name
 
 
 def register_workspace_routes(app):
@@ -69,30 +85,38 @@ def register_workspace_routes(app):
         f = request.files["file"]
         if not f.filename:
             return jsonify({"error": "filename 비어있음"}), 400
-        ext = os.path.splitext(f.filename)[1].lower()
-        if ext and ext not in ALLOWED_UPLOAD_EXT:
-            return jsonify({"error": f"지원하지 않는 확장자: {ext}"}), 415
-        f.stream.seek(0, os.SEEK_END)
-        size = f.stream.tell()
-        f.stream.seek(0)
-        if size > MAX_UPLOAD_MB * 1024 * 1024:
-            return jsonify({"error": f"파일 크기 초과 ({MAX_UPLOAD_MB}MB)"}), 413
+
         # relpath: 폴더 업로드 시 webkitRelativePath (예: "myproj/src/a.py")
         # dir: 명시적 하위 디렉토리 (예: "subdir")
         relpath = (request.form.get("relpath") or "").strip().replace("\\", "/")
         rel_dir_form = (request.form.get("dir") or "").strip().replace("\\", "/")
 
+        # 확장자 체크: 폴더 업로드 시에는 거부 대신 skip (소수 거부로 전체 무산되는 것 방지)
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext and ext not in ALLOWED_UPLOAD_EXT:
+            if relpath:
+                return jsonify({"status": "skipped", "reason": f"지원하지 않는 확장자: {ext}", "path": relpath}), 200
+            return jsonify({"error": f"지원하지 않는 확장자: {ext}"}), 415
+
+        f.stream.seek(0, os.SEEK_END)
+        size = f.stream.tell()
+        f.stream.seek(0)
+        if size > MAX_UPLOAD_MB * 1024 * 1024:
+            if relpath:
+                return jsonify({"status": "skipped", "reason": f"크기 초과 ({MAX_UPLOAD_MB}MB)", "path": relpath}), 200
+            return jsonify({"error": f"파일 크기 초과 ({MAX_UPLOAD_MB}MB)"}), 413
+
         if relpath:
-            # 컴포넌트별로 sanitize (구분자는 보존)
+            # 컴포넌트별로 sanitize (한글 보존)
             parts = [p for p in relpath.split("/") if p and p not in (".", "..")]
             if not parts:
                 return jsonify({"error": "잘못된 relpath"}), 400
-            safe_parts = [secure_filename(p) or "_" for p in parts[:-1]]
-            target_name = secure_filename(parts[-1]) or "uploaded"
+            safe_parts = [_safe_name_unicode(p) for p in parts[:-1]]
+            target_name = _safe_name_unicode(parts[-1])
             target_dir = _safe_join(WORKSPACE_DIR, *safe_parts) if safe_parts else WORKSPACE_DIR
         else:
             target_dir = _safe_join(WORKSPACE_DIR, rel_dir_form) if rel_dir_form else WORKSPACE_DIR
-            target_name = secure_filename(f.filename) or "uploaded"
+            target_name = _safe_name_unicode(f.filename)
 
         if not target_dir:
             return jsonify({"error": "잘못된 디렉토리"}), 400
