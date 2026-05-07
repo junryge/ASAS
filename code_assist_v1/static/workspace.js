@@ -78,8 +78,9 @@ const Workspace = {
         row.innerHTML = `
           <span class="caret">▶</span>
           <span>📁</span>
-          <span style="flex:1;">${node.name}</span>
+          <span class="ws-name" style="flex:1;">${node.name}</span>
           <span class="count">${count}</span>
+          <button class="ws-del" title="폴더 삭제">✕</button>
         `;
         parentEl.appendChild(row);
 
@@ -88,7 +89,8 @@ const Workspace = {
         parentEl.appendChild(childWrap);
         if (isOpen) Workspace._renderChildren(childWrap, node.children, depth + 1);
 
-        row.addEventListener("click", () => {
+        row.addEventListener("click", e => {
+          if (e.target.classList.contains("ws-del")) return;
           if (Workspace.expanded.has(node.path)) {
             Workspace.expanded.delete(node.path);
             row.classList.remove("open");
@@ -106,6 +108,11 @@ const Workspace = {
           e.preventDefault();
           Workspace._toggleAttachDir(node);
         });
+        // 폴더 삭제
+        row.querySelector(".ws-del").addEventListener("click", e => {
+          e.stopPropagation();
+          Workspace.deletePath(node.path, /*isDir*/ true, count);
+        });
       } else {
         const row = document.createElement("div");
         row.className = "ws-node ws-file";
@@ -114,16 +121,61 @@ const Workspace = {
         const attached = State.workspaceFiles.find(x => x.filename === node.path);
         row.innerHTML = `
           <span>📄</span>
-          <span style="flex:1;${attached ? "color:var(--accent-2);font-weight:600;" : ""}">${node.name}</span>
+          <span class="ws-name" style="flex:1;${attached ? "color:var(--accent-2);font-weight:600;" : ""}">${node.name}</span>
           <span class="size">${sizeKb}K</span>
+          <button class="ws-del" title="파일 삭제">✕</button>
         `;
-        row.addEventListener("click", () => Workspace.preview(node.path));
+        row.addEventListener("click", e => {
+          if (e.target.classList.contains("ws-del")) return;
+          Workspace.preview(node.path);
+        });
         row.addEventListener("contextmenu", e => {
           e.preventDefault();
           Workspace.toggleAttach(node.path);
         });
+        row.querySelector(".ws-del").addEventListener("click", e => {
+          e.stopPropagation();
+          Workspace.deletePath(node.path, /*isDir*/ false);
+        });
         parentEl.appendChild(row);
       }
+    }
+  },
+
+  async deletePath(path, isDir, fileCount = 0) {
+    const label = isDir ? `폴더 "${path}" 와 하위 ${fileCount}개 파일` : `파일 "${path}"`;
+    if (!confirm(`${label}을(를) 삭제할까요?\n이 동작은 되돌릴 수 없습니다.`)) return;
+    try {
+      const r = await fetch("/api/code/workspace/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      // 첨부 목록에서 해당 경로(폴더면 prefix) 정리
+      if (isDir) {
+        const prefix = path.endsWith("/") ? path : path + "/";
+        State.workspaceFiles = State.workspaceFiles.filter(
+          x => x.filename !== path && !x.filename.startsWith(prefix)
+        );
+      } else {
+        State.workspaceFiles = State.workspaceFiles.filter(x => x.filename !== path);
+      }
+      // 미리보기 닫기 (현재 본 파일이 지워졌을 때)
+      const wp = $("#workspacePanel");
+      if (wp.classList.contains("preview-on")) {
+        $("#wsPreview").textContent = "";
+        wp.classList.remove("preview-on");
+        const ab = wp.querySelector(".attach-toggle");
+        if (ab) ab.remove();
+      }
+      toast(`삭제됨: ${path}`, "ok");
+      Chat.refreshChips();
+      refreshMetaBar();
+      Workspace.refresh();
+    } catch (e) {
+      toast("삭제 실패: " + e.message, "error");
     }
   },
 
