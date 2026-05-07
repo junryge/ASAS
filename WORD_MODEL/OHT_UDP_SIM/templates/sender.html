@@ -80,6 +80,16 @@
     <div class="row"><span>전송 패킷</span><b><span id="tx-packets" class="stat-num">0</span></b></div>
     <div class="row"><span>전송 row</span><b id="tx-rows">0</b></div>
     <div class="row"><span>전송 byte</span><b id="tx-bytes">0</b></div>
+    <div class="row" style="border-top:1px dashed #374151;padding-top:6px;margin-top:6px;">
+      <span style="color:#86efac;">pps (현재 초당)</span>
+      <b id="pps-packets" style="color:#86efac;">0 pkt/s</b>
+    </div>
+    <div class="row"><span>row/s</span><b id="pps-rows">0</b></div>
+    <div class="row"><span>bytes/s</span><b id="pps-bytes">0 B/s</b></div>
+    <div class="row" style="font-size:10px;">
+      <span>로그 파일</span>
+      <b id="log-path" style="font-size:10px;color:#9ca3af;word-break:break-all;text-align:right;">—</b>
+    </div>
     <div class="row"><span>현재 ts</span><b id="cur-ts" style="font-size:11px;">—</b></div>
     <div class="row"><span>cycle</span><b id="cycle">0</b></div>
     <div class="row"><span>실시간 경과</span><b id="elapsed">0초</b></div>
@@ -215,6 +225,10 @@ async function refresh() {
     $('tx-packets').textContent = fmtNum(s.tx_packets);
     $('tx-rows').textContent    = fmtNum(s.tx_rows);
     $('tx-bytes').textContent   = fmtBytes(s.tx_bytes);
+    $('pps-packets').textContent= fmtNum(s.pps_packets||0) + ' pkt/s';
+    $('pps-rows').textContent   = fmtNum(s.pps_rows||0) + ' /s';
+    $('pps-bytes').textContent  = fmtBytes(s.pps_bytes||0) + '/s';
+    $('log-path').textContent   = s.log_path || '— (송신 시작 후 생성)';
     $('cur-ts').textContent     = s.cur_ts || '—';
     $('cycle').textContent      = s.cycle;
     $('elapsed').textContent    = fmtSec(s.elapsed_real_sec);

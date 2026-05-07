@@ -92,6 +92,18 @@ class SenderWorker:
         self.tx_rows    = 0
         self.tx_bytes   = 0
         self.cur_byte   = 0     # 파일 byte 오프셋 (진행률용)
+        # 초당 패킷 수 (pps) — 1초 윈도우 + 로그 기록
+        from collections import deque
+        self._pps_window: deque = deque(maxlen=10)   # (epoch_sec, packets, rows, bytes)
+        self._pps_last_sec = 0
+        self._pps_acc_pkt = 0
+        self._pps_acc_row = 0
+        self._pps_acc_byte = 0
+        self.pps_packets = 0
+        self.pps_rows    = 0
+        self.pps_bytes   = 0
+        self._log_path: Optional[Path] = None
+        self._log_fp = None
         self.cur_ts: Optional[datetime] = None
         self.last_tx: Optional[datetime] = None
         self.cycle    = 0
@@ -178,6 +190,10 @@ class SenderWorker:
             "tx_packets": self.tx_packets,
             "tx_rows": self.tx_rows,
             "tx_bytes": self.tx_bytes,
+            "pps_packets": int(self.pps_packets),
+            "pps_rows":    int(self.pps_rows),
+            "pps_bytes":   int(self.pps_bytes),
+            "log_path":    str(self._log_path) if self._log_path else None,
             "cur_byte": self.cur_byte,
             "cur_ts": self.cur_ts.isoformat() if self.cur_ts else None,
             "last_tx": self.last_tx.isoformat() if self.last_tx else None,
@@ -311,8 +327,58 @@ class SenderWorker:
                 self.tx_packets += 1
                 self.tx_rows += len(chunk)
                 self.tx_bytes += len(pkt)
+                # pps 누적
+                self._pps_acc_pkt  += 1
+                self._pps_acc_row  += len(chunk)
+                self._pps_acc_byte += len(pkt)
             self.last_tx = datetime.now()
         self.cur_ts = ts
+        self._tick_pps()
+
+    def _tick_pps(self):
+        """초가 바뀌면 직전 1초 pps 를 갱신 + 로그 한 줄."""
+        now_sec = int(time.time())
+        if self._pps_last_sec == 0:
+            self._pps_last_sec = now_sec
+            return
+        if now_sec == self._pps_last_sec:
+            return
+        # 직전 초 마감
+        elapsed = now_sec - self._pps_last_sec
+        if elapsed <= 0: elapsed = 1
+        pkt = self._pps_acc_pkt  / elapsed
+        row = self._pps_acc_row  / elapsed
+        byt = self._pps_acc_byte / elapsed
+        self._pps_window.append((self._pps_last_sec, pkt, row, byt))
+        self.pps_packets = pkt
+        self.pps_rows    = row
+        self.pps_bytes   = byt
+        # 로그 파일 기록
+        if self._log_fp is None:
+            self._open_log()
+        if self._log_fp is not None:
+            try:
+                ts = datetime.fromtimestamp(self._pps_last_sec).strftime("%Y-%m-%d %H:%M:%S")
+                self._log_fp.write(f"{ts},{self.fab},{int(pkt)},{int(row)},{int(byt)}\n")
+                self._log_fp.flush()
+            except Exception as e:
+                self.last_error = f"log: {e}"
+        # 초기화
+        self._pps_acc_pkt = 0
+        self._pps_acc_row = 0
+        self._pps_acc_byte = 0
+        self._pps_last_sec = now_sec
+
+    def _open_log(self):
+        try:
+            log_dir = Path(__file__).parent / "logs"
+            log_dir.mkdir(exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self._log_path = log_dir / f"sender_{self.fab}_{stamp}.csv"
+            self._log_fp = open(self._log_path, "w", encoding="utf-8")
+            self._log_fp.write("time,fab,packets_per_sec,rows_per_sec,bytes_per_sec\n")
+        except Exception as e:
+            self.last_error = f"log open: {e}"
 
     def _sleep_for(self, cur_ts: datetime, next_ts: Optional[datetime]) -> float:
         """ts 간격 만큼 sleep. CSV 가 descending 이어도 abs 로 동일 간격 유지."""

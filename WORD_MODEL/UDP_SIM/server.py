@@ -216,6 +216,16 @@ class FabReceiver(threading.Thread):
         self.last_raw_row: Optional[dict] = None
         self.parsed_ok = 0
         self.parsed_fail = 0
+        # pps + 로그
+        self._pps_last_sec = 0
+        self._pps_acc_pkt = 0
+        self._pps_acc_row = 0
+        self._pps_acc_byte = 0
+        self.pps_packets = 0
+        self.pps_rows    = 0
+        self.pps_bytes   = 0
+        self._log_path: Optional[Path] = None
+        self._log_fp = None
 
     def bind(self) -> bool:
         try:
@@ -240,6 +250,10 @@ class FabReceiver(threading.Thread):
             "last_raw_row": self.last_raw_row,
             "parsed_ok":   self.parsed_ok,
             "parsed_fail": self.parsed_fail,
+            "pps_packets": int(self.pps_packets),
+            "pps_rows":    int(self.pps_rows),
+            "pps_bytes":   int(self.pps_bytes),
+            "log_path":    str(self._log_path) if self._log_path else None,
         }
 
     def run(self):
@@ -252,6 +266,8 @@ class FabReceiver(threading.Thread):
 
             self.rx_packets += 1
             self.rx_bytes   += len(data)
+            self._pps_acc_pkt  += 1
+            self._pps_acc_byte += len(data)
             now = datetime.now()
             if self.first_at is None:
                 self.first_at = now
@@ -260,6 +276,7 @@ class FabReceiver(threading.Thread):
 
             pkt = self._parse(data)
             if pkt is None:
+                self._tick_pps()
                 continue
             self.last_ts = pkt.get("ts")
             ts_dt = _parse_ts(pkt.get("ts") or "")
@@ -269,12 +286,51 @@ class FabReceiver(threading.Thread):
                 self.last_columns = list(rows[0].keys())
             for row in rows:
                 self.rx_rows += 1
+                self._pps_acc_row += 1
                 vd = parse_row(row, self.fab)
                 if vd is None:
                     self.parsed_fail += 1
                     continue
                 self.parsed_ok += 1
                 self.store.update(vd, ts_dt, now)
+            self._tick_pps()
+
+    def _tick_pps(self):
+        import time as _t
+        now_sec = int(_t.time())
+        if self._pps_last_sec == 0:
+            self._pps_last_sec = now_sec
+            return
+        if now_sec == self._pps_last_sec:
+            return
+        elapsed = max(1, now_sec - self._pps_last_sec)
+        self.pps_packets = self._pps_acc_pkt  / elapsed
+        self.pps_rows    = self._pps_acc_row  / elapsed
+        self.pps_bytes   = self._pps_acc_byte / elapsed
+        if self._log_fp is None:
+            self._open_log()
+        if self._log_fp is not None:
+            try:
+                ts = datetime.fromtimestamp(self._pps_last_sec).strftime("%Y-%m-%d %H:%M:%S")
+                self._log_fp.write(f"{ts},{self.fab},{int(self.pps_packets)},{int(self.pps_rows)},{int(self.pps_bytes)}\n")
+                self._log_fp.flush()
+            except Exception as e:
+                self.last_error = f"log: {e}"
+        self._pps_acc_pkt = 0
+        self._pps_acc_row = 0
+        self._pps_acc_byte = 0
+        self._pps_last_sec = now_sec
+
+    def _open_log(self):
+        try:
+            log_dir = Path(__file__).parent / "logs"
+            log_dir.mkdir(exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self._log_path = log_dir / f"receiver_{self.fab}_{stamp}.csv"
+            self._log_fp = open(self._log_path, "w", encoding="utf-8")
+            self._log_fp.write("time,fab,packets_per_sec,rows_per_sec,bytes_per_sec\n")
+        except Exception as e:
+            self.last_error = f"log open: {e}"
 
     @staticmethod
     def _parse(data: bytes) -> Optional[dict]:
