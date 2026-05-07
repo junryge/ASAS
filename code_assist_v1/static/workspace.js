@@ -392,7 +392,10 @@ $("#btnWsRefresh").addEventListener("click", () => Workspace.refresh());
 $("#btnWsExpandAll").addEventListener("click", () => Workspace.expandAll());
 $("#btnWsCollapseAll").addEventListener("click", () => Workspace.collapseAll());
 $("#btnWsUploadFile").addEventListener("click", () => $("#wsFileInput").click());
-$("#btnWsUploadDir").addEventListener("click", () => $("#wsDirInput").click());
+$("#btnWsUploadDir").addEventListener("click", () => {
+  toast("폴더를 한 번 클릭(선택)하고 하단 '업로드' 버튼을 누르세요. 안 되면 폴더를 트리 영역에 드래그!", "warn");
+  $("#wsDirInput").click();
+});
 $("#btnWsClear").addEventListener("click", () => Workspace.clearAll());
 
 // ── 드래그앤드롭으로 폴더/파일 업로드 (웹킷 다이얼로그가 폴더를 1개만 인식하는 윈도우 케이스 대비) ──
@@ -480,7 +483,7 @@ $("#wsDirInput").addEventListener("change", e => {
     return;
   }
   if (e.target.files.length === 1) {
-    toast("⚠ 폴더 안에 파일이 1개만 인식됨 (콘솔 확인)", "warn");
+    toast("⚠ 1개만 인식됐어요. 다이얼로그에서 폴더를 더블클릭으로 들어가지 말고 한 번만 클릭한 뒤 '업로드' 누르세요. 또는 폴더를 트리에 드래그하세요!", "warn");
   }
   for (let i = 0; i < Math.min(10, e.target.files.length); i++) {
     const f = e.target.files[i];
