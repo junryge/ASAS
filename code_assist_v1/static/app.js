@@ -341,8 +341,42 @@ if (window.marked) {
   });
 }
 
+// ── 사이드바 접기/펼치기 ──
+const SidebarToggle = {
+  applyLeft(collapsed, persist = true) {
+    document.querySelector(".app-root").classList.toggle("left-collapsed", collapsed);
+    if (persist) localStorage.setItem("ws.left.collapsed", collapsed ? "1" : "0");
+    const btn = $("#btnToggleLeft");
+    if (btn) btn.title = collapsed ? "왼쪽 사이드바 펼치기" : "왼쪽 사이드바 접기";
+  },
+  applyRight(collapsed, persist = true) {
+    document.querySelector(".app-root").classList.toggle("right-collapsed", collapsed);
+    if (persist) localStorage.setItem("ws.right.collapsed", collapsed ? "1" : "0");
+    const btn = $("#btnToggleRight");
+    if (btn) btn.title = collapsed ? "워크스페이스 펼치기" : "워크스페이스 접기";
+  },
+  toggleLeft() {
+    const cur = document.querySelector(".app-root").classList.contains("left-collapsed");
+    SidebarToggle.applyLeft(!cur);
+  },
+  toggleRight() {
+    const cur = document.querySelector(".app-root").classList.contains("right-collapsed");
+    SidebarToggle.applyRight(!cur);
+  },
+  init() {
+    // 처음 방문이면 둘 다 접힘 (요청). localStorage 값이 "0" 일 때만 펼침.
+    const left = localStorage.getItem("ws.left.collapsed");
+    const right = localStorage.getItem("ws.right.collapsed");
+    SidebarToggle.applyLeft(left !== "0", false);
+    SidebarToggle.applyRight(right !== "0", false);
+  },
+};
+$("#btnToggleLeft").addEventListener("click", () => SidebarToggle.toggleLeft());
+$("#btnToggleRight").addEventListener("click", () => SidebarToggle.toggleRight());
+
 // ── 부트 ──
 window.addEventListener("DOMContentLoaded", async () => {
+  SidebarToggle.init();
   await loadModels();
   setTab("skills");
   Workspace.refresh();

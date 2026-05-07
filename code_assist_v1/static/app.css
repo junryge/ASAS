@@ -107,6 +107,24 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
   grid-template-rows: 44px 1fr;
   height: 100vh;
   width: 100vw;
+  transition: grid-template-columns .18s ease;
+}
+.app-root.left-collapsed { grid-template-columns: 0 1fr 360px; }
+.app-root.right-collapsed { grid-template-columns: 260px 1fr 0; }
+.app-root.left-collapsed.right-collapsed { grid-template-columns: 0 1fr 0; }
+.app-root.left-collapsed .sidebar,
+.app-root.right-collapsed .workspace {
+  width: 0; min-width: 0; padding: 0; border: 0;
+  overflow: hidden;
+}
+#btnToggleLeft, #btnToggleRight {
+  font-size: 14px; padding: 4px 9px;
+}
+.app-root.left-collapsed #btnToggleLeft,
+.app-root.right-collapsed #btnToggleRight {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 .topbar {
   grid-column: 1 / 4;
