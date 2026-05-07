@@ -142,6 +142,46 @@ const Workspace = {
     }
   },
 
+  async clearAll() {
+    if (!Workspace.files.length) {
+      toast("워크스페이스가 비어있습니다", "ok");
+      return;
+    }
+    const total = Workspace.files.length;
+    const phrase = "초기화";
+    const input = prompt(
+      `워크스페이스의 모든 파일·폴더 ${total}개를 삭제합니다.\n` +
+      `이 동작은 되돌릴 수 없습니다.\n\n` +
+      `진행하려면 "${phrase}" 를 입력하세요:`
+    );
+    if (input !== phrase) {
+      toast("취소됨", "ok");
+      return;
+    }
+    try {
+      const r = await fetch("/api/code/workspace/clear", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok && r.status !== 207) throw new Error(j.error || `HTTP ${r.status}`);
+      // 첨부·미리보기 모두 비움
+      State.workspaceFiles = [];
+      const wp = $("#workspacePanel");
+      if (wp.classList.contains("preview-on")) {
+        $("#wsPreview").textContent = "";
+        wp.classList.remove("preview-on");
+        const ab = wp.querySelector(".attach-toggle");
+        if (ab) ab.remove();
+      }
+      Workspace.expanded.clear();
+      const errMsg = j.errors?.length ? ` (${j.errors.length}개 실패)` : "";
+      toast(`초기화 완료: ${j.removed || 0}개 삭제${errMsg}`, j.errors?.length ? "warn" : "ok");
+      Chat.refreshChips();
+      refreshMetaBar();
+      Workspace.refresh();
+    } catch (e) {
+      toast("초기화 실패: " + e.message, "error");
+    }
+  },
+
   async deletePath(path, isDir, fileCount = 0) {
     const label = isDir ? `폴더 "${path}" 와 하위 ${fileCount}개 파일` : `파일 "${path}"`;
     if (!confirm(`${label}을(를) 삭제할까요?\n이 동작은 되돌릴 수 없습니다.`)) return;
@@ -306,6 +346,7 @@ const Workspace = {
 $("#btnWsRefresh").addEventListener("click", () => Workspace.refresh());
 $("#btnWsUploadFile").addEventListener("click", () => $("#wsFileInput").click());
 $("#btnWsUploadDir").addEventListener("click", () => $("#wsDirInput").click());
+$("#btnWsClear").addEventListener("click", () => Workspace.clearAll());
 
 $("#wsFileInput").addEventListener("change", e => {
   Workspace.handleFiles(e.target.files, { attachAfter: false });
