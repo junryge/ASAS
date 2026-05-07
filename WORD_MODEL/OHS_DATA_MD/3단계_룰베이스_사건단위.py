@@ -207,7 +207,10 @@ def evaluate_rules(t1_window, m14_window, lft_window):
     # ── Stage ──
     s1 = (ra_count >= 2) or ra_sustained
     s2 = rb_trig or rb_fast
-    s3 = ra_trig and rb_trig and rc_trig
+    # S3: R-A' AND (R-B 30분 OR R-B FAST 10분) AND R-C'
+    # rb_fast 도 인정 — 룰 정의서의 R-B 계열은 (rb_trig OR rb_fast)이고 S2도 OR 처리.
+    # S3만 rb_trig 단독이라 5/7 같은 빠른 폭주형이 누락되던 문제 해결.
+    s3 = ra_trig and (rb_trig or rb_fast) and rc_trig
 
     ctx = {
         'ra_count': ra_count,
