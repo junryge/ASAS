@@ -283,8 +283,11 @@ class IncidentTracker:
             'ra_sustained': bool(ctx.get('ra_sustained')),
             'rb_diff': ctx.get('rb_diff', 0),
             'rb_diff_10': ctx.get('rb_diff_10', 0),
+            'rb_fast': bool(ctx.get('rb_fast')),
+            'rb_trig': bool(ctx.get('rb_trig')),
             'rc_trend': ctx.get('rc_trend', 0),
             'rev_count': ctx.get('rev_count', 0),
+            'rev_lids': list(ctx.get('rev_lids') or []),
         })
         self.last_stage = stage
 
@@ -438,15 +441,22 @@ def incident_to_row(c, file_name):
         'contrib_breakdown': breakdown,
         'anomaly_explanation': explanation,
         'early_warning': early_warning,
+        'relation': build_incident_relation(c),
     }
 
 
 # ====== 발동이벤트 CSV 헬퍼 ======
 STAGE_LABEL = {0: '이벤트없음', 1: '1단계 조기경보', 2: '2단계 주의보', 3: '3단계 ⭐확정'}
 
+# 90min(STAR) CSV 원본 컬럼 — 룰의 근거가 되는 컬럼명 (prefix는 환경별로 다르므로 suffix만 표기)
+SRC_COL_RA = 'QUE.TIME.AVGTOTALTIME1MIN'
+SRC_COL_RB = 'QUE.M14TOM16.MESCURRENTQCNT'
+SRC_COL_RC_TPL = 'LFT.{lid}.TOTAL_CURRENTQCNT'
+
 EVENT_FIELDS = [
     'file', 'datetime', 'date', 'time',
     'stage', 'stage_name', 'prev_stage', 'transition', 'reason',
+    'relation',
 ]
 
 INCIDENT_FIELDS = [
@@ -454,21 +464,81 @@ INCIDENT_FIELDS = [
     'lead_min', 'duration_min', 'refire_count',
     'max_1min', 'max_m14_diff', 'max_reverse_lifters',
     'primary_cause', 'contrib_breakdown', 'anomaly_explanation', 'early_warning',
+    'relation',
 ]
 
 
+def build_event_relation(ev):
+    """
+    발동 사유의 근거가 된 STAR 컬럼+값. 매 분 R-A'/R-B/R-C' 3룰 상태를 모두 표기.
+    사용자가 90min 어느 컬럼/룰이 부족해서 단계 진입을 못 했는지 추적 가능.
+    형식: "[R-A' Y] AVGTOTALTIME1MIN=9.27분 | [R-B N] M14TOM16 +34 (<100) | [R-C' N] 역증가 1개 (<2)"
+    """
+    if ev['stage'] == 0:
+        return ''
+    ra_val = ev.get('ra_value')
+    ra_cnt = ev.get('ra_count', 0) or 0
+    ra_sus = bool(ev.get('ra_sustained'))
+    ra_trig = ra_cnt >= 1 or ra_sus
+    rb_trig = bool(ev.get('rb_trig'))
+    rb_fast = bool(ev.get('rb_fast'))
+    rb_any = rb_trig or rb_fast
+    rev_lids = ev.get('rev_lids') or []
+    rev_n = ev.get('rev_count', 0) or 0
+    rc_trend = ev.get('rc_trend', 0) or 0
+    rc_trig = (rc_trend < 0) and (rev_n >= 2)
+
+    # R-A'
+    ra_flag = 'Y' if ra_trig else 'N'
+    ra_val_s = f"{ra_val:.2f}분" if ra_val is not None else 'N/A'
+    ra_part = f"[R-A' {ra_flag}] {SRC_COL_RA}={ra_val_s} (≥9분 10분창 {ra_cnt}회"
+    ra_part += f", 지속Y" if ra_sus else ", 지속N"
+    ra_part += ")"
+
+    # R-B
+    rb_flag = 'Y' if rb_any else 'N'
+    rb_part = (f"[R-B {rb_flag}] {SRC_COL_RB} 30분Δ={ev.get('rb_diff', 0)} (≥100), "
+               f"10분Δ={ev.get('rb_diff_10', 0)} (≥30 fast)")
+
+    # R-C'
+    rc_flag = 'Y' if rc_trig else 'N'
+    if rev_lids:
+        lid_cols = ', '.join(SRC_COL_RC_TPL.format(lid=l) for l in rev_lids)
+        rc_part = f"[R-C' {rc_flag}] 역증가 {rev_n}개 (≥2): {lid_cols}; trend={rc_trend}"
+    else:
+        rc_part = f"[R-C' {rc_flag}] 역증가 0개 (≥2 필요); trend={rc_trend}"
+
+    return f"{ra_part} | {rb_part} | {rc_part}"
+
+
+def build_incident_relation(c):
+    """사건단위(S3) 의 근거가 된 STAR 컬럼명+값 — 누적 최대값/역증가 리프터 ID."""
+    parts = []
+    if c.get('max_1min'):
+        parts.append(f"{SRC_COL_RA} max={float(c['max_1min']):.2f}분 (기준 9.0분)")
+    if c.get('max_rb_diff'):
+        parts.append(f"{SRC_COL_RB} 최대증가 +{c['max_rb_diff']} (기준 +100)")
+    rev = sorted(c.get('rev_lids_union') or [])
+    if rev:
+        lid_cols = ', '.join(SRC_COL_RC_TPL.format(lid=l) for l in rev)
+        parts.append(f"역증가 LFT({len(rev)}): {lid_cols}")
+    return ' | '.join(parts) if parts else ''
+
+
 def event_to_row(ev, file_name):
-    """발동이벤트 1행. stage=0(이벤트없음)이면 stage/prev_stage/transition/reason 모두 빈칸."""
+    """발동이벤트 1행. stage=0(이벤트없음)이면 stage/prev_stage/transition/reason/relation 모두 빈칸."""
     t_str = ev['time'].strftime('%Y-%m-%d %H:%M')
     d_str = ev['time'].strftime('%Y-%m-%d')
     hm = ev['time'].strftime('%H:%M')
     stage_name = STAGE_LABEL.get(ev['stage'], '')
     if ev['stage'] == 0:
-        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '']
+        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '', '']
     transition = f"{ev['prev_stage']}→{ev['stage']}" if ev.get('is_transition') else ''
+    relation = build_event_relation(ev)
     return [
         file_name, t_str, d_str, hm,
         ev['stage'], stage_name, ev['prev_stage'], transition, ev['reason'],
+        relation,
     ]
 
 
