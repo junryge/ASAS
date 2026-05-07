@@ -195,12 +195,23 @@ def parse_row(row: dict, fab: str) -> Optional[dict]:
 # ─────────────────────────────────────────────────────
 class FabReceiver(threading.Thread):
     def __init__(self, fab: str, port: int, store: "VehicleStore"):
-        super().__init__(daemon=True, name=f"udp-{fab}")
+        super().__init__(daemon=True, name=f"udp-recv-{fab}")
         self.fab   = fab
         self.port  = port
         self.store = store
         self.sock  = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
+        # UDP 수신 버퍼 — 커널 net.core.rmem_max 까지만 적용됨.
+        # 가능한 큰 값으로 (drop 방지). 64MB 시도, 실패 시 점차 축소.
+        for sz in (64 << 20, 32 << 20, 16 << 20, 8 << 20, 4 << 20, 1 << 20):
+            try:
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, sz)
+                break
+            except OSError:
+                continue
+        # 파싱은 별도 스레드 — recvfrom 블락 안 되게 큐로 분리
+        from queue import Queue
+        self._raw_q: "Queue" = Queue(maxsize=20000)
+        self._drop_count = 0
 
         self.rx_packets = 0
         self.rx_rows    = 0
@@ -253,17 +264,25 @@ class FabReceiver(threading.Thread):
             "pps_packets": int(self.pps_packets),
             "pps_rows":    int(self.pps_rows),
             "pps_bytes":   int(self.pps_bytes),
+            "queue_size":  self._raw_q.qsize() if hasattr(self, "_raw_q") else 0,
+            "drop_count":  self._drop_count if hasattr(self, "_drop_count") else 0,
             "log_path":    str(self._log_path) if self._log_path else None,
         }
 
+    def start(self):
+        # 파싱 워커 스레드도 함께
+        threading.Thread(target=self._parse_loop, daemon=True,
+                         name=f"udp-parse-{self.fab}").start()
+        super().start()
+
     def run(self):
+        """recv 전용 — 빨리 받기만 해서 큐에 넣음 (drop 최소화)."""
         while True:
             try:
                 data, addr = self.sock.recvfrom(config.UDP_BUFFER_SIZE)
             except OSError as e:
                 self.last_error = f"recv: {e}"
                 return
-
             self.rx_packets += 1
             self.rx_bytes   += len(data)
             self._pps_acc_pkt  += 1
@@ -273,7 +292,26 @@ class FabReceiver(threading.Thread):
                 self.first_at = now
             self.last_at   = now
             self.last_addr = addr
+            try:
+                self._raw_q.put_nowait((data, now))
+            except Exception:
+                # 큐 가득 — 가장 오래된 것 버리고 새 것 넣음
+                try:
+                    self._raw_q.get_nowait()
+                    self._raw_q.put_nowait((data, now))
+                    self._drop_count += 1
+                except Exception:
+                    pass
 
+    def _parse_loop(self):
+        """파싱 + vehicle 갱신 — recv 와 분리."""
+        from queue import Empty
+        while True:
+            try:
+                data, now = self._raw_q.get(timeout=1.0)
+            except Empty:
+                self._tick_pps()
+                continue
             pkt = self._parse(data)
             if pkt is None:
                 self._tick_pps()
