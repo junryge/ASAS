@@ -73,11 +73,29 @@ const Chat = {
       });
       chips.appendChild(c);
     });
+    State.pastedImages.forEach(img => {
+      const c = document.createElement("span");
+      c.className = "chip image";
+      c.innerHTML = `<img src="${img.dataUrl}" class="chip-thumb" alt=""> <span class="thumb-label">🖼 ${(img.size / 1024).toFixed(0)}K</span> <span class="x">✕</span>`;
+      c.querySelector(".x").addEventListener("click", () => {
+        State.pastedImages = State.pastedImages.filter(x => x !== img);
+        Chat.refreshChips();
+        refreshMetaBar();
+      });
+      // 썸네일 클릭 → 모달로 원본 보기
+      c.querySelector(".chip-thumb").addEventListener("click", () => {
+        const w = document.createElement("div");
+        w.innerHTML = `<img src="${img.dataUrl}" style="max-width:100%;max-height:70vh;display:block;margin:0 auto;">`;
+        Modal.open({ title: img.name, body: w, footButtons: [{ label: "닫기" }] });
+      });
+      chips.appendChild(c);
+    });
   },
 
   async send() {
     const text = composerInput.value.trim();
-    if (!text) return;
+    const hasImages = State.pastedImages.length > 0;
+    if (!text && !hasImages) return;
     if (!State.model) {
       toast("모델을 선택하세요", "error");
       return;
@@ -86,8 +104,38 @@ const Chat = {
     composerInput.value = "";
     composerInput.style.height = "auto";
 
-    State.messages.push({ role: "user", content: text });
-    Chat.appendMessage("user", text);
+    // 이미지가 있으면 OpenAI 호환 multimodal 형식으로 전송
+    let userContent;
+    if (hasImages) {
+      const parts = [];
+      if (text) parts.push({ type: "text", text });
+      for (const img of State.pastedImages) {
+        parts.push({ type: "image_url", image_url: { url: img.dataUrl } });
+      }
+      userContent = parts;
+    } else {
+      userContent = text;
+    }
+
+    State.messages.push({ role: "user", content: userContent });
+    // UI 표시: 텍스트 + 이미지 썸네일
+    const userNode = Chat.appendMessage("user", text || "(이미지)");
+    if (hasImages) {
+      const gallery = document.createElement("div");
+      gallery.className = "msg-image-gallery";
+      State.pastedImages.forEach(img => {
+        const im = document.createElement("img");
+        im.src = img.dataUrl;
+        im.alt = img.name;
+        im.title = img.name;
+        gallery.appendChild(im);
+      });
+      userNode.appendChild(gallery);
+    }
+    // 전송 후 보관 비움
+    State.pastedImages = [];
+    Chat.refreshChips();
+    refreshMetaBar();
 
     const assistantNode = Chat.appendMessage("assistant", "");
     assistantNode.innerHTML = '<span class="cursor"></span>';
