@@ -65,7 +65,7 @@
       "env_id": "vl-72b",
       "model": "Qwen2.5-VL-72B-Instruct",
       "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "VL-72B (Vision/HCP)",
+      "name": "VL-72B (Vision/HCP, 시조새)",
       "capabilities": ["text", "vision", "large", "analysis"],
       "context_window": 128000,
       "priority": 1,
@@ -75,7 +75,7 @@
       "env_id": "qwen35-397b-fp8",
       "model": "Qwen3.5-397B-A17B-FP8",
       "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "Qwen3.5-397B FP8 (HCP)",
+      "name": "Qwen3.5-397B FP8 (HCP, 매머드)",
       "capabilities": ["text", "code", "analysis", "large"],
       "context_window": 128000,
       "priority": 1,
@@ -85,7 +85,7 @@
       "env_id": "qwen35-397b",
       "model": "Qwen3.5-397B-A17B",
       "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "Qwen3.5-397B (HCP)",
+      "name": "Qwen3.5-397B (HCP, 시조새)",
       "capabilities": ["text", "code", "analysis", "large"],
       "context_window": 128000,
       "priority": 1,
@@ -120,6 +120,46 @@
       "context_window": 128000,
       "priority": 3,
       "cost_tier": "low"
+    },
+    "qwen36-35b": {
+      "env_id": "qwen36-35b",
+      "model": "Qwen3.6-35B-A3B",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.6-35B-A3B (Common)",
+      "capabilities": ["text", "code", "medium"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "medium"
+    },
+    "gemma4-31b": {
+      "env_id": "gemma4-31b",
+      "model": "gemma-4-31B-it",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "Gemma-4-31B (Common)",
+      "capabilities": ["text", "analysis", "medium"],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "medium"
+    },
+    "glm-5-1": {
+      "env_id": "glm-5-1",
+      "model": "GLM-5.1",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "GLM-5.1 (Common)",
+      "capabilities": ["text", "code", "analysis", "medium"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "medium"
+    },
+    "kimi-k25": {
+      "env_id": "kimi-k25",
+      "model": "KIMI-K2.5",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "KIMI-K2.5 (Common)",
+      "capabilities": ["text", "code", "analysis", "large"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
     }
   },
 
@@ -128,6 +168,9 @@
     "qwen3-coder-next",
     "qwen3-coder-30b",
     "glm-5",
+    "glm-5-1",
+    "qwen36-35b",
+    "kimi-k25",
     "qwen3-next-80b",
     "gpt-oss-20b"
   ]
