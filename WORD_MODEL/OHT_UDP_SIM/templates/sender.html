@@ -32,6 +32,10 @@
                   border-radius:4px; cursor:pointer; font-size:12px; min-width:42px; }
   .speed-preset:hover { background:#2563eb; }
   .speed-preset.active { background:#f59e0b; color:#000; }
+  .rep-preset   { background:#7c3aed; color:#fff; border:0; padding:5px 10px;
+                  border-radius:4px; cursor:pointer; font-size:12px; min-width:42px; }
+  .rep-preset:hover { background:#9333ea; }
+  .rep-preset.active { background:#22c55e; color:#000; }
   input[type=range] { width: 100%; }
   input[type=number] { width: 80px; padding:6px; background:#1f2937; color:#fff;
                        border:1px solid #374151; border-radius:4px; }
@@ -135,6 +139,18 @@
       </span>
     </div>
     <div class="row">
+      <span>UDP 데이터 배수<br><span style="font-size:10px;color:#6b7280;">같은 패킷을 N번 반복 송신</span></span>
+      <span style="display:flex; gap:4px; flex-wrap:wrap;">
+        <button class="rep-preset" data-r="1">x1</button>
+        <button class="rep-preset" data-r="2">x2</button>
+        <button class="rep-preset" data-r="3">x3</button>
+        <button class="rep-preset" data-r="4">x4</button>
+        <button class="rep-preset" data-r="6">x6</button>
+        <button class="rep-preset" data-r="10">x10</button>
+        <button class="rep-preset" data-r="20">x20</button>
+      </span>
+    </div>
+    <div class="row">
       <span>루프 (CSV 끝나면 처음부터)</span>
       <span><label><input type="checkbox" id="loop-cb" checked> ON</label></span>
     </div>
@@ -185,6 +201,9 @@ async function refresh() {
     document.querySelectorAll('.speed-preset').forEach(b => {
       b.classList.toggle('active', parseFloat(b.dataset.s) === s.speed);
     });
+    document.querySelectorAll('.rep-preset').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.r) === (s.data_repeat||1));
+    });
     $('csv-path').textContent   = s.csv;
     $('csv-exists').textContent = s.csv_exists ? '있음' : '없음 ⚠️';
     $('csv-exists').style.color = s.csv_exists ? '#86efac' : '#fca5a5';
@@ -229,6 +248,13 @@ document.querySelectorAll('.speed-preset').forEach(b => {
     const s = parseFloat(b.dataset.s);
     $('speed-num').value = s;
     await api('/api/speed', {method:'POST', body: JSON.stringify({speed:s})});
+    refresh();
+  };
+});
+document.querySelectorAll('.rep-preset').forEach(b => {
+  b.onclick = async () => {
+    const r = parseInt(b.dataset.r);
+    await api('/api/data_repeat', {method:'POST', body: JSON.stringify({repeat:r})});
     refresh();
   };
 });

@@ -85,6 +85,7 @@ class SenderWorker:
         self.speed    = float(config.DEFAULT_SPEED)
         self.loop     = True
         self.seek_ratio: Optional[float] = None
+        self.data_repeat = 1            # 같은 패킷을 N 번 반복 송신 (UDP 부하 ↑)
 
         # 통계
         self.tx_packets = 0
@@ -146,6 +147,9 @@ class SenderWorker:
         if h:
             self.udp_host = h
 
+    def set_data_repeat(self, n: int):
+        self.data_repeat = max(1, min(int(n), 100))
+
     def seek(self, ratio: float):
         self.seek_ratio = max(0.0, min(1.0, ratio))
 
@@ -168,6 +172,7 @@ class SenderWorker:
             "running": self.running,
             "paused": self.paused,
             "speed": self.speed,
+            "data_repeat": self.data_repeat,
             "loop": self.loop,
             "cycle": self.cycle,
             "tx_packets": self.tx_packets,
@@ -289,20 +294,23 @@ class SenderWorker:
         if not rows:
             return
         max_n = max(1, config.MAX_ROWS_PER_PACKET)
+        repeat = max(1, int(self.data_repeat))
         for i in range(0, len(rows), max_n):
             chunk = rows[i:i + max_n]
             if config.PACKET_FORMAT == "csv":
                 pkt = serialize_csv(self.fab, ts, chunk, self.loader.fieldnames)
             else:
                 pkt = serialize_json(self.fab, ts, chunk)
-            try:
-                self.sock.sendto(pkt, (self.udp_host, self.udp_port))
-            except OSError as e:
-                self.last_error = f"sendto: {e}"
-                continue
-            self.tx_packets += 1
-            self.tx_rows += len(chunk)
-            self.tx_bytes += len(pkt)
+            # 같은 패킷을 data_repeat 번 반복 송신 (UDP 데이터 배수)
+            for _ in range(repeat):
+                try:
+                    self.sock.sendto(pkt, (self.udp_host, self.udp_port))
+                except OSError as e:
+                    self.last_error = f"sendto: {e}"
+                    continue
+                self.tx_packets += 1
+                self.tx_rows += len(chunk)
+                self.tx_bytes += len(pkt)
             self.last_tx = datetime.now()
         self.cur_ts = ts
 
@@ -401,6 +409,10 @@ class SenderHandler(BaseHTTPRequestHandler):
         if path == "/api/host":
             self.worker.set_host(str(body.get("host", "")))
             self._send_json(200, {"ok": True, "host": self.worker.udp_host})
+            return
+        if path == "/api/data_repeat":
+            self.worker.set_data_repeat(int(body.get("repeat", 1)))
+            self._send_json(200, {"ok": True, "data_repeat": self.worker.data_repeat})
             return
         if path == "/api/loop":
             self.worker.set_loop(bool(body.get("loop", True)))
