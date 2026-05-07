@@ -109,10 +109,13 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
       <div class="row"><span class="l">CSV ts</span><span class="v" id="m14-ts" style="font-size:10px;">—</span></div>
       <div class="row"><span class="l">최근 수신</span><span class="v" id="m14-rx" style="font-size:10px;">—</span></div>
       <div class="row"><span class="l">송신 from</span><span class="v" id="m14-from" style="font-size:10px;">—</span></div>
-      <div class="row" style="border-top:1px dashed #374151;padding-top:4px;margin-top:4px;"><span class="l">pps</span><span class="v" id="m14-pps" style="color:#86efac;">0 pkt/s</span></div>
-      <div class="row"><span class="l">bytes/s</span><span class="v" id="m14-bps">0 B/s</span></div>
-      <div class="row"><span class="l">파싱 큐</span><span class="v" id="m14-q">0</span></div>
+      <div class="row" style="border-top:1px dashed #374151;padding-top:4px;margin-top:4px;"><span class="l">recv pps (실 wire)</span><span class="v" id="m14-rpps" style="color:#86efac;">0 pkt/s</span></div>
+      <div class="row"><span class="l">recv bytes/s</span><span class="v" id="m14-bps">0 B/s</span></div>
+      <div class="row"><span class="l">parse pps</span><span class="v" id="m14-pps">0 /s</span></div>
+      <div class="row"><span class="l">parse rows/s</span><span class="v" id="m14-rps">0</span></div>
+      <div class="row"><span class="l">파싱 큐 (현재 / HWM)</span><span class="v" id="m14-q">0 / 0</span></div>
       <div class="row"><span class="l">큐 drop</span><span class="v" id="m14-drop" style="color:#fca5a5;">0</span></div>
+      <div class="row"><span class="l">커널 UDP drop</span><span class="v" id="m14-kdrop" style="color:#fca5a5;">0</span></div>
       <div class="row" style="font-size:10px;"><span class="l">로그</span><span class="v" id="m14-log" style="font-size:9px;color:#9ca3af;word-break:break-all;text-align:right;">—</span></div>
     </div>
 
@@ -124,10 +127,13 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
       <div class="row"><span class="l">CSV ts</span><span class="v" id="m16-ts" style="font-size:10px;">—</span></div>
       <div class="row"><span class="l">최근 수신</span><span class="v" id="m16-rx" style="font-size:10px;">—</span></div>
       <div class="row"><span class="l">송신 from</span><span class="v" id="m16-from" style="font-size:10px;">—</span></div>
-      <div class="row" style="border-top:1px dashed #374151;padding-top:4px;margin-top:4px;"><span class="l">pps</span><span class="v" id="m16-pps" style="color:#86efac;">0 pkt/s</span></div>
-      <div class="row"><span class="l">bytes/s</span><span class="v" id="m16-bps">0 B/s</span></div>
-      <div class="row"><span class="l">파싱 큐</span><span class="v" id="m16-q">0</span></div>
+      <div class="row" style="border-top:1px dashed #374151;padding-top:4px;margin-top:4px;"><span class="l">recv pps (실 wire)</span><span class="v" id="m16-rpps" style="color:#86efac;">0 pkt/s</span></div>
+      <div class="row"><span class="l">recv bytes/s</span><span class="v" id="m16-bps">0 B/s</span></div>
+      <div class="row"><span class="l">parse pps</span><span class="v" id="m16-pps">0 /s</span></div>
+      <div class="row"><span class="l">parse rows/s</span><span class="v" id="m16-rps">0</span></div>
+      <div class="row"><span class="l">파싱 큐 (현재 / HWM)</span><span class="v" id="m16-q">0 / 0</span></div>
       <div class="row"><span class="l">큐 drop</span><span class="v" id="m16-drop" style="color:#fca5a5;">0</span></div>
+      <div class="row"><span class="l">커널 UDP drop</span><span class="v" id="m16-kdrop" style="color:#fca5a5;">0</span></div>
       <div class="row" style="font-size:10px;"><span class="l">로그</span><span class="v" id="m16-log" style="font-size:9px;color:#9ca3af;word-break:break-all;text-align:right;">—</span></div>
     </div>
 
@@ -466,10 +472,13 @@ function updateStats(d) {
   $('m14-ts').textContent   = shortTs(m14.last_ts);
   $('m14-rx').textContent   = shortTs(m14.last_at);
   $('m14-from').textContent = m14.last_addr ? (m14.last_addr[0]+':'+m14.last_addr[1]) : '—';
-  $('m14-pps').textContent  = fmtNum(m14.pps_packets||0) + ' pkt/s';
-  $('m14-bps').textContent  = fmtBytes(m14.pps_bytes||0) + '/s';
-  $('m14-q').textContent    = fmtNum(m14.queue_size||0);
+  $('m14-rpps').textContent = fmtNum(m14.recv_pps||0) + ' pkt/s';
+  $('m14-bps').textContent  = fmtBytes(m14.recv_bps||0) + '/s';
+  $('m14-pps').textContent  = fmtNum(m14.parse_pps||0) + ' /s';
+  $('m14-rps').textContent  = fmtNum(m14.parse_rps||0);
+  $('m14-q').textContent    = fmtNum(m14.queue_size||0) + ' / ' + fmtNum(m14.queue_hwm||0);
   $('m14-drop').textContent = fmtNum(m14.drop_count||0);
+  $('m14-kdrop').textContent= fmtNum(m14.kernel_udp_drop||0);
   $('m14-log').textContent  = m14.log_path || '— (수신 시작 후 생성)';
   $('m16-pkt').textContent  = fmtNum(m16.rx_packets);
   $('m16-rows').textContent = fmtNum(m16.rx_rows);
@@ -477,10 +486,13 @@ function updateStats(d) {
   $('m16-ts').textContent   = shortTs(m16.last_ts);
   $('m16-rx').textContent   = shortTs(m16.last_at);
   $('m16-from').textContent = m16.last_addr ? (m16.last_addr[0]+':'+m16.last_addr[1]) : '—';
-  $('m16-pps').textContent  = fmtNum(m16.pps_packets||0) + ' pkt/s';
-  $('m16-bps').textContent  = fmtBytes(m16.pps_bytes||0) + '/s';
-  $('m16-q').textContent    = fmtNum(m16.queue_size||0);
+  $('m16-rpps').textContent = fmtNum(m16.recv_pps||0) + ' pkt/s';
+  $('m16-bps').textContent  = fmtBytes(m16.recv_bps||0) + '/s';
+  $('m16-pps').textContent  = fmtNum(m16.parse_pps||0) + ' /s';
+  $('m16-rps').textContent  = fmtNum(m16.parse_rps||0);
+  $('m16-q').textContent    = fmtNum(m16.queue_size||0) + ' / ' + fmtNum(m16.queue_hwm||0);
   $('m16-drop').textContent = fmtNum(m16.drop_count||0);
+  $('m16-kdrop').textContent= fmtNum(m16.kernel_udp_drop||0);
   $('m16-log').textContent  = m16.log_path || '— (수신 시작 후 생성)';
 
   // 차량 카운트 (현재 FAB)

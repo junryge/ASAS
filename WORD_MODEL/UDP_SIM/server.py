@@ -210,8 +210,18 @@ class FabReceiver(threading.Thread):
                 continue
         # 파싱은 별도 스레드 — recvfrom 블락 안 되게 큐로 분리
         from queue import Queue
-        self._raw_q: "Queue" = Queue(maxsize=20000)
-        self._drop_count = 0
+        self._raw_q: "Queue" = Queue(maxsize=100000)
+        self._drop_count = 0       # 큐 가득 차 버린 패킷 누적
+        self._queue_hwm  = 0       # 큐 최대 도달치 (high water mark)
+        # 부하 테스트용 카운터 (1초 단위)
+        self._recv_pps_acc = 0     # recv 스레드 직접 — 진짜 wire 속도
+        self._recv_bps_acc = 0
+        self._recv_last_sec = 0
+        self.recv_pps      = 0     # 매초 갱신 (recv loop 에서)
+        self.recv_bps      = 0
+        # 파싱 결과 (parse 스레드)
+        self.parse_pps     = 0
+        self.parse_rps     = 0     # rows/sec
 
         self.rx_packets = 0
         self.rx_rows    = 0
@@ -264,34 +274,61 @@ class FabReceiver(threading.Thread):
             "pps_packets": int(self.pps_packets),
             "pps_rows":    int(self.pps_rows),
             "pps_bytes":   int(self.pps_bytes),
+            "recv_pps":    int(self.recv_pps),
+            "recv_bps":    int(self.recv_bps),
+            "parse_pps":   int(self.parse_pps),
+            "parse_rps":   int(self.parse_rps),
             "queue_size":  self._raw_q.qsize() if hasattr(self, "_raw_q") else 0,
-            "drop_count":  self._drop_count if hasattr(self, "_drop_count") else 0,
+            "queue_hwm":   self._queue_hwm,
+            "drop_count":  self._drop_count,
+            "kernel_udp_drop": _read_kernel_udp_drops(self.port),
             "log_path":    str(self._log_path) if self._log_path else None,
         }
 
     def start(self):
-        # 파싱 워커 스레드도 함께
-        threading.Thread(target=self._parse_loop, daemon=True,
-                         name=f"udp-parse-{self.fab}").start()
+        # 파싱 워커 스레드 4개 (멀티 파서 — 고부하 대응)
+        for i in range(4):
+            threading.Thread(target=self._parse_loop, daemon=True,
+                             name=f"udp-parse-{self.fab}-{i}").start()
         super().start()
 
     def run(self):
-        """recv 전용 — 빨리 받기만 해서 큐에 넣음 (drop 최소화)."""
+        """recv 전용 — 빨리 받기만 해서 큐에 넣음 (drop 최소화).
+        진짜 wire 속도 (recv_pps/bps) 도 여기서 갱신."""
+        import time as _t
         while True:
             try:
                 data, addr = self.sock.recvfrom(config.UDP_BUFFER_SIZE)
             except OSError as e:
                 self.last_error = f"recv: {e}"
                 return
+            sz = len(data)
             self.rx_packets += 1
-            self.rx_bytes   += len(data)
-            self._pps_acc_pkt  += 1
-            self._pps_acc_byte += len(data)
+            self.rx_bytes   += sz
+            self._recv_pps_acc += 1
+            self._recv_bps_acc += sz
+            now_sec = int(_t.time())
+            if self._recv_last_sec == 0:
+                self._recv_last_sec = now_sec
+            elif now_sec != self._recv_last_sec:
+                el = max(1, now_sec - self._recv_last_sec)
+                self.recv_pps = self._recv_pps_acc / el
+                self.recv_bps = self._recv_bps_acc / el
+                self._recv_pps_acc = 0
+                self._recv_bps_acc = 0
+                self._recv_last_sec = now_sec
+
             now = datetime.now()
             if self.first_at is None:
                 self.first_at = now
             self.last_at   = now
             self.last_addr = addr
+
+            # 큐 high water mark
+            qs = self._raw_q.qsize()
+            if qs > self._queue_hwm:
+                self._queue_hwm = qs
+
             try:
                 self._raw_q.put_nowait((data, now))
             except Exception:
@@ -301,7 +338,7 @@ class FabReceiver(threading.Thread):
                     self._raw_q.put_nowait((data, now))
                     self._drop_count += 1
                 except Exception:
-                    pass
+                    self._drop_count += 1
 
     def _parse_loop(self):
         """파싱 + vehicle 갱신 — recv 와 분리."""
@@ -334,6 +371,7 @@ class FabReceiver(threading.Thread):
             self._tick_pps()
 
     def _tick_pps(self):
+        """parse 스레드에서 호출 — 1초 마다 통계 + 상세 로그 1줄."""
         import time as _t
         now_sec = int(_t.time())
         if self._pps_last_sec == 0:
@@ -342,16 +380,31 @@ class FabReceiver(threading.Thread):
         if now_sec == self._pps_last_sec:
             return
         elapsed = max(1, now_sec - self._pps_last_sec)
-        self.pps_packets = self._pps_acc_pkt  / elapsed
-        self.pps_rows    = self._pps_acc_row  / elapsed
+        # parse rate
+        self.parse_pps = self._pps_acc_pkt  / elapsed
+        self.parse_rps = self._pps_acc_row  / elapsed
+        self.pps_packets = self.parse_pps
+        self.pps_rows    = self.parse_rps
         self.pps_bytes   = self._pps_acc_byte / elapsed
+
         if self._log_fp is None:
             self._open_log()
         if self._log_fp is not None:
             try:
                 ts = datetime.fromtimestamp(self._pps_last_sec).strftime("%Y-%m-%d %H:%M:%S")
-                self._log_fp.write(f"{ts},{self.fab},{int(self.pps_packets)},{int(self.pps_rows)},{int(self.pps_bytes)}\n")
+                # 부하 테스트 분석용: recv / parse / 큐 / drop / kernel rmem
+                kdrop = _read_kernel_udp_drops(self.port)
+                self._log_fp.write(
+                    f"{ts},{self.fab},"
+                    f"{int(self.recv_pps)},{int(self.parse_pps)},{int(self.parse_rps)},"
+                    f"{int(self.recv_bps)},"
+                    f"{self._raw_q.qsize()},{self._queue_hwm},{self._drop_count},"
+                    f"{kdrop},"
+                    f"{self.parsed_ok},{self.parsed_fail}\n"
+                )
                 self._log_fp.flush()
+                # high water mark 리셋 (구간별 최대로)
+                self._queue_hwm = self._raw_q.qsize()
             except Exception as e:
                 self.last_error = f"log: {e}"
         self._pps_acc_pkt = 0
@@ -366,7 +419,14 @@ class FabReceiver(threading.Thread):
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self._log_path = log_dir / f"receiver_{self.fab}_{stamp}.csv"
             self._log_fp = open(self._log_path, "w", encoding="utf-8")
-            self._log_fp.write("time,fab,packets_per_sec,rows_per_sec,bytes_per_sec\n")
+            self._log_fp.write(
+                "time,fab,"
+                "recv_pps,parse_pps,parse_rps,"
+                "recv_bps,"
+                "queue_size,queue_hwm,queue_drop,"
+                "kernel_udp_drop,"
+                "parsed_ok,parsed_fail\n"
+            )
         except Exception as e:
             self.last_error = f"log open: {e}"
 
@@ -392,6 +452,32 @@ class FabReceiver(threading.Thread):
             return {"fab": meta.get("FAB"), "ts": meta.get("TS"),
                     "count": int(meta.get("N", len(rows))), "rows": rows}
         return None
+
+
+def _read_kernel_udp_drops(port: int) -> int:
+    """리눅스 /proc/net/udp 에서 해당 포트의 drops 컬럼 반환.
+    Windows 등 미지원 OS 면 -1.
+    """
+    try:
+        with open("/proc/net/udp", "r") as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) < 13:
+                    continue
+                # local_address: "00000000:0E86" hex
+                la = parts[1]
+                if ":" not in la:
+                    continue
+                p_hex = la.split(":")[1]
+                try:
+                    p = int(p_hex, 16)
+                except ValueError:
+                    continue
+                if p == port:
+                    return int(parts[12])
+        return 0
+    except Exception:
+        return -1
 
 
 def _parse_ts(s: str) -> Optional[datetime]:
