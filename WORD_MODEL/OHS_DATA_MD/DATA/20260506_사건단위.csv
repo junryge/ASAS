@@ -1,0 +1,2 @@
+﻿file,date,predict_time,start_time,end_time,lead_min,duration_min,refire_count,max_1min,max_m14_diff,max_reverse_lifters,primary_cause,contrib_breakdown,anomaly_explanation,early_warning
+90min.csv,2026-05-06,09:05,10:04,10:09,59,5.0,0,9.49,136,5,R-C' 리프터,R-C' 리프터 5개 역증가 (기준 2개) | R-B FAB큐 +136 (기준 +100) | R-A' 반송시간 9.49분 (기준 9분),"R-C' 리프터 주도 (매우 강함): 반송시간 9.5분, FAB간 큐 +136, 리프터 역증가 5개",09:05 1·2단계 발동 → 10:04 3단계 확정 (59분 먼저 인지)
