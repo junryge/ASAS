@@ -305,7 +305,8 @@ const Workspace = {
   // 파일 업로드 (개별/일부)
   async handleFiles(fileList, { attachAfter = true } = {}) {
     if (!fileList || !fileList.length) return;
-    let ok = 0, fail = 0;
+    let ok = 0, skip = 0, fail = 0;
+    const skipReasons = [];
     for (const file of fileList) {
       const fd = new FormData();
       fd.append("file", file);
@@ -317,6 +318,11 @@ const Workspace = {
         const r = await fetch("/api/code/workspace/upload", { method: "POST", body: fd });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        if (j.status === "skipped") {
+          skip++;
+          if (skipReasons.length < 3) skipReasons.push(`${file.webkitRelativePath || file.name}: ${j.reason}`);
+          continue;
+        }
         if (attachAfter && !file.webkitRelativePath) {
           // 단일 파일만 자동 첨부 (폴더 업로드는 너무 많아서 스킵)
           try {
@@ -327,11 +333,17 @@ const Workspace = {
         ok++;
       } catch (e) {
         fail++;
-        console.warn("업로드 실패:", file.name, e.message);
+        console.warn("업로드 실패:", file.webkitRelativePath || file.name, e.message);
       }
     }
-    if (fail) toast(`업로드: ${ok}개 성공, ${fail}개 실패`, fail > ok ? "error" : "warn");
-    else toast(`${ok}개 업로드 완료`, "ok");
+    const parts = [`${ok}개 업로드`];
+    if (skip) parts.push(`${skip}개 스킵`);
+    if (fail) parts.push(`${fail}개 실패`);
+    const kind = fail ? (fail > ok ? "error" : "warn") : (skip ? "warn" : "ok");
+    toast(parts.join(" · "), kind);
+    if (skipReasons.length) {
+      console.warn("스킵 사유 (최대 3개):\n" + skipReasons.join("\n"));
+    }
     Chat.refreshChips();
     refreshMetaBar();
     Workspace.refresh();
