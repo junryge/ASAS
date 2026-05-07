@@ -353,13 +353,23 @@ class SenderWorker:
         self.pps_packets = pkt
         self.pps_rows    = row
         self.pps_bytes   = byt
-        # 로그 파일 기록
+        # 로그 파일 기록 (송신 측 — 부하 테스트 분석용)
         if self._log_fp is None:
             self._open_log()
         if self._log_fp is not None:
             try:
                 ts = datetime.fromtimestamp(self._pps_last_sec).strftime("%Y-%m-%d %H:%M:%S")
-                self._log_fp.write(f"{ts},{self.fab},{int(pkt)},{int(row)},{int(byt)}\n")
+                fb = self.loader.file_bytes or 1
+                pct = (self.cur_byte / fb * 100) if fb else 0.0
+                err = (self.last_error or "").replace(",", ";")
+                self._log_fp.write(
+                    f"{ts},{self.fab},{self.udp_host},{self.udp_port},"
+                    f"{self.speed},{self.data_repeat},"
+                    f"{int(pkt)},{int(row)},{int(byt)},"
+                    f"{self.tx_packets},{self.tx_rows},{self.tx_bytes},"
+                    f"{self.cur_byte},{self.loader.file_bytes},{pct:.2f},"
+                    f"{self.cycle},{err}\n"
+                )
                 self._log_fp.flush()
             except Exception as e:
                 self.last_error = f"log: {e}"
@@ -376,7 +386,14 @@ class SenderWorker:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self._log_path = log_dir / f"sender_{self.fab}_{stamp}.csv"
             self._log_fp = open(self._log_path, "w", encoding="utf-8")
-            self._log_fp.write("time,fab,packets_per_sec,rows_per_sec,bytes_per_sec\n")
+            self._log_fp.write(
+                "time,fab,udp_host,udp_port,"
+                "speed,data_repeat,"
+                "tx_pps,tx_rps,tx_bps,"
+                "tx_packets_total,tx_rows_total,tx_bytes_total,"
+                "cur_byte,file_bytes,progress_pct,"
+                "cycle,errors\n"
+            )
         except Exception as e:
             self.last_error = f"log open: {e}"
 
