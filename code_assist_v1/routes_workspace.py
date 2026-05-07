@@ -117,6 +117,28 @@ def register_workspace_routes(app):
             f.write(content)
         return jsonify({"status": "saved", "path": rel, "size": len(content)})
 
+    @app.route("/api/code/workspace/clear", methods=["POST"])
+    def api_ws_clear():
+        """워크스페이스 폴더의 모든 파일/하위 폴더 삭제 (폴더 자체는 유지)."""
+        if not os.path.isdir(WORKSPACE_DIR):
+            os.makedirs(WORKSPACE_DIR, exist_ok=True)
+            return jsonify({"status": "cleared", "removed": 0})
+        removed = 0
+        errors: list[str] = []
+        for name in os.listdir(WORKSPACE_DIR):
+            p = os.path.join(WORKSPACE_DIR, name)
+            try:
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                else:
+                    os.remove(p)
+                removed += 1
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+        if errors:
+            return jsonify({"status": "partial", "removed": removed, "errors": errors}), 207
+        return jsonify({"status": "cleared", "removed": removed})
+
     @app.route("/api/code/workspace/delete", methods=["POST"])
     def api_ws_delete():
         data = request.get_json(force=True, silent=True) or {}
