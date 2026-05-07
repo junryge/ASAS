@@ -164,6 +164,84 @@ const Workspace = {
     }
   },
 
+  openFolderDropModal() {
+    const body = document.createElement("div");
+    body.innerHTML = `
+      <div id="wsBigDrop" style="
+        border: 2px dashed var(--accent);
+        border-radius: 12px;
+        padding: 60px 40px;
+        text-align: center;
+        background: rgba(80,160,255,0.05);
+        transition: all .15s;
+        cursor: pointer;
+      ">
+        <div style="font-size: 56px; margin-bottom: 12px;">📁</div>
+        <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">폴더를 여기에 드래그해서 떨어뜨리세요</div>
+        <div style="color: var(--muted); font-size: 12px; line-height: 1.7;">
+          윈도우 탐색기에서 폴더를 잡아서 이 영역에 끌어다 놓으세요.<br>
+          하위 폴더와 <b>모든 파일</b>이 그대로 업로드됩니다.
+        </div>
+      </div>
+      <details style="margin-top:14px;color:var(--muted);font-size:11px;">
+        <summary style="cursor:pointer;">⓵ 다이얼로그로 선택 (덜 추천)</summary>
+        <div style="margin-top:8px;line-height:1.6;">
+          버튼 누르면 윈도우 폴더 다이얼로그가 열립니다.<br>
+          ⚠️ 폴더를 <b>더블클릭으로 들어가지 마세요</b> — 한 번만 클릭한 후 하단 "업로드" 버튼.<br>
+          <button id="wsDirFallback" class="ghost" style="margin-top:6px;">＋ 다이얼로그 열기</button>
+        </div>
+      </details>
+    `;
+    Modal.open({
+      title: "📁 폴더 업로드",
+      body,
+      footButtons: [{ label: "닫기" }],
+    });
+
+    const dropEl = $("#wsBigDrop");
+    const setActive = on => {
+      dropEl.style.background = on ? "rgba(80,160,255,0.18)" : "rgba(80,160,255,0.05)";
+      dropEl.style.borderColor = on ? "var(--accent-2, var(--accent))" : "var(--accent)";
+    };
+    ["dragenter", "dragover"].forEach(ev =>
+      dropEl.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); setActive(true); })
+    );
+    ["dragleave"].forEach(ev =>
+      dropEl.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); setActive(false); })
+    );
+    dropEl.addEventListener("drop", async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      setActive(false);
+      const items = e.dataTransfer?.items;
+      if (!items || !items.length) return;
+      const entries = [];
+      for (const it of items) {
+        const entry = it.webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+      }
+      if (!entries.length) {
+        if (e.dataTransfer.files?.length) {
+          Modal.close();
+          Workspace.handleFiles(e.dataTransfer.files, { attachAfter: false });
+        }
+        return;
+      }
+      Modal.close();
+      toast("드래그 인식 중…", "ok");
+      const files = await _entriesToFiles(entries);
+      console.log(`[ws] 모달 드롭: ${files.length}개 파일 수집`);
+      Workspace.handleFiles(files, { attachAfter: false });
+    });
+
+    // 폴백 다이얼로그 버튼
+    const fb = $("#wsDirFallback");
+    if (fb) fb.addEventListener("click", () => {
+      Modal.close();
+      $("#wsDirInput").click();
+    });
+  },
+
   async clearAll() {
     if (!Workspace.files.length) {
       toast("워크스페이스가 비어있습니다", "ok");
@@ -392,10 +470,7 @@ $("#btnWsRefresh").addEventListener("click", () => Workspace.refresh());
 $("#btnWsExpandAll").addEventListener("click", () => Workspace.expandAll());
 $("#btnWsCollapseAll").addEventListener("click", () => Workspace.collapseAll());
 $("#btnWsUploadFile").addEventListener("click", () => $("#wsFileInput").click());
-$("#btnWsUploadDir").addEventListener("click", () => {
-  toast("폴더를 한 번 클릭(선택)하고 하단 '업로드' 버튼을 누르세요. 안 되면 폴더를 트리 영역에 드래그!", "warn");
-  $("#wsDirInput").click();
-});
+$("#btnWsUploadDir").addEventListener("click", () => Workspace.openFolderDropModal());
 $("#btnWsClear").addEventListener("click", () => Workspace.clearAll());
 
 // ── 드래그앤드롭으로 폴더/파일 업로드 (웹킷 다이얼로그가 폴더를 1개만 인식하는 윈도우 케이스 대비) ──
