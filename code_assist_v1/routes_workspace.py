@@ -77,12 +77,26 @@ def register_workspace_routes(app):
         f.stream.seek(0)
         if size > MAX_UPLOAD_MB * 1024 * 1024:
             return jsonify({"error": f"파일 크기 초과 ({MAX_UPLOAD_MB}MB)"}), 413
-        rel_dir = (request.form.get("dir") or "").strip().replace("\\", "/")
-        target_dir = _safe_join(WORKSPACE_DIR, rel_dir) if rel_dir else WORKSPACE_DIR
+        # relpath: 폴더 업로드 시 webkitRelativePath (예: "myproj/src/a.py")
+        # dir: 명시적 하위 디렉토리 (예: "subdir")
+        relpath = (request.form.get("relpath") or "").strip().replace("\\", "/")
+        rel_dir_form = (request.form.get("dir") or "").strip().replace("\\", "/")
+
+        if relpath:
+            # 컴포넌트별로 sanitize (구분자는 보존)
+            parts = [p for p in relpath.split("/") if p and p not in (".", "..")]
+            if not parts:
+                return jsonify({"error": "잘못된 relpath"}), 400
+            safe_parts = [secure_filename(p) or "_" for p in parts[:-1]]
+            target_name = secure_filename(parts[-1]) or "uploaded"
+            target_dir = _safe_join(WORKSPACE_DIR, *safe_parts) if safe_parts else WORKSPACE_DIR
+        else:
+            target_dir = _safe_join(WORKSPACE_DIR, rel_dir_form) if rel_dir_form else WORKSPACE_DIR
+            target_name = secure_filename(f.filename) or "uploaded"
+
         if not target_dir:
             return jsonify({"error": "잘못된 디렉토리"}), 400
         os.makedirs(target_dir, exist_ok=True)
-        target_name = secure_filename(f.filename) or "uploaded"
         target_path = os.path.join(target_dir, target_name)
         f.save(target_path)
         rel_path = os.path.relpath(target_path, WORKSPACE_DIR).replace("\\", "/")
@@ -102,6 +116,28 @@ def register_workspace_routes(app):
         with open(full, "w", encoding="utf-8") as f:
             f.write(content)
         return jsonify({"status": "saved", "path": rel, "size": len(content)})
+
+    @app.route("/api/code/workspace/clear", methods=["POST"])
+    def api_ws_clear():
+        """워크스페이스 폴더의 모든 파일/하위 폴더 삭제 (폴더 자체는 유지)."""
+        if not os.path.isdir(WORKSPACE_DIR):
+            os.makedirs(WORKSPACE_DIR, exist_ok=True)
+            return jsonify({"status": "cleared", "removed": 0})
+        removed = 0
+        errors: list[str] = []
+        for name in os.listdir(WORKSPACE_DIR):
+            p = os.path.join(WORKSPACE_DIR, name)
+            try:
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                else:
+                    os.remove(p)
+                removed += 1
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+        if errors:
+            return jsonify({"status": "partial", "removed": removed, "errors": errors}), 207
+        return jsonify({"status": "cleared", "removed": removed})
 
     @app.route("/api/code/workspace/delete", methods=["POST"])
     def api_ws_delete():
