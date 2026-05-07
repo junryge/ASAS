@@ -28,6 +28,10 @@
   button.primary:hover { filter: brightness(1.1); }
   button.danger { background:#dc2626; }
   button:disabled { opacity:.4; cursor:not-allowed; }
+  .speed-preset { background:#1e40af; color:#fff; border:0; padding:5px 10px;
+                  border-radius:4px; cursor:pointer; font-size:12px; min-width:42px; }
+  .speed-preset:hover { background:#2563eb; }
+  .speed-preset.active { background:#f59e0b; color:#000; }
   input[type=range] { width: 100%; }
   input[type=number] { width: 80px; padding:6px; background:#1f2937; color:#fff;
                        border:1px solid #374151; border-radius:4px; }
@@ -119,6 +123,18 @@
       </span>
     </div>
     <div class="row">
+      <span>빠른 속도</span>
+      <span style="display:flex; gap:4px; flex-wrap:wrap;">
+        <button class="speed-preset" data-s="1">x1</button>
+        <button class="speed-preset" data-s="2">x2</button>
+        <button class="speed-preset" data-s="4">x4</button>
+        <button class="speed-preset" data-s="6">x6</button>
+        <button class="speed-preset" data-s="10">x10</button>
+        <button class="speed-preset" data-s="60">x60</button>
+        <button class="speed-preset" data-s="3600">MAX</button>
+      </span>
+    </div>
+    <div class="row">
       <span>루프 (CSV 끝나면 처음부터)</span>
       <span><label><input type="checkbox" id="loop-cb" checked> ON</label></span>
     </div>
@@ -166,6 +182,9 @@ async function refresh() {
       $('host-input').value = s.udp_host;
       $('host-input').dataset.touched = '1';
     }
+    document.querySelectorAll('.speed-preset').forEach(b => {
+      b.classList.toggle('active', parseFloat(b.dataset.s) === s.speed);
+    });
     $('csv-path').textContent   = s.csv;
     $('csv-exists').textContent = s.csv_exists ? '있음' : '없음 ⚠️';
     $('csv-exists').style.color = s.csv_exists ? '#86efac' : '#fca5a5';
@@ -205,6 +224,14 @@ $('btn-resume').onclick = () => api('/api/resume', {method:'POST'}).then(refresh
 $('btn-stop').onclick   = () => api('/api/stop',   {method:'POST'}).then(refresh);
 $('btn-speed').onclick  = () => api('/api/speed',  {method:'POST', body: JSON.stringify({speed:parseFloat($('speed-num').value)})}).then(refresh);
 $('btn-host').onclick   = () => api('/api/host',   {method:'POST', body: JSON.stringify({host:$('host-input').value.trim()})}).then(refresh);
+document.querySelectorAll('.speed-preset').forEach(b => {
+  b.onclick = async () => {
+    const s = parseFloat(b.dataset.s);
+    $('speed-num').value = s;
+    await api('/api/speed', {method:'POST', body: JSON.stringify({speed:s})});
+    refresh();
+  };
+});
 $('loop-cb').onchange   = () => api('/api/loop',   {method:'POST', body: JSON.stringify({loop:$('loop-cb').checked})});
 $('btn-seek').onclick   = () => api('/api/seek',   {method:'POST', body: JSON.stringify({ratio:parseInt($('seek-range').value)/100})}).then(refresh);
 $('btn-test').onclick   = async () => {
