@@ -428,9 +428,11 @@ def incident_to_row(c, file_name):
         f"{c['predict_time'].strftime('%H:%M')} 1·2단계 발동 → "
         f"{c['start_time'].strftime('%H:%M')} 3단계 확정 ({lead_min}분 먼저 인지)"
     )
+    severity = '확정' if (c['max_rb_diff'] or 0) >= 100 else '주의'
     return {
         'file': file_name,
         'date': c['start_time'].strftime('%Y-%m-%d'),
+        'severity': severity,
         'predict_time': c['predict_time'].strftime('%H:%M'),
         'start_time': c['start_time'].strftime('%H:%M'),
         'end_time': c['end_time'].strftime('%H:%M'),
@@ -463,7 +465,7 @@ EVENT_FIELDS = [
 ]
 
 INCIDENT_FIELDS = [
-    'file', 'date', 'predict_time', 'start_time', 'end_time',
+    'file', 'date', 'severity', 'predict_time', 'start_time', 'end_time',
     'lead_min', 'duration_min', 'refire_count',
     'max_1min', 'max_m14_diff', 'max_reverse_lifters',
     'primary_cause', 'contrib_breakdown', 'anomaly_explanation', 'early_warning',
