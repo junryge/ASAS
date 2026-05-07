@@ -8,10 +8,28 @@ const Workspace = {
     try {
       const data = await api("/api/code/workspace/tree");
       Workspace.files = data.items || [];
+      console.log(`[ws] tree: ${Workspace.files.length}개 파일`, Workspace.files.map(f => f.path));
       Workspace.render();
     } catch (e) {
       toast("워크스페이스 로드 실패: " + e.message, "error");
     }
+  },
+
+  // 모든 폴더 펼침/접기
+  expandAll() {
+    const collect = node => {
+      if (node.kind === "dir") {
+        Workspace.expanded.add(node.path);
+        node.children.forEach(collect);
+      }
+    };
+    const root = Workspace._buildTree(Workspace.files);
+    root.children.forEach(collect);
+    Workspace.render();
+  },
+  collapseAll() {
+    Workspace.expanded.clear();
+    Workspace.render();
   },
 
   // 평탄 [{path,size}] → 트리 노드 {name, path, kind:'dir'|'file', size, children?}
@@ -307,6 +325,7 @@ const Workspace = {
     if (!fileList || !fileList.length) return;
     let ok = 0, skip = 0, fail = 0;
     const skipReasons = [];
+    const uploadedDirs = new Set();   // 업로드된 폴더의 모든 prefix (자동 펼침용)
     for (const file of fileList) {
       const fd = new FormData();
       fd.append("file", file);
@@ -320,8 +339,15 @@ const Workspace = {
         if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
         if (j.status === "skipped") {
           skip++;
-          if (skipReasons.length < 3) skipReasons.push(`${file.webkitRelativePath || file.name}: ${j.reason}`);
+          if (skipReasons.length < 5) skipReasons.push(`${file.webkitRelativePath || file.name}: ${j.reason}`);
           continue;
+        }
+        // 업로드된 path 의 모든 상위 폴더를 펼침 대상에 추가
+        if (j.path) {
+          const parts = j.path.split("/");
+          for (let i = 1; i < parts.length; i++) {
+            uploadedDirs.add(parts.slice(0, i).join("/"));
+          }
         }
         if (attachAfter && !file.webkitRelativePath) {
           // 단일 파일만 자동 첨부 (폴더 업로드는 너무 많아서 스킵)
@@ -333,7 +359,7 @@ const Workspace = {
         ok++;
       } catch (e) {
         fail++;
-        console.warn("업로드 실패:", file.webkitRelativePath || file.name, e.message);
+        console.warn("[ws] 업로드 실패:", file.webkitRelativePath || file.name, e.message);
       }
     }
     const parts = [`${ok}개 업로드`];
@@ -342,8 +368,10 @@ const Workspace = {
     const kind = fail ? (fail > ok ? "error" : "warn") : (skip ? "warn" : "ok");
     toast(parts.join(" · "), kind);
     if (skipReasons.length) {
-      console.warn("스킵 사유 (최대 3개):\n" + skipReasons.join("\n"));
+      console.warn("[ws] 스킵 사유 (최대 5개):\n" + skipReasons.join("\n"));
     }
+    // 폴더 업로드 시 그 폴더들을 자동 펼침 (사용자가 안에 든 파일을 바로 볼 수 있게)
+    uploadedDirs.forEach(d => Workspace.expanded.add(d));
     Chat.refreshChips();
     refreshMetaBar();
     Workspace.refresh();
@@ -356,6 +384,8 @@ const Workspace = {
 };
 
 $("#btnWsRefresh").addEventListener("click", () => Workspace.refresh());
+$("#btnWsExpandAll").addEventListener("click", () => Workspace.expandAll());
+$("#btnWsCollapseAll").addEventListener("click", () => Workspace.collapseAll());
 $("#btnWsUploadFile").addEventListener("click", () => $("#wsFileInput").click());
 $("#btnWsUploadDir").addEventListener("click", () => $("#wsDirInput").click());
 $("#btnWsClear").addEventListener("click", () => Workspace.clearAll());

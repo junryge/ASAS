@@ -38,7 +38,9 @@ def register_workspace_routes(app):
     @app.route("/api/code/workspace/tree")
     def api_ws_tree():
         items = []
-        for dirpath, _, filenames in os.walk(WORKSPACE_DIR):
+        for dirpath, dirnames, filenames in os.walk(WORKSPACE_DIR):
+            # __pycache__ 같은 노이즈는 트리에서 안 보이게 (디스크에는 둠)
+            dirnames[:] = [d for d in dirnames if d not in ("__pycache__", ".DS_Store")]
             rel = os.path.relpath(dirpath, WORKSPACE_DIR)
             if rel == ".":
                 rel = ""
@@ -54,7 +56,7 @@ def register_workspace_routes(app):
                     })
                 except OSError:
                     continue
-        return jsonify({"items": items, "root": WORKSPACE_DIR})
+        return jsonify({"items": items, "count": len(items), "root": WORKSPACE_DIR})
 
     @app.route("/api/code/workspace/file")
     def api_ws_file():
@@ -90,19 +92,19 @@ def register_workspace_routes(app):
         # dir: 명시적 하위 디렉토리 (예: "subdir")
         relpath = (request.form.get("relpath") or "").strip().replace("\\", "/")
         rel_dir_form = (request.form.get("dir") or "").strip().replace("\\", "/")
+        is_folder_upload = bool(relpath)
 
-        # 확장자 체크: 폴더 업로드 시에는 거부 대신 skip (소수 거부로 전체 무산되는 것 방지)
+        # 확장자 체크: 폴더 업로드는 화이트리스트 우회 (사용자가 폴더 통째로 의도)
+        # 단일 파일 업로드만 화이트리스트 적용.
         ext = os.path.splitext(f.filename)[1].lower()
-        if ext and ext not in ALLOWED_UPLOAD_EXT:
-            if relpath:
-                return jsonify({"status": "skipped", "reason": f"지원하지 않는 확장자: {ext}", "path": relpath}), 200
+        if not is_folder_upload and ext and ext not in ALLOWED_UPLOAD_EXT:
             return jsonify({"error": f"지원하지 않는 확장자: {ext}"}), 415
 
         f.stream.seek(0, os.SEEK_END)
         size = f.stream.tell()
         f.stream.seek(0)
         if size > MAX_UPLOAD_MB * 1024 * 1024:
-            if relpath:
+            if is_folder_upload:
                 return jsonify({"status": "skipped", "reason": f"크기 초과 ({MAX_UPLOAD_MB}MB)", "path": relpath}), 200
             return jsonify({"error": f"파일 크기 초과 ({MAX_UPLOAD_MB}MB)"}), 413
 
@@ -122,8 +124,15 @@ def register_workspace_routes(app):
             return jsonify({"error": "잘못된 디렉토리"}), 400
         os.makedirs(target_dir, exist_ok=True)
         target_path = os.path.join(target_dir, target_name)
-        f.save(target_path)
+        try:
+            f.save(target_path)
+        except Exception as e:
+            print(f"[ws] f.save 실패: {target_path} → {e}")
+            if is_folder_upload:
+                return jsonify({"status": "skipped", "reason": f"저장 실패: {e}", "path": relpath}), 200
+            return jsonify({"error": f"저장 실패: {e}"}), 500
         rel_path = os.path.relpath(target_path, WORKSPACE_DIR).replace("\\", "/")
+        print(f"[ws] uploaded: {rel_path} ({size} bytes)")
         return jsonify({"status": "uploaded", "path": rel_path, "size": size})
 
     @app.route("/api/code/workspace/save", methods=["POST"])
