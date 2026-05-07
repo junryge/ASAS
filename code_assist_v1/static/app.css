@@ -285,14 +285,27 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
   padding: 12px 24px 16px;
 }
 .composer .chips {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  margin-bottom: 8px; min-height: 22px;
+  display: flex; flex-wrap: nowrap; gap: 6px;
+  margin-bottom: 8px;
+  height: 32px; min-height: 32px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  align-items: center;
+  scrollbar-width: thin;
 }
+.composer .chips::-webkit-scrollbar { height: 4px; }
+.composer .chips::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
 .composer .chip {
   background: var(--chip-bg); color: var(--accent);
   border: 1px solid var(--chip-border);
   font-size: 11px; padding: 2px 8px; border-radius: 12px;
   display: inline-flex; gap: 4px; align-items: center;
+  flex-shrink: 0;
+  max-width: 220px;
+}
+.composer .chip > span:not(.x):not(.chip-thumb):not(.thumb-label) {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .composer .chip .x { cursor: pointer; opacity: .7; }
 .composer .chip .x:hover { opacity: 1; }
