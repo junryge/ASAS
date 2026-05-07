@@ -76,7 +76,11 @@ const Workspace = {
   render() {
     const tree = $("#wsTree");
     if (!Workspace.files.length) {
-      tree.innerHTML = `<div style="color:var(--muted);padding:14px;font-size:12px;">파일이 없습니다. ＋파일 또는 ＋폴더로 업로드하세요.</div>`;
+      tree.innerHTML = `<div style="color:var(--muted);padding:14px;font-size:12px;line-height:1.6;">
+        파일이 없습니다.<br>
+        • <b>＋파일</b> / <b>＋폴더</b> 버튼<br>
+        • 또는 이 영역에 <b>폴더를 드래그</b>해서 떨어뜨리세요
+      </div>`;
       return;
     }
     tree.innerHTML = "";
@@ -329,9 +333,10 @@ const Workspace = {
     for (const file of fileList) {
       const fd = new FormData();
       fd.append("file", file);
-      // webkitRelativePath 가 있으면 폴더 구조 보존
-      if (file.webkitRelativePath) {
-        fd.append("relpath", file.webkitRelativePath);
+      // webkitRelativePath (폴더 input) 또는 _relPath (드래그앤드롭) 가 있으면 폴더 구조 보존
+      const relPath = file.webkitRelativePath || file._relPath || "";
+      if (relPath) {
+        fd.append("relpath", relPath);
       }
       try {
         const r = await fetch("/api/code/workspace/upload", { method: "POST", body: fd });
@@ -349,7 +354,7 @@ const Workspace = {
             uploadedDirs.add(parts.slice(0, i).join("/"));
           }
         }
-        if (attachAfter && !file.webkitRelativePath) {
+        if (attachAfter && !relPath) {
           // 단일 파일만 자동 첨부 (폴더 업로드는 너무 많아서 스킵)
           try {
             const data = await api("/api/code/workspace/file?path=" + encodeURIComponent(j.path));
@@ -390,11 +395,100 @@ $("#btnWsUploadFile").addEventListener("click", () => $("#wsFileInput").click())
 $("#btnWsUploadDir").addEventListener("click", () => $("#wsDirInput").click());
 $("#btnWsClear").addEventListener("click", () => Workspace.clearAll());
 
+// ── 드래그앤드롭으로 폴더/파일 업로드 (웹킷 다이얼로그가 폴더를 1개만 인식하는 윈도우 케이스 대비) ──
+async function _entriesToFiles(entries, prefix = "") {
+  const out = [];
+  for (const entry of entries) {
+    if (entry.isFile) {
+      await new Promise(resolve => {
+        entry.file(
+          file => { file._relPath = prefix + entry.name; out.push(file); resolve(); },
+          () => resolve()
+        );
+      });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const subEntries = await new Promise(resolve => {
+        const all = [];
+        const readBatch = () => reader.readEntries(
+          batch => { if (!batch.length) resolve(all); else { all.push(...batch); readBatch(); } },
+          () => resolve(all)
+        );
+        readBatch();
+      });
+      const subFiles = await _entriesToFiles(subEntries, prefix + entry.name + "/");
+      out.push(...subFiles);
+    }
+  }
+  return out;
+}
+
+const _wsDropZone = $("#wsTree");
+const _wsPanel = $("#workspacePanel");
+["dragenter", "dragover"].forEach(ev => {
+  _wsDropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _wsPanel.classList.add("drag-over");
+  });
+});
+["dragleave", "drop"].forEach(ev => {
+  _wsDropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    e.stopPropagation();
+    _wsPanel.classList.remove("drag-over");
+  });
+});
+_wsDropZone.addEventListener("drop", async e => {
+  const items = e.dataTransfer?.items;
+  if (!items || !items.length) return;
+  const entries = [];
+  for (const it of items) {
+    const entry = it.webkitGetAsEntry?.();
+    if (entry) entries.push(entry);
+  }
+  if (!entries.length) {
+    // fallback: 일반 file list
+    if (e.dataTransfer.files?.length) {
+      Workspace.handleFiles(e.dataTransfer.files, { attachAfter: false });
+    }
+    return;
+  }
+  toast("드래그 인식 중…", "ok");
+  const files = await _entriesToFiles(entries);
+  console.log(`[ws] 드래그앤드롭: ${files.length}개 파일 수집`);
+  for (let i = 0; i < Math.min(10, files.length); i++) {
+    console.log(`   [${i}] ${files[i]._relPath} (${files[i].size}B)`);
+  }
+  if (files.length > 10) console.log(`   ... 외 ${files.length - 10}개 더`);
+  Workspace.handleFiles(files, { attachAfter: false });
+});
+
 $("#wsFileInput").addEventListener("change", e => {
+  console.log(`[ws] ＋파일 input: ${e.target.files.length}개 선택됨`);
+  for (let i = 0; i < Math.min(10, e.target.files.length); i++) {
+    const f = e.target.files[i];
+    console.log(`   [${i}] ${f.name} (${f.size}B) relPath="${f.webkitRelativePath || ""}"`);
+  }
   Workspace.handleFiles(e.target.files, { attachAfter: false });
   e.target.value = "";
 });
 $("#wsDirInput").addEventListener("change", e => {
+  console.log(`[ws] ＋폴더 input: ${e.target.files.length}개 파일 선택됨`);
+  if (e.target.files.length === 0) {
+    toast("폴더 안에 파일이 없거나 접근 거부됨", "warn");
+    return;
+  }
+  if (e.target.files.length === 1) {
+    toast("⚠ 폴더 안에 파일이 1개만 인식됨 (콘솔 확인)", "warn");
+  }
+  for (let i = 0; i < Math.min(10, e.target.files.length); i++) {
+    const f = e.target.files[i];
+    console.log(`   [${i}] ${f.webkitRelativePath || f.name} (${f.size}B)`);
+  }
+  if (e.target.files.length > 10) {
+    console.log(`   ... 외 ${e.target.files.length - 10}개 더`);
+  }
   Workspace.handleFiles(e.target.files, { attachAfter: false });
   e.target.value = "";
 });

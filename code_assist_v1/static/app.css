@@ -434,6 +434,16 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
   color: #fff;
   border-color: var(--error, #c44);
 }
+
+/* 드래그앤드롭 오버레이 */
+.workspace.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -8px;
+  background: rgba(80, 160, 255, 0.06);
+}
+.workspace.drag-over .ws-tree {
+  pointer-events: none;
+}
 .workspace .ws-preview {
   border-top: 1px solid var(--border);
   background: var(--code-bg);
