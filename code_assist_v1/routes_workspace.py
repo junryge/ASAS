@@ -150,6 +150,43 @@ def register_workspace_routes(app):
             f.write(content)
         return jsonify({"status": "saved", "path": rel, "size": len(content)})
 
+    @app.route("/api/code/workspace/_debug")
+    def api_ws_debug():
+        """디스크 상태와 코드 버전을 직접 확인 (브라우저로 열어 보기 쉽게)."""
+        info = {
+            "workspace_dir": WORKSPACE_DIR,
+            "exists": os.path.isdir(WORKSPACE_DIR),
+            "code_version": "fix-folder-upload-v2",  # 새 코드 적용 표식
+            "has_safe_name_unicode": "_safe_name_unicode" in globals(),
+            "allowed_ext_count": len(ALLOWED_UPLOAD_EXT),
+            "raw_files": [],
+            "raw_dirs": [],
+        }
+        for dirpath, dirnames, filenames in os.walk(WORKSPACE_DIR):
+            rel_d = os.path.relpath(dirpath, WORKSPACE_DIR).replace("\\", "/")
+            if rel_d != ".":
+                info["raw_dirs"].append(rel_d)
+            for fn in filenames:
+                full = os.path.join(dirpath, fn)
+                rel_f = os.path.relpath(full, WORKSPACE_DIR).replace("\\", "/")
+                try:
+                    info["raw_files"].append({
+                        "path": rel_f,
+                        "size": os.path.getsize(full),
+                        "ext": os.path.splitext(fn)[1].lower(),
+                    })
+                except OSError as e:
+                    info["raw_files"].append({"path": rel_f, "error": str(e)})
+        info["file_count"] = len(info["raw_files"])
+        info["dir_count"] = len(info["raw_dirs"])
+        # 확장자별 통계
+        ext_stats = {}
+        for f in info["raw_files"]:
+            e = f.get("ext", "")
+            ext_stats[e] = ext_stats.get(e, 0) + 1
+        info["ext_stats"] = ext_stats
+        return jsonify(info)
+
     @app.route("/api/code/workspace/clear", methods=["POST"])
     def api_ws_clear():
         """워크스페이스 폴더의 모든 파일/하위 폴더 삭제 (폴더 자체는 유지)."""
