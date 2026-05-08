@@ -31,5 +31,13 @@ def create_app():
     register_knowledge_routes(app)
     register_ppt_routes(app)
 
+    # code_assist_v1 통합 (Blueprint, url_prefix="/code", demos_v1 리소스 공유)
+    try:
+        from code_assist_v1.blueprint import register_code_blueprint
+        register_code_blueprint(app)
+        print("  🖥️  code_assist_v1 Blueprint 등록 완료 (/code/*)")
+    except Exception as _e:
+        print(f"  ⚠️  code_assist_v1 Blueprint 등록 실패: {_e}")
+
     _routes_registered = True
     return app

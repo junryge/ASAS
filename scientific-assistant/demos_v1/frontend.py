@@ -58,7 +58,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .content-inner{max-width:800px;margin:0 auto}
 .section-label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:10px}
 /* Chat - Fixed Bottom */
-.chat-box-fixed{position:fixed;bottom:0;left:250px;right:340px;background:#fff;border-top:2px solid #e5e3de;padding:6px 32px;z-index:100;box-shadow:0 -2px 10px rgba(0,0,0,.05);transition:left .2s ease,right .2s ease}
+.chat-box-fixed{position:fixed;bottom:0;left:250px;right:0;background:#fff;border-top:2px solid #e5e3de;padding:6px 32px;z-index:100;box-shadow:0 -2px 10px rgba(0,0,0,.05);transition:left .2s ease}
 .chat-box-fixed:focus-within{border-top-color:#6366f1}
 .chat-box-fixed-inner{max-width:800px;margin:0 auto}
 .chat-input{width:100%;border:none;outline:none;font-size:13px;resize:none;min-height:20px;max-height:100px;font-family:inherit;line-height:1.4}
@@ -725,7 +725,7 @@ pre{position:relative}
   <div class="header">
     <div class="project-title">📁 Demos V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 하네스 사용중</span></div>
     <div style="display:flex;align-items:center;gap:6px;">
-      <button id="hdCodeBtn" onclick="alert('준비 중 — 곧 연결됩니다')" style="font-size:12px;color:#fff;background:#6366f1;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🖥️ 코드 어시스턴트</button>
+      <button id="hdCodeBtn" onclick="window.location.href='/code/'" style="font-size:12px;color:#fff;background:#6366f1;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🖥️ 코드 어시스턴트</button>
       <button id="hdKdBtn" onclick="openKnowledgePopup()" style="font-size:12px;color:#fff;background:#22c55e;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">📚 내 지식</button>
       <button id="hdAdminBtn" onclick="openAdminPopup()" style="display:none;font-size:12px;color:#000;background:#f59e0b;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">👑 사용자 관리</button>
       <button id="hdLogoutBtn" onclick="doLogout()" style="font-size:12px;color:#888;background:none;border:1px solid #ddd;padding:5px 10px;border-radius:8px;cursor:pointer;">🚪</button>
@@ -4433,9 +4433,31 @@ function dismissIntroAndShowMode(){
   ov.classList.add('fade-out');
   setTimeout(function(){
     if(ov.parentNode) ov.parentNode.removeChild(ov);
-    // 매번 로그인 필수
-    showLoginScreen();
+    // sessionStorage 자동 로그인 + 서버 boot_id 검증 (재시작 시 강제 로그아웃)
+    tryAutoLoginOrShowLogin();
   }, 700);
+}
+
+// 자동 로그인 시도: sessionStorage + 서버 boot_id 검증
+async function tryAutoLoginOrShowLogin(){
+  try {
+    var _saved = JSON.parse(sessionStorage.getItem('demos_user') || 'null');
+    if (_saved && _saved.id) {
+      // 서버 boot_id 검증 — 서버 재시작 후엔 boot_id 다름 → 강제 로그아웃
+      try {
+        var resp = await fetch('/api/server-info', {cache:'no-store'});
+        var info = await resp.json();
+        if (_saved._boot_id && info.boot_id && _saved._boot_id === info.boot_id) {
+          currentUser = _saved;
+          showMainUI();
+          return;
+        }
+      } catch(e) {}
+      // boot_id 불일치 또는 검증 실패 → 세션 정리
+      sessionStorage.removeItem('demos_user');
+    }
+  } catch(e) {}
+  showLoginScreen();
 }
 
 function showLoginScreen(){
@@ -4485,7 +4507,12 @@ async function doLogin(){
     var data = await resp.json();
     if(data.error){ errEl.textContent=data.error; errEl.style.display='block'; return; }
     currentUser = data;
-    localStorage.setItem('demos_user', JSON.stringify(data));
+    // 서버 boot_id 같이 받아 저장 — 다음 페이지 로드 시 검증용
+    try {
+      var _info = await (await fetch('/api/server-info', {cache:'no-store'})).json();
+      data._boot_id = _info.boot_id || '';
+    } catch(e) { data._boot_id = ''; }
+    sessionStorage.setItem('demos_user', JSON.stringify(data));
     errEl.style.display='none';
     showMainUI();
   } catch(e){
@@ -4495,7 +4522,7 @@ async function doLogin(){
 
 function doLogout(){
   currentUser = null;
-  localStorage.removeItem('demos_user');
+  sessionStorage.removeItem('demos_user');
   var adminBtn = document.getElementById('adminBtn');
   if(adminBtn) adminBtn.remove();
   var logoutBtn = document.getElementById('logoutBtn');
@@ -4698,7 +4725,8 @@ function exitUioMode(){
 }
 
 (function(){
-  // 메인 UI를 처음에 숨기기 (로그인 전)
+  // sessionStorage + 서버 boot_id 검증 (브라우저 닫거나 서버 재시작 시 자동 로그아웃)
+  // 비동기 검증이라 일단 미로그인 상태 UI 표시 후 검증 결과에 따라 자동 복원/로그인 화면
   document.getElementById('sidebar').style.display='none';
   var mainEl = document.querySelector('.main');
   if(mainEl) mainEl.style.display='none';
@@ -4707,8 +4735,8 @@ function exitUioMode(){
   var sideToggle = document.querySelector('.sidebar-toggle');
   if(sideToggle) sideToggle.style.display='none';
 
-  // 바로 로그인 화면 표시
-  showLoginScreen();
+  // sessionStorage + boot_id 검증 → 자동 복원 또는 로그인 화면
+  tryAutoLoginOrShowLogin();
 })();
 
 // ==================== PPT 코드 감지 & 생성 ====================

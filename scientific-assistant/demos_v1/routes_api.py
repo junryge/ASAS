@@ -31,6 +31,11 @@ from demos_v1.skills import (
 from demos_v1.frontend import HTML_TEMPLATE
 
 
+# 서버 부팅마다 새로 생성되는 식별자 — 서버 재시작 시 클라이언트 강제 로그아웃에 사용
+import uuid as _uuid
+SERVER_BOOT_ID = _uuid.uuid4().hex
+
+
 def register_api_routes(app):
     """Register all API routes on the Flask app."""
     from demos_v1.gguf import _pool_status
@@ -41,6 +46,11 @@ def register_api_routes(app):
     @app.route("/")
     def index():
         return render_template_string(HTML_TEMPLATE)
+
+    @app.route("/api/server-info")
+    def api_server_info():
+        """서버 부팅 식별자 반환 — 클라이언트가 비교해서 다르면 강제 로그아웃."""
+        return jsonify({"boot_id": SERVER_BOOT_ID})
 
 
     @app.route("/uio")
