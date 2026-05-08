@@ -260,6 +260,10 @@ def register_chat_routes(app):
         _srv_is_drawio = False
         _srv_is_pptx = False
         _api_timeout = 120
+        # Code Assistant 등 폴백 비활성 요청은 대형 모델로 큰 코드 분석 → 타임아웃 10분
+        if data.get("disable_fallback", False):
+            _api_timeout = 600
+            print(f"  [TIMEOUT BOOST] disable_fallback=True → _api_timeout=600s (10분)")
 
         # ── 토큰 자동 결정 (API/GGUF 모두) ──
         if is_gguf:
@@ -1872,10 +1876,15 @@ def register_chat_routes(app):
             headers["Authorization"] = f"Bearer {api_key}"
 
         # 폴백 체인 구성: 현재 모델 → 대체 모델들
+        _client_disable_fallback = bool(data.get("disable_fallback", False))
         primary_reg_key = get_registry_key_for_env(env_id)
         if primary_reg_key:
-            # drawio/pptx 는 폴백 비활성 (모델 바뀌면 결과 완전히 달라져 처음부터 다시)
-            if _srv_is_drawio or _srv_is_pptx:
+            # drawio/pptx 또는 클라이언트 명시 비활성 시 폴백 OFF
+            # (Code Assistant 분석 모드는 사용자가 선택한 대형 모델을 그대로 써야 함)
+            if _client_disable_fallback:
+                fallback_keys = [primary_reg_key]
+                print(f"  [FALLBACK DISABLED] 클라이언트 요청 — 폴백 비활성 (primary only: {primary_reg_key})")
+            elif _srv_is_drawio or _srv_is_pptx:
                 fallback_keys = [primary_reg_key]
                 print(f"  [SERVER BOOST] {('drawio' if _srv_is_drawio else 'pptx')} — 폴백 비활성 (primary only)")
             else:
