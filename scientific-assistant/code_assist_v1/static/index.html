@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Freedom 코딩 어시스턴트</title>
+<link rel="stylesheet" href="static/app.css?v=20260507c">
+<!-- highlight.js 테마는 app.js 에서 라이트/다크에 따라 동적 로드 -->
+</head>
+<body>
+
+<div class="app-root">
+  <!-- ── 상단 ── -->
+  <div class="topbar">
+    <button class="icon" id="btnToggleLeft" title="왼쪽 사이드바 펼침/접기">☰</button>
+    <a href="/" class="icon" title="데모스로 돌아가기" style="text-decoration:none;display:inline-flex;align-items:center;padding:6px 12px;border:1px solid var(--border);border-radius:var(--radius);background:#22c55e;color:#fff;font-weight:600;font-size:12px;margin-right:8px;">🏠 Demos</a>
+    <div class="brand"><span class="dot"></span>Freedom 코딩 어시스턴트</div>
+    <div class="spacer"></div>
+
+    <span class="effort">
+      <label>effort</label>
+      <select id="effortSelect">
+        <option value="0">0 (정확)</option>
+        <option value="1">1</option>
+        <option value="2" selected>2 (균형)</option>
+        <option value="3">3 (창의)</option>
+      </select>
+    </span>
+
+    <select id="modelSelect" class="model-select"><option>모델 로드 중…</option></select>
+
+    <a class="icon" href="static/docs.html" target="_blank" title="사용 설명서" style="text-decoration:none;display:inline-flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);color:var(--text);">📖 문서</a>
+    <button class="icon" id="themeBtn" title="다크/라이트 전환">🌙</button>
+    <button class="icon" id="systemPromptBtn" title="시스템 프롬프트 보기/편집">⚙️ 프롬프트</button>
+    <button class="icon" id="newSessionBtn" title="새 세션">＋ 세션</button>
+    <button class="icon" id="btnToggleRight" title="워크스페이스 펼침/접기">📁</button>
+  </div>
+
+  <!-- ── 좌 사이드바 ── -->
+  <aside class="sidebar">
+    <div class="tabs">
+      <button data-tab="skills" class="active">스킬</button>
+      <button data-tab="knowledge">지식</button>
+      <button data-tab="sessions">세션</button>
+    </div>
+
+    <div class="panel-body" id="sidebarBody">
+      <!-- 동적 콘텐츠 -->
+    </div>
+
+    <div class="toolbar" id="sidebarToolbar">
+      <input type="text" id="sidebarSearch" placeholder="검색…">
+      <button id="sidebarAddBtn" title="새로 추가">＋</button>
+    </div>
+  </aside>
+
+  <!-- ── 중앙 채팅 ── -->
+  <section class="chat">
+    <div class="messages" id="messages">
+      <div class="msg assistant">
+        <div class="avatar">A</div>
+        <div class="body">
+          <div class="role">Assistant</div>
+          <div class="content">
+            <p>안녕하세요. <strong>Code Assistant v1</strong> 입니다.</p>
+            <p>사이드바에서 <em>코딩 스킬</em>을 켜고, 필요하면 <em>도메인 지식</em>을 등록한 뒤 질문하세요.</p>
+            <ul>
+              <li>📎 — 작업 파일 첨부</li>
+              <li>🛠 — 활성 스킬 토글</li>
+              <li>📚 — 도메인 지식 검색 ON/OFF (수동)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="meta-bar" id="metaBar">
+      <span class="pill" id="metaModel">model: -</span>
+      <span class="pill" id="metaSkills">skills: 0</span>
+      <span class="pill" id="metaKB">KB: off</span>
+      <span class="pill" id="metaWS">files: 0</span>
+      <span style="margin-left:auto;color:var(--muted);" id="metaStatus">대기</span>
+    </div>
+
+    <div class="composer">
+      <div class="chips" id="composerChips"></div>
+      <div class="input-wrap">
+        <textarea id="composerInput" rows="1" placeholder="무엇을 만들까요? (Shift+Enter 줄바꿈, Enter 전송)"></textarea>
+        <div class="actions">
+          <button class="icon-btn" id="btnAttach" title="파일 첨부">📎</button>
+          <button class="icon-btn" id="btnKB" title="도메인 지식 검색 토글">📚</button>
+          <label class="icon-btn" title="체크 시 모델이 응답 전에 reasoning 토큰을 생성합니다 (느려짐, 더 신중)" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0 8px;user-select:none;">
+            <input type="checkbox" id="thinkToggle" style="cursor:pointer;margin:0;">
+            <span style="font-size:13px;">💭 사고</span>
+          </label>
+          <button class="send-btn" id="btnSend">전송</button>
+        </div>
+      </div>
+      <input type="file" id="hiddenFileInput" multiple style="display:none">
+    </div>
+  </section>
+
+  <!-- ── 우측 워크스페이스 ── -->
+  <aside class="workspace" id="workspacePanel">
+    <div class="ws-head">
+      <span class="title">📁 워크스페이스</span>
+      <button class="ghost" id="btnWsRefresh" title="새로고침">⟳</button>
+      <button class="ghost" id="btnWsExpandAll" title="모두 펼치기">▼</button>
+      <button class="ghost" id="btnWsCollapseAll" title="모두 접기">▶</button>
+      <button class="ghost" id="btnWsUploadFile" title="파일 업로드">＋파일</button>
+      <button class="ghost" id="btnWsUploadDir" title="폴더 업로드">＋폴더</button>
+      <button class="ghost danger" id="btnWsClear" title="워크스페이스 전체 초기화">🗑</button>
+    </div>
+    <div class="ws-tree" id="wsTree">
+      <div style="color:var(--muted);padding:14px;font-size:12px;">파일이 없습니다. ＋파일 또는 ＋폴더로 업로드하세요.</div>
+    </div>
+    <div class="ws-preview" id="wsPreview"></div>
+    <input type="file" id="wsFileInput" multiple style="display:none">
+    <input type="file" id="wsDirInput" webkitdirectory directory multiple style="display:none">
+  </aside>
+</div>
+
+<!-- ── 모달 ── -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal" id="modal">
+    <div class="head">
+      <span class="title" id="modalTitle">제목</span>
+      <button class="ghost" id="modalClose">✕</button>
+    </div>
+    <div class="body" id="modalBody"></div>
+    <div class="foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+
+<script src="static/app.js?v=20260507c"></script>
+<script src="static/chat.js?v=20260507c"></script>
+<script src="static/skills.js?v=20260507c"></script>
+<script src="static/knowledge.js?v=20260507c"></script>
+<script src="static/workspace.js?v=20260507c"></script>
+<script src="static/sessions.js?v=20260507c"></script>
+</body>
+</html>
