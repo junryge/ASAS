@@ -42,7 +42,7 @@ def _find_mmproj_file(model_path):
     return None
 
 
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=512):
+def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=2048):
     """llama-cpp-python으로 GGUF 모델 로드 (같은 모델 + 충분한 ctx면 스킵, 부족하면 재로드)
     mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
     # 이미 같은 모델 + n_ctx 충분 → 스킵 / ctx 부족하면 재로드
@@ -122,11 +122,30 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=512):
                         _utils_mod.gguf_model = Llama(**base_kwargs)
             else:
                 # mmproj 없음 → 텍스트 전용
-                try:
-                    _utils_mod.gguf_model = Llama(**base_kwargs)
-                except TypeError:
-                    del base_kwargs["n_batch"]
-                    _utils_mod.gguf_model = Llama(**base_kwargs)
+                # flash_attn 은 Qwen3 시리즈에서만 검증됨 (Gemma 등 타 모델 미적용)
+                _model_name_lc = os.path.basename(model_path).lower()
+                _is_qwen3 = "qwen3" in _model_name_lc
+
+                if _is_qwen3:
+                    text_kwargs = {**base_kwargs, "flash_attn": True}
+                    try:
+                        _utils_mod.gguf_model = Llama(**text_kwargs)
+                        print(f"     ⚡ Qwen3 가속: flash_attn=True, n_batch={n_batch}")
+                    except TypeError:
+                        # 구버전 llama-cpp-python: flash_attn 미지원 → 기본 옵션
+                        try:
+                            _utils_mod.gguf_model = Llama(**base_kwargs)
+                            print(f"     ℹ️  flash_attn 미지원 (구버전), n_batch={n_batch}")
+                        except TypeError:
+                            del base_kwargs["n_batch"]
+                            _utils_mod.gguf_model = Llama(**base_kwargs)
+                else:
+                    # Qwen3 외: 기본 옵션 (flash_attn 안전성 미검증)
+                    try:
+                        _utils_mod.gguf_model = Llama(**base_kwargs)
+                    except TypeError:
+                        del base_kwargs["n_batch"]
+                        _utils_mod.gguf_model = Llama(**base_kwargs)
         finally:
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
