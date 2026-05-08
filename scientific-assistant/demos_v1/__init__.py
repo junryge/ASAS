@@ -21,17 +21,23 @@ def create_app():
 
     from demos_v1.routes_api import register_api_routes
     from demos_v1.routes_chat import register_chat_routes
-    from demos_v1.routes_chat_stream import register_chat_stream_routes
     from demos_v1.logpresso import register_logpresso_routes
     from demos_v1.knowledge import register_knowledge_routes
     from demos_v1.routes_ppt import register_ppt_routes
 
     register_api_routes(app)
     register_chat_routes(app)
-    register_chat_stream_routes(app)
     register_logpresso_routes(app)
     register_knowledge_routes(app)
     register_ppt_routes(app)
+
+    # code_assist_v1 통합 (Blueprint, url_prefix="/code", demos_v1 리소스 공유)
+    try:
+        from code_assist_v1.blueprint import register_code_blueprint
+        register_code_blueprint(app)
+        print("  🖥️  code_assist_v1 Blueprint 등록 완료 (/code/*)")
+    except Exception as _e:
+        print(f"  ⚠️  code_assist_v1 Blueprint 등록 실패: {_e}")
 
     _routes_registered = True
     return app
