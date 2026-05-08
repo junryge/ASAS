@@ -12,16 +12,20 @@ import json
 # 코드 블록(```)은 영문이라도 무조건 보존.
 _EN_THINKING_PATTERNS = re.compile(
     r"(?:^|\s)(?:"
-    r"I (?:will|'?ll|must|should|need to|cannot|don'?t|am going|have to|would|could|might)\b"
+    r"I (?:will|'?ll|must|should|need(?: to)?|cannot|don'?t|am going|have(?: to| already)?|would|could|might)\b"
     r"|Let me\b|Let's\b|Looking at\b|Wait[,\s]|Now[,\s]|First[,\s]|Actually[,\s]"
     r"|Hmm[,\s]|Okay[,\s]|OK[,\s]|So[,\s]|The user (?:wants?|asks?|is|requested?|meant)"
-    r"|Check constraint\b|Self[- ]Correction|Structure mapping"
+    r"|Check constraint\b|Self[- ]?[Cc]orrection|Structure mapping"
     r"|^Generate\.\s*$|^Proceed\.\s*$|^Done\.\s*$|^\[Proceeds?\]"
     r"|Output Generation|Output matches|Output:\s|All aligned"
     r"|Here'?s (?:a|the|my)|Thinking process|Analyze User Input"
-    r"|\[Output Generation\]|Step-by-step reasoning|Final (?:Check|decision|answer)"
+    r"|\[Output Generation\]|Step-by-step reasoning|Final (?:Check|decision|answer|plan)"
     r"|It (?:seems|appears|looks)|This (?:means|implies|suggests)"
     r"|Therefore[,\s]|However[,\s]|Based on\b|To be (?:safe|extremely|precise|honest)"
+    r"|Drafting (?:Content|the response|response)|Content plan:?|Final plan:?"
+    r"|Detailed Analysis Points|Strategic Recommendations|Subtitle:|Title:"
+    r"|Sections?:\s*$|Plan:\s*$|Ready\.|Ready to|Writing the response"
+    r"|Draft(?:ing)?:|Refinement:|Revis(?:ing|ed)|Polish(?:ing)?:"
     r"|^제목:\s|^요약:\s|^배경/목적:\s|^본문:\s*$|^결론 및 제언:\s"
     r")",
     re.IGNORECASE,

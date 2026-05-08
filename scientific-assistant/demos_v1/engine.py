@@ -135,6 +135,13 @@ def _agent_call_gguf(model_path, skill_ids, skill_contents, query, history,
         messages.extend(trimmed_history)
         messages.append({"role": "user", "content": query})
 
+        # Qwen3 /no_think 자동 주입 (gguf_chat을 우회한 직접 호출이라 여기서 처리)
+        try:
+            from demos_v1.gguf import _inject_no_think_for_qwen3
+            messages = _inject_no_think_for_qwen3(messages, model_path)
+        except Exception:
+            pass
+
         # 논스트리밍 추론 (병렬 에이전트)
         resp = llama_instance.create_chat_completion(
             messages=messages,
@@ -227,6 +234,13 @@ def _synthesize_responses_gguf(agent_results, query, synthesis_model_path, tempe
             {"role": "system", "content": synthesis_system},
             {"role": "user", "content": query},
         ]
+
+        # Qwen3 /no_think 자동 주입 (직접 호출 경로)
+        try:
+            from demos_v1.gguf import _inject_no_think_for_qwen3
+            messages = _inject_no_think_for_qwen3(messages, synthesis_model_path)
+        except Exception:
+            pass
 
         resp = llama_synth.create_chat_completion(
             messages=messages,

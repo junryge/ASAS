@@ -11,7 +11,7 @@ import math
 import time
 import uuid
 import base64
-from flask import request, jsonify, render_template_string, send_file
+from flask import request, jsonify, render_template, send_file
 
 from demos_v1.utils import (
     BASE_DIR, SKILLS_DIR, UPLOAD_DIR, PROMPTS_DIR, TOKEN_FILE,
@@ -28,7 +28,8 @@ from demos_v1.skills import (
     scan_skills, auto_select_skills, context_aware_skill_select,
     load_skill_content, get_skill_catalog,
 )
-from demos_v1.frontend import HTML_TEMPLATE
+# UI HTML은 demos_v1/templates/index.html (Jinja 템플릿)로 분리됨
+# Flask가 Flask(__name__) 기본 경로로 templates/ 자동 인식
 
 
 # 서버 부팅마다 새로 생성되는 식별자 — 서버 재시작 시 클라이언트 강제 로그아웃에 사용
@@ -45,7 +46,7 @@ def register_api_routes(app):
     # ============================================
     @app.route("/")
     def index():
-        return render_template_string(HTML_TEMPLATE)
+        return render_template('index.html')
 
     @app.route("/api/server-info")
     def api_server_info():
