@@ -4,6 +4,87 @@ demos_v1/routes_chat.py - /api/chat route (the massive chat endpoint) + /api/cha
 import os
 import re
 import json
+
+
+# ── 영문 사고 과정(Chain-of-Thought) 노출 방지 ──
+# Qwen3 등 reasoning 모델이 시스템 프롬프트 지시를 무시하고 본문에 영문 사고 절차를 토함.
+# 두 단계 방어: (1) <think> 태그 제거, (2) 응답 끝에서 거꾸로 한국어 본문만 추출
+# 코드 블록(```)은 영문이라도 무조건 보존.
+_EN_THINKING_PATTERNS = re.compile(
+    r"(?:^|\s)(?:"
+    r"I (?:will|'?ll|must|should|need to|cannot|don'?t|am going|have to|would|could|might)\b"
+    r"|Let me\b|Let's\b|Looking at\b|Wait[,\s]|Now[,\s]|First[,\s]|Actually[,\s]"
+    r"|Hmm[,\s]|Okay[,\s]|OK[,\s]|So[,\s]|The user (?:wants?|asks?|is|requested?|meant)"
+    r"|Check constraint\b|Self[- ]Correction|Structure mapping"
+    r"|^Generate\.\s*$|^Proceed\.\s*$|^Done\.\s*$|^\[Proceeds?\]"
+    r"|Output Generation|Output matches|Output:\s|All aligned"
+    r"|Here'?s (?:a|the|my)|Thinking process|Analyze User Input"
+    r"|\[Output Generation\]|Step-by-step reasoning|Final (?:Check|decision|answer)"
+    r"|It (?:seems|appears|looks)|This (?:means|implies|suggests)"
+    r"|Therefore[,\s]|However[,\s]|Based on\b|To be (?:safe|extremely|precise|honest)"
+    r"|^제목:\s|^요약:\s|^배경/목적:\s|^본문:\s*$|^결론 및 제언:\s"
+    r")",
+    re.IGNORECASE,
+)
+_KO_HEADER_RE = re.compile(r"^\s*#{1,6}\s+(?=[^\n]*[가-힯])")
+_KO_CHAR_RE = re.compile(r"[가-힯]")
+_EN_LETTER_RE = re.compile(r"[a-zA-Z]")
+
+
+def _strip_thinking_artifacts(text):
+    """응답에서 사고 과정 흔적 제거. 끝에서 거꾸로 한국어 본문만 추출."""
+    if not text:
+        return text
+    cleaned = re.sub(r"<think>[\s\S]*?</think>\s*", "", text, flags=re.IGNORECASE)
+
+    lines = cleaned.split("\n")
+    code_block_idxs = set()
+    in_block = False
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            code_block_idxs.add(i)
+            in_block = not in_block
+        elif in_block:
+            code_block_idxs.add(i)
+
+    keep_idxs = []
+    body_started = False
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i]
+        stripped = line.strip()
+        if i in code_block_idxs:
+            keep_idxs.append(i)
+            body_started = True
+            continue
+        if not stripped:
+            if body_started:
+                keep_idxs.append(i)
+            continue
+        if _KO_HEADER_RE.match(line):
+            keep_idxs.append(i)
+            body_started = True
+            continue
+        if _EN_THINKING_PATTERNS.search(line):
+            break
+        ko = len(_KO_CHAR_RE.findall(line))
+        en = len(_EN_LETTER_RE.findall(line))
+        if ko >= 3 and (en == 0 or ko * 2 >= en):
+            keep_idxs.append(i)
+            body_started = True
+            continue
+        if body_started and (stripped.startswith("|") or stripped == "---" or stripped.startswith(">")):
+            keep_idxs.append(i)
+            continue
+        if body_started and en < 8:
+            keep_idxs.append(i)
+            continue
+        break
+    keep_idxs.sort()
+    if not keep_idxs:
+        return cleaned.strip()
+    return "\n".join(lines[i] for i in keep_idxs).strip()
+
+
 import time
 import warnings
 import requests as req
@@ -772,9 +853,20 @@ def register_chat_routes(app):
 
         # 사고 모드 on/off
         if think_mode:
-            think_rule = "- 답변 전에 반드시 <think>...</think> 태그 안에서 충분히 사고한 후 답변하세요. 사고 내용도 반드시 한국어로 작성하세요."
+            think_rule = (
+                "- 답변 전에 반드시 <think>...</think> 태그 안에서 충분히 사고한 후 답변하세요. "
+                "사고 내용도 반드시 한국어로 작성하세요. "
+                "사고는 <think> 태그 안에만 작성하고, 태그 밖 본문은 사고 흔적 없이 최종 답변만 출력하세요."
+            )
         else:
-            think_rule = "- <think> 태그를 사용하지 마세요. 사고 과정 없이 바로 답변하세요."
+            think_rule = (
+                "- 사고/추론 과정을 본문에 절대 출력하지 마세요. <think> 태그도 사용 금지. "
+                "사고 절차를 영문/한글 어떤 형태로도 노출 금지: "
+                "'Here's a thinking process', 'Let me think/analyze', 'Self-Correction', "
+                "'Structure mapping', '[Output Generation]', '[Proceeds]', 'I will/must/should', "
+                "'Step 1/2/3', '먼저 분석', '먼저 생각해보면' 같은 절차 안내문구 일체 금지. "
+                "최종 답변(보고서·코드·설명)만 한국어로 즉시 출력하세요."
+            )
 
         default_prompt = f"""당신은 Demos V1.0 - 과학 연구와 소프트웨어 개발을 돕는 전문 AI 어시스턴트입니다.
     370개+ 전문 스킬(과학/개발/AI/인프라/비즈니스)을 활용할 수 있습니다.
@@ -1489,6 +1581,7 @@ def register_chat_routes(app):
                 print(f"  [QUALITY] score={_quality['score']}, grade={_quality['grade']}, issues={_q_issues}")
             except Exception:
                 pass
+            answer = _strip_thinking_artifacts(answer)
             _resp = {
                 "content": answer,
                 "loaded_skills": loaded,
@@ -1997,6 +2090,7 @@ def register_chat_routes(app):
                         except Exception:
                             pass
 
+                        answer = _strip_thinking_artifacts(answer)
                         resp_data = {
                             "content": answer,
                             "loaded_skills": loaded,
@@ -2138,6 +2232,7 @@ def register_chat_routes(app):
                 except Exception:
                     pass
 
+                answer = _strip_thinking_artifacts(answer)
                 resp_data = {
                     "content": answer,
                     "loaded_skills": loaded,
