@@ -42,7 +42,7 @@ def _find_mmproj_file(model_path):
     return None
 
 
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=512):
+def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=2048):
     """llama-cpp-python으로 GGUF 모델 로드 (같은 모델 + 충분한 ctx면 스킵, 부족하면 재로드)
     mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
     # 이미 같은 모델 + n_ctx 충분 → 스킵 / ctx 부족하면 재로드
@@ -122,11 +122,30 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=512):
                         _utils_mod.gguf_model = Llama(**base_kwargs)
             else:
                 # mmproj 없음 → 텍스트 전용
-                try:
-                    _utils_mod.gguf_model = Llama(**base_kwargs)
-                except TypeError:
-                    del base_kwargs["n_batch"]
-                    _utils_mod.gguf_model = Llama(**base_kwargs)
+                # flash_attn 은 Qwen3 시리즈에서만 검증됨 (Gemma 등 타 모델 미적용)
+                _model_name_lc = os.path.basename(model_path).lower()
+                _is_qwen3 = "qwen3" in _model_name_lc
+
+                if _is_qwen3:
+                    text_kwargs = {**base_kwargs, "flash_attn": True}
+                    try:
+                        _utils_mod.gguf_model = Llama(**text_kwargs)
+                        print(f"     ⚡ Qwen3 가속: flash_attn=True, n_batch={n_batch}")
+                    except TypeError:
+                        # 구버전 llama-cpp-python: flash_attn 미지원 → 기본 옵션
+                        try:
+                            _utils_mod.gguf_model = Llama(**base_kwargs)
+                            print(f"     ℹ️  flash_attn 미지원 (구버전), n_batch={n_batch}")
+                        except TypeError:
+                            del base_kwargs["n_batch"]
+                            _utils_mod.gguf_model = Llama(**base_kwargs)
+                else:
+                    # Qwen3 외: 기본 옵션 (flash_attn 안전성 미검증)
+                    try:
+                        _utils_mod.gguf_model = Llama(**base_kwargs)
+                    except TypeError:
+                        del base_kwargs["n_batch"]
+                        _utils_mod.gguf_model = Llama(**base_kwargs)
         finally:
             sys.stdout = saved_stdout
             sys.stderr = saved_stderr
@@ -142,10 +161,47 @@ def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=512):
         return False
 
 
+def _inject_no_think_for_qwen3(messages, model_path):
+    """Qwen3 모델 사용 시 reasoning 비활성화 — '/no_think' 키워드 자동 주입.
+
+    Qwen3는 시스템/user 메시지에 '/no_think'가 있으면 사고 토큰을 생성하지 않음
+    (Qwen3 공식 chat template). → 토큰/시간 낭비 차단 + 영문 사고 노출 방지.
+    예외: think_mode 토글 ON 시 (시스템 프롬프트에 명시적 사고 지시) 사고 허용.
+    """
+    if not model_path or "qwen3" not in os.path.basename(model_path).lower():
+        return messages
+    if not messages:
+        return messages
+    # think_mode 활성 검출 — 사용자가 명시적으로 켰으면 /no_think 안 넣음
+    for m in messages:
+        if m.get("role") == "system":
+            content = m.get("content", "") if isinstance(m.get("content"), str) else ""
+            if "<think>...</think> 태그 안에서" in content or "사고한 후 답변" in content:
+                return messages
+            break
+    new_msgs = list(messages)
+    for i, m in enumerate(new_msgs):
+        if m.get("role") == "system":
+            content = m.get("content", "")
+            if isinstance(content, str) and "/no_think" not in content:
+                new_msgs[i] = {**m, "content": content + "\n\n/no_think"}
+            return new_msgs
+    for i in range(len(new_msgs) - 1, -1, -1):
+        if new_msgs[i].get("role") == "user":
+            content = new_msgs[i].get("content", "")
+            if isinstance(content, str) and "/no_think" not in content:
+                new_msgs[i] = {**new_msgs[i], "content": content + "\n\n/no_think"}
+            break
+    return new_msgs
+
+
 def gguf_chat(messages, temperature=0.5, max_tokens=4096, stop_flag=None):
     """로드된 GGUF 모델로 채팅 (스트리밍으로 중단 가능)"""
     if _utils_mod.gguf_model is None:
         return None, "GGUF 모델이 로드되지 않았습니다."
+    # Qwen3 모델이면 /no_think 자동 주입 (reasoning 끄기)
+    _model_path = getattr(_utils_mod, "gguf_loaded_path", "") or ""
+    messages = _inject_no_think_for_qwen3(messages, _model_path)
     try:
         # 중단 플래그가 있으면 스트리밍 모드로 토큰별 체크
         if stop_flag is not None:
