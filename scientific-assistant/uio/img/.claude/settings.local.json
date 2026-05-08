@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(identify \"F:/M14_Q/scientific-assistant/uis/img/office_background_final.png\")",
+      "Bash(identify \"F:/M14_Q/scientific-assistant/uis/img/ceo_walk_lr_spritesheet.png\")",
+      "Bash(identify \"F:/M14_Q/scientific-assistant/uis/img/male_employee_walk_lr_spritesheet.png\")",
+      "Bash(identify \"F:/M14_Q/scientific-assistant/uis/img/female_employee_walk_lr_spritesheet.png\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python -c \"from PIL import Image; print\\(''Pillow OK''\\)\")",
+      "Bash(python:*)"
+    ]
+  }
+}
