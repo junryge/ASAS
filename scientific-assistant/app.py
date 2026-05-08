@@ -111,10 +111,21 @@ if __name__ == "__main__":
             }
             print(f"     [{env_key}] {gf['name']} ({gf['size_gb']} GB)")
 
-        # 첫 번째(가장 큰) 모델을 기본 로드
-        first_gguf = gguf_files[0]
+        # 자동 로드: VRAM 예산(기본 11GB, env GGUF_VRAM_BUDGET_GB로 조정)에
+        # 맞는 "가장 큰" 모델 선택. n_ctx=16K KV 캐시(~2-3GB)까지 고려해 보수적으로.
+        _vram_budget_gb = float(os.environ.get("GGUF_VRAM_BUDGET_GB", "10"))
+        _fit_models = [g for g in gguf_files if g["size_gb"] <= _vram_budget_gb]
+        if _fit_models:
+            first_gguf = _fit_models[0]  # 이미 내림차순 정렬되어 있음
+        else:
+            first_gguf = gguf_files[-1]  # 모두 초과 → 가장 작은 것
+            print(f"     ⚠️  모든 모델이 VRAM 예산({_vram_budget_gb}GB) 초과 → 가장 작은 모델 로드")
+
         if load_gguf_model(first_gguf["path"]):
-            print(f"     ✅ 기본 모델 로드 완료: {first_gguf['name']}")
+            print(f"     ✅ 기본 모델 로드 완료: {first_gguf['name']} ({first_gguf['size_gb']} GB)")
+            _skipped = [g["name"] for g in gguf_files if g["size_gb"] > _vram_budget_gb]
+            if _skipped:
+                print(f"     ℹ️  VRAM 초과로 자동로드 제외 (수동 선택 가능): {', '.join(_skipped)}")
         else:
             print(f"     ⚠️  기본 모델 로드 실패 (환경 전환 시 재시도)")
     else:

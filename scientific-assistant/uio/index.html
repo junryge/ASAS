@@ -4895,6 +4895,19 @@
 
         <!-- 좌: 입력 -->
         <div style="flex:1;border-right:1px solid #3a4a5a;display:flex;flex-direction:column;padding:14px;">
+          <!-- 테마 선택 -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <label style="font-size:11px;color:#888;white-space:nowrap;">🎨 테마</label>
+            <select id="pptTemplateSelect"
+                    style="flex:1;padding:6px 10px;background:#0a0a1a;color:#eaf1ff;
+                           border:1px solid #3a4a5a;border-radius:6px;font-size:12px;cursor:pointer;">
+              <option value="minimal">Minimal — 노란 액센트, 깔끔</option>
+              <option value="corporate">Corporate — 파란색, 정장</option>
+              <option value="academic">Academic — 와인색, 논문</option>
+              <option value="creative">Creative — 핑크, 화려</option>
+              <option value="dark">Dark — 다크모드, 네온</option>
+            </select>
+          </div>
           <div style="display:flex;gap:8px;margin-bottom:10px;">
             <button id="pptTabMd" onclick="pptSwitchTab('md')"
                     style="flex:1;padding:8px;background:#eab308;color:#fff;border:none;border-radius:6px;
@@ -5020,14 +5033,19 @@
       <div style="font-size:11px;color:#888;margin-bottom:6px;">슬라이드 구성</div>
       ${slidesHtml}`;
   }
+  function pptSelectedTemplate() {
+    const sel = document.getElementById('pptTemplateSelect');
+    return (sel && sel.value) ? sel.value : 'minimal';
+  }
   async function pptGenerateFromMd() {
     const md = document.getElementById('pptMdInput').value.trim();
     if (!md) { alert('MD 내용을 입력해주세요.'); return; }
-    pptShowLoading('MD → PPT 변환 중...');
+    const tpl = pptSelectedTemplate();
+    pptShowLoading(`MD → PPT 변환 중... (테마: ${tpl})`);
     try {
       const resp = await fetch('/api/ppt/from-md', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({md: md})
+        body: JSON.stringify({md: md, template: tpl})
       });
       const data = await resp.json();
       pptShowResult(data);
@@ -5037,9 +5055,11 @@
   }
   async function pptGenerateFromFile(file) {
     if (!file) return;
-    pptShowLoading('파일 업로드 + 변환 중... (' + file.name + ')');
+    const tpl = pptSelectedTemplate();
+    pptShowLoading(`파일 업로드 + 변환 중... (${file.name}, 테마: ${tpl})`);
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('template', tpl);
     try {
       const resp = await fetch('/api/ppt/from-md-file', {method:'POST', body: fd});
       const data = await resp.json();
