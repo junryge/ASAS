@@ -1,0 +1,47 @@
+[Serving > Inference Service] : Inference 하기 (Single Inference Service)
+
+
+
+1) "Create" 버튼 클릭
+
+
+
+
+2) Model 선택을 위하여 Select 버튼을 누릅니다. 
+
+원하는 Model과 버전을 선택하여 "APPLY" 버튼을 누릅니다.
+
+이후 Serving이 진행 됩니다.
+
+
+
+3) Serving 환경에 필요한 패키지들의 requirements를 잘 확인합니다.
+
+     : requirements가 dependency에 의해 에러가 발생할 수 있으니 확인합니다.
+
+
+
+      "CREATE" 버튼을 Click 하여 서빙을 시작 합니다.
+
+
+
+4) Serving 진행중, Inference 환경을 만드는 "Deploy Status"와 필요한 코드를 다운로드하고 구동시키는 "Status" 를 확인 합니다. 
+
+
+
+5) 생성 완료 후 생성된 Inference 서비스를 Double Click 합니다.
+
+
+
+
+
+6) URL을 복사하여 Request 하여 Inference 서비스를 제공할 수 있습니다.
+
+   관련 로그는 "Log" 에서 볼 수 있으며 "Metric" 에서 리소스 현황을 볼 수 있습니다.
+
+   "Request Code"를 Copy 하여 수행하면 Inference Test를 할 수 있습니다.
+
+
+
+7) Inference Test 결과 아래와 같이 값이 잘 나오는 것을 확인할 수 있습니다.
+

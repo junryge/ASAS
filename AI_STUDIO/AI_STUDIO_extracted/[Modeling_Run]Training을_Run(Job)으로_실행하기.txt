@@ -1,0 +1,78 @@
+[Modeling > Run] : Training을 Run(Job) 으로 실행하기
+
+
+
+
+
+1) Run 화면을 클릭하면 아래와 같은 화면이 나타 납니다.
+
+   : 한번도 수행한 이력이 없다면 "Latest Run Instances" 화면은 나오지 않게 됩니다.
+
+    수행한 이력이 있다면 상단에 최근 수행 이력이 나타나게 됩니다.
+
+
+
+2) RUN Template 생성하기
+
+   : "CREATE" 버튼 클릭
+
+
+
+3) 기본 정보를 채웁니다.
+
+
+
+  (1) Name : 이름
+
+  (2) Python Version : 생성하고자 하는 파이썬 버전
+
+  (3) 리소스 : 생성하고자 하는 리소스 크기
+
+  (4) Bitbucket Repository 주소 : ssh가 아닌 http의 git 주소
+
+  (5) Branch : 실행하고자 하는 Branch 이름
+
+  (6) File : Bitbucket을 선택 후 나타나는 파일 중 Run(Job)을 실행하고자 하는 Main이 되는 File을 선택 
+
+
+
+  (7) Requirements : RUN 실행 시 설치하고자 하는 패키지들을 입력 합니다.
+
+모든 정보가 입력되었으면 "CREATE" 버튼을 누릅니다.
+
+
+
+4) RUN 수행을 하기 위한 환경 만드는 작업을 시작 합니다.
+
+   아래와 같이 IN PROGRESS 상태는 만드는 중이며, 해당 컬럼을 Double Click 시 상세 Status를 확인할 수 있습니다.
+
+
+
+
+
+
+
+5) RUN 실행 버튼을 눌러 실행 합니다. 
+
+
+
+
+
+6) 가용 가능한 Queue List가 뜨고, 선택 합니다. 추후 GPU 도 Queue에 추가될 예정 입니다.
+
+
+
+
+
+7) 실행 대기중인 경우, Waiting, 완료된 경우 COMPLETED, 실패인 경우 FAILED 로 카드 형태로 뜸
+
+
+
+
+
+8) 최근 Run이 많은 경우에는 + 버튼을 누르면 전체 Run Instances 를 확인할 수 있음
+
+
+
+
+

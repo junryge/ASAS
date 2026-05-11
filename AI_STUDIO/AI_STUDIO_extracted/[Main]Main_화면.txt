@@ -1,0 +1,33 @@
+[Main] : Main 화면
+
+
+
+
+
+(1) ALL PROJECTS :
+
+    전체 프로젝트 확인 및 검색 가능한 화면을 띄워 줍니다.
+
+
+
+(2) CREATE PROJECT :
+
+     프로젝트 생성 가능하도록, HCP 프로젝트 생성 사이트와 연결 합니다.
+
+
+
+(3) My Project :
+
+    내가 멤버로 속해있는 프로젝트들을 보여줍니다.
+
+(4) NOTICE :
+
+     AI Studio iflow의 공지사항과 연결되어 있습니다.
+
+(5) GUIDE :
+
+     AI Studio iflow의 가이드와 연결되어 있습니다.
+
+ (6) VIDEO :
+
+      AI Studio HyTube 영상과 연결되어 있습니다.
