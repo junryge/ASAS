@@ -250,11 +250,19 @@ class FabReceiver(threading.Thread):
 
     def bind(self) -> bool:
         try:
+            # 포트가 TIME_WAIT / 중복 점유 상태여도 재사용 가능하게
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except (AttributeError, OSError):
+                pass   # Windows / 미지원 OS
             self.sock.bind((config.UDP_HOST, self.port))
             self._bound = True
+            print(f"[recv {self.fab}] bind OK on {config.UDP_HOST}:{self.port}")
             return True
         except OSError as e:
             self.last_error = f"bind: {e}"
+            print(f"[recv {self.fab}] ⚠ bind 실패 {config.UDP_HOST}:{self.port} — {e}")
             return False
 
     def stats(self) -> dict:
@@ -296,12 +304,19 @@ class FabReceiver(threading.Thread):
         """recv 전용 — 빨리 받기만 해서 큐에 넣음 (drop 최소화).
         진짜 wire 속도 (recv_pps/bps) 도 여기서 갱신."""
         import time as _t
+        print(f"[recv {self.fab}] recv loop 시작 (대기 중 — port {self.port})")
+        first_logged = False
         while True:
             try:
                 data, addr = self.sock.recvfrom(config.UDP_BUFFER_SIZE)
             except OSError as e:
                 self.last_error = f"recv: {e}"
+                print(f"[recv {self.fab}] ⚠ recv 종료: {e}")
                 return
+            if not first_logged:
+                preview = data[:80].decode("utf-8", errors="replace").replace("\n", " | ")
+                print(f"[recv {self.fab}] ✅ 첫 패킷 {len(data)}B from {addr} : {preview}")
+                first_logged = True
             sz = len(data)
             self.rx_packets += 1
             self.rx_bytes   += sz
@@ -586,7 +601,10 @@ async def startup():
 @app.get("/", response_class=HTMLResponse)
 async def index():
     p = Path(__file__).parent / "dashboard.html"
-    return p.read_text(encoding="utf-8")
+    from fastapi.responses import HTMLResponse as _HTML
+    return _HTML(p.read_text(encoding="utf-8"),
+                 headers={"Cache-Control": "no-store, no-cache, must-revalidate",
+                          "Pragma": "no-cache"})
 
 
 @app.get("/api/state")

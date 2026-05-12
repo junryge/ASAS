@@ -496,10 +496,18 @@ function updateStats(d) {
   $('m16-log').textContent  = m16.log_path || '— (수신 시작 후 생성)';
 
   // 차량 카운트 (현재 FAB)
-  const live = (d.vehicles||[]).filter(v=>v.fab===currentFab && v.x!=null).length;
-  const total= (d.vehicles||[]).filter(v=>v.fab===currentFab).length;
+  const allList = (d.vehicles||[]);
+  const curList = allList.filter(v=>v.fab===currentFab);
+  const live = curList.filter(v=>v.x!=null).length;
+  const nopos= curList.filter(v=>v.x==null).length;
+  const total= curList.length;
   $('vh-live').textContent  = live;
-  $('vh-total').textContent = total;
+  $('vh-total').textContent = total + (nopos>0 ? ` (좌표없음 ${nopos})` : '');
+  // 다른 FAB 들도 보임
+  const otherFabs = [...new Set(allList.map(v=>v.fab).filter(f=>f!==currentFab))];
+  if (otherFabs.length > 0) {
+    console.log(`[diag] 다른 FAB 차량 도착: ${otherFabs.join(', ')} (현재 ${currentFab})`);
+  }
 
   // 상태 분포
   const buckets = {};
