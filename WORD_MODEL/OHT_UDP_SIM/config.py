@@ -50,9 +50,9 @@ TICK_INTERVAL_S = 1.0      # 송신 tick 간격 (초)
 # 'json'     = {fab, ts, count, rows[]} (디버깅용, 메타 포함)
 # 'csv'      = CSV 형태 (헤더 포함)
 PACKET_FORMAT = os.environ.get("PACKET_FORMAT", "raw_line")
-# 한 UDP 패킷에 담을 row 수.
-# 1 = 1 메시지 1 패킷 (운영 호환, 권장). 200 = 묶음 송신 (대역폭 효율, 디버깅용).
-MAX_ROWS_PER_PACKET = int(os.environ.get("MAX_ROWS_PER_PACKET", 1))
+# 한 UDP 패킷에 담을 row 수 (1 그룹 = 같은 _time row 묶음).
+# 200 = 같은 1초 row 들을 한 패킷에 합쳐 송신 (기본, _time 단위 송신)
+MAX_ROWS_PER_PACKET = int(os.environ.get("MAX_ROWS_PER_PACKET", 200))
 
 # ── 환경변수 override ───────────────────────────────
 UDP_PORT_M14A    = int(os.environ.get("UDP_PORT_M14A",    UDP_PORT_M14A))

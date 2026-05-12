@@ -316,7 +316,6 @@ class SenderWorker:
         if not rows:
             return
         max_n = max(1, config.MAX_ROWS_PER_PACKET)
-        repeat = max(1, int(self.data_repeat))
         for i in range(0, len(rows), max_n):
             chunk = rows[i:i + max_n]
             fmt = config.PACKET_FORMAT
@@ -328,20 +327,24 @@ class SenderWorker:
                 pkt = serialize_raw_line(self.fab, ts, chunk)
                 if not pkt:
                     continue
-            # 같은 패킷을 data_repeat 번 반복 송신 (UDP 데이터 배수)
-            for _ in range(repeat):
+            # 같은 패킷을 data_repeat 번 반복 송신.
+            # 매 sendto 마다 self.data_repeat 를 다시 읽어 사용자 변경 즉각 반영.
+            sent_n = 0
+            while sent_n < max(1, int(self.data_repeat)):
+                if self.stop_flag or self.paused:
+                    break
                 try:
                     self.sock.sendto(pkt, (self.udp_host, self.udp_port))
                 except OSError as e:
                     self.last_error = f"sendto: {e}"
-                    continue
+                    break
                 self.tx_packets += 1
                 self.tx_rows += len(chunk)
                 self.tx_bytes += len(pkt)
-                # pps 누적
                 self._pps_acc_pkt  += 1
                 self._pps_acc_row  += len(chunk)
                 self._pps_acc_byte += len(pkt)
+                sent_n += 1
             self.last_tx = datetime.now()
         self.cur_ts = ts
         self._tick_pps()
