@@ -223,6 +223,22 @@ class OhtCsvLoader:
 # ───────────────────────────────────────────────
 # 패킷 직렬화
 # ───────────────────────────────────────────────
+def serialize_raw_line(fab: str, ts: datetime, rows: List[Dict[str, str]]) -> bytes:
+    """LOGPRESSO 의 line 컬럼만 추출 → newline 구분 raw 송신.
+    포맷 (운영 호환):
+        2,OHT,BV0121,1,1,0000,1,2146,0,2147,...
+        2,OHT,BV0058,1,1,0000,1,2468,0,2469,...
+        ...
+    """
+    lines = []
+    for r in rows:
+        v = r.get("line") or r.get("LINE") or r.get("MESSAGE") or r.get("MSG") or ""
+        v = str(v).strip().strip('"').strip("'")
+        if v:
+            lines.append(v)
+    return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+
+
 def serialize_json(fab: str, ts: datetime, rows: List[Dict[str, str]]) -> bytes:
     import json
     pkt = {

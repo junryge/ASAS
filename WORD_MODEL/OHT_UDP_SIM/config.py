@@ -46,7 +46,10 @@ DEFAULT_SPEED   = 1.0
 TICK_INTERVAL_S = 1.0      # 송신 tick 간격 (초)
 
 # ── 송신 패킷 포맷 ──────────────────────────────────
-PACKET_FORMAT = "json"       # 'json' | 'csv'
+# 'raw_line' = LOGPRESSO line 컬럼만 (newline 구분) — 운영 포맷 호환 (기본)
+# 'json'     = {fab, ts, count, rows[]} (디버깅용, 메타 포함)
+# 'csv'      = CSV 형태 (헤더 포함)
+PACKET_FORMAT = os.environ.get("PACKET_FORMAT", "raw_line")
 MAX_ROWS_PER_PACKET = 200
 
 # ── 환경변수 override ───────────────────────────────

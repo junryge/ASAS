@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import config
-from csv_loader import OhtCsvLoader, serialize_json, serialize_csv
+from csv_loader import OhtCsvLoader, serialize_json, serialize_csv, serialize_raw_line
 
 
 # ─────────────────────────────────────────────────────
@@ -213,7 +213,13 @@ class SenderWorker:
                 "_time":   ts.isoformat(),
                 "line":    f"2,OHT,TEST{self.fab},1,1,0000,1,1,0,2,1,1,TESTCAR,999,SRC,DST,4,RUN,90,0,0",
             }
-            pkt = serialize_json(self.fab, ts, [row])
+            fmt = config.PACKET_FORMAT
+            if fmt == "csv":
+                pkt = serialize_csv(self.fab, ts, [row], self.loader.fieldnames if self.loader.loaded else ["_id","_table","_time","line"])
+            elif fmt == "json":
+                pkt = serialize_json(self.fab, ts, [row])
+            else:
+                pkt = serialize_raw_line(self.fab, ts, [row])
             self.sock.sendto(pkt, (self.udp_host, self.udp_port))
             self.tx_packets += 1
             self.tx_rows += 1
@@ -313,10 +319,15 @@ class SenderWorker:
         repeat = max(1, int(self.data_repeat))
         for i in range(0, len(rows), max_n):
             chunk = rows[i:i + max_n]
-            if config.PACKET_FORMAT == "csv":
+            fmt = config.PACKET_FORMAT
+            if fmt == "csv":
                 pkt = serialize_csv(self.fab, ts, chunk, self.loader.fieldnames)
-            else:
+            elif fmt == "json":
                 pkt = serialize_json(self.fab, ts, chunk)
+            else:   # raw_line (기본)
+                pkt = serialize_raw_line(self.fab, ts, chunk)
+                if not pkt:
+                    continue
             # 같은 패킷을 data_repeat 번 반복 송신 (UDP 데이터 배수)
             for _ in range(repeat):
                 try:

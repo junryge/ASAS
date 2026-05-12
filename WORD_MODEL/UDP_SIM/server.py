@@ -430,8 +430,7 @@ class FabReceiver(threading.Thread):
         except Exception as e:
             self.last_error = f"log open: {e}"
 
-    @staticmethod
-    def _parse(data: bytes) -> Optional[dict]:
+    def _parse(self, data: bytes) -> Optional[dict]:
         text = data.decode("utf-8", errors="ignore").lstrip()
         if not text:
             return None
@@ -451,6 +450,15 @@ class FabReceiver(threading.Thread):
             rows = list(csvmod.DictReader(io.StringIO(body)))
             return {"fab": meta.get("FAB"), "ts": meta.get("TS"),
                     "count": int(meta.get("N", len(rows))), "rows": rows}
+        # raw line 포맷 — newline 구분 OHT 메시지 (운영 포맷)
+        if "OHT," in text:
+            rows = []
+            for ln in text.splitlines():
+                ln = ln.strip().strip('"').strip("'")
+                if "OHT," in ln:
+                    rows.append({"line": ln})
+            if rows:
+                return {"fab": self.fab, "ts": None, "count": len(rows), "rows": rows}
         return None
 
 
