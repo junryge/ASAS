@@ -3,8 +3,8 @@
 """
 하이브리드 예측기 — 룰(S1/S2/S3) × ML(0~1) 양방향 매트릭스 융합
 
-입력:  ../ml/ml_predict/<YYYYMMDD>_predictions.csv  (ml_predict_runner.py 출력)
-출력:  ../hybrid_predict/<YYYYMMDD>_hybrid.csv     (날짜별 append, 1분당 1행)
+입력:  ./ml_predict/<YYYYMMDD>_predictions.csv  (ml_predict_runner.py 출력)
+출력:  ./hybrid_predict/<YYYYMMDD>_hybrid.csv   (날짜별 append, 1분당 1행)
 
 핵심 등급:
     위험-확정 : S3 발동 (이미 늦음, 사후 기록)
@@ -35,8 +35,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 
 # 기본 경로 (run_ml.py에서 override 가능)
-DEFAULT_INPUT_DIR  = _HERE.parent / 'ml' / 'ml_predict'
-DEFAULT_OUTPUT_DIR = _HERE.parent / 'hybrid_predict'
+DEFAULT_INPUT_DIR  = _HERE / 'ml_predict'
+DEFAULT_OUTPUT_DIR = _HERE / 'hybrid_predict'
 DEFAULT_INTERVAL   = 60  # 초
 
 # 임계값 (운영 튜닝 포인트)
