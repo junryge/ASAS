@@ -85,7 +85,7 @@ class SenderWorker:
         self.speed    = float(config.DEFAULT_SPEED)
         self.loop     = True
         self.seek_ratio: Optional[float] = None
-        self.data_repeat = 1            # 같은 패킷을 N 번 반복 송신 (UDP 부하 ↑)
+        self.data_repeat = 1            # 1초당 송신 패킷 수 (rate). x1=1pkt/s, x1000=1000pkt/s
 
         # 통계
         self.tx_packets = 0
@@ -232,66 +232,61 @@ class SenderWorker:
 
     # ── 송신 루프 (byte 스트리밍) ───────────────────
     def _run(self):
+        """rate 기반 송신 — data_repeat = 1초당 송신 패킷 수.
+        CSV row 를 순환하면서 정확히 N pkt/sec 로 송신."""
         if not self.loader.time_col:
             self.last_error = "time column not detected"
             self.running = False
             return
 
         total_bytes = self.loader.file_bytes
-        print(f"[{self.fab}] _run 시작 — file={total_bytes/1024/1024:.0f}MB time_col={self.loader.time_col}")
+        print(f"[{self.fab}] _run 시작 — file={total_bytes/1024/1024:.0f}MB")
         try:
             while not self.stop_flag:
-                # 이번 cycle 의 시작 위치 (seek 적용)
                 seek = self.seek_ratio
                 self.seek_ratio = None
                 start_byte = int(seek * total_bytes) if seek is not None and total_bytes > 0 else 0
                 self.cur_byte = start_byte
 
-                last_sent_ts: Optional[datetime] = None
-                consumed_any = False
                 yielded = 0
+                consumed_any = False
+                next_send_t = time.perf_counter()
 
-                print(f"[{self.fab}] iter_groups(start_byte={start_byte})...")
+                # CSV row 들을 순환하면서 rate 만큼 송신
                 for ts0, batch, byte_pos in self.loader.iter_groups(start_byte=start_byte):
                     yielded += 1
                     if yielded == 1:
-                        print(f"[{self.fab}] 첫 group: ts={ts0} rows={len(batch)} byte_pos={byte_pos}")
-                    if self.stop_flag:
-                        return
-                    if self.seek_ratio is not None:
-                        break
-
-                    # 다음 group 까지 대기 (직전 ts → 현재 ts)
-                    if last_sent_ts is not None:
-                        wait_sec = self._sleep_for(last_sent_ts, ts0)
-                        while wait_sec > 0 and not self.stop_flag:
-                            if self.seek_ratio is not None:
-                                break
-                            if self.paused:
-                                time.sleep(0.1)
-                                continue
-                            chunk = min(0.1, wait_sec)
-                            time.sleep(chunk)
-                            wait_sec -= chunk
+                        print(f"[{self.fab}] 첫 group: ts={ts0} rows={len(batch)} target_pps={self.data_repeat}")
+                    for row in batch:
+                        if self.stop_flag:
+                            return
                         if self.seek_ratio is not None:
                             break
-
-                    if self.stop_flag:
-                        return
-                    if self.paused:
                         while self.paused and not self.stop_flag and self.seek_ratio is None:
-                            time.sleep(0.1)
+                            time.sleep(0.05)
                         if self.stop_flag:
                             return
                         if self.seek_ratio is not None:
                             break
 
-                    self._send_batch(ts0, batch)
-                    self.cur_byte = byte_pos
-                    last_sent_ts = ts0
-                    consumed_any = True
+                        # rate 제한 — 현재 data_repeat 동적으로 읽음 (즉각 반영)
+                        rate = max(1, int(self.data_repeat))
+                        interval = 1.0 / rate
+                        now_t = time.perf_counter()
+                        if now_t < next_send_t:
+                            sleep_t = next_send_t - now_t
+                            if sleep_t > 0.001:
+                                time.sleep(sleep_t)
+                        next_send_t = max(next_send_t + interval, time.perf_counter())
 
-                print(f"[{self.fab}] cycle 종료 — yielded={yielded} sent_packets={self.tx_packets} sent_rows={self.tx_rows}")
+                        self._send_one(ts0, row)
+                        self.cur_byte = byte_pos
+                        self.cur_ts = ts0
+                        consumed_any = True
+                    if self.seek_ratio is not None:
+                        break
+
+                print(f"[{self.fab}] cycle 종료 — yielded={yielded} sent_packets={self.tx_packets}")
                 if self.stop_flag:
                     return
                 if self.seek_ratio is not None:
@@ -301,8 +296,7 @@ class SenderWorker:
                 if consumed_any:
                     self.cycle += 1
                 else:
-                    self.last_error = ("CSV 에서 유효한 row 가 한 개도 안 나옴. "
-                                       "REPLAY 윈도우/시간컬럼/파싱 설정 확인.")
+                    self.last_error = "CSV row 0건. REPLAY 윈도우/시간컬럼 확인."
                     print(f"[{self.fab}] {self.last_error}")
                     break
 
@@ -311,6 +305,31 @@ class SenderWorker:
             print(f"[{self.fab}] 예외: {e!r}")
         finally:
             self.running = False
+
+    def _send_one(self, ts: datetime, row: Dict[str, str]):
+        """1 row → 1 UDP 패킷 송신."""
+        fmt = config.PACKET_FORMAT
+        if fmt == "csv":
+            pkt = serialize_csv(self.fab, ts, [row], self.loader.fieldnames)
+        elif fmt == "json":
+            pkt = serialize_json(self.fab, ts, [row])
+        else:
+            pkt = serialize_raw_line(self.fab, ts, [row])
+        if not pkt:
+            return
+        try:
+            self.sock.sendto(pkt, (self.udp_host, self.udp_port))
+        except OSError as e:
+            self.last_error = f"sendto: {e}"
+            return
+        self.tx_packets += 1
+        self.tx_rows += 1
+        self.tx_bytes += len(pkt)
+        self._pps_acc_pkt  += 1
+        self._pps_acc_row  += 1
+        self._pps_acc_byte += len(pkt)
+        self.last_tx = datetime.now()
+        self._tick_pps()
 
     def _send_batch(self, ts: datetime, rows: List[Dict[str, str]]):
         if not rows:
