@@ -128,8 +128,28 @@ def detect_prefix(fieldnames):
 
 # ====== STAR 로드 (한 줄씩 yield) ======
 def iter_star_rows(filepath):
-    """STAR CSV → (datetime, star_dict) 제너레이터"""
-    with open(filepath, 'r', encoding='utf-8') as f:
+    """STAR CSV → (datetime, star_dict) 제너레이터.
+    BOM 자동 처리(utf-8-sig) — 수집기가 utf-8-sig 로 저장해도 CRT_TM 키 정상 읽힘.
+    """
+    # 인코딩 자동 시도: utf-8-sig (BOM 자동 strip) → utf-8 → cp949 (한국어 윈도우)
+    last_err = None
+    for enc in ('utf-8-sig', 'utf-8', 'cp949'):
+        try:
+            f = open(filepath, 'r', encoding=enc)
+            # 첫 줄 시험 읽기 (인코딩 검증)
+            head = f.readline()
+            f.seek(0)
+            if 'CRT_TM' not in head:
+                f.close()
+                continue
+            break
+        except (UnicodeDecodeError, UnicodeError) as e:
+            last_err = e
+            continue
+    else:
+        return  # 모든 인코딩 실패
+
+    with f:
         reader = csv.DictReader(f)
         prefix = detect_prefix(reader.fieldnames)
         if not prefix:
