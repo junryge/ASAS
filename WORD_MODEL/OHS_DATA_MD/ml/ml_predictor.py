@@ -20,12 +20,13 @@ import sys
 
 
 class MLPredictor:
-    """학습된 XGBoost 모델로 30분 사전 확률 예측"""
+    """학습된 XGBoost 모델로 30분 사전 확률 예측 (sklearn 불필요 — Booster 직접 사용)"""
 
     def __init__(self, model_path='model.json', feature_names_path=None):
         import xgboost as xgb
-        self.model = xgb.XGBClassifier()
-        self.model.load_model(model_path)
+        # Booster 직접 사용 (sklearn 의존성 회피)
+        self.booster = xgb.Booster()
+        self.booster.load_model(model_path)
 
         # 피처 순서 로드
         if feature_names_path is None:
@@ -35,17 +36,24 @@ class MLPredictor:
             with open(feature_names_path, 'r', encoding='utf-8') as f:
                 self.feature_names = json.load(f)
         else:
-            # 모델에서 직접 추출 시도
-            self.feature_names = self.model.get_booster().feature_names or []
+            # Booster 에서 직접 추출 시도
+            self.feature_names = self.booster.feature_names or []
 
         if not self.feature_names:
             raise ValueError(f'피처명 로드 실패: {feature_names_path}')
+
+        # 호환 alias
+        self.model = self.booster
+
+    def _to_dmatrix(self, X):
+        import xgboost as xgb
+        return xgb.DMatrix(X, feature_names=self.feature_names)
 
     def predict(self, features_dict):
         """단일 시점 피처 dict → 0~1 확률"""
         import numpy as np
         x = np.array([[features_dict.get(n, 0) or 0 for n in self.feature_names]], dtype=float)
-        prob = self.model.predict_proba(x)[0][1]
+        prob = self.booster.predict(self._to_dmatrix(x))[0]
         return float(prob)
 
     def predict_batch(self, features_list):
@@ -55,7 +63,7 @@ class MLPredictor:
             [[fd.get(n, 0) or 0 for n in self.feature_names] for fd in features_list],
             dtype=float,
         )
-        probs = self.model.predict_proba(X)[:, 1]
+        probs = self.booster.predict(self._to_dmatrix(X))
         return [float(p) for p in probs]
 
     @staticmethod

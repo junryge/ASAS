@@ -39,10 +39,19 @@ from ml_predictor import MLPredictor
 
 
 # ==== 기본 경로 (run.py 에서 override 가능) ====
-DEFAULT_INPUT_CSV   = _HERE / 'predict' / 'M16_HUBROOM_PR.csv'
+# 수집기가 만드는 파일명은 M16A_HUBROOM_PR.csv (A 있음 주의)
+DEFAULT_INPUT_CSV   = _HERE / 'predict' / 'M16A_HUBROOM_PR.csv'
 DEFAULT_OUTPUT_DIR  = _HERE / 'ml_predict'
 DEFAULT_MODEL_PATH  = _HERE / 'model.json'
 DEFAULT_INTERVAL    = 60  # 초
+
+
+def _resolve_input_csv(candidates):
+    """파일명 변형 자동 탐색 (M16A_HUBROOM_PR.csv / M16_HUBROOM_PR.csv 등)"""
+    for c in candidates:
+        if Path(c).exists():
+            return Path(c)
+    return Path(candidates[0])  # 첫번째를 기본값으로
 
 
 def _date_key(t):
@@ -139,12 +148,18 @@ def _process_csv_once(input_csv, ml, last_t, log_fn=None):
     return last_t, new_predictions
 
 
-def run_watch(input_csv=DEFAULT_INPUT_CSV,
+def run_watch(input_csv=None,
               out_dir=DEFAULT_OUTPUT_DIR,
               model_path=DEFAULT_MODEL_PATH,
               interval=DEFAULT_INTERVAL,
               logger=None):
     """폴링 루프 (run.py 에서 스레드로 호출)"""
+    # 입력 CSV 자동 탐색 (M16A_HUBROOM_PR.csv 우선, M16_HUBROOM_PR.csv fallback)
+    if input_csv is None:
+        input_csv = _resolve_input_csv([
+            DEFAULT_INPUT_CSV,
+            _HERE / 'predict' / 'M16_HUBROOM_PR.csv',
+        ])
     input_csv  = Path(input_csv)
     out_dir    = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     model_path = Path(model_path)
