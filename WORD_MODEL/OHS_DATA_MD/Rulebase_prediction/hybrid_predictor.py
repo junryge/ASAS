@@ -3,8 +3,12 @@
 """
 하이브리드 예측기 — 룰(S1/S2/S3) × ML(0~1) 양방향 매트릭스 융합
 
-입력:  ./ml_predict/<YYYYMMDD>_predictions.csv  (ml_predict_runner.py 출력)
-출력:  ./hybrid_predict/<YYYYMMDD>_hybrid.csv   (날짜별 append, 1분당 1행)
+입력1: ./ml_predict/<YYYYMMDD>_predictions.csv   (ml_predict_runner.py 출력
+                                                   — 원천 영향값 + 룰판정 + 룰근거 + ML)
+입력2: ./predict_tobe/<YYYYMMDD>_발동이벤트.csv  (hubroom_predictor.py 출력
+                                                   — stage/stage_name/transition/reason/relation)
+출력:  ./hybrid_predict/<YYYYMMDD>_hybrid.csv    (날짜별 append, 1분당 1행
+                                                   — 원천+룰+ML+융합 통합)
 
 핵심 등급:
     위험-확정 : S3 발동 (이미 늦음, 사후 기록)
@@ -36,6 +40,7 @@ _HERE = Path(__file__).resolve().parent
 
 # 기본 경로 (run_ml.py에서 override 가능)
 DEFAULT_INPUT_DIR  = _HERE / 'ml_predict'
+DEFAULT_RULE_DIR   = _HERE / 'predict_tobe'  # 룰베이스 발동이벤트.csv 위치
 DEFAULT_OUTPUT_DIR = _HERE / 'hybrid_predict'
 DEFAULT_INTERVAL   = 60  # 초
 
@@ -130,13 +135,44 @@ def fuse(s1, s2, s3, ml_score):
     return level, agreement, direction, why
 
 
-# CSV 컬럼
-OUT_COLUMNS = [
-    'datetime', 'prediction_for',
-    'ml_score', 'ml_level', 'ml_level_kr',
-    'rule_s1', 'rule_s2', 'rule_s3',
-    'final_level', 'agreement', 'direction', 'final_reason',
+# 컬럼 정의 — ml_predict_runner.py 의 OUT_HEADER 와 일치
+LIFTER_IDS = [
+    '6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
+    '6ABL6031', '6ABL6032', '6ABL0111', '6ABL0112',
+    '6ABL0121', '6ABL0122',
 ]
+RAW_COLS_TOP = ['avgtotal1min', 'm14_to_m16', 'fabstorage_ratio']
+RAW_COLS_LFT = [f'lft_{lid}' for lid in LIFTER_IDS]
+RAW_COLS_V3 = [
+    'm14b_aotransdelay', 'm14b_oht_util', 'm14b_4abld122',
+    'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
+    'm14_htstop', 'm14_congested', 'm14_abnormal',
+    'm16pkt_aotransdelay', 'm16wt_aotransdelay',
+]
+CTX_COLS = [
+    'ra_value', 'ra_count', 'ra_sustained', 'ra_trig',
+    'rb_diff', 'rb_diff_10', 'rb_fast', 'rb_trig',
+    'rc_trend', 'rev_count', 'rev_lids', 'rc_trig',
+    'rd_fabstorage', 'rd_7f_alt', 'rd_trig',
+]
+RULE_EVENT_COLS = ['stage', 'stage_name', 'prev_stage', 'transition',
+                   'rule_reason', 'rule_relation']
+
+# 최종 hybrid CSV 컬럼 — 4블록 (시각 / 원천 / 룰 / ML / 융합)
+OUT_COLUMNS = (
+    ['datetime', 'prediction_for']
+    + RAW_COLS_TOP + RAW_COLS_LFT + RAW_COLS_V3
+    + ['rule_s1', 'rule_s2', 'rule_s3']
+    + CTX_COLS
+    + RULE_EVENT_COLS
+    + ['ml_score', 'ml_level', 'ml_level_kr']
+    + ['final_level', 'agreement', 'direction', 'final_reason']
+)
+
+# ml_predict_runner.py predictions.csv 에서 그대로 가져올 컬럼들
+PASSTHROUGH_FROM_ML_CSV = (
+    RAW_COLS_TOP + RAW_COLS_LFT + RAW_COLS_V3 + CTX_COLS
+)
 
 
 def _parse_dt(s):
@@ -157,6 +193,30 @@ def _read_csv_rows(path):
     raise RuntimeError(f'인코딩 감지 실패: {path}')
 
 
+def _load_rule_events(rule_csv):
+    """hubroom_predictor 의 발동이벤트.csv 를 datetime → {stage, stage_name, ...} 로 인덱싱.
+
+    발동이벤트.csv 의 datetime 컬럼 포맷은 'YYYY-MM-DD HH:MM' (초 없음) — 매칭 시 키 정규화.
+    """
+    if not rule_csv.exists():
+        return {}
+    rows = _read_csv_rows(rule_csv)
+    out = {}
+    for r in rows:
+        dt_raw = (r.get('datetime') or '').strip()
+        # 'YYYY-MM-DD HH:MM' 또는 'YYYY-MM-DD HH:MM:SS' 모두 'YYYY-MM-DD HH:MM' 로 정규화
+        key = dt_raw[:16]
+        out[key] = {
+            'stage':        r.get('stage', ''),
+            'stage_name':   r.get('stage_name', ''),
+            'prev_stage':   r.get('prev_stage', ''),
+            'transition':   r.get('transition', ''),
+            'rule_reason':  r.get('reason', ''),
+            'rule_relation': r.get('relation', ''),
+        }
+    return out
+
+
 def _append_hybrid(out_path, row_dict):
     new_file = (not out_path.exists()) or out_path.stat().st_size == 0
     with open(out_path, 'a', encoding='utf-8-sig', newline='') as f:
@@ -170,12 +230,13 @@ def _today_str():
     return datetime.now().strftime('%Y%m%d')
 
 
-def _process_ml_csv(ml_csv, out_csv, last_t, log_fn=None):
-    """ml_predict CSV에서 last_t 이후 신규 행만 fuse → hybrid CSV append"""
+def _process_ml_csv(ml_csv, rule_csv, out_csv, last_t, log_fn=None):
+    """ml_predict CSV + 룰베이스 발동이벤트.csv 머지 → 융합 → hybrid CSV append"""
     if not ml_csv.exists():
         return last_t, 0
 
     rows = _read_csv_rows(ml_csv)
+    rule_idx = _load_rule_events(rule_csv)
     written = 0
     new_last_t = last_t
 
@@ -196,20 +257,31 @@ def _process_ml_csv(ml_csv, out_csv, last_t, log_fn=None):
 
         level, agreement, direction, why = fuse(s1, s2, s3, ml_score)
 
+        # 룰베이스 발동이벤트.csv 와 datetime 매칭 (분 단위)
+        rule_key = dt.strftime('%Y-%m-%d %H:%M')
+        rule_ev = rule_idx.get(rule_key, {})
+
         out_row = {
             'datetime':       row.get('datetime', ''),
             'prediction_for': row.get('prediction_for', ''),
-            'ml_score':       f'{ml_score:.4f}',
-            'ml_level':       row.get('ml_level', ''),
-            'ml_level_kr':    row.get('ml_level_kr', ''),
             'rule_s1':        s1,
             'rule_s2':        s2,
             'rule_s3':        s3,
+            'ml_score':       f'{ml_score:.4f}',
+            'ml_level':       row.get('ml_level', ''),
+            'ml_level_kr':    row.get('ml_level_kr', ''),
             'final_level':    level,
             'agreement':      agreement,
             'direction':      direction,
             'final_reason':   why,
         }
+        # 원천 영향값 + 룰 근거 컬럼들 — ml predictions.csv 에서 그대로 forward
+        for c in PASSTHROUGH_FROM_ML_CSV:
+            out_row[c] = row.get(c, '')
+        # 룰베이스 발동이벤트.csv 의 stage/transition/reason/relation
+        for c in RULE_EVENT_COLS:
+            out_row[c] = rule_ev.get(c, '')
+
         _append_hybrid(out_csv, out_row)
         written += 1
         new_last_t = dt
@@ -221,9 +293,11 @@ def _process_ml_csv(ml_csv, out_csv, last_t, log_fn=None):
     return new_last_t, written
 
 
-def run_watch(input_dir=None, out_dir=None, interval=DEFAULT_INTERVAL, logger=None):
+def run_watch(input_dir=None, rule_dir=None, out_dir=None,
+              interval=DEFAULT_INTERVAL, logger=None):
     """폴링 루프 — run_ml.py에서 데몬 스레드로 호출"""
     input_dir = Path(input_dir) if input_dir else DEFAULT_INPUT_DIR
+    rule_dir  = Path(rule_dir)  if rule_dir  else DEFAULT_RULE_DIR
     out_dir   = Path(out_dir)   if out_dir   else DEFAULT_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -234,10 +308,11 @@ def run_watch(input_dir=None, out_dir=None, interval=DEFAULT_INTERVAL, logger=No
             print(msg, flush=True)
 
     _log('🔀 하이브리드 예측기 시작')
-    _log(f'   입력: {input_dir}')
-    _log(f'   출력: {out_dir}')
-    _log(f'   임계값: STRONG={ML_STRONG} MID={ML_MID} LOW={ML_LOW}')
-    _log(f'   폴링: {interval}초')
+    _log(f'   ML 입력: {input_dir}')
+    _log(f'   룰 입력: {rule_dir}')
+    _log(f'   출력:    {out_dir}')
+    _log(f'   임계값:  STRONG={ML_STRONG} MID={ML_MID} LOW={ML_LOW}')
+    _log(f'   폴링:    {interval}초')
 
     last_t = None
     last_date = None
@@ -246,8 +321,9 @@ def run_watch(input_dir=None, out_dir=None, interval=DEFAULT_INTERVAL, logger=No
     while True:
         try:
             today = _today_str()
-            ml_csv  = input_dir / f'{today}_predictions.csv'
-            out_csv = out_dir   / f'{today}_hybrid.csv'
+            ml_csv   = input_dir / f'{today}_predictions.csv'
+            rule_csv = rule_dir  / f'{today}_발동이벤트.csv'
+            out_csv  = out_dir   / f'{today}_hybrid.csv'
 
             # 자정 넘어가면 last_t 리셋
             if last_date is not None and last_date != today:
@@ -259,7 +335,8 @@ def run_watch(input_dir=None, out_dir=None, interval=DEFAULT_INTERVAL, logger=No
             if ml_csv.exists():
                 cur_size = ml_csv.stat().st_size
                 if cur_size != last_size:
-                    last_t, written = _process_ml_csv(ml_csv, out_csv, last_t, log_fn=_log)
+                    last_t, written = _process_ml_csv(ml_csv, rule_csv, out_csv,
+                                                       last_t, log_fn=_log)
                     if written > 0:
                         _log(f'  💾 hybrid {written}건 → {out_csv.name}')
                     last_size = cur_size
@@ -280,12 +357,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--input_dir', default=str(DEFAULT_INPUT_DIR),
                    help='ml_predict 폴더 (YYYYMMDD_predictions.csv 입력)')
+    p.add_argument('--rule_dir',  default=str(DEFAULT_RULE_DIR),
+                   help='predict_tobe 폴더 (YYYYMMDD_발동이벤트.csv 입력)')
     p.add_argument('--out_dir',   default=str(DEFAULT_OUTPUT_DIR),
                    help='hybrid_predict 폴더 (YYYYMMDD_hybrid.csv 출력)')
     p.add_argument('--interval', type=int, default=DEFAULT_INTERVAL, help='폴링 간격(초)')
     args = p.parse_args()
 
-    run_watch(args.input_dir, args.out_dir, args.interval)
+    run_watch(args.input_dir, args.rule_dir, args.out_dir, args.interval)
 
 
 if __name__ == '__main__':

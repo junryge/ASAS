@@ -15,8 +15,19 @@ ML 실시간 예측기 — M16_HUBROOM_PR.csv 1분 폴링 → 날짜별 predicti
     python ml_predict_runner.py [--input PATH] [--out_dir PATH] [--model PATH] [--interval SECONDS]
 
 출력 컬럼 (utf-8-sig, 엑셀 한글 OK):
-    datetime, prediction_for, ml_score, ml_level, ml_level_kr,
-    rule_s1, rule_s2, rule_s3
+    [시각]   datetime, prediction_for
+    [원천]   avgtotal1min, m14_to_m16, fabstorage_ratio,
+             lft_6ABL6011 ~ lft_6ABL0122 (10개),
+             m14b_aotransdelay, m14b_oht_util, m14b_4abld122,
+             m14b_avgtotal1min, m14b_7f_to_hub, m14b_7f_to_hub_alt,
+             m14_htstop, m14_congested, m14_abnormal,
+             m16pkt_aotransdelay, m16wt_aotransdelay
+    [룰판정] rule_s1, rule_s2, rule_s3
+    [룰근거] ra_value, ra_count, ra_sustained, ra_trig,
+             rb_diff, rb_diff_10, rb_fast, rb_trig,
+             rc_trend, rev_count, rev_lids, rc_trig,
+             rd_fabstorage, rd_7f_alt, rd_trig
+    [ML]    ml_score, ml_level, ml_level_kr
 """
 
 import argparse
@@ -58,28 +69,76 @@ def _date_key(t):
     return t.strftime('%Y%m%d')
 
 
+# 원천 영향 컬럼 (수집기 CSV 에서 들어오는 raw 값 — 룰/ML 모두의 입력)
+LIFTER_IDS = [
+    '6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
+    '6ABL6031', '6ABL6032', '6ABL0111', '6ABL0112',
+    '6ABL0121', '6ABL0122',
+]
+RAW_COLS_TOP = ['avgtotal1min', 'm14_to_m16', 'fabstorage_ratio']
+RAW_COLS_V3 = [
+    'm14b_aotransdelay', 'm14b_oht_util', 'm14b_4abld122',
+    'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
+    'm14_htstop', 'm14_congested', 'm14_abnormal',
+    'm16pkt_aotransdelay', 'm16wt_aotransdelay',
+]
+CTX_COLS = [
+    'ra_value', 'ra_count', 'ra_sustained', 'ra_trig',
+    'rb_diff', 'rb_diff_10', 'rb_fast', 'rb_trig',
+    'rc_trend', 'rev_count', 'rev_lids', 'rc_trig',
+    'rd_fabstorage', 'rd_7f_alt', 'rd_trig',
+]
+
+OUT_HEADER = (
+    ['datetime', 'prediction_for']
+    + RAW_COLS_TOP
+    + [f'lft_{lid}' for lid in LIFTER_IDS]
+    + RAW_COLS_V3
+    + ['rule_s1', 'rule_s2', 'rule_s3']
+    + CTX_COLS
+    + ['ml_score', 'ml_level', 'ml_level_kr']
+)
+
+
+def _fmt(v):
+    """CSV 셀 포맷 — None/bool/list 안전 처리"""
+    if v is None:
+        return ''
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, (list, tuple, set)):
+        return ';'.join(str(x) for x in v)
+    if isinstance(v, float):
+        return f'{v:.4f}'
+    return v
+
+
 def _append_prediction(out_dir, t, pred_for, score, level, level_kr,
-                       rule_s1, rule_s2, rule_s3):
-    """날짜별 CSV append (없으면 헤더 포함 신규 생성)"""
+                       rule_s1, rule_s2, rule_s3, star, ctx):
+    """날짜별 CSV append (원천+룰근거+ML 통합, 없으면 헤더 포함 신규 생성)"""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f'{_date_key(t)}_predictions.csv'
+
+    lft_list = star.get('lft_list') or {}
+
+    row = [
+        t.strftime('%Y-%m-%d %H:%M:%S'),
+        pred_for.strftime('%Y-%m-%d %H:%M:%S'),
+    ]
+    row += [_fmt(star.get(c)) for c in RAW_COLS_TOP]
+    row += [_fmt(lft_list.get(lid)) for lid in LIFTER_IDS]
+    row += [_fmt(star.get(c)) for c in RAW_COLS_V3]
+    row += [int(rule_s1), int(rule_s2), int(rule_s3)]
+    row += [_fmt(ctx.get(c)) for c in CTX_COLS]
+    row += [f'{score:.4f}', level, level_kr]
 
     new_file = (not path.exists()) or path.stat().st_size == 0
     with open(path, 'a', encoding='utf-8-sig', newline='') as f:
         w = csv.writer(f)
         if new_file:
-            w.writerow([
-                'datetime', 'prediction_for',
-                'ml_score', 'ml_level', 'ml_level_kr',
-                'rule_s1', 'rule_s2', 'rule_s3',
-            ])
-        w.writerow([
-            t.strftime('%Y-%m-%d %H:%M:%S'),
-            pred_for.strftime('%Y-%m-%d %H:%M:%S'),
-            f'{score:.4f}', level, level_kr,
-            int(rule_s1), int(rule_s2), int(rule_s3),
-        ])
+            w.writerow(OUT_HEADER)
+        w.writerow(row)
     return path
 
 
@@ -133,6 +192,7 @@ def _process_csv_once(input_csv, ml, last_t, log_fn=None):
             'pred_for': t + timedelta(minutes=30),
             'score': score, 'level': level, 'level_kr': level_kr,
             's1': s1, 's2': s2, 's3': s3,
+            'star': star, 'ctx': ctx,
         })
         last_t = t
 
@@ -200,6 +260,7 @@ def run_watch(input_csv=None,
                             out_dir, p['time'], p['pred_for'],
                             p['score'], p['level'], p['level_kr'],
                             p['s1'], p['s2'], p['s3'],
+                            p['star'], p['ctx'],
                         )
                         # 경보/위험만 로그
                         if p['score'] >= 0.7:
