@@ -74,9 +74,11 @@ def _append_prediction(out_dir, t, pred_for, score, level, level_kr,
     return path
 
 
-def _process_csv_once(input_csv, ml, last_t):
+def _process_csv_once(input_csv, ml, last_t, log_fn=None):
     """CSV 한 번 읽어서 last_t 이후 새 행만 처리 → (last_t, [예측 dict, ...])"""
     if not os.path.exists(input_csv):
+        if log_fn:
+            log_fn(f'⚠ CSV 파일 없음: {input_csv}')
         return last_t, []
 
     t1_window  = deque(maxlen=WINDOW_MIN)
@@ -85,8 +87,12 @@ def _process_csv_once(input_csv, ml, last_t):
     v3_window  = deque(maxlen=WINDOW_MIN)
 
     new_predictions = []
+    total_rows = 0
+    skipped_already = 0
+    skipped_window = 0
 
     for t, star, _ in iter_star_rows(input_csv):
+        total_rows += 1
         # 윈도우는 모두 누적 (이미 본 시각 포함 — 모델 입력 컨텍스트)
         t1_window.append(star.get('avgtotal1min'))
         m14_window.append(star.get('m14_to_m16'))
@@ -101,8 +107,10 @@ def _process_csv_once(input_csv, ml, last_t):
 
         # 이미 처리한 시각은 출력 스킵 (윈도우는 채워둠)
         if last_t is not None and t <= last_t:
+            skipped_already += 1
             continue
         if len(t1_window) < 31:
+            skipped_window += 1
             continue
 
         s1, s2, s3, ctx = evaluate_rules(t1_window, m14_window, lft_window, v3_window)
@@ -118,6 +126,15 @@ def _process_csv_once(input_csv, ml, last_t):
             's1': s1, 's2': s2, 's3': s3,
         })
         last_t = t
+
+    if log_fn:
+        log_fn(f'  📊 CSV 읽음: 총 {total_rows}행, '
+               f'이미 처리 {skipped_already}, 윈도우 부족 {skipped_window}, '
+               f'신규 예측 {len(new_predictions)}')
+        if total_rows < 31:
+            log_fn(f'  ⚠ CSV 행수 {total_rows} < 31 — 윈도우 채워질 때까지 대기')
+        elif total_rows == 0:
+            log_fn(f'  ⚠ CSV 비어있음 — iter_star_rows 가 0행 반환 (prefix 감지 실패 가능)')
 
     return last_t, new_predictions
 
@@ -150,15 +167,19 @@ def run_watch(input_csv=DEFAULT_INPUT_CSV,
 
     ml = MLPredictor(str(model_path))
 
-    last_size = 0
+    last_size = -1   # -1 로 시작 → 첫 루프에서 무조건 처리
     last_t = None
+    first_run = True
 
     while True:
         try:
             if input_csv.exists():
                 cur_size = input_csv.stat().st_size
                 if cur_size != last_size:
-                    last_t, preds = _process_csv_once(str(input_csv), ml, last_t)
+                    if first_run:
+                        _log(f'🔍 초기 CSV 스캔 ({cur_size:,} bytes)')
+                        first_run = False
+                    last_t, preds = _process_csv_once(str(input_csv), ml, last_t, log_fn=_log)
                     for p in preds:
                         path = _append_prediction(
                             out_dir, p['time'], p['pred_for'],
@@ -171,13 +192,18 @@ def run_watch(input_csv=DEFAULT_INPUT_CSV,
                                  f'{p["level_kr"]} score={p["score"]:.3f} '
                                  f'→ 30분 뒤({p["pred_for"].strftime("%H:%M")}) 정체 예상  '
                                  f'[{path.name}]')
+                    if preds:
+                        _log(f'  💾 {len(preds)}건 → {out_dir}/{preds[-1]["time"].strftime("%Y%m%d")}_predictions.csv')
                     last_size = cur_size
+            else:
+                _log(f'⚠ 입력 CSV 없음: {input_csv} (생성 대기)')
             time.sleep(interval)
         except KeyboardInterrupt:
             _log('🛑 ML 예측기 종료')
             break
         except Exception as e:
-            _log(f'⚠ ML 예측기 오류: {e}')
+            import traceback
+            _log(f'⚠ ML 예측기 오류: {e}\n{traceback.format_exc()}')
             time.sleep(interval)
 
 
