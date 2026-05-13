@@ -160,7 +160,12 @@ class SenderWorker:
             self.udp_host = h
 
     def set_data_repeat(self, n: int):
-        self.data_repeat = max(1, min(int(n), 10000))
+        # 사용자 입력 그대로 (최소 1만 보장 — 0 이하는 무의미)
+        try:
+            v = int(n)
+        except (TypeError, ValueError):
+            v = 1
+        self.data_repeat = max(1, v)
 
     def seek(self, ratio: float):
         self.seek_ratio = max(0.0, min(1.0, ratio))
