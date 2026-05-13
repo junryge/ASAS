@@ -234,7 +234,7 @@ def process_csv(csv_path, out_path):
         return
 
     fieldnames = ['timestamp'] + [k for k in feature_rows[0].keys() if k != 'timestamp']
-    with open(out_path, 'w', encoding='utf-8', newline='') as f:
+    with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(feature_rows)

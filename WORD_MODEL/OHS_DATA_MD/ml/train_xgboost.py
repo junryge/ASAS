@@ -194,7 +194,7 @@ def train(features_csv, incidents_json, out_path, lead_min=30):
 
     # 리포트 저장
     report_path = out_path.replace('.json', '_report.txt').replace('.bin', '_report.txt')
-    with open(report_path, 'w', encoding='utf-8') as f:
+    with open(report_path, 'w', encoding='utf-8-sig') as f:
         f.write(f'XGBoost 학습 리포트\n')
         f.write(f'====================\n')
         f.write(f'입력 피처: {features_csv}\n')

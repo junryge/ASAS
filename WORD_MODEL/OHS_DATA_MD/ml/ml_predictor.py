@@ -86,7 +86,7 @@ def cli_predict(model_path, features_csv, out_path=None):
     ml = MLPredictor(model_path)
 
     rows_out = []
-    with open(features_csv, 'r', encoding='utf-8') as f:
+    with open(features_csv, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
             # 숫자형 변환
@@ -110,7 +110,7 @@ def cli_predict(model_path, features_csv, out_path=None):
     if out_path is None:
         out_path = features_csv.replace('.csv', '_pred.csv')
 
-    with open(out_path, 'w', encoding='utf-8', newline='') as f:
+    with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.DictWriter(f, fieldnames=['timestamp', 'ml_score', 'ml_level', 'ml_level_kr'])
         w.writeheader()
         w.writerows(rows_out)

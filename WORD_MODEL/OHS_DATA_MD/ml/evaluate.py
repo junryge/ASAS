@@ -48,7 +48,7 @@ def main():
     print(f'📥 피처: {args.features}')
     timestamps = []
     scores = []
-    with open(args.features, 'r', encoding='utf-8') as f:
+    with open(args.features, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
             ts = parse_dt(row['timestamp'])
