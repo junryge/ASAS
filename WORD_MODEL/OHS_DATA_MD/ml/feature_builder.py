@@ -242,16 +242,83 @@ def process_csv(csv_path, out_path):
     print(f'✅ {len(feature_rows):,} 행 → {out_path}')
 
 
+def _resolve_csv_path(user_path):
+    """CSV 경로 자동 탐색 — 절대경로/상대경로/여러 위치 시도."""
+    if os.path.exists(user_path):
+        return os.path.abspath(user_path)
+
+    # 파일명만 추출
+    basename = os.path.basename(user_path)
+    cwd = os.getcwd()
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # 시도할 위치들
+    candidates = [
+        user_path,
+        os.path.abspath(user_path),
+        os.path.join(cwd, basename),
+        os.path.join(cwd, 'DATA', basename),
+        os.path.join(cwd, '..', 'DATA', basename),
+        os.path.join(cwd, '..', '..', 'DATA', basename),
+        os.path.join(this_dir, basename),
+        os.path.join(this_dir, '..', 'DATA', basename),
+        os.path.join(this_dir, 'DATA', basename),
+    ]
+
+    # 대소문자 변형도 시도 (윈도우는 대개 무시하지만 명시적으로)
+    if not basename.endswith('.csv') and not basename.endswith('.CSV'):
+        pass
+    else:
+        for v in [basename.lower(), basename.upper(),
+                  basename.replace('.csv', '.CSV'),
+                  basename.replace('.CSV', '.csv')]:
+            candidates.append(os.path.join(cwd, v))
+            candidates.append(os.path.join(cwd, '..', 'DATA', v))
+            candidates.append(os.path.join(cwd, 'DATA', v))
+
+    for c in candidates:
+        if os.path.exists(c):
+            print(f'✅ CSV 찾음: {c}')
+            return os.path.abspath(c)
+
+    # 못 찾았으면 디버그 정보 출력
+    print(f'❌ CSV 파일을 찾을 수 없습니다: {user_path}')
+    print(f'   현재 폴더: {cwd}')
+    print(f'   스크립트 폴더: {this_dir}')
+    print(f'\n다음 위치들을 시도했습니다:')
+    for c in candidates:
+        print(f'   - {os.path.abspath(c)}')
+    print(f'\n현재 폴더({cwd}) 내용:')
+    try:
+        for item in sorted(os.listdir(cwd)):
+            full = os.path.join(cwd, item)
+            mark = '[D]' if os.path.isdir(full) else '   '
+            print(f'   {mark} {item}')
+    except Exception as e:
+        print(f'   (디렉터리 읽기 실패: {e})')
+
+    parent = os.path.dirname(cwd)
+    if os.path.exists(parent):
+        print(f'\n상위 폴더({parent}) 내용:')
+        try:
+            for item in sorted(os.listdir(parent)):
+                full = os.path.join(parent, item)
+                mark = '[D]' if os.path.isdir(full) else '   '
+                print(f'   {mark} {item}')
+        except Exception as e:
+            print(f'   (디렉터리 읽기 실패: {e})')
+
+    sys.exit(1)
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--csv', required=True, help='입력 90min.csv 경로')
+    p.add_argument('--csv', required=True, help='입력 CSV 경로 (자동 탐색 지원)')
     p.add_argument('--out', default='features.csv', help='출력 피처 CSV 경로')
     args = p.parse_args()
 
-    if not os.path.exists(args.csv):
-        sys.exit(f'파일 없음: {args.csv}')
-
-    process_csv(args.csv, args.out)
+    csv_path = _resolve_csv_path(args.csv)
+    process_csv(csv_path, args.out)
 
 
 if __name__ == '__main__':
