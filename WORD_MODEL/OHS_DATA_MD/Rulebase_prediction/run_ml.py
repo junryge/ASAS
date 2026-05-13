@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-M16A HUBROOM 수집 + 예측 + ML 예측 동시 실행
-- 수집기 스레드 시작 (백그라운드 데몬)
-- 0.5초 뒤 예측기 watch 시작 (메인)
-- ML 예측기 스레드 시작 (백그라운드 데몬)
+M16A HUBROOM 수집 + 룰 예측 + ML 예측 + 하이브리드 동시 실행
+- 수집기 스레드 (백그라운드 데몬)
+- ML 예측기 스레드 (백그라운드 데몬)
+- 하이브리드 예측기 스레드 (백그라운드 데몬) — 룰×ML 양방향 매트릭스 융합
+- 룰 예측기 (메인 스레드)
 - Ctrl+C 한 번으로 같이 종료
 """
 
@@ -13,12 +14,16 @@ import time
 import aws_idc_realtime_collector as collector
 import hubroom_predictor as predictor
 import ml_predict_runner as ml_runner
+import hybrid_predictor
 
 # 수집기 (백그라운드 데몬 — 메인 종료 시 같이 죽음)
 threading.Thread(target=collector.main, daemon=True).start()
 
 # ML 예측기 (백그라운드 데몬)
 threading.Thread(target=ml_runner.run_watch, daemon=True).start()
+
+# 하이브리드 예측기 (백그라운드 데몬) — ML 출력 1분 뒤부터 처리
+threading.Thread(target=hybrid_predictor.run_watch, daemon=True).start()
 
 # 0.5초 후 예측기 watch (메인 스레드)
 time.sleep(0.5)
