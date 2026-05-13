@@ -31,8 +31,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from importlib import import_module
 import importlib.util
 
-# 3단계_룰베이스_사건단위.py 는 한글 파일명이라 spec 로드
-_rule_path = os.path.join(os.path.dirname(__file__), '..', '3단계_룰베이스_사건단위.py')
+# 3단계_룰베이스_사건단위.py 위치 자동 탐색
+# (같은 폴더 → 상위 폴더 → 현재 작업 디렉터리 순서)
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_candidates = [
+    os.path.join(_this_dir, '3단계_룰베이스_사건단위.py'),          # 같은 폴더
+    os.path.join(_this_dir, '..', '3단계_룰베이스_사건단위.py'),     # 상위 폴더
+    os.path.join(os.getcwd(), '3단계_룰베이스_사건단위.py'),         # 현재 작업 디렉터리
+]
+_rule_path = None
+for _p in _candidates:
+    if os.path.exists(_p):
+        _rule_path = _p
+        break
+
+if _rule_path is None:
+    raise FileNotFoundError(
+        f"3단계_룰베이스_사건단위.py 를 찾을 수 없습니다.\n"
+        f"다음 위치 중 하나에 두세요:\n" + '\n'.join(f"  - {p}" for p in _candidates)
+    )
+
 _spec = importlib.util.spec_from_file_location('rule_engine', _rule_path)
 _rule_engine = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_rule_engine)
