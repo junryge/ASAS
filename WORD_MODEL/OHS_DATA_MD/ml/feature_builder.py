@@ -31,14 +31,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from importlib import import_module
 import importlib.util
 
-# 3단계_룰베이스_사건단위.py 위치 자동 탐색
-# (같은 폴더 → 상위 폴더 → 현재 작업 디렉터리 순서)
+# 3DO_PRETIME.py (구 이름: 3단계_룰베이스_사건단위.py) 위치 자동 탐색
+# (같은 폴더 → 상위 폴더 → 현재 작업 디렉터리 순서, 신/구 이름 모두 시도)
 _this_dir = os.path.dirname(os.path.abspath(__file__))
-_candidates = [
-    os.path.join(_this_dir, '3단계_룰베이스_사건단위.py'),          # 같은 폴더
-    os.path.join(_this_dir, '..', '3단계_룰베이스_사건단위.py'),     # 상위 폴더
-    os.path.join(os.getcwd(), '3단계_룰베이스_사건단위.py'),         # 현재 작업 디렉터리
-]
+_NAMES = ['3DO_PRETIME.py', '3단계_룰베이스_사건단위.py']  # 신 이름 우선, 구 이름은 호환용
+_BASE_DIRS = [_this_dir,
+              os.path.join(_this_dir, '..'),
+              os.getcwd(),
+              os.path.join(os.getcwd(), '..')]
+_candidates = [os.path.join(b, n) for b in _BASE_DIRS for n in _NAMES]
+
 _rule_path = None
 for _p in _candidates:
     if os.path.exists(_p):
@@ -47,7 +49,7 @@ for _p in _candidates:
 
 if _rule_path is None:
     raise FileNotFoundError(
-        f"3단계_룰베이스_사건단위.py 를 찾을 수 없습니다.\n"
+        f"룰 엔진 파일(3DO_PRETIME.py 또는 3단계_룰베이스_사건단위.py)을 찾을 수 없습니다.\n"
         f"다음 위치 중 하나에 두세요:\n" + '\n'.join(f"  - {p}" for p in _candidates)
     )
 
