@@ -1,0 +1,13 @@
+[Monitoring > Resource] : 리소스 모니터링 하기
+
+: 현재는 jupyterlab, vscode, mlflow, object storage 리소스에 대해서만 표현이 되어 있으나, 추후에는 Inference 서비스까지 통합적으로 볼 수 있도록 합니다.
+
+
+
+
+
+- 서비스 현황 : 현재 제공받은 서비스들의 현황 입니다. 대부분의 사용자분들은 이 상태만 확인해도 됩니다.
+
+- Pod 현황 : 서비스에서 조금 더 나아가 K8S의 Pod 것이 어떤 Host에 어떤 Pod 이름으로 떠 있는지 보여줍니다.
+
+- Object Storage : mlflow의 저장소로 활용중인 Object Storage의 사용량을 보여 줍니다.

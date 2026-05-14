@@ -1,0 +1,42 @@
+[Serving > Inference Service] : Debugging 하기
+
+: 인퍼런스 서비스를 하다 보면, Debugging이 필요한 순간이 있습니다. 
+
+  이때, 인퍼런스 서비스를 직접 디버깅하는 것은 운영상의 이슈가 발생할 수 있습니다.
+
+  동일한 인퍼런스 서비스를 VSCode와 함께 생성할 수 있는 기능을 제공하여, VSCode에서 중단점을 걸고 Debugging이 가능하도록 합니다.
+
+
+
+
+
+1) "OFF" 버튼을 클릭 후 "CREATE" 버튼을 Click 합니다.
+
+
+
+
+
+2) 아래와 같이 "OFF" --> "ON" 으로 변경 됩니다.
+
+
+
+
+
+3) "ON" 버튼을 클릭 합니다.
+
+    : 아래와 같이 Deploy Status와 Status를 확인 합니다.
+
+
+
+4) 잠시 뒤 아래와 같이 Status가 SUCCESS와 READY가 된 것이 확인이 되면 디버깅 가능 합니다.
+
+    URL copy 하여 inference 가능하면 "VS Code" 클릭시 VS Code 환경이 뜹니다.
+
+
+
+
+
+5) default 비밀번호인 aistudio123! 을 입력 후 VS Code에 접속 합니다.
+
+   Code 중, "Predict" 함수를 수정하면, 코드가 변경을 하면서 Inference 테스트를 할 수 있으며, 디버그도 가능 합니다.
+

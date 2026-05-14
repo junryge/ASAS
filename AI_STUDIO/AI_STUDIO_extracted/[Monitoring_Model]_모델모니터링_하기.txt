@@ -1,0 +1,17 @@
+[Monitoring > Model] : 모델 모니터링 하기]
+
+: 모델의 Inference를 모니터링 하기 위한 메뉴 입니다.
+
+
+
+
+
+2) "Click"시 Grafana 화면으로 이동이 되게 됩니다. 
+
+
+
+3) 잘 활용하기 위해서는 아래의 iflow를 참고 하세요
+
+  - Model Endpoint 모니터링하기 :  http://iflow.skhynix.com/group/article/4752604
+
+  - Model Endpoint "잘" 모니터링하기 :  http://iflow.skhynix.com/group/article/4774037

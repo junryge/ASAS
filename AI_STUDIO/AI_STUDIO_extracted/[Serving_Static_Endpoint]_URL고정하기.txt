@@ -1,0 +1,45 @@
+[Serving > Static Endpoint] : URL 고정하기
+
+
+
+
+
+1) "CREATE" 버튼 클릭
+
+
+
+
+
+2) Name을 설정 후 "CREATE" 버튼을 눌러 줍니다.
+
+
+
+3) 이후 화면에서 연결하고자 하는 Single Inference Service나 Group Inference Service를 클릭 후 "APPLY" 버튼을 클릭 합니다.
+
+
+4) Model 을 교체 시, 다시 해당 Static 서비스를 Double Click 하여 상세페이지로 이동 후 "EDIT" 버튼을 클릭하여 원하는 모델로 교체 합니다.
+
+
+
+
+
+
+
+5) Inference Test 시 Ensemble 결과로 변경된 모델 결과가 나오는 것을 확인할 수 있습니다.
+
+
+
+6) 변경된 이력 관리를 위하여 History가 보이고, "Rollback" 기능을 통하여 이전 모델로 되돌리는 것도 가능 합니다.
+
+
+
+
+
+7) 아래와 같이 Rollback을 합니다.
+
+
+
+8) 동일한 Endpoint의 동일한 Inference Code를 수행해 보았을 때 Single End Point 모델의 결과가 나오는 것을 확인할 수 있습니다.
+
+
+

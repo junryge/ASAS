@@ -1,0 +1,25 @@
+[jupyter, vscode, mlflow]
+
+AI Studio에서 제공하는 jupyter, vscode, mlflow의 경우
+
+ID  : aistudio
+
+PW : aistudio123!
+
+으로 접속 합니다.
+
+
+
+[Monitoring 및 Logging]
+
+추가로 Inference Service 에 "Log" 와 "Metric" 버튼들은 HCP의 SRE를 기반으로 하고 있습니다.
+
+따라서 "Log"는 HCP의 Kibana로, "Metric"은 HCP 의 Grafana 서비스로 이동하는데,
+
+이따 로그인이 필요한 경우에는
+
+ID  : {프로젝트이름}
+
+PW : {프로젝트이름}12345
+
+로 접속 합니다.
