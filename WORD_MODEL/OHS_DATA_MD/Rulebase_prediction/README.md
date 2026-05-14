@@ -141,7 +141,105 @@ Ctrl+C 한 번에 4개 다 종료.
 6ABL0121, 6ABL0122
 ```
 
-### 2.7 출력: `predict_tobe/YYYYMMDD_발동이벤트.csv`
+### 2.7 룰 명명 규칙 — R / A' / B / C' / D 의 정확한 의미
+
+#### 공통: "R" 이란?
+
+- **R = Rule (룰)** — 룰 컴포넌트 식별자. R-A', R-B, R-C', R-D 의 R 은 모두 동일한 의미.
+- **`'` (프라임 기호)** — "개선판/정밀화" 표시. 원래 R-A, R-C 였는데 임계값 / 조건 개선하면서 R-A', R-C' 로 표기. R-B, R-D 는 처음부터 정밀 정의되어 프라임 없음.
+
+#### R-A' — 반송이 비정상적으로 느려짐 (시간축)
+
+| 항목 | 내용 |
+|---|---|
+| **R 의미** | Rule (룰 컴포넌트) |
+| **A' 의미** | **A**vgTotalTime (평균 반송시간) 의 개선판 |
+| **감시 축** | 시간 — "OHT가 느려졌나?" |
+| **보는 컬럼 수** | **1개** |
+| **원천 컬럼** | `M16HUB.QUE.TIME.AVGTOTALTIME1MIN` (최근 1분 평균 반송시간, 분 단위) |
+| **트리거 (ra_trig)** | 1MIN ≥ **9.0분** 이 10분 윈도우 안에 **1회 이상** |
+| **보조 (ra_sustained)** | 1MIN ≥ **6.0분** 이 5분 윈도우 안에 **3회 이상 지속** |
+| **잡는 것** | OHT 가 짐 들고 평소보다 오래 걸리는 상황 (구조적 정체 시작 신호) |
+| **코드 위치** | `hubroom_predictor.py:164` (avgtotal1min 읽기) |
+
+#### R-B — M14→M16 큐 누적 (양축)
+
+| 항목 | 내용 |
+|---|---|
+| **R 의미** | Rule (룰 컴포넌트) |
+| **B 의미** | **B**ridge Queue (M14↔M16 브릿지 큐) |
+| **감시 축** | 양 — "큐가 쌓이나?" |
+| **보는 컬럼 수** | **1개** |
+| **원천 컬럼** | `M16HUB.QUE.M14TOM16.MESCURRENTQCNT` (M14 → M16 브릿지 이동 반송 Q 수) |
+| **트리거 (rb_trig)** | 30분 윈도우 동안 **+100 이상** 증가 (느린 폭주) |
+| **보조 (rb_fast)** | 10분 윈도우 동안 **+30 이상** 증가 (빠른 폭주) |
+| **잡는 것** | M14 쪽으로 나가야 할 큐가 빠지지 않고 누적되는 상황 |
+| **코드 위치** | `hubroom_predictor.py:165` (m14_to_m16 읽기) |
+
+#### R-C' — 특정 리프터에 큐 몰림 (위치축)
+
+| 항목 | 내용 |
+|---|---|
+| **R 의미** | Rule (룰 컴포넌트) |
+| **C' 의미** | **C**ongestion at lifters (리프터 적체) 의 개선판 |
+| **감시 축** | 위치 — "한쪽으로 쏠리나?" |
+| **보는 컬럼 수** | **10개** (LIFTER 10대) |
+| **트리거 (rc_trig)** | 리프터 합계 추세가 **감소** (`rc_trend < 0`) **AND** **역증가 리프터 ≥2개** (`rev_count ≥ 2`) |
+| **역증가란?** | 전체 합은 줄고 있는데 일부 리프터만 거꾸로 증가 → 그 리프터에 큐가 몰리는 구조 |
+| **잡는 것** | 전체 큐가 빠지는 흐름인데 특정 리프터로 큐가 집중되는 구조적 막힘 |
+| **코드 위치** | `hubroom_predictor.py:166-169` (lft_list 읽기) |
+
+**원천 컬럼 10개**:
+```
+M16HUB.LFT.6ABL6011.TOTAL_CURRENTQCNT       6ABL6011 TOTAL Q 수
+M16HUB.LFT.6ABL6012.TOTAL_CURRENTQCNT       6ABL6012 TOTAL Q 수
+M16HUB.LFT.6ABL6021.TOTAL_CURRENTQCNT       6ABL6021 TOTAL Q 수
+M16HUB.LFT.6ABL6022.TOTAL_CURRENTQCNT       6ABL6022 TOTAL Q 수
+M16HUB.LFT.6ABL6031.TOTAL_CURRENTQCNT       6ABL6031 TOTAL Q 수
+M16HUB.LFT.6ABL6032.TOTAL_CURRENTQCNT       6ABL6032 TOTAL Q 수
+M16HUB.LFT.6ABL0111.TOTAL_CURRENTQCNT       6ABL0111 TOTAL Q 수
+M16HUB.LFT.6ABL0112.TOTAL_CURRENTQCNT       6ABL0112 TOTAL Q 수
+M16HUB.LFT.6ABL0121.TOTAL_CURRENTQCNT       6ABL0121 TOTAL Q 수
+M16HUB.LFT.6ABL0122.TOTAL_CURRENTQCNT       6ABL0122 TOTAL Q 수
+```
+
+#### R-D ★ — FAB 저장공간 가득참 (공간축)
+
+| 항목 | 내용 |
+|---|---|
+| **R 의미** | Rule (룰 컴포넌트) |
+| **D 의미** | Storage **D**ensity (저장률) |
+| **감시 축** | 공간 — "저장공간이 막혔나?" |
+| **보는 컬럼 수** | **1개 + 보조 1개** |
+| **메인 컬럼** | `M16HUB.STRATE.ALL.FABSTORAGERATIO` (FAB 내 저장장치 STK+ZFS 저장율 %, Down 장비 제외, Reserved 포함) |
+| **보조 컬럼** | `M14B.QUE.ALL.7F_TO_HUB_JOB_ALT` (7F→HUB ALT — R-D 보조 검증) |
+| **트리거 (rd_trig)** | FABSTORAGERATIO ≥ **25%** |
+| **잡는 것** | STK / ZFS 저장공간이 차서 큐가 빠질 곳이 없는 상황 |
+| **대표 사례** | **5/7 7시 SFA 정체** (저장공간 가득) |
+| **코드 위치** | `hubroom_predictor.py:170, 176` (fabstorage_ratio, m14b_7f_to_hub_alt 읽기) |
+
+#### 룰 요약 한눈에
+
+| 룰 | 약자 풀이 | 컬럼 수 | 감시 축 | 핵심 임계값 |
+|---|---|---|---|---|
+| **R-A'** | Rule - AvgTotalTime' | 1개 (T1MIN) | 시간 | ≥9분 (또는 ≥6분 지속) |
+| **R-B**  | Rule - Bridge Queue | 1개 (M14→M16 큐) | 양 | +100/30분 (또는 +30/10분) |
+| **R-C'** | Rule - Congestion at lifters' | 10개 (LIFTER 10대) | 위치 | 역증가 ≥2 + 추세감소 |
+| **R-D**  | Rule - storage Density | 1+1개 (FAB저장률) | 공간 | ≥25% |
+
+#### S3 데드락 확정 공식 (재정리)
+
+```
+S3 = R-A' AND R-C' AND (R-B OR R-D)
+   = 시간(느림) AND 위치(쏠림) AND (양 폭증 OR 공간 막힘)
+
+   └─ "느려졌고" AND "한 쪽으로 몰렸고" AND ("큐 폭증" 또는 "공간 막힘")
+       = 진짜 데드락
+```
+
+세 가지 축이 동시에 켜져야 사건 인정. 한 축만 켜지면 그냥 S1/S2 경고로만 남고 사건 기록 안 함 → **위양성 차단**.
+
+### 2.8 출력: `predict_tobe/YYYYMMDD_발동이벤트.csv`
 
 | 컬럼 | 내용 |
 |---|---|
