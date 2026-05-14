@@ -1,0 +1,9 @@
+[Modelling > Experiment] : 실험 결과 확인하기
+
+
+Experiment는 MLFlow의 실험 결과 화면으로 별도 탭으로 접속 합니다.
+
+아래와 같이 MLFlow 화면에서 실험 결과를 확인할 수 있습니다.
+
+
+

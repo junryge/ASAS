@@ -1,0 +1,46 @@
+[Serving > Inference Service] : Inference 하기 (Single Inference Service)
+
+
+
+1) "CREATE" 버튼을 눌러 Ensemble Inference를 생성을 합니다.
+
+    (2025. 09. 23. 현재 Ensemble 만 지원중. 추후 Sequence 등 지원 예정)
+
+
+
+
+2) "SELECT" 버튼을 눌러 Ensemble 모델을 생성을 위한 선택 화면을 띄웁니다.
+
+
+
+
+
+3) Single Inference Service 중 Ensemble이 필요한 서비스들을 클릭 후 "APPLY" 버튼을 누릅니다.
+
+
+
+4) "CREATE" 버튼을 눌러 Ensemble Service를 생성 합니다.
+
+
+
+
+
+5) 환경을 구성하는 "Deploy Status"와 서비스 상태인 "Status" 가 각각 "SUCCESS"와 "READY" 가 되면 Ensemble Inference Service를 활용 가능 하며, 서비스 환경 구성하는데 사내 네트워크 상태에 따라 다르지만 대략 5분~15분 정도 소요 됩니다.
+
+
+
+
+
+6) Ensemble Inference를 Double Click 하여 상세 정보를 확인합니다.
+
+
+
+7) 상세 페이지에서 Inference 가능한 "URL" 정보, Trace View 확인 가능한 "전체보기", "Log" 정보 등을 확인 할 수 있습니다.
+
+
+
+8) "상세보기" 를 클릭하면 아래와 같이, 어떤 Inference 서비스들이 Group으로 Ensemble 되어 있는지 확인이 가능 합니다.
+
+
+
+9) "URL"을 Copy 하여 아래와 같이 Inference Test 후 결과를 볼 수 있습니다.
