@@ -64,6 +64,9 @@ def predict_all(input_csv, model_path, out_path):
             'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
             'm14_htstop', 'm14_congested', 'm14_abnormal',
             'm16pkt_aotransdelay', 'm16wt_aotransdelay',
+            # ★ v3.1 신규 5개 컬럼 (학습된 70개 피처와 호환)
+            'hub_storage_util', 'm14_inflow',
+            'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
         )})
 
         # 윈도우 31개 미만이면 룰 평가 불가
@@ -91,6 +94,10 @@ def predict_all(input_csv, model_path, out_path):
             'rule_s1': int(s1),
             'rule_s2': int(s2),
             'rule_s3': int(s3),
+            # ★ v3.1 위험도 평가
+            'risk_score': ctx.get('risk_score', 0),
+            'risk_level': ctx.get('risk_level', '정상'),
+            'risk_factors': ctx.get('risk_factors', ''),
         })
 
     if not rows_out:
@@ -101,6 +108,7 @@ def predict_all(input_csv, model_path, out_path):
         'timestamp', 'prediction_for',
         'ml_score', 'ml_level', 'ml_level_kr',
         'rule_s1', 'rule_s2', 'rule_s3',
+        'risk_score', 'risk_level', 'risk_factors',
     ]
     with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
