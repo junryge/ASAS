@@ -76,6 +76,11 @@ TH_RC_REVERSE = 2
 TH_RD_FABSTORAGE = 25.0
 TH_RD_7F_HUB_ALT = 20
 
+# ★ v3.1 신규 룰 임계값 (보조 신호 — S3 로직 불변)
+TH_RE_HUB_STORAGE_LOW = 60.0    # R-E: HUB 저장 가용 ≤ 60%
+TH_RF_INFLOW_TOTAL    = 700     # R-F: HUB 전체 인플로 ≥ 700개
+TH_RF_INFLOW_SPIKE    = 1.5     # R-F-fast: 10분 +50% 폭증
+
 INCIDENT_END_GAP_MIN = 10
 PREDICT_LOOKBACK_MIN = 60
 
@@ -179,6 +184,12 @@ def iter_star_rows(filepath):
                         'm14_abnormal':      safe_int(row.get('M14.OHT.STATECNT.ABNORMAL')),
                         'm16pkt_aotransdelay': safe_float(row.get('M16_PKT.QUE.ABN.AOTRANSDELAY')),
                         'm16wt_aotransdelay':  safe_float(row.get('M16_WT.QUE.ABN.AOTRANSDELAY')),
+                        # ★ v3.1 신규 5개 컬럼
+                        'hub_storage_util':  safe_float(row.get(C('.STRATE.STB.3F_STORAGE_UTIL'))),
+                        'm14_inflow':        safe_int(row.get('M14.QUE.ALL.3F_TO_HUB_JOB')),
+                        'm16a_2f_inflow':    safe_int(row.get('M16A.QUE.ALL.2F_TO_HUB_JOB')),
+                        'm16a_6f_inflow':    safe_int(row.get('M16A.QUE.ALL.6F_TO_HUB_JOB')),
+                        'm16b_10f_inflow':   safe_int(row.get('M16B.QUE.ALL.10F_TO_HUB_JOB')),
                     }
                     star['lft_list'] = {k: v for k, v in star['lft_list'].items() if v is not None}
                     yield t, star, prefix
@@ -236,6 +247,13 @@ def evaluate_rules(t1_window, m14_window, lft_window, v3_window=None):
     rd_fabstorage = 0
     rd_7f_alt = 0
     rd_trig = False
+    # ★ v3.1 신규 변수
+    hub_storage_util = None
+    inflow_total = 0
+    inflow_total_10ago = 0
+    re_trig = False
+    rf_trig = False
+    rf_fast = False
     if v3_window:
         latest = v3_window[-1] if v3_window else {}
         if latest:
@@ -243,9 +261,78 @@ def evaluate_rules(t1_window, m14_window, lft_window, v3_window=None):
             rd_7f_alt = latest.get('m14b_7f_to_hub_alt') or 0
             rd_trig = rd_fabstorage >= TH_RD_FABSTORAGE
 
+            # R-E: HUB Storage 가용공간 부족
+            hub_storage_util = latest.get('hub_storage_util')
+            if hub_storage_util is not None:
+                re_trig = hub_storage_util <= TH_RE_HUB_STORAGE_LOW
+
+            # R-F: 인플로 통합
+            def _sum_inflow(d):
+                if not d: return 0
+                return ((d.get('m14_inflow') or 0)
+                        + (d.get('m16a_2f_inflow') or 0)
+                        + (d.get('m16a_6f_inflow') or 0)
+                        + (d.get('m16b_10f_inflow') or 0))
+            inflow_total = _sum_inflow(latest)
+            rf_trig = inflow_total >= TH_RF_INFLOW_TOTAL
+
+            if len(v3_window) >= 11:
+                prev = v3_window[-11] if v3_window[-11] else {}
+                inflow_total_10ago = _sum_inflow(prev)
+                if inflow_total_10ago > 100:
+                    rf_fast = inflow_total >= inflow_total_10ago * TH_RF_INFLOW_SPIKE
+
     s1 = (ra_count >= 2) or ra_sustained
     s2 = rb_trig or rb_fast
+    # ★ S3 = 불변 (검증된 로직) — R-E/R-F 는 ctx 출력만, S3 영향 없음
     s3 = ra_trig and rc_trig and (rb_trig or rd_trig)
+
+    # ============================================================
+    # ★★★ 위험도 점수 (Risk Score) — "S3 로 갈 진짜 위험인가"
+    # S1/S2 시점에도 0~170점 부여. 신호 동시 발동 많을수록 점수↑
+    # ============================================================
+    risk_score = 0
+    risk_factors = []
+
+    if ra_sustained:
+        risk_score += 25; risk_factors.append('ra_sustained')
+    if ra_count >= 2:
+        risk_score += 20; risk_factors.append(f'ra_count={ra_count}')
+    if ra_value and ra_value >= 7.5:
+        risk_score += 15; risk_factors.append(f'ra={ra_value:.1f}분')
+
+    if rb_fast:
+        risk_score += 25; risk_factors.append('rb_fast')
+    if rb_trig:
+        risk_score += 15; risk_factors.append(f'rb=+{rb_diff}')
+
+    if rc_trig:
+        risk_score += 20; risk_factors.append(f'rc_rev={rev_count}')
+    elif rev_count >= 3:
+        risk_score += 10; risk_factors.append(f'rev={rev_count}(준위험)')
+
+    if rd_trig:
+        risk_score += 25; risk_factors.append(f'rd={rd_fabstorage:.0f}%')
+    elif rd_fabstorage >= 15:
+        risk_score += 10; risk_factors.append(f'rd={rd_fabstorage:.0f}%(준위험)')
+
+    if re_trig:
+        risk_score += 15; risk_factors.append('re(HUB저장부족)')
+    if rf_trig:
+        risk_score += 10; risk_factors.append(f'rf={inflow_total}(인플로↑)')
+    if rf_fast:
+        risk_score += 10; risk_factors.append('rf_fast')
+
+    if risk_score >= 70:
+        risk_level = '매우위험'
+    elif risk_score >= 45:
+        risk_level = '위험'
+    elif risk_score >= 25:
+        risk_level = '주의'
+    elif risk_score > 0:
+        risk_level = '관심'
+    else:
+        risk_level = '정상'
 
     ctx = {
         'ra_count': ra_count, 'ra_value': ra_value, 'ra_sustained': ra_sustained,
@@ -255,6 +342,13 @@ def evaluate_rules(t1_window, m14_window, lft_window, v3_window=None):
         'rc_trend': rc_trend, 'rc_trig': rc_trig,
         'rev_count': rev_count, 'rev_lids': rev_lids,
         'rd_fabstorage': rd_fabstorage, 'rd_7f_alt': rd_7f_alt, 'rd_trig': rd_trig,
+        # ★ v3.1 신규
+        'hub_storage_util': hub_storage_util,
+        'inflow_total': inflow_total, 'inflow_total_10ago': inflow_total_10ago,
+        're_trig': re_trig, 'rf_trig': rf_trig, 'rf_fast': rf_fast,
+        # ★★★ 위험도 평가
+        'risk_score': risk_score, 'risk_level': risk_level,
+        'risk_factors': ';'.join(risk_factors),
     }
     return s1, s2, s3, ctx
 
@@ -310,6 +404,16 @@ class IncidentTracker:
             'rd_fabstorage': ctx.get('rd_fabstorage', 0),
             'rd_7f_alt': ctx.get('rd_7f_alt', 0),
             'rd_trig': bool(ctx.get('rd_trig')),
+            # ★ v3.1 신규
+            'hub_storage_util': ctx.get('hub_storage_util'),
+            'inflow_total': ctx.get('inflow_total', 0),
+            're_trig': bool(ctx.get('re_trig')),
+            'rf_trig': bool(ctx.get('rf_trig')),
+            'rf_fast': bool(ctx.get('rf_fast')),
+            # ★★★ 위험도 평가
+            'risk_score': ctx.get('risk_score', 0),
+            'risk_level': ctx.get('risk_level', '정상'),
+            'risk_factors': ctx.get('risk_factors', ''),
         })
         self.last_stage = stage
 
@@ -461,6 +565,10 @@ SRC_COL_RC_TPL = 'LFT.{lid}.TOTAL_CURRENTQCNT'
 EVENT_FIELDS = [
     'file', 'datetime', 'date', 'time',
     'stage', 'stage_name', 'prev_stage', 'transition', 'reason', 'relation',
+    # ★ v3.1 신규 보조 신호
+    'hub_storage_util', 'inflow_total', 're_trig', 'rf_trig', 'rf_fast',
+    # ★★★ 위험도 평가
+    'risk_score', 'risk_level', 'risk_factors',
 ]
 INCIDENT_FIELDS = [
     'file', 'date', 'severity', 'predict_time', 'start_time', 'end_time',
@@ -523,14 +631,21 @@ def event_to_row(ev, file_name):
     d_str = ev['time'].strftime('%Y-%m-%d')
     hm = ev['time'].strftime('%H:%M')
     stage_name = STAGE_LABEL.get(ev['stage'], '')
+    hub_util = ev.get('hub_storage_util')
+    hub_util_s = f"{hub_util:.1f}" if hub_util is not None else ''
+    common_tail = [
+        hub_util_s, ev.get('inflow_total', 0) or 0,
+        int(bool(ev.get('re_trig'))), int(bool(ev.get('rf_trig'))), int(bool(ev.get('rf_fast'))),
+        ev.get('risk_score', 0), ev.get('risk_level', '정상'), ev.get('risk_factors', ''),
+    ]
     if ev['stage'] == 0:
-        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '', '']
+        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '', ''] + common_tail
     transition = f"{ev['prev_stage']}→{ev['stage']}" if ev.get('is_transition') else ''
     relation = build_event_relation(ev)
     return [
         file_name, t_str, d_str, hm,
         ev['stage'], stage_name, ev['prev_stage'], transition, ev['reason'], relation,
-    ]
+    ] + common_tail
 
 
 def append_rows_csv(path, fields, rows):
@@ -598,6 +713,9 @@ class Predictor:
                     'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
                     'm14_htstop', 'm14_congested', 'm14_abnormal',
                     'm16pkt_aotransdelay', 'm16wt_aotransdelay',
+                    # ★ v3.1 신규 5개 컬럼
+                    'hub_storage_util', 'm14_inflow',
+                    'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
                 )})
                 self.last_t = t
                 new_rows += 1
