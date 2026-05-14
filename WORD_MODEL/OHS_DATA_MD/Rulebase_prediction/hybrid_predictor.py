@@ -149,29 +149,39 @@ RAW_COLS_V3 = [
     'm14_htstop', 'm14_congested', 'm14_abnormal',
     'm16pkt_aotransdelay', 'm16wt_aotransdelay',
 ]
+# ★ v3.1 신규 raw 컬럼 (수집기/predictions.csv 에서 forward)
+RAW_COLS_V31 = [
+    'hub_storage_util', 'm14_inflow',
+    'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
+]
 CTX_COLS = [
     'ra_value', 'ra_count', 'ra_sustained', 'ra_trig',
     'rb_diff', 'rb_diff_10', 'rb_fast', 'rb_trig',
     'rc_trend', 'rev_count', 'rev_lids', 'rc_trig',
     'rd_fabstorage', 'rd_7f_alt', 'rd_trig',
+    # ★ v3.1 신규 ctx
+    're_trig', 'rf_trig', 'rf_fast', 'inflow_total',
 ]
 RULE_EVENT_COLS = ['stage', 'stage_name', 'prev_stage', 'transition',
                    'rule_reason', 'rule_relation']
+# ★★★ 위험도 평가 (룰베이스 발동이벤트.csv 에서 forward)
+RISK_COLS = ['risk_score', 'risk_level', 'risk_factors']
 
-# 최종 hybrid CSV 컬럼 — 4블록 (시각 / 원천 / 룰 / ML / 융합)
+# 최종 hybrid CSV 컬럼 — 5블록 (시각 / 원천 / 룰 / 위험도 / ML / 융합)
 OUT_COLUMNS = (
     ['datetime', 'prediction_for']
-    + RAW_COLS_TOP + RAW_COLS_LFT + RAW_COLS_V3
+    + RAW_COLS_TOP + RAW_COLS_LFT + RAW_COLS_V3 + RAW_COLS_V31
     + ['rule_s1', 'rule_s2', 'rule_s3']
     + CTX_COLS
     + RULE_EVENT_COLS
+    + RISK_COLS
     + ['ml_score', 'ml_level', 'ml_level_kr']
     + ['final_level', 'agreement', 'direction', 'final_reason']
 )
 
 # ml_predict_runner.py predictions.csv 에서 그대로 가져올 컬럼들
 PASSTHROUGH_FROM_ML_CSV = (
-    RAW_COLS_TOP + RAW_COLS_LFT + RAW_COLS_V3 + CTX_COLS
+    RAW_COLS_TOP + RAW_COLS_LFT + RAW_COLS_V3 + RAW_COLS_V31 + CTX_COLS
 )
 
 
@@ -213,6 +223,10 @@ def _load_rule_events(rule_csv):
             'transition':   r.get('transition', ''),
             'rule_reason':  r.get('reason', ''),
             'rule_relation': r.get('relation', ''),
+            # ★ 위험도 평가 (발동이벤트.csv 에서 forward)
+            'risk_score':   r.get('risk_score', ''),
+            'risk_level':   r.get('risk_level', ''),
+            'risk_factors': r.get('risk_factors', ''),
         }
     return out
 
@@ -261,6 +275,13 @@ def _process_ml_csv(ml_csv, rule_csv, out_csv, last_t, log_fn=None):
         rule_key = dt.strftime('%Y-%m-%d %H:%M')
         rule_ev = rule_idx.get(rule_key, {})
 
+        # ★ 위험도 점수도 final_reason 에 포함 (운영자 가독성)
+        risk_score_s = row.get('risk_score') or rule_ev.get('risk_score', '')
+        risk_level_s = row.get('risk_level') or rule_ev.get('risk_level', '')
+        risk_factors_s = row.get('risk_factors') or rule_ev.get('risk_factors', '')
+        if risk_level_s and risk_level_s not in ('정상', ''):
+            why = f'{why} | risk={risk_score_s}({risk_level_s})'
+
         out_row = {
             'datetime':       row.get('datetime', ''),
             'prediction_for': row.get('prediction_for', ''),
@@ -281,6 +302,10 @@ def _process_ml_csv(ml_csv, rule_csv, out_csv, last_t, log_fn=None):
         # 룰베이스 발동이벤트.csv 의 stage/transition/reason/relation
         for c in RULE_EVENT_COLS:
             out_row[c] = rule_ev.get(c, '')
+        # ★ 위험도 평가 (predictions.csv 우선, 없으면 발동이벤트.csv)
+        out_row['risk_score']   = risk_score_s
+        out_row['risk_level']   = risk_level_s
+        out_row['risk_factors'] = risk_factors_s
 
         _append_hybrid(out_csv, out_row)
         written += 1
@@ -288,7 +313,7 @@ def _process_ml_csv(ml_csv, rule_csv, out_csv, last_t, log_fn=None):
 
         # 경보 이상만 콘솔 로그
         if log_fn and level in ('위험-예측', '위험-확정', '경보'):
-            log_fn(f'  [{dt.strftime("%H:%M")}] {level} | {agreement} | {direction} | {why}')
+            log_fn(f'  [{dt.strftime("%H:%M")}] {level} | {agreement} | {direction} | risk={risk_score_s}({risk_level_s}) | {why}')
 
     return new_last_t, written
 
