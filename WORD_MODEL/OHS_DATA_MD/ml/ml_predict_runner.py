@@ -82,11 +82,20 @@ RAW_COLS_V3 = [
     'm14_htstop', 'm14_congested', 'm14_abnormal',
     'm16pkt_aotransdelay', 'm16wt_aotransdelay',
 ]
+# ★ v3.1 신규 raw 컬럼
+RAW_COLS_V31 = [
+    'hub_storage_util', 'm14_inflow',
+    'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
+]
 CTX_COLS = [
     'ra_value', 'ra_count', 'ra_sustained', 'ra_trig',
     'rb_diff', 'rb_diff_10', 'rb_fast', 'rb_trig',
     'rc_trend', 'rev_count', 'rev_lids', 'rc_trig',
     'rd_fabstorage', 'rd_7f_alt', 'rd_trig',
+    # ★ v3.1 신규 ctx
+    're_trig', 'rf_trig', 'rf_fast', 'inflow_total',
+    # ★★★ 위험도 평가
+    'risk_score', 'risk_level', 'risk_factors',
 ]
 
 OUT_HEADER = (
@@ -94,6 +103,7 @@ OUT_HEADER = (
     + RAW_COLS_TOP
     + [f'lft_{lid}' for lid in LIFTER_IDS]
     + RAW_COLS_V3
+    + RAW_COLS_V31
     + ['rule_s1', 'rule_s2', 'rule_s3']
     + CTX_COLS
     + ['ml_score', 'ml_level', 'ml_level_kr']
@@ -129,6 +139,7 @@ def _append_prediction(out_dir, t, pred_for, score, level, level_kr,
     row += [_fmt(star.get(c)) for c in RAW_COLS_TOP]
     row += [_fmt(lft_list.get(lid)) for lid in LIFTER_IDS]
     row += [_fmt(star.get(c)) for c in RAW_COLS_V3]
+    row += [_fmt(star.get(c)) for c in RAW_COLS_V31]  # ★ v3.1
     row += [int(rule_s1), int(rule_s2), int(rule_s3)]
     row += [_fmt(ctx.get(c)) for c in CTX_COLS]
     row += [f'{score:.4f}', level, level_kr]
@@ -171,6 +182,9 @@ def _process_csv_once(input_csv, ml, last_t, log_fn=None):
             'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
             'm14_htstop', 'm14_congested', 'm14_abnormal',
             'm16pkt_aotransdelay', 'm16wt_aotransdelay',
+            # ★ v3.1 신규 5개 컬럼
+            'hub_storage_util', 'm14_inflow',
+            'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
         )})
 
         # 이미 처리한 시각은 출력 스킵 (윈도우는 채워둠)

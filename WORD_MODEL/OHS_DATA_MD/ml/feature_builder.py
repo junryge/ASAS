@@ -31,12 +31,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from importlib import import_module
 import importlib.util
 
-# 3DO_PRETIME.py (구 이름: 3단계_룰베이스_사건단위.py) 위치 자동 탐색
-# (같은 폴더 → 상위 폴더 → 현재 작업 디렉터리 순서, 신/구 이름 모두 시도)
+# 룰 엔진 파일 위치 자동 탐색 (운영본 hubroom_predictor.py 우선)
+# (같은 폴더 → 상위 폴더 → Rulebase_prediction 폴더 → 현재 작업 디렉터리)
 _this_dir = os.path.dirname(os.path.abspath(__file__))
-_NAMES = ['3DO_PRETIME.py', '3단계_룰베이스_사건단위.py']  # 신 이름 우선, 구 이름은 호환용
+_NAMES = ['hubroom_predictor.py', '3DO_PRETIME.py', '3단계_룰베이스_사건단위.py']  # 운영본 우선
 _BASE_DIRS = [_this_dir,
               os.path.join(_this_dir, '..'),
+              os.path.join(_this_dir, '..', 'Rulebase_prediction'),
+              os.path.join(_this_dir, '..', '..', 'Rulebase_prediction'),
               os.getcwd(),
               os.path.join(os.getcwd(), '..')]
 _candidates = [os.path.join(b, n) for b in _BASE_DIRS for n in _NAMES]
@@ -112,6 +114,15 @@ def build_features(t1_window, m14_window, lft_window, v3_window, rule_ctx):
     f['m14b_4abld122']      = _v3_field(v3_window, 'm14b_4abld122')
     f['m14b_7f_to_hub']     = _v3_field(v3_window, 'm14b_7f_to_hub')
     f['m14b_7f_to_hub_alt'] = _v3_field(v3_window, 'm14b_7f_to_hub_alt')
+    # ★ v3.1 신규 현재값
+    f['hub_storage_util']   = _v3_field(v3_window, 'hub_storage_util')
+    f['m14_inflow']         = _v3_field(v3_window, 'm14_inflow')
+    f['m16a_2f_inflow']     = _v3_field(v3_window, 'm16a_2f_inflow')
+    f['m16a_6f_inflow']     = _v3_field(v3_window, 'm16a_6f_inflow')
+    f['m16b_10f_inflow']    = _v3_field(v3_window, 'm16b_10f_inflow')
+    f['inflow_total_now']   = (f['m14_inflow'] + f['m16a_2f_inflow']
+                               + f['m16a_6f_inflow'] + f['m16b_10f_inflow']
+                               + _v3_field(v3_window, 'm14b_7f_to_hub'))
 
     # 리프터 합/std (현재)
     lft_now = lft_window[-1] if lft_window else {}
@@ -157,6 +168,32 @@ def build_features(t1_window, m14_window, lft_window, v3_window, rule_ctx):
     abld122_30 = _v3_series(v3_window, 'm14b_4abld122', 31)
     f['m14b_4abld122_delta_30m'] = (abld122_30[-1] - abld122_30[0]) if len(abld122_30) >= 2 else 0
 
+    # ★ v3.1 신규 변화율 피처 (가장 가치 있는 시그널)
+    hub_st_30 = _v3_series(v3_window, 'hub_storage_util', 31)
+    f['hub_storage_max_30m']   = max(hub_st_30) if hub_st_30 else 0
+    f['hub_storage_min_30m']   = min(hub_st_30) if hub_st_30 else 0
+    f['hub_storage_delta_30m'] = (hub_st_30[-1] - hub_st_30[0]) if len(hub_st_30) >= 2 else 0
+
+    # 인플로 통합 변화율
+    m14_in_30 = _v3_series(v3_window, 'm14_inflow', 31)
+    f['m14_inflow_delta_30m']   = (m14_in_30[-1] - m14_in_30[0]) if len(m14_in_30) >= 2 else 0
+    m14_in_10 = _v3_series(v3_window, 'm14_inflow', 11)
+    f['m14_inflow_delta_10m']   = (m14_in_10[-1] - m14_in_10[0]) if len(m14_in_10) >= 2 else 0
+
+    # 인플로 합계 시계열 (5개 합) — 10분 변화 / 30분 변화
+    def _inflow_sum_at(idx):
+        if not v3_window or len(v3_window) <= abs(idx):
+            return 0
+        d = list(v3_window)[idx]
+        return ((d.get('m14_inflow') or 0) + (d.get('m16a_2f_inflow') or 0)
+                + (d.get('m16a_6f_inflow') or 0) + (d.get('m16b_10f_inflow') or 0)
+                + (d.get('m14b_7f_to_hub') or 0))
+    inflow_now = _inflow_sum_at(-1)
+    inflow_10 = _inflow_sum_at(-11) if len(v3_window) >= 11 else inflow_now
+    inflow_30 = _inflow_sum_at(-31) if len(v3_window) >= 31 else inflow_now
+    f['inflow_total_delta_10m'] = inflow_now - inflow_10
+    f['inflow_total_delta_30m'] = inflow_now - inflow_30
+
     # ──────────────────── 4. 가속도 (변화의 변화) ────────────────────
     if len(t1_list) >= 11:
         d1 = (t1_list[-1] or 0) - (t1_list[-6] or 0)
@@ -186,6 +223,13 @@ def build_features(t1_window, m14_window, lft_window, v3_window, rule_ctx):
     f['rule_rc_trig']       = int(rule_ctx.get('rc_trig', False))
     f['rule_rd_fabstorage'] = rule_ctx.get('rd_fabstorage', 0)
     f['rule_rd_trig']       = int(rule_ctx.get('rd_trig', False))
+    # ★ v3.1 신규 룰 컨텍스트
+    f['rule_re_trig']       = int(rule_ctx.get('re_trig', False))
+    f['rule_rf_trig']       = int(rule_ctx.get('rf_trig', False))
+    f['rule_rf_fast']       = int(rule_ctx.get('rf_fast', False))
+    f['rule_inflow_total']  = rule_ctx.get('inflow_total', 0)
+    # ★★★ 위험도 점수 — 룰베이스 종합 평가 (강한 ML 피처)
+    f['risk_score']         = rule_ctx.get('risk_score', 0)
 
     # ──────────────────── 6. 조합 (interaction) ────────────────────
     f['1min_x_fabstorage']   = f['1min_now'] * f['fabstorage_now']
@@ -193,6 +237,10 @@ def build_features(t1_window, m14_window, lft_window, v3_window, rule_ctx):
     f['m14_x_fabstorage']    = f['m14_now'] * f['fabstorage_now']
     f['m14b_util_x_fab']     = f['m14b_oht_util'] * f['fabstorage_now']
     f['fab_x_revcount']      = f['fabstorage_now'] * f['rule_rev_count']
+    # ★ v3.1 신규 조합
+    f['1min_x_inflow']       = f['1min_now'] * f['inflow_total_now']
+    f['fab_x_hub_storage']   = f['fabstorage_now'] * (100 - f['hub_storage_util'])  # 저장압박
+    f['risk_x_inflow']       = f['risk_score'] * f['inflow_total_now']
 
     return f
 
@@ -216,6 +264,9 @@ def process_csv(csv_path, out_path):
             'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
             'm14_htstop', 'm14_congested', 'm14_abnormal',
             'm16pkt_aotransdelay', 'm16wt_aotransdelay',
+            # ★ v3.1 신규 5개 컬럼
+            'hub_storage_util', 'm14_inflow',
+            'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
         )})
 
         # 윈도우 31개 미만이면 룰 평가 보류
