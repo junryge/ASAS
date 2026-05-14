@@ -258,6 +258,59 @@ def evaluate_rules(t1_window, m14_window, lft_window, v3_window=None):
     # ★ S3 = 불변 (검증된 로직) — R-E/R-F 는 ctx 출력만, S3 영향 없음
     s3 = ra_trig and rc_trig and (rb_trig or rd_trig)
 
+    # ============================================================
+    # ★★★ 위험도 점수 (Risk Score) — "S3 로 갈 진짜 위험인가"
+    # S1/S2 시점에도 0~100점 부여. 신호 동시 발동 많을수록 점수↑
+    # ============================================================
+    risk_score = 0
+    risk_factors = []
+
+    # 시간축 (R-A')
+    if ra_sustained:
+        risk_score += 25; risk_factors.append('ra_sustained')
+    if ra_count >= 2:
+        risk_score += 20; risk_factors.append(f'ra_count={ra_count}')
+    if ra_value and ra_value >= 7.5:  # 9분 임계 직전 (S3 임박)
+        risk_score += 15; risk_factors.append(f'ra={ra_value:.1f}분')
+
+    # 양축 (R-B)
+    if rb_fast:
+        risk_score += 25; risk_factors.append('rb_fast')
+    if rb_trig:
+        risk_score += 15; risk_factors.append(f'rb=+{rb_diff}')
+
+    # 위치축 (R-C')
+    if rc_trig:
+        risk_score += 20; risk_factors.append(f'rc_rev={rev_count}')
+    elif rev_count >= 3:  # 트리거 미만이지만 역증가 많음
+        risk_score += 10; risk_factors.append(f'rev={rev_count}(준위험)')
+
+    # 공간축 (R-D)
+    if rd_trig:
+        risk_score += 25; risk_factors.append(f'rd={rd_fabstorage:.0f}%')
+    elif rd_fabstorage >= 15:  # 임계 직전 (25% 임계 60%)
+        risk_score += 10; risk_factors.append(f'rd={rd_fabstorage:.0f}%(준위험)')
+
+    # ★ v3.1 신규 신호
+    if re_trig:
+        risk_score += 15; risk_factors.append('re(HUB저장부족)')
+    if rf_trig:
+        risk_score += 10; risk_factors.append(f'rf={inflow_total}(인플로↑)')
+    if rf_fast:
+        risk_score += 10; risk_factors.append('rf_fast')
+
+    # 위험도 레벨
+    if risk_score >= 70:
+        risk_level = '매우위험'   # 90% 이상 S3 진행
+    elif risk_score >= 45:
+        risk_level = '위험'       # 60% 이상 S3 진행 가능
+    elif risk_score >= 25:
+        risk_level = '주의'       # 30% 이하 S3 진행
+    elif risk_score > 0:
+        risk_level = '관심'
+    else:
+        risk_level = '정상'
+
     ctx = {
         'ra_count': ra_count, 'ra_value': ra_value, 'ra_sustained': ra_sustained,
         'ra_trig': ra_trig,
@@ -270,6 +323,9 @@ def evaluate_rules(t1_window, m14_window, lft_window, v3_window=None):
         'hub_storage_util': hub_storage_util,
         'inflow_total': inflow_total, 'inflow_total_10ago': inflow_total_10ago,
         're_trig': re_trig, 'rf_trig': rf_trig, 'rf_fast': rf_fast,
+        # ★★★ 위험도 평가
+        'risk_score': risk_score, 'risk_level': risk_level,
+        'risk_factors': ';'.join(risk_factors),
     }
     return s1, s2, s3, ctx
 
@@ -331,6 +387,10 @@ class IncidentTracker:
             're_trig': bool(ctx.get('re_trig')),
             'rf_trig': bool(ctx.get('rf_trig')),
             'rf_fast': bool(ctx.get('rf_fast')),
+            # ★★★ 위험도 평가
+            'risk_score': ctx.get('risk_score', 0),
+            'risk_level': ctx.get('risk_level', '정상'),
+            'risk_factors': ctx.get('risk_factors', ''),
         })
         self.last_stage = stage
 
@@ -416,6 +476,8 @@ EVENT_FIELDS = [
     'stage', 'stage_name', 'prev_stage', 'transition', 'reason', 'relation',
     # ★ v3.1 신규 보조 신호
     'hub_storage_util', 'inflow_total', 're_trig', 'rf_trig', 'rf_fast',
+    # ★★★ 위험도 평가
+    'risk_score', 'risk_level', 'risk_factors',
 ]
 INCIDENT_FIELDS = [
     'file', 'date', 'severity', 'predict_time', 'start_time', 'end_time',
@@ -515,15 +577,19 @@ def event_to_row(ev, file_name):
     stage_name = STAGE_LABEL.get(ev['stage'], '')
     hub_util = ev.get('hub_storage_util')
     hub_util_s = f"{hub_util:.1f}" if hub_util is not None else ''
+    risk_score = ev.get('risk_score', 0)
+    risk_level = ev.get('risk_level', '정상')
+    risk_factors = ev.get('risk_factors', '')
+    common_tail = [
+        hub_util_s, ev.get('inflow_total', 0) or 0,
+        int(bool(ev.get('re_trig'))), int(bool(ev.get('rf_trig'))), int(bool(ev.get('rf_fast'))),
+        risk_score, risk_level, risk_factors,
+    ]
     if ev['stage'] == 0:
-        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '', '',
-                hub_util_s, ev.get('inflow_total', 0) or 0,
-                int(bool(ev.get('re_trig'))), int(bool(ev.get('rf_trig'))), int(bool(ev.get('rf_fast')))]
+        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '', ''] + common_tail
     transition = f"{ev['prev_stage']}→{ev['stage']}" if ev.get('is_transition') else ''
     relation = build_event_relation(ev)
-    return [file_name, t_str, d_str, hm, ev['stage'], stage_name, ev['prev_stage'], transition, ev['reason'], relation,
-            hub_util_s, ev.get('inflow_total', 0) or 0,
-            int(bool(ev.get('re_trig'))), int(bool(ev.get('rf_trig'))), int(bool(ev.get('rf_fast')))]
+    return [file_name, t_str, d_str, hm, ev['stage'], stage_name, ev['prev_stage'], transition, ev['reason'], relation] + common_tail
 
 
 def incident_to_row(c, file_name):
