@@ -1,0 +1,12 @@
+﻿No,룰,상수명,현재값,단위,의미,튜닝 가이드,코드 위치
+1,R-A',TH_RA_VALUE,9.0,분,R-A' 메인 임계 (1MIN 평균 반송시간),평소 1MIN 분포의 95~99% 분위 기준,hubroom_predictor.py:70
+2,R-A',TH_RA_SUSTAINED_VALUE,6.0,분,ra_sustained 임계 (5분 윈도우 지속),TH_RA_VALUE x 0.67 정도,hubroom_predictor.py:71
+3,R-A',TH_RA_SUSTAINED_COUNT,3,회,5분 윈도우 안에 6분 초과 지속 발생 횟수,너무 작으면 노이즈가 잡힘 (권장 3 유지),hubroom_predictor.py:72
+4,R-B,TH_RB_DIFF_30,100,개수,R-B 메인 (30분 동안 큐 증가량),정상시 30분간 큐 변화 최대값 + 여유분,hubroom_predictor.py:73
+5,R-B,TH_RB_DIFF_10,30,개수,rb_fast (10분 동안 큐 증가량),TH_RB_DIFF_30 x 0.3,hubroom_predictor.py:74
+6,R-C',TH_RC_REVERSE,2,개,역증가 리프터 최소 개수,1개로 줄이면 위양성 급증 (권장 2 이상),hubroom_predictor.py:75
+7,R-D,TH_RD_FABSTORAGE,25.0,%,R-D 메인 (FAB 저장률),평소 FAB 저장률 + 20% 여유,hubroom_predictor.py:76
+8,R-D,TH_RD_7F_HUB_ALT,20,개수,R-D 보조 (7F→HUB ALT),ML 피처용 - 실제 트리거에 사용 안 함,hubroom_predictor.py:77
+9,사건,INCIDENT_END_GAP_MIN,10,분,사건 종료 판정 - S3 후 OFF 지속 분,짧으면 사건 분리 과다,hubroom_predictor.py:79
+10,사건,PREDICT_LOOKBACK_MIN,60,분,사전 신호 추적 범위,길수록 사전 알람 범위 확대,hubroom_predictor.py:80
+11,윈도우,WINDOW_MIN,90,분,슬라이딩 윈도우 길이,ML 모델 학습 시 일치 필수,hubroom_predictor.py:62
