@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-AWS_IDC_DATA_HIS — M16HUB + M14/M14B/M16_PKT/M16_WT 통합 수집 v3
+AWS_IDC_DATA_HIS — M16HUB + M14/M14B/M16A/M16B/M16_PKT/M16_WT 통합 수집 v3.1
 ================================================================
 - 매 분 00초 동기 호출
 - 윈도우: SYSDATE 기준 과거 WINDOW_MIN 분
-- 컬럼: 60개 IDC + CRT_TM
+- 컬럼: 64개 IDC + CRT_TM (v3 59개 → v3.1 64개)
 - 저장: ./predict/M16A_HUBROOM_PR.csv (덮어쓰기)
+
+v3.1 추가 컬럼 (5개):
+  · M16HUB.STRATE.STB.3F_STORAGE_UTIL      — HUBROOM 저장 사용율
+  · M14.QUE.ALL.3F_TO_HUB_JOB              — M14 3F → HUB 인플로
+  · M16A.QUE.ALL.2F_TO_HUB_JOB             — M16A 2F → HUB 인플로
+  · M16A.QUE.ALL.6F_TO_HUB_JOB             — M16A 6F → HUB 인플로
+  · M16B.QUE.ALL.10F_TO_HUB_JOB            — M16B 10F → HUB 인플로
 """
 
 import os
@@ -82,12 +89,15 @@ IDC_COLUMNS = [
     "M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT",
     "M16HUB.STRATE.STK.STORAGERATIO",
     "M16HUB.STRATE.ALL.FABSTORAGERATIO",
+    "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
     # 32번째는 위에 다 들어감 - 31개. 원본 v3 헤더와 맞춤 (M16HUB 31개)
     # ★★★ M14 STATECNT (4)
     "M14.OHT.STATECNT.HTSTOP",
     "M14.OHT.STATECNT.CONGESTED",
     "M14.OHT.STATECNT.ABNORMAL",
     "M14.OHT.STATECNT.OBSANDBZSTOP",
+    # ★★★ M14 → HUB 인플로 (신규 추가)
+    "M14.QUE.ALL.3F_TO_HUB_JOB",
     # ★★ M14B 트래픽/지연 (6)
     "M14B.QUE.OHT.OHTUTIL",
     "M14B.QUE.OHT.CURRENTOHTQCNT",
@@ -108,6 +118,10 @@ IDC_COLUMNS = [
     "M14B.QUE.OHT.7F_TO_HUB_CMD",
     # ★ M14B Send Fab (1)
     "M14B.LFT.SENDFAB.TO_M16HUB_CURRENTQCNT",
+    # ★★★ M16A / M16B → HUB 인플로 (신규 추가)
+    "M16A.QUE.ALL.2F_TO_HUB_JOB",
+    "M16A.QUE.ALL.6F_TO_HUB_JOB",
+    "M16B.QUE.ALL.10F_TO_HUB_JOB",
     # ★★ M16_PKT 브릿지 (4)
     "M16_PKT.QUE.OHT.OHTUTIL",
     "M16_PKT.QUE.TIME.AVGTOTALTIME1MIN",
