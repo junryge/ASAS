@@ -207,6 +207,30 @@ flowchart LR
 - **부모**: `AbstractEdge`
 - **enum** (L428): `RAIL_DIRECTION { NONE, LEFT, RIGHT }`
 
+#### 2.1.0 RailEdge ↔ 주변 객체 관계도
+
+```mermaid
+flowchart LR
+    RE[RailEdge]
+    FN[fromNodeId<br/>RailNode]
+    TN[toNodeId<br/>RailNode]
+    BJE[branchJoinEdgeId<br/>BranchJoinEdge]
+    ST[stationIdList<br/>Station × N]
+    VH[vhlIdMap<br/>현재 차량 × N]
+    PL[portIdList<br/>Port × N]
+    HID[hidId<br/>HID 그룹]
+    VV[velocity<br/>EWMA 갱신]
+
+    RE -- from --> FN
+    RE -- to --> TN
+    RE -- 속함 --> BJE
+    RE -- 위 --> ST
+    RE -- 현재 위치 --> VH
+    RE -- 연결 포트 --> PL
+    RE -- 인터록 --> HID
+    RE -- 1분 평균 --> VV
+```
+
 #### 2.1.1 필드 (L24–42)
 
 | 필드 | 타입 | 의미 |
@@ -259,6 +283,26 @@ RailEdge(fabId, id, facId, mcpName, fromNodeId, toNodeId, ignoredBatchFlush,
 - `addHistory()` L330 — `hisCnt++` (호출자가 `addVelocity` 후 별도로 누적)
 
 #### 2.1.4 velocity 가 갱신되는 외부 경로
+
+```mermaid
+sequenceDiagram
+    participant OHT as OHT 차량 UDP
+    participant OW as OhtMsgWorker
+    participant LP as Logpresso<br/>FIND_RECENT_VELOCITY
+    participant DS as DataService<br/>(주기 쿼리)
+    participant RE as RailEdge
+
+    Note over OHT,OW: 실시간 경로 1
+    OHT->>OW: VHL_STATE_REPORT (speed)
+    OW->>RE: railEdge.addVelocity(v) (L863)
+    RE->>RE: if hisCnt==0: velocity = v<br/>else: velocity = lastHisWeight × velocity<br/>            + (1 − w) × v
+    OW->>RE: 예측 엣지에도 addVelocity (L890)
+
+    Note over LP,DS: 주기 쿼리 경로 2
+    DS->>LP: FIND_RECENT_VELOCITY (분 단위)
+    LP-->>DS: edgeId, velocity 목록
+    DS->>RE: railEdge.addVelocity(v) (L4473)
+```
 
 - **`DataService.java:4473`**: 주기적으로 `FIND_RECENT_VELOCITY` 쿼리(Logpresso)로 최근 실측 속도를 가져와 `railEdge.addVelocity(velocity)` 호출.
 - **`OhtMsgWorkerRunnable.java:863, 890`**: OHT UDP 메시지에서 차량 속도(speed) 수신 시, 차량이 머문 마지막 RailEdge / 예측 엣지에 `addVelocity()` 누적.
@@ -457,6 +501,34 @@ LongEdge.edgeIdList contains RailEdge.id
 
 ## §3 Node 8종
 
+### 3.0 노드별 역할/구현 인터페이스 매트릭스
+
+```mermaid
+flowchart LR
+    AN[AbstractNode]
+    AN --> RN[RailNode<br/>레일 노드<br/>지나가는 길]
+    AN --> EQ[EqpPortNode<br/>장비 포트]
+    AN --> FI[FioPortNode<br/>FIO 포트]
+    AN --> CN[CnvPortNode<br/>컨베이어 포트]
+    AN --> SP[StkPortNode<br/>스토커 포트]
+    AN --> SR[StkRmNode<br/>스토커 룸]
+    AN --> SS[StkShelfNode<br/>스토커 셸프]
+    AN --> ST[StbNode<br/>STB 노드]
+
+    EQ -.implements.-> CC[CarrierContainable]
+    FI -.implements.-> CC
+    CN -.implements.-> CC
+    SP -.implements.-> CC
+    SS -.implements.-> CC
+    ST -.implements.-> CC
+    SR -.implements.-> CC
+    SR -.implements.-> CT[CarrierTransportable]
+```
+
+`RailNode` 만 Containable/Transportable 둘 다 미구현 (단순 통과 지점).
+`StkRmNode` 만 Transportable 도 함께 구현 (스토커 룸은 command queue 보유).
+
+
 ### 3.1 `RailNode.java` (234 line)
 
 - **요약**: 레일 위의 한 지점(분기점/합류점/일반 통과점). OHT 위치의 기본 좌표.
@@ -597,6 +669,37 @@ LongEdge.edgeIdList contains RailEdge.id
 
 ## §4 기타 — Label, Vhl, Carrier* 인터페이스
 
+### §4.0 Carrier 이동 흐름 (Containable / Transportable 인터페이스)
+
+```mermaid
+flowchart LR
+    subgraph SRC["출발 (Containable)"]
+        EQ1[EqpPortNode<br/>장비 출력]
+    end
+    subgraph MOVE["운반 (Transportable)"]
+        V[Vhl 차량<br/>commandId 보유]
+        SR[StkRmNode<br/>상위 명령 큐]
+    end
+    subgraph DEST["도착 (Containable)"]
+        EQ2[EqpPortNode<br/>장비 입력]
+        SS[StkShelfNode<br/>보관]
+    end
+
+    EQ1 -- "removeCarrierId" --> V
+    V -- "addCarrierId" --> EQ2
+    V -- "addCarrierId" --> SS
+    SR -- "assign command" --> V
+
+    classDef containable fill:#e1f5fe,stroke:#0288d1
+    classDef transportable fill:#fff3e0,stroke:#f57c00
+    class EQ1,EQ2,SS containable
+    class V,SR transportable
+```
+
+`Containable` = "carrier 를 담을 수 있는 슬롯" (포트/셸프/차량 등 어디든 carrier 1개 보유)
+`Transportable` = "command 를 수행해 carrier 를 이동시키는 주체" (Vhl, StkRm)
+
+
 ### 4.1 `CarrierContainable.java` (10 line)
 
 - **요약**: “carrier를 담을 수 있는 객체”의 마커 인터페이스. 노드 7종 + Vhl 이 구현.
@@ -621,6 +724,76 @@ LongEdge.edgeIdList contains RailEdge.id
 - 단순 DTO. 비즈니스 로직 없음.
 
 ### 4.4 `Vhl.java` (536 line) — **차량(Vehicle = OHT)**
+
+#### Vhl 상태 전이 (VHL_STATE / VHL_DET_STATE / VHL_CYCLE / RUN_CYCLE)
+
+```mermaid
+stateDiagram-v2
+    [*] --> STOP
+    STOP --> RUN: UDP MOVING
+    RUN --> STOP: UDP WAIT
+    RUN --> JAM: 전방 점유
+    JAM --> RUN: 해소
+    RUN --> ABNORMAL: errorCode
+    ABNORMAL --> RUN: recovered
+    RUN --> HT_STOP: HID 차단
+    HT_STOP --> RUN: HID 복구
+    RUN --> E84_TIMEOUT: E84 신호
+    RUN --> OBS_BZ_STOP: BZ 차단
+    ABNORMAL --> REMOVING: 정비
+    REMOVING --> [*]
+    RUN --> MANUAL: 수동
+    MANUAL --> RUN: 자동 복귀
+```
+
+#### Vhl 클래스 구성
+
+```mermaid
+classDiagram
+    class Vhl {
+        +ReentrantLock lock
+        +AtomicLong lastMessageSequence
+        +String fabId, id, name, mcpName, eqpId
+        +int type
+        +String commandId, carrierId
+        +VhlUdpState udpState
+        +VhlUdpState lastUdpState
+        +boolean isUpdate, batchFlush
+        +VHL_STATE / VHL_DET_STATE / VHL_CYCLE / RUN_CYCLE
+        +copyCurrentVhlUdpStateToLast()
+        +getHidId()
+        +setHidId(int)
+    }
+    class VhlUdpState {
+        <<inner>>
+        +int hidId = -1
+        +int currentAddress, nextAddress
+        +String railNodeId, nextRailNodeId
+        +String railEdgeId
+        +String destPortId
+        +VHL_STATE state
+        +VHL_DET_STATE detailState
+        +VHL_CYCLE vhlCycle
+        +RUN_CYCLE runCycle
+        +double distance, errorCode
+        +long runDistance, receivedTime
+        +clone()
+    }
+    class CarrierContainable {
+        <<interface>>
+        +getCarrierId()
+        +setCarrierId(String)
+    }
+    class CarrierTransportable {
+        <<interface>>
+        +getCommandId()
+        +setCommandId(String)
+    }
+
+    Vhl ..|> CarrierContainable
+    Vhl ..|> CarrierTransportable
+    Vhl *-- VhlUdpState : udpState + lastUdpState
+```
 
 - **요약**: 한 대의 OHT. Carrier 한 개 보유(Containable) + Command 한 개 수행(Transportable). UDP 상태를 담는 `VhlUdpState` 를 내부에 둠.
 - **부모**: `Object` + `CarrierContainable, CarrierTransportable`
@@ -737,6 +910,41 @@ sequenceDiagram
 7. **Station 빌드**: RawStation → Station 변환, `railEdgeId/offset/portId` 결선. RailEdge.`stationIdList`에 추가.
 8. **HID 빌드**: HID 구역별로 RailEdge 모음 → `setHIDId(hidId)` 일괄 호출 → Logpresso 적재
 9. **velocity 초기 로드**: Logpresso 쿼리 → `addVelocity()` (서비스 시작 시점에 최근 운행 데이터 반영)
+
+### 6.3.b 빌드 시퀀스 다이어그램
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FTP
+    participant LU as LayoutUtil
+    participant MC as Mcp75Config
+    participant DS as DataService
+    participant E as Edge 인스턴스화
+    participant N as Node 인스턴스화
+    participant H as HID 매핑
+    participant DSET as DataSet
+
+    FTP->>LU: layout.zip 다운로드/캐시
+    LU->>MC: XmlUtil 파싱 → 14 Raw Map 채움
+
+    DS->>N: RawPoint → RailNode 생성
+    DS->>N: RawStation → 노드 → Station entity
+    DS->>N: RawJunction → BranchJoinEdge 묶음 노드 분류
+    Note over N: Port Node 8종도 모두 생성<br/>(Eqp/Fio/Cnv/Stk port 등)
+
+    DS->>E: RawEdge → RailEdge/CnvEdge/AgvEdge/...
+    DS->>E: Station / StkRmEdge / TransferEdge<br/>BranchJoinEdge / LongEdge 빌드
+
+    DS->>H: RawHid 순회 → HID 구역의 RailEdge ID 수집
+    H->>E: railEdge.setHIDId(hidId) 일괄
+    H->>DSET: hid2PortMap, railEdge4HidMap 초기화
+
+    DS->>DSET: edgeMap, nodeMap, vhlMap 등 모두 채움
+    DSET-->>DS: setInitialized(true)
+
+    Note over DS,DSET: 이후 listener/process/batch 활성화
+```
 
 ### 6.4 런타임 갱신 경로
 
