@@ -1,0 +1,5 @@
+package com.skhynix.smartatlas.queryformat.type;
+
+public enum ENUM_FABLIST_GROUP {
+	ALARM, TRANSPORT, MATERIAL, RESOURCE, MASTER, JOBCOMPLETED, MASTER_MACHINELIST, MASTER_UNITLIST
+}
