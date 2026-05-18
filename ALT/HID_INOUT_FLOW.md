@@ -258,7 +258,62 @@ String tableName = fabId + "_ATLAS_HID_INOUT";
 boolean success = LogpressoAPI.setInsertTuples(tableName, tuples, 100);
 ```
 - 테이블명 prefix = **워커의 fabId** (`parts[2]`)
-- 배치 크기 100 tuple
+- ⚠ **세 번째 인자 `100` 은 batch size 가 아니라 `timeoutSecond`** — `LogpressoAPI.java:408`
+  ```java
+  public static boolean setInsertTuples(String table, List<Tuple> tuples, int timeoutSecond)
+  ```
+- 한 번의 호출에 `tuples` 전체가 `Logpresso.insert()` 로 그대로 들어감
+- `setInsertTuplesInternal` 이 `TimeoutException` 던지면 **API 내부에서 자동 3회 재시도** (`LogpressoAPI.java:413-419`)
+- 그 외 예외는 `logger.error("insert Error ", e)` 후 `false` 반환 (라인 423-425)
+
+```mermaid
+flowchart TD
+    A[setInsertTuples table, tuples, 100s] --> B[setInsertTuplesInternal]
+    B --> C{성공?}
+    C -- yes --> R1[return true]
+    C -- TimeoutException --> D[로그 + 3회 재시도]
+    D --> E{성공?}
+    E -- yes --> R1
+    E -- no --> R2[return false]
+    C -- 기타 Exception --> F[logger.error + return false]
+```
+
+---
+
+## 3.4 ⚠ HID_INOUT 의 숨겨진 의존성 — VHL_CNT 스위치
+
+`_processHidInout` 은 `previousHidId` 를 `vehicle.getHidId()` 에서 읽지만,
+`vehicle.setHidId(currentHidId)` 호출은 **`_calculatedVhlCnt` 안에서만** 일어남
+(`OhtMsgWorkerRunnable.java:455`). 즉:
+
+```mermaid
+flowchart LR
+    A[메시지 처리] --> B["_processHidInout<br/>(line 311)<br/>previousHidId 읽기"]
+    B --> C["_calculatedVhlCnt<br/>(line 317)<br/>vehicle.setHidId(curr)"]
+```
+
+→ **`VHL_CNT` 스위치가 OFF 이면 `vehicle.setHidId()` 가 절대 호출되지 않음**
+
+`Vhl.java:452` 초기값:
+```java
+public int hidId = -1;   // 위치했던 HID 값 기억
+```
+
+따라서 `VHL_CNT` 가 OFF 이고 `HID_INOUT` 만 ON 인 경우의 동작:
+
+| 메시지 # | `vehicle.getHidId()` | `currentHidId` | `previousHidId != currentHidId` | 결과 |
+|---|---|---|---|---|
+| 1 | -1 (초기값) | 5 | true | `-001:005:...` merge → +1 |
+| 2 | -1 (안 바뀜!) | 5 | true | `-001:005:...` merge → +1 |
+| 3 | -1 | 5 | true | merge → +1 |
+| ... | -1 | 5 | true | **메시지마다 무한 증가** |
+
+→ `FROM_HIDID = -1` 로 `M14A_ATLAS_HID_INOUT` 에 엄청난 양 적재됨.
+
+**결론: `HID_INOUT` 은 사실상 `VHL_CNT` 와 함께 켜져야 정상 동작**.
+
+추가로 `HID_VALUE` 컬럼 값도 `_calculatedVhlCnt` 가 관리하는
+`hidVehicleCountMap` 에서 읽으므로, `VHL_CNT` OFF 면 **`HID_VALUE` = 0 으로 고정**.
 
 ---
 
@@ -353,6 +408,90 @@ flowchart LR
 
 ---
 
+## 6.1 `transCnt` 변수 — `_processHidInout` 내부
+
+`OhtMsgWorkerRunnable.java:519-520`:
+```java
+int transCnt = DataService.getDataSet().getEdgeInOutCountMap()
+        .merge(edgeKey, 1, Integer::sum);
+```
+- `merge` 반환값 (현재 누적 카운트) 을 `transCnt` 에 받지만 **사용처 없음** (dead variable)
+- 실제 DB `TRANS_CNT` 컬럼 값은 flush 시점의 `entry.getValue()`
+  (`HidEdgeInOutQueueFlushBatch.java:70`) 에서 구해짐
+
+---
+
+## 6.2 워커 `fabId` vs 차량 `vhl.getFabId()`
+
+| 필드 | 출처 | 용도 |
+|---|---|---|
+| `this.fabId` | `messageQueue.getFabId()` (`BizDataInitializer.java:183, 190`) | 메시지를 수신한 fab. **테이블명 prefix** + RawHid/edgeMap 조회 키 |
+| `vehicle.getFabId()` | Vhl 객체 자체 | DB `FAB_ID` **컬럼값** |
+
+```mermaid
+flowchart LR
+    MQ[MessageQueue<br/>fabId from MCP 라우팅] --> WORKER[OhtMsgWorkerRunnable<br/>this.fabId]
+    WORKER -- 테이블명 --> T["{this.fabId}_ATLAS_HID_INOUT"]
+    VHL[Vhl 객체<br/>vehicle.getFabId] -- 컬럼값 --> COL[FAB_ID 컬럼]
+```
+
+두 값이 다른 경우 (예: 타 fab 차량이 임시 이동) **테이블은 워커 fab 쪽에 저장
+되지만 `FAB_ID` 컬럼은 차량 fab 으로 기록**되어 join 시 주의 필요.
+
+---
+
+## 6.3 `edgeKey` 의 음수 처리 — `String.format("%03d", -1)`
+
+`hidId` 초기값 -1 인 상태에서 첫 메시지가 들어오면:
+- `String.format("%03d", -1)` → `"-01"` (sign 포함 3자리)
+- `String.format("%03d", 5)`  → `"005"`
+- 결과 `edgeKey` = `"-01:005:..."`
+
+flush 의 `Integer.parseInt("-01")` 은 정상으로 `-1` 반환 → DB `FROM_HIDID = -1`.
+**음수 HID 가 적재될 수 있음을 인지 필요**.
+
+---
+
+## 6.4 flush 배치는 `HID_INOUT` 스위치를 검사하지 않음
+
+`HidEdgeInOutQueueFlushBatch.execute()` 는 `edgeInOutCountMap` 의 모든 entry 를
+무조건 적재함. 실제로 이 맵에 쓰는 코드는 `_processHidInout` 하나이고 거기서
+이미 스위치 ON 일 때만 들어가므로 동작상 문제는 없지만, **코드 레벨 방어는 없음**.
+
+---
+
+## 6.5 flush 실패 시 로깅 부재
+
+`HidEdgeInOutQueueFlushBatch.java:137-139`:
+```java
+if (success) {
+    logger.info("HID Edge flush: {} - {} records", tableName, tuples.size());
+}
+// else: 로그 없음
+```
+- `LogpressoAPI.setInsertTuples` 가 `false` 반환해도 별도 로그 없음
+- LogpressoAPI 내부에 `"insert Error"` 는 찍지만 호출 측 컨텍스트(테이블/행수) 부족
+
+---
+
+## 6.6 동시 실행 방어 (Quartz @DisallowConcurrentExecution) 없음
+
+`HidEdgeInOutQueueFlushBatch` 클래스에 `@DisallowConcurrentExecution` 미부착.
+이전 flush 가 길어져 다음 trigger 와 겹치면 동일 Job 인스턴스가 동시에 두 번
+실행될 수 있음. 다만 첫 호출에서 `setEdgeInOutCountMap(new ...)` 으로 비웠으므로
+두 번째 실행의 `copyMap` 은 거의 비어있어 실질 손해는 작음.
+
+---
+
+## 6.7 Quartz 스케줄 등록 위치
+
+`HidEdgeInOutQueueFlushBatch` 의 cron 등록부는 **디코딩된 소스 안에 없음** — 외부
+Quartz config 파일(properties/xml) 에서 등록되는 것으로 보임. 클래스 javadoc
+(`OhtMsgWorkerRunnable.java:471`) 의 주석으로만 _"1분 배치 플러시, 하루 1회
+마스터 테이블 업데이트"_ 라고 명시되어 있음.
+
+---
+
 ## 7. 1분 사이클 타임라인
 
 ```mermaid
@@ -443,4 +582,63 @@ flowchart TD
 | 빈 fabId → return | `HidEdgeInOutQueueFlushBatch.java:128-130` |
 | 테이블명 조합 | `HidEdgeInOutQueueFlushBatch.java:132-133` |
 | Logpresso insert | `HidEdgeInOutQueueFlushBatch.java:135` |
+| 성공 시 로그 (실패는 무로그) | `HidEdgeInOutQueueFlushBatch.java:137-139` |
 | tibrv 송신 (주석 처리) | `HidEdgeInOutQueueFlushBatch.java:96-121` |
+| `setInsertTuples` 시그니처 (3rd arg = timeoutSecond) | `LogpressoAPI.java:408` |
+| Logpresso TimeoutException 3회 재시도 | `LogpressoAPI.java:413-419` |
+| `Vhl.hidId` 초기값 = -1 | `Vhl.java:452` |
+| `vehicle.setHidId` 호출 (유일한 곳) | `OhtMsgWorkerRunnable.java:455` |
+| 워커 생성 (fabId 주입) | `BizDataInitializer.java:190` |
+
+---
+
+## 11. 누락 없이 정리한 행위 체크리스트
+
+`{FAB}_ATLAS_HID_INOUT` 한 행이 만들어지기까지 모든 단계:
+
+1. OHT UDP 메시지가 MCP 라우팅 fab 기준으로 큐잉됨 (`messageQueue.getFabId()`)
+2. `BizDataInitializer` 가 `new OhtMsgWorkerRunnable(fabId, ...)` 로 워커 생성 (`BizDataInitializer.java:190`)
+3. 워커가 `_updateVehicle` 에서 token 파싱, `vehicle.set*` 호출
+4. `railEdge = edgeMap.get(railEdgeId)` 로 RailEdge 획득 후 `_buildRailVelocity` 로 속도 갱신
+5. `hidId = railEdge.getHIDId()` 로 현재 HID 결정 (line 301)
+6. `FunctionItem fi = Env.getSwitchMap().get(fabId + ":" + mcpName)` 조회 (line 307)
+7. `fi.getUseFunction(HID_INOUT) == true` 이면 `_processHidInout(hidId, vehicle, fi)` 호출 (line 310-311)
+8. `_processHidInout` 내부:
+   - `previousHidId = vehicle.getHidId()` (초기 -1)
+   - 같으면 no-op, 다르면 다음 단계 진행
+   - `vehicle.getId()`, `vehicle.getEqpId()` 의 `:` 뒤 토큰 추출
+   - `FabPropertiesMap[fabId].McpPropertiesMap[mcp].Mcp75Config.RawHidMap` 순회로 `vhlCountLimit`, `vhlPrecaution` 매칭
+   - `edgeMap` 전체 순회하며 `HID==curr && velocity>0` 인 RailEdge 의 평균속도 → `freeFlowSpeed`
+   - `hidVehicleCountMap[fab:mcp:%03d]` → `hidValue`
+   - 11필드 `String.format(":")` 으로 `edgeKey` 조립
+   - `edgeInOutCountMap.merge(edgeKey, 1, Integer::sum)` — return 값 (`transCnt`) 은 사용 안 함
+9. 같은 메시지 처리 안에서 `_calculatedVhlCnt` (VHL_CNT 스위치) 가 실행되어
+   `vehicle.setHidId(curr)` 호출 → 다음 메시지 때 정상 비교 가능
+   **(VHL_CNT 꺼져 있으면 hidId 가 -1 로 고정되어 매 메시지마다 중복 카운트)**
+10. Quartz trigger (외부 설정) 가 1분마다 `HidEdgeInOutQueueFlushBatch.execute()` 호출
+11. `DataService.initialized` 검사 (line 32)
+12. `edgeInOutCountMap.forEach` 로 `copyMap` 에 복사 (`new String`, `intValue`) — defensive copy (line 40-42)
+13. `setEdgeInOutCountMap(new ConcurrentHashMap<>())` 로 원본 비움 (line 44)
+14. 현재 시각으로 `eventDate`, `eventDt` 포맷 생성 (분 절삭, line 49-53)
+15. `copyMap.entrySet()` 순회:
+    - `key.split(":")` 11 토큰
+    - `Tuple` 에 14컬럼 put
+    - `fabIdTuples[parts[2]].add(tuple)` (워커 fab 기준 그루핑, line 88-92)
+16. `fabIdTuples.entrySet()` 순회 (line 124):
+    - blank fabId 만나면 `return` (⚠ 전체 종료, line 128-130)
+    - 아니면 `tableName = fabId + "_ATLAS_HID_INOUT"` (line 133)
+    - `LogpressoAPI.setInsertTuples(tableName, tuples, 100)` 호출 (100s timeout)
+    - 내부적으로 TimeoutException 시 3회 재시도, 기타 예외 시 false 반환
+    - 성공이면 info 로그, 실패면 무로그
+
+## 12. ⚠ 이전 문서에서 정정된 내용
+
+| 항목 | 이전 (잘못) | 정정 |
+|---|---|---|
+| `setInsertTuples` 의 3번째 인자 `100` | "배치 크기 100 tuple" | **timeoutSecond (100초)** |
+| `_processHidInout` 의 의존성 | 독립 동작으로 서술 | **VHL_CNT 스위치 켜져 있어야 정상** |
+| `previousHidId` 초기값 | 명시 안 함 | **-1 (`Vhl.java:452`)** |
+| LogpressoAPI 재시도 | 언급 없음 | TimeoutException 시 3회 자동 재시도 |
+| flush 실패 처리 | "no-op" | 별도 로그 없이 다음 fab 진행 |
+| `transCnt` 변수 | 언급 없음 | merge 반환값을 받지만 미사용 (dead var) |
+| 워커 fabId 와 차량 fabId | 같다고 가정 | 다를 수 있음 — 테이블 prefix vs FAB_ID 컬럼 |
