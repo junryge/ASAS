@@ -1,6 +1,6 @@
 # `{FAB}_ATLAS_HID_INOUT` 적재 로직 — 기존 코드 분석
 
-`ALT/decoded_main/` 의 SmartAtlas 기존 소스가 `{FAB}_ATLAS_HID_INOUT`
+`main/` 의 SmartAtlas 기존 소스가 `{FAB}_ATLAS_HID_INOUT`
 (예: `M14A_ATLAS_HID_INOUT`) 테이블에 데이터를 어떻게 적재하는지에 대한
 End-to-End 분석. **신규/제안 코드 없음** — 디코딩된 원본 그대로의 흐름.
 

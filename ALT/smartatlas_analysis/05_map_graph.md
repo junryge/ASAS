@@ -1,7 +1,7 @@
 # 05. SmartAtlas `map/` 패키지 — 그래프 모델 상세 분석
 
 > 대상: `com.skhynix.smartatlas.map.*` (총 26 파일)
-> 위치: `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/map/`
+> 위치: `main/java/com/skhynix/smartatlas/map/`
 > 역할: OHT(Overhead Hoist Transport)가 다니는 **레일 토폴로지(그래프)** 모델. 노드(분기점/포트/셀프) + 엣지(레일/컨베이어/스토커룸/이재) + 차량(Vhl) + 카테고리 인터페이스.
 
 ---

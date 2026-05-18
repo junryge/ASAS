@@ -1,7 +1,7 @@
 # SmartAtlas 시스템 전체 분석
 
 > SK하이닉스 반도체 FAB OHT(Overhead Hoist Transport) 관리 시스템 `com.skhynix.smartatlas`
-> 디코딩 소스 `ALT/decoded_main/java/com/skhynix/smartatlas/` 전체 (176 파일) 에 대한
+> 디코딩 소스 `main/java/com/skhynix/smartatlas/` 전체 (176 파일) 에 대한
 > 패키지별 상세 분석 모음.
 
 ---
@@ -294,7 +294,7 @@ QTransferPredictBatch / AmosMinBatch (분/시간 주기)
 ## 📦 부속 자료
 
 같은 폴더에 함께 있는 자료:
-- `../decoded_main/` — 원본 디코딩 자바 소스 176 파일
+- `../main/` — 원본 자바 소스 176 파일
 - `../HID_INOUT_FLOW.md` — `{FAB}_ATLAS_HID_INOUT` 적재 흐름 단독 분석 (기술용)
 - `../HID_INOUT_고객용.md` — 위와 동일 주제의 고객 보고용
 - `../LOGPRESSO_SAVE_INVENTORY.md` — Logpresso 적재 전체 인벤토리 (~50 테이블)

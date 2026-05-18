@@ -50,7 +50,7 @@ com.skhynix.smartatlas
 
 ## §1 `LauncherListener.java` — 런처 시작 후크
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/LauncherListener.java`
+**경로:** `main/java/com/skhynix/smartatlas/LauncherListener.java`
 
 ### 1.1 한 줄 요약
 SmartFX 런처가 부팅 완료될 때 호출되는 `onStarted` 콜백. 환경 로드 → UI 서비스 enable → 핵심 빈 강제 생성 → 비즈 데이터 초기화의 4단계를 수행한다.
@@ -100,7 +100,7 @@ sequenceDiagram
 
 ## §2 `BizEventHandler.java` — 서비스 호출 이벤트 후크
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/BizEventHandler.java`
+**경로:** `main/java/com/skhynix/smartatlas/BizEventHandler.java`
 
 ### 2.1 한 줄 요약
 SmartFX의 `ServiceInvokeEventHandler` 구현체. 모든 `@Service` 호출의 before/after/onSuccess/onError 시점에 `serviceId` 를 DEBUG 로그로 기록한다 (AOP-like cross-cutting concern).
@@ -146,7 +146,7 @@ flowchart LR
 
 ## §3 `service/AmosService.java` — AMOS 비즈니스 서비스
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/service/AmosService.java`
+**경로:** `main/java/com/skhynix/smartatlas/service/AmosService.java`
 
 ### 3.1 한 줄 요약
 `@Service("AMOS_SERVICE")` 로 노출되는 비즈니스 서비스. 알람 임계치 파라미터 CRUD(Logpresso `AMOS_ALARM_PARAMETER` 테이블) 와 UI 용 컨베이어 테이블 조회를 제공한다.
@@ -194,7 +194,7 @@ flowchart TD
 
 ## §4 `service/BizDataInitializer.java` — Fab 리스너/디스패처 부트
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/service/BizDataInitializer.java`
+**경로:** `main/java/com/skhynix/smartatlas/service/BizDataInitializer.java`
 
 ### 4.1 한 줄 요약
 부트스트랩의 가장 핵심. FabSet properties 로부터 `FabProperties` 맵을 구축하고, **#1 OHT UDP 리스너 생성 → #2 리스너 start → #3 메세지 디스패처 쓰레드 기동** 의 3단계를 수행한다.
@@ -274,7 +274,7 @@ sequenceDiagram
 
 ## §5 `service/HttpService.java` — REST(OkHttp) 헬퍼
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/service/HttpService.java`
+**경로:** `main/java/com/skhynix/smartatlas/service/HttpService.java`
 
 ### 5.1 한 줄 요약
 OkHttp3 기반의 **JSON POST** 유틸리티. 동기/비동기 호출 모두 `Map<String,Object>` 응답으로 정규화하며 5xx/4xx 표준 `HttpStatus` enum을 내장한다.
@@ -348,7 +348,7 @@ sequenceDiagram
 
 ## §6 `service/TibrvService.java` — TIBCO Rendezvous Pub/Sub 래퍼
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/service/TibrvService.java`
+**경로:** `main/java/com/skhynix/smartatlas/service/TibrvService.java`
 
 ### 6.1 한 줄 요약
 한 개의 `TibrvRvdTransport` + `TibrvQueue` + `TibrvListener` 의 생명주기를 캡슐화하며, **수신: `onMsg` 콜백 → `DataService.queue` 에 enqueue**, **송신: `sendMessage` → `TibrvAPI.send` + Logpresso 로그 적재** 를 수행. CMESSAGE XML 으로부터 service/network 를 GID 로 로드한다.
@@ -443,7 +443,7 @@ sequenceDiagram
 
 ## §7 `service/UiLogpresso.java` — UI 통합 조회 서비스 (거대 클래스)
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/service/UiLogpresso.java` (3549 lines)
+**경로:** `main/java/com/skhynix/smartatlas/service/UiLogpresso.java` (3549 lines)
 
 ### 7.1 한 줄 요약
 `@Service("USER_IF_LOG")` 빈명으로 등록된 **UI 후처리/조회 핵심 게이트웨이**. Logpresso/MongoDB/MyBatis 3개의 백엔드로 분기되는 MCSLOG, SECS, Transaction, Raw 등 50여개의 조회 API 와 그리드 레이아웃 파일 IO, SSH 원격 MongoDB 운영 명령 등을 제공한다.
@@ -582,7 +582,7 @@ flowchart TD
 
 ## §8 `environment/Env.java` — 환경 / Properties 전역 캐시
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/environment/Env.java`
+**경로:** `main/java/com/skhynix/smartatlas/environment/Env.java`
 
 ### 8.1 한 줄 요약
 4종의 설정 파일 (`Settings.properties`, `FabSet.properties`, `Reset.properties`, 그리고 XML 들)에 대한 **전역 캐시 + 파일 마지막 수정시간 트래커**. Logpresso/MongoDB 패스워드 자동 암복호화, FAB×MCP 기능 스위치(`FunctionItem`) 보관도 담당하는 정적 클래스.
@@ -681,7 +681,7 @@ flowchart LR
 
 ## §9 `environment/type/DbProperties.java` — DB 접속 정보 VO
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/environment/type/DbProperties.java`
+**경로:** `main/java/com/skhynix/smartatlas/environment/type/DbProperties.java`
 
 ### 9.1 한 줄 요약
 Logpresso 와 MongoDB 양쪽 모두에서 공통으로 사용하는 단순 DB 접속 정보 데이터 클래스 (불변에 가까운 단순 VO).
@@ -710,7 +710,7 @@ Logpresso 와 MongoDB 양쪽 모두에서 공통으로 사용하는 단순 DB �
 
 ## §10 `environment/type/SmsProperties.java` — SMS 알림 임계치 VO
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/environment/type/SmsProperties.java`
+**경로:** `main/java/com/skhynix/smartatlas/environment/type/SmsProperties.java`
 
 ### 10.1 한 줄 요약
 시스템 리소스(메모리/CPU/디스크) 사용량과 큐(UDP/Tibrv) 임계치를 보관하고, 임계 초과 시 SMS 를 보낼 수신자 전화번호 배열을 가진다.
@@ -742,7 +742,7 @@ Logpresso 와 MongoDB 양쪽 모두에서 공통으로 사용하는 단순 DB �
 
 ## §11 `environment/type/FunctionItem.java` — Fab×Mcp 기능 ON/OFF 스위치
 
-**경로:** `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/environment/type/FunctionItem.java`
+**경로:** `main/java/com/skhynix/smartatlas/environment/type/FunctionItem.java`
 
 ### 11.1 한 줄 요약
 `fabId + mcpName` 단위로 24종의 기능 플래그(HID_OFF, VHL_OFF, RAIL_CUT, MAP_FILE_REFRESH, VHL_CNT(+10/30/60), STAGE_COMMAND_MONITORING, UDP_MESSAGE_MONITORING, RAIL_VIBRATION, RAIL_TRAFFIC(+SUB/속도/PassCnt/VhlCnt), TIBRV_SEND, CNV_INOUT/TIBRV_SEND, AGV_INOUT/TIBRV_SEND, HID_INOUT)를 관리하는 동적 스위치 VO. `Boolean` 3-상태(null/true/false) 패턴으로 미설정 상태와 false 를 구분한다.
