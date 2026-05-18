@@ -77,6 +77,54 @@ getVhlIdMap / getVhlMap / getVhlOffMonitoringMap / getVhlOffRecordMap
 
 ## §1. `data/raw` — `layout.xml` 원본 데이터 (Mcp75Config 가 핵심 컨테이너)
 
+### §1.0 Mcp75Config 의 14개 ConcurrentMap 구조
+
+```mermaid
+flowchart TB
+    M[Mcp75Config<br/>~1500 LOC]
+
+    M --> P1[rawPointMap<br/>좌표]
+    M --> P2[rawStationMap<br/>스테이션]
+    M --> P3[rawHidMap<br/>HID 정의]
+    M --> P4[rawAreaMap<br/>구역]
+    M --> P5[rawBayMap<br/>Bay]
+    M --> P6[rawLoopMap<br/>Loop 경로]
+    M --> P7[rawJunctionMap<br/>분기점]
+    M --> P8[rawBzMap<br/>BridgeZone]
+    M --> P9[rawVhlMap<br/>차량 메타]
+    M --> P10[rawVhlTypeMap<br/>차량 타입]
+    M --> P11[rawVhlSpeedMap<br/>차량 속도 프로파일]
+    M --> P12[rawLabelMap<br/>라벨]
+    M --> P13[rawCnvZoneMap<br/>CNV 존]
+    M --> P14[rawRouteInfoMap<br/>경로 정보]
+```
+
+### §1.1 Raw → Map(그래프) → DataSet 빌드 흐름
+
+```mermaid
+sequenceDiagram
+    participant XML as layout.xml/zip
+    participant LU as LayoutUtil
+    participant MC as Mcp75Config
+    participant DS as DataService
+    participant DSET as DataSet
+
+    XML->>LU: FTP 다운로드/캐시
+    LU->>LU: XmlUtil 파싱
+    LU->>MC: rawPointMap, rawHidMap,<br/>rawEdgeMap, ... (14종) 채움
+    MC->>DS: McpProperties 에 보관
+
+    DS->>DSET: RawPoint × N → 좌표
+    DS->>DSET: RawEdge × N → AbstractEdge<br/>(RailEdge/CnvEdge/...) 인스턴스화
+    DS->>DSET: RawNode × N → AbstractNode 인스턴스화
+    DS->>DSET: RawHid 정보로 RailEdge.hidId 일괄 setter
+    DS->>DSET: RawVhl × N → Vhl 인스턴스화
+    DS->>DSET: edgeMap, nodeMap, vhlMap 등 채움
+
+    Note over DS,DSET: setInitialized(true)<br/>이후 처리/배치 가능
+```
+
+
 원본 `*.cfg/*.dat/*.xml` 의 토큰 1:1 모델이다. **Setter 가 거의 사용되지 않는 immutable 성격**.
 
 ### 1.1 `Mcp75Config.java` (1163줄) — Raw 데이터 루트 컨테이너
@@ -314,6 +362,59 @@ getVhlIdMap / getVhlMap / getVhlOffMonitoringMap / getVhlOffRecordMap
 
 `Eqp` 추상 베이스를 상속하는 6개 + AGV 용 AmpUnit. `EQP_TYPE` enum 1개.
 
+### 2.0 설비 클래스 상속 트리
+
+```mermaid
+classDiagram
+    class Eqp {
+        <<abstract>>
+        +String fabId
+        +String id, name
+        +EQP_TYPE eqpType
+        +Set~PROCESS_TYPE~ processTypeSet
+        +Map nodeMap
+        +getMcpName()
+        +findPortNodeById()
+    }
+    class Oht {
+        +OHT 차량 본체 메타
+        +ohtType
+    }
+    class Stocker {
+        +STK_TYPE stkType
+        +stkRmNodeMap
+        +shelfNodeMap
+    }
+    class StbGroup {
+        +STB 그룹 단위
+        +stbNodeMap
+    }
+    class Conveyor {
+        +CNV_EVENT enum (60+)
+        +portNodeMap
+        +zoneState
+    }
+    class Fio {
+        +FIOTYPE enum
+        +fioPortNode
+    }
+    class AmpUnit {
+        +AGV용 (AMP/AGV 통합)
+        +17 fields
+        +udpState
+    }
+
+    Eqp <|-- Oht
+    Eqp <|-- Stocker
+    Eqp <|-- StbGroup
+    Eqp <|-- Conveyor
+    Eqp <|-- Fio
+    Eqp <|-- AmpUnit
+```
+
+설비 타입별 EQP_TYPE enum 값: `STK`, `STBGROUP`, `EQP`, `FIO`, `OHT`, `CONVEYOR`, `AGV`
+
+
 ### 2.1 `Eqp.java` (432줄) — 모든 설비의 베이스 클래스
 
 **한 줄 요약**: 모든 설비의 공통 속성 + 포트 노드 검색·MCP 매핑 유틸 보유.
@@ -415,6 +516,21 @@ getVhlIdMap / getVhlMap / getVhlOffMonitoringMap / getVhlOffRecordMap
 ### §3.0 `DataSet.java` (1445줄) — 시스템 전역 단일 컨테이너
 
 > `DataService.getDataSet()` 로 전역 접근. 모든 처리 코드가 본 컨테이너의 Map 을 읽고/쓴다.
+
+#### 3.0.0 컬렉션 6개 그룹 분류 (전체 50+)
+
+```mermaid
+flowchart LR
+    DS[DataSet<br/>50+ Maps]
+
+    DS --> GA["A. 토폴로지<br/>edgeMap, nodeMap,<br/>railEdgeMap, vhlMap,<br/>longEdgeMap, branchJoinEdgeMap"]
+    DS --> GB["B. Port/Station 인덱스<br/>stationPortMap, nodePortMap,<br/>hid2PortMap, address2RailNode/Edge,<br/>railEdge4HidMap"]
+    DS --> GC["C. 설비 인덱스<br/>allEqpNameMap, stockerMap,<br/>conveyorMap, fioMap,<br/>ampUnitMap, ohtMap, stbGroupMap"]
+    DS --> GD["D. 명령/작업/캐리어/경로<br/>commandMap, jobMap,<br/>carrierContainableMap,<br/>routeItemMap, cnvTaskMap"]
+    DS --> GE["E. 분기/조인 검색 인덱스<br/>incomingRailMap,<br/>outgoingRailMap"]
+    DS --> GF["F. 차량/HID 통계<br/>hidVehicleCountMap,<br/>edgeInOutCountMap,<br/>hidOffRecordMap,<br/>stageCommandMap,<br/>vhlOffRecordMap"]
+    DS --> GG["G. 메시지/TIB 버퍼<br/>tibrvSendMsgBufferMap,<br/>ampBufferMap (5종),<br/>railVibrationRecordMap,<br/>railCutRecordMap"]
+```
 
 #### 3.0.1 ID 접두사 상수 (L130-159)
 
@@ -724,6 +840,56 @@ ID 포맷 예: `M14A:RN:A:01000` (L912-922 `address2RailNodeId`), `M14A:RE:A:M14
 
 ---
 
+### 3.7.5 RecordItem 5종 ER (HidOff / VhlOff / RailCut / RailVibration / StageCommand)
+
+```mermaid
+erDiagram
+    HidOffRecordItem {
+        String key "fab:mcp:HID"
+        String fabId
+        String mcpName
+        int hidId
+        String errorCode
+        long detectedTime
+        long resolvedTime
+        OHT_TIB_STATE state "NORMAL/ABNORMAL"
+    }
+    VhlOffRecordItem {
+        String key "fab:mcp:vhlId"
+        String vhlId
+        String errorCode
+        int address
+        int nextAddress
+        long detectedTime
+        OHT_TIB_STATE state
+    }
+    RailCutRecordItem {
+        String key
+        String fabId
+        Set ~edgeIds~ "차단 영향 엣지"
+        long detectedTime
+    }
+    RailVibrationRecordItem {
+        String key
+        String railEdgeId
+        double vibrationValue
+        long timestamp
+    }
+    StageCommandRecordItem {
+        String key
+        String machineId
+        String destPortId
+        OHT_TIB_STATE state
+        long eventDateTime
+    }
+
+    HidOffRecordItem ||--o{ VhlOffRecordItem : "차량 영향"
+    RailCutRecordItem ||--o{ RailVibrationRecordItem : "구간 진동"
+```
+
+각 RecordItem 은 `DataSet` 의 동명 ConcurrentMap 에 보관되며, 키는 모두
+`fabId + ":" + mcpName + ":" + (HID/vhl/edge)` 형태로 통일.
+
 ### 3.8 `HidOffRecordItem.java` (194줄)
 
 **요약**: HID OFF (HID 차단) 이벤트 1건.
@@ -879,6 +1045,51 @@ ID 포맷 예: `M14A:RN:A:01000` (L912-922 `address2RailNodeId`), `M14A:RE:A:M14
 
 ### 3.17 `FabProperties.java` (395줄)
 
+#### FabProperties / McpProperties 계층 구조
+
+```mermaid
+classDiagram
+    class DataService {
+        +singleton
+        +fabPropertiesMap : Map~fabId, FabProperties~
+    }
+    class FabProperties {
+        +fabId (M14A)
+        +facId (M14)
+        +mcpName (A)
+        +mapDir
+        +mcpPropertiesMap : Map~mcp, McpProperties~
+        +bridgeFromSet
+        +bridgeToSet
+        +cnvSocketIOListenerMap
+        +ampListener
+        +TIB send/recv 설정 (star/amos/mhs/mcs/ui)
+    }
+    class McpProperties {
+        +mcpName
+        +mcp75Config
+        +dbProperties
+    }
+    class Mcp75Config {
+        +14 ConcurrentMap (Raw*)
+    }
+    class DbProperties {
+        +host, port, user, password
+        +schema
+    }
+    class FunctionItem {
+        +useHidInout, useHidOff,
+        +useVhlCnt, useVhlOff,
+        +useRailCut, ...
+    }
+
+    DataService o-- FabProperties : fab 별 N
+    FabProperties o-- McpProperties : mcp 별 N
+    McpProperties --> Mcp75Config
+    McpProperties --> DbProperties
+    FabProperties --> FunctionItem : fab:mcp 키
+```
+
 **요약**: 1개 Fab 의 모든 외부 연결·MCP 정보 보관. `fabId`(M14A) / `facId`(M14) / `mcpName`(A).
 
 **필드** (L12-63):
@@ -969,6 +1180,50 @@ sequenceDiagram
     TIBRV->>DS: HidOffRecordItem,<br/>VhlOffRecordItem,<br/>RailCutRecordItem,<br/>RailVibrationRecordItem,<br/>StageCommandRecordItem
     PROC->>DS: increaseHidVehicleCnt/decreaseHidVehicleCnt
     DS->>Logpresso: exportAllLayoutToLogpresso()<br/>RouteItem.sendToLogpresso()
+```
+
+### 4.1.b 실시간 메시지에 의한 DataSet 변경 경로
+
+```mermaid
+flowchart LR
+    subgraph IN["수신"]
+        OHT[OHT UDP]
+        AMP[AMP TCP]
+        CNV[CNV Socket.IO]
+        UI[UI XML/TIB]
+    end
+
+    subgraph WRITE["DataSet 쓰기 위치"]
+        W1[edgeInOutCountMap<br/>OhtWorker:519]
+        W2[hidVehicleCountMap<br/>increaseHidVehicleCnt]
+        W3[hidOffRecordMap<br/>OhtWorker:_processHidOff]
+        W4[vhlOffRecordMap<br/>OhtWorker:_processVhlOff]
+        W5[stageCommandMap<br/>OhtWorker:_processStageCmd]
+        W6[carrierContainableMap<br/>CnvWorker]
+        W7[commandMap, jobMap<br/>UiWorker]
+        W8[railVibrationRecordMap<br/>OhtWorker]
+        W9[ampBufferMap×5<br/>AmpWorker]
+    end
+
+    subgraph READ["DataSet 읽기 (배치)"]
+        R1[HidEdgeInOutQueueFlushBatch]
+        R2[VhlCnt*Batch]
+        R3[MonitoringControlBatch]
+        R4[RailVibrationBatch]
+        R5[AmpBufferFlushBatch]
+        R6[TrafficBatch]
+    end
+
+    OHT --> W1 & W2 & W3 & W4 & W5 & W8
+    AMP --> W9
+    CNV --> W6
+    UI --> W7
+
+    W1 --> R1
+    W2 --> R2
+    W3 & W4 & W5 --> R3
+    W8 --> R4
+    W9 --> R5
 ```
 
 ### 4.2 Raw → 가공 매핑표
