@@ -840,10 +840,13 @@ def apply_hierarchical_delegation(parallel_groups):
 
 
 # ============================================
-# 스킬 파일 읽기
+# 스킬 파일 읽기 (lazy + 메모리 캐시)
 # ============================================
-def scan_skills():
-    """scientific-skills 폴더를 스캔해서 사용 가능한 스킬 목록 반환 (scripts/references/assets 포함)"""
+_SKILLS_CACHE: dict | None = None
+
+
+def _scan_skills_uncached():
+    """scientific-skills 폴더 실제 디스크 스캔 (캐시 없이)."""
     result = {}
     if not os.path.isdir(SKILLS_DIR):
         return result
@@ -904,6 +907,23 @@ def scan_skills():
             "assets": assets,
         }
     return result
+
+
+def scan_skills(force_refresh: bool = False):
+    """스킬 목록 반환 (lazy + 메모리 캐시).
+    첫 호출 또는 force_refresh=True 시에만 디스크 스캔.
+    이후 호출은 캐시의 얕은 복사 반환."""
+    global _SKILLS_CACHE
+    if force_refresh or _SKILLS_CACHE is None:
+        _SKILLS_CACHE = _scan_skills_uncached()
+    return dict(_SKILLS_CACHE)
+
+
+def reload_skills():
+    """캐시 비우고 디스크 재스캔. 새 dict 반환."""
+    global _SKILLS_CACHE
+    _SKILLS_CACHE = _scan_skills_uncached()
+    return dict(_SKILLS_CACHE)
 
 
 # ============================================

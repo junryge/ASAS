@@ -25,7 +25,7 @@ from demos_v1.config import (
 from demos_v1.models import MODEL_REGISTRY, ENV_CONFIG, ENV_TO_REGISTRY
 from demos_v1.skills import (
     SKILL_DESC_KO, DOMAIN_SKILLS, MANUAL_ONLY_SKILLS,
-    scan_skills, auto_select_skills, context_aware_skill_select,
+    scan_skills, reload_skills, auto_select_skills, context_aware_skill_select,
     load_skill_content, get_skill_catalog,
 )
 # UI HTML은 demos_v1/templates/index.html (Jinja 템플릿)로 분리됨
@@ -158,6 +158,8 @@ def register_api_routes(app):
             results = auto_select_skills(query, max_skills=max_skills)
             boosted = []
 
+        print(f"  🎯 [AUTO-SKILLS] query='{query[:50]}', 키워드 매칭 결과: {[sid for sid, _ in results]}")
+
         # 하네스 라우터 결과 병합 (기존 키워드 매칭 + 하네스 토큰 매칭 + Expert Pool + 조합 추천)
         if HARNESS_AVAILABLE:
             try:
@@ -165,6 +167,8 @@ def register_api_routes(app):
                 from harness import select_experts
                 # 1) 하네스 라우터로 추가 매칭
                 harness_matches = harness_route(query, limit=5)
+                if harness_matches:
+                    print(f"  🎯 [AUTO-SKILLS] 하네스 라우터 추천: {[hm['name'] for hm in harness_matches]}")
                 existing_ids = {sid for sid, _ in results}
                 for hm in harness_matches:
                     if hm['name'] not in existing_ids and hm['name'] not in MANUAL_ONLY_SKILLS:
@@ -214,6 +218,8 @@ def register_api_routes(app):
         # 점수 높은 순 정렬 + max_skills 제한
         skills.sort(key=lambda x: -x["score"])
         skills = skills[:max_skills]
+
+        print(f"  🎯 [AUTO-SKILLS] 최종 추천: {[s['id'] for s in skills]} (boosted: {[sid for sid in boosted if sid in {s['id'] for s in skills}]})")
 
         mode = "🧠 컨텍스트" if history else "🔍 키워드"
         return jsonify({
@@ -456,6 +462,21 @@ def register_api_routes(app):
     def api_skills():
         """스킬 카탈로그 반환"""
         return jsonify(get_skill_catalog())
+
+
+    @app.route("/api/skills/reload", methods=["POST"])
+    def api_skills_reload():
+        """스킬 폴더 메모리 캐시 + 하네스 ToolRegistry 강제 재빌드.
+        스킬 폴더 변경 후 호출."""
+        skills = reload_skills()
+        harness_count = None
+        try:
+            from harness_bridge import reload_registry
+            harness_reg = reload_registry()
+            harness_count = len(harness_reg.list_all())
+        except Exception as e:
+            return jsonify({"ok": True, "count": len(skills), "harness_error": str(e)})
+        return jsonify({"ok": True, "count": len(skills), "harness_count": harness_count})
 
 
     @app.route("/api/skill/<skill_name>")
