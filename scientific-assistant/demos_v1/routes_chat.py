@@ -359,6 +359,19 @@ def _stream_chat_sse(data):
             kb_results = search_knowledge(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
+            _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+            if not kb_results and _other_skills:
+                # 지식 검색은 0건이지만 다른 수동 스킬이 함께 선택됨 →
+                # knowledge-search SKILL.md 의 "등록된 지식이 없습니다 한 줄로 답변" 규칙이
+                # 다른 스킬 응답까지 가로채지 않도록 명시적으로 무력화.
+                override_msg = (
+                    "[지식 검색 결과: 0건]\n"
+                    f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 도메인 문서를 찾지 못했습니다.\n"
+                    "단, 사용자가 다른 스킬(" + ", ".join(_other_skills) + ")을 함께 선택했으므로 "
+                    "'등록된 지식이 없습니다' 한 줄로 끝내지 말고, 나머지 스킬을 정상적으로 사용해 "
+                    "사용자 질문에 끝까지 답변하세요. 지식 검색에 대해서는 '관련 문서 없음' 정도로만 짧게 언급해도 됩니다.\n"
+                )
+                api_messages = [{"role": "system", "content": override_msg}] + api_messages
             if kb_results:
                 kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
                 kb_context += f"검색어: {last_user_query}\n\n"
@@ -904,6 +917,18 @@ def register_chat_routes(app):
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
                 kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
+                _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+                if not kb_results and _other_skills:
+                    # 지식 검색 0건이지만 다른 수동 스킬이 함께 선택됨 →
+                    # SKILL.md 의 "등록된 지식이 없습니다" 규칙이 다른 스킬을 가로채지 않도록 override.
+                    override_msg = (
+                        "[지식 검색 결과: 0건]\n"
+                        f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 도메인 문서를 찾지 못했습니다.\n"
+                        "단, 사용자가 다른 스킬(" + ", ".join(_other_skills) + ")을 함께 선택했으므로 "
+                        "'등록된 지식이 없습니다' 한 줄로 끝내지 말고, 나머지 스킬을 정상적으로 사용해 "
+                        "사용자 질문에 끝까지 답변하세요. 지식 검색에 대해서는 '관련 문서 없음' 정도로만 짧게 언급해도 됩니다.\n"
+                    )
+                    messages = [{"role": "system", "content": override_msg}] + messages
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
