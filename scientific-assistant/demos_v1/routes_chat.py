@@ -359,17 +359,23 @@ def _stream_chat_sse(data):
             kb_results = search_knowledge(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
-            _other_skills = [s for s in skill_ids if s != "knowledge-search"]
-            if not kb_results and _other_skills:
-                # 지식 검색은 0건이지만 다른 수동 스킬이 함께 선택됨 →
-                # knowledge-search SKILL.md 의 "등록된 지식이 없습니다 한 줄로 답변" 규칙이
-                # 다른 스킬 응답까지 가로채지 않도록 명시적으로 무력화.
+            if not kb_results:
+                # 지식 검색 0건 — 절대 "등록된 지식이 없습니다" 한 줄로 응답을 종료하면 안 됨.
+                # 사용자는 (1) 무관한 다른 질문, (2) 일반 지식 기반 설명, (3) 새로운 것의 창작/구성,
+                # (4) 함께 선택된 다른 스킬 사용 등을 원할 수 있으므로 답변을 계속하도록 지시.
+                _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+                _other_note = (
+                    f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
+                    if _other_skills else ""
+                )
                 override_msg = (
                     "[지식 검색 결과: 0건]\n"
-                    f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 도메인 문서를 찾지 못했습니다.\n"
-                    "단, 사용자가 다른 스킬(" + ", ".join(_other_skills) + ")을 함께 선택했으므로 "
-                    "'등록된 지식이 없습니다' 한 줄로 끝내지 말고, 나머지 스킬을 정상적으로 사용해 "
-                    "사용자 질문에 끝까지 답변하세요. 지식 검색에 대해서는 '관련 문서 없음' 정도로만 짧게 언급해도 됩니다.\n"
+                    f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
+                    "응답 지침:\n"
+                    "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
+                    "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석하기, "
+                    "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성하기 등.\n"
+                    f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
                 )
                 api_messages = [{"role": "system", "content": override_msg}] + api_messages
             if kb_results:
@@ -917,16 +923,22 @@ def register_chat_routes(app):
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
                 kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
-                _other_skills = [s for s in skill_ids if s != "knowledge-search"]
-                if not kb_results and _other_skills:
-                    # 지식 검색 0건이지만 다른 수동 스킬이 함께 선택됨 →
-                    # SKILL.md 의 "등록된 지식이 없습니다" 규칙이 다른 스킬을 가로채지 않도록 override.
+                if not kb_results:
+                    # 지식 검색 0건 — 절대 "등록된 지식이 없습니다" 한 줄로 응답을 종료하면 안 됨.
+                    # 무관한 질문, 일반 지식 기반 설명, 새로운 것의 창작/구성, 다른 스킬 사용 모두 정상 수행.
+                    _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+                    _other_note = (
+                        f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
+                        if _other_skills else ""
+                    )
                     override_msg = (
                         "[지식 검색 결과: 0건]\n"
-                        f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 도메인 문서를 찾지 못했습니다.\n"
-                        "단, 사용자가 다른 스킬(" + ", ".join(_other_skills) + ")을 함께 선택했으므로 "
-                        "'등록된 지식이 없습니다' 한 줄로 끝내지 말고, 나머지 스킬을 정상적으로 사용해 "
-                        "사용자 질문에 끝까지 답변하세요. 지식 검색에 대해서는 '관련 문서 없음' 정도로만 짧게 언급해도 됩니다.\n"
+                        f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
+                        "응답 지침:\n"
+                        "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
+                        "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석하기, "
+                        "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성하기 등.\n"
+                        f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
                     )
                     messages = [{"role": "system", "content": override_msg}] + messages
                 if kb_results:
