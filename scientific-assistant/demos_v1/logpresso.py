@@ -379,7 +379,7 @@ table from=20260327000000 to=20260327235959 ts_data_view_m14a | limit 5
                     "messages": messages,
                     "temperature": 0.3,
                     "max_tokens": 2048,
-                    "stream": False, "tool_choice": "none",
+                    "stream": False,
                 },
                 timeout=60,
                 verify=False,

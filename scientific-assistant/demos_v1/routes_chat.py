@@ -359,6 +359,25 @@ def _stream_chat_sse(data):
             kb_results = search_knowledge(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
+            if not kb_results:
+                # 지식 검색 0건 — 절대 "등록된 지식이 없습니다" 한 줄로 응답을 종료하면 안 됨.
+                # 사용자는 (1) 무관한 다른 질문, (2) 일반 지식 기반 설명, (3) 새로운 것의 창작/구성,
+                # (4) 함께 선택된 다른 스킬 사용 등을 원할 수 있으므로 답변을 계속하도록 지시.
+                _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+                _other_note = (
+                    f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
+                    if _other_skills else ""
+                )
+                override_msg = (
+                    "[지식 검색 결과: 0건]\n"
+                    f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
+                    "응답 지침:\n"
+                    "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
+                    "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석하기, "
+                    "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성하기 등.\n"
+                    f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
+                )
+                api_messages = [{"role": "system", "content": override_msg}] + api_messages
             if kb_results:
                 kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
                 kb_context += f"검색어: {last_user_query}\n\n"
@@ -450,28 +469,34 @@ def _stream_chat_sse(data):
         headers["Authorization"] = f"Bearer {api_key}"
     max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
 
-    payload = {
-        "model": model,
-        "messages": api_messages,
-        "temperature": temperature_map[min(effort, 3)],
-        "max_tokens": max_tokens_a,
-        "stream": True,
-        "tool_choice": "none",
-    }
+    # 400 등 업스트림 거부 시 시도할 폴백 체인 (현재 모델 포함)
+    primary_reg_key = ENV_TO_REGISTRY.get(env_id)
+    if primary_reg_key:
+        sse_fallback_keys = [primary_reg_key] + list(FALLBACK_CHAINS.get(primary_reg_key, []))
+    else:
+        sse_fallback_keys = []
 
-    def gen_api():
-        meta = {"type": "meta", "env": env_id, "model": model}
-        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-        try:
-            r = req.post(
-                api_url,
-                headers=headers,
-                json=payload,
-                timeout=180,
-                verify=False,
-                stream=True,
-            )
-            r.raise_for_status()
+    def _try_one(try_url, try_model):
+        """단일 모델에 대해 SSE 시도. 첫 토큰까지 도달하지 못하면 (status, detail)을 반환,
+        성공해서 스트리밍을 시작했으면 (None, generator)을 반환."""
+        body_payload = {
+            "model": try_model,
+            "messages": api_messages,
+            "temperature": temperature_map[min(effort, 3)],
+            "max_tokens": max_tokens_a,
+            "stream": True,
+        }
+        r = req.post(try_url, headers=headers, json=body_payload,
+                     timeout=180, verify=False, stream=True)
+        if r.status_code >= 400:
+            detail = ""
+            try:
+                detail = r.text[:500]
+            except Exception:
+                pass
+            return (r.status_code, detail), None
+
+        def _stream():
             for line in r.iter_lines(decode_unicode=True):
                 if chat_stop_flag.get("stop"):
                     yield "data: [DONE]\n\n"
@@ -497,18 +522,60 @@ def _stream_chat_sse(data):
                 if fr:
                     yield f"data: {json.dumps({'type': 'end', 'finish_reason': fr}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
-        except req.exceptions.HTTPError as e:
-            code = getattr(e.response, "status_code", 500) if e.response is not None else 500
-            detail = ""
+
+        return None, _stream()
+
+    def gen_api():
+        last_err = None
+        tried = []
+        candidates = sse_fallback_keys or [primary_reg_key]
+        for idx, reg_key in enumerate(candidates):
+            if not reg_key or reg_key not in MODEL_REGISTRY:
+                continue
+            reg = MODEL_REGISTRY[reg_key]
+            try_url = reg["url"]
+            try_model = reg["model"]
+            tried.append(try_model)
+            meta = {"type": "meta", "env": env_id, "model": try_model}
+            if idx > 0:
+                meta["fallback_from"] = tried[0]
+            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
             try:
-                detail = e.response.text[:500] if e.response is not None else ""
-            except Exception:
-                pass
-            err = {"type": "error", "error": f"HTTP {code}: {str(e)}", "detail": detail}
-            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            err = {"type": "error", "error": str(e)}
-            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+                err, stream = _try_one(try_url, try_model)
+            except req.exceptions.RequestException as e:
+                last_err = {"status": 0, "detail": str(e)[:300], "model": try_model}
+                print(f"[SSE-Fallback] {try_model} → 네트워크 오류: {e}")
+                continue
+            if err is not None:
+                code, detail = err
+                last_err = {"status": code, "detail": detail, "model": try_model}
+                print(f"[SSE-Fallback] {try_model} → HTTP {code}: {detail[:200]}")
+                # 400/404/422는 다음 모델로, 그 외(401/403/5xx)는 사용자에게 즉시 노출
+                if code in (400, 404, 422):
+                    continue
+                err_payload = {"type": "error",
+                               "error": f"HTTP {code}",
+                               "detail": detail,
+                               "model": try_model}
+                yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
+                return
+            # 성공 — 스트림 그대로 흘림
+            try:
+                for chunk in stream:
+                    yield chunk
+            except Exception as e:
+                err_payload = {"type": "error", "error": str(e), "model": try_model}
+                yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
+            return
+
+        # 모든 폴백 실패
+        err_payload = {
+            "type": "error",
+            "error": f"모든 모델 시도 실패 ({', '.join(tried)})",
+            "detail": (last_err or {}).get("detail", ""),
+            "status": (last_err or {}).get("status", 0),
+        }
+        yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
 
     return Response(stream_with_context(gen_api()), mimetype="text/event-stream")
 
@@ -856,6 +923,24 @@ def register_chat_routes(app):
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
                 kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
+                if not kb_results:
+                    # 지식 검색 0건 — 절대 "등록된 지식이 없습니다" 한 줄로 응답을 종료하면 안 됨.
+                    # 무관한 질문, 일반 지식 기반 설명, 새로운 것의 창작/구성, 다른 스킬 사용 모두 정상 수행.
+                    _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+                    _other_note = (
+                        f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
+                        if _other_skills else ""
+                    )
+                    override_msg = (
+                        "[지식 검색 결과: 0건]\n"
+                        f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
+                        "응답 지침:\n"
+                        "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
+                        "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석하기, "
+                        "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성하기 등.\n"
+                        f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
+                    )
+                    messages = [{"role": "system", "content": override_msg}] + messages
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
@@ -2005,7 +2090,7 @@ def register_chat_routes(app):
                                     "model": synth_api["model"],
                                     "messages": [{"role": "system", "content": synth_system},
                                                  {"role": "user", "content": _last_query}],
-                                    "temperature": 0.3, "max_tokens": 8192, "stream": False, "tool_choice": "none",
+                                    "temperature": 0.3, "max_tokens": 8192, "stream": False,
                                 }, timeout=_api_timeout, verify=False)
                                 sr.raise_for_status()
                                 sr_data = sr.json()
@@ -2195,7 +2280,7 @@ def register_chat_routes(app):
                                              {"role": "user", "content": _last_query}],
                                 "temperature": 0.3,
                                 "max_tokens": max_tokens if max_tokens >= 8192 else 8192,
-                                "stream": False, "tool_choice": "none",
+                                "stream": False,
                             }, timeout=180, verify=False)
                             sr.raise_for_status()
                             sr_data = sr.json()
@@ -2317,7 +2402,6 @@ def register_chat_routes(app):
                             "temperature": temperature_map[min(effort, 3)],
                             "max_tokens": max_tokens,
                             "stream": False,
-                            "tool_choice": "none",
                         },
                         timeout=_api_timeout,
                         verify=False,
@@ -2360,7 +2444,7 @@ def register_chat_routes(app):
                                         "messages": try_msgs,
                                         "temperature": temperature_map[min(effort, 3)],
                                         "max_tokens": retry_max,
-                                        "stream": False, "tool_choice": "none",
+                                        "stream": False,
                                     },
                                     timeout=180,
                                     verify=False,
@@ -2465,7 +2549,7 @@ def register_chat_routes(app):
                         "messages": api_messages,
                         "temperature": temperature_map[min(effort, 3)],
                         "max_tokens": max_tokens,
-                        "stream": False, "tool_choice": "none",
+                        "stream": False,
                     },
                     timeout=_api_timeout,
                     verify=False,
@@ -2505,7 +2589,7 @@ def register_chat_routes(app):
                                     "messages": api_messages,
                                     "temperature": temperature_map[min(effort, 3)],
                                     "max_tokens": retry_max,
-                                    "stream": False, "tool_choice": "none",
+                                    "stream": False,
                                 },
                                 timeout=180,
                                 verify=False,
