@@ -1,3 +1,0 @@
-public enum ENUM_FULLTEXT_COND {
-	TRUE, FALSE
-}
