@@ -53,15 +53,11 @@ if __name__ == "__main__":
     print("  Demos V1.0")
     print("=" * 50)
 
-    # 스킬 폴더 확인
+    # 스킬 폴더 / 하네스 / 로그프레소 — 시작 시 로드하지 않음.
+    # → 자동/수동 스킬이 실제로 사용될 때 routes_chat.py / routes_api.py 에서 lazy 호출됨.
     if os.path.isdir(SKILLS_DIR):
-        skills = scan_skills()
         print(f"  📂 스킬 폴더: {SKILLS_DIR}")
-        print(f"  ✅ 발견된 스킬: {len(skills)}개")
-        for s in sorted(skills.keys())[:10]:
-            print(f"     - {s}")
-        if len(skills) > 10:
-            print(f"     ... 외 {len(skills)-10}개")
+        print(f"  ⏳ 스킬/하네스 스캔은 첫 사용 시점에 수행됩니다 (시작 부하 제거)")
     else:
         print(f"  ⚠️  스킬 폴더 없음: {SKILLS_DIR}")
         print(f"     scientific-skills 폴더를 app.py와 같은 위치에 복사하세요.")
@@ -73,39 +69,19 @@ if __name__ == "__main__":
         print(f"  ⚠️  TOKEN.TXT: 없음 또는 비어있음")
         print(f"     → {TOKEN_FILE} 에 API 키를 넣어주세요")
 
-    # 하네스 브릿지 초기화 (스킬 레지스트리 + API 엔드포인트)
-    # → 시작 시 동기 로드하면 첫 요청이 지연되고 LLM이 늦게 시작됨.
-    #   백그라운드 쓰레드로 옮겨 Flask 가 즉시 서빙을 시작하도록.
+    # 하네스 라우트는 즉시 등록 (실제 ToolRegistry 빌드는 처음 사용 시점까지 지연).
     if HARNESS_AVAILABLE:
         try:
-            from harness_bridge import init_harness, register_harness_routes
-            # 라우트 등록은 즉시 (스킬 레지스트리가 비어도 라우트 자체는 살아 있어야 함)
+            from harness_bridge import register_harness_routes, configure_lazy_init
+            configure_lazy_init(SKILLS_DIR, SKILL_KEYWORDS)
             register_harness_routes(app)
-
-            def _deferred_harness_init():
-                try:
-                    harness_reg = init_harness(SKILLS_DIR, SKILL_KEYWORDS)
-                    print(f"  🔧 하네스: {len(harness_reg.list_all())}개 스킬 레지스트리 등록 완료 (지연 로드)")
-                    print(f"     → /api/harness/skills, /api/harness/session/*, /api/harness/status")
-                except Exception as e:
-                    print(f"  ⚠️  하네스 지연 초기화 실패: {e}")
-
-            import threading as _th
-            _th.Thread(target=_deferred_harness_init, daemon=True, name="harness-init").start()
-            print(f"  🔧 하네스: 백그라운드 등록 시작 (첫 요청과 병렬 진행)")
+            print(f"  🔧 하네스: 라우트만 등록 (스킬 레지스트리 빌드는 lazy)")
         except Exception as e:
-            print(f"  ⚠️  하네스 초기화 실패: {e}")
+            print(f"  ⚠️  하네스 라우트 등록 실패: {e}")
     else:
         print(f"  ℹ️  하네스 브릿지 미설치 (harness_bridge.py 없음 → 기존 모드)")
 
-    # 로그프레소 테이블 목록 자동 업데이트 → 백그라운드
-    def _deferred_logpresso_refresh():
-        try:
-            _refresh_logpresso_tables()
-        except Exception as _le:
-            print(f"  ⚠️  로그프레소 테이블 갱신 실패: {_le}")
-    import threading as _th2
-    _th2.Thread(target=_deferred_logpresso_refresh, daemon=True, name="logpresso-refresh").start()
+    # 로그프레소 테이블 목록도 자동 갱신하지 않음 — 첫 요청 시점에 lazy.
 
     # ============================================
     # GGUF 자동 감지 & Python으로 직접 로드 (다중 모델 지원)

@@ -99,8 +99,22 @@ def build_skill_registry(
     return registry
 
 
+# Lazy init 용 — init_harness 호출 시 받은 인자를 저장해뒀다가
+# get_registry()/get_router() 가 처음 호출될 때 자동으로 빌드.
+_lazy_skills_dir: str | None = None
+_lazy_skill_keywords: dict | None = None
+
+
+def configure_lazy_init(skills_dir: str | None = None, skill_keywords: dict | None = None):
+    """시작 시 init_harness 를 호출하지 않을 때, 어떤 dir/keywords 로 lazy 빌드할지 등록만 함."""
+    global _lazy_skills_dir, _lazy_skill_keywords
+    _lazy_skills_dir = skills_dir
+    _lazy_skill_keywords = skill_keywords
+
+
 def init_harness(skills_dir: str | None = None, skill_keywords: dict | None = None):
-    """서버 시작 시 호출. 전역 레지스트리 + 라우터 초기화."""
+    """전역 레지스트리 + 라우터 초기화. 시작 시 호출하면 즉시 빌드,
+    아니면 get_registry/get_router 첫 호출 시점에 자동 빌드됨."""
     global _registry, _router, _history, _feedback_store
     _registry = build_skill_registry(skills_dir, skill_keywords)
     _router = ToolRouter(_registry)
@@ -110,17 +124,28 @@ def init_harness(skills_dir: str | None = None, skill_keywords: dict | None = No
     return _registry
 
 
+def _ensure_initialized():
+    """레지스트리가 비어 있으면 (시작 시 init_harness 가 안 불렸으면) 지금 빌드."""
+    global _registry, _router
+    if _registry is None or not _registry.list_all():
+        print(f"  🔧 하네스: 첫 사용 — 스킬 레지스트리 lazy 빌드 시작")
+        init_harness(_lazy_skills_dir, _lazy_skill_keywords)
+        try:
+            print(f"  🔧 하네스: {len(_registry.list_all())}개 스킬 등록 완료 (lazy)")
+        except Exception:
+            pass
+
+
 def get_registry() -> ToolRegistry:
-    """현재 레지스트리 반환. 초기화 전이면 빈 레지스트리."""
-    global _registry
-    if _registry is None:
-        _registry = ToolRegistry()
-    return _registry
+    """현재 레지스트리 반환. 비어 있으면 lazy 빌드."""
+    _ensure_initialized()
+    return _registry if _registry is not None else ToolRegistry()
 
 
 def get_router() -> ToolRouter:
-    """현재 라우터 반환."""
-    global _router, _registry
+    """현재 라우터 반환. 비어 있으면 lazy 빌드."""
+    _ensure_initialized()
+    global _router
     if _router is None:
         _router = ToolRouter(get_registry())
     return _router
