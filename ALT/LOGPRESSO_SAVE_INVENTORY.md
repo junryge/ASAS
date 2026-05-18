@@ -1,6 +1,6 @@
 # LogpressoAPI 적재 위치 전체 인벤토리
 
-`ALT/decoded_main/` 전체에서 Logpresso 에 데이터를 저장하는 모든 위치 (커밋된 코드 기준, 주석 처리된 호출 제외).
+`main/` 전체에서 Logpresso 에 데이터를 저장하는 모든 위치 (커밋된 코드 기준, 주석 처리된 호출 제외).
 
 저장 경로는 두 가지:
 1. **직접 호출** — `LogpressoAPI.setInsertTuple(s)(table, ..., timeoutSec)`
