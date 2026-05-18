@@ -1,6 +1,6 @@
 # `{FAB}_ATLAS_HID_INOUT` 적재 관련 자바 소스 모음
 
-`ALT/decoded_main/` 에서 `{FAB}_ATLAS_HID_INOUT` 테이블 적재에 직접/간접 관여하는
+`main/` 에서 `{FAB}_ATLAS_HID_INOUT` 테이블 적재에 직접/간접 관여하는
 파일들을 한 폴더에 복사한 것입니다. (원본 그대로 — 수정 없음)
 
 ## 파일 목록 & 역할

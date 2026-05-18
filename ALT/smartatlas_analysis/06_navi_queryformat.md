@@ -3,8 +3,8 @@
 분석 대상: 24개 파일 (navi 8 + queryformat 4 + queryformat/type 11 + queryformat/util 1)
 
 루트:
-- `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/navi/`
-- `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/queryformat/`
+- `main/java/com/skhynix/smartatlas/navi/`
+- `main/java/com/skhynix/smartatlas/queryformat/`
 
 ---
 

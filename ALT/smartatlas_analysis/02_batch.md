@@ -1,6 +1,6 @@
 # SmartAtlas batch 패키지 상세 분석
 
-본 문서는 `/home/user/ASAS/ALT/decoded_main/java/com/skhynix/smartatlas/batch/` 의 32 개 Quartz Job 클래스를 항목별로 분석한 결과이다. 모든 라인 번호는 원본 `.java` 파일 기준이다.
+본 문서는 `main/java/com/skhynix/smartatlas/batch/` 의 32 개 Quartz Job 클래스를 항목별로 분석한 결과이다. 모든 라인 번호는 원본 `.java` 파일 기준이다.
 
 ---
 

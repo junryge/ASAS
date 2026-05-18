@@ -1,6 +1,6 @@
 # 01. `util/PythonUtil.java` — Python 실행 핵심 분석
 
-> **위치:** `decoded_main/java/com/skhynix/smartatlas/util/PythonUtil.java` (151 라인)
+> **위치:** `main/java/com/skhynix/smartatlas/util/PythonUtil.java` (151 라인)
 > **역할:** 자바에서 외부 Python 인터프리터를 실행하고 stdout JSON 을 파싱해 반환
 
 ---

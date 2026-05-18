@@ -1,9 +1,9 @@
 # SmartAtlas 데이터 모델 패키지 상세 분석
 
 > 분석 대상 (47 파일)
-> - `decoded_main/java/com/skhynix/smartatlas/data/` (23)
-> - `decoded_main/java/com/skhynix/smartatlas/data/eq/` (7)
-> - `decoded_main/java/com/skhynix/smartatlas/data/raw/` (17)
+> - `main/java/com/skhynix/smartatlas/data/` (23)
+> - `main/java/com/skhynix/smartatlas/data/eq/` (7)
+> - `main/java/com/skhynix/smartatlas/data/raw/` (17)
 
 ---
 

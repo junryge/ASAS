@@ -1,6 +1,6 @@
 # SmartAtlas — process/ · listener/ 패키지 상세 분석
 
-본 문서는 SmartAtlas 시스템의 실시간 메시지 수신·처리 핵심 모듈(listener 4종 + process 4종)에 대한 코드 레벨 상세 분석이다. 모든 라인 번호는 `decoded_main/java/com/skhynix/smartatlas/...` 기준이며, 토큰 인덱스·FunctionType 분기·외부 호출(DataService/LogpressoAPI/TibrvAPI)을 빠짐없이 기술한다.
+본 문서는 SmartAtlas 시스템의 실시간 메시지 수신·처리 핵심 모듈(listener 4종 + process 4종)에 대한 코드 레벨 상세 분석이다. 모든 라인 번호는 `main/java/com/skhynix/smartatlas/...` 기준이며, 토큰 인덱스·FunctionType 분기·외부 호출(DataService/LogpressoAPI/TibrvAPI)을 빠짐없이 기술한다.
 
 ---
 
