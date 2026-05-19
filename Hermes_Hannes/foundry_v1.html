@@ -163,6 +163,13 @@
   .llm-card.hn .iconbox { background: var(--hn); color: var(--bg); }
   .llm-card .role { font-size: 10px; color: var(--text-3); }
   .llm-card .model { font-size: 12px; font-weight: 600; color: var(--text-1); font-family: 'JetBrains Mono', monospace; }
+  .llm-card .model-select {
+    font-size: 11px; font-weight: 600; color: var(--text-1);
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 4px; max-width: 160px;
+  }
+  .llm-card .model-select:focus { outline: 1px solid var(--ctx); }
   .llm-card .warn-badge {
     position: absolute; top: -6px; right: 6px;
     background: var(--red); color: white; font-size: 9px;
@@ -188,8 +195,12 @@
     min-height: 0;
   }
   .col { display: grid; gap: 8px; min-height: 0; }
-  .col-left { grid-template-rows: 1.3fr 1fr; }
+  .col-left { grid-template-rows: 1fr 1fr; }
   .col-right { grid-template-rows: 1.4fr 0.9fr; }
+
+  /* 좌측 컬럼 카드(나노봇/컨텍스트): 동일 높이 + 내부 스크롤(스크롤바 숨김) */
+  .col-left > .card { overflow-y: auto; overflow-x: hidden; min-height: 0; scrollbar-width: none; }
+  .col-left > .card::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
   .h-title {
     font-size: 12px;
@@ -275,6 +286,9 @@
   .chain-step.done .num { background: var(--green); color: var(--bg); }
   .chain-step.active { border-color: var(--nb); color: var(--nb); background: rgba(78,161,255,0.1); }
   .chain-step.active .num { background: var(--nb); color: white; }
+  .chain-step.error { border-color: var(--red, #ff6b6b); color: var(--red, #ff6b6b); }
+  .chain-step.error .num { background: var(--red, #ff6b6b); color: var(--bg); }
+  .chain-step:hover { filter: brightness(1.15); }
   .chain-step.active::after {
     content: ''; position: absolute; top: -3px; right: -3px;
     width: 8px; height: 8px; border-radius: 50%; background: var(--nb);
@@ -339,6 +353,59 @@
   .json-preview .k { color: var(--ctx); }
   .json-preview .s { color: var(--coral); }
   .json-preview .n { color: var(--hn); }
+
+  /* Context slots (M3) */
+  .ctx-slot-wrap { margin-bottom: 8px; display: block; }
+  .ctx-slot-wrap + .ctx-slot-wrap { margin-top: 0; }
+  .ctx-slot-wrap .lbl {
+    font-size: 10px; color: var(--text-3); margin-bottom: 2px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .ctx-slot-wrap .lbl .req-mark { color: var(--coral); font-weight: 700; }
+  .ctx-slot-wrap .lbl .auto-badge {
+    margin-left: auto;
+    background: rgba(255,184,108,.18); color: var(--coral);
+    font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 600;
+    display: none;
+  }
+  .ctx-slot-wrap.has-auto .lbl .auto-badge { display: inline-block; }
+  .ctx-slot-wrap input[type="text"],
+  .ctx-slot-wrap textarea {
+    width: 100%;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    font-size: 11px;
+    color: var(--text-1);
+    font-family: inherit;
+    box-sizing: border-box;
+  }
+  .ctx-slot-wrap textarea { resize: vertical; min-height: 38px; line-height: 1.4; }
+  .ctx-slot-wrap.missing input[type="text"],
+  .ctx-slot-wrap.missing textarea,
+  .ctx-slot-wrap.missing .file-drop {
+    border-color: var(--red, #ff6b6b);
+    box-shadow: 0 0 0 1px var(--red, #ff6b6b) inset;
+  }
+  .file-drop {
+    display: block;
+    background: var(--card-2);
+    border: 1px dashed var(--border);
+    border-radius: 5px;
+    padding: 8px 9px;
+    font-size: 11px;
+    color: var(--text-3);
+    cursor: pointer;
+    text-align: center;
+    box-sizing: border-box;
+    width: 100%;
+  }
+  .file-drop:hover { border-color: var(--ctx); color: var(--text-2); }
+  .file-drop.has-file { color: var(--text-1); border-style: solid; border-color: var(--ctx); }
+  .file-drop .meta { font-size: 9px; color: var(--text-3); margin-top: 2px; }
+  .file-drop .msg { display: block; line-height: 1.3; word-break: keep-all; }
+  .ctx-slot-wrap input[type="file"] { display: none; }
 
   /* Hermes */
   .hm-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; row-gap: 4px; }
@@ -895,38 +962,37 @@
     </div>
     <div class="llm-card nb">
       <div class="iconbox">N</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">나노봇 · 4단 체인</div>
-        <div class="model">hcp-70b-stable</div>
+        <select class="model-select" data-role="nb"><option>로딩…</option></select>
       </div>
     </div>
     <div class="llm-card ctx">
       <div class="iconbox">C</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">컨텍스트 · 파서</div>
-        <div class="model">hcp-13b-stable</div>
+        <select class="model-select" data-role="ctx"><option>로딩…</option></select>
       </div>
     </div>
     <div class="llm-card hm">
       <div class="iconbox">H</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">헤르메스 · 생성</div>
-        <div class="model">hcp-시조새-110b</div>
+        <select class="model-select" data-role="hm"><option>로딩…</option></select>
       </div>
-      <span class="warn-badge">FALLBACK 없음</span>
     </div>
     <div class="llm-card hn">
       <div class="iconbox">T</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">하네스 · L2 분류</div>
-        <div class="model">hcp-7b-stable</div>
+        <select class="model-select" data-role="hn"><option>로딩…</option></select>
       </div>
     </div>
     <div class="preset-tabs">
-      <button>👥 균형</button>
-      <button>🪙 비용</button>
-      <button class="active">💎 품질</button>
-      <button>⚙ 커스텀</button>
+      <button data-preset="balanced">👥 균형</button>
+      <button data-preset="cost">🪙 비용</button>
+      <button class="active" data-preset="quality">💎 품질</button>
+      <button data-preset="custom">⚙ 커스텀</button>
     </div>
   </div>
 
@@ -972,7 +1038,7 @@
 
       <div class="tool-selector">
         <span class="lbl">타입</span>
-        <select id="typeSelect" onchange="updateFwOptions()">
+        <select id="typeSelect" onchange="updateFwOptions(); updateContextSlots();">
           <option value="ml">🧠 ML/AI 모델</option>
           <option value="data">📊 데이터 분석</option>
           <option value="web">🌐 웹/API</option>
@@ -1018,13 +1084,10 @@
         🔄 로드 진화 모드 — 기존 코드 분석 후 피드백 적용 (변경분만 재생성)
       </div>
       <div class="ctx-section">컨텍스트-슬롯 <span class="badge" style="background: var(--ctx); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 3px;">UI</span></div>
-      <div class="ctx-slot">요구사항 · deadlock CNN 분류기, Acc ≥ 0.98</div>
-      <div class="ctx-slot">📊 CSV: training_logs.csv (14×8200)</div>
+      <div id="ctxSlots"><!-- updateContextSlots() 가 채움 --></div>
 
       <div class="ctx-section" style="margin-top: 4px;">컨텍스트-파서 <span style="background: var(--coral); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700;">LLM</span></div>
-      <div class="json-preview">
-        <span style="color:var(--text-3);">{</span> <span class="k">"task"</span>:<span class="s">"ml.classifier"</span>, <span class="k">"acc"</span>:<span class="n">0.98</span> <span style="color:var(--text-3);">}</span>
-      </div>
+      <div class="json-preview" id="ctxJsonPreview"><span style="color:var(--text-3);">{ }</span> <span style="color:var(--text-3);">— 시작 시 파서가 채움</span></div>
     </div>
   </div>
 
@@ -1760,7 +1823,545 @@
   // 초기화 시 한 번 실행
   setTimeout(() => window.updateFwOptions(), 0);
 
-  // ============ ▶ 시작 — GGUF 실제 추론 + API mock ============
+  // ============ HCP LLM 라우팅 — 모델 선택 ============
+  window.SELECTED_MODELS = { nb: null, ctx: null, hm: null, hn: null };
+  let _MODELS_CACHE = [];
+
+  // cost_tier 기반 프리셋
+  const MODEL_PRESETS = {
+    quality:  { prefer: 'high',   capability: null },     // 큰 모델
+    balanced: { prefer: 'medium', capability: null },
+    cost:     { prefer: 'low',    capability: null },
+  };
+
+  function _pickModelByTier(prefer, role) {
+    // role별 capability 힌트
+    const need = (role === 'hm') ? 'code' : (role === 'ctx' ? 'analysis' : null);
+    const tiers = ['high','medium','low'];
+    const order = [prefer, ...tiers.filter(t => t !== prefer)];
+    for (const tier of order) {
+      const cand = _MODELS_CACHE.filter(m => (m.cost_tier === tier) && (!need || (m.capabilities||[]).includes(need)));
+      if (cand.length) return cand[0].id;
+    }
+    return _MODELS_CACHE[0]?.id || null;
+  }
+
+  function _applyPreset(presetKey) {
+    if (presetKey === 'custom') return; // 그대로 둠
+    const p = MODEL_PRESETS[presetKey];
+    if (!p || _MODELS_CACHE.length === 0) return;
+    for (const role of ['nb','ctx','hm','hn']) {
+      // 하네스/컨텍스트는 너무 큰 모델 안 써도 됨 → 한 단계 낮춤
+      const prefer = (role === 'hn' || role === 'ctx')
+        ? (p.prefer === 'high' ? 'medium' : (p.prefer === 'medium' ? 'low' : 'low'))
+        : p.prefer;
+      const id = _pickModelByTier(prefer, role);
+      if (id) {
+        window.SELECTED_MODELS[role] = id;
+        const sel = document.querySelector(`.model-select[data-role="${role}"]`);
+        if (sel) sel.value = id;
+      }
+    }
+  }
+
+  async function _loadModelsAndInitPanel() {
+    try {
+      const res = await fetch('/api/elements/models');
+      const j = await res.json();
+      if (!j.ok || !j.models) throw new Error('no models');
+      _MODELS_CACHE = j.models;
+    } catch (e) {
+      // 백엔드 미동작 시: 빈 옵션 + 안내
+      document.querySelectorAll('.model-select').forEach(s => {
+        s.innerHTML = '<option value="">(백엔드 연결 안됨)</option>';
+        s.disabled = true;
+      });
+      return;
+    }
+    const optsHtml = _MODELS_CACHE.map(m => {
+      const tag = m.cost_tier ? ` [${m.cost_tier}]` : '';
+      return `<option value="${m.id}">${m.name || m.id}${tag}</option>`;
+    }).join('');
+    document.querySelectorAll('.model-select').forEach(sel => {
+      sel.innerHTML = optsHtml;
+      const role = sel.getAttribute('data-role');
+      sel.addEventListener('change', () => {
+        window.SELECTED_MODELS[role] = sel.value || null;
+        // 사용자가 직접 바꿨으면 프리셋은 '커스텀'
+        document.querySelectorAll('.preset-tabs button').forEach(b => b.classList.remove('active'));
+        document.querySelector('.preset-tabs button[data-preset="custom"]')?.classList.add('active');
+      });
+    });
+    // 초기 프리셋 = 품질
+    _applyPreset('quality');
+  }
+  setTimeout(_loadModelsAndInitPanel, 0);
+
+  // 프리셋 탭 클릭
+  document.querySelectorAll('.preset-tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.preset-tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const preset = btn.getAttribute('data-preset');
+      if (preset && preset !== 'custom') _applyPreset(preset);
+    });
+  });
+
+  // ============ 컨텍스트 슬롯 (M3) ============
+  // 백엔드 backend/context_schemas.py 의 widgets 와 동일 키 사용.
+  const SLOT_TEMPLATES = {
+    ml: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: deadlock CNN 분류기. 입력 14×T 시계열, Acc 0.98 이상…'},
+      {key:'dataset',       label:'데이터셋 파일',     required:true,  widget:'file',
+       accept:'.csv,.tsv,.parquet,.json,.xlsx,.npy'},
+      {key:'metric',        label:'목표 메트릭',       required:true,  widget:'input',
+       placeholder:'예: Acc≥0.98 / F1≥0.9 / MAE≤0.05'},
+      {key:'input_shape',   label:'입력 shape',       required:false, widget:'input',
+       placeholder:'예: 14×T, (B, 3, 224, 224)'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'위 칸에 못 담은 정보 자유롭게 — 파서가 빈 슬롯에 추론해 채워줍니다'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true,
+       accept:'.csv,.tsv,.json,.txt,.md,.yaml,.yml,.parquet,.npy,.xlsx'},
+    ],
+    data: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 월별 지역별 매출 집계 + 차트'},
+      {key:'dataset',       label:'데이터셋 파일',     required:true,  widget:'file',
+       accept:'.csv,.tsv,.parquet,.json,.xlsx'},
+      {key:'group_by',      label:'집계 차원',         required:false, widget:'input',
+       placeholder:'예: 지역, 월'},
+      {key:'output_format', label:'출력 포맷',         required:false, widget:'input',
+       placeholder:'예: CSV / 차트 PNG / Markdown 표'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    web: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 사용자 인증 + 게시판 REST API'},
+      {key:'endpoints',     label:'엔드포인트',        required:true,  widget:'textarea',
+       placeholder:'예:\nGET  /users\nPOST /login\nGET  /posts/:id'},
+      {key:'auth',          label:'인증 방식',         required:false, widget:'input',
+       placeholder:'예: JWT / OAuth / None'},
+      {key:'schema_text',   label:'요청/응답 스키마',   required:false, widget:'textarea',
+       placeholder:'예: User { id, name, email }'},
+      {key:'schema_file',   label:'스키마 파일 (선택)', required:false, widget:'file',
+       accept:'.yaml,.yml,.json'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    cli: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 로그 파일 파싱 후 통계 출력'},
+      {key:'args',          label:'인자/플래그',       required:true,  widget:'textarea',
+       placeholder:'예:\n--input <path>  (필수)\n--threshold <float>  기본 0.5\n--verbose'},
+      {key:'io_format',     label:'stdin/stdout 포맷', required:false, widget:'input',
+       placeholder:'예: stdin=JSON, stdout=CSV'},
+      {key:'example_input', label:'예시 입력 파일 (선택)', required:false, widget:'file',
+       accept:'.txt,.json,.csv,.tsv'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    automation: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 매일 아침 Slack 채널에 어제자 매출 요약 전송'},
+      {key:'trigger',       label:'트리거',           required:true,  widget:'input',
+       placeholder:'예: 매일 09:00 / Slack 명령어 /report / webhook'},
+      {key:'target_system', label:'대상 시스템',       required:false, widget:'input',
+       placeholder:'예: Slack workspace / Notion DB / GitHub'},
+      {key:'schedule',      label:'스케줄',            required:false, widget:'input',
+       placeholder:'예: cron 0 9 * * * / 매시간 / once'},
+      {key:'config_file',   label:'설정 파일 (선택)',   required:false, widget:'file',
+       accept:'.yaml,.yml,.json,.env'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    general: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 무엇을 만들고 싶은지 자유롭게…'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+  };
+
+  // 슬롯 키 → {file: File|null, files: File[]} 보관 (input file은 DOM에 직접 못 쓰니까 별도 저장)
+  const _ctxFiles = {};
+
+  function _slotInputHTML(slot) {
+    if (slot.widget === 'textarea') {
+      return `<textarea data-slot="${slot.key}" placeholder="${(slot.placeholder||'').replace(/"/g,'&quot;')}" rows="${slot.key==='requirement'?3:2}"></textarea>`;
+    }
+    if (slot.widget === 'input') {
+      return `<input type="text" data-slot="${slot.key}" placeholder="${(slot.placeholder||'').replace(/"/g,'&quot;')}">`;
+    }
+    if (slot.widget === 'file') {
+      const id = `fileSlot_${slot.key}`;
+      const mult = slot.multiple ? 'multiple' : '';
+      const accept = slot.accept ? `accept="${slot.accept}"` : '';
+      return `
+        <label class="file-drop" data-slot="${slot.key}" for="${id}">
+          <span class="msg">📎 파일 선택 / 드롭${slot.multiple?' (여러 개)':''}</span>
+          <div class="meta" style="display:none;"></div>
+        </label>
+        <input type="file" id="${id}" data-slot-file="${slot.key}" ${mult} ${accept}>
+      `;
+    }
+    return '';
+  }
+
+  window.updateContextSlots = function() {
+    const typeSelect = document.getElementById('typeSelect');
+    const host = document.getElementById('ctxSlots');
+    if (!typeSelect || !host) return;
+    const tmpl = SLOT_TEMPLATES[typeSelect.value] || SLOT_TEMPLATES.general;
+    // 파일 상태 초기화 (타입 바뀌면 슬롯 키도 바뀌니까)
+    for (const k of Object.keys(_ctxFiles)) delete _ctxFiles[k];
+
+    host.innerHTML = tmpl.map(slot => `
+      <div class="ctx-slot-wrap" data-slot-wrap="${slot.key}">
+        <div class="lbl">
+          ${slot.required ? '<span class="req-mark">★</span>' : ''}
+          <span>${slot.label}</span>
+          <span class="auto-badge">🪄 자동 채움</span>
+        </div>
+        ${_slotInputHTML(slot)}
+      </div>
+    `).join('');
+
+    // 파일 input change 핸들러 — DOM 라벨에 파일명 표시 + _ctxFiles에 저장
+    host.querySelectorAll('input[type="file"]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const key = inp.getAttribute('data-slot-file');
+        const drop = host.querySelector(`.file-drop[data-slot="${key}"]`);
+        if (!inp.files || inp.files.length === 0) {
+          _ctxFiles[key] = null;
+          if (drop) { drop.classList.remove('has-file'); drop.querySelector('.msg').textContent = '📎 파일 선택 / 드롭'; drop.querySelector('.meta').style.display='none'; }
+          return;
+        }
+        if (inp.multiple) {
+          _ctxFiles[key] = Array.from(inp.files);
+        } else {
+          _ctxFiles[key] = inp.files[0];
+        }
+        if (drop) {
+          drop.classList.add('has-file');
+          const names = Array.from(inp.files).map(f => f.name).join(', ');
+          const sizes = Array.from(inp.files).reduce((s, f) => s + f.size, 0);
+          drop.querySelector('.msg').textContent = '✓ ' + names;
+          const meta = drop.querySelector('.meta');
+          meta.style.display = 'block';
+          meta.textContent = `${(sizes/1024).toFixed(1)} KB`;
+        }
+      });
+    });
+
+    // planText 와 requirement 슬롯 동기화 — 사용자가 어디에 적든 같이 보이게
+    // typeSelect 변경 시 매번 호출되므로 planText 리스너는 한 번만 등록.
+    const planTextEl = document.getElementById('planText');
+    const reqEl = host.querySelector('[data-slot="requirement"]');
+    if (planTextEl && reqEl) {
+      reqEl.value = planTextEl.value;
+      reqEl.addEventListener('input', () => { planTextEl.value = reqEl.value; });
+      if (!planTextEl._ctxBound) {
+        planTextEl.addEventListener('input', () => {
+          const cur = document.querySelector('#ctxSlots [data-slot="requirement"]');
+          if (cur) cur.value = planTextEl.value;
+        });
+        planTextEl._ctxBound = true;
+      }
+    }
+  };
+  // 초기 렌더
+  setTimeout(() => window.updateContextSlots(), 0);
+
+  function _gatherContextSlots() {
+    const typeSelect = document.getElementById('typeSelect');
+    const tmpl = SLOT_TEMPLATES[typeSelect?.value || 'general'] || SLOT_TEMPLATES.general;
+    const host = document.getElementById('ctxSlots');
+    const text = {};
+    const files = {};   // key → File (single)
+    const fileLists = {}; // key → File[] (multiple)
+    for (const slot of tmpl) {
+      if (slot.widget === 'file') {
+        const v = _ctxFiles[slot.key];
+        if (Array.isArray(v) && v.length) fileLists[slot.key] = v;
+        else if (v) files[slot.key] = v;
+      } else {
+        const el = host.querySelector(`[data-slot="${slot.key}"]`);
+        if (el) text[slot.key] = (el.value || '').trim();
+      }
+    }
+    return { tmpl, text, files, fileLists };
+  }
+
+  function _renderParserJson(parsed) {
+    const pre = document.getElementById('ctxJsonPreview');
+    if (!pre) return;
+    // 내부 메타키 (_model, _project_type) 는 숨김
+    const clean = {};
+    for (const k of Object.keys(parsed)) {
+      if (k.startsWith('_')) continue;
+      clean[k] = parsed[k];
+    }
+    pre.textContent = JSON.stringify(clean, null, 2);
+    pre.style.whiteSpace = 'pre';
+    pre.style.fontFamily = "'JetBrains Mono', monospace";
+  }
+
+  function _markMissing(missing, inferred) {
+    const host = document.getElementById('ctxSlots');
+    if (!host) return;
+    host.querySelectorAll('.ctx-slot-wrap').forEach(w => {
+      w.classList.remove('missing', 'has-auto');
+    });
+    (missing || []).forEach(key => {
+      const w = host.querySelector(`[data-slot-wrap="${key}"]`);
+      if (w) w.classList.add('missing');
+    });
+    (inferred || []).forEach(item => {
+      const w = host.querySelector(`[data-slot-wrap="${item.field}"]`);
+      if (w) w.classList.add('has-auto');
+    });
+  }
+
+  // 컨텍스트 파서 호출. 성공 = required 다 채워짐.
+  window.runContextParser = async function(modeOverride) {
+    const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
+    const mode = modeOverride || (isGgufMode ? 'gguf' : 'api');
+    const typeSelect = document.getElementById('typeSelect');
+    const projectType = typeSelect?.value || 'general';
+    const { tmpl, text, files, fileLists } = _gatherContextSlots();
+
+    const fd = new FormData();
+    fd.append('mode', mode);
+    fd.append('project_type', projectType);
+    fd.append('slots_json', JSON.stringify(text));
+    if (mode === 'api' && window.SELECTED_MODELS?.ctx) {
+      fd.append('model_id', window.SELECTED_MODELS.ctx);
+    }
+    for (const [k, f] of Object.entries(files)) fd.append(k, f);
+    for (const [k, arr] of Object.entries(fileLists)) arr.forEach(f => fd.append(k, f));
+
+    let resp;
+    try {
+      resp = await fetch('/api/elements/context/parse', { method: 'POST', body: fd });
+    } catch (e) {
+      return { ok: false, error: '네트워크 오류: ' + e.message };
+    }
+    const j = await resp.json().catch(() => ({ ok: false, error: '응답 파싱 실패' }));
+    if (!j.ok) {
+      _renderParserJson({ error: j.error || 'unknown' });
+      return { ok: false, error: j.error };
+    }
+    const parsed = j.parsed || {};
+    _renderParserJson(parsed);
+    const missing = parsed.missing_required || [];
+    const inferred = parsed.inferred_from_freeform || [];
+    _markMissing(missing, inferred);
+    return { ok: missing.length === 0, missing, inferred, parsed, dataset_meta: j.dataset_meta };
+  };
+
+  // ============ 나노봇 SSE + 헤르메스 자동 이어서 (M3.7) ============
+  // 4단계 출력 보관 — 단계 칸 클릭하면 forge에 표시.
+  window.NB_STAGE_OUTPUT = { 1: null, 2: null, 3: null, 4: null, final_md: null };
+  window.NB_LAST_REQUEST = null;
+
+  function _setStepState(n, state) {
+    // state: 'idle' | 'active' | 'done' | 'error'
+    const el = document.getElementById(`step${n}`);
+    if (!el) return;
+    el.classList.remove('active','done','error');
+    if (state === 'active') el.classList.add('active');
+    else if (state === 'done') el.classList.add('done');
+    else if (state === 'error') el.classList.add('error');
+  }
+
+  function _resetChain() {
+    for (let i=1;i<=4;i++) _setStepState(i,'idle');
+    window.NB_STAGE_OUTPUT = { 1: null, 2: null, 3: null, 4: null, final_md: null };
+  }
+
+  function _renderForgeStage(n) {
+    const stageNames = {1:'① Analyzer · 요구 분석', 2:'② Architect · 구조 설계',
+                       3:'③ Writer · MD 작성', 4:'④ Reviewer · 자체 검토',
+                       'final':'📄 최종 통합 MD (Writer + Reviewer)'};
+    const out = (n === 'final') ? window.NB_STAGE_OUTPUT.final_md : window.NB_STAGE_OUTPUT[n];
+    if (!out) {
+      forge.classList.remove('has-code');
+      forge.innerHTML = `<h2 style="color: var(--text-3);">아직 결과 없음</h2><div class="hint">단계가 완료되면 클릭으로 확인 가능</div>`;
+      return;
+    }
+    forge.classList.add('has-code');
+    forge.innerHTML = `<span class="cm"># ${escapeHtml(stageNames[n])}</span><br><br>${escapeHtml(out).replace(/\n/g,'<br>')}`;
+    forge.scrollTop = 0;
+  }
+
+  // 단계 칸 클릭 핸들러
+  for (let i=1;i<=4;i++) {
+    const el = document.getElementById(`step${i}`);
+    if (el) {
+      el.style.cursor = 'pointer';
+      el.title = '클릭하면 이 단계의 결과를 헤르메스 영역에 표시';
+      el.addEventListener('click', () => _renderForgeStage(i));
+    }
+  }
+
+  // SSE 구독 — POST + 청크 읽기 (EventSource는 GET 전용이라 fetch+reader 사용)
+  async function _consumeSSE(url, body, onEvent) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      // SSE 이벤트는 \n\n 으로 구분
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
+          try { onEvent(JSON.parse(payload)); }
+          catch (e) { /* 부분 데이터 무시 */ }
+        }
+      }
+    }
+  }
+
+  // 나노봇 4단 SSE 실행. 끝나면 final_md 리턴.
+  async function runNanabotSSE(payload) {
+    _resetChain();
+    forge.classList.add('has-code');
+    forge.innerHTML = `<span class="cm"># 🧠 나노봇 4단 체인 실행 중...</span><br><span class="cm"># 요구사항: ${escapeHtml(payload.requirement)}</span><br><br>`;
+
+    let finalMd = null;
+    let errored = false;
+    await _consumeSSE('/api/elements/nanabot/stream', payload, (ev) => {
+      if (ev.stage === 'complete') {
+        finalMd = ev.final_md || '';
+        window.NB_STAGE_OUTPUT.final_md = finalMd;
+        // 통합 MD 표시
+        forge.innerHTML = `<span class="cm"># 📄 최종 통합 MD</span><br><br>${escapeHtml(finalMd).replace(/\n/g,'<br>')}`;
+        forge.scrollTop = 0;
+        return;
+      }
+      if (ev.status === 'error') {
+        errored = true;
+        _setStepState(ev.stage, 'error');
+        forge.innerHTML += `<br><span style="color: var(--red, #ff6b6b);">[stage ${ev.stage} 오류] ${escapeHtml(ev.error || '')}</span>`;
+        return;
+      }
+      if (ev.status === 'running') {
+        _setStepState(ev.stage, 'active');
+        forge.innerHTML += `<span class="cm"># ${ev.stage}/4 · ${escapeHtml(ev.name)} 실행 중...</span><br>`;
+        forge.scrollTop = forge.scrollHeight;
+      } else if (ev.status === 'done') {
+        _setStepState(ev.stage, 'done');
+        window.NB_STAGE_OUTPUT[ev.stage] = ev.output || '';
+        forge.innerHTML += `<span style="color: var(--green, #5edb91);"># ${ev.stage}/4 · ${escapeHtml(ev.name)} 완료 (${(ev.output||'').length} chars, model=${escapeHtml(ev.model||'?')})</span><br>`;
+        forge.scrollTop = forge.scrollHeight;
+      }
+    });
+    if (errored) throw new Error('나노봇 단계 오류');
+    return finalMd;
+  }
+
+  // 헤르메스 호출 — 일반 POST (스트림 아님)
+  async function runHermesGen(finalMd, lang, fw, modelId) {
+    forge.classList.add('has-code');
+    forge.innerHTML += `<br><span class="cm"># ⚒ 헤르메스 코드 생성 중... (model=${escapeHtml(modelId || 'default')})</span><br>`;
+    const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
+    const body = {
+      mode: isGgufMode ? 'gguf' : 'api',
+      md_spec: finalMd, lang, fw,
+    };
+    if (!isGgufMode && modelId) body.model_id = modelId;
+    const res = await fetch('/api/elements/hermes/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const j = await res.json();
+    if (!j.ok) {
+      forge.innerHTML += `<span style="color: var(--red, #ff6b6b);">[헤르메스 오류] ${escapeHtml(j.error || 'unknown')}</span>`;
+      return null;
+    }
+    const code = j.code || '';
+    forge.innerHTML = `<span class="cm"># ⚒ 헤르메스 생성 코드</span><br><br>${escapeHtml(code).replace(/\n/g,'<br>')}`;
+    forge.scrollTop = 0;
+    return code;
+  }
+
+  // 통합 파이프라인 — 컨텍스트 파서 → 나노봇 → 헤르메스
+  async function runPipeline() {
+    const ctxRes = await window.runContextParser();
+    if (!ctxRes.ok) {
+      const miss = (ctxRes.missing || []).join(', ');
+      forge.classList.remove('has-code');
+      forge.innerHTML = `<h2 style="color: var(--red, #ff6b6b);">⚠ 컨텍스트 필수 입력 누락</h2><div class="hint">빈 칸: <b>${miss || '알 수 없음'}</b><br>슬롯을 채우거나 <b>자연어 보충</b> 칸에 적어주세요.</div>`;
+      return;
+    }
+    const planTextEl = document.getElementById('planText');
+    const requirement = (planTextEl?.value || ctxRes.parsed?.intent || '').trim() || '간단한 프로그램을 작성해주세요.';
+    const typeSel = document.getElementById('typeSelect');
+    const langSel = document.getElementById('langSelect');
+    const fwSel = document.getElementById('fwSelect');
+    const typeLabel = typeSel?.selectedOptions[0]?.textContent || '일반 프로그램';
+    const langLabel = langSel?.selectedOptions[0]?.textContent || 'Python';
+    const fwLabel = fwSel?.selectedOptions[0]?.textContent || '';
+    const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
+    const mode = isGgufMode ? 'gguf' : 'api';
+
+    // GGUF 모드면 로드 확인
+    if (isGgufMode) {
+      try {
+        const sres = await fetch('/api/gguf-pool-status');
+        const sdata = await sres.json();
+        const loaded = sdata.loaded || (sdata.pool && sdata.pool[0] && sdata.pool[0].model);
+        if (!loaded) {
+          forge.classList.remove('has-code');
+          forge.innerHTML = '<h2 style="color: var(--red);">⚠ GGUF 모델이 로드되지 않았습니다</h2><div class="hint">먼저 상단 <b>📥 GGUF 모델 로드</b>를 클릭하세요.</div>';
+          return;
+        }
+      } catch (_) {}
+    }
+
+    const nanabotPayload = {
+      mode, requirement, type_label: typeLabel,
+      language_label: langLabel, framework_label: fwLabel,
+    };
+    if (mode === 'api' && window.SELECTED_MODELS?.nb) nanabotPayload.model_id = window.SELECTED_MODELS.nb;
+    window.NB_LAST_REQUEST = nanabotPayload;
+
+    let finalMd;
+    try {
+      finalMd = await runNanabotSSE(nanabotPayload);
+    } catch (e) {
+      forge.innerHTML += `<br><span style="color: var(--red, #ff6b6b);">[나노봇 통신 오류] ${escapeHtml(e.message)}</span>`;
+      return;
+    }
+    if (!finalMd) return;
+
+    // 헤르메스 자동 이어서
+    const fwVal = fwSel?.value || '';
+    await runHermesGen(finalMd, langLabel, (fwVal && fwVal !== 'none') ? fwLabel : '', window.SELECTED_MODELS?.hm);
+    startIterCounter();
+  }
+
+  // ============ ▶ 시작 — 통합 파이프라인 (M3.7) ============
   const startBtn = document.querySelector('.hm-actions .start');
   const forge = document.getElementById('forge');
   const itEl = document.getElementById('iterN');
@@ -1811,123 +2412,17 @@
     });
   }
 
-  async function runWithGguf() {
-    // 1) 모델 로드 상태 확인
-    let loaded = null;
-    try {
-      const sres = await fetch('/api/gguf-pool-status');
-      const sdata = await sres.json();
-      loaded = sdata.loaded || (sdata.pool && sdata.pool[0] && sdata.pool[0].model) || null;
-    } catch (_) {}
-
-    if (!loaded) {
-      forge.classList.remove('has-code');
-      forge.innerHTML = '<h2 style="color: var(--red);">⚠ GGUF 모델이 로드되지 않았습니다</h2><div class="hint">먼저 상단 <b>📥 GGUF 모델 로드</b>를 클릭해서 모델을 로드하세요.</div>';
-      running = false;
-      return;
-    }
-
-    // 2) 사용자 입력 우선, 없으면 컨텍스트에서 추출
-    const planTextEl = document.getElementById('planText');
-    const userPlan = planTextEl ? planTextEl.value.trim() : '';
-    const reqSlot = document.querySelectorAll('.ctx-slot')[0];
-    const ctxText = reqSlot ? reqSlot.textContent.trim() : '';
-    const requirement = userPlan || ctxText || '간단한 프로그램을 작성해주세요.';
-
-    // 3) 타입·언어·프레임워크
-    const typeSel = document.getElementById('typeSelect');
-    const langSel = document.getElementById('langSelect');
-    const fwSel = document.getElementById('fwSelect');
-    const typeLabel = typeSel?.selectedOptions[0]?.textContent || '일반 프로그램';
-    const langLabel = langSel?.selectedOptions[0]?.textContent || 'Python';
-    const fwLabel = fwSel?.selectedOptions[0]?.textContent || '';
-    const fwVal = fwSel?.value || '';
-    const fwInstruction = (fwVal && fwVal !== '' && fwVal !== 'none' && fwVal !== 'stdlib')
-      ? `${fwLabel} 라이브러리 사용. `
-      : (fwVal === 'stdlib' ? '표준 라이브러리만 사용. ' : '');
-    const langInstruction = `[타입: ${typeLabel}] ${langLabel}으로 작성. ${fwInstruction}`;
-
-    forge.classList.add('has-code');
-    forge.innerHTML = `<span class="cm"># 🧠 ${escapeHtml(loaded)} · 추론 중...</span><br><span class="cm"># ${escapeHtml(typeLabel)} · ${escapeHtml(langLabel)}${fwLabel ? ' · ' + escapeHtml(fwLabel) : ''}</span><br><span class="cm"># 요구사항: ${escapeHtml(requirement)}</span><br><br><span class="cursor blink"></span>`;
-
-    try {
-      const res = await fetch('/api/gguf/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: `당신은 ${langLabel} 코드 작성 전문가입니다. ${fwLabel ? fwLabel + ' 라이브러리를 사용해 ' : ''}사용자 요구사항을 코드로 구현하세요. 코드 블록 안에 코드만 출력하고 불필요한 설명은 줄이세요. 한국어 주석 포함.` },
-            { role: 'user', content: requirement + '\n\n' + langInstruction }
-          ],
-          temperature: 0.3,
-          max_tokens: 1536,
-        })
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        forge.innerHTML = '<span style="color: var(--red);">[GGUF 오류] ' + escapeHtml(data.error || '추론 실패') + '</span>';
-        running = false;
-        return;
-      }
-      // 타자기 효과로 결과 출력
-      await typewriter(data.text || '(빈 응답)', 8);
-
-      // CTX 게이지 업데이트
-      if (data.usage && data.usage.total_tokens) {
-        const used = data.usage.total_tokens;
-        const ctxFill = document.querySelector('.ctx-window-gauge .fill');
-        const ctxLabel = document.querySelector('.ctx-window-gauge span:last-child');
-        if (ctxFill && ctxLabel) {
-          const pct = Math.min(100, (used / 16384) * 100);
-          ctxFill.style.width = pct.toFixed(0) + '%';
-          ctxLabel.textContent = pct.toFixed(0) + '%';
-        }
-      }
-
-      // 반복 카운터 가동
-      startIterCounter();
-    } catch (err) {
-      forge.innerHTML = '<span style="color: var(--red);">[통신 오류] ' + escapeHtml(err.message) + '</span>';
-    } finally {
-      running = false;
-    }
-  }
-
-  async function runWithApiMock() {
-    const codeLines = [
-      '<span class="cm"># Hermes v3 forge — API mock (실제 LLM 미연결)</span>',
-      '<span class="kw">import</span> torch',
-      '<span class="kw">import</span> torch.nn <span class="kw">as</span> nn',
-      '<span class="kw">class</span> <span class="fn">DeadlockCNN</span>(nn.Module):',
-      '&nbsp;&nbsp;<span class="kw">def</span> <span class="fn">__init__</span>(self):',
-      '&nbsp;&nbsp;&nbsp;&nbsp;self.conv1 = nn.<span class="fn">Conv1d</span>(<span class="st">14</span>, <span class="st">32</span>, <span class="st">5</span>)',
-      '&nbsp;&nbsp;&nbsp;&nbsp;self.pool = nn.<span class="fn">MaxPool1d</span>(<span class="st">2</span>)',
-      '&nbsp;&nbsp;&nbsp;&nbsp;self.fc = nn.<span class="fn">Linear</span>(<span class="st">32</span>, <span class="st">2</span>)',
-      '&nbsp;&nbsp;<span class="kw">def</span> <span class="fn">forward</span>(self, x):',
-      '&nbsp;&nbsp;&nbsp;&nbsp;x = self.pool(F.relu(self.conv1(x)))<span class="cursor blink"></span>'
-    ];
-    forge.classList.add('has-code');
-    forge.innerHTML = '';
-    let i = 0;
-    await new Promise(resolve => {
-      const tick = setInterval(() => {
-        if (i >= codeLines.length) { clearInterval(tick); resolve(); return; }
-        forge.innerHTML += codeLines[i] + '<br>';
-        i++;
-      }, 280);
-    });
-    startIterCounter();
-    running = false;
-  }
+  // (구) runWithGguf / runWithApiMock 제거 — runPipeline 으로 일원화됨
 
   startBtn.addEventListener('click', async () => {
     if (running) return;
     running = true;
-    const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
-    if (isGgufMode) {
-      await runWithGguf();
-    } else {
-      await runWithApiMock();
+    try {
+      await runPipeline();
+    } catch (e) {
+      forge.innerHTML += `<br><span style="color: var(--red, #ff6b6b);">[파이프라인 오류] ${escapeHtml(e.message)}</span>`;
+    } finally {
+      running = false;
     }
   });
 

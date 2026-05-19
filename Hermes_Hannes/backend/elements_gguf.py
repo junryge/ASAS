@@ -8,7 +8,7 @@ import json
 import re
 
 import gguf
-from . import harness_rules
+from . import context_schemas, harness_rules
 
 
 def _chat(messages, temperature=0.4, max_tokens=900):
@@ -79,22 +79,26 @@ class Nanabot:
 
 
 class Context:
-    def parse(self, requirement, csv_uri=None):
-        sys_prompt = (
-            "요구사항을 JSON으로 변환. 스키마: "
-            '{"intent": str, "inputs": [str], "outputs": [str], '
-            '"constraints": [str], "success_criteria": [str]}'
-        )
-        user = f"요구사항:\n{requirement}" + (f"\n\n데이터: {csv_uri}" if csv_uri else "")
+    def parse(self, project_type="general", slots=None, dataset_meta=None):
+        slots = dict(slots or {})
+        sys_prompt = context_schemas.system_prompt(project_type, dataset_meta=dataset_meta)
+        user = context_schemas.user_prompt(slots, dataset_meta=dataset_meta)
         text = _chat(
             [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}],
-            temperature=0.2, max_tokens=800,
+            temperature=0.2, max_tokens=900,
         )
+        fallback_intent = (slots.get("requirement") or "")[:200]
         parsed = _safe_json(text, fallback={
-            "intent": requirement[:200], "inputs": [], "outputs": [],
-            "constraints": [], "success_criteria": [],
+            "intent": fallback_intent,
+            "missing_required": context_schemas.get_schema(project_type)["required"],
+            "inferred_from_freeform": [],
         })
+        if "missing_required" not in parsed:
+            parsed["missing_required"] = context_schemas.check_missing(project_type, slots, parsed)
+        if "inferred_from_freeform" not in parsed:
+            parsed["inferred_from_freeform"] = []
         parsed["_model"] = "gguf-local"
+        parsed["_project_type"] = project_type
         return parsed
 
 

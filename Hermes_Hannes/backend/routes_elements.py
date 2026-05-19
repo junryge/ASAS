@@ -4,12 +4,70 @@ backend/routes_elements.py - 5대 요소 Flask Blueprint.
 prefix: /api/elements
 mode 파라미터로 elements_api / elements_gguf 분기.
 """
+import csv
+import io
 import json
+import os
 import traceback
+import uuid
 
 from flask import Blueprint, Response, jsonify, request
+from werkzeug.utils import secure_filename
 
-from . import elements_api, elements_gguf, ralph_orchestrator
+from . import context_schemas, elements_api, elements_gguf, ralph_orchestrator
+
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB
+ALLOWED_EXT = {
+    ".csv", ".tsv", ".json", ".parquet", ".xlsx", ".npy",
+    ".yaml", ".yml", ".txt", ".env", ".md",
+}
+
+
+def save_upload(file_storage):
+    """업로드 파일을 backend/uploads/<uuid>.<ext> 로 저장. (saved_path, original_name)."""
+    name = secure_filename(file_storage.filename or "upload")
+    ext = os.path.splitext(name)[1].lower()
+    if ext and ext not in ALLOWED_EXT:
+        raise ValueError(f"허용되지 않는 확장자: {ext}")
+    uid = uuid.uuid4().hex[:12]
+    out_name = f"{uid}{ext or '.bin'}"
+    out_path = os.path.join(UPLOAD_DIR, out_name)
+    file_storage.save(out_path)
+    size = os.path.getsize(out_path)
+    if size > MAX_UPLOAD_BYTES:
+        os.remove(out_path)
+        raise ValueError(f"파일 50MB 초과 ({size} bytes)")
+    return out_path, name
+
+
+def peek_csv(path, max_preview_rows=5):
+    """CSV/TSV 한정 컬럼명 + 행수 추출. 실패 시 None."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in (".csv", ".tsv"):
+        return None
+    delim = "\t" if ext == ".tsv" else ","
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            head = f.read(8192)
+        reader = csv.reader(io.StringIO(head), delimiter=delim)
+        rows = list(reader)
+        if not rows:
+            return None
+        columns = rows[0]
+        # 전체 행수는 라인 수로 추정 (헤더 1줄 제외)
+        with open(path, "rb") as f:
+            line_count = sum(1 for _ in f)
+        return {
+            "columns": columns[:64],
+            "rows": max(line_count - 1, 0),
+            "preview": rows[1:1 + max_preview_rows],
+        }
+    except Exception:
+        return None
 
 
 bp = Blueprint("elements", __name__, url_prefix="/api/elements")
@@ -78,25 +136,99 @@ def nanabot_stream():
 # =====================================================================
 @bp.route("/context/parse", methods=["POST"])
 def context_parse():
+    """multipart/form-data 우선, JSON도 허용 (호환).
+
+    multipart 필드:
+      - mode: "api" | "gguf"
+      - project_type: "ml" | "data" | "web" | "cli" | "automation" | "general"
+      - slots_json: {"requirement": "...", "metric": "...", "freeform_note": "..."}
+      - model_id: 선택 (api 모드)
+      - <file_slot_key>: 파일 (예: dataset, schema_file, example_input, config_file)
+      - attachments: 다중 파일 (선택)
+    """
+    if request.content_type and request.content_type.startswith("multipart/"):
+        mode = (request.form.get("mode") or "api").lower()
+        if mode not in ("api", "gguf"):
+            return jsonify({"ok": False, "error": "mode must be 'api' or 'gguf'"}), 400
+        project_type = (request.form.get("project_type") or "general").lower()
+        model_id = request.form.get("model_id") or None
+        try:
+            slots = json.loads(request.form.get("slots_json") or "{}")
+        except json.JSONDecodeError:
+            return jsonify({"ok": False, "error": "slots_json 파싱 실패"}), 400
+
+        schema = context_schemas.get_schema(project_type)
+        file_slot_keys = [k for k, w in schema["widgets"].items() if w == "file"]
+
+        saved_files = []  # 정리용
+        dataset_meta = None
+        try:
+            for key in file_slot_keys:
+                if key == "attachments":
+                    files = request.files.getlist("attachments")
+                    paths = []
+                    for f in files:
+                        if not f or not f.filename:
+                            continue
+                        path, orig = save_upload(f)
+                        saved_files.append(path)
+                        paths.append({"path": path, "name": orig})
+                    if paths:
+                        slots["attachments"] = paths
+                else:
+                    f = request.files.get(key)
+                    if f and f.filename:
+                        path, orig = save_upload(f)
+                        saved_files.append(path)
+                        slots[key] = path
+                        if key == "dataset":
+                            dataset_meta = peek_csv(path)
+
+            if mode == "api":
+                ctx = elements_api.Context(model_id=model_id)
+            else:
+                ctx = elements_gguf.Context()
+            parsed = ctx.parse(project_type=project_type, slots=slots, dataset_meta=dataset_meta)
+            return jsonify({
+                "ok": True,
+                "parsed": parsed,
+                "dataset_meta": dataset_meta,
+                "saved_files": [os.path.basename(p) for p in saved_files],
+            })
+        except ValueError as ve:
+            return jsonify({"ok": False, "error": str(ve)}), 413
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    # JSON 경로 (파일 없이 호출)
     data = request.json or {}
     mode, err_resp, err_code = _pick_mode(data)
     if err_resp:
         return err_resp, err_code
-    requirement = (data.get("requirement") or "").strip()
-    if not requirement:
-        return jsonify({"ok": False, "error": "requirement 필수"}), 400
-    csv_uri = data.get("csv_uri")
-
+    project_type = (data.get("project_type") or "general").lower()
+    slots = data.get("slots") or {}
+    if not slots and data.get("requirement"):
+        slots = {"requirement": data["requirement"]}
     try:
         if mode == "api":
             ctx = elements_api.Context(model_id=data.get("model_id"))
         else:
             ctx = elements_gguf.Context()
-        parsed = ctx.parse(requirement, csv_uri=csv_uri)
+        parsed = ctx.parse(project_type=project_type, slots=slots)
         return jsonify({"ok": True, "parsed": parsed})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/context/schemas", methods=["GET"])
+def context_schemas_route():
+    """UI가 슬롯 템플릿 자동 동기화할 때 쓸 수 있는 단일 진실 소스."""
+    return jsonify({"ok": True, "schemas": {
+        k: {"required": v["required"], "widgets": v["widgets"]}
+        for k, v in context_schemas.SCHEMAS.items()
+    }})
 
 
 # =====================================================================

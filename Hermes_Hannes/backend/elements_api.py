@@ -7,7 +7,7 @@ backend/elements_api.py - API 경로 5대 요소 (회사용).
 import json
 import re
 
-from . import api_client, harness_rules
+from . import api_client, context_schemas, harness_rules
 
 
 def _safe_json(text, fallback):
@@ -88,27 +88,29 @@ class Context:
     def __init__(self, model_id=None):
         self.model_id = model_id or api_client.resolve_default(self.DEFAULT_TIER)
 
-    def parse(self, requirement, csv_uri=None):
-        sys_prompt = (
-            "당신은 요구사항을 구조화된 JSON으로 변환하는 파서입니다. "
-            "다음 스키마로만 응답하세요 (코드펜스 안에 JSON):\n"
-            '{"intent": str, "inputs": [str], "outputs": [str], '
-            '"constraints": [str], "success_criteria": [str]}'
-        )
-        user = f"요구사항:\n{requirement}"
-        if csv_uri:
-            user += f"\n\n참고 데이터: {csv_uri}"
+    def parse(self, project_type="general", slots=None, dataset_meta=None):
+        slots = dict(slots or {})
+        sys_prompt = context_schemas.system_prompt(project_type, dataset_meta=dataset_meta)
+        user = context_schemas.user_prompt(slots, dataset_meta=dataset_meta)
         text, used, _ = api_client.call_model(
             self.model_id,
             [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}],
             temperature=0.2,
-            max_tokens=800,
+            max_tokens=900,
         )
+        fallback_intent = (slots.get("requirement") or "")[:200]
         parsed = _safe_json(text, fallback={
-            "intent": requirement[:200], "inputs": [], "outputs": [],
-            "constraints": [], "success_criteria": [],
+            "intent": fallback_intent,
+            "missing_required": context_schemas.get_schema(project_type)["required"],
+            "inferred_from_freeform": [],
         })
+        # 파서가 missing_required를 안 채웠으면 보강
+        if "missing_required" not in parsed:
+            parsed["missing_required"] = context_schemas.check_missing(project_type, slots, parsed)
+        if "inferred_from_freeform" not in parsed:
+            parsed["inferred_from_freeform"] = []
         parsed["_model"] = used
+        parsed["_project_type"] = project_type
         return parsed
 
 
