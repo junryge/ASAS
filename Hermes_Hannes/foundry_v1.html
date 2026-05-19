@@ -195,8 +195,12 @@
     min-height: 0;
   }
   .col { display: grid; gap: 8px; min-height: 0; }
-  .col-left { grid-template-rows: 1.3fr 1fr; }
+  .col-left { grid-template-rows: 1fr 1fr; }
   .col-right { grid-template-rows: 1.4fr 0.9fr; }
+
+  /* 좌측 컬럼 카드(나노봇/컨텍스트): 동일 높이 + 내부 스크롤(스크롤바 숨김) */
+  .col-left > .card { overflow-y: auto; overflow-x: hidden; min-height: 0; scrollbar-width: none; }
+  .col-left > .card::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
   .h-title {
     font-size: 12px;
