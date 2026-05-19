@@ -326,12 +326,19 @@ def _stream_chat_sse(data):
         sys_parts.append(f"[로드된 스킬: {', '.join(loaded_skills)}]")
 
     # === 업로드된 CSV / 첨부 파일 주입 (JSON 경로와 동일 포맷) ===
+    # 호출 시점에 demos_v1.utils 의 최신 객체를 다시 가져옴
+    # (Python `from X import Y` 는 모듈 로드 시점의 바인딩이므로, 다른 코드가
+    # 의도치 않게 utils.uploaded_files 를 재할당했을 경우 stale 이 될 수 있음).
+    from demos_v1 import utils as _utils_now
+    _csv_now = _utils_now.uploaded_csv_data
+    _files_now = _utils_now.uploaded_files
+
     file_section = ""
     include_csv = data.get("include_csv", True)
-    if include_csv and uploaded_csv_data.get("filename"):
-        csv_info = uploaded_csv_data.get("summary", "")
-        rows = uploaded_csv_data.get("rows", []) or []
-        headers_csv = uploaded_csv_data.get("headers", []) or []
+    if include_csv and _csv_now.get("filename"):
+        csv_info = _csv_now.get("summary", "")
+        rows = _csv_now.get("rows", []) or []
+        headers_csv = _csv_now.get("headers", []) or []
         preview_limit = min(50, len(rows))
         csv_rows_text = ",".join(headers_csv) + "\n"
         for row in rows[:preview_limit]:
@@ -341,24 +348,27 @@ def _stream_chat_sse(data):
         file_section += f"=== 업로드된 CSV 데이터 ===\n{csv_info}\n\n데이터 미리보기:\n{csv_rows_text}\n\n"
         file_section += "사용자가 이 데이터에 대해 질문하면 위 CSV 데이터를 기반으로 분석해주세요.\n\n"
 
-    if uploaded_files:
-        file_section += f"=== 업로드된 파일 ({len(uploaded_files)}개) ===\n"
-        for uf in uploaded_files:
+    if _files_now:
+        file_section += f"=== 업로드된 파일 ({len(_files_now)}개) ===\n"
+        for uf in _files_now:
             file_section += f"\n--- 파일: {uf.get('filename','?')} ({uf.get('type','?')}, {uf.get('size',0)}바이트) ---\n"
             content = uf.get("content_full", "") or ""
-            if is_gguf:
-                cap = 8000
-            else:
-                cap = 50000
+            cap = 8000 if is_gguf else 50000
             shown = content[:cap]
             if len(content) > cap:
                 shown += f"\n... (총 {len(content)}자 중 {cap}자 표시)"
             file_section += shown + "\n"
         file_section += "\n사용자가 업로드된 파일에 대해 질문하면 위 내용을 기반으로 답변하세요.\n\n"
 
+    # 진단 로그 — 매 SSE 호출 시 globals 상태 출력 (사용자 디버깅용)
+    try:
+        _fnames = [f.get("filename") for f in (_files_now or [])]
+    except Exception:
+        _fnames = []
+    print(f"  📎 [SSE-FILES] CSV={_csv_now.get('filename') or '(none)'} | files={_fnames} | section_chars={len(file_section)}")
+
     if file_section:
         sys_parts.append(file_section.strip())
-        print(f"  📎 [SSE-FILES] CSV={bool(uploaded_csv_data.get('filename'))}, 파일={len(uploaded_files)}개 → {len(file_section)}자 주입")
 
     sys_parts.append(
         "[응답 규칙] 사고 과정 sentinel(<think>...</think>, <|channel|>thought, "
@@ -453,7 +463,7 @@ def _stream_chat_sse(data):
     try:
         is_gguf_vl = str(env_id).startswith("gguf-") and "vl" in ENV_CONFIG.get(env_id, {}).get("name", "").lower()
         has_vision = ("vision" in get_model_capabilities(env_id)) or is_gguf_vl
-        image_files = [f for f in (uploaded_files or []) if f.get("type") == "image" and f.get("img_base64")]
+        image_files = [f for f in (_files_now or []) if f.get("type") == "image" and f.get("img_base64")]
         if has_vision and image_files and api_messages:
             for i in range(len(api_messages) - 1, -1, -1):
                 if api_messages[i].get("role") == "user":
