@@ -685,6 +685,15 @@ pre{position:relative}
     </div>
   </div>
   <div id="fileListPanel" class="sidebar-file-panel" style="display:none"></div>
+  <!-- 로드된 스킬 (수동/자동) — 체크 해제로 개별 언로드 -->
+  <div style="padding:8px 12px 4px;border-top:1px solid #e5e3de;">
+    <div class="sidebar-section" style="display:flex;align-items:center;gap:6px;margin:0 0 6px 0;">
+      로드된 스킬 <span class="skill-count" id="loadedCount" style="background:#eef2ff;color:#4f46e5;border-radius:10px;padding:1px 8px;font-size:10px;">0</span>
+    </div>
+    <div id="loadedSkillsList" style="font-size:12px;padding:0 4px;max-height:180px;overflow-y:auto;">
+      <div style="color:#bbb">선택된 스킬 없음</div>
+    </div>
+  </div>
   <div class="sidebar-footer">
     <div class="credits">🔬 Demos V1.0</div>
   </div>
