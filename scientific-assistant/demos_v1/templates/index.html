@@ -1988,6 +1988,88 @@ async function send(){
   chatAbort = new AbortController();
 
   try{
+    // 단일 env (selEnvs ≤ 1) 면 SSE 로 토큰 스트리밍, 다중 env 면 기존 합성 흐름.
+    const isSingleEnv = (selEnvs || []).length < 2;
+    if(isSingleEnv){
+      const resp=await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        signal: chatAbort.signal,
+        body:JSON.stringify(Object.assign({
+          env: selEnvs,
+          messages:history, skills:skillsToUse, effort,
+          format: formatManualOverride ? selFormat : 'auto',
+          writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
+          system_prompt:document.getElementById('systemPromptInput').value.trim(),
+          think_mode: document.getElementById('thinkToggle').checked,
+          ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
+          ppt_ref_design: pptRefDesign,
+          user_id: currentUser ? currentUser.id : null,
+          stream: true,
+        }, maxTokens > 0 ? {max_tokens: maxTokens} : {}))
+      });
+      if(!resp.ok || !resp.body){
+        typing.remove();
+        let detail = '';
+        try{ detail = await resp.text(); }catch(_){}
+        addMsg('assistant','❌ SSE 시작 실패: HTTP '+resp.status+(detail?'\n'+detail.slice(0,300):''));
+      } else {
+        typing.remove();
+        // 스트리밍용 임시 버블 — 토큰 들어올 때마다 plain text 갱신
+        const _cont = document.getElementById('msgs');
+        const _sd = document.createElement('div');
+        _sd.className = 'msg assistant';
+        _sd.style.position = 'relative';
+        _sd.innerHTML = '<button class="msg-del" onclick="event.stopPropagation();deleteMsg(this)">✕</button>'+
+                        '<div class="msg-label">Demos</div>'+
+                        '<div class="stream-body" style="white-space:pre-wrap;"></div>';
+        _cont.appendChild(_sd);
+        const _bodyEl = _sd.querySelector('.stream-body');
+        try{ const _ct=document.querySelector('.content'); if(_ct) _ct.scrollTop=_ct.scrollHeight; }catch(_){}
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let _buf = '';
+        let _acc = '';
+        let _modelName = null;
+        let _errInfo = null;
+
+        outer: while(true){
+          let _chunk;
+          try{ _chunk = await reader.read(); }catch(_){ break; }
+          const {value, done} = _chunk;
+          if(done) break;
+          _buf += decoder.decode(value, {stream:true});
+          const _lines = _buf.split('\n');
+          _buf = _lines.pop() || '';
+          for(const _line of _lines){
+            const _s = _line.trim();
+            if(!_s.startsWith('data:')) continue;
+            const _payload = _s.slice(5).trim();
+            if(!_payload) continue;
+            if(_payload === '[DONE]') break outer;
+            try{
+              const _obj = JSON.parse(_payload);
+              if(_obj.type === 'meta') _modelName = _obj.model || _modelName;
+              else if(_obj.type === 'token' && _obj.t){
+                _acc += _obj.t;
+                _bodyEl.textContent = _acc;
+                try{ const _ct=document.querySelector('.content'); if(_ct) _ct.scrollTop=_ct.scrollHeight; }catch(_){}
+              }
+              else if(_obj.type === 'error') _errInfo = _obj;
+            }catch(_){}
+          }
+        }
+
+        // 스트림 종료 → 임시 버블 제거 후 정식 addMsg 로 마크다운 렌더 + 버튼 부착
+        _sd.remove();
+        const _errLine = _errInfo ? ('\n\n❌ '+(_errInfo.error||'')+(_errInfo.detail?'\n'+_errInfo.detail:'')) : '';
+        const _info = _modelName ? ('\n['+_modelName+']') : '';
+        const _finalContent = _acc + _errLine;
+        addMsg('assistant', _finalContent + _info, _finalContent);
+        history.push({role:'assistant', content:_finalContent});
+      }
+    } else {
     const resp=await fetch('/api/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -2055,6 +2137,7 @@ async function send(){
         appendMdDownloadBar(data.content, data.html_download_url);
       }
     }
+    }  // end multi-env else
   }catch(e){
     typing.remove();
     if(e.name === 'AbortError'){
