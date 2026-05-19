@@ -242,6 +242,27 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
 # - 자동 스킬은 이 경로에서 호출하지 않음 (이미 /api/auto_skills 에서 처리됨).
 # - 하네스 라우터는 시작 시 미빌드 상태라 빈 결과 — 호출하지 않음.
 # - 다중 env 병렬 합성이 필요한 경우 (env가 list 2개 이상) 는 SSE 안 함.
+def _prepend_system(msgs, extra):
+    """모든 system 메시지를 한 개로 합쳐 0번에 두고 나머지 user/assistant
+    순서는 유지. extra 는 그 합쳐진 system 의 맨 앞에 들어감.
+    vLLM/litellm 게이트웨이의 'System must be at beginning' / 다중-system
+    거부 회피."""
+    sys_parts = []
+    if extra and str(extra).strip():
+        sys_parts.append(str(extra).strip())
+    rest = []
+    for m in msgs or []:
+        if m.get("role") == "system":
+            c = m.get("content") or ""
+            if isinstance(c, str) and c.strip():
+                sys_parts.append(c.strip())
+        else:
+            rest.append(m)
+    if not sys_parts:
+        return rest
+    return [{"role": "system", "content": "\n\n".join(sys_parts)}] + rest
+
+
 def _stream_chat_sse(data):
     chat_stop_flag["stop"] = False
 
@@ -348,7 +369,7 @@ def _stream_chat_sse(data):
                     "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성 등.\n"
                     f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
                 )
-                api_messages = [{"role": "system", "content": override_msg}] + api_messages
+                api_messages = _prepend_system(api_messages, override_msg)
             else:
                 kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
                 kb_context += f"검색어: {last_user_query}\n\n"
@@ -385,7 +406,7 @@ def _stream_chat_sse(data):
                     "<knowledge-search/>, <tool/>, <function/> 같은 도구 호출 태그를 출력하지 마세요. "
                     "사고 채널(<|channel|>, <think>)도 출력 금지. 바로 답변 본문부터 시작하세요.\n"
                 )
-                api_messages = [{"role": "system", "content": kb_context}] + api_messages
+                api_messages = _prepend_system(api_messages, kb_context)
         except Exception as e:
             print(f"[Knowledge Search SSE] 검색 오류: {e}")
 
