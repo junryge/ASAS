@@ -324,6 +324,42 @@ def _stream_chat_sse(data):
         sys_parts.append(skill_section.strip())
     if loaded_skills:
         sys_parts.append(f"[로드된 스킬: {', '.join(loaded_skills)}]")
+
+    # === 업로드된 CSV / 첨부 파일 주입 (JSON 경로와 동일 포맷) ===
+    file_section = ""
+    include_csv = data.get("include_csv", True)
+    if include_csv and uploaded_csv_data.get("filename"):
+        csv_info = uploaded_csv_data.get("summary", "")
+        rows = uploaded_csv_data.get("rows", []) or []
+        headers_csv = uploaded_csv_data.get("headers", []) or []
+        preview_limit = min(50, len(rows))
+        csv_rows_text = ",".join(headers_csv) + "\n"
+        for row in rows[:preview_limit]:
+            csv_rows_text += ",".join(str(c) for c in row) + "\n"
+        if len(rows) > preview_limit:
+            csv_rows_text += f"... (총 {len(rows)}행 중 {preview_limit}행만 표시)\n"
+        file_section += f"=== 업로드된 CSV 데이터 ===\n{csv_info}\n\n데이터 미리보기:\n{csv_rows_text}\n\n"
+        file_section += "사용자가 이 데이터에 대해 질문하면 위 CSV 데이터를 기반으로 분석해주세요.\n\n"
+
+    if uploaded_files:
+        file_section += f"=== 업로드된 파일 ({len(uploaded_files)}개) ===\n"
+        for uf in uploaded_files:
+            file_section += f"\n--- 파일: {uf.get('filename','?')} ({uf.get('type','?')}, {uf.get('size',0)}바이트) ---\n"
+            content = uf.get("content_full", "") or ""
+            if is_gguf:
+                cap = 8000
+            else:
+                cap = 50000
+            shown = content[:cap]
+            if len(content) > cap:
+                shown += f"\n... (총 {len(content)}자 중 {cap}자 표시)"
+            file_section += shown + "\n"
+        file_section += "\n사용자가 업로드된 파일에 대해 질문하면 위 내용을 기반으로 답변하세요.\n\n"
+
+    if file_section:
+        sys_parts.append(file_section.strip())
+        print(f"  📎 [SSE-FILES] CSV={bool(uploaded_csv_data.get('filename'))}, 파일={len(uploaded_files)}개 → {len(file_section)}자 주입")
+
     sys_parts.append(
         "[응답 규칙] 사고 과정 sentinel(<think>...</think>, <|channel|>thought, "
         "<|im_start|>thinking 등)과 도구 호출 태그(<knowledge-search/>, <tool/>, "
@@ -412,6 +448,31 @@ def _stream_chat_sse(data):
                 api_messages = _prepend_system(api_messages, kb_context)
         except Exception as e:
             print(f"[Knowledge Search SSE] 검색 오류: {e}")
+
+    # === VL 모델: 이미지 첨부 시 마지막 user 메시지를 OpenAI Vision 포맷으로 변환 ===
+    try:
+        is_gguf_vl = str(env_id).startswith("gguf-") and "vl" in ENV_CONFIG.get(env_id, {}).get("name", "").lower()
+        has_vision = ("vision" in get_model_capabilities(env_id)) or is_gguf_vl
+        image_files = [f for f in (uploaded_files or []) if f.get("type") == "image" and f.get("img_base64")]
+        if has_vision and image_files and api_messages:
+            for i in range(len(api_messages) - 1, -1, -1):
+                if api_messages[i].get("role") == "user":
+                    text_content = api_messages[i].get("content", "")
+                    if isinstance(text_content, str):
+                        content_parts = [{"type": "text", "text": text_content}]
+                        for img_f in image_files:
+                            ext = (img_f.get("ext", "png") or "png").lower()
+                            mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif",
+                                    "bmp": "bmp", "webp": "webp", "svg": "svg+xml"}.get(ext, "png")
+                            content_parts.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/{mime};base64,{img_f['img_base64']}"}
+                            })
+                        api_messages[i]["content"] = content_parts
+                        print(f"  🖼️  [SSE-VL] 마지막 user 메시지에 이미지 {len(image_files)}장 첨부")
+                    break
+    except Exception as _ve:
+        print(f"  ⚠️ [SSE-VL] 이미지 첨부 변환 실패: {_ve}")
 
     # ── GGUF 경로 ──
     if str(env_id).startswith("gguf-"):
