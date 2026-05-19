@@ -340,6 +340,54 @@
   .json-preview .s { color: var(--coral); }
   .json-preview .n { color: var(--hn); }
 
+  /* Context slots (M3) */
+  .ctx-slot-wrap { margin-bottom: 6px; }
+  .ctx-slot-wrap .lbl {
+    font-size: 10px; color: var(--text-3); margin-bottom: 2px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .ctx-slot-wrap .lbl .req-mark { color: var(--coral); font-weight: 700; }
+  .ctx-slot-wrap .lbl .auto-badge {
+    margin-left: auto;
+    background: rgba(255,184,108,.18); color: var(--coral);
+    font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 600;
+    display: none;
+  }
+  .ctx-slot-wrap.has-auto .lbl .auto-badge { display: inline-block; }
+  .ctx-slot-wrap input[type="text"],
+  .ctx-slot-wrap textarea {
+    width: 100%;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    font-size: 11px;
+    color: var(--text-1);
+    font-family: inherit;
+    box-sizing: border-box;
+  }
+  .ctx-slot-wrap textarea { resize: vertical; min-height: 38px; line-height: 1.4; }
+  .ctx-slot-wrap.missing input[type="text"],
+  .ctx-slot-wrap.missing textarea,
+  .ctx-slot-wrap.missing .file-drop {
+    border-color: var(--red, #ff6b6b);
+    box-shadow: 0 0 0 1px var(--red, #ff6b6b) inset;
+  }
+  .file-drop {
+    background: var(--card-2);
+    border: 1px dashed var(--border);
+    border-radius: 5px;
+    padding: 8px 9px;
+    font-size: 11px;
+    color: var(--text-3);
+    cursor: pointer;
+    text-align: center;
+  }
+  .file-drop:hover { border-color: var(--ctx); color: var(--text-2); }
+  .file-drop.has-file { color: var(--text-1); border-style: solid; border-color: var(--ctx); }
+  .file-drop .meta { font-size: 9px; color: var(--text-3); margin-top: 2px; }
+  .ctx-slot-wrap input[type="file"] { display: none; }
+
   /* Hermes */
   .hm-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; row-gap: 4px; }
   .hm-tabs { display: flex; gap: 4px; flex-shrink: 0; }
@@ -972,7 +1020,7 @@
 
       <div class="tool-selector">
         <span class="lbl">타입</span>
-        <select id="typeSelect" onchange="updateFwOptions()">
+        <select id="typeSelect" onchange="updateFwOptions(); updateContextSlots();">
           <option value="ml">🧠 ML/AI 모델</option>
           <option value="data">📊 데이터 분석</option>
           <option value="web">🌐 웹/API</option>
@@ -1018,13 +1066,10 @@
         🔄 로드 진화 모드 — 기존 코드 분석 후 피드백 적용 (변경분만 재생성)
       </div>
       <div class="ctx-section">컨텍스트-슬롯 <span class="badge" style="background: var(--ctx); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 3px;">UI</span></div>
-      <div class="ctx-slot">요구사항 · deadlock CNN 분류기, Acc ≥ 0.98</div>
-      <div class="ctx-slot">📊 CSV: training_logs.csv (14×8200)</div>
+      <div id="ctxSlots"><!-- updateContextSlots() 가 채움 --></div>
 
       <div class="ctx-section" style="margin-top: 4px;">컨텍스트-파서 <span style="background: var(--coral); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700;">LLM</span></div>
-      <div class="json-preview">
-        <span style="color:var(--text-3);">{</span> <span class="k">"task"</span>:<span class="s">"ml.classifier"</span>, <span class="k">"acc"</span>:<span class="n">0.98</span> <span style="color:var(--text-3);">}</span>
-      </div>
+      <div class="json-preview" id="ctxJsonPreview"><span style="color:var(--text-3);">{ }</span> <span style="color:var(--text-3);">— 시작 시 파서가 채움</span></div>
     </div>
   </div>
 
@@ -1760,6 +1805,262 @@
   // 초기화 시 한 번 실행
   setTimeout(() => window.updateFwOptions(), 0);
 
+  // ============ 컨텍스트 슬롯 (M3) ============
+  // 백엔드 backend/context_schemas.py 의 widgets 와 동일 키 사용.
+  const SLOT_TEMPLATES = {
+    ml: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: deadlock CNN 분류기. 입력 14×T 시계열, Acc 0.98 이상…'},
+      {key:'dataset',       label:'데이터셋 파일',     required:true,  widget:'file',
+       accept:'.csv,.tsv,.parquet,.json,.xlsx,.npy'},
+      {key:'metric',        label:'목표 메트릭',       required:true,  widget:'input',
+       placeholder:'예: Acc≥0.98 / F1≥0.9 / MAE≤0.05'},
+      {key:'input_shape',   label:'입력 shape',       required:false, widget:'input',
+       placeholder:'예: 14×T, (B, 3, 224, 224)'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'위 칸에 못 담은 정보 자유롭게 — 파서가 빈 슬롯에 추론해 채워줍니다'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true,
+       accept:'.csv,.tsv,.json,.txt,.md,.yaml,.yml,.parquet,.npy,.xlsx'},
+    ],
+    data: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 월별 지역별 매출 집계 + 차트'},
+      {key:'dataset',       label:'데이터셋 파일',     required:true,  widget:'file',
+       accept:'.csv,.tsv,.parquet,.json,.xlsx'},
+      {key:'group_by',      label:'집계 차원',         required:false, widget:'input',
+       placeholder:'예: 지역, 월'},
+      {key:'output_format', label:'출력 포맷',         required:false, widget:'input',
+       placeholder:'예: CSV / 차트 PNG / Markdown 표'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    web: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 사용자 인증 + 게시판 REST API'},
+      {key:'endpoints',     label:'엔드포인트',        required:true,  widget:'textarea',
+       placeholder:'예:\nGET  /users\nPOST /login\nGET  /posts/:id'},
+      {key:'auth',          label:'인증 방식',         required:false, widget:'input',
+       placeholder:'예: JWT / OAuth / None'},
+      {key:'schema_text',   label:'요청/응답 스키마',   required:false, widget:'textarea',
+       placeholder:'예: User { id, name, email }'},
+      {key:'schema_file',   label:'스키마 파일 (선택)', required:false, widget:'file',
+       accept:'.yaml,.yml,.json'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    cli: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 로그 파일 파싱 후 통계 출력'},
+      {key:'args',          label:'인자/플래그',       required:true,  widget:'textarea',
+       placeholder:'예:\n--input <path>  (필수)\n--threshold <float>  기본 0.5\n--verbose'},
+      {key:'io_format',     label:'stdin/stdout 포맷', required:false, widget:'input',
+       placeholder:'예: stdin=JSON, stdout=CSV'},
+      {key:'example_input', label:'예시 입력 파일 (선택)', required:false, widget:'file',
+       accept:'.txt,.json,.csv,.tsv'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    automation: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 매일 아침 Slack 채널에 어제자 매출 요약 전송'},
+      {key:'trigger',       label:'트리거',           required:true,  widget:'input',
+       placeholder:'예: 매일 09:00 / Slack 명령어 /report / webhook'},
+      {key:'target_system', label:'대상 시스템',       required:false, widget:'input',
+       placeholder:'예: Slack workspace / Notion DB / GitHub'},
+      {key:'schedule',      label:'스케줄',            required:false, widget:'input',
+       placeholder:'예: cron 0 9 * * * / 매시간 / once'},
+      {key:'config_file',   label:'설정 파일 (선택)',   required:false, widget:'file',
+       accept:'.yaml,.yml,.json,.env'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+    general: [
+      {key:'requirement',   label:'요구사항',         required:true,  widget:'textarea',
+       placeholder:'예: 무엇을 만들고 싶은지 자유롭게…'},
+      {key:'freeform_note', label:'자연어 보충',       required:false, widget:'textarea',
+       placeholder:'추가 설명 자유 입력'},
+      {key:'attachments',   label:'참고 파일 (선택)',  required:false, widget:'file', multiple:true},
+    ],
+  };
+
+  // 슬롯 키 → {file: File|null, files: File[]} 보관 (input file은 DOM에 직접 못 쓰니까 별도 저장)
+  const _ctxFiles = {};
+
+  function _slotInputHTML(slot) {
+    if (slot.widget === 'textarea') {
+      return `<textarea data-slot="${slot.key}" placeholder="${(slot.placeholder||'').replace(/"/g,'&quot;')}" rows="${slot.key==='requirement'?3:2}"></textarea>`;
+    }
+    if (slot.widget === 'input') {
+      return `<input type="text" data-slot="${slot.key}" placeholder="${(slot.placeholder||'').replace(/"/g,'&quot;')}">`;
+    }
+    if (slot.widget === 'file') {
+      const id = `fileSlot_${slot.key}`;
+      const mult = slot.multiple ? 'multiple' : '';
+      const accept = slot.accept ? `accept="${slot.accept}"` : '';
+      return `
+        <label class="file-drop" data-slot="${slot.key}" for="${id}">
+          <span class="msg">📎 파일 선택 / 드롭${slot.multiple?' (여러 개)':''}</span>
+          <div class="meta" style="display:none;"></div>
+        </label>
+        <input type="file" id="${id}" data-slot-file="${slot.key}" ${mult} ${accept}>
+      `;
+    }
+    return '';
+  }
+
+  window.updateContextSlots = function() {
+    const typeSelect = document.getElementById('typeSelect');
+    const host = document.getElementById('ctxSlots');
+    if (!typeSelect || !host) return;
+    const tmpl = SLOT_TEMPLATES[typeSelect.value] || SLOT_TEMPLATES.general;
+    // 파일 상태 초기화 (타입 바뀌면 슬롯 키도 바뀌니까)
+    for (const k of Object.keys(_ctxFiles)) delete _ctxFiles[k];
+
+    host.innerHTML = tmpl.map(slot => `
+      <div class="ctx-slot-wrap" data-slot-wrap="${slot.key}">
+        <div class="lbl">
+          ${slot.required ? '<span class="req-mark">★</span>' : ''}
+          <span>${slot.label}</span>
+          <span class="auto-badge">🪄 자동 채움</span>
+        </div>
+        ${_slotInputHTML(slot)}
+      </div>
+    `).join('');
+
+    // 파일 input change 핸들러 — DOM 라벨에 파일명 표시 + _ctxFiles에 저장
+    host.querySelectorAll('input[type="file"]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const key = inp.getAttribute('data-slot-file');
+        const drop = host.querySelector(`.file-drop[data-slot="${key}"]`);
+        if (!inp.files || inp.files.length === 0) {
+          _ctxFiles[key] = null;
+          if (drop) { drop.classList.remove('has-file'); drop.querySelector('.msg').textContent = '📎 파일 선택 / 드롭'; drop.querySelector('.meta').style.display='none'; }
+          return;
+        }
+        if (inp.multiple) {
+          _ctxFiles[key] = Array.from(inp.files);
+        } else {
+          _ctxFiles[key] = inp.files[0];
+        }
+        if (drop) {
+          drop.classList.add('has-file');
+          const names = Array.from(inp.files).map(f => f.name).join(', ');
+          const sizes = Array.from(inp.files).reduce((s, f) => s + f.size, 0);
+          drop.querySelector('.msg').textContent = '✓ ' + names;
+          const meta = drop.querySelector('.meta');
+          meta.style.display = 'block';
+          meta.textContent = `${(sizes/1024).toFixed(1)} KB`;
+        }
+      });
+    });
+
+    // planText 와 requirement 슬롯 동기화 — 사용자가 어디에 적든 같이 보이게
+    // typeSelect 변경 시 매번 호출되므로 planText 리스너는 한 번만 등록.
+    const planTextEl = document.getElementById('planText');
+    const reqEl = host.querySelector('[data-slot="requirement"]');
+    if (planTextEl && reqEl) {
+      reqEl.value = planTextEl.value;
+      reqEl.addEventListener('input', () => { planTextEl.value = reqEl.value; });
+      if (!planTextEl._ctxBound) {
+        planTextEl.addEventListener('input', () => {
+          const cur = document.querySelector('#ctxSlots [data-slot="requirement"]');
+          if (cur) cur.value = planTextEl.value;
+        });
+        planTextEl._ctxBound = true;
+      }
+    }
+  };
+  // 초기 렌더
+  setTimeout(() => window.updateContextSlots(), 0);
+
+  function _gatherContextSlots() {
+    const typeSelect = document.getElementById('typeSelect');
+    const tmpl = SLOT_TEMPLATES[typeSelect?.value || 'general'] || SLOT_TEMPLATES.general;
+    const host = document.getElementById('ctxSlots');
+    const text = {};
+    const files = {};   // key → File (single)
+    const fileLists = {}; // key → File[] (multiple)
+    for (const slot of tmpl) {
+      if (slot.widget === 'file') {
+        const v = _ctxFiles[slot.key];
+        if (Array.isArray(v) && v.length) fileLists[slot.key] = v;
+        else if (v) files[slot.key] = v;
+      } else {
+        const el = host.querySelector(`[data-slot="${slot.key}"]`);
+        if (el) text[slot.key] = (el.value || '').trim();
+      }
+    }
+    return { tmpl, text, files, fileLists };
+  }
+
+  function _renderParserJson(parsed) {
+    const pre = document.getElementById('ctxJsonPreview');
+    if (!pre) return;
+    // 내부 메타키 (_model, _project_type) 는 숨김
+    const clean = {};
+    for (const k of Object.keys(parsed)) {
+      if (k.startsWith('_')) continue;
+      clean[k] = parsed[k];
+    }
+    pre.textContent = JSON.stringify(clean, null, 2);
+    pre.style.whiteSpace = 'pre';
+    pre.style.fontFamily = "'JetBrains Mono', monospace";
+  }
+
+  function _markMissing(missing, inferred) {
+    const host = document.getElementById('ctxSlots');
+    if (!host) return;
+    host.querySelectorAll('.ctx-slot-wrap').forEach(w => {
+      w.classList.remove('missing', 'has-auto');
+    });
+    (missing || []).forEach(key => {
+      const w = host.querySelector(`[data-slot-wrap="${key}"]`);
+      if (w) w.classList.add('missing');
+    });
+    (inferred || []).forEach(item => {
+      const w = host.querySelector(`[data-slot-wrap="${item.field}"]`);
+      if (w) w.classList.add('has-auto');
+    });
+  }
+
+  // 컨텍스트 파서 호출. 성공 = required 다 채워짐.
+  window.runContextParser = async function(modeOverride) {
+    const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
+    const mode = modeOverride || (isGgufMode ? 'gguf' : 'api');
+    const typeSelect = document.getElementById('typeSelect');
+    const projectType = typeSelect?.value || 'general';
+    const { tmpl, text, files, fileLists } = _gatherContextSlots();
+
+    const fd = new FormData();
+    fd.append('mode', mode);
+    fd.append('project_type', projectType);
+    fd.append('slots_json', JSON.stringify(text));
+    for (const [k, f] of Object.entries(files)) fd.append(k, f);
+    for (const [k, arr] of Object.entries(fileLists)) arr.forEach(f => fd.append(k, f));
+
+    let resp;
+    try {
+      resp = await fetch('/api/elements/context/parse', { method: 'POST', body: fd });
+    } catch (e) {
+      return { ok: false, error: '네트워크 오류: ' + e.message };
+    }
+    const j = await resp.json().catch(() => ({ ok: false, error: '응답 파싱 실패' }));
+    if (!j.ok) {
+      _renderParserJson({ error: j.error || 'unknown' });
+      return { ok: false, error: j.error };
+    }
+    const parsed = j.parsed || {};
+    _renderParserJson(parsed);
+    const missing = parsed.missing_required || [];
+    const inferred = parsed.inferred_from_freeform || [];
+    _markMissing(missing, inferred);
+    return { ok: missing.length === 0, missing, inferred, parsed, dataset_meta: j.dataset_meta };
+  };
+
   // ============ ▶ 시작 — GGUF 실제 추론 + API mock ============
   const startBtn = document.querySelector('.hm-actions .start');
   const forge = document.getElementById('forge');
@@ -1827,11 +2128,11 @@
       return;
     }
 
-    // 2) 사용자 입력 우선, 없으면 컨텍스트에서 추출
+    // 2) 사용자 입력 우선, 없으면 컨텍스트 슬롯의 requirement
     const planTextEl = document.getElementById('planText');
     const userPlan = planTextEl ? planTextEl.value.trim() : '';
-    const reqSlot = document.querySelectorAll('.ctx-slot')[0];
-    const ctxText = reqSlot ? reqSlot.textContent.trim() : '';
+    const reqSlot = document.querySelector('#ctxSlots [data-slot="requirement"]');
+    const ctxText = reqSlot ? (reqSlot.value || '').trim() : '';
     const requirement = userPlan || ctxText || '간단한 프로그램을 작성해주세요.';
 
     // 3) 타입·언어·프레임워크
@@ -1923,11 +2224,23 @@
   startBtn.addEventListener('click', async () => {
     if (running) return;
     running = true;
-    const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
-    if (isGgufMode) {
-      await runWithGguf();
-    } else {
-      await runWithApiMock();
+    try {
+      // 컨텍스트 파서 먼저 — 필수 누락 시 차단
+      const ctxRes = await window.runContextParser();
+      if (!ctxRes.ok) {
+        const miss = (ctxRes.missing || []).join(', ');
+        forge.classList.remove('has-code');
+        forge.innerHTML = `<h2 style="color: var(--red, #ff6b6b);">⚠ 컨텍스트 필수 입력 누락</h2><div class="hint">빈 칸: <b>${miss || '알 수 없음'}</b><br>슬롯을 채우거나 <b>자연어 보충</b> 칸에 적어주세요.</div>`;
+        return;
+      }
+      const isGgufMode = document.querySelector('#envToggle button[data-env="gguf"]').classList.contains('active');
+      if (isGgufMode) {
+        await runWithGguf();
+      } else {
+        await runWithApiMock();
+      }
+    } finally {
+      running = false;
     }
   });
 
