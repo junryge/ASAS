@@ -163,6 +163,13 @@
   .llm-card.hn .iconbox { background: var(--hn); color: var(--bg); }
   .llm-card .role { font-size: 10px; color: var(--text-3); }
   .llm-card .model { font-size: 12px; font-weight: 600; color: var(--text-1); font-family: 'JetBrains Mono', monospace; }
+  .llm-card .model-select {
+    font-size: 11px; font-weight: 600; color: var(--text-1);
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 4px; max-width: 160px;
+  }
+  .llm-card .model-select:focus { outline: 1px solid var(--ctx); }
   .llm-card .warn-badge {
     position: absolute; top: -6px; right: 6px;
     background: var(--red); color: white; font-size: 9px;
@@ -943,38 +950,37 @@
     </div>
     <div class="llm-card nb">
       <div class="iconbox">N</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">나노봇 · 4단 체인</div>
-        <div class="model">hcp-70b-stable</div>
+        <select class="model-select" data-role="nb"><option>로딩…</option></select>
       </div>
     </div>
     <div class="llm-card ctx">
       <div class="iconbox">C</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">컨텍스트 · 파서</div>
-        <div class="model">hcp-13b-stable</div>
+        <select class="model-select" data-role="ctx"><option>로딩…</option></select>
       </div>
     </div>
     <div class="llm-card hm">
       <div class="iconbox">H</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">헤르메스 · 생성</div>
-        <div class="model">hcp-시조새-110b</div>
+        <select class="model-select" data-role="hm"><option>로딩…</option></select>
       </div>
-      <span class="warn-badge">FALLBACK 없음</span>
     </div>
     <div class="llm-card hn">
       <div class="iconbox">T</div>
-      <div>
+      <div style="flex:1;">
         <div class="role">하네스 · L2 분류</div>
-        <div class="model">hcp-7b-stable</div>
+        <select class="model-select" data-role="hn"><option>로딩…</option></select>
       </div>
     </div>
     <div class="preset-tabs">
-      <button>👥 균형</button>
-      <button>🪙 비용</button>
-      <button class="active">💎 품질</button>
-      <button>⚙ 커스텀</button>
+      <button data-preset="balanced">👥 균형</button>
+      <button data-preset="cost">🪙 비용</button>
+      <button class="active" data-preset="quality">💎 품질</button>
+      <button data-preset="custom">⚙ 커스텀</button>
     </div>
   </div>
 
@@ -1805,6 +1811,90 @@
   // 초기화 시 한 번 실행
   setTimeout(() => window.updateFwOptions(), 0);
 
+  // ============ HCP LLM 라우팅 — 모델 선택 ============
+  window.SELECTED_MODELS = { nb: null, ctx: null, hm: null, hn: null };
+  let _MODELS_CACHE = [];
+
+  // cost_tier 기반 프리셋
+  const MODEL_PRESETS = {
+    quality:  { prefer: 'high',   capability: null },     // 큰 모델
+    balanced: { prefer: 'medium', capability: null },
+    cost:     { prefer: 'low',    capability: null },
+  };
+
+  function _pickModelByTier(prefer, role) {
+    // role별 capability 힌트
+    const need = (role === 'hm') ? 'code' : (role === 'ctx' ? 'analysis' : null);
+    const tiers = ['high','medium','low'];
+    const order = [prefer, ...tiers.filter(t => t !== prefer)];
+    for (const tier of order) {
+      const cand = _MODELS_CACHE.filter(m => (m.cost_tier === tier) && (!need || (m.capabilities||[]).includes(need)));
+      if (cand.length) return cand[0].id;
+    }
+    return _MODELS_CACHE[0]?.id || null;
+  }
+
+  function _applyPreset(presetKey) {
+    if (presetKey === 'custom') return; // 그대로 둠
+    const p = MODEL_PRESETS[presetKey];
+    if (!p || _MODELS_CACHE.length === 0) return;
+    for (const role of ['nb','ctx','hm','hn']) {
+      // 하네스/컨텍스트는 너무 큰 모델 안 써도 됨 → 한 단계 낮춤
+      const prefer = (role === 'hn' || role === 'ctx')
+        ? (p.prefer === 'high' ? 'medium' : (p.prefer === 'medium' ? 'low' : 'low'))
+        : p.prefer;
+      const id = _pickModelByTier(prefer, role);
+      if (id) {
+        window.SELECTED_MODELS[role] = id;
+        const sel = document.querySelector(`.model-select[data-role="${role}"]`);
+        if (sel) sel.value = id;
+      }
+    }
+  }
+
+  async function _loadModelsAndInitPanel() {
+    try {
+      const res = await fetch('/api/elements/models');
+      const j = await res.json();
+      if (!j.ok || !j.models) throw new Error('no models');
+      _MODELS_CACHE = j.models;
+    } catch (e) {
+      // 백엔드 미동작 시: 빈 옵션 + 안내
+      document.querySelectorAll('.model-select').forEach(s => {
+        s.innerHTML = '<option value="">(백엔드 연결 안됨)</option>';
+        s.disabled = true;
+      });
+      return;
+    }
+    const optsHtml = _MODELS_CACHE.map(m => {
+      const tag = m.cost_tier ? ` [${m.cost_tier}]` : '';
+      return `<option value="${m.id}">${m.name || m.id}${tag}</option>`;
+    }).join('');
+    document.querySelectorAll('.model-select').forEach(sel => {
+      sel.innerHTML = optsHtml;
+      const role = sel.getAttribute('data-role');
+      sel.addEventListener('change', () => {
+        window.SELECTED_MODELS[role] = sel.value || null;
+        // 사용자가 직접 바꿨으면 프리셋은 '커스텀'
+        document.querySelectorAll('.preset-tabs button').forEach(b => b.classList.remove('active'));
+        document.querySelector('.preset-tabs button[data-preset="custom"]')?.classList.add('active');
+      });
+    });
+    // 초기 프리셋 = 품질
+    _applyPreset('quality');
+  }
+  setTimeout(_loadModelsAndInitPanel, 0);
+
+  // 프리셋 탭 클릭
+  document.querySelectorAll('.preset-tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.preset-tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const preset = btn.getAttribute('data-preset');
+      if (preset && preset !== 'custom') _applyPreset(preset);
+    });
+  });
+
   // ============ 컨텍스트 슬롯 (M3) ============
   // 백엔드 backend/context_schemas.py 의 widgets 와 동일 키 사용.
   const SLOT_TEMPLATES = {
@@ -2039,6 +2129,9 @@
     fd.append('mode', mode);
     fd.append('project_type', projectType);
     fd.append('slots_json', JSON.stringify(text));
+    if (mode === 'api' && window.SELECTED_MODELS?.ctx) {
+      fd.append('model_id', window.SELECTED_MODELS.ctx);
+    }
     for (const [k, f] of Object.entries(files)) fd.append(k, f);
     for (const [k, arr] of Object.entries(fileLists)) arr.forEach(f => fd.append(k, f));
 
