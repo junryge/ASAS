@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>자율 제조 공장 v6.3 · HCP</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0b1020;
+    --card: #141a32;
+    --card-2: #0a0f1f;
+    --border: #283154;
+    --border-2: #3a4570;
+    --text-1: #e6e9f5;
+    --text-2: #a3aac8;
+    --text-3: #6c769e;
+    --nb: #4ea1ff;
+    --ctx: #2dd4bf;
+    --hm: #a78bfa;
+    --hn: #fbbf24;
+    --red: #f87171;
+    --green: #34d399;
+    --coral: #fb923c;
+    --user: #ff5e7a;
+  }
+  html, body { min-height: 100vh; }
+  html { scrollbar-width: none; -ms-overflow-style: none; }
+  html::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  body {
+    background: var(--bg);
+    color: var(--text-1);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 8px;
+    display: grid;
+    grid-template-rows: auto auto minmax(720px, 1fr) auto;
+    gap: 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .card-nb { border-color: rgba(78,161,255,0.5); }
+  .card-ctx { border-color: rgba(45,212,191,0.5); }
+  .card-hm { border-color: rgba(167,139,250,0.5); }
+  .card-hn { border-color: rgba(251,191,36,0.5); }
+  .card-red { border-color: rgba(248,113,113,0.4); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; vertical-align: middle; }
+  .dot-nb { background: var(--nb); }
+  .dot-ctx { background: var(--ctx); }
+  .dot-hm { background: var(--hm); }
+  .dot-hn { background: var(--hn); }
+  .dot-red { background: var(--red); }
+  .dot-green { background: var(--green); }
+  .dot-user { background: var(--user); box-shadow: 0 0 0 3px rgba(255,94,122,0.25); }
+  .pulse { animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .blink { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .trail { stroke-dasharray: 6 4; animation: dash 2s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -20; } }
+
+  /* ============ TOP BAR ============ */
+  .topbar {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .topbar > * { flex-shrink: 0; }
+  .topbar .spacer { flex: 1; }
+  .topbar button, .topbar .pill, .topbar .proj-pill { white-space: nowrap; }
+  .gauge-group { display: flex; align-items: center; gap: 10px; }
+  .brand-icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--nb), var(--hm));
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; color: white; font-size: 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+  .brand small { color: var(--text-3); font-weight: 400; margin-left: 6px; font-size: 10px; letter-spacing: 1px; }
+  .pill {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 11px;
+    color: var(--text-2);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill.api { color: var(--nb); }
+  .pill.hcp { color: var(--hn); }
+  .env-toggle {
+    display: flex; gap: 2px; background: var(--card-2);
+    border: 1px solid var(--border); border-radius: 7px; padding: 2px;
+    flex-shrink: 0;
+  }
+  .env-toggle button {
+    background: transparent; border: 0; color: var(--text-2);
+    padding: 4px 11px; border-radius: 5px; font-size: 11px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  }
+  .env-toggle button.active { background: var(--card); color: var(--text-1); font-weight: 600; }
+  .tab-group { display: flex; gap: 4px; flex-shrink: 0; }
+  .tab-group button {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .tab-group button.active { background: rgba(167,139,250,0.18); border-color: var(--hm); color: var(--hm); }
+  .gauge-box { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-3); }
+  .gauge-box .label { letter-spacing: 1px; font-weight: 600; color: var(--text-2); font-size: 10px; }
+  .gauge-box .val { font-weight: 600; color: var(--text-1); font-size: 12px; }
+  .gauge-bar { width: 70px; height: 5px; background: var(--card-2); border-radius: 3px; overflow: hidden; position: relative; }
+  .gauge-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--hn)); }
+
+  /* ============ LLM PANEL ============ */
+  .llm-panel {
+    display: block !important;
+    padding: 8px 14px;
+  }
+  .llm-panel .title { font-size: 11px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+  .llm-card {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    display: flex; align-items: center; gap: 8px;
+    position: relative;
+  }
+  .llm-card.nb { border-color: rgba(78,161,255,0.5); }
+  .llm-card.ctx { border-color: rgba(45,212,191,0.5); }
+  .llm-card.hm { border-color: rgba(167,139,250,0.7); background: rgba(167,139,250,0.08); }
+  .llm-card.hn { border-color: rgba(251,191,36,0.5); }
+  .llm-card .iconbox {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px; color: white;
+  }
+  .llm-card.nb .iconbox { background: var(--nb); }
+  .llm-card.ctx .iconbox { background: var(--ctx); }
+  .llm-card.hm .iconbox { background: var(--hm); }
+  .llm-card.hn .iconbox { background: var(--hn); color: var(--bg); }
+  .llm-card .role { font-size: 10px; color: var(--text-3); }
+  .llm-card .model { font-size: 12px; font-weight: 600; color: var(--text-1); font-family: 'JetBrains Mono', monospace; }
+  .llm-card .warn-badge {
+    position: absolute; top: -6px; right: 6px;
+    background: var(--red); color: white; font-size: 9px;
+    padding: 1px 6px; border-radius: 3px; font-weight: 600;
+  }
+  .preset-tabs { display: flex; gap: 4px; }
+  .preset-tabs button {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    padding: 5px 9px;
+    border-radius: 5px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .preset-tabs button.active { background: rgba(167,139,250,0.18); border-color: var(--hm); color: var(--hm); }
+
+  /* ============ MAIN BENTO ============ */
+  .main {
+    display: grid;
+    grid-template-columns: 1.05fr 1.5fr 1fr;
+    gap: 8px;
+    min-height: 0;
+  }
+  .col { display: grid; gap: 8px; min-height: 0; }
+  .col-left { grid-template-rows: 1.3fr 1fr; }
+  .col-right { grid-template-rows: 1.4fr 0.9fr; }
+
+  .h-title {
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .h-title .sub { color: var(--text-3); font-weight: 400; font-size: 11px; margin-left: 4px; }
+
+  /* Nanabot chain */
+  .chain {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .chain-step {
+    text-align: center;
+    padding: 5px 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card-2);
+    font-size: 10px;
+    color: var(--text-3);
+    position: relative;
+  }
+  .chain-step .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--border);
+    color: var(--text-2);
+    font-weight: 700; font-size: 9px;
+    margin-bottom: 2px;
+  }
+  .chain-step.done { border-color: var(--green); color: var(--green); }
+  .chain-step.done .num { background: var(--green); color: var(--bg); }
+  .chain-step.active { border-color: var(--nb); color: var(--nb); background: rgba(78,161,255,0.1); }
+  .chain-step.active .num { background: var(--nb); color: white; }
+  .chain-step.active::after {
+    content: ''; position: absolute; top: -3px; right: -3px;
+    width: 8px; height: 8px; border-radius: 50%; background: var(--nb);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .chain-step .lbl { font-size: 9px; color: var(--text-3); }
+  .chain-step.done .lbl, .chain-step.active .lbl { color: inherit; }
+
+  .md-slot {
+    border: 1px dashed var(--border-2);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-3);
+    margin-bottom: 6px;
+  }
+  .md-files { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; }
+  .md-file {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .md-file .tag {
+    background: var(--ctx); color: var(--bg);
+    font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+  }
+  .md-file.auto .tag { background: var(--coral); }
+  .md-file .name { flex: 1; color: var(--text-2); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+  .md-file .stat { font-size: 9px; color: var(--text-3); }
+
+  /* Context */
+  .ctx-section { font-size: 10px; color: var(--text-3); margin-bottom: 3px; }
+  .ctx-slot {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    font-size: 11px;
+    color: var(--text-2);
+    margin-bottom: 5px;
+    position: relative;
+  }
+  .ctx-slot .badge {
+    background: var(--ctx); color: var(--bg);
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700;
+    margin-left: 5px;
+  }
+  .json-preview {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-2);
+    overflow: hidden;
+  }
+  .json-preview .k { color: var(--ctx); }
+  .json-preview .s { color: var(--coral); }
+  .json-preview .n { color: var(--hn); }
+
+  /* Hermes */
+  .hm-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; row-gap: 4px; }
+  .hm-tabs { display: flex; gap: 4px; flex-shrink: 0; }
+  .hm-tabs button {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    color: var(--text-3);
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 4px;
+    white-space: nowrap;
+  }
+  .hm-tabs button.active { background: rgba(167,139,250,0.18); border-color: var(--hm); color: var(--hm); }
+  .hm-actions { margin-left: auto; display: flex; gap: 4px; flex-shrink: 0; }
+  .hm-actions button {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    padding: 5px 9px;
+    border-radius: 5px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .hm-actions .start {
+    background: var(--hm); color: white; border-color: var(--hm); font-weight: 600;
+  }
+  .sync-bar-wrap { display: flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 10px; color: var(--text-3); }
+  .sync-bar { width: 80px; height: 4px; background: var(--card-2); border-radius: 2px; overflow: hidden; }
+  .sync-fill { height: 100%; background: var(--hm); width: 100%; }
+  .forge {
+    flex: 1;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-3);
+    font-size: 11px;
+    text-align: center;
+    overflow: auto;
+    position: relative;
+    min-height: 0;
+  }
+  .forge.has-code { justify-content: flex-start; align-items: flex-start; text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .forge h2 { font-size: 18px; color: var(--text-2); margin-bottom: 8px; font-weight: 600; }
+  .forge .hint { font-size: 11px; color: var(--text-3); }
+  .forge .hint b { color: var(--hm); }
+  .forge .kw { color: #f472b6; }
+  .forge .fn { color: var(--hn); }
+  .forge .cm { color: var(--text-3); }
+  .forge .st { color: #a3e635; }
+  .cursor { display: inline-block; width: 7px; height: 12px; background: var(--hm); vertical-align: middle; }
+
+  .md-patch {
+    margin-top: 8px;
+    background: rgba(251,146,60,0.08);
+    border: 1px solid var(--coral);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10px;
+    color: var(--text-2);
+  }
+  .md-patch .label { color: var(--coral); font-weight: 600; font-size: 10px; }
+
+  /* Harness 3-layer */
+  .layer-stack { display: grid; gap: 5px; margin-bottom: 8px; }
+  .layer {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 9px;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11px;
+    position: relative;
+  }
+  .layer .num {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 9px;
+    color: var(--text-3);
+  }
+  .layer .info { flex: 1; }
+  .layer .info .ln { font-weight: 600; color: var(--text-1); font-size: 11px; }
+  .layer .info .ld { font-size: 9px; color: var(--text-3); }
+  .layer .stat { font-size: 10px; color: var(--text-3); }
+  .layer.active { border-color: var(--hn); background: rgba(251,191,36,0.06); }
+  .layer.active .num { background: var(--hn); color: var(--bg); }
+  .layer.done { border-color: rgba(52,211,153,0.4); }
+  .layer.done .num { background: var(--green); color: var(--bg); }
+  .layer.layer3 { position: relative; }
+  .ralph-counter {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 6px;
+  }
+  .rc-grid { display: grid; grid-template-columns: 1fr 1px 1fr; gap: 6px; align-items: center; }
+  .rc-divider { background: var(--border); height: 40px; }
+  .rc-cell { text-align: center; }
+  .rc-cell .l { font-size: 9px; color: var(--text-3); letter-spacing: 2px; }
+  .rc-cell .n { font-size: 26px; font-weight: 700; color: var(--hn); line-height: 1.1; }
+  .rc-cell .s { font-size: 9px; color: var(--text-3); margin-top: 2px; }
+  .rc-cell.best .n { color: var(--green); font-size: 22px; }
+  .rc-cell.best .l { color: var(--green); }
+  .rc-cell.best .acc { font-size: 10px; color: var(--green); font-weight: 600; }
+  .rc-cell.best.empty .n { color: var(--text-3); }
+  .rc-cell.best.empty .l { color: var(--text-3); }
+  .term-log {
+    flex: 1;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-2);
+    line-height: 1.6;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .term-log .t { color: var(--text-3); }
+  .term-log .ok { color: var(--green); }
+  .term-log .warn { color: var(--hn); }
+  .term-log .err { color: var(--red); }
+
+  /* Failure log */
+  .fail-list { flex: 1; overflow-y: auto; min-height: 0; }
+  .fail-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 0;
+    font-size: 11px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .fail-row:last-child { border-bottom: 0; }
+  .fail-row .id {
+    background: var(--card-2);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: monospace; font-size: 10px; font-weight: 700;
+  }
+  .fail-row.fixed .id { color: var(--green); border: 1px solid rgba(52,211,153,0.4); }
+  .fail-row.open .id { color: var(--red); border: 1px solid rgba(248,113,113,0.5); }
+  .fail-row .msg { color: var(--text-2); flex: 1; font-size: 10px; }
+  .fail-row .stat { font-size: 9px; color: var(--text-3); }
+
+  /* ============ BOTTOM ROW ============ */
+  .bottom-row {
+    display: grid;
+    grid-template-columns: 1.8fr 1fr;
+    gap: 8px;
+    min-height: 0;
+  }
+  .loop-section {
+    padding: 10px 14px;
+    position: relative;
+  }
+  .loop-title {
+    font-weight: 600; font-size: 12px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .loop-canvas {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+  .loop-node {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    background: var(--card-2);
+  }
+  .loop-node .role { font-size: 9px; color: var(--text-3); font-weight: 400; display: block; margin-top: 2px; }
+  .loop-node.nb { left: 1%; color: var(--nb); border: 1.5px solid var(--nb); }
+  .loop-node.hm { left: 50%; transform: translate(-50%, -50%); color: var(--hm); border: 1.5px solid var(--hm); }
+  .loop-node.hn { right: 1%; color: var(--hn); border: 1.5px solid var(--hn); }
+
+  .ralph-conditions {
+    padding: 10px 14px;
+  }
+  .ralph-title { font-weight: 600; font-size: 12px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .ralph-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; flex: 1; min-height: 0; }
+  .ralph-item {
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 10px;
+    display: flex; align-items: center; gap: 7px;
+    color: var(--text-2);
+  }
+  .ralph-item .n {
+    width: 16px; height: 16px;
+    background: var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-3); font-size: 9px; font-weight: 700;
+  }
+  .ralph-item.met { border-color: rgba(52,211,153,0.4); color: var(--green); }
+  .ralph-item.met .n { background: var(--green); color: var(--bg); }
+
+  /* User markers */
+  .user-marker {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--user);
+    box-shadow: 0 0 0 3px rgba(255,94,122,0.25);
+    border: 2px solid var(--bg);
+    z-index: 5;
+  }
+
+  /* Modal */
+  .modal-demo {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-demo.show { display: flex; }
+  .modal-box {
+    background: var(--card);
+    border: 2px solid var(--red);
+    border-radius: 12px;
+    padding: 22px;
+    max-width: 420px;
+    text-align: center;
+  }
+  .modal-box h3 { color: var(--red); font-size: 15px; margin-bottom: 8px; }
+  .modal-box p { color: var(--text-2); font-size: 12px; margin-bottom: 16px; }
+  .modal-box .btns { display: flex; gap: 8px; justify-content: center; }
+  .modal-box button {
+    padding: 9px 18px;
+    border-radius: 7px;
+    font-weight: 600;
+    font-size: 11px;
+    cursor: pointer;
+    border: 0;
+  }
+  .btn-bug { background: var(--red); color: white; }
+  .btn-design { background: var(--nb); color: white; }
+
+  /* Resume panel popup */
+  .resume-popup {
+    position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--hm); border-radius: 10px;
+    padding: 12px 14px; min-width: 480px; z-index: 50;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    display: none;
+  }
+  .resume-popup.show { display: block; }
+  .resume-popup .h-title { font-size: 12px; margin-bottom: 8px; }
+  .resume-list { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+  .resume-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .resume-item:hover { border-color: var(--hm); }
+  .resume-item .ic {
+    width: 22px; height: 22px; border-radius: 5px;
+    background: var(--card); display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+  }
+  .resume-item .info { flex: 1; }
+  .resume-item .name { color: var(--text-1); font-weight: 600; font-size: 11px; }
+  .resume-item .meta { color: var(--text-3); font-size: 10px; }
+  .resume-item .progress {
+    width: 70px; height: 5px;
+    background: var(--card); border-radius: 3px; overflow: hidden;
+  }
+  .resume-item .progress-fill { height: 100%; background: var(--green); }
+  .resume-item .badge {
+    font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+    background: var(--card); color: var(--text-2);
+  }
+  .resume-item .badge.success { color: var(--green); border: 1px solid rgba(52,211,153,0.4); }
+  .resume-item .badge.paused { color: var(--hn); border: 1px solid rgba(251,191,36,0.4); }
+  .resume-item .badge.failed { color: var(--red); border: 1px solid rgba(248,113,113,0.4); }
+
+  /* Cost block modal */
+  .modal-cost {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-cost.show { display: flex; }
+  .modal-cost-box {
+    background: var(--card);
+    border: 2px solid var(--red);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 460px;
+  }
+  .modal-cost-box h3 { color: var(--red); font-size: 16px; margin-bottom: 12px; }
+  .modal-cost-box .stats { background: var(--card-2); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 12px; color: var(--text-2); }
+  .modal-cost-box .stats div { display: flex; justify-content: space-between; padding: 2px 0; }
+  .modal-cost-box .stats .v { font-family: monospace; font-weight: 600; color: var(--text-1); }
+  .modal-cost-box .btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-cost-box button {
+    padding: 9px 18px; border-radius: 7px; font-weight: 600; font-size: 11px; cursor: pointer; border: 0;
+  }
+  .btn-stop { background: var(--red); color: white; }
+  .btn-raise { background: var(--hn); color: var(--bg); }
+
+  /* Best snapshot annotation */
+  .best-anno {
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.4);
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--green);
+    margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* Project selector */
+  .proj-pill {
+    background: var(--card-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px;
+    font-size: 11px; color: var(--text-1); display: inline-flex; align-items: center; gap: 6px;
+    cursor: pointer; position: relative;
+  }
+  .proj-pill .tag { font-size: 9px; color: var(--text-3); }
+  .proj-pill .name { font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .proj-pill .caret { color: var(--text-3); font-size: 9px; }
+  .proj-pill .count { background: var(--hm); color: white; border-radius: 8px; padding: 1px 6px; font-size: 9px; font-weight: 700; }
+
+  /* Hermes toolbar additions */
+  .ctx-window-gauge { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--text-3); }
+  .ctx-window-gauge .bar { width: 50px; height: 3px; background: var(--card-2); border-radius: 2px; overflow: hidden; }
+  .ctx-window-gauge .fill { height: 100%; background: var(--coral); width: 38%; }
+
+  /* Output format dropdown */
+  .fmt-select {
+    background: var(--card-2); border: 1px solid var(--border); color: var(--text-2);
+    padding: 5px 8px; border-radius: 5px; font-size: 10px; cursor: pointer;
+  }
+
+  /* MD conflict icon */
+  .md-file .conflict {
+    background: var(--red); color: white; font-size: 9px;
+    padding: 1px 5px; border-radius: 3px; font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* Load mode hint */
+  .load-mode-banner {
+    background: rgba(251,146,60,0.08); border: 1px solid var(--coral); border-radius: 5px;
+    padding: 5px 9px; font-size: 10px; color: var(--coral); margin-bottom: 6px;
+    display: none;
+  }
+  .load-mode-banner.show { display: block; }
+
+  /* Generic mini modal */
+  .mini-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .mini-modal.show { display: flex; }
+  .mini-modal-box {
+    background: var(--card); border: 1px solid var(--hm); border-radius: 12px;
+    padding: 22px; max-width: 540px; width: 90%;
+  }
+  .mini-modal-box h3 { font-size: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .mini-modal-box .close-btn {
+    position: absolute; top: 16px; right: 20px; cursor: pointer;
+    background: var(--card-2); border: 1px solid var(--border); color: var(--text-2);
+    border-radius: 5px; padding: 4px 10px; font-size: 11px;
+  }
+  .mini-modal-box ul { list-style: none; }
+  .history-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 12px; margin-bottom: 5px; font-size: 11px;
+  }
+  .history-row .v { font-family: monospace; font-weight: 700; color: var(--hm); min-width: 38px; }
+  .history-row .ts { font-size: 10px; color: var(--text-3); }
+  .history-row .diff { color: var(--text-2); flex: 1; font-size: 10px; }
+  .history-row button {
+    background: transparent; border: 1px solid var(--hm); color: var(--hm);
+    padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+  }
+
+  /* Result review modal */
+  .review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .review-card {
+    background: var(--card-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; font-size: 12px; color: var(--text-2);
+  }
+  .review-card .l { font-size: 10px; color: var(--text-3); letter-spacing: 1px; margin-bottom: 4px; }
+  .review-card .v { font-size: 16px; font-weight: 700; color: var(--green); }
+  .review-card.warn .v { color: var(--hn); }
+
+  .hidden { display: none !important; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ============================ TOP BAR ============================ -->
+<div class="card topbar">
+  <div class="brand">
+    <div class="brand-icon">N</div>
+    <div>자율 제조 공장 <small>v6.3 · 나나봇+헤르메스</small></div>
+  </div>
+  <span class="proj-pill" onclick="document.getElementById('modalProj').classList.add('show')">
+    <span class="tag">PROJ</span>
+    <span class="name">cnn_deadlock</span>
+    <span class="count">3</span>
+    <span class="caret">▾</span>
+  </span>
+  <div class="env-toggle" id="envToggle">
+    <button class="active" data-env="api"><span class="dot dot-nb"></span> 회사 API</button>
+    <button data-env="gguf"><span class="dot dot-hn"></span> 집 GGUF</button>
+  </div>
+  <span class="pill hcp" id="backendPill"><span class="dot dot-hn"></span>HCP</span>
+  <div class="tab-group" style="position: relative;">
+    <button class="active" data-tab="new">▶ 신규</button>
+    <button data-tab="resume" id="resumeTab">↻ 이어하기</button>
+    <button data-tab="load">📂 로드 진화</button>
+    <div class="resume-popup" id="resumePopup">
+      <div class="h-title">
+        <span class="dot dot-hm"></span> 이어하기 · 과거 세션 (자동 저장됨)
+      </div>
+      <div class="resume-list">
+        <div class="resume-item">
+          <div class="ic">🧪</div>
+          <div class="info">
+            <div class="name">cnn_deadlock_classifier</div>
+            <div class="meta">14/50 회 · 3일 전 중단 · Acc 0.94 (최선 #11)</div>
+          </div>
+          <div class="progress"><div class="progress-fill" style="width: 28%;"></div></div>
+          <div class="badge paused">중단</div>
+        </div>
+        <div class="resume-item">
+          <div class="ic">📈</div>
+          <div class="info">
+            <div class="name">xgb_yield_forecast</div>
+            <div class="meta">20/20 회 · 5일 전 · 동일 실패 반복으로 정지</div>
+          </div>
+          <div class="progress"><div class="progress-fill" style="width: 100%; background: var(--red);"></div></div>
+          <div class="badge failed">실패</div>
+        </div>
+        <div class="resume-item">
+          <div class="ic">🤖</div>
+          <div class="info">
+            <div class="name">wafer_defect_seg</div>
+            <div class="meta">8/30 회 · 1시간 전 일시정지 · Acc 0.88 (최선 #6)</div>
+          </div>
+          <div class="progress"><div class="progress-fill" style="width: 27%; background: var(--hn);"></div></div>
+          <div class="badge paused">대기</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div></div>
+  <div></div>
+  <div class="spacer"></div>
+  <div class="gauge-group">
+    <div class="gauge-box" id="gaugeTokens">
+      <span class="label">TOKENS</span>
+      <span class="val">2.4M</span>
+      <span style="color:var(--text-3); font-size: 10px;">누적 사용</span>
+    </div>
+    <div class="gauge-box" id="gaugeTime">
+      <span class="label">RUN</span>
+      <span class="val">12:34</span>
+      <span style="color:var(--text-3); font-size: 10px;">경과</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ LLM PANEL ============================ -->
+<div class="card llm-panel" id="llmPanel">
+  <!-- API mode -->
+  <div id="apiMode" style="display: grid; grid-template-columns: auto repeat(4, 1fr) auto; gap: 10px; align-items: center;">
+    <div class="title">
+      <span class="dot dot-green pulse"></span>
+      HCP LLM 라우팅
+    </div>
+    <div class="llm-card nb">
+      <div class="iconbox">N</div>
+      <div>
+        <div class="role">나나봇 · 4단 체인</div>
+        <div class="model">hcp-70b-stable</div>
+      </div>
+    </div>
+    <div class="llm-card ctx">
+      <div class="iconbox">C</div>
+      <div>
+        <div class="role">컨텍스트 · 파서</div>
+        <div class="model">hcp-13b-stable</div>
+      </div>
+    </div>
+    <div class="llm-card hm">
+      <div class="iconbox">H</div>
+      <div>
+        <div class="role">헤르메스 · 생성</div>
+        <div class="model">hcp-시조새-110b</div>
+      </div>
+      <span class="warn-badge">FALLBACK 없음</span>
+    </div>
+    <div class="llm-card hn">
+      <div class="iconbox">T</div>
+      <div>
+        <div class="role">하네스 · L2 분류</div>
+        <div class="model">hcp-7b-stable</div>
+      </div>
+    </div>
+    <div class="preset-tabs">
+      <button>👥 균형</button>
+      <button>🪙 비용</button>
+      <button class="active">💎 품질</button>
+      <button>⚙ 커스텀</button>
+    </div>
+  </div>
+
+  <!-- GGUF mode -->
+  <div id="ggufMode" style="display: none; grid-template-columns: auto 1fr auto auto auto; gap: 12px; align-items: center;">
+    <div class="title">
+      <span class="dot dot-hn pulse"></span>
+      GGUF 단일 모델 (수동 로드)
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="font-size: 11px; color: var(--text-3);">현재 로드:</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: var(--text-1);" id="ggufCurrent">— 없음 —</div>
+      <div style="font-size: 10px; color: var(--text-3);" id="ggufNote">로드된 1개 모델이 4대 요소(나나봇→컨텍스트→헤르메스→하네스) 순서대로 수행</div>
+    </div>
+    <div class="gauge-box">
+      <span class="label">VRAM</span>
+      <div class="gauge-bar"><div class="gauge-fill" id="vramFill" style="width: 0%;"></div></div>
+      <span class="val" id="vramVal">0</span><span style="color: var(--text-3);">/24 GB</span>
+    </div>
+    <button class="btn-gguf" onclick="mockGgufLoad()">📥 GGUF 모델 로드</button>
+    <button class="btn-secondary" onclick="mockGgufUnload()" style="background: var(--card-2); border: 1px solid var(--border); color: var(--text-2); padding: 7px 12px; border-radius: 6px; font-size: 11px; cursor: pointer;">언로드</button>
+  </div>
+</div>
+
+<!-- ============================ MAIN BENTO ============================ -->
+<div class="main">
+
+  <!-- LEFT COLUMN -->
+  <div class="col col-left">
+
+    <!-- 나나봇 -->
+    <div class="card card-nb">
+      <div class="h-title">
+        <span class="dot dot-nb"></span> 나나봇 <span class="sub">기획 · 4단 체인</span>
+      </div>
+
+      <div class="chain">
+        <div class="chain-step done"><span class="num">1</span><br><b>Analyzer</b><div class="lbl">요구 분석</div></div>
+        <div class="chain-step done"><span class="num">2</span><br><b>Architect</b><div class="lbl">구조 설계</div></div>
+        <div class="chain-step active"><span class="num">3</span><br><b>Writer</b><div class="lbl">MD 작성</div></div>
+        <div class="chain-step"><span class="num">4</span><br><b>Reviewer</b><div class="lbl">자체 검토</div></div>
+      </div>
+
+      <div style="font-size: 10px; color: var(--text-3); margin-bottom: 4px;">
+        MD 스킬 · 드래그앤드롭 · 없으면 자동 생성
+      </div>
+      <div class="md-slot">.md 파일 드롭 / 클릭</div>
+
+      <div class="md-files">
+        <div class="md-file">
+          <span class="tag">MD</span>
+          <span class="name">data_loader.md</span>
+          <span class="stat">로드됨</span>
+        </div>
+        <div class="md-file">
+          <span class="tag">MD</span>
+          <span class="name">cnn_classifier.md</span>
+          <span class="stat">로드됨</span>
+        </div>
+        <div class="md-file auto">
+          <span class="tag">?</span>
+          <span class="name">focal_loss.md</span>
+          <span class="conflict" onclick="document.getElementById('modalConflict').classList.add('show')" title="충돌">⚠ 충돌</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 컨텍스트 -->
+    <div class="card card-ctx" style="position: relative;">
+      <div class="user-marker" style="top: -6px; right: -6px;" title="시작 시 입력 1스폿"></div>
+      <div class="h-title">
+        <span class="dot dot-ctx"></span> 컨텍스트 <span class="sub">조건 · UI + 파서</span>
+      </div>
+      <div class="load-mode-banner" id="loadModeBanner">
+        🔄 로드 진화 모드 — 기존 코드 분석 후 피드백 적용 (변경분만 재생성)
+      </div>
+      <div class="ctx-section">컨텍스트-슬롯 <span class="badge" style="background: var(--ctx); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 3px;">UI</span></div>
+      <div class="ctx-slot">요구사항 · deadlock CNN 분류기, Acc ≥ 0.98</div>
+      <div class="ctx-slot">📊 CSV: training_logs.csv (14×8200)</div>
+
+      <div class="ctx-section" style="margin-top: 4px;">컨텍스트-파서 <span style="background: var(--coral); color: var(--bg); font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700;">LLM</span></div>
+      <div class="json-preview">
+        <span style="color:var(--text-3);">{</span> <span class="k">"task"</span>:<span class="s">"ml.classifier"</span>, <span class="k">"acc"</span>:<span class="n">0.98</span> <span style="color:var(--text-3);">}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER COLUMN — Hermes -->
+  <div class="col">
+    <div class="card card-hm" style="height: 100%;">
+      <div class="hm-toolbar">
+        <div class="h-title" style="margin: 0;">
+          <span class="dot dot-hm pulse"></span> 헤르메스 <span class="sub">생성 · 포지</span>
+        </div>
+        <div class="ctx-window-gauge" style="margin-left: 6px;">
+          <span>CTX</span>
+          <div class="bar"><div class="fill"></div></div>
+          <span style="color: var(--coral); font-weight: 600;">38%</span>
+        </div>
+        <div class="sync-bar-wrap" style="margin-left: auto;">
+          <span>MD-SYNC</span>
+          <div class="sync-bar"><div class="sync-fill"></div></div>
+          <span style="color: var(--hm); font-weight: 600;">100%</span>
+        </div>
+      </div>
+
+      <div class="hm-toolbar" style="margin-bottom: 8px;">
+        <div class="hm-tabs">
+          <button class="active"><span class="dot dot-hm"></span> 코드</button>
+          <button>● MD</button>
+          <button>⊞ 분할</button>
+          <button onclick="document.getElementById('modalHistory').classList.add('show')" title="버전 이력">🕒</button>
+        </div>
+        <div class="hm-actions">
+          <select class="fmt-select" title="결과 포맷 선택">
+            <option>📄 .py</option>
+            <option>📓 .ipynb</option>
+            <option>🧠 .pth</option>
+            <option>📦 zip</option>
+          </select>
+          <button>⚙ 자동</button>
+          <button>👤 수동</button>
+          <button>↻</button>
+          <button class="start">▶ 시작</button>
+        </div>
+      </div>
+
+      <div class="forge" id="forge">
+        <h2>준비 완료 — 헤르메스 포지</h2>
+        <div class="hint">
+          좌측에 조건을 채우고 <b>▶ 시작</b>을 누르세요.<br>
+          코드는 한 줄씩 단조되고, MD 설계도와 실시간 동기화됩니다.
+        </div>
+      </div>
+
+      <div class="md-patch">
+        <span class="label">⚠ MD-Patch 신호:</span> 헤르메스가 설계 누락 발견 시 나나봇에 자동 통보 (코드 직접 수정 금지)
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="col col-right">
+
+    <!-- 하네스 -->
+    <div class="card card-hn" style="position: relative;">
+      <div class="user-marker" style="top: 80px; right: -7px;" title="Layer 3 폴백 강제 개입"></div>
+      <div class="h-title">
+        <span class="dot dot-hn"></span> 하네스 <span class="sub">검증 · 3층 구조</span>
+      </div>
+
+      <div class="layer-stack">
+        <div class="layer">
+          <div class="num">1</div>
+          <div class="info">
+            <div class="ln">규칙 기반</div>
+            <div class="ld">컴파일 / NameError / SyntaxError</div>
+          </div>
+          <div class="stat">대기</div>
+        </div>
+        <div class="layer">
+          <div class="num">2</div>
+          <div class="info">
+            <div class="ln">LLM 분류</div>
+            <div class="ld">코드버그 ↔ 설계결함 자동 판정</div>
+          </div>
+          <div class="stat">—</div>
+        </div>
+        <div class="layer layer3" onclick="document.getElementById('modal3').classList.add('show')" style="cursor: pointer;">
+          <div class="num">3</div>
+          <div class="info">
+            <div class="ln">인간 폴백</div>
+            <div class="ld">신뢰도 &lt; 0.7 시 강제 분류 요청</div>
+          </div>
+          <div class="stat">대기</div>
+        </div>
+      </div>
+
+      <div class="best-anno">
+        ★ 최선 스냅샷 자동 저장 · 새 시도가 더 나쁘면 #최선 복원
+      </div>
+      <div class="ralph-counter">
+        <div class="rc-grid">
+          <div class="rc-cell">
+            <div class="l">RALPH ITER</div>
+            <div class="n" id="iterN">0</div>
+            <div class="s" id="iterStat">대기 중</div>
+          </div>
+          <div class="rc-divider"></div>
+          <div class="rc-cell best empty" id="bestCell">
+            <div class="l">★ 최선 #</div>
+            <div class="n" id="bestN">—</div>
+            <div class="acc" id="bestAcc">없음</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="term-log">
+        <span class="t">00:00</span> <span class="ok">BOOT</span>  공장 v6 가동 · HCP 백엔드 검증 완료<br>
+        <span class="t">00:05</span> <span class="warn">WARN</span>  헤르메스 모델 = hcp-시조새-110b · 신규<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(fallback 없음)
+      </div>
+    </div>
+
+    <!-- 실패 로그 -->
+    <div class="card card-red">
+      <div class="h-title">
+        <span class="dot dot-red"></span> 실패 로그 <span class="sub">해결 내역 · N회 반복 시 정지</span>
+      </div>
+      <div class="fail-list">
+        <div class="fail-row fixed">
+          <span class="id">#12</span>
+          <span class="msg">NameError 'F' undefined</span>
+          <span class="stat">헤르메스</span>
+        </div>
+        <div class="fail-row fixed">
+          <span class="id">#13</span>
+          <span class="msg">dtype 불일치</span>
+          <span class="stat">헤르메스</span>
+        </div>
+        <div class="fail-row open">
+          <span class="id">#14</span>
+          <span class="msg">shape [14] vs [14,T]</span>
+          <span class="stat">분류 중</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================ BOTTOM ROW ============================ -->
+<div class="bottom-row">
+
+  <!-- Feedback Loop -->
+  <div class="card loop-section">
+    <div class="loop-title">
+      <span class="dot dot-hm pulse"></span> 듀얼 피드백 루프 · 에너지 트레일
+    </div>
+    <div class="loop-canvas">
+      <div class="loop-node nb">나나봇<span class="role">4단 체인</span></div>
+      <div class="loop-node hm">헤르메스<span class="role">코드 생성</span></div>
+      <div class="loop-node hn">하네스<span class="role">3층 검증</span></div>
+
+      <svg width="100%" height="100%" style="position: absolute; inset: 0; pointer-events: none;">
+        <defs>
+          <marker id="aPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/>
+          </marker>
+          <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#f87171"/>
+          </marker>
+          <marker id="aBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#4ea1ff"/>
+          </marker>
+        </defs>
+        <!-- forward arrows -->
+        <path class="trail" d="M 12% 50% L 42% 50%" stroke="#a78bfa" stroke-width="2" fill="none" marker-end="url(#aPurple)"/>
+        <path class="trail" d="M 58% 50% L 88% 50%" stroke="#a78bfa" stroke-width="2" fill="none" marker-end="url(#aPurple)"/>
+        <!-- code bug feedback -->
+        <path class="trail" d="M 88% 60% Q 73% 92%, 56% 62%" stroke="#f87171" stroke-width="2" fill="none" marker-end="url(#aRed)"/>
+        <text x="73%" y="92%" font-size="10" fill="#f87171" font-weight="600">코드 버그</text>
+        <!-- design feedback -->
+        <path class="trail" d="M 88% 70% Q 50% 110%, 12% 60%" stroke="#4ea1ff" stroke-width="2" fill="none" marker-end="url(#aBlue)"/>
+        <text x="40%" y="98%" font-size="10" fill="#4ea1ff" font-weight="600">설계 결함 (4단 재실행)</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Ralph Wiggum Exit Conditions -->
+  <div class="card ralph-conditions">
+    <div class="ralph-title">
+      <span class="dot dot-hn"></span> 랄프 위검 종료 조건
+    </div>
+    <div class="ralph-grid">
+      <div class="ralph-item met">
+        <div class="n">1</div>
+        <div>목표 달성</div>
+      </div>
+      <div class="ralph-item">
+        <div class="n">2</div>
+        <div>최대 반복 도달 (≥ 20)</div>
+      </div>
+      <div class="ralph-item">
+        <div class="n">3</div>
+        <div>동일 실패 N회</div>
+      </div>
+      <div class="ralph-item">
+        <div class="n">4</div>
+        <div>분류 정확도 &lt; 60%</div>
+      </div>
+      <div class="ralph-item" style="grid-column: span 2;">
+        <div class="n">5</div>
+        <div>사용자 강제 중단</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Project selector modal -->
+<div class="mini-modal" id="modalProj">
+  <div class="mini-modal-box" style="position: relative;">
+    <button class="close-btn" onclick="document.getElementById('modalProj').classList.remove('show')">닫기</button>
+    <h3><span class="dot dot-hm"></span> 다중 프로젝트 — 동시 실행 가능 (3/5)</h3>
+    <div class="resume-list" style="max-height: none;">
+      <div class="resume-item" style="border-color: var(--hm);">
+        <div class="ic">🧪</div>
+        <div class="info">
+          <div class="name">cnn_deadlock <span style="color:var(--hm); font-size:9px;">(현재)</span></div>
+          <div class="meta">14/50회 · Acc 0.94 · 헤르메스 작업 중</div>
+        </div>
+        <div class="badge paused">활성</div>
+      </div>
+      <div class="resume-item">
+        <div class="ic">📈</div>
+        <div class="info">
+          <div class="name">wafer_yield_pred</div>
+          <div class="meta">22/30회 · MAE 0.08 · 하네스 검증 대기</div>
+        </div>
+        <div class="badge success">백그라운드</div>
+      </div>
+      <div class="resume-item">
+        <div class="ic">🤖</div>
+        <div class="info">
+          <div class="name">defect_seg_unet</div>
+          <div class="meta">5/40회 · 나나봇 4단 체인 진행</div>
+        </div>
+        <div class="badge paused">백그라운드</div>
+      </div>
+      <div class="resume-item" style="border-style: dashed; color: var(--text-3); cursor: pointer;">
+        <div class="ic">➕</div>
+        <div class="info">
+          <div class="name">새 프로젝트 시작</div>
+          <div class="meta">최대 5개까지 동시 가능 (남은 슬롯 2)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Version history modal -->
+<div class="mini-modal" id="modalHistory">
+  <div class="mini-modal-box" style="position: relative; max-width: 620px;">
+    <button class="close-btn" onclick="document.getElementById('modalHistory').classList.remove('show')">닫기</button>
+    <h3>🕒 버전 이력 — MD·코드 변경 추적</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+      <div>
+        <div style="font-size: 10px; color: var(--text-3); margin-bottom: 6px;">MD 변경 (나나봇)</div>
+        <div class="history-row">
+          <span class="v">v3</span>
+          <div class="diff">Writer: input_shape [14,T] 명시 추가</div>
+          <span class="ts">방금</span>
+          <button>복원</button>
+        </div>
+        <div class="history-row">
+          <span class="v">v2</span>
+          <div class="diff">Reviewer: 손실함수 명세 보강</div>
+          <span class="ts">3분 전</span>
+          <button>복원</button>
+        </div>
+        <div class="history-row">
+          <span class="v">v1</span>
+          <div class="diff">Architect: CNN 아키텍처 후보 결정</div>
+          <span class="ts">7분 전</span>
+          <button>복원</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size: 10px; color: var(--text-3); margin-bottom: 6px;">코드 변경 (헤르메스)</div>
+        <div class="history-row">
+          <span class="v">#14</span>
+          <div class="diff">conv1 채널 14→32</div>
+          <span class="ts">방금</span>
+          <button>복원</button>
+        </div>
+        <div class="history-row">
+          <span class="v">#13</span>
+          <div class="diff">dtype long → float32</div>
+          <span class="ts">2분 전</span>
+          <button>복원</button>
+        </div>
+        <div class="history-row" style="border-color: var(--green);">
+          <span class="v" style="color: var(--green);">#11 ★</span>
+          <div class="diff" style="color: var(--green);">최선 스냅샷 · Acc 0.94</div>
+          <span class="ts">5분 전</span>
+          <button style="border-color: var(--green); color: var(--green);">복원</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MD conflict modal -->
+<div class="mini-modal" id="modalConflict">
+  <div class="mini-modal-box" style="position: relative; border-color: var(--red);">
+    <button class="close-btn" onclick="document.getElementById('modalConflict').classList.remove('show')">닫기</button>
+    <h3 style="color: var(--red);">⚠ MD 스킬 충돌 — focal_loss.md</h3>
+    <p style="font-size: 12px; color: var(--text-2); margin-bottom: 14px;">
+      사용자가 업로드한 MD와 나나봇이 자동 생성한 MD가 같은 모듈을 정의합니다.<br>
+      어느 쪽을 우선할지 선택하세요.
+    </p>
+    <div style="display: grid; gap: 8px;">
+      <div class="resume-item" style="border-color: var(--nb); cursor: pointer;">
+        <div class="ic">📤</div>
+        <div class="info">
+          <div class="name">사용자 업로드 MD 우선</div>
+          <div class="meta">자동 생성본 폐기 · 사용자 의도 정확히 반영</div>
+        </div>
+        <div class="badge" style="color: var(--nb);">권장</div>
+      </div>
+      <div class="resume-item" style="cursor: pointer;">
+        <div class="ic">🤖</div>
+        <div class="info">
+          <div class="name">자동 생성 MD 우선</div>
+          <div class="meta">나나봇 4단 체인 결과 사용 · 사용자 MD는 참고만</div>
+        </div>
+      </div>
+      <div class="resume-item" style="cursor: pointer;">
+        <div class="ic">🔀</div>
+        <div class="info">
+          <div class="name">병합 (수동)</div>
+          <div class="meta">두 MD를 옆에 놓고 사용자가 직접 편집</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Result review modal (final inspection before download) -->
+<div class="mini-modal" id="modalReview">
+  <div class="mini-modal-box" style="position: relative; border-color: var(--green);">
+    <button class="close-btn" onclick="document.getElementById('modalReview').classList.remove('show')">닫기</button>
+    <h3 style="color: var(--green);">✓ 최종 결과 검수 — 수거 전 확인</h3>
+    <div class="review-grid">
+      <div class="review-card">
+        <div class="l">최종 정확도</div>
+        <div class="v">0.984</div>
+      </div>
+      <div class="review-card">
+        <div class="l">총 반복 횟수</div>
+        <div class="v" style="color: var(--text-1);">17 회</div>
+      </div>
+      <div class="review-card">
+        <div class="l">사용 토큰</div>
+        <div class="v" style="color: var(--text-1);">4.8M</div>
+      </div>
+      <div class="review-card warn">
+        <div class="l">총 비용</div>
+        <div class="v">$6.42</div>
+      </div>
+    </div>
+    <p style="font-size: 12px; color: var(--text-2); margin-bottom: 14px;">
+      포맷: <strong style="color: var(--hm);">.py + .pth (weights)</strong> · 7개 파일 (약 320KB)
+    </p>
+    <div class="btns" style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button class="btn-stop" style="background: var(--red); padding: 9px 16px; border: 0; border-radius: 7px; color: white; font-weight: 600; font-size: 11px; cursor: pointer;" onclick="document.getElementById('modalReview').classList.remove('show')">거절 · 추가 진화</button>
+      <button class="btn-design" style="background: var(--green); color: var(--bg); padding: 9px 18px; border: 0; border-radius: 7px; font-weight: 700; font-size: 11px; cursor: pointer;" onclick="document.getElementById('modalReview').classList.remove('show')">승인 · 다운로드</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-demo" id="modal3">
+  <div class="modal-box">
+    <h3>⚠ 하네스 Layer 3 폴백</h3>
+    <p>
+      시도 #14 — shape mismatch [14] vs [14, T]<br>
+      LLM 분류 신뢰도 0.62 (임계값 0.70 미만)<br><br>
+      <strong>이 실패는 코드 문제인가요, 설계 문제인가요?</strong>
+    </p>
+    <div class="btns">
+      <button class="btn-bug" onclick="document.getElementById('modal3').classList.remove('show')">코드 버그 → 헤르메스</button>
+      <button class="btn-design" onclick="document.getElementById('modal3').classList.remove('show')">설계 결함 → 나나봇</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Env switch (API ↔ GGUF)
+  const envBtns = document.querySelectorAll('#envToggle button');
+  const apiMode = document.getElementById('apiMode');
+  const ggufMode = document.getElementById('ggufMode');
+  const backendPill = document.getElementById('backendPill');
+  const gaugeTokens = document.getElementById('gaugeTokens');
+  envBtns.forEach(b => {
+    b.addEventListener('click', () => {
+      envBtns.forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const isApi = b.dataset.env === 'api';
+      apiMode.style.display = isApi ? 'grid' : 'none';
+      ggufMode.style.display = isApi ? 'none' : 'grid';
+      backendPill.innerHTML = isApi
+        ? '<span class="dot dot-hn"></span>HCP'
+        : '<span class="dot dot-nb"></span>로컬 RTX 3090';
+      // TOKENS는 API 모드에서만 의미 있음 (GGUF는 자체 토크나이저)
+      gaugeTokens.querySelector('.label').textContent = isApi ? 'TOKENS' : 'INFER';
+      gaugeTokens.querySelector('.val').textContent = isApi ? '2.4M' : '142';
+      gaugeTokens.querySelector('span:last-child').textContent = isApi ? '누적 사용' : '추론 횟수';
+    });
+  });
+
+  // GGUF load/unload mock
+  window.mockGgufLoad = function() {
+    document.getElementById('ggufCurrent').textContent = 'Qwen2.5-Coder-32B-Q4_K_M.gguf';
+    document.getElementById('vramFill').style.width = '76%';
+    document.getElementById('vramVal').textContent = '18.2';
+    document.getElementById('ggufNote').textContent = '로드 완료 · 4대 요소 순서대로 수행';
+  };
+  window.mockGgufUnload = function() {
+    document.getElementById('ggufCurrent').textContent = '— 없음 —';
+    document.getElementById('vramFill').style.width = '0%';
+    document.getElementById('vramVal').textContent = '0';
+    document.getElementById('ggufNote').textContent = '로드된 1개 모델이 4대 요소(나나봇→컨텍스트→헤르메스→하네스) 순서대로 수행';
+  };
+
+  // Tab interactions
+  document.querySelectorAll('.tab-group, .preset-tabs, .hm-tabs').forEach(group => {
+    group.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => {
+        if (b.id === 'resumeTab') return; // skip — handled separately
+        if (b.title === '버전 이력') return; // skip history button
+        group.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        // Load mode banner
+        if (b.dataset.tab === 'load') {
+          document.getElementById('loadModeBanner').classList.add('show');
+        } else if (b.dataset.tab) {
+          document.getElementById('loadModeBanner').classList.remove('show');
+        }
+      });
+    });
+  });
+
+  // Close all mini-modals on backdrop
+  document.querySelectorAll('.mini-modal').forEach(m => {
+    m.addEventListener('click', (e) => {
+      if (e.target === m) m.classList.remove('show');
+    });
+  });
+
+  // Result review demo trigger (after 8 iterations)
+  let reviewShown = false;
+  function maybeShowReview(n) {
+    if (n >= 8 && !reviewShown) {
+      reviewShown = true;
+      setTimeout(() => document.getElementById('modalReview').classList.add('show'), 1000);
+    }
+  }
+
+  // Resume tab popup
+  const resumeTab = document.getElementById('resumeTab');
+  const resumePopup = document.getElementById('resumePopup');
+  resumeTab.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resumePopup.classList.toggle('show');
+  });
+  document.addEventListener('click', (e) => {
+    if (!resumePopup.contains(e.target) && e.target !== resumeTab) {
+      resumePopup.classList.remove('show');
+    }
+  });
+  // Resume item click → load session
+  document.querySelectorAll('.resume-item').forEach(item => {
+    item.addEventListener('click', () => {
+      resumePopup.classList.remove('show');
+      const name = item.querySelector('.name').textContent;
+      const meta = item.querySelector('.meta').textContent;
+      const m = meta.match(/(\d+)\/(\d+)/);
+      const accMatch = meta.match(/Acc ([\d.]+).*#(\d+)/);
+      if (m) {
+        document.getElementById('iterN').textContent = m[1];
+        document.getElementById('iterStat').textContent = '이어하기 준비';
+      }
+      if (accMatch) {
+        document.getElementById('bestCell').classList.remove('empty');
+        document.getElementById('bestN').textContent = '#' + accMatch[2];
+        document.getElementById('bestAcc').textContent = 'Acc ' + accMatch[1];
+      }
+    });
+  });
+
+  // Best snapshot mock — appears after a few iterations
+  function updateBest(iter, acc) {
+    document.getElementById('bestCell').classList.remove('empty');
+    document.getElementById('bestN').textContent = '#' + iter;
+    document.getElementById('bestAcc').textContent = 'Acc ' + acc.toFixed(2);
+  }
+
+
+  // Start button - mock typewriter
+  const startBtn = document.querySelector('.hm-actions .start');
+  const forge = document.getElementById('forge');
+  const codeLines = [
+    '<span class="cm"># Hermes v3 forge — live stream</span>',
+    '<span class="kw">import</span> torch',
+    '<span class="kw">import</span> torch.nn <span class="kw">as</span> nn',
+    '<span class="kw">class</span> <span class="fn">DeadlockCNN</span>(nn.Module):',
+    '&nbsp;&nbsp;<span class="kw">def</span> <span class="fn">__init__</span>(self):',
+    '&nbsp;&nbsp;&nbsp;&nbsp;self.conv1 = nn.<span class="fn">Conv1d</span>(<span class="st">14</span>, <span class="st">32</span>, <span class="st">5</span>)',
+    '&nbsp;&nbsp;&nbsp;&nbsp;self.pool = nn.<span class="fn">MaxPool1d</span>(<span class="st">2</span>)',
+    '&nbsp;&nbsp;&nbsp;&nbsp;self.fc = nn.<span class="fn">Linear</span>(<span class="st">32</span>, <span class="st">2</span>)',
+    '&nbsp;&nbsp;<span class="kw">def</span> <span class="fn">forward</span>(self, x):',
+    '&nbsp;&nbsp;&nbsp;&nbsp;x = self.pool(F.relu(self.conv1(x)))<span class="cursor blink"></span>'
+  ];
+  let running = false;
+  startBtn.addEventListener('click', () => {
+    if (running) return;
+    running = true;
+    forge.classList.add('has-code');
+    forge.innerHTML = '';
+    let i = 0;
+    const tick = setInterval(() => {
+      if (i >= codeLines.length) {
+        clearInterval(tick);
+        return;
+      }
+      forge.innerHTML += codeLines[i] + '<br>';
+      i++;
+    }, 280);
+    // Start iteration counter + best snapshot logic
+    let n = 0;
+    let bestIter = null;
+    let bestAcc = 0;
+    const itEl = document.getElementById('iterN');
+    document.getElementById('iterStat').textContent = '실행 중';
+    setInterval(() => {
+      n++;
+      itEl.textContent = n;
+      // Simulate accuracy with noise; track best
+      const acc = 0.7 + Math.random() * 0.25;
+      if (acc > bestAcc) { bestAcc = acc; bestIter = n; updateBest(bestIter, bestAcc); }
+      maybeShowReview(n);
+    }, 1500);
+  });
+
+  // Modal close on backdrop
+  document.getElementById('modal3').addEventListener('click', (e) => {
+    if (e.target.id === 'modal3') e.target.classList.remove('show');
+  });
+</script>
+
+</body>
+</html>
