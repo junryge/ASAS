@@ -125,27 +125,23 @@ def init_harness(skills_dir: str | None = None, skill_keywords: dict | None = No
 
 
 def _ensure_initialized():
-    """레지스트리가 비어 있으면 (시작 시 init_harness 가 안 불렸으면) 지금 빌드."""
-    global _registry, _router
-    if _registry is None or not _registry.list_all():
-        print(f"  🔧 하네스: 첫 사용 — 스킬 레지스트리 lazy 빌드 시작")
-        init_harness(_lazy_skills_dir, _lazy_skill_keywords)
-        try:
-            print(f"  🔧 하네스: {len(_registry.list_all())}개 스킬 등록 완료 (lazy)")
-        except Exception:
-            pass
+    """이전에는 비어 있으면 자동으로 390 스킬을 모두 등록했지만,
+    "사용된 스킬만 로드" 정책에 따라 더 이상 자동 빌드하지 않음.
+    필요하면 외부에서 init_harness(...) 를 명시적으로 호출."""
+    return
 
 
 def get_registry() -> ToolRegistry:
-    """현재 레지스트리 반환. 비어 있으면 lazy 빌드."""
-    _ensure_initialized()
-    return _registry if _registry is not None else ToolRegistry()
+    """현재 레지스트리 반환. 초기화 전이면 빈 레지스트리 (자동 빌드 안 함)."""
+    global _registry
+    if _registry is None:
+        _registry = ToolRegistry()
+    return _registry
 
 
 def get_router() -> ToolRouter:
-    """현재 라우터 반환. 비어 있으면 lazy 빌드."""
-    _ensure_initialized()
-    global _router
+    """현재 라우터 반환. 초기화 전이면 빈 라우터 (자동 빌드 안 함)."""
+    global _router, _registry
     if _router is None:
         _router = ToolRouter(get_registry())
     return _router

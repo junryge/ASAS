@@ -928,9 +928,8 @@ def register_chat_routes(app):
         else:
             available_chars = 999999  # API는 사실상 무제한
 
-        # 스킬 로드
+        # 스킬 로드 — 사용자가 고른 skill_ids 만 개별 로드 (전수 스캔 안 함)
         loaded = []
-        available = scan_skills()
         total_skill_chars = 0
         num_skills = max(len(skill_ids), 1)
         per_skill_limit = available_chars // num_skills if is_gguf else 999999

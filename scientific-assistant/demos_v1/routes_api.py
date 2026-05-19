@@ -201,11 +201,14 @@ def register_api_routes(app):
                 pass
 
         # 실제 SKILL.md가 있는 스킬만 필터링 + max_skills 제한
-        available = scan_skills()
+        # 전수 scan_skills() 대신, 후보 결과별로 SKILL.md 존재만 가볍게 확인
+        from demos_v1.utils import SKILLS_DIR as _SD
         seen = set()
         skills = []
+        def _skill_exists(_sid):
+            return os.path.isfile(os.path.join(_SD, _sid, "SKILL.md"))
         for sid, score in results:
-            if sid in seen or sid in MANUAL_ONLY_SKILLS or sid not in available:
+            if sid in seen or sid in MANUAL_ONLY_SKILLS or not _skill_exists(sid):
                 continue
             seen.add(sid)
             desc = SKILL_DESC_KO.get(sid, "")
@@ -481,16 +484,33 @@ def register_api_routes(app):
 
     @app.route("/api/skill/<skill_name>")
     def api_skill_content(skill_name):
-        """개별 스킬 상세 반환 (SKILL.md + scripts/references/assets 목록)"""
+        """개별 스킬 상세 반환 (SKILL.md + scripts/references/assets 목록)
+        — 전수 scan_skills() 대신 요청된 스킬 폴더 하나만 스캔."""
+        from demos_v1.utils import SKILLS_DIR as _SD
         content = load_skill_content(skill_name)
-        available = scan_skills()
-        info = available.get(skill_name, {})
+        skill_dir = os.path.join(_SD, skill_name)
+        def _list(sub):
+            items = []
+            d = os.path.join(skill_dir, sub)
+            if os.path.isdir(d):
+                for root, _dirs, files in os.walk(d):
+                    for fn in files:
+                        full = os.path.join(root, fn)
+                        items.append({
+                            "name": fn,
+                            "path": os.path.relpath(full, skill_dir),
+                            "size": os.path.getsize(full),
+                        })
+            return items
+        scripts = _list("scripts")
+        references = _list("references")
+        assets = _list("assets")
         return jsonify({
             "name": skill_name,
             "content": content,
-            "scripts": info.get("scripts", []),
-            "references": info.get("references", []),
-            "assets": info.get("assets", []),
+            "scripts": scripts,
+            "references": references,
+            "assets": assets,
         })
 
 
