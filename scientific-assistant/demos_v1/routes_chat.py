@@ -281,6 +281,8 @@ def _stream_chat_sse(data):
 
     # 단일 env만 지원. AUTO면 분류기로 해석.
     env_id = user_envs[0]
+    auto_routed = False
+    route_reason = None
     if env_id == "auto":
         last_query = ""
         if messages:
@@ -288,7 +290,8 @@ def _stream_chat_sse(data):
             c = last.get("content", "")
             last_query = c if isinstance(c, str) else ""
         try:
-            env_id, _reason = classify_and_route(last_query, messages, uploaded_files)
+            env_id, route_reason = classify_and_route(last_query, messages, uploaded_files)
+            auto_routed = True
         except Exception:
             env_id = next(iter(ENV_CONFIG.keys()), env_id)
 
@@ -426,9 +429,17 @@ def _stream_chat_sse(data):
         model_name = os.path.basename(gguf_path) if gguf_path else env_id
 
         def gen_gguf():
-            meta = {"type": "meta", "env": env_id, "model": model_name}
+            _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
+            meta = {
+                "type": "meta", "env": env_id, "model": model_name,
+                "loaded_skills": loaded_skills,
+                "system_prompt_length": _sys_len,
+                "auto_routed": auto_routed,
+                "route_reason": route_reason,
+            }
             yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
             try:
+                _finish = None
                 for chunk in _utils_mod.gguf_model.create_chat_completion(
                     messages=api_messages,
                     temperature=temperature_map[min(effort, 3)],
@@ -445,6 +456,11 @@ def _stream_chat_sse(data):
                     tok = delta.get("content") or ""
                     if tok:
                         yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
+                    fr = choices[0].get("finish_reason")
+                    if fr:
+                        _finish = fr
+                end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
+                yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as e:
                 err = {"type": "error", "error": f"GGUF 오류: {str(e)}"}
@@ -470,7 +486,14 @@ def _stream_chat_sse(data):
     }
 
     def gen_api():
-        meta = {"type": "meta", "env": env_id, "model": model}
+        _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
+        meta = {
+            "type": "meta", "env": env_id, "model": model,
+            "loaded_skills": loaded_skills,
+            "system_prompt_length": _sys_len,
+            "auto_routed": auto_routed,
+            "route_reason": route_reason,
+        }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
         try:
             r = req.post(api_url, headers=headers, json=payload,
@@ -508,7 +531,8 @@ def _stream_chat_sse(data):
                     yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
                 fr = choices[0].get("finish_reason")
                 if fr:
-                    yield f"data: {json.dumps({'type': 'end', 'finish_reason': fr}, ensure_ascii=False)}\n\n"
+                    end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
+                    yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             err = {"type": "error", "error": str(e), "model": model}
