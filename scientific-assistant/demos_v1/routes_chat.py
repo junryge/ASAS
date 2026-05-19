@@ -1238,12 +1238,23 @@ def register_chat_routes(app):
                 total_skill_chars += len(content)
                 loaded.append(sid)
 
-                # scripts/references 목록 (짧으니 항상 포함)
-                info = available.get(sid, {})
-                scripts = info.get("scripts", [])
+                # scripts/references 목록 (짧으니 항상 포함) — 해당 스킬 폴더만 단발 스캔
+                _sd = os.path.join(SKILLS_DIR, sid)
+                scripts = []
+                _scripts_dir = os.path.join(_sd, "scripts")
+                if os.path.isdir(_scripts_dir):
+                    for _root, _dirs, _files in os.walk(_scripts_dir):
+                        for _fn in _files:
+                            if _fn.endswith(".py"):
+                                scripts.append({"name": _fn})
                 if scripts:
                     system_prompt += f"[{sid} 스크립트: {', '.join(s['name'] for s in scripts)}]\n"
-                refs = info.get("references", [])
+                refs = []
+                _refs_dir = os.path.join(_sd, "references")
+                if os.path.isdir(_refs_dir):
+                    for _fn in os.listdir(_refs_dir):
+                        if os.path.isfile(os.path.join(_refs_dir, _fn)):
+                            refs.append({"name": _fn})
                 if refs:
                     system_prompt += f"[{sid} 참고: {', '.join(r['name'] for r in refs)}]\n"
                 system_prompt += "\n"
