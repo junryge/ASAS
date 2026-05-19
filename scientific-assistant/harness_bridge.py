@@ -125,30 +125,26 @@ def init_harness(skills_dir: str | None = None, skill_keywords: dict | None = No
 
 
 def _ensure_initialized():
-    """레지스트리가 비어 있으면 (시작 시 init_harness 미호출) 지금 빌드.
-    빌드는 폴더 enumeration + Tool 메타데이터 등록만 함 — SKILL.md 본문은
-    실제로 그 스킬이 invoke 될 때만 읽힘 (lazy handler).
-    호출 경로: 자동 스킬 매칭에서 harness_route()/get_router()."""
-    global _registry, _router
-    if _registry is None or not _registry.list_all():
-        print(f"  🔧 하네스: 자동 스킬 첫 사용 — 스킬 메타데이터 등록 시작 (SKILL.md 본문은 미로드)")
-        init_harness(_lazy_skills_dir, _lazy_skill_keywords)
-        try:
-            print(f"  🔧 하네스: {len(_registry.list_all())}개 스킬 메타 등록 완료")
-        except Exception:
-            pass
+    """레지스트리 자동 빌드 금지.
+    "전부 로드 안 됨" 정책: 자동 스킬 매칭은 demos_v1/skills.py 의
+    SKILL_KEYWORDS 키워드 점수로만 처리되고, 매칭된 top-K 스킬만
+    개별 SKILL.md 가 로드됨. 하네스 라우터/Expert Pool/조합 추천은
+    레지스트리 미빌드 시 빈 결과를 돌려 자동 비활성화됨.
+    필요하면 외부에서 init_harness(...) 를 명시적으로 호출."""
+    return
 
 
 def get_registry() -> ToolRegistry:
-    """현재 레지스트리 반환. 비어 있으면 첫 호출 시 lazy 빌드."""
-    _ensure_initialized()
-    return _registry if _registry is not None else ToolRegistry()
+    """현재 레지스트리 반환. 초기화 전이면 빈 레지스트리 (자동 빌드 안 함)."""
+    global _registry
+    if _registry is None:
+        _registry = ToolRegistry()
+    return _registry
 
 
 def get_router() -> ToolRouter:
-    """현재 라우터 반환. 비어 있으면 첫 호출 시 lazy 빌드."""
-    _ensure_initialized()
-    global _router
+    """현재 라우터 반환. 초기화 전이면 빈 라우터 (자동 빌드 안 함)."""
+    global _router, _registry
     if _router is None:
         _router = ToolRouter(get_registry())
     return _router

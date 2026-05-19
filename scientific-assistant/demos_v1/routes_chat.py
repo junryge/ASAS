@@ -89,7 +89,7 @@ import time
 import warnings
 import requests as req
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import request, jsonify
+from flask import request, jsonify, Response, stream_with_context
 
 import demos_v1.utils as _utils_mod
 from demos_v1.utils import (
@@ -232,6 +232,291 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     return resp_data
 
 
+# ============================================
+# SSE 스트리밍 단순 경로 (단일 env + 단일 모델)
+# ============================================
+# 정책:
+# - 사용자가 선택한 모델 한 개만 시도. 폴백 체인 없음.
+#   (이전에 fallback chain 을 넣었을 때 "모든 모델 시도 실패" 가 발생함)
+# - 수동 스킬: 사용자가 체크한 skill_ids 만 개별 SKILL.md 로드 (전수 enumeration 없음).
+# - 자동 스킬은 이 경로에서 호출하지 않음 (이미 /api/auto_skills 에서 처리됨).
+# - 하네스 라우터는 시작 시 미빌드 상태라 빈 결과 — 호출하지 않음.
+# - 다중 env 병렬 합성이 필요한 경우 (env가 list 2개 이상) 는 SSE 안 함.
+def _prepend_system(msgs, extra):
+    """모든 system 메시지를 한 개로 합쳐 0번에 두고 나머지 user/assistant
+    순서는 유지. extra 는 그 합쳐진 system 의 맨 앞에 들어감.
+    vLLM/litellm 게이트웨이의 'System must be at beginning' / 다중-system
+    거부 회피."""
+    sys_parts = []
+    if extra and str(extra).strip():
+        sys_parts.append(str(extra).strip())
+    rest = []
+    for m in msgs or []:
+        if m.get("role") == "system":
+            c = m.get("content") or ""
+            if isinstance(c, str) and c.strip():
+                sys_parts.append(c.strip())
+        else:
+            rest.append(m)
+    if not sys_parts:
+        return rest
+    return [{"role": "system", "content": "\n\n".join(sys_parts)}] + rest
+
+
+def _stream_chat_sse(data):
+    chat_stop_flag["stop"] = False
+
+    raw_env = data.get("env", "auto")
+    if isinstance(raw_env, list):
+        user_envs = [e for e in raw_env if e] or ["auto"]
+    elif isinstance(raw_env, str):
+        user_envs = [raw_env] if raw_env else ["auto"]
+    else:
+        user_envs = ["auto"]
+
+    messages = data.get("messages", [])
+    custom_system_prompt = (data.get("system_prompt") or "").strip()
+    effort = data.get("effort", 2)
+    temperature_map = {0: 0.0, 1: 0.2, 2: 0.4, 3: 0.7}
+
+    # 단일 env만 지원. AUTO면 분류기로 해석.
+    env_id = user_envs[0]
+    if env_id == "auto":
+        last_query = ""
+        if messages:
+            last = messages[-1]
+            c = last.get("content", "")
+            last_query = c if isinstance(c, str) else ""
+        try:
+            env_id, _reason = classify_and_route(last_query, messages, uploaded_files)
+        except Exception:
+            env_id = next(iter(ENV_CONFIG.keys()), env_id)
+
+    if env_id not in ENV_CONFIG:
+        return jsonify({"error": f"알 수 없는 env: {env_id}"}), 400
+
+    # 수동 선택 스킬 본문 로드 — 체크된 ID 만, 개별로.
+    skill_ids = data.get("skills") or []
+    is_gguf = str(env_id).startswith("gguf-")
+    skill_section = ""
+    loaded_skills = []
+    if skill_ids:
+        per_skill_cap = 6000 if is_gguf else 999999
+        for sid in skill_ids:
+            try:
+                content = load_skill_content(sid)
+            except Exception:
+                content = ""
+            if not content:
+                continue
+            if len(content) > per_skill_cap:
+                content = content[:per_skill_cap] + f"\n... ({len(content)}자 중 {per_skill_cap}자 로드)"
+            skill_section += f"\n=== SKILL: {sid} ===\n{content}\n"
+            loaded_skills.append(sid)
+
+    sys_parts = []
+    if custom_system_prompt:
+        sys_parts.append(custom_system_prompt)
+    if skill_section:
+        sys_parts.append(skill_section.strip())
+    if loaded_skills:
+        sys_parts.append(f"[로드된 스킬: {', '.join(loaded_skills)}]")
+    sys_parts.append(
+        "[응답 규칙] 사고 과정 sentinel(<think>...</think>, <|channel|>thought, "
+        "<|im_start|>thinking 등)과 도구 호출 태그(<knowledge-search/>, <tool/>, "
+        "<function/>, <search/> 등) 절대 출력 금지. 검색/스킬 결과는 이미 위 시스템 "
+        "메시지에 제공되어 있으니, 그것만 보고 사용자 질문에 즉시 한국어로 답변 시작."
+    )
+
+    print(f"  📦 [SSE-SKILLS] 요청 skills={skill_ids!r} → 본문 로드 성공: {loaded_skills} ({len(skill_section)}자)")
+    if skill_ids and not loaded_skills:
+        print(f"  ⚠️ [SSE-SKILLS] 요청된 스킬 중 SKILL.md 본문 로드 0건 — 폴더 비었거나 ID 매칭 실패")
+
+    api_messages = list(messages)
+    if sys_parts:
+        merged_system = "\n\n".join(sys_parts)
+        api_messages = [{"role": "system", "content": merged_system}] + [
+            m for m in api_messages if m.get("role") != "system"
+        ]
+
+    # knowledge-search 스킬: 도메인 지식 검색 후 결과를 system 메시지로 prepend
+    last_user_query = ""
+    for _m in reversed(messages):
+        if _m.get("role") == "user":
+            _c = _m.get("content", "")
+            last_user_query = _c if isinstance(_c, str) else ""
+            break
+    if "knowledge-search" in skill_ids and last_user_query.strip():
+        try:
+            _chat_user_id = data.get("user_id", None)
+            print(f"  [KNOWLEDGE-SSE] user_id={_chat_user_id}, query={last_user_query[:50]}")
+            kb_results = search_knowledge(
+                last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
+            )
+            if not kb_results:
+                # 0건이면 한 줄로 끝내지 말고 일반 지식/다른 스킬로 계속 답변하도록 override.
+                _other_skills = [s for s in skill_ids if s != "knowledge-search"]
+                _other_note = (
+                    f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
+                    if _other_skills else ""
+                )
+                override_msg = (
+                    "[지식 검색 결과: 0건]\n"
+                    f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
+                    "응답 지침:\n"
+                    "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
+                    "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석, "
+                    "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성 등.\n"
+                    f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
+                )
+                api_messages = _prepend_system(api_messages, override_msg)
+            else:
+                kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
+                kb_context += f"검색어: {last_user_query}\n\n"
+                total_chars = 0
+                for r in kb_results:
+                    chunk = _sanitize_knowledge_content(r["content"][:4000])
+                    if total_chars + len(chunk) > 12000:
+                        chunk = chunk[: max(0, 12000 - total_chars)]
+                        if not chunk:
+                            break
+                    kb_context += f"--- 📄 {r['filename']} (관련도: {r['score']}) ---\n"
+                    kb_context += chunk + "\n\n"
+                    total_chars += len(chunk)
+                _ql = last_user_query.lower()
+                _is_search_only = any(
+                    kw in _ql for kw in ["검색해", "검색 해", "찾아봐", "찾아 봐", "뭐있", "뭐 있", "목록", "리스트", "파일명", "문서 목록"]
+                )
+                _is_content_request = any(
+                    kw in _ql for kw in ["내용", "관련", "알려", "설명", "분석", "요약", "만들어"]
+                )
+                if _is_search_only and not _is_content_request:
+                    kb_context += (
+                        "사용자가 '검색'을 요청했습니다. 파일명 목록과 관련도 점수만 간단히 보여주세요.\n"
+                        "문서 내용을 분석하거나 요약하지 마세요. 파일명 리스트만 출력하세요.\n"
+                        "형식 예시:\n1. 📄 파일명.md (관련도: 75)\n2. 📄 파일명.md (관련도: 73)\n"
+                    )
+                else:
+                    kb_context += (
+                        "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
+                        "중요: 프로토콜 메시지, raw 데이터, hex/binary는 절대 그대로 복사하지 마세요. 반드시 표(table) 또는 필드별 설명으로 변환하세요.\n"
+                    )
+                kb_context += (
+                    "\n⚠️ 위 검색 결과는 이미 시스템이 제공한 최종 결과입니다. "
+                    "<knowledge-search/>, <tool/>, <function/> 같은 도구 호출 태그를 출력하지 마세요. "
+                    "사고 채널(<|channel|>, <think>)도 출력 금지. 바로 답변 본문부터 시작하세요.\n"
+                )
+                api_messages = _prepend_system(api_messages, kb_context)
+        except Exception as e:
+            print(f"[Knowledge Search SSE] 검색 오류: {e}")
+
+    # ── GGUF 경로 ──
+    if str(env_id).startswith("gguf-"):
+        gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
+        user_n_ctx = data.get("n_ctx", 0)
+        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
+        if gguf_path:
+            if not load_gguf_model(gguf_path, n_ctx=_load_n_ctx):
+                return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
+        if _utils_mod.gguf_model is None:
+            return jsonify({"error": "GGUF 모델이 로드되지 않았습니다."}), 400
+
+        gguf_reply_cap = max(256, TOKEN_SETTINGS.get("gguf_reply_cap", 4096))
+        max_tokens_g = min(data.get("max_tokens", gguf_reply_cap), gguf_reply_cap)
+        model_name = os.path.basename(gguf_path) if gguf_path else env_id
+
+        def gen_gguf():
+            meta = {"type": "meta", "env": env_id, "model": model_name}
+            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+            try:
+                for chunk in _utils_mod.gguf_model.create_chat_completion(
+                    messages=api_messages,
+                    temperature=temperature_map[min(effort, 3)],
+                    max_tokens=max_tokens_g,
+                    stream=True,
+                ):
+                    if chat_stop_flag.get("stop"):
+                        yield "data: [DONE]\n\n"
+                        return
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    tok = delta.get("content") or ""
+                    if tok:
+                        yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                err = {"type": "error", "error": f"GGUF 오류: {str(e)}"}
+                yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+        return Response(stream_with_context(gen_gguf()), mimetype="text/event-stream")
+
+    # ── API 경로 (단일 모델, 폴백 없음) ──
+    api_url = ENV_CONFIG[env_id]["url"]
+    model = ENV_CONFIG[env_id]["model"]
+    api_key = API_TOKEN or data.get("api_key", "")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
+
+    payload = {
+        "model": model,
+        "messages": api_messages,
+        "temperature": temperature_map[min(effort, 3)],
+        "max_tokens": max_tokens_a,
+        "stream": True,
+    }
+
+    def gen_api():
+        meta = {"type": "meta", "env": env_id, "model": model}
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        try:
+            r = req.post(api_url, headers=headers, json=payload,
+                         timeout=180, verify=False, stream=True)
+            if r.status_code >= 400:
+                detail = ""
+                try:
+                    detail = r.text[:500]
+                except Exception:
+                    pass
+                err = {"type": "error", "error": f"HTTP {r.status_code}",
+                       "detail": detail, "model": model}
+                yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+                return
+            for line in r.iter_lines(decode_unicode=True):
+                if chat_stop_flag.get("stop"):
+                    yield "data: [DONE]\n\n"
+                    return
+                if not line or not line.startswith("data:"):
+                    continue
+                body = line[5:].strip()
+                if body == "[DONE]":
+                    yield "data: [DONE]\n\n"
+                    return
+                try:
+                    obj = json.loads(body)
+                except Exception:
+                    continue
+                choices = obj.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                tok = delta.get("content") or ""
+                if tok:
+                    yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
+                fr = choices[0].get("finish_reason")
+                if fr:
+                    yield f"data: {json.dumps({'type': 'end', 'finish_reason': fr}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            err = {"type": "error", "error": str(e), "model": model}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return Response(stream_with_context(gen_api()), mimetype="text/event-stream")
+
+
 def register_chat_routes(app):
     """Register chat routes on the Flask app."""
 
@@ -244,7 +529,28 @@ def register_chat_routes(app):
 
     @app.route("/api/chat", methods=["POST"])
     def api_chat():
-        """LLM API 프록시 - 스킬을 시스템 프롬프트에 넣어서 회사 API로 전달"""
+        """LLM API 프록시 - 스킬을 시스템 프롬프트에 넣어서 회사 API로 전달.
+        body.stream == true 이고 단일 env (auto 포함) 이면 SSE 단순 경로로 분기.
+        다중 env (병렬 합성) 는 기존 비-스트리밍 흐름 유지."""
+        _early_data = request.json or {}
+        _dbg_stream = _early_data.get("stream")
+        _dbg_env = _early_data.get("env")
+        _dbg_skills = _early_data.get("skills")
+        print(f"[api_chat] stream={_dbg_stream!r}, env={_dbg_env!r}, skills={_dbg_skills!r}")
+        if _dbg_stream is True:
+            _se_raw = _dbg_env if _dbg_env is not None else "auto"
+            if isinstance(_se_raw, list):
+                _se_list = [e for e in _se_raw if e]
+            elif isinstance(_se_raw, str):
+                _se_list = [_se_raw] if _se_raw else []
+            else:
+                _se_list = []
+            _is_multi = len(_se_list) >= 2
+            print(f"[api_chat] SSE 분기 판단: _se_list={_se_list}, _is_multi={_is_multi}")
+            if not _is_multi:
+                print("[api_chat] → _stream_chat_sse() 호출")
+                return _stream_chat_sse(_early_data)
+            print("[api_chat] → 다중 env, 기존 비-스트리밍 흐름으로 처리")
         chat_stop_flag["stop"] = False  # 새 요청 시작 시 플래그 초기화
         data = request.json
         # 환경 선택: 배열 또는 문자열 → 배열로 통일
@@ -953,12 +1259,23 @@ def register_chat_routes(app):
                 total_skill_chars += len(content)
                 loaded.append(sid)
 
-                # scripts/references 목록 (짧으니 항상 포함)
-                info = available.get(sid, {})
-                scripts = info.get("scripts", [])
+                # scripts/references 목록 (짧으니 항상 포함) — 해당 스킬 폴더만 단발 스캔
+                _sd = os.path.join(SKILLS_DIR, sid)
+                scripts = []
+                _scripts_dir = os.path.join(_sd, "scripts")
+                if os.path.isdir(_scripts_dir):
+                    for _root, _dirs, _files in os.walk(_scripts_dir):
+                        for _fn in _files:
+                            if _fn.endswith(".py"):
+                                scripts.append({"name": _fn})
                 if scripts:
                     system_prompt += f"[{sid} 스크립트: {', '.join(s['name'] for s in scripts)}]\n"
-                refs = info.get("references", [])
+                refs = []
+                _refs_dir = os.path.join(_sd, "references")
+                if os.path.isdir(_refs_dir):
+                    for _fn in os.listdir(_refs_dir):
+                        if os.path.isfile(os.path.join(_refs_dir, _fn)):
+                            refs.append({"name": _fn})
                 if refs:
                     system_prompt += f"[{sid} 참고: {', '.join(r['name'] for r in refs)}]\n"
                 system_prompt += "\n"
