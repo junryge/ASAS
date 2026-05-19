@@ -25,9 +25,19 @@ from demos_v1.config import (
 from demos_v1.models import MODEL_REGISTRY, ENV_CONFIG, ENV_TO_REGISTRY
 from demos_v1.skills import (
     SKILL_DESC_KO, DOMAIN_SKILLS, MANUAL_ONLY_SKILLS,
-    scan_skills, reload_skills, auto_select_skills, context_aware_skill_select,
+    scan_skills, auto_select_skills, context_aware_skill_select,
     load_skill_content, get_skill_catalog,
 )
+# reload_skills 는 일부 버전의 skills.py 에만 존재 (백업본은 없음).
+# 없으면 scan_skills() 재호출로 대체 — 백업본은 매 호출 디스크 스캔이라 그것만으로 충분.
+try:
+    from demos_v1.skills import reload_skills  # type: ignore
+except ImportError:
+    def reload_skills():
+        try:
+            return scan_skills(force_refresh=True)  # 신규 skills.py 시그니처
+        except TypeError:
+            return scan_skills()                     # 백업본 skills.py (인자 없음)
 # UI HTML은 demos_v1/templates/index.html (Jinja 템플릿)로 분리됨
 # Flask가 Flask(__name__) 기본 경로로 templates/ 자동 인식
 
