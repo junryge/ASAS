@@ -12,20 +12,16 @@ import json
 # 코드 블록(```)은 영문이라도 무조건 보존.
 _EN_THINKING_PATTERNS = re.compile(
     r"(?:^|\s)(?:"
-    r"I (?:will|'?ll|must|should|need(?: to)?|cannot|don'?t|am going|have(?: to| already)?|would|could|might)\b"
+    r"I (?:will|'?ll|must|should|need to|cannot|don'?t|am going|have to|would|could|might)\b"
     r"|Let me\b|Let's\b|Looking at\b|Wait[,\s]|Now[,\s]|First[,\s]|Actually[,\s]"
     r"|Hmm[,\s]|Okay[,\s]|OK[,\s]|So[,\s]|The user (?:wants?|asks?|is|requested?|meant)"
-    r"|Check constraint\b|Self[- ]?[Cc]orrection|Structure mapping"
+    r"|Check constraint\b|Self[- ]Correction|Structure mapping"
     r"|^Generate\.\s*$|^Proceed\.\s*$|^Done\.\s*$|^\[Proceeds?\]"
     r"|Output Generation|Output matches|Output:\s|All aligned"
     r"|Here'?s (?:a|the|my)|Thinking process|Analyze User Input"
-    r"|\[Output Generation\]|Step-by-step reasoning|Final (?:Check|decision|answer|plan)"
+    r"|\[Output Generation\]|Step-by-step reasoning|Final (?:Check|decision|answer)"
     r"|It (?:seems|appears|looks)|This (?:means|implies|suggests)"
     r"|Therefore[,\s]|However[,\s]|Based on\b|To be (?:safe|extremely|precise|honest)"
-    r"|Drafting (?:Content|the response|response)|Content plan:?|Final plan:?"
-    r"|Detailed Analysis Points|Strategic Recommendations|Subtitle:|Title:"
-    r"|Sections?:\s*$|Plan:\s*$|Ready\.|Ready to|Writing the response"
-    r"|Draft(?:ing)?:|Refinement:|Revis(?:ing|ed)|Polish(?:ing)?:"
     r"|^제목:\s|^요약:\s|^배경/목적:\s|^본문:\s*$|^결론 및 제언:\s"
     r")",
     re.IGNORECASE,
@@ -93,7 +89,7 @@ import time
 import warnings
 import requests as req
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import request, jsonify, Response, stream_with_context
+from flask import request, jsonify
 
 import demos_v1.utils as _utils_mod
 from demos_v1.utils import (
@@ -236,350 +232,6 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     return resp_data
 
 
-# ============================================
-# SSE 스트리밍 단순 경로
-# 기존 /api/chat의 복잡한 분기(병렬, 합성, fallback, 품질검증 등)는 통째 응답 유지.
-# 단일 env (API or GGUF, auto 포함) + 다중 env 아님일 때만 SSE.
-# 컨텍스트 messages 그대로 전달, env에 따라 GGUF/API generator 분기.
-# ============================================
-def _stream_chat_sse(data):
-    chat_stop_flag["stop"] = False
-
-    raw_env = data.get("env", "auto")
-    if isinstance(raw_env, list):
-        user_envs = [e for e in raw_env if e] or ["auto"]
-    elif isinstance(raw_env, str):
-        user_envs = [raw_env] if raw_env else ["auto"]
-    else:
-        user_envs = ["auto"]
-
-    messages = data.get("messages", [])
-    custom_system_prompt = (data.get("system_prompt") or "").strip()
-    effort = data.get("effort", 2)
-    temperature_map = {0: 0.0, 1: 0.2, 2: 0.4, 3: 0.7}
-
-    # 단일 env만 지원. AUTO면 분류.
-    env_id = user_envs[0]
-    if env_id == "auto":
-        last_query = ""
-        if messages:
-            last = messages[-1]
-            c = last.get("content", "")
-            last_query = c if isinstance(c, str) else ""
-        try:
-            env_id, _reason = classify_and_route(last_query, messages, uploaded_files)
-        except Exception:
-            env_id = next(iter(ENV_CONFIG.keys()), env_id)
-
-    if env_id not in ENV_CONFIG:
-        return jsonify({"error": f"알 수 없는 env: {env_id}"}), 400
-
-    # 수동 선택 스킬 본문 로드 → system prompt에 prepend
-    skill_ids = data.get("skills") or []
-    is_gguf = str(env_id).startswith("gguf-")
-    skill_section = ""
-    loaded_skills = []
-    if skill_ids:
-        per_skill_cap = 6000 if is_gguf else 999999  # GGUF는 컨텍스트 보호용 컷
-        for sid in skill_ids:
-            try:
-                content = load_skill_content(sid)
-            except Exception:
-                content = ""
-            if not content:
-                continue
-            if len(content) > per_skill_cap:
-                content = content[:per_skill_cap] + f"\n... ({len(content)}자 중 {per_skill_cap}자 로드)"
-            skill_section += f"\n=== SKILL: {sid} ===\n{content}\n"
-            loaded_skills.append(sid)
-
-    sys_parts = []
-    if custom_system_prompt:
-        sys_parts.append(custom_system_prompt)
-    if skill_section:
-        sys_parts.append(skill_section.strip())
-    if loaded_skills:
-        sys_parts.append(f"[로드된 스킬: {', '.join(loaded_skills)}]")
-
-    # 콘솔 로그: 이번 채팅에 실제로 적용된 스킬
-    print(f"  📦 [SSE-SKILLS] 요청 skills={skill_ids!r} → 본문 로드 성공: {loaded_skills} ({len(skill_section)}자)")
-    if skill_ids and not loaded_skills:
-        print(f"  ⚠️ [SSE-SKILLS] 요청된 스킬 중 SKILL.md 본문 로드 0건 — 폴더 비었거나 ID 매칭 실패")
-
-    # 하네스 라우팅 (수동 채팅에도 작동) — 메모리 조회만, 본문 추가 X (속도 영향 X).
-    # 첫 호출 시 lazy build가 트리거됨 (한 번만 ~1~2초).
-    _last_uq = ""
-    for _m in reversed(messages):
-        if _m.get("role") == "user":
-            _c = _m.get("content", "")
-            _last_uq = _c if isinstance(_c, str) else ""
-            break
-    if _last_uq.strip() and HARNESS_AVAILABLE:
-        try:
-            from harness_bridge import harness_route
-            _hm = harness_route(_last_uq, limit=5)
-            if _hm:
-                _hm_names = [x['name'] for x in _hm]
-                _overlap = [s for s in skill_ids if s in _hm_names]
-                _extra = [n for n in _hm_names if n not in skill_ids][:3]
-                print(f"  🔧 [HARNESS-RUN] 라우터 추천 Top5: {_hm_names}")
-                if _overlap:
-                    print(f"  🔧 [HARNESS-RUN] 사용자 선택과 매칭: {_overlap}")
-                if _extra:
-                    print(f"  🔧 [HARNESS-RUN] 추가 후보 (본문 미적용): {_extra}")
-        except Exception as _he:
-            print(f"  ⚠️ [HARNESS-RUN] 라우터 오류: {_he}")
-    # SSE 응답은 후처리(_strip_thinking_artifacts) 없이 토큰을 그대로 흘림 →
-    # 사고/도구 호출 sentinel이 사용자 화면에 그대로 나오므로 명시적으로 차단.
-    sys_parts.append(
-        "[응답 규칙] 사고 과정 sentinel(<think>...</think>, <|channel|>thought, "
-        "<|im_start|>thinking 등)과 도구 호출 태그(<knowledge-search/>, <tool/>, "
-        "<function/>, <search/> 등) 절대 출력 금지. 검색/스킬 결과는 이미 위 시스템 "
-        "메시지에 제공되어 있으니, 그것만 보고 사용자 질문에 즉시 한국어로 답변 시작."
-    )
-
-    api_messages = list(messages)
-    if sys_parts:
-        merged_system = "\n\n".join(sys_parts)
-        api_messages = [{"role": "system", "content": merged_system}] + [
-            m for m in api_messages if m.get("role") != "system"
-        ]
-
-    # knowledge-search 스킬: 도메인 지식 검색 후 결과를 system 메시지로 prepend
-    last_user_query = ""
-    for _m in reversed(messages):
-        if _m.get("role") == "user":
-            _c = _m.get("content", "")
-            last_user_query = _c if isinstance(_c, str) else ""
-            break
-    if "knowledge-search" in skill_ids and last_user_query.strip():
-        try:
-            _chat_user_id = data.get("user_id", None)
-            print(f"  [KNOWLEDGE-SSE] user_id={_chat_user_id}, query={last_user_query[:50]}")
-            kb_results = search_knowledge(
-                last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
-            )
-            if not kb_results:
-                # 지식 검색 0건 — 절대 "등록된 지식이 없습니다" 한 줄로 응답을 종료하면 안 됨.
-                # 사용자는 (1) 무관한 다른 질문, (2) 일반 지식 기반 설명, (3) 새로운 것의 창작/구성,
-                # (4) 함께 선택된 다른 스킬 사용 등을 원할 수 있으므로 답변을 계속하도록 지시.
-                _other_skills = [s for s in skill_ids if s != "knowledge-search"]
-                _other_note = (
-                    f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
-                    if _other_skills else ""
-                )
-                override_msg = (
-                    "[지식 검색 결과: 0건]\n"
-                    f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
-                    "응답 지침:\n"
-                    "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
-                    "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석하기, "
-                    "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성하기 등.\n"
-                    f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
-                )
-                api_messages = [{"role": "system", "content": override_msg}] + api_messages
-            if kb_results:
-                kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
-                kb_context += f"검색어: {last_user_query}\n\n"
-                total_chars = 0
-                for r in kb_results:
-                    chunk = _sanitize_knowledge_content(r["content"][:4000])
-                    if total_chars + len(chunk) > 12000:
-                        chunk = chunk[: max(0, 12000 - total_chars)]
-                        if not chunk:
-                            break
-                    kb_context += f"--- 📄 {r['filename']} (관련도: {r['score']}) ---\n"
-                    kb_context += chunk + "\n\n"
-                    total_chars += len(chunk)
-                _ql = last_user_query.lower()
-                _is_search_only = any(
-                    kw in _ql for kw in ["검색해", "검색 해", "찾아봐", "찾아 봐", "뭐있", "뭐 있", "목록", "리스트", "파일명", "문서 목록"]
-                )
-                _is_content_request = any(
-                    kw in _ql for kw in ["내용", "관련", "알려", "설명", "분석", "요약", "만들어"]
-                )
-                if _is_search_only and not _is_content_request:
-                    kb_context += (
-                        "사용자가 '검색'을 요청했습니다. 파일명 목록과 관련도 점수만 간단히 보여주세요.\n"
-                        "문서 내용을 분석하거나 요약하지 마세요. 파일명 리스트만 출력하세요.\n"
-                        "형식 예시:\n1. 📄 파일명.md (관련도: 75)\n2. 📄 파일명.md (관련도: 73)\n"
-                    )
-                else:
-                    kb_context += (
-                        "위 문서를 기반으로 사용자 질문에 답변하세요. 문서에 없는 내용을 지어내지 마세요. 어떤 문서에서 정보를 찾았는지 출처를 명시하세요.\n"
-                        "중요: 프로토콜 메시지, raw 데이터, hex/binary는 절대 그대로 복사하지 마세요. 반드시 표(table) 또는 필드별 설명으로 변환하세요.\n"
-                    )
-                kb_context += (
-                    "\n⚠️ 위 검색 결과는 이미 시스템이 제공한 최종 결과입니다. "
-                    "<knowledge-search/>, <tool/>, <function/> 같은 도구 호출 태그를 출력하지 마세요. "
-                    "사고 채널(<|channel|>, <think>)도 출력 금지. 바로 답변 본문부터 시작하세요.\n"
-                )
-                api_messages = [{"role": "system", "content": kb_context}] + api_messages
-        except Exception as e:
-            print(f"[Knowledge Search SSE] 검색 오류: {e}")
-
-    # ── GGUF 경로 ──
-    if str(env_id).startswith("gguf-"):
-        gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
-        user_n_ctx = data.get("n_ctx", 0)
-        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
-        if gguf_path:
-            if not load_gguf_model(gguf_path, n_ctx=_load_n_ctx):
-                return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
-        if _utils_mod.gguf_model is None:
-            return jsonify({"error": "GGUF 모델이 로드되지 않았습니다."}), 400
-
-        gguf_reply_cap = max(256, TOKEN_SETTINGS.get("gguf_reply_cap", 4096))
-        max_tokens_g = min(data.get("max_tokens", gguf_reply_cap), gguf_reply_cap)
-        model_name = os.path.basename(gguf_path) if gguf_path else env_id
-
-        def gen_gguf():
-            meta = {"type": "meta", "env": env_id, "model": model_name}
-            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-            try:
-                for chunk in _utils_mod.gguf_model.create_chat_completion(
-                    messages=api_messages,
-                    temperature=temperature_map[min(effort, 3)],
-                    max_tokens=max_tokens_g,
-                    stream=True,
-                ):
-                    if chat_stop_flag.get("stop"):
-                        yield "data: [DONE]\n\n"
-                        return
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    tok = delta.get("content") or ""
-                    if tok:
-                        yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
-                yield "data: [DONE]\n\n"
-            except Exception as e:
-                err = {"type": "error", "error": f"GGUF 오류: {str(e)}"}
-                yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
-
-        return Response(stream_with_context(gen_gguf()), mimetype="text/event-stream")
-
-    # ── API 경로 ──
-    api_url = ENV_CONFIG[env_id]["url"]
-    model = ENV_CONFIG[env_id]["model"]
-    api_key = API_TOKEN or data.get("api_key", "")
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
-
-    # 400 등 업스트림 거부 시 시도할 폴백 체인 (현재 모델 포함)
-    primary_reg_key = ENV_TO_REGISTRY.get(env_id)
-    if primary_reg_key:
-        sse_fallback_keys = [primary_reg_key] + list(FALLBACK_CHAINS.get(primary_reg_key, []))
-    else:
-        sse_fallback_keys = []
-
-    def _try_one(try_url, try_model):
-        """단일 모델에 대해 SSE 시도. 첫 토큰까지 도달하지 못하면 (status, detail)을 반환,
-        성공해서 스트리밍을 시작했으면 (None, generator)을 반환."""
-        body_payload = {
-            "model": try_model,
-            "messages": api_messages,
-            "temperature": temperature_map[min(effort, 3)],
-            "max_tokens": max_tokens_a,
-            "stream": True,
-        }
-        r = req.post(try_url, headers=headers, json=body_payload,
-                     timeout=180, verify=False, stream=True)
-        if r.status_code >= 400:
-            detail = ""
-            try:
-                detail = r.text[:500]
-            except Exception:
-                pass
-            return (r.status_code, detail), None
-
-        def _stream():
-            for line in r.iter_lines(decode_unicode=True):
-                if chat_stop_flag.get("stop"):
-                    yield "data: [DONE]\n\n"
-                    return
-                if not line or not line.startswith("data:"):
-                    continue
-                body = line[5:].strip()
-                if body == "[DONE]":
-                    yield "data: [DONE]\n\n"
-                    return
-                try:
-                    obj = json.loads(body)
-                except Exception:
-                    continue
-                choices = obj.get("choices") or []
-                if not choices:
-                    continue
-                delta = choices[0].get("delta") or {}
-                tok = delta.get("content") or ""
-                if tok:
-                    yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
-                fr = choices[0].get("finish_reason")
-                if fr:
-                    yield f"data: {json.dumps({'type': 'end', 'finish_reason': fr}, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
-
-        return None, _stream()
-
-    def gen_api():
-        last_err = None
-        tried = []
-        candidates = sse_fallback_keys or [primary_reg_key]
-        for idx, reg_key in enumerate(candidates):
-            if not reg_key or reg_key not in MODEL_REGISTRY:
-                continue
-            reg = MODEL_REGISTRY[reg_key]
-            try_url = reg["url"]
-            try_model = reg["model"]
-            tried.append(try_model)
-            meta = {"type": "meta", "env": env_id, "model": try_model}
-            if idx > 0:
-                meta["fallback_from"] = tried[0]
-            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-            try:
-                err, stream = _try_one(try_url, try_model)
-            except req.exceptions.RequestException as e:
-                last_err = {"status": 0, "detail": str(e)[:300], "model": try_model}
-                print(f"[SSE-Fallback] {try_model} → 네트워크 오류: {e}")
-                continue
-            if err is not None:
-                code, detail = err
-                last_err = {"status": code, "detail": detail, "model": try_model}
-                print(f"[SSE-Fallback] {try_model} → HTTP {code}: {detail[:200]}")
-                # 400/404/422는 다음 모델로, 그 외(401/403/5xx)는 사용자에게 즉시 노출
-                if code in (400, 404, 422):
-                    continue
-                err_payload = {"type": "error",
-                               "error": f"HTTP {code}",
-                               "detail": detail,
-                               "model": try_model}
-                yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
-                return
-            # 성공 — 스트림 그대로 흘림
-            try:
-                for chunk in stream:
-                    yield chunk
-            except Exception as e:
-                err_payload = {"type": "error", "error": str(e), "model": try_model}
-                yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
-            return
-
-        # 모든 폴백 실패
-        err_payload = {
-            "type": "error",
-            "error": f"모든 모델 시도 실패 ({', '.join(tried)})",
-            "detail": (last_err or {}).get("detail", ""),
-            "status": (last_err or {}).get("status", 0),
-        }
-        yield f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\n"
-
-    return Response(stream_with_context(gen_api()), mimetype="text/event-stream")
-
-
 def register_chat_routes(app):
     """Register chat routes on the Flask app."""
 
@@ -593,27 +245,6 @@ def register_chat_routes(app):
     @app.route("/api/chat", methods=["POST"])
     def api_chat():
         """LLM API 프록시 - 스킬을 시스템 프롬프트에 넣어서 회사 API로 전달"""
-        # body.stream == true 이고 단일 env(auto 포함)이면 SSE 단순 경로.
-        # 다중 env(병렬)는 기존 흐름(통째 응답).
-        _early_data = request.json or {}
-        _dbg_stream = _early_data.get("stream")
-        _dbg_env = _early_data.get("env")
-        _dbg_skills = _early_data.get("skills")
-        print(f"[api_chat] stream={_dbg_stream!r}, env={_dbg_env!r}, skills={_dbg_skills!r}")
-        if _dbg_stream is True:
-            _se_raw = _dbg_env if _dbg_env is not None else "auto"
-            if isinstance(_se_raw, list):
-                _se_list = [e for e in _se_raw if e]
-            elif isinstance(_se_raw, str):
-                _se_list = [_se_raw] if _se_raw else []
-            else:
-                _se_list = []
-            _is_multi = len(_se_list) >= 2
-            print(f"[api_chat] SSE 분기 진입, _se_list={_se_list}, _is_multi={_is_multi}")
-            if not _is_multi:
-                print("[api_chat] → _stream_chat_sse() 호출")
-                return _stream_chat_sse(_early_data)
-            print("[api_chat] → 다중 env, 기존 흐름으로 폴백")
         chat_stop_flag["stop"] = False  # 새 요청 시작 시 플래그 초기화
         data = request.json
         # 환경 선택: 배열 또는 문자열 → 배열로 통일
@@ -923,24 +554,6 @@ def register_chat_routes(app):
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
                 kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
-                if not kb_results:
-                    # 지식 검색 0건 — 절대 "등록된 지식이 없습니다" 한 줄로 응답을 종료하면 안 됨.
-                    # 무관한 질문, 일반 지식 기반 설명, 새로운 것의 창작/구성, 다른 스킬 사용 모두 정상 수행.
-                    _other_skills = [s for s in skill_ids if s != "knowledge-search"]
-                    _other_note = (
-                        f" 함께 선택된 다른 스킬({', '.join(_other_skills)})도 정상적으로 사용해 답변하세요."
-                        if _other_skills else ""
-                    )
-                    override_msg = (
-                        "[지식 검색 결과: 0건]\n"
-                        f"knowledge-search 스킬은 '{last_user_query[:80]}' 에 대한 등록된 도메인 문서를 찾지 못했습니다.\n"
-                        "응답 지침:\n"
-                        "1. '등록된 도메인 문서에서는 관련 자료를 찾지 못했습니다.' 한 문장으로만 짧게 알리세요.\n"
-                        "2. 그 후 사용자의 실제 요청을 끝까지 수행하세요 — 일반 지식으로 설명/분석하기, "
-                        "관련 없는 다른 질문에 답하기, 새로운 코드/문서/아이디어를 창작·구성하기 등.\n"
-                        f"3. '등록된 지식이 없습니다' 한 줄로 끝내고 응답을 종료하지 마세요.{_other_note}\n"
-                    )
-                    messages = [{"role": "system", "content": override_msg}] + messages
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
@@ -1315,9 +928,8 @@ def register_chat_routes(app):
         else:
             available_chars = 999999  # API는 사실상 무제한
 
-        # 스킬 로드
+        # 스킬 로드 — 사용자가 고른 skill_ids 만 개별 로드 (전수 스캔 안 함)
         loaded = []
-        available = scan_skills()
         total_skill_chars = 0
         num_skills = max(len(skill_ids), 1)
         per_skill_limit = available_chars // num_skills if is_gguf else 999999
