@@ -1,0 +1,433 @@
+/*==================================================================================
+ UI & design consuting - FOR C&C (二�)�뿉�봽�삤�븣�뵪�븻�뵪 - UI Creative Team 
+www.forcnc.co.kr  / (02)322-0637
+==================================================================================*/
+
+
+/*==================================
+Common
+==================================*/
+/* http://meyerweb.com/eric/tools/css/reset/ 
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed, 
+figure, figcaption, footer, header, hgroup, 
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	font-size: 100%;
+}
+/* HTML5 display-role reset for older browsers */
+article, aside, details, figcaption, figure, 
+footer, header, hgroup, menu, nav, section {
+	display: block;
+}
+body {
+	line-height: 1;
+}
+ol, ul {
+	list-style: none;
+}
+blockquote, q {
+	quotes: none;
+}
+blockquote:before, blockquote:after,
+q:before, q:after {
+	content: '';
+	content: none;
+}
+table {
+	border-collapse: collapse;
+	border-spacing: 0;
+}
+
+/* common */
+.win html {overflow-y:scroll;}
+
+body{
+	font-size:12px;
+	font-family:'Malgun Gothic', arial, dotum, gulim;
+	color:#676767;
+	padding:0; margin:0;
+	line-height: 1.3em;
+}
+
+a:focus {outline:none;} 
+a:link, a:visited, a:active {
+	font-family:'Malgun Gothic', arial, gulim, dotum;
+	color: #000;
+	text-decoration:none;
+}
+a:hover {text-decoration:none;}
+a img, fieldset {border:0;}
+
+input, textarea {
+	font-family:'Malgun Gothic', arial, gulim, dotum;
+	color: #000;
+	text-decoration:none;
+}
+
+.blind,
+caption {font-size:0; line-height:0; text-indent:-10000px;}
+.win.safari caption {display:none;}
+.baseline {display:inline-block; width:0; height:100%; font-size:0; line-height:0; vertical-align:middle; margin-left:-5px;}
+.clearboth{clear:both; line-height:0;}
+
+.highlight1 {color:#e60724;}
+.highlight2 {color:#fb6c07;}
+
+#lay_wrap .align_left {text-align:left;}
+#lay_wrap .align_center {text-align:center;}
+#lay_wrap .align_right {text-align:right;}
+
+.no_img {
+	display: inline-block;
+	width: 100%;
+	height: 100%;
+	background: url("../images/common/no_img.png") center center no-repeat;
+	background-color: #dedede;
+}
+
+.section_margin_s {margin-bottom:20px;}
+.section_margin_m {margin-bottom:30px;}
+.section_margin_l {margin-bottom:40px;}
+.item_margin_bottom {margin-bottom:5px;}
+.item_margin_left {margin-left:5px;}
+.item_margin_right {margin-right:5px;}
+.item_margin_top {margin-top:5px;}
+#lay_wrap .valign_top td {vertical-align:top;}
+
+/* ie�뿉�꽌 a�깭洹� �겢由��떆 �쉶�깋 bg 源붾━�뒗 �쁽�긽 �옟�쓬 */
+a:active, a:focus {background-color:transparent;}
+
+/* jQuery class setting */
+#lay_wrap .layer_selector_box {display:none;}
+
+
+/*==================================
+Form 湲곕낯
+==================================*/
+/* 湲곕낯 input */
+input[type="text"] {font-size:12px; line-height:1.33em; color:#333; box-sizing:border-box; height:24px; padding:0 5px; border:1px solid #d5d5d5; vertical-align:middle; outline:none;}
+input[type="text"]:hover,
+input[type="text"]:active,
+input[type="text"]:focus {border-color:#fd6901;}
+textarea {font-size:12px; line-height:1.33em; color:#333; box-sizing:border-box; border:1px solid #d5d5d5; outline:none;}
+textarea:hover,
+textarea:active,
+textarea:focus {border-color:#db2828;}
+
+
+/*==================================
+Form : form
+==================================*/
+/* Basic Setting */
+input.inp_date {width:75px;}
+.jqtransformdone input[type="text"] {color:#333 !important; outline:none;}
+.jqtransformdone select {color:#333 !important; outline:none;}
+.jqtransformdone label {font-size:13px; line-height:1.3em; color:#333; vertical-align:middle; outline:none;}
+.jqtransformdone textarea {outline:none;}
+
+.jqtransformdone .inp_group {display:inline-block; box-sizing:border-box; vertical-align:middle;}
+.jqtransformdone .inp_group + .inp_group {padding-left:15px; margin-left:-5px;}
+
+.jqTransformSelectWrapper + .jqTransformInputWrapper {margin-left:5px;}
+.jqtransformdone label + .jqTransformInputWrapper,
+.jqtransformdone label + .jqTransformSelectWrpper {margin-left:15px;}
+
+/* Button */
+.jqtransformdone .btn_form {display:inline-block; box-sizing:border-box; min-width:24px; height:24px; padding:0 5px; cursor:pointer; vertical-align:middle; background-color:#999;}
+.jqtransformdone .btn_form:hover {background-color:#828282;}
+.jqtransformdone .btn_form .name {font-size:12px; line-height:22px; color:#fff; text-align:center;}
+	/* btn_form : input �뮘�뿉 �뿬諛� �뾾�씠 遺숈쓣 �븣 */
+.jqtransformdone .btn_form {margin-left:-5px;}
+	/* btn_form.sep : input �뮘�뿉 �뿬諛� �엳�쓣 �븣 */
+.btn_form.sep {margin-left:0px;}
+	/* btn_date : �궇吏� 踰꾪듉  */
+.jqtransformdone .btn_date {display:inline-block; width:16px; height:22px; background:url(../images/form/form.png) no-repeat -200px top; cursor:pointer; vertical-align:top;}
+.jqtransformdone .btn_date:hover {background-position:-250px top;}
+.jqtransformdone .btn_date + .name {font-size:13px; line-height:22px; margin:0 5px; vertical-align:top;}
+	/* form_ico */
+.jqtransformdone .form_ico {display:inline-block; background:url(../images/form/form.png) no-repeat;}
+.jqtransformdone .form_ico_srch {width:14px; height:14px; background-position:left -50px;}
+.jqtransformdone .btn_form .form_ico_srch {margin-top:5px; vertical-align:top;}
+
+/* Input Text */
+.jqTransformInputWrapper.pct {width:99% !important;}
+.jqtransformdone input[type="text"].pct {width:100%;}
+.jqTransformInputWrapper {
+	display:inline-block;
+    box-sizing:border-box; 
+	height: 24px;
+	padding: 0px;
+	padding-left:5px;
+	vertical-align:middle;
+    border:1px solid #d5d5d5;
+    background-color:#fff;
+}
+.jqTransformInputWrapper + .jqTransformInputWrapper {margin-left:5px;}
+.jqTransformInputInner {
+	padding: 0px;
+	margin: 0px;
+	padding-right:5px;
+}
+.jqTransformInputInner div {
+	height: 22px;
+	margin:0;
+}
+.jqTransformInputInner div input {
+	font-size:12px;
+	line-height: 18px;
+	vertical-align: middle;
+	height: 22px;
+	color:#333;	
+	border: none;
+	padding:0px;
+	margin: 0px;
+	background:transparent;
+}
+.ie .jqTransformInputInner div input {height:22px; border:none;}
+.ie8 .jqTransformInputInner div input {margin-top:7px;}
+.ie7 .jqTransformInputInner div {padding-top:6px; vertical-align:top;}
+.ie7 .jqTransformInputInner div input {height:18px;}
+	/*  IE6 */
+* html .jqTransformInputInner div input {
+	padding: 6px 0 0 0;
+	margin: 0 0 0 -8px;
+	height:24px;
+}
+	/* Ie7 */
+*+ html .jqTransformInputInner div input {
+	padding: 6px 0 0 0;
+	margin-left:-10px;
+	height:24px;
+}
+	/* hover, focus */
+.jqTransformInputWrapper_hover,
+.jqTransformInputWrapper_focus {border-color:#27518b;}
+	/* crossbrowsing */
+.jqTransformSafari .jqTransformInputInner div {
+	position: relative;
+	overflow: hidden;
+	margin:0px 8px;
+}
+.jqTransformSafari .jqTransformInputInner div input {
+	background-color: none;
+	position: absolute;
+	top: -10px;
+	left: -2px;
+	height: 42px; 
+	padding-left: 4px;
+}
+.chrome .jqTransformInputInner div {
+	position: relative;
+	overflow: hidden;
+	margin:0px;
+}
+.chrome .jqTransformInputInner div input {
+	background-color: transparent;
+	position: absolute;
+	top: 0px;
+	left: -2px;
+	height: 22px; 
+	padding-left: 4px;
+}
+
+/* Textarea */
+table.jqTransformTextarea.pct,
+table.jqTransformTextarea.pct .jqTransformSafariTextarea, 
+textarea.pct {width:100%; height:70px; padding:5px;}
+table.jqTransformTextarea.pct .jqTransformSafariTextarea div {width:100% !important;}
+table.jqTransformTextarea td#jqTransformTextarea-mm textarea{
+	font-size: 12px;
+	line-height: 16px;
+}
+table.jqTransformTextarea td{
+	font-size: 1px;
+	line-height: 1px;
+	width: 5px;
+	height: 5px;
+	margin: 0;
+	padding: 0;
+}
+table.jqTransformTextarea #jqTransformTextarea-tm,
+table.jqTransformTextarea #jqTransformTextarea-mm,
+table.jqTransformTextarea #jqTransformTextarea-bm {width: auto;}
+table.jqTransformTextarea{}
+table.jqTransformTextarea tr{
+/*border: 1px solid red;*/
+}
+table.jqTransformTextarea textarea{
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	color:#333;
+}
+table.jqTransformTextarea td#jqTransformTextarea-tl{background: url(../images/form/form.png) no-repeat left -200px;}
+table.jqTransformTextarea td#jqTransformTextarea-tm{background: url(../images/form/form.png) repeat-x -5px -200px;}
+table.jqTransformTextarea td#jqTransformTextarea-tr{background: url(../images/form/form.png) no-repeat right -200px;}
+table.jqTransformTextarea td#jqTransformTextarea-ml{background: url(../images/form/form_textarea_hori_line.png) repeat-y left top;}
+table.jqTransformTextarea td#jqTransformTextarea-mm{background: url(../images/form/form_textarea_hori_line.png) repeat-y -5px top;}
+table.jqTransformTextarea td#jqTransformTextarea-mr{background: url(../images/form/form_textarea_hori_line.png) repeat-y right top;}
+table.jqTransformTextarea td#jqTransformTextarea-bl{background: url(../images/form/form.png) no-repeat left -300px;}
+table.jqTransformTextarea td#jqTransformTextarea-bm{background: url(../images/form/form.png) no-repeat -5px -300px;}
+table.jqTransformTextarea td#jqTransformTextarea-br{background: url(../images/form/form.png) no-repeat right -300px;}
+	/* hover */
+table.jqTransformTextarea-hover td#jqTransformTextarea-tl{background-position:left -210px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-tm{background-position:-5px -210px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-tr{background-position:right -210px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-ml{background: url(../images/form/form_textarea_hori_line_hover.png) repeat-y left -260px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-mm{background: url(../images/form/form_textarea_hori_line_hover.png) repeat-y -5px -260px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-mr{background: url(../images/form/form_textarea_hori_line_hover.png) repeat-y right -260px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-bl{background-position:left -310px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-bm{background-position:-5px -310px;}
+table.jqTransformTextarea-hover td#jqTransformTextarea-br{background-position:right -310px;}
+	/* focus */
+table.jqTransformTextarea-focus td#jqTransformTextarea-tl{background-position:left -220px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-tm{background-position:-5px -220px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-tr{background-position:right -220px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-ml{background: url(../images/form/form_textarea_hori_line_focus.png) repeat-y left -360px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-mm{background: url(../images/form/form_textarea_hori_line_focus.png) repeat-y -5px -360px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-mr{background: url(../images/form/form_textarea_hori_line_focus.png) repeat-y right -360px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-bl{background-position:left -320px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-bm{background-position:-5px -320px;}
+table.jqTransformTextarea-focus td#jqTransformTextarea-br{background-position:right -320px;}
+
+table.jqTransformTextarea textarea {
+	background: none;
+	position: absolute;
+	resize: none;
+}
+.ie table.jqTransformTextarea {
+	position: relative;
+	overflow: hidden;
+	border: 0px solid red;
+}
+table.jqTransformTextarea div {position:relative;}
+table.jqTransformTextarea textarea {top:0; left:0; padding:0;}
+.ie table.jqTransformTextarea div {position:static;}
+.ie table.jqTransformTextarea textarea {left:0; top:1px; padding:0px;}
+
+/* Radio */
+input[type=radio].jqTransformHidden {display:inherit; position:absolute; top:0; left:0; width:16px; height:16px; margin:0; opacity:0;}
+.jqTransformRadioWrapper {position:relative; display:inline-block; margin:0; vertical-align:middle; cursor: pointer;}
+.jqTransformRadioWrapper > * {cursor:pointer;}
+.jqRadio + .jqTransformRadio {
+	background: transparent url(../images/form/form.png) no-repeat left top;
+	vertical-align: middle;
+	height: 16px;
+	width: 16px;
+	display:block;
+}
+.jqRadio:checked + .jqTransformRadio {background-position:-50px top;}
+.jqTransformRadioWrapper + label {padding-left:5px; line-height:20px;}
+label + .jqTransformRadioWrapper  {margin-left:10px;}
+
+/* Checkbox */
+input[type=checkbox].jqTransformHidden {display:inherit; position:absolute; top:0; left:0; width:16px; height:16px; margin:0; opacity:0;}
+span.jqTransformCheckboxWrapper{ position:relative; display:inline-block; margin:0; vertical-align:middle; cursor:pointer;}
+span.jqTransformCheckboxWrapper > * {cursor:pointer;}
+.jqCheck + .jqTransformCheckbox {
+	background: transparent url(../images/form/form.png) no-repeat -100px top;
+	vertical-align: middle;
+	height: 16px;
+	width: 16px;
+	display:block;
+}
+.jqCheck:checked + .jqTransformCheckbox { background-position: -150px top;}
+span.jqTransformCheckboxWrapper + label {padding-left:5px; line-height:20px;}
+label + span.jqTransformCheckboxWrapper {margin-left:10px;}
+
+/* Selects */
+.jqTransformSelectWrapper {
+	max-width:100%;
+	position:relative;
+	height: 24px;
+	display:inline-block;
+	background: url(../images/form/form.png) no-repeat left -100px;
+	vertical-align:middle;
+}
+.jqTransformSelectWrapper + .jqTransformSelectWrapper {margin-left:5px;}
+.jqTransformSelectWrapper div {padding-right:24px;}
+.jqTransformSelectWrapper div span {
+	width:100%;
+	font-size: 12px;
+	float: none;
+    display:block;
+	position: absolute; 
+	white-space: nowrap;
+	height: 22px;
+	line-height: 15px;
+	color:#333;
+	overflow: hidden;
+	cursor:pointer;
+}
+.jqTransformSelectWrapper div span i {
+	font-style:normal;
+	display:block;
+    box-sizing:border-box;
+    height:24px;
+	padding:4px 0 0 7px;
+}
+.jqTransformSelectWrapper  a.jqTransformSelectOpen {
+	display: block;
+	position: absolute;
+    top:0;
+	right: 0px;
+	width: 24px;
+	height: 24px;
+	background: url(../images/form/form.png) no-repeat right -100px;
+}
+.jqTransformSelectWrapper ul {
+	position: absolute;
+    box-sizing:border-box;
+	width: 100%;
+	top: 23px;
+	left: 0px;
+	list-style: none;
+	background-color: #FFF;
+	border: solid 1px #CCC;
+	border-top:none;
+	margin: 0px;
+	padding: 0px;
+	max-height: 170px;
+	overflow: auto;
+	overflow-y: auto;
+	z-index:10;
+}
+.jqTransformSelectWrapper ul a {
+	display: block;
+	padding: 5px;
+	text-decoration: none;
+	color:#333;
+	background-color: #FFF;
+	font-size: 12px;
+	border-top:1px solid #d5d5d5;
+}
+.jqTransformSelectWrapper ul a.selected {
+	background: #f1f1f1;
+}
+.jqTransformSelectWrapper ul a:hover, .jqTransformSelectWrapper ul a.selected:hover {
+	background:#f1f1f1;
+	color:#27518b;
+}
+.jqTransformSelectWrapper.pct ul {box-sizing:border-box; min-width:100%;}
+
+/* Hidden - used to hide the original form elements */
+select.jqTransformHidden {visibility:hidden; display:inherit; max-height:1px; margin-right:20px;}
+.jqTransformHidden {display: none;}
+

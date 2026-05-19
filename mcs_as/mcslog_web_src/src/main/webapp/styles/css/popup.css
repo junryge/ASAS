@@ -1,0 +1,164 @@
+/*==================================================================================
+ UI & design consuting - FOR C&C (二�)�뿉�봽�삤�븣�뵪�븻�뵪 - UI Creative Team 
+www.forcnc.co.kr  / (02)322-0637
+==================================================================================*/
+
+/*==================================
+Modal window Common ---------------- �븫�쟾�뙘�뾽 紐⑤몢 怨듯넻
+==================================*/
+#mw {position:absolute; top:0; left:0; width:100%; height:100%; z-index:1000;}
+.pop_bg {position:fixed; width:100%; height:100%; opacity:0.7; background-color:#000000; }
+.ie8 .pop_bg {filter:alpha(opacity=70); }
+
+
+/*==================================
+Alert Popup
+==================================*/
+.pop_alert {position:absolute; width:480px; top:50%; left:50%; margin-left:-240px; background-color:#FFF;}
+.pop_alert .close_area {display:inline-block; width:30px; height:30px; position:absolute; top:10px; right:10px;}
+
+.pop_alert .pop_con_area {font-size:13px; line-height:1.33em; text-align:left; padding:45px 35px 40px 35px; overflow:auto;}
+.pop_alert .ico_area {display:inline-block; vertical-align:middle; white-space:normal; margin-right:17px;}
+.pop_alert .info_area {display:inline-block; vertical-align:middle; white-space:normal;}
+.pop_alert .ico_area + .info_area {width:290px;}
+.pop_alert .tit_area {font-weight:bold; color:#000000; margin-bottom:13px;}
+.pop_alert .desc_area {font-weight:normal; color:#76787c;}
+
+/* 以묒븰 �젙�젹 */
+.pop_alert .pop_con_center {text-align:center;}
+.pop_alert .pop_con_center .ico_area {margin:0 0 15px 0; display:block;}
+.pop_alert .pop_con_center .info_area {width:auto;}
+
+/* btn  */
+.pop_alert .pop_btn {display:inline-block; vertical-align:middle; }
+.pop_alert .pop_btn.pop_btn_close {width:12px; height:12px; background:url('../images/pop/pop_alert.png') -25px 0 no-repeat; margin:9px 0 0 9px;}
+
+/* pop_ico */
+.pop_alert .pop_ico {display:inline-block; vertical-align:middle; background:url('../images/pop/pop_alert.png'); }
+.pop_alert .pop_ico_confirm_a {width:93px; height:93px;  background-position:0 -25px; }
+.pop_alert .pop_ico_confirm_b {width:93px; height:93px;  background-position:-125px -25px; }
+.pop_alert .pop_ico_info {width:93px; height:93px;  background-position:0 -150px; }
+.pop_alert .pop_ico_alert {width:93px; height:93px;  background-position:-125px -150px; }
+.pop_alert .pop_ico_cancel {width:93px; height:93px;  background-position:-250px -150px; }
+
+
+/*==================================
+Contents Popup
+==================================*/
+.pop_contents {position:absolute; width:900px; top:50%; left:50%; margin-left:-450px; background-color:#FFF;}
+
+/* pop title �쁺�뿭 */
+.pop_contents .pop_tit_wrap {position:relative; height:50px; padding:0 15px 0 20px; overflow:hidden; background-color:#e46100;}
+.pop_contents .pop_tit {font-size:18px; font-weight:bold; color:#ffffff; line-height:1.33em; display:inline-block; margin-top:13px; vertical-align:middle; }
+.pop_contents .close_area {display:inline-block; width:50px; height:50px; position:absolute; top:0; right:0;}
+
+/* pop 而⑦뀗痢� �쁺�뿭 */
+.pop_contents .pop_con_fix {font-size:13px; color:#000000; line-height:1.33em; max-height:600px; overflow:auto;}
+.pop_contents .pop_con_area {padding:20px;}
+.pop_contents .desc_area {font-size:13px; font-weight:normal; color:#76787c; line-height:1.33em; margin-top:13px;}
+.pop_contents .btn_area {margin-top:30px;}
+
+/* btn  */
+.pop_contents .pop_btn {display:inline-block; vertical-align:middle; }
+.pop_contents .pop_btn.pop_btn_close {width:12px; height:12px; background:url('../images/pop/pop_contents.png') 0 0 no-repeat; margin:19px 0 0 19px;}
+
+/* pop 而⑦뀗痢� �쁺�뿭 */
+.pop_contents .lay_col2 {padding:20px 20px 20px 20px;}
+.pop_contents .lay_col2 #pop_lnb {width:200px; float:left;}
+.pop_contents #pop_lnb .temp {height:70px; padding:100px 0; background-color:#dadde3; }
+.pop_contents .lay_col2 #pop_contents {margin-left:220px; }
+.pop_contents #pop_contents .temp {height:70px; padding:100px 0; background-color:#dadde3; }
+
+
+/*==================================
+GNB Popup
+==================================*/
+.pop_gnb {width:100%; background-color:#f4f3f1; }
+.pop_gnb_wrap {position:relative; height:110px; margin:0 auto; text-align:center;}
+.pop_gnb_wrap .close_area {display:inline-block; width:30px; height:30px; position:absolute; top:10px; right:10px;}
+.pop_gnb_wrap .pop_gnb_today {position:absolute; bottom:12px; right:6px; }
+.pop_gnb_wrap .pop_gnb_today label,
+.pop_gnb_wrap .pop_gnb_today input[type="checkbox"] {vertical-align:middle;}
+
+/* btn  */
+.pop_gnb_btn {display:inline-block; vertical-align:middle; }
+.pop_gnb_btn.pop_gnb_btn_close {width:24px; height:24px; background:url('../images/pop/pop_gnb.png') 0 0 no-repeat; margin:3px 0 0 3px;}
+
+
+/*==================================
+Layer Popup
+==================================*/
+.pop_layer_s {position:absolute; width:480px; height:350px; top:50%; left:50%; margin-left:-240px; background-color:#FFF;}
+
+/* pop title �쁺�뿭 */
+.pop_layer_s .pop_tit_wrap {position:relative; height:50px; padding:0 15px 0 20px; overflow:hidden; background-color:#e46100;}
+.pop_layer_s .pop_tit {font-size:18px; font-weight:bold; color:#ffffff; line-height:50px; display:inline-block; vertical-align:middle; }
+.pop_layer_s .close_area {display:inline-block; width:50px; height:50px; position:absolute; right:0; top:0;}
+
+/* pop 而⑦뀗痢� �쁺�뿭 */
+.pop_layer_s .pop_con_fix {font-size:13px; font-weight:bold; color:#000000; line-height:1.33em; height:300px; overflow-y:auto;}
+.pop_layer_s .pop_con_area {display:inline-block; padding:25px 20px 30px 20px; vertical-align:middle;}
+.pop_layer_s .ico_area {margin-bottom:15px;}
+.pop_layer_s .tit_area {font-weight:bold; color:#000000; margin-bottom:13px;}
+.pop_layer_s .desc_area {font-size:13px; font-weight:normal; color:#76787c; line-height:1.33em; margin-bottom:15px;}
+.pop_layer_s .btn_area {margin-bottom:15px;}
+
+/* 以묒븰�젙�젹 */
+.pop_layer_s .pop_con_center {text-align:center;}
+
+/* pop bottom �쁺�뿭 */
+.pop_layer_s .pop_today_close {position:absolute; width:100%; height:30px; bottom:-30px; left:0; background-color:#f6f6f9;}
+.pop_layer_s .pop_today_close .pop_bot_left {padding:5px 10px;}
+.pop_layer_s .pop_today_close input[type="text"],
+.pop_layer_s .pop_today_close label {vertical-align:middle;}
+
+/* btn  */
+.pop_layer_s .pop_layer_btn {display:inline-block; vertical-align:middle; }
+.pop_layer_s .pop_layer_btn_close {width:12px; height:12px; margin:19px 0 0 19px; background:url('../images/pop/pop_layer.png') 0 0 no-repeat; }
+.pop_layer_s .pop_layer_btn_close_today {width:12px; height:12px; position:absolute; top:50%; right:10px; margin-top:-6px; background:url('../images/pop/pop_layer.png') -25px 0 no-repeat; }
+
+/* pop_layer_ico */
+.pop_layer_s .pop_layer_ico {display:inline-block; vertical-align:middle; background:url('../images/pop/pop_layer.png'); }
+.pop_layer_s .pop_layer_ico_confirm_a {width:93px; height:93px;  background-position:0 -25px; }
+.pop_layer_s .pop_layer_ico_confirm_b {width:93px; height:93px;  background-position:-125px -25px; }
+.pop_layer_s .pop_layer_ico_info {width:93px; height:93px;  background-position:0 -150px; }
+.pop_layer_s .pop_layer_ico_alert {width:93px; height:93px;  background-position:-125px -150px; }
+.pop_layer_s .pop_layer_ico_cancel {width:93px; height:93px;  background-position:-250px -150px; }
+
+
+/*==================================
+Window Popup
+==================================*/
+.pop_window {position:relative; width:100%; height:100%; }
+
+/* pop title �쁺�뿭 */
+.pop_window .pop_tit_wrap {position:relative; height:50px; padding:0 15px 0 20px; background-color:#415e98; }
+.pop_window .pop_tit {font-size:18px; font-weight:bold; color:#ffffff; line-height:1.33em; display:inline-block; margin-top:12px; vertical-align:middle; }
+
+/* popup 而⑦뀗痢� �쁺�뿭 */
+.pop_window .pop_con_area { padding:20px 30px; overflow:auto; background-color:#ffffff; }
+.pop_window .pop_con_center {text-align:center;}
+.pop_window .pop_con_area .ico_area {margin-bottom:15px;}
+.pop_window .pop_con_area .tit_area {font-size:13px; font-weight:bold; color:#000000; line-height:1.33em; margin-bottom:13px;}
+.pop_window .pop_con_area .desc_area {font-size:13px; font-weight:normal; color:#76787c; line-height:1.33em; margin-bottom:15px; }
+.pop_window .pop_con_area .btn_area {margin-top:5px; margin-bottom:15px;}
+
+/* popup bottom �쁺�뿭 */
+.pop_window .pop_bot_wrap {position:relative; height:30px; background-color:#f6f6f9; }
+.pop_window .pop_bot_left {padding:5px 10px;}
+.pop_window .pop_bot_left input[type="checkbox"],
+.pop_window .pop_bot_left label {vertical-align:middle;}
+
+/* btn  */
+.pop_window .pop_window_btn {display:inline-block; vertical-align:middle; background:url('../images/pop/pop_window.png') 0 0 no-repeat;}
+.pop_window .pop_window_btn_close {position:absolute; width:12px; height:12px; top:50%; right:15px; margin-top:-6px; background-position:0 0; }
+.pop_window .pop_window_btn_close_today {position:absolute; width:12px; height:12px; top:50%; right:15px; margin-top:-6px; background-position:-25px 0; }
+
+/* pop_window_ico */
+.pop_window .pop_window_ico {display:inline-block; vertical-align:middle; background:url('../images/pop/pop_window.png'); }
+.pop_window .pop_window_ico_confirm_a {width:93px; height:93px;  background-position:0 -25px; }
+.pop_window .pop_window_ico_confirm_b {width:93px; height:93px;  background-position:-125px -25px; }
+.pop_window .pop_window_ico_info {width:93px; height:93px;  background-position:0 -150px; }
+.pop_window .pop_window_ico_alert {width:93px; height:93px;  background-position:-125px -150px; }
+.pop_window .pop_window_ico_cancel {width:93px; height:93px;  background-position:-250px -150px; }
+

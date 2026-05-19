@@ -1,0 +1,116 @@
+/*==================================================================================
+ UI & design consuting - FOR C&C (주)에프오알씨앤씨 - UI Creative Team 
+www.forcnc.co.kr  / (02)322-0637
+정적 컨텐츠 : contents_static.css
+==================================================================================*/
+
+
+/*==================================
+Static Contents
+==================================*/
+/* Layout */
+.contents_static + .contents_static {margin-top:30px;}
+.contents_static .contents_wrap {overflow:hidden;}
+.contents_static .contents_list {float:left;}
+.contents_static .left {text-align:left;}
+.contents_static .center {text-align:center;}
+.contents_static .right {text-align:right;}
+.contents_static .contents_lay_a > .contents_wrap {margin-left:-5px;}
+.contents_static .contents_lay_a > .contents_wrap > .contents_list > .contents_area {margin-left:5px;}
+.contents_static .contents_lay_b > .contents_wrap {margin-left:-10px;}
+.contents_static .contents_lay_b > .contents_wrap > .contents_list > .contents_area {margin-left:10px;}
+.contents_static .contents_lay_c > .contents_wrap {margin-left:-20px;}
+.contents_static .contents_lay_c > .contents_wrap > .contents_list > .contents_area {margin-left:20px;}
+.contents_static .contents_lay_d > .contents_wrap {margin-left:-30px;}
+.contents_static .contents_lay_d > .contents_wrap > .contents_list > .contents_area {margin-left:30px;}
+
+/* Title */
+.contents_static .static_tit {margin-bottom:8px;}
+.contents_static .static_tit .tit {font-size:22px; line-height:1.33em; color:#3c404a; margin-bottom:3px;}
+.contents_static .static_tit .tit_sub {font-size:18px; line-height:1.33em; color:#76787c; margin-bottom:3px;}
+
+/* Description */
+.contents_static .static_desc {font-size:13px; line-height:1.33em; color:#76787c; margin-bottom:10px;}
+
+/* Image */
+.contents_static .static_img {margin-bottom:10px;}
+.contents_static .contents_lay_a > .contents_wrap .static_img {margin-bottom:5px;}
+.contents_static .static_img > img {width:100%;}
+.contents_static .static_img.middle_ico {position:relative;}
+.contents_static .static_img.middle_ico > img {margin-bottom:23px;}
+.contents_static .static_img.middle_ico .ico_area {position:absolute; left:50%; margin-left:-23px; bottom:0px;}
+
+/* Icon */
+.contents_static .static_ico {margin-bottom:10px;}
+
+/* Rolling */
+.contents_static .static_rolling {position:relative; margin-bottom:10px;}
+.contents_static .static_rolling .rolling_area {position:relative;}
+.contents_static .static_rolling .rolling_tit {font-size:18px; color:#fff; position:absolute; left:0; top:0; padding:15px;}
+.contents_static .static_rolling img {width:100%;}
+
+/* Step */
+.contents_static .static_step {overflow:hidden; margin-bottom:20px;}
+.contents_static .static_step .step {height:46px; margin-left:46px;}
+.contents_static .static_step .step_list {position:relative; text-align:center; float:left; height:100%;}
+.contents_static .static_step .step_list:first-child {width:46px; margin-left:-46px;}
+.contents_static .static_step .step_body {display:block; height:46px; background:url('../../images/contents_static/contents_static_step.png') no-repeat left top;}
+.contents_static .static_step .step_link {position:absolute; width:46px; height:46px; right:0; background:url('../../images/contents_static/contents_static_step.png') no-repeat left -100px;}
+.contents_static .static_step .step_list.completed .step_body {background-position:left -50px;}
+.contents_static .static_step .step_list.completed .step_link {background-position:-75px -100px;}
+.contents_static .static_step .step_list.ongoing .step_body {background-position:left -50px;}
+.contents_static .static_step .step_list:hover .step_link:hover,
+.contents_static .static_step .step_list.ongoing .step_link {background-position:-75px -100px;}
+
+/* btn */
+.contents_static .static_btn {margin-top:15px; margin-bottom:15px;}
+
+
+/*==================================
+FlexSlider (static_rolling 관련)
+==================================*/ 
+/* FlexSlider */
+.flex-container a:active,
+.flexslider a:active,
+.flex-container a:focus,
+.flexslider a:focus  {outline: none;}
+.slides,
+.flex-control-nav,
+.flex-direction-nav {margin: 0; padding: 0; list-style: none;}
+
+/* FlexSlider Necessary Styles */
+.flexslider {margin: 0; padding: 0;}
+.flexslider .slides > li {display: none; -webkit-backface-visibility: hidden;} /* Hide the slides before the JS is loaded. Avoids image jumping */
+.flexslider .slides img {width: 100%; display: block;}
+.flex-pauseplay span {text-transform: capitalize;}
+
+/* Clearfix for the .slides element */
+.slides:after {content: "\0020"; display: block; clear: both; visibility: hidden; line-height: 0; height: 0;}
+html[xmlns] .slides {display: block;}
+* html .slides {height: 1%;}
+
+/* No JavaScript Fallback */
+.no-js .slides > li:first-child {display: block;}
+
+/* FlexSlider Default Theme */
+.flexslider { margin: 0 0 60px; background: #fff; border: 4px solid #fff; position: relative; -webkit-border-radius: 4px; -moz-border-radius: 4px; -o-border-radius: 4px; border-radius: 4px; -webkit-box-shadow: 0 1px 4px rgba(0,0,0,.2); -moz-box-shadow: 0 1px 4px rgba(0,0,0,.2); -o-box-shadow: 0 1px 4px rgba(0,0,0,.2); box-shadow: 0 1px 4px rgba(0,0,0,.2); zoom: 1; }
+.flex-viewport { max-height: 2000px; -webkit-transition: all 1s ease; -moz-transition: all 1s ease; -o-transition: all 1s ease; transition: all 1s ease; }
+.loading .flex-viewport { max-height: 300px; }
+.flexslider .slides { zoom: 1; }
+.carousel li { margin-right: 5px; }
+
+/* Direction Nav */
+.flex-direction-nav {display: none;}
+
+/* Pause/Play */
+.flex-pauseplay a { display: block; width: 20px; height: 20px; position: absolute; bottom: 5px; left: 10px; opacity: 0.8; z-index: 10; overflow: hidden; cursor: pointer; color: #000; }
+.flex-pauseplay a:before  { font-family: "flexslider-icon"; font-size: 20px; display: inline-block; content: '\f004'; }
+.flex-pauseplay a:hover  { opacity: 1; }
+.flex-pauseplay a.flex-play:before { content: '\f003'; }
+
+/* Control Nav */
+.static_rolling .flex-control-nav {position: absolute; bottom:10px; width:100%; display:block; text-align:center;}
+.static_rolling .flex-control-nav li {margin: 0 2px 0 3px; display: inline-block; zoom: 1; *display: inline;}
+.static_rolling .flex-control-paging li a {width: 10px; height: 10px; display: block; background:url("../../images/contents_static/contents_static_rolling.png") left top; font-size:0; line-height:0; margin-right: 5px; cursor: pointer;}
+.static_rolling .flex-control-paging li a.flex-active {background-position: -20px top; width: 10px; background-repeat: no-repeat;}
+

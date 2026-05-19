@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- <!DOCTYPE tiles-definitions PUBLIC
+        "-//Apache Software Foundation//DTD Tiles Configuration 2.0//EN"        
+        "http://tiles.apache.org/dtds/tiles-config_2_0.dtd"> -->
+<!DOCTYPE tiles-definitions PUBLIC
+        "-//Apache Software Foundation//DTD Tiles Configuration 2.0//EN"        
+        "deploy/tiles-config_2_0.dtd">
+        <!-- 개발서버반영시 사용 -->        
+        <!-- "deploy/tiles-config_2_0.dtd"> -->
+        <!-- IC통합 -->
+        <!-- "deploy/mcslog/tiles-config_2_0.dtd"> -->
+        <!-- M15 -->
+        <!-- "deploy/M15/tiles-config_2_0.dtd"> -->
+        <!-- M11 -->
+        <!-- "deploy/plan/WEB-INF/dtd/tiles-config_2_0.dtd"> -->
+        <!-- C2 -->
+		<!-- "deploy/tiles-config_2_0.dtd"> -->
+		<!-- M14 -->
+		<!-- "deploy/M14/tiles-config_2_0.dtd"> -->
+        <!-- DEV 10.25.205.194 -->
+        <!-- "deploy/DEV/tiles-config_2_0.dtd"> -->
+<!-- C2원격컴퓨터용 -->
+<!-- <!DOCTYPE tiles-definitions SYSTEM "tiles-config_2_0.dtd"> -->
+        
+<tiles-definitions>
+	<!-- default : 템플릿에 설정된 페이지의 구성 요소에 대한 실제 파일을 지정합니다.  -->
+	<definition name="default" template="/WEB-INF/views/layouts/layout.jsp">
+		<put-attribute name="header" value="/WEB-INF/views/layouts/header.jsp" />
+		<put-attribute name="body"  value="" />
+		<put-attribute name="footer" value="" />
+	</definition>
+	
+	<definition name="tot/main" extends="default">
+		<put-attribute name="body" value="/WEB-INF/views/tot/main.jsp" />
+	</definition>
+</tiles-definitions>

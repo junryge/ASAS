@@ -1,0 +1,348 @@
+.wrap{
+	width : 99%;
+	margin : 0 auto;
+	margin-top : 10px;
+}
+#wrapSegment{
+	width : 99%;
+	margin-right : 0px !important;
+}
+.icon{
+	float : left !important;
+}
+.transHistoryDropdownIcon{
+
+}
+
+.menuIcon{
+	cursor: pointer;
+}
+
+.header{
+	height : 40px !important;
+	padding : 5px !important;
+	padding-top : 7px !important;
+}
+.pageButton{
+	padding: 5px !important;
+	padding-left : 12px !important;
+	padding-right : 12px !important;
+}
+
+.leftBody{
+	padding : 5px !important;
+	height: 858px;
+}
+
+.rightBody{
+	padding : 5px !important;
+	height: 858px;
+}
+.filterOption{
+	padding:7px !important;
+	cursor : pointer;
+}
+.filterOptionContent{
+	display:none;
+}
+/*.tabContent{
+	overflow: auto;
+}*/
+.tableHeaderWrapper{
+	margin-bottom: 0px !important;
+}
+.tableHeader{
+	margin-bottom: 0px !important;
+}
+
+.tableHeader th{
+	word-break:break-all;
+	font-size: 18px !important;
+	padding-top : 5px !important;
+	padding-bottom : 5px !important;
+}
+.tableBodyWrapper{
+	margin-top: 0px !important;
+	overflow: auto !important;
+	height: 740px !important;
+	border-bottom: 1px #cccccc !important;
+}
+.tableBody{
+	margin-top: 0px !important;
+}
+
+.tabContent{
+	height: 793px !important;
+	overflow: auto;
+}
+#leftBodyWrapper{
+	padding:5px;
+	padding-right : 0px;
+}
+
+#rightBodyWrapper{
+	padding:5px;
+	padding-left : 5px;
+	padding-bottom: 0px !important;
+}
+
+.tableBody td{
+	word-break:break-all;
+	padding-top : 3px !important;
+	padding-bottom : 3px !important;
+}
+.filterViewContent{
+	overflow: auto;
+}
+
+.tab.segment{
+	height: 802px;
+}
+
+.MachineFilter{
+	padding : 5px !important;
+}
+.timeRangeLabel{
+	line-height: 30px !important;
+}
+.tableHeadLong{
+	word-break:break-all;
+	width : 115px !important;
+	font-size : 18px;
+	padding-left: 0px !important;
+	padding-right: 0px !important;
+	margin-left: 0px !important;
+	margin-right: 0px !important;
+}
+.tableHeadShort{
+	word-break:break-all;
+	width : 70px !important;
+	font-size : 18px;
+	padding-left: 0px !important;
+	padding-right: 0px !important;
+	margin-left: 0px !important;
+	margin-right: 0px !important;
+}
+.tableHeadNo{
+	word-break:break-all;
+	width : 40px !important;
+	font-size : 18px;
+	padding-left: 10px !important;
+	padding-right: 0px !important;
+	margin-left: 0px !important;
+	margin-right: 0px !important;
+}
+.tableBodyLong{
+	word-break:break-all;
+	width : 120px !important;
+	padding-left: 0px !important;
+	padding-right: 0px !important;
+	margin-left: 0px !important;
+	margin-right: 0px !important;
+}
+.tableBodyShort{
+	word-break:break-all;
+	width : 70px !important;
+	padding-left: 0px !important;
+	padding-right: 0px !important;
+	margin-left: 0px !important;
+	margin-right: 0px !important;
+}
+.tableBodyNo{
+	word-break:break-all;
+	width : 40px !important;
+	padding-left: 10px !important;
+	padding-right: 0px !important;
+	margin-left: 0px !important;
+	margin-right: 0px !important;
+}
+#chartModal{
+	width : 1300px;
+	height : 700px;
+	position: absolute;
+	left : 800px !important;
+	top : 420px !important;
+}
+#chartModalClose{
+	text-align : right !important;
+}
+#chartBody{
+	margin : 0 auto;
+	height: 550px;
+	width: 97% !important;
+	overflow: hidden;
+}
+/* ------------------------------------------------------- */
+.topDate{
+	font-size : 18px;
+	font-weight: bold;
+}
+#headToDate{
+	margin-left: 110px;
+}
+.ui.blue.basic.button.Search{
+	margin-left : 20px !important;
+}
+
+.firstRow{
+	height: 100px;
+}
+
+.firstRowHead{
+	margin-bottom : 0px !important;
+
+}
+
+.firstSecondRow{
+	margin-top: 10px;
+}
+
+.facilityInput{
+	margin-top : 20px;
+	margin-left : 190px;
+}
+
+.SearchButton{
+
+	padding-top : 19px !important;
+	padding-left : 17px !important;
+}
+#searchButton{
+	width : 100% !important ;
+	height: 62px !important ;
+	font-size: 20px !important;
+	font-weight: bold !important;
+	line-height: 30px !important;
+}
+.timeRangeInputWrapper{
+	width : 80% !important;
+}
+
+.timeRangeInput{
+	width : 80% !important;
+	padding : 5px !important;
+}
+.timeRangeLabel{
+	width:  57px !important;
+	padding : 5px !important;
+}
+
+.secondRowGrid{
+	padding-top :5px !important;
+}
+
+.secondRow{
+	height: 760px;
+}
+.secondRowHead{
+	margin-top : 0px !important;
+	padding-top : 5px !important;
+}
+
+#firstRowLeft{
+	padding-right: 7px !important;
+}
+
+#firstRowRight{
+	padding-left: 7px !important;
+}
+
+#secondRowLeft{
+	padding-right: 7px !important;
+}
+
+.secondRowLeftCol{
+	height: 198px;
+}
+
+#secondRowRight{
+	padding-left: 7px !important;
+}
+
+.gridData{
+	height : 470px;
+}
+
+.chartAndOriginal{
+	height: 200px;
+}
+
+/*#chartSegment{
+
+	padding : 0px !important;
+	height: 0px;
+	width : 1070px;
+}
+*/
+.labels{
+	font-size : 18px !important;
+	font-weight: bold !important;
+	margin-bottom : 10px !important;
+}
+.rtns{
+	width : 130px !important;
+}
+.andOrCon{
+	float : left !important;
+	width : 65px !important;
+}
+
+.gridData{
+	overflow-y : auto;
+}
+
+#rawData{
+	height: 40px;
+}
+
+.gridTr{
+	cursor: pointer;
+}
+
+#tableHeadControl1{
+	margin-left : 50px !important;
+}
+#tableHeadControl2{
+	margin-left :  !important;
+}
+#tableHeadControl3{
+	margin-left : !important;
+}
+#tableHeadControl4{
+	margin-left :  !important;
+}
+#tableHeadControl5{
+	margin-left :  !important;
+}
+#tableHeadControl6{
+	margin-left : !important;
+}
+#tableHeadControl7{
+	margin-left : !important;
+}
+
+
+
+#chartSegmentWrap{
+	height : 100px;
+	padding-top : 15px;
+}
+
+#pagingButtonGroup{
+	float : right;
+	margin-bottom : 5px;
+}
+
+#rawDataWrite{
+	margin-top : 10px;
+}
+
+.chartButton{
+	padding-top : 13px !important;
+	padding-left : 0px !important;
+	padding-right : 0px !important;
+	width: 80px;
+	height:38px;
+	margin-left : 15px;
+	float:left;
+}

@@ -1,0 +1,161 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+  <title>SlickGrid example 1: Basic grid</title>
+  <%@ page pageEncoding="UTF-8"%>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/common.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/layout.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/btn01.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/board01.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/table01.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/object.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/resources/lib/semantic/semantic.css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/slick.grid.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/controls/slick.pager.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/css/smoothness/jquery-ui-1.8.16.custom.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/examples.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/controls/slick.columnpicker.css" type="text/css"/>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/css.browser.detect.js" ></script>
+
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/lib/jquery-1.7.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/lib/jquery.event.drag-2.2.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/lib/jquery-ui-1.8.16.custom.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.rowselectionmodel.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.checkboxselectcolumn.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.autotooltips.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellrangedecorator.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellrangeselector.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellcopymanager.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellselectionmodel.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.rowselectionmodel.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.formatters.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.core.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.grid.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.remotemodel.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.dataview.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.editors.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/controls/slick.columnpicker.js" ></script>
+
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery-1.9.1.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery-ui.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery.form.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery.ui.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/common/common.js" ></script>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/jqueryui/jquery-ui.theme.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/jqueryui/jquery-ui.css"/>
+<script type="text/javascript" src="${pageContext.request.contextPath }/resources/lib/semantic/semantic.min.js" ></script>
+<!-- excel -->
+<script type="text/javascript" charset="utf-8" async="" data-requirecontext="_" data-requiremodule="excel-builder" src="./styles/slickGrid/excel-builder.js"></script>
+<script type="text/javascript" src="./styles/slickGrid/require.js" ></script>
+<script type="text/javascript" src="./styles/slickGrid/underscore.js" ></script>
+<script type="text/javascript" src="./styles/slickGrid/jquery.slickgrid.export.excel.js" ></script>
+</head>
+<body>
+<a id="downloadLink" download="Report.xlsx" href="">Download Excel</a>
+
+<table width="100%">
+  <tr>
+    <td valign="top" width="50%">
+      <div style="border:1px solid gray;background:wheat;padding:6px;">
+        <label>Show tasks with % at least: </label>
+
+        <div style="padding:4px;">
+          <div style="width:100px;" id="pcSlider"></div>
+        </div>
+        <br/>
+        <label>And title including:</label>
+        <input type=text id="txtSearch">
+      </div>
+      <br/>
+
+      <div id="myGrid" style="width:600px;height:500px;"></div>
+    </td>
+    <td valign="top">
+      <h2>Demonstrates:</h2>
+      <ul>
+        <li>implementing expand/collapse as a filter for DataView</li>
+      </ul>
+
+        <h2>View Source:</h2>
+        <ul>
+            <li><A href="https://github.com/mleibman/SlickGrid/blob/gh-pages/examples/example5-collapsing.html" target="_sourcewindow"> View the source for this example on Github</a></li>
+        </ul>
+    </td>
+  </tr>
+</table>
+
+<script>
+
+var dataView;
+var grid;
+var data = [];
+var columns = [
+  {id: "title", name: "Title", field: "title", width: 220, cssClass: "cell-title", formatter: TaskNameFormatter, editor: Slick.Editors.Text, validator: requiredFieldValidator},
+  {id: "duration", name: "Duration", field: "duration", editor: Slick.Editors.Text},
+  {id: "%", name: "% Complete", field: "percentComplete", width: 80, resizable: false, formatter: Slick.Formatters.PercentCompleteBar, editor: Slick.Editors.PercentComplete},
+  {id: "start", name: "Start", field: "start", minWidth: 60, editor: Slick.Editors.Date},
+  {id: "finish", name: "Finish", field: "finish", minWidth: 60, editor: Slick.Editors.Date},
+  {id: "effort-driven", name: "Effort Driven", width: 80, minWidth: 20, maxWidth: 80, cssClass: "cell-effort-driven", field: "effortDriven", formatter: Slick.Formatters.Checkmark, editor: Slick.Editors.Checkbox, cannotTriggerInsert: true}
+];
+var options = {
+  editable: true,
+  enableAddRow: true,
+  enableCellNavigation: true,
+  asyncEditorLoading: false
+};
+var percentCompleteThreshold = 0;
+var searchString = "";
+
+  //default excel options
+var excelOptions = {
+    headerStyle: {
+        font: {
+            bold: true,  //enable bold
+            font: 12, // font size
+            color: '00ffffff' //font color --Note: Add 00 before the color code
+        },
+        fill: {   //fill background
+            type: 'pattern', 
+            patternType: 'solid',
+            fgColor: '00428BCA' //background color --Note: Add 00 before the color code
+        }
+    },
+    cellStyle: {
+        font: {
+            bold: false,  //enable bold
+            font: 12, // font size
+            color: '00000000' //font color --Note: Add 00 before the color code
+        },
+        fill: {   //fill background
+            type: 'pattern',
+            patternType: 'solid',
+            fgColor: '00ffffff' //background color --Note: Add 00 before the color code
+        }
+    },
+};
+var excelData = [];
+$(function () {
+  var data = [];
+  for (var i = 0; i < 500; i++) {
+    data[i] = {
+      title: "Task " + i,
+      duration: "5 days",
+      percentComplete: Math.round(Math.random() * 100),
+      start: "01/01/2009",
+      finish: "01/05/2009",
+      effortDriven: (i % 5 == 0)
+    };
+  }
+
+  grid = new Slick.Grid("#myGrid", data, columns, options);
+
+  $('body').exportToExcel("Report.xlsx", "Report", data, excelOptions, function (response) {
+      console.log(response);
+  });
+})
+
+</script>
+</body>
+</html>

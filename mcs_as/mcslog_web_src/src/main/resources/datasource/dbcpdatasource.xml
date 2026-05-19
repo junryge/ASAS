@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"	
+	xmlns:context="http://www.springframework.org/schema/context"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans 
+		http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+		http://www.springframework.org/schema/context 
+		http://www.springframework.org/schema/context/spring-context-4.2.xsd">
+
+	<!-- 프로퍼티 대치 변수 설정자(Property Placeholder Configurer)를 설정한다. -->
+	<context:property-placeholder 
+		location="classpath:/datasource/dbcpdatasource.properties" />
+
+	<!--
+		Apache Commons의 DBCP의 BasicDataSource 타입의 Bean을 선언하고
+		위에서 프로퍼티 대치 변수 설정자로 지정하여 properties 파일로 부터 읽어온
+		데이터를 대치 변수를 사용해 dataSource의 각 프로퍼티에 지정하고 있다.
+		이 프로젝트에서는 commons-dbcp2-2.1.1 사용하였다.
+	 -->
+	<bean id="dataSource" destroy-method="close"
+		class="org.apache.commons.dbcp2.BasicDataSource" >
+		<property name="driverClassName" value="${db.driverClassName}" />
+		<property name="url" value="${db.url}" />
+		<property name="username" value="${db.username}" />
+		<property name="password" value="${db.password}" />
+		<property name="initialSize" value="${db.initialSize}" />
+		<property name="maxTotal" value="${db.maxTotal}" />
+		<property name="maxIdle" value="${db.maxIdle}" />
+	</bean>
+</beans>
