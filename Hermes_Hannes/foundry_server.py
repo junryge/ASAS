@@ -182,6 +182,15 @@ def pool_status():
 # ============================================================
 app = Flask(__name__)
 
+# 5대 요소 라우트 등록 (backend/routes_elements.py).
+# 등록 실패해도 GGUF 단독 경로는 동작하도록 try/except.
+try:
+    from backend.routes_elements import register as register_elements
+    register_elements(app)
+    print("[BOOT] backend/routes_elements 등록 완료 (/api/elements/*)")
+except Exception as _e:
+    print(f"[BOOT][WARN] backend/routes_elements 등록 실패: {_e}")
+
 
 # CORS - file:// 또는 다른 포트에서 열어도 작동하게
 @app.after_request
@@ -216,9 +225,12 @@ def api_gguf_list():
 
 @app.route("/api/gguf-pool-status", methods=["GET"])
 def api_pool_status():
+    """단일 모델 상태 반환. 'pool' 키는 UI 호환용 (최대 1개 항목)."""
+    pool = pool_status()
+    single = pool[:1]  # 단일 운영 — 첫 항목만
     return jsonify({
-        "pool": pool_status(),
-        "max_pool_size": MAX_POOL_SIZE,
+        "pool": single,
+        "max_pool_size": 1,
         "vram_budget_gb": VRAM_BUDGET_GB,
         "loaded": os.path.basename(gguf_loaded_path) if gguf_loaded_path else None,
     })

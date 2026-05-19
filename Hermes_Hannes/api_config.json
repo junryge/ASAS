@@ -18,7 +18,7 @@
   "logpresso": {
     "host": "10.40.42.27",
     "port": 8888,
-    "api_key": "db1d2335-49cf-e859-3519-1ca132922e38",
+    "api_key_env": "LOGPRESSO_API_KEY",
     "page_size": 50,
     "cache_ttl": 600,
     "cache_max": 20

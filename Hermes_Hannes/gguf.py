@@ -1,178 +1,36 @@
 """
-demos_v1/gguf.py - GGUF model management: find, load, chat, multi-model pool
+gguf.py - GGUF 단일 모델 채팅 헬퍼 (집용).
+
+설계 원칙:
+- 집용 = 단일 GGUF 모델, 병렬 없음 (멀티풀 로직 제거됨)
+- API 경로(backend/api_client.py)와 완전 독립 — 이 파일은 backend.api_client 를 import 하지 않음
+- 모델 로드/언로드는 foundry_server.py 가 담당 (gguf_model, gguf_loaded_path 전역)
+- 본 파일은 "이미 로드된 모델을 사용한 채팅" 만 책임
 """
 import os
-import sys
-import time
-import glob
-import demos_v1.utils as _utils_mod
-from demos_v1.utils import BASE_DIR
-from demos_v1.config import (
-    _gguf_pool, _gguf_pool_lock, MAX_POOL_SIZE, VRAM_BUDGET_GB, TOKEN_SETTINGS
-)
+import threading
 
-# ============================================
-# GGUF 모델 관리 (llama-cpp-python)
-# ============================================
-def find_gguf_files():
-    """app.py 주변에서 GGUF 파일 검색"""
-    patterns = [
-        os.path.join(BASE_DIR, "*.gguf"),
-        os.path.join(BASE_DIR, "models", "*.gguf"),
-        os.path.join(BASE_DIR, "model", "*.gguf"),
-    ]
-    files = []
-    for p in patterns:
-        files.extend(glob.glob(p))
-    # mmproj(비전 프로젝션) 파일은 LLM이 아니므로 제외
-    files = [f for f in files if "mmproj" not in os.path.basename(f).lower()]
-    return [{"path": f, "name": os.path.basename(f), "size_gb": round(os.path.getsize(f) / 1e9, 1)} for f in files]
+# foundry_server 의 전역 단일 인스턴스를 참조. 순환 import 피하려고 함수 안에서 import.
+_chat_lock = threading.Lock()
 
 
-def _find_mmproj_file(model_path):
-    """GGUF 모델과 같은 폴더에서 mmproj 파일 자동 탐색"""
-    model_dir = os.path.dirname(model_path)
-    for p in glob.glob(os.path.join(model_dir, "*mmproj*.gguf")):
-        return p
-    # BASE_DIR에서도 탐색
-    for p in glob.glob(os.path.join(BASE_DIR, "*mmproj*.gguf")):
-        return p
-    for p in glob.glob(os.path.join(BASE_DIR, "models", "*mmproj*.gguf")):
-        return p
-    return None
-
-
-def load_gguf_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=2048):
-    """llama-cpp-python으로 GGUF 모델 로드 (같은 모델 + 충분한 ctx면 스킵, 부족하면 재로드)
-    mmproj 파일이 있으면 자동으로 비전(멀티모달) 모드로 로드"""
-    # 이미 같은 모델 + n_ctx 충분 → 스킵 / ctx 부족하면 재로드
-    if _utils_mod.gguf_loaded_path == model_path and _utils_mod.gguf_model is not None:
-        try:
-            _cur_ctx_attr = getattr(_utils_mod.gguf_model, 'n_ctx', None)
-            _cur_ctx = _cur_ctx_attr() if callable(_cur_ctx_attr) else (_cur_ctx_attr if _cur_ctx_attr else 0)
-        except Exception:
-            _cur_ctx = 0
-        if _cur_ctx >= n_ctx:
-            print(f"     ℹ️  이미 로드됨: {os.path.basename(model_path)} (ctx={_cur_ctx})")
-            return True
-        print(f"     🔄 ctx 부족 ({_cur_ctx} < {n_ctx}) → 재로드")
-
-    try:
-        from llama_cpp import Llama
-        print(f"     모델 로딩 중: {os.path.basename(model_path)}...")
-
-        # 기존 모델 해제
-        if _utils_mod.gguf_model is not None:
-            print(f"     🔄 기존 모델 해제: {os.path.basename(_utils_mod.gguf_loaded_path or '')}")
-            _utils_mod.gguf_model = None
-            _utils_mod.gguf_loaded_path = None
-
-        # mmproj 비전 프로젝터 자동 탐색
-        mmproj_path = _find_mmproj_file(model_path)
-
-        saved_stdout = sys.stdout
-        saved_stderr = sys.stderr
-        try:
-            base_kwargs = {
-                "model_path": model_path,
-                "n_ctx": n_ctx,
-                "n_gpu_layers": n_gpu_layers,
-                "n_batch": n_batch,
-                "verbose": False,
-            }
-
-            if mmproj_path:
-                # 방법 1: clip_model_path 직접 전달 (llama-cpp-python 0.3+)
-                try:
-                    _utils_mod.gguf_model = Llama(**base_kwargs, clip_model_path=mmproj_path)
-                    print(f"     👁️ 비전 모드 (clip_model_path): {os.path.basename(mmproj_path)}")
-                except (TypeError, Exception) as e1:
-                    # 방법 2: 여러 ChatHandler 시도
-                    _handlers_to_try = []
-                    try:
-                        from llama_cpp.llama_chat_format import Gemma3ChatHandler
-                        _handlers_to_try.append(("Gemma3", Gemma3ChatHandler))
-                    except ImportError:
-                        pass
-                    try:
-                        from llama_cpp.llama_chat_format import Llava16ChatHandler
-                        _handlers_to_try.append(("Llava16", Llava16ChatHandler))
-                    except ImportError:
-                        pass
-                    try:
-                        from llama_cpp.llama_chat_format import Llava15ChatHandler
-                        _handlers_to_try.append(("Llava15", Llava15ChatHandler))
-                    except ImportError:
-                        pass
-
-                    loaded_vision = False
-                    for handler_name, HandlerClass in _handlers_to_try:
-                        try:
-                            chat_handler = HandlerClass(clip_model_path=mmproj_path)
-                            _utils_mod.gguf_model = Llama(**base_kwargs, chat_handler=chat_handler)
-                            print(f"     👁️ 비전 모드 ({handler_name}): {os.path.basename(mmproj_path)}")
-                            loaded_vision = True
-                            break
-                        except Exception:
-                            continue
-
-                    if not loaded_vision:
-                        # 모든 비전 방식 실패 → 텍스트 전용으로 로드
-                        print(f"     ⚠️ 비전 로드 실패, 텍스트 전용으로 로드")
-                        _utils_mod.gguf_model = Llama(**base_kwargs)
-            else:
-                # mmproj 없음 → 텍스트 전용
-                # flash_attn 은 Qwen3 시리즈에서만 검증됨 (Gemma 등 타 모델 미적용)
-                _model_name_lc = os.path.basename(model_path).lower()
-                _is_qwen3 = "qwen3" in _model_name_lc
-
-                if _is_qwen3:
-                    text_kwargs = {**base_kwargs, "flash_attn": True}
-                    try:
-                        _utils_mod.gguf_model = Llama(**text_kwargs)
-                        print(f"     ⚡ Qwen3 가속: flash_attn=True, n_batch={n_batch}")
-                    except TypeError:
-                        # 구버전 llama-cpp-python: flash_attn 미지원 → 기본 옵션
-                        try:
-                            _utils_mod.gguf_model = Llama(**base_kwargs)
-                            print(f"     ℹ️  flash_attn 미지원 (구버전), n_batch={n_batch}")
-                        except TypeError:
-                            del base_kwargs["n_batch"]
-                            _utils_mod.gguf_model = Llama(**base_kwargs)
-                else:
-                    # Qwen3 외: 기본 옵션 (flash_attn 안전성 미검증)
-                    try:
-                        _utils_mod.gguf_model = Llama(**base_kwargs)
-                    except TypeError:
-                        del base_kwargs["n_batch"]
-                        _utils_mod.gguf_model = Llama(**base_kwargs)
-        finally:
-            sys.stdout = saved_stdout
-            sys.stderr = saved_stderr
-
-        _utils_mod.gguf_loaded_path = model_path
-        return True
-    except ImportError:
-        print(f"     ❌ llama-cpp-python 패키지 없음")
-        print(f"        → pip install llama-cpp-python")
-        return False
-    except Exception as e:
-        print(f"     ❌ 모델 로드 실패: {e}")
-        return False
+def _get_loaded():
+    """foundry_server 모듈에서 현재 로드된 단일 GGUF 인스턴스를 가져옴."""
+    import foundry_server as fs
+    return fs.gguf_model, fs.gguf_loaded_path
 
 
 def _inject_no_think_for_qwen3(messages, model_path):
     """Qwen3 모델 사용 시 reasoning 비활성화 — '/no_think' 키워드 자동 주입.
 
-    Qwen3는 시스템/user 메시지에 '/no_think'가 있으면 사고 토큰을 생성하지 않음
-    (Qwen3 공식 chat template). → 토큰/시간 낭비 차단 + 영문 사고 노출 방지.
-    예외: think_mode 토글 ON 시 (시스템 프롬프트에 명시적 사고 지시) 사고 허용.
+    Qwen3 공식 chat template: 시스템/user 메시지에 '/no_think' 있으면 사고 토큰 생성 X.
+    → 토큰/시간 낭비 차단 + 영문 사고 노출 방지.
+    예외: think_mode 토글 ON (시스템 프롬프트에 명시적 사고 지시) 시 사고 허용.
     """
     if not model_path or "qwen3" not in os.path.basename(model_path).lower():
         return messages
     if not messages:
         return messages
-    # think_mode 활성 검출 — 사용자가 명시적으로 켰으면 /no_think 안 넣음
     for m in messages:
         if m.get("role") == "system":
             content = m.get("content", "") if isinstance(m.get("content"), str) else ""
@@ -196,185 +54,43 @@ def _inject_no_think_for_qwen3(messages, model_path):
 
 
 def gguf_chat(messages, temperature=0.5, max_tokens=4096, stop_flag=None):
-    """로드된 GGUF 모델로 채팅 (스트리밍으로 중단 가능)"""
-    if _utils_mod.gguf_model is None:
-        return None, "GGUF 모델이 로드되지 않았습니다."
-    # Qwen3 모델이면 /no_think 자동 주입 (reasoning 끄기)
-    _model_path = getattr(_utils_mod, "gguf_loaded_path", "") or ""
-    messages = _inject_no_think_for_qwen3(messages, _model_path)
-    try:
-        # 중단 플래그가 있으면 스트리밍 모드로 토큰별 체크
-        if stop_flag is not None:
-            chunks = []
-            for chunk in _utils_mod.gguf_model.create_chat_completion(
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-            ):
-                if stop_flag.get("stop", False):
-                    # 중단 요청 → 지금까지 생성된 부분 반환
-                    partial = "".join(chunks)
-                    return (partial + "\n\n⏹️ (응답이 중단되었습니다)") if partial else None, None
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                content = delta.get("content", "")
-                if content:
-                    chunks.append(content)
-            return "".join(chunks), None
-        else:
-            resp = _utils_mod.gguf_model.create_chat_completion(
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            if resp and "choices" in resp and len(resp["choices"]) > 0:
-                return resp["choices"][0].get("message", {}).get("content") or "", None
-            return None, f"예상치 못한 응답: {resp}"
-    except Exception as e:
-        return None, f"GGUF 추론 오류: {str(e)}"
+    """로드된 단일 GGUF 모델로 채팅.
 
-
-# ============================================
-# GGUF 멀티모델 풀 (병렬 에이전트용)
-# ============================================
-def _pool_get_or_load(model_path, n_ctx=16384):
-    """풀에서 GGUF 모델 인스턴스를 가져오거나 새로 로드.
-    Thread-safe: 각 스레드가 독립 Llama 인스턴스를 받음.
+    Returns: (text, error) 튜플. 정상이면 (text, None), 실패 시 (None, msg).
+    GGUF 경로는 본질적으로 직렬이라 _chat_lock 으로 동시 호출 방지.
     """
-    from llama_cpp import Llama
+    model, model_path = _get_loaded()
+    if model is None:
+        return None, "GGUF 모델이 로드되지 않았습니다. /api/gguf/load 먼저 호출하세요."
 
-    size_gb = round(os.path.getsize(model_path) / 1e9, 1) if os.path.exists(model_path) else 0
+    messages = _inject_no_think_for_qwen3(messages, model_path or "")
 
-    def _safe_print(msg):
-        """Windows cp949 환경에서도 안전하게 출력 (이모지 등 유니코드 대응)."""
+    with _chat_lock:
         try:
-            print(msg)
-        except (UnicodeEncodeError, OSError):
-            try:
-                print(msg.encode("utf-8", errors="replace").decode("ascii", errors="replace"))
-            except Exception:
-                pass
-
-    with _gguf_pool_lock:
-        # 1) 이미 풀에 같은 path가 있으면 재사용 (n_ctx 다르더라도)
-        _wait_entry = None
-        for entry in _gguf_pool:
-            if entry["path"] == model_path and entry["model"] is not None:
-                if not entry["in_use"]:
-                    entry["in_use"] = True
-                    entry["last_used"] = time.time()
-                    _safe_print(f"     [POOL] reuse: {os.path.basename(model_path)} (ctx={entry['n_ctx']})")
-                    return entry["model"]
-                else:
-                    # 같은 모델이 사용 중 → 대기 후 재시도 (합성 단계 등)
-                    _safe_print(f"     [POOL] waiting for: {os.path.basename(model_path)}...")
-                    _wait_entry = entry
-                    break
-
-    # 락 밖에서 대기 (최대 120초)
-    if _wait_entry is not None:
-        for _ in range(240):
-            time.sleep(0.5)
-            with _gguf_pool_lock:
-                if not _wait_entry["in_use"]:
-                    _wait_entry["in_use"] = True
-                    _wait_entry["last_used"] = time.time()
-                    _safe_print(f"     [POOL] reuse after wait: {os.path.basename(model_path)}")
-                    return _wait_entry["model"]
-        # 타임아웃 → 새 인스턴스를 로드 (비 thread-safe 객체 공유 방지)
-        _safe_print(f"     [POOL] timeout, loading NEW instance: {os.path.basename(model_path)}")
-        try:
-            llama_new = Llama(
-                model_path=model_path, n_ctx=n_ctx,
-                n_gpu_layers=99, n_batch=128, verbose=False,
-            )
-        except TypeError:
-            llama_new = Llama(
-                model_path=model_path, n_ctx=n_ctx,
-                n_gpu_layers=99, verbose=False,
-            )
-        new_entry = {
-            "model": llama_new, "path": model_path, "size_gb": size_gb,
-            "n_ctx": n_ctx, "in_use": True, "last_used": time.time(),
-        }
-        with _gguf_pool_lock:
-            _gguf_pool.append(new_entry)
-        return llama_new
-
-    with _gguf_pool_lock:
-
-        # 2) VRAM 예산 확인 → 초과 시 LRU 제거
-        current_vram = sum(e["size_gb"] for e in _gguf_pool)
-        while (current_vram + size_gb > VRAM_BUDGET_GB or len(_gguf_pool) >= MAX_POOL_SIZE):
-            # 사용 중 아닌 것 중 가장 오래된 것 제거
-            idle = [e for e in _gguf_pool if not e["in_use"]]
-            if not idle:
-                break  # 모두 사용 중이면 어쩔 수 없음
-            lru = min(idle, key=lambda e: e["last_used"])
-            _safe_print(f"     [POOL] evict LRU: {os.path.basename(lru['path'])} ({lru['size_gb']}GB)")
-            _gguf_pool.remove(lru)
-            try:
-                del lru["model"]
-            except Exception:
-                pass
-            current_vram = sum(e["size_gb"] for e in _gguf_pool)
-
-        # 자리 확보 완료, 풀에 placeholder 등록 (로딩 중 표시)
-        placeholder = {
-            "model": None, "path": model_path, "size_gb": size_gb,
-            "n_ctx": n_ctx, "in_use": True, "last_used": time.time(),
-        }
-        _gguf_pool.append(placeholder)
-
-    # 3) 락 밖에서 모델 로드 (느리지만 다른 스레드 블록 안 함)
-    _safe_print(f"     [POOL] loading: {os.path.basename(model_path)} (ctx={n_ctx})...")
-    saved_stdout, saved_stderr = sys.stdout, sys.stderr
-    try:
-        try:
-            llama = Llama(
-                model_path=model_path, n_ctx=n_ctx,
-                n_gpu_layers=99, n_batch=128, verbose=False,
-            )
-        except TypeError:
-            llama = Llama(
-                model_path=model_path, n_ctx=n_ctx,
-                n_gpu_layers=99, verbose=False,
-            )
-    except Exception as _load_err:
-        sys.stdout, sys.stderr = saved_stdout, saved_stderr
-        # 로드 실패 → placeholder 제거 (풀 오염 방지)
-        with _gguf_pool_lock:
-            if placeholder in _gguf_pool:
-                _gguf_pool.remove(placeholder)
-        _safe_print(f"     [POOL] load FAILED: {os.path.basename(model_path)} -> {_load_err}")
-        raise
-    finally:
-        sys.stdout, sys.stderr = saved_stdout, saved_stderr
-
-    with _gguf_pool_lock:
-        placeholder["model"] = llama
-    _safe_print(f"     [POOL] loaded: {os.path.basename(model_path)} ({size_gb}GB, ctx={n_ctx})")
-    return llama
-
-
-def _pool_release(model_path):
-    """모델 사용 완료 표시."""
-    with _gguf_pool_lock:
-        for entry in _gguf_pool:
-            if entry["path"] == model_path and entry["in_use"]:
-                entry["in_use"] = False
-                entry["last_used"] = time.time()
-                return
-
-
-def _pool_status():
-    """현재 풀 상태 반환 (디버그용)."""
-    with _gguf_pool_lock:
-        return [{
-            "model": os.path.basename(e["path"]),
-            "size_gb": e["size_gb"],
-            "n_ctx": e["n_ctx"],
-            "in_use": e["in_use"],
-        } for e in _gguf_pool]
-
-
+            if stop_flag is not None:
+                chunks = []
+                for chunk in model.create_chat_completion(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True,
+                ):
+                    if stop_flag.get("stop", False):
+                        partial = "".join(chunks)
+                        return (partial + "\n\n⏹️ (응답이 중단되었습니다)") if partial else None, None
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        chunks.append(content)
+                return "".join(chunks), None
+            else:
+                resp = model.create_chat_completion(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                if resp and "choices" in resp and len(resp["choices"]) > 0:
+                    return resp["choices"][0].get("message", {}).get("content") or "", None
+                return None, f"예상치 못한 응답: {resp}"
+        except Exception as e:
+            return None, f"GGUF 추론 오류: {e}"
