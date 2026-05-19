@@ -1,0 +1,47 @@
+<%@ page pageEncoding="UTF-8"%>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/common.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/layout.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/btn01.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/board01.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/table01.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/css/object.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/resources/lib/semantic/semantic.css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/slick.grid.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/controls/slick.pager.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/css/smoothness/jquery-ui-1.8.16.custom.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/examples.css" type="text/css"/>
+<link rel="stylesheet" href="${pageContext.request.contextPath }/styles/slickGrid/controls/slick.columnpicker.css" type="text/css"/>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/css.browser.detect.js" ></script>
+
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/lib/jquery-1.7.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/lib/jquery.event.drag-2.2.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/lib/jquery-ui-1.8.16.custom.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.rowselectionmodel.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.checkboxselectcolumn.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.autotooltips.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellrangedecorator.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellrangeselector.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellcopymanager.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.cellselectionmodel.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/plugins/slick.rowselectionmodel.js"></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.formatters.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.core.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.grid.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.remotemodel.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.dataview.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/slick.editors.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/slickGrid/controls/slick.columnpicker.js" ></script>
+
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery-1.9.1.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery-ui.min.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery.form.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/jquery.ui.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/styles/js/common/common.js?v=<%=com.skhynix.supply.common.Common.sBUILD_VER%>" ></script>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/jqueryui/jquery-ui.theme.css"/>
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/styles/jqueryui/jquery-ui.css"/>
+<script type="text/javascript" src="${pageContext.request.contextPath }/resources/lib/semantic/semantic.min.js" ></script>
+
+<link rel="stylesheet" type="text/css" href="${pageContext.request.contextPath }/resources/pretty/pretty.css"/>
+<script type="text/javascript" src="${pageContext.request.contextPath }/resources/pretty/prettify.js" ></script>
+<script type="text/javascript" src="${pageContext.request.contextPath }/resources/pretty/lang.js" ></script>

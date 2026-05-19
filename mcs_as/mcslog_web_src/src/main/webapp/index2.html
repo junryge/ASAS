@@ -1,0 +1,309 @@
+<link rel="stylesheet" type="text/css" href="./resources/lib/semantic/semantic.min.css">
+<link rel="stylesheet" type="text/css" href="./resources/css/app.css">
+<script src="./resources/lib/jquery-2.1.4.min.js"></script>
+<script src="./resources/lib/jquery-ui.min.js"></script>
+<script src="./resources/lib/semantic/semantic.min.js"></script>
+<script src="./resources/js/test.js"></script>
+<div class='container'>
+	<div class='wrap'>
+  		<div class='ui segments' id='wrapSegment'>
+	  		<div class='ui segment header'>
+	          	<div class='ui dropdown item transHistoryDropdownIcon' style='float:left;'>
+	            	<i class='content large icon menuIcon transHistory' ></i>
+	            	<div class='menu'>
+						<div class='item historySearch' id='history1'><i class='search icon'></i>사용자 이력조회</div>
+						<div class='item historySearch' id='history2'><i class='search icon'></i>로그 조회</div>
+						<div class='item historySearch' id='history3'><i class='search icon'></i>반송 이력 조회</div>
+						<div class='ui divider'></div>
+						<div class='item historySearch' id='history4'><i class='search icon'></i>Alarm 이력 조회</div>
+						<div class='item historySearch' id='history5'><i class='search icon'></i>Alarm Report 이력 조회</div>
+						<div class='item historySearch' id='history6'><i class='search icon'></i>UnitAlarm 이력 조회</div>
+						<div class='ui divider'></div>
+						<div class='item historySearch' id='history7'><i class='search icon'></i>Carrier 위치 이력 조회</div>
+						<div class='item historySearch' id='history8'><i class='search icon'></i>Machine 이력 조회</div>
+						<div class='item historySearch' id='history9'><i class='search icon'></i>Port 이력 조회</div>
+						<div class='item historySearch' id='history10'><i class='search icon'></i>Shelf 이력 조회</div>
+						<div class='item historySearch' id='history11'><i class='search icon'></i>Crane 이력 조회</div>
+						<div class='item historySearch' id='history12'><i class='search icon'></i>Vehicle 이력 조회</div>
+	            	</div>
+	          	</div>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='file excel outline icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='filter icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='browser icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='external square icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='history icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='sitemap icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='tasks icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='object ungroup icon menuIcon'></i>
+				<i class='ellipsis vertical icon' style='color:#cccccc;'></i>
+				<i class='bar chart icon menuIcon'></i>
+          		<div style='float:right;'>
+            		<div class='mini ui basic button pageButton'>&lt</div>
+		            <div class='ui basic buttons'>
+		              <div class='ui mini button pageButton'>1</div>
+		              <div class='ui mini button pageButton'>2</div>
+		              <div class='ui mini button pageButton'>3</div>
+		              <div class='ui mini button pageButton'>4</div>
+		              <div class='ui mini button pageButton'>5</div>
+		            </div>
+            		<div class='mini ui basic button pageButton'>&gt</div>
+          		</div>
+			</div>
+        	<div class='ui segment'>
+	  			<div class='ui grid'>
+	  				<div class='three wide column' id='leftBodyWrapper'>
+	  					<div class='ui segment leftBody'>
+	  						<div class="ui top attached tabular menu">
+  			          			<a class="active item" data-tab="a">Filter View</a>
+							</div>
+  							<div class="ui bottom attached tab segment active filterViewContent" data-tab="a">
+                 				<div class="ui teal top attached message filterOption"><i class='caret right icon'></i>Carrier ID or Lot ID</div>
+								<div class='ui bottom attached segment filterOptionContent'>
+								  <div class='ui input focus'>
+								    <input type='text' placeholder='CarrierID or LotID' style='width:80% !important;'/>
+								  </div>
+								</div>
+								<div class="ui teal top attached message filterOption"><i class='caret right icon'></i>TransportJob Id</div>
+								<div class='ui bottom attached segment filterOptionContent'>
+								  <div class='ui input focus'>
+								    <input type='text' placeholder='Transport Job ID' style='width:80% !important;'/>
+								  </div>
+								</div>
+                  				<div class="ui teal top attached message filterOption"><i class='caret right icon'></i>Source Machine</div>
+                  				<div class='ui bottom attached segment filterOptionContent'>
+				                    <div class='ui two column grid' style='overflow:hidden'>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>ALL</label>
+				                        </div>
+				                      </div>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>STOCKER</label>
+				                        </div>
+				                      </div>
+				                    </div>
+				                    <div class='ui two column grid' style='overflow:hidden'>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>LIFTER</label>
+				                        </div>
+				                      </div>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>PROCESS</label>
+				                        </div>
+				                      </div>
+				                    </div>
+				                    <div class='ui two column grid' style='overflow:hidden'>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>OHT</label>
+				                        </div>
+				                      </div>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>CONVEYOR</label>
+				                        </div>
+				                      </div>
+				                    </div>
+				                    <div class='ui two column grid' style='overflow:hidden'>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>AGV</label>
+				                        </div>
+				                      </div>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>BRIDGE</label>
+				                        </div>
+				                      </div>
+				                    </div>
+				                    <div class='ui two column grid' style='overflow:hidden'>
+				                      <div class='column MachineFilter'>
+				                        <div class='ui checkbox'>
+				                          <input type='checkbox'><label>TRANSFER</label>
+				                        </div>
+				                      </div>
+				                    </div>
+								</div>
+								<div class="ui teal top attached message filterOption"><i class='caret right icon'></i>Dest Machine</div>
+								<div class='ui bottom attached segment filterOptionContent'>
+			                    <div class='ui two column grid' style='overflow:hidden'>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>ALL</label>
+			                        </div>
+			                      </div>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>STOCKER</label>
+			                        </div>
+			                      </div>
+			                    </div>
+			                    <div class='ui two column grid' style='overflow:hidden'>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>LIFTER</label>
+			                        </div>
+			                      </div>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>PROCESS</label>
+			                        </div>
+			                      </div>
+			                    </div>
+			                    <div class='ui two column grid' style='overflow:hidden'>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>OHT</label>
+			                        </div>
+			                      </div>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>CONVEYOR</label>
+			                        </div>
+			                      </div>
+			                    </div>
+			                    <div class='ui two column grid' style='overflow:hidden'>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>AGV</label>
+			                        </div>
+			                      </div>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>BRIDGE</label>
+			                        </div>
+			                      </div>
+			                    </div>
+			                    <div class='ui two column grid' style='overflow:hidden'>
+			                      <div class='column MachineFilter'>
+			                        <div class='ui checkbox'>
+			                          <input type='checkbox'><label>TRANSFER</label>
+			                        </div>
+			                      </div>
+			                    </div>
+                  			</div>
+		                 		<div class="ui teal top attached message filterOption"><i class='caret right icon'></i>State</div>
+		                  		<div class='ui bottom attached segment filterOptionContent'>
+                  			</div>
+                  			<div class="ui teal top attached message filterOption"><i class='caret right icon'></i>Time Range</div>
+							<div class='ui bottom attached segment filterOptionContent'>
+							  <div class='ui column grid'>
+							    <div class='column' style='padding:5px !important;'>
+							      <div class="ui form">
+							        <div class="grouped fields">
+							          <div class="field">
+							            <div class="ui radio checkbox timeChk">
+							              <input type="radio" name="fruit" tabindex="0" class="hidden">
+							              <label>Last 10 minutes</label>
+							            </div>
+							          </div>
+							          <div class="field">
+							            <div class="ui radio checkbox timeChk">
+							              <input type="radio" name="fruit" tabindex="0" class="hidden">
+							              <label>Last 1 Hour</label>
+							            </div>
+							          </div>
+							          <div class="field">
+							            <div class="ui radio checkbox timeChk">
+							              <input type="radio" name="fruit" tabindex="0" class="hidden">
+							              <label>Last 1 Day</label>
+							            </div>
+							          </div>
+							          <div class="field">
+							            <div class="ui radio checkbox specifiedChk timeChk">
+							              <input type="radio" name="fruit" tabindex="0" class="hidden">
+							              <label>Specified Range</label>
+							            </div>
+							          </div>
+							          <div class="field specifiedFromTime">
+							            <label>From</label>
+							            <div class="ui labeled input timeRangeInputWrapper">
+							              <div class='ui label timeRangeLabel'>날짜</div>
+							              <input type="date" tabindex="0" class="hidden timeRangeInput">
+							            </div>
+							          </div>
+							          <div class="field specifiedToTime">
+							            <div class="ui labeled input timeRangeInputWrapper">
+							              <div class='ui label timeRangeLabel'>시간</div>
+							              <input type="time" tabindex="0" class="hidden timeRangeInput">
+							            </div>
+							          </div>
+							          <div class="field specifiedFromTime">
+							            <label>To</label>
+							            <div class="ui labeled input timeRangeInputWrapper">
+							              <div class='ui label timeRangeLabel'>날짜</div>
+							              <input type="date" tabindex="0" class="hidden timeRangeInput">
+							            </div>
+							          </div>
+							          <div class="field specifiedToTime">
+							            <div class="ui labeled input timeRangeInputWrapper">
+							              <div class='ui label timeRangeLabel'>시간</div>
+							              <input type="time" tabindex="0" class="hidden timeRangeInput">
+							            </div>
+							          </div>
+							        </div>
+							      </div>
+							    </div>
+							  </div>
+							</div>
+							<div class='ui segment' style='box-shadow:none !important;text-align:center !important; border:0px !important;'>
+								<div class='ui teal basic button' id='searchButton'>Search</div>
+							</div>
+						</div>
+  					</div>
+	  				</div>
+	  				<div class='thirteen wide column' id='rightBodyWrapper'>
+	  					<div class='ui segment rightBody tabHeader' id='tabHeaderId'>
+	  						<div class="ui top attached tabular teal menu tabIconWrapper">
+  								<a class="active statTabClass teal item" data-tab="first">반송실패 이력조회 &nbsp;&nbsp;&nbsp;<i class='large remove circle icon tabRemove'></i></a>
+  								<a class="statTabClass teal item" data-tab="second">Unit Alarm 이력조회 &nbsp;&nbsp;&nbsp;<i class='large remove circle icon tabRemove'></i></a>
+  								<a class="statTabClass teal item" data-tab="third">현재 반송 조회 &nbsp;&nbsp;&nbsp;<i class='large remove circle icon tabRemove'></i></a>
+  							</div>
+  							<div class="active ui bottom attached tab segment tabContent" data-tab="first" id="firstTab">
+    							반송실패 이력조회 화면입니다.
+  							</div>
+  							<div class="ui bottom attached tab segment tabContent" data-tab="second">
+    							Unit Alarm 이력조회 화면입니다.
+  							</div>
+  							<div class="ui bottom attached tab segment tabContent " data-tab="third">
+    							현재 반송 조회
+  							</div>
+	  					</div>
+	  				</div>
+	  			</div>
+	  		</div>
+  		</div>
+  	</div>
+</div>
+<!-- chart modal --------------------------------------------------------------------->
+<div class="ui modal" id='chartModal'>
+  <i class="close icon"></i>
+  <div class="header">
+    DashBoard
+  </div>
+  <div class="image content" id='chartBody'>
+    <div class="description">
+      <div class="ui header">We've auto-chosen a profile image for you.</div>
+    </div>
+  </div>
+  <div class="actions">
+    <div class="ui blue right labeled icon button"  id='chartModalClose'>
+      확인
+      <i class="checkmark icon"></i>
+    </div>
+  </div>
+</div>
+<!-- chart modal --------------------------------------------------------------------->
+<!-- <script src="./resources/js/app.js"></script> -->
+<script src="./resources/js/appJs.js"></script>
