@@ -725,7 +725,15 @@ pre{position:relative}
 
 <div class="main">
   <div class="header">
-    <div class="project-title">📁 Demos V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 하네스 사용중</span></div>
+    <div class="project-title">📁 Demos V1.0 <span style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 10px;border-radius:10px;margin-left:8px;font-weight:500;">Opus SKILL 4.6 하네스 사용중</span>
+      <!-- Hermes Agent ON/OFF 토글 -->
+      <span id="hermesToggle" onclick="toggleHermesMode()" title="Hermes 에이전트 사용 (CLI/대시보드 연동)" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:500;cursor:pointer;user-select:none;background:#f5f5f0;color:#888;border:1px solid #e5e3de;transition:all .15s;">
+        <span id="hermesToggleDot" style="display:inline-block;width:28px;height:14px;border-radius:7px;background:#ccc;position:relative;transition:all .2s;">
+          <span style="position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#fff;transition:all .2s;" id="hermesToggleKnob"></span>
+        </span>
+        <span id="hermesToggleLabel">🤖 Hermes OFF</span>
+      </span>
+    </div>
     <div style="display:flex;align-items:center;gap:6px;">
       <button id="hdCodeBtn" onclick="window.location.href='/code/'" style="font-size:12px;color:#fff;background:#6366f1;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🖥️ 코드 어시스턴트</button>
       <button id="hdKdBtn" onclick="openKnowledgePopup()" style="font-size:12px;color:#fff;background:#22c55e;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">📚 내 지식</button>
@@ -1072,6 +1080,11 @@ let catalog = {};
 let selDomains = [];
 let selSkills = [];
 let autoSkillMode = true;  // 기본 ON
+// Hermes 에이전트 사용 여부 (헤더의 🤖 Hermes ON/OFF 토글). localStorage 에 영속.
+let hermesMode = (function(){
+  try { return localStorage.getItem('demos_hermes_mode') === '1'; }
+  catch(_){ return false; }
+})();
 let selFormat = 'auto';
 let formatManualOverride = false;  // 사용자가 수동으로 출력형식을 변경했는지
 let styleManualOverride = false;   // 사용자가 수동으로 스타일을 변경했는지
@@ -1764,6 +1777,37 @@ function toggleAutoSkill(){
   }
   try { localStorage.setItem('demos_autoSkillMode', autoSkillMode ? '1' : '0'); } catch(e){}
 }
+
+// ===== Hermes Agent ON/OFF =====
+function renderHermesToggle(){
+  const wrap = document.getElementById('hermesToggle');
+  const dot = document.getElementById('hermesToggleDot');
+  const knob = document.getElementById('hermesToggleKnob');
+  const label = document.getElementById('hermesToggleLabel');
+  if(!wrap || !dot || !knob || !label) return;
+  if(hermesMode){
+    wrap.style.background = '#eef2ff';
+    wrap.style.color = '#6366f1';
+    wrap.style.borderColor = '#c7d2fe';
+    dot.style.background = '#6366f1';
+    knob.style.left = '16px';
+    label.textContent = '🤖 Hermes ON';
+  } else {
+    wrap.style.background = '#f5f5f0';
+    wrap.style.color = '#888';
+    wrap.style.borderColor = '#e5e3de';
+    dot.style.background = '#ccc';
+    knob.style.left = '2px';
+    label.textContent = '🤖 Hermes OFF';
+  }
+}
+function toggleHermesMode(){
+  hermesMode = !hermesMode;
+  try { localStorage.setItem('demos_hermes_mode', hermesMode ? '1' : '0'); } catch(_){}
+  renderHermesToggle();
+  // 백엔드 연동은 단계적으로 추가 예정 — 지금은 상태만 토글.
+  console.log('[Hermes] mode =', hermesMode ? 'ON' : 'OFF');
+}
 // 초기 상태 반영 (+ localStorage에서 selSkills/autoSkillMode 복원)
 setTimeout(()=>{
   try {
@@ -1778,6 +1822,7 @@ setTimeout(()=>{
   if(typeof updateLoaded === 'function') updateLoaded();
   if(typeof updateComboActiveMsg === 'function') updateComboActiveMsg();
   document.getElementById('autoSkillToggle').classList.toggle('on', autoSkillMode);
+  renderHermesToggle();  // Hermes 토글 초기 표시 (localStorage 상태 반영)
 }, 200);
 
 // 입력 중 자동 스킬 미리보기 (디바운스)
@@ -2005,6 +2050,7 @@ async function send(){
           ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
           ppt_ref_design: pptRefDesign,
           user_id: currentUser ? currentUser.id : null,
+          hermes_mode: !!hermesMode,
           stream: true,
         }, maxTokens > 0 ? {max_tokens: maxTokens} : {}))
       });
@@ -2123,6 +2169,7 @@ async function send(){
         ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
         ppt_ref_design: pptRefDesign,
         user_id: currentUser ? currentUser.id : null,
+        hermes_mode: !!hermesMode,
       }, maxTokens > 0 ? {max_tokens: maxTokens} : {}))
     });
     const data=await resp.json();
