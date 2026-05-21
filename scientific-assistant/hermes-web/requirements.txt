@@ -1,0 +1,5 @@
+flask>=2.3
+requests>=2.31
+pywinpty>=2.0; sys_platform == "win32"
+# GGUF 추론 (HOME 모드에서만 실제 사용; 회사에선 import 만 되고 안 씀)
+llama-cpp-python>=0.2
