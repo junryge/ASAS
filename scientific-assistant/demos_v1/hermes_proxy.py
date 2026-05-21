@@ -69,12 +69,29 @@ def _strip_unsupported(body):
 
 
 def _forward_headers():
-    """클라이언트(hermes) 가 보낸 헤더를 그대로 upstream 에 전달."""
+    """클라이언트(hermes) 가 보낸 헤더를 그대로 upstream 에 전달.
+    환경변수 HERMES_PROXY_FORCE_SK=1 이면 Authorization Bearer 값이
+    'sk-' 로 시작하지 않을 때 자동으로 'sk-' 접두사를 붙여 보냄
+    (LiteLLM 게이트웨이가 Virtual Key 형식만 검사하는 경우 통과)."""
     h = {}
     for k, v in request.headers.items():
         if k.lower() in ("host", "content-length", "connection"):
             continue
         h[k] = v
+    if os.environ.get("HERMES_PROXY_FORCE_SK", "0") in ("1", "true", "yes"):
+        a = h.get("Authorization") or h.get("authorization")
+        if a:
+            parts = a.split(" ", 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                val = parts[1]
+                if not val.startswith("sk-"):
+                    h["Authorization"] = f"Bearer sk-{val}"
+                    print(f"[PROXY] FORCE_SK: 토큰 앞에 'sk-' 추가 (원래 길이 {len(val)})")
+    # 환경변수 HERMES_PROXY_OVERRIDE_KEY 이 있으면 그 값으로 통째 대체
+    override = os.environ.get("HERMES_PROXY_OVERRIDE_KEY", "").strip()
+    if override:
+        h["Authorization"] = f"Bearer {override}"
+        print(f"[PROXY] OVERRIDE_KEY 사용 (길이 {len(override)})")
     return h
 
 
