@@ -78,6 +78,22 @@ def _forward_headers():
     return h
 
 
+def _mask_auth(h):
+    """디버깅용: Authorization 값 마스킹해서 짧게 보여주기."""
+    a = h.get("Authorization") or h.get("authorization") or ""
+    if not a:
+        return "(none)"
+    parts = a.split(" ", 1)
+    if len(parts) == 2:
+        scheme, val = parts
+        if len(val) <= 12:
+            tail = val
+        else:
+            tail = val[:6] + "..." + val[-4:]
+        return f"{scheme} {tail} (len={len(val)})"
+    return f"(raw, len={len(a)})"
+
+
 @app.route("/v1/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE"])
 def proxy_v1(subpath):
     upstream_url = f"{UPSTREAM}/v1/{subpath}"
@@ -101,6 +117,12 @@ def proxy_v1(subpath):
             f"messages={len(body.get('messages') or [])} "
             f"removed={removed}"
         )
+        print(f"[PROXY] auth = {_mask_auth(headers)}")
+        # 추가 헤더 중 흥미로운 것만 골라서 보여줌
+        extra = {k: v for k, v in headers.items()
+                 if k.lower() not in ("authorization", "content-type", "user-agent", "accept", "accept-encoding")}
+        if extra:
+            print(f"[PROXY] extra headers = {list(extra.keys())}")
         body_payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
     else:
