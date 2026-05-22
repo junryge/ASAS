@@ -68,57 +68,41 @@ _ANSI_RE = re.compile(
     r"|\x1b\][0-9]+;[^\x07\x1b]*"
 )
 
+# hermes CLI TUI 노이즈: 박스 드로잉, 메타 헤더만 — 마크다운 불릿/표는 보존
 NOISE_PREFIXES = (
-    "✔", "ℹ", "→", "←", "•", "│", "├", "└", "┌", "┐",
+    "✔", "ℹ",
     "Elapsed:", "Context:", "Session:", "Resume", "Duration:",
-    "Messages:", "hermes --resume", "  hermes --resume", "─", "═",
+    "Messages:", "hermes --resume", "  hermes --resume",
     "Query:", "Initializing", "Initialized",
 )
 
-# Hermes 메타 줄 (어디든 매치) — Session/Elapsed/Duration/Messages/hermes --resume
+# Hermes 메타 줄 (어디든 매치)
 _META_LINE_RE = re.compile(
     r"\b(Session|Elapsed|Context|Duration|Messages|Resume\sthis\ssession)\s*:|"
     r"hermes\s+--resume\s+\S+",
-    re.IGNORECASE,
 )
 
-# 영어 CoT 사고 패턴 (줄 시작 매치) — 모델이 답 전에 토하는 reasoning 종합
-_EN_COT_RE = re.compile(
-    r"^(The user|I should|I'?ll|I will|I need(?:\s+to)?|I am going|I'?m going|"
-    r"Let me|Let's|Looking at|First[,\s]|Now[,\s]|Wait[,\s]|Actually[,\s]|"
-    r"Hmm[,\s]|Okay[,\s]|OK[,\s]|So[,\s]|Well[,\s]|"
-    r"Based on|Since the user|This is|It (?:seems|appears|looks)|"
-    r"To (?:be|respond|answer|help|provide)|Given the|"
-    r"My (?:response|answer|plan|task)|"
-    r"Step \d+|First,|Second,|Third,|"
-    # 흔한 thinking 헤더 (위 외 추가)
-    r"Here'?s (?:a|the|my)|Thinking|Analyze|"
-    r"Plan\s*:|Response\s*:|Note\s*:|Intent\s*:|Language\s*:|"
-    r"Final (?:plan|check|response|answer|decision)\s*[:.]?|"
-    r"Response construction|Response plan|"
-    r"One (?:thing|detail|important)|"
-    r"Host\s*:|Shell\s*:|Working directory|"
-    r"The prompt|The system prompt|"
-    r"User said|User says|User is asking|User wants|"
-    r"\d+\.\s+(?:Acknowledge|Analyze|Identify|Understand|Determine|Reply|Respond|Plan|Output|Generate|Process)|"
-    r"Output\s*:|Output format|Output construction|"
-    r"No (?:tools|skills|markdown|memory)|"
-    r"\(In Korean\)|\(Hello|\(Goodbye|"
-    r"Reasoning|Inner monologue|"
-    r"Considering|Thinking about|Thinking process)",
-    re.IGNORECASE,
-)
+# 박스 드로잉만으로 이뤄진 구분선 — 앞에 한 글자(예: "Q") 가 붙어있어도 매치
+_BOXLINE_RE = re.compile(r"^[A-Z]?\s*[─═━┌┐└┘├┤┬┴┼│]{3,}\s*$")
 
-# "Response: ..." 또는 "**최종 답변:**" 같은 마커 뒤만 추출하는 후처리용
-_FINAL_MARKER_RE = re.compile(
-    r"(?:^|\n)\s*(?:Response\s*:|Final (?:response|answer)\s*[:.]?|"
-    r"답변\s*:|최종\s*답변\s*:|결론\s*:)\s*(.+?)$",
-    re.IGNORECASE | re.DOTALL,
+# hermes 가 답변 전에 토하는 "Q\n" 단독 prompt-echo 라인
+_Q_PROMPT_RE = re.compile(r"^Q\s*$")
+
+# 명시적 thinking 마커 (보수적) — 일반 산문은 절대 안 잡게
+_THINK_MARKER_RE = re.compile(
+    r"^\s*(?:<think>|</think>|<thinking>|</thinking>|"
+    r"\[?Inner monologue\]?|\[?Reasoning\]?\s*:)",
+    re.IGNORECASE,
 )
 
 
 def _strip_ansi(s):
     return _ANSI_RE.sub("", s or "")
+
+
+def _normalize_for_match(s):
+    """선두/끝 비가시 문자 제거 — prefix 매치 신뢰성 확보."""
+    return (s or "").strip().lstrip("​﻿\xa0")
 
 
 def _is_proxy_alive():
@@ -665,6 +649,54 @@ def api_skills():
     })
 
 
+@app.route("/api/skill/<sid>")
+def api_skill_detail(sid):
+    """SKILL.md 전체 내용 + frontmatter 메타 반환 (progressive disclosure Tier 2)."""
+    # 디렉토리 traversal 방지
+    if not sid or "/" in sid or "\\" in sid or sid.startswith("."):
+        return jsonify({"error": "invalid skill id"}), 400
+    d = os.path.join(SKILLS_DIR, sid)
+    skill_md = os.path.join(d, "SKILL.md")
+    if not os.path.isfile(skill_md):
+        return jsonify({"error": "SKILL.md not found", "id": sid}), 404
+    try:
+        with open(skill_md, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception as e:
+        return jsonify({"error": f"read fail: {e}"}), 500
+
+    name, desc = None, ""
+    m = re.match(r"---\s*\n([\s\S]+?)\n---\s*\n", text)
+    body = text
+    if m:
+        front = m.group(1)
+        body = text[m.end():]
+        nm = re.search(r"^name:\s*(.+?)$", front, re.MULTILINE)
+        dm = re.search(r"^description:\s*(.+?)$", front, re.MULTILINE)
+        if nm:
+            name = nm.group(1).strip().strip('"').strip("'")
+        if dm:
+            desc = dm.group(1).strip().strip('"').strip("'")
+
+    # 보조 파일 리스트 (references/*, scripts/*)
+    files = []
+    for sub in ("references", "scripts", "assets"):
+        sd = os.path.join(d, sub)
+        if os.path.isdir(sd):
+            for fn in sorted(os.listdir(sd)):
+                fp = os.path.join(sd, fn)
+                if os.path.isfile(fp):
+                    files.append(f"{sub}/{fn}")
+
+    return jsonify({
+        "id": sid,
+        "name": name or sid,
+        "description": desc,
+        "body": body,
+        "files": files,
+    })
+
+
 @app.route("/api/translate-skills", methods=["POST"])
 def api_translate_skills():
     """프록시(:8765/v1) 통해 LLM 으로 영문 description → 한글 요약. 배치 처리.
@@ -762,6 +794,8 @@ def api_chat():
     data = request.json or {}
     messages = data.get("messages") or []
     skill_ids = [s for s in (data.get("skills") or []) if s and isinstance(s, str)]
+    raw_mode = bool(data.get("raw", False))
+    session_id = (data.get("session_id") or "").strip()
 
     last_user = ""
     for m in reversed(messages):
@@ -771,6 +805,13 @@ def api_chat():
                 last_user = c
             break
 
+    # 입력 에코 매치용: 사용자가 보낸 메시지의 각 비공백 줄을 집합으로
+    echo_lines = set()
+    for ln in (last_user or "").splitlines():
+        t = ln.strip()
+        if t:
+            echo_lines.add(t)
+
     def gen():
         info = ("Hermes — 전달된 스킬: " + ", ".join(skill_ids)) \
                if skill_ids else "Hermes (자동 스킬 판단)"
@@ -779,6 +820,8 @@ def api_chat():
             "env_mode": ENV_MODE,
             "loaded_skills": skill_ids,
             "info": info,
+            "session_id_in": session_id or None,
+            "raw": raw_mode,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
@@ -804,6 +847,8 @@ def api_chat():
             return
 
         cmd = [hermes_bin]
+        if session_id:
+            cmd += ["--resume", session_id]
         if skill_ids:
             cmd += ["-s", ",".join(skill_ids)]
         cmd += ["chat", "-q", last_user]
@@ -812,34 +857,54 @@ def api_chat():
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("TERM", "xterm-256color")
 
-        print(f"[chat] cmd={cmd}  (winpty={_USE_WINPTY})")
+        print(f"[chat] cmd={cmd}  (winpty={_USE_WINPTY}, raw={raw_mode}, sid_in={session_id})")
 
         new_sid = None
         line_count = 0
         emit_count = 0
+        # 답변 본문이 시작되었는가 — 한 번 시작되면 에코 필터 끔
+        body_started = [False]
 
-        def _proc_line(raw):
+        def _proc_line(rawline):
             nonlocal new_sid
-            line = _strip_ansi(raw.rstrip("\r\n"))
-            # session_id 추출 후 그 줄은 무조건 거름
+            line = _strip_ansi(rawline.rstrip("\r\n"))
+            # session_id 는 항상 추출 (raw 모드여도 sid 는 필요)
             mm = re.search(r"hermes\s+--resume\s+(\S+)", line)
             if mm:
                 new_sid = mm.group(1)
+                if not raw_mode:
+                    return None  # 메타라인은 일반 모드에서만 숨김
+
+            if raw_mode:
+                # 그대로 통과 (디버그용)
+                if line:
+                    return line + "\n"
                 return None
-            s = line.strip()
+
+            s = _normalize_for_match(line)
             if not s:
                 return None
-            # 박스/구분선/이니셜라이즈/쿼리 같은 hermes TUI 노이즈
+            # 박스/구분선 (앞에 한 글자가 붙어있어도 매치)
+            if _BOXLINE_RE.match(s):
+                return None
+            # "Q" 단독 prompt-echo
+            if _Q_PROMPT_RE.match(s):
+                return None
+            # NOISE_PREFIXES (정규화 후 prefix 매치)
             if any(s.startswith(p) for p in NOISE_PREFIXES):
                 return None
             if "⚕ Hermes" in s:
                 return None
-            # 세션·실행시간·컨텍스트 메타 줄 (위치 상관없이 매치)
             if _META_LINE_RE.search(s):
                 return None
-            # 영어 CoT 사고 줄 (모델이 답 전에 토하는 reasoning)
-            if _EN_COT_RE.match(s):
+            # 명시적 thinking 마커만 필터 (보수적)
+            if _THINK_MARKER_RE.match(s):
                 return None
+            # 입력 에코 — 답변 본문 시작 전까지만 드롭
+            if not body_started[0] and s in echo_lines:
+                return None
+            # 한 줄 답변이 시작된 시점부터는 에코 필터 비활성
+            body_started[0] = True
             return s + "\n"
 
         if _USE_WINPTY and _WINPTY_MOD is not None:
