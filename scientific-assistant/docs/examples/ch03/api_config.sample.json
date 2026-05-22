@@ -1,0 +1,67 @@
+{
+  "_doc": "Chapter 3 학습용 샘플. 운영 api_config.json 을 망가뜨리지 말고 이 파일로 실험하세요.",
+  "_updated": "2026-04-29 - 신규 모델 추가 예시 포함",
+
+  "token_settings": {
+    "agent_max_tokens": 8192,
+    "synth_max_tokens": 16384,
+    "default_n_ctx": 4096,
+    "gguf_reply_cap": 4096,
+    "gguf_ctx_reserve": 1536
+  },
+
+  "gguf": {
+    "max_pool_size": 4,
+    "vram_budget_gb": 14
+  },
+
+  "models": {
+    "qwen3-coder-30b": {
+      "env_id": "coder-common",
+      "model": "Qwen3-Coder-30B-A3B-Instruct",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "Coder-30B-A3B (Common) ★ default",
+      "capabilities": ["text", "code", "medium"],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "low",
+      "defaults": { "temperature": 0.1, "top_p": 0.9 }
+    },
+
+    "qwen3-next-80b": {
+      "env_id": "summary",
+      "model": "Qwen3-Next-80B-A3B-Instruct",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "Next-80B (Common)",
+      "capabilities": ["text", "analysis", "medium"],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "medium",
+      "defaults": { "temperature": 0.4 }
+    },
+
+    "qwen3-math-7b-EXAMPLE": {
+      "_note": "신규 모델 추가 예시 — 실제 사내에 배포되어 있는지는 별도 확인 필요",
+      "env_id": "math",
+      "model": "Qwen3-Math-7B-Instruct",
+      "url": "http://common.llm.skhynix.com/v1/chat/completions",
+      "name": "Math-7B (Common)",
+      "capabilities": ["text", "math", "fast"],
+      "context_window": 32000,
+      "priority": 3,
+      "cost_tier": "low"
+    },
+
+    "_qwen3-vl-30b-DISABLED": {
+      "_note": "키 앞에 _ 를 붙여 비활성. 코드 수정 없이 메뉴에서 빠집니다.",
+      "env_id": "vl-fast",
+      "model": "Qwen3-VL-30B-A3B-Instruct",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "VL-30B-A3B (Vision/HCP)",
+      "capabilities": ["text", "vision", "fast"],
+      "context_window": 128000,
+      "priority": 99,
+      "cost_tier": "low"
+    }
+  }
+}
