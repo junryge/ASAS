@@ -205,9 +205,402 @@ def _scan_skills():
             "id": entry,
             "name": name or entry,
             "description": desc,
+            "category": _categorize(entry, name or entry, desc or ""),
         })
     _SKILL_CACHE = items
     return items
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 스킬 대분류 (8개 + 기타)
+# ─────────────────────────────────────────────────────────────────────────────
+SKILL_CATEGORIES = [
+    {"key": "all",     "name": "전체"},
+    {"key": "code",    "name": "코드 작성"},
+    {"key": "review",  "name": "코드 리뷰·디버깅"},
+    {"key": "docs",    "name": "문서·MD·PPT"},
+    {"key": "skill",   "name": "스킬·에이전트 만들기"},
+    {"key": "data",    "name": "데이터·DB"},
+    {"key": "science", "name": "과학·리서치"},
+    {"key": "design",  "name": "시각화·디자인"},
+    {"key": "ops",     "name": "Git·배포·DevOps"},
+    {"key": "etc",     "name": "기타"},
+]
+
+# 명시 오버라이드 — 패턴으로 안 잡히는 항목들
+_CATEGORY_OVERRIDE = {
+    # ── 코드 리뷰·디버깅 ──
+    "code-review": "review",
+    "requesting-code-review": "review",
+    "peer-review": "review",
+    "debugging": "review",
+    "systematic-debugging": "review",
+    "test-driven-development": "review",
+    "webapp-testing": "review",
+    "verification-before-completion": "review",
+    "owasp-security": "review",
+    "scholar-evaluation": "review",
+    "scientific-critical-thinking": "review",
+    "agent-code-reviewer": "review",
+    "agent-debugger": "review",
+    "agent-error-coordinator": "review",
+    "agent-error-detective": "review",
+    "agent-test-automator": "review",
+    "agent-qa-expert": "review",
+    "agent-chaos-engineer": "review",
+    "agent-architect-reviewer": "review",
+    "agent-refactoring-specialist": "review",
+    "agent-legacy-modernizer": "review",
+    "agent-security-auditor": "review",
+    "agent-security-engineer": "review",
+    "agent-penetration-tester": "review",
+    "agent-compliance-auditor": "review",
+
+    # ── 문서·MD·PPT ──
+    "markdown-mermaid-writing": "docs",
+    "md-to-html": "docs",
+    "pdf": "docs",
+    "pptx": "docs",
+    "xlsx": "docs",
+    "docx": "docs",
+    "markitdown": "docs",
+    "repomix": "docs",
+    "citation-management": "docs",
+    "weekly-report": "docs",
+    "scientific-writing": "docs",
+    "scientific-slides": "docs",
+    "clinical-reports": "docs",
+    "treatment-plans": "docs",
+    "latex-posters": "docs",
+    "pptx-posters": "docs",
+    "venue-templates": "docs",
+    "research-grants": "docs",
+    "market-research-reports": "docs",
+    "iso-13485-certification": "docs",
+    "internal-comms": "docs",
+    "paper-2-web": "docs",
+    "changelog-generator": "docs",
+    "drawio-diagram": "docs",
+    "content-research-writer": "docs",
+    "writing-plans": "docs",
+    "literature-review": "docs",
+    "agent-documentation-engineer": "docs",
+    "agent-technical-writer": "docs",
+    "agent-api-documenter": "docs",
+    "agent-content-marketer": "docs",
+
+    # ── 스킬·에이전트 만들기 / 프롬프트 ──
+    "skill-creator": "skill",
+    "skill-share": "skill",
+    "template-skill": "skill",
+    "writing-skills": "skill",
+    "engineer-skill-creator": "skill",
+    "mcp-builder": "skill",
+    "anthropic-architect": "skill",
+    "anthropic-prompt-engineer": "skill",
+    "openai-prompt-engineer": "skill",
+    "claude-code": "skill",
+    "using-superpowers": "skill",
+    "guide-hooks": "skill",
+    "developer-growth-analysis": "skill",
+    "agent-mcp-developer": "skill",
+    "agent-prompt-engineer": "skill",
+    "agent-llm-architect": "skill",
+    "agent-ai-engineer": "skill",
+    "agent-context-manager": "skill",
+    "agent-agent-organizer": "skill",
+    "agent-multi-agent-coordinator": "skill",
+    "agent-workflow-orchestrator": "skill",
+    "agent-task-distributor": "skill",
+
+    # ── Git · 배포 · DevOps ──
+    "devops": "ops",
+    "github-ecosystem": "ops",
+    "guide-git": "ops",
+    "guide-github-actions": "ops",
+    "modal": "ops",
+    "agent-deployment-engineer": "ops",
+    "agent-devops-engineer": "ops",
+    "agent-devops-incident-responder": "ops",
+    "agent-incident-responder": "ops",
+    "agent-build-engineer": "ops",
+    "agent-cloud-architect": "ops",
+    "agent-kubernetes-specialist": "ops",
+    "agent-terraform-engineer": "ops",
+    "agent-sre-engineer": "ops",
+    "agent-platform-engineer": "ops",
+    "agent-network-engineer": "ops",
+    "agent-dependency-manager": "ops",
+    "agent-tooling-engineer": "ops",
+    "agent-dx-optimizer": "ops",
+    "agent-git-workflow-manager": "ops",
+
+    # ── 시각화·디자인 ──
+    "matplotlib": "design",
+    "plotly": "design",
+    "seaborn": "design",
+    "scientific-visualization": "design",
+    "scientific-schematics": "design",
+    "aesthetic": "design",
+    "ui-styling": "design",
+    "frontend-design": "design",
+    "web-design-guidelines": "design",
+    "brand-guidelines": "design",
+    "theme-factory": "design",
+    "canvas-design": "design",
+    "infographics": "design",
+    "generate-image": "design",
+    "image-enhancer": "design",
+    "slack-gif-creator": "design",
+    "artifacts-builder": "design",
+    "web-artifacts-builder": "design",
+    "agent-ui-designer": "design",
+    "agent-ux-researcher": "design",
+
+    # ── 데이터·DB (DataFrame/대용량/금융 데이터 포함) ──
+    "databases": "data",
+    "polars": "data",
+    "dask": "data",
+    "vaex": "data",
+    "zarr-python": "data",
+    "edgartools": "data",
+    "alpha-vantage": "data",
+    "fred-economic-data": "data",
+    "hedgefundmonitor": "data",
+    "usfiscaldata": "data",
+    "datacommons-client": "data",
+    "logpresso-query": "data",
+    "logpresso-search": "data",
+    "tiledbvcf": "data",
+    "agent-data-analyst": "data",
+    "agent-data-engineer": "data",
+    "agent-database-administrator": "data",
+    "agent-database-optimizer": "data",
+    "agent-postgres-pro": "data",
+    "agent-sql-pro": "data",
+
+    # ── 과학·리서치 ──
+    "biopython": "science",
+    "scanpy": "science",
+    "scvi-tools": "science",
+    "scvelo": "science",
+    "anndata": "science",
+    "cellxgene-census": "science",
+    "deepchem": "science",
+    "rdkit": "science",
+    "datamol": "science",
+    "molfeat": "science",
+    "medchem": "science",
+    "torchdrug": "science",
+    "diffdock": "science",
+    "esm": "science",
+    "alphafold-database": "science",
+    "molecular-dynamics": "science",
+    "phylogenetics": "science",
+    "etetoolkit": "science",
+    "astropy": "science",
+    "fluidsim": "science",
+    "pymatgen": "science",
+    "matlab": "science",
+    "sympy": "science",
+    "cobrapy": "science",
+    "arboreto": "science",
+    "geniml": "science",
+    "gtars": "science",
+    "flowio": "science",
+    "histolab": "science",
+    "pathml": "science",
+    "matchms": "science",
+    "pyopenms": "science",
+    "pysam": "science",
+    "deeptools": "science",
+    "pydeseq2": "science",
+    "scikit-bio": "science",
+    "scikit-survival": "science",
+    "pydicom": "science",
+    "pyhealth": "science",
+    "neurokit2": "science",
+    "neuropixels-analysis": "science",
+    "pytdc": "science",
+    "geomaster": "science",
+    "geopandas": "science",
+    "clinical-decision-support": "science",
+    "glycoengineering": "science",
+    "imaging-data-commons": "science",
+    "pyzotero": "science",
+    "scientific-brainstorming": "science",
+    "hypothesis-generation": "science",
+    "hypogenic": "science",
+    "denario": "science",
+    "research-lookup": "science",
+    "bgpt-paper-search": "science",
+    "notebooklm-skill": "science",
+    "open-notebook": "science",
+    "perplexity-search": "science",
+    "parallel-web": "science",
+    "ai-multimodal": "science",
+    "statistical-analysis": "science",
+    "statsmodels": "science",
+    "pymc": "science",
+    "pymoo": "science",
+    "shap": "science",
+    "umap-learn": "science",
+    "networkx": "science",
+    "transformers": "science",
+    "scikit-learn": "science",
+    "pytorch-lightning": "science",
+    "torch-geometric": "science",
+    "stable-baselines3": "science",
+    "pufferlib": "science",
+    "timesfm-forecasting": "science",
+    "aeon": "science",
+    "qiskit": "science",
+    "cirq": "science",
+    "pennylane": "science",
+    "qutip": "science",
+    "rowan": "science",
+    "simpy": "science",
+    "lamindb": "science",
+    "bioservices": "science",
+    "gget": "science",
+    "adaptyv": "science",
+    "benchling-integration": "science",
+    "ginkgo-cloud-lab": "science",
+    "opentrons-integration": "science",
+    "pylabrobot": "science",
+    "protocolsio-integration": "science",
+    "labarchive-integration": "science",
+    "dnanexus-integration": "science",
+    "latchbio-integration": "science",
+    "omero-integration": "science",
+    "exploratory-data-analysis": "science",
+    "agent-data-scientist": "science",
+    "agent-data-researcher": "science",
+    "agent-research-analyst": "science",
+    "agent-machine-learning-engineer": "science",
+    "agent-ml-engineer": "science",
+    "agent-mlops-engineer": "science",
+    "agent-nlp-engineer": "science",
+    "agent-quant-analyst": "science",
+    "agent-knowledge-synthesizer": "science",
+    "agent-market-researcher": "science",
+    "agent-competitive-analyst": "science",
+    "agent-trend-analyst": "science",
+    "agent-business-analyst": "science",
+    "agent-search-specialist": "science",
+
+    # ── 코드 작성 (개발 가이드/프레임워크) ──
+    "frontend-development": "code",
+    "backend-development": "code",
+    "web-frameworks": "code",
+    "react-best-practices": "code",
+    "python-project-skel": "code",
+    "python-deprecation-fixer": "code",
+    "better-auth": "code",
+    "shopify": "code",
+    "chrome-devtools": "code",
+    "docs-seeker": "code",
+    "guide-python": "code",
+    "guide-react": "code",
+    "guide-golang": "code",
+    "guide-opus-4-5": "code",
+    "guide-opus-4-5-agent": "code",
+    "guide-opus-migration": "code",
+    "guide-mcp-reference": "code",
+    "guide-version-discovery": "code",
+    "guide-claude-md": "docs",
+    "guide-documentation": "docs",
+    "guide-testing": "review",
+    "guide-hmhco": "etc",
+
+    # ── 기타 ──
+    "common": "etc",
+    "get-available-resources": "etc",
+    "file-organizer": "etc",
+    "invoice-organizer": "etc",
+    "raffle-winner-picker": "etc",
+    "video-downloader": "etc",
+    "media-processing": "etc",
+    "datadog-entity-generator": "ops",
+    "competitive-ads-extractor": "science",
+    "domain-name-brainstormer": "etc",
+    "lead-research-assistant": "science",
+    "meeting-insights-analyzer": "science",
+    "knowledge-search": "docs",
+    "offer-k-dense-web": "skill",
+    "brainstorming": "skill",
+    "consciousness-council": "skill",
+    "sequential-thinking": "skill",
+    "problem-solving": "skill",
+    "what-if-oracle": "skill",
+    "dhdna-profiler": "skill",
+    "openalex-database": "data",
+
+    # ── 보정 (패턴이 잘못 잡는 항목) ──
+    "agent-fintech-engineer": "code",
+    "agent-embedded-systems": "code",
+    "agent-iot-engineer": "code",
+    "agent-game-developer": "code",
+    "agent-accessibility-tester": "design",
+    "agent-performance-monitor": "ops",
+    "agent-performance-engineer": "ops",
+    "cmd-deep-research": "science",
+    "cmd-explore": "skill",
+    "agent-api-designer": "code",
+    "depmap": "science",
+    "primekg": "science",
+    "google-adk-python": "skill",
+}
+
+
+def _categorize(sid, name, desc):
+    """스킬 ID → 대분류 키. 명시 매핑 우선, 다음 패턴 규칙."""
+    if sid in _CATEGORY_OVERRIDE:
+        return _CATEGORY_OVERRIDE[sid]
+
+    # 패턴: 명확한 그룹
+    if sid.startswith("cmd-git-"):
+        return "ops"
+    if sid.startswith("cmd-cr"):
+        return "review"
+    if sid.endswith("-database"):
+        return "data"
+    if sid.startswith("guide-"):
+        return "docs"
+
+    # agent-* 패턴 분기
+    if sid.startswith("agent-"):
+        tail = sid[len("agent-"):]
+        # ops 키워드
+        if any(k in tail for k in ("devops", "deployment", "cloud", "kubernetes",
+                                   "terraform", "sre", "platform", "network",
+                                   "incident", "build-", "datadog")):
+            return "ops"
+        # review/QA/security 키워드
+        if any(k in tail for k in ("security", "penetration", "auditor", "debug",
+                                   "error", "test", "qa", "chaos", "reviewer",
+                                   "refactor", "legacy", "compliance")):
+            return "review"
+        # data 키워드
+        if any(k in tail for k in ("data-", "database", "postgres", "sql")):
+            return "data"
+        # design 키워드
+        if any(k in tail for k in ("ui-", "ux-", "designer")):
+            return "design"
+        # docs/비즈니스 키워드
+        if any(k in tail for k in ("writer", "documenter", "marketer", "scrum-",
+                                   "project-manager", "product-manager",
+                                   "scrum-master", "customer-", "sales-",
+                                   "legal-", "risk-", "fintech",
+                                   "seo-", "payment-")):
+            return "docs"
+        # 개발 직군
+        if any(k in tail for k in ("-developer", "-pro", "-expert", "-specialist",
+                                   "-architect", "-engineer", "-master")):
+            return "code"
+        return "etc"
+
+    return "etc"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,6 +661,7 @@ def api_skills():
         "count": len(items),
         "skills": items,
         "kr_cached": sum(1 for it in items if it["description_kr"]),
+        "categories": SKILL_CATEGORIES,
     })
 
 

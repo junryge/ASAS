@@ -149,6 +149,25 @@
   .side-search input::placeholder { color: var(--text-mute); font-style: italic; }
   .side-search input:focus { border-color: var(--gold); box-shadow: var(--shadow-gold); }
 
+  .side-cat { padding: 0 18px 12px; }
+  .side-cat select {
+    width: 100%; padding: 9px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text); font-size: 12.5px;
+    outline: none; transition: all 0.15s;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-mute) 50%),
+                      linear-gradient(135deg, var(--text-mute) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .side-cat select:focus { border-color: var(--gold); box-shadow: var(--shadow-gold); }
+
   .side-stat {
     padding: 0 22px 8px;
     display: flex; justify-content: space-between;
@@ -481,6 +500,11 @@
     <div class="side-search">
       <input id="search" type="text" placeholder="스킬 검색…" autocomplete="off" />
     </div>
+    <div class="side-cat">
+      <select id="categorySel" onchange="renderSkills()">
+        <option value="all">전체 카테고리</option>
+      </select>
+    </div>
     <div class="side-stat">
       <span id="skillCount">0 SKILLS</span>
       <span class="sel" id="selectedCount">0 SELECTED</span>
@@ -582,6 +606,7 @@ async function loadSkills() {
     const r = await fetch("/api/skills");
     const d = await r.json();
     allSkills = d.skills || [];
+    populateCategories(d.categories || [], allSkills);
     document.getElementById("skillCount").textContent = `${allSkills.length} SKILLS`;
     renderSkills();
   } catch (e) {
@@ -589,15 +614,36 @@ async function loadSkills() {
       '<div style="padding:24px;color:var(--text-mute);font-size:11px;text-align:center;letter-spacing:0.1em;">SKILLS 로드 실패</div>';
   }
 }
+function populateCategories(cats, skills) {
+  const sel = document.getElementById("categorySel");
+  if (!sel || !cats.length) return;
+  // 카테고리별 카운트
+  const counts = {};
+  skills.forEach(s => { counts[s.category] = (counts[s.category] || 0) + 1; });
+  const total = skills.length;
+  const cur = sel.value || "all";
+  sel.innerHTML = cats.map(c => {
+    const n = c.key === "all" ? total : (counts[c.key] || 0);
+    return `<option value="${c.key}">${c.name} (${n})</option>`;
+  }).join("");
+  sel.value = cats.some(c => c.key === cur) ? cur : "all";
+}
 function renderSkills() {
   const q = document.getElementById("search").value.trim().toLowerCase();
+  const catSel = document.getElementById("categorySel");
+  const cat = catSel ? catSel.value : "all";
   const list = document.getElementById("skillList");
-  const filtered = q
-    ? allSkills.filter(s =>
-        (s.id || "").toLowerCase().includes(q) ||
-        (s.name || "").toLowerCase().includes(q) ||
-        (s.description || "").toLowerCase().includes(q))
-    : allSkills;
+  let filtered = allSkills;
+  if (cat && cat !== "all") {
+    filtered = filtered.filter(s => (s.category || "etc") === cat);
+  }
+  if (q) {
+    filtered = filtered.filter(s =>
+      (s.id || "").toLowerCase().includes(q) ||
+      (s.name || "").toLowerCase().includes(q) ||
+      (s.description || "").toLowerCase().includes(q) ||
+      (s.description_kr || "").toLowerCase().includes(q));
+  }
   list.innerHTML = filtered.map(s => {
     const id = s.id, name = s.name || id;
     // 한글 캐시 있으면 우선 사용, 없으면 영문
