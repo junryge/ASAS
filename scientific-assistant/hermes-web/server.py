@@ -2,8 +2,9 @@
 Hermes Web — 독립 Flask 웹 UI
 
 - demos_v1 와 완전 분리. demos 실행 여부와 무관하게 동작.
-- 단, demos_v1/hermes_proxy.py (:8765) 가 떠있어야 hermes 가 응답함.
-- hermes 자체는 자기 ~/.hermes/config.yaml 의 model/base_url 사용 (변경 X).
+- 단, hermes-web/hermes_proxy.py (:8765) 가 떠있어야 hermes 가 응답함.
+- hermes 자체는 ~/.hermes/config.yaml 의 model/base_url 사용
+  (템플릿: hermes-web/hermes_config.yaml — common.llm.skhynix.com + Kimi-K2.5 디폴트).
 - 환경 자동감지: F:/M14_Q/... 존재하면 HOME, C:/연구과제/... 존재하면 OFFICE.
 
 라우트:
@@ -829,7 +830,7 @@ def api_chat():
             err = {
                 "type": "error",
                 "error": f"프록시(:{PROXY_PORT}) 가 떠있지 않습니다",
-                "detail": f"python {SCIENTIFIC_BASE}/demos_v1/hermes_proxy.py",
+                "detail": f"python {os.path.dirname(os.path.abspath(__file__))}/hermes_proxy.py",
             }
             yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"

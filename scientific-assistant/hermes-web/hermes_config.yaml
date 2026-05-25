@@ -1,19 +1,19 @@
 # =============================================================================
-# Hermes Agent — Demos V1 모델 + 스킬 카탈로그
+# Hermes Agent — hermes-web 전용 모델/스킬 카탈로그 (demos_v1 와 무관)
 # =============================================================================
 # hermes-agent (https://github.com/NousResearch/hermes-agent) 에게 "쓸 수 있는
-# 모델/스킬 이거다" 알려주는 인벤토리. 사용 가능한 LLM 엔드포인트 10종 + Demos
-# 의 scientific-skills 389종 메타가 모두 포함됨.
+# 모델/스킬 이거다" 알려주는 인벤토리. tool-call 검증된 LLM 4종 + 채팅 전용
+# 10종 + scientific-skills 389종 메타.
 #
 # 배포 (PowerShell):
 #   pip install "hermes-agent[all]"
 #   mkdir $env:USERPROFILE\.hermes -ErrorAction SilentlyContinue
-#   copy "scientific-assistant\demos_v1\hermes_config.yaml" "$env:USERPROFILE\.hermes\config.yaml"
+#   copy "scientific-assistant\hermes-web\hermes_config.yaml" "$env:USERPROFILE\.hermes\config.yaml"
 #   $env:OPENAI_API_KEY = "<TOKEN.TXT 의 값>"
 #
 # 참고:
-#   - defaults: 기본 LLM 엔드포인트 (OpenAI-호환 HCP vLLM)
-#   - models: 10개 모델 메타 (id/name/url/capabilities/context_window/priority/cost_tier)
+#   - defaults: 기본 LLM 엔드포인트 = common.llm.skhynix.com + Kimi-K2.5 (Agent ready)
+#   - models: ★ 표시 = capabilities 에 tools/function_calling 선언됨 (도구 사용 가능)
 #   - skills.catalog: 389 스킬 (id/name/description/path/has_scripts/has_references)
 #
 # hermes-agent 버전 별로 키 이름이 다를 수 있음 — `hermes --help` 결과와 대조 후
