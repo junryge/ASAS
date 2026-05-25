@@ -41,12 +41,12 @@ elif os.path.isdir(OFFICE_BASE):
     ENV_MODE = "OFFICE"
     SCIENTIFIC_BASE = OFFICE_BASE
     TOKEN_FILE = os.path.join(OFFICE_BASE, "TOKEN.TXT")
-    HCP_UPSTREAM = os.environ.get("HERMES_UPSTREAM", "http://dev.hcp.llm.skhynix.com")
+    HCP_UPSTREAM = os.environ.get("HERMES_UPSTREAM", "http://common.llm.skhynix.com")
 else:
     ENV_MODE = "UNKNOWN"
     SCIENTIFIC_BASE = os.path.dirname(os.path.abspath(__file__))
     TOKEN_FILE = None
-    HCP_UPSTREAM = os.environ.get("HERMES_UPSTREAM", "http://dev.hcp.llm.skhynix.com")
+    HCP_UPSTREAM = os.environ.get("HERMES_UPSTREAM", "http://common.llm.skhynix.com")
 
 LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = int(os.environ.get("HERMES_PROXY_PORT", "8765"))
@@ -62,11 +62,18 @@ if ENV_MODE == "OFFICE" and TOKEN_FILE and os.path.isfile(TOKEN_FILE):
     except Exception as _e:
         print(f"[PROXY] ! TOKEN.TXT 읽기 실패: {_e}", file=sys.stderr)
 
-# vLLM 이 거부하는 필드 (OFFICE 에서 forward 시 제거; HOME 에선 어차피 무시)
-STRIP_FIELDS = (
-    "tools", "tool_choice", "functions", "function_call",
-    "parallel_tool_calls", "response_format",
-)
+# common.llm.skhynix.com 은 tools/tool_choice/function_calling 다 지원함 (검증됨).
+# 옛 엔드포인트(dev.hcp) 호환이 필요하면 HERMES_STRIP_TOOLS=1 환경변수로 켤 수 있게.
+_STRIP_TOOLS = os.environ.get("HERMES_STRIP_TOOLS", "0") == "1"
+if _STRIP_TOOLS:
+    STRIP_FIELDS = (
+        "tools", "tool_choice", "functions", "function_call",
+        "parallel_tool_calls", "response_format",
+    )
+    print("[PROXY] ⚠ HERMES_STRIP_TOOLS=1 — tool 필드 제거 모드 (Agent 동작 안 함)")
+else:
+    # tool-call 통과시킴. response_format 은 일부 vLLM 이 거부할 수 있으니 유지.
+    STRIP_FIELDS = ("response_format",)
 
 
 app = Flask(__name__)

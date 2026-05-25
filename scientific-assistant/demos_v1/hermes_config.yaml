@@ -26,14 +26,71 @@ agent:
   description: Demos V1 — 회사 vLLM(HCP) 게이트웨이 연동 + 389 스킬 카탈로그
 defaults:
   provider: openai
-  base_url: http://dev.hcp.llm.skhynix.com/v1
+  base_url: http://common.llm.skhynix.com/v1
   api_key: ${OPENAI_API_KEY}
-  model: Qwen3-Coder-480B-A35B-Instruct
+  model: Kimi-K2.5
   temperature: 0.3
   max_tokens: 8192
   verify_ssl: false
   stream: true
 models:
+# ── common.llm.skhynix.com — tool-call 검증된 모델 (★ Agent 사용 권장) ──
+- id: kimi-k2-5
+  name: Kimi-K2.5 (Common, ★ Agent)
+  model: Kimi-K2.5
+  url: http://common.llm.skhynix.com/v1/chat/completions
+  capabilities:
+  - text
+  - code
+  - analysis
+  - tools
+  - function_calling
+  - large
+  context_window: 128000
+  priority: 1
+  cost_tier: high
+- id: glm-5-1
+  name: GLM-5.1 (Common, ★ Agent)
+  model: GLM-5.1
+  url: http://common.llm.skhynix.com/v1/chat/completions
+  capabilities:
+  - text
+  - code
+  - analysis
+  - tools
+  - function_calling
+  - reasoning
+  context_window: 128000
+  priority: 1
+  cost_tier: medium
+- id: qwen36-35b
+  name: Qwen3.6-35B-A3B (Common, Agent)
+  model: Qwen3.6-35B-A3B-public
+  url: http://common.llm.skhynix.com/v1/chat/completions
+  capabilities:
+  - text
+  - code
+  - tools
+  - function_calling
+  - reasoning
+  - medium
+  context_window: 128000
+  priority: 2
+  cost_tier: low
+- id: gemma-4-31b
+  name: Gemma-4-31B-it (Common, Agent)
+  model: gemma-4-31B-it-public
+  url: http://common.llm.skhynix.com/v1/chat/completions
+  capabilities:
+  - text
+  - tools
+  - function_calling
+  - reasoning
+  - medium
+  context_window: 128000
+  priority: 3
+  cost_tier: low
+# ── dev.hcp.llm.skhynix.com — tool-call 미확인 (채팅 전용으로 추정) ──
 - id: glm-5
   name: GLM-5 (HCP)
   model: GLM-5
