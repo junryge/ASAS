@@ -1690,16 +1690,44 @@ const msgsEl = document.getElementById("msgs");
 function scrollToBottom() {
   requestAnimationFrame(() => {
     msgsEl.scrollTop = msgsEl.scrollHeight;
-    // 두 번째 RAF 로 layout 완료 후 다시 한 번 (스트리밍 중 새 토큰 도착 대비)
-    requestAnimationFrame(() => { msgsEl.scrollTop = msgsEl.scrollHeight; });
+    // workspace 도 같이 바닥으로
+    const wsList = document.getElementById("fileList");
+    if (wsList) wsList.scrollTop = wsList.scrollHeight;
+    requestAnimationFrame(() => {
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+      if (wsList) wsList.scrollTop = wsList.scrollHeight;
+    });
   });
 }
-// 사용자가 위로 스크롤하면 auto 잠시 멈춤, 다시 바닥 근처 오면 재개
+
+// 사용자가 위로 스크롤하면 auto 잠시 멈춤
 let autoScrollOn = true;
 msgsEl.addEventListener("wheel", e => {
-  if (e.deltaY < 0) autoScrollOn = false;  // 위로 휠 → 멈춤
+  if (e.deltaY < 0) autoScrollOn = false;
   const nearBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 100;
   if (nearBottom) autoScrollOn = true;
+});
+
+// ★ 채팅창 ↔ 워크스페이스 스크롤 동기화
+let _syncing = false;
+function syncScroll(src, dst) {
+  if (_syncing) return;
+  _syncing = true;
+  const ratio = src.scrollTop / Math.max(1, src.scrollHeight - src.clientHeight);
+  dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight);
+  setTimeout(() => { _syncing = false; }, 30);
+}
+const wsListEl = () => document.getElementById("fileList");
+msgsEl.addEventListener("scroll", () => {
+  const ws = wsListEl();
+  if (ws) syncScroll(msgsEl, ws);
+});
+// workspace 스크롤도 채팅 따라오게 (선택 — 필요시)
+document.addEventListener("DOMContentLoaded", () => {
+  const ws = wsListEl();
+  if (ws) {
+    ws.addEventListener("scroll", () => syncScroll(ws, msgsEl));
+  }
 });
 
 // ════════════ Workspace (파일 브라우저) ════════════
