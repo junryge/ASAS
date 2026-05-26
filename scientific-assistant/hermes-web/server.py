@@ -298,28 +298,50 @@ def api_memory():
 
 @app.route("/api/models")
 def api_models():
-    """~/.hermes/config.yaml 에서 사용 가능한 모델 목록 + 현재 디폴트."""
-    cfg_path = os.path.join(HERMES_DIR, "config.yaml")
-    if not os.path.isfile(cfg_path):
-        return jsonify({"current": "", "models": [], "error": "config.yaml 없음"})
+    """사용 가능한 모델 목록 — proxy 의 /v1/models 우선 (HOME=GGUF / OFFICE=API),
+    실패 시 config.yaml 폴백."""
+    current = ""
+    models = []
+    source = "config"
+
+    # 1) proxy 에 물어봄 (이게 진짜 사용 가능한 모델)
     try:
-        import yaml
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-        current = ""
-        if isinstance(cfg.get("model"), dict):
-            current = cfg["model"].get("default", "")
-        models = []
-        for cp in (cfg.get("custom_providers") or []):
-            if isinstance(cp, dict):
-                for m in (cp.get("models") or []):
-                    if m not in models:
-                        models.append(m)
-        if not models:
-            models = ["gemma-4-31B-it", "Kimi-K2.5", "GLM-5.1", "Qwen3.6-35B-A3B"]
-        return jsonify({"current": current, "models": models})
-    except Exception as e:
-        return jsonify({"error": str(e), "current": "", "models": []}), 500
+        import requests as _req
+        r = _req.get(f"http://{PROXY_HOST}:{PROXY_PORT}/v1/models", timeout=2)
+        if r.status_code == 200:
+            data = r.json()
+            entries = data.get("data") or []
+            for e in entries:
+                mid = e.get("id") if isinstance(e, dict) else str(e)
+                if mid and mid not in models:
+                    models.append(mid)
+            if models:
+                source = "proxy"
+    except Exception:
+        pass
+
+    # 2) config.yaml 에서 current + (proxy 안 되면 모델도) 가져옴
+    cfg_path = os.path.join(HERMES_DIR, "config.yaml")
+    if os.path.isfile(cfg_path):
+        try:
+            import yaml
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            if isinstance(cfg.get("model"), dict):
+                current = cfg["model"].get("default", "")
+            if not models:
+                for cp in (cfg.get("custom_providers") or []):
+                    if isinstance(cp, dict):
+                        for m in (cp.get("models") or []):
+                            if m not in models:
+                                models.append(m)
+        except Exception:
+            pass
+
+    if not models:
+        models = ["gemma-4-31B-it", "Kimi-K2.5", "GLM-5.1", "Qwen3.6-35B-A3B"]
+
+    return jsonify({"current": current, "models": models, "source": source})
 
 
 @app.route("/api/models/set", methods=["POST"])
