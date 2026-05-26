@@ -1296,15 +1296,19 @@ ta.addEventListener("input", () => {
 });
 
 // ─── Init ───
-// 한 번만 실행되는 sid 강제 무효화 (옛 죽은 세션이 묶여있을 때 탈출)
-// URL 에 ?reset=1 또는 #reset 붙이면 즉시 비움. 또는 reset 마커 없으면 한 번 비움.
+// 한 번만 실행되는 sid 강제 무효화 (옛 죽은 세션이 묶여있을 때 탈출).
+// 히스토리(과거 대화)는 절대 안 지움. sid 만 비워서 새 세션 시작하게 함.
+// ?reset=1 붙이면 sid + history 둘 다 비움 (완전 초기화).
 const RESET_FLAG = "hermes_reset_v3";
-const wantReset = location.search.includes("reset=1") || location.hash.includes("reset");
-if (wantReset || !localStorage.getItem(RESET_FLAG)) {
+const fullReset = location.search.includes("reset=1") || location.hash.includes("reset");
+if (fullReset) {
   localStorage.removeItem(LS_SID);
   localStorage.removeItem(LS_HISTORY);
+  console.log("[hermes] 완전 초기화 (sid + history)");
+} else if (!localStorage.getItem(RESET_FLAG)) {
+  localStorage.removeItem(LS_SID);   // sid 만 비움 — 히스토리 유지
   localStorage.setItem(RESET_FLAG, "done");
-  console.log("[hermes] 옛 sid/history 자동 초기화");
+  console.log("[hermes] 옛 sid 만 자동 무효화 (history 유지)");
 }
 
 // 세션 ID 복원 (이제 비어있으니 새 대화로 시작)
