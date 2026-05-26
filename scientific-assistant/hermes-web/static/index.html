@@ -85,11 +85,7 @@
   }
   *::-webkit-scrollbar-track { background: transparent; }
 
-  .app { display: grid; grid-template-columns: 320px 1fr 300px; height: 100vh; }
-  @media (max-width: 1100px) {
-    .app { grid-template-columns: 300px 1fr; }
-    .workspace { display: none; }
-  }
+  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
 
   /* ───────── Sidebar ───────── */
   .side {
@@ -687,13 +683,38 @@
     opacity: 0.85;
   }
 
-  /* ───────── Workspace (오른쪽 패널) ───────── */
+  /* ───────── Workspace (팝업 모달) ───────── */
   .workspace {
-    background: var(--bg-side);
-    border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
+    display: none;
+    position: fixed;
+    top: 80px; right: 24px;
+    width: 380px; max-height: 70vh;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    z-index: 90;
+    flex-direction: column;
     overflow: hidden;
   }
+  .workspace.open { display: flex; }
+  .workspace-close {
+    position: absolute; top: 8px; right: 10px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); padding: 2px 8px;
+    border-radius: 4px; cursor: pointer; font-size: 11px;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .workspace-close:hover { color: var(--gold); border-color: var(--gold-soft); }
+  .workspace-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); padding: 5px 10px;
+    border-radius: 5px; cursor: pointer; font-size: 11px;
+    letter-spacing: 0.05em; font-family: inherit;
+  }
+  .workspace-btn:hover { color: var(--gold); border-color: var(--gold-soft); }
+  .workspace-btn.active { color: var(--gold); border-color: var(--gold); }
   .workspace-head {
     padding: 14px 18px 10px;
     border-bottom: 1px solid var(--border);
@@ -936,6 +957,7 @@
         <button onclick="clearChat()" title="히스토리 삭제">CLEAR</button>
       </span>
       <div class="top-right">
+        <button class="workspace-btn" id="wsBtn" onclick="toggleWorkspace()">📁 WORKSPACE</button>
         <span class="top-status"><span class="dot" id="proxyDot"></span><span id="proxyText">PROXY ···</span></span>
         <span class="top-status" id="sendingStatus" onclick="forceReset()" style="cursor:pointer;">
           <span class="dot" id="sendDot"></span><span id="sendText">READY</span>
@@ -985,8 +1007,9 @@
     </div>
   </main>
 
-  <!-- ────── Workspace (오른쪽 패널) ────── -->
-  <aside class="workspace">
+  <!-- ────── Workspace (팝업) ────── -->
+  <aside class="workspace" id="workspace">
+    <button class="workspace-close" onclick="toggleWorkspace(false)">CLOSE</button>
     <div class="workspace-head">
       <div class="workspace-title">WORKSPACE</div>
       <div class="workspace-path" id="workspacePath" title="">—</div>
@@ -1695,47 +1718,25 @@ ta.addEventListener("input", () => {
   ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
 });
 
-// ════════════ 자동 스크롤 — 무조건 바닥 따라가게 ════════════
+// ════════════ 자동 스크롤 — 채팅만 무조건 바닥 ════════════
 const msgsEl = document.getElementById("msgs");
 function scrollToBottom() {
   requestAnimationFrame(() => {
     msgsEl.scrollTop = msgsEl.scrollHeight;
-    // workspace 도 같이 바닥으로
-    const wsList = document.getElementById("fileList");
-    if (wsList) wsList.scrollTop = wsList.scrollHeight;
-    requestAnimationFrame(() => {
-      msgsEl.scrollTop = msgsEl.scrollHeight;
-      if (wsList) wsList.scrollTop = wsList.scrollHeight;
-    });
+    requestAnimationFrame(() => { msgsEl.scrollTop = msgsEl.scrollHeight; });
   });
 }
-
-// 사용자가 휠 멈춤 로직 제거 — 항상 따라옴
 let autoScrollOn = true;
 
-// ★ 채팅창 ↔ 워크스페이스 스크롤 동기화
-let _syncing = false;
-function syncScroll(src, dst) {
-  if (_syncing) return;
-  _syncing = true;
-  const ratio = src.scrollTop / Math.max(1, src.scrollHeight - src.clientHeight);
-  dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight);
-  setTimeout(() => { _syncing = false; }, 30);
+// ════════════ Workspace (팝업) ════════════
+function toggleWorkspace(force) {
+  const w = document.getElementById("workspace");
+  const btn = document.getElementById("wsBtn");
+  const open = typeof force === "boolean" ? force : !w.classList.contains("open");
+  w.classList.toggle("open", open);
+  btn.classList.toggle("active", open);
+  if (open && !currentCwd) loadFiles();
 }
-const wsListEl = () => document.getElementById("fileList");
-msgsEl.addEventListener("scroll", () => {
-  const ws = wsListEl();
-  if (ws) syncScroll(msgsEl, ws);
-});
-// workspace 스크롤도 채팅 따라오게 (선택 — 필요시)
-document.addEventListener("DOMContentLoaded", () => {
-  const ws = wsListEl();
-  if (ws) {
-    ws.addEventListener("scroll", () => syncScroll(ws, msgsEl));
-  }
-});
-
-// ════════════ Workspace (파일 브라우저) ════════════
 let currentCwd = "";
 async function loadFiles(path) {
   const list = document.getElementById("fileList");
@@ -1838,7 +1839,7 @@ loadHistory();
 refreshHealth();
 loadSkills();
 loadModels();
-loadFiles();
+// 워크스페이스는 버튼 누를 때만 로드 (lazy)
 // 저장된 탭 복원
 const savedTab = localStorage.getItem(LS_TAB);
 if (savedTab && ["skills", "sessions", "memory"].includes(savedTab)) {
