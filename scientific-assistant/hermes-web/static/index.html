@@ -1400,9 +1400,8 @@ function addMsg(role, content, opts) {
     m.textContent = opts.meta; wrap.appendChild(m);
   }
   document.getElementById("msgs").appendChild(wrap);
-  // 사용자가 메시지 보낸 직후엔 무조건 바닥으로
-  scrollToBottom(role === "user");
   if (role === "user") autoScrollOn = true;
+  scrollToBottom();
   return bub;
 }
 
@@ -1569,7 +1568,7 @@ async function send() {
               renderBubble(bubble, acc);
               bubble.classList.remove("typing");
             }
-            scrollToBottom();
+            if (autoScrollOn) scrollToBottom();
           } else if (obj.type === "error") {
             hadError = true;
             bubble.classList.remove("typing");
@@ -1686,21 +1685,22 @@ ta.addEventListener("input", () => {
   ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
 });
 
-// ════════════ 자동 스크롤 (사용자가 위로 스크롤했으면 건들지 않음) ════════════
-let autoScrollOn = true;
+// ════════════ 자동 스크롤 — 무조건 바닥 따라가게 ════════════
 const msgsEl = document.getElementById("msgs");
-msgsEl.addEventListener("scroll", () => {
-  // 바닥에서 80px 이내면 auto-scroll 켬, 위로 스크롤했으면 끔
-  const nearBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
-  autoScrollOn = nearBottom;
-});
-function scrollToBottom(force) {
-  if (force || autoScrollOn) {
-    requestAnimationFrame(() => {
-      msgsEl.scrollTop = msgsEl.scrollHeight;
-    });
-  }
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    // 두 번째 RAF 로 layout 완료 후 다시 한 번 (스트리밍 중 새 토큰 도착 대비)
+    requestAnimationFrame(() => { msgsEl.scrollTop = msgsEl.scrollHeight; });
+  });
 }
+// 사용자가 위로 스크롤하면 auto 잠시 멈춤, 다시 바닥 근처 오면 재개
+let autoScrollOn = true;
+msgsEl.addEventListener("wheel", e => {
+  if (e.deltaY < 0) autoScrollOn = false;  // 위로 휠 → 멈춤
+  const nearBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 100;
+  if (nearBottom) autoScrollOn = true;
+});
 
 // ════════════ Workspace (파일 브라우저) ════════════
 let currentCwd = "";
