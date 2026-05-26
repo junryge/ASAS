@@ -205,6 +205,150 @@ def _save_kr_cache(d):
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 
+# ─── 신규 엔드포인트: Sessions / Memory / Models ─────────────────────────
+HERMES_DIR = os.path.expanduser("~/.hermes")
+
+
+@app.route("/api/sessions")
+def api_sessions():
+    """~/.hermes/sessions/ 의 세션 파일 목록 (최근 50개)."""
+    sess_dir = os.path.join(HERMES_DIR, "sessions")
+    if not os.path.isdir(sess_dir):
+        return jsonify({"sessions": []})
+    items = []
+    for fn in os.listdir(sess_dir):
+        if not fn.endswith(".json"):
+            continue
+        if fn.startswith("request_dump_"):
+            continue
+        path = os.path.join(sess_dir, fn)
+        try:
+            stat = os.stat(path)
+            sid = fn[:-5]
+            if sid.startswith("session_"):
+                sid = sid[8:]
+            title = ""
+            msg_count = 0
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                messages = data.get("messages") or data.get("history") or []
+                msg_count = len(messages)
+                for m in messages:
+                    if isinstance(m, dict) and m.get("role") == "user":
+                        c = m.get("content", "")
+                        if isinstance(c, str) and c.strip():
+                            title = c.strip().split("\n")[0][:80]
+                            break
+            except Exception:
+                pass
+            items.append({
+                "id": sid,
+                "title": title or "(빈 세션)",
+                "messages": msg_count,
+                "mtime": stat.st_mtime,
+                "size": stat.st_size,
+            })
+        except Exception:
+            continue
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return jsonify({"sessions": items[:50], "total": len(items)})
+
+
+@app.route("/api/sessions/<sid>")
+def api_session_detail(sid):
+    """특정 세션의 전체 내용."""
+    if not sid or "/" in sid or "\\" in sid:
+        return jsonify({"error": "invalid id"}), 400
+    sess_dir = os.path.join(HERMES_DIR, "sessions")
+    for fname in (f"session_{sid}.json", f"{sid}.json"):
+        path = os.path.join(sess_dir, fname)
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return jsonify(json.load(f))
+            except Exception as e:
+                return jsonify({"error": f"파싱 실패: {e}"}), 500
+    return jsonify({"error": "not found", "id": sid}), 404
+
+
+@app.route("/api/memory")
+def api_memory():
+    """~/.hermes/memories/ 의 MEMORY.md, USER.md, SOUL.md 등 읽기."""
+    mem_dir = os.path.join(HERMES_DIR, "memories")
+    soul_path = os.path.join(HERMES_DIR, "SOUL.md")
+    result = {"files": {}}
+    if os.path.isdir(mem_dir):
+        for fn in sorted(os.listdir(mem_dir)):
+            if fn.endswith(".md"):
+                path = os.path.join(mem_dir, fn)
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        result["files"][fn] = f.read()
+                except Exception:
+                    pass
+    if os.path.isfile(soul_path):
+        try:
+            with open(soul_path, "r", encoding="utf-8") as f:
+                result["files"]["SOUL.md"] = f.read()
+        except Exception:
+            pass
+    return jsonify(result)
+
+
+@app.route("/api/models")
+def api_models():
+    """~/.hermes/config.yaml 에서 사용 가능한 모델 목록 + 현재 디폴트."""
+    cfg_path = os.path.join(HERMES_DIR, "config.yaml")
+    if not os.path.isfile(cfg_path):
+        return jsonify({"current": "", "models": [], "error": "config.yaml 없음"})
+    try:
+        import yaml
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        current = ""
+        if isinstance(cfg.get("model"), dict):
+            current = cfg["model"].get("default", "")
+        models = []
+        for cp in (cfg.get("custom_providers") or []):
+            if isinstance(cp, dict):
+                for m in (cp.get("models") or []):
+                    if m not in models:
+                        models.append(m)
+        if not models:
+            models = ["gemma-4-31B-it", "Kimi-K2.5", "GLM-5.1", "Qwen3.6-35B-A3B"]
+        return jsonify({"current": current, "models": models})
+    except Exception as e:
+        return jsonify({"error": str(e), "current": "", "models": []}), 500
+
+
+@app.route("/api/models/set", methods=["POST"])
+def api_models_set():
+    """디폴트 모델 변경 (~/.hermes/config.yaml 의 model.default + custom_providers[*].model)."""
+    body = request.get_json(silent=True) or {}
+    new_model = (body.get("model") or "").strip()
+    if not new_model:
+        return jsonify({"error": "model 필요"}), 400
+    cfg_path = os.path.join(HERMES_DIR, "config.yaml")
+    if not os.path.isfile(cfg_path):
+        return jsonify({"error": "config.yaml 없음"}), 404
+    try:
+        import yaml
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        if "model" not in cfg or not isinstance(cfg["model"], dict):
+            cfg["model"] = {}
+        cfg["model"]["default"] = new_model
+        for cp in (cfg.get("custom_providers") or []):
+            if isinstance(cp, dict):
+                cp["model"] = new_model
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            yaml.dump(cfg, f, allow_unicode=True, sort_keys=False, width=200)
+        return jsonify({"ok": True, "current": new_model})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
