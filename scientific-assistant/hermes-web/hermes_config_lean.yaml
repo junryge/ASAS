@@ -1,3 +1,4 @@
+# Hermes lean config — 65 skills + auxiliary LLM 사내 vLLM 지정 (openrouter.ai 차단 회피)
 agent:
   name: demos-hermes
   version: '1.0'
@@ -608,3 +609,23 @@ compatibility:
   single_system_message: true
   strip_thinking_artifacts: true
   fallback_chain_disabled: true
+auxiliary:
+  provider: openai
+  base_url: http://common.llm.skhynix.com/v1
+  api_key: ${OPENAI_API_KEY}
+  model: gemma-4-31B-it-public
+  temperature: 0.1
+  verify_ssl: false
+summarizer:
+  provider: openai
+  base_url: http://common.llm.skhynix.com/v1
+  api_key: ${OPENAI_API_KEY}
+  model: gemma-4-31B-it-public
+  temperature: 0.1
+  verify_ssl: false
+compaction:
+  enabled: true
+  provider: openai
+  base_url: http://common.llm.skhynix.com/v1
+  model: gemma-4-31B-it-public
+  api_key: ${OPENAI_API_KEY}
