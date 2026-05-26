@@ -128,30 +128,64 @@ def _inject_no_think_for_qwen3(messages, model_path):
     return [{"role": "system", "content": "/no_think"}] + list(messages)
 
 
-def chat_completion(messages, temperature=0.5, max_tokens=4096, stream=False):
-    """OpenAI 호환 chat completion. stream=True 면 generator 반환."""
+def chat_completion(messages, temperature=0.5, max_tokens=4096, stream=False, **extra):
+    """OpenAI 호환 chat completion. stream=True 면 generator 반환.
+
+    extra 로 tools, tool_choice, top_p, top_k, response_format, seed 등 전달 가능.
+    일부 chat_format 이 tools 를 거부하면 자동으로 tools 제거 후 재시도.
+    """
     if _model is None:
         return None, "GGUF 모델이 로드되지 않았습니다"
 
     messages = _inject_no_think_for_qwen3(messages, _model_path)
 
+    call_kwargs = {
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": stream,
+    }
+    # OpenAI 호환 추가 필드 패스스루
+    for key in ("tools", "tool_choice", "top_p", "top_k", "response_format",
+                "seed", "frequency_penalty", "presence_penalty"):
+        if key in extra and extra[key] is not None:
+            call_kwargs[key] = extra[key]
+
+    has_tools = "tools" in call_kwargs
+
+    def _try_call(kwargs):
+        return _model.create_chat_completion(**kwargs)
+
     try:
         if stream:
             def _gen():
-                for chunk in _model.create_chat_completion(
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=True,
-                ):
-                    yield chunk
+                try:
+                    for chunk in _try_call(call_kwargs):
+                        yield chunk
+                except Exception as e:
+                    # tools 거부 시 자동 제거 후 재시도 (chat_format 호환)
+                    if has_tools:
+                        print(f"[gguf] tools 거부 ({e}) — tools 빼고 재시도")
+                        retry = dict(call_kwargs)
+                        for k in ("tools", "tool_choice", "response_format"):
+                            retry.pop(k, None)
+                        for chunk in _try_call(retry):
+                            yield chunk
+                    else:
+                        raise
             return _gen(), None
         else:
-            resp = _model.create_chat_completion(
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            try:
+                resp = _try_call(call_kwargs)
+            except Exception as e:
+                if has_tools:
+                    print(f"[gguf] tools 거부 ({e}) — tools 빼고 재시도")
+                    retry = dict(call_kwargs)
+                    for k in ("tools", "tool_choice", "response_format"):
+                        retry.pop(k, None)
+                    resp = _try_call(retry)
+                else:
+                    raise
             return resp, None
     except Exception as e:
         return None, f"GGUF 추론 오류: {e}"

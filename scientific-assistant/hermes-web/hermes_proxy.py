@@ -121,7 +121,7 @@ def _gguf_ensure_loaded(model_id_hint=None):
 
 
 def _gguf_chat(body):
-    """HOME 의 /v1/chat/completions 처리."""
+    """HOME 의 /v1/chat/completions 처리 — tools 패스스루 포함."""
     cur, err = _gguf_ensure_loaded(body.get("model"))
     if err:
         return jsonify({"error": err}), 503
@@ -130,10 +130,20 @@ def _gguf_chat(body):
     max_tokens = body.get("max_tokens", 4096)
     stream = bool(body.get("stream", False))
 
+    # OpenAI 호환 추가 필드 (tools 포함) 추출
+    extra = {}
+    for key in ("tools", "tool_choice", "top_p", "top_k", "response_format",
+                "seed", "frequency_penalty", "presence_penalty"):
+        if key in body and body[key] is not None:
+            extra[key] = body[key]
+
+    if extra.get("tools"):
+        print(f"[PROXY/HOME] tools 개수: {len(extra['tools'])}")
+
     if stream:
         gen, err = gguf_engine.chat_completion(
             messages, temperature=temperature,
-            max_tokens=max_tokens, stream=True,
+            max_tokens=max_tokens, stream=True, **extra,
         )
         if err:
             return jsonify({"error": err}), 500
@@ -146,7 +156,7 @@ def _gguf_chat(body):
     else:
         resp, err = gguf_engine.chat_completion(
             messages, temperature=temperature,
-            max_tokens=max_tokens, stream=False,
+            max_tokens=max_tokens, stream=False, **extra,
         )
         if err:
             return jsonify({"error": err}), 500
