@@ -349,6 +349,32 @@ def api_models_set():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/files")
+def api_files():
+    """디렉토리 내용 나열 (워크스페이스 파일 브라우저)."""
+    path = request.args.get("path") or os.getcwd()
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
+        return jsonify({"error": "디렉토리 아님", "path": path}), 400
+    try:
+        items = []
+        for name in sorted(os.listdir(path), key=lambda s: (not os.path.isdir(os.path.join(path, s)), s.lower())):
+            p = os.path.join(path, name)
+            try:
+                st = os.stat(p)
+                items.append({
+                    "name": name,
+                    "is_dir": os.path.isdir(p),
+                    "size": st.st_size if not os.path.isdir(p) else 0,
+                    "mtime": st.st_mtime,
+                })
+            except Exception:
+                continue
+        return jsonify({"path": path, "items": items})
+    except Exception as e:
+        return jsonify({"error": str(e), "path": path}), 500
+
+
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
