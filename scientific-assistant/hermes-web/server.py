@@ -854,8 +854,20 @@ def api_chat():
             return
 
         cmd = [hermes_bin]
+        # session_id 가 와도 실제 세션 파일이 없으면 --resume 안 함 (silent skip)
+        # → 죽은 sid 들고 있는 브라우저 자동 구제, 새 세션 시작되어 sid 회수
         if session_id:
-            cmd += ["--resume", session_id]
+            sess_dir = os.path.expanduser("~/.hermes/sessions")
+            possible_files = [
+                os.path.join(sess_dir, f"session_{session_id}.json"),
+                os.path.join(sess_dir, f"{session_id}.json"),
+            ]
+            sess_exists = any(os.path.isfile(p) for p in possible_files)
+            if sess_exists:
+                cmd += ["--resume", session_id]
+                print(f"[chat] resume 가능: {session_id}")
+            else:
+                print(f"[chat] session_id={session_id} 파일 없음 → 새 세션 시작")
         if skill_ids:
             cmd += ["-s", ",".join(skill_ids)]
         cmd += ["chat", "-q", last_user]
