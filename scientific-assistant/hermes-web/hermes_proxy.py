@@ -89,22 +89,35 @@ def _mask_auth(h):
 
 # ─── HOME: GGUF 자체 추론 ─────────────────────────────────────────────────
 def _gguf_ensure_loaded(model_id_hint=None):
-    """원하는 모델 GGUF 가 로드돼있나 확인, 안 됐으면 자동 로드."""
+    """원하는 모델 GGUF 가 로드돼있나 확인, 안 됐으면 자동 로드.
+    model_id_hint 가 있으면 그 id 와 일치하는 .gguf 우선."""
     if not _GGUF_AVAILABLE:
         return None, "GGUF 사용 불가"
-    cur = gguf_engine.get_loaded_model()
-    if cur:
-        return cur, None
-    # 자동 탐색해서 첫 번째 로드
+
+    cur = gguf_engine.get_loaded_model() or {}
+    # 이미 원하는 모델 로드돼있으면 그대로
+    if cur.get("loaded"):
+        if not model_id_hint or model_id_hint == cur.get("id") or model_id_hint == cur.get("name"):
+            return cur, None
+
+    # 디스크에서 .gguf 찾기
     files = gguf_engine.find_gguf_files(SCIENTIFIC_BASE)
     if not files:
         return None, f"{SCIENTIFIC_BASE} 에서 .gguf 못 찾음"
+
     target = files[0]["path"]
-    try:
-        gguf_engine.load_model(target)
-        return gguf_engine.get_loaded_model(), None
-    except Exception as e:
-        return None, f"GGUF 로드 실패: {e}"
+    # hint 와 매치되는 파일 우선
+    if model_id_hint:
+        for f in files:
+            if f.get("id") == model_id_hint or f.get("name") == model_id_hint:
+                target = f["path"]
+                break
+
+    ok, msg = gguf_engine.load_model(target)
+    if not ok:
+        return None, msg
+    print(f"[PROXY/HOME] GGUF 로드 완료: {os.path.basename(target)}")
+    return gguf_engine.get_loaded_model(), None
 
 
 def _gguf_chat(body):
