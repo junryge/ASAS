@@ -42,7 +42,13 @@ else:
     ENV_MODE = "UNKNOWN"
     SCIENTIFIC_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SKILLS_DIR = os.path.join(SCIENTIFIC_BASE, "scientific-skills")
+# 스킬 디렉토리: ~/.hermes/skills (실제로 hermes 가 보는 곳) 우선,
+# 없으면 옛 scientific-skills/ 폴백
+_HERMES_SKILLS = os.path.expanduser("~/.hermes/skills")
+if os.path.isdir(_HERMES_SKILLS):
+    SKILLS_DIR = _HERMES_SKILLS
+else:
+    SKILLS_DIR = os.path.join(SCIENTIFIC_BASE, "scientific-skills")
 PROXY_HOST = "127.0.0.1"
 PROXY_PORT = 8765
 
