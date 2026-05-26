@@ -1400,8 +1400,9 @@ function addMsg(role, content, opts) {
     m.textContent = opts.meta; wrap.appendChild(m);
   }
   document.getElementById("msgs").appendChild(wrap);
-  const c = document.getElementById("msgs");
-  c.scrollTop = c.scrollHeight;
+  // 사용자가 메시지 보낸 직후엔 무조건 바닥으로
+  scrollToBottom(role === "user");
+  if (role === "user") autoScrollOn = true;
   return bub;
 }
 
@@ -1568,7 +1569,7 @@ async function send() {
               renderBubble(bubble, acc);
               bubble.classList.remove("typing");
             }
-            document.getElementById("msgs").scrollTop = 1e9;
+            scrollToBottom();
           } else if (obj.type === "error") {
             hadError = true;
             bubble.classList.remove("typing");
@@ -1684,6 +1685,22 @@ ta.addEventListener("input", () => {
   ta.style.height = "40px";
   ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
 });
+
+// ════════════ 자동 스크롤 (사용자가 위로 스크롤했으면 건들지 않음) ════════════
+let autoScrollOn = true;
+const msgsEl = document.getElementById("msgs");
+msgsEl.addEventListener("scroll", () => {
+  // 바닥에서 80px 이내면 auto-scroll 켬, 위로 스크롤했으면 끔
+  const nearBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
+  autoScrollOn = nearBottom;
+});
+function scrollToBottom(force) {
+  if (force || autoScrollOn) {
+    requestAnimationFrame(() => {
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    });
+  }
+}
 
 // ════════════ Workspace (파일 브라우저) ════════════
 let currentCwd = "";
