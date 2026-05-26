@@ -57,7 +57,7 @@ def find_gguf_files(base_dir):
     return result
 
 
-def load_model(model_path, n_ctx=32768, n_gpu_layers=99, n_batch=2048):
+def load_model(model_path, n_ctx=65536, n_gpu_layers=99, n_batch=2048):
     """모델 로드. 이미 같은 path + 충분한 ctx 면 스킵."""
     global _model, _model_path
     with _model_lock:

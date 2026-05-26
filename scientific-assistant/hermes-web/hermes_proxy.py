@@ -227,8 +227,23 @@ def models():
     return _forward("GET", "models", None, False)
 
 
+@app.route("/v1/models/<path:model_id>", methods=["GET"])
+def model_detail(model_id):
+    """단일 모델 조회 — HOME 에선 GGUF 파일 매치, OFFICE 에선 upstream forward."""
+    if ENV_MODE == "HOME" and _GGUF_AVAILABLE:
+        files = gguf_engine.find_gguf_files(SCIENTIFIC_BASE)
+        for f in files:
+            if f.get("id") == model_id or f.get("name") == model_id:
+                return jsonify({"id": f["id"], "object": "model", "owned_by": "local"})
+        return jsonify({"error": "model not found", "id": model_id}), 404
+    return _forward("GET", f"models/{model_id}", None, False)
+
+
 @app.route("/v1/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE"])
 def forward_anything(subpath):
+    # HOME 모드에선 외부로 안 나감
+    if ENV_MODE == "HOME":
+        return jsonify({"error": f"HOME 모드에서 /v1/{subpath} 지원 안 함"}), 404
     body = request.get_json(silent=True) or {}
     is_stream = bool(body.get("stream", False))
     return _forward(request.method, subpath, body, is_stream)
