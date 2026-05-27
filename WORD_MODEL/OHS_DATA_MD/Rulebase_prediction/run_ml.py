@@ -13,17 +13,17 @@ import time
 
 import aws_idc_realtime_collector as collector
 import hubroom_predictor as predictor
-import ml_predict_runner as ml_runner
-import hybrid_predictor
+# import ml_predict_runner as ml_runner       # ML 업그레이드 중 — 임시 비활성
+# import hybrid_predictor                      # ML 업그레이드 중 — 임시 비활성
 
 # 수집기 (백그라운드 데몬 — 메인 종료 시 같이 죽음)
 threading.Thread(target=collector.main, daemon=True).start()
 
-# ML 예측기 (백그라운드 데몬)
-threading.Thread(target=ml_runner.run_watch, daemon=True).start()
+# ML 예측기 (백그라운드 데몬) — 업그레이드 중, 임시 비활성
+# threading.Thread(target=ml_runner.run_watch, daemon=True).start()
 
-# 하이브리드 예측기 (백그라운드 데몬) — ML 출력 1분 뒤부터 처리
-threading.Thread(target=hybrid_predictor.run_watch, daemon=True).start()
+# 하이브리드 예측기 (백그라운드 데몬) — 업그레이드 중, 임시 비활성
+# threading.Thread(target=hybrid_predictor.run_watch, daemon=True).start()
 
 # 0.5초 후 예측기 watch (메인 스레드)
 time.sleep(0.5)
