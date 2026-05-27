@@ -1,80 +1,78 @@
-# M16 HUBROOM 통합 이벤트 예측기 — 설계 계획서
+# M16 HUBROOM 통합 이벤트 예측기 — 설계 계획서 v2.0
 
-> `hubroom_predictor_main.py` 통합 예측기 설계
-> 입력 자료: `MAIN_UIS/` 폴더 (MAIN_TS.TXT 375줄 + 1.PNG 배치도 + 2.PNG 흐름도)
+> `hubroom_predictor_main.py` 통합 예측기 설계 (269개 컬럼, 8개 FAB 영역)
+> 입력 자료: `MAIN_UIS/` 폴더 (MAIN_TS.TXT + 1.PNG + 2.PNG) + v3.1 보강
+> 컬럼 정리: `AWS_IDC_v4.1_컬럼_전체정리.md` 참조 (누락 0)
 
 ---
 
 ## 0. 입력 자료 분석 (누락 없이)
 
-### MAIN_TS.TXT (375줄) — 5개 섹션
+### 컬럼 출처
 
-| 섹션 | 내용 | 핵심 |
+| 출처 | 컬럼 수 | 비고 |
 |---|---|---|
-| ① 미션 (line 1) | "M16HUB, M14B, M14, M16_PKT, M16_WT, M16A, M16, M16B **통합 이벤트 예측**" | 8개 FAB 통합 |
-| ② 임계값 (line 6-18) | R-A'/R-B/R-C'/R-D + 사건/윈도우 11개 상수 | 검증된 임계값 보존 |
-| ③ 시나리오 (line 21-36) | 14개 정체 유형 매트릭스 (정상~복합형 데드락) | S3 4가지 형태 |
-| ④ 수집 컬럼 (line 39-335) | 24개 (현재 룰) + 13개 (0512 이상) + ~250개 (의미상 관련) | 약 290개 전체 |
-| ⑤ 도메인 지식 (line 338-376) | FAB 8개 + 반송장치 7종 + 연결 10개 | 물리적 흐름 구조 ★ |
+| MAIN_TS.TXT (line 41-335) | 263개 | 도메인 자료 |
+| v3.1 M16_PKT/WT 보강 | 6개 | OHTUTIL, T1MIN, OHTMCPALARM |
+| **총 v4.1** | **269개** | **누락 0** ✓ |
 
-### 1.PNG — 반도체 단지 배치도
-- 단지 평면도 (M14A/B, M16A/B/E/WT, R4 위치)
-- 건물 간 연결 다이어그램 (LFT/CNV/STK 노선)
+### 영역별 분포
 
-### 2.PNG — M16 HUB ROOM 트래픽 흐름도 ★★★
+| 영역 | 컬럼 수 | 역할 |
+|---|---|---|
+| **M16HUB** | 104 | 중심 허브 (3F) — M14↔M16 물류 연결 |
+| **M14** | 41 | M14A (3F) — CNV로 HUB 연결 |
+| **M14B** | 41 | M14B (7F) — LFT(4ABLD)로 HUB 연결 |
+| **M16A** | 39 | M16A (6F) — LFT(6ABL)로 HUB 연결 |
+| **M16B** | 25 | M16B (10F) — M16A 경유 HUB |
+| **M16** | 11 | SFAB FAB간 반송 |
+| **M16_PKT** | 4 | 브릿지 |
+| **M16_WT** | 4 | 브릿지 (M16EUV 연결) |
+| **합계** | **269** | |
 
-**9개 핵심 노드 — 현재값 vs 예상값**:
+### 2.PNG 흐름도 핵심 통찰 ★★★
 
-| 노드 | 의미 | 현재 | 예상 | **비율** | 평가 |
-|---|---|---|---|---|---|
-| **M14CNV** | M14A CNV → M16 HUB | **212** | 72 | **2.9x** | ★★★ 최대 병목 |
-| **M14B** | M14B → M14B LFT | **108** | 50 | **2.2x** | ★★ |
-| **M16HUBOHT** | M16 HUB → M16 2F/6F | **166** | 98 | **1.7x** | ★ |
-| M14A | M14A → M14A CNV | 31 | 33 | 0.94x | 정상 |
-| M14LFT | M14B → M16 HUB | 13 | 24 | 0.54x | 정상 |
-| M16LFT | M16 → M16 6F | 89 | 89 | 1.0x | 정상 |
-| M166F | M16 LFT → M16 6F | 28 | 78 | 0.36x | 정상 |
-| M16HUBMLUD | HUB MLUD → M16 HUB | 1 | 7 | 0.14x | 정상 |
-| M16EUV | M16 LFT → M16 2F | 0 | 2 | 0x | 정상 |
-| M16LFT2F | M16 HUB → M16 2F | 14 | 4 | 3.5x | 주의 |
+9개 핵심 노드의 **현재값 / 예상값 비율** 이 진짜 정체 지표:
 
-→ **핵심 통찰**: 절대값 아닌 **현재 / 예상 비율** 이 진짜 정체 지표.
+| 노드 | 현재 | 예상 | 비율 | 평가 |
+|---|---|---|---|---|
+| **M14CNV → HUB** | **212** | 72 | **2.9x** | ★★★ 최대 병목 |
+| **M14B → M14B LFT** | **108** | 50 | **2.2x** | ★★ 누적 |
+| **M16HUBOHT** | **166** | 98 | **1.7x** | ★ HUB 적체 |
+| M16LFT2F | 14 | 4 | 3.5x | 주의 (절대값 작음) |
+| 나머지 5개 | — | — | <1x | 정상 |
+
+→ **절대값 아닌 비율** 이 정체의 본질.
 
 ---
 
-## 1. 핵심 이해 — 3가지
+## 1. 도메인 기반 핵심 이해
 
-### ① M16 HUBROOM = 8개 FAB 의 물류 허브
+### FAB 연결 구조 (10개 연결)
 
 ```
-                M14B (7F)
-                  │ LFT
-                  ↓
-   M14A (3F) ── CNV ─── M16 HUBROOM (3F) ─── LFT ──── M16A (6F)
-                          │                            │
-                          ├── LFT ── M16 EUV (2F)      │ LFT
-                          │                            │
-                          └── LFT ── M14 분석실 (B1F)   M16B (10F)
-                                                       │
-                                                       └─ M16 WT (2F)
-                                                       └─ R4 (6F)
+                M14B (7F) ━━LFT(4ABLD)━━━┓
+                                          ↓
+   M14A (3F) ━━CNV(4AFC32/33)━━━━━━━━━━► M16 HUBROOM (3F)
+        │                                  │ ↑
+        ↓ LFT                              ↓ │
+   M10A (2F)                          ┌────┴─┴─────┐
+                                      ↓            ↓
+                                M16A (6F)     M16EUV (2F)
+                                LFT(6ABL)         ↓ WIS STK
+                                  ↓ LFT          M16WT (2F)
+                              M16B (10F)
 ```
 
-### ② 기존 룰베이스의 한계 (3가지)
+### 기존 한계 → 통합 해결
 
-| 한계 | 영향 |
+| 한계 (기존) | 통합 해결 (v2.0) |
 |---|---|
-| **M16HUB 내부만 봄** | 인접 FAB 발 정체를 사후에 잡음 → Lead time 손해 |
-| **흐름 방향 안 봄** | "어디서 → 어디로" 전파됐는지 모름 |
-| **24개 컬럼만 사용** | 290개 가용 컬럼 중 8% 만 활용 |
-
-### ③ 통합 예측기가 해결할 것
-
-| 문제 | 통합 해결 |
-|---|---|
-| M14A 막혀서 CNV 폭주 시 사후 인지 | **인플로 폭증 즉시 감지** (5~10분 추가 사전인지) |
-| 사건 시 원인 영역 모름 | **hot_area 컬럼**: "M14A 시작" 자동 식별 |
-| 정체 전파 경로 모름 | **propagation_chain**: "M14 → CNV → HUB → M16A" |
+| M16HUB 24개만 봄 | **269개 활용 (8개 영역 통합)** |
+| 인접 FAB 사후 인지 | **인플로 폭증 즉시 감지** |
+| 위치 모름 | **hot_area 식별 (어느 FAB 시작)** |
+| 전파 경로 모름 | **propagation_chain 추적** |
+| **운영자 MAXCAPA 무관심** | **MAXCAPA 6개 운영자 변수 활용** ★ |
 
 ---
 
@@ -83,243 +81,337 @@
 ```
 ┌──────────────────────────────────────────────────┐
 │ Layer 3: 통합 융합 + 사건 판정 + 전파 추적         │
-│   - 통합 위험도 (unified_risk_score)              │
-│   - 어디서 시작 (hot_area)                        │
-│   - 전파 체인 (propagation_chain)                 │
-│   - 사건 단위 (S3 확장)                           │
+│   - unified_risk_score (0~500)                    │
+│   - hot_area (어느 FAB 시작)                      │
+│   - propagation_chain (전파 경로)                 │
+│   - 통합 S3 (8개 영역 어디든 조건 만족)            │
 └────────────────▲─────────────────────────────────┘
                  │
 ┌────────────────┴─────────────────────────────────┐
-│ Layer 2: 흐름 룰 (9개 핵심 노드)                  │
-│   각 노드별 [현재값 / 예상값] 비율 평가           │
-│   - 인플로 5개 (HUB 로 들어옴)                    │
-│   - HUB 내부 3개                                  │
-│   - 출구 4개 (HUB → 외부)                         │
+│ Layer 2: 다축 룰 (4축 + 흐름 + 운영자변수)        │
+│   - 4축 룰: R-A'/R-B/R-C'/R-D × 6 영역 = 24셀      │
+│   - 흐름 룰: 9개 핵심 노드 (비율 1.5x/2x/3x)      │
+│   - SLA 룰: 4분초과 12개 (영역별)                 │
+│   - Sorter 룰: 8개 (LOT 적체)                     │
+│   - 운영자 변수 룰: MAXCAPA 6개 ★                  │
 └────────────────▲─────────────────────────────────┘
                  │
 ┌────────────────┴─────────────────────────────────┐
-│ Layer 1: 영역별 4축 룰                            │
-│   기존 R-A'/R-B/R-C'/R-D 를 각 영역별로 평가      │
-│   M16HUB / M14A / M14B / M16A / M16B            │
+│ Layer 1: 원천 데이터 수집 (269 컬럼)              │
+│   8개 FAB 영역 × 카테고리                         │
 └──────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Layer 1 — 영역별 4축 룰 매트릭스
+## 3. Layer 1 — 카테고리별 핵심 분류 (269개)
 
-| 축 \ 영역 | **M16HUB** | **M14A** | **M14B** | **M16A** | **M16B** |
-|---|---|---|---|---|---|
-| **시간(R-A')** | T1MIN ≥9분 | M14 T1MIN | M14B T1MIN | M16A 1MIN | M16B 1MIN |
-| **양(R-B)** | M14→M16 +100/30분 | M14A CNV Q 변화 | M14B LFT Q 변화 | M16A→HUB 변화 | M16B→HUB 변화 |
-| **위치(R-C')** | 리프터 10대 역증가 | 4AFC3201/3301 | 4ABLD 6대 | 6ABL01 4대 | (해당 없음) |
-| **공간(R-D)** | FAB 저장률 ≥25% | M14A OHTUTIL | M14B OHTUTIL | M16A OHTUTIL | M16B OHTUTIL |
-| **4분초과** ★ | TRANSPORT4MINOVERCNT | M14 동일 | (없음) | M16A 동일 | M16B 동일 |
+### ★★★ 운영자 변수 — 6개 (MAXCAPA)
+> **메신저에서 운영자가 변경하는 값** = 정체 발생/조치 직접 신호
 
-→ **5개 영역 × 5축 = 25개 셀** 동시 평가.
+| 컬럼 | 영역 |
+|---|---|
+| M16HUB.QUE.LFT.3F_LFT_MAXCAPA | M16HUB |
+| M16HUB.QUE.LFT.3F_M14BLFT_MAXCAPA | M16HUB |
+| M16HUB.QUE.CNV.3F_CNV_MAXCAPA | M16HUB |
+| M14.QUE.CNV.3F_CNV_MAXCAPA | M14 |
+| M16A.QUE.LFT.2F_LFT_MAXCAPA | M16A |
+| M16A.QUE.LFT.6F_LFT_MAXCAPA | M16A |
 
-### 출력 ctx 컬럼 예시
+→ MAXCAPA 가 평소 100% → 50% 변경되면 운영자가 인지한 상태.
+
+### ★★★ 4분 이상 SLA — 12개 (0512 case 핵심)
+영역별 TRANSPORT4MINOVERCNT/RATIO/TIMEAVG:
+- M16HUB (3), M14 (3), M16A (3), M16B (3)
+- → **정체의 직접 결과 지표**
+
+### ★★ HUB 인플로 — 9개
+> 5개 FAB → HUB 로 들어오는 부하
+
+| 컬럼 | 출발지 |
+|---|---|
+| M14.QUE.ALL.3F_TO_HUB_JOB | M14A 3F |
+| M14.QUE.ALL.3F_TO_HUB_JOB_ALT | M14A 우회 |
+| M14.QUE.OHT.3F_TO_HUB_CMD | 진행중 OHT |
+| M14B.QUE.ALL.7F_TO_HUB_JOB | M14B 7F |
+| M14B.QUE.ALL.7F_TO_HUB_JOB_ALT | M14B 우회 |
+| M14B.QUE.OHT.7F_TO_HUB_CMD | 진행중 |
+| M16A.QUE.ALL.2F_TO_HUB_JOB | M16A 2F |
+| M16A.QUE.ALL.6F_TO_HUB_JOB | M16A 6F |
+| M16B.QUE.ALL.10F_TO_HUB_JOB | M16B 10F |
+
+### ★★ HUB 출구 — 5개
+> HUB → 외부로 나가는 큐 (막히면 HUB 내부 적체)
+
 ```
-ra_value_hub, ra_value_m14a, ra_value_m14b, ra_value_m16a, ra_value_m16b
-rb_diff_hub, rb_diff_m14a, ...
-rc_trig_hub, rc_trig_m14a, ...
-rd_fab_hub, rd_oht_m14a, ...
-t4over_hub, t4over_m14, t4over_m16a, t4over_m16b
+M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB
+M16HUB.QUE.ALL.3F_TO_M16A_2F_JOB
+M16HUB.QUE.ALL.3F_TO_M14A_3F_JOB
+M16HUB.QUE.ALL.3F_TO_M14B_7F_JOB
+M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB
 ```
+
+### ★ Sorter — 8개 (LOT 적체)
+M14, M14B, M16A, M16B 각자 SORTERWAITCOUNTOVER 등
+
+### ★ HUB 내부 CMD/JOB — 11개
+M16HUB.QUE.LFT/MLUD/STB/CNV/ALL 의 CMD/JOB
+
+### 저장률 — 5개
+M16HUB.STRATE.STK/ALL.FABSTORAGERATIO/STB.3F_STORAGE_UTIL 등
+
+### 영역간 흐름 (CNV/LFT) — 30개+
+M14↔M16 브릿지, CNV 남/북측, LFT 합계 등
+
+### 리프터 큐 — 96개
+- TOTAL_CURRENTQCNT 16개 (M16HUB 10 + M14B 6)
+- 방향별 80개 (3F↔2F, 3F↔6F, 2F↔6F 등)
+
+### OHT 가동/큐/알람 — 12개
+각 영역별 OHTUTIL, CURRENTOHTQCNT, OHTMCPALARMCNT
+
+### 평균 시간 — 12개
+T1MIN, AVGTOTALTIME, AVGLOADTIME 시리즈
+
+### M16 SFAB — 11개
+SEND/RETURN/COMPLETE/RECEIVE (M16↔M14/M10)
 
 ---
 
-## 4. Layer 2 — 흐름 룰 (9개 핵심 노드)
+## 4. Layer 2 — 룰 평가 (5종)
 
-2.PNG 의 9개 노드를 룰화. **현재값 / 30분 평균 비율** 기준.
+### 4.1 영역별 4축 룰 매트릭스 (24셀 + M16B는 R-C' 없어 23셀)
 
-### 인플로 5개 (HUB 로 들어옴)
-```python
-flow_M14_in   = M14.QUE.ALL.3F_TO_HUB_JOB         # M14 → HUB
-flow_M14B_in  = M14B.QUE.ALL.7F_TO_HUB_JOB        # M14B 7F → HUB
-flow_M16A_2F  = M16A.QUE.ALL.2F_TO_HUB_JOB        # M16A 2F → HUB
-flow_M16A_6F  = M16A.QUE.ALL.6F_TO_HUB_JOB        # M16A 6F → HUB
-flow_M16B_in  = M16B.QUE.ALL.10F_TO_HUB_JOB       # M16B → HUB
-```
+| 축 \ 영역 | **M16HUB** | **M14** (=M14A) | **M14B** | **M16A** | **M16B** | **M16** |
+|---|---|---|---|---|---|---|
+| **R-A' (시간)** | T1MIN ≥9분 | AVGLOADTIME1MIN | T1MIN | LOAD1MIN | LOAD1MIN | (SFAB) |
+| **R-B (양)** | M14→M16 +100/30분 | CNV M14A→M16A 변화 | 7F→HUB 변화 | 2F+6F→HUB 변화 | 10F→HUB 변화 | SFAB SEND 변화 |
+| **R-C' (위치)** | 리프터 10대 역증가 | CNV 남/북측 쏠림 | LFT 6대 (4ABLD) | LFT 4대 (6ABL01) | (해당없음) | (해당없음) |
+| **R-D (공간)** | FAB 저장률 ≥25% | OHTUTIL ≥90% | OHTUTIL ≥90% | OHTUTIL ≥90% | OHTUTIL ≥90% | — |
 
-### HUB 내부 3개
-```python
-hub_oht       = M16HUB.QUE.OHT.CURRENTOHTQCNT
-hub_storage   = M16HUB.STRATE.STB.3F_STORAGE_UTIL
-hub_mlud      = M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT
-```
+### 4.2 흐름 룰 — 9개 노드 (현재/30분평균 비율)
+| 비율 | 등급 |
+|---|---|
+| ≥ 1.5x | 주의 |
+| ≥ 2.0x | 위험 |
+| ≥ 3.0x | ★ 심각 (예: 2.PNG M14CNV 2.9x) |
 
-### 출구 4개 (HUB → 외부)
-```python
-out_M14A     = M16HUB.QUE.ALL.3F_TO_M14A_3F_JOB
-out_M14B     = M16HUB.QUE.ALL.3F_TO_M14B_7F_JOB
-out_M16A_2F  = M16HUB.QUE.ALL.3F_TO_M16A_2F_JOB
-out_M16A_6F  = M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB
-```
+### 4.3 SLA 룰 — 4분 이상 (영역별 12개)
+- TRANSPORT4MINOVERRATIO ≥ 15%
+- TRANSPORT4MINOVERCNT 10분 +20 폭증
+- → 정체 직접 지표
 
-### 노드별 룰 (현재/30분평균 비율)
+### 4.4 Sorter 룰 — 영역별 임계값
+- SORTERWAITCOUNTOVER ≥ 100 → 적체 신호
+- SORTERTRANSFERFAIL 발생 → 알람
 
-| 비율 | 등급 | 운영자 행동 |
-|---|---|---|
-| ≥ **1.5x** | 주의 | 모니터링 |
-| ≥ **2.0x** | 위험 | 즉시 확인 |
-| ≥ **3.0x** | ★ 심각 | 즉시 조치 (2.PNG M14CNV 2.9x 가 이 케이스) |
+### 4.5 운영자 변수 룰 (★ 신규)
+- MAXCAPA 가 100 → 50 변경 = **운영자 인지 시점**
+- MAXCAPA 50 → 1 변경 = 심각도 상승
+- 이걸 시계열 추적하면 운영자 행동 패턴 학습
 
 ---
 
 ## 5. Layer 3 — 통합 융합 + 전파 추적
 
-### 확장 사건 판정 (S3 강화)
+### 5.1 통합 S3 정의
 
 ```
 통합 S3 = (어느 영역이든 시간축 R-A' 발동)
        AND (어느 영역이든 위치축 R-C' 발동)
-       AND (인플로 1개+ 비율 ≥2x  OR  HUB 내부 R-D 발동)
+       AND (인플로 1개+ 비율 ≥2x  OR  HUB 내부 R-D 발동  OR  4분초과 ≥15%)
 ```
 
-기존 S3 = `R-A'(HUB) AND R-C'(HUB) AND (R-B OR R-D)` (HUB 만)
-→ 통합 S3 = **어느 영역이든 만족** (8개 FAB 다 봄)
-
-### 전파 추적 (★ 가장 가치)
-
-시간축 분석으로 정체 전파 경로 자동 식별:
+### 5.2 전파 추적 알고리즘
 
 ```python
-# t-15분 ~ t 분석
-if flow_M14_in.delta(15min) > +30:
-    propagation_chain.append("M14 인플로 +30/15분 폭증")
-    hot_area = "M14"
+# 시간축 분석 (t-30 ~ t)
+if M14.인플로_delta(15min) > +30 또는 비율 ≥2x:
+    propagation.append({
+        'area': 'M14', 'time': t-15, 'signal': '인플로 폭증'
+    })
 
-if 5분 뒤 hub_oht.delta(5min) > +50:
-    propagation_chain.append("→ HUB OHT 큐 +50")
+# 5분 뒤
+if HUB.OHT_큐_delta(5min) > +50:
+    propagation.append({
+        'area': 'HUB', 'time': t-10, 'signal': 'OHT 큐 누적'
+    })
 
-if 10분 뒤 hub T1MIN > 9분:
-    propagation_chain.append("→ HUB R-A' 발동")
+# 10분 뒤
+if HUB.R-A'_발동:
+    propagation.append({
+        'area': 'HUB', 'time': t, 'signal': 'T1MIN ≥9분'
+    })
 
-# final_reason 자동 생성:
-# "M14 시작 → HUB 도달 (전파 lead_time 15분)"
+# 전파 체인 자동 생성:
+# "M14 인플로 폭증(t-15) → HUB 적체(t-10) → HUB R-A'(t)"
 ```
 
-### Layer 3 신규 출력 컬럼
+### 5.3 Hot Area 식별
 
-| 컬럼 | 의미 | 예시 |
-|---|---|---|
-| `unified_risk_score` | 통합 위험도 (0~300) | 142 |
-| `unified_risk_level` | 통합 위험 레벨 | "매우위험" |
-| `hot_area` | 시작 영역 | "M14A" |
-| `propagation_chain` | 전파 경로 | "M14A CNV +120 → HUB T1MIN +3.5" |
-| `lead_time` | 전파 시작→현재 (분) | 25 |
-| `affected_areas` | 영향 받은 영역 | "M14A, HUB" |
+가장 먼저 신호 발동한 영역 = hot_area
+- 시간 가중치: 가장 먼저 발동 (-50점)
+- 신호 강도 가중치: 비율 ≥3x (+30점)
+- 운영자 인지 가중치: MAXCAPA 변경 있음 (+50점)
+
+### 5.4 통합 위험도 점수 (확장)
+
+기존 risk_score (0~170) → unified_risk_score (0~500)
+
+| 카테고리 | 점수 |
+|---|---|
+| 영역별 4축 (5영역) | 각 영역 0~50점 × 5 = 250 |
+| 흐름 룰 (9개 노드) | 각 노드 0~10점 × 9 = 90 |
+| SLA 룰 (4분초과) | 12개 × 5점 = 60 |
+| Sorter | 8개 × 3점 = 24 |
+| 운영자 변수 (MAXCAPA) | 6개 × 10점 = 60 ★ |
+| **합계** | **0~500** |
 
 ---
 
 ## 6. 운영자가 한 줄에서 보는 결과 (목표)
 
 ### 발동이벤트.csv 한 줄 예시
+
 ```
 2026-05-14 14:23:00,
-unified_risk_score=92, unified_risk_level=매우위험,
+unified_risk_score=287, unified_risk_level=매우위험,
 hot_area=M14A,
-propagation_chain="M14A CNV +120/10분 → 5분 뒤 HUB OHT +50 → 10분 뒤 HUB T1MIN 9.5분",
-lead_time=25분,
+propagation_chain="M14A CNV +120/10분(t-15) → HUB OHT +50(t-10) → HUB T1MIN 9.5분(t)",
+lead_time=15분,
 affected_areas="M14A; HUB",
-layer1=[ra_hub=O,rc_hub=O,m14a_rb=O(CNV 폭주)],
-layer2=[m14_cnv=2.9x ★★★, hub_oht=1.7x],
-ml_score=0.87, risk_factors=ra_sustained;rb_fast;m14a_cnv_x2.9
+layer1_signals=[ra_hub=O, rc_hub=O, m14a_rb=O(CNV폭주)],
+layer2_flows=[m14_cnv=2.9x ★★★, hub_oht=1.7x],
+layer2_sla=[m14_t4over=18%, hub_t4over=12%],
+operator_action=[m14_maxcapa=50% (t-5분 변경)],
+ml_score=0.87,
+risk_factors=ra_sustained;rb_fast;m14a_cnv_x2.9;m14_t4over_18%;maxcapa_changed
 ```
 
-→ 운영자 즉시 판단: **"M14A CNV 쪽 봐야 한다"**
+→ 운영자 즉시 판단: **"M14A CNV 쪽이 문제, MAXCAPA 50% 이미 변경되어 있음, HUB 임박"**
 
 ---
 
 ## 7. 기존 vs 통합 — 비교 표
 
-| 항목 | 기존 (hubroom_predictor.py) | 통합 (hubroom_predictor_main.py) |
+| 항목 | 기존 (v3.1) | 통합 (v4.1) |
 |---|---|---|
-| **감시 범위** | M16HUB 내부 1개 영역 | **8개 FAB 영역** |
-| **컬럼 수** | 24개 | **약 60~80개** |
-| **룰 개수** | 4개 (R-A'/R-B/R-C'/R-D) | **4축 × 5영역 + 흐름 9개 = 29개** |
-| **사전 인지** | 평균 53분 | **70~90분 예상** (인플로 선행 신호) |
-| **원인 파악** | "HUB 정체" | **"어느 FAB 에서 시작 → 어디로 전파"** |
-| **운영자 행동** | "어디 봐야 하지?" | **"M14A CNV 봐라"** |
-| **위양성** | R-D 단독으로 잡힌 케이스 多 | **흐름 비율 기준으로 위양성 감소** |
+| 컬럼 수 | 64 | **269** (+205) |
+| 영역 수 | 4 (HUB+M14B+PKT/WT) | **8 (전체 FAB)** |
+| 룰 종류 | 4축 1세트 | **4축×5 + 흐름 + SLA + Sorter + 운영자** |
+| 사전 인지 | 평균 53분 | **70~90분 예상** |
+| 원인 파악 | "HUB 정체" | **"M14A 시작 → 전파 경로"** |
+| 운영자 변수 | 미활용 | **MAXCAPA 6개 학습** ★ |
+| Sorter 신호 | 미활용 | **8개 추적** ★ |
+| 위양성 방어 | 임계값 | **다축 + 운영자 변수 교차검증** |
 
 ---
 
 ## 8. 진행 로드맵
 
-### Phase 1 (1주) — Layer 1 영역별 4축
-- 5개 영역 × 5축 컬럼 추가
-- 25개 셀 동시 평가
-- 출력: 영역별 ctx + 위험도 (기존 호환)
+### Phase 0 — 데이터 수집 (이번 주) ★ 현재 위치
+- ✅ `AWS_IDC_v4.1_컬럼_전체정리.md` (269개 정리)
+- ⏳ `AWS_IDC_QUERY_v4.1.sql` 작성 (269개 컬럼)
+- ⏳ 학습 데이터 추출 (CSV)
+- ⏳ 영역별 정상 분포 분석 → 임계값 도출
 
-### Phase 2 (1주) — Layer 2 흐름 룰
-- 9개 흐름 노드 룰 추가
-- 비율 기반 발동 (1.5x/2x/3x)
-- hot_area 식별
+### Phase 1 — 룰베이스 통합 (1주)
+- 영역별 4축 평가 (5영역)
+- 흐름 룰 (9개 노드)
+- SLA 룰 (12개)
+- Sorter 룰 (8개)
+- 운영자 변수 룰 (MAXCAPA 6개)
 
-### Phase 3 (1주) — Layer 3 전파 추적
-- 시계열 패턴 매칭
+### Phase 2 — 전파 추적 (1주)
 - propagation_chain 자동 생성
-- 통합 S3 강화
+- hot_area 식별
+- 시계열 패턴 매칭
 
-### Phase 4 (1주) — 검증 + ML 재학습
-- dss_data.csv 로 검증
-- ML 피처 통합 (총 100개+)
+### Phase 3 — ML 재학습 (1주)
+- 피처 70개 → 200개+ (영역별 + 흐름 + SLA + 운영자)
 - model.json 재학습
 
-→ **총 예상 4주**.
+### Phase 4 — 하이브리드 융합 갱신 (3일)
+- 통합 룰+ML 받는 hybrid_predictor.py 수정
 
-### 추천: **Phase 1 부터 점진적 진행**
-
-이유:
-- 기존 코드 그대로 작동 (S3 정의 보존)
-- 영역별 신호만 추가 — 부작용 적음
-- 운영자가 점진적 적응 가능
+→ **총 약 3주** (Phase 0 완료 후).
 
 ---
 
-## 9. 데이터 / 컬럼 요구사항
+## 9. 데이터 / 컬럼 요구
 
-### 필수 추가 수집 컬럼 (수집기 v3.2 필요)
+### 새로 수집해야 할 컬럼 (수집기 v4.1)
 
-이미 수집 중 (v3.1) ✓:
-- M14, M14B, M16A 2F/6F, M16B 인플로 5개
-- M16HUB.STRATE.STB.3F_STORAGE_UTIL
+이미 수집 중 (v3.1) ✓ — 64개
 
-신규 필요:
-- **영역별 T1MIN 5개**: M14, M14B, M16A 별 T1MIN
-- **영역별 OHTUTIL 5개**: M14B 만 있음 → M14, M16A, M16B 추가
-- **영역별 4분초과** 3개: M14, M16A, M16B
-- **HUB 출구 4개**: M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB 등
+신규 추가 필요 — **205개**:
+- **★★★ 운영자 변수 MAXCAPA 6개** (최우선)
+- **★★ 4분초과 영역별 9개** (M14/M16A/M16B 추가)
+- **★★ HUB 출구 5개** (3F_TO_*_JOB)
+- **★★ HUB CMD/JOB 11개**
+- **★ Sorter 8개** (LOT 적체 신호)
+- **★ M14 CNV 남/북측 세부 9개**
+- **★ 영역간 흐름 30개+** (CNV/LFT)
+- 리프터 방향별 80개 (R-C' 정밀화 — 선택)
+- 나머지 영역별 기본 큐/시간 ~50개
 
-→ **약 17개 추가 컬럼** 수집기에 더 넣어야 함.
+→ **수집기 (aws_idc_realtime_collector.py) 도 v4.1 로 업데이트 필요**.
 
----
-
-## 10. 데이터 검증 — 사용자 줄 수 있다고 한 것
-
-### 필요한 데이터 (우선순위)
-
-1. ★★★ **통합 사건 라벨**: 5월 사건들의 "원인 영역" 표시
-   - 예: "5/8 13:00 사건 = M14A 시작" / "5/14 10:00 사건 = M14B 시작"
-
-2. ★★ **0512 case 상세**: 0512 (5/12) 사건의 영역별 데이터
-   - MAIN_TS.TXT 에 "0512 case 이상지표" 라고 적힘
-   - 이 사건이 어떤 영역에서 시작됐는지 알면 전파 추적 모델 검증 가능
-
-3. ★ **5/7 SFA 정체 검증**: 이미 R-D 로 잡고 있는데 통합 시 더 빨리 잡는지
+### 학습 데이터 추출 (SQL v4.1)
+- 기간: 2026-01-01 ~ 2026-05-14 (4.5개월)
+- 컬럼: 269개
+- 행 수: 약 192,000행
+- 예상 파일 크기: 약 60~80 MB
 
 ---
 
-## 11. 결론 — 한 줄 요약
+## 10. 데이터 검증 — 사용자 보유
 
-> **기존 룰베이스 (HUB 1개 영역) → 통합 룰베이스 (8개 FAB + 9개 흐름)**
+### 필요한 라벨/사건 정보 (우선순위)
+
+1. ★★★ **8개 사건 영역별 라벨**
+   - 5월 사건마다 "어느 FAB 가 시작점" 표시
+   - 예: "5/8 13:00 = M14A 시작" / "5/14 10:00 = M14B 시작"
+
+2. ★★ **0512 case 상세** (MAIN_TS.TXT 언급된 사건)
+   - 5/12 사건 영역별 데이터
+
+3. ★ **5/7 SFA 정체** 검증 (이미 R-D 잡음)
+
+4. ★★ **메신저 → 영역 매핑**
+   - 운영자가 어느 영역 MAXCAPA 변경했는지
+
+---
+
+## 11. 룰베이스 가능성 판단
+
+### 룰베이스로 통합 예측 — **80% 가능** (도메인 지식 덕분)
+
+**룰베이스 강점** (도메인 지식 기반):
+- FAB 연결도 (10개) 직접 룰화 → 흐름 추적 가능
+- 반송장치 7종 특성 → 각자 이상 신호 명확
+- 영역별 임계값 (정상 분포 기반) → 영역별 룰 가능
+- 운영자 행동 패턴 (MAXCAPA 변경) → 이미 데이터로 검증 가능
+
+**룰베이스 한계 (ML 보완 필요)**:
+- 영역 간 비선형 상호작용 (가중치 학습)
+- 신호 강도 정량화 (연속값)
+- 위양성 자동 감소 (학습)
+
+**최선**: 룰베이스 단독 80% → 룰+ML 결합 90%+
+
+---
+
+## 12. 결론
+
+> **269개 컬럼 / 8개 FAB / 5종 룰 → 통합 이벤트 예측기**
 > **사전 인지 53분 → 70~90분**
-> **원인 영역 식별 가능 (hot_area)**
-> **위양성 감소 (비율 기반 판정)**
-> **Phase 1 부터 점진적 진행 추천**
+> **원인 영역 자동 식별 (hot_area)**
+> **전파 경로 자동 추적 (propagation_chain)**
+> **운영자 MAXCAPA 변수까지 활용 (★ 신규)**
+> **Phase 0 (데이터 수집) → Phase 1 (룰베이스) → Phase 2~4 점진 진행**
 
 ---
 
-*본 문서는 MAIN_UIS/ (MAIN_TS.TXT + 1.PNG + 2.PNG) 분석 기반 통합 예측기 설계서.*
+*본 문서는 v4.1 (269컬럼) 기반 통합 예측기 설계서이다.*
+*상세 컬럼 목록: `AWS_IDC_v4.1_컬럼_전체정리.md`*
