@@ -1,65 +1,106 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-3단계 데드락 룰베이스 실시간 예측기
-======================================
-수집기가 매분 00초에 ./predict/M16A_HUBROOM_PR.csv 덮어쓰면
-본 스크립트는 매분 05초에 깨어나 마지막 행 1개를 새로 처리해서
-./predict_tobe/ 폴더에 날짜별 CSV로 append.
+M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)
+======================================================
+8개 FAB 영역 통합 룰베이스 데드락 예측기.
+   대상 영역: M16HUB, M14, M14B, M16A, M16B, M16, M16_PKT, M16_WT
+   학습 임계값: 2026-03-24 14:39 ~ 2026-04-30 정상분포 (p95/p99) 기반
+   테스트 구간 : 2026-05-01 ~ (사용자가 5월로 검증 예정)
 
-기본값:
-  · 입력: ./predict/M16A_HUBROOM_PR.csv
-  · 출력: ./predict_tobe/
-  · 주기: 매분 00초 동기 (수집기와 5초 offset)
+   ※ 데이터 검증 (사용자 지적 반영)
+   1) 1~3월 초는 22개 핵심 컬럼 (MAXCAPA 6, HUB인플로 9, HUB출구 5, STB 1, AOTRANSDELAY 1)
+      이 NULL. 2026-03-24 14:39 부터 수집 시작. 따라서 학습기간을 그 이후로 한정함.
+      모든 룰은 safe_int/safe_float 가 None 으로 처리하므로 NULL 행은 자동 스킵됨.
+   2) 현재 DB 에는 없지만 추후 추가될 수 있는 3개 컬럼은 graceful 처리 (있으면 사용):
+        - M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER
+        - M16A.SORTER.ABN.SORTERTRANSFERFAIL
+        - M16B.SORTER.ABN.SORTERTRANSFERFAIL
+   3) R-A' 컬럼명 영역별 차이 (검증완료):
+        - M16HUB / M14B / M16_PKT / M16_WT  →  QUE.TIME.AVGTOTALTIME1MIN
+        - M14   / M16A  / M16B              →  QUE.LOAD.AVGLOADTIME1MIN
+   4) 계획서 269컬럼 vs 실제 수집 265컬럼 차이는 폐기 19 / 추가 4(AOTRANSDELAY) /
+      추가 11(v3 collector 호환) — 본 예측기는 실제 수집 컬럼만 사용.
 
-룰 (3차 검증):
-  R-A'         : 1MIN ≥ 9분이 10분창 1회+
-  ra_sustained : 1MIN ≥ 6분이 5분창 3회+
-  R-B          : M14→M16 +100/30분
-  rb_fast      : M14→M16 +30/10분
-  R-C'         : 리프터 합 감소 + 역증가 2개+
-  R-D          : FAB저장률 ≥25% (5/7 7시 정체 검증)
-
-  S1 = R-A' 2회+ OR ra_sustained
-  S2 = R-B OR rb_fast
-  S3 = R-A' AND R-C' AND (R-B OR R-D)
-
-출력:
-  ./predict_tobe/<YYYYMMDD>_발동이벤트.csv  (매분 1행, 이벤트 없는 분도 기록)
-  ./predict_tobe/<YYYYMMDD>_사건단위.csv    (S3 종료 시 1건)
+수집기가 매분 ./predict/M16A_HUBROOM_PR.csv 덮어쓰면
+본 스크립트는 ./predict_tobe/ 폴더에 날짜별 CSV 로 append.
 
 사용법:
-    # 실시간 (기본 — 매분 동기, 추천)
-    python3 3단계_룰베이스_사건단위.py --watch
+    # 일괄 (백테스트)
+    python3 hubroom_predictor.py path/to/INPUT.csv -o ./predict_tobe
 
-    # 일괄 (현재 CSV 한 번만 처리)
-    python3 3단계_룰베이스_사건단위.py
-
-    # 경로 지정
-    python3 3단계_룰베이스_사건단위.py path/to/INPUT.csv -o ./predict_tobe --watch
+    # 실시간 감시 (수집기 동기)
+    python3 hubroom_predictor.py --watch
 """
-
-import csv
-import logging
-import os
-import sys
-import time
+import csv, logging, os, sys, time
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 
-
-# ====== 기본 경로 ======
+# ============================================================
+# 기본 경로 / 상수
+# ============================================================
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_INPUT_CSV = BASE_DIR / "predict" / "M16A_HUBROOM_PR.csv"
 DEFAULT_OUTPUT_DIR = BASE_DIR / "predict_tobe"
 
 SYNC_OFFSET_SEC = 5
 INTERVAL_SEC = 60
-
-
-# ====== 상수 ======
 WINDOW_MIN = 90
+INCIDENT_END_GAP_MIN = 10
+PREDICT_LOOKBACK_MIN = 60
+
+# ============================================================
+# 영역별 임계값 (2026-03-24 14:39 ~ 04-30 학습 분포 p95/p99 기반)
+# ============================================================
+TH_RA = {
+    'M16HUB':  9.0, 'M14':     3.3, 'M14B':    5.0,
+    'M16A':    3.2, 'M16B':    3.5, 'M16_PKT': 7.5, 'M16_WT':  2.8,
+}
+TH_RA_SUSTAINED_RATIO = 0.67
+TH_RA_SUSTAINED_COUNT = 3
+
+TH_RB_30 = {
+    'M16HUB': 100, 'M14': 80, 'M14B': 150,
+    'M16A': 80, 'M16B': 30, 'M16': 20,
+}
+TH_RB_10 = {k: max(10, int(v * 0.3)) for k, v in TH_RB_30.items()}
+
+TH_RC_REVERSE = 2
+TH_RD_FABSTORAGE = 25.0
+TH_RD_HUB_STB_UTIL = 99.0
+TH_RD_OHT_UTIL = 95.0
+
+TH_SLA_RATIO = {'M16HUB': 5.0, 'M14': 25.0, 'M16A': 13.0, 'M16B': 18.0}
+
+TH_SORTER_WAIT = {
+    'M14': 100, 'M14B': 75, 'M16A': 180, 'M16B': 90, 'M16HUB': 30,
+}
+TH_SORTER_TRANSFER_FAIL = 1
+
+MAXCAPA_NORMAL = {
+    'M16HUB.QUE.LFT.3F_LFT_MAXCAPA':       (165, 100),
+    'M16HUB.QUE.LFT.3F_M14BLFT_MAXCAPA':   (66, 50),
+    'M16HUB.QUE.CNV.3F_CNV_MAXCAPA':       (129, 80),
+    'M14.QUE.CNV.3F_CNV_MAXCAPA':          (244, 150),
+    'M16A.QUE.LFT.2F_LFT_MAXCAPA':         (54, 40),
+    'M16A.QUE.LFT.6F_LFT_MAXCAPA':         (149, 100),
+}
+
+FLOW_NODES = {
+    'M14_CNV_TO_HUB':    ('M14',    'M14.QUE.CNV.M14ATOM16ACURRNETQCNT'),
+    'M14_TO_HUB_JOB':    ('M14',    'M14.QUE.ALL.3F_TO_HUB_JOB'),
+    'M14B_7F_TO_HUB':    ('M14B',   'M14B.QUE.ALL.7F_TO_HUB_JOB'),
+    'M14B_LFT_4ABLD122': ('M14B',   'M14B.LFT.4ABLD122.TOTAL_CURRENTQCNT'),
+    'M16A_6F_TO_HUB':    ('M16A',   'M16A.QUE.ALL.6F_TO_HUB_JOB'),
+    'M16A_2F_TO_HUB':    ('M16A',   'M16A.QUE.ALL.2F_TO_HUB_JOB'),
+    'M16B_10F_TO_HUB':   ('M16B',   'M16B.QUE.ALL.10F_TO_HUB_JOB'),
+    'HUB_OHT_QCNT':      ('M16HUB', 'M16HUB.QUE.OHT.CURRENTOHTQCNT'),
+    'M14_TO_M16':        ('M16HUB', 'M16HUB.QUE.M14TOM16.MESCURRENTQCNT'),
+}
+TH_FLOW_X1_5 = 1.5
+TH_FLOW_X2_0 = 2.0
+TH_FLOW_X3_0 = 3.0
 
 LIFTER_IDS = [
     '6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
@@ -67,25 +108,59 @@ LIFTER_IDS = [
     '6ABL0121', '6ABL0122',
 ]
 
-TH_RA_VALUE = 9.0
-TH_RA_SUSTAINED_VALUE = 6.0
-TH_RA_SUSTAINED_COUNT = 3
-TH_RB_DIFF_30 = 100
-TH_RB_DIFF_10 = 30
-TH_RC_REVERSE = 2
-TH_RD_FABSTORAGE = 25.0
-TH_RD_7F_HUB_ALT = 20
+RA_COL = {
+    'M16HUB':  'M16HUB.QUE.TIME.AVGTOTALTIME1MIN',
+    'M14':     'M14.QUE.LOAD.AVGLOADTIME1MIN',
+    'M14B':    'M14B.QUE.TIME.AVGTOTALTIME1MIN',
+    'M16A':    'M16A.QUE.LOAD.AVGLOADTIME1MIN',
+    'M16B':    'M16B.QUE.LOAD.AVGLOADTIME1MIN',
+    'M16_PKT': 'M16_PKT.QUE.TIME.AVGTOTALTIME1MIN',
+    'M16_WT':  'M16_WT.QUE.TIME.AVGTOTALTIME1MIN',
+}
+RB_COL = {
+    'M16HUB':  'M16HUB.QUE.M14TOM16.MESCURRENTQCNT',
+    'M14':     'M14.QUE.ALL.3F_TO_HUB_JOB',
+    'M14B':    'M14B.QUE.ALL.7F_TO_HUB_JOB',
+    'M16A':    'M16A.QUE.ALL.6F_TO_HUB_JOB',
+    'M16B':    'M16B.QUE.ALL.10F_TO_HUB_JOB',
+    'M16':     'M16.QUE.SFAB.SENDQUEUETOTAL',
+}
+RD_OHT_COL = {
+    'M16HUB': 'M16HUB.QUE.OHT.OHTUTIL',
+    'M14':    'M14.QUE.OHT.OHTUTIL',
+    'M14B':   'M14B.QUE.OHT.OHTUTIL',
+    'M16A':   'M16A.QUE.OHT.OHTUTIL',
+    'M16B':   'M16B.QUE.OHT.OHTUTIL',
+}
+SLA_COL = {
+    'M16HUB': 'M16HUB.QUE.ALL.TRANSPORT4MINOVERRATIO',
+    'M14':    'M14.QUE.ALL.TRANSPORT4MINOVERRATIO',
+    'M16A':   'M16A.QUE.ALL.TRANSPORT4MINOVERRATIO',
+    'M16B':   'M16B.QUE.ALL.TRANSPORT4MINOVERRATIO',
+}
+SORTER_COL = {
+    'M14':    'M14.SORTER.ABN.SORTERWAITCOUNTOVER',
+    'M14B':   'M14B.SORTER.ABN.SORTERWAITCOUNTOVER',
+    'M16A':   'M16A.SORTER.ABN.SORTERWAITCOUNTOVER',
+    'M16B':   'M16B.SORTER.ABN.SORTERWAITCOUNTOVER',
+    'M16HUB': 'M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER',
+}
+SORTER_FAIL_COL = {
+    'M16A':   'M16A.SORTER.ABN.SORTERTRANSFERFAIL',
+    'M16B':   'M16B.SORTER.ABN.SORTERTRANSFERFAIL',
+}
+HUB_OUT_COLS = [
+    'M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB',
+    'M16HUB.QUE.ALL.3F_TO_M16A_2F_JOB',
+    'M16HUB.QUE.ALL.3F_TO_M14A_3F_JOB',
+    'M16HUB.QUE.ALL.3F_TO_M14B_7F_JOB',
+    'M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB',
+]
 
-# ★ v3.1 신규 룰 임계값 (보조 신호 — S3 로직 불변)
-TH_RE_HUB_STORAGE_LOW = 60.0    # R-E: HUB 저장 가용 ≤ 60%
-TH_RF_INFLOW_TOTAL    = 700     # R-F: HUB 전체 인플로 ≥ 700개
-TH_RF_INFLOW_SPIKE    = 1.5     # R-F-fast: 10분 +50% 폭증
 
-INCIDENT_END_GAP_MIN = 10
-PREDICT_LOOKBACK_MIN = 60
-
-
-# ====== 로깅 ======
+# ============================================================
+# 로깅 & 유틸
+# ============================================================
 def setup_logger(out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("predictor")
@@ -101,7 +176,6 @@ def setup_logger(out_dir: Path):
     return logger
 
 
-# ====== 유틸 ======
 def safe_float(v):
     try:
         return float(v) if v not in (None, '', 'null') else None
@@ -136,63 +210,122 @@ def parse_time(s):
     return None
 
 
-def detect_prefix(fieldnames):
-    anchor = '.QUE.ALL.CURRENTQCNT'
-    for col in fieldnames or []:
-        if col and col.endswith(anchor):
-            return col[:-len(anchor)]
-    return None
-
-
-# ====== STAR 로드 ======
-def iter_star_rows(filepath):
-    """STAR CSV → (datetime, star_dict, prefix) 제너레이터.
-    수집기가 utf-8-sig BOM 붙임. 인코딩 폴백."""
+# ============================================================
+# 입력 CSV 로더 — 8개 영역 통합
+# ============================================================
+def iter_unified_rows(filepath):
     enc_list = ['utf-8-sig', 'utf-8', 'cp949']
     last_err = None
     for enc in enc_list:
         try:
             with open(filepath, 'r', encoding=enc) as f:
                 reader = csv.DictReader(f)
-                prefix = detect_prefix(reader.fieldnames)
-                if not prefix:
-                    return
-
-                def C(suffix):
-                    return f"{prefix}{suffix}"
-
                 for row in reader:
                     t = parse_time(row.get('CRT_TM', ''))
                     if not t:
                         continue
-                    star = {
-                        'avgtotal1min': safe_float(row.get(C('.QUE.TIME.AVGTOTALTIME1MIN'))),
-                        'm14_to_m16':   safe_int(row.get(C('.QUE.M14TOM16.MESCURRENTQCNT'))),
-                        'lft_list': {
-                            lid: safe_int(row.get(C(f'.LFT.{lid}.TOTAL_CURRENTQCNT')))
-                            for lid in LIFTER_IDS
+                    d = {'time': t}
+                    g = row.get
+
+                    d['M16HUB'] = {
+                        'ra': safe_float(g(RA_COL['M16HUB'])),
+                        'rb': safe_int(g(RB_COL['M16HUB'])),
+                        'rd_fab': safe_float(g('M16HUB.STRATE.ALL.FABSTORAGERATIO')),
+                        'rd_oht': safe_float(g(RD_OHT_COL['M16HUB'])),
+                        'sla_ratio': safe_float(g(SLA_COL['M16HUB'])),
+                        'sla_cnt': safe_int(g('M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT')),
+                        'sorter': safe_int(g(SORTER_COL['M16HUB'])),
+                        'hub_stb_util': safe_float(g('M16HUB.STRATE.STB.3F_STORAGE_UTIL')),
+                        'oht_qcnt': safe_int(g('M16HUB.QUE.OHT.CURRENTOHTQCNT')),
+                        'oht_alarm': safe_int(g('M16HUB.OHT.ALERT.OHTMCPALARMCNT')),
+                        'aotransdelay': safe_int(g('M16HUB.QUE.ABN.AOTRANSDELAY')),
+                        'lifters': {lid: safe_int(g(f'M16HUB.LFT.{lid}.TOTAL_CURRENTQCNT'))
+                                    for lid in LIFTER_IDS},
+                        'hub_outs': {col: safe_int(g(col)) for col in HUB_OUT_COLS},
+                        'maxcapa': {
+                            'M16HUB.QUE.LFT.3F_LFT_MAXCAPA': safe_int(g('M16HUB.QUE.LFT.3F_LFT_MAXCAPA')),
+                            'M16HUB.QUE.LFT.3F_M14BLFT_MAXCAPA': safe_int(g('M16HUB.QUE.LFT.3F_M14BLFT_MAXCAPA')),
+                            'M16HUB.QUE.CNV.3F_CNV_MAXCAPA': safe_int(g('M16HUB.QUE.CNV.3F_CNV_MAXCAPA')),
                         },
-                        'fabstorage_ratio':  safe_float(row.get(C('.STRATE.ALL.FABSTORAGERATIO'))),
-                        'm14b_aotransdelay': safe_float(row.get('M14B.QUE.ABN.AOTRANSDELAY')),
-                        'm14b_oht_util':     safe_float(row.get('M14B.QUE.OHT.OHTUTIL')),
-                        'm14b_4abld122':     safe_int(row.get('M14B.LFT.4ABLD122.TOTAL_CURRENTQCNT')),
-                        'm14b_avgtotal1min': safe_float(row.get('M14B.QUE.TIME.AVGTOTALTIME1MIN')),
-                        'm14b_7f_to_hub':    safe_int(row.get('M14B.QUE.ALL.7F_TO_HUB_JOB')),
-                        'm14b_7f_to_hub_alt': safe_int(row.get('M14B.QUE.ALL.7F_TO_HUB_JOB_ALT')),
-                        'm14_htstop':        safe_int(row.get('M14.OHT.STATECNT.HTSTOP')),
-                        'm14_congested':     safe_int(row.get('M14.OHT.STATECNT.CONGESTED')),
-                        'm14_abnormal':      safe_int(row.get('M14.OHT.STATECNT.ABNORMAL')),
-                        'm16pkt_aotransdelay': safe_float(row.get('M16_PKT.QUE.ABN.AOTRANSDELAY')),
-                        'm16wt_aotransdelay':  safe_float(row.get('M16_WT.QUE.ABN.AOTRANSDELAY')),
-                        # ★ v3.1 신규 5개 컬럼
-                        'hub_storage_util':  safe_float(row.get(C('.STRATE.STB.3F_STORAGE_UTIL'))),
-                        'm14_inflow':        safe_int(row.get('M14.QUE.ALL.3F_TO_HUB_JOB')),
-                        'm16a_2f_inflow':    safe_int(row.get('M16A.QUE.ALL.2F_TO_HUB_JOB')),
-                        'm16a_6f_inflow':    safe_int(row.get('M16A.QUE.ALL.6F_TO_HUB_JOB')),
-                        'm16b_10f_inflow':   safe_int(row.get('M16B.QUE.ALL.10F_TO_HUB_JOB')),
                     }
-                    star['lft_list'] = {k: v for k, v in star['lft_list'].items() if v is not None}
-                    yield t, star, prefix
+                    d['M16HUB']['lifters'] = {k: v for k, v in d['M16HUB']['lifters'].items() if v is not None}
+
+                    d['M14'] = {
+                        'ra': safe_float(g(RA_COL['M14'])),
+                        'rb': safe_int(g(RB_COL['M14'])),
+                        'rd_oht': safe_float(g(RD_OHT_COL['M14'])),
+                        'sla_ratio': safe_float(g(SLA_COL['M14'])),
+                        'sla_cnt': safe_int(g('M14.QUE.ALL.TRANSPORT4MINOVERCNT')),
+                        'sorter': safe_int(g(SORTER_COL['M14'])),
+                        'cnv_north': safe_int(g('M14.QUE.CNV.M14ATONORTHCURRENTQCNT')),
+                        'cnv_south': safe_int(g('M14.QUE.CNV.M14ATOSOUTHCURRENTQCNT')),
+                        'cnv_m14a_m16a': safe_int(g('M14.QUE.CNV.M14ATOM16ACURRNETQCNT')),
+                        'inflow_alt': safe_int(g('M14.QUE.ALL.3F_TO_HUB_JOB_ALT')),
+                        'oht_cmd': safe_int(g('M14.QUE.OHT.3F_TO_HUB_CMD')),
+                        'htstop': safe_int(g('M14.OHT.STATECNT.HTSTOP')),
+                        'congested': safe_int(g('M14.OHT.STATECNT.CONGESTED')),
+                        'abnormal': safe_int(g('M14.OHT.STATECNT.ABNORMAL')),
+                        'maxcapa': {'M14.QUE.CNV.3F_CNV_MAXCAPA': safe_int(g('M14.QUE.CNV.3F_CNV_MAXCAPA'))},
+                    }
+
+                    d['M14B'] = {
+                        'ra': safe_float(g(RA_COL['M14B'])),
+                        'rb': safe_int(g(RB_COL['M14B'])),
+                        'rd_oht': safe_float(g(RD_OHT_COL['M14B'])),
+                        'sorter': safe_int(g(SORTER_COL['M14B'])),
+                        'lft_4abld122': safe_int(g('M14B.LFT.4ABLD122.TOTAL_CURRENTQCNT')),
+                        'inflow_alt': safe_int(g('M14B.QUE.ALL.7F_TO_HUB_JOB_ALT')),
+                        'oht_cmd': safe_int(g('M14B.QUE.OHT.7F_TO_HUB_CMD')),
+                        'aotransdelay': safe_int(g('M14B.QUE.ABN.AOTRANSDELAY')),
+                    }
+
+                    d['M16A'] = {
+                        'ra': safe_float(g(RA_COL['M16A'])),
+                        'rb': safe_int(g(RB_COL['M16A'])),
+                        'inflow_2f': safe_int(g('M16A.QUE.ALL.2F_TO_HUB_JOB')),
+                        'rd_oht': safe_float(g(RD_OHT_COL['M16A'])),
+                        'sla_ratio': safe_float(g(SLA_COL['M16A'])),
+                        'sla_cnt': safe_int(g('M16A.QUE.ALL.TRANSPORT4MINOVERCNT')),
+                        'sorter': safe_int(g(SORTER_COL['M16A'])),
+                        'sorter_fail': safe_int(g(SORTER_FAIL_COL['M16A'])),
+                        'oht_cmd_2f': safe_int(g('M16A.QUE.OHT.2F_TO_HUB_CMD')),
+                        'oht_cmd_6f': safe_int(g('M16A.QUE.OHT.6F_TO_HUB_CMD')),
+                        'maxcapa': {
+                            'M16A.QUE.LFT.2F_LFT_MAXCAPA': safe_int(g('M16A.QUE.LFT.2F_LFT_MAXCAPA')),
+                            'M16A.QUE.LFT.6F_LFT_MAXCAPA': safe_int(g('M16A.QUE.LFT.6F_LFT_MAXCAPA')),
+                        },
+                    }
+
+                    d['M16B'] = {
+                        'ra': safe_float(g(RA_COL['M16B'])),
+                        'rb': safe_int(g(RB_COL['M16B'])),
+                        'rd_oht': safe_float(g(RD_OHT_COL['M16B'])),
+                        'sla_ratio': safe_float(g(SLA_COL['M16B'])),
+                        'sla_cnt': safe_int(g('M16B.QUE.ALL.TRANSPORT4MINOVERCNT')),
+                        'sorter': safe_int(g(SORTER_COL['M16B'])),
+                        'sorter_fail': safe_int(g(SORTER_FAIL_COL['M16B'])),
+                    }
+
+                    d['M16'] = {
+                        'rb': safe_int(g(RB_COL['M16'])),
+                        'sfab_send': safe_int(g('M16.QUE.SFAB.SENDQUEUETOTAL')),
+                        'sfab_recv': safe_int(g('M16.QUE.SFAB.RECEIVEQUEUETOTAL')),
+                        'sfab_ret': safe_int(g('M16.QUE.SFAB.RETURNQUEUETOTAL')),
+                    }
+
+                    d['M16_PKT'] = {
+                        'ra': safe_float(g(RA_COL['M16_PKT'])),
+                        'rd_oht': safe_float(g('M16_PKT.QUE.OHT.OHTUTIL')),
+                        'aotransdelay': safe_int(g('M16_PKT.QUE.ABN.AOTRANSDELAY')),
+                    }
+
+                    d['M16_WT'] = {
+                        'ra': safe_float(g(RA_COL['M16_WT'])),
+                        'rd_oht': safe_float(g('M16_WT.QUE.OHT.OHTUTIL')),
+                        'aotransdelay': safe_int(g('M16_WT.QUE.ABN.AOTRANSDELAY')),
+                    }
+
+                    yield d
             return
         except UnicodeDecodeError as e:
             last_err = e
@@ -201,219 +334,287 @@ def iter_star_rows(filepath):
         raise last_err
 
 
-# ====== 룰 평가 ======
-def evaluate_rules(t1_window, m14_window, lft_window, v3_window=None):
-    t1_list = list(t1_window)
-    m14_list = list(m14_window)
-    lft_list = list(lft_window)
-
-    recent_t1 = t1_list[-10:]
-    ra_count = sum(1 for v in recent_t1 if v is not None and v >= TH_RA_VALUE)
-    ra_value = recent_t1[-1] if recent_t1 else None
-    ra_trig = ra_count >= 1
-
-    ra_sustained = False
-    if len(recent_t1) >= 5:
-        last5 = [v for v in recent_t1[-5:] if v is not None]
-        if len(last5) >= 3:
-            ra_sustained = sum(1 for v in last5 if v >= TH_RA_SUSTAINED_VALUE) >= TH_RA_SUSTAINED_COUNT
-
-    rb_diff = 0
-    rb_trig = False
-    if len(m14_list) >= 31 and m14_list[-1] is not None and m14_list[-31] is not None:
-        rb_diff = m14_list[-1] - m14_list[-31]
-        rb_trig = rb_diff >= TH_RB_DIFF_30
-
-    rb_fast = False
-    rb_diff_10 = 0
-    if len(m14_list) >= 11 and m14_list[-1] is not None and m14_list[-11] is not None:
-        rb_diff_10 = m14_list[-1] - m14_list[-11]
-        rb_fast = rb_diff_10 >= TH_RB_DIFF_10
-
-    rc_trend = 0
-    rev_count = 0
-    rev_lids = []
-    rc_trig = False
-    if len(lft_list) >= 21 and lft_list[-1] and lft_list[-21]:
-        now_l = lft_list[-1]
-        prev_l = lft_list[-21]
-        rc_trend = sum(now_l.values()) - sum(prev_l.values())
-        for lid in now_l:
-            if now_l[lid] > prev_l.get(lid, 0):
-                rev_lids.append(lid)
-                rev_count += 1
-        rc_trig = rc_trend < 0 and rev_count >= TH_RC_REVERSE
-
-    rd_fabstorage = 0
-    rd_7f_alt = 0
-    rd_trig = False
-    # ★ v3.1 신규 변수
-    hub_storage_util = None
-    inflow_total = 0
-    inflow_total_10ago = 0
-    re_trig = False
-    rf_trig = False
-    rf_fast = False
-    if v3_window:
-        latest = v3_window[-1] if v3_window else {}
-        if latest:
-            rd_fabstorage = latest.get('fabstorage_ratio') or 0
-            rd_7f_alt = latest.get('m14b_7f_to_hub_alt') or 0
-            rd_trig = rd_fabstorage >= TH_RD_FABSTORAGE
-
-            # R-E: HUB Storage 가용공간 부족
-            hub_storage_util = latest.get('hub_storage_util')
-            if hub_storage_util is not None:
-                re_trig = hub_storage_util <= TH_RE_HUB_STORAGE_LOW
-
-            # R-F: 인플로 통합
-            def _sum_inflow(d):
-                if not d: return 0
-                return ((d.get('m14_inflow') or 0)
-                        + (d.get('m16a_2f_inflow') or 0)
-                        + (d.get('m16a_6f_inflow') or 0)
-                        + (d.get('m16b_10f_inflow') or 0))
-            inflow_total = _sum_inflow(latest)
-            rf_trig = inflow_total >= TH_RF_INFLOW_TOTAL
-
-            if len(v3_window) >= 11:
-                prev = v3_window[-11] if v3_window[-11] else {}
-                inflow_total_10ago = _sum_inflow(prev)
-                if inflow_total_10ago > 100:
-                    rf_fast = inflow_total >= inflow_total_10ago * TH_RF_INFLOW_SPIKE
-
-    s1 = (ra_count >= 2) or ra_sustained
-    s2 = rb_trig or rb_fast
-    # ★ S3 = 불변 (검증된 로직) — R-E/R-F 는 ctx 출력만, S3 영향 없음
-    s3 = ra_trig and rc_trig and (rb_trig or rd_trig)
-
-    # ============================================================
-    # ★★★ 위험도 점수 (Risk Score) — "S3 로 갈 진짜 위험인가"
-    # S1/S2 시점에도 0~170점 부여. 신호 동시 발동 많을수록 점수↑
-    # ============================================================
-    risk_score = 0
-    risk_factors = []
-
-    if ra_sustained:
-        risk_score += 25; risk_factors.append('ra_sustained')
-    if ra_count >= 2:
-        risk_score += 20; risk_factors.append(f'ra_count={ra_count}')
-    if ra_value and ra_value >= 7.5:
-        risk_score += 15; risk_factors.append(f'ra={ra_value:.1f}분')
-
-    if rb_fast:
-        risk_score += 25; risk_factors.append('rb_fast')
-    if rb_trig:
-        risk_score += 15; risk_factors.append(f'rb=+{rb_diff}')
-
-    if rc_trig:
-        risk_score += 20; risk_factors.append(f'rc_rev={rev_count}')
-    elif rev_count >= 3:
-        risk_score += 10; risk_factors.append(f'rev={rev_count}(준위험)')
-
-    if rd_trig:
-        risk_score += 25; risk_factors.append(f'rd={rd_fabstorage:.0f}%')
-    elif rd_fabstorage >= 15:
-        risk_score += 10; risk_factors.append(f'rd={rd_fabstorage:.0f}%(준위험)')
-
-    if re_trig:
-        risk_score += 15; risk_factors.append('re(HUB저장부족)')
-    if rf_trig:
-        risk_score += 10; risk_factors.append(f'rf={inflow_total}(인플로↑)')
-    if rf_fast:
-        risk_score += 10; risk_factors.append('rf_fast')
-
-    if risk_score >= 70:
-        risk_level = '매우위험'
-    elif risk_score >= 45:
-        risk_level = '위험'
-    elif risk_score >= 25:
-        risk_level = '주의'
-    elif risk_score > 0:
-        risk_level = '관심'
-    else:
-        risk_level = '정상'
-
-    ctx = {
-        'ra_count': ra_count, 'ra_value': ra_value, 'ra_sustained': ra_sustained,
-        'ra_trig': ra_trig,
-        'rb_diff': rb_diff, 'rb_diff_10': rb_diff_10,
-        'rb_fast': rb_fast, 'rb_trig': rb_trig,
-        'rc_trend': rc_trend, 'rc_trig': rc_trig,
-        'rev_count': rev_count, 'rev_lids': rev_lids,
-        'rd_fabstorage': rd_fabstorage, 'rd_7f_alt': rd_7f_alt, 'rd_trig': rd_trig,
-        # ★ v3.1 신규
-        'hub_storage_util': hub_storage_util,
-        'inflow_total': inflow_total, 'inflow_total_10ago': inflow_total_10ago,
-        're_trig': re_trig, 'rf_trig': rf_trig, 'rf_fast': rf_fast,
-        # ★★★ 위험도 평가
-        'risk_score': risk_score, 'risk_level': risk_level,
-        'risk_factors': ';'.join(risk_factors),
+# ============================================================
+# 영역별 4축 룰 평가
+# ============================================================
+def eval_area_rules(area, window):
+    out = {
+        'ra_trig': False, 'ra_sustained': False, 'ra_value': None, 'ra_count': 0,
+        'rb_trig': False, 'rb_fast': False, 'rb_diff_30': 0, 'rb_diff_10': 0,
+        'rc_trig': False, 'rev_count': 0, 'rev_lids': [], 'rc_trend': 0,
+        'rd_trig': False, 'rd_fab': 0, 'rd_oht': 0,
+        'sla_trig': False, 'sla_ratio': 0, 'sla_cnt': 0,
+        'sorter_trig': False, 'sorter_val': 0,
+        'maxcapa_changed': [], 'maxcapa_changed_n': 0,
+        'area_score': 0, 'area_signals': [],
     }
-    return s1, s2, s3, ctx
+    wlist = list(window)
+    if not wlist:
+        return out
+    latest = wlist[-1]
+    if not latest:
+        return out
+
+    # R-A'
+    if area in TH_RA:
+        th_ra = TH_RA[area]
+        th_sus = th_ra * TH_RA_SUSTAINED_RATIO
+        ra_vals = [w.get('ra') for w in wlist[-10:] if w and w.get('ra') is not None]
+        if ra_vals:
+            out['ra_value'] = ra_vals[-1]
+            out['ra_count'] = sum(1 for v in ra_vals if v >= th_ra)
+            out['ra_trig'] = out['ra_count'] >= 1
+        last5 = [w.get('ra') for w in wlist[-5:] if w and w.get('ra') is not None]
+        if len(last5) >= 3:
+            out['ra_sustained'] = sum(1 for v in last5 if v >= th_sus) >= TH_RA_SUSTAINED_COUNT
+
+    # R-B
+    if area in TH_RB_30:
+        th30 = TH_RB_30[area]
+        th10 = TH_RB_10[area]
+        rb_vals = [w.get('rb') for w in wlist if w]
+        if len(rb_vals) >= 31 and rb_vals[-1] is not None and rb_vals[-31] is not None:
+            out['rb_diff_30'] = rb_vals[-1] - rb_vals[-31]
+            out['rb_trig'] = out['rb_diff_30'] >= th30
+        if len(rb_vals) >= 11 and rb_vals[-1] is not None and rb_vals[-11] is not None:
+            out['rb_diff_10'] = rb_vals[-1] - rb_vals[-11]
+            out['rb_fast'] = out['rb_diff_10'] >= th10
+
+    # R-C' (M16HUB lifter / M14 CNV skew)
+    if area == 'M16HUB':
+        lifters_list = [w.get('lifters', {}) for w in wlist if w]
+        if len(lifters_list) >= 21 and lifters_list[-1] and lifters_list[-21]:
+            now_l = lifters_list[-1]
+            prev_l = lifters_list[-21]
+            out['rc_trend'] = sum(now_l.values()) - sum(prev_l.values())
+            for lid, v in now_l.items():
+                if v is not None and v > (prev_l.get(lid) or 0):
+                    out['rev_lids'].append(lid)
+                    out['rev_count'] += 1
+            out['rc_trig'] = out['rc_trend'] < 0 and out['rev_count'] >= TH_RC_REVERSE
+    elif area == 'M14':
+        n = latest.get('cnv_north') or 0
+        s = latest.get('cnv_south') or 0
+        if n + s > 0:
+            ratio = max(n, s) / max(1, n + s)
+            out['cnv_skew'] = ratio
+            out['rc_trig'] = ratio >= 0.70
+
+    # R-D
+    if area == 'M16HUB':
+        out['rd_fab'] = latest.get('rd_fab') or 0
+        out['rd_oht'] = latest.get('rd_oht') or 0
+        stb = latest.get('hub_stb_util') or 0
+        out['hub_stb_util'] = stb
+        out['rd_trig'] = (out['rd_fab'] >= TH_RD_FABSTORAGE) or (stb >= TH_RD_HUB_STB_UTIL)
+    elif area in RD_OHT_COL:
+        out['rd_oht'] = latest.get('rd_oht') or 0
+        out['rd_trig'] = out['rd_oht'] >= TH_RD_OHT_UTIL
+
+    # SLA
+    if area in SLA_COL:
+        ratio = latest.get('sla_ratio')
+        cnt = latest.get('sla_cnt')
+        out['sla_ratio'] = ratio or 0
+        out['sla_cnt'] = cnt or 0
+        if ratio is not None and ratio >= TH_SLA_RATIO[area]:
+            out['sla_trig'] = True
+        if len(wlist) >= 11:
+            prev = wlist[-11]
+            if prev and prev.get('sla_cnt') is not None and cnt is not None:
+                if cnt - prev.get('sla_cnt') >= 20:
+                    out['sla_trig'] = True
+
+    # Sorter
+    if area in TH_SORTER_WAIT:
+        sv = latest.get('sorter')
+        if sv is not None:
+            out['sorter_val'] = sv
+            out['sorter_trig'] = sv >= TH_SORTER_WAIT[area]
+    sf = latest.get('sorter_fail')
+    if sf is not None and sf >= TH_SORTER_TRANSFER_FAIL:
+        out['sorter_fail_trig'] = True
+        out['sorter_fail_val'] = sf
+        out['sorter_trig'] = True
+
+    # MAXCAPA
+    mc = latest.get('maxcapa') or {}
+    for col, val in mc.items():
+        if val is None:
+            continue
+        normal, th = MAXCAPA_NORMAL.get(col, (None, None))
+        if th is not None and val <= th:
+            out['maxcapa_changed'].append(f"{col.split('.')[-1]}={val}(<={th})")
+    out['maxcapa_changed_n'] = len(out['maxcapa_changed'])
+
+    # 영역 점수 (0~50)
+    s = 0
+    sig = []
+    if out['ra_trig']:        s += 10; sig.append('RA')
+    if out['ra_sustained']:   s += 5;  sig.append('RA_sus')
+    if out['rb_trig']:        s += 10; sig.append('RB')
+    if out['rb_fast']:        s += 5;  sig.append('RB_fast')
+    if out['rc_trig']:        s += 8;  sig.append('RC')
+    if out['rd_trig']:        s += 7;  sig.append('RD')
+    if out['sla_trig']:       s += 5;  sig.append('SLA')
+    if out['sorter_trig']:    s += 3;  sig.append('SORT')
+    if out['maxcapa_changed_n'] > 0:
+        s += 10; sig.append(f'MAXCAPA*{out["maxcapa_changed_n"]}')
+    out['area_score'] = min(50, s)
+    out['area_signals'] = sig
+    return out
 
 
-# ====== 사건 추적 FSM ======
+# ============================================================
+# 흐름 룰 평가 (9개 노드)
+# ============================================================
+def eval_flow_rules(flow_history):
+    result = {}
+    if len(flow_history) < 11:
+        return result
+    latest = flow_history[-1] or {}
+    avg_window = list(flow_history)[-30:] if len(flow_history) >= 30 else list(flow_history)
+    for node, cur in latest.items():
+        if cur is None:
+            continue
+        vals = [w.get(node) for w in avg_window if w and w.get(node) is not None]
+        if not vals or len(vals) < 5:
+            continue
+        avg = sum(vals) / len(vals)
+        if avg <= 0:
+            continue
+        ratio = cur / avg
+        level = ''
+        if ratio >= TH_FLOW_X3_0:
+            level = '심각'
+        elif ratio >= TH_FLOW_X2_0:
+            level = '위험'
+        elif ratio >= TH_FLOW_X1_5:
+            level = '주의'
+        if level:
+            result[node] = {'ratio': ratio, 'level': level, 'current': cur, 'avg30': avg}
+    return result
+
+
+# ============================================================
+# Layer 3 통합 융합
+# ============================================================
+def evaluate_unified(t, area_results, flow_result, propagation_history):
+    layer1_total = sum(r.get('area_score', 0) for r in area_results.values())
+
+    flow_score = 0
+    flow_signals = []
+    for node, info in flow_result.items():
+        if info['level'] == '심각':
+            flow_score += 30
+        elif info['level'] == '위험':
+            flow_score += 15
+        elif info['level'] == '주의':
+            flow_score += 5
+        flow_signals.append(f"{node}={info['ratio']:.1f}x({info['level']})")
+
+    sla_score = sum(5 for r in area_results.values() if r.get('sla_trig'))
+    sorter_score = sum(3 for r in area_results.values() if r.get('sorter_trig'))
+
+    mc_score = 0
+    mc_signals = []
+    for area, r in area_results.items():
+        n = r.get('maxcapa_changed_n', 0)
+        if n > 0:
+            mc_score += 10 * n
+            mc_signals.extend([f"{area}:{x}" for x in r.get('maxcapa_changed', [])])
+
+    unified_risk_score = min(500, layer1_total + flow_score + sla_score + sorter_score + mc_score)
+
+    # 6단계 위험도 등급
+    if unified_risk_score >= 250:
+        unified_risk_level = '매우위험'
+    elif unified_risk_score >= 150:
+        unified_risk_level = '위험'
+    elif unified_risk_score >= 80:
+        unified_risk_level = '주의'
+    elif unified_risk_score >= 65:
+        unified_risk_level = '경계'   # ★ 신규: 관심 후반, 주의 직전 (score 65~79)
+    elif unified_risk_score >= 30:
+        unified_risk_level = '관심'   # 변경: 30~64
+    else:
+        unified_risk_level = '정상'
+
+    hot_area = None
+    hot_score = 0
+    for area, r in area_results.items():
+        if r.get('area_score', 0) > hot_score:
+            hot_score = r['area_score']
+            hot_area = area
+
+    triggered_areas = [a for a, r in area_results.items() if r.get('area_score', 0) >= 15]
+    for a in triggered_areas:
+        propagation_history.append({'time': t, 'area': a,
+                                    'score': area_results[a]['area_score'],
+                                    'signals': area_results[a]['area_signals']})
+
+    any_ra = any(r.get('ra_trig') or r.get('ra_sustained') for r in area_results.values())
+    any_rb = any(r.get('rb_trig') or r.get('rb_fast') for r in area_results.values())
+    any_rd_or_sla = any(r.get('rd_trig') or r.get('sla_trig') for r in area_results.values())
+    any_rc = area_results.get('M16HUB', {}).get('rc_trig', False)
+    any_flow_severe = any(info['level'] in ('위험', '심각') for info in flow_result.values())
+
+    unified_s3 = any_ra and (any_rd_or_sla or any_rc) and (any_rb or any_flow_severe)
+    unified_s1 = any_ra or any(r.get('ra_sustained') for r in area_results.values())
+    unified_s2 = any_rb
+
+    chain = []
+    seen = {}
+    for ent in list(propagation_history):
+        if (t - ent['time']).total_seconds() / 60.0 > PREDICT_LOOKBACK_MIN:
+            continue
+        a = ent['area']
+        if a not in seen:
+            seen[a] = ent
+            chain.append(ent)
+    chain.sort(key=lambda x: x['time'])
+    propagation_chain = ' → '.join(
+        f"{x['area']}({x['time'].strftime('%H:%M')},{'+'.join(x['signals']) or '-'})"
+        for x in chain
+    )
+
+    return {
+        'unified_risk_score': unified_risk_score,
+        'unified_risk_level': unified_risk_level,
+        'unified_s1': unified_s1,
+        'unified_s2': unified_s2,
+        'unified_s3': unified_s3,
+        'hot_area': hot_area or '',
+        'hot_score': hot_score,
+        'propagation_chain': propagation_chain,
+        'affected_areas': ';'.join(triggered_areas),
+        'flow_signals': ';'.join(flow_signals),
+        'maxcapa_signals': ';'.join(mc_signals),
+        'layer1_total': layer1_total,
+        'flow_score': flow_score,
+        'sla_score': sla_score,
+        'sorter_score': sorter_score,
+        'mc_score': mc_score,
+    }
+
+
+# ============================================================
+# 사건 추적 FSM
+# ============================================================
 class IncidentTracker:
     def __init__(self):
         self.state = 'IDLE'
         self.current = None
         self.incidents = []
-        self.early_signals = deque(maxlen=PREDICT_LOOKBACK_MIN)
+        self.early_signals = deque(maxlen=PREDICT_LOOKBACK_MIN * 2)
         self.events = []
         self.last_stage = 0
 
     def _record_event(self, t, stage, ctx):
-        is_transition = stage != self.last_stage
-        if stage == 0:
-            reason = "이벤트 없음"
-        elif stage == 1:
-            if ctx.get('ra_count', 0) >= 2:
-                reason = f"1MIN ≥9분이 {ctx['ra_count']}회"
-            elif ctx.get('ra_sustained'):
-                reason = "1MIN ≥6분 지속"
-            else:
-                reason = "1단계 발동"
-        elif stage == 2:
-            if ctx.get('rb_diff', 0) >= 100:
-                reason = f"M14→M16 +{ctx['rb_diff']} (30분간)"
-            elif ctx.get('rb_fast'):
-                reason = f"M14→M16 +{ctx.get('rb_diff_10', 0)} (10분간 fast)"
-            else:
-                reason = "2단계 발동"
-        elif stage == 3:
-            if ctx.get('rd_trig') and not (ctx.get('rb_trig') and ctx.get('rc_trig')):
-                reason = (f"R-D FAB저장률 정체 (FABSTORAGE={ctx.get('rd_fabstorage', 0):.1f}%, "
-                          f"1MIN {ctx.get('ra_value') or 0:.2f})")
-            else:
-                reason = (f"AND 만족 (1MIN {ctx.get('ra_value') or 0:.2f}, "
-                          f"M14→M16 +{ctx.get('rb_diff', 0)}, "
-                          f"역증가 {ctx.get('rev_count', 0)}개)")
-        else:
-            reason = "이벤트 없음"
         self.events.append({
             'time': t, 'stage': stage, 'prev_stage': self.last_stage,
-            'reason': reason, 'is_transition': is_transition,
-            'ra_value': ctx.get('ra_value'), 'ra_count': ctx.get('ra_count', 0),
-            'ra_sustained': bool(ctx.get('ra_sustained')),
-            'rb_diff': ctx.get('rb_diff', 0), 'rb_diff_10': ctx.get('rb_diff_10', 0),
-            'rb_fast': bool(ctx.get('rb_fast')), 'rb_trig': bool(ctx.get('rb_trig')),
-            'rc_trend': ctx.get('rc_trend', 0),
-            'rev_count': ctx.get('rev_count', 0),
-            'rev_lids': list(ctx.get('rev_lids') or []),
-            'rd_fabstorage': ctx.get('rd_fabstorage', 0),
-            'rd_7f_alt': ctx.get('rd_7f_alt', 0),
-            'rd_trig': bool(ctx.get('rd_trig')),
-            # ★ v3.1 신규
-            'hub_storage_util': ctx.get('hub_storage_util'),
-            'inflow_total': ctx.get('inflow_total', 0),
-            're_trig': bool(ctx.get('re_trig')),
-            'rf_trig': bool(ctx.get('rf_trig')),
-            'rf_fast': bool(ctx.get('rf_fast')),
-            # ★★★ 위험도 평가
-            'risk_score': ctx.get('risk_score', 0),
-            'risk_level': ctx.get('risk_level', '정상'),
-            'risk_factors': ctx.get('risk_factors', ''),
+            'is_transition': stage != self.last_stage,
+            'ctx': ctx,
         })
         self.last_stage = stage
 
@@ -422,7 +623,6 @@ class IncidentTracker:
             self.early_signals.append(t)
         cur_stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
         self._record_event(t, cur_stage, ctx)
-
         if self.state == 'IDLE':
             if s3:
                 self._start_new(t, ctx)
@@ -444,208 +644,116 @@ class IncidentTracker:
         self.current = {
             'predict_time': predict_time, 'start_time': t,
             'last_s3_time': t, 'end_time': t, 'refire_count': 0,
-            'max_1min': ctx['ra_value'] or 0, 'max_rb_diff': ctx['rb_diff'] or 0,
-            'max_rev': ctx['rev_count'] or 0,
-            'rev_lids_union': set(ctx.get('rev_lids') or []),
-            'max_rd_fabstorage': ctx.get('rd_fabstorage', 0) or 0,
-            'max_rd_7f_alt': ctx.get('rd_7f_alt', 0) or 0,
-            'rd_triggered': bool(ctx.get('rd_trig')),
+            'max_risk_score': ctx.get('unified_risk_score', 0),
+            'max_risk_level': ctx.get('unified_risk_level', '정상'),
+            'hot_area': ctx.get('hot_area', ''),
+            'affected_areas_union': set(ctx.get('affected_areas', '').split(';')) - {''},
+            'propagation_chain': ctx.get('propagation_chain', ''),
+            # ★ 사건 내 각 영역별 최대값 추적
+            'area_max': {},        # {area: {ra,rb_diff_30,rev_count,rd_fab,sla_ratio,sorter,maxcapa}}
+            'triggered_rules': {}, # {area: set of rule_names}
+            'maxcapa_history': set(),  # 사건 내 변경된 MAXCAPA 컬럼들
         }
         self.state = 'IN_INCIDENT'
+        self._merge_area_stats(ctx)
 
     def _update_current(self, t, ctx):
         c = self.current
         c['last_s3_time'] = t
         c['end_time'] = t
-        if ctx['ra_value'] and ctx['ra_value'] > c['max_1min']:
-            c['max_1min'] = ctx['ra_value']
-        if ctx['rb_diff'] and ctx['rb_diff'] > c['max_rb_diff']:
-            c['max_rb_diff'] = ctx['rb_diff']
-        if ctx['rev_count'] and ctx['rev_count'] > c['max_rev']:
-            c['max_rev'] = ctx['rev_count']
-        c['rev_lids_union'].update(ctx.get('rev_lids') or [])
-        rd_f = ctx.get('rd_fabstorage', 0) or 0
-        rd_a = ctx.get('rd_7f_alt', 0) or 0
-        if rd_f > c.get('max_rd_fabstorage', 0):
-            c['max_rd_fabstorage'] = rd_f
-        if rd_a > c.get('max_rd_7f_alt', 0):
-            c['max_rd_7f_alt'] = rd_a
-        if ctx.get('rd_trig'):
-            c['rd_triggered'] = True
+        if ctx.get('unified_risk_score', 0) > c['max_risk_score']:
+            c['max_risk_score'] = ctx['unified_risk_score']
+            c['max_risk_level'] = ctx['unified_risk_level']
+        c['affected_areas_union'].update(set(ctx.get('affected_areas', '').split(';')) - {''})
+        if ctx.get('propagation_chain'):
+            c['propagation_chain'] = ctx['propagation_chain']
+        self._merge_area_stats(ctx)
+
+    def _merge_area_stats(self, ctx):
+        """ 사건 내 영역별 max값 / 발동룰 누적 """
+        c = self.current
+        ar = ctx.get('area_results', {}) or {}
+        for area, r in ar.items():
+            if r.get('area_score', 0) == 0:
+                continue
+            am = c['area_max'].setdefault(area, {})
+            for k in ('ra_value', 'rb_diff_30', 'rev_count',
+                      'rd_fab', 'rd_oht', 'hub_stb_util',
+                      'sla_ratio', 'sla_cnt', 'sorter_val'):
+                v = r.get(k)
+                if v is None:
+                    continue
+                cur = am.get(k)
+                if cur is None or v > cur:
+                    am[k] = v
+            # 발동 룰 누적
+            tr = c['triggered_rules'].setdefault(area, set())
+            if r.get('ra_trig'):       tr.add('RA')
+            if r.get('ra_sustained'):  tr.add('RA_sus')
+            if r.get('rb_trig'):       tr.add('RB')
+            if r.get('rb_fast'):       tr.add('RB_fast')
+            if r.get('rc_trig'):       tr.add('RC')
+            if r.get('rd_trig'):       tr.add('RD')
+            if r.get('sla_trig'):      tr.add('SLA')
+            if r.get('sorter_trig'):   tr.add('SORT')
+            if r.get('sorter_fail_trig'): tr.add('SORT_FAIL')
+            for x in r.get('maxcapa_changed', []) or []:
+                c['maxcapa_history'].add(f"{area}:{x}")
 
     def _end_current(self, t):
         c = self.current
         c['end_time'] = c['last_s3_time']
-        self.incidents.append(c)
+        # ★ max_risk_score < 65 (관심 이하) 이면 사건단위에 기록 안 함
+        # 경계(65~79) / 주의(80~149) / 위험(150~249) / 매우위험(250~) 만 기록
+        # (발동이벤트.csv 에는 매분 그대로 기록 — 트렌드 모니터링 가능)
+        if c.get('max_risk_score', 0) >= 65:
+            self.incidents.append(c)
         self.current = None
         self.state = 'IDLE'
 
     def finalize(self, last_t):
         if self.state == 'IN_INCIDENT':
             self.current['end_time'] = self.current['last_s3_time']
-            self.incidents.append(self.current)
+            if self.current.get('max_risk_score', 0) >= 65:
+                self.incidents.append(self.current)
             self.current = None
             self.state = 'IDLE'
 
 
-# ====== 사건 → CSV 행 변환 ======
-def _build_explanation(max_1min, max_rb_diff, max_rev):
-    ra_val = float(max_1min or 0)
-    rb_val = int(max_rb_diff or 0)
-    rc_val = int(max_rev or 0)
-    ra_score = round(100 * (ra_val / 9.0 - 1), 1) if ra_val >= 9.0 else 0
-    rb_score = round(100 * (rb_val / 100.0 - 1), 1) if rb_val >= 100 else 0
-    rc_score = round(100 * (rc_val / 2.0 - 1), 1) if rc_val >= 2 else 0
-    contrib = [
-        ("R-A' 반송시간", ra_score, f"{ra_val:.2f}분 (기준 9분)"),
-        ("R-B FAB큐",    rb_score, f"+{rb_val} (기준 +100)"),
-        ("R-C' 리프터",  rc_score, f"{rc_val}개 역증가 (기준 2개)"),
-    ]
-    contrib.sort(key=lambda x: -x[1])
-    primary_cause = contrib[0][0] if contrib[0][1] > 0 else '기준 미달'
-    breakdown = ' | '.join(f"{name} {desc}" for name, _, desc in contrib)
-    if contrib[0][1] > 50:
-        impact = '매우 강함'
-    elif contrib[0][1] > 20:
-        impact = '강함'
-    elif contrib[0][1] > 0:
-        impact = '보통'
-    else:
-        impact = '약함'
-    parts = []
-    if ra_score > 0:
-        parts.append(f"반송시간 {ra_val:.1f}분")
-    if rb_score > 0:
-        parts.append(f"FAB간 큐 +{rb_val}")
-    if rc_score > 0:
-        parts.append(f"리프터 역증가 {rc_val}개")
-    explanation = f"{primary_cause} 주도 ({impact}): " + ", ".join(parts) if parts else '3단계 조건 일부만 부분 충족'
-    return primary_cause, breakdown, explanation
-
-
-def incident_to_row(c, file_name):
-    duration_min = round((c['end_time'] - c['start_time']).total_seconds() / 60.0, 1)
-    lead_min = round((c['start_time'] - c['predict_time']).total_seconds() / 60.0)
-    primary_cause, breakdown, explanation = _build_explanation(
-        c['max_1min'], c['max_rb_diff'], c['max_rev']
-    )
-    early_warning = (
-        f"{c['predict_time'].strftime('%H:%M')} 1·2단계 발동 → "
-        f"{c['start_time'].strftime('%H:%M')} 3단계 확정 ({lead_min}분 먼저 인지)"
-    )
-    severity = '확정' if (c['max_rb_diff'] or 0) >= 100 else '주의'
-    return {
-        'file': file_name,
-        'date': c['start_time'].strftime('%Y-%m-%d'),
-        'severity': severity,
-        'predict_time': c['predict_time'].strftime('%H:%M'),
-        'start_time': c['start_time'].strftime('%H:%M'),
-        'end_time': c['end_time'].strftime('%H:%M'),
-        'lead_min': lead_min,
-        'duration_min': duration_min,
-        'refire_count': c['refire_count'],
-        'max_1min': round(c['max_1min'], 2),
-        'max_m14_diff': c['max_rb_diff'],
-        'max_reverse_lifters': c['max_rev'],
-        'primary_cause': primary_cause,
-        'contrib_breakdown': breakdown,
-        'anomaly_explanation': explanation,
-        'early_warning': early_warning,
-        'relation': build_incident_relation(c),
-    }
-
-
-# ====== CSV 헤더 ======
+# ============================================================
+# CSV 출력
+# ============================================================
 STAGE_LABEL = {0: '이벤트없음', 1: '1단계 조기경보', 2: '2단계 주의보', 3: '3단계 ⭐확정'}
-
-SRC_COL_RA = 'QUE.TIME.AVGTOTALTIME1MIN'
-SRC_COL_RB = 'QUE.M14TOM16.MESCURRENTQCNT'
-SRC_COL_RC_TPL = 'LFT.{lid}.TOTAL_CURRENTQCNT'
 
 EVENT_FIELDS = [
     'file', 'datetime', 'date', 'time',
-    'stage', 'stage_name', 'prev_stage', 'transition', 'reason', 'relation',
-    # ★ v3.1 신규 보조 신호
-    'hub_storage_util', 'inflow_total', 're_trig', 'rf_trig', 'rf_fast',
-    # ★★★ 위험도 평가
-    'risk_score', 'risk_level', 'risk_factors',
+    'stage', 'stage_name', 'prev_stage', 'transition',
+    'unified_risk_score', 'unified_risk_level', 'hot_area',
+    'affected_areas', 'propagation_chain',
+    'flow_signals', 'maxcapa_signals',
+    'M16HUB_score', 'M14_score', 'M14B_score', 'M16A_score', 'M16B_score',
+    'M16_score', 'M16_PKT_score', 'M16_WT_score',
+    'M16HUB_signals', 'M14_signals', 'M14B_signals', 'M16A_signals', 'M16B_signals',
+    'M16HUB_ra', 'M14_ra', 'M14B_ra', 'M16A_ra', 'M16B_ra',
+    'M16HUB_rb_diff30', 'M14_rb_diff30', 'M14B_rb_diff30', 'M16A_rb_diff30',
+    'M16HUB_rd_fab', 'M16HUB_stb_util',
+    'M16HUB_rev_count', 'M16HUB_rev_lids',
+    'sla_M14', 'sla_M16A', 'sla_M16B', 'sla_M16HUB',
+    'sorter_M14', 'sorter_M14B', 'sorter_M16A', 'sorter_M16B',
+    'reason',
 ]
+
 INCIDENT_FIELDS = [
-    'file', 'date', 'severity', 'predict_time', 'start_time', 'end_time',
+    'file', 'date', 'predict_time', 'start_time', 'end_time',
     'lead_min', 'duration_min', 'refire_count',
-    'max_1min', 'max_m14_diff', 'max_reverse_lifters',
-    'primary_cause', 'contrib_breakdown', 'anomaly_explanation', 'early_warning',
-    'relation',
+    'max_risk_score', 'max_risk_level',
+    'hot_area', 'affected_areas', 'propagation_chain',
+    # ★ 상세 트리거 정보 (어떤 룰/컬럼이 발동했는지)
+    'triggered_rules',     # 영역별 발동 룰 (예: "M16HUB:RA+RC+RD; M14:RA_sus+SLA")
+    'risk_factors',        # 핵심 위험요인 (예: "M16HUB.AVGTOTALTIME1MIN=12.5분(>=9), ...")
+    'maxcapa_changes',     # 사건 내 변경된 운영자 변수
+    'relation',            # 영역별 핵심 컬럼-값-임계값 상세
 ]
-
-
-def build_event_relation(ev):
-    if ev['stage'] == 0:
-        return ''
-    ra_val = ev.get('ra_value')
-    ra_cnt = ev.get('ra_count', 0) or 0
-    ra_sus = bool(ev.get('ra_sustained'))
-    ra_trig = ra_cnt >= 1 or ra_sus
-    rb_trig = bool(ev.get('rb_trig'))
-    rb_fast = bool(ev.get('rb_fast'))
-    rb_any = rb_trig or rb_fast
-    rev_lids = ev.get('rev_lids') or []
-    rev_n = ev.get('rev_count', 0) or 0
-    rc_trend = ev.get('rc_trend', 0) or 0
-    rc_trig = (rc_trend < 0) and (rev_n >= 2)
-
-    ra_flag = 'Y' if ra_trig else 'N'
-    ra_val_s = f"{ra_val:.2f}분" if ra_val is not None else 'N/A'
-    ra_part = f"[R-A' {ra_flag}] {SRC_COL_RA}={ra_val_s} (≥9분 10분창 {ra_cnt}회"
-    ra_part += ", 지속Y)" if ra_sus else ", 지속N)"
-
-    rb_flag = 'Y' if rb_any else 'N'
-    rb_part = (f"[R-B {rb_flag}] {SRC_COL_RB} 30분Δ={ev.get('rb_diff', 0)} (≥100), "
-               f"10분Δ={ev.get('rb_diff_10', 0)} (≥30 fast)")
-
-    rc_flag = 'Y' if rc_trig else 'N'
-    if rev_lids:
-        lid_cols = ', '.join(SRC_COL_RC_TPL.format(lid=l) for l in rev_lids)
-        rc_part = f"[R-C' {rc_flag}] 역증가 {rev_n}개 (≥2): {lid_cols}; trend={rc_trend}"
-    else:
-        rc_part = f"[R-C' {rc_flag}] 역증가 0개 (≥2 필요); trend={rc_trend}"
-
-    return f"{ra_part} | {rb_part} | {rc_part}"
-
-
-def build_incident_relation(c):
-    parts = []
-    if c.get('max_1min'):
-        parts.append(f"{SRC_COL_RA} max={float(c['max_1min']):.2f}분 (기준 9.0분)")
-    if c.get('max_rb_diff'):
-        parts.append(f"{SRC_COL_RB} 최대증가 +{c['max_rb_diff']} (기준 +100)")
-    rev = sorted(c.get('rev_lids_union') or [])
-    if rev:
-        lid_cols = ', '.join(SRC_COL_RC_TPL.format(lid=l) for l in rev)
-        parts.append(f"역증가 LFT({len(rev)}): {lid_cols}")
-    return ' | '.join(parts) if parts else ''
-
-
-def event_to_row(ev, file_name):
-    t_str = ev['time'].strftime('%Y-%m-%d %H:%M')
-    d_str = ev['time'].strftime('%Y-%m-%d')
-    hm = ev['time'].strftime('%H:%M')
-    stage_name = STAGE_LABEL.get(ev['stage'], '')
-    hub_util = ev.get('hub_storage_util')
-    hub_util_s = f"{hub_util:.1f}" if hub_util is not None else ''
-    common_tail = [
-        hub_util_s, ev.get('inflow_total', 0) or 0,
-        int(bool(ev.get('re_trig'))), int(bool(ev.get('rf_trig'))), int(bool(ev.get('rf_fast'))),
-        ev.get('risk_score', 0), ev.get('risk_level', '정상'), ev.get('risk_factors', ''),
-    ]
-    if ev['stage'] == 0:
-        return [file_name, t_str, d_str, hm, '', stage_name, '', '', '', ''] + common_tail
-    transition = f"{ev['prev_stage']}→{ev['stage']}" if ev.get('is_transition') else ''
-    relation = build_event_relation(ev)
-    return [
-        file_name, t_str, d_str, hm,
-        ev['stage'], stage_name, ev['prev_stage'], transition, ev['reason'], relation,
-    ] + common_tail
 
 
 def append_rows_csv(path, fields, rows):
@@ -658,6 +766,192 @@ def append_rows_csv(path, fields, rows):
             w.writerow(r)
 
 
+def _fmt(v):
+    if v is None:
+        return ''
+    if isinstance(v, float):
+        return f"{v:.2f}"
+    return v
+
+
+def _build_reason(ctx):
+    """ 분 단위 reason — 어느 컬럼/룰이 발동중인지 상세 """
+    parts = []
+    hot = ctx.get('hot_area')
+    if hot:
+        parts.append(f"hot_area={hot}")
+    if ctx.get('unified_s3'):
+        parts.append("S3확정")
+    elif ctx.get('unified_s2'):
+        parts.append("S2주의보")
+    elif ctx.get('unified_s1'):
+        parts.append("S1조기경보")
+    # 영역별 발동한 룰 컬럼 상세
+    ar = ctx.get('area_results', {}) or {}
+    rule_parts = []
+    for area, r in ar.items():
+        if r.get('area_score', 0) == 0:
+            continue
+        sub = []
+        if r.get('ra_trig'):
+            v = r.get('ra_value')
+            col = RA_COL.get(area, '?').split('.')[-1]
+            sub.append(f"R-A'({col}={v:.2f}분/기준{TH_RA.get(area, '?')})")
+        if r.get('ra_sustained'):
+            sub.append('R-A_sus')
+        if r.get('rb_trig'):
+            d = r.get('rb_diff_30', 0)
+            col = RB_COL.get(area, '?').split('.')[-1]
+            sub.append(f"R-B({col}+{d}/30분/기준+{TH_RB_30.get(area, '?')})")
+        if r.get('rb_fast'):
+            d = r.get('rb_diff_10', 0)
+            sub.append(f"R-B_fast(+{d}/10분)")
+        if r.get('rc_trig'):
+            if area == 'M16HUB':
+                sub.append(f"R-C'(역증가{r.get('rev_count', 0)}개:{','.join(r.get('rev_lids') or [])})")
+            else:
+                sub.append("R-C'(CNV쏠림)")
+        if r.get('rd_trig'):
+            if area == 'M16HUB':
+                sub.append(f"R-D(FAB저장={r.get('rd_fab', 0):.1f}%,STB={r.get('hub_stb_util', 0):.1f}%)")
+            else:
+                sub.append(f"R-D(OHT={r.get('rd_oht', 0):.1f}%)")
+        if r.get('sla_trig'):
+            sub.append(f"SLA({r.get('sla_ratio', 0):.1f}%4분초과)")
+        if r.get('sorter_trig'):
+            sub.append(f"Sorter({r.get('sorter_val', 0)}LOT)")
+        if r.get('maxcapa_changed_n', 0) > 0:
+            sub.append(f"MAXCAPA{r.get('maxcapa_changed_n')}개변경")
+        if sub:
+            rule_parts.append(f"{area}[{','.join(sub)}]")
+    if rule_parts:
+        parts.append('발동: ' + '; '.join(rule_parts))
+    fs = ctx.get('flow_signals')
+    if fs:
+        parts.append(f"흐름:{fs}")
+    mc = ctx.get('maxcapa_signals')
+    if mc:
+        parts.append(f"운영자조치:{mc}")
+    return '; '.join(parts)
+
+
+def event_to_row(ev, file_name):
+    t = ev['time']
+    ctx = ev.get('ctx', {})
+    ar = ctx.get('area_results', {}) or {}
+    stage = ev['stage']
+    transition = f"{ev['prev_stage']}→{stage}" if ev.get('is_transition') and stage != 0 else ''
+    reason = _build_reason(ctx) if stage > 0 else ''
+
+    def A(area, key, default=''):
+        return ar.get(area, {}).get(key, default)
+
+    return [
+        file_name, t.strftime('%Y-%m-%d %H:%M'), t.strftime('%Y-%m-%d'), t.strftime('%H:%M'),
+        stage, STAGE_LABEL.get(stage, ''), ev['prev_stage'], transition,
+        ctx.get('unified_risk_score', 0), ctx.get('unified_risk_level', '정상'),
+        ctx.get('hot_area', ''),
+        ctx.get('affected_areas', ''), ctx.get('propagation_chain', ''),
+        ctx.get('flow_signals', ''), ctx.get('maxcapa_signals', ''),
+        A('M16HUB', 'area_score', 0), A('M14', 'area_score', 0),
+        A('M14B', 'area_score', 0), A('M16A', 'area_score', 0),
+        A('M16B', 'area_score', 0), A('M16', 'area_score', 0),
+        A('M16_PKT', 'area_score', 0), A('M16_WT', 'area_score', 0),
+        '+'.join(A('M16HUB', 'area_signals', []) or []),
+        '+'.join(A('M14', 'area_signals', []) or []),
+        '+'.join(A('M14B', 'area_signals', []) or []),
+        '+'.join(A('M16A', 'area_signals', []) or []),
+        '+'.join(A('M16B', 'area_signals', []) or []),
+        _fmt(A('M16HUB', 'ra_value')), _fmt(A('M14', 'ra_value')),
+        _fmt(A('M14B', 'ra_value')), _fmt(A('M16A', 'ra_value')),
+        _fmt(A('M16B', 'ra_value')),
+        A('M16HUB', 'rb_diff_30', 0), A('M14', 'rb_diff_30', 0),
+        A('M14B', 'rb_diff_30', 0), A('M16A', 'rb_diff_30', 0),
+        _fmt(A('M16HUB', 'rd_fab')), _fmt(A('M16HUB', 'hub_stb_util')),
+        A('M16HUB', 'rev_count', 0), ','.join(A('M16HUB', 'rev_lids', []) or []),
+        _fmt(A('M14', 'sla_ratio')), _fmt(A('M16A', 'sla_ratio')),
+        _fmt(A('M16B', 'sla_ratio')), _fmt(A('M16HUB', 'sla_ratio')),
+        A('M14', 'sorter_val', 0), A('M14B', 'sorter_val', 0),
+        A('M16A', 'sorter_val', 0), A('M16B', 'sorter_val', 0),
+        reason,
+    ]
+
+
+def incident_to_row(c, file_name):
+    duration_min = round((c['end_time'] - c['start_time']).total_seconds() / 60.0, 1)
+    lead_min = round((c['start_time'] - c['predict_time']).total_seconds() / 60.0)
+
+    # 영역별 발동 룰
+    tr_parts = []
+    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_PKT', 'M16_WT']:
+        rules = c.get('triggered_rules', {}).get(area)
+        if rules:
+            tr_parts.append(f"{area}:{'+'.join(sorted(rules))}")
+    triggered_rules_s = '; '.join(tr_parts)
+
+    # 핵심 위험요인 (영역별 max값 / 임계값 비교)
+    rf_parts = []
+    rel_parts = []
+    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16_PKT', 'M16_WT']:
+        am = c.get('area_max', {}).get(area)
+        if not am:
+            continue
+        ra_max = am.get('ra_value')
+        if ra_max is not None and area in TH_RA and ra_max >= TH_RA[area]:
+            col = RA_COL.get(area, '?')
+            rf_parts.append(f"{col}={ra_max:.2f}분(>={TH_RA[area]})")
+            rel_parts.append(f"[{area} R-A'] {col}={ra_max:.2f}분 (기준 {TH_RA[area]}분)")
+        rb_max = am.get('rb_diff_30')
+        if rb_max is not None and area in TH_RB_30 and rb_max >= TH_RB_30[area]:
+            col = RB_COL.get(area, '?')
+            rf_parts.append(f"{col} +{rb_max}/30분(>={TH_RB_30[area]})")
+            rel_parts.append(f"[{area} R-B] {col} +{rb_max}/30분 (기준 +{TH_RB_30[area]})")
+        if area == 'M16HUB':
+            rev = am.get('rev_count') or 0
+            if rev >= TH_RC_REVERSE:
+                rf_parts.append(f"M16HUB 리프터 역증가 {rev}개(>={TH_RC_REVERSE})")
+                rel_parts.append(f"[M16HUB R-C'] 리프터 역증가 {rev}개 (기준 {TH_RC_REVERSE})")
+            rdf = am.get('rd_fab') or 0
+            if rdf >= TH_RD_FABSTORAGE:
+                rf_parts.append(f"M16HUB.FABSTORAGERATIO={rdf:.1f}%(>={TH_RD_FABSTORAGE}%)")
+                rel_parts.append(f"[M16HUB R-D] FABSTORAGERATIO={rdf:.1f}% (기준 {TH_RD_FABSTORAGE}%)")
+            stb = am.get('hub_stb_util') or 0
+            if stb >= TH_RD_HUB_STB_UTIL:
+                rf_parts.append(f"M16HUB.STB_STORAGE_UTIL={stb:.1f}%(>={TH_RD_HUB_STB_UTIL}%)")
+                rel_parts.append(f"[M16HUB R-D] STB.3F_STORAGE_UTIL={stb:.1f}% (기준 {TH_RD_HUB_STB_UTIL}%)")
+        else:
+            oht = am.get('rd_oht') or 0
+            if oht >= TH_RD_OHT_UTIL:
+                col = RD_OHT_COL.get(area, '?')
+                rf_parts.append(f"{col}={oht:.1f}%(>={TH_RD_OHT_UTIL}%)")
+                rel_parts.append(f"[{area} R-D] {col}={oht:.1f}% (기준 {TH_RD_OHT_UTIL}%)")
+        sla_max = am.get('sla_ratio')
+        if sla_max is not None and area in TH_SLA_RATIO and sla_max >= TH_SLA_RATIO[area]:
+            col = SLA_COL.get(area, '?')
+            rf_parts.append(f"{col}={sla_max:.1f}%(>={TH_SLA_RATIO[area]}%)")
+            rel_parts.append(f"[{area} SLA] {col}={sla_max:.1f}% 4분초과 (기준 {TH_SLA_RATIO[area]}%)")
+        sort_max = am.get('sorter_val')
+        if sort_max is not None and area in TH_SORTER_WAIT and sort_max >= TH_SORTER_WAIT[area]:
+            col = SORTER_COL.get(area, '?')
+            rf_parts.append(f"{col}={sort_max}(>={TH_SORTER_WAIT[area]})")
+            rel_parts.append(f"[{area} Sorter] {col}={sort_max} LOT대기 (기준 {TH_SORTER_WAIT[area]})")
+
+    risk_factors_s = '; '.join(rf_parts) if rf_parts else ''
+    maxcapa_changes_s = '; '.join(sorted(c.get('maxcapa_history', []) or []))
+    relation_s = ' | '.join(rel_parts) if rel_parts else ''
+
+    return [
+        file_name, c['start_time'].strftime('%Y-%m-%d'),
+        c['predict_time'].strftime('%H:%M'), c['start_time'].strftime('%H:%M'),
+        c['end_time'].strftime('%H:%M'),
+        lead_min, duration_min, c['refire_count'],
+        c['max_risk_score'], c['max_risk_level'],
+        c['hot_area'], ';'.join(sorted(c['affected_areas_union'])),
+        c['propagation_chain'],
+        triggered_rules_s, risk_factors_s, maxcapa_changes_s, relation_s,
+    ]
+
+
 def append_event_row(out_dir, ev, file_name):
     ymd = ev['time'].strftime('%Y%m%d')
     path = os.path.join(out_dir, f'{ymd}_발동이벤트.csv')
@@ -668,12 +962,17 @@ def append_event_row(out_dir, ev, file_name):
 def append_incident_row(out_dir, incident, file_name):
     ymd = incident['start_time'].strftime('%Y%m%d')
     path = os.path.join(out_dir, f'{ymd}_사건단위.csv')
-    row = incident_to_row(incident, file_name)
-    append_rows_csv(path, INCIDENT_FIELDS, [[row[k] for k in INCIDENT_FIELDS]])
+    append_rows_csv(path, INCIDENT_FIELDS, [incident_to_row(incident, file_name)])
     return path
 
 
-# ====== Predictor: 매분 호출되는 처리기 ======
+# ============================================================
+# Predictor
+# ============================================================
+AREAS_ALL = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_PKT', 'M16_WT']
+
+
+
 class Predictor:
     def __init__(self, input_csv: Path, out_dir: Path, logger):
         self.input_csv = Path(input_csv)
@@ -681,61 +980,74 @@ class Predictor:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logger
         self.file_name = self.input_csv.name
-
-        self.t1_window = deque(maxlen=WINDOW_MIN)
-        self.m14_window = deque(maxlen=WINDOW_MIN)
-        self.lft_window = deque(maxlen=WINDOW_MIN)
-        self.v3_window = deque(maxlen=WINDOW_MIN)
-
+        self.area_windows = {a: deque(maxlen=WINDOW_MIN) for a in AREAS_ALL}
+        self.flow_history = deque(maxlen=WINDOW_MIN)
+        self.propagation_history = deque(maxlen=PREDICT_LOOKBACK_MIN * 2)
         self.tracker = IncidentTracker()
         self.last_t = None
         self.last_event_count = 0
         self.last_incident_count = 0
 
     def tick(self):
-        """1회 처리. 새 행만 append. 처리 행 수 반환."""
         if not self.input_csv.exists():
             self.logger.warning(f"입력 CSV 없음: {self.input_csv}")
             return 0
-
         new_rows = 0
         try:
-            for t, star, _prefix in iter_star_rows(self.input_csv):
+            for d in iter_unified_rows(self.input_csv):
+                t = d['time']
                 if self.last_t is not None and t <= self.last_t:
                     continue
-
-                self.t1_window.append(star.get('avgtotal1min'))
-                self.m14_window.append(star.get('m14_to_m16'))
-                self.lft_window.append(star.get('lft_list') or {})
-                self.v3_window.append({k: star.get(k) for k in (
-                    'fabstorage_ratio',
-                    'm14b_aotransdelay', 'm14b_oht_util', 'm14b_4abld122',
-                    'm14b_avgtotal1min', 'm14b_7f_to_hub', 'm14b_7f_to_hub_alt',
-                    'm14_htstop', 'm14_congested', 'm14_abnormal',
-                    'm16pkt_aotransdelay', 'm16wt_aotransdelay',
-                    # ★ v3.1 신규 5개 컬럼
-                    'hub_storage_util', 'm14_inflow',
-                    'm16a_2f_inflow', 'm16a_6f_inflow', 'm16b_10f_inflow',
-                )})
                 self.last_t = t
                 new_rows += 1
 
-                if len(self.t1_window) < 31:
+                for a in AREAS_ALL:
+                    self.area_windows[a].append(d.get(a) or {})
+
+                flow_now = {}
+                m14 = d.get('M14') or {}
+                m14b = d.get('M14B') or {}
+                m16a = d.get('M16A') or {}
+                m16b = d.get('M16B') or {}
+                m16hub = d.get('M16HUB') or {}
+                flow_now['M14_CNV_TO_HUB'] = m14.get('cnv_m14a_m16a')
+                flow_now['M14_TO_HUB_JOB'] = m14.get('rb')
+                flow_now['M14B_7F_TO_HUB'] = m14b.get('rb')
+                flow_now['M14B_LFT_4ABLD122'] = m14b.get('lft_4abld122')
+                flow_now['M16A_6F_TO_HUB'] = m16a.get('rb')
+                flow_now['M16A_2F_TO_HUB'] = m16a.get('inflow_2f')
+                flow_now['M16B_10F_TO_HUB'] = m16b.get('rb')
+                flow_now['HUB_OHT_QCNT'] = m16hub.get('oht_qcnt')
+                flow_now['M14_TO_M16'] = m16hub.get('rb')
+                self.flow_history.append(flow_now)
+
+                if len(self.area_windows['M16HUB']) < 31:
                     continue
 
-                s1, s2, s3, ctx = evaluate_rules(
-                    self.t1_window, self.m14_window, self.lft_window, self.v3_window
-                )
-                self.tracker.update(t, s1, s2, s3, ctx)
+                area_results = {a: eval_area_rules(a, self.area_windows[a]) for a in AREAS_ALL}
+                flow_result = eval_flow_rules(self.flow_history)
+                unified = evaluate_unified(t, area_results, flow_result, self.propagation_history)
+                unified['area_results'] = area_results
+                unified['flow_result'] = flow_result
+
+                self.tracker.update(t,
+                                    unified['unified_s1'],
+                                    unified['unified_s2'],
+                                    unified['unified_s3'],
+                                    unified)
 
                 while self.last_event_count < len(self.tracker.events):
                     ev = self.tracker.events[self.last_event_count]
                     append_event_row(self.out_dir, ev, self.file_name)
                     self.last_event_count += 1
                     if ev['stage'] >= 1:
+                        c = ev.get('ctx', {})
                         self.logger.info(
-                            f"  ▶ {ev['time'].strftime('%H:%M')} "
-                            f"단계{ev['stage']} ({STAGE_LABEL[ev['stage']]}) — {ev['reason']}"
+                            f"  ▶ {ev['time'].strftime('%m-%d %H:%M')} "
+                            f"단계{ev['stage']} ({STAGE_LABEL[ev['stage']]}) "
+                            f"score={c.get('unified_risk_score', 0)} "
+                            f"hot={c.get('hot_area', '')} "
+                            f"affected={c.get('affected_areas', '')}"
                         )
 
                 while self.last_incident_count < len(self.tracker.incidents):
@@ -743,13 +1055,13 @@ class Predictor:
                     p = append_incident_row(self.out_dir, inc, self.file_name)
                     self.last_incident_count += 1
                     self.logger.info(
-                        f"  ★ 사건 종료 → {inc['start_time'].strftime('%H:%M')}~"
-                        f"{inc['end_time'].strftime('%H:%M')} 저장: {os.path.basename(p)}"
+                        f"  ★ 사건 종료 → {inc['start_time'].strftime('%Y-%m-%d %H:%M')}~"
+                        f"{inc['end_time'].strftime('%H:%M')} hot={inc['hot_area']} "
+                        f"max={inc['max_risk_score']} 저장: {os.path.basename(p)}"
                     )
 
         except Exception as e:
             self.logger.exception(f"tick 오류: {e}")
-
         return new_rows
 
     def finalize(self):
@@ -760,9 +1072,7 @@ class Predictor:
             self.last_incident_count += 1
 
 
-# ====== 동기 sleep ======
 def sleep_until_next_minute(offset_sec=SYNC_OFFSET_SEC):
-    """다음 분 (00초 + offset_sec) 까지 대기."""
     now = time.time()
     sec_in_min = now % 60
     wait = (60 - sec_in_min) + offset_sec
@@ -773,33 +1083,30 @@ def sleep_until_next_minute(offset_sec=SYNC_OFFSET_SEC):
     time.sleep(wait)
 
 
-# ====== 모드 함수 ======
 def run_once(input_csv: Path, out_dir: Path, logger):
-    logger.info("=" * 60)
-    logger.info("일괄 처리 모드 (1회)")
+    logger.info("=" * 70)
+    logger.info("M16 HUBROOM 통합 예측기 v4.1 — 일괄 처리 모드")
     logger.info(f"  INPUT : {input_csv}")
     logger.info(f"  OUTPUT: {out_dir}")
-    logger.info("=" * 60)
+    logger.info(f"  대상 영역: {', '.join(AREAS_ALL)}")
+    logger.info("=" * 70)
     p = Predictor(input_csv, out_dir, logger)
     n = p.tick()
     p.finalize()
-    logger.info(f"처리 완료: {n}행, 이벤트 {p.last_event_count}건, 사건 {p.last_incident_count}건")
+    logger.info(f"처리 완료: {n}행 / 이벤트 {p.last_event_count}건 / 사건 {p.last_incident_count}건")
 
 
 def run_watch(input_csv: Path, out_dir: Path, logger):
-    logger.info("=" * 60)
-    logger.info("실시간 감시 모드 (매분 00초 + 5초 offset)")
+    logger.info("=" * 70)
+    logger.info("M16 HUBROOM 통합 예측기 v4.1 — 실시간 감시 모드 (00초+5초 offset)")
     logger.info(f"  INPUT : {input_csv}")
     logger.info(f"  OUTPUT: {out_dir}")
-    logger.info(f"  주기  : {INTERVAL_SEC}초")
-    logger.info("=" * 60)
-
+    logger.info(f"  대상 영역: {', '.join(AREAS_ALL)}")
+    logger.info("=" * 70)
     p = Predictor(input_csv, out_dir, logger)
-
     logger.info("[INIT] 시작 시점 윈도우 채우기...")
     n0 = p.tick()
     logger.info(f"[INIT] 초기 {n0}행 처리. 다음 분 동기 대기 시작...")
-
     try:
         while True:
             sleep_until_next_minute(SYNC_OFFSET_SEC)
@@ -808,9 +1115,9 @@ def run_watch(input_csv: Path, out_dir: Path, logger):
             elapsed = time.time() - cycle_start
             now_s = datetime.now().strftime('%H:%M:%S')
             if n > 0:
-                logger.info(f"[{now_s}] tick: 신규 {n}행 처리, {elapsed:.2f}s")
+                logger.info(f"[{now_s}] tick: 신규 {n}행, {elapsed:.2f}s")
             else:
-                logger.info(f"[{now_s}] tick: 신규 행 없음 (CSV 미갱신?), {elapsed:.2f}s")
+                logger.info(f"[{now_s}] tick: 신규 행 없음, {elapsed:.2f}s")
     except KeyboardInterrupt:
         logger.info("사용자 중단 (Ctrl+C)")
         p.finalize()
@@ -821,7 +1128,6 @@ def main():
     input_csv = DEFAULT_INPUT_CSV
     out_dir = DEFAULT_OUTPUT_DIR
     watch_mode = False
-
     args = sys.argv[1:]
     i = 0
     if i < len(args) and not args[i].startswith('-'):
@@ -840,15 +1146,12 @@ def main():
             return
         else:
             i += 1
-
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_logger(out_dir)
-
     if not Path(input_csv).exists() and not watch_mode:
         logger.error(f"입력 CSV 없음: {input_csv}")
         sys.exit(1)
-
     if watch_mode:
         run_watch(Path(input_csv), out_dir, logger)
     else:
