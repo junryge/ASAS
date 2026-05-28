@@ -59,7 +59,7 @@ from ml_predictor import MLPredictor
 # ============================================================
 # 기본 경로 (run_ml.py 에서 override 가능)
 # ============================================================
-BASE_DIR = _HERE.parent / 'Rulebase_prediction'  # ml/ 와 같은 레벨
+BASE_DIR = _HERE  # ml/ + Rulebase_prediction/ 통합 한 폴더
 
 DEFAULT_INPUT_CSV   = BASE_DIR / 'predict' / 'M16A_HUBROOM_PR.csv'
 DEFAULT_EVENTS_DIR  = BASE_DIR / 'predict_tobe'
