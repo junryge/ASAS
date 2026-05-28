@@ -100,7 +100,9 @@ def train(features_csv, incidents_json, out_path, lead_min=30):
     print()
 
     # 피처/라벨 분리
-    drop_cols = ['timestamp', 'label', '_rule_s1', '_rule_s2', '_rule_s3']
+    # v4.1: feature_builder_v41.py 출력에 datetime, prediction_for 도 메타로 들어옴
+    drop_cols = ['timestamp', 'label', '_rule_s1', '_rule_s2', '_rule_s3',
+                 'datetime', 'prediction_for']
     feature_cols = [c for c in df.columns if c not in drop_cols]
     X = df[feature_cols].values
     y = df['label'].values

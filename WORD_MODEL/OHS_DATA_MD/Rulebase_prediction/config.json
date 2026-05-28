@@ -1,11 +1,15 @@
 {
-  "_comment": "Rule_LO.py 설정. 변경 후 predictor 재시작 필요.",
+  "_comment": "Rule_LO.py + ML_LO.py 공용 설정. 변경 후 predictor 재시작 필요.",
 
   "logpresso_base": "http://10.40.42.27:8888/logpresso",
   "api_key_file": "api_key.txt",
 
   "table_name": "test_table3",
   "file_label": "Rule_system",
+
+  "ml_table_name": "test_table4",
+  "ml_file_label": "ML_system",
+  "ml_enabled": true,
 
   "enabled": true,
   "async_upload": true,

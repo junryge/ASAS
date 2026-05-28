@@ -11,18 +11,33 @@ M16A HUBROOM 수집 + 룰 예측 + ML 예측 + 하이브리드 동시 실행
 import threading
 import time
 
+import sys
+from pathlib import Path
+
 import aws_idc_realtime_collector as collector
 import hubroom_predictor as predictor
-# import ml_predict_runner as ml_runner       # ML 업그레이드 중 — 임시 비활성
-# import hybrid_predictor                      # ML 업그레이드 중 — 임시 비활성
+
+# ml/ 폴더의 v4.1 ML runner 사용
+_ML_DIR = Path(__file__).resolve().parent.parent / 'ml'
+sys.path.insert(0, str(_ML_DIR))
+try:
+    import ml_predict_runner_v41 as ml_runner
+    _ML_AVAILABLE = True
+except Exception as e:
+    print(f'⚠ ml_predict_runner_v41 로드 실패 — ML 비활성: {e}')
+    _ML_AVAILABLE = False
+
+# 하이브리드는 v4.1 호환 작업 후 별도 활성화 — 일단 비활성 유지
+# import hybrid_predictor
 
 # 수집기 (백그라운드 데몬 — 메인 종료 시 같이 죽음)
 threading.Thread(target=collector.main, daemon=True).start()
 
-# ML 예측기 (백그라운드 데몬) — 업그레이드 중, 임시 비활성
-# threading.Thread(target=ml_runner.run_watch, daemon=True).start()
+# ML 예측기 v4.1 (백그라운드 데몬) — 3 lead time (15/30/60분)
+if _ML_AVAILABLE:
+    threading.Thread(target=ml_runner.run_watch, daemon=True).start()
 
-# 하이브리드 예측기 (백그라운드 데몬) — 업그레이드 중, 임시 비활성
+# 하이브리드 예측기 (그대로 비활성 — 별도 작업)
 # threading.Thread(target=hybrid_predictor.run_watch, daemon=True).start()
 
 # 0.5초 후 예측기 watch (메인 스레드)
