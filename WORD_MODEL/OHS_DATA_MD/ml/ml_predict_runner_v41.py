@@ -5,7 +5,7 @@ ML 실시간 예측기 v4.1 — 3개 모델 (15/30/60분) 동시 추론 + Logpre
 
 v3 ml_predict_runner.py 와 차이:
   - v3: feature_builder.py + 단일 모델 (model.json)
-  - v4.1: feature_builder_v41.py + 3 lead time 모델 (model_v41_15m/30m/60m.json)
+  - v4.1: feature_builder_v41.py + 3 lead time 모델 (model_v41_10m/15m/30m.json)
   - v4.1: 입력 = raw CSV + 발동이벤트.csv join (룰 컨텍스트 포함)
   - v4.1: 출력 + Logpresso 적재 (ML_LO 모듈, test_table4)
 
@@ -18,9 +18,9 @@ v3 ml_predict_runner.py 와 차이:
   - Logpresso test_table4 (ML_LO 통해)
 
 출력 헤더:
-  datetime, prediction_for_15m, prediction_for_30m, prediction_for_60m,
-  ml_score_15m, ml_score_30m, ml_score_60m,
-  ml_level_15m, ml_level_30m, ml_level_60m
+  datetime, prediction_for_10m, prediction_for_15m, prediction_for_30m,
+  ml_score_10m, ml_score_15m, ml_score_30m,
+  ml_level_10m, ml_level_15m, ml_level_30m
 
 사용:
     import ml_predict_runner_v41 as ml_runner
@@ -30,9 +30,9 @@ v3 ml_predict_runner.py 와 차이:
     python ml_predict_runner_v41.py --input predict/M16A_HUBROOM_PR.csv \\
         --events_dir ../Rulebase_prediction/predict_tobe \\
         --out_dir ml_predict \\
+        --model_10m model_v41_10m.json \\
         --model_15m model_v41_15m.json \\
-        --model_30m model_v41_30m.json \\
-        --model_60m model_v41_60m.json
+        --model_30m model_v41_30m.json
 """
 
 import argparse
@@ -64,9 +64,9 @@ BASE_DIR = _HERE.parent / 'Rulebase_prediction'  # ml/ 와 같은 레벨
 DEFAULT_INPUT_CSV   = BASE_DIR / 'predict' / 'M16A_HUBROOM_PR.csv'
 DEFAULT_EVENTS_DIR  = BASE_DIR / 'predict_tobe'
 DEFAULT_OUTPUT_DIR  = _HERE / 'ml_predict'
+DEFAULT_MODEL_10M   = _HERE / 'model_v41_10m.json'
 DEFAULT_MODEL_15M   = _HERE / 'model_v41_15m.json'
 DEFAULT_MODEL_30M   = _HERE / 'model_v41_30m.json'
-DEFAULT_MODEL_60M   = _HERE / 'model_v41_60m.json'
 DEFAULT_INTERVAL    = 60
 SYNC_OFFSET_SEC     = 10   # 룰베이스(05초) 다음 5초
 
@@ -76,9 +76,9 @@ SYNC_OFFSET_SEC     = 10   # 룰베이스(05초) 다음 5초
 # ============================================================
 OUT_HEADER = [
     'datetime',
-    'prediction_for_15m', 'prediction_for_30m', 'prediction_for_60m',
-    'ml_score_15m', 'ml_score_30m', 'ml_score_60m',
-    'ml_level_15m', 'ml_level_30m', 'ml_level_60m',
+    'prediction_for_10m', 'prediction_for_15m', 'prediction_for_30m',
+    'ml_score_10m', 'ml_score_15m', 'ml_score_30m',
+    'ml_level_10m', 'ml_level_15m', 'ml_level_30m',
 ]
 
 
@@ -86,10 +86,10 @@ OUT_HEADER = [
 # 모델 로드 (3개)
 # ============================================================
 class TripleModel:
-    """3 lead time 모델 묶음 (15m/30m/60m)."""
+    """3 lead time 모델 묶음 (10m/15m/30m)."""
 
     def __init__(self, paths):
-        """paths = {'15m': Path, '30m': Path, '60m': Path}"""
+        """paths = {'10m': Path, '15m': Path, '30m': Path}"""
         self.models = {}
         for lead, p in paths.items():
             if not os.path.exists(p):
@@ -104,7 +104,7 @@ class TripleModel:
                 self.models[lead] = None
 
     def predict(self, feat_dict):
-        """피처 → {15m: score, 30m: score, 60m: score} (없는 모델은 None)."""
+        """피처 → {10m: score, 15m: score, 30m: score} (없는 모델은 None)."""
         out = {}
         for lead, m in self.models.items():
             if m is None:
@@ -199,21 +199,21 @@ def predict_one(input_csv, events_dir, triple_model, sliding_state, last_t,
     levels = triple_model.levels(scores)
 
     # 출력 행
+    pred_10 = (latest_t + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')
     pred_15 = (latest_t + timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
     pred_30 = (latest_t + timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M:%S')
-    pred_60 = (latest_t + timedelta(minutes=60)).strftime('%Y-%m-%d %H:%M:%S')
 
     row = {
         'datetime': latest_t.strftime('%Y-%m-%d %H:%M:%S'),
+        'prediction_for_10m': pred_10,
         'prediction_for_15m': pred_15,
         'prediction_for_30m': pred_30,
-        'prediction_for_60m': pred_60,
+        'ml_score_10m': f'{scores["10m"]:.4f}' if scores["10m"] is not None else '',
         'ml_score_15m': f'{scores["15m"]:.4f}' if scores["15m"] is not None else '',
         'ml_score_30m': f'{scores["30m"]:.4f}' if scores["30m"] is not None else '',
-        'ml_score_60m': f'{scores["60m"]:.4f}' if scores["60m"] is not None else '',
+        'ml_level_10m': levels.get('10m', ''),
         'ml_level_15m': levels.get('15m', ''),
         'ml_level_30m': levels.get('30m', ''),
-        'ml_level_60m': levels.get('60m', ''),
     }
     return latest_t, row
 
@@ -251,15 +251,15 @@ def sleep_until_next_minute(offset_sec=SYNC_OFFSET_SEC):
 # 외부 API — run_watch
 # ============================================================
 def run_watch(input_csv=None, events_dir=None, out_dir=None,
-              model_15m=None, model_30m=None, model_60m=None,
+              model_10m=None, model_15m=None, model_30m=None,
               interval=DEFAULT_INTERVAL):
     """매분 동기 ML 추론. run_ml.py 의 스레드 진입점."""
     input_csv = Path(input_csv or DEFAULT_INPUT_CSV)
     events_dir = Path(events_dir or DEFAULT_EVENTS_DIR)
     out_dir = Path(out_dir or DEFAULT_OUTPUT_DIR)
+    model_10m = Path(model_10m or DEFAULT_MODEL_10M)
     model_15m = Path(model_15m or DEFAULT_MODEL_15M)
     model_30m = Path(model_30m or DEFAULT_MODEL_30M)
-    model_60m = Path(model_60m or DEFAULT_MODEL_60M)
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -272,16 +272,16 @@ def run_watch(input_csv=None, events_dir=None, out_dir=None,
     _log(f'  입력: {input_csv}')
     _log(f'  발동이벤트: {events_dir}')
     _log(f'  출력: {out_dir}')
+    _log(f'  모델 10m: {model_10m}')
     _log(f'  모델 15m: {model_15m}')
     _log(f'  모델 30m: {model_30m}')
-    _log(f'  모델 60m: {model_60m}')
     _log('=' * 60)
 
     # 모델 로드
     triple = TripleModel({
+        '10m': model_10m,
         '15m': model_15m,
         '30m': model_30m,
-        '60m': model_60m,
     })
     if all(m is None for m in triple.models.values()):
         _log('❌ 모든 모델 로드 실패 — 종료')
@@ -340,9 +340,9 @@ def main():
     p.add_argument('--input', default=str(DEFAULT_INPUT_CSV))
     p.add_argument('--events_dir', default=str(DEFAULT_EVENTS_DIR))
     p.add_argument('--out_dir', default=str(DEFAULT_OUTPUT_DIR))
+    p.add_argument('--model_10m', default=str(DEFAULT_MODEL_10M))
     p.add_argument('--model_15m', default=str(DEFAULT_MODEL_15M))
     p.add_argument('--model_30m', default=str(DEFAULT_MODEL_30M))
-    p.add_argument('--model_60m', default=str(DEFAULT_MODEL_60M))
     p.add_argument('--interval', type=int, default=DEFAULT_INTERVAL)
     args = p.parse_args()
 
@@ -350,9 +350,9 @@ def main():
         input_csv=args.input,
         events_dir=args.events_dir,
         out_dir=args.out_dir,
+        model_10m=args.model_10m,
         model_15m=args.model_15m,
         model_30m=args.model_30m,
-        model_60m=args.model_60m,
         interval=args.interval,
     )
 
