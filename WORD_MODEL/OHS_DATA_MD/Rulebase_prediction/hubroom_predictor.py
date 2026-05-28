@@ -764,12 +764,20 @@ INCIDENT_FIELDS = [
 
 def append_rows_csv(path, fields, rows):
     new_file = not os.path.exists(path) or os.path.getsize(path) == 0
-    with open(path, 'a', encoding='utf-8-sig', newline='') as f:
-        w = csv.writer(f)
-        if new_file:
-            w.writerow(fields)
-        for r in rows:
-            w.writerow(r)
+    last_err = None
+    for attempt in range(10):
+        try:
+            with open(path, 'a', encoding='utf-8-sig', newline='') as f:
+                w = csv.writer(f)
+                if new_file:
+                    w.writerow(fields)
+                for r in rows:
+                    w.writerow(r)
+            return
+        except PermissionError as e:
+            last_err = e
+            time.sleep(0.3)
+    raise last_err
 
 
 def _fmt(v):
