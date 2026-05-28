@@ -28,7 +28,7 @@ except Exception as e:
 # 수집기 (백그라운드 데몬 — 메인 종료 시 같이 죽음)
 threading.Thread(target=collector.main, daemon=True).start()
 
-# ML 예측기 v4.1 (백그라운드 데몬) — 3 lead time (10/15/30분)
+# ML 예측기 v4.1 (백그라운드 데몬) — 2 lead time (10/30분)
 if _ML_AVAILABLE:
     threading.Thread(target=ml_runner.run_watch, daemon=True).start()
 
