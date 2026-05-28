@@ -1006,9 +1006,12 @@ class Predictor:
         try:
             for d in iter_unified_rows(self.input_csv):
                 t = d['time']
+                # 분 단위 정규화 — 같은 분에 초만 다른 입력 행 중복 방지
+                t = t.replace(second=0, microsecond=0)
                 if self.last_t is not None and t <= self.last_t:
                     continue
                 self.last_t = t
+                d['time'] = t
                 new_rows += 1
 
                 for a in AREAS_ALL:
