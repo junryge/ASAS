@@ -107,46 +107,30 @@ _fail_count = 0
 
 
 # ============================================================
-# CSV 직렬화 (Logpresso inputtxt 용)
+# Logpresso 쿼리 빌더 (json "{...}" | import <table>)
 # ============================================================
-def _csv_escape(v):
-    """CSV 값 1개 escape. None → ''. 쉼표/따옴표/줄바꿈 처리."""
-    if v is None:
-        return ""
-    s = str(v)
-    if any(c in s for c in [',', '"', '\n', '\r']):
-        s = '"' + s.replace('"', '""') + '"'
-    return s
+def _to_maru_literal(row_dict):
+    """dict → Maru object literal: {k = 'v', k2 = 'v2', k3 = null}.
+       값은 작은따옴표로 감싸고 내부 '는 \\' 로 escape."""
+    parts = []
+    for k, v in row_dict.items():
+        if v is None or v == '':
+            parts.append(f"{k} = null")
+        else:
+            s = str(v).replace("'", "\\'")
+            parts.append(f"{k} = '{s}'")
+    return "{" + ", ".join(parts) + "}"
 
 
-def _rows_to_csv(fields, rows):
-    """헤더 + 데이터 행을 단일 CSV 문자열로."""
-    buf = StringIO()
-    buf.write(",".join(_csv_escape(f) for f in fields))
-    buf.write("\n")
-    for row in rows:
-        buf.write(",".join(_csv_escape(v) for v in row))
-        buf.write("\n")
-    return buf.getvalue()
-
-
-# ============================================================
-# Logpresso 쿼리 (inputtxt + eval(file 하드코딩) + savetbl)
-# ============================================================
-def _build_query(csv_text):
-    """Logpresso 쿼리 작성. inputtxt 로 csv 받아 file 컬럼 덮어쓰고 테이블에 저장."""
-    # Logpresso 쿼리 안에서 큰 따옴표 escape (역슬래시)
-    csv_esc = csv_text.replace("\\", "\\\\").replace('"', '\\"')
-    q = (
-        f'inputtxt "{csv_esc}" delim="," tab=t '
-        f'| eval file="{FILE_LABEL}" '
-        f'| savetbl {TABLE_NAME}'
-    )
-    return q
+def _build_query(row_dict):
+    """단일 행 INSERT 쿼리. M14A 예시와 동일 패턴."""
+    literal = _to_maru_literal(row_dict)
+    escaped = literal.replace('"', '\\"')   # json " " 안쪽 " escape
+    return f'json "{escaped}" | import {TABLE_NAME}'
 
 
 def _post_query(q):
-    """Logpresso 쿼리 실행. M14A_FAB 패턴 그대로 (GET + URL 인코딩)."""
+    """Logpresso 쿼리 실행 (GET httpexport)."""
     qs = " ".join(q.split())
     url = f"{INSERT_URL}?_apikey={API_KEY}&_q={urllib.parse.quote(qs, safe='')}"
     r = requests.get(url, verify=False, timeout=HTTP_TIMEOUT)
@@ -156,12 +140,11 @@ def _post_query(q):
 
 
 # ============================================================
-# 전송 (재시도 포함)
+# 전송 (재시도 포함) — 단일 행
 # ============================================================
-def _send_batch(fields, rows):
-    """배치 행을 Logpresso 로 전송. 성공 True / 실패 False."""
-    csv_text = _rows_to_csv(fields, rows)
-    q = _build_query(csv_text)
+def _send_one(row_dict):
+    """한 건 전송. 성공 True / 실패 False."""
+    q = _build_query(row_dict)
     last_err = None
     for attempt in range(RETRY_ON_FAIL):
         try:
@@ -175,32 +158,23 @@ def _send_batch(fields, rows):
 
 
 # ============================================================
-# 비동기 워커
+# 비동기 워커 (단일 행씩 처리 — Logpresso json+import 단건 패턴)
 # ============================================================
 def _worker():
-    """큐에서 배치로 꺼내 전송. 종료 신호 받으면 남은 큐 flush 후 종료."""
+    """큐에서 1건씩 꺼내 전송. 종료 신호 받으면 남은 큐 flush 후 종료."""
     global _count, _fail_count
     while not _stop_flag.is_set() or (_queue and not _queue.empty()):
-        batch = []
         try:
-            batch.append(_queue.get(timeout=1.0))
+            row_dict = _queue.get(timeout=1.0)
         except queue.Empty:
             continue
-        while len(batch) < BATCH_SIZE:
-            try:
-                batch.append(_queue.get_nowait())
-            except queue.Empty:
-                break
-        # 첫 행의 fields 기준으로 그룹 처리 (모두 같은 EVENT_FIELDS 가정)
-        fields = batch[0]["fields"]
-        rows = [item["row"] for item in batch]
-        ok = _send_batch(fields, rows)
+        ok = _send_one(row_dict)
         if ok:
-            _count += len(rows)
+            _count += 1
             if LOG_EVERY_N and _count % LOG_EVERY_N == 0:
                 log.info(f"적재 누적 {_count}행")
         else:
-            _fail_count += len(rows)
+            _fail_count += 1
 
 
 # ============================================================
@@ -220,31 +194,28 @@ def start():
         _stop_flag.clear()
         _worker_thread = threading.Thread(target=_worker, daemon=True, name="Rule_LO-worker")
         _worker_thread.start()
-        log.info(f"비동기 워커 시작 (batch={BATCH_SIZE}, queue_max={QUEUE_MAX})")
+        log.info(f"비동기 워커 시작 (queue_max={QUEUE_MAX}, 단일행씩 전송)")
 
 
 def upload(fields, row):
-    """단일 이벤트 적재. fields/row 는 hubroom_predictor 의 EVENT_FIELDS / event_to_row 결과."""
+    """단일 이벤트 적재. fields/row 는 hubroom_predictor 의 EVENT_FIELDS / event_to_row 결과.
+       fields(list of str) + row(list of values) → dict 로 변환 후 file 컬럼 덮어쓰기."""
     if not ENABLED:
         return
     try:
-        # row 의 'file' 위치를 FILE_LABEL 로 덮어쓰기 (Logpresso 쿼리에서도 한번 더 덮어씀)
-        if 'file' in fields:
-            idx = fields.index('file')
-            row = list(row)
-            row[idx] = FILE_LABEL
+        row_dict = dict(zip(fields, row))
+        row_dict['file'] = FILE_LABEL   # 무조건 하드코딩
         if ASYNC_UPLOAD and _queue is not None:
-            item = {"fields": fields, "row": row}
             try:
-                _queue.put_nowait(item)
+                _queue.put_nowait(row_dict)
             except queue.Full:
                 try:
                     _queue.get_nowait()
-                    _queue.put_nowait(item)
+                    _queue.put_nowait(row_dict)
                 except queue.Empty:
                     pass
         else:
-            _send_batch(fields, [row])
+            _send_one(row_dict)
     except Exception as e:
         if not FAIL_SILENT:
             raise
