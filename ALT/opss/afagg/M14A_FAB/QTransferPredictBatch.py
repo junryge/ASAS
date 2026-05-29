@@ -405,11 +405,129 @@ class QTransferPredictBatch:
         except Exception as e:
             print(f"  ⚠ ALARM2 스킵: {e}")
 
-        # ── ALARM3, 4, 5 : Oracle/pandas 의존 — Phase0 후 queries 채워지면 활성화 ──
-        # TODO: ALARM3 (SELECT_M14TOM10LFT_DOWN_RATE), ALARM4 (SELECT_M14LFT_DOWN_RATE),
-        #       ALARM5 (qtransferAltJobCnt + pandas 집계)
+        # ── ALARM3, 4 : Oracle PORT_DOWN_RATE 의존 — dbquery Logpresso 쿼리 확보 후 활성화 ──
+        # TODO: ALARM3 (SELECT_M14TOM10LFT_DOWN_RATE), ALARM4 (SELECT_M14LFT_DOWN_RATE)
+        #       vhlRunRate 처럼 dbquery 패턴 Logpresso 쿼리로 만들면 oracledb 불필요.
+
+        # ── ALARM5 : JOB STATE ERROR/ALT 50%↑ & 동일장비 50%↑ (자바 L757-940) ──
+        try:
+            alarm5 = self._build_alarm5(prediction, req_limit, current_total)
+            if alarm5:
+                alarms.append(alarm5)
+        except Exception as e:
+            print(f"  ⚠ ALARM5 스킵: {e}")
 
         return alarms
+
+    # 자바 ALARM5 (L757-940) — ALT JOB 집계
+    def _build_alarm5(self, prediction, req_limit, current_total):
+        from collections import defaultdict
+
+        alt_job_limit = find_value("QTRANSFER_ALT_JOB_LIMIT", 50)
+        alt_job_machine_rate = find_value("QTRANSFER_ALT_JOB_MACHINE_RATE", 50)
+
+        today = self.event_dt.strftime("%Y%m%d")
+        yesterday = (self.event_dt - timedelta(days=1)).strftime("%Y%m%d")
+
+        # 1) qtransferAltJobCnt → INCREASE_RATE > 50 ?
+        q6 = QUERIES.get("qtransferAltJobCnt", "").replace("START_DT", yesterday).replace("END_DT", today)
+        alt_cnt = query(q6)
+        if not alt_cnt:
+            return None
+        try:
+            increase_rate = float(alt_cnt[0].get("INCREASE_RATE", 0))
+        except (ValueError, TypeError):
+            return None
+
+        if increase_rate <= alt_job_limit:
+            return None  # 자바: altJobLimitFlag=false → 알람 없음
+
+        # 2) altJobMachineRate → RATE_DT >= 50% 인 장비/상태
+        state_rate_msg = ""
+        machine_rate_msg = ""
+        state_mapping_machine = ""
+        msg_idx = 2
+
+        q7 = QUERIES.get("altJobMachineRate", "").replace("START_DT", yesterday).replace("END_DT", today)
+        mrate = query(q7)
+        if mrate:
+            def fnum(v):
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    return 0.0
+
+            filtered = [m for m in mrate if fnum(m.get("RATE_DT")) >= alt_job_machine_rate]
+            if filtered:
+                f_machines = {m.get("MACHINENAME") for m in filtered}
+                f_states = {m.get("STATE") for m in filtered}
+
+                # 장비별/상태별 CNT 합 (자바 groupingBy + summingInt)
+                machine_cnt = defaultdict(int)
+                state_cnt = defaultdict(int)
+                for m in mrate:
+                    try:
+                        c = int(float(m.get("CNT", 0)))
+                    except (ValueError, TypeError):
+                        c = 0
+                    if m.get("MACHINENAME") in f_machines:
+                        machine_cnt[m.get("MACHINENAME")] += c
+                    if m.get("STATE") in f_states:
+                        state_cnt[m.get("STATE")] += c
+
+                # STATE[MACHINE] 매핑
+                state_machine = defaultdict(list)
+                for m in mrate:
+                    s, mc = m.get("STATE"), m.get("MACHINENAME")
+                    if s in f_states and mc in f_machines and mc not in state_machine[s]:
+                        state_machine[s].append(mc)
+                state_mapping_machine = ",".join(f"{s}[{','.join(ms)}]" for s, ms in state_machine.items())
+
+                machine_list = ",".join(f'"{m}"' for m in machine_cnt)  # "M1","M2"
+                state_list = ",".join(f'"{s}"' for s in state_cnt)
+
+                # 3) 24h 평균 — 장비별
+                q72 = (QUERIES.get("altJobMachineRate24h", "")
+                       .replace("START_DT", yesterday).replace("END_DT", today)
+                       .replace("MACHINELIST", machine_list))
+                m24 = query(q72)
+                m24map = {r.get("MACHINENAME"): r.get("DAY_CNT") for r in m24}
+
+                # 24h 평균 — 상태별
+                q73 = (QUERIES.get("qtransferAltJobCnt24h", "")
+                       .replace("START_DT", yesterday).replace("END_DT", today)
+                       .replace("STATELIST", state_list))
+                s24 = query(q73)
+                s24map = {r.get("STATE"): r.get("AVG_VAL") for r in s24}
+
+                # 메시지 동적 생성 (자바 L915-935)
+                for st, cnt in state_cnt.items():
+                    state_rate_msg += f"{msg_idx}. 1시간 {st} 상태 반송큐 수: {cnt}개 (전일 평균 {s24map.get(st, '')}개)\\n \n        "
+                    msg_idx += 1
+                for mc, cnt in machine_cnt.items():
+                    machine_rate_msg += f"{msg_idx}. 1시간 {mc} 장비 반송큐 수: {cnt}개 (전일 평균 {m24map.get(mc, '')}개)\\n \n        "
+                    msg_idx += 1
+
+        # altJobLimitFlag=true 면 무조건 알람 발생 (자바 altJobMachineStateFlag=true)
+        a = _alarm_base()
+        a["IDCCOL"] = "QTRANSFER_ALARM5"
+        # 자바: ALARM5 는 별도 title/subtitle 없이 ALT_JOB content 만 (인라인). 메시지 코드 사용.
+        a["ALARM_DESC"] = ""
+        a["ALARM_CMT"] = "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다."
+        a["ALARM_MSG_CTN"] = get_message(
+            "QTRANSFER_ALT_JOB",
+            "10",                       # 0: predictOutput
+            int(prediction),            # 1
+            int(req_limit),             # 2
+            state_rate_msg,             # 3
+            machine_rate_msg,           # 4
+            current_total,              # 5
+            "",                         # 6: JOB STATE별
+            "",                         # 7: VHL 가동률
+            state_mapping_machine,      # 8: STATE[MACHINE]
+            "",                         # 9: 장비
+        )
+        return a
 
     def _oracle_storage_util(self):
         """ALARM2 의 M16A STORAGE_UTIL. Oracle 비활성 시 빈값."""
