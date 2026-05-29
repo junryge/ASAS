@@ -56,6 +56,7 @@ SITES = {
             "V8_Numerical_Real_time_10min.py",
             "V8_Numerical_Real_time_15min.py",
             "V8_Numerical_Real_time_25min.py",
+            "HubroomTransPredictBatch.py --once",   # 자바 HubroomTransPredictBatch 마이그레이션 (WARN_YN 판정)
         ],
     },
     "M14A_FAB": {
@@ -65,6 +66,7 @@ SITES = {
             "V8.3.1_Q_TRANSFER_PREDICTOR_10m.py",
             "V8.3.1_Q_TRANSFER_PREDICTOR_15m.py",
             "V8.3.1_Q_TRANSFER_PREDICTOR_25m.py",
+            "QTransferPredictBatch.py --once",      # 자바 QTransferPredictBatch 마이그레이션 (알람 11종 + 통계 + 적재)
         ],
     },
 }

@@ -1,0 +1,100 @@
+{
+  "_comment": "QTransferPredictBatch (알람 11종 + 통계 + 적재) 설정. 자바 QTransferPredictBatch.java 의 _alarmValid / _buildTransportAlarm / _buildAlarmN 이식.",
+
+  "logpresso": {
+    "host":          "10.40.42.27",
+    "port":          8888,
+    "insert_table":  "test_currentjob_predict",
+    "predict_table": "test_table2",
+    "dashboard_table": "qtransfer_dashboard"
+  },
+
+  "_threshold_comment": "자바 _findValueByCode 기본값. 운영 variable.xml/AMOS_ALARM_PARAMETER 값으로 교체.",
+  "thresholds": {
+    "QTRANSFER_LIMIT":                    1700,
+    "QTRANSFER_INCREASE_RATE":            10,
+    "VHL_RATE_LIMIT":                     95,
+    "QTRANSFER_CNV_PORT_DOWN_RATE":       10,
+    "QTRANSFER_M14TOM10_PORT_DOWN_RATE":  25,
+    "QTRANSFER_M14LFT_PORT_DOWN_RATE":    10,
+    "QTRANSFER_ALT_JOB_LIMIT":            50,
+    "QTRANSFER_ALT_JOB_MACHINE_RATE":     50,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_6":      95,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_7":      100,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_8":      100,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_9":      2700,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_10_1":   1700,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_10_2":   200,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_11_1":   500,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_11_2":   97
+  },
+
+  "_message_comment": "자바 alarm_message.xml. {0}{1}... 자리표시자는 get_message(code,*args) 로 치환. 운영 실제 텍스트로 교체 필요(Phase0).",
+  "messages": {
+    "QTRANSFER_REQ_TITLE":     "M14A 반송 큐 증가 예측",
+    "QTRANSFER_REQ_SUB_TITLE": "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다.",
+    "QTRANSFER_REQ_CONTENT":   "M14A 반송큐 예측 {0} (임계치 {1}), VHL 가동률 {2}%, MES 큐 10분 {3} / 24h {4}, 현재 {5}, 완료 {6}",
+
+    "QTRANSFER_CNV_TITLE":     "M14A↔M16 CNV 반송 증가",
+    "QTRANSFER_CNV_SUB_TITLE": "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다.",
+    "QTRANSFER_CNV_CONTENT":   "예측 {0} (임계치 {1}), M14A→M16 10분 {2}/24h {3}, M16→M14A 10분 {4}/24h {5}, 현재 {6}, 스토리지 {7}, VHL {8}%",
+
+    "QTRANSFER_M14TOM10_LFT":      "M10A ↔ M14A FAB간 반송 큐 다량 증가 (예측 {1}, 임계치 {2}, 다운율 {7})",
+    "QTRANSFER_M14ATOM14B_LFT":    "M14A ↔ M14B FAB간 반송 큐 다량 증가 (예측 {1}, 임계치 {2}, 다운율 {7})",
+    "QTRANSFER_ALT_JOB":           "ALT/ERROR JOB 급증 (예측 {1}, 임계치 {2}, 상태 {3}, 장비 {4})",
+
+    "NORMAL_STB_STORAGE_LOAD_TITLE":     "Normal STB Storage 부하 ({0}%)",
+    "NORMAL_STB_STORAGE_LOAD_SUB_TITLE": "- STB Storage 부하 임계 초과",
+    "NORMAL_STB_STORAGE_LOAD_CONTENT":   "현재 {0}%, 임계 {1}%",
+
+    "SORTER_WAIT_COUNT_OVER_TITLE":      "Sorter Wait Count 초과 ({0})",
+    "SORTER_WAIT_COUNT_OVER_SUB_TITLE":  "- Sorter 대기 수 임계 초과",
+    "SORTER_WAIT_COUNT_OVER_CONTENT":    "현재 {0}, 임계 {1}",
+
+    "CU_SORTER_WAIT_COUNT_OVER_TITLE":     "Cu Sorter Wait Count 초과 ({0})",
+    "CU_SORTER_WAIT_COUNT_OVER_SUB_TITLE": "- Cu Sorter 대기 수 임계 초과",
+    "CU_SORTER_WAIT_COUNT_OVER_CONTENT":   "현재 {0}, 임계 {1}",
+
+    "Q_COMPLETED_UNDER_AVERAGE_TITLE":     "Q-COMPLETED 임계 ({0})",
+    "Q_COMPLETED_UNDER_AVERAGE_SUB_TITLE": "- Q-COMPLETED 임계 초과",
+    "Q_COMPLETED_UNDER_AVERAGE_CONTENT":   "현재 {0}, 임계 {1}",
+
+    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_TITLE":     "Total Que 증가 & Manual Out ({0})",
+    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_SUB_TITLE": "- Total {0} / Manual {1}",
+    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_CONTENT":   "Total {0}(임계 {1}), Manual {2}(임계 {3})",
+
+    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_TITLE":     "층간 대기 QUE 증가 & STB 부하 ({0})",
+    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_SUB_TITLE": "- 대기 {0} / STB {1}",
+    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_CONTENT":   "대기 {0}(임계 {1}), STB {2}%(임계 {3}%)"
+  },
+
+  "_query_comment": "자바 customQuery/customQuery2 의 알람용 쿼리 ID. 운영 XML 본문을 그대로 붙여넣어야 함(Phase0). duration 치환은 코드에서 .replace 로 처리.",
+  "queries": {
+    "qTransferGroupData":          "",
+    "vhlRunRate":                  "",
+    "mesOHTQCntAlarmValid":        "",
+    "completedTsJobCountPerMin":   "",
+    "transferCountPerMin":         "",
+    "bridgeDetailCnvPortDownRate": "",
+    "qtransferAltJobCnt":          "",
+    "altJobMachineRate":           "",
+    "altJobMachineRate24h":        "",
+    "qtransferAltJobCnt24h":       "",
+    "SELECT_AWS_IDC_HISTORY":      ""
+  },
+
+  "_oracle_comment": "ALARM3/4 의 PORT_DOWN_RATE, ALARM2 의 STORAGE_UTIL. Logpresso 대체 불가 시 oracledb 사용. Phase0 결정.",
+  "oracle": {
+    "enabled": false,
+    "connections": {
+      "M14A": {"user": "", "password": "", "dsn": ""},
+      "M14B": {"user": "", "password": "", "dsn": ""},
+      "M16A": {"user": "", "password": "", "dsn": ""}
+    },
+    "queries": {
+      "SELECT_M14TOM10LFT_DOWN_RATE": "",
+      "SELECT_M14LFT_DOWN_RATE":      "",
+      "SELECT_M16A_STORAGE_UTIL":     ""
+    }
+  }
+}
