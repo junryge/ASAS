@@ -67,7 +67,7 @@ HOST = CFG["logpresso"]["host"]
 PORT = CFG["logpresso"]["port"]
 INSERT_TABLE = CFG["logpresso"]["insert_table"]      # test_table5 (구 test_currentjob_predict)
 PREDICT_TABLE = CFG["logpresso"]["predict_table"]    # test_table2 (V8.3.1 예측기가 실제 저장하는 곳 == 운영의 ATLAS_TS_PREDICT 역할)
-DASHBOARD_TABLE = CFG["logpresso"].get("dashboard_table", "test_table7")  # 구 qtransfer_dashboard
+DASHBOARD_TABLE = CFG["logpresso"].get("dashboard_table", "test_table6")  # 구 qtransfer_dashboard
 BASE = f"http://{HOST}:{PORT}/logpresso/httpexport/query.csv"
 
 THRESHOLDS = CFG["thresholds"]
