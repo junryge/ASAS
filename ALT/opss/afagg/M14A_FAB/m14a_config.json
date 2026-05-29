@@ -1,0 +1,32 @@
+{
+  "_comment": "M14A Q_TRANSFER 예측 통합 설정. 환경/모델 변경 시 여기만 수정.",
+
+  "logpresso": {
+    "host":         "10.40.42.27",
+    "port":         8888,
+    "insert_table": "test_table2"
+  },
+
+  "data": {
+    "range_min": 300,
+    "output":    "data/QTRANSFER.csv"
+  },
+
+  "models": {
+    "10m": {
+      "model_file": "model/model_V8.3_10min.pkl",
+      "horizon":    10,
+      "FILE_NM":    "V8.3.1_Q_TRANSFER_PREDICTOR_10m.py"
+    },
+    "15m": {
+      "model_file": "model/model_V8.3_15min.pkl",
+      "horizon":    15,
+      "FILE_NM":    "V8.3.1_Q_TRANSFER_PREDICTOR_15m.py"
+    },
+    "25m": {
+      "model_file": "model/model_V8.3_25min.pkl",
+      "horizon":    25,
+      "FILE_NM":    "V8.3.1_Q_TRANSFER_PREDICTOR_25m.py"
+    }
+  }
+}

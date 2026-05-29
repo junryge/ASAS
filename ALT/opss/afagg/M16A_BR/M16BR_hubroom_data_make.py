@@ -1,0 +1,181 @@
+"""
+HUB_ROOM_INPUT_DATA → HUBROOM_PIVOT_DATA.csv
+
+전체 쿼리가 무거워서 끊기는 문제 해결:
+  - PART1: test_bridge_layout 기반 데이터 (IDC + STORAGE)
+  - PART2: star_transport_view + ATLAS_RAIL_TRAFFIC 기반 데이터
+  - Python에서 STAT_DT 기준 outer merge
+
+각각 따로 받으면 서버 부담 적고, join도 Python pandas가 처리.
+"""
+import os, sys, time, json, requests, urllib.parse, urllib3
+import pandas as pd
+from io import StringIO
+from datetime import datetime
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# ─── 설정 ──────────────────────────────────────
+def load_api_key():
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in [os.path.join(here, "api_key.txt"),
+              os.path.join(os.getcwd(), "api_key.txt")]:
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                return f.read().strip().splitlines()[0].strip()
+    sys.exit("❌ api_key.txt 없음")
+
+API_KEY = load_api_key()
+# config.json 에서 접속 정보 로드
+_here = os.path.dirname(os.path.abspath(__file__))
+_config_path = os.path.join(_here, "m16br_config.json")
+with open(_config_path, encoding="utf-8") as _cf:
+    _cfg = json.load(_cf)
+BASE = f"http://{_cfg['logpresso']['host']}:{_cfg['logpresso']['port']}/logpresso/httpexport/query.csv"
+
+# 출력: data 폴더 자동 생성
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+OUTPUT = os.path.join(DATA_DIR, "HUBROOM_PIVOT_DATA.csv")
+
+INTERVAL = 60
+RANGE_MIN = 30  # 분
+
+
+# ─── PART1: test_bridge_layout 기반 ─────────────
+PART1_QUERY = f"""
+set TO = now()
+| set FR = dateadd($("TO"), "min", -{RANGE_MIN})
+| table from=$("FR") to=$("TO") test_bridge_layout
+| search in (FLOW,
+    "CURRENT_M16A_3F_JOB", "CURRENT_M16A_3F_JOB_2", "M14A_3F_CNV_MAXCAPA",
+    "M14A_3F_TO_HUB_CMD", "M14A_3F_TO_HUB_JOB2", "M14A_3F_TO_HUB_JOB_ALT",
+    "M14B_7F_LFT_MAXCAPA", "M14B_7F_TO_HUB_CMD", "M14B_7F_TO_HUB_JOB2",
+    "M14B_7F_TO_HUB_JOB_ALT", "M14_TO_M16_OFS_CUR", "M16A_2F_LFT_MAXCAPA",
+    "M16A_2F_TO_6F_JOB", "M16A_2F_TO_HUB_CMD", "M16A_2F_TO_HUB_JOB2",
+    "M16A_2F_TO_HUB_JOB_ALT", "M16A_3F_CMD", "M16A_3F_CNV_MAXCAPA",
+    "M16A_3F_LFT_MAXCAPA", "M16A_3F_M14BLFT_MAXCAPA", "M16A_3F_TO_3F_MLUD_JOB",
+    "M16A_3F_TO_M14A_3F_JOB", "M16A_3F_TO_M14A_CNV_AI_CMD", "M16A_3F_TO_M14B_7F_JOB",
+    "M16A_3F_TO_M14B_LFT_AI_CMD", "M16A_3F_TO_M16A_2F_JOB", "M16A_3F_TO_M16A_3F_STB_CMD",
+    "M16A_3F_TO_M16A_6F_JOB", "M16A_3F_TO_M16A_LFT_AI_CMD", "M16A_3F_TO_M16A_MLUD_AI_CMD",
+    "M16A_6F_LFT_MAXCAPA", "M16A_6F_TO_2F_JOB", "M16A_6F_TO_HUB_CMD",
+    "M16A_6F_TO_HUB_JOB", "M16A_6F_TO_HUB_JOB_ALT", "M16B_10F_TO_HUB_JOB",
+    "HUBROOMTOTAL")
+or IDC_NM == "CD_M163FSTORAGEUTIL"
+or FLOW == "M16_TO_M14_OFS"
+or FLOW == "M14_TO_M16_OFS"
+or IDC_NM == "CD_M163FSTORAGEUSE"
+or IDC_NM == "CD_M163FSTORAGETOTAL"
+| eval FLOW = case(isnull(FLOW), IDC_NM, FLOW),
+       STAT_DT = case(isnull(STAT_DT), EVENT_DT, STAT_DT),
+       VAL = case(isnull(VAL), CURR_VAL, VAL)
+| eval FLOW = case(FLOW == "M16_TO_M14_OFS", "M16_TO_M14_OFS_CUR",
+                   FLOW=="M14_TO_M16_OFS", "M14_TO_M16_OFS_CUR", FLOW)
+| eval FLOW = case(FLOW == "CD_M163FSTORAGEUTIL", "M16A_3F_STORAGE_UTIL", FLOW)
+| rename FLOW as IDC_NM, VAL as IDC_VAL
+| fields STAT_DT, IDC_NM, IDC_VAL
+| union [
+    table from=$("FR") to=$("TO") test_bridge_layout
+    | search IDC_NM == "CD_M163FSTORAGEUTIL"
+    | eval STAT_DT = case(isnull(STAT_DT), EVENT_DT, STAT_DT)
+    | rename CURR_VAL as IDC_VAL
+    | fields STAT_DT, IDC_NM, IDC_VAL
+]
+| pivot sum(long(IDC_VAL)) as IDC_VAL by STAT_DT for IDC_NM
+"""
+
+
+# ─── PART2: star_transport_view + ATLAS_RAIL_TRAFFIC ─
+PART2_QUERY = f"""
+set TO = now()
+| set FR = dateadd($("TO"), "min", -{RANGE_MIN})
+| table from=$("FR") to=$("TO") star_transport_view
+| union [
+    table from=$("FR") to=$("TO") star_transport_view
+    | search in (IDC_NM, "M16HUB.QUE.TIME.AVGTOTALTIME", "M16A.QUE.OHT.OHTUTIL")
+    | eval IDC_NM = if(IDC_NM == "M16HUB.QUE.TIME.AVGTOTALTIME",
+                       "M16HUB.QUE.TIME.AVGTOTALTIME1MIN", "M16HUB.QUE.OHT.OHTUTIL")
+]
+| eval STAT_DT = string(CRT_TM, "yyyyMMddHHmm")
+| union [
+    table from=$("FR") to=$("TO") ATLAS_RAIL_TRAFFIC
+    | search HID_ID != ""
+    | eval IDC_NM = concat(fabId, "_", mcpName, "_AVG_VELOCITY"),
+           STAT_DT = string(_time, "yyyyMMddHHmm")
+    | stats avg(velocity) as V by STAT_DT, IDC_NM
+    | eval IDC_VAL = round(V, 1)
+]
+| eval IDC_VAL = case(isnull(IDC_VAL), 0, IDC_VAL)
+| pivot last(IDC_VAL) as IDC_VAL by STAT_DT for IDC_NM
+"""
+
+
+# ─── 쿼리 실행 ─────────────────────────────────
+def query(label, q, timeout=180):
+    qs = " ".join(q.split())
+    url = f"{BASE}?_apikey={API_KEY}&_q={urllib.parse.quote(qs, safe='')}"
+    t0 = time.time()
+    try:
+        r = requests.get(url, verify=False, timeout=timeout)
+        el = time.time() - t0
+        if r.status_code != 200 or r.text.strip().startswith("<"):
+            print(f"  ❌ [{label}] HTTP {r.status_code} ({el:.1f}초)")
+            return None
+        df = pd.read_csv(StringIO(r.text))
+        print(f"  ✅ [{label}] {len(df)}행 × {len(df.columns)}컬럼 ({el:.1f}초)")
+        return df
+    except Exception as e:
+        el = time.time() - t0
+        print(f"  ❌ [{label}] {el:.1f}초 후 {type(e).__name__}")
+        return None
+
+
+# ─── 수집 1회 ─────────────────────────────────
+def collect():
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n[{ts}] 수집 시작")
+
+    df1 = query("PART1 (test_bridge_layout)", PART1_QUERY)
+    df2 = query("PART2 (star_transport + rail)", PART2_QUERY)
+
+    if df1 is None and df2 is None:
+        print("  ❌ 둘 다 실패")
+        return
+
+    if df1 is None:
+        merged = df2
+    elif df2 is None:
+        merged = df1
+    else:
+        # STAT_DT 기준 outer merge (full join 효과)
+        merged = pd.merge(df1, df2, on="STAT_DT", how="outer")
+
+    if "STAT_DT" in merged.columns:
+        merged = merged.sort_values("STAT_DT")
+
+    merged.to_csv(OUTPUT, encoding="utf-8-sig", index=False)
+    print(f"  ✅ 병합 {len(merged)}행 × {len(merged.columns)}컬럼 → {OUTPUT}")
+
+
+# ─── 메인 ─────────────────────────────────────
+if __name__ == "__main__":
+    once = "--once" in sys.argv
+
+    print(f"{'='*60}")
+    print(f"  HUBROOM 수집기 (쿼리 분할 방식)")
+    print(f"  출력: {os.path.abspath(OUTPUT)}")
+    print(f"  범위: {RANGE_MIN}분, 주기: {INTERVAL}초")
+    print(f"  중단: Ctrl+C")
+    print(f"{'='*60}")
+
+    if once:
+        collect()
+    else:
+        while True:
+            try:
+                t0 = time.time()
+                collect()
+                time.sleep(max(1, INTERVAL - (time.time() - t0)))
+            except KeyboardInterrupt:
+                print("\n중단")
+                break

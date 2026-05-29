@@ -1,0 +1,48 @@
+{
+  "_comment": "HUB_ROOM_PREDICTOR 전체 설정. 환경/모델 변경 시 여기만 수정.",
+
+  "logpresso": {
+    "host":         "10.40.42.27",
+    "port":         8888,
+    "insert_table": "test_table"
+  },
+
+  "models": {
+    "categorical_10m": {
+      "FLOW":               "HUBROOM_PREDICT_10MIN_CATEGORICAL",
+      "MODEL":              "V8_CLASSIFICATION_10MIN",
+      "MODEL_TYPE":         "CATEGORICAL",
+      "PREDICTION_HORIZON": "10MIN"
+    },
+    "categorical_15m": {
+      "FLOW":               "HUBROOM_PREDICT_15MIN_CATEGORICAL",
+      "MODEL":              "V8_CLASSIFICATION_15MIN",
+      "MODEL_TYPE":         "CATEGORICAL",
+      "PREDICTION_HORIZON": "15MIN"
+    },
+    "categorical_25m": {
+      "FLOW":               "HUBROOM_PREDICT_25MIN_CATEGORICAL",
+      "MODEL":              "V8_CLASSIFICATION_25MIN",
+      "MODEL_TYPE":         "CATEGORICAL",
+      "PREDICTION_HORIZON": "25MIN"
+    },
+    "numerical_10m": {
+      "FLOW":               "HUBROOM_PREDICT",
+      "MODEL":              "V8_REGRESSION_10MIN",
+      "MODEL_TYPE":         "NUMERICAL",
+      "PREDICTION_HORIZON": "10MIN"
+    },
+    "numerical_15m": {
+      "FLOW":               "HUBROOM_PREDICT_15MIN",
+      "MODEL":              "V8_REGRESSION_15MIN",
+      "MODEL_TYPE":         "NUMERICAL",
+      "PREDICTION_HORIZON": "15MIN"
+    },
+    "numerical_25m": {
+      "FLOW":               "HUBROOM_PREDICT_25MIN",
+      "MODEL":              "V8_REGRESSION_25MIN",
+      "MODEL_TYPE":         "NUMERICAL",
+      "PREDICTION_HORIZON": "25MIN"
+    }
+  }
+}

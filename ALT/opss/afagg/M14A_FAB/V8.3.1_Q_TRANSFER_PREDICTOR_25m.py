@@ -1,0 +1,513 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+🚀 실시간 예측 시스템 - V8.3.0 (queue_gap 복원!)
+60개 → 82개 Feature
++ 결과를 로그프레소 test_table2 에 저장
+"""
+
+import numpy as np
+import pandas as pd
+import pickle
+from datetime import datetime, timedelta
+import os
+import json
+import requests
+import urllib.parse
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 현 디렉터리를 기준으로 경로 설정
+script_dir = os.path.dirname(os.path.abspath(__file__))
+model_dir = os.path.join(script_dir, 'model', 'model_V8.3_25min.pkl')
+data_dir = os.path.join(script_dir, 'data', 'QTRANSFER.csv')
+
+# ========================================
+# Feature 생성 함수 (V8.3.0 - 82개!)
+# ========================================
+def create_features_V8_3(row_dict):
+    """핵심 컬럼 + queue_gap 기반 82개 Feature"""
+    features = {}
+   
+    seq_m14b = np.array(row_dict['M14AM14B'])
+    seq_m14bsum = np.array(row_dict['M14AM14BSUM'])
+    seq_m10arev = np.array(row_dict['M10AM14A'])
+    seq_totalcnt = np.array(row_dict['TOTALCNT'])
+    seq_transport = np.array(row_dict['TRANSPORT'])
+    seq_oht = np.array(row_dict['OHT'])
+    seq_q_created = np.array(row_dict['Q_CREATED'])
+    seq_q_completed = np.array(row_dict['Q_COMPLETED'])
+   
+    # 🔥 queue_gap 계산!
+    seq_gap = seq_q_created - seq_q_completed
+   
+    seq_len = len(seq_m14b)
+   
+    # 1. M14AM14B (8개)
+    features['m14b_mean'] = np.mean(seq_m14b)
+    features['m14b_max'] = np.max(seq_m14b)
+    features['m14b_current'] = seq_m14b[-1]
+    features['m14b_last10'] = np.mean(seq_m14b[-10:])
+    features['m14b_last30'] = np.mean(seq_m14b[-30:])
+    features['m14b_slope'] = np.polyfit(np.arange(seq_len), seq_m14b, 1)[0]
+    features['m14b_std'] = np.std(seq_m14b)
+    features['m14b_trend10'] = seq_m14b[-1] - seq_m14b[-10]
+   
+    # 2. M14AM14BSUM (8개)
+    features['m14bsum_mean'] = np.mean(seq_m14bsum)
+    features['m14bsum_max'] = np.max(seq_m14bsum)
+    features['m14bsum_current'] = seq_m14bsum[-1]
+    features['m14bsum_last10'] = np.mean(seq_m14bsum[-10:])
+    features['m14bsum_last30'] = np.mean(seq_m14bsum[-30:])
+    features['m14bsum_slope'] = np.polyfit(np.arange(seq_len), seq_m14bsum, 1)[0]
+    features['m14bsum_std'] = np.std(seq_m14bsum)
+    features['m14bsum_trend10'] = seq_m14bsum[-1] - seq_m14bsum[-10]
+   
+    # 3. TOTALCNT (10개)
+    features['total_mean'] = np.mean(seq_totalcnt)
+    features['total_max'] = np.max(seq_totalcnt)
+    features['total_min'] = np.min(seq_totalcnt)
+    features['total_current'] = seq_totalcnt[-1]
+    features['total_last5'] = np.mean(seq_totalcnt[-5:])
+    features['total_last10'] = np.mean(seq_totalcnt[-10:])
+    features['total_last30'] = np.mean(seq_totalcnt[-30:])
+    features['total_slope'] = np.polyfit(np.arange(seq_len), seq_totalcnt, 1)[0]
+    features['total_std'] = np.std(seq_totalcnt)
+    features['total_trend10'] = seq_totalcnt[-1] - seq_totalcnt[-10]
+   
+    # 4. M10AM14A (5개)
+    features['m10arev_mean'] = np.mean(seq_m10arev)
+    features['m10arev_max'] = np.max(seq_m10arev)
+    features['m10arev_current'] = seq_m10arev[-1]
+    features['m10arev_last10'] = np.mean(seq_m10arev[-10:])
+    features['m10arev_slope'] = np.polyfit(np.arange(seq_len), seq_m10arev, 1)[0]
+   
+    # 5. TRANSPORT (5개)
+    features['trans_mean'] = np.mean(seq_transport)
+    features['trans_max'] = np.max(seq_transport)
+    features['trans_current'] = seq_transport[-1]
+    features['trans_last10'] = np.mean(seq_transport[-10:])
+    features['trans_slope'] = np.polyfit(np.arange(seq_len), seq_transport, 1)[0]
+   
+    # 6. OHT (4개)
+    features['oht_mean'] = np.mean(seq_oht)
+    features['oht_max'] = np.max(seq_oht)
+    features['oht_current'] = seq_oht[-1]
+    features['oht_last10'] = np.mean(seq_oht[-10:])
+   
+    # 7. 🔥 Queue Gap (10개)
+    features['gap_mean'] = np.mean(seq_gap)
+    features['gap_max'] = np.max(seq_gap)
+    features['gap_min'] = np.min(seq_gap)
+    features['gap_current'] = seq_gap[-1]
+    features['gap_last5'] = np.mean(seq_gap[-5:])
+    features['gap_last10'] = np.mean(seq_gap[-10:])
+    features['gap_last30'] = np.mean(seq_gap[-30:])
+    features['gap_slope'] = np.polyfit(np.arange(seq_len), seq_gap, 1)[0]
+    features['gap_std'] = np.std(seq_gap)
+    features['gap_trend10'] = seq_gap[-1] - seq_gap[-10]
+   
+    # Interaction (12개)
+    features['m14b_x_sum'] = seq_m14b[-1] * seq_m14bsum[-1] / 1000
+    features['m14b_x_sum_mean'] = np.mean(seq_m14b * seq_m14bsum) / 1000
+    features['sum_per_m14b'] = seq_m14bsum[-1] / (seq_m14b[-1] + 1)
+    features['m14b_plus_sum'] = seq_m14b[-1] + seq_m14bsum[-1]
+    features['m10arev_x_m14b'] = seq_m10arev[-1] * seq_m14b[-1] / 100
+    features['trans_x_m14b'] = seq_transport[-1] * seq_m14b[-1] / 100
+    features['ratio_m14b_total'] = seq_m14b[-1] / (seq_totalcnt[-1] + 1)
+    features['ratio_sum_total'] = seq_m14bsum[-1] / (seq_totalcnt[-1] + 1)
+    features['gap_x_m14b'] = seq_gap[-1] * seq_m14b[-1] / 1000
+    features['gap_x_total'] = seq_gap[-1] * seq_totalcnt[-1] / 1000
+    features['gap_x_trans'] = seq_gap[-1] * seq_transport[-1] / 100
+    features['ratio_gap_total'] = seq_gap[-1] / (seq_totalcnt[-1] + 1)
+   
+    # 임계값 (12개)
+    features['m14b_over_520'] = np.sum(seq_m14b > 520)
+    features['m14b_over_540'] = np.sum(seq_m14b > 540)
+    features['m14bsum_over_600'] = np.sum(seq_m14bsum > 600)
+    features['m14bsum_over_620'] = np.sum(seq_m14bsum > 620)
+    features['m10arev_over_55'] = np.sum(seq_m10arev > 55)
+    features['total_over_1600'] = np.sum(seq_totalcnt >= 1600)
+    features['total_over_1650'] = np.sum(seq_totalcnt >= 1650)
+    features['total_over_1700'] = np.sum(seq_totalcnt >= 1700)
+    features['gap_over_200'] = np.sum(seq_gap > 200)
+    features['gap_over_250'] = np.sum(seq_gap > 250)
+    features['gap_over_300'] = np.sum(seq_gap > 300)
+    features['gap_over_350'] = np.sum(seq_gap > 350)
+   
+    # 황금 패턴 (8개)
+    features['gold_strict'] = 1 if (seq_m14b[-1] > 540 and seq_m14bsum[-1] > 620) else 0
+    features['gold_normal'] = 1 if (seq_m14b[-1] > 520 and seq_m14bsum[-1] > 600) else 0
+    features['in_danger'] = 1 if seq_totalcnt[-1] >= 1700 else 0
+    features['near_danger'] = 1 if seq_totalcnt[-1] >= 1600 else 0
+    features['danger_gap'] = 1 if seq_gap[-1] > 300 else 0
+    features['danger_trans'] = 1 if seq_transport[-1] > 151 else 0
+    features['triple_check'] = 1 if (seq_m14b[-1] > 520 and seq_m14bsum[-1] > 600 and seq_gap[-1] > 250) else 0
+    features['quad_check'] = 1 if (seq_m14b[-1] > 520 and seq_m14bsum[-1] > 600 and seq_gap[-1] > 250 and seq_transport[-1] > 145) else 0
+   
+    return features
+
+# ========================================
+# 보정 함수 (V8.3.0 - gap, trans 추가!)
+# ========================================
+def adjust_prediction_V8_3(pred, current_total, m14b, m14bsum, gap, trans):
+    """V8.3.0 보정 - 하한선 + 황금패턴 boost + gap boost"""
+    # 하한선 (25분이라 80)
+    floor = current_total - 130
+    if pred < floor:
+        pred = floor
+   
+    # 황금패턴 + gap boost (1650~1699)
+    if 1650 <= pred < 1700:
+        boost = 0
+        if m14b > 540 and m14bsum > 620:
+            boost += 50
+        elif m14b > 520 and m14bsum > 600:
+            boost += 40
+       
+        # gap boost
+        if gap > 350:
+            boost += 40
+        elif gap > 300:
+            boost += 35
+        elif gap > 250:
+            boost += 25
+       
+        # trans boost
+        if trans > 180:
+            boost += 30
+        elif trans > 151:
+            boost += 20
+       
+        pred = pred + boost
+   
+    # 현재 1700+ 보정
+    if current_total >= 1700 and pred < 1680:
+        pred = max(pred, current_total - 100)
+   
+    return pred
+
+# ========================================
+# 상태 판정 함수
+# ========================================
+def get_status_info(value):
+    if value < 900:
+        return 'LOW'
+    elif value < 1600:
+        return 'NORMAL'
+    elif value < 1700:
+        return 'CAUTION'
+    else:
+        return 'CRITICAL'
+
+# ========================================
+# 실시간 예측 함수
+# ========================================
+def predict_latest():
+    """
+    가장 최근 280분 데이터로 25분 후 예측
+    """
+   
+    # 1. 모델 로드
+    model_file = model_dir
+
+    try:
+        with open(model_file, 'rb') as f:
+            model = pickle.load(f)
+    except Exception as e:
+        return {
+            'prediction': 0,
+            'status': 'Model operation failure',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'No model file: {model_file}'
+        }
+   
+    # 2. CSV 파일 확인
+    csv_file = data_dir
+    if not os.path.exists(csv_file):
+        return {
+            'prediction': 0,
+            'status': 'No data',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'No data: {csv_file}'
+        }
+   
+    # 3. 데이터 로드
+    try:
+        df = pd.read_csv(csv_file, on_bad_lines='skip', dtype={'CURRTIME': str})
+    except Exception as e:
+        return {
+            'prediction': 0,
+            'status': 'No data',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'Failed to load data: {e}'
+        }
+   
+    # 4. 데이터가 비어있는 경우
+    if len(df) == 0:
+        return {
+            'prediction': 0,
+            'status': 'No data',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': 'CSV file is empty'
+        }
+   
+    # 5. 필수 컬럼 확인 (V8.3.0: 8개!)
+    required_cols = [
+        'M14AM14B', 'M14AM14BSUM', 'M10AM14A', 'TOTALCNT',
+        'M14.QUE.ALL.TRANSPORT4MINOVERCNT', 'M14.QUE.OHT.OHTUTIL',
+        'M14.QUE.ALL.CURRENTQCREATED', 'M14.QUE.ALL.CURRENTQCOMPLETED'
+    ]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+   
+    if missing_cols:
+        return {
+            'prediction': 0,
+            'status': 'No data',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'Missing required column: {", ".join(missing_cols)}'
+        }
+   
+    # 6. 데이터 부족 체크
+    if len(df) < 280:
+        return {
+            'prediction': 0,
+            'status': 'Lack of data',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'Lack of data: {len(df)}EA (Minimum 280 EA pieces)'
+        }
+   
+    # 7. CURRTIME 파싱
+    if 'CURRTIME' in df.columns:
+        try:
+            df['CURRTIME'] = df['CURRTIME'].astype(str).str.strip()
+            df = df[df['CURRTIME'].str.len() == 12].copy()
+            if len(df) == 0:
+                raise ValueError("유효한 CURRTIME 없음")
+            df['CURRTIME'] = pd.to_datetime(df['CURRTIME'], format='%Y%m%d%H%M', errors='coerce')
+            df = df.dropna(subset=['CURRTIME']).copy()
+            if len(df) < 280:
+                raise ValueError(f"CURRTIME 파싱 후 데이터 부족: {len(df)}개")
+        except Exception as e:
+            base_time = datetime.now()
+            df['CURRTIME'] = [base_time - timedelta(minutes=len(df)-1-i) for i in range(len(df))]
+    else:
+        base_time = datetime.now()
+        df['CURRTIME'] = [base_time - timedelta(minutes=len(df)-1-i) for i in range(len(df))]
+   
+    # 최종 데이터 부족 재확인
+    if len(df) < 280:
+        return {
+            'prediction': 0,
+            'status': 'Lack of data',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'Lack of data: {len(df)}EA (Minimum 280 EA pieces)'
+        }
+   
+    # 8. Feature 추출 및 예측
+    try:
+        # 최근 280분 데이터 추출 (V8.3.0: 8개 컬럼!)
+        row_dict = {
+            'M14AM14B': df['M14AM14B'].iloc[-280:].values,
+            'M14AM14BSUM': df['M14AM14BSUM'].iloc[-280:].values,
+            'M10AM14A': df['M10AM14A'].iloc[-280:].values,
+            'TOTALCNT': df['TOTALCNT'].iloc[-280:].values,
+            'TRANSPORT': df['M14.QUE.ALL.TRANSPORT4MINOVERCNT'].iloc[-280:].values,
+            'OHT': df['M14.QUE.OHT.OHTUTIL'].iloc[-280:].values,
+            'Q_CREATED': df['M14.QUE.ALL.CURRENTQCREATED'].iloc[-280:].values,
+            'Q_COMPLETED': df['M14.QUE.ALL.CURRENTQCOMPLETED'].iloc[-280:].values,
+        }
+       
+        # 시간 정보
+        current_time = df['CURRTIME'].iloc[-1]
+        if pd.isna(current_time):
+            current_time = datetime.now()
+        prediction_time = current_time + timedelta(minutes=25)
+       
+        # 현재 상태
+        seq_totalcnt = row_dict['TOTALCNT']
+        seq_m14b = row_dict['M14AM14B']
+        seq_m14bsum = row_dict['M14AM14BSUM']
+        seq_gap = row_dict['Q_CREATED'] - row_dict['Q_COMPLETED']
+        seq_trans = row_dict['TRANSPORT']
+       
+        current_totalcnt = seq_totalcnt[-1]
+        current_m14b = seq_m14b[-1]
+        current_m14bsum = seq_m14bsum[-1]
+        current_gap = seq_gap[-1]
+        current_trans = seq_trans[-1]
+       
+        # Feature 생성 (V8.3.0!)
+        features = create_features_V8_3(row_dict)
+        X_pred = pd.DataFrame([features])
+       
+        # 원본 예측
+        pred_raw = model.predict(X_pred)[0]
+       
+        pred = adjust_prediction_V8_3(pred_raw, current_totalcnt, current_m14b, current_m14bsum, current_gap, current_trans)
+       
+        # 🔥 추세기반 예측
+        total_12min_ago = seq_totalcnt[-12]
+        trend_change = current_totalcnt - total_12min_ago
+        trend_pred = trend_change + pred
+       
+        if pred >= 1700:
+            final_pred = pred
+        elif current_totalcnt >= 1600:
+            final_pred = max(pred, trend_pred)
+        else:
+            final_pred = pred
+        #======================================================
+        # 상태 판정
+        pred_status = get_status_info(final_pred)
+        # 패턴 감지 (V8.3.0!)
+        gold_strict = (current_m14b > 540 and current_m14bsum > 620)
+        gold_normal = (current_m14b > 520 and current_m14bsum > 600)
+        danger_gap = current_gap > 300
+        triple_check = (current_m14b > 520 and current_m14bsum > 600 and current_gap > 250)
+       
+        # 1700+ 위험 확률 계산
+        danger_prob = 0
+       
+        if pred >= 1750:
+            danger_prob = 100
+        elif pred >= 1700:
+            danger_prob = 95
+        elif pred >= 1680:
+            danger_prob = 75
+        elif pred >= 1650:
+            danger_prob = 50
+        elif pred >= 1620:
+            danger_prob = 30
+        elif pred >= 1600:
+            danger_prob = 15
+        else:
+            danger_prob = 5
+       
+        # 황금 패턴 보정
+        if gold_strict:
+            danger_prob = min(100, danger_prob + 20)
+        elif gold_normal:
+            danger_prob = min(100, danger_prob + 15)
+        elif (current_m14b > 509 and current_m14bsum > 570):
+            danger_prob = min(100, danger_prob + 10)
+       
+        # gap 보정
+        if danger_gap:
+            danger_prob = min(100, danger_prob + 15)
+        elif current_gap > 250:
+            danger_prob = min(100, danger_prob + 10)
+       
+        # triple_check 보정
+        if triple_check:
+            danger_prob = min(100, danger_prob + 10)
+       
+        # 현재값 보정
+        if current_totalcnt >= 1700:
+            danger_prob = max(danger_prob, 85)
+        elif current_totalcnt >= 1650:
+            danger_prob = max(danger_prob, 60)
+       
+        danger_prob = max(0, min(100, danger_prob))
+       
+        # 정상 결과 반환
+        result = {
+            'prediction': int(final_pred),
+            'status': pred_status,
+            'prediction_time': prediction_time.strftime('%Y-%m-%d %H:%M'),
+            'danger_probability': danger_prob
+        }
+       
+        return result
+       
+    except Exception as e:
+        return {
+            'prediction': 0,
+            'status': 'Model operation failure',
+            'prediction_time': '',
+            'danger_probability': 0,
+            'error_message': f'Model operation failure: {e}'
+        }
+
+
+# ─────────────────────────────────────────────
+#  로그프레소 저장 (test_table2)
+# ─────────────────────────────────────────────
+# m14a_config.json 에서 설정 로드
+_config_path = os.path.join(script_dir, "m14a_config.json")
+with open(_config_path, encoding="utf-8") as _cf:
+    _cfg = json.load(_cf)
+
+INSERT_TABLE = _cfg["logpresso"]["insert_table"]
+BASE = f"http://{_cfg['logpresso']['host']}:{_cfg['logpresso']['port']}/logpresso/httpexport/query.csv"
+FILE_NM = _cfg["models"]["25m"]["FILE_NM"]
+
+def _load_api_key():
+    for p in [os.path.join(script_dir, "api_key.txt"),
+              os.path.join(os.getcwd(), "api_key.txt")]:
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                return f.read().strip().splitlines()[0].strip()
+    return os.environ.get("LOGPRESSO_API_KEY", "")
+
+API_KEY = _load_api_key()
+
+def save_to_logpresso(row: dict) -> bool:
+    """row dict 한 건을 test_table2 에 저장 (json + import)"""
+    if not API_KEY:
+        print("❌ API_KEY 없음")
+        return False
+
+    parts = []
+    for k, v in row.items():
+        if v is None:
+            parts.append(f"{k} = null")
+        else:
+            s = str(v).replace("'", "\\'")
+            parts.append(f"{k} = '{s}'")
+    literal = "{" + ", ".join(parts) + "}"
+    escaped = literal.replace('"', '\\"')
+
+    q = f'json "{escaped}" | import {INSERT_TABLE}'
+    url = f"{BASE}?_apikey={API_KEY}&_q={urllib.parse.quote(q, safe='')}"
+
+    try:
+        r = requests.get(url, verify=False, timeout=30)
+        if r.status_code == 200 and not r.text.strip().startswith("<"):
+            print(f"✅ Logpresso 저장 ({INSERT_TABLE})")
+            return True
+        print(f"❌ HTTP {r.status_code} | {r.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"❌ {type(e).__name__}: {e}")
+        return False
+
+
+if __name__ == '__main__':
+    result = predict_latest()
+   
+    if result is not None:
+        predicted_dict = {
+            "LSTM": int(result['prediction']),
+            "STATE": f"{result['status']}",
+            "STATE_PER": int(result['danger_probability']),
+            "TIME": f"{result['prediction_time']}"
+        }
+        print([predicted_dict])
+
+        # 저장용 row (FILE_NM 추가)
+        save_row = {
+            "FILE_NM":   FILE_NM,
+            "LSTM":      predicted_dict["LSTM"],
+            "STATE":     predicted_dict["STATE"],
+            "STATE_PER": predicted_dict["STATE_PER"],
+            "TIME":      predicted_dict["TIME"]
+        }
+        save_to_logpresso(save_row)
