@@ -4,7 +4,7 @@ QTransferPredictBatch.py
 자바 QTransferPredictBatch.java 마이그레이션.
 
 역할 (데이터수집·예측은 이미 분리됨 → 본 배치는 통계 + 알람판정 + 통합적재):
-  _run() 이 test_currentjob_predict 에 적재하는 행은 3종류:
+  _run() 이 적재 테이블(test_table5)에 적재하는 행은 3종류:
     1) 실측+통계 row (N개) : qTransferGroupData 쿼리 → IDC 컬럼별 IQR/SD 계산 (_get_pivot_data)
     2) 예측 row (1개)      : TOTALCNT 행에 LSTM(예측값)/LSTM_JUDGE(10% 차이) 부여
     3) 알람 row (0~11개)   : _alarm_valid(ALARM1~5) + _build_transport_alarm(ALARM6~11)
@@ -65,9 +65,9 @@ CFG = load_config()
 API_KEY = load_api_key()
 HOST = CFG["logpresso"]["host"]
 PORT = CFG["logpresso"]["port"]
-INSERT_TABLE = CFG["logpresso"]["insert_table"]      # test_currentjob_predict
-PREDICT_TABLE = CFG["logpresso"]["predict_table"]    # test_table2 (예측 스크립트가 저장)
-DASHBOARD_TABLE = CFG["logpresso"].get("dashboard_table", "qtransfer_dashboard")
+INSERT_TABLE = CFG["logpresso"]["insert_table"]      # test_table5 (구 test_currentjob_predict)
+PREDICT_TABLE = CFG["logpresso"]["predict_table"]    # test_table6 (구 ATLAS_TS_PREDICT, 예측 스크립트가 저장)
+DASHBOARD_TABLE = CFG["logpresso"].get("dashboard_table", "test_table7")  # 구 qtransfer_dashboard
 BASE = f"http://{HOST}:{PORT}/logpresso/httpexport/query.csv"
 
 THRESHOLDS = CFG["thresholds"]

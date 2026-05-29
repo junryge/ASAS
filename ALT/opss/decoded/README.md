@@ -36,10 +36,12 @@ Prediction_ml.py                  마스터 스케줄러 (매분 정각, 2사이
 
 ### 마이그레이션 매핑 (자바 → Python)
 
-| 자바 | Python | 저장 테이블 |
+| 자바 | Python | 저장 테이블 (구 → 테스트) |
 |---|---|---|
-| `HubroomTransPredictBatch.java` `_validWarnYN` | `HubroomTransPredictBatch.py` | `test_hubroom_predict` |
-| `QTransferPredictBatch.java` `_alarmValid`+`_buildTransportAlarm` | `QTransferPredictBatch.py` | `test_currentjob_predict`, `qtransfer_dashboard` |
+| `HubroomTransPredictBatch.java` `_validWarnYN` | `HubroomTransPredictBatch.py` | `test_hubroom_predict` → **`test_table`** |
+| `QTransferPredictBatch.java` `_alarmValid`+`_buildTransportAlarm` | `QTransferPredictBatch.py` | `test_currentjob_predict` → **`test_table5`**, `ATLAS_TS_PREDICT` → **`test_table6`**, `qtransfer_dashboard` → **`test_table7`** |
+
+> ⚠ 현재 모든 적재 대상을 **테스트 테이블**(`test_table`/`test_table5`/`test_table6`/`test_table7`)로 변경함 (구조 동일). 운영 전환 시 config 의 `insert_table`/`predict_table`/`dashboard_table` 만 원복하면 됨.
 
 ### QTransfer 알람 11종 (전체 완성)
 - ALARM1 VHL+MES / ALARM2 CNV+storage / ALARM3 M10 LFT / ALARM4 M14B LFT

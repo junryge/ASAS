@@ -4,12 +4,12 @@ HubroomTransPredictBatch.py
 자바 HubroomTransPredictBatch.java 의 _validWarnYN 로직 마이그레이션.
 
 역할 (자바에서 데이터수집·예측은 이미 분리됨 → 본 배치는 WARN_YN 판정만):
-  - Numerical 예측 스크립트(V8_Numerical_Real_time_*.py)가 test_hubroom_predict 에
-    이미 JUDGEVAL 과 함께 저장한 최신 예측을 조회
+  - Numerical 예측 스크립트(V8_Numerical_Real_time_*.py)가 적재 테이블(test_table,
+    구 test_hubroom_predict)에 이미 JUDGEVAL 과 함께 저장한 최신 예측을 조회
   - 직전 예측의 JUDGEVAL 과 비교하여 WARN_YN 판정
       · 직전 JUDGEVAL=1 && 현재 JUDGEVAL=1  → WARN_YN="Y" (연속 2회 위험)
       · 그 외                              → WARN_YN="N"
-  - test_hubroom_predict 에 WARN_YN 반영하여 갱신 적재
+  - 적재 테이블(test_table)에 WARN_YN 반영하여 갱신 적재
 
 자바 매핑: _validWarnYN (HubroomTransPredictBatch.java:114-177)
 
