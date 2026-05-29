@@ -4,7 +4,7 @@
     "host": "10.40.42.27",
     "port": 8888,
     "insert_table": "test_table5",
-    "predict_table": "test_table6",
+    "predict_table": "test_table2",
     "dashboard_table": "test_table7"
   },
   "_threshold_comment": "자바 _findValueByCode 기본값. 운영 variable.xml/AMOS_ALARM_PARAMETER 값으로 교체.",

@@ -12,5 +12,5 @@
     "HUBROOM_PREDICT_25MIN"
   ],
   "_query_comment": "직전 예측의 JUDGEVAL 을 조회하는 쿼리. {FLOW} 와 {INSERT_TABLE} 치환. 자바 customQuery.xml 의 hubroomPredict 에 해당.",
-  "prev_judgeval_query": "table from=dateadd(now(),\"min\",-30) to=now() test_table | search FLOW == \"{FLOW}\" | sort -EVENT_DT | limit 1 | fields JUDGEVAL"
+  "prev_judgeval_query": "table duration=30m test_table | search FLOW == \"{FLOW}\" | sort -CURRENT_TIME | limit 1 | fields JUDGEVAL"
 }

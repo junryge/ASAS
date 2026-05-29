@@ -66,7 +66,7 @@ API_KEY = load_api_key()
 HOST = CFG["logpresso"]["host"]
 PORT = CFG["logpresso"]["port"]
 INSERT_TABLE = CFG["logpresso"]["insert_table"]      # test_table5 (구 test_currentjob_predict)
-PREDICT_TABLE = CFG["logpresso"]["predict_table"]    # test_table6 (구 ATLAS_TS_PREDICT, 예측 스크립트가 저장)
+PREDICT_TABLE = CFG["logpresso"]["predict_table"]    # test_table2 (V8.3.1 예측기가 실제 저장하는 곳 == 운영의 ATLAS_TS_PREDICT 역할)
 DASHBOARD_TABLE = CFG["logpresso"].get("dashboard_table", "test_table7")  # 구 qtransfer_dashboard
 BASE = f"http://{HOST}:{PORT}/logpresso/httpexport/query.csv"
 
@@ -264,8 +264,7 @@ class QTransferPredictBatch:
     def _fetch_prediction(self):
         """예측 스크립트가 PREDICT_TABLE(test_table2)에 저장한 최신 LSTM/STATE/STATE_PER 조회.
            default 모델(10m, V8.3.1_Q_TRANSFER_PREDICTOR_10m.py) 기준."""
-        q = (f'table from=dateadd(now(),"min",-5) to=now() {PREDICT_TABLE} '
-             f'| sort -TIME | limit 1')
+        q = f'table duration=5m {PREDICT_TABLE} | sort -TIME | limit 1'
         rows = query(q)
         return rows[0] if rows else {}
 

@@ -152,8 +152,9 @@ class HubroomTransPredictBatch:
 
     def _process_flow(self, flow, event_dt):
         # 1) 현재(최신) 예측 조회 — 예측 스크립트가 직전에 저장한 최신 row
-        cur_q = (f'table from=dateadd(now(),"min",-30) to=now() {INSERT_TABLE} '
-                 f'| search FLOW == "{flow}" | sort -EVENT_DT | limit 1')
+        # V8_Numerical 출력 row 에 EVENT_DT 가 없음 → CURRENT_TIME 으로 정렬 (실제 row 컬럼 기준)
+        cur_q = (f'table duration=30m {INSERT_TABLE} '
+                 f'| search FLOW == "{flow}" | sort -CURRENT_TIME | limit 1')
         cur_rows = query(cur_q)
         if not cur_rows:
             print(f"  ⏭  [{flow}] 현재 예측 없음 — 스킵")
@@ -162,8 +163,8 @@ class HubroomTransPredictBatch:
         cur_judgeval = cur.get("JUDGEVAL")
 
         # 2) 직전 예측 JUDGEVAL 조회 (현재 row 직전 것 = limit 1 offset 1 효과 → 2개 받아 두번째)
-        prev_q = (f'table from=dateadd(now(),"min",-30) to=now() {INSERT_TABLE} '
-                  f'| search FLOW == "{flow}" | sort -EVENT_DT | limit 2')
+        prev_q = (f'table duration=30m {INSERT_TABLE} '
+                  f'| search FLOW == "{flow}" | sort -CURRENT_TIME | limit 2')
         prev_rows = query(prev_q)
         prev_judgeval = None
         if len(prev_rows) >= 2:
