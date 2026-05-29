@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "mybatis-3-mapper.dtd">
+<mapper namespace="m16_view_mes">
+	<select id="SELECT_JOB_ENDTIME" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+	SELECT 
+		LOT_ID,
+	    EQP_ID,
+	    EQP_RECIPE_ID,
+	    OPER_ID,
+	    TIMEKEY,
+	    FAC_ID,    
+	    SECTION_NM,          
+	    FLOW_ID,  
+	    AVG_VAL_1,
+	    START_TM,    			    
+	    PREDICT_END_TM,
+	    RN,
+	    '' AS NEXT_OPER 
+	FROM (
+	        SELECT 
+	            H.LOT_ID,
+	            H.EQP_ID,
+	            H.EQP_RECIPE_ID,
+	            H.OPER_ID,
+	            H.TIMEKEY,
+	            H.FAC_ID,    
+	            H.SECTION_NM,          
+	            H.FLOW_ID,  
+	            R.AVG_VAL_1,
+	                TO_CHAR(TO_TIMESTAMP(
+	                    SUBSTR(TO_CHAR(H.TIMEKEY), 1, 14) || '.' || SUBSTR(TO_CHAR(H.TIMEKEY), 15, 6),
+	                    'YYYYMMDDHH24MISS.FF6'
+	                ),'YYYY-MM-DD HH24:MI:SS.FF6') AS START_TM,    			    
+	            CASE 
+	                 WHEN R.AVG_VAL_1 IS NOT NULL THEN 
+	                    TO_CHAR(TO_TIMESTAMP(
+	                        SUBSTR(TO_CHAR(H.TIMEKEY), 1, 14) || '.' || SUBSTR(TO_CHAR(H.TIMEKEY), 15, 6),
+	                        'YYYYMMDDHH24MISS.FF6'
+	                    ) + NUMTODSINTERVAL(R.AVG_VAL_1, 'MINUTE'),'YYYY-MM-DD HH24:MI:SS.FF6')
+	                 ELSE 
+	                    NULL
+	            END AS PREDICT_END_TM,
+	            ROW_NUMBER() OVER (
+	                PARTITION BY H.LOT_ID, H.TIMEKEY 
+	                ORDER BY 
+	                    -- 1 순위: H.OPER_ID 와 R.OPER_ID 이 같은거
+	                    CASE WHEN H.OPER_ID = R.OPER_ID THEN 0 ELSE 10 END,
+	                    -- 2 순위: R.OPER_ID 가 ALL
+	                    CASE WHEN R.OPER_ID = 'ALL' THEN 1 ELSE 10 END,
+	                    -- 3 순위: 기타등등
+	                    CASE WHEN R.OPER_ID IS NOT NULL THEN 2 ELSE 10 END
+	            ) AS RN
+	        FROM
+	            MES_LOT_HIS H
+	        LEFT JOIN
+	            RTS_LOTCDSCHTIME_INF R 
+	            ON H.EQP_ID = R.EQP_ID
+	            AND H.EQP_RECIPE_ID = R.RECIPE_ID
+	            AND R.TYP_VAL = 'PROC_PITCH_TIME'
+	            -- AND (H.OPER_ID = R.OPER_ID OR R.OPER_ID = 'ALL')
+	        WHERE H.EVENT_CD = 'JobStart'
+	            AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+	            AND H.TIMEKEY &gt;= '%s'
+	    		AND H.TIMEKEY &lt; '%s'
+	) 
+	WHERE RN = 1
+	</select>
+	<select id="SELECT_JOB_OPER_LIST" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+ 	SELECT t.FLOW_ID, t.OPER_SEQ, t.OPER_ID, t.MID_OPER_TYP, t.IS_STOP_POINT
+	FROM (
+	    SELECT 
+	     	A.FLOW_ID,
+	     	A.OPER_SEQ,
+			B.OPER_ID,
+			B.MID_OPER_TYP,
+			CASE 
+				WHEN B.MID_OPER_TYP = 'Processing' THEN 1 
+				ELSE 0 
+			END AS IS_STOP_POINT
+		FROM  MES_NODE_MAS A 
+		JOIN MES_OPER_MAS B ON A.NODE_ATTR_VAL_1 = B.OPER_ID
+		WHERE  A.FAC_ID = '%s'
+			AND EXISTS (
+				SELECT 1
+				FROM MES_LOT_HIS H
+				WHERE H.EVENT_CD = 'JobStart'
+				    AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+				    AND H.TIMEKEY &gt;= '%s'
+	    			AND H.TIMEKEY &lt; '%s'
+				    AND H.FLOW_ID = A.FLOW_ID
+			)
+			AND A.NODE_TYP = 'ProcessOperation'
+	) t
+	Order By t.FLOW_ID, t.OPER_SEQ
+	</select>
+	<select id="SELECT_JOB_MES_NODE_MAS" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+	SELECT A.FLOW_ID, A.OPER_SEQ, A.NODE_ATTR_VAL_1 AS OPER_ID
+	FROM MES_NODE_MAS A
+	WHERE A.NODE_TYP = 'ProcessOperation'
+	AND EXISTS (
+			SELECT 1
+			FROM MES_LOT_HIS H
+			WHERE H.EVENT_CD = 'JobStart'
+			  AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+			  AND H.TIMEKEY &gt;= '%s'
+    		  AND H.TIMEKEY &lt; '%s'
+			  AND H.FLOW_ID = A.FLOW_ID
+		)
+	</select>
+	<select id="SELECT_JOB_BIZ_LOTFUTUREACT_INF_LIST" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+	SELECT A.ACT_FLOW_ID, A.ACT_OPER_ID, A.LOT_ID, A.ACT_NM 
+	FROM BIZ_LOTFUTUREACT_INF A
+	WHERE 1 = 1
+	AND EXISTS (
+			SELECT 1
+			FROM MES_LOT_HIS H
+			WHERE H.EVENT_CD = 'JobStart'
+			  AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+			  AND H.TIMEKEY &gt;= '%s'
+    		  AND H.TIMEKEY &lt; '%s'
+			  AND H.LOT_ID = A.LOT_ID
+			  AND H.FLOW_ID = A.ACT_FLOW_ID
+			  AND H.OPER_ID = A.ACT_OPER_ID			  			  
+		)
+	AND ACT_NM IN ('Monitor')
+	AND ACT_YN = 'N'
+	</select>
+	<select id="SELECT_JOB_MES_OPER_MAS_LIST" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+	SELECT T.OPER_ID, T.MID_OPER_TYP, T.OPER_VER
+	FROM MES_OPER_MAS T
+	WHERE T.FAC_ID = '%s'
+	AND T.OPER_VER = '00001'
+    AND EXISTS (
+        SELECT 1
+        FROM MES_NODE_MAS A
+        WHERE A.NODE_TYP = 'ProcessOperation'
+        AND EXISTS (
+                SELECT 1
+                FROM MES_LOT_HIS H
+                WHERE H.EVENT_CD = 'JobStart'
+                  AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+                  AND H.TIMEKEY &gt;= '%s'
+    		  	  AND H.TIMEKEY &lt; '%s'
+                  AND H.FLOW_ID = A.FLOW_ID
+            )
+        AND T.OPER_ID = A.NODE_ATTR_VAL_1
+    )
+	</select>
+	<select id="SELECT_JOB_MES_LOT_MAS_LIST" resultType="java.util.LinkedHashMap">
+	SELECT M.LOT_ID
+	FROM MES_LOT_MAS M			
+	WHERE EXISTS (
+	        SELECT 1
+	        FROM MES_LOT_HIS H
+	        WHERE H.EVENT_CD = 'JobStart'
+	          AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+	          AND H.TIMEKEY &gt;= '%s'
+   		  	  AND H.TIMEKEY &lt; '%s'
+	          AND H.LOT_ID = M.LOT_ID
+	      )
+	  AND M.OWNER_CD NOT LIKE '%s'			
+	  AND M.DET_FAC_ID IN ('M16A','M16B','M16E')
+	</select>
+	<select id="SELECT_JOB_SFAB_LOTMOVE_MAS_LIST" resultType="java.util.LinkedHashMap">
+	SELECT LOT_ID, RETURN_OPER_ID
+	FROM (
+	  SELECT 
+	    M.LOT_ID, 
+	    M.RETURN_OPER_ID,
+	    ROW_NUMBER() OVER (PARTITION BY M.LOT_ID ORDER BY M.SEND_TIMEKEY DESC) AS NUM
+	  FROM SFAB_LOTMOVE_MAS M			
+	  WHERE 1=1
+		AND EXISTS (
+		        SELECT 1
+		        FROM MES_LOT_HIS H
+		        WHERE H.EVENT_CD = 'JobStart'
+		          AND H.DET_FAC_ID IN ('M16A','M16B','M16E') 
+		          AND H.TIMEKEY &gt;= '%s'
+   		  	      AND H.TIMEKEY &lt; '%s'
+		          AND H.LOT_ID = M.LOT_ID
+		      )
+		AND M.MOVE_STAT_CD != 'Complete'
+	  -- ORDER BY M.LOT_ID, M.SEND_TIMEKEY DESC
+	)
+	WHERE NUM=1
+	</select>	
+</mapper>

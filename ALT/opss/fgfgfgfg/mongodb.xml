@@ -1,0 +1,859 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+	If  Attr=Key, Value
+	IfNotBlank  Attr=Key
+-->
+<Mongodb>
+	<Queries>
+		<MCSLOG_TOTAL_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					<IfNotBlank Key="Level">"level": { $in: [ #{Level} ] },</IfNotBlank>
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText}, $caseSensitive : true },</IfNotBlank>
+					<IfNotBlank Key="MachineName">"MACHINENAME": { $in: [ #{MachineName} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineType">"MACHINETYPE": { $in: [ #{MachineType} ] },</IfNotBlank>
+					<If Key="HasCondition" Value="true">
+						<If Key="SearchOption" Value="or">
+							$or: [
+							<IfNotBlank Key="ProcessName">{ "filename": /.*${ProcessName}.log/ },</IfNotBlank>
+							<IfNotBlank Key="ThreadName">{ "thread": #{ThreadName} },</IfNotBlank>
+							<IfNotBlank Key="GtxnID">{ "GTXN_ID": #{GtxnID} },</IfNotBlank>
+							<IfNotBlank Key="TransactionID">{ "TRANSACTIONID": #{TransactionID} },</IfNotBlank>
+							<IfNotBlank Key="ComMsgName">{ "COMMAND": /^${ComMsgName}$/ },</IfNotBlank>
+							<IfNotBlank Key="ComMsgName">{ "MESSAGENAME": /^${ComMsgName}$/ },</IfNotBlank>
+							<IfNotBlank Key="BpelName">{ "MESSAGENAME": /^${BpelName}$/ },</IfNotBlank>
+							<IfNotBlank Key="OperationName">{ "operationName": #{OperationName} },</IfNotBlank>
+							<IfNotBlank Key="CarrierName">{ "CARRIER": #{CarrierName} },</IfNotBlank>
+							<IfNotBlank Key="CommandID">{ "COMMANDID": #{CommandID} },</IfNotBlank>
+							<IfNotBlank Key="UnitName">{ "UNITNAME": #{UnitName} },</IfNotBlank>
+							<IfNotBlank Key="Text">{ "line": /${Text}/ },</IfNotBlank>
+							]
+						</If>
+						<If Key="SearchOption" Value="and">
+							$and: [
+							<IfNotBlank Key="ProcessName">{ "filename": /.*${ProcessName}.log/ },</IfNotBlank>
+							<IfNotBlank Key="ThreadName">{ "thread": #{ThreadName} },</IfNotBlank>
+							<IfNotBlank Key="GtxnID">{ "GTXN_ID": #{GtxnID} },</IfNotBlank>
+							<IfNotBlank Key="TransactionID">{ "TRANSACTIONID": #{TransactionID} },</IfNotBlank>
+							<IfNotBlank Key="ComMsgName">{ $or: [ { "COMMAND": /^${ComMsgName}$/ }, { "MESSAGENAME": /^${ComMsgName}$/ } ] },</IfNotBlank>
+							<IfNotBlank Key="BpelName">{ "MESSAGENAME": /^${BpelName}$/ },</IfNotBlank>
+							<IfNotBlank Key="OperationName">{ "operationName": #{OperationName} },</IfNotBlank>
+							<IfNotBlank Key="CarrierName">{ "CARRIER": #{CarrierName} },</IfNotBlank>
+							<IfNotBlank Key="CommandID">{ "COMMANDID": #{CommandID} },</IfNotBlank>
+							<IfNotBlank Key="UnitName">{ "UNITNAME": #{UnitName} },</IfNotBlank>
+							<IfNotBlank Key="Text">{ "line": /${Text}/ },</IfNotBlank>
+							]
+						</If>
+					</If>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$project: {
+					"_id": 1,
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: ["$MACHINENAME", ""] },
+					"MACHINETYPE": { $ifNull: ["$MACHINETYPE", ""] },
+					"UNITNAME": { $ifNull: ["$UNITNAME", ""] },
+					"CARRIER": { $ifNull: ["$CARRIER", ""] },
+					"COMMANDID": { $ifNull: ["$COMMANDID", ""] },
+					"COMM_MSG_NAME": { $ifNull: [ { $ifNull: ["$COMMAND", "$MESSAGENAME"] }, "" ] },
+					"OPERATION_NAME": { $ifNull: ["$operationName", ""] },
+					"BPEL": { $ifNull: ["$MESSAGENAME", ""] },
+					"PROCESS": { $substr: [ "$filename", { $subtract: [ { $strLenCP: "$filename" }, 8 ] }, 4 ] },
+					"TRANSACTIONID": { $ifNull: ["$TRANSACTIONID", ""] },
+					"TEXT": { $ifNull: ["$line", ""] },
+					"THREAD": { $ifNull: ["$thread", ""] },
+					"LEVEL": { $ifNull: ["$level", ""] },
+					"XML": { $ifNull: [ { $ifNull: ["$XML", "$line"] }, "" ] },
+					"SECSII": { $ifNull: ["$SECSII", ""] },
+					"RESULTCODE": { $ifNull: ["$RESULTCODE", ""] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TOTAL_LOG>
+		<MCSLOG_SECS_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					<IfNotBlank Key="Level">"LEVEL": { $in: [ #{Level} ] },</IfNotBlank>
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="Host">"HOST": { $in: [ #{Host} ] },</IfNotBlank>
+					<If Key="HasCondition" Value="true">
+						<If Key="SecsTextConditionCheckBox" Value="and">
+							$and: [
+								<IfNotBlank Key="Secs">{ "SECSII": #{Secs} },</IfNotBlank>
+								<IfNotBlank Key="Text">{ "TEXT": /${Text}/ },</IfNotBlank>
+							]
+						</If>
+						<If Key="SecsTextConditionCheckBox" Value="or">
+							$or: [
+								<IfNotBlank Key="Secs">{ "SECSII": #{Secs} },</IfNotBlank>
+								<IfNotBlank Key="Text">{ "TEXT": /${Text}/ },</IfNotBlank>
+							]
+						</If>
+					</If>
+				}
+			},
+			{ $sort: { "TIME_EX": 1 } },
+			{ $limit: ${Limit} },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"SECSII": { $ifNull: ["$SECSII", ""] },
+					"LEVEL": { $ifNull: ["$LEVEL", ""] },
+					"S/F": { $ifNull: ["$S/F", ""] },
+					"SB": { $ifNull: ["$SB", ""] },
+					"NAME": { $ifNull: ["$NAME", ""] },
+					"DATA": { $ifNull: ["$DATA", ""] },
+					"CEID_TYPE": { $ifNull: ["$CEID_TYPE", ""] },
+					"TEXT": { $ifNull: ["$TEXT", ""] },
+					"SKEY": { $ifNull: ["$SKEY", ""] },
+					"HOST": { $ifNull: ["$HOST", ""] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_SECS_LOG>
+		<MCSLOG_RAW_LOG>
+		[
+			<If Key="IsTS" Value="true">
+			<![CDATA[
+				{
+					$set: {
+						"TAG_PARSED": { $regexFind: { input: "$tag", "regex": /^(\w+).(\w+).(\w+)/ } },
+						"CLASS_REG": { $regexFind: { input: "$line", "regex": /\[*\s*kr.co.aim.nanotrans.([A-Za-z0-9_\-. ]*)\]*/ } },
+						"XML_REG": { $regexFind: { input: "$line", "regex": /\s+\-\s+\[*(?:<\?xml version="1.0" encoding="UTF-8"\?>)?(.*)\]*/, "options": "s" } },
+					}
+				},
+				{
+					$project: {
+						"_id": 1,
+						"TIME_EX": 1,
+						"FAB": { $toUpper: { $trim: { input: { $arrayElemAt: [ "$TAG_PARSED.captures", 0 ] } } } },
+						"LOG": { $toUpper: { $trim: { input: { $arrayElemAt: [ "$TAG_PARSED.captures", 2 ] } } } },
+						"LEVEL": "$level",
+						"THREAD": "$thread",
+						"CLASS": { $trim: { input: { $arrayElemAt: [ "$CLASS_REG.captures", 0 ] } } },
+						"TEXT": "$line",
+						"HOST": { $trim: { input: { $arrayElemAt: [ "$TAG_PARSED.captures", 1 ] } } },
+						"PROCESS": { "$toLower": { "$substr": [ "$filename", { "$subtract": [{ "$indexOfCP": [ "$filename", ".log" ]}, 4]}, 4]}},
+						"TEXT_XML": { $trim: { input: { $arrayElemAt: [ "$XML_REG.captures", 0 ] } } },
+					}
+				},
+			]]>
+			</If>
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					<IfNotBlank Key="Level">"LEVEL": { $in: [ #{Level} ] },</IfNotBlank>
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="Host">"HOST": { $in: [ #{Host} ] },</IfNotBlank>
+					<IfNotBlank Key="Process">"PROCESS": #{Process},</IfNotBlank>
+					<IfNotBlank Key="Text">"TEXT": /${Text}/,</IfNotBlank>
+				}
+			},
+			{ $limit: ${Limit} },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"FAB": { $ifNull: ["$FAB", ""] },
+					"LOG": { $ifNull: ["$LOG", ""] },
+					"LEVEL": { $ifNull: ["$LEVEL", ""] },
+					"THREAD": { $ifNull: ["$THREAD", ""] },
+					"CLASS": { $ifNull: ["$CLASS", ""] },
+					"TEXT": { $ifNull: ["$TEXT", ""] },
+					"HOST": { $ifNull: ["$HOST", ""] },
+					"PROCESS": { $ifNull: ["$PROCESS", ""] },
+					"TEXT_XML": { $ifNull: ["$TEXT_XML", ""] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RAW_LOG>
+		<MCSLOG_TRANSACTION_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					<IfNotBlank Key="Appname">"Application_Name": #{Appname},</IfNotBlank>
+					<IfNotBlank Key="Txname">"Transaction_Name": /${Txname}/,</IfNotBlank>
+					<IfNotBlank Key="TxID">"Transaction_ID": /${TxID}/,</IfNotBlank>
+					<IfNotBlank Key="ElapsedFrom">"Elapsed_Time": { $gte: ${ElapsedFrom}, $lte: ${ElapsedTo} },</IfNotBlank>
+				}
+			},
+			{
+				$set: {
+					"Elapsed": "$Elapsed_Time",
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] }
+				}
+			},
+			{ $set: { "TIME": "$TIME_EX" } },
+			{ $unset: [ "Elapsed_Time" ] }
+		]
+		</MCSLOG_TRANSACTION_LOG>
+		<MCSLOG_TRANSACTION_LOG_APPNAME>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) }
+				}
+			},
+			{
+				$group: { "_id": "$Application_Name", "Count": { $count: {} }},
+			},
+			{
+				$project: {
+					"Application_Name": "$_id"
+				}
+			}
+		]
+		</MCSLOG_TRANSACTION_LOG_APPNAME>
+		<MCSLOG_TRANSACTION_LOG_TXNAME>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) }
+				}
+			},
+			{
+				$group: { "_id": "$Transaction_Name", "Count": { $count: {} }},
+			},
+			{
+				$project: {
+					"Transaction_Name": "$_id"
+				}
+			}
+		]
+		</MCSLOG_TRANSACTION_LOG_TXNAME>
+		<MCSLOG_ALARM_REPORT_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createAlarmReportHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="UnitName">"UNITNAME": #{UnitName},</IfNotBlank>
+					<IfNotBlank Key="AlarmID">"ALARMID": #{AlarmID},</IfNotBlank>
+					<IfNotBlank Key="AlarmCode">"ALARMCODE": #{AlarmCode},</IfNotBlank>
+					<IfNotBlank Key="AlarmText">"ALARMTEXT": #{AlarmText},</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"UNITNAME": { $ifNull: [ "$UNITNAME", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"ALARMID": { $ifNull: [ "$ALARMID", "" ] },
+					"ALARMCODE": { $ifNull: [ "$ALARMCODE", "" ] },
+					"ALARMTEXT": { $ifNull: [ "$ALARMTEXT", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_ALARM_REPORT_LOG>
+		<MCSLOG_MATERIAL_CARRIER_LOC_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createCarrierLocationHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"CURRENTMACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+					<IfNotBlank Key="LotID">"LOTID": #{LotID},</IfNotBlank>
+					<IfNotBlank Key="TransportCommandID">"TRANSPORTCOMMANDID": #{TransportCommandID},</IfNotBlank>
+					<IfNotBlank Key="UnitName">"CURRENTUNITNAME": #{UnitName},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"LOTID": { $ifNull: [ "$LOTID", "" ] },
+					"T/R COMMANDID": { $ifNull: [ "$TRANSPORTCOMMANDID", "" ] },
+					"CURRENTMACHINE": { $ifNull: [ "$CURRENTMACHINENAME", "" ] },
+					"CURRENTUNIT": { $ifNull: [ "$CURRENTUNITNAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_MATERIAL_CARRIER_LOC_LOG>
+		<MCSLOG_RESOURCE_MACHINE_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createMachineHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+					<IfNotBlank Key="ConnectionState">"CONNECTIONSTATE": #{ConnectionState},</IfNotBlank>
+					<IfNotBlank Key="ControlState">"CONTROLSTATE": #{ControlState},</IfNotBlank>
+					<IfNotBlank Key="TSCState">"TSCSTATE": #{TSCState},</IfNotBlank>
+					<IfNotBlank Key="ProcessingState">"PROCESSINGSTATE": #{ProcessingState},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"CONNECTIONSTATE": { $ifNull: [ "$CONNECTIONSTATE", "" ] },
+					"CONTROLSTATE": { $ifNull: [ "$CONTROLSTATE", "" ] },
+					"TSCSTATE": { $ifNull: [ "$TSCSTATE", "" ] },
+					"PROCESSINGSTATE": { $ifNull: [ "$PROCESSINGSTATE", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RESOURCE_MACHINE_LOG>
+		<MCSLOG_RESOURCE_PORT_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createPortHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="PortName">"PORTNAME": #{PortName},</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+					<IfNotBlank Key="SubState">"SUBSTATE": #{SubState},</IfNotBlank>
+					<IfNotBlank Key="ProcessingState">"PROCESSINGSTATE": #{ProcessingState},</IfNotBlank>
+					<IfNotBlank Key="Banned">"BANNED": #{Banned},</IfNotBlank>
+					<IfNotBlank Key="InOutType">"INOUTTYPE": #{InOutType},</IfNotBlank>
+					<IfNotBlank Key="Manual">"MANUAL": #{Manual},</IfNotBlank>
+					<IfNotBlank Key="AccessMode">"ACCESSMODE": #{AccessMode},</IfNotBlank>
+					<IfNotBlank Key="IdReadState">"IDREADSTATE": #{IdReadState},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"PORTNAME": { $ifNull: [ "$PORTNAME", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"PROCESSINGSTATE": { $ifNull: [ "$PROCESSINGSTATE", "" ] },
+					"SUBSTATE": { $ifNull: [ "$SUBSTATE", "" ] },
+					"INOUTTYPE": { $ifNull: [ "$INOUTTYPE", "" ] },
+					"MANUAL": { $ifNull: [ "$MANUAL", "" ] },
+					"OCCUPIED": { $ifNull: [ "$OCCUPIED", "" ] },
+					"BANNED": { $ifNull: [ "$BANNED", "" ] },
+					"TRANSPORTUNITACCESSIBLE": { $ifNull: [ "$TRANSPORTUNITACCESSIBLE", "" ] },
+					"IDREADSTATE": { $ifNull: [ "$IDREADSTATE", "" ] },
+					"ACCESSMODE": { $ifNull: [ "$ACCESSMODE", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RESOURCE_PORT_LOG>
+		<MCSLOG_RESOURCE_SHELF_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createShelfHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="ShelfName">"SHELFNAME": #{ShelfName},</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+					<IfNotBlank Key="ProcessingState">"PROCESSINGSTATE": #{ProcessingState},</IfNotBlank>
+					<IfNotBlank Key="Banned">"BANNED": #{Banned},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"SHELFNAME": { $ifNull: [ "$SHELFNAME", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"PROCESSINGSTATE": { $ifNull: [ "$PROCESSINGSTATE", "" ] },
+					"BANNED": { $ifNull: [ "$BANNED", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RESOURCE_SHELF_LOG>
+		<MCSLOG_RESOURCE_CRANE_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createCraneHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="CraneName">"CRANENAME": #{CraneName},</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+					<IfNotBlank Key="SubState">"SUBSTATE": #{SubState},</IfNotBlank>
+					<IfNotBlank Key="ProcessingState">"PROCESSINGSTATE": #{ProcessingState},</IfNotBlank>
+					<IfNotBlank Key="TrCommand">"TRANSPORTCOMMANDID": #{TrCommand},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"CRANENAME": { $ifNull: [ "$CRANENAME", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"PROCESSINGSTATE": { $ifNull: [ "$PROCESSINGSTATE", "" ] },
+					"SUBSTATE": { $ifNull: [ "$SUBSTATE", "" ] },
+					"TRANSPORTCOMMANDID": { $ifNull: [ "$TRANSPORTCOMMANDID", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RESOURCE_CRANE_LOG>
+		<MCSLOG_RESOURCE_VEHICLE_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createVehicleHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="VehicleName">"VEHICLENAME": #{VehicleName},</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+					<IfNotBlank Key="SubState">"SUBSTATE": #{SubState},</IfNotBlank>
+					<IfNotBlank Key="ProcessingState">"PROCESSINGSTATE": #{ProcessingState},</IfNotBlank>
+					<IfNotBlank Key="TrCommand">"TRANSPORTCOMMANDID": #{TrCommand},</IfNotBlank>
+					<IfNotBlank Key="Carrier">"CARRIER": #{Carrier},</IfNotBlank>
+					<IfNotBlank Key="TransferPort">"TRANSFERPORTNAME": #{TransferPort},</IfNotBlank>
+					<IfNotBlank Key="IdReadState">"IDREADSTATE": #{IdReadState},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"VEHICLENAME": { $ifNull: [ "$VEHICLENAME", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"PROCESSINGSTATE": { $ifNull: [ "$PROCESSINGSTATE", "" ] },
+					"SUBSTATE": { $ifNull: [ "$SUBSTATE", "" ] },
+					"TRANSPORTCOMMANDID": { $ifNull: [ "$TRANSPORTCOMMANDID", "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"TRANSFERPORTNAME": { $ifNull: [ "$TRANSFERPORTNAME", "" ] },
+					"IDREADSTATE": { $ifNull: [ "$IDREADSTATE", "" ] },
+					"MESSAGENAME": { $ifNull: [ "$MESSAGENAME", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RESOURCE_VEHICLE_LOG>
+		<MCSLOG_RESOURCE_STORAGE_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createStorageFullHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="State">"STATE": #{State},</IfNotBlank>
+					<IfNotBlank Key="FullState">"FULLSTATE": #{FullState},</IfNotBlank>
+					<IfNotBlank Key="ProcessingState">"PROCESSINGSTATE": #{ProcessingState},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"FULLSTATE": { $ifNull: [ "$FULLSTATE", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"PROCESSINGSTATE": { $ifNull: [ "$PROCESSINGSTATE", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_RESOURCE_STORAGE_LOG>
+		<MCSLOG_TRANSPORT_RETURN_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createTransportJobHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesSource">"SOURCEMACHINETYPE": { $in: [ #{MachineTypesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesDest">"DESTMACHINETYPE": { $in: [ #{MachineTypesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesSource">"SOURCEMACHINENAME": { $in: [ #{MachineNamesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesDest">"DESTMACHINENAME": { $in: [ #{MachineNamesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+					<IfNotBlank Key="LotID">"LOTID": #{LotID},</IfNotBlank>
+					<IfNotBlank Key="TransportJobID">"TRANSPORTJOBID": #{TransportJobID},</IfNotBlank>
+					<IfNotBlank Key="TransportCommandID">"TRANSPORTCOMMANDID": #{TransportCommandID},</IfNotBlank>
+					<If Key="State" Value="False">
+					"STATE": { $in: [ "COMPLETED", "CANCELED" ] },
+					</If>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANS_JOBSTART": { $ifNull: [ { $dateToString: { date: "$TRANS_JOBSTART", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANS_JOBEND": { $ifNull: [ { $dateToString: { date: "$TRANS_JOBEND", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANSPORTJOBID": { $ifNull: [ "$TRANSPORTJOBID", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"SOURCEMACHINENAME": { $ifNull: [ "$SOURCEMACHINENAME", "" ] },
+					"SOURCEMACHINETYPE": { $ifNull: [ "$SOURCEMACHINETYPE", "" ] },
+					"SOURCEUNITNAME": { $ifNull: [ "$SOURCEUNITNAME", "" ] },
+					"DESTTYPE": { $ifNull: [ "$DESTTYPE", "" ] },
+					"DESTMACHINENAME": { $ifNull: [ "$DESTMACHINENAME", "" ] },
+					"DESTMACHINETYPE": { $ifNull: [ "$DESTMACHINETYPE", "" ] },
+					"DESTUNITNAME": { $ifNull: [ "$DESTUNITNAME", "" ] },
+					"REASON": { $ifNull: [ "$REASON", "" ] },
+					"FIXEDROUTE": { $ifNull: [ "$FIXEDROUTE", "" ] },
+					"PRIORITY": { $ifNull: [ "$PRIORITY", "" ] },
+					"LOTID": { $ifNull: [ "$LOTID", "" ] },
+					"BATCHID": { $ifNull: [ "$BATCHID", "" ] },
+					"STEPID": { $ifNull: [ "$STEPID", "" ] },
+					"PROCESSID": { $ifNull: [ "$PROCESSID", "" ] },
+					"DESCRIPTION": { $ifNull: [ "$DESCRIPTION", "" ] },
+					"CREATEUSER": { $ifNull: [ "$CREATEUSER", "" ] },
+					"BATCHTYPE": { $ifNull: [ "$BATCHTYPE", "" ] },
+					"TRANSPORTCOMMANDID": { $ifNull: [ "$TRANSPORTCOMMANDID", "" ] },
+					"TRANSPORTMACHINENAME": { $ifNull: [ "$TRANSPORTMACHINENAME", "" ] },
+					"TRANSPORTTYPE": { $ifNull: [ "$TRANSPORTTYPE", "" ] },
+					"TRANSPORTUNITNAME": { $ifNull: [ "$TRANSPORTUNITNAME", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TRANSPORT_RETURN_LOG>
+		<MCSLOG_TRANSPORT_RETURN_JOB_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createTransportJobHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesTransport">"TRANSPORTTYPE": { $in: [ #{MachineTypesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesSource">"SOURCEMACHINETYPE": { $in: [ #{MachineTypesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesDest">"DESTMACHINETYPE": { $in: [ #{MachineTypesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesTransport">"TRANSPORTMACHINENAME": { $in: [ #{MachineNamesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesSource">"SOURCEMACHINENAME": { $in: [ #{MachineNamesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesDest">"DESTMACHINENAME": { $in: [ #{MachineNamesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+					<IfNotBlank Key="LotID">"LOTID": #{LotID},</IfNotBlank>
+					<IfNotBlank Key="TransportJobID">"TRANSPORTJOBID": #{TransportJobID},</IfNotBlank>
+					<IfNotBlank Key="States">"STATE": { $in: [ #{States} ] },</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANSPORTJOBID": { $ifNull: [ "$TRANSPORTJOBID", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"SOURCEMACHINENAME": { $ifNull: [ "$SOURCEMACHINENAME", "" ] },
+					"SOURCEMACHINETYPE": { $ifNull: [ "$SOURCEMACHINETYPE", "" ] },
+					"SOURCEUNITNAME": { $ifNull: [ "$SOURCEUNITNAME", "" ] },
+					"DESTTYPE": { $ifNull: [ "$DESTTYPE", "" ] },
+					"DESTMACHINENAME": { $ifNull: [ "$DESTMACHINENAME", "" ] },
+					"DESTMACHINETYPE": { $ifNull: [ "$DESTMACHINETYPE", "" ] },
+					"DESTUNITNAME": { $ifNull: [ "$DESTUNITNAME", "" ] },
+					"REASON": { $ifNull: [ "$REASON", "" ] },
+					"FIXEDROUTE": { $ifNull: [ "$FIXEDROUTE", "" ] },
+					"PRIORITY": { $ifNull: [ "$PRIORITY", "" ] },
+					"LOTID": { $ifNull: [ "$LOTID", "" ] },
+					"BATCHID": { $ifNull: [ "$BATCHID", "" ] },
+					"STEPID": { $ifNull: [ "$STEPID", "" ] },
+					"PROCESSID": { $ifNull: [ "$PROCESSID", "" ] },
+					"DESCRIPTION": { $ifNull: [ "$DESCRIPTION", "" ] },
+					"CREATEUSER": { $ifNull: [ "$CREATEUSER", "" ] },
+					"BATCHTYPE": { $ifNull: [ "$BATCHTYPE", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TRANSPORT_RETURN_JOB_LOG>
+		<MCSLOG_TRANSPORT_RETURN_COMMAND_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createTransportCommandHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesTransport">"TRANSPORTTYPE": { $in: [ #{MachineTypesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesSource">"SOURCEMACHINETYPE": { $in: [ #{MachineTypesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesDest">"DESTMACHINETYPE": { $in: [ #{MachineTypesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesTransport">"TRANSPORTMACHINENAME": { $in: [ #{MachineNamesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesSource">"SOURCEMACHINENAME": { $in: [ #{MachineNamesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesDest">"DESTMACHINENAME": { $in: [ #{MachineNamesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+					<IfNotBlank Key="TransportCommandID">"TRANSPORTCOMMANDID": #{TransportCommandID},</IfNotBlank>
+					<IfNotBlank Key="UnitNameSource">"SOURCEUNITNAME": #{UnitNameSource},</IfNotBlank>
+					<IfNotBlank Key="UnitNameDest">"DESTUNITNAME": #{UnitNameDest},</IfNotBlank>
+					<IfNotBlank Key="States">"STATE": { $in: [ #{States} ] },</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANSPORTCOMMANDID": { $ifNull: [ "$TRANSPORTCOMMANDID", "" ] },
+					"TRANSPORTJOBID": { $ifNull: [ "$TRANSPORTJOBID", "" ] },
+					"STATE": { $ifNull: [ "$STATE", "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"SOURCEMACHINENAME": { $ifNull: [ "$SOURCEMACHINENAME", "" ] },
+					"SOURCEUNITNAME": { $ifNull: [ "$SOURCEUNITNAME", "" ] },
+					"TRANSPORTMACHINENAME": { $ifNull: [ "$TRANSPORTMACHINENAME", "" ] },
+					"TRANSPORTTYPE": { $ifNull: [ "$TRANSPORTTYPE", "" ] },
+					"TRANSPORTUNITNAME": { $ifNull: [ "$TRANSPORTUNITNAME", "" ] },
+					"DESTTYPE": { $ifNull: [ "$DESTTYPE", "" ] },
+					"DESTMACHINENAME": { $ifNull: [ "$DESTMACHINENAME", "" ] },
+					"DESTMACHINETYPE": { $ifNull: [ "$DESTMACHINETYPE", "" ] },
+					"DESTUNITNAME": { $ifNull: [ "$DESTUNITNAME", "" ] },
+					"REASON": { $ifNull: [ "$REASON", "" ] },
+					"FIXEDROUTE": { $ifNull: [ "$FIXEDROUTE", "" ] },
+					"PRIORITY": { $ifNull: [ "$PRIORITY", "" ] },
+					"DESCRIPTION": { $ifNull: [ "$DESCRIPTION", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TRANSPORT_RETURN_COMMAND_LOG>
+		<MCSLOG_TRANSPORT_RETURN_JOB_FAIL_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createTransportJobFailHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesTransport">"TRANSPORTTYPE": { $in: [ #{MachineTypesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesSource">"SOURCEMACHINETYPE": { $in: [ #{MachineTypesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesDest">"DESTMACHINETYPE": { $in: [ #{MachineTypesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesTransport">"TRANSPORTMACHINENAME": { $in: [ #{MachineNamesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesSource">"SOURCEMACHINENAME": { $in: [ #{MachineNamesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesDest">"DESTMACHINENAME": { $in: [ #{MachineNamesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+					<IfNotBlank Key="LotID">"LOTID": #{LotID},</IfNotBlank>
+					<IfNotBlank Key="TransportJobID">"TRANSPORTJOBID": #{TransportJobID},</IfNotBlank>
+					<IfNotBlank Key="Reason">"REASON": { $in: [ #{Reason} ] },</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANSPORTJOBID": { $ifNull: [ "$TRANSPORTJOBID", "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"SOURCEMACHINENAME": { $ifNull: [ "$SOURCEMACHINENAME", "" ] },
+					"SOURCEMACHINETYPE": { $ifNull: [ "$SOURCEMACHINETYPE", "" ] },
+					"SOURCEUNITNAME": { $ifNull: [ "$SOURCEUNITNAME", "" ] },
+					"DESTTYPE": { $ifNull: [ "$DESTTYPE", "" ] },
+					"DESTMACHINENAME": { $ifNull: [ "$DESTMACHINENAME", "" ] },
+					"DESTMACHINETYPE": { $ifNull: [ "$DESTMACHINETYPE", "" ] },
+					"DESTUNITNAME": { $ifNull: [ "$DESTUNITNAME", "" ] },
+					"REASON": { $ifNull: [ "$REASON", "" ] },
+					"PRIORITY": { $ifNull: [ "$PRIORITY", "" ] },
+					"DESCRIPTION": { $ifNull: [ "$DESCRIPTION", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TRANSPORT_RETURN_JOB_FAIL_LOG>
+		<MCSLOG_TRANSPORT_RETURN_COMMAND_FAIL_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					"method": "createTransportCommandFailHistory",
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesTransport">"TRANSPORTTYPE": { $in: [ #{MachineTypesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesSource">"SOURCEMACHINETYPE": { $in: [ #{MachineTypesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineTypesDest">"DESTMACHINETYPE": { $in: [ #{MachineTypesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesTransport">"TRANSPORTMACHINENAME": { $in: [ #{MachineNamesTransport} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesSource">"SOURCEMACHINENAME": { $in: [ #{MachineNamesSource} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNamesDest">"DESTMACHINENAME": { $in: [ #{MachineNamesDest} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+					<IfNotBlank Key="TransportCommandID">"TRANSPORTCOMMANDID": #{TransportCommandID},</IfNotBlank>
+					<IfNotBlank Key="Reason">"REASON": { $in: [ #{Reason} ] },</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"TRANSPORTJOBID": { $ifNull: [ "$TRANSPORTJOBID", "" ] },
+					"TRANSPORTCOMMANDID": { $ifNull: [ "$TRANSPORTCOMMANDID", "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"SOURCEMACHINENAME": { $ifNull: [ "$SOURCEMACHINENAME", "" ] },
+					"SOURCEMACHINETYPE": { $ifNull: [ "$SOURCEMACHINETYPE", "" ] },
+					"SOURCEUNITNAME": { $ifNull: [ "$SOURCEUNITNAME", "" ] },
+					"DESTMACHINENAME": { $ifNull: [ "$DESTMACHINENAME", "" ] },
+					"DESTMACHINETYPE": { $ifNull: [ "$DESTMACHINETYPE", "" ] },
+					"DESTTYPE": { $ifNull: [ "$DESTTYPE", "" ] },
+					"DESTUNITNAME": { $ifNull: [ "$DESTUNITNAME", "" ] },
+					"PRIORITY": { $ifNull: [ "$PRIORITY", "" ] },
+					"REASON": { $ifNull: [ "$REASON", "" ] },
+					"DESCRIPTION": { $ifNull: [ "$DESCRIPTION", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TRANSPORT_RETURN_COMMAND_FAIL_LOG>
+		<MCSLOG_TRANSPORT_COMPLETED_CARRIER_FROM_TO_LOG>
+		[
+			{
+				$match: {
+					"TIME_EX": { $gte: ISODate(#{From}), $lte: ISODate(#{To}) },
+					<IfNotBlank Key="Key">$expr: { $gt: [ { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] }, #{Key} ] },</IfNotBlank>
+					<IfNotBlank Key="FullText">$text: { $search: #{FullText} },</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">"MACHINETYPE": { $in: [ #{MachineTypes} ] },</IfNotBlank>
+					<IfNotBlank Key="MachineNames">"MACHINENAME": { $in: [ #{MachineNames} ] },</IfNotBlank>
+					<IfNotBlank Key="CarrierName">"CARRIER": #{CarrierName},</IfNotBlank>
+				}
+			},
+			{ $sort: { "TIME_EX" : 1 } },
+			{
+				$set: {
+					"Key": { $concat: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S%L" } }, { $toString: "$_id" } ] },
+					"TIME_EX": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y-%m-%d %H:%M:%S.%L", timezone: "Asia/Seoul" } }, "" ] },
+					"FROM": { $ifNull: [ { $dateToString: { date: "$START_TIME", format: "%Y%m%d%H%M%S", timezone: "Asia/Seoul" } }, "" ] },
+					"TO": { $ifNull: [ { $dateToString: { date: "$TIME_EX", format: "%Y%m%d%H%M%S", timezone: "Asia/Seoul" } }, "" ] },
+					"CARRIER": { $ifNull: [ "$CARRIER", "" ] },
+					"LOCATION_ID": { $ifNull: [ "$LOCATION_ID", "" ] },
+					"TOTAL_ELAPSED": { $divide: [ { $toDouble: { $ifNull: [ "$ELAPSED_MSEC" , "0" ] } }, 1000 ] },
+					"MACHINENAME": { $ifNull: [ "$MACHINENAME", "" ] },
+					"MACHINETYPE": { $ifNull: [ "$MACHINETYPE", "" ] },
+					"_table": #{Collection}
+				}
+			}
+		]
+		</MCSLOG_TRANSPORT_COMPLETED_CARRIER_FROM_TO_LOG>
+		<MCSLOG_MACHINELIST_FILTER>
+		[
+			{
+				$match: {
+					<IfNotBlank Key="FabNames">SHOPNAME: { $in: [ #{FabNames} ] }</IfNotBlank>
+					<IfNotBlank Key="AreaName">AREANAME: #{AreaName}</IfNotBlank>
+					<IfNotBlank Key="BayName">BAYNAME: #{BayName}</IfNotBlank>
+					<IfNotBlank Key="MachineTypes">TYPE: { $in: [ #{MachineTypes} ] }</IfNotBlank>
+				}  
+			},
+			{
+				$group: {
+					<If Key="GroupingArea" Value="True">_id: "$AREANAME"</If>
+					<If Key="GroupingBay" Value="True">_id: "$BAYNAME"</If>
+					<If Key="GroupingType" Value="True">_id: "$TYPE"</If>
+					<If Key="GroupingId" Value="True">_id: "$_id"</If>
+				}   
+			}
+		]
+		</MCSLOG_MACHINELIST_FILTER>
+		<MCSLOG_MASTER_PROCESS>
+		[
+			<If Key="IsTS" Value="true">
+			<![CDATA[
+				{
+					$project: {
+						"PROCESS": { "$toLower": { "$substr": [ "$filename", { "$subtract": [{ "$indexOfCP": [ "$filename", ".log" ]}, 4]}, 4]}},
+					}
+				},
+			]]>
+			</If>
+			{ $limit: 1000000 },
+			{ $group: { _id: "$PROCESS" } },
+			{ $sort: { "_id": 1 } },
+			{ $match: { "_id": { $ne: null } } },
+			{
+				$project: {
+					"TYPE": #{Type},
+					"VALUE": "$_id",
+					"_id": { $concat: [ #{Type}, "_", "$_id" ] }   
+				}
+			},
+			{
+				$merge: { 
+					into: #{MasterCollection},
+					whenMatched: "keepExisting"
+				}
+			}
+		]
+		</MCSLOG_MASTER_PROCESS>
+		<MCSLOG_MASTER_MACHINE>
+		[
+			{ $limit: 1000000 },
+			{ $set: { "MACHINE": { $arrayElemAt: [ { $split: [ "$tag", "." ] }, 3 ] } } },
+			{ $group: { _id: "$MACHINE" } },
+			{ $sort: { "_id": 1 } },
+			{ $match: { "_id": { $ne: null } } },
+			{
+				$project: {
+					"TYPE": "SECS_MACHINE",
+					"VALUE": "$_id",
+					"_id": { $concat: [ "SECS_MACHINE", "_", "$_id" ] }   
+				}
+			},
+			{
+				$merge: { 
+					into: #{MasterCollection},
+					whenMatched: "keepExisting"
+				}
+			}
+		]
+		</MCSLOG_MASTER_MACHINE>
+	</Queries>
+</Mongodb>

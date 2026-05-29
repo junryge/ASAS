@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "mybatis-3-mapper.dtd">
+<mapper namespace="smartatlasSvc">
+
+	<insert id="SAMPLEBIZ_CREATE_USER" parameterType="java.util.HashMap">
+		INSERT INTO SAMPLEBIZ_USER (
+			USER_ID, USER_NM, MOBILE_NO, EMAIL
+		) VALUES ( 
+			#{USER_ID}, #{USER_NM}, #{MOBILE_NO}, #{EMAIL}
+		)
+	</insert>
+
+	<select id="SAMPLEBIZ_GET_USERLIST" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+		SELECT * FROM SAMPLEBIZ_USER
+	</select>	
+		
+	<update id="SAMPLEBIZ_UPDATE_USER" parameterType="java.util.HashMap">
+		UPDATE SAMPLEBIZ_USER SET
+			USER_NM = #{USER_NM},
+			MOBILE_NO = #{MOBILE_NO},
+			EMAIL = #{EMAIL}
+		WHERE 
+			USER_ID = #{USER_ID}	
+	</update>
+
+	<delete id="SAMPLEBIZ_DELETE_USER" parameterType="java.util.HashMap">
+		DELETE FROM SAMPLEBIZ_USER
+		WHERE 
+			USER_ID = #{USER_ID}
+	</delete>
+	
+</mapper>

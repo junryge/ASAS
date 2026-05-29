@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "mybatis-3-mapper.dtd">
+<mapper namespace="mcs_nwt">
+	<select id="SELECT_MACHINE_TYPEINFO" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+		SELECT
+		  A.*
+		  , SHOPNAME || '_' || TYPE AS "_id"
+		FROM (
+		  SELECT DISTINCT
+			#{FABID} AS SHOPNAME
+			, DECODE(STK_TYP, 'NA', TYPE, STK_TYP) AS TYPE
+		  FROM NT_R_MACHINE
+		) A
+	</select>
+	<select id="SELECT_MACHINE_LIST" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+		SELECT DISTINCT 
+			#{FABID} AS FACID
+			, #{FABID} AS MCSFABID
+			, #{FABID} AS SHOPNAME
+			, B.NAME AS "_id"
+			, CASE WHEN B.NAME LIKE '__IO%' 
+				THEN 'FIO' ELSE A.MACHINETYPE END AS MACHINETYPE
+			, DECODE(B.TYPE, 
+				'STOCKER', 
+					DECODE(B.STK_TYP, 
+						'NA', 'STOCKER',
+						'NORMAL', 'STOCKER',
+						'ZIPTOWER', 'LIFTER',
+						'LIFTER', 'LIFTER',
+						'INTERLAYER', 'LIFTER',
+						'PODZIPTOWER', 'LIFTER', 'STOCKER'),
+				'CONVEYOR',
+					DECODE(B.STK_TYP,
+						'INTERAILSEMITS', 'CONVEYOR',
+						'INTERAILSTORAGE', 'CONVEYOR', 'FIO')
+				, B.TYPE) AS TYPE
+			, B.AREANAME
+			, B.BAYNAME
+			, B.MACHINEKIND
+	  		, #{FABID} || '_' || B.NAME AS "UID"
+		FROM (SELECT MACHINENAME, MACHINETYPE FROM NT_C_SECS WHERE MACHINETYPE != 'VM') A
+		RIGHT JOIN NT_R_MACHINE B 
+			ON A.MACHINENAME = B.ID
+	</select>
+	<select id="SELECT_UNIT_LIST" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+		SELECT DISTINCT
+			NAME AS "_id"
+			, #{FABID} AS FABID
+			, TYPE
+			, ZONENAME
+		FROM NT_R_UNIT
+	</select>
+</mapper>

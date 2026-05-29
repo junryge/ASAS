@@ -405,9 +405,70 @@ class QTransferPredictBatch:
         except Exception as e:
             print(f"  ⚠ ALARM2 스킵: {e}")
 
-        # ── ALARM3, 4 : Oracle PORT_DOWN_RATE 의존 — dbquery Logpresso 쿼리 확보 후 활성화 ──
-        # TODO: ALARM3 (SELECT_M14TOM10LFT_DOWN_RATE), ALARM4 (SELECT_M14LFT_DOWN_RATE)
-        #       vhlRunRate 처럼 dbquery 패턴 Logpresso 쿼리로 만들면 oracledb 불필요.
+        # ── ALARM3: M14↔M10A LFT 반송 10%↑ & LFT 다운율 < 25% (자바 L658-1040) ──
+        try:
+            m10_down_limit = find_value("QTRANSFER_M14TOM10_PORT_DOWN_RATE", 25)
+            m10_10 = collect_idc_value(t10, "M14AM10ASUM")
+            m10_24 = collect_idc_value(t24, "M14AM10ASUM")
+            m14_10a_10 = collect_idc_value(t10, "M14AM10A")
+            m14_10a_24 = collect_idc_value(t24, "M14AM10A")
+            m10_14_10 = collect_idc_value(t10, "M10AM14A")
+            m10_14_24 = collect_idc_value(t24, "M10AM14A")
+            v10m = int(m10_10.split(",")[0]) if m10_10 else 0
+            v24m = int(m10_24.split(",")[0]) if m10_24 else 0
+            pct3 = ((v10m - v24m) / v24m * 100) if v24m else 0.0
+            m14_to_m10_flag = pct3 > increase_rate
+            # LFT 다운율 (dbquery Oracle)
+            lft_down = self._oracle_query("SELECT_M14TOM10LFT_DOWN_RATE", "PORT_DOWN_RATE")
+            lft_down_val = float(lft_down) if lft_down else 100.0
+            m10_down_flag = lft_down_val < m10_down_limit
+
+            if m14_to_m10_flag and m10_down_flag:
+                storage = self._oracle_storage_util()
+                inservice = round(100.0 - lft_down_val, 2)
+                a = _alarm_base()
+                a["IDCCOL"] = "QTRANSFER_ALARM3"
+                a["ALARM_CMT"] = "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다."
+                a["ALARM_DESC"] = "M10A ↔ M14A FAB간 반송 큐 개수 다량 증가"
+                a["ALARM_MSG_CTN"] = get_message("QTRANSFER_M14TOM10_LFT",
+                                                 "10", int(prediction), int(req_limit),
+                                                 m10_14_10, m10_14_24, m14_10a_10, m14_10a_24,
+                                                 lft_down, current_total, storage, "", inservice)
+                alarms.append(a)
+        except Exception as e:
+            print(f"  ⚠ ALARM3 스킵: {e}")
+
+        # ── ALARM4: M14↔M14B LFT 반송 10%↑ & LFT 다운율 < 10% (자바 L1042-1106) ──
+        try:
+            m14b_down_limit = find_value("QTRANSFER_M14LFT_PORT_DOWN_RATE", 10)
+            m14b_10 = collect_idc_value(t10, "M14AM14BSUM")
+            m14b_24 = collect_idc_value(t24, "M14AM14BSUM")
+            m14a_14b_10 = collect_idc_value(t10, "M14AM14B")
+            m14a_14b_24 = collect_idc_value(t24, "M14AM14B")
+            m14b_14a_10 = collect_idc_value(t10, "M14BM14A")
+            m14b_14a_24 = collect_idc_value(t24, "M14BM14A")
+            v10b = int(m14b_10.split(",")[0]) if m14b_10 else 0
+            v24b = int(m14b_24.split(",")[0]) if m14b_24 else 0
+            pct4 = ((v10b - v24b) / v24b * 100) if v24b else 0.0
+            m14b_cnt_flag = pct4 > increase_rate
+            lft_down2 = self._oracle_query("SELECT_M14LFT_DOWN_RATE", "PORT_DOWN_RATE")
+            lft_down2_val = float(lft_down2) if lft_down2 else 100.0
+            m14b_down_flag = lft_down2_val < m14b_down_limit
+
+            if m14b_cnt_flag and m14b_down_flag:
+                storage = self._oracle_storage_util()
+                inservice2 = round(100.0 - lft_down2_val, 2)
+                a = _alarm_base()
+                a["IDCCOL"] = "QTRANSFER_ALARM4"
+                a["ALARM_CMT"] = "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다."
+                a["ALARM_DESC"] = "M14A ↔ M14B FAB간 반송 큐 개수 다량 증가"
+                a["ALARM_MSG_CTN"] = get_message("QTRANSFER_M14ATOM14B_LFT",
+                                                 "10", int(prediction), int(req_limit),
+                                                 m14b_14a_10, m14b_14a_24, m14a_14b_10, m14a_14b_24,
+                                                 lft_down2, current_total, storage, "", inservice2)
+                alarms.append(a)
+        except Exception as e:
+            print(f"  ⚠ ALARM4 스킵: {e}")
 
         # ── ALARM5 : JOB STATE ERROR/ALT 50%↑ & 동일장비 50%↑ (자바 L757-940) ──
         try:
@@ -529,12 +590,22 @@ class QTransferPredictBatch:
         )
         return a
 
-    def _oracle_storage_util(self):
-        """ALARM2 의 M16A STORAGE_UTIL. Oracle 비활성 시 빈값."""
+    def _oracle_query(self, query_id, col):
+        """ALARM2/3/4 의 Oracle 값 1개 조회. dbquery 로 Logpresso httpexport 경유 (oracledb 불필요).
+           query_id: oracle.queries 의 키. col: 가져올 컬럼명."""
         if not ORACLE_CFG.get("enabled"):
             return ""
-        # TODO: oracledb 또는 Logpresso 대체 (Phase0 결정)
+        sql = ORACLE_CFG.get("queries", {}).get(query_id, "")
+        if not sql:
+            return ""
+        rows = query(sql)  # 'dbquery mcs_m14a SELECT ...' 형태
+        if rows and col in rows[0]:
+            return str(rows[0].get(col, ""))
         return ""
+
+    def _oracle_storage_util(self):
+        """ALARM2/3/4 의 M16A STORAGE_UTIL (CURR_VAL). dbquery Oracle."""
+        return self._oracle_query("SELECT_M16A_STORAGE_UTIL", "CURR_VAL")
 
     # 자바 _buildTransportAlarm (L1255-1369) — ALARM6~11
     def _build_transport_alarm(self):

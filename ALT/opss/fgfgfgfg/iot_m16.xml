@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "mybatis-3-mapper.dtd">
+<mapper namespace="iot_m16">
+	<select 
+		id="SELECT_VIBRATION"
+		parameterType="java.util.LinkedHashMap"
+		resultType="java.util.LinkedHashMap"
+	>
+		<![CDATA[
+			WITH COND1 AS (
+				SELECT
+					RUNSTATUS_ADDRESS AS ADDRESS,
+					AVG(VIBRATIONX) AS X,
+					AVG(VIBRATIONY) AS Y,
+					AVG(VIBRATIONZ) AS Z
+				FROM (
+					SELECT
+						*
+					FROM
+						CLWINFO
+					WHERE
+						H_TIMESTAMP < SYSDATE - INTERVAL '24' HOUR
+						AND H_TIMESTAMP >= SYSDATE - INTERVAL '48' HOUR
+				)
+				GROUP BY RUNSTATUS_ADDRESS
+			),
+			COND2 AS (
+			    SELECT
+			        RUNSTATUS_ADDRESS AS ADDRESS,
+			        VIBRATIONX AS X,
+			        VIBRATIONY AS Y,
+			        VIBRATIONZ AS Z
+			    FROM
+			        CLWINFO
+			    WHERE
+			        H_TIMESTAMP >= SYSDATE - INTERVAL '24' HOUR
+			)
+
+			SELECT
+				C1.ADDRESS AS ADDRESS,
+				#{FAB_ID} AS FAB_ID,
+				#{FAC_ID} AS FAC_ID,
+				24 AS TERM1,
+				48 AS TERM2,
+				ROUND(C1.X, 2) AS AVG_X,
+				ROUND(C1.Y, 2) AS AVG_Y,
+				ROUND(C1.Z, 2) AS AVG_Z,
+				'ABNORMAL' AS STATE,
+				CASE
+					WHEN (C2.X - C1.X) / C1.X >= 0.5
+						 AND (C2.Y - C1.Y) / C1.Y >= 0.5
+						 AND (C2.Z - C1.Z) / C1.Z >= 0.5 THEN 'X, Y, Z'
+					WHEN (C2.X - C1.X) / C1.X >= 0.5
+						 AND (C2.Y - C1.Y) / C1.Y >= 0.5 THEN 'X, Y'
+					WHEN (C2.Y - C1.Y) / C1.Y >= 0.5
+						 AND (C2.Z - C1.Z) / C1.Z >= 0.5 THEN 'Y, Z'
+					WHEN (C2.X - C1.X) / C1.X >= 0.5
+						 AND (C2.Z - C1.Z) / C1.Z >= 0.5 THEN 'X, Z'
+					WHEN (C2.X - C1.X) / C1.X >= 0.5 THEN 'X'
+					WHEN (C2.Y - C1.Y) / C1.Y >= 0.5 THEN 'Y'
+					WHEN (C2.Z - C1.Z) / C1.Z >= 0.5 THEN 'Z'
+					ELSE NULL
+				END AS DIR
+			FROM
+				COND1 C1
+			LEFT JOIN
+				COND2 C2
+			ON C1.ADDRESS = C2.ADDRESS
+			WHERE
+				(
+					C2.X >= 1.2
+					AND C2.Y >= 1.2
+					AND C2.Z >= 1.2
+				) AND (
+					(C2.X - C1.X) / C1.X >= 0.5
+					OR (C2.Y - C1.Y) / C1.Y >= 0.5
+					OR (C2.Z - C1.Z) / C1.Z >= 0.5
+				)
+		]]>
+	</select>
+</mapper>

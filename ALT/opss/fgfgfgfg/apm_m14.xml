@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "mybatis-3-mapper.dtd">
+<mapper namespace="apm_m14">
+	<select id="SELECT_APM_RESOURCE_LIST" resultType="java.util.LinkedHashMap">
+	SELECT time as MEAS_TM,
+       alert_group_name as FAB_ID,
+       host_name as SVR_NM,
+       was_name as PROC_NM,
+       IDC_NM,
+       MEAS_VAL
+		FROM (
+            SELECT to_char(sysdate, 'YYYYMMDD') as time,
+               i.alert_group_name,
+               i.host_name,
+               i.was_name,
+               ROUND(AVG(s.os_cpu_user/10),2) as os_cpu_user,
+               ROUND(AVG(s.jvm_cpu_usage/100),2) as jvm_cpu_usage,
+               ROUND(AVG(s.jvm_used_heap/1024),2) as jvm_used_heap,
+               ROUND(AVG(s.os_cpu_sys/10),1) as os_cpu_sys,
+               ROUND(AVG(s.jvm_thread_count),2) as jvm_thread_count,
+               ROUND(AVG(s.txn_elapse/100),2) as txn_elapse
+            FROM apmadm1.xapm_was_stat_summary s
+            JOIN apmadm1.xapm_was_info i ON s.was_id = i.was_id
+            WHERE s.was_id IN (SELECT was_id FROM apmadm1.xapm_was_info WHERE alert_group_name = 'M14_MCS')
+            AND s.time &gt;= to_date(substr(to_char(sysdate-1,'YYYYMMDDHH24MISS'),0,8)||'090000','YYYYMMDDHH24MISS')
+            AND s.time &lt; to_date(substr(to_char(sysdate,'YYYYMMDDHH24MISS'),0,8)||'090000','YYYYMMDDHH24MISS')
+            GROUP BY to_char(sysdate, 'YYYYMMDD'), i.alert_group_name, i.host_name, i.was_name
+		)
+		UNPIVOT (
+		    MEAS_VAL FOR IDC_NM IN (
+		        os_cpu_user AS 'CPU_OS',
+		        jvm_cpu_usage AS 'JVM_CPU',
+		        jvm_used_heap AS 'JVM_HEAP',
+		        os_cpu_sys AS 'CPU_USER',
+		        jvm_thread_count AS 'JVM_THREAD',
+		        txn_elapse AS 'TXN_TIME'
+		    )
+		)
+		ORDER BY time, alert_group_name, host_name, was_name, IDC_NM
+	</select>
+</mapper>

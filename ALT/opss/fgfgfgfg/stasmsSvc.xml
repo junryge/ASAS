@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "mybatis-3-mapper.dtd">
+<mapper namespace="stasms">
+	<insert id="INSERT_STA_SMS_HIS" parameterType="java.util.HashMap">
+ 		INSERT INTO STA_SMS_HIS(
+ 			GUID, CRT_TM, CTN, TEL_NO
+ 		) VALUES (
+	 		sys_guid(), SYSDATE, #{CTN}, #{TEL_NO}	
+ 		)
+	</insert>
+	
+	<select id="SELECT_STA_SMS_HIS" parameterType="java.util.HashMap" resultType="java.lang.Integer">
+		SELECT
+			COUNT(1) as CNT
+		FROM STA_SMS_HIS
+		WHERE	TEL_NO = #{TEL_NO}
+			AND CTN LIKE '${MSG_TYP}%'
+			AND CRT_TM > sysdate - 5/24/60
+	</select>
+	<select id="SELECT_STA_OPER_MAS" parameterType="java.util.HashMap" resultType="java.util.LinkedHashMap">
+		SELECT
+			CTN_DESC as OPER_NM,
+			OPER_TYP,
+			MAIN_OPER_ID as MAIN_OPER_YN,
+			MID_OPER_TYP,
+			DET_OPER_TYP,
+			STD_AREA_ID,
+			DET_AREA_ID
+		FROM STA_OPER_MAS
+		WHERE	OPER_ID = #{OPER_ID}
+			AND ROWNUM = 1
+	</select>
+</mapper>

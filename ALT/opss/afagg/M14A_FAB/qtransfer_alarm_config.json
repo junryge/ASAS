@@ -72,7 +72,7 @@
   },
   "_oracle_comment": "ALARM3/4 의 PORT_DOWN_RATE, ALARM2 의 STORAGE_UTIL. Logpresso 대체 불가 시 oracledb 사용. Phase0 결정.",
   "oracle": {
-    "enabled": false,
+    "enabled": true,
     "connections": {
       "M14A": {
         "user": "",
@@ -91,9 +91,11 @@
       }
     },
     "queries": {
-      "SELECT_M14TOM10LFT_DOWN_RATE": "",
-      "SELECT_M14LFT_DOWN_RATE": "",
-      "SELECT_M16A_STORAGE_UTIL": ""
-    }
+      "SELECT_M14TOM10LFT_DOWN_RATE": "dbquery mcs_m14a SELECT 'CD_M14LFT' AS EQP_TYP, ROUND( (COUNT(MACHINENAME) - COUNT(CASE WHEN STATE = 'INSERVICE' AND BANNED = 'F' THEN 1 END)) / COUNT(MACHINENAME) * 100, 2 ) AS PORT_DOWN_RATE FROM nt_r_unit where machinename like '4ABL33%' and PORTTYPE='LP' and name not like '%MI%' and name not like '%MO%' and name not like '%M_IN%' and name not like '%M_OUT%' and name not like '%OUT%F'",
+      "SELECT_M14LFT_DOWN_RATE": "dbquery mcs_m14b SELECT 'CD_M14ZT' AS EQP_TYP, ROUND( (COUNT(MACHINENAME) - COUNT(CASE WHEN STATE = 'INSERVICE' AND BANNED = 'F' THEN 1 END)) / COUNT(MACHINENAME) * 100, 2 ) AS PORT_DOWN_RATE FROM nt_r_unit WHERE machinename LIKE '4ALF%' AND PORTTYPE = 'LP' AND name NOT LIKE '%MI%' AND name NOT LIKE '%MO%' AND name NOT LIKE 'SEND%'",
+      "SELECT_M16A_STORAGE_UTIL": "dbquery mcs_m16a SELECT '14' AS ID, TO_CHAR(SYSDATE,'YYYYMMDDHH24MI') AS EVENT_DT, 'ALL' AS FR_FAB_ID, 'ALL' AS TO_FAB_ID, ROUND((B.USED_VAL/A.TOTAL_VAL)*100) as CURR_VAL, A.IDC_NM, 'ALL' AS FR_LOC_NM, 'ALL' TO_LOC_NM FROM ( SELECT 'CD_M163FSTORAGEUTIL' AS IDC_NM, COUNT(NAME) AS TOTAL_VAL FROM port_vw where shop='M16HUB' AND unitkind='shelf' AND state='INSERVICE' AND BANNED='F' ) A , ( SELECT 'CD_M163FSTORAGEUTIL' AS IDC_NM, COUNT(NAME) AS USED_VAL FROM port_vw where shop='M16HUB' AND unitkind='shelf' AND STATE='INSERVICE' AND BANNED='F' AND (OCCUPIED='T' or RESERVED='T') ) B WHERE A.IDC_NM = B.IDC_NM"
+    },
+    "_mode": "logpresso_dbquery",
+    "_comment": "ALARM3/4 PORT_DOWN_RATE, ALARM2 STORAGE_UTIL. dbquery 로 Logpresso httpexport 에서 Oracle 조회 (oracledb 불필요). 커넥션명 mcs_m14a/m14b/m16a 는 ENUM_DBCONNECTION_ID 매핑."
   }
 }
