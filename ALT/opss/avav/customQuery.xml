@@ -1,0 +1,1102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [Logpresso Query] -->
+<query-logpresso>
+	<query id="bridgeDetail">
+		<![CDATA[
+			table duration=10m ts_data_view_m14b
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-CARRIERTRANSFER") or (MESSAGENAME=="STORAGE-CARRIERTRANSFER"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4ABL*"
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | search DESTUNIT == "*AO4F*"  |  sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M14LFT",  DET_AREA_TYP="CD_7FAIM14B7FM163F" , DET_IDC_NM="CD_ZT10MINTRANS" ,JUDGE_VAL = 0
+			,RSLT_VAL= int(int(RSLT_VAL)/2)
+			| union [
+
+			table duration=10m ts_data_view_m14b
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-ZIPTOWERCARRIERWAITOUT") or (MESSAGENAME=="STORAGE-ZIPTOWERCARRIERWAITOUT"))and
+			((TEXT=="*4ABLD111*") or (TEXT=="*4ABLD112*") or (TEXT=="*4ABLD121*") or (TEXT=="*4ABLD122*") or (TEXT=="*4ABLD131*") or (TEXT=="*4ABLD132*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4ABL*"
+			 |  sort _time
+			 | rex field=XML "<CARRIERLOC>(?<CARRIERLOC>.*?)</CARRIERLOC>"
+			 | search (CARRIERLOC != "*AO4F*") and (CARRIERLOC == "*AO4*")  |  sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M14LFT",  DET_AREA_TYP="CD_3FAOM14B7FB7F" , DET_IDC_NM="CD_OUTPUT10MIN" ,JUDGE_VAL = 0
+			] | union [
+			 table duration=10m ts_data_view_m14b
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-CARRIERTRANSFER") or (MESSAGENAME=="STORAGE-CARRIERTRANSFER"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4ABL*"
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | search DESTUNIT == "*AO7*"
+			 | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M14LFT",  DET_AREA_TYP="CD_3FAI3FM14B7F" , DET_IDC_NM="CD_ZT10MINTRANS" ,JUDGE_VAL = 0
+			  ,RSLT_VAL= int(int(RSLT_VAL)/2)
+			] | union [
+
+			 table duration=10m ts_data_view_m14b
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-ZIPTOWERCARRIERWAITOUT") or (MESSAGENAME=="STORAGE-ZIPTOWERCARRIERWAITOUT"))and
+			((TEXT=="*4ABLD111*") or (TEXT=="*4ABLD112*") or (TEXT=="*4ABLD121*") or (TEXT=="*4ABLD122*") or (TEXT=="*4ABLD131*") or (TEXT=="*4ABLD132*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4ABL*"
+			 |  sort _time | search (TEXT == "*AO7*" or TEXT == "*AI7*")  | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M14LFT",  DET_AREA_TYP="CD_M14B7FAO3FM14B7F" , DET_IDC_NM="CD_OUTPUT10MIN" ,JUDGE_VAL = 0
+			] | union [
+			table duration=10m ts_data_view_m16
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-CARRIERTRANSFER") or (MESSAGENAME=="STORAGE-CARRIERTRANSFER")) and
+			((TEXT=="*6ABL0111*") or (TEXT=="*6ABL0112*") or (TEXT=="*6ABL0121*") or (TEXT=="*6ABL0122*")
+			   or (TEXT=="*6ABL6011*") or (TEXT=="*6ABL6012*") or (TEXT=="*6ABL6021*") or (TEXT=="*6ABL6022*")
+			   or (TEXT=="*6ABL6031*") or (TEXT=="*6ABL6032*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | rex field=XML "<SOURCEUNIT>(?<SOURCEUNIT>.*?)</SOURCEUNIT>"
+			 | search (SOURCEUNIT == "*AI3*" or  SOURCEUNIT == "*AO3*") and ( DESTUNIT == "*AOG2*" or  DESTUNIT == "*AOG6*" )
+			 | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M16LFT",  DET_AREA_TYP="CD_3FLFT3FAI" , DET_IDC_NM="CD_ZT10MINTRANS3F6F" ,JUDGE_VAL = 0
+			,RSLT_VAL= int(int(RSLT_VAL)/2)
+		] | union [
+
+			table duration=10m ts_data_view_m16
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-ZIPTOWERCARRIERWAITOUT") or (MESSAGENAME=="STORAGE-ZIPTOWERCARRIERWAITOUT")) and
+			((TEXT=="*6ABL0111*") or (TEXT=="*6ABL0112*") or (TEXT=="*6ABL0121*") or (TEXT=="*6ABL0122*")
+			   or (TEXT=="*6ABL6011*") or (TEXT=="*6ABL6012*") or (TEXT=="*6ABL6021*") or (TEXT=="*6ABL6022*")
+			   or (TEXT=="*6ABL6031*") or (TEXT=="*6ABL6032*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "6ABL*"
+			 | rex field=XML "(?<CARRIERLOC>(?<=\[CARRIERLOC\] ')[^']+)"
+			 | search (CARRIERLOC == "*AO6*")  | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M16LFT",  DET_AREA_TYP="CD_6FAO2F3F6F" , DET_IDC_NM="CD_ZT10MINOUTPUT" ,JUDGE_VAL = 0
+			] | union [
+
+			 table duration=10m ts_data_view_m16
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-ZIPTOWERCARRIERWAITOUT") or (MESSAGENAME=="STORAGE-ZIPTOWERCARRIERWAITOUT")) and
+			((TEXT=="*6ABL0111*") or (TEXT=="*6ABL0112*") or (TEXT=="*6ABL0121*") or (TEXT=="*6ABL0122*")
+			   or (TEXT=="*6ABL6011*") or (TEXT=="*6ABL6012*") or (TEXT=="*6ABL6021*") or (TEXT=="*6ABL6022*")
+			   or (TEXT=="*6ABL6031*") or (TEXT=="*6ABL6032*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "6ABL*"
+			 | rex field=XML "(?<CARRIERLOC>(?<=\[CARRIERLOC\] ')[^']+)"
+			 | search (CARRIERLOC == "*AO2*")  | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M16LFT",  DET_AREA_TYP="CD_2FAO6F3F2F" , DET_IDC_NM="CD_OUTPUT10MIN" ,JUDGE_VAL = 0
+			] | union [
+			table duration=10m ts_data_view_m16
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-CARRIERTRANSFER") or (MESSAGENAME=="STORAGE-CARRIERTRANSFER")) and
+			((TEXT=="*6ABL0111*") or (TEXT=="*6ABL0112*") or (TEXT=="*6ABL0121*") or (TEXT=="*6ABL0122*")
+			   or (TEXT=="*6ABL6011*") or (TEXT=="*6ABL6012*") or (TEXT=="*6ABL6021*") or (TEXT=="*6ABL6022*")
+			   or (TEXT=="*6ABL6031*") or (TEXT=="*6ABL6032*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | search (DESTUNIT == "*AOG3*" or DESTUNIT == "*AIG3*" )
+			 | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M16LFT",  DET_AREA_TYP="CD_6FLFT6FAI" , DET_IDC_NM="CD_ZT10MINTRANS6F3F" ,JUDGE_VAL = 0
+			,RSLT_VAL= int(int(RSLT_VAL)/2)
+			] | union [
+			 table duration=10m ts_data_view_m16
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-CARRIERTRANSFER") or (MESSAGENAME=="STORAGE-CARRIERTRANSFER")) and
+			((TEXT=="*6ABL0111*") or (TEXT=="*6ABL0112*") or (TEXT=="*6ABL0121*") or (TEXT=="*6ABL0122*")
+			   or (TEXT=="*6ABL6011*") or (TEXT=="*6ABL6012*") or (TEXT=="*6ABL6021*") or (TEXT=="*6ABL6022*")
+			   or (TEXT=="*6ABL6031*") or (TEXT=="*6ABL6032*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | search DESTUNIT=="*AOG2*"
+			 | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M16LFT",  DET_AREA_TYP="CD_2FLFT2FAI" , DET_IDC_NM="CD_ZT10MINTRANS" ,JUDGE_VAL = 0
+			,RSLT_VAL= int(int(RSLT_VAL)/2)
+			] | union [
+
+			table duration=10m ts_data_view_m16
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="STORAGE-ZIPTOWERCARRIERWAITOUT") or (MESSAGENAME=="STORAGE-ZIPTOWERCARRIERWAITOUT")) and
+			((TEXT=="*6ABL0111*") or (TEXT=="*6ABL0112*") or (TEXT=="*6ABL0121*") or (TEXT=="*6ABL0122*")
+			   or (TEXT=="*6ABL6011*") or (TEXT=="*6ABL6012*") or (TEXT=="*6ABL6021*") or (TEXT=="*6ABL6022*")
+			   or (TEXT=="*6ABL6031*") or (TEXT=="*6ABL6032*"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "6ABL*"
+			 |  sort _time | search TEXT == "*AO*"  | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M16LFT",  DET_AREA_TYP="CD_3FAO6F2F3F" , DET_IDC_NM="CD_OUTPUT10MIN" ,JUDGE_VAL = 0
+			] | union [
+			table duration=10m ts_data_view_m14a
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="INTERRAIL-CARRIERTRANSFER") or (MESSAGENAME=="INTERRAIL-CARRIERTRANSFER"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4AFC*"
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | search (DESTUNIT == "4AFC3301A_OUTG8*" or DESTUNIT == "4AFC3201A_OUTG8*")
+			 | sort _time | stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M14CNV",  DET_AREA_TYP="CD_M14AAI" , DET_IDC_NM="CD_ZT10MINTRANS" ,JUDGE_VAL = 0
+			, RSLT_VAL= int(int(RSLT_VAL)/2)
+			] | union [
+			table duration=10m ts_data_view_m14a
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="INTERRAIL-TRANSFERCOMPLETED") or (MESSAGENAME=="INTERRAIL-TRANSFERCOMPLETED"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4AFC*"
+			 | rex field=XML "<CARRIERLOC>(?<CARRIERLOC>.*?)</CARRIERLOC>"
+			 | search (CARRIERLOC == "*4AFC3301A_OUT8*" or CARRIERLOC == "*4AFC3201A_OUT8*")
+			 | sort time| stats count by MACHINENAME
+			 | rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			 | eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M14" , TO_FAB_ID="M16", EQP_TYP="CD_M14CNV",  DET_AREA_TYP="CD_M16AAO" , DET_IDC_NM="CD_OUTPUT10MIN" ,JUDGE_VAL = 0
+			] | union [
+			 table duration=10m ts_data_view_m14a
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			((COMMAND=="INTERRAIL-CARRIERTRANSFER") or (MESSAGENAME=="INTERRAIL-CARRIERTRANSFER"))
+			 | fields _time, TIME_EX, MACHINENAME, MACHINETYPE, UNITNAME, CARRIER, COMMANDID, COMMAND, OPERATION_NAME, MESSAGENAME, PROCESS, TRANSACTIONID, TEXT, THREAD, LEVEL, XML, SECSII, RESULTCODE
+			 | search MACHINENAME == "4AFC*"
+			 | rex field=XML "<DESTUNIT>(?<DESTUNIT>.*?)</DESTUNIT>"
+			 | search (DESTUNIT == "4AFC3301A_OUTG1" or DESTUNIT == "4AFC3301A_OUTG2" or DESTUNIT == "4AFC3301A_OUTG3" or DESTUNIT == "4AFC3301A_OUTG4"
+			              or DESTUNIT == "4AFC3301A_OUTG5" or DESTUNIT == "4AFC3301A_OUTG6" or DESTUNIT == "4AFC3301A_OUTG7"
+			              or DESTUNIT == "4AFC3302A_OUTG1" or DESTUNIT == "4AFC3302A_OUTG2"
+                                   or DESTUNIT == "4AFC3201A_OUTG1" or DESTUNIT == "4AFC3201A_OUTG2" or DESTUNIT == "4AFC3201A_OUTG3" or DESTUNIT == "4AFC3201A_OUTG4"
+			              or DESTUNIT == "4AFC3201A_OUTG5" or DESTUNIT == "4AFC3201A_OUTG6" or DESTUNIT == "4AFC3201A_OUTG7"
+			              or DESTUNIT == "4AFC3202A_OUTG1" or DESTUNIT == "4AFC3202A_OUTG2"
+                                   )
+			 | sort _time | stats count by MACHINENAME
+			| rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			| eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M14CNV",  DET_AREA_TYP="CD_M16AAI" , DET_IDC_NM="CD_ZT10MINTRANS" ,JUDGE_VAL = 0
+			,RSLT_VAL= int(int(RSLT_VAL)/2)
+			] | union [
+			 table duration=10m ts_data_view_m14a
+			| search   (LEVEL=="WELL" or LEVEL=="WARN" or LEVEL=="ERROR" or LEVEL=="FATAL") and
+			 ((COMMAND=="INTERRAIL-TRANSFERCOMPLETED") or (MESSAGENAME=="INTERRAIL-TRANSFERCOMPLETED"))  and
+			((TEXT=="*4AFC3201A_OUT1*") or (TEXT=="*4AFC3201A_OUT2*") or (TEXT=="*4AFC3201A_OUT3*") or (TEXT=="*4AFC3301A_OUT0*") or (TEXT=="*4AFC3301A_OUT1*")
+			or (TEXT=="*4AFC3301A_OUT2*") or (TEXT=="*4AFC3301A_OUT3*") or (TEXT=="*4AFC3301A_OUT4*"))
+			 | rex field=XML "<CARRIERLOC>(?<CARRIERLOC>.*?)</CARRIERLOC>"
+			 | sort time  |stats count by MACHINENAME
+			| rename MACHINENAME as EQP_ID, count as RSLT_VAL
+			| eval EVENT_DT=string(now(),"yyyyMMddHHmm") , FROM_FAB_ID = "M16" , TO_FAB_ID="M14", EQP_TYP="CD_M14CNV",  DET_AREA_TYP="CD_M14AAO" , DET_IDC_NM="CD_OUTPUT10MIN" ,JUDGE_VAL = 0
+			]
+
+		]]>
+	</query>
+	<query id="bridgeLayout">
+		<![CDATA[
+			setq [ table test_bridge_layout | search TEXT == "BRIDGE" | limit 1 | fields EVENT_DT | rename EVENT_DT as LAST_DT ]
+			| table  duration=1m test_bridge_layout
+		    | search EVENT_DT == $("LAST_DT")
+			| search TEXT =="BRIDGE"
+			and string(FR_FAB_ID) != ""  and string(TO_FAB_ID) != "" and  string(IDC_NM) != ""   and string(FR_LOC_NM) != "" and string(TO_LOC_NM) != ""
+			| sort EVENT_DT ASC, FR_FAB_ID , ID
+			| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM,CURR_VAL
+            | join FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM [
+			table  duration=7d test_bridge_layout
+			| search TEXT =="BRIDGE"
+			and string(FR_FAB_ID) != ""  and string(TO_FAB_ID) != "" and  string(IDC_NM) != ""   and string(FR_LOC_NM) != "" and string(TO_LOC_NM) != ""
+			| sort EVENT_DT ASC, FR_FAB_ID , ID
+			| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM,CURR_VAL
+            | stats avg(CURR_VAL) as AVG_VAL by FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM
+            | eval AVG_VAL = round(AVG_VAL)
+			| fields FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM,AVG_VAL
+            ]
+		]]>
+	</query>
+	<query id="bridgeLayout2">
+		<![CDATA[			
+			setq [
+				table test_bridge_layout
+				| search TEXT == "HUBROOM"
+				| limit 1
+				| fields STAT_DT
+				| rename STAT_DT as LAST_DT
+			]
+
+			| table  duration=5m test_bridge_layout
+			| search STAT_DT == $("LAST_DT")
+           	| search (TEXT == "HUBROOM") and (FLOW =="M14_TO_M16_OFS" or FLOW =="M16_TO_M14_OFS" or FLOW == "CURRENT_M16A_3F_JOB" or FLOW == "M14_M16_OFS_TOTAL_LIMIT_CNT"
+            	or FLOW == "M16_M10_OFS_TOTAL_LIMIT_CNT" or FLOW == "M16_M14_OFS_TOTAL_LIMIT_CNT" or FLOW == "M10_M16_OFS_TOTAL_LIMIT_CNT")
+			| sort STAT_DT,ID
+			| rename STAT_DT as EVENT_DT, VAL as CURR_VAL
+			| eval AVG_VAL = 0, WARN_YN = "N", CURR_VAL = int(CURR_VAL)
+			| fields EVENT_DT, FLOW, CURR_VAL, AVG_VAL, WARN_YN
+			| eval AVG_VAL = 0
+
+            | union [
+				setq [
+					table test_hubroom_predict
+					| limit 1
+					| fields EVENT_DT
+					| eval EVENT_DT = string(date(EVENT_DT, "yyyy-MM-dd HH:mm:ss"), "yyyyMMddHHmm")
+					| rename EVENT_DT as LAST_DT
+				]
+				| table test_hubroom_predict
+				| limit 10
+				| eval EVENT_DT = string(_time,"yyyyMMddHHmm")
+				| search EVENT_DT == $("LAST_DT")
+				| eval CURR_VAL = PREDICTVAL, AVG_VAL = 0
+				| fields EVENT_DT, FLOW, CURR_VAL, AVG_VAL, WARN_YN
+				| sort -EVENT_DT dst
+            ]
+
+            | fields EVENT_DT, FLOW, CURR_VAL, WARN_YN, AVG_VAL, WARN_YN
+		]]>
+	</query>
+	<query id="HUB_ROOM_INPUT_DATA">
+		<![CDATA[
+			set TO = now()
+			| set FR = dateadd($("TO"), "min", -30)
+			| table from=$("FR") to=$("TO") test_bridge_layout
+			| search  in (FLOW,
+				"CURRENT_M16A_3F_JOB",
+				"CURRENT_M16A_3F_JOB_2",
+				"M14A_3F_CNV_MAXCAPA",
+				"M14A_3F_TO_HUB_CMD",
+				"M14A_3F_TO_HUB_JOB2",
+				"M14A_3F_TO_HUB_JOB_ALT",
+				"M14B_7F_LFT_MAXCAPA",
+				"M14B_7F_TO_HUB_CMD",
+				"M14B_7F_TO_HUB_JOB2",
+				"M14B_7F_TO_HUB_JOB_ALT",
+				"M14_TO_M16_OFS_CUR",
+				"M16A_2F_LFT_MAXCAPA",
+				"M16A_2F_TO_6F_JOB",
+				"M16A_2F_TO_HUB_CMD",
+				"M16A_2F_TO_HUB_JOB2",
+				"M16A_2F_TO_HUB_JOB_ALT",
+				"M16A_3F_CMD",
+				"M16A_3F_CNV_MAXCAPA",
+				"M16A_3F_LFT_MAXCAPA",
+				"M16A_3F_M14BLFT_MAXCAPA",
+				"M16A_3F_TO_3F_MLUD_JOB",
+				"M16A_3F_TO_M14A_3F_JOB",
+				"M16A_3F_TO_M14A_CNV_AI_CMD",
+				"M16A_3F_TO_M14B_7F_JOB",
+				"M16A_3F_TO_M14B_LFT_AI_CMD",
+				"M16A_3F_TO_M16A_2F_JOB",
+				"M16A_3F_TO_M16A_3F_STB_CMD",
+				"M16A_3F_TO_M16A_6F_JOB",
+				"M16A_3F_TO_M16A_LFT_AI_CMD",
+				"M16A_3F_TO_M16A_MLUD_AI_CMD",
+				"M16A_6F_LFT_MAXCAPA",
+				"M16A_6F_TO_2F_JOB",
+				"M16A_6F_TO_HUB_CMD",
+				"M16A_6F_TO_HUB_JOB",
+				"M16A_6F_TO_HUB_JOB_ALT",
+				"M16B_10F_TO_HUB_JOB",
+				"HUBROOMTOTAL"
+			)
+			or IDC_NM == "CD_M163FSTORAGEUTIL"
+			or FLOW == "M16_TO_M14_OFS"
+			or FLOW == "M14_TO_M16_OFS"
+			| eval
+				FLOW = case(isnull(FLOW), IDC_NM, FLOW),
+				STAT_DT = case(isnull(STAT_DT), EVENT_DT, STAT_DT),
+				VAL = case(isnull(VAL), CURR_VAL, VAL)
+			| eval
+				FLOW = case(FLOW == "M16_TO_M14_OFS", "M16_TO_M14_OFS_CUR", FLOW=="M14_TO_M16_OFS", "M14_TO_M16_OFS_CUR",FLOW)
+			| eval
+				FLOW = case(FLOW == "CD_M163FSTORAGEUTIL", "M16A_3F_STORAGE_UTIL", FLOW)
+			| rename FLOW as IDC_NM, VAL as IDC_VAL
+			| sort STAT_DT, ID
+			| fields STAT_DT, IDC_NM, IDC_VAL
+
+			| union [
+				table from=$("FR") to=$("TO") test_bridge_layout
+				| search in (IDC_NM,
+					"CD_M163FSTORAGEUSE",
+					"CD_M163FSTORAGETOTAL",
+					"CD_M163FSTORAGEUTIL"
+				)
+				| eval STAT_DT = case(isnull(STAT_DT), EVENT_DT, STAT_DT)
+				| rename CURR_VAL as IDC_VAL
+			]
+
+			| pivot sum(long(IDC_VAL)) as IDC_VAL by STAT_DT for IDC_NM
+
+			| join type=full STAT_DT [
+				table from=$("FR") to=$("TO") star_transport_view
+
+				| union [
+					table from=$("FR") to=$("TO") star_transport_view
+					| search in (IDC_NM, "M16HUB.QUE.TIME.AVGTOTALTIME", "M16A.QUE.OHT.OHTUTIL")
+
+					| eval IDC_NM = if(IDC_NM == "M16HUB.QUE.TIME.AVGTOTALTIME", "M16HUB.QUE.TIME.AVGTOTALTIME1MIN", "M16HUB.QUE.OHT.OHTUTIL")
+				]
+				| eval STAT_DT = string(CRT_TM, "yyyyMMddHHmm")
+
+				| union [
+					table from=$("FR") to=$("TO") ATLAS_RAIL_TRAFFIC
+					| search HID_ID != ""
+					| eval IDC_NM = concat(fabId, "_", mcpName, "_AVG_VELOCITY"), STAT_DT = string(_time, "yyyyMMddHHmm")
+					| stats avg(velocity) as V by STAT_DT, IDC_NM
+					| eval IDC_VAL = round(V, 1)
+				]
+				| eval IDC_VAL = case(isnull(IDC_VAL), 0, IDC_VAL)
+				| pivot last(IDC_VAL) as IDC_VAL by STAT_DT for IDC_NM
+
+				| fields
+					STAT_DT,
+					M16HUB.QUE.TIME.AVGTOTALTIME1MIN,
+					M16HUB.QUE.OHT.OHTUTIL,
+					M16HUB.QUE.TIME.AVGTOTALTIME,
+					M16HUB.QUE.OHT.CURRENTOHTQCNT,
+					M16HUB.QUE.ALL.FABTRANSJOBCNT,
+					M16HUB.QUE.ALL.CURRENTQCOMPLETED,
+					M16HUB.QUE.ALL.CURRENTQCNT,
+					M16A.QUE.OHT.OHTUTIL,
+					M16A.QUE.OHT.CURRENTOHTQCNT,
+					M16A.QUE.LOAD.AVGLOADTIME1MIN,
+					M16A.QUE.ALL.TRANSPORT4MINOVERCNT,
+					M16A.QUE.ALL.CURRENTQCREATED,
+					M16A.QUE.ALL.CURRENTQCOMPLETED,
+					M14.QUE.ALL.CURRENTQCREATED,
+					M14.QUE.ALL.CURRENTQCOMPLETED,
+					M14.QUE.OHT.OHTUTIL,
+					M14.QUE.ALL.TRANSPORT4MINOVERCNT,
+					M14B.QUE.SENDFAB.VERTICALQUEUECOUNT,
+					M16HUB.QUE.ALL.CURRENTQCREATED,
+					M16HUB.QUE.ALL.MESCURRENTQCNT,
+					M14A_A_AVG_VELOCITY,
+					M16A_BR_AVG_VELOCITY,
+					M16A.QUE.ABN.QUETIMEDELAY
+			]
+        ]]>
+	</query>
+
+	<query id="hubroomPredict">
+		<![CDATA[
+            table duration=1h test_hubroom_predict
+            | sort -EVENT_DT -desc
+            | limit 1
+            | eval EVENT_DT = string(_time,"yyyyMMddHHmm")
+            | fields EVENT_DT, MODEL, PREDICTVAL, WARN_YN
+    	]]>
+	</query>
+	<query id="bridgeLayoutTemp">
+		<![CDATA[
+    	table duration=11m bridge_layout_tmp
+		| search ( EVENT_DT >=  string(dateadd(now(),"min",-10),"yyyyMMddHHmm") and EVENT_DT < string(now(),"yyyyMMddHHmm") )
+		and string(FROM_FAB_ID) != ""  and string(TO_FAB_ID) != ""  and string(EQP_ID)  != ""  and string(EQP_TYP) != ""  and  string(DET_AREA_TYP) != ""   and  string(DET_IDC_NM) != ""
+		| rename FROM_FAB_ID as FR_FAB_ID , DET_IDC_NM as IDC_NM
+		| eval  RSLT_VAL = int(RSLT_VAL) , JUDGE_VAL = int(JUDGE_VAL)
+		| fields EVENT_DT, FR_FAB_ID , TO_FAB_ID ,EQP_ID, EQP_TYP , DET_AREA_TYP , IDC_NM , RSLT_VAL, JUDGE_VAL,ALARM_MSG
+		| sort FR_FAB_ID
+		| search IDC_NM =="CD_ZT10MININPUT" or IDC_NM =="CD_OHTCMD"
+		| stats avg(RSLT_VAL) as RSLT_VAL by FR_FAB_ID, TO_FAB_ID, EQP_ID, EQP_TYP,DET_AREA_TYP,IDC_NM,JUDGE_VAL , ALARM_MSG
+		]]>
+	</query>
+	<query id="bridgeDetailState">
+		<![CDATA[
+    	table duration=1m bridge_layout_detail
+		| search DET_IDC_NM == "STATE"
+		| sort EQP_ID
+		| fields EVENT_DT, FROM_FAB_ID , TO_FAB_ID ,EQP_ID, EQP_TYP , DET_AREA_TYP , DET_IDC_NM , RSLT_VAL, JUDGE_VAL,ALARM_MSG
+		]]>
+	</query>
+	<query id="apmDataValid">
+		<![CDATA[
+		table  server_resource_apm
+        | search date( MEAS_TM ,"yyyyMMdd") >= dateadd(date(string(dateadd(now(),"day",1),"yyyyMMdd"),"yyyyMMdd"),"day",-61)
+        | search IDC_NM != "ALL"
+		| fields MEAS_TM, FAB_ID, SVR_NM, PROC_NM, IDC_NM, MEAS_VAL
+        | sort MEAS_TM
+        ]]>
+	</query>
+	<query id="apmDataValidM14APM">
+		<![CDATA[
+		table  server_resource_apm
+        | search date( MEAS_TM ,"yyyyMMdd") >= dateadd(date(string(dateadd(now(),"day",1),"yyyyMMdd"),"yyyyMMdd"),"day",-61)
+        | search IDC_NM != "ALL"
+        | search FAB_ID == "M14_MCS"
+		| fields MEAS_TM, FAB_ID, SVR_NM, PROC_NM, IDC_NM, MEAS_VAL
+        | sort MEAS_TM
+        ]]>
+	</query>
+	<query id="bridgeLayoutWeek">
+		<![CDATA[
+	     table  duration=7d test_bridge_layout
+		| search TEXT =="BRIDGE"  and IDC_NM != "*STORAGE*"
+		and string(FR_FAB_ID) != ""  and string(TO_FAB_ID) != "" and  string(IDC_NM) != ""   and string(FR_LOC_NM) != "" and string(TO_LOC_NM) != ""
+		| sort EVENT_DT ASC, FR_FAB_ID , ID
+		| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM,CURR_VAL
+		| eval CURR_VAL =int(CURR_VAL)
+   	  ]]>
+	</query>
+	<query id="bridgeJudgeRange">
+		<![CDATA[
+		table duration=48h bridge_judge_range
+        | sort -EVENT_DT -desc | limit 22
+		| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM,LOWER_VAL,UPPER_VAL
+    	]]>
+	</query>
+	<query id="bridgeJudgeRangeQCompleted">
+		table duration=48h bridge_judge_range
+		| sort -EVENT_DT -desc | limit 22
+		| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM,LOWER_VAL,UPPER_VAL
+		| search IDC_NM == "CD_M16TOHUBQCPT" or  IDC_NM =="CD_HUBTOM16QCPT"
+	</query>
+	<query id="tsLogPattern">
+		<![CDATA[
+		set from = string(datetrunc(dateadd(now(), "sec", -60), "1m"), "yyyyMMddHHmm")
+		| set to= str(now(), "yyyyMMddHHmm")
+		| table from=$("from") to=$("to") ts_data_m14a
+		| fields _time,PROCESS, TEXT,TRANSACTIONID,THREAD
+		| search isnotnull(TRANSACTIONID) and THREAD != "Tibrv Dispatcher" and TEXT != "*WorkflowManagerExImpl.execute*"
+		| rex field=TEXT "onStart\s*\]\s*\[\s*(?<STEP>[^,]+)"
+		| rex field=TEXT "onEnd\s*\]\s*(?:-\s*)?\[\s*(?<STEP_ONEND>END-\{[^}]+\})\{[^}]+\}"
+		| rex field=TEXT "\{(?<TXN_PRCS_TIME>\d+)ms"
+		| rex field=TEXT "running\((?<BPEL_CNT>\d+)\)"
+		| eval STEP = case(isnull(STEP),STEP_ONEND,STEP)
+        | search isnotnull(STEP)
+		| eval STEP = case(STEP== "*BpelActivityListenerImpl.onEnd*" , STEP_ONEND,STEP)
+		| eval STEP = case(STEP== "START-*",concat( "000-",STEP), STEP== "END-*",concat( "ZZZ-",STEP),STEP)
+		| sort _time,TRANSACTIONID,PROCESS,THREAD,STEP
+		| eval TIME = string(_time, "yyyy-MM-dd HH:mm") , MILLITIME =string(_time, "yyyy-MM-dd HH:mm:ss.SSS")
+		| sort MILLITIME ,TRANSACTIONID,PROCESS,THREAD,STEP
+		| fields TIME, MILLITIME,STEP, PROCESS, THREAD,TRANSACTIONID,TXN_PRCS_TIME,BPEL_CNT
+		| sort TIME ,TRANSACTIONID,PROCESS,THREAD,STEP
+        | eval STEP = replace(STEP, "ZZZ-", "999-")
+        | fields TIME, STEP, PROCESS, THREAD,TRANSACTIONID,TXN_PRCS_TIME,BPEL_CNT
+	  ]]>
+	</query>
+	<query id="tsNewPattern">
+		<![CDATA[
+			table duration=3mon ts_log_pattern
+			| stats last(ACTIVE_THREAD_CNT), last(TXN_PRCS_TIME) by PROC_SEQ, BPEL_CNT
+			| eval SVC_NM = "ALL1", PROC_NM = "ALL1"
+			| rename BPEL_CNT as ACTIVE_THREAD_CNT
+			| eval ACTIVE_THREAD_CNT = int(double(ACTIVE_THREAD_CNT))
+			| fields ACTIVE_THREAD_CNT, PROC_SEQ, PROC_NM, SVC_NM
+		]]>
+	</query>
+	<query id="mhsMcsMessage">
+		<![CDATA[
+			set from = string(datetrunc(dateadd(now(), "min", -2), "1m"), "yyyyMMddHHmm")
+				| set to = string(datetrunc(dateadd(now(), "min", -1), "1m"), "yyyyMMddHHmm")
+				| setq [
+					table from=$("from") to=$("to") ts_data_m14a
+					| search COMMAND == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ" or COMMAND == "MCSMHS_TRANSPORT_JOB_SCHEDULE_REP"
+					| limit 1
+					| eval LAST_DT = string(_time, "yyyy-MM-dd HH:mm")
+					| fields LAST_DT
+				]
+				| table duration=10m ts_data_view_m14a
+				| search COMMAND == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ" or COMMAND == "MCSMHS_TRANSPORT_JOB_SCHEDULE_REP"
+				| eval TIME = string(date(TIME_EX,"yyyy-MM-dd HH:mm:ss"),"yyyy-MM-dd HH:mm")
+				| fields COMMAND, OPERATION_NAME,TIME
+				| stats count(COMMAND) as MINUTE_PER_CNT by COMMAND, OPERATION_NAME,TIME
+				| eval FAB_ID = "M14A"
+				| rename OPERATION_NAME as HOST_NM, COMMAND as MSG_NM
+				| fields TIME,MSG_NM, HOST_NM, MINUTE_PER_CNT, FAB_ID
+				| sort TIME
+				| search TIME == $("LAST_DT")
+				| union [
+					setq [
+						table from=$("from") to=$("to") ts_data_view_m14b
+						| search COMMAND == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ" or COMMAND == "MCSMHS_TRANSPORT_JOB_SCHEDULE_REP"
+						| limit 1
+						| eval LAST_DT = string(_time, "yyyy-MM-dd HH:mm")
+						| fields LAST_DT
+					]
+					| table duration=10m ts_data_view_m14b
+					| search COMMAND == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ" or COMMAND == "MCSMHS_TRANSPORT_JOB_SCHEDULE_REP"
+					| eval TIME = string(date(TIME_EX,"yyyy-MM-dd HH:mm:ss"),"yyyy-MM-dd HH:mm")
+					| fields COMMAND, OPERATION_NAME,TIME
+					| stats count(COMMAND) as MINUTE_PER_CNT by COMMAND, OPERATION_NAME,TIME
+					| eval FAB_ID = "M14B"
+					| rename OPERATION_NAME as HOST_NM, COMMAND as MSG_NM
+					| fields TIME,MSG_NM , HOST_NM ,MINUTE_PER_CNT, FAB_ID
+					| sort TIME
+					| search TIME == $("LAST_DT")
+				]
+				| eval LL_VAL = (int(MINUTE_PER_CNT) - 20), UL_VAL = (int(MINUTE_PER_CNT) +20), FALR_JUDGE_YN = "N", IDC_NM = "MHS_MCS"
+				| fields TIME, MSG_NM, HOST_NM, MINUTE_PER_CNT, FAB_ID, LL_VAL,UL_VAL, FALR_JUDGE_YN,IDC_NM
+				| sort FAB_ID
+			]]>
+	</query>
+	<query id="mcsMcpMessage">
+		<![CDATA[
+			set from = string(datetrunc(dateadd(now(), "min", -2), "1m"), "yyyyMMddHHmm")
+				| set to = string(datetrunc(dateadd(now(), "min", -1), "1m"), "yyyyMMddHHmm")
+				| table from=$("from") to=$("to") secs_data
+				| search SECSII =="4ACM4701"
+				| rename S/F as S_F
+				| eval S_F=replace(S_F,"W","")
+				| search S_F =="S6F11" or S_F == "S6F12" or S_F =="S2F49" or S_F=="S2F50"
+				| eval S_F = case(
+					S_F == "S6F11" , "S6F11 Event Report Send",
+					S_F == "S6F12" , "S6F12 Event Report Acknowledge",
+					S_F == "S2F49" , "S2F49 Enhanced Remote Command",
+					S_F == "S2F50" , "S2F50 Enhanced Remote Command Acknowledge"),
+					TIME = string(_time,"yyyy-MM-dd HH:mm:ss")
+				| fields _time, S_F,TIME,SECSII
+				| eval TIME = string(date(TIME ,"yyyy-MM-dd HH:mm"),"yyyy-MM-dd HH:mm")
+				| stats count(TIME) as SECS_LOG_CNT by TIME,S_F,SECSII
+				| rename S_F as MSG_NM, SECSII as OHT_EQP_NM
+				| eval LL_VAL = (int(SECS_LOG_CNT) - 20) , FALR_JUDGE_YN = "N", IDC_NM = "MCS_MCP"
+				| fields TIME, OHT_EQP_NM, MSG_NM, SECS_LOG_CNT, LL_VAL, FALR_JUDGE_YN,IDC_NM
+				| sort TIME
+	  ]]>
+	</query>
+	<query id="mesJobMonitoring">
+		<![CDATA[
+				dbquery mcs_m14
+					select
+						'M14A MCS Transport JOB Count' as MONTR_IDC_NM
+						,count(*) as TOT_QUEUE_CNT
+					from transportjob_vw
+				| union [
+					dbquery mes_m14
+						select
+							'M14A MES Transport JOB Count' as MONTR_IDC_NM
+							,count(*) as TOT_QUEUE_CNT
+						from
+							biz_trans_inf
+						where
+							start_goal_val in (
+								select
+									eqp_id
+								from
+									mes_eqp_mas
+								where
+									det_fac_id in ('M14A')
+							)
+				]
+				| union [
+					dbquery mes_m14
+						select
+							'Number of JOBs In Requested JOB Status' AS MONTR_IDC_NM,
+							SUM(
+								case
+									when distance > 0 then 1
+									else 0
+								end
+							) as TOT_QUEUE_CNT,
+							CASE WHEN
+								SUM(
+									CASE
+										when distance > 0 then 1
+										else 0
+									end
+								) > 1 THEN 'T'
+							   	ELSE 'F'
+							END AS FALR_JUDGE_YN
+						from(
+							select
+								SYSDATE,
+								MOVE_CMD_TM,
+								(SYSDATE-MOVE_CMD_TM) distance
+							from
+								biz_trans_inf
+							where
+								start_goal_val in (
+									select
+										eqp_id
+									from
+										mes_eqp_mas
+									where
+										det_fac_id in ('M14A')
+								)
+								AND MOVE_STAT_CD = 'Request'
+								and MOVE_CMD_TM < (SYSDATE - INTERVAL '5' MINUTE)
+						)
+				]
+				| eval FALR_JUDGE_YN = case(isnull(FALR_JUDGE_YN), "F", FALR_JUDGE_YN), TIME = string(now(), "yyyy-MM-dd HH:mm"), IDC_NM = "MES_JOB"
+				| fields TIME, MONTR_IDC_NM,TOT_QUEUE_CNT,FALR_JUDGE_YN,IDC_NM
+	 ]]>
+	</query>
+	<query id="mcsSecsWarnLog">
+		<![CDATA[
+		set from = string(datetrunc(dateadd(now(), "min", -1), "1m"), "yyyyMMddHHmm")
+		| set to= str(now(), "yyyyMMddHHmm")
+		| table from=$("from") to=$("to") secs_data
+		| search LEVEL == "WARN" and (TEXT=="*RECEIVE UNKNOWN MESSAGE*" or TEXT == "*INVALID SECONDARY MESSAGE*" )
+		| eval TIME = string(date(TIME_EX, "yyyy-MM-dd HH:mm:ss"),"yyyyMMddHHmmss")
+		          , MONTR_IDC_NM = case(contains(TEXT ,"RECEIVE UNKNOWN MESSAGE")
+		          , "RECEIVE UNKNOWN MESSAGE", "SECS MESSAGE ERROR"), MSG_DET_CTN = TEXT
+		| eval TIME = string(now() ,"yyyy-MM-dd HH:mm"), IDC_NM = "SECS_WARN"
+		| fields TIME, MONTR_IDC_NM, MSG_DET_CTN,IDC_NM
+	  ]]>
+	</query>
+	<query id="hubToM16QPTAvg">
+		<![CDATA[
+		table duration=1mon test_bridge_layout
+		| search TEXT == "BRIDGE" and IDC_NM=="CD_HUBTOM16QCPT"
+		| eval EVENT_WEEK = string(datetrunc(date(EVENT_DT, "yyyyMMddHHmm"),"1w"),"yyyyMMdd")
+		| stats avg(CURR_VAL) as AVG_VAL by EVENT_WEEK
+		| eval AVG_VAL = round(AVG_VAL,2)
+		| fields AVG_VAL,EVENT_WEEK
+		| stats avg(AVG_VAL) as AVG
+		| eval AVG_VAL = round(AVG,2) ,IDC = "WEEK_AVG"
+		| fields AVG_VAL,IDC
+		| union [
+		table duration=1d test_bridge_layout
+		| search TEXT == "BRIDGE" and IDC_NM=="CD_HUBTOM16QCPT"
+		| eval EVENT_DA = string(datetrunc(date(EVENT_DT, "yyyyMMddHHmm"),"1d"),"yyyyMMdd")
+		| stats avg(CURR_VAL) as AVG_VAL by EVENT_DA
+		| eval AVG_VAL = round(AVG_VAL,2)
+		| fields AVG_VAL,EVENT_DA
+		| stats avg(AVG_VAL) as AVG
+		| eval AVG_VAL = round(AVG,2) ,IDC = "DAY_AVG"
+		| fields AVG_VAL,IDC
+		]
+		| pivot sum(AVG_VAL) as IDC_VAL for IDC
+	  ]]>
+	</query>
+	<query id="hubroomPredictValue">
+		<![CDATA[
+		table  duration=1m  test_hubroom_predict
+			| fields PREDICTVAL
+		]]>
+	</query>
+	<query id="vhlRunRateSearch">
+		<![CDATA[
+		table duration=1m oht_cmd_count
+		| search IDC_NM == "RUNRATE" and CARRIERTYPE == "FOUP"
+		| fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM
+		| rename TIME as EVENT_DT, MACHINENAME as EQP_NM , CARRIERTYPE as IDC_NM , VHLOPERRATE as  IDC_VAL , ALARM as ALARM_YN
+		| eval EVENT_DT = string(date(EVENT_DT, "yyyyMMddHHmm"),"yyyyMMddHHmm"), IDC_VAL = double(IDC_VAL)
+		| eval IDC_GRP_CD = "VHL_OPER_RATE"
+		| fields EVENT_DT, EQP_NM,IDC_GRP_CD, IDC_NM, IDC_VAL, ALARM_YN
+		| sort EVENT_DT
+		]]>
+	</query>
+	<query id="bridgeAlarmTextVal">
+		<![CDATA[
+		table duration=2m  bridge_layout_test
+		| search ( EVENT_DT >=  string(dateadd(now(),"min",-1),"yyyyMMddHHmm") and EVENT_DT < string(now(),"yyyyMMddHHmm") )
+		and string(FR_FAB_ID) != ""  and string(TO_FAB_ID) != "" and  string(IDC_NM) != ""   and string(FR_LOC_NM) != "" and string(TO_LOC_NM) != ""
+		| sort EVENT_DT ASC, FR_FAB_ID , ID
+		| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM, AVG_VAL,CURR_VAL,WARN_YN,ALARM_YN, ALARM_MSG
+		| rename ALARM_MSG as ALARM_MSG_CTN
+		| eval ALARM_YN = case(isnull(ALARM_YN), " ", ALARM_YN), ALARM_MSG_CTN = case(isnull(ALARM_MSG_CTN), " ", ALARM_MSG_CTN), AVG_VAL = double(AVG_VAL), CURR_VAL = int(CURR_VAL)
+		| fields EVENT_DT, FR_FAB_ID, TO_FAB_ID, IDC_NM , FR_LOC_NM ,TO_LOC_NM, AVG_VAL,CURR_VAL,WARN_YN, ALARM_MSG_CTN
+		| search (IDC_NM == "*CD_OFS" or IDC_NM=="CD_M16HUBMLUD") and FR_FAB_ID == "M16"
+		| pivot sum(CURR_VAL) as CURR_VAL for IDC_NM
+		]]>
+	</query>
+	<query id="currentHubroomValForAlarm">
+		<![CDATA[
+		table duration=1m test_bridge_layout
+		| search ( TEXT == "HUBROOM") and FLOW =="CURRENT_M16A_3F_JOB_2"
+		 | fields STAT_DT, FLOW ,VAL
+		 | sort STAT_DT
+		]]>
+	</query>
+	<query id="errorVhlVal">
+		<![CDATA[
+		table duration=1m ATLAS_OHT_VHL_OFF
+		| fields EVENT_DT, MACHINE_ID
+		]]>
+	</query>
+	<query id="errorVhlVal2">
+		<![CDATA[		table duration=1m ATLAS_OHT_VHL_OFF_ONLY
+		| stats values(MACHINE_ID) as MACHINE_LST  ,count(SAVE_DT) as MACHINE_CNT , max(JUDGE_VAL) as JUDGE_VAL by SAVE_DT
+		| eval MACHINE_LST = replace(MACHINE_LST,"\"","")
+		| eval MACHINE_LST = replace(MACHINE_LST,"[","")
+		| eval MACHINE_LST = replace(MACHINE_LST,"]","")
+		| eval MACHINE_CNT = case(JUDGE_VAL==0 , MACHINE_CNT-1,MACHINE_CNT)
+		| eval JUDGE_VAL=string(JUDGE_VAL),MACHINE_CNT=string(MACHINE_CNT)
+		| rename SAVE_DT as EVENT_DT
+		| fields EVENT_DT ,JUDGE_VAL ,MACHINE_CNT
+		]]>
+	</query>
+	<query id="mesMcsRegMsg1MonCollect">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MHS_MCS" and FAB_ID == "M14A" and MSG_NM == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ"
+			| eval MINUTE_PER_CNT = int(MINUTE_PER_CNT)
+			| rename TIME AS EVENT_DT, MINUTE_PER_CNT AS CNT, FALR_JUDGE_YN AS JUDGE_YN
+			| fields EVENT_DT, FAB_ID, MSG_NM, CNT
+		]]>
+	</query>
+
+
+
+	<query id="mhsMcs1MonthCollect">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+				| search IDC_NM == "MHS_MCS" and FAB_ID == "M14A" and MSG_NM == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ"
+				| eval MINUTE_PER_CNT = int(MINUTE_PER_CNT)
+				| rename TIME AS EVENT_DT, MINUTE_PER_CNT AS CNT, FALR_JUDGE_YN AS JUDGE_YN
+				| fields EVENT_DT, CNT
+ 		]]>
+	</query>
+
+	<query id="mcsMcp1MonthCollect">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MCS_MCP" and MSG_NM == "S2F49 Enhanced Remote Command"
+			| eval SECS_LOG_CNT = int(SECS_LOG_CNT)
+			| rename TIME AS EVENT_DT, OHT_EQP_NM AS EQP_NM, SECS_LOG_CNT AS CNT, FALR_JUDGE_YN AS JUDGE_YN
+			| fields EVENT_DT, FAB_ID, CNT
+ 		]]>
+	</query>
+	<query id="mcpEventReport1MonthCollect">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MCS_MCP" and MSG_NM == "S6F11 Event Report Send"
+			| eval SECS_LOG_CNT = int(SECS_LOG_CNT)
+			| rename TIME AS EVENT_DT, OHT_EQP_NM AS EQP_NM, SECS_LOG_CNT AS CNT, FALR_JUDGE_YN AS JUDGE_YN
+			| fields EVENT_DT, CNT
+ 		]]>
+	</query>
+	<!-- 1. MES -> MCS -->
+	<query id="MHSMCS_TS_JOB_CNT_AT_1MONTH">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MHS_MCS" and FAB_ID == "M14A" and MSG_NM == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ"
+			| eval REQ_CNT = int(MINUTE_PER_CNT)
+			| fields TIME, REQ_CNT
+			| join type=full TIME [
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MHS_MCS" and FAB_ID == "M14A" and MSG_NM == "MCSMHS_TRANSPORT_JOB_SCHEDULE_REP"
+			| eval REP_CNT = int(MINUTE_PER_CNT)
+			| fields TIME, REP_CNT
+			]
+			| fields TIME, REQ_CNT, REP_CNT
+		]]>
+	</query>
+	<!-- 2. MCS Remote Command -->
+	<query id="MCS_REMOTE_CMD_CNT_AT_1MONTH">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MCS_MCP" and MSG_NM == "S2F49 Enhanced Remote Command"
+			| eval CNT = int(SECS_LOG_CNT)
+			| fields TIME, CNT
+			| join type=full TIME [
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MCS_MCP" and MSG_NM == "S2F50 Enhanced Remote Command Acknowledge"
+			| eval ACK_CNT = int(SECS_LOG_CNT)
+			| fields TIME, ACK_CNT
+			]
+			| fields TIME, CNT, ACK_CNT
+		]]>
+	</query>
+	<!-- 3. MCP Event Report -->
+	<query id="SECS_EVENT_REPORT_CNT_AT_1MONTH">
+		<![CDATA[
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MCS_MCP" and MSG_NM == "S6F11 Event Report Send"
+			| eval CNT = int(SECS_LOG_CNT)
+			| fields TIME, CNT
+			| join type=full TIME [
+			table duration=1mon abnormal_detect_data
+			| search IDC_NM == "MCS_MCP" and MSG_NM == "S6F12 Event Report Acknowledge"
+			| eval ACK_CNT = int(SECS_LOG_CNT)
+			| fields TIME, ACK_CNT
+			]
+			| fields TIME, CNT, ACK_CNT
+		]]>
+	</query>
+	<!-- 5. missing required data of MES transaction command -->
+	<query id="mesJobTsLogPattern">
+		<![CDATA[
+			table duration=1m ts_data_view_m14a
+			| search TEXT == "*CARRIER_INFO_LIST*"
+			| fields TEXT ,COMMAND,TIME_EX
+			| rex field=TEXT "(?<CARRIER_INFO><CARRIER_INFO\b[^>]*>.*?)"
+			| rex field=CARRIER_INFO "CARRIER_ID=\"(?<CARRIER_ID>[^\"]+)\""
+			| rex field=CARRIER_INFO "CARRIER_TYPE=\"(?<CARRIER_TYPE>[^\"]+)\""
+			| rex field=CARRIER_INFO "SOURCE_ID=\"(?<SOURCE_ID>[^\"]+)\""
+			| rex field=CARRIER_INFO "SOURCE_TYPE=\"(?<SOURCE_TYPE>[^\"]+)\""
+			| rex field=CARRIER_INFO "DETAIL_SOURCE_ID=\"(?<DETAIL_SOURCE_ID>[^\"]+)\""
+			| rex field=CARRIER_INFO "DESTINATION_ID=\"(?<DESTINATION_ID>[^\"]+)\""
+			| rex field=CARRIER_INFO "DESTINATION_TYPE=\"(?<DESTINATION_TYPE>[^\"]+)\""
+			| rex field=CARRIER_INFO "DETAIL_DESTINATION_ID=\"(?<DETAIL_DESTINATION_ID>[^\"]+)\""
+			| fields TIME_EX,COMMAND, CARRIER_ID, CARRIER_TYPE, SOURCE_ID, SOURCE_TYPE, DETAIL_SOURCE_ID, DESTINATION_ID, DESTINATION_TYPE, DETAIL_DESTINATION_ID,TEXT
+
+			| eval OMIT_VAL=""
+			| eval OMIT_VAL=if(isnull(CARRIER_ID), if(len(OMIT_VAL) > 0, OMIT_VAL ,"CARRIER_ID", "CARRIER_ID"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(CARRIER_TYPE), if(len(OMIT_VAL) > 0, OMIT_VAL ,"CARRIER_TYPE", "CARRIER_TYPE"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(SOURCE_ID), if(len(OMIT_VAL) > 0, OMIT_VAL ,"SOURCE_ID", "SOURCE_ID"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(SOURCE_TYPE), if(len(OMIT_VAL) > 0, OMIT_VAL ,"SOURCE_TYPE", "SOURCE_TYPE"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(DETAIL_SOURCE_ID), if(len(OMIT_VAL) > 0, OMIT_VAL ,"DETAIL_SOURCE_ID", "DETAIL_SOURCE_ID"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(DESTINATION_ID), if(len(OMIT_VAL) > 0, OMIT_VAL ,"DESTINATION_ID", "DESTINATION_ID"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(DESTINATION_TYPE), if(len(OMIT_VAL) > 0, OMIT_VAL ,"DESTINATION_TYPE", "DESTINATION_TYPE"), OMIT_VAL)
+			| eval OMIT_VAL=if(isnull(DETAIL_DESTINATION_ID), if(len(OMIT_VAL) > 0, OMIT_VAL ,"DETAIL_DESTINATION_ID", "DETAIL_DESTINATION_ID"), OMIT_VAL)
+			| fields  TIME_EX,COMMAND ,CARRIER_ID .CARRIER_TYPE .SOURCE_ID, SOURCE_TYPE, DETAIL_SOURCE_ID, DESTINATION_ID, DESTINATION_TYPE, DETAIL_DESTINATION_ID, OMIT_VAL,TEXT
+			| fields  TIME_EX,COMMAND ,OMIT_VAL,TEXT
+			| search OMIT_VAL != ""
+		]]>
+	</query>
+	<query id="bridgeDetailCnvPortDownRate">
+		setq [
+			table bridge_layout_detail
+			| search EQP_TYP == "CD_M14CNV" and DET_IDC_NM == "*PORT*"
+			| limit 1
+			| fields EVENT_DT
+			| rename EVENT_DT as LAST_DT
+		]
+
+		| table duration=2m bridge_layout_detail
+		| search EVENT_DT == $("LAST_DT")
+		| search EQP_TYP == "CD_M14CNV" and DET_IDC_NM == "*PORT*"
+		| stats sum(int(RSLT_VAL)) as RSLT_VAL by EQP_TYP, DET_IDC_NM 
+		| eval TOTAL_PORTS = case(DET_IDC_NM == "CD_PORTTOTAL", RSLT_VAL, 0)
+		| eval INSERVICE_PORTS = case(DET_IDC_NM == "CD_PORTINSERVICE", RSLT_VAL, 0)
+		| stats max(int(TOTAL_PORTS)) as TOTAL_PORTS, max(int(INSERVICE_PORTS)) as INSERVICE_PORTS by EQP_TYP
+		| eval PORT_DOWN_RATE = round((TOTAL_PORTS - INSERVICE_PORTS) / TOTAL_PORTS * 100,2)
+		| fields EQP_TYP, PORT_DOWN_RATE
+	</query>
+	<query id="qtransferAltJobCnt">
+		fulltext from=START_DT to=END_DT (method=="createTransportJobHistory") from ts_transport_m14a
+		| fields TIME_EX,STATE
+		| search (STATE =="*ALT*" or STATE == "ERROR")
+		| stats count(STATE) as DAY_CNT
+		| eval FAB="M14A"
+
+		| join type=left FAB[
+			fulltext duration=1h (method=="createTransportJobHistory") from ts_transport_m14a
+			| fields TIME_EX,STATE
+			| search (STATE =="*ALT*" or STATE == "ERROR")
+			| stats count(STATE) as HOUR_CNT
+			| eval FAB="M14A"
+		]
+
+		| eval INCREASE_RATE = round((HOUR_CNT/DAY_CNT)*100)
+	</query> 
+	<query id="altJobMachineRate">
+		fulltext duration=1h (method=="createTransportJobHistory") from ts_transport_m14a
+		| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME
+		| search (STATE =="*ALT*" or STATE == "ERROR")
+		| fields DESTMACHINENAME,STATE
+		| rename DESTMACHINENAME as MACHINENAME 
+
+		| union [
+			fulltext duration=1h (method=="createTransportJobHistory") from ts_transport_m14a
+			| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME
+		 	| search (STATE =="*ALT*" or STATE == "ERROR")
+			| fields SOURCEMACHINENAME,STATE
+			| rename SOURCEMACHINENAME as MACHINENAME
+		]
+
+		| stats count(MACHINENAME) as CNT by MACHINENAME,STATE
+		| eval FAB = "M14A"
+
+		| join type=left FAB, STATE[
+			fulltext duration=1h (method=="createTransportJobHistory") from ts_transport_m14a
+			| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME
+		 	| search (STATE =="*ALT*" or STATE == "ERROR")
+			| fields DESTMACHINENAME,STATE
+			| rename DESTMACHINENAME as MACHINENAME
+
+			| union [
+				fulltext duration=1h (method=="createTransportJobHistory") from ts_transport_m14a
+				| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME
+		 		| search (STATE =="*ALT*" or STATE == "ERROR")
+				| fields SOURCEMACHINENAME,STATE
+				| rename SOURCEMACHINENAME as MACHINENAME
+			]
+
+			| stats count(MACHINENAME) as TOTAL_CNT  by STATE
+			| eval FAB = "M14A"
+        ]
+
+        | eval RATE_DT = round((CNT*100)/TOTAL_CNT,2)
+	</query>
+	<query id="altJobMachineRate24h">
+		fulltext from=START_DT to=END_DT (method=="createTransportJobHistory") from ts_transport_m14a
+		| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME
+		| search (STATE =="*ALT*" or STATE == "ERROR")
+		| fields DESTMACHINENAME,STATE,TIME_EX
+		| rename DESTMACHINENAME as MACHINENAME 
+
+		| union [
+			fulltext from=20250730 to=20250731 (method=="createTransportJobHistory") from ts_transport_m14a
+			| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME
+		 	| search (STATE =="*ALT*" or STATE == "ERROR")
+			| fields SOURCEMACHINENAME,STATE,TIME_EX
+			| rename SOURCEMACHINENAME as MACHINENAME
+		]
+
+		| search in(MACHINENAME,MACHINELIST)
+		| eval TIME_EX = datetrunc(date(TIME_EX,"yyyy-MM-dd HH:mm:ss"), "1h")
+		| stats count(MACHINENAME) as CNT by MACHINENAME,TIME_EX
+        | stats avg(CNT) as DAY_CNT by MACHINENAME
+        | eval DAY_CNT = round(DAY_CNT)
+	</query>
+	<query id="qtransferAltJobCnt24h">
+		fulltext from=START_DT to=END_DT (method=="createTransportJobHistory") from ts_transport_m14a
+		 | fields TIME_EX,STATE
+		 | search in(STATE,STATELIST)
+		 | eval TIME_EX = datetrunc(date(TIME_EX,"yyyy-MM-dd HH:mm:ss"), "1h")
+     	 | stats count(STATE) as HOUR_CNT by STATE,TIME_EX
+         | stats avg(HOUR_CNT) as AVG_VAL by STATE 
+         | eval AVG_VAL = round(AVG_VAL,2)
+	</query>
+	<query id="bridgeTimeAverage">
+		<![CDATA[
+			dbquery star_m14
+			SELECT
+				ROUND(AVG(IDC_VAL),2) as AVG_VAL
+			FROM
+				aws_idc_data_his
+			WHERE
+				IDC_NM = 'M16HUB.QUE.TIME.AVGTOTALTIME'
+				AND CRT_TM > SYSDATE - INTERVAL '5' MINUTE
+			GROUP BY IDC_NM, CTN_DESC
+		]]>
+	</query>
+	<query id="m16LftTransferCnt">
+		dbquery mcs_m16		  
+			SELECT
+			MACHINENAME,
+			CNT_VAL,
+			ROUND(AVG_VAL,2) AS AVG_VAL,
+			TOTAL_VAL,
+			IDC_NM
+			FROM (
+			SELECT
+			MACHINENAME, 
+			CNT_VAL,
+			AVG(CNT_VAL) OVER() AS AVG_VAL,
+			SUM(CNT_VAL) OVER() AS TOTAL_VAL,
+			'CD_6F3F' AS IDC_NM
+			FROM(
+			SELECT 
+			MACHINENAME,
+			COUNT(*) AS CNT_VAL
+			FROM TRANSPORTJOB_VW
+			WHERE MACHINENAME IN ('6ABL0111','6ABL0112','6ABL0121','6ABL0122','6ABL6011','6ABL6012','6ABL6021','6ABL6022','6ABL6031','6ABL6032')
+			AND SOURCESHOPNAME = 'M16'
+			AND DESTSHOPNAME = 'M16HUB'
+			GROUP BY MACHINENAME
+			)
+			UNION 
+			SELECT
+			MACHINENAME, 
+			CNT_VAL,
+			AVG(CNT_VAL) OVER() AS AVG_VAL,
+			SUM(CNT_VAL) OVER() AS TOTAL_VAL,
+			'CD_3F6F' AS IDC_NM
+			FROM(
+			SELECT 
+			MACHINENAME,
+			COUNT(*) AS CNT_VAL
+			FROM TRANSPORTJOB_VW
+			WHERE MACHINENAME IN ('6ABL0111','6ABL0112','6ABL0121','6ABL0122','6ABL6011','6ABL6012','6ABL6021','6ABL6022','6ABL6031','6ABL6032')
+			AND SOURCESHOPNAME = 'M16HUB'
+			AND DESTSHOPNAME = 'M16'
+			GROUP BY MACHINENAME
+			))
+			ORDER BY IDC_NM ,MACHINENAME
+			| fields MACHINENAME, CNT_VAL, AVG_VAL,TOTAL_VAL, IDC_NM
+	</query>
+	<query id="m16HubTotalCnt">		
+		<![CDATA[
+			dbquery mcs_m16
+			SELECT
+				'M16HUB.QUE.ALL.CURRENTQCNT' AS IDC_NM,
+				COUNT(*) AS IDC_VAL,
+				'[DTS] CurrentQCnt' AS CTN_DESC,
+				SYSDATE AS CRT_TM
+			FROM NT_T_TRANSPORTJOB
+		  	WHERE
+				SOURCEMACHINENAME <> DESTMACHINENAME
+			 	AND (SOURCEMACHINENAME IN (SELECT ID FROM NT_R_MACHINE WHERE SHOPNAME='M16HUB')
+				OR DESTMACHINENAME IN (SELECT ID FROM NT_R_MACHINE WHERE SHOPNAME='M16HUB'))
+		]]>
+	</query>
+
+	<!-- 서버 구동시 railEdge(혹은 Vhl) 의 velocity(속도) 값의 유지 -->
+	<query id="FIND_RECENT_VELOCITY">
+		<![CDATA[
+			setq [
+				table duration=1d ATLAS_RAIL_TRAFFIC
+				| search railEdgeId != "AVERAGE_PER_1MINUTES"
+				| limit 1
+				| eval LAST_DT = string(_time, "yyyy-MM-dd HH:mm")
+			]
+			| table duration=1d ATLAS_RAIL_TRAFFIC
+			| eval TIME = string(_time, "yyyy-MM-dd HH:mm")
+			| search TIME == $("LAST_DT") and railEdgeId != "AVERAGE_PER_1MINUTES"
+			| fields TIME, fabId, mcpName, railEdgeId, velocity
+		]]>
+	</query>
+	<query id="Q_TRANSFER_INPUT_DATA">
+		<![CDATA[
+			set TO = now()
+			| set FR = dateadd($("TO"), "min", -300)
+
+			| table from=$("FR") to=$("TO") ts_current_job
+			| search FAB == "M14"
+			| eval A = case(trim(DESTMACHINENAME) == "4ABL_M10" ,1,0)
+			| eval B =  case(substr(trim(SOURCEMACHINENAME),0,7) == "4ABL330" ,1,0)
+			| eval C =  case(substr(trim(DESTMACHINENAME),0,4) == "4ALF" ,1,0)
+			| eval D =  case(substr(trim(SOURCEMACHINENAME),0,4) == "4ALF" ,1,0)
+			| eval E =  case(substr(trim(DESTMACHINENAME),0,4) == "4AFC" ,1,0)
+			| eval F =  case(substr(trim(SOURCEMACHINENAME),0,4) == "4AFC" ,1,0)
+			| stats sum(A), sum(B), sum(C), sum(D), sum(E), sum(F), count by CURRTIME
+			| rename count as TOTALCNT, sum(A) as M14AM10A, sum(B) as M10AM14A, sum(C) as M14AM14B, sum(D) as M14BM14A, sum(E) as M14AM16, sum(F) as M16M14A
+			| eval M14AM10ASUM = M10AM14A + M14AM10A,
+				M14AM14BSUM = M14AM14B + M14BM14A,
+				M14AM16SUM = M14AM16 + M16M14A,
+				TIME = CURRTIME
+
+			| join CURRTIME [
+				table from=$("FR") to=$("TO") star_transport_view
+				| eval CURRTIME = string(CRT_TM, "yyyyMMddHHmm")
+				| pivot last(IDC_VAL) for IDC_NM by CURRTIME
+			]
+
+			| fields
+				CURRTIME,
+				TOTALCNT,
+				M14AM10A,
+				M10AM14A,
+				M14AM10ASUM,
+				M14AM14B,
+				M14BM14A,
+				M14AM14BSUM,
+				M14AM16,
+				M16M14A,
+				M14AM16SUM,
+				M14.QUE.ALL.CURRENTQCREATED,
+				M14.QUE.ALL.CURRENTQCOMPLETED,
+				M14.QUE.OHT.OHTUTIL,
+				M14.QUE.ALL.TRANSPORT4MINOVERCNT,
+				M14B.QUE.SENDFAB.VERTICALQUEUECOUNT
+		]]>
+	</query>
+	<query id="SELECT_AWS_IDC_HISTORY">
+		<![CDATA[
+			dbquery star_m14
+			SELECT *
+			FROM AWS_IDC_DATA_HIS
+			WHERE IDC_NM IN (
+				'M14.STRATE.NONN2.STORAGERATIO',
+				'M14.SORTER.ABN.SORTERWAITCOUNTOVER',
+				'M14.SORTER.ABN.CUSORTERWAITCOUNTOVER',
+				'M14.QUE.ALL.CURRENTQCOUNT',
+				'M14.QUE.ALL.CURRENTQCNT',
+				'M14.QUE.STK.MANUALOUTCOUNT',
+				'M14.QUE.SENDFAB.VERTICALQUEUECOUNT',
+				'M14.STRATE.STB.NONN2STORAGERATIO'
+			)
+			AND CRT_TM >= SYSDATE - INTERVAL '10' MINUTE
+
+			| stats avg(IDC_VAL) as IDC_VAL by IDC_NM
+			| eval IDC_VAL = round(IDC_VAL, 1)
+			| pivot last(IDC_VAL) as IDC_VAL for IDC_NM
+
+			| fields
+            	M14.STRATE.NONN2.STORAGERATIO,
+				M14.SORTER.ABN.SORTERWAITCOUNTOVER,
+				M14.SORTER.ABN.CUSORTERWAITCOUNTOVER,
+				M14.QUE.ALL.CURRENTQCOUNT,
+				M14.QUE.ALL.CURRENTQCNT,
+				M14.QUE.STK.MANUALOUTCOUNT,
+				M14.QUE.SENDFAB.VERTICALQUEUECOUNT,
+				M14.STRATE.STB.NONN2STORAGERATIO
+		]]>
+	</query>
+</query-logpresso>

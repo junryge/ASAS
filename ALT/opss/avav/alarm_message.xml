@@ -1,0 +1,626 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alarms>
+    <alarm code="LAYOUT_ALARM">{0} -> {1} 현재 반송큐 개수 {2}시그마 이탈 하였습니다. 확인 바랍니다.</alarm>
+    <alarm code="DETAIL_ALARM_DOWN">{0} 장비 DOWN 발생 하였습니다. 유관 부서 확인 부탁드립니다.</alarm>
+    <alarm code="DETAIL_ALARM_UP">{0} 장비 UP 발생 하였습니다. 유관 부서 확인 부탁드립니다.</alarm>
+    <alarm code="DETAIL_ALARM">임시알람 메세지</alarm>
+    <alarm code="BRIDGE_IMAGE_C0014">주평균: {0} \n
+        분당: {1} \n
+        현재: {2} \n</alarm>
+    <alarm code="BRIDGE_IMAGE_C0015">
+        1. HUB Storage 사용률 높음({0}%▲)  \n
+        2. CNV Input Capa. 감소({1}개 Port down, {2}) \n\n
+
+        - 조치 가이드 :   \n
+        1. M16 3F AI MAXCAPA 50% DOWN 조치 필요 \n\n
+
+        - 참고 지표 \n
+        1. M16 HUBROMM STORAGE 사용률 50% 초과(현재 {0}%)   \n
+        2. M16 HUBROOM CNV INPUT CAPA 감소({3}개중 {4}개 사용가능)  \n
+        3. 반송큐 개수: {5}개 (10분 지속시 {6}개 예상)    \n
+        4. HUB VHL 가동률: {7}% \n
+        5. MLUD 출고큐: {8}개 \n
+        6. OFS차수 : {9}차수 (M16▶M14A/B)</alarm>
+
+
+    <alarm code="BRIDGE_IMAGE_C0016">
+        1. HUB Storage 사용률 높음({0}%▲)  \n
+        2. M14B LFT Input Capa. 감소({1}개 Port down, {2}) \n\n
+
+        - 조치 가이드 :   \n
+        1. M16 6F AI MAXCAPA 50% DOWN 조치 필요 \n\n
+
+        - 참고 지표 \n
+        1. 현재 Bridge 반송큐 개수: {3}개 (10분 지속시 {4}개 예상) \n
+        2. HUB VHL 가동률: {5}% \n
+        3. MLUD 출고큐: {6}개 \n
+        4. OFS차수 : {7}차수 (M16▶M14A/B) \n
+        5. 에러비히클 {8}대
+    </alarm>
+    <alarm code="BRIDGE_IMAGE_DEFAULT"/>
+    <alarm code="BRIDGE_IMAGE_DEFAULT_NAME"/>
+    <alarm code="BRIDGE_IMAGE_DEFAULT_TITLE"/>
+
+    <!-- ABNORMAL#1 MES 방송큐 수가 줄어든 경우(MES) -> MCS 반송 명령 감소 -->
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_1_DESC">
+        MES 반송명령 감소
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_1_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_1_CONTENTS">
+        1. 분 당 MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 감소하였습니다.\n
+        2. RDS 서버에서도 분 당 MHSMCS_TRANSPORT_JOB_SCHEDULED_REQ가 {3}개로 1개월 평균 값({1}개)의 {4}% 수준으로 감소하여 MES로부터 메시지가 감소한 것으로 판단 됩니다.\n
+        3. 현재 MES->MCS 반송 JOB 요청건에 대한 MCS의 응답률은 100% 입니다.\n
+        \n
+        - 예상 원인 시스템 : M14 MES\n
+        \n
+        - 조치 가이드 :\n
+        1. MES 담당자에게 MES -> MCS 반송 JOB 감소 확인 요청\n
+        \n
+        - 참고 지표\n
+        1. MES 현재 반송 JOB 수: {0}개(1개월 평균 : {1}개)\n
+        2. MCS 현재 반송 JOB 수: {5}개(1개월 평균 : {6}개)\n
+        \n
+        - 참고 설명\n
+        1. MCS TS 로그에서 반송 JOB 요청에 대한 로그 수가 감소하였습니다.\n
+        2. RDS서버에서 MHS->MCS 반송 JOB 요청에 대한 TIB 메시지도 동일하게 감소한 것으로 보아 MES에서 반송명령이 내려오지 않는 것으로 판단 됩니다.
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_NORMAL_CONTENTS">현재 분 당 MES->MCS 반송 JOB 요청 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 정상 입니다.@현재 MES->MCS 반송 JOB 요청에 대한 MCS의 응답률은 {3}% 입니다.</alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_ABNORMAL_CONTENTS">현재 분 당 MES->MCS 반송 JOB 요청 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 장애로 판단 됩니다.@현재 MES->MCS 반송 JOB 요청건에 대한 MCS의 응답률은 {3}% 입니다.</alarm>
+    <!-- 반송 큐 알람 -->
+<!--    <alarm code="QTRANSFER_REQ">-->
+<!--        1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\n-->
+<!--        2. 현재 VHL 가동률: {3}%\n-->
+<!--        3. 10분간 MES로부터 받은 반송큐 수: {4}개 (전일 평균 {5}개)\n\n-->
+<!--        - 예상 원인 시스템: M14 MES\n\n-->
+<!--        - 조치 가이드: \n-->
+<!--        1. MES 담당자에게 MES ▶ MCS 반송큐 개수 증가 확인 요청\n-->
+<!--        2. MCS EQ-Unload 기능 사용 검토\n\n-->
+<!--        - 참고 지표\n-->
+<!--        1. 현재 반송큐 개수: {6}개\n-->
+<!--        2. 10분간 완료된 반송큐 수: {7}개\n\n-->
+<!--        - 참고 설명\n-->
+<!--        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\n-->
+<!--        2. Vehicle 가동률과 MES로 부터 내려오는 반송큐 개수가 증가한 것으로 보아 실제 반송량이 많아진 것으로 판단됩니다.-->
+<!--    </alarm>-->
+<!--    <alarm code="QTRANSFER_CNV">-->
+<!--        1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\n-->
+<!--        2. 현재 M14A ▶ M16A 반송큐 수: {3}개 (전일 평균 {4}개)\n-->
+<!--        3. 현재 M16A ▶ M14A 반송큐 수: {5}개 (전일 평균 {6}개)\n-->
+<!--        4. CNV 포트 Down 10% 미만\n\n-->
+<!--        - 예상 원인 시스템: M16 / M14 MES\n\n-->
+<!--        - 조치 가이드: \n-->
+<!--        1. MES 담당자에게 M14 ↔ M16 Fab 간 반송큐 개수 증가 확인 요청\n\n-->
+<!--        - 참고 지표\n-->
+<!--        1. 현재 반송큐 개수: {7}개\n-->
+<!--        2. Storage 사용률: {8}%\n-->
+<!--        2. Vehicle 가동률: {9}%\n\n-->
+<!--        - 참고 설명\n-->
+<!--        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\n-->
+<!--        2. CNV 포트가 모두 반송 가능함에도 CNV 반송큐가 많은 것으로 보아 M16 ↔ M14 Fab 간 반송량이 늘어난 것으로 판단됩니다.-->
+<!--    </alarm>-->
+    <alarm code="QTRANSFER_M14TOM10_LFT">
+        1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\n
+        2. 현재 M10A ▶ M14A 반송큐 수: {3}개 (전일 평균 {4}개)\n
+        3. 현재 M14A ▶ M10A 반송큐 수: {5}개 (전일 평균 {6}개)\n
+        4. 현재 4ABL33% LFT 장비 및 포트: {7}%\n\n
+        - 예상 원인 시스템: M14 / M10 MES\n\n
+        - 조치 가이드: \n
+        1. MES 담당자에게 MES▶MCS 반송큐 개수 확인 요청\n
+        2. MCS 담당자에게 M14 ↔ M10A Fab간 반송 확인 요청\n\n
+        - 참고 지표\n
+        1. 현재 반송큐 개수: {8}개\n
+        2. Storage 사용률: {9}%\n
+        2. Vehicle 가동률: {10}%\n\n
+        - 참고 설명\n
+        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\n
+        2. LFT 포트 중 {11}%가 사용가능함에도 LFT 반송큐가 많은 것으로 보아, M10 ↔ M14 Fab 간 반송량이 늘어난 것으로 판단됩니다.
+    </alarm>
+    <alarm code="QTRANSFER_M14ATOM14B_LFT">
+        1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\n
+        2. 현재 M10A ▶ M14A 반송큐 수: {3}개 (전일 평균 {4}개)\n
+        3. 현재 M14A ▶ M10A 반송큐 수: {5}개 (전일 평균 {6}개)\n
+        4. 현재 4ALF% LFT 장비 및 포트: {7}% 미만\n\n
+        - 예상 원인 시스템: M14 MES\n\n
+        - 조치 가이드: \n
+        1. MES 담당자에게 M14 3F ↔ 7F 반송큐 개수 확인 요청\n
+        2. MCS 담당자에게 M14 ↔ M14B 층간 반송 확인 요청\n\n
+        - 참고 지표\n
+        1. 현재 반송큐 개수: {8}개\n
+        2. Storage 사용률: {9}%\n
+        2. Vehicle 가동률: {10}%\n\n
+        - 참고 설명\n
+        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\n
+        2. LFT 포트 중 {11}%가 사용가능함에도 LFT 반송큐가 많은 것으로 보아, M14A ↔ M14B 반송량이 늘어난 것으로 판단됩니다.
+    </alarm>
+    <alarm code="QTRANSFER_ALT_JOB">
+        1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\n
+        {3}
+        {4}
+        - 예상 원인 시스템: EQP\n\n
+        - 조치 가이드: \n
+        1. MCS 담당자에게 반송 JOB의 상태 확인 요청\n
+        2. 현장 담당자에게 장비 반송 가능 여부 확인 요청\n\n
+        - 참고 지표\n
+        1. 반송큐 개수: {5}개\n
+        2. JOB STATE별: {6}\n
+        3. Vehicle 가동률: {7}\n\n
+        - 참고 설명\n
+        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\n
+        2. JOB STATE가 [{8}]인 반송큐가 많습니다.\n
+        3. 출발지/목적지가 [{9}]인 JOB에 이상이 많이 발생했으므로, 해당 장비 확인이 필요합니다.
+    </alarm>
+    <!-- ABNORMAL#1 MES 방송큐 수가 줄어든 경우(MES) -> MCS 반송 명령 감소 -->
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_1_DESC">
+        MES 반송명령 감소
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_1_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_1_CONTENTS">
+        1. MES 반송 JOB 요청(MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ)이 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 감소하였습니다.\n
+        2. RDS 서버에서는 MES 반송 JOB 요청(MHSMCS_TRANSPORT_JOB_SCHEDULED_REQ)이 {3}개로 1개월 평균 값({1}개)의 {4}% 수준으로 감소하여 MES로부터 메시지가 감소한 것으로 판단 됩니다.
+        3. 현재 MES->MCS 반송 JOB 요청에 대한 MCS의 응답률은 {7}% 입니다.
+        \n
+        - 예상 원인 시스템 : M14 MES\n
+        \n
+        - 조치 가이드 :\n
+        1. MES 담당자에게 MES -> MCS 반송 JOB 감소 확인 요청\n
+        \n
+        - 참고 지표\n
+        1. MES 현재 반송 JOB 수: {0}개(1개월 평균 : {1}개)\n
+        2. MCS 현재 반송 JOB 수: {5}개(1개월 평균 : {6}개)\n
+        \n
+        - 참고 설명\n
+        1. MCS TS 로그에서 반송 JOB 요청에 대한 로그 수가 감소하였습니다.\n
+        2. RDS서버에서 MHS->MCS 반송 JOB 요청에 대한 TIB 메시지도 동일하게 감소한 것으로 보아 MES에서 반송명령이 내려오지 않는 것으로 판단 됩니다.
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_NORMAL_CONTENTS">[{4}] MES->MCS 반송 JOB 요청 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 정상 입니다.@현재 MES->MCS 반송 JOB 요청에 대한 MCS의 응답률은 {3}% 입니다.</alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_ABNORMAL_CONTENTS">[{4}] MES->MCS 반송 JOB 요청 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 장애로 판단 됩니다.@현재 MES->MCS 반송 JOB 요청건에 대한 MCS의 응답률은 {3}% 입니다.</alarm>
+    <!-- ~ABNORMAL#1 MES 방송큐 수가 줄어든 경우(MES) -> MCS 반송 명령 감소 -->
+
+    <!-- ABNORMAL#2 MES 방송큐 수가 줄어든 경우(MCS) -->
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_2_DESC">
+        MCS 반송 JOB 처리 이슈
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_2_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MES_TRANSPORT_DECLARE_EXCEPT_2_CONTENTS">
+        1. MES 반송 JOB 요청(MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ)이 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 감소하였습니다.
+        2. RDS 서버에서는 MES 반송 JOB 요청(MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ)이 {3}개로 1개월 평균 값의 {4}% 수준으로 특이사항 없어 MCS 시스템 및 통신 점검이 필요합니다.
+        3. 현재 MES->MCS 반송 JOB 요청건에 대한 MCS의 응답률은 {7}% 입니다.\n
+        \n
+        - 예상 원인 시스템 : M14 MCS\n
+        \n
+        - 조치 가이드 :\n
+        1. MCS 담당자 MCS 서버 및 서비스 점검\n
+        \n
+        - 참고 지표\n
+        1. MES 현재 반송 JOB 수: {0}개(1개월 평균 : {1}개)\n
+        2. MCS 현재 반송 JOB 수: {5}개(1개월 평균 : {6}개)\n
+        \n
+        - 참고 설명\n
+        1. MCS TS 로그에서 반송 JOB 요청에 대한 로그 수가 감소하였습니다.\n
+        2. RDS서버에서 MHS->MCS 반송 JOB 요청에 대한 TIB 메시지는 이상이 없는 것으로 보아 MCS에서 메시지를 받지 못하거나 정상적으로 처리되지 않는 것으로 판단 됩니다.
+    </alarm>
+    <!-- ~ABNORMAL#2 MES 방송큐 수가 줄어든 경우(MCS) -->
+
+    <!-- ABNORMAL#3 MCS 반송 CMD 생성 수 감소 -->
+    <alarm code="MCS_TRANSPORT_COMMAND_DECLARE_EXCEPT_DESC">
+        MCS 반송 CMD(S2F49) 생성 수 감소
+    </alarm>
+    <alarm code="MCS_TRANSPORT_COMMAND_DECLARE_EXCEPT_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MCS_TRANSPORT_COMMAND_DECLARE_EXCEPT_CONTENTS">
+        1. MCS->MCP 반송 CMD(S2F49) 생성이 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 감소하였습니다.\n
+        2. MES 반송 JOB 요청(MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ)이 {3}개로 1개월 평균 값({4}개)의 {5}% 수준입니다.\n
+        3. 현재 MCS->MCP 반송 CMD에 대한 MCP의 응답률은 {6}% 입니다.\n
+        \n
+        - 예상 원인 시스템 : M14 MCS\n
+        \n
+        - 조치 가이드 :\n
+        1. MCS 담당자 MCS-MCP간 통신 상태 점검, MCS서버/네트워크/서비스 점검\n
+        2. MCP 담당자 MCP-MCS간 통신 상태 점검, MCP서버/네트워크/서비스 점검\n
+        \n
+        - 참고 지표\n
+        1. MES 현재 반송 JOB 수: {0}개(1개월 평균 : {1}개)\n
+        2. MCS 현재 반송 JOB 수: {7}개(1개월 평균 : {8}개)\n
+        3. MCS-MCP간 Connection/Control/TSC State : {9}/{10}/{11}\n
+        \n
+        - 참고 설명\n
+        1. MCS->MCP 반송 CMD수가 감소하였습니다.\n
+        2. MCS-MCP간 통신 상태 점검이 필요하며 MCS 내부 이슈인지 MCP 이슈인지 Network 이슈인지 정확한 원인 확인 후 조치가 필요합니다.
+    </alarm>
+    <alarm code="MCS_TRANSPORT_COMMAND_DECLARE_NORMAL_CONTENTS">[{4}] MCS->MCP 반송 CMD 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 정상 입니다.@현재 MCS->MCP 반송 CMD에 대한 MCP의 응답률은 {3}% 입니다.</alarm>
+    <alarm code="MCS_TRANSPORT_COMMAND_DECLARE_ABNORMAL_CONTENTS">[{4}] MCS->MCP 반송 CMD 수가 {0}개 입니다.@현재 MCS->MCP 반송 CMD에 대한 MCP의 응답률은 {3}% 입니다.</alarm>
+    <!-- ~ABNORMAL#3 MCS 반송 CMD 생성 수 감소 -->
+
+    <!-- ABNORMAL#4 MCP 반송 Event Report 수 감소 -->
+    <alarm code="MCP_TRANSPORT_S6F11_DECLARE_EXCEPT_DESC">
+        MCP 반송 Event Report(S6F11) 수 감소
+    </alarm>
+    <alarm code="MCP_TRANSPORT_S6F11_DECLARE_EXCEPT_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MCP_TRANSPORT_S6F11_DECLARE_EXCEPT_CONTENTS">
+        1. MCP->MCS 반송 Event Report(S6F11)가 {0}개로 1개월 평균 값({1}개)의 {2}% 감소하였습니다.\n
+        2. MCS->MCP 반송 CMD(S2F49) 수는 {3}개로 1개월 평균 값({4}개)의 {5}% 수준입니다.\n
+        3. 현재 MCP->MCS 반송 EventReport에 대한 MCS의 응답률은 {6}% 입니다.\n
+        \n
+        - 예상 원인 시스템 : M14 MCP\n
+        \n
+        - 조치 가이드 :\n
+        1. MCP 담당자 MCP-MCS간 통신 상태 점검, MCP서버/네트워크/서비스 점검\n
+        2. MCS 담당자 MCS-MCP간 통신 상태 점검, MCS서버/네트워크/서비스 점검\n
+        \n
+        - 참고 지표\n
+        1. MES 현재 반송 JOB 수: {7}개(1개월 평균 : {8}개)\n
+        2. MCS 현재 반송 JOB 수: {9}개(1개월 평균 : {10}개)\n
+        3. MCS-MCP간 Connection/Control/TSC State : {11}/{12}/{13}\n
+        \n
+        - 참고 설명\n
+        1. MCP->MCS Event Report 수가 감소하였습니다.\n
+        2. MCP-MCS간 통신 상태 점검이 필요하며 MCP 내부 이슈인지 MCS 이슈인지 Network 이슈인지 정확한 원인 확인 후 조치가 필요합니다.\n
+    </alarm>
+    <alarm code="MCP_TRANSPORT_S6F11_DECLARE_NORMAL_CONTENTS">[{4}] MCP->MCS 반송 Event Report 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 정상 입니다.@현재 MCP->MCS 반송 Event Report에 대한 MCS의 응답률은 {3}% 입니다.</alarm>
+    <alarm code="MCP_TRANSPORT_S6F11_DECLARE_ABNORMAL_CONTENTS">[{4}] MCP->MCS 반송 Event Report 수가 {0}개로 1개월 평균 값({1}개)의 {2}% 수준으로 장애로 판단 됩니다.@현재 MCP->MCS 반송 CMD에 대한 MCP의 응답률은 {3}% 입니다.</alarm>
+    <!-- ~ABNORMAL#4 MCP 반송 Event Report 수 감소 -->
+
+    <!-- ABNORMAL#5 새로운 BPEL 처리 순서 감지 -->
+    <alarm code="NEW_BPEL_PROCEDURE_EXCEPT_DESC">
+        MCP 반송명령 감소
+    </alarm>
+    <alarm code="NEW_BPEL_PROCEDURE_EXCEPT_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="NEW_BPEL_PROCEDURE_EXCEPT_CONTENTS">
+        1. TS로그 : 새로운 BPEL 처리 순서 감지\n
+        - 예상 원인 시스템 : M14 MCS\n
+        \n
+        - 조치 가이드 :\n
+        1. MCS 담당자에게 새로운 SEQ 발생한 사유 확인(시스템 패치, 옵션변경, 라인내 반송환경 변화, 장비 패치, Abnormal Case 발생 등)\n
+        \n
+        - 참고 지표\n
+        1. 유관시스템 패치 일정\n
+        \n
+        - 참고 설명\n
+        1. MCS TS 로그에서 반송명령 메시지 처리 중 새로운 패턴이 발생하였습니다.\n
+        2. 새로운 패턴 발생 사유(시스템 패치, 옵션변경, 라인내 반송환경 변화, 장비 패치, Abnormal Case 발생 등)를 확인하고 필요하면 조치해주세요.
+    </alarm>
+    <alarm code="NEW_BPEL_PROCEDURE_NORMAL_CONTENTS">TS 로그 처리 패턴 분석 결과 특이사항 없습니다.</alarm>
+    <alarm code="NEW_BPEL_PROCEDURE_ABNORMAL_CONTENTS">{0} [{1}]에서 새로운 처리 패턴이 감지되었습니다. MCS 담당자 변경 작업 및 반송 환경 변화 확인 요청 드립니다.</alarm>
+    <!-- ~ABNORMAL#5 새로운 BPEL 처리 순서 감지 -->
+
+    <!-- ABNORMAL#6 MES 반송 명령에서 필수 데이터 누락 감지 -->
+    <alarm code="MES_TRANSPORT_DATA_REQUIRED_EXCEPT_DESC">
+        MCS 반송 JOB 처리 이슈
+    </alarm>
+    <alarm code="MES_TRANSPORT_DATA_REQUIRED_EXCEPT_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MES_TRANSPORT_DATA_REQUIRED_EXCEPT_CONTENTS">
+        1. TS로그 : MHSMCS_TRANSPORT_JOB_SCHEDULED_REQ에서 필수 데이터 누락\n
+        2. TS로그 : 분당 MHSMCS_TRANSPORT_JOB_SCHEDULED_REQ 수 특이사항 없음\n
+        - 예상 원인 시스템 : M14 MES\n
+        \n
+        - 조치 가이드 :\n
+        1. MES 담당자 반송 JOB 요청 시 반송 데이터 누락 원인 확인\n
+        \n
+        - 참고 지표\n
+        1. MES 반송 JOB 수: {0}개\n
+        2. MCS 반송 JOB 수: {1}개\n
+        3. 유관시스템 패치 일정\n
+        \n
+        - 참고 설명\n
+        1. MHSMCS_TRANSPORT_JOB_SCHEDULED_REQ에서 Carrier 반송 데이터가 누락되어 반송이 진행되지 못하였습니다.\n
+        2. 필수 데이터가 누락한 원인 확인 및 조치해주세요.
+    </alarm>
+    <!-- ~ABNORMAL#6 MES 반송 명령에서 필수 데이터 누락 감지 -->
+
+    <!-- ABNORMAL#7 MCS-MCP 통신 간 System Byte 오류 발생 -->
+    <alarm code="MCP_MCP_TRANSPORT_SYSTEM_BYTE_EXCEPT_DESC">
+        INVALID SECONDARY MESSAGE
+    </alarm>
+    <alarm code="MCP_MCP_TRANSPORT_SYSTEM_BYTE_EXCEPT_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MCP_MCP_TRANSPORT_SYSTEM_BYTE_EXCEPT_CONTENTS">
+        1. SECS로그 : INVALID SECONDARY MESSAGE 감지\n
+        - 예상 원인 시스템 : M14 MCP\n
+        \n
+        - 조치 가이드 :\n
+        1. MCS/MCP 담당자 SECS 메시지 분석 및 프로토콜 점검하여 원인 확인 및 조치\n
+        2. 처리되지 않은 메시지 반송영향도 확인 및 처리\n
+        \n
+        - 참고 지표\n
+        1. 유관시스템 패치 일정\n
+        \n
+        - 참고 설명\n
+        1. MCS-MCP 통신 중 Reply 요구 메시지에 대한 응답메세지에서 System Byte가 일치하지 않는 메시지가 발생하였습니다.\n
+        2. 시스템 바이트는 메시지 교환의 흐름을 관리하고 메시지 식별 및 추적을 위해 사용되는 정보입니다. 오류가 발생하면 통신이 제대로 이루어지지 않아 장비 제어나 데이터 전송에 문제가 생길 수 있으니 점검해주세요.
+    </alarm>
+    <!-- ~ABNORMAL#7 MCS-MCP 통신 간 System Byte 오류 발생 -->
+    <!-- ABNORMAL#8 MCS-MCP 통신 간 MCP 메시지 Format 오류 발생 -->
+    <alarm code="MCP_MCP_TRANSPORT_MESSAGE_FORMAT_EXCEPT_DESC">
+        RECEIVE UNKNOWN MESSAGE
+    </alarm>
+    <alarm code="MCP_MCP_TRANSPORT_MESSAGE_FORMAT_EXCEPT_TITLE">
+        - 반송 Log 이상 패턴이 감지되었습니다.
+    </alarm>
+    <alarm code="MCP_MCP_TRANSPORT_MESSAGE_FORMAT_EXCEPT_CONTENTS">
+        1. SECS로그 : RECEIVE UNKNOWN MESSAGE 감지\n
+        - 예상 원인 시스템 : M14 MCP\n
+        \n
+        - 조치 가이드 :\n
+        1. MCS/MCP 담당자 SECS 메시지 분석하여 원인 확인 및 조치\n
+        2. 처리되지 않은 메시지 반송영향도 확인 및 처리\n
+        \n
+        - 참고 지표\n
+        1. 유관시스템 패치 일정\n
+        \n
+        - 참고 설명\n
+        1. MCP로부터 정의되지 않은 Format의 메시지가 올라왔습니다.
+    </alarm>
+    <!-- ~ABNORMAL#8 MCS-MCP 통신 간 MCP 메시지 Format 오류 발생 -->
+
+    <!-- 1. LAYOUT#1 HID OFF -->
+    <alarm code="OHT_LAYOUT_HID_OFF_DESC">
+        {0} {1} HID OFF 발생
+    </alarm>
+    <alarm code="OHT_LAYOUT_HID_OFF_TITLE">
+        - {0} {1}에서 HID OFF가 발생하였습니다.
+    </alarm>
+    <alarm code="OHT_LAYOUT_HID_OFF_CONTENTS">
+        - 조치 가이드 :\n
+        1. HID 즉시 점검 및 조치 필요\n
+        2. HID Reset 및 Power On 불가 시, 즉시 Parts 교환\n
+        \n
+        - 참고 지표\n
+        1. 영향 발생 생산 및 반송장비 List\n
+        : {0}\n
+        \n
+        -------------------------------\n
+        - 참고 설명\n
+        1. 현재 아래의 구간에서 HID OFF가 발생하였으며 상세 위치는 하기 Layout을 참조하시기 바랍니다.
+    </alarm>
+    <!-- 2. LAYOUT#2 VHL OFF -->
+    <alarm code="OHT_LAYOUT_VHL_OFF_DESC">
+        {0} {1} VHL OFF 발생
+    </alarm>
+    <alarm code="OHT_LAYOUT_VHL_OFF_TITLE">
+        - {0} {1} 구간에서 VHL OFF 발생하였습니다.
+    </alarm>
+    <alarm code="OHT_LAYOUT_VHL_OFF_CONTENTS">
+        - 조치 가이드 :\n
+        1. VHL STOP 구간을 즉시 확인\n
+        2. VHL 주행 불가 에러로 즉시 인접 MTL, MTH로 이동 조치 필요\n
+        \n
+        - 참고 지표\n
+        1. 영향 발생 생산 및 반송장비 List\n
+        : {0}
+    </alarm>
+    <!-- 3. LAYOUT#3 RAIL CUT -->
+    <alarm code="OHT_LAYOUT_RAIL_CUT_DESC">
+        {0} {1} RAIL CUT 발생
+    </alarm>
+    <alarm code="OHT_LAYOUT_RAIL_CUT_TITLE">
+        - {0} {1} 구간에서 RAIL CUT이 발생하였습니다.
+    </alarm>
+    <alarm code="OHT_LAYOUT_RAIL_CUT_CONTENTS">
+        - 조치 가이드 :\n
+        1. RAIL CUT 발생 구간을 즉시 확인\n
+        2. 사전 예약 작업(PM)이 아닌 긴급 RAIL CUT일 경우 반드시 사유를 확인 필요\n
+        \n
+        - 참고 지표\n
+        1. 영향 발생 생산 및 반송장비 List\n
+        : {0}
+    </alarm>
+    <!-- 4. LAYOUT#3 RAIL VIBRATION -->
+    <alarm code="OHT_LAYOUT_RAIL_VIBRATION_DESC">
+        {0} {1}:{2} 구간에서 진동 이상치 발생
+    </alarm>
+    <alarm code="OHT_LAYOUT_RAIL_VIBRATION_TITLE">
+        - {0} {1}:{2} 구간에서 RAIL CUT이 발생하였습니다.
+    </alarm>
+    <alarm code="OHT_LAYOUT_RAIL_VIBRATION_CONTENTS">
+        - {0} {1}:{2} 구간에서 진동 이상치가 발생하였습니다.
+    </alarm>
+    <alarm code="OHT_LAYOUT_RAIL_VIBRATION_TOOLTIP">
+        ,ADDRESS : AXIS,-----------------------,{0} : {1},=======================,{2}Hr A DAY BEFORE AVG,-----------------------,{3},=======================,{4}Hr PREVIOUS AVG,-----------------------,{5},=======================,INCREASE RATE,-----------------------,{6}
+    </alarm>
+    <!-- HUBROOM BRIDGE QUE 증가 대응 알람 -->
+    <alarm code="BRIDGE_IMAGE_C0017">
+        1.BridgeTime {0}분 초과 (현재 {1}분)\n
+        2.M16 ZT 6F ▶ 3F Q {2}개 초과 (현재 {3}개)\n\n
+        -조치 내용\n
+        1.M16 6F ZT AI MAXCAPA {4}로 변경 \n\n
+        -참고 지표\n
+        1.OFS 차수: {5}차수 (M16 ▶ M14A/B)\n
+        2.HUBSTB 점유율: {6}%\n
+        {7}
+    </alarm>
+    <alarm code="BRIDGE_IMAGE_C0018">
+        1.HUBTOTAL Q {0}개 초과 (현재 {1}개)\n
+        2.M16 ZT 6F ▶ 3F Q {2}개 초과 (현재 {3}개)\n\n
+        -조치 내용\n
+        1.M16 6F ZT AI MAXCAPA {4}로 변경 \n
+        2.M14A FAB CNV AI Disable 변경\n
+        3.M14B 7F ZT AI Disable 변경\n\n
+        -참고 지표\n
+        1.OFS 차수: {5}차수 (M16 ▶ M14A/B)\n
+        2.HUBSTB 점유율: {6}%\n
+        {7}
+    </alarm>
+    <alarm code="BRIDGE_IMAGE_C0019">
+        1.BridgeTime {0}분 초과 (현재 {1}분)\n
+        2.M16 ZT 3F ▶ 6F Q {2}개 초과 (현재 {3}개)\n\n
+        -조치 내용\n
+        1.M14A FAB CNV AI 50% 다운 조치 필요\n
+        2.M14B 7F ZT AI MAXCAPA 50% 다운 조치 필요\n
+        -참고 지표\n
+        1.OFS 차수: {4}차수 (M14 ▶ M16)\n
+        2.HUBSTB 점유율: {5}%\n
+        {6}
+    </alarm>
+    <alarm code="BRIDGE_IMAGE_C0020">
+        1.HUBTOTAL Q {0}개 초과 (현재 {1}개)\n
+        2.M16 ZT 3F ▶ 6F Q {2}개 초과 (현재 {3}개)\n\n
+        -조치 내용\n
+        1.M14A FAB CNV AI Disable 필요\n
+        2.M14B 7F ZT AI Disable 필요\n
+        3.M16 6F ZT AI MAXCAPA {4}로 변경 \n\n
+        -참고 지표\n
+        1.OFS 차수: {5}차수 (M14 ▶ M16)\n
+        2.HUBSTB 점유율: {6}%\n
+        {7}
+    </alarm>
+    <alarm code="HUBTOTAL_MSG">
+    -참고 지표\n
+    1.HUBTOTAL Q 개수: {0}\n
+	</alarm>
+    <alarm code="STBUTIL_MSG">
+    -참고 지표\n
+    1.HUBSTB 점유율: {0}\n
+	</alarm>
+    <alarm code="BRIDGE_IMAGE_C0021">
+    -M14A [{0}] 장비 DOWN 감지되었습니다. M14A CNV장비 {1}대 중 {2}대 DOWN 입니다.
+    </alarm>
+	<alarm code="BRIDGE_IMAGE_C0022">
+    -M14B [{0}] 장비 DOWN 감지되었습니다. M14B BRIDGE LFT장비 {1}대 중 {2}대 DOWN 입니다.
+    </alarm>
+	<alarm code="BRIDGE_IMAGE_C0023">
+    -M16HUB [{0}] 장비 DOWN 감지되었습니다.
+    </alarm>
+	<alarm code="BRIDGE_IMAGE_C0024">
+    -M16A [{0}] 장비 DOWN 감지되었습니다. M16A FAB 내 LFT장비 {1}대 중 {2}대 DOWN 입니다.
+    </alarm>
+    <!-- SERVER RESOURCE ALARM -->
+	<alarm code="SERVER_RESOURCE_DESC">
+  	 서버 Resource 이상 감지 발생 
+	</alarm>
+	<alarm code="SERVER_RESOURCE_CMT">
+    서버 Resource {0} 기준치를 초과하였습니다.
+	</alarm>
+
+    <!--  2025-12-03 알람 #6 ~ 11 추가  -->
+    <!-- 반송 큐 알람#1 -->
+    <alarm code="QTRANSFER_REQ_TITLE">M14A 반송 큐 개수 증가로 인한 반송 지연 예상</alarm>
+    <alarm code="QTRANSFER_REQ_SUB_TITLE">- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다.</alarm>
+    <alarm code="QTRANSFER_REQ_CONTENT">
+        1. 10분 뒤 M14A 반송큐 수: {0}개 (알람 기준치 {1}개)\n
+        2. 현재 VHL 가동률: {2}%\n
+        3. 10분간 MES로부터 받은 반송큐 수: {3}개 (전일 평균 {4}개)\n\n
+        - 예상 원인 시스템: M14 MES\n\n
+        - 조치 가이드: \n
+        1. MES 담당자에게 MES ▶ MCS 반송큐 개수 증가 확인 요청\n
+        2. MCS EQ-Unload 기능 사용 검토\n\n
+        - 참고 지표\n
+        1. 현재 반송큐 개수: {5}개\n
+        2. 10분간 완료된 반송큐 수: {6}개\n\n
+        - 참고 설명\n
+        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {0}개로, 알람 발생 기준값인 {1}개 보다 높습니다.\n
+        2. Vehicle 가동률과 MES로 부터 내려오는 반송큐 개수가 증가한 것으로 보아 실제 반송량이 많아진 것으로 판단됩니다.
+    </alarm>
+    <!-- 반송 큐 알람#2 -->
+    <alarm code="QTRANSFER_CNV_TITLE">M14A ↔ M16 반송 큐 개수 증가로 인한 반송량 증가</alarm>
+    <alarm code="QTRANSFER_CNV_SUB_TITLE">- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다.</alarm>
+    <alarm code="QTRANSFER_CNV_CONTENT">
+        1. 10분 뒤 M14A 반송큐 수: {0}개 (알람 기준치 {1}개)\n
+        2. 현재 M14A ▶ M16A 반송큐 수: {2}개 (전일 평균 {3}개)\n
+        3. 현재 M16A ▶ M14A 반송큐 수: {4}개 (전일 평균 {5}개)\n
+        4. CNV 포트 Down 10% 미만\n\n
+        - 예상 원인 시스템: M16 / M14 MES\n\n
+        - 조치 가이드: \n
+        1. MES 담당자에게 M14 ↔ M16 Fab 간 반송큐 개수 증가 확인 요청\n\n
+        - 참고 지표\n
+        1. 현재 반송큐 개수: {6}개\n
+        2. Storage 사용률: {7}%\n
+        2. Vehicle 가동률: {8}%\n\n
+        - 참고 설명\n
+        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {0}개로, 알람 발생 기준값인 {1}개 보다 높습니다.\n
+        2. CNV 포트가 모두 반송 가능함에도 CNV 반송큐가 많은 것으로 보아 M16 ↔ M14 Fab 간 반송량이 늘어난 것으로 판단됩니다.
+    </alarm>
+    <!--  6. Normal STB Storage 부하 10분 평균 95% 이상  -->
+    <alarm code="NORMAL_STB_STORAGE_LOAD_TITLE">
+        Normal STB Storage 부하 10분 평균 {0}% 이상
+    </alarm>
+    <alarm code="NORMAL_STB_STORAGE_LOAD_SUB_TITLE">
+        - Normal STB Storage 부하 10분 평균 {0}% 이상
+    </alarm>
+    <alarm code="NORMAL_STB_STORAGE_LOAD_CONTENT">
+        1. Normal STB Storage 부하 10분 평균 {0}% 이상(현재 {1}%)\n
+        - 조치 가이드 :\n
+        1. Normal Stroage에 보관된 빈 FOUP N2 로 이동
+    </alarm>
+
+    <!--  7. Sorter Wait Count Over 10분 평균 100개 이상  -->
+    <alarm code="SORTER_WAIT_COUNT_OVER_TITLE">
+        Sorter Wait Count Over 10분 평균 {0}개 이상
+    </alarm>
+    <alarm code="SORTER_WAIT_COUNT_OVER_SUB_TITLE">
+        - Sorter Wait Count Over 10분 평균 {0}개 이상
+    </alarm>
+    <alarm code="SORTER_WAIT_COUNT_OVER_CONTENT">
+        1. Sorter Wait Count Over 10분 평균 {0}개 이상(현재 {1}개)\n
+        - 조치 가이드 :\n
+        1. Sorter Down 장비 확인, Sorter Que 미생성시 시스템 운영 신고
+    </alarm>
+
+    <!--  8. Cu Sorter Wait Count Over 10분 평균 100개 이상  -->
+    <alarm code="CU_SORTER_WAIT_COUNT_OVER_TITLE">
+        Cu Sorter Wait Count Over 10분 평균 {0}개 이상
+    </alarm>
+    <alarm code="CU_SORTER_WAIT_COUNT_OVER_SUB_TITLE">
+        - Cu Sorter Wait Count Over 10분 평균 {0}개 이상
+    </alarm>
+    <alarm code="CU_SORTER_WAIT_COUNT_OVER_CONTENT">
+        1. Cu Sorter Wait Count Over 10분 평균 {0}개 이상(현재 {1}개)\n
+        - 조치 가이드 :\n
+        1. Sorter Down 장비 확인, Sorter Que 미생성시 시스템 운영 신고
+    </alarm>
+
+    <!--  9. Q-COMPLETED 10분 평균 2700개 이하  -->
+    <alarm code="Q_COMPLETED_UNDER_AVERAGE_TITLE">
+        Q-COMPLETED 10분 평균 {0}개 이하
+    </alarm>
+    <alarm code="Q_COMPLETED_UNDER_AVERAGE_SUB_TITLE">
+        - Q-COMPLETED 10분 평균 {0}개 이하
+    </alarm>
+    <alarm code="Q_COMPLETED_UNDER_AVERAGE_CONTENT">
+        1. Q-COMPLETED 10분 평균 {0}개 이하(현재 {1}개)\n
+        - 조치 가이드 :\n
+        1. Storage 부하, 층간 Lift Down 여부 확인\n
+        2. OHT Dead Lock 등 전반적인 장치 확인\n
+        3. 이상 없을시 MCS, MCP 등 전산 장애 여부 확인\n
+        4. FAB 담당자 CALL
+    </alarm>
+    <!--  10. 10분 평균 Total Que 1,700 개 이상 & Manual Out Que 200 개 이하  -->
+    <alarm code="TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_TITLE">
+        10분 평균, Total Que {0} 개 이상 &amp; Manual Out Que 200 개 이하
+    </alarm>
+    <alarm code="TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_SUB_TITLE">
+        - 10분 평균, Total Que {0} 개 이상 &amp; Manual Out Que {1} 개 이하
+    </alarm>
+    <alarm code="TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_CONTENT">
+        1. 10분 평균 Total Que {0} 개 이상(현재 {2}개)\n
+        2. 10분 평균 Manual Out Que {1} 개 이하(현재 {3}개)\n
+        - 조치 가이드 :\n
+        1. 공사 작업 중단
+    </alarm>
+    <!--  11. 10분 평균 층간 대기 QUE 500개 이상, Normal STB Storage 부하 97% 이상  -->
+    <alarm code="WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_TITLE">
+        10분 평균, 층간 대기 QUE {0}개 이상, Normal STB Storage 부하
+    </alarm>
+    <alarm code="WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_SUB_TITLE">
+        10분 평균, 층간 대기 QUE {0}개 이상, Normal STB Storage 부하 {1}% 이상
+    </alarm>
+    <alarm code="WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_CONTENT">
+        1. 10분 평균 층간 대기 QUE {0}개 이상(현재 {2}개)\n
+        2. 10분 평균 Normal STB Storage 부하 {1}% 이상(현재 {3}개)\n
+        - 조치 가이드 :\n
+        1. FAB 담당자 CALL
+    </alarm>
+</alarms>

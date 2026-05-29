@@ -1,100 +1,99 @@
 {
   "_comment": "QTransferPredictBatch (알람 11종 + 통계 + 적재) 설정. 자바 QTransferPredictBatch.java 의 _alarmValid / _buildTransportAlarm / _buildAlarmN 이식.",
-
   "logpresso": {
-    "host":          "10.40.42.27",
-    "port":          8888,
-    "insert_table":  "test_currentjob_predict",
+    "host": "10.40.42.27",
+    "port": 8888,
+    "insert_table": "test_currentjob_predict",
     "predict_table": "test_table2",
     "dashboard_table": "qtransfer_dashboard"
   },
-
   "_threshold_comment": "자바 _findValueByCode 기본값. 운영 variable.xml/AMOS_ALARM_PARAMETER 값으로 교체.",
   "thresholds": {
-    "QTRANSFER_LIMIT":                    1700,
-    "QTRANSFER_INCREASE_RATE":            10,
-    "VHL_RATE_LIMIT":                     95,
-    "QTRANSFER_CNV_PORT_DOWN_RATE":       10,
-    "QTRANSFER_M14TOM10_PORT_DOWN_RATE":  25,
-    "QTRANSFER_M14LFT_PORT_DOWN_RATE":    10,
-    "QTRANSFER_ALT_JOB_LIMIT":            50,
-    "QTRANSFER_ALT_JOB_MACHINE_RATE":     50,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_6":      95,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_7":      100,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_8":      100,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_9":      2700,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_10_1":   1700,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_10_2":   200,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_11_1":   500,
-    "Q_TRANSFER_BOUNDARY_DEFAULT_11_2":   97
+    "QTRANSFER_LIMIT": 1700.0,
+    "QTRANSFER_INCREASE_RATE": 10.0,
+    "VHL_RATE_LIMIT": 95.0,
+    "QTRANSFER_CNV_PORT_DOWN_RATE": 10.0,
+    "QTRANSFER_M14TOM10_PORT_DOWN_RATE": 25.0,
+    "QTRANSFER_M14LFT_PORT_DOWN_RATE": 10.0,
+    "QTRANSFER_ALT_JOB_LIMIT": 50.0,
+    "QTRANSFER_ALT_JOB_MACHINE_RATE": 50.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_6": 95.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_7": 100.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_8": 100.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_9": 2700.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_10_1": 1700.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_10_2": 200.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_11_1": 500.0,
+    "Q_TRANSFER_BOUNDARY_DEFAULT_11_2": 97.0
   },
-
   "_message_comment": "자바 alarm_message.xml. {0}{1}... 자리표시자는 get_message(code,*args) 로 치환. 운영 실제 텍스트로 교체 필요(Phase0).",
   "messages": {
-    "QTRANSFER_REQ_TITLE":     "M14A 반송 큐 증가 예측",
+    "QTRANSFER_REQ_TITLE": "M14A 반송 큐 개수 증가로 인한 반송 지연 예상",
     "QTRANSFER_REQ_SUB_TITLE": "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다.",
-    "QTRANSFER_REQ_CONTENT":   "M14A 반송큐 예측 {0} (임계치 {1}), VHL 가동률 {2}%, MES 큐 10분 {3} / 24h {4}, 현재 {5}, 완료 {6}",
-
-    "QTRANSFER_CNV_TITLE":     "M14A↔M16 CNV 반송 증가",
+    "QTRANSFER_REQ_CONTENT": "1. 10분 뒤 M14A 반송큐 수: {0}개 (알람 기준치 {1}개)\\n\n        2. 현재 VHL 가동률: {2}%\\n\n        3. 10분간 MES로부터 받은 반송큐 수: {3}개 (전일 평균 {4}개)\\n\\n\n        - 예상 원인 시스템: M14 MES\\n\\n\n        - 조치 가이드: \\n\n        1. MES 담당자에게 MES ▶ MCS 반송큐 개수 증가 확인 요청\\n\n        2. MCS EQ-Unload 기능 사용 검토\\n\\n\n        - 참고 지표\\n\n        1. 현재 반송큐 개수: {5}개\\n\n        2. 10분간 완료된 반송큐 수: {6}개\\n\\n\n        - 참고 설명\\n\n        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {0}개로, 알람 발생 기준값인 {1}개 보다 높습니다.\\n\n        2. Vehicle 가동률과 MES로 부터 내려오는 반송큐 개수가 증가한 것으로 보아 실제 반송량이 많아진 것으로 판단됩니다.",
+    "QTRANSFER_CNV_TITLE": "M14A ↔ M16 반송 큐 개수 증가로 인한 반송량 증가",
     "QTRANSFER_CNV_SUB_TITLE": "- M14A 반송 큐 개수 예측치가 임계치를 초과 했습니다.",
-    "QTRANSFER_CNV_CONTENT":   "예측 {0} (임계치 {1}), M14A→M16 10분 {2}/24h {3}, M16→M14A 10분 {4}/24h {5}, 현재 {6}, 스토리지 {7}, VHL {8}%",
-
-    "QTRANSFER_M14TOM10_LFT":      "M10A ↔ M14A FAB간 반송 큐 다량 증가 (예측 {1}, 임계치 {2}, 다운율 {7})",
-    "QTRANSFER_M14ATOM14B_LFT":    "M14A ↔ M14B FAB간 반송 큐 다량 증가 (예측 {1}, 임계치 {2}, 다운율 {7})",
-    "QTRANSFER_ALT_JOB":           "ALT/ERROR JOB 급증 (예측 {1}, 임계치 {2}, 상태 {3}, 장비 {4})",
-
-    "NORMAL_STB_STORAGE_LOAD_TITLE":     "Normal STB Storage 부하 ({0}%)",
-    "NORMAL_STB_STORAGE_LOAD_SUB_TITLE": "- STB Storage 부하 임계 초과",
-    "NORMAL_STB_STORAGE_LOAD_CONTENT":   "현재 {0}%, 임계 {1}%",
-
-    "SORTER_WAIT_COUNT_OVER_TITLE":      "Sorter Wait Count 초과 ({0})",
-    "SORTER_WAIT_COUNT_OVER_SUB_TITLE":  "- Sorter 대기 수 임계 초과",
-    "SORTER_WAIT_COUNT_OVER_CONTENT":    "현재 {0}, 임계 {1}",
-
-    "CU_SORTER_WAIT_COUNT_OVER_TITLE":     "Cu Sorter Wait Count 초과 ({0})",
-    "CU_SORTER_WAIT_COUNT_OVER_SUB_TITLE": "- Cu Sorter 대기 수 임계 초과",
-    "CU_SORTER_WAIT_COUNT_OVER_CONTENT":   "현재 {0}, 임계 {1}",
-
-    "Q_COMPLETED_UNDER_AVERAGE_TITLE":     "Q-COMPLETED 임계 ({0})",
-    "Q_COMPLETED_UNDER_AVERAGE_SUB_TITLE": "- Q-COMPLETED 임계 초과",
-    "Q_COMPLETED_UNDER_AVERAGE_CONTENT":   "현재 {0}, 임계 {1}",
-
-    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_TITLE":     "Total Que 증가 & Manual Out ({0})",
-    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_SUB_TITLE": "- Total {0} / Manual {1}",
-    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_CONTENT":   "Total {0}(임계 {1}), Manual {2}(임계 {3})",
-
-    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_TITLE":     "층간 대기 QUE 증가 & STB 부하 ({0})",
-    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_SUB_TITLE": "- 대기 {0} / STB {1}",
-    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_CONTENT":   "대기 {0}(임계 {1}), STB {2}%(임계 {3}%)"
+    "QTRANSFER_CNV_CONTENT": "1. 10분 뒤 M14A 반송큐 수: {0}개 (알람 기준치 {1}개)\\n\n        2. 현재 M14A ▶ M16A 반송큐 수: {2}개 (전일 평균 {3}개)\\n\n        3. 현재 M16A ▶ M14A 반송큐 수: {4}개 (전일 평균 {5}개)\\n\n        4. CNV 포트 Down 10% 미만\\n\\n\n        - 예상 원인 시스템: M16 / M14 MES\\n\\n\n        - 조치 가이드: \\n\n        1. MES 담당자에게 M14 ↔ M16 Fab 간 반송큐 개수 증가 확인 요청\\n\\n\n        - 참고 지표\\n\n        1. 현재 반송큐 개수: {6}개\\n\n        2. Storage 사용률: {7}%\\n\n        2. Vehicle 가동률: {8}%\\n\\n\n        - 참고 설명\\n\n        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {0}개로, 알람 발생 기준값인 {1}개 보다 높습니다.\\n\n        2. CNV 포트가 모두 반송 가능함에도 CNV 반송큐가 많은 것으로 보아 M16 ↔ M14 Fab 간 반송량이 늘어난 것으로 판단됩니다.",
+    "QTRANSFER_M14TOM10_LFT": "1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\\n\n        2. 현재 M10A ▶ M14A 반송큐 수: {3}개 (전일 평균 {4}개)\\n\n        3. 현재 M14A ▶ M10A 반송큐 수: {5}개 (전일 평균 {6}개)\\n\n        4. 현재 4ABL33% LFT 장비 및 포트: {7}%\\n\\n\n        - 예상 원인 시스템: M14 / M10 MES\\n\\n\n        - 조치 가이드: \\n\n        1. MES 담당자에게 MES▶MCS 반송큐 개수 확인 요청\\n\n        2. MCS 담당자에게 M14 ↔ M10A Fab간 반송 확인 요청\\n\\n\n        - 참고 지표\\n\n        1. 현재 반송큐 개수: {8}개\\n\n        2. Storage 사용률: {9}%\\n\n        2. Vehicle 가동률: {10}%\\n\\n\n        - 참고 설명\\n\n        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\\n\n        2. LFT 포트 중 {11}%가 사용가능함에도 LFT 반송큐가 많은 것으로 보아, M10 ↔ M14 Fab 간 반송량이 늘어난 것으로 판단됩니다.",
+    "QTRANSFER_M14ATOM14B_LFT": "1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\\n\n        2. 현재 M10A ▶ M14A 반송큐 수: {3}개 (전일 평균 {4}개)\\n\n        3. 현재 M14A ▶ M10A 반송큐 수: {5}개 (전일 평균 {6}개)\\n\n        4. 현재 4ALF% LFT 장비 및 포트: {7}% 미만\\n\\n\n        - 예상 원인 시스템: M14 MES\\n\\n\n        - 조치 가이드: \\n\n        1. MES 담당자에게 M14 3F ↔ 7F 반송큐 개수 확인 요청\\n\n        2. MCS 담당자에게 M14 ↔ M14B 층간 반송 확인 요청\\n\\n\n        - 참고 지표\\n\n        1. 현재 반송큐 개수: {8}개\\n\n        2. Storage 사용률: {9}%\\n\n        2. Vehicle 가동률: {10}%\\n\\n\n        - 참고 설명\\n\n        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\\n\n        2. LFT 포트 중 {11}%가 사용가능함에도 LFT 반송큐가 많은 것으로 보아, M14A ↔ M14B 반송량이 늘어난 것으로 판단됩니다.",
+    "QTRANSFER_ALT_JOB": "1. {0}분 뒤 M14A 반송큐 수: {1}개 (알람 기준치 {2}개)\\n\n        {3}\n        {4}\n        - 예상 원인 시스템: EQP\\n\\n\n        - 조치 가이드: \\n\n        1. MCS 담당자에게 반송 JOB의 상태 확인 요청\\n\n        2. 현장 담당자에게 장비 반송 가능 여부 확인 요청\\n\\n\n        - 참고 지표\\n\n        1. 반송큐 개수: {5}개\\n\n        2. JOB STATE별: {6}\\n\n        3. Vehicle 가동률: {7}\\n\\n\n        - 참고 설명\\n\n        1. 진행중인 반송 큐 개수의 10분 뒤 예측값이 {1}개로, 알람 발생 기준값인 {2}개 보다 높습니다.\\n\n        2. JOB STATE가 [{8}]인 반송큐가 많습니다.\\n\n        3. 출발지/목적지가 [{9}]인 JOB에 이상이 많이 발생했으므로, 해당 장비 확인이 필요합니다.",
+    "NORMAL_STB_STORAGE_LOAD_TITLE": "Normal STB Storage 부하 10분 평균 {0}% 이상",
+    "NORMAL_STB_STORAGE_LOAD_SUB_TITLE": "- Normal STB Storage 부하 10분 평균 {0}% 이상",
+    "NORMAL_STB_STORAGE_LOAD_CONTENT": "1. Normal STB Storage 부하 10분 평균 {0}% 이상(현재 {1}%)\\n\n        - 조치 가이드 :\\n\n        1. Normal Stroage에 보관된 빈 FOUP N2 로 이동",
+    "SORTER_WAIT_COUNT_OVER_TITLE": "Sorter Wait Count Over 10분 평균 {0}개 이상",
+    "SORTER_WAIT_COUNT_OVER_SUB_TITLE": "- Sorter Wait Count Over 10분 평균 {0}개 이상",
+    "SORTER_WAIT_COUNT_OVER_CONTENT": "1. Sorter Wait Count Over 10분 평균 {0}개 이상(현재 {1}개)\\n\n        - 조치 가이드 :\\n\n        1. Sorter Down 장비 확인, Sorter Que 미생성시 시스템 운영 신고",
+    "CU_SORTER_WAIT_COUNT_OVER_TITLE": "Cu Sorter Wait Count Over 10분 평균 {0}개 이상",
+    "CU_SORTER_WAIT_COUNT_OVER_SUB_TITLE": "- Cu Sorter Wait Count Over 10분 평균 {0}개 이상",
+    "CU_SORTER_WAIT_COUNT_OVER_CONTENT": "1. Cu Sorter Wait Count Over 10분 평균 {0}개 이상(현재 {1}개)\\n\n        - 조치 가이드 :\\n\n        1. Sorter Down 장비 확인, Sorter Que 미생성시 시스템 운영 신고",
+    "Q_COMPLETED_UNDER_AVERAGE_TITLE": "Q-COMPLETED 10분 평균 {0}개 이하",
+    "Q_COMPLETED_UNDER_AVERAGE_SUB_TITLE": "- Q-COMPLETED 10분 평균 {0}개 이하",
+    "Q_COMPLETED_UNDER_AVERAGE_CONTENT": "1. Q-COMPLETED 10분 평균 {0}개 이하(현재 {1}개)\\n\n        - 조치 가이드 :\\n\n        1. Storage 부하, 층간 Lift Down 여부 확인\\n\n        2. OHT Dead Lock 등 전반적인 장치 확인\\n\n        3. 이상 없을시 MCS, MCP 등 전산 장애 여부 확인\\n\n        4. FAB 담당자 CALL",
+    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_TITLE": "10분 평균, Total Que {0} 개 이상 & Manual Out Que 200 개 이하",
+    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_SUB_TITLE": "- 10분 평균, Total Que {0} 개 이상 & Manual Out Que {1} 개 이하",
+    "TOTAL_QUE_INCREASED_N_MANUAL_OUT_QUE_DECREASED_CONTENT": "1. 10분 평균 Total Que {0} 개 이상(현재 {2}개)\\n\n        2. 10분 평균 Manual Out Que {1} 개 이하(현재 {3}개)\\n\n        - 조치 가이드 :\\n\n        1. 공사 작업 중단",
+    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_TITLE": "10분 평균, 층간 대기 QUE {0}개 이상, Normal STB Storage 부하",
+    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_SUB_TITLE": "10분 평균, 층간 대기 QUE {0}개 이상, Normal STB Storage 부하 {1}% 이상",
+    "WAITING_QUE_INCREASED_N_STB_STORAGE_LOAD_CONTENT": "1. 10분 평균 층간 대기 QUE {0}개 이상(현재 {2}개)\\n\n        2. 10분 평균 Normal STB Storage 부하 {1}% 이상(현재 {3}개)\\n\n        - 조치 가이드 :\\n\n        1. FAB 담당자 CALL"
   },
-
   "_query_comment": "자바 customQuery/customQuery2 의 알람용 쿼리 ID. 운영 XML 본문을 그대로 붙여넣어야 함(Phase0). duration 치환은 코드에서 .replace 로 처리.",
   "queries": {
-    "qTransferGroupData":          "",
-    "vhlRunRate":                  "",
-    "mesOHTQCntAlarmValid":        "",
-    "completedTsJobCountPerMin":   "",
-    "transferCountPerMin":         "",
-    "bridgeDetailCnvPortDownRate": "",
-    "qtransferAltJobCnt":          "",
-    "altJobMachineRate":           "",
-    "altJobMachineRate24h":        "",
-    "qtransferAltJobCnt24h":       "",
-    "SELECT_AWS_IDC_HISTORY":      ""
+    "qTransferGroupData": "table duration=120m ts_current_job        \n            | search FAB == \"M14\"    \n\t\t\t| eval A = case(trim(DESTMACHINENAME) == \"4ABL_M10\" ,1,0)         \n\t\t\t| eval B =  case(substr(trim(SOURCEMACHINENAME),0,7) == \"4ABL330\" ,1,0)         \n\t\t\t| eval C =  case(substr(trim(DESTMACHINENAME),0,4) == \"4ALF\" ,1,0)         \n\t\t\t| eval D =  case(substr(trim(SOURCEMACHINENAME),0,4) == \"4ALF\" ,1,0)         \n\t\t\t| eval E =  case(substr(trim(DESTMACHINENAME),0,4) == \"4AFC\" ,1,0)         \n\t\t\t| eval F =  case(substr(trim(SOURCEMACHINENAME),0,4) == \"4AFC\" ,1,0)        \n\t\t\t| stats sum(A) ,sum(B) ,sum(C) ,sum(D),sum(E),sum(F), count by CURRTIME       \n\t\t\t| rename count as TOTALCNT, sum(A) as M14AM10A ,sum(B) as M10AM14A, sum(C) as M14AM14B,sum(D) as M14BM14A,sum(E) as M14AM16,sum(F) as M16M14A       \n\t\t\t| eval M14AM10ASUM = M10AM14A + M14AM10A,      \n\t\t\tM14AM14BSUM = M14AM14B + M14BM14A,     \n\t\t\tM14AM16SUM = M14AM16 + M16M14A,  \n\t\t\tTIME = CURRTIME \n\t\t\t| sort  CURRTIME \n\t\t\t| fields CURRTIME, TOTALCNT, M14AM10A, M10AM14A, M14AM10ASUM, M14AM14B, M14BM14A, M14AM14BSUM, M14AM16, M16M14A, M14AM16SUM,TIME\n\t\t    | sort  CURRTIME\n\t        | sort limit=100 -TIME dst",
+    "vhlRunRate": "dbquery mcs_m14\n\t\t\t\t\t\tSELECT \n\t\t\t\t\t\t    SYSDATE AS TIME,\n\t\t\t\t\t\t    MACHINENAME,\n\t\t\t\t\t\t    'FOUP' AS CARRIERTYPE,\n\t\t\t\t\t\t    FOUP_VHL_UTIL AS VHLOPERRATE,\n\t\t\t\t\t\t    CASE \n\t\t\t\t\t\t        WHEN FOUP_VHL_UTIL >= 80 THEN 'Y'\n\t\t\t\t\t\t        ELSE 'N'\n\t\t\t\t\t\t    END AS ALARM\n\t\t\t\t\t\tFROM \n\t\t\t\t\t\t    vhlutl_vw\n\t\t\t\t\t\tUNION ALL\n\t\t\t\t\t\tSELECT \n\t\t\t\t\t\t    SYSDATE AS TIME,\n\t\t\t\t\t\t    MACHINENAME,\n\t\t\t\t\t\t    'POD' AS CARRIERTYPE,\n\t\t\t\t\t\t    POD_VHL_UTIL AS VHLOPERRATE,\n\t\t\t\t\t\t    CASE \n\t\t\t\t\t\t        WHEN POD_VHL_UTIL >= 80 THEN 'Y'\n\t\t\t\t\t\t        ELSE 'N'\n\t\t\t\t\t\t    END AS ALARM\n\t\t\t\t\t\tFROM \n\t\t\t\t\t\t    vhlutl_vw\n\t\t\t\t\t\t| eval TIME = string(TIME,\"yyyy-MM-dd HH:mm\"), IDC_NM = \"RUNRATE\"\n\t\t\t\t\t    | fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM, IDC_NM",
+    "mesOHTQCntAlarmValid": "table duration=1m abnormal_detect_data\n\t\t| search MSG_NM == \"MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ\" and FAB_ID == \"M14A\"\n\t\t| eval TX = \"M_MES\"\n\t\t| rename MINUTE_PER_CNT as MESSAGE_COUNT\n\t\t| fields  MESSAGE_COUNT , TX",
+    "completedTsJobCountPerMin": "table duration=10m ts_data_view_m14a\n\t\t| search COMMAND == \"*MCSMHS_TRANSPORT_JOB_COMPLETED_EVENT*\"\n\t\t| eval MINPER_CNT=  string(datetrunc(_time,\"1m\"),\"yyyyMMddHHmm\")\n\t\t| fields MINPER_CNT,COMMAND\n\t\t| stats count(MINPER_CNT) as MINPER_CNT by MINPER_CNT,COMMAND\n\t\t| stats sum(MINPER_CNT) as MINPER_CNT ,max(COMMAND) as COMMAND",
+    "transferCountPerMin": "table duration=10m test_currentjob_predict\n\t\t| search  in(IDCCOL,  \"M14AM16\" , \"M14AM16SUM\" , \"M16M14A\", \"M14AM10A\" , \"M14AM10ASUM\" , \"M10AM14A\",\"M14AM14B\",\"M14BM14A\",\"M14AM14BSUM\")\n\t\t| stats avg(int(IDCVAL)) as IDCVAL by IDCCOL\n\t\t| eval IDCVAL = round(IDCVAL)",
+    "bridgeDetailCnvPortDownRate": "setq [\n\t\t\ttable bridge_layout_detail\n\t\t\t| search EQP_TYP == \"CD_M14CNV\" and DET_IDC_NM == \"*PORT*\"\n\t\t\t| limit 1\n\t\t\t| fields EVENT_DT\n\t\t\t| rename EVENT_DT as LAST_DT\n\t\t]\n\n\t\t| table duration=2m bridge_layout_detail\n\t\t| search EVENT_DT == $(\"LAST_DT\")\n\t\t| search EQP_TYP == \"CD_M14CNV\" and DET_IDC_NM == \"*PORT*\"\n\t\t| stats sum(int(RSLT_VAL)) as RSLT_VAL by EQP_TYP, DET_IDC_NM \n\t\t| eval TOTAL_PORTS = case(DET_IDC_NM == \"CD_PORTTOTAL\", RSLT_VAL, 0)\n\t\t| eval INSERVICE_PORTS = case(DET_IDC_NM == \"CD_PORTINSERVICE\", RSLT_VAL, 0)\n\t\t| stats max(int(TOTAL_PORTS)) as TOTAL_PORTS, max(int(INSERVICE_PORTS)) as INSERVICE_PORTS by EQP_TYP\n\t\t| eval PORT_DOWN_RATE = round((TOTAL_PORTS - INSERVICE_PORTS) / TOTAL_PORTS * 100,2)\n\t\t| fields EQP_TYP, PORT_DOWN_RATE",
+    "qtransferAltJobCnt": "fulltext from=START_DT to=END_DT (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t| fields TIME_EX,STATE\n\t\t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t| stats count(STATE) as DAY_CNT\n\t\t| eval FAB=\"M14A\"\n\n\t\t| join type=left FAB[\n\t\t\tfulltext duration=1h (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t\t| fields TIME_EX,STATE\n\t\t\t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t\t| stats count(STATE) as HOUR_CNT\n\t\t\t| eval FAB=\"M14A\"\n\t\t]\n\n\t\t| eval INCREASE_RATE = round((HOUR_CNT/DAY_CNT)*100)",
+    "altJobMachineRate": "fulltext duration=1h (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME\n\t\t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t| fields DESTMACHINENAME,STATE\n\t\t| rename DESTMACHINENAME as MACHINENAME \n\n\t\t| union [\n\t\t\tfulltext duration=1h (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t\t| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME\n\t\t \t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t\t| fields SOURCEMACHINENAME,STATE\n\t\t\t| rename SOURCEMACHINENAME as MACHINENAME\n\t\t]\n\n\t\t| stats count(MACHINENAME) as CNT by MACHINENAME,STATE\n\t\t| eval FAB = \"M14A\"\n\n\t\t| join type=left FAB, STATE[\n\t\t\tfulltext duration=1h (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t\t| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME\n\t\t \t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t\t| fields DESTMACHINENAME,STATE\n\t\t\t| rename DESTMACHINENAME as MACHINENAME\n\n\t\t\t| union [\n\t\t\t\tfulltext duration=1h (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t\t\t| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME\n\t\t \t\t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t\t\t| fields SOURCEMACHINENAME,STATE\n\t\t\t\t| rename SOURCEMACHINENAME as MACHINENAME\n\t\t\t]\n\n\t\t\t| stats count(MACHINENAME) as TOTAL_CNT  by STATE\n\t\t\t| eval FAB = \"M14A\"\n        ]\n\n        | eval RATE_DT = round((CNT*100)/TOTAL_CNT,2)",
+    "altJobMachineRate24h": "fulltext from=START_DT to=END_DT (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME\n\t\t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t| fields DESTMACHINENAME,STATE,TIME_EX\n\t\t| rename DESTMACHINENAME as MACHINENAME \n\n\t\t| union [\n\t\t\tfulltext from=20250730 to=20250731 (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t\t| fields TIME_EX, STATE, DESTMACHINENAME, SOURCEMACHINENAME\n\t\t \t| search (STATE ==\"*ALT*\" or STATE == \"ERROR\")\n\t\t\t| fields SOURCEMACHINENAME,STATE,TIME_EX\n\t\t\t| rename SOURCEMACHINENAME as MACHINENAME\n\t\t]\n\n\t\t| search in(MACHINENAME,MACHINELIST)\n\t\t| eval TIME_EX = datetrunc(date(TIME_EX,\"yyyy-MM-dd HH:mm:ss\"), \"1h\")\n\t\t| stats count(MACHINENAME) as CNT by MACHINENAME,TIME_EX\n        | stats avg(CNT) as DAY_CNT by MACHINENAME\n        | eval DAY_CNT = round(DAY_CNT)",
+    "qtransferAltJobCnt24h": "fulltext from=START_DT to=END_DT (method==\"createTransportJobHistory\") from ts_transport_m14a\n\t\t | fields TIME_EX,STATE\n\t\t | search in(STATE,STATELIST)\n\t\t | eval TIME_EX = datetrunc(date(TIME_EX,\"yyyy-MM-dd HH:mm:ss\"), \"1h\")\n     \t | stats count(STATE) as HOUR_CNT by STATE,TIME_EX\n         | stats avg(HOUR_CNT) as AVG_VAL by STATE \n         | eval AVG_VAL = round(AVG_VAL,2)",
+    "SELECT_AWS_IDC_HISTORY": "dbquery star_m14\n\t\t\tSELECT *\n\t\t\tFROM AWS_IDC_DATA_HIS\n\t\t\tWHERE IDC_NM IN (\n\t\t\t\t'M14.STRATE.NONN2.STORAGERATIO',\n\t\t\t\t'M14.SORTER.ABN.SORTERWAITCOUNTOVER',\n\t\t\t\t'M14.SORTER.ABN.CUSORTERWAITCOUNTOVER',\n\t\t\t\t'M14.QUE.ALL.CURRENTQCOUNT',\n\t\t\t\t'M14.QUE.ALL.CURRENTQCNT',\n\t\t\t\t'M14.QUE.STK.MANUALOUTCOUNT',\n\t\t\t\t'M14.QUE.SENDFAB.VERTICALQUEUECOUNT',\n\t\t\t\t'M14.STRATE.STB.NONN2STORAGERATIO'\n\t\t\t)\n\t\t\tAND CRT_TM >= SYSDATE - INTERVAL '10' MINUTE\n\n\t\t\t| stats avg(IDC_VAL) as IDC_VAL by IDC_NM\n\t\t\t| eval IDC_VAL = round(IDC_VAL, 1)\n\t\t\t| pivot last(IDC_VAL) as IDC_VAL for IDC_NM\n\n\t\t\t| fields\n            \tM14.STRATE.NONN2.STORAGERATIO,\n\t\t\t\tM14.SORTER.ABN.SORTERWAITCOUNTOVER,\n\t\t\t\tM14.SORTER.ABN.CUSORTERWAITCOUNTOVER,\n\t\t\t\tM14.QUE.ALL.CURRENTQCOUNT,\n\t\t\t\tM14.QUE.ALL.CURRENTQCNT,\n\t\t\t\tM14.QUE.STK.MANUALOUTCOUNT,\n\t\t\t\tM14.QUE.SENDFAB.VERTICALQUEUECOUNT,\n\t\t\t\tM14.STRATE.STB.NONN2STORAGERATIO"
   },
-
   "_oracle_comment": "ALARM3/4 의 PORT_DOWN_RATE, ALARM2 의 STORAGE_UTIL. Logpresso 대체 불가 시 oracledb 사용. Phase0 결정.",
   "oracle": {
     "enabled": false,
     "connections": {
-      "M14A": {"user": "", "password": "", "dsn": ""},
-      "M14B": {"user": "", "password": "", "dsn": ""},
-      "M16A": {"user": "", "password": "", "dsn": ""}
+      "M14A": {
+        "user": "",
+        "password": "",
+        "dsn": ""
+      },
+      "M14B": {
+        "user": "",
+        "password": "",
+        "dsn": ""
+      },
+      "M16A": {
+        "user": "",
+        "password": "",
+        "dsn": ""
+      }
     },
     "queries": {
       "SELECT_M14TOM10LFT_DOWN_RATE": "",
-      "SELECT_M14LFT_DOWN_RATE":      "",
-      "SELECT_M16A_STORAGE_UTIL":     ""
+      "SELECT_M14LFT_DOWN_RATE": "",
+      "SELECT_M16A_STORAGE_UTIL": ""
     }
   }
 }

@@ -1,0 +1,266 @@
+# -*- coding: utf-8 -*-
+"""
+Prediction_ml.py
+HUBROOM + Q_TRANSFER 예측 통합 실행 마스터 (비동기 병렬)
+
+흐름 (매 분 정각 00초):
+  ▶ M16A_BR 사이트 + M14A_FAB 사이트를 동시(병렬) 실행
+  ▶ 각 사이트 내부 스크립트는 순차 실행
+
+M16A_BR (HUBROOM):
+  1) M16BR_hubroom_data_make.py  → 데이터 수집
+  2) V8_Categorical_Real_time_10/15/25min.py
+  3) V8_Numerical_Real_time_10/15/25min.py
+
+M14A_FAB (Q_TRANSFER):
+  1) M14A_FAB_data_make.py  → 데이터 수집
+  2) V8.3.1_Q_TRANSFER_PREDICTOR_10/15/25m.py
+
+특징:
+  - 매 분 정각(00초)에 시작
+  - 2개 사이트 동시 실행 (ThreadPoolExecutor)
+  - 1개 스크립트 실패해도 다음 스크립트 계속
+  - 사이클 통째 예외도 잡고 다음 사이클 진행
+  - 콘솔 + logs/Prediction_ml.log 동시 기록 (일자별 로테이션)
+
+위치:  job/Prediction_ml.py
+대상:  job/M16A_BR/*.py
+       job/M14A_FAB/*.py
+"""
+import os
+import sys
+import time
+import subprocess
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from logging.handlers import TimedRotatingFileHandler
+from datetime import datetime
+
+
+# ─── 설정 ──────────────────────────────────────
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(HERE, "logs")
+INTERVAL = 60
+SCRIPT_TIMEOUT = 300
+
+# 사이트별 실행 정의
+SITES = {
+    "M16A_BR": {
+        "dir":     os.path.join(HERE, "M16A_BR"),
+        "scripts": [
+            "M16BR_hubroom_data_make.py --once",
+            "V8_Categorical_Real_time_10min.py",
+            "V8_Categorical_Real_time_15min.py",
+            "V8_Categorical_Real_time_25min.py",
+            "V8_Numerical_Real_time_10min.py",
+            "V8_Numerical_Real_time_15min.py",
+            "V8_Numerical_Real_time_25min.py",
+        ],
+    },
+    "M14A_FAB": {
+        "dir":     os.path.join(HERE, "M14A_FAB"),
+        "scripts": [
+            "M14A_FAB_data_make.py --once",
+            "V8.3.1_Q_TRANSFER_PREDICTOR_10m.py",
+            "V8.3.1_Q_TRANSFER_PREDICTOR_15m.py",
+            "V8.3.1_Q_TRANSFER_PREDICTOR_25m.py",
+        ],
+    },
+}
+
+
+# ─── 로거 ──────────────────────────────────────
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logger = logging.getLogger("Prediction_ml")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+fmt = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+log_path = os.path.join(LOG_DIR, "Prediction_ml.log")
+fh = TimedRotatingFileHandler(log_path, when="midnight", backupCount=30, encoding="utf-8")
+fh.suffix = "%Y-%m-%d"
+fh.setFormatter(fmt)
+logger.addHandler(fh)
+
+ch = logging.StreamHandler(sys.stdout)
+ch.setFormatter(fmt)
+logger.addHandler(ch)
+
+_log_lock = threading.Lock()
+
+def log_info(msg):
+    with _log_lock:
+        logger.info(msg)
+
+def log_error(msg):
+    with _log_lock:
+        logger.error(msg)
+
+def log_exception(msg):
+    with _log_lock:
+        logger.exception(msg)
+
+
+# ─── 1개 스크립트 실행 ─────────────────────────
+def run_script(site: str, target_dir: str, script_cmd: str) -> bool:
+    parts = script_cmd.split()
+    script_name = parts[0]
+    script_path = os.path.join(target_dir, script_name)
+
+    if not os.path.exists(script_path):
+        log_error(f"  [{site}] ❌ 파일 없음: {script_path}")
+        return False
+
+    cmd = [sys.executable, script_name] + parts[1:]
+    try:
+        t0 = time.time()
+        result = subprocess.run(
+            cmd,
+            cwd=target_dir,
+            capture_output=True,
+            text=True,
+            timeout=SCRIPT_TIMEOUT,
+            encoding="utf-8",
+        )
+        elapsed = time.time() - t0
+        ok = result.returncode == 0
+
+        if ok:
+            log_info(f"  [{site}] ✅ {script_name} {elapsed:.1f}초")
+        else:
+            log_error(f"  [{site}] ❌ {script_name} {elapsed:.1f}초 (returncode={result.returncode})")
+
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                if line.strip():
+                    log_info(f"     [{site}] {line}")
+
+        if not ok and result.stderr:
+            for line in result.stderr.strip().splitlines()[:20]:
+                log_error(f"     [{site}] stderr: {line}")
+
+        return ok
+
+    except subprocess.TimeoutExpired:
+        log_error(f"  [{site}] ❌ {script_name} 타임아웃 ({SCRIPT_TIMEOUT}초)")
+        return False
+    except Exception as e:
+        log_error(f"  [{site}] ❌ {script_name} {type(e).__name__}: {e}")
+        return False
+
+
+# ─── 1개 사이트 실행 (워커) ────────────────────
+def run_site(site_name: str) -> dict:
+    """사이트 1개의 스크립트들을 순차 실행 (스레드에서 호출됨)"""
+    cfg = SITES[site_name]
+    target_dir = cfg["dir"]
+    scripts = cfg["scripts"]
+
+    if not os.path.isdir(target_dir):
+        log_error(f"  [{site_name}] ❌ 폴더 없음: {target_dir}")
+        return {"site": site_name, "success": 0, "fail": len(scripts), "skipped": True}
+
+    log_info(f"  [{site_name}] 시작 ({len(scripts)}개 스크립트)")
+
+    success = 0
+    fail = 0
+    for s in scripts:
+        try:
+            if run_script(site_name, target_dir, s):
+                success += 1
+            else:
+                fail += 1
+        except Exception as e:
+            fail += 1
+            log_exception(f"  [{site_name}] ❌ {s} 사이트 내 예외: {e}")
+
+    log_info(f"  [{site_name}] 완료 (성공 {success} / 실패 {fail})")
+    return {"site": site_name, "success": success, "fail": fail, "skipped": False}
+
+
+# ─── 1회 사이클 (2개 사이트 병렬) ───────────────
+def run_cycle():
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_info("=" * 70)
+    log_info(f"  [{ts}] 사이클 시작 (2개 사이트 병렬)")
+    log_info("=" * 70)
+
+    with ThreadPoolExecutor(max_workers=len(SITES)) as executor:
+        futures = {executor.submit(run_site, name): name for name in SITES.keys()}
+        results = []
+        for fut in as_completed(futures):
+            site_name = futures[fut]
+            try:
+                results.append(fut.result())
+            except Exception as e:
+                log_exception(f"  [{site_name}] ❌ 사이트 실행 예외: {e}")
+                results.append({"site": site_name, "success": 0, "fail": -1, "skipped": False})
+
+    total_s = sum(r["success"] for r in results)
+    total_f = sum(r["fail"] for r in results if r["fail"] >= 0)
+    log_info(f"  → 사이클 결과: 전체 성공 {total_s} / 실패 {total_f}")
+
+
+# ─── 메인 ──────────────────────────────────────
+if __name__ == "__main__":
+    once = "--once" in sys.argv
+
+    log_info("=" * 70)
+    log_info(f"  Prediction_ml 마스터 시작 (병렬)")
+    log_info(f"  베이스 폴더: {HERE}")
+    log_info(f"  로그 폴더:   {LOG_DIR}")
+    log_info(f"  주기:        {INTERVAL}초 (매 분 정각 동기화)")
+    log_info(f"  모드:        {'1회 (--once)' if once else 'Ctrl+C 중단'}")
+    for name, cfg in SITES.items():
+        exists = "✅" if os.path.isdir(cfg["dir"]) else "❌"
+        log_info(f"  사이트: {exists} {name} ({len(cfg['scripts'])}개) — {cfg['dir']}")
+    log_info("=" * 70)
+
+    if once:
+        try:
+            run_cycle()
+        except Exception as e:
+            log_exception(f"❌ once 사이클 예외: {e}")
+        sys.exit(0)
+
+    now = datetime.now()
+    wait_first = 60 - now.second - now.microsecond / 1_000_000
+    if wait_first < 1:
+        wait_first += 60
+    log_info(f"  → 다음 정각(00초)까지 {wait_first:.1f}초 대기")
+    time.sleep(wait_first)
+
+    while True:
+        try:
+            t0 = time.time()
+            run_cycle()
+            elapsed = time.time() - t0
+
+            now = datetime.now()
+            sleep_sec = 60 - now.second - now.microsecond / 1_000_000
+            if sleep_sec < 0.5:
+                sleep_sec += 60
+
+            log_info(f"  → 사이클 {elapsed:.1f}초 / 다음 정각까지 {sleep_sec:.1f}초 대기\n")
+            time.sleep(sleep_sec)
+
+        except KeyboardInterrupt:
+            log_info("중단 (KeyboardInterrupt)")
+            break
+
+        except Exception as e:
+            log_exception(f"❌ 메인 루프 예외 (계속 진행): {e}")
+            try:
+                now = datetime.now()
+                sleep_sec = 60 - now.second - now.microsecond / 1_000_000
+                if sleep_sec < 0.5:
+                    sleep_sec += 60
+                time.sleep(sleep_sec)
+            except Exception:
+                time.sleep(60)

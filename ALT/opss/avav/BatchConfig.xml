@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<batchConfig>
+	<scheduler>
+		<threadCount>30</threadCount>
+	</scheduler>
+	<jobs>
+		<job name="UpdatingDbMasterDataBatch" type="JAVA" description="Updating Master Data">
+			<property key="name">UpdatingDbMasterDataBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.UpdatingDbMasterDataBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="UpdatingDbMachineListBatch" type="JAVA" description="Updating Machine List Data">
+			<property key="name">UpdatingDbMachineListBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.UpdatingDbMachineListBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="AlertingSystemStatusBatch" type="JAVA" description="Alerting System Status">
+			<property key="name">AlertingSystemStatus job</property>
+			<property key="className">com.skhynix.smartatlas.batch.AlertingSystemStatus</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="BridgeLayoutDetailBatch" type="JAVA" description="Bridge Layout Detail Batch">
+			<property key="name">BridgeLayoutDetailBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.BridgeLayoutDetailBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="HubroomTransPredictBatch" type="JAVA" description="Hubroom Trans Predict Batch">
+			<property key="name">HubroomTransPredictBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.HubroomTransPredictBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="BridgeLayoutBatch" type="JAVA" description="Bridge Layout Batch">
+			<property key="name">BridgeLayoutBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.BridgeLayoutBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="SwitchSystemBatch" type="JAVA" description="Switch System Batch">
+			<property key="name">SwitchSystemBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.SwitchSystemBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="BridgeJudgeRangeBatch" type="JAVA" description="Bridge Judge Range Batch">
+			<property key="name">"BridgeJudgeRangeBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.BridgeJudgeRangeBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="DataSetRefreshBatch" type="JAVA" description="Data Set Refresh Batch">
+			<property key="name">"DataSetRefreshBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.DataSetRefreshBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="RailCutRefreshBatch" type="JAVA" description="Rail Cut Refresh Batch">
+			<property key="name">"RailCutRefreshBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.RailCutRefreshBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="QTransferPredictBatch" type="JAVA" description="QTransfer Predict Batch">
+			<property key="name">"QTransferPredictBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.QTransferPredictBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="OhtPerformanceTimeMinBatch" type="JAVA" description="Oht Performance Time Min Batch">
+			<property key="name">OhtPerformanceTimeMinBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.OhtPerformanceTimeMinBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="OhtPerformanceTimeHourBatch" type="JAVA" description="Oht Performance Time Hour Batch">
+			<property key="name">OhtPerformanceTimeHourBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.OhtPerformanceTimeHourBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="ServerResourceApmBatch" type="JAVA" description="Server Resource Apm Batch">
+			<property key="name">ServerResourceApmBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.ServerResourceApmBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="AbnormalDetectBatch" type="JAVA" description="Abnormal Detect Batch">
+			<property key="name">AbnormalDetectBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.AbnormalDetectBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="SystemMessageDetectBatch" type="JAVA" description="System Message Detect Batch">
+			<property key="name">SystemMessageDetectBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.SystemMessageDetectBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="MonitoringControlBatch" type="JAVA" description="MonitoringControl Batch">
+			<property key="name">MonitoringControlBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.MonitoringControlBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="RailVibrationBatch" type="JAVA" description="RailVibration Batch">
+			<property key="name">RailVibrationBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.RailVibrationBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="QTransferDashBoardItemBatch" type="JAVA" description="QTranser DashBoard Item Batch">
+			<property key="name">QTranserDashBoardItem Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.QTransferDashBoardItemBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="TrafficBatch" type="JAVA" description="Traffic Batch">
+			<property key="name">TrafficBatch Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.TrafficBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="ItsmChangeRequestBatch" type="JAVA" description="Itsm Change Request Batch">
+			<property key="name">ItsmChangeRequestBatch Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.ItsmChangeRequestBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="VhlCntBatch" type="JAVA" description="VhlCnt Batch">
+			<property key="name">VhlCntBatch Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.VhlCntBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="VhlCnt10Batch" type="JAVA" description="VhlCnt Batch">
+			<property key="name">VhlCntBatch 10seconds Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.VhlCnt10Batch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="VhlCnt30Batch" type="JAVA" description="VhlCnt Batch">
+			<property key="name">VhlCntBatch 30seconds Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.VhlCnt30Batch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="VhlCnt60Batch" type="JAVA" description="VhlCnt Batch">
+			<property key="name">VhlCntBatch 1minutes Job</property>
+			<property key="className">com.skhynix.smartatlas.batch.VhlCnt60Batch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="HidEdgeInOutUpdateMasterBatch" type="JAVA">
+			<property key="name">HidEdgeInOutUpdateMasterBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.HidEdgeInOutUpdateMasterBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="HidEdgeInOutQueueFlushBatch" type="JAVA">
+			<property key="name">HidEdgeInOutQueueFlushBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.HidEdgeInOutQueueFlushBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="CnvTaskBatch" type="JAVA">
+			<property key="name">CnvTaskBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.CnvTaskBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="AmosMinBatch" type="JAVA">
+			<property key="name">AmosMinBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.AmosMinBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="AmpBufferFlushBatch" type="JAVA">
+			<property key="name">AmpBufferFlushBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.AmpBufferFlushBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+		<job name="AmosBoundryBatch" type="JAVA">
+			<property key="name">AmosBoundryBatch job</property>
+			<property key="className">com.skhynix.smartatlas.batch.AmosBoundryBatch</property>
+			<property key="methodName">execute</property>
+		</job>
+	</jobs>
+	<triggers>
+		<trigger name="Batch1" jobName="UpdatingDbMasterDataBatch" type="CRON">
+			<property key="cronExpression">0 0 0 * * ?</property>
+		</trigger>
+		<trigger name="Batch2" jobName="UpdatingDbMachineListBatch" type="CRON">
+			<property key="cronExpression">0 0 0 * * ?</property>
+		</trigger>
+		<trigger name="Batch3" jobName="AlertingSystemStatusBatch" type="CRON">
+			<property key="cronExpression">0/6 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch4" jobName="BridgeLayoutDetailBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch5" jobName="HubroomTransPredictBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch6" jobName="BridgeLayoutBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch7" jobName="SwitchSystemBatch" type="CRON">
+			<property key="cronExpression">0/10 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch8" jobName="BridgeJudgeRangeBatch" type="CRON">
+			<property key="cronExpression">0 0 9 * * ?</property>
+		</trigger>
+		<trigger name="Batch9" jobName="DataSetRefreshBatch" type="CRON">
+			<property key="cronExpression">0 0 9 * * ?</property>
+		</trigger>
+		<trigger name="Batch10" jobName="RailCutRefreshBatch" type="CRON">
+			<property key="cronExpression">0 */1 * * * ?</property>
+		</trigger>
+		<trigger name="Batch11" jobName="QTransferPredictBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch12" jobName="OhtPerformanceTimeMinBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch13" jobName="OhtPerformanceTimeHourBatch" type="CRON">
+			<property key="cronExpression">0 1 * * * ?</property>
+		</trigger>
+		<trigger name="Batch14" jobName="ServerResourceApmBatch" type="CRON">
+			<property key="cronExpression">0 0 9 * * ?</property>
+		</trigger>
+		<trigger name="Batch15" jobName="AbnormalDetectBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch16" jobName="SystemMessageDetectBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch17" jobName="MonitoringControlBatch" type="CRON">
+			<property key="cronExpression">0 */1 * * * ?</property>
+		</trigger>
+		<trigger name="Batch18" jobName="RailVibrationBatch" type="CRON">
+			<property key="cronExpression">0 0 */1 * * ?</property>
+		</trigger>
+		<trigger name="Batch19" jobName="QTransferDashBoardItemBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch20" jobName="TrafficBatch" type="CRON">
+			<property key="cronExpression">0 */1 * * * ?</property>
+		</trigger>
+		<trigger name="Batch21" jobName="ItsmChangeRequestBatch" type="CRON">
+			<property key="cronExpression">0 0 0 * * ?</property>
+		</trigger>
+		<trigger name="Batch22" jobName="VhlCntBatch" type="CRON">
+			<property key="cronExpression">*/5 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch23" jobName="VhlCnt10Batch" type="CRON">
+			<property key="cronExpression">*/10 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch24" jobName="VhlCnt30Batch" type="CRON">
+			<property key="cronExpression">*/30 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch25" jobName="VhlCnt60Batch" type="CRON">
+			<property key="cronExpression">0 */1 * * * ?</property>
+		</trigger>
+		<trigger name="Batch26" jobName="HidEdgeInOutUpdateMasterBatch" type="CRON">
+			<property key="cronExpression">0 0 0 * * ?</property>
+		</trigger>
+		<trigger name="Batch27" jobName="HidEdgeInOutQueueFlushBatch" type="CRON">
+			<property key="cronExpression">0 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch28" jobName="CnvTaskBatch" type="CRON">
+			<property key="cronExpression">4 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch29" jobName="AmosMinBatch" type="CRON">
+			<property key="cronExpression">9 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch30" jobName="AmpBufferFlushBatch" type="CRON">
+			<property key="cronExpression">14 * * * * ?</property>
+		</trigger>
+		<trigger name="Batch31" jobName="AmosBoundryBatch" type="CRON">
+			<property key="cronExpression">0 0 0 * * ?</property>
+		</trigger>
+	</triggers>
+</batchConfig>

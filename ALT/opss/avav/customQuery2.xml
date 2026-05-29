@@ -1,0 +1,2317 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [Logpresso Query] -->
+<query-logpresso>
+	<query id="vhlRunRate">
+		<![CDATA[
+		 dbquery mcs_m14
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'FOUP' AS CARRIERTYPE,
+						    FOUP_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN FOUP_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						UNION ALL
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'POD' AS CARRIERTYPE,
+						    POD_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN POD_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						| eval TIME = string(TIME,"yyyy-MM-dd HH:mm"), IDC_NM = "RUNRATE"
+					    | fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="vhlRunRateM14A">
+		<![CDATA[
+		 dbquery mcs_m14
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'FOUP' AS CARRIERTYPE,
+						    FOUP_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN FOUP_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						UNION ALL
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'POD' AS CARRIERTYPE,
+						    POD_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN POD_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						| eval TIME = string(TIME,"yyyy-MM-dd HH:mm"), IDC_NM = "RUNRATE"
+					    | fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="vhlRunRateM14B">
+		<![CDATA[
+		 dbquery mcs_m14b
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'FOUP' AS CARRIERTYPE,
+						    FOUP_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN FOUP_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						UNION ALL
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'POD' AS CARRIERTYPE,
+						    POD_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN POD_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						| eval TIME = string(TIME,"yyyy-MM-dd HH:mm"), IDC_NM = "RUNRATE"
+					    | fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="vhlRunRateM16A">
+		<![CDATA[
+		 dbquery mcs_m16
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'FOUP' AS CARRIERTYPE,
+						    FOUP_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN FOUP_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						UNION ALL
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'POD' AS CARRIERTYPE,
+						    POD_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN POD_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						| eval TIME = string(TIME,"yyyy-MM-dd HH:mm"), IDC_NM = "RUNRATE"
+					    | fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="vhlRunRateM16B">
+		<![CDATA[
+		 dbquery mcs_m16b
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'FOUP' AS CARRIERTYPE,
+						    FOUP_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN FOUP_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						UNION ALL
+						SELECT 
+						    SYSDATE AS TIME,
+						    MACHINENAME,
+						    'POD' AS CARRIERTYPE,
+						    POD_VHL_UTIL AS VHLOPERRATE,
+						    CASE 
+						        WHEN POD_VHL_UTIL >= 80 THEN 'Y'
+						        ELSE 'N'
+						    END AS ALARM
+						FROM 
+						    vhlutl_vw
+						| eval TIME = string(TIME,"yyyy-MM-dd HH:mm"), IDC_NM = "RUNRATE"
+					    | fields TIME, MACHINENAME, CARRIERTYPE, VHLOPERRATE, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgCountPerMin">
+		<![CDATA[
+		table duration=1m ts_data_view_m14a 
+		| search MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+		              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+		              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+		     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+		| sort _time  
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+		  MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+		  MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+		  MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+		  MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+		  MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+		| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+		| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"),MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+		| stats count(MESSAGENAME) as MESSAGE_COUNT ,max(TIME) as TIME by MESSAGENAME,MACHINENAME,MESSAGENUMB
+		| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+		| sort TIME,MESSAGENUMB ,MACHINENAME
+		| rename MESSAGENAME as MESSAGE_TYPE
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM	
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgCountPerMinM14A">
+		<![CDATA[
+		table duration=1m ts_data_view_m14a 
+		| search MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+		              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+		              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+		     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+		| sort _time  
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+		  MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+		  MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+		  MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+		  MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+		  MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+		| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+		| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"),MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+		| stats count(MESSAGENAME) as MESSAGE_COUNT ,max(TIME) as TIME by MESSAGENAME,MACHINENAME,MESSAGENUMB
+		| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+		| sort TIME,MESSAGENUMB ,MACHINENAME
+		| rename MESSAGENAME as MESSAGE_TYPE
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM	
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgCountPerMinM14B">
+		<![CDATA[
+		table duration=1m ts_data_view_m14b 
+		| search MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+		              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+		              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+		     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+		| sort _time  
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+		  MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+		  MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+		  MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+		  MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+		  MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+		| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+		| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"),MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+		| stats count(MESSAGENAME) as MESSAGE_COUNT ,max(TIME) as TIME by MESSAGENAME,MACHINENAME,MESSAGENUMB
+		| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+		| sort TIME,MESSAGENUMB ,MACHINENAME
+		| rename MESSAGENAME as MESSAGE_TYPE
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM	
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgCountPerMinM16A">
+		<![CDATA[
+		table duration=1m ts_data_view_m16
+		| search MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+		              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+		              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+		     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+		| sort _time  
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+		  MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+		  MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+		  MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+		  MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+		  MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+		| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+		| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"),MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+		| stats count(MESSAGENAME) as MESSAGE_COUNT ,max(TIME) as TIME by MESSAGENAME,MACHINENAME,MESSAGENUMB
+		| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+		| sort TIME,MESSAGENUMB ,MACHINENAME
+		| rename MESSAGENAME as MESSAGE_TYPE
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM	
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgCountPerMinM16B">
+		<![CDATA[
+		table duration=1m ts_data_view_m16b 
+		| search MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+		              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+		              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+		     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+		| sort _time  
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+		  MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+		  MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+		  MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+		  MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+		  MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+		| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+		| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"),MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+		| stats count(MESSAGENAME) as MESSAGE_COUNT ,max(TIME) as TIME by MESSAGENAME,MACHINENAME,MESSAGENUMB
+		| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+		| sort TIME,MESSAGENUMB ,MACHINENAME
+		| rename MESSAGENAME as MESSAGE_TYPE
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM	
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerMin">
+		<![CDATA[
+		table duration=1m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "REP"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+		| union [
+		table duration=1m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ASSIGN"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+		]
+		| union  [
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ACQUIRED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+		]
+		| union [
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "TRANSFERRING"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+		] 
+		| union [
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join CARRIER [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "DESPOSITED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+		]
+		| union [
+		
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+		| sort ETIME
+		| join COMMANDID,CARRIERLOC [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+		| sort STIME
+		] 
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "COMPLETED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+		
+		]
+		| sort RN 
+		| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+		 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerMinM14A">
+		<![CDATA[
+		table duration=1m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "REP"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+		| union [
+		table duration=1m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ASSIGN"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+		]
+		| union  [
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ACQUIRED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+		]
+		| union [
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "TRANSFERRING"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+		] 
+		| union [
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join CARRIER [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "DESPOSITED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+		]
+		| union [
+		
+		table duration=1m ts_data_view_m14a | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+		| sort ETIME
+		| join COMMANDID,CARRIERLOC [
+		table duration=10m ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+		| sort STIME
+		] 
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "COMPLETED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+		
+		]
+		| sort RN 
+		| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+		 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerMinM14B">
+		<![CDATA[
+		table duration=1m ts_data_view_m14b
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14b 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "REP"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+		| union [
+		table duration=1m ts_data_view_m14b 
+		| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14b 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ASSIGN"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+		]
+		| union  [
+		table duration=1m ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14b | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ACQUIRED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+		]
+		| union [
+		table duration=1m ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "TRANSFERRING"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+		] 
+		| union [
+		table duration=1m ts_data_view_m14b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join CARRIER [
+		table duration=10m ts_data_view_m14b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "DESPOSITED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+		]
+		| union [
+		
+		table duration=1m ts_data_view_m14b | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+		| sort ETIME
+		| join COMMANDID,CARRIERLOC [
+		table duration=10m ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+		| sort STIME
+		] 
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "COMPLETED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+		
+		]
+		| sort RN 
+		| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+		 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerMin16A">
+		<![CDATA[
+		table duration=1m ts_data_view_m16 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "REP"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+		| union [
+		table duration=1m ts_data_view_m16
+		| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ASSIGN"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+		]
+		| union  [
+		table duration=1m ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16 | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ACQUIRED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+		]
+		| union [
+		table duration=1m ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "TRANSFERRING"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+		] 
+		| union [
+		table duration=1m ts_data_view_m16 | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join CARRIER [
+		table duration=10m ts_data_view_m16 | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "DESPOSITED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+		]
+		| union [
+		
+		table duration=1m ts_data_view_m16 | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+		| sort ETIME
+		| join COMMANDID,CARRIERLOC [
+		table duration=10m ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+		| sort STIME
+		] 
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "COMPLETED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+		
+		]
+		| sort RN 
+		| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+		 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerMin16A">
+		<![CDATA[
+		table duration=1m ts_data_view_m16b 
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16b
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "REP"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+		| union [
+		table duration=1m ts_data_view_m16b
+		| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16b
+		| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ASSIGN"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+		]
+		| union  [
+		table duration=1m ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16b | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "ACQUIRED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+		]
+		| union [
+		table duration=1m ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join COMMANDID [
+		table duration=10m ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "TRANSFERRING"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+		] 
+		| union [
+		table duration=1m ts_data_view_m16b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+		| sort ETIME
+		| join CARRIER [
+		table duration=10m ts_data_view_m16b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+		| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+		| sort STIME
+		]
+		| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "DESPOSITED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+		]
+		| union [
+		
+		table duration=1m ts_data_view_m16b | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+		| sort ETIME
+		| join COMMANDID,CARRIERLOC [
+		table duration=10m ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+		| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+		| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+		| sort _time  
+		| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+		| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+		| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+		| sort STIME
+		] 
+		| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+		| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+		| eval MESSAGE_TYP = "COMPLETED"
+		| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+		| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+		
+		]
+		| sort RN 
+		| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+		 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+		| eval IDC_NM = "MIN"
+		| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>	
+	<query id="msgCountPerHour">
+		<![CDATA[
+			table duration=1h ts_data_view_m14a 
+			| search  MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+			              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+			              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+			     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+			| sort _time  
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+			MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+			MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+			MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+			MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+			MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+			| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+			| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"), MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+			| stats count(MESSAGENAME) as MESSAGE_COUNT , max(TIME) as TIME  by MESSAGENAME,MACHINENAME,MESSAGENUMB
+            | eval MESSAGE_COUNT = round(MESSAGE_COUNT/60)
+			| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+			| sort MACHINENAME,TIME,MESSAGENUMB
+			| rename MESSAGENAME as MESSAGE_TYPE
+			| eval TIME = string(now(), "yyyy-MM-dd HH:00")
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM
+            | eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+			]]>
+	</query>
+	<query id="msgCountPerHourM14A">
+		<![CDATA[
+			table duration=1h ts_data_view_m14a 
+			| search  MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+			              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+			              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+			     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+			| sort _time  
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+			MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+			MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+			MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+			MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+			MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+			| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+			| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"), MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+			| stats count(MESSAGENAME) as MESSAGE_COUNT , max(TIME) as TIME  by MESSAGENAME,MACHINENAME,MESSAGENUMB
+            | eval MESSAGE_COUNT = round(MESSAGE_COUNT/60)
+			| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+			| sort MACHINENAME,TIME,MESSAGENUMB
+			| rename MESSAGENAME as MESSAGE_TYPE
+			| eval TIME = string(now(), "yyyy-MM-dd HH:00")
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM
+            | eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+			]]>
+	</query>
+	<query id="msgCountPerHourM14B">
+		<![CDATA[
+			table duration=1h ts_data_view_m14b
+			| search  MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+			              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+			              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+			     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+			| sort _time  
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+			MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+			MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+			MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+			MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+			MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+			| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+			| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"), MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+			| stats count(MESSAGENAME) as MESSAGE_COUNT , max(TIME) as TIME  by MESSAGENAME,MACHINENAME,MESSAGENUMB
+            | eval MESSAGE_COUNT = round(MESSAGE_COUNT/60)
+			| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+			| sort MACHINENAME,TIME,MESSAGENUMB
+			| rename MESSAGENAME as MESSAGE_TYPE
+			| eval TIME = string(now(), "yyyy-MM-dd HH:00")
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM
+            | eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+			]]>
+	</query>
+	<query id="msgCountPerHourM16A">
+		<![CDATA[
+			table duration=1h ts_data_view_m16
+			| search  MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+			              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+			              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+			     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+			| sort _time  
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+			MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+			MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+			MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+			MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+			MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+			| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+			| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"), MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+			| stats count(MESSAGENAME) as MESSAGE_COUNT , max(TIME) as TIME  by MESSAGENAME,MACHINENAME,MESSAGENUMB
+            | eval MESSAGE_COUNT = round(MESSAGE_COUNT/60)
+			| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+			| sort MACHINENAME,TIME,MESSAGENUMB
+			| rename MESSAGENAME as MESSAGE_TYPE
+			| eval TIME = string(now(), "yyyy-MM-dd HH:00")
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM
+            | eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+			]]>
+	</query>
+	<query id="msgCountPerHourM16B">
+		<![CDATA[
+			table duration=1h ts_data_view_m16b
+			| search  MESSAGENAME =="RAIL-CARRIERTRANSFERREPLY"
+			              or MESSAGENAME == "RAIL-VEHICLEASSIGNED" or MESSAGENAME =="RAIL-VEHICLEACQUIRECOMPLETED"
+			              or MESSAGENAME == "RAIL-TRANSFERRING" or MESSAGENAME =="RAIL-VEHICLEDEPOSITCOMPLETED"
+			     or MESSAGENAME =="RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID 
+			| sort _time  
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| eval MESSAGENAME = case(MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY", "REP", MESSAGENAME == "RAIL-VEHICLEASSIGNED" , "ASSIGN" ,
+			MESSAGENAME == "RAIL-VEHICLEACQUIRECOMPLETED","ACQUIRED", MESSAGENAME == "RAIL-TRANSFERRING", "TRANSFERRING",  
+			MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" , "DESPOSITED" , MESSAGENAME == "RAIL-TRANSFERCOMPLETED", "COMPLETED","NONE") ,
+			MESSAGENUMB = case(MESSAGENAME == "REP", "1", MESSAGENAME == "ASSIGN" , "2" ,
+			MESSAGENAME == "ACQUIRED","3", MESSAGENAME == "TRANSFERRING", "4",  
+			MESSAGENAME == "DESPOSITED" , "5" , MESSAGENAME == "COMPLETED", "6","NONE") 
+			| search MESSAGENAME != "NONE" and MESSAGENUMB != "NONE"
+			| eval TIME = string(date(substr(_time,0,12),"yyyyMMddHHmm"), "yyyyMMddHHmm"), MACHINENAME = case(MESSAGENAME == "COMPLETED", "4ACM4701",  MACHINENAME)
+			| stats count(MESSAGENAME) as MESSAGE_COUNT , max(TIME) as TIME  by MESSAGENAME,MACHINENAME,MESSAGENUMB
+            | eval MESSAGE_COUNT = round(MESSAGE_COUNT/60)
+			| eval ALARM = "N", TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm")
+			| sort MACHINENAME,TIME,MESSAGENUMB
+			| rename MESSAGENAME as MESSAGE_TYPE
+			| eval TIME = string(now(), "yyyy-MM-dd HH:00")
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT,ALARM
+            | eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM, IDC_NM
+			]]>
+	</query>
+	<query id="msgTimePerHour">
+		<![CDATA[
+			table duration=1h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "REP"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+			| union [
+			table duration=1h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ASSIGN"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+			]
+			| union  [
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ACQUIRED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+			]
+			| union [
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "TRANSFERRING"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+			] 
+			| union [
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join CARRIER [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "DESPOSITED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+			]
+			| union [
+			
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+			| sort ETIME
+			| join COMMANDID,CARRIERLOC [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+			| sort STIME
+			] 
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "COMPLETED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+			
+			]
+			| sort RN 
+			| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+			 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+			| eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerHourM14A">
+		<![CDATA[
+			table duration=1h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "REP"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+			| union [
+			table duration=1h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ASSIGN"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+			]
+			| union  [
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ACQUIRED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+			]
+			| union [
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "TRANSFERRING"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+			] 
+			| union [
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join CARRIER [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "DESPOSITED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+			]
+			| union [
+			
+			table duration=1h ts_data_view_m14a | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+			| sort ETIME
+			| join COMMANDID,CARRIERLOC [
+			table duration=2h ts_data_view_m14a | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+			| sort STIME
+			] 
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "COMPLETED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+			
+			]
+			| sort RN 
+			| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+			 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+			| eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerHourM14B">
+		<![CDATA[
+			table duration=1h ts_data_view_m14b 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14b 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "REP"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+			| union [
+			table duration=1h ts_data_view_m14b 
+			| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14b 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ASSIGN"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+			]
+			| union  [
+			table duration=1h ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14b | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ACQUIRED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+			]
+			| union [
+			table duration=1h ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "TRANSFERRING"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+			] 
+			| union [
+			table duration=1h ts_data_view_m14b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join CARRIER [
+			table duration=2h ts_data_view_m14b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "DESPOSITED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+			]
+			| union [
+			
+			table duration=1h ts_data_view_m14b | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+			| sort ETIME
+			| join COMMANDID,CARRIERLOC [
+			table duration=2h ts_data_view_m14b | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+			| sort STIME
+			] 
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "COMPLETED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+			
+			]
+			| sort RN 
+			| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+			 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+			| eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerHourM16A">
+		<![CDATA[
+			table duration=1h ts_data_view_m16 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "REP"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+			| union [
+			table duration=1h ts_data_view_m16 
+			| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ASSIGN"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+			]
+			| union  [
+			table duration=1h ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16 | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ACQUIRED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+			]
+			| union [
+			table duration=1h ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "TRANSFERRING"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+			] 
+			| union [
+			table duration=1h ts_data_view_m16 | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join CARRIER [
+			table duration=2h ts_data_view_m16 | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "DESPOSITED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+			]
+			| union [
+			
+			table duration=1h ts_data_view_m16 | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+			| sort ETIME
+			| join COMMANDID,CARRIERLOC [
+			table duration=2h ts_data_view_m16 | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+			| sort STIME
+			] 
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "COMPLETED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+			
+			]
+			| sort RN 
+			| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+			 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+			| eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="msgTimePerHourM16B">
+		<![CDATA[
+			table duration=1h ts_data_view_m16b 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16b 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFER" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| stats last(_time) as _time by MACHINENAME,MESSAGENAME, SECSII,COMMANDID,TRANSACTIONID
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "REP"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="1"
+			| union [
+			table duration=1h ts_data_view_m16b 
+			| search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16b 
+			| search MESSAGENAME == "RAIL-CARRIERTRANSFERREPLY" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ASSIGN"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="2"
+			]
+			| union  [
+			table duration=1h ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16b | search MESSAGENAME == "RAIL-VEHICLEASSIGNED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "ACQUIRED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="3"
+			]
+			| union [
+			table duration=1h ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERREMOVED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join COMMANDID [
+			table duration=2h ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERINSTALLED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,COMMANDID,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "TRANSFERRING"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="4"
+			] 
+			| union [
+			table duration=1h ts_data_view_m16b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITCOMPLETED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as EMESSAGENAME
+			| sort ETIME
+			| join CARRIER [
+			table duration=2h ts_data_view_m16b | search MESSAGENAME == "RAIL-VEHICLEDEPOSITSTARTED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,CARRIER
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,CARRIER,MACHINENAME
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| stats last(_time) as _time  by MESSAGENAME,CARRIER,MACHINENAME
+			| rename _time as STIME, MESSAGENAME as SMESSAGENAME
+			| sort STIME
+			]
+			| search date(ETIME,"yyyyMMddHHmmssSSS") > date(STIME,"yyyyMMddHHmmssSSS")
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "DESPOSITED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="5"
+			]
+			| union [
+			
+			table duration=1h ts_data_view_m16b | search MESSAGENAME == "RAIL-TRANSFERCOMPLETED"
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as ETIME, MESSAGENAME as SMESSAGENAME
+			| sort ETIME
+			| join COMMANDID,CARRIERLOC [
+			table duration=2h ts_data_view_m16b | search MESSAGENAME == "RAIL-CARRIERREMOVED" 
+			| fields _time,MACHINENAME,MESSAGENAME ,COMMANDID ,SECSII
+			| rex field=SECSII "<A,14 \[CARRIERLOC\] '(?<CARRIERLOC>[^']+)'>"
+			| sort _time  
+			| fields _time,MESSAGENAME,COMMANDID,MACHINENAME,CARRIERLOC
+			| eval _time = string(_time, "yyyyMMddHHmmssSSS")
+			| rename _time as STIME, MESSAGENAME as EMESSAGENAME
+			| sort STIME
+			] 
+			| eval MESSAGE_TIME = datediff(date(STIME,"yyyyMMddHHmmssSSS"),date(ETIME,"yyyyMMddHHmmssSSS"),"msec")/1000 ,TIME = string(now(),"yyyyMMddHHmm")
+			| fields TIME,COMMANDID,MACHINENAME,MESSAGE_TIME
+			| eval MESSAGE_TYP = "COMPLETED"
+			| stats avg(MESSAGE_TIME) as MESSAGE_TIME by TIME,MACHINENAME, MESSAGE_TYP
+			| eval MESSAGE_TIME = round(MESSAGE_TIME,2) , RN="6"
+			
+			]
+			| sort RN 
+			| eval TIME = string(date(TIME,"yyyyMMddHHmm"),"yyyy-MM-dd HH:mm"),ALARM = "N",
+			 MESSAGE_TIME = case(MESSAGE_TIME < 0 , 0 ,MESSAGE_TIME)
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME,ALARM
+			| eval IDC_NM = "HOUR"
+			| fields TIME, MACHINENAME, MESSAGE_TYP, MESSAGE_TIME, ALARM, IDC_NM
+		]]>
+	</query>
+	<query id="qTransferGroupData">
+		<![CDATA[
+			table duration=120m ts_current_job        
+            | search FAB == "M14"    
+			| eval A = case(trim(DESTMACHINENAME) == "4ABL_M10" ,1,0)         
+			| eval B =  case(substr(trim(SOURCEMACHINENAME),0,7) == "4ABL330" ,1,0)         
+			| eval C =  case(substr(trim(DESTMACHINENAME),0,4) == "4ALF" ,1,0)         
+			| eval D =  case(substr(trim(SOURCEMACHINENAME),0,4) == "4ALF" ,1,0)         
+			| eval E =  case(substr(trim(DESTMACHINENAME),0,4) == "4AFC" ,1,0)         
+			| eval F =  case(substr(trim(SOURCEMACHINENAME),0,4) == "4AFC" ,1,0)        
+			| stats sum(A) ,sum(B) ,sum(C) ,sum(D),sum(E),sum(F), count by CURRTIME       
+			| rename count as TOTALCNT, sum(A) as M14AM10A ,sum(B) as M10AM14A, sum(C) as M14AM14B,sum(D) as M14BM14A,sum(E) as M14AM16,sum(F) as M16M14A       
+			| eval M14AM10ASUM = M10AM14A + M14AM10A,      
+			M14AM14BSUM = M14AM14B + M14BM14A,     
+			M14AM16SUM = M14AM16 + M16M14A,  
+			TIME = CURRTIME 
+			| sort  CURRTIME 
+			| fields CURRTIME, TOTALCNT, M14AM10A, M10AM14A, M14AM10ASUM, M14AM14B, M14BM14A, M14AM14BSUM, M14AM16, M16M14A, M14AM16SUM,TIME
+		    | sort  CURRTIME
+	        | sort limit=100 -TIME dst 
+		]]>
+	</query>
+	<query id="searchOHTCNTHour">
+		<![CDATA[
+		table duration=2h oht_cmd_count
+		| search IDC_NM == "HOUR"
+		| sort -EVENT_DT -desc | limit 6
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM
+		| rename TIME as EVENT_DT, MACHINENAME as EQP_NM , MESSAGE_TYPE as IDC_NM , MESSAGE_COUNT as  IDC_VAL , ALARM as ALARM_YN
+		| eval EVENT_DT = string(date(EVENT_DT, "yyyyMMddHHmm"),"yyyyMMddHHmm"), IDC_VAL = int(IDC_VAL)
+		| fields EVENT_DT, EQP_NM, IDC_NM, IDC_VAL, ALARM_YN
+		| eval IDC_GRP_CD = "HOUR_MSG_CNT" 
+		| fields EVENT_DT, EQP_NM,IDC_GRP_CD, IDC_NM, IDC_VAL, ALARM_YN
+		| sort EVENT_DT
+		]]>
+	</query>
+	<query id="searchOHTCNTHourM14A">
+		<![CDATA[
+		table duration=2h oht_cmd_count
+		| search IDC_NM == "HOUR" and MACHINENAME == "4ACM4701"
+		| sort -EVENT_DT -desc | limit 6
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM
+		| rename TIME as EVENT_DT, MACHINENAME as EQP_NM , MESSAGE_TYPE as IDC_NM , MESSAGE_COUNT as  IDC_VAL , ALARM as ALARM_YN
+		| eval EVENT_DT = string(date(EVENT_DT, "yyyyMMddHHmm"),"yyyyMMddHHmm"), IDC_VAL = int(IDC_VAL)
+		| fields EVENT_DT, EQP_NM, IDC_NM, IDC_VAL, ALARM_YN
+		| eval IDC_GRP_CD = "HOUR_MSG_CNT" 
+		| fields EVENT_DT, EQP_NM,IDC_GRP_CD, IDC_NM, IDC_VAL, ALARM_YN
+		| sort EVENT_DT
+		]]>
+	</query>
+	<query id="searchOHTCNTHourM14B">
+		<![CDATA[
+		table duration=2h oht_cmd_count
+		| search IDC_NM == "HOUR" and MACHINENAME == "4ACMD601"
+		| sort -EVENT_DT -desc | limit 6
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM
+		| rename TIME as EVENT_DT, MACHINENAME as EQP_NM , MESSAGE_TYPE as IDC_NM , MESSAGE_COUNT as  IDC_VAL , ALARM as ALARM_YN
+		| eval EVENT_DT = string(date(EVENT_DT, "yyyyMMddHHmm"),"yyyyMMddHHmm"), IDC_VAL = int(IDC_VAL)
+		| fields EVENT_DT, EQP_NM, IDC_NM, IDC_VAL, ALARM_YN
+		| eval IDC_GRP_CD = "HOUR_MSG_CNT" 
+		| fields EVENT_DT, EQP_NM,IDC_GRP_CD, IDC_NM, IDC_VAL, ALARM_YN
+		| sort EVENT_DT
+		]]>
+	</query>
+	<query id="searchOHTCNTHourM16A">
+		<![CDATA[
+		table duration=2h oht_cmd_count
+		| search IDC_NM == "HOUR" and in (MACHINENAME,"6ACM3901","6ECML101","6ECMB101")
+		| sort -EVENT_DT -desc | limit 6
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM
+		| rename TIME as EVENT_DT, MACHINENAME as EQP_NM , MESSAGE_TYPE as IDC_NM , MESSAGE_COUNT as  IDC_VAL , ALARM as ALARM_YN
+		| eval EVENT_DT = string(date(EVENT_DT, "yyyyMMddHHmm"),"yyyyMMddHHmm"), IDC_VAL = int(IDC_VAL)
+		| fields EVENT_DT, EQP_NM, IDC_NM, IDC_VAL, ALARM_YN
+		| eval IDC_GRP_CD = "HOUR_MSG_CNT" 
+		| fields EVENT_DT, EQP_NM,IDC_GRP_CD, IDC_NM, IDC_VAL, ALARM_YN
+		| sort EVENT_DT
+		]]>
+	</query>
+	<query id="searchOHTCNTHourM16B">
+		<![CDATA[
+		table duration=2h oht_cmd_count
+		| search IDC_NM == "HOUR" and MACHINENAME == "6ACMD701"
+		| sort -EVENT_DT -desc | limit 6
+		| fields TIME, MACHINENAME, MESSAGE_TYPE, MESSAGE_COUNT, ALARM
+		| rename TIME as EVENT_DT, MACHINENAME as EQP_NM , MESSAGE_TYPE as IDC_NM , MESSAGE_COUNT as  IDC_VAL , ALARM as ALARM_YN
+		| eval EVENT_DT = string(date(EVENT_DT, "yyyyMMddHHmm"),"yyyyMMddHHmm"), IDC_VAL = int(IDC_VAL)
+		| fields EVENT_DT, EQP_NM, IDC_NM, IDC_VAL, ALARM_YN
+		| eval IDC_GRP_CD = "HOUR_MSG_CNT" 
+		| fields EVENT_DT, EQP_NM,IDC_GRP_CD, IDC_NM, IDC_VAL, ALARM_YN
+		| sort EVENT_DT
+		]]>
+	</query>
+	<query id="mesOHTQCntAlarmValid">
+		<![CDATA[
+		table duration=1m abnormal_detect_data
+		| search MSG_NM == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ" and FAB_ID == "M14A"
+		| eval TX = "M_MES"
+		| rename MINUTE_PER_CNT as MESSAGE_COUNT
+		| fields  MESSAGE_COUNT , TX
+		]]>
+	</query>
+	<query id="mesOHTQCntAlarmValid2">
+		<![CDATA[
+		table duration=1m abnormal_detect_data
+		| search MSG_NM == "MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ" and FAB_ID == "%s"
+		| eval TX = "M_MES"
+		| rename MINUTE_PER_CNT as MESSAGE_COUNT
+		| fields  MESSAGE_COUNT , TX
+		]]>
+	</query>
+	<query id="searchOHTCNT10Min">
+		<![CDATA[
+		table duration=10m oht_cmd_count
+		| search  IDC_NM == "MIN"
+		| stats avg(int(MESSAGE_COUNT)) as CNT by MESSAGE_TYPE
+		| eval CNT = int(round(double(CNT),0))
+		]]>
+	</query>
+	<query id="searchOHTCNT10MinM14A">
+		<![CDATA[
+		table duration=10m oht_cmd_count
+		| search  IDC_NM == "MIN" and MACHINENAME == "4ACM4701"
+		| stats avg(int(MESSAGE_COUNT)) as CNT by MESSAGE_TYPE
+		| eval CNT = int(round(double(CNT),0))
+		]]>
+	</query>
+	<query id="searchOHTCNT10MinM14B">
+		<![CDATA[
+		table duration=10m oht_cmd_count
+		| search  IDC_NM == "MIN" and MACHINENAME == "4ACMD601"
+		| stats avg(int(MESSAGE_COUNT)) as CNT by MESSAGE_TYPE
+		| eval CNT = int(round(double(CNT),0))
+		]]>
+	</query>
+	<query id="searchOHTCNT10MinM16A">
+		<![CDATA[
+		table duration=10m oht_cmd_count
+		| search  IDC_NM == "MIN" and in (MACHINENAME,"6ACM3901","6ECML101","6ECMB101")
+		| stats avg(int(MESSAGE_COUNT)) as CNT by MESSAGE_TYPE
+		| eval CNT = int(round(double(CNT),0))
+		]]>
+	</query>
+	<query id="searchOHTCNT10MinM16B">
+		<![CDATA[
+		table duration=10m oht_cmd_count
+		| search  IDC_NM == "MIN" and MACHINENAME == "6ACMD701"
+		| stats avg(int(MESSAGE_COUNT)) as CNT by MESSAGE_TYPE
+		| eval CNT = int(round(double(CNT),0))
+		]]>
+	</query>
+	<query id="completedTsJobCountPerMin">
+		table duration=10m ts_data_view_m14a
+		| search COMMAND == "*MCSMHS_TRANSPORT_JOB_COMPLETED_EVENT*"
+		| eval MINPER_CNT=  string(datetrunc(_time,"1m"),"yyyyMMddHHmm")
+		| fields MINPER_CNT,COMMAND
+		| stats count(MINPER_CNT) as MINPER_CNT by MINPER_CNT,COMMAND
+		| stats sum(MINPER_CNT) as MINPER_CNT ,max(COMMAND) as COMMAND
+	</query>
+	<query id="transferCountPerMin">
+		table duration=10m test_currentjob_predict
+		| search  in(IDCCOL,  "M14AM16" , "M14AM16SUM" , "M16M14A", "M14AM10A" , "M14AM10ASUM" , "M10AM14A","M14AM14B","M14BM14A","M14AM14BSUM")
+		| stats avg(int(IDCVAL)) as IDCVAL by IDCCOL
+		| eval IDCVAL = round(IDCVAL)
+	</query>
+	<query id="requestorCount">
+		<![CDATA[
+		table duration=1h ts_data_view_m14a
+		| search COMMAND == "*MHSMCS_TRANSPORT_JOB_SCHEDULE_REQ*"
+		and  TEXT == "*REQUESTOR*"
+		| rex field=TEXT "REQUESTOR=\"(?<REQUESTOR>[^\"]+)\""
+		| eval REQUESTOR = case(isnum(int(REQUESTOR)), "MANUAL", case(isnum(int(substr(REQUESTOR,1,len(REQUESTOR)))),"MANUAL",  REQUESTOR))
+		| eval REQUESTOR = case(REQUESTOR == "RTD" or REQUESTOR== "RTS", "RTD/RTS" ,REQUESTOR)
+		| eval REQUESTOR = case(REQUESTOR == "MES" , "MHS" ,REQUESTOR)
+        | eval REQUESTOR = case(in(REQUESTOR, SEARCHSYSTEM ),REQUESTOR, "ETC")
+		| stats count(REQUESTOR) as REQUESTOR_CNT by REQUESTOR
+		| search  in(REQUESTOR,SEARCHSYSTEM)
+		]]>
+	</query>
+	<!-- 
+		table duration=1m ts_data_view_m14a
+		| search in(LEVEL,"WARN","ERROR","FATAL")
+		| stats count(LEVEL) as CNT by LEVEL
+	-->
+	<query id="mcsErrorLogCnt">
+		table duration=1h ts_data_view_m14a
+		| search in(LEVEL,"WARN","ERROR")
+		| eval LEVEL = case(TEXT == "*Caused by: java.lang.*Exception*", "EXCEPTION", LEVEL)
+        | stats count(LEVEL) as CNT by LEVEL
+	</query>
+	<query id="quePredictError">
+		table duration=2h test_currentjob_predict
+		| search IDCCOL =="TOTALCNT"
+		| fields TIME,IDCVAL
+		| join TIME [
+		table duration=2h test_currentjob_predict
+		| search IDCCOL =="TOTALCNT"
+		| fields TIME,LSTM
+		| eval TIME = string(dateadd(date(TIME,"yyyyMMddHHmm"),"min",10),"yyyyMMddHHmm")
+		]
+		| limit 60
+        | eval ABSOL_ERROR = abs(int(IDCVAL)-int(LSTM))
+        | prev ABSOL_ERROR
+        | prev IDCVAL
+        | eval IDCVAL = case(ABSOL_ERROR >= 1000,prev_IDCVAL,IDCVAL)
+        | eval ABSOL_ERROR = case(ABSOL_ERROR >= 1000,prev_ABSOL_ERROR,ABSOL_ERROR)
+        | fields TIME, IDCVAL,ABSOL_ERROR,LSTM
+        | eval ABSOL_RATE = (1-(int(ABSOL_ERROR)/int(IDCVAL)))*100
+		| stats avg(ABSOL_ERROR) as ERROR_VALUE , avg(ABSOL_RATE) as ERROR_RATE
+        | eval  ERROR_VALUE = round(ERROR_VALUE,2),ERROR_RATE=round(ERROR_RATE,2)
+	</query>
+	<query id="atlasHidInoutList">
+		table  from=%s to=%s %s_ATLAS_HID_INOUT
+		| search MCP_NM=="BR"
+		| fields EVENT_DT, FROM_HIDID, TRANS_CNT
+		| pivot sum(long(TRANS_CNT)) as VAL by EVENT_DT for FROM_HIDID
+	</query>
+	<query id="tsCurrentJobOfM14List">		
+		table from=%s to=%s ts_current_job
+		| search FAB == "M14" 
+		| eval A = case(trim(DESTMACHINENAME) == "4ABL_M10" ,1,0) 
+		| eval B =  case(substr(trim(SOURCEMACHINENAME),0,7) == "4ABL330" ,1,0) 
+		| eval C =  case(substr(trim(DESTMACHINENAME),0,4) == "4ALF" ,1,0) 
+		| eval D =  case(substr(trim(SOURCEMACHINENAME),0,4) == "4ALF" ,1,0) 
+		| eval E =  case(substr(trim(DESTMACHINENAME),0,4) == "4AFC" ,1,0) 
+		| eval F =  case(substr(trim(SOURCEMACHINENAME),0,4) == "4AFC" ,1,0) 
+		| stats sum(A) ,sum(B) ,sum(C) ,sum(D),sum(E),sum(F), count by CURRTIME 
+		| rename count as TOTALCNT, sum(A) as M14AM10A ,sum(B) as M10AM14A, sum(C) as M14AM14B,sum(D) as M14BM14A,sum(E) as M14AM16,sum(F) as M16M14A 
+		| eval M14AM10ASUM = M10AM14A + M14AM10A, M14AM14BSUM = M14AM14B + M14BM14A, M14AM16SUM = M14AM16 + M16M14A, EVENT_DT = concat(CURRTIME ,"00") 
+		| sort  CURRTIME 
+		| fields CURRTIME, TOTALCNT, M14AM10A, M10AM14A, M14AM10ASUM, M14AM14B, M14BM14A, M14AM14BSUM, M14AM16, M16M14A, M14AM16SUM, EVENT_DT 
+		| sort  EVENT_DT 
+	</query>
+	<query id="bridgeLayoutList">
+		table from=%s to=%s  bridge_layout_test
+		| search string(FR_FAB_ID) != ""  and string(TO_FAB_ID) != "" and  string(IDC_NM) != ""   and string(FR_LOC_NM) != "" and string(TO_LOC_NM) != ""
+		| eval AVG_VAL = double(AVG_VAL), CURR_VAL = int(CURR_VAL), EVENT_DT=concat(EVENT_DT,"00") ,COL1=replace(IDC_NM,"CD_", ""), COL2=replace(FR_LOC_NM, "CD_", ""), COL3=replace(TO_LOC_NM, "CD_", ""), IDC_NM=replace(concat(FR_FAB_ID,".PDT.LAYOUT.",COL1,"_",COL2,"TO",COL3,"_CURRENTQCNT")," ","")
+		| search in(IDC_NM %s)
+		| fields EVENT_DT,IDC_NM,CURR_VAL
+		| pivot max(long(CURR_VAL)) as IDC_VAL by EVENT_DT for IDC_NM
+		%s
+		| fields EVENT_DT
+		%s
+	</query>
+</query-logpresso>

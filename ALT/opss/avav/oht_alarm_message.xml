@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<alarms>
+	<alarm code="REQ_ALARM">1.OHT 응답 메세지 수: 1분 평균 {0}개 (1시간 평균의 {1}% 이하 발생)\n
+	2. MES ▶ MCS 반송큐 개수: 1분 평균 {2}개 (1시간 평균의 {1}% 이하 발생)\n
+	- 예상 원인 시스템 : M14 MES\n\n
+	- 조치 가이드:\n
+	 1. MES 담당자에게 MES ▶ MCS 반송큐 개수 감소 확인 요청\n\n
+	- 참고지표\n
+	 1.반송큐 개수: {2}개\n
+	 2.VHL 가동률: {3}%\n\n
+	- 참고설명\n
+	 1. OHT MCP ▶ MCS로 보고되는 OHT REPLY 응답수가 {0}개로 알람 기준치\n
+	 보다 낮게 유지되고 있습니다.\n
+	 2. MES로부터 내려오는 반송 명령 개수도 낮아진 것으로 미루어 보아 MES\n
+	 기인 현상으로 판단됩니다.
+	</alarm> 
+	<alarm code="REQ_ALARM2">1.OHT 응답 메세지 수: 1분 평균 {0}개 (1시간 평균의 {1}% 이하 발생)\n
+	2. MES ▶ MCS 반송큐 개수: 1분 평균 {2}개 (1시간 평균의 {1}% 이하 발생)\n
+	- 예상 원인 시스템 : M14 MCS, M14 OHT MCP\n\n
+	- 조치 가이드:\n
+	 1. MCS, OHT MCP 담당자에게 OHT 응답수 감소 확인 요청\n\n
+	- 참고지표\n
+	 1.반송큐 개수: {2}개\n
+	 2.VHL 가동률: {3}%\n\n
+	- 참고설명\n
+	 1. OHT MCP ▶ MCS로 보고되는 OHT REPLY 응답수가 적다는 뜻은 OHT가 반송을 \n
+	 수행하지 않는다는 뜻으로 FAB내 장애 상황이라 인지할 수 있습니다.\n
+	 2. OHT MCP의 OHT REPLY수가 정상 수치로 돌아올 수 있도록 MES-MCS-OHT각 시스템별 확인이 필요합니다.
+	</alarm> 
+	<alarm code="ASSIGN_ALARM">
+	1.OHT VHL ASSIGNED TIME: 1분 평균 {0}s (1시간 평균 {1}% 이상 발생)\n
+	2.VHL 가동률: {2}% (VHL 가동률 {3}% 이상 발생)\n
+	- 예상 원인 시스템 : M14 OHT MCP \n\n
+	- 조치 가이드: \n
+	1.OHT MCP 담당자에게 VHL 할당 시간 증가 확인\n
+	2.MES 반송큐 트렌드 확인 (반송큐 증가시 MES 담당자에게 반송 큐 증가 현상 확인)\n\n
+	- 참고지표\n
+	1.반송큐 개수: {4}개\n
+	2.OHT VHL ASSIGNED COUNT: 10분간 {5}개\n\n
+	- 참고설명\n
+	1.OHT VHL의 ASSIGNED TIME이 {0}초로 평균 {6}대비 {7}% 높습니다.\n
+	2.현재 VHL 가동률이 기준치 이상인 {2}%로 반송 지연이 발생될 가능성이 존재 합니다.\n
+	3.VHL ASSIGNED TIME이 길어진 경우 VHL이 반송을 수행하는 시간이 길어지기 때문에\n
+	VHL ASSIGNED TIME이 정상화 될 수 있도록 조치가 필요합니다.</alarm>
+	<alarm code="ASSIGN_ALARM2">
+	1.OHT VHL ASSIGNED TIME: 1분 평균 {0}s (1시간 평균 {1}% 이상 발생)\n
+	2.VHL 가동률: {2}% (VHL 가동률 {3}% 이상 발생)\n
+	- 예상 원인 시스템 : M14 OHT MCP \n\n
+	- 조치 가이드: \n
+	1.OHT MCP 담당자에게 VHL 할당 시간 증가 확인\n
+	2.MES 반송큐 트렌드 확인 (반송큐 증가시 MES 담당자에게 반송 큐 증가 현상 확인)\n\n
+	- 참고지표\n
+	1.반송큐 개수: {4}개\n
+	2.OHT VHL ASSIGNED COUNT: 10분간 {5}개\n\n
+	- 참고설명\n
+	1.VHL ASSIGNED TIME이 길어진 경우 VHL이 반송을 수행하는 시간이 길어지기 때문에\n
+	VHL ASSIGNED TIME이 정상화 될 수 있도록 조치가 필요합니다.</alarm>
+	<alarm code="TRANSFERRING_ALARM">
+	1.OHT VHL TRANSFERRING TIME: 1분 평균 {0}s (1시간 평균 {1}% 이상 발생)\n
+	2.VHL 가동률: {2}% (VHL 가동률 {3}% 이상 발생)\n
+	- 예상 원인 시스템 : M14 OHT MCP\n\n
+	- 조치 가이드: \n
+	1.OHT MCP 담당자에게 VHL 반송 수행시간이 길어짐을 확인\n
+	2.MES 반송큐 트렌드 확인 (반송큐 증가시 MES 담당자에게 반송 큐 증가 현상 확인)\n\n
+	- 참고 지표\n
+	1.반송큐 개수: {4}개\n
+	2.OHT VHL TRANSFERRING COUNT: 10분간 {5}개\n\n
+	- 참고설명\n
+	1.OHT VHL의 TRANSFERRING TIME이 {0}초로 평균 {6}대비 {7}% 높습니다.\n
+	2.현재 VHL 가동률이 기준치 이상인 {2}%로 반송 지연이 발생될 가능성이 존재 합니다.\n
+	3.VHL TRANSFERRING TIME은 VHL이 실제 FOUP을 이동시키는 시간으로 \n
+	길어진 경우 FOUP이 목적지에 도착하는 시간이 길어지기 때문에 \n
+	정상화 될 수 있도록 조치가 필요합니다.
+	</alarm>
+	<alarm code="TRANSFERRING_ALARM2">	
+	1.OHT VHL TRANSFERRING TIME: 1분 평균 {0}s (1시간 평균 {1}% 이상 발생)\n
+	2.VHL 가동률: {2}% (VHL 가동률 {3}% 이상 발생)\n
+	- 예상 원인 시스템 : M14 OHT MCP\n\n
+	- 조치 가이드: \n
+	1.OHT MCP 담당자에게 VHL 반송 수행시간이 길어짐을 확인\n\n
+	- 참고 지표\n
+	1.반송큐 개수: {4}개\n
+	2.OHT VHL TRANSFERRING COUNT: 10분간 {5}개\n\n
+	- 참고설명\n 
+	1.VHL TRANSFERRING TIME은 VHL이 실제 FOUP을 이동시키는 시간으로 \n
+	길어진 경우 FOUP이 목적지에 도착하는 시간이 길어지기 때문에 \n
+	정상화 될 수 있도록 조치가 필요합니다.
+	</alarm>
+	<alarm code="REP_ALARM_NAME">반송 명령에 대한 OHT 응답 메세지 수 적음</alarm>
+	<alarm code="REP_ALARM_BOLD">-MES ▶ MCS 반송 Q개수 이상이 감지 되었습니다.</alarm>
+	<alarm code="REP_ALARM_BOLD2">-OHT ▶ MCS로 응답하는 반송 CMD Q개수 이상이 감지 되었습니다.</alarm>
+	<alarm code="ASSIGN_TIME_ALARM_NAME">OHT에서 VHL 선정 시간 증가</alarm>
+	<alarm code="ASSIGN_TIME_ALARM_BOLD">-OHT에서 VHL을 선정하는 시간 증가가 감지되었습니다.</alarm>
+	<alarm code="ASSIGN_TIME_ALARM_BOLD2">-OHT에서 VHL을 선정하는 시간 증가가 감지되었습니다.</alarm>
+	<alarm code="TRANSFERRING_TIME_ALARM_NAME">OHT의 반송 Time 증가</alarm>
+	<alarm code="TRANSFERRING_TIME_ALARM_BOLD">-OHT의 반송 Time 증가가 감지 되었습니다.</alarm>
+	<alarm code="TRANSFERRING_TIME_ALARM_BOLD2">-OHT의 반송 Time 증가가 감지 되었습니다.</alarm>
+</alarms>

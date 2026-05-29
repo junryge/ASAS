@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<variables>
+	<!-- *LAYOUT VAR-->
+	<variable code="M16_LFT_PORT_DOWN_RATE">20</variable>
+	<variable code="M14_LFT_PORT_DOWN_RATE">33</variable>
+	<variable code="M14_CNV_PORT_DOWN_RATE">30</variable>
+	<variable code="LAYOUT_SIGMA">3</variable>
+	<variable code="TRIM_VAL">0.2</variable>
+	<variable code="CLIP_QPT_VAL">0.15</variable>
+	<variable code="QPT_SIGMA_VAL">10</variable>
+	<variable code="APM_PREDICT_INPUT_RANGE">60</variable>
+	<variable code="APM_PREDICT_OUTPUT_RANGE">7</variable>
+	<variable code="STORAGE_UTIL_PORT_DOWN">1</variable>
+	<variable code="STORAGE_UTIL_RATE">50</variable>
+
+	<!-- *OHT PERFORMANCE TIME -->
+	<variable code="REQ_LIMIT">50</variable>
+	<variable code="REQ_LIMIT2">50</variable>
+	<variable code="ASSIGN_LIMIT">200</variable>
+	<variable code="TRANSFERRING_LIMIT">200</variable>
+	<variable code="VHL_RATE_LIMIT">95</variable>
+
+	<!-- *HUB_ROOM PREDICT -->
+	<variable code="VHL_OFF_PLUS_DATA">30</variable>
+	<variable code="HUB_ROOM_MODEL_MAPPER">
+		FILE_NM:V8_Numerical_Real_time_10min.py|FLOW:HUBROOM_PREDICT,
+		FILE_NM:V8_Numerical_Real_time_15min.py|FLOW:HUBROOM_PREDICT_15MIN,
+		FILE_NM:V8_Numerical_Real_time_25min.py|FLOW:HUBROOM_PREDICT_25MIN,
+		FILE_NM:V8_Categorical_Real_time_10min.py|FLOW:HUBROOM_PREDICT_10MIN_CATEGORICAL,
+		FILE_NM:V8_Categorical_Real_time_15min.py|FLOW:HUBROOM_PREDICT_15MIN_CATEGORICAL,
+		FILE_NM:V8_Categorical_Real_time_25min.py|FLOW:HUBROOM_PREDICT_25MIN_CATEGORICAL
+	</variable>
+
+	<!-- *MCS ABNORMAL LOG DETECT -->
+	<variable code="ABNORMAL_LIMIT_CONDITION">50</variable>
+	<variable code="CONNECT_CONTROL_TYPE">Connection/Control/TSC</variable>
+	<variable code="CONNECT_REMOTE_TYPE">Connected/Online Remote/AUTO</variable>
+
+	<!-- *Q_TRANSFER -->
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_6">95</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_7">100</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_8">100</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_9">2700</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_10_1">1700</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_10_2">200</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_11_1">500</variable>
+	<variable code="Q_TRANSFER_BOUNDARY_DEFAULT_11_2">97</variable>
+
+	<!-- *Q_TRANSFER PREDICT -->
+	<variable code="QTRANSFER_LIMIT">1700</variable>
+	<variable code="QTRANSFER_INCREASE_RATE">10</variable>
+	<variable code="QTRANSFER_CNV_PORT_DOWN_RATE">10</variable>
+	<variable code="QTRANSFER_M14TOM10_PORT_DOWN_RATE">25</variable>
+	<variable code="QTRANSFER_M14LFT_PORT_DOWN_RATE">10</variable>
+	<variable code="QTRANSFER_ALT_JOB_LIMIT">50</variable>
+	<variable code="QTRANSFER_ALT_JOB_MACHINE_RATE">50</variable>
+	<variable code="QTRANSFER_REQUESTOR_LIST">"RTD/RTS","EIS","ETC","OFS","MCS"</variable>
+	<variable code="Q_TRANSFER_MODEL_MAPPER_DEFAULT">
+		V8.3.1_Q_TRANSFER_PREDICTOR_10m.py
+	</variable>
+	<variable code="Q_TRANSFER_MODEL_MAPPER">
+		FILE_NM:V8.3_Q_TRANSFER_PREDICTOR_10m.py,
+		FILE_NM:V8.3_Q_TRANSFER_PREDICTOR_15m.py,
+		FILE_NM:V8.3_Q_TRANSFER_PREDICTOR_25m.py,
+		FILE_NM:V8.3.1_Q_TRANSFER_PREDICTOR_10m.py,
+		FILE_NM:V8.3.1_Q_TRANSFER_PREDICTOR_15m.py,
+		FILE_NM:V8.3.1_Q_TRANSFER_PREDICTOR_25m.py
+	</variable>
+
+	<!-- *OHT HUBROOM MAXCAPA LIMITS-->
+	<variable code="BRIDGE_TIME_LIMIT">5</variable>
+	<variable code="M16ZT_Q_LIMIT">130</variable>
+	<variable code="M16ZT_Q_LIMIT_2">200</variable>
+	<variable code="M16_HUBROOM_TOTAL_LIMIT">600</variable>
+	<variable code="M16_6F_ZT_MAXCAPA_LIMIT">3</variable>
+	<variable code="M16_6F_ZT_MAXCAPA_LIMIT_2">1</variable>
+	<variable code="M16_6F_ZT_MAXCAPA_LIMIT_3">3</variable>
+
+	<!-- *SERVER RESOURCE APM MEAS -->
+	<variable code="CPU_OS_LIMIT">30</variable>
+	<variable code="CPU_USER_LIMIT">10</variable>
+	<variable code="JVM_CPU_LIMIT">5</variable>
+	<variable code="JVM_HEAP_LIMIT">400</variable>
+	<variable code="JVM_HEAP_LIMIT2">800</variable>
+	<variable code="JVM_THREAD_LIMIT">1000</variable>
+	<variable code="TXN_TIME_LIMIT">3</variable>
+	<variable code="ITSM_CHANGE_SYSTEM_NAME">MCS|MES|MCP|RTD|RTS</variable>
+
+	<!-- SWITCH_SYSTEM_BATCH -->
+	<variable code="RESET_LOG_DURATION">3d</variable>
+
+	<!-- *TRAFFIC_BATCH::from node(separator:',', '-') -> calculating the average of M14A center's velocity -->
+	<variable code="M14A_CENTER_FROM_NODE">7859,7860,7861,7923,7924,7925,6000-6099,6100-6199,6200-6299,6300-6399,6400-6499,6500-6509,6510-6519,6520-6529</variable>
+</variables>
