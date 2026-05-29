@@ -67,6 +67,7 @@ SITES = {
             "V8.3.1_Q_TRANSFER_PREDICTOR_15m.py",
             "V8.3.1_Q_TRANSFER_PREDICTOR_25m.py",
             "QTransferPredictBatch.py --once",      # 자바 QTransferPredictBatch 마이그레이션 (알람 11종 + 통계 + 적재)
+            "QTransferDashBoardItemBatch.py --once", # 자바 QTransferDashBoardItemBatch 마이그레이션 (REQUESTOR/WARNINGLOG/ERROR 대시보드 행)
         ],
     },
 }
