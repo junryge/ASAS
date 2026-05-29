@@ -290,11 +290,16 @@ def register_chat_stream_routes(app):
             ws_block = build_workspace_block(ws_files)
 
         # 최종 메시지 조립
-        final_msgs: list[dict] = [{"role": "system", "content": system_text}]
+        # 일부 vLLM 백엔드(Qwen3.6 등)의 채팅 템플릿은 system 메시지를 정확히 1개,
+        # 맨 앞에만 허용한다 ("System message must be at the beginning").
+        # 따라서 knowledge/workspace 블록을 별도 system 메시지로 추가하지 않고
+        # 메인 system 프롬프트에 병합하여 system 메시지를 항상 1개로 유지한다.
+        system_chunks = [system_text]
         if kb_block:
-            final_msgs.append(kb_block)
+            system_chunks.append(kb_block["content"])
         if ws_block:
-            final_msgs.append(ws_block)
+            system_chunks.append(ws_block["content"])
+        final_msgs: list[dict] = [{"role": "system", "content": "\n\n".join(system_chunks)}]
         for m in messages:
             if m.get("role") == "system":
                 final_msgs.append({"role": "user", "content": "[추가 지시] " + str(m.get("content", ""))})
