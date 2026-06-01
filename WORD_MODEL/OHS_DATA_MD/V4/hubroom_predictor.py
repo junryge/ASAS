@@ -97,7 +97,8 @@ FLOW_NODES = {
     'M14_CNV_TO_HUB':    ('M14',    'M14.QUE.CNV.M14ATOM16ACURRNETQCNT'),
     'M14_TO_HUB_JOB':    ('M14',    'M14.QUE.ALL.3F_TO_HUB_JOB'),
     'M14B_7F_TO_HUB':    ('M14B',   'M14B.QUE.ALL.7F_TO_HUB_JOB'),
-    'M14B_LFT_4ABLD_SUM': ('M14B',   'M14B.LFT.4ABLD_ALL.TOTAL_CURRENTQCNT_SUM'),
+    'M14B_LFT_4ABLD_SUM':        ('M14B',   'M14B.LFT.4ABLD_ALL.TOTAL_CURRENTQCNT_SUM'),
+    'M14B_LFT_4ABLD_TO_HUB_SUM': ('M14B',   'M14B.LFT.4ABLD_ALL.7F_TO_4F_CURRENTQCNT_SUM'),
     'M16A_6F_TO_HUB':    ('M16A',   'M16A.QUE.ALL.6F_TO_HUB_JOB'),
     'M16A_2F_TO_HUB':    ('M16A',   'M16A.QUE.ALL.2F_TO_HUB_JOB'),
     'M16B_10F_TO_HUB':   ('M16B',   'M16B.QUE.ALL.10F_TO_HUB_JOB'),
@@ -279,10 +280,15 @@ def iter_unified_rows(filepath):
                         'rb': safe_int(g(RB_COL['M14B'])),
                         'rd_oht': safe_float(g(RD_OHT_COL['M14B'])),
                         'sorter': safe_int(g(SORTER_COL['M14B'])),
-                        # M14B(7F) ↔ M16HUBROOM(3F) 리프터 6대 합산
-                        # (도메인 4-4: 리프터명 4ABLD로 시작 — 111/112/121/122/131/132)
+                        # M14B(7F) ↔ M16HUBROOM(3F) 리프터 6대 (도메인 4-4)
+                        # 양방향 TOTAL 합산 (참고용)
                         'lft_4abld_sum': sum(
                             safe_int(g(f'M14B.LFT.4ABLD{lid}.TOTAL_CURRENTQCNT'))
+                            for lid in ('111', '112', '121', '122', '131', '132')
+                        ),
+                        # M14B(7F) → M16HUB(3F) 하강 방향만 (정체 직접 신호) ★
+                        'lft_4abld_to_hub_sum': sum(
+                            safe_int(g(f'M14B.LFT.4ABLD{lid}.7F_TO_4F_CURRENTQCNT'))
                             for lid in ('111', '112', '121', '122', '131', '132')
                         ),
                         # 122 단독값 — 운영 호환용 (메신저에서 자주 참조)
@@ -1042,6 +1048,7 @@ class Predictor:
                 flow_now['M14_TO_HUB_JOB'] = m14.get('rb')
                 flow_now['M14B_7F_TO_HUB'] = m14b.get('rb')
                 flow_now['M14B_LFT_4ABLD_SUM'] = m14b.get('lft_4abld_sum')
+                flow_now['M14B_LFT_4ABLD_TO_HUB_SUM'] = m14b.get('lft_4abld_to_hub_sum')
                 flow_now['M16A_6F_TO_HUB'] = m16a.get('rb')
                 flow_now['M16A_2F_TO_HUB'] = m16a.get('inflow_2f')
                 flow_now['M16B_10F_TO_HUB'] = m16b.get('rb')
