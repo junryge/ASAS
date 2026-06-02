@@ -853,12 +853,19 @@ EVENT_FIELDS = [
     # ─────────────────────────────────────────────────────────
     # ★ B 보강 — 룰 진단 키 (운영자 디버깅 + ML 피처)
     # RA 진단: 10분 중 임계 초과 횟수 (5 영역)
+    'M16HUB_ra_count', 'M14_ra_count', 'M14B_ra_count', 'M16A_ra_count', 'M16B_ra_count',
     # RB 진단: 10분 변화량 (5 영역)
+    'M16HUB_rb_diff10', 'M14_rb_diff10', 'M14B_rb_diff10', 'M16A_rb_diff10', 'M16B_rb_diff10',
     # RC 진단: M16HUB 리프터 20분 트렌드 + M14 CNV 편향
+    'M16HUB_rc_trend', 'M14_cnv_skew',
     # RD 진단: OHT 가동률 (다른 영역 R-D 핵심)
+    'M14_rd_oht', 'M14B_rd_oht', 'M16A_rd_oht', 'M16B_rd_oht',
     # SLA 진단: 4분 초과 카운트 (4 영역)
+    'M16HUB_sla_cnt', 'M14_sla_cnt', 'M16A_sla_cnt', 'M16B_sla_cnt',
     # Sorter 실패 (M16A/M16B)
+    'M16A_sorter_fail', 'M16B_sorter_fail',
     # 영역 점수 원본 (50 클리핑 전, 5 영역) — score 가 50 캡 됐는지 확인용
+    'M16HUB_score_raw', 'M14_score_raw', 'M14B_score_raw', 'M16A_score_raw', 'M16B_score_raw',
 ]
 
 INCIDENT_FIELDS = [
@@ -910,7 +917,20 @@ INCIDENT_FIELDS = [
     # ─────────────────────────────────────────────────────────
     # ★ B 보강 — 진단 키 max + sum (사건 분석용)
     # ra_count / rb_diff10 / rc_trend / rd_oht / sla_cnt / sorter_fail / cnv_skew / score_raw
+    'M16HUB_max_ra_count','M14_max_ra_count','M14B_max_ra_count','M16A_max_ra_count','M16B_max_ra_count',
+    'M16HUB_max_rb_diff10','M14_max_rb_diff10','M14B_max_rb_diff10','M16A_max_rb_diff10','M16B_max_rb_diff10',
+    'M16HUB_max_rc_trend','M14_max_cnv_skew',
+    'M14_max_rd_oht','M14B_max_rd_oht','M16A_max_rd_oht','M16B_max_rd_oht',
+    'M16HUB_max_sla_cnt','M14_max_sla_cnt','M16A_max_sla_cnt','M16B_max_sla_cnt',
+    'M16A_max_sorter_fail','M16B_max_sorter_fail',
+    'M16HUB_max_score_raw','M14_max_score_raw','M14B_max_score_raw','M16A_max_score_raw','M16B_max_score_raw',
     # sum 동일 패턴
+    'M16HUB_sum_ra_count','M14_sum_ra_count','M14B_sum_ra_count','M16A_sum_ra_count','M16B_sum_ra_count',
+    'M16HUB_sum_rb_diff10','M14_sum_rb_diff10','M14B_sum_rb_diff10','M16A_sum_rb_diff10','M16B_sum_rb_diff10',
+    'M14_sum_rd_oht','M14B_sum_rd_oht','M16A_sum_rd_oht','M16B_sum_rd_oht',
+    'M16HUB_sum_sla_cnt','M14_sum_sla_cnt','M16A_sum_sla_cnt','M16B_sum_sla_cnt',
+    'M16A_sum_sorter_fail','M16B_sum_sorter_fail',
+    'M16HUB_sum_score_raw','M14_sum_score_raw','M14B_sum_score_raw','M16A_sum_score_raw','M16B_sum_score_raw',
 ]
 
 
@@ -1066,6 +1086,21 @@ def event_to_row(ev, file_name):
         ctx.get('sla_score', 0),
         ctx.get('sorter_score', 0),
         ctx.get('mc_score', 0),
+        # ─────────────────────────────────────────────────────────
+        # ★ B 보강 — 룰 진단 키 (운영자 디버깅 + ML 피처)
+        A('M16HUB','ra_count',0), A('M14','ra_count',0), A('M14B','ra_count',0),
+        A('M16A','ra_count',0), A('M16B','ra_count',0),
+        A('M16HUB','rb_diff_10',0), A('M14','rb_diff_10',0), A('M14B','rb_diff_10',0),
+        A('M16A','rb_diff_10',0), A('M16B','rb_diff_10',0),
+        A('M16HUB','rc_trend',0), _fmt(A('M14','cnv_skew')),
+        _fmt(A('M14','rd_oht')), _fmt(A('M14B','rd_oht')),
+        _fmt(A('M16A','rd_oht')), _fmt(A('M16B','rd_oht')),
+        A('M16HUB','sla_cnt',0), A('M14','sla_cnt',0),
+        A('M16A','sla_cnt',0), A('M16B','sla_cnt',0),
+        A('M16A','sorter_fail_val',0), A('M16B','sorter_fail_val',0),
+        A('M16HUB','area_score_raw',0), A('M14','area_score_raw',0),
+        A('M14B','area_score_raw',0), A('M16A','area_score_raw',0),
+        A('M16B','area_score_raw',0),
     ]
 
 
@@ -1153,6 +1188,25 @@ def incident_to_row(c, file_name):
     unified_sum_vals = [us.get(k, 0) for k in
                         ('layer1_total', 'flow_score', 'sla_score', 'sorter_score', 'mc_score')]
 
+    # B 보강 — 진단 키 max / sum
+    diag_max_vals = (
+        [DM(a, 'ra_count')    for a in AREAS5] +
+        [DM(a, 'rb_diff_10')  for a in AREAS5] +
+        [DM('M16HUB', 'rc_trend'), DM('M14', 'cnv_skew')] +
+        [DM(a, 'rd_oht')      for a in ('M14','M14B','M16A','M16B')] +
+        [DM(a, 'sla_cnt')     for a in ('M16HUB','M14','M16A','M16B')] +
+        [DM(a, 'sorter_fail_val') for a in ('M16A','M16B')] +
+        [DM(a, 'area_score_raw') for a in AREAS5]
+    )
+    diag_sum_vals = (
+        [DS(a, 'ra_count')    for a in AREAS5] +
+        [DS(a, 'rb_diff_10')  for a in AREAS5] +
+        [DS(a, 'rd_oht')      for a in ('M14','M14B','M16A','M16B')] +
+        [DS(a, 'sla_cnt')     for a in ('M16HUB','M14','M16A','M16B')] +
+        [DS(a, 'sorter_fail_val') for a in ('M16A','M16B')] +
+        [DS(a, 'area_score_raw') for a in AREAS5]
+    )
+
     return [
         file_name, c['start_time'].strftime('%Y-%m-%d'),
         c['predict_time'].strftime('%H:%M'), c['start_time'].strftime('%H:%M'),
@@ -1162,7 +1216,8 @@ def incident_to_row(c, file_name):
         c['hot_area'], ';'.join(sorted(c['affected_areas_union'])),
         c['propagation_chain'],
         triggered_rules_s, risk_factors_s, maxcapa_changes_s, relation_s,
-    ] + pts_max_vals + pts_sum_vals + unified_max_vals + unified_sum_vals
+    ] + pts_max_vals + pts_sum_vals + unified_max_vals + unified_sum_vals \
+      + diag_max_vals + diag_sum_vals
 
 
 def append_event_row(out_dir, ev, file_name):

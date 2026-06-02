@@ -1,16 +1,12 @@
 {
   "_comment": "Rule_LO.py + ML_LO.py 공용 설정. 변경 후 predictor 재시작 필요.",
-
   "logpresso_base": "http://10.40.42.27:8888/logpresso",
   "api_key_file": "api_key.txt",
-
   "table_name": "test_table3",
   "file_label": "Rule_system",
-
   "ml_table_name": "test_table4",
   "ml_file_label": "ML_system",
   "ml_enabled": false,
-
   "enabled": false,
   "async_upload": true,
   "queue_max_size": 10000,
@@ -20,13 +16,11 @@
   "log_every_n": 60,
   "fail_silent": true,
   "http_timeout": 30,
-
   "_endpoints": {
     "_comment": "logpresso_base 뒤에 붙는 경로",
     "query": "/httpexport/query.csv",
     "insert": "/httpexport/query.csv"
   },
-
   "_insert_method": "query_savetbl",
   "_insert_method_comment": "query_savetbl: Logpresso 쿼리(savetbl) 방식 / rest: REST API insert (서버 지원 시)"
 }
