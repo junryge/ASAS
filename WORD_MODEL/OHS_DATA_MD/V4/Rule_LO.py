@@ -110,15 +110,16 @@ _fail_count = 0
 # Logpresso 쿼리 빌더 (json "{...}" | import <table>)
 # ============================================================
 def _to_maru_literal(row_dict):
-    """dict → Maru object literal: {k = 'v', k2 = 'v2', k3 = null}.
-       값은 작은따옴표로 감싸고 내부 '는 \\' 로 escape."""
+    """dict → Maru object literal: {k = 'v', k2 = 'v2'}.
+       ★ 0/null/빈값 컬럼은 아예 제외 (Logpresso 글자수 한계 우회).
+       Logpresso 에서는 누락된 컬럼 = null = SQL 에서 0과 동일 처리."""
     parts = []
     for k, v in row_dict.items():
-        if v is None or v == '':
-            parts.append(f"{k} = null")
-        else:
-            s = str(v).replace("'", "\\'")
-            parts.append(f"{k} = '{s}'")
+        # 0/null/빈값 제외 — 쿼리 길이 단축
+        if v is None or v == '' or v == 0 or v == '0' or v == 0.0:
+            continue
+        s = str(v).replace("'", "\\'")
+        parts.append(f"{k} = '{s}'")
     return "{" + ", ".join(parts) + "}"
 
 
