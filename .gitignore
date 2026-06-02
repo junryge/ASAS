@@ -6,3 +6,6 @@ OHS/XSOHS_extracted/
 2차데이터/
 OHT_관련2_combined.zip
 api_key.txt
+
+# V4 폴더 백업 (수동 백업 — git 추적 제외)
+WORD_MODEL/OHS_DATA_MD/V4_BACKUP_*/

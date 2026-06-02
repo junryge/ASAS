@@ -200,11 +200,23 @@ def start():
 def upload(fields, row):
     """단일 이벤트 적재. fields/row 는 hubroom_predictor 의 EVENT_FIELDS / event_to_row 결과.
        fields(list of str) + row(list of values) → dict 로 변환 후 file 컬럼 덮어쓰기."""
+    _upload_with_label(fields, row, FILE_LABEL)
+
+
+def upload_incident(fields, row):
+    """사건단위 적재. INCIDENT_FIELDS / incident_to_row 결과.
+       같은 테이블이지만 file 컬럼을 'Rule_incident' 로 구분 (발동이벤트와 분리)."""
+    incident_label = CFG.get("incident_file_label", "Rule_incident")
+    _upload_with_label(fields, row, incident_label)
+
+
+def _upload_with_label(fields, row, file_label):
+    """내부: file 컬럼 라벨을 인자로 받아 큐에 넣음."""
     if not ENABLED:
         return
     try:
         row_dict = dict(zip(fields, row))
-        row_dict['file'] = FILE_LABEL   # 무조건 하드코딩
+        row_dict['file'] = file_label
         if ASYNC_UPLOAD and _queue is not None:
             try:
                 _queue.put_nowait(row_dict)

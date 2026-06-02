@@ -695,6 +695,17 @@ class IncidentTracker:
             'area_max': {},        # {area: {ra,rb_diff_30,rev_count,rd_fab,sla_ratio,sorter,maxcapa}}
             'triggered_rules': {}, # {area: set of rule_names}
             'maxcapa_history': set(),  # 사건 내 변경된 MAXCAPA 컬럼들
+            # ★ 신규 — 룰별 점수 max / sum 추적 (고객 조합 분석용)
+            'area_pts_max': {},    # {area: {RA: max_pts, ...}}
+            'area_pts_sum': {},    # {area: {RA: total_pts, ...}} — 사건 동안 누적
+            'unified_pts_max': {   # 통합 점수 분해의 사건 중 max
+                'layer1_total': 0, 'flow_score': 0,
+                'sla_score': 0, 'sorter_score': 0, 'mc_score': 0,
+            },
+            'unified_pts_sum': {   # 통합 점수 분해의 사건 동안 누적
+                'layer1_total': 0, 'flow_score': 0,
+                'sla_score': 0, 'sorter_score': 0, 'mc_score': 0,
+            },
         }
         self.state = 'IN_INCIDENT'
         self._merge_area_stats(ctx)
@@ -741,6 +752,24 @@ class IncidentTracker:
             if r.get('sorter_fail_trig'): tr.add('SORT_FAIL')
             for x in r.get('maxcapa_changed', []) or []:
                 c['maxcapa_history'].add(f"{area}:{x}")
+
+            # ★ 룰별 점수 max / sum 누적 (고객 조합 분석용)
+            pm = c['area_pts_max'].setdefault(area, {})
+            ps = c['area_pts_sum'].setdefault(area, {})
+            for sig in ('RA', 'RA_sus', 'RB', 'RB_fast', 'RC', 'RD'):
+                v = r.get(f'pts_{sig}', 0) or 0
+                if v > pm.get(sig, 0):
+                    pm[sig] = v
+                ps[sig] = ps.get(sig, 0) + v
+
+        # 통합 점수 분해 max / sum 누적 (영역 루프 밖, ctx 1회)
+        um = c['unified_pts_max']
+        us = c['unified_pts_sum']
+        for k in ('layer1_total', 'flow_score', 'sla_score', 'sorter_score', 'mc_score'):
+            v = ctx.get(k, 0) or 0
+            if v > um.get(k, 0):
+                um[k] = v
+            us[k] = us.get(k, 0) + v
 
     def _end_current(self, t):
         c = self.current
@@ -805,6 +834,34 @@ INCIDENT_FIELDS = [
     'risk_factors',        # 핵심 위험요인 (예: "M16HUB.AVGTOTALTIME1MIN=12.5분(>=9), ...")
     'maxcapa_changes',     # 사건 내 변경된 운영자 변수
     'relation',            # 영역별 핵심 컬럼-값-임계값 상세
+    # ─────────────────────────────────────────────────────────
+    # ★ 신규 — 룰별 점수 max (사건 중 가장 강하게 발동한 시점)
+    # 5 영역 × 6 룰 = 30 컬럼
+    'M16HUB_max_pts_RA', 'M16HUB_max_pts_RA_sus', 'M16HUB_max_pts_RB',
+    'M16HUB_max_pts_RB_fast', 'M16HUB_max_pts_RC', 'M16HUB_max_pts_RD',
+    'M14_max_pts_RA', 'M14_max_pts_RA_sus', 'M14_max_pts_RB',
+    'M14_max_pts_RB_fast', 'M14_max_pts_RC', 'M14_max_pts_RD',
+    'M14B_max_pts_RA', 'M14B_max_pts_RA_sus', 'M14B_max_pts_RB',
+    'M14B_max_pts_RB_fast', 'M14B_max_pts_RC', 'M14B_max_pts_RD',
+    'M16A_max_pts_RA', 'M16A_max_pts_RA_sus', 'M16A_max_pts_RB',
+    'M16A_max_pts_RB_fast', 'M16A_max_pts_RC', 'M16A_max_pts_RD',
+    'M16B_max_pts_RA', 'M16B_max_pts_RA_sus', 'M16B_max_pts_RB',
+    'M16B_max_pts_RB_fast', 'M16B_max_pts_RC', 'M16B_max_pts_RD',
+    # ★ 룰별 점수 sum (사건 동안 누적 — 얼마나 오래 발동했는지)
+    # 5 영역 × 6 룰 = 30 컬럼
+    'M16HUB_sum_pts_RA', 'M16HUB_sum_pts_RA_sus', 'M16HUB_sum_pts_RB',
+    'M16HUB_sum_pts_RB_fast', 'M16HUB_sum_pts_RC', 'M16HUB_sum_pts_RD',
+    'M14_sum_pts_RA', 'M14_sum_pts_RA_sus', 'M14_sum_pts_RB',
+    'M14_sum_pts_RB_fast', 'M14_sum_pts_RC', 'M14_sum_pts_RD',
+    'M14B_sum_pts_RA', 'M14B_sum_pts_RA_sus', 'M14B_sum_pts_RB',
+    'M14B_sum_pts_RB_fast', 'M14B_sum_pts_RC', 'M14B_sum_pts_RD',
+    'M16A_sum_pts_RA', 'M16A_sum_pts_RA_sus', 'M16A_sum_pts_RB',
+    'M16A_sum_pts_RB_fast', 'M16A_sum_pts_RC', 'M16A_sum_pts_RD',
+    'M16B_sum_pts_RA', 'M16B_sum_pts_RA_sus', 'M16B_sum_pts_RB',
+    'M16B_sum_pts_RB_fast', 'M16B_sum_pts_RC', 'M16B_sum_pts_RD',
+    # 통합 점수 분해 max + sum (10 컬럼)
+    'max_layer1_total', 'max_flow_score', 'max_sla_score', 'max_sorter_score', 'max_mc_score',
+    'sum_layer1_total', 'sum_flow_score', 'sum_sla_score', 'sum_sorter_score', 'sum_mc_score',
 ]
 
 
@@ -1018,6 +1075,22 @@ def incident_to_row(c, file_name):
     maxcapa_changes_s = '; '.join(sorted(c.get('maxcapa_history', []) or []))
     relation_s = ' | '.join(rel_parts) if rel_parts else ''
 
+    # ★ 신규 — 룰별 점수 max / sum (5 영역 × 6 룰 = 30 + 30 = 60 + 통합 10 = 70 컬럼)
+    def PM(area, sig):
+        return (c.get('area_pts_max', {}).get(area, {}) or {}).get(sig, 0)
+    def PS(area, sig):
+        return (c.get('area_pts_sum', {}).get(area, {}) or {}).get(sig, 0)
+    SIGS = ('RA', 'RA_sus', 'RB', 'RB_fast', 'RC', 'RD')
+    AREAS5 = ('M16HUB', 'M14', 'M14B', 'M16A', 'M16B')
+    pts_max_vals = [PM(a, s) for a in AREAS5 for s in SIGS]
+    pts_sum_vals = [PS(a, s) for a in AREAS5 for s in SIGS]
+    um = c.get('unified_pts_max', {}) or {}
+    us = c.get('unified_pts_sum', {}) or {}
+    unified_max_vals = [um.get(k, 0) for k in
+                        ('layer1_total', 'flow_score', 'sla_score', 'sorter_score', 'mc_score')]
+    unified_sum_vals = [us.get(k, 0) for k in
+                        ('layer1_total', 'flow_score', 'sla_score', 'sorter_score', 'mc_score')]
+
     return [
         file_name, c['start_time'].strftime('%Y-%m-%d'),
         c['predict_time'].strftime('%H:%M'), c['start_time'].strftime('%H:%M'),
@@ -1027,7 +1100,7 @@ def incident_to_row(c, file_name):
         c['hot_area'], ';'.join(sorted(c['affected_areas_union'])),
         c['propagation_chain'],
         triggered_rules_s, risk_factors_s, maxcapa_changes_s, relation_s,
-    ]
+    ] + pts_max_vals + pts_sum_vals + unified_max_vals + unified_sum_vals
 
 
 def append_event_row(out_dir, ev, file_name):
@@ -1044,7 +1117,15 @@ def append_event_row(out_dir, ev, file_name):
 def append_incident_row(out_dir, incident, file_name):
     ymd = incident['start_time'].strftime('%Y%m%d')
     path = os.path.join(out_dir, f'{ymd}_사건단위.csv')
-    append_rows_csv(path, INCIDENT_FIELDS, [incident_to_row(incident, file_name)])
+    row = incident_to_row(incident, file_name)
+    append_rows_csv(path, INCIDENT_FIELDS, [row])
+    # ★ 신규 — Logpresso 사건단위 적재 (file='Rule_incident')
+    if _logpresso is not None:
+        try:
+            _logpresso.upload_incident(INCIDENT_FIELDS, row)
+        except AttributeError:
+            # 구 버전 Rule_LO 호환 (upload_incident 없으면 일반 upload)
+            _logpresso.upload(INCIDENT_FIELDS, row)
     return path
 
 
