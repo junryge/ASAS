@@ -1011,6 +1011,10 @@ pre{position:relative}
         <div id="scGenResult" style="display:none;">
           <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">SKILL.md 내용 (LLM 생성 후 편집 가능)</label>
           <textarea id="scGenContent" rows="20" placeholder="🤖 LLM으로 생성 버튼을 클릭하면 여기에 SKILL.md 초안이 생성됩니다.&#10;직접 입력해도 됩니다." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <button id="scGenCopyBtn" onclick="copyGeneratedMd()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📋 MD 복사</button>
+            <button onclick="downloadGeneratedMd()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📥 MD 다운로드 (.md)</button>
+          </div>
           <div id="scGenValidateResult" style="margin-top:10px;"></div>
         </div>
       </div>
@@ -3690,6 +3694,35 @@ async function validateGenerated(){
   }catch(e){
     document.getElementById('scGenValidateResult').innerHTML = `<div style="color:#ef4444;font-size:12px;">오류: ${e.message}</div>`;
   }
+}
+async function copyGeneratedMd(){
+  const out = document.getElementById('scGenContent');
+  if(!out.value.trim()){ alert('생성된 SKILL.md 내용이 없습니다'); return; }
+  try{
+    await navigator.clipboard.writeText(out.value);
+    const btn = document.getElementById('scGenCopyBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ 복사됨';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }catch(e){
+    out.select();
+    document.execCommand('copy');
+    alert('클립보드에 복사됨');
+  }
+}
+function downloadGeneratedMd(){
+  const content = document.getElementById('scGenContent').value;
+  if(!content.trim()){ alert('생성된 SKILL.md 내용이 없습니다'); return; }
+  // frontmatter 의 name 으로 파일명 추정 (없으면 주제 입력값 → SKILL)
+  const m = content.match(/name:\s*(.+)/);
+  let base = m ? m[1].trim() : (document.getElementById('scTopic').value.trim() || 'SKILL');
+  base = base.replace(/[^\w\-가-힣]+/g, '-').replace(/^-+|-+$/g, '') || 'SKILL';
+  const blob = new Blob([content], {type: 'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${base}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 async function downloadGeneratedSkill(){
   const content = document.getElementById('scGenContent').value;
