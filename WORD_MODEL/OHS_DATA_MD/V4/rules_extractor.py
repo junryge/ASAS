@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PREDICTOR_PY = HERE / "hubroom_predictor.py'
+PREDICTOR_PY = HERE / 'hubroom_predictor.py'
 
 
 def extract_constants(source: str) -> dict:
