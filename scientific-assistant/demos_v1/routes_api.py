@@ -11,6 +11,7 @@ import math
 import time
 import uuid
 import base64
+import requests as req
 from flask import request, jsonify, render_template, send_file
 
 from demos_v1.utils import (
@@ -45,6 +46,104 @@ except ImportError:
 # 서버 부팅마다 새로 생성되는 식별자 — 서버 재시작 시 클라이언트 강제 로그아웃에 사용
 import uuid as _uuid
 SERVER_BOOT_ID = _uuid.uuid4().hex
+
+
+# GGUF 로컬 모델 호출용 (스킬/wiki LLM 자동 생성에서 GGUF 선택 지원)
+try:
+    from demos_v1.gguf import load_gguf_model, gguf_chat
+    _GGUF_AVAILABLE = True
+except Exception:
+    _GGUF_AVAILABLE = False
+
+
+def _resolve_gen_env(data):
+    """요청 body 의 env 선택값을 단일 env_id 로 정규화.
+
+    chat 과 동일한 포맷 지원: env 는 배열(['gguf-0'], ['coder-480b']) 또는 문자열.
+    'auto' / 빈 값이면 "" 반환 → 호출측에서 첫 번째 API env 로 폴백.
+    """
+    raw_env = data.get("env", None)
+    if isinstance(raw_env, list):
+        return next((e for e in raw_env if e and e != "auto"), "")
+    if isinstance(raw_env, str) and raw_env not in ("", "auto"):
+        return raw_env
+    return ""
+
+
+def _llm_generate_text(data, system_prompt, user_msg, max_tokens=8192, timeout=120):
+    """선택된 env(API 또는 GGUF)로 1회성 LLM 호출.
+
+    반환: (content, model_name). 실패 시 ValueError 발생.
+    - GGUF env 선택 시: 모델 로드 후 gguf_chat 사용.
+    - API env 선택 시: 해당 env 의 url/model 사용.
+    - 선택 없음(auto): 첫 번째 사용 가능한 API env 로 폴백.
+    """
+    env_id = _resolve_gen_env(data)
+
+    # ── GGUF 경로 ──
+    if env_id.startswith("gguf-"):
+        if not _GGUF_AVAILABLE:
+            raise ValueError("GGUF 엔진을 사용할 수 없습니다 (llama-cpp 미설치).")
+        cfg = ENV_CONFIG.get(env_id, {})
+        gguf_path = cfg.get("_gguf_path")
+        if not gguf_path:
+            raise ValueError(f"GGUF 모델 경로를 찾을 수 없습니다: {env_id}")
+        load_n_ctx = data.get("n_ctx") or 32768
+        if not load_gguf_model(gguf_path, n_ctx=load_n_ctx):
+            raise ValueError(f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}")
+        gguf_cap = max(256, TOKEN_SETTINGS.get("gguf_reply_cap", 4096))
+        content, err = gguf_chat(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.7,
+            max_tokens=min(max_tokens, gguf_cap),
+        )
+        if err:
+            raise ValueError(err)
+        return (content or ""), os.path.basename(gguf_path)
+
+    # ── API 경로 ──
+    if env_id and env_id in ENV_CONFIG:
+        api_url = ENV_CONFIG[env_id]["url"]
+        model = ENV_CONFIG[env_id]["model"]
+    else:
+        # 선택 없음 → 첫 번째 사용 가능한 API env 로 폴백
+        api_url = ""
+        model = ""
+        for eid, ecfg in ENV_CONFIG.items():
+            if not eid.startswith("gguf-"):
+                api_url = ecfg["url"]
+                model = ecfg["model"]
+                break
+        if not api_url:
+            raise ValueError("사용 가능한 LLM API가 없습니다. API 환경을 설정하세요.")
+
+    headers = {"Content-Type": "application/json"}
+    if API_TOKEN:
+        headers["Authorization"] = f"Bearer {API_TOKEN}"
+    resp = req.post(
+        api_url,
+        headers=headers,
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+            "stream": False,
+        },
+        timeout=timeout,
+        verify=False,
+    )
+    resp.raise_for_status()
+    result = resp.json()
+    if "choices" in result and result["choices"]:
+        return (result["choices"][0].get("message", {}).get("content", "") or ""), model
+    raise ValueError("LLM 응답이 비어있습니다.")
 
 
 def register_api_routes(app):
@@ -958,49 +1057,18 @@ def register_api_routes(app):
                 user_msg += f"상세 요구사항: {details}\n"
             user_msg += "\n위 내용으로 Claude Code SKILL.md를 한글로 작성해주세요."
 
-        # 첫 번째 사용 가능한 API 환경 찾기
-        api_url = ""
-        model = ""
-        for eid, ecfg in ENV_CONFIG.items():
-            if not eid.startswith("gguf-"):
-                api_url = ecfg["url"]
-                model = ecfg["model"]
-                break
-
-        if not api_url:
-            return jsonify({"error": "사용 가능한 LLM API가 없습니다. API 환경을 설정하세요."}), 500
-
+        # 선택된 env(API/GGUF)로 LLM 호출 — 선택 없으면 첫 API env 로 폴백
         try:
-            headers = {"Content-Type": "application/json"}
-            if API_TOKEN:
-                headers["Authorization"] = f"Bearer {API_TOKEN}"
-
-            resp = req.post(
-                api_url,
-                headers=headers,
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_msg},
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 8192,
-                    "stream": False,
-                },
-                timeout=120,
-                verify=False,
+            generated, model = _llm_generate_text(
+                data, system_prompt, user_msg, max_tokens=8192, timeout=120
             )
-            resp.raise_for_status()
-            result = resp.json()
-            if "choices" in result and len(result["choices"]) > 0:
-                generated = result["choices"][0].get("message", {}).get("content", "")
-                # ```markdown ... ``` 블록 추출
-                md_match = re.search(r'```(?:markdown)?\s*\n(.*?)```', generated, re.DOTALL)
-                if md_match:
-                    generated = md_match.group(1).strip()
-                return jsonify({"content": generated, "model": model})
-            return jsonify({"error": "LLM 응답이 비어있습니다."}), 500
+            if not generated:
+                return jsonify({"error": "LLM 응답이 비어있습니다."}), 500
+            # ```markdown ... ``` 블록 추출
+            md_match = re.search(r'```(?:markdown)?\s*\n(.*?)```', generated, re.DOTALL)
+            if md_match:
+                generated = md_match.group(1).strip()
+            return jsonify({"content": generated, "model": model})
         except Exception as e:
             return jsonify({"error": f"LLM 호출 실패: {str(e)}"}), 500
 
@@ -1064,40 +1132,11 @@ def register_api_routes(app):
         title_part = f"\n제안된 제목: {title_hint}\n" if title_hint else ""
         user_msg = f"다음 글을 위 규칙대로 wiki 페이지로 정리해줘.{title_part}\n\n---\n{source}\n---"
 
-        # 첫 번째 사용 가능한 API 환경 찾기
-        api_url = ""
-        model = ""
-        for eid, ecfg in ENV_CONFIG.items():
-            if not eid.startswith("gguf-"):
-                api_url = ecfg["url"]
-                model = ecfg["model"]
-                break
-        if not api_url:
-            return jsonify({"error": "사용 가능한 LLM API가 없습니다."}), 500
-
+        # 선택된 env(API/GGUF)로 LLM 호출 — 선택 없으면 첫 API env 로 폴백
         try:
-            headers = {"Content-Type": "application/json"}
-            if API_TOKEN:
-                headers["Authorization"] = f"Bearer {API_TOKEN}"
-            resp = req.post(
-                api_url, headers=headers,
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_msg},
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 8192,
-                    "stream": False,
-                },
-                timeout=180, verify=False,
+            content, model = _llm_generate_text(
+                data, system_prompt, user_msg, max_tokens=8192, timeout=180
             )
-            resp.raise_for_status()
-            result = resp.json()
-            content = ""
-            if "choices" in result and result["choices"]:
-                content = result["choices"][0].get("message", {}).get("content", "")
             # ```markdown ... ``` 로 감싸졌으면 제거
             md_match = re.search(r'```(?:markdown|md)?\s*\n(.*?)```', content, re.DOTALL)
             if md_match:
