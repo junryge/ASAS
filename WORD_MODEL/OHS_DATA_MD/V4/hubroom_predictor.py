@@ -466,21 +466,44 @@ def eval_area_rules(area, window):
             out['maxcapa_changed'].append(f"{col.split('.')[-1]}={val}(<={th})")
     out['maxcapa_changed_n'] = len(out['maxcapa_changed'])
 
-    # 영역 점수 (0~50)
-    s = 0
+    # 영역 점수 (0~50) — 룰별 분해 점수 함께 저장
+    ra_pts      = 10 if out['ra_trig']      else 0
+    ra_sus_pts  = 5  if out['ra_sustained'] else 0
+    rb_pts      = 10 if out['rb_trig']      else 0
+    rb_fast_pts = 5  if out['rb_fast']      else 0
+    rc_pts      = 8  if out['rc_trig']      else 0
+    rd_pts      = 7  if out['rd_trig']      else 0
+    sla_pts     = 5  if out['sla_trig']     else 0
+    sort_pts    = 3  if out['sorter_trig']  else 0
+    mc_pts      = 10 * out['maxcapa_changed_n']
+
     sig = []
-    if out['ra_trig']:        s += 10; sig.append('RA')
-    if out['ra_sustained']:   s += 5;  sig.append('RA_sus')
-    if out['rb_trig']:        s += 10; sig.append('RB')
-    if out['rb_fast']:        s += 5;  sig.append('RB_fast')
-    if out['rc_trig']:        s += 8;  sig.append('RC')
-    if out['rd_trig']:        s += 7;  sig.append('RD')
-    if out['sla_trig']:       s += 5;  sig.append('SLA')
-    if out['sorter_trig']:    s += 3;  sig.append('SORT')
+    if out['ra_trig']:        sig.append('RA')
+    if out['ra_sustained']:   sig.append('RA_sus')
+    if out['rb_trig']:        sig.append('RB')
+    if out['rb_fast']:        sig.append('RB_fast')
+    if out['rc_trig']:        sig.append('RC')
+    if out['rd_trig']:        sig.append('RD')
+    if out['sla_trig']:       sig.append('SLA')
+    if out['sorter_trig']:    sig.append('SORT')
     if out['maxcapa_changed_n'] > 0:
-        s += 10; sig.append(f'MAXCAPA*{out["maxcapa_changed_n"]}')
+        sig.append(f'MAXCAPA*{out["maxcapa_changed_n"]}')
+
+    s = ra_pts + ra_sus_pts + rb_pts + rb_fast_pts + rc_pts + rd_pts + sla_pts + sort_pts + mc_pts
     out['area_score'] = min(50, s)
+    out['area_score_raw'] = s  # 클리핑 전 원본 (분석용)
     out['area_signals'] = sig
+
+    # 룰별 분해 점수 (고객 조합 분석용)
+    out['pts_RA']      = ra_pts
+    out['pts_RA_sus']  = ra_sus_pts
+    out['pts_RB']      = rb_pts
+    out['pts_RB_fast'] = rb_fast_pts
+    out['pts_RC']      = rc_pts
+    out['pts_RD']      = rd_pts
+    out['pts_SLA']     = sla_pts
+    out['pts_SORT']    = sort_pts
+    out['pts_MAXCAPA'] = mc_pts
     return out
 
 
@@ -760,6 +783,16 @@ EVENT_FIELDS = [
     'sla_M14', 'sla_M16A', 'sla_M16B', 'sla_M16HUB',
     'sorter_M14', 'sorter_M14B', 'sorter_M16A', 'sorter_M16B',
     'reason',
+    # ─────────────────────────────────────────────────────────
+    # ★ 신규 — 룰별 분해 점수 (고객 조합 분석용)
+    # 영역별 6 룰 점수 × 5 핵심 영역 = 30 컬럼
+    'M16HUB_pts_RA', 'M16HUB_pts_RA_sus', 'M16HUB_pts_RB', 'M16HUB_pts_RB_fast', 'M16HUB_pts_RC', 'M16HUB_pts_RD',
+    'M14_pts_RA',    'M14_pts_RA_sus',    'M14_pts_RB',    'M14_pts_RB_fast',    'M14_pts_RC',    'M14_pts_RD',
+    'M14B_pts_RA',   'M14B_pts_RA_sus',   'M14B_pts_RB',   'M14B_pts_RB_fast',   'M14B_pts_RC',   'M14B_pts_RD',
+    'M16A_pts_RA',   'M16A_pts_RA_sus',   'M16A_pts_RB',   'M16A_pts_RB_fast',   'M16A_pts_RC',   'M16A_pts_RD',
+    'M16B_pts_RA',   'M16B_pts_RA_sus',   'M16B_pts_RB',   'M16B_pts_RB_fast',   'M16B_pts_RC',   'M16B_pts_RD',
+    # 통합 점수 분해 (5 컬럼)
+    'layer1_total', 'flow_score', 'sla_score_total', 'sorter_score_total', 'mc_score_total',
 ]
 
 INCIDENT_FIELDS = [
@@ -901,6 +934,24 @@ def event_to_row(ev, file_name):
         A('M14', 'sorter_val', 0), A('M14B', 'sorter_val', 0),
         A('M16A', 'sorter_val', 0), A('M16B', 'sorter_val', 0),
         reason,
+        # ─────────────────────────────────────────────────────────
+        # ★ 신규 — 룰별 분해 점수 (영역 5 × 6 룰 = 30 컬럼)
+        A('M16HUB', 'pts_RA', 0), A('M16HUB', 'pts_RA_sus', 0), A('M16HUB', 'pts_RB', 0),
+        A('M16HUB', 'pts_RB_fast', 0), A('M16HUB', 'pts_RC', 0), A('M16HUB', 'pts_RD', 0),
+        A('M14',    'pts_RA', 0), A('M14',    'pts_RA_sus', 0), A('M14',    'pts_RB', 0),
+        A('M14',    'pts_RB_fast', 0), A('M14',    'pts_RC', 0), A('M14',    'pts_RD', 0),
+        A('M14B',   'pts_RA', 0), A('M14B',   'pts_RA_sus', 0), A('M14B',   'pts_RB', 0),
+        A('M14B',   'pts_RB_fast', 0), A('M14B',   'pts_RC', 0), A('M14B',   'pts_RD', 0),
+        A('M16A',   'pts_RA', 0), A('M16A',   'pts_RA_sus', 0), A('M16A',   'pts_RB', 0),
+        A('M16A',   'pts_RB_fast', 0), A('M16A',   'pts_RC', 0), A('M16A',   'pts_RD', 0),
+        A('M16B',   'pts_RA', 0), A('M16B',   'pts_RA_sus', 0), A('M16B',   'pts_RB', 0),
+        A('M16B',   'pts_RB_fast', 0), A('M16B',   'pts_RC', 0), A('M16B',   'pts_RD', 0),
+        # 통합 점수 분해 (5 컬럼)
+        ctx.get('layer1_total', 0),
+        ctx.get('flow_score', 0),
+        ctx.get('sla_score', 0),
+        ctx.get('sorter_score', 0),
+        ctx.get('mc_score', 0),
     ]
 
 

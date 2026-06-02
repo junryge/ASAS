@@ -59,16 +59,21 @@ def extract_score_weights(source: str) -> dict:
     """eval_area_rules / evaluate_unified 의 점수 가중치 추출."""
     weights = {}
 
-    # 영역 점수 (eval_area_rules 내부)
+    # 영역 점수 — 룰별 분해 점수 형태 (RA_pts = 10 if out['ra_trig'] else 0)
     area_pattern = re.compile(
-        r"if out\['(\w+)'\]:\s*s \+=\s*(\d+);\s*sig\.append\('([^']+)'\)"
+        r"(\w+?)_pts\s*=\s*(\d+)\s*if out\['(\w+)'\]\s*else 0"
     )
     for m in area_pattern.finditer(source):
-        flag, score, signal = m.groups()
-        weights.setdefault('area', {})[signal] = {'flag': flag, 'score': int(score)}
+        sig_lower, score, flag = m.groups()
+        # sig_lower 는 ra / ra_sus / rb / rb_fast / rc / rd / sla / sort 등
+        sig_name = {
+            'ra': 'RA', 'ra_sus': 'RA_sus', 'rb': 'RB', 'rb_fast': 'RB_fast',
+            'rc': 'RC', 'rd': 'RD', 'sla': 'SLA', 'sort': 'SORT',
+        }.get(sig_lower, sig_lower.upper())
+        weights.setdefault('area', {})[sig_name] = {'flag': flag, 'score': int(score)}
 
-    # MAXCAPA
-    if "s += 10; sig.append(f'MAXCAPA*{out[\"maxcapa_changed_n\"]}')" in source:
+    # MAXCAPA (mc_pts = 10 * out['maxcapa_changed_n'])
+    if "mc_pts" in source and "maxcapa_changed_n" in source:
         weights.setdefault('area', {})['MAXCAPA*n'] = {'flag': 'maxcapa_changed_n>0', 'score': 10, 'per': '개'}
 
     # Flow score
