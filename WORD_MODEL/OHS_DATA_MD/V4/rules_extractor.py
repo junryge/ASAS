@@ -177,20 +177,11 @@ def main():
     p.add_argument('--check', help='MD 문서 누락 검증')
     args = p.parse_args()
 
-    # 룰 덤프 로드: hubroom_predictor.py 있으면 재추출, 없으면 캐시 사용
-    out_path = HERE / args.out
-    if PREDICTOR_PY.exists():
-        # 코드에서 새로 추출
-        dump = dump_all()
-        out_path.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding='utf-8')
-        print(f'✅ 룰 덤프 → {out_path}')
-    elif out_path.exists():
-        # 캐시 사용 (스킬 폴더 단독 배포 시)
-        dump = json.loads(out_path.read_text(encoding='utf-8'))
-        print(f'ℹ️ hubroom_predictor.py 없음 — 캐시 사용: {out_path}')
-    else:
-        sys.exit(f'❌ hubroom_predictor.py 도 rules_dump.json 도 없음. 추출 불가.')
+    dump = dump_all()
 
+    out_path = HERE / args.out
+    out_path.write_text(json.dumps(dump, ensure_ascii=False, indent=2), encoding='utf-8')
+    print(f'✅ 룰 덤프 → {out_path}')
     print(f'   상수 {len(dump["constants"])}개')
     print(f'   영역 점수 시그널 {len(dump["score_weights"].get("area", {}))}개')
     print(f'   위험도 등급 {len(dump["risk_levels"])}개')
