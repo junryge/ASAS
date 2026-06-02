@@ -129,48 +129,11 @@ def _build_query(row_dict):
     return f'json "{escaped}" | import {TABLE_NAME}'
 
 
-# ── HTTP Session (연결 재사용 + 안정성) ──
-_session = None
-
-
-def _get_session():
-    """requests.Session — 워커 스레드 1개당 1 세션 재사용."""
-    global _session
-    if _session is None:
-        _session = requests.Session()
-        # 연결 풀 키프얼라이브 + 명시적 재시도 비활성 (수동 재시도 사용)
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=2, pool_maxsize=4, max_retries=0
-        )
-        _session.mount('http://', adapter)
-        _session.mount('https://', adapter)
-    return _session
-
-
 def _post_query(q):
-    """Logpresso 쿼리 실행 — URL 길이 5KB 초과 시 POST, 아니면 GET 폴백.
-
-    131 컬럼 row 의 URL 인코딩 길이 ~5KB → GET 시 일부 서버가 끊음 (RemoteDisconnected).
-    Logpresso httpexport 는 _q 를 form body 로도 받음 → POST 가 안전.
-    """
+    """Logpresso 쿼리 실행 (GET httpexport)."""
     qs = " ".join(q.split())
-    s = _get_session()
-    base = f"{INSERT_URL}?_apikey={API_KEY}"
-    headers = {'Connection': 'close'}  # 서버 측 keep-alive 끊김 방지
-
-    # POST 우선 (URL 길이 무관)
-    try:
-        r = s.post(base, data={'_q': qs}, headers=headers,
-                   verify=False, timeout=HTTP_TIMEOUT)
-        if r.status_code == 200 and not r.text.strip().startswith("<"):
-            return r
-        # POST 거부 (HTTP 4xx/5xx 또는 HTML 응답) → GET 폴백
-    except requests.exceptions.RequestException:
-        pass
-
-    # GET 폴백 (작은 쿼리 또는 POST 거부 시)
-    url = f"{base}&_q={urllib.parse.quote(qs, safe='')}"
-    r = s.get(url, headers=headers, verify=False, timeout=HTTP_TIMEOUT)
+    url = f"{INSERT_URL}?_apikey={API_KEY}&_q={urllib.parse.quote(qs, safe='')}"
+    r = requests.get(url, verify=False, timeout=HTTP_TIMEOUT)
     if r.status_code != 200 or r.text.strip().startswith("<"):
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
     return r
@@ -180,19 +143,13 @@ def _post_query(q):
 # 전송 (재시도 포함) — 단일 행
 # ============================================================
 def _send_one(row_dict):
-    """한 건 전송. 성공 True / 실패 False.
-    ConnectionError / Timeout 은 백오프 강화 (서버 회복 시간 대기)."""
+    """한 건 전송. 성공 True / 실패 False."""
     q = _build_query(row_dict)
     last_err = None
     for attempt in range(RETRY_ON_FAIL):
         try:
             _post_query(q)
             return True
-        except (requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as e:
-            # 연결 끊김/타임아웃 — 서버 부하 의심, 백오프 강화
-            last_err = e
-            time.sleep(RETRY_BACKOFF * (3 ** attempt))
         except Exception as e:
             last_err = e
             time.sleep(RETRY_BACKOFF * (2 ** attempt))
