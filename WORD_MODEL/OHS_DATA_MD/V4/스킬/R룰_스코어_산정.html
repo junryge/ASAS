@@ -107,6 +107,16 @@
   코드 출처: <code>hubroom_predictor.py</code> (line 60-110, 359-484, 521-620).
 </div>
 
+<div style="background: #fff7e6; border-left: 5px solid #ff9800; padding: 14px 22px; border-radius: 0 8px 8px 0; margin: 20px 0;">
+  <b>⚠ A+B+C 보강 안내 (최신)</b><br>
+  본 문서는 <b>R-A/B/C/D 4 룰 + 영역 점수 6 룰 분해</b> 기준입니다.<br>
+  <b>최신 (EVENT_FIELDS 131 컬럼)</b>: 영역 점수가 <b>9 룰 분해</b> 로 확장 (RA/RA_sus/RB/RB_fast/RC/RD + <b>SLA/SORT/MAXCAPA</b>).<br>
+  → <code>area_score = Σ 9 pts</code> 검산 정확히 일치.<br>
+  → 영역별 진단 키 27 컬럼 추가 (ra_count, rb_diff10, rd_oht, sla_cnt 등).<br>
+  → 영역 대칭 복구 (M16B_rb_diff30, sla_M14B, sorter_M16HUB).<br>
+  자세한 사항: <code>발동이벤트_컬럼설명.md</code> [13] 장 참조.
+</div>
+
 <div class="toc">
   <strong>목차</strong>
   <ol>

@@ -820,7 +820,7 @@ STAGE_LABEL = {0: '이벤트없음', 1: '1단계 조기경보', 2: '2단계 주�
 EVENT_FIELDS = [
     'file', 'datetime', 'date', 'time',
     'stage', 'stage_name', 'prev_stage', 'transition',
-    'unified_risk_score', 'unified_risk_level', 'hot_area',
+    'unified_risk_score', 'unified_risk_level', 'hot_area', 'hot_score',
     'affected_areas', 'propagation_chain',
     'flow_signals', 'maxcapa_signals',
     'M16HUB_score', 'M14_score', 'M14B_score', 'M16A_score', 'M16B_score',
@@ -1036,7 +1036,7 @@ def event_to_row(ev, file_name):
         file_name, t.strftime('%Y-%m-%d %H:%M'), t.strftime('%Y-%m-%d'), t.strftime('%H:%M'),
         stage, STAGE_LABEL.get(stage, ''), ev['prev_stage'], transition,
         ctx.get('unified_risk_score', 0), ctx.get('unified_risk_level', '정상'),
-        ctx.get('hot_area', ''),
+        ctx.get('hot_area', ''), ctx.get('hot_score', 0),
         ctx.get('affected_areas', ''), ctx.get('propagation_chain', ''),
         ctx.get('flow_signals', ''), ctx.get('maxcapa_signals', ''),
         A('M16HUB', 'area_score', 0), A('M14', 'area_score', 0),
