@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PREDICTOR = HERE.parent / 'hubroom_predictor.py'
+PREDICTOR = HERE / "hubroom_predictor.py'
 
 src = PREDICTOR.read_text(encoding='utf-8')
 
