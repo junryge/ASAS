@@ -123,9 +123,32 @@
 V4/스킬/
 ├── <span class="star">일반_에이전트_스킬.md</span>             <span class="dim"># 정형 SOP — 표/임계/대응 매뉴얼</span>
 ├── <span class="star">카파시_스타일_에이전트_스킬.md</span>     <span class="dim"># 1차 원리 학습 — 15 강의</span>
-├── <span class="star">rules_extractor.py</span>               <span class="dim"># 룰 자동 추출 + MD 누락 검증</span>
-├── rules_dump.json                  <span class="dim"># 추출 결과 (참고)</span>
+├── <span class="star">rules_extractor.py</span>               <span class="dim"># 룰 자동 추출 + MD 누락 검증 (선택)</span>
+├── rules_dump.json                  <span class="dim"># 추출 결과 (선택)</span>
+├── hubroom_predictor.py             <span class="dim"># 룰베이스 코드 (검증 시 필요)</span>
 └── 스킬_사용법.html                  <span class="dim"># 본 문서</span>
+</div>
+
+<div class="callout ok" style="margin-top: 16px;">
+  <strong>★ 두 가지 사용 시나리오 — 필요한 파일 다름</strong>
+  <table style="margin-top: 10px;">
+    <tr><th>시나리오</th><th>필요한 파일</th><th>hubroom_predictor.py 필요?</th></tr>
+    <tr>
+      <td><b>A. LLM 운영</b> (system prompt 주입)</td>
+      <td>MD/HTML <b>5 파일만</b> 충분<br>
+          <code>일반/카파시 .md</code> + <code>R룰_*.html</code> + <code>스킬_사용법.html</code></td>
+      <td>❌ <b>불요</b></td>
+    </tr>
+    <tr>
+      <td><b>B. 스킬 갱신/검증</b> (룰 변경 후 동기화)</td>
+      <td>위 5 파일 + <code>rules_extractor.py</code> + <code>rules_dump.json</code> + <code>hubroom_predictor.py</code></td>
+      <td>✅ <b>필수</b></td>
+    </tr>
+  </table>
+  <p style="margin-top: 10px;">
+    LLM 운영만 할 때는 <code>hubroom_predictor.py</code> / <code>rules_extractor.py</code> / <code>rules_dump.json</code> 빼도 됨.
+    스킬 문서가 모든 룰을 포함하는지 검증하거나 룰 변경 후 재추출 시에만 필요.
+  </p>
 </div>
 
 <div class="grid" style="margin-top: 16px;">
