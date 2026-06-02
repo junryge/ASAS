@@ -3495,7 +3495,7 @@ async function generateWiki(){
   try{
     const r = await fetch('/api/wiki/generate', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ source: src, title, style, language })
+      body: JSON.stringify({ source: src, title, style, language, env: (selEnvs && selEnvs.length) ? selEnvs : ['auto'] })
     });
     const d = await r.json();
     if(d.error){
@@ -3655,11 +3655,13 @@ async function generateSkillLLM(){
   const details = document.getElementById('scDetails').value.trim();
   const lang = document.getElementById('scLang').value || 'ko';
   const tone = document.querySelector('input[name="scTone"]:checked')?.value || 'default';
+  // 사이드바에서 선택한 LLM 환경(API/GGUF) 을 그대로 사용
+  const env = (selEnvs && selEnvs.length) ? selEnvs : ['auto'];
   document.getElementById('scGenStatus').style.display = 'block';
   document.getElementById('scGenBtn').disabled = true;
   try{
   document.getElementById('scGenResult').style.display = 'none';
-    const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details,lang,tone})});
+    const resp = await fetch('/api/skill/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,skill_type,details,lang,tone,env})});
     const data = await resp.json();
     document.getElementById('scGenStatus').style.display = 'none';
     document.getElementById('scGenBtn').disabled = false;
