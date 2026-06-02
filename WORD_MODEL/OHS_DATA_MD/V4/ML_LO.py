@@ -114,39 +114,10 @@ def _build_query(row_dict):
     return f'json "{escaped}" | import {TABLE_NAME}'
 
 
-# ── HTTP Session 재사용 + 안정성 ──
-_session = None
-
-
-def _get_session():
-    global _session
-    if _session is None:
-        _session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=2, pool_maxsize=4, max_retries=0
-        )
-        _session.mount('http://', adapter)
-        _session.mount('https://', adapter)
-    return _session
-
-
 def _post_query(q):
-    """POST 우선 → GET 폴백 (URL 길이 큰 행 대응)."""
     qs = " ".join(q.split())
-    s = _get_session()
-    base = f"{INSERT_URL}?_apikey={API_KEY}"
-    headers = {'Connection': 'close'}
-
-    try:
-        r = s.post(base, data={'_q': qs}, headers=headers,
-                   verify=False, timeout=HTTP_TIMEOUT)
-        if r.status_code == 200 and not r.text.strip().startswith("<"):
-            return r
-    except requests.exceptions.RequestException:
-        pass
-
-    url = f"{base}&_q={urllib.parse.quote(qs, safe='')}"
-    r = s.get(url, headers=headers, verify=False, timeout=HTTP_TIMEOUT)
+    url = f"{INSERT_URL}?_apikey={API_KEY}&_q={urllib.parse.quote(qs, safe='')}"
+    r = requests.get(url, verify=False, timeout=HTTP_TIMEOUT)
     if r.status_code != 200 or r.text.strip().startswith("<"):
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
     return r
@@ -159,10 +130,6 @@ def _send_one(row_dict):
         try:
             _post_query(q)
             return True
-        except (requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as e:
-            last_err = e
-            time.sleep(RETRY_BACKOFF * (3 ** attempt))
         except Exception as e:
             last_err = e
             time.sleep(RETRY_BACKOFF * (2 ** attempt))
