@@ -118,10 +118,8 @@
       <label>📂 내 지식 문서 선택 (체크한 문서를 근거로 답변)</label>
       <div id="agKnowList" style="max-height:150px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
 
-      <label>🛠 스킬 / 조합 선택 (체크한 스킬이 사용됨)</label>
-      <div id="agComboWrap" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;max-height:240px;overflow:auto;padding:2px;"></div>
-      <input id="agSkillSearch" placeholder="스킬 검색…" style="margin-bottom:6px;">
-      <div id="agSkillList" style="max-height:180px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
+      <label>🛠 스킬 조합 선택 (카드를 클릭해 선택/해제)</label>
+      <div id="agComboWrap" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;max-height:320px;overflow:auto;padding:2px;"></div>
       <div id="agSkillCount" style="font-size:11px;color:#c4b5fd;margin-top:6px;"></div>
 
       <button class="primary" onclick="saveAgent()">💾 에이전트 저장</button>
@@ -217,8 +215,7 @@ async function loadEnvs(){
 }
 
 // ── 목록 ──
-// ── 스킬 / 조합 선택 ──
-var skillCatalog = {};          // {domain:{label,icon,skills:[{id,name,desc,available}]}}
+// ── 스킬 조합 선택 ──
 var selectedSkillSet = new Set();
 
 function getCheckedSkills(){ return Array.from(selectedSkillSet); }
@@ -279,50 +276,11 @@ function renderCombos(){
 function toggleCombo(sk, allOn){
   if(allOn){ sk.forEach(function(s){ selectedSkillSet.delete(s); }); }
   else { sk.forEach(function(s){ selectedSkillSet.add(s); }); }
-  renderSkillList(document.getElementById('agSkillSearch').value||'');
   updateSkillCount();
 }
 
-function renderSkillList(query){
-  var box=document.getElementById('agSkillList');
-  if(!box) return;
-  var q=(query||'').trim().toLowerCase();
-  box.innerHTML='';
-  var any=false;
-  Object.keys(skillCatalog).forEach(function(did){
-    var dom=skillCatalog[did]||{};
-    var skills=(dom.skills||[]).filter(function(s){
-      if(!q) return true;
-      return (s.id+' '+(s.name||'')+' '+(s.desc||'')).toLowerCase().indexOf(q)>=0;
-    });
-    if(!skills.length) return;
-    any=true;
-    var h=document.createElement('div');
-    h.style.cssText='font-weight:700;color:#a5b4fc;margin:6px 0 3px;font-size:11.5px;';
-    h.textContent=(dom.icon||'')+' '+(dom.label||did);
-    box.appendChild(h);
-    skills.forEach(function(s){
-      var lbl=document.createElement('label');
-      lbl.style.cssText='display:flex;align-items:center;gap:8px;padding:2px 0;color:'+(s.available?'#e2e8f0':'#6b7280')+';cursor:'+(s.available?'pointer':'default')+';';
-      var checked=selectedSkillSet.has(s.id)?'checked':'';
-      var dis=s.available?'':'disabled';
-      lbl.innerHTML='<input type="checkbox" value="'+esc(s.id)+'" '+checked+' '+dis+' style="width:auto;margin:0;"> '
-        +'<span style="flex:1;">'+(s.available?'':'❌ ')+esc(s.name||s.id)+(s.desc?(' <span style="color:#6b7280;font-size:10.5px;">'+esc(s.desc)+'</span>'):'')+'</span>';
-      var cb=lbl.querySelector('input');
-      cb.onchange=function(){ if(cb.checked) selectedSkillSet.add(s.id); else selectedSkillSet.delete(s.id); updateSkillCount(); };
-      box.appendChild(lbl);
-    });
-  });
-  if(!any) box.innerHTML='<span style="color:#888;">일치하는 스킬이 없습니다.</span>';
-}
-
-async function loadSkills(preselected){
+function initSkills(preselected){
   (preselected||[]).forEach(function(s){ selectedSkillSet.add(s); });
-  try{
-    var r=await fetch('/api/skills');
-    skillCatalog=await r.json()||{};
-  }catch(e){ document.getElementById('agSkillList').innerHTML='<span style="color:#f87171;">스킬 로드 실패: '+esc(e.message)+'</span>'; return; }
-  renderSkillList('');
   renderCombos();
   updateSkillCount();
 }
@@ -605,11 +563,8 @@ document.getElementById('chatInput').addEventListener('keydown', function(e){
   var ctx=openerCtx();
   document.getElementById('agKnowledge').checked = !!ctx.knowledge;
   if(ctx.effort!=null){ document.getElementById('agEffort').value=String(ctx.effort); }
-  // 스킬 검색
-  var ss=document.getElementById('agSkillSearch');
-  if(ss) ss.addEventListener('input', function(){ renderSkillList(ss.value); });
   loadEnvs();
-  loadSkills(Array.isArray(ctx.skills)? ctx.skills : []);  // 메인 현재 선택을 기본 체크
+  initSkills(Array.isArray(ctx.skills)? ctx.skills : []);  // 메인 현재 선택을 기본 반영
   loadKnowledgeFiles();
   loadAgents();
 })();
