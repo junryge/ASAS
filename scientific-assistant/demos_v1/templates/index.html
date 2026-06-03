@@ -676,6 +676,8 @@ pre{position:relative}
     <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);border-radius:10px;padding:14px;margin-bottom:16px;">
       <div style="font-weight:700;margin-bottom:8px;color:#c4b5fd;">＋ 현재 설정을 에이전트로 저장</div>
       <input id="agName" placeholder="에이전트 이름 (예: 보안 코드 리뷰어)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <div style="font-size:11.5px;color:#c4b5fd;font-weight:600;margin-bottom:4px;">모델(환경) 선택 — API / GGUF</div>
+      <select id="agEnvSelect" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;"></select>
       <textarea id="agPersona" placeholder="페르소나 / 시스템 프롬프트 (비우면 현재 시스템 프롬프트 입력값을 사용)" style="width:100%;height:80px;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;resize:vertical;"></textarea>
       <div id="agCurSummary" style="font-size:11px;color:#94a3b8;margin-bottom:8px;"></div>
       <button onclick="saveCurrentAsAgent()" style="width:100%;padding:10px;background:#a855f7;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;">💾 현재 설정으로 저장</button>
@@ -5501,7 +5503,32 @@ function _agToast(msg){
 
 function _agSummary(){
   var kb=(selSkills||[]).indexOf('knowledge-search')>=0;
-  return '환경 '+((selEnvs||['auto']).join(', '))+' · 스킬 '+((selSkills||[]).length)+'개 · 지식 '+(kb?'ON':'off')+' · effort '+effort;
+  return '스킬 '+((selSkills||[]).length)+'개 · 지식 '+(kb?'ON':'off')+' · effort '+effort+' (스킬·지식·effort는 현재 설정에서 가져옴)';
+}
+
+// 팝업 내 모델(환경) 드롭다운을 전역 envs 로 채운다 (API / GGUF 그룹, 메인 UI와 독립).
+function _agPopulateEnvSelect(selectedId){
+  var sel=document.getElementById('agEnvSelect');
+  if(!sel) return;
+  sel.innerHTML='';
+  var optAuto=document.createElement('option');
+  optAuto.value='auto'; optAuto.textContent='🤖 AUTO (자동 선택)';
+  sel.appendChild(optAuto);
+  var e=(typeof envs!=='undefined' && envs) ? envs : {};
+  var apiGroup=document.createElement('optgroup'); apiGroup.label='API 모델';
+  var ggufGroup=document.createElement('optgroup'); ggufGroup.label='GGUF (로컬)';
+  Object.keys(e).forEach(function(id){
+    var env=e[id]||{};
+    var o=document.createElement('option');
+    o.value=id;
+    o.textContent=(env.name||id)+(env.model?(' — '+env.model):'');
+    if(id.indexOf('gguf-')===0) ggufGroup.appendChild(o); else apiGroup.appendChild(o);
+  });
+  if(apiGroup.children.length) sel.appendChild(apiGroup);
+  if(ggufGroup.children.length) sel.appendChild(ggufGroup);
+  var want=selectedId || ((selEnvs&&selEnvs[0])||'auto');
+  sel.value=want;
+  if(!sel.value) sel.value='auto';
 }
 
 function openAgentPopup(){
@@ -5510,7 +5537,8 @@ function openAgentPopup(){
   document.getElementById('agName').value='';
   document.getElementById('agPersona').value='';
   document.getElementById('agSaveMsg').textContent='';
-  document.getElementById('agCurSummary').textContent='현재 설정 → '+_agSummary();
+  document.getElementById('agCurSummary').textContent=_agSummary();
+  _agPopulateEnvSelect();
   loadAgents();
 }
 function closeAgentPopup(){ document.getElementById('agentPopup').style.display='none'; }
@@ -5550,11 +5578,13 @@ async function saveCurrentAsAgent(){
   if(!name){ msg.innerHTML='<span style="color:#f87171;">이름을 입력하세요</span>'; return; }
   var persona=document.getElementById('agPersona').value.trim();
   if(!persona) persona=document.getElementById('systemPromptInput').value.trim();
+  var envSel=document.getElementById('agEnvSelect');
+  var chosenEnv=(envSel && envSel.value) ? envSel.value : 'auto';
   var payload={
     user_id:_agUid(),
     name:name,
     persona:persona,
-    envs:selEnvs||['auto'],
+    envs:[chosenEnv],
     skills:selSkills||[],
     knowledge:(selSkills||[]).indexOf('knowledge-search')>=0,
     effort:effort
