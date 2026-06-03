@@ -112,8 +112,11 @@
             <option value="3">3 (창의)</option>
           </select>
         </div>
-        <label class="chk" style="margin-top:22px;"><input type="checkbox" id="agKnowledge"> 📚 내 지식 검색 사용</label>
+        <label class="chk" style="margin-top:22px;"><input type="checkbox" id="agKnowledge"> 📚 전체 자동검색</label>
       </div>
+
+      <label>📂 내 지식 문서 선택 (체크한 문서를 근거로 답변)</label>
+      <div id="agKnowList" style="max-height:150px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
 
       <div id="agSkillNote" style="font-size:11px;color:#94a3b8;margin-top:8px;"></div>
 
@@ -210,6 +213,57 @@ async function loadEnvs(){
 }
 
 // ── 목록 ──
+// ── 내 지식 문서 목록 (체크박스) ──
+async function loadKnowledgeFiles(selected){
+  var box=document.getElementById('agKnowList');
+  var sel=new Set(selected||[]);
+  try{
+    var r=await fetch('/api/knowledge/files?user_id='+encodeURIComponent(uid()));
+    var d=await r.json();
+    var files=d.files||[];
+    if(!files.length){ box.innerHTML='<span style="color:#888;">등록된 지식 문서가 없습니다. (메인 📚 내 지식에서 등록)</span>'; return; }
+    box.innerHTML='';
+    files.forEach(function(f){
+      var lbl=document.createElement('label');
+      lbl.style.cssText='display:flex;align-items:center;gap:8px;padding:3px 0;color:#e2e8f0;cursor:pointer;';
+      lbl.innerHTML='<input type="checkbox" value="'+esc(f.filename)+'" '+(sel.has(f.filename)?'checked':'')+' style="width:auto;margin:0;"> '
+        +'<span style="flex:1;">'+esc(f.filename)+'</span>'
+        +'<span style="color:#6b7280;font-size:10.5px;">'+Math.round((f.size||0)/1024)+'KB</span>';
+      box.appendChild(lbl);
+    });
+  }catch(e){ box.innerHTML='<span style="color:#f87171;">지식 목록 로드 실패: '+esc(e.message)+'</span>'; }
+}
+function getCheckedKnowledge(){
+  var out=[];
+  var els=document.querySelectorAll('#agKnowList input[type=checkbox]');
+  for(var i=0;i<els.length;i++){ if(els[i].checked) out.push(els[i].value); }
+  return out;
+}
+
+// 선택한 지식 파일들의 내용을 가져와 시스템 프롬프트용 컨텍스트 블록 생성
+var _KCTX_PER_FILE = 4000, _KCTX_TOTAL = 14000;
+async function buildKnowledgeContext(files){
+  if(!files || !files.length) return '';
+  var parts=[], total=0;
+  for(var i=0;i<files.length;i++){
+    try{
+      var r=await fetch('/api/knowledge/view/'+encodeURIComponent(files[i])+'?user_id='+encodeURIComponent(uid()));
+      if(!r.ok) continue;
+      var d=await r.json();
+      var c=String(d.content||'').slice(0,_KCTX_PER_FILE);
+      if(total+c.length > _KCTX_TOTAL) c=c.slice(0, Math.max(0,_KCTX_TOTAL-total));
+      if(!c) break;
+      parts.push('--- 📄 '+files[i]+' ---\n'+c);
+      total+=c.length;
+      if(total>=_KCTX_TOTAL) break;
+    }catch(e){}
+  }
+  if(!parts.length) return '';
+  return '\n\n=== 선택한 내 지식 문서 ===\n'
+    +'아래 문서 내용을 우선 근거로 답하세요. 문서에 없는 내용은 추측하지 말고 일반 지식임을 밝히세요.\n\n'
+    +parts.join('\n\n');
+}
+
 async function loadAgents(){
   var box=document.getElementById('agList');
   box.innerHTML='로딩 중...';
@@ -230,7 +284,7 @@ async function loadAgents(){
           '<button class="ag-del" data-del="1">삭제</button>'+
         '</div>'+
         (per?'<div style="font-size:11px;color:#94a3b8;margin-bottom:3px;line-height:1.4;">'+esc(per.slice(0,90))+(per.length>90?'…':'')+'</div>':'')+
-        '<div class="meta">환경 '+esc((a.envs||['auto']).join(', '))+' · 스킬 '+((a.skills||[]).length)+'개 · 지식 '+(a.knowledge?'ON':'off')+' · effort '+(a.effort!=null?a.effort:2)+'</div>';
+        '<div class="meta">환경 '+esc((a.envs||['auto']).join(', '))+' · 스킬 '+((a.skills||[]).length)+'개 · 지식 '+(a.knowledge?'ON':'off')+((a.knowledge_files&&a.knowledge_files.length)?(' · 📄'+a.knowledge_files.length):'')+' · effort '+(a.effort!=null?a.effort:2)+'</div>';
       row.querySelector('[data-run]').onclick=function(){ activate(a); };
       row.querySelector('[data-del]').onclick=function(){ del(a.agent_id, a.name); };
       box.appendChild(row);
@@ -251,6 +305,7 @@ async function saveAgent(){
     envs: [document.getElementById('agEnvSelect').value || 'auto'],
     skills: Array.isArray(ctx.skills)? ctx.skills : [],
     knowledge: document.getElementById('agKnowledge').checked,
+    knowledge_files: getCheckedKnowledge(),
     effort: parseInt(document.getElementById('agEffort').value,10)
   };
   try{
@@ -278,7 +333,7 @@ function activate(a){
   activeAgent = a;
   chatHistory = loadChatMessages(a.agent_id);   // 이전 기록 복원
   document.getElementById('chatAgentName').textContent = '🟢 가동: '+a.name;
-  document.getElementById('chatAgentEnv').textContent = '['+((a.envs||['auto']).join(', '))+(a.knowledge?' · 📚지식':'')+' · effort '+(a.effort!=null?a.effort:2)+']';
+  document.getElementById('chatAgentEnv').textContent = '['+((a.envs||['auto']).join(', '))+(a.knowledge?' · 📚지식':'')+((a.knowledge_files&&a.knowledge_files.length)?(' · 📄'+a.knowledge_files.length+'개'):'')+' · effort '+(a.effort!=null?a.effort:2)+']';
   renderHistory(chatHistory);
   document.getElementById('chatPanel').style.display='flex';
   var mb=document.getElementById('manageBox'); if(mb) mb.open=false;
@@ -343,9 +398,21 @@ async function sendChat(){
   chatHistory.push({role:'user', content:text});
   saveChat();
 
-  // 지식검색: knowledge 켜져있으면 skills 에 knowledge-search 포함
+  // 지식검색: knowledge(전체 자동검색) 켜져있으면 skills 에 knowledge-search 포함
   var skills = Array.isArray(activeAgent.skills)? activeAgent.skills.slice() : [];
   if(activeAgent.knowledge && skills.indexOf('knowledge-search')<0) skills.push('knowledge-search');
+
+  var sendBtn=document.getElementById('chatSend');
+  isStreaming=true; sendBtn.disabled=true; sendBtn.textContent='…';
+  var bubble=addChatMsg('assistant','');
+  var acc='';
+
+  // 선택한 지식 문서 내용을 시스템 프롬프트에 주입 (Option A)
+  bubble.textContent='📚 선택한 지식 문서 불러오는 중…';
+  var sysPrompt = activeAgent.persona || '';
+  var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
+  if(kctx) sysPrompt += kctx;
+  bubble.textContent='';
 
   var payload={
     env: (Array.isArray(activeAgent.envs)&&activeAgent.envs.length)? activeAgent.envs : ['auto'],
@@ -354,16 +421,12 @@ async function sendChat(){
     effort: (activeAgent.effort!=null)? activeAgent.effort : 2,
     format: 'auto',
     writing_style: 'auto',
-    system_prompt: activeAgent.persona || '',
+    system_prompt: sysPrompt,
     think_mode: false,
     user_id: uid(),
     stream: true
   };
 
-  var sendBtn=document.getElementById('chatSend');
-  isStreaming=true; sendBtn.disabled=true; sendBtn.textContent='…';
-  var bubble=addChatMsg('assistant','');
-  var acc='';
   chatAbort=new AbortController();
 
   try{
@@ -433,6 +496,7 @@ document.getElementById('chatInput').addEventListener('keydown', function(e){
   document.getElementById('agSkillNote').textContent =
     '저장 시 메인 화면의 현재 선택 스킬('+nSkills+'개)이 함께 묶입니다.';
   loadEnvs();
+  loadKnowledgeFiles();
   loadAgents();
 })();
 </script>

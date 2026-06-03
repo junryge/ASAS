@@ -63,6 +63,7 @@ def _save(payload: dict) -> dict:
         "envs": envs,
         "skills": [s for s in (payload.get("skills") or []) if isinstance(s, str)],
         "knowledge": bool(payload.get("knowledge")),
+        "knowledge_files": [f for f in (payload.get("knowledge_files") or []) if isinstance(f, str)],
         "effort": effort,
         "timestamp": time.time(),
     }
