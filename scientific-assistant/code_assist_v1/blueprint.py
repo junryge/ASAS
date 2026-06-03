@@ -48,6 +48,7 @@ def register_code_blueprint(app) -> bool:
     from code_assist_v1.routes_workspace import register_workspace_routes
     from code_assist_v1.routes_chat_stream import register_chat_stream_routes
     from code_assist_v1.routes_sessions import register_session_routes
+    from code_assist_v1.routes_agents import register_agent_routes
 
     register_model_routes(code_bp)
     register_skill_routes(code_bp)
@@ -55,6 +56,7 @@ def register_code_blueprint(app) -> bool:
     register_workspace_routes(code_bp)
     register_chat_stream_routes(code_bp)
     register_session_routes(code_bp)
+    register_agent_routes(code_bp)
 
     # 모델 정보(API + GGUF)는 demos_v1.models에서 직접 가져온다 (routes_models.py가 처리).
     # → code_assist_v1 자체 MODEL_REGISTRY/ENV_CONFIG 빌드 안 함, demos_v1 것 그대로 공유.
