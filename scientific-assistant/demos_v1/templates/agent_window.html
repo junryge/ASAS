@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🤖 개인 에이전트</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#16161f; color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Malgun Gothic',sans-serif; padding:18px; }
+  h2 { margin:0 0 4px; color:#a855f7; font-size:18px; }
+  .hint { font-size:11.5px; color:#94a3b8; line-height:1.6; margin-bottom:14px; }
+  label { display:block; font-size:11.5px; color:#c4b5fd; font-weight:600; margin:8px 0 4px; }
+  input, select, textarea { width:100%; padding:8px; border:1px solid #444; border-radius:6px; background:#2a2a3e; color:#fff; font-size:13px; }
+  textarea { resize:vertical; min-height:80px; }
+  .card { background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.3); border-radius:10px; padding:14px; margin-bottom:16px; }
+  .row { display:flex; gap:10px; align-items:center; }
+  .chk { display:flex; align-items:center; gap:6px; font-weight:400; color:#e2e8f0; font-size:13px; margin-top:10px; }
+  .chk input { width:auto; }
+  button.primary { width:100%; padding:10px; background:#a855f7; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer; margin-top:10px; }
+  button.primary:hover { background:#9333ea; }
+  .sectitle { font-weight:700; margin-bottom:8px; color:#a5b4fc; }
+  .ag-item { border:1px solid #333; border-radius:8px; padding:10px; margin-bottom:8px; background:#23233a; }
+  .ag-run { background:#a855f7; color:#fff; border:none; border-radius:6px; padding:4px 12px; font-size:11px; font-weight:700; cursor:pointer; }
+  .ag-del { background:none; color:#f87171; border:1px solid #f87171; border-radius:6px; padding:4px 8px; font-size:11px; cursor:pointer; }
+  .meta { font-size:10.5px; color:#6b7280; font-family:monospace; }
+  .msg { font-size:12px; margin-top:6px; }
+  #notice { background:#3b1d1d; border:1px solid #f87171; color:#fca5a5; padding:10px; border-radius:8px; font-size:12px; display:none; margin-bottom:12px; }
+</style>
+</head>
+<body>
+  <h2>🤖 개인 에이전트</h2>
+  <div class="hint">설정 묶음(모델·페르소나·지식·effort)을 저장하고, <b style="color:#c4b5fd;">가동</b>하면 메인 채팅 창에 즉시 적용됩니다.</div>
+
+  <div id="notice"></div>
+
+  <!-- 새 에이전트 -->
+  <div class="card">
+    <div class="sectitle" style="color:#c4b5fd;">＋ 새 에이전트 저장</div>
+    <label>이름</label>
+    <input id="agName" placeholder="예: 보안 코드 리뷰어">
+
+    <label>모델(환경) 선택 — API / GGUF</label>
+    <select id="agEnvSelect"><option value="auto">🤖 AUTO (자동 선택)</option></select>
+
+    <label>페르소나 / 시스템 프롬프트</label>
+    <textarea id="agPersona" placeholder="예: 당신은 깐깐한 보안 코드 리뷰어입니다. 취약점을 우선순위로 지적하세요."></textarea>
+
+    <div class="row" style="margin-top:6px;">
+      <div style="flex:1;">
+        <label>effort</label>
+        <select id="agEffort">
+          <option value="0">0 (정확)</option>
+          <option value="1">1</option>
+          <option value="2" selected>2 (균형)</option>
+          <option value="3">3 (창의)</option>
+        </select>
+      </div>
+      <label class="chk" style="margin-top:22px;"><input type="checkbox" id="agKnowledge"> 📚 내 지식 검색 사용</label>
+    </div>
+
+    <div id="agSkillNote" style="font-size:11px;color:#94a3b8;margin-top:8px;"></div>
+
+    <button class="primary" onclick="saveAgent()">💾 에이전트 저장</button>
+    <div id="agSaveMsg" class="msg"></div>
+  </div>
+
+  <!-- 목록 -->
+  <div class="sectitle">📋 저장된 에이전트</div>
+  <div id="agList" style="font-size:12px;color:#888;">로딩 중...</div>
+
+<script>
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function getUser(){
+  try{ var u=JSON.parse(sessionStorage.getItem('demos_user')||'null'); return (u&&u.id)?u:null; }catch(e){ return null; }
+}
+var USER = getUser();
+function uid(){ return USER ? USER.id : ''; }
+
+// 메인 창(opener)에서 현재 스킬/지식/effort 컨텍스트 가져오기 (없으면 기본값)
+function openerCtx(){
+  try{
+    if(window.opener && !window.opener.closed && typeof window.opener.getCurrentAgentContext==='function'){
+      return window.opener.getCurrentAgentContext() || {};
+    }
+  }catch(e){}
+  return {};
+}
+
+function showNotice(msg){
+  var n=document.getElementById('notice');
+  n.textContent=msg; n.style.display='block';
+}
+
+// 모델 드롭다운 채우기 (/api/config 의 envs)
+async function loadEnvs(){
+  var sel=document.getElementById('agEnvSelect');
+  try{
+    var r=await fetch('/api/config');
+    var d=await r.json();
+    var envs=d.envs||{};
+    var apiGroup=document.createElement('optgroup'); apiGroup.label='API 모델';
+    var ggufGroup=document.createElement('optgroup'); ggufGroup.label='GGUF (로컬)';
+    Object.keys(envs).forEach(function(id){
+      var env=envs[id]||{};
+      var o=document.createElement('option');
+      o.value=id; o.textContent=(env.name||id)+(env.model?(' — '+env.model):'');
+      if(id.indexOf('gguf-')===0) ggufGroup.appendChild(o); else apiGroup.appendChild(o);
+    });
+    if(apiGroup.children.length) sel.appendChild(apiGroup);
+    if(ggufGroup.children.length) sel.appendChild(ggufGroup);
+  }catch(e){ showNotice('모델 목록 로드 실패: '+e.message); }
+}
+
+async function loadAgents(){
+  var box=document.getElementById('agList');
+  box.innerHTML='로딩 중...';
+  try{
+    var r=await fetch('/api/agents?user_id='+encodeURIComponent(uid()));
+    var d=await r.json();
+    var agents=d.agents||[];
+    if(!agents.length){ box.innerHTML='<span style="color:#888;">저장된 에이전트가 없습니다.</span>'; return; }
+    box.innerHTML='';
+    agents.forEach(function(a){
+      var row=document.createElement('div');
+      row.className='ag-item';
+      var per=a.persona||'';
+      row.innerHTML=
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'+
+          '<span style="flex:1;font-weight:700;color:#e2e8f0;font-size:13px;">'+esc(a.name)+'</span>'+
+          '<button class="ag-run" data-run="1">가동</button>'+
+          '<button class="ag-del" data-del="1">삭제</button>'+
+        '</div>'+
+        (per?'<div style="font-size:11px;color:#94a3b8;margin-bottom:3px;line-height:1.4;">'+esc(per.slice(0,90))+(per.length>90?'…':'')+'</div>':'')+
+        '<div class="meta">환경 '+esc((a.envs||['auto']).join(', '))+' · 스킬 '+((a.skills||[]).length)+'개 · 지식 '+(a.knowledge?'ON':'off')+' · effort '+(a.effort!=null?a.effort:2)+'</div>';
+      row.querySelector('[data-run]').onclick=function(){ activate(a); };
+      row.querySelector('[data-del]').onclick=function(){ del(a.agent_id, a.name); };
+      box.appendChild(row);
+    });
+  }catch(e){ box.innerHTML='<span style="color:#f87171;">로드 실패: '+esc(e.message)+'</span>'; }
+}
+
+async function saveAgent(){
+  var msg=document.getElementById('agSaveMsg');
+  var name=document.getElementById('agName').value.trim();
+  if(!name){ msg.innerHTML='<span style="color:#f87171;">이름을 입력하세요</span>'; return; }
+  var ctx=openerCtx();
+  var payload={
+    user_id: uid(),
+    name: name,
+    persona: document.getElementById('agPersona').value.trim(),
+    envs: [document.getElementById('agEnvSelect').value || 'auto'],
+    skills: Array.isArray(ctx.skills)? ctx.skills : [],
+    knowledge: document.getElementById('agKnowledge').checked,
+    effort: parseInt(document.getElementById('agEffort').value,10)
+  };
+  try{
+    var r=await fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    var d=await r.json();
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    msg.innerHTML='<span style="color:#22c55e;">✅ 저장됨</span>';
+    document.getElementById('agName').value=''; document.getElementById('agPersona').value='';
+    loadAgents();
+  }catch(e){ msg.innerHTML='<span style="color:#f87171;">저장 실패: '+esc(e.message)+'</span>'; }
+}
+
+async function del(aid, name){
+  if(!confirm('에이전트 "'+(name||'')+'" 을(를) 삭제할까요?')) return;
+  try{
+    var r=await fetch('/api/agents/'+encodeURIComponent(aid)+'?user_id='+encodeURIComponent(uid()),{method:'DELETE'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    loadAgents();
+  }catch(e){ alert('삭제 실패: '+e.message); }
+}
+
+function activate(a){
+  try{
+    if(window.opener && !window.opener.closed && typeof window.opener.applyAgentPreset==='function'){
+      window.opener.applyAgentPreset(a);
+      try{ window.opener.focus(); }catch(e){}
+      var msg=document.getElementById('agSaveMsg');
+      msg.innerHTML='<span style="color:#22c55e;">🤖 가동됨: '+esc(a.name)+' (메인 창에 적용)</span>';
+    } else {
+      alert('메인 채팅 창을 찾을 수 없습니다. 메인 창에서 🤖 개인 에이전트 버튼으로 다시 열어주세요.');
+    }
+  }catch(e){ alert('가동 실패: '+e.message); }
+}
+
+// 부트
+(function(){
+  if(!USER){ showNotice('로그인이 필요합니다. 메인 창에서 로그인 후 다시 열어주세요.'); }
+  var ctx=openerCtx();
+  document.getElementById('agKnowledge').checked = !!ctx.knowledge;
+  if(ctx.effort!=null){ document.getElementById('agEffort').value=String(ctx.effort); }
+  var nSkills = Array.isArray(ctx.skills)? ctx.skills.length : 0;
+  document.getElementById('agSkillNote').textContent =
+    '저장 시 메인 화면의 현재 선택 스킬('+nSkills+'개)이 함께 묶입니다.';
+  loadEnvs();
+  loadAgents();
+})();
+</script>
+</body>
+</html>

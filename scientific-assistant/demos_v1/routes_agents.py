@@ -16,7 +16,7 @@ import os
 import time
 from uuid import uuid4
 
-from flask import request, jsonify
+from flask import request, jsonify, render_template
 
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 AGENTS_DIR = os.path.join(_PKG_DIR, "personal-agents")
@@ -102,6 +102,11 @@ def _delete(user_id: str, aid: str) -> bool:
 
 def register_agent_routes(app):
     """개인 에이전트 CRUD 라우트 등록."""
+
+    @app.route("/agent-window")
+    def agent_window():
+        """개인 에이전트 독립 관리 창 (window.open 으로 열림)."""
+        return render_template("agent_window.html")
 
     @app.route("/api/agents", methods=["GET"])
     def api_agents_list():
