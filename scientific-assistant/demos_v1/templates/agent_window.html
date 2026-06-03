@@ -74,7 +74,11 @@
     <div id="chatBar">
       <span class="name" id="chatAgentName">-</span>
       <span class="env" id="chatAgentEnv"></span>
-      <span style="margin-left:auto;"><button onclick="endChat()" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">종료</button></span>
+      <span style="margin-left:auto;display:flex;gap:6px;">
+        <button onclick="newAgentSession()" title="현재 대화를 지우고 새 세션" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🆕 새 세션</button>
+        <button onclick="sendToDemos()" title="이 대화를 메인 데모스 채팅에 새 세션으로 보내기" style="background:none;border:1px solid #22c55e;color:#86efac;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">📤 데모스로</button>
+        <button onclick="endChat()" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">종료</button>
+      </span>
     </div>
     <div id="chatMsgs"></div>
     <div id="chatInputRow">
@@ -167,6 +171,24 @@ function stripThink(acc){
   return i>=0 ? acc.slice(i+8).replace(/^\s+/,'') : acc;
 }
 
+// ── 대화 기록 영속화 (아이디+에이전트별 localStorage, 데모스와 같은 오리진) ──
+function chatKey(agentId){ return 'demos_agentChat_'+uid()+'_'+agentId; }
+function saveChat(){
+  if(!activeAgent) return;
+  try{ localStorage.setItem(chatKey(activeAgent.agent_id), JSON.stringify({messages:chatHistory, updatedAt:Date.now()})); }catch(e){}
+}
+function loadChatMessages(agentId){
+  try{ var d=JSON.parse(localStorage.getItem(chatKey(agentId))||'null'); return (d&&Array.isArray(d.messages))? d.messages : []; }catch(e){ return []; }
+}
+function renderHistory(messages){
+  var c=document.getElementById('chatMsgs'); c.innerHTML='';
+  (messages||[]).forEach(function(m){
+    if(m.role==='user'){ addChatMsg('user', m.content); }
+    else { var b=addChatMsg('assistant',''); b.style.whiteSpace='normal'; b.innerHTML=renderFinal(m.content); }
+  });
+  c.scrollTop=c.scrollHeight;
+}
+
 // ── 모델 드롭다운 (/api/config) ──
 async function loadEnvs(){
   var sel=document.getElementById('agEnvSelect');
@@ -254,10 +276,10 @@ async function del(aid, name){
 function activate(a){
   if(!uid()){ alert('로그인이 필요합니다'); return; }
   activeAgent = a;
-  chatHistory = [];
+  chatHistory = loadChatMessages(a.agent_id);   // 이전 기록 복원
   document.getElementById('chatAgentName').textContent = '🟢 가동: '+a.name;
   document.getElementById('chatAgentEnv').textContent = '['+((a.envs||['auto']).join(', '))+(a.knowledge?' · 📚지식':'')+' · effort '+(a.effort!=null?a.effort:2)+']';
-  document.getElementById('chatMsgs').innerHTML='';
+  renderHistory(chatHistory);
   document.getElementById('chatPanel').style.display='flex';
   var mb=document.getElementById('manageBox'); if(mb) mb.open=false;
   // 메인 창에도 동기화(있을 때만, 비치명적)
@@ -270,6 +292,30 @@ function endChat(){
   document.getElementById('chatPanel').style.display='none';
   activeAgent=null; chatHistory=[];
   var mb=document.getElementById('manageBox'); if(mb) mb.open=true;
+}
+
+// 새 세션: 현재 에이전트 대화 기록 삭제 후 새로 시작
+function newAgentSession(){
+  if(!activeAgent) return;
+  if(chatHistory.length && !confirm('현재 대화를 지우고 새 세션을 시작할까요?')) return;
+  chatHistory=[];
+  try{ localStorage.removeItem(chatKey(activeAgent.agent_id)); }catch(e){}
+  document.getElementById('chatMsgs').innerHTML='';
+  document.getElementById('chatInput').focus();
+}
+
+// 데모스로 보내기: 현재 대화를 메인 데모스 채팅에 새 세션으로 불러옴
+function sendToDemos(){
+  if(!activeAgent || !chatHistory.length){ alert('보낼 대화가 없습니다.'); return; }
+  try{
+    if(window.opener && !window.opener.closed && typeof window.opener.importAgentConversation==='function'){
+      var ok=window.opener.importAgentConversation(activeAgent, chatHistory);
+      try{ window.opener.focus(); }catch(e){}
+      alert(ok ? '메인 데모스 채팅에 새 세션으로 불러왔습니다.' : '전송 실패');
+    } else {
+      alert('메인 데모스 창을 찾을 수 없습니다. 메인에서 🤖 버튼으로 다시 열어주세요.');
+    }
+  }catch(e){ alert('전송 실패: '+e.message); }
 }
 
 // ── 채팅 메시지 렌더 ──
@@ -295,6 +341,7 @@ async function sendChat(){
 
   addChatMsg('user', text);
   chatHistory.push({role:'user', content:text});
+  saveChat();
 
   // 지식검색: knowledge 켜져있으면 skills 에 knowledge-search 포함
   var skills = Array.isArray(activeAgent.skills)? activeAgent.skills.slice() : [];
@@ -361,6 +408,7 @@ async function sendChat(){
       bubble.style.whiteSpace='normal';
       bubble.innerHTML = renderFinal(finalText);
       chatHistory.push({role:'assistant', content: stripThink(acc)});
+      saveChat();
     }
   }catch(e){
     if(e && e.name==='AbortError'){ bubble.textContent=acc+'\n\n⏹ 중단됨'; }

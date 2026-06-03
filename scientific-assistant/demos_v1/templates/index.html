@@ -5504,6 +5504,22 @@ function applyAgentPreset(a){
   _agToast('🤖 에이전트 가동: '+(a.name||''));
   return true;
 }
+
+// 자식 창 → "데모스로 보내기": 에이전트 대화를 메인 데모스에 새 세션으로 불러온다
+function importAgentConversation(agent, messages){
+  try{
+    createNewSession();          // 새 데모스 세션
+    applyAgentPreset(agent);     // 환경/스킬/페르소나/effort/지식 적용
+    history = Array.isArray(messages) ? messages.slice() : [];
+    var msgsEl=document.getElementById('msgs');
+    if(msgsEl) msgsEl.innerHTML='';
+    history.forEach(function(m){ try{ addMsg(m.role, m.content, m.content); }catch(e){} });
+    saveCurrentSession();
+    renderSessionList();
+    _agToast('📥 데모스 새 세션으로 불러옴: '+(agent&&agent.name||''));
+    return true;
+  }catch(e){ return false; }
+}
 </script>
 
 <!-- 📑 PPT 설계 플로팅 버튼 (로그인 후에만 노출) -->
