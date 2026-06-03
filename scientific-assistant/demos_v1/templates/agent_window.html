@@ -119,7 +119,7 @@
       <div id="agKnowList" style="max-height:150px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
 
       <label>🛠 스킬 / 조합 선택 (체크한 스킬이 사용됨)</label>
-      <div id="agComboWrap" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;"></div>
+      <div id="agComboWrap" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;max-height:240px;overflow:auto;padding:2px;"></div>
       <input id="agSkillSearch" placeholder="스킬 검색…" style="margin-bottom:6px;">
       <div id="agSkillList" style="max-height:180px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
       <div id="agSkillCount" style="font-size:11px;color:#c4b5fd;margin-top:6px;"></div>
@@ -223,36 +223,64 @@ var selectedSkillSet = new Set();
 
 function getCheckedSkills(){ return Array.from(selectedSkillSet); }
 
+var _comboNames=null;
+function comboSkillName(sid){
+  if(_comboNames===null){
+    try{ if(window.opener && !window.opener.closed && typeof window.opener.getComboSkillNames==='function') _comboNames=window.opener.getComboSkillNames()||{}; else _comboNames={}; }
+    catch(e){ _comboNames={}; }
+  }
+  return (_comboNames && _comboNames[sid]) || sid;
+}
+
+function getCombos(){
+  try{ if(window.opener && !window.opener.closed && typeof window.opener.getSkillCombos==='function') return window.opener.getSkillCombos()||[]; }catch(e){}
+  return [];
+}
+
 function updateSkillCount(){
+  var combos=getCombos();
+  var activeCombos=combos.filter(function(c){ return (c.skills||[]).length>0 && c.skills.every(function(s){return selectedSkillSet.has(s);}); });
   var el=document.getElementById('agSkillCount');
-  if(el) el.textContent = '선택된 스킬: '+selectedSkillSet.size+'개';
-  // 조합 칩 활성 상태 갱신
+  if(el) el.textContent = (activeCombos.length? ('🔗 '+activeCombos.length+'개 조합 활성 · ') : '') + '총 '+selectedSkillSet.size+'개 스킬 선택됨';
   renderCombos();
 }
 
+// 메인과 동일한 카드형 조합 그리드 (클릭 시 조합 스킬 토글)
 function renderCombos(){
   var wrap=document.getElementById('agComboWrap');
   if(!wrap) return;
-  var combos=[];
-  try{ if(window.opener && !window.opener.closed && typeof window.opener.getSkillCombos==='function') combos=window.opener.getSkillCombos()||[]; }catch(e){}
-  if(!combos.length){ wrap.innerHTML=''; return; }
+  var combos=getCombos();
+  if(!combos.length){ wrap.innerHTML='<span style="color:#888;font-size:11px;">조합 정보를 불러올 수 없습니다 (메인 창에서 열어주세요).</span>'; return; }
   wrap.innerHTML='';
   combos.forEach(function(combo){
     var sk=combo.skills||[];
-    var allOn = sk.length>0 && sk.every(function(s){ return selectedSkillSet.has(s); });
-    var chip=document.createElement('button');
-    chip.type='button';
-    chip.textContent=(allOn?'✓ ':'')+(combo.label||'조합');
-    chip.title=(combo.desc||'')+' ['+sk.join(', ')+']';
-    chip.style.cssText='border:1px solid '+(allOn?'#ef4444':(combo.color||'#6366f1'))+';color:'+(allOn?'#ef4444':(combo.color||'#a5b4fc'))+';background:'+(allOn?'#ef444415':'transparent')+';border-radius:14px;padding:3px 10px;font-size:11px;cursor:pointer;';
-    chip.onclick=function(){
-      if(allOn){ sk.forEach(function(s){ selectedSkillSet.delete(s); }); }
-      else { sk.forEach(function(s){ selectedSkillSet.add(s); }); }
-      renderSkillList(document.getElementById('agSkillSearch').value||'');
-      updateSkillCount();
-    };
-    wrap.appendChild(chip);
+    var all = sk.length>0 && sk.every(function(s){ return selectedSkillSet.has(s); });
+    var some = !all && sk.some(function(s){ return selectedSkillSet.has(s); });
+    var border = all ? '#ef4444' : some ? '#f59e0b' : (combo.color+'55');
+    var bg = all ? '#ef444418' : some ? '#f59e0b12' : (combo.color+'10');
+    var card=document.createElement('div');
+    card.style.cssText='width:calc(50% - 5px);box-sizing:border-box;padding:8px 10px;border-radius:8px;border:2px solid '+border+';background:'+bg+';cursor:pointer;user-select:none;';
+    card.title= all ? '클릭하면 이 조합을 해제합니다' : '클릭하면 이 조합의 스킬이 추가됩니다';
+    card.onclick=function(){ toggleCombo(sk, all); };
+    var badge = all ? '<span style="font-size:9px;background:#ef4444;color:#fff;padding:1px 5px;border-radius:4px;margin-left:5px;">적용중</span>'
+              : some ? '<span style="font-size:9px;background:#f59e0b;color:#fff;padding:1px 5px;border-radius:4px;margin-left:5px;">일부</span>' : '';
+    var tags=sk.map(function(sid){
+      var on=selectedSkillSet.has(sid);
+      var tb=on?'#ef444422':(combo.color+'1a'); var tc=on?'#fca5a5':combo.color;
+      return '<span style="display:inline-block;background:'+tb+';color:'+tc+';padding:1px 6px;border-radius:4px;font-size:10px;margin:1px;font-weight:'+(on?700:400)+';">'+(on?'✓ ':'')+esc(comboSkillName(sid))+'</span>';
+    }).join('');
+    card.innerHTML='<div style="font-size:12.5px;font-weight:700;color:'+combo.color+';margin-bottom:3px;">'+esc(combo.label)+badge+'</div>'
+      +'<div style="font-size:10.5px;color:#94a3b8;margin-bottom:4px;">'+esc(combo.desc||'')+'</div>'
+      +'<div style="line-height:1.7;">'+tags+'</div>';
+    wrap.appendChild(card);
   });
+}
+
+function toggleCombo(sk, allOn){
+  if(allOn){ sk.forEach(function(s){ selectedSkillSet.delete(s); }); }
+  else { sk.forEach(function(s){ selectedSkillSet.add(s); }); }
+  renderSkillList(document.getElementById('agSkillSearch').value||'');
+  updateSkillCount();
 }
 
 function renderSkillList(query){

@@ -5490,6 +5490,9 @@ function getCurrentAgentContext(){
 function getSkillCombos(){
   try{ return (typeof SKILL_COMBOS!=='undefined' && Array.isArray(SKILL_COMBOS)) ? SKILL_COMBOS : []; }catch(e){ return []; }
 }
+function getComboSkillNames(){
+  try{ return (typeof _comboSkillNames!=='undefined') ? _comboSkillNames : {}; }catch(e){ return {}; }
+}
 
 // 자식 창의 "가동" → 메인 창 전역 상태에 주입 후 UI 동기화
 function applyAgentPreset(a){
