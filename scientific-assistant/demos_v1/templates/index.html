@@ -5486,6 +5486,11 @@ function getCurrentAgentContext(){
   };
 }
 
+// 자식 창이 스킬 조합 프리셋을 가져올 수 있게 노출
+function getSkillCombos(){
+  try{ return (typeof SKILL_COMBOS!=='undefined' && Array.isArray(SKILL_COMBOS)) ? SKILL_COMBOS : []; }catch(e){ return []; }
+}
+
 // 자식 창의 "가동" → 메인 창 전역 상태에 주입 후 UI 동기화
 function applyAgentPreset(a){
   if(!a) return;

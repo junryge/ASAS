@@ -118,7 +118,11 @@
       <label>📂 내 지식 문서 선택 (체크한 문서를 근거로 답변)</label>
       <div id="agKnowList" style="max-height:150px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
 
-      <div id="agSkillNote" style="font-size:11px;color:#94a3b8;margin-top:8px;"></div>
+      <label>🛠 스킬 / 조합 선택 (체크한 스킬이 사용됨)</label>
+      <div id="agComboWrap" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;"></div>
+      <input id="agSkillSearch" placeholder="스킬 검색…" style="margin-bottom:6px;">
+      <div id="agSkillList" style="max-height:180px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
+      <div id="agSkillCount" style="font-size:11px;color:#c4b5fd;margin-top:6px;"></div>
 
       <button class="primary" onclick="saveAgent()">💾 에이전트 저장</button>
       <div id="agSaveMsg" class="msg"></div>
@@ -213,6 +217,88 @@ async function loadEnvs(){
 }
 
 // ── 목록 ──
+// ── 스킬 / 조합 선택 ──
+var skillCatalog = {};          // {domain:{label,icon,skills:[{id,name,desc,available}]}}
+var selectedSkillSet = new Set();
+
+function getCheckedSkills(){ return Array.from(selectedSkillSet); }
+
+function updateSkillCount(){
+  var el=document.getElementById('agSkillCount');
+  if(el) el.textContent = '선택된 스킬: '+selectedSkillSet.size+'개';
+  // 조합 칩 활성 상태 갱신
+  renderCombos();
+}
+
+function renderCombos(){
+  var wrap=document.getElementById('agComboWrap');
+  if(!wrap) return;
+  var combos=[];
+  try{ if(window.opener && !window.opener.closed && typeof window.opener.getSkillCombos==='function') combos=window.opener.getSkillCombos()||[]; }catch(e){}
+  if(!combos.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML='';
+  combos.forEach(function(combo){
+    var sk=combo.skills||[];
+    var allOn = sk.length>0 && sk.every(function(s){ return selectedSkillSet.has(s); });
+    var chip=document.createElement('button');
+    chip.type='button';
+    chip.textContent=(allOn?'✓ ':'')+(combo.label||'조합');
+    chip.title=(combo.desc||'')+' ['+sk.join(', ')+']';
+    chip.style.cssText='border:1px solid '+(allOn?'#ef4444':(combo.color||'#6366f1'))+';color:'+(allOn?'#ef4444':(combo.color||'#a5b4fc'))+';background:'+(allOn?'#ef444415':'transparent')+';border-radius:14px;padding:3px 10px;font-size:11px;cursor:pointer;';
+    chip.onclick=function(){
+      if(allOn){ sk.forEach(function(s){ selectedSkillSet.delete(s); }); }
+      else { sk.forEach(function(s){ selectedSkillSet.add(s); }); }
+      renderSkillList(document.getElementById('agSkillSearch').value||'');
+      updateSkillCount();
+    };
+    wrap.appendChild(chip);
+  });
+}
+
+function renderSkillList(query){
+  var box=document.getElementById('agSkillList');
+  if(!box) return;
+  var q=(query||'').trim().toLowerCase();
+  box.innerHTML='';
+  var any=false;
+  Object.keys(skillCatalog).forEach(function(did){
+    var dom=skillCatalog[did]||{};
+    var skills=(dom.skills||[]).filter(function(s){
+      if(!q) return true;
+      return (s.id+' '+(s.name||'')+' '+(s.desc||'')).toLowerCase().indexOf(q)>=0;
+    });
+    if(!skills.length) return;
+    any=true;
+    var h=document.createElement('div');
+    h.style.cssText='font-weight:700;color:#a5b4fc;margin:6px 0 3px;font-size:11.5px;';
+    h.textContent=(dom.icon||'')+' '+(dom.label||did);
+    box.appendChild(h);
+    skills.forEach(function(s){
+      var lbl=document.createElement('label');
+      lbl.style.cssText='display:flex;align-items:center;gap:8px;padding:2px 0;color:'+(s.available?'#e2e8f0':'#6b7280')+';cursor:'+(s.available?'pointer':'default')+';';
+      var checked=selectedSkillSet.has(s.id)?'checked':'';
+      var dis=s.available?'':'disabled';
+      lbl.innerHTML='<input type="checkbox" value="'+esc(s.id)+'" '+checked+' '+dis+' style="width:auto;margin:0;"> '
+        +'<span style="flex:1;">'+(s.available?'':'❌ ')+esc(s.name||s.id)+(s.desc?(' <span style="color:#6b7280;font-size:10.5px;">'+esc(s.desc)+'</span>'):'')+'</span>';
+      var cb=lbl.querySelector('input');
+      cb.onchange=function(){ if(cb.checked) selectedSkillSet.add(s.id); else selectedSkillSet.delete(s.id); updateSkillCount(); };
+      box.appendChild(lbl);
+    });
+  });
+  if(!any) box.innerHTML='<span style="color:#888;">일치하는 스킬이 없습니다.</span>';
+}
+
+async function loadSkills(preselected){
+  (preselected||[]).forEach(function(s){ selectedSkillSet.add(s); });
+  try{
+    var r=await fetch('/api/skills');
+    skillCatalog=await r.json()||{};
+  }catch(e){ document.getElementById('agSkillList').innerHTML='<span style="color:#f87171;">스킬 로드 실패: '+esc(e.message)+'</span>'; return; }
+  renderSkillList('');
+  renderCombos();
+  updateSkillCount();
+}
+
 // ── 내 지식 문서 목록 (체크박스) ──
 async function loadKnowledgeFiles(selected){
   var box=document.getElementById('agKnowList');
@@ -297,13 +383,12 @@ async function saveAgent(){
   var msg=document.getElementById('agSaveMsg');
   var name=document.getElementById('agName').value.trim();
   if(!name){ msg.innerHTML='<span style="color:#f87171;">이름을 입력하세요</span>'; return; }
-  var ctx=openerCtx();
   var payload={
     user_id: uid(),
     name: name,
     persona: document.getElementById('agPersona').value.trim(),
     envs: [document.getElementById('agEnvSelect').value || 'auto'],
-    skills: Array.isArray(ctx.skills)? ctx.skills : [],
+    skills: getCheckedSkills(),
     knowledge: document.getElementById('agKnowledge').checked,
     knowledge_files: getCheckedKnowledge(),
     effort: parseInt(document.getElementById('agEffort').value,10)
@@ -492,10 +577,11 @@ document.getElementById('chatInput').addEventListener('keydown', function(e){
   var ctx=openerCtx();
   document.getElementById('agKnowledge').checked = !!ctx.knowledge;
   if(ctx.effort!=null){ document.getElementById('agEffort').value=String(ctx.effort); }
-  var nSkills = Array.isArray(ctx.skills)? ctx.skills.length : 0;
-  document.getElementById('agSkillNote').textContent =
-    '저장 시 메인 화면의 현재 선택 스킬('+nSkills+'개)이 함께 묶입니다.';
+  // 스킬 검색
+  var ss=document.getElementById('agSkillSearch');
+  if(ss) ss.addEventListener('input', function(){ renderSkillList(ss.value); });
   loadEnvs();
+  loadSkills(Array.isArray(ctx.skills)? ctx.skills : []);  // 메인 현재 선택을 기본 체크
   loadKnowledgeFiles();
   loadAgents();
 })();
