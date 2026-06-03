@@ -30,13 +30,12 @@ STATIC_DIR = os.path.join(PKG_DIR, "static")
 SKILLS_DIR = os.path.join(PKG_DIR, "skills")
 KNOWLEDGE_DIR = os.path.join(ROOT_DIR, "knowledge")  # demos_v1과 공유 (사용자별 user_id 구조)
 SESSIONS_DIR = os.path.join(PKG_DIR, "sessions")
-AGENTS_DIR = os.path.join(PKG_DIR, "agents")  # 개인 에이전트 프리셋 (사용자별 user_id 구조)
 WORKSPACE_DIR = os.path.join(PKG_DIR, "workspace")
 SKILL_WHITELIST_JSON = os.path.join(PKG_DIR, "skill_whitelist.json")
 TOKEN_FILE = os.path.join(ROOT_DIR, "TOKEN.TXT")  # demos_v1과 공유
 MODEL_GGUF_DIR = os.path.join(PKG_DIR, "MODEL_GGUF")
 
-for _d in (SKILLS_DIR, KNOWLEDGE_DIR, SESSIONS_DIR, AGENTS_DIR, WORKSPACE_DIR, MODEL_GGUF_DIR):
+for _d in (SKILLS_DIR, KNOWLEDGE_DIR, SESSIONS_DIR, WORKSPACE_DIR, MODEL_GGUF_DIR):
     os.makedirs(_d, exist_ok=True)
 
 
