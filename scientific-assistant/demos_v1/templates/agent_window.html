@@ -149,13 +149,22 @@ function showNotice(msg){ var n=document.getElementById('notice'); n.textContent
 // 답변을 데모스 메인과 동일하게 렌더 (think 접이식 박스 + 마크다운).
 // opener.renderMd 재사용, 없으면 think 제거 + 줄바꿈만.
 function renderFinal(text){
+  var raw=String(text||'');
+  // gguf 등에서 여는 <think> 없이 닫는 </think>만 오는 경우 → 앞에 <think> 보충
+  if(raw.indexOf('</think>')>=0 && raw.indexOf('<think>')<0){ raw='<think>'+raw; }
   try{
     if(window.opener && !window.opener.closed && typeof window.opener.renderMd==='function'){
-      return window.opener.renderMd(String(text||''));
+      return window.opener.renderMd(raw);
     }
   }catch(e){}
-  var t=String(text||'').replace(/<think>[\s\S]*?<\/think>\s*/g,'').replace(/<think>[\s\S]*$/g,'');
+  var t=raw.replace(/<think>[\s\S]*?<\/think>\s*/g,'').replace(/<think>[\s\S]*$/g,'');
   return '<div>'+esc(t).replace(/\n/g,'<br>')+'</div>';
+}
+
+// 추론(</think> 이전)을 제거하고 실제 답변만 추출
+function stripThink(acc){
+  var i=String(acc||'').lastIndexOf('</think>');
+  return i>=0 ? acc.slice(i+8).replace(/^\s+/,'') : acc;
 }
 
 // ── 모델 드롭다운 (/api/config) ──
@@ -338,7 +347,11 @@ async function sendChat(){
           try{
             var obj=JSON.parse(pl);
             if(obj.type==='token' && obj.t){
-              acc+=obj.t; bubble.textContent=acc;
+              acc+=obj.t;
+              // 추론(</think> 이전)은 가리고, 아직 추론 중이면 안내만 표시
+              if(acc.indexOf('</think>')>=0){ bubble.textContent=stripThink(acc); }
+              else if(/<think>/.test(acc)){ bubble.textContent='💭 생각하는 중…'; }
+              else { bubble.textContent=acc; }
               var c=document.getElementById('chatMsgs'); c.scrollTop=c.scrollHeight;
             } else if(obj.type==='error'){ errInfo=obj; }
           }catch(_){}
@@ -347,7 +360,7 @@ async function sendChat(){
       var finalText = acc + (errInfo ? ('\n\n❌ '+(errInfo.error||'')+(errInfo.detail?('\n'+errInfo.detail):'')) : '');
       bubble.style.whiteSpace='normal';
       bubble.innerHTML = renderFinal(finalText);
-      chatHistory.push({role:'assistant', content:acc});
+      chatHistory.push({role:'assistant', content: stripThink(acc)});
     }
   }catch(e){
     if(e && e.name==='AbortError'){ bubble.textContent=acc+'\n\n⏹ 중단됨'; }
