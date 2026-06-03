@@ -112,7 +112,6 @@
             <option value="3">3 (창의)</option>
           </select>
         </div>
-        <label class="chk" style="margin-top:22px;"><input type="checkbox" id="agKnowledge"> 📚 전체 자동검색</label>
       </div>
 
       <label>📂 내 지식 문서 선택 (체크한 문서를 근거로 답변)</label>
@@ -230,7 +229,11 @@ function comboSkillName(sid){
 }
 
 function getCombos(){
-  try{ if(window.opener && !window.opener.closed && typeof window.opener.getSkillCombos==='function') return window.opener.getSkillCombos()||[]; }catch(e){}
+  try{
+    if(window.opener && !window.opener.closed && typeof window.opener.getSkillCombos==='function'){
+      return (window.opener.getSkillCombos()||[]).filter(function(c){ return c.id!=='knowledge-domain'; });
+    }
+  }catch(e){}
   return [];
 }
 
@@ -375,7 +378,7 @@ async function saveAgent(){
     persona: document.getElementById('agPersona').value.trim(),
     envs: [document.getElementById('agEnvSelect').value || 'auto'],
     skills: getCheckedSkills(),
-    knowledge: document.getElementById('agKnowledge').checked,
+    knowledge: false,
     knowledge_files: getCheckedKnowledge(),
     effort: parseInt(document.getElementById('agEffort').value,10)
   };
@@ -561,7 +564,6 @@ document.getElementById('chatInput').addEventListener('keydown', function(e){
 (function(){
   if(!USER){ showNotice('로그인이 필요합니다. 메인 창에서 로그인 후 다시 열어주세요.'); }
   var ctx=openerCtx();
-  document.getElementById('agKnowledge').checked = !!ctx.knowledge;
   if(ctx.effort!=null){ document.getElementById('agEffort').value=String(ctx.effort); }
   loadEnvs();
   initSkills(Array.isArray(ctx.skills)? ctx.skills : []);  // 메인 현재 선택을 기본 반영
