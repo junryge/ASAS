@@ -442,7 +442,7 @@ ASAS가 이미 스킬 디스커버리 로직 있으면 (기존 355개 스킬 로
 
 ### 방법 3: 프롬프트에 인라인 주입 (간단 테스트용)
 
-Qwen3나 Claude 사용 시 시스템 프롬프트에:
+Qwen3나 API 모델 사용 시 시스템 프롬프트에:
 ```
 You have access to the following Superpowers skills. Read the one relevant to the user's request before responding.
 

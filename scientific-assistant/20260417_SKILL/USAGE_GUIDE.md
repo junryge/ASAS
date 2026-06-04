@@ -202,7 +202,7 @@
 ```
 1. "OHT 경로 최적화 스킬 만들자"
    → writing-skills + brainstorming
-2. RED: 기존 Claude 실패 시나리오 3개 관찰
+2. RED: 기존 API 모델 실패 시나리오 3개 관찰
 3. GREEN: 최소 SKILL.md (아이언 룰 3개만)
 4. REFACTOR: loophole 닫기
 5. verification-before-completion (실제 쿼리 3개 재발동 테스트)
