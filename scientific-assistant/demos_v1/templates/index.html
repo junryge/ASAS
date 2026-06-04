@@ -1088,6 +1088,11 @@ let maxTokens = 0;  // 0 = 서버 자동 결정 (모델에 맞게)
 // ===== 스킬 조합 프리셋 =====
 const SKILL_COMBOS = [
   {
+    id:'hermes', label:'🔮 헤르메스', color:'#a855f7',
+    desc:'기억·자기학습·되묻기 — 쓸수록 똑똑해짐 (개인 메모리/스킬)',
+    skills:['hermes']
+  },
+  {
     id:'data-analysis', label:'📊 데이터 분석', color:'#6366f1',
     desc:'CSV/엑셀 데이터 탐색, 통계, 시각화 풀세트',
     skills:['exploratory-data-analysis','statistical-analysis','matplotlib','seaborn','plotly','polars','agent-data-scientist','xlsx']
@@ -1906,6 +1911,45 @@ function _usePptSuggestion(el, text){
 
 const _pptKeywords = /PPT|ppt|파워포인트|프레젠테이션|발표자료|슬라이드\s*만들|피피티/i;
 
+// ── 🔮 헤르메스: 스킬 저장 제안 카드 (확인형) ──
+function _hesc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _showSkillApprovalCards(pending){
+  if(!pending || !pending.length) return;
+  const c=document.getElementById('msgs');
+  const wrap=document.createElement('div');
+  wrap.className='msg assistant';
+  wrap._pending=pending;
+  let html='<div class="msg-label">🔮 헤르메스 — 스킬 저장 제안</div><div class="content">'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:6px;">아래 절차를 개인 스킬로 저장할까요?</div>';
+  pending.forEach(function(sp,i){
+    html+='<div data-card="'+i+'" style="border:1px solid #a855f7;border-radius:8px;padding:8px;margin-bottom:6px;background:rgba(168,85,247,0.06);">'
+      +'<div style="font-weight:700;color:#a855f7;">'+_hesc(sp.action||'create')+': '+_hesc(sp.name||'(이름없음)')+'</div>'
+      +'<div style="font-size:11px;color:#64748b;margin:2px 0;">'+_hesc(sp.when||'')+'</div>'
+      +'<pre style="font-size:11px;white-space:pre-wrap;margin:4px 0;color:#475569;max-height:160px;overflow:auto;">'+_hesc((sp.body||'').slice(0,400))+'</pre>'
+      +'<button onclick="_confirmHermesSkill(this,'+i+')" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:3px 12px;font-size:11px;cursor:pointer;">저장</button> '
+      +'<button onclick="this.closest(\'[data-card]\').remove()" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:3px 12px;font-size:11px;cursor:pointer;">거절</button>'
+      +' <span class="hres" style="font-size:11px;margin-left:8px;color:#22c55e;"></span></div>';
+  });
+  html+='</div>';
+  wrap.innerHTML=html;
+  c.appendChild(wrap);
+  try{ const ct=document.querySelector('.content'); if(ct) ct.scrollTop=ct.scrollHeight; }catch(e){}
+}
+async function _confirmHermesSkill(btn, idx){
+  const card=btn.closest('[data-card]');
+  const wrap=btn.closest('.msg.assistant');
+  const pending=wrap && wrap._pending;
+  if(!pending || !pending[idx] || !currentUser) return;
+  const res=card.querySelector('.hres');
+  try{
+    const r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:currentUser.id, spec:pending[idx]})});
+    const d=await r.json();
+    if(d.ok){ btn.disabled=true; btn.textContent='✅ 저장됨'; if(res) res.textContent=d.msg||''; }
+    else if(res){ res.style.color='#ef4444'; res.textContent=d.msg||'실패'; }
+  }catch(e){ if(res){ res.style.color='#ef4444'; res.textContent='저장 실패: '+e.message; } }
+}
+
 async function send(){
   if(isSending) return;  // 응답 중이면 중복 전송 차단
 
@@ -1964,6 +2008,21 @@ async function send(){
   }
   // 수동 1개 선택 → 단일 에이전트, 수동 2개+ → 병렬 에이전트 (자동 추가 없음)
 
+  // ── 🔮 헤르메스: 켜져 있으면 프롬프트 준비 + 마커('hermes') 제거 ──
+  const hermesOn = (selSkills||[]).includes('hermes') && !!(currentUser && currentUser.id);
+  skillsToUse = skillsToUse.filter(s => s !== 'hermes');
+  let _hermesAddon = '';
+  let _hermesPending = null;
+  if(hermesOn){
+    try{
+      const _hpr = await fetch('/api/hermes/prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id, query:text})});
+      const _hpd = await _hpr.json();
+      _hermesAddon = _hpd.system_addon || '';
+    }catch(e){}
+  }
+  const _baseSys = document.getElementById('systemPromptInput').value.trim();
+  const _sysFinal = _hermesAddon ? (_hermesAddon + '\n\n' + _baseSys).trim() : _baseSys;
+
   // 첨부파일 표시 + 메시지
   let displayText = text || '';
   if(attachedNames.length > 0){
@@ -2007,7 +2066,7 @@ async function send(){
           messages:history, skills:skillsToUse, effort,
           format: formatManualOverride ? selFormat : 'auto',
           writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
-          system_prompt:document.getElementById('systemPromptInput').value.trim(),
+          system_prompt: _sysFinal,
           think_mode: document.getElementById('thinkToggle').checked,
           ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
           ppt_ref_design: pptRefDesign,
@@ -2100,9 +2159,24 @@ async function send(){
         if(_endInfo && _endInfo.truncated){
           _truncWarn = '\n\n⚠️ **응답이 토큰 한도('+(maxTokens||'?')+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.';
         }
-        const _finalContent = _acc + _truncWarn + _errLine;
+        // ── 🔮 헤르메스: 응답 블록 처리 (기억 즉시저장 / 스킬 승인대기 / 되묻기) ──
+        let _displayAcc = _acc;
+        if(hermesOn && _acc.trim()){
+          try{
+            const _por = await fetch('/api/hermes/post',{method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({user_id:currentUser.id, answer:_acc, user_message:text, session_id:(currentSessionId||'')})});
+            const _pod = await _por.json();
+            if(typeof _pod.clean === 'string') _displayAcc = _pod.clean;
+            if(_pod.questions && _pod.questions.length){
+              _displayAcc += (_displayAcc ? '\n\n' : '') + '❓ ' + _pod.questions.join('\n❓ ');
+            }
+            if(_pod.pending_skills && _pod.pending_skills.length) _hermesPending = _pod.pending_skills;
+          }catch(e){}
+        }
+        const _finalContent = _displayAcc + _truncWarn + _errLine;
         addMsg('assistant', _finalContent + _info, _finalContent);
-        history.push({role:'assistant', content:_acc});
+        history.push({role:'assistant', content:_displayAcc});
+        if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
         // 수동/자동 스킬 중 마크다운/HTML 리포트 계열이 선택돼 있으면 MD/HTML 다운로드 바 추가.
         // SSE 응답엔 html_download_url 이 없지만 appendMdDownloadBar 가 누락 시 /api/generate_html
         // 로 즉석 변환하므로 그대로 호출하면 됨.
