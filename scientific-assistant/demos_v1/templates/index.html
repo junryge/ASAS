@@ -663,6 +663,43 @@ pre{position:relative}
 
 <!-- 개인 에이전트는 독립 창(/agent-window)으로 분리됨 -->
 
+<!-- 🔮 헤르메스: 기억 / 배운 스킬 뷰어 -->
+<div id="hermesPopup" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+  <div style="background:#1e1e2e;border:1px solid #333;border-radius:16px;padding:24px;width:600px;max-height:85vh;overflow-y:auto;color:#e2e8f0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;color:#a855f7;">🔮 헤르메스 — 내 기억 & 배운 스킬</h3>
+      <button onclick="closeHermesPopup()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:11.5px;color:#94a3b8;margin-bottom:14px;">헤르메스가 기억한 사실과 스스로 배운 스킬입니다. 잘못된 건 삭제하세요.</div>
+
+    <div style="display:flex;gap:4px;margin-bottom:16px;">
+      <button id="hmTabMem" onclick="switchHermesTab('mem')" style="flex:1;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">🧠 기억</button>
+      <button id="hmTabSkill" onclick="switchHermesTab('skill')" style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;cursor:pointer;font-weight:600;">📚 배운 스킬</button>
+    </div>
+
+    <!-- 기억 탭 -->
+    <div id="hmMemTab">
+      <div style="font-weight:700;margin-bottom:6px;color:#a5b4fc;">🧠 환경·프로젝트 사실 (MEMORY)</div>
+      <div id="hmMemList" style="font-size:12px;color:#888;margin-bottom:6px;">로딩…</div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <input id="hmMemAdd" placeholder="사실 추가 (선언형)" style="flex:1;padding:6px 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">
+        <button onclick="addHermesMemory('memory')" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;">추가</button>
+      </div>
+      <div style="font-weight:700;margin-bottom:6px;color:#a5b4fc;">👤 사용자 선호 (USER)</div>
+      <div id="hmUserList" style="font-size:12px;color:#888;margin-bottom:6px;">로딩…</div>
+      <div style="display:flex;gap:6px;">
+        <input id="hmUserAdd" placeholder="선호 추가 (선언형)" style="flex:1;padding:6px 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">
+        <button onclick="addHermesMemory('user')" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;">추가</button>
+      </div>
+    </div>
+
+    <!-- 스킬 탭 -->
+    <div id="hmSkillTab" style="display:none;">
+      <div id="hmSkillList" style="font-size:12px;color:#888;">로딩…</div>
+    </div>
+  </div>
+</div>
+
 <!-- UIO 2D 픽셀 컨테이너 -->
 <div id="uioContainer">
   <iframe id="uioFrame" src="about:blank"></iframe>
@@ -732,6 +769,7 @@ pre{position:relative}
       <button id="hdCodeBtn" onclick="window.location.href='/code/'" style="font-size:12px;color:#fff;background:#6366f1;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🖥️ 코드 어시스턴트</button>
       <button id="hdKdBtn" onclick="openKnowledgePopup()" style="font-size:12px;color:#fff;background:#22c55e;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">📚 내 지식</button>
       <button id="hdAgentBtn" onclick="openAgentWindow()" style="font-size:12px;color:#fff;background:#a855f7;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🤖 개인 에이전트</button>
+      <button id="hdHermesBtn" onclick="openHermesPopup()" style="font-size:12px;color:#fff;background:#7c3aed;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🔮 헤르메스</button>
       <button id="hdAdminBtn" onclick="openAdminPopup()" style="display:none;font-size:12px;color:#000;background:#f59e0b;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">👑 사용자 관리</button>
       <button id="hdLogoutBtn" onclick="doLogout()" style="font-size:12px;color:#888;background:none;border:1px solid #ddd;padding:5px 10px;border-radius:8px;cursor:pointer;">🚪</button>
       <span style="color:#ccc;font-size:10px;">|</span>
@@ -5601,6 +5639,128 @@ function importAgentConversation(agent, messages){
     _agToast('📥 데모스 새 세션으로 불러옴: '+(agent&&agent.name||''));
     return true;
   }catch(e){ return false; }
+}
+
+// ═══════════ 🔮 헤르메스 — 기억/스킬 뷰어 ═══════════
+function _hmUid(){ return (currentUser && currentUser.id) ? currentUser.id : ''; }
+function _hmEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function openHermesPopup(){
+  if(!_hmUid()){ alert('로그인이 필요합니다'); return; }
+  document.getElementById('hermesPopup').style.display='flex';
+  switchHermesTab('mem');
+}
+function closeHermesPopup(){ document.getElementById('hermesPopup').style.display='none'; }
+
+function switchHermesTab(tab){
+  var mem=tab==='mem';
+  document.getElementById('hmMemTab').style.display=mem?'block':'none';
+  document.getElementById('hmSkillTab').style.display=mem?'none':'block';
+  document.getElementById('hmTabMem').style.background=mem?'#7c3aed':'#2a2a3e';
+  document.getElementById('hmTabMem').style.color=mem?'#fff':'#888';
+  document.getElementById('hmTabSkill').style.background=mem?'#2a2a3e':'#7c3aed';
+  document.getElementById('hmTabSkill').style.color=mem?'#888':'#fff';
+  if(mem) loadHermesMemory(); else loadHermesSkills();
+}
+
+function _hmMemRows(store, items){
+  if(!items || !items.length) return '<span style="color:#888;">없음</span>';
+  return items.map(function(it){
+    var t=_hmEsc(it);
+    return '<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3e;">'
+      +'<span style="flex:1;font-size:12px;color:#e2e8f0;line-height:1.5;">'+t+'</span>'
+      +'<button onclick="removeHermesMemory(\''+store+'\',this)" data-t="'+t+'" style="background:none;border:1px solid #f87171;color:#f87171;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">✕</button></div>';
+  }).join('');
+}
+
+async function loadHermesMemory(){
+  try{
+    var r=await fetch('/api/hermes/memory?user_id='+encodeURIComponent(_hmUid()));
+    var d=await r.json();
+    document.getElementById('hmMemList').innerHTML=_hmMemRows('memory', d.memory);
+    document.getElementById('hmUserList').innerHTML=_hmMemRows('user', d.user);
+  }catch(e){
+    document.getElementById('hmMemList').innerHTML='<span style="color:#f87171;">로드 실패: '+_hmEsc(e.message)+'</span>';
+  }
+}
+
+async function addHermesMemory(store){
+  var id=store==='memory'?'hmMemAdd':'hmUserAdd';
+  var inp=document.getElementById(id);
+  var text=inp.value.trim();
+  if(!text) return;
+  try{
+    var r=await fetch('/api/hermes/memory/op',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), store:store, action:'add', text:text})});
+    var d=await r.json();
+    if(d.ok){ inp.value=''; loadHermesMemory(); }
+    else alert(d.msg||'추가 실패');
+  }catch(e){ alert('추가 실패: '+e.message); }
+}
+
+async function removeHermesMemory(store, btn){
+  var text=btn.getAttribute('data-t');
+  if(!confirm('이 기억을 삭제할까요?')) return;
+  try{
+    var r=await fetch('/api/hermes/memory/op',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), store:store, action:'remove', target:text})});
+    var d=await r.json();
+    if(d.ok) loadHermesMemory(); else alert(d.msg||'삭제 실패');
+  }catch(e){ alert('삭제 실패: '+e.message); }
+}
+
+async function loadHermesSkills(){
+  var box=document.getElementById('hmSkillList');
+  box.innerHTML='로딩…';
+  try{
+    var r=await fetch('/api/hermes/skills?user_id='+encodeURIComponent(_hmUid()));
+    var d=await r.json();
+    var skills=d.skills||[];
+    if(!skills.length){ box.innerHTML='<span style="color:#888;">아직 배운 스킬이 없습니다. 헤르메스로 작업하면 스스로 만들어요.</span>'; return; }
+    box.innerHTML='';
+    skills.forEach(function(s){
+      var stateColor=s.state==='archived'?'#64748b':s.state==='stale'?'#f59e0b':'#22c55e';
+      var row=document.createElement('div');
+      row.style.cssText='border:1px solid #333;border-radius:8px;padding:9px;margin-bottom:7px;background:#23233a;';
+      row.innerHTML=
+        '<div style="display:flex;align-items:center;gap:6px;">'
+        +'<span style="flex:1;font-weight:700;color:#e2e8f0;font-size:13px;">'+(s.pinned?'📌 ':'')+_hmEsc(s.name)+'</span>'
+        +'<span style="font-size:10px;color:'+stateColor+';">'+_hmEsc(s.state)+'</span>'
+        +'<span style="font-size:10px;color:#64748b;">사용 '+(s.use_count||0)+'</span>'
+        +'<button data-pin="1" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">'+(s.pinned?'고정해제':'📌고정')+'</button>'
+        +'<button data-view="1" style="background:none;border:1px solid #6366f1;color:#a5b4fc;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">보기</button>'
+        +'<button data-del="1" style="background:none;border:1px solid #f87171;color:#f87171;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">삭제</button></div>'
+        +'<div style="font-size:11px;color:#94a3b8;margin-top:3px;">'+_hmEsc(s.description||'')+'</div>';
+      row.querySelector('[data-pin]').onclick=function(){ pinHermesSkill(s.name, !s.pinned); };
+      row.querySelector('[data-view]').onclick=function(){ viewHermesSkill(s.name); };
+      row.querySelector('[data-del]').onclick=function(){ deleteHermesSkill(s.name); };
+      box.appendChild(row);
+    });
+  }catch(e){ box.innerHTML='<span style="color:#f87171;">로드 실패: '+_hmEsc(e.message)+'</span>'; }
+}
+
+async function viewHermesSkill(name){
+  try{
+    var r=await fetch('/api/hermes/skill/view?user_id='+encodeURIComponent(_hmUid())+'&name='+encodeURIComponent(name));
+    var d=await r.json();
+    alert('📚 '+name+'\n\n'+(d.content||d.error||''));
+  }catch(e){ alert('보기 실패: '+e.message); }
+}
+async function pinHermesSkill(name, pinned){
+  try{
+    await fetch('/api/hermes/skill/pin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), name:name, pinned:pinned})});
+    loadHermesSkills();
+  }catch(e){ alert('실패: '+e.message); }
+}
+async function deleteHermesSkill(name){
+  if(!confirm('스킬 "'+name+'" 을(를) 삭제할까요?')) return;
+  try{
+    var r=await fetch('/api/hermes/skill/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), name:name})});
+    var d=await r.json();
+    if(d.ok) loadHermesSkills(); else alert(d.msg||'삭제 실패');
+  }catch(e){ alert('삭제 실패: '+e.message); }
 }
 </script>
 
