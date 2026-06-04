@@ -369,8 +369,8 @@
       font-size: 17px; font-weight: 700;
       flex-shrink: 0;
     }
-    .chat-header .ch-info { min-width: 0; }
-    .chat-header .ch-info h2 { font-size: 15px; font-weight: 700; white-space: nowrap; }
+    .chat-header .ch-info { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+    .chat-header .ch-info h2 { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-header .ch-info p { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-header .back-btn {
       margin-left: auto;
@@ -574,6 +574,7 @@
       border: 1px solid var(--border); background: var(--card);
       color: var(--text); font-size: 12px; font-family: inherit;
       outline: none; cursor: pointer;
+      flex: 0 0 auto; max-width: 200px;
     }
     .env-select:focus { border-color: var(--accent-blue); }
 
