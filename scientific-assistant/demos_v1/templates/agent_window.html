@@ -486,6 +486,36 @@ function addChatMsg(role, text){
 }
 
 // ── 전송 (SSE 스트리밍) — 메인 send() 의 /api/chat 계약 그대로 ──
+// 🔮 헤르메스: 스킬 저장 제안 카드 (확인형)
+function _awSkillCards(pending){
+  if(!pending || !pending.length) return;
+  var c=document.getElementById('chatMsgs');
+  pending.forEach(function(sp){
+    var card=document.createElement('div');
+    card.className='cm assistant';
+    card.style.cssText='border:1px solid #a855f7;border-radius:8px;padding:9px;margin-bottom:10px;background:rgba(168,85,247,0.08);';
+    card.innerHTML='<div style="font-weight:700;color:#c4b5fd;font-size:12px;">🔮 스킬 저장 제안: '+esc(sp.name||'(이름없음)')+'</div>'
+      +'<div style="font-size:11px;color:#94a3b8;margin:2px 0;">'+esc(sp.when||'')+'</div>'
+      +'<pre style="font-size:11px;white-space:pre-wrap;color:#cbd5e1;max-height:140px;overflow:auto;margin:4px 0;">'+esc((sp.body||'').slice(0,400))+'</pre>'
+      +'<button data-save="1" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:3px 12px;font-size:11px;cursor:pointer;">저장</button> '
+      +'<button data-rej="1" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:3px 12px;font-size:11px;cursor:pointer;">거절</button>'
+      +' <span class="awres" style="font-size:11px;margin-left:6px;color:#22c55e;"></span>';
+    card.querySelector('[data-rej]').onclick=function(){ card.remove(); };
+    card.querySelector('[data-save]').onclick=async function(){
+      var btn=this, res=card.querySelector('.awres');
+      try{
+        var r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({user_id:uid(), spec:sp})});
+        var d=await r.json();
+        if(d.ok){ btn.disabled=true; btn.textContent='✅ 저장됨'; if(res) res.textContent=d.msg||''; }
+        else if(res){ res.style.color='#f87171'; res.textContent=d.msg||'실패'; }
+      }catch(e){ if(res){ res.style.color='#f87171'; res.textContent='실패: '+e.message; } }
+    };
+    c.appendChild(card);
+  });
+  c.scrollTop=c.scrollHeight;
+}
+
 async function sendChat(){
   if(isStreaming) return;
   if(!activeAgent){ return; }
@@ -502,6 +532,10 @@ async function sendChat(){
   var skills = Array.isArray(activeAgent.skills)? activeAgent.skills.slice() : [];
   if(activeAgent.knowledge && skills.indexOf('knowledge-search')<0) skills.push('knowledge-search');
 
+  // 🔮 헤르메스: 마커 있으면 엔진 ON (마커는 /api/chat 전송에서 제거)
+  var hermesOn = skills.indexOf('hermes')>=0 && !!uid();
+  skills = skills.filter(function(s){ return s!=='hermes'; });
+
   var sendBtn=document.getElementById('chatSend');
   isStreaming=true; sendBtn.disabled=true; sendBtn.textContent='…';
   var bubble=addChatMsg('assistant','');
@@ -512,6 +546,14 @@ async function sendChat(){
   var sysPrompt = activeAgent.persona || '';
   var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
   if(kctx) sysPrompt += kctx;
+  if(hermesOn){
+    bubble.textContent='🔮 헤르메스 기억 불러오는 중…';
+    try{
+      var _hpr=await fetch('/api/hermes/prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid(), query:text})});
+      var _hpd=await _hpr.json();
+      if(_hpd.system_addon) sysPrompt += (sysPrompt?'\n\n':'') + _hpd.system_addon;
+    }catch(e){}
+  }
   bubble.textContent='';
 
   var payload={
@@ -567,11 +609,24 @@ async function sendChat(){
           }catch(_){}
         }
       }
-      var finalText = acc + (errInfo ? ('\n\n❌ '+(errInfo.error||'')+(errInfo.detail?('\n'+errInfo.detail):'')) : '');
+      var errLine = errInfo ? ('\n\n❌ '+(errInfo.error||'')+(errInfo.detail?('\n'+errInfo.detail):'')) : '';
+      var disp = stripThink(acc);
+      var pending = null;
+      if(hermesOn && acc.trim()){
+        try{
+          var _por=await fetch('/api/hermes/post',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({user_id:uid(), answer:acc, user_message:text, session_id:(activeAgent.agent_id||'')})});
+          var _pod=await _por.json();
+          if(typeof _pod.clean==='string') disp=_pod.clean;
+          if(_pod.questions && _pod.questions.length) disp += (disp?'\n\n':'')+'❓ '+_pod.questions.join('\n❓ ');
+          if(_pod.pending_skills && _pod.pending_skills.length) pending=_pod.pending_skills;
+        }catch(e){}
+      }
       bubble.style.whiteSpace='normal';
-      bubble.innerHTML = renderFinal(finalText);
-      chatHistory.push({role:'assistant', content: stripThink(acc)});
+      bubble.innerHTML = renderFinal(disp + errLine);
+      chatHistory.push({role:'assistant', content: disp});
       saveChat();
+      if(pending) _awSkillCards(pending);
     }
   }catch(e){
     if(e && e.name==='AbortError'){ bubble.textContent=acc+'\n\n⏹ 중단됨'; }
