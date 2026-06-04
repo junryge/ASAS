@@ -6,15 +6,31 @@
   <title>CEO Multi-Agent Office</title>
   <style>
     :root {
-      --bg-1: #1d2633;
-      --bg-2: #0f151e;
-      --panel: #1a2535;
-      --card: #223344;
+      /* 네온 팔레트 */
+      --neon-cyan: #00e5ff;
+      --neon-magenta: #ff3ea5;
+      --neon-violet: #a855f7;
+      --neon-lime: #4ade80;
+      --neon-amber: #fbbf24;
+      --danger: #ff4d4d;
+      /* 글로우 토큰 */
+      --glow-cyan: 0 0 8px rgba(0,229,255,.7), 0 0 20px rgba(0,229,255,.35);
+      --glow-magenta: 0 0 8px rgba(255,62,165,.7), 0 0 20px rgba(255,62,165,.35);
+      --glow-violet: 0 0 8px rgba(168,85,247,.7), 0 0 20px rgba(168,85,247,.35);
+      --glow-lime: 0 0 8px rgba(74,222,128,.7), 0 0 20px rgba(74,222,128,.35);
+      --panel-glass: rgba(18,27,40,.72);
+      --border-neon: rgba(0,229,255,.38);
+
+      /* 기존 변수명 유지 (값만 재지정) */
+      --bg-1: #161f2c;
+      --bg-2: #0a0e16;
+      --panel: rgba(20,30,46,.82);
+      --card: #1b2a3d;
       --text: #eaf1ff;
-      --muted: #7a8fa6;
-      --accent: #ff4d4d;
-      --accent-blue: #00b4d8;
-      --border: #2a4a5a;
+      --muted: #8aa0b8;
+      --accent: var(--danger);
+      --accent-blue: var(--neon-cyan);
+      --border: var(--border-neon);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -26,7 +42,11 @@
       grid-template-columns: 1fr 300px;
       font-family: "Segoe UI", "Malgun Gothic", sans-serif;
       color: var(--text);
-      background: var(--bg-2);
+      background:
+        radial-gradient(1200px 800px at 12% -8%, rgba(0,229,255,.10), transparent 60%),
+        radial-gradient(1100px 750px at 110% 115%, rgba(168,85,247,.12), transparent 60%),
+        radial-gradient(900px 600px at 95% -10%, rgba(255,62,165,.06), transparent 55%),
+        var(--bg-2);
       transition: grid-template-columns 0.3s ease;
     }
     body.sidebar-collapsed {
@@ -163,8 +183,9 @@
     }
     .agent-card:hover {
       background: var(--card);
-      border-color: var(--border);
+      border-color: var(--border-neon);
       transform: translateX(-4px);
+      box-shadow: var(--glow-cyan), 0 6px 18px rgba(0,0,0,.35);
     }
     .agent-card .avatar {
       width: 40px; height: 40px;
@@ -172,6 +193,7 @@
       display: grid; place-items: center;
       font-size: 18px; font-weight: 700;
       flex-shrink: 0;
+      box-shadow: 0 0 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.18);
     }
     .agent-card .info { flex: 1; min-width: 0; }
     .agent-card .name { font-size: 14px; font-weight: 600; }
@@ -209,13 +231,13 @@
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
     /* Agent color themes */
-    .agent-card.seo .avatar  { background: linear-gradient(135deg, #00b4d8, #0077b6); }
-    .agent-card.yoon .avatar { background: linear-gradient(135deg, #c084fc, #9333ea); }
-    .agent-card.lee .avatar  { background: linear-gradient(135deg, #4ade80, #16a34a); }
-    .agent-card.park .avatar { background: linear-gradient(135deg, #e2b714, #c9960c); }
-    .agent-card.kim .avatar  { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
-    .agent-card.choi .avatar { background: linear-gradient(135deg, #00e5ff, #0097a7); }
-    .agent-card.jung .avatar { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+    .agent-card.seo .avatar  { background: linear-gradient(135deg, #00b4d8, #0077b6); box-shadow: 0 0 12px rgba(0,180,216,.6); }
+    .agent-card.yoon .avatar { background: linear-gradient(135deg, #c084fc, #9333ea); box-shadow: 0 0 12px rgba(168,85,247,.6); }
+    .agent-card.lee .avatar  { background: linear-gradient(135deg, #4ade80, #16a34a); box-shadow: 0 0 12px rgba(74,222,128,.6); }
+    .agent-card.park .avatar { background: linear-gradient(135deg, #e2b714, #c9960c); box-shadow: 0 0 12px rgba(226,183,20,.6); }
+    .agent-card.kim .avatar  { background: linear-gradient(135deg, #ff6b6b, #ee5a24); box-shadow: 0 0 12px rgba(255,107,107,.6); }
+    .agent-card.choi .avatar { background: linear-gradient(135deg, #00e5ff, #0097a7); box-shadow: 0 0 12px rgba(0,229,255,.6); }
+    .agent-card.jung .avatar { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 0 12px rgba(167,139,250,.6); }
 
     /* Strike: disable agent cards */
     .agent-card.on-strike {
@@ -247,6 +269,22 @@
       overflow: hidden;
       transition: grid-template-columns 0.3s ease;
     }
+    /* 아케이드 스캔라인/그리드 오버레이 (JS 0) */
+    .main-area::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      background-image:
+        linear-gradient(rgba(0,229,255,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,.04) 1px, transparent 1px),
+        repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 2px, transparent 2px 4px);
+      background-size: 44px 44px, 44px 44px, 100% 4px;
+      mix-blend-mode: screen;
+      opacity: .5;
+    }
+    .main-area > * { position: relative; z-index: 2; }
     .main-area.split {
       grid-template-columns: 65fr 8px 35fr;
       gap: 0;
@@ -593,56 +631,80 @@
       z-index: 5;
     }
     .kpi-item {
-      padding: 5px 10px;
-      border-radius: 6px;
-      background: rgba(18, 27, 40, 0.88);
-      backdrop-filter: blur(4px);
-      border: 1px solid rgba(255,255,255,0.12);
+      position: relative;
+      overflow: hidden;
+      padding: 6px 12px 6px 15px;
+      border-radius: 9px;
+      background: var(--panel-glass);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-neon);
+      box-shadow: 0 0 0 1px rgba(0,229,255,.05), 0 6px 18px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05);
       display: flex;
       align-items: center;
       gap: 6px;
       font-size: 11px;
       white-space: nowrap;
+      transition: transform .15s ease, box-shadow .15s ease;
     }
-    .kpi-label { color: #7a8fa6; }
-    .kpi-value { font-weight: 700; font-size: 12px; }
-    .kpi-value.up { color: #4ade80; }
-    .kpi-value.down { color: #ff6b6b; }
-    .kpi-value.neutral { color: #fbbf24; }
+    .kpi-item::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+      background: linear-gradient(180deg, var(--neon-cyan), var(--neon-violet));
+      box-shadow: var(--glow-cyan);
+    }
+    .kpi-item.kpi-flash { animation: kpiFlash .5s ease; }
+    @keyframes kpiFlash {
+      0%   { transform: scale(1); }
+      35%  { transform: scale(1.13); box-shadow: 0 0 16px rgba(0,229,255,.65), 0 8px 24px rgba(0,0,0,.45); }
+      100% { transform: scale(1); }
+    }
+    .kpi-label { color: var(--muted); }
+    .kpi-value { font-weight: 800; font-size: 12px; letter-spacing: .2px; }
+    .kpi-value.up { color: var(--neon-lime); text-shadow: 0 0 8px rgba(74,222,128,.55); }
+    .kpi-value.down { color: #ff6b6b; text-shadow: 0 0 8px rgba(255,107,107,.5); }
+    .kpi-value.neutral { color: var(--neon-amber); text-shadow: 0 0 8px rgba(251,191,36,.5); }
     .kpi-change { font-size: 10px; color: var(--muted); }
-    .kpi-change.up { color: #4ade80; }
+    .kpi-change.up { color: var(--neon-lime); }
     .kpi-change.down { color: #ff6b6b; }
-    .kpi-change.neutral { color: #fbbf24; }
+    .kpi-change.neutral { color: var(--neon-amber); }
+
+    /* 네온 버튼 유틸 */
+    .btn-neon {
+      border: 1px solid var(--border-neon);
+      background: linear-gradient(180deg, rgba(0,229,255,.16), rgba(0,229,255,.04));
+      color: #eaffff;
+      box-shadow: var(--glow-cyan), inset 0 1px 0 rgba(255,255,255,.08);
+      transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+    }
+    .btn-neon:hover { transform: translateY(-1px); filter: brightness(1.15); }
 
     .strike-btn {
       position: absolute;
       right: 15px;
       top: 15px;
       padding: 10px 18px;
-      border-radius: 8px;
-      border: 2px solid #ff4d4d;
-      background: rgba(180, 30, 30, 0.85);
-      backdrop-filter: blur(4px);
+      border-radius: 9px;
+      border: 1px solid #ff5d6c;
+      background: linear-gradient(180deg, rgba(255,77,77,.30), rgba(150,20,30,.5));
+      backdrop-filter: blur(6px);
       color: #fff;
       font-size: 14px;
-      font-weight: 700;
+      font-weight: 800;
       font-family: "Segoe UI", "Malgun Gothic", sans-serif;
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      transition: all 0.2s;
+      box-shadow: 0 0 10px rgba(255,77,77,.55), 0 0 22px rgba(255,77,77,.25), 0 6px 16px rgba(0,0,0,.4);
+      transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
       z-index: 10;
     }
     .strike-btn:hover {
-      background: rgba(220, 40, 40, 0.95);
-      transform: scale(1.05);
+      transform: translateY(-1px) scale(1.04);
+      filter: brightness(1.12);
     }
     .strike-btn.active {
-      background: rgba(30, 120, 60, 0.85);
       border-color: #4dc46d;
+      background: linear-gradient(180deg, rgba(74,222,128,.28), rgba(20,110,55,.5));
+      box-shadow: 0 0 10px rgba(74,222,128,.6), 0 0 22px rgba(74,222,128,.28), 0 6px 16px rgba(0,0,0,.4);
     }
-    .strike-btn.active:hover {
-      background: rgba(40, 150, 70, 0.95);
-    }
+    .strike-btn.active:hover { filter: brightness(1.12); }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
@@ -975,6 +1037,12 @@
           if(this.frameTimer >= this.frameDuration) {
             this.frameTimer = 0;
             this.frameIndex = (this.frameIndex + 1) % this.frames.length;
+            // 걷기 먼지 (발걸음마다 저빈도 puff)
+            if (typeof spawnParticle === 'function' && Math.random() < 0.5) {
+              spawnParticle(this.x + (Math.random()-.5)*14, this.y - 2,
+                { vx:(Math.random()-.5)*16, vy:-(4+Math.random()*8), maxLife:0.4+Math.random()*0.3,
+                  size:3+Math.random()*3, color:'#9fb4c8', grav:8, fade:.4 });
+            }
           }
         }
       }
@@ -982,33 +1050,64 @@
       draw(ctx) {
         const img = this.isStatic ? this.frames : this.frames[this.frameIndex];
         if(!img || !img.complete || img.naturalWidth === 0) return; // Safely return if image is not loaded
-        
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        if(this.direction === -1 && !this.isStatic) {
-          ctx.scale(-1, 1); // Flip horizontally if walking left
-        }
-        
+
         const w = img.width * this.scale;
         const h = img.height * this.scale;
-        
-        ctx.drawImage(img, -w/2, -h, w, h);
+        const glow = this.glowColor || AGENT_HUES[this.name] || '#00e5ff';
+        const isHover = (this === hoveredChar);
+        const wantGlow = this.isStatic || isHover || this._reportPhase === 'running'
+                         || (typeof isOnStrike !== 'undefined' && isOnStrike && !this._fired);
 
+        // 접지 그림자 (월드좌표 — flip 밖)
+        ctx.save();
+        ctx.globalAlpha = 0.34;
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y - 2, Math.max(18, w*0.30), Math.max(6, h*0.05), 0, 0, Math.PI*2);
+        ctx.fill();
         ctx.restore();
 
-        // Name label
+        // 셀렉션 링 (hover — 회전 네온 대시)
+        if (isHover) {
+          ctx.save();
+          ctx.translate(this.x, this.y - 2);
+          ctx.rotate((Date.now()/1000) % (Math.PI*2));
+          ctx.strokeStyle = glow;
+          ctx.lineWidth = 3;
+          ctx.shadowColor = glow; ctx.shadowBlur = 12;
+          ctx.setLineDash([12, 9]);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, Math.max(28, w*0.44), Math.max(11, h*0.09), 0, 0, Math.PI*2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // 스프라이트 (+ 게이트된 네온 림 글로우)
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        if(this.direction === -1 && !this.isStatic) ctx.scale(-1, 1);
+        if (wantGlow){ ctx.shadowColor = glow; ctx.shadowBlur = isHover ? 22 : 14; }
+        ctx.drawImage(img, -w/2, -h, w, h);
+        ctx.restore();
+
+        // 이름표 (글래스 + 네온보더 + 부유 바운스)
         if (this.name) {
           ctx.save();
+          const bob = Math.sin(Date.now()/400 + this.x*0.01) * 2;
           ctx.font = 'bold 18px "Segoe UI", "Malgun Gothic", sans-serif';
           ctx.textAlign = 'center';
-          const tw = ctx.measureText(this.name).width + 14;
-          const lx = this.x, ly = this.y + 10;
-          ctx.fillStyle = 'rgba(0,0,0,0.72)';
+          const tw = ctx.measureText(this.name).width + 18;
+          const lx = this.x, ly = this.y + 12 + bob;
+          ctx.fillStyle = 'rgba(10,16,26,0.78)';
           ctx.beginPath();
-          ctx.roundRect(lx - tw/2, ly - 14, tw, 22, 5);
+          ctx.roundRect(lx - tw/2, ly - 15, tw, 23, 6);
           ctx.fill();
-          ctx.fillStyle = '#fff';
-          ctx.fillText(this.name, lx, ly + 3);
+          ctx.strokeStyle = glow; ctx.lineWidth = 1.5;
+          ctx.shadowColor = glow; ctx.shadowBlur = 6;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#eaffff';
+          ctx.fillText(this.name, lx, ly + 2);
           ctx.restore();
         }
       }
@@ -1154,6 +1253,16 @@
       if (isOnStrike) {
         btn.textContent = '✅ 복귀';
         btn.classList.add('active');
+        // 게임감: 파업 진입 — 셰이크 + 레드 파티클 burst + KPI 펄스
+        if (typeof addShake === 'function') addShake(10, 0.35);
+        if (typeof spawnParticle === 'function') {
+          characters.filter(c => !c.isStatic).forEach(c => {
+            for (let i=0;i<8;i++) spawnParticle(c.x, c.y-50,
+              { vx:(Math.random()-.5)*120, vy:-(40+Math.random()*160), maxLife:0.6+Math.random()*0.6,
+                size:5+Math.random()*7, color:'#ff4d4d', grav:160, fade:1 });
+          });
+        }
+        document.querySelectorAll('.kpi-item').forEach(el => { el.classList.remove('kpi-flash'); void el.offsetWidth; el.classList.add('kpi-flash'); });
         // Disable agent cards + red flash
         document.querySelectorAll('.agent-card').forEach(c => c.classList.add('on-strike'));
         // KPI는 updateKpi()에서 자동 반영
@@ -1243,6 +1352,16 @@
 
       // Show big "해고!!" flash
       fireFlashText = { text: '해고!!', name: char.name, x: char.x, y: char.y - 100, startTime: Date.now() };
+
+      // 게임감: 스크린 셰이크 + ember 파티클 burst
+      if (typeof addShake === 'function') addShake(16, 0.4);
+      if (typeof spawnParticle === 'function') {
+        for (let i=0;i<28;i++){
+          spawnParticle(char.x, char.y - 40,
+            { vx:(Math.random()-.5)*240, vy:-(60+Math.random()*220), maxLife:0.6+Math.random()*0.7,
+              size:5+Math.random()*8, color: Math.random()<.5?'#ff4d4d':'#ffae3a', grav:240, fade:1 });
+        }
+      }
 
       // CEO shouts
       speakSlogan(char.name + ' 해고! 너는 잘렸어!');
@@ -1764,14 +1883,18 @@
 
       // Bubble background (LLM 대화는 파란색 배경)
       const bgColor = isLlm ? '#e8f4fd' : '#fff';
-      const borderColor = isLlm ? '#4a9eff' : '#2f3440';
+      const borderColor = isLlm ? '#00e5ff' : '#2f3440';
       ctx.fillStyle = bgColor;
       ctx.strokeStyle = borderColor;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = isLlm ? 3 : 2.5;
+      // 게임감: 네온 글로우 (박스에만)
+      ctx.shadowColor = isLlm ? 'rgba(0,229,255,.8)' : 'rgba(0,0,0,.35)';
+      ctx.shadowBlur = isLlm ? 16 : 8;
       ctx.beginPath();
-      ctx.roundRect(boxX, boxY, boxW, boxH, 8);
+      ctx.roundRect(boxX, boxY, boxW, boxH, 10);
       ctx.fill();
       ctx.stroke();
+      ctx.shadowBlur = 0;
 
       // Tail triangle
       ctx.fillStyle = bgColor;
@@ -1802,18 +1925,175 @@
       characters.sort((a,b) => a.y - b.y);
     }
 
+    // ───────── 게임감 이펙트 레이어 (파티클 / 글로우 / 조명 / 셰이크) ─────────
+    // 색별 soft-glow 스프라이트 캐시 (가산합성 'lighter' 용)
+    const _glowCache = {};
+    function glowFor(color){
+      if (_glowCache[color]) return _glowCache[color];
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const rg = g.createRadialGradient(32,32,0,32,32,32);
+      rg.addColorStop(0, color);
+      rg.addColorStop(.30, color);
+      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = rg; g.fillRect(0,0,64,64);
+      _glowCache[color] = c; return c;
+    }
+
+    const particles = [];
+    const PARTICLE_CAP = 280;
+    function spawnParticle(x,y,o){
+      if (particles.length >= PARTICLE_CAP) return;
+      o = o || {};
+      particles.push({
+        x, y,
+        vx: o.vx!=null?o.vx:(Math.random()-.5)*40,
+        vy: o.vy!=null?o.vy:-(20+Math.random()*40),
+        life: 0, maxLife: o.maxLife||(0.8+Math.random()*0.8),
+        size: o.size||(6+Math.random()*10),
+        color: o.color||'#00e5ff',
+        grav: o.grav!=null?o.grav:30,
+        fade: o.fade!=null?o.fade:1
+      });
+    }
+    function updateParticles(dt){
+      for (let i=particles.length-1;i>=0;i--){
+        const p=particles[i];
+        p.life+=dt;
+        if (p.life>=p.maxLife){ particles.splice(i,1); continue; }
+        p.vy+=p.grav*dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
+      }
+    }
+    function drawParticles(ctx){
+      if (!particles.length) return;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      for (const p of particles){
+        ctx.globalAlpha = Math.max(0, 1-p.life/p.maxLife) * p.fade;
+        const s = p.size;
+        ctx.drawImage(glowFor(p.color), p.x-s, p.y-s, s*2, s*2);
+      }
+      ctx.restore();
+    }
+
+    // 비네팅 (그라데이션 1회 캐시)
+    let _vignette=null;
+    function drawVignette(ctx){
+      if (!_vignette){
+        _vignette = ctx.createRadialGradient(
+          world.width/2, world.height*0.46, world.height*0.32,
+          world.width/2, world.height*0.50, world.height*0.92);
+        _vignette.addColorStop(0,'rgba(0,0,0,0)');
+        _vignette.addColorStop(1,'rgba(2,6,14,0.55)');
+      }
+      ctx.save();
+      ctx.fillStyle=_vignette;
+      ctx.fillRect(0,0,world.width,world.height);
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle='rgba(0,229,255,0.028)';
+      ctx.fillRect(0,0,world.width,world.height*0.28);
+      ctx.restore();
+    }
+
+    // 스크린 셰이크 (fire/strike 공용)
+    const shake={t:0,dur:1,mag:0};
+    function addShake(mag,dur){ if(mag>=shake.mag || shake.t<=0){ shake.mag=mag; shake.dur=dur; shake.t=dur; } }
+
+    let _ambFrame=0;
+    function ambientSpawn(){
+      _ambFrame++;
+      if (_ambFrame % 13 === 0){
+        spawnParticle(Math.random()*world.width, world.height*0.5+Math.random()*world.height*0.42,
+          { vx:(Math.random()-.5)*9, vy:-(5+Math.random()*9), maxLife:2.6+Math.random()*2,
+            size:3+Math.random()*4, color: Math.random()<.5?'#00e5ff':'#a855f7', grav:-2, fade:.45 });
+      }
+    }
+
+    // 배경 분위기 이펙트 (절차적 — 새 PNG 없음)
+    let _ceoSpot = null;
+    function drawBackgroundFx(ctx){
+      const t = Date.now()/1000;
+      // 컬러 그레이드 (soft-light, 시안↔바이올렛 drift)
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      ctx.globalAlpha = 0.20;
+      ctx.fillStyle = (Math.sin(t*0.15) < 0) ? 'rgba(0,200,255,1)' : 'rgba(150,90,255,1)';
+      ctx.fillRect(0,0,world.width,world.height);
+      ctx.restore();
+      // 바닥 글로우 패드 (에이전트 roam zone — 게임 유닛 마커)
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const c of characters){
+        if (c.isStatic || c._fired || !c.bounds) continue;
+        const cx=(c.bounds.minX+c.bounds.maxX)/2, cy=c.bounds.maxY;
+        const rw=(c.bounds.maxX-c.bounds.minX)/2+50;
+        const pulse=0.5+0.5*Math.sin(t*1.4 + cx*0.01);
+        ctx.globalAlpha=0.08+0.06*pulse;
+        ctx.drawImage(glowFor(AGENT_HUES[c.name]||'#00e5ff'), cx-rw, cy-rw*0.30, rw*2, rw*0.6);
+      }
+      ctx.restore();
+      // CEO 스포트라이트
+      if (!_ceoSpot){
+        _ceoSpot = ctx.createRadialGradient(400,250,10, 400,330,260);
+        _ceoSpot.addColorStop(0,'rgba(255,225,150,0.16)');
+        _ceoSpot.addColorStop(1,'rgba(255,225,150,0)');
+      }
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha = 0.6 + 0.4*Math.sin(t*2);
+      ctx.fillStyle = _ceoSpot;
+      ctx.fillRect(120,70,560,500);
+      ctx.restore();
+    }
+
+    // 캐릭터 색조 (사이드바 팔레트와 매칭) + hover 셀렉션
+    const AGENT_HUES = {
+      'CEO Jiwon':'#ffd24a','Kim':'#ff6b6b','Han':'#a855f7','Lee':'#4ade80',
+      'Park':'#e2b714','Choi':'#00e5ff','Yoon':'#a78bfa','Seo':'#00b4d8','Jung':'#a78bfa'
+    };
+    let hoveredChar = null;
+    canvas.addEventListener('mousemove', (e) => {
+      const r = canvas.getBoundingClientRect();
+      const mx = (e.clientX - r.left) * (world.width / r.width);
+      const my = (e.clientY - r.top) * (world.height / r.height);
+      let best = null, bestD = 1e9;
+      for (const c of characters){
+        if (c._fired) continue;
+        const img = c.isStatic ? c.frames : (c.frames && c.frames[c.frameIndex]);
+        const w = ((img && img.width) || 80) * c.scale, h = ((img && img.height) || 120) * c.scale;
+        if (mx >= c.x - w/2 && mx <= c.x + w/2 && my >= c.y - h && my <= c.y){
+          const d = Math.abs(mx - c.x) + Math.abs(my - (c.y - h/2));
+          if (d < bestD){ bestD = d; best = c; }
+        }
+      }
+      hoveredChar = best;
+      canvas.style.cursor = best ? 'pointer' : 'default';
+    });
+    canvas.addEventListener('mouseleave', () => { hoveredChar = null; });
+
     let lastTime = performance.now();
     function loop(now) {
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
+      ctx.save();  // ← 셰이크/이펙트 프레임 wrap (맨 끝 restore)
+      if (shake.t > 0){
+        shake.t -= dt;
+        const k = Math.max(0, shake.t/shake.dur);
+        ctx.translate((Math.random()-.5)*shake.mag*k, (Math.random()-.5)*shake.mag*k);
+      }
+
+      // base fill (셰이크 갭 방지 + 폴백 배경)
+      ctx.fillStyle = "#0a0e16";
+      ctx.fillRect(-24, -24, world.width+48, world.height+48);
       // Draw office background
       if (map.complete && map.naturalWidth > 0) {
         ctx.drawImage(map, 0, 0, world.width, world.height);
-      } else {
-        ctx.fillStyle = "#101725";
-        ctx.fillRect(0, 0, world.width, world.height);
       }
+
+      // 게임감: 배경 분위기(컬러그레이드/스포트라이트/바닥패드) — 캐릭터 전
+      drawBackgroundFx(ctx);
+      ambientSpawn();
 
       // Update & Draw chars
       characters.forEach(c => {
@@ -1826,6 +2106,10 @@
         if (c._fired && c.x > world.width + 100) return;
         c.draw(ctx);
       });
+
+      // 게임감: 파티클 (캐릭터 위)
+      updateParticles(dt);
+      drawParticles(ctx);
 
       // Draw fire flash text
       drawFireFlash(ctx);
@@ -1919,6 +2203,9 @@
         }
       }
 
+      // 게임감: 비네팅/조명 (맨 위)
+      drawVignette(ctx);
+      ctx.restore();  // ← 프레임 wrap 종료 (셰이크)
       requestAnimationFrame(loop);
     }
 
@@ -2804,6 +3091,9 @@
         chgEl.textContent = `${arrow} ${Math.abs(n).toFixed(1)}%`;
         chgEl.className = 'kpi-change ' + cls;
       }
+      // HUD "팝" — 부모 .kpi-item 에 flash (updateKpi 의 className 덮어쓰기 영향 없음)
+      const item = el.closest('.kpi-item');
+      if (item) { item.classList.remove('kpi-flash'); void item.offsetWidth; item.classList.add('kpi-flash'); }
     }
     setInterval(updateKpi, 3000);
 
