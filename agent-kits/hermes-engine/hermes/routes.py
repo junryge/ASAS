@@ -61,6 +61,9 @@ def register_hermes_routes(app) -> int:
             counters.bump_turn(uid)
             dd = counters.due(uid)
             review_due = bool(dd.get("memory") or dd.get("skill"))
+            if dd.get("memory"):
+                from . import review
+                review.run_async(uid)   # set_completion 미주입이면 no-op
         except Exception:
             pass
         res["review_due"] = review_due
