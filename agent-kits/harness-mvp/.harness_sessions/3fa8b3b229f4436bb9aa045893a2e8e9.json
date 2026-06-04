@@ -1,0 +1,10 @@
+{
+  "session_id": "3fa8b3b229f4436bb9aa045893a2e8e9",
+  "messages": [
+    "echo hello",
+    "echo hello [turn 2]",
+    "echo hello [turn 3]"
+  ],
+  "input_tokens": 10,
+  "output_tokens": 13
+}
