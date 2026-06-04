@@ -2337,6 +2337,73 @@
     let currentAgent = null;
     let selectedEnv = 'auto';
     let availableEnvs = {};  // 서버에서 받아올 환경 목록
+
+    // ═══ 에이전트별 API 모델 배정 (GGUF 금지, 병렬, CEO 검증) ═══
+    const agentEnvMap = {};  // {ceo, seo, yoon, lee, park, kim, choi, jung} → API env id
+    function apiEnvEntries(){
+      return Object.entries(availableEnvs).filter(([id]) => !String(id).startsWith('gguf-'));
+    }
+    // 에이전트 역할/스킬에 맞는 API 모델 자동 추천 (서버에 있는 모델 중 키워드 매칭)
+    function recommendEnv(key){
+      const apis = apiEnvEntries();
+      if (!apis.length) return 'auto';
+      const PRI = {
+        ceo:  ['480','summary','80b','next','coder','glm'],   // 가장 강한 모델 (종합·검증)
+        choi: ['coder','480','next','glm'],                   // 로그프레소 쿼리
+        lee:  ['coder','480','next','glm'],                   // draw.io/코드
+        seo:  ['summary','480','80b','common','glm'],         // 데이터 분석
+        kim:  ['summary','480','common','glm'],               // 그래프
+        park: ['common','summary','glm'],                     // MD 문서
+        yoon: ['common','summary','480','glm'],               // PPT
+        jung: ['common','glm','summary'],
+      }[key] || ['common','glm','summary'];
+      for (const kw of PRI){
+        const hit = apis.find(([id, env]) => (id + ' ' + (env.name||'')).toLowerCase().includes(kw));
+        if (hit) return hit[0];
+      }
+      return apis[0][0];
+    }
+    function ensureAgentEnvs(){
+      for (const k of Object.keys(agentBaseData)){
+        if (!agentEnvMap[k] || String(agentEnvMap[k]).startsWith('gguf-')) agentEnvMap[k] = recommendEnv(k);
+      }
+    }
+    // 에이전트의 실제 사용 모델 (항상 API, 절대 gguf 아님)
+    function aEnv(key){
+      let v = agentEnvMap[key];
+      if (!v || String(v).startsWith('gguf-')) { ensureAgentEnvs(); v = agentEnvMap[key]; }
+      return v || 'auto';
+    }
+    function autoRecommendModels(){
+      for (const k of Object.keys(agentBaseData)) agentEnvMap[k] = recommendEnv(k);
+      renderModelAssign();
+    }
+    // CEO 뷰: 에이전트별 모델 배정 그리드 렌더
+    function _apiOptionsHtml(selId){
+      return apiEnvEntries().map(([id, env]) =>
+        `<option value="${id}"${id===selId?' selected':''}>${env.name||id}</option>`).join('');
+    }
+    function renderModelAssign(){
+      const box = document.getElementById('modelAssignBox');
+      if (!box) return;
+      ensureAgentEnvs();
+      const order = ['ceo','seo','yoon','lee','park','kim','choi','jung'].filter(k => agentBaseData[k]);
+      box.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+           <div style="font-size:11px;color:var(--muted);">🧠 에이전트별 API 모델 · 자동추천(수정가능) · CEO가 검증</div>
+           <button onclick="autoRecommendModels()" style="font-size:10px;padding:3px 8px;border-radius:6px;border:1px solid var(--border-neon);background:var(--card);color:var(--accent-blue);cursor:pointer;">🔄 자동추천</button>
+         </div>` +
+        order.map(k => {
+          const ag = agentBaseData[k]; const isCeo = (k === 'ceo');
+          return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="width:48px;font-size:11px;font-weight:700;color:${isCeo?'#f59e0b':'#cbd5e1'};">${isCeo?'👑 ':''}${ag.name}</span>
+            <select onchange="agentEnvMap['${k}']=this.value" title="${ag.name} 모델"
+              style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid ${isCeo?'#f59e0b':'var(--border)'};background:var(--card);color:var(--text);font-size:11px;">
+              ${_apiOptionsHtml(aEnv(k))}
+            </select>
+          </div>`;
+        }).join('');
+    }
     let userMaxTokens = 8192;    // 개별 에이전트 응답 토큰
     let userSynthMaxTokens = 16384; // CEO 합성 응답 토큰
     let userNCtx = 32768;       // 백엔드 GGUF 컨텍스트 윈도우
@@ -2491,14 +2558,7 @@
               <h2>CEO 멀티에이전트 시스템</h2>
               <p>에이전트들에게 작업을 지시하세요</p>
               ${restoреHtml}
-              <div style="margin-top:12px;max-width:300px;">
-                <div style="margin-bottom:8px;">
-                  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">모델 선택</div>
-                  <select id="ceoEnvSelect" onchange="selectedEnv=this.value" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:12px;">
-                    <option value="auto">🤖 AUTO (자동 선택)</option>
-                  </select>
-                </div>
-              </div>
+              <div id="modelAssignBox" style="margin:12px auto 6px;max-width:340px;text-align:left;"></div>
               <div style="display:flex;flex-direction:column;gap:8px;max-width:300px;">
                 <button class="quick-btn" onclick="startResearchMode('research')" style="padding:14px;font-size:14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;cursor:pointer;">🔬 연구하기</button>
                 <button class="quick-btn" onclick="startResearchMode('program')" style="padding:14px;font-size:14px;background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;border:none;border-radius:10px;cursor:pointer;">💻 프로그램 만들기</button>
@@ -2511,8 +2571,9 @@
               </div>
             </div>
           `;
-          // CEO 모델 선택 드롭다운 갱신
+          // CEO 모델 선택 드롭다운 갱신 + 에이전트별 모델 배정 그리드
           updateEnvSelect();
+          renderModelAssign();
         } else {
           const qbtns = agent.quickActions.map(q =>
             `<button class="quick-btn" onclick="sendQuick('${q.replace(/'/g,"\\\'")}')">${q}</button>`
@@ -3301,6 +3362,7 @@
         const d = await r.json();
         availableEnvs = d.envs || {};
         updateEnvSelect();
+        ensureAgentEnvs();  // 에이전트별 API 모델 자동추천 초기화
         // 서버 토큰 설정 자동 로드
         if(d.token_settings){
           const ts = d.token_settings;
@@ -3755,7 +3817,7 @@
           const resp = await fetch('/api/chat', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-              env:[ceoEnv], messages:[{role:'user',content:subtaskPrompt}],
+              env:[aEnv(ak)], messages:[{role:'user',content:subtaskPrompt}],  // ← 에이전트별 API 모델
               skills: info.skills || [], effort:2, format:'auto', writing_style:'auto',
               max_tokens:userMaxTokens, think_mode:false,
             })
@@ -3784,14 +3846,10 @@
         }
       }
 
-      // 단일 에이전트 순차 실행 (병렬 제거)
-      let results = [];
-      for (const ak of agentKeys) {
-        agentStages[ak] = 'working';
-        updateProgress(`② ${agentBaseData[ak]?.name||ak} 작업 중...`);
-        const r = await runAgent(ak);
-        results.push(r);
-      }
+      // 에이전트 병렬 실행 (API 모델 — 각자 다른 모델 동시 실행)
+      agentKeys.forEach(ak => { agentStages[ak] = 'working'; });
+      updateProgress(`② ${agentKeys.length}개 에이전트 병렬 작업 중 (각자 API 모델)...`);
+      let results = await Promise.all(agentKeys.map(ak => runAgent(ak)));
 
       // 디버그: 에러 상세 표시
       const errors = results.filter(r => r.error);
@@ -3815,7 +3873,7 @@
             const retryResp = await fetch('/api/chat', {
               method:'POST', headers:{'Content-Type':'application/json'},
               body: JSON.stringify({
-                env:[selectedEnv],
+                env:[aEnv(r.agent)],
                 messages:[
                   {role:'user', content:`이전 답변의 신뢰도가 ${r.confidence}점으로 낮습니다. 더 정확하고 근거가 충분한 답변을 다시 작성하세요.\n\n원래 과제: ${task}${confidencePrompt}`}
                 ],
@@ -3845,7 +3903,7 @@
           const peerResp = await fetch('/api/chat', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-              env:[selectedEnv],
+              env:[aEnv(peer)],
               messages:[{role:'user', content:`동료의 답변을 검토하세요. 과제: "${task}"\n\n동료 답변:\n${r.content.substring(0,3000)}\n\nLGTM이면 "LGTM"만 답하세요. 수정이 필요하면 간단히 수정제안을 답하세요.`}],
               skills:[], effort:1, max_tokens:1024, think_mode:false,
             })
@@ -3875,7 +3933,7 @@
           const ceoResp = await fetch('/api/chat', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-              env:[selectedEnv],
+              env:[aEnv('ceo')],
               messages:[{role:'user', content:reviewParts}],
               skills:[], effort:3, max_tokens:4096, think_mode:false,
               system_prompt: `CEO로서 각 에이전트의 결과를 엄격하게 검토하세요.\n각 에이전트에 대해 반드시 [APPROVE:에이전트명] 또는 [REJECT:에이전트명:구체적 사유] 형식으로 판정하세요.\n품질이 낮거나 근거가 부족하면 반려하세요. 모든 에이전트를 검토해야 합니다.`
@@ -3921,7 +3979,7 @@
             const reworkResp = await fetch('/api/chat', {
               method:'POST', headers:{'Content-Type':'application/json'},
               body: JSON.stringify({
-                env:[selectedEnv],
+                env:[aEnv(rej.agent)],
                 messages:[{role:'user', content:`CEO가 당신의 답변을 반려했습니다.\n반려 사유: "${rej.reason}"\n\n원래 과제: "${task}"\n\n반려 사유를 반영하여 답변을 수정하세요.${confidencePrompt}`}],
                 skills:orig.skills||[], effort:3, max_tokens:userMaxTokens, think_mode:false,
               })
@@ -3966,7 +4024,7 @@
         const synthResp = await fetch('/api/chat', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
-            env:[selectedEnv], messages:[{role:'user',content:task}],
+            env:[aEnv('ceo')], messages:[{role:'user',content:task}],
             skills:[], effort:3, format:'report', writing_style:'auto',
             max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
             system_prompt: `당신은 CEO입니다. 아래 ${finalSuccesses.length}명의 에이전트가 분석한 결과를 통합하여 최종 보고서를 작성하세요.\n반드시 한국어로 작성하세요.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}\n\n[리뷰 이력]\n${reviewSummary||'전체 1회 승인'}\n\n[통합 원칙]\n1. 모든 에이전트의 핵심 내용 포함\n2. 중복 제거, 하나의 자연스러운 보고서로 통합\n3. 제목 → 요약 → 본문 → 결론 구조\n4. 보고서를 끝까지 완성하세요`
@@ -3987,7 +4045,7 @@
             <div class="msg-body">
               <div style="font-weight:700;color:#f59e0b;margin-bottom:8px;">📋 CEO 통합 보고서 (하네스 검증 완료)</div>
               ${renderMd(finalReport)}
-              <div style="font-size:11px;color:var(--muted);margin-top:8px;">${pipelineSummary} [${selectedEnv}]</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:8px;">${pipelineSummary} [CEO: ${aEnv('ceo')}]</div>
             </div>
           </div>
           <div id="researchActions" style="display:flex;gap:8px;padding:12px;">
@@ -4301,7 +4359,7 @@
           const resp = await fetch('/api/chat', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-              env:[selectedEnv], messages:[{role:'user',content:prompt}],
+              env:[aEnv(ak)], messages:[{role:'user',content:prompt}],
               skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:userMaxTokens, think_mode:false,
             })
           });
@@ -4331,7 +4389,7 @@
         const synthResp = await fetch('/api/chat', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
-            env:[selectedEnv], messages:[{role:'user',content:researchState.task}],
+            env:[aEnv('ceo')], messages:[{role:'user',content:researchState.task}],
             skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
             system_prompt: `CEO로서 수정된 분석 결과를 통합 보고서로 작성하세요.\n한국어로 작성.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
           })
@@ -4651,7 +4709,7 @@
           const resp = await fetch('/api/chat', {
             method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-              env:[selectedEnv], messages:[{role:'user',content:prompt}],
+              env:[aEnv(ak)], messages:[{role:'user',content:prompt}],
               skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:userMaxTokens, think_mode:false,
             })
           });
@@ -4701,7 +4759,7 @@
         const synthResp = await fetch('/api/chat', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
-            env:[selectedEnv], messages:[{role:'user',content:researchState.task}],
+            env:[aEnv('ceo')], messages:[{role:'user',content:researchState.task}],
             skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
             system_prompt:`CEO로서 ${successes.length}명 에이전트 분석을 통합 보고서로 작성.\n한국어.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
           })
