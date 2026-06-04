@@ -33,6 +33,14 @@ def create_app():
     register_ppt_routes(app)
     register_agent_routes(app)
 
+    # 헤르메스(재해석) 엔진 라우트 — 실패해도 데모스 본체는 정상 동작
+    try:
+        from demos_v1.hermes.routes import register_hermes_routes
+        register_hermes_routes(app)
+        print("  🔮 헤르메스 라우트 등록 완료 (/api/hermes/*)")
+    except Exception as _he:
+        print(f"  ⚠️  헤르메스 라우트 등록 실패(무시): {_he}")
+
     # code_assist_v1 통합 (Blueprint, url_prefix="/code", demos_v1 리소스 공유)
     try:
         from code_assist_v1.blueprint import register_code_blueprint
