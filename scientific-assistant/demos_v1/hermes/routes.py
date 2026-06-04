@@ -25,6 +25,15 @@ def _uid():
 def register_hermes_routes(app) -> int:
     registered = 0
 
+    # 앱 시작 시 큐레이터 1회 (밀린 스킬 정리 따라잡기)
+    try:
+        from demos_v1.hermes import curator
+        _cr = curator.run_all_users()
+        if _cr.get("ran"):
+            print(f"  🗂 헤르메스 큐레이터: {_cr['ran']}명 (stale {_cr['staled']}, archive {_cr['archived']})")
+    except Exception as _ce:
+        print(f"  ⚠️  헤르메스 큐레이터 스킵: {_ce}")
+
     # ── 1) 프롬프트 준비 ──
     @app.route("/api/hermes/prep", methods=["POST"])
     def hermes_prep():

@@ -15,6 +15,13 @@ def _uid():
 
 
 def register_hermes_routes(app) -> int:
+    # 앱 시작 시 큐레이터 1회 (밀린 스킬 정리 따라잡기)
+    try:
+        from . import curator
+        curator.run_all_users()
+    except Exception:
+        pass
+
     @app.route("/api/hermes/prep", methods=["POST"])
     def hermes_prep():
         d = request.get_json(force=True, silent=True) or {}

@@ -675,6 +675,7 @@ pre{position:relative}
     <div style="display:flex;gap:4px;margin-bottom:16px;">
       <button id="hmTabMem" onclick="switchHermesTab('mem')" style="flex:1;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">🧠 기억</button>
       <button id="hmTabSkill" onclick="switchHermesTab('skill')" style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;cursor:pointer;font-weight:600;">📚 배운 스킬</button>
+      <button id="hmTabSearch" onclick="switchHermesTab('search')" style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;cursor:pointer;font-weight:600;">🔎 대화 검색</button>
     </div>
 
     <!-- 기억 탭 -->
@@ -696,6 +697,15 @@ pre{position:relative}
     <!-- 스킬 탭 -->
     <div id="hmSkillTab" style="display:none;">
       <div id="hmSkillList" style="font-size:12px;color:#888;">로딩…</div>
+    </div>
+
+    <!-- 대화 검색 탭 -->
+    <div id="hmSearchTab" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <input id="hmSearchInput" placeholder="과거 대화 검색어…" onkeydown="if(event.key==='Enter')searchHermesSessions()" style="flex:1;padding:7px 9px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;">
+        <button onclick="searchHermesSessions()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;">검색</button>
+      </div>
+      <div id="hmSearchResult" style="font-size:12px;color:#888;">검색어를 입력하세요. (비우고 검색하면 최근 세션)</div>
     </div>
   </div>
 </div>
@@ -5653,14 +5663,18 @@ function openHermesPopup(){
 function closeHermesPopup(){ document.getElementById('hermesPopup').style.display='none'; }
 
 function switchHermesTab(tab){
-  var mem=tab==='mem';
-  document.getElementById('hmMemTab').style.display=mem?'block':'none';
-  document.getElementById('hmSkillTab').style.display=mem?'none':'block';
-  document.getElementById('hmTabMem').style.background=mem?'#7c3aed':'#2a2a3e';
-  document.getElementById('hmTabMem').style.color=mem?'#fff':'#888';
-  document.getElementById('hmTabSkill').style.background=mem?'#2a2a3e':'#7c3aed';
-  document.getElementById('hmTabSkill').style.color=mem?'#888':'#fff';
-  if(mem) loadHermesMemory(); else loadHermesSkills();
+  var tabs=['mem','skill','search'];
+  var map={mem:'hmMemTab',skill:'hmSkillTab',search:'hmSearchTab'};
+  var btn={mem:'hmTabMem',skill:'hmTabSkill',search:'hmTabSearch'};
+  tabs.forEach(function(t){
+    var on=(t===tab);
+    document.getElementById(map[t]).style.display=on?'block':'none';
+    var b=document.getElementById(btn[t]);
+    b.style.background=on?'#7c3aed':'#2a2a3e';
+    b.style.color=on?'#fff':'#888';
+  });
+  if(tab==='mem') loadHermesMemory();
+  else if(tab==='skill') loadHermesSkills();
 }
 
 function _hmMemRows(store, items){
@@ -5761,6 +5775,41 @@ async function deleteHermesSkill(name){
     var d=await r.json();
     if(d.ok) loadHermesSkills(); else alert(d.msg||'삭제 실패');
   }catch(e){ alert('삭제 실패: '+e.message); }
+}
+
+// 🔎 과거 대화 검색 (세션 회상)
+async function searchHermesSessions(){
+  var q=document.getElementById('hmSearchInput').value.trim();
+  var box=document.getElementById('hmSearchResult');
+  box.innerHTML='검색 중…';
+  try{
+    var r=await fetch('/api/hermes/sessions/search?user_id='+encodeURIComponent(_hmUid())+'&q='+encodeURIComponent(q));
+    var d=await r.json();
+    if(d.recent){  // 검색어 없음 → 최근 세션
+      if(!d.recent.length){ box.innerHTML='<span style="color:#888;">기록이 없습니다.</span>'; return; }
+      box.innerHTML='<div style="color:#a5b4fc;font-weight:700;margin-bottom:6px;">최근 세션</div>'+
+        d.recent.map(function(s){
+          return '<div style="border-bottom:1px solid #2a2a3e;padding:5px 0;">'
+            +'<span style="color:#94a3b8;font-size:10.5px;font-family:monospace;">'+_hmEsc(s.date||'')+'</span> '
+            +'<span style="color:#e2e8f0;">'+_hmEsc(s.first_user||'(빈 세션)')+'</span>'
+            +' <span style="color:#64748b;font-size:10.5px;">('+(s.count||0)+'턴)</span></div>';
+        }).join('');
+      return;
+    }
+    var hits=d.hits||[];
+    if(!hits.length){ box.innerHTML='<span style="color:#888;">일치하는 대화가 없습니다.</span>'; return; }
+    box.innerHTML=hits.map(function(h){
+      var ctx=(h.context||[]).map(function(m){
+        var who=m.role==='user'?'🙋':'🤖';
+        var hl=m.match?'background:rgba(168,85,247,.18);border-radius:4px;':'';
+        return '<div style="padding:2px 4px;'+hl+'"><b style="color:#94a3b8;">'+who+'</b> '
+          +_hmEsc((m.content||'').slice(0,160))+((m.content||'').length>160?'…':'')+'</div>';
+      }).join('');
+      return '<div style="border:1px solid #333;border-radius:8px;padding:8px;margin-bottom:8px;background:#23233a;">'
+        +'<div style="color:#94a3b8;font-size:10.5px;font-family:monospace;margin-bottom:4px;">'+_hmEsc(h.date||'')+' · 관련도 '+h.score+'</div>'
+        +ctx+'</div>';
+    }).join('');
+  }catch(e){ box.innerHTML='<span style="color:#f87171;">검색 실패: '+_hmEsc(e.message)+'</span>'; }
 }
 </script>
 

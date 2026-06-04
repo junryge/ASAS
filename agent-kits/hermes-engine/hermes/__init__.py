@@ -14,10 +14,10 @@ Hermes Engine — 포터블 "기억하고 배우는" AI 에이전트 레이어.
     res   = engine.apply_response(user_id, answer)        # 응답 블록 처리
 """
 from .routes import register_hermes_routes
-from . import engine, memory, skills, sessions, counters, protocol, store, config
+from . import engine, memory, skills, sessions, counters, protocol, store, config, curator
 
 __all__ = [
     "register_hermes_routes",
-    "engine", "memory", "skills", "sessions", "counters", "protocol", "store", "config",
+    "engine", "memory", "skills", "sessions", "counters", "protocol", "store", "config", "curator",
 ]
 __version__ = "0.1.0"
