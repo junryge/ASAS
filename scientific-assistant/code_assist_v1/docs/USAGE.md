@@ -124,7 +124,7 @@ http://localhost:10010
 
 `SKILL.md` 라는 마크다운 파일 한 장에 frontmatter(메타) + 본문(절차) 형식으로 적힌 문서. 스킬을 활성화하면 그 본문이 시스템 프롬프트에 합쳐져 LLM 이 그 절차대로 행동합니다.
 
-이 형식은 Anthropic 의 Claude Skills(Capacity 스타일) 와 동일합니다.
+이 형식은 API 모델 스킬(SKILL.md) 형식과 동일합니다.
 
 ### 4.2. 시드된 69개 스킬 카테고리
 
@@ -139,7 +139,7 @@ http://localhost:10010
 | 데이터·ML | `agent-data-engineer`, `agent-ml-engineer`, `agent-ai-engineer` | 파이프라인·모델 |
 | 보안·QA | `agent-security-engineer`, `agent-qa-engineer` | 보안 검토·테스트 |
 | 코드 리뷰·아키텍처 | `agent-code-reviewer`, `agent-architect-reviewer`, `agent-api-designer` | 검토·설계 |
-| 메타 (워크플로우) | `writing-skills`, `writing-plans`, `brainstorming`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `requesting-code-review`, `using-superpowers`, `skill-creator` | Claude Code 워크플로우 |
+| 메타 (워크플로우) | `writing-skills`, `writing-plans`, `brainstorming`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `requesting-code-review`, `using-superpowers`, `skill-creator` | API 모델 워크플로우 |
 | 개발 도구 | `chrome-devtools`, `git`, `github-cli` 등 | 도구 활용 |
 | 도메인 검색 | `knowledge-search` | 도메인 지식 BM25 |
 

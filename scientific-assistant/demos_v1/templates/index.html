@@ -661,6 +661,45 @@ pre{position:relative}
   </div>
 </div>
 
+<!-- 개인 에이전트는 독립 창(/agent-window)으로 분리됨 -->
+
+<!-- 🔮 헤르메스: 기억 / 배운 스킬 뷰어 -->
+<div id="hermesPopup" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+  <div style="background:#1e1e2e;border:1px solid #333;border-radius:16px;padding:24px;width:600px;max-height:85vh;overflow-y:auto;color:#e2e8f0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;color:#a855f7;">🔮 헤르메스 — 내 기억 & 배운 스킬</h3>
+      <button onclick="closeHermesPopup()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:11.5px;color:#94a3b8;margin-bottom:14px;">헤르메스가 기억한 사실과 스스로 배운 스킬입니다. 잘못된 건 삭제하세요.</div>
+
+    <div style="display:flex;gap:4px;margin-bottom:16px;">
+      <button id="hmTabMem" onclick="switchHermesTab('mem')" style="flex:1;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">🧠 기억</button>
+      <button id="hmTabSkill" onclick="switchHermesTab('skill')" style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;cursor:pointer;font-weight:600;">📚 배운 스킬</button>
+    </div>
+
+    <!-- 기억 탭 -->
+    <div id="hmMemTab">
+      <div style="font-weight:700;margin-bottom:6px;color:#a5b4fc;">🧠 환경·프로젝트 사실 (MEMORY)</div>
+      <div id="hmMemList" style="font-size:12px;color:#888;margin-bottom:6px;">로딩…</div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <input id="hmMemAdd" placeholder="사실 추가 (선언형)" style="flex:1;padding:6px 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">
+        <button onclick="addHermesMemory('memory')" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;">추가</button>
+      </div>
+      <div style="font-weight:700;margin-bottom:6px;color:#a5b4fc;">👤 사용자 선호 (USER)</div>
+      <div id="hmUserList" style="font-size:12px;color:#888;margin-bottom:6px;">로딩…</div>
+      <div style="display:flex;gap:6px;">
+        <input id="hmUserAdd" placeholder="선호 추가 (선언형)" style="flex:1;padding:6px 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">
+        <button onclick="addHermesMemory('user')" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;">추가</button>
+      </div>
+    </div>
+
+    <!-- 스킬 탭 -->
+    <div id="hmSkillTab" style="display:none;">
+      <div id="hmSkillList" style="font-size:12px;color:#888;">로딩…</div>
+    </div>
+  </div>
+</div>
+
 <!-- UIO 2D 픽셀 컨테이너 -->
 <div id="uioContainer">
   <iframe id="uioFrame" src="about:blank"></iframe>
@@ -729,6 +768,8 @@ pre{position:relative}
     <div style="display:flex;align-items:center;gap:6px;">
       <button id="hdCodeBtn" onclick="window.location.href='/code/'" style="font-size:12px;color:#fff;background:#6366f1;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🖥️ 코드 어시스턴트</button>
       <button id="hdKdBtn" onclick="openKnowledgePopup()" style="font-size:12px;color:#fff;background:#22c55e;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">📚 내 지식</button>
+      <button id="hdAgentBtn" onclick="openAgentWindow()" style="font-size:12px;color:#fff;background:#a855f7;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🤖 개인 에이전트</button>
+      <button id="hdHermesBtn" onclick="openHermesPopup()" style="font-size:12px;color:#fff;background:#7c3aed;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">🔮 헤르메스</button>
       <button id="hdAdminBtn" onclick="openAdminPopup()" style="display:none;font-size:12px;color:#000;background:#f59e0b;border:none;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:600;">👑 사용자 관리</button>
       <button id="hdLogoutBtn" onclick="doLogout()" style="font-size:12px;color:#888;background:none;border:1px solid #ddd;padding:5px 10px;border-radius:8px;cursor:pointer;">🚪</button>
       <span style="color:#ccc;font-size:10px;">|</span>
@@ -1011,6 +1052,10 @@ pre{position:relative}
         <div id="scGenResult" style="display:none;">
           <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">SKILL.md 내용 (LLM 생성 후 편집 가능)</label>
           <textarea id="scGenContent" rows="20" placeholder="🤖 LLM으로 생성 버튼을 클릭하면 여기에 SKILL.md 초안이 생성됩니다.&#10;직접 입력해도 됩니다." style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <button id="scGenCopyBtn" onclick="copyGeneratedMd()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📋 MD 복사</button>
+            <button onclick="downloadGeneratedMd()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;">📥 MD 다운로드 (.md)</button>
+          </div>
           <div id="scGenValidateResult" style="margin-top:10px;"></div>
         </div>
       </div>
@@ -1080,6 +1125,11 @@ let history = [];
 let maxTokens = 0;  // 0 = 서버 자동 결정 (모델에 맞게)
 // ===== 스킬 조합 프리셋 =====
 const SKILL_COMBOS = [
+  {
+    id:'hermes', label:'🔮 헤르메스', color:'#a855f7',
+    desc:'기억·자기학습·되묻기 — 쓸수록 똑똑해짐 (개인 메모리/스킬)',
+    skills:['hermes']
+  },
   {
     id:'data-analysis', label:'📊 데이터 분석', color:'#6366f1',
     desc:'CSV/엑셀 데이터 탐색, 통계, 시각화 풀세트',
@@ -1899,6 +1949,45 @@ function _usePptSuggestion(el, text){
 
 const _pptKeywords = /PPT|ppt|파워포인트|프레젠테이션|발표자료|슬라이드\s*만들|피피티/i;
 
+// ── 🔮 헤르메스: 스킬 저장 제안 카드 (확인형) ──
+function _hesc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _showSkillApprovalCards(pending){
+  if(!pending || !pending.length) return;
+  const c=document.getElementById('msgs');
+  const wrap=document.createElement('div');
+  wrap.className='msg assistant';
+  wrap._pending=pending;
+  let html='<div class="msg-label">🔮 헤르메스 — 스킬 저장 제안</div><div class="content">'
+    +'<div style="font-size:12px;color:#64748b;margin-bottom:6px;">아래 절차를 개인 스킬로 저장할까요?</div>';
+  pending.forEach(function(sp,i){
+    html+='<div data-card="'+i+'" style="border:1px solid #a855f7;border-radius:8px;padding:8px;margin-bottom:6px;background:rgba(168,85,247,0.06);">'
+      +'<div style="font-weight:700;color:#a855f7;">'+_hesc(sp.action||'create')+': '+_hesc(sp.name||'(이름없음)')+'</div>'
+      +'<div style="font-size:11px;color:#64748b;margin:2px 0;">'+_hesc(sp.when||'')+'</div>'
+      +'<pre style="font-size:11px;white-space:pre-wrap;margin:4px 0;color:#475569;max-height:160px;overflow:auto;">'+_hesc((sp.body||'').slice(0,400))+'</pre>'
+      +'<button onclick="_confirmHermesSkill(this,'+i+')" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:3px 12px;font-size:11px;cursor:pointer;">저장</button> '
+      +'<button onclick="this.closest(\'[data-card]\').remove()" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:3px 12px;font-size:11px;cursor:pointer;">거절</button>'
+      +' <span class="hres" style="font-size:11px;margin-left:8px;color:#22c55e;"></span></div>';
+  });
+  html+='</div>';
+  wrap.innerHTML=html;
+  c.appendChild(wrap);
+  try{ const ct=document.querySelector('.content'); if(ct) ct.scrollTop=ct.scrollHeight; }catch(e){}
+}
+async function _confirmHermesSkill(btn, idx){
+  const card=btn.closest('[data-card]');
+  const wrap=btn.closest('.msg.assistant');
+  const pending=wrap && wrap._pending;
+  if(!pending || !pending[idx] || !currentUser) return;
+  const res=card.querySelector('.hres');
+  try{
+    const r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:currentUser.id, spec:pending[idx]})});
+    const d=await r.json();
+    if(d.ok){ btn.disabled=true; btn.textContent='✅ 저장됨'; if(res) res.textContent=d.msg||''; }
+    else if(res){ res.style.color='#ef4444'; res.textContent=d.msg||'실패'; }
+  }catch(e){ if(res){ res.style.color='#ef4444'; res.textContent='저장 실패: '+e.message; } }
+}
+
 async function send(){
   if(isSending) return;  // 응답 중이면 중복 전송 차단
 
@@ -1957,6 +2046,21 @@ async function send(){
   }
   // 수동 1개 선택 → 단일 에이전트, 수동 2개+ → 병렬 에이전트 (자동 추가 없음)
 
+  // ── 🔮 헤르메스: 켜져 있으면 프롬프트 준비 + 마커('hermes') 제거 ──
+  const hermesOn = (selSkills||[]).includes('hermes') && !!(currentUser && currentUser.id);
+  skillsToUse = skillsToUse.filter(s => s !== 'hermes');
+  let _hermesAddon = '';
+  let _hermesPending = null;
+  if(hermesOn){
+    try{
+      const _hpr = await fetch('/api/hermes/prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id, query:text})});
+      const _hpd = await _hpr.json();
+      _hermesAddon = _hpd.system_addon || '';
+    }catch(e){}
+  }
+  const _baseSys = document.getElementById('systemPromptInput').value.trim();
+  const _sysFinal = _hermesAddon ? (_hermesAddon + '\n\n' + _baseSys).trim() : _baseSys;
+
   // 첨부파일 표시 + 메시지
   let displayText = text || '';
   if(attachedNames.length > 0){
@@ -2000,7 +2104,7 @@ async function send(){
           messages:history, skills:skillsToUse, effort,
           format: formatManualOverride ? selFormat : 'auto',
           writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
-          system_prompt:document.getElementById('systemPromptInput').value.trim(),
+          system_prompt: _sysFinal,
           think_mode: document.getElementById('thinkToggle').checked,
           ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
           ppt_ref_design: pptRefDesign,
@@ -2093,9 +2197,24 @@ async function send(){
         if(_endInfo && _endInfo.truncated){
           _truncWarn = '\n\n⚠️ **응답이 토큰 한도('+(maxTokens||'?')+')에 도달하여 잘렸습니다.** "계속 이어서 작성해줘"라고 입력하면 이어서 받을 수 있습니다.';
         }
-        const _finalContent = _acc + _truncWarn + _errLine;
+        // ── 🔮 헤르메스: 응답 블록 처리 (기억 즉시저장 / 스킬 승인대기 / 되묻기) ──
+        let _displayAcc = _acc;
+        if(hermesOn && _acc.trim()){
+          try{
+            const _por = await fetch('/api/hermes/post',{method:'POST',headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({user_id:currentUser.id, answer:_acc, user_message:text, session_id:(currentSessionId||'')})});
+            const _pod = await _por.json();
+            if(typeof _pod.clean === 'string') _displayAcc = _pod.clean;
+            if(_pod.questions && _pod.questions.length){
+              _displayAcc += (_displayAcc ? '\n\n' : '') + '❓ ' + _pod.questions.join('\n❓ ');
+            }
+            if(_pod.pending_skills && _pod.pending_skills.length) _hermesPending = _pod.pending_skills;
+          }catch(e){}
+        }
+        const _finalContent = _displayAcc + _truncWarn + _errLine;
         addMsg('assistant', _finalContent + _info, _finalContent);
-        history.push({role:'assistant', content:_acc});
+        history.push({role:'assistant', content:_displayAcc});
+        if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
         // 수동/자동 스킬 중 마크다운/HTML 리포트 계열이 선택돼 있으면 MD/HTML 다운로드 바 추가.
         // SSE 응답엔 html_download_url 이 없지만 appendMdDownloadBar 가 누락 시 /api/generate_html
         // 로 즉석 변환하므로 그대로 호출하면 됨.
@@ -3690,6 +3809,35 @@ async function validateGenerated(){
   }catch(e){
     document.getElementById('scGenValidateResult').innerHTML = `<div style="color:#ef4444;font-size:12px;">오류: ${e.message}</div>`;
   }
+}
+async function copyGeneratedMd(){
+  const out = document.getElementById('scGenContent');
+  if(!out.value.trim()){ alert('생성된 SKILL.md 내용이 없습니다'); return; }
+  try{
+    await navigator.clipboard.writeText(out.value);
+    const btn = document.getElementById('scGenCopyBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ 복사됨';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }catch(e){
+    out.select();
+    document.execCommand('copy');
+    alert('클립보드에 복사됨');
+  }
+}
+function downloadGeneratedMd(){
+  const content = document.getElementById('scGenContent').value;
+  if(!content.trim()){ alert('생성된 SKILL.md 내용이 없습니다'); return; }
+  // frontmatter 의 name 으로 파일명 추정 (없으면 주제 입력값 → SKILL)
+  const m = content.match(/name:\s*(.+)/);
+  let base = m ? m[1].trim() : (document.getElementById('scTopic').value.trim() || 'SKILL');
+  base = base.replace(/[^\w\-가-힣]+/g, '-').replace(/^-+|-+$/g, '') || 'SKILL';
+  const blob = new Blob([content], {type: 'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${base}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 async function downloadGeneratedSkill(){
   const content = document.getElementById('scGenContent').value;
@@ -5419,6 +5567,201 @@ async function pptGenerateFromLlm(){
     if(f) pptGenerateFromFile(f);
   });
 })();
+
+/* ═══════════ 개인 에이전트 (독립 창 /agent-window) ═══════════
+   버튼 → 별도 브라우저 창을 연다. 그 창에서 모델/페르소나/지식/effort 를 골라
+   저장·관리하고, "가동" 시 window.opener(이 메인 창)의 아래 함수들을 호출한다.
+   (let 전역은 window 속성이 아니므로, 자식 창이 접근할 수 있도록 함수 선언으로 노출) */
+
+function _agToast(msg){
+  var t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#a855f7;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:11000;box-shadow:0 4px 16px rgba(0,0,0,.3);';
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); },2500);
+}
+
+// 독립 창 열기
+function openAgentWindow(){
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
+  var w=window.open('/agent-window','demosPersonalAgent','width=640,height=780,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
+  if(w) w.focus();
+  else alert('팝업 차단을 해제해주세요.');
+}
+
+// 자식 창이 저장 시 참고할 "현재 메인 설정" (스킬/지식/effort)
+function getCurrentAgentContext(){
+  return {
+    skills: (typeof selSkills!=='undefined' && Array.isArray(selSkills)) ? selSkills.slice() : [],
+    knowledge: (typeof selSkills!=='undefined') ? (selSkills.indexOf('knowledge-search')>=0) : false,
+    effort: (typeof effort!=='undefined') ? effort : 2
+  };
+}
+
+// 자식 창이 스킬 조합 프리셋을 가져올 수 있게 노출
+function getSkillCombos(){
+  try{ return (typeof SKILL_COMBOS!=='undefined' && Array.isArray(SKILL_COMBOS)) ? SKILL_COMBOS : []; }catch(e){ return []; }
+}
+function getComboSkillNames(){
+  try{ return (typeof _comboSkillNames!=='undefined') ? _comboSkillNames : {}; }catch(e){ return {}; }
+}
+
+// 자식 창의 "가동" → 메인 창 전역 상태에 주입 후 UI 동기화
+function applyAgentPreset(a){
+  if(!a) return;
+  selEnvs = (Array.isArray(a.envs)&&a.envs.length)? a.envs.slice() : ['auto'];
+  selSkills = Array.isArray(a.skills)? a.skills.slice() : [];
+  if(a.knowledge && selSkills.indexOf('knowledge-search')<0) selSkills.push('knowledge-search');
+  if(!a.knowledge) selSkills = selSkills.filter(function(s){ return s!=='knowledge-search'; });
+  var sp=document.getElementById('systemPromptInput'); if(sp) sp.value=a.persona||'';
+  effort = (a.effort!=null)? a.effort : 2;
+  var es=document.getElementById('effortSlider'); if(es) es.value=effort;
+  try{ renderEnvs(); }catch(e){}
+  try{ updateStatus(); }catch(e){}
+  try{ renderSkills(); }catch(e){}
+  try{ updateLoaded(); }catch(e){}
+  try{ updateEffort(); }catch(e){}
+  _agToast('🤖 에이전트 가동: '+(a.name||''));
+  return true;
+}
+
+// 자식 창 → "데모스로 보내기": 에이전트 대화를 메인 데모스에 새 세션으로 불러온다
+function importAgentConversation(agent, messages){
+  try{
+    createNewSession();          // 새 데모스 세션
+    applyAgentPreset(agent);     // 환경/스킬/페르소나/effort/지식 적용
+    history = Array.isArray(messages) ? messages.slice() : [];
+    var msgsEl=document.getElementById('msgs');
+    if(msgsEl) msgsEl.innerHTML='';
+    history.forEach(function(m){ try{ addMsg(m.role, m.content, m.content); }catch(e){} });
+    saveCurrentSession();
+    renderSessionList();
+    _agToast('📥 데모스 새 세션으로 불러옴: '+(agent&&agent.name||''));
+    return true;
+  }catch(e){ return false; }
+}
+
+// ═══════════ 🔮 헤르메스 — 기억/스킬 뷰어 ═══════════
+function _hmUid(){ return (currentUser && currentUser.id) ? currentUser.id : ''; }
+function _hmEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function openHermesPopup(){
+  if(!_hmUid()){ alert('로그인이 필요합니다'); return; }
+  document.getElementById('hermesPopup').style.display='flex';
+  switchHermesTab('mem');
+}
+function closeHermesPopup(){ document.getElementById('hermesPopup').style.display='none'; }
+
+function switchHermesTab(tab){
+  var mem=tab==='mem';
+  document.getElementById('hmMemTab').style.display=mem?'block':'none';
+  document.getElementById('hmSkillTab').style.display=mem?'none':'block';
+  document.getElementById('hmTabMem').style.background=mem?'#7c3aed':'#2a2a3e';
+  document.getElementById('hmTabMem').style.color=mem?'#fff':'#888';
+  document.getElementById('hmTabSkill').style.background=mem?'#2a2a3e':'#7c3aed';
+  document.getElementById('hmTabSkill').style.color=mem?'#888':'#fff';
+  if(mem) loadHermesMemory(); else loadHermesSkills();
+}
+
+function _hmMemRows(store, items){
+  if(!items || !items.length) return '<span style="color:#888;">없음</span>';
+  return items.map(function(it){
+    var t=_hmEsc(it);
+    return '<div style="display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3e;">'
+      +'<span style="flex:1;font-size:12px;color:#e2e8f0;line-height:1.5;">'+t+'</span>'
+      +'<button onclick="removeHermesMemory(\''+store+'\',this)" data-t="'+t+'" style="background:none;border:1px solid #f87171;color:#f87171;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">✕</button></div>';
+  }).join('');
+}
+
+async function loadHermesMemory(){
+  try{
+    var r=await fetch('/api/hermes/memory?user_id='+encodeURIComponent(_hmUid()));
+    var d=await r.json();
+    document.getElementById('hmMemList').innerHTML=_hmMemRows('memory', d.memory);
+    document.getElementById('hmUserList').innerHTML=_hmMemRows('user', d.user);
+  }catch(e){
+    document.getElementById('hmMemList').innerHTML='<span style="color:#f87171;">로드 실패: '+_hmEsc(e.message)+'</span>';
+  }
+}
+
+async function addHermesMemory(store){
+  var id=store==='memory'?'hmMemAdd':'hmUserAdd';
+  var inp=document.getElementById(id);
+  var text=inp.value.trim();
+  if(!text) return;
+  try{
+    var r=await fetch('/api/hermes/memory/op',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), store:store, action:'add', text:text})});
+    var d=await r.json();
+    if(d.ok){ inp.value=''; loadHermesMemory(); }
+    else alert(d.msg||'추가 실패');
+  }catch(e){ alert('추가 실패: '+e.message); }
+}
+
+async function removeHermesMemory(store, btn){
+  var text=btn.getAttribute('data-t');
+  if(!confirm('이 기억을 삭제할까요?')) return;
+  try{
+    var r=await fetch('/api/hermes/memory/op',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), store:store, action:'remove', target:text})});
+    var d=await r.json();
+    if(d.ok) loadHermesMemory(); else alert(d.msg||'삭제 실패');
+  }catch(e){ alert('삭제 실패: '+e.message); }
+}
+
+async function loadHermesSkills(){
+  var box=document.getElementById('hmSkillList');
+  box.innerHTML='로딩…';
+  try{
+    var r=await fetch('/api/hermes/skills?user_id='+encodeURIComponent(_hmUid()));
+    var d=await r.json();
+    var skills=d.skills||[];
+    if(!skills.length){ box.innerHTML='<span style="color:#888;">아직 배운 스킬이 없습니다. 헤르메스로 작업하면 스스로 만들어요.</span>'; return; }
+    box.innerHTML='';
+    skills.forEach(function(s){
+      var stateColor=s.state==='archived'?'#64748b':s.state==='stale'?'#f59e0b':'#22c55e';
+      var row=document.createElement('div');
+      row.style.cssText='border:1px solid #333;border-radius:8px;padding:9px;margin-bottom:7px;background:#23233a;';
+      row.innerHTML=
+        '<div style="display:flex;align-items:center;gap:6px;">'
+        +'<span style="flex:1;font-weight:700;color:#e2e8f0;font-size:13px;">'+(s.pinned?'📌 ':'')+_hmEsc(s.name)+'</span>'
+        +'<span style="font-size:10px;color:'+stateColor+';">'+_hmEsc(s.state)+'</span>'
+        +'<span style="font-size:10px;color:#64748b;">사용 '+(s.use_count||0)+'</span>'
+        +'<button data-pin="1" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">'+(s.pinned?'고정해제':'📌고정')+'</button>'
+        +'<button data-view="1" style="background:none;border:1px solid #6366f1;color:#a5b4fc;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">보기</button>'
+        +'<button data-del="1" style="background:none;border:1px solid #f87171;color:#f87171;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;">삭제</button></div>'
+        +'<div style="font-size:11px;color:#94a3b8;margin-top:3px;">'+_hmEsc(s.description||'')+'</div>';
+      row.querySelector('[data-pin]').onclick=function(){ pinHermesSkill(s.name, !s.pinned); };
+      row.querySelector('[data-view]').onclick=function(){ viewHermesSkill(s.name); };
+      row.querySelector('[data-del]').onclick=function(){ deleteHermesSkill(s.name); };
+      box.appendChild(row);
+    });
+  }catch(e){ box.innerHTML='<span style="color:#f87171;">로드 실패: '+_hmEsc(e.message)+'</span>'; }
+}
+
+async function viewHermesSkill(name){
+  try{
+    var r=await fetch('/api/hermes/skill/view?user_id='+encodeURIComponent(_hmUid())+'&name='+encodeURIComponent(name));
+    var d=await r.json();
+    alert('📚 '+name+'\n\n'+(d.content||d.error||''));
+  }catch(e){ alert('보기 실패: '+e.message); }
+}
+async function pinHermesSkill(name, pinned){
+  try{
+    await fetch('/api/hermes/skill/pin',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), name:name, pinned:pinned})});
+    loadHermesSkills();
+  }catch(e){ alert('실패: '+e.message); }
+}
+async function deleteHermesSkill(name){
+  if(!confirm('스킬 "'+name+'" 을(를) 삭제할까요?')) return;
+  try{
+    var r=await fetch('/api/hermes/skill/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_id:_hmUid(), name:name})});
+    var d=await r.json();
+    if(d.ok) loadHermesSkills(); else alert(d.msg||'삭제 실패');
+  }catch(e){ alert('삭제 실패: '+e.message); }
+}
 </script>
 
 <!-- 📑 PPT 설계 플로팅 버튼 (로그인 후에만 노출) -->
