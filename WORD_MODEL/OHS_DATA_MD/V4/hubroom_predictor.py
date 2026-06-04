@@ -52,37 +52,80 @@ DEFAULT_OUTPUT_DIR = BASE_DIR / "predict_tobe"
 
 SYNC_OFFSET_SEC = 5
 INTERVAL_SEC = 60
-WINDOW_MIN = 90
-INCIDENT_END_GAP_MIN = 10
-PREDICT_LOOKBACK_MIN = 60
+# ============================================================
+# 임계값 외부 설정 (thresholds.json) — 코드 수정 없이 조정
+# ============================================================
+#   · thresholds.json 이 있으면 그 값으로 덮어씀.
+#   · 파일이 없거나 / 특정 키가 빠지면 → 아래 코드 기본값 사용 (절대 안 깨짐).
+#   · dict 임계(TH_RA 등)는 영역별 부분 수정 가능 (빠진 영역은 기본값 유지).
+#   · 수정 후 predictor 재시작 필요.
+import json as _json
+
+THRESHOLDS_FILE = BASE_DIR / "thresholds.json"
+
+
+def _load_thresholds():
+    if not THRESHOLDS_FILE.exists():
+        return {}
+    try:
+        with open(THRESHOLDS_FILE, encoding='utf-8') as f:
+            data = _json.load(f)
+        return {k: v for k, v in data.items() if not str(k).startswith('_')}
+    except Exception as e:  # 깨진 json 이라도 운영 멈추지 않음
+        print(f"[thresholds] {THRESHOLDS_FILE} 로드 실패 ({e}) — 코드 기본값 사용")
+        return {}
+
+
+_TH = _load_thresholds()
+
+
+def _T(key, default):
+    """스칼라 임계: json 값 있으면 사용, 없으면 기본값."""
+    return _TH.get(key, default)
+
+
+def _TD(key, default_dict):
+    """dict 임계: json 의 해당 영역만 덮어쓰고 나머지는 기본값 유지."""
+    merged = dict(default_dict)
+    override = _TH.get(key)
+    if isinstance(override, dict):
+        merged.update(override)
+    return merged
+
+
+WINDOW_MIN = _T('WINDOW_MIN', 90)
+INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 10)
+PREDICT_LOOKBACK_MIN = _T('PREDICT_LOOKBACK_MIN', 60)
 
 # ============================================================
 # 영역별 임계값 (2026-03-24 14:39 ~ 04-30 학습 분포 p95/p99 기반)
+#   → thresholds.json 으로 운영 중 조정 (위 _T/_TD 로더 참조)
 # ============================================================
-TH_RA = {
+TH_RA = _TD('TH_RA', {
     'M16HUB':  9.0, 'M14':     3.3, 'M14B':    5.0,
     'M16A':    3.2, 'M16B':    3.5, 'M16_PKT': 7.5, 'M16_WT':  2.8,
-}
-TH_RA_SUSTAINED_RATIO = 0.67
-TH_RA_SUSTAINED_COUNT = 3
+})
+TH_RA_SUSTAINED_RATIO = _T('TH_RA_SUSTAINED_RATIO', 0.67)
+TH_RA_SUSTAINED_COUNT = _T('TH_RA_SUSTAINED_COUNT', 3)
 
-TH_RB_30 = {
+TH_RB_30 = _TD('TH_RB_30', {
     'M16HUB': 100, 'M14': 80, 'M14B': 150,
     'M16A': 80, 'M16B': 30, 'M16': 20,
-}
-TH_RB_10 = {k: max(10, int(v * 0.3)) for k, v in TH_RB_30.items()}
+})
+# TH_RB_10 은 기본적으로 30분 임계의 30% 로 자동 산출. json 에 TH_RB_10 명시 시 그 값 우선.
+TH_RB_10 = _TD('TH_RB_10', {k: max(10, int(v * 0.3)) for k, v in TH_RB_30.items()})
 
-TH_RC_REVERSE = 2
-TH_RD_FABSTORAGE = 25.0
-TH_RD_HUB_STB_UTIL = 99.0
-TH_RD_OHT_UTIL = 95.0
+TH_RC_REVERSE = _T('TH_RC_REVERSE', 2)
+TH_RD_FABSTORAGE = _T('TH_RD_FABSTORAGE', 25.0)
+TH_RD_HUB_STB_UTIL = _T('TH_RD_HUB_STB_UTIL', 99.0)
+TH_RD_OHT_UTIL = _T('TH_RD_OHT_UTIL', 95.0)
 
-TH_SLA_RATIO = {'M16HUB': 5.0, 'M14': 25.0, 'M16A': 13.0, 'M16B': 18.0}
+TH_SLA_RATIO = _TD('TH_SLA_RATIO', {'M16HUB': 5.0, 'M14': 25.0, 'M16A': 13.0, 'M16B': 18.0})
 
-TH_SORTER_WAIT = {
+TH_SORTER_WAIT = _TD('TH_SORTER_WAIT', {
     'M14': 100, 'M14B': 75, 'M16A': 180, 'M16B': 90, 'M16HUB': 30,
-}
-TH_SORTER_TRANSFER_FAIL = 1
+})
+TH_SORTER_TRANSFER_FAIL = _T('TH_SORTER_TRANSFER_FAIL', 1)
 
 MAXCAPA_NORMAL = {
     'M16HUB.QUE.LFT.3F_LFT_MAXCAPA':       (165, 100),
@@ -105,9 +148,9 @@ FLOW_NODES = {
     'HUB_OHT_QCNT':      ('M16HUB', 'M16HUB.QUE.OHT.CURRENTOHTQCNT'),
     'M14_TO_M16':        ('M16HUB', 'M16HUB.QUE.M14TOM16.MESCURRENTQCNT'),
 }
-TH_FLOW_X1_5 = 1.5
-TH_FLOW_X2_0 = 2.0
-TH_FLOW_X3_0 = 3.0
+TH_FLOW_X1_5 = _T('TH_FLOW_X1_5', 1.5)
+TH_FLOW_X2_0 = _T('TH_FLOW_X2_0', 2.0)
+TH_FLOW_X3_0 = _T('TH_FLOW_X3_0', 3.0)
 
 LIFTER_IDS = [
     '6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
