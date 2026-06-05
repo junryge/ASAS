@@ -1,12 +1,41 @@
-﻿No,룰,상수명,현재값,단위,의미,튜닝 가이드,코드 위치
-1,R-A',TH_RA_VALUE,9.0,분,R-A' 메인 임계 (1MIN 평균 반송시간),평소 1MIN 분포의 95~99% 분위 기준,hubroom_predictor.py:70
-2,R-A',TH_RA_SUSTAINED_VALUE,6.0,분,ra_sustained 임계 (5분 윈도우 지속),TH_RA_VALUE x 0.67 정도,hubroom_predictor.py:71
-3,R-A',TH_RA_SUSTAINED_COUNT,3,회,5분 윈도우 안에 6분 초과 지속 발생 횟수,너무 작으면 노이즈가 잡힘 (권장 3 유지),hubroom_predictor.py:72
-4,R-B,TH_RB_DIFF_30,100,개수,R-B 메인 (30분 동안 큐 증가량),정상시 30분간 큐 변화 최대값 + 여유분,hubroom_predictor.py:73
-5,R-B,TH_RB_DIFF_10,30,개수,rb_fast (10분 동안 큐 증가량),TH_RB_DIFF_30 x 0.3,hubroom_predictor.py:74
-6,R-C',TH_RC_REVERSE,2,개,역증가 리프터 최소 개수,1개로 줄이면 위양성 급증 (권장 2 이상),hubroom_predictor.py:75
-7,R-D,TH_RD_FABSTORAGE,25.0,%,R-D 메인 (FAB 저장률),평소 FAB 저장률 + 20% 여유,hubroom_predictor.py:76
-8,R-D,TH_RD_7F_HUB_ALT,20,개수,R-D 보조 (7F→HUB ALT),ML 피처용 - 실제 트리거에 사용 안 함,hubroom_predictor.py:77
-9,사건,INCIDENT_END_GAP_MIN,10,분,사건 종료 판정 - S3 후 OFF 지속 분,짧으면 사건 분리 과다,hubroom_predictor.py:79
-10,사건,PREDICT_LOOKBACK_MIN,60,분,사전 신호 추적 범위,길수록 사전 알람 범위 확대,hubroom_predictor.py:80
-11,윈도우,WINDOW_MIN,90,분,슬라이딩 윈도우 길이,ML 모델 학습 시 일치 필수,hubroom_predictor.py:62
+﻿No,룰,상수명,영역,현재값(v4.1),추천값(2026-06검증),단위,의미,튜닝 가이드,코드 위치
+1,R-A',TH_RA,M16HUB,9.0,12.0,분,M16HUB 1MIN 반송시간 임계,5월 30일 p99=15분 흡수,hubroom_predictor.py:62-65
+2,R-A',TH_RA,M14,3.3,3.6,분,M14 임계,여유 0.3,hubroom_predictor.py:62-65
+3,R-A',TH_RA,M14B,5.0,5.0,분,M14B 임계,유지,hubroom_predictor.py:62-65
+4,R-A',TH_RA,M16A,3.2,3.4,분,M16A 임계,여유 0.2,hubroom_predictor.py:62-65
+5,R-A',TH_RA,M16B,3.5,6.0,분,M16B 임계 (정상 p99=9.5),5월 30일 false positive 주범 — 대폭 상향,hubroom_predictor.py:62-65
+6,R-A',TH_RA,M16_PKT,7.5,7.5,분,M16_PKT 임계,유지,hubroom_predictor.py:62-65
+7,R-A',TH_RA,M16_WT,2.8,2.8,분,M16_WT 임계,유지,hubroom_predictor.py:62-65
+8,R-A',TH_RA_SUSTAINED_RATIO,공통,0.67,0.90,비율,임계의 N% 를 '지속' 판정,67% 너무 느슨 → 90% 로 강화,hubroom_predictor.py:66
+9,R-A',TH_RA_SUSTAINED_COUNT,공통,3,4,회,5분 중 N분 이상 지속,노이즈 차단,hubroom_predictor.py:67
+10,R-B,TH_RB_30,M16HUB,100,100,개,30분 큐 증가 임계,유지,hubroom_predictor.py:69-72
+11,R-B,TH_RB_30,M14,80,80,개,M14 30분 임계,유지,hubroom_predictor.py:69-72
+12,R-B,TH_RB_30,M14B,150,150,개,M14B 30분 임계,유지,hubroom_predictor.py:69-72
+13,R-B,TH_RB_30,M16A,80,110,개,M16A 30분 임계,p99=103 흡수,hubroom_predictor.py:69-72
+14,R-B,TH_RB_30,M16B,30,40,개,M16B 30분 임계,p99=34 흡수,hubroom_predictor.py:69-72
+15,R-B,TH_RB_10,M16HUB,30,75,개,10분 큐 증가 임계,p99=71 흡수,thresholds.json
+16,R-B,TH_RB_10,M14,24,55,개,M14 10분 임계,p99=51 흡수,thresholds.json
+17,R-B,TH_RB_10,M14B,45,45,개,M14B 10분 임계,유지,thresholds.json
+18,R-B,TH_RB_10,M16A,24,70,개,M16A 10분 임계,p99=66 흡수,thresholds.json
+19,R-B,TH_RB_10,M16B,10,45,개,M16B 10분 임계,p99=40 흡수,thresholds.json
+20,R-C',TH_RC_REVERSE,M16HUB,2,12,개,M16HUB 리프터 역증가 최소 개수,p99=10 → 12 로 상향 (5월 41% 위반),hubroom_predictor.py:75
+21,R-D,TH_RD_FABSTORAGE,M16HUB,25.0,30.0,%,FAB 저장률 임계,여유 5%,hubroom_predictor.py:76
+22,R-D,TH_RD_HUB_STB_UTIL,M16HUB,99.0,101.0,%,HUB STB 점유율 임계,STB 정상 98~100% 포화 → 사실상 해제,hubroom_predictor.py:77
+23,R-D,TH_RD_OHT_UTIL,공통,95.0,95.0,%,영역별 OHT 가동률 임계,유지,hubroom_predictor.py:78
+24,SLA,TH_SLA_RATIO,M16HUB,5.0,5.0,%,M16HUB 4분초과율 임계,유지,hubroom_predictor.py:80
+25,SLA,TH_SLA_RATIO,M14,25.0,28.0,%,M14 4분초과율 임계,p99=26,hubroom_predictor.py:80
+26,SLA,TH_SLA_RATIO,M16A,13.0,20.0,%,M16A 4분초과율 임계,5월 false positive 다수,hubroom_predictor.py:80
+27,SLA,TH_SLA_RATIO,M16B,18.0,45.0,%,M16B 4분초과율 임계,5월 false positive 다수 — 대폭 상향,hubroom_predictor.py:80
+28,Sorter,TH_SORTER_WAIT,M14,100,420,LOT,M14 Sorter 대기 임계,정상 p50=243 → 100 너무 낮음,hubroom_predictor.py:82-84
+29,Sorter,TH_SORTER_WAIT,M14B,75,300,LOT,M14B Sorter 임계,정상 p50=169,hubroom_predictor.py:82-84
+30,Sorter,TH_SORTER_WAIT,M16A,180,180,LOT,M16A Sorter 임계,유지,hubroom_predictor.py:82-84
+31,Sorter,TH_SORTER_WAIT,M16B,90,90,LOT,M16B Sorter 임계,유지,hubroom_predictor.py:82-84
+32,Sorter,TH_SORTER_WAIT,M16HUB,30,30,LOT,M16HUB Sorter 임계,유지,hubroom_predictor.py:82-84
+33,Sorter,TH_SORTER_TRANSFER_FAIL,M16A/B,1,1,건,이송실패 임계,유지,hubroom_predictor.py:85
+34,Flow,TH_FLOW_X1_5,공통,1.5,1.5,배,흐름비율 '주의' 등급,유지,hubroom_predictor.py:108
+35,Flow,TH_FLOW_X2_0,공통,2.0,2.0,배,흐름비율 '위험' 등급,유지,hubroom_predictor.py:109
+36,Flow,TH_FLOW_X3_0,공통,3.0,3.0,배,흐름비율 '심각' 등급,유지,hubroom_predictor.py:110
+37,사건,INCIDENT_END_GAP_MIN,공통,10,10,분,사건 종료 판정,유지,hubroom_predictor.py:56
+38,사건,PREDICT_LOOKBACK_MIN,공통,60,60,분,사전 신호 추적 범위,유지,hubroom_predictor.py:57
+39,윈도우,WINDOW_MIN,공통,90,90,분,슬라이딩 윈도우 길이,ML 모델 학습 시 일치 필수,hubroom_predictor.py:55
+40,적용방법,thresholds.json,-,-,-,파일,코드 수정 없이 임계값 조정,thresholds.recommended.json → thresholds.json 복사 후 predictor 재시작,V4/thresholds.json

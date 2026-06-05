@@ -6,6 +6,28 @@
 
 ---
 
+## ★ 임계값 조정 (2026-06 추가)
+
+룰베이스 임계값은 **`thresholds.json`** 파일에서 코드 수정 없이 조정 가능.
+
+| 파일 | 용도 |
+|---|---|
+| `thresholds.json` | ★ 현재 운영 임계값 (수정 후 predictor 재시작) |
+| `thresholds.recommended.json` | 2026-06-04 정상가동일 p99 기반 추천값 (5월 30일 검증 완료) |
+| `RULES_03_임계값.csv` | 룰별 현재값 vs 추천값 비교표 |
+| `AP/5월_30일_검증결과.md` | 30일 백테스트 검증 보고서 (사건 탐지 유지 입증) |
+
+**추천값 적용** — 정상시간 false positive 감소 (S3 52.1% → 1.3%, 무발동 0% → 81.3%) + 사건 탐지력 유지:
+```cmd
+copy thresholds.recommended.json thresholds.json
+python hubroom_predictor.py --watch
+```
+
+**롤백** — 옛날값으로 복귀:
+- `thresholds.json` 의 키를 지우거나 파일 자체를 삭제하면 코드 기본값(=옛날값)으로 동작
+
+---
+
 ## 빠른 시작
 
 ### 운영 시작 (1줄)
