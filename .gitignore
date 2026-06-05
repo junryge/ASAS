@@ -5,3 +5,6 @@ OHT3/MAP/
 OHS/XSOHS_extracted/
 2차데이터/
 OHT_관련2_combined.zip
+
+# layout.zip 압축 해제 결과물 (211MB, GitHub 100MB 제한 초과 / 원본 zip은 추적됨)
+OHT2/layout/layout/layout.xml
