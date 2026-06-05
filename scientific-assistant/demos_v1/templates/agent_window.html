@@ -61,6 +61,17 @@
   .think-box{ margin:8px 0; border:1px solid #4c3a6e; border-radius:8px; background:#221833; overflow:hidden; }
   .think-box summary{ cursor:pointer; padding:7px 10px; font-size:11.5px; font-weight:600; color:#c4b5fd; background:#2a1f40; user-select:none; }
   .think-content{ padding:9px 12px; font-size:11.5px; color:#9ca3af; line-height:1.6; max-height:300px; overflow-y:auto; }
+  /* 마크다운 문서 다운로드 (데모스 renderMd 인라인 블록 + 폴백 바 공용) */
+  .md-report-block{ margin:8px 0; border:1px solid #3a3a52; border-radius:10px; overflow:hidden; background:#15151f; }
+  .md-report-header{ display:flex; align-items:center; gap:8px; padding:8px 12px; background:#1e1e2e; }
+  .md-report-header > span:first-child{ font-weight:700; font-size:12.5px; color:#c4b5fd; }
+  .md-report-actions{ margin-left:auto; display:flex; gap:6px; }
+  .md-report-btn{ background:#2a2a3e; color:#e2e8f0; border:1px solid #3a3a52; border-radius:6px; padding:3px 10px; font-size:11.5px; cursor:pointer; }
+  .md-report-btn.md-download{ background:#a855f7; color:#fff; border-color:#a855f7; }
+  .md-report-btn:hover{ filter:brightness(1.15); }
+  .md-report-preview{ padding:10px 14px; font-size:12.5px; }
+  .md-raw-toggle{ padding:0 12px 8px; }
+  .md-raw-toggle pre{ max-height:240px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -172,6 +183,53 @@ function renderFinal(text){
   return '<div>'+esc(t).replace(/\n/g,'<br>')+'</div>';
 }
 
+// ── 마크다운 문서 다운로드 (데모스와 동일 동작, 자체 완결형) ──
+// opener.renderMd 가 닫힌 ```markdown 펜스를 인라인 블록(copyMdContent/downloadMarkdown 버튼)으로
+// 렌더하므로 그 핸들러를 여기서도 정의. 펜스가 없거나 안 닫힌 경우엔 _awAppendMdBar 폴백 바를 붙인다.
+function u2b(str){ var b=new TextEncoder().encode(str),s=''; for(var i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function b2u(b64){ var bin=atob(b64),b=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i); return new TextDecoder().decode(b); }
+function decodeMdB64(btn){ return b2u(btn.getAttribute('data-md')); }
+function copyMdContent(btn){
+  var md=decodeMdB64(btn);
+  navigator.clipboard.writeText(md).then(function(){ var o=btn.textContent; btn.textContent='✅ 복사됨'; setTimeout(function(){btn.textContent=o;},1500); });
+}
+function downloadMarkdown(btn){
+  var md=decodeMdB64(btn);
+  var m=md.match(/^#\s+(.+)$/m), fn='report.md';
+  if(m){ fn=m[1].replace(/[^\w가-힣\s-]/g,'').trim().replace(/\s+/g,'_').substring(0,50)+'.md'; }
+  var blob=new Blob([md],{type:'text/markdown;charset=utf-8'}), a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=fn; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+}
+async function downloadHtmlDoc(btn){
+  var md=decodeMdB64(btn); btn.disabled=true; var o=btn.textContent; btn.textContent='⏳ 변환 중...';
+  try{
+    var res=await fetch('/api/generate_html',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({markdown:md,title:'문서'})});
+    var data=await res.json();
+    if(data.download_url){ var a=document.createElement('a'); a.href=data.download_url; a.download='document.html'; a.click(); }
+    else { alert(data.error||'HTML 변환 실패'); }
+  }catch(e){ alert('HTML 변환 실패: '+(e.message||e)); }
+  finally{ btn.disabled=false; btn.textContent=o; }
+}
+// md 계열 스킬이 켜져 있고, 닫힌 ```markdown 펜스가 없을 때만 하단 다운로드 바 폴백.
+function _awAppendMdBar(bubble, rawContent, skills){
+  try{
+    if(!bubble || !rawContent || !rawContent.trim()) return;
+    var active=(skills||[]).some(function(s){ return s==='markdown-mermaid-writing'||s==='md-to-html'; });
+    if(!active) return;
+    if(/```markdown\s*[\s\S]*?```/.test(rawContent)) return; // 인라인 블록이 이미 렌더됨
+    var mdB64=u2b(rawContent);
+    var bar=document.createElement('div');
+    bar.className='md-report-header'; bar.style.marginTop='10px'; bar.style.borderRadius='8px';
+    bar.innerHTML='<span>📋 마크다운 문서로 저장</span>'+
+      '<div class="md-report-actions">'+
+      '<button class="md-report-btn" onclick="copyMdContent(this)" data-md="'+mdB64+'">📋 복사</button>'+
+      '<button class="md-report-btn md-download" onclick="downloadMarkdown(this)" data-md="'+mdB64+'">📥 MD 다운로드</button>'+
+      '<button class="md-report-btn" style="background:#6366f1;color:#fff;border-color:#6366f1;" onclick="downloadHtmlDoc(this)" data-md="'+mdB64+'">📄 HTML 다운로드</button>'+
+      '</div>';
+    bubble.appendChild(bar);
+  }catch(e){}
+}
+
 // 추론(</think> 이전)을 제거하고 실제 답변만 추출
 function stripThink(acc){
   var i=String(acc||'').lastIndexOf('</think>');
@@ -191,7 +249,10 @@ function renderHistory(messages){
   var c=document.getElementById('chatMsgs'); c.innerHTML='';
   (messages||[]).forEach(function(m){
     if(m.role==='user'){ addChatMsg('user', m.content); }
-    else { var b=addChatMsg('assistant',''); b.style.whiteSpace='normal'; b.innerHTML=renderFinal(m.content); }
+    else {
+      var b=addChatMsg('assistant',''); b.style.whiteSpace='normal'; b.innerHTML=renderFinal(m.content);
+      _awAppendMdBar(b, m.content, (activeAgent&&activeAgent.skills)||[]);
+    }
   });
   c.scrollTop=c.scrollHeight;
 }
@@ -624,6 +685,7 @@ async function sendChat(){
       }
       bubble.style.whiteSpace='normal';
       bubble.innerHTML = renderFinal(disp + errLine);
+      _awAppendMdBar(bubble, disp + errLine, skills);  // md 스킬 + 펜스 없으면 다운로드 바 폴백
       chatHistory.push({role:'assistant', content: disp});
       saveChat();
       if(pending) _awSkillCards(pending);

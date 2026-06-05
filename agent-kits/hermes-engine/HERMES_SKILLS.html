@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔮 헤르메스 스킬 문서</title>
+<style>
+  :root{ --bg:#0b0e16; --card:#161b27; --line:#26304180; --txt:#e8edf6; --mut:#93a0b5;
+         --cyan:#00e5ff; --violet:#a855f7; --lime:#4ade80; --amber:#fbbf24; --pink:#ff3ea5; }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+        radial-gradient(1100px 700px at 8% -10%, rgba(0,229,255,.10), transparent 60%),
+        radial-gradient(1000px 700px at 110% 115%, rgba(168,85,247,.12), transparent 60%),
+        var(--bg);
+       color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;
+       line-height:1.65;padding:34px 16px;}
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{font-size:26px;margin:0 0 4px;}
+  h1 .pill{font-size:12px;background:linear-gradient(135deg,var(--cyan),var(--violet));color:#04121a;
+        padding:3px 11px;border-radius:20px;margin-left:8px;font-weight:800;vertical-align:middle;}
+  .sub{color:var(--mut);margin:0 0 24px;font-size:14px;}
+  h2{font-size:19px;margin:32px 0 10px;border-left:4px solid var(--cyan);padding-left:10px;}
+  h3{font-size:15px;margin:18px 0 6px;}
+  .skill{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;
+         box-shadow:0 4px 16px rgba(0,0,0,.3);}
+  .skill .nm{font-size:15px;font-weight:800;color:var(--cyan);}
+  .skill .desc{color:var(--mut);font-size:13px;margin:3px 0 8px;}
+  .kw{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;}
+  .kw span{background:rgba(168,85,247,.16);color:#d8b4fe;border:1px solid rgba(168,85,247,.3);
+           border-radius:6px;padding:1px 7px;font-size:11px;}
+  pre{background:#0d1018;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:0;
+      font-family:'Consolas','Courier New',monospace;font-size:12.5px;color:#cfe3ff;white-space:pre-wrap;}
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;font-size:13.5px;margin:8px 0;}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);}
+  th{background:#1c2331;color:#c7d2e3;font-weight:700;font-size:12.5px;}
+  tr:last-child td{border-bottom:none;}
+  code{background:#0d1018;color:#9ecbff;padding:1px 6px;border-radius:5px;font-family:'Consolas',monospace;font-size:12.5px;}
+  .map{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;
+       font-family:'Consolas',monospace;font-size:13px;white-space:pre;overflow:auto;}
+  .map .a{color:var(--cyan)} .map .b{color:var(--violet)} .map .c{color:var(--lime)}
+  .foot{color:var(--mut);font-size:12px;margin-top:30px;text-align:center;border-top:1px solid var(--line);padding-top:16px;}
+  .tag-auto{font-size:11px;background:rgba(0,229,255,.16);color:#9beaff;border:1px solid rgba(0,229,255,.4);border-radius:8px;padding:2px 8px;}
+  .tag-dyn{font-size:11px;background:rgba(74,222,128,.16);color:#bbf7d0;border:1px solid rgba(74,222,128,.4);border-radius:8px;padding:2px 8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🔮 헤르메스 스킬 <span class="pill">Hermes Skills</span></h1>
+  <p class="sub">헤르메스 스킬은 2종류 — <b>① 빌트인(공통·자동)</b> + <b>② 자기학습(사용자별·동적)</b>.
+     순수 프롬프트 기반 · 폐쇄망/GGUF/API 무관. <br>※ 데모스 공용 388개 스킬은 별개(데모스 자산).</p>
+
+  <h2>1. 빌트인 스킬 4종 <span class="tag-auto">공통 · 자동 주입</span></h2>
+  <p class="sub" style="margin:0 0 10px;">질문에 키워드가 맞으면 점수 상위 2개가 시스템 프롬프트에 자동 주입. (<code>hermes/builtin.py</code>)</p>
+
+  <div class="skill">
+    <div class="nm">🧭 task-planning</div>
+    <div class="desc">복잡한 작업은 먼저 단계 계획을 세우고 실행</div>
+    <div class="kw"><span>만들</span><span>구현</span><span>설계</span><span>프로그램</span><span>코드</span><span>연구</span><span>분석</span><span>계획</span><span>파이프라인</span><span>단계</span><span>아키텍처</span><span>build</span><span>design</span><span>research</span></div>
+    <pre>복잡·다단계 요청이면 바로 답하지 말고:
+1) 목표를 한 줄로 정의
+2) 3~6단계 실행 계획 제시(각 단계 산출물 명시)
+3) 계획대로 실행/작성
+4) 마지막에 빠진 단계가 없는지 자가점검</pre>
+  </div>
+
+  <div class="skill">
+    <div class="nm">🐞 systematic-debugging</div>
+    <div class="desc">오류는 재현→가설→최소수정→검증 순서로</div>
+    <div class="kw"><span>오류</span><span>에러</span><span>버그</span><span>디버</span><span>안돼</span><span>실패</span><span>exception</span><span>traceback</span><span>고장</span><span>error</span><span>bug</span><span>fix</span></div>
+    <pre>오류 해결 순서:
+1) 증상/재현 조건 명확화
+2) 원인 가설 2~3개
+3) 가능성 높은 것부터 최소 변경으로 검증
+4) 환경 의존(패키지/권한) vs 코드 문제 구분
+5) 수정 후 재현 절차로 검증</pre>
+  </div>
+
+  <div class="skill">
+    <div class="nm">📊 structured-data-analysis</div>
+    <div class="desc">데이터는 컬럼/단위 확인 후 가설→통계→시각화</div>
+    <div class="kw"><span>데이터</span><span>분석</span><span>통계</span><span>반송</span><span>FAB</span><span>로그</span><span>수율</span><span>OHT</span><span>OHS</span><span>CSV</span><span>엑셀</span><span>컬럼</span><span>추세</span><span>이상</span><span>data</span><span>analysis</span></div>
+    <pre>데이터 분석 절차:
+1) 컬럼명·단위·기간을 먼저 확인(추측 금지)
+2) 분석 질문을 가설로 정의
+3) 기술통계 → 이상치 → 상관/추세 순
+4) 실제 값/컬럼만 인용(없는 값 만들지 말 것)
+5) 결론 + 표/차트 시각화 권고</pre>
+  </div>
+
+  <div class="skill">
+    <div class="nm">✅ answer-verification</div>
+    <div class="desc">최종 답 전 자가검증(근거·누락 확인)</div>
+    <div class="kw"><span>보고서</span><span>결론</span><span>정확</span><span>검증</span><span>요약</span><span>report</span><span>verify</span></div>
+    <pre>최종 답 직전 자가검증:
+1) 인용한 수치·컬럼·함수가 실제 컨텍스트에 있는가?
+2) 단정 대신 근거를 붙였는가?
+3) 요청을 빠짐없이 다뤘는가?
+불확실하면 추측임을 명시한다.</pre>
+  </div>
+
+  <h3>➕ 새 빌트인 스킬 추가</h3>
+  <pre>// hermes/builtin.py 의 BUILTIN_SKILLS 에 추가 (demos + agent-kits 둘 다)
+"skill-name": {
+  "desc": "한 줄 설명",
+  "keywords": ["발동", "키워드"],
+  "body": "1) ...\n2) ...",
+}</pre>
+
+  <h2>2. 자기학습 스킬 <span class="tag-dyn">사용자별 · 동적</span></h2>
+  <p class="sub" style="margin:0 0 10px;">에이전트가 스스로 만드는 개인 스킬. 처음 0개 → 작업하며 누적. (<code>hermes/skills.py</code>)</p>
+  <table>
+    <tbody>
+      <tr><th style="width:120px;">저장</th><td><code>demos_data/agents/&lt;user_id&gt;/skills/&lt;이름&gt;/SKILL.md</code></td></tr>
+      <tr><th>생성</th><td>재사용 가치 절차 발견 → <code>```hermes:skill</code> 블록 → <b>사용자 승인(확인형)</b> 후 저장</td></tr>
+      <tr><th>회상</th><td>질문 관련 시 BM25 상위 2개 본문 자동 주입 (인덱스는 이름+설명만)</td></tr>
+      <tr><th>관리</th><td>🔮 헤르메스 → 📚 배운 스킬 탭 — 보기 / 📌pin / 삭제</td></tr>
+      <tr><th>이름 규칙</th><td>소문자-하이픈(2~40자), 일회성/날짜 이름 거부</td></tr>
+      <tr><th>큐레이터</th><td>30일→stale, 90일→archived (pinned 면제, 자동삭제 없음)</td></tr>
+      <tr><th>액션</th><td>create · patch(find→replace) · edit · delete</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. 데모스 연계 — 🧭 헤르메스 작업스킬 조합</h2>
+  <p class="sub" style="margin:0 0 8px;">빌트인 4종 ↔ 실제 scientific-skills 매핑. 스킬조합 드롭다운에서 수동 선택(헤르메스 안 켜도 사용).</p>
+  <table>
+    <thead><tr><th>빌트인</th><th>매핑된 실제 스킬</th></tr></thead>
+    <tbody>
+      <tr><td>🧭 task-planning</td><td><code>writing-plans</code></td></tr>
+      <tr><td>🐞 systematic-debugging</td><td><code>systematic-debugging</code></td></tr>
+      <tr><td>📊 structured-data-analysis</td><td><code>exploratory-data-analysis</code> + <code>statistical-analysis</code></td></tr>
+      <tr><td>✅ answer-verification</td><td><code>verification-before-completion</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>🗺 한눈에</h2>
+  <div class="map">헤르메스 스킬
+├─ <span class="a">① 빌트인 4종 (공통·자동, builtin.py)</span>
+│    🧭 task-planning · 🐞 systematic-debugging · 📊 structured-data-analysis · ✅ answer-verification
+├─ <span class="b">② 자기학습 (사용자별·동적, skills.py)</span>   0 → ∞
+└─ <span class="c">③ 데모스 연계 조합 🧭 헤르메스 작업스킬 (실제 SKILL.md 매핑)</span></div>
+
+  <div class="foot">Hermes Skills — agent-kits/hermes-engine</div>
+</div>
+</body>
+</html>
