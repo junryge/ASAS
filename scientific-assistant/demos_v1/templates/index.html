@@ -2238,7 +2238,10 @@ async function send(){
           const _mdSkillActive = ['markdown-mermaid-writing','md-to-html'].some(
             s => selSkills.includes(s) || autoLoadedSkills.includes(s)
           );
-          if(_mdSkillActive && !_finalContent.includes('```markdown')){
+          // 인라인 "📋 마크다운 문서" 블록이 실제로 렌더될 때만(=닫힌 ```markdown 펜스) 하단 바 억제.
+          // 단순 includes 면 잘리거나 미완성 펜스에서 둘 다 안 뜨는 문제가 있어 정규식으로 닫힘 확인.
+          const _hasClosedMd = /```markdown\s*[\s\S]*?```/.test(_finalContent);
+          if(_mdSkillActive && !_hasClosedMd){
             appendMdDownloadBar(_finalContent, null);
           }
         }catch(_){}
@@ -2307,7 +2310,9 @@ async function send(){
       // markdown-mermaid-writing 또는 md-to-html 스킬: MD/HTML 다운로드 버튼 추가
       // selSkills(수동) 또는 autoLoadedSkills(자동) 모두 체크
       const _mdSkillActive = ['markdown-mermaid-writing','md-to-html'].some(s => selSkills.includes(s) || autoLoadedSkills.includes(s));
-      if(_mdSkillActive && !data.content.includes('```markdown')){
+      // 닫힌 ```markdown 펜스가 있을 때만(=인라인 블록 실제 렌더) 하단 바 억제. 미완성 펜스에서 둘 다 누락 방지.
+      const _hasClosedMd = /```markdown\s*[\s\S]*?```/.test(data.content);
+      if(_mdSkillActive && !_hasClosedMd){
         appendMdDownloadBar(data.content, data.html_download_url);
       }
     }
