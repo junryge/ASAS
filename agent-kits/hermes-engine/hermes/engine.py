@@ -3,20 +3,33 @@ hermes/engine.py — 오케스트레이션 (프롬프트 조립 + 응답 블록 
 """
 from __future__ import annotations
 
-from . import memory, skills, protocol, counters
+from . import memory, skills, protocol, counters, builtin
 
 PROTOCOL_GUIDE = """\
 === 헤르메스 능력 (텍스트 프로토콜) ===
 너는 대화에서 배우고 기억하는 에이전트다. 아래 블록을 답변 끝에 덧붙여 사용한다.
 (블록은 사용자에게 안 보이게 시스템이 처리한다. 남발 금지 — 정말 가치 있을 때만.)
 
-1) 기억할 선언적 사실/선호가 생기면:
+1) 대화에서 기억할 정보가 나오면 저장한다. 두 종류를 반드시 구분한다:
+   · store: memory = 환경·프로젝트 "사실" — 담당 FAB/라인, 시스템·도구, 데이터 종류, 제약, 도메인 용어 등
+   · store: user   = 사용자 "선호" — 답변 형식/말투/언어/길이 등
+   ★ 사용자가 자신의 역할·담당·사용 시스템·도구·데이터·도메인을 드러내면 → 반드시 store: memory 로 저장한다.
+
+예) 환경·프로젝트 사실(memory):
 ```hermes:memory
-store: user            # user(사용자 선호) | memory(환경·프로젝트 사실)
-action: add            # add | replace | remove
-text: <한 문장 선언적 사실>
+store: memory
+action: add
+text: 사용자는 M16_BR FAB의 OHT 반송 시스템(OHS) 정체를 분석한다
 ```
-- 명령형 금지("항상 ~하라" X), 선언형만("사용자는 ~를 선호한다" O). 절차는 메모리 말고 스킬로.
+예) 사용자 선호(user):
+```hermes:memory
+store: user
+action: add
+text: 사용자는 답변을 표로 정리하는 것을 선호한다
+```
+- 선언형만(명령형 "항상 ~하라" 금지), 한 문장. 절차·방법은 메모리가 아니라 스킬로.
+- 새 사실/선호가 나올 때마다 적극적으로 저장하되, 중복·사소한 잡담은 생략.
+- action: add(신규) | replace(target=기존 일부) | remove(target=기존 일부)
 
 2) 재사용 가치 있는 절차/해법을 발견하면(여러 단계 작업 완료·까다로운 오류 해결·비자명 워크플로):
 ```hermes:skill
@@ -50,6 +63,10 @@ def build_system_prompt(user_id: str, query: str = "") -> str:
         if recalled:
             bodies = "\n\n".join(f"--- 스킬: {r['name']} ---\n{r['body']}" for r in recalled)
             parts.append("=== 관련 개인 스킬 본문 ===\n" + bodies)
+        bi = builtin.recall_builtin(query, top_k=2)
+        if bi:
+            bbodies = "\n\n".join(f"[{r['name']}] {r['desc']}\n{r['body']}" for r in bi)
+            parts.append("=== 권장 작업 방식 (헤르메스 빌트인 스킬) ===\n" + bbodies)
     parts.append(PROTOCOL_GUIDE)
     return "\n\n".join(parts)
 

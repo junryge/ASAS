@@ -22,8 +22,60 @@ def _uid():
     return request.args.get("user_id", "") or ""
 
 
+def _demos_review_complete(messages):
+    """백그라운드 리뷰용 1회 LLM 호출 (데모스 API 모델). 실패 시 빈 문자열."""
+    import requests as _req
+    try:
+        from demos_v1.models import ENV_CONFIG
+        from demos_v1.config import API_TOKEN
+    except Exception:
+        return ""
+    # 리뷰용 가벼운 API env 선택 (gguf 제외)
+    env = None
+    for cand in ("common", "summary", "dev"):
+        if cand in ENV_CONFIG:
+            env = cand
+            break
+    if env is None:
+        for e in ENV_CONFIG:
+            if not str(e).startswith("gguf"):
+                env = e
+                break
+    if env is None:
+        return ""
+    cfg = ENV_CONFIG[env]
+    headers = {"Content-Type": "application/json"}
+    if API_TOKEN:
+        headers["Authorization"] = f"Bearer {API_TOKEN}"
+    try:
+        r = _req.post(cfg["url"], headers=headers, json={
+            "model": cfg["model"], "messages": messages,
+            "temperature": 0.2, "max_tokens": 800, "stream": False,
+        }, timeout=60, verify=False)
+        r.raise_for_status()
+        return (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+    except Exception:
+        return ""
+
+
 def register_hermes_routes(app) -> int:
     registered = 0
+
+    # 앱 시작 시 큐레이터 1회 (밀린 스킬 정리 따라잡기)
+    try:
+        from demos_v1.hermes import curator
+        _cr = curator.run_all_users()
+        if _cr.get("ran"):
+            print(f"  🗂 헤르메스 큐레이터: {_cr['ran']}명 (stale {_cr['staled']}, archive {_cr['archived']})")
+    except Exception as _ce:
+        print(f"  ⚠️  헤르메스 큐레이터 스킵: {_ce}")
+
+    # 백그라운드 리뷰용 LLM 완성함수 주입 (데모스 API 모델)
+    try:
+        from demos_v1.hermes import review
+        review.set_completion(_demos_review_complete)
+    except Exception:
+        pass
 
     # ── 1) 프롬프트 준비 ──
     @app.route("/api/hermes/prep", methods=["POST"])
@@ -64,12 +116,15 @@ def register_hermes_routes(app) -> int:
         except Exception:
             pass
 
-        # 카운터 + 리뷰 due
+        # 카운터 + 리뷰 due → 임계 도달 시 백그라운드 리뷰(메모리 자동 저장)
         review_due = False
         try:
             counters.bump_turn(uid)
             due = counters.due(uid)
             review_due = bool(due.get("memory") or due.get("skill"))
+            if due.get("memory"):
+                from demos_v1.hermes import review
+                review.run_async(uid)   # 완성함수 미주입(API 불가)이면 no-op
         except Exception:
             pass
 
