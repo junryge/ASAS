@@ -9,3 +9,8 @@ api_key.txt
 
 # V4 폴더 백업 (수동 백업 — git 추적 제외)
 WORD_MODEL/OHS_DATA_MD/V4_BACKUP_*/
+
+
+# V4/AP/ 백테스트 작업물 (원본은 d.txt 로 보존)
+WORD_MODEL/OHS_DATA_MD/V4/AP/aps.zip
+WORD_MODEL/OHS_DATA_MD/V4/AP/extracted/
