@@ -1141,6 +1141,11 @@ const SKILL_COMBOS = [
     skills:['hermes']
   },
   {
+    id:'hermes-workskills', label:'🧭 헤르메스 작업스킬', color:'#22d3ee',
+    desc:'계획·디버깅·데이터분석·검증 (헤르메스 빌트인 스킬팩)',
+    skills:['writing-plans','systematic-debugging','exploratory-data-analysis','statistical-analysis','verification-before-completion']
+  },
+  {
     id:'data-analysis', label:'📊 데이터 분석', color:'#6366f1',
     desc:'CSV/엑셀 데이터 탐색, 통계, 시각화 풀세트',
     skills:['exploratory-data-analysis','statistical-analysis','matplotlib','seaborn','plotly','polars','agent-data-scientist','xlsx']
@@ -1272,6 +1277,7 @@ const _comboSkillNames = {
   'anthropic-architect':'Anthropic설계','aeon':'시계열ML','timesfm-forecasting':'시계열예측',
   'openai-prompt-engineer':'OpenAI프롬프트','sequential-thinking':'순차사고',
   'knowledge-search':'지식검색','logpresso-query':'LPQL쿼리','logpresso-search':'로그조회',
+  'writing-plans':'작업계획','systematic-debugging':'체계적디버깅','verification-before-completion':'완료전검증',
 };
 
 function applyCombo(combo){
