@@ -3,7 +3,7 @@ hermes/engine.py — 오케스트레이션 (프롬프트 조립 + 응답 블록 
 """
 from __future__ import annotations
 
-from . import memory, skills, protocol, counters
+from . import memory, skills, protocol, counters, builtin
 
 PROTOCOL_GUIDE = """\
 === 헤르메스 능력 (텍스트 프로토콜) ===
@@ -63,6 +63,10 @@ def build_system_prompt(user_id: str, query: str = "") -> str:
         if recalled:
             bodies = "\n\n".join(f"--- 스킬: {r['name']} ---\n{r['body']}" for r in recalled)
             parts.append("=== 관련 개인 스킬 본문 ===\n" + bodies)
+        bi = builtin.recall_builtin(query, top_k=2)
+        if bi:
+            bbodies = "\n\n".join(f"[{r['name']}] {r['desc']}\n{r['body']}" for r in bi)
+            parts.append("=== 권장 작업 방식 (헤르메스 빌트인 스킬) ===\n" + bbodies)
     parts.append(PROTOCOL_GUIDE)
     return "\n\n".join(parts)
 

@@ -13,7 +13,7 @@ demos_v1/hermes/engine.py — 헤르메스 오케스트레이션
 """
 from __future__ import annotations
 
-from demos_v1.hermes import memory, skills, protocol, counters
+from demos_v1.hermes import memory, skills, protocol, counters, builtin
 
 # 텍스트 프로토콜 사용 지침 (시스템 프롬프트에 주입)
 PROTOCOL_GUIDE = """\
@@ -80,6 +80,12 @@ def build_system_prompt(user_id: str, query: str = "") -> str:
                 f"--- 스킬: {r['name']} ---\n{r['body']}" for r in recalled
             )
             parts.append("=== 관련 개인 스킬 본문 ===\n" + bodies)
+
+        # 빌트인 스킬 팩 (Hermes 영감 — task-planning / debugging / data-analysis / verify)
+        bi = builtin.recall_builtin(query, top_k=2)
+        if bi:
+            bbodies = "\n\n".join(f"[{r['name']}] {r['desc']}\n{r['body']}" for r in bi)
+            parts.append("=== 권장 작업 방식 (헤르메스 빌트인 스킬) ===\n" + bbodies)
 
     parts.append(PROTOCOL_GUIDE)
     return "\n\n".join(parts)
