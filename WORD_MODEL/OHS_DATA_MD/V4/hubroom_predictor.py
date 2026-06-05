@@ -1411,20 +1411,21 @@ def sleep_until_next_minute(offset_sec=SYNC_OFFSET_SEC):
 
 
 def run_once(input_csv: Path, out_dir: Path, logger):
+    # ★ 백테스트 모드는 Logpresso 적재 절대 안 함 (테스트 데이터가 운영 DB 에 들어가면 안 됨)
+    global _logpresso
+    if _logpresso is not None:
+        logger.info("[백테스트] Logpresso 적재 비활성화 (운영 DB 보호)")
+        _logpresso = None
     logger.info("=" * 70)
     logger.info("M16 HUBROOM 통합 예측기 v4.1 — 일괄 처리 모드")
     logger.info(f"  INPUT : {input_csv}")
     logger.info(f"  OUTPUT: {out_dir}")
     logger.info(f"  대상 영역: {', '.join(AREAS_ALL)}")
     logger.info("=" * 70)
-    if _logpresso is not None:
-        _logpresso.start()
     p = Predictor(input_csv, out_dir, logger)
     n = p.tick()
     p.finalize()
     logger.info(f"처리 완료: {n}행 / 이벤트 {p.last_event_count}건 / 사건 {p.last_incident_count}건")
-    if _logpresso is not None:
-        _logpresso.stop()
 
 
 def run_watch(input_csv: Path, out_dir: Path, logger):
