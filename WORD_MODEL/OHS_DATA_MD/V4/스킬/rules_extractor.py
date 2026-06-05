@@ -24,10 +24,7 @@ PREDICTOR_PY = HERE / 'hubroom_predictor.py'
 
 
 def extract_constants(source: str) -> dict:
-    """hubroom_predictor.py 의 상수 블록을 ast 로 추출."""
-    import ast
-    tree = ast.parse(source)
-
+    """hubroom_predictor.py 의 상수 — 직접 import 해서 실제 값 (thresholds.json 반영) 가져옴."""
     keep = {
         'WINDOW_MIN', 'INCIDENT_END_GAP_MIN', 'PREDICT_LOOKBACK_MIN',
         'TH_RA', 'TH_RA_SUSTAINED_RATIO', 'TH_RA_SUSTAINED_COUNT',
@@ -41,17 +38,15 @@ def extract_constants(source: str) -> dict:
         'STAGE_LABEL', 'EVENT_FIELDS', 'INCIDENT_FIELDS', 'AREAS_ALL',
     }
 
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("hp", PREDICTOR_PY)
+    hp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hp)
+
     out = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id in keep:
-                    try:
-                        out[target.id] = ast.literal_eval(node.value)
-                    except Exception:
-                        # 표현식 (예: TH_RB_10 dict comprehension)
-                        # 평가는 못 하지만 소스 위치 기록
-                        out[target.id] = f"<expression@line {node.lineno}>"
+    for k in keep:
+        if hasattr(hp, k):
+            out[k] = getattr(hp, k)
     return out
 
 

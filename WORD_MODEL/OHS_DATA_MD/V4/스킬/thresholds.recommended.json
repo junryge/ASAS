@@ -1,0 +1,50 @@
+{
+  "_comment": "2026-06-04 정상가동일(1440분) 분포 p99+마진 기반 추천 임계. 검증결과 S3 49.9%→1.0%, 무발동 0%→88.9%.",
+  "_howto": "적용하려면 이 파일 내용을 thresholds.json 으로 복사 후 predictor 재시작. 여러 날 데이터로 추가 검증 권장(단일 정상일 기반이라 실제 사건 억제 위험 점검).",
+  "_changes": {
+    "TH_RA": "M16HUB 9→12, M14 3.3→3.6, M16A 3.2→3.4, M16B 3.5→6.0 (정상 p99 흡수)",
+    "TH_RA_SUSTAINED": "ratio 0.67→0.90, count 3→4 (지속 RA_sus 가 100% 발동 → 강화)",
+    "TH_RC_REVERSE": "2→12 (리프터 역증가 정상 p99=10)",
+    "TH_RD_FABSTORAGE": "25→30, TH_RD_HUB_STB_UTIL 99→101 (STB 정상 98~100% 포화 → 사실상 해제, FAB 만 사용)",
+    "TH_SLA_RATIO": "M14 25→28, M16A 13→20, M16B 18→45 (정상 p99 흡수)",
+    "TH_SORTER_WAIT": "M14 100→420, M14B 75→300 (정상 p50 이미 243/169)",
+    "TH_RB_30": "M16A 80→110, M16B 30→40",
+    "TH_RB_10": "명시값으로 상향 (기존 30분의 30% 자동값이 너무 낮음)"
+  },
+
+  "WINDOW_MIN": 90,
+  "INCIDENT_END_GAP_MIN": 10,
+  "PREDICT_LOOKBACK_MIN": 60,
+
+  "TH_RA": {
+    "M16HUB": 12.0, "M14": 3.6, "M14B": 5.0,
+    "M16A": 3.4, "M16B": 6.0, "M16_PKT": 7.5, "M16_WT": 2.8
+  },
+  "TH_RA_SUSTAINED_RATIO": 0.90,
+  "TH_RA_SUSTAINED_COUNT": 4,
+
+  "TH_RB_30": {
+    "M16HUB": 100, "M14": 80, "M14B": 150,
+    "M16A": 110, "M16B": 40, "M16": 20
+  },
+  "TH_RB_10": {
+    "M16HUB": 75, "M14": 55, "M14B": 45,
+    "M16A": 70, "M16B": 45, "M16": 10
+  },
+
+  "TH_RC_REVERSE": 12,
+  "TH_RD_FABSTORAGE": 30.0,
+  "TH_RD_HUB_STB_UTIL": 101.0,
+  "TH_RD_OHT_UTIL": 95.0,
+
+  "TH_SLA_RATIO": { "M16HUB": 5.0, "M14": 28.0, "M16A": 20.0, "M16B": 45.0 },
+
+  "TH_SORTER_WAIT": {
+    "M14": 420, "M14B": 300, "M16A": 180, "M16B": 90, "M16HUB": 30
+  },
+  "TH_SORTER_TRANSFER_FAIL": 1,
+
+  "TH_FLOW_X1_5": 1.5,
+  "TH_FLOW_X2_0": 2.0,
+  "TH_FLOW_X3_0": 3.0
+}
