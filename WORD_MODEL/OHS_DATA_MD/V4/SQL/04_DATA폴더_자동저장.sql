@@ -1,33 +1,29 @@
 --===========================================================
 -- AWS_IDC_DATA_HIS — 분단위 피벗 → CSV 자동 저장 (DATA 폴더)
 --===========================================================
+-- ★ 보장 사항
+--   1) 분당 정확히 1행 (같은 분에 여러 초 데이터 있어도 1행으로 합침)
+--   2) 한 행은 한 줄로 출력 (LINESIZE 1000000, TRIMSPOOL ON)
+--   3) CRT_TM 포맷 = 'YYYY-MM-DD HH24:MI' (초 없음, 항상 00분 단위)
+--   4) CSV 표준 quoting (RFC 4180, SET MARKUP CSV ON QUOTE ON)
+--
 -- ★ 사용법
---   1) 아래 DEFINE 3줄만 수정 (날짜 / 출력파일명)
---   2) SQL*Plus 또는 SQLcl 에서 실행:
---        sqlplus user/pass@dsn @04_DATA폴더_자동저장.sql
---      또는 SQL Developer 에서:
---        F5 (스크립트 실행 — 한 줄 실행 X)
+--   (1) 아래 DEFINE 3줄만 수정
+--   (2) 실행:
+--        SQL*Plus  : sqlplus user/pass@dsn @04_DATA폴더_자동저장.sql
+--        SQLcl     : sql     user/pass@dsn @04_DATA폴더_자동저장.sql
+--        SQL Dev   : 파일 열고 F5 (스크립트 실행 - 한 줄 실행 X)
 --
--- ★ 결과
---   지정한 outfile 경로에 자동 저장됨 (csv.writer 와 동일한 표준 quoting)
---   → hubroom_predictor.py 입력으로 바로 사용 가능
---   → Excel 거치지 않음 → 따옴표/시간 깨짐 없음
---
--- ★ 분당 1행 보장
---   MAX + GROUP BY CRT_TM 으로 같은 분 중복 자동 합침
---
--- ★ 컬럼: CRT_TM + 265개 IDC (collector 와 동일)
+-- * 컬럼: CRT_TM + 265개 IDC (collector 와 동일, 순서까지 일치)
 --===========================================================
 
 -- ┌──────────────────────────────────────────────────────────┐
--- │  ★ 여기 3줄만 수정 ★                                      │
+-- │  ★ 여기 3줄만 수정 ★                                       │
 -- └──────────────────────────────────────────────────────────┘
 DEFINE start_dt = '2026-05-15 00:00:00'
 DEFINE end_dt   = '2026-05-16 00:00:00'
 DEFINE outfile  = 'C:\DATA\2026_05_15_idc.csv'
--- ┌──────────────────────────────────────────────────────────┐
--- │  Linux 사용 시: outfile = '/data/2026_05_15_idc.csv'      │
--- └──────────────────────────────────────────────────────────┘
+-- Linux 사용 시: outfile = '/data/2026_05_15_idc.csv'
 
 -- 표준 CSV 출력 옵션 (RFC 4180 호환)
 SET MARKUP CSV ON DELIMITER ',' QUOTE ON
@@ -44,8 +40,11 @@ SET SQLBLANKLINES ON
 
 SPOOL &outfile
 
+-- ★ 분당 1행 보장 핵심:
+--   GROUP BY TO_CHAR(CRT_TM, 'YYYY-MM-DD HH24:MI')  ← 분 단위로 묶음 (초 무시)
+--   같은 분에 N개 행이 들어와도 컬럼별 MAX 로 1행으로 합쳐짐
 SELECT
-  TO_CHAR(CRT_TM, 'YYYY-MM-DD HH24:MI:SS') AS CRT_TM,
+  TO_CHAR(CRT_TM, 'YYYY-MM-DD HH24:MI') AS CRT_TM,
   MAX(CASE WHEN IDC_NM='M16HUB.CNV.SENDFAB.TO_M14A_CURRENTQCNT' THEN IDC_VAL END) AS "M16HUB.CNV.SENDFAB.TO_M14A_CURRENTQCNT",
   MAX(CASE WHEN IDC_NM='M16HUB.LFT.6ABL0111.2F_TO_3F_CURRENTQCNT' THEN IDC_VAL END) AS "M16HUB.LFT.6ABL0111.2F_TO_3F_CURRENTQCNT",
   MAX(CASE WHEN IDC_NM='M16HUB.LFT.6ABL0111.2F_TO_6F_CURRENTQCNT' THEN IDC_VAL END) AS "M16HUB.LFT.6ABL0111.2F_TO_6F_CURRENTQCNT",
@@ -581,19 +580,19 @@ WHERE CRT_TM >= TO_DATE('&start_dt', 'YYYY-MM-DD HH24:MI:SS')
     'M16_WT.QUE.OHT.OHTUTIL',
     'M16_WT.QUE.TIME.AVGTOTALTIME1MIN'
   )
-GROUP BY CRT_TM
-ORDER BY CRT_TM
+GROUP BY TO_CHAR(CRT_TM, 'YYYY-MM-DD HH24:MI')
+ORDER BY TO_CHAR(CRT_TM, 'YYYY-MM-DD HH24:MI')
 ;
 
 SPOOL OFF
 
--- 출력 옵션 원복
 SET MARKUP CSV OFF
 SET FEEDBACK ON
 SET TERMOUT ON
 SET ECHO ON
 
 PROMPT
-PROMPT ✅ 저장 완료: &outfile
-PROMPT    다음 단계: python hubroom_predictor.py "&outfile" -o .\predict_tobe
+PROMPT  저장 완료: &outfile
+PROMPT  보장: 분당 1행 / 한 줄 / 'YYYY-MM-DD HH24:MI' 포맷
+PROMPT  다음: python hubroom_predictor.py "&outfile" -o .\predict_tobe
 PROMPT
