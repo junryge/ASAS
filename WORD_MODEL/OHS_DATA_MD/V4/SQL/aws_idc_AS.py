@@ -412,43 +412,70 @@ def extract(start_dt: datetime, end_dt: datetime, out_dir: Path) -> Path:
         fname = f"{start_dt.strftime('%Y%m%d')}_{end_dt.strftime('%Y%m%d')}_idc.csv"
     out_path = out_dir / fname
 
+    total_min = int((end_dt - start_dt).total_seconds() / 60)
+    total_days = (end_dt - start_dt).days + (1 if (end_dt - start_dt).seconds else 0)
+
     log.info("=" * 60)
     log.info("AWS_IDC_DATA_HIS 날짜지정 추출")
     log.info(f"  DSN     : {ORACLE_DSN}")
     log.info(f"  기간    : {start_dt} ~ {end_dt}  (end 미포함)")
+    log.info(f"  데이터  : {total_days}일치, 분당 1행 = 약 {total_min:,}행 예상")
     log.info(f"  컬럼    : CRT_TM + {len(IDC_COLUMNS)}개 IDC")
     log.info(f"  출력    : {out_path}")
     log.info("=" * 60)
 
     t0 = time.time()
-    log.info("[1/4] Oracle 접속...")
+    log.info("[1/3] Oracle 접속...")
     conn = oracledb.connect(user=ORACLE_USER, password=ORACLE_PASSWORD, dsn=ORACLE_DSN)
 
+    # ★ 일자별 청크 처리 — 메모리/Oracle 부담 분산 + 진행률 표시
+    # 짧으면 (≤2일) 한 방에, 길면 하루 단위로 잘라서 fetch + merge + append
+    chunk_days = 1 if total_days > 2 else total_days
+
     try:
-        log.info(f"[2/4] 쿼리 실행 (예상 ~{int((end_dt-start_dt).total_seconds()/60)}분)")
-        with conn.cursor() as cur:
-            cur.arraysize = 1000
-            cur.execute(SQL_QUERY,
-                        start_dt=start_dt.strftime('%Y-%m-%d %H:%M:%S'),
-                        end_dt=end_dt.strftime('%Y-%m-%d %H:%M:%S'))
-            rows = cur.fetchall()
-        log.info(f"      → {len(rows):,}행 fetch ({time.time()-t0:.1f}s)")
+        log.info(f"[2/3] 쿼리 실행 — {total_days}일을 {chunk_days}일 단위 청크로 처리")
+        with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+            writer.writerow(CSV_HEADER)
+
+            chunk_start = start_dt
+            total_rows = 0
+            total_minutes = 0
+            chunk_idx = 0
+            n_chunks = (total_days + chunk_days - 1) // chunk_days
+
+            while chunk_start < end_dt:
+                chunk_idx += 1
+                chunk_end = min(chunk_start + timedelta(days=chunk_days), end_dt)
+                t_chunk = time.time()
+                with conn.cursor() as cur:
+                    cur.arraysize = 10000  # round-trip 줄이기
+                    cur.execute(SQL_QUERY,
+                                start_dt=chunk_start.strftime('%Y-%m-%d %H:%M:%S'),
+                                end_dt=chunk_end.strftime('%Y-%m-%d %H:%M:%S'))
+                    rows = cur.fetchall()
+
+                merged = merge_by_minute(rows)
+                for r in merged:
+                    writer.writerow(["" if v is None else v for v in r])
+                f.flush()
+
+                total_rows += len(rows)
+                total_minutes += len(merged)
+                elapsed_chunk = time.time() - t_chunk
+                elapsed_total = time.time() - t0
+                progress = chunk_idx / n_chunks * 100
+                eta = elapsed_total * (n_chunks - chunk_idx) / max(chunk_idx, 1)
+                log.info(f"  [{chunk_idx}/{n_chunks}] {chunk_start.date()}~{chunk_end.date()} "
+                         f"fetch {len(rows):,}행 → 머지 {len(merged):,}분 "
+                         f"({elapsed_chunk:.1f}s, 진행 {progress:.0f}%, 잔여 ~{eta:.0f}s)")
+                chunk_start = chunk_end
     finally:
         conn.close()
 
-    log.info("[3/4] 분단위 머지...")
-    merged = merge_by_minute(rows)
-    log.info(f"      → {len(merged):,}분 (분당 1행)")
-
-    log.info(f"[4/4] CSV 저장 → {out_path}")
-    with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(CSV_HEADER)
-        for r in merged:
-            writer.writerow(["" if v is None else v for v in r])
-
     size_mb = out_path.stat().st_size / 1024 / 1024
-    log.info(f"완료: {size_mb:.1f}MB, 총 {time.time()-t0:.1f}s")
+    log.info(f"[3/3] 완료: 총 {total_rows:,}행 → {total_minutes:,}분, "
+             f"{size_mb:.1f}MB, 총 {time.time()-t0:.1f}s")
     return out_path
 
 
