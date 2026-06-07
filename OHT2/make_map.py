@@ -109,7 +109,7 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   #legend{{position:fixed;top:8px;right:8px;z-index:10;font-size:12px;background:#161b22cc;padding:6px 10px;border-radius:6px}}
   canvas{{display:block}}
 </style></head><body>
-<div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동</div>
+<div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
 <div id="legend"><span style="color:#3fb950">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#f85149">■</span> 리프터(IN초록/OUT빨강)</div>
 <canvas id="cv"></canvas>
 <script>
@@ -132,9 +132,10 @@ function fit(){{
   ox=m-minX*scale+(cv.width-2*m-W*scale)/2;
   oy=m-minY*scale+(cv.height-2*m-H*scale)/2;
 }}
-// 화면좌표 (Y 뒤집어 위가 +)
-function SX(x){{return x*scale+ox;}}
-function SY(y){{return cv.height-(y*scale+oy);}}
+// 화면좌표 — H/F 키로 좌우·상하 반전
+let flipX=false, flipY=false;
+function SX(x){{const v=x*scale+ox;return flipX ? cv.width-v : v;}}
+function SY(y){{const v=y*scale+oy;return flipY ? cv.height-v : v;}}
 
 function draw(){{
   if(!init){{fit();init=true;}}
@@ -161,11 +162,19 @@ function draw(){{
 let drag=false,lx,ly;
 cv.addEventListener('mousedown',e=>{{drag=true;lx=e.clientX;ly=e.clientY;}});
 addEventListener('mouseup',()=>drag=false);
-addEventListener('mousemove',e=>{{if(!drag)return;ox+=e.clientX-lx;oy-=e.clientY-ly;lx=e.clientX;ly=e.clientY;draw();}});
-// zoom
+addEventListener('mousemove',e=>{{if(!drag)return;
+  ox+=(flipX?-(e.clientX-lx):(e.clientX-lx));
+  oy+=(flipY?-(e.clientY-ly):(e.clientY-ly));
+  lx=e.clientX;ly=e.clientY;draw();}});
+// zoom (마우스 위치 기준)
 cv.addEventListener('wheel',e=>{{e.preventDefault();const f=e.deltaY<0?1.15:1/1.15;
-  const mx=e.clientX,my=cv.height-e.clientY;
+  const mx=flipX?cv.width-e.clientX:e.clientX, my=flipY?cv.height-e.clientY:e.clientY;
   ox=mx-(mx-ox)*f;oy=my-(my-oy)*f;scale*=f;draw();}},{{passive:false}});
+// 키: H=좌우반전, F=상하반전, R=리셋
+addEventListener('keydown',e=>{{const k=e.key.toLowerCase();
+  if(k==='h'){{flipX=!flipX;draw();}}
+  if(k==='f'){{flipY=!flipY;draw();}}
+  if(k==='r'){{init=false;draw();}}}});
 resize();
 </script></body></html>"""
 
