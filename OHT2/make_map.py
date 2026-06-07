@@ -121,42 +121,27 @@ def _convex_hull(pts):
     return lo[:-1] + up[:-1]
 
 
-def compute_hid_zones(xml_content, lift, nodes):
-    """리프터가 속한 HID Zone을 '그 zone의 멤버 주소(국소적)' convex hull 로 그림.
+def compute_lifter_hids(xml_content, lift):
+    """각 리프터가 속한 '근방 HID 번호'를 구함 (리프터 포트 -> HID Zone).
     layout.xml의 McpZone 을 직접 파싱 (hid_zone_csv_cre 필요).
-    멤버주소 기준이라 lane 목적지가 멀어도 거대 삼각형이 생기지 않음.
-    반환: [[label, fab, [[x,y],...]], ...]  label='HID'+zone_id"""
+    반환: {lifter_id: [HID번호, ...]}"""
     try:
         import hid_zone_csv_cre as H
     except Exception:
-        print("  (hid_zone_csv_cre.py 없음 -> HID 구역 생략)")
-        return []
+        print("  (hid_zone_csv_cre.py 없음 -> 리프터 HID 생략)")
+        return {}
     from collections import defaultdict
     mcp = H.parse_mcp_zones_from_content(xml_content)
     a2z = H.build_addr_to_zone_mapping(mcp)
-    # 리프터가 속한 zone(mcp_id) -> fab (6=M16 우선)
-    lz_fab = {}
+    lf_hids = defaultdict(set)
     for addr, port in lift.items():
         z = a2z.get(addr)
         if not z:
             continue
-        mid = z["mcp_id"]
-        fab = "M16" if port[0] == "6" else "M14"
-        if mid not in lz_fab or fab == "M16":
-            lz_fab[mid] = fab
-    # zone 멤버 주소 좌표
-    zmem = defaultdict(list)
-    for addr, z in a2z.items():
-        if z["mcp_id"] in lz_fab and addr in nodes:
-            zmem[z["mcp_id"]].append(nodes[addr])
-    out = []
-    for mid, fab in lz_fab.items():
-        pts = zmem.get(mid, [])
-        if not pts:
-            continue
-        zid = mcp.get(mid, {}).get("zone_id", mid)
-        out.append(["HID" + str(zid), fab, _convex_hull([tuple(p) for p in pts])])
-    print(f"  HID 구역: {len(out)}개")
+        zid = mcp.get(z["mcp_id"], {}).get("zone_id", z["mcp_id"])
+        lf_hids[port.split("_")[0]].add(zid)
+    out = {lf: sorted(s) for lf, s in lf_hids.items()}
+    print(f"  리프터별 근방 HID 매핑: {len(out)}기")
     return out
 
 
@@ -168,14 +153,14 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   #legend{{position:fixed;top:8px;right:8px;z-index:10;font-size:12px;background:#161b22cc;padding:6px 10px;border-radius:6px}}
   canvas{{display:block}}
 </style></head><body>
-<div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl} · HID구역 {nz}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
-<div id="legend"><span style="color:#6e7681">●</span>노드 &nbsp; <span style="color:#ffd54f">●</span>IN &nbsp; <span style="color:#3fb950">●</span>OUT &nbsp; <span style="color:#22d3ee">HID#</span>(M16) &nbsp; <span style="color:#e879f9">HID#</span>(M14) &nbsp; <span style="color:#ff8c42">▭</span>리프터M16 &nbsp; <span style="color:#58a6ff">▭</span>리프터M14</div>
+<div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl} · HID매핑 {nz}기<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
+<div id="legend"><span style="color:#6e7681">●</span>노드 &nbsp; <span style="color:#ffd54f">●</span>IN &nbsp; <span style="color:#3fb950">●</span>OUT &nbsp; <span style="color:#22d3ee">HID n</span>=근방HID &nbsp; <span style="color:#ff8c42">▭</span>리프터M16 &nbsp; <span style="color:#58a6ff">▭</span>리프터M14</div>
 <canvas id="cv"></canvas>
 <script>
 const NODES={nodes_json};      // {{addr:[x,y]}}
 const CONNS={conns_json};      // [[from,to]]
 const LIFT={lift_json};        // {{addr:port}}
-const HIDZ={hidz_json};        // [[label,fab,[[x,y],...]]] HID 구역
+const LHID={lhid_json};        // {{lifter: [HID번호,...]}} 근방 HID
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 // 리프터별 포트 좌표 그룹 -> 범위 박스 계산용
 const LGROUP={{}};
@@ -214,16 +199,7 @@ function draw(){{
   ctx.fillStyle='#6e7681';
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
-  // HID 구역: 번호만 구역 위치(멤버 중심)에 표시 (폴리곤 없음)
-  ctx.font='bold 13px monospace';ctx.textAlign='center';
-  for(const Z of HIDZ){{const label=Z[0],fab=Z[1],poly=Z[2];
-    const col=fab==='M16'?'#22d3ee':'#e879f9';
-    let cx=0,cy=0;for(const p of poly){{cx+=SX(p[0]);cy+=SY(p[1]);}}cx/=poly.length;cy/=poly.length;
-    ctx.lineWidth=3;ctx.strokeStyle='#0d1117';ctx.strokeText(label,cx,cy);
-    ctx.fillStyle=col;ctx.fillText(label,cx,cy);
-  }}
-  ctx.textAlign='left';
-  // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
+  // 리프터 범위 사각형 + 이름 + 근방 HID번호 (4=M14 파랑, 6=M16 주황)
   const pad=14;
   ctx.lineWidth=1.5;ctx.font='bold 13px monospace';
   for(const lf in LGROUP){{const ps=LGROUP[lf];
@@ -234,6 +210,10 @@ function draw(){{
     ctx.strokeStyle=col;ctx.setLineDash([5,3]);
     ctx.strokeRect(x1,y1,x2-x1,y2-y1);ctx.setLineDash([]);
     ctx.fillStyle=col;ctx.fillText(fab+'-'+lf,x1,y1-4);
+    // 근방 HID 번호 (박스 아래)
+    const hids=LHID[lf];
+    if(hids&&hids.length){{ctx.fillStyle='#22d3ee';ctx.font='bold 11px monospace';
+      ctx.fillText('HID '+hids.join(','),x1,y2+13);ctx.font='bold 13px monospace';}}
   }}
   // 리프터 포트 강조: IN=노랑, OUT=초록
   for(const a in LIFT){{const p=NODES[a];if(!p)continue;const port=LIFT[a];
@@ -297,15 +277,15 @@ def main():
     print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
     lift = parse_lifters(station)
     print(f"  리프터 포트 {len(lift)}")
-    hidz = compute_hid_zones(xml, lift, nodes) if station else []
+    lhid = compute_lifter_hids(xml, lift) if station else {}
 
     title = os.path.splitext(os.path.basename(out))[0]
     html = HTML.format(
-        title=title, nn=len(nodes), nc=len(conns), nl=len(lift), nz=len(hidz),
+        title=title, nn=len(nodes), nc=len(conns), nl=len(lift), nz=len(lhid),
         nodes_json=json.dumps({str(k): v for k, v in nodes.items()}),
         conns_json=json.dumps(conns),
         lift_json=json.dumps({str(k): v for k, v in lift.items()}),
-        hidz_json=json.dumps(hidz),
+        lhid_json=json.dumps(lhid),
     )
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
