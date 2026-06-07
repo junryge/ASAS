@@ -53,19 +53,22 @@ function draw(){
   for(const a in NODES){if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}
   // HID 구역 영역 (리프터 포함 zone, 채움+테두리+HID번호)
-  ctx.lineWidth=1.5;ctx.font='bold 12px monospace';
+  ctx.font='bold 13px monospace';
   for(const Z of HIDZ){const label=Z[0],fab=Z[1],poly=Z[2];
     const col=fab==='M16'?'#22d3ee':'#e879f9';
+    let cx=0,cy=0;for(const p of poly){cx+=SX(p[0]);cy+=SY(p[1]);}cx/=poly.length;cy/=poly.length;
     if(poly.length>=3){
       ctx.beginPath();
       for(let i=0;i<poly.length;i++){const px=SX(poly[i][0]),py=SY(poly[i][1]);i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
-      ctx.closePath();ctx.fillStyle=col+'22';ctx.fill();
-      ctx.strokeStyle=col;ctx.stroke();
+      ctx.closePath();ctx.fillStyle=col+'55';ctx.fill();
+      ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
     } else {
-      for(const p of poly){ctx.fillStyle=col+'55';ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),7,0,7);ctx.fill();}
+      ctx.fillStyle=col+'55';ctx.strokeStyle=col;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(cx,cy,12,0,7);ctx.fill();ctx.stroke();
     }
-    let cx=0,cy=0;for(const p of poly){cx+=SX(p[0]);cy+=SY(p[1]);}cx/=poly.length;cy/=poly.length;
-    ctx.fillStyle=col;ctx.fillText(label,cx+4,cy);
+    // 라벨 (외곽선 있는 텍스트로 잘 보이게)
+    ctx.lineWidth=3;ctx.strokeStyle='#0d1117';ctx.strokeText(label,cx+4,cy-2);
+    ctx.fillStyle=col;ctx.fillText(label,cx+4,cy-2);
   }
   // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
   const pad=14;

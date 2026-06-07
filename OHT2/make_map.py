@@ -121,21 +121,34 @@ def _convex_hull(pts):
     return lo[:-1] + up[:-1]
 
 
-def compute_hid_zones(station_path, nodes):
-    """HID_Zone_Master CSV(스테이션과 같은 폴더)에서 '리프터가 속한 HID 구역'을
-    영역 폴리곤으로 추출. CSV의 HID_ID=리프터포트, Zone_ID=HID번호.
+def compute_hid_zones(station_path, nodes, layout_input=None):
+    """이 레이아웃(FAB_PREFIX) 전용 HID_Zone_Master CSV에서 '리프터가 속한
+    HID 구역'을 영역 폴리곤으로 추출. CSV가 없으면 hid_zone_csv_cre 로 자동 생성.
+    CSV의 HID_ID=리프터포트, Zone_ID=HID번호.
     반환: [[label, fab, [[x,y],...]], ...]"""
     import csv as _csv
-    import glob
     from collections import defaultdict
     if not station_path:
         return []
     d = os.path.dirname(station_path) or "."
-    cands = glob.glob(os.path.join(d, "HID_Zone_Master*.csv"))
-    if not cands:
-        print("  (HID_Zone_Master*.csv 없음 -> HID 구역 생략)")
+    prefix = os.path.basename(station_path).split(".")[0]   # "BR.station.dat" -> "BR"
+    fab = os.path.basename(os.path.abspath(d))              # ".../M16A" -> "M16A"
+    # 반드시 이 레이아웃 전용 CSV 만 사용 (다른 prefix CSV 섞임 방지)
+    csv_path = os.path.join(d, f"HID_Zone_Master_{fab}_{prefix}.csv")
+    if not os.path.exists(csv_path):
+        # 없으면 자동 생성
+        if not layout_input:
+            print(f"  ({os.path.basename(csv_path)} 없음 -> HID 구역 생략)")
+            return []
+        try:
+            import hid_zone_csv_cre as H
+            print(f"  {os.path.basename(csv_path)} 없음 -> 자동 생성 중...")
+            H.create_hid_zone_csv(layout_input, csv_path, project_name=f"{fab} Project")
+        except Exception as e:
+            print(f"  (HID CSV 자동생성 실패: {e} -> HID 구역 생략)")
+            return []
+    if not os.path.exists(csv_path):
         return []
-    csv_path = cands[0]
 
     def lane_addrs(field):
         s = set()
@@ -224,19 +237,22 @@ function draw(){{
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
   // HID 구역 영역 (리프터 포함 zone, 채움+테두리+HID번호)
-  ctx.lineWidth=1.5;ctx.font='bold 12px monospace';
+  ctx.font='bold 13px monospace';
   for(const Z of HIDZ){{const label=Z[0],fab=Z[1],poly=Z[2];
     const col=fab==='M16'?'#22d3ee':'#e879f9';
+    let cx=0,cy=0;for(const p of poly){{cx+=SX(p[0]);cy+=SY(p[1]);}}cx/=poly.length;cy/=poly.length;
     if(poly.length>=3){{
       ctx.beginPath();
       for(let i=0;i<poly.length;i++){{const px=SX(poly[i][0]),py=SY(poly[i][1]);i?ctx.lineTo(px,py):ctx.moveTo(px,py);}}
-      ctx.closePath();ctx.fillStyle=col+'22';ctx.fill();
-      ctx.strokeStyle=col;ctx.stroke();
+      ctx.closePath();ctx.fillStyle=col+'55';ctx.fill();
+      ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
     }} else {{
-      for(const p of poly){{ctx.fillStyle=col+'55';ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),7,0,7);ctx.fill();}}
+      ctx.fillStyle=col+'55';ctx.strokeStyle=col;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(cx,cy,12,0,7);ctx.fill();ctx.stroke();
     }}
-    let cx=0,cy=0;for(const p of poly){{cx+=SX(p[0]);cy+=SY(p[1]);}}cx/=poly.length;cy/=poly.length;
-    ctx.fillStyle=col;ctx.fillText(label,cx+4,cy);
+    // 라벨 (외곽선 있는 텍스트로 잘 보이게)
+    ctx.lineWidth=3;ctx.strokeStyle='#0d1117';ctx.strokeText(label,cx+4,cy-2);
+    ctx.fillStyle=col;ctx.fillText(label,cx+4,cy-2);
   }}
   // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
   const pad=14;
@@ -312,7 +328,7 @@ def main():
     print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
     lift = parse_lifters(station)
     print(f"  리프터 포트 {len(lift)}")
-    hidz = compute_hid_zones(station, nodes) if station else []
+    hidz = compute_hid_zones(station, nodes, inp) if station else []
 
     title = os.path.splitext(os.path.basename(out))[0]
     html = HTML.format(
