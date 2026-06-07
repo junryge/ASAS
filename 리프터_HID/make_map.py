@@ -270,7 +270,8 @@ def main():
     if len(sys.argv) < 3:
         print(__doc__)
         sys.exit(1)
-    inp, out = sys.argv[1], sys.argv[2]
+    inp = sys.argv[1]
+    out = os.path.basename(sys.argv[2])   # 항상 '실행한 폴더(현재 위치)'에 생성
     station = sys.argv[3] if len(sys.argv) > 3 else None
 
     print(f"입력: {inp}")
