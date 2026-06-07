@@ -121,64 +121,42 @@ def _convex_hull(pts):
     return lo[:-1] + up[:-1]
 
 
-def compute_hid_zones(station_path, nodes, layout_input=None):
-    """이 레이아웃(FAB_PREFIX) 전용 HID_Zone_Master CSV에서 '리프터가 속한
-    HID 구역'을 영역 폴리곤으로 추출. CSV가 없으면 hid_zone_csv_cre 로 자동 생성.
-    CSV의 HID_ID=리프터포트, Zone_ID=HID번호.
-    반환: [[label, fab, [[x,y],...]], ...]"""
-    import csv as _csv
+def compute_hid_zones(xml_content, lift, nodes):
+    """리프터가 속한 HID Zone을 '그 zone의 멤버 주소(국소적)' convex hull 로 그림.
+    layout.xml의 McpZone 을 직접 파싱 (hid_zone_csv_cre 필요).
+    멤버주소 기준이라 lane 목적지가 멀어도 거대 삼각형이 생기지 않음.
+    반환: [[label, fab, [[x,y],...]], ...]  label='HID'+zone_id"""
+    try:
+        import hid_zone_csv_cre as H
+    except Exception:
+        print("  (hid_zone_csv_cre.py 없음 -> HID 구역 생략)")
+        return []
     from collections import defaultdict
-    if not station_path:
-        return []
-    d = os.path.dirname(station_path) or "."
-    prefix = os.path.basename(station_path).split(".")[0]   # "BR.station.dat" -> "BR"
-    fab = os.path.basename(os.path.abspath(d))              # ".../M16A" -> "M16A"
-    # 반드시 이 레이아웃 전용 CSV 만 사용 (다른 prefix CSV 섞임 방지)
-    csv_path = os.path.join(d, f"HID_Zone_Master_{fab}_{prefix}.csv")
-    if not os.path.exists(csv_path):
-        # 없으면 자동 생성
-        if not layout_input:
-            print(f"  ({os.path.basename(csv_path)} 없음 -> HID 구역 생략)")
-            return []
-        try:
-            import hid_zone_csv_cre as H
-            print(f"  {os.path.basename(csv_path)} 없음 -> 자동 생성 중...")
-            H.create_hid_zone_csv(layout_input, csv_path, project_name=f"{fab} Project")
-        except Exception as e:
-            print(f"  (HID CSV 자동생성 실패: {e} -> HID 구역 생략)")
-            return []
-    if not os.path.exists(csv_path):
-        return []
-
-    def lane_addrs(field):
-        s = set()
-        for seg in (field or "").split(";"):
-            m = re.match(r'\s*(\d+)\s*→\s*(\d+)', seg)
-            if m:
-                s.add(int(m.group(1))); s.add(int(m.group(2)))
-        return s
-
-    z_addrs = defaultdict(set)   # zone_id -> 주소 집합 (lane 양끝)
-    z_ports = defaultdict(set)   # zone_id -> 리프터 포트
-    with open(csv_path, encoding="utf-8-sig") as f:
-        for r in _csv.DictReader(f):
-            zid = r.get("Zone_ID", "")
-            z_addrs[zid] |= lane_addrs(r.get("IN_Lanes")) | lane_addrs(r.get("OUT_Lanes"))
-            hidid = (r.get("HID_ID") or "").strip()
-            if re.match(r'\dABL', hidid):
-                z_ports[zid].add(hidid)
-                an = (r.get("Addr_No") or "").strip()
-                if an.isdigit():
-                    z_addrs[zid].add(int(an))
-
+    mcp = H.parse_mcp_zones_from_content(xml_content)
+    a2z = H.build_addr_to_zone_mapping(mcp)
+    # 리프터가 속한 zone(mcp_id) -> fab (6=M16 우선)
+    lz_fab = {}
+    for addr, port in lift.items():
+        z = a2z.get(addr)
+        if not z:
+            continue
+        mid = z["mcp_id"]
+        fab = "M16" if port[0] == "6" else "M14"
+        if mid not in lz_fab or fab == "M16":
+            lz_fab[mid] = fab
+    # zone 멤버 주소 좌표
+    zmem = defaultdict(list)
+    for addr, z in a2z.items():
+        if z["mcp_id"] in lz_fab and addr in nodes:
+            zmem[z["mcp_id"]].append(nodes[addr])
     out = []
-    for zid, plist in z_ports.items():     # 리프터가 포함된 zone만
-        pts = [nodes[a] for a in z_addrs[zid] if a in nodes]
+    for mid, fab in lz_fab.items():
+        pts = zmem.get(mid, [])
         if not pts:
             continue
-        fab = "M16" if any(p[0] == "6" for p in plist) else "M14"
+        zid = mcp.get(mid, {}).get("zone_id", mid)
         out.append(["HID" + str(zid), fab, _convex_hull([tuple(p) for p in pts])])
-    print(f"  HID 구역: {len(out)}개 (리프터 포함 zone, 출처 {os.path.basename(csv_path)})")
+    print(f"  HID 구역: {len(out)}개")
     return out
 
 
@@ -328,7 +306,7 @@ def main():
     print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
     lift = parse_lifters(station)
     print(f"  리프터 포트 {len(lift)}")
-    hidz = compute_hid_zones(station, nodes, inp) if station else []
+    hidz = compute_hid_zones(xml, lift, nodes) if station else []
 
     title = os.path.splitext(os.path.basename(out))[0]
     html = HTML.format(
