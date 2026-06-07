@@ -169,7 +169,7 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   canvas{{display:block}}
 </style></head><body>
 <div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl} · HID구역 {nz}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
-<div id="legend"><span style="color:#6e7681">●</span>노드 &nbsp; <span style="color:#ffd54f">●</span>IN &nbsp; <span style="color:#3fb950">●</span>OUT &nbsp; <span style="color:#22d3ee">▰</span>HID구역(M16) &nbsp; <span style="color:#e879f9">▰</span>HID구역(M14) &nbsp; <span style="color:#ff8c42">▭</span>리프터M16 &nbsp; <span style="color:#58a6ff">▭</span>리프터M14</div>
+<div id="legend"><span style="color:#6e7681">●</span>노드 &nbsp; <span style="color:#ffd54f">●</span>IN &nbsp; <span style="color:#3fb950">●</span>OUT &nbsp; <span style="color:#22d3ee">HID#</span>(M16) &nbsp; <span style="color:#e879f9">HID#</span>(M14) &nbsp; <span style="color:#ff8c42">▭</span>리프터M16 &nbsp; <span style="color:#58a6ff">▭</span>리프터M14</div>
 <canvas id="cv"></canvas>
 <script>
 const NODES={nodes_json};      // {{addr:[x,y]}}
@@ -214,24 +214,15 @@ function draw(){{
   ctx.fillStyle='#6e7681';
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
-  // HID 구역 영역 (리프터 포함 zone, 채움+테두리+HID번호)
-  ctx.font='bold 13px monospace';
+  // HID 구역: 번호만 구역 위치(멤버 중심)에 표시 (폴리곤 없음)
+  ctx.font='bold 13px monospace';ctx.textAlign='center';
   for(const Z of HIDZ){{const label=Z[0],fab=Z[1],poly=Z[2];
     const col=fab==='M16'?'#22d3ee':'#e879f9';
     let cx=0,cy=0;for(const p of poly){{cx+=SX(p[0]);cy+=SY(p[1]);}}cx/=poly.length;cy/=poly.length;
-    if(poly.length>=3){{
-      ctx.beginPath();
-      for(let i=0;i<poly.length;i++){{const px=SX(poly[i][0]),py=SY(poly[i][1]);i?ctx.lineTo(px,py):ctx.moveTo(px,py);}}
-      ctx.closePath();ctx.fillStyle=col+'55';ctx.fill();
-      ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
-    }} else {{
-      ctx.fillStyle=col+'55';ctx.strokeStyle=col;ctx.lineWidth=2.5;
-      ctx.beginPath();ctx.arc(cx,cy,12,0,7);ctx.fill();ctx.stroke();
-    }}
-    // 라벨 (외곽선 있는 텍스트로 잘 보이게)
-    ctx.lineWidth=3;ctx.strokeStyle='#0d1117';ctx.strokeText(label,cx+4,cy-2);
-    ctx.fillStyle=col;ctx.fillText(label,cx+4,cy-2);
+    ctx.lineWidth=3;ctx.strokeStyle='#0d1117';ctx.strokeText(label,cx,cy);
+    ctx.fillStyle=col;ctx.fillText(label,cx,cy);
   }}
+  ctx.textAlign='left';
   // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
   const pad=14;
   ctx.lineWidth=1.5;ctx.font='bold 13px monospace';
