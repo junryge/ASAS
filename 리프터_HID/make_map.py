@@ -130,18 +130,27 @@ def compute_lifter_hids(station_path, layout_input=None):
     from collections import defaultdict
     if not station_path:
         return {}
-    d = os.path.dirname(station_path) or "."
-    prefix = os.path.basename(station_path).split(".")[0]   # "BR.station.dat" -> "BR"
-    fab = os.path.basename(os.path.abspath(d))              # ".../M16A" -> "M16A"
-    csv_path = os.path.join(d, f"HID_Zone_Master_{fab}_{prefix}.csv")
-    if not os.path.exists(csv_path) and layout_input:
+    sd = os.path.dirname(os.path.abspath(station_path))      # station 폴더
+    script_dir = os.path.dirname(os.path.abspath(__file__))  # make_map.py 폴더
+    prefix = os.path.basename(station_path).split(".")[0]    # "BR.station.dat" -> "BR"
+    fab = os.path.basename(sd)                               # ".../M16A" -> "M16A"
+    name = f"HID_Zone_Master_{fab}_{prefix}.csv"
+    # 이미 있으면 사용 (make_map 폴더 우선, 그다음 station 폴더)
+    csv_path = None
+    for cand in (os.path.join(script_dir, name), os.path.join(sd, name)):
+        if os.path.exists(cand):
+            csv_path = cand
+            break
+    # 없으면 make_map.py 가 있는 폴더에 생성 (MAP 하위폴더 만들지 않음)
+    if csv_path is None and layout_input:
+        csv_path = os.path.join(script_dir, name)
         try:
             import hid_zone_csv_cre as H
-            print(f"  {os.path.basename(csv_path)} 없음 -> 자동 생성 중...")
+            print(f"  {name} 없음 -> make_map.py 폴더에 생성 중...")
             H.create_hid_zone_csv(layout_input, csv_path, project_name=f"{fab} Project")
         except Exception as e:
             print(f"  (HID CSV 자동생성 실패: {e})")
-    if not os.path.exists(csv_path):
+    if not csv_path or not os.path.exists(csv_path):
         print("  (HID CSV 없음 -> 리프터 HID 생략)")
         return {}
     lf_hids = defaultdict(set)
