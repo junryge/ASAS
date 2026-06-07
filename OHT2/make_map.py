@@ -80,13 +80,13 @@ def parse_layout(xml_content):
     return nodes, conns
 
 
-def parse_lifters(station_path):
-    """station.dat -> {addr: port_name} (리프터 *ABL* 포트만)"""
+def parse_lifters(station_path, prefix="6ABL"):
+    """station.dat -> {addr: port_name} (해당 prefix 리프터 포트만, 기본 6ABL)"""
     if not station_path or not os.path.exists(station_path):
         return {}
     out = {}
     for line in open(station_path, encoding="utf-8", errors="replace"):
-        if "ABL" not in line:
+        if prefix not in line:
             continue
         m = re.search(r'STATION\s*=\s*(.+)', line)
         if not m:
@@ -96,7 +96,7 @@ def parse_lifters(station_path):
             port, addr = parts[3], int(parts[6])
         except (IndexError, ValueError):
             continue
-        if "_AI" in port or "_AO" in port:
+        if port.startswith(prefix) and ("_AI" in port or "_AO" in port):
             out[addr] = port
     return out
 
