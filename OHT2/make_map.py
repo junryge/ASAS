@@ -110,13 +110,17 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   canvas{{display:block}}
 </style></head><body>
 <div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
-<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span> IN &nbsp; <span style="color:#3fb950">●</span> OUT</div>
+<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span> IN &nbsp; <span style="color:#3fb950">●</span> OUT &nbsp; <span style="color:#ff8c42">▭</span> 리프터범위</div>
 <canvas id="cv"></canvas>
 <script>
 const NODES={nodes_json};      // {{addr:[x,y]}}
 const CONNS={conns_json};      // [[from,to]]
 const LIFT={lift_json};        // {{addr:port}}
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+// 리프터별 포트 좌표 그룹 -> 범위 박스 계산용
+const LGROUP={{}};
+for(const a in LIFT){{const p=NODES[a];if(!p)continue;const lf=LIFT[a].split('_')[0];
+  (LGROUP[lf]=LGROUP[lf]||[]).push(p);}}
 function resize(){{cv.width=innerWidth;cv.height=innerHeight;draw();}}
 window.addEventListener('resize',resize);
 
@@ -150,6 +154,16 @@ function draw(){{
   ctx.fillStyle='#6e7681';
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
+  // 리프터 범위 사각형 + 이름
+  const pad=14;
+  ctx.lineWidth=1.5;ctx.font='bold 13px monospace';
+  for(const lf in LGROUP){{const ps=LGROUP[lf];
+    let aX=ps.map(p=>SX(p[0])),aY=ps.map(p=>SY(p[1]));
+    const x1=Math.min(...aX)-pad,x2=Math.max(...aX)+pad,y1=Math.min(...aY)-pad,y2=Math.max(...aY)+pad;
+    ctx.strokeStyle='#ff8c42';ctx.setLineDash([5,3]);
+    ctx.strokeRect(x1,y1,x2-x1,y2-y1);ctx.setLineDash([]);
+    ctx.fillStyle='#ff8c42';ctx.fillText(lf,x1,y1-4);
+  }}
   // 리프터 포트 강조: IN=노랑, OUT=초록
   for(const a in LIFT){{const p=NODES[a];if(!p)continue;const port=LIFT[a];
     ctx.fillStyle=port.includes('_AI')?'#ffd54f':'#3fb950';
