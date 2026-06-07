@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+make_map.py - layout.xml -> 실제로 그려지는 2D 지도(HTML, canvas)
+
+OHT2/layout_map_cre.py 는 데이터만 넣고 렌더링 코드가 없어 빈 화면이 나온다.
+이 스크립트는 canvas 로 노드/연결을 실제로 그리고, pan/zoom 과
+리프터(*ABL*) 포트 강조 표시를 제공한다. 외부 라이브러리 불필요.
+
+사용법:
+    python3 make_map.py <layout.xml|layout.zip> <출력.html> [station.dat]
+
+예:
+    python3 make_map.py MAP/M16A/BR.layout.xml MAP/M16A/BR.map.html MAP/M16A/BR.station.dat
+"""
+import sys, os, re, json, zipfile
+
+
+def load_xml(path):
+    if path.endswith(".zip"):
+        with zipfile.ZipFile(path) as zf:
+            name = next((n for n in zf.namelist() if n.lower().endswith("layout.xml")), None)
+            if not name:
+                raise FileNotFoundError("zip 안에 layout.xml 없음")
+            return zf.read(name).decode("utf-8", "replace")
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def parse_layout(xml_content):
+    """nodes: {addr:(x,y)}, connections: [[from,to],...]"""
+    nodes = {}
+    conns = []
+    cur = None          # 현재 Addr params
+    nx = None           # 현재 NextAddr params
+    in_nx = False
+    key_re = re.compile(r'key="([^"]+)"')
+    val_re = re.compile(r'value="([^"]*)"')
+
+    def commit_addr(c):
+        if c and "address" in c:
+            try:
+                a = int(c["address"])
+                if a > 0:
+                    nodes[a] = (round(float(c.get("draw-x", 0)), 2),
+                                round(float(c.get("draw-y", 0)), 2))
+            except ValueError:
+                pass
+
+    for line in xml_content.split("\n"):
+        line = line.strip()
+        if '<group name="Addr' in line and 'address.Addr"' in line:
+            commit_addr(cur)
+            cur = {}
+            in_nx = False
+            continue
+        if '<group name="NextAddr' in line and 'NextAddr"' in line:
+            in_nx = True
+            nx = {}
+            continue
+        if in_nx and '</group>' in line:
+            if cur and "address" in cur and nx and "next-address" in nx:
+                try:
+                    fa, ta = int(cur["address"]), int(nx["next-address"])
+                    if fa > 0 and ta > 0:
+                        conns.append([fa, ta])
+                except ValueError:
+                    pass
+            in_nx = False
+            continue
+        if '<param ' in line and 'key="' in line and 'value="' in line:
+            k = key_re.search(line)
+            v = val_re.search(line)
+            if k and v:
+                if in_nx:
+                    nx[k.group(1)] = v.group(1)
+                elif cur is not None:
+                    cur[k.group(1)] = v.group(1)
+    commit_addr(cur)
+    return nodes, conns
+
+
+def parse_lifters(station_path):
+    """station.dat -> {addr: port_name} (리프터 *ABL* 포트만)"""
+    if not station_path or not os.path.exists(station_path):
+        return {}
+    out = {}
+    for line in open(station_path, encoding="utf-8", errors="replace"):
+        if "ABL" not in line:
+            continue
+        m = re.search(r'STATION\s*=\s*(.+)', line)
+        if not m:
+            continue
+        parts = [p.strip().strip('"') for p in m.group(1).split(",")]
+        try:
+            port, addr = parts[3], int(parts[6])
+        except (IndexError, ValueError):
+            continue
+        if "_AI" in port or "_AO" in port:
+            out[addr] = port
+    return out
+
+
+HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>{title}</title>
+<style>
+  html,body{{margin:0;height:100%;background:#0d1117;color:#ddd;font-family:monospace;overflow:hidden}}
+  #info{{position:fixed;top:8px;left:8px;z-index:10;font-size:13px;background:#161b22cc;padding:6px 10px;border-radius:6px}}
+  #legend{{position:fixed;top:8px;right:8px;z-index:10;font-size:12px;background:#161b22cc;padding:6px 10px;border-radius:6px}}
+  canvas{{display:block}}
+</style></head><body>
+<div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동</div>
+<div id="legend"><span style="color:#3fb950">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#f85149">■</span> 리프터(IN초록/OUT빨강)</div>
+<canvas id="cv"></canvas>
+<script>
+const NODES={nodes_json};      // {{addr:[x,y]}}
+const CONNS={conns_json};      // [[from,to]]
+const LIFT={lift_json};        // {{addr:port}}
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function resize(){{cv.width=innerWidth;cv.height=innerHeight;draw();}}
+window.addEventListener('resize',resize);
+
+// 좌표 범위
+let xs=[],ys=[];for(const a in NODES){{xs.push(NODES[a][0]);ys.push(NODES[a][1]);}}
+const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+const W=maxX-minX||1,H=maxY-minY||1;
+
+let scale=1,ox=0,oy=0,init=false;
+function fit(){{
+  const m=40;const sx=(cv.width-2*m)/W,sy=(cv.height-2*m)/H;
+  scale=Math.min(sx,sy);
+  ox=m-minX*scale+(cv.width-2*m-W*scale)/2;
+  oy=m-minY*scale+(cv.height-2*m-H*scale)/2;
+}}
+// 화면좌표 (Y 뒤집어 위가 +)
+function SX(x){{return x*scale+ox;}}
+function SY(y){{return cv.height-(y*scale+oy);}}
+
+function draw(){{
+  if(!init){{fit();init=true;}}
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,cv.width,cv.height);
+  // 연결
+  ctx.strokeStyle='#58a6ff55';ctx.lineWidth=1;ctx.beginPath();
+  for(const c of CONNS){{const f=NODES[c[0]],t=NODES[c[1]];if(!f||!t)continue;
+    ctx.moveTo(SX(f[0]),SY(f[1]));ctx.lineTo(SX(t[0]),SY(t[1]));}}
+  ctx.stroke();
+  // 노드
+  const r=Math.max(1.2,1.6*Math.min(scale,1.5));
+  ctx.fillStyle='#3fb950';
+  for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
+    ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
+  // 리프터 포트 강조
+  for(const a in LIFT){{const p=NODES[a];if(!p)continue;const port=LIFT[a];
+    ctx.fillStyle=port.includes('_AI')?'#3fb950':'#f85149';
+    ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),Math.max(3,r+2),0,7);ctx.fill();
+    if(scale>0.6){{ctx.fillStyle='#ffd54f';ctx.font='10px monospace';
+      ctx.fillText(port.split('_')[1],SX(p[0])+5,SY(p[1])-3);}}
+  }}
+}}
+// pan
+let drag=false,lx,ly;
+cv.addEventListener('mousedown',e=>{{drag=true;lx=e.clientX;ly=e.clientY;}});
+addEventListener('mouseup',()=>drag=false);
+addEventListener('mousemove',e=>{{if(!drag)return;ox+=e.clientX-lx;oy-=e.clientY-ly;lx=e.clientX;ly=e.clientY;draw();}});
+// zoom
+cv.addEventListener('wheel',e=>{{e.preventDefault();const f=e.deltaY<0?1.15:1/1.15;
+  const mx=e.clientX,my=cv.height-e.clientY;
+  ox=mx-(mx-ox)*f;oy=my-(my-oy)*f;scale*=f;draw();}},{{passive:false}});
+resize();
+</script></body></html>"""
+
+
+def main():
+    if len(sys.argv) < 3:
+        print(__doc__)
+        sys.exit(1)
+    inp, out = sys.argv[1], sys.argv[2]
+    station = sys.argv[3] if len(sys.argv) > 3 else None
+
+    print(f"입력: {inp}")
+    xml = load_xml(inp)
+    print(f"  XML 크기: {len(xml):,} bytes")
+    nodes, conns = parse_layout(xml)
+    print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
+    lift = parse_lifters(station)
+    print(f"  리프터 포트 {len(lift)}")
+
+    title = os.path.splitext(os.path.basename(out))[0]
+    html = HTML.format(
+        title=title, nn=len(nodes), nc=len(conns), nl=len(lift),
+        nodes_json=json.dumps({str(k): v for k, v in nodes.items()}),
+        conns_json=json.dumps(conns),
+        lift_json=json.dumps({str(k): v for k, v in lift.items()}),
+    )
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"생성 완료: {out} ({os.path.getsize(out):,} bytes)")
+
+
+if __name__ == "__main__":
+    main()
