@@ -178,6 +178,25 @@ def main():
     station = sys.argv[3] if len(sys.argv) > 3 else None
 
     print(f"입력: {inp}")
+
+    # 입력 파일 존재 확인 (없으면 친절 안내)
+    if not os.path.exists(inp):
+        print(f"\n[오류] 파일을 찾을 수 없습니다: {inp}")
+        d = os.path.dirname(inp) or "."
+        if os.path.isdir(d):
+            cand = [f for f in os.listdir(d) if f.lower().endswith((".xml", ".zip"))]
+            print(f"  '{d}' 폴더의 layout 후보: {cand if cand else '없음'}")
+            # 같은 폴더에 .zip 있으면 그것으로 자동 대체 제안
+            base = os.path.basename(inp)
+            zipname = base.replace(".layout.xml", ".layout.zip").replace(".xml", ".zip")
+            zpath = os.path.join(d, zipname)
+            if os.path.exists(zpath):
+                print(f"  -> .zip 발견! 이걸로 다시 실행하세요:\n     python make_map.py \"{zpath}\" \"{out}\""
+                      + (f" \"{station}\"" if station else ""))
+        else:
+            print(f"  '{d}' 폴더 자체가 없습니다. 경로를 확인하세요.")
+        sys.exit(1)
+
     xml = load_xml(inp)
     print(f"  XML 크기: {len(xml):,} bytes")
     nodes, conns = parse_layout(xml)
