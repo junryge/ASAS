@@ -80,13 +80,13 @@ def parse_layout(xml_content):
     return nodes, conns
 
 
-def parse_lifters(station_path, prefix="6ABL"):
-    """station.dat -> {addr: port_name} (해당 prefix 리프터 포트만, 기본 6ABL)"""
+def parse_lifters(station_path):
+    """station.dat -> {addr: port_name} (모든 <숫자>ABL 리프터 포트. 4=M14, 6=M16)"""
     if not station_path or not os.path.exists(station_path):
         return {}
     out = {}
     for line in open(station_path, encoding="utf-8", errors="replace"):
-        if prefix not in line:
+        if "ABL" not in line:
             continue
         m = re.search(r'STATION\s*=\s*(.+)', line)
         if not m:
@@ -96,7 +96,7 @@ def parse_lifters(station_path, prefix="6ABL"):
             port, addr = parts[3], int(parts[6])
         except (IndexError, ValueError):
             continue
-        if port.startswith(prefix) and ("_AI" in port or "_AO" in port):
+        if re.match(r'\dABL', port) and ("_AI" in port or "_AO" in port):
             out[addr] = port
     return out
 
@@ -110,7 +110,7 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   canvas{{display:block}}
 </style></head><body>
 <div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
-<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span> IN &nbsp; <span style="color:#3fb950">●</span> OUT &nbsp; <span style="color:#ff8c42">▭</span> 리프터범위</div>
+<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span> IN &nbsp; <span style="color:#3fb950">●</span> OUT &nbsp; <span style="color:#ff8c42">▭</span>M16 &nbsp; <span style="color:#58a6ff">▭</span>M14</div>
 <canvas id="cv"></canvas>
 <script>
 const NODES={nodes_json};      // {{addr:[x,y]}}
@@ -154,15 +154,17 @@ function draw(){{
   ctx.fillStyle='#6e7681';
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
-  // 리프터 범위 사각형 + 이름
+  // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
   const pad=14;
   ctx.lineWidth=1.5;ctx.font='bold 13px monospace';
   for(const lf in LGROUP){{const ps=LGROUP[lf];
+    const fab=lf[0]==='6'?'M16':(lf[0]==='4'?'M14':'?');
+    const col=lf[0]==='6'?'#ff8c42':'#58a6ff';
     let aX=ps.map(p=>SX(p[0])),aY=ps.map(p=>SY(p[1]));
     const x1=Math.min(...aX)-pad,x2=Math.max(...aX)+pad,y1=Math.min(...aY)-pad,y2=Math.max(...aY)+pad;
-    ctx.strokeStyle='#ff8c42';ctx.setLineDash([5,3]);
+    ctx.strokeStyle=col;ctx.setLineDash([5,3]);
     ctx.strokeRect(x1,y1,x2-x1,y2-y1);ctx.setLineDash([]);
-    ctx.fillStyle='#ff8c42';ctx.fillText(lf,x1,y1-4);
+    ctx.fillStyle=col;ctx.fillText(fab+'-'+lf,x1,y1-4);
   }}
   // 리프터 포트 강조: IN=노랑, OUT=초록
   for(const a in LIFT){{const p=NODES[a];if(!p)continue;const port=LIFT[a];
