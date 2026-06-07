@@ -101,6 +101,39 @@ def parse_lifters(station_path):
     return out
 
 
+def compute_hid_lanes(xml_content, lift, nodes):
+    """리프터가 속한 HID Zone의 IN(entries)/OUT(exits) lane을 좌표 화살표로.
+    같은 폴더에 hid_zone_csv_cre.py 가 있어야 동작 (없으면 빈 리스트)."""
+    try:
+        import hid_zone_csv_cre as H
+    except Exception:
+        print("  (hid_zone_csv_cre.py 없음 -> HID lane 생략)")
+        return []
+    mcp = H.parse_mcp_zones_from_content(xml_content)
+    a2z = H.build_addr_to_zone_mapping(mcp)
+    # 리프터 포트가 속한 zone(mcp_id) 모으기
+    zone_ids = set()
+    for addr in lift:
+        z = a2z.get(addr)
+        if z:
+            zone_ids.add(z["mcp_id"])
+    lanes = []
+    seen = set()
+    for mid in zone_ids:
+        z = mcp.get(mid)
+        if not z:
+            continue
+        for kind, key in (("IN", "entries"), ("OUT", "exits")):
+            for s, e in z.get(key, []):
+                if s in nodes and e in nodes and (kind, s, e) not in seen:
+                    seen.add((kind, s, e))
+                    x1, y1 = nodes[s]; x2, y2 = nodes[e]
+                    lanes.append([kind, x1, y1, x2, y2])
+    print(f"  HID lane: {sum(1 for l in lanes if l[0]=='IN')} IN, "
+          f"{sum(1 for l in lanes if l[0]=='OUT')} OUT")
+    return lanes
+
+
 HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <title>{title}</title>
 <style>
@@ -110,12 +143,13 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   canvas{{display:block}}
 </style></head><body>
 <div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
-<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span> IN &nbsp; <span style="color:#3fb950">●</span> OUT &nbsp; <span style="color:#ff8c42">▭</span>M16 &nbsp; <span style="color:#58a6ff">▭</span>M14</div>
+<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span>IN &nbsp; <span style="color:#3fb950">●</span>OUT &nbsp; <span style="color:#22d3ee">→</span>HID-IN &nbsp; <span style="color:#e879f9">→</span>HID-OUT &nbsp; <span style="color:#ff8c42">▭</span>M16 &nbsp; <span style="color:#58a6ff">▭</span>M14</div>
 <canvas id="cv"></canvas>
 <script>
 const NODES={nodes_json};      // {{addr:[x,y]}}
 const CONNS={conns_json};      // [[from,to]]
 const LIFT={lift_json};        // {{addr:port}}
+const HIDL={hid_json};         // [[kind,x1,y1,x2,y2]] kind=IN/OUT
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 // 리프터별 포트 좌표 그룹 -> 범위 박스 계산용
 const LGROUP={{}};
@@ -154,6 +188,19 @@ function draw(){{
   ctx.fillStyle='#6e7681';
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
+  // HID lane 화살표 (IN=청록, OUT=자홍)
+  ctx.lineWidth=2;
+  for(const L of HIDL){{const kind=L[0];
+    const ax=SX(L[1]),ay=SY(L[2]),bx=SX(L[3]),by=SY(L[4]);
+    ctx.strokeStyle=ctx.fillStyle=(kind==='IN'?'#22d3ee':'#e879f9');
+    ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    // 화살촉 (end 방향)
+    const ang=Math.atan2(by-ay,bx-ax),h=6;
+    ctx.beginPath();ctx.moveTo(bx,by);
+    ctx.lineTo(bx-h*Math.cos(ang-0.5),by-h*Math.sin(ang-0.5));
+    ctx.lineTo(bx-h*Math.cos(ang+0.5),by-h*Math.sin(ang+0.5));
+    ctx.closePath();ctx.fill();
+  }}
   // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
   const pad=14;
   ctx.lineWidth=1.5;ctx.font='bold 13px monospace';
@@ -228,6 +275,7 @@ def main():
     print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
     lift = parse_lifters(station)
     print(f"  리프터 포트 {len(lift)}")
+    hid = compute_hid_lanes(xml, lift, nodes) if station else []
 
     title = os.path.splitext(os.path.basename(out))[0]
     html = HTML.format(
@@ -235,6 +283,7 @@ def main():
         nodes_json=json.dumps({str(k): v for k, v in nodes.items()}),
         conns_json=json.dumps(conns),
         lift_json=json.dumps({str(k): v for k, v in lift.items()}),
+        hid_json=json.dumps(hid),
     )
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
