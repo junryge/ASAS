@@ -110,7 +110,7 @@ HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
   canvas{{display:block}}
 </style></head><body>
 <div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
-<div id="legend"><span style="color:#3fb950">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#f85149">■</span> 리프터(IN초록/OUT빨강)</div>
+<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span> IN &nbsp; <span style="color:#3fb950">●</span> OUT</div>
 <canvas id="cv"></canvas>
 <script>
 const NODES={nodes_json};      // {{addr:[x,y]}}
@@ -147,14 +147,14 @@ function draw(){{
   ctx.stroke();
   // 노드
   const r=Math.max(1.2,1.6*Math.min(scale,1.5));
-  ctx.fillStyle='#3fb950';
+  ctx.fillStyle='#6e7681';
   for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
-  // 리프터 포트 강조
+  // 리프터 포트 강조: IN=노랑, OUT=초록
   for(const a in LIFT){{const p=NODES[a];if(!p)continue;const port=LIFT[a];
-    ctx.fillStyle=port.includes('_AI')?'#3fb950':'#f85149';
+    ctx.fillStyle=port.includes('_AI')?'#ffd54f':'#3fb950';
     ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),Math.max(3,r+2),0,7);ctx.fill();
-    if(scale>0.6){{ctx.fillStyle='#ffd54f';ctx.font='10px monospace';
+    if(scale>0.6){{ctx.fillStyle='#ffffff';ctx.font='10px monospace';
       ctx.fillText(port.split('_')[1],SX(p[0])+5,SY(p[1])-3);}}
   }}
 }}
