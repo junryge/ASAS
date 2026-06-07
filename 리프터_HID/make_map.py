@@ -121,27 +121,40 @@ def _convex_hull(pts):
     return lo[:-1] + up[:-1]
 
 
-def compute_lifter_hids(xml_content, lift):
-    """각 리프터가 속한 '근방 HID 번호'를 구함 (리프터 포트 -> HID Zone).
-    layout.xml의 McpZone 을 직접 파싱 (hid_zone_csv_cre 필요).
+def compute_lifter_hids(station_path, layout_input=None):
+    """각 리프터의 '근방 HID 번호'를 HID_Zone_Master CSV에서 직접 추출.
+    CSV의 HID_ID=리프터포트, Zone_ID=HID번호 → 빠짐없이 매핑.
+    CSV가 없으면 hid_zone_csv_cre 로 자동 생성.
     반환: {lifter_id: [HID번호, ...]}"""
-    try:
-        import hid_zone_csv_cre as H
-    except Exception:
-        print("  (hid_zone_csv_cre.py 없음 -> 리프터 HID 생략)")
-        return {}
+    import csv as _csv
     from collections import defaultdict
-    mcp = H.parse_mcp_zones_from_content(xml_content)
-    a2z = H.build_addr_to_zone_mapping(mcp)
+    if not station_path:
+        return {}
+    d = os.path.dirname(station_path) or "."
+    prefix = os.path.basename(station_path).split(".")[0]   # "BR.station.dat" -> "BR"
+    fab = os.path.basename(os.path.abspath(d))              # ".../M16A" -> "M16A"
+    csv_path = os.path.join(d, f"HID_Zone_Master_{fab}_{prefix}.csv")
+    if not os.path.exists(csv_path) and layout_input:
+        try:
+            import hid_zone_csv_cre as H
+            print(f"  {os.path.basename(csv_path)} 없음 -> 자동 생성 중...")
+            H.create_hid_zone_csv(layout_input, csv_path, project_name=f"{fab} Project")
+        except Exception as e:
+            print(f"  (HID CSV 자동생성 실패: {e})")
+    if not os.path.exists(csv_path):
+        print("  (HID CSV 없음 -> 리프터 HID 생략)")
+        return {}
     lf_hids = defaultdict(set)
-    for addr, port in lift.items():
-        z = a2z.get(addr)
-        if not z:
-            continue
-        zid = mcp.get(z["mcp_id"], {}).get("zone_id", z["mcp_id"])
-        lf_hids[port.split("_")[0]].add(zid)
-    out = {lf: sorted(s) for lf, s in lf_hids.items()}
-    print(f"  리프터별 근방 HID 매핑: {len(out)}기")
+    with open(csv_path, encoding="utf-8-sig") as f:
+        for r in _csv.DictReader(f):
+            hidid = (r.get("HID_ID") or "").strip()
+            if re.match(r'\dABL', hidid) and ("_AI" in hidid or "_AO" in hidid):
+                zid = (r.get("Zone_ID") or "").strip()
+                if zid:
+                    lf_hids[hidid.split("_")[0]].add(zid)
+    out = {lf: sorted(s, key=lambda x: int(x) if x.isdigit() else x)
+           for lf, s in lf_hids.items()}
+    print(f"  리프터별 근방 HID: {len(out)}기 (출처 {os.path.basename(csv_path)})")
     return out
 
 
@@ -277,7 +290,7 @@ def main():
     print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
     lift = parse_lifters(station)
     print(f"  리프터 포트 {len(lift)}")
-    lhid = compute_lifter_hids(xml, lift) if station else {}
+    lhid = compute_lifter_hids(station, inp) if station else {}
 
     title = os.path.splitext(os.path.basename(out))[0]
     html = HTML.format(
