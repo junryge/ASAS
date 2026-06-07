@@ -13,7 +13,7 @@ OHT2/layout_map_cre.py 는 데이터만 넣고 렌더링 코드가 없어 빈 �
 예:
     python3 make_map.py MAP/M16A/BR.layout.xml MAP/M16A/BR.map.html MAP/M16A/BR.station.dat
 """
-import sys, os, re, json, zipfile
+import sys, os, re, json, zipfile, csv
 
 
 def load_xml(path):
@@ -316,6 +316,18 @@ def main():
         f.write(html)
     print(f"생성 완료: {os.path.abspath(out)} ({os.path.getsize(out):,} bytes)")
     print(f"  -> 이 파일을 브라우저로 여세요")
+
+    # 리프터-근방HID 매핑 CSV 도 실행 폴더에 생성
+    if lhid:
+        csv_out = "리프터_HID.csv"
+        with open(csv_out, "w", newline="", encoding="utf-8-sig") as cf:
+            w = csv.writer(cf)
+            w.writerow(["Lifter", "FAB", "근방HID_개수", "근방HID_Zone번호"])
+            for lf in sorted(lhid):
+                fab = "M16" if lf[0] == "6" else ("M14" if lf[0] == "4" else "?")
+                zids = lhid[lf]
+                w.writerow([lf, fab, len(zids), "; ".join(zids)])
+        print(f"리프터-HID CSV: {os.path.abspath(csv_out)} ({len(lhid)}기)")
 
 
 if __name__ == "__main__":
