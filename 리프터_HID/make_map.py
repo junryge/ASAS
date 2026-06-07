@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+make_map.py - layout.xml -> 실제로 그려지는 2D 지도(HTML, canvas)
+
+OHT2/layout_map_cre.py 는 데이터만 넣고 렌더링 코드가 없어 빈 화면이 나온다.
+이 스크립트는 canvas 로 노드/연결을 실제로 그리고, pan/zoom 과
+리프터(*ABL*) 포트 강조 표시를 제공한다. 외부 라이브러리 불필요.
+
+사용법:
+    python3 make_map.py <layout.xml|layout.zip> <출력.html> [station.dat]
+
+예:
+    python3 make_map.py MAP/M16A/BR.layout.xml MAP/M16A/BR.map.html MAP/M16A/BR.station.dat
+"""
+import sys, os, re, json, zipfile
+
+
+def load_xml(path):
+    if path.endswith(".zip"):
+        with zipfile.ZipFile(path) as zf:
+            name = next((n for n in zf.namelist() if n.lower().endswith("layout.xml")), None)
+            if not name:
+                raise FileNotFoundError("zip 안에 layout.xml 없음")
+            return zf.read(name).decode("utf-8", "replace")
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def parse_layout(xml_content):
+    """nodes: {addr:(x,y)}, connections: [[from,to],...]"""
+    nodes = {}
+    conns = []
+    cur = None          # 현재 Addr params
+    nx = None           # 현재 NextAddr params
+    in_nx = False
+    key_re = re.compile(r'key="([^"]+)"')
+    val_re = re.compile(r'value="([^"]*)"')
+
+    def commit_addr(c):
+        if c and "address" in c:
+            try:
+                a = int(c["address"])
+                if a > 0:
+                    nodes[a] = (round(float(c.get("draw-x", 0)), 2),
+                                round(float(c.get("draw-y", 0)), 2))
+            except ValueError:
+                pass
+
+    for line in xml_content.split("\n"):
+        line = line.strip()
+        if '<group name="Addr' in line and 'address.Addr"' in line:
+            commit_addr(cur)
+            cur = {}
+            in_nx = False
+            continue
+        if '<group name="NextAddr' in line and 'NextAddr"' in line:
+            in_nx = True
+            nx = {}
+            continue
+        if in_nx and '</group>' in line:
+            if cur and "address" in cur and nx and "next-address" in nx:
+                try:
+                    fa, ta = int(cur["address"]), int(nx["next-address"])
+                    if fa > 0 and ta > 0:
+                        conns.append([fa, ta])
+                except ValueError:
+                    pass
+            in_nx = False
+            continue
+        if '<param ' in line and 'key="' in line and 'value="' in line:
+            k = key_re.search(line)
+            v = val_re.search(line)
+            if k and v:
+                if in_nx:
+                    nx[k.group(1)] = v.group(1)
+                elif cur is not None:
+                    cur[k.group(1)] = v.group(1)
+    commit_addr(cur)
+    return nodes, conns
+
+
+def parse_lifters(station_path):
+    """station.dat -> {addr: port_name} (모든 <숫자>ABL 리프터 포트. 4=M14, 6=M16)"""
+    if not station_path or not os.path.exists(station_path):
+        return {}
+    out = {}
+    for line in open(station_path, encoding="utf-8", errors="replace"):
+        if "ABL" not in line:
+            continue
+        m = re.search(r'STATION\s*=\s*(.+)', line)
+        if not m:
+            continue
+        parts = [p.strip().strip('"') for p in m.group(1).split(",")]
+        try:
+            port, addr = parts[3], int(parts[6])
+        except (IndexError, ValueError):
+            continue
+        if re.match(r'\dABL', port) and ("_AI" in port or "_AO" in port):
+            out[addr] = port
+    return out
+
+
+def compute_hid_lanes(xml_content, lift, nodes):
+    """리프터가 속한 HID Zone의 IN(entries)/OUT(exits) lane을 좌표 화살표로.
+    같은 폴더에 hid_zone_csv_cre.py 가 있어야 동작 (없으면 빈 리스트)."""
+    try:
+        import hid_zone_csv_cre as H
+    except Exception:
+        print("  (hid_zone_csv_cre.py 없음 -> HID lane 생략)")
+        return []
+    mcp = H.parse_mcp_zones_from_content(xml_content)
+    a2z = H.build_addr_to_zone_mapping(mcp)
+    # 리프터 포트가 속한 zone(mcp_id) 모으기
+    zone_ids = set()
+    for addr in lift:
+        z = a2z.get(addr)
+        if z:
+            zone_ids.add(z["mcp_id"])
+    lanes = []
+    seen = set()
+    for mid in zone_ids:
+        z = mcp.get(mid)
+        if not z:
+            continue
+        for kind, key in (("IN", "entries"), ("OUT", "exits")):
+            for s, e in z.get(key, []):
+                if s in nodes and e in nodes and (kind, s, e) not in seen:
+                    seen.add((kind, s, e))
+                    x1, y1 = nodes[s]; x2, y2 = nodes[e]
+                    lanes.append([kind, x1, y1, x2, y2])
+    print(f"  HID lane: {sum(1 for l in lanes if l[0]=='IN')} IN, "
+          f"{sum(1 for l in lanes if l[0]=='OUT')} OUT")
+    return lanes
+
+
+HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>{title}</title>
+<style>
+  html,body{{margin:0;height:100%;background:#0d1117;color:#ddd;font-family:monospace;overflow:hidden}}
+  #info{{position:fixed;top:8px;left:8px;z-index:10;font-size:13px;background:#161b22cc;padding:6px 10px;border-radius:6px}}
+  #legend{{position:fixed;top:8px;right:8px;z-index:10;font-size:12px;background:#161b22cc;padding:6px 10px;border-radius:6px}}
+  canvas{{display:block}}
+</style></head><body>
+<div id="info">{title} · 노드 {nn} · 연결 {nc} · 리프터포트 {nl}<br>휠=확대/축소, 드래그=이동, H=좌우반전, F=상하반전, R=리셋</div>
+<div id="legend"><span style="color:#6e7681">●</span> 노드 &nbsp; <span style="color:#58a6ff">─</span> 연결 &nbsp; <span style="color:#ffd54f">●</span>IN &nbsp; <span style="color:#3fb950">●</span>OUT &nbsp; <span style="color:#22d3ee">→</span>HID-IN &nbsp; <span style="color:#e879f9">→</span>HID-OUT &nbsp; <span style="color:#ff8c42">▭</span>M16 &nbsp; <span style="color:#58a6ff">▭</span>M14</div>
+<canvas id="cv"></canvas>
+<script>
+const NODES={nodes_json};      // {{addr:[x,y]}}
+const CONNS={conns_json};      // [[from,to]]
+const LIFT={lift_json};        // {{addr:port}}
+const HIDL={hid_json};         // [[kind,x1,y1,x2,y2]] kind=IN/OUT
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+// 리프터별 포트 좌표 그룹 -> 범위 박스 계산용
+const LGROUP={{}};
+for(const a in LIFT){{const p=NODES[a];if(!p)continue;const lf=LIFT[a].split('_')[0];
+  (LGROUP[lf]=LGROUP[lf]||[]).push(p);}}
+function resize(){{cv.width=innerWidth;cv.height=innerHeight;draw();}}
+window.addEventListener('resize',resize);
+
+// 좌표 범위
+let xs=[],ys=[];for(const a in NODES){{xs.push(NODES[a][0]);ys.push(NODES[a][1]);}}
+const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+const W=maxX-minX||1,H=maxY-minY||1;
+
+let scale=1,ox=0,oy=0,init=false;
+function fit(){{
+  const m=40;const sx=(cv.width-2*m)/W,sy=(cv.height-2*m)/H;
+  scale=Math.min(sx,sy);
+  ox=m-minX*scale+(cv.width-2*m-W*scale)/2;
+  oy=m-minY*scale+(cv.height-2*m-H*scale)/2;
+}}
+// 화면좌표 — H/F 키로 좌우·상하 반전
+let flipX=false, flipY=false;
+function SX(x){{const v=x*scale+ox;return flipX ? cv.width-v : v;}}
+function SY(y){{const v=y*scale+oy;return flipY ? cv.height-v : v;}}
+
+function draw(){{
+  if(!init){{fit();init=true;}}
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,cv.width,cv.height);
+  // 연결
+  ctx.strokeStyle='#58a6ff55';ctx.lineWidth=1;ctx.beginPath();
+  for(const c of CONNS){{const f=NODES[c[0]],t=NODES[c[1]];if(!f||!t)continue;
+    ctx.moveTo(SX(f[0]),SY(f[1]));ctx.lineTo(SX(t[0]),SY(t[1]));}}
+  ctx.stroke();
+  // 노드
+  const r=Math.max(1.2,1.6*Math.min(scale,1.5));
+  ctx.fillStyle='#6e7681';
+  for(const a in NODES){{if(LIFT[a])continue;const p=NODES[a];
+    ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),r,0,7);ctx.fill();}}
+  // HID lane 화살표 (IN=청록, OUT=자홍)
+  ctx.lineWidth=2;
+  for(const L of HIDL){{const kind=L[0];
+    const ax=SX(L[1]),ay=SY(L[2]),bx=SX(L[3]),by=SY(L[4]);
+    ctx.strokeStyle=ctx.fillStyle=(kind==='IN'?'#22d3ee':'#e879f9');
+    ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();
+    // 화살촉 (end 방향)
+    const ang=Math.atan2(by-ay,bx-ax),h=6;
+    ctx.beginPath();ctx.moveTo(bx,by);
+    ctx.lineTo(bx-h*Math.cos(ang-0.5),by-h*Math.sin(ang-0.5));
+    ctx.lineTo(bx-h*Math.cos(ang+0.5),by-h*Math.sin(ang+0.5));
+    ctx.closePath();ctx.fill();
+  }}
+  // 리프터 범위 사각형 + 이름 (4=M14 파랑, 6=M16 주황)
+  const pad=14;
+  ctx.lineWidth=1.5;ctx.font='bold 13px monospace';
+  for(const lf in LGROUP){{const ps=LGROUP[lf];
+    const fab=lf[0]==='6'?'M16':(lf[0]==='4'?'M14':'?');
+    const col=lf[0]==='6'?'#ff8c42':'#58a6ff';
+    let aX=ps.map(p=>SX(p[0])),aY=ps.map(p=>SY(p[1]));
+    const x1=Math.min(...aX)-pad,x2=Math.max(...aX)+pad,y1=Math.min(...aY)-pad,y2=Math.max(...aY)+pad;
+    ctx.strokeStyle=col;ctx.setLineDash([5,3]);
+    ctx.strokeRect(x1,y1,x2-x1,y2-y1);ctx.setLineDash([]);
+    ctx.fillStyle=col;ctx.fillText(fab+'-'+lf,x1,y1-4);
+  }}
+  // 리프터 포트 강조: IN=노랑, OUT=초록
+  for(const a in LIFT){{const p=NODES[a];if(!p)continue;const port=LIFT[a];
+    ctx.fillStyle=port.includes('_AI')?'#ffd54f':'#3fb950';
+    ctx.beginPath();ctx.arc(SX(p[0]),SY(p[1]),Math.max(3,r+2),0,7);ctx.fill();
+    if(scale>0.6){{ctx.fillStyle='#ffffff';ctx.font='10px monospace';
+      ctx.fillText(port.split('_')[1],SX(p[0])+5,SY(p[1])-3);}}
+  }}
+}}
+// pan
+let drag=false,lx,ly;
+cv.addEventListener('mousedown',e=>{{drag=true;lx=e.clientX;ly=e.clientY;}});
+addEventListener('mouseup',()=>drag=false);
+addEventListener('mousemove',e=>{{if(!drag)return;
+  ox+=(flipX?-(e.clientX-lx):(e.clientX-lx));
+  oy+=(flipY?-(e.clientY-ly):(e.clientY-ly));
+  lx=e.clientX;ly=e.clientY;draw();}});
+// zoom (마우스 위치 기준)
+cv.addEventListener('wheel',e=>{{e.preventDefault();const f=e.deltaY<0?1.15:1/1.15;
+  const mx=flipX?cv.width-e.clientX:e.clientX, my=flipY?cv.height-e.clientY:e.clientY;
+  ox=mx-(mx-ox)*f;oy=my-(my-oy)*f;scale*=f;draw();}},{{passive:false}});
+// 키: H=좌우반전, F=상하반전, R=리셋
+addEventListener('keydown',e=>{{const k=e.key.toLowerCase();
+  if(k==='h'){{flipX=!flipX;draw();}}
+  if(k==='f'){{flipY=!flipY;draw();}}
+  if(k==='r'){{init=false;draw();}}}});
+resize();
+</script></body></html>"""
+
+
+def main():
+    if len(sys.argv) < 3:
+        print(__doc__)
+        sys.exit(1)
+    inp, out = sys.argv[1], sys.argv[2]
+    station = sys.argv[3] if len(sys.argv) > 3 else None
+
+    print(f"입력: {inp}")
+
+    # 입력 파일 존재 확인 (없으면 친절 안내)
+    if not os.path.exists(inp):
+        print(f"\n[오류] 파일을 찾을 수 없습니다: {inp}")
+        d = os.path.dirname(inp) or "."
+        if os.path.isdir(d):
+            cand = [f for f in os.listdir(d) if f.lower().endswith((".xml", ".zip"))]
+            print(f"  '{d}' 폴더의 layout 후보: {cand if cand else '없음'}")
+            # 같은 폴더에 .zip 있으면 그것으로 자동 대체 제안
+            base = os.path.basename(inp)
+            zipname = base.replace(".layout.xml", ".layout.zip").replace(".xml", ".zip")
+            zpath = os.path.join(d, zipname)
+            if os.path.exists(zpath):
+                print(f"  -> .zip 발견! 이걸로 다시 실행하세요:\n     python make_map.py \"{zpath}\" \"{out}\""
+                      + (f" \"{station}\"" if station else ""))
+        else:
+            print(f"  '{d}' 폴더 자체가 없습니다. 경로를 확인하세요.")
+        sys.exit(1)
+
+    xml = load_xml(inp)
+    print(f"  XML 크기: {len(xml):,} bytes")
+    nodes, conns = parse_layout(xml)
+    print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
+    lift = parse_lifters(station)
+    print(f"  리프터 포트 {len(lift)}")
+    hid = compute_hid_lanes(xml, lift, nodes) if station else []
+
+    title = os.path.splitext(os.path.basename(out))[0]
+    html = HTML.format(
+        title=title, nn=len(nodes), nc=len(conns), nl=len(lift),
+        nodes_json=json.dumps({str(k): v for k, v in nodes.items()}),
+        conns_json=json.dumps(conns),
+        lift_json=json.dumps({str(k): v for k, v in lift.items()}),
+        hid_json=json.dumps(hid),
+    )
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"생성 완료: {out} ({os.path.getsize(out):,} bytes)")
+
+
+if __name__ == "__main__":
+    main()
