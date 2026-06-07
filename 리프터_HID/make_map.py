@@ -309,9 +309,12 @@ def main():
         lift_json=json.dumps({str(k): v for k, v in lift.items()}),
         lhid_json=json.dumps(lhid),
     )
+    outdir = os.path.dirname(os.path.abspath(out))
+    os.makedirs(outdir, exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"생성 완료: {out} ({os.path.getsize(out):,} bytes)")
+    print(f"생성 완료: {os.path.abspath(out)} ({os.path.getsize(out):,} bytes)")
+    print(f"  -> 이 파일을 브라우저로 여세요")
 
 
 if __name__ == "__main__":
