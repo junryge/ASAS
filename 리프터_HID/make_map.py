@@ -121,27 +121,39 @@ def _convex_hull(pts):
     return lo[:-1] + up[:-1]
 
 
-def compute_lifter_hids(station_path, layout_input=None):
-    """각 리프터의 '근방 HID 번호'를 HID_Zone_Master CSV에서 직접 추출.
-    CSV의 HID_ID=리프터포트, Zone_ID=HID번호 → 빠짐없이 매핑.
-    CSV가 없으면 hid_zone_csv_cre 로 자동 생성.
-    반환: {lifter_id: [HID번호, ...]}"""
+def compute_lifter_hids(station_path, layout_input=None, nodes=None, lift=None):
+    """각 리프터의 '근처 HID4 구간'을 구함 (count_lifter_inout 과 동일 기준).
+    리프터에 경계(lane)가 가장 가까운 HID4(1~37) 구역을 매핑.
+    HID_Zone_Master CSV 가 없으면 hid_zone_csv_cre 로 자동 생성.
+    반환: {lifter_id: [HID4번호]}"""
     import csv as _csv
+    import math
     from collections import defaultdict
-    if not station_path:
+    if not station_path or not nodes or not lift:
         return {}
-    sd = os.path.dirname(os.path.abspath(station_path))      # station 폴더
-    script_dir = os.path.dirname(os.path.abspath(__file__))  # make_map.py 폴더
-    prefix = os.path.basename(station_path).split(".")[0]    # "BR.station.dat" -> "BR"
-    fab = os.path.basename(sd)                               # ".../M16A" -> "M16A"
+    sd = os.path.dirname(os.path.abspath(station_path))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    prefix = os.path.basename(station_path).split(".")[0]
+    fab = os.path.basename(sd)
+
+    # 이미 만들어둔 리프터_근처HID4.csv 가 있으면 그걸 사용 (카운트와 동일 기준)
+    for cand in (os.path.join(script_dir, "리프터_근처HID4.csv"),
+                 os.path.join(sd, "리프터_근처HID4.csv")):
+        if os.path.exists(cand):
+            out = {}
+            with open(cand, encoding="utf-8-sig") as f:
+                for r in _csv.DictReader(f):
+                    z = (r.get("근처HID4") or "").strip()
+                    if z:
+                        out[r["Lifter"]] = [z]
+            print(f"  리프터별 근처 HID4: {len(out)}기 (출처 {os.path.basename(cand)})")
+            return out
+
     name = f"HID_Zone_Master_{fab}_{prefix}.csv"
-    # 이미 있으면 사용 (make_map 폴더 우선, 그다음 station 폴더)
     csv_path = None
     for cand in (os.path.join(script_dir, name), os.path.join(sd, name)):
         if os.path.exists(cand):
-            csv_path = cand
-            break
-    # 없으면 make_map.py 가 있는 폴더에 생성 (MAP 하위폴더 만들지 않음)
+            csv_path = cand; break
     if csv_path is None and layout_input:
         csv_path = os.path.join(script_dir, name)
         try:
@@ -153,17 +165,39 @@ def compute_lifter_hids(station_path, layout_input=None):
     if not csv_path or not os.path.exists(csv_path):
         print("  (HID CSV 없음 -> 리프터 HID 생략)")
         return {}
-    lf_hids = defaultdict(set)
+
+    # HID4(1~37) lane 좌표
+    hid4 = defaultdict(list)
     with open(csv_path, encoding="utf-8-sig") as f:
         for r in _csv.DictReader(f):
-            hidid = (r.get("HID_ID") or "").strip()
-            if re.match(r'\dABL', hidid) and ("_AI" in hidid or "_AO" in hidid):
-                zid = (r.get("Zone_ID") or "").strip()
-                if zid:
-                    lf_hids[hidid.split("_")[0]].add(zid)
-    out = {lf: sorted(s, key=lambda x: int(x) if x.isdigit() else x)
-           for lf, s in lf_hids.items()}
-    print(f"  리프터별 근방 HID: {len(out)}기 (출처 {os.path.basename(csv_path)})")
+            zid = (r.get("Zone_ID") or "").strip()
+            if not (zid.isdigit() and 1 <= int(zid) <= 37):
+                continue
+            for fld in ("IN_Lanes", "OUT_Lanes"):
+                for seg in (r.get(fld) or "").split(";"):
+                    m = re.match(r'\s*(\d+)\s*→\s*(\d+)', seg)
+                    if m:
+                        for a in (int(m.group(1)), int(m.group(2))):
+                            if a in nodes:
+                                hid4[zid].append(nodes[a])
+    # 리프터 포트 좌표
+    lpts = defaultdict(list)
+    for a, p in lift.items():
+        if a in nodes:
+            lpts[p.split("_")[0]].append(nodes[a])
+    # 리프터 -> 최근접 HID4
+    out = {}
+    for lf in sorted(lpts):
+        best, bd = None, 1e18
+        for z, pts in hid4.items():
+            for px, py in pts:
+                for lx, ly in lpts[lf]:
+                    d = (lx - px) ** 2 + (ly - py) ** 2
+                    if d < bd:
+                        bd, best = d, z
+        if best:
+            out[lf] = [best]
+    print(f"  리프터별 근처 HID4: {len(out)}기 (출처 {os.path.basename(csv_path)})")
     return out
 
 
@@ -300,7 +334,7 @@ def main():
     print(f"  노드 {len(nodes)} · 연결 {len(conns)}")
     lift = parse_lifters(station)
     print(f"  리프터 포트 {len(lift)}")
-    lhid = compute_lifter_hids(station, inp) if station else {}
+    lhid = compute_lifter_hids(station, inp, nodes, lift) if station else {}
 
     title = os.path.splitext(os.path.basename(out))[0]
     html = HTML.format(
