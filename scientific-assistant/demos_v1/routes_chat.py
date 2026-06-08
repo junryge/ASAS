@@ -274,14 +274,6 @@ def _gguf_n_ctx(model, default=32768):
         return default
 
 
-def _gguf_count_tokens(model, text):
-    """모델 토크나이저로 토큰 수 추정(불가 시 보수적 문자 기반 폴백)."""
-    try:
-        return len(model.tokenize(str(text).encode("utf-8", "ignore"), add_bos=False))
-    except Exception:
-        return int(len(str(text)) / 2.5) + 1
-
-
 def _msg_text(m):
     c = m.get("content", "")
     if isinstance(c, list):
@@ -289,55 +281,80 @@ def _msg_text(m):
     return str(c)
 
 
-def _gguf_msgs_tokens(model, msgs):
-    return sum(_gguf_count_tokens(model, _msg_text(m)) + 4 for m in msgs) + 8
+def _make_token_counter(model=None):
+    """토큰 수 카운터 반환. model 있으면 토크나이저 사용(정확),
+    실패/미지정 시 보수적 문자기반 추정(과소평가 금지 — CSV/코드/숫자 대비 문자×1.5)."""
+    def count(text):
+        s = str(text)
+        if model is not None:
+            b = s.encode("utf-8", "ignore")
+            try:
+                return len(model.tokenize(b, add_bos=False))
+            except Exception:
+                try:
+                    return len(model.tokenize(b))
+                except Exception:
+                    pass
+        # 폴백: 절대 과소평가하지 않도록 보수적(밀집 CSV/숫자는 ~1.3 tok/char)
+        return int(len(s) * 1.5) + 1
+    return count
 
 
-def _truncate_text_to_tokens(model, text, allow_tokens):
-    """text 를 head+tail 형태로 allow_tokens 안에 들어오게 절단. (새 텍스트, 잘린_문자수) 반환."""
-    total = _gguf_count_tokens(model, text)
+def _truncate_text_to_tokens(text, allow_tokens, count):
+    """text 를 head+tail 형태로 allow_tokens 안에 들어오게 절단. (새 텍스트, 잘린_문자수) 반환.
+    count 가 정확/보수적이면 루프가 실제로 맞을 때까지 줄인다."""
+    total = count(text)
     if total <= allow_tokens:
         return text, 0
-    ratio = len(text) / max(1, total)            # 문자/토큰 근사
-    keep = max(200, int(allow_tokens * ratio * 0.92))
+    ratio = len(text) / max(1, total)            # 문자/토큰 근사 (초기 추정용)
+    keep = max(200, int(allow_tokens * ratio * 0.9))
     head = int(keep * 0.7)
     tail = keep - head
     marker = f"\n...[중략: 원본 {len(text):,}자 중 일부 생략]...\n"
     new = text[:head] + marker + (text[-tail:] if tail > 0 else "")
-    while _gguf_count_tokens(model, new) > allow_tokens and head > 200:
-        head = int(head * 0.85)
-        tail = int(tail * 0.85)
+    # count 기준으로 실제 맞을 때까지 축소 (보수적 count 라 오버플로 방지 보장)
+    _guard = 0
+    while count(new) > allow_tokens and head > 120 and _guard < 40:
+        head = int(head * 0.8)
+        tail = int(tail * 0.8)
         new = text[:head] + marker + (text[-tail:] if tail > 0 else "")
+        _guard += 1
     return new, max(0, len(text) - (head + max(0, tail)))
 
 
-def _fit_gguf_messages(model, messages, reply_cap, reserve=1024):
-    """GGUF n_ctx 안에 들어가도록 messages 를 (1)오래된 메시지 제거 →
-    (2)그래도 크면 가장 큰 메시지 본문 절단. (트림된 messages, 응답토큰예산, 경고문) 반환."""
-    n_ctx = _gguf_n_ctx(model)
+def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
+    """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단. GGUF·API 공통.
+    1) 오래된 user/assistant 메시지 제거 → 2) 그래도 크면 가장 큰 메시지 본문 절단.
+    반환: (트림된 messages, 응답토큰예산, 경고문)."""
+    count = _make_token_counter(model)
+
+    def mtoks(msgs):
+        # 메시지당 chat 템플릿 오버헤드 넉넉히(+8), 전체 여유(+16)
+        return sum(count(_msg_text(m)) + 8 for m in msgs) + 16
+
     msgs = [dict(m) for m in messages]
     warn = ""
-    input_budget = max(512, n_ctx - reserve - 256)   # 최소 응답 256 보장
+    input_budget = max(512, n_ctx - reply_cap - safety)
 
-    # 1) system 과 마지막 메시지는 유지하고, 오래된 user/assistant 부터 제거
-    while _gguf_msgs_tokens(model, msgs) > input_budget and len(msgs) > 1:
+    # 1) system·마지막 메시지 유지, 오래된 user/assistant 부터 제거
+    while mtoks(msgs) > input_budget and len(msgs) > 1:
         idx = next((i for i, m in enumerate(msgs[:-1]) if m.get("role") in ("user", "assistant")), -1)
         if idx < 0:
             break
         msgs.pop(idx)
 
-    # 2) 단일 메시지가 너무 큰 경우(예: 대용량 붙여넣기) → 그 본문을 절단
-    if _gguf_msgs_tokens(model, msgs) > input_budget:
+    # 2) 단일 대용량 메시지(붙여넣기 등) → 본문 절단
+    if mtoks(msgs) > input_budget:
         big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
-        others = _gguf_msgs_tokens(model, [m for j, m in enumerate(msgs) if j != big_i])
+        others = mtoks([m for j, m in enumerate(msgs) if j != big_i])
         allow = max(256, input_budget - others)
-        new_text, removed = _truncate_text_to_tokens(model, _msg_text(msgs[big_i]), allow)
+        new_text, removed = _truncate_text_to_tokens(_msg_text(msgs[big_i]), allow, count)
         if removed > 0:
             msgs[big_i] = dict(msgs[big_i], content=new_text)
-            warn = (f"⚠️ 입력이 GGUF 컨텍스트 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라냈습니다. "
-                    f"전체를 분석하려면 API 모델(128K)을 쓰거나 입력을 줄여주세요.")
+            warn = (f"⚠️ 입력이 컨텍스트 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라냈습니다. "
+                    f"전체를 반영하려면 입력을 줄이거나 더 큰 컨텍스트 모델을 사용하세요.")
 
-    reply_budget = max(256, min(reply_cap, n_ctx - _gguf_msgs_tokens(model, msgs) - reserve))
+    reply_budget = max(256, min(reply_cap, n_ctx - mtoks(msgs) - safety))
     return msgs, reply_budget, warn
 
 
@@ -578,8 +595,11 @@ def _stream_chat_sse(data):
         model_name = os.path.basename(gguf_path) if gguf_path else env_id
 
         # 컨텍스트 초과 방지: n_ctx 안에 맞도록 트림/절단 (오래된 메시지 제거 → 대용량 본문 절단)
-        _fit_msgs, _fit_reply, _fit_warn = _fit_gguf_messages(
-            _utils_mod.gguf_model, api_messages, max_tokens_g)
+        _gctx = _gguf_n_ctx(_utils_mod.gguf_model)
+        _greserve = max(512, TOKEN_SETTINGS.get("gguf_ctx_reserve", 1536))
+        _fit_msgs, _fit_reply, _fit_warn = _fit_messages_to_ctx(
+            api_messages, _gctx, max_tokens_g,
+            model=_utils_mod.gguf_model, safety=_greserve)
 
         def gen_gguf():
             _sys_len = sum(len(m.get("content","") or "") for m in _fit_msgs if m.get("role") == "system")
@@ -633,6 +653,12 @@ def _stream_chat_sse(data):
         headers["Authorization"] = f"Bearer {api_key}"
     max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
 
+    # 컨텍스트 초과 방지(API): 모델 context_window 안에 맞도록 트림/절단 (토크나이저 없음 → 보수적 추정)
+    _api_reg_key = ENV_TO_REGISTRY.get(env_id)
+    _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
+    api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
+        api_messages, _api_ctx, max_tokens_a, model=None, safety=1024)
+
     payload = {
         "model": model,
         "messages": api_messages,
@@ -651,6 +677,9 @@ def _stream_chat_sse(data):
             "route_reason": route_reason,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        # 입력이 잘렸으면 사용자에게 먼저 안내
+        if _api_fit_warn:
+            yield f"data: {json.dumps({'type': 'token', 't': _api_fit_warn + chr(10)+chr(10)}, ensure_ascii=False)}\n\n"
         try:
             r = chat_post(api_url, headers=headers, json=payload,
                          timeout=180, verify=False, stream=True)
