@@ -2,39 +2,6 @@
   "_source": "/home/user/ASAS/WORD_MODEL/OHS_DATA_MD/V4/스킬/hubroom_predictor.py",
   "_extracted_at": "1780633572.6824093",
   "constants": {
-    "TH_RA": {
-      "M16HUB": 12.0,
-      "M14": 3.6,
-      "M14B": 5.0,
-      "M16A": 3.4,
-      "M16B": 6.0,
-      "M16_PKT": 7.5,
-      "M16_WT": 2.8
-    },
-    "HUB_OUT_COLS": [
-      "M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB",
-      "M16HUB.QUE.ALL.3F_TO_M16A_2F_JOB",
-      "M16HUB.QUE.ALL.3F_TO_M14A_3F_JOB",
-      "M16HUB.QUE.ALL.3F_TO_M14B_7F_JOB",
-      "M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB"
-    ],
-    "SORTER_COL": {
-      "M14": "M14.SORTER.ABN.SORTERWAITCOUNTOVER",
-      "M14B": "M14B.SORTER.ABN.SORTERWAITCOUNTOVER",
-      "M16A": "M16A.SORTER.ABN.SORTERWAITCOUNTOVER",
-      "M16B": "M16B.SORTER.ABN.SORTERWAITCOUNTOVER",
-      "M16HUB": "M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER"
-    },
-    "RA_COL": {
-      "M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
-      "M14": "M14.QUE.LOAD.AVGLOADTIME1MIN",
-      "M14B": "M14B.QUE.TIME.AVGTOTALTIME1MIN",
-      "M16A": "M16A.QUE.LOAD.AVGLOADTIME1MIN",
-      "M16B": "M16B.QUE.LOAD.AVGLOADTIME1MIN",
-      "M16_PKT": "M16_PKT.QUE.TIME.AVGTOTALTIME1MIN",
-      "M16_WT": "M16_WT.QUE.TIME.AVGTOTALTIME1MIN"
-    },
-    "TH_RA_SUSTAINED_COUNT": 4,
     "RD_OHT_COL": {
       "M16HUB": "M16HUB.QUE.OHT.OHTUTIL",
       "M14": "M14.QUE.OHT.OHTUTIL",
@@ -42,12 +9,9 @@
       "M16A": "M16A.QUE.OHT.OHTUTIL",
       "M16B": "M16B.QUE.OHT.OHTUTIL"
     },
-    "SORTER_FAIL_COL": {
-      "M16A": "M16A.SORTER.ABN.SORTERTRANSFERFAIL",
-      "M16B": "M16B.SORTER.ABN.SORTERTRANSFERFAIL"
-    },
+    "TH_FLOW_X1_5": 1.5,
     "WINDOW_MIN": 90,
-    "TH_RD_OHT_UTIL": 95.0,
+    "TH_RC_REVERSE": 12,
     "MAXCAPA_NORMAL": {
       "M16HUB.QUE.LFT.3F_LFT_MAXCAPA": [
         165,
@@ -74,49 +38,6 @@
         100
       ]
     },
-    "TH_RD_FABSTORAGE": 30.0,
-    "PREDICT_LOOKBACK_MIN": 60,
-    "TH_FLOW_X2_0": 2.0,
-    "AREAS_ALL": [
-      "M16HUB",
-      "M14",
-      "M14B",
-      "M16A",
-      "M16B",
-      "M16",
-      "M16_PKT",
-      "M16_WT"
-    ],
-    "TH_SLA_RATIO": {
-      "M16HUB": 5.0,
-      "M14": 28.0,
-      "M16A": 20.0,
-      "M16B": 45.0
-    },
-    "TH_SORTER_WAIT": {
-      "M14": 420,
-      "M14B": 300,
-      "M16A": 180,
-      "M16B": 90,
-      "M16HUB": 30
-    },
-    "TH_RC_REVERSE": 12,
-    "TH_RA_SUSTAINED_RATIO": 0.9,
-    "RB_COL": {
-      "M16HUB": "M16HUB.QUE.M14TOM16.MESCURRENTQCNT",
-      "M14": "M14.QUE.ALL.3F_TO_HUB_JOB",
-      "M14B": "M14B.QUE.ALL.7F_TO_HUB_JOB",
-      "M16A": "M16A.QUE.ALL.6F_TO_HUB_JOB",
-      "M16B": "M16B.QUE.ALL.10F_TO_HUB_JOB",
-      "M16": "M16.QUE.SFAB.SENDQUEUETOTAL"
-    },
-    "TH_FLOW_X3_0": 3.0,
-    "STAGE_LABEL": {
-      "0": "이벤트없음",
-      "1": "1단계 조기경보",
-      "2": "2단계 주의보",
-      "3": "3단계 ⭐확정"
-    },
     "LIFTER_IDS": [
       "6ABL6011",
       "6ABL6012",
@@ -128,6 +49,61 @@
       "6ABL0112",
       "6ABL0121",
       "6ABL0122"
+    ],
+    "TH_FLOW_X2_0": 2.0,
+    "SORTER_COL": {
+      "M14": "M14.SORTER.ABN.SORTERWAITCOUNTOVER",
+      "M14B": "M14B.SORTER.ABN.SORTERWAITCOUNTOVER",
+      "M16A": "M16A.SORTER.ABN.SORTERWAITCOUNTOVER",
+      "M16B": "M16B.SORTER.ABN.SORTERWAITCOUNTOVER",
+      "M16HUB": "M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER"
+    },
+    "TH_RB_10": {
+      "M16HUB": 75,
+      "M14": 55,
+      "M14B": 45,
+      "M16A": 70,
+      "M16B": 45,
+      "M16": 10
+    },
+    "INCIDENT_END_GAP_MIN": 10,
+    "SLA_COL": {
+      "M16HUB": "M16HUB.QUE.ALL.TRANSPORT4MINOVERRATIO",
+      "M14": "M14.QUE.ALL.TRANSPORT4MINOVERRATIO",
+      "M16A": "M16A.QUE.ALL.TRANSPORT4MINOVERRATIO",
+      "M16B": "M16B.QUE.ALL.TRANSPORT4MINOVERRATIO"
+    },
+    "TH_RB_30": {
+      "M16HUB": 100,
+      "M14": 80,
+      "M14B": 150,
+      "M16A": 110,
+      "M16B": 40,
+      "M16": 20
+    },
+    "TH_RD_OHT_UTIL": 95.0,
+    "STAGE_LABEL": {
+      "0": "이벤트없음",
+      "1": "1단계 조기경보",
+      "2": "2단계 주의보",
+      "3": "3단계 ⭐확정"
+    },
+    "TH_SLA_RATIO": {
+      "M16HUB": 5.0,
+      "M14": 28.0,
+      "M16A": 20.0,
+      "M16B": 45.0
+    },
+    "PREDICT_LOOKBACK_MIN": 60,
+    "AREAS_ALL": [
+      "M16HUB",
+      "M14",
+      "M14B",
+      "M16A",
+      "M16B",
+      "M16",
+      "M16_PKT",
+      "M16_WT"
     ],
     "INCIDENT_FIELDS": [
       "file",
@@ -300,32 +276,30 @@
       "M16A_sum_score_raw",
       "M16B_sum_score_raw"
     ],
-    "TH_RB_10": {
-      "M16HUB": 75,
-      "M14": 55,
-      "M14B": 45,
-      "M16A": 70,
-      "M16B": 45,
-      "M16": 10
+    "TH_RD_HUB_STB_UTIL": 101.0,
+    "TH_SORTER_WAIT": {
+      "M14": 420,
+      "M14B": 300,
+      "M16A": 180,
+      "M16B": 90,
+      "M16HUB": 30
     },
-    "SLA_COL": {
-      "M16HUB": "M16HUB.QUE.ALL.TRANSPORT4MINOVERRATIO",
-      "M14": "M14.QUE.ALL.TRANSPORT4MINOVERRATIO",
-      "M16A": "M16A.QUE.ALL.TRANSPORT4MINOVERRATIO",
-      "M16B": "M16B.QUE.ALL.TRANSPORT4MINOVERRATIO"
+    "TH_RA_SUSTAINED_RATIO": 0.9,
+    "SORTER_FAIL_COL": {
+      "M16A": "M16A.SORTER.ABN.SORTERTRANSFERFAIL",
+      "M16B": "M16B.SORTER.ABN.SORTERTRANSFERFAIL"
+    },
+    "TH_RD_FABSTORAGE": 30.0,
+    "TH_RA": {
+      "M16HUB": 12.0,
+      "M14": 3.6,
+      "M14B": 5.0,
+      "M16A": 3.4,
+      "M16B": 6.0,
+      "M16_PKT": 7.5,
+      "M16_WT": 2.8
     },
     "TH_SORTER_TRANSFER_FAIL": 1,
-    "TH_RD_HUB_STB_UTIL": 101.0,
-    "TH_RB_30": {
-      "M16HUB": 100,
-      "M14": 80,
-      "M14B": 150,
-      "M16A": 110,
-      "M16B": 40,
-      "M16": 20
-    },
-    "TH_FLOW_X1_5": 1.5,
-    "INCIDENT_END_GAP_MIN": 10,
     "FLOW_NODES": {
       "M14_CNV_TO_HUB": [
         "M14",
@@ -368,6 +342,16 @@
         "M16HUB.QUE.M14TOM16.MESCURRENTQCNT"
       ]
     },
+    "RA_COL": {
+      "M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
+      "M14": "M14.QUE.LOAD.AVGLOADTIME1MIN",
+      "M14B": "M14B.QUE.TIME.AVGTOTALTIME1MIN",
+      "M16A": "M16A.QUE.LOAD.AVGLOADTIME1MIN",
+      "M16B": "M16B.QUE.LOAD.AVGLOADTIME1MIN",
+      "M16_PKT": "M16_PKT.QUE.TIME.AVGTOTALTIME1MIN",
+      "M16_WT": "M16_WT.QUE.TIME.AVGTOTALTIME1MIN"
+    },
+    "TH_FLOW_X3_0": 3.0,
     "EVENT_FIELDS": [
       "file",
       "datetime",
@@ -500,6 +484,22 @@
       "M14B_score_raw",
       "M16A_score_raw",
       "M16B_score_raw"
+    ],
+    "TH_RA_SUSTAINED_COUNT": 4,
+    "RB_COL": {
+      "M16HUB": "M16HUB.QUE.M14TOM16.MESCURRENTQCNT",
+      "M14": "M14.QUE.ALL.3F_TO_HUB_JOB",
+      "M14B": "M14B.QUE.ALL.7F_TO_HUB_JOB",
+      "M16A": "M16A.QUE.ALL.6F_TO_HUB_JOB",
+      "M16B": "M16B.QUE.ALL.10F_TO_HUB_JOB",
+      "M16": "M16.QUE.SFAB.SENDQUEUETOTAL"
+    },
+    "HUB_OUT_COLS": [
+      "M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB",
+      "M16HUB.QUE.ALL.3F_TO_M16A_2F_JOB",
+      "M16HUB.QUE.ALL.3F_TO_M14A_3F_JOB",
+      "M16HUB.QUE.ALL.3F_TO_M14B_7F_JOB",
+      "M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB"
     ]
   },
   "score_weights": {
