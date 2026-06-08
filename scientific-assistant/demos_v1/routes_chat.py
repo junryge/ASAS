@@ -353,8 +353,27 @@ def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
         new_text, removed = _truncate_text_to_tokens(_msg_text(msgs[big_i]), allow, count)
         if removed > 0:
             msgs[big_i] = dict(msgs[big_i], content=new_text)
-            warn = (f"⚠️ 입력이 컨텍스트 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라냈습니다. "
-                    f"전체를 반영하려면 입력을 줄이거나 더 큰 컨텍스트 모델을 사용하세요.")
+            warn = (f"⚠️ [컨텍스트보호 v3] 입력이 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라 넣었습니다. "
+                    f"전체를 보려면 더 큰 컨텍스트 모델(API 128K)을 쓰세요.")
+
+    # 3) 토큰 추정과 무관한 '하드 글자수' 안전장치 — 토크나이저가 어떤 값을 주든 절대 초과 안 함.
+    #    밀집 CSV(숫자·쉼표)는 문자당 토큰이 ~2.3개라, 글자수 자체를 input_budget/2.6 로 캡.
+    max_chars = max(400, int(input_budget / 2.6))
+    total_chars = sum(len(_msg_text(m)) for m in msgs)
+    if total_chars > max_chars:
+        big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
+        others_chars = total_chars - len(_msg_text(msgs[big_i]))
+        allow_chars = max(300, max_chars - others_chars)
+        t = _msg_text(msgs[big_i])
+        if len(t) > allow_chars:
+            head = int(allow_chars * 0.7)
+            tail = allow_chars - head
+            marker = f"\n...[중략: 원본 {len(t):,}자 중 일부 생략]...\n"
+            msgs[big_i] = dict(msgs[big_i], content=t[:head] + marker + (t[-tail:] if tail > 0 else ""))
+            hard_removed = len(t) - (head + max(0, tail))
+            if hard_removed > 0:
+                warn = (f"⚠️ [컨텍스트보호 v3] 입력이 한도({n_ctx:,} 토큰)를 넘어 약 {hard_removed:,}자를 잘라 넣었습니다. "
+                        f"전체를 보려면 더 큰 컨텍스트 모델(API 128K)을 쓰세요.")
 
     reply_budget = max(256, min(reply_cap, n_ctx - mtoks(msgs) - safety))
     return msgs, reply_budget, warn
