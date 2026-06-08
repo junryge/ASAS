@@ -6,6 +6,7 @@ import os
 import re
 import time
 import requests as req
+from demos_v1.llm_compat import chat_post
 from demos_v1.utils import BASE_DIR
 from demos_v1.config import (
     _gguf_pool, _gguf_pool_lock, MAX_POOL_SIZE, VRAM_BUDGET_GB,
@@ -324,7 +325,7 @@ def _api_agent_call(api_info, skill_ids, skill_contents, query, hist,
         h = {"Content-Type": "application/json"}
         if api_key:
             h["Authorization"] = f"Bearer {api_key}"
-        resp = req.post(
+        resp = chat_post(
             api_info["url"],
             headers=h,
             json={

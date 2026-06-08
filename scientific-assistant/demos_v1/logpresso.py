@@ -7,6 +7,7 @@ import time
 import math
 import uuid
 import requests as req
+from demos_v1.llm_compat import chat_post
 from flask import request, jsonify
 from logpresso_client import query_logpresso
 
@@ -371,7 +372,7 @@ table from=20260327000000 to=20260327235959 ts_data_view_m14a | limit 5
         reg = MODEL_REGISTRY[reg_key]
         tried.append(reg["model"])
         try:
-            resp = req.post(
+            resp = chat_post(
                 reg["url"],
                 headers=headers,
                 json={

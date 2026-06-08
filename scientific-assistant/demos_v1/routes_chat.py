@@ -88,6 +88,7 @@ def _strip_thinking_artifacts(text):
 import time
 import warnings
 import requests as req
+from demos_v1.llm_compat import chat_post
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import request, jsonify, Response, stream_with_context
 
@@ -567,7 +568,7 @@ def _stream_chat_sse(data):
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
         try:
-            r = req.post(api_url, headers=headers, json=payload,
+            r = chat_post(api_url, headers=headers, json=payload,
                          timeout=180, verify=False, stream=True)
             if r.status_code >= 400:
                 detail = ""
@@ -2110,7 +2111,7 @@ def register_chat_routes(app):
                                 h = {"Content-Type": "application/json"}
                                 if api_key:
                                     h["Authorization"] = f"Bearer {api_key}"
-                                sr = req.post(synth_api["url"], headers=h, json={
+                                sr = chat_post(synth_api["url"], headers=h, json={
                                     "model": synth_api["model"],
                                     "messages": [{"role": "system", "content": synth_system},
                                                  {"role": "user", "content": _last_query}],
@@ -2298,7 +2299,7 @@ def register_chat_routes(app):
                             _sh = {"Content-Type": "application/json"}
                             if api_key:
                                 _sh["Authorization"] = f"Bearer {api_key}"
-                            sr = req.post(_synth_reg["url"], headers=_sh, json={
+                            sr = chat_post(_synth_reg["url"], headers=_sh, json={
                                 "model": _synth_reg["model"],
                                 "messages": [{"role": "system", "content": synth_system},
                                              {"role": "user", "content": _last_query}],
@@ -2417,7 +2418,7 @@ def register_chat_routes(app):
                 models_tried.append(try_model)
 
                 try:
-                    resp = req.post(
+                    resp = chat_post(
                         try_url,
                         headers=headers,
                         json={
@@ -2460,7 +2461,7 @@ def register_chat_routes(app):
                             # 토큰 2배로 늘려서 재시도 (최대 32768)
                             retry_max = min(max_tokens * 2, 32768)
                             try:
-                                retry_resp = req.post(
+                                retry_resp = chat_post(
                                     try_url,
                                     headers=headers,
                                     json={
@@ -2565,7 +2566,7 @@ def register_chat_routes(app):
         else:
             # 폴백 체인 없는 경우 (GGUF 등) → 기존 단일 요청
             try:
-                resp = req.post(
+                resp = chat_post(
                     api_url,
                     headers=headers,
                     json={
@@ -2605,7 +2606,7 @@ def register_chat_routes(app):
                     if think_only and max_tokens < 32768:
                         retry_max = min(max_tokens * 2, 32768)
                         try:
-                            retry_resp = req.post(
+                            retry_resp = chat_post(
                                 api_url,
                                 headers=headers,
                                 json={
