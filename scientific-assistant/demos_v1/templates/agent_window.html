@@ -619,8 +619,8 @@ async function sendChat(){
   // 답변 규칙: 한국어로 + 영어 사고과정/<think> 누출 차단 (스킬 형식은 그대로 따름)
   sysPrompt += (sysPrompt ? '\n\n' : '') +
     '[답변 규칙] 반드시 한국어로 답하세요. 영어 사고과정("Here\'s a thinking process", "Analyze", "Let me think", "Draft" 등)이나 ' +
-    '<think>·<thinking> 태그를 절대 출력하지 말고, 바로 답변 본문부터 시작하세요(고유명사·코드·명령어는 예외). ' +
-    '스킬이 지정한 형식(표·문서·다이어그램 등)이 있으면 그 형식대로 충실히 작성하세요.';
+    '<think>·<thinking> 태그를 절대 출력하지 말고, 바로 결론·핵심부터 명확하게 답하세요(고유명사·코드·명령어는 예외). ' +
+    '불필요한 서론·과정 설명은 빼고 결론 위주로. 스킬이 지정한 형식(표·문서·다이어그램 등)이 있으면 그 형식대로 작성하세요.';
   var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
   if(kctx) sysPrompt += kctx;
   if(hermesOn){
