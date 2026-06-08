@@ -94,7 +94,7 @@
     <div id="chatMsgs"></div>
     <div id="chatInputRow">
       <textarea id="chatInput" placeholder="질문을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
-      <button id="chatSend" onclick="sendChat()">전송</button>
+      <button id="chatSend" onclick="onSendBtn()">전송</button>
     </div>
   </div>
 
@@ -503,6 +503,15 @@ function activate(a){
   document.getElementById('chatInput').focus();
 }
 
+// 전송/중지 토글: 스트리밍 중이면 중지, 아니면 전송
+function onSendBtn(){
+  if(isStreaming) stopChat();
+  else sendChat();
+}
+function stopChat(){
+  if(isStreaming && chatAbort){ try{ chatAbort.abort(); }catch(e){} }
+}
+
 function endChat(){
   if(isStreaming && chatAbort){ try{ chatAbort.abort(); }catch(e){} }
   document.getElementById('chatPanel').style.display='none';
@@ -598,13 +607,20 @@ async function sendChat(){
   skills = skills.filter(function(s){ return s!=='hermes'; });
 
   var sendBtn=document.getElementById('chatSend');
-  isStreaming=true; sendBtn.disabled=true; sendBtn.textContent='…';
+  // 스트리밍 중엔 '중지' 버튼으로 (비활성화하지 않고 누르면 abort)
+  isStreaming=true; sendBtn.disabled=false; sendBtn.textContent='⏹ 중지';
+  sendBtn.style.background='#ef4444';
   var bubble=addChatMsg('assistant','');
   var acc='';
 
   // 선택한 지식 문서 내용을 시스템 프롬프트에 주입 (Option A)
   bubble.textContent='📚 선택한 지식 문서 불러오는 중…';
   var sysPrompt = activeAgent.persona || '';
+  // 답변 규칙: 한국어로만, 간결하게 (영어 설명/사고과정 노출 금지)
+  sysPrompt += (sysPrompt ? '\n\n' : '') +
+    '[답변 규칙] 반드시 한국어로만 답하세요. 영어 문장이나 영어 설명을 쓰지 마세요(고유명사·코드·명령어는 예외). ' +
+    '결론과 핵심만 간결하게 전달하고, 불필요한 서론·반복·장황한 설명은 빼세요. ' +
+    '사고 과정이나 <think> 태그를 본문에 출력하지 마세요. 바로 답만 작성하세요.';
   var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
   if(kctx) sysPrompt += kctx;
   if(hermesOn){
@@ -691,10 +707,15 @@ async function sendChat(){
       if(pending) _awSkillCards(pending);
     }
   }catch(e){
-    if(e && e.name==='AbortError'){ bubble.textContent=acc+'\n\n⏹ 중단됨'; }
+    if(e && e.name==='AbortError'){
+      var _p=stripThink(acc);
+      bubble.innerHTML = renderFinal((_p?_p:'') + '\n\n⏹ 중단됨');
+      if(_p){ chatHistory.push({role:'assistant', content:_p}); saveChat(); }
+    }
     else { bubble.textContent=acc+'\n\n❌ '+(e.message||e); }
   } finally {
-    isStreaming=false; sendBtn.disabled=false; sendBtn.textContent='전송'; chatAbort=null;
+    isStreaming=false; sendBtn.disabled=false; sendBtn.textContent='전송';
+    sendBtn.style.background=''; chatAbort=null;
   }
 }
 
