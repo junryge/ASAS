@@ -458,24 +458,16 @@
               <select id="envSelect" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:10px;" title="모델 선택">
                 <option value="auto">🤖 자동</option>
                 <optgroup label="── API (고성능) ──">
-                  <option value="prod">Qwen3.5-397B (최고성능)</option>
-                  <option value="prod-fp8">Qwen3.5-397B-FP8</option>
-                  <option value="coder-480b">Coder-480B (코딩특화)</option>
-                  <option value="qwen3-235b">Qwen3-235B</option>
-                  <option value="coder-next">Coder-Next</option>
+                  <option value="dev">Qwen3.6-35B-A3B (최강)</option>
                 </optgroup>
-                <optgroup label="── API (중간) ──">
-                  <option value="dev">GLM-5</option>
-                  <option value="common">GPT-OSS-120B</option>
+                <optgroup label="── API (범용) ──">
+                  <option value="gemma">Gemma-4-31B-it</option>
                 </optgroup>
                 <optgroup label="── API (빠름) ──">
-                  <option value="dev-legacy">GLM-4.7</option>
-                  <option value="dev-fp8">GLM-4.7-FP8</option>
-                  <option value="qwen35-small">Qwen3.5-35B</option>
+                  <option value="common">GPT-OSS-20B</option>
                 </optgroup>
                 <optgroup label="── Vision ──">
-                  <option value="vl-large">VL-235B (이미지분석)</option>
-                  <option value="vl-medium">VL-72B</option>
+                  <option value="vl-72b">VL-72B (이미지분석)</option>
                   <option value="vl-fast">VL-30B</option>
                 </optgroup>
                 <optgroup label="── GGUF (로컬) ──">
@@ -620,13 +612,11 @@ const DEPARTMENTS = [
 ];
 
 const COST_RATES = {
-  'Qwen3.5-397B-A17B':  {in_1k:0.003,out_1k:0.015},
-  'Qwen3.5-397B-A17B-FP8':{in_1k:0.003,out_1k:0.015},
-  'Qwen3-Coder-480B-A35B':{in_1k:0.003,out_1k:0.015},
-  'GLM-5-0520-32B':     {in_1k:0.001,out_1k:0.005},
-  'gpt-oss-120b':       {in_1k:0.001,out_1k:0.005},
-  'Qwen3.5-35B':        {in_1k:0.0003,out_1k:0.001},
-  'GLM4.7':             {in_1k:0.0003,out_1k:0.001},
+  'Qwen2.5-VL-72B-Instruct':{in_1k:0.003,out_1k:0.015},
+  'Qwen3.6-35B-A3B':    {in_1k:0.001,out_1k:0.005},
+  'gemma-4-31B-it':     {in_1k:0.0008,out_1k:0.003},
+  'Qwen3-VL-30B-A3B-Instruct':{in_1k:0.0005,out_1k:0.002},
+  'gpt-oss-20b':        {in_1k:0.0003,out_1k:0.001},
   '_default':           {in_1k:0.001,out_1k:0.005},
   '_gguf':              {in_1k:0,out_1k:0}
 };

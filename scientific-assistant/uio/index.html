@@ -2348,15 +2348,15 @@
       const apis = apiEnvEntries();
       if (!apis.length) return 'auto';
       const PRI = {
-        ceo:  ['480','summary','80b','next','coder','glm'],   // 가장 강한 모델 (종합·검증)
-        choi: ['coder','480','next','glm'],                   // 로그프레소 쿼리
-        lee:  ['coder','480','next','glm'],                   // draw.io/코드
-        seo:  ['summary','480','80b','common','glm'],         // 데이터 분석
-        kim:  ['summary','480','common','glm'],               // 그래프
-        park: ['common','summary','glm'],                     // MD 문서
-        yoon: ['common','summary','480','glm'],               // PPT
-        jung: ['common','glm','summary'],
-      }[key] || ['common','glm','summary'];
+        ceo:  ['35b','72b','gemma','gpt-oss'],   // 가장 강한 모델 (종합·검증) Qwen3.6-35B
+        choi: ['35b','gpt-oss','gemma'],         // 로그프레소 쿼리 (코드)
+        lee:  ['35b','gpt-oss','gemma'],         // draw.io/코드
+        seo:  ['35b','gemma','72b'],             // 데이터 분석
+        kim:  ['35b','gemma','gpt-oss'],         // 그래프
+        park: ['gemma','gpt-oss','35b'],         // MD 문서 (경량)
+        yoon: ['35b','gemma','gpt-oss'],         // PPT
+        jung: ['gpt-oss','gemma','35b'],
+      }[key] || ['35b','gemma','gpt-oss'];
       for (const kw of PRI){
         const hit = apis.find(([id, env]) => (id + ' ' + (env.name||'')).toLowerCase().includes(kw));
         if (hit) return hit[0];

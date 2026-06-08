@@ -35,13 +35,13 @@ def _build_model_registry(config_models: dict) -> dict:
     return registry
 
 
-# 기본 모델 (api_config.json 없을 때 폴백)
+# 기본 모델 (api_config.json 없을 때 폴백) - 2026-06-08 사용 가능 모델
 _DEFAULT_MODELS = {
-    "qwen3-coder-480b": {
-        "env_id": "coder-480b",
-        "model": "Qwen3-Coder-480B-A35B-Instruct",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "Coder-480B (HCP)",
+    "qwen36-35b": {
+        "env_id": "dev",
+        "model": "Qwen3.6-35B-A3B",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "Qwen3.6-35B-A3B (Common)",
         "capabilities": {"text", "code", "analysis", "large"},
         "context_window": 128000,
         "priority": 1,
@@ -85,10 +85,9 @@ GGUF_DEFAULT_N_BATCH = int(_gguf_cfg.get("n_batch", 2048))
 
 # 기본 모델 우선순위 (api_config.json > 코드 기본값)
 DEFAULT_MODEL_PRIORITY = _EXT_CONFIG.get("default_model_priority", [
-    "qwen3-coder-480b",
-    "qwen3-coder-next",
-    "qwen3-coder-30b",
-    "glm-5",
-    "qwen3-next-80b",
+    "qwen36-35b",
+    "gemma-4-31b",
     "gpt-oss-20b",
+    "qwen25-vl-72b",
+    "qwen3-vl-30b",
 ])

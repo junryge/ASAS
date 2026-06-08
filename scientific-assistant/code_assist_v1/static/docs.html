@@ -189,7 +189,7 @@ python -m code_assist_v1.app_code</code></pre>
 <h3>2.4. 접속</h3>
 <pre><code>http://localhost:10010</code></pre>
 
-<p><strong>기본 모델 우선순위:</strong> qwen3-coder-480b → qwen3-coder-next → qwen3-coder-30b → glm-5 → qwen3-next-80b → gpt-oss-20b</p>
+<p><strong>기본 모델 우선순위:</strong> qwen36-35b → gemma-4-31b → gpt-oss-20b → qwen25-vl-72b → qwen3-vl-30b</p>
 
 <h2 id="sec-ui">3. 화면 구성</h2>
 
@@ -429,17 +429,14 @@ LLM 호출</code></pre>
 
 <h2 id="sec-models">11. 모델</h2>
 
-<h3>11.1. API 모델 10개</h3>
+<h3>11.1. API 모델 5개 (common.llm.skhynix.com)</h3>
 <table>
 <tr><th>ID</th><th>용도</th><th>컨텍스트</th></tr>
-<tr><td>qwen3-coder-480b</td><td>코딩 (최강)</td><td>128K</td></tr>
-<tr><td>qwen3-coder-next</td><td>코딩 (균형)</td><td>128K</td></tr>
-<tr><td>qwen3-coder-30b</td><td>코딩 (빠름)</td><td>128K</td></tr>
-<tr><td>glm-5</td><td>분석·일반</td><td>128K</td></tr>
-<tr><td>qwen3-next-80b</td><td>분석·요약</td><td>128K</td></tr>
-<tr><td>qwen35-397b / -fp8</td><td>초대형</td><td>128K</td></tr>
-<tr><td>qwen25-vl-72b / qwen3-vl-30b</td><td>비전</td><td>128K</td></tr>
+<tr><td>qwen36-35b (Qwen3.6-35B-A3B)</td><td>일반·코딩 (최강)</td><td>128K</td></tr>
+<tr><td>gemma-4-31b (gemma-4-31B-it)</td><td>분석·일반</td><td>128K</td></tr>
 <tr><td>gpt-oss-20b</td><td>빠름</td><td>128K</td></tr>
+<tr><td>qwen25-vl-72b (Qwen2.5-VL-72B)</td><td>비전 (대형)</td><td>128K</td></tr>
+<tr><td>qwen3-vl-30b (Qwen3-VL-30B-A3B)</td><td>비전 (빠름)</td><td>128K</td></tr>
 </table>
 
 <h3>11.2. GGUF 자동 로딩</h3>
@@ -462,7 +459,7 @@ LLM 호출</code></pre>
     예: "M14 데이터로 FastAPI 만들기" 절차
     ↓
 [3] 모델 선택
-    상단 모델 드롭다운 → qwen3-coder-480b
+    상단 모델 드롭다운 → qwen36-35b
     ↓
 [4] 활성화
     - [스킬] 탭에서 사용할 스킬 클릭 (🛠 칩)
@@ -507,7 +504,7 @@ LLM 호출</code></pre>
 <h3>13.2. SSE 채팅 페이로드</h3>
 <pre><code>POST /api/code/chat/stream
 {
-  "model": "qwen3-coder-480b",
+  "model": "qwen36-35b",
   "messages": [{"role": "user", "content": "..."}],
   "skills": ["agent-python-pro", "writing-plans"],
   "effort": 2,
