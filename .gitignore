@@ -13,3 +13,6 @@ OHT2/BR.map.html
 OHT2/HID_Zone_Master_M16A_BR.csv
 OHT2/리프터_HID.csv
 리프터_HID/MAP/M16A/BR.layout.xml
+WORD_MODEL/OHS_DATA_MD/M16A_BR_DATA/용량_혼잡도_1분.csv
+WORD_MODEL/OHS_DATA_MD/M16A_BR_DATA/리프터근처_차량수_1분.csv
+WORD_MODEL/OHS_DATA_MD/M16A_BR_DATA/*결과*.csv
