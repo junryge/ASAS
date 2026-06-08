@@ -686,9 +686,9 @@ def _stream_chat_sse(data):
                     _finish = fr
             yield ("__end__", acc, _finish)
 
-        # 입력이 컨텍스트를 초과하면 '이어서 보기'(분할 처리) 계획 수립
-        _plan = _plan_gguf_chunks(api_messages, _gctx, max_tokens_g,
-                                  _utils_mod.gguf_model, safety=_greserve)
+        # 분할(이어서보기) 비활성화 — 항상 단일 패스로 처리(큰 입력은 앞부분 잘라 한 번에 답변).
+        # ('부분 N/20' 식 분할이 보고서/지식 답변을 조각내고 영어 사고과정 누출을 키워서 끔.)
+        _plan = None
 
         def _meta_evt():
             _sys_len = sum(len(m.get("content", "") or "") for m in api_messages if m.get("role") == "system")
