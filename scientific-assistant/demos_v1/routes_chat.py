@@ -750,14 +750,14 @@ def register_chat_routes(app):
             # n_ctx는 32768 기본 (RTX 3090 24GB에서 충분). 프론트가 넘기면 그 값 사용.
             user_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
         else:
-            # API: 모델 크기별 자동 설정
+            # API: 모델 크기별 자동 설정 (속도: 상한이라 보통 답엔 영향 없고 긴 답 tail만 단축)
             _reg_key = ENV_TO_REGISTRY.get(env_id)
             _cost_tier = MODEL_REGISTRY.get(_reg_key, {}).get("cost_tier", "medium") if _reg_key else "medium"
-            if _cost_tier == "high":      # 대형 모델 (480B)
-                max_tokens = 16384
-            elif _cost_tier == "medium":  # 중형 모델 (GLM-5, Coder-Next)
+            if _cost_tier == "high":      # 대형 (Qwen3.6-35B-A3B / VL-72B)
                 max_tokens = 8192
-            else:                         # 경량 모델 (gpt-oss-20b)
+            elif _cost_tier == "medium":  # 중형 (gemma-4-31B)
+                max_tokens = 6144
+            else:                         # 경량 (VL-30B / gpt-oss-20b)
                 max_tokens = 4096
 
         # 출력형식/스타일 자동 분류 (format=auto 또는 writing_style=auto일 때)
