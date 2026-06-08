@@ -358,6 +358,69 @@ def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
     return msgs, reply_budget, warn
 
 
+def _extract_instruction(text):
+    """대용량 붙여넣기에서 '사용자 요청' 부분을 추정(보통 앞/뒤에 위치)."""
+    t = str(text).strip()
+    if len(t) <= 600:
+        return t
+    return (t[:180].strip() + "\n…\n" + t[-450:].strip())
+
+
+def _chunk_text_by_tokens(text, budget_tokens, count, hard_cap=64):
+    """text 를 각 청크가 budget_tokens 이하가 되도록 순서대로 분할."""
+    chunks = []
+    i, n = 0, len(text)
+    while i < n and len(chunks) < hard_cap:
+        approx = max(400, int(budget_tokens / 1.6))   # 보수적 초기 길이(문자)
+        j = min(n, i + approx)
+        piece = text[i:j]
+        guard = 0
+        while count(piece) > budget_tokens and (j - i) > 300 and guard < 40:
+            j = i + int((j - i) * 0.85)
+            piece = text[i:j]
+            guard += 1
+        if j <= i:
+            j = min(n, i + 400)
+            piece = text[i:j]
+        chunks.append(piece)
+        i = j
+    return chunks
+
+
+def _plan_gguf_chunks(messages, n_ctx, reply_cap, model, safety=1536, max_chunks=20):
+    """입력이 n_ctx 를 초과하면 '이어서 보기'(분할 처리) 계획 반환. 들어가면 None.
+    반환: {base, instr, chunks, reply, n_ctx, safety, over}."""
+    count = _make_token_counter(model)
+
+    def mtoks(msgs):
+        return sum(count(_msg_text(m)) + 8 for m in msgs) + 16
+
+    if mtoks(messages) + reply_cap + safety <= n_ctx:
+        return None   # 한 번에 들어감
+
+    big_i = max(range(len(messages)), key=lambda i: len(_msg_text(messages[i])))
+    big_text = _msg_text(messages[big_i])
+    base = [dict(m) for j, m in enumerate(messages) if j != big_i]   # 시스템 등 공통 메시지
+    instr = _extract_instruction(big_text)
+
+    base_tokens = mtoks(base) if base else 16
+    per_chunk_budget = n_ctx - reply_cap - safety - base_tokens - count(instr) - 80
+    if per_chunk_budget < 800:
+        instr = instr[-300:]
+        per_chunk_budget = max(800, n_ctx - reply_cap - safety - base_tokens - count(instr) - 80)
+
+    chunks = _chunk_text_by_tokens(big_text, per_chunk_budget, count)
+    if len(chunks) <= 1:
+        return None
+
+    over = False
+    if len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks]
+        over = True
+    return {"base": base, "instr": instr, "chunks": chunks,
+            "reply": reply_cap, "n_ctx": n_ctx, "safety": safety, "over": over}
+
+
 def _stream_chat_sse(data):
     chat_stop_flag["stop"] = False
 
@@ -594,53 +657,127 @@ def _stream_chat_sse(data):
         max_tokens_g = min(data.get("max_tokens", gguf_reply_cap), gguf_reply_cap)
         model_name = os.path.basename(gguf_path) if gguf_path else env_id
 
-        # 컨텍스트 초과 방지: n_ctx 안에 맞도록 트림/절단 (오래된 메시지 제거 → 대용량 본문 절단)
         _gctx = _gguf_n_ctx(_utils_mod.gguf_model)
         _greserve = max(512, TOKEN_SETTINGS.get("gguf_ctx_reserve", 1536))
-        _fit_msgs, _fit_reply, _fit_warn = _fit_messages_to_ctx(
-            api_messages, _gctx, max_tokens_g,
-            model=_utils_mod.gguf_model, safety=_greserve)
+        _temp = temperature_map[min(effort, 3)]
 
-        def gen_gguf():
-            _sys_len = sum(len(m.get("content","") or "") for m in _fit_msgs if m.get("role") == "system")
+        def _tok_evt(t):
+            return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
+
+        def _gguf_stream_once(msgs, max_toks):
+            """한 번의 create_chat_completion 을 스트리밍 — (yield용 SSE, 누적텍스트, finish) 제너레이터.
+            마지막에 ('__end__', acc, finish) 튜플을 yield."""
+            acc = ""
+            _finish = None
+            for chunk in _utils_mod.gguf_model.create_chat_completion(
+                    messages=msgs, temperature=_temp, max_tokens=max_toks, stream=True):
+                if chat_stop_flag.get("stop"):
+                    break
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                tok = delta.get("content") or ""
+                if tok:
+                    acc += tok
+                    yield _tok_evt(tok)
+                fr = choices[0].get("finish_reason")
+                if fr:
+                    _finish = fr
+            yield ("__end__", acc, _finish)
+
+        # 입력이 컨텍스트를 초과하면 '이어서 보기'(분할 처리) 계획 수립
+        _plan = _plan_gguf_chunks(api_messages, _gctx, max_tokens_g,
+                                  _utils_mod.gguf_model, safety=_greserve)
+
+        def _meta_evt():
+            _sys_len = sum(len(m.get("content", "") or "") for m in api_messages if m.get("role") == "system")
             meta = {
                 "type": "meta", "env": env_id, "model": model_name,
                 "loaded_skills": loaded_skills,
                 "system_prompt_length": _sys_len,
-                "auto_routed": auto_routed,
-                "route_reason": route_reason,
+                "auto_routed": auto_routed, "route_reason": route_reason,
             }
-            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-            # 입력이 잘렸으면 사용자에게 먼저 안내
-            if _fit_warn:
-                yield f"data: {json.dumps({'type': 'token', 't': _fit_warn + chr(10)+chr(10)}, ensure_ascii=False)}\n\n"
-            try:
-                _finish = None
-                for chunk in _utils_mod.gguf_model.create_chat_completion(
-                    messages=_fit_msgs,
-                    temperature=temperature_map[min(effort, 3)],
-                    max_tokens=_fit_reply,
-                    stream=True,
-                ):
+            return f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+
+        if _plan is None:
+            # ── 단일 패스 (필요 시 트림) ──
+            _fit_msgs, _fit_reply, _fit_warn = _fit_messages_to_ctx(
+                api_messages, _gctx, max_tokens_g,
+                model=_utils_mod.gguf_model, safety=_greserve)
+
+            def gen_gguf():
+                yield _meta_evt()
+                if _fit_warn:
+                    yield _tok_evt(_fit_warn + "\n\n")
+                try:
+                    _finish = None
+                    for ev in _gguf_stream_once(_fit_msgs, _fit_reply):
+                        if isinstance(ev, tuple) and ev and ev[0] == "__end__":
+                            _finish = ev[2]
+                        else:
+                            yield ev
+                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
+                    yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'error': f'GGUF 오류: {str(e)}'}, ensure_ascii=False)}\n\n"
+        else:
+            # ── 분할 처리 (이어서 보기): N조각 순차 분석 → 종합 ──
+            def gen_gguf():
+                yield _meta_evt()
+                _chunks = _plan["chunks"]; N = len(_chunks)
+                _base = _plan["base"]; _instr = _plan["instr"]
+                _sys_only = [m for m in _base if m.get("role") == "system"]
+                intro = (f"📚 입력이 GGUF 컨텍스트({_plan['n_ctx']:,} 토큰)를 초과해 "
+                         f"**{N}개 부분으로 나눠 순서대로 분석**한 뒤 종합합니다.\n")
+                if _plan["over"]:
+                    intro += "⚠️ 데이터가 매우 커서 앞부분 위주로 처리합니다.\n"
+                yield _tok_evt(intro)
+                _partials = []
+                try:
+                    for idx, piece in enumerate(_chunks, 1):
+                        if chat_stop_flag.get("stop"):
+                            yield "data: [DONE]\n\n"; return
+                        yield _tok_evt(f"\n\n━━━━━ 📄 부분 {idx}/{N} ━━━━━\n\n")
+                        framed = (f"[전체 {N}개 부분 중 {idx}번째 부분입니다. 이 부분 데이터에 대해 "
+                                  f"아래 요청을 수행하세요. 전체 종합은 마지막에 따로 합니다.]\n\n"
+                                  f"{piece}\n\n[사용자 요청]\n{_instr}")
+                        _msgs = _base + [{"role": "user", "content": framed}]
+                        _msgs, _rb, _ = _fit_messages_to_ctx(
+                            _msgs, _plan["n_ctx"], _plan["reply"],
+                            model=_utils_mod.gguf_model, safety=_plan["safety"])
+                        _acc = ""
+                        for ev in _gguf_stream_once(_msgs, _rb):
+                            if isinstance(ev, tuple) and ev and ev[0] == "__end__":
+                                _acc = ev[1]
+                            else:
+                                yield ev
+                        _partials.append(_acc)
+
+                    # 종합
                     if chat_stop_flag.get("stop"):
-                        yield "data: [DONE]\n\n"
-                        return
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    tok = delta.get("content") or ""
-                    if tok:
-                        yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
-                    fr = choices[0].get("finish_reason")
-                    if fr:
-                        _finish = fr
-                end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
-                yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
-                yield "data: [DONE]\n\n"
-            except Exception as e:
-                err = {"type": "error", "error": f"GGUF 오류: {str(e)}"}
-                yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"; return
+                    yield _tok_evt("\n\n━━━━━ ✅ 종합 ━━━━━\n\n")
+                    combined = "\n\n".join(f"[부분 {i+1}]\n{p}" for i, p in enumerate(_partials))
+                    synth_user = (f"다음은 큰 데이터를 {N}개로 나눠 각각 분석한 결과입니다. "
+                                  f"이를 하나로 종합해 사용자 요청에 대한 최종 결론을 작성하세요.\n\n"
+                                  f"[사용자 요청]\n{_instr}\n\n[부분 분석 결과]\n{combined}")
+                    _smsgs = _sys_only + [{"role": "user", "content": synth_user}]
+                    _smsgs, _srb, _ = _fit_messages_to_ctx(
+                        _smsgs, _plan["n_ctx"], _plan["reply"],
+                        model=_utils_mod.gguf_model, safety=_plan["safety"])
+                    _finish = None
+                    for ev in _gguf_stream_once(_smsgs, _srb):
+                        if isinstance(ev, tuple) and ev and ev[0] == "__end__":
+                            _finish = ev[2]
+                        else:
+                            yield ev
+                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": False}
+                    yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'error': f'GGUF 분할 처리 오류: {str(e)}'}, ensure_ascii=False)}\n\n"
 
         return Response(stream_with_context(gen_gguf()), mimetype="text/event-stream")
 
