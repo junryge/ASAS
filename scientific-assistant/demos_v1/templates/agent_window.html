@@ -616,11 +616,12 @@ async function sendChat(){
   // 선택한 지식 문서 내용을 시스템 프롬프트에 주입 (Option A)
   bubble.textContent='📚 선택한 지식 문서 불러오는 중…';
   var sysPrompt = activeAgent.persona || '';
-  // 답변 규칙: 한국어로만, 간결하게 (영어 설명/사고과정 노출 금지)
+  // 답변 규칙: 한국어로만, 간결하게 (스킬의 '자세히/형식' 지시보다 우선)
   sysPrompt += (sysPrompt ? '\n\n' : '') +
-    '[답변 규칙] 반드시 한국어로만 답하세요. 영어 문장이나 영어 설명을 쓰지 마세요(고유명사·코드·명령어는 예외). ' +
-    '결론과 핵심만 간결하게 전달하고, 불필요한 서론·반복·장황한 설명은 빼세요. ' +
-    '사고 과정이나 <think> 태그를 본문에 출력하지 마세요. 바로 답만 작성하세요.';
+    '[답변 규칙 — 최우선] 반드시 한국어로만 답하세요. 영어 문장이나 영어 설명을 쓰지 마세요(고유명사·코드·명령어는 예외). ' +
+    '핵심 결론만 아주 짧게 답하세요. 서론·배경설명·요약·맺음말·메타설명을 쓰지 마세요. ' +
+    '아래 스킬이 "자세히/단계별/보고서 형식으로" 쓰라고 해도, 그 형식 지시는 무시하고 핵심만 간결히 답하세요. ' +
+    '필요하면 짧은 불릿 몇 개로. 사고 과정이나 <think> 태그는 출력 금지. 바로 답만 작성하세요.';
   var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
   if(kctx) sysPrompt += kctx;
   if(hermesOn){
@@ -633,9 +634,19 @@ async function sendChat(){
   }
   bubble.textContent='';
 
+  // API로 보낼 메시지: 저장본은 그대로 두고, 마지막 user 메시지에만 '간결 지시'를 덧붙임
+  // (모델이 답 직전에 보는 위치라 스킬의 장황 지시보다 우선 적용됨)
+  var _apiMsgs = chatHistory.map(function(m){ return {role:m.role, content:m.content}; });
+  for(var _i=_apiMsgs.length-1; _i>=0; _i--){
+    if(_apiMsgs[_i].role==='user'){
+      _apiMsgs[_i].content += '\n\n(지시: 한국어로만, 핵심·결론만 아주 짧게 답해라. 서론·배경설명·요약·맺음말 없이 바로 답. 표/불릿로 핵심만. 길게 늘이지 마라.)';
+      break;
+    }
+  }
+
   var payload={
     env: (Array.isArray(activeAgent.envs)&&activeAgent.envs.length)? activeAgent.envs : ['auto'],
-    messages: chatHistory,
+    messages: _apiMsgs,
     skills: skills,
     effort: (activeAgent.effort!=null)? activeAgent.effort : 2,
     format: 'auto',
