@@ -264,6 +264,83 @@ def _prepend_system(msgs, extra):
     return [{"role": "system", "content": "\n\n".join(sys_parts)}] + rest
 
 
+def _gguf_n_ctx(model, default=32768):
+    """로드된 GGUF 모델의 컨텍스트 길이(n_ctx) 반환. (메서드/속성 모두 대응)"""
+    attr = getattr(model, "n_ctx", None)
+    try:
+        v = attr() if callable(attr) else attr
+        return int(v) if v else default
+    except Exception:
+        return default
+
+
+def _gguf_count_tokens(model, text):
+    """모델 토크나이저로 토큰 수 추정(불가 시 보수적 문자 기반 폴백)."""
+    try:
+        return len(model.tokenize(str(text).encode("utf-8", "ignore"), add_bos=False))
+    except Exception:
+        return int(len(str(text)) / 2.5) + 1
+
+
+def _msg_text(m):
+    c = m.get("content", "")
+    if isinstance(c, list):
+        c = "\n".join(str(p.get("text", "")) for p in c if isinstance(p, dict) and p.get("type") == "text")
+    return str(c)
+
+
+def _gguf_msgs_tokens(model, msgs):
+    return sum(_gguf_count_tokens(model, _msg_text(m)) + 4 for m in msgs) + 8
+
+
+def _truncate_text_to_tokens(model, text, allow_tokens):
+    """text 를 head+tail 형태로 allow_tokens 안에 들어오게 절단. (새 텍스트, 잘린_문자수) 반환."""
+    total = _gguf_count_tokens(model, text)
+    if total <= allow_tokens:
+        return text, 0
+    ratio = len(text) / max(1, total)            # 문자/토큰 근사
+    keep = max(200, int(allow_tokens * ratio * 0.92))
+    head = int(keep * 0.7)
+    tail = keep - head
+    marker = f"\n...[중략: 원본 {len(text):,}자 중 일부 생략]...\n"
+    new = text[:head] + marker + (text[-tail:] if tail > 0 else "")
+    while _gguf_count_tokens(model, new) > allow_tokens and head > 200:
+        head = int(head * 0.85)
+        tail = int(tail * 0.85)
+        new = text[:head] + marker + (text[-tail:] if tail > 0 else "")
+    return new, max(0, len(text) - (head + max(0, tail)))
+
+
+def _fit_gguf_messages(model, messages, reply_cap, reserve=1024):
+    """GGUF n_ctx 안에 들어가도록 messages 를 (1)오래된 메시지 제거 →
+    (2)그래도 크면 가장 큰 메시지 본문 절단. (트림된 messages, 응답토큰예산, 경고문) 반환."""
+    n_ctx = _gguf_n_ctx(model)
+    msgs = [dict(m) for m in messages]
+    warn = ""
+    input_budget = max(512, n_ctx - reserve - 256)   # 최소 응답 256 보장
+
+    # 1) system 과 마지막 메시지는 유지하고, 오래된 user/assistant 부터 제거
+    while _gguf_msgs_tokens(model, msgs) > input_budget and len(msgs) > 1:
+        idx = next((i for i, m in enumerate(msgs[:-1]) if m.get("role") in ("user", "assistant")), -1)
+        if idx < 0:
+            break
+        msgs.pop(idx)
+
+    # 2) 단일 메시지가 너무 큰 경우(예: 대용량 붙여넣기) → 그 본문을 절단
+    if _gguf_msgs_tokens(model, msgs) > input_budget:
+        big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
+        others = _gguf_msgs_tokens(model, [m for j, m in enumerate(msgs) if j != big_i])
+        allow = max(256, input_budget - others)
+        new_text, removed = _truncate_text_to_tokens(model, _msg_text(msgs[big_i]), allow)
+        if removed > 0:
+            msgs[big_i] = dict(msgs[big_i], content=new_text)
+            warn = (f"⚠️ 입력이 GGUF 컨텍스트 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라냈습니다. "
+                    f"전체를 분석하려면 API 모델(128K)을 쓰거나 입력을 줄여주세요.")
+
+    reply_budget = max(256, min(reply_cap, n_ctx - _gguf_msgs_tokens(model, msgs) - reserve))
+    return msgs, reply_budget, warn
+
+
 def _stream_chat_sse(data):
     chat_stop_flag["stop"] = False
 
@@ -500,8 +577,12 @@ def _stream_chat_sse(data):
         max_tokens_g = min(data.get("max_tokens", gguf_reply_cap), gguf_reply_cap)
         model_name = os.path.basename(gguf_path) if gguf_path else env_id
 
+        # 컨텍스트 초과 방지: n_ctx 안에 맞도록 트림/절단 (오래된 메시지 제거 → 대용량 본문 절단)
+        _fit_msgs, _fit_reply, _fit_warn = _fit_gguf_messages(
+            _utils_mod.gguf_model, api_messages, max_tokens_g)
+
         def gen_gguf():
-            _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
+            _sys_len = sum(len(m.get("content","") or "") for m in _fit_msgs if m.get("role") == "system")
             meta = {
                 "type": "meta", "env": env_id, "model": model_name,
                 "loaded_skills": loaded_skills,
@@ -510,12 +591,15 @@ def _stream_chat_sse(data):
                 "route_reason": route_reason,
             }
             yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+            # 입력이 잘렸으면 사용자에게 먼저 안내
+            if _fit_warn:
+                yield f"data: {json.dumps({'type': 'token', 't': _fit_warn + chr(10)+chr(10)}, ensure_ascii=False)}\n\n"
             try:
                 _finish = None
                 for chunk in _utils_mod.gguf_model.create_chat_completion(
-                    messages=api_messages,
+                    messages=_fit_msgs,
                     temperature=temperature_map[min(effort, 3)],
-                    max_tokens=max_tokens_g,
+                    max_tokens=_fit_reply,
                     stream=True,
                 ):
                     if chat_stop_flag.get("stop"):
