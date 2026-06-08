@@ -358,8 +358,8 @@ table from=20260327000000 to=20260327235959 ts_data_view_m14a | limit 5
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
 
-    # 기존 FALLBACK_CHAINS 활용: glm-5 → 체인 순서대로 폴백
-    primary_key = "glm-5"
+    # 기존 FALLBACK_CHAINS 활용: 기본 텍스트 모델 → 체인 순서대로 폴백
+    primary_key = "qwen36-35b"
     chain_keys = [primary_key] + FALLBACK_CHAINS.get(primary_key, [])
     # vision/reranker 모델 제외 (텍스트 전용만)
     chain_keys = [k for k in chain_keys if k in MODEL_REGISTRY
