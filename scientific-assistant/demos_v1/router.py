@@ -103,30 +103,30 @@ def classify_and_route(query, history, uploaded_files_list):
     if has_vision_kw and not has_images:
         return "vl-fast", "비전 키워드 감지 → VL-30B (이미지 업로드 권장)"
 
-    # 2순위: PPT 생성 → GLM-5
+    # 2순위: PPT 생성 → Qwen3.6-35B
     if any(kw in q for kw in PPT_SIGNALS):
-        return "dev", "PPT 생성 → GLM-5"
+        return "dev", "PPT 생성 → Qwen3.6-35B"
 
-    # 3순위: 복잡한 분석/코드/데이터 → GLM-5
+    # 3순위: 복잡한 분석/코드/데이터 → Qwen3.6-35B
     complex_count = sum(1 for kw in COMPLEX_SIGNALS if kw in q)
     if complex_count >= 2 or (complex_count >= 1 and len(q) > 200):
-        return "dev", "복잡한 분석 → GLM-5"
+        return "dev", "복잡한 분석 → Qwen3.6-35B"
 
     # 4순위: 데이터 분석 (CSV 로드 + 분석 키워드)
     if has_csv or any(kw in q for kw in DATA_SIGNALS):
-        return "dev", "데이터 분석 → GLM-5"
+        return "dev", "데이터 분석 → Qwen3.6-35B"
 
     # 5순위: 코드 작성 요청 (중간~긴 쿼리)
     code_kw = ["코드", "함수", "클래스", "구현", "작성", "코딩", "스크립트", "프로그래밍"]
     if any(kw in q for kw in code_kw) and len(q) > 80:
-        return "dev", "코드 작성 → GLM-5"
+        return "dev", "코드 작성 → Qwen3.6-35B"
 
     # 6순위: 간단한 Q&A → 가장 빠른 모델
     if len(q) <= SIMPLE_MAX_LEN:
         return "common", "간단 Q&A → gpt-oss-20b"
 
-    # 기본값: GLM-5
-    return "dev", "일반 요청 → GLM-5"
+    # 기본값: Qwen3.6-35B
+    return "dev", "일반 요청 → Qwen3.6-35B"
 
 
 def classify_format_and_style(query, history, uploaded_files_list, skill_ids):

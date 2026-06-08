@@ -59,7 +59,7 @@ except Exception:
 def _resolve_gen_env(data):
     """요청 body 의 env 선택값을 단일 env_id 로 정규화.
 
-    chat 과 동일한 포맷 지원: env 는 배열(['gguf-0'], ['coder-480b']) 또는 문자열.
+    chat 과 동일한 포맷 지원: env 는 배열(['gguf-0'], ['dev']) 또는 문자열.
     'auto' / 빈 값이면 "" 반환 → 호출측에서 첫 번째 API env 로 폴백.
     """
     raw_env = data.get("env", None)

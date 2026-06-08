@@ -27,50 +27,51 @@ def _build_model_registry_from_config(config_models):
 if _EXT_CONFIG.get("models"):
     MODEL_REGISTRY = _build_model_registry_from_config(_EXT_CONFIG["models"])
 else:
-    # 기본값 (api_config.json이 없을 때) - 2026-04-19 사용 가능한 모델 7개만
+    # 기본값 (api_config.json이 없을 때) - 2026-06-05 사용 가능한 모델 5개만
+    # 게이트웨이가 common.llm.skhynix.com 로 통합되고 아래 5종만 서비스됨.
+    # (dev.hcp / GLM-5 / Coder 계열 / Next-80B 는 더 이상 사용 불가)
     MODEL_REGISTRY = {
-    # === dev.hcp.llm.skhynix.com (4개) ===
-    "glm-5": {
+    # === common.llm.skhynix.com — 현재 사용 가능한 5개 (2026-06-05) ===
+    "qwen36-35b": {
         "env_id": "dev",
-        "model": "GLM-5",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "GLM-5 (HCP)",
-        "capabilities": {"text", "code", "analysis", "fast"},
-        "context_window": 128000,
-        "priority": 2,
-        "cost_tier": "medium",
-    },
-    "qwen3-coder-480b": {
-        "env_id": "coder-480b",
-        "model": "Qwen3-Coder-480B-A35B-Instruct",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "Coder-480B (HCP)",
+        "model": "Qwen3.6-35B-A3B",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "Qwen3.6-35B-A3B (Common)",
         "capabilities": {"text", "code", "analysis", "large"},
         "context_window": 128000,
         "priority": 1,
         "cost_tier": "high",
     },
-    "qwen3-coder-next": {
-        "env_id": "coder-next",
-        "model": "Qwen3-Coder-Next",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "Coder-Next (HCP)",
-        "capabilities": {"text", "code", "medium"},
+    "qwen25-vl-72b": {
+        "env_id": "vl-72b",
+        "model": "Qwen2.5-VL-72B-Instruct",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "VL-72B (Vision/Common)",
+        "capabilities": {"text", "vision", "large", "analysis"},
         "context_window": 128000,
-        "priority": 2,
-        "cost_tier": "medium",
+        "priority": 1,
+        "cost_tier": "high",
     },
     "qwen3-vl-30b": {
         "env_id": "vl-fast",
         "model": "Qwen3-VL-30B-A3B-Instruct",
-        "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-        "name": "VL-30B-A3B (Vision/HCP)",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "VL-30B-A3B (Vision/Common)",
         "capabilities": {"text", "vision", "fast"},
         "context_window": 128000,
         "priority": 2,
         "cost_tier": "low",
     },
-    # === common.llm.skhynix.com (3개) ===
+    "gemma-4-31b": {
+        "env_id": "gemma",
+        "model": "gemma-4-31B-it",
+        "url": "http://common.llm.skhynix.com/v1/chat/completions",
+        "name": "Gemma-4-31B-it (Common)",
+        "capabilities": {"text", "analysis", "medium"},
+        "context_window": 128000,
+        "priority": 2,
+        "cost_tier": "medium",
+    },
     "gpt-oss-20b": {
         "env_id": "common",
         "model": "gpt-oss-20b",
@@ -81,32 +82,12 @@ else:
         "priority": 3,
         "cost_tier": "low",
     },
-    "qwen3-next-80b": {
-        "env_id": "summary",
-        "model": "Qwen3-Next-80B-A3B-Instruct",
-        "url": "http://common.llm.skhynix.com/v1/chat/completions",
-        "name": "Next-80B (Common)",
-        "capabilities": {"text", "analysis", "medium"},
-        "context_window": 128000,
-        "priority": 2,
-        "cost_tier": "medium",
-    },
-    "qwen3-coder-30b": {
-        "env_id": "coder-common",
-        "model": "Qwen3-Coder-30B-A3B-Instruct",
-        "url": "http://common.llm.skhynix.com/v1/chat/completions",
-        "name": "Coder-30B-A3B (Common)",
-        "capabilities": {"text", "code", "medium"},
-        "context_window": 128000,
-        "priority": 3,
-        "cost_tier": "low",
-    },
 }
 
 # API 모델 크기 티어 (api_config.json > 기본값)
 API_MODEL_TIERS = _EXT_CONFIG.get("api_model_tiers", {
-    "large": ["qwen3-coder-480b", "qwen3-next-80b"],
-    "medium": ["qwen3-coder-next", "qwen3-coder-30b", "glm-5"],
+    "large": ["qwen25-vl-72b", "qwen36-35b"],
+    "medium": ["gemma-4-31b", "qwen3-vl-30b"],
     "small": ["gpt-oss-20b"],
 })
 
@@ -123,13 +104,13 @@ ENV_TO_REGISTRY = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
 
 # 폴백 체인 (api_config.json > 기본값)
 FALLBACK_CHAINS = _EXT_CONFIG.get("fallback_chains", {
-    "qwen3-coder-480b": ["qwen3-next-80b", "qwen3-coder-next", "glm-5", "qwen3-coder-30b", "gpt-oss-20b"],
-    "qwen3-next-80b":   ["qwen3-coder-480b", "qwen3-coder-next", "glm-5", "qwen3-coder-30b", "gpt-oss-20b"],
-    "qwen3-coder-next": ["qwen3-coder-480b", "qwen3-next-80b", "glm-5", "qwen3-coder-30b", "gpt-oss-20b"],
-    "glm-5":            ["qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b", "qwen3-coder-30b", "gpt-oss-20b"],
-    "gpt-oss-20b":      ["qwen3-coder-30b", "glm-5", "qwen3-coder-next", "qwen3-coder-480b", "qwen3-next-80b"],
-    "qwen3-coder-30b":  ["qwen3-coder-next", "glm-5", "gpt-oss-20b", "qwen3-coder-480b", "qwen3-next-80b"],
-    "qwen3-vl-30b":     ["glm-5", "qwen3-coder-next", "qwen3-coder-480b"],
+    # 텍스트 체인 (vision 모델은 텍스트도 가능하므로 후순위 포함)
+    "qwen36-35b":    ["gemma-4-31b", "gpt-oss-20b"],
+    "gemma-4-31b":   ["qwen36-35b", "gpt-oss-20b"],
+    "gpt-oss-20b":   ["gemma-4-31b", "qwen36-35b"],
+    # 비전 체인 (vision 우선 → 텍스트 폴백)
+    "qwen25-vl-72b": ["qwen3-vl-30b", "qwen36-35b", "gemma-4-31b"],
+    "qwen3-vl-30b":  ["qwen25-vl-72b", "qwen36-35b", "gemma-4-31b"],
 })
 
 # Reranker 기능 플래그 (bge-reranker 엔드포인트 안정화 후 활성화)

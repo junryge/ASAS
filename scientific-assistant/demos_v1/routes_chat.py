@@ -2262,11 +2262,11 @@ def register_chat_routes(app):
                         })
                     elif len(successes) >= 2:
                         # 합성 모델 결정: low cost tier → 대형 모델로 업그레이드
-                        _synth_reg_key = _primary_reg_key or "qwen3-coder-480b"
+                        _synth_reg_key = _primary_reg_key or "qwen36-35b"
                         _primary_cost = MODEL_REGISTRY.get(_synth_reg_key, {}).get("cost_tier", "medium")
                         if _primary_cost == "low":
-                            _synth_reg_key = "qwen3-coder-480b"
-                        _synth_reg = MODEL_REGISTRY.get(_synth_reg_key, MODEL_REGISTRY["qwen3-coder-480b"])
+                            _synth_reg_key = "qwen36-35b"
+                        _synth_reg = MODEL_REGISTRY.get(_synth_reg_key, MODEL_REGISTRY["qwen36-35b"])
 
                         # 합성 프롬프트
                         expert_sections = []
