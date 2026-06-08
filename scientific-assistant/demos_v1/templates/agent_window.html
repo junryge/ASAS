@@ -512,6 +512,26 @@ function stopChat(){
   if(isStreaming && chatAbort){ try{ chatAbort.abort(); }catch(e){} }
 }
 
+// ⏭ 이어서 보기: 직전 답변을 이어서 작성하게 함 (답이 잘렸을 때 특히 강조)
+function _awContinueBar(bubble, truncated){
+  try{
+    if(!bubble) return;
+    var bar=document.createElement('div');
+    bar.style.cssText='margin-top:8px;display:flex;gap:8px;align-items:center;';
+    var hint = truncated ? '<span style="font-size:11px;color:#fbbf24;">⚠️ 답변이 길이 제한으로 잘렸습니다.</span>' : '';
+    bar.innerHTML = '<button onclick="continueChat()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;">⏭ 이어서 보기</button>' + hint;
+    bubble.appendChild(bar);
+  }catch(e){}
+}
+// 직전 답변을 이어서 작성하도록 '계속' 메시지를 보내 스트리밍 재개
+function continueChat(){
+  if(isStreaming) return;
+  if(!activeAgent){ return; }
+  var inp=document.getElementById('chatInput');
+  inp.value='이어서 계속 작성해줘. (앞 답변에 바로 이어서, 같은 형식·한국어로, 중복 없이)';
+  sendChat();
+}
+
 function endChat(){
   if(isStreaming && chatAbort){ try{ chatAbort.abort(); }catch(e){} }
   document.getElementById('chatPanel').style.display='none';
@@ -612,6 +632,7 @@ async function sendChat(){
   sendBtn.style.background='#ef4444';
   var bubble=addChatMsg('assistant','');
   var acc='';
+  var truncatedFlag=false;
 
   // 선택한 지식 문서 내용을 시스템 프롬프트에 주입 (Option A)
   bubble.textContent='📚 선택한 지식 문서 불러오는 중…';
@@ -693,6 +714,7 @@ async function sendChat(){
               else { bubble.textContent=acc; }
               var c=document.getElementById('chatMsgs'); c.scrollTop=c.scrollHeight;
             } else if(obj.type==='error'){ errInfo=obj; }
+              else if(obj.type==='end'){ if(obj.truncated) truncatedFlag=true; }
           }catch(_){}
         }
       }
@@ -715,6 +737,7 @@ async function sendChat(){
       chatHistory.push({role:'assistant', content: disp});
       saveChat();
       if(pending) _awSkillCards(pending);
+      _awContinueBar(bubble, truncatedFlag);  // ⏭ 이어서 보기 버튼
     }
   }catch(e){
     if(e && e.name==='AbortError'){
