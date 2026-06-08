@@ -282,21 +282,23 @@ def _msg_text(m):
 
 
 def _make_token_counter(model=None):
-    """토큰 수 카운터 반환. model 있으면 토크나이저 사용(정확),
-    실패/미지정 시 보수적 문자기반 추정(과소평가 금지 — CSV/코드/숫자 대비 문자×1.5)."""
+    """토큰 수 카운터 반환. 과소평가 절대 금지(과소평가하면 트림이 부족해 컨텍스트 초과).
+    밀집 CSV/숫자는 문자당 토큰이 ~2.3개까지 나오므로 문자기반 하한을 2.6으로 둔다.
+    토크나이저가 그보다 크게 세면(정상) 그 값을 쓰고, 작게 세거나 실패하면 하한을 쓴다."""
+    DENSE = 2.6  # tokens per char (보수적 하한)
     def count(text):
         s = str(text)
+        floor = int(len(s) * DENSE) + 1
         if model is not None:
             b = s.encode("utf-8", "ignore")
             try:
-                return len(model.tokenize(b, add_bos=False))
+                return max(len(model.tokenize(b, add_bos=False)), floor)
             except Exception:
                 try:
-                    return len(model.tokenize(b))
+                    return max(len(model.tokenize(b)), floor)
                 except Exception:
                     pass
-        # 폴백: 절대 과소평가하지 않도록 보수적(밀집 CSV/숫자는 ~1.3 tok/char)
-        return int(len(s) * 1.5) + 1
+        return floor
     return count
 
 
