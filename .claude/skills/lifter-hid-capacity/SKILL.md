@@ -49,7 +49,12 @@ python count_capacity.py LOGPRESSO_HID_INOUT_*.csv 리프터_근처HID4.csv HID_
 # 특정 분만:
 python count_capacity.py LOGPRESSO_HID_INOUT_*.csv 리프터_근처HID4.csv HID_Zone_Master_<FAB>_<PREFIX>.csv --at "2026-04-21 14:04"
 ```
-출력 `용량.csv`: `시각, Lifter, FAB, 근처HID, 경계mm, 점유차량수, 용량Max, 혼잡도%`
+출력 2개 자동 생성:
+- `용량.csv` (리프터별): `시각, Lifter, FAB, 근처HID, 경계mm, 점유차량수, 용량Max, 혼잡도%`
+- `용량_HID구역.csv` (HID구역별, 중복제거): `시각, HID, MAX_VHL, 주의_VHL, 점유차량수, 포화도%, 소속리프터`
+  - **MAX_VHL** = 그 HID에 들어올 수 있는 최대 차량수 (Vehicle_Max)
+  - **주의_VHL** = 주의 임계 (Vehicle_Precaution)
+  - **포화도%** = 점유차량수 ÷ MAX_VHL × 100
 
 ## 계산 규칙
 - **점유** = HID 에 들어와서(IN/TO_HIDID) 아직 안 나간(OUT/FROM_HIDID) 차량 (차량단위, 중복없음)

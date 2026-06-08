@@ -77,6 +77,7 @@ def main():
         mx = zmax.get(z, 0)
         return round(100.0 * c / mx, 1) if mx else ""
 
+    # 출력 1) 리프터별
     with open(out, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["시각", "Lifter", "FAB", "근처HID", "경계mm", "점유차량수", "용량Max", "혼잡도%"])
@@ -86,14 +87,30 @@ def main():
                 c = peak[m].get(z, 0)
                 w.writerow([m, lf, fab(lf), z, lifter_mm.get(lf, ""), c, zmax.get(z, ""), ratio(c, z)])
 
+    # 출력 2) HID 구역별 (리프터 근처 HID 중복제거) — MAX VHL + 포화도
+    hid_lifters = defaultdict(list)
+    for lf, z in lifter_zone.items():
+        hid_lifters[z].append(lf)
+    target_hids = sorted(hid_lifters, key=lambda x: int(x) if x.isdigit() else 1 << 30)
+    out_hid = (out.rsplit(".", 1)[0] if out.endswith(".csv") else out) + "_HID구역.csv"
+    with open(out_hid, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["시각", "HID", "MAX_VHL", "주의_VHL", "점유차량수", "포화도%", "소속리프터"])
+        for m in minutes:
+            for z in target_hids:
+                c = peak[m].get(z, 0)
+                w.writerow([m, z, zmax.get(z, ""), zpre.get(z, ""), c, ratio(c, z),
+                            ";".join(hid_lifters[z])])
+
     if at:
-        print(f"=== {at} · 리프터 근처 HID 용량/혼잡도 (peak 점유) ===")
-        rows = [(lf, lifter_zone[lf], peak.get(at, {}).get(lifter_zone[lf], 0)) for lf in lifter_zone]
-        for lf, z, c in sorted(rows, key=lambda x: -x[2]):
-            print(f"  {lf:10} HID{z:3}  점유 {c:3}/{zmax.get(z,'?')}  ({ratio(c,z)}%)")
+        print(f"=== {at} · HID 구역별 MAX VHL / 포화도 (peak 점유) ===")
+        for z in sorted(target_hids, key=lambda z: -peak.get(at, {}).get(z, 0)):
+            c = peak.get(at, {}).get(z, 0)
+            print(f"  HID{z:3}  점유 {c:3}/{zmax.get(z,'?')} MAX  포화도 {ratio(c,z)}%   (리프터: {','.join(hid_lifters[z])})")
     else:
-        print(f"분 구간 {len(minutes)}개 ({minutes[0]} ~ {minutes[-1]}) · 리프터 {len(lifter_zone)}기")
-    print(f"\n저장: {os.path.abspath(out)}")
+        print(f"분 구간 {len(minutes)}개 ({minutes[0]} ~ {minutes[-1]}) · 리프터 {len(lifter_zone)}기 · HID {len(target_hids)}구역")
+    print(f"\n저장: {os.path.abspath(out)}  (리프터별)")
+    print(f"      {os.path.abspath(out_hid)}  (HID구역별)")
 
 
 if __name__ == "__main__":
