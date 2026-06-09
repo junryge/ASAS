@@ -562,7 +562,7 @@ MOCK_REPLIES = [
     (
         ["누구", "뭐야", "정체", "who", "what are you"],
         "저는 HLLM_CLI 의 mock 응답기입니다.\n"
-        "실제 대화는 config.json 의 모델 (Qwen3-Next-80B, HCP-LLM-Latest) 중 하나가 처리합니다.\n"
+        "실제 대화는 config.json 의 모델 7개 (Coder-480B, Next-80B, GLM-5 등) 중 하나가 처리합니다.\n"
         "지금은 토큰이 없어서 시뮬레이션 중입니다."
     ),
     (

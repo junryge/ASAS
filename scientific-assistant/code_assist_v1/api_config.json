@@ -89,6 +89,36 @@
       "context_window": 128000,
       "priority": 3,
       "cost_tier": "low"
+    },
+    "qwen3-next-80b-summary": {
+      "env_id": "summary",
+      "model": "Qwen3-Next-80B-A3B-Instruct",
+      "url": "http://summary.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3-Next-80B (Summary)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "hcp-llm-latest": {
+      "env_id": "summary",
+      "model": "HCP-LLM-Latest",
+      "url": "http://summary.llm.skhynix.com/v1/chat/completions",
+      "name": "HCP-LLM-Latest (Summary)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "fast"
+      ],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "medium"
     }
   },
   "default_model_priority": [
@@ -96,6 +126,8 @@
     "gemma-4-31b",
     "gpt-oss-20b",
     "qwen25-vl-72b",
-    "qwen3-vl-30b"
+    "qwen3-vl-30b",
+    "qwen3-next-80b-summary",
+    "hcp-llm-latest"
   ]
 }
