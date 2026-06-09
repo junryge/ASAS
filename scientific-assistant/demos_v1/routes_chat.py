@@ -32,17 +32,32 @@ _EN_LETTER_RE = re.compile(r"[a-zA-Z]")
 
 
 class _StreamThinkFilter:
-    """스트리밍 중 <think>...</think> 구간을 실시간 제거. 토큰 경계로 태그가 쪼개져도 안전.
-    Qwen3 등 추론모델이 사고과정을 본문 앞에 흘려보내도 사용자에겐 최종답변만 보이게 한다."""
+    """스트리밍 중 사고과정(<think>) 실시간 제거. 토큰 경계로 태그가 쪼개져도 안전.
+    implicit=True(예: Spark qwen3.6): 템플릿이 여는 <think> 를 프롬프트에 미리 넣어
+    모델 출력이 사고로 바로 시작하고 닫는 </think> 만 나온다 → 첫 </think> 전까지 전부 사고로 보고 버린다.
+    implicit=False: 명시적 <think>...</think> 만 제거(다른 모델은 평소대로 스트리밍)."""
     OPEN = "<think>"
     CLOSE = "</think>"
 
-    def __init__(self):
+    def __init__(self, implicit=False):
         self.buf = ""
         self.in_think = False
+        self.implicit = implicit
+        self.done = False   # 사고 종료(</think> 통과) 후엔 그냥 흘림
 
     def feed(self, tok):
+        if self.done:
+            return tok
         self.buf += tok
+        # 암묵 모드: 첫 </think> 전까지 전부 사고 → 버리고, 그 뒤부터 본문
+        if self.implicit and not self.in_think:
+            i = self.buf.find(self.CLOSE)
+            if i != -1:
+                after = self.buf[i + len(self.CLOSE):]
+                self.buf = ""
+                self.done = True
+                return after.lstrip("\n")
+            return ""   # 아직 </think> 안 나옴 → 보류(전부 사고로 간주)
         out = ""
         while self.buf:
             if not self.in_think:
@@ -909,7 +924,8 @@ def _stream_chat_sse(data):
         payload["chat_template_kwargs"] = {"enable_thinking": False}
 
     def gen_api():
-        _tf = _StreamThinkFilter()   # <think>...</think> 실시간 제거
+        # Spark(qwen3.6): 템플릿이 <think> 를 미리 넣어 닫는태그만 나옴 → 암묵 사고제거 모드
+        _tf = _StreamThinkFilter(implicit=(str(env_id) == "spark"))
         _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
         meta = {
             "type": "meta", "env": env_id, "model": model,
