@@ -515,6 +515,125 @@ def _plan_gguf_chunks(messages, n_ctx, reply_cap, model, safety=1536, max_chunks
             "reply": reply_cap, "n_ctx": n_ctx, "safety": safety, "over": over}
 
 
+# ══ 실행형 지식(스크립트) 자동 실행 ═════════════════════════════════
+# 개인에이전트가 '선택(체크)'한 스크립트 + 트리거어 + 업로드 데이터 → 스크립트 실행 →
+# 결과 요약을 LLM 에 주입. LLM 은 선택한 문서지식(카파시톤/결과해석)으로 해석.
+def _find_agent_script(user_id, query, selected_names):
+    """선택된 스크립트 중 query 트리거 매칭되는 것 (meta, dir). 선택 없으면 None(안전)."""
+    if not user_id or not selected_names:
+        return None
+    sroot = os.path.join(KNOWLEDGE_DIR, str(user_id), "scripts")
+    if not os.path.isdir(sroot):
+        return None
+    sel = set(selected_names)
+    q = query or ""
+    for nm in sorted(os.listdir(sroot)):
+        if nm not in sel:
+            continue
+        mp = os.path.join(sroot, nm, "_meta.json")
+        if not os.path.isfile(mp):
+            continue
+        try:
+            meta = json.load(open(mp, encoding="utf-8"))
+        except Exception:
+            continue
+        trig = meta.get("trigger") or []
+        if (not trig) or any(t and t in q for t in trig):
+            return meta, os.path.join(sroot, nm)
+    return None
+
+
+def _summarize_result_csv(path, max_full_rows=30, top_k=8):
+    """결과 CSV → LLM용 압축 요약. 작은 표(사건단위)는 통째로, 큰 표(발동이벤트)는 분포+상위행."""
+    import csv as _csv
+    from collections import Counter
+    try:
+        rows = list(_csv.DictReader(open(path, encoding="utf-8-sig")))
+    except Exception:
+        return "(읽기 실패)"
+    if not rows:
+        return "(0행)"
+    cols = list(rows[0].keys())
+    n = len(rows)
+    KEY = ["datetime", "time", "stage", "stage_name", "unified_risk_score", "unified_risk_level",
+           "hot_area", "affected_areas", "reason", "predict_time", "start_time", "end_time",
+           "lead_min", "duration_min", "max_risk_score", "max_risk_level", "triggered_rules",
+           "risk_factors", "M16HUB_signals", "M14_signals", "M16A_signals", "M16B_signals"]
+    keys = [c for c in KEY if c in cols] or cols[:10]
+    out = [f"행수: {n}"]
+    if n <= max_full_rows:
+        for r in rows:
+            line = " | ".join(f"{k}={r.get(k, '')}" for k in keys if str(r.get(k, '')).strip())
+            if line:
+                out.append(line)
+    else:
+        for c in ("stage_name", "unified_risk_level", "hot_area"):
+            if c in cols:
+                cnt = Counter(str(r.get(c, "")).strip() or "-" for r in rows)
+                out.append(f"[{c} 분포] " + ", ".join(f"{k}:{v}" for k, v in cnt.most_common(8)))
+        if "unified_risk_score" in cols:
+            def _score(r):
+                try:
+                    return float(r.get("unified_risk_score") or 0)
+                except Exception:
+                    return 0.0
+            for r in sorted(rows, key=_score, reverse=True)[:top_k]:
+                if _score(r) <= 0:
+                    break
+                out.append("· " + " | ".join(f"{k}={r.get(k, '')}" for k in keys if str(r.get(k, '')).strip()))
+    return "\n".join(out)
+
+
+def _run_agent_script(user_id, query, csv_data, selected_names):
+    """선택+트리거 매칭 스크립트 실행 → 결과 요약. 미매칭/실패 시 None."""
+    found = _find_agent_script(user_id, query, selected_names)
+    if not found:
+        return None
+    meta, sdir = found
+    headers = csv_data.get("headers") or []
+    rows = csv_data.get("rows") or []
+    if not headers or not rows:
+        return None
+    import tempfile
+    import subprocess
+    import sys as _sys
+    import glob
+    import shutil
+    import csv as _csv
+    fd, tin = tempfile.mkstemp(suffix=".csv", prefix="an_in_")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(headers)
+        for r in rows:
+            w.writerow(r)
+    outd = tempfile.mkdtemp(prefix="an_out_")
+    try:
+        entry = meta.get("entry") or ""
+        proc = subprocess.run([_sys.executable, os.path.join(sdir, entry), tin, "-o", outd],
+                              capture_output=True, text=True, timeout=120, cwd=sdir)
+        csvs = sorted(glob.glob(os.path.join(outd, "*.csv")) + glob.glob(os.path.join(outd, "*.CSV")))
+        parts = [f"=== [분석 결과: {meta.get('name')}] — 스크립트가 계산한 결과입니다. 재계산 말고 이걸로 진단하세요 ==="]
+        if csvs:
+            for cf in csvs:
+                parts.append(f"\n[{os.path.basename(cf)}]\n" + _summarize_result_csv(cf))
+        elif (proc.stdout or "").strip():
+            parts.append((proc.stdout or "")[:6000])
+        else:
+            parts.append(f"(산출 없음) {(proc.stderr or '')[:800]}")
+        parts.append("\n\n→ 위 결과를 선택한 지식문서(카파시톤=원리 / 결과해석=컬럼사전)로 해석해 진단하세요.\n\n")
+        return "\n".join(parts)
+    except subprocess.TimeoutExpired:
+        return f"=== [분석: {meta.get('name')}] 실행 시간 초과(120초). 데이터가 너무 큽니다. ===\n\n"
+    except Exception as e:
+        return f"=== [분석 오류: {meta.get('name')}] {e} ===\n\n"
+    finally:
+        try:
+            os.remove(tin)
+        except Exception:
+            pass
+        shutil.rmtree(outd, ignore_errors=True)
+
+
 def _stream_chat_sse(data):
     chat_stop_flag["stop"] = False
 
@@ -588,17 +707,27 @@ def _stream_chat_sse(data):
     file_section = ""
     include_csv = data.get("include_csv", True)
     if include_csv and _csv_now.get("filename"):
-        csv_info = _csv_now.get("summary", "")
-        rows = _csv_now.get("rows", []) or []
-        headers_csv = _csv_now.get("headers", []) or []
-        preview_limit = min(50, len(rows))
-        csv_rows_text = ",".join(headers_csv) + "\n"
-        for row in rows[:preview_limit]:
-            csv_rows_text += ",".join(str(c) for c in row) + "\n"
-        if len(rows) > preview_limit:
-            csv_rows_text += f"... (총 {len(rows)}행 중 {preview_limit}행만 표시)\n"
-        file_section += f"=== 업로드된 CSV 데이터 ===\n{csv_info}\n\n데이터 미리보기:\n{csv_rows_text}\n\n"
-        file_section += "사용자가 이 데이터에 대해 질문하면 위 CSV 데이터를 기반으로 분석해주세요.\n\n"
+        # ★ 에이전트가 선택한 스크립트 + 트리거어 매칭 시: raw 대신 '스크립트 실행 결과' 주입
+        _q_now = ""
+        for _m in reversed(messages):
+            if _m.get("role") == "user" and isinstance(_m.get("content"), str):
+                _q_now = _m["content"]
+                break
+        _script_out = _run_agent_script(data.get("user_id"), _q_now, _csv_now, data.get("knowledge_scripts") or [])
+        if _script_out:
+            file_section += _script_out          # 스크립트가 계산 → LLM은 결과만 해석(raw 안 봄)
+        else:
+            csv_info = _csv_now.get("summary", "")
+            rows = _csv_now.get("rows", []) or []
+            headers_csv = _csv_now.get("headers", []) or []
+            preview_limit = min(50, len(rows))
+            csv_rows_text = ",".join(headers_csv) + "\n"
+            for row in rows[:preview_limit]:
+                csv_rows_text += ",".join(str(c) for c in row) + "\n"
+            if len(rows) > preview_limit:
+                csv_rows_text += f"... (총 {len(rows)}행 중 {preview_limit}행만 표시)\n"
+            file_section += f"=== 업로드된 CSV 데이터 ===\n{csv_info}\n\n데이터 미리보기:\n{csv_rows_text}\n\n"
+            file_section += "사용자가 이 데이터에 대해 질문하면 위 CSV 데이터를 기반으로 분석해주세요.\n\n"
 
     if _files_now:
         file_section += f"=== 업로드된 파일 ({len(_files_now)}개) ===\n"

@@ -131,6 +131,9 @@
       <label>📂 내 지식 문서 선택 (체크한 문서를 근거로 답변)</label>
       <div id="agKnowList" style="max-height:150px;overflow:auto;border:1px solid #444;border-radius:6px;padding:8px;background:#23233a;font-size:12px;color:#94a3b8;">로딩 중…</div>
 
+      <label>📜 내 스크립트 선택 (체크하면 데이터 첨부+트리거어 시 자동 실행)</label>
+      <div id="agScriptList" style="max-height:140px;overflow:auto;border:1px solid #b4862f;border-radius:6px;padding:8px;background:#2a2410;font-size:12px;color:#fbbf24;">로딩 중…</div>
+
       <label>🛠 스킬 조합 선택</label>
       <select id="agComboSelect" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;box-sizing:border-box;">
         <option value="">+ 조합 추가…</option>
@@ -405,6 +408,33 @@ function getCheckedKnowledge(){
   return out;
 }
 
+// ── 내 스크립트 목록 (체크박스) ──
+async function loadAgentScripts(selected){
+  var box=document.getElementById('agScriptList');
+  var sel=new Set(selected||[]);
+  try{
+    var r=await fetch('/api/knowledge/scripts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid()})});
+    var d=await r.json();
+    var scripts=d.scripts||[];
+    if(!scripts.length){ box.innerHTML='<span style="color:#9a7b3a;">등록된 스크립트가 없습니다. (메인 📚 내 지식 → 📜 스크립트 탭에서 등록)</span>'; return; }
+    box.innerHTML='';
+    scripts.forEach(function(s){
+      var lbl=document.createElement('label');
+      lbl.style.cssText='display:flex;align-items:center;gap:8px;padding:3px 0;color:#fbbf24;cursor:pointer;';
+      lbl.innerHTML='<input type="checkbox" value="'+esc(s.name)+'" '+(sel.has(s.name)?'checked':'')+' style="width:auto;margin:0;accent-color:#f59e0b;"> '
+        +'<span style="flex:1;">🐍 '+esc(s.name)+'</span>'
+        +'<span style="color:#9a7b3a;font-size:10.5px;">'+esc((s.trigger||[]).join(','))+'</span>';
+      box.appendChild(lbl);
+    });
+  }catch(e){ box.innerHTML='<span style="color:#f87171;">스크립트 목록 로드 실패: '+esc(e.message)+'</span>'; }
+}
+function getCheckedScripts(){
+  var out=[];
+  var els=document.querySelectorAll('#agScriptList input[type=checkbox]');
+  for(var i=0;i<els.length;i++){ if(els[i].checked) out.push(els[i].value); }
+  return out;
+}
+
 // 선택한 지식 파일들의 내용을 가져와 시스템 프롬프트용 컨텍스트 블록 생성
 var _KCTX_PER_FILE = 4000, _KCTX_TOTAL = 14000;
 async function buildKnowledgeContext(files){
@@ -470,6 +500,7 @@ async function saveAgent(){
     skills: getCheckedSkills(),
     knowledge: false,
     knowledge_files: getCheckedKnowledge(),
+    knowledge_scripts: getCheckedScripts(),
     effort: parseInt(document.getElementById('agEffort').value,10)
   };
   try{
@@ -677,6 +708,7 @@ async function sendChat(){
     system_prompt: sysPrompt,
     think_mode: false,
     ctx_guard: document.getElementById('agCtxGuard') ? document.getElementById('agCtxGuard').checked : true,
+    knowledge_scripts: (activeAgent.knowledge_scripts || []),
     user_id: uid(),
     stream: true
   };
@@ -770,6 +802,7 @@ document.getElementById('chatInput').addEventListener('keydown', function(e){
   loadEnvs();
   initSkills();
   loadKnowledgeFiles();
+  loadAgentScripts();
   loadAgents();
 })();
 </script>
