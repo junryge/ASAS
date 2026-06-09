@@ -133,10 +133,10 @@
     <div>
       <div class="card">
         <h2>🔌 LLM API 설정</h2>
-        <label>API 주소 (OpenAI 호환, /v1)</label>
-        <input id="cfgBase" placeholder="http://common.llm.skhynix.com/v1">
-        <label>API 키 (Bearer 토큰)</label>
-        <input id="cfgKey" type="password" placeholder="token.txt 내용 붙여넣기">
+        <label>API 주소 — proxy.py 켜면 그대로 두세요</label>
+        <input id="cfgBase" placeholder="http://localhost:8000/v1">
+        <label>API 키 (proxy 쓰면 비워둠 — token.txt 자동 인증)</label>
+        <input id="cfgKey" type="password" placeholder="(proxy 사용 시 비워둠)">
         <label>모델명 <span class="muted" style="cursor:pointer;color:var(--cyan);" onclick="loadModels()">↻ 목록 불러오기</span></label>
         <input id="cfgModel" list="modelList" placeholder="Qwen3.6-35B-A3B">
         <datalist id="modelList"></datalist>
@@ -477,8 +477,8 @@ function resetAll(){ if(!confirm('데모 기억·스킬·대화를 모두 지울
 // ============ 부트 ============
 (function(){
   const c=getCfg();
-  // 최초 실행 시 기본값 자동 입력 (키만 넣으면 됨)
-  $('cfgBase').value = c.base || 'http://common.llm.skhynix.com/v1';
+  // 최초 실행 시 기본값 = 프록시(proxy.py). 프록시만 켜면 키 입력 없이 바로 됨.
+  $('cfgBase').value = c.base || 'http://localhost:8000/v1';
   $('cfgKey').value  = c.key  || '';
   $('cfgModel').value= c.model|| 'Qwen3.6-35B-A3B';
   $('cfgFold').checked  = !!c.fold;
