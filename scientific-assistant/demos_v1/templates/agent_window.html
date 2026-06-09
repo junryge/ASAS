@@ -94,7 +94,7 @@
     <div id="chatMsgs"></div>
     <div id="chatInputRow">
       <textarea id="chatInput" placeholder="질문을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
-      <button id="chatSend" onclick="sendChat()">전송</button>
+      <button id="chatSend" onclick="onSendBtn()">전송</button>
     </div>
   </div>
 
@@ -503,6 +503,35 @@ function activate(a){
   document.getElementById('chatInput').focus();
 }
 
+// 전송/중지 토글: 스트리밍 중이면 중지, 아니면 전송
+function onSendBtn(){
+  if(isStreaming) stopChat();
+  else sendChat();
+}
+function stopChat(){
+  if(isStreaming && chatAbort){ try{ chatAbort.abort(); }catch(e){} }
+}
+
+// ⏭ 이어서 보기: 직전 답변을 이어서 작성하게 함 (답이 잘렸을 때 특히 강조)
+function _awContinueBar(bubble, truncated){
+  try{
+    if(!bubble) return;
+    var bar=document.createElement('div');
+    bar.style.cssText='margin-top:8px;display:flex;gap:8px;align-items:center;';
+    var hint = truncated ? '<span style="font-size:11px;color:#fbbf24;">⚠️ 답변이 길이 제한으로 잘렸습니다.</span>' : '';
+    bar.innerHTML = '<button onclick="continueChat()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;">⏭ 이어서 보기</button>' + hint;
+    bubble.appendChild(bar);
+  }catch(e){}
+}
+// 직전 답변을 이어서 작성하도록 '계속' 메시지를 보내 스트리밍 재개
+function continueChat(){
+  if(isStreaming) return;
+  if(!activeAgent){ return; }
+  var inp=document.getElementById('chatInput');
+  inp.value='이어서 계속 작성해줘. (앞 답변에 바로 이어서, 같은 형식·한국어로, 중복 없이)';
+  sendChat();
+}
+
 function endChat(){
   if(isStreaming && chatAbort){ try{ chatAbort.abort(); }catch(e){} }
   document.getElementById('chatPanel').style.display='none';
@@ -598,13 +627,21 @@ async function sendChat(){
   skills = skills.filter(function(s){ return s!=='hermes'; });
 
   var sendBtn=document.getElementById('chatSend');
-  isStreaming=true; sendBtn.disabled=true; sendBtn.textContent='…';
+  // 스트리밍 중엔 '중지' 버튼으로 (비활성화하지 않고 누르면 abort)
+  isStreaming=true; sendBtn.disabled=false; sendBtn.textContent='⏹ 중지';
+  sendBtn.style.background='#ef4444';
   var bubble=addChatMsg('assistant','');
   var acc='';
+  var truncatedFlag=false;
 
   // 선택한 지식 문서 내용을 시스템 프롬프트에 주입 (Option A)
   bubble.textContent='📚 선택한 지식 문서 불러오는 중…';
   var sysPrompt = activeAgent.persona || '';
+  // 답변 규칙: 한국어로 + 영어 사고과정/<think> 누출 차단 (스킬 형식은 그대로 따름)
+  sysPrompt += (sysPrompt ? '\n\n' : '') +
+    '[답변 규칙] 반드시 한국어로 답하세요. 영어 사고과정("Here\'s a thinking process", "Analyze", "Let me think", "Draft" 등)이나 ' +
+    '<think>·<thinking> 태그를 절대 출력하지 말고, 바로 결론·핵심부터 명확하게 답하세요(고유명사·코드·명령어는 예외). ' +
+    '불필요한 서론·과정 설명은 빼고 결론 위주로. 스킬이 지정한 형식(표·문서·다이어그램 등)이 있으면 그 형식대로 작성하세요.';
   var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
   if(kctx) sysPrompt += kctx;
   if(hermesOn){
@@ -617,9 +654,19 @@ async function sendChat(){
   }
   bubble.textContent='';
 
+  // API로 보낼 메시지: 저장본은 그대로 두고, 마지막 user 메시지에만 '한국어/사고과정 차단' 지시만 덧붙임
+  // (보고서 스킬 형식은 건드리지 않음 — 영어 사고과정 누출만 막는다)
+  var _apiMsgs = chatHistory.map(function(m){ return {role:m.role, content:m.content}; });
+  for(var _i=_apiMsgs.length-1; _i>=0; _i--){
+    if(_apiMsgs[_i].role==='user'){
+      _apiMsgs[_i].content += '\n\n(지시: 한국어로 답하고, 영어 사고과정이나 <think> 태그는 출력하지 마라.)';
+      break;
+    }
+  }
+
   var payload={
     env: (Array.isArray(activeAgent.envs)&&activeAgent.envs.length)? activeAgent.envs : ['auto'],
-    messages: chatHistory,
+    messages: _apiMsgs,
     skills: skills,
     effort: (activeAgent.effort!=null)? activeAgent.effort : 2,
     format: 'auto',
@@ -667,6 +714,7 @@ async function sendChat(){
               else { bubble.textContent=acc; }
               var c=document.getElementById('chatMsgs'); c.scrollTop=c.scrollHeight;
             } else if(obj.type==='error'){ errInfo=obj; }
+              else if(obj.type==='end'){ if(obj.truncated) truncatedFlag=true; }
           }catch(_){}
         }
       }
@@ -689,12 +737,18 @@ async function sendChat(){
       chatHistory.push({role:'assistant', content: disp});
       saveChat();
       if(pending) _awSkillCards(pending);
+      _awContinueBar(bubble, truncatedFlag);  // ⏭ 이어서 보기 버튼
     }
   }catch(e){
-    if(e && e.name==='AbortError'){ bubble.textContent=acc+'\n\n⏹ 중단됨'; }
+    if(e && e.name==='AbortError'){
+      var _p=stripThink(acc);
+      bubble.innerHTML = renderFinal((_p?_p:'') + '\n\n⏹ 중단됨');
+      if(_p){ chatHistory.push({role:'assistant', content:_p}); saveChat(); }
+    }
     else { bubble.textContent=acc+'\n\n❌ '+(e.message||e); }
   } finally {
-    isStreaming=false; sendBtn.disabled=false; sendBtn.textContent='전송'; chatAbort=null;
+    isStreaming=false; sendBtn.disabled=false; sendBtn.textContent='전송';
+    sendBtn.style.background=''; chatAbort=null;
   }
 }
 

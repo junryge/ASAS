@@ -12,6 +12,7 @@ import time
 import uuid
 import base64
 import requests as req
+from demos_v1.llm_compat import chat_post
 from flask import request, jsonify, render_template, send_file
 
 from demos_v1.utils import (
@@ -123,7 +124,7 @@ def _llm_generate_text(data, system_prompt, user_msg, max_tokens=8192, timeout=1
     headers = {"Content-Type": "application/json"}
     if API_TOKEN:
         headers["Authorization"] = f"Bearer {API_TOKEN}"
-    resp = req.post(
+    resp = chat_post(
         api_url,
         headers=headers,
         json={

@@ -5,6 +5,7 @@ demos_v1/skills.py - Skill descriptions, domain mappings, groups, keywords, auto
 import os
 import re
 import requests as req
+from demos_v1.llm_compat import chat_post
 from demos_v1.utils import BASE_DIR, SKILLS_DIR, uploaded_csv_data, uploaded_files
 from demos_v1.config import RERANKER_ENABLED, API_TOKEN, MAX_POOL_SIZE
 from demos_v1.models import MODEL_REGISTRY, ENV_TO_REGISTRY
@@ -1559,7 +1560,7 @@ def rerank_skills(query, candidate_skill_ids, top_k=7):
         headers["Authorization"] = f"Bearer {API_TOKEN}"
 
     try:
-        resp = req.post(
+        resp = chat_post(
             reg["url"].replace("/chat/completions", "/rerank"),  # rerank 엔드포인트 시도
             headers=headers,
             json={

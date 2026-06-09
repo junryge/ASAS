@@ -88,6 +88,7 @@ def _strip_thinking_artifacts(text):
 import time
 import warnings
 import requests as req
+from demos_v1.llm_compat import chat_post
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import request, jsonify, Response, stream_with_context
 
@@ -261,6 +262,184 @@ def _prepend_system(msgs, extra):
     if not sys_parts:
         return rest
     return [{"role": "system", "content": "\n\n".join(sys_parts)}] + rest
+
+
+def _gguf_n_ctx(model, default=32768):
+    """로드된 GGUF 모델의 컨텍스트 길이(n_ctx) 반환. (메서드/속성 모두 대응)"""
+    attr = getattr(model, "n_ctx", None)
+    try:
+        v = attr() if callable(attr) else attr
+        return int(v) if v else default
+    except Exception:
+        return default
+
+
+def _msg_text(m):
+    c = m.get("content", "")
+    if isinstance(c, list):
+        c = "\n".join(str(p.get("text", "")) for p in c if isinstance(p, dict) and p.get("type") == "text")
+    return str(c)
+
+
+def _make_token_counter(model=None):
+    """토큰 수 카운터 반환. 과소평가 절대 금지(과소평가하면 트림이 부족해 컨텍스트 초과).
+    밀집 CSV/숫자는 문자당 토큰이 ~2.3개까지 나오므로 문자기반 하한을 2.6으로 둔다.
+    토크나이저가 그보다 크게 세면(정상) 그 값을 쓰고, 작게 세거나 실패하면 하한을 쓴다."""
+    DENSE = 2.6  # tokens per char (보수적 하한)
+    def count(text):
+        s = str(text)
+        floor = int(len(s) * DENSE) + 1
+        if model is not None:
+            b = s.encode("utf-8", "ignore")
+            try:
+                return max(len(model.tokenize(b, add_bos=False)), floor)
+            except Exception:
+                try:
+                    return max(len(model.tokenize(b)), floor)
+                except Exception:
+                    pass
+        return floor
+    return count
+
+
+def _truncate_text_to_tokens(text, allow_tokens, count):
+    """text 를 head+tail 형태로 allow_tokens 안에 들어오게 절단. (새 텍스트, 잘린_문자수) 반환.
+    count 가 정확/보수적이면 루프가 실제로 맞을 때까지 줄인다."""
+    total = count(text)
+    if total <= allow_tokens:
+        return text, 0
+    ratio = len(text) / max(1, total)            # 문자/토큰 근사 (초기 추정용)
+    keep = max(200, int(allow_tokens * ratio * 0.9))
+    head = int(keep * 0.7)
+    tail = keep - head
+    marker = f"\n...[중략: 원본 {len(text):,}자 중 일부 생략]...\n"
+    new = text[:head] + marker + (text[-tail:] if tail > 0 else "")
+    # count 기준으로 실제 맞을 때까지 축소 (보수적 count 라 오버플로 방지 보장)
+    _guard = 0
+    while count(new) > allow_tokens and head > 120 and _guard < 40:
+        head = int(head * 0.8)
+        tail = int(tail * 0.8)
+        new = text[:head] + marker + (text[-tail:] if tail > 0 else "")
+        _guard += 1
+    return new, max(0, len(text) - (head + max(0, tail)))
+
+
+def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
+    """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단. GGUF·API 공통.
+    1) 오래된 user/assistant 메시지 제거 → 2) 그래도 크면 가장 큰 메시지 본문 절단.
+    반환: (트림된 messages, 응답토큰예산, 경고문)."""
+    count = _make_token_counter(model)
+
+    def mtoks(msgs):
+        # 메시지당 chat 템플릿 오버헤드 넉넉히(+8), 전체 여유(+16)
+        return sum(count(_msg_text(m)) + 8 for m in msgs) + 16
+
+    msgs = [dict(m) for m in messages]
+    warn = ""
+    input_budget = max(512, n_ctx - reply_cap - safety)
+
+    # 1) system·마지막 메시지 유지, 오래된 user/assistant 부터 제거
+    while mtoks(msgs) > input_budget and len(msgs) > 1:
+        idx = next((i for i, m in enumerate(msgs[:-1]) if m.get("role") in ("user", "assistant")), -1)
+        if idx < 0:
+            break
+        msgs.pop(idx)
+
+    # 2) 단일 대용량 메시지(붙여넣기 등) → 본문 절단
+    if mtoks(msgs) > input_budget:
+        big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
+        others = mtoks([m for j, m in enumerate(msgs) if j != big_i])
+        allow = max(256, input_budget - others)
+        new_text, removed = _truncate_text_to_tokens(_msg_text(msgs[big_i]), allow, count)
+        if removed > 0:
+            msgs[big_i] = dict(msgs[big_i], content=new_text)
+            warn = (f"⚠️ [컨텍스트보호 v3] 입력이 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라 넣었습니다. "
+                    f"전체를 보려면 더 큰 컨텍스트 모델(API 128K)을 쓰세요.")
+
+    # 3) 토큰 추정과 무관한 '하드 글자수' 안전장치 — 토크나이저가 어떤 값을 주든 절대 초과 안 함.
+    #    밀집 CSV(숫자·쉼표)는 문자당 토큰이 ~2.3개라, 글자수 자체를 input_budget/2.6 로 캡.
+    max_chars = max(400, int(input_budget / 2.6))
+    total_chars = sum(len(_msg_text(m)) for m in msgs)
+    if total_chars > max_chars:
+        big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
+        others_chars = total_chars - len(_msg_text(msgs[big_i]))
+        allow_chars = max(300, max_chars - others_chars)
+        t = _msg_text(msgs[big_i])
+        if len(t) > allow_chars:
+            head = int(allow_chars * 0.7)
+            tail = allow_chars - head
+            marker = f"\n...[중략: 원본 {len(t):,}자 중 일부 생략]...\n"
+            msgs[big_i] = dict(msgs[big_i], content=t[:head] + marker + (t[-tail:] if tail > 0 else ""))
+            hard_removed = len(t) - (head + max(0, tail))
+            if hard_removed > 0:
+                warn = (f"⚠️ [컨텍스트보호 v3] 입력이 한도({n_ctx:,} 토큰)를 넘어 약 {hard_removed:,}자를 잘라 넣었습니다. "
+                        f"전체를 보려면 더 큰 컨텍스트 모델(API 128K)을 쓰세요.")
+
+    reply_budget = max(256, min(reply_cap, n_ctx - mtoks(msgs) - safety))
+    return msgs, reply_budget, warn
+
+
+def _extract_instruction(text):
+    """대용량 붙여넣기에서 '사용자 요청' 부분을 추정(보통 앞/뒤에 위치)."""
+    t = str(text).strip()
+    if len(t) <= 600:
+        return t
+    return (t[:180].strip() + "\n…\n" + t[-450:].strip())
+
+
+def _chunk_text_by_tokens(text, budget_tokens, count, hard_cap=64):
+    """text 를 각 청크가 budget_tokens 이하가 되도록 순서대로 분할."""
+    chunks = []
+    i, n = 0, len(text)
+    while i < n and len(chunks) < hard_cap:
+        approx = max(400, int(budget_tokens / 1.6))   # 보수적 초기 길이(문자)
+        j = min(n, i + approx)
+        piece = text[i:j]
+        guard = 0
+        while count(piece) > budget_tokens and (j - i) > 300 and guard < 40:
+            j = i + int((j - i) * 0.85)
+            piece = text[i:j]
+            guard += 1
+        if j <= i:
+            j = min(n, i + 400)
+            piece = text[i:j]
+        chunks.append(piece)
+        i = j
+    return chunks
+
+
+def _plan_gguf_chunks(messages, n_ctx, reply_cap, model, safety=1536, max_chunks=20):
+    """입력이 n_ctx 를 초과하면 '이어서 보기'(분할 처리) 계획 반환. 들어가면 None.
+    반환: {base, instr, chunks, reply, n_ctx, safety, over}."""
+    count = _make_token_counter(model)
+
+    def mtoks(msgs):
+        return sum(count(_msg_text(m)) + 8 for m in msgs) + 16
+
+    if mtoks(messages) + reply_cap + safety <= n_ctx:
+        return None   # 한 번에 들어감
+
+    big_i = max(range(len(messages)), key=lambda i: len(_msg_text(messages[i])))
+    big_text = _msg_text(messages[big_i])
+    base = [dict(m) for j, m in enumerate(messages) if j != big_i]   # 시스템 등 공통 메시지
+    instr = _extract_instruction(big_text)
+
+    base_tokens = mtoks(base) if base else 16
+    per_chunk_budget = n_ctx - reply_cap - safety - base_tokens - count(instr) - 80
+    if per_chunk_budget < 800:
+        instr = instr[-300:]
+        per_chunk_budget = max(800, n_ctx - reply_cap - safety - base_tokens - count(instr) - 80)
+
+    chunks = _chunk_text_by_tokens(big_text, per_chunk_budget, count)
+    if len(chunks) <= 1:
+        return None
+
+    over = False
+    if len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks]
+        over = True
+    return {"base": base, "instr": instr, "chunks": chunks,
+            "reply": reply_cap, "n_ctx": n_ctx, "safety": safety, "over": over}
 
 
 def _stream_chat_sse(data):
@@ -499,43 +678,127 @@ def _stream_chat_sse(data):
         max_tokens_g = min(data.get("max_tokens", gguf_reply_cap), gguf_reply_cap)
         model_name = os.path.basename(gguf_path) if gguf_path else env_id
 
-        def gen_gguf():
-            _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
+        _gctx = _gguf_n_ctx(_utils_mod.gguf_model)
+        _greserve = max(512, TOKEN_SETTINGS.get("gguf_ctx_reserve", 1536))
+        _temp = temperature_map[min(effort, 3)]
+
+        def _tok_evt(t):
+            return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
+
+        def _gguf_stream_once(msgs, max_toks):
+            """한 번의 create_chat_completion 을 스트리밍 — (yield용 SSE, 누적텍스트, finish) 제너레이터.
+            마지막에 ('__end__', acc, finish) 튜플을 yield."""
+            acc = ""
+            _finish = None
+            for chunk in _utils_mod.gguf_model.create_chat_completion(
+                    messages=msgs, temperature=_temp, max_tokens=max_toks, stream=True):
+                if chat_stop_flag.get("stop"):
+                    break
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                tok = delta.get("content") or ""
+                if tok:
+                    acc += tok
+                    yield _tok_evt(tok)
+                fr = choices[0].get("finish_reason")
+                if fr:
+                    _finish = fr
+            yield ("__end__", acc, _finish)
+
+        # 분할(이어서보기) 비활성화 — 항상 단일 패스로 처리(큰 입력은 앞부분 잘라 한 번에 답변).
+        # ('부분 N/20' 식 분할이 보고서/지식 답변을 조각내고 영어 사고과정 누출을 키워서 끔.)
+        _plan = None
+
+        def _meta_evt():
+            _sys_len = sum(len(m.get("content", "") or "") for m in api_messages if m.get("role") == "system")
             meta = {
                 "type": "meta", "env": env_id, "model": model_name,
                 "loaded_skills": loaded_skills,
                 "system_prompt_length": _sys_len,
-                "auto_routed": auto_routed,
-                "route_reason": route_reason,
+                "auto_routed": auto_routed, "route_reason": route_reason,
             }
-            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-            try:
-                _finish = None
-                for chunk in _utils_mod.gguf_model.create_chat_completion(
-                    messages=api_messages,
-                    temperature=temperature_map[min(effort, 3)],
-                    max_tokens=max_tokens_g,
-                    stream=True,
-                ):
+            return f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+
+        if _plan is None:
+            # ── 단일 패스 (필요 시 트림) ──
+            _fit_msgs, _fit_reply, _fit_warn = _fit_messages_to_ctx(
+                api_messages, _gctx, max_tokens_g,
+                model=_utils_mod.gguf_model, safety=_greserve)
+
+            def gen_gguf():
+                yield _meta_evt()
+                if _fit_warn:
+                    yield _tok_evt(_fit_warn + "\n\n")
+                try:
+                    _finish = None
+                    for ev in _gguf_stream_once(_fit_msgs, _fit_reply):
+                        if isinstance(ev, tuple) and ev and ev[0] == "__end__":
+                            _finish = ev[2]
+                        else:
+                            yield ev
+                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
+                    yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'error': f'GGUF 오류: {str(e)}'}, ensure_ascii=False)}\n\n"
+        else:
+            # ── 분할 처리 (이어서 보기): N조각 순차 분석 → 종합 ──
+            def gen_gguf():
+                yield _meta_evt()
+                _chunks = _plan["chunks"]; N = len(_chunks)
+                _base = _plan["base"]; _instr = _plan["instr"]
+                _sys_only = [m for m in _base if m.get("role") == "system"]
+                intro = (f"📚 입력이 GGUF 컨텍스트({_plan['n_ctx']:,} 토큰)를 초과해 "
+                         f"**{N}개 부분으로 나눠 순서대로 분석**한 뒤 종합합니다.\n")
+                if _plan["over"]:
+                    intro += "⚠️ 데이터가 매우 커서 앞부분 위주로 처리합니다.\n"
+                yield _tok_evt(intro)
+                _partials = []
+                try:
+                    for idx, piece in enumerate(_chunks, 1):
+                        if chat_stop_flag.get("stop"):
+                            yield "data: [DONE]\n\n"; return
+                        yield _tok_evt(f"\n\n━━━━━ 📄 부분 {idx}/{N} ━━━━━\n\n")
+                        framed = (f"[전체 {N}개 부분 중 {idx}번째 부분입니다. 이 부분 데이터에 대해 "
+                                  f"아래 요청을 수행하세요. 전체 종합은 마지막에 따로 합니다.]\n\n"
+                                  f"{piece}\n\n[사용자 요청]\n{_instr}")
+                        _msgs = _base + [{"role": "user", "content": framed}]
+                        _msgs, _rb, _ = _fit_messages_to_ctx(
+                            _msgs, _plan["n_ctx"], _plan["reply"],
+                            model=_utils_mod.gguf_model, safety=_plan["safety"])
+                        _acc = ""
+                        for ev in _gguf_stream_once(_msgs, _rb):
+                            if isinstance(ev, tuple) and ev and ev[0] == "__end__":
+                                _acc = ev[1]
+                            else:
+                                yield ev
+                        _partials.append(_acc)
+
+                    # 종합
                     if chat_stop_flag.get("stop"):
-                        yield "data: [DONE]\n\n"
-                        return
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    tok = delta.get("content") or ""
-                    if tok:
-                        yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
-                    fr = choices[0].get("finish_reason")
-                    if fr:
-                        _finish = fr
-                end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
-                yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
-                yield "data: [DONE]\n\n"
-            except Exception as e:
-                err = {"type": "error", "error": f"GGUF 오류: {str(e)}"}
-                yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"; return
+                    yield _tok_evt("\n\n━━━━━ ✅ 종합 ━━━━━\n\n")
+                    combined = "\n\n".join(f"[부분 {i+1}]\n{p}" for i, p in enumerate(_partials))
+                    synth_user = (f"다음은 큰 데이터를 {N}개로 나눠 각각 분석한 결과입니다. "
+                                  f"이를 하나로 종합해 사용자 요청에 대한 최종 결론을 작성하세요.\n\n"
+                                  f"[사용자 요청]\n{_instr}\n\n[부분 분석 결과]\n{combined}")
+                    _smsgs = _sys_only + [{"role": "user", "content": synth_user}]
+                    _smsgs, _srb, _ = _fit_messages_to_ctx(
+                        _smsgs, _plan["n_ctx"], _plan["reply"],
+                        model=_utils_mod.gguf_model, safety=_plan["safety"])
+                    _finish = None
+                    for ev in _gguf_stream_once(_smsgs, _srb):
+                        if isinstance(ev, tuple) and ev and ev[0] == "__end__":
+                            _finish = ev[2]
+                        else:
+                            yield ev
+                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": False}
+                    yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'error': f'GGUF 분할 처리 오류: {str(e)}'}, ensure_ascii=False)}\n\n"
 
         return Response(stream_with_context(gen_gguf()), mimetype="text/event-stream")
 
@@ -547,6 +810,12 @@ def _stream_chat_sse(data):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
+
+    # 컨텍스트 초과 방지(API): 모델 context_window 안에 맞도록 트림/절단 (토크나이저 없음 → 보수적 추정)
+    _api_reg_key = ENV_TO_REGISTRY.get(env_id)
+    _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
+    api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
+        api_messages, _api_ctx, max_tokens_a, model=None, safety=1024)
 
     payload = {
         "model": model,
@@ -566,8 +835,11 @@ def _stream_chat_sse(data):
             "route_reason": route_reason,
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+        # 입력이 잘렸으면 사용자에게 먼저 안내
+        if _api_fit_warn:
+            yield f"data: {json.dumps({'type': 'token', 't': _api_fit_warn + chr(10)+chr(10)}, ensure_ascii=False)}\n\n"
         try:
-            r = req.post(api_url, headers=headers, json=payload,
+            r = chat_post(api_url, headers=headers, json=payload,
                          timeout=180, verify=False, stream=True)
             if r.status_code >= 400:
                 detail = ""
@@ -749,14 +1021,14 @@ def register_chat_routes(app):
             # n_ctx는 32768 기본 (RTX 3090 24GB에서 충분). 프론트가 넘기면 그 값 사용.
             user_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
         else:
-            # API: 모델 크기별 자동 설정
+            # API: 모델 크기별 자동 설정 (속도: 상한이라 보통 답엔 영향 없고 긴 답 tail만 단축)
             _reg_key = ENV_TO_REGISTRY.get(env_id)
             _cost_tier = MODEL_REGISTRY.get(_reg_key, {}).get("cost_tier", "medium") if _reg_key else "medium"
-            if _cost_tier == "high":      # 대형 모델 (480B)
-                max_tokens = 16384
-            elif _cost_tier == "medium":  # 중형 모델 (GLM-5, Coder-Next)
+            if _cost_tier == "high":      # 대형 (Qwen3.6-35B-A3B / VL-72B)
                 max_tokens = 8192
-            else:                         # 경량 모델 (gpt-oss-20b)
+            elif _cost_tier == "medium":  # 중형 (gemma-4-31B)
+                max_tokens = 6144
+            else:                         # 경량 (VL-30B / gpt-oss-20b)
                 max_tokens = 4096
 
         # 출력형식/스타일 자동 분류 (format=auto 또는 writing_style=auto일 때)
@@ -2110,7 +2382,7 @@ def register_chat_routes(app):
                                 h = {"Content-Type": "application/json"}
                                 if api_key:
                                     h["Authorization"] = f"Bearer {api_key}"
-                                sr = req.post(synth_api["url"], headers=h, json={
+                                sr = chat_post(synth_api["url"], headers=h, json={
                                     "model": synth_api["model"],
                                     "messages": [{"role": "system", "content": synth_system},
                                                  {"role": "user", "content": _last_query}],
@@ -2298,7 +2570,7 @@ def register_chat_routes(app):
                             _sh = {"Content-Type": "application/json"}
                             if api_key:
                                 _sh["Authorization"] = f"Bearer {api_key}"
-                            sr = req.post(_synth_reg["url"], headers=_sh, json={
+                            sr = chat_post(_synth_reg["url"], headers=_sh, json={
                                 "model": _synth_reg["model"],
                                 "messages": [{"role": "system", "content": synth_system},
                                              {"role": "user", "content": _last_query}],
@@ -2417,7 +2689,7 @@ def register_chat_routes(app):
                 models_tried.append(try_model)
 
                 try:
-                    resp = req.post(
+                    resp = chat_post(
                         try_url,
                         headers=headers,
                         json={
@@ -2460,7 +2732,7 @@ def register_chat_routes(app):
                             # 토큰 2배로 늘려서 재시도 (최대 32768)
                             retry_max = min(max_tokens * 2, 32768)
                             try:
-                                retry_resp = req.post(
+                                retry_resp = chat_post(
                                     try_url,
                                     headers=headers,
                                     json={
@@ -2565,7 +2837,7 @@ def register_chat_routes(app):
         else:
             # 폴백 체인 없는 경우 (GGUF 등) → 기존 단일 요청
             try:
-                resp = req.post(
+                resp = chat_post(
                     api_url,
                     headers=headers,
                     json={
@@ -2605,7 +2877,7 @@ def register_chat_routes(app):
                     if think_only and max_tokens < 32768:
                         retry_max = min(max_tokens * 2, 32768)
                         try:
-                            retry_resp = req.post(
+                            retry_resp = chat_post(
                                 api_url,
                                 headers=headers,
                                 json={
