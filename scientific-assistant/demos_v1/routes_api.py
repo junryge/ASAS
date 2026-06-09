@@ -3082,10 +3082,13 @@ owner: {user_id}
         ]})
 
     # ── 실행형 지식: 스크립트 등록 / 목록 / 삭제 ──────────────
-    # 문서형 지식(.md)은 BM25 검색용. 실행형 지식(.py)은 데이터가 오면 실행되어
-    # '계산 결과'를 만들고, 그 결과를 문서형 지식(일반/카파시톤)이 해석한다.
-    # 계약: python <script> <입력파일경로>  →  요약을 stdout 으로 출력(≤8000자).
-    def _kd_scripts_dir(user_id):
+    # 문서형 지식(.md)은 BM25 검색용. 실행형 지식(.py + 동반파일)은 데이터가 오면
+    # 실행되어 '계산 결과'를 만들고, 그 결과를 문서형 지식(일반/카파시톤)이 해석한다.
+    # 저장: knowledge/<user>/scripts/<name>/ 폴더에 진입.py + thresholds.json 등 동반파일 + _meta.json
+    # 실행: python <entry> <입력파일> -o <임시폴더>  (predictor 그대로) → 산출 파일/stdout 을 LLM 에 주입
+    _SCRIPT_ALLOW_EXT = ('.py', '.json', '.txt', '.csv', '.cfg', '.ini', '.yaml', '.yml', '.md', '.tsv')
+
+    def _kd_scripts_root(user_id):
         d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
         os.makedirs(d, exist_ok=True)
         return d
@@ -3096,39 +3099,76 @@ owner: {user_id}
 
     @app.route("/api/knowledge/register_script", methods=["POST"])
     def api_knowledge_register_script():
-        """실행형 지식(.py) 등록. multipart: file=.py, user_id, name, description, trigger"""
+        """실행형 지식 등록 — 여러 파일 한 번에. multipart:
+        files[]=(.py + .json/config 등), user_id, name, description, trigger, entry(선택)"""
+        import shutil
         user_id = request.form.get("user_id", "").strip()
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip()
         trigger = request.form.get("trigger", "").strip()
+        entry = os.path.basename(request.form.get("entry", "").strip())
         if not user_id:
             return jsonify({"error": "사용자 ID가 필요합니다."}), 400
-        if "file" not in request.files:
-            return jsonify({"error": "스크립트(.py) 파일이 필요합니다."}), 400
-        f = request.files["file"]
-        if not f.filename or not f.filename.lower().endswith(".py"):
-            return jsonify({"error": "파이썬(.py) 파일만 등록 가능합니다."}), 400
-        sname = _safe_script_name(name or f.filename[:-3])
+        files = request.files.getlist("files") or request.files.getlist("file")
+        files = [f for f in files if f and f.filename]
+        if not files:
+            return jsonify({"error": "파일을 한 개 이상 선택하세요(.py 필수)."}), 400
+        py_files = [f for f in files if f.filename.lower().endswith(".py")]
+        if not py_files:
+            return jsonify({"error": "최소 1개의 파이썬(.py) 파일이 필요합니다."}), 400
+        sname = _safe_script_name(name or os.path.splitext(os.path.basename(py_files[0].filename))[0])
         if not sname:
             return jsonify({"error": "스크립트 이름이 잘못되었습니다."}), 400
-        code = f.read().decode("utf-8", errors="replace")
-        if len(code) > 500_000:
-            return jsonify({"error": "스크립트가 너무 큽니다(500KB 초과)."}), 400
-        sdir = _kd_scripts_dir(user_id)
-        with open(os.path.join(sdir, sname + ".py"), "w", encoding="utf-8") as wf:
-            wf.write(code)
+
+        sdir = os.path.join(_kd_scripts_root(user_id), sname)
+        if os.path.isdir(sdir):
+            shutil.rmtree(sdir)          # 같은 이름 재등록 = 덮어쓰기
+        os.makedirs(sdir, exist_ok=True)
+
+        saved, total = [], 0
+        for f in files:
+            fn = os.path.basename(f.filename)
+            if not fn or ".." in fn or "/" in fn or "\\" in fn:
+                continue
+            if not fn.lower().endswith(_SCRIPT_ALLOW_EXT):
+                continue                 # 허용 확장자만(실행파일/바이너리 차단)
+            blob = f.read()
+            total += len(blob)
+            if total > 5_000_000:        # 묶음 총 5MB 제한
+                shutil.rmtree(sdir, ignore_errors=True)
+                return jsonify({"error": "파일 묶음이 너무 큽니다(총 5MB 초과)."}), 400
+            with open(os.path.join(sdir, fn), "wb") as wf:
+                wf.write(blob)
+            saved.append(fn)
+        if not any(s.lower().endswith(".py") for s in saved):
+            shutil.rmtree(sdir, ignore_errors=True)
+            return jsonify({"error": "저장된 .py 파일이 없습니다."}), 400
+
+        # 진입 스크립트 결정: 폼 지정 > predictor/main/analyze/run 휴리스틱 > 첫 .py
+        py_saved = [s for s in saved if s.lower().endswith(".py")]
+        if entry and entry in saved:
+            entry_file = entry
+        elif len(py_saved) == 1:
+            entry_file = py_saved[0]
+        else:
+            entry_file = next((s for s in py_saved
+                               if any(k in s.lower() for k in ("predictor", "main", "analyze", "run"))),
+                              py_saved[0])
+
         triggers = [t.strip() for t in re.split(r"[,\s]+", trigger) if t.strip()] or ["분석", "진단", "평가"]
         meta = {
             "name": sname,
             "description": description or sname,
             "trigger": triggers,
             "input": "csv",
-            "entry": sname + ".py",
+            "entry": entry_file,
+            "files": saved,
             "created": _kd_dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
-        with open(os.path.join(sdir, sname + ".json"), "w", encoding="utf-8") as wf:
+        with open(os.path.join(sdir, "_meta.json"), "w", encoding="utf-8") as wf:
             json.dump(meta, wf, ensure_ascii=False, indent=2)
-        return jsonify({"message": f"스크립트 '{sname}' 등록 완료!", "name": sname, "trigger": triggers})
+        return jsonify({"message": f"스크립트 '{sname}' 등록 완료! ({len(saved)}개 파일, 진입={entry_file})",
+                        "name": sname, "entry": entry_file, "files": saved, "trigger": triggers})
 
     @app.route("/api/knowledge/scripts", methods=["POST"])
     def api_knowledge_scripts():
@@ -3137,17 +3177,20 @@ owner: {user_id}
         user_id = data.get("user_id", "").strip()
         if not user_id:
             return jsonify({"error": "사용자 ID 필요"}), 400
-        sdir = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
+        root = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
         scripts = []
-        if os.path.isdir(sdir):
-            for fn in sorted(os.listdir(sdir)):
-                if not fn.endswith(".json"):
+        if os.path.isdir(root):
+            for nm in sorted(os.listdir(root)):
+                d = os.path.join(root, nm)
+                mp = os.path.join(d, "_meta.json")
+                if not os.path.isdir(d) or not os.path.isfile(mp):
                     continue
                 try:
-                    with open(os.path.join(sdir, fn), encoding="utf-8") as rf:
+                    with open(mp, encoding="utf-8") as rf:
                         m = json.load(rf)
-                    py = os.path.join(sdir, m.get("entry", ""))
-                    m["size_kb"] = round(os.path.getsize(py) / 1024, 1) if os.path.isfile(py) else 0
+                    flist = [x for x in sorted(os.listdir(d)) if x != "_meta.json"]
+                    m["files"] = flist
+                    m["size_kb"] = round(sum(os.path.getsize(os.path.join(d, x)) for x in flist) / 1024, 1)
                     scripts.append(m)
                 except Exception:
                     pass
@@ -3155,21 +3198,17 @@ owner: {user_id}
 
     @app.route("/api/knowledge/script/delete", methods=["POST"])
     def api_knowledge_script_delete():
-        """실행형 지식(스크립트) 삭제"""
+        """실행형 지식(스크립트) 삭제 — 폴더 통째로"""
+        import shutil
         data = request.get_json(force=True)
         user_id = data.get("user_id", "").strip()
         name = _safe_script_name(data.get("name", ""))
         if not user_id or not name:
             return jsonify({"error": "사용자ID와 이름 필요"}), 400
-        sdir = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
-        removed = 0
-        for ext in (".py", ".json"):
-            p = os.path.join(sdir, name + ext)
-            if os.path.isfile(p):
-                os.remove(p)
-                removed += 1
-        if not removed:
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        if not os.path.isdir(d):
             return jsonify({"error": "스크립트 없음"}), 404
+        shutil.rmtree(d, ignore_errors=True)
         return jsonify({"message": f"스크립트 '{name}' 삭제 완료"})
 
     # ── 사용자 인증 시스템 ──────────────────────────────────

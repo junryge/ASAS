@@ -660,14 +660,15 @@ pre{position:relative}
     <div id="kdScriptTab" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px;margin-bottom:16px;">
       <div style="color:#fbbf24;font-size:11.5px;margin-bottom:10px;line-height:1.55;">
         데이터(CSV)를 주면 이 파이썬이 실행돼 <b>평가 결과</b>를 만들고, 문서형 지식(일반·카파시톤)이 그 결과를 해석합니다.<br>
-        <b>계약:</b> <code>python 스크립트.py 입력파일</code> → 요약을 stdout 출력.
+        <b>여러 파일 한 번에 선택</b> — 예: <code>predictor.py</code> + <code>thresholds.json</code> 같이.<br>
+        <b>진입 .py</b> 는 자동 인식(predictor/main/analyze) 또는 이름과 동일.
       </div>
       <div style="text-align:center;padding:16px;border:2px dashed #555;border-radius:8px;cursor:pointer;margin-bottom:8px;" onclick="document.getElementById('kdScriptInput').click()">
-        <div style="font-size:28px;margin-bottom:6px;">🐍</div>
-        <div style="color:#94a3b8;font-size:13px;">.py 파일 클릭하여 선택</div>
-        <div id="kdScriptName" style="color:#fbbf24;font-size:13px;margin-top:6px;font-weight:600;"></div>
+        <div style="font-size:28px;margin-bottom:6px;">🐍📄</div>
+        <div style="color:#94a3b8;font-size:13px;">.py + json/config 파일들을 한 번에 선택 (여러 개 가능)</div>
+        <div id="kdScriptName" style="color:#fbbf24;font-size:12px;margin-top:6px;font-weight:600;white-space:pre-line;"></div>
       </div>
-      <input type="file" id="kdScriptInput" accept=".py" style="display:none;" onchange="document.getElementById('kdScriptName').textContent=this.files[0]?'선택: '+this.files[0].name:''">
+      <input type="file" id="kdScriptInput" multiple accept=".py,.json,.txt,.csv,.cfg,.ini,.yaml,.yml,.md,.tsv" style="display:none;" onchange="kdScriptFilesSelected(this)">
       <input id="kdScriptTitle" placeholder="스크립트 이름 (영문/숫자/-, 예: hubroom-rule)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
       <input id="kdScriptDesc" placeholder="설명 (무엇을 평가하는지)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
       <input id="kdScriptTrigger" placeholder="트리거어 (쉼표 구분: 분석, 진단, 평가)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
@@ -4936,21 +4937,31 @@ function switchKdTab(tab){
     b.style.color = (k===tab) ? '#fff' : '#888';
   }
 }
+function kdScriptFilesSelected(input){
+  var el = document.getElementById('kdScriptName');
+  var n = input.files.length;
+  if(!n){ el.textContent=''; return; }
+  var names = Array.from(input.files).map(function(f){ return (f.name.toLowerCase().endsWith('.py')?'🐍 ':'📄 ')+f.name; });
+  el.textContent = '선택 '+n+'개:\n'+names.join('\n');
+}
 async function registerKdScript(){
   var msg = document.getElementById('kdScriptMsg');
   var input = document.getElementById('kdScriptInput');
-  if(!input.files[0]){ msg.innerHTML='<span style="color:#ef4444;">.py 파일을 선택하세요.</span>'; return; }
+  if(!input.files || !input.files.length){ msg.innerHTML='<span style="color:#ef4444;">파일을 선택하세요(.py 필수).</span>'; return; }
+  var hasPy = Array.from(input.files).some(function(f){ return f.name.toLowerCase().endsWith('.py'); });
+  if(!hasPy){ msg.innerHTML='<span style="color:#ef4444;">최소 1개의 .py 파일이 필요합니다.</span>'; return; }
   var fd = new FormData();
-  fd.append('file', input.files[0]);
+  for(var i=0;i<input.files.length;i++){ fd.append('files', input.files[i]); }
   fd.append('user_id', currentUser.id);
   fd.append('name', document.getElementById('kdScriptTitle').value.trim());
   fd.append('description', document.getElementById('kdScriptDesc').value.trim());
   fd.append('trigger', document.getElementById('kdScriptTrigger').value.trim());
   try {
+    msg.innerHTML='<span style="color:#94a3b8;">업로드 중...</span>';
     var resp = await fetch('/api/knowledge/register_script',{method:'POST',body:fd});
     var data = await resp.json();
     if(data.error){ msg.innerHTML='<span style="color:#ef4444;">'+data.error+'</span>'; return; }
-    msg.innerHTML='<span style="color:#22c55e;">'+data.message+' (트리거: '+(data.trigger||[]).join(', ')+')</span>';
+    msg.innerHTML='<span style="color:#22c55e;">'+data.message+'</span>';
     input.value=''; document.getElementById('kdScriptName').textContent='';
     document.getElementById('kdScriptTitle').value=''; document.getElementById('kdScriptDesc').value=''; document.getElementById('kdScriptTrigger').value='';
     loadKdScripts();
@@ -4964,10 +4975,12 @@ async function loadKdScripts(){
     var data = await resp.json();
     if(!data.scripts||data.scripts.length===0){ list.innerHTML='<div style="color:#666;padding:8px;">등록된 스크립트가 없습니다.</div>'; return; }
     list.innerHTML = data.scripts.map(function(s){
+      var fileCount = (s.files||[]).length;
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,158,11,0.06);border-radius:6px;margin-bottom:3px;">'
         +'<div><span style="font-weight:600;color:#fbbf24;">🐍 '+s.name+'</span>'
+        +' <span style="background:#3a2e10;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:10px;">진입: '+(s.entry||'?')+'</span>'
         +'<br><span style="color:#94a3b8;font-size:11px;">'+(s.description||'')+'</span>'
-        +'<br><span style="color:#555;font-size:11px;">트리거: '+((s.trigger||[]).join(', '))+' | '+(s.size_kb||0)+'KB</span></div>'
+        +'<br><span style="color:#555;font-size:11px;">트리거: '+((s.trigger||[]).join(', '))+' | 파일 '+fileCount+'개 | '+(s.size_kb||0)+'KB</span></div>'
         +'<button onclick="deleteKdScript(\''+s.name+'\')" style="padding:3px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">삭제</button></div>';
     }).join('');
   } catch(e){ list.innerHTML='<div style="color:#ef4444;">로드 실패</div>'; }
