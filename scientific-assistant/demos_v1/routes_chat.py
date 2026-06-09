@@ -31,6 +31,60 @@ _KO_CHAR_RE = re.compile(r"[가-힯]")
 _EN_LETTER_RE = re.compile(r"[a-zA-Z]")
 
 
+class _StreamThinkFilter:
+    """스트리밍 중 <think>...</think> 구간을 실시간 제거. 토큰 경계로 태그가 쪼개져도 안전.
+    Qwen3 등 추론모델이 사고과정을 본문 앞에 흘려보내도 사용자에겐 최종답변만 보이게 한다."""
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self):
+        self.buf = ""
+        self.in_think = False
+
+    def feed(self, tok):
+        self.buf += tok
+        out = ""
+        while self.buf:
+            if not self.in_think:
+                i = self.buf.find(self.OPEN)
+                if i == -1:
+                    cut = self._safe_emit_len(self.buf, self.OPEN)
+                    out += self.buf[:cut]
+                    self.buf = self.buf[cut:]
+                    break
+                out += self.buf[:i]
+                self.buf = self.buf[i + len(self.OPEN):]
+                self.in_think = True
+            else:
+                j = self.buf.find(self.CLOSE)
+                if j == -1:
+                    keep = self._tail_partial_len(self.buf, self.CLOSE)
+                    self.buf = self.buf[len(self.buf) - keep:] if keep else ""
+                    break
+                self.buf = self.buf[j + len(self.CLOSE):]
+                self.in_think = False
+        return out
+
+    def flush(self):
+        out = "" if self.in_think else self.buf
+        self.buf = ""
+        return out
+
+    @staticmethod
+    def _safe_emit_len(s, tag):
+        for k in range(min(len(tag) - 1, len(s)), 0, -1):
+            if s.endswith(tag[:k]):
+                return len(s) - k
+        return len(s)
+
+    @staticmethod
+    def _tail_partial_len(s, tag):
+        for k in range(min(len(tag) - 1, len(s)), 0, -1):
+            if s.endswith(tag[:k]):
+                return k
+        return 0
+
+
 def _strip_thinking_artifacts(text):
     """응답에서 사고 과정 흔적 제거. 끝에서 거꾸로 한국어 본문만 추출."""
     if not text:
@@ -840,8 +894,13 @@ def _stream_chat_sse(data):
         "max_tokens": max_tokens_a,
         "stream": True,
     }
+    # Spark(qwen3.6) 등 추론모델: 서버단 thinking 비활성화 (vLLM/sglang chat_template_kwargs).
+    # 미지원 서버는 보통 무시. + 아래 _StreamThinkFilter 로 <think> 누출도 실시간 차단.
+    if str(env_id) == "spark":
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
 
     def gen_api():
+        _tf = _StreamThinkFilter()   # <think>...</think> 실시간 제거
         _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
         meta = {
             "type": "meta", "env": env_id, "model": model,
@@ -885,11 +944,17 @@ def _stream_chat_sse(data):
                 if not choices:
                     continue
                 delta = choices[0].get("delta") or {}
+                # delta.reasoning_content(추론 채널)는 절대 본문으로 내보내지 않음 — 무시
                 tok = delta.get("content") or ""
                 if tok:
-                    yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
+                    vis = _tf.feed(tok)          # <think> 구간 실시간 제거
+                    if vis:
+                        yield f"data: {json.dumps({'type': 'token', 't': vis}, ensure_ascii=False)}\n\n"
                 fr = choices[0].get("finish_reason")
                 if fr:
+                    tail = _tf.flush()
+                    if tail:
+                        yield f"data: {json.dumps({'type': 'token', 't': tail}, ensure_ascii=False)}\n\n"
                     end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
