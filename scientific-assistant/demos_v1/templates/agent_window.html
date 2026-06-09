@@ -88,6 +88,9 @@
       <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#9aa;cursor:pointer;user-select:none;margin-left:10px;" title="ON: 입력이 길면 자동 트림. OFF: 트림 최소화. (API는 128K 네이티브라 OFF시 원문 전송 / GGUF는 n_ctx 물리한계라 OFF여도 토큰트림은 유지하고 과한 글자수캡만 끔)">
         <input type="checkbox" id="agCtxGuard" checked onchange="try{localStorage.setItem('demos_ctxGuard', this.checked?'1':'0')}catch(e){}" style="margin:0;accent-color:#3F7D4F">🛡️컨텍스트보호
       </label>
+      <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#9aa;cursor:pointer;user-select:none;margin-left:10px;" title="OFF(기본): /no_think 로 사고 끔 — 답만 깔끔. ON: 모델 사고 허용(느리고 사고과정 노출될 수 있음)">
+        <input type="checkbox" id="agThink" onchange="try{localStorage.setItem('demos_agThink', this.checked?'1':'0')}catch(e){}" style="margin:0;accent-color:#7c5cbf">💭사고
+      </label>
       <span style="margin-left:auto;display:flex;gap:6px;">
         <button onclick="newAgentSession()" title="현재 대화를 지우고 새 세션" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🆕 새 세션</button>
         <button onclick="sendToDemos()" title="이 대화를 메인 데모스 채팅에 새 세션으로 보내기" style="background:none;border:1px solid #22c55e;color:#86efac;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">📤 데모스로</button>
@@ -735,7 +738,7 @@ async function sendChat(){
     format: 'auto',
     writing_style: 'auto',
     system_prompt: sysPrompt,
-    think_mode: false,
+    think_mode: document.getElementById('agThink') ? document.getElementById('agThink').checked : false,
     ctx_guard: document.getElementById('agCtxGuard') ? document.getElementById('agCtxGuard').checked : true,
     knowledge_scripts: (activeAgent.knowledge_scripts || []),
     user_id: uid(),
@@ -828,6 +831,7 @@ document.getElementById('chatInput').addEventListener('keydown', function(e){
   var ctx=openerCtx();
   if(ctx.effort!=null){ document.getElementById('agEffort').value=String(ctx.effort); }
   try{ var _cg=localStorage.getItem('demos_ctxGuard'); if(_cg!==null) document.getElementById('agCtxGuard').checked=(_cg==='1'); }catch(e){}
+  try{ var _tk=localStorage.getItem('demos_agThink'); if(_tk!==null) document.getElementById('agThink').checked=(_tk==='1'); }catch(e){}
   loadEnvs();
   initSkills();
   loadKnowledgeFiles();
