@@ -3081,6 +3081,97 @@ owner: {user_id}
             {"id": "etc", "label": "기타"},
         ]})
 
+    # ── 실행형 지식: 스크립트 등록 / 목록 / 삭제 ──────────────
+    # 문서형 지식(.md)은 BM25 검색용. 실행형 지식(.py)은 데이터가 오면 실행되어
+    # '계산 결과'를 만들고, 그 결과를 문서형 지식(일반/카파시톤)이 해석한다.
+    # 계약: python <script> <입력파일경로>  →  요약을 stdout 으로 출력(≤8000자).
+    def _kd_scripts_dir(user_id):
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _safe_script_name(name):
+        base = re.sub(r"[^a-zA-Z0-9_\-]", "_", (name or "").strip())
+        return base[:40].strip("_")
+
+    @app.route("/api/knowledge/register_script", methods=["POST"])
+    def api_knowledge_register_script():
+        """실행형 지식(.py) 등록. multipart: file=.py, user_id, name, description, trigger"""
+        user_id = request.form.get("user_id", "").strip()
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        trigger = request.form.get("trigger", "").strip()
+        if not user_id:
+            return jsonify({"error": "사용자 ID가 필요합니다."}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "스크립트(.py) 파일이 필요합니다."}), 400
+        f = request.files["file"]
+        if not f.filename or not f.filename.lower().endswith(".py"):
+            return jsonify({"error": "파이썬(.py) 파일만 등록 가능합니다."}), 400
+        sname = _safe_script_name(name or f.filename[:-3])
+        if not sname:
+            return jsonify({"error": "스크립트 이름이 잘못되었습니다."}), 400
+        code = f.read().decode("utf-8", errors="replace")
+        if len(code) > 500_000:
+            return jsonify({"error": "스크립트가 너무 큽니다(500KB 초과)."}), 400
+        sdir = _kd_scripts_dir(user_id)
+        with open(os.path.join(sdir, sname + ".py"), "w", encoding="utf-8") as wf:
+            wf.write(code)
+        triggers = [t.strip() for t in re.split(r"[,\s]+", trigger) if t.strip()] or ["분석", "진단", "평가"]
+        meta = {
+            "name": sname,
+            "description": description or sname,
+            "trigger": triggers,
+            "input": "csv",
+            "entry": sname + ".py",
+            "created": _kd_dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        with open(os.path.join(sdir, sname + ".json"), "w", encoding="utf-8") as wf:
+            json.dump(meta, wf, ensure_ascii=False, indent=2)
+        return jsonify({"message": f"스크립트 '{sname}' 등록 완료!", "name": sname, "trigger": triggers})
+
+    @app.route("/api/knowledge/scripts", methods=["POST"])
+    def api_knowledge_scripts():
+        """등록된 실행형 지식(스크립트) 목록"""
+        data = request.get_json(force=True)
+        user_id = data.get("user_id", "").strip()
+        if not user_id:
+            return jsonify({"error": "사용자 ID 필요"}), 400
+        sdir = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
+        scripts = []
+        if os.path.isdir(sdir):
+            for fn in sorted(os.listdir(sdir)):
+                if not fn.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(sdir, fn), encoding="utf-8") as rf:
+                        m = json.load(rf)
+                    py = os.path.join(sdir, m.get("entry", ""))
+                    m["size_kb"] = round(os.path.getsize(py) / 1024, 1) if os.path.isfile(py) else 0
+                    scripts.append(m)
+                except Exception:
+                    pass
+        return jsonify({"scripts": scripts, "count": len(scripts)})
+
+    @app.route("/api/knowledge/script/delete", methods=["POST"])
+    def api_knowledge_script_delete():
+        """실행형 지식(스크립트) 삭제"""
+        data = request.get_json(force=True)
+        user_id = data.get("user_id", "").strip()
+        name = _safe_script_name(data.get("name", ""))
+        if not user_id or not name:
+            return jsonify({"error": "사용자ID와 이름 필요"}), 400
+        sdir = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
+        removed = 0
+        for ext in (".py", ".json"):
+            p = os.path.join(sdir, name + ext)
+            if os.path.isfile(p):
+                os.remove(p)
+                removed += 1
+        if not removed:
+            return jsonify({"error": "스크립트 없음"}), 404
+        return jsonify({"message": f"스크립트 '{name}' 삭제 완료"})
+
     # ── 사용자 인증 시스템 ──────────────────────────────────
     import hashlib
     USERS_FILE = os.path.join(BASE_DIR, "users.json")
