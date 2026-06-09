@@ -119,26 +119,9 @@
       "context_window": 128000,
       "priority": 2,
       "cost_tier": "medium"
-    },
-    "spark-qwen36": {
-      "env_id": "spark",
-      "model": "qwen3.6-35b",
-      "url": "http://14.35.248.221:10010/v1/chat/completions",
-      "name": "⚡ Spark Qwen3.6-35B (전용)",
-      "capabilities": [
-        "text",
-        "code",
-        "analysis",
-        "large"
-      ],
-      "context_window": 128000,
-      "priority": 1,
-      "cost_tier": "medium",
-      "token_file": "spark_api.txt"
     }
   },
   "default_model_priority": [
-    "spark-qwen36",
     "qwen36-35b",
     "gemma-4-31b",
     "gpt-oss-20b",
