@@ -685,6 +685,10 @@ def _stream_chat_sse(data):
         _gctx = _gguf_n_ctx(_utils_mod.gguf_model)
         _greserve = max(512, TOKEN_SETTINGS.get("gguf_ctx_reserve", 1536))
         _temp = temperature_map[min(effort, 3)]
+        # 컨텍스트 보호 토글. GGUF 는 n_ctx 를 물리적으로 못 넘으므로(초과=크래시) 토큰트림은 항상 유지.
+        #  · ON(기본) → 토큰트림 + 하드 글자수캡(밀집CSV 안전망)
+        #  · OFF      → 토큰트림만(실제 토크나이저로 n_ctx 에 맞춤) — 과한 글자수캡은 끔
+        _ctx_guard = data.get("ctx_guard", True)
 
         def _tok_evt(t):
             return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
@@ -729,7 +733,7 @@ def _stream_chat_sse(data):
             # ── 단일 패스 (필요 시 트림) ──
             _fit_msgs, _fit_reply, _fit_warn = _fit_messages_to_ctx(
                 api_messages, _gctx, max_tokens_g,
-                model=_utils_mod.gguf_model, safety=_greserve)
+                model=_utils_mod.gguf_model, safety=_greserve, hard_char_cap=_ctx_guard)
 
             def gen_gguf():
                 yield _meta_evt()
@@ -771,7 +775,7 @@ def _stream_chat_sse(data):
                         _msgs = _base + [{"role": "user", "content": framed}]
                         _msgs, _rb, _ = _fit_messages_to_ctx(
                             _msgs, _plan["n_ctx"], _plan["reply"],
-                            model=_utils_mod.gguf_model, safety=_plan["safety"])
+                            model=_utils_mod.gguf_model, safety=_plan["safety"], hard_char_cap=_ctx_guard)
                         _acc = ""
                         for ev in _gguf_stream_once(_msgs, _rb):
                             if isinstance(ev, tuple) and ev and ev[0] == "__end__":
@@ -791,7 +795,7 @@ def _stream_chat_sse(data):
                     _smsgs = _sys_only + [{"role": "user", "content": synth_user}]
                     _smsgs, _srb, _ = _fit_messages_to_ctx(
                         _smsgs, _plan["n_ctx"], _plan["reply"],
-                        model=_utils_mod.gguf_model, safety=_plan["safety"])
+                        model=_utils_mod.gguf_model, safety=_plan["safety"], hard_char_cap=_ctx_guard)
                     _finish = None
                     for ev in _gguf_stream_once(_smsgs, _srb):
                         if isinstance(ev, tuple) and ev and ev[0] == "__end__":

@@ -979,7 +979,7 @@ pre{position:relative}
           <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="체크하면 모델이 답변 전에 깊이 사고합니다 (응답 느림)">
             <input type="checkbox" id="thinkToggle" style="margin:0;accent-color:#7c5cbf">💭사고
           </label>
-          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="ON: 입력이 모델 한도(API 128K)를 넘으면 자동 트림. OFF: 자르지 않고 원문 그대로 전송(128K 네이티브 신뢰). GGUF는 안전상 항상 보호됩니다.">
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="ON: 입력이 길면 자동 트림. OFF: 트림 최소화. (API는 128K 네이티브라 OFF시 원문 전송 / GGUF는 n_ctx 물리한계라 OFF여도 토큰트림은 유지하고 과한 글자수캡만 끔)">
             <input type="checkbox" id="ctxGuardToggle" checked style="margin:0;accent-color:#3F7D4F">🛡️컨텍스트보호
           </label>
           <span style="font-size:11px;color:#bbb">Enter 전송</span>

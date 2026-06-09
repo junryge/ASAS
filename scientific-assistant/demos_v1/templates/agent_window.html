@@ -85,7 +85,7 @@
     <div id="chatBar">
       <span class="name" id="chatAgentName">-</span>
       <span class="env" id="chatAgentEnv"></span>
-      <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#9aa;cursor:pointer;user-select:none;margin-left:10px;" title="ON: 입력이 모델 한도(API 128K)를 넘으면 자동 트림. OFF: 자르지 않고 원문 그대로 전송(128K 네이티브 신뢰). GGUF는 안전상 항상 보호됩니다.">
+      <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#9aa;cursor:pointer;user-select:none;margin-left:10px;" title="ON: 입력이 길면 자동 트림. OFF: 트림 최소화. (API는 128K 네이티브라 OFF시 원문 전송 / GGUF는 n_ctx 물리한계라 OFF여도 토큰트림은 유지하고 과한 글자수캡만 끔)">
         <input type="checkbox" id="agCtxGuard" checked onchange="try{localStorage.setItem('demos_ctxGuard', this.checked?'1':'0')}catch(e){}" style="margin:0;accent-color:#3F7D4F">🛡️컨텍스트보호
       </label>
       <span style="margin-left:auto;display:flex;gap:6px;">
