@@ -3211,6 +3211,47 @@ owner: {user_id}
         shutil.rmtree(d, ignore_errors=True)
         return jsonify({"message": f"스크립트 '{name}' 삭제 완료"})
 
+    @app.route("/api/knowledge/save", methods=["POST"])
+    def api_knowledge_save():
+        """문서형 지식 내용 덮어쓰기(수정)."""
+        data = request.get_json(force=True)
+        user_id = data.get("user_id", "").strip()
+        filename = data.get("filename", "").strip()
+        content = data.get("content", "")
+        if not user_id or not filename:
+            return jsonify({"error": "사용자ID와 파일명 필요"}), 400
+        if ".." in filename or "/" in filename or "\\" in filename:
+            return jsonify({"error": "잘못된 파일명"}), 400
+        if not filename.lower().endswith((".md", ".txt")):
+            return jsonify({"error": "md/txt 파일만 수정 가능"}), 400
+        fpath = os.path.join(KNOWLEDGE_DIR, user_id, filename)
+        if not os.path.isfile(fpath):
+            return jsonify({"error": "파일 없음"}), 404
+        with open(fpath, "w", encoding="utf-8") as wf:
+            wf.write(content)
+        return jsonify({"message": f"'{filename}' 수정 완료"})
+
+    @app.route("/api/knowledge/script/download", methods=["GET"])
+    def api_knowledge_script_download():
+        """등록 스크립트 폴더 전체를 zip 으로 다운로드."""
+        import io as _io
+        import zipfile as _zip
+        user_id = request.args.get("user_id", "").strip()
+        name = _safe_script_name(request.args.get("name", ""))
+        if not user_id or not name:
+            return jsonify({"error": "user_id/name 필요"}), 400
+        sdir = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        if not os.path.isdir(sdir):
+            return jsonify({"error": "스크립트 없음"}), 404
+        buf = _io.BytesIO()
+        with _zip.ZipFile(buf, "w", _zip.ZIP_DEFLATED) as zf:
+            for fn in sorted(os.listdir(sdir)):
+                if fn == "_meta.json":
+                    continue
+                zf.write(os.path.join(sdir, fn), arcname=fn)
+        buf.seek(0)
+        return send_file(buf, as_attachment=True, download_name=f"{name}.zip", mimetype="application/zip")
+
     # ── 사용자 인증 시스템 ──────────────────────────────────
     import hashlib
     USERS_FILE = os.path.join(BASE_DIR, "users.json")
