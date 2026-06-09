@@ -764,9 +764,11 @@ def _stream_chat_sse(data):
 
         def _gguf_stream_once(msgs, max_toks):
             """한 번의 create_chat_completion 을 스트리밍 — (yield용 SSE, 누적텍스트, finish) 제너레이터.
-            마지막에 ('__end__', acc, finish) 튜플을 yield."""
+            마지막에 ('__end__', acc, finish) 튜플을 yield.
+            qwen3.x GGUF 는 템플릿이 <think> 를 미리 넣어 닫는 </think> 만 나오므로 암묵 사고제거 적용."""
             acc = ""
             _finish = None
+            _gtf = _StreamThinkFilter(implicit=("qwen3" in (model_name or "").lower()))
             for chunk in _utils_mod.gguf_model.create_chat_completion(
                     messages=msgs, temperature=_temp, max_tokens=max_toks, stream=True):
                 if chat_stop_flag.get("stop"):
@@ -777,11 +779,17 @@ def _stream_chat_sse(data):
                 delta = choices[0].get("delta") or {}
                 tok = delta.get("content") or ""
                 if tok:
-                    acc += tok
-                    yield _tok_evt(tok)
+                    vis = _gtf.feed(tok)          # 사고과정 실시간 제거
+                    if vis:
+                        acc += vis
+                        yield _tok_evt(vis)
                 fr = choices[0].get("finish_reason")
                 if fr:
                     _finish = fr
+            tail = _gtf.flush()
+            if tail:
+                acc += tail
+                yield _tok_evt(tail)
             yield ("__end__", acc, _finish)
 
         # 분할(이어서보기) 비활성화 — 항상 단일 패스로 처리(큰 입력은 앞부분 잘라 한 번에 답변).
