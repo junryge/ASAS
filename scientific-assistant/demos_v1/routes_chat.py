@@ -609,8 +609,11 @@ def _run_agent_script(user_id, query, csv_data, selected_names):
     outd = tempfile.mkdtemp(prefix="an_out_")
     try:
         entry = meta.get("entry") or ""
+        # encoding/errors 고정 — Windows 기본 cp949 로 한글 stdout 디코딩 시 UnicodeDecodeError 방지
         proc = subprocess.run([_sys.executable, os.path.join(sdir, entry), tin, "-o", outd],
-                              capture_output=True, text=True, timeout=120, cwd=sdir)
+                              capture_output=True, text=True, timeout=120, cwd=sdir,
+                              encoding="utf-8", errors="replace",
+                              env=dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1"))
         csvs = sorted(glob.glob(os.path.join(outd, "*.csv")) + glob.glob(os.path.join(outd, "*.CSV")))
         parts = [f"=== [분석 결과: {meta.get('name')}] — 스크립트가 계산한 결과입니다. 재계산 말고 이걸로 진단하세요 ==="]
         if csvs:

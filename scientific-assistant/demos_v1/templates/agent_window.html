@@ -95,8 +95,14 @@
       </span>
     </div>
     <div id="chatMsgs"></div>
+    <div id="agAttachBar" style="display:none;align-items:center;gap:8px;font-size:12px;color:#86efac;margin:4px 0;">
+      <span id="agAttachName"></span>
+      <span onclick="clearAgCsv()" style="color:#f87171;cursor:pointer;">✕ 제거</span>
+    </div>
     <div id="chatInputRow">
-      <textarea id="chatInput" placeholder="질문을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+      <button id="agAttachBtn" onclick="document.getElementById('agCsvInput').click()" title="CSV 첨부" style="background:#2a2a3e;border:1px solid #555;color:#fbbf24;border-radius:8px;padding:0 12px;font-size:18px;cursor:pointer;">📎</button>
+      <input type="file" id="agCsvInput" accept=".csv,.tsv,.txt" style="display:none;" onchange="agCsvSelected(this)">
+      <textarea id="chatInput" placeholder="질문을 입력하세요 (📎로 CSV 첨부 후 '분석해줘')"></textarea>
       <button id="chatSend" onclick="onSendBtn()">전송</button>
     </div>
   </div>
@@ -433,6 +439,29 @@ function getCheckedScripts(){
   var els=document.querySelectorAll('#agScriptList input[type=checkbox]');
   for(var i=0;i<els.length;i++){ if(els[i].checked) out.push(els[i].value); }
   return out;
+}
+
+// ── CSV 첨부 (메인과 동일하게 /api/upload_csv → 글로벌 uploaded_csv_data) ──
+var _agCsvAttached = false;
+async function agCsvSelected(input){
+  var f = input.files && input.files[0];
+  if(!f) return;
+  var bar=document.getElementById('agAttachBar'), nm=document.getElementById('agAttachName');
+  nm.textContent='📎 업로드 중… '+f.name; bar.style.display='flex';
+  var fd=new FormData(); fd.append('file', f);
+  try{
+    var r=await fetch('/api/upload_csv',{method:'POST',body:fd});
+    var d=await r.json();
+    if(d.error){ nm.innerHTML='<span style="color:#f87171;">업로드 실패: '+esc(d.error)+'</span>'; _agCsvAttached=false; return; }
+    _agCsvAttached=true;
+    nm.textContent='📎 '+(d.filename||f.name)+' ('+(d.rows||'?')+'행 × '+(d.cols||'?')+'열) — "분석해줘" 입력';
+  }catch(e){ nm.innerHTML='<span style="color:#f87171;">업로드 오류: '+esc(e.message)+'</span>'; _agCsvAttached=false; }
+}
+function clearAgCsv(){
+  _agCsvAttached=false;
+  document.getElementById('agCsvInput').value='';
+  document.getElementById('agAttachBar').style.display='none';
+  fetch('/api/clear_csv',{method:'POST'}).catch(function(){});
 }
 
 // 선택한 지식 파일들의 내용을 가져와 시스템 프롬프트용 컨텍스트 블록 생성
