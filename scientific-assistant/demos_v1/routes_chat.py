@@ -887,6 +887,15 @@ def _stream_chat_sse(data):
             api_messages, _api_ctx, max_tokens_a, model=None, safety=1024,
             hard_char_cap=False, tpc=0.5)
 
+    # Spark(qwen3.6 추론모델): 사고를 '숨기는' 게 아니라 '끄기'. 안 끄면 속으로 4만토큰 생각해서 느림.
+    #  · /no_think : Qwen3 chat 템플릿이 인식 → 서버가 enable_thinking 무시해도 사고 안 함 (핵심)
+    if str(env_id) == "spark" and not data.get("think_mode", False):
+        for _m in reversed(api_messages):
+            if _m.get("role") == "user" and isinstance(_m.get("content"), str):
+                if "/no_think" not in _m["content"]:
+                    _m["content"] = _m["content"].rstrip() + " /no_think"
+                break
+
     payload = {
         "model": model,
         "messages": api_messages,
@@ -894,8 +903,8 @@ def _stream_chat_sse(data):
         "max_tokens": max_tokens_a,
         "stream": True,
     }
-    # Spark(qwen3.6) 등 추론모델: 서버단 thinking 비활성화 (vLLM/sglang chat_template_kwargs).
-    # 미지원 서버는 보통 무시. + 아래 _StreamThinkFilter 로 <think> 누출도 실시간 차단.
+    # 서버단 thinking 비활성화도 함께 (vLLM/sglang chat_template_kwargs). 미지원 서버는 무시.
+    # + _StreamThinkFilter 로 <think> 누출도 실시간 차단 (3중 방어).
     if str(env_id) == "spark":
         payload["chat_template_kwargs"] = {"enable_thinking": False}
 
