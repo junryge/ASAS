@@ -634,6 +634,31 @@ def _run_agent_script(user_id, query, csv_data, selected_names):
         shutil.rmtree(outd, ignore_errors=True)
 
 
+def _split_csv_text(text):
+    """채팅에 '붙여넣은' CSV 추출 → (headers, rows, 지시문). 첨부 파일 없을 때 사용.
+    콤마 많은 줄 = CSV(헤더+데이터), 나머지(예: '분석해줘') = 지시문."""
+    lines = (text or "").splitlines()
+    cand_idx = [i for i, ln in enumerate(lines) if ln.count(",") >= 5]
+    if len(cand_idx) < 2:
+        return None, None, text
+    from collections import Counter
+    ncols = Counter(lines[i].count(",") for i in cand_idx).most_common(1)[0][0]
+    keep = set(i for i in cand_idx if abs(lines[i].count(",") - ncols) <= 2)
+    if len(keep) < 2:
+        return None, None, text
+    import csv as _csv
+    import io as _io
+    csv_text = "\n".join(lines[i] for i in sorted(keep))
+    try:
+        rows = [r for r in _csv.reader(_io.StringIO(csv_text)) if len(r) >= 3]
+    except Exception:
+        return None, None, text
+    if len(rows) < 2:
+        return None, None, text
+    instr = "\n".join(lines[i] for i in range(len(lines)) if i not in keep).strip()
+    return rows[0], rows[1:], (instr or "이 데이터 분석해줘")
+
+
 def _stream_chat_sse(data):
     chat_stop_flag["stop"] = False
 
@@ -706,28 +731,46 @@ def _stream_chat_sse(data):
 
     file_section = ""
     include_csv = data.get("include_csv", True)
-    if include_csv and _csv_now.get("filename"):
-        # ★ 에이전트가 선택한 스크립트 + 트리거어 매칭 시: raw 대신 '스크립트 실행 결과' 주입
-        _q_now = ""
-        for _m in reversed(messages):
-            if _m.get("role") == "user" and isinstance(_m.get("content"), str):
-                _q_now = _m["content"]
-                break
-        _script_out = _run_agent_script(data.get("user_id"), _q_now, _csv_now, data.get("knowledge_scripts") or [])
-        if _script_out:
-            file_section += _script_out          # 스크립트가 계산 → LLM은 결과만 해석(raw 안 봄)
-        else:
-            csv_info = _csv_now.get("summary", "")
-            rows = _csv_now.get("rows", []) or []
-            headers_csv = _csv_now.get("headers", []) or []
-            preview_limit = min(50, len(rows))
-            csv_rows_text = ",".join(headers_csv) + "\n"
-            for row in rows[:preview_limit]:
-                csv_rows_text += ",".join(str(c) for c in row) + "\n"
-            if len(rows) > preview_limit:
-                csv_rows_text += f"... (총 {len(rows)}행 중 {preview_limit}행만 표시)\n"
-            file_section += f"=== 업로드된 CSV 데이터 ===\n{csv_info}\n\n데이터 미리보기:\n{csv_rows_text}\n\n"
-            file_section += "사용자가 이 데이터에 대해 질문하면 위 CSV 데이터를 기반으로 분석해주세요.\n\n"
+
+    # ── 스크립트 자동 실행: 데이터 출처 = 첨부 CSV(우선) 또는 채팅에 붙여넣은 CSV ──
+    _q_now = ""
+    _q_idx = -1
+    for _i in range(len(messages) - 1, -1, -1):
+        if messages[_i].get("role") == "user" and isinstance(messages[_i].get("content"), str):
+            _q_now = messages[_i]["content"]
+            _q_idx = _i
+            break
+    _data_for_script = None
+    _pasted_instr = None
+    if _csv_now.get("filename") and _csv_now.get("headers") and _csv_now.get("rows"):
+        _data_for_script = {"headers": _csv_now["headers"], "rows": _csv_now["rows"]}   # 첨부
+    else:
+        _ph, _pr, _pi = _split_csv_text(_q_now)                                          # 붙여넣기
+        if _ph and _pr:
+            _data_for_script = {"headers": _ph, "rows": _pr}
+            _pasted_instr = _pi
+    _script_out = None
+    if _data_for_script:
+        _script_out = _run_agent_script(data.get("user_id"), _q_now, _data_for_script,
+                                        data.get("knowledge_scripts") or [])
+
+    if _script_out:
+        file_section += _script_out          # 스크립트가 계산 → LLM은 결과만 해석(raw 안 봄)
+        if _pasted_instr is not None and _q_idx >= 0:
+            # 붙여넣은 raw CSV 는 LLM 에 보내지 않고 지시문만 남김 (토큰 폭발 방지)
+            messages[_q_idx] = dict(messages[_q_idx], content=_pasted_instr)
+    elif include_csv and _csv_now.get("filename"):
+        csv_info = _csv_now.get("summary", "")
+        rows = _csv_now.get("rows", []) or []
+        headers_csv = _csv_now.get("headers", []) or []
+        preview_limit = min(50, len(rows))
+        csv_rows_text = ",".join(headers_csv) + "\n"
+        for row in rows[:preview_limit]:
+            csv_rows_text += ",".join(str(c) for c in row) + "\n"
+        if len(rows) > preview_limit:
+            csv_rows_text += f"... (총 {len(rows)}행 중 {preview_limit}행만 표시)\n"
+        file_section += f"=== 업로드된 CSV 데이터 ===\n{csv_info}\n\n데이터 미리보기:\n{csv_rows_text}\n\n"
+        file_section += "사용자가 이 데이터에 대해 질문하면 위 CSV 데이터를 기반으로 분석해주세요.\n\n"
 
     if _files_now:
         file_section += f"=== 업로드된 파일 ({len(_files_now)}개) ===\n"
