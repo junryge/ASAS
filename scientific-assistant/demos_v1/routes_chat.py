@@ -753,6 +753,12 @@ def _stream_chat_sse(data):
     if _data_for_script:
         _script_out = _run_agent_script(data.get("user_id"), _q_now, _data_for_script,
                                         data.get("knowledge_scripts") or [])
+    try:
+        print(f"  🐍 [SCRIPT-HOOK] user_id={data.get('user_id')!r} | knowledge_scripts={data.get('knowledge_scripts')!r} | "
+              f"첨부CSV={bool(_csv_now.get('filename'))} | 붙여넣기CSV={bool(_data_for_script and _pasted_instr is not None)} | "
+              f"데이터행={len((_data_for_script or {}).get('rows') or [])} | 스크립트실행={'O' if _script_out else 'X'}")
+    except Exception:
+        pass
 
     if _script_out:
         file_section += _script_out          # 스크립트가 계산 → LLM은 결과만 해석(raw 안 봄)
