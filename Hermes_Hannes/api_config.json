@@ -195,13 +195,30 @@
       "context_window": 128000,
       "priority": 2,
       "cost_tier": "medium"
+    },
+    "spark-qwen36": {
+      "env_id": "spark",
+      "model": "qwen3.6-35b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡ Spark Qwen3.6-35B (전용)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "medium",
+      "token_file": "spark_api.txt"
     }
   },
   "api_model_tiers": {
     "large": [
       "qwen3-coder-480b",
       "qwen3-next-80b",
-      "qwen3-next-80b-summary"
+      "qwen3-next-80b-summary",
+      "spark-qwen36"
     ],
     "medium": [
       "qwen3-coder-next",
@@ -271,6 +288,10 @@
     "hcp-llm-latest": [
       "qwen3-next-80b-summary",
       "glm-5"
+    ],
+    "spark-qwen36": [
+      "glm-5",
+      "qwen3-coder-480b"
     ]
   }
 }

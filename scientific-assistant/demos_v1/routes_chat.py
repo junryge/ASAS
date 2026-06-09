@@ -813,7 +813,8 @@ def _stream_chat_sse(data):
     # ── API 경로 (단일 모델, 폴백 없음) ──
     api_url = ENV_CONFIG[env_id]["url"]
     model = ENV_CONFIG[env_id]["model"]
-    api_key = API_TOKEN or data.get("api_key", "")
+    # 모델별 전용 토큰(예: Spark) 우선 → 없으면 글로벌 → 요청값
+    api_key = ENV_CONFIG[env_id].get("token") or API_TOKEN or data.get("api_key", "")
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -999,7 +1000,8 @@ def register_chat_routes(app):
             else:
                 api_url = data.get("api_url", "")
                 model = data.get("model", "")
-        api_key = API_TOKEN or data.get("api_key", "")
+        # 모델별 전용 토큰(예: Spark) 우선 → 없으면 글로벌 → 요청값
+        api_key = (ENV_CONFIG.get(env_id, {}).get("token") if env_id else "") or API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
         # ── 히스토리 자동 트림: 최근 6턴(12 메시지)만 유지 ──
         # 응답 잘림·느림 방지: 입력 토큰 폭증 차단
