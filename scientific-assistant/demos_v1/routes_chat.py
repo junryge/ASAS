@@ -281,11 +281,11 @@ def _msg_text(m):
     return str(c)
 
 
-def _make_token_counter(model=None):
+def _make_token_counter(model=None, tpc=2.6):
     """토큰 수 카운터 반환. 과소평가 절대 금지(과소평가하면 트림이 부족해 컨텍스트 초과).
-    밀집 CSV/숫자는 문자당 토큰이 ~2.3개까지 나오므로 문자기반 하한을 2.6으로 둔다.
-    토크나이저가 그보다 크게 세면(정상) 그 값을 쓰고, 작게 세거나 실패하면 하한을 쓴다."""
-    DENSE = 2.6  # tokens per char (보수적 하한)
+    GGUF(크래시 위험)는 밀집 CSV 최악값 2.6 tokens/char 하한을 쓴다.
+    API(128K 네이티브, 초과해도 서버가 에러로 처리)는 현실값(≈0.5)을 써서 정상 텍스트를 헛되이 자르지 않는다."""
+    DENSE = tpc  # tokens per char 하한 (GGUF=2.6 보수적, API=0.5 현실적)
     def count(text):
         s = str(text)
         floor = int(len(s) * DENSE) + 1
@@ -324,11 +324,14 @@ def _truncate_text_to_tokens(text, allow_tokens, count):
     return new, max(0, len(text) - (head + max(0, tail)))
 
 
-def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
-    """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단. GGUF·API 공통.
+def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512,
+                         hard_char_cap=True, tpc=2.6):
+    """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단.
     1) 오래된 user/assistant 메시지 제거 → 2) 그래도 크면 가장 큰 메시지 본문 절단.
+    hard_char_cap=True(GGUF): 토크나이저 무관 '하드 글자수' 안전장치까지 적용(크래시 방지).
+    hard_char_cap=False(API): 토큰 추정 기반 트림만(128K 초과 시에만). 정상 텍스트를 헛되이 자르지 않음.
     반환: (트림된 messages, 응답토큰예산, 경고문)."""
-    count = _make_token_counter(model)
+    count = _make_token_counter(model, tpc)
 
     def mtoks(msgs):
         # 메시지당 chat 템플릿 오버헤드 넉넉히(+8), 전체 여유(+16)
@@ -356,11 +359,12 @@ def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
             warn = (f"⚠️ [컨텍스트보호 v3] 입력이 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라 넣었습니다. "
                     f"전체를 보려면 더 큰 컨텍스트 모델(API 128K)을 쓰세요.")
 
-    # 3) 토큰 추정과 무관한 '하드 글자수' 안전장치 — 토크나이저가 어떤 값을 주든 절대 초과 안 함.
-    #    밀집 CSV(숫자·쉼표)는 문자당 토큰이 ~2.3개라, 글자수 자체를 input_budget/2.6 로 캡.
-    max_chars = max(400, int(input_budget / 2.6))
+    # 3) 토큰 추정과 무관한 '하드 글자수' 안전장치 — GGUF 전용(초과 시 크래시 방지).
+    #    밀집 CSV(숫자·쉼표)는 문자당 토큰이 ~2.3개라, 글자수 자체를 input_budget/tpc 로 캡.
+    #    API(hard_char_cap=False)는 이 단계를 건너뛴다 — 128K 네이티브라 헛절단 불필요.
+    max_chars = max(400, int(input_budget / max(0.1, tpc)))
     total_chars = sum(len(_msg_text(m)) for m in msgs)
-    if total_chars > max_chars:
+    if hard_char_cap and total_chars > max_chars:
         big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
         others_chars = total_chars - len(_msg_text(msgs[big_i]))
         allow_chars = max(300, max_chars - others_chars)
@@ -811,11 +815,18 @@ def _stream_chat_sse(data):
         headers["Authorization"] = f"Bearer {api_key}"
     max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
 
-    # 컨텍스트 초과 방지(API): 모델 context_window 안에 맞도록 트림/절단 (토크나이저 없음 → 보수적 추정)
-    _api_reg_key = ENV_TO_REGISTRY.get(env_id)
-    _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
-    api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
-        api_messages, _api_ctx, max_tokens_a, model=None, safety=1024)
+    # 컨텍스트 보호(API): 토글로 제어. 기본 ON.
+    #  · ON  → 모델 context_window(128K) 안에 들어오도록 '토큰 추정' 기반으로만 트림(현실값 0.5 tpc, 하드 글자수캡 없음).
+    #          → 일반 텍스트는 12만 자여도 ~6만 토큰이라 안 잘림. 진짜 128K 초과 시에만 트림.
+    #  · OFF → 전혀 자르지 않고 원문 그대로 전송(128K 네이티브 신뢰).
+    _ctx_guard = data.get("ctx_guard", True)
+    _api_fit_warn = ""
+    if _ctx_guard:
+        _api_reg_key = ENV_TO_REGISTRY.get(env_id)
+        _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
+        api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
+            api_messages, _api_ctx, max_tokens_a, model=None, safety=1024,
+            hard_char_cap=False, tpc=0.5)
 
     payload = {
         "model": model,
