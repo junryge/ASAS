@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔮 헤르메스 — 기억 vs 스킬 로직</title>
+<style>
+  :root{ --bg:#0b0e16; --card:#161b27; --line:#26304180; --txt:#e8edf6; --mut:#93a0b5;
+         --cyan:#00e5ff; --violet:#a855f7; --lime:#4ade80; --amber:#fbbf24; --pink:#ff3ea5; }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+        radial-gradient(1100px 700px at 8% -10%, rgba(0,229,255,.10), transparent 60%),
+        radial-gradient(1000px 700px at 110% 115%, rgba(168,85,247,.12), transparent 60%),
+        var(--bg);
+       color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;
+       line-height:1.65;padding:34px 16px;}
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{font-size:26px;margin:0 0 4px;}
+  h1 .pill{font-size:12px;background:linear-gradient(135deg,var(--cyan),var(--violet));color:#04121a;
+        padding:3px 11px;border-radius:20px;margin-left:8px;font-weight:800;vertical-align:middle;}
+  .sub{color:var(--mut);margin:0 0 22px;font-size:14px;}
+  .lead{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--cyan);
+        border-radius:12px;padding:14px 16px;margin:0 0 24px;font-size:14px;}
+  .lead b{color:var(--cyan);}
+  h2{font-size:19px;margin:34px 0 12px;border-left:4px solid var(--cyan);padding-left:10px;}
+  h3{font-size:15px;margin:20px 0 6px;color:var(--violet);}
+  a{color:var(--cyan);text-decoration:none;} a:hover{text-decoration:underline;}
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;font-size:13.5px;margin:10px 0;}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{background:#1c2331;color:#c7d2e3;font-weight:700;font-size:12.5px;}
+  tr:last-child td{border-bottom:none;}
+  .mem{color:var(--cyan);font-weight:700;} .sk{color:var(--lime);font-weight:700;}
+  code{background:#0d1018;color:#9ecbff;padding:1px 6px;border-radius:5px;font-family:'Consolas',monospace;font-size:12.5px;}
+  pre{background:#0d1018;border:1px solid var(--line);border-radius:8px;padding:11px 13px;
+      font-family:'Consolas','Courier New',monospace;font-size:12.5px;color:#cfe3ff;white-space:pre-wrap;overflow:auto;}
+  .map{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;
+       font-family:'Consolas',monospace;font-size:12.5px;white-space:pre;overflow:auto;color:#cfe3ff;}
+  .map .a{color:var(--cyan)} .map .b{color:var(--violet)} .map .c{color:var(--lime)} .map .m{color:var(--mut)}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0;}
+  @media(max-width:760px){ .steps{grid-template-columns:1fr 1fr;} }
+  .step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;position:relative;}
+  .step .n{position:absolute;top:-10px;left:12px;width:24px;height:24px;border-radius:50%;
+        background:linear-gradient(135deg,var(--cyan),var(--violet));color:#04121a;font-weight:800;font-size:13px;
+        display:flex;align-items:center;justify-content:center;}
+  .step h4{margin:10px 0 4px;font-size:13.5px;color:var(--cyan);}
+  .step p{margin:0;font-size:12px;color:var(--mut);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0;}
+  .card.star{border-color:rgba(74,222,128,.45);}
+  ul{margin:6px 0;padding-left:20px;} li{font-size:13.5px;margin:5px 0;}
+  .tag{display:inline-block;border-radius:6px;padding:1px 8px;font-size:11.5px;margin-right:4px;}
+  .tag.k{background:rgba(0,229,255,.14);color:#9beaff;border:1px solid rgba(0,229,255,.35);}
+  .tag.s{background:rgba(74,222,128,.14);color:#bbf7d0;border:1px solid rgba(74,222,128,.35);}
+  .faq{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:8px 0;}
+  .faq .q{color:var(--amber);font-weight:700;font-size:13.5px;}
+  .faq .a{font-size:13px;color:var(--txt);margin-top:4px;}
+  .foot{color:var(--mut);font-size:12px;margin-top:30px;border-top:1px solid var(--line);padding-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🔮 헤르메스 — 기억 vs 스킬 로직 <span class="pill">Memory vs Skill</span></h1>
+  <p class="sub">고객 질문: <i>"'기억'이 포함되면 해당 내용을 기억하는데, skill 같은 경우는 어떤 로직인가요?"</i></p>
+
+  <div class="lead">
+    <b>한 줄 답</b> — 메모리는 <b>사실/선호</b>라 한 문장으로 <b>즉시 자동 저장</b>되고,
+    스킬은 <b>재사용 절차</b>라서 모델이 가치 있다고 판단할 때만 → <b>검증·사용자 승인</b>을 거쳐 저장된 뒤,
+    이후 관련 질문에 <b>검색(BM25)으로 본문을 골라 주입</b>됩니다.
+  </div>
+
+  <h2>1. 메모리 vs 스킬, 무엇이 다른가</h2>
+  <table>
+    <tr><th></th><th>🧠 메모리 (memory)</th><th>📚 스킬 (skill)</th></tr>
+    <tr><td><b>본질</b></td><td class="mem">"무엇을 안다" — 사실·선호</td><td class="sk">"어떻게 한다" — 재사용 절차·해법</td></tr>
+    <tr><td><b>예시</b></td><td>"M16 FAB OHT 반송 정체를 분석한다" / "표로 답변 선호"</td><td>"OHT 정체 원인 추적 절차 1→2→3"</td></tr>
+    <tr><td><b>형태</b></td><td>선언형 <b>한 문장</b></td><td>여러 줄 <b>본문(단계 절차)</b></td></tr>
+    <tr><td><b>저장 시점</b></td><td class="mem">즉시 자동 저장 (승인 게이트 없음)</td><td class="sk">검증 + 사용자 승인 후 저장</td></tr>
+    <tr><td><b>컨텍스트 주입</b></td><td>매 턴 <b>전체</b> 주입</td><td>평소 <b>이름만</b>, 관련될 때 <b>본문</b>만</td></tr>
+    <tr><td><b>저장 형식</b></td><td><code>MEMORY.md</code> / <code>USER.md</code> 한 줄</td><td><code>skills/&lt;이름&gt;/SKILL.md</code> 파일</td></tr>
+  </table>
+  <p style="font-size:13.5px;"><b>판단 기준 한마디:</b> <span class="mem">사실이면 메모리</span>, <span class="sk">방법/절차이면 스킬.</span></p>
+
+  <h2>2. 스킬 로직 — 4단계 생애주기</h2>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><h4>생성 판단</h4><p>모델이 "재사용 가치 있는 절차"를 발견하면 블록을 냄</p></div>
+    <div class="step"><div class="n">2</div><h4>검증 + 승인</h4><p>이름규칙·인젝션 검사 + <b>사용자 OK</b> 필수</p></div>
+    <div class="step"><div class="n">3</div><h4>회상/주입</h4><p>인덱스 항상 + 본문은 <b>BM25</b> 매칭 시</p></div>
+    <div class="step"><div class="n">4</div><h4>관리</h4><p>patch · edit · delete · archive</p></div>
+  </div>
+
+  <h3>① 생성 판단 — 언제 스킬로 만드나</h3>
+  <p style="font-size:13.5px;">단순 사실이면 메모리로, <b>재사용 가치 있는 절차/해법</b>(다단계 작업 완료 · 까다로운 오류 해결 · 비자명 워크플로)을 발견하면 답변 끝에 블록을 냅니다.</p>
+  <pre>```hermes:skill
+action: create
+name: oht-jam-triage          # 소문자-하이픈 클래스명
+when: OHT 반송 정체 원인 추적 시   # 언제 쓰는지 한 줄
+body: |
+  1. 구간별 큐 길이 확인
+  2. 병목 구간 OHT 가동률 비교
+  3. ...
+```</pre>
+
+  <h3>② 검증 + 승인 — 메모리와 가장 큰 차이</h3>
+  <div class="card star">
+    <p style="margin:0 0 6px;font-size:13.5px;">스킬은 <b>자동 저장이 안 됩니다.</b> 아래 게이트를 통과해야 함 (<code>hermes/skills.py</code>):</p>
+    <ul>
+      <li><b>이름 규칙</b>: <code>oht-jam-triage</code> 처럼 재사용 클래스명만. <code>test</code>·<code>fix-1</code>·날짜(<code>2026-06-09</code>)·<code>temp/오늘</code> 같은 <b>일회성 이름은 거부</b>.</li>
+      <li><b>인젝션 검사</b>(<code>looks_injected</code>): 악성·프롬프트인젝션 의심 본문 차단.</li>
+      <li>⭐ <b>사용자 승인 필수</b>: <code>pending_skills</code>로 빠지고, 사용자가 OK 해야 <code>confirm_skill()</code>로 실제 저장. (메모리는 바로, 스킬은 <b>승인 한 단계 더</b> — 핵심 차이)</li>
+      <li><b>저장 위치</b>: <code>&lt;data&gt;/agents/&lt;user&gt;/skills/&lt;이름&gt;/SKILL.md</code></li>
+    </ul>
+  </div>
+
+  <h3>③ 회상/주입 — 저장된 스킬을 어떻게 꺼내 쓰나</h3>
+  <ul>
+    <li>매 질문마다 <b>인덱스(이름: 설명)만</b> 시스템 프롬프트에 <b>항상</b> 주입 (<code>index_text</code>).</li>
+    <li>질문과 관련되면 <b>BM25 검색</b>(<code>recall</code>)으로 <b>상위 2개 본문</b>까지 주입 — 토큰 절약 위해 <i>관련될 때만</i>.</li>
+    <li>사용할 때마다 <code>use_count</code> / <code>last_used</code> <b>사용 통계</b> 기록.</li>
+  </ul>
+
+  <h3>④ 관리 — 유지보수 액션</h3>
+  <table>
+    <tr><th>액션</th><th>설명</th></tr>
+    <tr><td><code>create</code></td><td>신규 스킬 생성</td></tr>
+    <tr><td><code>patch</code></td><td>본문 일부만 치환 수정 (find→replace)</td></tr>
+    <tr><td><code>edit</code></td><td>본문 전체 교체</td></tr>
+    <tr><td><code>delete</code></td><td>스킬 삭제</td></tr>
+    <tr><td>(자동) <code>archived</code></td><td>오래 안 쓰면 회상에서 제외</td></tr>
+  </table>
+
+  <h2>3. 전체 흐름 한눈에</h2>
+  <div class="map"><span class="m">[사용자 발화]</span>
+     │
+     ▼
+모델 답변 생성 ──► 답변 끝에 블록을 냄
+     │
+     ├─ <span class="a">hermes:memory</span> ─► (사실/선호)  ─► <span class="a">즉시 자동 저장</span> ─► MEMORY.md / USER.md
+     │
+     └─ <span class="c">hermes:skill</span>  ─► (재사용 절차) ─► 이름·인젝션 검증
+                                             │
+                                       <span class="b">사용자 승인?</span> ──No──► 폐기
+                                             │Yes
+                                             ▼
+                                    <span class="c">skills/&lt;이름&gt;/SKILL.md 저장</span>
+                                             │
+                          [다음 질문] ─► 인덱스 항상 주입 + <span class="b">BM25</span>로 관련 본문 주입</div>
+
+  <h2>4. 코드 위치 (개발자용)</h2>
+  <table>
+    <tr><th>기능</th><th>파일 · 함수</th></tr>
+    <tr><td>블록 파싱 → 분기</td><td><code>engine.py · apply_response()</code></td></tr>
+    <tr><td>스킬 승인 저장</td><td><code>engine.py · confirm_skill()</code></td></tr>
+    <tr><td>이름 검증 / 일회성 거부</td><td><code>skills.py · valid_name(), _BAD_NAME_RE</code></td></tr>
+    <tr><td>생성/patch/edit/delete</td><td><code>skills.py</code></td></tr>
+    <tr><td>인덱스 주입</td><td><code>skills.py · index_text()</code></td></tr>
+    <tr><td>BM25 본문 회상</td><td><code>skills.py · recall()</code></td></tr>
+    <tr><td>인젝션 차단</td><td><code>store.py · looks_injected()</code></td></tr>
+  </table>
+
+  <h2>5. 자주 묻는 것</h2>
+  <div class="faq"><div class="q">Q. 왜 스킬만 승인을 받나요?</div>
+    <div class="a">메모리는 한 문장 사실이라 틀려도 영향이 작지만, 스킬은 <i>앞으로 계속 적용될 절차</i>라 잘못 학습되면 반복적으로 영향을 줍니다. 그래서 사용자가 한 번 확인합니다.</div></div>
+  <div class="faq"><div class="q">Q. 스킬이 매번 다 끼어들면 토큰이 너무 커지지 않나요?</div>
+    <div class="a">아니요. 평소엔 <b>이름·설명 한 줄(인덱스)</b>만 들어가고, <b>질문과 관련된 스킬 본문 2개</b>만 BM25로 골라 넣습니다.</div></div>
+  <div class="faq"><div class="q">Q. 메모리에 절차를 적으면 안 되나요?</div>
+    <div class="a">지침상 메모리는 <b>선언형 한 문장</b>만 — 절차·방법은 메모리가 아니라 <b>스킬</b>로 저장하도록 모델에게 안내합니다.</div></div>
+
+  <div class="foot">함께 보기 — <a href="USAGE.md">USAGE.md</a> · <a href="HERMES_SKILLS.html">HERMES_SKILLS</a> · <a href="HERMES_FEATURES.html">HERMES_FEATURES</a> · 체험 <a href="DEMO.html">DEMO.html</a></div>
+</div>
+</body>
+</html>
