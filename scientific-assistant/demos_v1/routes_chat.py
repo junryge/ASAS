@@ -919,6 +919,13 @@ def _stream_chat_sse(data):
 
     # ── GGUF 경로 ──
     if str(env_id).startswith("gguf-"):
+        # qwen3.x GGUF: /no_think 로 사고 비활성화(템플릿이 인식) → 답만 생성. 누출/과부하/지연 방지.
+        if not data.get("think_mode", False):
+            for _m in reversed(api_messages):
+                if _m.get("role") == "user" and isinstance(_m.get("content"), str):
+                    if "/no_think" not in _m["content"]:
+                        _m["content"] = _m["content"].rstrip() + " /no_think"
+                    break
         gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
         user_n_ctx = data.get("n_ctx", 0)
         _load_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
