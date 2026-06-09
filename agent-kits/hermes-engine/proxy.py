@@ -9,8 +9,8 @@ CORS 헤더와 토큰을 자동으로 붙여줍니다. (당신의 Python 이 되
 
 사용법:
   1) token.txt 를 이 파일과 같은 폴더에 둔다 (Bearer 토큰 한 줄)
-  2) python proxy.py            (기본 BASE=http://common.llm.skhynix.com, 포트 8000)
-     - 다른 게이트웨이:  python proxy.py --base http://dev.hcp.llm.skhynix.com --port 8000
+  2) python proxy.py            (기본 BASE=http://summary.llm.skhynix.com, 포트 8000)
+     - 다른 게이트웨이:  python proxy.py --base http://common.llm.skhynix.com --port 8000
   3) DEMO.html 의 'API 주소' 를  http://localhost:8000/v1  로 바꾸고 저장
      - API 키 칸은 비워둬도 됨 (프록시가 token.txt 로 자동 인증)
 
@@ -19,7 +19,7 @@ CORS 헤더와 토큰을 자동으로 붙여줍니다. (당신의 Python 이 되
 import argparse, json, os, sys, urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-BASE = "http://common.llm.skhynix.com"
+BASE = "http://summary.llm.skhynix.com"
 TOKEN = ""
 
 
