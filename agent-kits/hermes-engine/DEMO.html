@@ -40,7 +40,10 @@
   .msg.user{align-self:flex-end;background:#1d4ed8;color:#fff;}
   .msg.assistant{align-self:flex-start;background:#1a2030;border:1px solid var(--line);}
   .msg.sys{align-self:center;background:transparent;color:var(--mut);font-size:11.5px;border:1px dashed var(--line);}
-  .inrow{display:flex;gap:8px;margin-top:10px;}
+  .testbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;}
+  .testbar .tlabel{font-size:11.5px;color:var(--mut);}
+  button.sm{padding:5px 9px;font-size:11px;}
+  .inrow{display:flex;gap:8px;margin-top:8px;}
   .inrow textarea{flex:1;min-height:42px;}
   .tag{display:inline-block;font-size:10.5px;border-radius:6px;padding:1px 7px;margin:2px 3px 0 0;}
   .tag.mem{background:rgba(0,229,255,.14);color:#9beaff;border:1px solid rgba(0,229,255,.35);}
@@ -113,6 +116,12 @@
         <div class="msg sys">오른쪽에서 API를 설정한 뒤 대화를 시작하세요. 예: "나는 M16 FAB OHT 반송 정체를 분석해. 답은 표로."</div>
       </div>
       <div id="approveBox"></div>
+      <div class="testbar">
+        <span class="tlabel">🧪 빠른 테스트:</span>
+        <button class="sec sm" onclick="fillEx('mem')">예시① 기억</button>
+        <button class="sec sm" onclick="fillEx('skill')">예시② 스킬 학습</button>
+        <button class="sec sm" onclick="simulateSkill()" title="API 없이 스킬 승인→저장→회상 흐름을 바로 봅니다">스킬 흐름 시뮬레이트(무 API)</button>
+      </div>
       <div class="inrow">
         <textarea id="input" placeholder="질문을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
         <button id="sendBtn" onclick="onSend()">전송</button>
@@ -389,6 +398,36 @@ async function onSend(){
   }catch(e){
     bubble.textContent='❌ '+(e.message||e); $('status').textContent='상태: 오류';
   }finally{ busy=false; $('sendBtn').disabled=false; }
+}
+
+// ============ 빠른 테스트 ============
+function fillEx(kind){
+  if(kind==='mem'){ $('input').value='나는 M16 FAB의 OHT 반송 정체를 분석해. 답은 표로 줘.'; }
+  else if(kind==='skill'){ $('input').value='방금 OHT 정체 추적하던 절차(구간 큐 확인 → 병목 OHT 가동률 비교 → 우회경로 검토)를 앞으로 재사용하게 "스킬"로 저장해줘.'; }
+  $('input').focus();
+}
+// API 없이 스킬 승인→저장→회상 흐름을 그대로 보여줌
+function simulateSkill(){
+  const fake = `OHT 반송 정체는 보통 합류 구간에서 발생합니다. 아래 절차로 추적하면 됩니다.
+
+\`\`\`hermes:skill
+action: create
+name: oht-jam-triage
+when: OHT 반송 정체 원인을 추적할 때
+body: |
+  1. 구간별 큐 길이 확인 (정체 시작 지점 특정)
+  2. 병목 구간 OHT 가동률·속도 비교
+  3. 합류/분기 포인트의 대기 시간 측정
+  4. 우회 경로 가용성 검토 후 재배분
+\`\`\``;
+  addMsg('user','(시뮬레이트) OHT 정체 추적 절차를 스킬로 저장');
+  const bubble=addMsg('assistant','…');
+  const {clean,blocks}=parseBlocks(fake);
+  const {pending}=applyBlocks(blocks);
+  bubble.textContent = clean;
+  addMsg('sys','🧪 모델이 hermes:skill 블록을 냈습니다 → 아래 승인 카드에서 "저장"을 눌러보세요. 저장하면 오른쪽 「배운 스킬」에 쌓이고, 다음 질문에 BM25로 본문이 회상됩니다.');
+  showApproval(pending);
+  $('status').textContent='상태: 스킬 시뮬레이트 — 승인 대기';
 }
 
 // ============ 설정/초기화 ============
