@@ -167,7 +167,7 @@
       "cost_tier": "low"
     },
     "qwen3-next-80b-summary": {
-      "env_id": "summary",
+      "env_id": "summary-next80b",
       "model": "Qwen3-Next-80B-A3B-Instruct",
       "url": "http://summary.llm.skhynix.com/v1/chat/completions",
       "name": "Qwen3-Next-80B (Summary)",
@@ -182,7 +182,7 @@
       "cost_tier": "high"
     },
     "hcp-llm-latest": {
-      "env_id": "summary",
+      "env_id": "summary-hcp",
       "model": "HCP-LLM-Latest",
       "url": "http://summary.llm.skhynix.com/v1/chat/completions",
       "name": "HCP-LLM-Latest (Summary)",
