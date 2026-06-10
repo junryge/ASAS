@@ -2020,6 +2020,48 @@ function _showSkillApprovalCards(pending){
   c.appendChild(wrap);
   try{ const ct=document.querySelector('.content'); if(ct) ct.scrollTop=ct.scrollHeight; }catch(e){}
 }
+
+// 🔮 헤르메스: 수동 스킬 저장 — 모델이 hermes:skill 블록을 안 뱉어도 직전 답변을 직접 스킬화
+function _showManualSkillBtn(bodyText){
+  if(!bodyText || !bodyText.trim() || !currentUser) return;
+  const c=document.getElementById('msgs');
+  const wrap=document.createElement('div');
+  wrap.className='msg assistant';
+  wrap.innerHTML='<div class="content"><button class="msk-open" '
+    +'style="background:none;border:1px solid #a855f7;color:#a855f7;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;">📌 이 답변을 스킬로 저장</button></div>';
+  const body=bodyText;
+  wrap.querySelector('.msk-open').onclick=function(){
+    const cont=wrap.querySelector('.content');
+    cont.innerHTML='<div style="border:1px solid #a855f7;border-radius:8px;padding:9px;background:rgba(168,85,247,0.06);">'
+      +'<div style="font-weight:700;color:#a855f7;font-size:12px;margin-bottom:6px;">🔮 이 답변을 재사용 스킬로 저장</div>'
+      +'<input class="msk-name" placeholder="이름 (영문소문자-하이픈, 예: hubroom-diag)" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
+      +'<input class="msk-when" placeholder="언제 쓰는 스킬인지 한 줄 (한국어 OK)" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
+      +'<textarea class="msk-body" rows="6" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:11px;white-space:pre-wrap;margin-bottom:6px;"></textarea>'
+      +'<button class="msk-go" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;">저장</button> '
+      +'<button class="msk-cancel" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer;">취소</button>'
+      +' <span class="msk-res" style="font-size:11px;margin-left:6px;color:#22c55e;"></span></div>';
+    cont.querySelector('.msk-body').value=body.slice(0,4000);
+    cont.querySelector('.msk-cancel').onclick=function(){ wrap.remove(); };
+    cont.querySelector('.msk-go').onclick=async function(){
+      const go=this, res=cont.querySelector('.msk-res');
+      const spec={action:'create',
+        name:(cont.querySelector('.msk-name').value||'').trim().toLowerCase(),
+        when:(cont.querySelector('.msk-when').value||'').trim(),
+        body:(cont.querySelector('.msk-body').value||'').trim()};
+      if(!spec.name){ res.style.color='#ef4444'; res.textContent='이름을 입력하세요'; return; }
+      go.disabled=true;
+      try{
+        const r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({user_id:currentUser.id, spec:spec})});
+        const d=await r.json();
+        if(d.ok){ cont.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+_hesc(d.msg||'저장됨')+'</span>'; }
+        else { go.disabled=false; res.style.color='#ef4444'; res.textContent=d.msg||'실패'; }
+      }catch(e){ go.disabled=false; res.style.color='#ef4444'; res.textContent='실패: '+e.message; }
+    };
+  };
+  c.appendChild(wrap);
+  try{ const ct=document.querySelector('.content'); if(ct) ct.scrollTop=ct.scrollHeight; }catch(e){}
+}
 async function _confirmHermesSkill(btn, idx){
   const card=btn.closest('[data-card]');
   const wrap=btn.closest('.msg.assistant');
@@ -2263,6 +2305,7 @@ async function send(){
         addMsg('assistant', _finalContent + _info, _finalContent);
         history.push({role:'assistant', content:_displayAcc});
         if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
+        if(hermesOn && currentUser && _displayAcc.trim()) _showManualSkillBtn(_displayAcc);  // 📌 직접 스킬화
         // 수동/자동 스킬 중 마크다운/HTML 리포트 계열이 선택돼 있으면 MD/HTML 다운로드 바 추가.
         // SSE 응답엔 html_download_url 이 없지만 appendMdDownloadBar 가 누락 시 /api/generate_html
         // 로 즉석 변환하므로 그대로 호출하면 됨.

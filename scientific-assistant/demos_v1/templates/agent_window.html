@@ -880,6 +880,56 @@ function _awSkillCards(pending){
   c.scrollTop=c.scrollHeight;
 }
 
+// 🔮 헤르메스: 수동 스킬 저장 — 모델이 hermes:skill 블록을 안 뱉어도 이 답변을 직접 스킬화
+//   답변 버블 밑에 '📌 스킬로 저장' 버튼을 달고, 누르면 인라인 폼(이름/용도/본문)으로 /skill/confirm 호출.
+function _awManualSkillBtn(bubble, bodyText){
+  try{
+    if(!bubble || !uid()) return;                 // 로그인 사용자만 (스킬은 사용자별 저장)
+    if(!(bodyText||'').trim()) return;
+    var wrap=document.createElement('span');
+    var btn=document.createElement('button');
+    btn.textContent='📌 스킬로 저장';
+    btn.style.cssText='background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px;';
+    wrap.appendChild(btn);
+    btn.onclick=function(){
+      btn.style.display='none';
+      var box=document.createElement('div');
+      box.style.cssText='border:1px solid #a855f7;border-radius:8px;padding:9px;margin-top:8px;background:rgba(168,85,247,0.08);';
+      box.innerHTML=
+        '<div style="font-weight:700;color:#c4b5fd;font-size:12px;margin-bottom:6px;">🔮 이 답변을 재사용 스킬로 저장</div>'
+        +'<input class="msk-name" placeholder="이름 (영문소문자-하이픈, 예: hubroom-진단 ✕ → hubroom-diag)" '
+        +'style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #475569;color:#e2e8f0;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
+        +'<input class="msk-when" placeholder="언제 쓰는 스킬인지 한 줄 (한국어 OK)" '
+        +'style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #475569;color:#e2e8f0;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
+        +'<textarea class="msk-body" rows="6" style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #475569;color:#cbd5e1;border-radius:6px;padding:6px 8px;font-size:11px;white-space:pre-wrap;margin-bottom:6px;"></textarea>'
+        +'<button class="msk-go" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;">저장</button> '
+        +'<button class="msk-cancel" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer;">취소</button>'
+        +' <span class="msk-res" style="font-size:11px;margin-left:6px;color:#22c55e;"></span>';
+      box.querySelector('.msk-body').value=(bodyText||'').slice(0,4000);
+      box.querySelector('.msk-cancel').onclick=function(){ box.remove(); btn.style.display=''; };
+      box.querySelector('.msk-go').onclick=async function(){
+        var go=this, res=box.querySelector('.msk-res');
+        var spec={action:'create',
+          name:(box.querySelector('.msk-name').value||'').trim().toLowerCase(),
+          when:(box.querySelector('.msk-when').value||'').trim(),
+          body:(box.querySelector('.msk-body').value||'').trim()};
+        if(!spec.name){ res.style.color='#f87171'; res.textContent='이름을 입력하세요'; return; }
+        go.disabled=true;
+        try{
+          var r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({user_id:uid(), spec:spec})});
+          var d=await r.json();
+          if(d.ok){ box.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+esc(d.msg||'저장됨')+'</span>'; }
+          else { go.disabled=false; res.style.color='#f87171'; res.textContent=d.msg||'실패'; }
+        }catch(e){ go.disabled=false; res.style.color='#f87171'; res.textContent='실패: '+e.message; }
+      };
+      wrap.appendChild(box);
+      var c=document.getElementById('chatMsgs'); if(c) c.scrollTop=c.scrollHeight;
+    };
+    bubble.appendChild(wrap);
+  }catch(e){}
+}
+
 async function sendChat(){
   if(isStreaming) return;
   if(!activeAgent){ return; }
@@ -1015,6 +1065,7 @@ async function sendChat(){
       saveChat();
       if(pending) _awSkillCards(pending);
       _awContinueBar(bubble, truncatedFlag);  // ⏭ 이어서 보기 버튼
+      _awManualSkillBtn(bubble, disp);         // 📌 이 답변을 직접 스킬로 저장
     }
   }catch(e){
     if(e && e.name==='AbortError'){
