@@ -1,0 +1,35 @@
+{
+  "_doc": "RAG 서버 설정. 데모스와 별도 프로세스. 같은 PC, 포트 8765.",
+  "host": "127.0.0.1",
+  "port": 8765,
+
+  "knowledge_dir": "../knowledge",
+
+  "_embed": "임베딩: local(bge-m3 GGUF, CPU) | api(사내 /v1/embeddings) | none(BM25+청킹만)",
+  "embed_backend": "local",
+
+  "local": {
+    "model_path": "models/bge-m3-q8_0.gguf",
+    "n_ctx": 2048,
+    "n_gpu_layers": 0,
+    "n_threads": 0,
+    "n_batch": 64
+  },
+
+  "api": {
+    "url": "",
+    "model": "bge-m3",
+    "token_file": "",
+    "timeout_s": 30
+  },
+
+  "chunk_size": 1000,
+  "chunk_overlap": 180,
+  "chunk_min": 200,
+
+  "vector_candidate_limit": 6000,
+  "bm25_prefilter_top": 600,
+
+  "default_top_k": 8,
+  "default_max_chars": 12000
+}
