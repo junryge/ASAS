@@ -72,11 +72,67 @@
   .md-report-preview{ padding:10px 14px; font-size:12.5px; }
   .md-raw-toggle{ padding:0 12px 8px; }
   .md-raw-toggle pre{ max-height:240px; overflow:auto; }
+
+  /* ════ 테마 (다크 기본 / 라이트 / 블루 / 그린) ════ */
+  /* 라이트 */
+  body.theme-light{ background:#f4f4f8 !important; color:#1f2937 !important; }
+  body.theme-light h2{ color:#7c3aed !important; }
+  body.theme-light .hint,body.theme-light .meta{ color:#6b7280 !important; }
+  body.theme-light label,body.theme-light .sectitle,body.theme-light details>summary{ color:#7c3aed !important; }
+  body.theme-light input,body.theme-light select,body.theme-light textarea{ background:#fff !important; color:#1f2937 !important; border-color:#cbd5e1 !important; }
+  body.theme-light .card{ background:#fff !important; border-color:#e2d5f5 !important; }
+  body.theme-light .box{ background:#f7f7fb !important; border-color:#d6d6e0 !important; color:#374151 !important; }
+  body.theme-light .box.scr{ background:#fff8e8 !important; border-color:#e3c873 !important; }
+  body.theme-light .ag-item{ background:#fff !important; border-color:#e5e7eb !important; }
+  body.theme-light .ag-item span{ color:#1f2937 !important; }
+  body.theme-light .ag-item div{ color:#475569 !important; }
+  body.theme-light .chk{ color:#1f2937 !important; }
+  body.theme-light #chatMsgs{ background:#f7f7fb !important; }
+  body.theme-light #chatBar{ background:#ede9fe !important; }
+  body.theme-light #chatBar .name{ color:#7c3aed !important; }
+  body.theme-light .cm .bubble{ color:#1f2937 !important; }
+  body.theme-light .cm.user .bubble{ background:#e5edff !important; }
+  body.theme-light #chatInputRow{ background:#eef0f4 !important; border-color:#ddd !important; }
+  body.theme-light .bubble code{ background:#eef0f4 !important; color:#7c3aed !important; }
+  body.theme-light .bubble pre{ background:#f3f4f6 !important; border-color:#ddd !important; }
+
+  /* 블루 (다크) */
+  body.theme-blue{ background:#0f1722 !important; }
+  body.theme-blue h2{ color:#38bdf8 !important; }
+  body.theme-blue label,body.theme-blue .sectitle,body.theme-blue details>summary,body.theme-blue #chatBar .name{ color:#7dd3fc !important; }
+  body.theme-blue .card{ background:rgba(56,189,248,0.08) !important; border-color:rgba(56,189,248,0.3) !important; }
+  body.theme-blue button.primary,body.theme-blue .ag-run,body.theme-blue #chatSend,body.theme-blue #chatInput:focus{ background:#0ea5e9 !important; }
+  body.theme-blue button.primary:hover{ background:#0284c7 !important; }
+  body.theme-blue #chatPanel{ border-color:#0ea5e9 !important; }
+  body.theme-blue #chatBar{ background:#0c2a3e !important; }
+
+  /* 그린 (다크) */
+  body.theme-green{ background:#0e1a14 !important; }
+  body.theme-green h2{ color:#34d399 !important; }
+  body.theme-green label,body.theme-green .sectitle,body.theme-green details>summary,body.theme-green #chatBar .name{ color:#6ee7b7 !important; }
+  body.theme-green .card{ background:rgba(16,185,129,0.08) !important; border-color:rgba(16,185,129,0.3) !important; }
+  body.theme-green button.primary,body.theme-green .ag-run,body.theme-green #chatSend{ background:#10b981 !important; }
+  body.theme-green button.primary:hover{ background:#059669 !important; }
+  body.theme-green #chatPanel{ border-color:#10b981 !important; }
+  body.theme-green #chatBar{ background:#0c3225 !important; }
+
+  /* 테마 선택기 */
+  #themeBar{ display:flex; gap:5px; align-items:center; margin-bottom:8px; }
+  #themeBar .tbtn{ border:1px solid #555; background:#2a2a3e; color:#cbd5e1; border-radius:6px; padding:3px 9px; font-size:11px; cursor:pointer; }
+  #themeBar .tbtn.on{ outline:2px solid #a855f7; color:#fff; }
+  body.theme-light #themeBar .tbtn{ background:#fff; color:#475569; border-color:#cbd5e1; }
 </style>
 </head>
 <body>
   <h2>🤖 개인 에이전트</h2>
   <div class="hint">에이전트를 <b style="color:#c4b5fd;">가동</b>하면 아래에서 그 에이전트로 바로 질문/답변할 수 있습니다. (아이디별 저장)</div>
+  <div id="themeBar">
+    <span style="font-size:11px;color:#94a3b8;">🎨 테마</span>
+    <button class="tbtn" data-theme="dark" onclick="applyTheme('dark')">🌙 다크</button>
+    <button class="tbtn" data-theme="light" onclick="applyTheme('light')">☀️ 라이트</button>
+    <button class="tbtn" data-theme="blue" onclick="applyTheme('blue')">🔵 블루</button>
+    <button class="tbtn" data-theme="green" onclick="applyTheme('green')">🟢 그린</button>
+  </div>
 
   <div id="notice"></div>
 
@@ -169,6 +225,19 @@ function getUser(){
 }
 var USER = getUser();
 function uid(){ return USER ? USER.id : ''; }
+
+// ── 테마 (다크/라이트/블루/그린) ──
+function applyTheme(name){
+  name = name || 'dark';
+  var b=document.body;
+  b.classList.remove('theme-light','theme-blue','theme-green');
+  if(name!=='dark') b.classList.add('theme-'+name);
+  try{ localStorage.setItem('demos_agTheme', name); }catch(e){}
+  document.querySelectorAll('#themeBar .tbtn').forEach(function(btn){
+    btn.classList.toggle('on', btn.getAttribute('data-theme')===name);
+  });
+}
+try{ applyTheme(localStorage.getItem('demos_agTheme')||'dark'); }catch(e){}
 
 var activeAgent = null;       // 현재 가동된 에이전트
 var chatHistory = [];         // [{role, content}]
