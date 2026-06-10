@@ -2319,7 +2319,7 @@ async function send(){
           }
         }catch(_){}
         if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
-        if(hermesOn && currentUser && _displayAcc.trim()) _showManualSkillBtn(_displayAcc);  // 📌 직접 스킬화
+        if(currentUser && _displayAcc.trim()) _showManualSkillBtn(_displayAcc);  // 📌 직접 스킬화 (헤르메스 토글 무관, 로그인만)
       }
     } else {
     const resp=await fetch('/api/chat',{
@@ -2391,6 +2391,7 @@ async function send(){
       if(_mdSkillActive && !_hasClosedMd){
         appendMdDownloadBar(data.content, data.html_download_url);
       }
+      if(currentUser && (data.content||'').trim()) _showManualSkillBtn(data.content);  // 📌 직접 스킬화 (로그인만)
     }
     }  // end multi-env else
   }catch(e){
