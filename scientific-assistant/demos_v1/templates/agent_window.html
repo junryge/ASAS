@@ -115,7 +115,10 @@
     <summary>⚙️ 에이전트 관리 (새로 만들기 / 목록)</summary>
 
     <div class="card">
-      <div class="sectitle" style="color:#c4b5fd;">＋ 새 에이전트 저장</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div id="agFormTitle" class="sectitle" style="color:#c4b5fd;margin:0;flex:1;">＋ 새 에이전트 만들기</div>
+        <button id="agNewBtn" onclick="resetAgentForm()" style="display:none;background:#475569;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">＋ 새로 만들기</button>
+      </div>
       <label>이름</label>
       <input id="agName" placeholder="예: 보안 코드 리뷰어">
 
@@ -150,7 +153,7 @@
       <div id="agComboChips" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;"></div>
       <div id="agSkillCount" style="font-size:11px;color:#c4b5fd;margin-top:6px;"></div>
 
-      <button class="primary" onclick="saveAgent()">💾 에이전트 저장</button>
+      <button id="agSaveBtn" class="primary" onclick="saveAgent()">💾 에이전트 저장</button>
       <div id="agSaveMsg" class="msg"></div>
     </div>
 
@@ -504,22 +507,79 @@ async function loadAgents(){
       var row=document.createElement('div');
       row.className='ag-item';
       var per=a.persona||'';
+      var nDoc=(a.knowledge_files&&a.knowledge_files.length)||0;
+      var nScr=(a.knowledge_scripts&&a.knowledge_scripts.length)||0;
+      var nSkl=(a.skills&&a.skills.length)||0;
       row.innerHTML=
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'+
-          '<span style="flex:1;font-weight:700;color:#e2e8f0;font-size:13px;">'+esc(a.name)+'</span>'+
-          '<button class="ag-run" data-run="1">가동</button>'+
-          '<button class="ag-del" data-del="1">삭제</button>'+
+          '<span style="flex:1;font-weight:700;color:#e2e8f0;font-size:13px;">🤖 '+esc(a.name)+'</span>'+
+          '<button class="ag-run" data-run="1">▶ 가동</button>'+
+          '<button class="ag-edit" data-edit="1" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer;">✏️ 수정</button>'+
+          '<button class="ag-del" data-del="1">🗑</button>'+
         '</div>'+
-        (per?'<div style="font-size:11px;color:#94a3b8;margin-bottom:3px;line-height:1.4;">'+esc(per.slice(0,90))+(per.length>90?'…':'')+'</div>':'')+
-        '<div class="meta">환경 '+esc((a.envs||['auto']).join(', '))+' · 스킬 '+((a.skills||[]).length)+'개 · 지식 '+(a.knowledge?'ON':'off')+((a.knowledge_files&&a.knowledge_files.length)?(' · 📄'+a.knowledge_files.length):'')+' · effort '+(a.effort!=null?a.effort:2)+'</div>';
+        (per?'<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;line-height:1.4;">'+esc(per.slice(0,90))+(per.length>90?'…':'')+'</div>':'')+
+        '<div class="meta" style="display:flex;flex-wrap:wrap;gap:5px;">'+
+          '<span style="background:#23233a;padding:1px 7px;border-radius:10px;">'+esc((a.envs||['auto']).join(', '))+'</span>'+
+          (nDoc?'<span style="background:#1e2b3a;color:#7dd3fc;padding:1px 7px;border-radius:10px;">📄 문서 '+nDoc+'</span>':'')+
+          (nScr?'<span style="background:#2a2410;color:#fbbf24;padding:1px 7px;border-radius:10px;">🐍 스크립트 '+nScr+'</span>':'')+
+          (nSkl?'<span style="background:#241e3a;color:#c4b5fd;padding:1px 7px;border-radius:10px;">🛠 스킬 '+nSkl+'</span>':'')+
+          '<span style="background:#23233a;padding:1px 7px;border-radius:10px;">effort '+(a.effort!=null?a.effort:2)+'</span>'+
+        '</div>';
       row.querySelector('[data-run]').onclick=function(){ activate(a); };
+      row.querySelector('[data-edit]').onclick=function(){ editAgent(a); };
       row.querySelector('[data-del]').onclick=function(){ del(a.agent_id, a.name); };
       box.appendChild(row);
     });
   }catch(e){ box.innerHTML='<span style="color:#f87171;">로드 실패: '+esc(e.message)+'</span>'; }
 }
 
-// ── 저장 ──
+// ── 수정/새로만들기 모드 ──
+var editingAgentId = null;
+function _setFormMode(editingName){
+  var t=document.getElementById('agFormTitle'), nb=document.getElementById('agNewBtn'), sb=document.getElementById('agSaveBtn');
+  if(editingName){
+    t.innerHTML='✏️ 수정 중: <span style="color:#fbbf24;">'+esc(editingName)+'</span>';
+    if(nb) nb.style.display='';
+    if(sb) sb.textContent='💾 수정 저장';
+  }else{
+    t.textContent='＋ 새 에이전트 만들기';
+    if(nb) nb.style.display='none';
+    if(sb) sb.textContent='💾 에이전트 저장';
+  }
+}
+function resetAgentForm(){
+  editingAgentId=null;
+  document.getElementById('agName').value='';
+  document.getElementById('agPersona').value='';
+  document.getElementById('agEffort').value='2';
+  var es=document.getElementById('agEnvSelect'); if(es) es.value='auto';
+  loadKnowledgeFiles([]);     // 문서 체크 해제
+  loadAgentScripts([]);       // 스크립트 체크 해제
+  activeComboIds=new Set(); recomputeSkills(); buildComboSelect(); renderComboChips(); updateSkillCount();
+  document.getElementById('agSaveMsg').innerHTML='';
+  _setFormMode(null);
+}
+function editAgent(a){
+  editingAgentId=a.agent_id;
+  document.getElementById('agName').value=a.name||'';
+  document.getElementById('agPersona').value=a.persona||'';
+  document.getElementById('agEffort').value=String(a.effort!=null?a.effort:2);
+  var es=document.getElementById('agEnvSelect'); if(es) es.value=(a.envs&&a.envs[0])||'auto';
+  loadKnowledgeFiles(a.knowledge_files||[]);      // 문서 체크 복원
+  loadAgentScripts(a.knowledge_scripts||[]);      // 스크립트 체크 복원
+  // 스킬조합 복원: 조합의 스킬이 모두 a.skills 에 있으면 그 조합 활성
+  activeComboIds=new Set();
+  getCombos().forEach(function(c){
+    var sk=c.skills||[];
+    if(sk.length && sk.every(function(s){ return (a.skills||[]).indexOf(s)>=0; })) activeComboIds.add(c.id);
+  });
+  recomputeSkills(); buildComboSelect(); renderComboChips(); updateSkillCount();
+  _setFormMode(a.name);
+  var mb=document.getElementById('manageBox'); if(mb) mb.open=true;
+  document.getElementById('agName').scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+// ── 저장 (새로만들기 또는 수정) ──
 async function saveAgent(){
   var msg=document.getElementById('agSaveMsg');
   var name=document.getElementById('agName').value.trim();
@@ -535,12 +595,13 @@ async function saveAgent(){
     knowledge_scripts: getCheckedScripts(),
     effort: parseInt(document.getElementById('agEffort').value,10)
   };
+  if(editingAgentId) payload.agent_id=editingAgentId;   // 있으면 그 에이전트 덮어쓰기(수정)
   try{
     var r=await fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     var d=await r.json();
     if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    msg.innerHTML='<span style="color:#22c55e;">✅ 저장됨</span>';
-    document.getElementById('agName').value=''; document.getElementById('agPersona').value='';
+    msg.innerHTML='<span style="color:#22c55e;">✅ '+(editingAgentId?'수정':'저장')+'됨</span>';
+    resetAgentForm();
     loadAgents();
   }catch(e){ msg.innerHTML='<span style="color:#f87171;">저장 실패: '+esc(e.message)+'</span>'; }
 }
