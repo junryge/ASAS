@@ -207,6 +207,7 @@ from demos_v1.gguf import (
     _pool_get_or_load, _pool_release, _pool_status,
 )
 from demos_v1.knowledge import search_knowledge, KNOWLEDGE_DIR, KNOWLEDGE_TRIGGERS
+from demos_v1.rag_client import search_knowledge_smart
 from demos_v1.logpresso import (
     LOGPRESSO_TABLES, LOGPRESSO_TABLE_GROUPS, LOGPRESSO_FAB_FILTERS,
     _get_table_group, _filter_tables_by_groups, _fetch_table_fields,
@@ -828,11 +829,34 @@ def _stream_chat_sse(data):
             _c = _m.get("content", "")
             last_user_query = _c if isinstance(_c, str) else ""
             break
+    # 개인에이전트 선택 지식문서: 질문 관련 청크만 RAG(없으면 BM25)로 골라 주입 (프론트 통째 주입 대체)
+    _agent_kfiles = data.get("knowledge_files") or []
+    if _agent_kfiles and last_user_query.strip():
+        try:
+            _kf_res = search_knowledge_smart(last_user_query, max_results=8, max_content_chars=4000,
+                                             user_id=data.get("user_id"), files=_agent_kfiles)
+            if _kf_res:
+                _kf_ctx = ("\n\n=== 선택한 내 지식 문서 ===\n"
+                           "아래 문서 내용을 우선 근거로 답하세요. 문서에 없는 내용은 추측하지 말고 일반 지식임을 밝히세요.\n\n")
+                _tot = 0
+                for _r in _kf_res:
+                    _seg = _r["content"][:4000]
+                    if _tot + len(_seg) > 14000:
+                        _seg = _seg[:max(0, 14000 - _tot)]
+                        if not _seg:
+                            break
+                    _kf_ctx += f"--- 📄 {_r['filename']} ---\n{_seg}\n\n"
+                    _tot += len(_seg)
+                api_messages = _prepend_system(api_messages, _kf_ctx)
+                print(f"  [AGENT-KFILES] {len(_kf_res)}개 파일 청크 주입 ({_tot}자)")
+        except Exception as _e:
+            print(f"  [AGENT-KFILES] {_e}")
+
     if "knowledge-search" in skill_ids and last_user_query.strip():
         try:
             _chat_user_id = data.get("user_id", None)
             print(f"  [KNOWLEDGE-SSE] user_id={_chat_user_id}, query={last_user_query[:50]}")
-            kb_results = search_knowledge(
+            kb_results = search_knowledge_smart(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
             if not kb_results:
@@ -1515,7 +1539,7 @@ def register_chat_routes(app):
                 _chat_user_id = data.get("user_id", None)
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
-                kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
+                kb_results = search_knowledge_smart(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"

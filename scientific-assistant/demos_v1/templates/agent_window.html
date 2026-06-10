@@ -916,8 +916,8 @@ async function sendChat(){
     '[답변 규칙] 반드시 한국어로 답하세요. 영어 사고과정("Here\'s a thinking process", "Analyze", "Let me think", "Draft" 등)이나 ' +
     '<think>·<thinking> 태그를 절대 출력하지 말고, 바로 결론·핵심부터 명확하게 답하세요(고유명사·코드·명령어는 예외). ' +
     '불필요한 서론·과정 설명은 빼고 결론 위주로. 스킬이 지정한 형식(표·문서·다이어그램 등)이 있으면 그 형식대로 작성하세요.';
-  var kctx = await buildKnowledgeContext(activeAgent.knowledge_files);
-  if(kctx) sysPrompt += kctx;
+  // 선택 지식문서는 백엔드(RAG/BM25)가 질문 관련 청크만 골라 주입함 → 프론트 주입 제거.
+  // (buildKnowledgeContext 는 RAG 미사용 환경 롤백용으로 함수만 보존)
   if(hermesOn){
     bubble.textContent='🔮 헤르메스 기억 불러오는 중…';
     try{
@@ -949,6 +949,7 @@ async function sendChat(){
     think_mode: document.getElementById('agThink') ? document.getElementById('agThink').checked : false,
     ctx_guard: document.getElementById('agCtxGuard') ? document.getElementById('agCtxGuard').checked : true,
     knowledge_scripts: (activeAgent.knowledge_scripts || []),
+    knowledge_files: (activeAgent.knowledge_files || []),
     user_id: uid(),
     stream: true
   };

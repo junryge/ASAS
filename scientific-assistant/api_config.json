@@ -179,5 +179,11 @@
     "qwen3-vl-30b",
     "qwen3-next-80b-summary",
     "hcp-llm-latest"
-  ]
+  ],
+  "rag": {
+    "enabled": true,
+    "url": "http://127.0.0.1:8765",
+    "timeout_s": 4,
+    "health_ttl_s": 30
+  }
 }
