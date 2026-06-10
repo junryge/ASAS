@@ -298,18 +298,33 @@ function openerCtx(){
 function showNotice(msg){ var n=document.getElementById('notice'); n.textContent=msg; n.style.display='block'; }
 
 // 답변을 데모스 메인과 동일하게 렌더 (think 접이식 박스 + 마크다운).
-// opener.renderMd 재사용, 없으면 think 제거 + 줄바꿈만.
+// LaTeX → 유니코드 기호 폴백 (데모스 delatexFallback 과 동일 매핑). 개인에이전트엔 KaTeX 미로딩이라
+// $\rightarrow$ 같은 게 raw 로 보이던 문제 해결 — HTML 문자열을 받아 기호로 치환해 돌려준다.
+function _awDelatex(html){
+  var map={'\\rightarrow':'→','\\Rightarrow':'⇒','\\to':'→','\\leftarrow':'←','\\Leftarrow':'⇐',
+    '\\geq':'≥','\\ge':'≥','\\leq':'≤','\\le':'≤','\\neq':'≠','\\ne':'≠','\\approx':'≈',
+    '\\times':'×','\\cdot':'·','\\pm':'±','\\div':'÷','\\infty':'∞','\\alpha':'α','\\beta':'β',
+    '\\sum':'∑','\\rightarrowtail':'→'};
+  var h=String(html||'');
+  h=h.replace(/\\text\s*\{([^}]*)\}/g,'$1').replace(/\\mathrm\s*\{([^}]*)\}/g,'$1');
+  for(var k in map){ h=h.split(k).join(map[k]); }
+  // 남은 인라인/블록 수식 구분자 제거 ($$...$$ , $...$)
+  h=h.replace(/\$\$([\s\S]+?)\$\$/g,'$1').replace(/\$([^$\n]+?)\$/g,'$1');
+  return h;
+}
+
+// opener.renderMd 재사용, 없으면 think 제거 + 줄바꿈만. (LaTeX 는 _awDelatex 로 항상 폴백)
 function renderFinal(text){
   var raw=String(text||'');
   // gguf 등에서 여는 <think> 없이 닫는 </think>만 오는 경우 → 앞에 <think> 보충
   if(raw.indexOf('</think>')>=0 && raw.indexOf('<think>')<0){ raw='<think>'+raw; }
   try{
     if(window.opener && !window.opener.closed && typeof window.opener.renderMd==='function'){
-      return window.opener.renderMd(raw);
+      return _awDelatex(window.opener.renderMd(raw));
     }
   }catch(e){}
   var t=raw.replace(/<think>[\s\S]*?<\/think>\s*/g,'').replace(/<think>[\s\S]*$/g,'');
-  return '<div>'+esc(t).replace(/\n/g,'<br>')+'</div>';
+  return _awDelatex('<div>'+esc(t).replace(/\n/g,'<br>')+'</div>');
 }
 
 // ── 마크다운 문서 다운로드 (데모스와 동일 동작, 자체 완결형) ──
