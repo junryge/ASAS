@@ -859,6 +859,13 @@ def _stream_chat_sse(data):
             kb_results = search_knowledge_smart(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
+            try:
+                from demos_v1.rag_client import _healthy as _rag_healthy
+                _src = "RAG" if _rag_healthy() else "BM25"
+            except Exception:
+                _src = "?"
+            print(f"  [KNOWLEDGE-SSE] 검색원={_src} | 결과 {len(kb_results)}건 | "
+                  f"{sum(len(r.get('content','')) for r in kb_results)}자")
             if not kb_results:
                 # 0건이면 한 줄로 끝내지 말고 일반 지식/다른 스킬로 계속 답변하도록 override.
                 _other_skills = [s for s in skill_ids if s != "knowledge-search"]
