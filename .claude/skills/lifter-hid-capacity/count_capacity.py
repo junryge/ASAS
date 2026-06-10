@@ -51,24 +51,20 @@ def main():
             try: zpre[z] = int(r.get("Vehicle_Precaution") or 0)
             except ValueError: pass
 
-    # 이벤트 시간순 -> HID별 점유 추적, 분당 peak
-    events = []
+    # 점유 = 로그의 HID_VALUE (실제 구역 점유차량수). 분당 peak.
+    peak = defaultdict(lambda: defaultdict(int))   # minute -> hid -> HID_VALUE peak
     with open(inout, encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
-            events.append((r["_time"], r["FROM_HIDID"].strip(), r["TO_HIDID"].strip(), r["VHL_ID"]))
-    events.sort()
-
-    occ = defaultdict(set)                  # hid -> 현재 점유 차량
-    peak = defaultdict(lambda: defaultdict(int))   # minute -> hid -> peak 점유
-    for t, fr, to, v in events:
-        m = t[:16]
-        if fr: occ[fr].discard(v)
-        if to: occ[to].add(v)
-        for hid in (fr, to):
-            if hid:
-                c = len(occ[hid])
-                if c > peak[m][hid]:
-                    peak[m][hid] = c
+            m = r["_time"][:16]
+            to = r["TO_HIDID"].strip()
+            if not to:
+                continue
+            try:
+                hv = int(r["HID_VALUE"])
+                if hv > peak[m][to]:
+                    peak[m][to] = hv
+            except (ValueError, KeyError):
+                pass
 
     minutes = sorted(peak)
     fab = lambda lf: "M16" if lf[0] == "6" else ("M14" if lf[0] == "4" else "?")

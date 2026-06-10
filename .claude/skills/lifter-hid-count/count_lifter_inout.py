@@ -48,30 +48,23 @@ def main():
             try: zmax[r["Zone_ID"].strip()] = int(r.get("Vehicle_Max") or 0)
             except ValueError: pass
 
-    # 이벤트 시간순 -> 진입개수(분별) + 점유 추적(peak)
-    events = []
+    # 이벤트 -> 분별 진입개수(TO_HIDID 중복제거) + 점유(HID_VALUE peak)
+    in_veh = defaultdict(set)               # (minute, hid) -> 진입차량 집합
+    occ_peak = defaultdict(lambda: defaultdict(int))  # minute -> hid -> HID_VALUE peak(점유)
     with open(inout, encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
-            events.append((r["_time"], r["FROM_HIDID"].strip(), r["TO_HIDID"].strip(), r["VHL_ID"]))
-    events.sort()
+            m = r["_time"][:16]
+            to = r["TO_HIDID"].strip()
+            if to:
+                in_veh[(m, to)].add(r["VHL_ID"])
+                try:
+                    hv = int(r["HID_VALUE"])           # 로그가 주는 실제 점유
+                    if hv > occ_peak[m][to]:
+                        occ_peak[m][to] = hv
+                except (ValueError, KeyError):
+                    pass
 
-    in_veh = defaultdict(set)               # (minute, hid) -> 진입차량 집합
-    occ = defaultdict(set)                  # hid -> 현재 점유 차량
-    peak = defaultdict(lambda: defaultdict(int))  # minute -> hid -> peak 점유
-    for t, fr, to, v in events:
-        m = t[:16]
-        if to:
-            in_veh[(m, to)].add(v)
-            occ[to].add(v)
-        if fr:
-            occ[fr].discard(v)
-        for hid in (fr, to):
-            if hid:
-                c = len(occ[hid])
-                if c > peak[m][hid]:
-                    peak[m][hid] = c
-
-    minutes = sorted(set(m for m, _ in in_veh) | set(peak))
+    minutes = sorted(set(m for m, _ in in_veh) | set(occ_peak))
     fab = lambda lf: "M16" if lf[0] == "6" else ("M14" if lf[0] == "4" else "?")
     def sat(c, z):
         mx = zmax.get(z, 0)
@@ -84,13 +77,13 @@ def main():
             for lf in sorted(lifter_zone):
                 z = lifter_zone[lf]
                 nin = len(in_veh.get((m, z), ()))
-                pk = peak[m].get(z, 0)
+                pk = occ_peak[m].get(z, 0)
                 w.writerow([m, lf, fab(lf), z, lifter_mm.get(lf, ""), nin, pk, zmax.get(z, ""), sat(pk, z)])
 
     if at:
         print(f"=== {at} · 리프터 근처 HID (진입개수 / 점유·포화도) ===")
         rows = [(lf, lifter_zone[lf], len(in_veh.get((at, lifter_zone[lf]), ())),
-                 peak.get(at, {}).get(lifter_zone[lf], 0)) for lf in lifter_zone]
+                 occ_peak.get(at, {}).get(lifter_zone[lf], 0)) for lf in lifter_zone]
         for lf, z, nin, pk in sorted(rows, key=lambda x: -x[2]):
             print(f"  {lf:10} HID{z:3}  진입 {nin:3}대  점유 {pk:3}/{zmax.get(z,'?')} ({sat(pk,z)}%)")
     else:
