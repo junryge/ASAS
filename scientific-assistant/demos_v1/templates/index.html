@@ -2304,11 +2304,9 @@ async function send(){
         const _finalContent = _displayAcc + _truncWarn + _errLine;
         addMsg('assistant', _finalContent + _info, _finalContent);
         history.push({role:'assistant', content:_displayAcc});
-        if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
-        if(hermesOn && currentUser && _displayAcc.trim()) _showManualSkillBtn(_displayAcc);  // 📌 직접 스킬화
-        // 수동/자동 스킬 중 마크다운/HTML 리포트 계열이 선택돼 있으면 MD/HTML 다운로드 바 추가.
-        // SSE 응답엔 html_download_url 이 없지만 appendMdDownloadBar 가 누락 시 /api/generate_html
-        // 로 즉석 변환하므로 그대로 호출하면 됨.
+        // ⚠️ md 다운로드 바를 헤르메스 카드/버튼보다 '먼저' 붙인다.
+        // appendMdDownloadBar 는 '마지막 assistant 메시지'에 붙는데, 헤르메스 카드/수동스킬 버튼이
+        // 먼저 새 메시지를 만들면 md 바가 그쪽에 붙어버려 스킬 폼을 닫을 때 같이 사라지는 버그가 있었음.
         try{
           const _mdSkillActive = ['markdown-mermaid-writing','md-to-html'].some(
             s => selSkills.includes(s) || autoLoadedSkills.includes(s)
@@ -2320,6 +2318,8 @@ async function send(){
             appendMdDownloadBar(_finalContent, null);
           }
         }catch(_){}
+        if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
+        if(hermesOn && currentUser && _displayAcc.trim()) _showManualSkillBtn(_displayAcc);  // 📌 직접 스킬화
       }
     } else {
     const resp=await fetch('/api/chat',{
