@@ -67,18 +67,24 @@ class LocalEmbedder(_Base):
             )
             # ★ 0.3.40 등 신버전: pooling_type 명시 안 하면 .embed() 가
             #   'must be created with embeddings=True' 로 거부함. MEAN 풀링 강제.
-            pt = None
+            #   (구버전이 pooling_type 인자를 모르면 자동으로 빼고 재시도 → 집/회사 한 파일로 공용)
             try:
-                from llama_cpp import LLAMA_POOLING_TYPE_MEAN as pt   # 상수
+                from llama_cpp import LLAMA_POOLING_TYPE_MEAN as _pt
             except Exception:
+                import llama_cpp as _lc
+                _pt = getattr(_lc, "LLAMA_POOLING_TYPE_MEAN", 1)   # 보통 1 == MEAN
+            self._llm = None
+            for _try_pt in (True, False):
                 try:
-                    import llama_cpp as _lc
-                    pt = getattr(_lc, "LLAMA_POOLING_TYPE_MEAN", 1)   # 보통 1 == MEAN
-                except Exception:
-                    pt = 1
-            if pt is not None:
-                kw["pooling_type"] = pt
-            self._llm = Llama(**kw)
+                    _kw = dict(kw)
+                    if _try_pt:
+                        _kw["pooling_type"] = _pt
+                    self._llm = Llama(**_kw)
+                    break
+                except TypeError:
+                    continue   # 이 버전은 pooling_type 미지원 → 빼고 재시도
+            if self._llm is None:
+                self._llm = Llama(**kw)
             probe = self._raw_embed("warmup")
             self.dim = len(probe)
             self.available = self.dim > 0
