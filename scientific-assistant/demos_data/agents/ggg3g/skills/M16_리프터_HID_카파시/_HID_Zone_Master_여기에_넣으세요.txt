@@ -1,4 +1,0 @@
-이 폴더에 HID_Zone_Master_M16A_BR.csv 를 넣으세요.
-없으면 hid_zone_csv_cre.py 로 생성:
-  python hid_zone_csv_cre.py BR.layout.zip HID_Zone_Master_M16A_BR.csv
-(이 파일이 없으면 count_*.py 실행 시 에러)
