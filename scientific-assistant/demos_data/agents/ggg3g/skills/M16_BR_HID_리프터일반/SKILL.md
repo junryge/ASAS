@@ -1,5 +1,5 @@
 ---
-name: M16_리프터_HID_일반스킬
+name: M16_BR_HID_리프터일반
 description: >
   M16A_BR OHT 리프터 근처 HID 구역의 차량 개수(진입/점유/포화도)를 1분 단위로
   집계한다. LOGPRESSO_HID_INOUT 로그 + layout.zip + station.dat 를 줄 때 사용.
