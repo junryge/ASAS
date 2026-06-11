@@ -142,14 +142,19 @@ def register_hermes_routes(app) -> int:
         ok, msg = engine.confirm_skill(uid, spec)
         return jsonify({"ok": ok, "msg": msg})
 
-    # ── 스킬 관리 ──
+    # ── 스킬 관리 ──  (★ 모든 엔드포인트 user_id 필수 — 빈 ID 는 _shared 로 새던 사고 차단)
     @app.route("/api/hermes/skills", methods=["GET"])
     def hermes_skills_list():
-        return jsonify({"skills": skills.list_skills(_uid())})
+        uid = _uid()
+        if not uid:
+            return jsonify({"error": "user_id 필요", "skills": []}), 400
+        return jsonify({"skills": skills.list_skills(uid)})
 
     @app.route("/api/hermes/skill/view", methods=["GET"])
     def hermes_skill_view():
         uid = _uid()
+        if not uid:
+            return jsonify({"error": "user_id 필요"}), 400
         name = request.args.get("name", "")
         ok, nm = skills.valid_name(name)
         if not ok:
@@ -161,12 +166,16 @@ def register_hermes_routes(app) -> int:
     @app.route("/api/hermes/skill/pin", methods=["POST"])
     def hermes_skill_pin():
         d = request.get_json(force=True, silent=True) or {}
+        if not (d.get("user_id") or "").strip():
+            return jsonify({"ok": False, "error": "user_id 필요"}), 400
         ok = skills.set_pinned(d.get("user_id", ""), d.get("name", ""), bool(d.get("pinned")))
         return jsonify({"ok": ok})
 
     @app.route("/api/hermes/skill/delete", methods=["POST"])
     def hermes_skill_delete():
         d = request.get_json(force=True, silent=True) or {}
+        if not (d.get("user_id") or "").strip():
+            return jsonify({"ok": False, "error": "user_id 필요"}), 400
         ok, msg = skills.delete(d.get("user_id", ""), d.get("name", ""))
         return jsonify({"ok": ok, "msg": msg})
 
@@ -174,6 +183,8 @@ def register_hermes_routes(app) -> int:
     @app.route("/api/hermes/memory", methods=["GET"])
     def hermes_memory_get():
         uid = _uid()
+        if not uid:
+            return jsonify({"error": "user_id 필요", "memory": [], "user": []}), 400
         return jsonify({
             "memory": memory.read_items(uid, "memory"),
             "user": memory.read_items(uid, "user"),
@@ -182,7 +193,9 @@ def register_hermes_routes(app) -> int:
     @app.route("/api/hermes/memory/op", methods=["POST"])
     def hermes_memory_op():
         d = request.get_json(force=True, silent=True) or {}
-        uid = d.get("user_id", "")
+        uid = (d.get("user_id") or "").strip()
+        if not uid:
+            return jsonify({"ok": False, "error": "user_id 필요"}), 400
         sname = d.get("store", "memory")
         action = d.get("action", "add")
         if action == "add":
@@ -199,6 +212,8 @@ def register_hermes_routes(app) -> int:
     @app.route("/api/hermes/sessions/search", methods=["GET"])
     def hermes_sessions_search():
         uid = _uid()
+        if not uid:
+            return jsonify({"error": "user_id 필요", "recent": [], "hits": []}), 400
         q = request.args.get("q", "")
         if not q:
             return jsonify({"recent": sessions.list_recent(uid)})

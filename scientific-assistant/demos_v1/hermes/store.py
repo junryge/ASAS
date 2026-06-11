@@ -35,7 +35,11 @@ def safe_id(val: str) -> str:
 
 
 def user_dir(user_id: str) -> str:
-    uid = safe_id(user_id) or "_shared"
+    uid = safe_id(user_id)
+    if not uid:
+        # 과거엔 "_shared" 공용폴더로 폴백 → 사용자 간 기억/스킬이 섞이는 사고.
+        # 이제 빈 user_id 는 거부 (호출측에서 반드시 로그인 ID 전달).
+        raise ValueError("user_id 필요 (빈 ID 는 헤르메스 저장소 접근 불가)")
     d = os.path.join(AGENTS_ROOT, uid)
     os.makedirs(d, exist_ok=True)
     return d
