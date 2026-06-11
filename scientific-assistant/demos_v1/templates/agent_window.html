@@ -182,10 +182,21 @@
         <input type="checkbox" id="agThink" onchange="try{localStorage.setItem('demos_agThink', this.checked?'1':'0')}catch(e){}" style="margin:0;accent-color:#7c5cbf">💭사고
       </label>
       <span style="margin-left:auto;display:flex;gap:6px;">
-        <button onclick="newAgentSession()" title="현재 대화를 지우고 새 세션" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🆕 새 세션</button>
+        <button onclick="openAgHistory()" title="이 에이전트의 과거 세션을 날짜별로 보기/불러오기" style="background:none;border:1px solid #38bdf8;color:#7dd3fc;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🕘 기록</button>
+        <button onclick="newAgentSession()" title="현재 대화는 기록에 보관하고 새 세션 시작" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🆕 새 세션</button>
         <button onclick="sendToDemos()" title="이 대화를 메인 데모스 채팅에 새 세션으로 보내기" style="background:none;border:1px solid #22c55e;color:#86efac;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">📤 데모스로</button>
         <button onclick="endChat()" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">종료</button>
       </span>
+    </div>
+    <!-- 🕘 과거 세션 기록 팝업 (날짜별 분류) -->
+    <div id="agHistPopup" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;" onclick="if(event.target===this)closeAgHistory()">
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:12px;width:min(520px,92vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #334155;">
+          <span style="font-weight:700;color:#7dd3fc;">🕘 <span id="agHistTitle">과거 세션</span></span>
+          <span onclick="closeAgHistory()" style="cursor:pointer;color:#94a3b8;font-size:18px;line-height:1;">✕</span>
+        </div>
+        <div id="agHistList" style="overflow:auto;padding:10px 12px;font-size:13px;">로딩…</div>
+      </div>
     </div>
     <div id="chatMsgs"></div>
     <div id="agAttachBar" style="display:none;align-items:center;gap:8px;font-size:12px;color:#86efac;margin:4px 0;">
@@ -380,15 +391,63 @@ function stripThink(acc){
   return i>=0 ? acc.slice(i+8).replace(/^\s+/,'') : acc;
 }
 
-// ── 대화 기록 영속화 (아이디+에이전트별 localStorage, 데모스와 같은 오리진) ──
-function chatKey(agentId){ return 'demos_agentChat_'+uid()+'_'+agentId; }
+// ── 대화 기록 영속화 (에이전트당 '여러 세션' 보관, 날짜별 기록) ──
+var activeSessionId = null;
+function _oldChatKey(aid){ return 'demos_agentChat_'+uid()+'_'+aid; }          // 구버전 단일 대화
+function _sessIdxKey(aid){ return 'demos_agSessIdx_'+uid()+'_'+aid; }          // 세션 목록(메타)
+function _sessKey(aid,sid){ return 'demos_agSess_'+uid()+'_'+aid+'_'+sid; }    // 세션별 메시지
+function _newSid(){ return 's'+Date.now()+Math.floor(Math.random()*1000); }
+function _sessTitle(msgs){
+  var u=(msgs||[]).filter(function(m){return m.role==='user';})[0];
+  var t=(u&&u.content)? String(u.content).replace(/\s+/g,' ').trim() : '';
+  return (t.slice(0,42)) || '(빈 대화)';
+}
+function _loadSessIdx(aid){ try{ var a=JSON.parse(localStorage.getItem(_sessIdxKey(aid))||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _saveSessIdx(aid,idx){ try{ localStorage.setItem(_sessIdxKey(aid), JSON.stringify(idx)); }catch(e){} }
+function _loadSessMsgs(aid,sid){ try{ var d=JSON.parse(localStorage.getItem(_sessKey(aid,sid))||'null'); return (d&&Array.isArray(d.messages))? d.messages : []; }catch(e){ return []; } }
+// 구버전 단일 대화가 있으면 세션 하나로 흡수 후 제거
+function _migrateOldChat(aid){
+  try{
+    var raw=localStorage.getItem(_oldChatKey(aid)); if(!raw) return;
+    var d=JSON.parse(raw);
+    if(d && Array.isArray(d.messages) && d.messages.length){
+      var sid='s'+(d.updatedAt||Date.now());
+      localStorage.setItem(_sessKey(aid,sid), JSON.stringify({messages:d.messages}));
+      var idx=_loadSessIdx(aid);
+      if(!idx.some(function(s){return s.sid===sid;})){
+        idx.push({sid:sid,title:_sessTitle(d.messages),created:(d.updatedAt||Date.now()),updated:(d.updatedAt||Date.now()),count:d.messages.length});
+        _saveSessIdx(aid,idx);
+      }
+    }
+    localStorage.removeItem(_oldChatKey(aid));
+  }catch(e){}
+}
 function saveChat(){
   if(!activeAgent) return;
-  try{ localStorage.setItem(chatKey(activeAgent.agent_id), JSON.stringify({messages:chatHistory, updatedAt:Date.now()})); }catch(e){}
+  var aid=activeAgent.agent_id;
+  if(!activeSessionId) activeSessionId=_newSid();
+  // 빈 대화는 인덱스에 안 남김(목록 지저분 방지)
+  if(!chatHistory.length){
+    try{ localStorage.removeItem(_sessKey(aid,activeSessionId)); }catch(e){}
+    var idx0=_loadSessIdx(aid).filter(function(s){return s.sid!==activeSessionId;}); _saveSessIdx(aid,idx0);
+    return;
+  }
+  try{ localStorage.setItem(_sessKey(aid,activeSessionId), JSON.stringify({messages:chatHistory})); }catch(e){}
+  var idx=_loadSessIdx(aid), now=Date.now();
+  var e=idx.filter(function(s){return s.sid===activeSessionId;})[0];
+  if(!e){ e={sid:activeSessionId,created:now}; idx.push(e); }
+  e.title=_sessTitle(chatHistory); e.updated=now; e.count=chatHistory.length;
+  _saveSessIdx(aid,idx);
 }
-function loadChatMessages(agentId){
-  try{ var d=JSON.parse(localStorage.getItem(chatKey(agentId))||'null'); return (d&&Array.isArray(d.messages))? d.messages : []; }catch(e){ return []; }
+// 에이전트 가동 시: 구버전 흡수 후 가장 최근 세션 복원(없으면 새 세션)
+function _restoreLatestSession(aid){
+  _migrateOldChat(aid);
+  var idx=_loadSessIdx(aid).filter(function(s){return (s.count||0)>0;});
+  idx.sort(function(x,y){return (y.updated||0)-(x.updated||0);});
+  if(idx.length){ activeSessionId=idx[0].sid; return _loadSessMsgs(aid, activeSessionId); }
+  activeSessionId=_newSid(); return [];
 }
+function loadChatMessages(agentId){ return _restoreLatestSession(agentId); }  // 호환 유지
 function renderHistory(messages){
   var c=document.getElementById('chatMsgs'); c.innerHTML='';
   (messages||[]).forEach(function(m){
@@ -769,10 +828,11 @@ async function saveAgent(){
 }
 
 async function del(aid, name){
-  if(!confirm('에이전트 "'+(name||'')+'" 을(를) 삭제할까요?')) return;
+  if(!confirm('에이전트 "'+(name||'')+'" 을(를) 삭제할까요?\n(이 에이전트의 과거 세션 기록도 함께 삭제됩니다)')) return;
   try{
     var r=await fetch('/api/agents/'+encodeURIComponent(aid)+'?user_id='+encodeURIComponent(uid()),{method:'DELETE'});
     if(!r.ok) throw new Error('HTTP '+r.status);
+    purgeAgentSessions(aid);   // 아예 삭제 = 과거 세션도 진짜 삭제
     loadAgents();
   }catch(e){ alert('삭제 실패: '+e.message); }
 }
@@ -828,15 +888,80 @@ function endChat(){
   var mb=document.getElementById('manageBox'); if(mb) mb.open=true;
 }
 
-// 새 세션: 현재 에이전트 대화 기록 삭제 후 새로 시작
+// 새 세션: 현재 대화는 '기록에 보관'하고 새 세션 시작 (삭제 안 함)
 function newAgentSession(){
   if(!activeAgent) return;
-  if(chatHistory.length && !confirm('현재 대화를 지우고 새 세션을 시작할까요?')) return;
+  saveChat();                       // 현재 세션 확정 저장(기록에 남음)
+  activeSessionId=_newSid();         // 새 세션 시작
   chatHistory=[];
-  try{ localStorage.removeItem(chatKey(activeAgent.agent_id)); }catch(e){}
   document.getElementById('chatMsgs').innerHTML='';
   document.getElementById('chatInput').focus();
 }
+
+// 🕘 과거 세션 기록 (날짜별 분류) ──────────────────────────────
+function _dateGroup(ts){
+  var d=new Date(ts||0), now=new Date();
+  var ymd=function(x){return x.getFullYear()+'-'+(x.getMonth()+1)+'-'+x.getDate();};
+  if(ymd(d)===ymd(now)) return '오늘';
+  var y=new Date(); y.setDate(now.getDate()-1);
+  if(ymd(d)===ymd(y)) return '어제';
+  return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');
+}
+function _hhmm(ts){ var d=new Date(ts||0); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function openAgHistory(){
+  if(!activeAgent){ return; }
+  saveChat();                       // 현재 것도 목록에 반영
+  var aid=activeAgent.agent_id;
+  document.getElementById('agHistTitle').textContent=activeAgent.name+' · 과거 세션';
+  var idx=_loadSessIdx(aid).filter(function(s){return (s.count||0)>0;});
+  idx.sort(function(x,y){return (y.updated||0)-(x.updated||0);});
+  var box=document.getElementById('agHistList');
+  if(!idx.length){ box.innerHTML='<div style="color:#64748b;padding:14px;text-align:center;">저장된 과거 세션이 없습니다.</div>'; }
+  else{
+    var html='', lastG=null;
+    idx.forEach(function(s){
+      var g=_dateGroup(s.updated);
+      if(g!==lastG){ html+='<div style="color:#38bdf8;font-size:11px;font-weight:700;margin:10px 2px 4px;">'+g+'</div>'; lastG=g; }
+      var cur=(s.sid===activeSessionId)?' style="border-color:#38bdf8;background:rgba(56,189,248,0.08);"':'';
+      html+='<div data-sid="'+s.sid+'" class="agh-item"'+cur+' style="display:flex;align-items:center;gap:8px;border:1px solid #334155;border-radius:8px;padding:8px 10px;margin-bottom:5px;">'
+        +'<div style="flex:1;min-width:0;cursor:pointer;" onclick="loadAgSession(\''+s.sid+'\')">'
+        +'<div style="color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(s.title||'(빈 대화)')+(s.sid===activeSessionId?' <span style="color:#38bdf8;font-size:10px;">● 현재</span>':'')+'</div>'
+        +'<div style="color:#64748b;font-size:11px;">'+_hhmm(s.updated)+' · '+(s.count||0)+'개 메시지</div></div>'
+        +'<span onclick="deleteAgSession(\''+s.sid+'\')" title="이 세션 삭제" style="color:#f87171;cursor:pointer;font-size:12px;padding:2px 4px;">🗑</span></div>';
+    });
+    box.innerHTML=html;
+  }
+  document.getElementById('agHistPopup').style.display='flex';
+}
+function closeAgHistory(){ document.getElementById('agHistPopup').style.display='none'; }
+function loadAgSession(sid){
+  if(!activeAgent) return;
+  saveChat();                       // 현재 것 보존 후 전환
+  activeSessionId=sid;
+  chatHistory=_loadSessMsgs(activeAgent.agent_id, sid);
+  renderHistory(chatHistory);
+  closeAgHistory();
+}
+function deleteAgSession(sid){
+  if(!activeAgent) return;
+  if(!confirm('이 세션을 영구 삭제할까요?')) return;
+  var aid=activeAgent.agent_id;
+  try{ localStorage.removeItem(_sessKey(aid,sid)); }catch(e){}
+  _saveSessIdx(aid, _loadSessIdx(aid).filter(function(s){return s.sid!==sid;}));
+  if(sid===activeSessionId){ activeSessionId=_newSid(); chatHistory=[]; document.getElementById('chatMsgs').innerHTML=''; }
+  openAgHistory();
+}
+// 에이전트 영구 삭제 시 호출: 그 에이전트의 모든 세션 정리 (진짜 삭제)
+function purgeAgentSessions(aid){
+  try{
+    _loadSessIdx(aid).forEach(function(s){ try{ localStorage.removeItem(_sessKey(aid,s.sid)); }catch(e){} });
+    localStorage.removeItem(_sessIdxKey(aid));
+    localStorage.removeItem(_oldChatKey(aid));
+  }catch(e){}
+}
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape'){ var p=document.getElementById('agHistPopup'); if(p && p.style.display==='flex') closeAgHistory(); }
+});
 
 // 데모스로 보내기: 현재 대화를 메인 데모스 채팅에 새 세션으로 불러옴
 function sendToDemos(){
