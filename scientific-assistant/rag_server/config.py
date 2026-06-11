@@ -18,15 +18,39 @@ _DEFAULTS = {
 }
 
 
+_LOCAL_PATH = os.path.join(BASE_DIR, "rag_config.local.json")  # 집/회사별 override (git 제외)
+
+
+def _merge(base, over):
+    """over 를 base 위에 병합. local/api 같은 중첩 dict 는 키 단위로 병합."""
+    for k, v in over.items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            nb = dict(base[k]); nb.update({kk: vv for kk, vv in v.items() if not kk.startswith("_")})
+            base[k] = nb
+        else:
+            base[k] = v
+    return base
+
+
 def _load():
     cfg = dict(_DEFAULTS)
+    # 1) 공용 rag_config.json (git 공유 기본값)
     if os.path.isfile(_CFG_PATH):
         try:
             with open(_CFG_PATH, encoding="utf-8") as f:
-                user = json.load(f)
-            cfg.update({k: v for k, v in user.items() if not k.startswith("_")})
+                cfg = _merge(cfg, json.load(f))
         except Exception as e:
             print(f"[config] rag_config.json 파싱 실패({e}) — 기본값 사용")
+    # 2) rag_config.local.json (이 PC 전용 override — 집/회사 설정 분리. git 에 안 올림)
+    if os.path.isfile(_LOCAL_PATH):
+        try:
+            with open(_LOCAL_PATH, encoding="utf-8") as f:
+                cfg = _merge(cfg, json.load(f))
+            print("[config] rag_config.local.json override 적용됨 (이 PC 전용 설정)")
+        except Exception as e:
+            print(f"[config] rag_config.local.json 파싱 실패({e}) — 무시")
     return cfg
 
 

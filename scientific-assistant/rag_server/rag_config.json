@@ -8,10 +8,11 @@
   "_embed": "임베딩: local(bge-m3 GGUF, CPU) | api(사내 /v1/embeddings) | none(BM25+청킹만)",
   "embed_backend": "local",
 
+  "_local_note": "이 값은 공용 기본값(CPU). 집/회사별 차이는 rag_config.local.json 으로 override.",
   "local": {
     "model_path": "models/bge-m3-q8_0.gguf",
     "n_ctx": 2048,
-    "n_gpu_layers": 99,
+    "n_gpu_layers": 0,
     "n_threads": 0,
     "n_batch": 64
   },

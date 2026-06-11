@@ -1,0 +1,5 @@
+{
+  "_doc": "회사 PC 전용. 이 파일을 'rag_config.local.json' 으로 복사해서 사용.",
+  "_설명": "회사는 CPU. bge-m3 CPU 로(원래 잘 됨). 사내 임베딩 API 있으면 embed_backend=api 로 바꿔도 됨.",
+  "local": { "n_gpu_layers": 0 }
+}
