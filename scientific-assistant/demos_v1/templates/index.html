@@ -676,6 +676,13 @@ pre{position:relative}
       <input id="kdScriptTitle" placeholder="스크립트 이름 (영문/숫자/-, 예: hubroom-rule)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
       <input id="kdScriptDesc" placeholder="설명 (무엇을 평가하는지)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
       <input id="kdScriptTrigger" placeholder="트리거어 (쉼표 구분: 분석, 진단, 평가)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <input id="kdScriptEntry" placeholder="진입 .py 파일명 (선택 — 비우면 자동 인식)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <textarea id="kdScriptArgv" placeholder="실행 인자 (선택 — 한 줄에 하나). 비우면 기본: {input} -o {outdir}" style="width:100%;height:84px;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;margin-bottom:4px;box-sizing:border-box;resize:vertical;font-family:monospace;"></textarea>
+      <div style="color:#fbbf24;font-size:10.5px;margin-bottom:8px;line-height:1.5;">
+        <code>{input}</code>=업로드한 CSV, <code>{outdir}</code>=결과폴더, 그 외 맨이름은 스크립트 폴더의 동반파일.<br>
+        예) 입력 CSV 1개+동반파일 2개 스크립트(각각 한 줄):<br>
+        <code>{input}</code> · <code>리프터_근처HID4.csv</code> · <code>HID_Zone_Master_M16A_BR.csv</code> · <code>{outdir}/결과.csv</code>
+      </div>
       <button onclick="registerKdScript()" style="width:100%;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;">🐍 스크립트 등록</button>
       <div id="kdScriptMsg" style="margin-top:6px;font-size:12px;"></div>
     </div>
@@ -5040,6 +5047,8 @@ async function registerKdScript(){
   fd.append('name', document.getElementById('kdScriptTitle').value.trim());
   fd.append('description', document.getElementById('kdScriptDesc').value.trim());
   fd.append('trigger', document.getElementById('kdScriptTrigger').value.trim());
+  fd.append('entry', (document.getElementById('kdScriptEntry').value||'').trim());
+  fd.append('argv', (document.getElementById('kdScriptArgv').value||'').trim());
   try {
     msg.innerHTML='<span style="color:#94a3b8;">업로드 중...</span>';
     var resp = await fetch('/api/knowledge/register_script',{method:'POST',body:fd});
@@ -5048,6 +5057,7 @@ async function registerKdScript(){
     msg.innerHTML='<span style="color:#22c55e;">'+data.message+'</span>';
     input.value=''; document.getElementById('kdScriptName').textContent='';
     document.getElementById('kdScriptTitle').value=''; document.getElementById('kdScriptDesc').value=''; document.getElementById('kdScriptTrigger').value='';
+    document.getElementById('kdScriptEntry').value=''; document.getElementById('kdScriptArgv').value='';
     loadKdScripts();
   } catch(e){ msg.innerHTML='<span style="color:#ef4444;">등록 실패</span>'; }
 }

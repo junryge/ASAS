@@ -3107,6 +3107,9 @@ owner: {user_id}
         description = request.form.get("description", "").strip()
         trigger = request.form.get("trigger", "").strip()
         entry = os.path.basename(request.form.get("entry", "").strip())
+        # 실행 인자 템플릿(선택) — 한 줄에 하나. 비우면 기본(hubroom식: {input} -o {outdir}).
+        #   토큰: {input}=업로드 CSV 임시경로, {outdir}=결과폴더. 그 외 맨이름은 스크립트 폴더의 동반파일.
+        argv_tpl = [ln.strip() for ln in (request.form.get("argv", "") or "").splitlines() if ln.strip()]
         if not user_id:
             return jsonify({"error": "사용자 ID가 필요합니다."}), 400
         files = request.files.getlist("files") or request.files.getlist("file")
@@ -3162,6 +3165,7 @@ owner: {user_id}
             "trigger": triggers,
             "input": "csv",
             "entry": entry_file,
+            "argv": argv_tpl,            # [] = 기본 호출(hubroom식). 있으면 그대로 실행 인자로.
             "files": saved,
             "created": _kd_dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         }

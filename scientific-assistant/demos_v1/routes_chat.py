@@ -610,8 +610,16 @@ def _run_agent_script(user_id, query, csv_data, selected_names):
     outd = tempfile.mkdtemp(prefix="an_out_")
     try:
         entry = meta.get("entry") or ""
+        # 실행 인자: argv 템플릿 있으면 그대로(토큰 치환), 없으면 기본(hubroom식: <input> -o <outdir>).
+        #   {input}=업로드 CSV 임시경로, {outdir}=결과폴더. 맨이름 동반파일은 cwd=sdir 라 자동 해석.
+        argv_tpl = meta.get("argv") or []
+        if argv_tpl:
+            mapped = [t.replace("{input}", tin).replace("{outdir}", outd) for t in argv_tpl]
+            cmd = [_sys.executable, os.path.join(sdir, entry)] + mapped
+        else:
+            cmd = [_sys.executable, os.path.join(sdir, entry), tin, "-o", outd]
         # encoding/errors 고정 — Windows 기본 cp949 로 한글 stdout 디코딩 시 UnicodeDecodeError 방지
-        proc = subprocess.run([_sys.executable, os.path.join(sdir, entry), tin, "-o", outd],
+        proc = subprocess.run(cmd,
                               capture_output=True, text=True, timeout=120, cwd=sdir,
                               encoding="utf-8", errors="replace",
                               env=dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1"))
