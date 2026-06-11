@@ -1,5 +1,0 @@
-{
-  "_doc": "집 PC 전용. 이 파일을 'rag_config.local.json' 으로 복사해서 사용.",
-  "_설명": "집은 GPU 있음 → bge-m3 를 GPU 로. (CUDA 빌드가 GPU 임베딩 지원하면 OK)",
-  "local": { "n_gpu_layers": 99 }
-}

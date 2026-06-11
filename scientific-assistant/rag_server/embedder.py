@@ -57,7 +57,7 @@ class LocalEmbedder(_Base):
             return
         try:
             from llama_cpp import Llama
-            kw = dict(
+            self._llm = Llama(
                 model_path=path, embedding=True,
                 n_ctx=int(conf.get("n_ctx", 2048)),
                 n_gpu_layers=int(conf.get("n_gpu_layers", 0)),
@@ -65,47 +65,19 @@ class LocalEmbedder(_Base):
                 n_batch=int(conf.get("n_batch", 64)),
                 verbose=False,
             )
-            # ★ 0.3.40 등 신버전: pooling_type 명시 안 하면 .embed() 가
-            #   'must be created with embeddings=True' 로 거부함. MEAN 풀링 강제.
-            #   (구버전이 pooling_type 인자를 모르면 자동으로 빼고 재시도 → 집/회사 한 파일로 공용)
-            try:
-                from llama_cpp import LLAMA_POOLING_TYPE_MEAN as _pt
-            except Exception:
-                import llama_cpp as _lc
-                _pt = getattr(_lc, "LLAMA_POOLING_TYPE_MEAN", 1)   # 보통 1 == MEAN
-            self._llm = None
-            for _try_pt in (True, False):
-                try:
-                    _kw = dict(kw)
-                    if _try_pt:
-                        _kw["pooling_type"] = _pt
-                    self._llm = Llama(**_kw)
-                    break
-                except TypeError:
-                    continue   # 이 버전은 pooling_type 미지원 → 빼고 재시도
-            if self._llm is None:
-                self._llm = Llama(**kw)
-            probe = self._raw_embed("warmup")
+            probe = _flatten_pool(self._llm.embed("warmup"))
             self.dim = len(probe)
             self.available = self.dim > 0
-            print(f"[embedder] local bge-m3 로드 OK (dim={self.dim}, CPU, pooling=mean) — {os.path.basename(path)}")
+            print(f"[embedder] local bge-m3 로드 OK (dim={self.dim}, CPU) — {os.path.basename(path)}")
         except Exception as e:
             print(f"[embedder] local 로드 실패({e}) → lexical 모드")
-
-    def _raw_embed(self, text):
-        """버전 호환: create_embedding(표준) 우선, 실패 시 embed() 폴백. 단일 벡터 반환."""
-        t = text or " "
-        try:
-            r = self._llm.create_embedding(t)
-            return _flatten_pool(r["data"][0]["embedding"])
-        except Exception:
-            return _flatten_pool(self._llm.embed(t))
 
     def embed(self, texts):
         out = []
         with self._lock:
             for t in texts:
-                out.append(_l2norm(self._raw_embed(t)))
+                v = _flatten_pool(self._llm.embed(t or " "))
+                out.append(_l2norm(v))
         return out
 
 

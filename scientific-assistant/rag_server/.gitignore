@@ -2,4 +2,3 @@ data/
 models/*.gguf
 __pycache__/
 *.pyc
-rag_config.local.json
