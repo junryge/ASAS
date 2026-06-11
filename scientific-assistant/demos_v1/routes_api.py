@@ -1257,9 +1257,11 @@ def register_api_routes(app):
             if total_rows > 5:
                 preview_text += f"... ({total_rows - 5}행 더 있음)"
 
-            # 저장
-            uploaded_csv_data.clear()
-            uploaded_csv_data.update({
+            # 저장 — user_id 별 슬롯 (다중 사용자 첨부 충돌 방지)
+            from demos_v1.utils import csv_slot
+            _slot = csv_slot(request.form.get("user_id", ""))
+            _slot.clear()
+            _slot.update({
                 "filename": file.filename,
                 "headers": headers,
                 "rows": data_rows,
@@ -1465,9 +1467,11 @@ def register_api_routes(app):
         if total_rows > 5:
             preview_text += f"... ({total_rows - 5}행 더 있음)"
 
-        # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
-        uploaded_csv_data.clear()
-        uploaded_csv_data.update({
+        # user_id 별 슬롯에 저장 (기존 CSV 분석 경로와 호환, 다중 사용자 충돌 방지)
+        from demos_v1.utils import csv_slot
+        _slot = csv_slot(request.form.get("user_id", ""))
+        _slot.clear()
+        _slot.update({
             "filename": file.filename,
             "headers": headers,
             "rows": data_rows,
@@ -1496,10 +1500,12 @@ def register_api_routes(app):
 
     @app.route("/api/clear_csv", methods=["POST"])
     def api_clear_csv():
-        """업로드된 CSV 데이터 삭제"""
-        global uploaded_csv_data
-        uploaded_csv_data.clear()
-        uploaded_csv_data.update({"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""})
+        """업로드된 CSV 데이터 삭제 — 자기(user_id) 슬롯만. 남의 첨부는 못 지움."""
+        from demos_v1.utils import csv_slot
+        _d = request.get_json(force=True, silent=True) or {}
+        _slot = csv_slot(_d.get("user_id") or request.form.get("user_id", ""))
+        _slot.clear()
+        _slot.update({"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""})
         return jsonify({"success": True})
 
 

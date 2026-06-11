@@ -751,7 +751,7 @@ def _stream_chat_sse(data):
     # (Python `from X import Y` 는 모듈 로드 시점의 바인딩이므로, 다른 코드가
     # 의도치 않게 utils.uploaded_files 를 재할당했을 경우 stale 이 될 수 있음).
     from demos_v1 import utils as _utils_now
-    _csv_now = _utils_now.uploaded_csv_data
+    _csv_now = _utils_now.csv_slot(data.get("user_id"))   # ★ 사용자별 첨부 슬롯 (다중 사용자 충돌 방지)
     _files_now = _utils_now.uploaded_files
 
     file_section = ""
@@ -1261,6 +1261,10 @@ def register_chat_routes(app):
             print("[api_chat] → 다중 env, 기존 비-스트리밍 흐름으로 처리")
         chat_stop_flag["stop"] = False  # 새 요청 시작 시 플래그 초기화
         data = request.json
+        # ★ 사용자별 첨부 CSV 슬롯 — 이 함수 내 모든 uploaded_csv_data 참조를 자기 슬롯으로 섀도잉
+        #   (과거: 서버 전역 1칸 → 다중 사용자가 서로 첨부를 덮어쓰던 버그)
+        from demos_v1.utils import csv_slot as _csv_slot
+        uploaded_csv_data = _csv_slot(data.get("user_id"))
         # 환경 선택: 배열 또는 문자열 → 배열로 통일
         raw_env = data.get("env", "auto")
         if isinstance(raw_env, list):

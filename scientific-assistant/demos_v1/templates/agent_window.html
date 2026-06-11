@@ -675,7 +675,7 @@ async function agCsvSelected(input){
   if(!f) return;
   var bar=document.getElementById('agAttachBar'), nm=document.getElementById('agAttachName');
   nm.textContent='📎 업로드 중… '+f.name; bar.style.display='flex';
-  var fd=new FormData(); fd.append('file', f);
+  var fd=new FormData(); fd.append('file', f); fd.append('user_id', uid());  // 사용자별 첨부 슬롯
   try{
     var r=await fetch('/api/upload_csv',{method:'POST',body:fd});
     var d=await r.json();
@@ -688,7 +688,7 @@ function clearAgCsv(){
   _agCsvAttached=false;
   document.getElementById('agCsvInput').value='';
   document.getElementById('agAttachBar').style.display='none';
-  fetch('/api/clear_csv',{method:'POST'}).catch(function(){});
+  fetch('/api/clear_csv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid()})}).catch(function(){});
 }
 
 // 선택한 지식 파일들의 내용을 가져와 시스템 프롬프트용 컨텍스트 블록 생성

@@ -3245,7 +3245,7 @@ function createNewSession(){
   document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f==='auto');});
   // 업로드된 파일/CSV 초기화 (이전 세션 데이터 잔류 방지)
   fetch('/api/clear_files', {method:'POST'});
-  fetch('/api/clear_csv', {method:'POST'});
+  fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||''})});
   uploadedFilesList = [];
   renderFileList();
   csvLoaded = false;
@@ -4088,6 +4088,7 @@ let csvFilename = '';
 async function uploadCsvFile(file){
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('user_id', (currentUser&&currentUser.id)||'');  // 사용자별 첨부 슬롯
 
   try{
     const resp = await fetch('/api/upload_csv', {method:'POST', body:formData});
@@ -4127,6 +4128,7 @@ async function uploadXlsxFile(file, sheetIdx){
   _xlsxRawFile = file;
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('user_id', (currentUser&&currentUser.id)||'');  // 사용자별 첨부 슬롯
   if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
 
   try{
@@ -4596,7 +4598,7 @@ async function downloadHtmlDoc(btn){
 }
 
 async function removeCsv(){
-  await fetch('/api/clear_csv', {method:'POST'});
+  await fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||''})});
   csvLoaded = false;
   csvFilename = '';
   document.getElementById('csvInfoPanel').style.display = 'none';
