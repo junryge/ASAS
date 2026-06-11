@@ -85,6 +85,14 @@ def _read_files_direct(user_id, files, per=4000, total_cap=14000):
     return out
 
 
+def read_selected(user_id, files, per_file=6000, total_cap=14000):
+    """개인에이전트 전용: 선택한 지식 문서를 '그대로' 읽어 반환. 검색/자동 추천 없음.
+    (자동 지식검색은 데모스 메인에서만. 에이전트는 사용자가 고른 문서만 주입.)"""
+    if not user_id or not files:
+        return []
+    return _read_files_direct(user_id, files, per=per_file, total_cap=total_cap)
+
+
 def search_knowledge_smart(query, max_results=10, max_content_chars=4000, user_id=None, files=None):
     """RAG 우선, 실패/미사용 시 기존 BM25 폴백. 반환 스키마 = search_knowledge 와 동일."""
     if user_id and _healthy():

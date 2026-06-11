@@ -849,12 +849,13 @@ def _stream_chat_sse(data):
             _c = _m.get("content", "")
             last_user_query = _c if isinstance(_c, str) else ""
             break
-    # 개인에이전트 선택 지식문서: 질문 관련 청크만 RAG(없으면 BM25)로 골라 주입 (프론트 통째 주입 대체)
+    # 개인에이전트 선택 지식문서: 사용자가 '고른 문서만' 그대로 읽어 주입.
+    # (자동 지식검색/추천은 데모스 메인 전용. 에이전트는 KB 전체를 뒤지지 않는다 — 엉뚱한 문서 자동주입 방지.)
     _agent_kfiles = data.get("knowledge_files") or []
-    if _agent_kfiles and last_user_query.strip():
+    if _agent_kfiles:
         try:
-            _kf_res = search_knowledge_smart(last_user_query, max_results=8, max_content_chars=4000,
-                                             user_id=data.get("user_id"), files=_agent_kfiles)
+            from demos_v1.rag_client import read_selected as _read_selected
+            _kf_res = _read_selected(data.get("user_id"), _agent_kfiles)
             if _kf_res:
                 _kf_ctx = ("\n\n=== 선택한 내 지식 문서 ===\n"
                            "아래 문서 내용을 우선 근거로 답하세요. 문서에 없는 내용은 추측하지 말고 일반 지식임을 밝히세요.\n\n")
