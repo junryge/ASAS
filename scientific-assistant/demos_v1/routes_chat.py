@@ -567,7 +567,8 @@ def _summarize_result_csv(path, max_full_rows=30, top_k=8):
             line = " | ".join(f"{k}={r.get(k, '')}" for k in keys if str(r.get(k, '')).strip())
             if line:
                 out.append(line)
-    else:
+    elif any(c in cols for c in KEY):
+        # hubroom 스키마 결과(발동이벤트): 분포 + 위험 상위행
         for c in ("stage_name", "unified_risk_level", "hot_area"):
             if c in cols:
                 cnt = Counter(str(r.get(c, "")).strip() or "-" for r in rows)
@@ -582,6 +583,17 @@ def _summarize_result_csv(path, max_full_rows=30, top_k=8):
                 if _score(r) <= 0:
                     break
                 out.append("· " + " | ".join(f"{k}={r.get(k, '')}" for k in keys if str(r.get(k, '')).strip()))
+    else:
+        # 일반(비-hubroom) 결과: 실제 행을 CSV 그대로 보여준다 (문자 예산 내). 큰 표면 앞부분만.
+        out = ["컬럼: " + ",".join(cols), f"행수: {n}"]
+        budget, used = 16000, 0
+        for i, r in enumerate(rows):
+            line = ",".join(str(r.get(c, "")) for c in cols)
+            if used + len(line) + 1 > budget:
+                out.append(f"...(표가 큼 — 위 {i}행까지만 표시, 총 {n}행. 전체는 결과 CSV 참조)")
+                break
+            out.append(line)
+            used += len(line) + 1
     return "\n".join(out)
 
 
