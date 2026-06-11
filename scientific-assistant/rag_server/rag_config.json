@@ -11,7 +11,7 @@
   "local": {
     "model_path": "models/bge-m3-q8_0.gguf",
     "n_ctx": 2048,
-    "n_gpu_layers": 0,
+    "n_gpu_layers": 99,
     "n_threads": 0,
     "n_batch": 64
   },
