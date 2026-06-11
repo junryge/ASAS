@@ -208,6 +208,7 @@ from demos_v1.gguf import (
 )
 from demos_v1.knowledge import search_knowledge, KNOWLEDGE_DIR, KNOWLEDGE_TRIGGERS
 from demos_v1.rag_client import search_knowledge_smart
+print("[routes_chat] ✅ 새 버전 로드됨 — 에이전트 지식=직접주입(read_selected) / 결과요약 제너릭 / argv")
 from demos_v1.logpresso import (
     LOGPRESSO_TABLES, LOGPRESSO_TABLE_GROUPS, LOGPRESSO_FAB_FILTERS,
     _get_table_group, _filter_tables_by_groups, _fetch_table_fields,
