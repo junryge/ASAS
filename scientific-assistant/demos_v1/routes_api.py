@@ -3215,6 +3215,47 @@ owner: {user_id}
         shutil.rmtree(d, ignore_errors=True)
         return jsonify({"message": f"스크립트 '{name}' 삭제 완료"})
 
+    @app.route("/api/knowledge/script/update", methods=["POST"])
+    def api_knowledge_script_update():
+        """실행형 지식(스크립트) 메타 수정 — 파일은 그대로, description/trigger/entry/argv 만 갱신."""
+        data = request.get_json(force=True)
+        user_id = data.get("user_id", "").strip()
+        name = _safe_script_name(data.get("name", ""))
+        if not user_id or not name:
+            return jsonify({"error": "사용자ID와 이름 필요"}), 400
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        mp = os.path.join(d, "_meta.json")
+        if not os.path.isfile(mp):
+            return jsonify({"error": "스크립트 없음"}), 404
+        try:
+            with open(mp, encoding="utf-8") as rf:
+                meta = json.load(rf)
+        except Exception:
+            return jsonify({"error": "메타 로드 실패"}), 500
+        flist = [x for x in os.listdir(d) if x != "_meta.json"]
+        # description
+        if "description" in data:
+            meta["description"] = (data.get("description") or "").strip() or meta.get("description", name)
+        # trigger (쉼표/공백 구분 문자열)
+        if "trigger" in data:
+            trig = [t.strip() for t in re.split(r"[,\s]+", data.get("trigger") or "") if t.strip()]
+            meta["trigger"] = trig or meta.get("trigger") or ["분석", "진단", "평가"]
+        # entry (.py 파일명 — 폴더에 실제 존재해야)
+        if "entry" in data:
+            ent = os.path.basename((data.get("entry") or "").strip())
+            if ent:
+                if ent not in flist:
+                    return jsonify({"error": f"진입 파일 '{ent}' 이(가) 폴더에 없습니다. (있는 .py: " +
+                                            ", ".join(x for x in flist if x.lower().endswith('.py')) + ")"}), 400
+                meta["entry"] = ent
+        # argv (한 줄에 하나)
+        if "argv" in data:
+            meta["argv"] = [ln.strip() for ln in (data.get("argv") or "").splitlines() if ln.strip()]
+        with open(mp, "w", encoding="utf-8") as wf:
+            json.dump(meta, wf, ensure_ascii=False, indent=2)
+        return jsonify({"message": f"스크립트 '{name}' 수정 완료", "entry": meta.get("entry"),
+                        "trigger": meta.get("trigger"), "argv": meta.get("argv", [])})
+
     @app.route("/api/knowledge/save", methods=["POST"])
     def api_knowledge_save():
         """문서형 지식 내용 덮어쓰기(수정)."""

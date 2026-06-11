@@ -692,6 +692,7 @@ pre{position:relative}
     <div id="kdFileList" style="font-size:12px;color:#888;">로딩 중...</div>
     <div style="font-weight:700;margin:14px 0 8px;color:#fbbf24;">🐍 등록된 스크립트 (실행형)</div>
     <div id="kdScriptList" style="font-size:12px;color:#888;">로딩 중...</div>
+    <div id="kdScriptEditPanel" style="display:none;margin-top:8px;"></div>
   </div>
 </div>
 
@@ -5067,19 +5068,68 @@ async function loadKdScripts(){
   try {
     var resp = await fetch('/api/knowledge/scripts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id})});
     var data = await resp.json();
-    if(!data.scripts||data.scripts.length===0){ list.innerHTML='<div style="color:#666;padding:8px;">등록된 스크립트가 없습니다.</div>'; return; }
+    if(!data.scripts||data.scripts.length===0){ _kdScripts=[]; list.innerHTML='<div style="color:#666;padding:8px;">등록된 스크립트가 없습니다.</div>'; return; }
+    _kdScripts = data.scripts;   // ✏️ 수정 폼 미리채우기용 보관
     list.innerHTML = data.scripts.map(function(s){
       var fileCount = (s.files||[]).length;
+      var argvN = (s.argv||[]).length;
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,158,11,0.06);border-radius:6px;margin-bottom:3px;">'
         +'<div><span style="font-weight:600;color:#fbbf24;">🐍 '+s.name+'</span>'
         +' <span style="background:#3a2e10;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:10px;">진입: '+(s.entry||'?')+'</span>'
+        +(argvN? ' <span style="background:#1e3a2e;color:#34d399;padding:1px 6px;border-radius:4px;font-size:10px;">인자 '+argvN+'</span>':'')
         +'<br><span style="color:#94a3b8;font-size:11px;">'+(s.description||'')+'</span>'
         +'<br><span style="color:#555;font-size:11px;">트리거: '+((s.trigger||[]).join(', '))+' | 파일 '+fileCount+'개 | '+(s.size_kb||0)+'KB</span></div>'
         +'<div style="display:flex;gap:4px;flex:0 0 auto;">'
+        +'<button onclick="editKdScript(\''+s.name+'\')" title="수정(인자/트리거/진입/설명)" style="padding:3px 8px;background:#f59e0b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">✏️</button>'
         +'<button onclick="downloadKdScript(\''+s.name+'\')" title="zip 다운로드" style="padding:3px 7px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">📥</button>'
         +'<button onclick="deleteKdScript(\''+s.name+'\')" style="padding:3px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">삭제</button></div></div>';
     }).join('');
   } catch(e){ list.innerHTML='<div style="color:#ef4444;">로드 실패</div>'; }
+}
+var _kdScripts = [];   // loadKdScripts 에서 채움 (수정 폼 미리채우기용)
+function _hescAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function editKdScript(name){
+  var s = _kdScripts.filter(function(x){ return x.name===name; })[0];
+  if(!s){ return; }
+  var panel = document.getElementById('kdScriptEditPanel');
+  var pyFiles = (s.files||[]).filter(function(f){ return f.toLowerCase().endsWith('.py'); });
+  var entryOpts = pyFiles.map(function(f){ return '<option value="'+_hescAttr(f)+'"'+(f===s.entry?' selected':'')+'>'+_hescAttr(f)+'</option>'; }).join('');
+  var trig = (s.trigger||[]).join(', ');
+  var argv = (s.argv||[]).join('\n');
+  panel.innerHTML =
+    '<div style="border:1px solid #f59e0b;border-radius:8px;padding:10px;background:rgba(245,158,11,0.08);">'
+    +'<div style="font-weight:700;color:#fbbf24;font-size:12px;margin-bottom:8px;">✏️ 스크립트 수정: '+_hescAttr(s.name)+' <span style="color:#94a3b8;font-weight:400;">(파일은 그대로, 메타만 변경)</span></div>'
+    +'<label style="font-size:11px;color:#94a3b8;">설명</label>'
+    +'<input id="edScDesc" value="'+_hescAttr(s.description||'')+'" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'
+    +'<label style="font-size:11px;color:#94a3b8;">트리거어 (쉼표 구분)</label>'
+    +'<input id="edScTrigger" value="'+_hescAttr(trig)+'" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'
+    +'<label style="font-size:11px;color:#94a3b8;">진입 .py</label>'
+    +'<select id="edScEntry" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'+entryOpts+'</select>'
+    +'<label style="font-size:11px;color:#94a3b8;">실행 인자 (한 줄에 하나 — {input}, {outdir}, 동반파일명)</label>'
+    +'<textarea id="edScArgv" rows="5" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#cbd5e1;font-size:11px;font-family:monospace;resize:vertical;">'+_hescAttr(argv)+'</textarea>'
+    +'<button onclick="saveKdScriptEdit(\''+_hescAttr(s.name)+'\')" style="padding:6px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">저장</button> '
+    +'<button onclick="document.getElementById(\'kdScriptEditPanel\').style.display=\'none\';" style="padding:6px 14px;background:none;border:1px solid #555;color:#aaa;border-radius:6px;cursor:pointer;font-size:12px;">취소</button>'
+    +' <span id="edScMsg" style="font-size:11px;margin-left:6px;"></span></div>';
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+async function saveKdScriptEdit(name){
+  var msg = document.getElementById('edScMsg');
+  var body = {
+    user_id: currentUser.id, name: name,
+    description: document.getElementById('edScDesc').value,
+    trigger: document.getElementById('edScTrigger').value,
+    entry: document.getElementById('edScEntry').value,
+    argv: document.getElementById('edScArgv').value
+  };
+  try {
+    var r = await fetch('/api/knowledge/script/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d = await r.json();
+    if(d.error){ msg.style.color='#ef4444'; msg.textContent=d.error; return; }
+    msg.style.color='#22c55e'; msg.textContent=d.message||'수정 완료';
+    document.getElementById('kdScriptEditPanel').style.display='none';
+    loadKdScripts();
+  } catch(e){ msg.style.color='#ef4444'; msg.textContent='수정 실패'; }
 }
 function downloadKdScript(name){
   window.open('/api/knowledge/script/download?user_id='+encodeURIComponent(currentUser.id)+'&name='+encodeURIComponent(name),'_blank');
