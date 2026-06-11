@@ -106,11 +106,12 @@ def search_knowledge_smart(query, max_results=10, max_content_chars=4000, user_i
     # ── 폴백: 기존 BM25 ──
     out = _kb.search_knowledge(query, max_results=max_results,
                                max_content_chars=max_content_chars, user_id=user_id)
-    if files:  # 개인에이전트: 선택 파일만, 매칭 0이면 직접 읽기(무손실)
+    if files:  # 개인에이전트: 선택 파일만. 못 찾으면 직접 읽기, 그래도 없으면 '아무것도 안 줌'.
         sel = set(files)
         filt = [r for r in out if r.get("filename") in sel]
         if filt:
             return filt
-        direct = _read_files_direct(user_id, files)
-        return direct if direct else out
+        # 선택 파일이 검색결과에 없으면 직접 읽기 시도. 그래도 없으면 [] (선택 안 한 문서를
+        # 대신 넣지 않는다 — 예전엔 out(전체)을 반환해 엉뚱한 문서가 주입되던 버그).
+        return _read_files_direct(user_id, files)
     return out
