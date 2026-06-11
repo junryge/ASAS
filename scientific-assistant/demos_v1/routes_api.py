@@ -1193,12 +1193,26 @@ def register_api_routes(app):
             # 파일 읽기 (여러 인코딩 시도)
             raw_bytes = file.read()
             content = None
-            for enc in ["utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1"]:
-                try:
-                    content = raw_bytes.decode(enc)
-                    break
-                except (UnicodeDecodeError, LookupError):
-                    continue
+            # ① UTF-16 계열 먼저 감지 (로그프레소/엑셀 '유니코드 텍스트' 내보내기).
+            #    과거엔 latin-1 이 NUL 범벅 그대로 받아 0행/깨짐 → 첨부만 안 되던 원인.
+            if b"\x00" in raw_bytes[:2048]:
+                for enc in ["utf-16", "utf-16-le", "utf-16-be"]:
+                    try:
+                        content = raw_bytes.decode(enc)
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+            # ② 일반 인코딩 (utf-8-sig 우선 → BOM 이 헤더명을 오염시키지 않게)
+            if content is None:
+                for enc in ["utf-8-sig", "utf-8", "cp949", "euc-kr", "latin-1"]:
+                    try:
+                        content = raw_bytes.decode(enc)
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+            # 남은 NUL 제거 (혼합/깨진 파일 방어)
+            if content and "\x00" in content:
+                content = content.replace("\x00", "")
 
             if content is None:
                 return jsonify({"error": "파일 인코딩을 인식할 수 없습니다."}), 400
