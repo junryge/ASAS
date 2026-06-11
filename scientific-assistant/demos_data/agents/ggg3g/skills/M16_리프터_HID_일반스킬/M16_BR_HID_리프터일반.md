@@ -1,52 +1,41 @@
 ---
 name: M16_BR_HID_리프터일반
 description: >
-  M16A_BR OHT 리프터 근처 HID 구역의 차량 개수(진입/점유/포화도)를 1분 단위로
-  집계한다. LOGPRESSO_HID_INOUT 로그 + layout.zip + station.dat 를 줄 때 사용.
-  "리프터 HID 개수", "1분당 차량수", "진입개수", "리프터 근처 차량", "리프터 지도",
+  M16A_BR OHT 리프터별 근처 HID4 구역의 '근처차량수'(1분당 그 구역을 거친 고유 차량 수)를
+  1분 단위로 집계한다. LOGPRESSO_HID_INOUT 로그 + 리프터_근처HID4.csv 를 줄 때 사용.
+  "리프터 HID 개수", "1분당 차량수", "근처차량수", "리프터 근처 차량",
   "M16 리프터 HID" 같은 요청에 발동. (SK하이닉스 M16A_BR OHT)
 ---
 
-# M16 리프터 HID 일반 스킬 (개수)
+# M16 리프터 HID 일반 스킬 (근처차량수)
 
-M16A_BR 리프터(`*ABL*`)별 **근처 HID4 구역**의 차량 **개수**를 1분 단위로 산출.
-한 결과 CSV 에 진입개수 + 점유 + MAX_VHL + 포화도 를 모두 출력.
+M16A_BR 리프터(`*ABL*`)별 **근처 HID4 구역**을 1분 동안 거친 **고유 차량 수(근처차량수)** 를 산출.
+개수만 본다 — 포화도/용량 분석은 카파시 스킬(`count_capacity.py`).
 
 ## 입력 (사용자 제공)
 | 파일 | 설명 |
 |------|------|
-| `BR.layout.zip` | 레이아웃 (내부 layout/layout.xml) |
-| `BR.station.dat` | 포트→주소 (정상 ~113KB, 6ABL/4ABL 포함) |
-| `LOGPRESSO_HID_INOUT_*.csv` | HID IN/OUT 로그 |
+| `LOGPRESSO_HID_INOUT_*.csv` | HID IN/OUT 로그 (_time/FROM_HIDID/TO_HIDID/VHL_ID) |
+| `리프터_근처HID4.csv` | 리프터→근처HID4 매핑 (이 폴더에 동봉) |
 
 ## 스크립트 (이 폴더)
-- `hid_zone_csv_cre.py` : layout → HID_Zone_Master CSV (없으면 자동)
-- `gen_near_hid4.py` : 리프터 → 근처 HID4 매핑
-- `count_lifter_inout.py` : 1분당 결과 CSV (메인)
-- `make_map.py` : (선택) 2D 지도
+- `count_lifter_inout.py` : 1분당 근처차량수 결과 CSV (메인)
+- `gen_near_hid4.py` : (사전 1회) 리프터 → 근처 HID4 매핑 생성
+- `hid_zone_csv_cre.py`, `make_map.py` : (선택) 매핑 생성 보조/지도
 
-## 실행 순서
-### STEP 1 — 리프터 → 근처 HID4 매핑
-```
-python gen_near_hid4.py BR.layout.zip BR.station.dat HID_Zone_Master_M16A_BR.csv 리프터_근처HID4.csv
-```
-출력 `리프터_근처HID4.csv`: `Lifter, FAB, 근처HID4, 경계mm`
-(HID_Zone_Master CSV 없으면 먼저 `python hid_zone_csv_cre.py BR.layout.zip HID_Zone_Master_M16A_BR.csv`)
-
-### STEP 2 — 1분당 개수 결과 (핵심)
+## 실행 (핵심 — 입력 2개)
 ```
 # 전체 시계열:
-python count_lifter_inout.py LOGPRESSO_HID_INOUT_*.csv 리프터_근처HID4.csv HID_Zone_Master_M16A_BR.csv 결과.csv
+python count_lifter_inout.py LOGPRESSO_HID_INOUT_*.csv 리프터_근처HID4.csv 결과.csv
 # 특정 분:
-python count_lifter_inout.py LOGPRESSO_HID_INOUT_*.csv 리프터_근처HID4.csv HID_Zone_Master_M16A_BR.csv --at "2026-04-21 14:04"
+python count_lifter_inout.py LOGPRESSO_HID_INOUT_*.csv 리프터_근처HID4.csv --at "2026-04-21 14:04"
 ```
+※ HID_Zone_Master 는 이 스킬(개수)엔 불필요. (포화도 보는 카파시 스킬에서만 사용)
 
 ## 결과.csv 컬럼
-`시각, Lifter, FAB, 근처HID, 경계mm, 진입개수, 점유차량수, MAX_VHL, 포화도%`
-- **진입개수** = 그 1분에 HID로 들어온 차량 (TO_HIDID, 중복제거) ← 핵심 "개수"
-- **점유차량수** = 그 시점 머무는 차량 (로그 `HID_VALUE`)
-- **MAX_VHL** = HID 최대수용 (Vehicle_Max)
-- **포화도%** = 점유 ÷ MAX
+`시각, Lifter, FAB, 근처HID, 경계mm, 근처차량수`
+- **근처차량수** = 그 1분에 그 HID4 구역을 거친(FROM 또는 TO 가 그 HID) **고유 차량(VHL_ID) 수**
+- 같은 HID4 를 근처로 두는 리프터는 같은 값 (HID 단위 집계라서)
 
 ## 핵심 규칙
 - 1분 단위 / 리프터별 / 차량 중복제거
