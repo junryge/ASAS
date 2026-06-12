@@ -95,8 +95,22 @@ FAULT_TYPE_RULES = [
 HEADER_RE = re.compile(
     r'^(?P<author>[^,\n]+),(?P<org>[^,\n]+),(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*$'
 )
-EQUIP_RE = re.compile(r'\b(\d[A-Z]{2,5}\d{2,4}|OHT\d*|ZT#?\d+|\d{3}호기)\b')
-LINE_RE = re.compile(r'\b(M1[46][AB]?|M16HUB|HUBROOM|Hubroom|hubroom)\b')
+# 장비번호 — 좁은 매칭 (구체적 호기명)
+#   4ABLD131, 6ABL6032, 4AFC3201, OHT, ZT4-2, ZT#6, ZT 3호기, 132호기, M16E OHT
+EQUIP_RE = re.compile(
+    r'\b('
+    r'\d[A-Z]{2,5}\d{2,4}(?:-\d+)?'      # 4ABLD131, 6ABL6032 등
+    r'|OHT(?:\d+)?'                       # OHT, OHT01
+    r'|ZT\s*#?\s*\d+(?:-\d+)?(?:호기)?'   # ZT4, ZT#6, ZT4-2, ZT 3호기
+    r'|M16E\s*OHT'                        # M16E OHT
+    r'|\d{2,3}호기'                       # 132호기, 3호기
+    r')\b'
+)
+# 라인/구역 (장비 없을 때 fallback 키)
+LINE_RE = re.compile(r'\b(M14A|M14B|M14|M16HUB|HUBROOM|Hubroom|hubroom|M16A|M16B|M16E|M16|BRIDGE|Bridge)\b')
+FLOOR_RE = re.compile(r'\b(\d+F)\b')      # 3F, 6F, 7F, 10F
+# CAPA 메시지 식별
+CAPA_RE = re.compile(r'(CAPA|Capa|capa|MAXCAPA|MAX\s*CAPA|MaxCapa)')
 
 
 # ============================================================
@@ -115,6 +129,43 @@ class Message:
     fault_type: str = ''            # 정체/병목, 리프터 등 (fault 일 때만)
     equipment: Set[str] = field(default_factory=set)
     line: Set[str] = field(default_factory=set)
+    floor: Set[str] = field(default_factory=set)    # 3F, 6F, 7F, 10F
+    is_capa: bool = False           # CAPA/MAXCAPA 변경 메시지
+
+    def group_keys(self) -> List[str]:
+        """Episode 묶기 key 우선순위 리스트.
+
+        ★ 핵심 원칙: 장비번호가 있는 메시지는 EQ 키만 사용 (라인 키 흡수 방지).
+                    라인 키는 장비번호가 없을 때만 fallback.
+
+        우선순위:
+          [장비 있을 때]
+            1) EQ:장비 (예: EQ:4ABLD131)
+          [장비 없을 때 — fallback]
+            2) CAPA 메시지: CAPA:라인+층 또는 CAPA:라인
+            3) 라인+층 (LN:M14B@7F)
+            4) 라인만 (LN:M14B)
+        """
+        keys = []
+        if self.equipment:
+            # 장비번호가 있으면 EQ 키만 — 라인 키로 인한 흡수 방지
+            for eq in sorted(self.equipment):
+                keys.append(f'EQ:{eq}')
+            return keys
+
+        # 장비 없을 때만 라인 기반 fallback
+        if self.is_capa:
+            # CAPA 는 라인+층 우선, 그 다음 라인만
+            for ln in sorted(self.line):
+                for fl in sorted(self.floor):
+                    keys.append(f'CAPA:{ln}@{fl}')
+                keys.append(f'CAPA:{ln}')
+        else:
+            for ln in sorted(self.line):
+                for fl in sorted(self.floor):
+                    keys.append(f'LN:{ln}@{fl}')
+                keys.append(f'LN:{ln}')
+        return keys
 
 
 @dataclass
@@ -209,6 +260,14 @@ def classify_category(text: str) -> str:
     # Case 5: "발생" 포함 + fault 의도 → fault 우선
     if any(k in text for k in FAULT_PRIORITY_KEYWORDS):
         return 'fault'
+    # ★ CAPA 변경 액션 — 별도 우선 처리 (normal 로 빠지지 않게)
+    if CAPA_RE.search(text):
+        # 원복은 기존 룰의 rollback 으로 가게 (변경 키워드보다 원복 우선 검사)
+        if '원복' not in text:
+            if any(k in text for k in ['변경 부탁', '변경 했', '변경했', '변경 합', '변경합',
+                                        '변경 완료', '변경완료', '변경 진행', '바꾸겠', '바꿔',
+                                        '1로', '50으로', '3으로', '으로 변경', '로 변경']):
+                return 'action'
     for cat, keywords in CATEGORY_RULES:
         if any(k in text for k in keywords):
             return cat
@@ -232,13 +291,18 @@ def extract_line(text: str) -> Set[str]:
 
 
 def enrich_messages(messages: List[Message]) -> None:
-    """카테고리/유형/장비/라인 채우기."""
+    """카테고리/유형/장비/라인/층/CAPA 플래그 채우기."""
     for m in messages:
         m.category = classify_category(m.text)
         if m.category == 'fault':
             m.fault_type = classify_fault_type(m.text)
         m.equipment = extract_equipment(m.text)
         m.line = extract_line(m.text)
+        m.floor = set(FLOOR_RE.findall(m.text))
+        m.is_capa = bool(CAPA_RE.search(m.text))
+        # CAPA 변경 메시지에 fault_type 부여 (rollback/action 도 분류)
+        if m.is_capa and not m.fault_type:
+            m.fault_type = 'CAPA변경'
 
 
 # ============================================================
@@ -285,9 +349,18 @@ def find_open_episode(msg: Message, open_episodes: dict) -> Optional[Episode]:
 
 
 def cluster_episodes(messages: List[Message]) -> List[Episode]:
-    """메시지 → Episode 묶기."""
+    """메시지 → Episode 묶기 (group_key 우선순위 매칭).
+
+    매칭 우선순위:
+      1) 장비번호 (EQ:4ABLD131)
+      2) CAPA 라인 (CAPA:M14B)
+      3) 라인+층 (LN:M14B@7F)
+      4) 라인만 (LN:M14B)
+
+    그 어느 키로도 open episode 매칭 안 되면 → 새 Episode (fault/action) 또는 orphan (recovery/rollback).
+    """
     episodes: List[Episode] = []
-    open_episodes: dict = {}     # equipment -> Episode
+    open_episodes: dict = {}     # group_key -> Episode
     ep_id = 0
 
     for m in messages:
@@ -295,59 +368,83 @@ def cluster_episodes(messages: List[Message]) -> List[Episode]:
         if m.category in ('normal', 'cancel'):
             continue
 
-        # 장비 미특정 메시지 — 일단 스킵 (또는 라인 기반 보강 가능)
-        if not m.equipment:
-            continue
-
-        matched = False
-        for equip in m.equipment:
-            if equip in open_episodes:
-                ep = open_episodes[equip]
-                # 시간 윈도우 검사
-                if (m.ts - ep.last_time).total_seconds() / 60.0 <= SESSION_WINDOW_MIN:
-                    ep.message_ids.append(m.msg_id)
-                    ep.message_count = len(ep.message_ids)
-                    ep.last_time = m.ts
-                    if m.fault_type and not ep.fault_type:
-                        ep.fault_type = m.fault_type
-                    # recovery/rollback → 종료
-                    if m.category in ('recovery', 'rollback'):
-                        ep.end_time = m.ts
-                        ep.status = 'closed'
-                        ep.update_severity()
-                        episodes.append(ep)
-                        del open_episodes[equip]
-                    matched = True
-                    break
-
-        if matched:
-            continue
-
-        # 새 Episode 생성 — fault 또는 action 만 (Case 1: recovery 단독 = orphan)
-        if m.category in ('fault', 'action'):
-            for equip in m.equipment:
-                if equip in open_episodes:
-                    continue
+        keys = m.group_keys()
+        # 어떤 키도 못 만들면 (장비/라인 다 없는 fault) → 마지막 fallback: 카테고리만
+        # 이건 너무 광범위해서 묶기 위험 — 그냥 단독 Episode 처리
+        if not keys:
+            # 장비/라인 둘 다 없는 경우 — fault/action 이면 단독 Episode
+            if m.category in ('fault', 'action'):
                 ep_id += 1
                 ep = Episode(
-                    episode_id=ep_id,
-                    start_time=m.ts,
-                    last_time=m.ts,
-                    equipment=equip,
-                    line=next(iter(m.line), '') if m.line else '',
-                    fault_type=m.fault_type,
-                    message_ids=[m.msg_id],
-                    message_count=1,
+                    episode_id=ep_id, start_time=m.ts, last_time=m.ts,
+                    equipment='', line='', fault_type=m.fault_type,
+                    message_ids=[m.msg_id], message_count=1,
                 )
-                open_episodes[equip] = ep
+                episodes.append(ep)   # 즉시 종료 (매칭 키 없으므로)
+            # recovery/rollback 이면 orphan
+            elif m.category in ('recovery', 'rollback'):
+                ep_id += 1
+                ep = Episode(
+                    episode_id=ep_id, start_time=m.ts, last_time=m.ts, end_time=m.ts,
+                    equipment='', line='', fault_type=m.fault_type,
+                    status='orphan', is_orphan=True,
+                    message_ids=[m.msg_id], message_count=1,
+                )
+                episodes.append(ep)
+            continue
+
+        # 우선순위 키 순서대로 open episode 매칭 시도
+        matched_ep = None
+        matched_key = None
+        for k in keys:
+            if k in open_episodes:
+                cand = open_episodes[k]
+                if (m.ts - cand.last_time).total_seconds() / 60.0 <= SESSION_WINDOW_MIN:
+                    matched_ep = cand
+                    matched_key = k
+                    break
+
+        if matched_ep is not None:
+            matched_ep.message_ids.append(m.msg_id)
+            matched_ep.message_count = len(matched_ep.message_ids)
+            matched_ep.last_time = m.ts
+            if m.fault_type and not matched_ep.fault_type:
+                matched_ep.fault_type = m.fault_type
+            # recovery/rollback → 종료
+            if m.category in ('recovery', 'rollback'):
+                matched_ep.end_time = m.ts
+                matched_ep.status = 'closed'
+                matched_ep.update_severity()
+                episodes.append(matched_ep)
+                del open_episodes[matched_key]
+            continue
+
+        # 매칭 실패 — 새 Episode 또는 orphan
+        primary_key = keys[0]       # 가장 구체적 키
+        # 장비명 / 라인 추출
+        eq_val = next(iter(m.equipment), '')
+        ln_val = next(iter(m.line), '') if m.line else ''
+
+        if m.category in ('fault', 'action'):
+            # ★ 같은 키로 이미 open 인 Episode 가 있으면 (window 초과로 매칭 실패한 경우)
+            #   덮어쓰기 전에 episodes 리스트에 마감해서 추가 (재발생 분리)
+            if primary_key in open_episodes:
+                stale = open_episodes[primary_key]
+                stale.update_severity()
+                episodes.append(stale)
+            ep_id += 1
+            ep = Episode(
+                episode_id=ep_id, start_time=m.ts, last_time=m.ts,
+                equipment=eq_val, line=ln_val, fault_type=m.fault_type,
+                message_ids=[m.msg_id], message_count=1,
+            )
+            open_episodes[primary_key] = ep
         elif m.category in ('recovery', 'rollback'):
             # Case 1: 선행 fault 없는 복구 → orphan
             ep_id += 1
             ep = Episode(
-                episode_id=ep_id,
-                start_time=m.ts, last_time=m.ts, end_time=m.ts,
-                equipment=next(iter(m.equipment), ''),
-                line=next(iter(m.line), '') if m.line else '',
+                episode_id=ep_id, start_time=m.ts, last_time=m.ts, end_time=m.ts,
+                equipment=eq_val, line=ln_val, fault_type=m.fault_type,
                 status='orphan', is_orphan=True,
                 message_ids=[m.msg_id], message_count=1,
             )
@@ -359,6 +456,9 @@ def cluster_episodes(messages: List[Message]) -> List[Episode]:
         episodes.append(ep)
 
     episodes.sort(key=lambda x: x.start_time)
+    # episode_id 재부여 (시간순)
+    for i, ep in enumerate(episodes, 1):
+        ep.episode_id = i
     return episodes
 
 

@@ -95,8 +95,21 @@ python3 운영로그_파서_v2.py ../AP/MA202605.txt --out ./output
 [4/4] 출력:        message.csv, episode.csv, summary.json
 
 📊 v1 (메시지 단위) 장애 카운트 : 152건
-📊 v2 (Episode 단위) 장애 카운트: 20건
-📉 거품 제거: 86.8%
+📊 v2 (Episode 단위) 장애 카운트: 107건  (3차 수정 후 정확)
+📉 거품 제거: 47.3%   (이전 86.8% 는 누락 때문에 부정확)
+
+[3차 수정 개선 이력]
+  지표           첫 v2 → 1차 → 2차 (최종)
+  fault 포함률  25% → 59% → 100% ✅
+  CAPA 포함률  2.5% → 41% → 84% ✅
+  closed       5건 → 6건 → 10건 ✅
+
+[핵심 성과 — CAPA 사이클 묶기]
+  E9 [M16A] CAPA변경 (closed, msg3, 16분):
+    11:39 [action  ] M16A MAX CAPA 1로 변경 부탁
+    11:43 [action  ] M16A 6F MaxCapa 1 변경 완료
+    11:55 [rollback] M16A Storage 증가로 원복
+  → "CAPA 4분산(요청+완료+원복요청+원복완료)" 문제 해결
 ```
 
 ### Episode 분포 (장애 유형별)
