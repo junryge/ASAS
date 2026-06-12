@@ -1,0 +1,40 @@
+{
+  "input_messages": 476,
+  "asis_fault_count": 152,
+  "asis_note": "메시지 단위 (normal 제외 전부 장애로 카운트 — v1 방식)",
+  "v2_episode_count": 20,
+  "v2_orphan_count": 9,
+  "reduction_pct": 86.8,
+  "category_distribution": {
+    "fault": 71,
+    "recovery": 28,
+    "normal": 324,
+    "action": 3,
+    "rollback": 45,
+    "cancel": 5
+  },
+  "fault_type_distribution": {
+    "리프터": 8,
+    "정체/병목": 34,
+    "브릿지": 12,
+    "CNV": 6,
+    "기타": 10,
+    "MLUD": 1
+  },
+  "episode_status": {
+    "closed": 5,
+    "open": 15,
+    "orphan": 9
+  },
+  "episode_severity": {
+    "MED": 3,
+    "LOW": 17
+  },
+  "episode_fault_type": {
+    "리프터": 6,
+    "브릿지": 4,
+    "정체/병목": 5,
+    "CNV": 2,
+    "기타": 1
+  }
+}
