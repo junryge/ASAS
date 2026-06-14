@@ -95,10 +95,22 @@ def overlap(a_s, a_e, b_s, b_e, window):
     return (a_s - window) <= b_e and (b_s - window) <= a_e
 
 
+MAX_LEAD_MIN = 120   # 합리적 사전 예측 창 (이보다 일찍 = 다른 사건으로 간주)
+
+
 def match(incidents, episodes, window_min):
-    """매칭 + 리드타임 계산.
-    매칭 기준: 룰베이스 사건의 [predict ~ end] 와 메신저 Episode 시간 겹침.
-    리드타임 = 메신저 발생(start) - 룰베이스 예측(predict).
+    """매칭 + 리드타임 계산 — 1:1 최근접 매칭.
+
+    매칭 기준:
+      룰베이스 사건의 [predict ~ end] 가 메신저 Episode [start ~ end] 와 겹치고,
+      예측 리드타임이 [-window, +MAX_LEAD_MIN] 범위 (합리적 사전 예측창).
+
+    1:1 보장:
+      - 한 룰베이스 사건은 한 Episode 만 (이미 matched 면 스킵)
+      - 한 Episode 는 리드타임이 '가장 작은(가장 가까운)' 사건과 매칭
+        → 4시간 전 사건이 흡수하는 과장 방지
+
+    리드타임 = 메신저 발생(start) - 룰베이스 예측(predict). 양수=사전예측.
     """
     W = timedelta(minutes=window_min)
     for inc in incidents:
@@ -108,20 +120,25 @@ def match(incidents, episodes, window_min):
         ep['matched'] = False
 
     matches = []
-    for ep in episodes:
-        best = None
+    # Episode 를 시간순으로, 각자 '가장 가까운 미사용 사건' 과 1:1
+    for ep in sorted(episodes, key=lambda x: x['start']):
+        best = None         # (inc, lead, abs_gap)
         for inc in incidents:
-            # 같은 날 근방만
+            if inc['matched']:
+                continue
             if abs((inc['predict'] - ep['start']).total_seconds()) > 86400 * 1.5:
                 continue
-            # 룰베이스 신호 구간 [predict ~ end] 와 메신저 장애 [start ~ end] 겹침
-            if overlap(inc['predict'], inc['end'], ep['start'], ep['end'], W):
-                lead = (ep['start'] - inc['predict']).total_seconds() / 60.0
-                # 가장 리드타임 긴(=가장 먼저 예측한) 사건 선택
-                if best is None or lead > best[1]:
-                    best = (inc, lead)
+            if not overlap(inc['predict'], inc['end'], ep['start'], ep['end'], W):
+                continue
+            lead = (ep['start'] - inc['predict']).total_seconds() / 60.0
+            # 합리적 예측창: 룰베이스가 너무 일찍(>120분) 이면 다른 사건
+            if lead > MAX_LEAD_MIN or lead < -window_min:
+                continue
+            gap = abs(lead)
+            if best is None or gap < best[2]:
+                best = (inc, lead, gap)
         if best is not None:
-            inc, lead = best
+            inc, lead, _ = best
             inc['matched'] = True
             inc['lead_min'] = lead
             ep['matched'] = True
