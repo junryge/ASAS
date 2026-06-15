@@ -120,6 +120,13 @@ TH_RD_FABSTORAGE = _T('TH_RD_FABSTORAGE', 25.0)
 TH_RD_HUB_STB_UTIL = _T('TH_RD_HUB_STB_UTIL', 99.0)
 TH_RD_OHT_UTIL = _T('TH_RD_OHT_UTIL', 95.0)
 
+# ★ v5 신규 룰 임계
+# R-MLUD: MLUD 잡(수동 이동) 누적 — 메신저 "MLUD 정체" 패턴 (1건 미탐 사례)
+TH_MLUD_JOB = _T('TH_MLUD_JOB', 50)            # MLUD 잡 임계 (개)
+TH_MLUD_MANUAL = _T('TH_MLUD_MANUAL', 30)      # 수동 이동 큐 임계 (개)
+# R-CNVFULL: M16HUB CNV 충만도 — 메신저 "Conv 전체 Full" 패턴
+TH_CNV_FULL_RATIO = _T('TH_CNV_FULL_RATIO', 0.85)  # cnv_to_m14a / cnv_capa ≥ N%
+
 TH_SLA_RATIO = _TD('TH_SLA_RATIO', {'M16HUB': 5.0, 'M14': 25.0, 'M16A': 13.0, 'M16B': 18.0})
 
 TH_SORTER_WAIT = _TD('TH_SORTER_WAIT', {
@@ -289,6 +296,11 @@ def iter_unified_rows(filepath):
                         'oht_qcnt': safe_int(g('M16HUB.QUE.OHT.CURRENTOHTQCNT')),
                         'oht_alarm': safe_int(g('M16HUB.OHT.ALERT.OHTMCPALARMCNT')),
                         'aotransdelay': safe_int(g('M16HUB.QUE.ABN.AOTRANSDELAY')),
+                        # ★ v5 신규 — MLUD/CNV 룰용 메트릭
+                        'mlud_job':      safe_int(g('M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB')),
+                        'mlud_manual':   safe_int(g('M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT')),
+                        'cnv_capa':      safe_int(g('M16HUB.QUE.CNV.3F_CNV_MAXCAPA')),
+                        'cnv_to_m14a':   safe_int(g('M16HUB.CNV.SENDFAB.TO_M14A_CURRENTQCNT')),
                         'lifters': {lid: safe_int(g(f'M16HUB.LFT.{lid}.TOTAL_CURRENTQCNT'))
                                     for lid in LIFTER_IDS},
                         'hub_outs': {col: safe_int(g(col)) for col in HUB_OUT_COLS},
@@ -468,7 +480,23 @@ def eval_area_rules(area, window):
         out['rd_oht'] = latest.get('rd_oht') or 0
         stb = latest.get('hub_stb_util') or 0
         out['hub_stb_util'] = stb
-        out['rd_trig'] = (out['rd_fab'] >= TH_RD_FABSTORAGE) or (stb >= TH_RD_HUB_STB_UTIL)
+        # ★ v5 신규 — R-MLUD: MLUD 잡 누적 (메신저 "MLUD 정체" 패턴)
+        mlud_job = latest.get('mlud_job') or 0
+        mlud_manual = latest.get('mlud_manual') or 0
+        out['mlud_job'] = mlud_job
+        out['mlud_manual'] = mlud_manual
+        out['mlud_trig'] = (mlud_job >= TH_MLUD_JOB) or (mlud_manual >= TH_MLUD_MANUAL)
+        # ★ v5 신규 — R-CNVFULL: M16HUB CNV 충만도 (메신저 "Conv 전체 Full" 패턴)
+        cnv_cur = latest.get('cnv_to_m14a') or 0
+        cnv_capa = latest.get('cnv_capa') or 0
+        cnv_ratio = (cnv_cur / cnv_capa) if cnv_capa > 0 else 0
+        out['cnv_ratio'] = cnv_ratio
+        out['cnv_full_trig'] = cnv_ratio >= TH_CNV_FULL_RATIO
+        # R-D 통합 트리거 — 기존 FAB/STB + 신규 MLUD/CNV (R-D 우산 아래로)
+        out['rd_trig'] = ((out['rd_fab'] >= TH_RD_FABSTORAGE)
+                          or (stb >= TH_RD_HUB_STB_UTIL)
+                          or out['mlud_trig']
+                          or out['cnv_full_trig'])
     elif area in RD_OHT_COL:
         out['rd_oht'] = latest.get('rd_oht') or 0
         out['rd_trig'] = out['rd_oht'] >= TH_RD_OHT_UTIL

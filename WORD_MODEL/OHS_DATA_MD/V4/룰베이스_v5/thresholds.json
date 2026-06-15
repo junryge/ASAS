@@ -1,44 +1,49 @@
 {
-  "_comment": "룰베이스 임계값 — 코드 수정 없이 여기서 조정. 수정 후 predictor 재시작 필요.",
-  "_how": "값을 바꾸면 그 값으로 동작. 키를 지우면 코드 기본값 사용. dict 는 영역별 일부만 바꿔도 됨(나머지 영역은 기본값 유지).",
-  "_note_RA": "TH_RA: 영역별 반송시간(분) 임계. R-A 발동 기준.",
-  "_note_RA_SUS": "TH_RA_SUSTAINED_RATIO: 임계의 몇 % 를 '지속'으로 볼지(0.67=67%). COUNT: 최근5분 중 몇 분 이상이어야 지속.",
-  "_note_RB": "TH_RB_30: 30분 큐 증가량 임계. TH_RB_10 미지정 시 30분값의 30% 자동.",
-  "_note_RC": "TH_RC_REVERSE: M16HUB 리프터 역증가 개수 임계.",
-  "_note_RD": "TH_RD_FABSTORAGE: FAB 저장률(%) 임계. TH_RD_HUB_STB_UTIL: HUB STB 점유율(%) 임계(101=사실상 해제). TH_RD_OHT_UTIL: 타 영역 OHT 가동률(%).",
-  "_note_SLA": "TH_SLA_RATIO: 영역별 4분초과율(%) 임계.",
-  "_note_SORTER": "TH_SORTER_WAIT: 영역별 Sorter LOT 대기 임계. TH_SORTER_TRANSFER_FAIL: 이송실패 건수 임계.",
-  "_note_FLOW": "TH_FLOW_X1_5/2_0/3_0: 흐름비율 주의/위험/심각 배수.",
-
+  "TH_RA": {
+    "M16HUB": 9.45,
+    "M14": 3.34,
+    "M14B": 5.0,
+    "M16A": 3.23,
+    "M16B": 3.88,
+    "M16_PKT": 7.5,
+    "M16_WT": 2.8
+  },
+  "TH_RA_SUSTAINED_RATIO": 0.7,
+  "TH_RA_SUSTAINED_COUNT": 3,
+  "TH_RB_30": {
+    "M16HUB": 100,
+    "M14": 80,
+    "M14B": 150,
+    "M16A": 84,
+    "M16B": 32,
+    "M16": 20
+  },
+  "TH_RC_REVERSE": 4,
+  "TH_RD_FABSTORAGE": 25.75,
+  "TH_RD_HUB_STB_UTIL": 99.3,
+  "TH_RD_OHT_UTIL": 95.0,
+  "TH_SLA_RATIO": {
+    "M16HUB": 5.0,
+    "M14": 25.45,
+    "M16A": 14.05,
+    "M16B": 22.05
+  },
+  "TH_SORTER_WAIT": {
+    "M14": 148,
+    "M14B": 109,
+    "M16A": 180,
+    "M16B": 90,
+    "M16HUB": 30
+  },
   "WINDOW_MIN": 90,
   "INCIDENT_END_GAP_MIN": 10,
   "PREDICT_LOOKBACK_MIN": 60,
-
-  "TH_RA": {
-    "M16HUB": 9.0, "M14": 3.3, "M14B": 5.0,
-    "M16A": 3.2, "M16B": 3.5, "M16_PKT": 7.5, "M16_WT": 2.8
-  },
-  "TH_RA_SUSTAINED_RATIO": 0.67,
-  "TH_RA_SUSTAINED_COUNT": 3,
-
-  "TH_RB_30": {
-    "M16HUB": 100, "M14": 80, "M14B": 150,
-    "M16A": 80, "M16B": 30, "M16": 20
-  },
-
-  "TH_RC_REVERSE": 2,
-  "TH_RD_FABSTORAGE": 25.0,
-  "TH_RD_HUB_STB_UTIL": 99.0,
-  "TH_RD_OHT_UTIL": 95.0,
-
-  "TH_SLA_RATIO": { "M16HUB": 5.0, "M14": 25.0, "M16A": 13.0, "M16B": 18.0 },
-
-  "TH_SORTER_WAIT": {
-    "M14": 100, "M14B": 75, "M16A": 180, "M16B": 90, "M16HUB": 30
-  },
   "TH_SORTER_TRANSFER_FAIL": 1,
-
   "TH_FLOW_X1_5": 1.5,
   "TH_FLOW_X2_0": 2.0,
-  "TH_FLOW_X3_0": 3.0
+  "TH_FLOW_X3_0": 3.0,
+  "_comment": "A(blend 0.15) + B(신규룰 MLUD/CNV) 적용 — 5월 검증 기반",
+  "TH_MLUD_JOB": 50,
+  "TH_MLUD_MANUAL": 30,
+  "TH_CNV_FULL_RATIO": 0.85
 }
