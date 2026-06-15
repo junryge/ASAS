@@ -149,16 +149,25 @@ def parse_reason(text):
 
 
 def main():
+    # 인자로 바로 준 경우
     if len(sys.argv) >= 2:
-        text = ' '.join(sys.argv[1:])
-    else:
-        print("reason 또는 relation 텍스트를 붙여넣고 Enter 2번 (또는 Ctrl+D):")
-        text = sys.stdin.read()
-    text = text.strip()
-    if not text:
-        print("입력 없음.")
+        parse_reason(' '.join(sys.argv[1:]).strip())
         return
-    parse_reason(text)
+
+    # 대화형 — 붙여넣고 Enter 한 번이면 출력. 빈 줄/quit 이면 종료.
+    print("=" * 72)
+    print("  reason 컬럼찾기 — reason 또는 relation 텍스트를 붙여넣고 Enter")
+    print("  (그만하려면 빈 줄에서 Enter, 또는 q 입력)")
+    print("=" * 72)
+    while True:
+        try:
+            text = input("\nreason> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not text or text.lower() in ('q', 'quit', 'exit'):
+            print("종료.")
+            break
+        parse_reason(text)
 
 
 if __name__ == '__main__':
