@@ -94,7 +94,7 @@ def _TD(key, default_dict):
 
 
 WINDOW_MIN = _T('WINDOW_MIN', 90)
-INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 10)
+INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 60)  # ★ v6: 10→60분, 진동(on/off) 흡수
 PREDICT_LOOKBACK_MIN = _T('PREDICT_LOOKBACK_MIN', 60)
 
 # ============================================================
@@ -639,17 +639,18 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
 
     unified_risk_score = min(500, layer1_total + flow_score + sla_score + sorter_score + mc_score)
 
-    # 6단계 위험도 등급
-    if unified_risk_score >= 250:
-        unified_risk_level = '매우위험'
-    elif unified_risk_score >= 150:
+    # ★ v6 5단계 위험도 등급 (한국 경보 체계: 관심<주의<경계<위험<발동)
+    # 점수 100 미만은 알람 X (사건단위.csv 에서 자동 제외됨)
+    if unified_risk_score >= 220:
+        unified_risk_level = '발동'
+    elif unified_risk_score >= 160:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 80:
+    elif unified_risk_score >= 130:
+        unified_risk_level = '경계'
+    elif unified_risk_score >= 120:
         unified_risk_level = '주의'
-    elif unified_risk_score >= 65:
-        unified_risk_level = '경계'   # ★ 신규: 관심 후반, 주의 직전 (score 65~79)
-    elif unified_risk_score >= 30:
-        unified_risk_level = '관심'   # 변경: 30~64
+    elif unified_risk_score >= 100:
+        unified_risk_level = '관심'
     else:
         unified_risk_level = '정상'
 
@@ -866,10 +867,10 @@ class IncidentTracker:
     def _end_current(self, t):
         c = self.current
         c['end_time'] = c['last_s3_time']
-        # ★ max_risk_score < 65 (관심 이하) 이면 사건단위에 기록 안 함
-        # 경계(65~79) / 주의(80~149) / 위험(150~249) / 매우위험(250~) 만 기록
+        # ★ v6: 점수 100 미만 (정상 등급) 은 사건단위 기록 X
+        # 관심(100~119) / 주의(120~129) / 경계(130~159) / 위험(160~219) / 발동(220+) 만 기록
         # (발동이벤트.csv 에는 매분 그대로 기록 — 트렌드 모니터링 가능)
-        if c.get('max_risk_score', 0) >= 65:
+        if c.get('max_risk_score', 0) >= 100:
             self.incidents.append(c)
         self.current = None
         self.state = 'IDLE'
@@ -877,7 +878,7 @@ class IncidentTracker:
     def finalize(self, last_t):
         if self.state == 'IN_INCIDENT':
             self.current['end_time'] = self.current['last_s3_time']
-            if self.current.get('max_risk_score', 0) >= 65:
+            if self.current.get('max_risk_score', 0) >= 100:
                 self.incidents.append(self.current)
             self.current = None
             self.state = 'IDLE'

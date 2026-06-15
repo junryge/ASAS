@@ -1,10 +1,10 @@
 {
   "TH_RA": {
-    "M16HUB": 9.45,
-    "M14": 3.34,
+    "M16HUB": 9.0,
+    "M14": 3.3,
     "M14B": 5.0,
-    "M16A": 3.23,
-    "M16B": 3.88,
+    "M16A": 3.2,
+    "M16B": 3.5,
     "M16_PKT": 7.5,
     "M16_WT": 2.8
   },
@@ -36,13 +36,13 @@
     "M16HUB": 30
   },
   "WINDOW_MIN": 90,
-  "INCIDENT_END_GAP_MIN": 10,
+  "INCIDENT_END_GAP_MIN": 60,
   "PREDICT_LOOKBACK_MIN": 60,
   "TH_SORTER_TRANSFER_FAIL": 1,
   "TH_FLOW_X1_5": 1.5,
   "TH_FLOW_X2_0": 2.0,
   "TH_FLOW_X3_0": 3.0,
-  "_comment": "A(blend 0.15) + B(신규룰 MLUD/CNV) 적용 — 5월 검증 기반",
+  "_comment": "v6: RA만 v4.1 원본 / gap 60분 / 5단계 등급(관심100~ 주의120~ 경계130~ 위험160~ 발동220~) — 4-5월 검증 정밀도 52%, 사전예측 +32분",
   "TH_MLUD_JOB": 50,
   "TH_MLUD_MANUAL": 30,
   "TH_CNV_FULL_RATIO": 0.85
