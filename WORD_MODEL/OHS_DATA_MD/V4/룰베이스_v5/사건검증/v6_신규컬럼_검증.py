@@ -40,37 +40,69 @@ def s3(r):
     return ra and (rd or sla or rc) and (rb or flow)
 
 
+def _top_type(types):
+    """voting — '기타' 약화 (명확한 유형이 1번이라도 떠있으면 그걸 우선)."""
+    if not types: return ''
+    non_other = [(t, c) for t, c in types.most_common() if t not in ('기타', '')]
+    if non_other:
+        # '기타' 압도적(10배 이상)이 아니면 명확한 유형 선택
+        other_c = types.get('기타', 0)
+        top_c = non_other[0][1]
+        if other_c >= top_c * 10:
+            return '기타'
+        return non_other[0][0]
+    return '기타'
+
+
 def predict_fault_type(r):
-    """발동이벤트 raw 행에서 fault_type 추론 (hubroom_predictor 로직 동일)."""
-    # MLUD — raw 컬럼에 mlud 없음 (v5 신규룰이라 발동이벤트에 mlud 컬럼 따로 없음)
-    # 대신 M16HUB rb_diff30 매우 큼 + 큐 누적 패턴 → MLUD 의심
-    # CNV
-    if (fnum(r, 'M14_cnv_skew') or 0) >= 1.5:
-        return 'CNV'
-    # 리프터
-    rev = fnum(r, 'M16HUB_rev_count') or 0
-    if rev >= 4 and (fnum(r, 'M16HUB_rc_trend') or 0) < 0:
-        return '리프터'
-    # 브릿지 — 단일 영역 강한 RA
-    affected_count = sum(1 for a in AREAS if (fnum(r, f'{a}_score') or 0) >= 30)
-    hot_score = max((fnum(r, f'{a}_score') or 0) for a in AREAS)
-    # hot area 찾기
-    hot_area = max(AREAS, key=lambda a: fnum(r, f'{a}_score') or 0)
-    if affected_count <= 2 and hot_score >= 30 and hot_area in ('M16A', 'M16B', 'M14B'):
-        if (fnum(r, f'{hot_area}_ra') or 0) > 0:
-            return '브릿지'
-    # 정체/병목
-    fab = fnum(r, 'M16HUB_rd_fab') or 0
-    stb = fnum(r, 'M16HUB_stb_util') or 0
-    flow = fnum(r, 'flow_score') or 0
-    if affected_count >= 3 or ((fab >= TH['FAB'] or stb >= TH['STB']) and flow >= 15):
-        return '정체/병목'
-    # 통신/에러
-    sorter_sum = sum(fnum(r, f'sorter_{a}') or 0 for a in ('M14', 'M14B', 'M16A', 'M16B'))
-    if sorter_sum >= 300:
-        return '통신/에러'
-    if (fnum(r, 'unified_risk_score') or 0) >= 80:
-        return '기타'
+    """v6.3 — 데이터 직독: hot_area + 증상 키워드 (운영자 즉시 이해)."""
+    scores = {a: fnum(r, f'{a}_score') or 0 for a in AREAS}
+    hot_area = max(scores, key=scores.get)
+    if scores[hot_area] < 10:
+        return ''
+    affected = sum(1 for s in scores.values() if s >= 30)
+
+    # 광역 우선 — 3개 이상 영역 동시
+    if affected >= 4:
+        return '광역정체'
+
+    if hot_area == 'M16HUB':
+        rev = fnum(r, 'M16HUB_rev_count') or 0
+        rc_trend = fnum(r, 'M16HUB_rc_trend') or 0
+        fab = fnum(r, 'M16HUB_rd_fab') or 0
+        stb = fnum(r, 'M16HUB_stb_util') or 0
+        rb30 = fnum(r, 'M16HUB_rb_diff30') or 0
+        ra = fnum(r, 'M16HUB_ra') or 0
+        if rev >= 4 and rc_trend < 0:    return 'HUB-리프터역증가'
+        if fab >= TH['FAB']:             return 'HUB-FAB정체'
+        if stb >= TH['STB']:             return 'HUB-STB정체'
+        if rb30 >= 100:                  return 'HUB-큐누적'
+        if ra >= TH['RA']['M16HUB']:     return 'HUB-반송지연'
+        return 'HUB-신호'
+    if hot_area == 'M14':
+        if (fnum(r, 'M14_cnv_skew') or 0) >= 1.5:        return 'M14-CNV쏠림'
+        if (fnum(r, 'sorter_M14') or 0) >= 148:          return 'M14-Sorter대기'
+        if (fnum(r, 'M14_rd_oht') or 0) >= 95:           return 'M14-OHT정체'
+        if (fnum(r, 'sla_M14') or 0) >= TH['SLA']['M14']:return 'M14-SLA초과'
+        if (fnum(r, 'M14_ra') or 0) >= TH['RA']['M14']:  return 'M14-반송지연'
+        return 'M14-신호'
+    if hot_area == 'M14B':
+        if (fnum(r, 'sorter_M14B') or 0) >= 109:         return 'M14B-Sorter대기'
+        if (fnum(r, 'M14B_rd_oht') or 0) >= 95:          return 'M14B-OHT정체'
+        if (fnum(r, 'M14B_ra') or 0) >= TH['RA']['M14B']:return 'M14B-반송지연'
+        return 'M14B-신호'
+    if hot_area == 'M16A':
+        if (fnum(r, 'sorter_M16A') or 0) >= 180:                return 'M16A-Sorter대기'
+        if (fnum(r, 'sla_M16A') or 0) >= TH['SLA']['M16A']:     return 'M16A-SLA초과'
+        if (fnum(r, 'M16A_rd_oht') or 0) >= 95:                 return 'M16A-OHT정체'
+        if (fnum(r, 'M16A_ra') or 0) >= TH['RA']['M16A']:       return 'M16A-반송지연'
+        return 'M16A-신호'
+    if hot_area == 'M16B':
+        if (fnum(r, 'sorter_M16B') or 0) >= 90:                 return 'M16B-Sorter대기'
+        if (fnum(r, 'sla_M16B') or 0) >= TH['SLA']['M16B']:     return 'M16B-SLA초과'
+        if (fnum(r, 'M16B_rd_oht') or 0) >= 95:                 return 'M16B-OHT정체'
+        if (fnum(r, 'M16B_ra') or 0) >= TH['RA']['M16B']:       return 'M16B-반송지연'
+        return 'M16B-신호'
     return ''
 
 
@@ -201,7 +233,7 @@ def main():
     correct = 0; partial = 0
     detail = Counter()
     for inc, ep in matches:
-        pred = inc['types'].most_common(1)[0][0] if inc['types'] else ''
+        pred = _top_type(inc['types'])
         actual = ep['type']
         detail[f'{actual} → {pred}'] += 1
         if pred == actual: correct += 1

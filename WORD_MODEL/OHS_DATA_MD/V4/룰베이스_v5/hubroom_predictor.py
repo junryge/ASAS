@@ -713,44 +713,39 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
 
 
 # ============================================================
-# ★ v6 신규 — 예측 장애 유형 추론 (룰 패턴 기반)
-# 메신저 유형 7종 매핑: MLUD / CNV / 리프터 / 정체병목 / 브릿지 / 통신에러 / 기타
+# ★ v6.3 — 예측 장애 유형: hot_area + 증상 키워드 (운영자 즉시 이해)
+# 예: HUB-FAB정체 / HUB-리프터역증가 / M14-Sorter대기 / M16B-SLA초과 / 광역정체
 # ============================================================
 def _predict_fault_type(ctx):
     if not ctx:
         return ''
     ar = ctx.get('area_results', {}) or {}
-    hub = ar.get('M16HUB', {}) or {}
-    m14 = ar.get('M14', {}) or {}
-    # ① MLUD — M16HUB MLUD 룰 직접 트리거 시
-    if hub.get('mlud_trig'):
-        return 'MLUD'
-    # ② CNV — M16HUB CNV Full 또는 M14 CNV 쏠림
-    if hub.get('cnv_full_trig') or m14.get('rc_trig') and (m14.get('cnv_skew', 0) or 0) >= 1.5:
-        return 'CNV'
-    # ③ 리프터 — M16HUB 역증가 강함 (R-C + R-D 조합)
-    if hub.get('rc_trig') and (hub.get('rev_count', 0) or 0) >= 4:
-        return '리프터'
-    # ④ 브릿지 — propagation 짧고 (1~2 영역) 한 영역 R-A 강함 (장비 1대 영향)
-    affected = (ctx.get('affected_areas', '') or '').split(';')
-    n_affected = len([a for a in affected if a])
     hot_area = ctx.get('hot_area', '')
     hot_score = ctx.get('hot_score', 0)
-    if n_affected <= 2 and hot_score >= 30 and hot_area in ('M16A', 'M16B', 'M14B'):
-        # 단일 영역 강한 R-A → 장비/브릿지 의심
-        if (ar.get(hot_area, {}) or {}).get('ra_value', 0):
-            return '브릿지'
-    # ⑤ 정체/병목 — 시스템 전체 정체 (3+ 영역 영향 + R-B/SLA 강함)
-    if n_affected >= 3 or (hub.get('rd_trig') and (ctx.get('flow_score', 0) or 0) >= 15):
-        return '정체/병목'
-    # ⑥ 통신/에러 — Sorter 다수 실패 (운영로그 통신 에러 패턴)
-    sorter_fails = sum((ar.get(a, {}) or {}).get('sorter_val', 0) or 0
-                       for a in ('M14', 'M14B', 'M16A', 'M16B'))
-    if sorter_fails >= 300:
-        return '통신/에러'
-    if ctx.get('unified_risk_score', 0) >= 80:
-        return '기타'
-    return ''
+    if not hot_area or hot_score < 10:
+        return ''
+    # 광역 우선 — 4+ 영역 동시
+    affected = [a for a in (ctx.get('affected_areas', '') or '').split(';') if a]
+    if len(affected) >= 4:
+        return '광역정체'
+    r = ar.get(hot_area, {}) or {}
+    if hot_area == 'M16HUB':
+        if r.get('mlud_trig'):       return 'HUB-MLUD'
+        if r.get('cnv_full_trig'):   return 'HUB-CNV가득'
+        if r.get('rc_trig') and (r.get('rev_count', 0) or 0) >= 4: return 'HUB-리프터역증가'
+        if r.get('rd_trig'):
+            if (r.get('rd_fab', 0) or 0) >= TH_RD_FABSTORAGE: return 'HUB-FAB정체'
+            if (r.get('hub_stb_util', 0) or 0) >= TH_RD_HUB_STB_UTIL: return 'HUB-STB정체'
+        if r.get('rb_trig'):         return 'HUB-큐누적'
+        if r.get('ra_trig'):         return 'HUB-반송지연'
+        return 'HUB-신호'
+    if r.get('sorter_trig'):         return f'{hot_area}-Sorter대기'
+    if r.get('sla_trig'):            return f'{hot_area}-SLA초과'
+    if r.get('rd_trig'):             return f'{hot_area}-OHT정체'
+    if r.get('rc_trig') and hot_area == 'M14': return 'M14-CNV쏠림'
+    if r.get('ra_trig'):             return f'{hot_area}-반송지연'
+    if r.get('rb_trig'):             return f'{hot_area}-큐누적'
+    return f'{hot_area}-신호'
 
 
 # ============================================================
