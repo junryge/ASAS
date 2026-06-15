@@ -1,0 +1,11 @@
+{
+  "_comment": "v5 검증 전용 — Logpresso 적재 완전 차단",
+  "enabled": false,
+  "ml_enabled": false,
+  "logpresso_base": "http://disabled",
+  "api_key_file": "api_key.txt",
+  "table_name": "v5_test_disabled",
+  "file_label": "v5_test",
+  "fail_silent": true,
+  "async_upload": false
+}
