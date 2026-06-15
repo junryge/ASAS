@@ -713,6 +713,47 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
 
 
 # ============================================================
+# ★ v6 신규 — 예측 장애 유형 추론 (룰 패턴 기반)
+# 메신저 유형 7종 매핑: MLUD / CNV / 리프터 / 정체병목 / 브릿지 / 통신에러 / 기타
+# ============================================================
+def _predict_fault_type(ctx):
+    if not ctx:
+        return ''
+    ar = ctx.get('area_results', {}) or {}
+    hub = ar.get('M16HUB', {}) or {}
+    m14 = ar.get('M14', {}) or {}
+    # ① MLUD — M16HUB MLUD 룰 직접 트리거 시
+    if hub.get('mlud_trig'):
+        return 'MLUD'
+    # ② CNV — M16HUB CNV Full 또는 M14 CNV 쏠림
+    if hub.get('cnv_full_trig') or m14.get('rc_trig') and (m14.get('cnv_skew', 0) or 0) >= 1.5:
+        return 'CNV'
+    # ③ 리프터 — M16HUB 역증가 강함 (R-C + R-D 조합)
+    if hub.get('rc_trig') and (hub.get('rev_count', 0) or 0) >= 4:
+        return '리프터'
+    # ④ 브릿지 — propagation 짧고 (1~2 영역) 한 영역 R-A 강함 (장비 1대 영향)
+    affected = (ctx.get('affected_areas', '') or '').split(';')
+    n_affected = len([a for a in affected if a])
+    hot_area = ctx.get('hot_area', '')
+    hot_score = ctx.get('hot_score', 0)
+    if n_affected <= 2 and hot_score >= 30 and hot_area in ('M16A', 'M16B', 'M14B'):
+        # 단일 영역 강한 R-A → 장비/브릿지 의심
+        if (ar.get(hot_area, {}) or {}).get('ra_value', 0):
+            return '브릿지'
+    # ⑤ 정체/병목 — 시스템 전체 정체 (3+ 영역 영향 + R-B/SLA 강함)
+    if n_affected >= 3 or (hub.get('rd_trig') and (ctx.get('flow_score', 0) or 0) >= 15):
+        return '정체/병목'
+    # ⑥ 통신/에러 — Sorter 다수 실패 (운영로그 통신 에러 패턴)
+    sorter_fails = sum((ar.get(a, {}) or {}).get('sorter_val', 0) or 0
+                       for a in ('M14', 'M14B', 'M16A', 'M16B'))
+    if sorter_fails >= 300:
+        return '통신/에러'
+    if ctx.get('unified_risk_score', 0) >= 80:
+        return '기타'
+    return ''
+
+
+# ============================================================
 # 사건 추적 FSM
 # ============================================================
 class IncidentTracker:
@@ -750,6 +791,17 @@ class IncidentTracker:
                 last_s3 = self.current['last_s3_time']
                 if (t - last_s3).total_seconds() / 60.0 >= INCIDENT_END_GAP_MIN:
                     self._end_current(t)
+        # ★ v6 신규 — 발동이벤트 행에 사건 상태/지속성/예측유형 박기
+        ev = self.events[-1]
+        if self.state == 'IN_INCIDENT' and self.current is not None:
+            ev['incident_state'] = 'IN_INCIDENT'
+            ev['continuity_min'] = int((t - self.current['start_time']).total_seconds() / 60) + 1
+            ev['refire_count'] = self.current.get('refire_count', 0)
+        else:
+            ev['incident_state'] = 'IDLE'
+            ev['continuity_min'] = 0
+            ev['refire_count'] = 0
+        ev['predicted_fault_type'] = _predict_fault_type(ctx)
 
     def _start_new(self, t, ctx):
         cutoff = t - timedelta(minutes=PREDICT_LOOKBACK_MIN)
@@ -892,6 +944,8 @@ STAGE_LABEL = {0: '이벤트없음', 1: '1단계 조기경보', 2: '2단계 주�
 EVENT_FIELDS = [
     'file', 'datetime', 'date', 'time',
     'stage', 'stage_name', 'prev_stage', 'transition',
+    # ★ v6 신규 — 사건 지속성/재발생/예측유형
+    'incident_state', 'continuity_min', 'refire_count', 'predicted_fault_type',
     'unified_risk_score', 'unified_risk_level', 'hot_area', 'hot_score',
     'affected_areas', 'propagation_chain',
     'flow_signals', 'maxcapa_signals',
@@ -1107,6 +1161,9 @@ def event_to_row(ev, file_name):
     return [
         file_name, t.strftime('%Y-%m-%d %H:%M'), t.strftime('%Y-%m-%d'), t.strftime('%H:%M'),
         stage, STAGE_LABEL.get(stage, ''), ev['prev_stage'], transition,
+        # ★ v6 신규 — 사건 지속성/재발생/예측유형
+        ev.get('incident_state', 'IDLE'), ev.get('continuity_min', 0),
+        ev.get('refire_count', 0), ev.get('predicted_fault_type', ''),
         ctx.get('unified_risk_score', 0), ctx.get('unified_risk_level', '정상'),
         ctx.get('hot_area', ''), ctx.get('hot_score', 0),
         ctx.get('affected_areas', ''), ctx.get('propagation_chain', ''),
