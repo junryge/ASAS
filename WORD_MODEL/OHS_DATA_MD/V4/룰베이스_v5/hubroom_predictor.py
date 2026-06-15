@@ -993,6 +993,8 @@ INCIDENT_FIELDS = [
     'file', 'date', 'predict_time', 'start_time', 'end_time',
     'lead_min', 'duration_min', 'refire_count',
     'max_risk_score', 'max_risk_level',
+    # ★ v6.3 — 사건 대표 장애 유형 (예: HUB-FAB정체 / HUB-리프터역증가 / 광역정체)
+    'predicted_fault_type',
     'hot_area', 'affected_areas', 'propagation_chain',
     # ★ 상세 트리거 정보 (어떤 룰/컬럼이 발동했는지)
     'triggered_rules',     # 영역별 발동 룰 (예: "M16HUB:RA+RC+RD; M14:RA_sus+SLA")
@@ -1228,6 +1230,37 @@ def event_to_row(ev, file_name):
     ]
 
 
+def _predict_fault_type_from_incident(c):
+    """사건의 area_max + triggered_rules 보고 대표 장애 유형 결정 (v6.3 동일 로직)."""
+    hot = c.get('hot_area', '')
+    if not hot:
+        return ''
+    affected = c.get('affected_areas_union', set()) or set()
+    if len(affected) >= 4:
+        return '광역정체'
+    am = (c.get('area_max', {}) or {}).get(hot, {}) or {}
+    rules = (c.get('triggered_rules', {}) or {}).get(hot, set()) or set()
+    if hot == 'M16HUB':
+        rev = am.get('rev_count', 0) or 0
+        if rev >= TH_RC_REVERSE:                        return 'HUB-리프터역증가'
+        fab = am.get('rd_fab', 0) or 0
+        if fab >= TH_RD_FABSTORAGE:                     return 'HUB-FAB정체'
+        stb = am.get('hub_stb_util', 0) or 0
+        if stb >= TH_RD_HUB_STB_UTIL:                   return 'HUB-STB정체'
+        rb = am.get('rb_diff_30', 0) or 0
+        if rb >= TH_RB_30.get('M16HUB', 100):           return 'HUB-큐누적'
+        ra = am.get('ra_value', 0) or 0
+        if ra >= TH_RA.get('M16HUB', 9):                return 'HUB-반송지연'
+        return 'HUB-신호'
+    if 'SORT' in rules:                                 return f'{hot}-Sorter대기'
+    if 'SLA' in rules:                                  return f'{hot}-SLA초과'
+    if 'RD' in rules:                                   return f'{hot}-OHT정체'
+    if 'RC' in rules and hot == 'M14':                  return 'M14-CNV쏠림'
+    if 'RA' in rules or 'RA_sus' in rules:              return f'{hot}-반송지연'
+    if 'RB' in rules or 'RB_fast' in rules:             return f'{hot}-큐누적'
+    return f'{hot}-신호'
+
+
 def incident_to_row(c, file_name):
     duration_min = round((c['end_time'] - c['start_time']).total_seconds() / 60.0, 1)
     lead_min = round((c['start_time'] - c['predict_time']).total_seconds() / 60.0)
@@ -1337,6 +1370,7 @@ def incident_to_row(c, file_name):
         c['end_time'].strftime('%H:%M'),
         lead_min, duration_min, c['refire_count'],
         c['max_risk_score'], c['max_risk_level'],
+        _predict_fault_type_from_incident(c),   # ★ v6.3 신규
         c['hot_area'], ';'.join(sorted(c['affected_areas_union'])),
         c['propagation_chain'],
         triggered_rules_s, risk_factors_s, maxcapa_changes_s, relation_s,
