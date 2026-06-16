@@ -115,6 +115,9 @@ def _to_maru_literal(row_dict):
        Logpresso 에서는 누락된 컬럼 = null = SQL 에서 0과 동일 처리."""
     parts = []
     for k, v in row_dict.items():
+        # 내부 제어 키(_requeued 등) 제외
+        if isinstance(k, str) and k.startswith('_'):
+            continue
         # 0/null/빈값 제외 — 쿼리 길이 단축
         if v is None or v == '' or v == 0 or v == '0' or v == 0.0:
             continue
@@ -131,10 +134,13 @@ def _build_query(row_dict):
 
 
 def _post_query(q):
-    """Logpresso 쿼리 실행 (GET httpexport)."""
+    """Logpresso 쿼리 실행.
+    ★ GET(URL 에 쿼리) → POST(본문에 쿼리) 로 변경.
+      reason/relation 등 긴 한글 컬럼이 URL 길이 한계를 넘겨
+      RemoteDisconnected 로 끊기던 문제 해결."""
     qs = " ".join(q.split())
-    url = f"{INSERT_URL}?_apikey={API_KEY}&_q={urllib.parse.quote(qs, safe='')}"
-    r = requests.get(url, verify=False, timeout=HTTP_TIMEOUT)
+    url = f"{INSERT_URL}?_apikey={API_KEY}"
+    r = requests.post(url, data={"_q": qs}, verify=False, timeout=HTTP_TIMEOUT)
     if r.status_code != 200 or r.text.strip().startswith("<"):
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
     return r
@@ -175,7 +181,17 @@ def _worker():
             if LOG_EVERY_N and _count % LOG_EVERY_N == 0:
                 log.info(f"적재 누적 {_count}행")
         else:
-            _fail_count += 1
+            # ★ 1회 실패한 행은 버리지 말고 큐 뒤에 1번만 재투입 (유실 방지).
+            #   _requeued 플래그로 무한 재시도 방지.
+            if not row_dict.get('_requeued') and _queue is not None and not _stop_flag.is_set():
+                row_dict['_requeued'] = True
+                try:
+                    _queue.put_nowait(row_dict)
+                    log.info("실패 행 재큐잉 (다음 사이클 재시도)")
+                except queue.Full:
+                    _fail_count += 1
+            else:
+                _fail_count += 1
 
 
 # ============================================================
