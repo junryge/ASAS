@@ -211,6 +211,8 @@ CONTENT_TYPES = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
 <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
 <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 ''' + "".join(
     f'<Override PartName="/ppt/slides/slide{i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
     for i in range(N)) + '</Types>'
@@ -218,7 +220,24 @@ CONTENT_TYPES = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 RELS = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
 </Relationships>'''
+
+CORE = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<dc:title>M16A HUBROOM 작업 보고</dc:title><dc:creator>Rulebase v6</dc:creator>
+<cp:lastModifiedBy>Rulebase v6</cp:lastModifiedBy>
+<dcterms:created xsi:type="dcterms:W3CDTF">2026-06-16T00:00:00Z</dcterms:created>
+<dcterms:modified xsi:type="dcterms:W3CDTF">2026-06-16T00:00:00Z</dcterms:modified></cp:coreProperties>'''
+
+APP = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+<Application>Microsoft Office PowerPoint</Application><PresentationFormat>Widescreen</PresentationFormat>
+<Slides>{N}</Slides><Company></Company><AppVersion>16.0000</AppVersion></Properties>'''
 
 pres_rels = ['<Relationship Id="rIdM" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>',
              '<Relationship Id="rIdT" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>']
@@ -247,7 +266,12 @@ xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
 </p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1"
 accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6"
 hlink="hlink" folHlink="folHlink"/>
-<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rIdL1"/></p:sldLayoutIdLst></p:sldMaster>'''
+<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rIdL1"/></p:sldLayoutIdLst>
+<p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr sz="4400"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="Malgun Gothic"/></a:defRPr></a:lvl1pPr></p:titleStyle>
+<p:bodyStyle><a:lvl1pPr><a:defRPr sz="1800"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="Malgun Gothic"/></a:defRPr></a:lvl1pPr>
+<a:lvl2pPr><a:defRPr sz="1600"><a:latin typeface="Malgun Gothic"/></a:defRPr></a:lvl2pPr>
+<a:lvl3pPr><a:defRPr sz="1400"><a:latin typeface="Malgun Gothic"/></a:defRPr></a:lvl3pPr></p:bodyStyle>
+<p:otherStyle><a:lvl1pPr><a:defRPr sz="1800"><a:latin typeface="Malgun Gothic"/></a:defRPr></a:lvl1pPr></p:otherStyle></p:txStyles></p:sldMaster>'''
 
 SM_RELS = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -305,6 +329,8 @@ out = "/tmp/작업보고_PPT_20260616.pptx"
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     z.writestr("[Content_Types].xml", CONTENT_TYPES)
     z.writestr("_rels/.rels", RELS)
+    z.writestr("docProps/core.xml", CORE)
+    z.writestr("docProps/app.xml", APP)
     z.writestr("ppt/presentation.xml", PRESENTATION)
     z.writestr("ppt/_rels/presentation.xml.rels", PRES_RELS)
     z.writestr("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER)
