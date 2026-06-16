@@ -15,6 +15,12 @@ reason 컬럼찾기 — 발동이벤트/사건단위의 'reason'(또는 relation
 import re
 import sys
 
+# 윈도우 cp949 콘솔에서도 한글/유니코드(— 등) 깨지지 않게 stdout UTF-8 강제
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 # ── 룰 → 원본 컬럼 매핑 (hubroom_predictor.py 와 동일) ──
 RA_COL = {
     'M16HUB': 'M16HUB.QUE.TIME.AVGTOTALTIME1MIN',

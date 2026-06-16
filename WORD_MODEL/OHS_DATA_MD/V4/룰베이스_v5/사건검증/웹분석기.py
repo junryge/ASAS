@@ -26,9 +26,17 @@ import tempfile
 import html as _html
 from pathlib import Path
 
+# 윈도우 cp949 콘솔에서도 한글/유니코드 깨지지 않게 stdout UTF-8 강제
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 PORT = 8765
 BASE = Path(__file__).resolve().parent
 PY = sys.executable  # 현재 파이썬
+# subprocess 로 호출되는 하위 스크립트도 UTF-8 출력하도록 환경변수 강제
+_CHILD_ENV = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
 
 SCRIPTS = {
     'oneline':   BASE / '한줄분석.py',
@@ -214,7 +222,8 @@ def call_oneline(data):
     inp = f"{data}\nq\n"
     res = subprocess.run([PY, str(SCRIPTS['oneline'])],
                          input=inp, capture_output=True, text=True,
-                         encoding='utf-8', errors='replace', cwd=str(BASE))
+                         encoding='utf-8', errors='replace', cwd=str(BASE),
+                         env=_CHILD_ENV)
     return (res.stdout or '') + (('\n' + res.stderr) if res.stderr else '')
 
 
@@ -222,7 +231,8 @@ def call_reason(data):
     inp = f"{data}\nq\n"
     res = subprocess.run([PY, str(SCRIPTS['reason'])],
                          input=inp, capture_output=True, text=True,
-                         encoding='utf-8', errors='replace', cwd=str(BASE))
+                         encoding='utf-8', errors='replace', cwd=str(BASE),
+                         env=_CHILD_ENV)
     return (res.stdout or '') + (('\n' + res.stderr) if res.stderr else '')
 
 
@@ -239,7 +249,8 @@ def call_fileanl(file_bytes, mode, arg):
             n = arg.strip() or '1'
             args += ['--top', n]
         res = subprocess.run(args, capture_output=True, text=True,
-                             encoding='utf-8', errors='replace', cwd=str(BASE))
+                             encoding='utf-8', errors='replace', cwd=str(BASE),
+                             env=_CHILD_ENV)
         return (res.stdout or '') + (('\n' + res.stderr) if res.stderr else '')
     finally:
         try: os.unlink(tmp_path)

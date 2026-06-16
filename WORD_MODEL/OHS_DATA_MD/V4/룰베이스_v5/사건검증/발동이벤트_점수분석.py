@@ -13,6 +13,12 @@
 import csv
 import sys
 
+# 윈도우 cp949 콘솔에서도 한글/유니코드(— 등) 깨지지 않게 stdout UTF-8 강제
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 AREAS5 = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B']
 RULES = ['RA', 'RA_sus', 'RB', 'RB_fast', 'RC', 'RD', 'SLA', 'SORT', 'MAXCAPA']
 RULE_KR = {

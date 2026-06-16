@@ -16,6 +16,12 @@ import csv
 import io
 import sys
 
+# 윈도우 cp949 콘솔에서도 한글/유니코드(— 등) 깨지지 않게 stdout UTF-8 강제
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 # ── 발동이벤트.csv 헤더 (hubroom_predictor.py EVENT_FIELDS 와 동일 순서) ──
 HEADER = [
     'file', 'datetime', 'date', 'time',
