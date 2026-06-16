@@ -83,7 +83,21 @@ def f(r, k):
     except: return 0
 
 
+def _verdict(r):
+    """점수 → 정상/문제 한 줄 판정."""
+    sc = f(r, 'unified_risk_score')
+    cont = f(r, 'continuity_min')
+    cont_s = f" / {int(cont)}분째 지속" if cont >= 1 else ""
+    if sc >= 220:   return f"⚫ 발동 — 점수 {int(sc)}{cont_s}"
+    if sc >= 160:   return f"🔴 위험 — 점수 {int(sc)}{cont_s}"
+    if sc >= 130:   return f"🟠 경계 — 점수 {int(sc)}{cont_s}"
+    if sc >= 120:   return f"🟡 주의 — 점수 {int(sc)}{cont_s}"
+    if sc >= 100:   return f"🔵 관심 — 점수 {int(sc)}{cont_s}"
+    return f"🟢 정상 — 점수 {int(sc)} (알람 X)"
+
+
 def analyze(r):
+    print("\n" + _verdict(r))
     print("=" * 74)
     print(f"  {r.get('datetime','?')} | 점수 {r.get('unified_risk_score','?')} "
           f"[{r.get('unified_risk_level','?')}] | hot={r.get('hot_area','?')} "
