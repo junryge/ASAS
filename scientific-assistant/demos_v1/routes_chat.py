@@ -850,13 +850,20 @@ def _stream_chat_sse(data):
             _c = _m.get("content", "")
             last_user_query = _c if isinstance(_c, str) else ""
             break
-    # 개인에이전트 선택 지식문서: 사용자가 '고른 문서만' 그대로 읽어 주입.
-    # (자동 지식검색/추천은 데모스 메인 전용. 에이전트는 KB 전체를 뒤지지 않는다 — 엉뚱한 문서 자동주입 방지.)
+    # 개인에이전트 선택 지식문서: RAG 로 '선택한 문서의 관련 청크만' 빠르게 주입.
+    #   files 필터 + 폴백버그 수정 덕에 '고른 문서'만 들어감(엉뚱한 문서 자동주입 없음).
+    #   RAG 가 그 문서에서 못 찾으면 search_knowledge_smart 가 직접읽기로 폴백(무손실).
     _agent_kfiles = data.get("knowledge_files") or []
     if _agent_kfiles:
         try:
-            from demos_v1.rag_client import read_selected as _read_selected
-            _kf_res = _read_selected(data.get("user_id"), _agent_kfiles)
+            # 검색어: 마지막 user 질문에서 '(지시: ...)' 꼬리표 제거 → RAG 매칭 정확도↑
+            _q_kf = (last_user_query or "").split("\n\n(지시:")[0].strip() or (last_user_query or "")
+            if _q_kf.strip():
+                _kf_res = search_knowledge_smart(_q_kf, max_results=8, max_content_chars=4000,
+                                                 user_id=data.get("user_id"), files=_agent_kfiles)
+            else:
+                from demos_v1.rag_client import read_selected as _read_selected
+                _kf_res = _read_selected(data.get("user_id"), _agent_kfiles)
             if _kf_res:
                 _kf_ctx = ("\n\n=== 선택한 내 지식 문서 ===\n"
                            "아래 문서 내용을 우선 근거로 답하세요. 문서에 없는 내용은 추측하지 말고 일반 지식임을 밝히세요.\n\n")
@@ -870,7 +877,12 @@ def _stream_chat_sse(data):
                     _kf_ctx += f"--- 📄 {_r['filename']} ---\n{_seg}\n\n"
                     _tot += len(_seg)
                 api_messages = _prepend_system(api_messages, _kf_ctx)
-                print(f"  [AGENT-KFILES] {len(_kf_res)}개 파일 청크 주입 ({_tot}자)")
+                try:
+                    from demos_v1.rag_client import _healthy as _rh
+                    _ksrc = "RAG" if _rh() else "BM25/직접"
+                except Exception:
+                    _ksrc = "?"
+                print(f"  [AGENT-KFILES] 검색원={_ksrc} | {len(_kf_res)}개 파일 청크 주입 ({_tot}자) | 선택={_agent_kfiles}")
         except Exception as _e:
             print(f"  [AGENT-KFILES] {_e}")
 
