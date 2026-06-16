@@ -182,11 +182,31 @@
         <input type="checkbox" id="agThink" onchange="try{localStorage.setItem('demos_agThink', this.checked?'1':'0')}catch(e){}" style="margin:0;accent-color:#7c5cbf">💭사고
       </label>
       <span style="margin-left:auto;display:flex;gap:6px;">
+        <button onclick="openAgExample()" title="예시문 참조 — 데이터/예시를 저장해두고 답변 참고용으로 사용 (스킬 아님)" style="background:none;border:1px solid #f59e0b;color:#fbbf24;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">📋 예시문</button>
         <button onclick="openAgHistory()" title="이 에이전트의 과거 세션을 날짜별로 보기/불러오기" style="background:none;border:1px solid #38bdf8;color:#7dd3fc;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🕘 기록</button>
         <button onclick="newAgentSession()" title="현재 대화는 기록에 보관하고 새 세션 시작" style="background:none;border:1px solid #a855f7;color:#c4b5fd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🆕 새 세션</button>
         <button onclick="sendToDemos()" title="이 대화를 메인 데모스 채팅에 새 세션으로 보내기" style="background:none;border:1px solid #22c55e;color:#86efac;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">📤 데모스로</button>
         <button onclick="endChat()" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">종료</button>
       </span>
+    </div>
+    <!-- 📋 예시문 참조 팝업 (스킬 아님 — 답변 참고용 데이터/예시 저장) -->
+    <div id="agExPopup" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;" onclick="if(event.target===this)closeAgExample()">
+      <div style="background:#0f172a;border:1px solid #5a4410;border-radius:12px;width:min(620px,94vw);max-height:84vh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #5a4410;">
+          <span style="font-weight:700;color:#fbbf24;">📋 <span id="agExTitle">예시문 참조</span> <span style="color:#94a3b8;font-weight:400;font-size:11px;">(스킬 아님 · 답변 참고용)</span></span>
+          <span onclick="closeAgExample()" style="cursor:pointer;color:#94a3b8;font-size:18px;line-height:1;">✕</span>
+        </div>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px;overflow:auto;">
+          <div style="font-size:11px;color:#94a3b8;line-height:1.5;">여기에 넣은 데이터/예시는 이 에이전트 답변 시 <b>참고용</b>으로만 들어갑니다. 스킬·지식문서와 별개예요. 비워두면 안 들어갑니다.</div>
+          <textarea id="agExText" placeholder="예) 표 형식 예시, 샘플 데이터, 보고서 양식, 용어 정의 등 — 답변이 이걸 참고하게 됩니다." style="width:100%;box-sizing:border-box;min-height:240px;background:#1e293b;border:1px solid #475569;color:#e2e8f0;border-radius:8px;padding:10px;font-size:12.5px;font-family:monospace;white-space:pre;resize:vertical;"></textarea>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button onclick="saveAgExample()" style="background:#f59e0b;color:#1a1205;border:none;border-radius:6px;padding:6px 16px;font-weight:700;cursor:pointer;font-size:12px;">💾 저장</button>
+            <button onclick="clearAgExampleText()" style="background:none;border:1px solid #555;color:#aaa;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;">비우기</button>
+            <span id="agExMsg" style="font-size:11px;color:#22c55e;margin-left:4px;"></span>
+            <span id="agExLen" style="font-size:11px;color:#64748b;margin-left:auto;"></span>
+          </div>
+        </div>
+      </div>
     </div>
     <!-- 🕘 과거 세션 기록 팝업 (날짜별 분류) -->
     <div id="agHistPopup" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;" onclick="if(event.target===this)closeAgHistory()">
@@ -898,6 +918,33 @@ function newAgentSession(){
   document.getElementById('chatInput').focus();
 }
 
+// 📋 예시문 참조 (에이전트별 저장, 스킬 아님 — 답변 참고용으로만 시스템프롬프트에 주입) ──
+function _exKey(aid){ return 'demos_agExample_'+uid()+'_'+aid; }
+function _loadAgExample(aid){ try{ return localStorage.getItem(_exKey(aid))||''; }catch(e){ return ''; } }
+function openAgExample(){
+  if(!activeAgent){ return; }
+  var t=document.getElementById('agExText');
+  t.value=_loadAgExample(activeAgent.agent_id);
+  document.getElementById('agExTitle').textContent=activeAgent.name+' · 예시문 참조';
+  document.getElementById('agExMsg').textContent='';
+  document.getElementById('agExLen').textContent=(t.value.length||0)+'자';
+  t.oninput=function(){ document.getElementById('agExLen').textContent=(t.value.length||0)+'자'; document.getElementById('agExMsg').textContent=''; };
+  document.getElementById('agExPopup').style.display='flex';
+  t.focus();
+}
+function closeAgExample(){ document.getElementById('agExPopup').style.display='none'; }
+function saveAgExample(){
+  if(!activeAgent) return;
+  var v=document.getElementById('agExText').value;
+  try{
+    if(v.trim()) localStorage.setItem(_exKey(activeAgent.agent_id), v);
+    else localStorage.removeItem(_exKey(activeAgent.agent_id));
+    document.getElementById('agExMsg').style.color='#22c55e';
+    document.getElementById('agExMsg').textContent='✅ 저장됨 (답변에 참고로 들어갑니다)';
+  }catch(e){ document.getElementById('agExMsg').style.color='#f87171'; document.getElementById('agExMsg').textContent='저장 실패: '+e.message; }
+}
+function clearAgExampleText(){ document.getElementById('agExText').value=''; document.getElementById('agExLen').textContent='0자'; }
+
 // 🕘 과거 세션 기록 (날짜별 분류) ──────────────────────────────
 function _dateGroup(ts){
   var d=new Date(ts||0), now=new Date();
@@ -960,7 +1007,7 @@ function purgeAgentSessions(aid){
   }catch(e){}
 }
 document.addEventListener('keydown', function(e){
-  if(e.key==='Escape'){ var p=document.getElementById('agHistPopup'); if(p && p.style.display==='flex') closeAgHistory(); }
+  if(e.key==='Escape'){ var p=document.getElementById('agHistPopup'); if(p && p.style.display==='flex') closeAgHistory(); var e2=document.getElementById('agExPopup'); if(e2 && e2.style.display==='flex') closeAgExample(); }
 });
 
 // 데모스로 보내기: 현재 대화를 메인 데모스 채팅에 새 세션으로 불러옴
@@ -1106,6 +1153,11 @@ async function sendChat(){
     '[답변 규칙] 반드시 한국어로 답하세요. 영어 사고과정("Here\'s a thinking process", "Analyze", "Let me think", "Draft" 등)이나 ' +
     '<think>·<thinking> 태그를 절대 출력하지 말고, 바로 결론·핵심부터 명확하게 답하세요(고유명사·코드·명령어는 예외). ' +
     '불필요한 서론·과정 설명은 빼고 결론 위주로. 스킬이 지정한 형식(표·문서·다이어그램 등)이 있으면 그 형식대로 작성하세요.';
+  // 📋 예시문 참조 주입 (스킬/지식 아님 — 사용자가 저장한 데이터/예시를 답변 참고용으로만)
+  var _exRef = _loadAgExample(activeAgent.agent_id);
+  if(_exRef && _exRef.trim()){
+    sysPrompt += '\n\n=== 예시문 참조 (아래는 답변 형식·내용 참고용 예시일 뿐, 스킬·규칙 아님. 실제 요청·데이터를 우선하라) ===\n' + _exRef.trim();
+  }
   // 선택 지식문서는 백엔드(RAG/BM25)가 질문 관련 청크만 골라 주입함 → 프론트 주입 제거.
   // (buildKnowledgeContext 는 RAG 미사용 환경 롤백용으로 함수만 보존)
   if(hermesOn){
