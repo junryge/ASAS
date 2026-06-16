@@ -178,18 +178,18 @@ def main():
         if r: analyze(r)
         return
     print("=" * 74)
-    print("  한줄분석 — 발동이벤트.csv 데이터 행을 통째로 붙여넣고 Enter (q 종료)")
-    print("  (맨 윗줄 헤더는 넣지 말고, 데이터 행만)")
+    print("  한줄분석 — 발동이벤트.csv 의 데이터 한 줄을 복사해서 붙여넣고 Enter")
+    print("            (헤더는 빼고 데이터만 / 끝내려면 q 입력)")
     print("=" * 74)
     while True:
         try:
-            line = input("\n행> ").strip()
+            line = input("\nCSV 데이터 한 줄 붙여넣기> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if not line or line.lower() in ('q','quit','exit'):
             print("종료."); break
         if line.startswith('file,'):
-            print("  (헤더 줄임 — 데이터 행을 넣어줘)"); continue
+            print("  (헤더 줄임 — 데이터 한 줄만 붙여넣어줘)"); continue
         try:
             r = parse_line(line)
             analyze(r)
