@@ -3,9 +3,11 @@ name: m16_br_reason찾기
 description: M16A HUBROOM 룰베이스의 reason 또는 relation 텍스트(예 "M16HUB[R-A'(AVGTOTALTIME1MIN=20.13분/기준9.0),R-D(STB=100.0%)]")를 사용자가 붙여넣으면, 발동한 룰이 본 '원본 데이터 컬럼명'과 실측값을 찾아준다. "이 reason 무슨 컬럼", "reason 분석", "어느 컬럼 때문에" 요청 시 사용.
 ---
 
-# m16_br reason찾기 (LLM 버전)
+# m16_br reason찾기
 
 `reason` / `relation` 텍스트를 받아 `reason_컬럼찾기.py` 와 동일하게 **발동 룰 → 원본 컬럼명** 을 매핑한다.
+
+⛔ **규칙**: 아래 "출력 형식" 블록은 코드블록 안 monospace 평문 그대로 (변형 금지). 그 아래에 짧은 결론 한두 줄은 추가 허용.
 
 ## 입력
 `hot_area=...; 발동: M16HUB[R-A'(...),R-D(...)]; M16A[R-B(...),SLA(...)]; ...; 흐름:노드=N.Nx(레벨)` 형태 텍스트.
