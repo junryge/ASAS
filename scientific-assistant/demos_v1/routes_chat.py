@@ -240,6 +240,28 @@ def _auto_save_feedback(loaded, quality, last_user_query):
         pass
 
 
+def _delatex_md(t):
+    """$\\rightarrow$ 등 LaTeX 표기를 유니코드 기호로 치환 (프론트 delatexFallback 동일 매핑).
+    python-markdown 은 수식을 못 다뤄 그대로 두면 HTML 다운로드 시 깨진다."""
+    if not t:
+        return t
+    import re as _re
+    _map = {
+        '\\rightarrowtail': '→', '\\rightarrow': '→', '\\Rightarrow': '⇒', '\\to': '→',
+        '\\leftarrow': '←', '\\Leftarrow': '⇐', '\\geq': '≥', '\\ge': '≥',
+        '\\leq': '≤', '\\le': '≤', '\\neq': '≠', '\\ne': '≠', '\\approx': '≈',
+        '\\times': '×', '\\cdot': '·', '\\pm': '±', '\\div': '÷', '\\infty': '∞',
+        '\\alpha': 'α', '\\beta': 'β', '\\sum': '∑',
+    }
+    t = _re.sub(r'\\text\s*\{([^}]*)\}', r'\1', t)
+    t = _re.sub(r'\\mathrm\s*\{([^}]*)\}', r'\1', t)
+    for k, v in _map.items():
+        t = t.replace(k, v)
+    t = _re.sub(r'\$\$([\s\S]+?)\$\$', r'\1', t)
+    t = _re.sub(r'\$([^$\n]+?)\$', r'\1', t)
+    return t
+
+
 def _maybe_generate_md_html(answer, loaded, resp_data):
     """md-to-html 스킬이 로드되었으면 MD/HTML 파일을 생성하고 다운로드 URL을 resp_data에 추가"""
     if "md-to-html" not in loaded:
@@ -255,7 +277,7 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     for line in answer.split("\n"):
         stripped = line.strip()
         if stripped.startswith("# ") and not stripped.startswith("## "):
-            title = stripped.lstrip("# ").strip()
+            title = _delatex_md(stripped.lstrip("# ").strip())
             break
 
     # 1) MD 파일 저장
@@ -268,7 +290,7 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     try:
         import markdown as md_lib
         extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
-        body_html = md_lib.markdown(answer, extensions=extensions)
+        body_html = md_lib.markdown(_delatex_md(answer), extensions=extensions)
         full_html = (
             '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'

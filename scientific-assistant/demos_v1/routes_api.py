@@ -2804,6 +2804,28 @@ def register_api_routes(app):
                          mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
     # ── Markdown → HTML 변환 ──────────────────────────────────
+    def _delatex_md(t):
+        """$\\rightarrow$ 등 LaTeX 표기를 유니코드 기호로 치환 (프론트 delatexFallback 동일 매핑).
+        python-markdown 은 수식을 못 다뤄 그대로 두면 HTML 다운로드 시 깨진다."""
+        if not t:
+            return t
+        import re as _re
+        _map = {
+            '\\rightarrowtail': '→', '\\rightarrow': '→', '\\Rightarrow': '⇒', '\\to': '→',
+            '\\leftarrow': '←', '\\Leftarrow': '⇐', '\\geq': '≥', '\\ge': '≥',
+            '\\leq': '≤', '\\le': '≤', '\\neq': '≠', '\\ne': '≠', '\\approx': '≈',
+            '\\times': '×', '\\cdot': '·', '\\pm': '±', '\\div': '÷', '\\infty': '∞',
+            '\\alpha': 'α', '\\beta': 'β', '\\sum': '∑',
+        }
+        t = _re.sub(r'\\text\s*\{([^}]*)\}', r'\1', t)
+        t = _re.sub(r'\\mathrm\s*\{([^}]*)\}', r'\1', t)
+        for k, v in _map.items():
+            t = t.replace(k, v)
+        # 남은 수식 구분자 제거 ($$..$$, $..$)
+        t = _re.sub(r'\$\$([\s\S]+?)\$\$', r'\1', t)
+        t = _re.sub(r'\$([^$\n]+?)\$', r'\1', t)
+        return t
+
     @app.route("/api/generate_html", methods=["POST"])
     def api_generate_html():
         """Markdown 텍스트를 스타일 포함 HTML 문서로 변환"""
@@ -2814,6 +2836,11 @@ def register_api_routes(app):
         title = data.get("title", "")
         if not md_text:
             return jsonify({"error": "markdown 텍스트가 비어 있습니다."}), 400
+
+        # LaTeX → 유니코드 기호 폴백 (프론트 delatexFallback 과 동일 매핑).
+        # python-markdown 은 $\rightarrow$ 같은 수식을 못 다뤄 raw 로 남아 깨지므로 변환 후 렌더.
+        md_text = _delatex_md(md_text)
+        title = _delatex_md(title)
 
         # 제목 자동 추출: 첫 번째 # 헤딩에서 가져옴
         if not title:
