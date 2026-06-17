@@ -2030,6 +2030,42 @@ function _showSkillApprovalCards(pending){
 }
 
 // 🔮 헤르메스: 수동 스킬 저장 — 모델이 hermes:skill 블록을 안 뱉어도 직전 답변을 직접 스킬화
+// ── 스킬 이름·설명 자동 추정 (오프라인·무에러, 백엔드 skills.py 와 동일 규칙) ──
+function _skillBanned(n){ return /(오늘|today|temp|tmp|test|fix-?\d|수정|어제|에러|error-|bug-\d|\d{4}-\d{2}-\d{2})/i.test(n); }
+function _skillNameValid(n){
+  n=(n||'').trim().toLowerCase();
+  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(n)) return false;
+  if(n.length<2 || n.length>40) return false;
+  if(_skillBanned(n)) return false;
+  return true;
+}
+function _skillSlug(s){
+  var stop={the:1,and:1,for:1,with:1,that:1,this:1,you:1,are:1,was:1,csv:1,html:1,http:1,https:1,com:1,the:1};
+  var toks=(s||'').toLowerCase().match(/[a-z0-9]{2,}/g)||[];
+  toks=toks.filter(function(t){ return !stop[t]; });
+  return toks.slice(0,4).join('-').slice(0,40).replace(/^-+|-+$/g,'');
+}
+function _suggestSkillMeta(bodyText){
+  var txt=String(bodyText||''), when='';
+  var lines=txt.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i].replace(/^#+\s*/,'').replace(/[*_`>|]/g,'').trim();
+    if(ln.length>=4){ when=ln.slice(0,60); break; }
+  }
+  var name=_skillSlug((when||txt).slice(0,200));
+  if(!_skillNameValid(name)) name='skill-'+String(Date.now()).slice(-6);  // 폴백: 순수숫자(금지어 회피)
+  return {name:name, when:when||'재사용 스킬'};
+}
+// 이름칸 실시간 유효성 표시 (저장 전에 빨강/초록)
+function _wireSkillNameCheck(input, res){
+  function chk(){
+    var ok=_skillNameValid(input.value);
+    input.style.borderColor = input.value.trim()? (ok?'#22c55e':'#ef4444') : '#cbd5e1';
+    if(res && input.value.trim() && !ok){ res.style.color='#ef4444'; res.textContent='이름: 영문소문자·숫자·하이픈만 (2~40자)'; }
+    else if(res && res.textContent.indexOf('이름:')===0){ res.textContent=''; }
+  }
+  input.addEventListener('input', chk); chk();
+}
 function _showManualSkillBtn(bodyText){
   if(!bodyText || !bodyText.trim() || !currentUser) return;
   const c=document.getElementById('msgs');
@@ -2049,6 +2085,11 @@ function _showManualSkillBtn(bodyText){
       +'<button class="msk-cancel" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer;">취소</button>'
       +' <span class="msk-res" style="font-size:11px;margin-left:6px;color:#22c55e;"></span></div>';
     cont.querySelector('.msk-body').value=body.slice(0,4000);
+    // ★ 이름·설명 자동 채움 (회사님은 보고 고쳐서 저장만)
+    var _sg=_suggestSkillMeta(body);
+    cont.querySelector('.msk-name').value=_sg.name;
+    cont.querySelector('.msk-when').value=_sg.when;
+    _wireSkillNameCheck(cont.querySelector('.msk-name'), cont.querySelector('.msk-res'));
     cont.querySelector('.msk-cancel').onclick=function(){ wrap.remove(); };
     cont.querySelector('.msk-go').onclick=async function(){
       const go=this, res=cont.querySelector('.msk-res');
@@ -2056,14 +2097,20 @@ function _showManualSkillBtn(bodyText){
         name:(cont.querySelector('.msk-name').value||'').trim().toLowerCase(),
         when:(cont.querySelector('.msk-when').value||'').trim(),
         body:(cont.querySelector('.msk-body').value||'').trim()};
-      if(!spec.name){ res.style.color='#ef4444'; res.textContent='이름을 입력하세요'; return; }
-      go.disabled=true;
+      if(!_skillNameValid(spec.name)){ res.style.color='#ef4444'; res.textContent='이름: 영문소문자·숫자·하이픈만 (2~40자)'; return; }
+      go.disabled=true; res.style.color='#94a3b8'; res.textContent='저장 중…';
+      var base=spec.name;
       try{
-        const r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({user_id:currentUser.id, spec:spec})});
-        const d=await r.json();
-        if(d.ok){ cont.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+_hesc(d.msg||'저장됨')+'</span>'; }
-        else { go.disabled=false; res.style.color='#ef4444'; res.textContent=d.msg||'실패'; }
+        let d=null;
+        for(let k=0;k<6;k++){                       // 중복이면 -2,-3… 자동 회피
+          const r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({user_id:currentUser.id, spec:spec})});
+          d=await r.json();
+          if(d.ok || !/이미 존재/.test(d.msg||'')) break;
+          spec.name=base+'-'+(k+2);
+        }
+        if(d&&d.ok){ cont.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+_hesc(d.msg||'저장됨')+'</span>'; }
+        else { go.disabled=false; res.style.color='#ef4444'; res.textContent=(d&&d.msg)||'실패'; }
       }catch(e){ go.disabled=false; res.style.color='#ef4444'; res.textContent='실패: '+e.message; }
     };
   };
