@@ -5145,9 +5145,10 @@ function editKdScript(name){
   var entryOpts = pyFiles.map(function(f){ return '<option value="'+_hescAttr(f)+'"'+(f===s.entry?' selected':'')+'>'+_hescAttr(f)+'</option>'; }).join('');
   var trig = (s.trigger||[]).join(', ');
   var argv = (s.argv||[]).join('\n');
+  var fileOpts = (s.files||[]).map(function(f){ return '<option value="'+_hescAttr(f)+'"'+(f===s.entry?' selected':'')+'>'+_hescAttr(f)+'</option>'; }).join('');
   panel.innerHTML =
     '<div style="border:1px solid #f59e0b;border-radius:8px;padding:10px;background:rgba(245,158,11,0.08);">'
-    +'<div style="font-weight:700;color:#fbbf24;font-size:12px;margin-bottom:8px;">✏️ 스크립트 수정: '+_hescAttr(s.name)+' <span style="color:#94a3b8;font-weight:400;">(파일은 그대로, 메타만 변경)</span></div>'
+    +'<div style="font-weight:700;color:#fbbf24;font-size:12px;margin-bottom:8px;">✏️ 스크립트 수정: '+_hescAttr(s.name)+'</div>'
     +'<label style="font-size:11px;color:#94a3b8;">설명</label>'
     +'<input id="edScDesc" value="'+_hescAttr(s.description||'')+'" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'
     +'<label style="font-size:11px;color:#94a3b8;">트리거어 (쉼표 구분)</label>'
@@ -5156,11 +5157,46 @@ function editKdScript(name){
     +'<select id="edScEntry" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'+entryOpts+'</select>'
     +'<label style="font-size:11px;color:#94a3b8;">실행 인자 (한 줄에 하나 — {input}, {outdir}, 동반파일명)</label>'
     +'<textarea id="edScArgv" rows="5" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#cbd5e1;font-size:11px;font-family:monospace;resize:vertical;">'+_hescAttr(argv)+'</textarea>'
-    +'<button onclick="saveKdScriptEdit(\''+_hescAttr(s.name)+'\')" style="padding:6px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">저장</button> '
-    +'<button onclick="document.getElementById(\'kdScriptEditPanel\').style.display=\'none\';" style="padding:6px 14px;background:none;border:1px solid #555;color:#aaa;border-radius:6px;cursor:pointer;font-size:12px;">취소</button>'
-    +' <span id="edScMsg" style="font-size:11px;margin-left:6px;"></span></div>';
+    +'<button onclick="saveKdScriptEdit(\''+_hescAttr(s.name)+'\')" style="padding:6px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">메타 저장</button> '
+    +'<button onclick="document.getElementById(\'kdScriptEditPanel\').style.display=\'none\';" style="padding:6px 14px;background:none;border:1px solid #555;color:#aaa;border-radius:6px;cursor:pointer;font-size:12px;">닫기</button>'
+    +' <span id="edScMsg" style="font-size:11px;margin-left:6px;"></span>'
+    // ── 파일 코드 편집 (재등록 없이 .py/config 내용 직접 수정) ──
+    +'<div style="border-top:1px dashed #f59e0b;margin:12px 0 0;padding-top:10px;">'
+    +'<div style="font-weight:700;color:#fbbf24;font-size:12px;margin-bottom:6px;">📄 파일 코드 편집 <span style="color:#94a3b8;font-weight:400;">(재등록 없이 바로 수정 — .py / json / config)</span></div>'
+    +'<select id="edScFile" onchange="loadKdScriptFile(\''+_hescAttr(s.name)+'\')" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 6px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'+fileOpts+'</select>'
+    +'<textarea id="edScFileContent" spellcheck="false" wrap="off" rows="16" style="width:100%;box-sizing:border-box;padding:8px;margin:2px 0 6px;border:1px solid #444;border-radius:6px;background:#11131c;color:#cbd5e1;font-size:12px;font-family:monospace;line-height:1.5;resize:vertical;white-space:pre;overflow:auto;">불러오는 중…</textarea>'
+    +'<button onclick="saveKdScriptFile(\''+_hescAttr(s.name)+'\')" style="padding:6px 14px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">💾 코드 저장</button>'
+    +' <span id="edScFileMsg" style="font-size:11px;margin-left:6px;"></span>'
+    +'</div>'
+    +'</div>';
   panel.style.display='block';
+  loadKdScriptFile(s.name);     // 진입 파일 코드 자동 로드
   panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+async function loadKdScriptFile(name){
+  var fn = document.getElementById('edScFile').value;
+  var ta = document.getElementById('edScFileContent');
+  var msg = document.getElementById('edScFileMsg');
+  if(!fn){ ta.value=''; return; }
+  ta.value = '불러오는 중…'; if(msg) msg.textContent='';
+  try{
+    var r = await fetch('/api/knowledge/script/file?user_id='+encodeURIComponent(currentUser.id)+'&name='+encodeURIComponent(name)+'&filename='+encodeURIComponent(fn));
+    var d = await r.json();
+    if(d.error){ ta.value=''; msg.style.color='#ef4444'; msg.textContent=d.error; return; }
+    ta.value = d.content;
+  }catch(e){ ta.value=''; if(msg){ msg.style.color='#ef4444'; msg.textContent='불러오기 실패'; } }
+}
+async function saveKdScriptFile(name){
+  var fn = document.getElementById('edScFile').value;
+  var content = document.getElementById('edScFileContent').value;
+  var msg = document.getElementById('edScFileMsg');
+  if(!fn){ return; }
+  try{
+    var r = await fetch('/api/knowledge/script/file/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id, name:name, filename:fn, content:content})});
+    var d = await r.json();
+    if(d.error){ msg.style.color='#ef4444'; msg.textContent=d.error; return; }
+    msg.style.color='#22c55e'; msg.textContent=d.message||'저장 완료';
+  }catch(e){ msg.style.color='#ef4444'; msg.textContent='저장 실패'; }
 }
 async function saveKdScriptEdit(name){
   var msg = document.getElementById('edScMsg');

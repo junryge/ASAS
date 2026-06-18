@@ -3303,6 +3303,60 @@ owner: {user_id}
         return jsonify({"message": f"스크립트 '{name}' 수정 완료", "entry": meta.get("entry"),
                         "trigger": meta.get("trigger"), "argv": meta.get("argv", [])})
 
+    @app.route("/api/knowledge/script/file", methods=["GET"])
+    def api_knowledge_script_file_get():
+        """스크립트 폴더 안 개별 파일(.py 등) 내용 읽기 — 코드 편집용."""
+        user_id = request.args.get("user_id", "").strip()
+        name = _safe_script_name(request.args.get("name", ""))
+        fn = os.path.basename((request.args.get("filename") or "").strip())
+        if not user_id or not name or not fn:
+            return jsonify({"error": "user_id/name/filename 필요"}), 400
+        fp = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name, fn)
+        if not os.path.isfile(fp):
+            return jsonify({"error": "파일 없음"}), 404
+        try:
+            with open(fp, encoding="utf-8", errors="replace") as rf:
+                content = rf.read()
+        except Exception as e:
+            return jsonify({"error": f"읽기 실패: {e}"}), 500
+        return jsonify({"filename": fn, "content": content})
+
+    @app.route("/api/knowledge/script/file/save", methods=["POST"])
+    def api_knowledge_script_file_save():
+        """스크립트 폴더 안 개별 파일 내용 덮어쓰기 — 재등록 없이 코드 수정."""
+        data = request.get_json(force=True)
+        user_id = data.get("user_id", "").strip()
+        name = _safe_script_name(data.get("name", ""))
+        fn = os.path.basename((data.get("filename") or "").strip())
+        content = data.get("content", "")
+        if not user_id or not name or not fn:
+            return jsonify({"error": "user_id/name/filename 필요"}), 400
+        if not fn.lower().endswith(_SCRIPT_ALLOW_EXT):
+            return jsonify({"error": "허용되지 않는 확장자"}), 400
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        if not os.path.isdir(d):
+            return jsonify({"error": "스크립트 없음"}), 404
+        fp = os.path.join(d, fn)
+        existed = os.path.isfile(fp)
+        try:
+            with open(fp, "w", encoding="utf-8", newline="") as wf:
+                wf.write(content)
+        except Exception as e:
+            return jsonify({"error": f"저장 실패: {e}"}), 500
+        # 새로 만든 파일이면 _meta.json 의 files 목록에 추가
+        if not existed:
+            mp = os.path.join(d, "_meta.json")
+            try:
+                with open(mp, encoding="utf-8") as rf:
+                    meta = json.load(rf)
+                if fn not in (meta.get("files") or []):
+                    meta.setdefault("files", []).append(fn)
+                    with open(mp, "w", encoding="utf-8") as wf:
+                        json.dump(meta, wf, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+        return jsonify({"message": f"'{fn}' 코드 저장 완료 ({len(content)}자)"})
+
     @app.route("/api/knowledge/save", methods=["POST"])
     def api_knowledge_save():
         """문서형 지식 내용 덮어쓰기(수정)."""
