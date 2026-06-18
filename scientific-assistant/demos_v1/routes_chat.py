@@ -289,17 +289,23 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     # 2) HTML 파일 생성
     try:
         import markdown as md_lib
+        # 표 앞 빈 줄 보정 (표로 인식 못 해 '| ... |' 글자로 깨지는 것 방지)
+        _md_in = []
+        for _ln in _delatex_md(answer).split("\n"):
+            if _ln.lstrip().startswith("|") and _md_in and _md_in[-1].strip() and not _md_in[-1].lstrip().startswith("|"):
+                _md_in.append("")
+            _md_in.append(_ln)
         extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
-        body_html = md_lib.markdown(_delatex_md(answer), extensions=extensions)
+        body_html = md_lib.markdown("\n".join(_md_in), extensions=extensions)
         full_html = (
             '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{title}</title><style>'
             'body{font-family:"Pretendard","Noto Sans KR",sans-serif;max-width:900px;margin:2rem auto;padding:0 1.5rem;color:#1a1a2e;line-height:1.7}'
             'h1,h2,h3{color:#16213e;border-bottom:2px solid #e2e8f0;padding-bottom:.3em}'
-            'table{border-collapse:collapse;width:100%;margin:1em 0}'
-            'th,td{border:1px solid #cbd5e1;padding:.6em 1em;text-align:left}'
-            'th{background:#f1f5f9;font-weight:700}'
+            'table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.86em}'
+            'th,td{border:1px solid #cbd5e1;padding:.4em .55em;text-align:left;vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}'
+            'th{background:#f1f5f9;font-weight:700;white-space:nowrap}'
             'code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:.9em}'
             'pre{background:#1e293b;color:#e2e8f0;padding:1em;border-radius:8px;overflow-x:auto}'
             'pre code{background:none;color:inherit;padding:0}'

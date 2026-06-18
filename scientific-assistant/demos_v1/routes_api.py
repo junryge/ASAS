@@ -2858,6 +2858,17 @@ def register_api_routes(app):
         import html as _html
         title = _html.escape(title)
 
+        # 표 앞에 빈 줄이 없으면 python-markdown 이 표로 인식 못 해 '| 점수 |' 글자로 깨진다.
+        # 비어있지 않은 비-표 줄 다음에 표(| ...)가 바로 오면 빈 줄을 끼워준다.
+        def _ensure_table_blanklines(md):
+            out = []
+            for ln in md.split("\n"):
+                if ln.lstrip().startswith("|") and out and out[-1].strip() and not out[-1].lstrip().startswith("|"):
+                    out.append("")
+                out.append(ln)
+            return "\n".join(out)
+        md_text = _ensure_table_blanklines(md_text)
+
         extensions = [
             "tables", "fenced_code", "codehilite", "toc",
             "nl2br", "sane_lists", "smarty",
@@ -2873,9 +2884,9 @@ def register_api_routes(app):
 <style>
   body {{ font-family: 'Pretendard','Noto Sans KR',sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; line-height: 1.7; }}
   h1,h2,h3 {{ color: #16213e; border-bottom: 2px solid #e2e8f0; padding-bottom: .3em; }}
-  table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-  th,td {{ border: 1px solid #cbd5e1; padding: .6em 1em; text-align: left; }}
-  th {{ background: #f1f5f9; font-weight: 700; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .86em; }}
+  th,td {{ border: 1px solid #cbd5e1; padding: .4em .55em; text-align: left; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }}
+  th {{ background: #f1f5f9; font-weight: 700; white-space: nowrap; }}
   code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: .9em; }}
   pre {{ background: #1e293b; color: #e2e8f0; padding: 1em; border-radius: 8px; overflow-x: auto; }}
   pre code {{ background: none; color: inherit; padding: 0; }}
