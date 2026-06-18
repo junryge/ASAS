@@ -5174,8 +5174,14 @@ function editKdScript(name){
   panel.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 async function loadKdScriptFile(name){
-  var fn = document.getElementById('edScFile').value;
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
   var ta = document.getElementById('edScFileContent');
+  // 저장 안 한 수정이 있으면 파일 전환 전에 확인 (수정 유실 방지)
+  if(ta && ta.dataset.dirty==='1' && !confirm('저장하지 않은 코드 수정이 사라집니다. 계속할까요?')){
+    document.getElementById('edScFile').value = ta.dataset.curfile || '';
+    return;
+  }
+  var fn = document.getElementById('edScFile').value;
   var msg = document.getElementById('edScFileMsg');
   if(!fn){ ta.value=''; return; }
   ta.value = '불러오는 중…'; if(msg) msg.textContent='';
@@ -5184,11 +5190,15 @@ async function loadKdScriptFile(name){
     var d = await r.json();
     if(d.error){ ta.value=''; msg.style.color='#ef4444'; msg.textContent=d.error; return; }
     ta.value = d.content;
+    ta.dataset.dirty='0'; ta.dataset.curfile=fn;             // 로드 직후는 깨끗
+    ta.oninput = function(){ ta.dataset.dirty='1'; };         // 수정하면 dirty
   }catch(e){ ta.value=''; if(msg){ msg.style.color='#ef4444'; msg.textContent='불러오기 실패'; } }
 }
 async function saveKdScriptFile(name){
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
   var fn = document.getElementById('edScFile').value;
-  var content = document.getElementById('edScFileContent').value;
+  var ta = document.getElementById('edScFileContent');
+  var content = ta.value;
   var msg = document.getElementById('edScFileMsg');
   if(!fn){ return; }
   try{
@@ -5196,6 +5206,7 @@ async function saveKdScriptFile(name){
     var d = await r.json();
     if(d.error){ msg.style.color='#ef4444'; msg.textContent=d.error; return; }
     msg.style.color='#22c55e'; msg.textContent=d.message||'저장 완료';
+    ta.dataset.dirty='0';                                     // 저장 성공 → 깨끗
   }catch(e){ msg.style.color='#ef4444'; msg.textContent='저장 실패'; }
 }
 async function saveKdScriptEdit(name){

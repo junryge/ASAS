@@ -1399,8 +1399,11 @@ def register_api_routes(app):
             })
 
         # ── 선택된 시트 상세 ──
-        active_sheet_idx = int(request.form.get('sheet', 0))
-        if active_sheet_idx >= len(sheet_names):
+        try:
+            active_sheet_idx = int(request.form.get('sheet') or 0)
+        except (ValueError, TypeError):
+            active_sheet_idx = 0
+        if active_sheet_idx >= len(sheet_names) or active_sheet_idx < 0:
             active_sheet_idx = 0
 
         target_rid = sheet_rids[active_sheet_idx] if active_sheet_idx < len(sheet_rids) else ''
@@ -2851,6 +2854,9 @@ def register_api_routes(app):
                     break
             if not title:
                 title = "문서"
+        # <title> 에 들어갈 제목은 HTML 이스케이프 (</title><script> 주입 차단)
+        import html as _html
+        title = _html.escape(title)
 
         extensions = [
             "tables", "fenced_code", "codehilite", "toc",
@@ -2976,7 +2982,7 @@ owner: {user_id}
     @app.route("/api/knowledge/upload", methods=["POST"])
     def api_knowledge_upload():
         """지식 도메인 파일 업로드 (MD/TXT) - 사용자별 폴더에 저장"""
-        user_id = request.form.get("user_id", "").strip()
+        user_id = _safe_uid(request.form.get("user_id", ""))
         if not user_id:
             return jsonify({"error": "사용자 ID가 필요합니다."}), 400
 
@@ -3022,7 +3028,7 @@ owner: {user_id}
     def api_knowledge_manual():
         """수동 입력으로 지식 등록"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         title = data.get("title", "").strip()
         category = data.get("category", "guide")
         content = data.get("content", "").strip()
@@ -3059,7 +3065,7 @@ owner: {user_id}
     def api_knowledge_list():
         """사용자 지식 파일 목록"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         if not user_id:
             return jsonify({"error": "사용자 ID 필요"}), 400
 
@@ -3103,7 +3109,7 @@ owner: {user_id}
     def api_knowledge_delete():
         """지식 파일 삭제"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         filename = data.get("filename", "").strip()
         if not user_id or not filename:
             return jsonify({"error": "사용자ID와 파일명 필요"}), 400
@@ -3144,12 +3150,19 @@ owner: {user_id}
         base = re.sub(r"[^a-zA-Z0-9_\-]", "_", (name or "").strip())
         return base[:40].strip("_")
 
+    def _safe_uid(uid):
+        """경로에 쓸 user_id 검증 — 경로구분자/.. 있으면 빈 문자열(거부). 멀티유저 폴더 탈출 차단."""
+        uid = (uid or "").strip()
+        if not uid or "/" in uid or "\\" in uid or ".." in uid or uid.startswith("."):
+            return ""
+        return uid
+
     @app.route("/api/knowledge/register_script", methods=["POST"])
     def api_knowledge_register_script():
         """실행형 지식 등록 — 여러 파일 한 번에. multipart:
         files[]=(.py + .json/config 등), user_id, name, description, trigger, entry(선택)"""
         import shutil
-        user_id = request.form.get("user_id", "").strip()
+        user_id = _safe_uid(request.form.get("user_id", ""))
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip()
         trigger = request.form.get("trigger", "").strip()
@@ -3225,7 +3238,7 @@ owner: {user_id}
     def api_knowledge_scripts():
         """등록된 실행형 지식(스크립트) 목록"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         if not user_id:
             return jsonify({"error": "사용자 ID 필요"}), 400
         root = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
@@ -3252,7 +3265,7 @@ owner: {user_id}
         """실행형 지식(스크립트) 삭제 — 폴더 통째로"""
         import shutil
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         name = _safe_script_name(data.get("name", ""))
         if not user_id or not name:
             return jsonify({"error": "사용자ID와 이름 필요"}), 400
@@ -3266,7 +3279,7 @@ owner: {user_id}
     def api_knowledge_script_update():
         """실행형 지식(스크립트) 메타 수정 — 파일은 그대로, description/trigger/entry/argv 만 갱신."""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         name = _safe_script_name(data.get("name", ""))
         if not user_id or not name:
             return jsonify({"error": "사용자ID와 이름 필요"}), 400
@@ -3306,7 +3319,7 @@ owner: {user_id}
     @app.route("/api/knowledge/script/file", methods=["GET"])
     def api_knowledge_script_file_get():
         """스크립트 폴더 안 개별 파일(.py 등) 내용 읽기 — 코드 편집용."""
-        user_id = request.args.get("user_id", "").strip()
+        user_id = _safe_uid(request.args.get("user_id", ""))
         name = _safe_script_name(request.args.get("name", ""))
         fn = os.path.basename((request.args.get("filename") or "").strip())
         if not user_id or not name or not fn:
@@ -3325,12 +3338,14 @@ owner: {user_id}
     def api_knowledge_script_file_save():
         """스크립트 폴더 안 개별 파일 내용 덮어쓰기 — 재등록 없이 코드 수정."""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         name = _safe_script_name(data.get("name", ""))
         fn = os.path.basename((data.get("filename") or "").strip())
         content = data.get("content", "")
         if not user_id or not name or not fn:
             return jsonify({"error": "user_id/name/filename 필요"}), 400
+        if fn == "_meta.json":
+            return jsonify({"error": "_meta.json 은 직접 수정 불가 (메타는 ✏️수정 폼에서)"}), 400
         if not fn.lower().endswith(_SCRIPT_ALLOW_EXT):
             return jsonify({"error": "허용되지 않는 확장자"}), 400
         d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
@@ -3361,7 +3376,7 @@ owner: {user_id}
     def api_knowledge_save():
         """문서형 지식 내용 덮어쓰기(수정)."""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         filename = data.get("filename", "").strip()
         content = data.get("content", "")
         if not user_id or not filename:
@@ -3382,7 +3397,7 @@ owner: {user_id}
         """등록 스크립트 폴더 전체를 zip 으로 다운로드."""
         import io as _io
         import zipfile as _zip
-        user_id = request.args.get("user_id", "").strip()
+        user_id = _safe_uid(request.args.get("user_id", ""))
         name = _safe_script_name(request.args.get("name", ""))
         if not user_id or not name:
             return jsonify({"error": "user_id/name 필요"}), 400

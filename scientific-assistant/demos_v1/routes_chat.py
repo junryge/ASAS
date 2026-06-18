@@ -551,6 +551,9 @@ def _find_agent_script(user_id, query, selected_names):
         return None
     sel = set(selected_names)
     q = query or ""
+    # 후보를 모아 '가장 구체적인(긴) 트리거가 매칭된' 스크립트를 고른다.
+    # (기존: 알파벳 첫 번째가 이기고, 트리거 없으면 무조건 매칭 → 엉뚱한 스크립트 오발동)
+    best = None          # (matched_trigger_len, meta, dir)
     for nm in sorted(os.listdir(sroot)):
         if nm not in sel:
             continue
@@ -561,10 +564,14 @@ def _find_agent_script(user_id, query, selected_names):
             meta = json.load(open(mp, encoding="utf-8"))
         except Exception:
             continue
-        trig = meta.get("trigger") or []
-        if (not trig) or any(t and t in q for t in trig):
-            return meta, os.path.join(sroot, nm)
-    return None
+        trig = [t for t in (meta.get("trigger") or []) if t]
+        matched = [t for t in trig if t in q]
+        if not matched:
+            continue                              # 트리거 없거나 안 맞으면 실행 안 함(안전)
+        score = max(len(t) for t in matched)      # 가장 긴(구체적) 트리거 길이
+        if best is None or score > best[0]:
+            best = (score, meta, os.path.join(sroot, nm))
+    return (best[1], best[2]) if best else None
 
 
 def _summarize_result_csv(path, max_full_rows=30, top_k=8):

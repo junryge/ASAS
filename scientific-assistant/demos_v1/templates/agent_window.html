@@ -297,7 +297,9 @@ function getUser(){
   try{ var u=JSON.parse(sessionStorage.getItem('demos_user')||'null'); return (u&&u.id)?u:null; }catch(e){ return null; }
 }
 var USER = getUser();
-function uid(){ return USER ? USER.id : ''; }
+// ★ 매 호출마다 sessionStorage 를 다시 읽는다. (USER 를 1회 캡처하면 팝업 새로고침/
+//   메인창 로그인 반영 전에 빈 ID 가 되어 세션키가 어긋나고 '기록이 사라지는' 버그)
+function uid(){ try{ var u=getUser(); return (u&&u.id)?u.id:''; }catch(e){ return ''; } }
 
 // ── 테마 (다크/라이트/블루/그린) ──
 function applyTheme(name){
@@ -443,7 +445,7 @@ function _migrateOldChat(aid){
   }catch(e){}
 }
 function saveChat(){
-  if(!activeAgent) return;
+  if(!activeAgent || !uid()) return;   // ★ uid 비면 저장 금지 (빈 네임스페이스에 흩어져 '사라짐' 방지)
   var aid=activeAgent.agent_id;
   if(!activeSessionId) activeSessionId=_newSid();
   // 빈 대화는 인덱스에 안 남김(목록 지저분 방지)
@@ -486,7 +488,8 @@ function _trySaveSession(aid, sid, history){
 // 에이전트 가동 시: 구버전 흡수 후 가장 최근 세션 복원(없으면 새 세션)
 function _restoreLatestSession(aid){
   _migrateOldChat(aid);
-  var idx=_loadSessIdx(aid).filter(function(s){return (s.count||0)>0;});
+  // 본문 저장 실패(saved===false)한 세션은 '최근'으로 복원 안 함 — 빈 채로 떠서 손실처럼 보이는 문제 방지
+  var idx=_loadSessIdx(aid).filter(function(s){return (s.count||0)>0 && s.saved!==false;});
   idx.sort(function(x,y){return (y.updated||0)-(x.updated||0);});
   if(idx.length){ activeSessionId=idx[0].sid; return _loadSessMsgs(aid, activeSessionId); }
   activeSessionId=_newSid(); return [];
