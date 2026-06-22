@@ -164,9 +164,6 @@ canvas.chart { width:100%; flex:1; }
 <body>
 
 <div id="topbar">
-  <select id="date-select" onchange="loadDate(this.value)">
-    <option value="">-- 날짜 선택 --</option>
-  </select>
   <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
   <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
   <span style="margin-left:8px;border-left:1px solid #444;padding-left:8px;display:inline-flex;align-items:center;gap:6px;">
@@ -478,63 +475,7 @@ async function logpressoLoad() {
   }
 }
 
-async function loadDate(dateKey) {
-  if (!dateKey) return;
-  document.getElementById('loading-msg').style.display = 'inline';
-  // 날짜 변경 시 프론트 상태 먼저 리셋 — 이전 날짜 잔존 데이터 노출 방지
-  obsHistory = []; jamEvents = []; _lastObsSampleTime = ''; _lastJamCount = 0;
-  fullObsHistory = [];
-  bottleneckCache = null;
-  vehicleDisplay = {};
-  mapData.vehicles = [];
-  // 열린 모달 닫기 (이전 날짜 데이터 표시 중일 수 있음)
-  ['spike-modal','bottleneck-modal','risk-modal'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
-  try {
-    // HTTP POST 로 단일 경로로만 로드. WS 로 중복 load 보내지 않음 (이전엔 중복 로드로 경쟁 상태 발생).
-    const resp = await fetch('/api/replay/load', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:dateKey}) });
-    const data = await resp.json();
-    document.getElementById('time-slider').max = data.total_frames || 100;
-    updateDataSources(data.stats);
-
-    if (!railGraph) await loadRailGraph();
-    const starResp = await fetch('/api/star-history');
-    starHistory = await starResp.json();
-    drawQueueChart();
-    const hidResp = await fetch('/api/hid-speeds');
-    hidSpeeds = await hidResp.json();
-    renderZoneList();
-    // OBS/JAM 전체 시계열 (재생과 무관, 데이터 로드 직후 한 번만)
-    const obsResp = await fetch('/api/obs-jam-history');
-    fullObsHistory = await obsResp.json();
-
-    // 데드락 핫스팟 이력 전체 스캔 (재생 안 해도 즉시 표시)
-    try {
-      const hsResp = await fetch('/api/hotspot-history');
-      const hsEvents = await hsResp.json();
-      hotspotHistory = hsEvents || [];
-      activeHotspotEvents = {};
-      console.log(`데드락 핫스팟 이력: ${hotspotHistory.length}건 로드`);
-      // 배지에 요약 띄우기
-      const badge = document.getElementById('p-dl-badge');
-      const critCount = hotspotHistory.filter(e => e.maxSev === 'CRITICAL').length;
-      const dangerCount = hotspotHistory.filter(e => e.maxSev === 'DANGER').length;
-      const warnCount = hotspotHistory.filter(e => e.maxSev === 'WARN').length;
-      if (badge && (critCount + dangerCount + warnCount) > 0) {
-        const tags = [];
-        if (critCount) tags.push(`심각 ${critCount}`);
-        if (dangerCount) tags.push(`위험 ${dangerCount}`);
-        if (warnCount) tags.push(`주의 ${warnCount}`);
-        const msg = document.getElementById('p-dl-msg');
-        if (msg) msg.textContent = `이력: ${tags.join(' / ')}`;
-      }
-      updateHotspotPanel([]);
-    } catch(e) { console.error('핫스팟 이력 로드 실패:', e); }
-  } catch(e) { console.error('Load failed:', e); }
-  document.getElementById('loading-msg').style.display = 'none';
-}
+// loadDate() 제거됨 — 로그프레소 조회로만 데이터를 로드 (logpressoLoad)
 
 // ============================================================
 // UI 업데이트
@@ -2261,21 +2202,7 @@ function jumpToHotspot(x, y) {
 let fabCatalog = [];   // [{fab, prefix, has_data, dates}]
 let currentFab = '', currentPrefix = '';
 
-async function refreshDateOptions() {
-  const sel = document.getElementById('date-select');
-  sel.innerHTML = '<option value="">-- 날짜 선택 --</option>';
-  try {
-    const resp = await fetch('/api/dates');
-    const dates = await resp.json();
-    for (const d of dates) {
-      if (!d.exists) continue;
-      const opt = document.createElement('option');
-      opt.value = d.date;
-      opt.textContent = d.description;
-      sel.appendChild(opt);
-    }
-  } catch(e) { console.error('날짜 목록 로드 실패:', e); }
-}
+// refreshDateOptions() 제거됨 — 데이터 로드는 로그프레소 조회 전담
 
 function rebuildLayoutSelect() {
   const sel = document.getElementById('layout-select');
@@ -2353,8 +2280,6 @@ async function applyFab(fab, prefix) {
 
     // 맵 재로드
     await loadRailGraph();
-    // 날짜 목록 재로드
-    await refreshDateOptions();
     drawQueueChart();
     renderZoneList();
     console.log(`FAB 전환: ${currentFab}/${currentPrefix} (노드 ${data.nodes}, 엣지 ${data.edges}, Zone ${data.zones})`);
@@ -2377,7 +2302,6 @@ async function applyFab(fab, prefix) {
     rebuildFabSelect();
     rebuildLayoutSelect();
     syncLogpressoTable();   // 초기 FAB에 맞는 테이블명 주입
-    await refreshDateOptions();
   } catch(e) { console.error('FAB 목록 로드 실패:', e); }
 })();
 </script>
