@@ -415,6 +415,6 @@ STATE_NAMES = {
 }
 
 # 서버 설정
-SERVER_HOST = "127.0.0.1"   # 로컬에서만 접속 허용 (외부 차단)
+SERVER_HOST = "0.0.0.0"     # 모든 네트워크 인터페이스에서 접속 허용 (외부 접속 가능)
 SERVER_PORT = 10005
 WS_INTERVAL = 0.5  # WebSocket 전송 간격 (초)
