@@ -169,12 +169,15 @@ canvas.chart { width:100%; flex:1; }
   </select>
   <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
   <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
-  <span style="margin-left:8px;border-left:1px solid #444;padding-left:8px;">
-    <input type="datetime-local" id="lp-from" step="1" title="시작 시각" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:2px 4px;">
-    ~
-    <input type="datetime-local" id="lp-to"   step="1" title="끝 시각"   style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:2px 4px;">
-    <input type="text" id="lp-table" placeholder="(FAB 선택 시 자동)" title="로그프레소 테이블명 — FAB 변경 시 자동 갱신, 직접 수정 가능" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:2px 6px;width:180px;">
-    <button onclick="logpressoLoad()" id="lp-btn" title="로그프레소 조회 후 리플레이 로드">📡 조회 로드</button>
+  <span style="margin-left:8px;border-left:1px solid #444;padding-left:8px;display:inline-flex;align-items:center;gap:6px;">
+    <label style="color:#9ad;font-size:12px;">시작</label>
+    <input type="text" id="lp-from" placeholder="yyyyMMddHHmmss" title="시작 시각 (14자리, 예: 20260621000000)" maxlength="14" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:4px 8px;width:180px;font-family:monospace;font-size:14px;">
+    <span style="color:#666;">~</span>
+    <label style="color:#9ad;font-size:12px;">끝</label>
+    <input type="text" id="lp-to"   placeholder="yyyyMMddHHmmss" title="끝 시각 (14자리, 예: 20260621010000)"   maxlength="14" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:4px 8px;width:180px;font-family:monospace;font-size:14px;">
+    <label style="color:#9ad;font-size:12px;margin-left:6px;">테이블</label>
+    <input type="text" id="lp-table" placeholder="(FAB 선택 시 자동)" title="로그프레소 테이블명 — FAB 변경 시 자동 갱신, 직접 수정 가능" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:4px 8px;width:240px;font-family:monospace;font-size:14px;">
+    <button onclick="logpressoLoad()" id="lp-btn" title="로그프레소 조회 후 리플레이 로드" style="padding:4px 12px;font-size:13px;">📡 조회 로드</button>
     <span id="lp-status" style="color:#9ad;font-size:12px;"></span>
   </span>
   <button onclick="sendCmd('play')">&#9654; 재생</button>
@@ -375,9 +378,12 @@ function jumpFrame(val) { sendCmd('jump_frame', { frame: parseInt(val) }); }
 // 로그프레소 조회 → CSV → 리플레이 로드 (datetime-local + 테이블명)
 // ============================================================
 function _toLP(ts) {
-  // "2026-06-21T00:00:00"  →  "20260621000000"
+  // 사용자가 직접 14자리로 적거나, 'yyyy-MM-dd HH:mm:ss' / 'yyyy-MM-ddTHH:mm:ss' 등 어떤
+  // 포맷으로 적어도 숫자만 추출 후 14자리로 정규화.
   if (!ts) return '';
-  return ts.replace(/[-T:]/g, '').padEnd(14, '0').slice(0, 14);
+  const digits = String(ts).replace(/[^0-9]/g, '');
+  if (digits.length < 8) return '';     // 최소 yyyyMMdd 는 있어야
+  return digits.padEnd(14, '0').slice(0, 14);
 }
 // FAB/Layout 에 맞는 기본 테이블명 생성 — config.py 규칙과 동일.
 // 예) M14A/A → oht_data_m14a,  M16A/BR → oht_data_m16br,  M16A/E → oht_data_m16e
