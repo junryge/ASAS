@@ -260,6 +260,21 @@ def derive_blocking_groups(edge_vehicles):
     return groups
 
 
+def resolve_oht_path(p):
+    """경로가 폴더면 그 안의 CSV 1개를 자동 선택. 파일이면 그대로."""
+    path = Path(p)
+    if path.is_file():
+        return str(path)
+    if path.is_dir():
+        csvs = sorted(list(path.glob('*.csv')) + list(path.glob('*.CSV')))
+        if not csvs:
+            raise FileNotFoundError(f"{path} 안에 CSV가 없습니다")
+        if len(csvs) > 1:
+            print(f"  ⚠ {path} 안에 CSV {len(csvs)}개 — 첫 번째 사용: {csvs[0].name}")
+        return str(csvs[0])
+    raise FileNotFoundError(f"경로 없음: {p}")
+
+
 # ============================================================
 # main
 # ============================================================
@@ -267,7 +282,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="월드모델 파생 분석 — 맵 + OHT CSV 1개만 사용")
     ap.add_argument('--layout', required=True, help='layout_cache.json')
-    ap.add_argument('--oht',    required=True, help='OHT CSV (parsed 포맷)')
+    ap.add_argument('--oht',    required=True,
+                    help='OHT CSV 파일 또는 CSV가 들어있는 폴더 (예: M16A_BR_DATA)')
     ap.add_argument('--topn',   type=int, default=20, help='혼잡 핫스팟 상위 N')
     ap.add_argument('--report', default=None, help='JSON 결과 저장 경로')
     args = ap.parse_args()
@@ -275,6 +291,10 @@ def main():
     print("=" * 70)
     print(" 월드모델 파생 분석기 (layout + OHT CSV 1개)")
     print("=" * 70)
+
+    # 0. 입력 경로 정리 (폴더면 안의 CSV 자동 선택)
+    oht_path = resolve_oht_path(args.oht)
+    print(f"\n[0] 입력 CSV: {oht_path}")
 
     # 1. 맵
     coords, edges, adj_static = load_layout(args.layout)
