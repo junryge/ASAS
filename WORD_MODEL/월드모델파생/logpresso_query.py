@@ -44,7 +44,8 @@ def _fetch(from_dt: str, to_dt: str, table: str):
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
     size = len(resp.content)
-    df = pd.read_csv(StringIO(resp.text)) if resp.text.strip() else pd.DataFrame()
+    df = (pd.read_csv(StringIO(resp.text), low_memory=False, dtype=str)
+          if resp.text.strip() else pd.DataFrame())
     return df, size
 
 
