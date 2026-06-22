@@ -19,8 +19,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 
-# 현재 디렉토리를 path에 추가
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 현재 디렉토리를 path에 추가 (개발 모드)
+if not getattr(sys, 'frozen', False):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from app_paths import bundled_dir, runtime_dir
 
 from config import (
     SERVER_HOST, SERVER_PORT, DATA_DATES, DATA_BY_FAB, FAB_CATALOG,
@@ -44,8 +47,7 @@ app = FastAPI(title="OHT 월드모델 시뮬레이션", version="1.0")
 # ============================================================
 # 로그프레소 캐시 폴더 — 서버 종료 시 자동 삭제
 # ============================================================
-LOGPRESSO_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "_logpresso_cache")
+LOGPRESSO_CACHE_DIR = str(runtime_dir() / "_logpresso_cache")
 
 
 def _cleanup_logpresso_cache():
@@ -109,7 +111,7 @@ ws_clients: list = []
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     """대시보드 HTML"""
-    html_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    html_path = str(bundled_dir() / "dashboard.html")
     with open(html_path, 'r', encoding='utf-8') as f:
         return f.read()
 

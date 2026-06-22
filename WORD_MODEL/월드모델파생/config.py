@@ -9,9 +9,13 @@ import re
 import pathlib
 
 # ============================================================
-# 경로 설정
+# 경로 설정 (개발/PyInstaller 빌드 양쪽 지원)
 # ============================================================
-_SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
+try:
+    from app_paths import runtime_dir
+    _SCRIPT_DIR = runtime_dir()
+except ImportError:
+    _SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 _PROJECT_DIR = _SCRIPT_DIR.parent  # 상위 폴더 (구 구조 호환)
 
 
