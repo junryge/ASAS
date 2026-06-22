@@ -345,7 +345,23 @@ canvas.chart { width:100%; flex:1; }
         </div>
       </div>
     </div>
-    <!-- 하단 패널(큐&OBS 차트 + 데이터 상관관계) 제거 — 사용하지 않음 -->
+    <div id="bottom-panels">
+      <div class="cpanel">
+        <h4>큐 & OBS 추이 (스타)</h4>
+        <canvas id="chart-queue" class="chart"></canvas>
+      </div>
+      <div class="cpanel">
+        <h4>데이터 상관관계</h4>
+        <div id="corr-panel" style="font-size:11px;overflow-y:auto;flex:1;line-height:1.5;">
+          <div class="corr-item"><span class="sl">큐-TAT: </span><span class="sv" style="color:#60a5fa;">r=0.12 (약한 양의 상관)</span></div>
+          <div class="corr-item"><span class="sl">큐-OBS: </span><span class="sv" style="color:#6b7280;">r=0.03 (무관)</span></div>
+          <div class="corr-item"><span class="sl">큐-HID속도: </span><span class="sv" style="color:#6b7280;">r=-0.01 (무관)</span></div>
+          <div class="corr-item" style="margin-top:4px;color:#9ca3af;">TAT 24시간 균일 (~2.88분)</div>
+          <div class="corr-item" style="color:#9ca3af;">물동량 ~20,000건/시 (균일)</div>
+          <div class="corr-item" style="color:#9ca3af;">OBS 물리 구조, 큐와 무관</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1352,7 +1368,6 @@ document.addEventListener('keydown', (e) => {
 // ============================================================
 function drawQueueChart() {
   const canvas = document.getElementById('chart-queue');
-  if (!canvas) return;   // 하단 패널 제거됨 — 안전 가드
   const rect = canvas.parentElement.getBoundingClientRect();
   canvas.width = rect.width; canvas.height = rect.height - 18;
   const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
