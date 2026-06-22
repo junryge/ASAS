@@ -189,6 +189,8 @@ canvas.chart { width:100%; flex:1; }
   <button class="speed-btn" onclick="setSpeed(10)">x10</button>
   <button class="speed-btn" onclick="setSpeed(0)">MAX</button>
   <span>|</span>
+  <button onclick="openMapSettings()" title="맵 표시 설정">⚙ 설정</button>
+  <span>|</span>
   <span id="time-display">--:--:--</span>
   <span id="frame-display"></span>
   <div id="slider-container">
@@ -378,6 +380,71 @@ function setSpeed(s) {
   document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('selected', b.textContent === (s===0?'MAX':`x${s}`)));
 }
 function jumpFrame(val) { sendCmd('jump_frame', { frame: parseInt(val) }); }
+
+// ============================================================
+// 맵 표시 설정 (색상/크기) — localStorage 영속 저장
+// ============================================================
+const MAP_SETTINGS_KEY = 'oht_world_map_settings_v1';
+const DEFAULT_MAP_SETTINGS = {
+  bgColor:        '#0a0e17',
+  edgeColor:      'rgba(255,255,255,0.75)',
+  edgeWidth:      1.0,            // mapZoom 에 곱해짐
+  nodeColor:      '#2a4a6a',
+  nodeSize:       1,              // 정사각 한 변(px)
+  vehicleRadius:  1.5,            // mapZoom 에 곱해짐
+  colorEmpty:     '#22c55e',      // 공차
+  colorLoaded:    '#3b82f6',      // 적재
+  colorObs:       '#f59e0b',      // OBS
+  colorStop:      '#6b7280',      // 정지
+  colorJam:       '#ef4444',      // JAM
+};
+let mapSettings = { ...DEFAULT_MAP_SETTINGS };
+function loadMapSettings() {
+  try {
+    const raw = localStorage.getItem(MAP_SETTINGS_KEY);
+    if (raw) mapSettings = { ...DEFAULT_MAP_SETTINGS, ...JSON.parse(raw) };
+  } catch(e) { console.warn('mapSettings 로드 실패:', e); }
+}
+function saveMapSettings() {
+  try { localStorage.setItem(MAP_SETTINGS_KEY, JSON.stringify(mapSettings)); }
+  catch(e) { console.warn('mapSettings 저장 실패:', e); }
+}
+function openMapSettings() {
+  // 현재 값으로 입력 채우기
+  for (const k of Object.keys(DEFAULT_MAP_SETTINGS)) {
+    const el = document.getElementById('ms-' + k);
+    if (el) el.value = mapSettings[k];
+  }
+  document.getElementById('map-settings-modal').style.display = 'flex';
+}
+function closeMapSettings() {
+  document.getElementById('map-settings-modal').style.display = 'none';
+}
+function applyMapSettings() {
+  for (const k of Object.keys(DEFAULT_MAP_SETTINGS)) {
+    const el = document.getElementById('ms-' + k);
+    if (!el) continue;
+    if (typeof DEFAULT_MAP_SETTINGS[k] === 'number') {
+      const v = parseFloat(el.value);
+      if (!isNaN(v)) mapSettings[k] = v;
+    } else {
+      mapSettings[k] = el.value || DEFAULT_MAP_SETTINGS[k];
+    }
+  }
+  saveMapSettings();
+  railCacheCanvas = null;   // 캐시 무효화하여 새 색상/굵기로 재렌더
+  drawMap();
+  closeMapSettings();
+}
+function resetMapSettings() {
+  if (!confirm('맵 표시 설정을 기본값으로 되돌릴까요?')) return;
+  mapSettings = { ...DEFAULT_MAP_SETTINGS };
+  saveMapSettings();
+  railCacheCanvas = null;
+  drawMap();
+  closeMapSettings();
+}
+loadMapSettings();
 
 // ============================================================
 // 시간 슬라이더 마우스 드래그 제어
@@ -856,14 +923,14 @@ function drawMap() {
     railCachePanX = mapPanX;
     railCachePanY = mapPanY;
     const rc = railCacheCanvas.getContext('2d');
-    rc.fillStyle = '#0a0e17'; rc.fillRect(0, 0, railCacheCanvas.width, railCacheCanvas.height);
+    rc.fillStyle = mapSettings.bgColor; rc.fillRect(0, 0, railCacheCanvas.width, railCacheCanvas.height);
     // 이후 그리기 좌표는 viewport 기준 → (+CACHE_PAD) 만큼 이동.
     rc.translate(CACHE_PAD, CACHE_PAD);
 
     if (railGraph) {
       const nodes = railGraph.nodes, edges = railGraph.edges;
-      rc.strokeStyle = 'rgba(255,255,255,0.75)';
-      rc.lineWidth = Math.max(0.8, 1.0*mapZoom);
+      rc.strokeStyle = mapSettings.edgeColor;
+      rc.lineWidth = Math.max(0.8, mapSettings.edgeWidth*mapZoom);
       rc.lineCap = 'round';
       rc.beginPath();
       for (let i=0; i<edges.length; i++) {
@@ -877,11 +944,13 @@ function drawMap() {
       rc.stroke();
 
       if (mapZoom >= 3) {
-        rc.fillStyle = '#2a4a6a';
+        rc.fillStyle = mapSettings.nodeColor;
+        const ns = Math.max(0.5, mapSettings.nodeSize);
+        const half = ns / 2;
         for (const [nid, c] of Object.entries(nodes)) {
           const [sx,sy]=toS(c[0],c[1]);
           if (sx<-CACHE_PAD||sx>w+CACHE_PAD||sy<-CACHE_PAD||sy>h+CACHE_PAD) continue;
-          rc.fillRect(sx-0.5, sy-0.5, 1, 1);
+          rc.fillRect(sx-half, sy-half, ns, ns);
         }
       }
 
@@ -1000,9 +1069,8 @@ function drawMap() {
     mapCtx.globalAlpha = 1.0;
   }
 
-  // 2. 차량 (보간된 위치) — 카테고리별 색상 분리
-  // 공차운행: 초록 #22c55e | 적재: 주황 #f59e0b | OBS: 노랑 #eab308 | 정지: 회색 #6b7280 | JAM: 빨강 #ef4444
-  const r = Math.max(1.5, Math.min(4, 1.5*mapZoom));
+  // 2. 차량 (보간된 위치) — 카테고리별 색상 (설정 가능: ⚙ 설정)
+  const r = Math.max(1.5, Math.min(8, mapSettings.vehicleRadius*mapZoom));
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
     const [sx,sy] = toS(v.dx, v.dy);
@@ -1010,11 +1078,11 @@ function drawMap() {
     mapCtx.beginPath();
     mapCtx.arc(sx, sy, r, 0, 6.283);
     let color;
-    if (v.state === 6) color = '#f59e0b';                      // OBS (주황)
-    else if (v.state === 7) color = '#ef4444';                 // JAM (빨강)
-    else if (v.state === 2 || v.state === 8 || v.state === 9) color = '#6b7280';  // 정지 (회색)
-    else if (v.isFull) color = '#3b82f6';                      // 적재 (파랑)
-    else color = '#22c55e';                                    // 공차운행 (초록)
+    if (v.state === 6) color = mapSettings.colorObs;                                                   // OBS
+    else if (v.state === 7) color = mapSettings.colorJam;                                              // JAM
+    else if (v.state === 2 || v.state === 8 || v.state === 9) color = mapSettings.colorStop;           // 정지
+    else if (v.isFull) color = mapSettings.colorLoaded;                                                // 적재
+    else color = mapSettings.colorEmpty;                                                               // 공차
     mapCtx.fillStyle = color;
     mapCtx.fill();
   }
@@ -2342,6 +2410,64 @@ async function applyFab(fab, prefix) {
   } catch(e) { console.error('FAB 목록 로드 실패:', e); }
 })();
 </script>
+<!-- 맵 표시 설정 모달 -->
+<div id="map-settings-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='map-settings-modal')closeMapSettings()">
+  <div style="background:#0a0e17;border:1px solid #3b82f6;border-radius:8px;padding:18px;width:480px;max-width:92%;max-height:90vh;overflow-y:auto;color:#eee;font-size:13px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;color:#60a5fa;">⚙ 맵 표시 설정</h3>
+      <button onclick="closeMapSettings()" style="background:none;border:1px solid #444;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;">✕</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;">
+      <div style="grid-column:1/-1;color:#9ad;margin-top:4px;border-bottom:1px solid #333;padding-bottom:4px;">맵 배경 / 레일</div>
+
+      <label>맵 배경색</label>
+      <input type="color" id="ms-bgColor" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+
+      <label>레일 색상</label>
+      <input type="text" id="ms-edgeColor" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;font-family:monospace;" placeholder="rgba(255,255,255,0.75)">
+
+      <label>레일 굵기 (배수)</label>
+      <input type="number" id="ms-edgeWidth" step="0.1" min="0.1" max="10" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
+
+      <div style="grid-column:1/-1;color:#9ad;margin-top:8px;border-bottom:1px solid #333;padding-bottom:4px;">노드 (정적 점)</div>
+
+      <label>노드 색상</label>
+      <input type="color" id="ms-nodeColor" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+
+      <label>노드 크기 (px)</label>
+      <input type="number" id="ms-nodeSize" step="0.5" min="0.5" max="20" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
+
+      <div style="grid-column:1/-1;color:#9ad;margin-top:8px;border-bottom:1px solid #333;padding-bottom:4px;">차량 (움직이는 점)</div>
+
+      <label>차량 반경 (배수)</label>
+      <input type="number" id="ms-vehicleRadius" step="0.1" min="0.5" max="10" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
+
+      <label>공차운행 색상</label>
+      <input type="color" id="ms-colorEmpty" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+
+      <label>적재 색상</label>
+      <input type="color" id="ms-colorLoaded" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+
+      <label>OBS 색상</label>
+      <input type="color" id="ms-colorObs" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+
+      <label>정지 색상</label>
+      <input type="color" id="ms-colorStop" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+
+      <label>JAM 색상</label>
+      <input type="color" id="ms-colorJam" style="width:60px;height:28px;background:#222;border:1px solid #444;">
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;border-top:1px solid #333;padding-top:12px;">
+      <button onclick="resetMapSettings()" style="background:#333;color:#ddd;border:1px solid #555;padding:6px 14px;border-radius:4px;cursor:pointer;">기본값 복원</button>
+      <button onclick="closeMapSettings()" style="background:#333;color:#ddd;border:1px solid #555;padding:6px 14px;border-radius:4px;cursor:pointer;">취소</button>
+      <button onclick="applyMapSettings()" style="background:#3b82f6;color:#fff;border:1px solid #3b82f6;padding:6px 14px;border-radius:4px;cursor:pointer;font-weight:bold;">저장 + 적용</button>
+    </div>
+    <div style="margin-top:8px;color:#666;font-size:11px;">설정은 브라우저(localStorage)에 저장됩니다.</div>
+  </div>
+</div>
+
 <!-- 위험 레벨 이력 모달 (NORMAL 제외 모든 이벤트) -->
 <div id="risk-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='risk-modal')closeRiskModal()">
   <div style="background:#0a0e17;border:1px solid #06b6d4;border-radius:8px;padding:16px;width:90%;max-width:700px;max-height:85vh;overflow-y:auto;">
