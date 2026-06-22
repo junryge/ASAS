@@ -97,9 +97,20 @@ class ReplayEngine:
         }
 
     def play(self):
-        """재생 시작"""
+        """재생 시작.
+        - STOPPED (정지 또는 끝까지 재생 후 자동 정지) → frame 0 부터
+        - PAUSED → 현재 위치에서 이어재생
+        """
         if not self.data_loader or not self.data_loader.oht_timeline:
             return
+        total = len(self.data_loader.oht_timeline)
+        if (self.state == ReplayState.STOPPED
+                or self.current_frame_idx >= total
+                or self.current_frame_idx < 0):
+            self.current_frame_idx = 0
+            if self.data_loader.time_start:
+                self.current_time = self.data_loader.time_start
+            self._update_current_frame()
         self.state = ReplayState.PLAYING
 
     def pause(self):

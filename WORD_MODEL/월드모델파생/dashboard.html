@@ -13,8 +13,10 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 .speed-btn.selected { background:#f59e0b !important; color:#000 !important; }
 #time-display { font-size:18px; font-weight:bold; color:#60a5fa; min-width:80px; text-align:center; }
 #frame-display { font-size:11px; color:#6b7280; }
-#slider-container { flex:1; display:flex; align-items:center; }
-#time-slider { flex:1; accent-color:#3b82f6; }
+#slider-container { flex:1; display:flex; align-items:center; min-width:300px; }
+#time-slider { flex:1; accent-color:#3b82f6; height:24px; cursor:pointer; }
+#time-slider::-webkit-slider-thumb { background:#3b82f6; }
+#time-slider::-moz-range-thumb     { background:#3b82f6; }
 .badge { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:bold; }
 .badge-stopped { background:#dc2626; }
 .badge-playing { background:#16a34a; }
@@ -190,7 +192,13 @@ canvas.chart { width:100%; flex:1; }
   <span id="time-display">--:--:--</span>
   <span id="frame-display"></span>
   <div id="slider-container">
-    <input type="range" id="time-slider" min="0" max="100" value="0" oninput="jumpFrame(this.value)">
+    <input type="range" id="time-slider" min="0" max="100" value="0"
+           oninput="onSliderInput(this.value)"
+           onchange="onSliderChange(this.value)"
+           onmousedown="userSliderDragging=true"
+           onmouseup="userSliderDragging=false"
+           ontouchstart="userSliderDragging=true"
+           ontouchend="userSliderDragging=false">
   </div>
   <span id="status-badge" class="badge badge-stopped">정지</span>
   <span id="loading-msg">로딩중...</span>
@@ -372,6 +380,32 @@ function setSpeed(s) {
 function jumpFrame(val) { sendCmd('jump_frame', { frame: parseInt(val) }); }
 
 // ============================================================
+// 시간 슬라이더 마우스 드래그 제어
+//   - 드래그 중에는 서버 WS 업데이트가 슬라이더 값을 덮어쓰지 않도록
+//   - oninput: 드래그 중 실시간 표시 갱신만 (서버 부담 줄이려 throttle)
+//   - onchange: 마우스 놓는 순간 한 번만 서버에 jump 명령
+// ============================================================
+let userSliderDragging = false;
+let _sliderInputDebounce = null;
+function onSliderInput(val) {
+  // 드래그 중 표시 시각만 즉각 갱신 (서버 호출은 throttle)
+  const frame = parseInt(val) || 0;
+  const total = parseInt(document.getElementById('time-slider').max) || 0;
+  const fd = document.getElementById('frame-display');
+  if (fd) fd.textContent = `${frame}/${total}`;
+  // 50ms 단위로 jump 명령 보내기 (스크럽 미리보기)
+  if (_sliderInputDebounce) clearTimeout(_sliderInputDebounce);
+  _sliderInputDebounce = setTimeout(() => jumpFrame(frame), 50);
+}
+function onSliderChange(val) {
+  // 마우스 떼는 순간 — 최종 위치 확정
+  if (_sliderInputDebounce) { clearTimeout(_sliderInputDebounce); _sliderInputDebounce = null; }
+  jumpFrame(parseInt(val) || 0);
+  // 약간 후 드래그 플래그 해제 (WS 응답이 도착하기 전 살짝 보호)
+  setTimeout(() => { userSliderDragging = false; }, 250);
+}
+
+// ============================================================
 // 로그프레소 조회 → CSV → 리플레이 로드 (datetime-local + 테이블명)
 // ============================================================
 function _toLP(ts) {
@@ -487,7 +521,8 @@ function updateUI(d) {
   document.getElementById('frame-display').textContent = `${d.frame||0}/${d.totalFrames||0}`;
   const slider = document.getElementById('time-slider');
   if (d.totalFrames) slider.max = d.totalFrames;
-  slider.value = d.frame || 0;
+  // 사용자가 슬라이더를 드래그 중일 때는 서버에서 오는 프레임으로 값을 덮어쓰지 않음
+  if (!userSliderDragging) slider.value = d.frame || 0;
 
   const badge = document.getElementById('status-badge');
   badge.textContent = statusMap[d.state] || d.state;
