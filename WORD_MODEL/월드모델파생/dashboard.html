@@ -345,7 +345,8 @@ canvas.chart { width:100%; flex:1; }
         </div>
       </div>
     </div>
-    <div id="bottom-panels">
+    <!-- 하단 패널(큐&OBS 차트 + 데이터 상관관계) — 숨김 처리. DOM은 유지하여 관련 JS 무사. -->
+    <div id="bottom-panels" style="display:none;">
       <div class="cpanel">
         <h4>큐 & OBS 추이 (스타)</h4>
         <canvas id="chart-queue" class="chart"></canvas>
