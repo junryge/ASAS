@@ -25,15 +25,48 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (
     SERVER_HOST, SERVER_PORT, DATA_DATES, DATA_BY_FAB, FAB_CATALOG,
     DEFAULT_FAB, DEFAULT_PREFIX, get_fab_entry, get_dates_for_fab,
+    MAP_DIR, DATA_DIR,
 )
 from data_loader import LayoutData, HIDZoneData, get_available_dates, ensure_layout_cache
 from replay_engine import ReplayEngine, ReplayState
+
+# 경로 자동 인식 결과 표시
+print(f"[경로] MAP_DIR  = {MAP_DIR}")
+print(f"[경로] DATA_DIR = {DATA_DIR}")
 
 # ============================================================
 # 앱 초기화
 # ============================================================
 
 app = FastAPI(title="OHT 월드모델 시뮬레이션", version="1.0")
+
+
+# ============================================================
+# 로그프레소 캐시 폴더 — 서버 종료 시 자동 삭제
+# ============================================================
+LOGPRESSO_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "_logpresso_cache")
+
+
+def _cleanup_logpresso_cache():
+    """_logpresso_cache 폴더 전체 삭제. 종료 시 1회 호출."""
+    import shutil
+    if os.path.isdir(LOGPRESSO_CACHE_DIR):
+        try:
+            shutil.rmtree(LOGPRESSO_CACHE_DIR)
+            print(f"[정리] 로그프레소 캐시 삭제 완료: {LOGPRESSO_CACHE_DIR}")
+        except Exception as e:
+            print(f"[정리] 캐시 삭제 실패: {e}")
+
+
+@app.on_event("shutdown")
+async def _on_shutdown():
+    _cleanup_logpresso_cache()
+
+
+# Ctrl+C / kill 신호로 종료될 때도 동작하도록 atexit 등록
+import atexit
+atexit.register(_cleanup_logpresso_cache)
 
 # 현재 선택된 FAB/prefix
 current_fab = DEFAULT_FAB
@@ -224,9 +257,8 @@ async def logpresso_load(request: Request):
             status_code=200)
 
     # CSV 저장 → 폴더 구조를 date_config 형태로 wrap
-    save_root = os.path.join(os.path.dirname(__file__), "_logpresso_cache")
     folder_name = f"{from_dt}_{to_dt}"
-    save_dir = os.path.join(save_root, folder_name)
+    save_dir = os.path.join(LOGPRESSO_CACHE_DIR, folder_name)
     os.makedirs(save_dir, exist_ok=True)
     csv_name = f"{table}_{from_dt}_{to_dt}.csv"
     csv_path = os.path.join(save_dir, csv_name)

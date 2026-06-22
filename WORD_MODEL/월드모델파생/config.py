@@ -12,11 +12,27 @@ import pathlib
 # 경로 설정
 # ============================================================
 _SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
-_PROJECT_DIR = _SCRIPT_DIR.parent  # OHT_WORDMODEL
+_PROJECT_DIR = _SCRIPT_DIR.parent  # 상위 폴더 (구 구조 호환)
 
-# 데이터 폴더
-DATA_DIR = _PROJECT_DIR / "OHS_DATA_MD"
-MAP_DIR = _PROJECT_DIR / "OHT_MAP"
+
+def _resolve_data_root(name: str) -> pathlib.Path:
+    """OHT_MAP / OHS_DATA_MD 같은 데이터 폴더를 자동 탐색.
+       1) 스크립트 폴더 안(파생/OHT_MAP/)  ← 권장
+       2) 상위 폴더(WORLD_MODEL/OHT_MAP/)   ← 구 구조
+       둘 다 없으면 1번 경로를 그대로 반환(없어도 main.py 에서 에러 처리).
+    """
+    here = _SCRIPT_DIR / name
+    up   = _PROJECT_DIR / name
+    if here.exists():
+        return here
+    if up.exists():
+        return up
+    return here   # 기본값(없으면 이 경로 기준으로 동작)
+
+
+# 데이터 폴더 — 파생/ 안에 있으면 그걸, 없으면 상위 폴더 것 사용
+DATA_DIR = _resolve_data_root("OHS_DATA_MD")
+MAP_DIR  = _resolve_data_root("OHT_MAP")
 
 # 레이아웃/설정 파일
 LAYOUT_CACHE_JSON = MAP_DIR / "layout_cache.json"        # M14A 기본 캐시 (하위호환)
