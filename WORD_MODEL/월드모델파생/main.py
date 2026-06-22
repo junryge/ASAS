@@ -174,6 +174,97 @@ async def load_date(request: Request):
     return result
 
 
+@app.post("/api/logpresso/load")
+async def logpresso_load(request: Request):
+    """로그프레소에서 시간 구간을 조회 → CSV 저장 → 리플레이 엔진에 로드.
+
+    body 예시:
+      {
+        "from_dt": "20260621000000",
+        "to_dt"  : "20260621010000",
+        "table"  : "oht_data_m16br",
+        "chunk_minutes": 10            (선택, 기본 10)
+      }
+    """
+    import time as _time
+    body = await request.json()
+    from_dt = (body.get('from_dt') or '').strip()
+    to_dt   = (body.get('to_dt')   or '').strip()
+    table   = (body.get('table')   or '').strip()
+    chunk_minutes = int(body.get('chunk_minutes', 10))
+
+    if not (from_dt and to_dt and table):
+        return JSONResponse(
+            {"error": "from_dt / to_dt / table 모두 필요"}, status_code=400)
+    if len(from_dt) != 14 or len(to_dt) != 14:
+        return JSONResponse(
+            {"error": "from_dt/to_dt 는 yyyyMMddHHmmss (14자리)"}, status_code=400)
+
+    try:
+        from logpresso_query import query_oht_chunked
+    except ImportError as e:
+        return JSONResponse(
+            {"error": f"logpresso_query 모듈 임포트 실패 (requests/pandas 필요): {e}"},
+            status_code=500)
+
+    print(f"[로그프레소] 조회 시작: {table}  {from_dt}~{to_dt}  chunk={chunk_minutes}분")
+    t0 = _time.perf_counter()
+    try:
+        df = query_oht_chunked(from_dt, to_dt, table=table,
+                                chunk_minutes=chunk_minutes)
+    except Exception as e:
+        print(f"[로그프레소] 조회 실패: {e}")
+        return JSONResponse(
+            {"error": f"로그프레소 조회 실패: {e}"}, status_code=502)
+    elapsed = _time.perf_counter() - t0
+    if df is None or df.empty:
+        return JSONResponse(
+            {"error": "조회 결과가 비어 있음", "rows": 0,
+             "elapsed_sec": round(elapsed, 1)},
+            status_code=200)
+
+    # CSV 저장 → 폴더 구조를 date_config 형태로 wrap
+    save_root = os.path.join(os.path.dirname(__file__), "_logpresso_cache")
+    folder_name = f"{from_dt}_{to_dt}"
+    save_dir = os.path.join(save_root, folder_name)
+    os.makedirs(save_dir, exist_ok=True)
+    csv_name = f"{table}_{from_dt}_{to_dt}.csv"
+    csv_path = os.path.join(save_dir, csv_name)
+    try:
+        df.to_csv(csv_path, index=False, encoding='utf-8')
+    except Exception as e:
+        return JSONResponse({"error": f"CSV 저장 실패: {e}"}, status_code=500)
+    print(f"[로그프레소] {len(df):,}건 저장: {csv_path}  ({elapsed:.1f}s)")
+
+    # 가상 date_config (data_loader 형식과 일치) 구성
+    date_key = f"LP_{from_dt}_{to_dt}"
+    date_config = {
+        "dir": save_dir,
+        "fab": current_fab,
+        "prefix": current_prefix,
+        "oht_raw": csv_name,
+        "oht_data_m14a": csv_name,   # parsed 포맷이므로 m14a 로더로 라우팅
+        "hid_inout": None,
+        "rail_cut": None,
+        "star": None,
+        "ts_resource": None,
+        "oht_time_avg": None,
+        "time_range": ("00:00:00", "23:59:59"),
+        "description": f"로그프레소 {table} {from_dt}~{to_dt} ({len(df):,}건)",
+    }
+
+    print(f"[로드] 가상 date_key={date_key} 데이터 로딩 시작...")
+    result = engine.load_date(date_key, date_config)
+    result['logpresso'] = {
+        'rows': int(len(df)),
+        'csv_path': csv_path,
+        'elapsed_sec': round(elapsed, 1),
+        'date_key': date_key,
+    }
+    print(f"[로드] 완료: {result.get('stats', {})}")
+    return result
+
+
 @app.post("/api/replay/play")
 async def replay_play():
     """리플레이 시작"""

@@ -169,6 +169,14 @@ canvas.chart { width:100%; flex:1; }
   </select>
   <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
   <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
+  <span style="margin-left:8px;border-left:1px solid #444;padding-left:8px;">
+    <input type="datetime-local" id="lp-from" step="1" title="시작 시각" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:2px 4px;">
+    ~
+    <input type="datetime-local" id="lp-to"   step="1" title="끝 시각"   style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:2px 4px;">
+    <input type="text" id="lp-table" placeholder="oht_data_m16br" value="oht_data_m16br" title="로그프레소 테이블명" style="background:#222;color:#eee;border:1px solid #444;border-radius:3px;padding:2px 6px;width:180px;">
+    <button onclick="logpressoLoad()" id="lp-btn" title="로그프레소 조회 후 리플레이 로드">📡 조회 로드</button>
+    <span id="lp-status" style="color:#9ad;font-size:12px;"></span>
+  </span>
   <button onclick="sendCmd('play')">&#9654; 재생</button>
   <button onclick="sendCmd('pause')">&#9208; 일시정지</button>
   <button onclick="sendCmd('stop')">&#9632; 정지</button>
@@ -362,6 +370,89 @@ function setSpeed(s) {
   document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('selected', b.textContent === (s===0?'MAX':`x${s}`)));
 }
 function jumpFrame(val) { sendCmd('jump_frame', { frame: parseInt(val) }); }
+
+// ============================================================
+// 로그프레소 조회 → CSV → 리플레이 로드 (datetime-local + 테이블명)
+// ============================================================
+function _toLP(ts) {
+  // "2026-06-21T00:00:00"  →  "20260621000000"
+  if (!ts) return '';
+  return ts.replace(/[-T:]/g, '').padEnd(14, '0').slice(0, 14);
+}
+async function logpressoLoad() {
+  const fromEl = document.getElementById('lp-from');
+  const toEl   = document.getElementById('lp-to');
+  const tblEl  = document.getElementById('lp-table');
+  const btn    = document.getElementById('lp-btn');
+  const stat   = document.getElementById('lp-status');
+
+  const from_dt = _toLP(fromEl.value);
+  const to_dt   = _toLP(toEl.value);
+  const table   = (tblEl.value || '').trim();
+  if (!from_dt || !to_dt || !table) {
+    alert('시작/끝 시각과 테이블명을 모두 입력하세요.\n예) oht_data_m16br');
+    return;
+  }
+  if (from_dt >= to_dt) {
+    alert('끝 시각이 시작 시각보다 늦어야 합니다.');
+    return;
+  }
+
+  // 프론트 상태 리셋 (loadDate 와 동일 처리)
+  obsHistory = []; jamEvents = []; _lastObsSampleTime = ''; _lastJamCount = 0;
+  fullObsHistory = []; bottleneckCache = null;
+  vehicleDisplay = {}; mapData.vehicles = [];
+  ['spike-modal','bottleneck-modal','risk-modal'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  btn.disabled = true;
+  const t0 = performance.now();
+  stat.textContent = '⏳ 조회 중...';
+  document.getElementById('loading-msg').style.display = 'inline';
+  try {
+    const resp = await fetch('/api/logpresso/load', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ from_dt, to_dt, table }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      stat.textContent = `❌ ${data.error || resp.status}`;
+      alert(`로그프레소 조회 실패: ${data.error || resp.status}`);
+      return;
+    }
+    const lp = data.logpresso || {};
+    stat.textContent = `✅ ${lp.rows?.toLocaleString?.() || '?'} 건  ${lp.elapsed_sec || '?'}s`;
+
+    // 로드 결과 — loadDate 와 동일하게 후속 데이터 갱신
+    document.getElementById('time-slider').max = data.total_frames || 100;
+    updateDataSources(data.stats);
+    if (!railGraph) await loadRailGraph();
+    try {
+      const starResp = await fetch('/api/star-history');
+      starHistory = await starResp.json();
+      drawQueueChart();
+    } catch (e) {}
+    try {
+      const hidResp = await fetch('/api/hid-speeds');
+      hidSpeeds = await hidResp.json();
+      renderZoneList();
+    } catch (e) {}
+    try {
+      const obsResp = await fetch('/api/obs-jam-history');
+      fullObsHistory = await obsResp.json();
+    } catch (e) {}
+    console.log(`[로그프레소] 로드 완료 (${((performance.now()-t0)/1000).toFixed(1)}s):`, lp);
+  } catch (e) {
+    stat.textContent = `❌ ${e.message || e}`;
+    alert(`요청 실패: ${e.message || e}`);
+  } finally {
+    btn.disabled = false;
+    document.getElementById('loading-msg').style.display = 'none';
+  }
+}
 
 async function loadDate(dateKey) {
   if (!dateKey) return;
