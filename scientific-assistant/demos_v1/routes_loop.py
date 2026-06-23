@@ -1,0 +1,124 @@
+"""
+demos_v1/routes_loop.py — loop_engine(루프 엔지니어링) 실행 라우트
+
+UIO 가 generator 에이전트(모델 A) + verifier 에이전트(모델 B, 다른 모델)를 골라
+목표(goal)를 주면, loop_engine 으로 generate→verify 를 조건 충족까지 반복한다.
+
+핵심: generator 와 verifier 를 '다른 모델'로 분리해 self-bias(자기채점 후함)를 막는다.
+
+POST /api/loop/run
+  body: {
+    goal: "...",                 # 측정 가능한 목표
+    generator_env: "<env id>",   # 짓는 AI 모델 (ENV_CONFIG 키)
+    verifier_env:  "<env id>",   # 검사 AI 모델 (다른 모델 권장)
+    max_rounds: 4,
+    pass_score: 8.0,             # 루브릭 통과 점수(0~10)
+    criteria: "정확성·명료성 엄격 채점",
+    min_length: 0,               # 하드체크(선택)
+    contains: ["AMHS"],          # 포함 필수 문자열(선택)
+    max_tokens: 2048,
+    name: "uio_loop"
+  }
+"""
+from __future__ import annotations
+from flask import request, jsonify
+
+
+def register_loop_routes(app):
+    @app.route("/api/loop/run", methods=["POST"])
+    def api_loop_run():
+        try:
+            import loop_engine as le
+        except Exception as e:
+            return jsonify({"error": f"loop_engine import 실패: {e}"}), 200
+        from demos_v1.models import ENV_CONFIG
+
+        d = request.get_json(force=True, silent=True) or {}
+        goal = (d.get("goal") or "").strip()
+        gen_env = (d.get("generator_env") or d.get("generator") or "").strip()
+        ver_env = (d.get("verifier_env") or d.get("verifier") or "").strip()
+        if not goal:
+            return jsonify({"error": "goal(목표)이 필요합니다."}), 400
+        gen = ENV_CONFIG.get(gen_env)
+        ver = ENV_CONFIG.get(ver_env)
+        if not gen or not ver:
+            return jsonify({"error": f"env 를 찾을 수 없습니다 (generator={gen_env}, verifier={ver_env})"}), 400
+
+        try:
+            max_rounds = max(1, min(int(d.get("max_rounds") or 4), 8))
+        except (TypeError, ValueError):
+            max_rounds = 4
+        try:
+            pass_score = float(d.get("pass_score") or 8.0)
+        except (TypeError, ValueError):
+            pass_score = 8.0
+        try:
+            max_tokens = int(d.get("max_tokens") or 2048)
+        except (TypeError, ValueError):
+            max_tokens = 2048
+        criteria = (d.get("criteria") or "정확성·구조·실무성을 엄격하게 채점").strip()
+
+        # base_url: 데모스 env url 에서 /chat/completions 떼기 (loop_engine 이 다시 붙임)
+        base = gen["url"].rsplit("/chat/completions", 1)[0]
+        token = (gen.get("token") or ver.get("token") or "").strip()
+
+        cfg = le.LLMConfig(
+            base_url=base, token=token,
+            generator_model=gen["model"], verifier_model=ver["model"],
+            verify_ssl=False, max_tokens=max_tokens,
+        )
+        client = le.LLMClient(cfg)
+
+        # 하드체크(closed loop 바닥)
+        checks = []
+        try:
+            ml = int(d.get("min_length") or 0)
+            if ml > 0:
+                checks.append(le.check_min_length(ml))
+        except (TypeError, ValueError):
+            pass
+        for s in (d.get("contains") or []):
+            s = str(s).strip()
+            if s:
+                checks.append(le.check_contains(s))
+        checks.append(le.check_no_placeholder())
+        suite = le.CheckSuite(checks)
+
+        rubric = le.Rubric(criteria, pass_score=pass_score)
+        verifier = le.VerifierAgent(
+            client, check_suite=suite, rubric=rubric,
+            generator_model=gen["model"], verifier_model=ver["model"],
+        )
+        generator = le.Generator(client)
+        spec = le.LoopSpec(
+            name=(d.get("name") or "uio_loop"), goal=goal,
+            generator=generator, verifier=verifier, max_rounds=max_rounds,
+        )
+
+        try:
+            result = le.Loop(spec).run()
+        except Exception as e:
+            return jsonify({"error": f"루프 실행 실패: {e}",
+                            "generator_model": gen["model"],
+                            "verifier_model": ver["model"]}), 200
+
+        rounds = []
+        for r in result.rounds:
+            v = r.verdict
+            rounds.append({
+                "index": r.index,
+                "done": bool(v.done),
+                "score": (v.rubric.score if getattr(v, "rubric", None) else None),
+                "failures": [cr.name for cr in v.critical_failures],
+                "artifact_preview": (r.artifact or "")[:600],
+            })
+
+        return jsonify({
+            "status": result.status.value,
+            "n_rounds": result.n_rounds,
+            "rounds": rounds,
+            "final_artifact": result.final_artifact,
+            "generator_model": gen["model"],
+            "verifier_model": ver["model"],
+            "self_bias_warning": (gen["model"] == ver["model"]),
+        })

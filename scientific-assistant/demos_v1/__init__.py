@@ -33,6 +33,14 @@ def create_app():
     register_ppt_routes(app)
     register_agent_routes(app)
 
+    # 루프 엔지니어링(loop_engine) 라우트 — 실패해도 본체 정상 동작
+    try:
+        from demos_v1.routes_loop import register_loop_routes
+        register_loop_routes(app)
+        print("  🔁 루프엔진 라우트 등록 완료 (/api/loop/run)")
+    except Exception as _le:
+        print(f"  ⚠️  루프엔진 라우트 스킵: {_le}")
+
     # 헤르메스(재해석) 엔진 라우트 — 실패해도 데모스 본체는 정상 동작
     try:
         from demos_v1.hermes.routes import register_hermes_routes
