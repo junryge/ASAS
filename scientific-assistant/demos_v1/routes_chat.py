@@ -925,14 +925,12 @@ def _stream_chat_sse(data):
         try:
             _chat_user_id = data.get("user_id", None)
             print(f"  [KNOWLEDGE-SSE] user_id={_chat_user_id}, query={last_user_query[:50]}")
-            kb_results = search_knowledge_smart(
+            # ★ 지식검색은 BM25/점수(키워드 매칭) 사용 — '주간 보고' 같은 키워드 질의에
+            #    의미검색(RAG)이 엉뚱한 청크를 가져오던 문제로 원복.
+            kb_results = search_knowledge(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
-            try:
-                from demos_v1.rag_client import _healthy as _rag_healthy
-                _src = "RAG" if _rag_healthy() else "BM25"
-            except Exception:
-                _src = "?"
+            _src = "BM25/점수"
             print(f"  [KNOWLEDGE-SSE] 검색원={_src} | 결과 {len(kb_results)}건 | "
                   f"{sum(len(r.get('content','')) for r in kb_results)}자")
             if not kb_results:
@@ -1618,8 +1616,9 @@ def register_chat_routes(app):
             try:
                 _chat_user_id = data.get("user_id", None)
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
+                # ★ BM25/점수(키워드 매칭) 사용 — RAG(의미검색)로 엉뚱하게 나오던 문제 원복
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
-                kb_results = search_knowledge_smart(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
+                kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
                 if kb_results:
                     # 검색된 문서 내용을 시스템 프롬프트에 주입하여 LLM이 답변하도록
                     kb_context = "\n\n=== 도메인 지식 검색 결과 ===\n"
