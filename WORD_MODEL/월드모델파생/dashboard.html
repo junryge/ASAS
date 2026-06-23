@@ -231,8 +231,9 @@ canvas.chart { width:100%; flex:1; }
 </div>
 
 <div id="main">
-  <div id="sidebar-toggle" onclick="toggleSidebar()" title="사이드바 열기/닫기">&#9654;</div>
-  <div id="sidebar" class="collapsed">
+  <!-- 왼쪽 사이드바 + 토글 버튼 숨김. DOM 유지하여 관련 JS 무사. -->
+  <div id="sidebar-toggle" onclick="toggleSidebar()" title="사이드바 열기/닫기" style="display:none;">&#9654;</div>
+  <div id="sidebar" class="collapsed" style="display:none;">
     <!-- 상태 패널 (차량 현황 + 스타 지표 + 10분 후 예측 + 위험 Zone + 레일 차단 + 데이터 소스) -->
     <div class="panel">
       <h3>차량 현황</h3>
