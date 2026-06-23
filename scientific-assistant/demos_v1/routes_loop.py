@@ -57,6 +57,8 @@ def register_loop_routes(app):
         except (TypeError, ValueError):
             max_tokens = 2048
         criteria = (d.get("criteria") or "정확성·구조·실무성을 엄격하게 채점").strip()
+        # 참고 데이터/컨텍스트 — generator 가 매 라운드 이걸 보고 분석한다 (없으면 일반론·환각)
+        context_data = (d.get("context") or "").strip()
 
         # base_url: 데모스 env url 에서 /chat/completions 떼기 (loop_engine 이 다시 붙임)
         base = gen["url"].rsplit("/chat/completions", 1)[0]
@@ -90,9 +92,12 @@ def register_loop_routes(app):
             generator_model=gen["model"], verifier_model=ver["model"],
         )
         generator = le.Generator(client)
+        # 참고 데이터가 있으면 매 라운드 generator 맥락으로 주입 (실제 데이터 분석)
+        ctx_provider = (lambda c=context_data: c) if context_data else None
         spec = le.LoopSpec(
             name=(d.get("name") or "uio_loop"), goal=goal,
             generator=generator, verifier=verifier, max_rounds=max_rounds,
+            context_provider=ctx_provider,
         )
 
         try:

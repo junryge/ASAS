@@ -2448,7 +2448,9 @@
           <label style="font-size:11px;color:#cbd5e1;">🔍 verifier (검사 AI · 다른 모델 권장)</label>
           <select id="loopVer" style="width:100%;padding:7px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);">${_loopAgentOptions(verDef)}</select>
           <label style="font-size:11px;color:#cbd5e1;">🎯 목표 (측정 가능하게)</label>
-          <textarea id="loopGoal" rows="3" placeholder="예) AMHS 물류 혼잡 예측을 보고용 300자 이상으로 요약. 'AMHS' 포함, 미완성 표현 금지." style="width:100%;padding:8px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:13px;"></textarea>
+          <textarea id="loopGoal" rows="3" placeholder="예) 아래 참고 데이터를 근거로 M16 HUBROOM 정체 원인을 보고용 300자 이상으로 요약. 미완성 표현 금지." style="width:100%;padding:8px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:13px;"></textarea>
+          <label style="font-size:11px;color:#cbd5e1;">📎 참고 데이터 (있으면 generator가 이걸 보고 분석 — 없으면 일반론)</label>
+          <textarea id="loopContext" rows="5" placeholder="여기에 분석할 데이터/맥락을 붙여넣기 (예: 발동이벤트 요약표, 사건단위 CSV, 지식문서 발췌 등). 비우면 데이터 없이 목표만으로 작성." style="width:100%;padding:8px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:12px;font-family:monospace;"></textarea>
           <div style="display:flex;gap:8px;margin-bottom:8px;">
             <div style="flex:1;"><label style="font-size:11px;color:#cbd5e1;">최대 라운드</label><input id="loopRounds" type="number" value="4" min="1" max="8" style="width:100%;padding:6px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);"></div>
             <div style="flex:1;"><label style="font-size:11px;color:#cbd5e1;">통과 점수(0~10)</label><input id="loopPass" type="number" value="8" min="1" max="10" step="0.5" style="width:100%;padding:6px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);"></div>
@@ -2461,6 +2463,7 @@
       const genK = document.getElementById('loopGen').value;
       const verK = document.getElementById('loopVer').value;
       const goal = document.getElementById('loopGoal').value.trim();
+      const context = (document.getElementById('loopContext')?.value || '').trim();
       const rounds = parseInt(document.getElementById('loopRounds').value)||4;
       const pass = parseFloat(document.getElementById('loopPass').value)||8;
       const out = document.getElementById('loopResult');
@@ -2472,7 +2475,7 @@
       out.innerHTML = sameWarn + '<div style="color:var(--muted);">실행 중...</div>';
       try{
         const resp = await fetch('/api/loop/run', {method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({goal, generator_env:genEnv, verifier_env:verEnv, max_rounds:rounds, pass_score:pass})});
+          body: JSON.stringify({goal, context, generator_env:genEnv, verifier_env:verEnv, max_rounds:rounds, pass_score:pass})});
         const d = await resp.json();
         if(d.error){ out.innerHTML = sameWarn + `<div style="color:#ef4444;">실패: ${escapeHtml(d.error)}</div>`; return; }
         const shipped = d.status==='shipped';
