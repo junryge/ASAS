@@ -531,6 +531,16 @@ async function logpressoLoad() {
     alert('끝 시각이 시작 시각보다 늦어야 합니다.');
     return;
   }
+  // 최대 조회 구간 30분 제한 — 서버 부하 방지
+  // yyyyMMddHHmmss 파싱하여 분 차이 계산
+  const _parse = s => new Date(
+    +s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8),
+    +s.slice(8,10), +s.slice(10,12), +s.slice(12,14));
+  const _diffMin = (_parse(to_dt) - _parse(from_dt)) / 60000;
+  if (_diffMin > 30) {
+    alert(`조회 구간이 ${_diffMin.toFixed(1)}분입니다.\n30분 이내로 줄여주세요.`);
+    return;
+  }
 
   // 프론트 상태 리셋 (loadDate 와 동일 처리)
   obsHistory = []; jamEvents = []; _lastObsSampleTime = ''; _lastJamCount = 0;
