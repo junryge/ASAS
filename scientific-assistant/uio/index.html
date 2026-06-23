@@ -2421,6 +2421,68 @@
           </div>`;
         }).join('');
     }
+    // ═══ 🔁 루프 엔진 패널 (generator↔verifier 다른 모델로 반복) ═══
+    function _loopAgentOptions(selKey){
+      ensureAgentEnvs();
+      return Object.keys(agentBaseData).filter(k=>k!=='ceo').map(k=>{
+        const mname = (availableEnvs[aEnv(k)]?.name || aEnv(k));
+        return `<option value="${k}"${k===selKey?' selected':''}>${agentBaseData[k].name} — ${mname}</option>`;
+      }).join('');
+    }
+    function openLoopPanel(){
+      ensureAgentEnvs();
+      const keys = Object.keys(agentBaseData).filter(k=>k!=='ceo');
+      const genDef = keys[0], verDef = keys[1] || keys[0];
+      document.getElementById('chatArea').innerHTML = `
+        <div style="padding:14px;max-width:560px;margin:0 auto;text-align:left;">
+          <h2 style="color:#E0912F;margin:0 0 4px;">🔁 루프 엔진</h2>
+          <p style="color:var(--muted);font-size:12px;margin:0 0 14px;">짓는 AI(generator) ↔ 검사 AI(verifier)를 <b>다른 모델</b>로 분리해 조건 충족까지 반복.</p>
+          <label style="font-size:11px;color:#cbd5e1;">🛠 generator (짓는 AI)</label>
+          <select id="loopGen" style="width:100%;padding:7px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);">${_loopAgentOptions(genDef)}</select>
+          <label style="font-size:11px;color:#cbd5e1;">🔍 verifier (검사 AI · 다른 모델 권장)</label>
+          <select id="loopVer" style="width:100%;padding:7px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);">${_loopAgentOptions(verDef)}</select>
+          <label style="font-size:11px;color:#cbd5e1;">🎯 목표 (측정 가능하게)</label>
+          <textarea id="loopGoal" rows="3" placeholder="예) AMHS 물류 혼잡 예측을 보고용 300자 이상으로 요약. 'AMHS' 포함, 미완성 표현 금지." style="width:100%;padding:8px;margin:3px 0 8px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:13px;"></textarea>
+          <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="flex:1;"><label style="font-size:11px;color:#cbd5e1;">최대 라운드</label><input id="loopRounds" type="number" value="4" min="1" max="8" style="width:100%;padding:6px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);"></div>
+            <div style="flex:1;"><label style="font-size:11px;color:#cbd5e1;">통과 점수(0~10)</label><input id="loopPass" type="number" value="8" min="1" max="10" step="0.5" style="width:100%;padding:6px;border-radius:6px;background:var(--card);color:var(--text);border:1px solid var(--border);"></div>
+          </div>
+          <button id="loopRunBtn" onclick="runLoop()" style="width:100%;padding:12px;background:#E0912F;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">▶ 루프 실행</button>
+          <div id="loopResult" style="margin-top:14px;"></div>
+        </div>`;
+    }
+    async function runLoop(){
+      const genK = document.getElementById('loopGen').value;
+      const verK = document.getElementById('loopVer').value;
+      const goal = document.getElementById('loopGoal').value.trim();
+      const rounds = parseInt(document.getElementById('loopRounds').value)||4;
+      const pass = parseFloat(document.getElementById('loopPass').value)||8;
+      const out = document.getElementById('loopResult');
+      if(!goal){ out.innerHTML = '<div style="color:#ef4444;">목표를 입력하세요.</div>'; return; }
+      const genEnv = aEnv(genK), verEnv = aEnv(verK);
+      const sameWarn = (genEnv===verEnv) ? '<div style="color:#fbbf24;font-size:12px;margin-bottom:8px;">⚠️ generator·verifier가 같은 모델 — self-bias 위험(자기채점 후함)</div>' : '';
+      const btn = document.getElementById('loopRunBtn');
+      btn.disabled = true; btn.textContent = '⏳ 루프 도는 중... (라운드마다 LLM 호출, 수십초~분)';
+      out.innerHTML = sameWarn + '<div style="color:var(--muted);">실행 중...</div>';
+      try{
+        const resp = await fetch('/api/loop/run', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({goal, generator_env:genEnv, verifier_env:verEnv, max_rounds:rounds, pass_score:pass})});
+        const d = await resp.json();
+        if(d.error){ out.innerHTML = sameWarn + `<div style="color:#ef4444;">실패: ${escapeHtml(d.error)}</div>`; return; }
+        const shipped = d.status==='shipped';
+        let html = sameWarn + `<div style="font-weight:700;color:${shipped?'#2F9E73':'#fbbf24'};margin-bottom:6px;">${shipped?'✅ SHIPPED (통과)':'🔁 '+escapeHtml(d.status)+' (최고점 보존)'} · ${d.n_rounds}라운드 · 🛠${escapeHtml(d.generator_model)} / 🔍${escapeHtml(d.verifier_model)}</div>`;
+        if(d.self_bias_warning) html += '<div style="color:#fbbf24;font-size:12px;margin-bottom:4px;">⚠️ self-bias: generator·verifier 같은 모델</div>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0;"><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;">R</th><th style="text-align:left;">점수</th><th style="text-align:left;">통과</th><th style="text-align:left;">실패체크</th></tr>';
+        (d.rounds||[]).forEach(r=>{
+          html += `<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">${r.index}</td><td>${r.score!=null?r.score:'-'}</td><td>${r.done?'✅':'🔁'}</td><td style="color:#f87171;">${(r.failures||[]).join(', ')||'-'}</td></tr>`;
+        });
+        html += '</table>';
+        html += `<div style="margin-top:8px;font-weight:700;color:#E0912F;">📄 최종 산출물</div><div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:4px;white-space:pre-wrap;font-size:13px;max-height:340px;overflow:auto;">${escapeHtml(d.final_artifact||'')}</div>`;
+        out.innerHTML = html;
+      }catch(e){ out.innerHTML = sameWarn + `<div style="color:#ef4444;">실패: ${escapeHtml(e.message)}</div>`; }
+      finally { btn.disabled=false; btn.textContent='▶ 루프 실행'; }
+    }
+
     let userMaxTokens = 8192;    // 개별 에이전트 응답 토큰
     let userSynthMaxTokens = 16384; // CEO 합성 응답 토큰
     let userNCtx = 32768;       // 백엔드 GGUF 컨텍스트 윈도우
@@ -2581,6 +2643,7 @@
                 <button class="quick-btn" onclick="startResearchMode('program')" style="padding:14px;font-size:14px;background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;border:none;border-radius:10px;cursor:pointer;">💻 프로그램 만들기</button>
                 <button class="quick-btn" onclick="startResearchMode('data-analysis')" style="padding:14px;font-size:14px;background:linear-gradient(135deg,#ea580c,#f97316);color:#fff;border:none;border-radius:10px;cursor:pointer;">📊 데이터 분석하기</button>
                 <button class="quick-btn" onclick="startResearchMode('code-analysis')" style="padding:14px;font-size:14px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:10px;cursor:pointer;">🔍 소스코드 분석/추가</button>
+                <button class="quick-btn" onclick="openLoopPanel()" style="padding:14px;font-size:14px;background:linear-gradient(135deg,#E0912F,#b5731f);color:#fff;border:none;border-radius:10px;cursor:pointer;">🔁 루프 엔진 (generator↔verifier)</button>
                 <button onclick="showArchives()" style="padding:10px;font-size:12px;background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:10px;cursor:pointer;margin-top:4px;">📦 보관함 (완료된 연구)</button>
               </div>
               <div style="margin-top:12px;">
