@@ -1099,7 +1099,8 @@ function drawMap() {
   }
 
   // 2. 차량 (보간된 위치) — 카테고리별 색상 + 카테고리별 도형 (설정 가능: ⚙ 설정)
-  const r = Math.max(1.5, Math.min(8, mapSettings.vehicleRadius*mapZoom));
+  // 반경 = vehicleRadius × mapZoom. 최소 0.5px, 최대 50px 까지 허용.
+  const r = Math.max(0.5, Math.min(50, mapSettings.vehicleRadius*mapZoom));
   function _drawShape(sx, sy, rr, shape) {
     mapCtx.beginPath();
     if (shape === 'triangle') {
@@ -2491,7 +2492,7 @@ async function applyFab(fab, prefix) {
       <div style="grid-column:1/-1;color:#9ad;margin-top:8px;border-bottom:1px solid #333;padding-bottom:4px;">차량 (움직이는 점)</div>
 
       <label>차량 반경 (배수)</label>
-      <input type="number" id="ms-vehicleRadius" step="0.1" min="0.5" max="10" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
+      <input type="number" id="ms-vehicleRadius" step="0.1" min="0.1" max="30" title="실제 px = (배수) × (현재 줌). 최종 0.5~50px 로 클램프됨." style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
 
       <label>공차운행</label>
       <span style="display:inline-flex;gap:8px;align-items:center;">
