@@ -39,10 +39,24 @@ def register_loop_routes(app):
         ver_env = (d.get("verifier_env") or d.get("verifier") or "").strip()
         if not goal:
             return jsonify({"error": "goal(목표)이 필요합니다."}), 400
-        gen = ENV_CONFIG.get(gen_env)
-        ver = ENV_CONFIG.get(ver_env)
+        # env 해석: 'auto'/없는 env 면 실제 API 모델로 폴백 (gguf 제외)
+        api_ids = [k for k in ENV_CONFIG if not str(k).startswith("gguf-")]
+
+        def _resolve(env_id, avoid=None):
+            if env_id and env_id in ENV_CONFIG and not str(env_id).startswith("gguf-"):
+                return env_id
+            # auto/없음 → avoid(상대편)와 다른 API 모델 우선
+            for k in api_ids:
+                if k != avoid:
+                    return k
+            return api_ids[0] if api_ids else None
+
+        gen_env = _resolve(gen_env)
+        ver_env = _resolve(ver_env, avoid=gen_env)   # 가능하면 generator 와 다른 모델
+        gen = ENV_CONFIG.get(gen_env) if gen_env else None
+        ver = ENV_CONFIG.get(ver_env) if ver_env else None
         if not gen or not ver:
-            return jsonify({"error": f"env 를 찾을 수 없습니다 (generator={gen_env}, verifier={ver_env})"}), 400
+            return jsonify({"error": "사용 가능한 API 모델이 없습니다 (서버 env 설정 확인)."}), 400
 
         try:
             max_rounds = max(1, min(int(d.get("max_rounds") or 4), 8))
@@ -68,6 +82,7 @@ def register_loop_routes(app):
             base_url=base, token=token,
             generator_model=gen["model"], verifier_model=ver["model"],
             verify_ssl=False, max_tokens=max_tokens,
+            timeout=90, retries=1,   # 안 되면 매달리지 말고 빨리 에러 반환
         )
         client = le.LLMClient(cfg)
 
