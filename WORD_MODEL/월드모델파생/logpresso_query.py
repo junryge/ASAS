@@ -6,6 +6,9 @@ logpresso_query.py — 로그프레소 OHT 조회 (시간 구간 → CSV DataFra
 요청 시간 구간을 chunk_minutes 단위로 끊어 로그프레소 HTTP export API 호출.
 응답 크기가 30MB 초과하면 해당 구간을 절반으로 재귀 분할.
 
+쿼리 형식: 'remote icamcslogdt01' 로 감싸 원격 노드에서 조회.
+  remote icamcslogdt01 [ table from=... to=... <table> | sort _time ]
+
 출력 컬럼 (oht_data_m16br 기준, 25컬럼 parsed 포맷):
   _id, _table, _time, ADDRESS, CARRIER, DESTINATION, DEST_RETURN_PORT,
   DISTANCE, E/M, EDGE, ERROR_CODE, EXECUTE_CYCLE, FROM_RETURN_PORT,
@@ -25,17 +28,36 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-HOST    = "10.40.42.27"
+# ───────────────────────────────────────────────────────────
+# 접속 설정 — 운영/개발 둘 중 하나만 활성화 (다른 건 주석 처리)
+# ───────────────────────────────────────────────────────────
+
+# [운영]
+#HOST    = "10.40.42.27"
+#PORT    = 8888
+#API_KEY = "10f12ae0-5a80-55cd-7b15-e5554f0612f3"
+
+# [개발]  http://10.125.173.63/
+HOST    = "10.125.173.63"
 PORT    = 8888
-API_KEY = "10f12ae0-5a80-55cd-7b15-e5554f0612f3"
+API_KEY = "db1d2335-49cf-e859-3519-1ca132922e38"
+
+# 원격 노드명 (쿼리에서 remote <NODE> [ ... ] 로 감쌀 때 사용)
+REMOTE_NODE = "icamcslogdt01"
 
 FMT = "%Y%m%d%H%M%S"
 MAX_BYTES = 30 * 1024 * 1024   # 30MB
 
 
+def _build_query(from_dt: str, to_dt: str, table: str) -> str:
+    """remote <NODE> [ ... ] 로 감싼 쿼리 문자열 생성."""
+    inner = f'table from={from_dt} to={to_dt} {table} | sort _time'
+    return f'remote {REMOTE_NODE} [ {inner} ]'
+
+
 def _fetch(from_dt: str, to_dt: str, table: str):
     """단일 구간 조회. (df, byte_size) 반환. 실패 시 예외."""
-    q = f'table from={from_dt} to={to_dt} {table} | sort _time'
+    q = _build_query(from_dt, to_dt, table)
     encoded = urllib.parse.quote(q, safe="")
     url = f"http://{HOST}:{PORT}/logpresso/httpexport/query.csv?_apikey={API_KEY}&_q={encoded}"
 
@@ -102,6 +124,7 @@ def query_oht_chunked(from_dt: str, to_dt: str,
 
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
+    print(f"[설정] HOST={HOST}:{PORT}  REMOTE={REMOTE_NODE}")
     df = query_oht_chunked(
         from_dt       = "20260621000000",
         to_dt         = "20260621010101",
