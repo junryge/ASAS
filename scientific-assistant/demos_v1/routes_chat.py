@@ -1238,6 +1238,47 @@ def _stream_chat_sse(data):
                 print(f"  📈 [GRAPH] 리포트 그래프 삽입 ({len(_blk)}자)")
                 yield f"data: {json.dumps({'type': 'token', 't': _blk}, ensure_ascii=False)}\n\n"
 
+        # 그래프는 '제목(# …) 바로 밑, 본문 위'에 끼운다.
+        #   첫 H1 제목 줄이 끝날 때까지 토큰을 살짝 버퍼링했다가, 제목+그래프+나머지 순으로 흘린다.
+        _inj = {"done": False, "buf": ""}
+
+        def _tok(t):
+            return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
+
+        def _stream_vis(vis):
+            """제목 줄을 만나면 그 직후에 그래프를 1회 삽입. 그 전까진 버퍼링."""
+            if _inj["done"]:
+                yield _tok(vis)
+                return
+            _inj["buf"] += vis
+            m = re.search(r'(?m)^#\s+.+?\n', _inj["buf"])
+            if m:
+                head = _inj["buf"][:m.end()]
+                rest = _inj["buf"][m.end():]
+                if head:
+                    yield _tok(head)
+                yield from _emit_graph()
+                _inj["done"] = True
+                _inj["buf"] = ""
+                if rest:
+                    yield _tok(rest)
+            elif len(_inj["buf"]) > 4000:
+                # 제목(# …)이 안 나옴 → 그래프 먼저, 그다음 본문(폴백)
+                yield from _emit_graph()
+                _inj["done"] = True
+                yield _tok(_inj["buf"])
+                _inj["buf"] = ""
+
+        def _flush_pending():
+            """스트림 종료 시 제목을 못 만났으면 그래프+남은 버퍼를 마저 흘린다."""
+            if _inj["done"]:
+                return
+            yield from _emit_graph()
+            _inj["done"] = True
+            if _inj["buf"]:
+                yield _tok(_inj["buf"])
+                _inj["buf"] = ""
+
         _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
         meta = {
             "type": "meta", "env": env_id, "model": model,
@@ -1250,9 +1291,6 @@ def _stream_chat_sse(data):
         # 입력이 잘렸으면 사용자에게 먼저 안내
         if _api_fit_warn:
             yield f"data: {json.dumps({'type': 'token', 't': _api_fit_warn + chr(10)+chr(10)}, ensure_ascii=False)}\n\n"
-        # ★ 리포트 그래프를 '맨 앞'에 먼저 표시 — 진단 텍스트보다 위에 오게(한눈에 파악).
-        #   LLM 응답을 3분 기다리는 동안에도 그래프가 즉시 뜬다.
-        yield from _emit_graph()
         try:
             r = chat_post(api_url, headers=headers, json=payload,
                          timeout=180, verify=False, stream=True)
@@ -1274,6 +1312,7 @@ def _stream_chat_sse(data):
                     continue
                 body = line[5:].strip()
                 if body == "[DONE]":
+                    yield from _flush_pending()
                     yield "data: [DONE]\n\n"
                     return
                 try:
@@ -1289,14 +1328,16 @@ def _stream_chat_sse(data):
                 if tok:
                     vis = _tf.feed(tok)          # <think> 구간 실시간 제거
                     if vis:
-                        yield f"data: {json.dumps({'type': 'token', 't': vis}, ensure_ascii=False)}\n\n"
+                        yield from _stream_vis(vis)
                 fr = choices[0].get("finish_reason")
                 if fr:
                     tail = _tf.flush()
                     if tail:
-                        yield f"data: {json.dumps({'type': 'token', 't': tail}, ensure_ascii=False)}\n\n"
+                        yield from _stream_vis(tail)
+                    yield from _flush_pending()
                     end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+            yield from _flush_pending()
             yield "data: [DONE]\n\n"
         except Exception as e:
             err = {"type": "error", "error": str(e), "model": model}
