@@ -82,12 +82,16 @@ COLORS = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#0891B2','#DB2777',
 # ─────────────────────────────────────────────────────────────
 # 24시간 통합 그래프 — 상단 점수 추이 + 하단 최고점 reason 컬럼 시계열
 # ─────────────────────────────────────────────────────────────
-def make_24h_combined_svg(day, score_data, peak, raw_series):
+def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
     """
     score_data = [{'t', 'score', 'level', 'hot'}, ...]  매분
     peak       = {'t', 'score', 'level', 'hot', 'reason'}
-    raw_series = {evt_col: [(t, val), ...]}  최고점 reason 의 컬럼들 24h 시계열
+    raw_series = {col: [(t, val), ...]}  최고점 reason 의 컬럼들 24h 시계열
+                 ★ key 는 **raw 풀네임 권장** (M16HUB.QUE.TIME.AVGTOTALTIME1MIN).
+                    축약 컬럼 (M16HUB_ra) 도 호환 — friendly_map 으로 라벨 결정.
+    friendly_map = {col: "한글 라벨 (단위)"} — 좌측 큰 라벨용 (없으면 short_label())
     """
+    friendly_map = friendly_map or {}
     from collections import Counter
     levels = Counter(d['level'] for d in score_data)
     t0 = datetime.strptime(f'{day} 00:00', '%Y-%m-%d %H:%M')
@@ -173,22 +177,32 @@ def make_24h_combined_svg(day, score_data, peak, raw_series):
     svg.append(f'<text x="{PAD_L-8}" y="{y_sec - 20}" font-size="13" font-weight="700" fill="#111827">'
                f'② 최고점({peak["t"].strftime("%H:%M")}) reason 발동 컬럼 — 24시간 추이</text>')
 
-    raw_to_orig = {v: k for k, v in COL_MAP_RAW_TO_EVT.items() if v != 'M16HUB_rev_count'}
-    raw_to_orig['M16HUB_rev_count'] = 'M16HUB.LFT (리프터 역증가 개수)'
+    # 라벨 결정 — friendly_map 우선, 없으면 COL_MAP_RAW_TO_EVT 역추론, 그것도 없으면 col 그대로
+    raw_to_orig_legacy = {v: k for k, v in COL_MAP_RAW_TO_EVT.items() if v != 'M16HUB_rev_count'}
+    raw_to_orig_legacy['M16HUB_rev_count'] = 'M16HUB.LFT (리프터 역증가 개수)'
+
+    def _resolve(col):
+        # 한글 친화 라벨
+        nice = friendly_map.get(col) or short_label(col)
+        # 풀네임 (monospace 표시용) — col 자체가 raw 풀네임이면 그대로, 아니면 역매핑
+        if '.' in col:
+            mono = col
+        else:
+            mono = raw_to_orig_legacy.get(col, col)
+        return nice, mono
 
     for k, (col, pts) in enumerate(raw_series.items()):
+        nice, mono = _resolve(col)
         color = COLORS[k % len(COLORS)]
         y_top = y_sec + k * H_PER
         y_bot = y_top + H_PER - 25
         plot_h = y_bot - y_top
         svg.append(f'<rect x="{PAD_L}" y="{y_top}" width="{plot_w}" height="{plot_h}" '
                    f'fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1"/>')
-        # 라벨 (한글 + 원본 컬럼명)
         svg.append(f'<text x="{PAD_L-12}" y="{y_top+plot_h/2-7}" text-anchor="end" font-size="12" '
-                   f'fill="#1F2937" font-weight="700" dominant-baseline="middle">{escape(short_label(col))}</text>')
-        orig = raw_to_orig.get(col, col)
+                   f'fill="#1F2937" font-weight="700" dominant-baseline="middle">{escape(nice)}</text>')
         svg.append(f'<text x="{PAD_L-12}" y="{y_top+plot_h/2+9}" text-anchor="end" font-size="9" '
-                   f'fill="#9CA3AF" font-family="Consolas,monospace" dominant-baseline="middle">{escape(orig)}</text>')
+                   f'fill="#9CA3AF" font-family="Consolas,monospace" dominant-baseline="middle">{escape(mono)}</text>')
 
         if not pts:
             svg.append(f'<text x="{PAD_L+plot_w/2}" y="{y_top+plot_h/2}" text-anchor="middle" font-size="11" fill="#9CA3AF">(데이터 없음)</text>')
@@ -210,7 +224,7 @@ def make_24h_combined_svg(day, score_data, peak, raw_series):
                    f'stroke="#DC2626" stroke-width="1" stroke-dasharray="3,2" opacity="0.6"/>')
         # 우측 아래 원본 컬럼명
         svg.append(f'<text x="{PAD_L+plot_w}" y="{y_bot+12}" text-anchor="end" font-size="10" '
-                   f'fill="#6B7280" font-family="Consolas, monospace">{escape(orig)}</text>')
+                   f'fill="#6B7280" font-family="Consolas, monospace">{escape(mono)}</text>')
 
     # 시간축 (마지막)
     y_last_x = y_sec + n_sub * H_PER - 22
@@ -306,10 +320,12 @@ def make_24h_score_svg(day, data, peak):
 # ─────────────────────────────────────────────────────────────
 # 위험사건 ±60분 그래프
 # ─────────────────────────────────────────────────────────────
-def make_incident_svg(incident, series, evt_score_series=None):
+def make_incident_svg(incident, series, evt_score_series=None, friendly_map=None):
     """incident = {'predict':..., 'start':..., 'end':..., 'level':..., 'score':..., 'hot':..., 'day':...}
-       series = {col: [(t, val), ...]} (발동이벤트 raw 컬럼 시계열)
-       evt_score_series = [(t, score), ...] (상단에 그릴 점수 추이, 선택)"""
+       series = {col: [(t, val), ...]} (key 는 raw 풀네임 권장; 축약형도 호환)
+       evt_score_series = [(t, score), ...] (상단에 그릴 점수 추이, 선택)
+       friendly_map = {col: "한글 라벨"} — 좌측 큰 라벨"""
+    friendly_map = friendly_map or {}
     t0 = incident['t0']
     t1 = incident['t1']
     total_sec = (t1 - t0).total_seconds() or 1
@@ -392,10 +408,12 @@ def make_incident_svg(incident, series, evt_score_series=None):
                        f'fill="#FEE2E2" opacity="0.5"/>')
         svg.append(f'<rect x="{PAD_L}" y="{y_top}" width="{plot_w}" height="{plot_h}" '
                    f'fill="none" stroke="#E5E7EB" stroke-width="1"/>')
+        nice = friendly_map.get(col) or short_label(col)
+        mono = col if '.' in col else col
         svg.append(f'<text x="{PAD_L-12}" y="{y_top + plot_h/2 - 7}" text-anchor="end" font-size="12" '
-                   f'fill="#1F2937" font-weight="700" dominant-baseline="middle">{escape(short_label(col))}</text>')
+                   f'fill="#1F2937" font-weight="700" dominant-baseline="middle">{escape(nice)}</text>')
         svg.append(f'<text x="{PAD_L-12}" y="{y_top + plot_h/2 + 8}" text-anchor="end" font-size="9" '
-                   f'fill="#9CA3AF" font-family="Consolas,monospace" dominant-baseline="middle">{escape(col)}</text>')
+                   f'fill="#9CA3AF" font-family="Consolas,monospace" dominant-baseline="middle">{escape(mono)}</text>')
 
         if not pts:
             svg.append(f'<text x="{PAD_L+plot_w/2}" y="{y_top+plot_h/2}" text-anchor="middle" font-size="11" fill="#9CA3AF">(데이터 없음)</text>')
