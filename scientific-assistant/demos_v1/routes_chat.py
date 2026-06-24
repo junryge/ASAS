@@ -1250,6 +1250,9 @@ def _stream_chat_sse(data):
         # 입력이 잘렸으면 사용자에게 먼저 안내
         if _api_fit_warn:
             yield f"data: {json.dumps({'type': 'token', 't': _api_fit_warn + chr(10)+chr(10)}, ensure_ascii=False)}\n\n"
+        # ★ 리포트 그래프를 '맨 앞'에 먼저 표시 — 진단 텍스트보다 위에 오게(한눈에 파악).
+        #   LLM 응답을 3분 기다리는 동안에도 그래프가 즉시 뜬다.
+        yield from _emit_graph()
         try:
             r = chat_post(api_url, headers=headers, json=payload,
                          timeout=180, verify=False, stream=True)
@@ -1271,7 +1274,6 @@ def _stream_chat_sse(data):
                     continue
                 body = line[5:].strip()
                 if body == "[DONE]":
-                    yield from _emit_graph()
                     yield "data: [DONE]\n\n"
                     return
                 try:
@@ -1295,7 +1297,6 @@ def _stream_chat_sse(data):
                         yield f"data: {json.dumps({'type': 'token', 't': tail}, ensure_ascii=False)}\n\n"
                     end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
-            yield from _emit_graph()
             yield "data: [DONE]\n\n"
         except Exception as e:
             err = {"type": "error", "error": str(e), "model": model}
