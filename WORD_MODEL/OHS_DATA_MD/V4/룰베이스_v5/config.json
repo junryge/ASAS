@@ -7,5 +7,11 @@
   "table_name": "v5_test_disabled",
   "file_label": "v5_test",
   "fail_silent": true,
-  "async_upload": false
+  "async_upload": false,
+
+  "_comment_graph": "Graph_LO — 발동이벤트 ≥주의 시 raw 90분 복사 + 그래프 자동 생성",
+  "graph_enabled": true,
+  "graph_dir": "./gre",
+  "graph_raw_path": "./predict/M16A_HUBROOM_PR.csv",
+  "graph_levels": ["주의", "경계", "위험", "발동"]
 }
