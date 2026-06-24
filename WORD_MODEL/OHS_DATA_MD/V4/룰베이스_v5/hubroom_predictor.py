@@ -43,6 +43,12 @@ try:
 except Exception as _e:
     _logpresso = None
 
+# Graph_LO — 발동이벤트 ≥주의 시 raw 90분 복사 + 그래프 자동 생성 (선택)
+try:
+    import Graph_LO as _graph
+except Exception:
+    _graph = None
+
 # ============================================================
 # 기본 경로 / 상수
 # ============================================================
@@ -1386,6 +1392,9 @@ def append_event_row(out_dir, ev, file_name):
     # Logpresso 적재 (file 컬럼은 Rule_LO 에서 'Rule_system' 으로 하드코딩)
     if _logpresso is not None:
         _logpresso.upload(EVENT_FIELDS, row)
+    # Graph_LO — ≥주의 시 raw 복사 + 그래프 자동 생성
+    if _graph is not None:
+        _graph.trigger(EVENT_FIELDS, row)
     return path
 
 
@@ -1552,6 +1561,8 @@ def run_watch(input_csv: Path, out_dir: Path, logger):
     logger.info("=" * 70)
     if _logpresso is not None:
         _logpresso.start()
+    if _graph is not None:
+        _graph.start()
     p = Predictor(input_csv, out_dir, logger)
     logger.info("[INIT] 시작 시점 윈도우 채우기...")
     n0 = p.tick()
@@ -1572,6 +1583,8 @@ def run_watch(input_csv: Path, out_dir: Path, logger):
         p.finalize()
         if _logpresso is not None:
             _logpresso.stop()
+        if _graph is not None:
+            _graph.stop()
         logger.info("종료")
 
 
