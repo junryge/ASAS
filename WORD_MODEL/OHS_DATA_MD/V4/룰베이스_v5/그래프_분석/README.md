@@ -12,7 +12,8 @@
 | `svg_lib.py` | 공통 SVG 빌더 (24h / 위험사건) — raw 풀네임 + 한글 라벨 동시 표시 |
 | `발동이벤트_24h.py` | 발동이벤트.csv → 24시간 점수 추이 + 최고점 reason 발동 컬럼 그래프 |
 | `위험사건_그래프.py` | 사건단위 + 발동이벤트 → 사건마다 ±60분 그래프 |
-| `일괄생성.py` | 하루치 한 번에 처리 |
+| `원본컬럼_그래프.py` | **★ raw CSV (M16A_HUBROOM_PR.csv) 의 풀네임 컬럼 직접 추출** — 고객 보고용 |
+| `일괄생성.py` | 하루치 한 번에 처리 (`--raw` 옵션으로 원본 그래프도 같이) |
 
 ## 사용
 
@@ -29,9 +30,20 @@ python 위험사건_그래프.py predict_tobe\20260525_사건단위.csv predict_
 옵션 `-l 위험` 으로 등급 필터 (기본 ≥주의).
 → `20260525_1757_위험_M16HUB.svg`, `20260525_2205_위험_M16B.svg` …
 
-### ③ 한 번에
+### ③ 원본 raw 컬럼 그래프 (★ 고객 보고용)
+```cmd
+python 원본컬럼_그래프.py 20260609DATA\M16A_HUBROOM_PR.CSV predict_tobe\20260609_발동이벤트.csv -o ./out
+```
+- 발동이벤트.csv reason 은 **어느 raw 컬럼이 원인인지 식별** 용도로만 사용
+- 그래프 데이터는 **raw CSV 의 풀네임 컬럼** (M16HUB.QUE.TIME.AVGTOTALTIME1MIN 등) 에서 직접 추출
+- 발동이벤트.csv 의 축약값 안 씀 — 고객이 보는 원본 그대로
+
+→ `20260609_1251_원본raw_M16HUB.svg`
+
+### ④ 한 번에
 ```cmd
 python 일괄생성.py 20260525 --in ../predict_tobe -o ./out
+python 일괄생성.py 20260609 --in ../predict_tobe --raw ../20260609DATA/M16A_HUBROOM_PR.CSV -o ./out
 ```
 
 ## 사용 컬럼 (발동이벤트.csv 안)
