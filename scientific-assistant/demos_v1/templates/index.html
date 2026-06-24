@@ -2482,6 +2482,9 @@ function renderMd(text){
   // 1) escape HTML (think-box는 이미 처리했으므로 보호)
   const thinkBlocks=[];
   text=text.replace(/<details class="think-box">[\s\S]*?<\/details>/g, m=>{thinkBlocks.push(m);return `__THINK_${thinkBlocks.length-1}__`;});
+  // 리포트 그래프(백엔드가 붙인 인라인 SVG/PNG) — escape 전에 빼두고 끝에 원본 그대로 복원
+  const graphBlocks=[];
+  text=text.replace(/<div class="hub-report-graph"[^>]*>[\s\S]*?<\/div>/g, m=>{graphBlocks.push(m);return `__GRAPH_${graphBlocks.length-1}__`;});
   let s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   // 2) code blocks (```lang\n...``` 또는 ```lang코드...``` 모두 지원)
   // 2a) drawio 코드블록은 특별 처리
@@ -2623,6 +2626,8 @@ function renderMd(text){
   // single newlines inside remaining text
   // think 블록 복원
   thinkBlocks.forEach((block,i)=>{s=s.replace(`__THINK_${i}__`,block);});
+  // 리포트 그래프 복원 (원본 SVG/PNG 그대로 — escape 안 함)
+  graphBlocks.forEach((block,i)=>{s=s.replace(`__GRAPH_${i}__`,block);});
   return s;
 }
 // 수식 렌더: KaTeX 로드됐으면 렌더, 아니면 LaTeX→유니코드 기호 변환

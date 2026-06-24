@@ -731,6 +731,16 @@ def _stream_chat_sse(data):
         user_envs = ["auto"]
 
     messages = data.get("messages", [])
+    # 과거 assistant 응답에 백엔드가 붙인 리포트 그래프(인라인 SVG/PNG, 수십~수백 KB)는
+    # 다음 턴 LLM 컨텍스트로 되돌리지 않는다(토큰 폭발 방지). 화면/다운로드용일 뿐.
+    try:
+        _gre = re.compile(r'<div class="hub-report-graph"[^>]*>.*?</div>', re.S)
+        for _m in messages:
+            _c = _m.get("content")
+            if isinstance(_c, str) and "hub-report-graph" in _c:
+                _m["content"] = _gre.sub("[리포트 그래프는 화면에 표시됨 — 생략]", _c)
+    except Exception:
+        pass
     custom_system_prompt = (data.get("system_prompt") or "").strip()
     effort = data.get("effort", 2)
     temperature_map = {0: 0.0, 1: 0.2, 2: 0.4, 3: 0.7}
@@ -1206,6 +1216,28 @@ def _stream_chat_sse(data):
 
     def gen_api():
         _tf = _StreamThinkFilter()   # 명시적 <think>...</think> 만 제거 (안전)
+        _graph_done = {"v": False}
+
+        def _emit_graph():
+            """응답 끝에 리포트 그래프(인라인 SVG/PNG) 1블록을 자동 삽입.
+            발동이벤트 스키마(unified_risk_score+reason+datetime) CSV 가 있을 때만."""
+            if _graph_done["v"] or not _data_for_script:
+                return
+            _graph_done["v"] = True
+            try:
+                from demos_v1.report_graphs import build_report_graph
+                _hdr = _data_for_script.get("headers") or []
+                _hdr = [str(h).lstrip("﻿") for h in _hdr]
+                _rws = _data_for_script.get("rows") or []
+                _dict_rows = [dict(zip(_hdr, r)) for r in _rws]
+                _blk = build_report_graph(_hdr, _dict_rows)
+            except Exception as _ge:
+                print(f"  📈 [GRAPH] 생성 예외: {_ge}")
+                _blk = None
+            if _blk:
+                print(f"  📈 [GRAPH] 리포트 그래프 삽입 ({len(_blk)}자)")
+                yield f"data: {json.dumps({'type': 'token', 't': _blk}, ensure_ascii=False)}\n\n"
+
         _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
         meta = {
             "type": "meta", "env": env_id, "model": model,
@@ -1239,6 +1271,7 @@ def _stream_chat_sse(data):
                     continue
                 body = line[5:].strip()
                 if body == "[DONE]":
+                    yield from _emit_graph()
                     yield "data: [DONE]\n\n"
                     return
                 try:
@@ -1262,6 +1295,7 @@ def _stream_chat_sse(data):
                         yield f"data: {json.dumps({'type': 'token', 't': tail}, ensure_ascii=False)}\n\n"
                     end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+            yield from _emit_graph()
             yield "data: [DONE]\n\n"
         except Exception as e:
             err = {"type": "error", "error": str(e), "model": model}
