@@ -236,8 +236,8 @@ SORTER_COL = {
     'M16HUB': 'M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER',
 }
 
-# R-C' 리프터 역증가 (M16HUB.LFT.* 들의 추세 분석 → 단일 컬럼 아님)
-RC_REPRESENTATIVE = 'M16HUB.LFT (리프터 역증가)'
+# R-C' 리프터 (M16HUB.LFT.* 들의 추세 분석 → 단일 컬럼 아님)
+RC_REPRESENTATIVE = 'M16HUB.LFT (리프터)'
 
 # ============================================================
 # ★ 발동이벤트.csv 축약 컬럼 ↔ raw 풀네임 (양방향)
@@ -282,7 +282,7 @@ def friendly_label(evt_col):
         a = evt_col.replace('_ra', ''); return f"{a} 반송시간 (분)"
     if evt_col == 'M16HUB_rd_fab':    return "M16HUB FAB 저장율 (%)"
     if evt_col == 'M16HUB_stb_util':  return "M16HUB STB 저장율 (%)"
-    if evt_col == 'M16HUB_rev_count': return "M16HUB 리프터 역증가 (대)"
+    if evt_col == 'M16HUB_rev_count': return "M16HUB 리프터 (대)"
     if evt_col.endswith('_rd_oht'):
         a = evt_col.replace('_rd_oht', ''); return f"{a} OHT 가동률 (%)"
     if evt_col.startswith('sla_'):
@@ -339,7 +339,7 @@ def parse_reason_pairs(reason):
         if ('Sorter(' in body or 'SORTERWAIT' in body) and area in SORTER_COL:
             evt = f"sorter_{area}"
             add(evt, SORTER_COL[area], area, "Sorter")
-        # R-C' 리프터 역증가 (M16HUB 전용)
+        # R-C' 리프터 (M16HUB 전용) — reason 키워드 매칭만 유지
         if area == 'M16HUB' and '역증가' in body:
             add('M16HUB_rev_count', RC_REPRESENTATIVE, area, "R-C'")
     return out
@@ -377,7 +377,7 @@ def parse_relation_pairs(relation):
                 if f"[{area} {rid}]" in text or rid in text:
                     rule = rid; break
             out.append((evt, raw, area, rule))
-    # 리프터 역증가 (한글)
+    # 리프터 (한글 키워드 — relation 안의 '역증가'/'감소' 텍스트만 매칭에 사용)
     if '리프터' in text and '역증가' in text and 'M16HUB_rev_count' not in seen:
         seen.add('M16HUB_rev_count')
         out.append(('M16HUB_rev_count', RC_REPRESENTATIVE, 'M16HUB', "R-C'"))
@@ -394,7 +394,7 @@ if __name__ == '__main__':
         print(f"   [{area} {rule}] {evt} ← {raw}")
     r = ("[M16HUB R-A'] M16HUB.QUE.TIME.AVGTOTALTIME1MIN=6.34분 (기준 5.0분) | "
          "[M16HUB R-D] M16HUB.STRATE.ALL.FABSTORAGERATIO=92.3% (기준 90%) | "
-         "[M16HUB R-C'] 리프터 역증가 3개 (기준 2)")
+         "[M16HUB R-C'] 리프터 3개 (기준 2)")
     print("relation →")
     for evt, raw, area, rule in parse_relation_pairs(r):
         print(f"   [{area} {rule}] {evt} ← {raw}")

@@ -64,7 +64,7 @@ DB 접속 없이 reason/relation 텍스트만 보고 어느 raw 풀네임 컬럼
 | R-D(OHT) | RD_OHT_COL | M16B → `M16B.QUE.OHT.OHTUTIL` |
 | SLA | SLA_COL | M14 → `M14.QUE.ALL.TRANSPORT4MINOVERRATIO` |
 | Sorter | SORTER_COL | M14 → `M14.SORTER.ABN.SORTERWAITCOUNTOVER` |
-| R-C' (리프터 역증가) | 다중 LFT 컬럼 추세 | `M16HUB.LFT.*` (대표명) |
+| R-C' (리프터) | 다중 LFT 컬럼 추세 | `M16HUB.LFT.*` (대표명) |
 
 그래프 좌측에 `한글 친화 라벨 (단위)` + 그 아래 monospace 로 `raw 풀네임` 같이 표시.
 

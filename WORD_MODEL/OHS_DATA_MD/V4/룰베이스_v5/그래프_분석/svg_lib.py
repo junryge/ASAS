@@ -40,8 +40,8 @@ COL_MAP_RAW_TO_EVT = {
     'M16A.SORTER.ABN.SORTERWAITCOUNTOVER': 'sorter_M16A',
     'M16B.SORTER.ABN.SORTERWAITCOUNTOVER': 'sorter_M16B',
     'M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER':'sorter_M16HUB',
-    # R-C 리프터 역증가
-    '리프터역증가': 'M16HUB_rev_count',
+    # R-C 리프터
+    '리프터': 'M16HUB_rev_count',
 }
 
 
@@ -51,7 +51,7 @@ def short_label(col):
         a = col.replace('_ra',''); return f"{a} 반송시간 (분)"
     if col == 'M16HUB_rd_fab': return "M16HUB FAB 저장율 (%)"
     if col == 'M16HUB_stb_util': return "M16HUB STB 저장율 (%)"
-    if col == 'M16HUB_rev_count': return "M16HUB 리프터 역증가 (대)"
+    if col == 'M16HUB_rev_count': return "M16HUB 리프터 (대)"
     if col.endswith('_rd_oht'):
         a = col.replace('_rd_oht',''); return f"{a} OHT 가동률 (%)"
     if col.startswith('sla_'):
@@ -179,7 +179,7 @@ def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
 
     # 라벨 결정 — friendly_map 우선, 없으면 COL_MAP_RAW_TO_EVT 역추론, 그것도 없으면 col 그대로
     raw_to_orig_legacy = {v: k for k, v in COL_MAP_RAW_TO_EVT.items() if v != 'M16HUB_rev_count'}
-    raw_to_orig_legacy['M16HUB_rev_count'] = 'M16HUB.LFT (리프터 역증가 개수)'
+    raw_to_orig_legacy['M16HUB_rev_count'] = 'M16HUB.LFT (리프터)'
 
     def _resolve(col):
         # 한글 친화 라벨
