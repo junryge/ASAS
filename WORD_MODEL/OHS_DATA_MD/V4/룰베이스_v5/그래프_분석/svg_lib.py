@@ -79,6 +79,151 @@ COLORS = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#0891B2','#DB2777',
 # ─────────────────────────────────────────────────────────────
 # 24시간 점수 추이 그래프
 # ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# 24시간 통합 그래프 — 상단 점수 추이 + 하단 최고점 reason 컬럼 시계열
+# ─────────────────────────────────────────────────────────────
+def make_24h_combined_svg(day, score_data, peak, raw_series):
+    """
+    score_data = [{'t', 'score', 'level', 'hot'}, ...]  매분
+    peak       = {'t', 'score', 'level', 'hot', 'reason'}
+    raw_series = {evt_col: [(t, val), ...]}  최고점 reason 의 컬럼들 24h 시계열
+    """
+    from collections import Counter
+    levels = Counter(d['level'] for d in score_data)
+    t0 = datetime.strptime(f'{day} 00:00', '%Y-%m-%d %H:%M')
+    t1 = datetime.strptime(f'{day} 23:59', '%Y-%m-%d %H:%M')
+    total_sec = (t1 - t0).total_seconds()
+
+    W = 1400
+    H_SCORE = 360
+    H_PER = 110
+    PAD_L, PAD_R, PAD_T, PAD_B = 220, 100, 140, 80
+    n_sub = len(raw_series)
+    H = PAD_T + H_SCORE + 30 + H_PER * n_sub + PAD_B
+    plot_w = W - PAD_L - PAD_R
+    def tx(t): return PAD_L + (t - t0).total_seconds() / total_sec * plot_w
+
+    y_s_top = PAD_T
+    y_s_bot = PAD_T + H_SCORE
+    Y_MAX = 250
+    def ty_score(v): return y_s_bot - (min(v, Y_MAX) / Y_MAX) * H_SCORE
+
+    svg = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
+        f'font-family="Malgun Gothic, AppleGothic, sans-serif">',
+        f'<rect width="{W}" height="{H}" fill="#FFFFFF"/>',
+        f'<text x="{W//2}" y="32" text-anchor="middle" font-size="22" font-weight="700" fill="#111827">'
+        f'{day} 발동이벤트 24시간 분석</text>',
+        f'<text x="{W//2}" y="54" text-anchor="middle" font-size="13" fill="#6B7280">'
+        f'최고 {peak["score"]}점 [{peak["level"]}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]}) · '
+        f'정상 {levels.get("정상",0)} · 관심 {levels.get("관심",0)} · 주의 {levels.get("주의",0)} · '
+        f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 발동 {levels.get("발동",0)}</text>',
+        f'<text x="{PAD_L}" y="92" font-size="11" fill="#374151" font-weight="600">등급 :</text>',
+    ]
+    xx = PAD_L + 42
+    for v0, v1, color, name in LEVEL_BANDS[:-1]:
+        svg.append(f'<rect x="{xx}" y="82" width="14" height="12" fill="{color}" stroke="#D1D5DB"/>')
+        svg.append(f'<text x="{xx+18}" y="92" font-size="11" fill="#374151">{name} ({v0}~{v1})</text>')
+        xx += 100
+
+    # ── ① 상단: 점수 추이 ──
+    svg.append(f'<text x="{PAD_L-8}" y="{y_s_top - 10}" font-size="13" font-weight="700" fill="#111827">'
+               f'① unified_risk_score 추이 (점수 0~{Y_MAX}+)</text>')
+    # 등급 배경 밴드
+    for v0, v1, color, name in LEVEL_BANDS:
+        if v0 >= Y_MAX: continue
+        y_a = ty_score(min(v1, Y_MAX)); y_b = ty_score(v0)
+        svg.append(f'<rect x="{PAD_L}" y="{y_a:.1f}" width="{plot_w}" height="{y_b-y_a:.1f}" '
+                   f'fill="{color}" opacity="0.45"/>')
+    for v in [0, 100, 120, 130, 160, 220]:
+        if v > Y_MAX: continue
+        y = ty_score(v)
+        if v > 0:
+            svg.append(f'<line x1="{PAD_L}" y1="{y:.1f}" x2="{PAD_L+plot_w}" y2="{y:.1f}" '
+                       f'stroke="#9CA3AF" stroke-width="0.7" stroke-dasharray="3,3"/>')
+        svg.append(f'<text x="{PAD_L-6}" y="{y:.1f}" text-anchor="end" font-size="10" fill="#6B7280" '
+                   f'dominant-baseline="middle">{v}</text>')
+    # 점수 선
+    path = " ".join(f"{'M' if i==0 else 'L'}{tx(d['t']):.1f},{ty_score(d['score']):.1f}"
+                    for i, d in enumerate(score_data))
+    svg.append(f'<path d="{path}" stroke="#1F2937" stroke-width="1.4" fill="none" stroke-linejoin="round"/>')
+    # 최고점 마커
+    mx, my = tx(peak['t']), ty_score(peak['score'])
+    svg.append(f'<circle cx="{mx:.1f}" cy="{my:.1f}" r="6" fill="#DC2626" stroke="#fff" stroke-width="2"/>')
+    svg.append(f'<text x="{mx:.1f}" y="{my-13:.1f}" text-anchor="middle" font-size="12" '
+               f'fill="#DC2626" font-weight="700">{peak["score"]}점 @ {peak["t"].strftime("%H:%M")}</text>')
+    # 우측 등급 라벨
+    for v0, v1, color, name in LEVEL_BANDS:
+        if v0 >= Y_MAX: continue
+        y_mid = (ty_score(v0) + ty_score(v1)) / 2
+        svg.append(f'<text x="{PAD_L + plot_w + 5}" y="{y_mid:.1f}" font-size="11" '
+                   f'fill="#374151" dominant-baseline="middle">{name}</text>')
+    # x축 (점수 그래프 아래)
+    def draw_xticks(y_x):
+        for h in range(0, 25, 3):
+            tt = datetime.strptime(f'{day} {h:02d}:00', '%Y-%m-%d %H:%M') if h < 24 else t1
+            x = tx(tt)
+            svg.append(f'<line x1="{x:.1f}" y1="{y_x}" x2="{x:.1f}" y2="{y_x+4}" stroke="#6B7280"/>')
+            svg.append(f'<text x="{x:.1f}" y="{y_x+16}" text-anchor="middle" font-size="10" fill="#6B7280">{h:02d}</text>')
+    draw_xticks(y_s_bot)
+
+    # ── ② 하단: reason 컬럼들 24h ──
+    y_sec = y_s_bot + 60
+    svg.append(f'<text x="{PAD_L-8}" y="{y_sec - 20}" font-size="13" font-weight="700" fill="#111827">'
+               f'② 최고점({peak["t"].strftime("%H:%M")}) reason 발동 컬럼 — 24시간 추이</text>')
+
+    raw_to_orig = {v: k for k, v in COL_MAP_RAW_TO_EVT.items() if v != 'M16HUB_rev_count'}
+    raw_to_orig['M16HUB_rev_count'] = 'M16HUB.LFT (리프터 역증가 개수)'
+
+    for k, (col, pts) in enumerate(raw_series.items()):
+        color = COLORS[k % len(COLORS)]
+        y_top = y_sec + k * H_PER
+        y_bot = y_top + H_PER - 25
+        plot_h = y_bot - y_top
+        svg.append(f'<rect x="{PAD_L}" y="{y_top}" width="{plot_w}" height="{plot_h}" '
+                   f'fill="#FAFAFA" stroke="#E5E7EB" stroke-width="1"/>')
+        # 라벨 (한글 + 원본 컬럼명)
+        svg.append(f'<text x="{PAD_L-12}" y="{y_top+plot_h/2-7}" text-anchor="end" font-size="12" '
+                   f'fill="#1F2937" font-weight="700" dominant-baseline="middle">{escape(short_label(col))}</text>')
+        orig = raw_to_orig.get(col, col)
+        svg.append(f'<text x="{PAD_L-12}" y="{y_top+plot_h/2+9}" text-anchor="end" font-size="9" '
+                   f'fill="#9CA3AF" font-family="Consolas,monospace" dominant-baseline="middle">{escape(orig)}</text>')
+
+        if not pts:
+            svg.append(f'<text x="{PAD_L+plot_w/2}" y="{y_top+plot_h/2}" text-anchor="middle" font-size="11" fill="#9CA3AF">(데이터 없음)</text>')
+            continue
+        vmin = min(v for _, v in pts); vmax = max(v for _, v in pts)
+        rng = max(vmax-vmin, 1e-9)
+        vmin_d, vmax_d = vmin - rng*0.05, vmax + rng*0.08
+        def ty(v): return y_bot - (v-vmin_d)/(vmax_d-vmin_d)*plot_h
+        for frac in (0.25, 0.5, 0.75):
+            y = y_top + plot_h*frac
+            svg.append(f'<line x1="{PAD_L}" y1="{y:.1f}" x2="{PAD_L+plot_w}" y2="{y:.1f}" stroke="#F3F4F6"/>')
+        svg.append(f'<text x="{PAD_L-6}" y="{y_top+3}" text-anchor="end" font-size="9" fill="#6B7280" dominant-baseline="hanging">{vmax:.1f}</text>')
+        svg.append(f'<text x="{PAD_L-6}" y="{y_bot-3}" text-anchor="end" font-size="9" fill="#6B7280">{vmin:.1f}</text>')
+        path = " ".join(f"{'M' if i==0 else 'L'}{tx(t):.1f},{ty(v):.1f}" for i,(t,v) in enumerate(pts))
+        svg.append(f'<path d="{path}" stroke="{color}" stroke-width="1.6" fill="none" stroke-linejoin="round"/>')
+        # 최고점 빨간 점선
+        x_p = tx(peak['t'])
+        svg.append(f'<line x1="{x_p:.1f}" y1="{y_top}" x2="{x_p:.1f}" y2="{y_bot}" '
+                   f'stroke="#DC2626" stroke-width="1" stroke-dasharray="3,2" opacity="0.6"/>')
+        # 우측 아래 원본 컬럼명
+        svg.append(f'<text x="{PAD_L+plot_w}" y="{y_bot+12}" text-anchor="end" font-size="10" '
+                   f'fill="#6B7280" font-family="Consolas, monospace">{escape(orig)}</text>')
+
+    # 시간축 (마지막)
+    y_last_x = y_sec + n_sub * H_PER - 22
+    draw_xticks(y_last_x)
+    svg.append(f'<text x="{W//2}" y="{H - 12}" text-anchor="middle" font-size="11" fill="#6B7280">'
+               f'시각 (시간) · 빨간 점선 = 최고점({peak["t"].strftime("%H:%M")})</text>')
+    svg.append('</svg>')
+    return '\n'.join(svg)
+
+
+# ─────────────────────────────────────────────────────────────
+# 24시간 점수만 — 단순 그래프 (기존 호환)
+# ─────────────────────────────────────────────────────────────
 def make_24h_score_svg(day, data, peak):
     """data = [{'t':..., 'score':..., 'level':..., 'hot':...}, ...] (매분 1행)."""
     from collections import Counter
