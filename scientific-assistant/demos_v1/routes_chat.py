@@ -1216,68 +1216,31 @@ def _stream_chat_sse(data):
 
     def gen_api():
         _tf = _StreamThinkFilter()   # 명시적 <think>...</think> 만 제거 (안전)
-        _graph_done = {"v": False}
 
-        def _emit_graph():
-            """응답 끝에 리포트 그래프(인라인 SVG/PNG) 1블록을 자동 삽입.
-            발동이벤트 스키마(unified_risk_score+reason+datetime) CSV 가 있을 때만."""
-            if _graph_done["v"] or not _data_for_script:
-                return
-            _graph_done["v"] = True
-            try:
-                from demos_v1.report_graphs import build_report_graph
-                _hdr = _data_for_script.get("headers") or []
-                _hdr = [str(h).lstrip("﻿") for h in _hdr]
-                _rws = _data_for_script.get("rows") or []
-                _dict_rows = [dict(zip(_hdr, r)) for r in _rws]
-                _blk = build_report_graph(_hdr, _dict_rows)
-            except Exception as _ge:
-                print(f"  📈 [GRAPH] 생성 예외: {_ge}")
-                _blk = None
-            if _blk:
-                print(f"  📈 [GRAPH] 리포트 그래프 삽입 ({len(_blk)}자)")
-                yield f"data: {json.dumps({'type': 'token', 't': _blk}, ensure_ascii=False)}\n\n"
-
-        # 그래프는 '제목(# …) 바로 밑, 본문 위'에 끼운다.
-        #   첫 H1 제목 줄이 끝날 때까지 토큰을 살짝 버퍼링했다가, 제목+그래프+나머지 순으로 흘린다.
-        _inj = {"done": False, "buf": ""}
-
+        # 리포트 그래프 삽입은 report_graphs.GraphStreamInjector 가 전담(코어 침투 최소화).
+        #   여기선 feed()/flush() 만 호출하고 _tok 으로 SSE 포장.  떼고 싶으면 이 3줄만 제거.
         def _tok(t):
             return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
 
+        try:
+            from demos_v1.report_graphs import GraphStreamInjector
+            _inj = GraphStreamInjector(_data_for_script)
+        except Exception as _ie:
+            print(f"  📈 [GRAPH] injector 비활성: {_ie}")
+            _inj = None
+
         def _stream_vis(vis):
-            """제목 줄을 만나면 그 직후에 그래프를 1회 삽입. 그 전까진 버퍼링."""
-            if _inj["done"]:
+            if _inj is None:
                 yield _tok(vis)
                 return
-            _inj["buf"] += vis
-            m = re.search(r'(?m)^#\s+.+?\n', _inj["buf"])
-            if m:
-                head = _inj["buf"][:m.end()]
-                rest = _inj["buf"][m.end():]
-                if head:
-                    yield _tok(head)
-                yield from _emit_graph()
-                _inj["done"] = True
-                _inj["buf"] = ""
-                if rest:
-                    yield _tok(rest)
-            elif len(_inj["buf"]) > 4000:
-                # 제목(# …)이 안 나옴 → 그래프 먼저, 그다음 본문(폴백)
-                yield from _emit_graph()
-                _inj["done"] = True
-                yield _tok(_inj["buf"])
-                _inj["buf"] = ""
+            for _p in _inj.feed(vis):
+                yield _tok(_p)
 
         def _flush_pending():
-            """스트림 종료 시 제목을 못 만났으면 그래프+남은 버퍼를 마저 흘린다."""
-            if _inj["done"]:
+            if _inj is None:
                 return
-            yield from _emit_graph()
-            _inj["done"] = True
-            if _inj["buf"]:
-                yield _tok(_inj["buf"])
-                _inj["buf"] = ""
+            for _p in _inj.flush():
+                yield _tok(_p)
 
         _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
         meta = {

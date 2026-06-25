@@ -330,3 +330,82 @@ def build_report_graph(headers, rows, prefer_png=None):
             inner = f'<img src="{uri}" alt="리포트 그래프" style="max-width:100%;border-radius:10px;"/>'
     # 블록 레벨 <div> 로 감싸 python-markdown/marked 통과 보장
     return f'\n\n<div class="hub-report-graph" style="margin:14px 0;">{inner}</div>\n\n'
+
+
+class GraphStreamInjector:
+    """SSE 스트림에 리포트 그래프를 '제목(# …) 바로 밑, 본문 위'로 1회 삽입.
+
+    routes_chat 의 gen_api 침투를 최소화하기 위한 어댑터.  코어 파일은
+        inj = GraphStreamInjector(_data_for_script)
+        ... for p in inj.feed(vis): yield _tok(p)
+        ... for p in inj.flush():   yield _tok(p)
+    처럼 feed()/flush() 만 호출하면 된다(버퍼링·정규식·그래프 생성은 전부 여기).
+
+    feed/flush 는 'SSE로 감싸기 전의 텍스트 조각'을 yield 한다(코어가 _tok 으로 감쌈).
+    """
+
+    def __init__(self, data_for_script, prefer_png=None, head_limit=4000):
+        self.src = data_for_script if (data_for_script and data_for_script.get("rows")) else None
+        self.prefer_png = prefer_png
+        self.head_limit = head_limit
+        self.done = (self.src is None)   # CSV 없으면 처음부터 그냥 통과
+        self.buf = ""
+        self._block = None
+        self._built = False
+
+    def _block_md(self):
+        if self._built:
+            return self._block
+        self._built = True
+        try:
+            hdr = [str(h).lstrip("﻿") for h in (self.src.get("headers") or [])]
+            rows = self.src.get("rows") or []
+            dict_rows = [dict(zip(hdr, r)) for r in rows]
+            self._block = build_report_graph(hdr, dict_rows, prefer_png=self.prefer_png)
+        except Exception as e:
+            print(f"  📈 [GRAPH] 생성 예외: {e}")
+            self._block = None
+        if self._block:
+            print(f"  📈 [GRAPH] 리포트 그래프 삽입 ({len(self._block)}자)")
+        return self._block
+
+    def feed(self, vis):
+        """가시 토큰 1조각 → 내보낼 텍스트 조각들(제목 직후 그래프 포함)을 yield."""
+        if self.done:
+            if vis:
+                yield vis
+            return
+        self.buf += vis
+        m = re.search(r'(?m)^#\s+.+?\n', self.buf)
+        if m:
+            head, rest = self.buf[:m.end()], self.buf[m.end():]
+            self.done = True
+            self.buf = ""
+            if head:
+                yield head
+            blk = self._block_md()
+            if blk:
+                yield blk
+            if rest:
+                yield rest
+        elif len(self.buf) > self.head_limit:
+            # 제목(# …)을 못 만남 → 그래프 먼저, 그다음 본문(폴백)
+            self.done = True
+            blk = self._block_md()
+            if blk:
+                yield blk
+            yield self.buf
+            self.buf = ""
+
+    def flush(self):
+        """스트림 종료 시: 제목을 못 만났으면 그래프+남은 버퍼를 마저 흘린다."""
+        if self.done:
+            return
+        self.done = True
+        blk = self._block_md()
+        if blk:
+            yield blk
+        if self.buf:
+            yield self.buf
+            self.buf = ""
+
