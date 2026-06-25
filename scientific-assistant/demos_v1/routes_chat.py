@@ -672,6 +672,22 @@ def _run_agent_script(user_id, query, csv_data, selected_names):
                               encoding="utf-8", errors="replace",
                               env=dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1"))
         csvs = sorted(glob.glob(os.path.join(outd, "*.csv")) + glob.glob(os.path.join(outd, "*.CSV")))
+        # 스크립트가 SVG(그래프)를 출력하면 채집 → 리포트 본문에 그대로 끼운다(LLM 거치지 않음).
+        #   여러 개면 순서대로 이어붙임. 데이터는 csv_data 에 실어 보내(injector 가 읽음).
+        try:
+            svgs = sorted(glob.glob(os.path.join(outd, "*.svg")) + glob.glob(os.path.join(outd, "*.SVG")))
+            if svgs:
+                _parts_svg = []
+                for sf in svgs:
+                    try:
+                        _parts_svg.append(open(sf, encoding="utf-8").read().strip())
+                    except Exception:
+                        pass
+                if _parts_svg and isinstance(csv_data, dict):
+                    csv_data["_script_svg"] = "\n".join(_parts_svg)
+                    print(f"  📈 [GRAPH] 스크립트 SVG 채집 {len(_parts_svg)}개 ({sum(len(s) for s in _parts_svg)}자)")
+        except Exception as _se:
+            print(f"  📈 [GRAPH] 스크립트 SVG 채집 예외: {_se}")
         parts = [f"=== [분석 결과: {meta.get('name')}] — 스크립트가 계산한 결과입니다. 재계산 말고 이걸로 진단하세요 ==="]
         if csvs:
             for cf in csvs:

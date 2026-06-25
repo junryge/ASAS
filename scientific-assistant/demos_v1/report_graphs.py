@@ -264,14 +264,141 @@ def render_hub_evt_24h(rows, title=None, width=900):
     return "".join(out)
 
 
+# ══ 사건단위 타임라인 그래프 ════════════════════════════════════════════
+_LEVEL_COLOR = {"관심": "#16a34a", "주의": "#ca8a04", "경계": "#ea580c",
+                "위험": "#dc2626", "발동": "#991b1b"}
+_LEVEL_EMOJI = {"관심": "🟢", "주의": "🟡", "경계": "🟠", "위험": "🔴", "발동": "⛔"}
+_LEVEL_ORDER = {"정상": 0, "관심": 1, "주의": 2, "경계": 3, "위험": 4, "발동": 5}
+
+
+def _hhmm_to_min(s):
+    try:
+        h, m = str(s).split(":")[:2]
+        return int(h) * 60 + int(m)
+    except Exception:
+        return None
+
+
+def _incident_cause(relation, risk_factors=""):
+    txt = (relation or risk_factors or "").strip()
+    parts = [p.strip() for p in txt.split("|") if p.strip()]
+    return parts[0] if parts else ""
+
+
+def render_incident_timeline(rows, title=None, width=900):
+    """사건단위 rows → 하루 위험사건 타임라인 SVG (사건당 가로 막대)."""
+    rows = [{(k or "").lstrip("﻿"): v for k, v in r.items()} for r in rows]
+    incs = []
+    day = ""
+    for r in rows:
+        s = _hhmm_to_min(r.get("start_time"))
+        e = _hhmm_to_min(r.get("end_time"))
+        if s is None or e is None:
+            continue
+        if e < s:
+            e += 1440   # 자정 넘김
+        p = _hhmm_to_min(r.get("predict_time"))
+        if p is not None and p > s:
+            p -= 1440
+        try:
+            score = int(float(r.get("max_risk_score") or 0))
+        except (TypeError, ValueError):
+            score = 0
+        day = day or (r.get("date") or "")
+        incs.append({
+            "s": s, "e": e, "p": p, "score": score,
+            "level": (r.get("max_risk_level") or "").strip(),
+            "hot": (r.get("hot_area") or "").strip(),
+            "dur": r.get("duration_min") or "",
+            "cause": _incident_cause(r.get("relation"), r.get("risk_factors")),
+        })
+    if not incs:
+        return None
+    incs.sort(key=lambda x: (-_LEVEL_ORDER.get(x["level"], 0), x["s"]))
+
+    if title is None:
+        title = f"📅 {day} M16 HUBROOM 위험사건 타임라인 ({len(incs)}건)"
+
+    t_min = min((i["p"] if i["p"] is not None else i["s"]) for i in incs)
+    t_max = max(i["e"] for i in incs)
+    t_min = (t_min // 60) * 60
+    t_max = ((t_max + 59) // 60) * 60
+    span = max(1, t_max - t_min)
+
+    L, R = 96, 18
+    pw = width - L - R
+    TITLE_H = 34
+    ROW_H, ROW_GAP = 30, 8
+    top = TITLE_H + 6
+    height = int(top + len(incs) * (ROW_H + ROW_GAP) + 30)
+
+    def X(mn):
+        return round(L + pw * ((mn - t_min) / span))
+
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+           f'font-family="-apple-system,\'Malgun Gothic\',sans-serif" '
+           f'style="max-width:100%;height:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;">']
+    out.append(f'<text x="{L}" y="22" font-size="15" font-weight="800" fill="#16213e">{_esc(title)}</text>')
+
+    # 시간축 (2시간 간격 세로선 + HH시)
+    hr = t_min
+    while hr <= t_max:
+        x = X(hr)
+        out.append(f'<line x1="{x}" y1="{top}" x2="{x}" y2="{height-22}" stroke="#eef2f7" stroke-width=".8"/>')
+        out.append(f'<text x="{x}" y="{height-8}" font-size="9" fill="#64748b" text-anchor="middle">{(hr//60)%24:02d}시</text>')
+        hr += 120
+
+    for idx, it in enumerate(incs):
+        ry = top + idx * (ROW_H + ROW_GAP)
+        color = _LEVEL_COLOR.get(it["level"], "#64748b")
+        x0, x1 = X(it["s"]), X(it["e"])
+        bw = max(3, x1 - x0)
+        # 좌측 라벨: 등급 이모지 + 진원지
+        emo = _LEVEL_EMOJI.get(it["level"], "·")
+        out.append(f'<text x="6" y="{ry+ROW_H*0.62:.0f}" font-size="11" font-weight="700" fill="{color}">{emo} {_esc(it["hot"] or "-")}</text>')
+        # 예측→시작 선행구간 (점선)
+        if it["p"] is not None and it["p"] < it["s"]:
+            xp = X(it["p"])
+            out.append(f'<line x1="{xp}" y1="{ry+ROW_H/2:.0f}" x2="{x0}" y2="{ry+ROW_H/2:.0f}" stroke="{color}" stroke-width="1" stroke-dasharray="3 3" opacity=".6"/>')
+            out.append(f'<circle cx="{xp}" cy="{ry+ROW_H/2:.0f}" r="2.5" fill="{color}" opacity=".6"/>')
+        # 사건 막대
+        out.append(f'<rect x="{x0}" y="{ry+5}" width="{bw}" height="{ROW_H-10}" rx="4" fill="{color}" opacity="0.88"/>')
+        # 막대 안/옆 라벨: 점수 + 지속(분) + 원인 (막대가 좁으면 오른쪽에)
+        sh, sm = divmod(it["s"], 60)
+        eh, em = divmod(it["e"] % 1440, 60)
+        try:
+            dmin = int(float(it["dur"]))
+        except (TypeError, ValueError):
+            dmin = it["e"] - it["s"]
+        info = f'{it["level"]} {it["score"]}점 · {sh%24:02d}:{sm:02d}~{eh:02d}:{em:02d} · {dmin}분'
+        if bw > 230:
+            out.append(f'<text x="{x0+8}" y="{ry+ROW_H*0.62:.0f}" font-size="9.5" font-weight="700" fill="#fff" style="paint-order:stroke;stroke:{color};stroke-width:2px;">{_esc(info)}</text>')
+        else:
+            out.append(f'<text x="{x1+6}" y="{ry+ROW_H*0.62:.0f}" font-size="9.5" font-weight="700" fill="{color}">{_esc(info)}</text>')
+        # 원인 한 줄 (막대 아래 회색 작게)
+        if it["cause"]:
+            cz = it["cause"]
+            cz = cz[:78] + "…" if len(cz) > 80 else cz
+            out.append(f'<text x="{L}" y="{ry+ROW_H-1:.0f}" font-size="7.5" fill="#94a3b8">{_esc(cz)}</text>')
+
+    out.append('</svg>')
+    return "".join(out)
+
+
 # ── 렌더러 레지스트리 ───────────────────────────────────────────────────
 def _detect_hub_evt(headers):
     h = set(headers or [])
     return ("unified_risk_score" in h) and ("reason" in h) and ("datetime" in h)
 
 
+def _detect_incident(headers):
+    h = set(headers or [])
+    return ("start_time" in h) and ("end_time" in h) and ("max_risk_level" in h)
+
+
 RENDERERS = [
     {"name": "hub_evt_24h", "detect": _detect_hub_evt, "render": render_hub_evt_24h},
+    {"name": "incident_timeline", "detect": _detect_incident, "render": render_incident_timeline},
 ]
 
 
@@ -355,7 +482,12 @@ class GraphStreamInjector:
         #   그 외(다른 개인에이전트·일반 데모스 채팅·다른 CSV)는 done=True → 토큰을 그대로
         #   통과만 시킨다(버퍼링조차 안 함). 즉 발동이벤트 분석이 아니면 완전 무영향.
         self.done = True
-        if self.src:
+        # 우선순위 1: 등록 스크립트가 직접 출력한 SVG(사용자가 100% 통제).
+        self.script_svg = (self.src or {}).get("_script_svg") if self.src else None
+        if self.script_svg:
+            self.done = False
+        # 우선순위 2: 내장 렌더러가 인식하는 스키마(발동이벤트 24h 자동생성).
+        elif self.src:
             try:
                 hdr = [str(h).lstrip("﻿") for h in (self.src.get("headers") or [])]
                 if any(r["detect"](hdr) for r in RENDERERS):
@@ -367,6 +499,12 @@ class GraphStreamInjector:
         if self._built:
             return self._block
         self._built = True
+        # 스크립트가 준 SVG 가 있으면 그대로 끼운다(내장 렌더러보다 우선).
+        if self.script_svg:
+            self._block = (f'\n\n<div class="hub-report-graph" style="margin:14px 0;">'
+                           f'{self.script_svg}</div>\n\n')
+            print(f"  📈 [GRAPH] 스크립트 SVG 삽입 ({len(self._block)}자)")
+            return self._block
         try:
             hdr = [str(h).lstrip("﻿") for h in (self.src.get("headers") or [])]
             rows = self.src.get("rows") or []
