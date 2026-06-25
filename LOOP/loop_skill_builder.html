@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loop Engineering · 스킬 빌더</title>
+<style>
+  :root{
+    --bg:#0c0e14; --panel:#141823; --panel2:#1b2030; --line:#262c3d;
+    --ink:#e8ecf5; --mut:#8b94ab; --acc:#5b8cff; --acc2:#3ad6a0;
+    --warn:#ffb454; --bad:#ff6b6b; --code:#0a0c12;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    font-size:14px;line-height:1.5}
+  code,pre,textarea.mono{font-family:"SF Mono",Consolas,"D2Coding",Menlo,monospace}
+  a{color:var(--acc)}
+  header.top{padding:22px 26px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#11151f,#0c0e14)}
+  header.top h1{margin:0;font-size:20px;letter-spacing:.3px}
+  header.top h1 .v{color:var(--acc);font-weight:800}
+  header.top .sub{color:var(--mut);margin-top:6px;font-size:13px}
+  header.top .quote{margin-top:10px;padding:8px 12px;border-left:3px solid var(--acc2);
+    background:#0f1320;border-radius:0 8px 8px 0;color:#c7d0e6;font-size:12.5px}
+  .wrap{display:grid;grid-template-columns:minmax(420px,1fr) minmax(440px,1fr);
+    gap:0;min-height:calc(100vh - 132px)}
+  .col{padding:18px 22px;overflow:auto}
+  .col.left{border-right:1px solid var(--line)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .card h2 .n{display:inline-flex;width:22px;height:22px;border-radius:7px;
+    background:var(--panel2);color:var(--acc);align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;border:1px solid var(--line)}
+  .card .hint{color:var(--mut);font-size:12px;margin:2px 0 12px}
+  label.fld{display:block;margin:10px 0 4px;font-size:12.5px;color:#b9c2d8}
+  input[type=text],input[type=number],textarea,select{
+    width:100%;background:var(--code);border:1px solid var(--line);border-radius:8px;
+    color:var(--ink);padding:9px 11px;font-size:13px;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--acc)}
+  textarea{resize:vertical;min-height:64px}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1}
+  .pill{display:inline-flex;gap:6px;align-items:center;padding:4px 9px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--line);font-size:11.5px;color:var(--mut)}
+  .pill.on{color:var(--acc2);border-color:#235a45;background:#0f2018}
+  /* autonomy slider */
+  .slider-box{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  .ticks{display:flex;justify-content:space-between;margin-top:6px;color:var(--mut);font-size:11px}
+  .lvl{display:flex;align-items:baseline;gap:10px;margin-top:10px}
+  .lvl .big{font-size:17px;font-weight:800;color:var(--acc)}
+  .lvl .desc{color:#c7d0e6;font-size:12.5px}
+  /* checks */
+  .chk{display:flex;gap:8px;align-items:center;padding:7px 9px;border:1px solid var(--line);
+    border-radius:8px;margin-bottom:7px;background:var(--code)}
+  .chk input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc2)}
+  .chk .body{flex:1}
+  .chk .nm{font-size:12.5px;font-weight:600}
+  .chk .dn{font-size:11px;color:var(--mut)}
+  .chk .arg{width:120px;flex:none}
+  .comp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .comp{border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:var(--code);
+    cursor:pointer;transition:.12s}
+  .comp:hover{border-color:#34406a}
+  .comp.on{border-color:var(--acc);background:#0f1626}
+  .comp .ct{font-size:12.5px;font-weight:700;display:flex;justify-content:space-between}
+  .comp .cd{font-size:11px;color:var(--mut);margin-top:3px}
+  .comp .on-dot{color:var(--acc2)}
+  /* right tabs */
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:var(--panel);
+    color:var(--mut);cursor:pointer;font-size:12.5px}
+  .tab.on{color:var(--ink);border-color:var(--acc);background:#0f1626}
+  pre.out{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px;
+    overflow:auto;font-size:12.5px;white-space:pre;max-height:calc(100vh - 280px);margin:0}
+  .bar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  button.btn{background:var(--acc);color:#06122e;border:none;border-radius:8px;padding:8px 14px;
+    font-size:12.5px;font-weight:700;cursor:pointer}
+  button.btn.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  button.btn:active{transform:translateY(1px)}
+  .warnbox{border:1px solid #5a4420;background:#1f1708;color:var(--warn);border-radius:9px;
+    padding:9px 11px;font-size:12px;margin-top:10px;display:none}
+  .warnbox.show{display:block}
+  .okbox{border:1px solid #1f4a36;background:#0c1c14;color:var(--acc2);border-radius:9px;
+    padding:9px 11px;font-size:12px;margin-top:10px}
+  /* karpathy */
+  .karp{font-size:12.8px;line-height:1.65}
+  .karp h3{font-size:13px;margin:14px 0 4px;color:var(--acc2)}
+  .karp .k{border-left:3px solid var(--line);padding:2px 0 2px 12px;margin:6px 0;color:#c7d0e6}
+  .karp .map{color:var(--mut);font-size:11.5px}
+  .tagline{color:var(--mut);font-size:11px;margin-top:4px}
+  .footer{padding:12px 26px;border-top:1px solid var(--line);color:var(--mut);font-size:11.5px;
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .add-chk{border:1px dashed var(--line);border-radius:8px;padding:8px;text-align:center;
+    color:var(--mut);cursor:pointer;font-size:12px;margin-top:4px}
+  .add-chk:hover{color:var(--ink);border-color:var(--acc)}
+  .small{font-size:11px;color:var(--mut)}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}.col.left{border-right:none;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>🔁 Loop Engineering · <span class="v">스킬 빌더</span></h1>
+  <div class="sub">loop_engine (폐쇄망·stdlib-only) 위에서 <b>SKILL.md + 실행 러너(.py)</b>를 생성하는 오프라인 HTML 도구</div>
+  <div class="quote">"AI한테 매번 시키지 말고, AI를 시키는 시스템을 짜라." — 프롬프트를 짜던 자리에서 빠져나와 <b>루프(트랙)</b>를 설계한다.</div>
+</header>
+
+<div class="wrap">
+  <!-- ===================== LEFT : 설계 폼 ===================== -->
+  <div class="col left">
+
+    <div class="card">
+      <h2><span class="n">①</span> 스킬 정체성 <span class="tagline">— 인수인계 노트(③ 스킬)</span></h2>
+      <div class="hint">세션이 바뀌면 맥락은 백지가 된다. 스킬은 도메인 지식을 파일에 박아두고 루프가 매번 다시 읽게 한다.</div>
+      <label class="fld">스킬 이름 (name) — 영문/스네이크</label>
+      <input id="f_name" type="text" value="amhs_report" oninput="render()">
+      <label class="fld">설명 (description) — 한 줄, "언제 쓰는지"</label>
+      <input id="f_desc" type="text" value="AMHS 일일 운영 리포트를 측정 가능한 기준으로 자동 작성·검증한다." oninput="render()">
+      <label class="fld">목표 (goal) — ★ done 을 '측정 가능'하게</label>
+      <textarea id="f_goal" oninput="render()">M16A_BR OHT 운영 로그를 요약한 일일 리포트를 작성한다. 최소 300자, 'AMHS' 키워드 포함, 병목 구간 1개 이상을 수치 근거와 함께 지목, 플레이스홀더(TODO/생략) 금지.</textarea>
+      <label class="fld">스킬 본문 (SKILL.md body) — 인수인계 지침</label>
+      <textarea id="f_body" style="min-height:90px" oninput="render()">## 절차
+1. LOGPRESSO_HID_INOUT 로그에서 진입/점유/포화도를 1분 단위로 집계.
+2. 포화도 상위 구간을 병목 후보로 추출하고 수치 근거를 붙인다.
+3. 리포트는 [요약]/[병목]/[권고] 3단 구성.
+
+## 금지
+- 추측으로 빈칸을 메우지 말 것. 근거 없는 수치 금지.</textarea>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">②</span> 자율성 슬라이더 <span class="tagline">— Karpathy: "Iron Man 슈트, 로봇이 아니라"</span></h2>
+      <div class="hint">사람이 매 스텝 엔터 누르는 쪽 ↔ 완전 자율 사이를 미끄러뜨린다. 한 번에 한 칸씩, 검증이 따라올 수 있는 만큼만 자율을 올린다.</div>
+      <div class="slider-box">
+        <input id="f_auto" type="range" min="1" max="5" value="3" oninput="onAuto()">
+        <div class="ticks"><span>수동</span><span>보조</span><span>부분자율</span><span>감독</span><span>완전</span></div>
+        <div class="lvl"><span class="big" id="auto_big">L3 · 부분자율</span><span class="desc" id="auto_desc"></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">③</span> 루프 사양 (LoopSpec)</h2>
+      <div class="row">
+        <div>
+          <label class="fld">모드 (mode)</label>
+          <select id="f_mode" onchange="render()">
+            <option value="CLOSED">CLOSED — 기준 못박고 매 스텝 평가(안전)</option>
+            <option value="OPEN">OPEN — 목표+느슨한 조건, 넓게 탐색</option>
+          </select>
+        </div>
+        <div>
+          <label class="fld">최대 라운드 (max_rounds)</label>
+          <input id="f_rounds" type="number" min="1" max="20" value="4" oninput="render()">
+        </div>
+      </div>
+      <label class="fld">탐색 지시 (open_instruction) — closed '바닥' 위에 얹는 한 줄</label>
+      <input id="f_open" type="text" value="" placeholder="예) 제목/구성은 더 도발적으로 바꿔봐라 (선택)" oninput="render()">
+      <div class="small" style="margin-top:8px">실전 트릭: closed 하드체크를 바닥으로 깔고 그 위에 open 지시 하나 → 기준 밑으론 안 떨어지는 탐색.</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">④</span> Verifier — <b style="color:var(--acc2)">루프의 병목</b> <span class="tagline">= reward function</span></h2>
+      <div class="hint">generator는 거의 공짜로 반복된다. 결과가 가치 있는지 판정하는 <b>verifier가 루프의 전부</b>다. 여기에 당신의 도메인 지식을 박는다.</div>
+
+      <label class="fld">하드 체크 (CheckSuite) — closed loop '바닥'(yes/no)</label>
+      <div id="checks"></div>
+      <div class="add-chk" onclick="addCheck()">+ 체크 추가</div>
+
+      <label class="fld" style="margin-top:14px">루브릭 (Rubric) — LLM 품질 채점</label>
+      <textarea id="f_rubric" oninput="render()">정확성/명료성/실무성을 엄격히 채점. 근거 없는 단정·슬롭은 감점.</textarea>
+      <div class="row" style="margin-top:8px">
+        <div>
+          <label class="fld">통과 점수 (pass_score / 10)</label>
+          <input id="f_pass" type="number" min="0" max="10" step="0.5" value="8" oninput="render()">
+        </div>
+        <div>
+          <label class="fld">루브릭 사용</label>
+          <select id="f_userubric" onchange="render()">
+            <option value="1">사용 (open 품질 바)</option>
+            <option value="0">미사용 (하드 체크만)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">⑤</span> 모델 — 짓는 AI vs 검사하는 AI</h2>
+      <div class="hint">자기채점은 부풀려진다(실측 9.04 vs 7.43). generator와 verifier를 <b>다른 모델 계열</b>로 분리하라.</div>
+      <div class="row">
+        <div>
+          <label class="fld">generator_model (짓는 AI)</label>
+          <input id="f_gen" type="text" value="qwen3.5-397b" oninput="render()">
+        </div>
+        <div>
+          <label class="fld">verifier_model (검사하는 AI)</label>
+          <input id="f_ver" type="text" value="glm-5" oninput="render()">
+        </div>
+      </div>
+      <label class="fld">엔드포인트 (config.DEFAULT_ENDPOINTS 키)</label>
+      <input id="f_ep" type="text" value="DEV" oninput="render()">
+      <div id="biasbox" class="warnbox">⚠ self-bias: generator와 verifier가 같은 모델 계열이다. 점수가 부풀려질 수 있다 — 평가자를 분리하라.</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">⑥</span> 부품 · 오토메이션 · 공유두뇌</h2>
+      <div class="hint">필요한 부품만 켜라. 켠 부품은 러너 코드에 자동 배선된다.</div>
+      <div class="comp-grid" id="comps"></div>
+      <div id="schedrow" style="display:none">
+        <label class="fld" style="margin-top:12px">스케줄 — ① 오토메이션 (cron 또는 N초)</label>
+        <div class="row">
+          <input id="f_cron" type="text" value="0 9 * * 1-5" placeholder="cron: 분 시 일 월 요일">
+          <input id="f_every" type="number" value="0" placeholder="또는 N초마다 (0=cron 사용)">
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================== RIGHT : 산출물 ===================== -->
+  <div class="col right">
+    <div class="tabs">
+      <div class="tab on" data-t="skill" onclick="tab('skill')">📄 SKILL.md</div>
+      <div class="tab" data-t="py" onclick="tab('py')">🐍 러너 runner.py</div>
+      <div class="tab" data-t="check" onclick="tab('check')">✅ 사전 점검</div>
+      <div class="tab" data-t="karp" onclick="tab('karp')">🧠 Karpathy 원칙</div>
+    </div>
+
+    <div id="pane_skill">
+      <div class="bar">
+        <button class="btn" onclick="copyOut('skillmd')">복사</button>
+        <button class="btn ghost" onclick="download('SKILL.md', skillText())">SKILL.md 내려받기</button>
+      </div>
+      <pre class="out" id="skillmd"></pre>
+    </div>
+
+    <div id="pane_py" style="display:none">
+      <div class="bar">
+        <button class="btn" onclick="copyOut('pycode')">복사</button>
+        <button class="btn ghost" onclick="download(fileName()+'.py', pyText())">.py 내려받기</button>
+        <span class="pill">stdlib only · pip 불필요</span>
+      </div>
+      <pre class="out" id="pycode"></pre>
+    </div>
+
+    <div id="pane_check" style="display:none">
+      <div class="okbox" id="checkbox"></div>
+      <div style="margin-top:12px" class="karp" id="checklist"></div>
+    </div>
+
+    <div id="pane_karp" style="display:none">
+      <div class="karp">
+        <p class="small">이 빌더의 설계 축은 Andrej Karpathy의 "Software Is Changing (Again)" 논지와 loop_engine 6부품을 1:1로 엮은 것이다.</p>
+
+        <h3>1. Software 3.0 — "영어가 가장 핫한 프로그래밍 언어"</h3>
+        <div class="k">코드(1.0) → 신경망 가중치(2.0) → <b>프롬프트(3.0)</b>. 이제 자연어 프롬프트가 프로그램이다.</div>
+        <div class="map">→ 빌더 매핑: goal·rubric·SKILL.md 본문이 곧 "코드". 그래서 goal을 <b>측정 가능</b>하게 쓰는 게 컴파일 조건이다.</div>
+
+        <h3>2. LLM = 새로운 운영체제/컴퓨터</h3>
+        <div class="k">LLM은 CPU, 컨텍스트 윈도우는 RAM. 매번 비싼 부팅(맥락 재설명) 대신 디스크에 상태를 남겨라.</div>
+        <div class="map">→ 매핑: ⑥ 상태/기억(ArtifactStore·WorkLog·Signal). "에이전트는 잊어도 저장소는 안 잊는다."</div>
+
+        <h3>3. 자율성 슬라이더 — "Iron Man 슈트지 로봇이 아니다"</h3>
+        <div class="k">완전 자율을 한 방에 주지 마라. 증강(슈트)에서 시작해 <b>자율을 한 칸씩</b> 올린다.</div>
+        <div class="map">→ 매핑: 위 자율성 슬라이더가 mode/max_rounds/트리거를 함께 움직인다. L1=사람이 엔터, L5=cron 완전자율.</div>
+
+        <h3>4. generation ↔ verification 루프를 빠르게, AI를 목줄에 묶어라</h3>
+        <div class="k">생성은 싸다. 병목은 <b>검증</b>이다. 검증 루프를 빠르게 돌리고, 큰 diff를 통째로 삼키지 말고 작게 끊어 검증하라.</div>
+        <div class="map">→ 매핑: ④ Verifier = reward function. 하드 체크(즉답 yes/no) + 루브릭(품질 바). verifier가 약하면 루프는 쓰레기를 자신있게 수백 번 만든다.</div>
+
+        <h3>5. 부분 자율 앱 — GUI로 감사 속도를 높여라</h3>
+        <div class="k">사람이 빠르게 검증하도록 결과를 시각화하고, 자율 범위를 조절 가능한 앱을 만든다.</div>
+        <div class="map">→ 매핑: 바로 이 HTML 빌더 + 러너의 run_dir/report(). 라운드별 산출물·평결이 파일로 남아 사람이 감사한다.</div>
+
+        <h3>냉정한 현실 (Addy Osmani, README)</h3>
+        <div class="k">검증은 여전히 사람 몫이다. 산출물을 안 읽으면 이해도는 떨어진다. 가장 큰 위험은 <b>인지적 항복</b>이다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>loop_engine v0.1 · 6부품(오토메이션·워크트리·스킬·커넥터·서브에이전트·상태) 매핑</span>
+  <span id="statusline">—</span>
+</div>
+
+<script>
+/* ---------------- 체크 빌더(부품 ④ 하드 패스) ---------------- */
+const CHECK_DEFS = [
+  {id:'min_length', label:'check_min_length', desc:'최소 글자수', arg:'300', argType:'number', fn:'check_min_length'},
+  {id:'contains',   label:'check_contains',   desc:'키워드 포함',  arg:'AMHS', argType:'text', fn:'check_contains'},
+  {id:'regex',      label:'check_regex',      desc:'정규식 매치',  arg:'\\d{2,}%', argType:'text', fn:'check_regex'},
+  {id:'no_ph',      label:'check_no_placeholder', desc:'TODO/생략 금지', arg:'', argType:'none', fn:'check_no_placeholder'},
+  {id:'json',       label:'check_valid_json', desc:'유효한 JSON', arg:'', argType:'none', fn:'check_valid_json'},
+  {id:'py',         label:'check_python_syntax', desc:'파이썬 컴파일', arg:'', argType:'none', fn:'check_python_syntax'},
+];
+let checks = [
+  {def:'min_length', arg:'300', on:true, critical:true},
+  {def:'contains',   arg:'AMHS', on:true, critical:true},
+  {def:'no_ph',      arg:'',     on:true, critical:true},
+];
+
+/* ---------------- 6부품 ---------------- */
+const COMPONENTS = [
+  {id:'automation', t:'① 오토메이션', d:'주기적 시작(스케줄러)', on:false},
+  {id:'worktree',   t:'② 워크트리',   d:'runs/<id>/ 실행 격리', on:true},
+  {id:'skill',      t:'③ 스킬 주입',  d:'discover로 SKILL 자동 주입', on:true},
+  {id:'tools',      t:'④ 도구 커넥터',d:'Logpresso/내부API 호출 루프', on:false},
+  {id:'planner',    t:'⑤ Planner 분리',d:'plan→execute 체인', on:false},
+  {id:'sharedbrain',t:'⑥ 공유 두뇌',  d:'멀티루프 signals 복리', on:false},
+];
+
+/* ---------------- 자율성 슬라이더 프리셋 ---------------- */
+const AUTO = {
+  1:{big:'L1 · 수동',     desc:'사람이 매 스텝 엔터. ManualTrigger·closed·1라운드.', mode:'CLOSED', rounds:1, auto:false},
+  2:{big:'L2 · 보조',     desc:'closed·2~3라운드. 사람이 결과를 매번 읽고 출시 결정.', mode:'CLOSED', rounds:3, auto:false},
+  3:{big:'L3 · 부분자율', desc:'closed 바닥 + 탐색 지시. 4라운드. 사람은 감사만.', mode:'CLOSED', rounds:4, auto:false},
+  4:{big:'L4 · 감독자율', desc:'open·5~6라운드 + 스케줄. 사람은 주기적 감독.', mode:'OPEN', rounds:6, auto:true},
+  5:{big:'L5 · 완전자율', desc:'open + cron + 공유두뇌. 백그라운드 복리.', mode:'OPEN', rounds:6, auto:true},
+};
+
+/* ---------------- 렌더 ---------------- */
+function el(id){return document.getElementById(id)}
+function val(id){return el(id).value}
+
+function renderChecks(){
+  const box = el('checks'); box.innerHTML='';
+  checks.forEach((c,i)=>{
+    const d = CHECK_DEFS.find(x=>x.id===c.def);
+    const div = document.createElement('div'); div.className='chk';
+    let argHtml='';
+    if(d.argType!=='none'){
+      argHtml = `<input class="arg" type="${d.argType}" value="${c.arg.replace(/"/g,'&quot;')}" oninput="setArg(${i},this.value)">`;
+    }
+    div.innerHTML = `
+      <input type="checkbox" ${c.on?'checked':''} onchange="toggleChk(${i})" title="사용">
+      <div class="body">
+        <div class="nm">${d.label} <span class="dn">· ${d.desc}</span></div>
+      </div>
+      ${argHtml}
+      <select onchange="setCrit(${i},this.value)" style="width:96px;flex:none" title="critical">
+        <option value="1" ${c.critical?'selected':''}>critical</option>
+        <option value="0" ${!c.critical?'selected':''}>warn</option>
+      </select>
+      <span onclick="rmChk(${i})" style="cursor:pointer;color:var(--mut)" title="삭제">✕</span>`;
+    box.appendChild(div);
+  });
+}
+function setArg(i,v){checks[i].arg=v;render()}
+function toggleChk(i){checks[i].on=!checks[i].on;render()}
+function setCrit(i,v){checks[i].critical=(v==='1');render()}
+function rmChk(i){checks.splice(i,1);renderChecks();render()}
+function addCheck(){
+  // 아직 안 쓴 체크 우선
+  const used = new Set(checks.map(c=>c.def));
+  const next = CHECK_DEFS.find(d=>!used.has(d.id)) || CHECK_DEFS[0];
+  checks.push({def:next.id, arg:next.arg, on:true, critical:true});
+  renderChecks(); render();
+}
+
+function renderComps(){
+  const box = el('comps'); box.innerHTML='';
+  COMPONENTS.forEach((c,i)=>{
+    const div=document.createElement('div');
+    div.className='comp'+(c.on?' on':'');
+    div.onclick=()=>{c.on=!c.on; renderComps(); render()};
+    div.innerHTML=`<div class="ct">${c.t}<span class="on-dot">${c.on?'●':'○'}</span></div><div class="cd">${c.d}</div>`;
+    box.appendChild(div);
+  });
+  el('schedrow').style.display = comp('automation')?'block':'none';
+}
+function comp(id){return COMPONENTS.find(c=>c.id===id).on}
+
+function onAuto(){
+  const a=AUTO[val('f_auto')];
+  el('auto_big').textContent=a.big;
+  el('auto_desc').textContent=a.desc;
+  el('f_mode').value=a.mode;
+  el('f_rounds').value=a.rounds;
+  COMPONENTS.find(c=>c.id==='automation').on=a.auto;
+  COMPONENTS.find(c=>c.id==='sharedbrain').on=(val('f_auto')==='5');
+  renderComps(); render();
+}
+
+/* ---------------- 코드 생성 ---------------- */
+function fileName(){return (val('f_name')||'loop').replace(/[^a-zA-Z0-9_]/g,'_')}
+
+function checkLine(c){
+  const d=CHECK_DEFS.find(x=>x.id===c.def);
+  let call;
+  if(d.argType==='number') call=`${d.fn}(${parseInt(c.arg||'0',10)||0})`;
+  else if(d.argType==='text') call=`${d.fn}(${pyStr(c.arg)})`;
+  else call=`${d.fn}()`;
+  if(!c.critical){
+    // critical=False 는 Check 객체에 직접 → check_callable 래핑이 필요. 간단히 주석으로 표기.
+    return `        ${call},  # critical=False 로 쓰려면 Check(...,critical=False) 로 감싸기`;
+  }
+  return `        ${call},`;
+}
+function pyStr(s){return '"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"'}
+
+function activeChecks(){return checks.filter(c=>c.on)}
+
+function skillText(){
+  const name=val('f_name'), desc=val('f_desc'), body=val('f_body');
+  return `---
+name: ${name}
+description: ${desc}
+---
+${body}
+`;
+}
+
+function pyText(){
+  const name=fileName();
+  const goal=val('f_goal').replace(/\n/g,' ').trim();
+  const mode=val('f_mode');
+  const rounds=parseInt(val('f_rounds'),10)||4;
+  const openi=val('f_open').trim();
+  const gen=val('f_gen'), ver=val('f_ver'), ep=val('f_ep');
+  const useRubric=val('f_userubric')==='1';
+  const passScore=parseFloat(val('f_pass'))||8;
+  const rubricCrit=val('f_rubric').replace(/\n/g,' ').trim();
+  const ac=activeChecks();
+
+  const usePlanner=comp('planner'), useTools=comp('tools'),
+        useSkill=comp('skill'), useSharedBrain=comp('sharedbrain'),
+        useAuto=comp('automation'), useWorktree=comp('worktree');
+
+  const imports = ['LoopSystem','LoopConfig','LLMConfig','Generator','VerifierAgent',
+    'CheckSuite','LoopSpec','LoopMode','Loop'];
+  if(useRubric) imports.push('Rubric');
+  if(usePlanner) imports.push('Agent');
+  if(useTools) imports.push('ToolRegistry','ToolUsingGenerator');
+  if(useSkill) imports.push('Skill');
+  // 사용된 체크 빌더만 import
+  const checkFns=[...new Set(ac.map(c=>CHECK_DEFS.find(x=>x.id===c.def).fn))];
+
+  let L=[];
+  L.push('#!/usr/bin/env python3');
+  L.push('# -*- coding: utf-8 -*-');
+  L.push('"""');
+  L.push(`${name} — loop_engine 러너 (Loop Engineering 스킬 빌더 생성)`);
+  L.push(`목표: ${goal}`);
+  L.push('');
+  L.push('실행: python ' + name + '.py        (TOKEN.TXT 를 CWD 에 두거나 환경변수 LLM_TOKEN)');
+  L.push('오프라인 시연: 내부 LLM 없이 돌려보려면 README 의 mock transport 참고.');
+  L.push('"""');
+  L.push('from loop_engine import (');
+  L.push('    ' + imports.join(', ') + ',');
+  L.push('    ' + checkFns.join(', '));
+  L.push(')');
+  L.push('');
+  L.push('# ── ④ 커넥터: 내부 LLM (OpenAI 호환) ───────────────────────────────');
+  L.push('cfg = LoopConfig(llm=LLMConfig(');
+  L.push(`    endpoint=${pyStr(ep)},`);
+  L.push(`    generator_model=${pyStr(gen)},      # 짓는 AI`);
+  L.push(`    verifier_model=${pyStr(ver)},       # 검사하는 AI ★ 다른 계열 = self-bias 회피`);
+  L.push('    verify_ssl=False,');
+  L.push('))');
+  L.push('system = LoopSystem(cfg)');
+  L.push('client = system.client');
+  L.push('');
+
+  if(useSkill){
+    L.push('# ── ③ 스킬: 같은 폴더의 SKILL.md 를 레지스트리에 등록 ──');
+    L.push('import os');
+    L.push('if os.path.exists("SKILL.md"):');
+    L.push('    system.skills.add(Skill.from_file("SKILL.md"))  # frontmatter name 으로 등록');
+    L.push('');
+  }
+
+  if(useTools){
+    L.push('# ── ④ 도구 커넥터: 에이전트가 실제 일을 하게(예: Logpresso) ──');
+    L.push('tools = ToolRegistry()');
+    L.push('');
+    L.push('@tools.tool("query_logpresso", "Logpresso 쿼리 실행", {"lpql": "쿼리문"})');
+    L.push('def query_logpresso(args):');
+    L.push('    # TODO: 실제 내부 호출로 교체');
+    L.push('    return run_internal_lpql(args["lpql"])');
+    L.push('');
+    L.push('# ── ⑤ 짓는 AI = 도구 쓰는 generator ──');
+    L.push(`gen = ToolUsingGenerator(client, tools, model=${pyStr(gen)},`);
+    L.push('                         max_steps=6, native=False)  # native=True 면 서버 tools= 사용');
+  } else {
+    L.push('# ── ⑤ 짓는 AI ──');
+    L.push('gen = Generator(client)');
+  }
+  L.push('');
+
+  if(usePlanner){
+    L.push('# ── ⑤ Planner 분리 (plan → execute 체인) ──');
+    L.push(`planner = Agent("planner", "너는 계획가다. 단계별 계획만 간결히 낸다.", client, model=${pyStr(ver)})`);
+    L.push('');
+  }
+
+  L.push('# ── ④ Verifier = 루프의 병목 = reward function ──');
+  L.push('checks = CheckSuite([');
+  ac.forEach(c=>L.push(checkLine(c)));
+  L.push('])');
+  L.push('');
+  if(useRubric){
+    L.push('rubric = Rubric(');
+    L.push(`    ${pyStr(rubricCrit)},`);
+    L.push(`    pass_score=${passScore},`);
+    L.push(')');
+  }
+  L.push('verifier = VerifierAgent(');
+  L.push('    client,');
+  L.push('    check_suite=checks,');
+  if(useRubric) L.push('    rubric=rubric,');
+  L.push(`    generator_model=${pyStr(gen)},`);
+  L.push(`    verifier_model=${pyStr(ver)},   # 분리 → self-bias 자동 경고`);
+  L.push(')');
+  L.push('');
+
+  L.push('# ── 루프 사양 ──');
+  L.push('spec = LoopSpec(');
+  L.push(`    name=${pyStr(val('f_name'))},`);
+  L.push(`    goal=${pyStr(goal)},`);
+  L.push('    generator=gen,');
+  L.push('    verifier=verifier,');
+  L.push(`    mode=LoopMode.${mode},`);
+  L.push(`    max_rounds=${rounds},`);
+  if(openi) L.push(`    open_instruction=${pyStr(openi)},`);
+  if(usePlanner) L.push('    planner=planner, plan_once=True,');
+  if(useSkill) L.push(`    context_provider=system.discover_context(skill_names=[${pyStr(val('f_name'))}], include_open_signals=${useSharedBrain?'True':'False'}, worklog_tail=8).as_provider(),`);
+  L.push(')');
+  L.push('');
+
+  if(useAuto){
+    const every=parseInt(val('f_every'),10)||0;
+    L.push('# ── ① 오토메이션: 스케줄러(백그라운드) ──');
+    L.push('system.register(spec)');
+    if(every>0) L.push(`system.schedule_every(${pyStr(val('f_name'))}, ${every})   # ${every}초마다`);
+    else L.push(`system.schedule_cron(${pyStr(val('f_name'))}, ${pyStr(val('f_cron'))})`);
+    if(useSharedBrain){
+      L.push('# ⑥ 공유 두뇌: 발견을 시그널로 흘려 다른 루프가 픽업(복리)');
+      L.push('# system.emit_signal("이 구간 포화도 급등, 후속 분석 필요", kind="opportunity")');
+    }
+    L.push('system.start()   # 스케줄러 가동 (Ctrl+C 까지 백그라운드 실행)');
+    L.push('print("scheduler started. registered:", system.names())');
+    L.push('try:');
+    L.push('    import time');
+    L.push('    while True: time.sleep(60)');
+    L.push('except KeyboardInterrupt:');
+    L.push('    system.stop()');
+  } else {
+    L.push('# ── 단발 실행 ──');
+    if(useWorktree){
+      L.push('from loop_engine import RunContext, new_run_id');
+      L.push(`run_ctx = RunContext(new_run_id(${pyStr(val('f_name'))}))   # ② runs/<id>/ 격리`);
+      L.push('result = Loop(spec).run(run_ctx=run_ctx)');
+    } else {
+      L.push('result = Loop(spec).run()');
+    }
+    L.push('print(result.report())');
+    L.push('print("─"*60)');
+    L.push('print(result.final_artifact)');
+  }
+  L.push('');
+  return L.join('\n');
+}
+
+/* ---------------- 사전 점검 ---------------- */
+function checklist(){
+  const out=[];
+  const goal=val('f_goal');
+  const measurable = /\d/.test(goal) || /이상|최소|포함|금지/.test(goal);
+  out.push(test(measurable, 'goal 이 측정 가능한가(수치/명시 기준)', '수치·명시 기준을 넣어 done 을 객관화하라.'));
+  out.push(test(activeChecks().length>0, '하드 체크(바닥)가 1개 이상인가', 'closed loop 은 측정 가능한 바닥이 필요하다.'));
+  const bias = sameFamily(val('f_gen'), val('f_ver'));
+  out.push(test(!bias, 'generator ≠ verifier 모델 계열인가', 'self-bias: 자기채점은 부풀려진다. 평가자를 분리하라.'));
+  out.push(test(parseInt(val('f_rounds'),10)>=1, 'max_rounds 로 무한루프를 막았는가', '필수 안전장치.'));
+  const hasFloor = activeChecks().some(c=>c.critical);
+  out.push(test(hasFloor || val('f_userubric')==='1', 'stop 조건이 존재하는가(critical 체크 or 루브릭)', 'done 판정 근거가 없으면 루프가 멈추지 않는다.'));
+  if(val('f_mode')==='OPEN') out.push(test(val('f_userubric')==='1', 'OPEN 모드인데 품질 바(루브릭)가 있는가', 'open 탐색은 슬롭 위험. 루브릭으로 바닥을 깔아라.'));
+  return out;
+}
+function test(ok,label,fix){return {ok,label,fix}}
+function sameFamily(a,b){
+  const fams=['qwen','glm','gpt-oss','gemma','llama','mistral','deepseek','claude'];
+  const f=s=>{s=(s||'').toLowerCase();for(const x of fams)if(s.includes(x))return x;return s.split('-')[0]||'?'};
+  return f(a)===f(b);
+}
+
+/* ---------------- 메인 렌더 ---------------- */
+function render(){
+  el('skillmd').textContent = skillText();
+  el('pycode').textContent = pyText();
+  // bias 경고
+  el('biasbox').className = 'warnbox'+(sameFamily(val('f_gen'),val('f_ver'))?' show':'');
+  // 사전 점검
+  const cl=checklist();
+  const pass=cl.filter(x=>x.ok).length;
+  el('checkbox').textContent = `사전 점검 ${pass}/${cl.length} 통과` + (pass<cl.length?' — 빨간 항목을 고치면 루프 신뢰도가 올라간다.':' — 출시 준비 OK.');
+  el('checkbox').style.color = (pass<cl.length)?'var(--warn)':'var(--acc2)';
+  el('checkbox').style.borderColor = (pass<cl.length)?'#5a4420':'#1f4a36';
+  el('checkbox').style.background = (pass<cl.length)?'#1f1708':'#0c1c14';
+  el('checklist').innerHTML = cl.map(x=>
+    `<div class="k" style="border-left-color:${x.ok?'var(--acc2)':'var(--bad)'}">
+       ${x.ok?'✅':'❌'} <b>${x.label}</b>${x.ok?'':`<div class="map">→ ${x.fix}</div>`}
+     </div>`).join('');
+  // status
+  el('statusline').textContent =
+    `${val('f_mode')} · ${val('f_rounds')}라운드 · 체크 ${activeChecks().length}개 · ${val('f_userubric')==='1'?'루브릭 ON':'루브릭 OFF'} · ${pass}/${cl.length} 점검`;
+}
+
+/* ---------------- 탭/IO ---------------- */
+function tab(t){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+  ['skill','py','check','karp'].forEach(p=>el('pane_'+p).style.display=(p===t?'block':'none'));
+}
+function copyOut(id){
+  const txt=el(id).textContent;
+  navigator.clipboard?.writeText(txt).then(()=>flash('복사됨')).catch(()=>fallbackCopy(txt));
+}
+function fallbackCopy(txt){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();flash('복사됨')}
+function download(fn,txt){
+  const b=new Blob([txt],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fn;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);flash('내려받음: '+fn);
+}
+function flash(msg){const s=el('statusline');const old=s.textContent;s.textContent='✔ '+msg;setTimeout(()=>render(),1100)}
+
+/* ---------------- 부트 ---------------- */
+renderChecks(); renderComps(); onAuto();
+</script>
+</body>
+</html>
