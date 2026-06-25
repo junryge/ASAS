@@ -348,10 +348,20 @@ class GraphStreamInjector:
         self.src = data_for_script if (data_for_script and data_for_script.get("rows")) else None
         self.prefer_png = prefer_png
         self.head_limit = head_limit
-        self.done = (self.src is None)   # CSV 없으면 처음부터 그냥 통과
         self.buf = ""
         self._block = None
         self._built = False
+        # ★ 강한 스코프: '등록 렌더러가 인식하는 스키마(발동이벤트 등)'의 CSV 일 때만 활성.
+        #   그 외(다른 개인에이전트·일반 데모스 채팅·다른 CSV)는 done=True → 토큰을 그대로
+        #   통과만 시킨다(버퍼링조차 안 함). 즉 발동이벤트 분석이 아니면 완전 무영향.
+        self.done = True
+        if self.src:
+            try:
+                hdr = [str(h).lstrip("﻿") for h in (self.src.get("headers") or [])]
+                if any(r["detect"](hdr) for r in RENDERERS):
+                    self.done = False
+            except Exception:
+                self.done = True
 
     def _block_md(self):
         if self._built:
