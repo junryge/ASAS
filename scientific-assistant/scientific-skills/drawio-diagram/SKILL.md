@@ -599,3 +599,109 @@ with open("결과물.drawio", "w", encoding="utf-8") as f:
 <?xml version="1.0"?>
 <mxfile>...</mxfile>
 ```
+
+---
+
+# 📐 다이어그램 타입별 스타일 레퍼런스 (drawio-skill v1.14 흡수)
+
+> 사용자가 특정 타입(ERD/UML/시퀀스/아키텍처/ML/플로우차트)을 요청하면 아래 **구조 style 키워드**를 그대로 mxCell `style=`에 사용. 색/폰트는 그 위에 얹는다.
+> (CLI export·스크립트·shapesearch 등은 데모스에서 동작하지 않으므로 제외 — 여기 표의 style 문자열은 LLM이 직접 써서 ```drawio 코드블록으로 출력)
+
+## ERD (개체-관계도)
+| 요소 | style |
+|---|---|
+| 테이블(컨테이너) | `shape=table;startSize=30;container=1;collapsible=1;childLayout=tableLayout;fixedRows=1;rowLines=0;fontStyle=1;strokeColor=#6c8ebf;fillColor=#dae8fc;` |
+| 행(컬럼) | `shape=tableRow;horizontal=0;startSize=0;swimlaneHead=0;swimlaneBody=0;fillColor=none;collapsible=0;dropTarget=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;fontSize=12;` (parent=테이블id) |
+| PK | 그 행에 `fontStyle=1` (굵게), 텍스트 앞에 `PK` |
+| FK 관계선 | `dashed=1;endArrow=ERmandOne;startArrow=ERmandOne;` |
+| 배치 | TB, 테이블 간격 300px |
+
+## UML 클래스
+| 요소 | style |
+|---|---|
+| 클래스 박스(3단: 제목/속성/메서드) | `swimlane;fontStyle=1;align=center;startSize=26;html=1;` |
+| 구분선 | `line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=10;rotatable=0;labelPosition=left;points=[];portConstraint=eastwest;` |
+| 상속 | `endArrow=block;endFill=0;` (속 빈 삼각형) |
+| 구현(implements) | `endArrow=block;endFill=0;dashed=1;` |
+| 합성(composition) | `endArrow=diamondThin;endFill=1;` |
+| 집합(aggregation) | `endArrow=diamondThin;endFill=0;` |
+| 배치 | TB, 클래스 간격 250px |
+
+## 시퀀스
+| 요소 | style |
+|---|---|
+| 라이프라인 | `shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;outlineConnect=0;portConstraint=eastwest;` |
+| 동기 메시지 | `html=1;verticalAlign=bottom;endArrow=block;` |
+| 비동기 메시지 | `html=1;verticalAlign=bottom;endArrow=open;dashed=1;` |
+| 반환 메시지 | `html=1;verticalAlign=bottom;endArrow=open;dashed=1;strokeColor=#999999;` |
+| 배치 | LR, 라이프라인 간격 200px, 시간은 위→아래 |
+
+## 아키텍처
+| 요소 | style |
+|---|---|
+| 계층/티어(컨테이너) | `swimlane;startSize=30;` (Client/API/Service/Data 그룹핑) |
+| 서비스 | `rounded=1;whiteSpace=wrap;html=1;` + 티어 색 |
+| DB | `shape=cylinder3;whiteSpace=wrap;html=1;` (초록) |
+| 큐/버스 | `rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;` (중앙 배치=허브) |
+| 게이트웨이/LB | `rounded=1;` + 주황 |
+| 외부 시스템 | `rounded=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;` |
+| 배치 | 티어 4개↑면 TB, 허브 노드는 중앙 |
+
+## ML / 딥러닝 모델
+| 레이어 종류 | 색 (fill/stroke) |
+|---|---|
+| Input/Output | `#d5e8d4` / `#82b366` (초록) |
+| Conv/Pooling | `#dae8fc` / `#6c8ebf` (파랑) |
+| Attention/Transformer | `#e1d5e7` / `#9673a6` (보라) |
+| RNN/LSTM/GRU | `#fff2cc` / `#d6b656` (노랑) |
+| FC/Linear | `#ffe6cc` / `#d79b00` (주황) |
+| Loss/Activation | `#f8cecc` / `#b85450` (빨강) |
+| Skip connection | `dashed=1;endArrow=block;curved=1;` |
+- 레이어 블록 기본 `rounded=1;whiteSpace=wrap;html=1;` + 위 색. 배치 TB, 간격 150px.
+- 텐서 shape는 둘째 줄로: `value="Conv2D&#xa;(B, 64, 32, 32)"` (`&#xa;`=줄바꿈).
+
+## 플로우차트
+| 요소 | style |
+|---|---|
+| 시작/끝 | `ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;` |
+| 처리 | `rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;` |
+| 판단 | `rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;` |
+| 입출력 | `shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;` |
+| 서브프로세스 | `rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;` |
+- 판단 분기엔 항상 `value="Yes"`/`"No"` 라벨. 배치 TB, 세로 간격 200px.
+
+# 🔷 도형 치트시트 (손으로 바로 쓰는 style)
+`whiteSpace=wrap;html=1;`와 조합. 모르는 `shape=mxgraph.*`는 추측 금지(빈 박스로 깨짐).
+
+| 필요 | style |
+|---|---|
+| 사각/둥근사각 | `rounded=0;` / `rounded=1;` |
+| 원/타원 | `ellipse;` (정원 `aspect=fixed;`) |
+| 마름모(판단) | `rhombus;` |
+| 원통(DB) | `shape=cylinder3;` |
+| 구름 | `cloud;` |
+| 큐브(3D) | `shape=cube;` |
+| 노트 | `shape=note;` · 문서 `shape=document;` · 폴더 `shape=folder;` |
+| 카드 | `shape=card;` · 프로세스(겹선) `shape=process;` · 스텝 `shape=step;` |
+| 평행사변형(I/O) | `shape=parallelogram;perimeter=parallelogramPerimeter;` |
+| 사다리꼴 | `shape=trapezoid;perimeter=trapezoidPerimeter;` · 육각 `shape=hexagon;perimeter=hexagonPerimeter2;` |
+| 수동입력 | `shape=manualInput;` · 데이터저장 `shape=dataStorage;` · 지연 `shape=delay;` |
+| 블록 화살표 | `shape=singleArrow;` / `shape=doubleArrow;` |
+| 말풍선 | `shape=callout;` |
+
+**UML 기본**: 액터 `shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;` · 컴포넌트 `shape=component;` · 프레임 `shape=umlFrame;` · 제공 인터페이스 `shape=lollipop;direction=south;`
+
+**컨테이너**: 보이지 않는 그룹 `group;pointerEvents=0;` · 제목 있는 스윔레인 `swimlane;startSize=30;` · 아무 도형을 컨테이너로 `container=1;pointerEvents=0;` 추가
+
+**엣지**: 직교 라우팅 `edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;` · 곡선 `curved=1;` · 화살표없음 `endArrow=none;` · 점선 `dashed=1;` · 라벨배경 `labelBackgroundColor=#ffffff;`
+
+**속성 노브**: `fontStyle` 비트마스크(1=굵게,2=기울임,4=밑줄, 합산) · `direction=north|south|east|west` 90°회전 · `gradientColor=#RRGGBB;gradientDirection=north;` 그라데이션
+
+# 🎨 스타일 톤 (선택 — 전체 통일감)
+사용자가 톤을 요청하면 아래 팔레트(역할→fill/stroke)로 전체 색을 통일.
+
+**Corporate(기본·각진)** 폰트 Arial / 엣지 직교:
+- 서비스 `#e3f2fd`/`#1565c0` · DB `#e8f5e9`/`#2e7d32` · 큐 `#fff9c4`/`#f57c00` · 게이트웨이 `#fff3e0`/`#e65100` · 에러 `#ffebee`/`#c62828` · 외부 `#eceff1`/`#455a64` · 보안 `#f3e5f5`/`#6a1b9a`
+
+**Handdrawn(손그림 느낌)** 모든 도형/엣지에 `sketch=1;strokeWidth=2;`, 엣지 `curved=1;`:
+- 서비스 `#ffe4b5`/`#b8651e` · DB `#def0dc`/`#5c8a49` · 큐 `#fff4cc`/`#b8901a` · 외부 `#f5e6d3`/`#8b7355`
