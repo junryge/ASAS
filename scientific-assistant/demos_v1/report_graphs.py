@@ -70,11 +70,13 @@ def _parse_dt(s):
 
 
 def parse_reason_metrics(reason):
-    """peak reason → [{col, raw, label, unit}] (영역별, reason 등장 순서, 중복 제거)."""
+    """peak reason → [{col, raw, label, unit}] (영역별, reason 등장 순서, 중복 제거).
+    M16_PKT·M16_WT 는 제외(사용자 요청 — 발동이벤트 분석/그래프에서 불필요)."""
     out, seen = [], set()
+    _EXCLUDE = ("M16_PKT", "M16_WT")
 
     def add(col, raw, label, unit):
-        if col and col not in seen:
+        if col and col not in seen and not any(x in col or x in raw or x in label for x in _EXCLUDE):
             seen.add(col)
             out.append({"col": col, "raw": raw, "label": label, "unit": unit})
 
