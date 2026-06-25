@@ -198,8 +198,21 @@
           <input id="f_ver" type="text" value="glm-5" oninput="render()">
         </div>
       </div>
-      <label class="fld">엔드포인트 (config.DEFAULT_ENDPOINTS 키)</label>
-      <input id="f_ep" type="text" value="DEV" oninput="render()">
+      <label class="fld">연결 방식 (커넥터)</label>
+      <select id="f_conn" onchange="render()">
+        <option value="endpoint">프리셋 endpoint 키 (DEV/COMMON/LOCAL)</option>
+        <option value="base_url" selected>커스텀 base_url (오픈소스 LLM 직접)</option>
+      </select>
+      <div id="row_ep" style="display:none">
+        <label class="fld">endpoint (config.DEFAULT_ENDPOINTS 키)</label>
+        <input id="f_ep" type="text" value="LOCAL" oninput="render()">
+      </div>
+      <div id="row_url">
+        <label class="fld">base_url — OpenAI 호환 (vLLM/llama.cpp/Ollama/TGI). /chat/completions 는 자동 부착</label>
+        <input id="f_url" type="text" value="http://127.0.0.1:8000/v1" oninput="render()">
+      </div>
+      <label class="fld">토큰 (선택) — 비우면 TOKEN.TXT/환경변수 LLM_TOKEN 사용(권장)</label>
+      <input id="f_token" type="text" value="" placeholder="비워두면 코드에 키를 박지 않음(권장)" oninput="render()">
       <div id="biasbox" class="warnbox">⚠ self-bias: generator와 verifier가 같은 모델 계열이다. 점수가 부풀려질 수 있다 — 평가자를 분리하라.</div>
     </div>
 
@@ -392,10 +405,8 @@ function checkLine(c){
   if(d.argType==='number') call=`${d.fn}(${parseInt(c.arg||'0',10)||0})`;
   else if(d.argType==='text') call=`${d.fn}(${pyStr(c.arg)})`;
   else call=`${d.fn}()`;
-  if(!c.critical){
-    // critical=False 는 Check 객체에 직접 → check_callable 래핑이 필요. 간단히 주석으로 표기.
-    return `        ${call},  # critical=False 로 쓰려면 Check(...,critical=False) 로 감싸기`;
-  }
+  // warn(critical=False): 편의 빌더는 critical 인자를 안 받으므로 _warn() 으로 감싼다.
+  if(!c.critical) return `        _warn(${call}),`;
   return `        ${call},`;
 }
 function pyStr(s){return '"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"'}
@@ -418,7 +429,8 @@ function pyText(){
   const mode=val('f_mode');
   const rounds=parseInt(val('f_rounds'),10)||4;
   const openi=val('f_open').trim();
-  const gen=val('f_gen'), ver=val('f_ver'), ep=val('f_ep');
+  const gen=val('f_gen'), ver=val('f_ver');
+  const conn=val('f_conn'), ep=val('f_ep'), baseUrl=val('f_url').trim(), token=val('f_token').trim();
   const useRubric=val('f_userubric')==='1';
   const passScore=parseFloat(val('f_pass'))||8;
   const rubricCrit=val('f_rubric').replace(/\n/g,' ').trim();
@@ -452,9 +464,13 @@ function pyText(){
   L.push('    ' + checkFns.join(', '));
   L.push(')');
   L.push('');
-  L.push('# ── ④ 커넥터: 내부 LLM (OpenAI 호환) ───────────────────────────────');
+  L.push('# ── ④ 커넥터: LLM (OpenAI 호환) ───────────────────────────────');
   L.push('cfg = LoopConfig(llm=LLMConfig(');
-  L.push(`    endpoint=${pyStr(ep)},`);
+  if(conn==='base_url')
+    L.push(`    base_url=${pyStr(baseUrl)},   # 오픈소스 LLM(vLLM/llama.cpp/Ollama/TGI). endpoint 보다 우선`);
+  else
+    L.push(`    endpoint=${pyStr(ep)},`);
+  if(token) L.push(`    token=${pyStr(token)},   # ※ 운영에선 TOKEN.TXT/LLM_TOKEN 권장(코드에 키 박지 말 것)`);
   L.push(`    generator_model=${pyStr(gen)},      # 짓는 AI`);
   L.push(`    verifier_model=${pyStr(ver)},       # 검사하는 AI ★ 다른 계열 = self-bias 회피`);
   L.push('    verify_ssl=False,');
@@ -496,6 +512,12 @@ function pyText(){
   }
 
   L.push('# ── ④ Verifier = 루프의 병목 = reward function ──');
+  if(ac.some(c=>!c.critical)){
+    L.push('def _warn(check):');
+    L.push('    check.critical = False   # 통과 못 해도 stop 막지 않음(경고)');
+    L.push('    return check');
+    L.push('');
+  }
   L.push('checks = CheckSuite([');
   ac.forEach(c=>L.push(checkLine(c)));
   L.push('])');
@@ -549,9 +571,8 @@ function pyText(){
   } else {
     L.push('# ── 단발 실행 ──');
     if(useWorktree){
-      L.push('from loop_engine import RunContext, new_run_id');
-      L.push(`run_ctx = RunContext(new_run_id(${pyStr(val('f_name'))}))   # ② runs/<id>/ 격리`);
-      L.push('result = Loop(spec).run(run_ctx=run_ctx)');
+      L.push('system.register(spec)');
+      L.push(`result = system.run_once(${pyStr(val('f_name'))})   # ② runs/<id>/ 격리 + 워크로그`);
     } else {
       L.push('result = Loop(spec).run()');
     }
@@ -587,6 +608,10 @@ function sameFamily(a,b){
 
 /* ---------------- 메인 렌더 ---------------- */
 function render(){
+  // 연결 방식 행 토글
+  const isUrl = val('f_conn')==='base_url';
+  el('row_url').style.display = isUrl?'block':'none';
+  el('row_ep').style.display  = isUrl?'none':'block';
   el('skillmd').textContent = skillText();
   el('pycode').textContent = pyText();
   // bias 경고
