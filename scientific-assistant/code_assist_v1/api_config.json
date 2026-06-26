@@ -119,6 +119,109 @@
       "context_window": 128000,
       "priority": 2,
       "cost_tier": "medium"
+    },
+    "qwen35-397b": {
+      "env_id": "q397",
+      "model": "Qwen3.5-397B-A17B",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.5-397B-A17B (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "qwen35-397b-fp8": {
+      "env_id": "q397-fp8",
+      "model": "Qwen3.5-397B-A17B-FP8",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.5-397B-A17B-FP8 (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "qwen35-397b-vlm": {
+      "env_id": "q397-vlm",
+      "model": "Qwen3.5-397B-A17B-vlm",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.5-397B-A17B-vlm (Vision/Dev.HCP)",
+      "capabilities": [
+        "text",
+        "vision",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "qwen36-35b-hcp": {
+      "env_id": "q36-hcp",
+      "model": "Qwen3.6-35B-A3B",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.6-35B-A3B (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis"
+      ],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "medium"
+    },
+    "glm-51": {
+      "env_id": "glm51",
+      "model": "GLM-5.1",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "GLM-5.1 (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "qwen35-122b-mail": {
+      "env_id": "q122-mail",
+      "model": "Qwen3.5-122B-A10B-mail",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.5-122B-A10B-mail (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "high"
+    },
+    "gpt-oss-120b": {
+      "env_id": "oss120",
+      "model": "gpt-oss-120b",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "GPT-OSS-120B (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
     }
   },
   "default_model_priority": [
@@ -129,5 +232,6 @@
     "qwen3-vl-30b",
     "qwen3-next-80b-summary",
     "hcp-llm-latest"
-  ]
+  ],
+  "_updated": "2026-06-26 dev.hcp 7종 추가"
 }
