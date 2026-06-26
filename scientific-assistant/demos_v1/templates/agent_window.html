@@ -1202,9 +1202,15 @@ async function sendChat(){
   chatHistory.push({role:'user', content:text});
   saveChat();
 
-  // 지식검색: knowledge(전체 자동검색) 켜져있으면 skills 에 knowledge-search 포함
+  // 지식검색(전체 도메인 BM25 자동검색): activeAgent.knowledge 가 켜졌을 때만.
+  //   조합으로 knowledge-search 가 딸려 들어와도, 지식도메인 OFF 면 제거해서
+  //   '연결도 안 했는데 마음대로 검색되는' 문제를 막는다. (선택문서 RAG 는 knowledge_files 로 별도 동작)
   var skills = Array.isArray(activeAgent.skills)? activeAgent.skills.slice() : [];
-  if(activeAgent.knowledge && skills.indexOf('knowledge-search')<0) skills.push('knowledge-search');
+  if(activeAgent.knowledge){
+    if(skills.indexOf('knowledge-search')<0) skills.push('knowledge-search');
+  } else {
+    skills = skills.filter(function(s){ return s!=='knowledge-search'; });
+  }
 
   // 🔮 헤르메스: 마커 있으면 엔진 ON (마커는 /api/chat 전송에서 제거)
   var hermesOn = skills.indexOf('hermes')>=0 && !!uid();
