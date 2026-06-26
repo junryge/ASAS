@@ -848,6 +848,14 @@ pre{position:relative}
             <div class="env-row" id="envRowVl"></div>
           </div>
         </div>
+        <div class="env-section" id="envSectionSpark" style="display:none">
+          <div class="env-section-label env-toggle" onclick="toggleEnvSection('Spark')">
+            <span id="envArrowSpark">▶</span> ⚡ 스파크API <span style="color:#b0b0b0">- 집 Spark DGX 전용 (사내망에선 연결 안 됨)</span>
+          </div>
+          <div id="envSparkInner" style="display:none">
+            <div class="env-row" id="envRowSpark"></div>
+          </div>
+        </div>
         <div class="env-section" id="envSectionGguf">
           <div class="env-section-label env-toggle" onclick="toggleEnvSection('Gguf')">
             <span id="envArrowGguf">▶</span> GGUF 로컬 모델
@@ -1532,7 +1540,9 @@ Promise.all([
 
 // ===== 환경 선택 =====
 function toggleEnvSection(type){
-  const target = type==='Api' ? document.getElementById('envApiInner') : document.getElementById('envRowGguf');
+  const target = type==='Api' ? document.getElementById('envApiInner')
+               : type==='Spark' ? document.getElementById('envSparkInner')
+               : document.getElementById('envRowGguf');
   const arrow = document.getElementById('envArrow'+type);
   if(target.style.display==='none'){
     target.style.display='';
@@ -1569,7 +1579,8 @@ function renderEnvs(){
   const rowLow = document.getElementById('envRowLow');
   const rowVl = document.getElementById('envRowVl');
   const rowGguf = document.getElementById('envRowGguf');
-  rowAuto.innerHTML=''; rowHigh.innerHTML=''; rowMid.innerHTML=''; rowLow.innerHTML=''; rowVl.innerHTML=''; rowGguf.innerHTML='';
+  const rowSpark = document.getElementById('envRowSpark');
+  rowAuto.innerHTML=''; rowHigh.innerHTML=''; rowMid.innerHTML=''; rowLow.innerHTML=''; rowVl.innerHTML=''; rowGguf.innerHTML=''; if(rowSpark) rowSpark.innerHTML='';
   const icons = {'dev':'🚀','gemma':'💎','common':'🌐','vl-72b':'👁️','vl-fast':'👁️'};
   for(const id of Object.keys(envs)){ if(id.startsWith('gguf-')) icons[id]='💻'; }
   // AUTO 버튼
@@ -1583,9 +1594,13 @@ function renderEnvs(){
   // API 모델 tier 분류
   const highIds = new Set(['dev']);
   const lowIds = new Set(['common']);
-  let hasApi=false, hasGguf=false, hasHigh=false, hasMid=false, hasLow=false, hasVl=false;
+  let hasApi=false, hasGguf=false, hasHigh=false, hasMid=false, hasLow=false, hasVl=false, hasSpark=false;
+  for(const id of Object.keys(envs)){ if(id.startsWith('spark-')) icons[id]='⚡'; }
   for(const [id, env] of Object.entries(envs)){
-    if(id.startsWith('gguf-')){
+    if(id.startsWith('spark-')){
+      if(rowSpark) rowSpark.appendChild(_makeEnvBtn(id, env, icons));
+      hasSpark = true;
+    } else if(id.startsWith('gguf-')){
       rowGguf.appendChild(_makeEnvBtn(id, env, icons));
       hasGguf = true;
     } else if(id.startsWith('vl-')){
@@ -1608,6 +1623,7 @@ function renderEnvs(){
   document.getElementById('envVlLabel').style.display = hasVl ? '' : 'none';
   document.getElementById('envSectionApi').style.display = hasApi ? '' : 'none';
   document.getElementById('envSectionGguf').style.display = hasGguf ? '' : 'none';
+  var _spk=document.getElementById('envSectionSpark'); if(_spk) _spk.style.display = hasSpark ? '' : 'none';
 }
 function renderTokenStatus(){
   const el = document.getElementById('tokenStatus');

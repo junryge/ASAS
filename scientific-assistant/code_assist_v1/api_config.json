@@ -222,6 +222,86 @@
       "context_window": 128000,
       "priority": 1,
       "cost_tier": "high"
+    },
+    "spark-qwen3-next-80b": {
+      "env_id": "spark-80b",
+      "model": "qwen3-next-80b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡Qwen3-Next-80B (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 32768,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "spark-qwen36-35b": {
+      "env_id": "spark-35b",
+      "model": "qwen3.6-35b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡Qwen3.6-35B (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis"
+      ],
+      "context_window": 32768,
+      "priority": 2,
+      "cost_tier": "medium"
+    },
+    "spark-glm47-flash": {
+      "env_id": "spark-glm",
+      "model": "glm-4.7-flash",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡GLM-4.7-Flash (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis"
+      ],
+      "context_window": 32768,
+      "priority": 2,
+      "cost_tier": "medium"
+    },
+    "spark-gemma4-12b": {
+      "env_id": "spark-g12",
+      "model": "gemma4-12b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡Gemma4-12B (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "analysis",
+        "fast"
+      ],
+      "context_window": 16384,
+      "priority": 3,
+      "cost_tier": "low"
+    },
+    "spark-gemma4-26b": {
+      "env_id": "spark-g26",
+      "model": "gemma4-26b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡Gemma4-26B (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "analysis"
+      ],
+      "context_window": 16384,
+      "priority": 2,
+      "cost_tier": "medium"
     }
   },
   "default_model_priority": [
@@ -233,5 +313,5 @@
     "qwen3-next-80b-summary",
     "hcp-llm-latest"
   ],
-  "_updated": "2026-06-26 dev.hcp 7종 추가"
+  "_updated": "2026-06-27 스파크 DGX(집) 5종 추가"
 }
