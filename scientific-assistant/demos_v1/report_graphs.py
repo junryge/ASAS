@@ -35,12 +35,12 @@ _FAB_RAW = 'M16HUB.STRATE.ALL.FABSTORAGERATIO'
 _STB_RAW = 'M16HUB.STRATE.STB.3F_STORAGE_UTIL'
 _REV_RAW = 'M16HUB.QUE.LFT.3F_LFT_REVERSALCNT'
 
-# 등급 배경 밴드 (1~100 척도 — 경계54/위험75/발동90, 54 미만은 알람 없음(회색))
+# 등급 배경 밴드 (1~100 척도 — 경계54/위험75/초위험90, 54 미만은 알람 없음(회색))
 _BANDS = [
     (0, 54, "#f1f5f9"),      # 알람 없음 (등급 미표기)
     (54, 75, "#ffedd5"),     # 🟠 경계
     (75, 90, "#fee2e2"),     # 🔴 위험
-    (90, 100, "#fecaca"),    # ⛔ 발동
+    (90, 100, "#fecaca"),    # ⛔ 초위험
 ]
 _SCORE_COLOR = "#2563eb"
 _KIND_COLOR = {
