@@ -35,9 +35,12 @@ _FAB_RAW = 'M16HUB.STRATE.ALL.FABSTORAGERATIO'
 _STB_RAW = 'M16HUB.STRATE.STB.3F_STORAGE_UTIL'
 _REV_RAW = 'M16HUB.QUE.LFT.3F_LFT_REVERSALCNT'
 
+# 등급 배경 밴드 (1~100 척도 — 경계54/위험75/발동90, 54 미만은 알람 없음(회색))
 _BANDS = [
-    (0, 100, "#f1f5f9"), (100, 120, "#dcfce7"), (120, 130, "#fef9c3"),
-    (130, 160, "#ffedd5"), (160, 220, "#fee2e2"), (220, 99999, "#fde2e2"),
+    (0, 54, "#f1f5f9"),      # 알람 없음 (등급 미표기)
+    (54, 75, "#ffedd5"),     # 🟠 경계
+    (75, 90, "#fee2e2"),     # 🔴 위험
+    (90, 100, "#fecaca"),    # ⛔ 발동
 ]
 _SCORE_COLOR = "#2563eb"
 _KIND_COLOR = {
@@ -193,8 +196,8 @@ def render_hub_evt_24h(rows, title=None, width=900):
                     out.append(f'<text x="{x}" y="{ptop+h+14}" font-size="9" fill="#64748b" text-anchor="middle">{cur.strftime("%H시")}</text>')
             k += 1
 
-    # ① 점수 패널
-    ymax = max(220.0, max(s for _, s, _ in data) * 1.08)
+    # ① 점수 패널 (1~100 척도)
+    ymax = 100.0
 
     def Y1(v):
         return round(top + H_SCORE * (1 - min(v, ymax) / ymax))
@@ -204,7 +207,7 @@ def render_hub_evt_24h(rows, title=None, width=900):
             continue
         yh, yl = Y1(min(hi, ymax)), Y1(lo)
         out.append(f'<rect x="{L}" y="{yh}" width="{pw}" height="{yl-yh}" fill="{color}"/>')
-    for v in (100, 120, 130, 160, 220):
+    for v in (54, 75, 90, 100):
         if v > ymax:
             continue
         yy = Y1(v)
