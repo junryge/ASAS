@@ -21,7 +21,7 @@ Graph_LO.py — 발동이벤트 ≥주의 시 자동 그래프 생성기
   · graph_enabled  : 활성 여부 (기본 True)
   · graph_dir      : 출력 폴더 (기본 ./gre)
   · graph_raw_path : raw 파일 경로 (기본 ./predict/M16A_HUBROOM_PR.csv)
-  · graph_levels   : trigger 등급 (기본 ['주의','경계','위험','발동'])
+  · graph_levels   : trigger 등급 (기본 ['주의','경계','위험','초위험'])
 
 설치 의존성: 표준 라이브러리만 (csv / re / shutil / xml). matplotlib 불필요.
 """
@@ -63,7 +63,7 @@ _CFG = _load_config()
 ENABLED   = bool(_CFG.get("graph_enabled", True))
 GRAPH_DIR = _CFG.get("graph_dir", os.path.join(_HERE, "gre"))
 RAW_PATH  = _CFG.get("graph_raw_path", os.path.join(_HERE, "predict", "M16A_HUBROOM_PR.csv"))
-LEVELS    = set(_CFG.get("graph_levels", ["경계", "위험", "발동"]))
+LEVELS    = set(_CFG.get("graph_levels", ["경계", "위험", "초위험"]))
 
 # 같은 분 중복 방지
 _processed = set()
@@ -156,7 +156,7 @@ def _build_svg(csv_path, trigger_dt, score, level, hot, cols):
         f'<text x="{W//2}" y="32" text-anchor="middle" font-size="20" font-weight="700" fill="#111827">'
         f'{os.path.basename(csv_path)} — 90분 윈도우 분석</text>',
         f'<text x="{W//2}" y="54" text-anchor="middle" font-size="13" fill="#6B7280">'
-        f'발동 {trigger_dt.strftime("%H:%M")}  ·  점수 {score} [{level}]  ·  hot={hot}  ·  '
+        f'트리거 {trigger_dt.strftime("%H:%M")}  ·  점수 {score} [{level}]  ·  hot={hot}  ·  '
         f'{len(rows)}분 ({t_start.strftime("%H:%M")} ~ {t_end.strftime("%H:%M")})</text>',
         f'<line x1="{PAD_L}" y1="78" x2="{PAD_L+25}" y2="78" stroke="#DC2626" stroke-width="2" stroke-dasharray="4,2"/>',
         f'<text x="{PAD_L+32}" y="82" font-size="12" fill="#374151">발동 시점 ({trigger_dt.strftime("%H:%M")})</text>',

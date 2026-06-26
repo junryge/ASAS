@@ -68,7 +68,7 @@ LEVEL_BANDS = [
     (0,   60,  '#F8FAFC', ''),
     (60,  80,  '#FED7AA', '경계'),
     (80,  100, '#FECACA', '위험'),
-    (100, 101, '#FCA5A5', '발동'),
+    (100, 101, '#FCA5A5', '초위험'),
 ]
 
 COLORS = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#0891B2','#DB2777','#65A30D','#EA580C','#0D9488']
@@ -119,7 +119,7 @@ def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
         f'{day} 발동이벤트 24시간 분석</text>',
         f'<text x="{W//2}" y="54" text-anchor="middle" font-size="13" fill="#6B7280">'
         f'최고 {peak["score"]}점 [{peak["level"] or "—"}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]}) · '
-        f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 발동 {levels.get("발동",0)}</text>',
+        f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 초위험 {levels.get("초위험",0)}</text>',
         f'<text x="{PAD_L}" y="92" font-size="11" fill="#374151" font-weight="600">등급 :</text>',
     ]
     xx = PAD_L + 42
@@ -262,7 +262,7 @@ def make_24h_score_svg(day, data, peak):
         f'{day} 발동이벤트 24시간 추이 (unified_risk_score)</text>',
         f'<text x="{W//2}" y="54" text-anchor="middle" font-size="13" fill="#6B7280">'
         f'최고 {peak["score"]}점 [{peak["level"] or "—"}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]})  ·  '
-        f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 발동 {levels.get("발동",0)}</text>',
+        f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 초위험 {levels.get("초위험",0)}</text>',
     ]
     # 범례
     svg.append(f'<text x="{PAD_L}" y="92" font-size="11" fill="#374151" font-weight="600">등급:</text>')

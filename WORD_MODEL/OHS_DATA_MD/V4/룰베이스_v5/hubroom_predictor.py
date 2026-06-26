@@ -650,7 +650,7 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
     # ★ v7 3단계 위험도 등급 (정상/관심/주의 제거)
     # 60 미만은 등급 공란 — 사건단위.csv 자동 제외, 발동이벤트.csv 는 매분 기록 유지
     if unified_risk_score >= 100:
-        unified_risk_level = '발동'
+        unified_risk_level = '초위험'
     elif unified_risk_score >= 80:
         unified_risk_level = '위험'
     elif unified_risk_score >= 60:

@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from svg_lib import make_incident_svg
 from raw_columns import parse_relation_pairs, friendly_label
 
-LEVEL_ORDER = {'정상':0, '관심':1, '주의':2, '경계':3, '위험':4, '발동':5}
+LEVEL_ORDER = {'정상':0, '관심':1, '주의':2, '경계':3, '위험':4, '초위험':5}
 DEFAULT_MIN = '주의'
 
 
