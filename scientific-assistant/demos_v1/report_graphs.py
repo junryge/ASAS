@@ -165,22 +165,22 @@ def render_hub_evt_24h(rows, title=None, width=900):
         day = (rows[0].get("date") or (rows[0].get("datetime") or "")[:10])
         title = f"📅 {day} M16 HUBROOM 발동이벤트 24시간 종합"
 
-    L, R = 172, 18
+    L, R = 200, 18                 # 좌측 거터 넓힘 — raw 컬럼명 잘 보이게
     pw = width - L - R
-    TITLE_H = 32
-    H_SCORE = 150
-    PH, PGAP = 62, 9
-    top = TITLE_H + 4
-    y = top + H_SCORE + 16
+    TITLE_H = 30
+    PH, PGAP = 72, 10              # 패널 키움(라벨 크게) — 점수 패널은 제거
+    y = TITLE_H + 22               # 지표 패널 시작
     height = int(y + (len(series) * (PH + PGAP) if series else 0) + 22)
 
     def X(t):
         return round(L + pw * ((t - t0).total_seconds() / span))
 
+    px = X(peak_t)
+
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
            f'font-family="-apple-system,\'Malgun Gothic\',sans-serif" '
            f'style="max-width:100%;height:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;">']
-    out.append(f'<text x="{L}" y="20" font-size="15" font-weight="800" fill="#16213e">{_esc(title)}</text>')
+    out.append(f'<text x="14" y="20" font-size="15" font-weight="800" fill="#16213e">{_esc(title)}</text>')
 
     def xticks(ptop, h, labels=False):
         hr = t0.replace(minute=0, second=0, microsecond=0)
@@ -196,40 +196,9 @@ def render_hub_evt_24h(rows, title=None, width=900):
                     out.append(f'<text x="{x}" y="{ptop+h+14}" font-size="9" fill="#64748b" text-anchor="middle">{cur.strftime("%H시")}</text>')
             k += 1
 
-    # ① 점수 패널 (1~100 척도)
-    ymax = 100.0
-
-    def Y1(v):
-        return round(top + H_SCORE * (1 - min(v, ymax) / ymax))
-
-    for lo, hi, color in _BANDS:
-        if lo >= ymax:
-            continue
-        yh, yl = Y1(min(hi, ymax)), Y1(lo)
-        out.append(f'<rect x="{L}" y="{yh}" width="{pw}" height="{yl-yh}" fill="{color}"/>')
-    for v in (54, 75, 90, 100):
-        if v > ymax:
-            continue
-        yy = Y1(v)
-        out.append(f'<line x1="{L}" y1="{yy}" x2="{L+pw}" y2="{yy}" stroke="#e2e8f0" stroke-width=".5" stroke-dasharray="2 3"/>')
-        out.append(f'<text x="{L-6}" y="{yy+3}" font-size="9" fill="#94a3b8" text-anchor="end">{v}</text>')
-    xticks(top, H_SCORE)
-    px = X(peak_t)
-    out.append(f'<text x="{L}" y="{top-6}" font-size="11" font-weight="700" fill="#334155">① 종합 위험점수 (24시간)</text>')
-    sd = _downsample([(t, s) for t, s, _ in data])
-    d = "M" + " L".join(f"{X(t)},{Y1(s)}" for t, s in sd)
-    out.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.7"/>')
-    out.append(f'<line x1="{px}" y1="{top}" x2="{px}" y2="{top+H_SCORE}" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3"/>')
-    out.append(f'<circle cx="{px}" cy="{Y1(peak_v)}" r="4" fill="#dc2626"/>')
-    la = "end" if px > L + pw * 0.7 else "start"
-    lx = px - 7 if la == "end" else px + 7
-    out.append(f'<text x="{lx}" y="{Y1(peak_v)-7}" font-size="11" font-weight="800" fill="#dc2626" '
-               f'text-anchor="{la}" style="paint-order:stroke;stroke:#fff;stroke-width:3.2px;stroke-linejoin:round">'
-               f'▲ 최고 {int(peak_v)}점 · {peak_t.strftime("%H:%M")} · {_esc(peak_r.get("hot_area") or "")}</text>')
-
     if series:
-        out.append(f'<text x="{L}" y="{y-3}" font-size="11" font-weight="700" fill="#334155">'
-                   f'② 최고점({peak_t.strftime("%H:%M")}) 발동 지표 — 실제 raw 컬럼 24시간 추이</text>')
+        out.append(f'<text x="14" y="{y-6}" font-size="11.5" font-weight="700" fill="#334155">'
+                   f'최고점({peak_t.strftime("%H:%M")} · {int(peak_v)}점 · {_esc(peak_r.get("hot_area") or "")}) 발동 지표 — 실제 raw 컬럼 24시간 추이</text>')
 
     # ② 지표 스택 패널
     for i, s in enumerate(series):
@@ -248,9 +217,9 @@ def render_hub_evt_24h(rows, title=None, width=900):
         out.append(f'<rect x="0" y="{ptop}" width="{L}" height="{PH}" fill="#fff"/>')
         out.append(f'<rect x="{L-4}" y="{ptop}" width="3.5" height="{PH}" fill="{pc}"/>')
         xticks(ptop, PH, labels=last)
-        out.append(f'<text x="7" y="{ptop+16}" font-size="10.5" font-weight="700" fill="{pc}">{_esc(s["label"])} ({_esc(s["unit"])})</text>')
-        out.append(f'<text x="7" y="{ptop+30}" font-size="7" fill="#64748b" font-family="ui-monospace,Consolas,monospace">{_esc(s["raw"])}</text>')
-        out.append(f'<text x="7" y="{ptop+44}" font-size="8.5" fill="#94a3b8">범위 {vmin:g}~{vmax:g}{_esc(s["unit"])}</text>')
+        out.append(f'<text x="8" y="{ptop+18}" font-size="12" font-weight="800" fill="{pc}">{_esc(s["label"])} ({_esc(s["unit"])})</text>')
+        out.append(f'<text x="8" y="{ptop+35}" font-size="9.5" font-weight="600" fill="#1e293b" font-family="ui-monospace,Consolas,monospace">{_esc(s["raw"])}</text>')
+        out.append(f'<text x="8" y="{ptop+50}" font-size="9" fill="#94a3b8">범위 {vmin:g}~{vmax:g}{_esc(s["unit"])}</text>')
         dpts = _downsample(pts)
         dd = "M" + " L".join(f"{X(t)},{Yp(v)}" for t, v in dpts)
         out.append(f'<path d="{dd}" fill="none" stroke="{pc}" stroke-width="1.6"/>')
