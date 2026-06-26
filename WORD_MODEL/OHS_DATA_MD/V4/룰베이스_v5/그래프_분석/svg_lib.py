@@ -65,12 +65,10 @@ def short_label(col):
 # 등급 배경 색
 # ─────────────────────────────────────────────────────────────
 LEVEL_BANDS = [
-    (0,   100, '#F0FDF4', '정상'),
-    (100, 120, '#DBEAFE', '관심'),
-    (120, 130, '#FEF9C3', '주의'),
-    (130, 160, '#FED7AA', '경계'),
-    (160, 220, '#FECACA', '위험'),
-    (220, 500, '#FCA5A5', '발동'),
+    (0,   60,  '#F8FAFC', ''),
+    (60,  80,  '#FED7AA', '경계'),
+    (80,  100, '#FECACA', '위험'),
+    (100, 101, '#FCA5A5', '발동'),
 ]
 
 COLORS = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#0891B2','#DB2777','#65A30D','#EA580C','#0D9488']
@@ -109,7 +107,7 @@ def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
 
     y_s_top = PAD_T
     y_s_bot = PAD_T + H_SCORE
-    Y_MAX = 250
+    Y_MAX = 100
     def ty_score(v): return y_s_bot - (min(v, Y_MAX) / Y_MAX) * H_SCORE
 
     svg = [
@@ -120,27 +118,27 @@ def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
         f'<text x="{W//2}" y="32" text-anchor="middle" font-size="22" font-weight="700" fill="#111827">'
         f'{day} 발동이벤트 24시간 분석</text>',
         f'<text x="{W//2}" y="54" text-anchor="middle" font-size="13" fill="#6B7280">'
-        f'최고 {peak["score"]}점 [{peak["level"]}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]}) · '
-        f'정상 {levels.get("정상",0)} · 관심 {levels.get("관심",0)} · 주의 {levels.get("주의",0)} · '
+        f'최고 {peak["score"]}점 [{peak["level"] or "—"}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]}) · '
         f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 발동 {levels.get("발동",0)}</text>',
         f'<text x="{PAD_L}" y="92" font-size="11" fill="#374151" font-weight="600">등급 :</text>',
     ]
     xx = PAD_L + 42
     for v0, v1, color, name in LEVEL_BANDS[:-1]:
+        if not name: continue
         svg.append(f'<rect x="{xx}" y="82" width="14" height="12" fill="{color}" stroke="#D1D5DB"/>')
         svg.append(f'<text x="{xx+18}" y="92" font-size="11" fill="#374151">{name} ({v0}~{v1})</text>')
         xx += 100
 
     # ── ① 상단: 점수 추이 ──
     svg.append(f'<text x="{PAD_L-8}" y="{y_s_top - 10}" font-size="13" font-weight="700" fill="#111827">'
-               f'① unified_risk_score 추이 (점수 0~{Y_MAX}+)</text>')
+               f'① unified_risk_score 추이 (점수 0~100)</text>')
     # 등급 배경 밴드
     for v0, v1, color, name in LEVEL_BANDS:
         if v0 >= Y_MAX: continue
         y_a = ty_score(min(v1, Y_MAX)); y_b = ty_score(v0)
         svg.append(f'<rect x="{PAD_L}" y="{y_a:.1f}" width="{plot_w}" height="{y_b-y_a:.1f}" '
                    f'fill="{color}" opacity="0.45"/>')
-    for v in [0, 100, 120, 130, 160, 220]:
+    for v in [0, 60, 80, 100]:
         if v > Y_MAX: continue
         y = ty_score(v)
         if v > 0:
@@ -162,7 +160,7 @@ def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
         if v0 >= Y_MAX: continue
         y_mid = (ty_score(v0) + ty_score(v1)) / 2
         svg.append(f'<text x="{PAD_L + plot_w + 5}" y="{y_mid:.1f}" font-size="11" '
-                   f'fill="#374151" dominant-baseline="middle">{name}</text>')
+                   f'fill="#374151" dominant-baseline="middle">{name}</text>') if name else None
     # x축 (점수 그래프 아래)
     def draw_xticks(y_x):
         for h in range(0, 25, 3):
@@ -251,7 +249,7 @@ def make_24h_score_svg(day, data, peak):
     plot_w = W - PAD_L - PAD_R
     plot_h = H - PAD_T - PAD_B
     y_top, y_bot = PAD_T, PAD_T + plot_h
-    Y_MAX = 250
+    Y_MAX = 100
     def ty(v): return y_bot - (min(v, Y_MAX) / Y_MAX) * plot_h
     def tx(t): return PAD_L + (t - t0).total_seconds() / total_sec * plot_w
 
@@ -263,14 +261,14 @@ def make_24h_score_svg(day, data, peak):
         f'<text x="{W//2}" y="32" text-anchor="middle" font-size="20" font-weight="700" fill="#111827">'
         f'{day} 발동이벤트 24시간 추이 (unified_risk_score)</text>',
         f'<text x="{W//2}" y="54" text-anchor="middle" font-size="13" fill="#6B7280">'
-        f'최고 {peak["score"]}점 [{peak["level"]}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]})  ·  '
-        f'정상 {levels.get("정상",0)} · 관심 {levels.get("관심",0)} · 주의 {levels.get("주의",0)} · '
+        f'최고 {peak["score"]}점 [{peak["level"] or "—"}] @ {peak["t"].strftime("%H:%M")} (hot={peak["hot"]})  ·  '
         f'경계 {levels.get("경계",0)} · 위험 {levels.get("위험",0)} · 발동 {levels.get("발동",0)}</text>',
     ]
     # 범례
     svg.append(f'<text x="{PAD_L}" y="92" font-size="11" fill="#374151" font-weight="600">등급:</text>')
     xx = PAD_L + 42
     for v0, v1, color, name in LEVEL_BANDS[:-1]:
+        if not name: continue
         svg.append(f'<rect x="{xx}" y="82" width="14" height="12" fill="{color}" stroke="#D1D5DB"/>')
         svg.append(f'<text x="{xx+18}" y="92" font-size="11" fill="#374151">{name} ({v0}~{v1})</text>')
         xx += 100
@@ -285,7 +283,7 @@ def make_24h_score_svg(day, data, peak):
                    f'fill="#374151" font-weight="600" dominant-baseline="middle">{name}</text>')
 
     # 격자
-    for v in [0, 100, 120, 130, 160, 220]:
+    for v in [0, 60, 80, 100]:
         if v > Y_MAX: continue
         y = ty(v)
         if v > 0:
@@ -362,7 +360,7 @@ def make_incident_svg(incident, series, evt_score_series=None, friendly_map=None
     if evt_score_series:
         y_s_top = PAD_T
         y_s_bot = PAD_T + H_SCORE
-        Y_MAX = 250
+        Y_MAX = 100
         def ty_score(v): return y_s_bot - (min(v, Y_MAX) / Y_MAX) * H_SCORE
         svg.append(f'<text x="{PAD_L-8}" y="{y_s_top - 6}" font-size="12" font-weight="700" '
                    f'fill="#111827">unified_risk_score 추이</text>')
@@ -387,7 +385,7 @@ def make_incident_svg(incident, series, evt_score_series=None, friendly_map=None
             svg.append(f'<line x1="{x:.1f}" y1="{y_s_top}" x2="{x:.1f}" y2="{y_s_bot}" '
                        f'stroke="#10B981" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.8"/>')
         # y 라벨
-        for v in [0, 100, 160, 220]:
+        for v in [0, 60, 80, 100]:
             if v > Y_MAX: continue
             y = ty_score(v)
             svg.append(f'<text x="{PAD_L-6}" y="{y:.1f}" text-anchor="end" font-size="9" fill="#6B7280" '

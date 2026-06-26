@@ -63,7 +63,7 @@ _CFG = _load_config()
 ENABLED   = bool(_CFG.get("graph_enabled", True))
 GRAPH_DIR = _CFG.get("graph_dir", os.path.join(_HERE, "gre"))
 RAW_PATH  = _CFG.get("graph_raw_path", os.path.join(_HERE, "predict", "M16A_HUBROOM_PR.csv"))
-LEVELS    = set(_CFG.get("graph_levels", ["주의", "경계", "위험", "발동"]))
+LEVELS    = set(_CFG.get("graph_levels", ["경계", "위험", "발동"]))
 
 # 같은 분 중복 방지
 _processed = set()

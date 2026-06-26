@@ -643,22 +643,20 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
             mc_score += 10 * n
             mc_signals.extend([f"{area}:{x}" for x in r.get('maxcapa_changed', [])])
 
-    unified_risk_score = min(500, layer1_total + flow_score + sla_score + sorter_score + mc_score)
+    # ★ 점수 정규화 — raw 합산 → 0~100 척도 (raw 220 = 100점 발동)
+    raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score
+    unified_risk_score = min(100, round(raw_score * 100 / 220))
 
-    # ★ v6 5단계 위험도 등급 (한국 경보 체계: 관심<주의<경계<위험<발동)
-    # 점수 100 미만은 알람 X (사건단위.csv 에서 자동 제외됨)
-    if unified_risk_score >= 220:
+    # ★ v7 3단계 위험도 등급 (정상/관심/주의 제거)
+    # 60 미만은 등급 공란 — 사건단위.csv 자동 제외, 발동이벤트.csv 는 매분 기록 유지
+    if unified_risk_score >= 100:
         unified_risk_level = '발동'
-    elif unified_risk_score >= 160:
+    elif unified_risk_score >= 80:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 130:
+    elif unified_risk_score >= 60:
         unified_risk_level = '경계'
-    elif unified_risk_score >= 120:
-        unified_risk_level = '주의'
-    elif unified_risk_score >= 100:
-        unified_risk_level = '관심'
     else:
-        unified_risk_level = '정상'
+        unified_risk_level = ''
 
     hot_area = None
     hot_score = 0
@@ -920,10 +918,10 @@ class IncidentTracker:
     def _end_current(self, t):
         c = self.current
         c['end_time'] = c['last_s3_time']
-        # ★ v6: 점수 100 미만 (정상 등급) 은 사건단위 기록 X
-        # 관심(100~119) / 주의(120~129) / 경계(130~159) / 위험(160~219) / 발동(220+) 만 기록
+        # ★ v7: 새 0~100 척도 — 60 미만 (등급 공란) 은 사건단위 기록 X
+        # 경계(60~79) / 위험(80~99) / 발동(100) 만 기록
         # (발동이벤트.csv 에는 매분 그대로 기록 — 트렌드 모니터링 가능)
-        if c.get('max_risk_score', 0) >= 100:
+        if c.get('max_risk_score', 0) >= 60:
             self.incidents.append(c)
         self.current = None
         self.state = 'IDLE'
@@ -931,7 +929,7 @@ class IncidentTracker:
     def finalize(self, last_t):
         if self.state == 'IN_INCIDENT':
             self.current['end_time'] = self.current['last_s3_time']
-            if self.current.get('max_risk_score', 0) >= 100:
+            if self.current.get('max_risk_score', 0) >= 60:
                 self.incidents.append(self.current)
             self.current = None
             self.state = 'IDLE'
