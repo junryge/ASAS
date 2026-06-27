@@ -302,6 +302,22 @@
       "context_window": 16384,
       "priority": 2,
       "cost_tier": "medium"
+    },
+    "spark-qwable36-27b": {
+      "env_id": "spark-27b",
+      "model": "Qwable3.6-27b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡Qwable3.6-27B (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis"
+      ],
+      "context_window": 32768,
+      "priority": 2,
+      "cost_tier": "medium"
     }
   },
   "default_model_priority": [
@@ -313,5 +329,5 @@
     "qwen3-next-80b-summary",
     "hcp-llm-latest"
   ],
-  "_updated": "2026-06-27 스파크 DGX(집) 5종 추가"
+  "_updated": "2026-06-27 스파크 Qwable3.6-27b 추가"
 }

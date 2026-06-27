@@ -1231,7 +1231,14 @@ def _stream_chat_sse(data):
     }
 
     def gen_api():
-        _tf = _StreamThinkFilter()   # 명시적 <think>...</think> 만 제거 (안전)
+        # 스파크 DGX(raw GGUF) 추론모델(glm·qwen3.6 등)은 여는 <think> 없이 추론하다
+        # 닫는 </think> 만 뱉어 사고과정이 그대로 노출됨 → implicit 모드로 첫 </think> 전까지 버림.
+        # 깔끔하게 답하는 next-80b 는 제외(스트리밍 유지). 게이트웨이 모델은 영향 없음.
+        _ml = (model or "").lower()
+        # 스파크 추론모델(glm·qwen3.6·qwable3.6 등)은 next-80b·gemma 외 전부 사고노출 → implicit.
+        _implicit_think = (str(env_id).startswith("spark-")
+                           and "next" not in _ml and "gemma" not in _ml)
+        _tf = _StreamThinkFilter(implicit=_implicit_think)
 
         # 리포트 그래프 삽입은 report_graphs.GraphStreamInjector 가 전담(코어 침투 최소화).
         #   여기선 feed()/flush() 만 호출하고 _tok 으로 SSE 포장.  떼고 싶으면 이 3줄만 제거.

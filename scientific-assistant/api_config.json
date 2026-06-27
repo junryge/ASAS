@@ -1,6 +1,6 @@
 {
   "_doc": "Demos V1.0 API/모델/인프라 설정. app.py 수정 없이 이 파일만 편집하면 됩니다.",
-  "_updated": "2026-06-27 스파크 DGX(집) 5종 추가",
+  "_updated": "2026-06-27 스파크 Qwable3.6-27b 추가",
   "token_settings": {
     "agent_max_tokens": 8192,
     "synth_max_tokens": 16384,
@@ -303,6 +303,22 @@
         "analysis"
       ],
       "context_window": 16384,
+      "priority": 2,
+      "cost_tier": "medium"
+    },
+    "spark-qwable36-27b": {
+      "env_id": "spark-27b",
+      "model": "Qwable3.6-27b",
+      "url": "http://14.35.248.221:10010/v1/chat/completions",
+      "name": "⚡Qwable3.6-27B (집/Spark)",
+      "token": "sk-myspark1234",
+      "category": "spark",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis"
+      ],
+      "context_window": 32768,
       "priority": 2,
       "cost_tier": "medium"
     }
