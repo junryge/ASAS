@@ -155,7 +155,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg-del{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.8);border:1px solid #ddd;color:#aaa;cursor:pointer;font-size:10px;padding:1px 6px;border-radius:4px;opacity:0;transition:opacity .15s;z-index:5}
 .msg:hover .msg-del{opacity:1}
 .msg-del:hover{color:#ef4444;border-color:#ef4444;background:#fef2f2}
-.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:space-between;align-items:center}
+.msg-fb-right{display:flex;gap:4px}
 .msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
 .msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
 .msg-feedback button.fb-selected-good{background:#e8f5e9;color:#2e7d32;border-color:#81c784}
@@ -2084,15 +2085,26 @@ function _wireSkillNameCheck(input, res){
 }
 function _showManualSkillBtn(bodyText){
   if(!bodyText || !bodyText.trim() || !currentUser) return;
-  const c=document.getElementById('msgs');
-  const wrap=document.createElement('div');
-  wrap.className='msg assistant';
-  wrap.innerHTML='<div class="content"><button class="msk-open" '
-    +'style="background:none;border:1px solid #a855f7;color:#a855f7;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;">📌 이 답변을 스킬로 저장</button></div>';
+  // ★ 별도 카드를 만들지 않고, 마지막 assistant 응답의 피드백 행(👍👎) '왼쪽'에 버튼을 넣는다.
+  const msgs=document.querySelectorAll('#msgs .msg.assistant');
+  const target=msgs[msgs.length-1];
+  if(!target) return;
+  const slot=target.querySelector('.msg-fb-left');
+  if(!slot || slot.querySelector('.msk-open')) return;   // 슬롯 없거나 이미 있으면 중복 방지
   const body=bodyText;
-  wrap.querySelector('.msk-open').onclick=function(){
-    const cont=wrap.querySelector('.content');
-    cont.innerHTML='<div style="border:1px solid #a855f7;border-radius:8px;padding:9px;background:rgba(168,85,247,0.06);">'
+  const btn=document.createElement('button');
+  btn.className='msk-open';
+  btn.style.cssText='background:none;border:1px solid #a855f7;color:#a855f7;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;';
+  btn.textContent='📌 이 답변을 스킬로 저장';
+  slot.appendChild(btn);
+  btn.onclick=function(){
+    const cont=target.querySelector('.content');
+    let form=cont.querySelector('.msk-form');
+    if(form){ form.remove(); return; }                   // 토글(다시 누르면 닫힘)
+    form=document.createElement('div');
+    form.className='msk-form';
+    form.style.cssText='margin-top:8px;';
+    form.innerHTML='<div style="border:1px solid #a855f7;border-radius:8px;padding:9px;background:rgba(168,85,247,0.06);">'
       +'<div style="font-weight:700;color:#a855f7;font-size:12px;margin-bottom:6px;">🔮 이 답변을 재사용 스킬로 저장</div>'
       +'<input class="msk-name" placeholder="이름 (영문소문자-하이픈, 예: hubroom-diag)" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
       +'<input class="msk-when" placeholder="언제 쓰는 스킬인지 한 줄 (한국어 OK)" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
@@ -2100,19 +2112,19 @@ function _showManualSkillBtn(bodyText){
       +'<button class="msk-go" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;">저장</button> '
       +'<button class="msk-cancel" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer;">취소</button>'
       +' <span class="msk-res" style="font-size:11px;margin-left:6px;color:#22c55e;"></span></div>';
-    cont.querySelector('.msk-body').value=body.slice(0,4000);
-    // ★ 이름·설명 자동 채움 (회사님은 보고 고쳐서 저장만)
+    cont.appendChild(form);
+    form.querySelector('.msk-body').value=body.slice(0,4000);
     var _sg=_suggestSkillMeta(body);
-    cont.querySelector('.msk-name').value=_sg.name;
-    cont.querySelector('.msk-when').value=_sg.when;
-    _wireSkillNameCheck(cont.querySelector('.msk-name'), cont.querySelector('.msk-res'));
-    cont.querySelector('.msk-cancel').onclick=function(){ wrap.remove(); };
-    cont.querySelector('.msk-go').onclick=async function(){
-      const go=this, res=cont.querySelector('.msk-res');
+    form.querySelector('.msk-name').value=_sg.name;
+    form.querySelector('.msk-when').value=_sg.when;
+    _wireSkillNameCheck(form.querySelector('.msk-name'), form.querySelector('.msk-res'));
+    form.querySelector('.msk-cancel').onclick=function(){ form.remove(); };
+    form.querySelector('.msk-go').onclick=async function(){
+      const go=this, res=form.querySelector('.msk-res');
       const spec={action:'create',
-        name:(cont.querySelector('.msk-name').value||'').trim().toLowerCase(),
-        when:(cont.querySelector('.msk-when').value||'').trim(),
-        body:(cont.querySelector('.msk-body').value||'').trim()};
+        name:(form.querySelector('.msk-name').value||'').trim().toLowerCase(),
+        when:(form.querySelector('.msk-when').value||'').trim(),
+        body:(form.querySelector('.msk-body').value||'').trim()};
       if(!_skillNameValid(spec.name)){ res.style.color='#ef4444'; res.textContent='이름: 영문소문자·숫자·하이픈만 (2~40자)'; return; }
       go.disabled=true; res.style.color='#94a3b8'; res.textContent='저장 중…';
       var base=spec.name;
@@ -2125,13 +2137,11 @@ function _showManualSkillBtn(bodyText){
           if(d.ok || !/이미 존재/.test(d.msg||'')) break;
           spec.name=base+'-'+(k+2);
         }
-        if(d&&d.ok){ cont.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+_hesc(d.msg||'저장됨')+'</span>'; }
+        if(d&&d.ok){ form.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+_hesc(d.msg||'저장됨')+'</span>'; }
         else { go.disabled=false; res.style.color='#ef4444'; res.textContent=(d&&d.msg)||'실패'; }
       }catch(e){ go.disabled=false; res.style.color='#ef4444'; res.textContent='실패: '+e.message; }
     };
   };
-  c.appendChild(wrap);
-  try{ const ct=document.querySelector('.content'); if(ct) ct.scrollTop=ct.scrollHeight; }catch(e){}
 }
 async function _confirmHermesSkill(btn, idx){
   const card=btn.closest('[data-card]');
@@ -2699,7 +2709,8 @@ function addMsg(role,text,rawForDetect){
   if(role==='assistant'){
     const fbDiv=document.createElement('div');
     fbDiv.className='msg-feedback';
-    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    fbDiv.innerHTML='<span class="msg-fb-left"></span>'
+      +'<span class="msg-fb-right"><button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button></span>';
     d.appendChild(fbDiv);
   }
   // 삭제 버튼 주입
