@@ -289,12 +289,19 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     # 2) HTML 파일 생성
     try:
         import markdown as md_lib
-        # 표 앞 빈 줄 보정 (표로 인식 못 해 '| ... |' 글자로 깨지는 것 방지)
+        # 표 보정: 표 앞 빈 줄 + 헤더 직후 구분선(|---|) 자동삽입 (LLM 이 구분선 빼먹어 깨지는 것 방지)
+        _md_src = _delatex_md(answer).split("\n")
         _md_in = []
-        for _ln in _delatex_md(answer).split("\n"):
-            if _ln.lstrip().startswith("|") and _md_in and _md_in[-1].strip() and not _md_in[-1].lstrip().startswith("|"):
+        for _i, _ln in enumerate(_md_src):
+            _is_row = _ln.lstrip().startswith("|")
+            _prev_row = bool(_md_in) and _md_in[-1].lstrip().startswith("|")
+            if _is_row and _md_in and _md_in[-1].strip() and not _prev_row:
                 _md_in.append("")
             _md_in.append(_ln)
+            if _is_row and not _prev_row:
+                _nxt = _md_src[_i + 1] if _i + 1 < len(_md_src) else ""
+                if _nxt.lstrip().startswith("|") and "---" not in _nxt:
+                    _md_in.append("|" + "|".join(["---"] * max(1, _ln.count("|") - 1)) + "|")
         extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
         body_html = md_lib.markdown("\n".join(_md_in), extensions=extensions)
         full_html = (
@@ -303,6 +310,7 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
             f'<title>{title}</title><style>'
             'body{font-family:"Pretendard","Noto Sans KR",sans-serif;max-width:900px;margin:2rem auto;padding:0 1.5rem;color:#1a1a2e;line-height:1.7}'
             'h1,h2,h3{color:#16213e;border-bottom:2px solid #e2e8f0;padding-bottom:.3em}'
+            'h1{font-size:1.45rem}h2{font-size:1.15rem}'
             'table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.86em}'
             'th,td{border:1px solid #cbd5e1;padding:.4em .55em;text-align:left;vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}'
             'th{background:#f1f5f9;font-weight:700;white-space:nowrap}'

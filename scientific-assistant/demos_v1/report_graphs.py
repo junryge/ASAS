@@ -163,7 +163,7 @@ def render_hub_evt_24h(rows, title=None, width=900):
 
     if title is None:
         day = (rows[0].get("date") or (rows[0].get("datetime") or "")[:10])
-        title = f"📅 {day} M16 HUBROOM 발동이벤트 24시간 종합"
+        title = f"📅 {day} M16 BR 발동이벤트 24시간 종합"
 
     L, R = 200, 18                 # 좌측 거터 넓힘 — raw 컬럼명 잘 보이게
     pw = width - L - R

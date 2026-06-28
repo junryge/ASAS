@@ -2858,14 +2858,22 @@ def register_api_routes(app):
         import html as _html
         title = _html.escape(title)
 
-        # 표 앞에 빈 줄이 없으면 python-markdown 이 표로 인식 못 해 '| 점수 |' 글자로 깨진다.
-        # 비어있지 않은 비-표 줄 다음에 표(| ...)가 바로 오면 빈 줄을 끼워준다.
+        # 표 보정: ① 표 앞 빈 줄 ② 헤더 직후 구분선(|---|) 없으면 자동 삽입.
+        #   LLM 이 구분선을 빼먹으면 python-markdown 이 표로 인식 못 해 '| 점수 |' 글자로 깨진다.
         def _ensure_table_blanklines(md):
+            lines = md.split("\n")
             out = []
-            for ln in md.split("\n"):
-                if ln.lstrip().startswith("|") and out and out[-1].strip() and not out[-1].lstrip().startswith("|"):
-                    out.append("")
+            for i, ln in enumerate(lines):
+                is_row = ln.lstrip().startswith("|")
+                prev_row = bool(out) and out[-1].lstrip().startswith("|")
+                if is_row and out and out[-1].strip() and not prev_row:
+                    out.append("")          # 표 앞 빈 줄
                 out.append(ln)
+                if is_row and not prev_row:  # 표 첫 행(헤더) — 다음이 표인데 구분선 아니면 삽입
+                    nxt = lines[i + 1] if i + 1 < len(lines) else ""
+                    if nxt.lstrip().startswith("|") and "---" not in nxt:
+                        ncol = max(1, ln.count("|") - 1)
+                        out.append("|" + "|".join(["---"] * ncol) + "|")
             return "\n".join(out)
         md_text = _ensure_table_blanklines(md_text)
 
@@ -2884,6 +2892,7 @@ def register_api_routes(app):
 <style>
   body {{ font-family: 'Pretendard','Noto Sans KR',sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; line-height: 1.7; }}
   h1,h2,h3 {{ color: #16213e; border-bottom: 2px solid #e2e8f0; padding-bottom: .3em; }}
+  h1 {{ font-size: 1.45rem; }} h2 {{ font-size: 1.15rem; }}
   table {{ border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .86em; }}
   th,td {{ border: 1px solid #cbd5e1; padding: .4em .55em; text-align: left; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }}
   th {{ background: #f1f5f9; font-weight: 700; white-space: nowrap; }}
