@@ -149,7 +149,17 @@ def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
     peak_t, peak_v, peak_r = max(data, key=lambda x: x[1])
     if peak_v <= 0:
         return None
-    metrics_def = parse_reason_metrics(peak_r.get("reason") or "")
+    if incidents:
+        # 사건마다 발동 지표가 다를 수 있다 → 모든 사건 peak reason 의 지표를 합쳐 표시
+        metrics_def, _seen = [], set()
+        for _inc in incidents:
+            for _md in parse_reason_metrics(_inc.get("reason") or ""):
+                if _md["col"] not in _seen:
+                    _seen.add(_md["col"]); metrics_def.append(_md)
+        if not metrics_def:
+            metrics_def = parse_reason_metrics(peak_r.get("reason") or "")
+    else:
+        metrics_def = parse_reason_metrics(peak_r.get("reason") or "")
 
     series = []
     for md in metrics_def:
@@ -182,6 +192,15 @@ def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
         return round(L + pw * ((t - t0).total_seconds() / span))
 
     px = X(peak_t)
+
+    # 피크 마커: 사건별 최고점(여러 사건이면 각각) — 없으면 전체 최고점 1개
+    if incidents:
+        _markers = [(i["peak_t"], _LEVEL_HL.get(i.get("level"), "#dc2626"), i.get("idx"))
+                    for i in incidents if i.get("peak_t") is not None]
+        if not _markers:
+            _markers = [(peak_t, "#dc2626", None)]
+    else:
+        _markers = [(peak_t, "#dc2626", None)]
 
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
            f'font-family="-apple-system,\'Malgun Gothic\',sans-serif" '
@@ -248,6 +267,15 @@ def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
     out.append(f'<text x="{_lx}" y="{Y1(peak_v)-7}" font-size="11" font-weight="800" fill="#dc2626" '
                f'text-anchor="{_la}" style="paint-order:stroke;stroke:#fff;stroke-width:3.2px;stroke-linejoin:round">'
                f'▲ 최고 {int(peak_v)}점 · {peak_t.strftime("%H:%M")} · {_esc(peak_r.get("hot_area") or "")}</text>')
+    # 사건별 최고점 점(전체 최고점 외 다른 사건도 점수선에 표시)
+    for _mt, _mc, _midx in _markers:
+        if _mt == peak_t:
+            continue
+        _mv = next((s for t, s, _ in data if t == _mt), None)
+        if _mv is not None:
+            out.append(f'<circle cx="{X(_mt)}" cy="{Y1(_mv)}" r="3.5" fill="{_mc}"/>')
+            out.append(f'<text x="{X(_mt)}" y="{Y1(_mv)-6}" font-size="9.5" font-weight="800" fill="{_mc}" '
+                       f'text-anchor="middle" style="paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round">{int(_mv)}점</text>')
 
     # ② 지표 스택 패널
     if series:
@@ -279,14 +307,17 @@ def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
         out.append(f'<path d="{dd}" fill="none" stroke="{pc}" stroke-width="1.6"/>')
         area_d = dd + f" L{X(dpts[-1][0])},{ptop+PH-2} L{X(dpts[0][0])},{ptop+PH-2} Z"
         out.append(f'<path d="{area_d}" fill="{pc}" opacity="0.07"/>')
-        out.append(f'<line x1="{px}" y1="{ptop}" x2="{px}" y2="{ptop+PH}" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3"/>')
-        pv = next((v for t, v in pts if t == peak_t), None)
-        if pv is not None:
-            out.append(f'<circle cx="{px}" cy="{Yp(pv)}" r="3" fill="#dc2626"/>')
-            pa = "end" if px > L + pw * 0.7 else "start"
-            pxx = px - 6 if pa == "end" else px + 6
-            out.append(f'<text x="{pxx}" y="{Yp(pv)-5}" font-size="9.5" font-weight="800" fill="#dc2626" '
-                       f'text-anchor="{pa}" style="paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round">{pv:g}{_esc(s["unit"])}</text>')
+        # 사건별 최고점마다 지표 값 표시(사건1·2 모두) — 기존엔 전체 최고점 한 곳만 찍혀 사건2가 비어 보였음
+        for _mt, _mc, _midx in _markers:
+            _mx = X(_mt)
+            out.append(f'<line x1="{_mx}" y1="{ptop}" x2="{_mx}" y2="{ptop+PH}" stroke="{_mc}" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>')
+            pv = next((v for t, v in pts if t == _mt), None)
+            if pv is not None:
+                out.append(f'<circle cx="{_mx}" cy="{Yp(pv)}" r="3" fill="{_mc}"/>')
+                pa = "end" if _mx > L + pw * 0.7 else "start"
+                pxx = _mx - 6 if pa == "end" else _mx + 6
+                out.append(f'<text x="{pxx}" y="{Yp(pv)-5}" font-size="9.5" font-weight="800" fill="{_mc}" '
+                           f'text-anchor="{pa}" style="paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round">{pv:g}{_esc(s["unit"])}</text>')
 
     out.append('</svg>')
     return "".join(out)
@@ -554,6 +585,8 @@ def build_report_graph(headers, rows, query=None, prefer_png=None):
             win = [r for (t, r) in all_data if w0 <= t <= w1]
             inc_meta = [{"start": i["start"], "end": i["end"], "idx": n,
                          "peak_score": int(i["peak_score"]),
+                         "peak_t": i["peak_t"],
+                         "reason": (i["peak_row"].get("reason") or ""),
                          "level": _level_from_score(i["peak_score"]),
                          "hot": (i["peak_row"].get("hot_area") or "")}
                         for n, i in enumerate(incs, 1)]
