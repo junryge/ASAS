@@ -1218,10 +1218,11 @@ def _stream_chat_sse(data):
         def _tok_evt(t):
             return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
 
-        def _gguf_stream_once(msgs, max_toks):
+        def _gguf_stream_once(msgs, max_toks, emit=None):
             """한 번의 create_chat_completion 을 스트리밍 — (yield용 SSE, 누적텍스트, finish) 제너레이터.
             마지막에 ('__end__', acc, finish) 튜플을 yield.
-            qwen3.x GGUF 는 템플릿이 <think> 를 미리 넣어 닫는 </think> 만 나오므로 암묵 사고제거 적용."""
+            qwen3.x GGUF 는 템플릿이 <think> 를 미리 넣어 닫는 </think> 만 나오므로 암묵 사고제거 적용.
+            emit(vis)->list[SSE] 주면 그걸로 감싼다(그래프 주입·금지어 필터용). 없으면 기본 _tok_evt."""
             acc = ""
             _finish = None
             _gtf = _StreamThinkFilter(implicit=("qwen3" in (model_name or "").lower()))
@@ -1238,14 +1239,22 @@ def _stream_chat_sse(data):
                     vis = _gtf.feed(tok)          # 사고과정 실시간 제거
                     if vis:
                         acc += vis
-                        yield _tok_evt(vis)
+                        if emit is None:
+                            yield _tok_evt(vis)
+                        else:
+                            for _s in emit(vis):
+                                yield _s
                 fr = choices[0].get("finish_reason")
                 if fr:
                     _finish = fr
             tail = _gtf.flush()
             if tail:
                 acc += tail
-                yield _tok_evt(tail)
+                if emit is None:
+                    yield _tok_evt(tail)
+                else:
+                    for _s in emit(tail):
+                        yield _s
             yield ("__end__", acc, _finish)
 
         # 분할(이어서보기) 비활성화 — 항상 단일 패스로 처리(큰 입력은 앞부분 잘라 한 번에 답변).
@@ -1272,13 +1281,45 @@ def _stream_chat_sse(data):
                 yield _meta_evt()
                 if _fit_warn:
                     yield _tok_evt(_fit_warn + "\n\n")
+                # ★ GGUF 도 API 경로처럼 리포트 그래프 삽입 + 금지어 치환 (전엔 API에만 있어 GGUF는 그래프 안 나왔음)
+                _inj = None
+                try:
+                    from demos_v1.report_graphs import GraphStreamInjector
+                    _inj = GraphStreamInjector(_data_for_script, query=_q_now)
+                except Exception as _ie:
+                    print(f"  📈 [GRAPH] injector 비활성: {_ie}")
+                    _inj = None
+                _termf2 = _TermStreamFilter()
+
+                def _emit(vis):
+                    out = []
+                    v2 = _termf2.feed(vis)        # 금지어(역증가→정체) 실시간 치환
+                    if not v2:
+                        return out
+                    if _inj is None:
+                        out.append(_tok_evt(v2))
+                    else:
+                        for _p in _inj.feed(v2):  # 제목(# …) 직후 그래프 삽입
+                            out.append(_tok_evt(_p))
+                    return out
+
                 try:
                     _finish = None
-                    for ev in _gguf_stream_once(_fit_msgs, _fit_reply):
+                    for ev in _gguf_stream_once(_fit_msgs, _fit_reply, emit=_emit):
                         if isinstance(ev, tuple) and ev and ev[0] == "__end__":
                             _finish = ev[2]
                         else:
                             yield ev
+                    # flush: 금지어 꼬리 → 그래프 주입기로 흘려보내고 → 그래프 마저 삽입
+                    _tailtxt = _termf2.flush()
+                    if _inj is None:
+                        if _tailtxt:
+                            yield _tok_evt(_tailtxt)
+                    else:
+                        for _p in _inj.feed(_tailtxt or ""):
+                            yield _tok_evt(_p)
+                        for _p in _inj.flush():
+                            yield _tok_evt(_p)
                     end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
