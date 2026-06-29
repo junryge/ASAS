@@ -634,6 +634,86 @@ def _find_agent_script(user_id, query, selected_names):
     return (best[1], best[2]) if best else None
 
 
+def _builtin_hub_summary(headers, rows):
+    """등록 스크립트가 안 돌았을 때의 안전망: 발동이벤트 스키마면 raw 1440행 대신
+    ①일일통계+③사건목록 을 코드로 직접 만들어 컴팩트 텍스트로 돌려준다(잘림 방지).
+    스키마가 아니면 None(기존 미리보기 경로 사용)."""
+    try:
+        from demos_v1.report_graphs import _detect_hub_evt, derive_incidents_from_evt, _parse_dt
+    except Exception:
+        return None
+    try:
+        hdr = [str(h).lstrip("﻿") for h in (headers or [])]
+        if not _detect_hub_evt(hdr):
+            return None
+        drows = [dict(zip(hdr, r)) for r in (rows or [])]
+        if not drows:
+            return None
+
+        def _lvl(s):
+            return "초위험" if s >= 90 else "위험" if s >= 75 else "경계" if s >= 54 else "정상"
+        _EMO = {"경계": "🟠 경계", "위험": "🔴 위험", "초위험": "⛔ 초위험", "정상": "정상"}
+
+        n_total = len(drows)
+        dist = {"경계": 0, "위험": 0, "초위험": 0}
+        n_cong = 0
+        peak = (-1, "", "")          # (score, time, hot_area)
+        hour_cong = {}
+        day = ""
+        for r in drows:
+            try:
+                sc = int(float(r.get("unified_risk_score") or 0))
+            except (TypeError, ValueError):
+                sc = 0
+            lv = _lvl(sc)
+            tm = str(r.get("time") or (r.get("datetime") or "")[-5:] or "")
+            day = day or str(r.get("date") or "")
+            if sc >= 54:
+                n_cong += 1
+                if lv in dist:
+                    dist[lv] += 1
+                hh = tm[:2]
+                hour_cong[hh] = hour_cong.get(hh, 0) + 1
+            if sc > peak[0]:
+                peak = (sc, tm, str(r.get("hot_area") or ""))
+        busy = sorted(hour_cong.items(), key=lambda x: -x[1])[:5]
+        busy_str = ", ".join(f"{h}시({n}분)" for h, n in busy) if busy else "없음"
+
+        incs = derive_incidents_from_evt(drows)
+        incs = sorted(incs, key=lambda i: i["start"])
+
+        out = ["=== [발동이벤트 자동요약 — 내장 분석기가 계산. 재계산 말고 이걸로 진단하세요] ==="]
+        out.append(
+            f"[① 일일통계] 보고일자 {day} | 총 {n_total}분 | 정상 {n_total - n_cong}분 | 정체(54점↑) {n_cong}분"
+        )
+        out.append(
+            f"등급분포: 🟠경계 {dist['경계']} · 🔴위험 {dist['위험']} · ⛔초위험 {dist['초위험']}"
+        )
+        if peak[0] >= 0:
+            out.append(f"하루 최고: {peak[0]}점 {_EMO[_lvl(peak[0])]} @{peak[1]} (시작영역 {peak[2]})")
+        out.append(f"정체 집중 시간대: {busy_str}")
+        out.append("")
+        out.append(f"[③ 사건목록] (stage=3 확정·간격10분·최고점수 54점+) — {len(incs)}건")
+        if not incs:
+            out.append("→ 금일 점수 54 이상 확정 사건 없음 (정상 운영).")
+        else:
+            out.append("| # | 시각 | 종료 | 지속분 | 최고등급 | 최고점수 | 시작영역 | 영향영역 | 대표_전파경로 |")
+            out.append("|---|---|---|---|---|---|---|---|---|")
+            for n, inc in enumerate(incs, 1):
+                pr = inc["peak_row"]
+                dur = int((inc["end"] - inc["start"]).total_seconds() // 60)
+                out.append(
+                    f"| {n} | {inc['start'].strftime('%H:%M')} | {inc['end'].strftime('%H:%M')} | {dur} "
+                    f"| {_EMO[_lvl(int(inc['peak_score']))]} | {int(inc['peak_score'])} "
+                    f"| {pr.get('hot_area') or ''} | {pr.get('affected_areas') or ''} "
+                    f"| {pr.get('propagation_chain') or ''} |"
+                )
+        return "\n".join(out) + "\n\n"
+    except Exception as _e:
+        print(f"  🐍 [BUILTIN-SUMMARY] 예외: {_e}")
+        return None
+
+
 def _summarize_result_csv(path, max_full_rows=30, top_k=8):
     """결과 CSV → LLM용 압축 요약. 작은 표(사건단위)는 통째로, 큰 표(발동이벤트)는 분포+상위행."""
     import csv as _csv
@@ -900,11 +980,21 @@ def _stream_chat_sse(data):
     except Exception:
         pass
 
+    # 등록 스크립트가 안 돌았어도 발동이벤트 CSV면 내장 요약(①③)으로 안전망 — raw 1440행 잘림 방지.
+    _builtin_sum = None
+    if not _script_out and _data_for_script:
+        _builtin_sum = _builtin_hub_summary(_data_for_script.get("headers"), _data_for_script.get("rows"))
+
     if _script_out:
         file_section += _script_out          # 스크립트가 계산 → LLM은 결과만 해석(raw 안 봄)
         if _pasted_instr is not None and _q_idx >= 0:
             # 붙여넣은 raw CSV 는 LLM 에 보내지 않고 지시문만 남김 (토큰 폭발 방지)
             messages[_q_idx] = dict(messages[_q_idx], content=_pasted_instr)
+    elif _builtin_sum:
+        file_section += _builtin_sum         # 발동이벤트 자동요약 → LLM은 ①③ 표만 봄(raw 안 봄)
+        if _pasted_instr is not None and _q_idx >= 0:
+            messages[_q_idx] = dict(messages[_q_idx], content=_pasted_instr)
+        print("  🐍 [BUILTIN-SUMMARY] 발동이벤트 스키마 감지 → 내장 ①③ 요약 주입(raw 미전송)")
     elif include_csv and _csv_now.get("filename"):
         csv_info = _csv_now.get("summary", "")
         rows = _csv_now.get("rows", []) or []
