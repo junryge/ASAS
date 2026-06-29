@@ -500,6 +500,17 @@ def render_incident_zoom(all_data, inc, idx, total, width=900):
     return render_hub_evt_24h(win, title=title, width=width)
 
 
+def _is_incident_query(query):
+    """질문이 '사건(사건발생/사건단위) 모드'인가. 발동이벤트는 제외(그래프 그대로 줘야 함)."""
+    q = str(query or "")
+    if "발동이벤트" in q:
+        return False
+    return any(k in q for k in (
+        "사건단위", "사건 단위", "위험사건", "사건별", "사건 분석", "사건분석",
+        "사건발생", "사건 발생", "사건",
+    ))
+
+
 def build_report_graph(headers, rows, query=None, prefer_png=None):
     """헤더+질문으로 렌더러 선택 → 본문에 붙일 마크다운 블록(<div>…</div>) 또는 None.
     질문에 '사건단위/위험사건' 키워드 + 발동이벤트 CSV → 사건별 ±60분 줌(여러 개).
@@ -507,7 +518,7 @@ def build_report_graph(headers, rows, query=None, prefer_png=None):
     if not headers or not rows:
         return None
     q = str(query or "")
-    want_incident = any(k in q for k in ("사건단위", "사건 단위", "위험사건", "사건별", "사건 분석", "사건분석"))
+    want_incident = _is_incident_query(q)
     svgs = []
     if want_incident and _detect_hub_evt(headers):
         rows2 = [{(k or "").lstrip("﻿"): v for k, v in r.items()} for r in rows]
@@ -581,6 +592,20 @@ class GraphStreamInjector:
                     self.done = False
             except Exception:
                 self.done = True
+
+        # ★ 사건(사건발생) 모드인데 사건이 0건(정상)이면 그래프를 아예 주지 않는다 — 텍스트만.
+        #   스크립트 SVG·내장 그래프 둘 다 차단. (발동이벤트 모드는 _is_incident_query=False 라 무영향.)
+        if not self.done and self.src and _is_incident_query(self.query):
+            try:
+                hdr = [str(h).lstrip("﻿") for h in (self.src.get("headers") or [])]
+                if _detect_hub_evt(hdr):
+                    dict_rows = [dict(zip(hdr, r)) for r in (self.src.get("rows") or [])]
+                    if not derive_incidents_from_evt(dict_rows):
+                        self.done = True          # 토큰 그대로 통과 — 그래프 미삽입
+                        self.script_svg = None     # 스크립트가 준 SVG 도 버림
+                        print("  📈 [GRAPH] 사건 0건(정상) → 그래프 생략, 텍스트만")
+            except Exception:
+                pass
 
     def _block_md(self):
         if self._built:
