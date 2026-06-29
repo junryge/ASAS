@@ -100,6 +100,50 @@ class _StreamThinkFilter:
         return 0
 
 
+# 금지어 강제 치환 — 원자료(risk_factors·signals·전파경로 등)에 박힌 단어가
+# 프롬프트 지시를 무시하고 새어나오는 것을 코드 레벨에서 차단한다.
+# (긴 표현 먼저 → 짧은 표현. 데이터가 어디서 오든 출력 한 곳에서 다 막힌다.)
+_TERM_REPL = [
+    ("리프터 역증가", "리프터 정체"),
+    ("리프터 역류", "리프터 정체"),
+    ("Queue 역류", "Queue 밀림"),
+    ("큐 역류", "Queue 밀림"),
+    ("역증가", "정체"),
+    ("역류", "밀림"),
+]
+_TERM_HOLD = max(len(a) for a, _ in _TERM_REPL) - 1   # 토큰 경계 분할 대비 보류 길이
+
+
+def _sanitize_terms(text):
+    """완성된 텍스트에서 금지어를 일괄 치환."""
+    if not text:
+        return text
+    for a, b in _TERM_REPL:
+        text = text.replace(a, b)
+    return text
+
+
+class _TermStreamFilter:
+    """스트리밍 중 금지어 실시간 치환. 단어가 토큰 경계로 쪼개져도 안전하게
+    꼬리(_TERM_HOLD 글자)를 보류했다가 다음 토큰과 합쳐 치환한다."""
+    def __init__(self):
+        self.buf = ""
+
+    def feed(self, s):
+        self.buf += s
+        self.buf = _sanitize_terms(self.buf)
+        if len(self.buf) > _TERM_HOLD:
+            out = self.buf[:-_TERM_HOLD]
+            self.buf = self.buf[-_TERM_HOLD:]
+            return out
+        return ""
+
+    def flush(self):
+        out = _sanitize_terms(self.buf)
+        self.buf = ""
+        return out
+
+
 def _strip_thinking_artifacts(text):
     """응답에서 사고 과정 흔적 제거. 끝에서 거꾸로 한국어 본문만 추출."""
     if not text:
@@ -150,8 +194,8 @@ def _strip_thinking_artifacts(text):
         break
     keep_idxs.sort()
     if not keep_idxs:
-        return cleaned.strip()
-    return "\n".join(lines[i] for i in keep_idxs).strip()
+        return _sanitize_terms(cleaned.strip())
+    return _sanitize_terms("\n".join(lines[i] for i in keep_idxs).strip())
 
 
 import time
@@ -266,6 +310,8 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     """md-to-html 스킬이 로드되었으면 MD/HTML 파일을 생성하고 다운로드 URL을 resp_data에 추가"""
     if "md-to-html" not in loaded:
         return resp_data
+
+    answer = _sanitize_terms(answer)   # 저장 파일에도 금지어(역증가 등) 치환 반영
 
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1247,6 +1293,7 @@ def _stream_chat_sse(data):
         _implicit_think = (str(env_id).startswith("spark-")
                            and "next" not in _ml and "gemma" not in _ml)
         _tf = _StreamThinkFilter(implicit=_implicit_think)
+        _termf = _TermStreamFilter()   # 금지어(역증가→정체 등) 실시간 치환
 
         # 리포트 그래프 삽입은 report_graphs.GraphStreamInjector 가 전담(코어 침투 최소화).
         #   여기선 feed()/flush() 만 호출하고 _tok 으로 SSE 포장.  떼고 싶으면 이 3줄만 제거.
@@ -1323,10 +1370,12 @@ def _stream_chat_sse(data):
                 if tok:
                     vis = _tf.feed(tok)          # <think> 구간 실시간 제거
                     if vis:
-                        yield from _stream_vis(vis)
+                        vis = _termf.feed(vis)   # 금지어 실시간 치환
+                        if vis:
+                            yield from _stream_vis(vis)
                 fr = choices[0].get("finish_reason")
                 if fr:
-                    tail = _tf.flush()
+                    tail = _termf.feed(_tf.flush()) + _termf.flush()
                     if tail:
                         yield from _stream_vis(tail)
                     yield from _flush_pending()
