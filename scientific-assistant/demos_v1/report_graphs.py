@@ -123,8 +123,12 @@ def _downsample(pts, step_min=2):
     return out
 
 
-def render_hub_evt_24h(rows, title=None, width=900):
-    """발동이벤트 rows → (점수 패널 + 발동지표 스택 패널) 인라인 SVG."""
+_LEVEL_HL = {"경계": "#ea580c", "위험": "#dc2626", "초위험": "#7c3aed", "정상": "#3b82f6"}
+
+
+def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
+    """발동이벤트 rows → (점수 패널 + 발동지표 스택 패널) 인라인 SVG.
+    incidents: [{start,end,idx,peak_score,level,hot}] 주면 점수 패널에 사건 구간을 음영+라벨로 표시."""
     rows = [{(k or "").lstrip("﻿"): v for k, v in r.items()} for r in rows]
     data = []
     for r in rows:
@@ -218,6 +222,22 @@ def render_hub_evt_24h(rows, title=None, width=900):
         out.append(f'<line x1="{L}" y1="{yy}" x2="{L+pw}" y2="{yy}" stroke="#e2e8f0" stroke-width=".5" stroke-dasharray="2 3"/>')
         out.append(f'<text x="{L-6}" y="{yy+3}" font-size="9" fill="#94a3b8" text-anchor="end">{v}</text>')
     xticks(top, H_SCORE)
+    # 사건 구간 음영 + 라벨(여러 사건을 한 그래프에) — 점수선보다 먼저 그려 배경이 되게
+    for _inc in (incidents or []):
+        try:
+            _ix0, _ix1 = X(_inc["start"]), X(_inc["end"])
+        except Exception:
+            continue
+        _ix0 = max(L, min(_ix0, L + pw)); _ix1 = max(L, min(_ix1, L + pw))
+        if _ix1 - _ix0 < 2:
+            _ix1 = _ix0 + 2
+        _hc = _LEVEL_HL.get(_inc.get("level"), "#3b82f6")
+        out.append(f'<rect x="{_ix0}" y="{top}" width="{_ix1-_ix0}" height="{H_SCORE}" fill="{_hc}" opacity="0.10"/>')
+        out.append(f'<line x1="{_ix0}" y1="{top}" x2="{_ix0}" y2="{top+H_SCORE}" stroke="{_hc}" stroke-width="1" stroke-dasharray="3 2" opacity="0.65"/>')
+        out.append(f'<line x1="{_ix1}" y1="{top}" x2="{_ix1}" y2="{top+H_SCORE}" stroke="{_hc}" stroke-width="1" stroke-dasharray="3 2" opacity="0.65"/>')
+        _lbl = f'사건{_inc.get("idx","")} · {int(_inc.get("peak_score") or 0)}점'
+        out.append(f'<text x="{(_ix0+_ix1)/2:.0f}" y="{top+12}" font-size="10" font-weight="800" fill="{_hc}" '
+                   f'text-anchor="middle" style="paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round">{_esc(_lbl)}</text>')
     sd = _downsample([(t, s) for t, s, _ in data])
     d = "M" + " L".join(f"{X(t)},{Y1(s)}" for t, s in sd)
     out.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.7"/>')
@@ -527,8 +547,20 @@ def build_report_graph(headers, rows, query=None, prefer_png=None):
         incs = derive_incidents_from_evt(rows)
         incs = sorted(incs, key=lambda i: -i["peak_score"])[:8]   # 점수 상위 8건만
         incs = sorted(incs, key=lambda i: i["start"])            # 표시는 시간순
-        for n, inc in enumerate(incs, 1):
-            s = render_incident_zoom(all_data, inc, n, len(incs))
+        if incs:
+            # ★ 사건들을 한 그래프에 — 모든 사건을 감싸는 윈도우 1개 + 사건 구간 음영/라벨
+            w0 = min(i["start"] for i in incs) - timedelta(minutes=60)
+            w1 = max(i["end"] for i in incs) + timedelta(minutes=60)
+            win = [r for (t, r) in all_data if w0 <= t <= w1]
+            inc_meta = [{"start": i["start"], "end": i["end"], "idx": n,
+                         "peak_score": int(i["peak_score"]),
+                         "level": _level_from_score(i["peak_score"]),
+                         "hot": (i["peak_row"].get("hot_area") or "")}
+                        for n, i in enumerate(incs, 1)]
+            day0 = (win[0].get("date") if win else "") or ""
+            ttl = (f"📅 {day0} M16 BR 사건 통합 ({len(incs)}건) · "
+                   f"{incs[0]['start'].strftime('%H:%M')}~{incs[-1]['end'].strftime('%H:%M')}")
+            s = render_hub_evt_24h(win, title=ttl, incidents=inc_meta)
             if s:
                 svgs.append(s)
         if not svgs:
