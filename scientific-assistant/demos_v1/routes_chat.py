@@ -960,6 +960,9 @@ def _stream_chat_sse(data):
             _q_now = messages[_i]["content"]
             _q_idx = _i
             break
+    # ★ 리포트 그래프는 '개인에이전트' 요청에서만 — 일반 데모스 채팅에선 끔.
+    #   개인에이전트만 payload 에 knowledge_scripts/knowledge_files 키를 보낸다(일반은 키 자체가 없음).
+    _is_agent_req = ("knowledge_scripts" in data) or ("knowledge_files" in data)
     _data_for_script = None
     _pasted_instr = None
     if _csv_now.get("filename") and _csv_now.get("headers") and _csv_now.get("rows"):
@@ -1285,7 +1288,7 @@ def _stream_chat_sse(data):
                 _inj = None
                 try:
                     from demos_v1.report_graphs import GraphStreamInjector
-                    _inj = GraphStreamInjector(_data_for_script, query=_q_now)
+                    _inj = GraphStreamInjector(_data_for_script if _is_agent_req else None, query=_q_now)
                 except Exception as _ie:
                     print(f"  📈 [GRAPH] injector 비활성: {_ie}")
                     _inj = None
@@ -1434,7 +1437,7 @@ def _stream_chat_sse(data):
         try:
             from demos_v1.report_graphs import GraphStreamInjector
             # 질문 키워드로 그래프 종류 라우팅: '사건단위 분석' → 사건별 ±60분, 그 외 → 24h 종합
-            _inj = GraphStreamInjector(_data_for_script, query=_q_now)
+            _inj = GraphStreamInjector(_data_for_script if _is_agent_req else None, query=_q_now)
         except Exception as _ie:
             print(f"  📈 [GRAPH] injector 비활성: {_ie}")
             _inj = None
