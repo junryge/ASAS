@@ -3,7 +3,7 @@ name: m16_hub_임계값
 description: hubroom_predictor.py 룰베이스의 임계값(thresholds.json) 전체 목록·의미·조정 방법 스킬. 어느 임계가 무슨 룰에 쓰이는지, 값을 어떻게 바꾸는지, 영향이 무엇인지 묻거나 튜닝을 도울 때 사용. "임계값", "thresholds", "임계 조정", "튜닝" 요청 시.
 ---
 
-# m16_hub 임계값 — thresholds.json 가이드 (v6 / 배포 V2)
+# m16_hub 임계값 — thresholds.json 가이드 (v7 / 0~100 3등급)
 
 > 코드의 모든 임계는 `thresholds.json` 으로 덮어쓴다(없으면 코드 기본값). 수정 후 predictor 재시작 필요.
 
