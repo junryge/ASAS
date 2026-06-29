@@ -87,7 +87,7 @@ MAX_WORKSPACE_FILE_CHARS = 4000
 MAX_WORKSPACE_TOTAL_CHARS = 16000
 MAX_KNOWLEDGE_INJECT_CHARS = 12000
 
-MAX_UPLOAD_MB = 50
+MAX_UPLOAD_MB = 200   # 업로드/조회 상한 (전엔 50MB·조회 5MB 라 좁았음 → 넉넉히)
 ALLOWED_UPLOAD_EXT = {
     ".py", ".js", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
     ".html", ".css", ".scss", ".sass", ".less",

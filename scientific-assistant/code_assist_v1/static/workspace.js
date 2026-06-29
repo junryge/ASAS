@@ -1,12 +1,20 @@
 /* code_assist_v1/static/workspace.js — 워크스페이스 (트리 + 폴더/파일 업로드) */
 
+// 데모스 로그인 user_id (sessionStorage('demos_user').id) — 워크스페이스를 아이디별로 분리
+function _wsUid() {
+  try { const u = JSON.parse(sessionStorage.getItem('demos_user') || 'null'); return (u && u.id) ? u.id : null; }
+  catch { return null; }
+}
+function _wsUidQs() { const u = _wsUid(); return u ? ('?user_id=' + encodeURIComponent(u)) : ''; }
+function _wsUidAmp() { const u = _wsUid(); return u ? ('&user_id=' + encodeURIComponent(u)) : ''; }
+
 const Workspace = {
   files: [],          // [{path, size, mtime}]
   expanded: new Set(),// 펼쳐진 폴더 경로 집합
 
   async refresh() {
     try {
-      const data = await api("api/code/workspace/tree");
+      const data = await api("api/code/workspace/tree" + _wsUidQs());
       Workspace.files = data.items || [];
       console.log(`[ws] tree: ${Workspace.files.length}개 파일`, Workspace.files.map(f => f.path));
       Workspace.render();
@@ -259,7 +267,11 @@ const Workspace = {
       return;
     }
     try {
-      const r = await fetch("api/code/workspace/clear", { method: "POST" });
+      const r = await fetch("api/code/workspace/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: _wsUid() }),
+      });
       const j = await r.json();
       if (!r.ok && r.status !== 207) throw new Error(j.error || `HTTP ${r.status}`);
       // 첨부·미리보기 모두 비움
@@ -289,7 +301,7 @@ const Workspace = {
       const r = await fetch("api/code/workspace/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
+        body: JSON.stringify({ path, user_id: _wsUid() }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -336,7 +348,7 @@ const Workspace = {
       for (const p of paths) {
         if (State.workspaceFiles.find(x => x.filename === p)) continue;
         try {
-          const data = await api("api/code/workspace/file?path=" + encodeURIComponent(p));
+          const data = await api("api/code/workspace/file?path=" + encodeURIComponent(p) + _wsUidAmp());
           State.workspaceFiles.push({ filename: p, content: data.content });
           added++;
         } catch (e) { /* 5MB 초과/바이너리 등 스킵 */ }
@@ -350,7 +362,7 @@ const Workspace = {
 
   async preview(path) {
     try {
-      const data = await api("api/code/workspace/file?path=" + encodeURIComponent(path));
+      const data = await api("api/code/workspace/file?path=" + encodeURIComponent(path) + _wsUidAmp());
       const wp = $("#workspacePanel");
       wp.classList.add("preview-on");
       const pre = $("#wsPreview");
@@ -380,7 +392,7 @@ const Workspace = {
     if (existing) {
       State.workspaceFiles = State.workspaceFiles.filter(x => x !== existing);
     } else {
-      api("api/code/workspace/file?path=" + encodeURIComponent(path))
+      api("api/code/workspace/file?path=" + encodeURIComponent(path) + _wsUidAmp())
         .then(data => Workspace.setAttach(path, data.content))
         .catch(e => toast(e.message, "error"));
       return;
@@ -411,6 +423,7 @@ const Workspace = {
     for (const file of fileList) {
       const fd = new FormData();
       fd.append("file", file);
+      { const _u = _wsUid(); if (_u) fd.append("user_id", _u); }
       // webkitRelativePath (폴더 input) 또는 _relPath (드래그앤드롭) 가 있으면 폴더 구조 보존
       const relPath = file.webkitRelativePath || file._relPath || "";
       if (relPath) {
@@ -435,7 +448,7 @@ const Workspace = {
         if (attachAfter && !relPath) {
           // 단일 파일만 자동 첨부 (폴더 업로드는 너무 많아서 스킵)
           try {
-            const data = await api("api/code/workspace/file?path=" + encodeURIComponent(j.path));
+            const data = await api("api/code/workspace/file?path=" + encodeURIComponent(j.path) + _wsUidAmp());
             State.workspaceFiles.push({ filename: j.path, content: data.content });
           } catch {}
         }
