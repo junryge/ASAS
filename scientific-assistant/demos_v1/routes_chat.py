@@ -906,8 +906,7 @@ def _stream_chat_sse(data):
             c = last.get("content", "")
             last_query = c if isinstance(c, str) else ""
         try:
-            env_id, route_reason = classify_and_route(last_query, messages,
-                                                      _utils_mod.files_slot(data.get("scope") or data.get("user_id")))
+            env_id, route_reason = classify_and_route(last_query, messages, uploaded_files)
             auto_routed = True
         except Exception:
             env_id = next(iter(ENV_CONFIG.keys()), env_id)
@@ -950,8 +949,8 @@ def _stream_chat_sse(data):
     # ★ 앱별 데이터 스코프: 데모스/개인에이전트가 같은 user_id 라도 첨부를 분리(scope).
     #   프론트가 scope 를 보내면 그걸로, 없으면 user_id 로 폴백(기존 동작 유지).
     _scope = data.get("scope") or data.get("user_id")
-    _csv_now = _utils_now.csv_slot(_scope)        # 스코프별 첨부 CSV 슬롯
-    _files_now = _utils_now.files_slot(_scope)    # 스코프별 첨부 파일 슬롯
+    _csv_now = _utils_now.csv_slot(_scope)        # ★ 스코프별 첨부 CSV 슬롯 (데모스/에이전트 분리)
+    _files_now = _utils_now.uploaded_files        # 파일(범용)은 기존 전역 유지(읽는 곳 다수라 일관성 위해)
 
     file_section = ""
     include_csv = data.get("include_csv", True)
@@ -1567,7 +1566,7 @@ def register_chat_routes(app):
         # ★ 사용자별 첨부 CSV 슬롯 — 이 함수 내 모든 uploaded_csv_data 참조를 자기 슬롯으로 섀도잉
         #   (과거: 서버 전역 1칸 → 다중 사용자가 서로 첨부를 덮어쓰던 버그)
         from demos_v1.utils import csv_slot as _csv_slot
-        uploaded_csv_data = _csv_slot(data.get("user_id"))
+        uploaded_csv_data = _csv_slot(data.get("scope") or data.get("user_id"))  # ★ 스코프 일치(업로드와 동일 키)
         # 환경 선택: 배열 또는 문자열 → 배열로 통일
         raw_env = data.get("env", "auto")
         if isinstance(raw_env, list):
