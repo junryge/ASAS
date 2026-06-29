@@ -17,7 +17,7 @@ from flask import request, jsonify, render_template, send_file
 
 from demos_v1.utils import (
     BASE_DIR, SKILLS_DIR, UPLOAD_DIR, PROMPTS_DIR, TOKEN_FILE,
-    uploaded_csv_data, uploaded_files,
+    uploaded_csv_data, uploaded_files, files_slot,
     HARNESS_AVAILABLE, chat_stop_flag,
 )
 from demos_v1.config import (
@@ -1273,7 +1273,7 @@ def register_api_routes(app):
 
             # 저장 — user_id 별 슬롯 (다중 사용자 첨부 충돌 방지)
             from demos_v1.utils import csv_slot
-            _slot = csv_slot(request.form.get("user_id", ""))
+            _slot = csv_slot(request.form.get("scope") or request.form.get("user_id", ""))
             _slot.clear()
             _slot.update({
                 "filename": file.filename,
@@ -1425,7 +1425,7 @@ def register_api_routes(app):
                         mime = {'jpg': 'jpeg', 'jpeg': 'jpeg'}.get(img_ext, img_ext)
                         images_info.append({"name": name.split('/')[-1], "size": len(img_data), "mime": f"image/{mime}"})
                         # VL 모델용으로 uploaded_files에 추가
-                        uploaded_files.append({
+                        files_slot(request.form.get("scope") or request.form.get("user_id", "")).append({
                             "filename": f"{file.filename}/{name.split('/')[-1]}",
                             "safe_name": name.split('/')[-1],
                             "type": "image",
@@ -1486,7 +1486,7 @@ def register_api_routes(app):
 
         # user_id 별 슬롯에 저장 (기존 CSV 분석 경로와 호환, 다중 사용자 충돌 방지)
         from demos_v1.utils import csv_slot
-        _slot = csv_slot(request.form.get("user_id", ""))
+        _slot = csv_slot(request.form.get("scope") or request.form.get("user_id", ""))
         _slot.clear()
         _slot.update({
             "filename": file.filename,
@@ -1520,7 +1520,7 @@ def register_api_routes(app):
         """업로드된 CSV 데이터 삭제 — 자기(user_id) 슬롯만. 남의 첨부는 못 지움."""
         from demos_v1.utils import csv_slot
         _d = request.get_json(force=True, silent=True) or {}
-        _slot = csv_slot(_d.get("user_id") or request.form.get("user_id", ""))
+        _slot = csv_slot(_d.get("scope") or _d.get("user_id") or request.form.get("scope") or request.form.get("user_id", ""))
         _slot.clear()
         _slot.update({"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""})
         return jsonify({"success": True})
@@ -1729,7 +1729,7 @@ def register_api_routes(app):
                                         img_ext = name.rsplit('.', 1)[-1].lower()
                                         b64 = _b64.b64encode(img_data).decode('ascii')
                                         img_name = name.split('/')[-1]
-                                        uploaded_files.append({
+                                        files_slot(request.form.get("scope") or request.form.get("user_id", "")).append({
                                             "filename": f"{filename}/{img_name}",
                                             "safe_name": img_name,
                                             "type": "image",
@@ -1827,7 +1827,9 @@ def register_api_routes(app):
                         file_info["img_base64"] = _b64.b64encode(_imgf.read()).decode('ascii')
                 else:
                     file_info["img_base64"] = None  # 너무 큰 이미지
-            uploaded_files.append(file_info)
+            from demos_v1.utils import files_slot as _files_slot
+            _flist = _files_slot(request.form.get("scope") or request.form.get("user_id", ""))
+            _flist.append(file_info)
 
             # 아이콘 매핑
             icon_map = {
@@ -1846,7 +1848,7 @@ def register_api_routes(app):
                 "size": file_size,
                 "icon": icon,
                 "preview": preview[:500],
-                "total_files": len(uploaded_files),
+                "total_files": len(_flist),
             }
             if drm_warning:
                 resp["drm_warning"] = drm_warning
@@ -1858,27 +1860,30 @@ def register_api_routes(app):
 
     @app.route("/api/uploaded_files", methods=["GET"])
     def api_uploaded_files():
-        """업로드된 파일 목록"""
+        """업로드된 파일 목록 (scope 별)"""
+        from demos_v1.utils import files_slot as _files_slot
+        _flist = _files_slot(request.args.get("scope") or request.args.get("user_id", ""))
         return jsonify({
             "files": [{
                 "filename": f["filename"],
                 "type": f["type"],
                 "ext": f["ext"],
                 "size": f["size"],
-            } for f in uploaded_files]
+            } for f in _flist]
         })
 
 
     @app.route("/api/remove_file", methods=["POST"])
     def api_remove_file():
-        """업로드된 파일 제거"""
-        global uploaded_files
+        """업로드된 파일 제거 (scope 별)"""
+        from demos_v1.utils import files_slot as _files_slot
         data = request.json
         fname = data.get("filename", "")
+        _flist = _files_slot(data.get("scope") or data.get("user_id", ""))
 
         removed = False
         new_files = []
-        for f in uploaded_files:
+        for f in _flist:
             if f["filename"] == fname and not removed:
                 # 파일 삭제
                 try:
@@ -1888,20 +1893,21 @@ def register_api_routes(app):
                 removed = True
             else:
                 new_files.append(f)
-        uploaded_files[:] = new_files  # in-place 수정 (routes_chat과 공유 유지)
-        return jsonify({"success": removed, "total_files": len(uploaded_files)})
+        _flist[:] = new_files  # in-place 수정 (routes_chat과 공유 유지)
+        return jsonify({"success": removed, "total_files": len(_flist)})
 
 
     @app.route("/api/clear_files", methods=["POST"])
     def api_clear_files():
-        """모든 업로드 파일 제거"""
-        global uploaded_files
-        for f in uploaded_files:
+        """업로드 파일 제거 (scope 별)"""
+        _d = request.get_json(silent=True) or {}
+        _flist = files_slot(_d.get("scope") or _d.get("user_id") or request.form.get("scope") or request.form.get("user_id", ""))
+        for f in _flist:
             try:
                 os.remove(f["path"])
             except Exception:
                 pass
-        uploaded_files.clear()  # in-place 수정 (routes_chat과 공유 유지)
+        _flist.clear()
         return jsonify({"success": True})
 
 

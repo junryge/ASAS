@@ -40,7 +40,18 @@ def csv_slot(user_id=None):
     })
 
 # 업로드된 파일 (CSV 외 범용)
-uploaded_files = []  # [{filename, type, size, summary, content_preview}]
+# ⚠️ 과거엔 전역 1칸이라 모든 사용자·앱(데모스/개인에이전트)이 서로 파일을 공유.
+#   이제 scope 별 슬롯(files_slot)으로 분리. 빈 scope(레거시)는 기존 전역을 그대로 사용.
+uploaded_files = []  # [{filename, type, size, summary, content_preview}]  (레거시/빈 scope)
+uploaded_files_by_scope = {}  # scope -> [ ... ]
+
+
+def files_slot(scope=None):
+    """scope 별 업로드 파일 목록. 빈 scope(비로그인/레거시)는 기존 전역(uploaded_files)."""
+    key = str(scope or "").strip()
+    if not key:
+        return uploaded_files
+    return uploaded_files_by_scope.setdefault(key, [])
 
 # 응답 중지 플래그
 chat_stop_flag = {"stop": False}

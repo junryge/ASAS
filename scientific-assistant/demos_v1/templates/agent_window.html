@@ -300,6 +300,8 @@ var USER = getUser();
 // ★ 매 호출마다 sessionStorage 를 다시 읽는다. (USER 를 1회 캡처하면 팝업 새로고침/
 //   메인창 로그인 반영 전에 빈 ID 가 되어 세션키가 어긋나고 '기록이 사라지는' 버그)
 function uid(){ try{ var u=getUser(); return (u&&u.id)?u.id:''; }catch(e){ return ''; } }
+// ★ 데이터 스코프: 개인에이전트 첨부를 데모스/다른 에이전트와 분리(에이전트별).
+function _dataScope(){ try{ var aid=(typeof activeAgent!=='undefined'&&activeAgent&&activeAgent.agent_id)?activeAgent.agent_id:'noagent'; return 'agent:'+aid+':'+uid(); }catch(e){ return 'agent:'+uid(); } }
 
 // ── 테마 (다크/라이트/블루/그린) ──
 function applyTheme(name){
@@ -748,7 +750,7 @@ async function agCsvSelected(input){
   if(!f) return;
   var bar=document.getElementById('agAttachBar'), nm=document.getElementById('agAttachName');
   nm.textContent='📎 업로드 중… '+f.name; bar.style.display='flex';
-  var fd=new FormData(); fd.append('file', f); fd.append('user_id', uid());  // 사용자별 첨부 슬롯
+  var fd=new FormData(); fd.append('file', f); fd.append('user_id', uid()); fd.append('scope', _dataScope());  // 에이전트별 첨부 슬롯
   try{
     var r=await fetch('/api/upload_csv',{method:'POST',body:fd});
     var d=await r.json();
@@ -761,7 +763,7 @@ function clearAgCsv(){
   _agCsvAttached=false;
   document.getElementById('agCsvInput').value='';
   document.getElementById('agAttachBar').style.display='none';
-  fetch('/api/clear_csv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid()})}).catch(function(){});
+  fetch('/api/clear_csv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid(),scope:_dataScope()})}).catch(function(){});
 }
 
 // 선택한 지식 파일들의 내용을 가져와 시스템 프롬프트용 컨텍스트 블록 생성
@@ -1298,6 +1300,7 @@ async function sendChat(){
     knowledge_scripts: (activeAgent.knowledge_scripts || []),
     knowledge_files: (activeAgent.knowledge_files || []),
     user_id: uid(),
+    scope: _dataScope(),
     stream: true
   };
 

@@ -2280,6 +2280,7 @@ async function send(){
           ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
           ppt_ref_design: pptRefDesign,
           user_id: currentUser ? currentUser.id : null,
+          scope: _dataScope(),
           stream: true,
         }, maxTokens > 0 ? {max_tokens: maxTokens} : {}))
       });
@@ -3324,7 +3325,7 @@ function createNewSession(){
   document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f==='auto');});
   // 업로드된 파일/CSV 초기화 (이전 세션 데이터 잔류 방지)
   fetch('/api/clear_files', {method:'POST'});
-  fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||''})});
+  fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||'',scope:_dataScope()})});
   uploadedFilesList = [];
   renderFileList();
   csvLoaded = false;
@@ -4168,6 +4169,7 @@ async function uploadCsvFile(file){
   const formData = new FormData();
   formData.append('file', file);
   formData.append('user_id', (currentUser&&currentUser.id)||'');  // 사용자별 첨부 슬롯
+  formData.append('scope', _dataScope());                         // 데모스/에이전트 분리
 
   try{
     const resp = await fetch('/api/upload_csv', {method:'POST', body:formData});
@@ -4208,6 +4210,7 @@ async function uploadXlsxFile(file, sheetIdx){
   const formData = new FormData();
   formData.append('file', file);
   formData.append('user_id', (currentUser&&currentUser.id)||'');  // 사용자별 첨부 슬롯
+  formData.append('scope', _dataScope());                         // 데모스/에이전트 분리
   if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
 
   try{
@@ -4677,7 +4680,7 @@ async function downloadHtmlDoc(btn){
 }
 
 async function removeCsv(){
-  await fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||''})});
+  await fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||'',scope:_dataScope()})});
   csvLoaded = false;
   csvFilename = '';
   document.getElementById('csvInfoPanel').style.display = 'none';
@@ -4915,6 +4918,8 @@ async function uploadChatPendingFiles(){
 // ==================== 인트로 → 모드 선택 시스템 ====================
 // ═══ 로그인 시스템 ═══
 var currentUser = null; // {id, name, role, token}
+// ★ 데이터 스코프: 일반 데모스 첨부를 개인에이전트와 분리.
+function _dataScope(){ return 'demos:' + ((currentUser && currentUser.id) || ''); }
 
 function dismissIntroAndShowMode(){
   var ov = document.getElementById('introOverlay');
