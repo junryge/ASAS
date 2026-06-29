@@ -454,14 +454,15 @@ function saveChat(){
     var idx0=_loadSessIdx(aid).filter(function(s){return s.sid!==activeSessionId;}); _saveSessIdx(aid,idx0);
     return;
   }
-  var res=_trySaveSession(aid, activeSessionId, chatHistory);   // 용량초과 시 '다른 세션은 보존'하고 현재 본문만 축소
-  var ok=(res===true || res==='trim');
+  var res=_trySaveSession(aid, activeSessionId, chatHistory);   // 용량초과 시 본문 축소 → 그래도 안 되면 오래된 세션 정리
+  var ok=(res===true || res==='trim' || res==='evict');
   var idx=_loadSessIdx(aid), now=Date.now();
   var e=idx.filter(function(s){return s.sid===activeSessionId;})[0];
   if(!e){ e={sid:activeSessionId,created:now}; idx.push(e); }
-  var mark=(res===false?'⚠️저장실패 ':(res==='trim'?'✂️일부생략 ':''));
+  var mark=(res===false?'⚠️저장실패 ':((res==='trim'||res==='evict')?'✂️일부생략 ':''));
   e.title=mark+_sessTitle(chatHistory); e.updated=now; e.count=chatHistory.length; e.saved=ok;
   _saveSessIdx(aid,idx);
+  if(res==='evict' && !saveChat._evictNoted){ saveChat._evictNoted=true; try{ console.warn('저장공간 확보: 오래된 세션 '+(_trySaveSession._evicted||0)+'개 정리 후 현재 대화 저장됨'); }catch(_){} }
   if(res===false && !saveChat._warned){ saveChat._warned=true; try{ alert('⚠️ 브라우저 저장공간이 가득 찼습니다.\n과거 세션은 보존했지만 이번 대화는 저장되지 않았습니다.\n(큰 CSV·표는 채팅에 붙여넣지 말고 📎첨부를 쓰면 저장공간을 아낍니다)'); }catch(_){} }
 }
 // 저장용으로만 큰 메시지 본문을 잘라 용량 확보 — 라이브 chatHistory(화면)는 손대지 않음
@@ -472,8 +473,9 @@ function _trimmedHistory(history, cap){
     return {role:(m&&m.role)||'assistant', content:c};
   });
 }
-// 세션 저장(용량초과 방어): ★다른 세션은 절대 삭제하지 않는다.★
-// 원본→점점 강한 트림 순으로 재시도. 반환: true(원본저장) / 'trim'(축소저장) / false(실패)
+// 세션 저장(용량초과 방어): 현재 세션은 반드시 지킨다.
+// 1단계: 원본→점점 강한 트림. 2단계: 그래도 안 들어가면 '오래된 다른 세션'부터 LRU 삭제 후 재시도.
+// 반환: true(원본저장) / 'trim'(축소저장) / 'evict'(오래된 세션 정리 후 저장) / false(실패)
 function _trySaveSession(aid, sid, history){
   var caps=[null, 30000, 12000, 4000, 1200];   // null=원본, 이후 본문 길이 상한을 점점 낮춤
   for(var i=0;i<caps.length;i++){
@@ -481,9 +483,27 @@ function _trySaveSession(aid, sid, history){
     try{
       localStorage.setItem(_sessKey(aid,sid), JSON.stringify({messages:hist, trimmed:(caps[i]!==null)}));
       return (caps[i]===null)?true:'trim';
-    }catch(err){ /* 더 강하게 트림해 재시도 (다른 세션은 그대로 둠) */ }
+    }catch(err){ /* 더 강하게 트림해 재시도 */ }
   }
-  return false;                                  // 그래도 안 되면 실패 — 과거 기록은 보존
+  // 마지막 수단: 현재 세션을 살리려 '오래된 다른 세션'부터 하나씩 비우고 재시도(LRU).
+  var minHist=_trimmedHistory(history, 1200), evicted=0;
+  _trySaveSession._evicted=0;
+  while(true){
+    var idx=_loadSessIdx(aid);
+    var others=idx.filter(function(s){return s.sid!==sid;})
+                  .sort(function(a,b){return (a.updated||a.created||0)-(b.updated||b.created||0);});
+    if(!others.length) break;                    // 더 지울 다른 세션 없음 → 포기
+    var victim=others[0];                         // 가장 오래된 세션
+    try{ localStorage.removeItem(_sessKey(aid, victim.sid)); }catch(e){}
+    _saveSessIdx(aid, idx.filter(function(s){return s.sid!==victim.sid;}));
+    evicted++;
+    try{
+      localStorage.setItem(_sessKey(aid,sid), JSON.stringify({messages:minHist, trimmed:true}));
+      _trySaveSession._evicted=evicted;          // 정리한 세션 수 기록(안내용)
+      return 'evict';
+    }catch(err2){ /* 아직 부족 → 다음으로 오래된 세션도 비움 */ }
+  }
+  return false;                                  // 그래도 안 되면 실패
 }
 // 에이전트 가동 시: 구버전 흡수 후 가장 최근 세션 복원(없으면 새 세션)
 function _restoreLatestSession(aid){
