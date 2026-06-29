@@ -97,4 +97,11 @@ if __name__ == "__main__":
     mode = "hybrid(bge-m3)" if getattr(EMBEDDER, "available", False) else "lexical(BM25+청킹)"
     print(f"[RAG] http://{host}:{port}  | 모드={mode} | knowledge={config.KNOWLEDGE_DIR}")
     print(f"[RAG] 첫 검색 시 사용자별 자동 인덱싱. 전체 미리 만들려면 POST /reindex")
+    # 윈도우 콘솔에서 Flask 시작 배너를 colorama 가 출력하다 'OSError: Windows error 6'
+    # (잘못된 콘솔 핸들)로 죽는 문제 방지 — 배너만 끈다(서버 동작엔 영향 없음).
+    try:
+        import flask.cli
+        flask.cli.show_server_banner = lambda *a, **k: None
+    except Exception:
+        pass
     app.run(host=host, port=port, threaded=True)
