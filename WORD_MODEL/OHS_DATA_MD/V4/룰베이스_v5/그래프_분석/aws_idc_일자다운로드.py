@@ -7,15 +7,17 @@ aws_idc_realtime_collector.py 의 일자 선택 버전.
 
 - 매분 루프 X → **지정한 날짜의 24시간 raw 한 번에** 다운로드
 - 265개 IDC 컬럼 (raw_columns.RAW_COLS_265 사용)
-- 출력: ./raw/M16A_HUBROOM_PR.CSV  (원본 수집기와 동일 파일명, 매번 덮어쓰기)
+- 단일 일자 → ./raw/M16A_HUBROOM_PR.CSV  (원본 수집기와 동일 파일명)
+- 범위    → ./raw/M16A_HUBROOM_PR_YYYYMMDD.CSV  (일자별 파일)
 
 사용:
-  python aws_idc_일자다운로드.py <YYYYMMDD> [-o <출력폴더>]
+  python aws_idc_일자다운로드.py <YYYYMMDD> [<YYYYMMDD>] [-o <출력폴더>]
 
 예:
-  python aws_idc_일자다운로드.py 20260525           # 5/25 24시간
-  python aws_idc_일자다운로드.py 2026-05-25         # 하이픈 OK
-  python aws_idc_일자다운로드.py 20260525 -o ./raw  # 출력 폴더 지정
+  python aws_idc_일자다운로드.py 20260525             # 5/25 1일 → M16A_HUBROOM_PR.CSV
+  python aws_idc_일자다운로드.py 2026-05-25           # 하이픈 OK
+  python aws_idc_일자다운로드.py 20260525 -o ./raw    # 출력 폴더 지정
+  python aws_idc_일자다운로드.py 20260525 20260531    # 5/25~5/31 범위 → 일자별 7개 파일
 
 DB 접속 정보 (환경변수로 오버라이드 가능):
   ORA_USER  (기본 STAREAD)
@@ -86,7 +88,7 @@ def parse_yyyymmdd(s):
     raise ValueError(f"날짜 형식 오류: {s} (YYYYMMDD 또는 YYYY-MM-DD)")
 
 
-def fetch_day(conn, day_dt, out_dir):
+def fetch_day(conn, day_dt, out_dir, fname):
     t_start = day_dt.strftime('%Y-%m-%d 00:00:00')
     t_end = (day_dt + timedelta(days=1)).strftime('%Y-%m-%d 00:00:00')
     log.info(f"쿼리: {t_start} ≤ CRT_TM < {t_end}")
@@ -109,55 +111,80 @@ def fetch_day(conn, day_dt, out_dir):
                 merged[minute_key][i] = v
     sorted_rows = [merged[k] for k in sorted(merged.keys())]
 
-    out_path = Path(out_dir) / OUTPUT_NAME
+    out_path = Path(out_dir) / fname
     with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(CSV_HEADER)
         for r in sorted_rows:
             writer.writerow(["" if v is None else v for v in r])
     log.info(f"✅ 저장: {out_path}  ({len(sorted_rows)}분 / {len(RAW_COLS_265)} 컬럼)")
+    return len(sorted_rows)
 
 
 def main():
     if len(sys.argv) < 2:
         print(__doc__); return
 
-    date_str = None
+    date_args = []
     out_dir = './raw'
     i = 1
     while i < len(sys.argv):
         a = sys.argv[i]
         if a == '-o' and i+1 < len(sys.argv):
             out_dir = sys.argv[i+1]; i += 2; continue
-        if date_str is None:
-            date_str = a
+        date_args.append(a)
         i += 1
 
-    if not date_str:
+    if not date_args:
         print(__doc__); return
 
-    day_dt = parse_yyyymmdd(date_str)
+    # 단일 일자 또는 시작~끝 범위
+    if len(date_args) == 1:
+        d_start = d_end = parse_yyyymmdd(date_args[0])
+        is_range = False
+    else:
+        d_start = parse_yyyymmdd(date_args[0])
+        d_end = parse_yyyymmdd(date_args[1])
+        if d_end < d_start:
+            d_start, d_end = d_end, d_start
+        is_range = (d_start != d_end)
+
     os.makedirs(out_dir, exist_ok=True)
+    n_days = (d_end - d_start).days + 1
 
     log.info("=" * 60)
     log.info("AWS_IDC_DATA_HIS — 일자 다운로드")
     log.info(f"  DSN     : {ORACLE_DSN}")
     log.info(f"  USER    : {ORACLE_USER}")
-    log.info(f"  날짜    : {day_dt.strftime('%Y-%m-%d')}")
+    if is_range:
+        log.info(f"  기간    : {d_start.strftime('%Y-%m-%d')} ~ {d_end.strftime('%Y-%m-%d')} ({n_days}일)")
+        log.info(f"  출력    : {out_dir}/M16A_HUBROOM_PR_YYYYMMDD.CSV (일자별)")
+    else:
+        log.info(f"  날짜    : {d_start.strftime('%Y-%m-%d')}")
+        log.info(f"  출력    : {out_dir}/{OUTPUT_NAME}")
     log.info(f"  컬럼    : {len(RAW_COLS_265)}개 IDC + CRT_TM")
-    log.info(f"  출력    : {out_dir}/{OUTPUT_NAME}")
     log.info("=" * 60)
 
     log.info("Oracle 연결 시도...")
     conn = oracledb.connect(user=ORACLE_USER, password=ORACLE_PASSWORD, dsn=ORACLE_DSN)
     log.info("Oracle 연결 성공")
 
+    total_min = 0
+    d = d_start
     try:
-        fetch_day(conn, day_dt, out_dir)
+        while d <= d_end:
+            # 단일이면 고정 파일명, 범위면 날짜 붙여서 일자별 저장
+            fname = OUTPUT_NAME if not is_range else f"M16A_HUBROOM_PR_{d.strftime('%Y%m%d')}.CSV"
+            log.info(f"━━ {d.strftime('%Y-%m-%d')} ━━")
+            try:
+                total_min += fetch_day(conn, d, out_dir, fname)
+            except Exception as e:
+                log.exception(f"  실패: {e}")
+            d += timedelta(days=1)
     finally:
         try: conn.close()
         except: pass
-    log.info("🎉 완료")
+    log.info(f"🎉 완료 — 총 {total_min}분 / {n_days}일")
 
 
 if __name__ == '__main__':
