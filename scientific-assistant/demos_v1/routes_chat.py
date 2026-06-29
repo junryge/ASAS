@@ -1255,7 +1255,8 @@ def _stream_chat_sse(data):
 
         try:
             from demos_v1.report_graphs import GraphStreamInjector
-            _inj = GraphStreamInjector(_data_for_script)
+            # 질문 키워드로 그래프 종류 라우팅: '사건단위 분석' → 사건별 ±60분, 그 외 → 24h 종합
+            _inj = GraphStreamInjector(_data_for_script, query=_q_now)
         except Exception as _ie:
             print(f"  📈 [GRAPH] injector 비활성: {_ie}")
             _inj = None

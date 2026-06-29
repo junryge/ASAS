@@ -184,18 +184,22 @@ def render_hub_evt_24h(rows, title=None, width=900):
            f'style="max-width:100%;height:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;">']
     out.append(f'<text x="14" y="20" font-size="15" font-weight="800" fill="#16213e">{_esc(title)}</text>')
 
+    _span_h = span / 3600.0      # 윈도우 길이에 맞춰 눈금 간격 적응(짧은 사건줌에서도 보이게)
+    _tick_min = 15 if _span_h <= 2 else (30 if _span_h <= 3.5 else (60 if _span_h <= 7 else 120))
+
     def xticks(ptop, h, labels=False):
-        hr = t0.replace(minute=0, second=0, microsecond=0)
+        base = t0.replace(minute=0, second=0, microsecond=0)
         k = 0
         while True:
-            cur = hr + timedelta(hours=k * 2)
+            cur = base + timedelta(minutes=k * _tick_min)
             if cur > t1:
                 break
             if cur >= t0:
                 x = X(cur)
                 out.append(f'<line x1="{x}" y1="{ptop}" x2="{x}" y2="{ptop+h}" stroke="#eef2f7" stroke-width=".7"/>')
                 if labels:
-                    out.append(f'<text x="{x}" y="{ptop+h+14}" font-size="9" fill="#64748b" text-anchor="middle">{cur.strftime("%H시")}</text>')
+                    _lbl = cur.strftime("%H:%M") if _tick_min < 60 else cur.strftime("%H시")
+                    out.append(f'<text x="{x}" y="{ptop+h+14}" font-size="9" fill="#64748b" text-anchor="middle">{_lbl}</text>')
             k += 1
 
     # ① 종합 위험점수 패널 (1~100 척도, 등급 배경)
@@ -439,21 +443,99 @@ def svg_to_png_data_uri(svg, width=900):
     return None
 
 
-def build_report_graph(headers, rows, prefer_png=None):
-    """헤더로 렌더러 자동 감지 → 본문에 붙일 마크다운 블록(<div>…</div>) 또는 None."""
+def _level_from_score(s):
+    try:
+        s = float(s)
+    except (TypeError, ValueError):
+        return "정상"
+    return "초위험" if s >= 90 else ("위험" if s >= 75 else ("경계" if s >= 54 else "정상"))
+
+
+def derive_incidents_from_evt(rows, gap_min=10, min_score=54):
+    """발동이벤트 rows → 사건 목록 (예측기 로직 그대로: stage=3 확정 시작,
+    gap_min 분 동안 무s3면 종료, 사건 내 최고점수 ≥ min_score 만 기록)."""
+    data = []
+    for r in rows:
+        r = {(k or "").lstrip("﻿"): v for k, v in r.items()}
+        t = _parse_dt(r.get("datetime") or "")
+        if t is None:
+            continue
+        try:
+            sc = float(r.get("unified_risk_score") or 0)
+        except (TypeError, ValueError):
+            sc = 0.0
+        data.append((t, sc, str(r.get("stage") or "").strip(), r))
+    data.sort(key=lambda x: x[0])
+    incs, cur = [], None
+    for t, sc, st, r in data:
+        s3 = (st == "3")
+        if cur is None:
+            if s3:
+                cur = {"start": t, "end": t, "last_s3": t, "peak_score": sc, "peak_t": t, "peak_row": r}
+        elif s3:
+            cur["last_s3"] = t
+            cur["end"] = t
+            if sc > cur["peak_score"]:
+                cur["peak_score"], cur["peak_t"], cur["peak_row"] = sc, t, r
+        elif (t - cur["last_s3"]).total_seconds() / 60.0 >= gap_min:
+            incs.append(cur)
+            cur = None
+    if cur:
+        incs.append(cur)
+    return [i for i in incs if i["peak_score"] >= min_score]
+
+
+def render_incident_zoom(all_data, inc, idx, total, width=900):
+    """한 사건의 ±60분 윈도우 그래프 (점수 + 발동지표). all_data = 정렬된 [(t,row),...]."""
+    w0 = inc["start"] - timedelta(minutes=60)
+    w1 = inc["end"] + timedelta(minutes=60)
+    win = [r for (t, r) in all_data if w0 <= t <= w1]
+    if len(win) < 2:
+        return None
+    lvl = _level_from_score(inc["peak_score"])
+    emo = _LEVEL_EMOJI.get(lvl, "")
+    hot = (inc["peak_row"].get("hot_area") or "")
+    title = (f"{emo} 사건 {idx}/{total} · {inc['start'].strftime('%H:%M')}~{inc['end'].strftime('%H:%M')}"
+             f" · 최고 {int(inc['peak_score'])}점 · {_esc(hot)}")
+    return render_hub_evt_24h(win, title=title, width=width)
+
+
+def build_report_graph(headers, rows, query=None, prefer_png=None):
+    """헤더+질문으로 렌더러 선택 → 본문에 붙일 마크다운 블록(<div>…</div>) 또는 None.
+    질문에 '사건단위/위험사건' 키워드 + 발동이벤트 CSV → 사건별 ±60분 줌(여러 개).
+    그 외 → 스키마 자동 감지(발동이벤트=24h 종합, 사건단위=타임라인)."""
     if not headers or not rows:
         return None
-    renderer = next((r for r in RENDERERS if r["detect"](headers)), None)
-    if not renderer:
-        return None
-    try:
-        svg = renderer["render"](rows)
-    except Exception:
-        return None
-    if not svg:
-        return None
+    q = str(query or "")
+    want_incident = any(k in q for k in ("사건단위", "사건 단위", "위험사건", "사건별", "사건 분석", "사건분석"))
+    svgs = []
+    if want_incident and _detect_hub_evt(headers):
+        rows2 = [{(k or "").lstrip("﻿"): v for k, v in r.items()} for r in rows]
+        all_data = sorted(((_parse_dt(r.get("datetime") or ""), r) for r in rows2
+                           if _parse_dt(r.get("datetime") or "")), key=lambda x: x[0])
+        incs = derive_incidents_from_evt(rows)
+        incs = sorted(incs, key=lambda i: -i["peak_score"])[:8]   # 점수 상위 8건만
+        incs = sorted(incs, key=lambda i: i["start"])            # 표시는 시간순
+        for n, inc in enumerate(incs, 1):
+            s = render_incident_zoom(all_data, inc, n, len(incs))
+            if s:
+                svgs.append(s)
+        if not svgs:
+            return None
+    else:
+        renderer = next((r for r in RENDERERS if r["detect"](headers)), None)
+        if not renderer:
+            return None
+        try:
+            s = renderer["render"](rows)
+        except Exception:
+            return None
+        if not s:
+            return None
+        svgs = [s]
     if prefer_png is None:
         prefer_png = os.environ.get("DEMOS_GRAPH_PNG", "") in ("1", "true", "yes")
+    svg = "".join(f'<div style="margin:12px 0;">{s}</div>' for s in svgs) if len(svgs) > 1 else svgs[0]
     inner = svg
     if prefer_png:
         uri = svg_to_png_data_uri(svg)
@@ -475,10 +557,11 @@ class GraphStreamInjector:
     feed/flush 는 'SSE로 감싸기 전의 텍스트 조각'을 yield 한다(코어가 _tok 으로 감쌈).
     """
 
-    def __init__(self, data_for_script, prefer_png=None, head_limit=4000):
+    def __init__(self, data_for_script, prefer_png=None, head_limit=4000, query=None):
         self.src = data_for_script if (data_for_script and data_for_script.get("rows")) else None
         self.prefer_png = prefer_png
         self.head_limit = head_limit
+        self.query = query or ""   # 질문 키워드로 그래프 종류 라우팅(사건단위 vs 발동이벤트)
         self.buf = ""
         self._block = None
         self._built = False
@@ -513,7 +596,7 @@ class GraphStreamInjector:
             hdr = [str(h).lstrip("﻿") for h in (self.src.get("headers") or [])]
             rows = self.src.get("rows") or []
             dict_rows = [dict(zip(hdr, r)) for r in rows]
-            self._block = build_report_graph(hdr, dict_rows, prefer_png=self.prefer_png)
+            self._block = build_report_graph(hdr, dict_rows, query=self.query, prefer_png=self.prefer_png)
         except Exception as e:
             print(f"  📈 [GRAPH] 생성 예외: {e}")
             self._block = None
