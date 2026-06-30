@@ -1646,6 +1646,8 @@ def register_chat_routes(app):
             messages = _sys_msgs + _recent
             print(f"  [HISTORY TRIM] {_orig_msg_count} → {len(messages)} 메시지 (최근 {MAX_HISTORY_MESSAGES} 턴 유지)")
         skill_ids = data.get("skills", [])
+        # ★ 개인 에이전트 요청 식별 — 에이전트는 하네스(피드백힌트·세션저장 등) 절대 사용 안 함
+        _is_agent_chat = bool(data.get("knowledge_scripts") or data.get("knowledge_files"))
         effort = data.get("effort", 2)
         output_format = data.get("format", "code")
         writing_style = data.get("writing_style", "")
@@ -2298,8 +2300,8 @@ def register_chat_routes(app):
 
         if loaded:
             system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
-            # 하네스 피드백 힌트: 이전 피드백 기반 주의사항 자동 삽입
-            if HARNESS_AVAILABLE:
+            # 하네스 피드백 힌트: 이전 피드백 기반 주의사항 자동 삽입 (★개인 에이전트는 제외)
+            if HARNESS_AVAILABLE and not _is_agent_chat:
                 try:
                     from harness_bridge import _feedback_store
                     if _feedback_store:
@@ -3581,8 +3583,8 @@ def register_chat_routes(app):
                 if truncated:
                     resp_data["truncated"] = True
 
-                # 하네스: 세션 자동 저장 + 이벤트 로깅
-                if HARNESS_AVAILABLE:
+                # 하네스: 세션 자동 저장 + 이벤트 로깅 (★개인 에이전트는 제외)
+                if HARNESS_AVAILABLE and not _is_agent_chat:
                     try:
                         save_chat_session(
                             messages=messages,

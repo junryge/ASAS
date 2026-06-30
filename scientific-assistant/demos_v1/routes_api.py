@@ -275,8 +275,8 @@ def register_api_routes(app):
             try:
                 from harness_bridge import harness_route, suggest_skill_combinations
                 from harness import select_experts
-                # 1) 하네스 라우터로 추가 매칭
-                harness_matches = harness_route(query, limit=5)
+                # 1) 하네스 라우터로 추가 매칭 (컨텍스트 보호: 5→2)
+                harness_matches = harness_route(query, limit=2)
                 if harness_matches:
                     print(f"  🎯 [AUTO-SKILLS] 하네스 라우터 추천: {[hm['name'] for hm in harness_matches]}")
                 existing_ids = {sid for sid, _ in results}
@@ -284,14 +284,15 @@ def register_api_routes(app):
                     if hm['name'] not in existing_ids and hm['name'] not in MANUAL_ONLY_SKILLS:
                         results.append((hm['name'], hm['score']))
                         boosted.append(hm['name'])
-                # 2) Expert Pool: 관련도 높은 스킬 최대 3개만 추가
+                        existing_ids.add(hm['name'])   # ★중복버그 수정: 이후 단계(Expert/조합)가 재추가 못하게
+                # 2) Expert Pool: 관련도 높은 스킬 최대 1개만 추가 (컨텍스트 보호: 3→1)
                 try:
                     from harness_bridge import get_router
                     assignments = select_experts(query, get_router(), min_agents=1, max_agents=2)
                     ep_added = 0
                     for assign in assignments:
                         for sid in assign.skills:
-                            if ep_added >= 3:
+                            if ep_added >= 1:
                                 break
                             if sid not in existing_ids and sid not in MANUAL_ONLY_SKILLS:
                                 results.append((sid, assign.relevance_score + 2))
@@ -302,7 +303,7 @@ def register_api_routes(app):
                     pass
                 # 3) 선택된 스킬과 함께 쓰면 좋을 보조 스킬 추천
                 selected = [sid for sid, _ in results]
-                combos = suggest_skill_combinations(query, selected, limit=2)
+                combos = suggest_skill_combinations(query, selected, limit=1)   # 컨텍스트 보호: 2→1
                 for combo_sid in combos:
                     if combo_sid not in existing_ids and combo_sid not in MANUAL_ONLY_SKILLS:
                         results.append((combo_sid, 1))
