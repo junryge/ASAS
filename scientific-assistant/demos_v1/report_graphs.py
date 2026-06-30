@@ -502,9 +502,12 @@ def _level_from_score(s):
     return "초위험" if s >= 90 else ("위험" if s >= 75 else ("경계" if s >= 54 else "정상"))
 
 
-def derive_incidents_from_evt(rows, gap_min=10, min_score=54):
-    """발동이벤트 rows → 사건 목록 (예측기 로직 그대로: stage=3 확정 시작,
-    gap_min 분 동안 무s3면 종료, 사건 내 최고점수 ≥ min_score 만 기록)."""
+def derive_incidents_from_evt(rows, gap_min=60, min_score=54):
+    """발동이벤트 rows → 사건 목록.
+    ★ 점수 기준: unified_risk_score ≥ min_score(경계+) 인 구간을 사건으로 잡는다.
+      (전엔 stage=3 기준이라 점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생김.
+       이제 '진짜 정체(점수 54+)'만 사건 → 시작·피크가 실제 몰림과 일치.)
+      gap_min 분 동안 점수 미달이면 종료. predictor(INCIDENT_END_GAP_MIN=60)와 동일하게 60분."""
     data = []
     for r in rows:
         r = {(k or "").lstrip("﻿"): v for k, v in r.items()}
@@ -515,16 +518,16 @@ def derive_incidents_from_evt(rows, gap_min=10, min_score=54):
             sc = float(r.get("unified_risk_score") or 0)
         except (TypeError, ValueError):
             sc = 0.0
-        data.append((t, sc, str(r.get("stage") or "").strip(), r))
+        data.append((t, sc, r))
     data.sort(key=lambda x: x[0])
     incs, cur = [], None
-    for t, sc, st, r in data:
-        s3 = (st == "3")
+    for t, sc, r in data:
+        alarm = (sc >= min_score)           # ★ stage 대신 점수
         if cur is None:
-            if s3:
+            if alarm:
                 cur = {"start": t, "end": t, "last_s3": t, "peak_score": sc, "peak_t": t, "peak_row": r}
-        elif s3:
-            cur["last_s3"] = t
+        elif alarm:
+            cur["last_s3"] = t              # 필드명 유지(의미=마지막 경보 시각)
             cur["end"] = t
             if sc > cur["peak_score"]:
                 cur["peak_score"], cur["peak_t"], cur["peak_row"] = sc, t, r
