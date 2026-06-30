@@ -1956,7 +1956,7 @@ function stopGeneration(){
   // typing indicator 제거
   document.querySelectorAll('.typing-wrap').forEach(el=>el.remove());
   addMsg('assistant','⏹️ 응답이 중지되었습니다.');
-  saveCurrentSession();
+  saveCurrentSession(true);
 }
 
 /* ── PPT 제안 배너 ── */
@@ -2492,7 +2492,7 @@ async function send(){
   const inp=document.getElementById('input');
   inp.focus();
   inp.style.height='auto';
-  saveCurrentSession();
+  saveCurrentSession(true);
 }
 
 function renderMd(text){
@@ -2741,7 +2741,7 @@ function deleteMsg(btn){
   if(msgIndex >= 0 && msgIndex < history.length){
     history.splice(msgIndex, 1);
   }
-  saveCurrentSession();
+  saveCurrentSession(true);
 }
 function addTyping(){
   const c=document.getElementById('msgs');
@@ -2767,7 +2767,9 @@ function saveSessions(){
     try { localStorage.setItem('domos_sessions', JSON.stringify(sessions)); } catch(e2){}
   }
 }
-function saveCurrentSession(){
+function saveCurrentSession(bump){
+  // bump=true 일 때만 updatedAt 갱신(메시지 추가 등 실제 내용 변경).
+  // 단순 전환/저장(세션 이동·복원)에선 기존 updatedAt 유지 → 과거 세션이 '오늘'로 점프해 사라지는 버그 방지.
   if(!currentSessionId) return;
   sessions[currentSessionId] = {
     id: currentSessionId,
@@ -2787,7 +2789,7 @@ function saveCurrentSession(){
     systemPromptId: currentPromptId || '',
     thinkMode: document.getElementById('thinkToggle')?.checked || false,
     msgsHtml: document.getElementById('msgs').innerHTML,
-    updatedAt: Date.now()
+    updatedAt: bump ? Date.now() : ((sessions[currentSessionId] && sessions[currentSessionId].updatedAt) || Date.now())
   };
   // Auto-name from first user message
   if(sessions[currentSessionId].name === '새 세션' && history.length > 0){
