@@ -57,5 +57,21 @@ def create_app():
     except Exception as _e:
         print(f"  ⚠️  code_assist_v1 Blueprint 등록 실패: {_e}")
 
+    # 하네스(harness) 스킬 라우터 — init_harness() 를 호출하지 않으면 레지스트리가
+    # 빈 채로 남아 라우터/Expert Pool/조합추천이 전부 빈 결과(자동 비활성)가 된다.
+    # 여기서 명시적으로 초기화 + /api/harness/* 라우트 등록. 실패해도 본체는 정상 동작.
+    try:
+        from harness_bridge import init_harness, register_harness_routes
+        from demos_v1.utils import SKILLS_DIR as _HSD
+        try:
+            from demos_v1.skills import SKILL_KEYWORDS as _HKW
+        except Exception:
+            _HKW = None
+        _hreg = init_harness(skills_dir=_HSD, skill_keywords=_HKW)
+        register_harness_routes(app)
+        print(f"  🧰 하네스 등록 완료 ({len(_hreg.list_all())}개 스킬, 라우터/Expert Pool 활성, /api/harness/*)")
+    except Exception as _hb:
+        print(f"  ⚠️  하네스 등록 실패(무시): {_hb}")
+
     _routes_registered = True
     return app
