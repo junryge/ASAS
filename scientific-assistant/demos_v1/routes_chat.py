@@ -693,20 +693,20 @@ def _builtin_hub_summary(headers, rows):
             out.append(f"하루 최고: {peak[0]}점 {_EMO[_lvl(peak[0])]} @{peak[1]} (시작영역 {peak[2]})")
         out.append(f"정체 집중 시간대: {busy_str}")
         out.append("")
-        out.append(f"[③ 사건목록] (stage=3 확정·간격10분·최고점수 54점+) — {len(incs)}건")
+        out.append(f"[③ 사건목록] (점수 54+ 구간 · 시각=최고점) — {len(incs)}건")
         if not incs:
-            out.append("→ 금일 점수 54 이상 확정 사건 없음 (정상 운영).")
+            out.append("→ 금일 점수 54 이상 사건 없음 (정상 운영).")
         else:
-            out.append("| # | 시각 | 종료 | 지속분 | 최고등급 | 최고점수 | 시작영역 | 영향영역 | 대표_전파경로 |")
-            out.append("|---|---|---|---|---|---|---|---|---|")
+            out.append("| # | 시각 | 구간 | 지속분 | 최고등급 | 최고점수 | 시작영역 |")
+            out.append("|---|---|---|---|---|---|---|")
             for n, inc in enumerate(incs, 1):
                 pr = inc["peak_row"]
-                dur = int((inc["end"] - inc["start"]).total_seconds() // 60)
+                dur = int((inc["end"] - inc["start"]).total_seconds() // 60) + 1
+                _pt = inc.get("peak_t") or inc["start"]   # ★ 시각 = 최고점(진짜 몰림)
                 out.append(
-                    f"| {n} | {inc['start'].strftime('%H:%M')} | {inc['end'].strftime('%H:%M')} | {dur} "
+                    f"| {n} | {_pt.strftime('%H:%M')} | {inc['start'].strftime('%H:%M')}~{inc['end'].strftime('%H:%M')} | {dur} "
                     f"| {_EMO[_lvl(int(inc['peak_score']))]} | {int(inc['peak_score'])} "
-                    f"| {pr.get('hot_area') or ''} | {pr.get('affected_areas') or ''} "
-                    f"| {pr.get('propagation_chain') or ''} |"
+                    f"| {pr.get('hot_area') or ''} |"
                 )
         return "\n".join(out) + "\n\n"
     except Exception as _e:
