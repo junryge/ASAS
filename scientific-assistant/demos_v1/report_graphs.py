@@ -254,7 +254,9 @@ def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
         out.append(f'<rect x="{_ix0}" y="{top}" width="{_ix1-_ix0}" height="{H_SCORE}" fill="{_hc}" opacity="0.10"/>')
         out.append(f'<line x1="{_ix0}" y1="{top}" x2="{_ix0}" y2="{top+H_SCORE}" stroke="{_hc}" stroke-width="1" stroke-dasharray="3 2" opacity="0.65"/>')
         out.append(f'<line x1="{_ix1}" y1="{top}" x2="{_ix1}" y2="{top+H_SCORE}" stroke="{_hc}" stroke-width="1" stroke-dasharray="3 2" opacity="0.65"/>')
-        _lbl = f'사건{_inc.get("idx","")} · {int(_inc.get("peak_score") or 0)}점'
+        _pt = _inc.get("peak_t")
+        _pts = (" @" + _pt.strftime("%H:%M")) if _pt is not None else ""
+        _lbl = f'사건{_inc.get("idx","")} · {int(_inc.get("peak_score") or 0)}점{_pts}'   # ★ 최고시각 표시
         out.append(f'<text x="{(_ix0+_ix1)/2:.0f}" y="{top+12}" font-size="10" font-weight="800" fill="{_hc}" '
                    f'text-anchor="middle" style="paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round">{_esc(_lbl)}</text>')
     sd = _downsample([(t, s) for t, s, _ in data])
