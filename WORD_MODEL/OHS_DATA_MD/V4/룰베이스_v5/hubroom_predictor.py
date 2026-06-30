@@ -102,6 +102,9 @@ def _TD(key, default_dict):
 WINDOW_MIN = _T('WINDOW_MIN', 90)
 INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 60)  # ★ v6: 10→60분, 진동(on/off) 흡수
 PREDICT_LOOKBACK_MIN = _T('PREDICT_LOOKBACK_MIN', 60)
+# ★ 사건 정의 = '점수 이 값 이상(경계+)' 으로 시작/종료. (전엔 stage 3 기준이라
+#   점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생기던 문제 → 점수 기준으로 교정)
+MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 54)
 
 # ============================================================
 # 영역별 임계값 (2026-03-24 14:39 ~ 04-30 학습 분포 p95/p99 기반)
@@ -647,13 +650,12 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
     raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score
     unified_risk_score = min(100, round(raw_score * 100 / 220))
 
-    # ★ v7 3단계 위험도 등급 (정상/관심/주의 제거)
-    # 60 미만은 등급 공란 — 사건단위.csv 자동 제외, 발동이벤트.csv 는 매분 기록 유지
-    if unified_risk_score >= 100:
+    # ★ 위험도 등급 (회사 표준 54/75/90): 경계 54~74 / 위험 75~89 / 초위험 90~100. 54 미만은 등급 공란 (정상 라벨 없음).
+    if unified_risk_score >= 90:
         unified_risk_level = '초위험'
-    elif unified_risk_score >= 80:
+    elif unified_risk_score >= 75:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 60:
+    elif unified_risk_score >= 54:
         unified_risk_level = '경계'
     else:
         unified_risk_level = ''
@@ -777,18 +779,21 @@ class IncidentTracker:
             self.early_signals.append(t)
         cur_stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
         self._record_event(t, cur_stage, ctx)
+        # ★ 사건 시작/지속/종료 = '점수 54 이상(경계+)' 기준. (전엔 stage 3 → 점수 낮은 시각이
+        #   사건 시작으로 잡혀 9시간 가짜 사건이 생김. 이제 진짜 정체(점수)만 사건으로.)
+        is_alarm = (ctx.get('unified_risk_score', 0) or 0) >= MIN_INCIDENT_SCORE
         if self.state == 'IDLE':
-            if s3:
+            if is_alarm:
                 self._start_new(t, ctx)
         else:
-            if s3:
-                last_s3 = self.current['last_s3_time']
-                if (t - last_s3).total_seconds() / 60.0 >= INCIDENT_END_GAP_MIN:
+            if is_alarm:
+                last_alarm = self.current['last_s3_time']   # 필드명 유지(의미=마지막 경보 시각)
+                if (t - last_alarm).total_seconds() / 60.0 >= INCIDENT_END_GAP_MIN:
                     self.current['refire_count'] += 1
                 self._update_current(t, ctx)
             else:
-                last_s3 = self.current['last_s3_time']
-                if (t - last_s3).total_seconds() / 60.0 >= INCIDENT_END_GAP_MIN:
+                last_alarm = self.current['last_s3_time']
+                if (t - last_alarm).total_seconds() / 60.0 >= INCIDENT_END_GAP_MIN:
                     self._end_current(t)
         # ★ v6 신규 — 발동이벤트 행에 사건 상태/지속성/예측유형 박기
         ev = self.events[-1]
@@ -810,7 +815,8 @@ class IncidentTracker:
             'predict_time': predict_time, 'start_time': t,
             'last_s3_time': t, 'end_time': t, 'refire_count': 0,
             'max_risk_score': ctx.get('unified_risk_score', 0),
-            'max_risk_level': ctx.get('unified_risk_level', '정상'),
+            'max_risk_time': t,   # ★ 최고점(진짜 몰림) 발생 시각
+            'max_risk_level': ctx.get('unified_risk_level', ''),
             'hot_area': ctx.get('hot_area', ''),
             'affected_areas_union': set(ctx.get('affected_areas', '').split(';')) - {''},
             'propagation_chain': ctx.get('propagation_chain', ''),
@@ -842,6 +848,7 @@ class IncidentTracker:
         c['end_time'] = t
         if ctx.get('unified_risk_score', 0) > c['max_risk_score']:
             c['max_risk_score'] = ctx['unified_risk_score']
+            c['max_risk_time'] = t   # ★ 최고점 갱신 시각도 기록
             c['max_risk_level'] = ctx['unified_risk_level']
         c['affected_areas_union'].update(set(ctx.get('affected_areas', '').split(';')) - {''})
         if ctx.get('propagation_chain'):
@@ -918,10 +925,8 @@ class IncidentTracker:
     def _end_current(self, t):
         c = self.current
         c['end_time'] = c['last_s3_time']
-        # ★ v7: 새 0~100 척도 — 60 미만 (등급 공란) 은 사건단위 기록 X
-        # 경계(60~79) / 위험(80~99) / 발동(100) 만 기록
-        # (발동이벤트.csv 에는 매분 그대로 기록 — 트렌드 모니터링 가능)
-        if c.get('max_risk_score', 0) >= 60:
+        # ★ 사건 기록 기준 = 점수 54 이상(경계+). 시작 기준과 동일하게 통일.
+        if c.get('max_risk_score', 0) >= MIN_INCIDENT_SCORE:
             self.incidents.append(c)
         self.current = None
         self.state = 'IDLE'
@@ -929,7 +934,7 @@ class IncidentTracker:
     def finalize(self, last_t):
         if self.state == 'IN_INCIDENT':
             self.current['end_time'] = self.current['last_s3_time']
-            if self.current.get('max_risk_score', 0) >= 60:
+            if self.current.get('max_risk_score', 0) >= MIN_INCIDENT_SCORE:
                 self.incidents.append(self.current)
             self.current = None
             self.state = 'IDLE'
@@ -995,6 +1000,7 @@ EVENT_FIELDS = [
 
 INCIDENT_FIELDS = [
     'file', 'date', 'predict_time', 'start_time', 'end_time',
+    'max_risk_time',   # ★ 최고점(진짜 몰림) 시각 — 보고서 대표 시각
     'lead_min', 'duration_min', 'refire_count',
     'max_risk_score', 'max_risk_level',
     # ★ v6.3 — 사건 대표 장애 유형 (예: HUB-FAB정체 / HUB-리프터역증가 / 광역정체)
@@ -1165,7 +1171,7 @@ def event_to_row(ev, file_name):
         # ★ v6 신규 — 사건 지속성/재발생/예측유형
         ev.get('incident_state', 'IDLE'), ev.get('continuity_min', 0),
         ev.get('refire_count', 0), ev.get('predicted_fault_type', ''),
-        ctx.get('unified_risk_score', 0), ctx.get('unified_risk_level', '정상'),
+        ctx.get('unified_risk_score', 0), ctx.get('unified_risk_level', ''),
         ctx.get('hot_area', ''), ctx.get('hot_score', 0),
         ctx.get('affected_areas', ''), ctx.get('propagation_chain', ''),
         ctx.get('flow_signals', ''), ctx.get('maxcapa_signals', ''),
@@ -1372,6 +1378,7 @@ def incident_to_row(c, file_name):
         file_name, c['start_time'].strftime('%Y-%m-%d'),
         c['predict_time'].strftime('%H:%M'), c['start_time'].strftime('%H:%M'),
         c['end_time'].strftime('%H:%M'),
+        c.get('max_risk_time', c['start_time']).strftime('%H:%M'),   # ★ 최고점 시각
         lead_min, duration_min, c['refire_count'],
         c['max_risk_score'], c['max_risk_level'],
         _predict_fault_type_from_incident(c),   # ★ v6.3 신규

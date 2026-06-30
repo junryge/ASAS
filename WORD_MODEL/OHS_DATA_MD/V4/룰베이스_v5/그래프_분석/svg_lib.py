@@ -65,10 +65,10 @@ def short_label(col):
 # 등급 배경 색
 # ─────────────────────────────────────────────────────────────
 LEVEL_BANDS = [
-    (0,   60,  '#F8FAFC', ''),
-    (60,  80,  '#FED7AA', '경계'),
-    (80,  100, '#FECACA', '위험'),
-    (100, 101, '#FCA5A5', '초위험'),
+    (0,   54,  '#F8FAFC', ''),
+    (54,  75,  '#FED7AA', '경계'),
+    (75,  90,  '#FECACA', '위험'),
+    (90,  100, '#FCA5A5', '초위험'),
 ]
 
 COLORS = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#0891B2','#DB2777','#65A30D','#EA580C','#0D9488']
@@ -138,7 +138,7 @@ def make_24h_combined_svg(day, score_data, peak, raw_series, friendly_map=None):
         y_a = ty_score(min(v1, Y_MAX)); y_b = ty_score(v0)
         svg.append(f'<rect x="{PAD_L}" y="{y_a:.1f}" width="{plot_w}" height="{y_b-y_a:.1f}" '
                    f'fill="{color}" opacity="0.45"/>')
-    for v in [0, 60, 80, 100]:
+    for v in [0, 54, 75, 90, 100]:
         if v > Y_MAX: continue
         y = ty_score(v)
         if v > 0:
@@ -283,7 +283,7 @@ def make_24h_score_svg(day, data, peak):
                    f'fill="#374151" font-weight="600" dominant-baseline="middle">{name}</text>')
 
     # 격자
-    for v in [0, 60, 80, 100]:
+    for v in [0, 54, 75, 90, 100]:
         if v > Y_MAX: continue
         y = ty(v)
         if v > 0:
@@ -385,7 +385,7 @@ def make_incident_svg(incident, series, evt_score_series=None, friendly_map=None
             svg.append(f'<line x1="{x:.1f}" y1="{y_s_top}" x2="{x:.1f}" y2="{y_s_bot}" '
                        f'stroke="#10B981" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.8"/>')
         # y 라벨
-        for v in [0, 60, 80, 100]:
+        for v in [0, 54, 75, 90, 100]:
             if v > Y_MAX: continue
             y = ty_score(v)
             svg.append(f'<text x="{PAD_L-6}" y="{y:.1f}" text-anchor="end" font-size="9" fill="#6B7280" '
