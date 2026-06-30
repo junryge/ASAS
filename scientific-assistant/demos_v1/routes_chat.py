@@ -427,6 +427,21 @@ def _gguf_n_ctx(model, default=32768):
         return default
 
 
+def _gguf_default_n_ctx(model_path):
+    """GGUF 모델 크기별 기본 n_ctx (3090 24GB 기준).
+    12B 이하 = 65536(여유 VRAM 활용), 그 외(26~35B 등) = 32768 유지 → 큰 모델 OOM 방지.
+    파일명에서 '<숫자>b' 를 뽑아 최댓값으로 판정(예: gemma-26B-A4B → max(26,4)=26 → 32768).
+    크기 못 찾거나 12 초과면 안전하게 32768. (API 모델엔 적용 안 됨 — GGUF 전용)"""
+    try:
+        name = os.path.basename(model_path or "").lower()
+        sizes = [int(n) for n in re.findall(r'(\d+)\s*b', name)]
+        if sizes and max(sizes) <= 12:
+            return 65536
+    except Exception:
+        pass
+    return 32768
+
+
 def _msg_text(m):
     c = m.get("content", "")
     if isinstance(c, list):
@@ -1202,7 +1217,8 @@ def _stream_chat_sse(data):
                     break
         gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
         user_n_ctx = data.get("n_ctx", 0)
-        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
+        # 9B↓ 는 65536, 27B 등은 32768 유지 (요청에 n_ctx 명시되면 그걸 우선)
+        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else _gguf_default_n_ctx(gguf_path)
         if gguf_path:
             if not load_gguf_model(gguf_path, n_ctx=_load_n_ctx):
                 return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
