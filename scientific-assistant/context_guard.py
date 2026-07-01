@@ -34,13 +34,14 @@ def _content_str(m):
 
 class ContextGuard:
     def __init__(self, budget_tokens=32000, keep_recent=4, trigger_ratio=0.70,
-                 enable_evict=True, name="ctx", verbose=True):
+                 enable_evict=True, name="ctx", verbose=True, debug=False):
         self.budget = budget_tokens
         self.keep_recent = max(0, keep_recent)
         self.trigger = trigger_ratio
         self.enable_evict = enable_evict
         self.name = name          # 로그 식별용 (예: "데모스", "코딩")
         self.verbose = verbose    # 압축 실제 발동 시 콘솔 로그
+        self.debug = debug        # True 면 압축 안 해도(짧은 대화) 매번 통과 로그
         self.all_refs = {}       # 누적 복구맵 (CCR)
         self.evicted = 0
 
@@ -71,6 +72,13 @@ class ContextGuard:
         cache = {}
         before = self._total(messages, cache)
         if not messages or before < self.budget * self.trigger:
+            if self.debug and self.verbose:
+                try:
+                    print(f"[ctx_compress] {self.name} 통과: {before:,} 토큰 "
+                          f"(발동선 {int(self.budget * self.trigger):,} 미달 → 무압축)",
+                          flush=True)
+                except Exception:
+                    pass
             return messages   # 여유 → 입력 그대로(무변형·무복사)
 
         keep = self.keep_recent
