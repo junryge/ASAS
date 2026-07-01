@@ -34,11 +34,13 @@ def _content_str(m):
 
 class ContextGuard:
     def __init__(self, budget_tokens=32000, keep_recent=4, trigger_ratio=0.70,
-                 enable_evict=True):
+                 enable_evict=True, name="ctx", verbose=True):
         self.budget = budget_tokens
         self.keep_recent = max(0, keep_recent)
         self.trigger = trigger_ratio
         self.enable_evict = enable_evict
+        self.name = name          # 로그 식별용 (예: "데모스", "코딩")
+        self.verbose = verbose    # 압축 실제 발동 시 콘솔 로그
         self.all_refs = {}       # 누적 복구맵 (CCR)
         self.evicted = 0
 
@@ -67,7 +69,8 @@ class ContextGuard:
 
     def _run(self, messages):
         cache = {}
-        if not messages or self._total(messages, cache) < self.budget * self.trigger:
+        before = self._total(messages, cache)
+        if not messages or before < self.budget * self.trigger:
             return messages   # 여유 → 입력 그대로(무변형·무복사)
 
         keep = self.keep_recent
@@ -76,7 +79,10 @@ class ContextGuard:
         else:
             head_src, tail = list(messages), []
 
+        n_folded = 0
+
         # 1단계 microcompact: 오래된 '도구 결과'만 접기 (새 딕셔너리로 — 원본 불변)
+        # ★ system 메시지(스킬/지시)는 절대 건드리지 않는다 → 스킬 기능 무손실.
         head = []
         for m in head_src:
             if m.get("role") == "tool":
@@ -88,13 +94,17 @@ class ContextGuard:
                     if folded != s:
                         nm = dict(m); nm["content"] = folded
                         head.append(nm)
+                        n_folded += 1
                         continue
             head.append(m)
 
-        # 2단계: 그래도 넘치면 오래된 본문(도구 아닌 것 포함)까지 접기
+        # 2단계: 그래도 넘치면 오래된 '본문'(user/assistant)까지 접기. ★system 은 제외.
         if self._total(head, cache) + self._total(tail, cache) >= self.budget:
             folded_head = []
             for m in head:
+                if m.get("role") == "system":
+                    folded_head.append(m)      # 스킬/시스템 지시는 보존
+                    continue
                 s = _content_str(m)
                 if s is not None:
                     folded, refs = compress(s)
@@ -103,11 +113,12 @@ class ContextGuard:
                     if folded != s:
                         nm = dict(m); nm["content"] = folded
                         folded_head.append(nm)
+                        n_folded += 1
                         continue
                 folded_head.append(m)
             head = folded_head
 
-        # 3단계: 접어도 넘치면 오래된 것 축출(원본은 all_refs 로 복구가능). system 은 보존.
+        # 3단계: 접어도 넘치면 오래된 것 축출(원본은 all_refs 로 복구가능). ★system 은 보존.
         if self.enable_evict:
             sys_head = [m for m in head if m.get("role") == "system"]
             body = [m for m in head if m.get("role") != "system"]
@@ -123,7 +134,16 @@ class ContextGuard:
                 self.evicted += 1
             head = sys_head + body
 
-        return head + tail
+        result = head + tail
+        after = self._total(result, {})
+        if self.verbose and after < before:
+            try:
+                print(f"[ctx_compress] {self.name} 압축: {before:,} → {after:,} 토큰 "
+                      f"(접음 {n_folded}개, 축출 {self.evicted}개, 복구맵 {len(self.all_refs)}개)",
+                      flush=True)
+            except Exception:
+                pass
+        return result
 
     def make_retrieve_tool(self):
         """접힌/축출된 원본을 ref_id 로 복구하는 함수. 도구로 등록해서 쓴다."""

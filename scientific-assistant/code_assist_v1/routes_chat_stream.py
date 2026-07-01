@@ -40,7 +40,7 @@ warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 # import 실패해도 부팅을 막지 않게 no-op 폴백.
 try:
     from context_guard import ContextGuard as _ContextGuard
-    _ctx_guard_code = _ContextGuard(budget_tokens=32000, keep_recent=4)
+    _ctx_guard_code = _ContextGuard(budget_tokens=32000, keep_recent=4, name="코딩")
 except Exception:
     class _NoGuardCode:
         def maybe_compress(self, _m):
