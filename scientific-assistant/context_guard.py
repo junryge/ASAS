@@ -9,15 +9,19 @@
     messages = _guard.maybe_compress(messages)   # ← 이 한 줄
     # ... 이후 기존대로 LLM 호출 ...
 
-동작:
-- 총 토큰이 budget*trigger 미만이면 손 안 댐(일반 짧은 대화는 무변형).
-- 넘치면 오래된 메시지의 '도구 결과'부터 접고(microcompact),
-  그래도 넘치면 오래된 본문까지 접고, 최후엔 오래된 것을 축출(evict)한다.
-- 최근 keep_recent 개 메시지는 항상 원본 보존.
-- 접기/축출한 원본은 all_refs 에 보관 → make_retrieve_tool() 로 복구 가능.
+★ 안전 원칙 (다른 기능에 영향 없게):
+- **입력 메시지/딕셔너리를 절대 변형하지 않는다(non-mutating).** 토큰 캐시 키를
+  메시지에 심지 않고 로컬 dict(id 기준)로만 들고, 압축 시엔 새 딕셔너리를 만든다.
+  → 호출부의 data["messages"] / 세션 히스토리는 그대로 보존.
+- 총 토큰이 budget*trigger 미만이면 **입력 리스트를 그대로 반환**(무변형·무복사).
+  일반 짧은 대화는 손도 안 댄다.
+- maybe_compress 는 어떤 예외에도 원본을 그대로 돌려줘 채팅이 끊기지 않는다.
+- content 가 str 이 아니어도(예: 비전 content_parts 리스트) 그 메시지는 건드리지 않는다.
 
-안전장치(프로덕션): content 가 str 이 아니어도(예: 비전 content_parts 리스트)
-절대 예외를 내지 않고 그 메시지는 건드리지 않고 통과시킨다.
+동작(예산 초과 시에만):
+- 오래된 '도구 결과'부터 접고 → 그래도 넘치면 오래된 본문까지 접고 →
+  최후엔 오래된 것을 축출(evict). 최근 keep_recent 개는 항상 원본 보존.
+- 접기/축출한 원본은 all_refs 에 보관 → make_retrieve_tool() 로 복구 가능.
 """
 from ctx_compress import compress, retrieve, _rough_tokens
 
@@ -26,22 +30,6 @@ def _content_str(m):
     """메시지 content 를 문자열로. 리스트/기타면 None(=압축 대상 아님)."""
     c = m.get("content", "")
     return c if isinstance(c, str) else None
-
-
-def _tok(m):
-    """토큰 수(캐시). str 아니면 대략 길이로 근사, 실패해도 0."""
-    if "_tok" in m:
-        return m["_tok"]
-    c = _content_str(m)
-    if c is None:
-        try:
-            n = _rough_tokens(str(m.get("content", "")))
-        except Exception:
-            n = 0
-    else:
-        n = _rough_tokens(c)
-    m["_tok"] = n
-    return n
 
 
 class ContextGuard:
@@ -54,8 +42,21 @@ class ContextGuard:
         self.all_refs = {}       # 누적 복구맵 (CCR)
         self.evicted = 0
 
-    def _total(self, messages):
-        return sum(_tok(m) for m in messages)
+    # ── 토큰 수: 메시지를 변형하지 않고 로컬 캐시(id 기준)로만 센다 ──
+    def _tok(self, m, cache):
+        key = id(m)
+        if key in cache:
+            return cache[key]
+        c = _content_str(m)
+        try:
+            n = _rough_tokens(c) if c is not None else _rough_tokens(str(m.get("content", "")))
+        except Exception:
+            n = 0
+        cache[key] = n
+        return n
+
+    def _total(self, messages, cache):
+        return sum(self._tok(m, cache) for m in messages)
 
     def maybe_compress(self, messages):
         """LLM 호출 직전에 부른다. 실패해도 원본을 그대로 돌려줘 안전."""
@@ -65,53 +66,55 @@ class ContextGuard:
             return messages   # 무슨 일이 있어도 채팅은 끊기지 않게
 
     def _run(self, messages):
-        if not messages or self._total(messages) < self.budget * self.trigger:
-            return messages
+        cache = {}
+        if not messages or self._total(messages, cache) < self.budget * self.trigger:
+            return messages   # 여유 → 입력 그대로(무변형·무복사)
 
         keep = self.keep_recent
         if keep > 0:
-            head, tail = messages[:-keep], messages[-keep:]
+            head_src, tail = messages[:-keep], messages[-keep:]
         else:
-            head, tail = list(messages), []
+            head_src, tail = list(messages), []
 
-        # 1단계 microcompact: 오래된 '도구 결과'만 접기 (이미 접은 건 skip)
-        for m in head:
-            if m.get("_folded"):
-                continue
+        # 1단계 microcompact: 오래된 '도구 결과'만 접기 (새 딕셔너리로 — 원본 불변)
+        head = []
+        for m in head_src:
             if m.get("role") == "tool":
                 s = _content_str(m)
-                if s is None:
-                    continue
-                folded, refs = compress(s)
-                if refs:
-                    self.all_refs.update(refs)
-                m["content"] = folded
-                m["_folded"] = True
-                m["_tok"] = _rough_tokens(folded)
+                if s is not None:
+                    folded, refs = compress(s)
+                    if refs:
+                        self.all_refs.update(refs)
+                    if folded != s:
+                        nm = dict(m); nm["content"] = folded
+                        head.append(nm)
+                        continue
+            head.append(m)
 
         # 2단계: 그래도 넘치면 오래된 본문(도구 아닌 것 포함)까지 접기
-        if self._total(head) + self._total(tail) >= self.budget:
+        if self._total(head, cache) + self._total(tail, cache) >= self.budget:
+            folded_head = []
             for m in head:
-                if m.get("_folded"):
-                    continue
                 s = _content_str(m)
-                if s is None:
-                    continue
-                folded, refs = compress(s)
-                if refs:
-                    self.all_refs.update(refs)
-                m["content"] = folded
-                m["_folded"] = True
-                m["_tok"] = _rough_tokens(folded)
+                if s is not None:
+                    folded, refs = compress(s)
+                    if refs:
+                        self.all_refs.update(refs)
+                    if folded != s:
+                        nm = dict(m); nm["content"] = folded
+                        folded_head.append(nm)
+                        continue
+                folded_head.append(m)
+            head = folded_head
 
         # 3단계: 접어도 넘치면 오래된 것 축출(원본은 all_refs 로 복구가능). system 은 보존.
         if self.enable_evict:
             sys_head = [m for m in head if m.get("role") == "system"]
             body = [m for m in head if m.get("role") != "system"]
-            cur = self._total(sys_head) + self._total(body) + self._total(tail)
+            cur = self._total(sys_head, cache) + self._total(body, cache) + self._total(tail, cache)
             while body and cur >= self.budget:
                 drop = body.pop(0)
-                cur -= _tok(drop)
+                cur -= self._tok(drop, cache)
                 s = _content_str(drop)
                 if s is not None:
                     _, refs = compress(s)
