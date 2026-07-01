@@ -31,6 +31,119 @@ _KO_CHAR_RE = re.compile(r"[가-힯]")
 _EN_LETTER_RE = re.compile(r"[a-zA-Z]")
 
 
+class _StreamThinkFilter:
+    """스트리밍 중 사고과정(<think>) 실시간 제거. 토큰 경계로 태그가 쪼개져도 안전.
+    implicit=True(예: Spark qwen3.6): 템플릿이 여는 <think> 를 프롬프트에 미리 넣어
+    모델 출력이 사고로 바로 시작하고 닫는 </think> 만 나온다 → 첫 </think> 전까지 전부 사고로 보고 버린다.
+    implicit=False: 명시적 <think>...</think> 만 제거(다른 모델은 평소대로 스트리밍)."""
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self, implicit=False):
+        self.buf = ""
+        self.in_think = False
+        self.implicit = implicit
+        self.done = False   # 사고 종료(</think> 통과) 후엔 그냥 흘림
+
+    def feed(self, tok):
+        if self.done:
+            return tok
+        self.buf += tok
+        # 암묵 모드: 첫 </think> 전까지 전부 사고 → 버리고, 그 뒤부터 본문
+        if self.implicit and not self.in_think:
+            i = self.buf.find(self.CLOSE)
+            if i != -1:
+                after = self.buf[i + len(self.CLOSE):]
+                self.buf = ""
+                self.done = True
+                return after.lstrip("\n")
+            return ""   # 아직 </think> 안 나옴 → 보류(전부 사고로 간주)
+        out = ""
+        while self.buf:
+            if not self.in_think:
+                i = self.buf.find(self.OPEN)
+                if i == -1:
+                    cut = self._safe_emit_len(self.buf, self.OPEN)
+                    out += self.buf[:cut]
+                    self.buf = self.buf[cut:]
+                    break
+                out += self.buf[:i]
+                self.buf = self.buf[i + len(self.OPEN):]
+                self.in_think = True
+            else:
+                j = self.buf.find(self.CLOSE)
+                if j == -1:
+                    keep = self._tail_partial_len(self.buf, self.CLOSE)
+                    self.buf = self.buf[len(self.buf) - keep:] if keep else ""
+                    break
+                self.buf = self.buf[j + len(self.CLOSE):]
+                self.in_think = False
+        return out
+
+    def flush(self):
+        out = "" if self.in_think else self.buf
+        self.buf = ""
+        return out
+
+    @staticmethod
+    def _safe_emit_len(s, tag):
+        for k in range(min(len(tag) - 1, len(s)), 0, -1):
+            if s.endswith(tag[:k]):
+                return len(s) - k
+        return len(s)
+
+    @staticmethod
+    def _tail_partial_len(s, tag):
+        for k in range(min(len(tag) - 1, len(s)), 0, -1):
+            if s.endswith(tag[:k]):
+                return k
+        return 0
+
+
+# 금지어 강제 치환 — 원자료(risk_factors·signals·전파경로 등)에 박힌 단어가
+# 프롬프트 지시를 무시하고 새어나오는 것을 코드 레벨에서 차단한다.
+# (긴 표현 먼저 → 짧은 표현. 데이터가 어디서 오든 출력 한 곳에서 다 막힌다.)
+_TERM_REPL = [
+    ("리프터 역증가", "리프터 정체"),
+    ("리프터 역류", "리프터 정체"),
+    ("Queue 역류", "Queue 밀림"),
+    ("큐 역류", "Queue 밀림"),
+    ("역증가", "정체"),
+    ("역류", "밀림"),
+]
+_TERM_HOLD = max(len(a) for a, _ in _TERM_REPL) - 1   # 토큰 경계 분할 대비 보류 길이
+
+
+def _sanitize_terms(text):
+    """완성된 텍스트에서 금지어를 일괄 치환."""
+    if not text:
+        return text
+    for a, b in _TERM_REPL:
+        text = text.replace(a, b)
+    return text
+
+
+class _TermStreamFilter:
+    """스트리밍 중 금지어 실시간 치환. 단어가 토큰 경계로 쪼개져도 안전하게
+    꼬리(_TERM_HOLD 글자)를 보류했다가 다음 토큰과 합쳐 치환한다."""
+    def __init__(self):
+        self.buf = ""
+
+    def feed(self, s):
+        self.buf += s
+        self.buf = _sanitize_terms(self.buf)
+        if len(self.buf) > _TERM_HOLD:
+            out = self.buf[:-_TERM_HOLD]
+            self.buf = self.buf[-_TERM_HOLD:]
+            return out
+        return ""
+
+    def flush(self):
+        out = _sanitize_terms(self.buf)
+        self.buf = ""
+        return out
+
+
 def _strip_thinking_artifacts(text):
     """응답에서 사고 과정 흔적 제거. 끝에서 거꾸로 한국어 본문만 추출."""
     if not text:
@@ -81,8 +194,8 @@ def _strip_thinking_artifacts(text):
         break
     keep_idxs.sort()
     if not keep_idxs:
-        return cleaned.strip()
-    return "\n".join(lines[i] for i in keep_idxs).strip()
+        return _sanitize_terms(cleaned.strip())
+    return _sanitize_terms("\n".join(lines[i] for i in keep_idxs).strip())
 
 
 import time
@@ -138,6 +251,8 @@ from demos_v1.gguf import (
     _pool_get_or_load, _pool_release, _pool_status,
 )
 from demos_v1.knowledge import search_knowledge, KNOWLEDGE_DIR, KNOWLEDGE_TRIGGERS
+from demos_v1.rag_client import search_knowledge_smart
+print("[routes_chat] ✅ 새 버전 로드됨 — 에이전트 지식=직접주입(read_selected) / 결과요약 제너릭 / argv")
 from demos_v1.logpresso import (
     LOGPRESSO_TABLES, LOGPRESSO_TABLE_GROUPS, LOGPRESSO_FAB_FILTERS,
     _get_table_group, _filter_tables_by_groups, _fetch_table_fields,
@@ -169,10 +284,34 @@ def _auto_save_feedback(loaded, quality, last_user_query):
         pass
 
 
+def _delatex_md(t):
+    """$\\rightarrow$ 등 LaTeX 표기를 유니코드 기호로 치환 (프론트 delatexFallback 동일 매핑).
+    python-markdown 은 수식을 못 다뤄 그대로 두면 HTML 다운로드 시 깨진다."""
+    if not t:
+        return t
+    import re as _re
+    _map = {
+        '\\rightarrowtail': '→', '\\rightarrow': '→', '\\Rightarrow': '⇒', '\\to': '→',
+        '\\leftarrow': '←', '\\Leftarrow': '⇐', '\\geq': '≥', '\\ge': '≥',
+        '\\leq': '≤', '\\le': '≤', '\\neq': '≠', '\\ne': '≠', '\\approx': '≈',
+        '\\times': '×', '\\cdot': '·', '\\pm': '±', '\\div': '÷', '\\infty': '∞',
+        '\\alpha': 'α', '\\beta': 'β', '\\sum': '∑',
+    }
+    t = _re.sub(r'\\text\s*\{([^}]*)\}', r'\1', t)
+    t = _re.sub(r'\\mathrm\s*\{([^}]*)\}', r'\1', t)
+    for k, v in _map.items():
+        t = t.replace(k, v)
+    t = _re.sub(r'\$\$([\s\S]+?)\$\$', r'\1', t)
+    t = _re.sub(r'\$([^$\n]+?)\$', r'\1', t)
+    return t
+
+
 def _maybe_generate_md_html(answer, loaded, resp_data):
     """md-to-html 스킬이 로드되었으면 MD/HTML 파일을 생성하고 다운로드 URL을 resp_data에 추가"""
     if "md-to-html" not in loaded:
         return resp_data
+
+    answer = _sanitize_terms(answer)   # 저장 파일에도 금지어(역증가 등) 치환 반영
 
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -184,7 +323,7 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     for line in answer.split("\n"):
         stripped = line.strip()
         if stripped.startswith("# ") and not stripped.startswith("## "):
-            title = stripped.lstrip("# ").strip()
+            title = _delatex_md(stripped.lstrip("# ").strip())
             break
 
     # 1) MD 파일 저장
@@ -196,17 +335,31 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
     # 2) HTML 파일 생성
     try:
         import markdown as md_lib
+        # 표 보정: 표 앞 빈 줄 + 헤더 직후 구분선(|---|) 자동삽입 (LLM 이 구분선 빼먹어 깨지는 것 방지)
+        _md_src = _delatex_md(answer).split("\n")
+        _md_in = []
+        for _i, _ln in enumerate(_md_src):
+            _is_row = _ln.lstrip().startswith("|")
+            _prev_row = bool(_md_in) and _md_in[-1].lstrip().startswith("|")
+            if _is_row and _md_in and _md_in[-1].strip() and not _prev_row:
+                _md_in.append("")
+            _md_in.append(_ln)
+            if _is_row and not _prev_row:
+                _nxt = _md_src[_i + 1] if _i + 1 < len(_md_src) else ""
+                if _nxt.lstrip().startswith("|") and "---" not in _nxt:
+                    _md_in.append("|" + "|".join(["---"] * max(1, _ln.count("|") - 1)) + "|")
         extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
-        body_html = md_lib.markdown(answer, extensions=extensions)
+        body_html = md_lib.markdown("\n".join(_md_in), extensions=extensions)
         full_html = (
             '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{title}</title><style>'
             'body{font-family:"Pretendard","Noto Sans KR",sans-serif;max-width:900px;margin:2rem auto;padding:0 1.5rem;color:#1a1a2e;line-height:1.7}'
             'h1,h2,h3{color:#16213e;border-bottom:2px solid #e2e8f0;padding-bottom:.3em}'
-            'table{border-collapse:collapse;width:100%;margin:1em 0}'
-            'th,td{border:1px solid #cbd5e1;padding:.6em 1em;text-align:left}'
-            'th{background:#f1f5f9;font-weight:700}'
+            'h1{font-size:1.45rem}h2{font-size:1.15rem}'
+            'table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.86em}'
+            'th,td{border:1px solid #cbd5e1;padding:.4em .55em;text-align:left;vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}'
+            'th{background:#f1f5f9;font-weight:700;white-space:nowrap}'
             'code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:.9em}'
             'pre{background:#1e293b;color:#e2e8f0;padding:1em;border-radius:8px;overflow-x:auto}'
             'pre code{background:none;color:inherit;padding:0}'
@@ -274,6 +427,21 @@ def _gguf_n_ctx(model, default=32768):
         return default
 
 
+def _gguf_default_n_ctx(model_path):
+    """GGUF 모델 크기별 기본 n_ctx (3090 24GB 기준).
+    12B 이하 = 65536(여유 VRAM 활용), 그 외(26~35B 등) = 32768 유지 → 큰 모델 OOM 방지.
+    파일명에서 '<숫자>b' 를 뽑아 최댓값으로 판정(예: gemma-26B-A4B → max(26,4)=26 → 32768).
+    크기 못 찾거나 12 초과면 안전하게 32768. (API 모델엔 적용 안 됨 — GGUF 전용)"""
+    try:
+        name = os.path.basename(model_path or "").lower()
+        sizes = [int(n) for n in re.findall(r'(\d+)\s*b', name)]
+        if sizes and max(sizes) <= 12:
+            return 65536
+    except Exception:
+        pass
+    return 32768
+
+
 def _msg_text(m):
     c = m.get("content", "")
     if isinstance(c, list):
@@ -281,11 +449,11 @@ def _msg_text(m):
     return str(c)
 
 
-def _make_token_counter(model=None):
+def _make_token_counter(model=None, tpc=2.6):
     """토큰 수 카운터 반환. 과소평가 절대 금지(과소평가하면 트림이 부족해 컨텍스트 초과).
-    밀집 CSV/숫자는 문자당 토큰이 ~2.3개까지 나오므로 문자기반 하한을 2.6으로 둔다.
-    토크나이저가 그보다 크게 세면(정상) 그 값을 쓰고, 작게 세거나 실패하면 하한을 쓴다."""
-    DENSE = 2.6  # tokens per char (보수적 하한)
+    GGUF(크래시 위험)는 밀집 CSV 최악값 2.6 tokens/char 하한을 쓴다.
+    API(128K 네이티브, 초과해도 서버가 에러로 처리)는 현실값(≈0.5)을 써서 정상 텍스트를 헛되이 자르지 않는다."""
+    DENSE = tpc  # tokens per char 하한 (GGUF=2.6 보수적, API=0.5 현실적)
     def count(text):
         s = str(text)
         floor = int(len(s) * DENSE) + 1
@@ -324,11 +492,14 @@ def _truncate_text_to_tokens(text, allow_tokens, count):
     return new, max(0, len(text) - (head + max(0, tail)))
 
 
-def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
-    """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단. GGUF·API 공통.
+def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512,
+                         hard_char_cap=True, tpc=2.6):
+    """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단.
     1) 오래된 user/assistant 메시지 제거 → 2) 그래도 크면 가장 큰 메시지 본문 절단.
+    hard_char_cap=True(GGUF): 토크나이저 무관 '하드 글자수' 안전장치까지 적용(크래시 방지).
+    hard_char_cap=False(API): 토큰 추정 기반 트림만(128K 초과 시에만). 정상 텍스트를 헛되이 자르지 않음.
     반환: (트림된 messages, 응답토큰예산, 경고문)."""
-    count = _make_token_counter(model)
+    count = _make_token_counter(model, tpc)
 
     def mtoks(msgs):
         # 메시지당 chat 템플릿 오버헤드 넉넉히(+8), 전체 여유(+16)
@@ -356,11 +527,12 @@ def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512):
             warn = (f"⚠️ [컨텍스트보호 v3] 입력이 한도({n_ctx:,} 토큰)를 넘어 약 {removed:,}자를 잘라 넣었습니다. "
                     f"전체를 보려면 더 큰 컨텍스트 모델(API 128K)을 쓰세요.")
 
-    # 3) 토큰 추정과 무관한 '하드 글자수' 안전장치 — 토크나이저가 어떤 값을 주든 절대 초과 안 함.
-    #    밀집 CSV(숫자·쉼표)는 문자당 토큰이 ~2.3개라, 글자수 자체를 input_budget/2.6 로 캡.
-    max_chars = max(400, int(input_budget / 2.6))
+    # 3) 토큰 추정과 무관한 '하드 글자수' 안전장치 — GGUF 전용(초과 시 크래시 방지).
+    #    밀집 CSV(숫자·쉼표)는 문자당 토큰이 ~2.3개라, 글자수 자체를 input_budget/tpc 로 캡.
+    #    API(hard_char_cap=False)는 이 단계를 건너뛴다 — 128K 네이티브라 헛절단 불필요.
+    max_chars = max(400, int(input_budget / max(0.1, tpc)))
     total_chars = sum(len(_msg_text(m)) for m in msgs)
-    if total_chars > max_chars:
+    if hard_char_cap and total_chars > max_chars:
         big_i = max(range(len(msgs)), key=lambda i: len(_msg_text(msgs[i])))
         others_chars = total_chars - len(_msg_text(msgs[big_i]))
         allow_chars = max(300, max_chars - others_chars)
@@ -442,6 +614,276 @@ def _plan_gguf_chunks(messages, n_ctx, reply_cap, model, safety=1536, max_chunks
             "reply": reply_cap, "n_ctx": n_ctx, "safety": safety, "over": over}
 
 
+# ══ 실행형 지식(스크립트) 자동 실행 ═════════════════════════════════
+# 개인에이전트가 '선택(체크)'한 스크립트 + 트리거어 + 업로드 데이터 → 스크립트 실행 →
+# 결과 요약을 LLM 에 주입. LLM 은 선택한 문서지식(카파시톤/결과해석)으로 해석.
+def _find_agent_script(user_id, query, selected_names):
+    """선택된 스크립트 중 query 트리거 매칭되는 것 (meta, dir). 선택 없으면 None(안전)."""
+    if not user_id or not selected_names:
+        return None
+    sroot = os.path.join(KNOWLEDGE_DIR, str(user_id), "scripts")
+    if not os.path.isdir(sroot):
+        return None
+    sel = set(selected_names)
+    q = query or ""
+    # 후보를 모아 '가장 구체적인(긴) 트리거가 매칭된' 스크립트를 고른다.
+    # (기존: 알파벳 첫 번째가 이기고, 트리거 없으면 무조건 매칭 → 엉뚱한 스크립트 오발동)
+    best = None          # (matched_trigger_len, meta, dir)
+    for nm in sorted(os.listdir(sroot)):
+        if nm not in sel:
+            continue
+        mp = os.path.join(sroot, nm, "_meta.json")
+        if not os.path.isfile(mp):
+            continue
+        try:
+            meta = json.load(open(mp, encoding="utf-8"))
+        except Exception:
+            continue
+        trig = [t for t in (meta.get("trigger") or []) if t]
+        matched = [t for t in trig if t in q]
+        if not matched:
+            continue                              # 트리거 없거나 안 맞으면 실행 안 함(안전)
+        score = max(len(t) for t in matched)      # 가장 긴(구체적) 트리거 길이
+        if best is None or score > best[0]:
+            best = (score, meta, os.path.join(sroot, nm))
+    return (best[1], best[2]) if best else None
+
+
+def _builtin_hub_summary(headers, rows):
+    """등록 스크립트가 안 돌았을 때의 안전망: 발동이벤트 스키마면 raw 1440행 대신
+    ①일일통계+③사건목록 을 코드로 직접 만들어 컴팩트 텍스트로 돌려준다(잘림 방지).
+    스키마가 아니면 None(기존 미리보기 경로 사용)."""
+    try:
+        from demos_v1.report_graphs import _detect_hub_evt, derive_incidents_from_evt, _parse_dt
+    except Exception:
+        return None
+    try:
+        hdr = [str(h).lstrip("﻿") for h in (headers or [])]
+        if not _detect_hub_evt(hdr):
+            return None
+        drows = [dict(zip(hdr, r)) for r in (rows or [])]
+        if not drows:
+            return None
+
+        def _lvl(s):
+            return "초위험" if s >= 90 else "위험" if s >= 75 else "경계" if s >= 54 else "정상"
+        _EMO = {"경계": "🟠 경계", "위험": "🔴 위험", "초위험": "⛔ 초위험", "정상": "정상"}
+
+        n_total = len(drows)
+        dist = {"경계": 0, "위험": 0, "초위험": 0}
+        n_cong = 0
+        peak = (-1, "", "")          # (score, time, hot_area)
+        hour_cong = {}
+        day = ""
+        for r in drows:
+            try:
+                sc = int(float(r.get("unified_risk_score") or 0))
+            except (TypeError, ValueError):
+                sc = 0
+            lv = _lvl(sc)
+            tm = str(r.get("time") or (r.get("datetime") or "")[-5:] or "")
+            day = day or str(r.get("date") or "")
+            if sc >= 54:
+                n_cong += 1
+                if lv in dist:
+                    dist[lv] += 1
+                hh = tm[:2]
+                hour_cong[hh] = hour_cong.get(hh, 0) + 1
+            if sc > peak[0]:
+                peak = (sc, tm, str(r.get("hot_area") or ""))
+        busy = sorted(hour_cong.items(), key=lambda x: -x[1])[:5]
+        busy_str = ", ".join(f"{h}시({n}분)" for h, n in busy) if busy else "없음"
+
+        incs = derive_incidents_from_evt(drows)
+        incs = sorted(incs, key=lambda i: i["start"])
+
+        out = ["=== [발동이벤트 자동요약 — 내장 분석기가 계산. 재계산 말고 이걸로 진단하세요] ==="]
+        out.append(
+            f"[① 일일통계] 보고일자 {day} | 총 {n_total}분 | 정상 {n_total - n_cong}분 | 정체(54점↑) {n_cong}분"
+        )
+        out.append(
+            f"등급분포: 🟠경계 {dist['경계']} · 🔴위험 {dist['위험']} · ⛔초위험 {dist['초위험']}"
+        )
+        if peak[0] >= 0:
+            out.append(f"하루 최고: {peak[0]}점 {_EMO[_lvl(peak[0])]} @{peak[1]} (시작영역 {peak[2]})")
+        out.append(f"정체 집중 시간대: {busy_str}")
+        out.append("")
+        out.append(f"[③ 사건목록] (점수 54+ 구간 · 시각=최고점) — {len(incs)}건")
+        if not incs:
+            out.append("→ 금일 점수 54 이상 사건 없음 (정상 운영).")
+        else:
+            out.append("| # | 시각 | 구간 | 지속분 | 최고등급 | 최고점수 | 시작영역 |")
+            out.append("|---|---|---|---|---|---|---|")
+            for n, inc in enumerate(incs, 1):
+                pr = inc["peak_row"]
+                dur = int((inc["end"] - inc["start"]).total_seconds() // 60) + 1
+                _pt = inc.get("peak_t") or inc["start"]   # ★ 시각 = 최고점(진짜 몰림)
+                out.append(
+                    f"| {n} | {_pt.strftime('%H:%M')} | {inc['start'].strftime('%H:%M')}~{inc['end'].strftime('%H:%M')} | {dur} "
+                    f"| {_EMO[_lvl(int(inc['peak_score']))]} | {int(inc['peak_score'])} "
+                    f"| {pr.get('hot_area') or ''} |"
+                )
+        return "\n".join(out) + "\n\n"
+    except Exception as _e:
+        print(f"  🐍 [BUILTIN-SUMMARY] 예외: {_e}")
+        return None
+
+
+def _summarize_result_csv(path, max_full_rows=30, top_k=8):
+    """결과 CSV → LLM용 압축 요약. 작은 표(사건단위)는 통째로, 큰 표(발동이벤트)는 분포+상위행."""
+    import csv as _csv
+    from collections import Counter
+    try:
+        rows = list(_csv.DictReader(open(path, encoding="utf-8-sig")))
+    except Exception:
+        return "(읽기 실패)"
+    if not rows:
+        return "(0행)"
+    cols = list(rows[0].keys())
+    n = len(rows)
+    KEY = ["datetime", "time", "stage", "stage_name", "unified_risk_score", "unified_risk_level",
+           "hot_area", "affected_areas", "reason", "predict_time", "start_time", "end_time",
+           "lead_min", "duration_min", "max_risk_score", "max_risk_level", "triggered_rules",
+           "risk_factors", "M16HUB_signals", "M14_signals", "M16A_signals", "M16B_signals"]
+    keys = [c for c in KEY if c in cols] or cols[:10]
+    out = [f"행수: {n}"]
+    if n <= max_full_rows:
+        for r in rows:
+            line = " | ".join(f"{k}={r.get(k, '')}" for k in keys if str(r.get(k, '')).strip())
+            if line:
+                out.append(line)
+    elif any(c in cols for c in KEY):
+        # hubroom 스키마 결과(발동이벤트): 분포 + 위험 상위행
+        for c in ("stage_name", "unified_risk_level", "hot_area"):
+            if c in cols:
+                cnt = Counter(str(r.get(c, "")).strip() or "-" for r in rows)
+                out.append(f"[{c} 분포] " + ", ".join(f"{k}:{v}" for k, v in cnt.most_common(8)))
+        if "unified_risk_score" in cols:
+            def _score(r):
+                try:
+                    return float(r.get("unified_risk_score") or 0)
+                except Exception:
+                    return 0.0
+            for r in sorted(rows, key=_score, reverse=True)[:top_k]:
+                if _score(r) <= 0:
+                    break
+                out.append("· " + " | ".join(f"{k}={r.get(k, '')}" for k in keys if str(r.get(k, '')).strip()))
+    else:
+        # 일반(비-hubroom) 결과: 실제 행을 CSV 그대로 보여준다 (문자 예산 내). 큰 표면 앞부분만.
+        out = ["컬럼: " + ",".join(cols), f"행수: {n}"]
+        budget, used = 16000, 0
+        for i, r in enumerate(rows):
+            line = ",".join(str(r.get(c, "")) for c in cols)
+            if used + len(line) + 1 > budget:
+                out.append(f"...(표가 큼 — 위 {i}행까지만 표시, 총 {n}행. 전체는 결과 CSV 참조)")
+                break
+            out.append(line)
+            used += len(line) + 1
+    return "\n".join(out)
+
+
+def _run_agent_script(user_id, query, csv_data, selected_names):
+    """선택+트리거 매칭 스크립트 실행 → 결과 요약. 미매칭/실패 시 None."""
+    found = _find_agent_script(user_id, query, selected_names)
+    if not found:
+        return None
+    meta, sdir = found
+    headers = csv_data.get("headers") or []
+    rows = csv_data.get("rows") or []
+    if not headers or not rows:
+        return None
+    import tempfile
+    import subprocess
+    import sys as _sys
+    import glob
+    import shutil
+    import csv as _csv
+    fd, tin = tempfile.mkstemp(suffix=".csv", prefix="an_in_")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(headers)
+        for r in rows:
+            w.writerow(r)
+    outd = tempfile.mkdtemp(prefix="an_out_")
+    try:
+        entry = meta.get("entry") or ""
+        # 실행 인자: argv 템플릿 있으면 그대로(토큰 치환), 없으면 기본(hubroom식: <input> -o <outdir>).
+        #   {input}=업로드 CSV 임시경로, {outdir}=결과폴더. 맨이름 동반파일은 cwd=sdir 라 자동 해석.
+        argv_tpl = meta.get("argv") or []
+        if argv_tpl:
+            mapped = [t.replace("{input}", tin).replace("{outdir}", outd) for t in argv_tpl]
+            cmd = [_sys.executable, os.path.join(sdir, entry)] + mapped
+        else:
+            cmd = [_sys.executable, os.path.join(sdir, entry), tin, "-o", outd]
+        # encoding/errors 고정 — Windows 기본 cp949 로 한글 stdout 디코딩 시 UnicodeDecodeError 방지
+        proc = subprocess.run(cmd,
+                              capture_output=True, text=True, timeout=120, cwd=sdir,
+                              encoding="utf-8", errors="replace",
+                              env=dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1"))
+        csvs = sorted(glob.glob(os.path.join(outd, "*.csv")) + glob.glob(os.path.join(outd, "*.CSV")))
+        # 스크립트가 SVG(그래프)를 출력하면 채집 → 리포트 본문에 그대로 끼운다(LLM 거치지 않음).
+        #   여러 개면 순서대로 이어붙임. 데이터는 csv_data 에 실어 보내(injector 가 읽음).
+        try:
+            svgs = sorted(glob.glob(os.path.join(outd, "*.svg")) + glob.glob(os.path.join(outd, "*.SVG")))
+            if svgs:
+                _parts_svg = []
+                for sf in svgs:
+                    try:
+                        _parts_svg.append(open(sf, encoding="utf-8").read().strip())
+                    except Exception:
+                        pass
+                if _parts_svg and isinstance(csv_data, dict):
+                    csv_data["_script_svg"] = "\n".join(_parts_svg)
+                    print(f"  📈 [GRAPH] 스크립트 SVG 채집 {len(_parts_svg)}개 ({sum(len(s) for s in _parts_svg)}자)")
+        except Exception as _se:
+            print(f"  📈 [GRAPH] 스크립트 SVG 채집 예외: {_se}")
+        parts = [f"=== [분석 결과: {meta.get('name')}] — 스크립트가 계산한 결과입니다. 재계산 말고 이걸로 진단하세요 ==="]
+        if csvs:
+            for cf in csvs:
+                parts.append(f"\n[{os.path.basename(cf)}]\n" + _summarize_result_csv(cf))
+        elif (proc.stdout or "").strip():
+            parts.append((proc.stdout or "")[:6000])
+        else:
+            parts.append(f"(산출 없음) {(proc.stderr or '')[:800]}")
+        parts.append("\n\n→ 위 결과를 선택한 지식문서(카파시톤=원리 / 결과해석=컬럼사전)로 해석해 진단하세요.\n\n")
+        return "\n".join(parts)
+    except subprocess.TimeoutExpired:
+        return f"=== [분석: {meta.get('name')}] 실행 시간 초과(120초). 데이터가 너무 큽니다. ===\n\n"
+    except Exception as e:
+        return f"=== [분석 오류: {meta.get('name')}] {e} ===\n\n"
+    finally:
+        try:
+            os.remove(tin)
+        except Exception:
+            pass
+        shutil.rmtree(outd, ignore_errors=True)
+
+
+def _split_csv_text(text):
+    """채팅에 '붙여넣은' CSV 추출 → (headers, rows, 지시문). 첨부 파일 없을 때 사용.
+    콤마 많은 줄 = CSV(헤더+데이터), 나머지(예: '분석해줘') = 지시문."""
+    lines = (text or "").splitlines()
+    cand_idx = [i for i, ln in enumerate(lines) if ln.count(",") >= 5]
+    if len(cand_idx) < 2:
+        return None, None, text
+    from collections import Counter
+    ncols = Counter(lines[i].count(",") for i in cand_idx).most_common(1)[0][0]
+    keep = set(i for i in cand_idx if abs(lines[i].count(",") - ncols) <= 2)
+    if len(keep) < 2:
+        return None, None, text
+    import csv as _csv
+    import io as _io
+    csv_text = "\n".join(lines[i] for i in sorted(keep))
+    try:
+        rows = [r for r in _csv.reader(_io.StringIO(csv_text)) if len(r) >= 3]
+    except Exception:
+        return None, None, text
+    if len(rows) < 2:
+        return None, None, text
+    instr = "\n".join(lines[i] for i in range(len(lines)) if i not in keep).strip()
+    return rows[0], rows[1:], (instr or "이 데이터 분석해줘")
+
+
 def _stream_chat_sse(data):
     chat_stop_flag["stop"] = False
 
@@ -454,6 +896,16 @@ def _stream_chat_sse(data):
         user_envs = ["auto"]
 
     messages = data.get("messages", [])
+    # 과거 assistant 응답에 백엔드가 붙인 리포트 그래프(인라인 SVG/PNG, 수십~수백 KB)는
+    # 다음 턴 LLM 컨텍스트로 되돌리지 않는다(토큰 폭발 방지). 화면/다운로드용일 뿐.
+    try:
+        _gre = re.compile(r'<div class="hub-report-graph"[^>]*>.*?</div>', re.S)
+        for _m in messages:
+            _c = _m.get("content")
+            if isinstance(_c, str) and "hub-report-graph" in _c:
+                _m["content"] = _gre.sub("[리포트 그래프는 화면에 표시됨 — 생략]", _c)
+    except Exception:
+        pass
     custom_system_prompt = (data.get("system_prompt") or "").strip()
     effort = data.get("effort", 2)
     temperature_map = {0: 0.0, 1: 0.2, 2: 0.4, 3: 0.7}
@@ -509,12 +961,62 @@ def _stream_chat_sse(data):
     # (Python `from X import Y` 는 모듈 로드 시점의 바인딩이므로, 다른 코드가
     # 의도치 않게 utils.uploaded_files 를 재할당했을 경우 stale 이 될 수 있음).
     from demos_v1 import utils as _utils_now
-    _csv_now = _utils_now.uploaded_csv_data
-    _files_now = _utils_now.uploaded_files
+    # ★ 앱별 데이터 스코프: 데모스/개인에이전트가 같은 user_id 라도 첨부를 분리(scope).
+    #   프론트가 scope 를 보내면 그걸로, 없으면 user_id 로 폴백(기존 동작 유지).
+    _scope = data.get("scope") or data.get("user_id")
+    _csv_now = _utils_now.csv_slot(_scope)        # ★ 스코프별 첨부 CSV 슬롯 (데모스/에이전트 분리)
+    _files_now = _utils_now.uploaded_files        # 파일(범용)은 기존 전역 유지(읽는 곳 다수라 일관성 위해)
 
     file_section = ""
     include_csv = data.get("include_csv", True)
-    if include_csv and _csv_now.get("filename"):
+
+    # ── 스크립트 자동 실행: 데이터 출처 = 첨부 CSV(우선) 또는 채팅에 붙여넣은 CSV ──
+    _q_now = ""
+    _q_idx = -1
+    for _i in range(len(messages) - 1, -1, -1):
+        if messages[_i].get("role") == "user" and isinstance(messages[_i].get("content"), str):
+            _q_now = messages[_i]["content"]
+            _q_idx = _i
+            break
+    # ★ 리포트 그래프는 '개인에이전트' 요청에서만 — 일반 데모스 채팅에선 끔.
+    #   개인에이전트만 payload 에 knowledge_scripts/knowledge_files 키를 보낸다(일반은 키 자체가 없음).
+    _is_agent_req = ("knowledge_scripts" in data) or ("knowledge_files" in data)
+    _data_for_script = None
+    _pasted_instr = None
+    if _csv_now.get("filename") and _csv_now.get("headers") and _csv_now.get("rows"):
+        _data_for_script = {"headers": _csv_now["headers"], "rows": _csv_now["rows"]}   # 첨부
+    else:
+        _ph, _pr, _pi = _split_csv_text(_q_now)                                          # 붙여넣기
+        if _ph and _pr:
+            _data_for_script = {"headers": _ph, "rows": _pr}
+            _pasted_instr = _pi
+    _script_out = None
+    if _data_for_script:
+        _script_out = _run_agent_script(data.get("user_id"), _q_now, _data_for_script,
+                                        data.get("knowledge_scripts") or [])
+    try:
+        print(f"  🐍 [SCRIPT-HOOK] user_id={data.get('user_id')!r} | knowledge_scripts={data.get('knowledge_scripts')!r} | "
+              f"첨부CSV={bool(_csv_now.get('filename'))} | 붙여넣기CSV={bool(_data_for_script and _pasted_instr is not None)} | "
+              f"데이터행={len((_data_for_script or {}).get('rows') or [])} | 스크립트실행={'O' if _script_out else 'X'}")
+    except Exception:
+        pass
+
+    # 등록 스크립트가 안 돌았어도 발동이벤트 CSV면 내장 요약(①③)으로 안전망 — raw 1440행 잘림 방지.
+    _builtin_sum = None
+    if not _script_out and _data_for_script:
+        _builtin_sum = _builtin_hub_summary(_data_for_script.get("headers"), _data_for_script.get("rows"))
+
+    if _script_out:
+        file_section += _script_out          # 스크립트가 계산 → LLM은 결과만 해석(raw 안 봄)
+        if _pasted_instr is not None and _q_idx >= 0:
+            # 붙여넣은 raw CSV 는 LLM 에 보내지 않고 지시문만 남김 (토큰 폭발 방지)
+            messages[_q_idx] = dict(messages[_q_idx], content=_pasted_instr)
+    elif _builtin_sum:
+        file_section += _builtin_sum         # 발동이벤트 자동요약 → LLM은 ①③ 표만 봄(raw 안 봄)
+        if _pasted_instr is not None and _q_idx >= 0:
+            messages[_q_idx] = dict(messages[_q_idx], content=_pasted_instr)
+        print("  🐍 [BUILTIN-SUMMARY] 발동이벤트 스키마 감지 → 내장 ①③ 요약 주입(raw 미전송)")
+    elif include_csv and _csv_now.get("filename"):
         csv_info = _csv_now.get("summary", "")
         rows = _csv_now.get("rows", []) or []
         headers_csv = _csv_now.get("headers", []) or []
@@ -574,13 +1076,54 @@ def _stream_chat_sse(data):
             _c = _m.get("content", "")
             last_user_query = _c if isinstance(_c, str) else ""
             break
+    # 개인에이전트 선택 지식문서: RAG 로 '선택한 문서의 관련 청크만' 빠르게 주입.
+    #   files 필터 + 폴백버그 수정 덕에 '고른 문서'만 들어감(엉뚱한 문서 자동주입 없음).
+    #   RAG 가 그 문서에서 못 찾으면 search_knowledge_smart 가 직접읽기로 폴백(무손실).
+    _agent_kfiles = data.get("knowledge_files") or []
+    if _agent_kfiles:
+        try:
+            # 검색어: 마지막 user 질문에서 '(지시: ...)' 꼬리표 제거 → RAG 매칭 정확도↑
+            _q_kf = (last_user_query or "").split("\n\n(지시:")[0].strip() or (last_user_query or "")
+            if _q_kf.strip():
+                _kf_res = search_knowledge_smart(_q_kf, max_results=8, max_content_chars=4000,
+                                                 user_id=data.get("user_id"), files=_agent_kfiles)
+            else:
+                from demos_v1.rag_client import read_selected as _read_selected
+                _kf_res = _read_selected(data.get("user_id"), _agent_kfiles)
+            if _kf_res:
+                _kf_ctx = ("\n\n=== 선택한 내 지식 문서 ===\n"
+                           "아래 문서 내용을 우선 근거로 답하세요. 문서에 없는 내용은 추측하지 말고 일반 지식임을 밝히세요.\n\n")
+                _tot = 0
+                for _r in _kf_res:
+                    _seg = _r["content"][:4000]
+                    if _tot + len(_seg) > 14000:
+                        _seg = _seg[:max(0, 14000 - _tot)]
+                        if not _seg:
+                            break
+                    _kf_ctx += f"--- 📄 {_r['filename']} ---\n{_seg}\n\n"
+                    _tot += len(_seg)
+                api_messages = _prepend_system(api_messages, _kf_ctx)
+                try:
+                    from demos_v1.rag_client import _healthy as _rh
+                    _ksrc = "RAG" if _rh() else "BM25/직접"
+                except Exception:
+                    _ksrc = "?"
+                print(f"  [AGENT-KFILES] 검색원={_ksrc} | {len(_kf_res)}개 파일 청크 주입 ({_tot}자) | 선택={_agent_kfiles}")
+        except Exception as _e:
+            print(f"  [AGENT-KFILES] {_e}")
+
     if "knowledge-search" in skill_ids and last_user_query.strip():
         try:
             _chat_user_id = data.get("user_id", None)
             print(f"  [KNOWLEDGE-SSE] user_id={_chat_user_id}, query={last_user_query[:50]}")
+            # ★ 지식검색은 BM25/점수(키워드 매칭) 사용 — '주간 보고' 같은 키워드 질의에
+            #    의미검색(RAG)이 엉뚱한 청크를 가져오던 문제로 원복.
             kb_results = search_knowledge(
                 last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id
             )
+            _src = "BM25/점수"
+            print(f"  [KNOWLEDGE-SSE] 검색원={_src} | 결과 {len(kb_results)}건 | "
+                  f"{sum(len(r.get('content','')) for r in kb_results)}자")
             if not kb_results:
                 # 0건이면 한 줄로 끝내지 말고 일반 지식/다른 스킬로 계속 답변하도록 override.
                 _other_skills = [s for s in skill_ids if s != "knowledge-search"]
@@ -665,9 +1208,17 @@ def _stream_chat_sse(data):
 
     # ── GGUF 경로 ──
     if str(env_id).startswith("gguf-"):
+        # qwen3.x GGUF: /no_think 로 사고 비활성화(템플릿이 인식) → 답만 생성. 누출/과부하/지연 방지.
+        if not data.get("think_mode", False):
+            for _m in reversed(api_messages):
+                if _m.get("role") == "user" and isinstance(_m.get("content"), str):
+                    if "/no_think" not in _m["content"]:
+                        _m["content"] = _m["content"].rstrip() + " /no_think"
+                    break
         gguf_path = ENV_CONFIG.get(env_id, {}).get("_gguf_path")
         user_n_ctx = data.get("n_ctx", 0)
-        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else 32768
+        # 9B↓ 는 65536, 27B 등은 32768 유지 (요청에 n_ctx 명시되면 그걸 우선)
+        _load_n_ctx = user_n_ctx if user_n_ctx > 0 else _gguf_default_n_ctx(gguf_path)
         if gguf_path:
             if not load_gguf_model(gguf_path, n_ctx=_load_n_ctx):
                 return jsonify({"error": f"GGUF 모델 로드 실패: {os.path.basename(gguf_path)}"}), 500
@@ -681,15 +1232,22 @@ def _stream_chat_sse(data):
         _gctx = _gguf_n_ctx(_utils_mod.gguf_model)
         _greserve = max(512, TOKEN_SETTINGS.get("gguf_ctx_reserve", 1536))
         _temp = temperature_map[min(effort, 3)]
+        # 컨텍스트 보호 토글. GGUF 는 n_ctx 를 물리적으로 못 넘으므로(초과=크래시) 토큰트림은 항상 유지.
+        #  · ON(기본) → 토큰트림 + 하드 글자수캡(밀집CSV 안전망)
+        #  · OFF      → 토큰트림만(실제 토크나이저로 n_ctx 에 맞춤) — 과한 글자수캡은 끔
+        _ctx_guard = data.get("ctx_guard", True)
 
         def _tok_evt(t):
             return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
 
-        def _gguf_stream_once(msgs, max_toks):
+        def _gguf_stream_once(msgs, max_toks, emit=None):
             """한 번의 create_chat_completion 을 스트리밍 — (yield용 SSE, 누적텍스트, finish) 제너레이터.
-            마지막에 ('__end__', acc, finish) 튜플을 yield."""
+            마지막에 ('__end__', acc, finish) 튜플을 yield.
+            qwen3.x GGUF 는 템플릿이 <think> 를 미리 넣어 닫는 </think> 만 나오므로 암묵 사고제거 적용.
+            emit(vis)->list[SSE] 주면 그걸로 감싼다(그래프 주입·금지어 필터용). 없으면 기본 _tok_evt."""
             acc = ""
             _finish = None
+            _gtf = _StreamThinkFilter(implicit=("qwen3" in (model_name or "").lower()))
             for chunk in _utils_mod.gguf_model.create_chat_completion(
                     messages=msgs, temperature=_temp, max_tokens=max_toks, stream=True):
                 if chat_stop_flag.get("stop"):
@@ -700,11 +1258,25 @@ def _stream_chat_sse(data):
                 delta = choices[0].get("delta") or {}
                 tok = delta.get("content") or ""
                 if tok:
-                    acc += tok
-                    yield _tok_evt(tok)
+                    vis = _gtf.feed(tok)          # 사고과정 실시간 제거
+                    if vis:
+                        acc += vis
+                        if emit is None:
+                            yield _tok_evt(vis)
+                        else:
+                            for _s in emit(vis):
+                                yield _s
                 fr = choices[0].get("finish_reason")
                 if fr:
                     _finish = fr
+            tail = _gtf.flush()
+            if tail:
+                acc += tail
+                if emit is None:
+                    yield _tok_evt(tail)
+                else:
+                    for _s in emit(tail):
+                        yield _s
             yield ("__end__", acc, _finish)
 
         # 분할(이어서보기) 비활성화 — 항상 단일 패스로 처리(큰 입력은 앞부분 잘라 한 번에 답변).
@@ -725,19 +1297,51 @@ def _stream_chat_sse(data):
             # ── 단일 패스 (필요 시 트림) ──
             _fit_msgs, _fit_reply, _fit_warn = _fit_messages_to_ctx(
                 api_messages, _gctx, max_tokens_g,
-                model=_utils_mod.gguf_model, safety=_greserve)
+                model=_utils_mod.gguf_model, safety=_greserve, hard_char_cap=_ctx_guard)
 
             def gen_gguf():
                 yield _meta_evt()
                 if _fit_warn:
                     yield _tok_evt(_fit_warn + "\n\n")
+                # ★ GGUF 도 API 경로처럼 리포트 그래프 삽입 + 금지어 치환 (전엔 API에만 있어 GGUF는 그래프 안 나왔음)
+                _inj = None
+                try:
+                    from demos_v1.report_graphs import GraphStreamInjector
+                    _inj = GraphStreamInjector(_data_for_script if _is_agent_req else None, query=_q_now)
+                except Exception as _ie:
+                    print(f"  📈 [GRAPH] injector 비활성: {_ie}")
+                    _inj = None
+                _termf2 = _TermStreamFilter()
+
+                def _emit(vis):
+                    out = []
+                    v2 = _termf2.feed(vis)        # 금지어(역증가→정체) 실시간 치환
+                    if not v2:
+                        return out
+                    if _inj is None:
+                        out.append(_tok_evt(v2))
+                    else:
+                        for _p in _inj.feed(v2):  # 제목(# …) 직후 그래프 삽입
+                            out.append(_tok_evt(_p))
+                    return out
+
                 try:
                     _finish = None
-                    for ev in _gguf_stream_once(_fit_msgs, _fit_reply):
+                    for ev in _gguf_stream_once(_fit_msgs, _fit_reply, emit=_emit):
                         if isinstance(ev, tuple) and ev and ev[0] == "__end__":
                             _finish = ev[2]
                         else:
                             yield ev
+                    # flush: 금지어 꼬리 → 그래프 주입기로 흘려보내고 → 그래프 마저 삽입
+                    _tailtxt = _termf2.flush()
+                    if _inj is None:
+                        if _tailtxt:
+                            yield _tok_evt(_tailtxt)
+                    else:
+                        for _p in _inj.feed(_tailtxt or ""):
+                            yield _tok_evt(_p)
+                        for _p in _inj.flush():
+                            yield _tok_evt(_p)
                     end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
@@ -767,7 +1371,7 @@ def _stream_chat_sse(data):
                         _msgs = _base + [{"role": "user", "content": framed}]
                         _msgs, _rb, _ = _fit_messages_to_ctx(
                             _msgs, _plan["n_ctx"], _plan["reply"],
-                            model=_utils_mod.gguf_model, safety=_plan["safety"])
+                            model=_utils_mod.gguf_model, safety=_plan["safety"], hard_char_cap=_ctx_guard)
                         _acc = ""
                         for ev in _gguf_stream_once(_msgs, _rb):
                             if isinstance(ev, tuple) and ev and ev[0] == "__end__":
@@ -787,7 +1391,7 @@ def _stream_chat_sse(data):
                     _smsgs = _sys_only + [{"role": "user", "content": synth_user}]
                     _smsgs, _srb, _ = _fit_messages_to_ctx(
                         _smsgs, _plan["n_ctx"], _plan["reply"],
-                        model=_utils_mod.gguf_model, safety=_plan["safety"])
+                        model=_utils_mod.gguf_model, safety=_plan["safety"], hard_char_cap=_ctx_guard)
                     _finish = None
                     for ev in _gguf_stream_once(_smsgs, _srb):
                         if isinstance(ev, tuple) and ev and ev[0] == "__end__":
@@ -805,17 +1409,25 @@ def _stream_chat_sse(data):
     # ── API 경로 (단일 모델, 폴백 없음) ──
     api_url = ENV_CONFIG[env_id]["url"]
     model = ENV_CONFIG[env_id]["model"]
-    api_key = API_TOKEN or data.get("api_key", "")
+    # 모델별 전용 토큰(예: Spark) 우선 → 없으면 글로벌 → 요청값
+    api_key = ENV_CONFIG[env_id].get("token") or API_TOKEN or data.get("api_key", "")
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     max_tokens_a = data.get("max_tokens", TOKEN_SETTINGS.get("agent_max_tokens", 4096))
 
-    # 컨텍스트 초과 방지(API): 모델 context_window 안에 맞도록 트림/절단 (토크나이저 없음 → 보수적 추정)
-    _api_reg_key = ENV_TO_REGISTRY.get(env_id)
-    _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
-    api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
-        api_messages, _api_ctx, max_tokens_a, model=None, safety=1024)
+    # 컨텍스트 보호(API): 토글로 제어. 기본 ON.
+    #  · ON  → 모델 context_window(128K) 안에 들어오도록 '토큰 추정' 기반으로만 트림(현실값 0.5 tpc, 하드 글자수캡 없음).
+    #          → 일반 텍스트는 12만 자여도 ~6만 토큰이라 안 잘림. 진짜 128K 초과 시에만 트림.
+    #  · OFF → 전혀 자르지 않고 원문 그대로 전송(128K 네이티브 신뢰).
+    _ctx_guard = data.get("ctx_guard", True)
+    _api_fit_warn = ""
+    if _ctx_guard:
+        _api_reg_key = ENV_TO_REGISTRY.get(env_id)
+        _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
+        api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
+            api_messages, _api_ctx, max_tokens_a, model=None, safety=1024,
+            hard_char_cap=False, tpc=0.5)
 
     payload = {
         "model": model,
@@ -826,6 +1438,42 @@ def _stream_chat_sse(data):
     }
 
     def gen_api():
+        # 스파크 DGX(raw GGUF) 추론모델(glm·qwen3.6 등)은 여는 <think> 없이 추론하다
+        # 닫는 </think> 만 뱉어 사고과정이 그대로 노출됨 → implicit 모드로 첫 </think> 전까지 버림.
+        # 깔끔하게 답하는 next-80b 는 제외(스트리밍 유지). 게이트웨이 모델은 영향 없음.
+        _ml = (model or "").lower()
+        # 스파크 추론모델(glm·qwen3.6·qwable3.6 등)은 next-80b·gemma 외 전부 사고노출 → implicit.
+        _implicit_think = (str(env_id).startswith("spark-")
+                           and "next" not in _ml and "gemma" not in _ml)
+        _tf = _StreamThinkFilter(implicit=_implicit_think)
+        _termf = _TermStreamFilter()   # 금지어(역증가→정체 등) 실시간 치환
+
+        # 리포트 그래프 삽입은 report_graphs.GraphStreamInjector 가 전담(코어 침투 최소화).
+        #   여기선 feed()/flush() 만 호출하고 _tok 으로 SSE 포장.  떼고 싶으면 이 3줄만 제거.
+        def _tok(t):
+            return f"data: {json.dumps({'type': 'token', 't': t}, ensure_ascii=False)}\n\n"
+
+        try:
+            from demos_v1.report_graphs import GraphStreamInjector
+            # 질문 키워드로 그래프 종류 라우팅: '사건단위 분석' → 사건별 ±60분, 그 외 → 24h 종합
+            _inj = GraphStreamInjector(_data_for_script if _is_agent_req else None, query=_q_now)
+        except Exception as _ie:
+            print(f"  📈 [GRAPH] injector 비활성: {_ie}")
+            _inj = None
+
+        def _stream_vis(vis):
+            if _inj is None:
+                yield _tok(vis)
+                return
+            for _p in _inj.feed(vis):
+                yield _tok(_p)
+
+        def _flush_pending():
+            if _inj is None:
+                return
+            for _p in _inj.flush():
+                yield _tok(_p)
+
         _sys_len = sum(len(m.get("content","") or "") for m in api_messages if m.get("role") == "system")
         meta = {
             "type": "meta", "env": env_id, "model": model,
@@ -859,6 +1507,7 @@ def _stream_chat_sse(data):
                     continue
                 body = line[5:].strip()
                 if body == "[DONE]":
+                    yield from _flush_pending()
                     yield "data: [DONE]\n\n"
                     return
                 try:
@@ -869,13 +1518,23 @@ def _stream_chat_sse(data):
                 if not choices:
                     continue
                 delta = choices[0].get("delta") or {}
+                # delta.reasoning_content(추론 채널)는 절대 본문으로 내보내지 않음 — 무시
                 tok = delta.get("content") or ""
                 if tok:
-                    yield f"data: {json.dumps({'type': 'token', 't': tok}, ensure_ascii=False)}\n\n"
+                    vis = _tf.feed(tok)          # <think> 구간 실시간 제거
+                    if vis:
+                        vis = _termf.feed(vis)   # 금지어 실시간 치환
+                        if vis:
+                            yield from _stream_vis(vis)
                 fr = choices[0].get("finish_reason")
                 if fr:
+                    tail = _termf.feed(_tf.flush()) + _termf.flush()
+                    if tail:
+                        yield from _stream_vis(tail)
+                    yield from _flush_pending()
                     end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
+            yield from _flush_pending()
             yield "data: [DONE]\n\n"
         except Exception as e:
             err = {"type": "error", "error": str(e), "model": model}
@@ -920,6 +1579,10 @@ def register_chat_routes(app):
             print("[api_chat] → 다중 env, 기존 비-스트리밍 흐름으로 처리")
         chat_stop_flag["stop"] = False  # 새 요청 시작 시 플래그 초기화
         data = request.json
+        # ★ 사용자별 첨부 CSV 슬롯 — 이 함수 내 모든 uploaded_csv_data 참조를 자기 슬롯으로 섀도잉
+        #   (과거: 서버 전역 1칸 → 다중 사용자가 서로 첨부를 덮어쓰던 버그)
+        from demos_v1.utils import csv_slot as _csv_slot
+        uploaded_csv_data = _csv_slot(data.get("scope") or data.get("user_id"))  # ★ 스코프 일치(업로드와 동일 키)
         # 환경 선택: 배열 또는 문자열 → 배열로 통일
         raw_env = data.get("env", "auto")
         if isinstance(raw_env, list):
@@ -984,7 +1647,8 @@ def register_chat_routes(app):
             else:
                 api_url = data.get("api_url", "")
                 model = data.get("model", "")
-        api_key = API_TOKEN or data.get("api_key", "")
+        # 모델별 전용 토큰(예: Spark) 우선 → 없으면 글로벌 → 요청값
+        api_key = (ENV_CONFIG.get(env_id, {}).get("token") if env_id else "") or API_TOKEN or data.get("api_key", "")
         messages = data.get("messages", [])
         # ── 히스토리 자동 트림: 최근 6턴(12 메시지)만 유지 ──
         # 응답 잘림·느림 방지: 입력 토큰 폭증 차단
@@ -998,6 +1662,8 @@ def register_chat_routes(app):
             messages = _sys_msgs + _recent
             print(f"  [HISTORY TRIM] {_orig_msg_count} → {len(messages)} 메시지 (최근 {MAX_HISTORY_MESSAGES} 턴 유지)")
         skill_ids = data.get("skills", [])
+        # ★ 개인 에이전트 요청 식별 — 에이전트는 하네스(피드백힌트·세션저장 등) 절대 사용 안 함
+        _is_agent_chat = bool(data.get("knowledge_scripts") or data.get("knowledge_files"))
         effort = data.get("effort", 2)
         output_format = data.get("format", "code")
         writing_style = data.get("writing_style", "")
@@ -1225,6 +1891,7 @@ def register_chat_routes(app):
             try:
                 _chat_user_id = data.get("user_id", None)
                 print(f"  [KNOWLEDGE] user_id={_chat_user_id}, query={last_user_query[:50]}")
+                # ★ BM25/점수(키워드 매칭) 사용 — RAG(의미검색)로 엉뚱하게 나오던 문제 원복
                 # max_results=10: 검색 결과 누락 방지 (content 총량은 line 471 의 12000자 캡으로 보호)
                 kb_results = search_knowledge(last_user_query, max_results=10, max_content_chars=4000, user_id=_chat_user_id)
                 if kb_results:
@@ -1649,8 +2316,8 @@ def register_chat_routes(app):
 
         if loaded:
             system_prompt += f"[로드된 스킬: {', '.join(loaded)}]\n\n"
-            # 하네스 피드백 힌트: 이전 피드백 기반 주의사항 자동 삽입
-            if HARNESS_AVAILABLE:
+            # 하네스 피드백 힌트: 이전 피드백 기반 주의사항 자동 삽입 (★개인 에이전트는 제외)
+            if HARNESS_AVAILABLE and not _is_agent_chat:
                 try:
                     from harness_bridge import _feedback_store
                     if _feedback_store:
@@ -2932,8 +3599,8 @@ def register_chat_routes(app):
                 if truncated:
                     resp_data["truncated"] = True
 
-                # 하네스: 세션 자동 저장 + 이벤트 로깅
-                if HARNESS_AVAILABLE:
+                # 하네스: 세션 자동 저장 + 이벤트 로깅 (★개인 에이전트는 제외)
+                if HARNESS_AVAILABLE and not _is_agent_chat:
                     try:
                         save_chat_session(
                             messages=messages,

@@ -40,7 +40,10 @@
   .msg.user{align-self:flex-end;background:#1d4ed8;color:#fff;}
   .msg.assistant{align-self:flex-start;background:#1a2030;border:1px solid var(--line);}
   .msg.sys{align-self:center;background:transparent;color:var(--mut);font-size:11.5px;border:1px dashed var(--line);}
-  .inrow{display:flex;gap:8px;margin-top:10px;}
+  .testbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;}
+  .testbar .tlabel{font-size:11.5px;color:var(--mut);}
+  button.sm{padding:5px 9px;font-size:11px;}
+  .inrow{display:flex;gap:8px;margin-top:8px;}
   .inrow textarea{flex:1;min-height:42px;}
   .tag{display:inline-block;font-size:10.5px;border-radius:6px;padding:1px 7px;margin:2px 3px 0 0;}
   .tag.mem{background:rgba(0,229,255,.14);color:#9beaff;border:1px solid rgba(0,229,255,.35);}
@@ -113,6 +116,12 @@
         <div class="msg sys">오른쪽에서 API를 설정한 뒤 대화를 시작하세요. 예: "나는 M16 FAB OHT 반송 정체를 분석해. 답은 표로."</div>
       </div>
       <div id="approveBox"></div>
+      <div class="testbar">
+        <span class="tlabel">🧪 빠른 테스트:</span>
+        <button class="sec sm" onclick="fillEx('mem')">예시① 기억</button>
+        <button class="sec sm" onclick="fillEx('skill')">예시② 스킬 학습</button>
+        <button class="sec sm" onclick="simulateSkill()" title="API 없이 스킬 승인→저장→회상 흐름을 바로 봅니다">스킬 흐름 시뮬레이트(무 API)</button>
+      </div>
       <div class="inrow">
         <textarea id="input" placeholder="질문을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
         <button id="sendBtn" onclick="onSend()">전송</button>
@@ -124,13 +133,17 @@
     <div>
       <div class="card">
         <h2>🔌 LLM API 설정</h2>
-        <label>API 주소 (OpenAI 호환, /v1)</label>
-        <input id="cfgBase" placeholder="http://common.llm.skhynix.com/v1">
-        <label>API 키 (Bearer, 없으면 비워둠)</label>
-        <input id="cfgKey" type="password" placeholder="sk-... 또는 토큰">
-        <label>모델명</label>
-        <input id="cfgModel" placeholder="Qwen3.6-35B-A3B">
+        <label>API 주소 — proxy.py 켜면 그대로 두세요</label>
+        <input id="cfgBase" placeholder="http://localhost:8000/v1">
+        <label>API 키 (proxy 쓰면 비워둠 — token.txt 자동 인증)</label>
+        <input id="cfgKey" type="password" placeholder="(proxy 사용 시 비워둠)">
+        <label>모델명 <span class="muted" style="cursor:pointer;color:var(--cyan);" onclick="loadModels()">↻ 목록 불러오기</span></label>
+        <input id="cfgModel" list="modelList" placeholder="Qwen3.6-35B-A3B">
+        <datalist id="modelList"></datalist>
         <label style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+          <input type="checkbox" id="cfgStream" style="width:auto;"> 스트리밍 사용 (서버 미지원 시 끄세요 — 기본 꺼짐)
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;">
           <input type="checkbox" id="cfgFold" style="width:auto;"> system을 첫 user에 합치기 (gemma 계열)
         </label>
         <div class="row" style="margin-top:10px;">
@@ -315,8 +328,24 @@ async function callLLM(messages, onToken){
   }
   const url = cfg.base.replace(/\/+$/,'') + '/chat/completions';
   const headers={'Content-Type':'application/json'}; if(cfg.key) headers['Authorization']='Bearer '+cfg.key;
-  const resp=await fetch(url,{method:'POST',headers,body:JSON.stringify({model:cfg.model,messages:msgs,temperature:0.3,max_tokens:2048,stream:true})});
-  if(!resp.ok || !resp.body){ const t=await resp.text().catch(()=> ''); throw new Error('HTTP '+resp.status+(t?(' '+t.slice(0,200)):'')); }
+  const body={model:cfg.model, messages:msgs, max_tokens:2048};
+  if(cfg.stream) body.stream=true;
+  let resp;
+  try{
+    resp=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  }catch(e){ // 네트워크/CORS 실패 (Failed to fetch)
+    throw new Error('네트워크/CORS 차단 — 브라우저가 사내 API에 직접 접근 못 함. proxy.py 를 켜고 주소를 http://localhost:8000/v1 로 바꾸세요. ('+(e.message||e)+')');
+  }
+  if(!resp.ok){ const t=await resp.text().catch(()=> ''); throw new Error('HTTP '+resp.status+(t?(' '+t.slice(0,300)):'')); }
+  // 비스트리밍 (기본, 당신 Python 과 동일)
+  if(!cfg.stream){
+    const j=await resp.json();
+    const acc=(j.choices&&j.choices[0]&&(j.choices[0].message?.content||j.choices[0].text))||'';
+    onToken&&onToken(acc);
+    return acc;
+  }
+  // 스트리밍 (SSE)
+  if(!resp.body){ throw new Error('스트리밍 응답 없음 — 스트리밍 체크를 끄세요.'); }
   const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='', acc='';
   while(true){
     const {done,value}=await reader.read(); if(done) break;
@@ -327,6 +356,22 @@ async function callLLM(messages, onToken){
     }
   }
   return acc;
+}
+
+// 모델 목록 불러오기 (/v1/models) → datalist 채움
+async function loadModels(){
+  const cfg=getCfg(); if(!cfg.base){ saveCfg(); }
+  const b=($('cfgBase').value.trim()||'').replace(/\/+$/,''); const key=$('cfgKey').value.trim();
+  if(!b){ $('cfgMsg').innerHTML='<span class="warn">먼저 API 주소를 입력하세요.</span>'; return; }
+  $('cfgMsg').textContent='모델 목록 불러오는 중…';
+  try{
+    const h={}; if(key) h['Authorization']='Bearer '+key;
+    const r=await fetch(b+'/models',{headers:h}); const j=await r.json();
+    const arr=(j.data||j||[]).map(m=>m.id||m).filter(Boolean);
+    $('modelList').innerHTML=arr.map(n=>`<option value="${esc(n)}">`).join('');
+    if(arr.length && !$('cfgModel').value) $('cfgModel').value=arr[0];
+    $('cfgMsg').innerHTML='<span class="ok">✅ 모델 '+arr.length+'개 — 입력칸에서 선택</span>';
+  }catch(e){ $('cfgMsg').innerHTML='<span class="warn">목록 실패(CORS 가능): '+esc(e.message||e)+' → proxy.py 사용</span>'; }
 }
 
 // ============ UI ============
@@ -391,8 +436,38 @@ async function onSend(){
   }finally{ busy=false; $('sendBtn').disabled=false; }
 }
 
+// ============ 빠른 테스트 ============
+function fillEx(kind){
+  if(kind==='mem'){ $('input').value='나는 M16 FAB의 OHT 반송 정체를 분석해. 답은 표로 줘.'; }
+  else if(kind==='skill'){ $('input').value='방금 OHT 정체 추적하던 절차(구간 큐 확인 → 병목 OHT 가동률 비교 → 우회경로 검토)를 앞으로 재사용하게 "스킬"로 저장해줘.'; }
+  $('input').focus();
+}
+// API 없이 스킬 승인→저장→회상 흐름을 그대로 보여줌
+function simulateSkill(){
+  const fake = `OHT 반송 정체는 보통 합류 구간에서 발생합니다. 아래 절차로 추적하면 됩니다.
+
+\`\`\`hermes:skill
+action: create
+name: oht-jam-triage
+when: OHT 반송 정체 원인을 추적할 때
+body: |
+  1. 구간별 큐 길이 확인 (정체 시작 지점 특정)
+  2. 병목 구간 OHT 가동률·속도 비교
+  3. 합류/분기 포인트의 대기 시간 측정
+  4. 우회 경로 가용성 검토 후 재배분
+\`\`\``;
+  addMsg('user','(시뮬레이트) OHT 정체 추적 절차를 스킬로 저장');
+  const bubble=addMsg('assistant','…');
+  const {clean,blocks}=parseBlocks(fake);
+  const {pending}=applyBlocks(blocks);
+  bubble.textContent = clean;
+  addMsg('sys','🧪 모델이 hermes:skill 블록을 냈습니다 → 아래 승인 카드에서 "저장"을 눌러보세요. 저장하면 오른쪽 「배운 스킬」에 쌓이고, 다음 질문에 BM25로 본문이 회상됩니다.');
+  showApproval(pending);
+  $('status').textContent='상태: 스킬 시뮬레이트 — 승인 대기';
+}
+
 // ============ 설정/초기화 ============
-function saveCfg(){ const c={base:$('cfgBase').value.trim(), key:$('cfgKey').value.trim(), model:$('cfgModel').value.trim(), fold:$('cfgFold').checked}; localStorage.setItem(LS.cfg,JSON.stringify(c)); $('cfgMsg').innerHTML='<span class="ok">✅ 저장됨</span>'; }
+function saveCfg(){ const c={base:$('cfgBase').value.trim(), key:$('cfgKey').value.trim(), model:$('cfgModel').value.trim(), fold:$('cfgFold').checked, stream:$('cfgStream').checked}; localStorage.setItem(LS.cfg,JSON.stringify(c)); $('cfgMsg').innerHTML='<span class="ok">✅ 저장됨</span>'; }
 async function testCfg(){ saveCfg(); $('cfgMsg').textContent='연결 테스트 중…';
   try{ const a=await callLLM([{role:'user',content:'한 단어로 "준비완료"라고만 답해.'}]); $('cfgMsg').innerHTML='<span class="ok">✅ 응답: '+esc(stripThink(a).slice(0,40))+'</span>'; }
   catch(e){ $('cfgMsg').innerHTML='<span class="warn">❌ '+esc(e.message||e)+'</span>'; } }
@@ -401,7 +476,13 @@ function resetAll(){ if(!confirm('데모 기억·스킬·대화를 모두 지울
 
 // ============ 부트 ============
 (function(){
-  const c=getCfg(); $('cfgBase').value=c.base||''; $('cfgKey').value=c.key||''; $('cfgModel').value=c.model||''; $('cfgFold').checked=!!c.fold;
+  const c=getCfg();
+  // 최초 실행 시 기본값 = 프록시(proxy.py). 프록시만 켜면 키 입력 없이 바로 됨.
+  $('cfgBase').value = c.base || 'http://localhost:8000/v1';
+  $('cfgKey').value  = c.key  || '';
+  $('cfgModel').value= c.model|| 'Qwen3.6-35B-A3B';
+  $('cfgFold').checked  = !!c.fold;
+  $('cfgStream').checked= !!c.stream;   // 기본 비스트리밍
   renderBuiltin(); renderSide();
   $('input').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); onSend(); } });
 })();

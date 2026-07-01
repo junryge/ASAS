@@ -30,8 +30,10 @@ def _safe(val: str) -> str:
 
 
 def _user_dir(user_id: str) -> str:
-    """user_id 별 폴더. 빈 값이면 _shared (knowledge.py 사용자 폴더 패턴과 동일)."""
-    uid = _safe(user_id) or "_shared"
+    """user_id 별 폴더. 빈/잘못된 값은 거부 (멀티유저 누수 방지 — '_shared' 폴백 제거)."""
+    uid = _safe(user_id)
+    if not uid:
+        raise ValueError("user_id 필요")
     d = os.path.join(AGENTS_DIR, uid)
     os.makedirs(d, exist_ok=True)
     return d
@@ -64,11 +66,16 @@ def _save(payload: dict) -> dict:
         "skills": [s for s in (payload.get("skills") or []) if isinstance(s, str)],
         "knowledge": bool(payload.get("knowledge")),
         "knowledge_files": [f for f in (payload.get("knowledge_files") or []) if isinstance(f, str)],
+        "knowledge_scripts": [s for s in (payload.get("knowledge_scripts") or []) if isinstance(s, str)],
         "effort": effort,
         "timestamp": time.time(),
     }
-    with open(_path(user_id, aid), "w", encoding="utf-8") as f:
+    # 원자적 쓰기(임시파일 → replace) — 동시 저장/중단 시 JSON 손상 방지
+    dst = _path(user_id, aid)
+    tmp = dst + f".tmp{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, dst)
     return data
 
 
@@ -111,11 +118,15 @@ def register_agent_routes(app):
 
     @app.route("/api/agents", methods=["GET"])
     def api_agents_list():
+        if not _safe(request.args.get("user_id", "")):
+            return jsonify({"error": "user_id 필요", "agents": []}), 400
         return jsonify({"agents": _list(request.args.get("user_id", ""))})
 
     @app.route("/api/agents", methods=["POST"])
     def api_agents_save():
         data = request.get_json(force=True, silent=True) or {}
+        if not _safe(data.get("user_id", "")):
+            return jsonify({"error": "user_id 필요"}), 400
         try:
             agent = _save(data)
         except Exception as e:
@@ -124,6 +135,8 @@ def register_agent_routes(app):
 
     @app.route("/api/agents/<agent_id>", methods=["DELETE"])
     def api_agents_delete(agent_id):
+        if not _safe(request.args.get("user_id", "")):
+            return jsonify({"error": "user_id 필요"}), 400
         ok = _delete(request.args.get("user_id", ""), agent_id)
         if not ok:
             return jsonify({"error": "삭제 실패 또는 에이전트 없음"}), 404

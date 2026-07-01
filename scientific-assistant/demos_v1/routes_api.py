@@ -17,7 +17,7 @@ from flask import request, jsonify, render_template, send_file
 
 from demos_v1.utils import (
     BASE_DIR, SKILLS_DIR, UPLOAD_DIR, PROMPTS_DIR, TOKEN_FILE,
-    uploaded_csv_data, uploaded_files,
+    uploaded_csv_data, uploaded_files, files_slot,
     HARNESS_AVAILABLE, chat_stop_flag,
 )
 from demos_v1.config import (
@@ -275,8 +275,8 @@ def register_api_routes(app):
             try:
                 from harness_bridge import harness_route, suggest_skill_combinations
                 from harness import select_experts
-                # 1) 하네스 라우터로 추가 매칭
-                harness_matches = harness_route(query, limit=5)
+                # 1) 하네스 라우터로 추가 매칭 (컨텍스트 보호: 5→2)
+                harness_matches = harness_route(query, limit=2)
                 if harness_matches:
                     print(f"  🎯 [AUTO-SKILLS] 하네스 라우터 추천: {[hm['name'] for hm in harness_matches]}")
                 existing_ids = {sid for sid, _ in results}
@@ -284,14 +284,15 @@ def register_api_routes(app):
                     if hm['name'] not in existing_ids and hm['name'] not in MANUAL_ONLY_SKILLS:
                         results.append((hm['name'], hm['score']))
                         boosted.append(hm['name'])
-                # 2) Expert Pool: 관련도 높은 스킬 최대 3개만 추가
+                        existing_ids.add(hm['name'])   # ★중복버그 수정: 이후 단계(Expert/조합)가 재추가 못하게
+                # 2) Expert Pool: 관련도 높은 스킬 최대 1개만 추가 (컨텍스트 보호: 3→1)
                 try:
                     from harness_bridge import get_router
                     assignments = select_experts(query, get_router(), min_agents=1, max_agents=2)
                     ep_added = 0
                     for assign in assignments:
                         for sid in assign.skills:
-                            if ep_added >= 3:
+                            if ep_added >= 1:
                                 break
                             if sid not in existing_ids and sid not in MANUAL_ONLY_SKILLS:
                                 results.append((sid, assign.relevance_score + 2))
@@ -302,7 +303,7 @@ def register_api_routes(app):
                     pass
                 # 3) 선택된 스킬과 함께 쓰면 좋을 보조 스킬 추천
                 selected = [sid for sid, _ in results]
-                combos = suggest_skill_combinations(query, selected, limit=2)
+                combos = suggest_skill_combinations(query, selected, limit=1)   # 컨텍스트 보호: 2→1
                 for combo_sid in combos:
                     if combo_sid not in existing_ids and combo_sid not in MANUAL_ONLY_SKILLS:
                         results.append((combo_sid, 1))
@@ -1193,12 +1194,26 @@ def register_api_routes(app):
             # 파일 읽기 (여러 인코딩 시도)
             raw_bytes = file.read()
             content = None
-            for enc in ["utf-8", "utf-8-sig", "cp949", "euc-kr", "latin-1"]:
-                try:
-                    content = raw_bytes.decode(enc)
-                    break
-                except (UnicodeDecodeError, LookupError):
-                    continue
+            # ① UTF-16 계열 먼저 감지 (로그프레소/엑셀 '유니코드 텍스트' 내보내기).
+            #    과거엔 latin-1 이 NUL 범벅 그대로 받아 0행/깨짐 → 첨부만 안 되던 원인.
+            if b"\x00" in raw_bytes[:2048]:
+                for enc in ["utf-16", "utf-16-le", "utf-16-be"]:
+                    try:
+                        content = raw_bytes.decode(enc)
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+            # ② 일반 인코딩 (utf-8-sig 우선 → BOM 이 헤더명을 오염시키지 않게)
+            if content is None:
+                for enc in ["utf-8-sig", "utf-8", "cp949", "euc-kr", "latin-1"]:
+                    try:
+                        content = raw_bytes.decode(enc)
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+            # 남은 NUL 제거 (혼합/깨진 파일 방어)
+            if content and "\x00" in content:
+                content = content.replace("\x00", "")
 
             if content is None:
                 return jsonify({"error": "파일 인코딩을 인식할 수 없습니다."}), 400
@@ -1257,9 +1272,11 @@ def register_api_routes(app):
             if total_rows > 5:
                 preview_text += f"... ({total_rows - 5}행 더 있음)"
 
-            # 저장
-            uploaded_csv_data.clear()
-            uploaded_csv_data.update({
+            # 저장 — user_id 별 슬롯 (다중 사용자 첨부 충돌 방지)
+            from demos_v1.utils import csv_slot
+            _slot = csv_slot(request.form.get("scope") or request.form.get("user_id", ""))
+            _slot.clear()
+            _slot.update({
                 "filename": file.filename,
                 "headers": headers,
                 "rows": data_rows,
@@ -1383,8 +1400,11 @@ def register_api_routes(app):
             })
 
         # ── 선택된 시트 상세 ──
-        active_sheet_idx = int(request.form.get('sheet', 0))
-        if active_sheet_idx >= len(sheet_names):
+        try:
+            active_sheet_idx = int(request.form.get('sheet') or 0)
+        except (ValueError, TypeError):
+            active_sheet_idx = 0
+        if active_sheet_idx >= len(sheet_names) or active_sheet_idx < 0:
             active_sheet_idx = 0
 
         target_rid = sheet_rids[active_sheet_idx] if active_sheet_idx < len(sheet_rids) else ''
@@ -1465,9 +1485,11 @@ def register_api_routes(app):
         if total_rows > 5:
             preview_text += f"... ({total_rows - 5}행 더 있음)"
 
-        # uploaded_csv_data에 저장 (기존 CSV 분석 경로와 호환)
-        uploaded_csv_data.clear()
-        uploaded_csv_data.update({
+        # user_id 별 슬롯에 저장 (기존 CSV 분석 경로와 호환, 다중 사용자 충돌 방지)
+        from demos_v1.utils import csv_slot
+        _slot = csv_slot(request.form.get("scope") or request.form.get("user_id", ""))
+        _slot.clear()
+        _slot.update({
             "filename": file.filename,
             "headers": headers,
             "rows": data_rows,
@@ -1496,10 +1518,12 @@ def register_api_routes(app):
 
     @app.route("/api/clear_csv", methods=["POST"])
     def api_clear_csv():
-        """업로드된 CSV 데이터 삭제"""
-        global uploaded_csv_data
-        uploaded_csv_data.clear()
-        uploaded_csv_data.update({"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""})
+        """업로드된 CSV 데이터 삭제 — 자기(user_id) 슬롯만. 남의 첨부는 못 지움."""
+        from demos_v1.utils import csv_slot
+        _d = request.get_json(force=True, silent=True) or {}
+        _slot = csv_slot(_d.get("scope") or _d.get("user_id") or request.form.get("scope") or request.form.get("user_id", ""))
+        _slot.clear()
+        _slot.update({"filename": "", "headers": [], "rows": [], "summary": "", "raw_preview": ""})
         return jsonify({"success": True})
 
 
@@ -2784,6 +2808,28 @@ def register_api_routes(app):
                          mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
     # ── Markdown → HTML 변환 ──────────────────────────────────
+    def _delatex_md(t):
+        """$\\rightarrow$ 등 LaTeX 표기를 유니코드 기호로 치환 (프론트 delatexFallback 동일 매핑).
+        python-markdown 은 수식을 못 다뤄 그대로 두면 HTML 다운로드 시 깨진다."""
+        if not t:
+            return t
+        import re as _re
+        _map = {
+            '\\rightarrowtail': '→', '\\rightarrow': '→', '\\Rightarrow': '⇒', '\\to': '→',
+            '\\leftarrow': '←', '\\Leftarrow': '⇐', '\\geq': '≥', '\\ge': '≥',
+            '\\leq': '≤', '\\le': '≤', '\\neq': '≠', '\\ne': '≠', '\\approx': '≈',
+            '\\times': '×', '\\cdot': '·', '\\pm': '±', '\\div': '÷', '\\infty': '∞',
+            '\\alpha': 'α', '\\beta': 'β', '\\sum': '∑',
+        }
+        t = _re.sub(r'\\text\s*\{([^}]*)\}', r'\1', t)
+        t = _re.sub(r'\\mathrm\s*\{([^}]*)\}', r'\1', t)
+        for k, v in _map.items():
+            t = t.replace(k, v)
+        # 남은 수식 구분자 제거 ($$..$$, $..$)
+        t = _re.sub(r'\$\$([\s\S]+?)\$\$', r'\1', t)
+        t = _re.sub(r'\$([^$\n]+?)\$', r'\1', t)
+        return t
+
     @app.route("/api/generate_html", methods=["POST"])
     def api_generate_html():
         """Markdown 텍스트를 스타일 포함 HTML 문서로 변환"""
@@ -2795,6 +2841,11 @@ def register_api_routes(app):
         if not md_text:
             return jsonify({"error": "markdown 텍스트가 비어 있습니다."}), 400
 
+        # LaTeX → 유니코드 기호 폴백 (프론트 delatexFallback 과 동일 매핑).
+        # python-markdown 은 $\rightarrow$ 같은 수식을 못 다뤄 raw 로 남아 깨지므로 변환 후 렌더.
+        md_text = _delatex_md(md_text)
+        title = _delatex_md(title)
+
         # 제목 자동 추출: 첫 번째 # 헤딩에서 가져옴
         if not title:
             for line in md_text.split("\n"):
@@ -2804,6 +2855,28 @@ def register_api_routes(app):
                     break
             if not title:
                 title = "문서"
+        # <title> 에 들어갈 제목은 HTML 이스케이프 (</title><script> 주입 차단)
+        import html as _html
+        title = _html.escape(title)
+
+        # 표 보정: ① 표 앞 빈 줄 ② 헤더 직후 구분선(|---|) 없으면 자동 삽입.
+        #   LLM 이 구분선을 빼먹으면 python-markdown 이 표로 인식 못 해 '| 점수 |' 글자로 깨진다.
+        def _ensure_table_blanklines(md):
+            lines = md.split("\n")
+            out = []
+            for i, ln in enumerate(lines):
+                is_row = ln.lstrip().startswith("|")
+                prev_row = bool(out) and out[-1].lstrip().startswith("|")
+                if is_row and out and out[-1].strip() and not prev_row:
+                    out.append("")          # 표 앞 빈 줄
+                out.append(ln)
+                if is_row and not prev_row:  # 표 첫 행(헤더) — 다음이 표인데 구분선 아니면 삽입
+                    nxt = lines[i + 1] if i + 1 < len(lines) else ""
+                    if nxt.lstrip().startswith("|") and "---" not in nxt:
+                        ncol = max(1, ln.count("|") - 1)
+                        out.append("|" + "|".join(["---"] * ncol) + "|")
+            return "\n".join(out)
+        md_text = _ensure_table_blanklines(md_text)
 
         extensions = [
             "tables", "fenced_code", "codehilite", "toc",
@@ -2820,9 +2893,10 @@ def register_api_routes(app):
 <style>
   body {{ font-family: 'Pretendard','Noto Sans KR',sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; line-height: 1.7; }}
   h1,h2,h3 {{ color: #16213e; border-bottom: 2px solid #e2e8f0; padding-bottom: .3em; }}
-  table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-  th,td {{ border: 1px solid #cbd5e1; padding: .6em 1em; text-align: left; }}
-  th {{ background: #f1f5f9; font-weight: 700; }}
+  h1 {{ font-size: 1.45rem; }} h2 {{ font-size: 1.15rem; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .86em; }}
+  th,td {{ border: 1px solid #cbd5e1; padding: .4em .55em; text-align: left; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }}
+  th {{ background: #f1f5f9; font-weight: 700; white-space: nowrap; }}
   code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: .9em; }}
   pre {{ background: #1e293b; color: #e2e8f0; padding: 1em; border-radius: 8px; overflow-x: auto; }}
   pre code {{ background: none; color: inherit; padding: 0; }}
@@ -2929,7 +3003,7 @@ owner: {user_id}
     @app.route("/api/knowledge/upload", methods=["POST"])
     def api_knowledge_upload():
         """지식 도메인 파일 업로드 (MD/TXT) - 사용자별 폴더에 저장"""
-        user_id = request.form.get("user_id", "").strip()
+        user_id = _safe_uid(request.form.get("user_id", ""))
         if not user_id:
             return jsonify({"error": "사용자 ID가 필요합니다."}), 400
 
@@ -2975,7 +3049,7 @@ owner: {user_id}
     def api_knowledge_manual():
         """수동 입력으로 지식 등록"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         title = data.get("title", "").strip()
         category = data.get("category", "guide")
         content = data.get("content", "").strip()
@@ -3012,7 +3086,7 @@ owner: {user_id}
     def api_knowledge_list():
         """사용자 지식 파일 목록"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         if not user_id:
             return jsonify({"error": "사용자 ID 필요"}), 400
 
@@ -3056,7 +3130,7 @@ owner: {user_id}
     def api_knowledge_delete():
         """지식 파일 삭제"""
         data = request.get_json(force=True)
-        user_id = data.get("user_id", "").strip()
+        user_id = _safe_uid(data.get("user_id", ""))
         filename = data.get("filename", "").strip()
         if not user_id or not filename:
             return jsonify({"error": "사용자ID와 파일명 필요"}), 400
@@ -3080,6 +3154,285 @@ owner: {user_id}
             {"id": "guide", "label": "가이드"},
             {"id": "etc", "label": "기타"},
         ]})
+
+    # ── 실행형 지식: 스크립트 등록 / 목록 / 삭제 ──────────────
+    # 문서형 지식(.md)은 BM25 검색용. 실행형 지식(.py + 동반파일)은 데이터가 오면
+    # 실행되어 '계산 결과'를 만들고, 그 결과를 문서형 지식(일반/카파시톤)이 해석한다.
+    # 저장: knowledge/<user>/scripts/<name>/ 폴더에 진입.py + thresholds.json 등 동반파일 + _meta.json
+    # 실행: python <entry> <입력파일> -o <임시폴더>  (predictor 그대로) → 산출 파일/stdout 을 LLM 에 주입
+    _SCRIPT_ALLOW_EXT = ('.py', '.json', '.txt', '.csv', '.cfg', '.ini', '.yaml', '.yml', '.md', '.tsv')
+
+    def _kd_scripts_root(user_id):
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _safe_script_name(name):
+        base = re.sub(r"[^a-zA-Z0-9_\-]", "_", (name or "").strip())
+        return base[:40].strip("_")
+
+    def _safe_uid(uid):
+        """경로에 쓸 user_id 검증 — 경로구분자/.. 있으면 빈 문자열(거부). 멀티유저 폴더 탈출 차단."""
+        uid = (uid or "").strip()
+        if not uid or "/" in uid or "\\" in uid or ".." in uid or uid.startswith("."):
+            return ""
+        return uid
+
+    @app.route("/api/knowledge/register_script", methods=["POST"])
+    def api_knowledge_register_script():
+        """실행형 지식 등록 — 여러 파일 한 번에. multipart:
+        files[]=(.py + .json/config 등), user_id, name, description, trigger, entry(선택)"""
+        import shutil
+        user_id = _safe_uid(request.form.get("user_id", ""))
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        trigger = request.form.get("trigger", "").strip()
+        entry = os.path.basename(request.form.get("entry", "").strip())
+        # 실행 인자 템플릿(선택) — 한 줄에 하나. 비우면 기본(hubroom식: {input} -o {outdir}).
+        #   토큰: {input}=업로드 CSV 임시경로, {outdir}=결과폴더. 그 외 맨이름은 스크립트 폴더의 동반파일.
+        argv_tpl = [ln.strip() for ln in (request.form.get("argv", "") or "").splitlines() if ln.strip()]
+        if not user_id:
+            return jsonify({"error": "사용자 ID가 필요합니다."}), 400
+        files = request.files.getlist("files") or request.files.getlist("file")
+        files = [f for f in files if f and f.filename]
+        if not files:
+            return jsonify({"error": "파일을 한 개 이상 선택하세요(.py 필수)."}), 400
+        py_files = [f for f in files if f.filename.lower().endswith(".py")]
+        if not py_files:
+            return jsonify({"error": "최소 1개의 파이썬(.py) 파일이 필요합니다."}), 400
+        sname = _safe_script_name(name or os.path.splitext(os.path.basename(py_files[0].filename))[0])
+        if not sname:
+            return jsonify({"error": "스크립트 이름이 잘못되었습니다."}), 400
+
+        sdir = os.path.join(_kd_scripts_root(user_id), sname)
+        if os.path.isdir(sdir):
+            shutil.rmtree(sdir)          # 같은 이름 재등록 = 덮어쓰기
+        os.makedirs(sdir, exist_ok=True)
+
+        saved, total = [], 0
+        for f in files:
+            fn = os.path.basename(f.filename)
+            if not fn or ".." in fn or "/" in fn or "\\" in fn:
+                continue
+            if not fn.lower().endswith(_SCRIPT_ALLOW_EXT):
+                continue                 # 허용 확장자만(실행파일/바이너리 차단)
+            blob = f.read()
+            total += len(blob)
+            if total > 5_000_000:        # 묶음 총 5MB 제한
+                shutil.rmtree(sdir, ignore_errors=True)
+                return jsonify({"error": "파일 묶음이 너무 큽니다(총 5MB 초과)."}), 400
+            with open(os.path.join(sdir, fn), "wb") as wf:
+                wf.write(blob)
+            saved.append(fn)
+        if not any(s.lower().endswith(".py") for s in saved):
+            shutil.rmtree(sdir, ignore_errors=True)
+            return jsonify({"error": "저장된 .py 파일이 없습니다."}), 400
+
+        # 진입 스크립트 결정: 폼 지정 > predictor/main/analyze/run 휴리스틱 > 첫 .py
+        py_saved = [s for s in saved if s.lower().endswith(".py")]
+        if entry and entry in saved:
+            entry_file = entry
+        elif len(py_saved) == 1:
+            entry_file = py_saved[0]
+        else:
+            entry_file = next((s for s in py_saved
+                               if any(k in s.lower() for k in ("predictor", "main", "analyze", "run"))),
+                              py_saved[0])
+
+        triggers = [t.strip() for t in re.split(r"[,\s]+", trigger) if t.strip()] or ["분석", "진단", "평가"]
+        meta = {
+            "name": sname,
+            "description": description or sname,
+            "trigger": triggers,
+            "input": "csv",
+            "entry": entry_file,
+            "argv": argv_tpl,            # [] = 기본 호출(hubroom식). 있으면 그대로 실행 인자로.
+            "files": saved,
+            "created": _kd_dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        with open(os.path.join(sdir, "_meta.json"), "w", encoding="utf-8") as wf:
+            json.dump(meta, wf, ensure_ascii=False, indent=2)
+        return jsonify({"message": f"스크립트 '{sname}' 등록 완료! ({len(saved)}개 파일, 진입={entry_file})",
+                        "name": sname, "entry": entry_file, "files": saved, "trigger": triggers})
+
+    @app.route("/api/knowledge/scripts", methods=["POST"])
+    def api_knowledge_scripts():
+        """등록된 실행형 지식(스크립트) 목록"""
+        data = request.get_json(force=True)
+        user_id = _safe_uid(data.get("user_id", ""))
+        if not user_id:
+            return jsonify({"error": "사용자 ID 필요"}), 400
+        root = os.path.join(KNOWLEDGE_DIR, user_id, "scripts")
+        scripts = []
+        if os.path.isdir(root):
+            for nm in sorted(os.listdir(root)):
+                d = os.path.join(root, nm)
+                mp = os.path.join(d, "_meta.json")
+                if not os.path.isdir(d) or not os.path.isfile(mp):
+                    continue
+                try:
+                    with open(mp, encoding="utf-8") as rf:
+                        m = json.load(rf)
+                    flist = [x for x in sorted(os.listdir(d)) if x != "_meta.json"]
+                    m["files"] = flist
+                    m["size_kb"] = round(sum(os.path.getsize(os.path.join(d, x)) for x in flist) / 1024, 1)
+                    scripts.append(m)
+                except Exception:
+                    pass
+        return jsonify({"scripts": scripts, "count": len(scripts)})
+
+    @app.route("/api/knowledge/script/delete", methods=["POST"])
+    def api_knowledge_script_delete():
+        """실행형 지식(스크립트) 삭제 — 폴더 통째로"""
+        import shutil
+        data = request.get_json(force=True)
+        user_id = _safe_uid(data.get("user_id", ""))
+        name = _safe_script_name(data.get("name", ""))
+        if not user_id or not name:
+            return jsonify({"error": "사용자ID와 이름 필요"}), 400
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        if not os.path.isdir(d):
+            return jsonify({"error": "스크립트 없음"}), 404
+        shutil.rmtree(d, ignore_errors=True)
+        return jsonify({"message": f"스크립트 '{name}' 삭제 완료"})
+
+    @app.route("/api/knowledge/script/update", methods=["POST"])
+    def api_knowledge_script_update():
+        """실행형 지식(스크립트) 메타 수정 — 파일은 그대로, description/trigger/entry/argv 만 갱신."""
+        data = request.get_json(force=True)
+        user_id = _safe_uid(data.get("user_id", ""))
+        name = _safe_script_name(data.get("name", ""))
+        if not user_id or not name:
+            return jsonify({"error": "사용자ID와 이름 필요"}), 400
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        mp = os.path.join(d, "_meta.json")
+        if not os.path.isfile(mp):
+            return jsonify({"error": "스크립트 없음"}), 404
+        try:
+            with open(mp, encoding="utf-8") as rf:
+                meta = json.load(rf)
+        except Exception:
+            return jsonify({"error": "메타 로드 실패"}), 500
+        flist = [x for x in os.listdir(d) if x != "_meta.json"]
+        # description
+        if "description" in data:
+            meta["description"] = (data.get("description") or "").strip() or meta.get("description", name)
+        # trigger (쉼표/공백 구분 문자열)
+        if "trigger" in data:
+            trig = [t.strip() for t in re.split(r"[,\s]+", data.get("trigger") or "") if t.strip()]
+            meta["trigger"] = trig or meta.get("trigger") or ["분석", "진단", "평가"]
+        # entry (.py 파일명 — 폴더에 실제 존재해야)
+        if "entry" in data:
+            ent = os.path.basename((data.get("entry") or "").strip())
+            if ent:
+                if ent not in flist:
+                    return jsonify({"error": f"진입 파일 '{ent}' 이(가) 폴더에 없습니다. (있는 .py: " +
+                                            ", ".join(x for x in flist if x.lower().endswith('.py')) + ")"}), 400
+                meta["entry"] = ent
+        # argv (한 줄에 하나)
+        if "argv" in data:
+            meta["argv"] = [ln.strip() for ln in (data.get("argv") or "").splitlines() if ln.strip()]
+        with open(mp, "w", encoding="utf-8") as wf:
+            json.dump(meta, wf, ensure_ascii=False, indent=2)
+        return jsonify({"message": f"스크립트 '{name}' 수정 완료", "entry": meta.get("entry"),
+                        "trigger": meta.get("trigger"), "argv": meta.get("argv", [])})
+
+    @app.route("/api/knowledge/script/file", methods=["GET"])
+    def api_knowledge_script_file_get():
+        """스크립트 폴더 안 개별 파일(.py 등) 내용 읽기 — 코드 편집용."""
+        user_id = _safe_uid(request.args.get("user_id", ""))
+        name = _safe_script_name(request.args.get("name", ""))
+        fn = os.path.basename((request.args.get("filename") or "").strip())
+        if not user_id or not name or not fn:
+            return jsonify({"error": "user_id/name/filename 필요"}), 400
+        fp = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name, fn)
+        if not os.path.isfile(fp):
+            return jsonify({"error": "파일 없음"}), 404
+        try:
+            with open(fp, encoding="utf-8", errors="replace") as rf:
+                content = rf.read()
+        except Exception as e:
+            return jsonify({"error": f"읽기 실패: {e}"}), 500
+        return jsonify({"filename": fn, "content": content})
+
+    @app.route("/api/knowledge/script/file/save", methods=["POST"])
+    def api_knowledge_script_file_save():
+        """스크립트 폴더 안 개별 파일 내용 덮어쓰기 — 재등록 없이 코드 수정."""
+        data = request.get_json(force=True)
+        user_id = _safe_uid(data.get("user_id", ""))
+        name = _safe_script_name(data.get("name", ""))
+        fn = os.path.basename((data.get("filename") or "").strip())
+        content = data.get("content", "")
+        if not user_id or not name or not fn:
+            return jsonify({"error": "user_id/name/filename 필요"}), 400
+        if fn == "_meta.json":
+            return jsonify({"error": "_meta.json 은 직접 수정 불가 (메타는 ✏️수정 폼에서)"}), 400
+        if not fn.lower().endswith(_SCRIPT_ALLOW_EXT):
+            return jsonify({"error": "허용되지 않는 확장자"}), 400
+        d = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        if not os.path.isdir(d):
+            return jsonify({"error": "스크립트 없음"}), 404
+        fp = os.path.join(d, fn)
+        existed = os.path.isfile(fp)
+        try:
+            with open(fp, "w", encoding="utf-8", newline="") as wf:
+                wf.write(content)
+        except Exception as e:
+            return jsonify({"error": f"저장 실패: {e}"}), 500
+        # 새로 만든 파일이면 _meta.json 의 files 목록에 추가
+        if not existed:
+            mp = os.path.join(d, "_meta.json")
+            try:
+                with open(mp, encoding="utf-8") as rf:
+                    meta = json.load(rf)
+                if fn not in (meta.get("files") or []):
+                    meta.setdefault("files", []).append(fn)
+                    with open(mp, "w", encoding="utf-8") as wf:
+                        json.dump(meta, wf, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+        return jsonify({"message": f"'{fn}' 코드 저장 완료 ({len(content)}자)"})
+
+    @app.route("/api/knowledge/save", methods=["POST"])
+    def api_knowledge_save():
+        """문서형 지식 내용 덮어쓰기(수정)."""
+        data = request.get_json(force=True)
+        user_id = _safe_uid(data.get("user_id", ""))
+        filename = data.get("filename", "").strip()
+        content = data.get("content", "")
+        if not user_id or not filename:
+            return jsonify({"error": "사용자ID와 파일명 필요"}), 400
+        if ".." in filename or "/" in filename or "\\" in filename:
+            return jsonify({"error": "잘못된 파일명"}), 400
+        if not filename.lower().endswith((".md", ".txt")):
+            return jsonify({"error": "md/txt 파일만 수정 가능"}), 400
+        fpath = os.path.join(KNOWLEDGE_DIR, user_id, filename)
+        if not os.path.isfile(fpath):
+            return jsonify({"error": "파일 없음"}), 404
+        with open(fpath, "w", encoding="utf-8") as wf:
+            wf.write(content)
+        return jsonify({"message": f"'{filename}' 수정 완료"})
+
+    @app.route("/api/knowledge/script/download", methods=["GET"])
+    def api_knowledge_script_download():
+        """등록 스크립트 폴더 전체를 zip 으로 다운로드."""
+        import io as _io
+        import zipfile as _zip
+        user_id = _safe_uid(request.args.get("user_id", ""))
+        name = _safe_script_name(request.args.get("name", ""))
+        if not user_id or not name:
+            return jsonify({"error": "user_id/name 필요"}), 400
+        sdir = os.path.join(KNOWLEDGE_DIR, user_id, "scripts", name)
+        if not os.path.isdir(sdir):
+            return jsonify({"error": "스크립트 없음"}), 404
+        buf = _io.BytesIO()
+        with _zip.ZipFile(buf, "w", _zip.ZIP_DEFLATED) as zf:
+            for fn in sorted(os.listdir(sdir)):
+                if fn == "_meta.json":
+                    continue
+                zf.write(os.path.join(sdir, fn), arcname=fn)
+        buf.seek(0)
+        return send_file(buf, as_attachment=True, download_name=f"{name}.zip", mimetype="application/zip")
 
     # ── 사용자 인증 시스템 ──────────────────────────────────
     import hashlib

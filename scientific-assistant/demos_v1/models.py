@@ -3,6 +3,7 @@ demos_v1/models.py - MODEL_REGISTRY, API_MODEL_TIERS, ENV_CONFIG, FALLBACK_CHAIN
 """
 import os
 from demos_v1.config import _EXT_CONFIG
+from demos_v1.utils import BASE_DIR as _ROOT_DIR  # api_config.json / TOKEN.TXT 가 있는 경로
 
 # ============================================
 # 설정
@@ -92,8 +93,26 @@ API_MODEL_TIERS = _EXT_CONFIG.get("api_model_tiers", {
 })
 
 # MODEL_REGISTRY에서 ENV_CONFIG 자동 생성 (하위 호환)
+def _resolve_model_token(info):
+    """모델 전용 토큰 해석. 키를 코드/config 에 하드코딩하지 않는다:
+    config 의 token_file(예: spark_api.txt) 에서 읽는다. (token 직접값도 허용하되 권장X)"""
+    t = (info.get("token") or "").strip()
+    if t:
+        return t
+    tf = (info.get("token_file") or "").strip()
+    if tf:
+        for base in (_ROOT_DIR, BASE_DIR, os.getcwd()):
+            p = os.path.join(base, tf)
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8-sig") as f:
+                        return f.read().strip()
+                except Exception:
+                    pass
+    return ""
+
 ENV_CONFIG = {
-    v["env_id"]: {"url": v["url"], "model": v["model"], "name": v["name"]}
+    v["env_id"]: {"url": v["url"], "model": v["model"], "name": v["name"], "token": _resolve_model_token(v)}
     for v in MODEL_REGISTRY.values()
     if "rerank" not in v.get("capabilities", set())
 }

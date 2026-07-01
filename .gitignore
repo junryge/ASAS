@@ -5,14 +5,4 @@ OHT3/MAP/
 OHS/XSOHS_extracted/
 2차데이터/
 OHT_관련2_combined.zip
-
-# layout.zip 압축 해제 결과물 (211MB, GitHub 100MB 제한 초과 / 원본 zip은 추적됨)
-OHT2/layout/layout/layout.xml
-OHT2/MAP/M16A/BR.layout.xml
-OHT2/BR.map.html
-OHT2/HID_Zone_Master_M16A_BR.csv
-OHT2/리프터_HID.csv
-리프터_HID/MAP/M16A/BR.layout.xml
-WORD_MODEL/OHS_DATA_MD/M16A_BR_DATA/용량_혼잡도_1분.csv
-WORD_MODEL/OHS_DATA_MD/M16A_BR_DATA/리프터근처_차량수_1분.csv
-WORD_MODEL/OHS_DATA_MD/M16A_BR_DATA/*결과*.csv
+spark_api.txt

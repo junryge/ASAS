@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Demos V1.0</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<!-- KaTeX: 수식($...$, $$...$$) 렌더링. CDN 차단 시 자동으로 기호변환 폴백 사용 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f7f4;color:#1a1a1a;display:flex;height:100vh}
@@ -151,7 +155,8 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 .msg-del{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.8);border:1px solid #ddd;color:#aaa;cursor:pointer;font-size:10px;padding:1px 6px;border-radius:4px;opacity:0;transition:opacity .15s;z-index:5}
 .msg:hover .msg-del{opacity:1}
 .msg-del:hover{color:#ef4444;border-color:#ef4444;background:#fef2f2}
-.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:flex-end}
+.msg-feedback{display:flex;gap:4px;margin-top:6px;justify-content:space-between;align-items:center}
+.msg-fb-right{display:flex;gap:4px}
 .msg-feedback button{background:none;border:1px solid #e0e0e0;border-radius:6px;padding:3px 10px;font-size:14px;cursor:pointer;color:#999;transition:all .2s;line-height:1}
 .msg-feedback button:hover{background:#f5f5f0;color:#333;border-color:#ccc}
 .msg-feedback button.fb-selected-good{background:#e8f5e9;color:#2e7d32;border-color:#81c784}
@@ -615,10 +620,11 @@ pre{position:relative}
       <button onclick="closeKnowledgePopup()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">✕</button>
     </div>
 
-    <!-- 탭: 파일 업로드 / 수동 입력 -->
+    <!-- 탭: 파일 업로드 / 수동 입력 / 스크립트 -->
     <div style="display:flex;gap:4px;margin-bottom:16px;">
       <button id="kdTabUpload" onclick="switchKdTab('upload')" style="flex:1;padding:8px;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">📁 파일 업로드</button>
       <button id="kdTabManual" onclick="switchKdTab('manual')" style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;cursor:pointer;font-weight:600;">✏️ 수동 입력</button>
+      <button id="kdTabScript" onclick="switchKdTab('script')" style="flex:1;padding:8px;background:#2a2a3e;color:#888;border:none;border-radius:6px;cursor:pointer;font-weight:600;">📜 스크립트</button>
     </div>
 
     <!-- 파일 업로드 탭 -->
@@ -655,9 +661,39 @@ pre{position:relative}
       <div id="kdManualMsg" style="margin-top:6px;font-size:12px;"></div>
     </div>
 
+    <!-- 스크립트 등록 탭 (실행형 지식) -->
+    <div id="kdScriptTab" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:14px;margin-bottom:16px;">
+      <div style="color:#fbbf24;font-size:11.5px;margin-bottom:10px;line-height:1.55;">
+        데이터(CSV)를 주면 이 파이썬이 실행돼 <b>평가 결과</b>를 만들고, 문서형 지식(일반·카파시톤)이 그 결과를 해석합니다.<br>
+        <b>여러 파일 한 번에 선택</b> — 예: <code>predictor.py</code> + <code>thresholds.json</code> 같이.<br>
+        <b>진입 .py</b> 는 자동 인식(predictor/main/analyze) 또는 이름과 동일.
+      </div>
+      <div style="text-align:center;padding:16px;border:2px dashed #555;border-radius:8px;cursor:pointer;margin-bottom:8px;" onclick="document.getElementById('kdScriptInput').click()">
+        <div style="font-size:28px;margin-bottom:6px;">🐍📄</div>
+        <div style="color:#94a3b8;font-size:13px;">.py + json/config 파일들을 한 번에 선택 (여러 개 가능)</div>
+        <div id="kdScriptName" style="color:#fbbf24;font-size:12px;margin-top:6px;font-weight:600;white-space:pre-line;"></div>
+      </div>
+      <input type="file" id="kdScriptInput" multiple accept=".py,.json,.txt,.csv,.cfg,.ini,.yaml,.yml,.md,.tsv" style="display:none;" onchange="kdScriptFilesSelected(this)">
+      <input id="kdScriptTitle" placeholder="스크립트 이름 (영문/숫자/-, 예: hubroom-rule)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <input id="kdScriptDesc" placeholder="설명 (무엇을 평가하는지)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <input id="kdScriptTrigger" placeholder="트리거어 (쉼표 구분: 분석, 진단, 평가)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <input id="kdScriptEntry" placeholder="진입 .py 파일명 (선택 — 비우면 자동 인식)" style="width:100%;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+      <textarea id="kdScriptArgv" placeholder="실행 인자 (선택 — 한 줄에 하나). 비우면 기본: {input} -o {outdir}" style="width:100%;height:84px;padding:8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;margin-bottom:4px;box-sizing:border-box;resize:vertical;font-family:monospace;"></textarea>
+      <div style="color:#fbbf24;font-size:10.5px;margin-bottom:8px;line-height:1.5;">
+        <code>{input}</code>=업로드한 CSV, <code>{outdir}</code>=결과폴더, 그 외 맨이름은 스크립트 폴더의 동반파일.<br>
+        예) 입력 CSV 1개+동반파일 2개 스크립트(각각 한 줄):<br>
+        <code>{input}</code> · <code>리프터_근처HID4.csv</code> · <code>HID_Zone_Master_M16A_BR.csv</code> · <code>{outdir}/결과.csv</code>
+      </div>
+      <button onclick="registerKdScript()" style="width:100%;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;">🐍 스크립트 등록</button>
+      <div id="kdScriptMsg" style="margin-top:6px;font-size:12px;"></div>
+    </div>
+
     <!-- 내 파일 목록 -->
-    <div style="font-weight:700;margin-bottom:8px;color:#a5b4fc;">📋 등록된 지식 파일</div>
+    <div style="font-weight:700;margin-bottom:8px;color:#a5b4fc;">📋 등록된 지식 파일 (문서형)</div>
     <div id="kdFileList" style="font-size:12px;color:#888;">로딩 중...</div>
+    <div style="font-weight:700;margin:14px 0 8px;color:#fbbf24;">🐍 등록된 스크립트 (실행형)</div>
+    <div id="kdScriptList" style="font-size:12px;color:#888;">로딩 중...</div>
+    <div id="kdScriptEditPanel" style="display:none;margin-top:8px;"></div>
   </div>
 </div>
 
@@ -813,6 +849,14 @@ pre{position:relative}
             <div class="env-row" id="envRowVl"></div>
           </div>
         </div>
+        <div class="env-section" id="envSectionSpark" style="display:none">
+          <div class="env-section-label env-toggle" onclick="toggleEnvSection('Spark')">
+            <span id="envArrowSpark">▶</span> ⚡ 스파크API <span style="color:#b0b0b0">- 집 Spark DGX 전용 (사내망에선 연결 안 됨)</span>
+          </div>
+          <div id="envSparkInner" style="display:none">
+            <div class="env-row" id="envRowSpark"></div>
+          </div>
+        </div>
         <div class="env-section" id="envSectionGguf">
           <div class="env-section-label env-toggle" onclick="toggleEnvSection('Gguf')">
             <span id="envArrowGguf">▶</span> GGUF 로컬 모델
@@ -955,6 +999,9 @@ pre{position:relative}
           </select><span id="pptRefBadge" class="ppt-ref-badge" style="display:none">📎 참고스타일 적용중</span>
           <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="체크하면 모델이 답변 전에 깊이 사고합니다 (응답 느림)">
             <input type="checkbox" id="thinkToggle" style="margin:0;accent-color:#7c5cbf">💭사고
+          </label>
+          <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:#888;cursor:pointer;user-select:none" title="ON: 입력이 길면 자동 트림. OFF: 트림 최소화. (API는 128K 네이티브라 OFF시 원문 전송 / GGUF는 n_ctx 물리한계라 OFF여도 토큰트림은 유지하고 과한 글자수캡만 끔)">
+            <input type="checkbox" id="ctxGuardToggle" checked style="margin:0;accent-color:#3F7D4F">🛡️컨텍스트보호
           </label>
           <span style="font-size:11px;color:#bbb">Enter 전송</span>
         </div>
@@ -1448,6 +1495,7 @@ if(lastSessions.length > 0){
     if(s.systemPrompt) document.getElementById('systemPromptInput').value = s.systemPrompt;
     if(s.systemPromptId){ currentPromptId=s.systemPromptId; renderPromptChips(); }
     if(s.thinkMode!==undefined) document.getElementById('thinkToggle').checked=s.thinkMode;
+    if(s.ctxGuard!==undefined && document.getElementById('ctxGuardToggle')) document.getElementById('ctxGuardToggle').checked=s.ctxGuard;
     if(s.selFormat){ selFormat=s.selFormat; formatManualOverride=(selFormat!=='auto'); document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
     if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; }
     if(s.selEnvs){ selEnvs=s.selEnvs; renderEnvs(); updateStatus(); }
@@ -1493,7 +1541,9 @@ Promise.all([
 
 // ===== 환경 선택 =====
 function toggleEnvSection(type){
-  const target = type==='Api' ? document.getElementById('envApiInner') : document.getElementById('envRowGguf');
+  const target = type==='Api' ? document.getElementById('envApiInner')
+               : type==='Spark' ? document.getElementById('envSparkInner')
+               : document.getElementById('envRowGguf');
   const arrow = document.getElementById('envArrow'+type);
   if(target.style.display==='none'){
     target.style.display='';
@@ -1530,7 +1580,8 @@ function renderEnvs(){
   const rowLow = document.getElementById('envRowLow');
   const rowVl = document.getElementById('envRowVl');
   const rowGguf = document.getElementById('envRowGguf');
-  rowAuto.innerHTML=''; rowHigh.innerHTML=''; rowMid.innerHTML=''; rowLow.innerHTML=''; rowVl.innerHTML=''; rowGguf.innerHTML='';
+  const rowSpark = document.getElementById('envRowSpark');
+  rowAuto.innerHTML=''; rowHigh.innerHTML=''; rowMid.innerHTML=''; rowLow.innerHTML=''; rowVl.innerHTML=''; rowGguf.innerHTML=''; if(rowSpark) rowSpark.innerHTML='';
   const icons = {'dev':'🚀','gemma':'💎','common':'🌐','vl-72b':'👁️','vl-fast':'👁️'};
   for(const id of Object.keys(envs)){ if(id.startsWith('gguf-')) icons[id]='💻'; }
   // AUTO 버튼
@@ -1544,9 +1595,13 @@ function renderEnvs(){
   // API 모델 tier 분류
   const highIds = new Set(['dev']);
   const lowIds = new Set(['common']);
-  let hasApi=false, hasGguf=false, hasHigh=false, hasMid=false, hasLow=false, hasVl=false;
+  let hasApi=false, hasGguf=false, hasHigh=false, hasMid=false, hasLow=false, hasVl=false, hasSpark=false;
+  for(const id of Object.keys(envs)){ if(id.startsWith('spark-')) icons[id]='⚡'; }
   for(const [id, env] of Object.entries(envs)){
-    if(id.startsWith('gguf-')){
+    if(id.startsWith('spark-')){
+      if(rowSpark) rowSpark.appendChild(_makeEnvBtn(id, env, icons));
+      hasSpark = true;
+    } else if(id.startsWith('gguf-')){
       rowGguf.appendChild(_makeEnvBtn(id, env, icons));
       hasGguf = true;
     } else if(id.startsWith('vl-')){
@@ -1569,6 +1624,7 @@ function renderEnvs(){
   document.getElementById('envVlLabel').style.display = hasVl ? '' : 'none';
   document.getElementById('envSectionApi').style.display = hasApi ? '' : 'none';
   document.getElementById('envSectionGguf').style.display = hasGguf ? '' : 'none';
+  var _spk=document.getElementById('envSectionSpark'); if(_spk) _spk.style.display = hasSpark ? '' : 'none';
 }
 function renderTokenStatus(){
   const el = document.getElementById('tokenStatus');
@@ -1900,7 +1956,7 @@ function stopGeneration(){
   // typing indicator 제거
   document.querySelectorAll('.typing-wrap').forEach(el=>el.remove());
   addMsg('assistant','⏹️ 응답이 중지되었습니다.');
-  saveCurrentSession();
+  saveCurrentSession(true);
 }
 
 /* ── PPT 제안 배너 ── */
@@ -1988,6 +2044,104 @@ function _showSkillApprovalCards(pending){
   wrap.innerHTML=html;
   c.appendChild(wrap);
   try{ const ct=document.querySelector('.content'); if(ct) ct.scrollTop=ct.scrollHeight; }catch(e){}
+}
+
+// 🔮 헤르메스: 수동 스킬 저장 — 모델이 hermes:skill 블록을 안 뱉어도 직전 답변을 직접 스킬화
+// ── 스킬 이름·설명 자동 추정 (오프라인·무에러, 백엔드 skills.py 와 동일 규칙) ──
+function _skillBanned(n){ return /(오늘|today|temp|tmp|test|fix-?\d|수정|어제|에러|error-|bug-\d|\d{4}-\d{2}-\d{2})/i.test(n); }
+function _skillNameValid(n){
+  n=(n||'').trim().toLowerCase();
+  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(n)) return false;
+  if(n.length<2 || n.length>40) return false;
+  if(_skillBanned(n)) return false;
+  return true;
+}
+function _skillSlug(s){
+  var stop={the:1,and:1,for:1,with:1,that:1,this:1,you:1,are:1,was:1,csv:1,html:1,http:1,https:1,com:1,the:1};
+  var toks=(s||'').toLowerCase().match(/[a-z0-9]{2,}/g)||[];
+  toks=toks.filter(function(t){ return !stop[t]; });
+  return toks.slice(0,4).join('-').slice(0,40).replace(/^-+|-+$/g,'');
+}
+function _suggestSkillMeta(bodyText){
+  var txt=String(bodyText||''), when='';
+  var lines=txt.split('\n');
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i].replace(/^#+\s*/,'').replace(/[*_`>|]/g,'').trim();
+    if(ln.length>=4){ when=ln.slice(0,60); break; }
+  }
+  var name=_skillSlug((when||txt).slice(0,200));
+  if(!_skillNameValid(name)) name='skill-'+String(Date.now()).slice(-6);  // 폴백: 순수숫자(금지어 회피)
+  return {name:name, when:when||'재사용 스킬'};
+}
+// 이름칸 실시간 유효성 표시 (저장 전에 빨강/초록)
+function _wireSkillNameCheck(input, res){
+  function chk(){
+    var ok=_skillNameValid(input.value);
+    input.style.borderColor = input.value.trim()? (ok?'#22c55e':'#ef4444') : '#cbd5e1';
+    if(res && input.value.trim() && !ok){ res.style.color='#ef4444'; res.textContent='이름: 영문소문자·숫자·하이픈만 (2~40자)'; }
+    else if(res && res.textContent.indexOf('이름:')===0){ res.textContent=''; }
+  }
+  input.addEventListener('input', chk); chk();
+}
+function _showManualSkillBtn(bodyText){
+  if(!bodyText || !bodyText.trim() || !currentUser) return;
+  // ★ 별도 카드를 만들지 않고, 마지막 assistant 응답의 피드백 행(👍👎) '왼쪽'에 버튼을 넣는다.
+  const msgs=document.querySelectorAll('#msgs .msg.assistant');
+  const target=msgs[msgs.length-1];
+  if(!target) return;
+  const slot=target.querySelector('.msg-fb-left');
+  if(!slot || slot.querySelector('.msk-open')) return;   // 슬롯 없거나 이미 있으면 중복 방지
+  const body=bodyText;
+  const btn=document.createElement('button');
+  btn.className='msk-open';
+  btn.style.cssText='background:none;border:1px solid #a855f7;color:#a855f7;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;';
+  btn.textContent='📌 이 답변을 스킬로 저장';
+  slot.appendChild(btn);
+  btn.onclick=function(){
+    const cont=target.querySelector('.content');
+    let form=cont.querySelector('.msk-form');
+    if(form){ form.remove(); return; }                   // 토글(다시 누르면 닫힘)
+    form=document.createElement('div');
+    form.className='msk-form';
+    form.style.cssText='margin-top:8px;';
+    form.innerHTML='<div style="border:1px solid #a855f7;border-radius:8px;padding:9px;background:rgba(168,85,247,0.06);">'
+      +'<div style="font-weight:700;color:#a855f7;font-size:12px;margin-bottom:6px;">🔮 이 답변을 재사용 스킬로 저장</div>'
+      +'<input class="msk-name" placeholder="이름 (영문소문자-하이픈, 예: hubroom-diag)" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
+      +'<input class="msk-when" placeholder="언제 쓰는 스킬인지 한 줄 (한국어 OK)" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:5px;">'
+      +'<textarea class="msk-body" rows="6" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:11px;white-space:pre-wrap;margin-bottom:6px;"></textarea>'
+      +'<button class="msk-go" style="background:#a855f7;color:#fff;border:none;border-radius:6px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;">저장</button> '
+      +'<button class="msk-cancel" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 14px;font-size:12px;cursor:pointer;">취소</button>'
+      +' <span class="msk-res" style="font-size:11px;margin-left:6px;color:#22c55e;"></span></div>';
+    cont.appendChild(form);
+    form.querySelector('.msk-body').value=body.slice(0,4000);
+    var _sg=_suggestSkillMeta(body);
+    form.querySelector('.msk-name').value=_sg.name;
+    form.querySelector('.msk-when').value=_sg.when;
+    _wireSkillNameCheck(form.querySelector('.msk-name'), form.querySelector('.msk-res'));
+    form.querySelector('.msk-cancel').onclick=function(){ form.remove(); };
+    form.querySelector('.msk-go').onclick=async function(){
+      const go=this, res=form.querySelector('.msk-res');
+      const spec={action:'create',
+        name:(form.querySelector('.msk-name').value||'').trim().toLowerCase(),
+        when:(form.querySelector('.msk-when').value||'').trim(),
+        body:(form.querySelector('.msk-body').value||'').trim()};
+      if(!_skillNameValid(spec.name)){ res.style.color='#ef4444'; res.textContent='이름: 영문소문자·숫자·하이픈만 (2~40자)'; return; }
+      go.disabled=true; res.style.color='#94a3b8'; res.textContent='저장 중…';
+      var base=spec.name;
+      try{
+        let d=null;
+        for(let k=0;k<6;k++){                       // 중복이면 -2,-3… 자동 회피
+          const r=await fetch('/api/hermes/skill/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({user_id:currentUser.id, spec:spec})});
+          d=await r.json();
+          if(d.ok || !/이미 존재/.test(d.msg||'')) break;
+          spec.name=base+'-'+(k+2);
+        }
+        if(d&&d.ok){ form.innerHTML='<span style="color:#22c55e;font-size:12px;font-weight:700;">✅ '+_hesc(d.msg||'저장됨')+'</span>'; }
+        else { go.disabled=false; res.style.color='#ef4444'; res.textContent=(d&&d.msg)||'실패'; }
+      }catch(e){ go.disabled=false; res.style.color='#ef4444'; res.textContent='실패: '+e.message; }
+    };
+  };
 }
 async function _confirmHermesSkill(btn, idx){
   const card=btn.closest('[data-card]');
@@ -2122,9 +2276,11 @@ async function send(){
           writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
           system_prompt: _sysFinal,
           think_mode: document.getElementById('thinkToggle').checked,
+          ctx_guard: document.getElementById('ctxGuardToggle') ? document.getElementById('ctxGuardToggle').checked : true,
           ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
           ppt_ref_design: pptRefDesign,
           user_id: currentUser ? currentUser.id : null,
+          scope: _dataScope(),
           stream: true,
         }, maxTokens > 0 ? {max_tokens: maxTokens} : {}))
       });
@@ -2230,10 +2386,9 @@ async function send(){
         const _finalContent = _displayAcc + _truncWarn + _errLine;
         addMsg('assistant', _finalContent + _info, _finalContent);
         history.push({role:'assistant', content:_displayAcc});
-        if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
-        // 수동/자동 스킬 중 마크다운/HTML 리포트 계열이 선택돼 있으면 MD/HTML 다운로드 바 추가.
-        // SSE 응답엔 html_download_url 이 없지만 appendMdDownloadBar 가 누락 시 /api/generate_html
-        // 로 즉석 변환하므로 그대로 호출하면 됨.
+        // ⚠️ md 다운로드 바를 헤르메스 카드/버튼보다 '먼저' 붙인다.
+        // appendMdDownloadBar 는 '마지막 assistant 메시지'에 붙는데, 헤르메스 카드/수동스킬 버튼이
+        // 먼저 새 메시지를 만들면 md 바가 그쪽에 붙어버려 스킬 폼을 닫을 때 같이 사라지는 버그가 있었음.
         try{
           const _mdSkillActive = ['markdown-mermaid-writing','md-to-html'].some(
             s => selSkills.includes(s) || autoLoadedSkills.includes(s)
@@ -2245,6 +2400,8 @@ async function send(){
             appendMdDownloadBar(_finalContent, null);
           }
         }catch(_){}
+        if(hermesOn && _hermesPending && _hermesPending.length) _showSkillApprovalCards(_hermesPending);
+        if(currentUser && _displayAcc.trim()) _showManualSkillBtn(_displayAcc);  // 📌 직접 스킬화 (헤르메스 토글 무관, 로그인만)
       }
     } else {
     const resp=await fetch('/api/chat',{
@@ -2258,6 +2415,7 @@ async function send(){
         writing_style: styleManualOverride ? document.getElementById('writingStyle').value.trim() : 'auto',
         system_prompt:document.getElementById('systemPromptInput').value.trim(),
         think_mode: document.getElementById('thinkToggle').checked,
+        ctx_guard: document.getElementById('ctxGuardToggle') ? document.getElementById('ctxGuardToggle').checked : true,
         ppt_style: activePptStyle ? (PPT_STYLE_PROMPTS[activePptStyle]||'') : '',
         ppt_ref_design: pptRefDesign,
         user_id: currentUser ? currentUser.id : null,
@@ -2315,6 +2473,7 @@ async function send(){
       if(_mdSkillActive && !_hasClosedMd){
         appendMdDownloadBar(data.content, data.html_download_url);
       }
+      if(currentUser && (data.content||'').trim()) _showManualSkillBtn(data.content);  // 📌 직접 스킬화 (로그인만)
     }
     }  // end multi-env else
   }catch(e){
@@ -2333,7 +2492,7 @@ async function send(){
   const inp=document.getElementById('input');
   inp.focus();
   inp.style.height='auto';
-  saveCurrentSession();
+  saveCurrentSession(true);
 }
 
 function renderMd(text){
@@ -2350,6 +2509,9 @@ function renderMd(text){
   // 1) escape HTML (think-box는 이미 처리했으므로 보호)
   const thinkBlocks=[];
   text=text.replace(/<details class="think-box">[\s\S]*?<\/details>/g, m=>{thinkBlocks.push(m);return `__THINK_${thinkBlocks.length-1}__`;});
+  // 리포트 그래프(백엔드가 붙인 인라인 SVG/PNG) — escape 전에 빼두고 끝에 원본 그대로 복원
+  const graphBlocks=[];
+  text=text.replace(/<div class="hub-report-graph"[^>]*>[\s\S]*?<\/div>/g, m=>{graphBlocks.push(m);return `__GRAPH_${graphBlocks.length-1}__`;});
   let s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   // 2) code blocks (```lang\n...``` 또는 ```lang코드...``` 모두 지원)
   // 2a) drawio 코드블록은 특별 처리
@@ -2491,7 +2653,36 @@ function renderMd(text){
   // single newlines inside remaining text
   // think 블록 복원
   thinkBlocks.forEach((block,i)=>{s=s.replace(`__THINK_${i}__`,block);});
+  // 리포트 그래프 복원 (원본 SVG/PNG 그대로 — escape 안 함)
+  graphBlocks.forEach((block,i)=>{s=s.replace(`__GRAPH_${i}__`,block);});
   return s;
+}
+// 수식 렌더: KaTeX 로드됐으면 렌더, 아니면 LaTeX→유니코드 기호 변환
+function renderMathOrFallback(el){
+  if(window.renderMathInElement){
+    try{
+      renderMathInElement(el,{delimiters:[
+        {left:'$$',right:'$$',display:true},
+        {left:'$',right:'$',display:false},
+        {left:'\\[',right:'\\]',display:true},
+        {left:'\\(',right:'\\)',display:false}
+      ],throwOnError:false});
+      return;
+    }catch(e){}
+  }
+  delatexFallback(el);
+}
+function delatexFallback(el){
+  var map={'\\rightarrow':'→','\\Rightarrow':'⇒','\\to':'→','\\leftarrow':'←','\\Leftarrow':'⇐',
+    '\\geq':'≥','\\ge':'≥','\\leq':'≤','\\le':'≤','\\neq':'≠','\\ne':'≠','\\approx':'≈',
+    '\\times':'×','\\cdot':'·','\\pm':'±','\\div':'÷','\\infty':'∞','\\alpha':'α','\\beta':'β',
+    '\\sum':'∑','\\rightarrowtail':'→'};
+  var h=el.innerHTML;
+  h=h.replace(/\\text\s*\{([^}]*)\}/g,'$1').replace(/\\mathrm\s*\{([^}]*)\}/g,'$1');
+  for(var k in map){ h=h.split(k).join(map[k]); }
+  // 남은 인라인/블록 수식 구분자 제거
+  h=h.replace(/\$\$([\s\S]+?)\$\$/g,'$1').replace(/\$([^$\n]+?)\$/g,'$1');
+  el.innerHTML=h;
 }
 function addMsg(role,text,rawForDetect){
   const c=document.getElementById('msgs');
@@ -2506,6 +2697,8 @@ function addMsg(role,text,rawForDetect){
     btn.onclick=()=>{navigator.clipboard.writeText(pre.textContent.replace('복사',''));btn.textContent='✓';setTimeout(()=>btn.textContent='복사',1500);};
     pre.appendChild(btn);
   });
+  // 수식 렌더링: KaTeX 있으면 제대로 렌더, 없으면(CDN차단) 기호 변환 폴백
+  if(role==='assistant') renderMathOrFallback(d);
   // PPT 코드 블록 감지 → 생성 & 다운로드 버튼 삽입
   if(role==='assistant') detectAndAddPptxButtons(d, (typeof rawForDetect==='string' ? rawForDetect : text));
   // Chart.js 차트 초기화 (data-chart-json 속성이 있는 canvas 탐색)
@@ -2517,7 +2710,8 @@ function addMsg(role,text,rawForDetect){
   if(role==='assistant'){
     const fbDiv=document.createElement('div');
     fbDiv.className='msg-feedback';
-    fbDiv.innerHTML='<button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button>';
+    fbDiv.innerHTML='<span class="msg-fb-left"></span>'
+      +'<span class="msg-fb-right"><button onclick="openFeedback(this,\'good\')" title="좋아요">👍</button><button onclick="openFeedback(this,\'bad\')" title="별로예요">👎</button></span>';
     d.appendChild(fbDiv);
   }
   // 삭제 버튼 주입
@@ -2547,7 +2741,7 @@ function deleteMsg(btn){
   if(msgIndex >= 0 && msgIndex < history.length){
     history.splice(msgIndex, 1);
   }
-  saveCurrentSession();
+  saveCurrentSession(true);
 }
 function addTyping(){
   const c=document.getElementById('msgs');
@@ -2573,7 +2767,9 @@ function saveSessions(){
     try { localStorage.setItem('domos_sessions', JSON.stringify(sessions)); } catch(e2){}
   }
 }
-function saveCurrentSession(){
+function saveCurrentSession(bump){
+  // bump=true 일 때만 updatedAt 갱신(메시지 추가 등 실제 내용 변경).
+  // 단순 전환/저장(세션 이동·복원)에선 기존 updatedAt 유지 → 과거 세션이 '오늘'로 점프해 사라지는 버그 방지.
   if(!currentSessionId) return;
   sessions[currentSessionId] = {
     id: currentSessionId,
@@ -2586,13 +2782,14 @@ function saveCurrentSession(){
     formatManualOverride: formatManualOverride,
     styleManualOverride: styleManualOverride,
     effort: effort,
+    ctxGuard: document.getElementById('ctxGuardToggle') ? document.getElementById('ctxGuardToggle').checked : true,
     writingStyle: document.getElementById('writingStyle')?.value || '',
     writingStyleId: activeStyleId || '',
     systemPrompt: document.getElementById('systemPromptInput')?.value || '',
     systemPromptId: currentPromptId || '',
     thinkMode: document.getElementById('thinkToggle')?.checked || false,
     msgsHtml: document.getElementById('msgs').innerHTML,
-    updatedAt: Date.now()
+    updatedAt: bump ? Date.now() : ((sessions[currentSessionId] && sessions[currentSessionId].updatedAt) || Date.now())
   };
   // Auto-name from first user message
   if(sessions[currentSessionId].name === '새 세션' && history.length > 0){
@@ -3130,7 +3327,7 @@ function createNewSession(){
   document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f==='auto');});
   // 업로드된 파일/CSV 초기화 (이전 세션 데이터 잔류 방지)
   fetch('/api/clear_files', {method:'POST'});
-  fetch('/api/clear_csv', {method:'POST'});
+  fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||'',scope:_dataScope()})});
   uploadedFilesList = [];
   renderFileList();
   csvLoaded = false;
@@ -3163,6 +3360,7 @@ function loadSession(id){
   styleManualOverride = s.styleManualOverride !== undefined ? s.styleManualOverride : !!s.writingStyle;
   if(s.systemPrompt) document.getElementById('systemPromptInput').value=s.systemPrompt;
   if(s.thinkMode!==undefined) document.getElementById('thinkToggle').checked=s.thinkMode;
+  if(s.ctxGuard!==undefined && document.getElementById('ctxGuardToggle')) document.getElementById('ctxGuardToggle').checked=s.ctxGuard;
   if(s.selFormat){ selFormat=s.selFormat; formatManualOverride=(s.formatManualOverride!==undefined ? s.formatManualOverride : selFormat!=='auto'); document.querySelectorAll('.fmt-btn').forEach(b=>{b.classList.toggle('selected',b.dataset.f===selFormat);}); syncFormatDropToChat(); }
   if(s.effort!==undefined){ effort=s.effort; document.getElementById('effortSlider').value=effort; updateEffort(); }
   // 저장된 수동 스킬 복원
@@ -3972,6 +4170,8 @@ let csvFilename = '';
 async function uploadCsvFile(file){
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('user_id', (currentUser&&currentUser.id)||'');  // 사용자별 첨부 슬롯
+  formData.append('scope', _dataScope());                         // 데모스/에이전트 분리
 
   try{
     const resp = await fetch('/api/upload_csv', {method:'POST', body:formData});
@@ -4011,6 +4211,8 @@ async function uploadXlsxFile(file, sheetIdx){
   _xlsxRawFile = file;
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('user_id', (currentUser&&currentUser.id)||'');  // 사용자별 첨부 슬롯
+  formData.append('scope', _dataScope());                         // 데모스/에이전트 분리
   if(typeof sheetIdx === 'number') formData.append('sheet', sheetIdx);
 
   try{
@@ -4480,7 +4682,7 @@ async function downloadHtmlDoc(btn){
 }
 
 async function removeCsv(){
-  await fetch('/api/clear_csv', {method:'POST'});
+  await fetch('/api/clear_csv', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:(currentUser&&currentUser.id)||'',scope:_dataScope()})});
   csvLoaded = false;
   csvFilename = '';
   document.getElementById('csvInfoPanel').style.display = 'none';
@@ -4718,6 +4920,8 @@ async function uploadChatPendingFiles(){
 // ==================== 인트로 → 모드 선택 시스템 ====================
 // ═══ 로그인 시스템 ═══
 var currentUser = null; // {id, name, role, token}
+// ★ 데이터 스코프: 일반 데모스 첨부를 개인에이전트와 분리.
+function _dataScope(){ return 'demos:' + ((currentUser && currentUser.id) || ''); }
 
 function dismissIntroAndShowMode(){
   var ov = document.getElementById('introOverlay');
@@ -4891,17 +5095,186 @@ function openKnowledgePopup(){
   document.getElementById('knowledgePopup').style.display='flex';
   switchKdTab('upload');
   loadKdFiles();
+  loadKdScripts();
 }
+// ESC 누르면 내지식 팝업 닫기
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape'){
+    var p=document.getElementById('knowledgePopup');
+    if(p && p.style.display!=='none' && p.style.display!=='') closeKnowledgePopup();
+  }
+});
 function closeKnowledgePopup(){
   document.getElementById('knowledgePopup').style.display='none';
 }
 function switchKdTab(tab){
-  document.getElementById('kdUploadTab').style.display = tab==='upload' ? 'block' : 'none';
-  document.getElementById('kdManualTab').style.display = tab==='manual' ? 'block' : 'none';
-  document.getElementById('kdTabUpload').style.background = tab==='upload' ? '#6366f1' : '#2a2a3e';
-  document.getElementById('kdTabUpload').style.color = tab==='upload' ? '#fff' : '#888';
-  document.getElementById('kdTabManual').style.background = tab==='manual' ? '#6366f1' : '#2a2a3e';
-  document.getElementById('kdTabManual').style.color = tab==='manual' ? '#fff' : '#888';
+  var tabs = {upload:'kdUploadTab', manual:'kdManualTab', script:'kdScriptTab'};
+  var btns = {upload:'kdTabUpload', manual:'kdTabManual', script:'kdTabScript'};
+  for(var k in tabs){
+    document.getElementById(tabs[k]).style.display = (k===tab) ? 'block' : 'none';
+    var b = document.getElementById(btns[k]);
+    b.style.background = (k===tab) ? '#6366f1' : '#2a2a3e';
+    b.style.color = (k===tab) ? '#fff' : '#888';
+  }
+}
+function kdScriptFilesSelected(input){
+  var el = document.getElementById('kdScriptName');
+  var n = input.files.length;
+  if(!n){ el.textContent=''; return; }
+  var names = Array.from(input.files).map(function(f){ return (f.name.toLowerCase().endsWith('.py')?'🐍 ':'📄 ')+f.name; });
+  el.textContent = '선택 '+n+'개:\n'+names.join('\n');
+}
+async function registerKdScript(){
+  var msg = document.getElementById('kdScriptMsg');
+  var input = document.getElementById('kdScriptInput');
+  if(!input.files || !input.files.length){ msg.innerHTML='<span style="color:#ef4444;">파일을 선택하세요(.py 필수).</span>'; return; }
+  var hasPy = Array.from(input.files).some(function(f){ return f.name.toLowerCase().endsWith('.py'); });
+  if(!hasPy){ msg.innerHTML='<span style="color:#ef4444;">최소 1개의 .py 파일이 필요합니다.</span>'; return; }
+  var fd = new FormData();
+  for(var i=0;i<input.files.length;i++){ fd.append('files', input.files[i]); }
+  fd.append('user_id', currentUser.id);
+  fd.append('name', document.getElementById('kdScriptTitle').value.trim());
+  fd.append('description', document.getElementById('kdScriptDesc').value.trim());
+  fd.append('trigger', document.getElementById('kdScriptTrigger').value.trim());
+  fd.append('entry', (document.getElementById('kdScriptEntry').value||'').trim());
+  fd.append('argv', (document.getElementById('kdScriptArgv').value||'').trim());
+  try {
+    msg.innerHTML='<span style="color:#94a3b8;">업로드 중...</span>';
+    var resp = await fetch('/api/knowledge/register_script',{method:'POST',body:fd});
+    var data = await resp.json();
+    if(data.error){ msg.innerHTML='<span style="color:#ef4444;">'+data.error+'</span>'; return; }
+    msg.innerHTML='<span style="color:#22c55e;">'+data.message+'</span>';
+    input.value=''; document.getElementById('kdScriptName').textContent='';
+    document.getElementById('kdScriptTitle').value=''; document.getElementById('kdScriptDesc').value=''; document.getElementById('kdScriptTrigger').value='';
+    document.getElementById('kdScriptEntry').value=''; document.getElementById('kdScriptArgv').value='';
+    loadKdScripts();
+  } catch(e){ msg.innerHTML='<span style="color:#ef4444;">등록 실패</span>'; }
+}
+async function loadKdScripts(){
+  var list = document.getElementById('kdScriptList');
+  if(!list) return;
+  try {
+    var resp = await fetch('/api/knowledge/scripts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id})});
+    var data = await resp.json();
+    if(!data.scripts||data.scripts.length===0){ _kdScripts=[]; list.innerHTML='<div style="color:#666;padding:8px;">등록된 스크립트가 없습니다.</div>'; return; }
+    _kdScripts = data.scripts;   // ✏️ 수정 폼 미리채우기용 보관
+    list.innerHTML = data.scripts.map(function(s){
+      var fileCount = (s.files||[]).length;
+      var argvN = (s.argv||[]).length;
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,158,11,0.06);border-radius:6px;margin-bottom:3px;">'
+        +'<div><span style="font-weight:600;color:#fbbf24;">🐍 '+s.name+'</span>'
+        +' <span style="background:#3a2e10;color:#fbbf24;padding:1px 6px;border-radius:4px;font-size:10px;">진입: '+(s.entry||'?')+'</span>'
+        +(argvN? ' <span style="background:#1e3a2e;color:#34d399;padding:1px 6px;border-radius:4px;font-size:10px;">인자 '+argvN+'</span>':'')
+        +'<br><span style="color:#94a3b8;font-size:11px;">'+(s.description||'')+'</span>'
+        +'<br><span style="color:#555;font-size:11px;">트리거: '+((s.trigger||[]).join(', '))+' | 파일 '+fileCount+'개 | '+(s.size_kb||0)+'KB</span></div>'
+        +'<div style="display:flex;gap:4px;flex:0 0 auto;">'
+        +'<button onclick="editKdScript(\''+s.name+'\')" title="수정(인자/트리거/진입/설명)" style="padding:3px 8px;background:#f59e0b;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">✏️</button>'
+        +'<button onclick="downloadKdScript(\''+s.name+'\')" title="zip 다운로드" style="padding:3px 7px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">📥</button>'
+        +'<button onclick="deleteKdScript(\''+s.name+'\')" style="padding:3px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">삭제</button></div></div>';
+    }).join('');
+  } catch(e){ list.innerHTML='<div style="color:#ef4444;">로드 실패</div>'; }
+}
+var _kdScripts = [];   // loadKdScripts 에서 채움 (수정 폼 미리채우기용)
+function _hescAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function editKdScript(name){
+  var s = _kdScripts.filter(function(x){ return x.name===name; })[0];
+  if(!s){ return; }
+  var panel = document.getElementById('kdScriptEditPanel');
+  var pyFiles = (s.files||[]).filter(function(f){ return f.toLowerCase().endsWith('.py'); });
+  var entryOpts = pyFiles.map(function(f){ return '<option value="'+_hescAttr(f)+'"'+(f===s.entry?' selected':'')+'>'+_hescAttr(f)+'</option>'; }).join('');
+  var trig = (s.trigger||[]).join(', ');
+  var argv = (s.argv||[]).join('\n');
+  var fileOpts = (s.files||[]).map(function(f){ return '<option value="'+_hescAttr(f)+'"'+(f===s.entry?' selected':'')+'>'+_hescAttr(f)+'</option>'; }).join('');
+  panel.innerHTML =
+    '<div style="border:1px solid #f59e0b;border-radius:8px;padding:10px;background:rgba(245,158,11,0.08);">'
+    +'<div style="font-weight:700;color:#fbbf24;font-size:12px;margin-bottom:8px;">✏️ 스크립트 수정: '+_hescAttr(s.name)+'</div>'
+    +'<label style="font-size:11px;color:#94a3b8;">설명</label>'
+    +'<input id="edScDesc" value="'+_hescAttr(s.description||'')+'" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'
+    +'<label style="font-size:11px;color:#94a3b8;">트리거어 (쉼표 구분)</label>'
+    +'<input id="edScTrigger" value="'+_hescAttr(trig)+'" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'
+    +'<label style="font-size:11px;color:#94a3b8;">진입 .py</label>'
+    +'<select id="edScEntry" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 7px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'+entryOpts+'</select>'
+    +'<label style="font-size:11px;color:#94a3b8;">실행 인자 (한 줄에 하나 — {input}, {outdir}, 동반파일명)</label>'
+    +'<textarea id="edScArgv" rows="5" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 8px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#cbd5e1;font-size:11px;font-family:monospace;resize:vertical;">'+_hescAttr(argv)+'</textarea>'
+    +'<button onclick="saveKdScriptEdit(\''+_hescAttr(s.name)+'\')" style="padding:6px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">메타 저장</button> '
+    +'<button onclick="document.getElementById(\'kdScriptEditPanel\').style.display=\'none\';" style="padding:6px 14px;background:none;border:1px solid #555;color:#aaa;border-radius:6px;cursor:pointer;font-size:12px;">닫기</button>'
+    +' <span id="edScMsg" style="font-size:11px;margin-left:6px;"></span>'
+    // ── 파일 코드 편집 (재등록 없이 .py/config 내용 직접 수정) ──
+    +'<div style="border-top:1px dashed #f59e0b;margin:12px 0 0;padding-top:10px;">'
+    +'<div style="font-weight:700;color:#fbbf24;font-size:12px;margin-bottom:6px;">📄 파일 코드 편집 <span style="color:#94a3b8;font-weight:400;">(재등록 없이 바로 수정 — .py / json / config)</span></div>'
+    +'<select id="edScFile" onchange="loadKdScriptFile(\''+_hescAttr(s.name)+'\')" style="width:100%;box-sizing:border-box;padding:6px;margin:2px 0 6px;border:1px solid #444;border-radius:6px;background:#2a2a3e;color:#fff;font-size:12px;">'+fileOpts+'</select>'
+    +'<textarea id="edScFileContent" spellcheck="false" wrap="off" rows="16" style="width:100%;box-sizing:border-box;padding:8px;margin:2px 0 6px;border:1px solid #444;border-radius:6px;background:#11131c;color:#cbd5e1;font-size:12px;font-family:monospace;line-height:1.5;resize:vertical;white-space:pre;overflow:auto;">불러오는 중…</textarea>'
+    +'<button onclick="saveKdScriptFile(\''+_hescAttr(s.name)+'\')" style="padding:6px 14px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">💾 코드 저장</button>'
+    +' <span id="edScFileMsg" style="font-size:11px;margin-left:6px;"></span>'
+    +'</div>'
+    +'</div>';
+  panel.style.display='block';
+  loadKdScriptFile(s.name);     // 진입 파일 코드 자동 로드
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+async function loadKdScriptFile(name){
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
+  var ta = document.getElementById('edScFileContent');
+  // 저장 안 한 수정이 있으면 파일 전환 전에 확인 (수정 유실 방지)
+  if(ta && ta.dataset.dirty==='1' && !confirm('저장하지 않은 코드 수정이 사라집니다. 계속할까요?')){
+    document.getElementById('edScFile').value = ta.dataset.curfile || '';
+    return;
+  }
+  var fn = document.getElementById('edScFile').value;
+  var msg = document.getElementById('edScFileMsg');
+  if(!fn){ ta.value=''; return; }
+  ta.value = '불러오는 중…'; if(msg) msg.textContent='';
+  try{
+    var r = await fetch('/api/knowledge/script/file?user_id='+encodeURIComponent(currentUser.id)+'&name='+encodeURIComponent(name)+'&filename='+encodeURIComponent(fn));
+    var d = await r.json();
+    if(d.error){ ta.value=''; msg.style.color='#ef4444'; msg.textContent=d.error; return; }
+    ta.value = d.content;
+    ta.dataset.dirty='0'; ta.dataset.curfile=fn;             // 로드 직후는 깨끗
+    ta.oninput = function(){ ta.dataset.dirty='1'; };         // 수정하면 dirty
+  }catch(e){ ta.value=''; if(msg){ msg.style.color='#ef4444'; msg.textContent='불러오기 실패'; } }
+}
+async function saveKdScriptFile(name){
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
+  var fn = document.getElementById('edScFile').value;
+  var ta = document.getElementById('edScFileContent');
+  var content = ta.value;
+  var msg = document.getElementById('edScFileMsg');
+  if(!fn){ return; }
+  try{
+    var r = await fetch('/api/knowledge/script/file/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id, name:name, filename:fn, content:content})});
+    var d = await r.json();
+    if(d.error){ msg.style.color='#ef4444'; msg.textContent=d.error; return; }
+    msg.style.color='#22c55e'; msg.textContent=d.message||'저장 완료';
+    ta.dataset.dirty='0';                                     // 저장 성공 → 깨끗
+  }catch(e){ msg.style.color='#ef4444'; msg.textContent='저장 실패'; }
+}
+async function saveKdScriptEdit(name){
+  var msg = document.getElementById('edScMsg');
+  var body = {
+    user_id: currentUser.id, name: name,
+    description: document.getElementById('edScDesc').value,
+    trigger: document.getElementById('edScTrigger').value,
+    entry: document.getElementById('edScEntry').value,
+    argv: document.getElementById('edScArgv').value
+  };
+  try {
+    var r = await fetch('/api/knowledge/script/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d = await r.json();
+    if(d.error){ msg.style.color='#ef4444'; msg.textContent=d.error; return; }
+    msg.style.color='#22c55e'; msg.textContent=d.message||'수정 완료';
+    document.getElementById('kdScriptEditPanel').style.display='none';
+    loadKdScripts();
+  } catch(e){ msg.style.color='#ef4444'; msg.textContent='수정 실패'; }
+}
+function downloadKdScript(name){
+  window.open('/api/knowledge/script/download?user_id='+encodeURIComponent(currentUser.id)+'&name='+encodeURIComponent(name),'_blank');
+}
+async function deleteKdScript(name){
+  if(!confirm('스크립트 "'+name+'" 을(를) 삭제하시겠습니까?')) return;
+  try {
+    await fetch('/api/knowledge/script/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id,name:name})});
+    loadKdScripts();
+  } catch(e){}
 }
 function kdFileSelected(input){
   var name = input.files[0]?.name || '';
@@ -4959,9 +5332,40 @@ async function loadKdFiles(){
         +'<div><span style="font-weight:600;color:#e2e8f0;">'+f.title+'</span>'
         +' <span style="background:#334155;color:#94a3b8;padding:1px 6px;border-radius:4px;font-size:10px;">'+catBadge+'</span>'
         +'<br><span style="color:#555;font-size:11px;">'+f.filename+' | '+f.size_kb+'KB | '+f.date+'</span></div>'
-        +'<button onclick="deleteKdFile(\''+f.filename+'\')" style="padding:3px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">삭제</button></div>';
+        +'<div style="display:flex;gap:4px;flex:0 0 auto;">'
+        +'<button onclick="downloadKdFile(\''+f.filename+'\')" title="다운로드" style="padding:3px 7px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">📥</button>'
+        +'<button onclick="editKdDoc(\''+f.filename+'\')" title="수정" style="padding:3px 7px;background:#6366f1;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">✏️</button>'
+        +'<button onclick="deleteKdFile(\''+f.filename+'\')" style="padding:3px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">삭제</button></div></div>';
     }).join('');
   } catch(e){ list.innerHTML='<div style="color:#ef4444;">로드 실패</div>'; }
+}
+function downloadKdFile(fname){
+  window.open('/api/knowledge/download/'+encodeURIComponent(fname)+'?user_id='+encodeURIComponent(currentUser.id),'_blank');
+}
+async function editKdDoc(fname){
+  try{
+    var r=await fetch('/api/knowledge/view/'+encodeURIComponent(fname)+'?user_id='+encodeURIComponent(currentUser.id));
+    var d=await r.json();
+    if(d.error){ alert(d.error); return; }
+    var list=document.getElementById('kdFileList');
+    list.innerHTML='<div style="margin-bottom:6px;color:#a5b4fc;font-weight:700;">✏️ 수정: '+fname+'</div>'
+      +'<textarea id="kdEditArea" style="width:100%;height:260px;background:#0d1018;border:1px solid #444;border-radius:6px;color:#e2e8f0;font-size:12px;padding:8px;box-sizing:border-box;resize:vertical;"></textarea>'
+      +'<div style="display:flex;gap:6px;margin-top:6px;">'
+      +'<button onclick="saveKdEdit(\''+fname+'\')" style="flex:1;padding:8px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">💾 저장</button>'
+      +'<button onclick="loadKdFiles()" style="flex:1;padding:8px;background:#475569;color:#fff;border:none;border-radius:6px;cursor:pointer;">취소</button></div>'
+      +'<div id="kdEditMsg" style="margin-top:6px;font-size:12px;"></div>';
+    document.getElementById('kdEditArea').value=d.content||'';
+  }catch(e){ alert('불러오기 실패'); }
+}
+async function saveKdEdit(fname){
+  var content=document.getElementById('kdEditArea').value;
+  var msg=document.getElementById('kdEditMsg');
+  try{
+    var r=await fetch('/api/knowledge/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentUser.id,filename:fname,content:content})});
+    var d=await r.json();
+    if(d.error){ msg.innerHTML='<span style="color:#ef4444;">'+d.error+'</span>'; return; }
+    loadKdFiles();
+  }catch(e){ msg.innerHTML='<span style="color:#ef4444;">저장 실패</span>'; }
 }
 async function deleteKdFile(fname){
   if(!confirm(fname+' 파일을 삭제하시겠습니까?')) return;

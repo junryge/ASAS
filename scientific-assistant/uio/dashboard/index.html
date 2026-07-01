@@ -287,7 +287,7 @@
     <!-- ═══ Org Chart Tab ═══ -->
     <div class="tab-content" id="tab-orgchart">
       <div class="panel-header" style="margin-bottom:16px;">
-        <span class="panel-title">조직도 (7개 부서, 380+ 스킬)</span>
+        <span class="panel-title">조직도 (6개 부서, 380+ 스킬)</span>
       </div>
       <div class="org-tree" id="orgTree"></div>
     </div>
@@ -525,7 +525,7 @@
 <div class="sidebar">
   <div class="sidebar-header">
     <h2>CEO 관제센터</h2>
-    <p>7개 부서 / 380+ 스킬</p>
+    <p>6개 부서 / 380+ 스킬</p>
   </div>
   <div class="dept-list" id="deptList"></div>
   <div class="sidebar-footer">
@@ -563,6 +563,8 @@
       <div class="form-group"><label>부서</label><select id="schedDept"></select></div>
       <div class="form-group"><label>스케줄</label>
         <select id="schedType">
+          <option value="minutely">매분 (데모)</option>
+          <option value="5min">5분마다 (데모)</option>
           <option value="hourly">매시간</option>
           <option value="daily">매일</option>
           <option value="weekdays">평일만</option>
@@ -595,8 +597,6 @@
 // ════════════════════════════════════════════════════
 
 const DEPARTMENTS = [
-  {id:'scientific',  icon:'🧬', name:'과학연구', fullName:'과학연구부',      color:'#ef4444', skills:130,
-    teams:['생물정보학(21)','바이오DB(21)','화학정보학(19)','재료/물리(8)','임상의학(14)','실험자동화(12)']},
   {id:'data-analysis',icon:'📊', name:'데이터',   fullName:'데이터분석부',         color:'#f59e0b', skills:50,
     teams:['데이터/ML(23)','금융분석(8)','통계분석','탐색적분석']},
   {id:'code',        icon:'💻', name:'개발',     fullName:'개발부',           color:'#2563eb', skills:80,
@@ -875,10 +875,10 @@ function drawOrgChart(){
 
   el.innerHTML = `
     <div class="org-ceo">
-      <div class="org-node" style="background:linear-gradient(135deg,#f59e0b22,#d9770622);border:2px solid #f59e0b55;box-shadow:0 4px 20px rgba(245,158,11,.15);" onclick="openDeptDetail('scientific')">
+      <div class="org-node" style="background:linear-gradient(135deg,#f59e0b22,#d9770622);border:2px solid #f59e0b55;box-shadow:0 4px 20px rgba(245,158,11,.15);">
         <div class="on-icon">👑</div>
         <div class="on-name" style="color:#f59e0b;">CEO 관제센터</div>
-        <div class="on-sub">7개 부서 총괄</div>
+        <div class="on-sub">${DEPARTMENTS.length}개 부서 총괄</div>
       </div>
       <div class="org-vline"></div>
     </div>
@@ -1135,7 +1135,6 @@ function setDeptMode(mode){
 }
 
 const DEFAULT_DEPT_ROLES = {
-  'scientific':     {checked:true,  role:'도메인 지식 기반 해석 및 가설 수립'},
   'data-analysis':  {checked:true,  role:'데이터 전처리, EDA, 통계 분석'},
   'code':           {checked:true,  role:'ML 모델 코드 작성 및 최적화'},
   'infrastructure': {checked:false, role:'학습 환경 설정, GPU/분산처리'},

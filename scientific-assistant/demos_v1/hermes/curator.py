@@ -76,6 +76,8 @@ def run_all_users() -> dict:
     for uid in os.listdir(root):
         if not os.path.isdir(os.path.join(root, uid)):
             continue
+        if uid == "_shared":   # 과거 빈 ID 폴백으로 생긴 오염 폴더 — 사용자 아님
+            continue
         total["users"] += 1
         r = maybe_run(uid)
         if r.get("ran"):
