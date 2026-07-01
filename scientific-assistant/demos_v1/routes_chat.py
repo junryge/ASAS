@@ -5,6 +5,17 @@ import os
 import re
 import json
 
+# ── 컨텍스트 압축 가드 (긴 세션이 컨텍스트 부족으로 끊기지 않게) ──
+# 데모스/개인에이전트/UIO 가 공유하는 /api/chat 백엔드. import 실패해도 부팅을 막지 않게 no-op 폴백.
+try:
+    from context_guard import ContextGuard as _ContextGuard
+    _ctx_guard_demos = _ContextGuard(budget_tokens=32000, keep_recent=4)
+except Exception:
+    class _NoGuardDemos:
+        def maybe_compress(self, _m):
+            return _m
+    _ctx_guard_demos = _NoGuardDemos()
+
 
 # ── 영문 사고 과정(Chain-of-Thought) 노출 방지 ──
 # Qwen3 등 reasoning 모델이 시스템 프롬프트 지시를 무시하고 본문에 영문 사고 절차를 토함.
@@ -1180,6 +1191,10 @@ def _stream_chat_sse(data):
                 api_messages = _prepend_system(api_messages, kb_context)
         except Exception as e:
             print(f"[Knowledge Search SSE] 검색 오류: {e}")
+
+    # ── 컨텍스트 압축 가드: LLM 호출 직전, 긴 세션이 끊기지 않게 오래된 도구결과/본문을 접음 ──
+    # (최근 keep_recent 턴은 원본 보존. 예산 여유면 무변형.) 비전 변환 전이라 content 는 아직 문자열.
+    api_messages = _ctx_guard_demos.maybe_compress(api_messages)
 
     # === VL 모델: 이미지 첨부 시 마지막 user 메시지를 OpenAI Vision 포맷으로 변환 ===
     try:

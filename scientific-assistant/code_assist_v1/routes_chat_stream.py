@@ -36,6 +36,17 @@ from code_assist_v1 import knowledge_store as ks
 
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
+# ── 컨텍스트 압축 가드 (긴 코딩 세션이 컨텍스트 부족으로 끊기지 않게) ──
+# import 실패해도 부팅을 막지 않게 no-op 폴백.
+try:
+    from context_guard import ContextGuard as _ContextGuard
+    _ctx_guard_code = _ContextGuard(budget_tokens=32000, keep_recent=4)
+except Exception:
+    class _NoGuardCode:
+        def maybe_compress(self, _m):
+            return _m
+    _ctx_guard_code = _NoGuardCode()
+
 
 def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
@@ -240,6 +251,8 @@ def register_chat_stream_routes(app):
 
         # 히스토리 트림
         messages = trim_message_history(messages, max_turns=MAX_HISTORY_TURNS)
+        # ── 컨텍스트 압축 가드: 남은 히스토리의 큰 도구결과/본문을 접어 컨텍스트 부족 방지 ──
+        messages = _ctx_guard_code.maybe_compress(messages)
 
         # 시스템 프롬프트 (코딩 페르소나 + 스킬 본문)
         try:
