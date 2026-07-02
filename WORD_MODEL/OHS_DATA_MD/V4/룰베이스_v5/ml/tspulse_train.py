@@ -11,20 +11,23 @@ tspulse_train — TSPulse R1 이상탐지 fine-tune (Phase 2)  ★회사 PC 전�
 
 입력:
     --features   features.csv (features_31.py 산출: datetime + 31피처)
-    --labels     labels.csv   (labels_채점지.py 산출: is_normal 컬럼 사용)
+                 ★ 정상 raw(정상데이터_생성.py) 로 만든 features 면 전부 정상 → labels 불필요
+    --labels     (옵션) labels.csv 의 is_normal 마스크. 없으면 features 전체를 정상으로 간주
     --context    윈도우 길이(분) 기본 512 (≈8.5h)
     --epochs     기본 10
     --out        모델/스케일러 저장 폴더 (기본 ./out_ml/tspulse)
 
 실행:
-    python tspulse_train.py --features ./out_ml/features.csv --labels ./out_ml/labels.csv
+    python tspulse_train.py --features ./out_ml/features.csv          # 정상 raw 기반 (labels X)
+    python tspulse_train.py --features ./out_ml/features.csv --labels ./out_ml/labels.csv  # 마스크 사용
 
 출력:
     out_ml/tspulse/model/        fine-tuned TSPulse 가중치
     out_ml/tspulse/scaler.json   robust 정규화 파라미터(median/iqr, 피처순서)
     out_ml/tspulse/train_meta.json
 
-★ 누수 차단: 학습은 is_normal=1 (정체 ±60분 제외) 구간만.  정규화 통계도 정상구간에서만.
+★ 누수 차단: 학습창은 '연속(1분) 정상 세그먼트' 안에서만 생성 → 삭제로 생긴 시간 구멍 안 넘음.
+★ 정규화 통계도 정상 데이터에서만.
 """
 import argparse
 import csv
@@ -55,16 +58,23 @@ def _need():
 # ============================================================
 # 1. 데이터 로드 (features + labels → 정상구간 행렬)
 # ============================================================
-def load_xy(features_fp, labels_fp):
-    import numpy as np
+def load_xy(features_fp, labels_fp=None):
+    import os
     import pandas as pd
     feat = pd.read_csv(features_fp, encoding='utf-8-sig')
-    lab = pd.read_csv(labels_fp, encoding='utf-8-sig')
     feat['datetime'] = pd.to_datetime(feat['datetime'])
-    lab['datetime'] = pd.to_datetime(lab['datetime'])
-    df = feat.merge(lab[['datetime', 'is_normal']], on='datetime', how='left')
-    df = df.sort_values('datetime').reset_index(drop=True)
     feat_cols = [c for c in feat.columns if c != 'datetime']
+    if labels_fp and os.path.exists(labels_fp):
+        # (옵션) labels.csv 있으면 is_normal 마스크 사용
+        lab = pd.read_csv(labels_fp, encoding='utf-8-sig')
+        lab['datetime'] = pd.to_datetime(lab['datetime'])
+        df = feat.merge(lab[['datetime', 'is_normal']], on='datetime', how='left')
+        df['is_normal'] = df['is_normal'].fillna(0).astype(int)
+    else:
+        # labels 없음 = 입력이 이미 '정상 raw' (작업일정 제거됨) → 전부 정상
+        df = feat.copy()
+        df['is_normal'] = 1
+    df = df.sort_values('datetime').reset_index(drop=True)
     # 결측 → 시간 전방채움 후 0 (설비 무보고=직전 유지가 도메인상 자연스러움)
     df[feat_cols] = df[feat_cols].ffill().fillna(0.0)
     return df, feat_cols
@@ -98,7 +108,8 @@ def apply_scaler(df, cols, stats):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--features', required=True)
-    ap.add_argument('--labels', required=True)
+    ap.add_argument('--labels', default=None,
+                    help='(옵션) is_normal 마스크. 정상 raw 로 만든 features 면 불필요')
     ap.add_argument('--context', type=int, default=512)
     ap.add_argument('--epochs', type=int, default=10)
     ap.add_argument('--batch', type=int, default=32)
@@ -134,16 +145,32 @@ def main():
         json.dump({'features': cols, 'stats': stats, 'context': a.context}, f,
                   ensure_ascii=False, indent=2)
 
-    # 정상구간에서만 슬라이딩 윈도우 (경계 넘는 창은 정상비율<100% 이면 제외)
-    isn = df['is_normal'].fillna(0).values.astype(int)
+    # ── 연속(1분 간격) 정상 세그먼트 단위로만 슬라이딩 윈도우 ──
+    #    작업일정 제거로 생긴 시간 '구멍'을 건너뛰는 창은 만들지 않음 (누수/불연속 차단).
+    isn = df['is_normal'].values.astype(int)
+    tmin = df['datetime'].values.astype('datetime64[m]').astype('int64')  # 분 단위 정수
     arr = dfx[cols].values.astype('float32')
     C = a.context
+    # 정상 & 직전과 1분 연속 인 구간을 세그먼트로 분할
+    segs = []
+    i, n = 0, len(arr)
+    while i < n:
+        if isn[i] != 1:
+            i += 1; continue
+        j = i
+        while j + 1 < n and isn[j + 1] == 1 and (tmin[j + 1] - tmin[j]) == 1:
+            j += 1
+        segs.append((i, j)); i = j + 1
     windows = []
-    for i in range(0, len(arr) - C + 1):
-        if isn[i:i + C].mean() >= 0.99:      # 창 전체가 정상일 때만 학습
-            windows.append(arr[i:i + C])
+    for s, e in segs:
+        for k in range(s, e - C + 2):        # k..k+C-1 이 [s,e] 안일 때만
+            windows.append(arr[k:k + C])
+    too_short = sum(1 for s, e in segs if (e - s + 1) < C)
+    print(f"[세그먼트] 연속 정상 구간 {len(segs)}개 "
+          f"(그중 {C}분 미만 {too_short}개는 창 불가)")
     if not windows:
-        print("⚠️ 정상 윈도우 0개 — guard/context 조정 필요"); sys.exit(3)
+        print(f"⚠️ 정상 윈도우 0개 — 연속 구간이 모두 {C}분 미만. "
+              f"context 를 줄이거나(--context) 데이터 확인"); sys.exit(3)
     X = torch.tensor(np.stack(windows))       # (N, C, ch)
     print(f"[학습창] 정상 윈도우 {len(windows)}개  shape={tuple(X.shape)}")
 
