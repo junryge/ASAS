@@ -51,7 +51,7 @@ def main():
     ap.add_argument('--features', required=True)
     ap.add_argument('--model', default='./out_ml/tspulse')
     ap.add_argument('--labels', default=None)
-    ap.add_argument('--batch', type=int, default=64)
+    ap.add_argument('--batch', type=int, default=128)
     ap.add_argument('--out', default='./out_ml/anomaly.csv')
     a = ap.parse_args()
 
@@ -85,6 +85,8 @@ def main():
     # 매분 과거 창 → 재구성오차 (창의 마지막 시점 오차를 그 분의 점수로)
     idxs = list(range(C - 1, len(feat)))       # t=C-1 부터 과거창 성립
     errs = np.full(len(feat), np.nan, dtype='float64')
+    total = len(idxs)
+    print(f"[추론] {total}분 점수화 시작 (batch={a.batch}, device={device}) — 학습 아님, 1회만", flush=True)
     with torch.no_grad():
         buf_i, buf_x = [], []
 
@@ -100,12 +102,15 @@ def main():
                 errs[ti] = float(e[k])
             buf_i.clear(); buf_x.clear()
 
-        for t in idxs:
+        for n, t in enumerate(idxs, 1):
             buf_i.append(t)
             buf_x.append(Xn[t - C + 1:t + 1])
             if len(buf_x) >= a.batch:
                 flush()
+            if n % (a.batch * 20) == 0:
+                print(f"    {n}/{total}분 ({n / total * 100:.0f}%)", flush=True)
         flush()
+    print(f"    {total}/{total}분 (100%) 계산 완료", flush=True)
 
     # ── 점수 정규화: 정상구간 오차의 median/MAD 로 z → 시그모이드 [0,1] ──
     valid = ~np.isnan(errs)
