@@ -115,7 +115,28 @@ def main():
     ap.add_argument('--batch', type=int, default=32)
     ap.add_argument('--lr', type=float, default=1e-4)
     ap.add_argument('--out', default='./out_ml/tspulse')
+    ap.add_argument('--model_dir', default=None,
+                    help='로컬 모델 폴더(오프라인 반입). 없으면 HF에서 다운로드')
+    ap.add_argument('--ca_bundle', default=None,
+                    help='회사 CA 인증서(.pem) 경로 — SSL 검증 실패 시')
+    ap.add_argument('--insecure', action='store_true',
+                    help='SSL 검증 끄고 다운로드 (내부망 한정, 비권장)')
     a = ap.parse_args()
+
+    # ── 회사망 SSL 대응 (HF 모델 다운로드용) ──
+    if a.ca_bundle:
+        os.environ['REQUESTS_CA_BUNDLE'] = a.ca_bundle
+        os.environ['CURL_CA_BUNDLE'] = a.ca_bundle
+        print(f"[SSL] CA 번들 사용: {a.ca_bundle}")
+    if a.insecure:
+        import requests, urllib3
+        urllib3.disable_warnings()
+        _orig_req = requests.Session.request
+        def _noverify(self, *ar, **kw):
+            kw['verify'] = False
+            return _orig_req(self, *ar, **kw)
+        requests.Session.request = _noverify
+        print("[SSL] ⚠️ 검증 비활성화 (--insecure)")
 
     print("=" * 60)
     print(f"TSPulse R1 fine-tune — context {a.context}분 / epochs {a.epochs}")
@@ -176,9 +197,12 @@ def main():
 
     # 모델: 사전학습 TSPulse R1 → 채널수 맞춰 reconstruction head
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"[모델] {TSPULSE_MODEL} 로드 (device={device})")
+    model_src = a.model_dir or TSPULSE_MODEL
+    if a.model_dir:
+        os.environ['HF_HUB_OFFLINE'] = '1'      # 로컬 폴더만 사용 (네트워크 X)
+    print(f"[모델] {model_src} 로드 (device={device})")
     model = TSPulseForReconstruction.from_pretrained(
-        TSPULSE_MODEL, num_input_channels=n_ch,
+        model_src, num_input_channels=n_ch,
         context_length=C, mask_type="user", ignore_mismatched_sizes=True,
     ).to(device)
 
