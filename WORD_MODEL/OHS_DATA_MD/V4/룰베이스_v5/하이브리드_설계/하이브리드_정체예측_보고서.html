@@ -82,6 +82,18 @@
   <section>
     <h2>아키텍처 — 캐스케이드 흐름 (하이브리드) 방식</h2>
     <p class="sub">탐지(룰 + TSPulse <b style="color:var(--ink)">캐스케이드</b>) → 하이브리드 판정(합의) → <b style="color:var(--ink)">LLM 진단</b>(어디서·왜) → 실시간·일일 리포트</p>
+    <!-- LLM 진단 예시 -->
+    <div style="margin:4px 0 18px;border:1px solid var(--llm);border-radius:12px;overflow:hidden">
+      <div style="background:var(--llm);color:#fff;font-size:12.5px;font-weight:700;padding:8px 16px">LLM 진단 예시 — 실시간 이상 리포트</div>
+      <div style="padding:16px 18px;background:var(--plane)">
+        <p style="margin:0 0 10px;font-size:14.5px;color:var(--ink)">
+          <b style="color:var(--rule)">M16HUB STB 저장 100%</b> → 리프터가 못 내려놓음 → <b>큐 역류</b> → <b style="color:var(--crit)">M16A 반송 정체</b>
+        </p>
+        <p style="margin:0;font-size:13.5px;color:var(--ink2)">
+          <b style="color:var(--judge)">권장 조치</b> : 6ABL0121 Port 개방 &nbsp;+&nbsp; Maxcapa 조정
+        </p>
+      </div>
+    </div>
     <div class="flow">
       <div class="step"><span class="lbl" style="background:var(--normal)">탐지</span>
         <span class="txt">룰베이스 + TSPulse (정상 → 비정상 캐스케이드)</span></div>
@@ -174,18 +186,6 @@
     <p style="text-align:center;font-size:12.5px;color:var(--muted);margin:12px 0 0">
       <span style="color:var(--llm);font-weight:700">┈ 점선</span> = 룰베이스·TSPulse <b style="color:var(--ink)">각각 단독으로도</b> LLM 리포트 생성 가능
     </p>
-    <!-- LLM 진단 예시 -->
-    <div style="margin-top:18px;border:1px solid var(--llm);border-radius:12px;overflow:hidden">
-      <div style="background:var(--llm);color:#fff;font-size:12.5px;font-weight:700;padding:8px 16px">LLM 진단 예시 — 실시간 이상 리포트</div>
-      <div style="padding:16px 18px;background:var(--plane)">
-        <p style="margin:0 0 10px;font-size:14.5px;color:var(--ink)">
-          <b style="color:var(--rule)">M16HUB STB 저장 100%</b> → 리프터가 못 내려놓음 → <b>큐 역류</b> → <b style="color:var(--crit)">M16A 반송 정체</b>
-        </p>
-        <p style="margin:0;font-size:13.5px;color:var(--ink2)">
-          <b style="color:var(--judge)">권장 조치</b> : 6ABL0121 Port 개방 &nbsp;+&nbsp; Maxcapa 조정
-        </p>
-      </div>
-    </div>
   </section>
 
   <!-- 2. ★ 30분 선행 그래프 -->
