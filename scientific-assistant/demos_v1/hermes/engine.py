@@ -13,7 +13,7 @@ demos_v1/hermes/engine.py — 헤르메스 오케스트레이션
 """
 from __future__ import annotations
 
-from demos_v1.hermes import memory, skills, protocol, counters, builtin
+from demos_v1.hermes import memory, skills, protocol, counters, builtin, sessions
 
 # 텍스트 프로토콜 사용 지침 (시스템 프롬프트에 주입)
 PROTOCOL_GUIDE = """\
@@ -86,6 +86,28 @@ def build_system_prompt(user_id: str, query: str = "") -> str:
         if bi:
             bbodies = "\n\n".join(f"[{r['name']}] {r['desc']}\n{r['body']}" for r in bi)
             parts.append("=== 권장 작업 방식 (헤르메스 빌트인 스킬) ===\n" + bbodies)
+
+        # 지난 대화(과거 세션) 회상 — 사용자가 이전 대화를 물으면 근거가 되게 관련 기록 주입.
+        # (기억 스냅샷=사실 요약과 별개로, 실제 대화 원문을 검색해 넣는다.)
+        try:
+            hits = sessions.search(user_id, query, max_hits=3)
+        except Exception:
+            hits = []
+        if hits:
+            lines = []
+            for h in hits:
+                d = h.get("date", "")
+                for c in h.get("context", []):
+                    role = "사용자" if c.get("role") == "user" else "에이전트"
+                    txt = (c.get("content") or "").strip().replace("\n", " ")
+                    if txt:
+                        lines.append(f"[{d}] {role}: {txt[:200]}")
+            if lines:
+                parts.append(
+                    "=== 지난 대화 관련 기록 (과거 세션 검색) ===\n"
+                    + "\n".join(lines[:20])
+                    + "\n(참고용 과거 대화다. 사용자가 '지난 대화/전에 얘기한 것'을 물으면 이 기록을 근거로 답한다.)"
+                )
 
     parts.append(PROTOCOL_GUIDE)
     return "\n\n".join(parts)
