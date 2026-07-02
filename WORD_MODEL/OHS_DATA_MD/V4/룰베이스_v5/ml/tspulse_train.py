@@ -105,6 +105,28 @@ def apply_scaler(df, cols, stats):
 # ============================================================
 # 2. TSPulse fine-tune (정상 재구성)
 # ============================================================
+def _ensure_safetensors(model_dir):
+    """로컬 모델 폴더에 model.safetensors 가 없고 다른 *.safetensors(예: model-1.safetensors)
+       하나만 있으면 표준명으로 복사 → from_pretrained 가 인식하게. (sharded 인덱스면 손대지 않음)"""
+    import glob
+    import shutil
+    std = os.path.join(model_dir, 'model.safetensors')
+    if os.path.exists(std):
+        return
+    if os.path.exists(os.path.join(model_dir, 'model.safetensors.index.json')):
+        return                                      # sharded → 그대로 둠
+    cands = glob.glob(os.path.join(model_dir, '*.safetensors'))
+    if len(cands) == 1:
+        shutil.copy(cands[0], std)
+        print(f"[모델] {os.path.basename(cands[0])} → model.safetensors 복사 (from_pretrained 호환)")
+    elif not cands:
+        # bin 형태 대비
+        bins = glob.glob(os.path.join(model_dir, '*.bin'))
+        if len(bins) == 1 and not os.path.exists(os.path.join(model_dir, 'pytorch_model.bin')):
+            shutil.copy(bins[0], os.path.join(model_dir, 'pytorch_model.bin'))
+            print(f"[모델] {os.path.basename(bins[0])} → pytorch_model.bin 복사")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--features', required=True)
@@ -199,6 +221,7 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_src = a.model_dir or TSPULSE_MODEL
     if a.model_dir:
+        _ensure_safetensors(a.model_dir)        # model-1.safetensors 등 자동 표준명 처리
         os.environ['HF_HUB_OFFLINE'] = '1'      # 로컬 폴더만 사용 (네트워크 X)
     print(f"[모델] {model_src} 로드 (device={device})")
     model = TSPulseForReconstruction.from_pretrained(
