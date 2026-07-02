@@ -1,0 +1,105 @@
+﻿날짜,작업내용,시작,완료,비고
+04/01,M16 ZT#6 호기 6F 가벽 철거 (오전 H/T STOP),09:50,11:03,작업 완료 보고
+04/01,M16 ZT#6 호기 6F 가벽 철거 (오후 H/T STOP),13:30,14:56,Rail Cut → H/T STOP 변경
+04/02,"M16A ZT 4,5 호기 6F CONV Port 차단",08:45,-,작업 영향 확인용 차단
+04/02,M16A ZT 6 호기 6F 가벽 철거 (오전),09:00,11:48,작업 완료 보고
+04/02,M16A ZT 6 호기 6F 가벽 철거 (오후),13:30,-,오전 작업 연장 및 완료 (오후 작업 없음)
+04/03,4ABLD122 호기 Error 대응 (AI Close/Open),11:30,12:14,"11:30 Close, 11:41 Open, 11:42 재Close, 12:14 Open"
+04/04,Bridge STB 공간부족 Maxcapa 50% 변경,01:08,01:46,"M14A/B, M16A 변경 및 원복 반복 (야간 작업)"
+04/05,Maxcapa 조정 (3→1→원복),04:03,07:09,"M14A/B, M16A 다수 변경 및 원복 (야간/새벽 작업)"
+04/06,M16A ZT#6 호기 3F CONV 안착 (오전),09:37,10:50,H/T 작업 완료
+04/06,M16A ZT#6 호기 3F CONV 안착 (오후),14:14,16:10,H/T 작업 완료
+04/07,M16A ZT#6 호기 3F CONV 설치 마무리 (오전),09:20,09:56,H/T 작업 완료
+04/07,4ABLD111/112/121/122/131 호기 Error 대응,10:01,14:03,각 호기별 AI Close/Open 반복 조치
+04/08,M16A ZT#6 호기 6F 작업 (오전),09:00,11:15,H/T-Stop 작업 완료
+04/08,M16A ZT#6 호기 6F 작업 (오후),14:05,15:59,H/T-Stop 작업 완료
+04/09,4AFC3201 ERROR 대응 (Port 차단/Open),01:02,01:21,M16→M14 A_IN 80~90 차단 후 복구
+04/09,"M16A ZT 4,5 호기 6F Conv Port Down",09:51,10:27,작업 완료 후 Open
+04/09,4ABLD112 호기 Error 대응,09:26,11:10,AI Close/Open 반복
+04/10,TCM813 통신 Cable 교체 작업,10:00,11:00,4AFC3201(남측) Zone81318
+04/12,4ABLD132 호기 Error 대응,08:20,08:44,AI Close/Open
+04/12,4ABLD111 호기 Error 대응 (야간),22:04,22:26,"7F AI Close, 4F Foup Manual 제거 (HT-Stop)"
+04/13,4ABLD122 호기 Error 대응 (새벽),01:12,01:45,Close 후 처리 완료 Open
+04/13,M16A ZT 6 호기 3F 작업 (오전),09:11,11:25,Handy Stop 작업 완료
+04/13,M16A ZT 6 호기 6F Rail Cut (오후),14:20,16:47,Conv 6 개 Down 작업 후 Open
+04/16,Bridge OHT 몰림 Maxcapa 조정,10:48,11:19,"M14A/B, M16A Maxcapa 1 변경 및 원복"
+04/19,HUB 반송 지연 모니터링,09:04,09:43,M14 7 층/LFT 문제 확인 (작업 아님)
+04/21,6FIOB101 장비 Teaching 작업,09:00,11:43,Manual Input port 사용 (Hand Stop)
+04/21,PM 관련 MLUD 물량 감축 조정,14:10,14:52,M14A/B 수량 단계적 감축 (50→10)
+04/22,Hub Room Conveyor Port 설치 작업,07:05,14:25,OHT HT Stop 중단/재개 및 Conveyor 작업
+04/22,M16↔M14 Bridge OHT Open,14:34,-,작업 종료 후 정상화
+04/22,PM 관련 물량 원복 조정,17:41,18:16,M14A/B 수량 단계적 원복 (10→50)
+04/22,4ABLD131/6ABL6032 Error 대응,19:10,01:23(익일),AI Close/Open 및 야간 조치
+04/23,6ABL6011 Error 대응,15:36,16:42,AI Close/Error Clear/Open 반복
+04/24,4ABLD111 Error 대응 (새벽),03:27,03:40,AI Close/Open
+04/24,6ABL6011 Error 대응 및 Maxcapa 조정,05:14,06:41,Error 조치 및 Maxcapa 1 변경/원복
+04/25,M16 Bridge MLUD 출고 지연 대응,11:54,13:12,Queue 기준정보 수정 (50→10)
+04/25,4ABLD112 호기 Error 대응 (야간),20:42,21:40,AI Close/Open
+04/27,"M14 A,B Maxcapa 조정 (새벽)",05:22,06:27,1 로 변경 후 원복
+04/27,4ABLD132 호기 반송 Delay/Error 대응,08:19,08:48,Manual/HT STOP 대응 및 Error 조치
+04/27,M16A ZT#6 호기 3F CONV Sensor 조정,14:00,15:28,H/T STOP 작업 완료
+04/30,4ABLD131 호기 Error 대응,09:26,09:49,AI Close/Open
+05/06,4ABLD131 호기 Error 대응,09:26,09:49,AI Close/Open
+05/06,4ABLD131 호기 Error 재발생 대응,11:49,12:05,AI Close/Open
+05/07,4ABLD132 호기 AI75 임시 조치,07:31,07:36,Close 후 Open
+05/07,Hubroom 정체로 4ABLD122 7F AI 조치,07:40,07:42,Close 후 Open
+05/07,M16A ZT#6 호기 3F CONV Sensor 조정,09:20,10:26,H/T STOP 작업 완료
+05/07,SFA 7F AI Full 호기 Close 대응,09:12,-,Port Close 조치
+05/07,BRIDGE M16 ZT 3 호기 Down 대응,10:36,10:37,OHT 정체 발생 후 즉시 조치 완료
+05/08,"M14A/B, M16A Maxcapa 1 변경",11:38,11:43,정체 해소를 위한 용량 제한
+05/08,M16 HUB VHL 몰림 현상 대응,11:40,11:55,6ABL0121/0122 3F AI Port Open/Disable
+05/08,M16A 6F MaxCapa 원복,11:55,-,Storage 증가에 따른 원복
+05/08,M16 Bridge Hub OHT 정체 심화 대응,12:07,13:06,M16B→M16A Delay Foup Trans Count 상향 (11→25)
+05/08,M16HUB Queue High Alarm 발생,13:06,17:20+,Queue 1700~2000 개 초과 지속 (오후 내내 모니터링)
+05/09,4AFC3201 Error 대응 (A_IN80~90 차단),17:39,17:48,"조치 후 Open (86~90 먼저, 80~85 뒤따름)"
+05/09,4AFC3201 Error 재발생 대응,17:59,18:14,재차단 후 Open
+05/10,HUB Error 여부 확인 및 Maxcapa 조정,02:32,04:52,"OHT Error 없음 확인, Maxcapa 50% 변경"
+05/10,M16A Maxcapa 원복 요청 및 조치,10:29,12:31,반송량 증가 우려로 지연 후 원복 완료
+05/10,4AFC3301 Error 대응 (A_IN80~89 차단),22:34,22:38,차단 후 즉시 Open
+05/11,M16A ZT Maxcapa 50% 변경,23:59,00:02(익일),야간 조치
+05/11,Bridge OHT BV0165 호기 Err 처리,07:44,07:49,발생 및 처리 완료
+05/11,4ABLD111 호기 Error 대응,10:03,10:27,AI Close/Open
+05/11,4AFC3201 고소작업 Port 임시 차단,15:57,16:29,"Zone70902 error 대응, Maxcapa 조정 (1→8 원복)"
+05/11,"M16 Maxcapa ""3"" 변경 및 원복",16:26,16:55,일시적 상향 후 원복
+05/11,M14→M16 반송 정체 (6PDMP863) 대응,23:11,23:13,MCS Queue 확인 및 Car Status 모니터링
+05/12,M16A ZT#6 호기 3F 소방 배관 설치,09:34,09:59,H/T STOP 작업 완료
+05/12,4ABLD111 호기 Error 대응,10:41,11:01,AI Close/Open
+05/12,M16A ZT#6 호기 3F Conv 확인 작업,14:30,15:11,H/T STOP 작업 (Conv Error 로 16:00 까지 연장)
+05/13,M16 2F EUV VLF 점검 (1 호기),09:00,17:52,가이드롤러/스토퍼/베어링 교체 작업 완료
+05/13,M16E LINE OHT 정체 대응,00:09,06:02,SFA Lifter 7F AI Port 전체 Close/Open 순차 조치
+05/13,Bridge OHT Alarm Deadlock 처리,05:39,05:58,Delay 해소 및 Port Open
+05/13,MLUD 정체로 인한 Capa 조정,07:07,07:28,6FIO103/105/107 Maxcapa 8→4 변경 후 원복
+05/14,"M16 2F EUV VLF 점검 (2,3 호기)",09:07,15:21,"2,3 호기 동시 Down 작업 완료"
+05/14,M14A/B Maxcapa 1 변경 및 원복,10:02,10:16,"Hubroom 정체로 변경, 즉시 원복"
+05/14,M16 Hubroom Rail Cut 대응,10:04,10:08,"St.2298→2940, St.2375→2376 Cut 후 Open"
+05/14,4ABLD131 ERROR 대응,11:57,12:21,AI Close/Open
+05/16,4ABLD121 Error 대응 (새벽),03:49,04:09,AI Close/Open
+05/16,4ABLD121 Error 대응 (아침),07:45,08:00,AI Close/Open
+05/18,ZT#6 호기 6F CONV OHT Teaching (오전),10:02,10:20,Capa 조정 (50% Down) 후 작업 취소 및 원복
+05/18,ZT#6 호기 6F CONV OHT Teaching (오후),15:07,15:47,"Capa ""1"" 변경 후 작업, 완료 후 원복"
+05/19,ZT#6 호기 BCL 설치 작업 (오전),09:00,09:52,"Maxcapa ""1""~""2"" 조정하며 5/10 개 설치 완료"
+05/19,ZT#6 호기 BCL 설치 작업 (오후),14:01,15:46,"3 차 작업까지 완료, Upper 구간 BCL 설치 종료"
+05/21,3F Bridge ZT 6 호기 Teaching (오전),08:57,11:21,작업 종료
+05/21,M16A 6ABL0121 Error 대응,13:31,13:40,AI Banned T 변경
+05/21,3F Bridge ZT 6 호기 Teaching (오후),14:27,15:30,"4 개소 티칭 완료, BCL/E84 설정 작업 진행"
+05/21,ZT5-1 호기 LOW FORK DISABLE 조치,14:44,17:14,"잔류 FOUP 정리, 3F IN CAPA 2 변경, 2F 차단"
+05/21,M14A/B Maxcapa 1 변경 (야간),17:10,21:32,Hub 정체 및 Bridge 순환을 위한 조정
+05/22,M16>M14>M10A/C 반송 지연 분석,16:34,16:45,"STK FULL 아님, Manual 반송 영역 확인"
+05/24,M16A 6ABL0111 ERROR 대응,12:18,12:50,AI Banned T 변경 후 처리 완료
+05/25,6AFS6201/6202 IN 증가 확인,16:13,16:25,"STK 이상 없음, Queue 많음 확인"
+05/25,M16A ZT Maxcapa 50% 변경,17:04,17:05,조치 완료
+05/25,M14A/B Maxcapa 50% 변경 및 원복,17:06,17:41,변경 후 원복 완료
+05/25,M16 Maxcapa '1' 변경,18:02,18:13,조치 완료
+05/25,Deadlock 및 Storage Full 대응,18:34,21:15,"층간반송 차단, Capa 조정 (70→10), Port 개방 조절"
+05/25,M16HUB Queue High Alarm 발생,19:59,20:39,Queue 2000 개 초과 지속
+05/25,M14A/B Maxcapa 원복,22:06,22:14,정상화 조치
+05/26,M16A Storage 층간 이동 수량 변경,07:58,-,임시 변경
+05/26,작업 일정 재수립 및 취소 공지,08:41,08:50,연휴 물류 악화로 인한 일정 조정
+05/26,M16A ZT5-1 호기 Motor 교체 작업 인폼,17:03,-,5/27 작업 예정 공지
+05/26,HUB 쪽 OHT 몰림 현상 분산 요청,21:09,21:12,6AFS6201/6202 분산 요청
+05/27,ZT5-1 호기 Lower Fork Motor 교체,08:16,13:47,3F/6F AI Close → 부분 Open → 전체 Open
+05/27,"SFA Lifter Maxcapa ""1"" 전체 변경",13:44,13:59,조치 완료
+05/27,"M14A Maxcapa ""1"" 변경 및 원복",13:50,14:25,변경 후 원복 완료
+05/27,M16 6F Maxcapa 3 변경,13:47,15:30,작업 완료 후 원복
+05/28,4AFC3201 Port 증축 작업 일정 재공지,11:25,11:31,5/29 작업으로 일정 확정 (기존 5/28→29 변경)
+05/29,M16A ZT 3-2 호기 6ABL6032 Error 대응,08:16,10:18,Close → Clear/Open → 재발생 조치 → 전 Port Open
