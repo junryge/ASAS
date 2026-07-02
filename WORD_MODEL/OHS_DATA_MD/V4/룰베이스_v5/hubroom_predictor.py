@@ -104,7 +104,7 @@ INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 60)  # ★ v6: 10→60분, 진
 PREDICT_LOOKBACK_MIN = _T('PREDICT_LOOKBACK_MIN', 60)
 # ★ 사건 정의 = '점수 이 값 이상(경계+)' 으로 시작/종료. (전엔 stage 3 기준이라
 #   점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생기던 문제 → 점수 기준으로 교정)
-MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 54)
+MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 50)
 
 # ============================================================
 # 영역별 임계값 (2026-03-24 14:39 ~ 04-30 학습 분포 p95/p99 기반)
@@ -650,12 +650,12 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
     raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score
     unified_risk_score = min(100, round(raw_score * 100 / 220))
 
-    # ★ 위험도 등급 (회사 표준 54/75/90): 경계 54~74 / 위험 75~89 / 초위험 90~100. 54 미만은 등급 공란 (정상 라벨 없음).
-    if unified_risk_score >= 90:
+    # ★ 위험도 등급 (회사 표준 50/71/85): 경계 50~70 / 위험 71~84 / 초위험 85~100. 50 미만은 등급 공란 (정상 라벨 없음).
+    if unified_risk_score >= 85:
         unified_risk_level = '초위험'
-    elif unified_risk_score >= 75:
+    elif unified_risk_score >= 71:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 54:
+    elif unified_risk_score >= 50:
         unified_risk_level = '경계'
     else:
         unified_risk_level = ''
@@ -779,7 +779,7 @@ class IncidentTracker:
             self.early_signals.append(t)
         cur_stage = 3 if s3 else (2 if s2 else (1 if s1 else 0))
         self._record_event(t, cur_stage, ctx)
-        # ★ 사건 시작/지속/종료 = '점수 54 이상(경계+)' 기준. (전엔 stage 3 → 점수 낮은 시각이
+        # ★ 사건 시작/지속/종료 = '점수 50 이상(경계+)' 기준. (전엔 stage 3 → 점수 낮은 시각이
         #   사건 시작으로 잡혀 9시간 가짜 사건이 생김. 이제 진짜 정체(점수)만 사건으로.)
         is_alarm = (ctx.get('unified_risk_score', 0) or 0) >= MIN_INCIDENT_SCORE
         if self.state == 'IDLE':
@@ -925,7 +925,7 @@ class IncidentTracker:
     def _end_current(self, t):
         c = self.current
         c['end_time'] = c['last_s3_time']
-        # ★ 사건 기록 기준 = 점수 54 이상(경계+). 시작 기준과 동일하게 통일.
+        # ★ 사건 기록 기준 = 점수 50 이상(경계+). 시작 기준과 동일하게 통일.
         if c.get('max_risk_score', 0) >= MIN_INCIDENT_SCORE:
             self.incidents.append(c)
         self.current = None

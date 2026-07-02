@@ -124,7 +124,7 @@ JAM = {'정체/병목','리프터','CNV','MLUD','브릿지'}  # orphan='Y' 제�
      → ml_predict/YYYYMMDD_anomaly.csv (datetime, anomaly_score, ml_level)
      → 룰베이스(test_table3) 옆 별도 (test_table4) 적재
 ```
-- ml_level 4단계: 안전<0.3 / 관심 / 경계 / 위험≥0.7 (룰 54/75/90 과 별개)
+- ml_level 4단계: 안전<0.3 / 관심 / 경계 / 위험≥0.7 (룰 50/71/85 과 별개)
 - 룰베이스와 **병행만**, 하이브리드 융합은 나중.
 - 신규: `ml/ml_runner_tspulse.py` (+ `ML_LO.py` 적재)
 

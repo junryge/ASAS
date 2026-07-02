@@ -20,7 +20,7 @@ tspulse_infer — 학습된 TSPulse R1 로 매분 이상점수 생성 (Phase 2) 
 
 출력:
     anomaly.csv  — datetime, recon_err, anomaly_score[0~1], ml_level
-    ml_level: 안전<0.3 / 관심0.3~ / 경계0.5~ / 위험≥0.7  (룰 54/75/90 과 별개)
+    ml_level: 안전<0.3 / 관심0.3~ / 경계0.5~ / 위험≥0.7  (룰 50/71/85 과 별개)
 """
 import argparse
 import csv
