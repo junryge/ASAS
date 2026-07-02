@@ -2231,6 +2231,14 @@ async function send(){
   const _baseSys = document.getElementById('systemPromptInput').value.trim();
   const _sysFinal = _hermesAddon ? (_hermesAddon + '\n\n' + _baseSys).trim() : _baseSys;
 
+  // ── 🔮 회상 질문('지난 대화/기억' 등)이면 무거운 자동 스킬을 빼 회상이 묻히지 않게 (A안) ──
+  // 헤르메스 켜진 경우만 적용 → 일반 질문·스킬 사용엔 영향 없음.
+  const _recallHints = ['지난','이전','전에','저번','방금','아까','기억','예전','지난번','말해준','말했','얘기했','얘기한','물어봤','직전'];
+  if(_hermesAddon && _recallHints.some(h => (text||'').includes(h))){
+    skillsToUse = [];
+    autoLoaded = [];
+  }
+
   // 첨부파일 표시 + 메시지
   let displayText = text || '';
   if(attachedNames.length > 0){
