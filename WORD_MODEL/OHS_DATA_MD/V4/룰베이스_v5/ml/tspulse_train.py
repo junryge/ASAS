@@ -133,6 +133,8 @@ def main():
     ap.add_argument('--labels', default=None,
                     help='(옵션) is_normal 마스크. 정상 raw 로 만든 features 면 불필요')
     ap.add_argument('--context', type=int, default=512)
+    ap.add_argument('--stride', type=int, default=64,
+                    help='학습창 간격(분). 클수록 창 수↓·빠름. 64 권장 (1=최대중복·초느림)')
     ap.add_argument('--epochs', type=int, default=10)
     ap.add_argument('--batch', type=int, default=32)
     ap.add_argument('--lr', type=float, default=1e-4)
@@ -206,11 +208,11 @@ def main():
         segs.append((i, j)); i = j + 1
     windows = []
     for s, e in segs:
-        for k in range(s, e - C + 2):        # k..k+C-1 이 [s,e] 안일 때만
+        for k in range(s, e - C + 2, a.stride):   # stride 간격 (재구성 학습엔 겹침 과다 불필요)
             windows.append(arr[k:k + C])
     too_short = sum(1 for s, e in segs if (e - s + 1) < C)
     print(f"[세그먼트] 연속 정상 구간 {len(segs)}개 "
-          f"(그중 {C}분 미만 {too_short}개는 창 불가)")
+          f"(그중 {C}분 미만 {too_short}개는 창 불가) · stride {a.stride}")
     if not windows:
         print(f"⚠️ 정상 윈도우 0개 — 연속 구간이 모두 {C}분 미만. "
               f"context 를 줄이거나(--context) 데이터 확인"); sys.exit(3)
@@ -231,10 +233,14 @@ def main():
 
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr)
     loader = DataLoader(TensorDataset(X), batch_size=a.batch, shuffle=True)
+    nb = len(loader)
+    print(f"[학습] {a.epochs} epochs × {nb} batch (batch={a.batch}, device={device})", flush=True)
     model.train()
+    import time as _t
     for ep in range(1, a.epochs + 1):
         tot = 0.0
-        for (xb,) in loader:
+        t0 = _t.time() if hasattr(_t, 'time') else 0
+        for bi, (xb,) in enumerate(loader, 1):
             xb = xb.to(device)                # (B, C, ch)
             opt.zero_grad()
             out = model(past_values=xb)
@@ -243,7 +249,9 @@ def main():
             loss.backward()
             opt.step()
             tot += loss.item() * xb.size(0)
-        print(f"  epoch {ep:2d}/{a.epochs}  recon MSE {tot/len(X):.5f}")
+            if bi % 5 == 0 or bi == nb:       # 진행상황 (조용히 안 돌게)
+                print(f"    ep{ep} {bi}/{nb} loss {loss.item():.5f}", flush=True)
+        print(f"  ✔ epoch {ep}/{a.epochs}  recon MSE {tot/len(X):.5f}", flush=True)
 
     model.save_pretrained(os.path.join(a.out, 'model'))
     with open(os.path.join(a.out, 'train_meta.json'), 'w', encoding='utf-8') as f:
