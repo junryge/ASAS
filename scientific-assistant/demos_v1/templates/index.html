@@ -2231,6 +2231,14 @@ async function send(){
   const _baseSys = document.getElementById('systemPromptInput').value.trim();
   const _sysFinal = _hermesAddon ? (_hermesAddon + '\n\n' + _baseSys).trim() : _baseSys;
 
+  // ── 🔮 회상 질문('지난 대화/기억' 등)이면 무거운 자동 스킬을 빼 회상이 묻히지 않게 (A안) ──
+  // 헤르메스 켜진 경우만 적용 → 일반 질문·스킬 사용엔 영향 없음.
+  const _recallHints = ['지난','이전','전에','저번','방금','아까','기억','예전','지난번','말해준','말했','얘기했','얘기한','물어봤','직전'];
+  if(_hermesAddon && _recallHints.some(h => (text||'').includes(h))){
+    skillsToUse = [];
+    autoLoaded = [];
+  }
+
   // 첨부파일 표시 + 메시지
   let displayText = text || '';
   if(attachedNames.length > 0){
@@ -6204,10 +6212,11 @@ async function searchHermesSessions(){
       if(!d.recent.length){ box.innerHTML='<span style="color:#888;">기록이 없습니다.</span>'; return; }
       box.innerHTML='<div style="color:#a5b4fc;font-weight:700;margin-bottom:6px;">최근 세션</div>'+
         d.recent.map(function(s){
-          return '<div style="border-bottom:1px solid #2a2a3e;padding:5px 0;">'
+          return '<div onclick="_hmJumpSession(\''+_hmEsc(s.session_id||'')+'\',\''+_hmEsc(s.date||'')+'\')" title="이 세션으로 이동" style="border-bottom:1px solid #2a2a3e;padding:5px 0;cursor:pointer;">'
             +'<span style="color:#94a3b8;font-size:10.5px;font-family:monospace;">'+_hmEsc(s.date||'')+'</span> '
             +'<span style="color:#e2e8f0;">'+_hmEsc(s.first_user||'(빈 세션)')+'</span>'
-            +' <span style="color:#64748b;font-size:10.5px;">('+(s.count||0)+'턴)</span></div>';
+            +' <span style="color:#64748b;font-size:10.5px;">('+(s.count||0)+'턴)</span>'
+            +' <span style="color:#a78bfa;font-size:10.5px;">↗ 이동</span></div>';
         }).join('');
       return;
     }
@@ -6220,11 +6229,35 @@ async function searchHermesSessions(){
         return '<div style="padding:2px 4px;'+hl+'"><b style="color:#94a3b8;">'+who+'</b> '
           +_hmEsc((m.content||'').slice(0,160))+((m.content||'').length>160?'…':'')+'</div>';
       }).join('');
-      return '<div style="border:1px solid #333;border-radius:8px;padding:8px;margin-bottom:8px;background:#23233a;">'
-        +'<div style="color:#94a3b8;font-size:10.5px;font-family:monospace;margin-bottom:4px;">'+_hmEsc(h.date||'')+' · 관련도 '+h.score+'</div>'
+      return '<div onclick="_hmJumpSession(\''+_hmEsc(h.session_id||'')+'\',\''+_hmEsc(h.date||'')+'\')" title="이 세션으로 이동" style="border:1px solid #333;border-radius:8px;padding:8px;margin-bottom:8px;background:#23233a;cursor:pointer;">'
+        +'<div style="color:#94a3b8;font-size:10.5px;font-family:monospace;margin-bottom:4px;">'+_hmEsc(h.date||'')+' · 관련도 '+h.score+' <span style="color:#a78bfa;">↗ 세션으로 이동</span></div>'
         +ctx+'</div>';
     }).join('');
   }catch(e){ box.innerHTML='<span style="color:#f87171;">검색 실패: '+_hmEsc(e.message)+'</span>'; }
+}
+
+// 🔎 검색 결과(세션) → 그 세션으로 이동. 없으면 날짜로 찾아 이동, 그래도 없으면 안내.
+function _hmJumpSession(sid, date){
+  try{
+    if(typeof sessions==='undefined'){ alert('세션 목록을 불러올 수 없습니다.'); return; }
+    // 1) session_id 로 바로 이동
+    if(sid && sessions[sid]){
+      closeHermesPopup(); loadSession(sid); return;
+    }
+    // 2) 날짜(YYYY-MM-DD)로 폴백 — 로컬 세션 중 같은 날짜의 세션 찾기
+    if(date){
+      for(var k in sessions){
+        var ts=parseInt(String(k).replace('sess_',''),10);
+        if(!isNaN(ts)){
+          var ds=new Date(ts);
+          var y=ds.getFullYear()+'-'+String(ds.getMonth()+1).padStart(2,'0')+'-'+String(ds.getDate()).padStart(2,'0');
+          if(y===date){ closeHermesPopup(); loadSession(k); return; }
+        }
+      }
+    }
+    // 3) 로컬에 없음 (다른 기기/삭제된 세션)
+    alert('이 세션은 현재 브라우저의 세션 목록에 없습니다.\n(날짜: '+(date||'?')+')\n다른 기기에서 나눈 대화이거나 로컬에서 삭제된 세션입니다.');
+  }catch(e){ alert('세션 이동 실패: '+e.message); }
 }
 </script>
 

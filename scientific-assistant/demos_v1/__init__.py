@@ -49,6 +49,28 @@ def create_app():
     except Exception as _he:
         print(f"  ⚠️  헤르메스 라우트 등록 실패(무시): {_he}")
 
+    # 헤르메스 자동기억 리뷰어에 LLM 완성함수 주입 (없으면 review 가 no-op → 기억이 안 쌓임).
+    # ★ 백그라운드 스레드에서만 동작(라이브 채팅·프롬프트·다른 표면 무영향). 실패해도 부팅/채팅 정상.
+    try:
+        from demos_v1.hermes import review as _hermes_review
+
+        def _hermes_review_llm(messages):
+            """리뷰어용 1회성 완성. gguf/API 자동 선택. 실패 시 빈 문자열(=저장할 것 없음)."""
+            try:
+                from demos_v1.routes_api import _llm_generate_text
+                sys_p = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+                usr_p = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
+                content, _ = _llm_generate_text({}, sys_p, usr_p, max_tokens=512, timeout=60)
+                return content or ""
+            except Exception as _e:
+                print(f"  ⚠️  헤르메스 리뷰 LLM 호출 실패(무시): {_e}")
+                return ""
+
+        _hermes_review.set_completion(_hermes_review_llm)
+        print("  🔮 헤르메스 자동기억 리뷰어 LLM 연결 완료")
+    except Exception as _re:
+        print(f"  ⚠️  헤르메스 리뷰어 연결 실패(무시): {_re}")
+
     # code_assist_v1 통합 (Blueprint, url_prefix="/code", demos_v1 리소스 공유)
     try:
         from code_assist_v1.blueprint import register_code_blueprint

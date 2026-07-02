@@ -609,19 +609,16 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
             mc_score += 10 * n
             mc_signals.extend([f"{area}:{x}" for x in r.get('maxcapa_changed', [])])
 
-    unified_risk_score = min(500, layer1_total + flow_score + sla_score + sorter_score + mc_score)
+    _raw = layer1_total + flow_score + sla_score + sorter_score + mc_score
+    unified_risk_score = min(100, round(_raw / 2.2))   # V2 정규화 → 1~100 척도
 
-    # 6단계 위험도 등급
-    if unified_risk_score >= 250:
-        unified_risk_level = '매우위험'
-    elif unified_risk_score >= 150:
+    # 등급 (1~100 정규화 기준): 정상<50 / 경계50~70 / 위험71~84 / 초위험85~100
+    if unified_risk_score >= 85:
+        unified_risk_level = '초위험'
+    elif unified_risk_score >= 71:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 80:
-        unified_risk_level = '주의'
-    elif unified_risk_score >= 65:
-        unified_risk_level = '경계'   # ★ 신규: 관심 후반, 주의 직전 (score 65~79)
-    elif unified_risk_score >= 30:
-        unified_risk_level = '관심'   # 변경: 30~64
+    elif unified_risk_score >= 50:
+        unified_risk_level = '경계'
     else:
         unified_risk_level = '정상'
 
@@ -838,10 +835,10 @@ class IncidentTracker:
     def _end_current(self, t):
         c = self.current
         c['end_time'] = c['last_s3_time']
-        # ★ max_risk_score < 65 (관심 이하) 이면 사건단위에 기록 안 함
-        # 경계(65~79) / 주의(80~149) / 위험(150~249) / 매우위험(250~) 만 기록
+        # ★ max_risk_score < 50 (경계 미만) 이면 사건단위에 기록 안 함 (1~100 정규화 기준)
+        # 경계(50~70) / 위험(71~84) / 초위험(85~100) 만 기록
         # (발동이벤트.csv 에는 매분 그대로 기록 — 트렌드 모니터링 가능)
-        if c.get('max_risk_score', 0) >= 65:
+        if c.get('max_risk_score', 0) >= 50:
             self.incidents.append(c)
         self.current = None
         self.state = 'IDLE'
@@ -849,7 +846,7 @@ class IncidentTracker:
     def finalize(self, last_t):
         if self.state == 'IN_INCIDENT':
             self.current['end_time'] = self.current['last_s3_time']
-            if self.current.get('max_risk_score', 0) >= 65:
+            if self.current.get('max_risk_score', 0) >= 50:
                 self.incidents.append(self.current)
             self.current = None
             self.state = 'IDLE'
