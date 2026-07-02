@@ -97,10 +97,11 @@ def build_system_prompt(user_id: str, query: str = "") -> str:
             bbodies = "\n\n".join(f"[{r['name']}] {r['desc']}\n{r['body']}" for r in bi)
             parts.append("=== 권장 작업 방식 (헤르메스 빌트인 스킬) ===\n" + bbodies)
 
-        # 지난 대화(과거 세션) 회상 — 사용자가 이전 대화를 물으면 근거가 되게 관련 기록 주입.
-        # (기억 스냅샷=사실 요약과 별개로, 실제 대화 원문을 검색해 넣는다.)
+        # 지난 대화(과거 세션) 회상 — ★회상 의도('지난/기억/전에' 등)일 때만 주입한다.
+        # (분석·일반 질문['사건발생 분석' 등]엔 주입하지 않음 → 리포트/그래프 등 기존 동작 보존.)
+        _recall = _wants_recall(query)
         try:
-            hits = sessions.search(user_id, query, max_hits=3)
+            hits = sessions.search(user_id, query, max_hits=3) if _recall else []
         except Exception:
             hits = []
         if hits:
