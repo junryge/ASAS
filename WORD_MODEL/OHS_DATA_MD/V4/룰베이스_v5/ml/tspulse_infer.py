@@ -115,13 +115,17 @@ def main():
     # ── 점수 정규화: 정상구간 오차의 median/MAD 로 z → 시그모이드 [0,1] ──
     valid = ~np.isnan(errs)
     base = errs[valid]
-    if 'err_median' in scaler and 'err_mad' in scaler:
-        # ★ 고정 기준선(tspulse_baseline.py): 학습 정상분포로 정규화 → 자기참조 과탐지 제거.
-        #   정상 분은 낮게(<0.5), 급증(정체 전조)만 높게. 이게 정상 운영 모드.
-        med = float(scaler['err_median'])
-        mad = float(scaler['err_mad']) or 1e-9
-        print(f"[정규화] 고정 기준선 사용 median={med:.6f} MAD={mad:.6f} (n={scaler.get('baseline_n','?')})")
+    scores = np.full(len(feat), np.nan)
+    if 'err_p95' in scaler and 'err_median' in scaler:
+        # ★ 고정 기준선(학습시 저장): 정상오차 P95 를 '경계선(center)' 으로 → 자기참조 과탐지 제거.
+        #   정상 분(≈P50) → z<0 → 낮음(안전/관심), P95 → 0.5(경계), 급증 → 위험.
+        c = float(scaler['err_p95'])
+        s = max((float(scaler['err_p95']) - float(scaler['err_median'])) / 2.0, 1e-9)
+        z = (errs[valid] - c) / s
+        scores[valid] = 1.0 / (1.0 + np.exp(-z))
+        print(f"[정규화] 고정 기준선 center(P95)={c:.6f} scale={s:.6f} (n={scaler.get('baseline_n','?')})")
     else:
+        # 폴백: 기준선 없음 → 입력 자기분포 (과탐지 경고)
         if a.labels and os.path.exists(a.labels):
             lab = pd.read_csv(a.labels, encoding='utf-8-sig')
             lab['datetime'] = pd.to_datetime(lab['datetime'])
@@ -131,10 +135,9 @@ def main():
                 base = nb
         med = float(np.median(base))
         mad = float(np.median(np.abs(base - med))) or 1e-9
-        print(f"[정규화] ⚠️ 자기참조(입력분포) — 과탐지 가능. tspulse_baseline.py 로 기준선 고정 권장")
-    scores = np.full(len(feat), np.nan)
-    z = (errs[valid] - med) / (1.4826 * mad)
-    scores[valid] = 1.0 / (1.0 + np.exp(-z))    # 시그모이드
+        z = (errs[valid] - med) / (1.4826 * mad)
+        scores[valid] = 1.0 / (1.0 + np.exp(-z))
+        print("[정규화] ⚠️ 자기참조(입력분포) — 과탐지 가능. 재학습(기준선 자동고정) 또는 tspulse_baseline.py 권장")
 
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)

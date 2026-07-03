@@ -254,6 +254,37 @@ def main():
         print(f"  ✔ epoch {ep}/{a.epochs}  recon MSE {tot/len(X):.5f}", flush=True)
 
     model.save_pretrained(os.path.join(a.out, 'model'))
+
+    # ── ★ 정상 기준선 고정 (frozen baseline) : 과탐지 근본해결 ──
+    #    학습한 '정상' 창들의 재구성오차 median/MAD 를 scaler.json 에 박아둔다.
+    #    추론 때 입력 자기분포로 정규화(=절반이 위험) 하는 대신 이 고정값을 쓰면
+    #    정상 분=낮음, 급증(정체 전조)만=높음 으로 분리된다.
+    model.eval()
+    berr = []
+    with torch.no_grad():
+        for bi in range(0, len(X), a.batch):
+            xb = X[bi:bi + a.batch].to(device)
+            out = model(past_values=xb)
+            recon = out.reconstruction_outputs if hasattr(out, 'reconstruction_outputs') else out[1]
+            e = ((recon[:, -1, :] - xb[:, -1, :]) ** 2).mean(dim=1).cpu().numpy()
+            berr.extend(e.tolist())
+            if (bi // a.batch) % 20 == 0:
+                print(f"    [기준선] {min(bi + a.batch, len(X))}/{len(X)}", flush=True)
+    berr = np.asarray(berr, dtype='float64')
+    emed = float(np.median(berr))
+    emad = float(np.median(np.abs(berr - emed))) or 1e-9
+    ep95 = float(np.percentile(berr, 95))
+    ep99 = float(np.percentile(berr, 99))
+    sc = json.load(open(os.path.join(a.out, 'scaler.json'), encoding='utf-8'))
+    sc['err_median'] = emed          # 정상 중앙값 (P50)
+    sc['err_mad'] = emad
+    sc['err_p95'] = ep95             # ★ 경계선: 정상의 95%는 이 아래 → 추론 정규화 중심
+    sc['err_p99'] = ep99
+    sc['baseline_n'] = int(len(berr))
+    json.dump(sc, open(os.path.join(a.out, 'scaler.json'), 'w', encoding='utf-8'),
+              ensure_ascii=False, indent=2)
+    print(f"[기준선] 정상오차 P50={emed:.6f} P95={ep95:.6f} P99={ep99:.6f} (n={len(berr)}) → scaler.json 고정", flush=True)
+
     with open(os.path.join(a.out, 'train_meta.json'), 'w', encoding='utf-8') as f:
         json.dump({'model': TSPULSE_MODEL, 'channels': n_ch, 'context': C,
                    'epochs': a.epochs, 'normal_windows': len(windows),

@@ -132,10 +132,12 @@ def main():
     mad = float(np.median(np.abs(errs - med))) or 1e-9
     scaler['err_median'] = med
     scaler['err_mad'] = mad
+    scaler['err_p95'] = float(np.percentile(errs, 95))   # ★ 추론 정규화 중심(경계선)
+    scaler['err_p99'] = float(np.percentile(errs, 99))
     scaler['baseline_n'] = len(idxs)
     json.dump(scaler, open(sc_fp, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
 
-    print(f"[완료] 정상 재구성오차  median={med:.6f}  MAD={mad:.6f}  (n={len(idxs)})")
+    print(f"[완료] 정상오차 P50={med:.6f} P95={scaler['err_p95']:.6f} P99={scaler['err_p99']:.6f} (n={len(idxs)})")
     print(f"       → {sc_fp} 에 고정 저장")
     print("       이제 tspulse_infer 는 이 기준선으로 정규화 (정상=낮음, 급증=높음)")
 
