@@ -223,8 +223,24 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_src = a.model_dir or TSPULSE_MODEL
     if a.model_dir:
+        # 로컬 폴더 검증 + config.json 위치 자동 탐색 (zip 압축해제로 한 겹 더 생긴 경우 대응)
+        if not os.path.isdir(a.model_dir):
+            print(f"⚠️ 모델 폴더 없음: {a.model_dir}\n   → ls 로 실제 경로 확인 후 --model_dir 다시 지정")
+            sys.exit(4)
+        if not os.path.isfile(os.path.join(a.model_dir, 'config.json')):
+            import glob as _g
+            hits = _g.glob(os.path.join(a.model_dir, '**', 'config.json'), recursive=True)
+            if hits:
+                a.model_dir = os.path.dirname(hits[0])
+                print(f"[모델] config.json 하위폴더에서 발견 → {a.model_dir}")
+            else:
+                print(f"⚠️ {a.model_dir} 안에 config.json 없음 — TSPulse 가중치 폴더가 맞는지 확인\n"
+                      f"   (config.json + *.safetensors 가 같이 있어야 함)")
+                sys.exit(4)
+        model_src = a.model_dir
         _ensure_safetensors(a.model_dir)        # model-1.safetensors 등 자동 표준명 처리
         os.environ['HF_HUB_OFFLINE'] = '1'      # 로컬 폴더만 사용 (네트워크 X)
+        os.environ['TRANSFORMERS_OFFLINE'] = '1'
     print(f"[모델] {model_src} 로드 (device={device})")
     model = TSPulseForReconstruction.from_pretrained(
         model_src, num_input_channels=n_ch,
