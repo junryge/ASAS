@@ -115,15 +115,23 @@ def main():
     # ── 점수 정규화: 정상구간 오차의 median/MAD 로 z → 시그모이드 [0,1] ──
     valid = ~np.isnan(errs)
     base = errs[valid]
-    if a.labels and os.path.exists(a.labels):
-        lab = pd.read_csv(a.labels, encoding='utf-8-sig')
-        lab['datetime'] = pd.to_datetime(lab['datetime'])
-        m = feat.merge(lab[['datetime', 'is_normal']], on='datetime', how='left')
-        nb = errs[(m['is_normal'].fillna(0).values == 1) & valid]
-        if len(nb) > 100:
-            base = nb
-    med = float(np.median(base))
-    mad = float(np.median(np.abs(base - med))) or 1e-9
+    if 'err_median' in scaler and 'err_mad' in scaler:
+        # ★ 고정 기준선(tspulse_baseline.py): 학습 정상분포로 정규화 → 자기참조 과탐지 제거.
+        #   정상 분은 낮게(<0.5), 급증(정체 전조)만 높게. 이게 정상 운영 모드.
+        med = float(scaler['err_median'])
+        mad = float(scaler['err_mad']) or 1e-9
+        print(f"[정규화] 고정 기준선 사용 median={med:.6f} MAD={mad:.6f} (n={scaler.get('baseline_n','?')})")
+    else:
+        if a.labels and os.path.exists(a.labels):
+            lab = pd.read_csv(a.labels, encoding='utf-8-sig')
+            lab['datetime'] = pd.to_datetime(lab['datetime'])
+            m = feat.merge(lab[['datetime', 'is_normal']], on='datetime', how='left')
+            nb = errs[(m['is_normal'].fillna(0).values == 1) & valid]
+            if len(nb) > 100:
+                base = nb
+        med = float(np.median(base))
+        mad = float(np.median(np.abs(base - med))) or 1e-9
+        print(f"[정규화] ⚠️ 자기참조(입력분포) — 과탐지 가능. tspulse_baseline.py 로 기준선 고정 권장")
     scores = np.full(len(feat), np.nan)
     z = (errs[valid] - med) / (1.4826 * mad)
     scores[valid] = 1.0 / (1.0 + np.exp(-z))    # 시그모이드
