@@ -27,9 +27,10 @@ import json
 import os
 import sys
 
-# ★ train 과 반드시 동일
-ROLL_WINS = [15, 30]
-DELTA_LAGS = [15, 30]
+# ★ train 과 반드시 동일 (60분 흐름)
+ROLL_WINS = [15, 30, 60]
+DELTA_LAGS = [15, 30, 60]
+MAX_WINS = [60]
 
 
 def _need():
@@ -52,6 +53,8 @@ def build_features(feat_df, base_cols):
         for w in ROLL_WINS:
             new[f'{c}__rmean{w}'] = s.rolling(w, min_periods=1).mean()
             new[f'{c}__rstd{w}'] = s.rolling(w, min_periods=1).std().fillna(0.0)
+        for w in MAX_WINS:
+            new[f'{c}__rmax{w}'] = s.rolling(w, min_periods=1).max()
         for lag in DELTA_LAGS:
             new[f'{c}__d{lag}'] = s - s.shift(lag).fillna(s.iloc[0])
     df = pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
@@ -79,8 +82,19 @@ def main():
     import xgboost as xgb
 
     feat_cols = json.load(open(os.path.join(a.model, 'feature_cols.json'), encoding='utf-8'))
-    model = xgb.XGBClassifier()
-    model.load_model(os.path.join(a.model, 'model.json'))
+    # 지평선별 모델 로드 (model_y_pre10.json, model_y_pre30.json) — 없으면 구 model.json
+    import glob
+    mfiles = sorted(glob.glob(os.path.join(a.model, 'model_y_pre*.json')))
+    if not mfiles and os.path.exists(os.path.join(a.model, 'model.json')):
+        mfiles = [os.path.join(a.model, 'model.json')]
+    if not mfiles:
+        print("⚠️ 모델 파일 없음 (model_y_pre*.json)"); sys.exit(3)
+    models = {}
+    for mf in mfiles:
+        tag = os.path.basename(mf).replace('model_', '').replace('.json', '')  # y_pre10 / y_pre30
+        m = xgb.XGBClassifier(); m.load_model(mf)
+        models[tag] = m
+    print(f"[모델] {list(models.keys())} 로드")
 
     feat = pd.read_csv(a.features, encoding='utf-8-sig')
     feat['datetime'] = pd.to_datetime(feat['datetime'])
@@ -91,16 +105,24 @@ def main():
     if missing:
         print(f"⚠️ 피처 불일치 {len(missing)}개 (train/infer 상수 확인): {missing[:5]}...")
         sys.exit(3)
-    p = model.predict_proba(df[feat_cols].values)[:, 1]
+    X = df[feat_cols].values
+    probs = {tag: m.predict_proba(X)[:, 1] for tag, m in models.items()}
+    tags = list(models.keys())
 
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['datetime', 'jam_probability', 'jam_level'])
-        for t, prob in zip(df['datetime'], p):
-            w.writerow([t.strftime('%Y-%m-%d %H:%M'), f'{prob:.4f}', level(float(prob))])
+        header = ['datetime'] + [f'{t}_prob' for t in tags] + [f'{t}_level' for t in tags]
+        w.writerow(header)
+        for i, t in enumerate(df['datetime']):
+            row = [t.strftime('%Y-%m-%d %H:%M')]
+            row += [f'{probs[tg][i]:.4f}' for tg in tags]
+            row += [level(float(probs[tg][i])) for tg in tags]
+            w.writerow(row)
 
-    hi = int((p >= 0.7).sum())
-    print(f"[완료] {len(p)}분 정체확률 (정체≥0.7 {hi}분, {hi/len(p)*100:.1f}%) → {a.out}")
+    print(f"[완료] {len(df)}분 → {a.out}")
+    for tg in tags:
+        hi = int((probs[tg] >= 0.7).sum())
+        print(f"       {tg}: 정체(≥0.7) {hi}분 ({hi/len(df)*100:.1f}%)")
     print("다음: 하이브리드_판정.py 에서 룰·정상TSPulse·이 확률 종합")
 
 

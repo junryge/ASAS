@@ -31,8 +31,9 @@ import json
 import os
 import sys
 
-ROLL_WINS = [15, 30]        # 롤링 평균/표준편차 창(분)
-DELTA_LAGS = [15, 30]       # 델타(현재 − N분전)
+ROLL_WINS = [15, 30, 60]    # 롤링 평균/표준편차 창(분) — 60분 흐름 포함
+DELTA_LAGS = [15, 30, 60]   # 델타(현재 − N분전) — 60분 추세
+MAX_WINS = [60]             # 60분 내 최대치(얼마나 튀었나 = 급증 포착)
 
 
 def _need():
@@ -59,6 +60,8 @@ def build_features(feat_df, base_cols):
         for w in ROLL_WINS:
             new[f'{c}__rmean{w}'] = s.rolling(w, min_periods=1).mean()
             new[f'{c}__rstd{w}'] = s.rolling(w, min_periods=1).std().fillna(0.0)
+        for w in MAX_WINS:
+            new[f'{c}__rmax{w}'] = s.rolling(w, min_periods=1).max()   # 60분 내 피크(급증)
         for lag in DELTA_LAGS:
             new[f'{c}__d{lag}'] = s - s.shift(lag).fillna(s.iloc[0])
     import pandas as pd
@@ -94,57 +97,67 @@ def main():
     lab['datetime'] = pd.to_datetime(lab['datetime'])
     base_cols = [c for c in feat.columns if c != 'datetime']
 
-    # 롤링/델타 피처
+    # 롤링/델타/최대 피처 (60분 흐름) — 공통
     df, feat_cols = build_features(feat, base_cols)
-    df = df.merge(lab[['datetime', 'y_pre30']], on='datetime', how='left')
-    df['y_pre30'] = df['y_pre30'].fillna(0).astype(int)
-    print(f"[데이터] {len(df)}분 × {len(feat_cols)}피처 (원 {len(base_cols)} + 롤링/델타)")
-    print(f"[라벨] 양성(정체30분전) {int(df['y_pre30'].sum())}분 "
-          f"({df['y_pre30'].mean()*100:.1f}%)")
+    print(f"[데이터] {len(df)}분 × {len(feat_cols)}피처 (원 {len(base_cols)} + 60분 롤링/델타/최대)")
 
-    # 시간분할 (뒤쪽 = 검증) — 누수 차단
+    # 학습할 타겟 자동 선택: labels.csv 에 있는 y_pre* 컬럼 전부 (10분·30분 등)
+    TARGETS = [c for c in ['y_pre10', 'y_pre30'] if c in lab.columns]
+    if not TARGETS:
+        TARGETS = [c for c in lab.columns if c.startswith('y_pre')]
+    if not TARGETS:
+        print("⚠️ labels.csv 에 y_pre10/y_pre30 컬럼 없음"); sys.exit(3)
+    df = df.merge(lab[['datetime'] + TARGETS], on='datetime', how='left')
+    for t in TARGETS:
+        df[t] = df[t].fillna(0).astype(int)
+
+    # 공통 피처저장 (두 모델 동일 피처)
+    with open(os.path.join(a.out, 'feature_cols.json'), 'w', encoding='utf-8') as f:
+        json.dump(feat_cols, f, ensure_ascii=False)
+
+    # 시간분할 (뒤쪽 = 검증) — 누수 차단, 두 타겟 공통 분할
     n = len(df)
     cut = int(n * (1 - a.test_ratio))
     tr, te = df.iloc[:cut], df.iloc[cut:]
-    Xtr, ytr = tr[feat_cols].values, tr['y_pre30'].values
-    Xte, yte = te[feat_cols].values, te['y_pre30'].values
-    pos, neg = int(ytr.sum()), int((ytr == 0).sum())
-    spw = neg / max(pos, 1)
-    print(f"[분할] 학습 {len(tr)}분(양성{pos}) / 검증 {len(te)}분(양성{int(yte.sum())}) "
-          f"· scale_pos_weight={spw:.1f}")
-    if pos == 0 or int(yte.sum()) == 0:
-        print("⚠️ 학습/검증에 양성 0 — labels 확인 또는 test_ratio 조정"); sys.exit(3)
+    Xtr = tr[feat_cols].values
+    Xte = te[feat_cols].values
 
-    model = xgb.XGBClassifier(
-        n_estimators=400, max_depth=5, learning_rate=0.05,
-        subsample=0.8, colsample_bytree=0.8, scale_pos_weight=spw,
-        eval_metric='aucpr', n_jobs=4, random_state=0,
-    )
-    model.fit(Xtr, ytr, eval_set=[(Xte, yte)], verbose=False)
+    print("\n" + "=" * 60)
+    for tgt in TARGETS:
+        horizon = tgt.replace('y_pre', '') + '분 후'
+        ytr, yte = tr[tgt].values, te[tgt].values
+        pos, neg = int(ytr.sum()), int((ytr == 0).sum())
+        spw = neg / max(pos, 1)
+        print(f"\n■ [{tgt}] {horizon} 예측 모델")
+        print(f"   양성 {int(df[tgt].sum())}분({df[tgt].mean()*100:.1f}%) · "
+              f"학습양성{pos}/검증양성{int(yte.sum())} · scale_pos_weight={spw:.1f}")
+        if pos == 0 or int(yte.sum()) == 0:
+            print(f"   ⚠️ 양성 0 — {tgt} 건너뜀"); continue
 
-    # 검증 성능
-    p = model.predict_proba(Xte)[:, 1]
-    prauc = average_precision_score(yte, p)
-    yhat = (p >= 0.5).astype(int)
-    pr, rc, f1, _ = precision_recall_fscore_support(yte, yhat, average='binary', zero_division=0)
-    print("\n" + "-" * 60)
-    print(f"[검증] PR-AUC {prauc:.3f} · 정밀도 {pr:.2f} · 재현율 {rc:.2f} · F1 {f1:.2f}")
-    print("  (PR-AUC 높을수록 정체 잘 분리. 임계 0.5 기준 정밀/재현)")
+        model = xgb.XGBClassifier(
+            n_estimators=400, max_depth=5, learning_rate=0.05,
+            subsample=0.8, colsample_bytree=0.8, scale_pos_weight=spw,
+            eval_metric='aucpr', n_jobs=4, random_state=0,
+        )
+        model.fit(Xtr, ytr, eval_set=[(Xte, yte)], verbose=False)
 
-    # 저장
-    model.save_model(os.path.join(a.out, 'model.json'))
-    with open(os.path.join(a.out, 'feature_cols.json'), 'w', encoding='utf-8') as f:
-        json.dump(feat_cols, f, ensure_ascii=False)
-    imp = sorted(zip(feat_cols, model.feature_importances_), key=lambda x: -x[1])
-    with open(os.path.join(a.out, 'importance.csv'), 'w', encoding='utf-8-sig') as f:
-        f.write('feature,importance\n')
-        for name, v in imp:
-            f.write(f'{name},{v:.5f}\n')
-    print("\n▶ 중요 피처 top10:")
-    for name, v in imp[:10]:
-        print(f"    {name:<32}{v:.4f}")
-    print(f"\n🎉 → {a.out}/model.json  (importance.csv 포함)")
-    print("다음: xgb_비정상_infer.py 로 jam_probability 생성 → 하이브리드 판정")
+        p = model.predict_proba(Xte)[:, 1]
+        prauc = average_precision_score(yte, p)
+        yhat = (p >= 0.5).astype(int)
+        pr, rc, f1, _ = precision_recall_fscore_support(yte, yhat, average='binary', zero_division=0)
+        print(f"   [검증] PR-AUC {prauc:.3f} · 정밀도 {pr:.2f} · 재현율 {rc:.2f} · F1 {f1:.2f}")
+
+        model.save_model(os.path.join(a.out, f'model_{tgt}.json'))
+        imp = sorted(zip(feat_cols, model.feature_importances_), key=lambda x: -x[1])
+        with open(os.path.join(a.out, f'importance_{tgt}.csv'), 'w', encoding='utf-8-sig') as f:
+            f.write('feature,importance\n')
+            for name, v in imp:
+                f.write(f'{name},{v:.5f}\n')
+        print(f"   ▶ top5: " + ", ".join(f"{name}({v:.2f})" for name, v in imp[:5]))
+        print(f"   → {a.out}/model_{tgt}.json")
+
+    print(f"\n🎉 완료 → {a.out}/  (model_y_pre10.json, model_y_pre30.json)")
+    print("다음: xgb_비정상_infer.py 로 10분·30분 확률 생성 → 하이브리드 판정")
 
 
 if __name__ == '__main__':

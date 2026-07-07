@@ -76,32 +76,37 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--events', required=True, help='predict_tobe 폴더 또는 발동이벤트 csv')
     ap.add_argument('--thr', type=float, default=71, help='위험 점수 임계(기본 71)')
-    ap.add_argument('--pre', type=int, default=30, help='선행 창(분)')
+    ap.add_argument('--pre', default='10,30', help='선행 창(분) 쉼표구분 — 기본 10,30')
     ap.add_argument('--guard', type=int, default=60, help='정상 가드(분)')
     ap.add_argument('--alarm', type=float, default=50, help='경보(경계+) 기준점수')
     ap.add_argument('--out', default='./out_ml/labels.csv')
     a = ap.parse_args()
 
+    pres = [int(x) for x in str(a.pre).split(',') if x.strip()]
     seq = load_events(a.events)
     score = {t: s for t, s in seq}
     times = [t for t, _ in seq]
 
-    # 인접 분 조회를 빠르게: 분 단위 정수 인덱스
     def z(t):
         return score.get(t, None)
 
     os.makedirs(os.path.dirname(a.out) or '.', exist_ok=True)
-    npos = nnorm = nrow = 0
+    ycols = [f'y_pre{p}' for p in pres]
+    npos = {p: 0 for p in pres}
+    nnorm = nrow = 0
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['datetime', 'y_pre30', 'is_normal'])
+        w.writerow(['datetime'] + ycols + ['is_normal'])
         for t in times:
-            # y_pre30: 미래 pre분 내 위험 도달?
-            y = 0
-            for k in range(1, a.pre + 1):
-                s = z(t + timedelta(minutes=k))
-                if s is not None and s >= a.thr:
-                    y = 1; break
+            # y_preP: 미래 P분 내 위험 도달? (여러 지평선 동시)
+            ys = []
+            for p in pres:
+                y = 0
+                for k in range(1, p + 1):
+                    s = z(t + timedelta(minutes=k))
+                    if s is not None and s >= a.thr:
+                        y = 1; break
+                ys.append(y); npos[p] += y
             # is_normal: 현재 ± guard 분 전부 경보 미만
             isn = 1
             cur = z(t)
@@ -112,13 +117,14 @@ def main():
                     s = z(t + timedelta(minutes=k))
                     if s is not None and s >= a.alarm:
                         isn = 0; break
-            w.writerow([t.strftime('%Y-%m-%d %H:%M'), y, isn])
-            nrow += 1; npos += y; nnorm += isn
+            w.writerow([t.strftime('%Y-%m-%d %H:%M')] + ys + [isn])
+            nrow += 1; nnorm += isn
 
-    print(f"[완료] {nrow}분 → {a.out}")
-    print(f"       정체전조 y_pre30=1 : {npos}분 ({npos/nrow*100:.1f}%)  [임계 {a.thr:.0f} / 선행 {a.pre}분]")
+    print(f"[완료] {nrow}분 → {a.out}  (임계 {a.thr:.0f}, 선행 {pres}분)")
+    for p in pres:
+        print(f"       정체전조 y_pre{p}=1 : {npos[p]}분 ({npos[p]/nrow*100:.1f}%)")
     print(f"       확실한 정상 is_normal=1 : {nnorm}분 ({nnorm/nrow*100:.1f}%)")
-    print("다음: python xgb_비정상_train.py --features ./out_ml/features.csv --labels " + a.out)
+    print("다음: python xgb_비정상_train.py --features ./out_ml/features_full.csv --labels " + a.out)
 
 
 if __name__ == '__main__':
