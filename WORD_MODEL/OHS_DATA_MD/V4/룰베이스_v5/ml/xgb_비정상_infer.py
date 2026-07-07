@@ -108,15 +108,23 @@ def main():
     X = df[feat_cols].values
     probs = {tag: m.predict_proba(X)[:, 1] for tag, m in models.items()}
     tags = list(models.keys())
+    # 지평선(분) 추출: y_pre10 → 10, y_pre30 → 30  → 예측 대상시각 = 현재 + 지평선
+    import re
+    from datetime import timedelta
+    horizon = {tg: int(re.sub(r'\D', '', tg) or 0) for tg in tags}
 
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        header = ['datetime'] + [f'{t}_prob' for t in tags] + [f'{t}_level' for t in tags]
+        # datetime(예측시점) + 각 모델: 예측대상시각 + 확률 + 등급
+        header = ['datetime']
+        for tg in tags:
+            header += [f'{tg}_예측시각', f'{tg}_prob', f'{tg}_level']
         w.writerow(header)
         for i, t in enumerate(df['datetime']):
             row = [t.strftime('%Y-%m-%d %H:%M')]
-            row += [f'{probs[tg][i]:.4f}' for tg in tags]
-            row += [level(float(probs[tg][i])) for tg in tags]
+            for tg in tags:
+                tgt = (t + timedelta(minutes=horizon[tg])).strftime('%Y-%m-%d %H:%M')
+                row += [tgt, f'{probs[tg][i]:.4f}', level(float(probs[tg][i]))]
             w.writerow(row)
 
     print(f"[완료] {len(df)}분 → {a.out}")
