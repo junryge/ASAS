@@ -121,14 +121,22 @@ def storage_alarm(rd_fab, rd_stb, sla, rd_stk=None):
 
 
 def cusum_alarm(sq_cu, nq_cu, fab_cu):
-    """CUSUM 밀림룰: 컨베이어 큐 or 저장 CUSUM 지속상승 → 밀림 경보 + 사유."""
-    if (sq_cu is not None and sq_cu >= TH_CUSUM_Q):
-        return True, f"밀림경보(남측큐 지속상승 CUSUM {sq_cu:.0f}≥{TH_CUSUM_Q:.0f})"
-    if (nq_cu is not None and nq_cu >= TH_CUSUM_Q):
-        return True, f"밀림경보(북측큐 지속상승 CUSUM {nq_cu:.0f}≥{TH_CUSUM_Q:.0f})"
-    if (fab_cu is not None and fab_cu >= TH_CUSUM_FAB):
-        return True, f"밀림경보(저장 지속상승 CUSUM {fab_cu:.0f}≥{TH_CUSUM_FAB:.0f})"
-    return False, ''
+    """CUSUM 밀림룰: 큐/저장 CUSUM(누적 상승)이 클수록 높은 등급.
+       임계 대비 배수로 경계/위험/초위험 구분 (심할수록 위험). 반환: (등급, 사유)."""
+    # 큐(남/북)는 TH_CUSUM_Q 기준, 저장은 TH_CUSUM_FAB 기준 → 각자 '초과비율' 계산
+    cands = []
+    if sq_cu is not None and sq_cu >= TH_CUSUM_Q:
+        cands.append((sq_cu / TH_CUSUM_Q, f"남측큐 지속상승 CUSUM {sq_cu:.0f}"))
+    if nq_cu is not None and nq_cu >= TH_CUSUM_Q:
+        cands.append((nq_cu / TH_CUSUM_Q, f"북측큐 지속상승 CUSUM {nq_cu:.0f}"))
+    if fab_cu is not None and fab_cu >= TH_CUSUM_FAB:
+        cands.append((fab_cu / TH_CUSUM_FAB, f"저장 지속상승 CUSUM {fab_cu:.0f}"))
+    if not cands:
+        return '', ''
+    ratio, why = max(cands)                       # 가장 심한 신호 채택
+    # 임계의 1.0~1.5배=경계, 1.5~2.5배=위험, 2.5배↑=초위험
+    grade = '초위험' if ratio >= 2.5 else '위험' if ratio >= 1.5 else '경계'
+    return grade, f"밀림경보({why}, 임계 {ratio:.1f}배)"
 
 
 def main():
@@ -207,8 +215,10 @@ def main():
         header = ['datetime']
         for tg in tags:
             m = tg.replace('y_pre', '')
-            header += [f'{m}분_예측시각', f'{m}분_확률', f'{m}분_최종등급', f'{m}분_사유']
-        header += ['저장경보', '밀림경보', 'RD_FAB', 'RD_STB', 'RD_STK', 'SLA_4분초과']
+            header += [f'{m}분_예측시각', f'{m}분_확률%', f'{m}분_최종등급', f'{m}분_사유']
+        header += ['저장경보', '밀림경보',
+                   'RD_FAB', 'RD_STB', 'RD_STK', 'SLA_4분초과',
+                   '남큐CUSUM', '북큐CUSUM', '저장CUSUM']
         w.writerow(header)
         for i, t in enumerate(df['datetime']):
             # 저장룰 (지평선 공통) — STK 하드 + (FAB/STB AND 4분초과)
@@ -223,11 +233,14 @@ def main():
                     s_reason = f"저장경보(STK스토커{rd_stk:.0f}%≥{TH_RD_STK:.0f})"
                 else:
                     s_reason = f"저장경보(FAB{rd_fab or 0:.0f}%/STB{rd_stb or 0:.0f}%,4분초과{sla or 0:.0f}%)"
-            # ★ CUSUM 밀림룰 (M16→M14 국소 밀림 = 6/22·24·29)
-            m_alarm, m_reason = cusum_alarm(fnum(sq_cu_v[i]), fnum(nq_cu_v[i]), fnum(fab_cu_v[i]))
+            # ★ CUSUM 밀림룰 (M16→M14 국소 밀림 = 6/22·24·29) — 심할수록 높은 등급
+            sq_cu, nq_cu, fab_cu = fnum(sq_cu_v[i]), fnum(nq_cu_v[i]), fnum(fab_cu_v[i])
+            m_grade, m_reason = cusum_alarm(sq_cu, nq_cu, fab_cu)
+            m_alarm = bool(m_grade)
             if m_alarm:
                 n_mil += 1
-            rule_rank = RANK['위험'] if (s_alarm or m_alarm) else 0
+            # 룰 등급 = 저장경보(위험) vs 밀림등급 중 높은 것
+            rule_rank = max(RANK['위험'] if s_alarm else 0, RANK[m_grade])
 
             row = [t.strftime('%Y-%m-%d %H:%M')]
             for tg in tags:
@@ -246,12 +259,15 @@ def main():
                 if final:
                     n_final[tg] += 1
                 tgt = (t + timedelta(minutes=horizon[tg])).strftime('%Y-%m-%d %H:%M')
-                row += [tgt, f'{p:.4f}', final, ' | '.join(why)]
+                row += [tgt, f'{p*100:.1f}%', final, ' | '.join(why)]
             row += ['예' if s_alarm else '', '예' if m_alarm else '',
                     '' if rd_fab is None else f'{rd_fab:.1f}',
                     '' if rd_stb is None else f'{rd_stb:.1f}',
                     '' if rd_stk is None else f'{rd_stk:.1f}',
-                    '' if sla is None else f'{sla:.1f}']
+                    '' if sla is None else f'{sla:.1f}',
+                    '' if sq_cu is None else f'{sq_cu:.0f}',
+                    '' if nq_cu is None else f'{nq_cu:.0f}',
+                    '' if fab_cu is None else f'{fab_cu:.0f}']
             w.writerow(row)
 
     print(f"[완료] {len(df)}분 → {a.out}")
