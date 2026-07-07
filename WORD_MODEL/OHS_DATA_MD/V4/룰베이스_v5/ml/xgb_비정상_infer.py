@@ -51,7 +51,7 @@ def _cusum(np, s, base_win=CUSUM_BASE_WIN, k=CUSUM_K):
     x = pd.Series(s).astype(float)
     base = x.shift(1).rolling(base_win, min_periods=15).median()
     sd = x.shift(1).rolling(base_win, min_periods=15).std()
-    base = base.fillna(method='bfill').fillna(x.iloc[0] if len(x) else 0.0).values
+    base = base.bfill().fillna(x.iloc[0] if len(x) else 0.0).values
     sd = sd.fillna(0.0).values
     xv = x.values
     n = len(xv)

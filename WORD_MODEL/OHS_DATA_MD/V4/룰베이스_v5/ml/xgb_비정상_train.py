@@ -46,7 +46,7 @@ def _cusum(np, s, base_win=CUSUM_BASE_WIN, k=CUSUM_K):
     x = pd.Series(s).astype(float)
     base = x.shift(1).rolling(base_win, min_periods=15).median()   # 직전까지 평소값
     sd = x.shift(1).rolling(base_win, min_periods=15).std()
-    base = base.fillna(method='bfill').fillna(x.iloc[0] if len(x) else 0.0)
+    base = base.bfill().fillna(x.iloc[0] if len(x) else 0.0)
     sd = sd.fillna(0.0).values
     base = base.values
     xv = x.values
