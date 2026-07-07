@@ -61,9 +61,15 @@ def build_features(feat_df, base_cols):
     return df
 
 
-def level(p):
-    # 회사 표준 등급명 통일 (hubroom 과 동일): 경계/위험/초위험, 그 아래는 공란(정상)
-    return '초위험' if p >= 0.85 else '위험' if p >= 0.70 else '경계' if p >= 0.50 else ''
+def level(p, tag=''):
+    """6월 검증 캘리브레이션(정밀도) 근거 확률컷.
+    10분: 신뢰도 잘 나뉨(74/79/96%) → 3등급.
+    30분: 신뢰도 ~77%에서 평평 → 단일 경보(위험)만."""
+    if '30' in str(tag):
+        return '위험' if p >= 0.50 else ''            # 30분: 신뢰 77% 단일 경보
+    return ('초위험' if p >= 0.90                      # 10분: 신뢰 96%
+            else '위험' if p >= 0.70                   #        신뢰 79%
+            else '경계' if p >= 0.50 else '')          #        신뢰 74%
 
 
 def main():
@@ -125,7 +131,7 @@ def main():
             row = [t.strftime('%Y-%m-%d %H:%M')]
             for tg in tags:
                 tgt = (t + timedelta(minutes=horizon[tg])).strftime('%Y-%m-%d %H:%M')
-                row += [tgt, f'{probs[tg][i]:.4f}', level(float(probs[tg][i]))]
+                row += [tgt, f'{probs[tg][i]:.4f}', level(float(probs[tg][i]), tg)]
             w.writerow(row)
 
     print(f"[완료] {len(df)}분 → {a.out}")
