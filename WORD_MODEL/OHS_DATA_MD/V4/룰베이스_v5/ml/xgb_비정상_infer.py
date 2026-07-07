@@ -88,6 +88,10 @@ TH_RD_FAB = 25.0      # FAB저장률 ≥ 25% (6/4형: 평소 튈 수 있어 SLA 
 TH_RD_STB = 99.0      # STB이용률 ≥ 99% (평소에도 100 → SLA 확인 필요)
 TH_RD_STK = 10.0      # ★ STK 스토커 저장률 ≥ 10% (평소 0 → 단독 하드경보, 저장Full 직결)
 TH_SLA_UP = 5.0       # 4분초과율(SLA) ≥ 5% = 실제 정체 (6/4는 0 → 차단)
+# ── ★ CUSUM 밀림룰 (M16→M14 국소 밀림 = 6/22·24·29형, hubroom·XGBoost 못 잡음) ──
+#    큐/저장 CUSUM(누적 상승)이 임계 넘으면 밀림 경보. 6월검증: 3/3 잡음(리드 13~23분).
+TH_CUSUM_Q = 600.0    # SouthQ/NorthQ CUSUM (컨베이어 큐 지속 상승)
+TH_CUSUM_FAB = 300.0  # FAB저장 CUSUM (저장 지속 상승 = 6/29형)
 RANK = {'': 0, '경계': 1, '위험': 2, '초위험': 3}
 INV = {v: k for k, v in RANK.items()}
 
@@ -114,6 +118,17 @@ def storage_alarm(rd_fab, rd_stb, sla, rd_stk=None):
     congested = (sla is not None and sla >= TH_SLA_UP)
     alarm = stk_hard or (soft_hi and congested)
     return alarm, (stk_hard or soft_hi)
+
+
+def cusum_alarm(sq_cu, nq_cu, fab_cu):
+    """CUSUM 밀림룰: 컨베이어 큐 or 저장 CUSUM 지속상승 → 밀림 경보 + 사유."""
+    if (sq_cu is not None and sq_cu >= TH_CUSUM_Q):
+        return True, f"밀림경보(남측큐 지속상승 CUSUM {sq_cu:.0f}≥{TH_CUSUM_Q:.0f})"
+    if (nq_cu is not None and nq_cu >= TH_CUSUM_Q):
+        return True, f"밀림경보(북측큐 지속상승 CUSUM {nq_cu:.0f}≥{TH_CUSUM_Q:.0f})"
+    if (fab_cu is not None and fab_cu >= TH_CUSUM_FAB):
+        return True, f"밀림경보(저장 지속상승 CUSUM {fab_cu:.0f}≥{TH_CUSUM_FAB:.0f})"
+    return False, ''
 
 
 def main():
@@ -169,6 +184,10 @@ def main():
         return df[name].values if name in df.columns else [None] * len(df)
     rd_fab_v, rd_stb_v, sla_v = col('RD_FAB'), col('RD_STB'), col('SLA_M16HUB')
     rd_stk_v = col('RD_STK')
+    # CUSUM 밀림룰용 (build_features 가 만든 {col}__cusum)
+    sq_cu_v = col('DIR_SouthCNV_Q__cusum')
+    nq_cu_v = col('DIR_NorthCNV_Q__cusum')
+    fab_cu_v = col('RD_FAB__cusum')
 
     def fnum(v):
         try:
@@ -181,7 +200,7 @@ def main():
     # 지평선 정렬 (10분 먼저, 30분 뒤)
     tags = sorted(tags, key=lambda tg: horizon[tg])
     n_final = {tg: 0 for tg in tags}
-    n_stor = n_block = 0
+    n_stor = n_block = n_mil = 0
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
         # 지평선별로 예측시각·확률·최종등급·사유 나눠서 출력
@@ -189,7 +208,7 @@ def main():
         for tg in tags:
             m = tg.replace('y_pre', '')
             header += [f'{m}분_예측시각', f'{m}분_확률', f'{m}분_최종등급', f'{m}분_사유']
-        header += ['저장경보', 'RD_FAB', 'RD_STB', 'RD_STK', 'SLA_4분초과']
+        header += ['저장경보', '밀림경보', 'RD_FAB', 'RD_STB', 'RD_STK', 'SLA_4분초과']
         w.writerow(header)
         for i, t in enumerate(df['datetime']):
             # 저장룰 (지평선 공통) — STK 하드 + (FAB/STB AND 4분초과)
@@ -204,24 +223,31 @@ def main():
                     s_reason = f"저장경보(STK스토커{rd_stk:.0f}%≥{TH_RD_STK:.0f})"
                 else:
                     s_reason = f"저장경보(FAB{rd_fab or 0:.0f}%/STB{rd_stb or 0:.0f}%,4분초과{sla or 0:.0f}%)"
+            # ★ CUSUM 밀림룰 (M16→M14 국소 밀림 = 6/22·24·29)
+            m_alarm, m_reason = cusum_alarm(fnum(sq_cu_v[i]), fnum(nq_cu_v[i]), fnum(fab_cu_v[i]))
+            if m_alarm:
+                n_mil += 1
+            rule_rank = RANK['위험'] if (s_alarm or m_alarm) else 0
 
             row = [t.strftime('%Y-%m-%d %H:%M')]
             for tg in tags:
                 m = tg.replace('y_pre', '')
                 p = float(probs[tg][i])
                 g_xgb = level(p, tg)
-                # 지평선별 최종 = max(그 지평선 XGBoost, 저장경보)
-                final = INV[max(RANK[g_xgb], RANK['위험' if s_alarm else ''])]
+                # 지평선별 최종 = max(그 지평선 XGBoost, 저장경보, 밀림경보)
+                final = INV[max(RANK[g_xgb], rule_rank)]
                 why = []
                 if g_xgb:
                     why.append(f"XGBoost {m}분 {p*100:.0f}%")
                 if s_alarm:
                     why.append(s_reason)
+                if m_alarm:
+                    why.append(m_reason)
                 if final:
                     n_final[tg] += 1
                 tgt = (t + timedelta(minutes=horizon[tg])).strftime('%Y-%m-%d %H:%M')
                 row += [tgt, f'{p:.4f}', final, ' | '.join(why)]
-            row += ['예' if s_alarm else '',
+            row += ['예' if s_alarm else '', '예' if m_alarm else '',
                     '' if rd_fab is None else f'{rd_fab:.1f}',
                     '' if rd_stb is None else f'{rd_stb:.1f}',
                     '' if rd_stk is None else f'{rd_stk:.1f}',
@@ -232,7 +258,7 @@ def main():
     for tg in tags:
         m = tg.replace('y_pre', '')
         print(f"       {m}분 최종경보(위험+): {n_final[tg]}분 ({n_final[tg]/len(df)*100:.1f}%)")
-    print(f"       저장경보 {n_stor}분 · 저장튐→4분초과없어 차단(6/4형) {n_block}분")
+    print(f"       저장경보 {n_stor}분 · 밀림경보(CUSUM) {n_mil}분 · 차단(6/4형) {n_block}분")
 
 
 if __name__ == '__main__':
