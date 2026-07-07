@@ -145,7 +145,28 @@ def main():
         prauc = average_precision_score(yte, p)
         yhat = (p >= 0.5).astype(int)
         pr, rc, f1, _ = precision_recall_fscore_support(yte, yhat, average='binary', zero_division=0)
-        print(f"   [검증] PR-AUC {prauc:.3f} · 정밀도 {pr:.2f} · 재현율 {rc:.2f} · F1 {f1:.2f}")
+        print(f"   [검증] PR-AUC {prauc:.3f} · 정밀도(0.5) {pr:.2f} · 재현율 {rc:.2f} · F1 {f1:.2f}")
+
+        # ── 등급 캘리브레이션: 확률컷별 '정밀도(신뢰도)'만 (등급 = 이 예측 얼마나 믿나) ──
+        #    재현율은 개별 예측의 등급과 무관(예측 순간 알 수 없음) → 등급 기준에서 제외.
+        print(f"   [등급 캘리브레이션] {tgt}  — 확률컷별 정밀도(신뢰도)")
+        print(f"      확률컷   예측건수   정밀도(맞을확률)")
+        calib = []
+        for thr in [0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.95]:
+            yh = (p >= thr)
+            npred = int(yh.sum())
+            tp = int((yh & (yte == 1)).sum())
+            prc = tp / npred if npred else 0.0
+            calib.append((thr, npred, prc))
+            print(f"      ≥{thr:.2f}    {npred:6d}      {prc*100:5.1f}%")
+        # 정밀도(신뢰도) 기준 등급 자동 제안 (경계≥60% / 위험≥80% / 초위험≥95%)
+        def cut_for(target_pr):
+            for thr, npred, prc in calib:
+                if prc >= target_pr and npred > 0:
+                    return thr
+            return None
+        c_b, c_w, c_c = cut_for(0.60), cut_for(0.80), cut_for(0.95)
+        print(f"      → 제안 등급컷: 경계 p≥{c_b}(신뢰60%) / 위험 p≥{c_w}(80%) / 초위험 p≥{c_c}(95%)")
 
         model.save_model(os.path.join(a.out, f'model_{tgt}.json'))
         imp = sorted(zip(feat_cols, model.feature_importances_), key=lambda x: -x[1])
