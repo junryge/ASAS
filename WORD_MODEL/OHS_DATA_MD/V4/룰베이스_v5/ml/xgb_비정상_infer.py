@@ -61,6 +61,14 @@ def build_features(feat_df, base_cols):
     return df
 
 
+# ── 저장룰 임계 (hubroom_predictor 동일) + 실제정체 확인 ──
+TH_RD_FAB = 25.0      # FAB저장률 ≥ 25%
+TH_RD_STB = 99.0      # STB이용률 ≥ 99%
+TH_SLA_UP = 5.0       # 4분초과율(SLA) ≥ 5% = 실제 정체 (6/4는 0 → 차단)
+RANK = {'': 0, '경계': 1, '위험': 2, '초위험': 3}
+INV = {v: k for k, v in RANK.items()}
+
+
 def level(p, tag=''):
     """6월 검증 캘리브레이션(정밀도) 근거 확률컷.
     10분: 신뢰도 잘 나뉨(74/79/96%) → 3등급.
@@ -70,6 +78,14 @@ def level(p, tag=''):
     return ('초위험' if p >= 0.90                      # 10분: 신뢰 96%
             else '위험' if p >= 0.70                   #        신뢰 79%
             else '경계' if p >= 0.50 else '')          #        신뢰 74%
+
+
+def storage_alarm(rd_fab, rd_stb, sla):
+    """저장룰: 저장 높음 AND 4분초과(실제정체). 6/4형(저장만 튐)은 차단."""
+    hi = ((rd_fab is not None and rd_fab >= TH_RD_FAB)
+          or (rd_stb is not None and rd_stb >= TH_RD_STB))
+    congested = (sla is not None and sla >= TH_SLA_UP)
+    return hi and congested, hi
 
 
 def main():
@@ -120,25 +136,67 @@ def main():
     from datetime import timedelta
     horizon = {tg: int(re.sub(r'\D', '', tg) or 0) for tg in tags}
 
+    # 저장룰용 원신호 (features 에 있으면 사용)
+    def col(name):
+        return df[name].values if name in df.columns else [None] * len(df)
+    rd_fab_v, rd_stb_v, sla_v = col('RD_FAB'), col('RD_STB'), col('SLA_M16HUB')
+
+    def fnum(v):
+        try:
+            import math
+            x = float(v)
+            return None if math.isnan(x) else x
+        except (TypeError, ValueError):
+            return None
+
+    n_final = n_stor = n_block = 0
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        # datetime(예측시점) + 각 모델: 예측대상시각 + 확률 + 등급
-        header = ['datetime']
+        header = ['datetime', '최종등급', '사유']
         for tg in tags:
             header += [f'{tg}_예측시각', f'{tg}_prob', f'{tg}_level']
+        header += ['저장경보', 'RD_FAB', 'RD_STB', 'SLA_4분초과']
         w.writerow(header)
         for i, t in enumerate(df['datetime']):
-            row = [t.strftime('%Y-%m-%d %H:%M')]
+            reasons = []
+            # ① XGBoost 등급 (30분 + 10분 초위험 승격)
+            g_xgb = ''
+            for tg in tags:
+                g = level(float(probs[tg][i]), tg)
+                if RANK[g] > RANK[g_xgb]:
+                    g_xgb = g
+            if g_xgb:
+                pr = " ".join(f"{tg.replace('y_pre','')}분{probs[tg][i]*100:.0f}%" for tg in tags)
+                reasons.append(f"XGBoost({pr})")
+            # ② 저장룰 (4분초과 확인 → 6/4형 차단)
+            rd_fab, rd_stb, sla = fnum(rd_fab_v[i]), fnum(rd_stb_v[i]), fnum(sla_v[i])
+            s_alarm, s_hi = storage_alarm(rd_fab, rd_stb, sla)
+            if s_hi and not s_alarm:
+                n_block += 1
+            if s_alarm:
+                n_stor += 1
+                reasons.append(f"저장경보(FAB{rd_fab or 0:.0f}%/STB{rd_stb or 0:.0f}%,4분초과{sla or 0:.0f}%)")
+            # ③ 최종 = max(XGBoost, 저장경보)
+            final = INV[max(RANK[g_xgb], RANK['위험' if s_alarm else ''])]
+            if final:
+                n_final += 1
+
+            row = [t.strftime('%Y-%m-%d %H:%M'), final, ' | '.join(reasons)]
             for tg in tags:
                 tgt = (t + timedelta(minutes=horizon[tg])).strftime('%Y-%m-%d %H:%M')
                 row += [tgt, f'{probs[tg][i]:.4f}', level(float(probs[tg][i]), tg)]
+            row += ['예' if s_alarm else '',
+                    '' if rd_fab is None else f'{rd_fab:.1f}',
+                    '' if rd_stb is None else f'{rd_stb:.1f}',
+                    '' if sla is None else f'{sla:.1f}']
             w.writerow(row)
 
     print(f"[완료] {len(df)}분 → {a.out}")
     for tg in tags:
         hi = int((probs[tg] >= 0.7).sum())
         print(f"       {tg}: 정체(≥0.7) {hi}분 ({hi/len(df)*100:.1f}%)")
-    print("다음: 하이브리드_판정.py 에서 룰·정상TSPulse·이 확률 종합")
+    print(f"       저장경보 {n_stor}분 · 저장튐→4분초과없어 차단(6/4형) {n_block}분")
+    print(f"       ★ 최종경보(XGBoost+저장룰) {n_final}분 ({n_final/len(df)*100:.1f}%)")
 
 
 if __name__ == '__main__':
