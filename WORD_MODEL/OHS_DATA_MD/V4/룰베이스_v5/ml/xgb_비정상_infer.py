@@ -62,7 +62,8 @@ def build_features(feat_df, base_cols):
 
 
 def level(p):
-    return '정체' if p >= 0.7 else '경계' if p >= 0.5 else '관심' if p >= 0.3 else '안전'
+    # 회사 표준 등급명 통일 (hubroom 과 동일): 경계/위험/초위험, 그 아래는 공란(정상)
+    return '초위험' if p >= 0.85 else '위험' if p >= 0.70 else '경계' if p >= 0.50 else ''
 
 
 def main():
