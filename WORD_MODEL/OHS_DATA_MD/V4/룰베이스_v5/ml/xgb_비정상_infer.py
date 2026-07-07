@@ -27,10 +27,12 @@ import json
 import os
 import sys
 
-# ★ train 과 반드시 동일 (60분 흐름)
+# ★ train 과 반드시 동일 (60분 흐름 + CUSUM)
 ROLL_WINS = [15, 30, 60]
 DELTA_LAGS = [15, 30, 60]
 MAX_WINS = [60]
+CUSUM_BASE_WIN = 120
+CUSUM_K = 0.5
 
 
 def _need():
@@ -43,7 +45,26 @@ def _need():
         return False
 
 
+def _cusum(np, s, base_win=CUSUM_BASE_WIN, k=CUSUM_K):
+    """한쪽(상승) CUSUM — train 과 100% 동일. 값이 평소+여유를 지속적으로 넘으면 누적."""
+    import pandas as pd
+    x = pd.Series(s).astype(float)
+    base = x.shift(1).rolling(base_win, min_periods=15).median()
+    sd = x.shift(1).rolling(base_win, min_periods=15).std()
+    base = base.fillna(method='bfill').fillna(x.iloc[0] if len(x) else 0.0).values
+    sd = sd.fillna(0.0).values
+    xv = x.values
+    n = len(xv)
+    C = np.zeros(n, dtype='float64')
+    prev = 0.0
+    for i in range(n):
+        prev = max(0.0, prev + (xv[i] - base[i] - k * sd[i]))
+        C[i] = prev
+    return C
+
+
 def build_features(feat_df, base_cols):
+    import numpy as np
     import pandas as pd
     df = feat_df.sort_values('datetime').reset_index(drop=True)
     df[base_cols] = df[base_cols].ffill().fillna(0.0)
@@ -57,6 +78,7 @@ def build_features(feat_df, base_cols):
             new[f'{c}__rmax{w}'] = s.rolling(w, min_periods=1).max()
         for lag in DELTA_LAGS:
             new[f'{c}__d{lag}'] = s - s.shift(lag).fillna(s.iloc[0])
+        new[f'{c}__cusum'] = _cusum(np, s.values)                    # ★ CUSUM (train 과 동일)
     df = pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
     return df
 

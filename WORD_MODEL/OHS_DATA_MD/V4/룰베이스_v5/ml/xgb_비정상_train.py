@@ -34,6 +34,32 @@ import sys
 ROLL_WINS = [15, 30, 60]    # 롤링 평균/표준편차 창(분) — 60분 흐름 포함
 DELTA_LAGS = [15, 30, 60]   # 델타(현재 − N분전) — 60분 추세
 MAX_WINS = [60]             # 60분 내 최대치(얼마나 튀었나 = 급증 포착)
+# ── CUSUM(누적 상승) 파라미터 — '서서히 밀리는 조짐' 포착 (룰 같은 ML 피처) ──
+CUSUM_BASE_WIN = 120        # 기준선(평소) 계산 창(분, 과거만)
+CUSUM_K = 0.5               # 여유(slack) = K × 과거 표준편차 (작을수록 민감)
+
+
+def _cusum(np, s, base_win=CUSUM_BASE_WIN, k=CUSUM_K):
+    """한쪽(상승) CUSUM: 값이 평소+여유 를 지속적으로 넘으면 누적. 순간 튐은 무시.
+       C[i] = max(0, C[i-1] + (x - 기준선 - 여유)).  기준선/표준편차는 과거창만(누수 없음)."""
+    import pandas as pd
+    x = pd.Series(s).astype(float)
+    base = x.shift(1).rolling(base_win, min_periods=15).median()   # 직전까지 평소값
+    sd = x.shift(1).rolling(base_win, min_periods=15).std()
+    base = base.fillna(method='bfill').fillna(x.iloc[0] if len(x) else 0.0)
+    sd = sd.fillna(0.0).values
+    base = base.values
+    xv = x.values
+    n = len(xv)
+    C = np.zeros(n, dtype='float64')
+    prev = 0.0
+    for i in range(n):
+        dev = xv[i] - base[i] - k * sd[i]
+        prev = prev + dev
+        if prev < 0:
+            prev = 0.0
+        C[i] = prev
+    return C
 
 
 def _need():
@@ -50,7 +76,8 @@ def _need():
 
 
 def build_features(feat_df, base_cols):
-    """31 원피처 → + 롤링평균/표준편차 + 델타 (전부 과거만 → 누수 없음)."""
+    """원피처 → + 롤링/델타/최대 + ★CUSUM(누적 상승) (전부 과거만 → 누수 없음)."""
+    import numpy as np
     import pandas as pd  # noqa
     df = feat_df.sort_values('datetime').reset_index(drop=True)
     df[base_cols] = df[base_cols].ffill().fillna(0.0)
@@ -64,7 +91,7 @@ def build_features(feat_df, base_cols):
             new[f'{c}__rmax{w}'] = s.rolling(w, min_periods=1).max()   # 60분 내 피크(급증)
         for lag in DELTA_LAGS:
             new[f'{c}__d{lag}'] = s - s.shift(lag).fillna(s.iloc[0])
-    import pandas as pd
+        new[f'{c}__cusum'] = _cusum(np, s.values)                     # ★ 서서히 밀리는 조짐
     df = pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
     feat_cols = list(base_cols) + list(new.keys())
     return df, feat_cols
