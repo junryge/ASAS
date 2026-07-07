@@ -75,6 +75,29 @@ FEATURES_31 = [
 FEATURE_COLS = [f[0] for f in FEATURES_31]
 SHORT = {f[0]: f[2] for f in FEATURES_31}
 
+# ============================================================
+# ★ 파생 피처 (Bridge SOP 반영) — 방향별 ZT 리프터 큐 합산
+#   SOP 발동기준: "M16 ZT 3F→6F QUE 280↑ / 6F→3F QUE 280↑ / HUB Total 600↑"
+#   원본에 있는 10대 ZT(6ABL...) 방향별 큐를 합쳐 SOP 지표를 그대로 피처화.
+#   (shortname, 그룹, 합산모드, 원본 접두, 원본 접미)
+# ============================================================
+DERIVED = [
+    ('BR_ZT_3to6', 'BR', 'sum', 'M16HUB.LFT.', '.3F_TO_6F_CURRENTQCNT'),  # M16방향(3F→6F) 큐 합
+    ('BR_ZT_6to3', 'BR', 'sum', 'M16HUB.LFT.', '.6F_TO_3F_CURRENTQCNT'),  # M14방향(6F→3F) 큐 합
+    ('BR_HUB_totalQ', 'BR', 'sum', 'M16HUB.LFT.', '.TOTAL_CURRENTQCNT'),  # HUB Total(리프터 총큐)
+]
+DERIVED_SHORTS = [d[0] for d in DERIVED]
+# 파생2(계산형): 방향 불균형 = 3to6 − 6to3 (양수=M16방향 정체 / 음수=M14방향 정체)
+DERIVED_CALC = ['BR_dir_imbalance']
+
+
+def _match_srcs(fieldnames):
+    """각 파생피처가 합산할 실제 원본컬럼 목록 (파일 헤더 기준)."""
+    out = {}
+    for short, grp, mode, pre, suf in DERIVED:
+        out[short] = [c for c in (fieldnames or []) if c.startswith(pre) and c.endswith(suf)]
+    return out
+
 
 def load_raw(raw_path, t_start, t_end):
     """raw CSV 들 → {datetime: {col: val}} (지정 구간만, 분 단위)."""
@@ -89,6 +112,7 @@ def load_raw(raw_path, t_start, t_end):
         return {}
     grid = {}          # datetime → {col: float}
     seen_cols = set()
+    dsrc = {s: set() for s in DERIVED_SHORTS}   # 파생피처별 합산 원본컬럼(전 파일 합집합)
     for fp in sorted(files):
         for enc in ('utf-8-sig', 'utf-8', 'cp949'):
             try:
@@ -103,6 +127,13 @@ def load_raw(raw_path, t_start, t_end):
             continue
         present = [c for c in FEATURE_COLS if c in (rd.fieldnames or [])]
         seen_cols.update(present)
+        # 파생 원본컬럼(방향별 ZT 큐) 매칭 → 저장 대상에 포함
+        srcs = _match_srcs(rd.fieldnames)
+        present_src = []
+        for s, cols in srcs.items():
+            dsrc[s].update(cols)
+            present_src += cols
+        wanted = present + present_src
         for row in rd:
             ts = (row.get('CRT_TM') or '').strip()
             if len(ts) < 16:
@@ -114,7 +145,7 @@ def load_raw(raw_path, t_start, t_end):
             if not (t_start <= t <= t_end):
                 continue
             cell = grid.setdefault(t, {})
-            for c in present:
+            for c in wanted:
                 v = (row.get(c) or '').strip()
                 if not v:
                     continue
@@ -126,7 +157,10 @@ def load_raw(raw_path, t_start, t_end):
     missing = [c for c in FEATURE_COLS if c not in seen_cols]
     if missing:
         print(f"⚠️ raw 에 없는 피처 {len(missing)}개: {[SHORT[c] for c in missing]}")
-    return grid
+    dsrc = {s: sorted(v) for s, v in dsrc.items()}
+    for s in DERIVED_SHORTS:
+        print(f"[파생] {s}: {len(dsrc[s])}개 ZT큐 합산")
+    return grid, dsrc
 
 
 def main():
@@ -145,16 +179,24 @@ def main():
     print(f"features_31 — {a.start} ~ {a.end}  (핵심 {len(FEATURES_31)}피처)")
     print("=" * 60)
 
-    grid = load_raw(a.raw, t_start, t_end)
+    grid, dsrc = load_raw(a.raw, t_start, t_end)
     if not grid:
         print("⚠️ 데이터 없음 — 경로/구간 확인")
         return
     times = sorted(grid.keys())
 
-    # ── features.csv 저장 (datetime + 31 short-name) ──
+    # ── features.csv 저장 (datetime + 31 원피처 + 파생 Bridge 피처) ──
     out_csv = os.path.join(a.out, 'features.csv')
-    header = ['datetime'] + [SHORT[c] for c in FEATURE_COLS]
+    header = (['datetime'] + [SHORT[c] for c in FEATURE_COLS]
+              + DERIVED_SHORTS + DERIVED_CALC)
     filled = {c: 0 for c in FEATURE_COLS}
+
+    def dsum(cell, short):
+        """파생 합산: 해당 ZT큐 원본들의 합 (하나라도 있으면 값, 전무면 None)."""
+        cols = dsrc.get(short, [])
+        vals = [cell[c] for c in cols if c in cell]
+        return sum(vals) if vals else None
+
     with open(out_csv, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
         w.writerow(header)
@@ -166,22 +208,32 @@ def main():
                 if v is not None:
                     filled[c] += 1
                 row.append('' if v is None else f'{v:g}')
+            # 파생 합산 (방향별 ZT 큐)
+            d = {s: dsum(cell, s) for s in DERIVED_SHORTS}
+            for s in DERIVED_SHORTS:
+                row.append('' if d[s] is None else f'{d[s]:g}')
+            # 방향 불균형 = 3to6 − 6to3
+            a3, a6 = d.get('BR_ZT_3to6'), d.get('BR_ZT_6to3')
+            imb = (a3 - a6) if (a3 is not None and a6 is not None) else None
+            row.append('' if imb is None else f'{imb:g}')
             w.writerow(row)
 
     # ── meta 저장 ──
     n = len(times)
     cov = {SHORT[c]: round(filled[c] / n * 100, 1) for c in FEATURE_COLS}
+    ncols = len(FEATURE_COLS) + len(DERIVED_SHORTS) + len(DERIVED_CALC)
     meta = {
         'rows': n,
         'range': [times[0].strftime('%Y-%m-%d %H:%M'), times[-1].strftime('%Y-%m-%d %H:%M')],
-        'features': [SHORT[c] for c in FEATURE_COLS],
+        'features': [SHORT[c] for c in FEATURE_COLS] + DERIVED_SHORTS + DERIVED_CALC,
         'raw_fullnames': FEATURE_COLS,
+        'derived_sources': dsrc,
         'coverage_pct': cov,
     }
     with open(os.path.join(a.out, 'features_meta.json'), 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    print(f"[완료] {n}분 × {len(FEATURES_31)}피처 → {out_csv}")
+    print(f"[완료] {n}분 × {ncols}피처(원 {len(FEATURES_31)} + 파생 {len(DERIVED_SHORTS)+len(DERIVED_CALC)}) → {out_csv}")
     print(f"       범위 {meta['range'][0]} ~ {meta['range'][1]}")
     low = [(k, v) for k, v in cov.items() if v < 90]
     if low:
