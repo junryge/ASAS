@@ -49,9 +49,10 @@ FEATURES_31 = [
     ('M16A.QUE.ALL.6F_TO_HUB_JOB',          'RB', 'RB_M16A'),
     ('M16B.QUE.ALL.10F_TO_HUB_JOB',         'RB', 'RB_M16B'),
     ('M16.QUE.SFAB.SENDQUEUETOTAL',         'RB', 'RB_M16send'),
-    # ── R-D 저장/OHT (6) ──
+    # ── R-D 저장/OHT (7) ──
     ('M16HUB.STRATE.ALL.FABSTORAGERATIO',   'RD', 'RD_FAB'),
     ('M16HUB.STRATE.STB.3F_STORAGE_UTIL',   'RD', 'RD_STB'),
+    ('M16HUB.STRATE.STK.STORAGERATIO',      'RD', 'RD_STK'),   # ★ STK 스토커 저장률 (6/16 저장Full 겨냥)
     ('M14.QUE.OHT.OHTUTIL',                 'RD', 'RD_OHT_M14'),
     ('M14B.QUE.OHT.OHTUTIL',                'RD', 'RD_OHT_M14B'),
     ('M16A.QUE.OHT.OHTUTIL',                'RD', 'RD_OHT_M16A'),

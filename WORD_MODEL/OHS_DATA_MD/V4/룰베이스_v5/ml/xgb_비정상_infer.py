@@ -62,8 +62,9 @@ def build_features(feat_df, base_cols):
 
 
 # ── 저장룰 임계 (hubroom_predictor 동일) + 실제정체 확인 ──
-TH_RD_FAB = 25.0      # FAB저장률 ≥ 25%
-TH_RD_STB = 99.0      # STB이용률 ≥ 99%
+TH_RD_FAB = 25.0      # FAB저장률 ≥ 25% (6/4형: 평소 튈 수 있어 SLA 확인 필요)
+TH_RD_STB = 99.0      # STB이용률 ≥ 99% (평소에도 100 → SLA 확인 필요)
+TH_RD_STK = 10.0      # ★ STK 스토커 저장률 ≥ 10% (평소 0 → 단독 하드경보, 저장Full 직결)
 TH_SLA_UP = 5.0       # 4분초과율(SLA) ≥ 5% = 실제 정체 (6/4는 0 → 차단)
 RANK = {'': 0, '경계': 1, '위험': 2, '초위험': 3}
 INV = {v: k for k, v in RANK.items()}
@@ -80,12 +81,17 @@ def level(p, tag=''):
             else '경계' if p >= 0.50 else '')          #        신뢰 74%
 
 
-def storage_alarm(rd_fab, rd_stb, sla):
-    """저장룰: 저장 높음 AND 4분초과(실제정체). 6/4형(저장만 튐)은 차단."""
-    hi = ((rd_fab is not None and rd_fab >= TH_RD_FAB)
-          or (rd_stb is not None and rd_stb >= TH_RD_STB))
+def storage_alarm(rd_fab, rd_stb, sla, rd_stk=None):
+    """저장룰:
+       ① STK 스토커 저장률 ≥ 10% → 단독 하드경보 (평소 0이라 튀면 곧 저장Full = 6/16형)
+       ② FAB≥25 OR STB≥99 → 4분초과(SLA)≥5 확인돼야 경보 (6/4형 저장만 튐은 차단)
+    """
+    stk_hard = (rd_stk is not None and rd_stk >= TH_RD_STK)
+    soft_hi = ((rd_fab is not None and rd_fab >= TH_RD_FAB)
+               or (rd_stb is not None and rd_stb >= TH_RD_STB))
     congested = (sla is not None and sla >= TH_SLA_UP)
-    return hi and congested, hi
+    alarm = stk_hard or (soft_hi and congested)
+    return alarm, (stk_hard or soft_hi)
 
 
 def main():
@@ -140,6 +146,7 @@ def main():
     def col(name):
         return df[name].values if name in df.columns else [None] * len(df)
     rd_fab_v, rd_stb_v, sla_v = col('RD_FAB'), col('RD_STB'), col('SLA_M16HUB')
+    rd_stk_v = col('RD_STK')
 
     def fnum(v):
         try:
@@ -160,17 +167,21 @@ def main():
         for tg in tags:
             m = tg.replace('y_pre', '')
             header += [f'{m}분_예측시각', f'{m}분_확률', f'{m}분_최종등급', f'{m}분_사유']
-        header += ['저장경보', 'RD_FAB', 'RD_STB', 'SLA_4분초과']
+        header += ['저장경보', 'RD_FAB', 'RD_STB', 'RD_STK', 'SLA_4분초과']
         w.writerow(header)
         for i, t in enumerate(df['datetime']):
-            # 저장룰 (지평선 공통) — 4분초과 확인으로 6/4형 차단
+            # 저장룰 (지평선 공통) — STK 하드 + (FAB/STB AND 4분초과)
             rd_fab, rd_stb, sla = fnum(rd_fab_v[i]), fnum(rd_stb_v[i]), fnum(sla_v[i])
-            s_alarm, s_hi = storage_alarm(rd_fab, rd_stb, sla)
+            rd_stk = fnum(rd_stk_v[i])
+            s_alarm, s_hi = storage_alarm(rd_fab, rd_stb, sla, rd_stk)
             if s_hi and not s_alarm:
                 n_block += 1
             if s_alarm:
                 n_stor += 1
-                s_reason = f"저장경보(FAB{rd_fab or 0:.0f}%/STB{rd_stb or 0:.0f}%,4분초과{sla or 0:.0f}%)"
+                if rd_stk is not None and rd_stk >= TH_RD_STK:
+                    s_reason = f"저장경보(STK스토커{rd_stk:.0f}%≥{TH_RD_STK:.0f})"
+                else:
+                    s_reason = f"저장경보(FAB{rd_fab or 0:.0f}%/STB{rd_stb or 0:.0f}%,4분초과{sla or 0:.0f}%)"
 
             row = [t.strftime('%Y-%m-%d %H:%M')]
             for tg in tags:
@@ -191,6 +202,7 @@ def main():
             row += ['예' if s_alarm else '',
                     '' if rd_fab is None else f'{rd_fab:.1f}',
                     '' if rd_stb is None else f'{rd_stb:.1f}',
+                    '' if rd_stk is None else f'{rd_stk:.1f}',
                     '' if sla is None else f'{sla:.1f}']
             w.writerow(row)
 
