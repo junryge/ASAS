@@ -72,6 +72,14 @@ FEATURES_31 = [
     # ── 보조 (2) ──
     ('M16HUB.QUE.ABN.AOTRANSDELAY',         'AUX', 'AUX_AOdelay'),
     ('M16HUB.QUE.OHT.CURRENTOHTQCNT',       'AUX', 'AUX_OHTq(리프터대표)'),
+    # ── ★ M16→M14 방향 국소 밀림/정체 (4AFC 컨베이어) — 고객 정체 4건 겨냥 ──
+    ('M16HUB.QUE.M16TOM14.MESCURRENTQCNT',      'DIR', 'DIR_M16toM14_Q'),      # M16→M14 총 큐
+    ('M16A.QUE.CNV.M16TOM14ACURRNETQCNT',       'DIR', 'DIR_M16toM14A_CNV'),   # M16A→M14A 컨베이어 큐
+    ('M16A.QUE.CNV.M16TOM14BCURRNETQCNT',       'DIR', 'DIR_M16toM14B_CNV'),   # M16A→M14B 컨베이어 큐
+    ('M14.QUE.CNV.NORTHCNVTOM14TIME1MIN',       'DIR', 'DIR_NorthCNVtoM14_T'), # 북측(4AFC3301) 컨베이어→M14 시간 ★밀림직결
+    ('M14.QUE.CNV.SOUTHCNVTOM14TIME1MIN',       'DIR', 'DIR_SouthCNVtoM14_T'), # 남측(4AFC3201) 컨베이어→M14 시간 ★밀림직결
+    ('M14.QUE.CNV.NORTHCURRENTQCNT',            'DIR', 'DIR_NorthCNV_Q'),      # 북측 컨베이어 큐
+    ('M14.QUE.CNV.SOUTHCURRENTQCNT',            'DIR', 'DIR_SouthCNV_Q'),      # 남측 컨베이어 큐
 ]
 FEATURE_COLS = [f[0] for f in FEATURES_31]
 SHORT = {f[0]: f[2] for f in FEATURES_31}
