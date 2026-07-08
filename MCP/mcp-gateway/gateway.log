@@ -1,0 +1,15 @@
+2026-07-08 21:46:41,629 INFO gateway AMHS MCP Gateway 시작 — Streamable HTTP
+2026-07-08 21:46:41,685 INFO mcp.server.streamable_http_manager StreamableHTTP session manager started
+2026-07-08 21:54:39,624 INFO mcp.server.streamable_http_manager StreamableHTTP session manager shutting down
+2026-07-08 21:54:41,476 INFO gateway AMHS MCP Gateway 시작 — Streamable HTTP
+2026-07-08 21:54:41,511 INFO mcp.server.streamable_http_manager StreamableHTTP session manager started
+2026-07-08 21:55:50,328 INFO mcp.server.streamable_http_manager StreamableHTTP session manager shutting down
+2026-07-08 21:55:52,014 INFO gateway AMHS MCP Gateway 시작 — Streamable HTTP
+2026-07-08 21:55:52,050 INFO mcp.server.streamable_http_manager StreamableHTTP session manager started
+2026-07-08 21:57:34,096 INFO mcp.server.streamable_http_manager StreamableHTTP session manager shutting down
+2026-07-08 21:57:35,665 INFO gateway AMHS MCP Gateway 시작 — Streamable HTTP
+2026-07-08 21:57:35,702 INFO mcp.server.streamable_http_manager StreamableHTTP session manager started
+2026-07-08 22:11:31,459 INFO mcp.server.streamable_http_manager StreamableHTTP session manager shutting down
+2026-07-08 22:11:33,177 INFO gateway AMHS MCP Gateway 시작 — Streamable HTTP
+2026-07-08 22:11:33,214 INFO mcp.server.streamable_http_manager StreamableHTTP session manager started
+2026-07-08 22:12:14,232 INFO mcp.server.streamable_http_manager StreamableHTTP session manager shutting down

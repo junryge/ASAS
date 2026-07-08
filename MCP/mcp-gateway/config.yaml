@@ -1,0 +1,59 @@
+# ============================================================
+# AMHS MCP Gateway 설정
+# 서버 PC에서 이 파일만 수정하면 된다. 코드 수정 불필요.
+# ============================================================
+
+server:
+  name: amhs-mcp-gateway
+  host: 0.0.0.0        # 폐쇄망 내부 어디서든 접속 허용
+  port: 8010
+  # 관리 콘솔 HTML 위치 (server.py 기준 상대경로)
+  # http://<서버IP>:8010/console 로 접속하면 이 파일을 서빙한다
+  console_html: "../INDEX/MCP_Console.html"
+  # 오프닝 페이지 — 루트(/) 접속 시 서빙, 7초 후 콘솔 자동 진입
+  opening_html: "../INDEX/AMHS_MCP_OP.html"
+
+# ---- REST API 커넥터 ----
+# 등록된 이름으로만 호출 가능 (허용 목록 방식)
+rest:
+  timeout: 10
+  endpoints:
+    # 이름: URL   ← 내부 서버 주소로 바꿔라
+    mes_status: "http://10.0.0.21:8080/api/status"
+    amhs_oht: "http://10.0.0.22:9000/api/oht"
+
+# ---- DB 커넥터 ----
+db:
+  max_rows: 500        # 한 번에 반환할 최대 행 수
+  select_only: true    # true면 SELECT/WITH만 허용 (안전)
+  connections:
+    oracle_main:
+      type: oracle
+      dsn: "10.0.0.31:1521/ORCLPDB"
+      user: "readonly"
+      password: "CHANGE_ME"
+    mssql_log:
+      type: mssql
+      host: "10.0.0.32"
+      database: "AMHS_LOG"
+      user: "readonly"
+      password: "CHANGE_ME"
+
+# ---- 파일 서버 / 공유폴더 커넥터 ----
+# 별칭: 실제 경로. 이 경로 밖은 접근 차단된다.
+files:
+  max_read_bytes: 1048576   # 1MB
+  roots:
+    share: "C:/공유폴더"     # 서버 PC 기준 경로로 수정
+    data: "D:/data"
+
+# ---- 다른 MCP 서버 중계 ----
+# 내부에 이미 떠 있는 MCP 서버들을 이 게이트웨이 하나로 묶는다
+relay:
+  servers:
+    # 이름: Streamable HTTP 주소
+    # internal_fs: "http://10.0.0.41:8020/mcp"
+
+logging:
+  file: "gateway.log"
+  level: INFO
