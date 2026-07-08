@@ -27,11 +27,12 @@ import json
 import os
 import sys
 
-# ★ train 과 반드시 동일 (60분 흐름 + CUSUM)
+# ★ train 과 반드시 동일 (총 과거 60분만 필요 — 운영 데이터 제약)
 ROLL_WINS = [15, 30, 60]
 DELTA_LAGS = [15, 30, 60]
 MAX_WINS = [60]
-CUSUM_BASE_WIN = 120
+CUSUM_BASE_WIN = 30         # 기준선 = 직전 30분
+CUSUM_ACC_WIN = 30          # 누적 = 최근 30분
 CUSUM_K = 0.5
 
 
@@ -45,22 +46,18 @@ def _need():
         return False
 
 
-def _cusum(np, s, base_win=CUSUM_BASE_WIN, k=CUSUM_K):
-    """한쪽(상승) CUSUM — train 과 100% 동일. 값이 평소+여유를 지속적으로 넘으면 누적."""
+def _cusum(np, s, base_win=CUSUM_BASE_WIN, acc_win=CUSUM_ACC_WIN, k=CUSUM_K):
+    """60분 완결 CUSUM — train 과 100% 동일. 기준선 30분 + 누적 30분."""
     import pandas as pd
     x = pd.Series(s).astype(float)
-    base = x.shift(1).rolling(base_win, min_periods=15).median()
-    sd = x.shift(1).rolling(base_win, min_periods=15).std()
+    base = x.shift(1).rolling(base_win, min_periods=10).median()
+    sd = x.shift(1).rolling(base_win, min_periods=10).std()
     base = base.bfill().fillna(x.iloc[0] if len(x) else 0.0).values
     sd = sd.fillna(0.0).values
-    xv = x.values
-    n = len(xv)
-    C = np.zeros(n, dtype='float64')
-    prev = 0.0
-    for i in range(n):
-        prev = max(0.0, prev + (xv[i] - base[i] - k * sd[i]))
-        C[i] = prev
-    return C
+    dev = x.values - base - k * sd
+    S = np.concatenate([[0.0], np.cumsum(dev)])
+    Smin = pd.Series(S).rolling(acc_win + 1, min_periods=1).min().values
+    return np.maximum(0.0, S[1:] - Smin[1:])
 
 
 def build_features(feat_df, base_cols):
@@ -88,10 +85,10 @@ TH_RD_FAB = 25.0      # FAB저장률 ≥ 25% (6/4형: 평소 튈 수 있어 SLA 
 TH_RD_STB = 99.0      # STB이용률 ≥ 99% (평소에도 100 → SLA 확인 필요)
 TH_RD_STK = 10.0      # ★ STK 스토커 저장률 ≥ 10% (평소 0 → 단독 하드경보, 저장Full 직결)
 TH_SLA_UP = 5.0       # 4분초과율(SLA) ≥ 5% = 실제 정체 (6/4는 0 → 차단)
-# ── ★ CUSUM 밀림룰 (M16→M14 국소 밀림 = 6/22·24·29형, hubroom·XGBoost 못 잡음) ──
-#    큐/저장 CUSUM(누적 상승)이 임계 넘으면 밀림 경보. 6월검증: 3/3 잡음(리드 13~23분).
-TH_CUSUM_Q = 600.0    # SouthQ/NorthQ CUSUM (컨베이어 큐 지속 상승)
-TH_CUSUM_FAB = 300.0  # FAB저장 CUSUM (저장 지속 상승 = 6/29형)
+# ── ★ CUSUM 밀림룰 (M16→M14 국소 밀림 = 6/11·22·24·29형) ──
+#    60분 완결 CUSUM 스케일 기준 임계. 6월검증: 4/4 (리드 5~30분) · 경보율 4.8%.
+TH_CUSUM_Q = 200.0    # SouthQ/NorthQ CUSUM (컨베이어 큐 지속 상승)
+TH_CUSUM_FAB = 100.0  # FAB저장 CUSUM (저장 지속 상승 = 6/29형)
 RANK = {'': 0, '경계': 1, '위험': 2, '초위험': 3}
 INV = {v: k for k, v in RANK.items()}
 
