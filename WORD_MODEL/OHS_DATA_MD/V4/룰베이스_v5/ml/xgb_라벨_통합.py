@@ -146,18 +146,23 @@ def main():
 
     if not (a.episodes or a.events or a.manual):
         print("⚠️ --episodes / --events / --manual 중 최소 하나 필요"); sys.exit(2)
+    ep_files = [p.strip() for p in (a.episodes or '').split(',') if p.strip()]
     # ★ 경로를 줬는데 파일이 없으면 조용히 넘어가지 않고 즉시 중단 (라벨 누락 사고 방지)
-    for opt, path in (('--episodes', a.episodes), ('--events', a.events), ('--manual', a.manual)):
+    for opt, path in ([('--episodes', p) for p in ep_files]
+                      + [('--events', a.events), ('--manual', a.manual)]):
         if path and not os.path.exists(path):
             print(f"❌ {opt} 경로 없음: {path}  ← 파일 위치/이름 확인!"); sys.exit(2)
 
     # 사건 분 집합 (합집합) + 소스별 통계
     jam = set()
-    if a.episodes:
-        m, n = load_episodes(a.episodes, a.dur, a.types, a.maxdur)
-        jam |= m
-        print(f"[메신저] episode {n}건 → 사건 분 {len(m)}")
-        if n == 0:
+    if ep_files:                                     # 쉼표로 여러 파일 (4월,5월 등)
+        tot = 0
+        for fp in ep_files:
+            m, n = load_episodes(fp, a.dur, a.types, a.maxdur)
+            jam |= m
+            tot += n
+            print(f"[메신저] {os.path.basename(fp)}: episode {n}건 → 사건 분 {len(m)}")
+        if tot == 0:
             print("❌ 메신저 사건 0건 — types 필터/파일 확인"); sys.exit(2)
     if a.events:
         m, n = load_hubroom(a.events, a.thr)
