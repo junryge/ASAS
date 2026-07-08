@@ -144,8 +144,7 @@
 <h2>② 핵심 기술 3가지</h2>
 <div class="card">
 <h3 style="margin-top:0">1. CUSUM — 서서히 밀리는 조짐을 잡는 눈</h3>
-<pre>dev(t) = 현재값 − 직전30분 중앙값 − 0.5×표준편차
-C(t)   = max(0, 누적합 − 최근30분 내 누적합 최저점)   ← 총 60분 완결</pre>
+<pre>C(t) = max(0, C(t-1) + [현재값 − 직전120분 중앙값 − 0.5×표준편차])</pre>
 <p style="font-size:13.5px;color:var(--ink2);margin:6px 0 0">순간 스파이크는 누적이 안 돼 무시되고, <b>조금씩이라도 지속 상승</b>하면 쌓여서 경보.
 절대 임계로는 노이즈에 묻히던 국소 밀림(큐 66→108)이 CUSUM으론 뚜렷해진다(270→1007).
 피처로도 들어가고(ML이 학습), 독립 룰로도 동작(안전망).</p>
@@ -219,8 +218,8 @@ python 경보요약.py --infile .\out_ml\july_final.csv</pre>
 <div class="scroll"><table>
   <tr><th>손잡이</th><th>위치</th><th>기본</th><th>효과</th></tr>
   <tr><td>hubroom 라벨 임계</td><td>라벨 --thr</td><td>50</td><td>낮추면 민감, 올리면 엄격</td></tr>
-  <tr><td>큐 CUSUM 임계</td><td>infer TH_CUSUM_Q</td><td>200</td><td>밀림룰 민감도</td></tr>
-  <tr><td>저장 CUSUM 임계</td><td>infer TH_CUSUM_FAB</td><td>100</td><td>야간 오탐 시 상향</td></tr>
+  <tr><td>큐 CUSUM 임계</td><td>infer TH_CUSUM_Q</td><td>600</td><td>밀림룰 민감도</td></tr>
+  <tr><td>저장 CUSUM 임계</td><td>infer TH_CUSUM_FAB</td><td>300</td><td><b>야간 오탐 줄이려면 450</b></td></tr>
   <tr><td>ML 등급컷</td><td>infer level()</td><td>캘리브레이션 근거</td><td>재학습 시 표 보고 갱신</td></tr>
 </table></div>
 </div>

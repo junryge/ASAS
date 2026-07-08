@@ -35,26 +35,31 @@ ROLL_WINS = [15, 30, 60]    # 롤링 평균/표준편차 창(분) — 60분 흐�
 DELTA_LAGS = [15, 30, 60]   # 델타(현재 − N분전) — 60분 추세
 MAX_WINS = [60]             # 60분 내 최대치(얼마나 튀었나 = 급증 포착)
 # ── CUSUM(누적 상승) 파라미터 — '서서히 밀리는 조짐' 포착 (룰 같은 ML 피처) ──
-#    ★ 60분 완결: 기준선 30분 + 누적창 30분 = 총 과거 60분만 필요 (운영 데이터 제약)
-CUSUM_BASE_WIN = 30         # 기준선(평소) 창(분) — 직전 30분 중앙값
-CUSUM_ACC_WIN = 30          # 누적 창(분) — 최근 30분 내 지속상승만 누적
+CUSUM_BASE_WIN = 120        # 기준선(평소) 계산 창(분, 과거만)
 CUSUM_K = 0.5               # 여유(slack) = K × 과거 표준편차 (작을수록 민감)
 
 
-def _cusum(np, s, base_win=CUSUM_BASE_WIN, acc_win=CUSUM_ACC_WIN, k=CUSUM_K):
-    """60분 완결 CUSUM: dev = x − 직전base_win분 중앙값 − k·표준편차.
-       C(t) = max(0, 누적합(t) − 최근 acc_win분 내 누적합 최저점) → 창 밖 과거에 의존 없음.
-       순간 튐은 누적 안 되고, 지속 상승만 쌓임. 전부 과거만(누수 없음)."""
+def _cusum(np, s, base_win=CUSUM_BASE_WIN, k=CUSUM_K):
+    """한쪽(상승) CUSUM: 값이 평소+여유 를 지속적으로 넘으면 누적. 순간 튐은 무시.
+       C[i] = max(0, C[i-1] + (x - 기준선 - 여유)).  기준선/표준편차는 과거창만(누수 없음)."""
     import pandas as pd
     x = pd.Series(s).astype(float)
-    base = x.shift(1).rolling(base_win, min_periods=10).median()   # 직전 30분 평소값
-    sd = x.shift(1).rolling(base_win, min_periods=10).std()
-    base = base.bfill().fillna(x.iloc[0] if len(x) else 0.0).values
+    base = x.shift(1).rolling(base_win, min_periods=15).median()   # 직전까지 평소값
+    sd = x.shift(1).rolling(base_win, min_periods=15).std()
+    base = base.bfill().fillna(x.iloc[0] if len(x) else 0.0)
     sd = sd.fillna(0.0).values
-    dev = x.values - base - k * sd
-    S = np.concatenate([[0.0], np.cumsum(dev)])                    # 누적합
-    Smin = pd.Series(S).rolling(acc_win + 1, min_periods=1).min().values
-    return np.maximum(0.0, S[1:] - Smin[1:])                       # 최근 30분 내 리셋 기준 누적
+    base = base.values
+    xv = x.values
+    n = len(xv)
+    C = np.zeros(n, dtype='float64')
+    prev = 0.0
+    for i in range(n):
+        dev = xv[i] - base[i] - k * sd[i]
+        prev = prev + dev
+        if prev < 0:
+            prev = 0.0
+        C[i] = prev
+    return C
 
 
 def _need():
