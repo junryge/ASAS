@@ -49,10 +49,13 @@ def parse_dt(s):
     return None
 
 
-def load_episodes(fp, dur):
-    """메신저 episode.csv → 사건 분(minute) 집합. start_time|t0 부터 dur분."""
+def load_episodes(fp, dur, types='', maxdur=60):
+    """메신저 episode.csv → 사건 분(minute) 집합.
+       start_time~end_time 구간 사용(없으면 dur분), maxdur 분에서 자름.
+       types='정체,브릿지' 처럼 주면 fault_type 부분일치 필터 (빈값=전체)."""
     mins = set()
     n = 0
+    tkeys = [t.strip() for t in types.split(',') if t.strip()]
     with open(fp, encoding='utf-8-sig', newline='') as f:
         rd = csv.DictReader(f)
         cols = rd.fieldnames or []
@@ -60,12 +63,22 @@ def load_episodes(fp, dur):
         if not tcol:
             print(f"⚠️ episode.csv 에 t0/start_time 없음 (컬럼: {cols[:8]})"); return mins, 0
         for x in rd:
-            if (x.get('orphan') or '').strip().upper() == 'Y':
+            orphan = (x.get('is_orphan') or x.get('orphan') or '').strip().upper()
+            if orphan == 'Y':
                 continue                                  # 고아(원인불명) 제외
+            if tkeys:
+                ft = (x.get('fault_type') or '').strip()
+                if not any(k in ft for k in tkeys):
+                    continue
             t = parse_dt(x.get(tcol))
             if not t:
                 continue
-            for k in range(dur):
+            te = parse_dt(x.get('end_time'))
+            span = dur
+            if te and te > t:
+                span = min(maxdur, int((te - t).total_seconds() // 60) + 1)
+            span = max(1, span)
+            for k in range(span):
                 mins.add(t + timedelta(minutes=k))
             n += 1
     return mins, n
@@ -122,6 +135,10 @@ def main():
     ap.add_argument('--manual', default=None)
     ap.add_argument('--thr', type=float, default=50)
     ap.add_argument('--dur', type=int, default=10)
+    ap.add_argument('--maxdur', type=int, default=60,
+                    help='episode 지속시간 상한(분) — 초장기 사건이 라벨을 뒤덮는 것 방지')
+    ap.add_argument('--types', default='',
+                    help="episode fault_type 필터 (예: '정체,브릿지,리프터,CNV,CAPA'). 빈값=전체")
     ap.add_argument('--pre', default='10,30')
     ap.add_argument('--guard', type=int, default=60)
     ap.add_argument('--out', default='./out_ml/labels_통합.csv')
@@ -129,18 +146,24 @@ def main():
 
     if not (a.episodes or a.events or a.manual):
         print("⚠️ --episodes / --events / --manual 중 최소 하나 필요"); sys.exit(2)
+    # ★ 경로를 줬는데 파일이 없으면 조용히 넘어가지 않고 즉시 중단 (라벨 누락 사고 방지)
+    for opt, path in (('--episodes', a.episodes), ('--events', a.events), ('--manual', a.manual)):
+        if path and not os.path.exists(path):
+            print(f"❌ {opt} 경로 없음: {path}  ← 파일 위치/이름 확인!"); sys.exit(2)
 
     # 사건 분 집합 (합집합) + 소스별 통계
     jam = set()
-    if a.episodes and os.path.exists(a.episodes):
-        m, n = load_episodes(a.episodes, a.dur)
+    if a.episodes:
+        m, n = load_episodes(a.episodes, a.dur, a.types, a.maxdur)
         jam |= m
         print(f"[메신저] episode {n}건 → 사건 분 {len(m)}")
-    if a.events and os.path.exists(a.events):
+        if n == 0:
+            print("❌ 메신저 사건 0건 — types 필터/파일 확인"); sys.exit(2)
+    if a.events:
         m, n = load_hubroom(a.events, a.thr)
         jam |= m
         print(f"[hubroom] 파일 {n}개, 점수≥{a.thr:.0f} → 사건 분 {len(m)}")
-    if a.manual and os.path.exists(a.manual):
+    if a.manual:
         m, n = load_manual(a.manual, a.dur)
         jam |= m
         print(f"[수동] 이벤트 {n}건 → 사건 분 {len(m)}")
