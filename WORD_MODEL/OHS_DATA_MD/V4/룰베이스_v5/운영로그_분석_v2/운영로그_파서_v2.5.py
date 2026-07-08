@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-운영로그 파서 v2 — Episode 단위 장애 라벨링
+운영로그 파서 v2.5 — Episode 단위 장애 라벨링 (정체/밀림/데드락 어휘 회수판)
+
+v2.5 변경 (1~5월 실데이터 검증):
+  - fault 관문에 정체 어휘 추가: 밀림/밀려/밀리/밀렸/병목/데드락/Deadlock/쌓/적체/막힘/막혀/Delay
+    → "밀리는데" "쌓이고있는데" "Deadlock" 등이 normal 로 버려지던 것 회수 (실측 +13건)
+  - 부정문/가정문 가드: "적을 것으로 예상" "이슈 발생시" 등은 fault 승격 안 함 (오탐 2건 차단)
+  - '정체/병목' fault_type 에도 동일 어휘 반영 → 회수된 사건이 올바른 유형으로 분류
+  - Queue(맨 QUE/큐/증가)는 라벨에서 의도적 제외 → 숫자 룰/피처(CUSUM·SOP)가 담당
 
 v1 (운영로그_파서.py, 메시지 단위) 의 한계를 보완:
   - 메시지 4개(요청→조치→복구→원복) 가 v1 에선 4건 장애로 카운트
@@ -25,8 +32,8 @@ v1 (운영로그_파서.py, 메시지 단위) 의 한계를 보완:
   8. Output: 메시지 CSV + Episode CSV
 
 사용법:
-    python3 운영로그_파서_v2.py <운영로그.txt>
-    python3 운영로그_파서_v2.py <운영로그.txt> --out ./output
+    python3 운영로그_파서_v2.5.py <운영로그.txt>
+    python3 운영로그_파서_v2.5.py <운영로그.txt> --out ./output
 
 출력:
     YYYYMMDD_HHMMSS_message.csv  — 메시지 단위 (v1 호환)
@@ -68,7 +75,10 @@ CATEGORY_RULES = [
     ('fault',    ['장애', '이상', '에러', 'Error', 'ERROR', 'Err', 'error', 'fail',
                   '발생', '다운', '멈춤', '정체', '몰림', '인터락', 'alarm', 'Alarm',
                   '지연', 'Q-OVER', 'T-OVER', 'timeout', 'Timeout', 'TIMEOUT',
-                  'Down', '미동작', '통신불량']),
+                  'Down', '미동작', '통신불량',
+                  # ★ 정체/밀림/데드락 어휘 추가 (1~5월 실데이터 검증) — 지금까지 normal 로 버려지던 것 회수
+                  '밀림', '밀려', '밀리', '밀렸', '병목', '데드락', 'Deadlock', 'deadlock', 'DeadLock',
+                  '쌓', '적체', '막힘', '막혀', '막히', 'Delay', 'delay']),
 ]
 # normal = 위 어디에도 매칭 안 됨
 
@@ -76,11 +86,18 @@ CATEGORY_RULES = [
 # ── Case 5: "발생" 포함 시 fault 우선 (action 보다 먼저) ─────
 FAULT_PRIORITY_KEYWORDS = ['발생', 'Error 발생', 'ERROR 발생', '이상 발생', '장애 발생', 'Down 발생']
 
+# ── ★ 부정문/가정문 가드 — 정체어휘 있어도 '문제 없음/예상'이면 fault 아님 (오탐 방지) ──
+#    예: "밀리는 현상은 적을 것으로 예상됩니다", "이슈 발생시 대응", "반송큐 증가外 특이사항 없었습니다"
+#    (해소/안정화/정상화/원복은 recovery 로 이미 걸러지므로 여기 넣지 않음)
+NEG_HYPO_KEYWORDS = ['예상', '적을 것', '발생시', '발생 시', '특이사항 없', '이슈 없',
+                     '문제 없', '이상 없', '없었습니다']
+
 
 # ── 장애 유형 7종 (fault 메시지 대상) ──────────────────────
 FAULT_TYPE_RULES = [
-    ('정체/병목', ['정체', '몰림', '밀림', '밀려', 'Q-OVER', 'T-OVER', '지연',
-                   'Storage 증가', '증가하고', 'Queue']),
+    ('정체/병목', ['정체', '몰림', '밀림', '밀려', '밀리', '밀렸', '병목', 'Q-OVER', 'T-OVER',
+                   '지연', 'Delay', 'delay', '데드락', 'Deadlock', 'deadlock', 'DeadLock',
+                   '쌓', '적체', '막힘', '막혀', '막히', 'Storage 증가', '증가하고', 'Queue']),
     ('브릿지',    ['Bridge', 'bridge', 'BRIDGE', 'ZT', '브릿지']),
     ('리프터',    ['4ABLD', '6ABL', 'Lifter', 'lifter', 'LIFTER', '리프터', 'LIFT', 'LFT']),
     ('CNV',       ['4AFC', 'CNV', '컨베이어', 'Conveyor']),
@@ -256,9 +273,11 @@ def parse_messages(path: str) -> List[Message]:
 # ============================================================
 
 def classify_category(text: str) -> str:
-    """6종 카테고리 분류. 복구 우선 + Case 5(발생 키워드 시 fault 우선)."""
-    # Case 5: "발생" 포함 + fault 의도 → fault 우선
-    if any(k in text for k in FAULT_PRIORITY_KEYWORDS):
+    """6종 카테고리 분류. 복구 우선 + Case 5(발생 키워드 시 fault 우선).
+       ★ 부정문/가정문(예상·발생시·특이사항 없…)은 fault 로 승격되지 않음 (오탐 방지)."""
+    neg_hypo = any(k in text for k in NEG_HYPO_KEYWORDS)
+    # Case 5: "발생" 포함 + fault 의도 → fault 우선 (단, 가정문 '발생시/예상'이면 제외)
+    if any(k in text for k in FAULT_PRIORITY_KEYWORDS) and not neg_hypo:
         return 'fault'
     # ★ CAPA 변경 액션 — 별도 우선 처리 (normal 로 빠지지 않게)
     if CAPA_RE.search(text):
@@ -270,6 +289,9 @@ def classify_category(text: str) -> str:
                 return 'action'
     for cat, keywords in CATEGORY_RULES:
         if any(k in text for k in keywords):
+            # 정체어휘로 fault 가 되려는데 부정문/가정문이면 → 정상 (문제없음/예상)
+            if cat == 'fault' and neg_hypo:
+                return 'normal'
             return cat
     return 'normal'
 
