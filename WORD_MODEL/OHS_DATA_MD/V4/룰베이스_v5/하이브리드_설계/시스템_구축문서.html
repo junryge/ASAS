@@ -70,7 +70,7 @@
 <div class="tiles">
   <div class="tile"><div class="k">목표 4개 사건 탐지</div><div class="v" style="color:var(--good)">4/4</div></div>
   <div class="tile"><div class="k">사전 리드타임</div><div class="v">13~44<small>분 전</small></div></div>
-  <div class="tile"><div class="k">30분 모델 정밀도</div><div class="v">87<small>%</small></div></div>
+  <div class="tile"><div class="k">6월 실측 경보 적중</div><div class="v">54<small>% (30분) · 56% (10분)</small></div></div>
   <div class="tile"><div class="k">ML 직접 탐지</div><div class="v">6/29·6/19<small> 등</small></div></div>
 </div>
 
@@ -153,8 +153,8 @@
 운영 메신저에서 파서로 추출한 <b>실제 사건(4~5월 261건)</b>을 정답에 합치자 ML이 몰림 클래스를 배우기 시작
 (6/29 몰림·6/19 몰림을 XGBoost가 직접 탐지, 30분 모델 신뢰도 77% 한계 → 99% 돌파).</p>
 <h3>3. 등급 = 정밀도 캘리브레이션</h3>
-<p style="font-size:13.5px;color:var(--ink2);margin:6px 0 0">"위험"이라는 등급은 <b>그 경보가 맞을 확률</b>로 정의: 30분 모델 p≥0.5→신뢰 87%, p≥0.6→95%, p≥0.7→99%.
-고객이 "왜 위험이냐" 물으면 정밀도로 답한다.</p>
+<p style="font-size:13.5px;color:var(--ink2);margin:6px 0 0">"위험"이라는 등급은 <b>그 경보가 맞을 확률</b>로 정의: 30분 모델 p≥0.5→신뢰 87%, p≥0.6→95%, p≥0.7→99%
+<b>(학습기간 4~5월 내부검증 기준)</b>. 6월 실전 적중률은 ④의 운영자 채점(30분 54% · 10분 56%)이 기준.</p>
 </div>
 
 <h2>③ 개발 여정 — 8단계 시행착오</h2>
@@ -184,8 +184,11 @@
   <tr><td>6/5 저장Full→반송지연</td><td>14:48</td><td>09:07~</td><td class="lead">사전</td><td>위험</td><td><span class="pill p-ml">XGBoost 연속</span></td></tr>
   <tr><td>6/19 브릿지 비클 몰림</td><td>10:07</td><td>10:02</td><td class="lead">5분 전</td><td>위험</td><td><span class="pill p-ml">XGBoost 52%</span></td></tr>
 </table>
-<p style="font-size:12.5px;color:var(--ink2)">오탐: 30분 요약 74구간 중 사전예측 54% · 오탐 41% (운영자 채점). 오탐 대부분은 야간 저장 CUSUM 패턴 —
-저장 CUSUM 임계 상향(300→450)으로 감축 가능하며 목표 4사건엔 영향 없음.</p>
+<p style="font-size:12.5px;color:var(--ink2)"><b>6월 실측 경보 적중 (운영자 전수 채점):</b>
+30분 = 74구간 중 사전예측 40건(54%) · 사후 4건(5%) · 오탐 30건(41%) /
+10분 = 66구간 중 사전예측 37건(56%) · 정탐 2건 · 사후 2건 · 오탐 24건(36%).
+오탐 대부분은 야간 저장 CUSUM 패턴 — 임계 상향(300→450)으로 감축 가능하며 목표 4사건엔 영향 없음.
+(§② 캘리브레이션 수치는 학습기간 내부검증 기준이며, 실전 성적은 이 표가 기준.)</p>
 </div>
 
 <h2>⑤ 사용법</h2>
