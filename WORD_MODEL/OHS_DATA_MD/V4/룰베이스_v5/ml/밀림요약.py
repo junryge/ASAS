@@ -35,6 +35,8 @@ def cusum_of(r):
     d = r.get('밀림방향', '')
     if '남측' in d:
         return float(r.get('남큐CUSUM') or 0)
+    if '브릿지' in d:
+        return float(r.get('브릿지CUSUM') or 0)
     if '북측' in d:
         return float(r.get('북큐CUSUM') or 0)
     if '허브' in d:
@@ -90,6 +92,8 @@ def main():
             return '컨베이어밀림(남측)'
         if '북측' in d:
             return '컨베이어밀림(북측)'
+        if '브릿지' in d:
+            return '브릿지 정체(BridgeTime)'
         if '저장Full' in s['사유'] or 'STK' in s['사유']:
             return '허브 저장Full'
         return '허브 몰림/저장'
