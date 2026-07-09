@@ -7,6 +7,7 @@
 """
 import logging
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -24,6 +25,8 @@ BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
 from connectors import rest, db, files, mcp_relay  # noqa: E402
+
+START_TIME = time.time()  # /health 업타임 계산용
 
 
 def load_config() -> dict:
@@ -76,22 +79,59 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def gateway_info() -> dict:
         """게이트웨이 상태·설정 요약을 반환한다 (연결 확인용)."""
+        # 릴레이는 config.yaml + servers.yaml(콘솔 등록) 병합 결과를 보여준다
+        relay_merged = mcp_relay._console_servers()
+        for name in (cfg.get("relay", {}).get("servers") or {}):
+            relay_merged.setdefault(name, None)
         return {
             "name": sc.get("name", "amhs-mcp-gateway"),
             "port": sc.get("port", 8010),
             "rest_endpoints": list((cfg.get("rest", {}).get("endpoints") or {}).keys()),
             "db_connections": list((cfg.get("db", {}).get("connections") or {}).keys()),
             "file_roots": list((cfg.get("files", {}).get("roots") or {}).keys()),
-            "relay_servers": list((cfg.get("relay", {}).get("servers") or {}).keys()),
+            "relay_servers": list(relay_merged.keys()),
             "registered_servers": [s.get("name") for s in load_servers()],
+            "auth_enabled": bool(str(sc.get("admin_token") or "").strip()),
         }
 
     # ---- 관리 API (콘솔 HTML ↔ YAML 저장) ----
     CORS = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Admin-Token",
     }
+
+    # 관리 API 토큰 — config server.admin_token 설정 시에만 쓰기(POST)를 보호한다.
+    # 미설정이면 기존처럼 개방(하위호환). 조회(GET)는 항상 허용.
+    admin_token = str(sc.get("admin_token") or "").strip()
+
+    def _authorized(request: Request) -> bool:
+        if not admin_token:
+            return True
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer ") and auth[7:].strip() == admin_token:
+            return True
+        return request.headers.get("x-admin-token", "").strip() == admin_token
+
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health(request: Request):
+        """헬스체크 — 상태·업타임·tool 수. 모니터링/로드밸런서용."""
+        try:
+            tools = await mcp.list_tools()
+            tool_count = len(tools)
+        except Exception:  # tool 열거 실패해도 살아있음은 보고
+            tool_count = None
+        return JSONResponse(
+            {
+                "status": "ok",
+                "name": sc.get("name", "amhs-mcp-gateway"),
+                "uptime_seconds": round(time.time() - START_TIME, 1),
+                "tool_count": tool_count,
+                "registered_servers": len(load_servers()),
+                "auth_enabled": bool(admin_token),
+            },
+            headers=CORS,
+        )
 
     @mcp.custom_route("/", methods=["GET"])
     async def root(request: Request):
@@ -127,6 +167,15 @@ def build_server() -> FastMCP:
             return Response(status_code=204, headers=CORS)
         if request.method == "GET":
             return JSONResponse(load_servers(), headers=CORS)
+        if not _authorized(request):
+            logging.getLogger("gateway.admin").warning(
+                "servers.yaml 저장 거부 — 인증 실패 (client=%s)", request.client.host if request.client else "?"
+            )
+            return JSONResponse(
+                {"error": "인증 필요 — Authorization: Bearer <admin_token>"},
+                status_code=401,
+                headers=CORS,
+            )
         try:
             items = await request.json()
         except Exception:

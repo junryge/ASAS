@@ -12,6 +12,10 @@ server:
   console_html: "../INDEX/MCP_Console.html"
   # 오프닝 페이지 — 루트(/) 접속 시 서빙, 7초 후 콘솔 자동 진입
   opening_html: "../INDEX/AMHS_MCP_OP.html"
+  # 관리 API 토큰 (선택). 값을 채우면 콘솔의 서버 저장(POST /admin/servers)에
+  # Authorization: Bearer <토큰>  또는  X-Admin-Token: <토큰> 헤더가 필요하다.
+  # 비워두면 기존처럼 개방(폐쇄망 내부 신뢰). 조회(GET)·헬스체크는 항상 허용.
+  # admin_token: "CHANGE_ME_ADMIN_TOKEN"
 
 # ---- REST API 커넥터 ----
 # 등록된 이름으로만 호출 가능 (허용 목록 방식)

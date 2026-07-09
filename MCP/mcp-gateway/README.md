@@ -38,8 +38,16 @@ python server.py
 
 - 브라우저에서 `http://<서버IP>:8010/console` 접속
 - 콘솔에서 서버 등록/수정/삭제하면 → 게이트웨이가 `mcp-gateway/servers.yaml`에 자동 저장
+- 콘솔에 등록한 서버는 **곧바로 릴레이 중계 대상이 된다** (`relay_servers`/`relay_call`에서 바로 보임).
+  게이트웨이 재시작 불필요 — 호출마다 servers.yaml을 다시 읽는다. `config.yaml`의 `relay.servers`와 병합되며 이름이 겹치면 콘솔 등록이 우선.
+  · 항목 포맷: `{name, url}` 또는 `{name, host, port}` (port 있으면 `http://host:port/mcp`로 조립). `enabled: false`면 제외.
 - 헤더에 저장 상태 표시: **YAML 저장 연결됨**(정상) / **게이트웨이 미연결 · 임시 저장**(오프라인 폴백)
 - INDEX 폴더(MCP_Console.html)는 mcp-gateway 폴더와 같은 위치에 둬야 한다 (config server.console_html로 경로 변경 가능)
+- **관리 API 보호(선택)**: `config.yaml`의 `server.admin_token`을 채우면 서버 저장(POST)에 `Authorization: Bearer <토큰>` 헤더가 필요하다. 비워두면 개방(하위호환).
+
+### 헬스체크
+
+- `GET http://<서버IP>:8010/health` → `{status, uptime_seconds, tool_count, registered_servers, auth_enabled}` (모니터링/로드밸런서용)
 
 ## 4. 클라이언트 연결 (니 PC)
 
