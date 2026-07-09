@@ -8,11 +8,12 @@
 
 출력 컬럼:
    datetime |
-   남측_10분%·30분%·등급 | 북측_... | 허브_... |
-   밀림방향(최고등급 방향: 남측 4AFC3201 / 북측 4AFC3301 / 허브) | 밀림등급
+   남측_10분%·30분%·예측결과 | 북측_... | 허브_... |
+   밀림방향(예측된 방향: 남측 4AFC3201 / 북측 4AFC3301 / 허브) | 예측결과
 
-등급(정밀도 기준, 방향 공통): 경계 p≥0.5 / 위험 p≥0.7 / 초위험 p≥0.85
-게이트(오탐컷): 초위험=밤낮 항상 / 위험=주간(08~19시)만 / 경계=참고
+예측결과 = '예측' / '미예측' 2가지 (등급 대신). 게이트 통과하면 '예측'.
+내부 등급(정밀도 기준): 경계 p≥0.5 / 위험 p≥0.7 / 초위험 p≥0.85
+게이트(오탐컷): 초위험=밤낮 항상 / 위험=주간(08~19시)만 → 통과분만 '예측'
 
 입력:
    --features  features_june.csv (또는 실시간 창)
@@ -119,19 +120,19 @@ def main():
             p10 = probs.get((d, 10), np.zeros(len(feat)))[i]
             p30 = probs.get((d, 30), np.zeros(len(feat)))[i]
             g = grade_of(max(p10, p30))
-            gg = gated(g, hours[i])
+            gg = gated(g, hours[i])   # 게이트(초위험 항상/위험 주간) 내부 적용
             rec[f'{d}_10분%'] = f'{p10*100:.1f}'
             rec[f'{d}_30분%'] = f'{p30*100:.1f}'
-            rec[f'{d}_등급'] = gg
+            rec[f'{d}_예측결과'] = '예측' if gg else '미예측'
             if gg and GRADE_ORD[gg] > GRADE_ORD[best_grade]:
                 best_grade, best_dir = gg, d
         rec['밀림방향'] = DIR_LABEL[best_dir] if best_dir else ''
-        rec['밀림등급'] = best_grade
+        rec['예측결과'] = '예측' if best_dir else '미예측'
         if best_dir:
             n_alarm[best_dir] += 1
         rows.append(rec)
 
-    cols = ['datetime'] + [f'{d}_{h}' for d in dirs for h in ('10분%', '30분%', '등급')] + ['밀림방향', '밀림등급']
+    cols = ['datetime'] + [f'{d}_{h}' for d in dirs for h in ('10분%', '30분%', '예측결과')] + ['밀림방향', '예측결과']
     os.makedirs(os.path.dirname(a.out) or '.', exist_ok=True)
     import csv as _csv
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:

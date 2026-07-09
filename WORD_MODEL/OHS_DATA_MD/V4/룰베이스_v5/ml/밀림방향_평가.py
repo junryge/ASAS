@@ -54,15 +54,15 @@ def main():
     a = ap.parse_args()
 
     rows = list(csv.DictReader(open(a.result, encoding='utf-8-sig')))
-    alarms = []   # (t, dir, grade)
+    alarms = []   # (t, dir, 예측결과)
     for r in rows:
-        t = pdt(r['datetime']); g = (r.get('밀림등급') or '').strip()
-        if t and g:
-            alarms.append((t, dir_of(r.get('밀림방향', '')), g))
+        t = pdt(r['datetime']); pred = (r.get('예측결과') or '').strip()
+        if t and pred == '예측':
+            alarms.append((t, dir_of(r.get('밀림방향', '')), '예측'))
 
     print("=" * 60 + "\n  6월 방향별 밀림 ML 평가\n" + "=" * 60)
     print(f"\n■ 사건 커버 ({len(EVENTS)}개 고객확인)")
-    print(f"  {'사건':^16}{'기대방향':^8}{'ML판정':^10}{'리드':^7}{'등급':^7}{'방향맞음'}")
+    print(f"  {'사건':^16}{'기대방향':^8}{'ML판정':^10}{'리드':^7}{'결과':^7}{'방향맞음'}")
     cover = 0; dir_ok = 0
     ev_windows = []
     for ts, exp in EVENTS:
@@ -100,8 +100,6 @@ def main():
     for t, d, g in alarms:
         if segs and (t - segs[-1][1]).total_seconds() <= 300 and segs[-1][2] == d:
             segs[-1][1] = t
-            if GRADE_ORD[g] > GRADE_ORD[segs[-1][3]]:
-                segs[-1][3] = g
         else:
             segs.append([t, t, d, g])
     fp = sum(1 for s in segs if not near_real(s[0]))
@@ -113,7 +111,7 @@ def main():
 
     if a.out:
         with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
-            w = csv.writer(f); w.writerow(['경보시작', '경보종료', '방향', '최고등급', '오탐여부'])
+            w = csv.writer(f); w.writerow(['경보시작', '경보종료', '방향', '예측결과', '오탐여부'])
             for s in segs:
                 w.writerow([s[0].strftime('%m/%d %H:%M'), s[1].strftime('%H:%M'), s[2], s[3],
                             '오탐' if not near_real(s[0]) else '적중'])
