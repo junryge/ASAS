@@ -97,7 +97,7 @@ def main():
     rd_stk = col('RD_STK'); rd_stb = col('RD_STB'); sla = col('SLA_M16HUB')
     hours = df['datetime'].dt.hour.values
 
-    cols = ['datetime',
+    cols = ['datetime', '예측시각(10분후)', '예측시각(30분후)',
             '남큐CUSUM', '남측_예측결과', '북큐CUSUM', '북측_예측결과',
             '저장CUSUM', '허브_예측결과', 'RD_STK', '저장하드경보',
             '밀림방향', '예측결과', '사유']
@@ -122,8 +122,11 @@ def main():
         best = max(cand, key=lambda x: (GRADE_ORD[x[1]], x[2])) if cand else None
         if best:
             n[best[0]] += 1
+        pt10 = (t + pd.Timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M') if best else ''
+        pt30 = (t + pd.Timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M') if best else ''
         rows.append({
             'datetime': t.strftime('%Y-%m-%d %H:%M'),
+            '예측시각(10분후)': pt10, '예측시각(30분후)': pt30,
             '남큐CUSUM': f'{cu_S[i]:.0f}', '남측_예측결과': '예측' if ggS else '미예측',
             '북큐CUSUM': f'{cu_N[i]:.0f}', '북측_예측결과': '예측' if ggN else '미예측',
             '저장CUSUM': f'{cu_F[i]:.0f}', '허브_예측결과': '예측' if ggF else '미예측',
