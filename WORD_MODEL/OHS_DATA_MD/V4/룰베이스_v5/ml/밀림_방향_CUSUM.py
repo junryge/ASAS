@@ -59,10 +59,11 @@ def grade_by_ratio(cu, thr):
 
 
 def gated(grade, hour):
-    """초위험=항상 / 위험=주간(08~19) / 경계·''=미예측."""
+    """초위험=밤낮 항상 / 위험·경계=주간(08~19)만 예측.
+       ★ 경계(1.0배=임계도달)부터 예측 → 10~30분 리드 확보 (위험만 쓰면 코앞에 터짐)."""
     if grade == '초위험':
         return grade
-    if grade == '위험' and 8 <= hour <= 19:
+    if grade in ('위험', '경계') and 8 <= hour <= 19:
         return grade
     return ''
 
