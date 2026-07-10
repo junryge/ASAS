@@ -53,13 +53,51 @@ def grade_of(r):
     return '초위험' if ratio >= 2.5 else '위험' if ratio >= 1.5 else '경계'
 
 
+def load_events(paths):
+    """episode.csv → (시각, 설명) 리스트. 비고아 전부 (장비Error·작업·정체 모두 판정 근거가 됨)."""
+    ev = []
+    for fp in [p.strip() for p in paths.split(',') if p.strip()]:
+        for r in csv.DictReader(open(fp, encoding='utf-8-sig')):
+            if (r.get('is_orphan') or '').strip().upper() == 'Y':
+                continue
+            t = pdt(r.get('start_time') or r.get('t0'))
+            if not t:
+                continue
+            desc = ' '.join(x for x in [r.get('equipment', ''), r.get('fault_type', '')] if x)
+            ev.append((t, desc or '사건'))
+    ev.sort()
+    return ev
+
+
+def judge(st, en, events):
+    """판정: 예측 = 경보종료 후 4시간 내 사건 발생(사전예고) OR 같은날 경보 전 사건(여파, 12h내).
+       그 외 = 오탐. 근거메시지 = 매칭된 사건 시각+내용."""
+    best = None
+    for e, d in events:
+        if e >= st and (e - en) <= timedelta(hours=4):
+            cand = ('예측', f"{e.strftime('%m/%d %H:%M')} {d}", abs((e - st).total_seconds()))
+        elif e < st and e.date() == st.date() and (st - e) <= timedelta(hours=12):
+            cand = ('예측', f"{e.strftime('%m/%d %H:%M')} {d} (사건후 여파)",
+                    (st - e).total_seconds() + 10**6)
+        else:
+            continue
+        if best is None or cand[2] < best[2]:
+            best = cand
+    return best[:2] if best else ('오탐', '')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--result', required=True)
     ap.add_argument('--gap', type=int, default=10)
+    ap.add_argument('--episodes', default=None,
+                    help='메신저 episode.csv (운영로그_파서_v2.5 산출, 쉼표로 여러개) — 주면 판정/근거메시지 자동')
     ap.add_argument('--out', default='./out_ml/밀림_경보요약.csv')
     a = ap.parse_args()
 
+    events = load_events(a.episodes) if a.episodes else None
+    if events is not None:
+        print(f"[메신저] 판정근거 사건 {len(events)}건 로드")
     rows = list(csv.DictReader(open(a.result, encoding='utf-8-sig')))
     segs = []
     for r in rows:
@@ -100,21 +138,32 @@ def main():
 
     with open(a.out, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.writer(f)
-        w.writerow(['경보시작', '경보종료', '지속(분)', '예측종류', '밀림방향', '최고등급',
-                    '예측시각(10분후)', '예측시각(30분후)', '최고CUSUM', '사건적중', '사유'])
+        hdr = ['경보시작', '경보종료', '지속(분)', '예측종류', '밀림방향', '최고등급',
+               '예측시각(10분후)', '예측시각(30분후)', '최고CUSUM', '사건적중', '사유']
+        if events is not None:
+            hdr += ['판정', '근거메시지']
+        w.writerow(hdr)
+        n_pred = 0
         for s in segs:
             dur = int((s['end'] - s['start']).total_seconds() // 60) + 1
-            w.writerow([
+            row = [
                 s['start'].strftime('%Y-%m-%d %H:%M'),
                 s['end'].strftime('%H:%M'), dur, kind(s), s['방향'], s['최고등급'],
                 (s['start'] + timedelta(minutes=10)).strftime('%m-%d %H:%M'),
                 (s['start'] + timedelta(minutes=30)).strftime('%m-%d %H:%M'),
                 f"{s['최고CUSUM']:.0f}",
                 '★사건' if hit(s) else '', s['사유'],
-            ])
+            ]
+            if events is not None:
+                v, basis = judge(s['start'], s['end'], events)
+                n_pred += (v == '예측')
+                row += [v, basis]
+            w.writerow(row)
 
     n_hit = sum(1 for s in segs if hit(s))
     print(f"[완료] {len(rows)}줄 → 경보구간 {len(segs)}줄  → {a.out}")
+    if events is not None:
+        print(f"       판정: 예측 {n_pred} / 오탐 {len(segs) - n_pred}  ({n_pred/max(len(segs),1)*100:.0f}% 정탐)")
     print(f"       ★사건 적중 {n_hit}구간 / 오탐 {len(segs) - n_hit}구간")
     print("       ※ 이 표만 보면 됨 (정상 미예측은 전부 생략)")
 
