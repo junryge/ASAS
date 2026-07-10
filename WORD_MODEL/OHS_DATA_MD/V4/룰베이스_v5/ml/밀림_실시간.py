@@ -9,7 +9,7 @@
 동작:
   · 원본 폴더에서 최신 데이터의 마지막 시각 기준, 직전 120분(권장 240분)으로 CUSUM 계산
   · 남측(4AFC3201)/북측(4AFC3301)/허브저장/브릿지타임 4감지기 판정
-  · 콘솔 1줄 출력 + 매분 1행 CSV(밀림예측_YYYYMMDD.csv):
+  · 콘솔 1줄 출력 + 매분 1행 CSV(realtime_cusum_YYYYMMDD.csv):
       측정시간|지속(분)|예측종류|밀림방향|최고등급|예측시각(10/30분후)|최고CUSUM|사유|판정|근거메시지
   · 구간표(밀림경보요약_실시간.csv)도 자동 갱신 — 경보시작~종료 한 줄
   · 판정/근거메시지는 실시간엔 공란 (월말 메신저 episode 대조로 채움)
@@ -174,7 +174,7 @@ def append_row(outdir, rec, seg):
        미예측 분은 측정시간만 채움. 판정/근거메시지는 월말 메신저 대조로 채움(실시간 공란)."""
     os.makedirs(outdir, exist_ok=True)
     day = rec['datetime'][:10].replace('-', '')
-    fp = os.path.join(outdir, f'밀림예측_{day}.csv')
+    fp = os.path.join(outdir, f'realtime_cusum_{day}.csv')
     if os.path.exists(fp):
         with open(fp, encoding='utf-8-sig') as f:
             lines = f.readlines()
