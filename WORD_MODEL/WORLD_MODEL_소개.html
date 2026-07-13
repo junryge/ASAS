@@ -510,7 +510,8 @@
       <li><a href="#case"><span class="n">8</span> 실전 검증 사례</a></li>
       <li><a href="#data"><span class="n">9</span> 데이터와 정확도</a></li>
       <li><a href="#usage"><span class="n">10</span> 사용 방법</a></li>
-      <li><a href="#glossary"><span class="n">11</span> 용어 설명</a></li>
+      <li><a href="#tdmpc"><span class="n">11</span> 차세대 로드맵 — TD-MPC</a></li>
+      <li><a href="#glossary"><span class="n">12</span> 용어 설명</a></li>
     </ol>
   </nav>
 
@@ -898,7 +899,114 @@ python main.py</code></pre>
     </p>
   </section>
 
-  <!-- 11. 용어 -->
+  <!-- 11. TD-MPC 로드맵 -->
+  <section id="tdmpc">
+    <p class="eyebrow">Next — Learning-based World Model</p>
+    <h2>차세대 로드맵 — TD-MPC 기반 학습형 월드모델</h2>
+    <p>
+      현재의 월드모델은 <strong>규칙 기반</strong>입니다. 경로는 실제 시스템과 같은 Dijkstra+LineCost로
+      계산하고, 데드락 경보는 실 사건 데이터로 검증한 R-A/R-B/R-C 룰로 판정합니다. 검증된 구간에서는
+      정확하지만, 한계도 분명합니다 — <strong>새로운 FAB, 새로운 유형의 데드락 패턴이 나타나면
+      룰을 다시 사람 손으로 만들어야 합니다.</strong>
+    </p>
+    <p>
+      이 한계를 넘기 위해 채택을 추진하는 것이 <strong>TD-MPC</strong>
+      (Temporal Difference Learning for Model Predictive Control)입니다. 모델 기반 강화학습(model-based RL)
+      알고리즘으로, 환경의 원본 상태를 복원(reconstruction)하는 대신 <strong>행동에 따른 미래의
+      잠재 상태(latent state)와 보상(reward)만을 예측하는 모델을 학습</strong>하고, 그 잠재 공간
+      안에서 최적의 행동 궤적을 계획(planning)합니다.
+    </p>
+
+    <h3>왜 TD-MPC가 OHT에 맞는가</h3>
+    <div class="grid2">
+      <div class="card">
+        <h4>복원 없는 잠재 모델 = OHT 체질</h4>
+        <p>차량 수백 대 × 노드 수천 개의 원본 상태를 매 스텝 복원하는 것은 낭비입니다.
+        실제로 필요한 것은 &ldquo;이 조치를 하면 10분 뒤 큐·OBS·TAT가 어떻게 되나&rdquo;라는
+        <strong>미래의 요약 상태와 보상</strong>뿐 — TD-MPC의 설계 철학과 정확히 일치합니다.</p>
+      </div>
+      <div class="card">
+        <h4>룰을 손으로 짜지 않아도 됨</h4>
+        <p>현재 경보 룰은 M16A_BR의 검증 사건에 맞춰 사람이 설계했습니다. 학습형 모델은
+        데드락의 전조 패턴을 <strong>데이터에서 스스로 추출</strong>하므로, 다른 FAB·다른
+        패턴으로의 확장 비용이 크게 줄어듭니다.</p>
+      </div>
+      <div class="card">
+        <h4>예측을 넘어 &ldquo;개입 제안&rdquo;으로</h4>
+        <p>현재 시스템은 경보까지만 하고 개입은 사람 몫입니다. TD-MPC는 잠재 공간에서
+        행동 궤적을 계획하므로 <strong>&ldquo;그래서 무엇을 해야 하는가&rdquo;</strong>
+        (진입 제한, 우회, 할당 조절)까지 제안할 수 있습니다 — 관제 지원에서 관제 자동화로 가는 길입니다.</p>
+      </div>
+      <div class="card">
+        <h4>훈련 환경이 이미 있음</h4>
+        <p>실 라인에서 RL 실험은 불가능하지만, <strong>지금까지 만든 WORLD_SIM이 바로
+        훈련 환경</strong>입니다. 검증된 그래프 시뮬레이션 + 실 로그 리플레이를 gym 스타일
+        환경으로 감싸면 TD-MPC가 안전하게 학습할 수 있습니다. 기존 작업이 전부 자산이 됩니다.</p>
+      </div>
+    </div>
+
+    <h3>정직하게 짚는 난제</h3>
+    <ul>
+      <li><strong>행동(action) 정의</strong> — OHT는 단일 로봇 제어가 아니라 수백 대 멀티에이전트입니다.
+        차량 단위 행동은 조합 폭발하므로, HID 구역별 진입 상한 · 리프터 할당률 · LineCost 가중치 같은
+        <strong>매크로 레벨 손잡이</strong>로 행동 공간을 좁혀야 하며, 이 손잡이가 실제로 데드락을 막을 수
+        있는지부터 검증이 필요합니다.</li>
+      <li><strong>보상 설계</strong> — &ldquo;데드락 발생 = 큰 음의 보상&rdquo;은 너무 희소한 신호입니다(발생 자체가 드묾).
+        이미 검증해 둔 전조 지표(OBS 추세, 반송시간, FAB 간 큐, 리프터 역전)를 <strong>보상 형태로 재활용</strong>하는
+        것이 답입니다 — R-A/R-B/R-C 룰이 여기서 다시 쓰입니다.</li>
+      <li><strong>설명 가능성</strong> — 현재 3단계 경보는 관제자에게 근거를 말해 줄 수 있지만, 잠재 공간 모델은
+        블랙박스입니다. 따라서 기존 룰 기반 경보는 <strong>폐기하지 않고 병행</strong>합니다 — 학습 모델의
+        안전망이자 성능 비교 베이스라인으로.</li>
+    </ul>
+
+    <div class="callout">
+      <p><strong>기술 선택 두 가지.</strong>
+      ① 인코더는 MLP/CNN이 아닌 <strong>GNN(그래프 신경망)</strong>으로 갑니다 — 우리 세계는 애초에
+      노드·엣지 그래프이며, 이를 벡터로 뭉개면 가장 큰 구조 정보를 버리는 셈입니다.
+      ② 원조 TD-MPC(2022)보다 <strong>TD-MPC2(2023)</strong>를 채택합니다 — 단일 하이퍼파라미터 설정으로
+      다양한 태스크에서 안정적이라 튜닝 부담이 크게 줄어듭니다.</p>
+    </div>
+
+    <h3>도입 순서 — 계획(planning)은 마지막에</h3>
+    <p>
+      한 번에 전부 바꾸지 않습니다. 실패해도 잃는 것이 없도록, 각 단계가 앞 단계의 검증을
+      통과해야만 다음으로 넘어가는 3단계 로드맵입니다.
+    </p>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="arch-box">
+          <div class="t">1단계 — 환경 포장</div>
+          <div class="d">검증된 WORLD_SIM을 gym 스타일 환경(state / action / reward / step)으로
+          감싼다. 기존 시뮬레이터가 학습의 &ldquo;세계&rdquo;가 된다.</div>
+        </div>
+      </div>
+      <div class="arch-arrow">▼ 통과 조건: 리플레이 재현 일치</div>
+      <div class="arch-row">
+        <div class="arch-box hl">
+          <div class="t">2단계 — 모델 먼저, 맞대결</div>
+          <div class="d">TD-MPC에서 planning을 뗀 <strong>잠재 동역학 + 보상 예측기</strong>만
+          실 로그로 학습해, 기존 매크로 예측기와 동일 벤치마크로 대결한다.
+          기준: <strong>04-21 사건에서 13:50 경보(리드타임 10분)를 이기고,
+          16:00 거짓 경보를 똑같이 차단하는가.</strong></div>
+        </div>
+      </div>
+      <div class="arch-arrow">▼ 통과 조건: 기존 예측기 대비 우위 입증</div>
+      <div class="arch-row">
+        <div class="arch-box">
+          <div class="t">3단계 — 계획(planning) 결합</div>
+          <div class="d">모델이 이긴 뒤에야 잠재 공간 계획을 붙여, 매크로 행동(진입 상한·할당·가중치)의
+          최적 궤적을 제안하는 제어 단계로 확장한다. 예측 → 제어로의 전환.</div>
+        </div>
+      </div>
+    </div>
+    <p>
+      이 순서라면 2단계까지는 순수 예측 문제라 <strong>기존 운영에 아무 위험이 없고</strong>,
+      3단계는 이미 이긴 모델 위에서만 진행됩니다. 실패 비용은 최소로, 성공 시에는
+      예측을 넘어 제어까지 가는 로드맵이 확보됩니다.
+    </p>
+  </section>
+
+  <!-- 12. 용어 -->
   <section id="glossary">
     <p class="eyebrow">Glossary</p>
     <h2>용어 설명</h2>
@@ -914,6 +1022,10 @@ python main.py</code></pre>
       <div><dt>RAIL_CUT</dt><dd>보수 작업 등으로 특정 레일 구간을 차단하는 것. 월드모델은 차단 발생/해제를 지도에 실시간 반영합니다.</dd></div>
       <div><dt>Tarjan SCC</dt><dd>그래프에서 서로 도달 가능한 고리(강한 연결 요소)를 찾는 알고리즘. 대기 관계 그래프에 적용하면 순환 대기(데드락)를 수학적으로 판정합니다.</dd></div>
       <div><dt>디지털 트윈</dt><dd>현실의 설비·시스템을 컴퓨터 안에 쌍둥이처럼 재현한 모델. 현실을 관찰하고, 미래를 시험해 보는 데 씁니다.</dd></div>
+      <div><dt>TD-MPC</dt><dd>Temporal Difference Learning for Model Predictive Control. 원본 상태 복원 없이 미래의 잠재 상태와 보상만 예측하는 모델을 학습하고, 그 잠재 공간에서 최적 행동을 계획하는 모델 기반 강화학습 알고리즘. 차세대 학습형 월드모델의 기반 기술.</dd></div>
+      <div><dt>잠재 상태 (latent state)</dt><dd>원본 데이터(차량 수백 대의 위치·상태 전부)를 예측에 필요한 정보만 남긴 압축 표현. 잠재 공간에서 계산하면 거대한 원본을 다루지 않고도 미래를 시뮬레이션할 수 있습니다.</dd></div>
+      <div><dt>보상 (reward)</dt><dd>강화학습에서 &ldquo;좋은 상태&rdquo;를 숫자로 정의한 것. 우리 경우 반송 시간 단축·큐 감소는 양(+), 데드락 전조 지표 악화는 음(−)으로 설계합니다.</dd></div>
+      <div><dt>GNN</dt><dd>Graph Neural Network(그래프 신경망). 노드와 엣지로 이루어진 데이터를 구조 그대로 학습하는 신경망. 레일 그래프인 OHT 세계에 자연스럽게 맞아 TD-MPC의 인코더로 채택 예정.</dd></div>
     </dl>
   </section>
 </main>
