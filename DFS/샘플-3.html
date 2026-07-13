@@ -175,6 +175,8 @@
 (function () {
   'use strict';
 
+  window.__AMHS_NATIVE_SAVE = true;
+
   const amosTbody = document.querySelector('#amos-detection-table tbody');
   const actualTbody = document.getElementById('actual-incident-tbody');
   const saveButton = document.getElementById('save-report-button');
@@ -573,7 +575,7 @@
   }
 
   let fileHandle = null;
-  const STORAGE_KEY = 'amos-report:' + window.location.pathname;
+  const STORAGE_KEY = 'amos-report:' + (window.__AMHS_DATE || window.location.pathname);
   let fileDirty = false;
 
   function setFileDirty(value) {
@@ -602,6 +604,7 @@
       cloneActualTbody.innerHTML = '<tr class="empty-row"><td colspan="6">실제 발생여부가 체크된 AMOS 이상 감지 항목이 없습니다.</td></tr>';
     }
     docClone.querySelectorAll('.manual-detection-row').forEach((row) => row.remove());
+    docClone.querySelectorAll('#__amhs_bridge').forEach((node) => node.remove());
 
     const dataScript = docClone.querySelector('#saved-data');
     if (dataScript) {
@@ -630,9 +633,29 @@
     }
   }
 
+  function postToParent(state) {
+    try {
+      if (!window.parent || window.parent === window) return false;
+      window.parent.postMessage({
+        type: 'amhs-report-save',
+        date: window.__AMHS_DATE || null,
+        html: buildHtmlText(state)
+      }, '*');
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function saveLocal() {
     const state = collectFullState();
-    if (syncLocal(state)) {
+    const localOk = syncLocal(state);
+    if (postToParent(state)) {
+      markSaved('저장됨 · 리포트 시스템 반영');
+      setFileDirty(false);
+      return;
+    }
+    if (localOk) {
       markSaved('저장됨');
     } else if (saveStatus) {
       saveStatus.textContent = '브라우저 저장 실패 — \u2018파일로 저장\u2019 버튼을 사용하세요.';
@@ -655,6 +678,7 @@
   async function saveReport() {
     const state = collectFullState();
     syncLocal(state);
+    postToParent(state);
     const htmlText = buildHtmlText(state);
 
     if (window.showSaveFilePicker) {
