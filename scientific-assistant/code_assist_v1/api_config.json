@@ -18,11 +18,70 @@
     "n_batch": 2048
   },
   "models": {
-    "qwen35-397b-thinking": {
-      "env_id": "q397-thinking",
-      "model": "Qwen3.5-397B-A17B-Thinking",
+    "qwen35-397b": {
+      "env_id": "q397",
+      "model": "gaia-Qwen3.5-397B-A17B",
       "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "Qwen3.5-397B-A17B-Thinking (Dev.HCP)",
+      "name": "Qwen3.5-397B-A17B (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "glm-52": {
+      "env_id": "glm52",
+      "model": "gaia-GLM-5.2",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "GLM-5.2 (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "glm-51": {
+      "env_id": "glm51",
+      "model": "gaia-GLM-5.1",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "GLM-5.1 (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis",
+        "large"
+      ],
+      "context_window": 128000,
+      "priority": 1,
+      "cost_tier": "high"
+    },
+    "qwen36-35b-hcp": {
+      "env_id": "q36-hcp",
+      "model": "gaia-Qwen3.6-35B-A3B",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "Qwen3.6-35B-A3B (Dev.HCP)",
+      "capabilities": [
+        "text",
+        "code",
+        "analysis"
+      ],
+      "context_window": 128000,
+      "priority": 2,
+      "cost_tier": "medium"
+    },
+    "gpt-oss-120b": {
+      "env_id": "oss120",
+      "model": "gpt-oss-120b",
+      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+      "name": "GPT-OSS-120B (Dev.HCP)",
       "capabilities": [
         "text",
         "code",
@@ -47,89 +106,56 @@
       "context_window": 128000,
       "priority": 1,
       "cost_tier": "high"
-    },
-    "qwen36-35b-hcp": {
-      "env_id": "q36-hcp",
-      "model": "Qwen3.6-35B-A3B",
-      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "Qwen3.6-35B-A3B (Dev.HCP)",
-      "capabilities": [
-        "text",
-        "code",
-        "analysis"
-      ],
-      "context_window": 128000,
-      "priority": 2,
-      "cost_tier": "medium"
-    },
-    "glm-51": {
-      "env_id": "glm51",
-      "model": "GLM-5.1",
-      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "GLM-5.1 (Dev.HCP)",
-      "capabilities": [
-        "text",
-        "code",
-        "analysis",
-        "large"
-      ],
-      "context_window": 128000,
-      "priority": 1,
-      "cost_tier": "high"
-    },
-    "qwen35-122b-mail": {
-      "env_id": "q122-mail",
-      "model": "Qwen3.5-122B-A10B-mail",
-      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "Qwen3.5-122B-A10B-mail (Dev.HCP)",
-      "capabilities": [
-        "text",
-        "analysis",
-        "large"
-      ],
-      "context_window": 128000,
-      "priority": 2,
-      "cost_tier": "high"
-    },
-    "gpt-oss-120b": {
-      "env_id": "oss120",
-      "model": "gpt-oss-120b",
-      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "GPT-OSS-120B (Dev.HCP)",
-      "capabilities": [
-        "text",
-        "code",
-        "analysis",
-        "large"
-      ],
-      "context_window": 128000,
-      "priority": 1,
-      "cost_tier": "high"
-    },
-    "qwen35-397b": {
-      "env_id": "q397",
-      "model": "Qwen3.5-397B-A17B",
-      "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
-      "name": "Qwen3.5-397B-A17B (Dev.HCP)",
-      "capabilities": [
-        "text",
-        "code",
-        "analysis",
-        "large"
-      ],
-      "context_window": 128000,
-      "priority": 1,
-      "cost_tier": "high"
     }
   },
   "default_model_priority": [
-    "qwen35-397b-thinking",
     "qwen35-397b",
+    "glm-52",
     "glm-51",
     "qwen36-35b-hcp",
     "gpt-oss-120b",
-    "qwen35-122b-mail",
     "qwen35-397b-vlm"
   ],
-  "_updated": "2026-07-02 DEV.HCP 7종 전환 (스파크/common/summary/FP8 제거)"
+  "_updated": "2026-07-02 팀 허용 gaia-* 모델 ID 로 복구 (403 해결). Thinking/122B-mail 은 팀 미허용으로 제외.",
+  "api_model_tiers": {
+    "large": [
+      "qwen35-397b",
+      "glm-52",
+      "glm-51",
+      "gpt-oss-120b",
+      "qwen35-397b-vlm"
+    ],
+    "medium": [
+      "qwen36-35b-hcp"
+    ],
+    "small": []
+  },
+  "fallback_chains": {
+    "qwen35-397b": [
+      "glm-52",
+      "qwen36-35b-hcp"
+    ],
+    "glm-52": [
+      "qwen35-397b",
+      "glm-51",
+      "qwen36-35b-hcp"
+    ],
+    "glm-51": [
+      "glm-52",
+      "qwen35-397b",
+      "qwen36-35b-hcp"
+    ],
+    "qwen36-35b-hcp": [
+      "qwen35-397b",
+      "gpt-oss-120b"
+    ],
+    "gpt-oss-120b": [
+      "qwen35-397b",
+      "qwen36-35b-hcp"
+    ],
+    "qwen35-397b-vlm": [
+      "qwen35-397b",
+      "qwen36-35b-hcp"
+    ]
+  }
 }

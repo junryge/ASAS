@@ -458,11 +458,10 @@
               <select id="envSelect" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-2);color:var(--text);font-size:10px;" title="모델 선택">
                 <option value="auto">🤖 자동</option>
                 <optgroup label="── DEV.HCP (고성능) ──">
-                  <option value="q397-thinking">Qwen3.5-397B-A17B-Thinking</option>
                   <option value="q397">Qwen3.5-397B-A17B</option>
+                  <option value="glm52">GLM-5.2</option>
                   <option value="glm51">GLM-5.1</option>
                   <option value="oss120">gpt-oss-120b</option>
-                  <option value="q122-mail">Qwen3.5-122B-A10B-mail</option>
                 </optgroup>
                 <optgroup label="── DEV.HCP (범용) ──">
                   <option value="q36-hcp">Qwen3.6-35B-A3B</option>
@@ -612,16 +611,17 @@ const DEPARTMENTS = [
 ];
 
 const COST_RATES = {
-  // DEV.HCP 7종
-  'Qwen3.5-397B-A17B-Thinking':{in_1k:0.004,out_1k:0.020},
-  'Qwen3.5-397B-A17B':         {in_1k:0.004,out_1k:0.020},
-  'Qwen3.5-397B-A17B-vlm':     {in_1k:0.004,out_1k:0.020},
-  'GLM-5.1':                   {in_1k:0.003,out_1k:0.015},
-  'Qwen3.5-122B-A10B-mail':    {in_1k:0.002,out_1k:0.010},
-  'gpt-oss-120b':              {in_1k:0.002,out_1k:0.008},
-  'Qwen3.6-35B-A3B':           {in_1k:0.001,out_1k:0.005},
-  '_default':                  {in_1k:0.002,out_1k:0.010},
-  '_gguf':                     {in_1k:0,out_1k:0}
+  // DEV.HCP 팀 허용 (gaia-* ID). 표시는 깔끔한 이름, 매칭은 접두사 유무 모두 커버.
+  'gaia-Qwen3.5-397B-A17B':{in_1k:0.004,out_1k:0.020},
+  'Qwen3.5-397B-A17B':     {in_1k:0.004,out_1k:0.020},
+  'Qwen3.5-397B-A17B-vlm': {in_1k:0.004,out_1k:0.020},
+  'gaia-GLM-5.2':          {in_1k:0.003,out_1k:0.015},
+  'gaia-GLM-5.1':          {in_1k:0.003,out_1k:0.015},
+  'gaia-Qwen3.6-35B-A3B':  {in_1k:0.001,out_1k:0.005},
+  'Qwen3.6-35B-A3B':       {in_1k:0.001,out_1k:0.005},
+  'gpt-oss-120b':          {in_1k:0.002,out_1k:0.008},
+  '_default':              {in_1k:0.002,out_1k:0.010},
+  '_gguf':                 {in_1k:0,out_1k:0}
 };
 
 const LS = {
