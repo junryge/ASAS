@@ -2358,15 +2358,15 @@
     function recommendEnv(key){
       const apis = apiEnvEntries();
       if (!apis.length) return 'auto';
-      // DEV.HCP 팀 허용 모델 기준 (397B / GLM-5.2 / GLM-5.1 / Qwen3.6-35B-A3B / gpt-oss-120b / 397B-vlm)
+      // GaiA 모델이 목록 앞쪽 → 아래 substring 은 GaiA(gaia-*) 항목에 먼저 매칭됨(동작 보장)
       const PRI = {
-        ceo:  ['397','glm','120b','35b'],   // 가장 강한 모델 (종합·검증)
-        choi: ['glm','397','120b','35b'],   // 로그프레소 쿼리 (코드)
-        lee:  ['397','glm','35b'],          // draw.io/코드
-        seo:  ['397','glm','35b'],          // 데이터 분석
-        kim:  ['35b','397','glm'],          // 그래프
-        park: ['35b','glm','397'],          // MD 문서 (경량)
-        yoon: ['397','glm','35b'],          // PPT
+        ceo:  ['397','glm','oss','35b'],   // 가장 강한 모델 (종합·검증)
+        choi: ['glm','397','oss','35b'],   // 로그프레소 쿼리 (코드)
+        lee:  ['397','glm','35b'],         // draw.io/코드
+        seo:  ['397','glm','35b'],         // 데이터 분석
+        kim:  ['35b','397','glm'],         // 그래프
+        park: ['35b','glm','397'],         // MD 문서 (경량)
+        yoon: ['397','glm','35b'],         // PPT
         jung: ['35b','glm','397'],
       }[key] || ['397','glm','35b'];
       for (const kw of PRI){
@@ -2935,8 +2935,8 @@
         const _isLarge = /397b|glm|120b/.test(_curName);  // 대형(397B/GLM-5.x/120B)
         const _needModelBump = !_isLarge && _curEnv !== 'auto';
 
-        // 권장 대형 모델 우선순위: 397B → GLM-5.2 → GLM-5.1 (DEV.HCP)
-        const _preferredLarge = ['q397', 'glm52', 'glm51'].find(id => availableEnvs[id]);
+        // 권장 대형 모델 우선순위: GaiA 397B → GaiA GLM-5.2 → 397B (DEV.HCP)
+        const _preferredLarge = ['gaia-q397', 'gaia-glm52', 'q397'].find(id => availableEnvs[id]);
         const _targetName = _preferredLarge ? (availableEnvs[_preferredLarge]?.name || _preferredLarge) : '대형 모델';
 
         let _dialogMsg = `[${_kind}] 요청 감지됨.\n\n` +
