@@ -315,6 +315,70 @@
   }
   pre code { background: none; border: none; padding: 0; color: inherit; white-space: pre; }
 
+  /* 인용구 (영역전개) */
+  .pullquote {
+    margin: 30px 0;
+    padding: 26px 30px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 12px 12px 0;
+    box-shadow: var(--shadow);
+  }
+  .pullquote .q {
+    font-size: clamp(19px, 3vw, 24px);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.5;
+    color: var(--ink);
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .pullquote .q .accent { color: var(--accent-ink); }
+  .pullquote p { margin: 0; font-size: 14.5px; color: var(--ink-soft); }
+
+  /* 아키텍처 그림 (SVG) */
+  .worldpic {
+    margin: 26px 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 18px 14px 8px;
+    overflow-x: auto;
+  }
+  .worldpic svg { display: block; min-width: 640px; width: 100%; height: auto; }
+  .worldpic figcaption {
+    font-size: 13px;
+    color: var(--ink-faint);
+    text-align: center;
+    padding: 8px 12px 10px;
+  }
+  .worldpic text {
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  }
+  .wp-boxtitle { font-size: 15px; font-weight: 800; fill: var(--ink); }
+  .wp-label { font-size: 12px; fill: var(--ink-soft); }
+  .wp-small { font-size: 11px; fill: var(--ink-faint); }
+  .wp-accent { font-size: 12.5px; font-weight: 700; fill: var(--accent-ink); }
+  .wp-panel { fill: var(--panel-2); stroke: var(--line); }
+  .wp-rail { stroke: var(--ink-faint); stroke-width: 2; fill: none; }
+  .wp-vhl { fill: var(--accent); }
+  .wp-vhl-jam { fill: var(--critical); }
+  .wp-domain-aura { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 6; opacity: .7; }
+  .wp-domain { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .wp-mini-rail { stroke: var(--accent-ink); stroke-width: 1.5; fill: none; opacity: .65; }
+  .wp-node { fill: var(--accent-ink); }
+  .wp-arrow { stroke: var(--ink-faint); stroke-width: 1.8; fill: none; }
+  .wp-chip { fill: var(--panel-2); stroke: var(--line); }
+  .wp-chip-t { font-size: 13px; font-weight: 700; fill: var(--ink); }
+  .wp-chip-d { font-size: 11px; fill: var(--ink-faint); }
+  @media (prefers-reduced-motion: no-preference) {
+    .wp-domain-aura { animation: aura-spin 40s linear infinite; transform-origin: 490px 205px; }
+    @keyframes aura-spin { to { transform: rotate(360deg); } }
+  }
+
   /* 아키텍처 다이어그램 */
   .arch { margin: 26px 0; }
   .arch-row {
@@ -550,6 +614,12 @@
       OHT 월드모델은 FAB의 레일 도면을 <strong>노드(분기점)와 엣지(레일 구간)로 이루어진
       그래프</strong>로 변환하고, 그 위에 실제 차량 하나하나를 올려 움직입니다.
     </p>
+    <blockquote class="pullquote">
+      <p class="q">&ldquo;월드모델은 <span class="accent">나만의 영역전개(領域展開)</span>를 만든다!&rdquo;</p>
+      <p>주술회전의 그 대사처럼 — 현실의 FAB을 통째로 복제한 나만의 도메인을 펼치는 것입니다.
+      이 영역 안에서는 우리가 시간의 주인입니다. 되감고(과거), 멈추고(현재), 미리 돌려봅니다(미래).
+      현실에서는 절대 할 수 없는 실험을, 여기서는 마음껏 할 수 있습니다.</p>
+    </blockquote>
     <p>세 가지를 한 화면에서 제공합니다.</p>
     <div class="grid3">
       <div class="card">
@@ -579,7 +649,87 @@
     <p class="eyebrow">Architecture</p>
     <h2>시스템 구성 — 데이터가 화면까지 흐르는 길</h2>
     <p>
-      전체 시스템은 파이썬(FastAPI) 기반의 단일 서버로 동작하며, 데이터는 아래 순서로 흐릅니다.
+      먼저 전체 개념을 그림 한 장으로 보면 이렇습니다. 현실의 FAB에서 데이터가 흘러 들어와
+      <strong>월드모델이라는 &ldquo;영역&rdquo;</strong>이 펼쳐지고, 그 안에서 과거·현재·미래
+      세 방향의 답이 나옵니다.
+    </p>
+
+    <figure class="worldpic">
+      <svg viewBox="0 0 960 410" role="img" aria-label="월드모델 아키텍처 개념도: 현실 FAB에서 7종 데이터가 월드모델 영역으로 들어가 과거 리플레이, 현재 데드락 탐지, 미래 예측이 나온다">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ink-faint)"/>
+          </marker>
+        </defs>
+
+        <!-- ===== 왼쪽: 현실 세계 FAB ===== -->
+        <rect class="wp-panel" x="18" y="66" width="220" height="280" rx="12"/>
+        <text class="wp-boxtitle" x="128" y="98" text-anchor="middle">현실 세계 · FAB</text>
+        <text class="wp-small" x="128" y="116" text-anchor="middle">천장 레일 위 OHT 수백 대</text>
+        <!-- 레일 -->
+        <path class="wp-rail" d="M 42 160 H 214"/>
+        <path class="wp-rail" d="M 42 230 H 214"/>
+        <path class="wp-rail" d="M 42 300 H 214"/>
+        <path class="wp-rail" d="M 76 160 V 300"/>
+        <path class="wp-rail" d="M 180 160 V 300"/>
+        <!-- 차량 -->
+        <rect class="wp-vhl" x="96" y="154" width="14" height="12" rx="3"/>
+        <rect class="wp-vhl" x="140" y="224" width="14" height="12" rx="3"/>
+        <rect class="wp-vhl" x="60" y="294" width="14" height="12" rx="3"/>
+        <rect class="wp-vhl-jam" x="172" y="196" width="14" height="12" rx="3"/>
+        <rect class="wp-vhl-jam" x="172" y="214" width="14" height="12" rx="3"/>
+        <text class="wp-small" x="128" y="332" text-anchor="middle">빨강 = 정체·잼</text>
+
+        <!-- ===== 데이터 화살표 ===== -->
+        <path class="wp-arrow" d="M 244 205 H 302" marker-end="url(#ah)"/>
+        <text class="wp-accent" x="273" y="190" text-anchor="middle">7종 데이터</text>
+        <text class="wp-small" x="273" y="228" text-anchor="middle">운행 로그 · 도면</text>
+        <text class="wp-small" x="273" y="243" text-anchor="middle">차단 · 지표 · 명령</text>
+
+        <!-- ===== 가운데: 월드모델 영역전개 ===== -->
+        <circle class="wp-domain-aura" cx="490" cy="205" r="163"/>
+        <circle class="wp-domain" cx="490" cy="205" r="146"/>
+        <text class="wp-boxtitle" x="490" y="105" text-anchor="middle">월드모델</text>
+        <text class="wp-accent" x="490" y="125" text-anchor="middle">— 나만의 영역전개 —</text>
+        <!-- 복제된 미니 그래프 -->
+        <path class="wp-mini-rail" d="M 404 170 H 576"/>
+        <path class="wp-mini-rail" d="M 404 225 H 576"/>
+        <path class="wp-mini-rail" d="M 438 170 V 225"/>
+        <path class="wp-mini-rail" d="M 542 170 V 225"/>
+        <circle class="wp-node" cx="438" cy="170" r="4"/>
+        <circle class="wp-node" cx="542" cy="170" r="4"/>
+        <circle class="wp-node" cx="438" cy="225" r="4"/>
+        <circle class="wp-node" cx="542" cy="225" r="4"/>
+        <circle class="wp-vhl" cx="470" cy="170" r="5"/>
+        <circle class="wp-vhl" cx="510" cy="225" r="5"/>
+        <circle class="wp-vhl-jam" cx="542" cy="196" r="5"/>
+        <text class="wp-small" x="490" y="256" text-anchor="middle">현실을 복제한 그래프 (노드·엣지·차량)</text>
+        <!-- 시간 조종 -->
+        <text class="wp-accent" x="490" y="292" text-anchor="middle" font-size="17">⏪ &#9199; ⏩</text>
+        <text class="wp-small" x="490" y="312" text-anchor="middle">이 영역 안에서는 시간을 지배한다</text>
+
+        <!-- ===== 오른쪽: 세 가지 출력 ===== -->
+        <path class="wp-arrow" d="M 610 128 Q 660 110 700 105" marker-end="url(#ah)"/>
+        <path class="wp-arrow" d="M 638 205 H 700" marker-end="url(#ah)"/>
+        <path class="wp-arrow" d="M 610 282 Q 660 300 700 305" marker-end="url(#ah)"/>
+
+        <rect class="wp-chip" x="706" y="76" width="236" height="58" rx="10"/>
+        <text class="wp-chip-t" x="824" y="100" text-anchor="middle">과거 — 리플레이 ⏪</text>
+        <text class="wp-chip-d" x="824" y="119" text-anchor="middle">사건 당일을 지도 위에서 재생·배속·점프</text>
+
+        <rect class="wp-chip" x="706" y="176" width="236" height="58" rx="10"/>
+        <text class="wp-chip-t" x="824" y="200" text-anchor="middle">현재 — 데드락 탐지 👁</text>
+        <text class="wp-chip-d" x="824" y="219" text-anchor="middle">Tarjan SCC로 순환 대기를 수학적 판정</text>
+
+        <rect class="wp-chip" x="706" y="276" width="236" height="58" rx="10"/>
+        <text class="wp-chip-t" x="824" y="300" text-anchor="middle">미래 — 예측·경보 ⏩</text>
+        <text class="wp-chip-d" x="824" y="319" text-anchor="middle">10·20분 뒤 예측 + 3단계 조기 경보</text>
+      </svg>
+      <figcaption>월드모델 개념도 — 현실 FAB의 데이터로 &ldquo;영역&rdquo;을 전개하고, 그 안에서 과거·현재·미래를 다룬다</figcaption>
+    </figure>
+
+    <p>
+      이를 실제로 구현한 시스템은 파이썬(FastAPI) 기반의 단일 서버로 동작하며, 데이터는 아래 순서로 흐릅니다.
       별도 데이터베이스 없이 <strong>CSV 로그 파일을 폴더에 넣는 것만으로</strong> 구동됩니다.
     </p>
 
