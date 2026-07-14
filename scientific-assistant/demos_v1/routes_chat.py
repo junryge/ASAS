@@ -361,11 +361,23 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
                     _md_in.append("|" + "|".join(["---"] * max(1, _ln.count("|") - 1)) + "|")
         extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
         body_html = md_lib.markdown("\n".join(_md_in), extensions=extensions)
+        # ── AMOS 인터랙티브 보고서 (사건발생 확인건 — 샘플5 형식): 체크박스·수동기입·저장 JS 주입 ──
+        _amos_css = _amos_toolbar = _amos_js = ""
+        _maxw = "900px"
+        try:
+            from demos_v1.amos_report import amosify, AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+            body_html, _has_amos = amosify(body_html)
+            if _has_amos:
+                _amos_css, _amos_toolbar, _amos_js = AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+                _maxw = "1120px"
+                print("  📋 [AMOS] 인터랙티브 보고서 블록 주입 완료")
+        except Exception as _amerr:
+            print(f"  📋 [AMOS] 주입 실패(무시, 일반 HTML 생성): {_amerr}")
         full_html = (
             '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{title}</title><style>'
-            'body{font-family:"Pretendard","Noto Sans KR",sans-serif;max-width:900px;margin:2rem auto;padding:0 1.5rem;color:#1a1a2e;line-height:1.7}'
+            f'body{{font-family:"Pretendard","Noto Sans KR",sans-serif;max-width:{_maxw};margin:2rem auto;padding:0 1.5rem;color:#1a1a2e;line-height:1.7}}'
             'h1,h2,h3{color:#16213e;border-bottom:2px solid #e2e8f0;padding-bottom:.3em}'
             'h1{font-size:1.45rem}h2{font-size:1.15rem}'
             'table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.86em}'
@@ -376,8 +388,9 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
             'pre code{background:none;color:inherit;padding:0}'
             'blockquote{border-left:4px solid #6366f1;margin:1em 0;padding:.5em 1em;background:#f8fafc}'
             'a{color:#6366f1}img{max-width:100%;border-radius:8px}'
+            f'{_amos_css}'
             '</style></head><body>'
-            f'{body_html}</body></html>'
+            f'{_amos_toolbar}{body_html}{_amos_js}</body></html>'
         )
         html_filename = f"document_{timestamp}.html"
         html_path = os.path.join(uploads_dir, html_filename)
@@ -677,7 +690,7 @@ def _builtin_hub_summary(headers, rows):
             return None
 
         def _lvl(s):
-            return "초위험" if s >= 90 else "위험" if s >= 75 else "경계" if s >= 54 else "정상"
+            return "초위험" if s >= 85 else "위험" if s >= 71 else "경계" if s >= 50 else "정상"
         _EMO = {"경계": "🟠 경계", "위험": "🔴 위험", "초위험": "⛔ 초위험", "정상": "정상"}
 
         n_total = len(drows)
@@ -694,7 +707,7 @@ def _builtin_hub_summary(headers, rows):
             lv = _lvl(sc)
             tm = str(r.get("time") or (r.get("datetime") or "")[-5:] or "")
             day = day or str(r.get("date") or "")
-            if sc >= 54:
+            if sc >= 50:
                 n_cong += 1
                 if lv in dist:
                     dist[lv] += 1
@@ -710,7 +723,7 @@ def _builtin_hub_summary(headers, rows):
 
         out = ["=== [발동이벤트 자동요약 — 내장 분석기가 계산. 재계산 말고 이걸로 진단하세요] ==="]
         out.append(
-            f"[① 일일통계] 보고일자 {day} | 총 {n_total}분 | 정상 {n_total - n_cong}분 | 정체(54점↑) {n_cong}분"
+            f"[① 일일통계] 보고일자 {day} | 총 {n_total}분 | 정상 {n_total - n_cong}분 | 정체(50점↑) {n_cong}분"
         )
         out.append(
             f"등급분포: 🟠경계 {dist['경계']} · 🔴위험 {dist['위험']} · ⛔초위험 {dist['초위험']}"
@@ -719,9 +732,9 @@ def _builtin_hub_summary(headers, rows):
             out.append(f"하루 최고: {peak[0]}점 {_EMO[_lvl(peak[0])]} @{peak[1]} (시작영역 {peak[2]})")
         out.append(f"정체 집중 시간대: {busy_str}")
         out.append("")
-        out.append(f"[③ 사건목록] (점수 54+ 구간 · 시각=최고점) — {len(incs)}건")
+        out.append(f"[③ 사건목록] (점수 50+ 구간 · 시각=최고점) — {len(incs)}건")
         if not incs:
-            out.append("→ 금일 점수 54 이상 사건 없음 (정상 운영).")
+            out.append("→ 금일 점수 50 이상 사건 없음 (정상 운영).")
         else:
             out.append("| # | 시각 | 구간 | 지속분 | 최고등급 | 최고점수 | 시작영역 |")
             out.append("|---|---|---|---|---|---|---|")
@@ -734,6 +747,74 @@ def _builtin_hub_summary(headers, rows):
                     f"| {_EMO[_lvl(int(inc['peak_score']))]} | {int(inc['peak_score'])} "
                     f"| {pr.get('hot_area') or ''} |"
                 )
+
+        # ── [④ AMOS 이상감지] — 신규 4컬럼(BOTTLENECK/QUEUE *_anomaly_cols) 사건별 집계 ──
+        #   구간 = BOTTLENECK cols 의 HID 토큰(HID_32_FROM_SUM_A → HID32), 항목 = 그래프 지표(reason) + QUEUE cols.
+        #   심각도 = 경계→주의(확인필요) / 위험→경고(모니터링 필요) / 초위험→심각(조치필요).
+        _AMOS_COLS = ("BOTTLENECK_downward_anomaly_cols", "BOTTLENECK_upward_anomaly_cols",
+                      "QUEUE_downward_anomaly_cols", "QUEUE_upward_anomaly_cols")
+        if incs and any(c in hdr for c in _AMOS_COLS):
+            try:
+                import re as _re2
+                from demos_v1.report_graphs import parse_reason_metrics
+                _SEV = {"경계": "주의(확인필요)", "위험": "경고(모니터링 필요)", "초위험": "심각(조치필요)"}
+
+                def _hid_zones(tokens):
+                    """HID_32_FROM_SUM_A → HID32 (순서 보존·중복 제거)."""
+                    seen, z = set(), []
+                    for tok in tokens:
+                        m = _re2.match(r"HID_?(\d+)", tok.strip())
+                        name = f"HID{m.group(1)}" if m else tok.strip()
+                        if name and name not in seen:
+                            seen.add(name)
+                            z.append(name)
+                    return z
+
+                # 분→사건 매핑용: datetime 파싱 준비
+                _trows = []
+                for r in drows:
+                    t = _parse_dt(r.get("datetime") or "")
+                    if t is not None:
+                        _trows.append((t, r))
+
+                out.append("")
+                out.append("[④ AMOS 이상감지] (사건 구간 내 이상감지 집계 — 보고서 '2. AMOS 이상 감지 내역' 표의 근거)")
+                out.append("| 번호 | 이상감지 시간 | 이상감지 구간 | 심각도 | 이상감지 항목 |")
+                out.append("|---|---|---|---|---|")
+                for n, inc in enumerate(incs, 1):
+                    w0, w1 = inc["start"], inc["end"]
+                    bott, queue = [], []
+                    for t, r in _trows:
+                        if not (w0 <= t <= w1):
+                            continue
+                        for c in ("BOTTLENECK_downward_anomaly_cols", "BOTTLENECK_upward_anomaly_cols"):
+                            v = (r.get(c) or "").strip()
+                            if v:
+                                bott.extend(x for x in v.split(",") if x.strip())
+                        for c in ("QUEUE_downward_anomaly_cols", "QUEUE_upward_anomaly_cols"):
+                            v = (r.get(c) or "").strip()
+                            if v:
+                                queue.extend(x.strip() for x in v.split(",") if x.strip())
+                    zones = _hid_zones(bott)
+                    zone_str = ", ".join(zones) if zones else "-"
+                    # 이상감지 항목 = 그래프 지표(최고점 reason 의 raw 컬럼) + QUEUE 이상 컬럼 (중복 제거)
+                    items, iseen = [], set()
+                    for md in parse_reason_metrics(inc["peak_row"].get("reason") or ""):
+                        lbl = f"{md['label']} ({md['raw']})"
+                        if md["raw"] not in iseen:
+                            iseen.add(md["raw"])
+                            items.append(lbl)
+                    for q in queue:
+                        base = _re2.sub(r"_[A-Z]$", "", q)   # ..._A 꼬리 제거
+                        if base and base not in iseen:
+                            iseen.add(base)
+                            items.append(base)
+                    item_str = "<br>".join(items) if items else "-"
+                    _pt = inc.get("peak_t") or inc["start"]
+                    sev = _SEV.get(_lvl(int(inc["peak_score"])), "주의(확인필요)")
+                    out.append(f"| {n} | {_pt.strftime('%H:%M')} | {zone_str} | {sev} | {item_str} |")
+            except Exception as _ae:
+                print(f"  🐍 [BUILTIN-SUMMARY] AMOS 집계 예외(무시): {_ae}")
         return "\n".join(out) + "\n\n"
     except Exception as _e:
         print(f"  🐍 [BUILTIN-SUMMARY] 예외: {_e}")
@@ -1026,7 +1107,7 @@ def _stream_chat_sse(data):
         file_section += _builtin_sum         # 발동이벤트 자동요약 → LLM은 ①③ 표만 봄(raw 안 봄)
         if _pasted_instr is not None and _q_idx >= 0:
             messages[_q_idx] = dict(messages[_q_idx], content=_pasted_instr)
-        print("  🐍 [BUILTIN-SUMMARY] 발동이벤트 스키마 감지 → 내장 ①③ 요약 주입(raw 미전송)")
+        print("  🐍 [BUILTIN-SUMMARY] 발동이벤트 스키마 감지 → 내장 ①③④ 요약 주입(raw 미전송)")
     elif include_csv and _csv_now.get("filename"):
         csv_info = _csv_now.get("summary", "")
         rows = _csv_now.get("rows", []) or []

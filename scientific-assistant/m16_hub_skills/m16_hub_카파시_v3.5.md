@@ -22,7 +22,7 @@ description: hubroom_predictor.py (M16 HUBROOM 룰베이스 v6) 가 무엇을 �
               ↓ hubroom_predictor.py (매분 평가)
        ┌──────────────┴───────────────┐
   발동이벤트.csv (24시간 전체)       사건단위.csv (문제 발생 시)
-  - 매분 1행, 135컬럼                 - 사건당 1행, 170컬럼
+  - 매분 1행, 139컬럼(AMOS 4컬럼 포함)  - 사건당 1행, 170컬럼
   - 하루 ≈ 1440행                     - 점수 50+ 사건만(1~100 정규화), 종료 후 기록
               ↓ (선택)
        Rule_LO.py → Logpresso 적재
@@ -90,6 +90,13 @@ unified_risk_score = min(100, round(raw / 2.2))   ← V2 정규화, 최종 척�
 3. **장애유형 자동 라벨** — hot_area + 증상 → `HUB-FAB정체`, `HUB-MLUD`, `광역정체` 등.
 4. **지속성/재발생 컬럼** — `continuity_min`, `refire_count` (점수엔 영향 X, 참고용).
 5. **선행시간(lead_min)** — 사건을 확정(start)보다 얼마나 일찍 예측(predict)했는지.
+
+## 8.5 AMOS 이상감지 컬럼 (발동이벤트 신규 4컬럼)
+| 컬럼 | 내용 | 쓰임 |
+|---|---|---|
+| `BOTTLENECK_downward/upward_anomaly_cols` | 병목 이상이 감지된 HID 구간 토큰 (`HID_32_FROM_SUM_A`) | 보고서 '이상감지 구간' (HID32 로 표기) |
+| `QUEUE_downward/upward_anomaly_cols` | 이상 패턴 Queue 지표 raw 컬럼명 | 보고서 '이상감지 항목'에 그래프 지표와 함께 표기 |
+> 심각도 표기(사건 등급 매핑): 🟠경계→주의(확인필요) / 🔴위험→경고(모니터링 필요) / ⛔초위험→심각(조치필요)
 
 ## 9. 중요 주의 (해석 시)
 - **predict_time(예측 시작) ≠ max_risk_score(최고점) 시각** — 사건단위 한 줄에서 두 값은 다른 분일 수 있음. 최고점 시각은 발동이벤트에서 확인.

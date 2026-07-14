@@ -161,6 +161,13 @@ def main():
             "affected": (r.get("affected_areas") or "").strip(),
             "stage": str(r.get("stage") or "").strip(),
             "reason": (r.get("reason") or "").strip(),
+            # AMOS 이상감지 신규 4컬럼 (없는 배포본이면 빈 문자열)
+            "amos_bott": ", ".join(x for x in (
+                (r.get("BOTTLENECK_downward_anomaly_cols") or "").strip(),
+                (r.get("BOTTLENECK_upward_anomaly_cols") or "").strip()) if x),
+            "amos_queue": ", ".join(x for x in (
+                (r.get("QUEUE_downward_anomaly_cols") or "").strip(),
+                (r.get("QUEUE_upward_anomaly_cols") or "").strip()) if x),
         })
     minutes.sort(key=lambda m: m["dt"])
 
@@ -287,6 +294,94 @@ def main():
                ["번호", "시각", "구간", "지속분", "최고등급", "최고점수", "시작영역"],
                inc_rows)
     print(f"  ③ 사건목록: {len(inc_rows)}건 (점수 {MIN_SCORE}+·간격{GAP_MIN}분) → {p3}")
+
+    # ───────────────────────────────────────────────────────────
+    # ④ AMOS 이상감지 — 신규 4컬럼(BOTTLENECK/QUEUE *_anomaly_cols)을 사건 구간별 집계
+    #    구간 = BOTTLENECK 의 HID 토큰(HID_32_FROM_SUM_A → HID32)
+    #    항목 = 최고점 reason 의 그래프 지표(raw 컬럼) + QUEUE 이상 컬럼 (<br> 구분)
+    #    심각도 = 경계→주의(확인필요) / 위험→경고(모니터링 필요) / 초위험→심각(조치필요)
+    # ───────────────────────────────────────────────────────────
+    _SEV = {"경계": "주의(확인필요)", "위험": "경고(모니터링 필요)", "초위험": "심각(조치필요)"}
+    _RA_RAW = {"M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN", "M14": "M14.QUE.LOAD.AVGLOADTIME1MIN",
+               "M14B": "M14B.QUE.TIME.AVGTOTALTIME1MIN", "M16A": "M16A.QUE.LOAD.AVGLOADTIME1MIN",
+               "M16B": "M16B.QUE.LOAD.AVGLOADTIME1MIN"}
+
+    def _reason_metrics(reason):
+        """최고점 reason → 그래프와 동일한 raw 지표 목록 (report_graphs.parse_reason_metrics 미러)."""
+        out, seen = [], set()
+        body = (reason or "").split("발동:", 1)[-1]
+        body = re.split(r"흐름:|운영자조치:", body)[0]
+        def _add(label, raw):
+            if raw not in seen:
+                seen.add(raw)
+                out.append(f"{label} ({raw})")
+        for m in re.finditer(r"(M16HUB|M14B|M16A|M16B|M14)\s*\[(.*?)\]", body):
+            area, inner = m.group(1), m.group(2)
+            if "AVGTOTALTIME1MIN" in inner or "AVGLOADTIME1MIN" in inner:
+                _add(f"{area} 반송시간", _RA_RAW.get(area, f"{area}.QUE.TIME.AVGTOTALTIME1MIN"))
+            if "FAB저장" in inner:
+                _add("M16HUB FAB저장율", "M16HUB.STRATE.ALL.FABSTORAGERATIO")
+            if re.search(r"\bSTB", inner):
+                _add("M16HUB STB저장율", "M16HUB.STRATE.STB.3F_STORAGE_UTIL")
+            if "OHT=" in inner or "OHT가동" in inner:
+                _add(f"{area} OHT가동률", f"{area}.QUE.OHT.OHTUTIL")
+            if "R-C" in inner:
+                _add("M16HUB 리프터막힘", "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT")
+            if "SLA(" in inner or "4분초과" in inner:
+                _add(f"{area} 4분초과율", f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO")
+            if "SORT(" in inner or "소터" in inner:
+                _add(f"{area} 소터대기", f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER")
+        return out
+
+    def _hid_zones(text_list):
+        seen, z = set(), []
+        for token in text_list:
+            for tok in token.split(","):
+                tok = tok.strip()
+                if not tok:
+                    continue
+                m = re.match(r"HID_?(\d+)", tok)
+                name = f"HID{m.group(1)}" if m else tok
+                if name not in seen:
+                    seen.add(name)
+                    z.append(name)
+        return z
+
+    amos_rows = []
+    for i, c in enumerate(incs, 1):
+        w0, w1 = c["s"]["dt"], c["e"]["dt"]
+        bott, queue = [], []
+        for m in minutes:
+            if w0 <= m["dt"] <= w1:
+                if m.get("amos_bott"):
+                    bott.append(m["amos_bott"])
+                if m.get("amos_queue"):
+                    queue.append(m["amos_queue"])
+        zones = _hid_zones(bott)
+        items, iseen = [], set()
+        for it in _reason_metrics(c["peak"].get("reason", "")):
+            if it not in iseen:
+                iseen.add(it)
+                items.append(it)
+        for qcsv in queue:
+            for q in qcsv.split(","):
+                q = q.strip()
+                base = re.sub(r"_[A-Z]$", "", q)
+                if base and base not in iseen:
+                    iseen.add(base)
+                    items.append(base)
+        pk = c["peak"]
+        amos_rows.append({
+            "번호": i,
+            "이상감지 시간": pk["time"],
+            "이상감지 구간": ", ".join(zones) if zones else "-",
+            "심각도": _SEV.get(pk["level"], "주의(확인필요)"),
+            "이상감지 항목": "<br>".join(items) if items else "-",
+        })
+    p4 = _wcsv("발동이벤트_4_AMOS이상감지.csv",
+               ["번호", "이상감지 시간", "이상감지 구간", "심각도", "이상감지 항목"],
+               amos_rows)
+    print(f"  ④ AMOS이상감지: {len(amos_rows)}건 → {p4}")
 
     # 콘솔 요약
     print(f"[발동이벤트 일일자료] 총 {n_total}분 중 정체(50점↑) {len(risk_mins)}분 "

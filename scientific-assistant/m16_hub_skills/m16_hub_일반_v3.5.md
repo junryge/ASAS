@@ -18,6 +18,8 @@ description: hubroom_predictor.py (M16 HUBROOM 룰베이스 v6) 의 실행·사�
 ## 1. 무엇을 하는 프로그램인가
 `predict/M16A_HUBROOM_PR.csv`(설비 데이터)를 매분 읽어 8영역×9룰 평가 → `predict_tobe/` 에
 발동이벤트.csv(24시간 전체) + 사건단위.csv(문제 발생 시) 출력.
+발동이벤트에는 AMOS 이상감지 4컬럼(BOTTLENECK/QUEUE `*_anomaly_cols`)이 포함된다
+— BOTTLENECK=HID 병목 구간, QUEUE=Queue 지표 이상. 보고서 'AMOS 이상 감지 내역'의 근거.
 
 ## 2. 실행 방법 (직접 CLI)
 
@@ -51,7 +53,7 @@ python hubroom_predictor.py <설비데이터.csv> -o <출력폴더>
 ## 4. 출력 파일
 | 파일 | 범위 | 기록 시점 | 컬럼 |
 |---|---|---|---|
-| `YYYYMMDD_발동이벤트.csv` | 24시간 전체(매분 1행) | 즉시 | 135 |
+| `YYYYMMDD_발동이벤트.csv` | 24시간 전체(매분 1행) | 즉시 | 139 (AMOS 이상감지 4컬럼 포함) |
 | `YYYYMMDD_사건단위.csv` | 문제 발생 시(사건당 1행) | 사건 종료+60분 후, **점수 50+ 만** (1~100 정규화) | 170 |
 
 ## 5. 의존성
