@@ -44,6 +44,7 @@ LOCK = threading.Lock()
 SESSIONS = {}  # token -> {id, role, name, exp}
 SESSION_TTL = 12 * 3600  # 12시간 (사용 중이면 자동 연장)
 REPORT_DATE = re.compile(r"^/api/reports/(\d{4}-\d{2}-\d{2})$")
+REPORT_DONE = re.compile(r"^/api/reports/(\d{4}-\d{2}-\d{2})/complete$")
 USER_PW = re.compile(r"^/api/users/([^/]+)/password$")
 USER_ONE = re.compile(r"^/api/users/([^/]+)$")
 
@@ -196,6 +197,7 @@ class Handler(BaseHTTPRequestHandler):
                     r2["body"] = mine["body"]
                     if mine.get("updatedAt"):
                         r2["updatedAt"] = mine["updatedAt"]
+                    r2["opStatus"] = mine.get("status") or ""
                 out[ds] = r2
             self._send(200, out)
         elif p == "/api/users":
@@ -231,6 +233,31 @@ class Handler(BaseHTTPRequestHandler):
             token = secrets.token_hex(16)
             SESSIONS[token] = {"id": uid, "role": role, "name": name, "exp": time.time() + SESSION_TTL}
             self._send(200, {"ok": True, "token": token, "id": uid, "role": role, "name": name})
+        elif REPORT_DONE.match(p):
+            self._json_body()  # 본문 소진
+            s = self._session()
+            if not s:
+                self._send(401, {"ok": False, "error": "로그인이 필요합니다"})
+                return
+            ds = REPORT_DONE.match(p).group(1)
+            uid = s["id"]
+            with LOCK:
+                db = load_json(DB)
+                if ds not in db or not isinstance(db[ds], dict):
+                    self._send(404, {"ok": False, "error": "등록되지 않은 날짜입니다"})
+                    return
+                entry = db[ds]
+                if not isinstance(entry.get("opBodies"), dict):
+                    entry["opBodies"] = {}
+                cur = entry["opBodies"].get(uid) or {}
+                entry["opBodies"][uid] = {
+                    "body": cur.get("body") or str(entry.get("body") or ""),
+                    "updatedAt": cur.get("updatedAt") or str(entry.get("updatedAt") or ""),
+                    "status": "completed",
+                    "completedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                }
+                save_json(DB, db)
+            self._send(200, {"ok": True})
         elif p == "/api/logout":
             SESSIONS.pop(self.headers.get("X-Auth-Token") or "", None)
             self._send(200, {"ok": True})
@@ -293,16 +320,37 @@ class Handler(BaseHTTPRequestHandler):
                     db[ds] = rec
                 else:
                     if ds not in db or not isinstance(db[ds], dict):
-                        self._send(403, {"ok": False, "error": "리포트 등록은 최고 관리자만 할 수 있습니다"})
-                        return
+                        if s["role"] == "admin" and qop:
+                            # 특정 아이디 대상 등록인데 날짜가 비어 있으면 원본도 함께 생성
+                            db[ds] = {
+                                "title": str(rec.get("title") or ds),
+                                "body": str(rec.get("body") or ""),
+                                "author": str(rec.get("author") or ""),
+                                "status": str(rec.get("status") or "draft"),
+                                "updatedAt": str(rec.get("updatedAt") or ""),
+                                "opBodies": {},
+                            }
+                        else:
+                            self._send(403, {"ok": False, "error": "리포트 등록은 최고 관리자만 할 수 있습니다"})
+                            return
                     target = qop if (s["role"] == "admin" and qop) else s["id"]
                     entry = db[ds]
                     if not isinstance(entry.get("opBodies"), dict):
                         entry["opBodies"] = {}
-                    entry["opBodies"][target] = {
-                        "body": str(rec.get("body") or ""),
-                        "updatedAt": str(rec.get("updatedAt") or ""),
-                    }
+                    if s["role"] == "admin" and qop:
+                        # 관리자의 아이디별 (재)등록 — 완료상태 초기화
+                        entry["opBodies"][target] = {
+                            "body": str(rec.get("body") or ""),
+                            "updatedAt": str(rec.get("updatedAt") or ""),
+                        }
+                    else:
+                        # 운영담당자 내용 저장 — 기존 완료상태 유지
+                        old = entry["opBodies"].get(target) or {}
+                        entry["opBodies"][target] = {
+                            "body": str(rec.get("body") or ""),
+                            "updatedAt": str(rec.get("updatedAt") or ""),
+                            "status": old.get("status") or "",
+                        }
                 save_json(DB, db)
             self._send(200, {"ok": True})
             return
