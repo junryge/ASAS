@@ -21,6 +21,8 @@ LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직�
                    (--event 에 폴더를 주면 그 안의 최신 *발동이벤트*.csv 자동 선택
                     → 20260714_발동이벤트.csv 처럼 매일 새 파일이 생겨도 자동 전환)
   1회만:           python LO_LOW_AMOS.py --event .\predict_tobe\20260713_발동이벤트.csv
+  과거 일괄백필:   python LO_LOW_AMOS.py --event .\predict_tobe --alldays
+                   (폴더 안 모든 날짜 파일에 4컬럼 기입 — 로그프레소 보존기간 내)
   테스트(원본보존): 위에 --out .\테스트.csv 추가
   옵션: --lag 0(같은 분) · --interval 60 · --host/--port/--apikey
 
@@ -257,12 +259,33 @@ def run_watch(event='./predict_tobe', interval=60, lag=0,
     _loop(a)
 
 
+def backfill_alldays(a):
+    """폴더 내 모든 *발동이벤트*.csv 를 날짜순으로 일괄 기입 (과거 백필)."""
+    if not os.path.isdir(a.event):
+        print(f'❌ --alldays 는 폴더를 주세요: {a.event}'); sys.exit(2)
+    files = sorted(f for f in os.listdir(a.event)
+                   if f.lower().endswith('.csv') and '발동이벤트' in f)
+    if not files:
+        print(f'❌ {os.path.abspath(a.event)} 안에 *발동이벤트*.csv 없음'); sys.exit(2)
+    print(f'[백필] 대상 {len(files)}개 파일')
+    cache = {p: {} for p in TABLES}
+    ok = fail = 0
+    for f in files:
+        n = cycle(a, cache, fp=os.path.join(a.event, f))
+        if n is None:
+            fail += 1; print(f'  ❌ {f} 실패 (조회오류 등)')
+        else:
+            ok += 1; print(f'  ✅ {f} — {n}행 기입')
+    print(f'🎉 백필 완료 — 성공 {ok} / 실패 {fail}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--event', required=True, help='발동이벤트.csv 또는 폴더(최신 *발동이벤트*.csv 자동)')
     ap.add_argument('--out', default=None, help='(테스트용) 지정하면 원본 대신 여기에 저장')
     ap.add_argument('--lag', type=int, default=0, help='몇 분 전 로그프레소를 기입할지 (기본 0=같은 분)')
     ap.add_argument('--loop', action='store_true', help='운영: interval초마다 반복')
+    ap.add_argument('--alldays', action='store_true', help='폴더 내 모든 날짜 파일 일괄 기입 (과거 백필)')
     ap.add_argument('--interval', type=int, default=60)
     ap.add_argument('--host', default=HOST)
     ap.add_argument('--port', type=int, default=PORT)
@@ -270,11 +293,14 @@ def main():
     a = ap.parse_args()
 
     print('=' * 60)
-    print('발동이벤트 ← 로그프레소 이상감지 4컬럼 기입' + (' (운영 루프)' if a.loop else ' (1회)'))
+    print('발동이벤트 ← 로그프레소 이상감지 4컬럼 기입'
+          + (' (운영 루프)' if a.loop else ' (과거 일괄백필)' if a.alldays else ' (1회)'))
     print('=' * 60)
 
     if a.loop:
         _loop(a)
+    elif a.alldays:
+        backfill_alldays(a)
     else:
         cache = {p: {} for p in TABLES}
         n = cycle(a, cache)
