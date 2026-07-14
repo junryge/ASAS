@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-발동이벤트_로그프레소조회 — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
+LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
 ====================================================================
 별도 병합파일 안 만들고 발동이벤트.csv 그 자체에 컬럼을 추가/기입한다.
 매분 발동이벤트에 새 행이 붙으면 → 그 분만 로그프레소 조회해서 채움 (이미 채운 행은 유지).
@@ -15,8 +15,8 @@
   QUEUE_downward_anomaly_cols,      QUEUE_upward_anomaly_cols
 
 실행 (pip: requests 만):
-  운영(1분 루프):  python 발동이벤트_로그프레소조회.py --event .\predict_tobe\발동이벤트.csv --loop
-  1회만:           python 발동이벤트_로그프레소조회.py --event .\predict_tobe\20260713_발동이벤트.csv
+  운영(1분 루프):  python LO_LOW_AMOS.py --event .\predict_tobe\발동이벤트.csv --loop
+  1회만:           python LO_LOW_AMOS.py --event .\predict_tobe\20260713_발동이벤트.csv
   테스트(원본보존): 위에 --out .\테스트.csv 추가
   옵션: --lag 1 · --interval 60 · --host/--port/--apikey
 
