@@ -312,9 +312,10 @@ def main():
         body = (reason or "").split("발동:", 1)[-1]
         body = re.split(r"흐름:|운영자조치:", body)[0]
         def _add(label, raw):
+            # ★ raw 컬럼명만 표기 (한글 라벨 없이 — 고객 요청)
             if raw not in seen:
                 seen.add(raw)
-                out.append(f"{label} ({raw})")
+                out.append(raw)
         for m in re.finditer(r"(M16HUB|M14B|M16A|M16B|M14)\s*\[(.*?)\]", body):
             area, inner = m.group(1), m.group(2)
             if "AVGTOTALTIME1MIN" in inner or "AVGLOADTIME1MIN" in inner:

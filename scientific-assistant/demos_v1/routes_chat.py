@@ -798,12 +798,12 @@ def _builtin_hub_summary(headers, rows):
                     zones = _hid_zones(bott)
                     zone_str = ", ".join(zones) if zones else "-"
                     # 이상감지 항목 = 그래프 지표(최고점 reason 의 raw 컬럼) + QUEUE 이상 컬럼 (중복 제거)
+                    # ★ raw 컬럼명만 표기 (한글 라벨 없이 — 고객 요청)
                     items, iseen = [], set()
                     for md in parse_reason_metrics(inc["peak_row"].get("reason") or ""):
-                        lbl = f"{md['label']} ({md['raw']})"
                         if md["raw"] not in iseen:
                             iseen.add(md["raw"])
-                            items.append(lbl)
+                            items.append(md["raw"])
                     for q in queue:
                         base = _re2.sub(r"_[A-Z]$", "", q)   # ..._A 꼬리 제거
                         if base and base not in iseen:

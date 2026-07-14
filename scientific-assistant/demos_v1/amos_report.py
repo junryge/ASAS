@@ -579,6 +579,19 @@ def amosify(body_html):
         hm = re.search(r"<h[123]\b[^>]*>[^<]*AMOS[^<]*감지[^<]*</h[123]>", body_html)
         if not hm:
             return body_html, False
+
+        # 0) 총평 섹션의 '점수 등급 기준' 표 제거 (등급 기준은 헤딩 인라인으로 충분 — 고객 요청)
+        def _strip_grade_table(html):
+            for tm0 in re.finditer(r"<table\b[^>]*>[\s\S]*?</table>", html):
+                seg = tm0.group(0)
+                if ("경계" in seg) and ("초위험" in seg) and re.search(r"50\s*~\s*70", seg):
+                    return html[:tm0.start()] + html[tm0.end():]
+            return html
+        head_part = body_html[:hm.start()]
+        head_part2 = _strip_grade_table(head_part)
+        if head_part2 != head_part:
+            body_html = head_part2 + body_html[hm.start():]
+            hm = re.search(r"<h[123]\b[^>]*>[^<]*AMOS[^<]*감지[^<]*</h[123]>", body_html)
         after = body_html[hm.end():]
         tm = re.search(r"<table\b[^>]*>[\s\S]*?</table>", after)
         if tm:
