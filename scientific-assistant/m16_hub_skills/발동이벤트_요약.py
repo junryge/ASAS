@@ -299,9 +299,9 @@ def main():
     # ④ AMOS 이상감지 — 신규 4컬럼(BOTTLENECK/QUEUE *_anomaly_cols)을 사건 구간별 집계
     #    구간 = BOTTLENECK 의 HID 토큰(HID_32_FROM_SUM_A → HID32)
     #    항목 = 최고점 reason 의 그래프 지표(raw 컬럼) + QUEUE 이상 컬럼 (<br> 구분)
-    #    심각도 = 경계→주의(확인필요) / 위험→경고(모니터링 필요) / 초위험→심각(조치필요)
+    #    심각도 = 경계→경계/주의(확인필요) / 위험→위험/경고(모니터링 필요) / 초위험→초위험/심각(조치필요)
     # ───────────────────────────────────────────────────────────
-    _SEV = {"경계": "주의(확인필요)", "위험": "경고(모니터링 필요)", "초위험": "심각(조치필요)"}
+    _SEV = {"경계": "경계/주의(확인필요)", "위험": "위험/경고(모니터링 필요)", "초위험": "초위험/심각(조치필요)"}
     _RA_RAW = {"M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN", "M14": "M14.QUE.LOAD.AVGLOADTIME1MIN",
                "M14B": "M14B.QUE.TIME.AVGTOTALTIME1MIN", "M16A": "M16A.QUE.LOAD.AVGLOADTIME1MIN",
                "M16B": "M16B.QUE.LOAD.AVGLOADTIME1MIN"}
@@ -380,7 +380,7 @@ def main():
             "번호": i,
             "이상감지 시간": pk["time"],
             "이상감지 구간": zone_str,
-            "심각도": _SEV.get(pk["level"], "주의(확인필요)"),
+            "심각도": _SEV.get(pk["level"], "경계/주의(확인필요)"),
             "이상감지 항목": "<br>".join(items) if items else "-",
         })
     p4 = _wcsv("발동이벤트_4_AMOS이상감지.csv",

@@ -750,14 +750,14 @@ def _builtin_hub_summary(headers, rows):
 
         # ── [④ AMOS 이상감지] — 신규 4컬럼(BOTTLENECK/QUEUE *_anomaly_cols) 사건별 집계 ──
         #   구간 = BOTTLENECK cols 의 HID 토큰(HID_32_FROM_SUM_A → HID32), 항목 = 그래프 지표(reason) + QUEUE cols.
-        #   심각도 = 경계→주의(확인필요) / 위험→경고(모니터링 필요) / 초위험→심각(조치필요).
+        #   심각도 = 경계→경계/주의(확인필요) / 위험→위험/경고(모니터링 필요) / 초위험→초위험/심각(조치필요).
         _AMOS_COLS = ("BOTTLENECK_downward_anomaly_cols", "BOTTLENECK_upward_anomaly_cols",
                       "QUEUE_downward_anomaly_cols", "QUEUE_upward_anomaly_cols")
         if incs and any(c in hdr for c in _AMOS_COLS):
             try:
                 import re as _re2
                 from demos_v1.report_graphs import parse_reason_metrics
-                _SEV = {"경계": "주의(확인필요)", "위험": "경고(모니터링 필요)", "초위험": "심각(조치필요)"}
+                _SEV = {"경계": "경계/주의(확인필요)", "위험": "위험/경고(모니터링 필요)", "초위험": "초위험/심각(조치필요)"}
 
                 def _hid_zones(tokens):
                     """HID_32_FROM_SUM_A → HID32 (순서 보존·중복 제거)."""
@@ -814,7 +814,7 @@ def _builtin_hub_summary(headers, rows):
                             items.append(base)
                     item_str = "<br>".join(items) if items else "-"
                     _pt = inc.get("peak_t") or inc["start"]
-                    sev = _SEV.get(_lvl(int(inc["peak_score"])), "주의(확인필요)")
+                    sev = _SEV.get(_lvl(int(inc["peak_score"])), "경계/주의(확인필요)")
                     out.append(f"| {n} | {_pt.strftime('%H:%M')} | {zone_str} | {sev} | {item_str} |")
             except Exception as _ae:
                 print(f"  🐍 [BUILTIN-SUMMARY] AMOS 집계 예외(무시): {_ae}")

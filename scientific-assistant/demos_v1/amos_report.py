@@ -625,6 +625,30 @@ def amosify(body_html):
             dm = re.search(r"<h[123]\b[^>]*>[^<]*위험[^<]*이벤트[^<]*상세[^<]*</h[123]>", body_html)
             body_html = body_html[:dm.end()] + graph + body_html[dm.end():]
 
+        # 4) 금지어 스크럽 — LLM이 raw 컬럼(LFT_REVERSALCNT 등)을 "리프터 역방향 카운트"로
+        #    풀어써도 무조건 "리프터 정체"로 치환. 한글 '역방향'·'카운트'는 서술문에만 존재
+        #    (raw 컬럼명은 전부 ASCII) → HTML 태그·컬럼명 훼손 없이 안전.
+        body_html = _scrub_forbidden_words(body_html)
+
         return body_html, True
     except Exception:
         return body_html, False
+
+
+def _scrub_forbidden_words(html):
+    """'역방향'·'카운트' 금지어를 '리프터 정체' 계열로 결정적 치환 (AMOS 보고서 전용)."""
+    try:
+        pairs = [
+            ("리프터 역방향 카운트", "리프터 정체"),
+            ("리프터 역방향", "리프터 정체"),
+            ("역방향 카운트", "정체"),
+            ("역방향", "정체"),
+        ]
+        for a, b in pairs:
+            html = html.replace(a, b)
+        # 남은 단독 '카운트' 제거 (예: "카운트 증가" → "증가")
+        html = re.sub(r"\s*카운트\s*", " ", html)
+        html = re.sub(r"[ \t]{2,}", " ", html)
+        return html
+    except Exception:
+        return html
