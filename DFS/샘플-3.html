@@ -575,7 +575,7 @@
   }
 
   let fileHandle = null;
-  const STORAGE_KEY = 'amos-report:' + (window.__AMHS_DATE || window.location.pathname);
+  const STORAGE_KEY = 'amos-report:' + (window.__AMHS_USER ? window.__AMHS_USER + ':' : '') + (window.__AMHS_DATE || window.location.pathname);
   let fileDirty = false;
 
   function setFileDirty(value) {

@@ -66,3 +66,14 @@
 - 완료 표시: 관리자 달력/목록 배지 ✓N/M, 뷰어 필 "아이디 ✓" / 담당자 자신은 ✓등록완료
 - 관리자 삭제 = 전체 삭제(원본+모든 사본). 클라이언트는 서버 GET 결과로 reports 를
   통째 교체(병합 금지) — 삭제된 리포트가 로컬 캐시로 되살아나지 않게 함
+
+### 같은 PC 브라우저 오염 차단 (2026-07 추가 — 중요)
+
+- 증상: 같은 PC 한 브라우저에서 아이디를 바꿔 로그인하면, 샘플-3.html 이 날짜 키로
+  localStorage 에 남긴 임시저장을 다음 아이디가 읽어와 다른 담당자 내용이 보임
+- 해결:
+  1) 뷰어가 iframe 에 주입하는 `#__amhs_bridge` 가 `amos-report:` 로 시작하는 localStorage
+     getItem 을 무조건 null 로 막음 → 시스템 안에서는 항상 서버 사본(embedded saved-data)만 사용
+  2) 샘플-3.html 의 STORAGE_KEY 에 로그인 아이디 포함 (`amos-report:아이디:날짜`)
+  3) 브리지가 `window.__AMHS_USER` (로그인 아이디) 를 iframe 에 주입
+- 결론: 내용의 진실 원천은 서버 opBodies[아이디] 뿐. 브라우저 localStorage 는 시스템 안에서 무시됨
