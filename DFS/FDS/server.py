@@ -279,9 +279,17 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 db = load_json(DB)
                 if s["role"] == "admin" and not qop:
-                    # 관리자 원본 저장 — 담당자별 사본(opBodies)은 서버 보관본을 유지
-                    kept = (db.get(ds) or {}).get("opBodies") if isinstance(db.get(ds), dict) else None
-                    rec["opBodies"] = kept if isinstance(kept, dict) else {}
+                    dist = (parse_qs(urlparse(self.path).query).get("dist") or [""])[0] == "1"
+                    if dist:
+                        # 레포트 "등록": 모든 운영담당자 아이디별로 같은 리포트를 각각 등록
+                        users = load_json(USERS)
+                        stamp_body = str(rec.get("body") or "")
+                        stamp_at = str(rec.get("updatedAt") or "")
+                        rec["opBodies"] = {u: {"body": stamp_body, "updatedAt": stamp_at} for u in users}
+                    else:
+                        # 원본만 저장 — 담당자별 사본(opBodies)은 서버 보관본을 유지
+                        kept = (db.get(ds) or {}).get("opBodies") if isinstance(db.get(ds), dict) else None
+                        rec["opBodies"] = kept if isinstance(kept, dict) else {}
                     db[ds] = rec
                 else:
                     if ds not in db or not isinstance(db[ds], dict):
