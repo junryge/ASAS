@@ -796,7 +796,10 @@ def _builtin_hub_summary(headers, rows):
                             if v:
                                 queue.extend(x.strip() for x in v.split(",") if x.strip())
                     zones = _hid_zones(bott)
-                    zone_str = ", ".join(zones) if zones else "-"
+                    # ★ 구간이 길면 4개마다 <br> 줄바꿈 (표 셀에서 보기 좋게 — 고객 요청)
+                    zone_str = "<br>".join(
+                        ", ".join(zones[i:i + 4]) for i in range(0, len(zones), 4)
+                    ) if zones else "-"
                     # 이상감지 항목 = 그래프 지표(최고점 reason 의 raw 컬럼) + QUEUE 이상 컬럼 (중복 제거)
                     # ★ raw 컬럼명만 표기 (한글 라벨 없이 — 고객 요청)
                     items, iseen = [], set()

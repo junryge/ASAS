@@ -372,10 +372,14 @@ def main():
                     iseen.add(base)
                     items.append(base)
         pk = c["peak"]
+        # ★ 구간이 길면 4개마다 <br> 줄바꿈 (표 셀에서 보기 좋게 — 고객 요청)
+        zone_str = "<br>".join(
+            ", ".join(zones[i2:i2 + 4]) for i2 in range(0, len(zones), 4)
+        ) if zones else "-"
         amos_rows.append({
             "번호": i,
             "이상감지 시간": pk["time"],
-            "이상감지 구간": ", ".join(zones) if zones else "-",
+            "이상감지 구간": zone_str,
             "심각도": _SEV.get(pk["level"], "주의(확인필요)"),
             "이상감지 항목": "<br>".join(items) if items else "-",
         })
