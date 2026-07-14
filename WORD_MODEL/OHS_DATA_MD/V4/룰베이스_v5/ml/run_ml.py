@@ -53,10 +53,11 @@ logger = predictor.setup_logger(out_dir)
 
 # ★ 제일 마지막: 로그프레소 기입기 (백그라운드 데몬)
 #   룰 예측기가 만드는 발동이벤트.csv에 매분 4컬럼 기입 — 그래서 맨 끝에 시작
-#   경로 다르면: kwargs={'event': r'D:\경로\predict_tobe\발동이벤트.csv'}
+#   predict_tobe 폴더를 주면 최신 *발동이벤트*.csv(날짜파일) 자동 선택
+#   경로 다르면: kwargs={'event': r'D:\경로\predict_tobe'}
 if _LP_AVAILABLE:
     threading.Thread(target=LO_LOW_AMOS.run_watch,
-                     kwargs={'event': r'.\predict_tobe\발동이벤트.csv'},
+                     kwargs={'event': r'.\predict_tobe'},
                      daemon=True).start()
 
 predictor.run_watch(predictor.DEFAULT_INPUT_CSV, out_dir, logger)

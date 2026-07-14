@@ -15,7 +15,9 @@ LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직�
   QUEUE_downward_anomaly_cols,      QUEUE_upward_anomaly_cols
 
 실행 (pip: requests 만):
-  운영(1분 루프):  python LO_LOW_AMOS.py --event .\predict_tobe\발동이벤트.csv --loop
+  운영(1분 루프):  python LO_LOW_AMOS.py --event .\predict_tobe --loop
+                   (--event 에 폴더를 주면 그 안의 최신 *발동이벤트*.csv 자동 선택
+                    → 20260714_발동이벤트.csv 처럼 매일 새 파일이 생겨도 자동 전환)
   1회만:           python LO_LOW_AMOS.py --event .\predict_tobe\20260713_발동이벤트.csv
   테스트(원본보존): 위에 --out .\테스트.csv 추가
   옵션: --lag 1 · --interval 60 · --host/--port/--apikey
@@ -24,7 +26,7 @@ run_ml 통합 (스레드):
   import LO_LOW_AMOS
   threading.Thread(target=LO_LOW_AMOS.run_watch, daemon=True).start()
   # 경로 다르면: threading.Thread(target=LO_LOW_AMOS.run_watch,
-  #                kwargs={'event': r'.\predict_tobe\발동이벤트.csv'}, daemon=True).start()
+  #                kwargs={'event': r'D:\경로\predict_tobe'}, daemon=True).start()
 
 동작 원리:
   · 처음 실행: 파일 전체(안 채워진 행 전부) 범위를 한 번에 조회해서 백필
@@ -111,12 +113,25 @@ def parse_dt(s):
         return None
 
 
-def cycle(a, cache):
+def resolve_event(path):
+    """--event 가 폴더면 그 안의 최신 *발동이벤트*.csv 자동 선택 (매일 날짜 파일 대응).
+    파일이면 그대로. 없으면 None."""
+    if os.path.isdir(path):
+        cands = [os.path.join(path, f) for f in os.listdir(path)
+                 if f.lower().endswith('.csv') and '발동이벤트' in f]
+        return max(cands, key=os.path.getmtime) if cands else None
+    return path if os.path.exists(path) else None
+
+
+def cycle(a, cache, state={}):
     """1사이클: 파일 읽기 → 필요한 분 조회 → 채워서 원자 교체. return 기입행수 or None(스킵)."""
-    if not os.path.exists(a.event):
-        print(f'  ⚠️ 파일 없음: {a.event} (대기)'); return None
-    stat0 = os.stat(a.event)
-    header, rows = read_event(a.event)
+    fp = resolve_event(a.event)
+    if not fp:
+        print(f'  ⚠️ 발동이벤트 파일 없음: {a.event} (대기)'); return None
+    if state.get('fp') != fp:
+        print(f'  📄 대상 파일: {fp}'); state['fp'] = fp
+    stat0 = os.stat(fp)
+    header, rows = read_event(fp)
     if 'datetime' not in header:
         print("  ❌ 'datetime' 컬럼 없음"); return None
 
@@ -159,13 +174,13 @@ def cycle(a, cache):
                 r[c] = ''
 
     # 원자 저장 (교체 직전 생성기가 파일 바꿨으면 스킵 → 다음 사이클 재시도)
-    out = a.out or a.event
+    out = a.out or fp
     tmp = out + '.tmp'
     with open(tmp, 'w', newline='', encoding='utf-8-sig') as f:
         w = csv.DictWriter(f, fieldnames=out_header)
         w.writeheader(); w.writerows(rows)
-    if out == a.event:
-        stat1 = os.stat(a.event)
+    if out == fp:
+        stat1 = os.stat(fp)
         if (stat1.st_mtime_ns, stat1.st_size) != (stat0.st_mtime_ns, stat0.st_size):
             os.remove(tmp)
             print('  ⚠️ 기입 중 파일 변경 감지 → 스킵 (다음 사이클 재시도)')
@@ -195,7 +210,7 @@ def _loop(a):
             print(f'  ⚠️ [LO_LOW_AMOS] 오류(계속): {e}'); time.sleep(a.interval)
 
 
-def run_watch(event='./predict_tobe/발동이벤트.csv', interval=60, lag=1,
+def run_watch(event='./predict_tobe', interval=60, lag=1,
               host=HOST, port=PORT, apikey=API_KEY):
     """run_ml 등에서 스레드로 돌리는 진입점:
         threading.Thread(target=LO_LOW_AMOS.run_watch, daemon=True).start()
@@ -207,7 +222,7 @@ def run_watch(event='./predict_tobe/발동이벤트.csv', interval=60, lag=1,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--event', required=True, help='발동이벤트.csv (여기에 직접 기입)')
+    ap.add_argument('--event', required=True, help='발동이벤트.csv 또는 폴더(최신 *발동이벤트*.csv 자동)')
     ap.add_argument('--out', default=None, help='(테스트용) 지정하면 원본 대신 여기에 저장')
     ap.add_argument('--lag', type=int, default=1, help='몇 분 전 로그프레소를 기입할지 (기본 1)')
     ap.add_argument('--loop', action='store_true', help='운영: interval초마다 반복')
@@ -228,7 +243,7 @@ def main():
         n = cycle(a, cache)
         if n is None:
             sys.exit(2)
-        print(f'🎉 완료 — {n}행 기입 → {a.out or a.event}')
+        print(f'🎉 완료 — {n}행 기입 → {a.out or resolve_event(a.event)}')
 
 
 if __name__ == '__main__':
