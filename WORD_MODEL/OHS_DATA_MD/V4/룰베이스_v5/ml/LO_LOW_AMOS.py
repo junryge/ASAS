@@ -10,9 +10,11 @@ LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직�
   table from=... to=... ATLAS_BOTTLENECK_ANOMALY | search MCP_NM == "BR" | sort _time
   table from=... to=... ATLAS_QUEUE_ANOMALY      | search MCP_NM == "BR" | sort _time
 
-추가 4컬럼 (시간정렬: 발동이벤트 datetime T ← 로그프레소 EVENT_DT T-1분):
+추가 4컬럼 (시간정렬: 발동이벤트 datetime T = 로그프레소 EVENT_DT T, 같은 분끼리):
   BOTTLENECK_downward_anomaly_cols, BOTTLENECK_upward_anomaly_cols
   QUEUE_downward_anomaly_cols,      QUEUE_upward_anomaly_cols
+  ※ 로그프레소가 T분을 아직 안 썼으면 그 사이클엔 공란 → 다음 사이클(1분 뒤)
+    최근 5분 재조회가 자동으로 채움 (수집만 늦게, 시간은 안 어긋남)
 
 실행 (pip: requests 만):
   운영(1분 루프):  python LO_LOW_AMOS.py --event .\predict_tobe --loop
@@ -20,7 +22,7 @@ LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직�
                     → 20260714_발동이벤트.csv 처럼 매일 새 파일이 생겨도 자동 전환)
   1회만:           python LO_LOW_AMOS.py --event .\predict_tobe\20260713_발동이벤트.csv
   테스트(원본보존): 위에 --out .\테스트.csv 추가
-  옵션: --lag 1 · --interval 60 · --host/--port/--apikey
+  옵션: --lag 0(같은 분) · --interval 60 · --host/--port/--apikey
 
 run_ml 통합 (스레드):
   import LO_LOW_AMOS
@@ -215,7 +217,7 @@ def _loop(a):
             print(f'  ⚠️ [LO_LOW_AMOS] 오류(계속): {e}'); time.sleep(a.interval)
 
 
-def run_watch(event='./predict_tobe', interval=60, lag=1,
+def run_watch(event='./predict_tobe', interval=60, lag=0,
               host=HOST, port=PORT, apikey=API_KEY):
     """run_ml 등에서 스레드로 돌리는 진입점:
         threading.Thread(target=LO_LOW_AMOS.run_watch, daemon=True).start()
@@ -229,7 +231,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--event', required=True, help='발동이벤트.csv 또는 폴더(최신 *발동이벤트*.csv 자동)')
     ap.add_argument('--out', default=None, help='(테스트용) 지정하면 원본 대신 여기에 저장')
-    ap.add_argument('--lag', type=int, default=1, help='몇 분 전 로그프레소를 기입할지 (기본 1)')
+    ap.add_argument('--lag', type=int, default=0, help='몇 분 전 로그프레소를 기입할지 (기본 0=같은 분)')
     ap.add_argument('--loop', action='store_true', help='운영: interval초마다 반복')
     ap.add_argument('--interval', type=int, default=60)
     ap.add_argument('--host', default=HOST)
