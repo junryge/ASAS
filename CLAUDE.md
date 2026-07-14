@@ -37,3 +37,14 @@
 - 인증: POST /api/login → 토큰(X-Auth-Token 헤더), 세션 12시간, 서버 재시작 시 재로그인
 - 날짜별 저장 API: PUT/DELETE /api/reports/{YYYY-MM-DD} (운영담당자 PUT은 기존 날짜만 허용)
 - 서버 응답 전에 요청 body 를 반드시 소진할 것 (keep-alive 오염 방지 — _json_body 먼저 호출)
+
+### 운영담당자별 내용 격리 (2026-07 추가)
+
+- 리포트 = 등록 원본(body) + 담당자별 사본(opBodies: {아이디: {body, updatedAt}})
+- 운영담당자 GET /api/reports → 자기 사본만 body 로 받음 (opBodies 는 절대 안 내려감)
+- 운영담당자 PUT /api/reports/{날짜} → 자기 사본에만 저장 (원본 불변)
+- 관리자 PUT (쿼리 없음) → 원본 저장, 서버가 opBodies 보존 / ?op=아이디 → 해당 담당자 사본 저장
+- 관리자 뷰어에 [등록 원본][담당자 아이디…] 보기 전환 필 표시
+- 다운로드(복원/엑셀/PC보관/기간 HTML·MD)는 관리자 전용 (화면에서 숨김)
+- 관리자 계정: AMHS1234 / AMHS1234 (config.json adminId/adminPassword)
+- 로컬 캐시 키는 로그인 아이디별 분리 (daily_reports_v1:아이디)

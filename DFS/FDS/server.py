@@ -32,7 +32,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 BASE = Path(__file__).resolve().parent
 HTML = BASE / "INDEX" / "Daily_Report_System.html"
@@ -176,10 +176,28 @@ class Handler(BaseHTTPRequestHandler):
             cfg = load_config()
             self._send(200, {"editPassword": cfg["editPassword"], "adminPassword": cfg["adminPassword"]})
         elif p == "/api/reports":
-            if not self._auth():
+            s = self._auth()
+            if not s:
                 return
             with LOCK:
-                self._send(200, load_json(DB))
+                db = load_json(DB)
+            if s["role"] == "admin":
+                self._send(200, db)
+                return
+            # 운영담당자: 자기 사본(body)만 내려주고 다른 담당자 내용(opBodies)은 숨김
+            uid = s["id"]
+            out = {}
+            for ds, rec in db.items():
+                if not isinstance(rec, dict):
+                    continue
+                r2 = {k: v for k, v in rec.items() if k != "opBodies"}
+                mine = (rec.get("opBodies") or {}).get(uid)
+                if isinstance(mine, dict) and mine.get("body"):
+                    r2["body"] = mine["body"]
+                    if mine.get("updatedAt"):
+                        r2["updatedAt"] = mine["updatedAt"]
+                out[ds] = r2
+            self._send(200, out)
         elif p == "/api/users":
             if not self._auth(admin_only=True):
                 return
@@ -248,7 +266,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         p = self.path.split("?")[0]
         m = REPORT_DATE.match(p)
-        if m:  # 날짜별 리포트 저장 (운영담당자는 이미 등록된 날짜만 가능)
+        if m:  # 날짜별 리포트 저장
             rec = self._json_body()  # 본문 먼저 소진 (응답을 먼저 보내면 keep-alive 오염)
             s = self._auth()
             if not s:
@@ -257,12 +275,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"ok": False, "error": "invalid json"})
                 return
             ds = m.group(1)
+            qop = (parse_qs(urlparse(self.path).query).get("op") or [None])[0]
             with LOCK:
                 db = load_json(DB)
-                if s["role"] != "admin" and ds not in db:
-                    self._send(403, {"ok": False, "error": "리포트 등록은 관리자만 할 수 있습니다"})
-                    return
-                db[ds] = rec
+                if s["role"] == "admin" and not qop:
+                    # 관리자 원본 저장 — 담당자별 사본(opBodies)은 서버 보관본을 유지
+                    kept = (db.get(ds) or {}).get("opBodies") if isinstance(db.get(ds), dict) else None
+                    rec["opBodies"] = kept if isinstance(kept, dict) else {}
+                    db[ds] = rec
+                else:
+                    if ds not in db or not isinstance(db[ds], dict):
+                        self._send(403, {"ok": False, "error": "리포트 등록은 최고 관리자만 할 수 있습니다"})
+                        return
+                    target = qop if (s["role"] == "admin" and qop) else s["id"]
+                    entry = db[ds]
+                    if not isinstance(entry.get("opBodies"), dict):
+                        entry["opBodies"] = {}
+                    entry["opBodies"][target] = {
+                        "body": str(rec.get("body") or ""),
+                        "updatedAt": str(rec.get("updatedAt") or ""),
+                    }
                 save_json(DB, db)
             self._send(200, {"ok": True})
             return
