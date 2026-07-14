@@ -36,8 +36,10 @@ run_ml 통합 (스레드):
   · 파일에 4컬럼 없으면 헤더에 추가, 있으면 그대로 이어서 기입
   · 조회 실패(서버 불안정)면 그 사이클은 파일 안 건드리고 다음 분에 재시도
   · 저장은 임시파일 → 원자 교체(os.replace), 교체 직전 파일 변경 감지되면 스킵 후 재시도
+  · 자정 전환: 새 날짜 파일로 넘어가도 전날 파일을 6사이클 더 마무리 기입
+    (로그프레소가 23:59 등 마지막 분을 자정 넘어 쓰기 때문 — 23:59까지 빠짐없이 채움)
 """
-import argparse, csv, os, sys, time, urllib.parse
+import argparse, csv, os, re, sys, time, urllib.parse
 from datetime import datetime, timedelta
 from io import StringIO
 
@@ -117,17 +119,26 @@ def parse_dt(s):
 
 def resolve_event(path):
     """--event 가 폴더면 그 안의 최신 *발동이벤트*.csv 자동 선택 (매일 날짜 파일 대응).
+    파일명의 날짜(YYYYMMDD)가 큰 것 우선 — mtime 은 우리가 기입할 때마다 바뀌므로 안 씀.
     파일이면 그대로. 없으면 None."""
     if os.path.isdir(path):
-        cands = [os.path.join(path, f) for f in os.listdir(path)
+        cands = [f for f in os.listdir(path)
                  if f.lower().endswith('.csv') and '발동이벤트' in f]
-        return max(cands, key=os.path.getmtime) if cands else None
+        if not cands:
+            return None
+        dated = [(m.group(1), f) for f in cands
+                 for m in [re.search(r'(\d{8})', f)] if m]
+        if dated:
+            return os.path.join(path, max(dated)[1])
+        return max((os.path.join(path, f) for f in cands), key=os.path.getmtime)
     return path if os.path.exists(path) else None
 
 
-def cycle(a, cache, state={}):
-    """1사이클: 파일 읽기 → 필요한 분 조회 → 채워서 원자 교체. return 기입행수 or None(스킵)."""
-    fp = resolve_event(a.event)
+def cycle(a, cache, fp=None, state={'seen': set()}):
+    """1사이클: 파일 읽기 → 필요한 분 조회 → 채워서 원자 교체. return 기입행수 or None(스킵).
+    fp 를 주면 그 파일만 처리 (자정 전환 시 전날 파일 마무리용)."""
+    if fp is None:
+        fp = resolve_event(a.event)
     if not fp:
         ab = os.path.abspath(a.event)
         if not os.path.exists(ab):
@@ -135,8 +146,8 @@ def cycle(a, cache, state={}):
         else:
             print(f'  ⚠️ {ab} 안에 *발동이벤트*.csv 없음 (대기)')
         return None
-    if state.get('fp') != fp:
-        print(f'  📄 대상 파일: {fp}'); state['fp'] = fp
+    if fp not in state['seen']:
+        print(f'  📄 대상 파일: {fp}'); state['seen'].add(fp)
     stat0 = os.stat(fp)
     header, rows = read_event(fp)
     if 'datetime' not in header:
@@ -201,13 +212,32 @@ def cycle(a, cache, state={}):
     return len(targets)
 
 
+FINISH_CYCLES = 6  # 자정 전환 후 전날 파일을 몇 사이클 더 마무리 기입할지
+
+
 def _loop(a):
     """운영 루프 본체 (main --loop 와 run_watch 공용)."""
     print(f'[LO_LOW_AMOS] {a.interval}초 간격 · 대상: {a.event}')
     cache = {p: {} for p in TABLES}  # 분키 → (down, up)
+    cur = None
+    finishing = {}  # 전날 파일 → 남은 마무리 사이클
     while True:
         try:
-            n = cycle(a, cache)
+            fp = resolve_event(a.event)
+            # 자정 전환 감지: 새 날짜 파일로 바뀌면 전날 파일을 몇 분 더 마무리
+            # (로그프레소가 23:59 등 마지막 분을 자정 넘어 쓰기 때문)
+            if fp and cur and fp != cur and os.path.exists(cur):
+                finishing[cur] = FINISH_CYCLES
+                print(f'  🔄 날짜 전환 — 전날 파일 마무리 시작: {os.path.basename(cur)}')
+            if fp:
+                cur = fp
+            n = cycle(a, cache, fp=fp)
+            for old in list(finishing):
+                cycle(a, cache, fp=old)  # 전날 파일 끝부분(최근5분) 재조회·기입
+                finishing[old] -= 1
+                if finishing[old] <= 0:
+                    del finishing[old]
+                    print(f'  ✅ 전날 파일 마무리 완료: {os.path.basename(old)}')
             if n is not None:
                 print(f"[LO_LOW_AMOS {datetime.now():%H:%M:%S}] 기입 {n}행 (캐시 {len(cache['BOTTLENECK'])}분)")
             time.sleep(a.interval)
