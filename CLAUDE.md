@@ -26,3 +26,14 @@
 - 샘플-3.html 의 "저장" 버튼 → `postMessage({type:'amhs-report-save', date, html})` 로 부모(달력 시스템)에 전달 → 부모가 해당 날짜 body 갱신 + `PUT /api/reports` 로 서버 저장
 - 구버전 샘플 호환: 뷰어가 iframe 열 때 `#__amhs_bridge` 스크립트 주입 (localStorage 저장 감지 → HTML 직렬화 → postMessage)
 - 반드시 `http://서버IP:8000` 으로 접속해야 서버 저장됨 (file:// 로 열면 경고 토스트 표시)
+
+### 계정/로그인 체계 (2026-07 추가)
+
+- `server.py` 는 표준 라이브러리만 사용 (FastAPI/uvicorn 불필요) — `python server.py` 만으로 실행
+- 최고 관리자: `config.json` 의 `adminId` / `adminPassword` 로 로그인 (기본 admin / AMHS1234)
+  - 리포트 등록·수정·삭제 + "👥 계정 관리"(운영담당자 생성/삭제/비번변경)
+- 운영담당자: `users_db.json` 에 저장 (비밀번호 sha256+salt 해시) — 웹에서 관리자가 생성
+  - 등록된 리포트 열람 + 리포트 안 내용 입력·저장만 가능
+- 인증: POST /api/login → 토큰(X-Auth-Token 헤더), 세션 12시간, 서버 재시작 시 재로그인
+- 날짜별 저장 API: PUT/DELETE /api/reports/{YYYY-MM-DD} (운영담당자 PUT은 기존 날짜만 허용)
+- 서버 응답 전에 요청 body 를 반드시 소진할 것 (keep-alive 오염 방지 — _json_body 먼저 호출)
