@@ -127,7 +127,12 @@ def cycle(a, cache, state={}):
     """1사이클: 파일 읽기 → 필요한 분 조회 → 채워서 원자 교체. return 기입행수 or None(스킵)."""
     fp = resolve_event(a.event)
     if not fp:
-        print(f'  ⚠️ 발동이벤트 파일 없음: {a.event} (대기)'); return None
+        ab = os.path.abspath(a.event)
+        if not os.path.exists(ab):
+            print(f'  ⚠️ 경로 자체가 없음: {ab} (실행 위치 기준 상대경로 확인!) (대기)')
+        else:
+            print(f'  ⚠️ {ab} 안에 *발동이벤트*.csv 없음 (대기)')
+        return None
     if state.get('fp') != fp:
         print(f'  📄 대상 파일: {fp}'); state['fp'] = fp
     stat0 = os.stat(fp)

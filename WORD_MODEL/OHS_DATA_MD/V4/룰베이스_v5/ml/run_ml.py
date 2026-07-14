@@ -52,12 +52,12 @@ out_dir.mkdir(parents=True, exist_ok=True)
 logger = predictor.setup_logger(out_dir)
 
 # ★ 제일 마지막: 로그프레소 기입기 (백그라운드 데몬)
-#   룰 예측기가 만드는 발동이벤트.csv에 매분 4컬럼 기입 — 그래서 맨 끝에 시작
-#   predict_tobe 폴더를 주면 최신 *발동이벤트*.csv(날짜파일) 자동 선택
-#   경로 다르면: kwargs={'event': r'D:\경로\predict_tobe'}
+#   룰 예측기가 만드는 YYYYMMDD_발동이벤트.csv 에 매분 4컬럼 기입 — 그래서 맨 끝에 시작
+#   경로는 룰 예측기가 실제로 쓰는 곳(DEFAULT_OUTPUT_DIR = predict_tobe)을 그대로 사용
+#   → run_ml 을 어디서 실행하든 항상 같은 폴더를 봄
 if _LP_AVAILABLE:
     threading.Thread(target=LO_LOW_AMOS.run_watch,
-                     kwargs={'event': r'.\predict_tobe'},
+                     kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
                      daemon=True).start()
 
 predictor.run_watch(predictor.DEFAULT_INPUT_CSV, out_dir, logger)
