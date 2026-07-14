@@ -41,13 +41,6 @@ threading.Thread(target=collector.main, daemon=True).start()
 if _ML_AVAILABLE:
     threading.Thread(target=ml_runner.run_watch, daemon=True).start()
 
-# 로그프레소 기입기 (백그라운드 데몬) — 매분 발동이벤트.csv에 4컬럼 기입
-# 경로 다르면: kwargs={'event': r'D:\경로\predict_tobe\발동이벤트.csv'}
-if _LP_AVAILABLE:
-    threading.Thread(target=LO_LOW_AMOS.run_watch,
-                     kwargs={'event': r'.\predict_tobe\발동이벤트.csv'},
-                     daemon=True).start()
-
 # 하이브리드 예측기 (그대로 비활성 — 별도 작업)
 # threading.Thread(target=hybrid_predictor.run_watch, daemon=True).start()
 
@@ -57,4 +50,13 @@ time.sleep(0.5)
 out_dir = predictor.DEFAULT_OUTPUT_DIR
 out_dir.mkdir(parents=True, exist_ok=True)
 logger = predictor.setup_logger(out_dir)
+
+# ★ 제일 마지막: 로그프레소 기입기 (백그라운드 데몬)
+#   룰 예측기가 만드는 발동이벤트.csv에 매분 4컬럼 기입 — 그래서 맨 끝에 시작
+#   경로 다르면: kwargs={'event': r'D:\경로\predict_tobe\발동이벤트.csv'}
+if _LP_AVAILABLE:
+    threading.Thread(target=LO_LOW_AMOS.run_watch,
+                     kwargs={'event': r'.\predict_tobe\발동이벤트.csv'},
+                     daemon=True).start()
+
 predictor.run_watch(predictor.DEFAULT_INPUT_CSV, out_dir, logger)
