@@ -103,19 +103,36 @@ def build_context_df(pd, times, series_by_col, target, upto):
     return pd.DataFrame(rows)
 
 
-def forecast_with_covariates(pipeline, pd, ctx_df, horizon, times_future):
+def forecast_with_covariates(pipeline, pd, ctx_df, horizon, times_future,
+                             freq="min"):
     """
     Chronos-2 predict_df 호출 → 타깃의 q10/q50/q90 리스트 반환.
-    ※ 인자명/반환컬럼명은 chronos-2 버전에 맞춰 확인할 것.
+    freq="min" 을 명시해 주기 자동추론 실패(Could not infer frequency) 방지.
+    (데일리 파일 병합 시 경계에서 추론이 실패할 수 있어 1분 주기를 못박음)
     """
-    pred = pipeline.predict_df(
-        ctx_df,
-        prediction_length=horizon,
-        quantile_levels=[0.1, 0.5, 0.9],
-        id_column="id",
-        timestamp_column="timestamp",
-        target="target",
-    )
+    try:
+        pred = pipeline.predict_df(
+            ctx_df,
+            prediction_length=horizon,
+            quantile_levels=[0.1, 0.5, 0.9],
+            id_column="id",
+            timestamp_column="timestamp",
+            target="target",
+            freq=freq,
+        )
+    except TypeError:
+        # 구버전이 freq 인자를 안 받으면 timestamp 를 규칙적 주기로 재생성해 재시도
+        ctx_df = ctx_df.copy()
+        ctx_df["timestamp"] = pd.date_range(
+            end=ctx_df["timestamp"].iloc[-1], periods=len(ctx_df), freq=freq)
+        pred = pipeline.predict_df(
+            ctx_df,
+            prediction_length=horizon,
+            quantile_levels=[0.1, 0.5, 0.9],
+            id_column="id",
+            timestamp_column="timestamp",
+            target="target",
+        )
     # 반환 DataFrame 에서 분위수 컬럼 추출 (버전따라 '0.1' / 'q0.1' 등)
     def qcol(pred, q):
         for name in (str(q), f"q{q}", f"{q:.1f}", f"quantile_{q}"):
