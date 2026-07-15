@@ -172,8 +172,11 @@ def main():
     try:
         from chronos import Chronos2Pipeline
         import pandas as pd
-        dev = args.device or "cuda"
-        pipeline = Chronos2Pipeline.from_pretrained(args.model, device_map=dev)
+        from forecaster import _resolve_model, _auto_device
+        model_path = _resolve_model(args.model)      # 로컬 폴더 자동 감지
+        dev = args.device or _auto_device()           # GPU 없으면 cpu
+        print(f" 모델: {model_path} | device: {dev}")
+        pipeline = Chronos2Pipeline.from_pretrained(model_path, device_map=dev)
     except Exception as e:
         print(f"⚠ Chronos-2 로드 실패: {e!r}")
         print("  → chronos-forecasting>=2.0 + torch + pandas 설치된 GPU 환경에서 실행하세요.")

@@ -81,6 +81,25 @@ class BaselineForecaster:
         return out
 
 
+def _resolve_model(model_path: str) -> str:
+    """
+    로컬에 받아둔 모델 폴더를 자동 감지.
+      · model_path 가 실제 폴더면 그대로 사용 (예: ./models/chronos-2)
+      · 아니면 흔한 위치(./models/chronos-2, ./chronos-2 ...) 를 탐색
+      · 없으면 HF 식별자 문자열 그대로 (온라인 자동 다운로드)
+    → 모델을 폴더에 '집어넣기만' 하면 자동으로 로컬본을 씀 (오프라인 OK).
+    """
+    import os
+    if os.path.isdir(model_path):
+        return model_path
+    base = os.path.basename(model_path)  # 예: chronos-2
+    for cand in (f"./models/{base}", f"./{base}", f"models/{base}",
+                 "./models/chronos-2", "./chronos-2"):
+        if os.path.isdir(cand):
+            return cand
+    return model_path  # HF 식별자
+
+
 def _auto_device() -> str:
     """cuda > mps > cpu 순으로 사용 가능한 디바이스 자동 선택."""
     try:
@@ -113,7 +132,7 @@ class ChronosForecaster:
 
     def __init__(self, model_path: str = "amazon/chronos-2",
                  device: str | None = None, torch_dtype=None):
-        self.model_path = model_path
+        self.model_path = _resolve_model(model_path)
         self.device = device or _auto_device()
         self._torch_dtype = torch_dtype
         self._pipeline = None
