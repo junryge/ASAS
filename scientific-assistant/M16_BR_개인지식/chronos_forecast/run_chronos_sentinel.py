@@ -58,6 +58,8 @@ def main():
     ap.add_argument("--signal", default="M16HUB.QUE.TIME.AVGTOTALTIME1MIN")
     ap.add_argument("--horizon", type=int, default=10, help="예측 지평(분). 기본 10")
     ap.add_argument("--context", type=int, default=180, help="예측 입력 context 길이(분)")
+    ap.add_argument("--stride", type=int, default=1,
+                    help="백테스트 평가 간격(분). CPU에서 한 달치는 5~10 권장. 실시간은 1")
     ap.add_argument("--model", default="amazon/chronos-2",
                     help="amazon/chronos-2 (최신·기본) 또는 chronos-bolt-{tiny,base}")
     ap.add_argument("--device", default=None, help="cuda/mps/cpu (기본 자동)")
@@ -116,15 +118,20 @@ def main():
     print("=" * 72)
 
     # 5) 매분 파이프라인 (인과적)
+    #    --stride>1 이면 stride 간격으로만 모델 호출, 사이 분은 직전 액션 유지
+    #    (CPU 백테스트 가속용. 실시간 운영은 stride=1).
     actions = []
+    last_action = None
+    stride = max(1, args.stride)
     for t in range(len(filled)):
         ctx = filled[max(0, t - args.context):t + 1]
         if len(ctx) < 5:
             actions.append(None)
             continue
-        fc = f.predict(ctx, horizon=args.horizon)
-        a = sen.step(fc["q10"], fc["q50"], fc["q90"])
-        actions.append(a)
+        if t % stride == 0:
+            fc = f.predict(ctx, horizon=args.horizon)
+            last_action = sen.step(fc["q10"], fc["q50"], fc["q90"])
+        actions.append(last_action)
 
     # 6) 문제 예측 시각 집계 (stage>=2 경보 구간)
     alarms, on0 = [], None

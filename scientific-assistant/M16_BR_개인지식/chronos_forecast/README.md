@@ -42,6 +42,25 @@ python3 run_chronos2_covariates.py \
 임계 자동학습: `--train APR_MAY.CSV --pct 0.99` (학습기간 분위수로 임계 산출).
 torch/chronos 미설치 시 ①은 baseline 폴백으로 파이프라인만 동작, ②는 실모델 전용.
 
+### 💻 CPU로 실행 (GPU 없어도 됨)
+
+Chronos-2 는 **CPU 추론 지원** (RAM 약 8GB 필요, GPU 대비 4~10배 느림).
+**실시간 운영(1분당 1회)은 CPU로 충분.** 느린 건 한 달치를 1분단위로 전부
+백테스트할 때뿐 → `--stride` 로 평가 간격을 늘려 가속.
+
+```bash
+# CPU 실시간/소량
+python3 run_chronos_sentinel.py --data JUNE.CSV --horizon 10 \
+    --model amazon/chronos-2 --device cpu --threshold 12.0
+
+# CPU 한 달치 백테스트 (5분 간격으로 가속)
+python3 run_chronos_sentinel.py --data JUNE.CSV --horizon 10 \
+    --model amazon/chronos-2 --device cpu --stride 5 --out actions.csv
+```
+
+CPU에서 더 가볍고 빠르게 원하면 `--model amazon/chronos-bolt-tiny`(9M) 도 가능
+(단 covariate 미지원 = 단변량 전용, 정확도는 chronos-2 가 우위).
+
 **핵심 파일:**
 | 파일 | 역할 |
 |---|---|
