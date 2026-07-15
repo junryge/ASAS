@@ -14,8 +14,11 @@
 |---|---|
 | `forecaster.py` | Chronos-Bolt 어댑터. 모델 없으면 baseline 예측기로 자동 폴백 |
 | `guardrail.py` | 예측 분포(q10/q50/q90) → 경계 있는·인과적 stage/위험도 판정 (TightLoop '역할' 자체 구현) |
-| `scenario.py` | 합성 HUBROOM 정체 시나리오 생성 (실 데이터 대체용) |
-| `run_poc.py` | 룰베이스 vs 예측+가드레일 비교 하네스 (지평 10분/30분) |
+| `data_loader.py` | **실 수집기 CSV 로더** (CRT_TM + 265 메트릭, null/non-finite 정규화, 날짜 슬라이스) |
+| `calibrate.py` | **임계값 자동 학습** — 학습기간 정상분포(p95/p99)에서 신호별 임계 산출 |
+| `run_real.py` | **실데이터 학습→평가 실행기** (Apr~May 학습 → June 평가) |
+| `scenario.py` | 합성 HUBROOM 정체 시나리오 생성 (실 데이터 없을 때) |
+| `run_poc.py` | 룰베이스 vs 예측+가드레일 비교 하네스 — 합성 (지평 10분/30분) |
 | `DESIGN.md` | 설계 문서 |
 
 ---
@@ -42,6 +45,42 @@ pip install chronos-forecasting torch   # 사내/Jetson 환경
 
 설치돼 있으면 `forecaster.py`가 자동으로 `amazon/chronos-bolt-base`를 로드한다.
 없으면 baseline 예측기로 폴백해 **파이프라인·가드레일·평가**는 그대로 검증된다.
+
+---
+
+## 실데이터 워크플로우 (Apr~May 학습 → June 평가)
+
+```bash
+# 1) 학습기간 임계 자동 학습 확인 (손임계와 비교)
+python3 calibrate.py <학습CSV> 0.99
+
+# 2) 정식: 학습기간에서 임계 학습 → 평가기간에 선제예측 vs 룰베이스
+python3 run_real.py \
+    --train "data/2026-04*.CSV" "data/2026-05*.CSV" \
+    --eval  "data/2026-06*.CSV" \
+    --signal M16HUB.QUE.TIME.AVGTOTALTIME1MIN \
+    --horizons 10 30 --pct 0.99
+
+# 샘플(하루) plumbing 데모 — 하루를 앞/뒤로 쪼갬
+python3 run_real.py --sample <April1.CSV> --split "12:00" --horizons 10 30
+```
+
+**설계 원칙 (leakage 방지):**
+- 임계값은 **학습기간에서만** 산출 → 평가기간에 그대로 lock.
+- 예측은 **인과적**(매 분, 직전 context만) → 미래 정보 누수 없음.
+- ground-truth 정체 = 평가기간에서 신호가 (학습)임계를 실제로 넘은 구간
+  → "임계 넘기 전에 미리 잡았나(lead)" 를 실측.
+
+**왜 임계 자동학습인가 (실데이터가 증명):** April 1 실측 —
+
+| 신호 | 손임계 | 학습임계(p99) | 손임계 문제 |
+|---|---|---|---|
+| 반송시간 AVGTOTALTIME1MIN | 12.0 | 10.6 | 조금 높음 |
+| 큐누적 MESCURRENTQCNT | 100 | 259 | **min이 107 → 항상 초과(무의미)** |
+| FAB저장률 FABSTORAGERATIO | 30 | 22.5 | **max 26 → 절대 미달** |
+
+손으로 정한 임계는 라인 분포와 어긋난다. "추천 vs v4.1 원본" 임계 두 벌을 계속
+저울질하던 문제의 근본 원인 → 데이터에서 학습하면 사라진다.
 
 ---
 
