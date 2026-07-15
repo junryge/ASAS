@@ -1,0 +1,6 @@
+# 비밀번호가 들어가는 설정은 커밋/공유 금지
+config.json
+# 런타임 생성물
+downloads/
+__pycache__/
+*.pyc

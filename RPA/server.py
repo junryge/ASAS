@@ -69,10 +69,19 @@ except Exception:
 BASE_DIR   = Path(__file__).resolve().parent
 HTML_FILE  = BASE_DIR / "RPA_Workflow_Builder.html"
 FLOW_FILE  = BASE_DIR / "rpa_flow.json"          # 서버측 영구 저장 파일
+CONFIG_FILE = BASE_DIR / "config.json"           # 비밀번호 등 설정(선택)
 DOWNLOAD_DIR = BASE_DIR / "downloads"            # 다운로드 기본 폴더
 PORT       = 8600
 
 DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+# config.json (예: {"jupyter_password": "비밀번호"}) — 있으면 로드
+CONFIG = {}
+if CONFIG_FILE.exists():
+    try:
+        CONFIG = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        CONFIG = {}
 
 app = FastAPI(title="FlowBot RPA Engine")
 
@@ -306,6 +315,8 @@ def run_node(node):
         filename = render_vars(c.get("filename", "") or "")
         token = render_vars(c.get("token", "") or "")     # Jupyter 토큰(있으면)
         cookie = render_vars(c.get("cookie", "") or "")    # 로그인 세션 쿠키(있으면)
+        # Jupyter 비밀번호: 노드 설정 우선, 없으면 config.json 의 jupyter_password
+        password = render_vars(c.get("password", "") or "") or CONFIG.get("jupyter_password", "")
         if not filename:
             filename = unquote(os.path.basename(url.split("?")[0])) or "download.bin"
         try:
@@ -315,9 +326,26 @@ def run_node(node):
                 headers["Authorization"] = f"token {token}"
             if cookie:
                 headers["Cookie"] = cookie
+            sess = requests.Session()
+            # Jupyter 비밀번호 로그인(있으면): /login 에서 _xsrf 얻어 POST → 세션 쿠키 확보
+            if password:
+                try:
+                    from urllib.parse import urlparse
+                    pu = urlparse(url)
+                    login_url = f"{pu.scheme}://{pu.netloc}/login"
+                    rg = sess.get(login_url, verify=False, timeout=30)
+                    mx = re.search(r'name="_xsrf"[^>]*value="([^"]+)"', rg.text)
+                    ldata = {"password": password}
+                    if mx:
+                        ldata["_xsrf"] = mx.group(1)
+                    rp = sess.post(login_url, data=ldata, verify=False, timeout=30)
+                    ok = ("password" not in rp.text.lower()) or (rp.url and "/login" not in rp.url)
+                    yield ev("run", "   │ Jupyter 로그인 " + ("성공" if ok else "시도(응답 확인필요)"))
+                except Exception as e:
+                    yield ev("err", f"   │ 로그인 오류: {e}")
             yield ev("run", f"   │ GET {url}")
-            with requests.get(url, headers=headers, stream=True, timeout=60,
-                              verify=False) as r:
+            with sess.get(url, headers=headers, stream=True, timeout=60,
+                          verify=False) as r:
                 r.raise_for_status()
                 ctype = r.headers.get("Content-Type", "")
                 # CSV 를 기대했는데 HTML 이 오면 = 인증 실패(로그인 페이지). 저장하지 말고 진단.
