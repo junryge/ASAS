@@ -56,6 +56,8 @@ def main():
     ap = argparse.ArgumentParser(description="Chronos-2 → TightLoop Sentinel")
     ap.add_argument("--data", required=True, nargs="+",
                     help="대상 CSV. 파일 하나/여러 개/글롭 가능 (예: RAW/*.CSV)")
+    ap.add_argument("--config", default=None,
+                    help="fit.py 가 만든 학습 config(json). 임계·signal·horizon 자동적용")
     ap.add_argument("--signal", default="M16HUB.QUE.TIME.AVGTOTALTIME1MIN")
     ap.add_argument("--horizon", type=int, default=10, help="예측 지평(분). 기본 10")
     ap.add_argument("--context", type=int, default=180, help="예측 입력 context 길이(분)")
@@ -73,6 +75,24 @@ def main():
     ap.add_argument("--out", default=None, help="분당 액션 CSV 저장 경로")
     ap.add_argument("--no-real", action="store_true", help="baseline 예측기 강제")
     args = ap.parse_args()
+
+    # 0) 학습 config 적용 (fit.py 산출물) — 명시 인자가 없으면 config 값 사용
+    if args.config:
+        import json
+        with open(args.config, encoding="utf-8") as fp:
+            cfg = json.load(fp)
+        args.signal = cfg.get("signal", args.signal)
+        if args.threshold is None:
+            args.threshold = cfg.get("threshold")
+        # horizon/p_on/p_off 는 사용자가 기본값 그대로면 config 로 덮음
+        if ap.get_default("horizon") == args.horizon:
+            args.horizon = cfg.get("horizon", args.horizon)
+        if ap.get_default("p_on") == args.p_on:
+            args.p_on = cfg.get("p_on", args.p_on)
+        if ap.get_default("p_off") == args.p_off:
+            args.p_off = cfg.get("p_off", args.p_off)
+        print(f"[config] {args.config} 적용: signal={args.signal} "
+              f"horizon={args.horizon} threshold={args.threshold}")
 
     # 1) 데이터 로드 (파일/여러개/글롭 병합)
     sd = load_any(args.data, list({args.signal, *CORE_SIGNALS}) + ["CRT_TM"])

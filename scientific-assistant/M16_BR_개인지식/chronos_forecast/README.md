@@ -8,6 +8,28 @@
 
 ---
 
+## 🎓 학습 → 평가 워크플로우 (Apr~May 학습 → June 평가)
+
+> Chronos-2 는 **zero-shot** — 신경망 가중치는 학습하지 않는다(그게 강점).
+> 여기서 "학습" = 데이터에서 **임계값 + 선행지표 covariate** 를 맞추는 것.
+
+```bash
+# ── 1단계: 학습 (Apr~May 에서 임계·covariate 산출 → config 저장)
+python3 fit.py --train "RAW/M16A_HUBROOM_PR_20260401~20260531.CSV" \
+    --horizon 10 --pct 0.99 --out fit_config.json
+
+# ── 2단계: 평가 (6월에 Chronos-2 예측 + Sentinel, 학습 config 적용)
+python3 run_chronos_sentinel.py --config fit_config.json \
+    --data "RAW/M16A_HUBROOM_PR_20260601~20260630.CSV" \
+    --model ./models/chronos-2 --device cpu --out actions_202606.csv
+```
+
+- `fit.py` 가 임계(정상분포 p99) + 선행지표 covariate 를 **학습기간에서만** 산출 → leakage 없음.
+- `--config` 로 그 값이 평가에 자동 적용됨.
+- 모델은 로컬 폴더(`./models/chronos-2`)에 넣어두면 자동 감지 (오프라인).
+
+---
+
 ## ⭐ 메인 파이프라인 (문서 구조 그대로)
 
 ```
