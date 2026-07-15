@@ -1,0 +1,10 @@
+# FlowBot Studio — RPA 실행 서버 의존성 (Windows)
+# 설치:  pip install -r requirements.txt
+
+fastapi>=0.110
+uvicorn>=0.27
+requests>=2.31          # HTTP 요청 / 파일 다운로드
+pyautogui>=0.9.54       # 마우스 / 키보드 / 이미지 인식
+pyperclip>=1.8          # 한글 등 비ASCII 텍스트 입력(클립보드 붙여넣기)
+pillow>=10.0            # pyautogui 스크린샷/이미지 처리
+opencv-python>=4.8      # 이미지 인식 confidence(정확도) 옵션용
