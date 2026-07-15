@@ -123,6 +123,36 @@ def ev(level, text):
     return {"level": level, "text": text}
 
 
+def find_browser(kind):
+    """크롬/엣지 실행파일 경로 탐색(윈도우). config.json 의 chrome_path/edge_path 를 우선 사용."""
+    import shutil
+    kind = (kind or "chrome").lower()
+    cfg = CONFIG.get(kind + "_path")
+    if cfg and os.path.exists(cfg):
+        return cfg
+    if kind == "chrome":
+        names, paths = ["chrome"], [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        ]
+    elif kind == "edge":
+        names, paths = ["msedge"], [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ]
+    else:
+        return None
+    for n in names:
+        w = shutil.which(n)
+        if w:
+            return w
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+
 # ── 개별 노드 실행 (제너레이터: 로그 이벤트를 순차 yield) ─────────────────────
 def run_node(node):
     typ = node.get("type")
@@ -291,9 +321,20 @@ def run_node(node):
     # ---- 브라우저 열기 (신규) ----
     elif typ == "browser":
         url = render_vars(c.get("url", "") or "")
+        which = (c.get("browser", "") or "chrome").lower()
         try:
-            webbrowser.open(url)
-            yield ev("ok", f"   ✓ 브라우저 열기: {url}")
+            opened = False
+            if which in ("chrome", "edge"):
+                path = find_browser(which)
+                if path:
+                    subprocess.Popen([path, url])
+                    opened = True
+                    yield ev("ok", f"   ✓ {which} 로 열기: {url}")
+                else:
+                    yield ev("err", f"   │ {which} 실행파일을 못 찾음 — 기본 브라우저로 엽니다. (config.json 의 {which}_path 로 지정 가능)")
+            if not opened:
+                webbrowser.open(url)
+                yield ev("ok", f"   ✓ 브라우저 열기: {url}")
         except Exception as e:
             yield ev("err", f"   ✗ 브라우저 오류: {e}")
 

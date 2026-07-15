@@ -9,6 +9,14 @@
         "save_dir": "",
         "filename": "{yesterday}_발동이벤트.csv"
       }
+    },
+    {
+      "id": "n2",
+      "type": "browser",
+      "config": {
+        "url": "http://127.0.0.1:10009",
+        "browser": "chrome"
+      }
     }
   ],
   "trigger": {
@@ -24,5 +32,5 @@
       6
     ]
   },
-  "savedAt": 1784157571465
+  "savedAt": 1784159391384
 }
