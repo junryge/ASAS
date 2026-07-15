@@ -157,6 +157,9 @@ def main():
     ap.add_argument("--pct", type=float, default=0.99)
     ap.add_argument("--covariates", nargs="+", default=["auto"],
                     help="'auto' 자동선택 / 또는 컬럼명 나열")
+    ap.add_argument("--p-on", type=float, default=0.60,
+                    help="경보 켜짐 확률문턱 (낮출수록 recall·lead↑, precision↓)")
+    ap.add_argument("--p-off", type=float, default=0.35, help="경보 해제 문턱")
     ap.add_argument("--out", default=None, help="평가 시점별 액션 CSV 저장 경로")
     args = ap.parse_args()
 
@@ -207,7 +210,8 @@ def main():
     times = sd.times
 
     # 행동 계층
-    sen = TightLoopSentinel(SentinelConfig(threshold=threshold))
+    sen = TightLoopSentinel(SentinelConfig(threshold=threshold,
+                                           p_on=args.p_on, p_off=args.p_off))
 
     # strided 백테스트
     N = len(times)
