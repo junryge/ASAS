@@ -104,6 +104,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", nargs="+", help="학습 CSV 파일/글롭 (여러 개 가능)")
     ap.add_argument("--eval", nargs="+", help="평가 CSV 파일/글롭")
+    ap.add_argument("--data", nargs="+",
+                    help="파일 여러 개(또는 합쳐진 1개)를 날짜로 학습/평가 분리. "
+                         "--train-end/--eval-start 와 함께 사용")
+    ap.add_argument("--train-end", help="학습 종료일 YYYY-MM-DD (포함)")
+    ap.add_argument("--eval-start", help="평가 시작일 YYYY-MM-DD (포함)")
+    ap.add_argument("--eval-end", help="평가 종료일 YYYY-MM-DD (포함, 생략시 끝까지)")
     ap.add_argument("--sample", help="샘플 단일 CSV (하루 데모용)")
     ap.add_argument("--split", default="16:00", help="샘플 학습/평가 분할 시각")
     ap.add_argument("--signal", default="M16HUB.QUE.TIME.AVGTOTALTIME1MIN")
