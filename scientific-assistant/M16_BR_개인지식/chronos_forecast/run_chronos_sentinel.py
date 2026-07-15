@@ -37,7 +37,7 @@ from __future__ import annotations
 import argparse
 import csv
 
-from data_loader import load_csv, CORE_SIGNALS
+from data_loader import load_csv, load_any, CORE_SIGNALS
 from calibrate import percentile
 from forecaster import ChronosForecaster, BaselineForecaster
 from sentinel import TightLoopSentinel, SentinelConfig
@@ -54,7 +54,8 @@ def forward_fill(vals):
 
 def main():
     ap = argparse.ArgumentParser(description="Chronos-2 → TightLoop Sentinel")
-    ap.add_argument("--data", required=True, help="평가/운영 대상 CSV")
+    ap.add_argument("--data", required=True, nargs="+",
+                    help="대상 CSV. 파일 하나/여러 개/글롭 가능 (예: RAW/*.CSV)")
     ap.add_argument("--signal", default="M16HUB.QUE.TIME.AVGTOTALTIME1MIN")
     ap.add_argument("--horizon", type=int, default=10, help="예측 지평(분). 기본 10")
     ap.add_argument("--context", type=int, default=180, help="예측 입력 context 길이(분)")
@@ -73,8 +74,8 @@ def main():
     ap.add_argument("--no-real", action="store_true", help="baseline 예측기 강제")
     args = ap.parse_args()
 
-    # 1) 데이터 로드
-    sd = load_csv(args.data, list({args.signal, *CORE_SIGNALS}) + ["CRT_TM"])
+    # 1) 데이터 로드 (파일/여러개/글롭 병합)
+    sd = load_any(args.data, list({args.signal, *CORE_SIGNALS}) + ["CRT_TM"])
     if args.signal not in sd.columns:
         raise SystemExit(f"신호 {args.signal} 가 데이터에 없음")
     values = sd.signal(args.signal)
@@ -86,7 +87,7 @@ def main():
         threshold = args.threshold
         thr_src = "수동"
     elif args.train:
-        tr = load_csv(args.train, [args.signal, "CRT_TM"])
+        tr = load_any(args.train, [args.signal, "CRT_TM"])
         tv = sorted(v for v in tr.signal(args.signal) if v is not None)
         threshold = round(percentile(tv, args.pct), 3)
         thr_src = f"학습CSV p{args.pct*100:.0f}"
