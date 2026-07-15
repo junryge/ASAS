@@ -81,25 +81,52 @@ class BaselineForecaster:
         return out
 
 
+def _auto_device() -> str:
+    """cuda > mps > cpu 순으로 사용 가능한 디바이스 자동 선택."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
 class ChronosForecaster:
     """
-    amazon/chronos-bolt-* 래퍼. 로드 실패 시 BaselineForecaster 로 폴백.
+    amazon/chronos-bolt-* 래퍼 (예측 계층 / Forecast).
+    문서 구조의 1단: 과거 시계열 → 미래 quantile 분포(q10/q50/q90).
+    torch/chronos 미설치 또는 모델 로드 실패 시 BaselineForecaster 로 폴백.
+
+    모델 선택:
+      · amazon/chronos-bolt-base  (205M, GPU 권장, 정확도 최고)
+      · amazon/chronos-bolt-small (48M)
+      · amazon/chronos-bolt-mini  (21M)
+      · amazon/chronos-bolt-tiny  (9M, CPU 실시간에 적합)
     """
 
     def __init__(self, model_path: str = "amazon/chronos-bolt-base",
-                 device: str = "cpu"):
+                 device: str | None = None, torch_dtype=None):
         self.model_path = model_path
-        self.device = device
+        self.device = device or _auto_device()
+        self._torch_dtype = torch_dtype
         self._pipeline = None
         self._fallback = BaselineForecaster()
+        self._load_error = None
         self._load()
 
     def _load(self):
         try:
-            import torch  # noqa: F401
+            import torch
             from chronos import BaseChronosPipeline
+            # dtype: GPU면 bfloat16, CPU면 float32 (CPU는 bf16 느림/미지원 가능)
+            dtype = self._torch_dtype
+            if dtype is None:
+                dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
             self._pipeline = BaseChronosPipeline.from_pretrained(
-                self.model_path, device_map=self.device
+                self.model_path, device_map=self.device, torch_dtype=dtype,
             )
             self.backend = self.model_path.split("/")[-1]
         except Exception as e:  # 모델/라이브러리/네트워크 문제 → 폴백
