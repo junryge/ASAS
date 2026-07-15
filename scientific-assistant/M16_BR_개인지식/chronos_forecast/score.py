@@ -118,6 +118,10 @@ def main():
     recall = caught / n_gt if n_gt else 0
     precision = (n_al - false_alarms) / n_al if n_al else 0
     mean_lead = round(sum(leads) / len(leads), 1) if leads else None
+    # lead 분포 (몇 건을 얼마나 미리 잡았나)
+    lead10 = sum(1 for l in leads if l >= 10)
+    lead5 = sum(1 for l in leads if 5 <= l < 10)
+    lead0 = sum(1 for l in leads if l < 5)
 
     print("=" * 60)
     print(" 채점 결과 (실제 정체 vs 예측 경보)")
@@ -132,6 +136,11 @@ def main():
     print(f" Recall(재현율, 정체 잡은 비율)  : {recall:.1%}")
     print(f" Precision(정밀도, 경보 맞은 비율): {precision:.1%}")
     print(f" 평균 사전감지 lead            : {mean_lead}분")
+    print("-" * 60)
+    print(f" ★ lead 분포 (잡은 {caught}건 중):")
+    print(f"    ≥10분 전  : {lead10}건   ← '10분 전 예측' 성공")
+    print(f"    5~9분 전  : {lead5}건")
+    print(f"    <5분 전   : {lead0}건")
     print("=" * 60)
     if mean_lead is not None and mean_lead < 5:
         print(" ※ lead가 짧으면 --pre 를 늘리거나(운영 허용 관점),")
