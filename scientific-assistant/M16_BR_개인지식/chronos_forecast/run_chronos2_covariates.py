@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import argparse
 
-from data_loader import load_csv, CORE_SIGNALS
+from data_loader import load_csv, load_any, CORE_SIGNALS
 from calibrate import percentile
 from sentinel import TightLoopSentinel, SentinelConfig
 
@@ -142,9 +142,8 @@ def main():
                     help="'auto' 자동선택 / 또는 컬럼명 나열")
     args = ap.parse_args()
 
-    # 데이터
-    want = list({args.signal, *CORE_SIGNALS, *LEADING_COVARIATES})
-    sd = load_csv(args.data, want + ["CRT_TM"])
+    # 데이터 (글롭/여러파일 병합. auto covariate 선택 위해 전체 컬럼 로드)
+    sd = load_any(args.data, None)
     if args.signal not in sd.columns:
         raise SystemExit(f"타깃 {args.signal} 없음")
 
