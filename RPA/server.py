@@ -320,10 +320,23 @@ def run_node(node):
                               verify=False) as r:
                 r.raise_for_status()
                 ctype = r.headers.get("Content-Type", "")
-                # HTML 로그인 페이지가 오면(=인증 필요) CSV 대신 그게 저장되므로 경고
-                if "text/html" in ctype:
-                    yield ev("err", "   ✗ 응답이 HTML 입니다 — 로그인/인증이 필요할 수 있습니다."
-                                    " (쿠키 또는 토큰 필요)")
+                # CSV 를 기대했는데 HTML 이 오면 = 인증 실패(로그인 페이지). 저장하지 말고 진단.
+                if "text/html" in ctype.lower():
+                    body = r.content
+                    text = body.decode("utf-8", "replace")
+                    m = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+                    title = (m.group(1).strip() if m else text.strip().replace("\n", " "))[:140]
+                    diag = os.path.join(save_dir, filename + ".로그인응답.html")
+                    try:
+                        with open(diag, "wb") as fp:
+                            fp.write(body)
+                    except Exception:
+                        pass
+                    yield ev("err", "   ✗ 실패: CSV 가 아니라 HTML(로그인/인증 페이지)을 받았습니다.")
+                    yield ev("err", "   │ 페이지 내용: " + title)
+                    yield ev("err", "   │ 원인: 이 요청에는 브라우저 로그인 세션(쿠키)이 없습니다.")
+                    yield ev("err", "   │ 진단 파일: " + diag + " (메모장으로 열어 확인)")
+                    return
                 dest = os.path.join(save_dir, filename)
                 total = 0
                 with open(dest, "wb") as fp:
