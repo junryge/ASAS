@@ -58,20 +58,26 @@ python server.py
 | `{now}` | `20260714002000` |
 | 포맷 지정 `{yesterday:%Y-%m-%d}` | `2026-07-13` |
 
-## 6. 예시 시나리오 — 매일 새벽 CSV 자동 다운로드
+## 6. 이미 설정된 시나리오 — 매일 새벽 발동이벤트 CSV 자동 다운로드
 
-> 매일 00:20 에 JupyterLab 에서 **어제 날짜** CSV(`M16_HUBROOM_YYYYMMDD.CSV`)를
-> 자동 다운로드.
+`rpa_flow.json` 에 아래 시나리오가 **미리 저장**되어 있습니다. 서버를 켜두기만 하면
+매일 00:20 에 자동 실행됩니다. (화면에서 다시 편집 후 💾저장을 누르면 갱신됩니다.)
 
-1. **트리거** → 매일 `00:20`
-2. **브라우저** 노드 → URL: `http://<주피터주소>:8888/lab` (화면 확인용, 선택)
-3. **다운로드** 노드 →
-   - URL: `http://<주피터주소>:8888/files/<경로>/M16_HUBROOM_{yesterday}.CSV?token=<토큰>`
-   - 저장 폴더: `C:\rpa\downloads`
-   - 파일명(선택): `M16_HUBROOM_{yesterday}.CSV`
-4. **💾 저장** → 서버가 매일 00:20 자동 실행.
+- **트리거**: 매일 `00:20`
+- **다운로드 노드**:
+  - URL: `http://aiu-amhas-prediction-que.aipp01.skhynix.com/files/pjt_shared_pool/job/m16a_hubroom_event_prediction/predict_tobe/{yesterday}_발동이벤트.csv?_xsrf=...`
+  - 파일명: `{yesterday}_발동이벤트.csv`  (실행일 **전날**)
+  - 저장 폴더: 비움 → 서버 `downloads/` 폴더
 
-`downloads/` 에 파일이 떨어집니다.
+동작 예: 오늘이 **07/16** 이면 `20260715_발동이벤트.csv` 를 받습니다 (실행일 전날).
+
+JupyterLab 파일 다운로드 URL 은 파일 **우클릭 → Copy Download Link** 로 얻고,
+날짜 부분만 `{yesterday}` 로 바꾸면 됩니다.
+
+> ⚠️ URL 끝의 `?_xsrf=...` 토큰은 브라우저 세션 임시 토큰이라 시간이 지나면 만료될 수
+> 있습니다. 자동 다운로드가 실패하면 **Copy Download Link** 로 새 URL 을 복사해 날짜만
+> `{yesterday}` 로 바꿔 다시 붙여넣으세요. (xsrf 없이도 받아지면 `?_xsrf=...` 를 아예
+> 빼면 만료 걱정이 없습니다.)
 
 ## 7. 파일 구성
 
