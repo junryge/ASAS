@@ -108,17 +108,18 @@ def main():
             for m in matched:
                 matched_alarms.add(m)
             lead = max(0, round((gs - first).total_seconds() / 60))
+            pred_t = (first + timedelta(minutes=lead)).strftime("%m-%d %H:%M")
             rec, dirn, prob = alarm_detail(first)
             rows.append(["정체-감지", n, gs.strftime("%m-%d %H:%M"),
                          ge.strftime("%H:%M"),
                          round(pk, 1) if pk else "",
-                         first.strftime("%m-%d %H:%M"), lead,
+                         first.strftime("%m-%d %H:%M"), pred_t, lead,
                          "≥10분" if lead >= 10 else "5~9분" if lead >= 5 else "<5분",
                          dirn, prob, rec])
         else:
             rows.append(["정체-놓침", n, gs.strftime("%m-%d %H:%M"),
                          ge.strftime("%H:%M"),
-                         round(pk, 1) if pk else "", "", "", "놓침", "", "", ""])
+                         round(pk, 1) if pk else "", "", "", "", "놓침", "", "", ""])
 
     # 오탐
     fa = 0
@@ -131,10 +132,10 @@ def main():
         rec, dirn, prob = alarm_detail(as_)
         rows.append(["오탐", "", as_.strftime("%m-%d %H:%M"),
                      ae.strftime("%H:%M"), "", as_.strftime("%m-%d %H:%M"),
-                     "", "헛울림", dirn, prob, rec])
+                     "", "", "헛울림", dirn, prob, rec])
 
     caught = sum(1 for r in rows if r[0] == "정체-감지")
-    leads = [r[6] for r in rows if r[0] == "정체-감지" and isinstance(r[6], int)]
+    leads = [r[7] for r in rows if r[0] == "정체-감지" and isinstance(r[7], int)]
     lead10 = sum(1 for l in leads if l >= 10)
     mean_lead = round(sum(leads) / len(leads), 1) if leads else 0
 
@@ -144,7 +145,7 @@ def main():
                     f"(recall {caught/len(gt)*100:.0f}%) | ≥10분전 {lead10}건 | "
                     f"평균lead {mean_lead}분 | 오탐 {fa}건"])
         w.writerow(["구분", "사건#", "정체시작", "정체종료", "최고반송시간(분)",
-                    "감지시각", "lead(분)", "lead구간", "감지기/방향",
+                    "감지시각", "예측시간", "lead(분)", "lead구간", "감지기/방향",
                     "확률", "사유"])
         for r in rows:
             w.writerow(r)
