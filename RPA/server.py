@@ -289,24 +289,41 @@ def run_node(node):
             yield ev("err", f"   ✗ 브라우저 오류: {e}")
 
     # ---- 파일 다운로드 (신규 · 시나리오 핵심) ----
+    # JupyterLab: 파일 우클릭 → "Copy Download Link" 의 /files/ URL 을 붙여넣고
+    # 날짜 부분만 {today}/{yesterday}/{tomorrow} 로 바꾸면 매일 자동 다운로드됨.
     elif typ == "download":
         if requests is None:
             yield ev("err", "   ✗ requests 미설치 — 다운로드 불가")
             return
+        from urllib.parse import unquote
+        try:
+            requests.packages.urllib3.disable_warnings()
+        except Exception:
+            pass
         url = render_vars(c.get("url", "") or "")
+        url = requests.utils.requote_uri(url)   # 한글/특수문자(|,공백 등) 안전 인코딩, 기존 %XX 는 보존
         save_dir = render_vars(c.get("save_dir", "") or "") or str(DOWNLOAD_DIR)
         filename = render_vars(c.get("filename", "") or "")
-        token = render_vars(c.get("token", "") or "")
+        token = render_vars(c.get("token", "") or "")     # Jupyter 토큰(있으면)
+        cookie = render_vars(c.get("cookie", "") or "")    # 로그인 세션 쿠키(있으면)
         if not filename:
-            filename = os.path.basename(url.split("?")[0]) or "download.bin"
+            filename = unquote(os.path.basename(url.split("?")[0])) or "download.bin"
         try:
             os.makedirs(save_dir, exist_ok=True)
             headers = {}
             if token:
                 headers["Authorization"] = f"token {token}"
+            if cookie:
+                headers["Cookie"] = cookie
             yield ev("run", f"   │ GET {url}")
-            with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+            with requests.get(url, headers=headers, stream=True, timeout=60,
+                              verify=False) as r:
                 r.raise_for_status()
+                ctype = r.headers.get("Content-Type", "")
+                # HTML 로그인 페이지가 오면(=인증 필요) CSV 대신 그게 저장되므로 경고
+                if "text/html" in ctype:
+                    yield ev("err", "   ✗ 응답이 HTML 입니다 — 로그인/인증이 필요할 수 있습니다."
+                                    " (쿠키 또는 토큰 필요)")
                 dest = os.path.join(save_dir, filename)
                 total = 0
                 with open(dest, "wb") as fp:
@@ -439,8 +456,9 @@ def _node_summary(node):
     if typ == "http":     return f"{c.get('method')} {c.get('url')}"
     if typ == "browser":  return render_vars(str(c.get("url", "")))
     if typ == "download":
+        from urllib.parse import unquote
         url = render_vars(str(c.get("url", "")))
-        fn = render_vars(str(c.get("filename", ""))) or os.path.basename(url.split("?")[0])
+        fn = render_vars(str(c.get("filename", ""))) or unquote(os.path.basename(url.split("?")[0]))
         return f"{fn}"
     return typ
 
