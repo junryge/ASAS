@@ -11,31 +11,45 @@
 ## ⭐ 메인 파이프라인 (문서 구조 그대로)
 
 ```
-[예측·Forecast]  Chronos-Bolt      →  미래 값 분포 (q10/q50/q90)
+[예측·Forecast]  Chronos-2          →  미래 값 분포 (q10/q50/q90)
 [행동·Action]    TightLoop Sentinel →  경보단계·예비조정·center·tail·lead
 ```
 
-**실행 (사내/GPU 환경, torch+chronos 설치 후):**
+**모델은 최신 `amazon/chronos-2`** (2025-10 공개, 120M, GIFT-Eval SOTA,
+chronos-bolt 대비 90%+ 승률, **다변량·covariate zero-shot 지원**). chronos-bolt 도
+같은 코드로 로드 가능(`--model amazon/chronos-bolt-base`).
+
+**① 단변량 실행 (반송시간만, 기본):**
 ```bash
 pip install -r requirements.txt
 python3 run_chronos_sentinel.py \
     --data  M16A_HUBROOM_PR_20260601~20260630.CSV \
     --signal M16HUB.QUE.TIME.AVGTOTALTIME1MIN \
-    --horizon 10 --model amazon/chronos-bolt-base \
+    --horizon 10 --model amazon/chronos-2 \
     --threshold 12.0 --out actions_202606.csv
 ```
 → "문제 예측 시각" 리스트 + 분당 액션 CSV. 지평 10분 = 오탐 적고 신뢰도 높음.
-torch/chronos 미설치 시 baseline 예측기로 파이프라인만 동작(경고).
+
+**② 다변량 실행 (고도화 — 리프터·완료량 covariate 주입):**
+```bash
+python3 run_chronos2_covariates.py \
+    --data JUNE.CSV --horizon 10 --stride 5 \
+    --threshold 12.0 --covariates auto     # EDA 선행지표 자동선택
+```
+→ Chronos-2 `predict_df` 로 선행지표를 예측에 반영. 30분 지평에서 특히 이득
+(FINDINGS_ml고도화.md 참고).
 
 임계 자동학습: `--train APR_MAY.CSV --pct 0.99` (학습기간 분위수로 임계 산출).
+torch/chronos 미설치 시 ①은 baseline 폴백으로 파이프라인만 동작, ②는 실모델 전용.
 
 **핵심 파일:**
 | 파일 | 역할 |
 |---|---|
-| `run_chronos_sentinel.py` | **메인 진입점** — Chronos→Sentinel end-to-end, 문제예측시각 출력 |
-| `forecaster.py` | Chronos-Bolt 어댑터(예측계층). device 자동(cuda>mps>cpu), 없으면 baseline 폴백 |
+| `run_chronos_sentinel.py` | **메인 진입점(단변량)** — Chronos-2→Sentinel, 문제예측시각 출력 |
+| `run_chronos2_covariates.py` | **다변량 진입점** — Chronos-2 covariate(predict_df)로 선행지표 주입 |
+| `forecaster.py` | Chronos 어댑터. Chronos2Pipeline→bolt→baseline 폴백, device 자동 |
 | `sentinel.py` | **TightLoop Sentinel 행동계층** — 분포→경보·예비·center·tail (bounded·causal) |
-| `requirements.txt` | 예측계층 의존성 (chronos-forecasting, torch) |
+| `requirements.txt` | 예측계층 의존성 (chronos-forecasting>=2.0, torch, pandas) |
 
 ## 그 밖의 도구
 

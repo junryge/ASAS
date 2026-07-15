@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Chronos-Bolt → TightLoop Sentinel 파이프라인 (실행 진입점)
+Chronos-2 → TightLoop Sentinel 파이프라인 (실행 진입점)
 =========================================================
-문서 구조 그대로:  [예측] Chronos-Bolt  →  [행동] TightLoop Sentinel
+문서 구조 그대로:  [예측] Chronos-2  →  [행동] TightLoop Sentinel
 
     과거 반송시간 시계열
           │
           ▼  (매 1분, 인과적 — 직전까지 데이터만)
-    Chronos-Bolt.predict(context, horizon=10)  →  q10/q50/q90 (10분 뒤 분포)
+    Chronos.predict(context, horizon=10)  →  q10/q50/q90 (10분 뒤 분포)
           │
           ▼
     Sentinel.step(q10,q50,q90)  →  경보단계 · 예비조정 · center · tail · lead
@@ -22,7 +22,7 @@ Chronos-Bolt → TightLoop Sentinel 파이프라인 (실행 진입점)
         --data  M16A_HUBROOM_PR_20260601~20260630.CSV \
         --signal M16HUB.QUE.TIME.AVGTOTALTIME1MIN \
         --horizon 10 \
-        --model amazon/chronos-bolt-base \
+        --model amazon/chronos-2 \
         --threshold 12.0 \
         --out actions_202606.csv
 
@@ -53,13 +53,13 @@ def forward_fill(vals):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Chronos-Bolt → TightLoop Sentinel")
+    ap = argparse.ArgumentParser(description="Chronos-2 → TightLoop Sentinel")
     ap.add_argument("--data", required=True, help="평가/운영 대상 CSV")
     ap.add_argument("--signal", default="M16HUB.QUE.TIME.AVGTOTALTIME1MIN")
     ap.add_argument("--horizon", type=int, default=10, help="예측 지평(분). 기본 10")
     ap.add_argument("--context", type=int, default=180, help="예측 입력 context 길이(분)")
-    ap.add_argument("--model", default="amazon/chronos-bolt-base",
-                    help="chronos-bolt-{tiny,mini,small,base}")
+    ap.add_argument("--model", default="amazon/chronos-2",
+                    help="amazon/chronos-2 (최신·기본) 또는 chronos-bolt-{tiny,base}")
     ap.add_argument("--device", default=None, help="cuda/mps/cpu (기본 자동)")
     ap.add_argument("--threshold", type=float, default=None, help="임계값(수동)")
     ap.add_argument("--train", default=None, help="임계 자동학습용 학습 CSV")
@@ -101,7 +101,7 @@ def main():
         f = ChronosForecaster(model_path=args.model, device=args.device)
         backend = f.backend
         if not f.using_real_model:
-            print(f"⚠ Chronos-Bolt 로드 실패 → baseline 폴백. 원인: {f._load_error}")
+            print(f"⚠ Chronos 모델 로드 실패 → baseline 폴백. 원인: {f._load_error}")
             print("  (torch/chronos 설치 및 모델 다운로드 가능한 환경에서 실행하세요)")
 
     # 4) 행동 계층 (Sentinel)
@@ -109,7 +109,7 @@ def main():
     sen = TightLoopSentinel(cfg)
 
     print("=" * 72)
-    print(" Chronos-Bolt → TightLoop Sentinel")
+    print(" Chronos-2 → TightLoop Sentinel")
     print(f" 신호: {args.signal}")
     print(f" 예측 backend: {backend} | 지평 {args.horizon}분 | 임계 {threshold} ({thr_src})")
     print(f" 데이터: {len(times)}분  {times[0]} ~ {times[-1]}")
@@ -168,7 +168,7 @@ def main():
         print(f"\n분당 액션 저장: {args.out}")
 
     if backend == "baseline-ewma":
-        print("\n※ 실 Chronos-Bolt 아님(baseline). 사내 GPU 환경에서 --model 로 실모델 사용.")
+        print("\n※ 실 Chronos 모델 아님(baseline). 사내 GPU 환경에서 --model amazon/chronos-2 로 실모델 사용.")
 
 
 if __name__ == "__main__":
