@@ -582,9 +582,9 @@ def _node_summary(node):
     typ = node.get("type")
     if typ == "python":   return c.get("name", "스크립트")
     if typ == "mouse":    return f"({c.get('x')}, {c.get('y')})"
-    if typ == "keyboard": return str(c.get("value", ""))
+    if typ == "keyboard": return render_vars(str(c.get("value", "")))
     if typ == "wait":     return f"sleep({c.get('seconds')})"
-    if typ == "cmd":      return "$ " + str(c.get("command", ""))
+    if typ == "cmd":      return "$ " + render_vars(str(c.get("command", "")))
     if typ == "image":    return str(c.get("target", ""))
     if typ == "http":     return f"{c.get('method')} {c.get('url')}"
     if typ == "browser":  return render_vars(str(c.get("url", "")))
