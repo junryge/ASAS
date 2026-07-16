@@ -196,7 +196,16 @@ def run_node(node):
             yield ev("err", "   ✗ pyautogui 미설치 — 마우스 제어 불가")
             return
         action = c.get("action", "click")
-        x, y = int(c.get("x", 0)), int(c.get("y", 0))
+        source = (c.get("source", "") or "xy").lower()
+        if source == "found":
+            # 직전 '이미지 찾기' 스텝이 찾아둔 좌표를 그대로 사용(좌표 직접 입력 불필요)
+            pos = STATE.get("last_pos")
+            if not pos:
+                yield ev("err", "   ✗ 직전에 찾은 이미지 위치가 없습니다 (앞에 '이미지 찾기' 스텝을 두세요)")
+                return
+            x, y = pos
+        else:
+            x, y = int(c.get("x", 0)), int(c.get("y", 0))
         try:
             pyautogui.moveTo(x, y, duration=0.2)
             if action == "click":
@@ -207,7 +216,8 @@ def run_node(node):
                 pyautogui.rightClick(x, y)
             label = {"move": "이동", "click": "클릭", "double": "더블클릭",
                      "right": "우클릭"}.get(action, action)
-            yield ev("ok", f"   ✓ 마우스 {label} → ({x}, {y})")
+            src = " (찾은 이미지 위치)" if source == "found" else ""
+            yield ev("ok", f"   ✓ 마우스 {label} → ({x}, {y}){src}")
         except Exception as e:
             yield ev("err", f"   ✗ 마우스 오류: {e}")
 
@@ -324,6 +334,7 @@ def run_node(node):
                         pass
                 if loc:
                     x, y = int(loc[0]), int(loc[1])
+                    STATE["last_pos"] = (x, y)   # 마우스 노드가 재사용할 수 있게 저장
                     action = (c.get("action", "") or "move").lower()
                     try:
                         if action in ("move", "click", "double"):
