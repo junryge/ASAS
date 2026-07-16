@@ -315,6 +315,7 @@ def run_node(node):
                     except Exception as e:
                         yield ev("err", f"   │ 이미지 디코드 실패: {e}")
                 if not search or (tmp_img is None and not os.path.exists(search)):
+                    STATE["fatal"] = True
                     yield ev("err", f"   ✗ 기준 이미지 파일이 없습니다: {target}  "
                                     "(빌더에서 이미지를 다시 선택해 저장하거나, 실제 파일 경로를 넣으세요)")
                     return
@@ -349,6 +350,7 @@ def run_node(node):
                            "double": "더블클릭"}.get(action, "이동")
                     yield ev("ok", f"   ✓ 매칭 → 마우스 {lab} → ({x}, {y})")
                 else:
+                    STATE["fatal"] = True
                     yield ev("err", f"   ✗ 화면에서 이미지를 찾지 못함: {target}  "
                                     "(그 이미지가 화면에 실제로 보이는 상태여야 함 / 정확도를 낮춰보세요)")
         except Exception as e:
@@ -456,6 +458,7 @@ def run_node(node):
                     yield ev("err", "   │ 페이지 내용: " + title)
                     yield ev("err", "   │ 원인: 이 요청에는 브라우저 로그인 세션(쿠키)이 없습니다.")
                     yield ev("err", "   │ 진단 파일: " + diag + " (메모장으로 열어 확인)")
+                    STATE["fatal"] = True
                     return
                 dest = os.path.join(save_dir, filename)
                 total = 0
@@ -469,6 +472,7 @@ def run_node(node):
                             total += len(chunk)
                 yield ev("ok", f"   ✓ 다운로드 완료 → {dest} ({total:,} bytes)")
         except Exception as e:
+            STATE["fatal"] = True
             yield ev("err", f"   ✗ 다운로드 오류: {e}")
 
     # ---- 조건/반복은 엔진 레벨에서 처리 (여기 도달 시 정보성 로그) ----
@@ -509,72 +513,94 @@ def trigger_text(t):
 
 
 def execute_workflow(nodes, trigger):
-    """워크플로우를 순차 실행하며 로그 이벤트를 yield."""
+    """워크플로우를 순차 실행하며 로그 이벤트를 yield.
+    치명적 실패(이미지 못찾음/다운로드 실패) 시 config 설정에 따라 처음부터 재시도."""
     STATE["stop"] = False
     STATE["running"] = True
+    max_retries = int(CONFIG.get("max_retries", 0)) if CONFIG.get("retry_on_fail") else 0
     try:
-        yield ev("sys", "━━━ 워크플로우 실행 시작 ━━━")
-        yield ev("run", f"⏰ 트리거: {trigger_text(trigger)}")
-        n = len(nodes)
-        i = 0
-        while i < n:
+        attempt = 0
+        while True:
+            STATE["fatal"] = False
+            if attempt == 0:
+                yield ev("sys", "━━━ 워크플로우 실행 시작 ━━━")
+            else:
+                yield ev("sys", f"━━━ 처음부터 다시 시도 ({attempt}/{max_retries}) ━━━")
+            yield ev("run", f"⏰ 트리거: {trigger_text(trigger)}")
+            n = len(nodes)
+            i = 0
+            while i < n:
+                if STATE["stop"]:
+                    yield ev("err", "■ 사용자에 의해 중지되었습니다.")
+                    break
+                if STATE.get("fatal"):
+                    break
+                node = nodes[i]
+                typ = node.get("type")
+
+                # 반복: 바로 다음 스텝 1개를 count회 실행
+                if typ == "loop":
+                    try:
+                        count = int((node.get("config") or {}).get("count", 1))
+                    except Exception:
+                        count = 1
+                    if i + 1 < n:
+                        target = nodes[i + 1]
+                        tlabel = target.get("type")
+                        yield ev("run", f"↻ 반복 시작: 다음 [{tlabel}] 스텝을 {count}회")
+                        for r in range(count):
+                            if STATE["stop"] or STATE.get("fatal"):
+                                break
+                            yield ev("run", f"  ─ 반복 {r + 1}/{count}")
+                            for e in run_node(target):
+                                yield e
+                        yield ev("ok", f"   ✓ {count}회 반복 완료")
+                        i += 2
+                    else:
+                        yield ev("err", "   ✗ 반복할 다음 스텝이 없습니다.")
+                        i += 1
+                    continue
+
+                # 조건: false 면 바로 다음 스텝 1개를 건너뜀
+                if typ == "cond":
+                    cond = (node.get("config") or {}).get("condition", "")
+                    ok = eval_condition(cond)
+                    yield ev("run", f"◆ 조건 평가: {cond}  →  {ok}")
+                    if ok:
+                        yield ev("ok", "   ✓ TRUE → 다음 스텝 진행")
+                        i += 1
+                    else:
+                        skip = nodes[i + 1].get("type") if i + 1 < n else "-"
+                        yield ev("wait", f"   · FALSE → 다음 [{skip}] 스텝 건너뜀")
+                        i += 2
+                    continue
+
+                # 일반 노드
+                yield ev("run", f"▶ [{typ}] " + _node_summary(node))
+                for e in run_node(node):
+                    yield e
+                if STATE.get("fatal"):
+                    yield ev("err", "   ✗ 이 스텝에서 실패 — 워크플로우 중단")
+                    break
+                i += 1
+
+            # 한 회차 종료 판정
             if STATE["stop"]:
-                yield ev("err", "■ 사용자에 의해 중지되었습니다.")
                 break
-            node = nodes[i]
-            typ = node.get("type")
-
-            # 반복: 바로 다음 스텝 1개를 count회 실행
-            if typ == "loop":
-                try:
-                    count = int((node.get("config") or {}).get("count", 1))
-                except Exception:
-                    count = 1
-                if i + 1 < n:
-                    target = nodes[i + 1]
-                    tlabel = target.get("type")
-                    yield ev("run", f"↻ 반복 시작: 다음 [{tlabel}] 스텝을 {count}회")
-                    for r in range(count):
-                        if STATE["stop"]:
-                            break
-                        yield ev("run", f"  ─ 반복 {r + 1}/{count}")
-                        for e in run_node(target):
-                            yield e
-                    yield ev("ok", f"   ✓ {count}회 반복 완료")
-                    i += 2
-                else:
-                    yield ev("err", "   ✗ 반복할 다음 스텝이 없습니다.")
-                    i += 1
+            if STATE.get("fatal") and attempt < max_retries:
+                attempt += 1
+                yield ev("wait", "⟳ 실패 감지 — 3초 후 처음부터 다시 시도합니다.")
+                time.sleep(3)
                 continue
-
-            # 조건: false 면 바로 다음 스텝 1개를 건너뜀
-            if typ == "cond":
-                cond = (node.get("config") or {}).get("condition", "")
-                ok = eval_condition(cond)
-                yield ev("run", f"◆ 조건 평가: {cond}  →  {ok}")
-                if ok:
-                    yield ev("ok", "   ✓ TRUE → 다음 스텝 진행")
-                    i += 1
-                else:
-                    skip = nodes[i + 1].get("type") if i + 1 < n else "-"
-                    yield ev("wait", f"   · FALSE → 다음 [{skip}] 스텝 건너뜀")
-                    i += 2
-                continue
-
-            # 일반 노드
-            t_label = node.get("type")
-            summary = ""
-            cfg = node.get("config") or {}
-            yield ev("run", f"▶ [{t_label}] " + _node_summary(node))
-            for e in run_node(node):
-                yield e
-            i += 1
-
-        if not STATE["stop"]:
-            yield ev("sys", "━━━ 실행 완료 ✓ ━━━")
+            if STATE.get("fatal"):
+                yield ev("err", "━━━ 최종 실패 (재시도 소진) ━━━")
+            else:
+                yield ev("sys", "━━━ 실행 완료 ✓ ━━━")
+            break
     finally:
         STATE["running"] = False
         STATE["stop"] = False
+        STATE["fatal"] = False
 
 
 def _node_summary(node):
@@ -711,6 +737,13 @@ def _keepawake_loop():
             x, y = pyautogui.position()
             pyautogui.moveTo(x + dist, y, duration=0.1)   # 오른쪽 조금
             pyautogui.moveTo(x, y, duration=0.1)          # 왼쪽(원위치)
+            if CONFIG.get("keep_awake_click"):
+                # 1분마다 클릭도 수행. keep_awake_click_pos([x,y]) 있으면 그 위치, 없으면 현재 위치
+                pos = CONFIG.get("keep_awake_click_pos")
+                if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                    pyautogui.click(int(pos[0]), int(pos[1]))
+                else:
+                    pyautogui.click()
         except Exception:
             pass
 
