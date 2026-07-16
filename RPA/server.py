@@ -722,8 +722,9 @@ def _scheduler_loop():
 
 def _keepawake_loop():
     """화면 유지: 일정 간격으로 마우스를 살짝 오른쪽→원위치 이동(절전/잠금 방지).
-    RPA 실행 중에는 방해하지 않도록 건너뜀. config.json 에서 설정:
-      keep_awake(bool), keep_awake_interval(초, 기본 60), keep_awake_dist(px, 기본 3)
+    RPA 실행 중에는 방해하지 않도록 건너뜀. config.json 설정:
+      keep_awake(bool), keep_awake_interval(초, 기본 60), keep_awake_dist(px, 기본 3),
+      keep_awake_click(bool)
     """
     interval = int(CONFIG.get("keep_awake_interval", 60))
     dist = int(CONFIG.get("keep_awake_dist", 3))
