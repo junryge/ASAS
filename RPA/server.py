@@ -691,6 +691,27 @@ def _scheduler_loop():
             print(f"[scheduler] 오류: {e}")
 
 
+def _keepawake_loop():
+    """화면 유지: 일정 간격으로 마우스를 살짝 오른쪽→원위치 이동(절전/잠금 방지).
+    RPA 실행 중에는 방해하지 않도록 건너뜀. config.json 에서 설정:
+      keep_awake(bool), keep_awake_interval(초, 기본 60), keep_awake_dist(px, 기본 3)
+    """
+    interval = int(CONFIG.get("keep_awake_interval", 60))
+    dist = int(CONFIG.get("keep_awake_dist", 3))
+    while True:
+        try:
+            time.sleep(max(5, interval))
+            if pyautogui is None:
+                continue
+            if STATE.get("running"):
+                continue          # 실제 RPA 실행 중엔 건드리지 않음
+            x, y = pyautogui.position()
+            pyautogui.moveTo(x + dist, y, duration=0.1)   # 오른쪽 조금
+            pyautogui.moveTo(x, y, duration=0.1)          # 왼쪽(원위치)
+        except Exception:
+            pass
+
+
 def main():
     print("=" * 60)
     print("  FlowBot Studio — RPA 실행 서버")
@@ -703,6 +724,10 @@ def main():
     print("=" * 60)
     t = threading.Thread(target=_scheduler_loop, daemon=True)
     t.start()
+    if CONFIG.get("keep_awake"):
+        ta = threading.Thread(target=_keepawake_loop, daemon=True)
+        ta.start()
+        print(f"  화면유지  : ON ({int(CONFIG.get('keep_awake_interval', 60))}초마다 마우스 미세 이동)")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
 
 
