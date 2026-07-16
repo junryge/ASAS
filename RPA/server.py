@@ -671,7 +671,10 @@ def _scheduler_loop():
                 continue
             now = datetime.datetime.now()
             hhmm = now.strftime("%H:%M")
-            if hhmm != trig.get("time", "09:00"):
+            # 실행 시각: config.json 의 run_times(여러 시각) 우선, 없으면 트리거 time(콤마 여러개 가능)
+            tconf = trig.get("time", "09:00")
+            target_times = CONFIG.get("run_times") or [t.strip() for t in str(tconf).split(",") if t.strip()]
+            if hhmm not in target_times:
                 continue
             # 같은 분에 중복 실행 방지
             minute_key = now.strftime("%Y%m%d%H%M")
