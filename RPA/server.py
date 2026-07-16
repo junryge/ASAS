@@ -323,7 +323,20 @@ def run_node(node):
                     except Exception:
                         pass
                 if loc:
-                    yield ev("ok", f"   ✓ 매칭 성공 → ({int(loc[0])}, {int(loc[1])})")
+                    x, y = int(loc[0]), int(loc[1])
+                    action = (c.get("action", "") or "move").lower()
+                    try:
+                        if action in ("move", "click", "double"):
+                            pyautogui.moveTo(x, y, duration=0.3)   # 찾은 위치로 이동
+                        if action == "click":
+                            pyautogui.click(x, y)
+                        elif action == "double":
+                            pyautogui.doubleClick(x, y)
+                    except Exception as e:
+                        yield ev("err", f"   │ 이동/클릭 오류: {e}")
+                    lab = {"locate": "찾기만", "move": "이동", "click": "클릭",
+                           "double": "더블클릭"}.get(action, "이동")
+                    yield ev("ok", f"   ✓ 매칭 → 마우스 {lab} → ({x}, {y})")
                 else:
                     yield ev("err", f"   ✗ 화면에서 이미지를 찾지 못함: {target}  "
                                     "(그 이미지가 화면에 실제로 보이는 상태여야 함 / 정확도를 낮춰보세요)")
