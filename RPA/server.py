@@ -287,19 +287,46 @@ def run_node(node):
                 pyautogui.screenshot(path)
                 yield ev("ok", f"   ✓ 화면 캡처 저장 → {path}")
             else:
+                # 빌더에서 고른 로컬 이미지는 저장파일 안에 base64(imageData)로 들어있음.
+                # → 임시 PNG 로 복원해서 화면 매칭에 사용 (없으면 target 을 파일경로로 사용)
+                image_data = c.get("imageData", "") or ""
+                tmp_img = None
+                search = target
+                if isinstance(image_data, str) and image_data.startswith("data:"):
+                    import base64 as _b64
+                    try:
+                        raw = _b64.b64decode(image_data.split(",", 1)[1])
+                        safe = Path(target or "target.png").name or "target.png"
+                        with tempfile.NamedTemporaryFile("wb", suffix="_" + safe,
+                                                         delete=False) as f:
+                            f.write(raw)
+                            tmp_img = f.name
+                        search = tmp_img
+                    except Exception as e:
+                        yield ev("err", f"   │ 이미지 디코드 실패: {e}")
+                if not search or (tmp_img is None and not os.path.exists(search)):
+                    yield ev("err", f"   ✗ 기준 이미지 파일이 없습니다: {target}  "
+                                    "(빌더에서 이미지를 다시 선택해 저장하거나, 실제 파일 경로를 넣으세요)")
+                    return
                 try:
                     conf = float(c.get("confidence", 0.8))
                 except Exception:
                     conf = 0.8
                 try:
-                    loc = pyautogui.locateCenterOnScreen(target, confidence=conf)
+                    loc = pyautogui.locateCenterOnScreen(search, confidence=conf)
                 except TypeError:
                     # opencv 미설치 시 confidence 미지원 → 정확 매칭
-                    loc = pyautogui.locateCenterOnScreen(target)
+                    loc = pyautogui.locateCenterOnScreen(search)
+                if tmp_img and os.path.exists(tmp_img):
+                    try:
+                        os.unlink(tmp_img)
+                    except Exception:
+                        pass
                 if loc:
                     yield ev("ok", f"   ✓ 매칭 성공 → ({int(loc[0])}, {int(loc[1])})")
                 else:
-                    yield ev("err", f"   ✗ 이미지를 찾지 못함: {target}")
+                    yield ev("err", f"   ✗ 화면에서 이미지를 찾지 못함: {target}  "
+                                    "(그 이미지가 화면에 실제로 보이는 상태여야 함 / 정확도를 낮춰보세요)")
         except Exception as e:
             yield ev("err", f"   ✗ 이미지 오류: {e}")
 
