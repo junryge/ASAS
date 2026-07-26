@@ -61,15 +61,21 @@ RECHECK_MIN = 5  # 최근 N분은 매 사이클 재조회 (로그프레소 지�
 
 
 def query_logpresso(query, a, timeout=180):
-    """LPQL 실행 → CSV 텍스트 (재시도 3회). 실패 시 None."""
+    """LPQL 실행 → CSV 텍스트 (재시도 3회).
+    반환: 텍스트(정상, 0건이면 빈 문자열) / None(서버오류·연결실패)
+    ※ HTTP 200 + 본문 '\\n' = 결과 0건 (정상 응답이므로 실패로 보지 않음)"""
     clean_q = ' '.join(query.split())
     url = (f'http://{a.host}:{a.port}/logpresso/httpexport/query.csv'
            f'?_apikey={a.apikey}&_q={urllib.parse.quote(clean_q, safe="")}')
     for attempt in range(3):
         try:
             resp = requests.get(url, verify=False, timeout=timeout)
-            if resp.status_code == 200 and resp.text.strip() and not resp.text.strip().startswith('<!'):
-                return resp.text
+            if resp.status_code == 200:
+                body = resp.text
+                if body.strip().startswith('<!'):
+                    print(f'  ⚠️ Logpresso HTML 에러페이지 반환 · 쿼리: {clean_q}')
+                    return None
+                return body if body.strip() else ''   # 빈 본문 = 0건 (정상)
             if resp.status_code >= 500 and attempt < 2:
                 time.sleep(2 * (attempt + 1)); continue
             print(f'  ⚠️ Logpresso HTTP {resp.status_code}: {resp.text[:150]!r}')
@@ -85,11 +91,17 @@ def query_logpresso(query, a, timeout=180):
     return None
 
 
-def fetch_range(dt_from, dt_to, a, cache):
-    """두 테이블을 [dt_from, dt_to] 조회 → cache[pfx][분키]=(down,up) 갱신. 실패 시 False."""
+MARGIN_MIN = 3  # 조회 구간 앞뒤 여유 (table from/to 는 _time 기준, EVENT_DT 와 몇 초~몇 분 차이)
+
+
+def fetch_range(dt_from, dt_to, a, cache, quiet=False):
+    """두 테이블을 [dt_from, dt_to] 조회 → cache[pfx][분키]=(down,up) 갱신.
+    return False = 서버오류(기입 보류) / True = 정상(0건 포함)."""
+    qf = dt_from - timedelta(minutes=MARGIN_MIN)
+    qt = dt_to + timedelta(minutes=MARGIN_MIN)
     for pfx, tbl in TABLES.items():
-        lpql = (f'table from={dt_from:%Y%m%d%H%M}00 to={dt_to:%Y%m%d%H%M}59 {tbl} '
-                f'| search MCP_NM == "BR" | sort _time')
+        lpql = (f'table from={qf:%Y%m%d%H%M}00 to={qt:%Y%m%d%H%M}59 {tbl} '
+                f'| search MCP_NM == "{a.mcp}" | sort _time')
         text = query_logpresso(lpql, a)
         if text is None:
             return False
@@ -100,7 +112,12 @@ def fetch_range(dt_from, dt_to, a, cache):
                 cache[pfx][k] = ((r.get('downward_anomaly_cols') or '').strip(),
                                  (r.get('upward_anomaly_cols') or '').strip())
                 n += 1
-        print(f'  [{tbl}] {dt_from:%H:%M}~{dt_to:%H:%M} → {n}분 수신')
+        if n == 0:
+            print(f'  ⚠️ [{tbl}] {qf:%m/%d %H:%M}~{qt:%H:%M} → 0건 (공란 기입)')
+            print(f'     ↳ 쿼리 확인: {lpql}')
+            print(f'     ↳ 원인 진단: python LO_LOW_AMOS.py --test')
+        elif not quiet:
+            print(f'  [{tbl}] {qf:%H:%M}~{qt:%H:%M} → {n}분 수신')
     return True
 
 
@@ -249,14 +266,59 @@ def _loop(a):
             print(f'  ⚠️ [LO_LOW_AMOS] 오류(계속): {e}'); time.sleep(a.interval)
 
 
-def run_watch(event='./predict_tobe', interval=60, lag=0,
+def run_watch(event='./predict_tobe', interval=60, lag=0, mcp='BR',
               host=HOST, port=PORT, apikey=API_KEY):
     """run_ml 등에서 스레드로 돌리는 진입점:
         threading.Thread(target=LO_LOW_AMOS.run_watch, daemon=True).start()
     """
-    a = argparse.Namespace(event=event, out=None, lag=lag, loop=True,
+    a = argparse.Namespace(event=event, out=None, lag=lag, loop=True, mcp=mcp,
                            interval=interval, host=host, port=port, apikey=apikey)
     _loop(a)
+
+
+def diagnose(a):
+    """0건 원인 진단 — 쿼리를 단계별로 벗겨가며 어디서 0건이 되는지 찾는다."""
+    now = datetime.now()
+    d0 = (now - timedelta(days=1)).strftime('%Y%m%d')   # 어제(하루치 확정 데이터)
+    d1 = now.strftime('%Y%m%d')
+
+    def run(label, lpql):
+        text = query_logpresso(lpql, a)
+        if text is None:
+            print(f'  ❌ {label}: 서버오류/연결실패')
+            return None
+        rows = list(csv.DictReader(StringIO(text))) if text.strip() else []
+        print(f'  {"✅" if rows else "⚠️ "} {label}: {len(rows)}건')
+        if rows:
+            r = rows[0]
+            print(f'      컬럼: {list(r.keys())}')
+            print(f'      샘플: ' + ' | '.join(f'{k}={v!r}' for k, v in list(r.items())[:8]))
+        return rows
+
+    for tbl in TABLES.values():
+        print(f'\n── {tbl} ' + '─' * (46 - len(tbl)))
+        # ① 필터 없이 어제 하루 (테이블 자체에 데이터가 있는지)
+        rows = run('① 필터없음 (어제 하루)',
+                   f'table from={d0}000000 to={d0}235959 {tbl} | limit 5')
+        # ② MCP_NM 필터만
+        run(f'② MCP_NM=="{a.mcp}" (어제 하루)',
+            f'table from={d0}000000 to={d0}235959 {tbl} | search MCP_NM == "{a.mcp}" | limit 5')
+        # ③ 오늘 (실시간 기입 대상 구간)
+        run(f'③ MCP_NM=="{a.mcp}" (오늘)',
+            f'table from={d1}000000 to={d1}235959 {tbl} | search MCP_NM == "{a.mcp}" | limit 5')
+        # ④ MCP_NM 실제 값 분포 (① 이 있는데 ② 가 0이면 여기서 답이 나옴)
+        if rows:
+            vals = run('④ MCP_NM 실제 값 목록 (어제)',
+                       f'table from={d0}000000 to={d0}235959 {tbl} '
+                       f'| stats count by MCP_NM, FAB_ID | limit 20')
+            if vals:
+                print('      → 위 목록에 원하는 값이 있으면 --mcp 로 지정하세요')
+
+    print('\n[해석]')
+    print('  ①0건  → 테이블에 데이터 자체가 없음 (보존기간/테이블명 확인)')
+    print(f'  ①있음 ②0건 → MCP_NM 값이 "{a.mcp}" 가 아님 → ④ 목록 보고 --mcp 로 지정')
+    print('  ②있음 ③0건 → 오늘 데이터가 아직 안 쌓임 (적재 지연)')
+    print('  전부 있음   → 정상. 운영 로그의 0건은 그 시간대에 실제로 데이터가 없던 것')
 
 
 def backfill_alldays(a):
@@ -281,11 +343,13 @@ def backfill_alldays(a):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--event', required=True, help='발동이벤트.csv 또는 폴더(최신 *발동이벤트*.csv 자동)')
+    ap.add_argument('--event', default=None, help='발동이벤트.csv 또는 폴더(최신 *발동이벤트*.csv 자동)')
     ap.add_argument('--out', default=None, help='(테스트용) 지정하면 원본 대신 여기에 저장')
     ap.add_argument('--lag', type=int, default=0, help='몇 분 전 로그프레소를 기입할지 (기본 0=같은 분)')
     ap.add_argument('--loop', action='store_true', help='운영: interval초마다 반복')
     ap.add_argument('--alldays', action='store_true', help='폴더 내 모든 날짜 파일 일괄 기입 (과거 백필)')
+    ap.add_argument('--test', action='store_true', help='조회 0건 원인 진단 (--event 불필요)')
+    ap.add_argument('--mcp', default='BR', help='MCP_NM 필터값 (기본 BR)')
     ap.add_argument('--interval', type=int, default=60)
     ap.add_argument('--host', default=HOST)
     ap.add_argument('--port', type=int, default=PORT)
@@ -294,8 +358,14 @@ def main():
 
     print('=' * 60)
     print('발동이벤트 ← 로그프레소 이상감지 4컬럼 기입'
-          + (' (운영 루프)' if a.loop else ' (과거 일괄백필)' if a.alldays else ' (1회)'))
+          + (' (진단)' if a.test else ' (운영 루프)' if a.loop
+             else ' (과거 일괄백필)' if a.alldays else ' (1회)'))
     print('=' * 60)
+
+    if a.test:
+        diagnose(a); return
+    if not a.event:
+        print('❌ --event 가 필요합니다 (진단은 --test)'); sys.exit(2)
 
     if a.loop:
         _loop(a)
