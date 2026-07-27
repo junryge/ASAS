@@ -24,6 +24,25 @@ import urllib.request
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
+
+def _fix_console_encoding() -> None:
+    """Windows 콘솔(cp949)에서 이모지 출력 시 UnicodeEncodeError 로 죽는 것을 막는다.
+
+    ✅ ❌ ⚠ 같은 문자는 cp949 에 없어서, 첫 print 에서 프로그램이 즉시 종료된다.
+    stdout/stderr 를 UTF-8(errors='replace')로 바꿔 어떤 콘솔에서도 안 죽게 한다.
+    """
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            enc = (getattr(stream, "encoding", "") or "").lower()
+            if enc.replace("-", "") not in ("utf8", "utf8mb4") and hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_fix_console_encoding()      # import 시점에 한 번 — 모든 진입점이 lp_client 를 import 한다
+
 # 읽기 전용 강제 — 관제 시스템은 절대 쓰기 쿼리를 보내지 않는다
 _BLOCKED = ("drop", "delete", "insert", "import", "create",
             "grant", "revoke", "update", "truncate")
@@ -41,8 +60,17 @@ def load_config(reload: bool = False) -> dict:
 
 
 def load_api_key(cfg: dict | None = None) -> str:
-    """api_key_file 에서 로그프레소 API 키를 읽는다. 없으면 환경변수 LP_API_KEY."""
+    """로그프레소 API 키.
+
+    우선순위: config.json 의 api_key → api_key_file → 환경변수 LP_API_KEY
+    (스크립트처럼 config 에 바로 박아 써도 된다.)
+    """
     cfg = cfg or load_config()
+
+    direct = str(cfg.get("api_key") or "").strip()
+    if direct and not direct.startswith("<"):        # <여기에...> 플레이스홀더 무시
+        return direct
+
     path = cfg.get("api_key_file", "api_key.txt")
     if not os.path.isabs(path):
         path = os.path.join(BASE_DIR, path)
@@ -142,6 +170,26 @@ def _offline_rows(lpql: str):
     return None, 0, {"reason": f"오프라인 모드인데 fixture 없음: {fxdir}", "query_sent": lpql}
 
 
+_opener_cache = None
+
+
+def _get_opener(cfg: dict):
+    """HTTP opener.
+
+    ★기본은 프록시 우회. Windows 의 urllib 은 시스템 프록시(IE 설정)를 자동으로
+    타기 때문에, 사내 IP(10.x) 조회가 프록시로 나가 막히는 일이 흔하다.
+    프록시를 꼭 써야 하면 config.query.use_proxy = true.
+    """
+    global _opener_cache
+    if _opener_cache is None:
+        if cfg.get("query", {}).get("use_proxy", False):
+            _opener_cache = urllib.request.build_opener()
+        else:
+            _opener_cache = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}))
+    return _opener_cache
+
+
 def query_sized(lpql: str, timeout: int | None = None,
                 cfg: dict | None = None, verbose: bool = True,
                 retries: int | None = None):
@@ -162,15 +210,25 @@ def query_sized(lpql: str, timeout: int | None = None,
     if os.getenv("LP_OFFLINE") == "1":
         return _offline_rows(clean)
 
+    # 키가 없으면 빈 _apikey= 로 나가서 조용히 실패한다 → 먼저 막고 알려준다
+    if not load_api_key(cfg):
+        kf = cfg.get("api_key_file", "api_key.txt")
+        return None, 0, {
+            "reason": f"로그프레소 API 키가 없습니다 — {kf} 를 만들거나 "
+                      f"config.json 의 \"api_key\" 에 직접 넣으세요 "
+                      f"(경로: {os.path.join(BASE_DIR, kf)})",
+            "query_sent": clean}
+
     url = build_url(clean, cfg)
     if verbose:
         print(f"[LP] ▶ {clean[:200]}")
 
+    opener = _get_opener(cfg)
     last = None
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"Accept": "text/csv"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with opener.open(req, timeout=timeout) as resp:
                 raw = resp.read()
                 code = resp.getcode()
             body = raw.decode("utf-8", errors="replace")

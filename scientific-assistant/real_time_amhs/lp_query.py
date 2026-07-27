@@ -107,6 +107,11 @@ def query_chunked(from_dt: str, to_dt: str, table: str | None = None,
 
         rows, size, err = query_sized(lpql, verbose=False)
         if err:
+            # 어느 청크에서 왜 막혔는지 반드시 남긴다
+            print(f"[LP] ❌ {f_s}~{t_s} 실패 — {err.get('reason')}")
+            print(f"[LP]    쿼리: {lpql[:180]}")
+            if err.get("response_preview"):
+                print(f"[LP]    응답: {err['response_preview'][:200]}")
             return None, err
 
         # 30MB 초과 → 해당 구간만 절반으로 재분할 (1초 미만이면 더 못 쪼갬)

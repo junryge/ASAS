@@ -36,8 +36,19 @@ def collect(from_dt: str, to_dt: str, cfg: dict | None = None,
 
     rows, err = fetch_amos(from_dt=from_dt, to_dt=to_dt)
     if err and not err.get("warn"):
+        # ★실패 사유를 반드시 보여준다 (조용히 끝나면 원인을 알 수 없다)
+        print(f"  ❌ 조회 실패 — {err.get('reason')}")
+        if err.get("query_sent"):
+            print(f"     쿼리: {err['query_sent'][:200]}")
+        if err.get("response_preview"):
+            print(f"     응답: {err['response_preview'][:300]}")
+        print(f"     → 원인 확인: python collect.py --debug")
         return {"ok": False, "error": err.get("reason"), "rows": 0, "written": 0}
     warn = err.get("reason") if err else None
+
+    if not rows:
+        print(f"  ⚠️ 조회 0행 — 그 구간에 데이터가 없습니다 "
+              f"(테이블 {cfg.get('table_name')}, 구간 {from_dt}~{to_dt})")
 
     from store_csv import append_rows
     saved = append_rows(rows or [], cfg)

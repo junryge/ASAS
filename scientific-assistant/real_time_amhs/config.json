@@ -1,6 +1,8 @@
 {
   "_doc": "AMHS Sentinel — 데모스와 완전 독립된 LLM 실시간 관제 시스템 설정",
   "logpresso_base": "http://10.40.42.167:8888/logpresso",
+  "api_key": "",
+  "_api_key_doc": "여기에 키를 직접 넣어도 됨(스크립트처럼). 비우면 api_key_file 을 읽는다.",
   "api_key_file": "api_key.txt",
   "table_name": "test_table3",
   "query": {
@@ -35,7 +37,9 @@
     "max_bytes": 31457280,
     "_max_bytes_doc": "한 청크 응답이 30MB 초과면 그 구간만 절반으로 재귀 분할",
     "sort_col": "_time",
-    "_sort_doc": "구간 조회 정렬 컬럼. 테이블에 없으면 \"\" 로 비워 정렬 생략"
+    "_sort_doc": "구간 조회 정렬 컬럼. 테이블에 없으면 \"\" 로 비워 정렬 생략",
+    "use_proxy": false,
+    "_use_proxy_doc": "기본 false = 시스템 프록시 우회. Windows urllib 이 IE 프록시를 타서 사내 IP 조회가 막히는 것 방지. 프록시를 꼭 거쳐야 하면 true."
   },
   "amos": {
     "_doc": "AMOS 이상감지 — 별도 2개 테이블을 기존 데이터에 시각으로 조인해 4개 컬럼을 추가한다.",
