@@ -28,9 +28,11 @@ python lp_query.py --schema
 python lp_query.py --schema -t ATLAS_BOTTLENECK_ANOMALY
 python lp_query.py --schema -t ATLAS_QUEUE_ANOMALY
 
-# 4) 관제 시작
-python server.py            # → http://localhost:8700/
+# 4) 관제 시작 — 실행하면 대시보드가 브라우저로 자동 실행된다
+python server.py            # → http://localhost:8700/ 자동 오픈
 ```
+
+브라우저 자동 실행을 끄려면 `config.server.auto_open: false` 또는 `NO_BROWSER=1`.
 
 사내망 밖(개발 PC)에서는 로그프레소에 닿지 않으므로 fixture 로 UI 를 볼 수 있다:
 
@@ -52,7 +54,7 @@ LP_OFFLINE=1 python server.py
 | `sentinel.py` | 감지 → 케이스 생성/병합 → 등급 → 에스컬레이션 |
 | `llm_client.py` | 스킬 4종 + 페르소나 주입 → LLM 판단·리포트 (+금지어 스크럽) |
 | `report.py` | 구간 리포트 + 피드백 저장 → 임계치 자동 보정 |
-| `server.py` | 독립 Flask + 폴링 스레드 + REST API |
+| `server.py` | 독립 Flask + 폴링 스레드 + REST API + **대시보드 자동 실행** |
 | `static/dashboard.html` | 관제 화면 (**오프닝 화면 없음** — 바로 진입) |
 | `fixtures/` | 오프라인 검증용 샘플 (실제 스키마 아님) |
 

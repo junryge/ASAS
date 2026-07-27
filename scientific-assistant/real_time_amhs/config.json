@@ -132,6 +132,8 @@
   "server": {
     "_doc": "데모스(5000번대)와 겹치지 않는 독립 포트",
     "host": "0.0.0.0",
-    "port": 8700
+    "port": 8700,
+    "auto_open": true,
+    "_auto_open_doc": "server.py 실행 시 대시보드를 브라우저로 자동 실행. 끄려면 false (또는 NO_BROWSER=1)"
   }
 }

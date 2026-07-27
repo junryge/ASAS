@@ -272,6 +272,22 @@ def api_query():
     return jsonify({"lpql": lpql, "count": len(rows), "rows": rows[: int(b.get("limit") or 100)]})
 
 
+def _open_browser(url: str, delay: float = 1.2) -> None:
+    """서버가 뜬 직후 대시보드를 브라우저로 자동 실행."""
+    def go():
+        time.sleep(delay)
+        try:
+            import webbrowser
+            if webbrowser.open(url):
+                print(f"  🌐 브라우저 실행: {url}")
+                return
+        except Exception:
+            pass
+        # 브라우저가 없는 환경(서버/원격) — 주소만 안내
+        print(f"  ℹ️ 브라우저 자동 실행 실패 — 직접 여세요: {url}")
+    threading.Thread(target=go, daemon=True).start()
+
+
 if __name__ == "__main__":
     s = CFG.get("server", {})
     threading.Thread(target=_poll_loop, daemon=True).start()
@@ -282,7 +298,13 @@ if __name__ == "__main__":
     print(f"  모델       : {CFG.get('llm', {}).get('model')}")
     print(f"  폴링       : {CFG.get('query', {}).get('poll_interval_s')}초"
           + ("   [OFFLINE fixture 모드]" if os.getenv("LP_OFFLINE") == "1" else ""))
-    print(f"  대시보드   : http://{s.get('host')}:{s.get('port', 8700)}/")
+    port = s.get("port", 8700)
+    url = f"http://localhost:{port}/"
+    print(f"  대시보드   : {url}")
     print("=" * 62)
-    app.run(host=s.get("host", "0.0.0.0"), port=s.get("port", 8700),
-            threaded=True, debug=False)
+
+    # 실행하면 대시보드가 바로 뜨게 (config.server.auto_open=false 로 끌 수 있음)
+    if s.get("auto_open", True) and os.getenv("NO_BROWSER") != "1":
+        _open_browser(url)
+
+    app.run(host=s.get("host", "0.0.0.0"), port=port, threaded=True, debug=False)
