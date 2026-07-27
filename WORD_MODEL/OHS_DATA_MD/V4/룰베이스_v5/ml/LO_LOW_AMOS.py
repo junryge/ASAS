@@ -200,6 +200,14 @@ def cycle(a, cache, fp=None, state={'seen': set()}):
             print('  ⚠️ 조회 실패 → 이번 사이클 기입 생략 (다음에 재시도)')
             return None
 
+    # --force 안전장치: 조회 결과가 아예 없으면 기존 값을 공란으로 덮어쓰지 않음
+    if force:
+        got = sum(1 for i in targets
+                  if (times[i] - timedelta(minutes=a.lag)).strftime('%Y-%m-%d %H:%M') in cache['BOTTLENECK'])
+        if got == 0:
+            print(f'  ⛔ {os.path.basename(fp)}: 조회 0건 → 기존 값 보존 (덮어쓰기 안 함)')
+            return None
+
     # 기입
     out_header = header + [c for c in NEW_COLS if c not in header]
     for i in targets:
