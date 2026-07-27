@@ -28,9 +28,9 @@ requests.packages.urllib3.disable_warnings()
 # ============================================================================
 # 로그프레소 설정 (외부 조회용)
 # ============================================================================
-LOGPRESSO_HOST = "10.40.42.27"
+LOGPRESSO_HOST = "10.40.42.167"
 LOGPRESSO_PORT = 8888
-LOGPRESSO_API_KEY = "db1d2335-49cf-e859-3519-1ca132922e38"
+LOGPRESSO_API_KEY = "10f12ae0-5a80-55cd-7b15-e5554f0612f3"
 
 FINAL_COLUMNS = [
     'CURRTIME', 'TOTALCNT',

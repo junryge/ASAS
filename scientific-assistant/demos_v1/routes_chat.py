@@ -2103,7 +2103,7 @@ def register_chat_routes(app):
                         _content += f"\n**서버 응답:**\n```\n{resp_preview[:300]}\n```\n"
                     _content += f"\n**원인 추정:** "
                     if "타임아웃" in err_reason or "연결" in err_reason:
-                        _content += "로그프레소 서버(`10.40.42.27:8888`)에 연결할 수 없습니다. 서버 상태 또는 네트워크를 확인하세요."
+                        _content += "로그프레소 서버(`10.40.42.167:8888`)에 연결할 수 없습니다. 서버 상태 또는 네트워크를 확인하세요."
                     elif "HTML" in err_reason:
                         _content += "서버가 에러 페이지를 반환했습니다. 테이블명이나 쿼리 문법을 확인하세요."
                     elif "빈 응답" in err_reason:

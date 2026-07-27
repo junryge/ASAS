@@ -11,9 +11,9 @@ from datetime import datetime, timedelta
 
 requests.packages.urllib3.disable_warnings()
 
-HOST = "10.40.42.27"
+HOST = "10.40.42.167"
 PORT = 8888
-API_KEY = "db1d2335-49cf-e859-3519-1ca132922e38"
+API_KEY = "10f12ae0-5a80-55cd-7b15-e5554f0612f3"
 
 # V8.3 최종 출력 컬럼
 FINAL_COLUMNS = [
