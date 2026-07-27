@@ -53,8 +53,11 @@ def _std(vals, mean=None):
     return (sum((v - m) ** 2 for v in vals) / n) ** 0.5
 
 
-def cusum(x, win=CUSUM_BASE_WIN, K=CUSUM_K, min_periods=15):
-    """한쪽(상승) CUSUM. x: [float|None]. 결측은 이전값 유지(포워드필)."""
+def cusum(x, win=None, K=None, min_periods=15):
+    """한쪽(상승) CUSUM. x: [float|None]. 결측은 이전값 유지(포워드필).
+    win/K 를 None 으로 두면 호출시점의 전역값 사용(CLI 튜닝 반영)."""
+    win = CUSUM_BASE_WIN if win is None else win
+    K = CUSUM_K if K is None else K
     filled, last = [], None
     for v in x:
         if v is not None:
@@ -170,7 +173,22 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="CUSUM 4감지기 (조기경보)")
     ap.add_argument("--data", required=True, nargs="+", help="원본 CSV(글롭 가능)")
     ap.add_argument("--out", default=None, help="score.py 호환 액션 CSV 저장")
+    # ── 10분 전 목표 튜닝 (낮출수록 더 일찍 발동 = lead↑, 헛울림↑) ──
+    ap.add_argument("--k", type=float, default=None, help="여유계수 K (기본 0.5 → 0.35 등)")
+    ap.add_argument("--th-q", type=float, default=None, help="남/북 큐 임계 (기본 600)")
+    ap.add_argument("--th-fab", type=float, default=None, help="허브 저장 임계 (기본 300)")
+    ap.add_argument("--th-br", type=float, default=None, help="브릿지 임계 (기본 40 → 30)")
     args = ap.parse_args()
+
+    # CLI 튜닝을 전역에 반영 (run/cusum 이 호출시점에 읽음)
+    if args.k is not None:
+        CUSUM_K = args.k
+    if args.th_q is not None:
+        TH_Q = args.th_q
+    if args.th_fab is not None:
+        TH_FAB = args.th_fab
+    if args.th_br is not None:
+        TH_BR = args.th_br
 
     need = [COL_SOUTH, COL_NORTH, COL_FAB, COL_BR, COL_STK, "CRT_TM"]
     sd = load_any(args.data, need)
