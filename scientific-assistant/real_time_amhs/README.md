@@ -15,6 +15,7 @@ M16 HUBROOM 반송 정체를 로그프레소에서 실시간으로 읽어 **감�
 
 ```bash
 cd real_time_amhs
+pip install -r requirements.txt      # requests, flask
 
 # 1) 키 2개 넣기 (둘 다 이 폴더 안 — 데모스와 무관)
 echo "<로그프레소 API 키>" > api_key.txt
@@ -86,6 +87,13 @@ python lp_query.py --recent 10m                                     # 최근 구
 
 설정은 `config.query` — `chunk_minutes`(10), `max_bytes`(30MB), `sort_col`(`_time`),
 `timeout_s`(300). 테이블에 `_time` 이 없으면 `sort_col` 을 `""` 로 비운다.
+
+**전송은 `requests` 를 쓴다** (사내 스크립트와 동일 경로). 로그프레소 export 는
+Content-Length 를 다 채우지 않고 끊는 경우가 있어 `urllib` 은 `IncompleteRead` 로
+죽지만 `requests/urllib3` 은 견딘다. `requests` 가 없으면 urllib 로 폴백하되
+끊긴 응답은 받은 만큼 살리고 잘린 마지막 행은 버린다.
+
+API 키는 `api_key.txt` 또는 `config.json` 의 `"api_key"` 에 직접 넣어도 된다.
 
 ---
 

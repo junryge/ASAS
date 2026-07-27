@@ -136,8 +136,20 @@ def build_url(lpql: str, cfg: dict | None = None) -> str:
 
 
 def _parse_csv(text: str) -> list[dict]:
-    """CSV 텍스트 → list[dict] (pandas 비의존)."""
-    return [dict(r) for r in csv.DictReader(io.StringIO(text))]
+    """CSV 텍스트 → list[dict] (pandas 비의존).
+
+    응답이 중간에 끊긴 경우 마지막 줄이 잘려 컬럼 수가 모자랄 수 있다.
+    DictReader 는 모자란 필드를 None 으로 채우므로, 그런 행은 버린다.
+    """
+    rows, dropped = [], 0
+    for r in csv.DictReader(io.StringIO(text)):
+        if None in r.values() or None in r:      # 잘린 행 / 여분 필드
+            dropped += 1
+            continue
+        rows.append(dict(r))
+    if dropped:
+        print(f"[LP] ⚠️ 잘린 행 {dropped}건 제외")
+    return rows
 
 
 def _offline_rows(lpql: str):
@@ -170,24 +182,60 @@ def _offline_rows(lpql: str):
     return None, 0, {"reason": f"오프라인 모드인데 fixture 없음: {fxdir}", "query_sent": lpql}
 
 
-_opener_cache = None
+_requests = None
+_requests_checked = False
 
 
-def _get_opener(cfg: dict):
-    """HTTP opener.
+def _get_requests():
+    """requests 가 있으면 그걸 쓴다 (사내에서 검증된 방식).
 
-    ★기본은 프록시 우회. Windows 의 urllib 은 시스템 프록시(IE 설정)를 자동으로
-    타기 때문에, 사내 IP(10.x) 조회가 프록시로 나가 막히는 일이 흔하다.
-    프록시를 꼭 써야 하면 config.query.use_proxy = true.
+    로그프레소 export 는 Content-Length 를 다 채우지 않고 연결을 끊는 경우가 있어
+    urllib 은 IncompleteRead 로 죽지만, requests/urllib3 은 이를 견딘다.
     """
-    global _opener_cache
-    if _opener_cache is None:
-        if cfg.get("query", {}).get("use_proxy", False):
-            _opener_cache = urllib.request.build_opener()
-        else:
-            _opener_cache = urllib.request.build_opener(
-                urllib.request.ProxyHandler({}))
-    return _opener_cache
+    global _requests, _requests_checked
+    if not _requests_checked:
+        _requests_checked = True
+        try:
+            import requests as _r
+            try:
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            except Exception:
+                pass
+            _requests = _r
+        except ImportError:
+            _requests = None
+    return _requests
+
+
+def _http_get(url: str, timeout: int, cfg: dict) -> tuple[int, bytes]:
+    """CSV 본문을 가져온다. (status, bytes)
+
+    ① requests 우선 — 회사 스크립트와 동일한 경로
+    ② 없으면 urllib. 이때 IncompleteRead 는 받은 만큼 살려서 쓴다
+       (마지막 잘린 줄은 파싱 단계에서 버려진다)
+    """
+    rq = _get_requests()
+    if rq is not None:
+        resp = rq.get(url, verify=False, timeout=timeout)
+        return resp.status_code, resp.content
+
+    import http.client
+    if cfg.get("query", {}).get("use_proxy", False):
+        opener = urllib.request.build_opener()
+    else:
+        # Windows urllib 은 시스템 프록시(IE 설정)를 자동으로 타므로 기본 우회
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    req = urllib.request.Request(url, headers={"Accept": "text/csv"})
+    with opener.open(req, timeout=timeout) as resp:
+        code = resp.getcode()
+        try:
+            raw = resp.read()
+        except http.client.IncompleteRead as e:
+            raw = e.partial                      # 받은 만큼이라도 살린다
+            print(f"[LP] ⚠️ 응답이 중간에 끊김 — 받은 {len(raw)}바이트로 진행")
+    return code, raw
 
 
 def query_sized(lpql: str, timeout: int | None = None,
@@ -223,14 +271,10 @@ def query_sized(lpql: str, timeout: int | None = None,
     if verbose:
         print(f"[LP] ▶ {clean[:200]}")
 
-    opener = _get_opener(cfg)
     last = None
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, headers={"Accept": "text/csv"})
-            with opener.open(req, timeout=timeout) as resp:
-                raw = resp.read()
-                code = resp.getcode()
+            code, raw = _http_get(url, timeout, cfg)
             body = raw.decode("utf-8", errors="replace")
             size = len(raw)
 
