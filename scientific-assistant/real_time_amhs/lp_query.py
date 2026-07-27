@@ -25,7 +25,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-from lp_client import fetch_columns, load_config, ping, query, query_sized
+from lp_client import fetch_columns, load_config, parse_dt, ping, query, query_sized
 
 
 # ────────────────────────────── LPQL 빌더 ──────────────────────────────
@@ -159,9 +159,13 @@ def amos_columns_present(rows: list[dict]) -> list[str]:
 
 
 def _minute_key(v: str) -> str:
-    """'2026-07-11 10:27:33' / '2026-07-11T10:27' → '202607111027' (분 단위 키)."""
-    d = "".join(ch for ch in str(v or "") if ch.isdigit())
-    return d[:12] if len(d) >= 12 else d
+    """시각 → '202607280801' (분 단위 조인 키).
+
+    '2026-07-28 08:02:05+0900' / '2026-07-28 08:01' / '2026-07-27 0:00' 모두 처리.
+    파싱 실패 시 빈 문자열 → 조인되지 않는다(잘못 붙는 것보다 안전).
+    """
+    dt = parse_dt(v)
+    return dt.strftime("%Y%m%d%H%M") if dt else ""
 
 
 def fetch_amos_table(which: str, duration: str | None = None,
@@ -208,28 +212,53 @@ def enrich_with_amos(rows: list[dict], duration: str | None = None,
             warns.append(f"{spec.get('table', which)}: {err.get('reason')}")
             continue
 
-        tc = spec.get("time_col", "_time")
         dcol, ucol = spec.get("downward_col"), spec.get("upward_col")
         if arows and (dcol not in arows[0] or ucol not in arows[0]):
             warns.append(f"{spec.get('table')}: 컬럼 {dcol}/{ucol} 없음 — "
                          f"실제 컬럼 {list(arows[0].keys())[:12]} (--schema 로 확인 후 config 수정)")
             continue
+        if not arows:
+            continue
 
-        idx = {}
-        for ar in arows or []:
-            idx.setdefault(_minute_key(ar.get(tc)), ar)
-
-        hit = 0
+        # 조인 시각 컬럼 자동 판별.
+        # _time 은 '수집 시각'이라 데이터 시각(datetime)과 1분 어긋날 수 있으므로
+        # 실제로 가장 많이 붙는 컬럼을 골라 쓴다 (설정값 → datetime → _time 순 후보).
+        base_idx = {}
         for r in rows:
-            ar = idx.get(_minute_key(r.get(base_tc)))
-            if not ar:
-                continue
-            hit += 1
-            r[dcol] = ar.get(dcol, "") or ""
-            r[ucol] = ar.get(ucol, "") or ""
-        if arows and not hit:
+            k = _minute_key(r.get(base_tc))
+            if k:
+                base_idx.setdefault(k, []).append(r)
+
+        # 후보 순서 = 의미가 같은 컬럼 우선.
+        # base 가 datetime(데이터 시각)이면 ATLAS 도 datetime 으로 붙여야 한다.
+        # _time 은 '수집 시각'이라 1분 밀릴 수 있으므로 마지막 후보.
+        cands, seen = [], set()
+        for c in (base_tc, spec.get("time_col"), "datetime", "time", "_time"):
+            if c and c in arows[0] and c not in seen:
+                seen.add(c)
+                cands.append(c)
+
+        best_tc, best_idx, best_hit = None, None, -1
+        for c in cands:
+            idx = {}
+            for ar in arows:
+                k = _minute_key(ar.get(c))
+                if k:
+                    idx.setdefault(k, ar)
+            hit = sum(1 for k in idx if k in base_idx)
+            if hit > best_hit:
+                best_tc, best_idx, best_hit = c, idx, hit
+
+        if best_hit <= 0:
             warns.append(f"{spec.get('table')}: {len(arows)}건 조회됐으나 시각 조인 0건 "
-                         f"(base_time_col={base_tc}, time_col={tc} 형식 확인)")
+                         f"(기준 {base_tc}, 시도 {cands} — 시각 형식 확인)")
+            continue
+
+        for k, ar in best_idx.items():
+            for r in base_idx.get(k, []):
+                r[dcol] = ar.get(dcol, "") or ""
+                r[ucol] = ar.get(ucol, "") or ""
+        print(f"[AMOS] {spec.get('table')} — {best_tc} 기준 {best_hit}분 조인")
 
     return rows, ({"reason": " / ".join(warns), "warn": True} if warns else None)
 

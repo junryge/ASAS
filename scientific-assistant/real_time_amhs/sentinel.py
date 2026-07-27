@@ -88,6 +88,53 @@ def _score(row: dict) -> float:
         return 0.0
 
 
+# 룰 코드 → 한글명 (스킬 규칙: 답변에 룰 코드 노출 금지)
+# 실제 표기는 두 가지 — reason 은 'R-A_sus', signals 는 'RA_sus'
+_RULE_KR = [
+    (r"R-?A_sus\b", "반송지연 지속"),
+    (r"R-?B_fast\b", "Queue 상승"),
+    (r"R-?A\b", "반송지연"),
+    (r"R-?B\b", "Queue 누적"),
+    (r"R-?C\b", "리프터 정체"),
+    (r"R-?D\b", "Storage FULL"),
+    (r"MAXCAPA", "운영자 용량변경"),
+    (r"SORT", "분류기 대기"),
+    (r"SLA", "4분초과"),
+]
+
+
+def summarize_reason(reason: str, area: str = "") -> str:
+    """reason 원문에서 발동 룰을 뽑아 한글 한 줄로. 룰 코드는 노출하지 않는다.
+
+    예) 'hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,R-D(STB=100.0%)]; M14[R-A_sus]'
+        → 'M16HUB 반송지연 지속 · 리프터 정체 · Storage FULL'
+    """
+    import re
+    txt = reason or ""
+    if not txt:
+        return ""
+
+    # '발동:' 뒤에서 hot_area 의 대괄호 블록을 우선 사용, 없으면 첫 블록
+    seg = txt.split("발동:", 1)[1] if "발동:" in txt else txt
+    block = ""
+    if area:
+        m = re.search(re.escape(area) + r"\[([^\]]*)\]", seg)
+        if m:
+            block = m.group(1)
+    if not block:
+        m = re.search(r"\[([^\]]*)\]", seg)
+        block = m.group(1) if m else ""
+
+    names, seen = [], set()
+    for code, kr in _RULE_KR:                      # 긴 코드부터 매칭
+        if re.search(r"R?-?" + code + r"\b", block) and kr not in seen:
+            seen.add(kr)
+            names.append(kr)
+    if not names:
+        return ""
+    return f"{area} " .lstrip() + " · ".join(names) if area else " · ".join(names)
+
+
 def hid_zones(tokens: str) -> list[str]:
     """HID_32_FROM_SUM_A → HID32 (순서 보존·중복 제거)."""
     out, seen = [], set()
@@ -223,10 +270,13 @@ class CaseStore:
         queue = [x for x in " ".join(
             y for y in (row.get("QUEUE_downward_anomaly_cols", ""),
                         row.get("QUEUE_upward_anomaly_cols", "")) if y).split() if x]
+        raw_reason = (row.get("reason") or "").strip()
+        area = (row.get("hot_area") or "").strip()
         return {
             "zones": hid_zones(bott),
             "items": queue,
-            "reason": (row.get("reason") or "").strip(),
+            "reason": summarize_reason(raw_reason, area) or raw_reason[:80],
+            "reason_raw": raw_reason,
             "chain": (row.get("propagation_chain") or "").strip(),
             "flow": (row.get("flow_signals") or "").strip(),
             "maxcapa": (row.get("maxcapa_signals") or "").strip(),

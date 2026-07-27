@@ -28,7 +28,13 @@ python lp_query.py --schema
 python lp_query.py --schema -t ATLAS_BOTTLENECK_ANOMALY
 python lp_query.py --schema -t ATLAS_QUEUE_ANOMALY
 
-# 4) 관제 시작 — 실행하면 대시보드가 브라우저로 자동 실행된다
+# 4) ★데이터 확보 (관제 없이 수집만 — 먼저 이것부터)
+python collect.py                  # 오늘 00:00 ~ 현재까지
+python collect.py --date 20260727  # 그 날 하루치
+python collect.py --loop           # 1분마다 계속 수집
+python collect.py --list           # 확보된 날짜 목록
+
+# 5) 관제 시작 — 실행하면 대시보드가 브라우저로 자동 실행된다
 python server.py            # → http://localhost:8700/ 자동 오픈
 ```
 
@@ -56,7 +62,8 @@ LP_OFFLINE=1 python server.py
 | `report.py` | 구간 리포트 + 피드백 저장 → 임계치 자동 보정 |
 | `server.py` | 독립 Flask + 폴링 스레드 + REST API + **대시보드 자동 실행** |
 | `static/dashboard.html` | 관제 화면 (**오프닝 화면 없음** — 바로 진입) |
-| `store_csv.py` | **날짜별 CSV 누적 저장** — `data/20260727_TOTAL.CSV` |
+| `collect.py` | **데이터 확보** — 로그프레소 → 날짜 CSV (서버 없이 단독 실행) |
+| `store_csv.py` | 날짜별 CSV 누적 저장 — `data/20260727_TOTAL.CSV` |
 | `fixtures/` | 오프라인 검증용 샘플 (실제 스키마 아님) |
 
 ---

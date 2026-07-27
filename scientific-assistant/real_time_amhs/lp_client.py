@@ -61,6 +61,34 @@ def load_api_key(cfg: dict | None = None) -> str:
     return os.getenv("LP_API_KEY", "").strip()
 
 
+def parse_dt(value):
+    """로그프레소/CSV 의 여러 시각 표기를 datetime 으로. 실패 시 None.
+
+    실제로 들어오는 형태들:
+      '2026-07-28 08:02:05+0900'   ← _time (타임존 포함)
+      '2026-07-28 08:01'           ← datetime
+      '2026-07-27 0:00'            ← 한 자리 시
+      '2026-07-28T08:01:00'
+    ※ 숫자만 뽑아 자르는 방식은 '0:00' 에서 자릿수가 어긋나므로 쓰지 않는다.
+    """
+    from datetime import datetime as _dt
+    s = str(value or "").strip()
+    if not s:
+        return None
+    s = s.replace("T", " ")
+    # 끝의 타임존(+0900 / +09:00 / Z) 제거 — 로그프레소는 KST 로 내려준다
+    import re as _re
+    s = _re.sub(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", "", s).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+                "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
+                "%Y%m%d%H%M%S", "%Y-%m-%d"):
+        try:
+            return _dt.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def validate_readonly(lpql: str) -> str | None:
     """쓰기 계열 명령이 섞이면 사유 문자열 반환, 안전하면 None."""
     low = " " + " ".join(lpql.split()).lower() + " "
@@ -108,7 +136,7 @@ def _offline_rows(lpql: str):
             with open(fx, "r", encoding="utf-8-sig") as f:
                 body = f.read()
             rows = _parse_csv(body)
-            print(f"[LP] 🔌 OFFLINE — {cand} {len(rows)}건")
+            print(f"[LP] 🔌 OFFLINE — {cand} {len(rows)}건 (fixture 원본)")
             return rows, len(body.encode("utf-8")), None
 
     return None, 0, {"reason": f"오프라인 모드인데 fixture 없음: {fxdir}", "query_sent": lpql}
