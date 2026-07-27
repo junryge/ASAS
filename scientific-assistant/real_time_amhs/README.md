@@ -20,8 +20,8 @@ cd real_time_amhs
 echo "<로그프레소 API 키>" > api_key.txt
 echo "<GaiA LLM API 키>"   > token.txt
 
-# 2) 접속 확인
-python lp_query.py --ping
+# 2) ★기본 점검 — 주소·키·접속·기본 테이블 한 번에
+python lp_query.py --check
 
 # 3) ★ 실제 컬럼 확인 (추측 금지 — 아래 '확인 필요' 참고)
 python lp_query.py --schema
@@ -50,13 +50,34 @@ LP_OFFLINE=1 python server.py
 | `api_key.txt` | 로그프레소 키 (직접 생성) |
 | `token.txt` | LLM 키 (직접 생성). **데모스 TOKEN.TXT 와 무관 — 각자 관리** |
 | `lp_client.py` | 로그프레소 HTTP 클라이언트 (`httpexport/query.csv`). 쓰기 쿼리 차단 |
-| `lp_query.py` | LPQL 빌더 + CLI 조회 + **AMOS 2개 테이블 조인** |
+| `lp_query.py` | LPQL 빌더 + CLI 조회 + **청크 분할 조회** + AMOS 2개 테이블 조인 |
 | `sentinel.py` | 감지 → 케이스 생성/병합 → 등급 → 에스컬레이션 |
 | `llm_client.py` | 스킬 4종 + 페르소나 주입 → LLM 판단·리포트 (+금지어 스크럽) |
 | `report.py` | 구간 리포트 + 피드백 저장 → 임계치 자동 보정 |
 | `server.py` | 독립 Flask + 폴링 스레드 + REST API + **대시보드 자동 실행** |
 | `static/dashboard.html` | 관제 화면 (**오프닝 화면 없음** — 바로 진입) |
 | `fixtures/` | 오프라인 검증용 샘플 (실제 스키마 아님) |
+
+---
+
+## 기본 조회 (이게 기본)
+
+```
+http://10.40.42.167:8888/logpresso/httpexport/query.csv?_apikey=<api_key.txt>&_q=<LPQL>
+LPQL:  table from=... to=... test_table3 | sort _time
+```
+
+긴 구간은 **10분 청크로 끊어서** 조회하고, 한 청크가 **30MB를 넘으면 그 구간만 절반으로
+재귀 분할**한 뒤 합친다 (로그프레소 export 가 대용량에서 끊기는 것 방지).
+
+```bash
+python lp_query.py --from 20260621000000 --to 20260621010101       # 청크 분할 자동
+python lp_query.py --from ... --to ... --chunk-minutes 5           # 분할 단위 변경
+python lp_query.py --recent 10m                                     # 최근 구간 단발
+```
+
+설정은 `config.query` — `chunk_minutes`(10), `max_bytes`(30MB), `sort_col`(`_time`),
+`timeout_s`(300). 테이블에 `_time` 이 없으면 `sort_col` 을 `""` 로 비운다.
 
 ---
 

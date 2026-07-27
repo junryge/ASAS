@@ -21,9 +21,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
+from datetime import datetime, timedelta
 
-from lp_client import fetch_columns, load_config, ping, query
+from lp_client import fetch_columns, load_config, ping, query, query_sized
 
 
 # ────────────────────────────── LPQL 빌더 ──────────────────────────────
@@ -62,9 +64,89 @@ def recent(window: str | None = None, limit: int | None = None) -> tuple[list[di
                        limit=limit or q.get("limit", 2000)))
 
 
+FMT = "%Y%m%d%H%M%S"
+
+
+def query_chunked(from_dt: str, to_dt: str, table: str | None = None,
+                  chunk_minutes: int | None = None, sort: str | None = "_time",
+                  _depth: int = 0, verbose: bool = True):
+    """긴 구간을 청크로 끊어 조회 → 합친다. (rows, err)
+
+    · chunk_minutes 단위로 분할 조회 (기본 config.query.chunk_minutes = 10분)
+    · 한 청크 응답이 max_bytes(기본 30MB)를 넘으면 그 구간만 절반으로 재귀 분할
+    · 로그프레소 export 가 대용량에서 끊기는 것을 피하기 위한 검증된 방식
+
+    from_dt/to_dt: "yyyyMMddHHmmss"
+    """
+    cfg = load_config()
+    q = cfg.get("query", {})
+    table = table or cfg.get("table_name", "")
+    chunk_minutes = chunk_minutes or q.get("chunk_minutes", 10)
+    max_bytes = q.get("max_bytes", 30 * 1024 * 1024)
+
+    try:
+        start, end = datetime.strptime(from_dt, FMT), datetime.strptime(to_dt, FMT)
+    except ValueError as e:
+        return None, {"reason": f"기간 형식 오류 (yyyyMMddHHmmss): {e}", "query_sent": ""}
+    if start >= end:
+        return [], None
+
+    # 오프라인(fixture)은 청크마다 같은 파일을 돌려주므로 분할하지 않는다
+    if os.getenv("LP_OFFLINE") == "1":
+        rows, _sz, err = query_sized(build(table, from_dt=from_dt, to_dt=to_dt, sort=sort),
+                                     verbose=False)
+        return (None, err) if err else (rows, None)
+
+    step = timedelta(minutes=chunk_minutes)
+    out, cur = [], start
+
+    while cur < end:
+        nxt = min(cur + step, end)
+        f_s, t_s = cur.strftime(FMT), nxt.strftime(FMT)
+        lpql = build(table, from_dt=f_s, to_dt=t_s, sort=sort)
+
+        rows, size, err = query_sized(lpql, verbose=False)
+        if err:
+            return None, err
+
+        # 30MB 초과 → 해당 구간만 절반으로 재분할 (1초 미만이면 더 못 쪼갬)
+        if size > max_bytes and (nxt - cur) > timedelta(seconds=1) and _depth < 12:
+            mid = cur + (nxt - cur) / 2
+            if verbose:
+                print(f"[LP] ✂️ {f_s}~{t_s} {size/1048576:.1f}MB 초과 → 분할")
+            for a, b in ((f_s, mid.strftime(FMT)), (mid.strftime(FMT), t_s)):
+                sub, serr = query_chunked(a, b, table, chunk_minutes, sort,
+                                          _depth + 1, verbose)
+                if serr:
+                    return None, serr
+                out.extend(sub)
+        else:
+            if verbose:
+                print(f"[LP] ✅ {f_s}~{t_s}  {len(rows):>6}건  {size/1048576:5.1f}MB")
+            out.extend(rows)
+
+        cur = nxt
+
+    if _depth == 0:
+        tcol = sort or "_time"
+        if out and tcol in out[0]:
+            out.sort(key=lambda r: str(r.get(tcol) or ""))
+        if verbose:
+            print(f"[LP] 🏁 총 {len(out)}건")
+    return out, None
+
+
 def range_query(from_dt: str, to_dt: str, limit: int | None = None):
-    """리포트 구간 평가용 — 절대 기간 조회 (yyyyMMddHHmmss)."""
-    return query(build(from_dt=from_dt, to_dt=to_dt, limit=limit))
+    """리포트 구간 평가용 — 절대 기간 조회 (yyyyMMddHHmmss).
+
+    긴 구간은 청크 분할로 안전하게 가져온다. limit 은 합친 뒤 적용.
+    """
+    cfg = load_config()
+    rows, err = query_chunked(from_dt, to_dt,
+                              sort=cfg.get("query", {}).get("sort_col", "_time") or None)
+    if err:
+        return None, err
+    return (rows[:limit] if limit else rows), None
 
 
 # ────────────────────────────── AMOS 이상감지 ──────────────────────────────
@@ -196,6 +278,79 @@ def _save_csv(rows: list[dict], path: str) -> None:
     print(f"💾 {len(rows)}건 → {path}")
 
 
+# ────────────────────────────── 기본 점검 ──────────────────────────────
+def _check(cfg: dict) -> int:
+    """★가장 먼저 돌릴 것 — 기본 3종(주소·키·테이블)이 실제로 되는지 확인.
+
+    AMOS(ATLAS 2개)는 부가 항목이라 실패해도 관제는 돌아간다. 여기서 구분해 보여준다.
+    """
+    from lp_client import load_api_key
+    from lp_query import fetch_amos_table
+
+    ok_all = True
+    print("━" * 58)
+    print(" AMHS Sentinel 기본 점검")
+    print("━" * 58)
+
+    # 1) 설정
+    base, table = cfg.get("logpresso_base"), cfg.get("table_name")
+    print(f" 1. 주소   : {base}")
+    print(f"    테이블 : {table}")
+    key = load_api_key(cfg)
+    print(f"    키     : {(key[:8] + '…(' + str(len(key)) + '자)') if key else '❌ 없음 — api_key.txt 를 채우세요'}")
+    if not key:
+        ok_all = False
+
+    # 2) 접속
+    ok, msg = ping()
+    print(f"\n 2. 접속   : {'✅' if ok else '❌'} {msg}")
+    if not ok:
+        ok_all = False
+
+    # 3) 기본 테이블 (이게 핵심)
+    rows, err = recent()
+    if err:
+        print(f"\n 3. 기본 조회 : ❌ {err.get('reason')}")
+        return 1
+    print(f"\n 3. 기본 조회 : ✅ {table} {len(rows)}건")
+    if rows:
+        cols = list(rows[0].keys())
+        print(f"    컬럼 {len(cols)}개 : {', '.join(cols[:10])}{' …' if len(cols) > 10 else ''}")
+        need = {"datetime": "시각", "unified_risk_score": "점수", "hot_area": "설비"}
+        miss = [f"{c}({k})" for c, k in need.items() if c not in cols]
+        if miss:
+            print(f"    ⚠️ 감지에 필요한 컬럼 없음 : {', '.join(miss)}")
+            print(f"       → config.json 또는 sentinel.py 매핑을 실제 컬럼명으로 맞춰야 합니다")
+            ok_all = False
+        else:
+            print(f"    ✅ 감지 필수 컬럼(시각·점수·설비) 확인")
+
+    # 4) AMOS (부가)
+    print("\n 4. AMOS (부가 — 실패해도 관제는 동작)")
+    a = cfg.get("amos", {})
+    for which in ("bottleneck", "queue"):
+        spec = a.get(which, {})
+        tbl = spec.get("table")
+        arows, aerr = fetch_amos_table(which, duration=cfg.get("query", {}).get("window", "10m"), limit=5)
+        if aerr:
+            print(f"    ❌ {tbl} — {aerr.get('reason')}")
+            continue
+        have = list(arows[0].keys()) if arows else []
+        want = [spec.get("downward_col"), spec.get("upward_col")]
+        hit = [c for c in want if c in have]
+        mark = "✅" if len(hit) == 2 else "⚠️"
+        print(f"    {mark} {tbl} — {len(arows)}건, 목표 컬럼 {len(hit)}/2")
+        if len(hit) != 2 and have:
+            print(f"       실제 컬럼: {', '.join(have[:10])}")
+            print(f"       → config.amos.{which}.downward_col/upward_col 교체 필요")
+
+    print("\n" + "━" * 58)
+    print(" 결과: " + ("✅ 기본 준비 완료 — python server.py 실행하세요"
+                     if ok_all else "❌ 위 항목을 먼저 해결하세요"))
+    print("━" * 58)
+    return 0 if ok_all else 1
+
+
 # ────────────────────────────── CLI ──────────────────────────────
 def main(argv=None) -> int:
     cfg = load_config()
@@ -212,8 +367,12 @@ def main(argv=None) -> int:
     p.add_argument("--fields", help="컬럼 쉼표 구분 (모르면 쓰지 말 것)")
     p.add_argument("--sort", help="정렬 (예: '-_time')")
     p.add_argument("--limit", type=int, help="건수 제한")
+    p.add_argument("--chunk-minutes", type=int, dest="chunk",
+                   help=f"--from/--to 구간 분할 단위(분). 기본 {cfg.get('query',{}).get('chunk_minutes',10)}")
     p.add_argument("--schema", action="store_true", help="컬럼 목록만 조회 (추측 금지용)")
     p.add_argument("--ping", action="store_true", help="접속 확인")
+    p.add_argument("--check", action="store_true",
+                   help="★기본 점검 — 설정·키·접속·기본 테이블 조회를 한 번에 확인")
     p.add_argument("--json", action="store_true", help="JSON 출력")
     p.add_argument("--out", metavar="FILE.csv", help="CSV 저장")
     p.add_argument("--dry-run", action="store_true", help="쿼리만 출력하고 실행 안 함")
@@ -224,6 +383,9 @@ def main(argv=None) -> int:
         print(f"{'✅' if ok else '❌'} {cfg.get('logpresso_base')} — {msg}")
         return 0 if ok else 1
 
+    if a.check:
+        return _check(cfg)
+
     if a.schema:
         table = a.table or cfg.get("table_name")
         cols = fetch_columns(table)
@@ -233,6 +395,28 @@ def main(argv=None) -> int:
         print(f"📋 {table} 컬럼 {len(cols)}개")
         for i, c in enumerate(cols, 1):
             print(f"  {i:3}. {c}")
+        return 0
+
+    # --from/--to 는 청크 분할 경로 (대용량 안전). 단, 직접 쿼리·필터 지정 시엔 단발 조회.
+    if a.from_dt and a.to_dt and not a.query and not a.search and not a.fields:
+        cm = a.chunk or cfg.get("query", {}).get("chunk_minutes", 10)
+        print(f"🔎 구간 조회 (청크 {cm}분, 30MB 초과 시 자동 분할)")
+        if a.dry_run:
+            print(f"   예: {build(a.table, from_dt=a.from_dt, to_dt=a.to_dt, sort=a.sort or '_time')}")
+            return 0
+        rows, err = query_chunked(a.from_dt, a.to_dt, a.table, cm,
+                                  sort=a.sort or cfg.get("query", {}).get("sort_col", "_time") or None)
+        if err:
+            print(f"❌ {err.get('reason')}")
+            return 1
+        if a.limit:
+            rows = rows[: a.limit]
+        if a.out:
+            _save_csv(rows, a.out)
+        elif a.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2)[:20000])
+        else:
+            _print_table(rows)
         return 0
 
     if a.query:

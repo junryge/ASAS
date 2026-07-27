@@ -84,7 +84,7 @@ def _parse_csv(text: str) -> list[dict]:
     return [dict(r) for r in csv.DictReader(io.StringIO(text))]
 
 
-def _offline_rows(lpql: str) -> tuple[list[dict] | None, dict | None]:
+def _offline_rows(lpql: str):
     """LP_OFFLINE=1 일 때 fixtures 에서 읽어 동작 검증.
 
     쿼리의 테이블명과 같은 이름의 fixture(fixtures/<TABLE>.csv)가 있으면 그것을,
@@ -106,31 +106,30 @@ def _offline_rows(lpql: str) -> tuple[list[dict] | None, dict | None]:
         fx = os.path.join(fxdir, cand)
         if os.path.isfile(fx):
             with open(fx, "r", encoding="utf-8-sig") as f:
-                rows = _parse_csv(f.read())
+                body = f.read()
+            rows = _parse_csv(body)
             print(f"[LP] 🔌 OFFLINE — {cand} {len(rows)}건")
-            return rows, None
+            return rows, len(body.encode("utf-8")), None
 
-    return None, {"reason": f"오프라인 모드인데 fixture 없음: {fxdir}", "query_sent": lpql}
+    return None, 0, {"reason": f"오프라인 모드인데 fixture 없음: {fxdir}", "query_sent": lpql}
 
 
-def query(lpql: str, timeout: int | None = None,
-          cfg: dict | None = None, verbose: bool = True,
-          retries: int | None = None):
-    """LPQL 실행 → (rows, None) 또는 (None, err).
+def query_sized(lpql: str, timeout: int | None = None,
+                cfg: dict | None = None, verbose: bool = True,
+                retries: int | None = None):
+    """LPQL 실행 → (rows, 응답바이트, err).
 
-    rows   : list[dict]  — CSV 헤더를 키로 하는 레코드 목록
-    err    : {"reason", "query_sent", ...}
-    retries: None 이면 config 값. 헬스체크처럼 즉시 실패가 나은 곳은 1 을 준다.
+    응답 크기를 함께 돌려준다 — 대용량 구간을 청크로 쪼갤 때 판단 기준이 된다.
     """
     cfg = cfg or load_config()
     qcfg = cfg.get("query", {})
-    timeout = timeout or qcfg.get("timeout_s", 60)
+    timeout = timeout or qcfg.get("timeout_s", 300)
     retries = retries if retries is not None else qcfg.get("max_retries", 3)
 
     clean = " ".join(lpql.split())
     bad = validate_readonly(clean)
     if bad:
-        return None, {"reason": bad, "query_sent": clean}
+        return None, 0, {"reason": bad, "query_sent": clean}
 
     if os.getenv("LP_OFFLINE") == "1":
         return _offline_rows(clean)
@@ -144,20 +143,23 @@ def query(lpql: str, timeout: int | None = None,
         try:
             req = urllib.request.Request(url, headers={"Accept": "text/csv"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read().decode("utf-8", errors="replace")
+                raw = resp.read()
                 code = resp.getcode()
+            body = raw.decode("utf-8", errors="replace")
+            size = len(raw)
 
             if code == 200 and body.strip():
                 if body.lstrip().startswith("<!"):
-                    return None, {"reason": "HTTP 200 (HTML 에러 페이지)",
-                                  "response_preview": body[:500], "query_sent": clean}
+                    return None, size, {"reason": "HTTP 200 (HTML 에러 페이지)",
+                                        "response_preview": body[:500], "query_sent": clean}
                 rows = _parse_csv(body)
                 if verbose:
-                    print(f"[LP] ✅ {len(rows)}건" + (f" (재시도 {attempt})" if attempt else ""))
-                return rows, None
+                    print(f"[LP] ✅ {len(rows)}건 {size/1048576:.1f}MB"
+                          + (f" (재시도 {attempt})" if attempt else ""))
+                return rows, size, None
 
             reason = f"HTTP {code}" + (" (빈 응답)" if not body.strip() else "")
-            return None, {"reason": reason, "response_preview": body[:500], "query_sent": clean}
+            return None, size, {"reason": reason, "response_preview": body[:500], "query_sent": clean}
 
         except Exception as e:
             last = f"{type(e).__name__}: {e}"
@@ -168,7 +170,20 @@ def query(lpql: str, timeout: int | None = None,
                 time.sleep(wait)
                 continue
 
-    return None, {"reason": f"재시도 {retries}회 실패 ({last})", "query_sent": clean}
+    return None, 0, {"reason": f"재시도 {retries}회 실패 ({last})", "query_sent": clean}
+
+
+def query(lpql: str, timeout: int | None = None,
+          cfg: dict | None = None, verbose: bool = True,
+          retries: int | None = None):
+    """LPQL 실행 → (rows, None) 또는 (None, err).
+
+    rows   : list[dict]  — CSV 헤더를 키로 하는 레코드 목록
+    err    : {"reason", "query_sent", ...}
+    retries: None 이면 config 값. 헬스체크처럼 즉시 실패가 나은 곳은 1 을 준다.
+    """
+    rows, _size, err = query_sized(lpql, timeout, cfg, verbose, retries)
+    return rows, err
 
 
 def fetch_columns(table: str | None = None, timeout: int = 10) -> list[str]:

@@ -9,8 +9,15 @@
     "poll_interval_s": 30,
     "window": "10m",
     "limit": 2000,
-    "timeout_s": 60,
-    "max_retries": 3
+    "timeout_s": 300,
+    "max_retries": 3,
+
+    "chunk_minutes": 10,
+    "_chunk_doc": "긴 구간(리포트)은 이 단위로 끊어 조회 후 합친다",
+    "max_bytes": 31457280,
+    "_max_bytes_doc": "한 청크 응답이 30MB 초과면 그 구간만 절반으로 재귀 분할",
+    "sort_col": "_time",
+    "_sort_doc": "구간 조회 정렬 컬럼. 테이블에 없으면 \"\" 로 비워 정렬 생략"
   },
 
   "amos": {
