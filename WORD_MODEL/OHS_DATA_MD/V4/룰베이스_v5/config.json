@@ -1,5 +1,5 @@
 {
-  "_comment": "운영 — Logpresso 적재 사용 (서버 이관 반영: 10.40.42.27 → 10.40.42.167)",
+  "_comment": "운영 — Logpresso적재",
   "enabled": true,
   "ml_enabled": false,
   "logpresso_base": "http://10.40.42.167:8888",
