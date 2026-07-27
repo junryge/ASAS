@@ -54,7 +54,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 #   구 서버는 접속은 되지만 결과 0건만 반환하므로, IP 가 틀리면 조용히 빈 값이 됨 → 주의
 HOST = '10.40.42.167'
 PORT = 8888
-API_KEY = 'db1d2335-49cf-e859-3519-1ca132922e38'
+API_KEY = '10f12ae0-5a80-55cd-7b15-e5554f0612f3'   # 신 서버 키 (구: db1d2335-...)
 
 TABLES = {'BOTTLENECK': 'ATLAS_BOTTLENECK_ANOMALY', 'QUEUE': 'ATLAS_QUEUE_ANOMALY'}
 NEW_COLS = ['BOTTLENECK_downward_anomaly_cols', 'BOTTLENECK_upward_anomaly_cols',
