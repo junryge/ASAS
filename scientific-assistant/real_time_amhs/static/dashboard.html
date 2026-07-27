@@ -346,6 +346,7 @@ async function pollStatus(){
     const sv = st.saved || {};
     $('#streamtx').textContent = st.connected
       ? `STREAMING · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 수집`
+        + (st.gap_min > 5 ? ` · ${st.gap_min}분 구간 보충` : '')
         + (sv.files?.length ? ` → ${sv.files[0]}` : '')
         + ` · 임계 ${s.alarm_floor}점`
       : `연결 끊김 — ${st.error||'대기'}`;

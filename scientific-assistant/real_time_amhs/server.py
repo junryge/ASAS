@@ -58,7 +58,13 @@ def _poll_loop() -> None:
                 window=CFG.get("query", {}).get("window", "10m"),
                 last_rows=res.pop("all_rows", None) or STATE.get("last_rows"),
                 saved=res.get("saved"),
+                gap_min=res.get("gap_min"),
             )
+            sv = res.get("saved") or {}
+            if STATE["scans"] == 1 or sv.get("written"):
+                print(f"[수집] {res.get('gap_min')}분 구간 · {res.get('rows')}행 조회 · "
+                      f"신규 {sv.get('written', 0)}행 저장"
+                      + (f" → {sv['files'][0]}" if sv.get("files") else ""))
             if res.get("ok"):
                 _auto_judge(res.get("cases") or [])
         except Exception as e:

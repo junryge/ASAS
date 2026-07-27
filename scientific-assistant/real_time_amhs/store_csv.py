@@ -149,6 +149,24 @@ def _days_between(f8: str, t8: str) -> list[str]:
     return days
 
 
+def last_time(day: str, cfg: dict | None = None) -> datetime | None:
+    """그 날 파일에 저장된 가장 늦은 시각. 없으면 None."""
+    cfg = cfg or load_config()
+    time_col = cfg.get("amos", {}).get("base_time_col", "datetime")
+    newest = None
+    for r in read_day(day, cfg):
+        d = "".join(ch for ch in str(r.get(time_col) or "") if ch.isdigit())[:14]
+        if len(d) < 12:
+            continue
+        try:
+            t = datetime.strptime(d.ljust(14, "0"), "%Y%m%d%H%M%S")
+        except ValueError:
+            continue
+        if newest is None or t > newest:
+            newest = t
+    return newest
+
+
 def list_days(cfg: dict | None = None) -> list[dict]:
     """저장된 날짜 파일 목록 (최신순)."""
     d = data_dir(cfg)

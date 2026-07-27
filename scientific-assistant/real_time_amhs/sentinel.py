@@ -319,14 +319,39 @@ class CaseStore:
 
 
 # ────────────────────────────── 폴링 ──────────────────────────────
+def catch_up_range(cfg: dict | None = None) -> tuple[str, str, int]:
+    """가져올 구간을 정한다 — 저장된 마지막 시각 ~ 현재.
+
+    · 오늘 저장분이 없으면 오늘 00:00:00 부터 (서버를 늦게 켜도 하루치가 채워진다)
+    · 있으면 그 시각부터 (중간에 멈췄던 구간을 메운다)
+    반환 (from_dt, to_dt, 빈구간_분)
+    """
+    cfg = cfg or load_config()
+    now = datetime.now()
+    day = now.strftime("%Y%m%d")
+
+    last = None
+    try:
+        from store_csv import last_time
+        last = last_time(day, cfg)
+    except Exception:
+        pass
+
+    start = last if last else now.replace(hour=0, minute=0, second=0, microsecond=0)
+    gap = max(0, int((now - start).total_seconds() // 60))
+    return start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"), gap
+
+
 def scan_once(store: CaseStore, rows: list[dict] | None = None,
               cfg: dict | None = None) -> dict:
     """1회 스캔 — 로그프레소 조회 → 임계 초과분을 케이스에 반영."""
     cfg = cfg or load_config()
-    warn, saved = None, None
+    warn, saved, gap = None, None, None
     if rows is None:
+        # 마지막 저장 시각 ~ 현재까지 (없으면 오늘 00:00부터) — 빈 구간을 메운다
+        start, end, gap = catch_up_range(cfg)
         # 기존 데이터 + AMOS 4개 컬럼(ATLAS 2개 테이블 조인)
-        rows, err = fetch_amos()
+        rows, err = fetch_amos(from_dt=start, to_dt=end)
         if err and not err.get("warn"):
             return {"ok": False, "error": err.get("reason"), "detected": 0, "rows": 0}
         if err:
@@ -359,6 +384,7 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
         "active": len(store.active()),
         "amos_warn": warn,
         "saved": saved,
+        "gap_min": gap,            # 이번에 메운 빈 구간(분)
         "all_rows": rows,          # 정상 포함 전체 — 화면 피드용
     }
 
