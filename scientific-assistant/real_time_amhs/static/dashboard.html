@@ -198,7 +198,13 @@
         <button data-f="위험">위험</button>
         <button data-f="unack">미확인</button>
       </div>
-      <div class="stream"><span class="dot" id="dot"></span><span id="streamtx">연결 확인 중</span></div>
+      <div class="stream">
+        <label style="color:var(--tx3)">구간</label>
+        <select id="selWindow" title="한 번에 가져올 데이터 구간"></select>
+        <label style="color:var(--tx3)">주기</label>
+        <select id="selPoll" title="몇 초마다 가져올지"></select>
+        <span class="dot" id="dot"></span><span id="streamtx">연결 확인 중</span>
+      </div>
     </div>
     <table class="cases">
       <thead><tr><th style="width:150px">CASE</th><th>이상 내용</th>
@@ -218,13 +224,19 @@
   <div class="card">
     <h2>LLM 리포트</h2>
     <div class="bd">
-      <h3 class="note" style="margin:0 0 7px">구간 지정</h3>
+      <h3 class="note" style="margin:0 0 7px">날짜 검색 — 로그프레소에서 직접 조회 (실시간 관제와 별개)</h3>
+      <div class="row" style="margin-bottom:8px">
+        <label>날짜</label>
+        <input type="date" id="rdate">
+        <button class="act" id="btnday">그 날 하루 전체</button>
+        <span class="note">교대·PM 구간 사후 분석에 사용</span>
+      </div>
       <div class="row">
+        <label>구간 지정</label>
         <input type="datetime-local" id="rstart">
         <span class="note">~</span>
         <input type="datetime-local" id="rend">
         <button class="act pri" id="btnrep" style="flex:0 0 auto">평가 실행</button>
-        <span class="note">교대·PM 구간 사후 분석에 사용</span>
       </div>
       <div id="repout"></div>
     </div>
@@ -323,7 +335,7 @@ async function pollStatus(){
     POLL = s.poll_interval_s;
     $('#dot').className = 'dot'+(st.connected?'':' off');
     $('#streamtx').textContent = st.connected
-      ? `STREAMING · ${st.latency_ms??'–'}ms · 임계 ${s.alarm_floor}점`
+      ? `STREAMING · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 ${parseInt(st.window||s.window||'10')}분치 · 임계 ${s.alarm_floor}점`
       : `연결 끊김 — ${st.error||'대기'}`;
     $('#ch-lp').className  = st.connected?'':'off';
     $('#ch-amos').className= st.amos_warn?'off':'';
@@ -530,10 +542,15 @@ const chunk = (z=[]) => z.length
   ? z.reduce((a,v,i)=>a+esc(v)+((i%4===3&&i<z.length-1)?'<br>':(i<z.length-1?', ':'')),'')
   : '–';
 
-$('#btnrep').onclick = async () => {
-  const b=$('#btnrep'); b.disabled=true; b.textContent='평가 중…';
+$('#btnday').onclick = () => runReport({date: $('#rdate').value}, $('#btnday'));
+$('#btnrep').onclick = () => runReport({start:$('#rstart').value, end:$('#rend').value}, $('#btnrep'));
+
+async function runReport(body, btn){
+  const label = btn.textContent;
+  btn.disabled=true; btn.textContent='평가 중…';
   try{
-    REPORT = await post('/api/report',{start:$('#rstart').value,end:$('#rend').value});
+    REPORT = await post('/api/report', body);
+    if(REPORT.error){ alert(REPORT.error); return; }
     const s=REPORT.summary;
     $('#repout').innerHTML = `
       ${REPORT.llm_error?`<div class="warn" style="margin:12px 0">LLM 미연결 — 통계 요약만 표시 (${esc(REPORT.llm_error)})</div>`:''}
@@ -556,8 +573,8 @@ $('#btnrep').onclick = async () => {
     $('#btnmcs').onclick=()=>alert('관제시스템 전송 규격(엔드포인트·포맷)이 필요합니다 — 미구현.');
     $('#btnfb').disabled=false; $('#fbtarget').textContent=`대상: ${REPORT.id}`;
     loadFbStatus();
-  } finally { b.disabled=false; b.textContent='평가 실행'; }
-};
+  } finally { btn.disabled=false; btn.textContent=label; }
+}
 
 /* 피드백 */
 document.querySelectorAll('#verdicts button').forEach(b=>b.onclick=()=>{
@@ -596,8 +613,32 @@ $('#btnq').onclick = async () => {
      <tbody>${r.rows.slice(0,10).map(row=>`<tr>${cols.map(c=>`<td style="font-size:11.5px">${esc(String(row[c]??'').slice(0,38))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'');
 };
 
+/* 수집 설정 — 데이터 구간 / 수집 주기 */
+const pollLabel = s => s < 60 ? `${s}초` : `${s/60}분`;
+
+async function initSettings(){
+  const s = await api('/api/window');
+  $('#selWindow').innerHTML = s.window_options
+    .map(w => `<option value="${w}" ${w===s.window?'selected':''}>${parseInt(w)}분</option>`).join('');
+  $('#selPoll').innerHTML = s.poll_options
+    .map(p => `<option value="${p}" ${p===s.poll_interval_s?'selected':''}>${pollLabel(p)}</option>`).join('');
+  POLL = s.poll_interval_s;
+}
+$('#selWindow').onchange = async e => {
+  const r = await post('/api/window', {window: e.target.value});
+  if(r.error) alert(r.error); else pollStatus();
+};
+$('#selPoll').onchange = async e => {
+  const r = await post('/api/window', {poll_interval_s: parseInt(e.target.value)});
+  if(r.error) alert(r.error); else { POLL = r.poll_interval_s; pollStatus(); }
+};
+
 /* 시작 — 스플래시 없이 바로 */
-pollStatus(); pollCases(); loadFbStatus();
+(function initDate(){
+  const d = new Date();
+  $('#rdate').value = new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+})();
+initSettings(); pollStatus(); pollCases(); loadFbStatus();
 setInterval(pollStatus,5000);
 setInterval(pollCases,5000);
 </script>

@@ -43,7 +43,7 @@ STATE = {
 
 # ────────────────────────────── 폴링 루프 ──────────────────────────────
 def _poll_loop() -> None:
-    interval = CFG.get("query", {}).get("poll_interval_s", 30)
+    """수집 루프 — 주기·구간을 매 회 config 에서 다시 읽어 즉시 반영한다."""
     while True:
         t0 = time.time()
         try:
@@ -55,11 +55,59 @@ def _poll_loop() -> None:
                 error=None if res.get("ok") else res.get("error"),
                 amos_warn=res.get("amos_warn"),
                 scans=STATE["scans"] + 1,
+                window=CFG.get("query", {}).get("window", "10m"),
             )
+            if res.get("ok"):
+                _auto_judge(res.get("cases") or [])
         except Exception as e:
             STATE.update(connected=False, error=f"{type(e).__name__}: {e}",
                          last_scan=datetime.now().isoformat())
-        time.sleep(interval)
+
+        # 주기를 나눠 자며 변경을 빠르게 반영
+        interval = max(5, int(CFG.get("query", {}).get("poll_interval_s", 60)))
+        slept = 0
+        while slept < interval:
+            time.sleep(min(2, interval - slept))
+            slept += 2
+            if int(CFG.get("query", {}).get("poll_interval_s", 60)) != interval:
+                break                       # 주기가 바뀌면 즉시 다음 수집으로
+
+
+_LEVEL_ORD = {"경계": 1, "위험": 2, "초위험": 3}
+
+
+def _auto_judge(case_ids: list[str]) -> None:
+    """실시간 감지 즉시 LLM 이 판단하게 한다 (신규·등급상향 케이스만)."""
+    lc = CFG.get("llm", {})
+    if not (lc.get("enabled", True) and lc.get("auto_judge", True)):
+        return
+    floor = _LEVEL_ORD.get(lc.get("auto_judge_min_level", "경계"), 1)
+
+    for cid in case_ids:
+        c = STORE.by_id(cid)
+        if not c or not c.pop("_new", False):
+            continue
+        if _LEVEL_ORD.get(c.get("level"), 0) < floor:
+            continue
+
+        def work(case_id=cid):
+            try:
+                from llm_client import judge_case
+                cc = STORE.by_id(case_id)
+                if not cc:
+                    return
+                res, err = judge_case(cc, CFG)
+                if err:
+                    print(f"[LLM] ⚠️ {case_id} 자동 판단 실패: {err}")
+                    return
+                cc["llm"] = {**res, "at": datetime.now().isoformat(), "auto": True}
+                STORE.save()
+                print(f"[LLM] 🤖 {case_id} 자동 판단 완료 (확신도 {res.get('확신도')}%)")
+            except Exception as e:
+                print(f"[LLM] ⚠️ {case_id} 자동 판단 예외: {e}")
+
+        threading.Thread(target=work, daemon=True).start()
+    STORE.save()
 
 
 # ────────────────────────────── 화면 ──────────────────────────────
@@ -95,6 +143,40 @@ def api_status():
 def api_ping():
     ok, msg = ping()
     return jsonify({"ok": ok, "message": msg, "base": CFG.get("logpresso_base")})
+
+
+@app.route("/api/window", methods=["GET", "POST"])
+def api_window():
+    """실시간 수집 설정 조회/변경.
+
+    · window          — 한 번에 가져올 데이터 구간 (1m ~ 60m)
+    · poll_interval_s — 몇 초마다 가져올지 (수집 주기)
+    둘은 별개다: '1분마다 최근 30분치' 같은 조합이 가능하다.
+    """
+    q = CFG.setdefault("query", {})
+    wopts = q.get("window_options", ["1m", "5m", "10m", "20m", "30m", "40m", "50m", "60m"])
+    popts = q.get("poll_options", [10, 30, 60, 300, 600])
+
+    if request.method == "POST":
+        b = request.get_json(silent=True) or {}
+        if "window" in b:
+            if b["window"] not in wopts:
+                return jsonify({"error": f"window 는 {wopts} 중 하나여야 합니다"}), 400
+            q["window"] = b["window"]
+            print(f"[관제] 데이터 구간 → {b['window']}")
+        if "poll_interval_s" in b:
+            try:
+                p = int(b["poll_interval_s"])
+            except (TypeError, ValueError):
+                return jsonify({"error": "poll_interval_s 는 정수(초)"}), 400
+            if p not in popts:
+                return jsonify({"error": f"poll_interval_s 는 {popts} 중 하나여야 합니다"}), 400
+            q["poll_interval_s"] = p
+            print(f"[관제] 수집 주기 → {p}초")
+        STATE["settings_changed_at"] = datetime.now().isoformat()
+
+    return jsonify({"window": q.get("window", "10m"), "window_options": wopts,
+                    "poll_interval_s": q.get("poll_interval_s", 60), "poll_options": popts})
 
 
 @app.route("/api/kpi")
@@ -206,10 +288,26 @@ def _parse_dt(s: str | None, default: datetime) -> datetime:
 @app.route("/api/report", methods=["POST"])
 def api_report():
     """구간 지정 → 평가 실행."""
+    """구간 리포트 — 기본은 로그프레소를 날짜로 직접 조회(관제와 분리).
+
+    {"date": "2026-07-27"}                      → 그 날 하루 전체
+    {"start": "...", "end": "..."}              → 지정 구간
+    {"source": "store"}                         → 실시간 케이스 저장소 기준
+    """
     b = request.get_json(silent=True) or {}
-    end = _parse_dt(b.get("end"), datetime.now())
-    start = _parse_dt(b.get("start"), end - timedelta(minutes=30))
-    rep = build_report(STORE, start, end, CFG, use_llm=b.get("use_llm", True))
+    if b.get("date"):
+        try:
+            d = datetime.strptime(b["date"][:10], "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "date 형식은 YYYY-MM-DD"}), 400
+        start, end = d, d.replace(hour=23, minute=59, second=59)
+    else:
+        end = _parse_dt(b.get("end"), datetime.now())
+        start = _parse_dt(b.get("start"), end - timedelta(minutes=30))
+
+    rep = build_report(STORE, start, end, CFG,
+                       use_llm=b.get("use_llm", True),
+                       source=b.get("source", "query"))
     return jsonify(rep)
 
 

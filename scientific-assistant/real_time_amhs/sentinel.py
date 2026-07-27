@@ -186,11 +186,17 @@ class CaseStore:
                 }
                 self.cases.append(c)
                 self._tl(c, dt, "감지", f"{g['emoji']} {g['level']} {score:.0f}점 최초 감지")
+                c["_new"] = True                    # 자동 LLM 판단 대상 표시
             else:
+                # 이미 반영한 시각이면 아무것도 하지 않는다 (재폴링 시 중복 방지)
+                if c.get("last_seen") and dt <= datetime.fromisoformat(c["last_seen"]) \
+                        and score <= c["peak_score"]:
+                    return c
                 if c["status"] == "종결":
                     c["status"] = "활성"
                     c["closed_at"] = None
                     self._tl(c, dt, "재발", f"억제 창 내 재발 — 같은 케이스로 병합 ({score:.0f}점)")
+                    c["_new"] = True
 
             is_peak = score >= c["peak_score"]
             if score > c["peak_score"]:
@@ -199,6 +205,7 @@ class CaseStore:
                 g2 = grade(score, self.cfg)
                 if g2["level"] != c["level"]:
                     self._tl(c, dt, "상향", f"{c['level']} → {g2['level']} ({score:.0f}점)")
+                    c["_new"] = True            # 등급 상향 → LLM 재판단
                 c.update(level=g2["level"], severity=g2["severity"], emoji=g2["emoji"])
 
             c["last_seen"] = dt.isoformat()

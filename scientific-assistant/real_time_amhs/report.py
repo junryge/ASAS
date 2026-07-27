@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime
 
 from lp_client import load_config
-from sentinel import CaseStore, alarm_floor, grade
+from sentinel import CaseStore, _row_dt, _score, alarm_floor, grade
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -22,6 +23,40 @@ def _dir(cfg: dict, key: str, default: str) -> str:
     p = os.path.join(BASE_DIR, cfg.get("storage", {}).get(key, default))
     os.makedirs(p, exist_ok=True)
     return p
+
+
+def cases_from_query(from_dt: str, to_dt: str, cfg: dict | None = None):
+    """★리포트 전용 — 로그프레소를 날짜로 직접 조회해 그 구간의 사건을 뽑는다.
+
+    실시간 관제(케이스 저장소)와 분리된 경로다. 관제가 안 돌던 시간대도
+    날짜만 지정하면 그대로 분석할 수 있다.
+
+    from_dt/to_dt: "yyyyMMddHHmmss"
+    반환 (cases, err)
+    """
+    cfg = cfg or load_config()
+    from lp_query import fetch_amos
+
+    rows, err = fetch_amos(from_dt=from_dt, to_dt=to_dt)
+    if err and not err.get("warn"):
+        return None, err
+    warn = err.get("reason") if err else None
+
+    # 조회 결과만으로 케이스를 새로 구성 (실시간 저장소를 건드리지 않는다)
+    tmp = CaseStore.__new__(CaseStore)
+    tmp.cfg, tmp.cases = cfg, []
+    tmp._lock = threading.Lock()
+    tmp.path = os.path.join(BASE_DIR, "data", ".report_tmp.json")
+    tmp.save = lambda: None                    # 임시 — 디스크에 쓰지 않는다
+
+    floor = alarm_floor(cfg)
+    for row in rows or []:
+        dt, sc = _row_dt(row), _score(row)
+        if dt is None or sc < floor:
+            continue
+        tmp.ingest((row.get("hot_area") or "").strip() or "UNKNOWN", dt, sc, row)
+
+    return sorted(tmp.cases, key=lambda c: c["peak_at"]), ({"warn": warn} if warn else None)
 
 
 def cases_in_span(store: CaseStore, start: datetime, end: datetime) -> list[dict]:
@@ -37,11 +72,27 @@ def cases_in_span(store: CaseStore, start: datetime, end: datetime) -> list[dict
     return sorted(out, key=lambda c: c["peak_at"])
 
 
-def build_report(store: CaseStore, start: datetime, end: datetime,
-                 cfg: dict | None = None, use_llm: bool = True) -> dict:
-    """구간 리포트 생성. LLM 실패해도 통계 리포트는 반드시 나온다."""
+def build_report(store: CaseStore | None, start: datetime, end: datetime,
+                 cfg: dict | None = None, use_llm: bool = True,
+                 source: str = "query") -> dict:
+    """구간 리포트 생성. LLM 실패해도 통계 리포트는 반드시 나온다.
+
+    source="query" (기본) — 로그프레소를 날짜로 직접 조회 (관제와 분리)
+    source="store"        — 실시간 케이스 저장소에서 추출
+    """
     cfg = cfg or load_config()
-    cs = cases_in_span(store, start, end)
+    fetch_warn = None
+
+    if source == "query":
+        cs, werr = cases_from_query(start.strftime("%Y%m%d%H%M%S"),
+                                    end.strftime("%Y%m%d%H%M%S"), cfg)
+        if cs is None:
+            cs, fetch_warn = [], (werr or {}).get("reason", "조회 실패")
+        elif werr:
+            fetch_warn = werr.get("warn")
+    else:
+        cs = cases_in_span(store, start, end) if store else []
+
     span = f"{start.strftime('%Y-%m-%d %H:%M')} ~ {end.strftime('%H:%M')}"
 
     top = max(cs, key=lambda c: c["peak_score"], default=None)
