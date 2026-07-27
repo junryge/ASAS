@@ -1,0 +1,135 @@
+{
+  "_doc": "AMHS Sentinel — 데모스와 완전 독립된 LLM 실시간 관제 시스템 설정",
+
+  "logpresso_base": "http://10.40.42.167:8888/logpresso",
+  "api_key_file": "api_key.txt",
+  "table_name": "test_table3",
+
+  "query": {
+    "poll_interval_s": 30,
+    "window": "10m",
+    "limit": 2000,
+    "timeout_s": 60,
+    "max_retries": 3
+  },
+
+  "amos": {
+    "_doc": "AMOS 이상감지 — 별도 2개 테이블을 기존 데이터에 시각으로 조인해 4개 컬럼을 추가한다.",
+    "_확인방법": "python lp_query.py --schema -t ATLAS_BOTTLENECK_ANOMALY   ← 실제 컬럼 확인 후 *_col 교체",
+    "source": "atlas_tables",
+    "filter": "MCP_NM == \"BR\"",
+    "base_time_col": "datetime",
+    "_base_time_col_doc": "기존 데이터(test_table3)의 시각 컬럼",
+
+    "bottleneck": {
+      "table": "ATLAS_BOTTLENECK_ANOMALY",
+      "time_col": "_time",
+      "downward_col": "BOTTLENECK_downward_anomaly_cols",
+      "upward_col": "BOTTLENECK_upward_anomaly_cols"
+    },
+    "queue": {
+      "table": "ATLAS_QUEUE_ANOMALY",
+      "time_col": "_time",
+      "downward_col": "QUEUE_downward_anomaly_cols",
+      "upward_col": "QUEUE_upward_anomaly_cols"
+    },
+
+    "join_tolerance_s": 60,
+    "_join_doc": "분 단위 데이터 기준. 같은 분으로 맞추고 못 찾으면 이 오차 내 최근접을 쓴다.",
+    "target_columns": [
+      "BOTTLENECK_downward_anomaly_cols",
+      "BOTTLENECK_upward_anomaly_cols",
+      "QUEUE_downward_anomaly_cols",
+      "QUEUE_upward_anomaly_cols"
+    ]
+  },
+
+  "llm": {
+    "enabled": true,
+    "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
+    "model": "gaia-Qwen3.5-397B-A17B",
+    "api_key_env": "GAIA_API_KEY",
+    "timeout_s": 90,
+    "max_tokens": 2048,
+    "temperature": 0.2,
+    "skills_dir": "../m16_hub_skills",
+    "skills": [
+      "m16_hub_일반_v3.5.md",
+      "m16_hub_임계값_v3.5.md",
+      "m16_hub_카파시_v3.5.md",
+      "m16_hub_결과해석_도메인_고객인용V3.5.md"
+    ],
+    "persona": "페르소나_통합.txt"
+  },
+
+  "grade": {
+    "_doc": "점수 등급 (데모스 스킬과 동일 기준)",
+    "normal_max": 49,
+    "bands": [
+      { "min": 50, "max": 70, "level": "경계",   "emoji": "🟠", "severity": "경계/주의(확인필요)" },
+      { "min": 71, "max": 84, "level": "위험",   "emoji": "🔴", "severity": "위험/경고(모니터링 필요)" },
+      { "min": 85, "max": 100, "level": "초위험", "emoji": "⛔", "severity": "초위험/심각(조치필요)" }
+    ]
+  },
+
+  "policy": {
+    "_doc": "감지·확인·에스컬레이션 정책. 감지는 항상 실시간이며 아래는 라우팅/재확인 주기만 규정한다.",
+    "routing": [
+      {
+        "level": "초위험",
+        "on_detect": ["관제실 팝업", "당직 반장 SMS"],
+        "unack_5m": ["파트장 호출"],
+        "unack_15m": ["팀장 에스컬레이션"],
+        "recheck_min": 1
+      },
+      {
+        "level": "위험",
+        "on_detect": ["관제 대시보드 알림", "메신저 채널"],
+        "unack_5m": ["당직 반장 메신저"],
+        "unack_15m": ["파트장 호출"],
+        "recheck_min": 3
+      },
+      {
+        "level": "경계",
+        "on_detect": ["관제 대시보드 알림"],
+        "unack_5m": [],
+        "unack_15m": ["당직 반장 메신저"],
+        "recheck_min": 5
+      }
+    ],
+    "suppression_window_min": 30,
+    "_suppression_doc": "종결 후에도 이 시간 동안 같은 설비/위치 재발은 같은 케이스로 묶는다.",
+    "close_requires_ack": true,
+    "_close_doc": "'이상 없음' 판정은 케이스를 닫지 않고 재확인 예약만 갱신한다."
+  },
+
+  "evaluation": {
+    "_doc": "누적 구간을 다시 평가해 리포트로 내보내는 주기. 감지 자체와 무관.",
+    "periods": [
+      { "every": "1m",  "enabled": false, "scope": "직전 1분",   "filter": "CRITICAL_ONLY", "channels": ["관제 대시보드"] },
+      { "every": "5m",  "enabled": false, "scope": "직전 5분",   "filter": "CRITICAL_ONLY", "channels": ["메신저"] },
+      { "every": "30m", "enabled": true,  "scope": "직전 30분",  "filter": "ALL",           "channels": ["관제 대시보드"] },
+      { "every": "8h",  "enabled": true,  "scope": "교대 구간",  "filter": "ALL",           "channels": ["메신저", "메일"] }
+    ]
+  },
+
+  "feedback": {
+    "_doc": "리포트 피드백 → 다음 리포트의 임계치/요약 방식에 반영",
+    "store": "data/feedback.jsonl",
+    "apply_last_n": 20,
+    "threshold_nudge": 2,
+    "_nudge_doc": "'과다 탐지' 누적 시 임계 점수를 +N, '누락' 누적 시 -N 조정 (최대 ±10)"
+  },
+
+  "storage": {
+    "cases": "data/cases.json",
+    "reports": "data/reports",
+    "raw_snapshots": "data/snapshots"
+  },
+
+  "server": {
+    "_doc": "데모스(5000번대)와 겹치지 않는 독립 포트",
+    "host": "0.0.0.0",
+    "port": 8700
+  }
+}

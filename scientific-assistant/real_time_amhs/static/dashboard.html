@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMHS Sentinel — LLM 실시간 이상감지 · 관제</title>
+<style>
+  :root{
+    --bg:#080A0F; --panel:#0D1119; --panel2:#131926; --line:#1C2431; --line2:#26303f;
+    --tx:#E6EDF6; --tx2:#8FA0B6; --tx3:#5E6E85;
+    --cy:#3DDBE8; --crit:#FF4D5E; --major:#FF9F2E; --minor:#F2D338; --ok:#2FD68A;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif}
+
+  /* ── 상단 바 (오프닝 화면 없이 바로 관제) ── */
+  .top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
+       border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+  .logo{display:flex;align-items:center;gap:9px}
+  .logo .mk{width:26px;height:26px;border-radius:7px;border:2px solid var(--cy);
+            display:grid;place-items:center}
+  .logo .mk i{width:8px;height:8px;border-radius:50%;background:var(--cy);display:block}
+  .logo b{font-size:14px;letter-spacing:1.4px;font-weight:700}
+  .logo span{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.2px}
+  .tabs{display:flex;gap:4px;margin-left:10px}
+  .tabs button{background:transparent;border:1px solid transparent;color:var(--tx2);
+               padding:6px 14px;border-radius:7px;cursor:pointer;font:inherit;font-size:12.5px}
+  .tabs button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:600}
+  .chan{margin-left:auto;display:flex;gap:14px;font-size:11.5px;color:var(--tx2)}
+  .chan i{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:5px}
+  .chan i.off{background:var(--crit)}
+  .clk{text-align:right;font-variant-numeric:tabular-nums}
+  .clk b{font-size:17px;font-weight:600;letter-spacing:.5px}
+  .clk span{display:block;font-size:10.5px;color:var(--tx3)}
+
+  /* ── KPI ── */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--line);
+        background:var(--panel)}
+  .kpi{padding:11px 18px;border-right:1px solid var(--line)}
+  .kpi:last-child{border-right:0}
+  .kpi .l{font-size:11.5px;color:var(--tx3)}
+  .kpi .v{font-size:23px;font-weight:700;line-height:1.25;letter-spacing:-.5px}
+  .kpi .v u{font-size:11.5px;font-weight:500;color:var(--tx3);text-decoration:none;margin-left:3px}
+  .kpi .s{font-size:11px;color:var(--tx3)}
+  .c-cy{color:var(--cy)} .c-cr{color:var(--crit)} .c-mj{color:var(--major)} .c-ok{color:var(--ok)}
+
+  /* ── 레이아웃 ── */
+  .main{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:0;align-items:start}
+  @media(max-width:1180px){.main{grid-template-columns:1fr}}
+  .pane{border-right:1px solid var(--line);min-height:calc(100vh - 118px)}
+  .side{background:var(--panel);min-height:calc(100vh - 118px)}
+
+  .hd{display:flex;align-items:center;gap:9px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .hd h2{margin:0;font-size:13px;font-weight:650}
+  .filters{display:flex;gap:5px;margin-left:4px}
+  .filters button{background:transparent;border:1px solid var(--line2);color:var(--tx2);
+                  border-radius:20px;padding:3px 11px;font:inherit;font-size:11.5px;cursor:pointer}
+  .filters button.on{background:#12303a;border-color:#1d4b57;color:var(--cy)}
+  .stream{margin-left:auto;font-size:11.5px;color:var(--tx3);display:flex;align-items:center;gap:7px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
+       box-shadow:0 0 0 0 rgba(47,214,138,.6);animation:p 2s infinite}
+  .dot.off{background:var(--crit);animation:none}
+  @keyframes p{70%{box-shadow:0 0 0 7px rgba(47,214,138,0)}100%{box-shadow:0 0 0 0 rgba(47,214,138,0)}}
+
+  /* ── 케이스 목록 ── */
+  table.cases{width:100%;border-collapse:collapse}
+  table.cases th{font-size:11px;color:var(--tx3);font-weight:600;text-align:left;
+                 padding:8px 14px;border-bottom:1px solid var(--line)}
+  table.cases td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.cases tr.crow{cursor:pointer}
+  table.cases tr.crow:hover{background:var(--panel2)}
+  table.cases tr.crow.sel{background:#101a24;box-shadow:inset 3px 0 0 var(--cy)}
+  .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
+  .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+  .ttl{font-weight:600;font-size:13.5px}
+  .sub{font-size:11.5px;color:var(--tx3);margin-top:3px}
+  .chip{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10.5px;
+        font-weight:700;letter-spacing:.3px;margin-right:6px}
+  .lv초위험{background:rgba(255,77,94,.15);color:var(--crit)}
+  .lv위험{background:rgba(255,159,46,.15);color:var(--major)}
+  .lv경계{background:rgba(242,211,56,.15);color:var(--minor)}
+  .dim{color:var(--tx3);font-size:12px;white-space:nowrap}
+  .stt{font-size:12px;font-weight:600}
+  .stt.활성{color:var(--crit)} .stt.확인{color:var(--major)} .stt.종결{color:var(--tx3)}
+
+  /* ── 상세 ── */
+  .side .sec{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .side h3{margin:0 0 8px;font-size:11.5px;color:var(--tx3);font-weight:650}
+  .dt-hd{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .dt-hd .id{font-size:12.5px;color:var(--tx2)}
+  .dt-ttl{font-size:17px;font-weight:700;margin:9px 0 12px;line-height:1.35}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .grid4 .l{font-size:10.5px;color:var(--tx3)}
+  .grid4 .v{font-size:13px;font-weight:600;margin-top:2px}
+  .step{display:flex;align-items:center;margin:15px 0 4px}
+  .step .n{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;width:56px}
+  .step .n i{width:9px;height:9px;border-radius:50%;background:#26303f}
+  .step .n.on i{background:var(--cy)}
+  .step .n.cur i{background:var(--crit);box-shadow:0 0 0 4px rgba(255,77,94,.18)}
+  .step .n span{font-size:10.5px;color:var(--tx3)}
+  .step .n.on span,.step .n.cur span{color:var(--tx2)}
+  .step .ln{height:1px;background:#26303f;flex:1;margin-bottom:19px}
+  .llmbox{background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:12px}
+  .llmbox .tag{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--cy);
+               font-weight:650;margin-bottom:7px}
+  .llmbox .tag i{width:7px;height:7px;border-radius:50%;background:var(--cy)}
+  ol.act{margin:10px 0 0;padding:0;list-style:none;counter-reset:a}
+  ol.act li{counter-increment:a;font-size:12.5px;padding:4px 0 4px 26px;position:relative;color:var(--tx2)}
+  ol.act li::before{content:counter(a,decimal-leading-zero);position:absolute;left:0;
+                    color:var(--cy);font-size:11px;font-weight:700;top:5px}
+  pre.snap{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+           padding:11px;margin:0;overflow:auto;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
+           color:#8ecfdc;white-space:pre-wrap;word-break:break-all}
+  table.mx{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:9px}
+  table.mx td{padding:7px 10px;border-bottom:1px solid var(--line)}
+  table.mx td:nth-child(2){text-align:right;font-weight:700}
+  table.mx td:nth-child(3){text-align:right;color:var(--tx3);font-size:11.5px;width:88px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .zchip{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;
+         padding:2px 8px;font-size:11.5px;color:var(--tx2)}
+  ul.tl{list-style:none;margin:0;padding:0;font-size:12.5px}
+  ul.tl li{padding:5px 0 5px 15px;border-left:1px solid var(--line2);position:relative;color:var(--tx2)}
+  ul.tl li::before{content:"";position:absolute;left:-3.5px;top:12px;width:6px;height:6px;
+                   border-radius:50%;background:var(--cy)}
+  ul.tl .k{color:var(--tx3);margin-right:7px;font-variant-numeric:tabular-nums}
+
+  button.act{background:var(--panel2);border:1px solid var(--line2);color:var(--tx);
+             border-radius:8px;padding:10px 14px;cursor:pointer;font:inherit;font-size:12.5px}
+  button.act:hover{background:#1a2331;border-color:#324459}
+  button.act.pri{background:#123039;border-color:#1d4b57;color:var(--cy);font-weight:650;flex:1}
+  button.act:disabled{opacity:.4;cursor:not-allowed}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  input,select,textarea{background:var(--bg);color:var(--tx);border:1px solid var(--line2);
+        border-radius:7px;padding:7px 10px;font:inherit;font-size:12.5px}
+  textarea{width:100%;resize:vertical;min-height:60px}
+  .note{color:var(--tx3);font-size:11.5px;line-height:1.65}
+  .warn{background:rgba(255,159,46,.09);border:1px solid rgba(255,159,46,.3);color:var(--major);
+        padding:9px 12px;border-radius:8px;font-size:12px;margin:12px 16px}
+  .empty{color:var(--tx3);text-align:center;padding:44px 16px;font-size:13px}
+  pre.md{white-space:pre-wrap;font:inherit;margin:0}
+  .page{padding:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+  .card>h2{margin:0;padding:11px 15px;font-size:13px;border-bottom:1px solid var(--line)}
+  .card .bd{padding:14px 15px}
+  table.pol{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.pol th{text-align:left;color:var(--tx3);font-weight:600;font-size:11.5px;
+               padding:7px 9px;border-bottom:1px solid var(--line)}
+  table.pol td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo">
+    <span class="mk"><i></i></span>
+    <span><b>AMHS SENTINEL</b><span>LLM 실시간 이상감지 · 관제</span></span>
+  </div>
+  <div class="tabs">
+    <button data-tab="live" class="on">실시간 관제</button>
+    <button data-tab="report">리포트 · 피드백</button>
+    <button data-tab="policy">정책</button>
+  </div>
+  <div class="chan">
+    <span><i id="ch-lp"></i>로그프레소</span>
+    <span><i id="ch-llm"></i>LLM</span>
+    <span><i id="ch-amos"></i>AMOS</span>
+  </div>
+  <div class="clk"><b id="clk">–</b><span id="clkd">KST</span></div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">활성 케이스</div>
+    <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
+  <div class="kpi"><div class="l">미확인</div>
+    <div class="v c-cr" id="k-unack">–<u>건</u></div><div class="s" id="k-unack-s">–</div></div>
+  <div class="kpi"><div class="l">감지 지연</div>
+    <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
+  <div class="kpi"><div class="l">재발률 (1h)</div>
+    <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
+  <div class="kpi"><div class="l">LLM 정탐률</div>
+    <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">피드백 누적 시 산출</div></div>
+</div>
+
+<div id="warnbox"></div>
+
+<!-- ── 실시간 관제 ── -->
+<div class="main" id="tab-live">
+  <div class="pane">
+    <div class="hd">
+      <h2>활성 케이스</h2>
+      <div class="filters">
+        <button data-f="all" class="on">전체</button>
+        <button data-f="초위험">초위험</button>
+        <button data-f="위험">위험</button>
+        <button data-f="unack">미확인</button>
+      </div>
+      <div class="stream"><span class="dot" id="dot"></span><span id="streamtx">연결 확인 중</span></div>
+    </div>
+    <table class="cases">
+      <thead><tr><th style="width:150px">CASE</th><th>이상 내용</th>
+        <th style="width:120px">설비 / 위치</th><th style="width:88px">경과</th>
+        <th style="width:74px">상태</th></tr></thead>
+      <tbody id="cases"><tr><td colspan="5" class="empty">불러오는 중…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="side" id="detail">
+    <div class="empty">왼쪽에서 케이스를 선택하세요</div>
+  </div>
+</div>
+
+<!-- ── 리포트 · 피드백 ── -->
+<div class="page hidden" id="tab-report">
+  <div class="card">
+    <h2>LLM 리포트</h2>
+    <div class="bd">
+      <h3 class="note" style="margin:0 0 7px">구간 지정</h3>
+      <div class="row">
+        <input type="datetime-local" id="rstart">
+        <span class="note">~</span>
+        <input type="datetime-local" id="rend">
+        <button class="act pri" id="btnrep" style="flex:0 0 auto">평가 실행</button>
+        <span class="note">교대·PM 구간 사후 분석에 사용</span>
+      </div>
+      <div id="repout"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>리포트 피드백</h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">평가가 다음 리포트의 임계치와 요약 방식에 반영됩니다.</p>
+      <h3 class="note">이번 리포트 판단은?</h3>
+      <div class="row" id="verdicts" style="margin-bottom:12px">
+        <button class="act" data-v="정확">정확</button>
+        <button class="act" data-v="보통">보통</button>
+        <button class="act" data-v="과다탐지">과다 탐지</button>
+        <button class="act" data-v="누락">누락 있음</button>
+      </div>
+      <h3 class="note">누락된 이슈가 있나요?</h3>
+      <input id="fbmissed" style="width:100%;margin-bottom:12px" placeholder="예: 14:20 M16A 반송지연 누락">
+      <h3 class="note">코멘트</h3>
+      <textarea id="fbcomment" placeholder="관제 관점 의견"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="act pri" id="btnfb" style="flex:0 0 auto" disabled>피드백 저장</button>
+        <span class="note" id="fbtarget">리포트를 먼저 생성하세요</span>
+      </div>
+      <h3 class="note" style="margin-top:16px">학습 반영 현황</h3>
+      <div id="fbstatus" class="note">–</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>로그프레소 조회 <span class="note" id="lptable"></span></h2>
+    <div class="bd">
+      <div class="row">
+        <input id="lpql" style="flex:1;min-width:240px" placeholder="LPQL (비우면 최근 구간 자동)">
+        <button class="act" id="btnq">조회</button>
+      </div>
+      <div id="qout" class="note" style="margin-top:10px">읽기 전용 — 쓰기 명령은 차단됩니다.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 정책 ── -->
+<div class="page hidden" id="tab-policy">
+  <div class="card">
+    <h2>감지 · 확인 · 에스컬레이션 정책</h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 12px">감지는 항상 실시간입니다. <b style="color:var(--tx2)">“이상 없음” 판정은
+        케이스를 닫지 않고 재확인 예약만 갱신</b>하며, 종결 후에도 억제 창 동안 재발이 같은 케이스로 묶입니다.</p>
+      <table class="pol"><thead><tr>
+        <th>심각도</th><th>감지 즉시</th><th>미확인 5분</th><th>미확인 15분</th><th>재확인 주기</th>
+      </tr></thead><tbody id="routing"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>평가 주기 설정</h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 12px">감지는 항상 실시간입니다. 아래는
+        <b style="color:var(--tx2)">누적 구간을 다시 평가해 리포트로 내보내는</b> 주기입니다.</p>
+      <table class="pol"><thead><tr>
+        <th>주기</th><th>사용</th><th>평가 범위</th><th>필터</th><th>수신 채널</th>
+      </tr></thead><tbody id="evalrows"></tbody></table>
+      <p class="note" style="margin-top:12px">짧은 주기(1·5분)는 노이즈가 커서 <b style="color:var(--tx2)">초위험만</b>
+        필터링해 보내는 것을 권장합니다. 주기를 늘리는 방향이 아니라 <b style="color:var(--tx2)">수신 대상과 필터를
+        좁히는 방향</b>으로 조정하세요 — 감지 자체를 늦추면 누락이 생깁니다.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (u,o) => (await fetch(u,o)).json();
+const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hhmm = s => (s||'').slice(11,16);
+
+let CASES=[], SEL=null, FILTER='all', REPORT=null, VERDICT=null, POLL=30;
+
+/* 탭 */
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  ['live','report','policy'].forEach(t =>
+    $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
+});
+
+/* 시계 */
+setInterval(()=>{
+  const d=new Date();
+  $('#clk').textContent=d.toLocaleTimeString('ko-KR',{hour12:false});
+  $('#clkd').textContent=d.toLocaleDateString('ko-KR')+' KST';
+},1000);
+
+/* 상태 + KPI */
+async function pollStatus(){
+  try{
+    const s = await api('/api/status'), st = s.state||{};
+    POLL = s.poll_interval_s;
+    $('#dot').className = 'dot'+(st.connected?'':' off');
+    $('#streamtx').textContent = st.connected
+      ? `STREAMING · ${st.latency_ms??'–'}ms · 임계 ${s.alarm_floor}점`
+      : `연결 끊김 — ${st.error||'대기'}`;
+    $('#ch-lp').className  = st.connected?'':'off';
+    $('#ch-amos').className= st.amos_warn?'off':'';
+    $('#lptable').textContent = `${s.table||''}${s.offline?'  (OFFLINE fixture)':''}`;
+    renderPolicy(s.policy, s.evaluation);
+    $('#warnbox').innerHTML = st.amos_warn
+      ? `<div class="warn">AMOS 조인 경고 — ${esc(st.amos_warn)}</div>` : '';
+    if(st.error) $('#warnbox').innerHTML +=
+      `<div class="warn">로그프레소 — ${esc(st.error)}</div>`;
+  }catch(e){ $('#dot').className='dot off'; $('#streamtx').textContent='서버 응답 없음'; }
+
+  try{
+    const k = await api('/api/kpi');
+    $('#k-active').innerHTML   = `${k.active}<u>건</u>`;
+    $('#k-active-s').textContent = `최근 30분 신규 ${k.active_new_30m}건`;
+    $('#k-unack').innerHTML    = `${k.unack}<u>건</u>`;
+    $('#k-unack-s').textContent= `5분 초과 ${k.unack_over_5m}건`;
+    $('#k-lat').innerHTML      = `${k.detect_latency_ms??'–'}<u>ms</u>`;
+    $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
+    $('#k-recur').innerHTML    = `${k.recur_rate_1h}<u>%</u>`;
+    $('#k-recur-s').textContent= `최근 1시간 ${k.recur_base}건 기준`;
+    $('#k-acc').innerHTML      = k.llm_accuracy==null ? '–' : `${k.llm_accuracy}<u>%</u>`;
+    $('#k-acc-s').textContent  = k.llm_sample ? `피드백 ${k.llm_sample}건 기준` : '피드백 누적 시 산출';
+  }catch(e){}
+}
+
+function renderPolicy(p, ev){
+  if(p && p.routing && !$('#routing').dataset.done){
+    $('#routing').dataset.done='1';
+    $('#routing').innerHTML = p.routing.map(r=>`<tr>
+      <td><span class="chip lv${esc(r.level)}">${esc(r.level)}</span></td>
+      <td>${(r.on_detect||[]).map(esc).join('<br>')||'–'}</td>
+      <td>${(r.unack_5m||[]).map(esc).join('<br>')||'–'}</td>
+      <td>${(r.unack_15m||[]).map(esc).join('<br>')||'–'}</td>
+      <td>${r.recheck_min}분</td></tr>`).join('')
+      + `<tr><td colspan="5" class="note">억제 창 ${p.suppression_window_min}분 · 종결은 확인 처리 후 가능</td></tr>`;
+  }
+  if(ev && ev.periods && !$('#evalrows').dataset.done){
+    $('#evalrows').dataset.done='1';
+    $('#evalrows').innerHTML = ev.periods.map(e=>`<tr>
+      <td><b>${esc(e.every)}</b></td>
+      <td>${e.enabled?'<span style="color:var(--ok)">사용</span>':'<span class="note">미사용</span>'}</td>
+      <td>${esc(e.scope)}</td><td>${esc(e.filter)}</td>
+      <td>${(e.channels||[]).map(esc).join(', ')}</td></tr>`).join('');
+  }
+}
+
+/* 케이스 목록 */
+async function pollCases(){
+  try{
+    const d = await api('/api/cases');
+    CASES = d.cases||[];
+    let list = CASES;
+    if(FILTER==='unack') list = CASES.filter(c=>!c.acked_at);
+    else if(FILTER!=='all') list = CASES.filter(c=>c.level===FILTER);
+
+    $('#cases').innerHTML = list.length ? list.map(c=>`
+      <tr class="crow ${SEL===c.id?'sel':''}" data-id="${esc(c.id)}">
+        <td><div class="cid"><i style="background:${lvColor(c.level)}"></i>${esc(shortId(c.id))}</div></td>
+        <td><div class="ttl">${esc(c.evidence?.reason||'반송 정체 감지')}</div>
+            <div class="sub"><span class="chip lv${esc(c.level)}">${esc(c.severity)}</span>
+            최고 ${Math.round(c.peak_score)}점 @ ${hhmm(c.peak_at)}</div></td>
+        <td><div>${esc(c.area)}</div><div class="dim">${esc(c.location)}</div></td>
+        <td><div class="dim">${elapsed(c.opened_at)}</div>
+            <div class="dim">${hhmm(c.opened_at)} 감지</div></td>
+        <td><div class="stt ${esc(c.status)}">${esc(c.status)}</div>
+            <div class="dim">재확인 ${c.recheck_at?hhmm(c.recheck_at):'–'}</div></td>
+      </tr>`).join('')
+      : `<tr><td colspan="5" class="empty">해당 조건의 케이스 없음</td></tr>`;
+
+    document.querySelectorAll('tr.crow').forEach(el =>
+      el.onclick = () => { SEL = el.dataset.id; pollCases(); renderDetail(); });
+    if(SEL && !CASES.find(c=>c.id===SEL)){ SEL=null; renderDetail(); }
+  }catch(e){}
+}
+const shortId = id => id.replace(/^C\d{8}/,'C');
+const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)':'var(--minor)';
+
+document.querySelectorAll('.filters button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.filters button').forEach(x=>x.classList.toggle('on',x===b));
+  FILTER = b.dataset.f; pollCases();
+});
+
+/* 상세 */
+async function renderDetail(){
+  if(!SEL){ $('#detail').innerHTML='<div class="empty">왼쪽에서 케이스를 선택하세요</div>'; return; }
+  const c = await api('/api/cases/'+encodeURIComponent(SEL));
+  if(c.error) return;
+  const ev=c.evidence||{}, llm=c.llm;
+  const stage = c.status==='종결'?3 : c.acked_at?2 : 1;
+
+  $('#detail').innerHTML = `
+   <div class="sec">
+    <div class="dt-hd"><span class="id">${esc(c.id)}</span>
+      <span class="chip lv${esc(c.level)}">${esc(c.severity)}</span>
+      <span class="note" style="margin-left:auto">${hhmm(c.opened_at)} 감지 · ${elapsed(c.opened_at)} 경과</span></div>
+    <div class="dt-ttl">${esc(ev.reason||'반송 정체 감지')}</div>
+    <div class="grid4">
+      <div><div class="l">설비</div><div class="v">${esc(c.area)}</div></div>
+      <div><div class="l">위치</div><div class="v">${esc(c.location)}</div></div>
+      <div><div class="l">LLM 확신도</div><div class="v">${llm?esc(llm.확신도)+'%':'–'}</div></div>
+      <div><div class="l">최고 점수</div><div class="v">${Math.round(c.peak_score)}점</div></div>
+    </div>
+    <div class="step">
+      ${stepNode('감지',1,stage)}<div class="ln"></div>
+      ${stepNode('확인중',2,stage)}<div class="ln"></div>
+      ${stepNode('재확인',2.5,stage)}<div class="ln"></div>
+      ${stepNode('종결',3,stage)}
+    </div>
+   </div>
+
+   <div class="sec">
+    <div class="llmbox">
+      <div class="tag"><i></i>LLM 판단</div>
+      ${llm ? `<div>${esc(llm.판단)}</div>
+        ${(llm.근거||[]).length?`<div class="note" style="margin-top:7px">근거 · ${(llm.근거||[]).map(esc).join(' / ')}</div>`:''}
+        ${(llm.조치||[]).length?`<ol class="act">${(llm.조치||[]).map(a=>`<li>${esc(a)}</li>`).join('')}</ol>`:''}`
+        : `<div class="note">아직 판단 없음 — 스킬 4종 기반으로 분석합니다.</div>
+           <div class="row" style="margin-top:9px"><button class="act" id="btnjudge">LLM 판단 실행</button></div>`}
+    </div>
+   </div>
+
+   <div class="sec">
+    <h3>근거 데이터 · DB 스냅샷</h3>
+    <pre class="snap">${esc(snapshot(c))}</pre>
+    <table class="mx">
+      <tr><td>이상감지 구간</td><td>${(ev.zones||[]).length}</td><td>HID</td></tr>
+      <tr><td>이상감지 항목</td><td>${(ev.items||[]).length}</td><td>컬럼</td></tr>
+      <tr><td>영향 영역</td><td>${(ev.affected||[]).length}</td><td>영역</td></tr>
+    </table>
+    <div style="margin-top:10px" class="chips">
+      ${(ev.zones||[]).map(z=>`<span class="zchip">${esc(z)}</span>`).join('')||'<span class="note">구간 없음</span>'}
+    </div>
+   </div>
+
+   <div class="sec">
+    <h3>에스컬레이션 경로</h3>
+    ${(c.escalations||[]).length
+      ? `<ul class="tl">${c.escalations.map(e=>`<li><span class="k">${hhmm(e.at)}</span>${esc(e.stage)} → ${(e.targets||[]).map(esc).join(', ')}</li>`).join('')}</ul>`
+      : '<div class="note">아직 없음</div>'}
+   </div>
+
+   <div class="sec">
+    <h3>케이스 타임라인</h3>
+    <ul class="tl">${(c.timeline||[]).map(t=>`<li><span class="k">${hhmm(t.at)}</span><b style="color:var(--tx)">${esc(t.kind)}</b> ${esc(t.text)}</li>`).join('')}</ul>
+   </div>
+
+   <div class="sec">
+    <h3>확인 처리 · 재확인 예약</h3>
+    <div class="row">
+      <button class="act pri" id="btnack" ${c.acked_at?'disabled':''}>확인 처리 · 재확인 예약</button>
+      <button class="act" id="btnclose">종결</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="act" id="btnnormal" style="flex:1">이상 없음 (케이스 유지 · 재확인만 갱신)</button>
+    </div>
+   </div>`;
+
+  const act = async a => { const r = await post(`/api/cases/${encodeURIComponent(SEL)}/${a}`,{});
+                           if(r.error) alert(r.error); pollCases(); renderDetail(); };
+  $('#btnack')&&($('#btnack').onclick=()=>act('ack'));
+  $('#btnclose')&&($('#btnclose').onclick=()=>act('close'));
+  $('#btnnormal')&&($('#btnnormal').onclick=()=>act('normal'));
+  $('#btnjudge')&&($('#btnjudge').onclick=async e=>{
+    e.target.disabled=true; e.target.textContent='판단 중…';
+    const r=await post(`/api/cases/${encodeURIComponent(SEL)}/judge`,{});
+    if(r.error) alert('LLM 오류: '+r.error);
+    renderDetail();
+  });
+}
+
+function stepNode(label, at, cur){
+  const cls = cur>at ? 'on' : (Math.floor(cur)===Math.floor(at) ? 'cur' : '');
+  return `<div class="n ${cls}"><i></i><span>${label}</span></div>`;
+}
+
+function snapshot(c){
+  const ev=c.evidence||{};
+  return [
+    `# ${c.area} · 최고점 ${hhmm(c.peak_at)} (${Math.round(c.peak_score)}점)`,
+    `이상감지 구간 : ${(ev.zones||[]).join(', ')||'–'}`,
+    `이상감지 항목 : ${(ev.items||[]).join('\n                ')||'–'}`,
+    ev.chain   ? `전파 경로     : ${ev.chain}`   : '',
+    ev.flow    ? `유입 신호     : ${ev.flow}`    : '',
+    ev.maxcapa ? `용량 변경     : ${ev.maxcapa}` : '',
+    (ev.affected||[]).length ? `영향 영역     : ${ev.affected.join(', ')}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+const elapsed = iso => {
+  if(!iso) return '–';
+  const m = Math.floor((Date.now()-new Date(iso))/60000);
+  return m<60 ? `${m}분` : `${Math.floor(m/60)}시간 ${m%60}분`;
+};
+
+/* 리포트 */
+(function initSpan(){
+  const now=new Date(), ago=new Date(now-30*60000);
+  const f=d=>new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  $('#rstart').value=f(ago); $('#rend').value=f(now);
+})();
+
+const chunk = (z=[]) => z.length
+  ? z.reduce((a,v,i)=>a+esc(v)+((i%4===3&&i<z.length-1)?'<br>':(i<z.length-1?', ':'')),'')
+  : '–';
+
+$('#btnrep').onclick = async () => {
+  const b=$('#btnrep'); b.disabled=true; b.textContent='평가 중…';
+  try{
+    REPORT = await post('/api/report',{start:$('#rstart').value,end:$('#rend').value});
+    const s=REPORT.summary;
+    $('#repout').innerHTML = `
+      ${REPORT.llm_error?`<div class="warn" style="margin:12px 0">LLM 미연결 — 통계 요약만 표시 (${esc(REPORT.llm_error)})</div>`:''}
+      <div class="note" style="margin:12px 0 8px">구간 ${esc(s.span)} · ${s.count}건 ·
+        최고 ${s.top_emoji} ${esc(s.top_level)} ${Math.round(s.top_score)}점 · 임계 ${s.alarm_floor}점</div>
+      ${s.count?`<table class="pol"><thead><tr><th>번호</th><th>시간</th><th>심각도</th>
+        <th>이상감지 구간</th><th>이상감지 항목</th></tr></thead><tbody>
+        ${REPORT.incidents.map(i=>`<tr><td>${i.no}</td><td>${esc(i.time)}</td>
+          <td><span class="chip lv${esc(i.level)}">${esc(i.severity)}</span></td>
+          <td>${chunk(i.zones)}</td>
+          <td style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px">${(i.items||[]).map(esc).join('<br>')||'–'}</td>
+        </tr>`).join('')}</tbody></table>`:''}
+      <div style="margin-top:14px"><pre class="md">${esc(REPORT.body)}</pre></div>
+      <div class="row" style="margin-top:14px">
+        <button class="act" id="btnmsg">메신저로 발송</button>
+        <button class="act" onclick="window.print()">PDF 내보내기</button>
+        <button class="act" id="btnmcs">관제시스템 전송</button>
+      </div>`;
+    $('#btnmsg').onclick=()=>alert('사내 메신저 API 규격(엔드포인트·인증)이 필요합니다 — 미구현.');
+    $('#btnmcs').onclick=()=>alert('관제시스템 전송 규격(엔드포인트·포맷)이 필요합니다 — 미구현.');
+    $('#btnfb').disabled=false; $('#fbtarget').textContent=`대상: ${REPORT.id}`;
+    loadFbStatus();
+  } finally { b.disabled=false; b.textContent='평가 실행'; }
+};
+
+/* 피드백 */
+document.querySelectorAll('#verdicts button').forEach(b=>b.onclick=()=>{
+  VERDICT=b.dataset.v;
+  document.querySelectorAll('#verdicts button').forEach(x=>x.classList.toggle('pri',x===b));
+});
+$('#btnfb').onclick = async () => {
+  if(!REPORT) return;
+  if(!VERDICT) return alert('판단을 선택하세요');
+  const r = await post('/api/feedback',{report_id:REPORT.id,verdict:VERDICT,
+      missed:$('#fbmissed').value,comment:$('#fbcomment').value});
+  if(r.error) return alert(r.error);
+  $('#fbmissed').value=''; $('#fbcomment').value=''; VERDICT=null;
+  document.querySelectorAll('#verdicts button').forEach(x=>x.classList.remove('pri'));
+  loadFbStatus(); pollStatus();
+};
+async function loadFbStatus(){
+  const s=await api('/api/feedback/status'), c=s.counts||{};
+  $('#fbstatus').innerHTML = `누적 ${s.total}건 (최근 ${s.applied_window}건 반영) ·
+    정확 ${c.정확||0} / 보통 ${c.보통||0} / 과다탐지 ${c.과다탐지||0} / 누락 ${c.누락||0}<br>
+    알람 임계 <b style="color:var(--tx)">${s.base_floor} → ${s.current_floor}점</b>
+    (${s.nudge>0?'+':''}${s.nudge} 보정)` +
+    ((s.missed_notes||[]).length?`<br>최근 누락 지적 · ${s.missed_notes.map(esc).join(' / ')}`:'');
+}
+
+/* 로그프레소 조회 */
+$('#btnq').onclick = async () => {
+  const out=$('#qout'); out.textContent='조회 중…';
+  const r=await post('/api/query',{lpql:$('#lpql').value,limit:20});
+  if(r.error) return out.innerHTML=`<span style="color:var(--crit)">${esc(r.error)}</span>
+     <pre class="snap" style="margin-top:7px">${esc(r.lpql||'')}</pre>`;
+  const cols=r.rows.length?Object.keys(r.rows[0]).slice(0,6):[];
+  out.innerHTML=`<pre class="snap">${esc(r.lpql)}</pre>
+    <div class="note" style="margin:7px 0">${r.count}건</div>`+
+    (r.rows.length?`<div style="overflow:auto"><table class="pol"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+     <tbody>${r.rows.slice(0,10).map(row=>`<tr>${cols.map(c=>`<td style="font-size:11.5px">${esc(String(row[c]??'').slice(0,38))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'');
+};
+
+/* 시작 — 스플래시 없이 바로 */
+pollStatus(); pollCases(); loadFbStatus();
+setInterval(pollStatus,5000);
+setInterval(pollCases,5000);
+</script>
+</body>
+</html>
