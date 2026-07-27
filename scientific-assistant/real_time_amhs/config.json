@@ -6,7 +6,8 @@
   "table_name": "test_table3",
 
   "query": {
-    "poll_interval_s": 30,
+    "poll_interval_s": 60,
+    "_poll_doc": "실시간 관제 주기 — 1분에 한 번",
     "window": "10m",
     "limit": 2000,
     "timeout_s": 300,
