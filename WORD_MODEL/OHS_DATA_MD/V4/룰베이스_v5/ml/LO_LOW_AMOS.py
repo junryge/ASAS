@@ -22,9 +22,8 @@ LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직�
                     → 20260714_발동이벤트.csv 처럼 매일 새 파일이 생겨도 자동 전환)
   1회만:           python LO_LOW_AMOS.py --event .\predict_tobe\20260713_발동이벤트.csv
   과거 일괄백필:   python LO_LOW_AMOS.py --event .\predict_tobe --alldays
-                   (폴더 안 모든 날짜 파일에 4컬럼 기입 — 로그프레소 보존기간 내)
-  재백필(덮어쓰기): python LO_LOW_AMOS.py --event .\predict_tobe --alldays --force
-                   (이미 공란으로 채워진 파일을 다시 채울 때 — --force 없으면 건너뜀)
+                   (폴더 안 모든 날짜 파일을 전체 덮어쓰기 — 기존에 잘못/공란으로
+                    들어간 값도 다시 채움. 단 조회 0건이면 기존 값 보존)
   테스트(원본보존): 위에 --out .\테스트.csv 추가
   옵션: --lag 0(같은 분) · --interval 60 · --host/--port/--apikey
 
@@ -334,14 +333,17 @@ def diagnose(a):
 
 
 def backfill_alldays(a):
-    """폴더 내 모든 *발동이벤트*.csv 를 날짜순으로 일괄 기입 (과거 백필)."""
+    """폴더 내 모든 *발동이벤트*.csv 를 날짜순으로 일괄 기입 (과거 백필).
+    ★ 백필은 항상 전체 덮어쓰기 — 기존에 잘못/공란으로 들어간 값도 다시 채운다.
+      (단 조회 0건이면 기존 값 보존)"""
     if not os.path.isdir(a.event):
         print(f'❌ --alldays 는 폴더를 주세요: {a.event}'); sys.exit(2)
     files = sorted(f for f in os.listdir(a.event)
                    if f.lower().endswith('.csv') and '발동이벤트' in f)
     if not files:
         print(f'❌ {os.path.abspath(a.event)} 안에 *발동이벤트*.csv 없음'); sys.exit(2)
-    print(f'[백필] 대상 {len(files)}개 파일')
+    a.force = True   # 백필 = 전체 재기입 (덮어쓰기)
+    print(f'[백필] 대상 {len(files)}개 파일 — 전체 덮어쓰기')
     cache = {p: {} for p in TABLES}
     ok = fail = 0
     for f in files:
@@ -359,9 +361,10 @@ def main():
     ap.add_argument('--out', default=None, help='(테스트용) 지정하면 원본 대신 여기에 저장')
     ap.add_argument('--lag', type=int, default=0, help='몇 분 전 로그프레소를 기입할지 (기본 0=같은 분)')
     ap.add_argument('--loop', action='store_true', help='운영: interval초마다 반복')
-    ap.add_argument('--alldays', action='store_true', help='폴더 내 모든 날짜 파일 일괄 기입 (과거 백필)')
+    ap.add_argument('--alldays', action='store_true',
+                    help='폴더 내 모든 날짜 파일 일괄 기입 (과거 백필 — 항상 전체 덮어쓰기)')
     ap.add_argument('--force', action='store_true',
-                    help='이미 채워진(공란 포함) 행도 전부 다시 조회·기입 (재백필)')
+                    help='단일 파일도 전체 덮어쓰기 (--alldays 는 기본 적용)')
     ap.add_argument('--test', action='store_true', help='조회 0건 원인 진단 (--event 불필요)')
     ap.add_argument('--mcp', default='BR', help='MCP_NM 필터값 (기본 BR)')
     ap.add_argument('--interval', type=int, default=60)
