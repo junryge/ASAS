@@ -18,9 +18,9 @@ from demos_v1.config import _EXT_CONFIG, API_TOKEN
 # 로그프레소 (Logpresso) 직접 조회 설정
 # ============================================
 _lp_cfg = _EXT_CONFIG.get("logpresso", {})
-LOGPRESSO_HOST = _lp_cfg.get("host", "10.40.42.27")
+LOGPRESSO_HOST = _lp_cfg.get("host", "10.40.42.167")
 LOGPRESSO_PORT = _lp_cfg.get("port", 8888)
-LOGPRESSO_API_KEY = _lp_cfg.get("api_key", "db1d2335-49cf-e859-3519-1ca132922e38")
+LOGPRESSO_API_KEY = _lp_cfg.get("api_key", "10f12ae0-5a80-55cd-7b15-e5554f0612f3")
 LOGPRESSO_PAGE_SIZE = _lp_cfg.get("page_size", 50)
 LOGPRESSO_CACHE_TTL = _lp_cfg.get("cache_ttl", 600)
 LOGPRESSO_CACHE_MAX = _lp_cfg.get("cache_max", 20)

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>하이브리드 정체예측 — 핵심기술</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --line:#334155; --ink:#e2e8f0; --sub:#94a3b8;
+    --rule:#f59e0b; --normal:#3b82f6; --abnormal:#ec4899; --judge:#10b981; --danger:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;line-height:1.6}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px}
+  h1{font-size:28px;margin:0 0 6px;font-weight:800}
+  .lead{color:var(--sub);margin:0 0 32px;font-size:15px}
+  h2{font-size:19px;margin:36px 0 14px;padding-left:12px;border-left:4px solid var(--judge)}
+  .oneline{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:18px 22px;font-size:16px;color:#cbd5e1}
+  .oneline b{color:var(--judge)}
+  /* 아키텍처 */
+  .arch{display:flex;flex-direction:column;gap:10px;margin:8px 0}
+  .layer{display:flex;align-items:center;gap:14px;background:var(--card);
+    border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+  .tag{flex:0 0 130px;font-weight:700;font-size:14px;padding:6px 10px;border-radius:6px;text-align:center}
+  .t-rule{background:rgba(245,158,11,.15);color:var(--rule);border:1px solid var(--rule)}
+  .t-normal{background:rgba(59,130,246,.15);color:var(--normal);border:1px solid var(--normal)}
+  .t-abn{background:rgba(236,72,153,.15);color:var(--abnormal);border:1px solid var(--abnormal)}
+  .t-judge{background:rgba(16,185,129,.15);color:var(--judge);border:1px solid var(--judge)}
+  .desc{font-size:14px;color:#cbd5e1}
+  .desc small{color:var(--sub);display:block;font-size:12.5px}
+  .down{text-align:center;color:var(--sub);font-size:18px;margin:-2px}
+  /* 표 */
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:center}
+  th{background:#0b1220;color:var(--sub);font-weight:600}
+  .hit{background:rgba(16,185,129,.12)}
+  .star{background:rgba(245,158,11,.14)}
+  .mute{color:var(--sub)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700}
+  .b-red{background:rgba(239,68,68,.2);color:#fca5a5}
+  .b-yel{background:rgba(245,158,11,.2);color:#fcd34d}
+  .b-grn{background:rgba(16,185,129,.2);color:#6ee7b7}
+  /* 기술 카드 */
+  .tech{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}
+  .tcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .tcard h3{margin:0 0 6px;font-size:15px}
+  .tcard p{margin:0;font-size:13px;color:var(--sub)}
+  .key{background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(59,130,246,.1));
+    border:1px solid var(--judge);border-radius:12px;padding:20px;margin-top:14px;font-size:15px}
+  code{background:#0b1220;padding:1px 6px;border-radius:4px;color:#7dd3fc;font-size:13px}
+  @media(max-width:640px){.tech{grid-template-columns:1fr}.tag{flex-basis:96px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>하이브리드 정체 30분 사전예측 — 핵심기술</h1>
+  <p class="lead">M16A Hubroom · 룰베이스 + 정상 TSPulse + 비정상 TSPulse → 하이브리드 판정</p>
+
+  <div class="oneline">
+    운영자가 정체를 보고하기 <b>30분 전</b>, 서로 다른 3개 탐지기가 <b>합의</b>하여 정체 전조를 미리 알린다.
+  </div>
+
+  <h2>1. 3층 아키텍처</h2>
+  <div class="arch">
+    <div class="layer"><span class="tag t-rule">룰베이스</span>
+      <span class="desc">도메인 임계 규칙 (경계50/위험71/초위험85)<small>확실·설명가능 · 그러나 규칙 밖은 못 봄</small></span></div>
+    <div class="down">＋</div>
+    <div class="layer"><span class="tag t-normal">정상 TSPulse</span>
+      <span class="desc">정상만 학습 → 재구성오차 = 이상점수<small>미묘한 전조 포착 · 30분 선행 · 그러나 오탐↑</small></span></div>
+    <div class="down">＋</div>
+    <div class="layer"><span class="tag t-abn">비정상 TSPulse</span>
+      <span class="desc">정체만 학습 → "진짜 정체?" 확인관<small>오탐 제거 · 그러나 정체 데이터 적음</small></span></div>
+    <div class="down">▼</div>
+    <div class="layer"><span class="tag t-judge">하이브리드 판정</span>
+      <span class="desc">3개 종합 → 최종 등급 + 신뢰도<small>합의가 많을수록 신뢰 높음</small></span></div>
+  </div>
+
+  <h2>2. 핵심기술 — 재구성 이상탐지 (TSPulse R1)</h2>
+  <div class="tech">
+    <div class="tcard"><h3>① 정상만 학습</h3>
+      <p>라벨 불필요. 정상 패턴을 재구성하도록 학습 → 평소와 다른 급증(정체 전조)은 재구성 실패 → <b>오차 큼 = 이상</b>.</p></div>
+    <div class="tcard"><h3>② 대칭 확인관</h3>
+      <p>비정상 모델은 정체를 재구성. 후보가 <b>정체모델서 오차 낮으면 = 정체 패턴</b> → 확정. 둘 다 높으면 = 정체 아닌 이상(설비작업).</p></div>
+    <div class="tcard"><h3>③ 초경량</h3>
+      <p>1.08M 파라미터. CPU로도 동작, 폐쇄망 오프라인 반입 가능. 시계열 네이티브(롤링·델타 수작업 불필요).</p></div>
+    <div class="tcard"><h3>④ 누수 차단</h3>
+      <p>학습창은 시각 t까지 과거만. 작업일정·정체 구간을 <b>데이터에서 제거</b>한 순수 정상만 학습.</p></div>
+  </div>
+
+  <h2>3. 하이브리드 판정 로직</h2>
+  <table>
+    <tr><th>룰베이스</th><th>정상TSPulse<br>(이상?)</th><th>비정상TSPulse<br>(정체?)</th><th>최종 판정</th><th>신뢰도</th></tr>
+    <tr class="hit"><td>위험 🔴</td><td>이상</td><td>정체</td><td><span class="badge b-red">확실 정체 · 즉시</span></td><td>★★★</td></tr>
+    <tr><td>위험 🔴</td><td>정상</td><td class="mute">—</td><td>정체 (룰 근거)</td><td>★★</td></tr>
+    <tr class="star"><td>정상</td><td><b>이상</b></td><td><b>정체</b></td><td><span class="badge b-yel">전조 경보 · 30분 선행 ⭐</span></td><td>★★</td></tr>
+    <tr><td>정상</td><td>이상</td><td>정체아님</td><td class="mute">⚪ 무시 (설비작업·센서)</td><td class="mute">—</td></tr>
+    <tr><td>정상</td><td>정상</td><td class="mute">—</td><td><span class="badge b-grn">✅ 안전</span></td><td class="mute">—</td></tr>
+  </table>
+
+  <div class="key">
+    <b>★ 이 시스템의 진짜 가치 = 3번째 줄</b><br>
+    룰은 아직 조용한데(정상) → 정상 TSPulse가 전조를 잡고(이상) → 비정상 TSPulse가 "정체 맞다" 확인
+    → <b>룰보다 30분 먼저 경보</b>. 그리고 4번째 줄로 <b>정체 아닌 이상(오탐)을 걸러낸다.</b><br>
+    <br>핵심 문장 — <code>세 개가 합의하면 진짜다.</code>
+  </div>
+</div>
+</body>
+</html>

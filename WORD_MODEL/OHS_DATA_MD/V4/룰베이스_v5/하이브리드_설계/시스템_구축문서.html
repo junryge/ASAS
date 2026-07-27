@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M16A HUBROOM 정체·밀림 사전예측 시스템 구축 문서</title>
+<style>
+  :root{
+    --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --border:rgba(11,11,11,.10);
+    --blue:#2a78d6; --aqua:#1baf7a; --violet:#4a3aa7; --orange:#eb6834; --magenta:#e87ba4; --yellow:#eda100;
+    --good:#0ca30c; --crit:#d03b3b;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --plane:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.10);
+    --blue:#3987e5; --aqua:#199e70; --violet:#9085e9; --orange:#d95926; --magenta:#d55181; --yellow:#c98500;}}
+  :root[data-theme=dark]{
+    --plane:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.10);
+    --blue:#3987e5; --aqua:#199e70; --violet:#9085e9; --orange:#d95926; --magenta:#d55181; --yellow:#c98500;}
+  :root[data-theme=light]{
+    --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --border:rgba(11,11,11,.10);
+    --blue:#2a78d6; --aqua:#1baf7a; --violet:#4a3aa7; --orange:#eb6834; --magenta:#e87ba4; --yellow:#eda100;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 20px 60px}
+  h1{font-size:24px;margin:0 0 4px;letter-spacing:-.5px}
+  h2{font-size:18px;margin:36px 0 12px;padding-top:18px;border-top:1px solid var(--grid)}
+  h3{font-size:15px;margin:20px 0 8px}
+  .sub{color:var(--ink2);font-size:13.5px;margin:0 0 24px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .tile .k{font-size:12px;color:var(--ink2)}
+  .tile .v{font-size:25px;font-weight:700;letter-spacing:-.5px;margin-top:2px}
+  .tile .v small{font-size:12px;font-weight:600;color:var(--ink2)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--grid);text-align:left;vertical-align:top}
+  th{color:var(--ink2);font-weight:600;font-size:12.5px}
+  .scroll{overflow-x:auto}
+  code,pre{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+  pre{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow-x:auto;line-height:1.6}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:600}
+  .p-rule{background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange)}
+  .p-ml{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}
+  .p-ok{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+  .lead{font-weight:700;color:var(--good)}
+  svg{width:100%;height:auto;display:block}
+  .flow-note{font-size:12px;color:var(--muted);margin-top:8px}
+  .tl{list-style:none;margin:0;padding:0}
+  .tl li{position:relative;padding:0 0 16px 26px;border-left:2px solid var(--grid);margin-left:8px}
+  .tl li:last-child{border-left-color:transparent}
+  .tl li::before{content:"";position:absolute;left:-7px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--muted)}
+  .tl li.fail::before{background:var(--crit)}
+  .tl li.win::before{background:var(--good)}
+  .tl b{display:block;font-size:13.5px}
+  .tl span{font-size:12.5px;color:var(--ink2)}
+  @media(max-width:680px){.tiles{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>M16A HUBROOM 정체·밀림 사전예측 시스템</h1>
+<p class="sub">구축 문서 · 2026년 07월 08일 작성 · 제작 John Forest<br>
+목표: 정체·병목·몰림·밀림을 <b>10분/30분 전</b> 예보 — 정답 기준은 운영자가 메신저로 확인한 실제 사건</p>
+
+<div class="tiles">
+  <div class="tile"><div class="k">목표 4개 사건 탐지</div><div class="v" style="color:var(--good)">4/4</div></div>
+  <div class="tile"><div class="k">사전 리드타임</div><div class="v">13~44<small>분 전</small></div></div>
+  <div class="tile"><div class="k">6월 실측 경보 적중</div><div class="v">54<small>% (30분) · 56% (10분)</small></div></div>
+  <div class="tile"><div class="k">ML 직접 탐지</div><div class="v">6/29·6/19<small> 등</small></div></div>
+</div>
+
+<h2>① 최종 아키텍처</h2>
+<div class="card">
+<svg viewBox="0 0 960 360" role="img" aria-label="시스템 데이터 흐름도">
+  <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0 0L8 4L0 8z" fill="var(--muted)"/></marker></defs>
+  <!-- 입력 -->
+  <rect x="10" y="20" width="150" height="52" rx="9" fill="none" stroke="var(--muted)" stroke-width="1.5"/>
+  <text x="85" y="42" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">원본 RAW</text>
+  <text x="85" y="59" text-anchor="middle" font-size="11" fill="var(--ink2)">265컬럼 / 분</text>
+  <!-- features -->
+  <rect x="205" y="20" width="160" height="52" rx="9" fill="none" stroke="var(--blue)" stroke-width="2"/>
+  <text x="285" y="42" text-anchor="middle" font-size="12.5" fill="var(--blue)" font-weight="700">features_31</text>
+  <text x="285" y="59" text-anchor="middle" font-size="11" fill="var(--ink2)">핵심 43피처 (BR·DIR 포함)</text>
+  <!-- merge -->
+  <rect x="410" y="20" width="175" height="52" rx="9" fill="none" stroke="var(--violet)" stroke-width="2"/>
+  <text x="497" y="42" text-anchor="middle" font-size="12.5" fill="var(--violet)" font-weight="700">+발동이벤트 전문가 30</text>
+  <text x="497" y="59" text-anchor="middle" font-size="11" fill="var(--ink2)">= 73피처 (룰엔진 지식)</text>
+  <!-- derive -->
+  <rect x="630" y="20" width="175" height="52" rx="9" fill="none" stroke="var(--aqua)" stroke-width="2"/>
+  <text x="717" y="42" text-anchor="middle" font-size="12.5" fill="var(--aqua)" font-weight="700">60분 파생 ×12 = 876</text>
+  <text x="717" y="59" text-anchor="middle" font-size="11" fill="var(--ink2)">롤링·델타·최대·★CUSUM</text>
+  <line x1="160" y1="46" x2="203" y2="46" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="365" y1="46" x2="408" y2="46" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="585" y1="46" x2="628" y2="46" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <!-- 라벨 파이프 -->
+  <rect x="10" y="120" width="150" height="52" rx="9" fill="none" stroke="var(--magenta)" stroke-width="2"/>
+  <text x="85" y="142" text-anchor="middle" font-size="12.5" fill="var(--magenta)" font-weight="700">운영 메신저 TXT</text>
+  <text x="85" y="159" text-anchor="middle" font-size="11" fill="var(--ink2)">고객 확인 사건 = 정답</text>
+  <rect x="205" y="120" width="160" height="52" rx="9" fill="none" stroke="var(--magenta)" stroke-width="1.5"/>
+  <text x="285" y="142" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">운영로그_파서_v2</text>
+  <text x="285" y="159" text-anchor="middle" font-size="11" fill="var(--ink2)">episode.csv (사건 목록)</text>
+  <rect x="410" y="120" width="175" height="52" rx="9" fill="none" stroke="var(--magenta)" stroke-width="2"/>
+  <text x="497" y="142" text-anchor="middle" font-size="12.5" fill="var(--magenta)" font-weight="700">xgb_라벨_통합</text>
+  <text x="497" y="159" text-anchor="middle" font-size="11" fill="var(--ink2)">메신저∪hubroom≥50 → y_pre10/30</text>
+  <line x1="160" y1="146" x2="203" y2="146" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="365" y1="146" x2="408" y2="146" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <!-- 모델 -->
+  <rect x="630" y="108" width="175" height="76" rx="9" fill="none" stroke="var(--blue)" stroke-width="2.5"/>
+  <text x="717" y="132" text-anchor="middle" font-size="13" fill="var(--blue)" font-weight="700">XGBoost 2모델</text>
+  <text x="717" y="150" text-anchor="middle" font-size="11" fill="var(--ink2)">10분 예측 · 30분 예측</text>
+  <text x="717" y="167" text-anchor="middle" font-size="11" fill="var(--ink2)">등급=정밀도 캘리브레이션</text>
+  <line x1="717" y1="72" x2="717" y2="106" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="585" y1="146" x2="628" y2="146" stroke="var(--magenta)" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#ar)"/>
+  <text x="600" y="138" font-size="10" fill="var(--magenta)">정답</text>
+  <!-- 룰 -->
+  <rect x="410" y="220" width="175" height="56" rx="9" fill="none" stroke="var(--orange)" stroke-width="2"/>
+  <text x="497" y="242" text-anchor="middle" font-size="12.5" fill="var(--orange)" font-weight="700">CUSUM 밀림룰</text>
+  <text x="497" y="259" text-anchor="middle" font-size="11" fill="var(--ink2)">큐≥600 · 저장≥300 (누적상승)</text>
+  <rect x="205" y="220" width="160" height="56" rx="9" fill="none" stroke="var(--orange)" stroke-width="1.5"/>
+  <text x="285" y="242" text-anchor="middle" font-size="12.5" fill="var(--ink)" font-weight="600">저장룰</text>
+  <text x="285" y="259" text-anchor="middle" font-size="11" fill="var(--ink2)">STK하드 / FAB·STB AND 4분초과</text>
+  <!-- 판정 -->
+  <rect x="630" y="220" width="175" height="56" rx="9" fill="none" stroke="var(--aqua)" stroke-width="2.5"/>
+  <text x="717" y="242" text-anchor="middle" font-size="13" fill="var(--aqua)" font-weight="700">최종판정 (max결합)</text>
+  <text x="717" y="259" text-anchor="middle" font-size="11" fill="var(--ink2)">등급 + 사유 (누가·왜)</text>
+  <line x1="717" y1="184" x2="717" y2="218" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="585" y1="248" x2="628" y2="248" stroke="var(--orange)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <line x1="365" y1="248" x2="408" y2="248" stroke="var(--orange)" stroke-width="1.5" marker-end="url(#ar)"/>
+  <!-- 요약 -->
+  <rect x="630" y="308" width="175" height="42" rx="9" fill="none" stroke="var(--muted)" stroke-width="1.5"/>
+  <text x="717" y="326" text-anchor="middle" font-size="12" fill="var(--ink)" font-weight="600">경보요약 (10분/30분)</text>
+  <text x="717" y="341" text-anchor="middle" font-size="10.5" fill="var(--ink2)">경보 구간만 — 사람이 보는 것</text>
+  <line x1="717" y1="276" x2="717" y2="306" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+</svg>
+<p class="flow-note">파랑=ML · 주황=룰 안전망 · 마젠타=정답(라벨) 파이프 · 아쿠아=판정/파생. ML과 룰이 병렬로 돌고 최종은 둘 중 높은 등급.</p>
+</div>
+
+<h2>② 핵심 기술 3가지</h2>
+<div class="card">
+<h3 style="margin-top:0">1. CUSUM — 서서히 밀리는 조짐을 잡는 눈</h3>
+<pre>C(t) = max(0, C(t-1) + [현재값 − 직전120분 중앙값 − 0.5×표준편차])</pre>
+<p style="font-size:13.5px;color:var(--ink2);margin:6px 0 0">순간 스파이크는 누적이 안 돼 무시되고, <b>조금씩이라도 지속 상승</b>하면 쌓여서 경보.
+절대 임계로는 노이즈에 묻히던 국소 밀림(큐 66→108)이 CUSUM으론 뚜렷해진다(270→1007).
+피처로도 들어가고(ML이 학습), 독립 룰로도 동작(안전망).</p>
+<h3>2. 정답 = 고객이 확인한 사건 (라벨 혁신)</h3>
+<p style="font-size:13.5px;color:var(--ink2);margin:6px 0 0">룰엔진(hubroom) 점수만 정답으로 쓰면 국소 밀림을 <b>"정상(12~47점)"으로 가르치게 된다</b> — 6월 4개 사건으로 증명.
+운영 메신저에서 파서로 추출한 <b>실제 사건(4~5월 261건)</b>을 정답에 합치자 ML이 몰림 클래스를 배우기 시작
+(6/29 몰림·6/19 몰림을 XGBoost가 직접 탐지, 30분 모델 신뢰도 77% 한계 → 99% 돌파).</p>
+<h3>3. 등급 = 정밀도 캘리브레이션</h3>
+<p style="font-size:13.5px;color:var(--ink2);margin:6px 0 0">"위험"이라는 등급은 <b>그 경보가 맞을 확률</b>로 정의: 30분 모델 p≥0.5→신뢰 87%, p≥0.6→95%, p≥0.7→99%
+<b>(학습기간 4~5월 내부검증 기준)</b>. 6월 실전 적중률은 ④의 운영자 채점(30분 54% · 10분 56%)이 기준.</p>
+</div>
+
+<h2>③ 개발 여정 — 8단계 시행착오</h2>
+<div class="card">
+<ul class="tl">
+  <li class="fail"><b>1. TSPulse R1 이상탐지</b><span>과탐지 25%/일 — 자기참조 정규화가 원인</span></li>
+  <li class="fail"><b>2. TSPulse + 고정 기준선</b><span>과탐지 6%로 개선, 6/5를 262분 전 탐지. 그러나 국소밀림 불가·512분 고정 → 제외</span></li>
+  <li class="fail"><b>3. XGBoost + hubroom 라벨</b><span>큰 정체(6/2·6/5)는 정탐(정밀도 77%), 국소밀림 0/4</span></li>
+  <li class="fail"><b>4. 방향피처(DIR)·STK 추가</b><span>여전히 0/4 — 피처가 아니라 정답이 문제라는 확신</span></li>
+  <li class="win"><b>5. 원인 확정 (발동이벤트 원본 검증)</b><span>4개 사건의 hubroom 점수 = 12~47(정상). hubroom 라벨로는 영원히 못 배움 — 증명 완료</span></li>
+  <li class="fail"><b>6. SOP 절대임계 시도</b><span>Bridge Time 상승은 확인했으나 6월은 만성 과부하(중앙값 5.85분)라 절대값은 노이즈</span></li>
+  <li class="win"><b>7. CUSUM 밀림룰</b><span>누적상승 방식으로 4/4 탐지 (13~30분 전)</span></li>
+  <li class="win"><b>8. 메신저 정답 + 전문가 피처 재학습</b><span>ML 자체가 6/29·6/19·6/2·6/5 직접 탐지 — 정답을 바꾸니 모델이 배웠다</span></li>
+</ul>
+<p style="font-size:13px;color:var(--ink2);margin:4px 0 0"><b>교훈:</b> 실패의 원인은 모델이 아니라 정답지였다. 고정 임계가 못 보는 사건을 그 임계의 라벨로 가르칠 수는 없다.</p>
+</div>
+
+<h2>④ 6월 홀드아웃 검증 (학습에 1분도 안 쓴 시험지)</h2>
+<div class="card scroll">
+<table>
+  <tr><th>사건</th><th>실제 시각</th><th>경보 시작</th><th>리드</th><th>등급</th><th>잡은 주체</th></tr>
+  <tr><td>6/11 4AFC3301 밀림</td><td>10:18</td><td>09:34</td><td class="lead">44분 전</td><td>초위험</td><td><span class="pill p-rule">밀림룰 · 북측큐 2.6배</span></td></tr>
+  <tr><td>6/22 4AFC3201 Conv정체</td><td>11:11</td><td>10:58</td><td class="lead">13분 전</td><td>위험</td><td><span class="pill p-rule">밀림룰 · 남측큐 1.5배</span></td></tr>
+  <tr><td>6/24 16&gt;14 밀림</td><td>11:58</td><td>11:36</td><td class="lead">22분 전</td><td>위험</td><td><span class="pill p-rule">밀림룰 · 남측큐 1.5배</span></td></tr>
+  <tr><td>6/29 M14 HUB VHL 몰림</td><td>18:07</td><td>17:51</td><td class="lead">16분 전</td><td>위험</td><td><span class="pill p-ml">★ XGBoost ML 51%</span></td></tr>
+  <tr><td>6/2 반송Time 급증</td><td>13:47</td><td>10:57</td><td class="lead">사전</td><td>초위험</td><td><span class="pill p-ml">XGBoost 60%</span>+<span class="pill p-rule">밀림룰</span></td></tr>
+  <tr><td>6/5 저장Full→반송지연</td><td>14:48</td><td>09:07~</td><td class="lead">사전</td><td>위험</td><td><span class="pill p-ml">XGBoost 연속</span></td></tr>
+  <tr><td>6/19 브릿지 비클 몰림</td><td>10:07</td><td>10:02</td><td class="lead">5분 전</td><td>위험</td><td><span class="pill p-ml">XGBoost 52%</span></td></tr>
+</table>
+<p style="font-size:12.5px;color:var(--ink2)"><b>6월 실측 경보 적중 (운영자 전수 채점):</b>
+30분 = 74구간 중 사전예측 40건(54%) · 사후 4건(5%) · 오탐 30건(41%) /
+10분 = 66구간 중 사전예측 37건(56%) · 정탐 2건 · 사후 2건 · 오탐 24건(36%).
+오탐 대부분은 야간 저장 CUSUM 패턴 — 임계 상향(300→450)으로 감축 가능하며 목표 4사건엔 영향 없음.
+(§② 캘리브레이션 수치는 학습기간 내부검증 기준이며, 실전 성적은 이 표가 기준.)</p>
+</div>
+
+<h2>⑤ 사용법</h2>
+<div class="card">
+<h3 style="margin-top:0">학습 (최초 1회 / 새 달 편입 시)</h3>
+<pre>:: 0. 피처 + 발동이벤트
+python features_31.py --raw .\RAW --start 2026-04-01 --end 2026-05-31 --out .\out_ml
+for %f in (RAW\*.CSV) do python hubroom_predictor.py "%f" -o .\predict_tobe
+
+:: 1. 메신저 → 사건 추출 (정답)
+python 운영로그_파서_v2.py 4월_5월.TXT --out .\ep45
+
+:: 2. 전문가 피처 병합 (43→73)
+python 피처병합_발동이벤트.py --features .\out_ml\features.csv --events .\predict_tobe --out .\out_ml\features_확장.csv
+
+:: 3. 통합 라벨 → 4. 학습
+python xgb_라벨_통합.py --features .\out_ml\features_확장.csv --episodes .\ep45\{생성}_episode.csv --events .\predict_tobe --out .\out_ml\labels_통합.csv
+python xgb_비정상_train.py --features .\out_ml\features_확장.csv --labels .\out_ml\labels_통합.csv</pre>
+<h3>예측 (새 기간)</h3>
+<pre>python features_31.py --raw .\OUT_7 --start 2026-07-01 --end 2026-07-31 --out .\out_ml\july
+for %f in (OUT_7\*.CSV) do python hubroom_predictor.py "%f" -o .\predict_tobe_7
+python 피처병합_발동이벤트.py --features .\out_ml\july\features.csv --events .\predict_tobe_7 --out .\out_ml\july\features_확장.csv
+python xgb_비정상_infer.py --features .\out_ml\july\features_확장.csv --model .\out_ml\xgb --out .\out_ml\july_final.csv
+python 경보요약.py --infile .\out_ml\july_final.csv</pre>
+<p style="font-size:13px;color:var(--ink2)">→ 사람은 <b>경보요약_10분.csv / 경보요약_30분.csv</b> 두 개만 본다 (경보 구간·등급·예측대상시각·사유).</p>
+<h3>조정 손잡이</h3>
+<div class="scroll"><table>
+  <tr><th>손잡이</th><th>위치</th><th>기본</th><th>효과</th></tr>
+  <tr><td>hubroom 라벨 임계</td><td>라벨 --thr</td><td>50</td><td>낮추면 민감, 올리면 엄격</td></tr>
+  <tr><td>큐 CUSUM 임계</td><td>infer TH_CUSUM_Q</td><td>600</td><td>밀림룰 민감도</td></tr>
+  <tr><td>저장 CUSUM 임계</td><td>infer TH_CUSUM_FAB</td><td>300</td><td><b>야간 오탐 줄이려면 450</b></td></tr>
+  <tr><td>ML 등급컷</td><td>infer level()</td><td>캘리브레이션 근거</td><td>재학습 시 표 보고 갱신</td></tr>
+</table></div>
+</div>
+
+<h2>⑥ 한계와 다음 단계</h2>
+<div class="card" style="font-size:13.5px;color:var(--ink2)">
+<b style="color:var(--ink)">한계</b> — ① 오탐 ~40% (야간 저장 CUSUM 패턴, 임계 상향으로 감축 가능) ② 순간 터지는 급발성 에러는 물리적으로 30분 전 예측 불가(실시간 룰 담당) ③ ML의 밀림 학습은 시작 단계.<br><br>
+<b style="color:var(--ink)">다음 단계</b> — ① 7월 데이터 홀드아웃 재검증 → 6월 편입 재학습(매달 반복, 사건 누적 → ML 비중↑) ② 야간 저장 오탐 튜닝 ③ LLM 진단 리포트 연결: 경보 사유(어느 신호가 왜) + SOP 조치(MAX CAPA·Port 제어)를 자동 권고.
+</div>
+
+<p style="font-size:12px;color:var(--muted);margin-top:28px">M16A HUBROOM 반송 정체·밀림 사전예측 — 구축 문서 v1.0 · 2026-07-08 · John Forest</p>
+</div>
+</body>
+</html>
