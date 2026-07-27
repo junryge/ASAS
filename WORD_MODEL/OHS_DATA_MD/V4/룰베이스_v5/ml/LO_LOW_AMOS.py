@@ -50,7 +50,9 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 로그프레소 접속 (logpresso_client.py 와 동일 — 검증된 직접 HTTP 방식)
-HOST = '10.40.42.27'
+# ★ 서버 이관 (2026-07-21~27): 10.40.42.27(구) → 10.40.42.167(신)
+#   구 서버는 접속은 되지만 결과 0건만 반환하므로, IP 가 틀리면 조용히 빈 값이 됨 → 주의
+HOST = '10.40.42.167'
 PORT = 8888
 API_KEY = 'db1d2335-49cf-e859-3519-1ca132922e38'
 
@@ -83,7 +85,7 @@ def query_logpresso(query, a, timeout=180):
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError):
             if attempt < 2:
                 time.sleep(2 * (attempt + 1)); continue
-            print('  ⚠️ Logpresso 연결 실패')
+            print(f'  ⚠️ Logpresso 연결 실패 ({a.host}:{a.port})')
             return None
         except Exception as e:
             print(f'  ⚠️ Logpresso 예외: {e}')
