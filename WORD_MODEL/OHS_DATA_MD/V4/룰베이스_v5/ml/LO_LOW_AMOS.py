@@ -23,6 +23,8 @@ LO_LOW_AMOS — 로그프레소 조회 → 발동이벤트.csv 에 4컬럼 직�
   1회만:           python LO_LOW_AMOS.py --event .\predict_tobe\20260713_발동이벤트.csv
   과거 일괄백필:   python LO_LOW_AMOS.py --event .\predict_tobe --alldays
                    (폴더 안 모든 날짜 파일에 4컬럼 기입 — 로그프레소 보존기간 내)
+  재백필(덮어쓰기): python LO_LOW_AMOS.py --event .\predict_tobe --alldays --force
+                   (이미 공란으로 채워진 파일을 다시 채울 때 — --force 없으면 건너뜀)
   테스트(원본보존): 위에 --out .\테스트.csv 추가
   옵션: --lag 0(같은 분) · --interval 60 · --host/--port/--apikey
 
@@ -179,10 +181,12 @@ def cycle(a, cache, fp=None, state={'seen': set()}):
     tmax = max(valid)
 
     # 채울 대상: 4컬럼이 물리적으로 없는 행(None) + 최근 RECHECK_MIN분(지연기입 보정)
+    # --force 면 이미 채워진(공란 포함) 행도 전부 다시 조회·기입
     def unfilled(r):
         return any(r.get(c) is None for c in NEW_COLS)
+    force = getattr(a, 'force', False)
     targets = [i for i, (r, t) in enumerate(zip(rows, times))
-               if t and (unfilled(r) or (tmax - t) <= timedelta(minutes=RECHECK_MIN))]
+               if t and (force or unfilled(r) or (tmax - t) <= timedelta(minutes=RECHECK_MIN))]
     if not targets:
         return 0
 
@@ -271,7 +275,7 @@ def run_watch(event='./predict_tobe', interval=60, lag=0, mcp='BR',
     """run_ml 등에서 스레드로 돌리는 진입점:
         threading.Thread(target=LO_LOW_AMOS.run_watch, daemon=True).start()
     """
-    a = argparse.Namespace(event=event, out=None, lag=lag, loop=True, mcp=mcp,
+    a = argparse.Namespace(event=event, out=None, lag=lag, loop=True, mcp=mcp, force=False,
                            interval=interval, host=host, port=port, apikey=apikey)
     _loop(a)
 
@@ -348,6 +352,8 @@ def main():
     ap.add_argument('--lag', type=int, default=0, help='몇 분 전 로그프레소를 기입할지 (기본 0=같은 분)')
     ap.add_argument('--loop', action='store_true', help='운영: interval초마다 반복')
     ap.add_argument('--alldays', action='store_true', help='폴더 내 모든 날짜 파일 일괄 기입 (과거 백필)')
+    ap.add_argument('--force', action='store_true',
+                    help='이미 채워진(공란 포함) 행도 전부 다시 조회·기입 (재백필)')
     ap.add_argument('--test', action='store_true', help='조회 0건 원인 진단 (--event 불필요)')
     ap.add_argument('--mcp', default='BR', help='MCP_NM 필터값 (기본 BR)')
     ap.add_argument('--interval', type=int, default=60)
