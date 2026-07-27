@@ -85,6 +85,84 @@ def collect_today_catchup(cfg: dict | None = None) -> dict:
     return collect(start.strftime(FMT), now.strftime(FMT), cfg)
 
 
+def _debug(cfg: dict, date: str | None = None) -> int:
+    """저장이 안 될 때 — 조회부터 저장까지 단계별로 어디서 막히는지 보여준다."""
+    from lp_client import build_url, load_api_key, query_sized
+    from lp_query import build
+    from store_csv import append_rows, day_path
+
+    now = datetime.now()
+    d = ("".join(ch for ch in str(date) if ch.isdigit())[:8]) if date else now.strftime("%Y%m%d")
+    f_s, t_s = f"{d}000000", (now.strftime(FMT) if d == now.strftime("%Y%m%d") else f"{d}235959")
+    tc = cfg.get("amos", {}).get("base_time_col", "datetime")
+
+    print(f"■ 1. 설정")
+    print(f"   주소   : {cfg.get('logpresso_base')}")
+    print(f"   테이블 : {cfg.get('table_name')}")
+    key = load_api_key(cfg)
+    print(f"   키     : {(key[:8]+'…') if key else '❌ 없음 (api_key.txt)'}")
+    print(f"   구간   : {f_s} ~ {t_s}")
+
+    lpql = build(from_dt=f_s, to_dt=t_s, sort=cfg.get("query", {}).get("sort_col") or None)
+    print(f"\n■ 2. 기본 조회")
+    print(f"   LPQL : {lpql}")
+    print(f"   URL  : {build_url(lpql, cfg)[:150]}…")
+    rows, size, err = query_sized(lpql, verbose=False)
+    if err:
+        print(f"   ❌ 실패 — {err.get('reason')}")
+        if err.get("response_preview"):
+            print(f"      응답: {err['response_preview'][:200]}")
+        return 1
+    print(f"   ✅ {len(rows)}행 / {size/1048576:.2f}MB")
+    if not rows:
+        print("   ⚠️ 0행 — 그 구간에 데이터가 없습니다 (날짜/테이블 확인)")
+        return 1
+    cols = list(rows[0].keys())
+    print(f"   컬럼 {len(cols)}개")
+    print(f"   시각 컬럼 '{tc}' → {rows[0].get(tc)!r}  (파싱: {parse_dt(rows[0].get(tc))})")
+    if parse_dt(rows[0].get(tc)) is None:
+        print(f"   ❌ 시각 파싱 실패 → config.amos.base_time_col 을 실제 컬럼으로 바꾸세요")
+        print(f"      후보: {[c for c in cols if 'time' in c.lower() or 'date' in c.lower()]}")
+        return 1
+
+    print(f"\n■ 3. AMOS 2개 테이블")
+    for which in ("bottleneck", "queue"):
+        spec = cfg["amos"][which]
+        q2 = build(spec["table"], from_dt=f_s, to_dt=t_s,
+                   search=cfg["amos"].get("filter") or None, sort=spec.get("time_col"))
+        ar, _sz, e2 = query_sized(q2, verbose=False)
+        if e2:
+            print(f"   ❌ {spec['table']} — {e2.get('reason')}")
+            continue
+        have = list(ar[0].keys()) if ar else []
+        need = [spec["downward_col"], spec["upward_col"]]
+        miss = [c for c in need if c not in have]
+        print(f"   {'✅' if not miss else '⚠️'} {spec['table']} — {len(ar)}행"
+              + (f", 컬럼 없음 {miss}" if miss else ""))
+        if miss and have:
+            print(f"      실제 컬럼: {have}")
+
+    print(f"\n■ 4. 조인 + 저장")
+    merged, warn = fetch_amos(from_dt=f_s, to_dt=t_s)
+    if warn:
+        print(f"   ⚠️ {warn.get('reason')}")
+    mins = {parse_dt(r.get(tc)).strftime("%H:%M") for r in merged if parse_dt(r.get(tc))}
+    print(f"   병합 {len(merged)}행 ({len(mins)}분)")
+    saved = append_rows(merged, cfg)
+    print(f"   저장 결과: {saved}")
+    print(f"   파일: {day_path(d, cfg)}")
+
+    import os as _os
+    p = day_path(d, cfg)
+    if _os.path.isfile(p):
+        n = sum(1 for _ in open(p, encoding="utf-8-sig")) - 1
+        print(f"   ✅ 파일 {n}행 / {_os.path.getsize(p)/1024:.1f}KB")
+    else:
+        print(f"   ❌ 파일이 만들어지지 않음 — 쓰기 권한 확인")
+        return 1
+    return 0
+
+
 def main(argv=None) -> int:
     cfg = load_config()
     p = argparse.ArgumentParser(
@@ -101,7 +179,12 @@ def main(argv=None) -> int:
                    default=cfg.get("query", {}).get("poll_interval_s", 60),
                    help="--loop 주기(초). 기본 60 = 1분")
     p.add_argument("--list", action="store_true", help="확보된 날짜 파일 목록")
+    p.add_argument("--debug", action="store_true",
+                   help="★저장이 안 될 때 — 단계별로 어디서 막히는지 출력")
     a = p.parse_args(argv)
+
+    if a.debug:
+        return _debug(cfg, a.date[0] if a.date else None)
 
     print(f"로그프레소 : {cfg.get('logpresso_base')}  ({cfg.get('table_name')})")
     print(f"AMOS      : {cfg['amos']['bottleneck']['table']} + {cfg['amos']['queue']['table']}")

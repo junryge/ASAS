@@ -220,9 +220,11 @@
     "daily_csv_dir": "data",
     "_daily_csv_doc": "1분마다 수집한 데이터를 날짜별로 누적 저장 → data/20260727_TOTAL.CSV",
     "dedupe_cols": [
+      "_id",
+      "file",
       "hot_area"
     ],
-    "_dedupe_doc": "시각(datetime) + 이 컬럼들이 같으면 이미 저장된 행으로 보고 건너뛴다"
+    "_dedupe_doc": "시각(datetime) + 이 컬럼들이 같아야 같은 행. _id/file 을 넣어야 같은 분에 여러 행이 와도 안 버려진다. 없는 컬럼은 자동 무시."
   },
   "server": {
     "_doc": "데모스(5000번대)와 겹치지 않는 독립 포트",

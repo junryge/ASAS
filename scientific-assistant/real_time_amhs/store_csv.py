@@ -75,7 +75,7 @@ def append_rows(rows: list[dict], cfg: dict | None = None) -> dict:
     time_col = cfg.get("amos", {}).get("base_time_col", "datetime")
     key_cols = sc.get("dedupe_cols", ["hot_area"])
 
-    written = skipped = 0
+    written = skipped = failed = 0
     files: set[str] = set()
 
     with _lock:
@@ -88,24 +88,50 @@ def append_rows(rows: list[dict], cfg: dict | None = None) -> dict:
                 skipped += 1
                 continue
 
+            # 헤더는 파일당 한 번만 정하고 이후 그 순서를 그대로 따른다.
+            # (행마다 키 순서가 달라도 컬럼이 밀리지 않게)
+            fields = _fields(path, row)
             new_file = not os.path.isfile(path) or os.path.getsize(path) == 0
             try:
                 with open(path, "a", encoding="utf-8-sig", newline="") as f:
-                    w = csv.DictWriter(f, fieldnames=list(row.keys()),
-                                       extrasaction="ignore")
+                    w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
                     if new_file:
                         w.writeheader()
                     w.writerow(row)
             except Exception as e:
                 print(f"[CSV] ❌ 쓰기 실패({path}): {e}")
+                failed += 1
                 continue
 
             keys.add(k)
             written += 1
             files.add(path)
 
-    return {"written": written, "skipped": skipped,
-            "files": sorted(os.path.basename(p) for p in files)}
+    out = {"written": written, "skipped": skipped,
+           "files": sorted(os.path.basename(p) for p in files)}
+    if failed:
+        out["failed"] = failed
+    return out
+
+
+_fields_cache: dict[str, list] = {}
+
+
+def _fields(path: str, row: dict) -> list:
+    """그 파일의 컬럼 순서. 기존 파일이 있으면 그 헤더를 그대로 쓴다."""
+    if path in _fields_cache:
+        return _fields_cache[path]
+    fields = None
+    if os.path.isfile(path) and os.path.getsize(path) > 0:
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                fields = next(csv.reader(f), None)
+        except Exception:
+            fields = None
+    if not fields:
+        fields = list(row.keys())
+    _fields_cache[path] = fields
+    return fields
 
 
 def read_day(day: str, cfg: dict | None = None) -> list[dict]:
