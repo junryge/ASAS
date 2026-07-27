@@ -48,6 +48,8 @@
     "enabled": true,
     "url": "http://dev.hcp.llm.skhynix.com/v1/chat/completions",
     "model": "gaia-Qwen3.5-397B-A17B",
+    "api_key_file": "token.txt",
+    "_api_key_doc": "★이 폴더 안의 자체 키 파일. 데모스 TOKEN.TXT 와 무관 (완전 독립).",
     "api_key_env": "GAIA_API_KEY",
     "timeout_s": 90,
     "max_tokens": 2048,

@@ -46,9 +46,14 @@ def load_skills(cfg: dict | None = None) -> dict:
 
     cfg = cfg or load_config()
     lc = cfg.get("llm", {})
-    sdir = lc.get("skills_dir", "../m16_hub_skills")
-    if not os.path.isabs(sdir):
-        sdir = os.path.normpath(os.path.join(BASE_DIR, sdir))
+    # 폴더 안 skills/ 가 있으면 그것부터 (완전 자립 배포용), 없으면 config 경로
+    local = os.path.join(BASE_DIR, "skills")
+    if os.path.isdir(local) and any(n in os.listdir(local) for n in lc.get("skills", [])):
+        sdir = local
+    else:
+        sdir = lc.get("skills_dir", "../m16_hub_skills")
+        if not os.path.isabs(sdir):
+            sdir = os.path.normpath(os.path.join(BASE_DIR, sdir))
 
     out = {"dir": sdir, "skills": {}, "persona": "", "missing": []}
     for name in lc.get("skills", []):
@@ -100,22 +105,31 @@ def build_system_prompt(cfg: dict | None = None) -> str:
 
 
 def _api_key(cfg: dict) -> str:
-    """LLM API 키 — 환경변수 우선, 없으면 TOKEN.TXT."""
-    env = cfg.get("llm", {}).get("api_key_env", "GAIA_API_KEY")
-    key = os.getenv(env, "").strip()
-    if key:
-        return key
-    for p in (os.path.join(BASE_DIR, "TOKEN.TXT"),
-              os.path.normpath(os.path.join(BASE_DIR, "..", "TOKEN.TXT"))):
-        if os.path.isfile(p):
-            try:
-                with open(p, "r", encoding="utf-8-sig") as f:
-                    k = f.read().strip()
-                k.encode("ascii")
+    """LLM API 키 — 이 폴더의 자체 키 파일만 본다.
+
+    ★데모스 TOKEN.TXT 를 참조하지 않는다 (완전 독립).
+    우선순위: config.llm.api_key_file (이 폴더 내부) → 환경변수.
+    """
+    lc = cfg.get("llm", {})
+    path = lc.get("api_key_file", "token.txt")
+    if not os.path.isabs(path):
+        path = os.path.join(BASE_DIR, path)
+    # 폴더 밖 경로는 거부 — 독립성 보장
+    if os.path.commonpath([os.path.abspath(path), BASE_DIR]) != BASE_DIR:
+        print(f"[LLM] ⚠️ api_key_file 이 폴더 밖을 가리킴 — 무시: {path}")
+    elif os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                k = f.read().strip()
+            if k:
+                k.encode("ascii")          # 한글 플레이스홀더 방어
                 return k
-            except Exception:
-                continue
-    return ""
+        except UnicodeEncodeError:
+            print(f"[LLM] ⚠️ {path} 에 비영문 문자 — 실제 키로 교체하세요")
+        except Exception as e:
+            print(f"[LLM] ⚠️ 키 파일 읽기 실패: {e}")
+
+    return os.getenv(lc.get("api_key_env", "GAIA_API_KEY"), "").strip()
 
 
 def chat(messages: list[dict], cfg: dict | None = None,
@@ -245,5 +259,6 @@ if __name__ == "__main__":
         print(f"  ❌ 누락: {sk['missing']}")
     print(f"시스템 프롬프트 총 {len(build_system_prompt(cfg)):,}자")
     print(f"모델: {cfg['llm']['model']} @ {cfg['llm']['url']}")
-    print(f"API 키: {'있음' if _api_key(cfg) else '없음 (GAIA_API_KEY 또는 TOKEN.TXT)'}")
+    _kf = cfg["llm"].get("api_key_file", "token.txt")
+    print(f"API 키: {'있음' if _api_key(cfg) else f'없음 — real_time_amhs/{_kf} 에 넣으세요'}")
     print("금지어 스크럽 테스트:", scrub("3F 리프터 역방향 카운트 (LFT_REVERSALCNT) 증가"))

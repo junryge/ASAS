@@ -16,8 +16,9 @@ M16 HUBROOM 반송 정체를 로그프레소에서 실시간으로 읽어 **감�
 ```bash
 cd real_time_amhs
 
-# 1) 로그프레소 API 키 넣기
+# 1) 키 2개 넣기 (둘 다 이 폴더 안 — 데모스와 무관)
 echo "<로그프레소 API 키>" > api_key.txt
+echo "<GaiA LLM API 키>"   > token.txt
 
 # 2) 접속 확인
 python lp_query.py --ping
@@ -44,6 +45,8 @@ LP_OFFLINE=1 python server.py
 | 파일 | 역할 |
 |---|---|
 | `config.json` | 접속·정책·등급·평가주기 전부. **코드 수정 없이 여기만 고친다** |
+| `api_key.txt` | 로그프레소 키 (직접 생성) |
+| `token.txt` | LLM 키 (직접 생성). **데모스 TOKEN.TXT 와 무관 — 각자 관리** |
 | `lp_client.py` | 로그프레소 HTTP 클라이언트 (`httpexport/query.csv`). 쓰기 쿼리 차단 |
 | `lp_query.py` | LPQL 빌더 + CLI 조회 + **AMOS 2개 테이블 조인** |
 | `sentinel.py` | 감지 → 케이스 생성/병합 → 등급 → 에스컬레이션 |
@@ -112,8 +115,8 @@ LLM 판단 / 구간 리포트  ← 스킬 4종
    다르면 `config.amos.bottleneck.downward_col` 등을 교체.
 3. **시각 컬럼 형식** — 조인 키는 `_time`(ATLAS) ↔ `datetime`(기존) 을 **분 단위**로 맞춘다.
    형식이 다르면 조인 0건 경고가 대시보드에 뜬다.
-4. **LLM API 키** — `GAIA_API_KEY` 환경변수 또는 `TOKEN.TXT`. 없으면 LLM 판단/리포트만 비활성되고
-   감지·케이스·통계 리포트는 정상 동작한다.
+4. **LLM API 키** — `real_time_amhs/token.txt` (또는 `GAIA_API_KEY` 환경변수).
+   없으면 LLM 판단/리포트만 비활성되고 감지·케이스·통계 리포트는 정상 동작한다.
 
 ## 미구현 (규격 필요)
 
