@@ -56,6 +56,8 @@ def _poll_loop() -> None:
                 amos_warn=res.get("amos_warn"),
                 scans=STATE["scans"] + 1,
                 window=CFG.get("query", {}).get("window", "10m"),
+                last_rows=res.pop("all_rows", None) or STATE.get("last_rows"),
+                saved=res.get("saved"),
             )
             if res.get("ok"):
                 _auto_judge(res.get("cases") or [])
@@ -177,6 +179,76 @@ def api_window():
 
     return jsonify({"window": q.get("window", "10m"), "window_options": wopts,
                     "poll_interval_s": q.get("poll_interval_s", 60), "poll_options": popts})
+
+
+@app.route("/api/feed")
+def api_feed():
+    """수집한 전체 데이터 — 정상 포함 4등급으로 분류해서 내려준다.
+
+    경계 이상은 케이스(case_id)와 연결되고, 정상은 데이터 행 그대로 보여준다.
+    """
+    from sentinel import _row_dt, _score, grade, hid_zones
+
+    # 오늘 쌓인 전체 데이터를 보여준다 (없으면 마지막 수집분)
+    rows = []
+    try:
+        from store_csv import read_day
+        rows = read_day(datetime.now().strftime("%Y%m%d"), CFG)
+    except Exception:
+        pass
+    if not rows:
+        rows = STATE.get("last_rows") or []
+    out = []
+    for r in rows:
+        dt, sc = _row_dt(r), _score(r)
+        if dt is None:
+            continue
+        g = grade(sc, CFG)
+        area = (r.get("hot_area") or "").strip() or "UNKNOWN"
+        bott = " ".join(x for x in (r.get("BOTTLENECK_downward_anomaly_cols", ""),
+                                    r.get("BOTTLENECK_upward_anomaly_cols", "")) if x)
+        items = " ".join(x for x in (r.get("QUEUE_downward_anomaly_cols", ""),
+                                     r.get("QUEUE_upward_anomaly_cols", "")) if x).split()
+        # 이 시각이 속한 케이스 찾기
+        cid = None
+        for c in STORE.cases:
+            if c["area"] == area and c["opened_at"] <= dt.isoformat() <= (
+                    c.get("last_seen") or c["opened_at"]):
+                cid = c["id"]
+                break
+        out.append({
+            "at": dt.isoformat(), "time": dt.strftime("%H:%M"), "area": area,
+            "score": sc, "level": g["level"], "emoji": g["emoji"], "severity": g["severity"],
+            "reason": (r.get("reason") or "").strip(),
+            "zones": hid_zones(bott), "items": items,
+            "chain": (r.get("propagation_chain") or "").strip(),
+            "case_id": cid,
+        })
+
+    out.sort(key=lambda x: x["at"], reverse=True)
+    counts = {lv: sum(1 for x in out if x["level"] == lv)
+              for lv in ("정상", "경계", "위험", "초위험")}
+    return jsonify({"rows": out, "counts": counts, "total": len(out),
+                    "window": CFG.get("query", {}).get("window", "10m")})
+
+
+@app.route("/api/data/days")
+def api_data_days():
+    """누적 저장된 날짜 CSV 목록 (20260727_TOTAL.CSV ...)."""
+    from store_csv import data_dir, list_days
+    return jsonify({"dir": data_dir(CFG), "days": list_days(CFG)})
+
+
+@app.route("/api/data/<day>.csv")
+def api_data_csv(day):
+    """저장된 날짜 CSV 원본 다운로드 — 직접 열어볼 수 있게."""
+    from store_csv import day_path
+    d = "".join(ch for ch in day if ch.isdigit())[:8]
+    p = day_path(d, CFG)
+    if not os.path.isfile(p):
+        return jsonify({"error": f"{d}_TOTAL.CSV 없음"}), 404
+    return send_from_directory(os.path.dirname(p), os.path.basename(p),
+                               as_attachment=True)
 
 
 @app.route("/api/kpi")

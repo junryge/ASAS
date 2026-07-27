@@ -193,15 +193,15 @@
     <div class="hd">
       <h2>활성 케이스</h2>
       <div class="filters">
-        <button data-f="all" class="on">전체</button>
-        <button data-f="초위험">초위험</button>
-        <button data-f="위험">위험</button>
+        <button data-f="all" class="on">전체 <b id="n-all">0</b></button>
+        <button data-f="정상">정상 <b id="n-정상">0</b></button>
+        <button data-f="경계">경계 <b id="n-경계">0</b></button>
+        <button data-f="위험">위험 <b id="n-위험">0</b></button>
+        <button data-f="초위험">초위험 <b id="n-초위험">0</b></button>
         <button data-f="unack">미확인</button>
       </div>
       <div class="stream">
-        <label style="color:var(--tx3)">구간</label>
-        <select id="selWindow" title="한 번에 가져올 데이터 구간"></select>
-        <label style="color:var(--tx3)">주기</label>
+        <label style="color:var(--tx3)">수집 주기</label>
         <select id="selPoll" title="몇 초마다 가져올지"></select>
         <span class="dot" id="dot"></span><span id="streamtx">연결 확인 중</span>
       </div>
@@ -263,6 +263,15 @@
       </div>
       <h3 class="note" style="margin-top:16px">학습 반영 현황</h3>
       <div id="fbstatus" class="note">–</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>누적 데이터 <span class="sub note" id="datadir"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">1분마다 수집한 데이터가 날짜별 CSV 로 쌓입니다.
+        파일을 직접 열어보거나 내려받을 수 있습니다.</p>
+      <div id="daylist" class="note">불러오는 중…</div>
     </div>
   </div>
 
@@ -334,8 +343,11 @@ async function pollStatus(){
     const s = await api('/api/status'), st = s.state||{};
     POLL = s.poll_interval_s;
     $('#dot').className = 'dot'+(st.connected?'':' off');
+    const sv = st.saved || {};
     $('#streamtx').textContent = st.connected
-      ? `STREAMING · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 ${parseInt(st.window||s.window||'10')}분치 · 임계 ${s.alarm_floor}점`
+      ? `STREAMING · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 수집`
+        + (sv.files?.length ? ` → ${sv.files[0]}` : '')
+        + ` · 임계 ${s.alarm_floor}점`
       : `연결 끊김 — ${st.error||'대기'}`;
     $('#ch-lp').className  = st.connected?'':'off';
     $('#ch-amos').className= st.amos_warn?'off':'';
@@ -383,33 +395,80 @@ function renderPolicy(p, ev){
   }
 }
 
-/* 케이스 목록 */
+/* 목록 — 수집한 전체 데이터를 4등급으로, 경계 이상은 케이스와 연결 */
+let FEED = [];
+
 async function pollCases(){
   try{
-    const d = await api('/api/cases');
-    CASES = d.cases||[];
-    let list = CASES;
-    if(FILTER==='unack') list = CASES.filter(c=>!c.acked_at);
-    else if(FILTER!=='all') list = CASES.filter(c=>c.level===FILTER);
+    // 종결 케이스도 목록에 연결돼야 하므로 전체를 받는다
+    const [cs, fd] = await Promise.all([api('/api/cases?all=1'), api('/api/feed')]);
+    CASES = cs.cases||[];
+    FEED  = fd.rows||[];
+    const cnt = fd.counts||{};
+    $('#n-all').textContent = fd.total||0;
+    ['정상','경계','위험','초위험'].forEach(l => $('#n-'+l).textContent = cnt[l]||0);
 
-    $('#cases').innerHTML = list.length ? list.map(c=>`
-      <tr class="crow ${SEL===c.id?'sel':''}" data-id="${esc(c.id)}">
-        <td><div class="cid"><i style="background:${lvColor(c.level)}"></i>${esc(shortId(c.id))}</div></td>
-        <td><div class="ttl">${esc(c.evidence?.reason||'반송 정체 감지')}</div>
-            <div class="sub"><span class="chip lv${esc(c.level)}">${esc(c.severity)}</span>
-            최고 ${Math.round(c.peak_score)}점 @ ${hhmm(c.peak_at)}</div></td>
-        <td><div>${esc(c.area)}</div><div class="dim">${esc(c.location)}</div></td>
-        <td><div class="dim">${elapsed(c.opened_at)}</div>
-            <div class="dim">${hhmm(c.opened_at)} 감지</div></td>
-        <td><div class="stt ${esc(c.status)}">${esc(c.status)}</div>
-            <div class="dim">재확인 ${c.recheck_at?hhmm(c.recheck_at):'–'}</div></td>
-      </tr>`).join('')
-      : `<tr><td colspan="5" class="empty">해당 조건의 케이스 없음</td></tr>`;
+    const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
+    let list = FEED;
+    if(FILTER==='unack') list = FEED.filter(r=>r.case_id && byId[r.case_id] && !byId[r.case_id].acked_at);
+    else if(FILTER!=='all') list = FEED.filter(r=>r.level===FILTER);
 
-    document.querySelectorAll('tr.crow').forEach(el =>
-      el.onclick = () => { SEL = el.dataset.id; pollCases(); renderDetail(); });
-    if(SEL && !CASES.find(c=>c.id===SEL)){ SEL=null; renderDetail(); }
+    $('#cases').innerHTML = list.length ? list.map(r=>{
+      const c = r.case_id ? byId[r.case_id] : null;
+      const sel = c && SEL===c.id ? 'sel' : '';
+      return `<tr class="crow ${sel}" data-id="${esc(r.case_id||'')}" data-at="${esc(r.at)}">
+        <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
+            r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
+        <td><div class="ttl">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '반송 정체 감지'))}</div>
+            <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span>
+            ${Math.round(r.score)}점${r.zones.length?` · 구간 ${r.zones.slice(0,3).join(', ')}${r.zones.length>3?'…':''}`:''}</div></td>
+        <td><div>${esc(r.area)}</div><div class="dim">${esc(r.chain||'')}</div></td>
+        <td><div class="dim">${esc(r.time)}</div><div class="dim">${elapsed(r.at)} 전</div></td>
+        <td>${c ? `<div class="stt ${esc(c.status)}">${esc(c.status)}</div>
+              <div class="dim">재확인 ${c.recheck_at?hhmm(c.recheck_at):'–'}</div>`
+            : '<div class="dim">—</div>'}</td>
+      </tr>`;}).join('')
+      : `<tr><td colspan="5" class="empty">해당 등급 데이터 없음</td></tr>`;
+
+    document.querySelectorAll('tr.crow').forEach(el => el.onclick = () => {
+      const id = el.dataset.id;
+      if(id){ SEL = id; pollCases(); renderDetail(); }
+      else   { SEL = null; renderRow(el.dataset.at); }
+    });
+    if(SEL && !byId[SEL]){ SEL=null; renderDetail(); }
   }catch(e){}
+}
+
+/* 정상 행(케이스 없음) 상세 */
+function renderRow(at){
+  const r = FEED.find(x=>x.at===at);
+  if(!r) return;
+  $('#detail').innerHTML = `
+   <div class="sec">
+    <div class="dt-hd"><span class="id">${esc(r.time)} · ${esc(r.area)}</span>
+      <span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div>
+    <div class="dt-ttl">${esc(r.reason||'정상 운영')}</div>
+    <div class="grid4">
+      <div><div class="l">설비</div><div class="v">${esc(r.area)}</div></div>
+      <div><div class="l">점수</div><div class="v">${Math.round(r.score)}점</div></div>
+      <div><div class="l">등급</div><div class="v">${r.emoji} ${esc(r.level)}</div></div>
+      <div><div class="l">시각</div><div class="v">${esc(r.time)}</div></div>
+    </div>
+   </div>
+   <div class="sec">
+    <h3>수집 데이터</h3>
+    <pre class="snap">${esc([
+      `시각   : ${r.at.replace('T',' ')}`,
+      `설비   : ${r.area}`,
+      `점수   : ${Math.round(r.score)} (${r.level})`,
+      r.chain ? `전파   : ${r.chain}` : '',
+      `구간   : ${r.zones.join(', ') || '–'}`,
+      `항목   : ${r.items.join('\n         ') || '–'}`,
+    ].filter(Boolean).join('\n'))}</pre>
+    <p class="note" style="margin-top:10px">${r.level==='정상'
+      ? `임계 점수 미만이라 케이스를 만들지 않습니다 (알람 없음).`
+      : `케이스로 관리 중이 아닙니다.`}</p>
+   </div>`;
 }
 const shortId = id => id.replace(/^C\d{8}/,'C');
 const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)':'var(--minor)';
@@ -618,16 +677,10 @@ const pollLabel = s => s < 60 ? `${s}초` : `${s/60}분`;
 
 async function initSettings(){
   const s = await api('/api/window');
-  $('#selWindow').innerHTML = s.window_options
-    .map(w => `<option value="${w}" ${w===s.window?'selected':''}>${parseInt(w)}분</option>`).join('');
   $('#selPoll').innerHTML = s.poll_options
     .map(p => `<option value="${p}" ${p===s.poll_interval_s?'selected':''}>${pollLabel(p)}</option>`).join('');
   POLL = s.poll_interval_s;
 }
-$('#selWindow').onchange = async e => {
-  const r = await post('/api/window', {window: e.target.value});
-  if(r.error) alert(r.error); else pollStatus();
-};
 $('#selPoll').onchange = async e => {
   const r = await post('/api/window', {poll_interval_s: parseInt(e.target.value)});
   if(r.error) alert(r.error); else { POLL = r.poll_interval_s; pollStatus(); }
@@ -638,7 +691,29 @@ $('#selPoll').onchange = async e => {
   const d = new Date();
   $('#rdate').value = new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 })();
-initSettings(); pollStatus(); pollCases(); loadFbStatus();
+async function loadDays(){
+  try{
+    const d = await api('/api/data/days');
+    $('#datadir').textContent = d.dir;
+    $('#daylist').innerHTML = d.days.length
+      ? `<table class="pol"><thead><tr><th>날짜</th><th>파일</th><th>행수</th><th>크기</th><th></th></tr></thead><tbody>`
+        + d.days.map(x=>`<tr><td>${esc(x.day)}</td><td class="mono">${esc(x.file)}</td>
+            <td>${x.rows.toLocaleString()}</td><td>${(x.bytes/1024).toFixed(1)} KB</td>
+            <td><a href="/api/data/${esc(x.day)}.csv" style="color:var(--cy)">내려받기</a>
+            &nbsp;<a href="#" data-day="${esc(x.day)}" class="rep-day" style="color:var(--cy)">리포트</a></td></tr>`).join('')
+        + `</tbody></table>`
+      : '아직 저장된 데이터 없음 — 수집이 돌면 여기에 쌓입니다.';
+    document.querySelectorAll('.rep-day').forEach(a => a.onclick = e => {
+      e.preventDefault();
+      const d0 = a.dataset.day;
+      $('#rdate').value = `${d0.slice(0,4)}-${d0.slice(4,6)}-${d0.slice(6,8)}`;
+      runReport({date: $('#rdate').value}, $('#btnday'));
+    });
+  }catch(e){ $('#daylist').textContent = '목록 조회 실패'; }
+}
+
+initSettings(); pollStatus(); pollCases(); loadFbStatus(); loadDays();
+setInterval(loadDays, 30000);
 setInterval(pollStatus,5000);
 setInterval(pollCases,5000);
 </script>

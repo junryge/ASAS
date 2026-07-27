@@ -35,12 +35,27 @@ def cases_from_query(from_dt: str, to_dt: str, cfg: dict | None = None):
     반환 (cases, err)
     """
     cfg = cfg or load_config()
-    from lp_query import fetch_amos
+    warn = None
 
-    rows, err = fetch_amos(from_dt=from_dt, to_dt=to_dt)
-    if err and not err.get("warn"):
-        return None, err
-    warn = err.get("reason") if err else None
+    # ① 저장된 날짜 CSV 우선 (1분마다 쌓아둔 것) — 재조회 불필요
+    rows = []
+    try:
+        from store_csv import read_range
+        rows = read_range(from_dt, to_dt, cfg)
+    except Exception as e:
+        print(f"[CSV] ⚠️ 읽기 실패: {e}")
+
+    # ② 저장분이 없으면 로그프레소에서 그 날짜로 직접 조회
+    if not rows:
+        from lp_query import fetch_amos
+        rows, err = fetch_amos(from_dt=from_dt, to_dt=to_dt)
+        if err and not err.get("warn"):
+            return None, err
+        warn = err.get("reason") if err else None
+        src = "로그프레소 직접 조회"
+    else:
+        src = f"저장 CSV {len(rows)}행"
+    print(f"[리포트] {from_dt}~{to_dt} — {src}")
 
     # 조회 결과만으로 케이스를 새로 구성 (실시간 저장소를 건드리지 않는다)
     tmp = CaseStore.__new__(CaseStore)

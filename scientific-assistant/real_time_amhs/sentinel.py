@@ -323,7 +323,7 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
               cfg: dict | None = None) -> dict:
     """1회 스캔 — 로그프레소 조회 → 임계 초과분을 케이스에 반영."""
     cfg = cfg or load_config()
-    warn = None
+    warn, saved = None, None
     if rows is None:
         # 기존 데이터 + AMOS 4개 컬럼(ATLAS 2개 테이블 조인)
         rows, err = fetch_amos()
@@ -331,6 +331,13 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
             return {"ok": False, "error": err.get("reason"), "detected": 0, "rows": 0}
         if err:
             warn = err.get("reason")       # 조인 경고는 감지를 막지 않는다
+
+        # 가져온 데이터를 날짜별 CSV 에 한 줄씩 누적 (나중에 그대로 열어볼 수 있게)
+        try:
+            from store_csv import append_rows
+            saved = append_rows(rows, cfg)
+        except Exception as e:
+            print(f"[CSV] ⚠️ 저장 실패: {e}")
 
     floor = alarm_floor(cfg)
     touched = []
@@ -351,6 +358,8 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
         "alarm_floor": floor,
         "active": len(store.active()),
         "amos_warn": warn,
+        "saved": saved,
+        "all_rows": rows,          # 정상 포함 전체 — 화면 피드용
     }
 
 
