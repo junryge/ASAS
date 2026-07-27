@@ -42,9 +42,42 @@ STATE = {
 
 
 # ────────────────────────────── 폴링 루프 ──────────────────────────────
+def _bootstrap_today() -> None:
+    """기동 시 오늘 하루치를 통째로 확보한다 (00:00 ~ 현재).
+
+    중간에 서버가 꺼져 있던 구간까지 메운다. 이미 저장된 분은 중복으로 걸러지므로
+    여러 번 돌려도 안전하다. 이후 수집은 폴링 루프가 증분으로 이어간다.
+    """
+    now = datetime.now()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day = now.strftime("%Y%m%d")
+    print(f"[기동] 오늘({day}) 00:00 ~ {now:%H:%M} 하루치 확보 중…")
+    t0 = time.time()
+    try:
+        from collect import collect
+        r = collect(start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"),
+                    CFG, verbose=False)
+        if not r.get("ok"):
+            print(f"[기동] ⚠️ 확보 실패 — {r.get('error')}")
+            STATE["bootstrap"] = {"ok": False, "error": r.get("error")}
+            return
+        print(f"[기동] ✅ {r['rows']}행({r['minutes']}분) 조회 · 신규 {r['written']}행 저장 · "
+              f"중복 {r['skipped']}"
+              + (f" → {', '.join(r['files'])}" if r.get("files") else "")
+              + f"  [{round(time.time()-t0,1)}초]")
+        if r.get("warn"):
+            print(f"[기동] ⚠️ {r['warn']}")
+        STATE["bootstrap"] = {"ok": True, "minutes": r["minutes"],
+                              "written": r["written"], "at": datetime.now().isoformat()}
+    except Exception as e:
+        print(f"[기동] ⚠️ 확보 예외: {type(e).__name__}: {e}")
+        STATE["bootstrap"] = {"ok": False, "error": str(e)}
+
+
 def _poll_loop() -> None:
     """수집 루프 — 주기·구간을 매 회 config 에서 다시 읽어 즉시 반영한다."""
-    while True:
+    _bootstrap_today()                 # ① 하루치 먼저 확보
+    while True:                        # ② 이후 증분 수집
         t0 = time.time()
         try:
             res = scan_once(STORE, cfg=CFG)
@@ -236,6 +269,26 @@ def api_feed():
               for lv in ("정상", "경계", "위험", "초위험")}
     return jsonify({"rows": out, "counts": counts, "total": len(out),
                     "window": CFG.get("query", {}).get("window", "10m")})
+
+
+@app.route("/api/collect", methods=["POST"])
+def api_collect():
+    """수동 확보 — 오늘 하루 다시 훑거나(기본), 지정 날짜를 확보한다.
+
+    {"date": "YYYYMMDD"} 또는 {} (오늘 00:00~현재)
+    """
+    b = request.get_json(silent=True) or {}
+    try:
+        from collect import collect, collect_day
+        if b.get("date"):
+            r = collect_day(b["date"], CFG)
+        else:
+            now = datetime.now()
+            r = collect(now.strftime("%Y%m%d000000"), now.strftime("%Y%m%d%H%M%S"),
+                        CFG, verbose=False)
+        return (jsonify(r), 200) if r.get("ok") else (jsonify(r), 502)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/data/days")

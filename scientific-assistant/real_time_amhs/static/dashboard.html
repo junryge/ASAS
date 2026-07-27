@@ -269,8 +269,14 @@
   <div class="card">
     <h2>누적 데이터 <span class="sub note" id="datadir"></span></h2>
     <div class="bd">
-      <p class="note" style="margin:0 0 10px">1분마다 수집한 데이터가 날짜별 CSV 로 쌓입니다.
-        파일을 직접 열어보거나 내려받을 수 있습니다.</p>
+      <p class="note" style="margin:0 0 10px">서버를 켜면 <b style="color:var(--tx2)">오늘 하루치(00:00~현재)를 자동으로 확보</b>하고,
+        이후 1분마다 이어서 쌓습니다. 파일을 직접 열어보거나 내려받을 수 있습니다.</p>
+      <div class="row" style="margin-bottom:10px">
+        <button class="act" id="btncollect">오늘 하루 다시 훑기</button>
+        <input type="date" id="cdate">
+        <button class="act" id="btncday">그 날 확보</button>
+        <span class="note" id="collectmsg"></span>
+      </div>
       <div id="daylist" class="note">불러오는 중…</div>
     </div>
   </div>
@@ -692,6 +698,26 @@ $('#selPoll').onchange = async e => {
   const d = new Date();
   $('#rdate').value = new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 })();
+async function runCollect(body, btn){
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '확보 중…';
+  $('#collectmsg').textContent = '';
+  try{
+    const r = await post('/api/collect', body);
+    $('#collectmsg').innerHTML = r.ok
+      ? `<span style="color:var(--ok)">${r.rows}행(${r.minutes}분) 조회 · 신규 ${r.written}행 · 중복 ${r.skipped}</span>`
+        + (r.warn ? `<br><span style="color:var(--major)">${esc(r.warn)}</span>` : '')
+      : `<span style="color:var(--crit)">${esc(r.error||'실패')}</span>`;
+    loadDays();
+  } finally { btn.disabled=false; btn.textContent=label; }
+}
+$('#btncollect').onclick = () => runCollect({}, $('#btncollect'));
+$('#btncday').onclick = () => {
+  const d = ($('#cdate').value||'').replace(/-/g,'');
+  if(!d) return alert('날짜를 고르세요');
+  runCollect({date:d}, $('#btncday'));
+};
+
 async function loadDays(){
   try{
     const d = await api('/api/data/days');
