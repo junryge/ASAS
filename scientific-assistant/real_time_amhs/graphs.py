@@ -29,22 +29,34 @@ _FAB = "M16HUB.STRATE.ALL.FABSTORAGERATIO"
 _STB = "M16HUB.STRATE.STB.3F_STORAGE_UTIL"
 _REV = "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT"
 
+# ── 다크 테마 (dashboard.html CSS 변수와 동일) ──
+_BG = "#0D1119"      # --panel
+_BG2 = "#0F1622"     # 스코어 패널 정상 구간
+_LINE = "#1C2431"    # --line
+_GRID = "#2E3A4C"    # 눈금선
+_TX = "#E6EDF6"      # --tx
+_TX2 = "#8FA0B6"     # --tx2
+_TX3 = "#5E6E85"     # --tx3
+
 # 지표 패널 색 — 반송시간(빨강) → 저장율(주황/호박) → 리프터(자홍) → 4분초과율(청록/파랑)
-_PALETTE = ["#e0443a", "#f2921e", "#eda93b", "#e0479b", "#29b6c8", "#47a3e0", "#3b8ad9"]
+# 어두운 배경에서 읽히도록 밝기를 올린 값
+_PALETTE = ["#FF6B5E", "#FFA53D", "#F2C94C", "#FF6FB5", "#3DDBE8", "#5FB8FF", "#7C9CFF"]
 # 지표 종류별 고정 색 (같은 지표는 항상 같은 색)
 _COLOR_BY_KIND = {
-    "ra": "#e0443a",        # 반송시간
-    "rd_fab": "#f2921e",    # FAB저장율
-    "stb_util": "#eda93b",  # STB저장율
-    "rev_count": "#e0479b",  # 리프터 정체
-    "sla": "#29b6c8",       # 4분초과율
-    "sorter": "#47a3e0",    # 분류기 대기
-    "rd_oht": "#3b8ad9",    # OHT가동률
+    "ra": "#FF6B5E",        # 반송시간
+    "rd_fab": "#FFA53D",    # FAB저장율
+    "stb_util": "#F2C94C",  # STB저장율
+    "rev_count": "#FF6FB5",  # 리프터 정체
+    "sla": "#3DDBE8",       # 4분초과율
+    "sorter": "#5FB8FF",    # 분류기 대기
+    "rd_oht": "#7C9CFF",    # OHT가동률
 }
-_SCORE_COLOR = "#4a7fd0"
-_SEL_COLOR = "#1f2a44"   # 더블클릭한 시각 표시색
-_EVT_COLOR = "#f0921e"
-_BANDS = [(0, 50, "#dbe6f5"), (50, 71, "#fde9c8"), (71, 85, "#fbd5c8"), (85, 100, "#f6c4c4")]
+_SCORE_COLOR = "#3DDBE8"   # --cy
+_SEL_COLOR = "#E6EDF6"     # 더블클릭한 시각 표시색 (밝게)
+_EVT_COLOR = "#FF9F2E"     # --major
+_CRIT_COLOR = "#FF4D5E"    # --crit
+# 등급 밴드 — 다크 배경 위에 등급색을 옅게 깐 톤
+_BANDS = [(0, 50, _BG2), (50, 71, "#2B2612"), (71, 85, "#33210F"), (85, 100, "#331419")]
 
 
 def _kind_color(col: str, idx: int) -> str:
@@ -132,9 +144,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     pts = window_rows(rows, center, minutes, cfg)
     if not pts:
         return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="110">'
-                '<rect width="100%%" height="100%%" fill="#fff"/>'
-                '<text x="%d" y="60" fill="#888" font-size="14" text-anchor="middle">'
-                '해당 구간에 데이터가 없습니다</text></svg>' % (width, width // 2))
+                '<rect width="100%%" height="100%%" fill="%s"/>'
+                '<text x="%d" y="60" fill="%s" font-size="14" text-anchor="middle">'
+                '해당 구간에 데이터가 없습니다</text></svg>'
+                % (width, _BG, width // 2, _TX2))
 
     floor = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=50)
     t0, t1 = pts[0][0], pts[-1][0]
@@ -161,10 +174,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
          f'viewBox="0 0 {width} {height}" '
          f'font-family="-apple-system,Segoe UI,Malgun Gothic,sans-serif">',
-         f'<rect width="100%" height="100%" fill="#ffffff"/>']
+         f'<rect width="100%" height="100%" fill="{_BG}"/>']
 
     # ── 제목 ──
-    o.append(f'<text x="{L-46}" y="21" font-size="14" font-weight="700" fill="#1f2937">'
+    o.append(f'<text x="{L-46}" y="21" font-size="14" font-weight="700" fill="{_TX}">'
              f'📅 {t0:%Y-%m-%d} M16 BR 구간 ({len(incs)}건) · {t0:%H:%M}~{t1:%H:%M}</text>')
 
     # ── 스코어 패널 ──
@@ -176,14 +189,14 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         o.append(f'<rect x="{L}" y="{y1:.1f}" width="{pw}" height="{y2-y1:.1f}" fill="{col}"/>')
     for v in (50, 71, 85, 100):
         y = SY(v)
-        o.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L+pw}" y2="{y:.1f}" stroke="#c8d2e0" '
+        o.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L+pw}" y2="{y:.1f}" stroke="{_GRID}" '
                  f'stroke-width="0.8" stroke-dasharray="3 3"/>')
-        o.append(f'<text x="{L-7}" y="{y+4:.1f}" font-size="10" fill="#6b7280" '
+        o.append(f'<text x="{L-7}" y="{y+4:.1f}" font-size="10" fill="{_TX2}" '
                  f'text-anchor="end">{v}</text>')
 
     sv = [(t, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
     d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{SY(v):.1f}" for k, (t, v) in enumerate(sv))
-    o.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.5"/>')
+    o.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.6"/>')
 
     # 사건 표시
     for i, (it, ir, isc) in enumerate(incs, 1):
@@ -191,22 +204,22 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         o.append(f'<line x1="{x:.1f}" y1="{top_score}" x2="{x:.1f}" y2="{top_score+SCORE_H}" '
                  f'stroke="{_EVT_COLOR}" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>')
         o.append(f'<circle cx="{x:.1f}" cy="{SY(isc):.1f}" r="3.4" fill="{_EVT_COLOR}"/>')
-        o.append(f'<text x="{x:.1f}" y="{SY(isc)-7:.1f}" font-size="9.5" fill="#b45309" '
+        o.append(f'<text x="{x:.1f}" y="{SY(isc)-7:.1f}" font-size="9.5" fill="{_EVT_COLOR}" '
                  f'font-weight="700" text-anchor="middle">{isc:.0f}점</text>')
-        o.append(f'<text x="{x:.1f}" y="{top_score-5:.1f}" font-size="9" fill="#b45309" '
+        o.append(f'<text x="{x:.1f}" y="{top_score-5:.1f}" font-size="9" fill="{_EVT_COLOR}" '
                  f'text-anchor="middle">사건{i} {isc:.0f}점 @{it:%H:%M}</text>')
 
     # 최고점 라벨은 사건 라벨보다 한 줄 위 (겹침 방지)
     o.append(f'<text x="{X(peak_t):.1f}" y="{top_score-19:.1f}" font-size="10.5" '
-             f'fill="#b91c1c" font-weight="700" text-anchor="middle">'
+             f'fill="{_CRIT_COLOR}" font-weight="700" text-anchor="middle">'
              f'▲ 최고 {peak_sc:.0f}점 · {peak_t:%H:%M}{" · " + _e(area) if area else ""}</text>')
 
     # ── 더블클릭한 시각 표시 (선택 시각 + 그 시각 스코어) ──
     sel_t, sel_r, sel_sc = min(pts_sc, key=lambda x: abs((x[0] - center).total_seconds()))
     sx = X(sel_t)
     o.append(f'<line x1="{sx:.1f}" y1="{top_score}" x2="{sx:.1f}" y2="{top_score+SCORE_H}" '
-             f'stroke="{_SEL_COLOR}" stroke-width="1.6"/>')
-    o.append(f'<circle cx="{sx:.1f}" cy="{SY(sel_sc):.1f}" r="4.6" fill="#fff" '
+             f'stroke="{_SEL_COLOR}" stroke-width="1.4" opacity="0.8"/>')
+    o.append(f'<circle cx="{sx:.1f}" cy="{SY(sel_sc):.1f}" r="4.6" fill="{_BG}" '
              f'stroke="{_SEL_COLOR}" stroke-width="2.2"/>')
     _lb = f'선택 {sel_t:%H:%M} · {sel_sc:.0f}점'
     _lw = len(_lb) * 6.2 + 12
@@ -214,19 +227,19 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     _ly = SY(sel_sc) + (16 if sel_sc > 60 else -30)
     o.append(f'<rect x="{_lx:.1f}" y="{_ly:.1f}" width="{_lw:.1f}" height="19" rx="4" '
              f'fill="{_SEL_COLOR}"/>')
-    o.append(f'<text x="{_lx+_lw/2:.1f}" y="{_ly+13.5:.1f}" font-size="10.5" fill="#fff" '
+    o.append(f'<text x="{_lx+_lw/2:.1f}" y="{_ly+13.5:.1f}" font-size="10.5" fill="{_BG}" '
              f'font-weight="700" text-anchor="middle">{_e(_lb)}</text>')
 
     # 스코어 = 실제 컬럼명 명시
     o.append(f'<text x="{L}" y="{top_score+SCORE_H+14:.1f}" font-size="10.5" '
              f'fill="{_SCORE_COLOR}" font-weight="700">스코어</text>')
-    o.append(f'<text x="{L+44}" y="{top_score+SCORE_H+14:.1f}" font-size="9.5" fill="#6b7280" '
+    o.append(f'<text x="{L+44}" y="{top_score+SCORE_H+14:.1f}" font-size="9.5" fill="{_TX2}" '
              f'font-family="ui-monospace,Menlo,Consolas,monospace">unified_risk_score</text>')
 
     # ── 지표 섹션 ──
     if metrics:
         o.append(f'<text x="{L-46}" y="{top_score+SCORE_H+40:.1f}" font-size="11" '
-                 f'fill="#374151" font-weight="700">'
+                 f'fill="{_TX}" font-weight="700">'
                  f'최고점({peak_t:%H:%M} · {peak_sc:.0f}점{" · " + _e(area) if area else ""}) '
                  f'발동 지표 — 실제 raw 컬럼 {minutes}분 추이</text>')
 
@@ -239,17 +252,17 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         o.append(f'<rect x="{L-46}" y="{y}" width="4" height="{MET_H}" fill="{col}" rx="2"/>')
         o.append(f'<text x="{L-38}" y="{y+12}" font-size="11.5" font-weight="700" fill="{col}">'
                  f'{_e(md["label"])} ({_e(md["unit"])})</text>')
-        o.append(f'<text x="{L-38}" y="{y+26}" font-size="9" fill="#4b5563" '
+        o.append(f'<text x="{L-38}" y="{y+26}" font-size="9" fill="{_TX2}" '
                  f'font-family="ui-monospace,Menlo,Consolas,monospace">{_e(md["raw"])}</text>')
 
         if len(vals) < 2:
-            o.append(f'<text x="{L-38}" y="{y+44}" font-size="9.5" fill="#9ca3af">데이터 없음</text>')
+            o.append(f'<text x="{L-38}" y="{y+44}" font-size="9.5" fill="{_TX3}">데이터 없음</text>')
             continue
 
         vmin = min(v for _, v in vals)
         vmax = max(v for _, v in vals)
         rng = (vmax - vmin) or 1.0
-        o.append(f'<text x="{L-38}" y="{y+39}" font-size="9" fill="#9ca3af">'
+        o.append(f'<text x="{L-38}" y="{y+39}" font-size="9" fill="{_TX3}">'
                  f'범위 {_fmt(vmin)}~{_fmt(vmax)}{_e(md["unit"])}</text>')
 
         pt, pb = y + 6, y + MET_H - 10
@@ -257,11 +270,11 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         def MY(v):
             return pb - (pb - pt) * ((v - vmin) / rng)
 
-        o.append(f'<line x1="{L}" y1="{pb:.1f}" x2="{L+pw}" y2="{pb:.1f}" stroke="#e5e7eb"/>')
+        o.append(f'<line x1="{L}" y1="{pb:.1f}" x2="{L+pw}" y2="{pb:.1f}" stroke="{_LINE}"/>')
         area_d = (f"M{X(vals[0][0]):.1f},{pb:.1f} "
                   + " ".join(f"L{X(t):.1f},{MY(v):.1f}" for t, v in vals)
                   + f" L{X(vals[-1][0]):.1f},{pb:.1f} Z")
-        o.append(f'<path d="{area_d}" fill="{col}" opacity="0.13"/>')
+        o.append(f'<path d="{area_d}" fill="{col}" opacity="0.20"/>')
         d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{MY(v):.1f}"
                      for k, (t, v) in enumerate(vals))
         o.append(f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.4"/>')
@@ -276,19 +289,21 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
             if v is None:
                 continue
             o.append(f'<circle cx="{x:.1f}" cy="{MY(v):.1f}" r="2.8" fill="{_EVT_COLOR}"/>')
-            o.append(f'<text x="{x+4:.1f}" y="{MY(v)-5:.1f}" font-size="9" fill="#b45309" '
+            o.append(f'<text x="{x+4:.1f}" y="{MY(v)-5:.1f}" font-size="9" fill="{_EVT_COLOR}" '
                      f'font-weight="700">{_fmt(v)}{_e(md["unit"])}</text>')
 
         # 선택 시각 — 지표 패널에도 세로선 + 그 시각 실제 값
         o.append(f'<line x1="{sx:.1f}" y1="{pt:.1f}" x2="{sx:.1f}" y2="{pb:.1f}" '
-                 f'stroke="{_SEL_COLOR}" stroke-width="1.4"/>')
+                 f'stroke="{_SEL_COLOR}" stroke-width="1.2" opacity="0.55"/>')
         sv_ = vmap.get(sel_t)
         if sv_ is not None:
-            o.append(f'<circle cx="{sx:.1f}" cy="{MY(sv_):.1f}" r="3.4" fill="#fff" '
+            o.append(f'<circle cx="{sx:.1f}" cy="{MY(sv_):.1f}" r="3.4" fill="{_BG}" '
                      f'stroke="{_SEL_COLOR}" stroke-width="1.8"/>')
-            o.append(f'<text x="{sx:.1f}" y="{pt+9:.1f}" font-size="9" fill="{_SEL_COLOR}" '
-                     f'font-weight="700" text-anchor="middle">'
-                     f'{_fmt(sv_)}{_e(md["unit"])}</text>')
+            _t = f'{_fmt(sv_)}{md["unit"]}'
+            _tw = len(_t) * 6.0
+            _tx = max(L + _tw / 2, min(L + pw - _tw / 2, sx))
+            o.append(f'<text x="{_tx:.1f}" y="{pt+9:.1f}" font-size="9" fill="{_SEL_COLOR}" '
+                     f'font-weight="700" text-anchor="middle">{_e(_t)}</text>')
 
     # ── X 축 ──
     ybase = height - 20
@@ -296,7 +311,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     tick = t0
     while tick <= t1:
         x = X(tick)
-        o.append(f'<text x="{x:.1f}" y="{ybase}" font-size="9.5" fill="#6b7280" '
+        o.append(f'<text x="{x:.1f}" y="{ybase}" font-size="9.5" fill="{_TX2}" '
                  f'text-anchor="middle">{tick:%H:%M}</text>')
         tick += timedelta(minutes=step)
 
