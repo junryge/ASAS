@@ -103,10 +103,15 @@ API 키는 `api_key.txt` 또는 `config.json` 의 `"api_key"` 에 직접 넣어�
 test_table3 (기존 데이터)
         +
 ATLAS_BOTTLENECK_ANOMALY  ─┐  search MCP_NM == "BR"
-ATLAS_QUEUE_ANOMALY       ─┘  시각(분) 조인
+ATLAS_QUEUE_ANOMALY       ─┘  EVENT_DT(분) 기준 조인
         ↓
-BOTTLENECK_downward/upward_anomaly_cols
-QUEUE_downward/upward_anomaly_cols        ← AMOS 4개 컬럼 추가
+두 테이블 모두 컬럼명이 downward_anomaly_cols / upward_anomaly_cols 로 같으므로
+접두어를 붙여 구분해서 기본 데이터에 추가한다:
+
+  ATLAS_BOTTLENECK_ANOMALY.downward_anomaly_cols → BOTTLENECK_downward_anomaly_cols
+  ATLAS_BOTTLENECK_ANOMALY.upward_anomaly_cols   → BOTTLENECK_upward_anomaly_cols
+  ATLAS_QUEUE_ANOMALY.downward_anomaly_cols      → QUEUE_downward_anomaly_cols
+  ATLAS_QUEUE_ANOMALY.upward_anomaly_cols        → QUEUE_upward_anomaly_cols
         ↓
 감지 (unified_risk_score ≥ 임계)
         ↓
@@ -181,10 +186,11 @@ data/20260727_TOTAL.CSV
 
 1. **`test_table3` 실제 컬럼** — 특히 `datetime`, `unified_risk_score`, `hot_area`, `reason` 이
    그대로 있는지. 다르면 `config.amos.base_time_col` 과 `sentinel.py` 의 `_row_dt/_score` 매핑 확인.
-2. **ATLAS 두 테이블의 컬럼명** — `BOTTLENECK_downward_anomaly_cols` 등 4개가 그 이름 그대로인지.
-   다르면 `config.amos.bottleneck.downward_col` 등을 교체.
-3. **시각 컬럼 형식** — 조인 키는 `_time`(ATLAS) ↔ `datetime`(기존) 을 **분 단위**로 맞춘다.
-   형식이 다르면 조인 0건 경고가 대시보드에 뜬다.
+2. ~~ATLAS 컬럼명~~ — 확인 완료. 원본은 `downward_anomaly_cols`/`upward_anomaly_cols`,
+   시각은 `EVENT_DT`. `config.amos.*.src_downward/src_upward` 가 원본,
+   `downward_col/upward_col` 이 CSV 에 저장될 이름이다.
+3. ~~시각 컬럼 형식~~ — 확인 완료. `EVENT_DT`(예 `2026-07-27 0:00`) 기준으로 조인한다.
+   `_time` 은 수집시각(밀리초·타임존 포함)이라 1분 밀리므로 쓰지 않는다.
 4. **LLM API 키** — `real_time_amhs/token.txt` (또는 `GAIA_API_KEY` 환경변수).
    없으면 LLM 판단/리포트만 비활성되고 감지·케이스·통계 리포트는 정상 동작한다.
 

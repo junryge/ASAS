@@ -42,7 +42,7 @@
     "_use_proxy_doc": "기본 false = 시스템 프록시 우회. Windows urllib 이 IE 프록시를 타서 사내 IP 조회가 막히는 것 방지. 프록시를 꼭 거쳐야 하면 true."
   },
   "amos": {
-    "_doc": "AMOS 이상감지 — 별도 2개 테이블을 기존 데이터에 시각으로 조인해 4개 컬럼을 추가한다.",
+    "_doc": "AMOS 이상감지 — ATLAS 2개 테이블의 downward/upward_anomaly_cols 를 각각 BOTTLENECK_/QUEUE_ 이름으로 바꿔 기본 데이터에 시각으로 붙인다.",
     "_확인방법": "python lp_query.py --schema -t ATLAS_BOTTLENECK_ANOMALY   ← 실제 컬럼 확인 후 *_col 교체",
     "source": "atlas_tables",
     "filter": "MCP_NM == \"BR\"",
@@ -50,13 +50,20 @@
     "_base_time_col_doc": "기존 데이터(test_table3)의 시각 컬럼",
     "bottleneck": {
       "table": "ATLAS_BOTTLENECK_ANOMALY",
-      "time_col": "datetime",
+      "time_col": "EVENT_DT",
+      "_time_col_doc": "ATLAS 의 데이터 시각 컬럼 (예 '2026-07-27 0:00'). _time 은 수집시각이라 안 씀.",
+      "src_downward": "downward_anomaly_cols",
+      "src_upward": "upward_anomaly_cols",
+      "_src_doc": "★ATLAS 원본 컬럼명 (두 테이블 모두 같은 이름)",
       "downward_col": "BOTTLENECK_downward_anomaly_cols",
-      "upward_col": "BOTTLENECK_upward_anomaly_cols"
+      "upward_col": "BOTTLENECK_upward_anomaly_cols",
+      "_dst_doc": "★CSV 에 저장될 이름 (접두어를 붙여 두 테이블을 구분)"
     },
     "queue": {
       "table": "ATLAS_QUEUE_ANOMALY",
-      "time_col": "datetime",
+      "time_col": "EVENT_DT",
+      "src_downward": "downward_anomaly_cols",
+      "src_upward": "upward_anomaly_cols",
       "downward_col": "QUEUE_downward_anomaly_cols",
       "upward_col": "QUEUE_upward_anomaly_cols"
     },
@@ -67,8 +74,7 @@
       "BOTTLENECK_upward_anomaly_cols",
       "QUEUE_downward_anomaly_cols",
       "QUEUE_upward_anomaly_cols"
-    ],
-    "_time_col_doc": "데이터 시각 기준으로 조인. _time 은 수집시각이라 1분 밀릴 수 있음(자동 판별 후보에는 남김)"
+    ]
   },
   "llm": {
     "enabled": true,

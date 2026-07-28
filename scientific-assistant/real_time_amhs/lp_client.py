@@ -107,6 +107,7 @@ def parse_dt(value):
     # 끝의 타임존(+0900 / +09:00 / Z) 제거 — 로그프레소는 KST 로 내려준다
     import re as _re
     s = _re.sub(r"\s*(?:Z|[+-]\d{2}:?\d{2})$", "", s).strip()
+    s = _re.sub(r"\.\d+$", "", s)          # 밀리초 제거 (00:00:05.866)
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
                 "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
                 "%Y%m%d%H%M%S", "%Y-%m-%d"):

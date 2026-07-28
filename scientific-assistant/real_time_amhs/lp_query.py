@@ -228,12 +228,17 @@ def enrich_with_amos(rows: list[dict], duration: str | None = None,
             warns.append(f"{spec.get('table', which)}: {err.get('reason')}")
             continue
 
+        # 원본 컬럼(ATLAS) → 저장 컬럼(CSV) 로 이름을 바꿔 붙인다.
+        # ATLAS 두 테이블 모두 downward/upward_anomaly_cols 라 접두어로 구분해야 한다.
+        sd = spec.get("src_downward", spec.get("downward_col"))
+        su = spec.get("src_upward", spec.get("upward_col"))
         dcol, ucol = spec.get("downward_col"), spec.get("upward_col")
-        if arows and (dcol not in arows[0] or ucol not in arows[0]):
-            warns.append(f"{spec.get('table')}: 컬럼 {dcol}/{ucol} 없음 — "
-                         f"실제 컬럼 {list(arows[0].keys())[:12]} (--schema 로 확인 후 config 수정)")
-            continue
         if not arows:
+            continue
+        if sd not in arows[0] or su not in arows[0]:
+            warns.append(f"{spec.get('table')}: 원본 컬럼 {sd}/{su} 없음 — "
+                         f"실제 컬럼 {list(arows[0].keys())} "
+                         f"(config.amos.{which}.src_downward/src_upward 수정)")
             continue
 
         # 조인 시각 컬럼 자동 판별.
@@ -249,7 +254,7 @@ def enrich_with_amos(rows: list[dict], duration: str | None = None,
         # base 가 datetime(데이터 시각)이면 ATLAS 도 datetime 으로 붙여야 한다.
         # _time 은 '수집 시각'이라 1분 밀릴 수 있으므로 마지막 후보.
         cands, seen = [], set()
-        for c in (base_tc, spec.get("time_col"), "datetime", "time", "_time"):
+        for c in (spec.get("time_col"), "EVENT_DT", base_tc, "datetime", "time", "_time"):
             if c and c in arows[0] and c not in seen:
                 seen.add(c)
                 cands.append(c)
@@ -270,11 +275,16 @@ def enrich_with_amos(rows: list[dict], duration: str | None = None,
                          f"(기준 {base_tc}, 시도 {cands} — 시각 형식 확인)")
             continue
 
+        filled = 0
         for k, ar in best_idx.items():
+            dv, uv = (ar.get(sd) or "").strip(), (ar.get(su) or "").strip()
             for r in base_idx.get(k, []):
-                r[dcol] = ar.get(dcol, "") or ""
-                r[ucol] = ar.get(ucol, "") or ""
-        print(f"[AMOS] {spec.get('table')} — {best_tc} 기준 {best_hit}분 조인")
+                r[dcol] = dv          # downward_anomaly_cols → BOTTLENECK_/QUEUE_ 접두어
+                r[ucol] = uv
+            if dv or uv:
+                filled += 1
+        print(f"[AMOS] {spec.get('table')} — {best_tc} 기준 {best_hit}분 조인"
+              f" (값 있는 분 {filled})")
 
     return rows, ({"reason": " / ".join(warns), "warn": True} if warns else None)
 
