@@ -95,10 +95,10 @@ _RULE_KR = [
     (r"R-?B_fast\b", "Queue 상승"),
     (r"R-?A\b", "반송지연"),
     (r"R-?B\b", "Queue 누적"),
-    (r"R-?C\b", "리프터 정체"),
+    (r"R-?C\b", "리프터막힘"),
     (r"R-?D\b", "Storage FULL"),
     (r"MAXCAPA", "운영자 용량변경"),
-    (r"SORT", "분류기 대기"),
+    (r"SORT", "소터대기"),
     (r"SLA", "4분초과"),
 ]
 
@@ -107,7 +107,7 @@ def summarize_reason(reason: str, area: str = "") -> str:
     """reason 원문에서 발동 룰을 뽑아 한글 한 줄로. 룰 코드는 노출하지 않는다.
 
     예) 'hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,R-D(STB=100.0%)]; M14[R-A_sus]'
-        → 'M16HUB 반송지연 지속 · 리프터 정체 · Storage FULL'
+        → 'M16HUB 반송지연 지속 · 리프터막힘 · Storage FULL'
     """
     import re
     txt = reason or ""

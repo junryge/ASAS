@@ -153,15 +153,19 @@ def _auto_judge(case_ids: list[str]) -> None:
 
 # ─────────────────────── 추이 그래프 지표 목록 ───────────────────────
 # 화면 위 '추이 그래프'에서 고를 수 있는 지표. config.ui.strip_metrics 로 갈아끼운다.
+# 라벨·raw 컬럼명은 m16_hub_skills/발동이벤트_요약.py 와 동일하게 맞춘다.
+#   key = 값이 들어있는 CSV 컬럼 / raw = 화면에 보여줄 AMOS 실제 컬럼명
 _STRIP_DEFAULT = [
-    {"key": "unified_risk_score", "label": "스코어", "unit": "점",
-     "color": "#3DDBE8", "max": 100, "bands": True},
-    {"key": "M16HUB_ra", "label": "M16HUB 반송시간", "unit": "분", "color": "#FF6B5E"},
-    {"key": "M16HUB_rd_fab", "label": "M16HUB FAB저장율", "unit": "%",
-     "color": "#FFA53D", "max": 100},
-    {"key": "M16HUB_stb_util", "label": "M16HUB STB저장율", "unit": "%",
-     "color": "#F2C94C", "max": 100},
-    {"key": "M16HUB_rev_count", "label": "M16HUB 리프터 정체", "unit": "회", "color": "#FF6FB5"},
+    {"key": "unified_risk_score", "raw": "unified_risk_score", "label": "스코어",
+     "unit": "점", "color": "#3DDBE8", "max": 100, "bands": True},
+    {"key": "M16HUB_ra", "raw": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
+     "label": "M16HUB 반송시간", "unit": "분", "color": "#FF6B5E"},
+    {"key": "M16HUB_rd_fab", "raw": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
+     "label": "M16HUB FAB저장율", "unit": "%", "color": "#FFA53D", "max": 100},
+    {"key": "M16HUB_stb_util", "raw": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
+     "label": "M16HUB STB저장율", "unit": "%", "color": "#F2C94C", "max": 100},
+    {"key": "M16HUB_rev_count", "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
+     "label": "M16HUB 리프터막힘", "unit": "회", "color": "#FF6FB5"},
 ]
 
 
@@ -172,7 +176,8 @@ def strip_metrics(cfg: dict) -> list[dict]:
     out = []
     for m in ms:
         if isinstance(m, dict) and m.get("key"):
-            out.append({"key": m["key"], "label": m.get("label") or m["key"],
+            out.append({"key": m["key"], "raw": m.get("raw") or m["key"],
+                        "label": m.get("label") or m["key"],
                         "unit": m.get("unit") or "", "color": m.get("color") or "#3DDBE8",
                         "max": m.get("max"), "bands": bool(m.get("bands"))})
     return out or _STRIP_DEFAULT
