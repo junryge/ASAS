@@ -283,14 +283,16 @@ def api_feed():
     out.sort(key=lambda x: x["at"], reverse=True)
     counts = {lv: sum(1 for x in out if x["level"] == lv)
               for lv in ("정상", "경계", "위험", "초위험")}
+    # 기본은 하루치 전부 (1분 1행 = 1440행). 00:00 부터 다 보여야 한다.
     try:
-        limit = max(1, min(2000, int(request.args.get("limit", 400))))
+        limit = max(1, min(5000, int(request.args.get("limit", 1500))))
     except ValueError:
-        limit = 400
+        limit = 1500
     return jsonify({"rows": out[:limit], "counts": counts, "total": len(out),
                     "shown": min(limit, len(out)),
                     "day": shown_day, "fallback": fallback,
                     "latest": out[0]["datetime"] if out else None,
+                    "earliest": out[-1]["datetime"] if out else None,
                     "window": CFG.get("query", {}).get("window", "10m")})
 
 

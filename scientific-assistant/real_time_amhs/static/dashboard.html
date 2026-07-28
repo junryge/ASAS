@@ -455,10 +455,13 @@ async function pollCases(){
 
     // 최신 데이터가 들어왔는지 바로 보이게
     const d = fd.day ? `${fd.day.slice(0,4)}-${fd.day.slice(4,6)}-${fd.day.slice(6,8)}` : '';
+    const from_ = (fd.earliest||'').slice(11), to_ = (fd.latest||'').slice(11);
     $('#feedinfo').innerHTML =
       (fd.fallback ? `<span style="color:var(--major)">오늘 데이터 없음 → ${esc(d)} 표시</span> · ` : `${esc(d)} · `)
-      + `최신 ${esc((fd.latest||'').slice(11) || '–')}`
-      + (fd.total > fd.shown ? ` · ${fd.shown}/${fd.total}행 표시` : ` · ${fd.total}행`)
+      + (from_ ? `<b style="color:var(--tx2)">${esc(from_)}~${esc(to_)}</b>` : '–')
+      + (fd.total > fd.shown
+          ? ` · <span style="color:var(--major)">${fd.shown}/${fd.total}행만 표시</span>`
+          : ` · ${fd.total}행`)
       + ` · 갱신 ${new Date().toLocaleTimeString('ko-KR',{hour12:false})}`;
     if(fd.latest && fd.latest !== LAST_LATEST){ NEW_AT = fd.latest; LAST_LATEST = fd.latest; }
 
