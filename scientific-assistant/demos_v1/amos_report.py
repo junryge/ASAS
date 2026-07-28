@@ -2,9 +2,13 @@
 """demos_v1/amos_report.py — 사건발생 보고서 HTML에 AMOS 인터랙티브 블록 주입.
 
 _maybe_generate_md_html 이 만든 body_html 에 'AMOS 이상 감지 내역' 섹션이 있으면:
-  ① AMOS 표 → 체크박스 표(id=amos-detection-table)로 변환
+  ① AMOS 표 → 인터랙티브 표(id=amos-detection-table)로 변환
+     · 실제 발생여부 = O/X 라디오
+     · 작업 여부 = O/X 라디오 (신규 열)
   ② '실제 이상 발생내역' 섹션 아래 → 인터랙티브 표 + '+ 수동 기입' 버튼 주입
-     (체크 시 행 자동 생성 / 해제 시 제거 / 수동기입은 항상 가능 — 샘플5 스펙)
+     (실제 발생여부 O → 행 자동 생성 / X·미선택 → 제거 / 수동기입은 항상 가능)
+     · 발생·완료 시간, 조치 시간, 원복 시간 모두 시/분 분리 셀렉트
+     (저장 형식은 'HH:MM' 유지 → 예전 저장본도 그대로 복원됨)
   ③ 리포트 그래프(hub-report-graph)를 '위험 이벤트 상세' 헤딩 아래로 이동
   ④ 상단 저장 툴바 + 저장/복원 JS (같은 브라우저 자동 복원, 파일로 저장 지원)
 
@@ -16,16 +20,27 @@ import re
 # ── 인터랙티브 CSS (샘플5 이식) ──────────────────────────────────────────
 AMOS_CSS = """
 .table-wrap{width:100%;overflow-x:auto;margin:1em 0}
-.amos-table{min-width:940px}
-.actual-incident-table{min-width:1120px}
+.amos-table{min-width:1040px}
+.actual-incident-table{min-width:1300px}
 .center-cell{text-align:center;vertical-align:middle}
 .section-note{margin:.5em 0 1em;color:#475569;font-size:.9em}
-input[type="checkbox"]{width:16px;height:16px;vertical-align:middle;accent-color:#2563eb}
+/* 체크박스·라디오는 어떤 배치(flex/grid) 안에서도 같은 크기로 고정 —
+   inline-flex 라벨 안에서 글자 길이에 따라 눌려 작아지던 문제 방지 */
+input[type="checkbox"],input[type="radio"]{width:16px;height:16px;min-width:16px;min-height:16px;
+  flex:0 0 16px;margin:0;padding:0;vertical-align:middle;accent-color:#2563eb}
 select,textarea{box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#1a1a2e;font:inherit}
 select{min-width:92px;padding:.25em .35em}
 textarea{width:100%;min-width:170px;min-height:62px;padding:.45em .55em;resize:vertical;line-height:1.45}
-.time-selects{display:flex;flex-wrap:wrap;gap:.35rem .5rem}
+.time-selects{display:flex;flex-direction:column;gap:.35rem}
 .time-selects label{display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap;font-size:.92em}
+/* 시/분 분리 셀렉트 */
+.time-field{display:inline-flex;align-items:center;gap:.22rem;white-space:nowrap;font-size:.92em}
+.time-field .time-field-label{color:#334155;font-weight:650;margin-right:.15rem}
+.time-field .time-unit{color:#475569}
+.time-field select{min-width:62px;padding:.22em .25em}
+/* O/X 라디오 그룹 */
+.ox-group{display:inline-flex;align-items:center;justify-content:center;gap:.7rem}
+.ox-group label{display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap;font-weight:700;color:#334155}
 .action-area-options{display:grid;grid-template-columns:repeat(2,minmax(72px,1fr));gap:.25rem .5rem}
 .action-area-options label{display:inline-flex;align-items:center;gap:.25rem;white-space:nowrap}
 .empty-row td{text-align:center;color:#94a3b8;padding:1.1em;background:#f8fafc}
@@ -38,6 +53,7 @@ textarea{width:100%;min-width:170px;min-height:62px;padding:.45em .55em;resize:v
 .action-item{padding:.5rem;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc}
 .action-item-controls{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.4rem}
 .action-time-label{display:inline-flex;align-items:center;gap:.3rem;color:#334155;font-size:.92em;font-weight:650;white-space:nowrap}
+.action-times{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .7rem}
 .add-action-button,.remove-action-button{border:1px solid #94a3b8;border-radius:6px;background:#fff;color:#334155;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
 .add-action-button{padding:.28em .65em;border-color:#2563eb;color:#1d4ed8}
 .remove-action-button{padding:.22em .52em;color:#b91c1c;border-color:#fca5a5}
@@ -76,18 +92,18 @@ TOOLBAR_HTML = """
 """
 
 SECTION3_HTML = """
-<p class="section-note">2. AMOS 이상 감지 내역의 <strong>실제 발생여부</strong>를 체크하면 아래 표에 해당 번호의 행이 자동으로 생성됩니다. 체크를 해제하면 해당 행은 표에서 제외됩니다.</p>
+<p class="section-note">2. AMOS 이상 감지 내역의 <strong>실제 발생여부</strong>를 <strong>O</strong>로 선택하면 아래 표에 해당 번호의 행이 자동으로 생성됩니다. <strong>X</strong>로 바꾸거나 선택을 비우면 해당 행은 표에서 제외됩니다.</p>
 <div class="table-wrap">
 <table id="actual-incident-table" class="actual-incident-table">
 <colgroup>
-<col style="width:55px"><col style="width:125px"><col style="width:210px">
-<col style="width:165px"><col style="width:325px"><col style="width:240px">
+<col style="width:55px"><col style="width:120px"><col style="width:250px">
+<col style="width:160px"><col style="width:405px"><col style="width:225px">
 </colgroup>
 <thead>
 <tr><th>번호</th><th>AMOS 이상감지 시간</th><th>실제 발생시간/조치완료시간</th><th>조치 구간</th><th>조치내용</th><th>Comment(or 발생원인)</th></tr>
 </thead>
 <tbody id="actual-incident-tbody">
-<tr class="empty-row"><td colspan="6">실제 발생여부가 체크된 AMOS 이상 감지 항목이 없습니다.</td></tr>
+<tr class="empty-row"><td colspan="6">실제 발생여부가 O 로 선택된 AMOS 이상 감지 항목이 없습니다.</td></tr>
 </tbody>
 </table>
 </div>
@@ -116,60 +132,113 @@ AMOS_JS = r"""
   const actionAreas = ['CNV', 'M14BLFT', 'M16LFT', 'FIO'];
 
   function pad2(v) { return String(v).padStart(2, '0'); }
+  // '실제 발생여부' O 라디오 = 판정 기준 (X/미선택이면 3번 표에 행을 만들지 않는다)
   function getOccurrenceChecks() { return Array.from(document.querySelectorAll('.actual-occurrence-check')); }
 
-  function buildTimeOptions(selectedValue) {
+  // ── O/X 라디오 (실제 발생여부 · 작업 여부) ─────────────────────────
+  function oxNodes(cls, no) {
+    const key = String(no);
+    const pick = (sel) => Array.from(document.querySelectorAll(sel))
+      .find((node) => node.dataset.incidentNo === key) || null;
+    return { o: pick('.' + cls), x: pick('.' + cls + '-no') };
+  }
+
+  function readOx(cls, no) {
+    const { o, x } = oxNodes(cls, no);
+    if (o && o.checked) return 'O';
+    if (x && x.checked) return 'X';
+    return '';
+  }
+
+  function applyOx(cls, no, value) {
+    const { o, x } = oxNodes(cls, no);
+    if (o) o.checked = value === 'O';
+    if (x) x.checked = value === 'X';
+  }
+
+  // ── 시/분 분리 셀렉트 ──────────────────────────────────────────────
+  // 저장 형식은 기존과 같은 'HH:MM' 문자열 유지 (예전에 저장한 보고서도 그대로 복원됨)
+  function splitHM(value) {
+    const m = /^(\d{1,2}):(\d{1,2})$/.exec(String(value || '').trim());
+    return m ? [pad2(m[1]), pad2(m[2])] : ['', ''];
+  }
+
+  function buildUnitOptions(count, selectedValue) {
     const fragment = document.createDocumentFragment();
     const placeholder = document.createElement('option');
-    placeholder.value = ''; placeholder.textContent = '선택';
+    placeholder.value = ''; placeholder.textContent = '--';
     fragment.appendChild(placeholder);
-    for (let hour = 0; hour < 24; hour += 1) {
-      for (let minute = 0; minute < 60; minute += 1) {
-        const value = `${pad2(hour)}:${pad2(minute)}`;
-        const option = document.createElement('option');
-        option.value = value; option.textContent = value;
-        if (value === selectedValue) option.selected = true;
-        fragment.appendChild(option);
-      }
+    for (let i = 0; i < count; i += 1) {
+      const value = pad2(i);
+      const option = document.createElement('option');
+      option.value = value; option.textContent = value;
+      if (value === selectedValue) option.selected = true;
+      fragment.appendChild(option);
     }
     return fragment;
   }
 
+  function createTimeSplit(no, field, labelText, selectedValue) {
+    const [hh, mm] = splitHM(selectedValue);
+    const wrap = document.createElement('span');
+    wrap.className = 'time-field';
+    if (labelText) {
+      const tag = document.createElement('span');
+      tag.className = 'time-field-label'; tag.textContent = labelText;
+      wrap.appendChild(tag);
+    }
+    const hour = document.createElement('select');
+    hour.dataset.field = `${field}-h`;
+    hour.setAttribute('aria-label', `${no}번 ${labelText} 시`);
+    hour.appendChild(buildUnitOptions(24, hh));
+    const hUnit = document.createElement('span');
+    hUnit.className = 'time-unit'; hUnit.textContent = '시';
+    const minute = document.createElement('select');
+    minute.dataset.field = `${field}-m`;
+    minute.setAttribute('aria-label', `${no}번 ${labelText} 분`);
+    minute.appendChild(buildUnitOptions(60, mm));
+    const mUnit = document.createElement('span');
+    mUnit.className = 'time-unit'; mUnit.textContent = '분';
+    wrap.appendChild(hour); wrap.appendChild(hUnit);
+    wrap.appendChild(minute); wrap.appendChild(mUnit);
+    return wrap;
+  }
+
+  function readTime(scope, field) {
+    if (!scope) return '';
+    const hh = scope.querySelector(`[data-field="${field}-h"]`)?.value || '';
+    const mm = scope.querySelector(`[data-field="${field}-m"]`)?.value || '';
+    if (!hh && !mm) return '';
+    return `${hh || '00'}:${mm || '00'}`;
+  }
+
+  function defaultAction() { return { time: '', restoreTime: '', text: '' }; }
+
   function defaultState() {
-    return { actualTime: '', completeTime: '', areas: [], actions: [{ time: '', text: '' }], commentText: '' };
+    return { actualTime: '', completeTime: '', areas: [], actions: [defaultAction()], commentText: '' };
   }
 
   function getActionsFromRow(row) {
     const items = Array.from(row.querySelectorAll('[data-action-item]'));
     const actions = items.map((item) => ({
-      time: item.querySelector('[data-field="action-time"]')?.value || '',
+      time: readTime(item, 'action-time'),
+      restoreTime: readTime(item, 'restore-time'),
       text: item.querySelector('[data-field="action-text"]')?.value || ''
     }));
-    return actions.length ? actions : [{ time: '', text: '' }];
+    return actions.length ? actions : [defaultAction()];
   }
 
   function saveCurrentRows() {
     if (!actualTbody) return;
     actualTbody.querySelectorAll('tr[data-incident-no]').forEach((row) => {
       savedState.set(row.dataset.incidentNo, {
-        actualTime: row.querySelector('[data-field="actual-time"]')?.value || '',
-        completeTime: row.querySelector('[data-field="complete-time"]')?.value || '',
+        actualTime: readTime(row, 'actual-time'),
+        completeTime: readTime(row, 'complete-time'),
         areas: Array.from(row.querySelectorAll('[data-field="action-area"]:checked')).map((i) => i.value),
         actions: getActionsFromRow(row),
         commentText: row.querySelector('[data-field="comment-text"]')?.value || ''
       });
     });
-  }
-
-  function createTimeSelect(no, field, labelText, selectedValue) {
-    const label = document.createElement('label');
-    label.textContent = labelText;
-    const select = document.createElement('select');
-    select.dataset.field = field;
-    select.setAttribute('aria-label', `${no}번 ${labelText}`);
-    select.appendChild(buildTimeOptions(selectedValue));
-    label.appendChild(select);
-    return label;
   }
 
   function createActionAreaOptions(no, selectedAreas) {
@@ -205,19 +274,15 @@ AMOS_JS = r"""
     item.className = 'action-item'; item.dataset.actionItem = '';
     const controls = document.createElement('div');
     controls.className = 'action-item-controls';
-    const timeLabel = document.createElement('label');
-    timeLabel.className = 'action-time-label';
-    timeLabel.appendChild(document.createTextNode('조치 시간'));
-    const timeSelect = document.createElement('select');
-    timeSelect.dataset.field = 'action-time';
-    timeSelect.setAttribute('aria-label', `${no}번 ${index + 1}번째 조치 시간`);
-    timeSelect.appendChild(buildTimeOptions(action?.time || ''));
-    timeLabel.appendChild(timeSelect);
+    const times = document.createElement('div');
+    times.className = 'action-times';
+    times.appendChild(createTimeSplit(no, 'action-time', '조치 시간', action?.time || ''));
+    times.appendChild(createTimeSplit(no, 'restore-time', '원복 시간', action?.restoreTime || ''));
     const removeButton = document.createElement('button');
     removeButton.type = 'button'; removeButton.className = 'remove-action-button';
     removeButton.dataset.action = 'remove-action'; removeButton.textContent = '삭제';
     removeButton.setAttribute('aria-label', `${no}번 ${index + 1}번째 조치내용 삭제`);
-    controls.appendChild(timeLabel); controls.appendChild(removeButton);
+    controls.appendChild(times); controls.appendChild(removeButton);
     const textarea = createTextarea(no, 'action-text', `${index + 1}번째 조치내용`, action?.text || '',
       'ex) M16 6F Maxcapa 3조정,Maxcapa원복');
     item.appendChild(controls); item.appendChild(textarea);
@@ -228,10 +293,14 @@ AMOS_JS = r"""
     const items = Array.from(row.querySelectorAll('[data-action-item]'));
     const no = row.dataset.incidentNo;
     items.forEach((item, index) => {
-      const timeSelect = item.querySelector('[data-field="action-time"]');
       const textarea = item.querySelector('[data-field="action-text"]');
       const removeButton = item.querySelector('[data-action="remove-action"]');
-      if (timeSelect) timeSelect.setAttribute('aria-label', `${no}번 ${index + 1}번째 조치 시간`);
+      [['action-time', '조치 시간'], ['restore-time', '원복 시간']].forEach(([field, label]) => {
+        item.querySelector(`[data-field="${field}-h"]`)
+          ?.setAttribute('aria-label', `${no}번 ${index + 1}번째 ${label} 시`);
+        item.querySelector(`[data-field="${field}-m"]`)
+          ?.setAttribute('aria-label', `${no}번 ${index + 1}번째 ${label} 분`);
+      });
       if (textarea) textarea.setAttribute('aria-label', `${no}번 ${index + 1}번째 조치내용`);
       if (removeButton) {
         removeButton.hidden = items.length === 1;
@@ -254,7 +323,7 @@ AMOS_JS = r"""
     toolbar.appendChild(title); toolbar.appendChild(addButton);
     const list = document.createElement('div');
     list.className = 'action-list';
-    const normalizedActions = Array.isArray(actions) && actions.length ? actions : [{ time: '', text: '' }];
+    const normalizedActions = Array.isArray(actions) && actions.length ? actions : [defaultAction()];
     normalizedActions.forEach((action, index) => { list.appendChild(createActionItem(no, action, index)); });
     editor.appendChild(toolbar); editor.appendChild(list);
     return editor;
@@ -283,8 +352,8 @@ AMOS_JS = r"""
     const timeCell = document.createElement('td');
     const timeWrapper = document.createElement('div');
     timeWrapper.className = 'time-selects';
-    timeWrapper.appendChild(createTimeSelect(no, 'actual-time', '발생', state.actualTime));
-    timeWrapper.appendChild(createTimeSelect(no, 'complete-time', '완료', state.completeTime));
+    timeWrapper.appendChild(createTimeSplit(no, 'actual-time', '발생', state.actualTime));
+    timeWrapper.appendChild(createTimeSplit(no, 'complete-time', '완료', state.completeTime));
     timeCell.appendChild(timeWrapper);
     const areaCell = document.createElement('td');
     areaCell.appendChild(createActionAreaOptions(no, state.areas || []));
@@ -309,7 +378,7 @@ AMOS_JS = r"""
       emptyRow.className = 'empty-row';
       const emptyCell = document.createElement('td');
       emptyCell.colSpan = 6;
-      emptyCell.textContent = '실제 발생여부가 체크된 AMOS 이상 감지 항목이 없습니다.';
+      emptyCell.textContent = '실제 발생여부가 O 로 선택된 AMOS 이상 감지 항목이 없습니다.';
       emptyRow.appendChild(emptyCell);
       actualTbody.appendChild(emptyRow);
       return;
@@ -331,10 +400,18 @@ AMOS_JS = r"""
   function collectFullState() {
     saveCurrentRows();
     const staticChecks = {};
-    getOccurrenceChecks().forEach((check) => { staticChecks[check.dataset.incidentNo] = check.checked; });
+    const occurrenceStatus = {};
+    const workStatus = {};
+    getOccurrenceChecks().forEach((check) => {
+      const no = check.dataset.incidentNo;
+      staticChecks[no] = check.checked;   // 하위호환 (예전 저장본 형식)
+      occurrenceStatus[no] = readOx('actual-occurrence-check', no);
+      workStatus[no] = readOx('work-status-check', no);
+    });
     const incidents = {};
     savedState.forEach((value, key) => { incidents[key] = value; });
-    return { version: 1, savedAt: new Date().toISOString(), staticChecks, manualIncidents: manualIncidents.slice(), incidents };
+    return { version: 2, savedAt: new Date().toISOString(), staticChecks, occurrenceStatus, workStatus,
+             manualIncidents: manualIncidents.slice(), incidents };
   }
 
   let fileHandle = null;
@@ -362,7 +439,7 @@ AMOS_JS = r"""
     const docClone = document.documentElement.cloneNode(true);
     const cloneActualTbody = docClone.querySelector('#actual-incident-tbody');
     if (cloneActualTbody) {
-      cloneActualTbody.innerHTML = '<tr class="empty-row"><td colspan="6">실제 발생여부가 체크된 AMOS 이상 감지 항목이 없습니다.</td></tr>';
+      cloneActualTbody.innerHTML = '<tr class="empty-row"><td colspan="6">실제 발생여부가 O 로 선택된 AMOS 이상 감지 항목이 없습니다.</td></tr>';
     }
     docClone.querySelectorAll('.manual-detection-row').forEach((row) => row.remove());
     docClone.querySelectorAll('#__amhs_bridge').forEach((node) => node.remove());
@@ -463,16 +540,26 @@ AMOS_JS = r"""
     }
     if (!state) return;
     Object.entries(state.incidents || {}).forEach(([no, value]) => { savedState.set(String(no), value); });
-    Object.entries(state.staticChecks || {}).forEach(([no, checked]) => {
-      const check = document.querySelector(`.actual-occurrence-check[data-incident-no="${no}"]`);
-      if (check && !check.dataset.manual) check.checked = !!checked;
+    const occStatus = state.occurrenceStatus || {};
+    const wrkStatus = state.workStatus || {};
+    const legacy = state.staticChecks || {};
+    getOccurrenceChecks().forEach((check) => {
+      const no = check.dataset.incidentNo;
+      // version 2 = 'O'/'X'/'' · version 1(예전 저장본) = boolean → O 로 환산
+      const occ = occStatus[no] !== undefined ? occStatus[no] : (legacy[no] ? 'O' : '');
+      applyOx('actual-occurrence-check', no, occ);
+      applyOx('work-status-check', no, wrkStatus[no] || '');
     });
     manualIncidents = (state.manualIncidents || []).map(String);
   }
 
   amosTbody?.addEventListener('change', (event) => {
     setFileDirty(true);
-    if (event.target.classList.contains('actual-occurrence-check')) renderActualIncidentRows();
+    const cl = event.target.classList;
+    // O 든 X 든 바뀌면 3번 표를 다시 그린다 (O → 행 생성, X/미선택 → 행 제외)
+    if (cl.contains('actual-occurrence-check') || cl.contains('actual-occurrence-check-no')) {
+      renderActualIncidentRows();
+    }
   });
 
   addManualButton?.addEventListener('click', () => {
@@ -484,7 +571,7 @@ AMOS_JS = r"""
     renderActualIncidentRows();
     const newRow = actualTbody.querySelector(`tr[data-incident-no="${no}"]`);
     if (newRow && typeof newRow.scrollIntoView === 'function') newRow.scrollIntoView({ block: 'nearest' });
-    newRow?.querySelector('[data-field="actual-time"]')?.focus();
+    newRow?.querySelector('[data-field="actual-time-h"]')?.focus();
   });
 
   saveButton?.addEventListener('click', saveLocal);
@@ -512,9 +599,9 @@ AMOS_JS = r"""
     if (!actionList) return;
     if (button.dataset.action === 'add-action') {
       const index = actionList.querySelectorAll('[data-action-item]').length;
-      actionList.appendChild(createActionItem(row.dataset.incidentNo, { time: '', text: '' }, index));
+      actionList.appendChild(createActionItem(row.dataset.incidentNo, defaultAction(), index));
       refreshActionItemControls(row); saveCurrentRows();
-      actionList.lastElementChild?.querySelector('[data-field="action-time"]')?.focus();
+      actionList.lastElementChild?.querySelector('[data-field="action-time-h"]')?.focus();
       return;
     }
     if (button.dataset.action === 'remove-action') {
@@ -541,11 +628,40 @@ def _cell_text(html_cell):
     return _TAG_RE.sub("", html_cell).replace("&nbsp;", " ").strip()
 
 
+def _ox_cell(no, group, cls, label, extra=""):
+    """O/X 라디오 한 쌍이 든 <td>. O 쪽에만 판정용 class 를 준다."""
+    return (
+        f'<td class="center-cell"><span class="ox-group" role="radiogroup" '
+        f'aria-label="{no}번 {label}">'
+        f'<label><input type="radio" name="{group}-{no}" class="{cls}" value="O" '
+        f'data-incident-no="{no}"{extra} aria-label="{no}번 {label} O">O</label>'
+        f'<label><input type="radio" name="{group}-{no}" class="{cls}-no" value="X" '
+        f'data-incident-no="{no}" aria-label="{no}번 {label} X">X</label>'
+        f"</span></td>"
+    )
+
+
 def _transform_amos_table(table_html):
-    """AMOS 표 → id/class + 마지막 열(실제 발생여부)을 체크박스로."""
+    """AMOS 표 → id/class + 마지막 열(실제 발생여부)을 O/X 라디오로,
+    그 뒤에 '작업 여부' O/X 열을 신규 추가."""
     table_html = re.sub(r"<table\b[^>]*>",
                         '<table id="amos-detection-table" class="amos-table">',
                         table_html, count=1)
+
+    # 1) 머리행에 '작업 여부' th 추가 (마지막 th 뒤)
+    hm = re.search(r"<thead>([\s\S]*?)</thead>", table_html)
+    if hm:
+        head = hm.group(1)
+        ths = re.findall(r"<th\b[^>]*>[\s\S]*?</th>", head)
+        if ths and "작업 여부" not in head:
+            head2 = head.replace(ths[-1], ths[-1] + "<th>작업 여부</th>", 1)
+            table_html = table_html.replace(head, head2, 1)
+    # colgroup 이 있으면 열 하나 늘려준다 (없으면 그대로)
+    cm = re.search(r"<colgroup>[\s\S]*?</colgroup>", table_html)
+    if cm and cm.group(0).count("<col") >= 1:
+        table_html = table_html.replace(
+            cm.group(0), cm.group(0).replace("</colgroup>", '<col style="width:92px"></colgroup>'), 1)
+
     m = re.search(r"<tbody>([\s\S]*?)</tbody>", table_html)
     if not m:
         return table_html
@@ -559,11 +675,11 @@ def _transform_amos_table(table_html):
         no = _cell_text(tds[0]) or "?"
         tmm = re.search(r"\d{1,2}:\d{2}", _cell_text(tds[1]))
         tm = tmm.group(0) if tmm else _cell_text(tds[1])
-        chk = ('<td class="center-cell"><input type="checkbox" class="actual-occurrence-check" '
-               f'data-incident-no="{no}" data-detection-time="{tm}" aria-label="{no}번 실제 발생여부"></td>')
-        # 마지막 td(실제 발생여부 자리)를 체크박스로 교체
-        last = tds[-1]
-        return row.replace(last, chk, 1)
+        # 마지막 td(실제 발생여부 자리) → O/X 라디오, 그 뒤에 '작업 여부' O/X 열 추가
+        occ = _ox_cell(no, "occurrence", "actual-occurrence-check", "실제 발생여부",
+                       extra=f' data-detection-time="{tm}"')
+        work = _ox_cell(no, "work", "work-status-check", "작업 여부")
+        return row.replace(tds[-1], occ + work, 1)
 
     body2 = re.sub(r"<tr\b[^>]*>[\s\S]*?</tr>", _fix_row, body)
     return table_html.replace(body, body2, 1)
