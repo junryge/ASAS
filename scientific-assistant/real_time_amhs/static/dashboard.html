@@ -169,7 +169,7 @@
   .stripbox svg{width:100%;height:auto;display:block;cursor:crosshair;border-radius:6px}
   .lgd{display:flex;gap:9px;margin-left:auto;font-size:10.5px;color:var(--tx3)}
   .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
-  .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:200px}
+  .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:340px}
 
   /* ── 더블클릭 그래프 ── */
   .gmask{position:fixed;inset:0;background:rgba(4,7,12,.78);z-index:50;
@@ -652,8 +652,9 @@ function fillMetricSelects(){
     const el = $(sel);
     if(!el || el.dataset.n === String(METRICS.length)) return;
     el.dataset.n = String(METRICS.length);
+    // 실제 CSV 컬럼명을 대괄호로 같이 보여준다 — 어느 컬럼인지 바로 알게
     el.innerHTML = METRICS.map(m=>`<option value="${esc(m.key)}">${esc(m.label)}${
-      m.unit ? ' ('+esc(m.unit)+')' : ''}</option>`).join('');
+      m.unit ? ' ('+esc(m.unit)+')' : ''} [${esc(m.key)}]</option>`).join('');
     el.value = get();
   });
 }
