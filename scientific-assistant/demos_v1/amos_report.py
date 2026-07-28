@@ -100,7 +100,7 @@ SECTION3_HTML = """
 <col style="width:160px"><col style="width:405px"><col style="width:225px">
 </colgroup>
 <thead>
-<tr><th>번호</th><th>AMOS 이상감지 시간</th><th>실제 발생시간/조치완료시간</th><th>조치 구간</th><th>조치내용</th><th>Comment(or 발생원인)</th></tr>
+<tr><th>번호</th><th>이상감지 시간</th><th>실제 발생시간/조치완료시간</th><th>조치 구간</th><th>조치내용</th><th>Comment(or 발생원인)</th></tr>
 </thead>
 <tbody id="actual-incident-tbody">
 <tr class="empty-row"><td colspan="6">실제 발생여부가 O 로 선택된 AMOS 이상 감지 항목이 없습니다.</td></tr>
