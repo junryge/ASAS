@@ -47,10 +47,8 @@
   .c-cy{color:var(--cy)} .c-cr{color:var(--crit)} .c-mj{color:var(--major)} .c-ok{color:var(--ok)}
 
   /* ── 레이아웃 ── */
-  .main{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:0;align-items:start}
-  @media(max-width:1180px){.main{grid-template-columns:1fr}}
-  .pane{border-right:1px solid var(--line);min-height:calc(100vh - 118px)}
-  .side{background:var(--panel);min-height:calc(100vh - 118px)}
+  .main{display:block}
+  .pane{min-height:calc(100vh - 118px)}
 
   .hd{display:flex;align-items:center;gap:9px;padding:10px 16px;border-bottom:1px solid var(--line)}
   .hd h2{margin:0;font-size:13px;font-weight:650}
@@ -207,15 +205,16 @@
       </div>
     </div>
     <table class="cases">
-      <thead><tr><th style="width:150px">CASE</th><th>이상 내용</th>
-        <th style="width:120px">설비 / 위치</th><th style="width:88px">경과</th>
-        <th style="width:74px">상태</th></tr></thead>
-      <tbody id="cases"><tr><td colspan="5" class="empty">불러오는 중…</td></tr></tbody>
+      <thead><tr>
+        <th style="width:132px">시간</th>
+        <th style="width:150px">CASE</th>
+        <th style="width:104px">이상 내용</th>
+        <th>reason</th>
+        <th style="width:88px">경과</th>
+        <th style="width:74px">상태</th>
+      </tr></thead>
+      <tbody id="cases"><tr><td colspan="6" class="empty">불러오는 중…</td></tr></tbody>
     </table>
-  </div>
-
-  <div class="side" id="detail">
-    <div class="empty">왼쪽에서 케이스를 선택하세요</div>
   </div>
 </div>
 
@@ -422,178 +421,38 @@ async function pollCases(){
 
     $('#cases').innerHTML = list.length ? list.map(r=>{
       const c = r.case_id ? byId[r.case_id] : null;
-      const sel = c && SEL===c.id ? 'sel' : '';
-      return `<tr class="crow ${sel}" data-id="${esc(r.case_id||'')}" data-at="${esc(r.at)}">
+      return `<tr class="crow" data-at="${esc(r.at)}">
+        <td><div>${esc((r.datetime||'').slice(11) || r.time)}</div>
+            <div class="dim">${esc((r.datetime||'').slice(0,10))}</div></td>
         <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
             r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
-        <td><div class="ttl">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '반송 정체 감지'))}</div>
-            <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span>
-            ${Math.round(r.score)}점${r.zones.length?` · 구간 ${r.zones.slice(0,3).join(', ')}${r.zones.length>3?'…':''}`:''}</div></td>
-        <td><div>${esc(r.area)}</div><div class="dim">${esc(r.chain||'')}</div></td>
-        <td><div class="dim">${esc(r.time)}</div><div class="dim">${elapsed(r.at)} 전</div></td>
+        <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
+            <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
+        <td><div title="${esc(r.reason_raw||'')}">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '–'))}</div>
+            ${r.zones.length?`<div class="dim">구간 ${esc(r.zones.slice(0,6).join(', '))}${r.zones.length>6?'…':''}</div>`:''}</td>
+        <td><div class="dim">${elapsed(r.at)}${elapsed(r.at)==="방금"?"":" 전"}</div></td>
         <td>${c ? `<div class="stt ${esc(c.status)}">${esc(c.status)}</div>
               <div class="dim">재확인 ${c.recheck_at?hhmm(c.recheck_at):'–'}</div>`
             : '<div class="dim">—</div>'}</td>
       </tr>`;}).join('')
-      : `<tr><td colspan="5" class="empty">해당 등급 데이터 없음</td></tr>`;
-
-    document.querySelectorAll('tr.crow').forEach(el => el.onclick = () => {
-      const id = el.dataset.id;
-      if(id){ SEL = id; pollCases(); renderDetail(); }
-      else   { SEL = null; renderRow(el.dataset.at); }
-    });
-    if(SEL && !byId[SEL]){ SEL=null; renderDetail(); }
-  }catch(e){}
+      : `<tr><td colspan="6" class="empty">해당 등급 데이터 없음</td></tr>`;
+  }catch(e){ console.error('목록 갱신 실패', e); }
 }
+const shortId = id => String(id||'').replace(/^C\d{8}/,'C');
+const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)'
+                   : l==='경계'?'var(--minor)':'var(--ok)';
 
 /* 정상 행(케이스 없음) 상세 */
-function renderRow(at){
-  const r = FEED.find(x=>x.at===at);
-  if(!r) return;
-  $('#detail').innerHTML = `
-   <div class="sec">
-    <div class="dt-hd"><span class="id">${esc(r.time)} · ${esc(r.area)}</span>
-      <span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div>
-    <div class="dt-ttl">${esc(r.reason||'정상 운영')}</div>
-    <div class="grid4">
-      <div><div class="l">설비</div><div class="v">${esc(r.area)}</div></div>
-      <div><div class="l">점수</div><div class="v">${Math.round(r.score)}점</div></div>
-      <div><div class="l">등급</div><div class="v">${r.emoji} ${esc(r.level)}</div></div>
-      <div><div class="l">시각</div><div class="v">${esc(r.time)}</div></div>
-    </div>
-   </div>
-   <div class="sec">
-    <h3>수집 데이터</h3>
-    <pre class="snap">${esc([
-      `시각   : ${r.at.replace('T',' ')}`,
-      `설비   : ${r.area}`,
-      `점수   : ${Math.round(r.score)} (${r.level})`,
-      r.chain ? `전파   : ${r.chain}` : '',
-      `구간   : ${r.zones.join(', ') || '–'}`,
-      `항목   : ${r.items.join('\n         ') || '–'}`,
-    ].filter(Boolean).join('\n'))}</pre>
-    <p class="note" style="margin-top:10px">${r.level==='정상'
-      ? `임계 점수 미만이라 케이스를 만들지 않습니다 (알람 없음).`
-      : `케이스로 관리 중이 아닙니다.`}</p>
-   </div>`;
-}
-const shortId = id => id.replace(/^C\d{8}/,'C');
-const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)':'var(--minor)';
-
 document.querySelectorAll('.filters button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.filters button').forEach(x=>x.classList.toggle('on',x===b));
   FILTER = b.dataset.f; pollCases();
 });
 
 /* 상세 */
-async function renderDetail(){
-  if(!SEL){ $('#detail').innerHTML='<div class="empty">왼쪽에서 케이스를 선택하세요</div>'; return; }
-  const c = await api('/api/cases/'+encodeURIComponent(SEL));
-  if(c.error) return;
-  const ev=c.evidence||{}, llm=c.llm;
-  const stage = c.status==='종결'?3 : c.acked_at?2 : 1;
-
-  $('#detail').innerHTML = `
-   <div class="sec">
-    <div class="dt-hd"><span class="id">${esc(c.id)}</span>
-      <span class="chip lv${esc(c.level)}">${esc(c.severity)}</span>
-      <span class="note" style="margin-left:auto">${hhmm(c.opened_at)} 감지 · ${elapsed(c.opened_at)} 경과</span></div>
-    <div class="dt-ttl">${esc(ev.reason||'반송 정체 감지')}</div>
-    <div class="grid4">
-      <div><div class="l">설비</div><div class="v">${esc(c.area)}</div></div>
-      <div><div class="l">위치</div><div class="v">${esc(c.location)}</div></div>
-      <div><div class="l">LLM 확신도</div><div class="v">${llm?esc(llm.확신도)+'%':'–'}</div></div>
-      <div><div class="l">최고 점수</div><div class="v">${Math.round(c.peak_score)}점</div></div>
-    </div>
-    <div class="step">
-      ${stepNode('감지',1,stage)}<div class="ln"></div>
-      ${stepNode('확인중',2,stage)}<div class="ln"></div>
-      ${stepNode('재확인',2.5,stage)}<div class="ln"></div>
-      ${stepNode('종결',3,stage)}
-    </div>
-   </div>
-
-   <div class="sec">
-    <div class="llmbox">
-      <div class="tag"><i></i>LLM 판단</div>
-      ${llm ? `<div>${esc(llm.판단)}</div>
-        ${(llm.근거||[]).length?`<div class="note" style="margin-top:7px">근거 · ${(llm.근거||[]).map(esc).join(' / ')}</div>`:''}
-        ${(llm.조치||[]).length?`<ol class="act">${(llm.조치||[]).map(a=>`<li>${esc(a)}</li>`).join('')}</ol>`:''}`
-        : `<div class="note">아직 판단 없음 — 스킬 4종 기반으로 분석합니다.</div>
-           <div class="row" style="margin-top:9px"><button class="act" id="btnjudge">LLM 판단 실행</button></div>`}
-    </div>
-   </div>
-
-   <div class="sec">
-    <h3>근거 데이터 · DB 스냅샷</h3>
-    <pre class="snap">${esc(snapshot(c))}</pre>
-    <table class="mx">
-      <tr><td>이상감지 구간</td><td>${(ev.zones||[]).length}</td><td>HID</td></tr>
-      <tr><td>이상감지 항목</td><td>${(ev.items||[]).length}</td><td>컬럼</td></tr>
-      <tr><td>영향 영역</td><td>${(ev.affected||[]).length}</td><td>영역</td></tr>
-    </table>
-    <div style="margin-top:10px" class="chips">
-      ${(ev.zones||[]).map(z=>`<span class="zchip">${esc(z)}</span>`).join('')||'<span class="note">구간 없음</span>'}
-    </div>
-   </div>
-
-   <div class="sec">
-    <h3>에스컬레이션 경로</h3>
-    ${(c.escalations||[]).length
-      ? `<ul class="tl">${c.escalations.map(e=>`<li><span class="k">${hhmm(e.at)}</span>${esc(e.stage)} → ${(e.targets||[]).map(esc).join(', ')}</li>`).join('')}</ul>`
-      : '<div class="note">아직 없음</div>'}
-   </div>
-
-   <div class="sec">
-    <h3>케이스 타임라인</h3>
-    <ul class="tl">${(c.timeline||[]).map(t=>`<li><span class="k">${hhmm(t.at)}</span><b style="color:var(--tx)">${esc(t.kind)}</b> ${esc(t.text)}</li>`).join('')}</ul>
-   </div>
-
-   <div class="sec">
-    <h3>확인 처리 · 재확인 예약</h3>
-    <div class="row">
-      <button class="act pri" id="btnack" ${c.acked_at?'disabled':''}>확인 처리 · 재확인 예약</button>
-      <button class="act" id="btnclose">종결</button>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <button class="act" id="btnnormal" style="flex:1">이상 없음 (케이스 유지 · 재확인만 갱신)</button>
-    </div>
-   </div>`;
-
-  const act = async a => { const r = await post(`/api/cases/${encodeURIComponent(SEL)}/${a}`,{});
-                           if(r.error) alert(r.error); pollCases(); renderDetail(); };
-  $('#btnack')&&($('#btnack').onclick=()=>act('ack'));
-  $('#btnclose')&&($('#btnclose').onclick=()=>act('close'));
-  $('#btnnormal')&&($('#btnnormal').onclick=()=>act('normal'));
-  $('#btnjudge')&&($('#btnjudge').onclick=async e=>{
-    e.target.disabled=true; e.target.textContent='판단 중…';
-    const r=await post(`/api/cases/${encodeURIComponent(SEL)}/judge`,{});
-    if(r.error) alert('LLM 오류: '+r.error);
-    renderDetail();
-  });
-}
-
-function stepNode(label, at, cur){
-  const cls = cur>at ? 'on' : (Math.floor(cur)===Math.floor(at) ? 'cur' : '');
-  return `<div class="n ${cls}"><i></i><span>${label}</span></div>`;
-}
-
-function snapshot(c){
-  const ev=c.evidence||{};
-  return [
-    `# ${c.area} · 최고점 ${hhmm(c.peak_at)} (${Math.round(c.peak_score)}점)`,
-    `이상감지 구간 : ${(ev.zones||[]).join(', ')||'–'}`,
-    `이상감지 항목 : ${(ev.items||[]).join('\n                ')||'–'}`,
-    ev.chain   ? `전파 경로     : ${ev.chain}`   : '',
-    ev.flow    ? `유입 신호     : ${ev.flow}`    : '',
-    ev.maxcapa ? `용량 변경     : ${ev.maxcapa}` : '',
-    (ev.affected||[]).length ? `영향 영역     : ${ev.affected.join(', ')}` : '',
-  ].filter(Boolean).join('\n');
-}
-
 const elapsed = iso => {
   if(!iso) return '–';
   const m = Math.floor((Date.now()-new Date(iso))/60000);
+  if(m < 0) return '방금';                 // 시계 차이로 음수가 나오면 '방금'
   return m<60 ? `${m}분` : `${Math.floor(m/60)}시간 ${m%60}분`;
 };
 

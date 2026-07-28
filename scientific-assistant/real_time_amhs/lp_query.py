@@ -217,6 +217,8 @@ def enrich_with_amos(rows: list[dict], duration: str | None = None,
 
     if a.get("source") != "atlas_tables":
         return rows, None
+    if not rows:
+        return rows, None          # 붙일 기준 행이 없으면 조회도 경고도 없다
 
     warns, base_tc = [], a.get("base_time_col", "datetime")
     for which in ("bottleneck", "queue"):

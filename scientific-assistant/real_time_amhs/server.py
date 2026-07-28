@@ -226,7 +226,7 @@ def api_feed():
 
     경계 이상은 케이스(case_id)와 연결되고, 정상은 데이터 행 그대로 보여준다.
     """
-    from sentinel import _row_dt, _score, grade, hid_zones
+    from sentinel import _row_dt, _score, grade, hid_zones, summarize_reason
 
     # 오늘 쌓인 전체 데이터를 보여준다 (없으면 마지막 수집분)
     rows = []
@@ -255,10 +255,14 @@ def api_feed():
                     c.get("last_seen") or c["opened_at"]):
                 cid = c["id"]
                 break
+        raw_reason = (r.get("reason") or "").strip()
         out.append({
-            "at": dt.isoformat(), "time": dt.strftime("%H:%M"), "area": area,
+            "at": dt.isoformat(),
+            "datetime": (r.get("datetime") or dt.strftime("%Y-%m-%d %H:%M")).strip(),
+            "time": dt.strftime("%H:%M"), "area": area,
             "score": sc, "level": g["level"], "emoji": g["emoji"], "severity": g["severity"],
-            "reason": (r.get("reason") or "").strip(),
+            "reason": summarize_reason(raw_reason, area) or raw_reason,
+            "reason_raw": raw_reason,
             "zones": hid_zones(bott), "items": items,
             "chain": (r.get("propagation_chain") or "").strip(),
             "case_id": cid,
