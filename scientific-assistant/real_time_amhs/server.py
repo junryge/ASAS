@@ -230,11 +230,12 @@ def api_feed():
 
     # 오늘 쌓인 전체 데이터. 오늘이 아직 비었으면 가장 최근 날짜를 대신 보여준다.
     from store_csv import list_days, read_day
-    day = (request.args.get("day") or "").strip() or datetime.now().strftime("%Y%m%d")
+    asked = (request.args.get("day") or "").strip()   # 날짜를 콕 집어 물어본 경우
+    day = asked or datetime.now().strftime("%Y%m%d")
     rows, shown_day, fallback = [], day, False
     try:
         rows = read_day(day, CFG)
-        if not rows and not request.args.get("day"):
+        if not rows and not asked:
             for d in list_days(CFG):                 # 최신순
                 r2 = read_day(d["day"], CFG)
                 if r2:
@@ -242,7 +243,9 @@ def api_feed():
                     break
     except Exception as e:
         print(f"[FEED] ⚠️ 읽기 실패: {e}")
-    if not rows:
+    # 폴링 버퍼 폴백은 '오늘' 요청일 때만. 과거 날짜를 물었는데 없으면 없는 것이다
+    # (안 그러면 7/25 를 물었는데 오늘 버퍼가 나와서 날짜가 뒤바뀐다)
+    if not rows and not asked:
         rows = STATE.get("last_rows") or []
     out = []
     for r in rows:

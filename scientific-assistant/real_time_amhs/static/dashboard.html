@@ -310,11 +310,11 @@
         <button data-f="초위험">초위험 <b id="pn-초위험">0</b></button>
       </div>
       <div class="stream">
-        <label style="color:var(--tx3)">저장된 날짜</label>
-        <select id="pday" title="data 폴더에 쌓인 YYYYMMDD_TOTAL.CSV"></select>
-        <input type="date" id="pdate" title="목록에 없는 날짜를 직접 입력">
-        <button class="act" id="pload">조회</button>
-        <button class="act" id="pget" title="그 날짜를 로그프레소에서 새로 확보">확보</button>
+        <label style="color:var(--tx3)">날짜</label>
+        <input type="date" id="pdate" title="아무 날짜나 고르면 서버에서 가져옵니다">
+        <select id="pday" title="이미 저장된 날짜 빠른 선택 (data/YYYYMMDD_TOTAL.CSV)"></select>
+        <button class="act" id="pload" title="선택한 날짜 조회 — 저장본이 없으면 서버에서 자동으로 가져옵니다">조회</button>
+        <button class="act" id="pget" title="저장본이 있어도 서버에서 다시 가져옵니다">다시 확보</button>
         <a class="act" id="pcsv" href="#" download>CSV</a>
       </div>
     </div>
@@ -673,7 +673,10 @@ async function initPast(){
   if(PINIT) return;
   PINIT = true;
   await loadPastDays();
-  if($('#pday').value) await loadPast($('#pday').value);
+  // 저장된 날짜가 있으면 최신 날짜, 없으면 오늘을 기본으로 잡아 바로 조회한다
+  const day = $('#pday').value || new Date().toLocaleDateString('sv-SE').replace(/-/g,'');
+  $('#pdate').value = `${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)}`;
+  await loadPast(day);
 }
 
 async function loadPastDays(keep){
@@ -698,15 +701,31 @@ function paintPast(){
   drawStrip('#pstrip', '#pstripinfo', PFEED);
 }
 
-async function loadPast(day){
+/* 조회 중에는 날짜 컨트롤을 잠근다 (하루치 확보는 몇 분 걸릴 수 있다) */
+let PBUSY = false;
+function pastBusy(on){
+  PBUSY = on;
+  ['#pload','#pget','#pday','#pdate'].forEach(s => $(s).disabled = on);
+}
+
+/* 날짜를 고르면 저장된 CSV 를 읽고, 없으면 그 자리에서 서버(로그프레소)로 확보한다 */
+async function loadPast(day, opt){
+  opt = opt || {};
   day = day || pickedDay();
   if(!day){ $('#pinfo').textContent = '— 날짜를 고르세요'; return; }
+  if(PBUSY) return;
   PDAY = day;
+  pastBusy(true);
   $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">불러오는 중…</td></tr>';
   $('#pcsv').href = `/api/data/${day}.csv`;
   try{
-    // 하루치 1440행이 전부 보여야 한다
-    const fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
+    if(opt.force && !await fetchDay(day)) return;    // '다시 확보'
+    let fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
+    // 저장된 게 없으면 서버에서 그 날짜를 확보한 뒤 다시 읽는다
+    if(!(fd.rows||[]).length && !opt.force && opt.autoFetch !== false){
+      if(await fetchDay(day)) fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
+      else return;
+    }
     PFEED = fd.rows || [];
     const cnt = fd.counts || {};
     $('#pn-all').textContent = fd.total || 0;
@@ -718,33 +737,44 @@ async function loadPast(day){
         + (fd.total > fd.shown
             ? ` · <span style="color:var(--major)">${fd.shown}/${fd.total}행만 표시</span>`
             : ` · ${fd.total}행`)
-      : `<span style="color:var(--major)">${esc(fmtDay(day))} 저장된 데이터 없음 — '확보' 를 누르면 로그프레소에서 가져옵니다</span>`;
+      : `<span style="color:var(--major)">${esc(fmtDay(day))} 데이터 없음 — 그 날짜는 로그프레소에도 기록이 없습니다</span>`;
     paintPast();
   }catch(e){
     console.error('과거 조회 실패', e);
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
     $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">조회 실패</td></tr>';
+  }finally{ pastBusy(false); }
+}
+
+/* 서버에 그 날짜 확보를 시킨다. 성공하면 날짜 목록도 갱신. */
+async function fetchDay(day){
+  $('#pinfo').innerHTML = `${esc(fmtDay(day))} 서버에서 가져오는 중… `
+    + `<span class="dim">로그프레소 하루치는 몇 분 걸릴 수 있습니다</span>`;
+  $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">서버 조회 중…</td></tr>';
+  try{
+    const r = await post('/api/collect', {date: day});
+    if(!r.ok){
+      $('#pinfo').innerHTML = `<span style="color:var(--crit)">${esc(fmtDay(day))} 확보 실패 — ${esc(r.error||'')}</span>`;
+      $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">확보 실패</td></tr>';
+      return false;
+    }
+    await loadPastDays(day);
+    return true;
+  }catch(e){
+    $('#pinfo').innerHTML = '<span style="color:var(--crit)">확보 실패 — 서버 응답 없음</span>';
+    $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">확보 실패</td></tr>';
+    return false;
   }
 }
 
 $('#pload').onclick  = () => loadPast();
-$('#pday').onchange  = () => { $('#pdate').value = ''; loadPast($('#pday').value); };
+$('#pget').onclick   = () => loadPast(pickedDay(), {force:true});
 $('#pdate').onchange = () => loadPast();
-$('#pget').onclick = async () => {
-  const day = pickedDay();
-  if(!day) return;
-  $('#pget').disabled = true;
-  $('#pinfo').innerHTML = `${esc(fmtDay(day))} 확보 중… <span class="dim">로그프레소 하루치는 몇 분 걸립니다</span>`;
-  try{
-    const r = await post('/api/collect', {date: day});
-    if(!r.ok){
-      $('#pinfo').innerHTML = `<span style="color:var(--crit)">확보 실패 — ${esc(r.error||'')}</span>`;
-    }else{
-      await loadPastDays(day);
-      await loadPast(day);
-    }
-  }catch(e){ $('#pinfo').innerHTML = '<span style="color:var(--crit)">확보 실패 — 서버 응답 없음</span>'; }
-  finally{ $('#pget').disabled = false; }
+$('#pday').onchange  = () => {
+  const d = $('#pday').value;
+  if(!d) return;
+  $('#pdate').value = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  loadPast(d);
 };
 
 document.querySelectorAll('#pfilters button').forEach(b => b.onclick = () => {
