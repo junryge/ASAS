@@ -36,7 +36,7 @@
   .clk span{display:block;font-size:10.5px;color:var(--tx3)}
 
   /* ── KPI ── */
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--line);
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);
         background:var(--panel)}
   .kpi{padding:11px 18px;border-right:1px solid var(--line)}
   .kpi:last-child{border-right:0}
@@ -169,6 +169,7 @@
   .stripbox svg{width:100%;height:auto;display:block;cursor:crosshair;border-radius:6px}
   .lgd{display:flex;gap:9px;margin-left:auto;font-size:10.5px;color:var(--tx3)}
   .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
+  .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:200px}
 
   /* ── 더블클릭 그래프 ── */
   .gmask{position:fixed;inset:0;background:rgba(4,7,12,.78);z-index:50;
@@ -207,8 +208,6 @@
 <div class="kpis">
   <div class="kpi"><div class="l">활성 케이스</div>
     <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
-  <div class="kpi"><div class="l">미확인</div>
-    <div class="v c-cr" id="k-unack">–<u>건</u></div><div class="s" id="k-unack-s">–</div></div>
   <div class="kpi"><div class="l">감지 지연</div>
     <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
   <div class="kpi"><div class="l">재발률 (1h)</div>
@@ -242,10 +241,11 @@
 <div class="main" id="tab-live">
   <div class="pane">
     <div class="strip">
-      <div class="striphd"><b>스코어 추이</b>
+      <div class="striphd"><b>추이</b>
+        <select id="stripsel" class="msel" title="볼 지표 선택"></select>
         <span class="note" id="stripinfo">—</span>
         <span class="note">· 클릭 → 그 시각 구간 그래프</span>
-        <span class="lgd">
+        <span class="lgd gradelgd">
           <span><i style="background:#2FD68A"></i>정상</span>
           <span><i style="background:#F2D338"></i>경계</span>
           <span><i style="background:#FF9F2E"></i>위험</span>
@@ -262,7 +262,6 @@
         <button data-f="경계">경계 <b id="n-경계">0</b></button>
         <button data-f="위험">위험 <b id="n-위험">0</b></button>
         <button data-f="초위험">초위험 <b id="n-초위험">0</b></button>
-        <button data-f="unack">미확인</button>
       </div>
       <div class="stream">
         <label style="color:var(--tx3)">수집 주기</label>
@@ -288,10 +287,11 @@
 <div class="main hidden" id="tab-past">
   <div class="pane">
     <div class="strip">
-      <div class="striphd"><b>스코어 추이</b>
+      <div class="striphd"><b>추이</b>
+        <select id="pstripsel" class="msel" title="볼 지표 선택"></select>
         <span class="note" id="pstripinfo">—</span>
         <span class="note">· 클릭 → 그 시각 구간 그래프</span>
-        <span class="lgd">
+        <span class="lgd gradelgd">
           <span><i style="background:#2FD68A"></i>정상</span>
           <span><i style="background:#F2D338"></i>경계</span>
           <span><i style="background:#FF9F2E"></i>위험</span>
@@ -485,8 +485,6 @@ async function pollStatus(){
     const k = await api('/api/kpi');
     $('#k-active').innerHTML   = `${k.active}<u>건</u>`;
     $('#k-active-s').textContent = `최근 30분 신규 ${k.active_new_30m}건`;
-    $('#k-unack').innerHTML    = `${k.unack}<u>건</u>`;
-    $('#k-unack-s').textContent= `5분 초과 ${k.unack_over_5m}건`;
     $('#k-lat').innerHTML      = `${k.detect_latency_ms??'–'}<u>ms</u>`;
     $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
     $('#k-recur').innerHTML    = `${k.recur_rate_1h}<u>%</u>`;
@@ -522,7 +520,6 @@ let FEED = [];
 
 /* ── 실시간·과거 공통 렌더 (표 모양은 완전히 동일, 보는 날짜만 다르다) ── */
 function applyFilter(rows, filter, byId){
-  if(filter==='unack') return rows.filter(r=>r.case_id && byId[r.case_id] && !byId[r.case_id].acked_at);
   if(filter!=='all')   return rows.filter(r=>r.level===filter);
   return rows;
 }
@@ -560,18 +557,56 @@ function dayStartOf(rows){
   return s ? new Date(s + 'T00:00:00') : new Date(new Date().toDateString());
 }
 
-function stripSvg(rows){
+/* 지표 목록 — /api/feed 가 준다 (config.ui.strip_metrics 기반, 값 있는 것만) */
+let METRICS = [], STRIPK = 'unified_risk_score', PSTRIPK = 'unified_risk_score';
+const SCORE_KEY = 'unified_risk_score';
+
+function metricOf(key){
+  return METRICS.find(m=>m.key===key)
+      || {key:SCORE_KEY, label:'스코어', unit:'점', color:'#3DDBE8', max:100, bands:true};
+}
+
+/* 지표 값 — 스코어는 rows 최상위, 나머지는 m{} 에 실려온다 */
+function mval(r, key){
+  const v = key===SCORE_KEY ? r.score : (r.m || {})[key];
+  return (v===null || v===undefined || v==='') ? null : +v;
+}
+
+function fmtV(v, unit){
+  const a = Math.abs(v);
+  return (a>=100 ? v.toFixed(0) : a>=10 ? v.toFixed(1) : v.toFixed(2)).replace(/\.0+$/,'') + unit;
+}
+
+function stripSvg(rows, mt){
   const iw = STRIP_W - STRIP_L - STRIP_R, ih = STRIP_H - STRIP_T - STRIP_B;
   const d0 = dayStartOf(rows), t0 = d0.getTime(), t1 = t0 + 86400000;
   const X = t => STRIP_L + iw * ((t - t0) / (t1 - t0));
-  const Y = v => STRIP_T + ih * (1 - Math.max(0, Math.min(100, v)) / 100);
+
+  const vals = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
+  const isScore = !!mt.bands;
+  // 스코어는 0~100 고정 + 등급 밴드, 나머지는 값 범위에 맞춰 자동 스케일
+  let lo = 0, hi = mt.max || 100;
+  if(!isScore){
+    lo = vals.length ? Math.min(...vals) : 0;
+    hi = vals.length ? Math.max(...vals) : 1;
+    const pad = (hi - lo) * 0.12 || Math.abs(hi)*0.1 || 1;
+    lo = Math.max(0, lo - pad); hi = hi + pad;
+    if(mt.max) hi = Math.min(hi, mt.max);
+    if(hi <= lo) hi = lo + 1;
+  }
+  const Y = v => STRIP_T + ih * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo));
+
   const o = [`<svg viewBox="0 0 ${STRIP_W} ${STRIP_H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">`,
              `<rect width="${STRIP_W}" height="${STRIP_H}" fill="#0D1119"/>`];
-  STRIP_BANDS.forEach(([lo,hi,c]) =>
-    o.push(`<rect x="${STRIP_L}" y="${Y(hi).toFixed(1)}" width="${iw}" height="${(Y(lo)-Y(hi)).toFixed(1)}" fill="${c}"/>`));
-  [50,71,85,100].forEach(v => {
+  if(isScore){
+    STRIP_BANDS.forEach(([bl,bh,c]) =>
+      o.push(`<rect x="${STRIP_L}" y="${Y(bh).toFixed(1)}" width="${iw}" height="${(Y(bl)-Y(bh)).toFixed(1)}" fill="${c}"/>`));
+  }
+  const ticks = isScore ? [50,71,85,100] : [lo, lo+(hi-lo)/2, hi];
+  ticks.forEach(v => {
     o.push(`<line x1="${STRIP_L}" y1="${Y(v).toFixed(1)}" x2="${STRIP_L+iw}" y2="${Y(v).toFixed(1)}" stroke="#2E3A4C" stroke-width=".7" stroke-dasharray="3 3"/>`);
-    o.push(`<text x="${STRIP_L-4}" y="${(Y(v)+3.4).toFixed(1)}" font-size="8.5" fill="#8FA0B6" text-anchor="end">${v}</text>`);
+    o.push(`<text x="${STRIP_L-4}" y="${(Y(v)+3.4).toFixed(1)}" font-size="8.5" fill="#8FA0B6" text-anchor="end">${
+      isScore ? v : (Math.abs(v)>=10 ? v.toFixed(0) : v.toFixed(1))}</text>`);
   });
   for(let h=0; h<=24; h+=2){
     const x = X(t0 + h*3600000);
@@ -579,21 +614,26 @@ function stripSvg(rows){
     o.push(`<text x="${x.toFixed(1)}" y="${STRIP_H-5}" font-size="8.5" fill="#5E6E85" text-anchor="middle">${String(h).padStart(2,'0')}:00</text>`);
   }
   const pts = rows.slice().sort((a,b)=> a.at < b.at ? -1 : 1)
-    .map(r=>({x:X(new Date(r.at).getTime()), y:Y(+r.score||0), v:+r.score||0, at:r.at, lv:r.level}));
+    .map(r=>({x:X(new Date(r.at).getTime()), v:mval(r, mt.key), at:r.at, lv:r.level}))
+    .filter(p=>p.v!==null && !isNaN(p.v))
+    .map(p=>({...p, y:Y(p.v)}));
   if(pts.length > 1){
     const line = pts.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-    o.push(`<path d="M${pts[0].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} Z" fill="#3DDBE8" opacity=".13"/>`);
-    o.push(`<path d="${line}" fill="none" stroke="#3DDBE8" stroke-width="1.4"/>`);
+    o.push(`<path d="M${pts[0].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
+    o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
   }
-  // 경계 이상만 점으로 (등급 색)
-  pts.filter(p=>p.v>=50).forEach(p =>
-    o.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2" fill="${
-      p.lv==='초위험'?'#FF4D5E':p.lv==='위험'?'#FF9F2E':'#F2D338'}"/>`));
+  // 스코어는 경계 이상만 등급 색 점으로
+  if(isScore){
+    pts.filter(p=>p.v>=50).forEach(p =>
+      o.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2" fill="${
+        p.lv==='초위험'?'#FF4D5E':p.lv==='위험'?'#FF9F2E':'#F2D338'}"/>`));
+  }
   // 최고점
   if(pts.length){
     const pk = pts.reduce((a,b)=> b.v>a.v?b:a);
-    o.push(`<circle cx="${pk.x.toFixed(1)}" cy="${pk.y.toFixed(1)}" r="3.6" fill="none" stroke="#FF4D5E" stroke-width="1.5"/>`);
-    o.push(`<text x="${Math.min(STRIP_L+iw-46, Math.max(STRIP_L+2, pk.x-20)).toFixed(1)}" y="${Math.max(STRIP_T+9, pk.y-6).toFixed(1)}" font-size="9" fill="#FF4D5E" font-weight="700">▲${Math.round(pk.v)}점</text>`);
+    const c = isScore ? '#FF4D5E' : mt.color;
+    o.push(`<circle cx="${pk.x.toFixed(1)}" cy="${pk.y.toFixed(1)}" r="3.6" fill="none" stroke="${c}" stroke-width="1.5"/>`);
+    o.push(`<text x="${Math.min(STRIP_L+iw-52, Math.max(STRIP_L+2, pk.x-22)).toFixed(1)}" y="${Math.max(STRIP_T+9, pk.y-6).toFixed(1)}" font-size="9" fill="${c}" font-weight="700">▲${fmtV(pk.v, mt.unit)}</text>`);
   }
   // 현재 시각 (오늘일 때만)
   const now = new Date();
@@ -605,21 +645,47 @@ function stripSvg(rows){
   return o.join('');
 }
 
+/* 지표 선택 상자 채우기 (실시간·과거 공통) */
+function fillMetricSelects(){
+  if(!METRICS.length) return;
+  [['#stripsel', ()=>STRIPK], ['#pstripsel', ()=>PSTRIPK]].forEach(([sel, get])=>{
+    const el = $(sel);
+    if(!el || el.dataset.n === String(METRICS.length)) return;
+    el.dataset.n = String(METRICS.length);
+    el.innerHTML = METRICS.map(m=>`<option value="${esc(m.key)}">${esc(m.label)}${
+      m.unit ? ' ('+esc(m.unit)+')' : ''}</option>`).join('');
+    el.value = get();
+  });
+}
+
 /* 스트립 클릭 → 가장 가까운 데이터 시각의 구간 그래프 */
-function drawStrip(boxSel, infoSel, rows){
+function drawStrip(boxSel, infoSel, rows, key){
   const box = $(boxSel);
   if(!box) return;
+  fillMetricSelects();
+  const mt = metricOf(key || SCORE_KEY);
+  const isScore = !!mt.bands;
+  // 등급 범례는 스코어일 때만 의미가 있다
+  const lgd = box.closest('.strip')?.querySelector('.gradelgd');
+  if(lgd) lgd.classList.toggle('hidden', !isScore);
   if(!rows.length){
     box.innerHTML = '<div class="empty" style="padding:26px 0">데이터 없음</div>';
     $(infoSel).textContent = '—';
     return;
   }
-  box.innerHTML = stripSvg(rows);
-  const sc = rows.map(r=>+r.score||0);
-  const pk = rows.reduce((a,b)=> (+b.score||0) > (+a.score||0) ? b : a);
-  $(infoSel).innerHTML = `${esc((rows[0].datetime||'').slice(0,10))} · ${rows.length}분 · `
-    + `최고 <b style="color:var(--crit)">${Math.round(+pk.score||0)}점</b> ${esc((pk.datetime||'').slice(11))} · `
-    + `평균 ${(sc.reduce((a,b)=>a+b,0)/sc.length).toFixed(1)}점`;
+  box.innerHTML = stripSvg(rows, mt);
+  const vs = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
+  const raw = `<span class="zchip mono" style="padding:0 5px">${esc(mt.key)}</span>`;
+  if(!vs.length){
+    $(infoSel).innerHTML = `${esc((rows[0].datetime||'').slice(0,10))} · ${raw} `
+      + `<span style="color:var(--major)">값 없음</span>`;
+  }else{
+    const pk = rows.filter(r=>mval(r,mt.key)!==null)
+                   .reduce((a,b)=> mval(b,mt.key) > mval(a,mt.key) ? b : a);
+    $(infoSel).innerHTML = `${esc((rows[0].datetime||'').slice(0,10))} · ${raw} · ${vs.length}분 · `
+      + `최고 <b style="color:${isScore?'var(--crit)':esc(mt.color)}">${esc(fmtV(mval(pk,mt.key), mt.unit))}</b> `
+      + `${esc((pk.datetime||'').slice(11))} · 평균 ${esc(fmtV(vs.reduce((a,b)=>a+b,0)/vs.length, mt.unit))}`;
+  }
   const svg = box.querySelector('svg');
   if(!svg) return;
   svg.onclick = ev => {
@@ -661,7 +727,8 @@ async function pollCases(){
     $('#cases').innerHTML = rowsHtml(applyFilter(FEED, FILTER, byId), byId, NEW_AT);
     bindGraph('#cases');
     // 스코어 추이는 필터와 무관하게 하루치 전체 (폴링마다 갱신 = 실시간)
-    drawStrip('#strip', '#stripinfo', FEED);
+    METRICS = fd.metrics || METRICS;
+    drawStrip('#strip', '#stripinfo', FEED, STRIPK);
   }catch(e){ console.error('목록 갱신 실패', e); }
 }
 
@@ -698,7 +765,7 @@ function paintPast(){
   const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
   $('#pcases').innerHTML = rowsHtml(applyFilter(PFEED, PFILTER, byId), byId, null);
   bindGraph('#pcases');
-  drawStrip('#pstrip', '#pstripinfo', PFEED);
+  drawStrip('#pstrip', '#pstripinfo', PFEED, PSTRIPK);
 }
 
 /* 조회 중에는 날짜 컨트롤을 잠근다 (하루치 확보는 몇 분 걸릴 수 있다) */
@@ -727,6 +794,7 @@ async function loadPast(day, opt){
       else return;
     }
     PFEED = fd.rows || [];
+    METRICS = fd.metrics || METRICS;
     const cnt = fd.counts || {};
     $('#pn-all').textContent = fd.total || 0;
     ['정상','경계','위험','초위험'].forEach(l => $('#pn-'+l).textContent = cnt[l]||0);
@@ -766,6 +834,9 @@ async function fetchDay(day){
     return false;
   }
 }
+
+$('#stripsel').onchange  = () => { STRIPK  = $('#stripsel').value;  drawStrip('#strip','#stripinfo',FEED,STRIPK); };
+$('#pstripsel').onchange = () => { PSTRIPK = $('#pstripsel').value; drawStrip('#pstrip','#pstripinfo',PFEED,PSTRIPK); };
 
 $('#pload').onclick  = () => loadPast();
 $('#pget').onclick   = () => loadPast(pickedDay(), {force:true});

@@ -151,6 +151,41 @@ def _auto_judge(case_ids: list[str]) -> None:
     STORE.save()
 
 
+# ─────────────────────── 추이 그래프 지표 목록 ───────────────────────
+# 화면 위 '추이 그래프'에서 고를 수 있는 지표. config.ui.strip_metrics 로 갈아끼운다.
+_STRIP_DEFAULT = [
+    {"key": "unified_risk_score", "label": "스코어", "unit": "점",
+     "color": "#3DDBE8", "max": 100, "bands": True},
+    {"key": "M16HUB_ra", "label": "M16HUB 반송시간", "unit": "분", "color": "#FF6B5E"},
+    {"key": "M16HUB_rd_fab", "label": "M16HUB FAB저장율", "unit": "%",
+     "color": "#FFA53D", "max": 100},
+    {"key": "M16HUB_stb_util", "label": "M16HUB STB저장율", "unit": "%",
+     "color": "#F2C94C", "max": 100},
+    {"key": "M16HUB_rev_count", "label": "M16HUB 리프터 정체", "unit": "회", "color": "#FF6FB5"},
+]
+
+
+def strip_metrics(cfg: dict) -> list[dict]:
+    ms = (cfg.get("ui") or {}).get("strip_metrics")
+    if not isinstance(ms, list) or not ms:
+        return _STRIP_DEFAULT
+    out = []
+    for m in ms:
+        if isinstance(m, dict) and m.get("key"):
+            out.append({"key": m["key"], "label": m.get("label") or m["key"],
+                        "unit": m.get("unit") or "", "color": m.get("color") or "#3DDBE8",
+                        "max": m.get("max"), "bands": bool(m.get("bands"))})
+    return out or _STRIP_DEFAULT
+
+
+def _num(v):
+    try:
+        s = str(v).strip()
+        return float(s) if s not in ("", "-", "None", "nan", "NaN") else None
+    except (TypeError, ValueError):
+        return None
+
+
 # ────────────────────────────── 화면 ──────────────────────────────
 @app.route("/")
 def index():
@@ -247,6 +282,12 @@ def api_feed():
     # (안 그러면 7/25 를 물었는데 오늘 버퍼가 나와서 날짜가 뒤바뀐다)
     if not rows and not asked:
         rows = STATE.get("last_rows") or []
+
+    # 추이 그래프에서 고를 수 있는 지표 (config.ui.strip_metrics) — 값을 같이 실어보낸다
+    metrics = strip_metrics(CFG)
+    mkeys = [m["key"] for m in metrics]
+    seen_keys = set()
+
     out = []
     for r in rows:
         dt, sc = _row_dt(r), _score(r)
@@ -268,7 +309,14 @@ def api_feed():
                 cid = c["id"]
                 break
         raw_reason = (r.get("reason") or "").strip()
+        m = {}
+        for k in mkeys:
+            v = _num(r.get(k))
+            if v is not None:
+                m[k] = v
+                seen_keys.add(k)
         out.append({
+            "m": m,
             "at": dt.isoformat(),
             "datetime": (r.get("datetime") or dt.strftime("%Y-%m-%d %H:%M")).strip(),
             "time": dt.strftime("%H:%M"), "area": area,
@@ -293,6 +341,8 @@ def api_feed():
         limit = 1500
     return jsonify({"rows": out[:limit], "counts": counts, "total": len(out),
                     "shown": min(limit, len(out)),
+                    # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
+                    "metrics": [m for m in metrics if m["key"] in seen_keys],
                     "day": shown_day, "fallback": fallback,
                     "latest": out[0]["datetime"] if out else None,
                     "earliest": out[-1]["datetime"] if out else None,
