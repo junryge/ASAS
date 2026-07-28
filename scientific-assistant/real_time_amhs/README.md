@@ -198,32 +198,49 @@ M16A 소터대기 (건)    [M16A.SORTER.ABN.SORTERWAITCOUNTOVER]
 * 스트립을 **클릭하면 그 시각 구간 그래프**가 뜬다
 * 실시간·과거 선택은 서로 독립 (한쪽을 바꿔도 다른 쪽은 그대로)
 
-고를 수 있는 지표는 `config.json` 의 `ui.strip_metrics` 로 바꾼다.
-그 날 CSV 에 값이 하나도 없는 항목은 목록에서 자동으로 빠진다.
+### 지표 묶음 — `AMOS 컬럼` / `CSV 컬럼` 버튼
+
+선택 상자 왼쪽 버튼으로 **두 묶음을 갈아탄다.** 둘 다 값은 같은 CSV 에서 읽고,
+**컬럼명 표기와 항목 구성만 다르다.**
+
+| 묶음 | 표기 | 항목 |
+|---|---|---|
+| `AMOS 컬럼` (기본) | AMOS 실제 컬럼명 `M16HUB.QUE.LFT.3F_LFT_REVERSALCNT` | 20개 — 발동이벤트_요약 매핑 그대로 (4분초과율·소터대기 포함) |
+| `CSV 컬럼` | 저장된 CSV 컬럼명 `M16HUB_rev_count` | 16개 — 점수 계열(`M16HUB_score`·`flow_score`·`hot_score`) 포함 |
+
+묶음을 바꿔도 같은 지표가 있으면 그대로 유지되고, 없으면 그 묶음의 첫 항목(스코어)으로
+넘어간다. 실시간·과거 탭의 묶음/지표 선택은 서로 독립이다.
+
+목록은 `config.json` 의 `ui.metric_groups` 로 바꾼다.
+그 날 CSV 에 값이 하나도 없는 항목·묶음은 자동으로 빠진다.
 
 ```json
-"ui": { "strip_metrics": [
-  {"key":"unified_risk_score","raw":"unified_risk_score","label":"스코어",
-   "unit":"점","color":"#3DDBE8","max":100,"bands":true},
-  {"key":"M16HUB_ra","raw":"M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
-   "label":"M16HUB 반송시간","unit":"분","color":"#FF6B5E"},
-  {"key":"M16HUB_rev_count","raw":"M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
-   "label":"M16HUB 리프터막힘","unit":"회","color":"#FF6FB5"}
+"ui": { "metric_groups": [
+  { "id":"amos", "name":"AMOS 컬럼", "desc":"발동이벤트_요약 기준", "metrics":[
+    {"key":"unified_risk_score","raw":"unified_risk_score","label":"스코어",
+     "unit":"점","color":"#3DDBE8","max":100,"bands":true},
+    {"key":"M16HUB_rev_count","raw":"M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
+     "label":"M16HUB 리프터막힘","unit":"회","color":"#FF6FB5"}
+  ]},
+  { "id":"csv", "name":"CSV 컬럼", "metrics":[
+    {"key":"M16HUB_rev_count","raw":"M16HUB_rev_count",
+     "label":"M16HUB 리프터막힘","unit":"회","color":"#FF6FB5"}
+  ]}
 ]}
 ```
 
 | 필드 | 뜻 |
 |---|---|
+| `id` / `name` / `desc` | 묶음 식별자 / 버튼 이름 / 버튼 툴팁 |
 | `key` | **값이 들어있는 CSV 컬럼** (필수) — `M16HUB_rev_count` |
-| `raw` | **화면에 보여줄 AMOS 실제 컬럼명** — `M16HUB.QUE.LFT.3F_LFT_REVERSALCNT` |
+| `raw` | **화면에 보여줄 컬럼명** — 묶음에 따라 AMOS 명 또는 CSV 명 |
 | `label` / `unit` | 화면에 보일 이름 / 단위 (발동이벤트_요약 과 같은 표기) |
 | `color` | 선·면 색 |
 | `max` | 축 상한 고정 (예: % 는 100). 없으면 데이터에 맞춰 자동 |
 | `bands` | `true` 면 등급 밴드 + 0~100 고정 (스코어용) |
 
-기본 20개 — 스코어 / 반송시간(M16HUB·M14·M14B·M16A·M16B) / FAB저장율 / STB저장율 /
-리프터막힘 / OHT가동률(M14·M14B·M16A·M16B) / 4분초과율(M14·M16A·M16B) /
-소터대기(M14·M14B·M16A·M16B)
+`ui.metric_groups` 가 없으면 예전 형식인 `ui.strip_metrics` 를, 그것도 없으면
+코드 기본값을 쓴다.
 
 **수집 주기**는 화면에서 바로 바꿀 수 있다(즉시 반영): 10초 / 30초 / **1분(기본)** / 5분 / 10분.
 

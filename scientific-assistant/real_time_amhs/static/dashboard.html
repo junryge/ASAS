@@ -170,6 +170,10 @@
   .lgd{display:flex;gap:9px;margin-left:auto;font-size:10.5px;color:var(--tx3)}
   .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
   .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:340px}
+  .mgrp{display:inline-flex;gap:3px}
+  .mgrp button{background:transparent;border:1px solid var(--line2);color:var(--tx3);
+               border-radius:6px;padding:3px 9px;font:inherit;font-size:11px;cursor:pointer}
+  .mgrp button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:650}
 
   /* ── 더블클릭 그래프 ── */
   .gmask{position:fixed;inset:0;background:rgba(4,7,12,.78);z-index:50;
@@ -242,6 +246,7 @@
   <div class="pane">
     <div class="strip">
       <div class="striphd"><b>추이</b>
+        <span class="mgrp" id="stripgrp"></span>
         <select id="stripsel" class="msel" title="볼 지표 선택"></select>
         <span class="note" id="stripinfo">—</span>
         <span class="note">· 클릭 → 그 시각 구간 그래프</span>
@@ -288,6 +293,7 @@
   <div class="pane">
     <div class="strip">
       <div class="striphd"><b>추이</b>
+        <span class="mgrp" id="pstripgrp"></span>
         <select id="pstripsel" class="msel" title="볼 지표 선택"></select>
         <span class="note" id="pstripinfo">—</span>
         <span class="note">· 클릭 → 그 시각 구간 그래프</span>
@@ -557,13 +563,21 @@ function dayStartOf(rows){
   return s ? new Date(s + 'T00:00:00') : new Date(new Date().toDateString());
 }
 
-/* 지표 목록 — /api/feed 가 준다 (config.ui.strip_metrics 기반, 값 있는 것만) */
-let METRICS = [], STRIPK = 'unified_risk_score', PSTRIPK = 'unified_risk_score';
+/* 지표 묶음 — /api/feed 가 준다 (config.ui.metric_groups 기반, 값 있는 것만) */
 const SCORE_KEY = 'unified_risk_score';
+const FALLBACK_M = {key:SCORE_KEY, raw:SCORE_KEY, label:'스코어', unit:'점',
+                    color:'#3DDBE8', max:100, bands:true};
+let GROUPS = [];
+let STRIPG = null,  STRIPK  = SCORE_KEY;    // 실시간 탭 (묶음, 지표)
+let PSTRIPG = null, PSTRIPK = SCORE_KEY;    // 과거 탭 — 서로 독립
 
-function metricOf(key){
-  return METRICS.find(m=>m.key===key)
-      || {key:SCORE_KEY, raw:SCORE_KEY, label:'스코어', unit:'점', color:'#3DDBE8', max:100, bands:true};
+function groupOf(gid){
+  return GROUPS.find(g=>g.id===gid) || GROUPS[0] || {id:null, name:'지표', metrics:[FALLBACK_M]};
+}
+
+function metricOf(gid, key){
+  const ms = groupOf(gid).metrics || [];
+  return ms.find(m=>m.key===key) || ms[0] || FALLBACK_M;
 }
 
 /* 지표 값 — 스코어는 rows 최상위, 나머지는 m{} 에 실려온다 */
@@ -645,26 +659,39 @@ function stripSvg(rows, mt){
   return o.join('');
 }
 
-/* 지표 선택 상자 채우기 (실시간·과거 공통) */
-function fillMetricSelects(){
-  if(!METRICS.length) return;
-  [['#stripsel', ()=>STRIPK], ['#pstripsel', ()=>PSTRIPK]].forEach(([sel, get])=>{
-    const el = $(sel);
-    if(!el || el.dataset.n === String(METRICS.length)) return;
-    el.dataset.n = String(METRICS.length);
-    // 실제 컬럼명(AMOS raw)을 대괄호로 같이 보여준다 — 어느 컬럼인지 바로 알게
-    el.innerHTML = METRICS.map(m=>`<option value="${esc(m.key)}">${esc(m.label)}${
-      m.unit ? ' ('+esc(m.unit)+')' : ''} [${esc(m.raw || m.key)}]</option>`).join('');
-    el.value = get();
-  });
+/* 묶음 버튼 + 지표 선택 상자 채우기 (실시간·과거 각각) */
+function fillMetricUI(grpSel, selSel, gid, key){
+  if(!GROUPS.length) return;
+  const gEl = $(grpSel), sEl = $(selSel);
+  if(gEl){
+    const sig = GROUPS.map(g=>g.id).join(',') + '|' + gid;
+    if(gEl.dataset.sig !== sig){
+      gEl.dataset.sig = sig;
+      gEl.innerHTML = GROUPS.map(g=>`<button type="button" data-g="${esc(g.id)}"${
+        g.id===gid ? ' class="on"' : ''} title="${esc(g.desc||'')}">${esc(g.name)}</button>`).join('');
+    }
+  }
+  if(sEl){
+    const ms = groupOf(gid).metrics || [];
+    const sig = gid + '|' + ms.length;
+    if(sEl.dataset.sig !== sig){
+      sEl.dataset.sig = sig;
+      // 컬럼명을 대괄호로 같이 보여준다 — 어느 컬럼인지 바로 알게
+      sEl.innerHTML = ms.map(m=>`<option value="${esc(m.key)}">${esc(m.label)}${
+        m.unit ? ' ('+esc(m.unit)+')' : ''} [${esc(m.raw || m.key)}]</option>`).join('');
+    }
+    sEl.value = key;
+    if(sEl.selectedIndex < 0) sEl.selectedIndex = 0;   // 묶음에 없는 지표면 첫 항목
+  }
 }
 
 /* 스트립 클릭 → 가장 가까운 데이터 시각의 구간 그래프 */
-function drawStrip(boxSel, infoSel, rows, key){
+function drawStrip(boxSel, infoSel, rows, gid, key){
   const box = $(boxSel);
   if(!box) return;
-  fillMetricSelects();
-  const mt = metricOf(key || SCORE_KEY);
+  const live = boxSel === '#strip';
+  fillMetricUI(live ? '#stripgrp' : '#pstripgrp', live ? '#stripsel' : '#pstripsel', gid, key);
+  const mt = metricOf(gid, key);
   const isScore = !!mt.bands;
   // 등급 범례는 스코어일 때만 의미가 있다
   const lgd = box.closest('.strip')?.querySelector('.gradelgd');
@@ -728,8 +755,8 @@ async function pollCases(){
     $('#cases').innerHTML = rowsHtml(applyFilter(FEED, FILTER, byId), byId, NEW_AT);
     bindGraph('#cases');
     // 스코어 추이는 필터와 무관하게 하루치 전체 (폴링마다 갱신 = 실시간)
-    METRICS = fd.metrics || METRICS;
-    drawStrip('#strip', '#stripinfo', FEED, STRIPK);
+    if(fd.groups){ GROUPS = fd.groups; if(!STRIPG) STRIPG = GROUPS[0]?.id; }
+    drawStrip('#strip', '#stripinfo', FEED, STRIPG, STRIPK);
   }catch(e){ console.error('목록 갱신 실패', e); }
 }
 
@@ -766,7 +793,7 @@ function paintPast(){
   const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
   $('#pcases').innerHTML = rowsHtml(applyFilter(PFEED, PFILTER, byId), byId, null);
   bindGraph('#pcases');
-  drawStrip('#pstrip', '#pstripinfo', PFEED, PSTRIPK);
+  drawStrip('#pstrip', '#pstripinfo', PFEED, PSTRIPG, PSTRIPK);
 }
 
 /* 조회 중에는 날짜 컨트롤을 잠근다 (하루치 확보는 몇 분 걸릴 수 있다) */
@@ -795,7 +822,7 @@ async function loadPast(day, opt){
       else return;
     }
     PFEED = fd.rows || [];
-    METRICS = fd.metrics || METRICS;
+    if(fd.groups){ GROUPS = fd.groups; if(!PSTRIPG) PSTRIPG = GROUPS[0]?.id; }
     const cnt = fd.counts || {};
     $('#pn-all').textContent = fd.total || 0;
     ['정상','경계','위험','초위험'].forEach(l => $('#pn-'+l).textContent = cnt[l]||0);
@@ -836,8 +863,27 @@ async function fetchDay(day){
   }
 }
 
-$('#stripsel').onchange  = () => { STRIPK  = $('#stripsel').value;  drawStrip('#strip','#stripinfo',FEED,STRIPK); };
-$('#pstripsel').onchange = () => { PSTRIPK = $('#pstripsel').value; drawStrip('#pstrip','#pstripinfo',PFEED,PSTRIPK); };
+/* 지표 묶음 버튼 / 지표 선택 — 실시간·과거 각각 독립 */
+function redrawLive(){ drawStrip('#strip','#stripinfo',FEED,STRIPG,STRIPK); }
+function redrawPast(){ drawStrip('#pstrip','#pstripinfo',PFEED,PSTRIPG,PSTRIPK); }
+
+$('#stripsel').onchange  = () => { STRIPK  = $('#stripsel').value;  redrawLive(); };
+$('#pstripsel').onchange = () => { PSTRIPK = $('#pstripsel').value; redrawPast(); };
+$('#stripgrp').onclick = e => {
+  const b = e.target.closest('button[data-g]'); if(!b) return;
+  STRIPG = b.dataset.g;
+  // 바꾼 묶음에 같은 지표가 없으면 그 묶음의 첫 지표(스코어)로
+  if(!(groupOf(STRIPG).metrics||[]).some(m=>m.key===STRIPK))
+    STRIPK = (groupOf(STRIPG).metrics||[{key:SCORE_KEY}])[0].key;
+  redrawLive();
+};
+$('#pstripgrp').onclick = e => {
+  const b = e.target.closest('button[data-g]'); if(!b) return;
+  PSTRIPG = b.dataset.g;
+  if(!(groupOf(PSTRIPG).metrics||[]).some(m=>m.key===PSTRIPK))
+    PSTRIPK = (groupOf(PSTRIPG).metrics||[{key:SCORE_KEY}])[0].key;
+  redrawPast();
+};
 
 $('#pload').onclick  = () => loadPast();
 $('#pget').onclick   = () => loadPast(pickedDay(), {force:true});

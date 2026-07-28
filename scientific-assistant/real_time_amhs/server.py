@@ -169,18 +169,34 @@ _STRIP_DEFAULT = [
 ]
 
 
-def strip_metrics(cfg: dict) -> list[dict]:
-    ms = (cfg.get("ui") or {}).get("strip_metrics")
-    if not isinstance(ms, list) or not ms:
-        return _STRIP_DEFAULT
+def _clean_metrics(ms) -> list[dict]:
     out = []
-    for m in ms:
+    for m in ms or []:
         if isinstance(m, dict) and m.get("key"):
             out.append({"key": m["key"], "raw": m.get("raw") or m["key"],
                         "label": m.get("label") or m["key"],
                         "unit": m.get("unit") or "", "color": m.get("color") or "#3DDBE8",
                         "max": m.get("max"), "bands": bool(m.get("bands"))})
-    return out or _STRIP_DEFAULT
+    return out
+
+
+def metric_groups(cfg: dict) -> list[dict]:
+    """지표 묶음 목록. config.ui.metric_groups → 없으면 ui.strip_metrics → 없으면 기본값."""
+    ui = cfg.get("ui") or {}
+    gs = ui.get("metric_groups")
+    if isinstance(gs, list) and gs:
+        out = []
+        for i, g in enumerate(gs):
+            if not isinstance(g, dict):
+                continue
+            ms = _clean_metrics(g.get("metrics"))
+            if ms:
+                out.append({"id": g.get("id") or f"g{i}", "name": g.get("name") or f"묶음{i+1}",
+                            "desc": g.get("desc") or "", "metrics": ms})
+        if out:
+            return out
+    ms = _clean_metrics(ui.get("strip_metrics")) or _STRIP_DEFAULT
+    return [{"id": "amos", "name": "지표", "desc": "", "metrics": ms}]
 
 
 def _num(v):
@@ -288,9 +304,9 @@ def api_feed():
     if not rows and not asked:
         rows = STATE.get("last_rows") or []
 
-    # 추이 그래프에서 고를 수 있는 지표 (config.ui.strip_metrics) — 값을 같이 실어보낸다
-    metrics = strip_metrics(CFG)
-    mkeys = [m["key"] for m in metrics]
+    # 추이 그래프에서 고를 수 있는 지표 묶음 — 값을 같이 실어보낸다
+    groups = metric_groups(CFG)
+    mkeys = sorted({m["key"] for g in groups for m in g["metrics"]})
     seen_keys = set()
 
     out = []
@@ -347,7 +363,9 @@ def api_feed():
     return jsonify({"rows": out[:limit], "counts": counts, "total": len(out),
                     "shown": min(limit, len(out)),
                     # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
-                    "metrics": [m for m in metrics if m["key"] in seen_keys],
+                    "groups": [dict(g, metrics=[m for m in g["metrics"] if m["key"] in seen_keys])
+                               for g in groups
+                               if any(m["key"] in seen_keys for m in g["metrics"])],
                     "day": shown_day, "fallback": fallback,
                     "latest": out[0]["datetime"] if out else None,
                     "earliest": out[-1]["datetime"] if out else None,
