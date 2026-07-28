@@ -68,6 +68,9 @@
                  padding:8px 14px;border-bottom:1px solid var(--line)}
   table.cases td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
   table.cases tr.crow{cursor:pointer}
+  table.cases tr.fresh{background:rgba(61,219,232,.07);
+        box-shadow:inset 3px 0 0 var(--cy);animation:flash 1.6s ease-out}
+  @keyframes flash{from{background:rgba(61,219,232,.22)}to{background:rgba(61,219,232,.07)}}
   table.cases tr.crow:hover{background:var(--panel2)}
   table.cases tr.crow.sel{background:#101a24;box-shadow:inset 3px 0 0 var(--cy)}
   .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
@@ -189,7 +192,7 @@
 <div class="main" id="tab-live">
   <div class="pane">
     <div class="hd">
-      <h2>활성 케이스</h2>
+      <h2>실시간 데이터 <span class="note" id="feedinfo"></span></h2>
       <div class="filters">
         <button data-f="all" class="on">전체 <b id="n-all">0</b></button>
         <button data-f="정상">정상 <b id="n-정상">0</b></button>
@@ -327,6 +330,7 @@ const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 const hhmm = s => (s||'').slice(11,16);
 
 let CASES=[], SEL=null, FILTER='all', REPORT=null, VERDICT=null, POLL=30;
+let LAST_LATEST=null, NEW_AT=null;
 
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
@@ -414,6 +418,15 @@ async function pollCases(){
     $('#n-all').textContent = fd.total||0;
     ['정상','경계','위험','초위험'].forEach(l => $('#n-'+l).textContent = cnt[l]||0);
 
+    // 최신 데이터가 들어왔는지 바로 보이게
+    const d = fd.day ? `${fd.day.slice(0,4)}-${fd.day.slice(4,6)}-${fd.day.slice(6,8)}` : '';
+    $('#feedinfo').innerHTML =
+      (fd.fallback ? `<span style="color:var(--major)">오늘 데이터 없음 → ${esc(d)} 표시</span> · ` : `${esc(d)} · `)
+      + `최신 ${esc((fd.latest||'').slice(11) || '–')}`
+      + (fd.total > fd.shown ? ` · ${fd.shown}/${fd.total}행 표시` : ` · ${fd.total}행`)
+      + ` · 갱신 ${new Date().toLocaleTimeString('ko-KR',{hour12:false})}`;
+    if(fd.latest && fd.latest !== LAST_LATEST){ NEW_AT = fd.latest; LAST_LATEST = fd.latest; }
+
     const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
     let list = FEED;
     if(FILTER==='unack') list = FEED.filter(r=>r.case_id && byId[r.case_id] && !byId[r.case_id].acked_at);
@@ -421,7 +434,8 @@ async function pollCases(){
 
     $('#cases').innerHTML = list.length ? list.map(r=>{
       const c = r.case_id ? byId[r.case_id] : null;
-      return `<tr class="crow" data-at="${esc(r.at)}">
+      const isNew = NEW_AT && r.datetime===NEW_AT;
+      return `<tr class="crow${isNew?' fresh':''}" data-at="${esc(r.at)}">
         <td><div>${esc((r.datetime||'').slice(11) || r.time)}</div>
             <div class="dim">${esc((r.datetime||'').slice(0,10))}</div></td>
         <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
@@ -601,7 +615,7 @@ async function loadDays(){
 initSettings(); pollStatus(); pollCases(); loadFbStatus(); loadDays();
 setInterval(loadDays, 30000);
 setInterval(pollStatus,5000);
-setInterval(pollCases,5000);
+setInterval(pollCases,3000);
 </script>
 </body>
 </html>

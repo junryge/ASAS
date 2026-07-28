@@ -228,13 +228,20 @@ def api_feed():
     """
     from sentinel import _row_dt, _score, grade, hid_zones, summarize_reason
 
-    # 오늘 쌓인 전체 데이터를 보여준다 (없으면 마지막 수집분)
-    rows = []
+    # 오늘 쌓인 전체 데이터. 오늘이 아직 비었으면 가장 최근 날짜를 대신 보여준다.
+    from store_csv import list_days, read_day
+    day = (request.args.get("day") or "").strip() or datetime.now().strftime("%Y%m%d")
+    rows, shown_day, fallback = [], day, False
     try:
-        from store_csv import read_day
-        rows = read_day(datetime.now().strftime("%Y%m%d"), CFG)
-    except Exception:
-        pass
+        rows = read_day(day, CFG)
+        if not rows and not request.args.get("day"):
+            for d in list_days(CFG):                 # 최신순
+                r2 = read_day(d["day"], CFG)
+                if r2:
+                    rows, shown_day, fallback = r2, d["day"], True
+                    break
+    except Exception as e:
+        print(f"[FEED] ⚠️ 읽기 실패: {e}")
     if not rows:
         rows = STATE.get("last_rows") or []
     out = []
@@ -271,7 +278,14 @@ def api_feed():
     out.sort(key=lambda x: x["at"], reverse=True)
     counts = {lv: sum(1 for x in out if x["level"] == lv)
               for lv in ("정상", "경계", "위험", "초위험")}
-    return jsonify({"rows": out, "counts": counts, "total": len(out),
+    try:
+        limit = max(1, min(2000, int(request.args.get("limit", 400))))
+    except ValueError:
+        limit = 400
+    return jsonify({"rows": out[:limit], "counts": counts, "total": len(out),
+                    "shown": min(limit, len(out)),
+                    "day": shown_day, "fallback": fallback,
+                    "latest": out[0]["datetime"] if out else None,
                     "window": CFG.get("query", {}).get("window", "10m")})
 
 
