@@ -99,6 +99,7 @@ def query_chunked(from_dt: str, to_dt: str, table: str | None = None,
 
     step = timedelta(minutes=chunk_minutes)
     out, cur = [], start
+    bad = []
 
     while cur < end:
         nxt = min(cur + step, end)
@@ -107,12 +108,13 @@ def query_chunked(from_dt: str, to_dt: str, table: str | None = None,
 
         rows, size, err = query_sized(lpql, verbose=False)
         if err:
-            # 어느 청크에서 왜 막혔는지 반드시 남긴다
-            print(f"[LP] ❌ {f_s}~{t_s} 실패 — {err.get('reason')}")
-            print(f"[LP]    쿼리: {lpql[:180]}")
+            # 청크 하나가 실패해도 나머지는 계속 가져온다 (실패분만 기록)
+            print(f"[LP] ❌ {f_s}~{t_s} 실패 — {err.get('reason')} → 건너뜀")
             if err.get("response_preview"):
-                print(f"[LP]    응답: {err['response_preview'][:200]}")
-            return None, err
+                print(f"[LP]    응답: {err['response_preview'][:150]}")
+            bad.append(f"{f_s[8:12]}~{t_s[8:12]}")
+            cur = nxt
+            continue
 
         # 30MB 초과 → 해당 구간만 절반으로 재분할 (1초 미만이면 더 못 쪼갬)
         if size > max_bytes and (nxt - cur) > timedelta(seconds=1) and _depth < 12:
@@ -123,10 +125,11 @@ def query_chunked(from_dt: str, to_dt: str, table: str | None = None,
                 sub, serr = query_chunked(a, b, table, chunk_minutes, sort,
                                           _depth + 1, verbose)
                 if serr:
-                    return None, serr
+                    bad.append(f"{a[8:12]}~{b[8:12]}")
+                    continue
                 out.extend(sub)
         else:
-            if verbose:
+            if verbose and rows:
                 print(f"[LP] ✅ {f_s}~{t_s}  {len(rows):>6}건  {size/1048576:5.1f}MB")
             out.extend(rows)
 
@@ -137,7 +140,13 @@ def query_chunked(from_dt: str, to_dt: str, table: str | None = None,
         if out and tcol in out[0]:
             out.sort(key=lambda r: str(r.get(tcol) or ""))
         if verbose:
-            print(f"[LP] 🏁 총 {len(out)}건")
+            print(f"[LP] 🏁 총 {len(out)}건"
+                  + (f" (실패 구간 {len(bad)}개: {', '.join(bad[:6])}"
+                     + ("…" if len(bad) > 6 else "") + ")" if bad else ""))
+        # 전부 실패했을 때만 에러로 본다
+        if bad and not out:
+            return None, {"reason": f"모든 구간 조회 실패 ({len(bad)}개)",
+                          "query_sent": build(table, from_dt=from_dt, to_dt=to_dt, sort=sort)}
     return out, None
 
 

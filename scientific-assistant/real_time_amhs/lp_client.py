@@ -278,7 +278,12 @@ def query_sized(lpql: str, timeout: int | None = None,
             body = raw.decode("utf-8", errors="replace")
             size = len(raw)
 
-            if code == 200 and body.strip():
+            if code == 200:
+                # 빈 응답 = 그 구간에 데이터가 없다는 뜻. 에러가 아니라 0행이다.
+                if not body.strip():
+                    if verbose:
+                        print("[LP] 0건 (해당 구간 데이터 없음)")
+                    return [], size, None
                 if body.lstrip().startswith("<!"):
                     return None, size, {"reason": "HTTP 200 (HTML 에러 페이지)",
                                         "response_preview": body[:500], "query_sent": clean}
@@ -288,8 +293,8 @@ def query_sized(lpql: str, timeout: int | None = None,
                           + (f" (재시도 {attempt})" if attempt else ""))
                 return rows, size, None
 
-            reason = f"HTTP {code}" + (" (빈 응답)" if not body.strip() else "")
-            return None, size, {"reason": reason, "response_preview": body[:500], "query_sent": clean}
+            return None, size, {"reason": f"HTTP {code}",
+                                "response_preview": body[:500], "query_sent": clean}
 
         except Exception as e:
             last = f"{type(e).__name__}: {e}"
