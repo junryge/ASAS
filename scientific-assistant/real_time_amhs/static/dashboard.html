@@ -121,6 +121,10 @@
   .chips{display:flex;flex-wrap:wrap;gap:5px}
   .zchip{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;
          padding:2px 8px;font-size:11.5px;color:var(--tx2)}
+  .dirline{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:4px}
+  .dirline:last-child{margin-bottom:0}
+  .dirline b{font-size:11px;flex:none;width:14px}
+  .zchip.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px}
   ul.tl{list-style:none;margin:0;padding:0;font-size:12.5px}
   ul.tl li{padding:5px 0 5px 15px;border-left:1px solid var(--line2);position:relative;color:var(--tx2)}
   ul.tl li::before{content:"";position:absolute;left:-3.5px;top:12px;width:6px;height:6px;
@@ -213,8 +217,8 @@
         <th style="width:150px">CASE</th>
         <th style="width:104px">스코어</th>
         <th>reason</th>
-        <th style="width:88px">경과</th>
-        <th style="width:74px">상태</th>
+        <th style="width:210px">HID 구역 (BOTTLENECK)</th>
+        <th style="width:270px">QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="6" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -442,16 +446,25 @@ async function pollCases(){
             r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
         <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
             <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
-        <td><div title="${esc(r.reason_raw||'')}">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '–'))}</div>
-            ${r.zones.length?`<div class="dim">구간 ${esc(r.zones.slice(0,6).join(', '))}${r.zones.length>6?'…':''}</div>`:''}</td>
-        <td><div class="dim">${elapsed(r.at)}${elapsed(r.at)==="방금"?"":" 전"}</div></td>
-        <td>${c ? `<div class="stt ${esc(c.status)}">${esc(c.status)}</div>
-              <div class="dim">재확인 ${c.recheck_at?hhmm(c.recheck_at):'–'}</div>`
-            : '<div class="dim">—</div>'}</td>
+        <td><div title="${esc(r.reason_raw||'')}">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '–'))}</div></td>
+        <td>${dirCell(r.bott_down, r.bott_up)}</td>
+        <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
       </tr>`;}).join('')
       : `<tr><td colspan="6" class="empty">해당 등급 데이터 없음</td></tr>`;
   }catch(e){ console.error('목록 갱신 실패', e); }
 }
+/* downward / upward 를 나눠서 보여준다 (CSV 의 AMOS 4개 컬럼) */
+function dirCell(down, up, mono){
+  down = down||[]; up = up||[];
+  if(!down.length && !up.length) return '<span class="dim">—</span>';
+  const cls = mono ? 'zchip mono' : 'zchip';
+  const line = (label, arr, color) => arr.length
+    ? `<div class="dirline"><b style="color:${color}">${label}</b>`
+      + arr.map(v=>`<span class="${cls}">${esc(v)}</span>`).join('') + `</div>`
+    : '';
+  return line('▼', down, 'var(--cy)') + line('▲', up, 'var(--major)');
+}
+
 const shortId = id => String(id||'').replace(/^C\d{8}/,'C');
 const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)'
                    : l==='경계'?'var(--minor)':'var(--ok)';

@@ -251,10 +251,12 @@ def api_feed():
             continue
         g = grade(sc, CFG)
         area = (r.get("hot_area") or "").strip() or "UNKNOWN"
-        bott = " ".join(x for x in (r.get("BOTTLENECK_downward_anomaly_cols", ""),
-                                    r.get("BOTTLENECK_upward_anomaly_cols", "")) if x)
-        items = " ".join(x for x in (r.get("QUEUE_downward_anomaly_cols", ""),
-                                     r.get("QUEUE_upward_anomaly_cols", "")) if x).split()
+        bd = (r.get("BOTTLENECK_downward_anomaly_cols") or "").strip()
+        bu = (r.get("BOTTLENECK_upward_anomaly_cols") or "").strip()
+        qd = (r.get("QUEUE_downward_anomaly_cols") or "").strip()
+        qu = (r.get("QUEUE_upward_anomaly_cols") or "").strip()
+        bott = " ".join(x for x in (bd, bu) if x)
+        items = " ".join(x for x in (qd, qu) if x).split()
         # 이 시각이 속한 케이스 찾기
         cid = None
         for c in STORE.cases:
@@ -271,6 +273,9 @@ def api_feed():
             "reason": summarize_reason(raw_reason, area) or raw_reason,
             "reason_raw": raw_reason,
             "zones": hid_zones(bott), "items": items,
+            # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)
+            "bott_down": hid_zones(bd), "bott_up": hid_zones(bu),
+            "queue_down": qd.split(), "queue_up": qu.split(),
             "chain": (r.get("propagation_chain") or "").strip(),
             "case_id": cid,
         })
