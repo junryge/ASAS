@@ -29,10 +29,30 @@ _FAB = "M16HUB.STRATE.ALL.FABSTORAGERATIO"
 _STB = "M16HUB.STRATE.STB.3F_STORAGE_UTIL"
 _REV = "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT"
 
-_PALETTE = ["#e2564d", "#ea9a2f", "#e0a83a", "#d94f8a", "#3ab7d8", "#4a9fe0", "#7c6ee0"]
+# 지표 패널 색 — 반송시간(빨강) → 저장율(주황/호박) → 리프터(자홍) → 4분초과율(청록/파랑)
+_PALETTE = ["#e0443a", "#f2921e", "#eda93b", "#e0479b", "#29b6c8", "#47a3e0", "#3b8ad9"]
+# 지표 종류별 고정 색 (같은 지표는 항상 같은 색)
+_COLOR_BY_KIND = {
+    "ra": "#e0443a",        # 반송시간
+    "rd_fab": "#f2921e",    # FAB저장율
+    "stb_util": "#eda93b",  # STB저장율
+    "rev_count": "#e0479b",  # 리프터 정체
+    "sla": "#29b6c8",       # 4분초과율
+    "sorter": "#47a3e0",    # 분류기 대기
+    "rd_oht": "#3b8ad9",    # OHT가동률
+}
 _SCORE_COLOR = "#4a7fd0"
-_EVT_COLOR = "#ea9a2f"
+_SEL_COLOR = "#1f2a44"   # 더블클릭한 시각 표시색
+_EVT_COLOR = "#f0921e"
 _BANDS = [(0, 50, "#dbe6f5"), (50, 71, "#fde9c8"), (71, 85, "#fbd5c8"), (85, 100, "#f6c4c4")]
+
+
+def _kind_color(col: str, idx: int) -> str:
+    """컬럼명으로 지표 종류를 알아 고정 색을 준다 (사진과 같은 색 배치)."""
+    for key, c in _COLOR_BY_KIND.items():
+        if col.endswith("_" + key) or col.startswith(key + "_") or col.endswith(key):
+            return c
+    return _PALETTE[idx % len(_PALETTE)]
 
 
 def parse_reason_metrics(reason: str) -> list[dict]:
@@ -122,6 +142,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     incs = _incidents(pts, floor)
     peak_t, peak_r, peak_sc = max(
         ((t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts), key=lambda x: x[2])
+    pts_sc = [(t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
     metrics = parse_reason_metrics(peak_r.get("reason") or "")
     area = (peak_r.get("hot_area") or "").strip()
 
@@ -180,6 +201,22 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
              f'fill="#b91c1c" font-weight="700" text-anchor="middle">'
              f'▲ 최고 {peak_sc:.0f}점 · {peak_t:%H:%M}{" · " + _e(area) if area else ""}</text>')
 
+    # ── 더블클릭한 시각 표시 (선택 시각 + 그 시각 스코어) ──
+    sel_t, sel_r, sel_sc = min(pts_sc, key=lambda x: abs((x[0] - center).total_seconds()))
+    sx = X(sel_t)
+    o.append(f'<line x1="{sx:.1f}" y1="{top_score}" x2="{sx:.1f}" y2="{top_score+SCORE_H}" '
+             f'stroke="{_SEL_COLOR}" stroke-width="1.6"/>')
+    o.append(f'<circle cx="{sx:.1f}" cy="{SY(sel_sc):.1f}" r="4.6" fill="#fff" '
+             f'stroke="{_SEL_COLOR}" stroke-width="2.2"/>')
+    _lb = f'선택 {sel_t:%H:%M} · {sel_sc:.0f}점'
+    _lw = len(_lb) * 6.2 + 12
+    _lx = max(L + 2, min(L + pw - _lw - 2, sx - _lw / 2))
+    _ly = SY(sel_sc) + (16 if sel_sc > 60 else -30)
+    o.append(f'<rect x="{_lx:.1f}" y="{_ly:.1f}" width="{_lw:.1f}" height="19" rx="4" '
+             f'fill="{_SEL_COLOR}"/>')
+    o.append(f'<text x="{_lx+_lw/2:.1f}" y="{_ly+13.5:.1f}" font-size="10.5" fill="#fff" '
+             f'font-weight="700" text-anchor="middle">{_e(_lb)}</text>')
+
     # 스코어 = 실제 컬럼명 명시
     o.append(f'<text x="{L}" y="{top_score+SCORE_H+14:.1f}" font-size="10.5" '
              f'fill="{_SCORE_COLOR}" font-weight="700">스코어</text>')
@@ -195,7 +232,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
 
     for i, md in enumerate(metrics):
         y = y_met0 + (MET_H + GAP) * i
-        col = _PALETTE[i % len(_PALETTE)]
+        col = _kind_color(md["col"], i)
         vals = [(t, _f(r.get(md["col"]))) for t, r in pts]
         vals = [(t, v) for t, v in vals if v is not None]
 
@@ -224,10 +261,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         area_d = (f"M{X(vals[0][0]):.1f},{pb:.1f} "
                   + " ".join(f"L{X(t):.1f},{MY(v):.1f}" for t, v in vals)
                   + f" L{X(vals[-1][0]):.1f},{pb:.1f} Z")
-        o.append(f'<path d="{area_d}" fill="{col}" opacity="0.10"/>')
+        o.append(f'<path d="{area_d}" fill="{col}" opacity="0.13"/>')
         d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{MY(v):.1f}"
                      for k, (t, v) in enumerate(vals))
-        o.append(f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.2"/>')
+        o.append(f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.4"/>')
 
         # 사건 시각의 실제 값 표시
         vmap = dict(vals)
@@ -241,6 +278,17 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
             o.append(f'<circle cx="{x:.1f}" cy="{MY(v):.1f}" r="2.8" fill="{_EVT_COLOR}"/>')
             o.append(f'<text x="{x+4:.1f}" y="{MY(v)-5:.1f}" font-size="9" fill="#b45309" '
                      f'font-weight="700">{_fmt(v)}{_e(md["unit"])}</text>')
+
+        # 선택 시각 — 지표 패널에도 세로선 + 그 시각 실제 값
+        o.append(f'<line x1="{sx:.1f}" y1="{pt:.1f}" x2="{sx:.1f}" y2="{pb:.1f}" '
+                 f'stroke="{_SEL_COLOR}" stroke-width="1.4"/>')
+        sv_ = vmap.get(sel_t)
+        if sv_ is not None:
+            o.append(f'<circle cx="{sx:.1f}" cy="{MY(sv_):.1f}" r="3.4" fill="#fff" '
+                     f'stroke="{_SEL_COLOR}" stroke-width="1.8"/>')
+            o.append(f'<text x="{sx:.1f}" y="{pt+9:.1f}" font-size="9" fill="{_SEL_COLOR}" '
+                     f'font-weight="700" text-anchor="middle">'
+                     f'{_fmt(sv_)}{_e(md["unit"])}</text>')
 
     # ── X 축 ──
     ybase = height - 20
