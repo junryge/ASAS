@@ -64,6 +64,7 @@ LP_OFFLINE=1 python server.py
 | `server.py` | 독립 Flask + 폴링 스레드 + REST API + **대시보드 자동 실행** |
 | `static/dashboard.html` | 관제 화면 (**오프닝 화면 없음** — 바로 진입) |
 | `collect.py` | **데이터 확보** — 로그프레소 → 날짜 CSV (서버 없이 단독 실행) |
+| `graphs.py` | **구간 그래프 SVG** — 점수 + reason 지표 (발동이벤트_요약 규칙) |
 | `store_csv.py` | 날짜별 CSV 누적 저장 — `data/20260727_TOTAL.CSV` |
 | `fixtures/` | 오프라인 검증용 샘플 (실제 스키마 아님) |
 
@@ -164,6 +165,15 @@ data/20260727_TOTAL.CSV
 
 목록에는 **오늘 쌓인 전체 데이터**가 4등급(정상·경계·위험·초위험)으로 표시된다.
 경계 이상은 케이스와 연결되고, 정상 행은 데이터만 보여준다(알람 없음).
+
+**행을 더블클릭하면 그 시각 기준 1시간 구간 그래프**가 뜬다 (30분/1시간/2시간/6시간 선택).
+`발동이벤트_요약`·`report_graphs` 와 같은 규칙으로 그린다:
+
+- 주선 = `unified_risk_score` (등급 밴드 50/71/85 배경, 최고점 표시)
+- 보조선 = 최고점 `reason` 에서 뽑은 raw 지표
+  (`M16HUB_ra` 반송시간, `M16HUB_stb_util` STB저장율, `M16HUB_rev_count` 리프터 정체,
+   `M16HUB_rd_fab` FAB저장율, `sla_*` 4분초과율, `sorter_*` 분류기 대기, `*_rd_oht` OHT가동률)
+  각 지표는 자기 범위로 정규화해 겹쳐 그리고, 범례에 실제 값 범위를 함께 쓴다.
 
 ## 정책 (config.json `policy`)
 

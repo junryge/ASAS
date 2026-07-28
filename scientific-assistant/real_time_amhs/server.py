@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from lp_client import load_config, ping
+from lp_client import load_config, parse_dt, ping
 from lp_query import build, query
 from report import build_report, feedback_status, save_feedback
 from sentinel import CaseStore, alarm_floor, scan_once
@@ -312,6 +312,32 @@ def api_collect():
         return (jsonify(r), 200) if r.get("ok") else (jsonify(r), 502)
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/graph")
+def api_graph():
+    """구간 그래프 SVG — 목록에서 더블클릭한 시각 기준 1시간.
+
+    /api/graph?at=2026-07-28T08:11:00&minutes=60
+    """
+    from graphs import render
+    from store_csv import read_day
+
+    at = parse_dt(request.args.get("at")) or datetime.now()
+    try:
+        minutes = max(5, min(1440, int(request.args.get("minutes", 60))))
+    except ValueError:
+        minutes = 60
+
+    rows = []
+    for d in {(at - timedelta(minutes=minutes)).strftime("%Y%m%d"),
+              at.strftime("%Y%m%d"), (at + timedelta(minutes=minutes)).strftime("%Y%m%d")}:
+        rows.extend(read_day(d, CFG))
+    if not rows:
+        rows = STATE.get("last_rows") or []
+
+    svg = render(rows, at, minutes, cfg=CFG)
+    return app.response_class(svg, mimetype="image/svg+xml")
 
 
 @app.route("/api/data/days")
