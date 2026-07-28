@@ -99,15 +99,42 @@ JupyterLab 파일 다운로드 URL 은 파일 **우클릭 → Copy Download Link
 
 > ⚠️ `config.json` 은 비밀번호가 들어가므로 git/공유 금지입니다(`.gitignore` 처리됨).
 
+## 6-2. ★★ 웹 없이 파이썬 스크립트로만 돌리기 (run_flow.py) — 권장
+
+브라우저(웹 화면)가 보안정책으로 **00시에 강제 종료**되면 웹 UI 방식은 끊긴다.
+`run_flow.py` 는 **웹/서버 없이** 워크플로우(`rpa_flow.json`)를 그대로 실행하는
+단독 스크립트라, 창이 꺼져도 파이썬 프로세스가 살아서 계속 동작한다.
+
+**실행 방법 (둘 중 하나)**
+
+| 무엇을 할 때 | 실행 |
+|---|---|
+| 자동 실행(계속 켜두기) | `RPA시작.bat` 더블클릭  (또는 `python run_flow.py`) |
+| 지금 즉시 1회 테스트 | `RPA지금실행.bat` 더블클릭  (또는 `python run_flow.py --now`) |
+
+- `rpa_flow.json` (빌더에서 저장한 그 파일)을 그대로 읽어 실행한다.
+- `config.json` 의 `run_times` 시각마다 자동 실행 (예: `["00:20","01:00","02:00"]`).
+- 실패하면 `retry_on_fail` / `max_retries` 설정대로 **처음부터 다시 시도**.
+- `keep_awake` 가 true 면 1분마다 마우스를 살짝 움직여 절전/잠금 방지
+  (RPA 실행 중에는 개입하지 않음).
+- 실행 기록은 화면 출력 + `run_flow.log` 파일에 남는다.
+
+> 워크플로우를 수정할 때만 웹 빌더를 열어 편집·저장하고, 평소 운영은
+> `RPA시작.bat` 만 켜두면 된다.
+
 ## 7. 파일 구성
 
 ```
 RPA/
-├─ RPA_Workflow_Builder.html   # 빌더 화면(프론트)
-├─ server.py                   # 실행 엔진(백엔드) — 여기서 실제 실행
+├─ run_flow.py                 # ★ 단독 실행 스크립트 (웹 없이 동작) — 운영용
+├─ RPA시작.bat                 # ★ 자동 실행(스케줄러) 더블클릭 실행
+├─ RPA지금실행.bat             # ★ 지금 즉시 1회 실행(테스트)
+├─ RPA_Workflow_Builder.html   # 빌더 화면(워크플로우 편집용)
+├─ server.py                   # 빌더용 실행 엔진(웹 UI 쓸 때)
 ├─ requirements.txt            # 의존성
-├─ config.json                 # 비밀번호 설정(여기에 jupyter_password 입력)
-├─ rpa_flow.json               # 서버 저장 워크플로우
+├─ config.json                 # 비밀번호/실행시각/재시도/화면유지 설정
+├─ rpa_flow.json               # 워크플로우(빌더에서 저장)
+├─ run_flow.log                # 실행 기록(자동 생성)
 ├─ .gitignore                  # config.json/downloads 제외
 └─ downloads/                  # 다운로드/캡처 저장 폴더(자동 생성)
 ```
