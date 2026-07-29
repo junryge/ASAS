@@ -31,7 +31,7 @@ from store_csv import read_day, read_llm_day, upsert_llm_rows
 
 _busy = threading.Lock()          # 이전 추론이 안 끝났으면 그 분은 건너뛴다
 STATE: dict = {"last_at": None, "last_ms": None, "skipped": 0,
-               "calls": 0, "errors": 0, "last_error": None}
+               "calls": 0, "errors": 0, "last_error": None, "pending": 0}
 
 # 자동 판정 종류 (사람 판정은 '정탐'/'오탐' 으로 따로 들어온다)
 _HIT, _FP, _FN, _EFFECT, _WAIT = "적중", "과다탐지", "누락", "조치효과", ""
@@ -44,6 +44,8 @@ def pm_cfg(cfg: dict) -> dict:
         "every_min": int(c.get("every_min", 1) or 0),
         "light_below": float(c.get("light_below", 50)),
         "skip_if_busy": c.get("skip_if_busy", True),
+        "max_per_cycle": int(c.get("max_per_cycle", 3) or 1),
+        "backfill": c.get("backfill", True),
     }
 
 
@@ -114,7 +116,12 @@ def judge_minute(row: dict, cfg: dict | None = None) -> dict:
 
 
 def run_minute(rows: list[dict], cfg: dict | None = None) -> dict | None:
-    """가장 최근 1분에 대해 추론하고 LLM.CSV 에 남긴다.
+    """아직 판단 안 한 분들을 추론해 LLM.CSV 에 남긴다.
+
+    '가장 최근 1분만' 하면 폴링이 한 번 밀리는 순간 그 사이 분이 영구히 빈다.
+    그래서 **최신 분을 먼저** 처리하고(실시간이 최우선), 남은 자리로 **최근 과거부터
+    거꾸로 메운다**. 한 번에 처리할 개수는 max_per_cycle 로 묶어 게이트웨이를
+    한꺼번에 때리지 않게 한다.
 
     이전 추론이 안 끝났으면 건너뛴다 (수집 루프는 절대 밀리면 안 된다).
     """
@@ -123,33 +130,73 @@ def run_minute(rows: list[dict], cfg: dict | None = None) -> dict | None:
     if not (pm["enabled"] and pm["every_min"] > 0) or not rows:
         return None
 
-    row = max(rows, key=lambda r: str(r.get("datetime") or ""))
-    dt = parse_dt(row.get("datetime"))
-    if dt is None:
-        return None
-    if pm["every_min"] > 1 and dt.minute % pm["every_min"] != 0:
+    from store_csv import llm_minutes
+
+    # 판단 대상 후보 — 시각 있고, every_min 주기에 맞고, 아직 안 한 분
+    cand = []
+    done_by_day: dict[str, set] = {}
+    for r in rows:
+        dt = parse_dt(r.get("datetime"))
+        key = (r.get("datetime") or "").strip()
+        if dt is None or not key:
+            continue
+        if pm["every_min"] > 1 and dt.minute % pm["every_min"] != 0:
+            continue
+        day = dt.strftime("%Y%m%d")
+        if day not in done_by_day:
+            done_by_day[day] = llm_minutes(day, cfg)
+        if key in done_by_day[day]:
+            continue
+        cand.append((dt, r))
+    if not cand:
         return None
 
-    from store_csv import llm_minutes
-    key = (row.get("datetime") or "").strip()
-    if key in llm_minutes(dt.strftime("%Y%m%d"), cfg):
-        return None                                   # 이미 추론한 분
+    cand.sort(key=lambda x: x[0])
+    cap = max(1, pm["max_per_cycle"])
+    newest = cand[-1]
+    older = list(reversed(cand[:-1])) if pm["backfill"] else []
+    batch = [newest] + older[:cap - 1]                 # 최신 먼저, 그 다음 최근 과거부터
 
     if not _busy.acquire(blocking=not pm["skip_if_busy"]):
         STATE["skipped"] += 1
-        upsert_llm_rows([{"datetime": key, "스코어": f"{_f(row.get('unified_risk_score')):.0f}",
+        upsert_llm_rows([{"datetime": (newest[1].get("datetime") or "").strip(),
+                          "스코어": f"{_f(newest[1].get('unified_risk_score')):.0f}",
                           "오류": "지연스킵"}], cfg)
         return None
     try:
-        out = judge_minute(row, cfg)
-        upsert_llm_rows([out], cfg)
-        STATE.update(last_at=datetime.now().isoformat(), last_ms=out["소요ms"],
-                     calls=STATE["calls"] + 1)
-        if out["오류"]:
-            STATE.update(errors=STATE["errors"] + 1, last_error=out["오류"])
-        return out
+        first = None
+        for _dt, row in batch:
+            out = judge_minute(row, cfg)
+            upsert_llm_rows([out], cfg)
+            STATE.update(last_at=datetime.now().isoformat(), last_ms=out["소요ms"],
+                         calls=STATE["calls"] + 1)
+            if out["오류"]:
+                STATE.update(errors=STATE["errors"] + 1, last_error=out["오류"])
+            if first is None:
+                first = out
+        STATE["pending"] = max(0, len(cand) - len(batch))
+        return first
     finally:
         _busy.release()
+
+
+def backlog(rows: list[dict], cfg: dict | None = None) -> int:
+    """아직 판단 안 한 분이 몇 개 남았는지 (화면 안내용)."""
+    cfg = cfg or load_config()
+    from store_csv import llm_minutes
+    done_by_day: dict[str, set] = {}
+    n = 0
+    for r in rows or []:
+        dt = parse_dt(r.get("datetime"))
+        key = (r.get("datetime") or "").strip()
+        if dt is None or not key:
+            continue
+        day = dt.strftime("%Y%m%d")
+        if day not in done_by_day:
+            done_by_day[day] = llm_minutes(day, cfg)
+        if key not in done_by_day[day]:
+            n += 1
+    return n
 
 
 # ────────────────────────────── 사후검증 ──────────────────────────────
@@ -213,10 +260,18 @@ def verify_day(day: str, cfg: dict | None = None) -> dict:
         if (r.get("판정") or "").strip():
             continue                                   # 이미 판정됨(사람 포함)
         said = (r.get("실제이상") or "").strip()
-        if said not in ("예", "아니오"):
-            continue                                   # 판단 실패 행은 채점 대상 아님
         t0 = parse_dt(r.get("datetime"))
         if t0 is None:
+            continue
+        if said not in ("예", "아니오"):
+            # 채점 대상이 아니다. 창이 지났으면 왜 못 하는지 못박는다
+            # (그냥 넘기면 영구히 '대기' 로 남아 고장처럼 보인다)
+            if now >= t0 + timedelta(minutes=a["window_min"]):
+                why = ("LLM 호출 실패 — " + (r.get("오류") or "").strip()[:80]) \
+                    if (r.get("오류") or "").strip() \
+                    else "LLM 이 '실제이상'을 예/아니오로 답하지 않아 채점 불가"
+                upd.append({"datetime": r["datetime"], "판정": "판정불가",
+                            "판정시각": now.strftime("%Y-%m-%d %H:%M"), "판정근거": why})
             continue
         if now < t0 + timedelta(minutes=a["window_min"]):
             waiting += 1
@@ -301,10 +356,72 @@ def set_human(day: str, dt_key: str, verdict: str, cfg: dict | None = None) -> b
     return True
 
 
+def backfill_day(day: str, cfg: dict | None = None, limit: int = 0,
+                 verbose: bool = True) -> dict:
+    """그 날 TOTAL.CSV 에 있는데 아직 판단 안 한 분을 통째로 메운다.
+
+    폴링은 최근 구간만 본다. 서버를 늦게 켰거나 오래 꺼져 있던 구간은
+    이걸로 채운다. LLM 을 그만큼 부르므로 필요할 때만 쓴다.
+
+        python accuracy.py --backfill 20260729
+        python accuracy.py --backfill 20260729 --limit 100
+    """
+    cfg = cfg or load_config()
+    pm = pm_cfg(cfg)
+    from store_csv import llm_minutes
+    rows = read_day(day, cfg)
+    done = llm_minutes(day, cfg)
+
+    todo = []
+    for r in rows:
+        dt = parse_dt(r.get("datetime"))
+        key = (r.get("datetime") or "").strip()
+        if dt is None or not key or key in done:
+            continue
+        if pm["every_min"] > 1 and dt.minute % pm["every_min"] != 0:
+            continue
+        todo.append((dt, r))
+    todo.sort(key=lambda x: x[0])
+    if limit > 0:
+        todo = todo[:limit]
+
+    if verbose:
+        print(f"[메움] {day} — 수집 {len(rows)}분 · 이미 판단 {len(done)}분 · "
+              f"이번에 판단 {len(todo)}분")
+    ok = err = 0
+    for i, (dt, r) in enumerate(todo, 1):
+        out = judge_minute(r, cfg)
+        upsert_llm_rows([out], cfg)
+        if out["오류"]:
+            err += 1
+            if verbose and err <= 3:
+                print(f"  ⚠️ {out['datetime']} — {out['오류']}")
+        else:
+            ok += 1
+        if verbose and (i % 20 == 0 or i == len(todo)):
+            print(f"  {i}/{len(todo)}  성공 {ok} · 실패 {err}")
+    v = verify_day(day, cfg)
+    if verbose:
+        print(f"[메움] 끝 — 성공 {ok} · 실패 {err} · 채점 {v['scored']}건 (대기 {v['waiting']})")
+    return {"day": day, "todo": len(todo), "ok": ok, "error": err, **v}
+
+
 if __name__ == "__main__":
+    import argparse
     import json
-    import sys
+
+    ap = argparse.ArgumentParser(description="1분 LLM 추론 채점 / 빈 구간 메움")
+    ap.add_argument("day", nargs="?", default=datetime.now().strftime("%Y%m%d"),
+                    help="YYYYMMDD (기본 오늘)")
+    ap.add_argument("--backfill", action="store_true",
+                    help="아직 판단 안 한 분을 LLM 으로 통째로 메운다")
+    ap.add_argument("--limit", type=int, default=0, help="메움 개수 제한 (0=전부)")
+    a = ap.parse_args()
+
     cfg = load_config()
-    d = sys.argv[1] if len(sys.argv) > 1 else datetime.now().strftime("%Y%m%d")
-    print(json.dumps(verify_day(d, cfg), ensure_ascii=False))
+    d = "".join(ch for ch in a.day if ch.isdigit())[:8]
+    if a.backfill:
+        backfill_day(d, cfg, a.limit)
+    else:
+        print(json.dumps(verify_day(d, cfg), ensure_ascii=False))
     print(json.dumps(summary(d, cfg), ensure_ascii=False, indent=2))

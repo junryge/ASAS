@@ -30,6 +30,9 @@ STORE = CaseStore(CFG)
 
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"))
 
+# 빈 구간 메움(backfill) 진행 상태
+BACKFILL: dict = {"running": False, "day": None, "started": None, "result": None}
+
 # 폴링 상태 (대시보드 헤더의 STREAMING · latency 표시용)
 STATE = {
     "last_scan": None,
@@ -448,6 +451,12 @@ def api_accuracy():
     except Exception as e:
         print(f"[검증] ⚠️ {day} 채점 실패: {e}")
     out = summary(day, CFG)
+    out["backfill"] = dict(BACKFILL)
+    try:
+        from accuracy import backlog
+        out["backlog"] = backlog(STATE.get("last_rows") or [], CFG)
+    except Exception:
+        out["backlog"] = None
     if request.args.get("rows"):
         rows = read_llm_day(day, CFG)
         rows.sort(key=lambda r: r.get("datetime") or "", reverse=True)
@@ -467,6 +476,42 @@ def api_accuracy():
                     r["대기분"] = max(0, int(left + 0.999))
         out["rows_data"] = rows
     return jsonify(out)
+
+
+@app.route("/api/accuracy/backfill", methods=["POST"])
+def api_accuracy_backfill():
+    """그 날 아직 판단 안 한 분을 LLM 으로 메운다. {date, limit?}
+
+    폴링은 최근 구간만 본다. 서버를 늦게 켰거나 꺼져 있던 구간은 이걸로 채운다.
+    """
+    b = request.get_json(silent=True) or {}
+    day = "".join(ch for ch in str(b.get("date") or "") if ch.isdigit())[:8] \
+        or datetime.now().strftime("%Y%m%d")
+    try:
+        limit = max(0, min(1500, int(b.get("limit", 0) or 0)))
+    except (TypeError, ValueError):
+        limit = 0
+
+    if BACKFILL.get("running"):
+        return jsonify({"ok": False, "error": "이미 메우는 중입니다", "state": BACKFILL}), 409
+
+    def work():
+        BACKFILL.update(running=True, day=day, started=datetime.now().isoformat(), result=None)
+        try:
+            from accuracy import backfill_day
+            BACKFILL["result"] = backfill_day(day, CFG, limit)
+        except Exception as e:
+            BACKFILL["result"] = {"error": f"{type(e).__name__}: {e}"}
+        finally:
+            BACKFILL["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"ok": True, "started": True, "day": day, "limit": limit})
+
+
+@app.route("/api/accuracy/backfill")
+def api_accuracy_backfill_state():
+    return jsonify(BACKFILL)
 
 
 @app.route("/api/accuracy/verdict", methods=["POST"])

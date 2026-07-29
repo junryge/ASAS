@@ -567,7 +567,11 @@ async function openAcc(day){
         <span class="note">| 추론 ${(a.state&&a.state.calls)||0}회${
           a.state&&a.state.errors ? ` · <span style="color:var(--crit)">실패 ${a.state.errors}</span>` : ''}${
           a.state&&a.state.skipped ? ` · 지연스킵 ${a.state.skipped}` : ''}${
-          a.state&&a.state.last_ms!=null ? ` · 최근 ${a.state.last_ms}ms` : ''}</span>
+          a.state&&a.state.last_ms!=null ? ` · 최근 ${a.state.last_ms}ms` : ''}${
+          a.backlog ? ` · <span style="color:var(--major)">미판단 ${a.backlog}분</span>` : ''}</span>
+        <button class="act" id="accfill" style="padding:4px 10px;font-size:11.5px"
+          title="그 날 수집됐는데 아직 LLM 판단이 없는 분을 통째로 메웁니다 (LLM 을 그만큼 호출합니다)">
+          ${a.backfill&&a.backfill.running ? '메우는 중…' : '빈 구간 메움'}</button>
         <label class="note" style="margin-left:auto">날짜</label>
         <input type="date" id="accdate" value="${esc(a.day.slice(0,4)+'-'+a.day.slice(4,6)+'-'+a.day.slice(6,8))}"
                style="padding:4px 7px;font-size:11.5px">
@@ -606,6 +610,22 @@ async function openAcc(day){
       </tr>`).join('') : '<tr><td colspan="8" class="empty">아직 추론 기록이 없습니다 — 1분마다 쌓입니다</td></tr>')
       + `</tbody></table>`;
     $('#accdate').onchange = e => openAcc(e.target.value.replace(/-/g,''));
+    $('#accfill').onclick = async () => {
+      const btn = $('#accfill');
+      if(btn.textContent.includes('메우는 중')) return;
+      if(!confirm(`${ACCDAY} 에 수집됐는데 LLM 판단이 없는 분을 전부 판단합니다.\n`
+        + `분당 1회씩 LLM 을 호출하므로 시간이 걸립니다. 진행할까요?`)) return;
+      btn.disabled = true; btn.textContent = '메우는 중…';
+      try{
+        const r = await post('/api/accuracy/backfill', {date: ACCDAY});
+        if(!r.ok){ alert(r.error || '시작 실패'); btn.disabled=false; btn.textContent='빈 구간 메움'; return; }
+        // 진행 상황을 몇 초마다 다시 읽어 화면을 갱신
+        const tick = setInterval(async () => {
+          const st = await api('/api/accuracy/backfill');
+          if(!st.running){ clearInterval(tick); openAcc(ACCDAY); }
+        }, 4000);
+      }catch(e){ btn.disabled=false; btn.textContent='빈 구간 메움'; }
+    };
     $('#gbody').querySelectorAll('button.hv').forEach(b => b.onclick = async () => {
       b.disabled = true;
       await post('/api/accuracy/verdict', {datetime: b.dataset.dt, verdict: b.dataset.v});

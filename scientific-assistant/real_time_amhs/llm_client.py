@@ -252,9 +252,31 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
     res = _parse_json(txt)
     if not res:
         return None, f"JSON 파싱 실패: {str(txt)[:120]}"
-    v = str(res.get("실제이상") or "").strip()
-    res["실제이상"] = "예" if v.startswith("예") else ("아니오" if v.startswith("아니") else "")
+    res["실제이상"] = _yes_no(res.get("실제이상"))
     return res, None
+
+
+# 부정은 어디에 있어도 먼저 잡는다 ('이상없음' 이 '이상' 으로 읽혀 예가 되면 안 된다)
+_NEG = ("없", "아니", "아뇨", "불필요", "불요", "정상", "no", "false")
+_POS = ("예", "네", "yes", "y", "true", "1", "이상", "필요", "위험", "맞", "있")
+
+
+def _yes_no(v) -> str:
+    """모델이 '예.' / 'YES' / '이상 있음' / '이상없음' 처럼 답해도 예/아니오로 정규화.
+
+    여기서 못 읽으면 그 행은 채점 대상에서 빠져 영구히 '대기' 로 남으므로
+    최대한 관대하게 읽는다. 그래도 못 읽으면 빈 값 → 사후검증이 '판정불가'로 못박는다.
+    """
+    s = str(v or "").strip().lower().replace(" ", "")
+    if not s:
+        return ""
+    if s in ("0", "1"):                 # 숫자로 답하는 경우
+        return "아니오" if s == "0" else "예"
+    if any(t in s for t in _NEG):
+        return "아니오"
+    if any(s.startswith(t) for t in _POS):
+        return "예"
+    return ""
 
 
 def make_report(cases: list[dict], span: str, cfg: dict | None = None):

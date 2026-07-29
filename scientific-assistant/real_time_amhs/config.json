@@ -107,7 +107,11 @@
       "_light_below_doc": "이 점수 미만(정상 구간)은 짧게 묻는다 — 예/아니오 + 한 줄. 하루 1440번이라 낭비를 줄인다",
       "skip_if_busy": true,
       "_skip_doc": "이전 추론이 안 끝났으면 그 분은 건너뛴다(오류=지연스킵). 데이터 수집은 절대 밀리지 않게",
-      "csv_suffix": "_LLM"
+      "csv_suffix": "_LLM",
+      "max_per_cycle": 3,
+      "_max_per_cycle_doc": "한 폴링에서 처리할 추론 개수. 최신 1건을 먼저 하고 남은 자리로 과거 빈 분을 메운다",
+      "backfill": true,
+      "_backfill_doc": "폴링이 밀려 빈 분이나 기동 전 수집 구간을 뒤에서 순차로 메운다. false 면 최신 분만"
     },
     "accuracy": {
       "_doc": "사후검증 — LLM 판단 이후 실제 데이터 흐름과 일치했는지 채점. LLM 재호출 없이 저장된 TOTAL.CSV 스코어만 읽는다. ★정탐률이 아니라 '판단 일치율'이다.",
