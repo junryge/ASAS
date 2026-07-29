@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -140,13 +141,23 @@ def chat(messages: list[dict], cfg: dict | None = None,
     if not lc.get("enabled", True):
         return None, "LLM 비활성 (config.llm.enabled=false)"
 
+    model = lc.get("model", "gaia-Qwen3.5-397B-A17B")
+    msgs = messages
+    # ★ Qwen3 계열은 사고(reasoning) 모델이다. 그냥 부르면 사고 토큰만 쓰다
+    #   max_tokens 에 걸려 본문이 빈 응답으로 온다. 데모스와 같은 방식으로 사고를 끈다.
+    if lc.get("no_think", True) and "qwen3" in str(model).lower():
+        msgs = _inject_no_think(messages)
+
     payload = {
-        "model": lc.get("model", "gaia-Qwen3.5-397B-A17B"),
-        "messages": messages,
+        "model": model,
+        "messages": msgs,
         "temperature": temperature if temperature is not None else lc.get("temperature", 0.2),
         "max_tokens": max_tokens or lc.get("max_tokens", 2048),
         "stream": False,
     }
+    # 서버가 지원하면 템플릿 수준에서도 사고를 끈다 (vLLM/Qwen 계열)
+    if lc.get("disable_thinking_kwarg", False):
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
     headers = {"Content-Type": "application/json"}
     key = _api_key(cfg)
     if key:
@@ -161,12 +172,53 @@ def chat(messages: list[dict], cfg: dict | None = None,
         choices = data.get("choices") or []
         if not choices:
             return None, f"빈 응답: {str(data)[:200]}"
-        return scrub(choices[0].get("message", {}).get("content") or ""), None
+        msg = choices[0].get("message") or {}
+        fin = choices[0].get("finish_reason")
+        txt = _strip_think(msg.get("content") or "")
+        if not txt:
+            # 사고만 하고 본문을 못 낸 경우 — reasoning 필드에서라도 건져본다
+            for k in ("reasoning_content", "reasoning", "thinking"):
+                txt = _strip_think(msg.get(k) or "")
+                if txt:
+                    break
+        if not txt:
+            # ★ 조용히 빈 문자열을 돌려주면 안 된다 (예전엔 여기서 파서 폴백이
+            #   {"확신도":0} 을 만들어 '오류 없는 빈 판단' 이 CSV 에 쌓였다)
+            usage = data.get("usage") or {}
+            return None, (f"본문 없는 응답 (finish_reason={fin}, "
+                          f"max_tokens={payload['max_tokens']}, "
+                          f"완료토큰={usage.get('completion_tokens')}) — "
+                          f"사고 토큰만 쓰고 잘렸을 가능성. max_tokens 를 올리거나 "
+                          f"config.llm.no_think 를 확인하세요")
+        return scrub(txt), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
         return None, f"HTTP {e.code}: {body}"
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
+
+
+def _inject_no_think(messages: list[dict]) -> list[dict]:
+    """Qwen3 계열 사고 비활성 — 마지막 user 메시지에 '/no_think' 를 붙인다.
+
+    데모스(demos_v1/gguf.py `_inject_no_think_for_qwen3`) 와 같은 방식.
+    사고를 끄지 않으면 max_tokens 를 사고에 다 써버려 본문이 비어 온다.
+    """
+    out = [dict(m) for m in messages]
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") == "user" and isinstance(out[i].get("content"), str):
+            if "/no_think" not in out[i]["content"]:
+                out[i]["content"] = out[i]["content"].rstrip() + "\n\n/no_think"
+            return out
+    return out
+
+
+_THINK_RE = re.compile(r"<think>[\s\S]*?</think>|<think>[\s\S]*$", re.I)
+
+
+def _strip_think(text: str) -> str:
+    """<think>…</think> 사고 블록 제거. 닫히지 않은 채 잘린 경우도 버린다."""
+    return _THINK_RE.sub("", str(text or "")).strip()
 
 
 # ────────────────────────── 관제용 프롬프트 ──────────────────────────
@@ -231,7 +283,7 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 
 지금 대응이 필요한 진짜 이상인가? 다음 JSON 만 출력하라 (설명·코드펜스 금지):
 {"실제이상":"예|아니오","판단":"한 문장","확신도":0~100 정수}"""
-        max_tok = 160
+        max_tok = int((cfg.get("llm", {}).get("per_minute") or {}).get("light_max_tokens", 400))
     else:
         user = head + f"""
 - 전이 경로: {(row.get('propagation_chain') or '').strip() or '없음'}
@@ -243,7 +295,7 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 '실제이상' = 지금 대응이 필요한 진짜 이상이면 "예", 일시적 변동이면 "아니오".
 규칙: 룰 코드 대신 한글명. 부등호 대신 말로. '역방향'·'카운트'·'역증가'·'역류' 금지.
 데이터에 없는 호기×방향을 지어내지 마라."""
-        max_tok = 700
+        max_tok = int((cfg.get("llm", {}).get("per_minute") or {}).get("full_max_tokens", 900))
 
     txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
                      {"role": "user", "content": user}], cfg, max_tokens=max_tok)
@@ -251,8 +303,10 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
         return None, err
     res = _parse_json(txt)
     if not res:
-        return None, f"JSON 파싱 실패: {str(txt)[:120]}"
+        return None, f"JSON 파싱 실패: {str(txt)[:150]}"
     res["실제이상"] = _yes_no(res.get("실제이상"))
+    if not res["실제이상"] and not (res.get("판단") or "").strip():
+        return None, f"판단 내용 없음: {str(txt)[:150]}"
     return res, None
 
 
@@ -325,7 +379,11 @@ def _parse_json(text: str) -> dict:
             return json.loads(m.group(0))
         except Exception:
             pass
-    return {"판단": (text or "")[:300], "확신도": 0, "근거": [], "조치": []}
+    # ★ 예전엔 여기서 {"판단": text, "확신도": 0} 을 돌려줬다. 응답이 비면
+    #   '오류 없는 빈 판단' 이 CSV 에 그대로 쌓여 원인을 찾을 수 없었다.
+    #   JSON 이 아니면 빈 dict → 호출부가 오류로 처리한다.
+    t2 = (text or "").strip()
+    return {"판단": t2[:300]} if t2 else {}
 
 
 if __name__ == "__main__":
@@ -342,3 +400,28 @@ if __name__ == "__main__":
     _kf = cfg["llm"].get("api_key_file", "token.txt")
     print(f"API 키: {'있음' if _api_key(cfg) else f'없음 — real_time_amhs/{_kf} 에 넣으세요'}")
     print("금지어 스크럽 테스트:", scrub("3F 리프터 역방향 카운트 (LFT_REVERSALCNT) 증가"))
+
+    # ── 실제 호출 점검 (python llm_client.py --test) ──
+    import sys
+    if "--test" in sys.argv:
+        print()
+        print("=" * 62)
+        print("  LLM 호출 점검 — 1분 판단과 같은 경로로 한 번 부른다")
+        print(f"  사고 끄기(no_think): {cfg['llm'].get('no_think', True)}")
+        print("=" * 62)
+        fake = {"datetime": "2026-07-29 08:11", "unified_risk_score": "88",
+                "hot_area": "M16HUB", "reason": "발동: M16HUB[R-A_sus, R-C, R-D]",
+                "BOTTLENECK_downward_anomaly_cols": "HID_35_FROM_SUM_A",
+                "QUEUE_downward_anomaly_cols": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN"}
+        for light in (True, False):
+            tag = "간단(정상 구간)" if light else "상세(경계 이상)"
+            res, err = judge_snapshot(fake, 88.0,
+                                      {"level": "초위험", "emoji": "⛔"}, "M16HUB", light, cfg)
+            if err:
+                print(f"  ❌ {tag}: {err}")
+            else:
+                print(f"  ✅ {tag}: 실제이상={res.get('실제이상')!r} "
+                      f"확신도={res.get('확신도')} 판단={str(res.get('판단'))[:60]!r}")
+        print()
+        print("  실제이상 이 예/아니오 로 나오면 정상. 비어 있거나 오류가 나오면")
+        print("  그 메시지를 그대로 알려주세요.")

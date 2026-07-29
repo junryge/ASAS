@@ -202,6 +202,33 @@ data/20260727_TOTAL.CSV
 * 기동 전 구간(`_bootstrap_today` 가 수집한 00:00~기동시각)은 자동 판단 대상이 아니다.
   필요하면 `빈 구간 메움` 으로 채운다
 
+### ★ 사고(think) 모델 주의
+
+`gaia-Qwen3.5-*` 는 **사고 모델**이다. 그냥 부르면 `<think>` 안에서 추론만 하다
+`max_tokens` 에 걸려 **본문이 빈 응답**으로 온다. 그러면 판단이 전부 비어
+`실제이상` 이 안 채워지고 채점도 안 된다.
+
+그래서 `config.llm.no_think: true` 가 기본이고, 마지막 user 메시지에 `/no_think` 를
+주입한다 (데모스 `_inject_no_think_for_qwen3` 와 같은 방식).
+
+```bash
+python llm_client.py --test     # 1분 판단과 같은 경로로 한 번 호출해 본다
+```
+
+`실제이상=예` 또는 `아니오` 가 나오면 정상. 안 나오면 오류 메시지에 원인이 찍힌다
+(`본문 없는 응답 (finish_reason=length, max_tokens=400, 완료토큰=400)` 처럼).
+
+| 설정 | 뜻 |
+|---|---|
+| `llm.no_think` | `/no_think` 주입 (기본 true). 사고 과정을 보려면 false + `max_tokens` 크게 |
+| `llm.disable_thinking_kwarg` | 서버가 지원할 때만 true — `chat_template_kwargs.enable_thinking=false` 를 실어 보낸다 |
+| `per_minute.light_max_tokens` | 정상 구간 응답 토큰 (기본 400) |
+| `per_minute.full_max_tokens` | 경계 이상 응답 토큰 (기본 900) |
+
+빈 응답은 **오류로 잡는다.** 예전엔 `_parse_json` 이 빈 텍스트를
+`{"판단": "", "확신도": 0}` 으로 위장해 돌려줘서 '오류 없는 빈 판단' 이 CSV 에
+쌓이고 원인을 찾을 수 없었다. 이제 `오류` 칸에 이유가 남는다.
+
 ### 채점 — 사후검증
 
 LLM 을 다시 부르지 않는다. 저장된 `TOTAL.CSV` 의 분당 스코어만 읽어 판정한다.
