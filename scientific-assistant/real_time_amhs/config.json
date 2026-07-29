@@ -117,7 +117,9 @@
       "full_max_tokens": 1200,
       "_full_max_tokens_doc": "경계 이상(상세 프롬프트) 응답 토큰",
       "json_prefill": true,
-      "_json_prefill_doc": "★assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다. 이 게이트웨이는 /no_think 를 안 듣고 'Thinking Process: …' 평문 추론을 먼저 써서 토큰을 다 쓴다. 프리필하면 추론을 건너뛰어 빠르고 안정적이다. 서버가 assistant 프리필을 무시하면 false 로 두고 토큰을 올린다"
+      "_json_prefill_doc": "★assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다. 이 게이트웨이는 /no_think 를 안 듣고 'Thinking Process: …' 평문 추론을 먼저 써서 토큰을 다 쓴다. 프리필하면 추론을 건너뛰어 빠르고 안정적이다. 서버가 assistant 프리필을 무시하면 false 로 두고 토큰을 올린다",
+      "judge_max_chars": 200,
+      "_judge_max_chars_doc": "판단·근거·조치·오류 각 칸의 최대 글자수. 넘치면 잘리고 … 가 붙는다"
     },
     "accuracy": {
       "_doc": "사후검증 — LLM 판단 이후 실제 데이터 흐름과 일치했는지 채점. LLM 재호출 없이 저장된 TOTAL.CSV 스코어만 읽는다. ★정탐률이 아니라 '판단 일치율'이다.",

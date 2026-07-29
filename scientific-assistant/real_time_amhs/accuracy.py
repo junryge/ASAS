@@ -46,6 +46,7 @@ def pm_cfg(cfg: dict) -> dict:
         "skip_if_busy": c.get("skip_if_busy", True),
         "max_per_cycle": int(c.get("max_per_cycle", 3) or 1),
         "backfill": c.get("backfill", True),
+        "judge_max_chars": int(c.get("judge_max_chars", 200) or 200),
     }
 
 
@@ -92,23 +93,30 @@ def judge_minute(row: dict, cfg: dict | None = None) -> dict:
     res, err = judge_snapshot(row, sc, g, area, light, cfg)
     ms = int((time.time() - t0) * 1000)
 
+    cap = int(pm.get("judge_max_chars", 200) or 200)
+
     out = {
         "datetime": (row.get("datetime") or "").strip(),
         "스코어": f"{sc:.0f}", "등급": g["level"], "구역": area,
         "판정": _WAIT, "판정시각": "", "판정근거": "",
         "모델": cfg.get("llm", {}).get("model", ""),
         "추론깊이": "간단" if light else "상세",
-        "소요ms": ms, "오류": err or "",
+        "소요ms": ms, "오류": (" ".join(str(err).split())[:cap] if err else ""),
     }
     if res:
+        def txt(v, limit):
+            """리스트는 ' / ' 로 합치고, 길면 자른다 (CSV·화면이 터지지 않게)."""
+            t = " / ".join(str(x).strip() for x in v if str(x).strip()) \
+                if isinstance(v, list) else str(v or "").strip()
+            t = " ".join(t.split())                 # 줄바꿈·중복공백 정리
+            return t if len(t) <= limit else t[:limit - 1].rstrip() + "…"
+
         out.update({
             "실제이상": (res.get("실제이상") or "").strip(),
             "확신도": res.get("확신도", ""),
-            "판단": (res.get("판단") or "").strip(),
-            "근거": " / ".join(res.get("근거") or []) if isinstance(res.get("근거"), list)
-                    else (res.get("근거") or ""),
-            "조치": " / ".join(res.get("조치") or []) if isinstance(res.get("조치"), list)
-                    else (res.get("조치") or ""),
+            "판단": txt(res.get("판단"), cap),
+            "근거": txt(res.get("근거"), cap),
+            "조치": txt(res.get("조치"), cap),
         })
     else:
         out.update({"실제이상": "", "확신도": "", "판단": "", "근거": "", "조치": ""})
