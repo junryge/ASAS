@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AMHS REPORT SYSTEM 작성 가이드</title>
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{background:#0F172A;color:#0F172A;font-family:'Pretendard','Malgun Gothic',-apple-system,sans-serif;
+    display:flex;flex-direction:column;overflow:hidden;}
+  header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#F8FAFC;
+    border-bottom:1px solid #E2E8F0;flex:none;}
+  .title{font-weight:800;font-size:15px;}
+  .page{margin-left:auto;font-size:13px;color:#64748B;font-weight:700;}
+  .close{width:30px;height:30px;border:none;border-radius:8px;background:transparent;color:#64748B;
+    font-size:16px;cursor:pointer;line-height:1;font-family:inherit;}
+  .close:hover{background:#E2E8F0;color:#0F172A;}
+  main{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+    background:#F1F5F9;padding:14px 66px;overflow:hidden;}
+  img{max-width:100%;max-height:100%;object-fit:contain;border:1px solid #E2E8F0;border-radius:8px;
+    background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border:1px solid #E2E8F0;
+    border-radius:50%;background:rgba(255,255,255,.95);color:#334155;font-size:23px;line-height:1;
+    cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);font-family:inherit;}
+  .nav:hover{background:#fff;color:#4338CA;border-color:#818CF8;}
+  .prev{left:14px;} .next{right:14px;}
+  footer{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#F8FAFC;
+    border-top:1px solid #E2E8F0;flex:none;}
+  .dots{display:flex;gap:7px;}
+  .dot{width:10px;height:10px;border-radius:50%;background:#CBD5E1;border:none;padding:0;cursor:pointer;}
+  .dot.on{background:#4338CA;}
+  .hint{margin-left:auto;font-size:12px;color:#94A3B8;}
+  .err{color:#DC2626;font-size:14px;font-weight:700;text-align:center;line-height:1.8;}
+</style>
+</head>
+<body>
+<header>
+  <span class="title">📘 AMHS REPORT SYSTEM 작성 가이드</span>
+  <span class="page" id="page">1 / 4</span>
+  <button class="close" id="close" title="닫기">✕</button>
+</header>
+
+<main>
+  <button class="nav prev" id="prev" title="이전">&#8249;</button>
+  <img id="img" alt="사용법 가이드">
+  <div class="err" id="err" style="display:none;">
+    가이드 이미지를 찾을 수 없습니다.<br>
+    <b>IMAGE</b> 폴더에 <b>A1.PNG · A2.PNG · A3.PNG · A4.PNG</b> 를 넣어주세요.
+  </div>
+  <button class="nav next" id="next" title="다음">&#8250;</button>
+</main>
+
+<footer>
+  <div class="dots" id="dots"></div>
+  <span class="hint">← → 키로 넘기기 · ESC 닫기</span>
+</footer>
+
+<script>
+(function(){
+  var IMGS = ['IMAGE/A1.PNG','IMAGE/A2.PNG','IMAGE/A3.PNG','IMAGE/A4.PNG'];
+  var idx = 0;
+  var img = document.getElementById('img');
+  var err = document.getElementById('err');
+  var page = document.getElementById('page');
+  var dots = document.getElementById('dots');
+
+  IMGS.forEach(function(_, i){
+    var d = document.createElement('button');
+    d.className = 'dot';
+    d.title = (i + 1) + '쪽';
+    d.onclick = function(){ show(i); };
+    dots.appendChild(d);
+  });
+
+  img.onerror = function(){ img.style.display = 'none'; err.style.display = 'block'; };
+  img.onload  = function(){ img.style.display = ''; err.style.display = 'none'; };
+
+  function show(i){
+    idx = (i + IMGS.length) % IMGS.length;
+    img.src = IMGS[idx];
+    page.textContent = (idx + 1) + ' / ' + IMGS.length;
+    for (var k = 0; k < dots.children.length; k++){
+      dots.children[k].className = 'dot' + (k === idx ? ' on' : '');
+    }
+  }
+
+  document.getElementById('prev').onclick = function(){ show(idx - 1); };
+  document.getElementById('next').onclick = function(){ show(idx + 1); };
+  document.getElementById('close').onclick = function(){ window.close(); };
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowLeft') show(idx - 1);
+    else if (e.key === 'ArrowRight') show(idx + 1);
+    else if (e.key === 'Escape') window.close();
+  });
+
+  show(0);
+})();
+</script>
+</body>
+</html>
