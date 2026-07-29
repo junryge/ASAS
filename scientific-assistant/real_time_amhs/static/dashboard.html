@@ -170,6 +170,8 @@
   .lgd{display:flex;gap:9px;margin-left:auto;font-size:10.5px;color:var(--tx3)}
   .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
   .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:340px}
+  #kpi-acc{cursor:pointer}
+  #kpi-acc:hover{background:var(--panel2)}
   .mgrp{display:inline-flex;gap:3px}
   .mgrp button{background:transparent;border:1px solid var(--line2);color:var(--tx3);
                border-radius:6px;padding:3px 9px;font:inherit;font-size:11px;cursor:pointer}
@@ -180,6 +182,8 @@
          display:flex;align-items:center;justify-content:center;padding:24px}
   .gbox{background:var(--panel);border:1px solid var(--line2);border-radius:12px;
         max-width:1120px;width:100%;max-height:92vh;overflow:auto;
+        }
+  .gbox.wide{max-width:1280px;
         box-shadow:0 18px 60px rgba(0,0,0,.6)}
   .ghd{display:flex;align-items:center;gap:10px;padding:12px 16px;
        border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
@@ -216,8 +220,9 @@
     <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
   <div class="kpi"><div class="l">재발률 (1h)</div>
     <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
-  <div class="kpi"><div class="l">LLM 정탐률</div>
-    <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">피드백 누적 시 산출</div></div>
+  <div class="kpi" id="kpi-acc" title="1분마다 LLM 이 판단한 것을 이후 실제 데이터 흐름과 대조한 값입니다. 검증된 정탐률이 아닙니다.">
+    <div class="l">LLM 판단 일치 <span class="note" style="font-size:10px">· 클릭 상세</span></div>
+    <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">1분 추론 누적 시 산출</div></div>
 </div>
 
 <div id="warnbox"></div>
@@ -495,9 +500,107 @@ async function pollStatus(){
     $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
     $('#k-recur').innerHTML    = `${k.recur_rate_1h}<u>%</u>`;
     $('#k-recur-s').textContent= `최근 1시간 ${k.recur_base}건 기준`;
-    $('#k-acc').innerHTML      = k.llm_accuracy==null ? '–' : `${k.llm_accuracy}<u>%</u>`;
-    $('#k-acc-s').textContent  = k.llm_sample ? `피드백 ${k.llm_sample}건 기준` : '피드백 누적 시 산출';
+    renderAcc(k.llm_match);
   }catch(e){}
+}
+
+/* ── LLM 판단 일치 (1분 추론 사후검증) ──
+   ★ 검증된 '정탐률'이 아니라 '이후 데이터와 일치했나' 다. 표본이 차기 전엔
+   퍼센트를 내지 않고 건수만 보여준다 — 그게 튜닝에도 더 쓸모 있다. */
+let ACC = null;
+function renderAcc(a){
+  ACC = a || null;
+  if(!a || a.error){
+    $('#k-acc').textContent = '–';
+    $('#k-acc-s').textContent = a && a.error ? '집계 실패' : '1분 추론 누적 시 산출';
+    return;
+  }
+  const cnt = `적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
+            + (a.effect ? ` · 조치효과 ${a.effect}` : '');
+  if(a.human_rate != null){
+    $('#k-acc').innerHTML = `${a.human_rate}<u>%</u>`;
+    $('#k-acc-s').textContent = `확인 ${a.human_ok+a.human_ng}건 기준 · 자동 ${cnt}`;
+  }else if(a.match_rate != null){
+    $('#k-acc').innerHTML = `${a.match_rate}<u>%</u>`;
+    $('#k-acc-s').textContent = `${cnt} · 대기 ${a.waiting}`;
+  }else{
+    // 표본 부족 — 퍼센트 대신 건수
+    $('#k-acc').innerHTML = a.base
+      ? `<span style="font-size:15px">${cnt}</span>`
+      : '–';
+    $('#k-acc-s').textContent = a.base
+      ? `표본 ${a.base}/${a.min_sample}건 · 대기 ${a.waiting} (${a.min_sample}건부터 %)`
+      : `1분 추론 ${a.rows||0}건 · 대기 ${a.waiting} · ${a.window_min}분 뒤 채점`;
+  }
+}
+
+// 실시간 탭이면 오늘, 과거 탭을 보고 있으면 그 날짜의 LLM CSV 를 연다
+$('#kpi-acc').onclick = () => openAcc(
+  $('#tab-past').classList.contains('hidden') ? null : (PDAY || null));
+
+let ACCDAY = null;
+async function openAcc(day){
+  ACCDAY = day || new Date().toLocaleDateString('sv-SE').replace(/-/g,'');
+  $('#gtitle').textContent = 'LLM 판단 일치 — 1분 추론 사후검증 (LLM CSV 원본)';
+  document.querySelector('.gbox').classList.add('wide');
+  $('#gmin').classList.add('hidden');          // 구간 선택은 그래프용 — 여기선 숨김
+  $('#gmask').classList.remove('hidden');
+  $('#gbody').innerHTML = '<div class="empty">불러오는 중…</div>';
+  try{
+    const a = await api(`/api/accuracy?day=${encodeURIComponent(ACCDAY)}&rows=1500`);
+    const rows = a.rows_data || [];
+    const vchip = v => v==='적중' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">적중</span>`
+                    : v==='과다탐지' ? `<span class="chip lv위험">과다탐지</span>`
+                    : v==='누락' ? `<span class="chip lv초위험">누락</span>`
+                    : v==='조치효과' ? `<span class="chip lv경계">조치효과</span>`
+                    : v==='정탐' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">정탐(확인)</span>`
+                    : v==='오탐' ? `<span class="chip lv위험">오탐(확인)</span>`
+                    : `<span class="dim">대기</span>`;
+    const file = `${a.day}_LLM.CSV`;
+    $('#gbody').innerHTML = `
+      <div class="row" style="margin:0 0 8px">
+        <b class="mono" style="font-size:12.5px;color:var(--cy)">${esc(file)}</b>
+        <span class="note">1분 1행 · ${a.rows}행 · 검증 창 ${a.window_min}분 · ${a.sustain_min}분 유지 기준</span>
+        <label class="note" style="margin-left:auto">날짜</label>
+        <input type="date" id="accdate" value="${esc(a.day.slice(0,4)+'-'+a.day.slice(4,6)+'-'+a.day.slice(6,8))}"
+               style="padding:4px 7px;font-size:11.5px">
+        <a class="act" style="padding:4px 10px;font-size:11.5px"
+           href="/api/data/${esc(a.day)}_LLM.csv" download>CSV 내려받기</a>
+      </div>
+      <p class="note" style="margin:0 0 10px">
+        <b style="color:var(--major)">이 값은 검증된 정탐률이 아닙니다</b> —
+        LLM 판단이 이후 실제 데이터 흐름과 일치했는지만 봅니다.
+        조치로 빨리 회복된 건은 '조치효과' 로 빼고 분모에서 제외합니다.
+        아래에서 직접 정탐/오탐을 눌러주시면 그게 최종 판정입니다.
+        (같은 시각을 <b>20260729_TOTAL.CSV</b> 와 <span class="mono">datetime</span> 으로 맞춰 보면 그때 원데이터가 나옵니다)
+      </p>
+      <table class="pol"><thead><tr>
+        <th style="width:62px">시각</th><th style="width:60px">점수</th>
+        <th style="width:66px">실제이상</th><th style="width:58px">확신도</th>
+        <th>판단</th><th style="width:92px">판정</th>
+        <th style="width:270px">판정근거</th><th style="width:106px">확인</th>
+      </tr></thead><tbody>` + (rows.length ? rows.map(r=>`<tr>
+        <td title="${esc(r.datetime)}">${esc((r.datetime||'').slice(11,16))}</td>
+        <td>${esc(r.스코어)}점</td>
+        <td>${r.실제이상 ? `<b style="color:${r.실제이상==='예'?'var(--crit)':'var(--ok)'}">${esc(r.실제이상)}</b>` : '<span class="dim">–</span>'}</td>
+        <td>${r.확신도!=='' && r.확신도!=null ? esc(r.확신도)+'%' : '<span class="dim">–</span>'}</td>
+        <td title="${esc(r.근거||'')}">${r.판단 ? esc(r.판단)
+             : (r.오류 ? `<span style="color:var(--crit)">${esc(r.오류.slice(0,70))}</span>` : '<span class="dim">–</span>')}</td>
+        <td>${vchip((r.판정||'').trim())}</td>
+        <td class="note">${esc(r.판정근거||'')}</td>
+        <td><button class="act hv" data-dt="${esc(r.datetime)}" data-v="정탐"
+              style="padding:2px 7px;font-size:11px">정탐</button>
+            <button class="act hv" data-dt="${esc(r.datetime)}" data-v="오탐"
+              style="padding:2px 7px;font-size:11px">오탐</button></td>
+      </tr>`).join('') : '<tr><td colspan="8" class="empty">아직 추론 기록이 없습니다 — 1분마다 쌓입니다</td></tr>')
+      + `</tbody></table>`;
+    $('#accdate').onchange = e => openAcc(e.target.value.replace(/-/g,''));
+    $('#gbody').querySelectorAll('button.hv').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      await post('/api/accuracy/verdict', {datetime: b.dataset.dt, verdict: b.dataset.v});
+      openAcc(ACCDAY);
+    });
+  }catch(e){ $('#gbody').innerHTML = '<div class="empty">불러오지 못했습니다</div>'; }
 }
 
 function renderPolicy(p, ev){
@@ -903,6 +1006,8 @@ document.querySelectorAll('#pfilters button').forEach(b => b.onclick = () => {
 let GAT = null;
 async function openGraph(at){
   GAT = at;
+  document.querySelector('.gbox').classList.remove('wide');
+  $('#gmin').classList.remove('hidden');
   const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
   $('#gtitle').textContent = r
     ? `${r.datetime} · ${r.area} · ${Math.round(r.score)}점 ${r.emoji} ${r.level}`

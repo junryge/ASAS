@@ -97,7 +97,32 @@
       "m16_hub_카파시_v3.5.md",
       "m16_hub_결과해석_도메인_고객인용V3.5.md"
     ],
-    "persona": "페르소나_통합.txt"
+    "persona": "페르소나_통합.txt",
+    "per_minute": {
+      "_doc": "1분마다 그 분 데이터를 LLM 이 판단해 data/YYYYMMDD_LLM.CSV 에 1행씩 남긴다. TOTAL.CSV 와 datetime 으로 조인된다.",
+      "enabled": true,
+      "every_min": 1,
+      "_every_min_doc": "1=매분, 5=5분마다, 0=끔(케이스 발생 시에만 판단)",
+      "light_below": 50,
+      "_light_below_doc": "이 점수 미만(정상 구간)은 짧게 묻는다 — 예/아니오 + 한 줄. 하루 1440번이라 낭비를 줄인다",
+      "skip_if_busy": true,
+      "_skip_doc": "이전 추론이 안 끝났으면 그 분은 건너뛴다(오류=지연스킵). 데이터 수집은 절대 밀리지 않게",
+      "csv_suffix": "_LLM"
+    },
+    "accuracy": {
+      "_doc": "사후검증 — LLM 판단 이후 실제 데이터 흐름과 일치했는지 채점. LLM 재호출 없이 저장된 TOTAL.CSV 스코어만 읽는다. ★정탐률이 아니라 '판단 일치율'이다.",
+      "enabled": true,
+      "window_min": 20,
+      "_window_doc": "검증 창(분). 사건 한 사이클이 대략 20분",
+      "sustain_min": 5,
+      "_sustain_doc": "임계 이상이 이만큼 연속되면 '실제 이상이었다'로 본다",
+      "recover_min": 5,
+      "_recover_doc": "판단 직후 이 분 안에 임계 아래로 회복되면 과다탐지",
+      "min_sample": 10,
+      "_min_sample_doc": "채점 건수가 이보다 적으면 퍼센트를 내지 않는다(건수만 표시)",
+      "floor": null,
+      "_floor_doc": "임계 점수. null 이면 grade 밴드 최저값(50) 사용"
+    }
   },
   "grade": {
     "_doc": "점수 등급 (데모스 스킬과 동일 기준)",

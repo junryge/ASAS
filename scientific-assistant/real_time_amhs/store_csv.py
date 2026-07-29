@@ -193,6 +193,103 @@ def last_time(day: str, cfg: dict | None = None) -> datetime | None:
     return newest
 
 
+# ─────────────────── LLM 판단 CSV (1분 1행, 판정은 나중에 채워짐) ───────────────────
+# data/20260729_LLM.CSV — 열어보면 바로 읽히도록 컬럼명을 한글로 둔다.
+# 'datetime' 만 영문인데, TOTAL.CSV 와 이 열로 조인하기 때문이다.
+#
+#   datetime   그 분 (TOTAL.CSV 와 같은 키)
+#   스코어/등급/구역   그 분 상태
+#   실제이상   LLM 판단 — 지금 대응이 필요한 진짜 이상인가 (예/아니오)  ★채점 대상
+#   확신도     LLM 확신도 0~100
+#   판단/근거/조치     LLM 이 쓴 문장 (정상 구간은 '판단' 한 줄만)
+#   판정       사후검증 결과 — 적중/과다탐지/누락/조치효과, 사람이 누르면 정탐/오탐
+#   판정시각/판정근거  왜 그렇게 판정했는지
+#   추론깊이   간단(정상 구간) / 상세(경계 이상)
+LLM_FIELDS = [
+    "datetime", "스코어", "등급", "구역",
+    "실제이상", "확신도", "판단", "근거", "조치",
+    "판정", "판정시각", "판정근거",
+    "모델", "추론깊이", "소요ms", "오류",
+]
+_llm_lock = threading.Lock()
+
+
+def llm_suffix(cfg: dict | None = None) -> str:
+    cfg = cfg or load_config()
+    return (cfg.get("llm", {}).get("per_minute", {}) or {}).get("csv_suffix", "_LLM")
+
+
+def llm_path(day: str, cfg: dict | None = None) -> str:
+    """'20260729' → data/20260729_LLM.CSV"""
+    day = "".join(ch for ch in str(day) if ch.isdigit())[:8]
+    return os.path.join(data_dir(cfg), f"{day}{llm_suffix(cfg)}.CSV")
+
+
+def read_llm_day(day: str, cfg: dict | None = None) -> list[dict]:
+    p = llm_path(day, cfg)
+    if not os.path.isfile(p):
+        return []
+    try:
+        with open(p, "r", encoding="utf-8-sig", newline="") as f:
+            return [dict(r) for r in csv.DictReader(f)]
+    except Exception as e:
+        print(f"[LLM CSV] ⚠️ 읽기 실패({p}): {e}")
+        return []
+
+
+def llm_minutes(day: str, cfg: dict | None = None) -> set:
+    """그 날 이미 추론을 남긴 분(datetime) 집합 — 중복 호출 방지."""
+    return {(r.get("datetime") or "").strip() for r in read_llm_day(day, cfg)}
+
+
+def upsert_llm_rows(rows: list[dict], cfg: dict | None = None) -> dict:
+    """LLM 판단 행을 datetime 기준으로 추가하거나 갱신한다.
+
+    판정(적중/과다탐지…)은 검증 창이 찬 뒤에 같은 행에 채워 넣어야 하므로
+    append 가 아니라 upsert 다. 하루 1440행이라 통째로 다시 써도 부담 없다.
+    """
+    if not rows:
+        return {"written": 0, "updated": 0, "files": []}
+    cfg = cfg or load_config()
+    written = updated = 0
+    files: set[str] = set()
+
+    with _llm_lock:
+        by_day: dict[str, list[dict]] = {}
+        for r in rows:
+            by_day.setdefault(_day_of(r, "datetime"), []).append(r)
+
+        for day, new_rows in by_day.items():
+            cur = {(r.get("datetime") or "").strip(): r for r in read_llm_day(day, cfg)}
+            for r in new_rows:
+                k = (r.get("datetime") or "").strip()
+                if not k:
+                    continue
+                if k in cur:
+                    cur[k].update({f: v for f, v in r.items() if v not in (None, "")})
+                    updated += 1
+                else:
+                    cur[k] = {f: r.get(f, "") for f in LLM_FIELDS}
+                    written += 1
+            p = llm_path(day, cfg)
+            tmp = p + f".tmp{os.getpid()}"
+            try:
+                with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=LLM_FIELDS, extrasaction="ignore")
+                    w.writeheader()
+                    for k in sorted(cur):
+                        w.writerow({f: cur[k].get(f, "") for f in LLM_FIELDS})
+                os.replace(tmp, p)
+                files.add(os.path.basename(p))
+            except Exception as e:
+                print(f"[LLM CSV] ❌ 쓰기 실패({p}): {e}")
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+    return {"written": written, "updated": updated, "files": sorted(files)}
+
+
 def list_days(cfg: dict | None = None) -> list[dict]:
     """저장된 날짜 파일 목록 (최신순)."""
     d = data_dir(cfg)

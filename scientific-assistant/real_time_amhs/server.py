@@ -100,6 +100,7 @@ def _poll_loop() -> None:
                       + (f" → {sv['files'][0]}" if sv.get("files") else ""))
             if res.get("ok"):
                 _auto_judge(res.get("cases") or [])
+                _minute_llm(STATE.get("last_rows") or [])
         except Exception as e:
             STATE.update(connected=False, error=f"{type(e).__name__}: {e}",
                          last_scan=datetime.now().isoformat())
@@ -112,6 +113,23 @@ def _poll_loop() -> None:
             slept += 2
             if int(CFG.get("query", {}).get("poll_interval_s", 60)) != interval:
                 break                       # 주기가 바뀌면 즉시 다음 수집으로
+
+
+def _minute_llm(rows: list[dict]) -> None:
+    """1분 추론 + 검증 창이 찬 과거 행 채점 — 수집 루프를 막지 않게 별도 스레드."""
+    def work():
+        try:
+            from accuracy import run_minute, verify_day
+            out = run_minute(rows, CFG)
+            if out and out.get("오류"):
+                print(f"[LLM/1분] ⚠️ {out['datetime']} — {out['오류']}")
+            v = verify_day(datetime.now().strftime("%Y%m%d"), CFG)
+            if v.get("scored"):
+                print(f"[검증] {v['scored']}건 채점 (대기 {v['waiting']}건)")
+        except Exception as e:
+            print(f"[LLM/1분] ⚠️ 예외: {type(e).__name__}: {e}")
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 _LEVEL_ORD = {"경계": 1, "위험": 2, "초위험": 3}
@@ -418,6 +436,38 @@ def api_graph():
     return app.response_class(svg, mimetype="image/svg+xml")
 
 
+@app.route("/api/accuracy")
+def api_accuracy():
+    """1분 LLM 판단 + 사후검증 결과. ?day=YYYYMMDD (기본 오늘), ?rows=1 이면 행까지."""
+    from accuracy import summary
+    from store_csv import read_llm_day
+    day = (request.args.get("day") or "").strip() or datetime.now().strftime("%Y%m%d")
+    out = summary(day, CFG)
+    if request.args.get("rows"):
+        rows = read_llm_day(day, CFG)
+        rows.sort(key=lambda r: r.get("datetime") or "", reverse=True)
+        try:
+            lim = max(1, min(2000, int(request.args.get("rows", 300))))
+        except ValueError:
+            lim = 300
+        out["rows_data"] = rows[:lim]
+    return jsonify(out)
+
+
+@app.route("/api/accuracy/verdict", methods=["POST"])
+def api_accuracy_verdict():
+    """운영자가 직접 누른 판정 — 자동 판정을 덮어쓴다. {datetime, verdict:정탐|오탐}"""
+    from accuracy import set_human
+    b = request.get_json(silent=True) or {}
+    dt = (b.get("datetime") or "").strip()
+    v = (b.get("verdict") or "").strip()
+    if not dt or v not in ("정탐", "오탐"):
+        return jsonify({"ok": False, "error": "datetime 과 verdict(정탐|오탐) 필요"}), 400
+    day = "".join(ch for ch in dt if ch.isdigit())[:8]
+    ok = set_human(day, dt, v, CFG)
+    return jsonify({"ok": ok})
+
+
 @app.route("/api/data/days")
 def api_data_days():
     """누적 저장된 날짜 CSV 목록 (20260727_TOTAL.CSV ...)."""
@@ -427,12 +477,17 @@ def api_data_days():
 
 @app.route("/api/data/<day>.csv")
 def api_data_csv(day):
-    """저장된 날짜 CSV 원본 다운로드 — 직접 열어볼 수 있게."""
-    from store_csv import day_path
+    """저장된 날짜 CSV 원본 다운로드 — 직접 열어볼 수 있게.
+
+    /api/data/20260729.csv      → 20260729_TOTAL.CSV (데이터)
+    /api/data/20260729_LLM.csv  → 20260729_LLM.CSV   (1분 LLM 판단·판정)
+    """
+    from store_csv import day_path, llm_path
     d = "".join(ch for ch in day if ch.isdigit())[:8]
-    p = day_path(d, CFG)
+    want_llm = "LLM" in day.upper()
+    p = llm_path(d, CFG) if want_llm else day_path(d, CFG)
     if not os.path.isfile(p):
-        return jsonify({"error": f"{d}_TOTAL.CSV 없음"}), 404
+        return jsonify({"error": f"{os.path.basename(p)} 없음"}), 404
     return send_from_directory(os.path.dirname(p), os.path.basename(p),
                                as_attachment=True)
 
@@ -457,10 +512,12 @@ def api_kpi():
     reopened = [c for c in recent
                 if any(t["kind"] == "재발" for t in c.get("timeline", []))]
 
-    # LLM 정탐률 — 리포트 피드백이 있을 때만
-    fb = feedback_status(CFG)
-    judged = sum(fb["counts"].get(v, 0) for v in ("정확", "보통", "과다탐지", "누락"))
-    acc = round(100 * fb["counts"].get("정확", 0) / judged, 1) if judged else None
+    # LLM 판단 일치 — 1분 추론의 사후검증 결과 (★정탐률이 아니다)
+    try:
+        from accuracy import summary as acc_summary
+        acc = acc_summary(None, CFG)
+    except Exception as e:
+        acc = {"error": f"{type(e).__name__}: {e}"}
 
     return jsonify({
         "active": len(act),
@@ -470,8 +527,7 @@ def api_kpi():
         "detect_latency_ms": STATE.get("latency_ms"),
         "recur_rate_1h": round(100 * len(reopened) / len(recent), 1) if recent else 0,
         "recur_base": len(recent),
-        "llm_accuracy": acc,
-        "llm_sample": judged,
+        "llm_match": acc,
         "by_level": {lv: len([c for c in act if c["level"] == lv])
                      for lv in ("경계", "위험", "초위험")},
         "alarm_floor": alarm_floor(CFG),

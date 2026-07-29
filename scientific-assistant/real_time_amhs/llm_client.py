@@ -187,8 +187,9 @@ def judge_case(case: dict, cfg: dict | None = None):
 - 운영자 용량변경: {ev.get('maxcapa') or '없음'}
 
 다음 JSON 만 출력하라 (설명·코드펜스 금지):
-{{"판단":"한 문장 원인 진단","확신도":0~100 정수,"근거":["근거1","근거2"],"조치":["조치1","조치2"]}}
+{{"실제이상":"예|아니오","판단":"한 문장 원인 진단","확신도":0~100 정수,"근거":["근거1","근거2"],"조치":["조치1","조치2"]}}
 
+'실제이상' = 지금 대응이 필요한 진짜 이상이면 "예", 일시적 변동이라 넘어가도 되면 "아니오".
 규칙: 룰 코드 대신 한글명. 부등호 대신 말로. '역방향'·'카운트'·'역증가'·'역류' 금지.
 데이터에 없는 호기×방향을 지어내지 마라."""
 
@@ -197,6 +198,63 @@ def judge_case(case: dict, cfg: dict | None = None):
     if err:
         return None, err
     return _parse_json(txt), None
+
+
+# ────────────────── 1분 단위 스냅샷 판단 (정탐률 채점용) ──────────────────
+def judge_snapshot(row: dict, score: float, grade: dict, area: str,
+                   light: bool, cfg: dict | None = None):
+    """수집한 그 1분에 대한 판단 → {"실제이상","판단","확신도","근거","조치"}.
+
+    light=True(정상 구간)면 짧게 묻는다. 하루 1440번이라 정상 구간까지
+    근거·조치를 다 받으면 낭비고, 채점에 필요한 건 '실제이상' 한 칸이다.
+    """
+    cfg = cfg or load_config()
+    from sentinel import hid_zones, summarize_reason
+
+    reason = (row.get("reason") or "").strip()
+    bd = (row.get("BOTTLENECK_downward_anomaly_cols") or "").strip()
+    bu = (row.get("BOTTLENECK_upward_anomaly_cols") or "").strip()
+    qd = (row.get("QUEUE_downward_anomaly_cols") or "").strip()
+    qu = (row.get("QUEUE_upward_anomaly_cols") or "").strip()
+    zones = hid_zones(" ".join(x for x in (bd, bu) if x))
+    items = " ".join(x for x in (qd, qu) if x).split()
+
+    head = f"""M16 BR 구간 {(row.get('datetime') or '')[11:16]} 시점 데이터다.
+
+- 점수: {score:.0f}점 ({grade.get('emoji','')} {grade.get('level','')}) / 최고 구역: {area}
+- AMOS HID 구역: {', '.join(zones) or '없음'}
+- AMOS QUEUE 지표: {' / '.join(items) or '없음'}
+- 발동 사유: {summarize_reason(reason, area) or reason or '없음'}"""
+
+    if light:
+        user = head + """
+
+지금 대응이 필요한 진짜 이상인가? 다음 JSON 만 출력하라 (설명·코드펜스 금지):
+{"실제이상":"예|아니오","판단":"한 문장","확신도":0~100 정수}"""
+        max_tok = 160
+    else:
+        user = head + f"""
+- 전이 경로: {(row.get('propagation_chain') or '').strip() or '없음'}
+- 운영자 용량변경: {(row.get('maxcapa_change') or '').strip() or '없음'}
+
+다음 JSON 만 출력하라 (설명·코드펜스 금지):
+{{"실제이상":"예|아니오","판단":"한 문장 원인 진단","확신도":0~100 정수,"근거":["근거1","근거2"],"조치":["조치1","조치2"]}}
+
+'실제이상' = 지금 대응이 필요한 진짜 이상이면 "예", 일시적 변동이면 "아니오".
+규칙: 룰 코드 대신 한글명. 부등호 대신 말로. '역방향'·'카운트'·'역증가'·'역류' 금지.
+데이터에 없는 호기×방향을 지어내지 마라."""
+        max_tok = 700
+
+    txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
+                     {"role": "user", "content": user}], cfg, max_tokens=max_tok)
+    if err:
+        return None, err
+    res = _parse_json(txt)
+    if not res:
+        return None, f"JSON 파싱 실패: {str(txt)[:120]}"
+    v = str(res.get("실제이상") or "").strip()
+    res["실제이상"] = "예" if v.startswith("예") else ("아니오" if v.startswith("아니") else "")
+    return res, None
 
 
 def make_report(cases: list[dict], span: str, cfg: dict | None = None):
