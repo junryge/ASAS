@@ -30,6 +30,9 @@
   .dots{display:flex;gap:7px;}
   .dot{width:10px;height:10px;border-radius:50%;background:#CBD5E1;border:none;padding:0;cursor:pointer;}
   .dot.on{background:#4338CA;}
+  .noshow{display:flex;align-items:center;gap:7px;margin-left:18px;font-size:13px;color:#475569;
+    font-weight:600;cursor:pointer;user-select:none;}
+  .noshow input{width:16px;height:16px;accent-color:#4338CA;cursor:pointer;margin:0;}
   .hint{margin-left:auto;font-size:12px;color:#94A3B8;}
   .err{color:#DC2626;font-size:14px;font-weight:700;text-align:center;line-height:1.8;}
 </style>
@@ -53,6 +56,9 @@
 
 <footer>
   <div class="dots" id="dots"></div>
+  <label class="noshow" title="체크하면 24시간 동안 자동으로 열리지 않습니다 (가이드 버튼으로는 언제든 열 수 있어요)">
+    <input type="checkbox" id="noshow"> 하루동안 안 보기
+  </label>
   <span class="hint">← → 키로 넘기기 · ESC 닫기</span>
 </footer>
 
@@ -84,6 +90,20 @@
       dots.children[k].className = 'dot' + (k === idx ? ' on' : '');
     }
   }
+
+  // '하루동안 안 보기' — 체크하면 24시간 동안 자동 표시 안 함(버튼으로는 열림)
+  var HIDE_KEY = 'amhs_guide_hide_until';
+  var chk = document.getElementById('noshow');
+  try {
+    var until = parseInt(localStorage.getItem(HIDE_KEY) || '0', 10);
+    if (until > Date.now()) chk.checked = true;
+  } catch(e){}
+  chk.onchange = function(){
+    try {
+      if (chk.checked) localStorage.setItem(HIDE_KEY, String(Date.now() + 24 * 60 * 60 * 1000));
+      else localStorage.removeItem(HIDE_KEY);
+    } catch(e){}
+  };
 
   // 별도 창으로 열렸으면 창을 닫고, 달력 안(iframe)에서 열렸으면 부모에게 닫기 요청
   function closeMe(){
