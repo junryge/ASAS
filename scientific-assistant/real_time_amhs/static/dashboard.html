@@ -549,18 +549,25 @@ async function openAcc(day){
   try{
     const a = await api(`/api/accuracy?day=${encodeURIComponent(ACCDAY)}&rows=1500`);
     const rows = a.rows_data || [];
-    const vchip = v => v==='적중' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">적중</span>`
+    const vchip = (v, r) => v==='적중' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">적중</span>`
                     : v==='과다탐지' ? `<span class="chip lv위험">과다탐지</span>`
                     : v==='누락' ? `<span class="chip lv초위험">누락</span>`
                     : v==='조치효과' ? `<span class="chip lv경계">조치효과</span>`
                     : v==='정탐' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">정탐(확인)</span>`
                     : v==='오탐' ? `<span class="chip lv위험">오탐(확인)</span>`
-                    : `<span class="dim">대기</span>`;
+                    : v==='판정불가' ? `<span class="dim">판정불가</span>`
+                    : (r && r.대기분!=null
+                        ? `<span class="dim">채점 대기 <b style="color:var(--tx2)">${r.대기분}분</b></span>`
+                        : `<span class="dim">대기</span>`);
     const file = `${a.day}_LLM.CSV`;
     $('#gbody').innerHTML = `
       <div class="row" style="margin:0 0 8px">
         <b class="mono" style="font-size:12.5px;color:var(--cy)">${esc(file)}</b>
         <span class="note">1분 1행 · ${a.rows}행 · 검증 창 ${a.window_min}분 · ${a.sustain_min}분 유지 기준</span>
+        <span class="note">| 추론 ${(a.state&&a.state.calls)||0}회${
+          a.state&&a.state.errors ? ` · <span style="color:var(--crit)">실패 ${a.state.errors}</span>` : ''}${
+          a.state&&a.state.skipped ? ` · 지연스킵 ${a.state.skipped}` : ''}${
+          a.state&&a.state.last_ms!=null ? ` · 최근 ${a.state.last_ms}ms` : ''}</span>
         <label class="note" style="margin-left:auto">날짜</label>
         <input type="date" id="accdate" value="${esc(a.day.slice(0,4)+'-'+a.day.slice(4,6)+'-'+a.day.slice(6,8))}"
                style="padding:4px 7px;font-size:11.5px">
@@ -571,7 +578,9 @@ async function openAcc(day){
         <b style="color:var(--major)">이 값은 검증된 정탐률이 아닙니다</b> —
         LLM 판단이 이후 실제 데이터 흐름과 일치했는지만 봅니다.
         조치로 빨리 회복된 건은 '조치효과' 로 빼고 분모에서 제외합니다.
-        아래에서 직접 정탐/오탐을 눌러주시면 그게 최종 판정입니다.
+        아래에서 직접 정탐/오탐을 눌러주시면 그게 최종 판정입니다.<br>
+        <b>판정이 '채점 대기' 인 건 정상입니다</b> — LLM 판단은 이미 끝났고,
+        그 판단이 맞았는지는 이후 ${a.window_min}분 실제 흐름을 봐야 알 수 있어 그때 채워집니다.
         (같은 시각을 <b>20260729_TOTAL.CSV</b> 와 <span class="mono">datetime</span> 으로 맞춰 보면 그때 원데이터가 나옵니다)
       </p>
       <table class="pol"><thead><tr>
@@ -586,8 +595,10 @@ async function openAcc(day){
         <td>${r.확신도!=='' && r.확신도!=null ? esc(r.확신도)+'%' : '<span class="dim">–</span>'}</td>
         <td title="${esc(r.근거||'')}">${r.판단 ? esc(r.판단)
              : (r.오류 ? `<span style="color:var(--crit)">${esc(r.오류.slice(0,70))}</span>` : '<span class="dim">–</span>')}</td>
-        <td>${vchip((r.판정||'').trim())}</td>
-        <td class="note">${esc(r.판정근거||'')}</td>
+        <td>${vchip((r.판정||'').trim(), r)}</td>
+        <td class="note">${esc(r.판정근거||'') || (r.대기분!=null
+             ? `LLM 판단은 끝났습니다 — 이후 ${a.window_min}분 실제 흐름을 봐야 채점됩니다`
+             : '')}</td>
         <td><button class="act hv" data-dt="${esc(r.datetime)}" data-v="정탐"
               style="padding:2px 7px;font-size:11px">정탐</button>
             <button class="act hv" data-dt="${esc(r.datetime)}" data-v="오탐"

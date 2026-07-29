@@ -225,6 +225,10 @@ def verify_day(day: str, cfg: dict | None = None) -> dict:
                           acted=any(t0 < t <= t0 + timedelta(minutes=a["window_min"])
                                     for t in acted))
         if not v:
+            # 창은 지났는데 그 구간 데이터가 없다 (수집 공백 등) — 영구 대기로 남지 않게 못박는다
+            upd.append({"datetime": r["datetime"], "판정": "판정불가",
+                        "판정시각": now.strftime("%Y-%m-%d %H:%M"),
+                        "판정근거": f"검증 창({a['window_min']}분) 안에 수집된 데이터가 없음"})
             continue
         upd.append({"datetime": r["datetime"], "판정": v,
                     "판정시각": now.strftime("%Y-%m-%d %H:%M"), "판정근거": why})
@@ -253,9 +257,10 @@ def summary(day: str | None = None, cfg: dict | None = None) -> dict:
     day = day or datetime.now().strftime("%Y%m%d")
     rows = read_llm_day(day, cfg)
 
-    cnt = {_HIT: 0, _FP: 0, _FN: 0, _EFFECT: 0}
+    cnt = {_HIT: 0, _FP: 0, _FN: 0, _EFFECT: 0, "판정불가": 0}
     human = {"정탐": 0, "오탐": 0}
     waiting = judged_fail = 0
+    now = datetime.now()
     for r in rows:
         v = (r.get("판정") or "").strip()
         if v in cnt:
@@ -276,6 +281,7 @@ def summary(day: str | None = None, cfg: dict | None = None) -> dict:
     return {
         "day": day, "rows": len(rows),
         "hit": cnt[_HIT], "fp": cnt[_FP], "fn": cnt[_FN], "effect": cnt[_EFFECT],
+        "nojudge": cnt["판정불가"],
         "waiting": waiting, "failed": judged_fail,
         "base": base, "min_sample": a["min_sample"],
         "match_rate": rate,                 # 자동 — 판단 일치율

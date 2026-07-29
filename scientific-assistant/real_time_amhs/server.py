@@ -439,9 +439,14 @@ def api_graph():
 @app.route("/api/accuracy")
 def api_accuracy():
     """1분 LLM 판단 + 사후검증 결과. ?day=YYYYMMDD (기본 오늘), ?rows=1 이면 행까지."""
-    from accuracy import summary
+    from accuracy import acc_cfg, summary, verify_day
     from store_csv import read_llm_day
     day = (request.args.get("day") or "").strip() or datetime.now().strftime("%Y%m%d")
+    # 그 날짜를 열 때 채점을 한 번 돌린다 (과거 날짜도 판정이 채워지게)
+    try:
+        verify_day(day, CFG)
+    except Exception as e:
+        print(f"[검증] ⚠️ {day} 채점 실패: {e}")
     out = summary(day, CFG)
     if request.args.get("rows"):
         rows = read_llm_day(day, CFG)
@@ -450,7 +455,17 @@ def api_accuracy():
             lim = max(1, min(2000, int(request.args.get("rows", 300))))
         except ValueError:
             lim = 300
-        out["rows_data"] = rows[:lim]
+        rows = rows[:lim]
+        # 아직 판정이 안 된 행에 '몇 분 뒤에 채점되는지' 를 붙여준다
+        win = acc_cfg(CFG)["window_min"]
+        now = datetime.now()
+        for r in rows:
+            if not (r.get("판정") or "").strip() and (r.get("실제이상") or "").strip():
+                t0 = parse_dt(r.get("datetime"))
+                if t0:
+                    left = (t0 + timedelta(minutes=win) - now).total_seconds() / 60
+                    r["대기분"] = max(0, int(left + 0.999))
+        out["rows_data"] = rows
     return jsonify(out)
 
 
