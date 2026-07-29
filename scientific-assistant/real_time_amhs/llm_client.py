@@ -134,8 +134,13 @@ def _api_key(cfg: dict) -> str:
 
 
 def chat(messages: list[dict], cfg: dict | None = None,
-         max_tokens: int | None = None, temperature: float | None = None):
-    """OpenAI 호환 호출 → (text, None) 또는 (None, error)."""
+         max_tokens: int | None = None, temperature: float | None = None,
+         json_prefill: bool = False):
+    """OpenAI 호환 호출 → (text, None) 또는 (None, error).
+
+    json_prefill=True 면 assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다
+    (사고 모델이 평문 추론을 먼저 쓰는 것을 막는다).
+    """
     cfg = cfg or load_config()
     lc = cfg.get("llm", {})
     if not lc.get("enabled", True):
@@ -158,6 +163,12 @@ def chat(messages: list[dict], cfg: dict | None = None,
     # 서버가 지원하면 템플릿 수준에서도 사고를 끈다 (vLLM/Qwen 계열)
     if lc.get("disable_thinking_kwarg", False):
         payload["chat_template_kwargs"] = {"enable_thinking": False}
+    # ★ JSON 프리필 — assistant 턴을 '{' 로 미리 채워 모델이 그 뒤를 이어 쓰게 만든다.
+    #   이 게이트웨이는 /no_think 를 안 듣고 'Thinking Process: …' 평문 추론을 먼저 쓴다.
+    #   프리필하면 추론을 건너뛰고 바로 JSON 을 뱉으므로 토큰·시간이 크게 줄고 파싱이 안정된다.
+    if json_prefill:
+        payload["messages"] = list(payload["messages"]) + [
+            {"role": "assistant", "content": "{"}]
     headers = {"Content-Type": "application/json"}
     key = _api_key(cfg)
     if key:
@@ -190,6 +201,8 @@ def chat(messages: list[dict], cfg: dict | None = None,
                           f"완료토큰={usage.get('completion_tokens')}) — "
                           f"사고 토큰만 쓰고 잘렸을 가능성. max_tokens 를 올리거나 "
                           f"config.llm.no_think 를 확인하세요")
+        if json_prefill and not txt.lstrip().startswith("{"):
+            txt = "{" + txt            # 프리필한 '{' 는 응답에 안 실려 온다
         return scrub(txt), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
@@ -281,7 +294,9 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
     if light:
         user = head + """
 
-지금 대응이 필요한 진짜 이상인가? 다음 JSON 만 출력하라 (설명·코드펜스 금지):
+지금 대응이 필요한 진짜 이상인가?
+
+★출력 규칙: 추론 과정을 쓰지 마라. 'Thinking' 같은 서술 금지. 첫 글자가 '{' 여야 한다.
 {"실제이상":"예|아니오","판단":"한 문장","확신도":0~100 정수}"""
         max_tok = int((cfg.get("llm", {}).get("per_minute") or {}).get("light_max_tokens", 400))
     else:
@@ -289,7 +304,7 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 - 전이 경로: {(row.get('propagation_chain') or '').strip() or '없음'}
 - 운영자 용량변경: {(row.get('maxcapa_change') or '').strip() or '없음'}
 
-다음 JSON 만 출력하라 (설명·코드펜스 금지):
+★출력 규칙: 추론 과정을 쓰지 마라. 'Thinking' 같은 서술 금지. 첫 글자가 '{{' 여야 한다.
 {{"실제이상":"예|아니오","판단":"한 문장 원인 진단","확신도":0~100 정수,"근거":["근거1","근거2"],"조치":["조치1","조치2"]}}
 
 '실제이상' = 지금 대응이 필요한 진짜 이상이면 "예", 일시적 변동이면 "아니오".
@@ -297,8 +312,10 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 데이터에 없는 호기×방향을 지어내지 마라."""
         max_tok = int((cfg.get("llm", {}).get("per_minute") or {}).get("full_max_tokens", 900))
 
+    pm = cfg.get("llm", {}).get("per_minute") or {}
     txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
-                     {"role": "user", "content": user}], cfg, max_tokens=max_tok)
+                     {"role": "user", "content": user}], cfg, max_tokens=max_tok,
+                    json_prefill=pm.get("json_prefill", True))
     if err:
         return None, err
     res = _parse_json(txt)
@@ -365,25 +382,95 @@ def make_report(cases: list[dict], span: str, cfg: dict | None = None):
                  {"role": "user", "content": user}], cfg, max_tokens=1500)
 
 
+def _json_candidates(t: str):
+    """텍스트에서 균형 잡힌 {...} 덩어리를 모두 뽑는다 (뒤에 붙은 JSON 도 잡히게)."""
+    out, depth, start, instr, esc = [], 0, -1, False, False
+    for i, ch in enumerate(t):
+        if instr:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                instr = False
+            continue
+        if ch == '"':
+            instr = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                out.append(t[start:i + 1])
+                start = -1
+            elif depth < 0:
+                depth = 0
+    return out
+
+
+_KEYS = ("실제이상", "판단", "확신도")
+
+
 def _parse_json(text: str) -> dict:
-    """코드펜스/잡음 섞인 응답에서 JSON 추출."""
-    import re
+    """코드펜스·평문 추론이 섞인 응답에서 JSON 추출.
+
+    이 모델은 'Thinking Process: ...' 처럼 평문으로 추론을 먼저 쓰고 그 뒤에 JSON 을
+    붙이는 경우가 있다. 그래서 앞에서부터 통째로 파싱하지 말고 **균형 잡힌 {...}
+    후보를 뒤에서부터** 시도한다.
+    """
     t = re.sub(r"^```(?:json)?|```$", "", (text or "").strip(), flags=re.M).strip()
     try:
-        return json.loads(t)
+        d = json.loads(t)
+        if isinstance(d, dict):
+            return d
     except Exception:
         pass
-    m = re.search(r"\{[\s\S]*\}", t)
+
+    cands = _json_candidates(t)
+    for c in reversed(cands):                     # 뒤에 있는 게 최종 답일 가능성이 높다
+        try:
+            d = json.loads(c)
+        except Exception:
+            continue
+        if isinstance(d, dict) and any(k in d for k in _KEYS):
+            return d
+    for c in reversed(cands):                     # 키가 없더라도 dict 면 받는다
+        try:
+            d = json.loads(c)
+            if isinstance(d, dict):
+                return d
+        except Exception:
+            continue
+
+    # JSON 이 아예 없거나 잘린 경우 — 본문에서 필요한 값만 건져낸다
+    got = _salvage(t)
+    return got or ({"판단": t[:300]} if t else {})
+
+
+# 'JSON 이 없어도' 실제이상만은 건져낸다 (채점이 되려면 이 한 칸이 필요하다)
+_RE_YES_NO = re.compile(r'"?실제이상"?\s*[:=]\s*"?\s*(예|아니오|아니요|yes|no)', re.I)
+_RE_CONF = re.compile(r'"?확신도"?\s*[:=]\s*"?\s*(\d{1,3})')
+_RE_JUDGE = re.compile(r'"?판단"?\s*[:=]\s*"([^"]{2,200})"')
+
+
+def _salvage(t: str) -> dict:
+    """잘린 응답에서 실제이상·확신도·판단을 정규식으로 건져낸다."""
+    out = {}
+    m = _RE_YES_NO.search(t)
+    if m:
+        out["실제이상"] = m.group(1)
+    m = _RE_CONF.search(t)
     if m:
         try:
-            return json.loads(m.group(0))
-        except Exception:
+            out["확신도"] = int(m.group(1))
+        except ValueError:
             pass
-    # ★ 예전엔 여기서 {"판단": text, "확신도": 0} 을 돌려줬다. 응답이 비면
-    #   '오류 없는 빈 판단' 이 CSV 에 그대로 쌓여 원인을 찾을 수 없었다.
-    #   JSON 이 아니면 빈 dict → 호출부가 오류로 처리한다.
-    t2 = (text or "").strip()
-    return {"판단": t2[:300]} if t2 else {}
+    m = _RE_JUDGE.search(t)
+    if m:
+        out["판단"] = m.group(1).strip()
+    return out
 
 
 if __name__ == "__main__":

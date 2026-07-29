@@ -211,6 +211,27 @@ data/20260727_TOTAL.CSV
 그래서 `config.llm.no_think: true` 가 기본이고, 마지막 user 메시지에 `/no_think` 를
 주입한다 (데모스 `_inject_no_think_for_qwen3` 와 같은 방식).
 
+**그런데 이 게이트웨이(`hcp.llm.skhynix.com`)는 `/no_think` 를 듣지 않는다.**
+`<think>` 태그도 안 쓰고 `Thinking Process: 1. **Analyze the Request:** …` 처럼
+**평문으로 추론을 먼저 쓴다.** 그러다 `max_tokens` 를 다 써서 JSON 까지 못 간다.
+
+그래서 두 가지를 더 한다:
+
+1. **JSON 프리필** (`per_minute.json_prefill: true`) — assistant 턴을 `{` 로 미리
+   채워 보내면 모델이 그 뒤를 이어 쓴다. 추론을 건너뛰므로 **빠르고 안정적이다**
+   (backfill 이 느렸던 원인도 이것)
+2. **견고한 JSON 추출** — 균형 잡힌 `{…}` 덩어리를 **뒤에서부터** 시도하고,
+   JSON 이 잘렸으면 정규식으로 `실제이상`·`확신도`·`판단` 만이라도 건져낸다
+   (채점에 필요한 건 `실제이상` 한 칸이다)
+
+| 응답 형태 | 결과 |
+|---|---|
+| 평문 추론 뒤에 JSON | ✅ 파싱 |
+| ```json 코드펜스 | ✅ 파싱 |
+| 프리필로 `{` 되붙인 형태 | ✅ 파싱 |
+| 잘린 JSON | ✅ `실제이상` 건져냄 |
+| 추론만 하고 JSON 없음 | ❌ 오류로 기록 (원인 표시) |
+
 ```bash
 python llm_client.py --test     # 1분 판단과 같은 경로로 한 번 호출해 본다
 ```
