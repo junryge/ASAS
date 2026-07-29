@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 로그프레소 조회 클라이언트 (독립)
+AMHS Sentinel_M16BR — 로그프레소 조회 클라이언트 (독립)
 
 데모스(demos_v1)와 완전 독립. 어떤 데모스 모듈도 import 하지 않는다.
 검증된 HTTP 방식(httpexport/query.csv)만 그대로 사용한다.

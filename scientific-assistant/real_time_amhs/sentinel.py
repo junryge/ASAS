@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 실시간 관제 코어 (독립)
+AMHS Sentinel_M16BR — 실시간 관제 코어 (독립)
 
 로그프레소 폴링 → 이상감지 → 케이스 생성/갱신 → 심각도 라우팅/에스컬레이션.
 데모스(demos_v1) 어떤 모듈도 import 하지 않는다.

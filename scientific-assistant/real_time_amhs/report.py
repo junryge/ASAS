@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 구간 리포트 + 피드백 (독립)
+AMHS Sentinel_M16BR — 구간 리포트 + 피드백 (독립)
 
   · 구간 지정 → 평가 실행 → 주요 발견 / 다음 구간 예측·선제 조치
   · 리포트 피드백 → feedback.jsonl → 다음 리포트의 임계치·요약 방식에 반영

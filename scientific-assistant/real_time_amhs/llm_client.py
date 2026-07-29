@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — LLM 판단·리포트 (독립)
+AMHS Sentinel_M16BR — LLM 판단·리포트 (독립)
 
 지식은 전부 스킬 4종 + 페르소나에 있다. 이 모듈은 그것을 로드해 주입만 한다.
 도메인 규칙을 여기에 새로 쓰지 않는다 (스킬이 단일 출처).

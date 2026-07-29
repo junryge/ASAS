@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 독립 관제 서버
+AMHS Sentinel_M16BR — 독립 관제 서버
 
-데모스(demos_v1)와 완전 독립: 별도 프로세스, 별도 포트(기본 8700),
+데모스(demos_v1)와 완전 독립: 별도 프로세스, 별도 포트(기본 8989),
 demos_v1 어떤 모듈도 import 하지 않는다.
 
 실행:
@@ -644,19 +644,49 @@ def _open_browser(url: str, delay: float = 1.2) -> None:
     threading.Thread(target=go, daemon=True).start()
 
 
+def _lan_ips() -> list[str]:
+    """이 PC 의 사내망 IP 목록 (외부에서 접속할 주소 안내용)."""
+    import socket
+    ips = set()
+    try:
+        # 기본 경로로 나가는 인터페이스의 IP (실제로 밖에서 보이는 주소)
+        sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sk.connect(("8.8.8.8", 80))
+            ips.add(sk.getsockname()[0])
+        finally:
+            sk.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    return sorted(ip for ip in ips if not ip.startswith("127."))
+
+
 if __name__ == "__main__":
     s = CFG.get("server", {})
     threading.Thread(target=_poll_loop, daemon=True).start()
     print("=" * 62)
-    print("  AMHS Sentinel — 독립 LLM 관제 시스템 (데모스 비의존)")
+    print("  AMHS Sentinel_M16BR — 독립 LLM 관제 시스템 (데모스 비의존)")
     print(f"  로그프레소 : {CFG.get('logpresso_base')}  table={CFG.get('table_name')}")
     print(f"  AMOS      : {CFG['amos']['bottleneck']['table']} + {CFG['amos']['queue']['table']}")
     print(f"  모델       : {CFG.get('llm', {}).get('model')}")
     print(f"  폴링       : {CFG.get('query', {}).get('poll_interval_s')}초"
           + ("   [OFFLINE fixture 모드]" if os.getenv("LP_OFFLINE") == "1" else ""))
-    port = s.get("port", 8700)
+    host = s.get("host", "0.0.0.0")
+    port = s.get("port", 8989)
     url = f"http://localhost:{port}/"
     print(f"  대시보드   : {url}")
+    if host in ("0.0.0.0", "::"):
+        # 외부(사내망)에서 접속할 주소를 그대로 알려준다 — 그냥 나눠주면 된다
+        for ip in _lan_ips():
+            print(f"             : http://{ip}:{port}/   ← 외부 접속용")
+        print(f"  ℹ️ 외부에서 안 열리면 방화벽에서 TCP {port} 인바운드를 열어야 합니다")
+    else:
+        print(f"  ⚠️ host={host} — 이 PC 에서만 열립니다. 외부 공개는 config.server.host=0.0.0.0")
     print("=" * 62)
 
     # 실행하면 대시보드가 바로 뜨게 (config.server.auto_open=false 로 끌 수 있음)

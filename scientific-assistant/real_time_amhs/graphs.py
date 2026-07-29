@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 구간 그래프 (독립 SVG 렌더러)
+AMHS Sentinel_M16BR — 구간 그래프 (독립 SVG 렌더러)
 
 발동이벤트_요약 / report_graphs 와 같은 형식으로 그린다:
 

@@ -1,9 +1,9 @@
-# AMHS Sentinel — LLM 실시간 관제 (데모스와 완전 독립)
+# AMHS Sentinel_M16BR — LLM 실시간 관제 (데모스와 완전 독립)
 
 M16 HUBROOM 반송 정체를 로그프레소에서 실시간으로 읽어 **감지 → 케이스 → 에스컬레이션 →
 리포트 → 피드백 학습** 까지 돌리는 독립 시스템.
 
-> **독립성**: `demos_v1` 을 단 한 줄도 import 하지 않는다. 별도 프로세스·별도 포트(8700).
+> **독립성**: `demos_v1` 을 단 한 줄도 import 하지 않는다. 별도 프로세스·별도 포트(8989).
 > 데모스가 죽어도 관제는 돈다. 반대도 마찬가지.
 >
 > **지식 출처**: 도메인 규칙을 이 폴더에 새로 쓰지 않는다.
@@ -36,7 +36,8 @@ python collect.py --loop           # 1분마다 계속 수집
 python collect.py --list           # 확보된 날짜 목록
 
 # 5) 관제 시작 — 켜면 오늘 하루치를 자동 확보하고 대시보드가 열린다
-python server.py            # → http://localhost:8700/ 자동 오픈
+python server.py            # → http://localhost:8989/ 자동 오픈
+                            #   외부(사내망)에서도 http://<이PC IP>:8989/ 로 접속
 ```
 
 브라우저 자동 실행을 끄려면 `config.server.auto_open: false` 또는 `NO_BROWSER=1`.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 날짜별 CSV 누적 저장 (독립)
+AMHS Sentinel_M16BR — 날짜별 CSV 누적 저장 (독립)
 
 실시간 수집이 1분마다 가져온 데이터를 날짜 파일에 한 줄씩 붙인다.
 

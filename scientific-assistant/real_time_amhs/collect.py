@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 데이터 확보 (독립 실행)
+AMHS Sentinel_M16BR — 데이터 확보 (독립 실행)
 
 로그프레소에서 실제 데이터를 가져와 날짜별 CSV 에 1분 한 줄씩 쌓는다.
 관제 서버(server.py) 없이 이것만 돌려도 데이터는 확보된다.

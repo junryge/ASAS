@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AMHS Sentinel — 로그프레소 쿼리 조회 도구 (독립)
+AMHS Sentinel_M16BR — 로그프레소 쿼리 조회 도구 (독립)
 
 LPQL 빌더 + CLI. 데모스 비의존.
 
@@ -344,7 +344,7 @@ def _check(cfg: dict) -> int:
 
     ok_all = True
     print("━" * 58)
-    print(" AMHS Sentinel 기본 점검")
+    print(" AMHS Sentinel_M16BR 기본 점검")
     print("━" * 58)
 
     # 1) 설정
@@ -410,7 +410,7 @@ def _check(cfg: dict) -> int:
 def main(argv=None) -> int:
     cfg = load_config()
     p = argparse.ArgumentParser(
-        description="로그프레소 쿼리 조회 (AMHS Sentinel 독립 도구)",
+        description="로그프레소 쿼리 조회 (AMHS Sentinel_M16BR 독립 도구)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__.split("사용법:")[-1])
     p.add_argument("-q", "--query", help="LPQL 직접 입력")
