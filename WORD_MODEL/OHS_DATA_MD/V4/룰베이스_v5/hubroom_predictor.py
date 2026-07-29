@@ -143,6 +143,24 @@ TH_SORTER_WAIT = _TD('TH_SORTER_WAIT', {
 })
 TH_SORTER_TRANSFER_FAIL = _T('TH_SORTER_TRANSFER_FAIL', 1)
 
+# ============================================================
+# ★ 영역별 융합 가중 (unified_risk_score 전용)
+# ------------------------------------------------------------
+#   Layer3 점수 합산(layer1/flow/sla/sorter/mc) 시에만 곱한다.
+#   · hot_area / affected_areas / propagation_chain / 단계(stage) 는
+#     원본 area_score·트리거를 그대로 쓰므로 영향 없음.
+#   · 값 1.0 = 현행 유지. 0.5 = 그 영역 점수 기여를 정확히 절반.
+#   · thresholds.json 에 {"AREA_WEIGHT": {"M16B": 0.5}} 로 넣으면
+#     코드 수정 없이 조정 가능 (재시작 필요).
+# ============================================================
+AREA_WEIGHT = _TD('AREA_WEIGHT', {'M16B': 0.5})
+
+
+def _aw(area):
+    """영역 융합 가중치 (미지정 영역은 1.0)."""
+    return AREA_WEIGHT.get(area, 1.0)
+
+
 MAXCAPA_NORMAL = {
     'M16HUB.QUE.LFT.3F_LFT_MAXCAPA':       (165, 100),
     'M16HUB.QUE.LFT.3F_M14BLFT_MAXCAPA':   (66, 50),
@@ -622,29 +640,31 @@ def eval_flow_rules(flow_history):
 # Layer 3 통합 융합
 # ============================================================
 def evaluate_unified(t, area_results, flow_result, propagation_history):
-    layer1_total = sum(r.get('area_score', 0) for r in area_results.values())
+    # ★ AREA_WEIGHT: 점수 합산에만 영역 가중 적용 (아래 hot_area/affected_areas 는 원본 사용)
+    layer1_total = round(sum(r.get('area_score', 0) * _aw(a)
+                             for a, r in area_results.items()), 1)
 
     flow_score = 0
     flow_signals = []
     for node, info in flow_result.items():
-        if info['level'] == '심각':
-            flow_score += 30
-        elif info['level'] == '위험':
-            flow_score += 15
-        elif info['level'] == '주의':
-            flow_score += 5
+        pts = 30 if info['level'] == '심각' else 15 if info['level'] == '위험' else \
+              5 if info['level'] == '주의' else 0
+        if pts:
+            flow_score += pts * _aw(FLOW_NODES.get(node, (None,))[0])
         flow_signals.append(f"{node}={info['ratio']:.1f}x({info['level']})")
+    flow_score = round(flow_score, 1)
 
-    sla_score = sum(5 for r in area_results.values() if r.get('sla_trig'))
-    sorter_score = sum(3 for r in area_results.values() if r.get('sorter_trig'))
+    sla_score = round(sum(5 * _aw(a) for a, r in area_results.items() if r.get('sla_trig')), 1)
+    sorter_score = round(sum(3 * _aw(a) for a, r in area_results.items() if r.get('sorter_trig')), 1)
 
     mc_score = 0
     mc_signals = []
     for area, r in area_results.items():
         n = r.get('maxcapa_changed_n', 0)
         if n > 0:
-            mc_score += 10 * n
+            mc_score += 10 * n * _aw(area)
             mc_signals.extend([f"{area}:{x}" for x in r.get('maxcapa_changed', [])])
+    mc_score = round(mc_score, 1)
 
     # ★ 점수 정규화 — raw 합산 → 0~100 척도 (raw 220 = 100점 발동)
     raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score

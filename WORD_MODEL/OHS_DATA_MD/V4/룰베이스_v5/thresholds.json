@@ -45,5 +45,9 @@
   "_comment": "v6: RA만 v4.1 원본 / gap 60분 / 5단계 등급(관심100~ 주의120~ 경계130~ 위험160~ 발동220~) — 4-5월 검증 정밀도 52%, 사전예측 +32분",
   "TH_MLUD_JOB": 50,
   "TH_MLUD_MANUAL": 30,
-  "TH_CNV_FULL_RATIO": 0.85
+  "TH_CNV_FULL_RATIO": 0.85,
+  "_comment_area_weight": "영역별 점수 가중 — unified_risk_score 합산에만 적용. hot_area/affected_areas/단계는 무영향. 1.0=현행, 0.5=기여 절반. 미기재 영역은 1.0",
+  "AREA_WEIGHT": {
+    "M16B": 0.5
+  }
 }

@@ -251,9 +251,18 @@ def _loop(a):
     cache = {p: {} for p in TABLES}  # 분키 → (down, up)
     cur = None
     finishing = {}  # 전날 파일 → 남은 마무리 사이클
+    healed = set()  # 시작 직후 1회 전체 복구를 마친 파일
+    user_force = getattr(a, 'force', False)
     while True:
         try:
             fp = resolve_event(a.event)
+            # ★ 시작 직후(또는 새 날짜 첫 대면) 1회는 그 파일 전체를 강제 재기입.
+            #   서버 장애·재시작 중에 공란으로 굳은 과거 행들을 스스로 복구한다.
+            #   (이후 사이클은 신규행 + 최근 5분만 → 가볍게 유지)
+            heal = bool(fp) and fp not in healed
+            a.force = user_force or heal
+            if heal:
+                print(f'  🩹 시작 복구: {os.path.basename(fp)} 전체 재기입')
             # 자정 전환 감지: 새 날짜 파일로 바뀌면 전날 파일을 몇 분 더 마무리
             # (로그프레소가 23:59 등 마지막 분을 자정 넘어 쓰기 때문)
             if fp and cur and fp != cur and os.path.exists(cur):
@@ -262,6 +271,9 @@ def _loop(a):
             if fp:
                 cur = fp
             n = cycle(a, cache, fp=fp)
+            if heal and n is not None:
+                healed.add(fp)   # 복구 성공 → 이후엔 증분만
+            a.force = user_force
             for old in list(finishing):
                 cycle(a, cache, fp=old)  # 전날 파일 끝부분(최근5분) 재조회·기입
                 finishing[old] -= 1
