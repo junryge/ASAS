@@ -166,6 +166,205 @@ def build_report(store: CaseStore | None, start: datetime, end: datetime,
     return rep
 
 
+def build_day_report(day: str, cfg: dict | None = None, use_llm: bool = True) -> dict:
+    """★하루 사건 리포트 — 데모스 개인 에이전트 '사건발생 보고서' 와 같은 5섹션.
+
+    저장된 날짜 CSV 에서 ③ 사건목록 · ④ AMOS 표를 만들고 (daily.py — 스킬
+    발동이벤트_요약 과 같은 규칙), 그 두 표만 근거로 LLM 이 보고서를 쓴다.
+    """
+    cfg = cfg or load_config()
+    from daily import day_material
+
+    day = "".join(ch for ch in str(day) if ch.isdigit())[:8]
+    mat = day_material(day, cfg)
+    fetch_warn = None
+
+    # 저장분이 없으면 그 날짜를 로그프레소에서 확보한 뒤 다시 만든다
+    if not mat["minutes"]:
+        try:
+            from collect import collect_day
+            r = collect_day(day, cfg, verbose=False)
+            if not r.get("ok"):
+                fetch_warn = r.get("error") or "그 날짜 데이터를 확보하지 못했습니다"
+            mat = day_material(day, cfg)
+        except Exception as e:
+            fetch_warn = f"{type(e).__name__}: {e}"
+
+    pk = mat.get("peak") or {}
+    summary = {
+        "span": mat["date_ko"],
+        "day": day,
+        "start": f"{day[:4]}-{day[4:6]}-{day[6:8]}T00:00:00",
+        "end": f"{day[:4]}-{day[4:6]}-{day[6:8]}T23:59:59",
+        "count": len(mat["incidents"]),
+        "top_score": pk.get("score", 0),
+        "top_level": pk.get("level", "정상"),
+        "top_emoji": pk.get("emoji", "🟢"),
+        "alarm_floor": alarm_floor(cfg),
+        "minutes": mat["minutes"],
+        "risk_minutes": mat["risk_minutes"],
+        "by_level": mat.get("by_level") or {},
+        "busy": mat.get("busy"),
+    }
+    incidents = [{
+        "no": r["번호"], "time": r["시각"], "span": r["구간"], "dur": r["지속분"],
+        "area": r["시작영역"], "score": r["최고점수"], "level": r["최고등급"],
+        "reason": r.get("발동사유", ""),
+    } for r in mat["incidents"]]
+
+    body, llm_err = "", None
+    if use_llm and cfg.get("llm", {}).get("enabled", True):
+        try:
+            from llm_client import make_day_report
+            body, llm_err = make_day_report(mat, cfg)
+        except Exception as e:
+            llm_err = f"{type(e).__name__}: {e}"
+    if not body:
+        body = _fallback_day_body(mat)
+
+    rep = {
+        "id": f"D{day}",
+        "kind": "day",
+        "generated_at": datetime.now().isoformat(),
+        "summary": summary,
+        "incidents": incidents,
+        "amos": mat["amos"],
+        "body": body,
+        "llm_error": llm_err,
+        "fetch_warn": fetch_warn,
+        "feedback_applied": _applied_summary(cfg),
+    }
+    path = os.path.join(_dir(cfg, "reports", "data/reports"), rep["id"] + ".json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(rep, f, ensure_ascii=False, indent=2)
+    rep["path"] = path
+    return rep
+
+
+def day_report_html(rep: dict, cfg: dict | None = None) -> str:
+    """하루 사건 리포트 → 데모스 개인 에이전트와 같은 인터랙티브 HTML.
+
+    마크다운 본문을 표까지 살려 HTML 로 바꾸고, amos_block(데모스 amos_report 의
+    독립 복사본)이 체크박스 표·수동 기입·저장 툴바를 주입한다.
+    """
+    cfg = cfg or load_config()
+    body = _md_to_html(rep.get("body") or "")
+    try:
+        from amos_block import AMOS_CSS, AMOS_JS, TOOLBAR_HTML, amosify
+        body, _has = amosify(body)
+        css, toolbar, js = AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+    except Exception as e:
+        print(f"[리포트] ⚠️ 인터랙티브 블록 주입 실패: {e}")
+        css, toolbar, js = "", "", ""
+
+    day = (rep.get("summary") or {}).get("day", "")
+    return ("<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
+            f"<title>{day} M16 BR 반송 이벤트 발생 확인건</title>"
+            "<style>"
+            "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;"
+            "max-width:1400px;margin:0 auto;padding:20px;color:#1a1a2e;background:#fff;line-height:1.65}"
+            "h1{font-size:22px;margin:.2em 0 .8em}h2{font-size:17px;margin:1.4em 0 .5em;"
+            "padding-bottom:.3em;border-bottom:2px solid #e2e8f0}"
+            "table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:13.5px}"
+            "th,td{border:1px solid #cbd5e1;padding:.5em .6em;text-align:left;vertical-align:top}"
+            "th{background:#f1f5f9;font-weight:650}"
+            "code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.92em}"
+            + css +
+            "</style></head><body>" + toolbar + body + js + "</body></html>")
+
+
+def _md_to_html(md: str) -> str:
+    """리포트 마크다운 → HTML (헤딩·파이프 표·목록·강조만 — 외부 라이브러리 없이)."""
+    import html as _h
+    import re as _re
+
+    def inline(t):
+        t = _h.escape(t, quote=False)
+        t = t.replace("&lt;br&gt;", "<br>")          # 표 셀 줄바꿈은 살린다
+        t = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)
+        t = _re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        return t
+
+    out, tbl, ul = [], [], []
+
+    def flush_tbl():
+        if not tbl:
+            return
+        rows = [r for r in tbl if not _re.fullmatch(r"\s*\|[\s\-:|]+\|\s*", r)]
+        cells = [[c.strip() for c in r.strip().strip("|").split("|")] for r in rows]
+        if cells:
+            out.append("<table><thead><tr>"
+                       + "".join(f"<th>{inline(c)}</th>" for c in cells[0])
+                       + "</tr></thead><tbody>")
+            for row in cells[1:]:
+                out.append("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in row) + "</tr>")
+            out.append("</tbody></table>")
+        tbl.clear()
+
+    def flush_ul():
+        if not ul:
+            return
+        out.append("<ul>" + "".join(f"<li>{inline(x)}</li>" for x in ul) + "</ul>")
+        ul.clear()
+
+    for line in str(md or "").splitlines():
+        ln = line.rstrip()
+        if ln.lstrip().startswith("|"):
+            flush_ul()
+            tbl.append(ln)
+            continue
+        flush_tbl()
+        m = _re.match(r"^(#{1,4})\s+(.*)$", ln)
+        if m:
+            flush_ul()
+            lvl = len(m.group(1))
+            out.append(f"<h{lvl}>{inline(m.group(2))}</h{lvl}>")
+            continue
+        if _re.match(r"^\s*[-*]\s+", ln):
+            ul.append(_re.sub(r"^\s*[-*]\s+", "", ln))
+            continue
+        flush_ul()
+        if ln.strip():
+            out.append(f"<p>{inline(ln)}</p>")
+    flush_tbl()
+    flush_ul()
+    return "\n".join(out)
+
+
+def _fallback_day_body(mat: dict) -> str:
+    """LLM 실패 시에도 같은 5섹션 골격은 나온다 (표는 스크립트 자료 그대로)."""
+    pk = mat.get("peak") or {}
+    incs, amos = mat.get("incidents") or [], mat.get("amos") or []
+    L = [f"# 📅 {mat['date_ko']} M16 BR 반송 이벤트 발생 확인건", "",
+         "## 1. 한 줄 총평:등급(50~70 🟠 경계/ 71~84 🔴 위험 / 85~100 ⛔ 초위험)", ""]
+    if incs:
+        L.append(f"금일 총 {len(incs)}건 · 최고 {pk.get('emoji','')} {pk.get('level','')} "
+                 f"{pk.get('score',0)}점 ({pk.get('time','')} {pk.get('area','')}). "
+                 f"정체 {mat['risk_minutes']}분. (LLM 미연결 — 통계 요약만)")
+    else:
+        L.append(f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영).")
+    L += ["", "## 2. AMOS 이상 감지 내역", ""]
+    if amos:
+        L += ["| 번호 | 이상감지 시간 | 이상감지 구간 | 심각도 | 이상감지 항목 | 실제 발생여부 |",
+              "|---|---|---|---|---|---|"]
+        for r in amos:
+            L.append(f"| {r['번호']} | {r['이상감지 시간']} | {r['이상감지 구간']} | "
+                     f"{r['심각도']} | {r['이상감지 항목']} |  |")
+    else:
+        L.append("금일 AMOS 이상감지 내역 없음")
+    L += ["", "## 3. 실제 이상 발생내역", "",
+          "2번 표의 실제 발생여부를 체크하면 아래에 행이 자동 생성됩니다.", "",
+          "## 4. 위험 이벤트 상세 분석 (도메인 세분화)", ""]
+    if incs:
+        for r in incs:
+            L.append(f"**이벤트 #{r['번호']} ({r['시각']} 발생)** — {r['시작영역']} "
+                     f"{r['최고점수']}점 {r['최고등급']}, {r['구간']} {r['지속분']}분 지속.")
+    else:
+        L.append("해당 없음")
+    L += ["", "## 5. 에이전트 제안", "", "- (LLM 미연결 — 통계 요약만 제공)"]
+    return "\n".join(L)
+
+
 def _fallback_body(incidents: list[dict], summary: dict) -> str:
     """LLM 미사용/실패 시의 통계 기반 본문 (관제가 멈추면 안 되므로)."""
     if not incidents:

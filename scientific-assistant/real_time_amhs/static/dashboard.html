@@ -367,8 +367,10 @@
       <div class="row" style="margin-bottom:8px">
         <label>날짜</label>
         <input type="date" id="rdate">
-        <button class="act" id="btnday">그 날 하루 전체</button>
-        <span class="note">교대·PM 구간 사후 분석에 사용</span>
+        <button class="act pri" id="btnday" style="flex:0 0 auto">사건 보고서 생성</button>
+        <button class="act" id="btndayhtml"
+          title="데모스 개인 에이전트 '사건발생 보고서' 와 같은 화면 — 체크박스 표·수동 기입·저장 포함">보고서 창으로 열기</button>
+        <span class="note">하루 사건(점수 50↑) 기준 5섹션 보고서 — 데모스 개인 에이전트와 같은 형식</span>
       </div>
       <div class="row">
         <label>구간 지정</label>
@@ -1188,7 +1190,13 @@ const chunk = (z=[]) => z.length
   ? z.reduce((a,v,i)=>a+esc(v)+((i%4===3&&i<z.length-1)?'<br>':(i<z.length-1?', ':'')),'')
   : '–';
 
-$('#btnday').onclick = () => runReport({date: $('#rdate').value}, $('#btnday'));
+$('#btnday').onclick = () => runReport({date: $('#rdate').value, kind:'day'}, $('#btnday'));
+/* 체크박스 표·수동 기입·저장이 들어간 인터랙티브 보고서는 별도 창으로 (데모스와 동일) */
+$('#btndayhtml').onclick = () => {
+  const d = ($('#rdate').value || '').replace(/-/g,'');
+  if(!d){ alert('날짜를 먼저 고르세요'); return; }
+  window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`, '_blank');
+};
 $('#btnrep').onclick = () => runReport({start:$('#rstart').value, end:$('#rend').value}, $('#btnrep'));
 
 async function runReport(body, btn){

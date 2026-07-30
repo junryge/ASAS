@@ -140,7 +140,7 @@ def _api_key(cfg: dict) -> str:
 
 def chat(messages: list[dict], cfg: dict | None = None,
          max_tokens: int | None = None, temperature: float | None = None,
-         json_prefill: bool = False):
+         json_prefill: bool = False, prefill: str | None = None):
     """OpenAI 호환 호출 → (text, None) 또는 (None, error).
 
     json_prefill=True 면 assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다
@@ -172,11 +172,11 @@ def chat(messages: list[dict], cfg: dict | None = None,
     #   이 게이트웨이는 /no_think 를 안 듣고 추론을 먼저 쓴다.
     #   '{' 만 넣으면 모델이 JSON 이 아니라 그 뒤에 산문을 이어 쓰므로
     #   **첫 키까지** 넣어 값부터 채우게 못박는다.
-    prefill = ""
-    if json_prefill:
-        prefill = lc.get("json_prefill_text") or '{"실제이상": "'
+    pre = prefill if prefill is not None else (
+        (lc.get("json_prefill_text") or '{"실제이상": "') if json_prefill else "")
+    if pre:
         payload["messages"] = list(payload["messages"]) + [
-            {"role": "assistant", "content": prefill}]
+            {"role": "assistant", "content": pre}]
     headers = {"Content-Type": "application/json"}
     key = _api_key(cfg)
     if key:
@@ -209,8 +209,8 @@ def chat(messages: list[dict], cfg: dict | None = None,
                           f"완료토큰={usage.get('completion_tokens')}) — "
                           f"사고 토큰만 쓰고 잘렸을 가능성. max_tokens 를 올리거나 "
                           f"config.llm.no_think 를 확인하세요")
-        if prefill and not txt.lstrip().startswith("{"):
-            txt = prefill + txt        # 프리필은 응답에 안 실려 오므로 되붙인다
+        if pre and not txt.lstrip().startswith(pre.strip()[:8]):
+            txt = pre + txt            # 프리필은 응답에 안 실려 오므로 되붙인다
         return scrub(txt), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
@@ -267,10 +267,15 @@ def judge_case(case: dict, cfg: dict | None = None):
 데이터에 없는 호기×방향을 지어내지 마라."""
 
     txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
-                     {"role": "user", "content": user}], cfg, max_tokens=800)
+                     {"role": "user", "content": user}], cfg, max_tokens=900,
+                    json_prefill=True)
     if err:
         return None, err
-    return _parse_json(txt), None
+    res = _parse_json(txt)
+    if not res:
+        return None, f"JSON 파싱 실패: {str(txt)[:150]}"
+    res["실제이상"] = _yes_no(res.get("실제이상"))
+    return res, None
 
 
 # ────────────────── 1분 단위 스냅샷 판단 (정탐률 채점용) ──────────────────
@@ -408,10 +413,90 @@ def make_report(cases: list[dict], span: str, cfg: dict | None = None):
 (이 추세가 이어질 때 다음 구간에 무엇이 우려되는지 + 지금 할 선제 조치. 3~5줄)
 
 규칙: 룰 코드 대신 한글명. 부등호 대신 말로. '역방향'·'카운트'·'역증가'·'역류' 금지.
-표를 만들지 말고 문장으로. 데이터에 없는 호기×방향을 지어내지 마라."""
+표를 만들지 말고 문장으로. 데이터에 없는 호기×방향을 지어내지 마라.
+★한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
+★'## 주요 발견' 으로 바로 시작한다. 인사말·서론·설명 없이 마크다운 본문만."""
 
-    return chat([{"role": "system", "content": build_system_prompt(cfg)},
-                 {"role": "user", "content": user}], cfg, max_tokens=1500)
+    # ★ 리포트도 같은 문제를 겪는다 — 이 모델은 마크다운 앞에 'Thinking Process: …'
+    #   산문을 붙인다. 첫 헤딩을 프리필해 그 뒤부터 쓰게 만들고, 그래도 앞에 뭐가
+    #   붙으면 첫 '## ' 앞을 잘라낸다.
+    txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
+                     {"role": "user", "content": user}], cfg,
+                    max_tokens=int(cfg.get("llm", {}).get("report_max_tokens", 1800)),
+                    prefill="## 주요 발견\n")
+    if err:
+        return None, err
+    return _strip_preamble(txt), None
+
+
+def make_day_report(mat: dict, cfg: dict | None = None):
+    """하루 사건 리포트 — 데모스 개인 에이전트 '사건발생 보고서' 와 같은 5섹션.
+
+    형식은 페르소나_통합.txt [B] 사건단위 에 이미 정의돼 있고 시스템 프롬프트로
+    들어간다. 여기서는 그 스킬이 요구하는 **③ 사건목록 · ④ AMOS 표만 근거로** 준다.
+    """
+    cfg = cfg or load_config()
+    pk = mat.get("peak") or {}
+
+    def table(rows, cols):
+        if not rows:
+            return "(없음)"
+        out = ["| " + " | ".join(cols) + " |",
+               "|" + "|".join(["---"] * len(cols)) + "|"]
+        for r in rows:
+            out.append("| " + " | ".join(str(r.get(c, "")) for c in cols) + " |")
+        return "\n".join(out)
+
+    inc_tbl = table(mat.get("incidents") or [],
+                    ["번호", "시각", "구간", "지속분", "최고등급", "최고점수", "시작영역"])
+    amos_tbl = table(mat.get("amos") or [],
+                     ["번호", "이상감지 시간", "이상감지 구간", "심각도", "이상감지 항목"])
+
+    reasons = "\n".join(
+        f"- {r['번호']}번 {r['시각']} {r['시작영역']} {r['최고점수']}점 발동사유: "
+        + (r.get("발동사유") or "없음")
+        for r in (mat.get("incidents") or [])) or "(사건 없음)"
+
+    user = f"""[B] 사건단위 = 이벤트 발생 확인건 보고서를 작성하라.
+
+date = {mat['day']}  ({mat['date_ko']})
+
+■ 하루 통계
+- 수집 {mat['minutes']}분 · 점수 50 이상(정체) {mat['risk_minutes']}분
+- 등급 분포: {', '.join(f'{k} {v}분' for k, v in (mat.get('by_level') or {{}}).items()) or '없음'}
+- 하루 최고: {(pk.get('time') or '-')} {pk.get('emoji','')} {pk.get('level','정상')} {pk.get('score',0)}점 ({pk.get('area','-')})
+- 정체 집중: {mat.get('busy','없음')}
+
+■ ③ 사건목록 (점수 50+ · 간격 60분 · 시각=최고점)
+{inc_tbl}
+
+■ ④ AMOS 이상감지
+{amos_tbl}
+
+■ 사건별 발동사유 (원문 — 4번 상세 분석의 근거)
+{reasons}
+
+★③ 사건목록·④ AMOS 표만 근거로 쓴다. 분단위 데이터를 직접 나열하지 마라.
+★섹션 번호·제목은 페르소나에 정의된 1~5 를 그대로 쓴다 (시스템이 제목을 인식한다).
+★④ 표를 2번 섹션에 그대로 옮기고 마지막에 빈 '실제 발생여부' 컬럼을 붙인다.
+  구간·항목의 <br> 은 지우지 마라.
+★한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
+★'# 📅 ' 로 바로 시작한다. 인사말·서론 없이 마크다운 본문만."""
+
+    txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
+                     {"role": "user", "content": user}], cfg,
+                    max_tokens=int(cfg.get("llm", {}).get("day_report_max_tokens", 4000)),
+                    prefill=f"# 📅 {mat['date_ko']} M16 BR 반송 이벤트 발생 확인건\n\n")
+    if err:
+        return None, err
+    return _strip_preamble(txt, heading="# "), None
+
+
+def _strip_preamble(md: str, heading: str = "## ") -> str:
+    """마크다운 앞에 붙은 서술(추론 등)을 잘라낸다 — 첫 헤딩부터가 본문."""
+    t = str(md or "")
+    i = t.find(heading)
+    return (t[i:] if i > 0 else t).strip()
 
 
 def _json_candidates(t: str):

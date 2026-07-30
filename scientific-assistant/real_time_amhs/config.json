@@ -140,7 +140,11 @@
     "disable_thinking_kwarg": false,
     "_disable_thinking_kwarg_doc": "서버가 지원할 때만 true — 요청에 chat_template_kwargs.enable_thinking=false 를 실어 보낸다. 지원 안 하면 400 이 날 수 있어 기본 false",
     "json_prefill_text": "{\"실제이상\": \"",
-    "_json_prefill_text_doc": "프리필 문자열. '{' 만 넣으면 모델이 JSON 대신 산문을 이어 쓰므로 첫 키까지 넣어 값부터 채우게 한다. 응답에는 안 실려오므로 코드가 되붙인다"
+    "_json_prefill_text_doc": "프리필 문자열. '{' 만 넣으면 모델이 JSON 대신 산문을 이어 쓰므로 첫 키까지 넣어 값부터 채우게 한다. 응답에는 안 실려오므로 코드가 되붙인다",
+    "report_max_tokens": 1800,
+    "_report_max_tokens_doc": "구간 리포트 본문 응답 토큰. 리포트는 '## 주요 발견' 을 프리필해 산문을 막는다",
+    "day_report_max_tokens": 4000,
+    "_day_report_max_tokens_doc": "하루 사건 리포트(5섹션) 응답 토큰. 사건이 많으면 늘린다"
   },
   "grade": {
     "_doc": "점수 등급 (데모스 스킬과 동일 기준)",

@@ -674,6 +674,11 @@ def api_report():
             d = datetime.strptime(b["date"][:10], "%Y-%m-%d")
         except ValueError:
             return jsonify({"error": "date 형식은 YYYY-MM-DD"}), 400
+        # ★ 날짜 지정 = 하루 사건 리포트 (데모스 개인 에이전트 '사건발생 보고서' 와 같은 5섹션)
+        if b.get("kind", "day") == "day":
+            from report import build_day_report
+            return jsonify(build_day_report(d.strftime("%Y%m%d"), CFG,
+                                            use_llm=b.get("use_llm", True)))
         start, end = d, d.replace(hour=23, minute=59, second=59)
     else:
         end = _parse_dt(b.get("end"), datetime.now())
@@ -683,6 +688,21 @@ def api_report():
                        use_llm=b.get("use_llm", True),
                        source=b.get("source", "query"))
     return jsonify(rep)
+
+
+@app.route("/api/report/day.html")
+def api_report_day_html():
+    """하루 사건 리포트를 데모스 개인 에이전트와 같은 인터랙티브 HTML 로.
+
+    /api/report/day.html?date=20260728  (없으면 오늘)
+    체크박스 표·시간 시분 분리·O/X 판정·수동 기입·저장 툴바가 들어간다.
+    """
+    from report import build_day_report, day_report_html
+    d = "".join(ch for ch in (request.args.get("date") or "") if ch.isdigit())[:8] \
+        or datetime.now().strftime("%Y%m%d")
+    use_llm = request.args.get("llm", "1") != "0"
+    rep = build_day_report(d, CFG, use_llm=use_llm)
+    return app.response_class(day_report_html(rep, CFG), mimetype="text/html; charset=utf-8")
 
 
 @app.route("/api/reports")
