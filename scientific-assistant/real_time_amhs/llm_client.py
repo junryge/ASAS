@@ -502,11 +502,58 @@ date = {mat['day']}  ({mat['date_ko']})
     if err:
         return None, err
     md = _strip_preamble(txt, heading="# ")
-    # ★영문으로 나온 섹션만 한국어로 다시 받는다 (섹션 단위 재요청 → 실패 시 통계 문장)
-    md = _koreanize_sections(md, mat, cfg, sysmsg, mx)
+    md = _strip_reasoning(md)              # 제목~첫 섹션 사이 추론/서론 제거
+    # ★영문·추론으로 오염된 섹션만 통계 기반 한국어로 대체 (LLM 재호출 안 함 — 추론 누출 방지)
+    md = _sanitize_sections(md, mat)
     # ★모델이 빼먹은 섹션(주로 마지막 5. 에이전트 제안)을 채운다
     md = _ensure_day_sections(md, mat)
     return md, None
+
+
+# 이 reasoning 모델이 산문으로 흘리는 추론 마커 — 한 줄이라도 있으면 그 섹션은 통계로 대체
+_REASON_MARKERS = (
+    "사용자의 요청", "사용자 요청", "사용자 지시", "주요 제약", "규칙 확인",
+    "섹션별 규칙", "용어 표준", "결정:", "해석:", "페르소나 규칙", "충돌 발생",
+    "Thinking", "Analyze the Request", "출력 형식", "라고 함", "라는 뜻",
+    "하는 것이 맞음", "포함해야 함", "출력해야 함",
+)
+
+
+def _strip_reasoning(md: str) -> str:
+    """제목(# ) 과 첫 섹션(## ) 사이에 낀 서론·추론을 제거한다.
+
+    이 모델은 프리필한 제목 뒤에 곧바로 '사용자의 요청은…' 같은 추론을 쏟아낸다.
+    정상 보고서라면 제목과 '## 1.' 사이는 비어 있어야 하므로 그 사이를 지운다.
+    """
+    import re as _re
+    lines = str(md or "").splitlines()
+    h1 = next((i for i, l in enumerate(lines) if _re.match(r"^#\s+\S", l)), None)
+    s2 = next((i for i, l in enumerate(lines) if _re.match(r"^##\s+\S", l)), None)
+    if h1 is not None and s2 is not None and s2 > h1 + 1:
+        lines = lines[:h1 + 1] + [""] + lines[s2:]
+    return "\n".join(lines)
+
+
+def _sanitize_sections(md: str, mat: dict) -> str:
+    """섹션별로 한글 여부·추론 마커를 보고, 오염된 섹션만 통계 문장으로 갈아끼운다.
+    LLM 을 다시 부르지 않는다 — 재호출이 추론을 다시 흘리던 문제를 없앤다. 2번 표는 손대지 않는다."""
+    def dirty(text: str) -> bool:
+        if any(m in text for m in _REASON_MARKERS):
+            return True
+        return not _is_korean(text)
+
+    out, fixed = [], []
+    for head, body in _split_sections(md):
+        h = head.lstrip("# ").strip()
+        # 2번 AMOS 표·3번 안내문은 표/고정문구라 건드리지 않는다
+        if not body or "2." in h or "3." in h or not dirty(head + "\n" + body):
+            out.append((head, body))
+            continue
+        out.append((head, _ko_section_fallback(head, mat)))
+        fixed.append(h[:14] or "본문")
+    if fixed:
+        print(f"  📝 [리포트] 오염 섹션 한국어 통계로 대체 — {', '.join(fixed)}")
+    return "\n".join(((h + "\n\n" if h else "") + (b + "\n" if b else "")) for h, b in out).strip()
 
 
 _DAY_SECTIONS = (
@@ -604,38 +651,6 @@ def _split_sections(md: str):
             buf.append(ln)
     secs.append((head, "\n".join(buf).strip()))
     return [s for s in secs if s[0] or s[1]]
-
-
-def _koreanize_sections(md: str, mat: dict, cfg: dict, sysmsg: dict, mx: int) -> str:
-    """섹션별로 한글 비율을 보고, 영문으로 쓴 섹션만 한국어로 다시 받는다.
-
-    이 모델은 간헐적으로 한 섹션(주로 4번 상세 분석·5번 제안)을 영어로 써 버린다.
-    보고서 전체를 버리면 아까우니 그 섹션만 골라 재작성시키고, 재작성도 영문이면
-    통계 기반 한국어 문장으로 대체한다. 표(2번)는 손대지 않는다.
-    """
-    secs = _split_sections(md)
-    out, fixed = [], []
-    for head, body in secs:
-        if not body or _is_korean(head + "\n" + body):
-            out.append((head, body))
-            continue
-        name = head.lstrip("# ").strip() or "본문"
-        ko, err = chat([sysmsg, {"role": "user", "content":
-                        f"""아래는 M16 BR 반송 보고서의 '{name}' 섹션인데 영어로 잘못 작성됐다.
-같은 내용·같은 마크다운 구조(굵게·목록·표 그대로)로 **한국어로만** 다시 써라.
-헤딩 줄({head.strip()}) 은 다시 쓰지 말고 본문만. 설명·서론·추론과정 없이 본문만.
-
-{body}"""}], cfg, max_tokens=min(mx, 1600))
-        if not err and ko and _is_korean(ko):
-            out.append((head, scrub(ko.strip())))
-            fixed.append(name + "(재작성)")
-        else:
-            rep = _ko_section_fallback(head, mat)
-            out.append((head, rep))
-            fixed.append(name + "(통계문장 대체)")
-    if fixed:
-        print(f"  📝 [리포트] 영문 섹션 한국어 보정 — {', '.join(fixed)}")
-    return "\n".join(((h + "\n\n" if h else "") + (b + "\n" if b else "")) for h, b in out).strip()
 
 
 def _ko_section_fallback(head: str, mat: dict) -> str:

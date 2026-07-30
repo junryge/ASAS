@@ -241,6 +241,25 @@ def build_day_report(day: str, cfg: dict | None = None, use_llm: bool = True) ->
     return rep
 
 
+def load_day_report(day: str, cfg: dict | None = None) -> dict | None:
+    """이미 생성해 둔 하루 리포트를 그대로 읽어온다 (없으면 None).
+
+    '사건 보고서 생성' 이 만들어 둔 것을 'HTML 열기'·'내려받기' 가 다시 쓰도록 —
+    열 때마다 LLM 을 다시 돌려 문장이 달라지는 일을 막는다.
+    """
+    cfg = cfg or load_config()
+    day = "".join(ch for ch in str(day) if ch.isdigit())[:8]
+    p = os.path.join(_dir(cfg, "reports", "data/reports"), f"D{day}.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            rep = json.load(f)
+        return rep if rep.get("kind") == "day" else None
+    except Exception:
+        return None
+
+
 def day_report_html(rep: dict, cfg: dict | None = None) -> str:
     """하루 사건 리포트 → 데모스 개인 에이전트와 같은 인터랙티브 HTML.
 

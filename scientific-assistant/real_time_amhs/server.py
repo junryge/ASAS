@@ -697,12 +697,23 @@ def api_report_day_html():
     /api/report/day.html?date=20260728  (없으면 오늘)
     체크박스 표·시간 시분 분리·O/X 판정·수동 기입·저장 툴바가 들어간다.
     """
-    from report import build_day_report, day_report_html
+    from report import build_day_report, day_report_html, load_day_report
     d = "".join(ch for ch in (request.args.get("date") or "") if ch.isdigit())[:8] \
         or datetime.now().strftime("%Y%m%d")
     use_llm = request.args.get("llm", "1") != "0"
-    rep = build_day_report(d, CFG, use_llm=use_llm)
-    return app.response_class(day_report_html(rep, CFG), mimetype="text/html; charset=utf-8")
+    # 이미 생성해 둔 보고서가 있으면 그대로 연다 (다시 뽑으면 LLM 문장이 달라지므로)
+    rep = (None if request.args.get("fresh") == "1" else load_day_report(d, CFG)) \
+        or build_day_report(d, CFG, use_llm=use_llm)
+    html = day_report_html(rep, CFG)
+    resp = app.response_class(html, mimetype="text/html; charset=utf-8")
+    if request.args.get("download") == "1":
+        # ★파일명에 한글을 쓰려면 RFC 5987 인코딩 — HTTP 헤더는 latin-1 만 담긴다
+        from urllib.parse import quote as _q
+        name = f"M16BR_사건발생보고서_{d}.html"
+        resp.headers["Content-Disposition"] = (
+            f'attachment; filename="M16BR_report_{d}.html"; '
+            f"filename*=UTF-8''{_q(name)}")
+    return resp
 
 
 @app.route("/api/reports")
@@ -716,10 +727,13 @@ def api_reports():
             try:
                 with open(os.path.join(d, fn), "r", encoding="utf-8") as f:
                     r = json.load(f)
+                s = r.get("summary") or {}
                 out.append({"id": r["id"], "generated_at": r["generated_at"],
-                            "span": r["summary"]["span"], "count": r["summary"]["count"]})
+                            "kind": r.get("kind", "span"), "day": s.get("day", ""),
+                            "span": s.get("span", ""), "count": s.get("count", 0)})
             except Exception:
                 continue
+    out.sort(key=lambda r: r.get("generated_at", ""), reverse=True)
     return jsonify({"reports": out})
 
 
