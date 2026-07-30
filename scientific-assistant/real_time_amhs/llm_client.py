@@ -292,6 +292,14 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
     zones = hid_zones(" ".join(x for x in (bd, bu) if x))
     items = " ".join(x for x in (qd, qu) if x).split()
 
+    # ★ 등급 기준을 규칙으로 못박는다. 이게 없으면 29점(정상)인데도 '예' 가 나온다.
+    floor = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=50)
+    rule = (f'★판정 규칙(반드시 따른다): 스코어 {floor:.0f}점 미만은 정상이므로 '
+            f'"실제이상"은 "아니오" 다. {floor:.0f}점 이상일 때만 "예" 를 쓸 수 있다.\n'
+            f'  현재 스코어 {score:.0f}점 → '
+            + ('판단해서 예/아니오 중 하나.' if score >= floor
+               else f'{floor:.0f}점 미만이므로 반드시 "아니오".'))
+
     head = f"""M16 BR 구간 {(row.get('datetime') or '')[11:16]} 시점 데이터다.
 
 - 점수: {score:.0f}점 ({grade.get('emoji','')} {grade.get('level','')}) / 최고 구역: {area}
@@ -300,7 +308,7 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 - 발동 사유: {summarize_reason(reason, area) or reason or '없음'}"""
 
     if light:
-        user = head + """
+        user = head + "\n\n" + rule + """
 
 지금 대응이 필요한 진짜 이상인가?
 
@@ -313,6 +321,8 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
         user = head + f"""
 - 전이 경로: {(row.get('propagation_chain') or '').strip() or '없음'}
 - 운영자 용량변경: {(row.get('maxcapa_change') or '').strip() or '없음'}
+
+{rule}
 
 ★출력 규칙: 한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
 첫 글자가 '{{' 여야 하고 JSON 만 출력한다.
@@ -339,6 +349,13 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
     #   오류로 남겨 원인이 보이게 한다 (모델이 JSON 대신 서술을 쓴 경우).
     if not res["실제이상"]:
         return None, f"실제이상(예/아니오) 없음 — 모델이 JSON 형식을 안 지켰습니다: {str(txt)[:150]}"
+    # ★ 등급 기준은 코드에서도 강제한다. 프롬프트만 믿으면 29점인데 '예' 가 나온다.
+    #   임계 미만은 정의상 정상이므로 '아니오' 로 확정하고, 무엇을 고쳤는지 남긴다.
+    if score < floor and res["실제이상"] == "예":
+        res["실제이상"] = "아니오"
+        j = (res.get("판단") or "").strip()
+        res["판단"] = (f"[{floor:.0f}점 미만 정상 — LLM 은 이상으로 봤음] " + j) if j else \
+            f"스코어 {score:.0f}점으로 {floor:.0f}점 미만 정상 (LLM 은 이상으로 봤으나 규칙상 아니오)"
     return res, None
 
 
