@@ -248,36 +248,71 @@ def day_report_html(rep: dict, cfg: dict | None = None) -> str:
     독립 복사본)이 체크박스 표·수동 기입·저장 툴바를 주입한다.
     """
     cfg = cfg or load_config()
-    body = _md_to_html(rep.get("body") or "")
-    # ★ 그래프를 제목 바로 밑에 넣는다 — amos_block 이 '위험 이벤트 상세' 아래로 옮긴다
-    #   (데모스 report_graphs → amos_report 흐름과 동일)
+    md_text = rep.get("body") or ""
+
+    # ★ 그래프를 제목(# ) 바로 밑에 마크다운 그대로 끼운다
+    #   — 데모스 GraphStreamInjector.feed 와 같은 위치. amos_block 이 뒤에서
+    #     '위험 이벤트 상세' 헤딩 아래로 옮긴다.
     g = day_report_graph(rep, cfg)
     if g:
         import re as _re
-        m = _re.search(r"</h1>", body)
-        body = (body[:m.end()] + g + body[m.end():]) if m else (g + body)
+        m = _re.search(r"(?m)^#\s+.+?\n", md_text + "\n")
+        md_text = (md_text[:m.end()] + g + md_text[m.end():]) if m else (g + md_text)
+
+    body = _md_to_html(md_text)
+
+    title = ""
+    for line in md_text.split("\n"):
+        s = line.strip()
+        if s.startswith("# ") and not s.startswith("## "):
+            title = s.lstrip("# ").strip()
+            break
+    if not title:
+        day = (rep.get("summary") or {}).get("day", "")
+        title = f"{day} M16 BR 반송 이벤트 발생 확인건"
+    import html as _html
+    title = _html.escape(title)
+
+    css = toolbar = js = ""
+    maxw = "900px"
     try:
         from amos_block import AMOS_CSS, AMOS_JS, TOOLBAR_HTML, amosify
-        body, _has = amosify(body)
-        css, toolbar, js = AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+        body, has_amos = amosify(body)
+        if has_amos:
+            css, toolbar, js = AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+            maxw = "1120px"
     except Exception as e:
         print(f"[리포트] ⚠️ 인터랙티브 블록 주입 실패: {e}")
-        css, toolbar, js = "", "", ""
 
-    day = (rep.get("summary") or {}).get("day", "")
-    return ("<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
-            f"<title>{day} M16 BR 반송 이벤트 발생 확인건</title>"
-            "<style>"
-            "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;"
-            "max-width:1400px;margin:0 auto;padding:20px;color:#1a1a2e;background:#fff;line-height:1.65}"
-            "h1{font-size:22px;margin:.2em 0 .8em}h2{font-size:17px;margin:1.4em 0 .5em;"
-            "padding-bottom:.3em;border-bottom:2px solid #e2e8f0}"
-            "table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:13.5px}"
-            "th,td{border:1px solid #cbd5e1;padding:.5em .6em;text-align:left;vertical-align:top}"
-            "th{background:#f1f5f9;font-weight:650}"
-            "code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.92em}"
-            + css +
-            "</style></head><body>" + toolbar + body + js + "</body></html>")
+    # ↓ 데모스 개인 에이전트(/api/generate_html) 의 문서 골격·CSS 그대로
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+  body {{ font-family: 'Pretendard','Noto Sans KR',sans-serif; max-width: {maxw}; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; line-height: 1.7; }}
+  h1,h2,h3 {{ color: #16213e; border-bottom: 2px solid #e2e8f0; padding-bottom: .3em; }}
+  h1 {{ font-size: 1.45rem; }} h2 {{ font-size: 1.15rem; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .86em; }}
+  th,td {{ border: 1px solid #cbd5e1; padding: .4em .55em; text-align: left; vertical-align: top; word-break: keep-all; overflow-wrap: anywhere; }}
+  th {{ background: #f1f5f9; font-weight: 700; white-space: nowrap; }}
+  code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: .9em; }}
+  pre {{ background: #1e293b; color: #e2e8f0; padding: 1em; border-radius: 8px; overflow-x: auto; }}
+  pre code {{ background: none; color: inherit; padding: 0; }}
+  blockquote {{ border-left: 4px solid #6366f1; margin: 1em 0; padding: .5em 1em; background: #f8fafc; }}
+  a {{ color: #6366f1; }}
+  img {{ max-width: 100%; border-radius: 8px; }}
+{css}
+</style>
+</head>
+<body>
+{toolbar}
+{body}
+{js}
+</body>
+</html>"""
 
 
 def day_report_graph(rep: dict, cfg: dict | None = None) -> str:
@@ -302,15 +337,49 @@ def day_report_graph(rep: dict, cfg: dict | None = None) -> str:
         if not rows:
             return ""
         headers = list(rows[0].keys())
-        # '사건단위' 키워드 → 개인 에이전트 보고서와 같은 사건 통합 그래프 경로
-        return build_report_graph(headers, rows, query="사건단위 보고서") or ""
+        # '사건발생' 키워드 → 개인 에이전트 '사건발생 보고서' 와 같은 통합 그래프 경로
+        return build_report_graph(headers, rows, query="사건발생 보고서") or ""
     except Exception as e:
         print(f"[리포트] ⚠️ 그래프 생성 실패: {e}")
         return ""
 
 
+def _ensure_table_blanklines(md: str) -> str:
+    """표 앞 빈 줄 + 헤더 직후 구분선(|---|) 자동 보정 — 데모스와 같은 전처리.
+    LLM 이 구분선을 빼먹으면 표가 '| 점수 |' 글자로 깨지기 때문."""
+    import re as _re
+    lines = str(md or "").split("\n")
+    out: list[str] = []
+    for i, ln in enumerate(lines):
+        is_row = ln.lstrip().startswith("|")
+        prev_row = bool(out) and out[-1].lstrip().startswith("|")
+        if is_row and out and out[-1].strip() and not prev_row:
+            out.append("")                      # 표 앞 빈 줄
+        out.append(ln)
+        if is_row and not prev_row:             # 표 첫 행(헤더)
+            nxt = lines[i + 1] if i + 1 < len(lines) else ""
+            if nxt.lstrip().startswith("|") and "---" not in nxt:
+                ncol = max(1, ln.count("|") - 1)
+                out.append("|" + "|".join(["---"] * ncol) + "|")
+    return "\n".join(out)
+
+
 def _md_to_html(md: str) -> str:
-    """리포트 마크다운 → HTML (헤딩·파이프 표·목록·강조만 — 외부 라이브러리 없이)."""
+    """리포트 마크다운 → HTML. ★데모스 개인 에이전트와 같은 변환기·확장(python-markdown).
+    markdown 이 없는 환경에서만 아래 자체 변환기로 내려간다."""
+    md = _ensure_table_blanklines(md)
+    try:
+        import markdown as _mdlib
+        return _mdlib.markdown(md, extensions=[
+            "tables", "fenced_code", "codehilite", "toc",
+            "nl2br", "sane_lists", "smarty"])
+    except Exception as e:
+        print(f"[리포트] ⚠️ markdown 라이브러리 없음 — 자체 변환기 사용 ({e})")
+        return _md_to_html_min(md)
+
+
+def _md_to_html_min(md: str) -> str:
+    """폴백 변환기 (헤딩·파이프 표·목록·강조만 — 외부 라이브러리 없이)."""
     import html as _h
     import re as _re
 
@@ -368,37 +437,14 @@ def _md_to_html(md: str) -> str:
 
 
 def _fallback_day_body(mat: dict) -> str:
-    """LLM 실패 시에도 같은 5섹션 골격은 나온다 (표는 스크립트 자료 그대로)."""
-    pk = mat.get("peak") or {}
-    incs, amos = mat.get("incidents") or [], mat.get("amos") or []
-    L = [f"# 📅 {mat['date_ko']} M16 BR 반송 이벤트 발생 확인건", "",
-         "## 1. 한 줄 총평:등급(50~70 🟠 경계/ 71~84 🔴 위험 / 85~100 ⛔ 초위험)", ""]
-    if incs:
-        L.append(f"금일 총 {len(incs)}건 · 최고 {pk.get('emoji','')} {pk.get('level','')} "
-                 f"{pk.get('score',0)}점 ({pk.get('time','')} {pk.get('area','')}). "
-                 f"정체 {mat['risk_minutes']}분. (LLM 미연결 — 통계 요약만)")
-    else:
-        L.append(f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영).")
-    L += ["", "## 2. AMOS 이상 감지 내역", ""]
-    if amos:
-        L += ["| 번호 | 이상감지 시간 | 이상감지 구간 | 심각도 | 이상감지 항목 | 실제 발생여부 |",
-              "|---|---|---|---|---|---|"]
-        for r in amos:
-            L.append(f"| {r['번호']} | {r['이상감지 시간']} | {r['이상감지 구간']} | "
-                     f"{r['심각도']} | {r['이상감지 항목']} |  |")
-    else:
-        L.append("금일 AMOS 이상감지 내역 없음")
-    L += ["", "## 3. 실제 이상 발생내역", "",
-          "2번 표의 실제 발생여부를 체크하면 아래에 행이 자동 생성됩니다.", "",
-          "## 4. 위험 이벤트 상세 분석 (도메인 세분화)", ""]
-    if incs:
-        for r in incs:
-            L.append(f"**이벤트 #{r['번호']} ({r['시각']} 발생)** — {r['시작영역']} "
-                     f"{r['최고점수']}점 {r['최고등급']}, {r['구간']} {r['지속분']}분 지속.")
-    else:
-        L.append("해당 없음")
-    L += ["", "## 5. 에이전트 제안", "", "- (LLM 미연결 — 통계 요약만 제공)"]
-    return "\n".join(L)
+    """LLM 실패·미사용 시의 본문 — ★골격은 LLM 성공 때와 완전히 같은 것을 쓴다.
+
+    llm_client.assemble_day_report(mat, {}) 가 5섹션(제목·총평·AMOS 표·실제 이상
+    발생내역 안내·상세·제안)을 통계만으로 채워 준다. 골격을 한 곳에서만 만들어
+    LLM 유무에 따라 보고서 모양이 달라지지 않게 한다.
+    """
+    from llm_client import assemble_day_report
+    return assemble_day_report(mat, {})
 
 
 def _fallback_body(incidents: list[dict], summary: dict) -> str:

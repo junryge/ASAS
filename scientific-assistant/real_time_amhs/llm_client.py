@@ -485,13 +485,196 @@ date = {mat['day']}  ({mat['date_ko']})
 ★한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
 ★'# 📅 ' 로 바로 시작한다. 인사말·서론 없이 마크다운 본문만."""
 
-    txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
-                     {"role": "user", "content": user}], cfg,
-                    max_tokens=int(cfg.get("llm", {}).get("day_report_max_tokens", 4000)),
+    llm = cfg.get("llm", {}) or {}
+    mx = int(llm.get("day_report_max_tokens", 4000))
+    sysmsg = {"role": "system", "content": build_system_prompt(cfg)}
+    txt, err = chat([sysmsg, {"role": "user", "content": user}], cfg, max_tokens=mx,
                     prefill=f"# 📅 {mat['date_ko']} M16 BR 반송 이벤트 발생 확인건\n\n")
     if err:
         return None, err
-    return _strip_preamble(txt, heading="# "), None
+    md = _strip_preamble(txt, heading="# ")
+    # ★영문으로 나온 섹션만 한국어로 다시 받는다 (섹션 단위 재요청 → 실패 시 통계 문장)
+    md = _koreanize_sections(md, mat, cfg, sysmsg, mx)
+    # ★모델이 빼먹은 섹션(주로 마지막 5. 에이전트 제안)을 채운다
+    md = _ensure_day_sections(md, mat)
+    return md, None
+
+
+_DAY_SECTIONS = (
+    (1, "## 1. 한 줄 총평:등급(50~70 🟠 경계/ 71~84 🔴 위험 / 85~100 ⛔ 초위험)"),
+    (2, "## 2. AMOS 이상 감지 내역"),
+    (3, "## 3. 실제 이상 발생내역"),
+    (4, "## 4. 위험 이벤트 상세 분석 (도메인 세분화)"),
+    (5, "## 5. 에이전트 제안"),
+)
+
+
+def _ensure_day_sections(md: str, mat: dict) -> str:
+    """1~5 섹션이 다 있는지 확인하고, 없는 섹션을 통계 내용으로 채워 넣는다.
+
+    이 모델은 토큰이 길어지면 마지막 '5. 에이전트 제안' 을 그냥 안 쓰고 끝낸다.
+    보고서 형식(개인 에이전트와 동일한 5섹션)은 어떤 경우에도 지켜져야 한다.
+    """
+    import re as _re
+    t = str(md or "").rstrip()
+    heads = [ln for ln in t.splitlines() if _re.match(r"^#{1,3}\s+\S", ln)]
+    added = []
+    for num, head in _DAY_SECTIONS:
+        if any(_re.match(rf"^#{{1,3}}\s*{num}\s*[.)]", h.lstrip("# ").strip()) or
+               _re.match(rf"^{num}\s*[.)]", h.lstrip("# ").strip()) for h in heads):
+            continue
+        body = _amos_table_md(mat) if num == 2 else (
+            "2번 표의 실제 발생여부를 체크하면 아래에 행이 자동 생성됩니다."
+            if num == 3 else _ko_section_fallback(head, mat))
+        t += f"\n\n{head}\n\n{body}"
+        added.append(str(num))
+    if added:
+        print(f"  📝 [리포트] 빠진 섹션 보완 — {', '.join(added)}번")
+    return t
+
+
+def _amos_table_md(mat: dict) -> str:
+    """2번 섹션의 AMOS 표 (마지막에 빈 '실제 발생여부' 컬럼 — 시스템이 체크박스로 바꾼다)."""
+    amos = mat.get("amos") or []
+    if not amos:
+        return "금일 AMOS 이상감지 내역 없음"
+    L = ["| 번호 | 이상감지 시간 | 이상감지 구간 | 심각도 | 이상감지 항목 | 실제 발생여부 |",
+         "|---|---|---|---|---|---|"]
+    for r in amos:
+        L.append(f"| {r.get('번호','')} | {r.get('이상감지 시간','')} | "
+                 f"{r.get('이상감지 구간','')} | {r.get('심각도','')} | "
+                 f"{r.get('이상감지 항목','')} |  |")
+    return "\n".join(L)
+
+
+def _split_sections(md: str):
+    """마크다운을 (헤딩줄, 본문) 목록으로 쪼갠다. 헤딩 앞 서두는 헤딩='' 로 들어간다."""
+    import re as _re
+    secs, head, buf = [], "", []
+    for ln in str(md or "").splitlines():
+        if _re.match(r"^#{1,3}\s+\S", ln):
+            secs.append((head, "\n".join(buf).strip()))
+            head, buf = ln, []
+        else:
+            buf.append(ln)
+    secs.append((head, "\n".join(buf).strip()))
+    return [s for s in secs if s[0] or s[1]]
+
+
+def _koreanize_sections(md: str, mat: dict, cfg: dict, sysmsg: dict, mx: int) -> str:
+    """섹션별로 한글 비율을 보고, 영문으로 쓴 섹션만 한국어로 다시 받는다.
+
+    이 모델은 간헐적으로 한 섹션(주로 4번 상세 분석·5번 제안)을 영어로 써 버린다.
+    보고서 전체를 버리면 아까우니 그 섹션만 골라 재작성시키고, 재작성도 영문이면
+    통계 기반 한국어 문장으로 대체한다. 표(2번)는 손대지 않는다.
+    """
+    secs = _split_sections(md)
+    out, fixed = [], []
+    for head, body in secs:
+        if not body or _is_korean(head + "\n" + body):
+            out.append((head, body))
+            continue
+        name = head.lstrip("# ").strip() or "본문"
+        ko, err = chat([sysmsg, {"role": "user", "content":
+                        f"""아래는 M16 BR 반송 보고서의 '{name}' 섹션인데 영어로 잘못 작성됐다.
+같은 내용·같은 마크다운 구조(굵게·목록·표 그대로)로 **한국어로만** 다시 써라.
+헤딩 줄({head.strip()}) 은 다시 쓰지 말고 본문만. 설명·서론·추론과정 없이 본문만.
+
+{body}"""}], cfg, max_tokens=min(mx, 1600))
+        if not err and ko and _is_korean(ko):
+            out.append((head, scrub(ko.strip())))
+            fixed.append(name + "(재작성)")
+        else:
+            rep = _ko_section_fallback(head, mat)
+            out.append((head, rep))
+            fixed.append(name + "(통계문장 대체)")
+    if fixed:
+        print(f"  📝 [리포트] 영문 섹션 한국어 보정 — {', '.join(fixed)}")
+    return "\n".join(((h + "\n\n" if h else "") + (b + "\n" if b else "")) for h, b in out).strip()
+
+
+def _ko_section_fallback(head: str, mat: dict) -> str:
+    """재작성까지 실패한 섹션을 통계 기반 한국어 문장으로 채운다."""
+    h = str(head or "")
+    incs = mat.get("incidents") or []
+    pk = mat.get("peak") or {}
+    if "4." in h or "상세" in h:
+        if not incs:
+            return "해당 없음"
+        return "\n\n".join(
+            f"**이벤트 #{r['번호']} ({r['시각']} 발생)** — {r['시작영역']} "
+            f"{r['최고점수']}점 {r['최고등급']}, {r['구간']} {r['지속분']}분 지속."
+            for r in incs)
+    if "5." in h or "제안" in h:
+        if not incs:
+            return "- 현행 감시 유지 (특이 추세 없음)."
+        return f"- 정체 집중 구간({mat.get('busy','–')}) 재발 여부를 다음 주기에 확인 필요."
+    if "1." in h or "총평" in h:
+        if not incs:
+            return f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
+        return (f"금일 총 {len(incs)}건 · 최고 {pk.get('emoji','')} {pk.get('level','')} "
+                f"{pk.get('score',0)}점 ({pk.get('time','')} {pk.get('area','')}). "
+                f"정체 {mat.get('risk_minutes',0)}분.")
+    return "(한국어 재작성 실패 — 통계 요약만)"
+
+
+def _is_korean(t: str, min_ratio: float = 0.25) -> bool:
+    """한글 비율이 일정 수준 이상인가 — 영문 답변을 걸러낸다."""
+    s = str(t or "")
+    han = sum(1 for ch in s if "가" <= ch <= "힣")
+    latin = sum(1 for ch in s if ("a" <= ch <= "z") or ("A" <= ch <= "Z"))
+    if han + latin < 20:
+        return True                                      # 표·숫자만 있는 짧은 줄은 통과
+    return han / float(han + latin) >= min_ratio
+
+
+def assemble_day_report(mat: dict, blocks: dict | None = None) -> str:
+    """★5섹션 골격을 코드가 만든다 — 데모스 개인 에이전트 '사건발생 보고서' 와 동일.
+
+    제목 · 2번 AMOS 표(+빈 '실제 발생여부' 컬럼) · 3번 안내문은 결정적으로 찍고,
+    LLM 은 1번 총평 · 4번 상세분석 · 5번 제안 문장만 채운다. 이렇게 하면 모델이
+    영문으로 쓰거나 표를 빼먹어도 보고서 형식이 절대 흐트러지지 않는다.
+    """
+    b = blocks or {}
+    pk = mat.get("peak") or {}
+    incs, amos = mat.get("incidents") or [], mat.get("amos") or []
+
+    if b.get("총평"):
+        head = b["총평"]
+    elif incs:
+        head = (f"금일 총 {len(incs)}건 · 최고 {pk.get('emoji','')} {pk.get('level','')} "
+                f"{pk.get('score',0)}점 ({pk.get('time','')} {pk.get('area','')}). "
+                f"정체 {mat.get('risk_minutes',0)}분.")
+    else:
+        head = f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
+
+    L = [f"# 📅 {mat['date_ko']} M16 BR 반송 이벤트 발생 확인건", "",
+         "## 1. 한 줄 총평:등급(50~70 🟠 경계/ 71~84 🔴 위험 / 85~100 ⛔ 초위험)", "",
+         head, "",
+         "## 2. AMOS 이상 감지 내역", ""]
+    L.append(_amos_table_md(mat))
+
+    L += ["", "## 3. 실제 이상 발생내역", "",
+          "2번 표의 실제 발생여부를 체크하면 아래에 행이 자동 생성됩니다.", "",
+          "## 4. 위험 이벤트 상세 분석 (도메인 세분화)", ""]
+    if b.get("상세"):
+        L.append(b["상세"])
+    elif incs:
+        for r in incs:
+            L.append(f"**이벤트 #{r['번호']} ({r['시각']} 발생)** — {r['시작영역']} "
+                     f"{r['최고점수']}점 {r['최고등급']}, {r['구간']} {r['지속분']}분 지속.")
+            L.append("")
+    else:
+        L.append("해당 없음")
+
+    L += ["", "## 5. 에이전트 제안", ""]
+    if b.get("제안"):
+        L.append(b["제안"])
+    elif incs:
+        L.append(f"- 정체 집중 구간({mat.get('busy','–')}) 재발 여부를 다음 주기에 확인 필요.")
+    else:
+        L.append("- 현행 감시 유지 (특이 추세 없음).")
+    return scrub("\n".join(L))
 
 
 def _strip_preamble(md: str, heading: str = "## ") -> str:
