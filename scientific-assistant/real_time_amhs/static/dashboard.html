@@ -370,11 +370,9 @@
         <button class="act pri" id="btnday" style="flex:0 0 auto">사건 보고서 생성</button>
         <button class="act" id="btndayhtml"
           title="데모스 개인 에이전트 '사건발생 보고서' 와 같은 화면 — 체크박스 표·수동 기입·저장 포함">HTML 열기</button>
-        <span class="note">하루 사건(점수 50↑) 기준 5섹션 보고서 — 생성하면 아래 목록에 등록됩니다</span>
+        <span class="note">하루 사건(점수 50↑) 기준 5섹션 보고서 — 데모스 개인 에이전트와 같은 형식</span>
       </div>
       <div id="repout"></div>
-      <h3 class="note" style="margin:16px 0 7px">생성된 리포트</h3>
-      <div id="replist" class="note">불러오는 중…</div>
     </div>
   </div>
 </div>
@@ -1147,7 +1145,6 @@ $('#btnday').onclick = async () => {
         <a class="act" href="/api/report/day.html?date=${encodeURIComponent(d)}&download=1" style="flex:0 0 auto">내려받기</a>
       </div>`;
     $('#btnopen').onclick=()=>window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`,'_blank');
-    loadReports();
   } finally { btn.disabled=false; btn.textContent=label; }
 };
 
@@ -1158,28 +1155,6 @@ $('#btndayhtml').onclick = () => {
   window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`, '_blank');
 };
 
-async function loadReports(){
-  try{
-    const r = await api('/api/reports');
-    const rows = r.reports||[];
-    $('#replist').innerHTML = rows.length
-      ? `<table class="pol"><thead><tr><th>날짜</th><th>생성 시각</th><th>사건</th><th></th></tr></thead><tbody>`
-        + rows.map(x=>{
-            const d=(x.day||'').replace(/-/g,'') || (x.id||'').replace(/\\D/g,'');
-            const t=(x.generated_at||'').replace('T',' ').slice(0,16);
-            return `<tr><td>${esc(x.span||d)}</td><td class="mono">${esc(t)}</td>
-              <td>${x.count||0}건</td>
-              <td><a href="#" class="rep-open" data-day="${esc(d)}" style="color:var(--cy)">HTML 열기</a>
-              &nbsp;<a href="/api/report/day.html?date=${encodeURIComponent(d)}&download=1" style="color:var(--cy)">내려받기</a></td></tr>`;
-          }).join('')
-        + `</tbody></table>`
-      : '아직 생성된 리포트가 없습니다 — 날짜를 고르고 <b style="color:var(--tx2)">사건 보고서 생성</b>을 누르세요.';
-    document.querySelectorAll('.rep-open').forEach(a=>a.onclick=e=>{
-      e.preventDefault();
-      window.open(`/api/report/day.html?date=${encodeURIComponent(a.dataset.day)}`,'_blank');
-    });
-  }catch(e){ $('#replist').textContent='목록 조회 실패'; }
-}
 
 /* 수집 설정 — 데이터 구간 / 수집 주기 */
 const pollLabel = s => s < 60 ? `${s}초` : `${s/60}분`;
@@ -1200,7 +1175,7 @@ $('#selPoll').onchange = async e => {
   const d = new Date();
   $('#rdate').value = new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 })();
-initSettings(); pollStatus(); pollCases(); loadReports();
+initSettings(); pollStatus(); pollCases();
 setInterval(pollStatus,5000);
 setInterval(pollCases,3000);
 </script>
