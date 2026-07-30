@@ -482,6 +482,15 @@ date = {mat['day']}  ({mat['date_ko']})
 ★섹션 번호·제목은 페르소나에 정의된 1~5 를 그대로 쓴다 (시스템이 제목을 인식한다).
 ★④ 표를 2번 섹션에 그대로 옮기고 마지막에 빈 '실제 발생여부' 컬럼을 붙인다.
   구간·항목의 <br> 은 지우지 마라.
+★4번은 사건마다 아래 골격 그대로 (굵게·불릿 유지):
+**이벤트 #N (HH:MM 발생)**
+- **현상**: (어디서 시작·몇 분 지속·등급/점수)
+- **원인**: (어느 지표가 어떻게 움직였나 — 실측값 기준)
+- **인과**: (그 원인이 어떤 순서로 정체를 만들었나)
+- **영향**: (반송/대기에 준 영향 + 시사점)
+★5번은 아래 두 불릿만:
+- **공통 근본 원인**: (사건들의 공통 원인 1가지)
+- **구체 조치**: (지금 할 조치)
 ★한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
 ★'# 📅 ' 로 바로 시작한다. 인사말·서론 없이 마크다운 본문만."""
 
@@ -531,6 +540,42 @@ def _ensure_day_sections(md: str, mat: dict) -> str:
     if added:
         print(f"  📝 [리포트] 빠진 섹션 보완 — {', '.join(added)}번")
     return t
+
+
+def _detail_md(mat: dict) -> str:
+    """4번 상세 분석 — 개인 에이전트 보고서와 같은 현상/원인/인과/영향 골격 (통계만으로)."""
+    incs = mat.get("incidents") or []
+    if not incs:
+        return "해당 없음"
+    try:
+        from sentinel import summarize_reason
+    except Exception:
+        summarize_reason = None
+    out = []
+    for r in incs:
+        # 룰 코드는 노출하지 않는다 (스킬 규칙) — 한글 발동사유로 바꿔 쓴다
+        raw = str(r.get("발동사유") or "")
+        cause = (summarize_reason(raw, r.get("시작영역", "")) if summarize_reason else "") \
+            or "발동 지표 정보 없음"
+        out.append(
+            f"**이벤트 #{r['번호']} ({r['시각']} 발생)**\n"
+            f"- **현상**: {r['시작영역']} 에서 시작되어 {r['지속분']}분 지속된 "
+            f"{r['최고등급']} ({r['최고점수']}점) 이벤트입니다 (구간 {r['구간']}).\n"
+            f"- **원인**: {cause}\n"
+            f"- **인과**: 위 지표가 함께 움직이며 허브 반송 대기가 누적된 구간입니다.\n"
+            f"- **영향**: {r['지속분']}분간 반송 지연이 이어졌습니다.")
+    return "\n\n".join(out)
+
+
+def _advice_md(mat: dict) -> str:
+    """5번 에이전트 제안 — 공통 근본 원인 + 구체 조치 두 불릿 (통계만으로)."""
+    incs = mat.get("incidents") or []
+    if not incs:
+        return "- **공통 근본 원인**: 없음 (금일 점수 50 이상 사건 없음).\n- **구체 조치**: 현행 감시 유지."
+    return (f"- **공통 근본 원인**: 정체가 {mat.get('busy','–')} 에 집중돼 "
+            "허브 저장·리프터 처리 여력이 부족했던 구간입니다.\n"
+            "- **구체 조치**: 해당 시간대 상류 유입 속도 조절과 허브 저장 공간 확보를 "
+            "점검하고, 같은 구간 재발 여부를 다음 주기에 확인합니다.")
 
 
 def _amos_table_md(mat: dict) -> str:
@@ -599,16 +644,9 @@ def _ko_section_fallback(head: str, mat: dict) -> str:
     incs = mat.get("incidents") or []
     pk = mat.get("peak") or {}
     if "4." in h or "상세" in h:
-        if not incs:
-            return "해당 없음"
-        return "\n\n".join(
-            f"**이벤트 #{r['번호']} ({r['시각']} 발생)** — {r['시작영역']} "
-            f"{r['최고점수']}점 {r['최고등급']}, {r['구간']} {r['지속분']}분 지속."
-            for r in incs)
+        return _detail_md(mat)
     if "5." in h or "제안" in h:
-        if not incs:
-            return "- 현행 감시 유지 (특이 추세 없음)."
-        return f"- 정체 집중 구간({mat.get('busy','–')}) 재발 여부를 다음 주기에 확인 필요."
+        return _advice_md(mat)
     if "1." in h or "총평" in h:
         if not incs:
             return f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
@@ -657,23 +695,8 @@ def assemble_day_report(mat: dict, blocks: dict | None = None) -> str:
     L += ["", "## 3. 실제 이상 발생내역", "",
           "2번 표의 실제 발생여부를 체크하면 아래에 행이 자동 생성됩니다.", "",
           "## 4. 위험 이벤트 상세 분석 (도메인 세분화)", ""]
-    if b.get("상세"):
-        L.append(b["상세"])
-    elif incs:
-        for r in incs:
-            L.append(f"**이벤트 #{r['번호']} ({r['시각']} 발생)** — {r['시작영역']} "
-                     f"{r['최고점수']}점 {r['최고등급']}, {r['구간']} {r['지속분']}분 지속.")
-            L.append("")
-    else:
-        L.append("해당 없음")
-
-    L += ["", "## 5. 에이전트 제안", ""]
-    if b.get("제안"):
-        L.append(b["제안"])
-    elif incs:
-        L.append(f"- 정체 집중 구간({mat.get('busy','–')}) 재발 여부를 다음 주기에 확인 필요.")
-    else:
-        L.append("- 현행 감시 유지 (특이 추세 없음).")
+    L.append(b.get("상세") or _detail_md(mat))
+    L += ["", "## 5. 에이전트 제안", "", b.get("제안") or _advice_md(mat)]
     return scrub("\n".join(L))
 
 
