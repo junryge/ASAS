@@ -351,8 +351,13 @@ def summary(day: str | None = None, cfg: dict | None = None) -> dict:
                 confs.append(max(0, min(100, int(float(c)))))
         except (TypeError, ValueError):
             pass
-        if (r.get("판단") or "").strip() or (r.get("오류") or "").strip():
-            if latest is None or (r.get("datetime") or "") > (latest.get("datetime") or ""):
+        # 실제 판단이 있는 행을 우선한다 (오류 행만 있으면 그거라도)
+        has_j = bool((r.get("판단") or "").strip())
+        has_e = bool((r.get("오류") or "").strip())
+        if has_j or has_e:
+            cur_j = bool((latest or {}).get("판단", "").strip()) if latest else False
+            newer = latest is None or (r.get("datetime") or "") > (latest.get("datetime") or "")
+            if latest is None or (has_j and not cur_j) or (has_j == cur_j and newer):
                 latest = r
     conf_avg = round(sum(confs) / len(confs), 1) if confs else None
 

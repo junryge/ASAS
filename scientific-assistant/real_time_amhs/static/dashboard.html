@@ -327,7 +327,7 @@
       <div class="stripbox" id="pstrip"></div>
     </div>
     <div class="hd">
-      <h2>과거 데이터 <span class="note" id="pinfo"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
+      <h2>과거 데이터 <span class="note" id="pinfo"></span><span class="note" id="pllm" style="margin-left:6px"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
       <div class="filters" id="pfilters">
         <button data-f="all" class="on">전체 <b id="pn-all">0</b></button>
         <button data-f="정상">정상 <b id="pn-정상">0</b></button>
@@ -474,7 +474,12 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
   ['live','past','report','policy'].forEach(t =>
     $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
-  if(b.dataset.tab==='past') initPast();
+  if(b.dataset.tab==='past'){
+    initPast();
+    if(PDAY) loadPastLlm(PDAY);          // 과거 탭 = 그 날짜 LLM 판단
+  }else if(ACC){
+    renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
+  }
 });
 
 /* 시계 */
@@ -530,7 +535,8 @@ function renderAcc(a){
     $('#k-acc-s').textContent = a && a.error ? '집계 실패' : '1분 추론 누적 시 산출';
     return;
   }
-  renderLlmNow(a);
+  // 과거 탭을 보는 중이면 그 날짜 표시를 실시간 값으로 덮지 않는다
+  if($('#tab-past').classList.contains('hidden')) renderLlmNow(a);
   const cnt = `적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
             + (a.effect ? ` · 조치효과 ${a.effect}` : '');
   // 확신도 평균을 카드 밑줄에 항상 붙인다
@@ -554,10 +560,19 @@ function renderAcc(a){
 
 // 실시간 탭이면 오늘, 과거 탭을 보고 있으면 그 날짜의 LLM CSV 를 연다
 /* LLM 이 방금 뭐라고 판단했는지 — 모달 안 열고도 보이게 (200자 요약이라 한 줄에 들어간다) */
-function renderLlmNow(a){
+function renderLlmNow(a, past){
   const box = $('#llmnow');
   const r = a && a.latest;
-  if(!r || (!r.판단 && !r.오류)){ box.classList.add('hidden'); return; }
+  if(!r || (!r.판단 && !r.오류)){
+    box.classList.remove('hidden');
+    box.innerHTML = `<span class="tag"><i style="background:var(--tx3)"></i>LLM 판단</span>`
+      + `<span class="dim">${past
+          ? esc(fmtDay((a&&a.day)||past)) + ' — 이 날짜에는 LLM 판단 기록이 없습니다 (상세에서 빈 구간 메움 가능)'
+          : '아직 LLM 판단 기록이 없습니다 — 1분마다 쌓입니다'}</span>`;
+    box.onclick = () => openAcc(past || null);
+    box.title = '';
+    return;
+  }
   box.classList.remove('hidden');
   const c = (r.확신도==='' || r.확신도==null) ? null : Math.max(0, Math.min(100, +r.확신도||0));
   const col = c==null ? 'var(--tx3)' : c>=80 ? 'var(--ok)' : c>=60 ? 'var(--minor)' : 'var(--major)';
@@ -565,7 +580,8 @@ function renderLlmNow(a){
            : r.실제이상==='아니오' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">이상 아니오</span>`
            : '';
   box.innerHTML =
-      `<span class="tag"><i></i>LLM 최근 판단</span>`
+      `<span class="tag"><i></i>LLM ${past ? '판단' : '최근 판단'}</span>`
+    + (past ? `<span class="dim">${esc(fmtDay(a.day||past))}</span>` : '')
     + `<span class="dim">${esc((r.datetime||'').slice(11,16))}</span>`
     + `<span class="dim">${esc(r.스코어||'')}점</span>`
     + yn
@@ -578,7 +594,23 @@ function renderLlmNow(a){
               : `<span class="dim">채점 대기</span>`);
   box.title = [r.근거 ? '근거 · ' + r.근거 : '', r.조치 ? '조치 · ' + r.조치 : '']
               .filter(Boolean).join('\n') || '클릭하면 전체 내역이 열립니다';
-  box.onclick = () => openAcc($('#tab-past').classList.contains('hidden') ? null : (PDAY || null));
+  box.onclick = () => openAcc(past || null);
+}
+
+/* 과거 탭 — 그 날짜의 LLM 판단을 같은 줄에 보여준다 */
+async function loadPastLlm(day){
+  if(!day) return;
+  try{
+    const a = await api(`/api/accuracy?day=${encodeURIComponent(day)}`);
+    PACC = a;
+    renderLlmNow(a, day);
+    $('#pllm').innerHTML = a.rows
+      ? `LLM 판단 <b style="color:var(--tx2)">${a.rows}건</b>`
+        + (a.conf_avg!=null ? ` · 확신도 평균 ${a.conf_avg}%` : '')
+        + ` · 적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
+        + (a.waiting ? ` · 대기 ${a.waiting}` : '')
+      : `<span style="color:var(--major)">LLM 판단 없음</span>`;
+  }catch(e){ $('#pllm').textContent = ''; }
 }
 
 $('#kpi-acc').onclick = () => openAcc(
@@ -946,7 +978,7 @@ async function pollCases(){
 }
 
 /* ── 과거 데이터 조회 — 저장된 CSV 를 날짜로 읽어 같은 표에 뿌린다 ── */
-let PFEED = [], PFILTER = 'all', PDAY = null, PINIT = false;
+let PFEED = [], PFILTER = 'all', PDAY = null, PINIT = false, PACC = null;
 const fmtDay = d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
 
 async function initPast(){
@@ -1020,6 +1052,7 @@ async function loadPast(day, opt){
             : ` · ${fd.total}행`)
       : `<span style="color:var(--major)">${esc(fmtDay(day))} 데이터 없음 — 그 날짜는 로그프레소에도 기록이 없습니다</span>`;
     paintPast();
+    loadPastLlm(day);
   }catch(e){
     console.error('과거 조회 실패', e);
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
