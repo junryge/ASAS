@@ -384,30 +384,6 @@
   </div>
 
   <div class="card">
-    <h2>리포트 피드백</h2>
-    <div class="bd">
-      <p class="note" style="margin:0 0 10px">평가가 다음 리포트의 임계치와 요약 방식에 반영됩니다.</p>
-      <h3 class="note">이번 리포트 판단은?</h3>
-      <div class="row" id="verdicts" style="margin-bottom:12px">
-        <button class="act" data-v="정확">정확</button>
-        <button class="act" data-v="보통">보통</button>
-        <button class="act" data-v="과다탐지">과다 탐지</button>
-        <button class="act" data-v="누락">누락 있음</button>
-      </div>
-      <h3 class="note">누락된 이슈가 있나요?</h3>
-      <input id="fbmissed" style="width:100%;margin-bottom:12px" placeholder="예: 14:20 M16A 반송지연 누락">
-      <h3 class="note">코멘트</h3>
-      <textarea id="fbcomment" placeholder="관제 관점 의견"></textarea>
-      <div class="row" style="margin-top:10px">
-        <button class="act pri" id="btnfb" style="flex:0 0 auto" disabled>피드백 저장</button>
-        <span class="note" id="fbtarget">리포트를 먼저 생성하세요</span>
-      </div>
-      <h3 class="note" style="margin-top:16px">학습 반영 현황</h3>
-      <div id="fbstatus" class="note">–</div>
-    </div>
-  </div>
-
-  <div class="card">
     <h2>누적 데이터 <span class="sub note" id="datadir"></span></h2>
     <div class="bd">
       <p class="note" style="margin:0 0 10px">서버를 켜면 <b style="color:var(--tx2)">오늘 하루치(00:00~현재)를 자동으로 확보</b>하고,
@@ -419,17 +395,6 @@
         <span class="note" id="collectmsg"></span>
       </div>
       <div id="daylist" class="note">불러오는 중…</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>로그프레소 조회 <span class="note" id="lptable"></span></h2>
-    <div class="bd">
-      <div class="row">
-        <input id="lpql" style="flex:1;min-width:240px" placeholder="LPQL (비우면 최근 구간 자동)">
-        <button class="act" id="btnq">조회</button>
-      </div>
-      <div id="qout" class="note" style="margin-top:10px">읽기 전용 — 쓰기 명령은 차단됩니다.</div>
     </div>
   </div>
 </div>
@@ -468,7 +433,7 @@ const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = s => (s||'').slice(11,16);
 
-let CASES=[], SEL=null, FILTER='all', REPORT=null, VERDICT=null, POLL=30;
+let CASES=[], SEL=null, FILTER='all', REPORT=null, POLL=30;
 let LAST_LATEST=null, NEW_AT=null;
 
 /* 탭 */
@@ -506,7 +471,6 @@ async function pollStatus(){
       : `연결 끊김 — ${st.error||'대기'}`;
     $('#ch-lp').className  = st.connected?'':'off';
     $('#ch-amos').className= st.amos_warn?'off':'';
-    $('#lptable').textContent = `${s.table||''}${s.offline?'  (OFFLINE fixture)':''}`;
     renderPolicy(s.policy, s.evaluation);
     $('#warnbox').innerHTML = st.amos_warn
       ? `<div class="warn">AMOS 조인 경고 — ${esc(st.amos_warn)}</div>` : '';
@@ -1225,47 +1189,8 @@ async function runReport(body, btn){
       </div>`;
     $('#btnmsg').onclick=()=>alert('사내 메신저 API 규격(엔드포인트·인증)이 필요합니다 — 미구현.');
     $('#btnmcs').onclick=()=>alert('관제시스템 전송 규격(엔드포인트·포맷)이 필요합니다 — 미구현.');
-    $('#btnfb').disabled=false; $('#fbtarget').textContent=`대상: ${REPORT.id}`;
-    loadFbStatus();
   } finally { btn.disabled=false; btn.textContent=label; }
 }
-
-/* 피드백 */
-document.querySelectorAll('#verdicts button').forEach(b=>b.onclick=()=>{
-  VERDICT=b.dataset.v;
-  document.querySelectorAll('#verdicts button').forEach(x=>x.classList.toggle('pri',x===b));
-});
-$('#btnfb').onclick = async () => {
-  if(!REPORT) return;
-  if(!VERDICT) return alert('판단을 선택하세요');
-  const r = await post('/api/feedback',{report_id:REPORT.id,verdict:VERDICT,
-      missed:$('#fbmissed').value,comment:$('#fbcomment').value});
-  if(r.error) return alert(r.error);
-  $('#fbmissed').value=''; $('#fbcomment').value=''; VERDICT=null;
-  document.querySelectorAll('#verdicts button').forEach(x=>x.classList.remove('pri'));
-  loadFbStatus(); pollStatus();
-};
-async function loadFbStatus(){
-  const s=await api('/api/feedback/status'), c=s.counts||{};
-  $('#fbstatus').innerHTML = `누적 ${s.total}건 (최근 ${s.applied_window}건 반영) ·
-    정확 ${c.정확||0} / 보통 ${c.보통||0} / 과다탐지 ${c.과다탐지||0} / 누락 ${c.누락||0}<br>
-    알람 임계 <b style="color:var(--tx)">${s.base_floor} → ${s.current_floor}점</b>
-    (${s.nudge>0?'+':''}${s.nudge} 보정)` +
-    ((s.missed_notes||[]).length?`<br>최근 누락 지적 · ${s.missed_notes.map(esc).join(' / ')}`:'');
-}
-
-/* 로그프레소 조회 */
-$('#btnq').onclick = async () => {
-  const out=$('#qout'); out.textContent='조회 중…';
-  const r=await post('/api/query',{lpql:$('#lpql').value,limit:20});
-  if(r.error) return out.innerHTML=`<span style="color:var(--crit)">${esc(r.error)}</span>
-     <pre class="snap" style="margin-top:7px">${esc(r.lpql||'')}</pre>`;
-  const cols=r.rows.length?Object.keys(r.rows[0]).slice(0,6):[];
-  out.innerHTML=`<pre class="snap">${esc(r.lpql)}</pre>
-    <div class="note" style="margin:7px 0">${r.count}건</div>`+
-    (r.rows.length?`<div style="overflow:auto"><table class="pol"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
-     <tbody>${r.rows.slice(0,10).map(row=>`<tr>${cols.map(c=>`<td style="font-size:11.5px">${esc(String(row[c]??'').slice(0,38))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'');
-};
 
 /* 수집 설정 — 데이터 구간 / 수집 주기 */
 const pollLabel = s => s < 60 ? `${s}초` : `${s/60}분`;
@@ -1327,7 +1252,7 @@ async function loadDays(){
   }catch(e){ $('#daylist').textContent = '목록 조회 실패'; }
 }
 
-initSettings(); pollStatus(); pollCases(); loadFbStatus(); loadDays();
+initSettings(); pollStatus(); pollCases(); loadDays();
 setInterval(loadDays, 30000);
 setInterval(pollStatus,5000);
 setInterval(pollCases,3000);

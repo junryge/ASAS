@@ -457,13 +457,15 @@ def make_day_report(mat: dict, cfg: dict | None = None):
         + (r.get("발동사유") or "없음")
         for r in (mat.get("incidents") or [])) or "(사건 없음)"
 
+    lv = ", ".join(f"{k} {v}분" for k, v in (mat.get("by_level") or {}).items()) or "없음"
+
     user = f"""[B] 사건단위 = 이벤트 발생 확인건 보고서를 작성하라.
 
 date = {mat['day']}  ({mat['date_ko']})
 
 ■ 하루 통계
 - 수집 {mat['minutes']}분 · 점수 50 이상(정체) {mat['risk_minutes']}분
-- 등급 분포: {', '.join(f'{k} {v}분' for k, v in (mat.get('by_level') or {{}}).items()) or '없음'}
+- 등급 분포: {lv}
 - 하루 최고: {(pk.get('time') or '-')} {pk.get('emoji','')} {pk.get('level','정상')} {pk.get('score',0)}점 ({pk.get('area','-')})
 - 정체 집중: {mat.get('busy','없음')}
 
