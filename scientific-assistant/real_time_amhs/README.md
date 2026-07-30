@@ -65,7 +65,11 @@ LP_OFFLINE=1 python server.py
 | `server.py` | 독립 Flask + 폴링 스레드 + REST API + **대시보드 자동 실행** |
 | `static/dashboard.html` | 관제 화면 (**오프닝 화면 없음** — 바로 진입) |
 | `collect.py` | **데이터 확보** — 로그프레소 → 날짜 CSV (서버 없이 단독 실행) |
-| `graphs.py` | **구간 그래프 SVG** — 점수 + reason 지표 (발동이벤트_요약 규칙) |
+| `graphs.py` | **대시보드 구간 그래프 SVG** (다크) — 더블클릭 시 1시간 |
+| `report_graphs.py` | **리포트 그래프** — `demos_v1/report_graphs.py` 독립 복사본 |
+| `daily.py` | 하루 ③ 사건목록 · ④ AMOS 표 (스킬 발동이벤트_요약 과 같은 규칙) |
+| `accuracy.py` | 1분 LLM 추론 + 사후검증 채점 + 빈 구간 메움 |
+| `amos_block.py` | 리포트 인터랙티브 블록 — `demos_v1/amos_report.py` 독립 복사본 |
 | `store_csv.py` | 날짜별 CSV 누적 저장 — `data/20260727_TOTAL.CSV` |
 | `fixtures/` | 오프라인 검증용 샘플 (실제 스키마 아님) |
 
@@ -196,12 +200,19 @@ data/20260727_TOTAL.CSV
 * 그 두 표만 근거로 LLM 이 보고서를 쓴다 (5섹션 형식은 `페르소나_통합.txt` [B] 사건단위)
 * `보고서 창으로 열기` → `/api/report/day.html?date=YYYYMMDD` —
   체크박스 표·수동 기입·저장 툴바가 들어간 인터랙티브 HTML (별도 창)
+* **그래프도 개인 에이전트와 똑같다** — `report_graphs.py`(데모스
+  `demos_v1/report_graphs.py` 독립 복사본)를 `'사건단위'` 질의로 부른다.
+  개인 에이전트 보고서와 **같은 경로**를 타서 사건들을 한 그래프에 담고
+  사건 구간 음영·사건 라벨·최고점 라벨까지 같게 그린다.
+  `<div class="hub-report-graph">` 로 나오므로 `amos_block` 이
+  `4. 위험 이벤트 상세` 아래로 옮긴다
 * 저장분이 없는 날짜면 그 날짜를 로그프레소에서 먼저 확보한다
 * LLM 이 실패해도 같은 5섹션 골격이 통계로 나온다 (관제가 멈추면 안 되므로)
 
-`amos_block.py` 는 데모스 `demos_v1/amos_report.py` 의 **독립 복사본**이다
-(import 하지 않는다). 체크박스·시간 분리·O/X 규격이 같아야 하므로 데모스 쪽을
-고치면 이 파일도 같이 맞춘다.
+`amos_block.py` · `report_graphs.py` 는 데모스 `demos_v1/amos_report.py` ·
+`demos_v1/report_graphs.py` 의 **독립 복사본**이다 (import 하지 않는다).
+개인 에이전트 보고서와 표·그래프가 똑같아야 하므로 데모스 쪽을 고치면
+이 파일들도 같이 맞춘다.
 
 ```bash
 python daily.py 20260728     # ③ 사건목록 · ④ AMOS 표만 확인

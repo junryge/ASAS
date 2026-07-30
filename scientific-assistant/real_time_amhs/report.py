@@ -249,6 +249,13 @@ def day_report_html(rep: dict, cfg: dict | None = None) -> str:
     """
     cfg = cfg or load_config()
     body = _md_to_html(rep.get("body") or "")
+    # ★ 그래프를 제목 바로 밑에 넣는다 — amos_block 이 '위험 이벤트 상세' 아래로 옮긴다
+    #   (데모스 report_graphs → amos_report 흐름과 동일)
+    g = day_report_graph(rep, cfg)
+    if g:
+        import re as _re
+        m = _re.search(r"</h1>", body)
+        body = (body[:m.end()] + g + body[m.end():]) if m else (g + body)
     try:
         from amos_block import AMOS_CSS, AMOS_JS, TOOLBAR_HTML, amosify
         body, _has = amosify(body)
@@ -271,6 +278,35 @@ def day_report_html(rep: dict, cfg: dict | None = None) -> str:
             "code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.92em}"
             + css +
             "</style></head><body>" + toolbar + body + js + "</body></html>")
+
+
+def day_report_graph(rep: dict, cfg: dict | None = None) -> str:
+    """하루 리포트 그래프 — ★데모스 개인 에이전트와 완전히 동일.
+
+    `report_graphs.build_report_graph` (demos_v1/report_graphs.py 독립 복사본) 를
+    '사건단위' 질의로 부른다. 그러면 개인 에이전트 보고서와 같은 경로를 타서
+    사건들을 한 그래프에 담고 사건 구간 음영·라벨까지 같게 그린다.
+
+    `<div class="hub-report-graph">` 로 감싸져 나오므로 amos_block 이
+    '위험 이벤트 상세' 헤딩 아래로 옮긴다 (데모스와 같은 흐름).
+    """
+    cfg = cfg or load_config()
+    day = (rep.get("summary") or {}).get("day") or ""
+    if not day:
+        return ""
+    try:
+        from report_graphs import build_report_graph
+        from store_csv import read_day
+
+        rows = read_day(day, cfg)
+        if not rows:
+            return ""
+        headers = list(rows[0].keys())
+        # '사건단위' 키워드 → 개인 에이전트 보고서와 같은 사건 통합 그래프 경로
+        return build_report_graph(headers, rows, query="사건단위 보고서") or ""
+    except Exception as e:
+        print(f"[리포트] ⚠️ 그래프 생성 실패: {e}")
+        return ""
 
 
 def _md_to_html(md: str) -> str:
