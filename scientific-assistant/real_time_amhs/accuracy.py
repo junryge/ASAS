@@ -341,8 +341,30 @@ def summary(day: str | None = None, cfg: dict | None = None) -> dict:
     hbase = human["정탐"] + human["오탐"]
     hrate = round(100 * human["정탐"] / hbase, 1) if hbase else None
 
+    # 확신도 평균 + 가장 최근 판단 (화면에 바로 보여주기 위해)
+    confs = []
+    latest = None
+    for r in rows:
+        c = r.get("확신도")
+        try:
+            if str(c).strip() != "":
+                confs.append(max(0, min(100, int(float(c)))))
+        except (TypeError, ValueError):
+            pass
+        if (r.get("판단") or "").strip() or (r.get("오류") or "").strip():
+            if latest is None or (r.get("datetime") or "") > (latest.get("datetime") or ""):
+                latest = r
+    conf_avg = round(sum(confs) / len(confs), 1) if confs else None
+
     return {
         "day": day, "rows": len(rows),
+        "conf_avg": conf_avg, "conf_n": len(confs),
+        "latest": ({"datetime": latest.get("datetime"), "스코어": latest.get("스코어"),
+                    "등급": latest.get("등급"), "실제이상": latest.get("실제이상"),
+                    "확신도": latest.get("확신도"), "판단": latest.get("판단"),
+                    "근거": latest.get("근거"), "조치": latest.get("조치"),
+                    "판정": latest.get("판정"), "오류": latest.get("오류")}
+                   if latest else None),
         "hit": cnt[_HIT], "fp": cnt[_FP], "fn": cnt[_FN], "effect": cnt[_EFFECT],
         "nojudge": cnt["판정불가"],
         "waiting": waiting, "failed": judged_fail,
