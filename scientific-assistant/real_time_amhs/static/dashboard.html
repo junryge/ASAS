@@ -410,6 +410,12 @@ const api = async (u,o) => (await fetch(u,o)).json();
 const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = s => (s||'').slice(11,16);
+/* 점수 등급 — 50 미만 정상 / 50~70 경계 / 71~84 위험 / 85~100 초위험.
+   위험·초위험은 사람 확인이 필요한 구간이다 (config.grade.bands 와 같은 기준). */
+const gradeOf = s => s>=85 ? {n:'초위험', c:'var(--crit)',  chk:true}
+                   : s>=71 ? {n:'위험',   c:'var(--major)', chk:true}
+                   : s>=50 ? {n:'경계',   c:'var(--minor)', chk:false}
+                           : {n:'정상',   c:'var(--tx2)',   chk:false};
 
 let CASES=[], SEL=null, FILTER='all', POLL=30;
 let LAST_LATEST=null, NEW_AT=null;
@@ -527,7 +533,11 @@ function renderLlmNow(a, past){
       `<span class="tag"><i></i>LLM ${past ? '판단' : '최근 판단'}</span>`
     + (past ? `<span class="dim">${esc(fmtDay(a.day||past))}</span>` : '')
     + `<span class="dim">${esc((r.datetime||'').slice(11,16))}</span>`
-    + `<span class="dim">${esc(r.스코어||'')}점</span>`
+    + (()=>{ const s=parseFloat(r.스코어), g=gradeOf(s);
+             return isFinite(s)
+               ? `<span style="color:${g.c}">${esc(r.스코어)}점 ${g.n}</span>`
+                 + (g.chk ? `<span class="chip lv초위험">사람 확인 필요</span>` : '')
+               : `<span class="dim">–</span>`; })()
     + yn
     + (c==null ? `<span class="dim">확신도 –</span>`
        : `<span class="cf" style="color:${col}">확신도 ${c}%</span>`
@@ -571,6 +581,11 @@ async function openAcc(day){
   try{
     const a = await api(`/api/accuracy?day=${encodeURIComponent(ACCDAY)}&rows=1500`);
     const rows = a.rows_data || [];
+    const scoreCell = v => {
+      const s = parseFloat(v); if(!isFinite(s)) return '<span class="dim">–</span>';
+      const g = gradeOf(s);
+      return `<b style="color:${g.c}" title="${g.n}">${esc(v)}점</b>`;
+    };
     const vchip = (v, r) => v==='적중' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">적중</span>`
                     : v==='과다탐지' ? `<span class="chip lv위험">과다탐지</span>`
                     : v==='누락' ? `<span class="chip lv초위험">누락</span>`
@@ -608,20 +623,24 @@ async function openAcc(day){
         <b>판정이 '채점 대기' 인 건 정상입니다</b> — LLM 판단은 이미 끝났고,
         그 판단이 맞았는지는 이후 ${a.window_min}분 실제 흐름을 봐야 알 수 있어 그때 채워집니다.
         (같은 시각을 <b>${esc(a.day)}_TOTAL.CSV</b> 와 <span class="mono">datetime</span> 으로 맞춰 보면 그때 원데이터가 나옵니다)<br>
-        <b>확신도</b> = LLM 이 자기 판단을 얼마나 확신하는지 (0~100).
-        <span style="color:var(--ok)">80↑ 높음</span> ·
-        <span style="color:var(--minor)">60~79 보통</span> ·
-        <span style="color:var(--major)">60 미만 낮음 — 사람이 확인하는 게 좋습니다</span>
+        <b>확신도</b> = LLM 이 자기 판단을 얼마나 확신하는지 (0~100).<br>
+        <b>점수 등급</b> —
+        <span style="color:var(--ok)">50 미만 정상</span> ·
+        <span style="color:var(--minor)">50~70 경계</span> ·
+        <span style="color:var(--major)">71~84 위험</span> ·
+        <span style="color:var(--crit)">85~100 초위험</span>
+        <b style="color:var(--crit)">— 위험·초위험은 무조건 사람 확인이 필요합니다</b>
       </p>
       <table class="pol"><thead><tr>
-        <th style="width:62px">시각</th><th style="width:60px">점수</th>
+        <th style="width:62px">시각</th><th style="width:92px">점수</th>
         <th style="width:66px">실제이상</th>
-        <th style="width:66px" title="LLM 이 자기 판단을 얼마나 확신하는지 (0~100). 낮으면 사람이 확인하는 게 좋다">확신도</th>
+        <th style="width:66px" title="LLM 이 자기 판단을 얼마나 확신하는지 (0~100)">확신도</th>
         <th>판단</th><th style="width:92px">판정</th>
         <th style="width:270px">판정근거</th><th style="width:106px">확인</th>
       </tr></thead><tbody>` + (rows.length ? rows.map(r=>`<tr>
         <td title="${esc(r.datetime)}">${esc((r.datetime||'').slice(11,16))}</td>
-        <td>${esc(r.스코어)}점</td>
+        <td>${scoreCell(r.스코어)}${gradeOf(parseFloat(r.스코어)).chk
+             ? `<br><span class="note" style="color:var(--crit);font-size:10.5px;white-space:nowrap">사람 확인 필요</span>` : ''}</td>
         <td>${r.실제이상 ? `<b style="color:${r.실제이상==='예'?'var(--crit)':'var(--ok)'}">${esc(r.실제이상)}</b>` : '<span class="dim">–</span>'}</td>
         <td>${r.확신도!=='' && r.확신도!=null ? esc(r.확신도)+'%' : '<span class="dim">–</span>'}</td>
         <td title="${esc(r.근거||'')}">${r.판단 ? esc(r.판단)
