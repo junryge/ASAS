@@ -477,18 +477,37 @@ def feedback_status(cfg: dict | None = None) -> dict:
 
 
 if __name__ == "__main__":
+    import argparse
     from datetime import timedelta
+
+    ap = argparse.ArgumentParser(
+        description="하루 사건 리포트 생성 (데모스 개인 에이전트 '사건발생 보고서' 와 같은 형식)")
+    ap.add_argument("day", nargs="?", default=datetime.now().strftime("%Y%m%d"),
+                    help="YYYYMMDD (기본 오늘)")
+    ap.add_argument("--html", metavar="파일",
+                    help="인터랙티브 HTML 로 저장 (체크박스 표·그래프·저장 툴바 포함)")
+    ap.add_argument("--no-llm", action="store_true", help="LLM 없이 통계만")
+    a = ap.parse_args()
+
     cfg = load_config()
-    st = CaseStore(cfg)
-    if not st.cases:
-        print("케이스 없음 — 먼저 'LP_OFFLINE=1 python3 sentinel.py' 실행")
-        raise SystemExit(0)
-    peaks = [datetime.fromisoformat(c["peak_at"]) for c in st.cases]
-    rep = build_report(st, min(peaks) - timedelta(minutes=1),
-                       max(peaks) + timedelta(minutes=1), cfg, use_llm=False)
-    print(f"리포트 {rep['id']}  구간 {rep['summary']['span']}  {rep['summary']['count']}건")
-    for i in rep["incidents"]:
-        print(f"  {i['no']}. {i['time']} {i['emoji']} {i['severity']} {i['score']:.0f}점 "
-              f"| {', '.join(i['zones'][:4])}")
-    print("\n" + rep["body"])
-    print("학습 반영 현황:", json.dumps(rep["feedback_applied"], ensure_ascii=False))
+    d = "".join(ch for ch in a.day if ch.isdigit())[:8]
+    print(f"[리포트] {d} 하루 사건 리포트 생성 중…")
+    rep = build_day_report(d, cfg, use_llm=not a.no_llm)
+
+    sm = rep["summary"]
+    print(f"  사건 {sm['count']}건 · 수집 {sm['minutes']}분 · 정체 {sm['risk_minutes']}분 "
+          f"· 최고 {sm['top_emoji']} {sm['top_level']} {sm['top_score']:.0f}점")
+    if rep.get("fetch_warn"):
+        print(f"  ⚠️ {rep['fetch_warn']}")
+    if rep.get("llm_error"):
+        print(f"  ⚠️ LLM: {rep['llm_error']}  → 통계 요약으로 대체")
+    print(f"  JSON: {rep['path']}")
+
+    if a.html:
+        html = day_report_html(rep, cfg)
+        with open(a.html, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"  HTML: {a.html}  ({len(html):,}자)  ← 브라우저로 열면 체크박스·그래프 동작")
+    else:
+        print()
+        print(rep["body"])
