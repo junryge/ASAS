@@ -168,12 +168,15 @@ def chat(messages: list[dict], cfg: dict | None = None,
     # 서버가 지원하면 템플릿 수준에서도 사고를 끈다 (vLLM/Qwen 계열)
     if lc.get("disable_thinking_kwarg", False):
         payload["chat_template_kwargs"] = {"enable_thinking": False}
-    # ★ JSON 프리필 — assistant 턴을 '{' 로 미리 채워 모델이 그 뒤를 이어 쓰게 만든다.
-    #   이 게이트웨이는 /no_think 를 안 듣고 'Thinking Process: …' 평문 추론을 먼저 쓴다.
-    #   프리필하면 추론을 건너뛰고 바로 JSON 을 뱉으므로 토큰·시간이 크게 줄고 파싱이 안정된다.
+    # ★ JSON 프리필 — assistant 턴을 미리 채워 모델이 그 뒤를 이어 쓰게 만든다.
+    #   이 게이트웨이는 /no_think 를 안 듣고 추론을 먼저 쓴다.
+    #   '{' 만 넣으면 모델이 JSON 이 아니라 그 뒤에 산문을 이어 쓰므로
+    #   **첫 키까지** 넣어 값부터 채우게 못박는다.
+    prefill = ""
     if json_prefill:
+        prefill = lc.get("json_prefill_text") or '{"실제이상": "'
         payload["messages"] = list(payload["messages"]) + [
-            {"role": "assistant", "content": "{"}]
+            {"role": "assistant", "content": prefill}]
     headers = {"Content-Type": "application/json"}
     key = _api_key(cfg)
     if key:
@@ -206,8 +209,8 @@ def chat(messages: list[dict], cfg: dict | None = None,
                           f"완료토큰={usage.get('completion_tokens')}) — "
                           f"사고 토큰만 쓰고 잘렸을 가능성. max_tokens 를 올리거나 "
                           f"config.llm.no_think 를 확인하세요")
-        if json_prefill and not txt.lstrip().startswith("{"):
-            txt = "{" + txt            # 프리필한 '{' 는 응답에 안 실려 온다
+        if prefill and not txt.lstrip().startswith("{"):
+            txt = prefill + txt        # 프리필은 응답에 안 실려 오므로 되붙인다
         return scrub(txt), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
@@ -332,8 +335,10 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
     if not res:
         return None, f"JSON 파싱 실패: {str(txt)[:150]}"
     res["실제이상"] = _yes_no(res.get("실제이상"))
-    if not res["실제이상"] and not (res.get("판단") or "").strip():
-        return None, f"판단 내용 없음: {str(txt)[:150]}"
+    # ★ 실제이상이 없으면 채점도 못 하고 쓸모가 없다. 산문을 '판단' 으로 저장하지 말고
+    #   오류로 남겨 원인이 보이게 한다 (모델이 JSON 대신 서술을 쓴 경우).
+    if not res["실제이상"]:
+        return None, f"실제이상(예/아니오) 없음 — 모델이 JSON 형식을 안 지켰습니다: {str(txt)[:150]}"
     return res, None
 
 
@@ -462,7 +467,8 @@ def _parse_json(text: str) -> dict:
 # 'JSON 이 없어도' 실제이상만은 건져낸다 (채점이 되려면 이 한 칸이 필요하다)
 _RE_YES_NO = re.compile(r'"?실제이상"?\s*[:=]\s*"?\s*(예|아니오|아니요|yes|no)', re.I)
 _RE_CONF = re.compile(r'"?확신도"?\s*[:=]\s*"?\s*(\d{1,3})')
-_RE_JUDGE = re.compile(r'"?판단"?\s*[:=]\s*"([^"]{2,200})"')
+# 닫는 따옴표가 없어도(잘린 응답) 판단을 건진다
+_RE_JUDGE = re.compile(r'"?판단"?\s*[:=]\s*"([^"]{2,400})(?:"|$)')
 
 
 def _salvage(t: str) -> dict:
