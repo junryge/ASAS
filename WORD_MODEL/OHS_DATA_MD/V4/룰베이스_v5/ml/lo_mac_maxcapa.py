@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mcs_maxcapa — MAXCAPA 조작내역 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
+lo_mac_maxcapa — MAXCAPA 조작내역 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
 ====================================================================
 LO_LOW_AMOS 와 동일한 구조. 다른 점은 조회 대상이 로그프레소(HTTP) 가 아니라
 MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발동이벤트.csv 자체에 기입.
@@ -26,11 +26,11 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
       --source db 로 바꾸면 mcs_config.ini 의 RAC FAILOVER DSN 으로 Oracle 에 직접 접속.
 
 실행:
-  운영(1분 루프):  python mcs_maxcapa.py --event .\predict_tobe --loop
+  운영(1분 루프):  python lo_mac_maxcapa.py --event .\predict_tobe --loop
                    (--event 폴더를 주면 최신 *발동이벤트*.csv 자동 선택, 자정 전환 대응)
-  1회만:           python mcs_maxcapa.py --event .\predict_tobe\20260728_발동이벤트.csv
-  과거 일괄백필:   python mcs_maxcapa.py --event .\predict_tobe --alldays
-  접속 점검:       python mcs_maxcapa.py --test
+  1회만:           python lo_mac_maxcapa.py --event .\predict_tobe\20260728_발동이벤트.csv
+  과거 일괄백필:   python lo_mac_maxcapa.py --event .\predict_tobe --alldays
+  접속 점검:       python lo_mac_maxcapa.py --test
   조회 경로:       --source logpresso (기본, 로그프레소 dbquery 경유 — MCS DB 직접 접속 막힌 망용)
                    --source db        (Oracle 직접, mcs_config.ini 필요)
                    --source csv --maxcapa .\maxcapa_v3.csv  (수집본 사용)
@@ -47,8 +47,8 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
   · 조작 0건인 분은 공란 (정상 — 대부분의 분에는 조작이 없다)
 
 run_ml 통합 (스레드):
-  import mcs_maxcapa
-  threading.Thread(target=mcs_maxcapa.run_watch,
+  import lo_mac_maxcapa
+  threading.Thread(target=lo_mac_maxcapa.run_watch,
                    kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)}, daemon=True).start()
 """
 import argparse, configparser, csv, os, re, sys, time
@@ -516,14 +516,14 @@ def refresh(a, cache, dt_from, dt_to):
 # 운영 루프
 # ────────────────────────────────────────────────────────────
 def _loop(a):
-    print(f'[mcs_maxcapa] {a.interval}초 간격 · 대상 {a.event} · 원본 '
+    print(f'[lo_mac_maxcapa] {a.interval}초 간격 · 대상 {a.event} · 원본 '
           + ('CSV ' + str(a.maxcapa) if a.source == 'csv'
              else f'로그프레소 dbquery {a.lp_profile}' if a.source == 'logpresso'
              else f"Oracle {a.cfg['service']}"))
     # ★ 수집기(매분 00초 Oracle 접속)와 같은 순간에 붙으면 경합해 타임아웃난다 → 시작을 어긋나게
     off = getattr(a, 'offset', 0)
     if off > 0:
-        print(f'[mcs_maxcapa] 수집기와 겹치지 않게 {off}초 후 시작')
+        print(f'[lo_mac_maxcapa] 수집기와 겹치지 않게 {off}초 후 시작')
         time.sleep(off)
     cache, healed, finishing, cur = {}, set(), {}, None
     user_force = getattr(a, 'force', False)
@@ -560,12 +560,12 @@ def _loop(a):
                     del finishing[old]
                     print(f'  ✅ 전날 파일 마무리 완료: {os.path.basename(old)}')
             if n is not None:
-                print(f'[mcs_maxcapa {datetime.now():%H:%M:%S}] 기입 {n}행 (캐시 {len(cache)}분)')
+                print(f'[lo_mac_maxcapa {datetime.now():%H:%M:%S}] 기입 {n}행 (캐시 {len(cache)}분)')
             time.sleep(a.interval)
         except KeyboardInterrupt:
-            print('\n[mcs_maxcapa] 종료.'); break
+            print('\n[lo_mac_maxcapa] 종료.'); break
         except Exception as e:
-            print(f'  ⚠️ [mcs_maxcapa] 오류(계속): {e}'); time.sleep(a.interval)
+            print(f'  ⚠️ [lo_mac_maxcapa] 오류(계속): {e}'); time.sleep(a.interval)
 
 
 def run_watch(event='./predict_tobe', interval=60, lookback=10, offset=25,
