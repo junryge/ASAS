@@ -419,8 +419,11 @@ def execute_flow(flow):
 
 # ── 화면 유지 (절전/화면보호기 방지) ─────────────────────────────────────────
 # config.json 의 keep_awake_mode 로 방식 선택:
-#   "api"   (기본·권장) 윈도우에 "화면 켜둬"라고 요청. 마우스/키 입력을 전혀 안 보냄 → 가장 안전
-#   "key"   F15(존재하지 않는 키) 를 눌러 유휴시간만 리셋. 어떤 프로그램도 반응 안 함
+#   "both"  (기본·권장) api + key 동시 사용 → 절전/화면꺼짐 + 화면보호기 모두 방지
+#   "api"   윈도우에 "화면 켜둬"라고 요청. 절전·화면꺼짐은 막지만
+#           화면보호기는 '입력 없는 시간' 기준이라 뜰 수 있음
+#   "key"   F15(실제 키보드에 없는 키) 입력 → 유휴시간이 리셋되어 화면보호기까지 방지.
+#           어떤 프로그램도 F15 에 반응하지 않아 클릭 사고가 없음
 #   "mouse" 마우스를 3px 움직였다 되돌림 (클릭 없음)
 #   "click" 마우스 이동 + 클릭  ← 엉뚱한 곳이 눌릴 수 있어 권장하지 않음
 ES_CONTINUOUS       = 0x80000000
@@ -455,9 +458,9 @@ def keepawake_loop():
     interval = int(CONFIG.get("keep_awake_interval", 60))
     dist = int(CONFIG.get("keep_awake_dist", 3))
     mode = (CONFIG.get("keep_awake_mode") or
-            ("click" if CONFIG.get("keep_awake_click") else "api")).lower()
+            ("click" if CONFIG.get("keep_awake_click") else "both")).lower()
 
-    if mode == "api" and not _win_keep_display_on():
+    if mode in ("api", "both") and not _win_keep_display_on():
         log("[화면유지] OS 요청 방식을 쓸 수 없어 key(F15) 방식으로 전환합니다.")
         mode = "key"
     log(f"[화면유지] 방식={mode}, 주기={interval}초")
@@ -468,13 +471,19 @@ def keepawake_loop():
             if STATE.get("running"):
                 continue          # RPA 실행 중엔 절대 개입하지 않음
 
+            if mode in ("api", "both"):
+                _win_keep_display_on()          # 절전·화면꺼짐 방지(주기적으로 재요청)
             if mode == "api":
-                _win_keep_display_on()          # 주기적으로 다시 요청(스레드 유지)
                 continue
             if pyautogui is None:
                 continue
-            if mode == "key":
-                pyautogui.press("f15")          # 실제 키보드에 없는 키 → 아무 반응 없음
+            if mode in ("key", "both"):
+                # F15 : 물리 키보드엔 없지만 윈도우가 인식하는 키(VK_F15).
+                # 유휴시간은 초기화되어 화면보호기를 막고, 반응하는 프로그램은 없다.
+                try:
+                    pyautogui.press("f15")
+                except Exception:
+                    pyautogui.press("shift")    # 혹시 F15 를 못 쓰면 shift(단독으론 무동작)
                 continue
             # mouse / click 공통: 살짝 움직였다 원위치
             x, y = pyautogui.position()
