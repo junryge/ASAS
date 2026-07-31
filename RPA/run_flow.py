@@ -417,19 +417,70 @@ def execute_flow(flow):
         STATE["fatal"] = False
 
 
-# ── 화면 유지 (절전/잠금 방지) ───────────────────────────────────────────────
+# ── 화면 유지 (절전/화면보호기 방지) ─────────────────────────────────────────
+# config.json 의 keep_awake_mode 로 방식 선택:
+#   "api"   (기본·권장) 윈도우에 "화면 켜둬"라고 요청. 마우스/키 입력을 전혀 안 보냄 → 가장 안전
+#   "key"   F15(존재하지 않는 키) 를 눌러 유휴시간만 리셋. 어떤 프로그램도 반응 안 함
+#   "mouse" 마우스를 3px 움직였다 되돌림 (클릭 없음)
+#   "click" 마우스 이동 + 클릭  ← 엉뚱한 곳이 눌릴 수 있어 권장하지 않음
+ES_CONTINUOUS       = 0x80000000
+ES_SYSTEM_REQUIRED  = 0x00000001
+ES_DISPLAY_REQUIRED = 0x00000002
+
+
+def _win_keep_display_on():
+    """윈도우에 절전/화면보호기 진입 금지를 요청 (입력 시뮬레이션 없음)."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
+        return True
+    except Exception:
+        return False
+
+
+def _win_release_keep_display():
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+    except Exception:
+        pass
+
+
 def keepawake_loop():
     interval = int(CONFIG.get("keep_awake_interval", 60))
     dist = int(CONFIG.get("keep_awake_dist", 3))
+    mode = (CONFIG.get("keep_awake_mode") or
+            ("click" if CONFIG.get("keep_awake_click") else "api")).lower()
+
+    if mode == "api" and not _win_keep_display_on():
+        log("[화면유지] OS 요청 방식을 쓸 수 없어 key(F15) 방식으로 전환합니다.")
+        mode = "key"
+    log(f"[화면유지] 방식={mode}, 주기={interval}초")
+
     while True:
         try:
             time.sleep(max(5, interval))
-            if pyautogui is None or STATE.get("running"):
+            if STATE.get("running"):
                 continue          # RPA 실행 중엔 절대 개입하지 않음
+
+            if mode == "api":
+                _win_keep_display_on()          # 주기적으로 다시 요청(스레드 유지)
+                continue
+            if pyautogui is None:
+                continue
+            if mode == "key":
+                pyautogui.press("f15")          # 실제 키보드에 없는 키 → 아무 반응 없음
+                continue
+            # mouse / click 공통: 살짝 움직였다 원위치
             x, y = pyautogui.position()
             pyautogui.moveTo(x + dist, y, duration=0.1)
             pyautogui.moveTo(x, y, duration=0.1)
-            if CONFIG.get("keep_awake_click"):
+            if mode == "click":
                 pos = CONFIG.get("keep_awake_click_pos")
                 if isinstance(pos, (list, tuple)) and len(pos) == 2:
                     pyautogui.click(int(pos[0]), int(pos[1]))
