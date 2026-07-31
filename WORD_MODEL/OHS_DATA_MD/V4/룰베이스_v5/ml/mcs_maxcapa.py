@@ -410,6 +410,7 @@ def cycle(a, cache, fp=None, state={'seen': set()}):
 LP_HOST, LP_PORT = '10.40.42.167', 8888
 LP_APIKEY = '10f12ae0-5a80-55cd-7b15-e5554f0612f3'
 LP_PROFILE = 'mcs_m16'
+LP_SCHEMA = 'MCSADM'      # NT_L_LOGMESSAGE 소유자 (접속계정 MCSREAD 와 다르므로 반드시 명시)
 
 SQL_ONESHOT = """
 SELECT a.TRANSACTIONID AS TXID,
@@ -417,7 +418,7 @@ SELECT a.TRANSACTIONID AS TXID,
        a.PROCESSNAME AS PROC,
        b.MACHINENAME AS MACHINE,
        DBMS_LOB.SUBSTR(b.TEXT, 2000, 1) AS TXT
-  FROM NT_L_LOGMESSAGE a, NT_L_LOGMESSAGE b
+  FROM {sch}.NT_L_LOGMESSAGE a, {sch}.NT_L_LOGMESSAGE b
  WHERE a.COMMUNICATIONMESSAGENAME = '{msg}'
    AND a.TIME >= TO_DATE('{f}','YYYY-MM-DD HH24:MI:SS')
    AND a.TIME <  TO_DATE('{t}','YYYY-MM-DD HH24:MI:SS')
@@ -463,7 +464,7 @@ def lp_query(a, lpql, timeout=180):
 def fetch_lp(a, dt_from, dt_to, cache):
     """로그프레소 dbquery 로 MAXCAPA 조작 조회 → cache 갱신."""
     t0 = time.time()
-    sql = SQL_ONESHOT.format(msg=MSG,
+    sql = SQL_ONESHOT.format(msg=MSG, sch=getattr(a, 'lp_schema', LP_SCHEMA),
                              f=dt_from.strftime('%Y-%m-%d %H:%M:%S'),
                              t=dt_to.strftime('%Y-%m-%d %H:%M:%S'))
     text = lp_query(a, f'dbquery {a.lp_profile} {sql}')
@@ -564,12 +565,13 @@ def _loop(a):
 
 def run_watch(event='./predict_tobe', interval=60, lookback=20, offset=25,
               config='mcs_config.ini', source='logpresso', maxcapa='./maxcapa_v3.csv',
-              lp_host=LP_HOST, lp_port=LP_PORT, lp_apikey=LP_APIKEY, lp_profile=LP_PROFILE):
+              lp_host=LP_HOST, lp_port=LP_PORT, lp_apikey=LP_APIKEY,
+              lp_profile=LP_PROFILE, lp_schema=LP_SCHEMA):
     """run_ml 등에서 스레드로 돌리는 진입점. offset=수집기와 겹침 방지(초)."""
     a = argparse.Namespace(event=event, out=None, interval=interval, lookback=lookback,
                            source=source, maxcapa=maxcapa, force=False, config=config,
                            offset=offset, lp_host=lp_host, lp_port=lp_port,
-                           lp_apikey=lp_apikey, lp_profile=lp_profile)
+                           lp_apikey=lp_apikey, lp_profile=lp_profile, lp_schema=lp_schema)
     a.cfg = load_cfg(config) if source == 'db' else None
     _loop(a)
 
@@ -669,6 +671,8 @@ def main():
     ap.add_argument('--lp-apikey', dest='lp_apikey', default=LP_APIKEY)
     ap.add_argument('--lp-profile', dest='lp_profile', default=LP_PROFILE,
                     help='로그프레소 DB 프로파일명 (기본 mcs_m16)')
+    ap.add_argument('--lp-schema', dest='lp_schema', default=LP_SCHEMA,
+                    help='로그 테이블 소유자 (기본 MCSADM)')
     ap.add_argument('--maxcapa', default='./maxcapa_v3.csv', help='--source csv 일 때 원본')
     a = ap.parse_args()
     a.cfg = load_cfg(a.config) if a.source == 'db' else None
