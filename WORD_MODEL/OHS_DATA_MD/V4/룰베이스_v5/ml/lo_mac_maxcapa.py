@@ -595,13 +595,18 @@ def backfill_alldays(a):
     for f in files:
         fp = os.path.join(a.event, f)
         cache = {}
+        # ★ 파일명의 날짜로 그날 전체를 조회한다 (db/logpresso 공통).
+        #   예전엔 source=='db' 일 때만 그렇게 해서, logpresso 면 now~now(폭 0)를
+        #   조회하고 0건이 나왔다.
         m = re.search(r'(\d{8})', f)
-        if m and a.source == 'db':
+        if a.source == 'csv':
+            refresh(a, cache, datetime.now(), datetime.now())
+        elif m:
             d = datetime.strptime(m.group(1), '%Y%m%d')
             if not refresh(a, cache, d, d + timedelta(days=1)):
                 fail += 1; print(f'  ❌ {f} — 조회 실패'); continue
         else:
-            refresh(a, cache, datetime.now(), datetime.now())
+            print(f'  ⚠️ {f} — 파일명에 날짜(YYYYMMDD)가 없어 건너뜀'); fail += 1; continue
         n = cycle(a, cache, fp=fp)
         if n is None:
             fail += 1; print(f'  ❌ {f} 실패')
