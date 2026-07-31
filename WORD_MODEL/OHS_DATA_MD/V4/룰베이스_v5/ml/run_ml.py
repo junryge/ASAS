@@ -31,6 +31,14 @@ except Exception as e:
     print(f'⚠ LO_LOW_AMOS 로드 실패 — 로그프레소 기입 비활성: {e}')
     _LP_AVAILABLE = False
 
+# MAXCAPA 조작내역 기입기 (발동이벤트.csv에 MACHINE/PORT:후(after)/PROCESS/TRANSACTIONID)
+try:
+    import LO_MAXCAPA
+    _MC_AVAILABLE = True
+except Exception as e:
+    print(f'⚠ LO_MAXCAPA 로드 실패 — MAXCAPA 기입 비활성: {e}')
+    _MC_AVAILABLE = False
+
 # 하이브리드는 v4.1 호환 작업 후 별도 활성화 — 일단 비활성 유지
 # import hybrid_predictor
 
@@ -58,6 +66,14 @@ logger = predictor.setup_logger(out_dir)
 if _LP_AVAILABLE:
     threading.Thread(target=LO_LOW_AMOS.run_watch,
                      kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
+                     daemon=True).start()
+
+# MAXCAPA 조작내역 기입기 (백그라운드 데몬)
+#   maxcapa 경로 = maxcapa_v3.py 산출 CSV. 자동 수집까지 원하면 collect_flag=True
+if _MC_AVAILABLE:
+    threading.Thread(target=LO_MAXCAPA.run_watch,
+                     kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR),
+                             'maxcapa': r'.\maxcapa_v3.csv'},
                      daemon=True).start()
 
 predictor.run_watch(predictor.DEFAULT_INPUT_CSV, out_dir, logger)
