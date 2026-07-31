@@ -501,12 +501,34 @@ def backfill_alldays(a):
 
 
 def diagnose(a):
-    """접속·조회 점검."""
+    """접속·조회 점검 — 노드별 TCP 도달성까지 확인."""
+    import socket
+    c = a.cfg
     print(f"설정: {a.config}")
-    print(f"  hosts   : {', '.join(a.cfg['hosts'])}:{a.cfg['port']}")
-    print(f"  service : {a.cfg['service']}   user: {a.cfg['user']}")
-    print(f"  DSN     : {build_dsn(a.cfg)[:110]}...")
+    print(f"  service : {c['service']}   user: {c['user']}   port: {c['port']}")
+    print(f"  DSN     : {build_dsn(c)[:120]}...")
     print()
+    print(f"[1] RAC 노드별 TCP 도달성 (각 {c['conn_timeout']}초 제한)")
+    alive = 0
+    for h in c['hosts']:
+        t0 = time.time()
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(float(c['conn_timeout']))
+        try:
+            s.connect((h, int(c['port'])))
+            print(f"    ✅ {h}:{c['port']}  ({time.time()-t0:.2f}s)")
+            alive += 1
+        except socket.timeout:
+            print(f"    ⛔ {h}:{c['port']}  타임아웃 — 응답 없음(방화벽/노드 다운)")
+        except Exception as e:
+            print(f"    ❌ {h}:{c['port']}  {e}")
+        finally:
+            s.close()
+    print(f"    → 살아있는 노드 {alive}/{len(c['hosts'])}")
+    if alive == 0:
+        print("    ※ 전부 막혔으면 이 서버에서 DB 로 나가는 경로가 없는 것 — 방화벽/망 확인")
+    print()
+    print("[2] Oracle 로그인 + 조회")
     now = datetime.now()
     for label, (f0, f1) in (('오늘 00:00~현재', (now.replace(hour=0, minute=0, second=0, microsecond=0), now)),
                             ('어제 하루', (now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1),
@@ -517,7 +539,11 @@ def diagnose(a):
         for k in sorted(cache)[:3]:
             e = cache[k]
             print(f"     {k}  {','.join(e['machine'])}  {' / '.join(e['ports'])}  {','.join(e['proc'])}")
-    print('\n[해석]  접속 실패 → hosts/service/계정 확인 · 조회 0건 → 그 기간에 조작이 없던 것')
+    print()
+    print('[해석]')
+    print('  · TCP 전부 ⛔  → 이 서버에서 DB 로 나가는 망이 막힘 (코드 문제 아님, 방화벽 신청)')
+    print('  · TCP 일부 ✅ 인데 로그인 실패 → 계정/서비스명 확인 (ORA-01017 / ORA-12514)')
+    print('  · 전부 ✅ 인데 조회 0건 → 그 기간에 MAXCAPA 조작이 없던 것 (정상)')
 
 
 def main():
