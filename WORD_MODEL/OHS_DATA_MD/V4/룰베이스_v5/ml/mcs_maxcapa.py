@@ -35,11 +35,11 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
                    --source db        (Oracle 직접, mcs_config.ini 필요)
                    --source csv --maxcapa .\maxcapa_v3.csv  (수집본 사용)
   테스트(원본보존): --out .\테스트.csv
-  옵션: --interval 60 · --lookback 20 · --offset 25 · --config mcs_config.ini · --force
+  옵션: --interval 60 · --lookback 10 · --offset 25 · --config mcs_config.ini · --force
 
 동작 원리 (LO_LOW_AMOS 와 동일):
   · 시작 직후 1회 그날 파일 전체 재기입 + 그날 00:00~현재 전체 조회 → 자가복구
-  · 이후 사이클은 최근 --lookback 분만 조회해서 캐시 갱신 (DB 부담 최소)
+  · 이후 사이클은 최근 --lookback 분(기본 10)만 조회해서 캐시 갱신 (DB 부담 최소)
   · 파일에 4컬럼 없으면 헤더에 추가, 있으면 이어서 기입
   · 조회 실패(DB 불안정)면 그 사이클은 파일 안 건드리고 다음 분에 재시도
   · 저장은 임시파일 → 원자 교체, 기입 중 파일 변경/잠김 감지 시 스킵 후 재시도
@@ -413,12 +413,12 @@ LP_PROFILE = 'mcs_m16'
 LP_SCHEMA = 'MCSADM'      # NT_L_LOGMESSAGE 소유자 (접속계정 MCSREAD 와 다르므로 반드시 명시)
 
 SQL_ONESHOT = """
-SELECT /*+ INDEX(a NT_L_LOGMESSAGE_IX2) */
+SELECT /*+ LEADING(a) USE_NL(a b) INDEX(a NT_L_LOGMESSAGE_IX2) */
        a.TRANSACTIONID AS TXID,
        TO_CHAR(a.TIME,'YYYY-MM-DD HH24:MI') AS TM,
        a.PROCESSNAME AS PROC,
        b.MACHINENAME AS MACHINE,
-       DBMS_LOB.SUBSTR(b.TEXT, 2000, 1) AS TXT
+       DBMS_LOB.SUBSTR(b.TEXT, 300, 1) AS TXT
   FROM {sch}.NT_L_LOGMESSAGE a, {sch}.NT_L_LOGMESSAGE b
  WHERE a.COMMUNICATIONMESSAGENAME = '{msg}'
    AND a.TIME >= TO_DATE('{f}','YYYY-MM-DD HH24:MI:SS')
@@ -427,6 +427,7 @@ SELECT /*+ INDEX(a NT_L_LOGMESSAGE_IX2) */
    AND b.TIME <  TO_DATE('{t}','YYYY-MM-DD HH24:MI:SS')
    AND b.TRANSACTIONID = a.TRANSACTIONID
    AND b.PARTITIONID = a.PARTITIONID
+   AND b.MACHINENAME IS NOT NULL
    AND INSTR(b.OPERATIONNAME,'compareAndUpdatePortMaxCapacity') > 0
  ORDER BY a.TIME
 """
@@ -477,9 +478,12 @@ def fetch_lp(a, dt_from, dt_to, cache):
         if not m:
             continue
         port, after = m.group(1), m.group(2)
-        k = (r.get('TM') or '').strip()[:16]
-        if not k:
+        # ★ TO_CHAR 결과가 '2026-07-28 8:46' 처럼 시가 비패딩으로 올 수 있다.
+        #   발동이벤트 쪽 키는 '08:46' 로 정규화되므로 반드시 같은 방식으로 맞춘다.
+        tdt = parse_dt(r.get('TM'))
+        if not tdt:
             continue
+        k = tdt.strftime('%Y-%m-%d %H:%M')
         e = cache.setdefault(k, {'machine': [], 'ports': [], 'proc': [], 'tx': []})
         mach = (r.get('MACHINE') or '').strip() or port.split('_')[0]
         if mach not in e['machine']:
@@ -564,7 +568,7 @@ def _loop(a):
             print(f'  ⚠️ [mcs_maxcapa] 오류(계속): {e}'); time.sleep(a.interval)
 
 
-def run_watch(event='./predict_tobe', interval=60, lookback=20, offset=25,
+def run_watch(event='./predict_tobe', interval=60, lookback=10, offset=25,
               config='mcs_config.ini', source='logpresso', maxcapa='./maxcapa_v3.csv',
               lp_host=LP_HOST, lp_port=LP_PORT, lp_apikey=LP_APIKEY,
               lp_profile=LP_PROFILE, lp_schema=LP_SCHEMA):
@@ -661,7 +665,7 @@ def main():
     ap.add_argument('--force', action='store_true', help='단일 파일도 전체 덮어쓰기')
     ap.add_argument('--test', action='store_true', help='접속·조회 점검 (--event 불필요)')
     ap.add_argument('--interval', type=int, default=60)
-    ap.add_argument('--lookback', type=int, default=20, help='매 사이클 재조회할 최근 분 (기본 20)')
+    ap.add_argument('--lookback', type=int, default=10, help='매 사이클 재조회할 최근 분 (기본 10)')
     ap.add_argument('--offset', type=int, default=25,
                     help='수집기와 접속 시점 겹침 방지 지연(초, 기본 25). --loop 에만 적용')
     ap.add_argument('--config', default='mcs_config.ini')
