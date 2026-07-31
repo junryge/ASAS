@@ -33,10 +33,10 @@ except Exception as e:
 
 # MAXCAPA 조작내역 기입기 (발동이벤트.csv에 MACHINE/PORT:후(after)/PROCESS/TRANSACTIONID)
 try:
-    import LO_MAXCAPA
+    import mcs_maxcapa
     _MC_AVAILABLE = True
 except Exception as e:
-    print(f'⚠ LO_MAXCAPA 로드 실패 — MAXCAPA 기입 비활성: {e}')
+    print(f'⚠ mcs_maxcapa 로드 실패 — MAXCAPA 기입 비활성: {e}')
     _MC_AVAILABLE = False
 
 # 하이브리드는 v4.1 호환 작업 후 별도 활성화 — 일단 비활성 유지
@@ -69,11 +69,11 @@ if _LP_AVAILABLE:
                      daemon=True).start()
 
 # MAXCAPA 조작내역 기입기 (백그라운드 데몬)
-#   maxcapa 경로 = maxcapa_v3.py 산출 CSV. 자동 수집까지 원하면 collect_flag=True
+#   MCS Oracle 직접 조회 — 접속정보는 mcs_config.ini (같은 폴더)
+#   DB 대신 수집 CSV 를 쓰려면: kwargs 에 source='csv', maxcapa=r'.\maxcapa_v3.csv'
 if _MC_AVAILABLE:
-    threading.Thread(target=LO_MAXCAPA.run_watch,
-                     kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR),
-                             'maxcapa': r'.\maxcapa_v3.csv'},
+    threading.Thread(target=mcs_maxcapa.run_watch,
+                     kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
                      daemon=True).start()
 
 predictor.run_watch(predictor.DEFAULT_INPUT_CSV, out_dir, logger)

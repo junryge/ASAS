@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LO_MAXCAPA — MAXCAPA 조작내역 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
+mcs_maxcapa — MAXCAPA 조작내역 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
 ====================================================================
 LO_LOW_AMOS 와 동일한 구조. 다른 점은 조회 대상이 로그프레소(HTTP) 가 아니라
 MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발동이벤트.csv 자체에 기입.
@@ -26,11 +26,11 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
       RAC 4노드 FAILOVER DSN 을 config 값으로 조립한다.
 
 실행:
-  운영(1분 루프):  python LO_MAXCAPA.py --event .\predict_tobe --loop
+  운영(1분 루프):  python mcs_maxcapa.py --event .\predict_tobe --loop
                    (--event 폴더를 주면 최신 *발동이벤트*.csv 자동 선택, 자정 전환 대응)
-  1회만:           python LO_MAXCAPA.py --event .\predict_tobe\20260728_발동이벤트.csv
-  과거 일괄백필:   python LO_MAXCAPA.py --event .\predict_tobe --alldays
-  접속 점검:       python LO_MAXCAPA.py --test
+  1회만:           python mcs_maxcapa.py --event .\predict_tobe\20260728_발동이벤트.csv
+  과거 일괄백필:   python mcs_maxcapa.py --event .\predict_tobe --alldays
+  접속 점검:       python mcs_maxcapa.py --test
   CSV 사용(옵션):  --source csv --maxcapa .\maxcapa_v3.csv   (DB 대신 수집본 사용)
   테스트(원본보존): --out .\테스트.csv
   옵션: --interval 60 · --lookback 20 · --config mcs_config.ini · --force
@@ -45,8 +45,8 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
   · 조작 0건인 분은 공란 (정상 — 대부분의 분에는 조작이 없다)
 
 run_ml 통합 (스레드):
-  import LO_MAXCAPA
-  threading.Thread(target=LO_MAXCAPA.run_watch,
+  import mcs_maxcapa
+  threading.Thread(target=mcs_maxcapa.run_watch,
                    kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)}, daemon=True).start()
 """
 import argparse, configparser, csv, os, re, sys, time
@@ -353,7 +353,7 @@ def refresh(a, cache, dt_from, dt_to):
 # 운영 루프
 # ────────────────────────────────────────────────────────────
 def _loop(a):
-    print(f'[LO_MAXCAPA] {a.interval}초 간격 · 대상 {a.event} · 원본 '
+    print(f'[mcs_maxcapa] {a.interval}초 간격 · 대상 {a.event} · 원본 '
           + ('CSV ' + str(a.maxcapa) if a.source == 'csv' else f"Oracle {a.cfg['service']}"))
     cache, healed, finishing, cur = {}, set(), {}, None
     user_force = getattr(a, 'force', False)
@@ -390,12 +390,12 @@ def _loop(a):
                     del finishing[old]
                     print(f'  ✅ 전날 파일 마무리 완료: {os.path.basename(old)}')
             if n is not None:
-                print(f'[LO_MAXCAPA {datetime.now():%H:%M:%S}] 기입 {n}행 (캐시 {len(cache)}분)')
+                print(f'[mcs_maxcapa {datetime.now():%H:%M:%S}] 기입 {n}행 (캐시 {len(cache)}분)')
             time.sleep(a.interval)
         except KeyboardInterrupt:
-            print('\n[LO_MAXCAPA] 종료.'); break
+            print('\n[mcs_maxcapa] 종료.'); break
         except Exception as e:
-            print(f'  ⚠️ [LO_MAXCAPA] 오류(계속): {e}'); time.sleep(a.interval)
+            print(f'  ⚠️ [mcs_maxcapa] 오류(계속): {e}'); time.sleep(a.interval)
 
 
 def run_watch(event='./predict_tobe', interval=60, lookback=20,
