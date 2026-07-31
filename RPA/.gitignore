@@ -5,3 +5,4 @@ downloads/
 __pycache__/
 *.pyc
 rpa_flow.json
+run_flow.log
