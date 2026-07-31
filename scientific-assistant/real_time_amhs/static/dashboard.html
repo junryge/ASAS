@@ -231,7 +231,7 @@
     <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
   <div class="kpi"><div class="l">감지 지연</div>
     <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
-  <div class="kpi"><div class="l">재발률 (1h)</div>
+  <div class="kpi" id="kpi-recur"><div class="l">재발률 (1h)</div>
     <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
   <div class="kpi" id="kpi-acc" title="1분마다 LLM 이 판단한 것을 이후 실제 데이터 흐름과 대조한 값입니다. 검증된 정탐률이 아닙니다.">
     <div class="l">LLM 판단 일치 <span class="note" style="font-size:10px">· 클릭 상세</span></div>
@@ -468,8 +468,21 @@ async function pollStatus(){
     $('#k-active-s').textContent = `최근 30분 신규 ${k.active_new_30m}건`;
     $('#k-lat').innerHTML      = `${k.detect_latency_ms??'–'}<u>ms</u>`;
     $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
-    $('#k-recur').innerHTML    = `${k.recur_rate_1h}<u>%</u>`;
-    $('#k-recur-s').textContent= `최근 1시간 ${k.recur_base}건 기준`;
+    // 재발률 — 임계(50점) 이상이 가라앉았다 다시 올라온 비율. 표본이 없으면 '–'
+    if(k.recur_rate_1h == null){
+      $('#k-recur').innerHTML     = `–<u>%</u>`;
+      $('#k-recur-s').textContent = `최근 1시간 ${k.recur_floor??50}점 이상 없음`;
+    }else{
+      $('#k-recur').innerHTML     = `${k.recur_rate_1h}<u>%</u>`;
+      $('#k-recur-s').textContent = `최근 1시간 정체 ${k.recur_base}구간 · 재발 ${k.recur_events}회`
+        + ` (${k.recur_minutes}분)`;
+    }
+    $('#kpi-recur').title =
+      `${k.recur_floor??50}점 이상 구간이 임계 아래로 내려갔다가 다시 올라온 비율입니다.`
+      + `\n· 분모 = 최근 1시간 ${k.recur_floor??50}점 이상 구간 수`
+      + `\n· 분자 = 그중 다시 올라온 횟수 (구간 수 − 1)`
+      + `\n· 예) 3구간이면 재발 2회 → 67%`
+      + `\n기준 시각(데이터 최신) ${(k.recur_ref||'').replace('T',' ').slice(0,16)}`;
     renderAcc(k.llm_match);
   }catch(e){}
 }

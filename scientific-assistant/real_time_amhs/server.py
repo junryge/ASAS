@@ -552,25 +552,75 @@ def api_data_csv(day):
                                as_attachment=True)
 
 
+def _recur_1h(ref: datetime) -> dict:
+    """재발률 — '50점(임계) 이상이 가라앉았다가 다시 올라왔나' 를 분단위 점수로 센다.
+
+    최근 60분 점수를 보고 임계 이상 구간(런)을 끊는다. 임계 미만으로 내려간 뒤
+    다시 올라오면 그게 재발이다.
+        런 1개  → 재발 0회 → 0%
+        런 3개  → 재발 2회 → 67%   (2/3)
+    분모는 런 수, 분자는 재발 횟수(런 수 - 1). 최근 60분에 임계 이상이 아예
+    없으면 rate 는 None (0% 로 굳어 보이지 않게).
+    """
+    from sentinel import _row_dt, _score
+    floor = alarm_floor(CFG)
+    rows = STATE.get("last_rows") or []
+    try:                                      # 폴링 구간이 60분보다 짧으면 저장분으로 보충
+        from store_csv import read_day
+        saved = read_day(ref.strftime("%Y%m%d"), CFG)
+        if saved:
+            seen_dt = {(r.get("datetime") or "") for r in rows}
+            rows = list(rows) + [r for r in saved
+                                 if (r.get("datetime") or "") not in seen_dt]
+    except Exception:
+        pass
+
+    win = []
+    for r in rows:
+        d = _row_dt(r)
+        if d and 0 <= (ref - d).total_seconds() / 60 <= 60:
+            win.append((d, _score(r)))
+    win.sort(key=lambda x: x[0])
+
+    runs, over, minutes = 0, False, 0
+    for _, s in win:
+        if s >= floor:
+            minutes += 1
+            if not over:
+                runs += 1                     # 임계 아래에서 위로 올라온 순간 = 런 시작
+            over = True
+        else:
+            over = False
+    recur = max(0, runs - 1)
+    return {"rate": round(100 * recur / runs, 1) if runs else None,
+            "runs": runs, "recur": recur, "minutes": minutes, "floor": floor}
+
+
 @app.route("/api/kpi")
 def api_kpi():
     """상단 지표 — 실제 계산 가능한 값만. 근거 없는 수치는 null 로 둔다."""
-    now = datetime.now()
     act = STORE.active()
 
-    def age_min(c):
+    def _dt(s):
         try:
-            return (now - datetime.fromisoformat(c["opened_at"])).total_seconds() / 60
+            return datetime.fromisoformat(s)
         except Exception:
-            return 0
+            return None
+
+    # ★기준 시각 = '데이터의 최신 시각'. 벽시계로 재면 로그프레소가 몇 분 밀리거나
+    #   과거 날짜를 재생할 때 모든 케이스가 '1시간 밖' 이 돼 재발률이 늘 0% 로 굳는다.
+    seen = [d for d in (_dt(c.get("last_seen") or c.get("opened_at"))
+                        for c in STORE.cases) if d]
+    ref = max(seen) if seen else datetime.now()
+
+    def age_min(c, field="opened_at"):
+        d = _dt(c.get(field) or c.get("opened_at"))
+        return (ref - d).total_seconds() / 60 if d else 0
 
     unack = [c for c in act if not c.get("acked_at")]
     new30 = [c for c in act if age_min(c) <= 30]
 
-    # 재발률 — 최근 1시간 케이스 중 억제 창 재발(재발/자동종결 후 재개)이 있던 비율
-    recent = [c for c in STORE.cases if age_min(c) <= 60]
-    reopened = [c for c in recent
-                if any(t["kind"] == "재발" for t in c.get("timeline", []))]
+    rc = _recur_1h(ref)
 
     # LLM 판단 일치 — 1분 추론의 사후검증 결과 (★정탐률이 아니다)
     try:
@@ -585,8 +635,12 @@ def api_kpi():
         "unack": len(unack),
         "unack_over_5m": len([c for c in unack if age_min(c) >= 5]),
         "detect_latency_ms": STATE.get("latency_ms"),
-        "recur_rate_1h": round(100 * len(reopened) / len(recent), 1) if recent else 0,
-        "recur_base": len(recent),
+        "recur_rate_1h": rc["rate"],
+        "recur_base": rc["runs"],
+        "recur_events": rc["recur"],
+        "recur_minutes": rc["minutes"],
+        "recur_floor": rc["floor"],
+        "recur_ref": ref.isoformat(),
         "llm_match": acc,
         "by_level": {lv: len([c for c in act if c["level"] == lv])
                      for lv in ("경계", "위험", "초위험")},
