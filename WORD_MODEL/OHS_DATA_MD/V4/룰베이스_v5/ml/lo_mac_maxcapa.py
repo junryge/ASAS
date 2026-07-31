@@ -35,7 +35,7 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
                    --source db        (Oracle 직접, mcs_config.ini 필요)
                    --source csv --maxcapa .\maxcapa_v3.csv  (수집본 사용)
   테스트(원본보존): --out .\테스트.csv
-  옵션: --interval 60 · --lookback 10 · --offset 25 · --config mcs_config.ini · --force
+  옵션: --interval 60 · --lookback 10 · --offset 25 · --chunk-hours 2 · --config mcs_config.ini · --force
 
 동작 원리 (LO_LOW_AMOS 와 동일):
   · 시작 직후 1회 그날 파일 전체 재기입 + 그날 00:00~현재 전체 조회 → 자가복구
@@ -410,7 +410,9 @@ def cycle(a, cache, fp=None, state={'seen': set()}):
 LP_HOST, LP_PORT = '10.40.42.167', 8888
 LP_APIKEY = '10f12ae0-5a80-55cd-7b15-e5554f0612f3'
 LP_PROFILE = 'mcs_m16'
-LP_SCHEMA = 'MCSADM'      # NT_L_LOGMESSAGE 소유자 (접속계정 MCSREAD 와 다르므로 반드시 명시)
+LP_SCHEMA = 'MCSADM'
+CHUNK_HOURS = 2           # 조회를 이 시간 단위로 쪼갠다 (하루 통조회는 타임아웃)
+LP_TIMEOUT = 120          # 구간별 HTTP 타임아웃(초)      # NT_L_LOGMESSAGE 소유자 (접속계정 MCSREAD 와 다르므로 반드시 명시)
 
 SQL_ONESHOT = """
 SELECT /*+ LEADING(a) USE_NL(a b) INDEX(a NT_L_LOGMESSAGE_IX2) */
@@ -434,7 +436,7 @@ SELECT /*+ LEADING(a) USE_NL(a b) INDEX(a NT_L_LOGMESSAGE_IX2) */
 # ★ b.TIME 조건이 없으면 조인 상대가 로그 테이블 전체를 스캔한다 (파티션 프루닝 불가) → 매우 느림
 
 
-def lp_query(a, lpql, timeout=180):
+def lp_query(a, lpql, timeout=LP_TIMEOUT):
     """로그프레소 실행 → CSV 텍스트. 0건이면 빈 문자열, 오류면 None."""
     import urllib.parse
     import requests
@@ -464,12 +466,35 @@ def lp_query(a, lpql, timeout=180):
 
 
 def fetch_lp(a, dt_from, dt_to, cache):
-    """로그프레소 dbquery 로 MAXCAPA 조작 조회 → cache 갱신."""
+    """로그프레소 dbquery 로 MAXCAPA 조작 조회 → cache 갱신.
+    ★ 하루를 통으로 던지면 타임아웃난다(실측). chunk 시간 단위로 쪼개서 조회한다."""
+    hours = max(1, getattr(a, 'chunk_hours', CHUNK_HOURS))
+    span = timedelta(hours=hours)
+    if dt_to - dt_from > span:
+        cur, idx, total = dt_from, 0, 0
+        n_chunk = int((dt_to - dt_from + span - timedelta(seconds=1)) / span)
+        while cur < dt_to:
+            nxt = min(cur + span, dt_to)
+            idx += 1
+            before = sum(len(v['ports']) for v in cache.values())
+            if not _fetch_lp_once(a, cur, nxt, cache, quiet=True):
+                print(f'  ⚠️ {idx}/{n_chunk} 구간 실패 ({cur:%H:%M}~{nxt:%H:%M})')
+                return False
+            got = sum(len(v['ports']) for v in cache.values()) - before
+            total += got
+            print(f'  [LP {idx}/{n_chunk}] {cur:%m/%d %H:%M}~{nxt:%H:%M} → {got}건')
+            cur = nxt
+        print(f'  [LP·dbquery {a.lp_profile}] 합계 포트변경 {total}건')
+        return True
+    return _fetch_lp_once(a, dt_from, dt_to, cache)
+
+
+def _fetch_lp_once(a, dt_from, dt_to, cache, quiet=False):
     t0 = time.time()
     sql = SQL_ONESHOT.format(msg=MSG, sch=getattr(a, 'lp_schema', LP_SCHEMA),
                              f=dt_from.strftime('%Y-%m-%d %H:%M:%S'),
                              t=dt_to.strftime('%Y-%m-%d %H:%M:%S'))
-    text = lp_query(a, f'dbquery {a.lp_profile} {sql}')
+    text = lp_query(a, f'dbquery {a.lp_profile} {sql}', timeout=a.lp_timeout)
     if text is None:
         return False
     n = 0
@@ -498,8 +523,9 @@ def fetch_lp(a, dt_from, dt_to, cache):
         if tx and tx not in e['tx']:
             e['tx'].append(tx)
         n += 1
-    print(f'  [LP·dbquery {a.lp_profile}] {dt_from:%m/%d %H:%M}~{dt_to:%H:%M} → '
-          f'포트변경 {n}건 · {time.time()-t0:.1f}s')
+    if not quiet:
+        print(f'  [LP·dbquery {a.lp_profile}] {dt_from:%m/%d %H:%M}~{dt_to:%H:%M} → '
+              f'포트변경 {n}건 · {time.time()-t0:.1f}s')
     return True
 
 
@@ -571,12 +597,14 @@ def _loop(a):
 def run_watch(event='./predict_tobe', interval=60, lookback=10, offset=25,
               config='mcs_config.ini', source='logpresso', maxcapa='./maxcapa_v3.csv',
               lp_host=LP_HOST, lp_port=LP_PORT, lp_apikey=LP_APIKEY,
-              lp_profile=LP_PROFILE, lp_schema=LP_SCHEMA):
+              lp_profile=LP_PROFILE, lp_schema=LP_SCHEMA,
+              chunk_hours=CHUNK_HOURS, lp_timeout=LP_TIMEOUT):
     """run_ml 등에서 스레드로 돌리는 진입점. offset=수집기와 겹침 방지(초)."""
     a = argparse.Namespace(event=event, out=None, interval=interval, lookback=lookback,
                            source=source, maxcapa=maxcapa, force=False, config=config,
                            offset=offset, lp_host=lp_host, lp_port=lp_port,
-                           lp_apikey=lp_apikey, lp_profile=lp_profile, lp_schema=lp_schema)
+                           lp_apikey=lp_apikey, lp_profile=lp_profile, lp_schema=lp_schema,
+                           chunk_hours=chunk_hours, lp_timeout=lp_timeout)
     a.cfg = load_cfg(config) if source == 'db' else None
     _loop(a)
 
@@ -683,6 +711,10 @@ def main():
                     help='로그프레소 DB 프로파일명 (기본 mcs_m16)')
     ap.add_argument('--lp-schema', dest='lp_schema', default=LP_SCHEMA,
                     help='로그 테이블 소유자 (기본 MCSADM)')
+    ap.add_argument('--chunk-hours', dest='chunk_hours', type=int, default=CHUNK_HOURS,
+                    help='조회를 몇 시간 단위로 쪼갤지 (기본 2 — 하루 통조회는 타임아웃)')
+    ap.add_argument('--lp-timeout', dest='lp_timeout', type=int, default=LP_TIMEOUT,
+                    help='구간별 HTTP 타임아웃 초 (기본 120)')
     ap.add_argument('--maxcapa', default='./maxcapa_v3.csv', help='--source csv 일 때 원본')
     a = ap.parse_args()
     a.cfg = load_cfg(a.config) if a.source == 'db' else None
