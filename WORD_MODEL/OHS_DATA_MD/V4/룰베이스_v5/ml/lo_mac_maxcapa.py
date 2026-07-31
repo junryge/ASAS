@@ -1,56 +1,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-lo_mac_maxcapa — MAXCAPA 조작내역 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
-====================================================================
-LO_LOW_AMOS 와 동일한 구조. 다른 점은 조회 대상이 로그프레소(HTTP) 가 아니라
-MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발동이벤트.csv 자체에 기입.
-
-조회 (maxcapa_v3.py 와 동일한 2단계):
-  ① NT_L_LOGMESSAGE 에서 COMMUNICATIONMESSAGENAME='UI-UNIT-PORT-MAXCAPACITY-UPDATE'
-     → TRANSACTIONID / TIME / PROCESSNAME / PARTITIONID
-  ② 각 TRANSACTIONID 재조회 → TEXT 에서
-     port{6ABL6031_AI612}.maxCapacity was changed to {1}  파싱
-
-추가 4컬럼 (같은 분끼리: 발동이벤트 datetime T == 조작시각 T):
-  MACHINE            그 분에 조작된 설비 (여러개면 쉼표)
-  PORT:후(after)     'PORT:후값' 을 줄바꿈으로 나열 — 예)
-                       6ABL6031_AI612:1
-                       6ABL6031_AI622:1
-                       6ABL6031_AO623:1
-  PROCESS            TS15 등 (여러개면 쉼표)
-  TRANSACTIONID      MCS... (여러개면 쉼표)
-
-접속(기본 --source logpresso): 로그프레소 httpexport 로 `dbquery mcs_m16 <SQL>` 실행.
-      MCS DB 에 직접 붙지 못하는 망(접근제어)에서도 로그프레소는 이미 뚫려 있으므로 그 길을 쓴다.
-      --source db 로 바꾸면 mcs_config.ini 의 RAC FAILOVER DSN 으로 Oracle 에 직접 접속.
-
-실행:
-  운영(1분 루프):  python lo_mac_maxcapa.py --event .\predict_tobe --loop
-                   (--event 폴더를 주면 최신 *발동이벤트*.csv 자동 선택, 자정 전환 대응)
-  1회만:           python lo_mac_maxcapa.py --event .\predict_tobe\20260728_발동이벤트.csv
-  과거 일괄백필:   python lo_mac_maxcapa.py --event .\predict_tobe --alldays
-  접속 점검:       python lo_mac_maxcapa.py --test
-  조회 경로:       --source logpresso (기본, 로그프레소 dbquery 경유 — MCS DB 직접 접속 막힌 망용)
-                   --source db        (Oracle 직접, mcs_config.ini 필요)
-                   --source csv --maxcapa .\maxcapa_v3.csv  (수집본 사용)
-  테스트(원본보존): --out .\테스트.csv
-  옵션: --interval 60 · --lookback 10 · --offset 25 · --chunk-hours 2 · --config mcs_config.ini · --force
-
-동작 원리 (LO_LOW_AMOS 와 동일):
-  · 시작 직후 1회 그날 파일 전체 재기입 + 그날 00:00~현재 전체 조회 → 자가복구
-  · 이후 사이클은 최근 --lookback 분(기본 10)만 조회해서 캐시 갱신 (DB 부담 최소)
-  · 파일에 4컬럼 없으면 헤더에 추가, 있으면 이어서 기입
-  · 조회 실패(DB 불안정)면 그 사이클은 파일 안 건드리고 다음 분에 재시도
-  · 저장은 임시파일 → 원자 교체, 기입 중 파일 변경/잠김 감지 시 스킵 후 재시도
-  · 자정 전환 시 전날 파일 6사이클 더 마무리
-  · 조작 0건인 분은 공란 (정상 — 대부분의 분에는 조작이 없다)
-
-run_ml 통합 (스레드):
-  import lo_mac_maxcapa
-  threading.Thread(target=lo_mac_maxcapa.run_watch,
-                   kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)}, daemon=True).start()
-"""
+# lo_mac_maxcapa — MAXCAPA 조작내역 → 발동이벤트.csv 에 4컬럼 직접 기입 (운영용)
+# ====================================================================
+# LO_LOW_AMOS 와 동일한 구조. 다른 점은 조회 대상이 로그프레소(HTTP) 가 아니라
+# MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발동이벤트.csv 자체에 기입.
+#
+# 조회 (maxcapa_v3.py 와 동일한 2단계):
+#   ① NT_L_LOGMESSAGE 에서 COMMUNICATIONMESSAGENAME='UI-UNIT-PORT-MAXCAPACITY-UPDATE'
+#      → TRANSACTIONID / TIME / PROCESSNAME / PARTITIONID
+#   ② 각 TRANSACTIONID 재조회 → TEXT 에서
+#      port{6ABL6031_AI612}.maxCapacity was changed to {1}  파싱
+#
+# 추가 4컬럼 (같은 분끼리: 발동이벤트 datetime T == 조작시각 T):
+#   MACHINE            그 분에 조작된 설비 (여러개면 쉼표)
+#   PORT:후(after)     'PORT:후값' 을 줄바꿈으로 나열 — 예)
+#                        6ABL6031_AI612:1
+#                        6ABL6031_AI622:1
+#                        6ABL6031_AO623:1
+#   PROCESS            TS15 등 (여러개면 쉼표)
+#   TRANSACTIONID      MCS... (여러개면 쉼표)
+#
+# 접속(기본 --source logpresso): 로그프레소 httpexport 로 `dbquery mcs_m16 <SQL>` 실행.
+#       MCS DB 에 직접 붙지 못하는 망(접근제어)에서도 로그프레소는 이미 뚫려 있으므로 그 길을 쓴다.
+#       --source db 로 바꾸면 mcs_config.ini 의 RAC FAILOVER DSN 으로 Oracle 에 직접 접속.
+#
+# 실행:
+#   운영(1분 루프):  python lo_mac_maxcapa.py --event .\predict_tobe --loop
+#                    (--event 폴더를 주면 최신 *발동이벤트*.csv 자동 선택, 자정 전환 대응)
+#   1회만:           python lo_mac_maxcapa.py --event .\predict_tobe\20260728_발동이벤트.csv
+#   과거 일괄백필:   python lo_mac_maxcapa.py --event .\predict_tobe --alldays
+#   접속 점검:       python lo_mac_maxcapa.py --test
+#   조회 경로:       --source logpresso (기본, 로그프레소 dbquery 경유 — MCS DB 직접 접속 막힌 망용)
+#                    --source db        (Oracle 직접, mcs_config.ini 필요)
+#                    --source csv --maxcapa .\maxcapa_v3.csv  (수집본 사용)
+#   테스트(원본보존): --out .\테스트.csv
+#   옵션: --interval 60 · --lookback 10 · --offset 25 · --chunk-hours 2 · --config mcs_config.ini · --force
+#
+# 동작 원리 (LO_LOW_AMOS 와 동일):
+#   · 시작 직후 1회 그날 파일 전체 재기입 + 그날 00:00~현재 전체 조회 → 자가복구
+#   · 이후 사이클은 최근 --lookback 분(기본 10)만 조회해서 캐시 갱신 (DB 부담 최소)
+#   · 파일에 4컬럼 없으면 헤더에 추가, 있으면 이어서 기입
+#   · 조회 실패(DB 불안정)면 그 사이클은 파일 안 건드리고 다음 분에 재시도
+#   · 저장은 임시파일 → 원자 교체, 기입 중 파일 변경/잠김 감지 시 스킵 후 재시도
+#   · 자정 전환 시 전날 파일 6사이클 더 마무리
+#   · 조작 0건인 분은 공란 (정상 — 대부분의 분에는 조작이 없다)
+#
+# run_ml 통합 (스레드):
+#   import lo_mac_maxcapa
+#   threading.Thread(target=lo_mac_maxcapa.run_watch,
+#                    kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)}, daemon=True).start()
 import argparse, configparser, csv, os, re, sys, time
 from datetime import datetime, timedelta
 
