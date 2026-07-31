@@ -421,11 +421,14 @@ SELECT a.TRANSACTIONID AS TXID,
  WHERE a.COMMUNICATIONMESSAGENAME = '{msg}'
    AND a.TIME >= TO_DATE('{f}','YYYY-MM-DD HH24:MI:SS')
    AND a.TIME <  TO_DATE('{t}','YYYY-MM-DD HH24:MI:SS')
+   AND b.TIME >= TO_DATE('{f}','YYYY-MM-DD HH24:MI:SS')
+   AND b.TIME <  TO_DATE('{t}','YYYY-MM-DD HH24:MI:SS')
    AND b.TRANSACTIONID = a.TRANSACTIONID
    AND b.PARTITIONID = a.PARTITIONID
    AND INSTR(b.OPERATIONNAME,'compareAndUpdatePortMaxCapacity') > 0
  ORDER BY a.TIME
 """
+# ★ b.TIME 조건이 없으면 조인 상대가 로그 테이블 전체를 스캔한다 (파티션 프루닝 불가) → 매우 느림
 
 
 def lp_query(a, lpql, timeout=180):
