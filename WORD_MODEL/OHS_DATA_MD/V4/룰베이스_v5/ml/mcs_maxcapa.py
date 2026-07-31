@@ -21,9 +21,9 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
   PROCESS            TS15 등 (여러개면 쉼표)
   TRANSACTIONID      MCS... (여러개면 쉼표)
 
-접속: 같은 폴더 mcs_config.ini  ([oracle] hosts/port/service_name/user/password)
-      드라이버는 oracledb 또는 cx_Oracle 중 설치된 것을 자동 사용.
-      RAC 4노드 FAILOVER DSN 을 config 값으로 조립한다.
+접속(기본 --source logpresso): 로그프레소 httpexport 로 `dbquery mcs_m16 <SQL>` 실행.
+      MCS DB 에 직접 붙지 못하는 망(접근제어)에서도 로그프레소는 이미 뚫려 있으므로 그 길을 쓴다.
+      --source db 로 바꾸면 mcs_config.ini 의 RAC FAILOVER DSN 으로 Oracle 에 직접 접속.
 
 실행:
   운영(1분 루프):  python mcs_maxcapa.py --event .\predict_tobe --loop
@@ -31,7 +31,9 @@ MCS 운영 Oracle 이라는 것뿐이다. 별도 병합파일 안 만들고 발�
   1회만:           python mcs_maxcapa.py --event .\predict_tobe\20260728_발동이벤트.csv
   과거 일괄백필:   python mcs_maxcapa.py --event .\predict_tobe --alldays
   접속 점검:       python mcs_maxcapa.py --test
-  CSV 사용(옵션):  --source csv --maxcapa .\maxcapa_v3.csv   (DB 대신 수집본 사용)
+  조회 경로:       --source logpresso (기본, 로그프레소 dbquery 경유 — MCS DB 직접 접속 막힌 망용)
+                   --source db        (Oracle 직접, mcs_config.ini 필요)
+                   --source csv --maxcapa .\maxcapa_v3.csv  (수집본 사용)
   테스트(원본보존): --out .\테스트.csv
   옵션: --interval 60 · --lookback 20 · --offset 25 · --config mcs_config.ini · --force
 
@@ -400,10 +402,104 @@ def cycle(a, cache, fp=None, state={'seen': set()}):
     return len(targets)
 
 
+# ────────────────────────────────────────────────────────────
+# 로그프레소 dbquery 경유 (MCS DB 직접 접속이 막힌 망에서 사용)
+#   운영 PC → MCS DB 는 접근제어로 막혀 있어도, 로그프레소는 이미 붙어 있으므로
+#   `dbquery <프로파일> <SQL>` 로 우회 조회한다. LO_LOW_AMOS 와 같은 엔드포인트.
+# ────────────────────────────────────────────────────────────
+LP_HOST, LP_PORT = '10.40.42.167', 8888
+LP_APIKEY = '10f12ae0-5a80-55cd-7b15-e5554f0612f3'
+LP_PROFILE = 'mcs_m16'
+
+SQL_ONESHOT = """
+SELECT a.TRANSACTIONID AS TXID,
+       TO_CHAR(a.TIME,'YYYY-MM-DD HH24:MI') AS TM,
+       a.PROCESSNAME AS PROC,
+       b.MACHINENAME AS MACHINE,
+       DBMS_LOB.SUBSTR(b.TEXT, 2000, 1) AS TXT
+  FROM NT_L_LOGMESSAGE a, NT_L_LOGMESSAGE b
+ WHERE a.COMMUNICATIONMESSAGENAME = '{msg}'
+   AND a.TIME >= TO_DATE('{f}','YYYY-MM-DD HH24:MI:SS')
+   AND a.TIME <  TO_DATE('{t}','YYYY-MM-DD HH24:MI:SS')
+   AND b.TRANSACTIONID = a.TRANSACTIONID
+   AND b.PARTITIONID = a.PARTITIONID
+   AND INSTR(b.OPERATIONNAME,'compareAndUpdatePortMaxCapacity') > 0
+ ORDER BY a.TIME
+"""
+
+
+def lp_query(a, lpql, timeout=180):
+    """로그프레소 실행 → CSV 텍스트. 0건이면 빈 문자열, 오류면 None."""
+    import urllib.parse
+    import requests
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    q = ' '.join(lpql.split())
+    url = (f'http://{a.lp_host}:{a.lp_port}/logpresso/httpexport/query.csv'
+           f'?_apikey={a.lp_apikey}&_q={urllib.parse.quote(q, safe="")}')
+    for attempt in range(3):
+        try:
+            r = requests.get(url, verify=False, timeout=timeout)
+            if r.status_code == 200:
+                if r.text.strip().startswith('<'):
+                    print(f'  ⚠️ 로그프레소 HTML 반환(쿼리 오류 가능) · {q[:120]}')
+                    return None
+                return r.text if r.text.strip() else ''
+            if r.status_code >= 500 and attempt < 2:
+                time.sleep(2 * (attempt + 1)); continue
+            print(f'  ⚠️ 로그프레소 HTTP {r.status_code}: {r.text[:150]!r}')
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1)); continue
+            print(f'  ⚠️ 로그프레소 요청 실패: {e}')
+            return None
+    return None
+
+
+def fetch_lp(a, dt_from, dt_to, cache):
+    """로그프레소 dbquery 로 MAXCAPA 조작 조회 → cache 갱신."""
+    t0 = time.time()
+    sql = SQL_ONESHOT.format(msg=MSG,
+                             f=dt_from.strftime('%Y-%m-%d %H:%M:%S'),
+                             t=dt_to.strftime('%Y-%m-%d %H:%M:%S'))
+    text = lp_query(a, f'dbquery {a.lp_profile} {sql}')
+    if text is None:
+        return False
+    n = 0
+    for r in csv.DictReader(__import__('io').StringIO(text)):
+        m = RE_CHANGED.search(r.get('TXT') or '')
+        if not m:
+            continue
+        port, after = m.group(1), m.group(2)
+        k = (r.get('TM') or '').strip()[:16]
+        if not k:
+            continue
+        e = cache.setdefault(k, {'machine': [], 'ports': [], 'proc': [], 'tx': []})
+        mach = (r.get('MACHINE') or '').strip() or port.split('_')[0]
+        if mach not in e['machine']:
+            e['machine'].append(mach)
+        pair = f'{port}:{after}'
+        if pair not in e['ports']:
+            e['ports'].append(pair)
+        proc = (r.get('PROC') or '').strip()
+        if proc and proc not in e['proc']:
+            e['proc'].append(proc)
+        tx = (r.get('TXID') or '').strip()
+        if tx and tx not in e['tx']:
+            e['tx'].append(tx)
+        n += 1
+    print(f'  [LP·dbquery {a.lp_profile}] {dt_from:%m/%d %H:%M}~{dt_to:%H:%M} → '
+          f'포트변경 {n}건 · {time.time()-t0:.1f}s')
+    return True
+
+
 def refresh(a, cache, dt_from, dt_to):
-    """원본 갱신 — DB 또는 CSV."""
+    """원본 갱신 — 로그프레소 경유 / Oracle 직접 / CSV."""
     if a.source == 'csv':
         return load_csv(a.maxcapa, cache)
+    if a.source == 'logpresso':
+        return fetch_lp(a, dt_from, dt_to, cache)
     return fetch_db(a, dt_from, dt_to, cache)
 
 
@@ -412,7 +508,9 @@ def refresh(a, cache, dt_from, dt_to):
 # ────────────────────────────────────────────────────────────
 def _loop(a):
     print(f'[mcs_maxcapa] {a.interval}초 간격 · 대상 {a.event} · 원본 '
-          + ('CSV ' + str(a.maxcapa) if a.source == 'csv' else f"Oracle {a.cfg['service']}"))
+          + ('CSV ' + str(a.maxcapa) if a.source == 'csv'
+             else f'로그프레소 dbquery {a.lp_profile}' if a.source == 'logpresso'
+             else f"Oracle {a.cfg['service']}"))
     # ★ 수집기(매분 00초 Oracle 접속)와 같은 순간에 붙으면 경합해 타임아웃난다 → 시작을 어긋나게
     off = getattr(a, 'offset', 0)
     if off > 0:
@@ -462,11 +560,13 @@ def _loop(a):
 
 
 def run_watch(event='./predict_tobe', interval=60, lookback=20, offset=25,
-              config='mcs_config.ini', source='db', maxcapa='./maxcapa_v3.csv'):
+              config='mcs_config.ini', source='logpresso', maxcapa='./maxcapa_v3.csv',
+              lp_host=LP_HOST, lp_port=LP_PORT, lp_apikey=LP_APIKEY, lp_profile=LP_PROFILE):
     """run_ml 등에서 스레드로 돌리는 진입점. offset=수집기와 겹침 방지(초)."""
     a = argparse.Namespace(event=event, out=None, interval=interval, lookback=lookback,
                            source=source, maxcapa=maxcapa, force=False, config=config,
-                           offset=offset)
+                           offset=offset, lp_host=lp_host, lp_port=lp_port,
+                           lp_apikey=lp_apikey, lp_profile=lp_profile)
     a.cfg = load_cfg(config) if source == 'db' else None
     _loop(a)
 
@@ -559,7 +659,13 @@ def main():
     ap.add_argument('--offset', type=int, default=25,
                     help='수집기와 접속 시점 겹침 방지 지연(초, 기본 25). --loop 에만 적용')
     ap.add_argument('--config', default='mcs_config.ini')
-    ap.add_argument('--source', choices=['db', 'csv'], default='db')
+    ap.add_argument('--source', choices=['logpresso', 'db', 'csv'], default='logpresso',
+                    help='logpresso=로그프레소 dbquery 경유(기본) · db=Oracle 직접 · csv=수집본')
+    ap.add_argument('--lp-host', dest='lp_host', default=LP_HOST)
+    ap.add_argument('--lp-port', dest='lp_port', type=int, default=LP_PORT)
+    ap.add_argument('--lp-apikey', dest='lp_apikey', default=LP_APIKEY)
+    ap.add_argument('--lp-profile', dest='lp_profile', default=LP_PROFILE,
+                    help='로그프레소 DB 프로파일명 (기본 mcs_m16)')
     ap.add_argument('--maxcapa', default='./maxcapa_v3.csv', help='--source csv 일 때 원본')
     a = ap.parse_args()
     a.cfg = load_cfg(a.config) if a.source == 'db' else None
