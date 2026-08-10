@@ -532,8 +532,21 @@ function renderForecast(fc){
          ${fc.current!=null?`<span class="dim">· 현재 ${fc.current}점 · 표본 ${fc.points}분</span>`:''}`;
   }
   if($('#fcstat')) $('#fcstat').textContent = fc && fc.ok===false ? '· 꺼짐' : '';
-  if(!fc || !fc.warn){ box.classList.add('hidden'); return; }
+  if(!fc){ box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
+  box.onclick = openLeading;
+
+  // ── 경보 조건 미달 = 조용한 상태. 줄을 숨기면 기능이 도는지 알 수가 없어
+  //    한 줄로 '지금 왜 조용한지' 를 항상 보여준다. 눈에 띄지 않게 흐린 색으로.
+  if(!fc.warn){
+    box.innerHTML =
+        `<span class="tag" style="color:var(--tx3)"><i style="background:var(--tx3)"></i>선행 감지</span>`
+      + `<span class="dim">감시 중 — ${esc(fc.reason || '조건 미달')}</span>`
+      + (fc.current!=null ? `<span class="dim">현재 ${fc.current}점 · 분당 ${fc.slope>0?'+':''}${fc.slope}점`
+          + ` · 표본 ${fc.points}분 · 임계 ${fc.floor}점</span>` : '')
+      + `<span class="dim" style="margin-left:auto">클릭 → 선행 지표 분석</span>`;
+    return;
+  }
   const dr = (fc.drivers||[]).slice(0,3).map(d =>
       `<span class="chip lv경계">${esc(d.label)} ${d.now}${esc(d.unit||'')}</span>`).join('');
   box.innerHTML =
