@@ -4,12 +4,13 @@ real_time_amhs/analysis.py — 4-LLM 파이프라인 분석 (분석 탭)
 구조 (모델 4종 — 게이트웨이가 이 팀에 허용한 이름만 쓴다)
     1차  gaia-GLM-5.2            데이터 훑기 (★병렬)
     2차  gaia-Qwen3.6-35B-A3B    원인·전파 분석
-    3차  gaia-cc-gpt-oss-120b    교차 검증 + 조치 (1·2차와 다른 계열)
+    3차  gaia-Qwen3.5-397B-A17B  교차 검증 + 조치 (1·2차와 다른 계열 · 실호출 확인됨)
     최종 gaia-Qwen3.5-397B-A17B  통합 판정 리포트
 
-    ※ gaia-GLM-5.1 은 목록에 있으나 호출 시 400 Invalid model name 이 났고,
-      gaia-solution-Qwen3-235B… 는 403 team not allowed 였다. 그래서 뺐다.
-      모델이 거부되면 _fallbacks() 가 자동으로 다른 모델로 갈아탄다.
+    ※ 실호출로 죽은 것을 뺀 결과다 — gaia-GLM-5.1(400 Invalid model name),
+      gaia-solution-Qwen3-235B…(403 team not allowed), gaia-cc-gpt-oss-120b(없음).
+      그래도 모델이 거부되면 _fallbacks() 가 자동으로 갈아타고, 모든 단계는
+      최대 retries(기본 3)회까지 재시도한다.
 
 왜 이 구조인가
     - **1차가 병렬이다.** 분석 구간을 시간 조각으로 쪼개 GLM-5.2 를 조각마다
@@ -51,7 +52,7 @@ STAGES = {
     "p2": {"name": "2차 — 원인·전파 분석", "icon": "🧩",
            "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
     "p3": {"name": "3차 — 교차 검증·조치", "icon": "⚖️",
-           "model": "gaia-cc-gpt-oss-120b", "parallel": False},
+           "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
     "final": {"name": "최종 — 통합 판정", "icon": "📋",
               "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
 }
@@ -64,6 +65,8 @@ DEFAULTS = {
     "p3_max_tokens": 1600,
     "final_max_tokens": 2200,
     "timeout_s": 150,
+    "retries": 3,            # 단계별 최대 시도 횟수
+    "retry_backoff_s": 2,    # 일시 오류 재시도 간격(회차에 비례)
 }
 
 
@@ -268,18 +271,33 @@ def _repair_json(t: str) -> dict | None:
         return None
 
 
-def _parse_or_none(txt: str) -> dict | None:
+def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
+    """JSON 추출 — 단, **산문이 JSON 으로 둔갑하는 것을 막는다.**
+
+    프리필('{"원인": "')이 붙은 상태로 모델이 산문을 쓰면, 괄호 복구가
+    {"원인": "…산문…"} 같은 '형식은 맞지만 내용은 쓰레기' 를 만들어낸다.
+    그래서 스키마의 주요 키가 최소 2개는 있어야 통과시킨다.
+    """
     from llm_client import _json_candidates, scrub
+
+    def ok(v):
+        if not isinstance(v, dict):
+            return False
+        if not required:
+            return True
+        hit = sum(1 for k in required if k in v)
+        return hit >= min(2, len(required))
+
     t = scrub(txt or "")
     for cand in reversed(_json_candidates(t)):
         try:
             v = json.loads(cand)
-            if isinstance(v, dict):
-                return v
         except json.JSONDecodeError:
             continue
+        if ok(v):
+            return v
     v = _repair_json(t)                    # 잘린 응답 구제
-    return v if isinstance(v, dict) else None
+    return v if ok(v) else None
 
 
 def _fallbacks(cfg: dict, sid: str) -> list[str]:
@@ -289,65 +307,111 @@ def _fallbacks(cfg: dict, sid: str) -> list[str]:
     if isinstance(fb, list) and fb:
         return [m for m in fb if m and m != _stage_model(cfg, sid)]
     return [m for m in ("gaia-Qwen3.5-397B-A17B", "gaia-GLM-5.2",
-                        "gaia-cc-gpt-oss-120b", "gaia-Qwen3.6-35B-A3B")
+                        "gaia-Qwen3.6-35B-A3B", "GaiA-LLM-Latest")
             if m != _stage_model(cfg, sid)]
 
 
 _MODEL_ERR = ("Invalid model name", "team not allowed", "HTTP 400", "HTTP 403", "HTTP 404")
 
 
-def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
-              cfg: dict) -> tuple[dict | None, str, float, str]:
-    """단계 1회 호출 → (JSON, 오류, 소요초, 실제로 쓴 모델).
+def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
+                want_json: bool = True,
+                required: tuple = ()) -> tuple[object, str, float, str, list[str]]:
+    """단계 1회 — **성공할 때까지 최대 N회 재시도**. (결과, 안내/오류, 초, 모델, 로그)
 
-    두 가지를 자동으로 넘어간다 — 둘 다 실제 게이트웨이에서 겪은 실패다.
-      · 모델 거부(400 Invalid model / 403 not allowed) → 대체 모델로 재시도
-      · JSON 이 아니거나 잘림 → 괄호 복구 → 그래도 안 되면 1회 재요청(짧게)
+    실패는 세 종류이고 대응이 다르다.
+      · 모델 거부(400 Invalid model / 403 not allowed / 404) → 다음 대체 모델로.
+        같은 모델로 다시 걸어도 영원히 같은 답이라 즉시 갈아탄다.
+      · 일시 오류(타임아웃·5xx·네트워크) → 잠깐 쉬었다 같은 모델로 다시.
+      · JSON 이 아니거나 잘림 → 괄호 복구 시도 → 안 되면 '짧게 JSON 만' 을
+        덧붙여 다시. 그래도 안 되면 모델을 바꿔 본다.
+
+    want_json=False 면 마크다운 본문을 그대로 받는다 (최종 단계).
     """
     from llm_client import build_system_prompt, chat
     t0 = time.time()
+    a = _acfg(cfg)
+    tries = max(1, int(a.get("retries", 3)))
+    backoff = float(a.get("retry_backoff_s", 2))
     sys_msg = {"role": "system", "content": build_system_prompt(cfg)}
+    primary = _stage_model(cfg, sid)
+    models = [primary] + _fallbacks(cfg, sid)
+    log: list[str] = []
 
-    def call(model: str, u: str, mt: int):
+    def call(model: str, u: str):
         c = dict(cfg)
         lc = dict(cfg.get("llm", {}))
         lc["model"] = model
         c["llm"] = lc
         try:
             return chat([sys_msg, {"role": "user", "content": u}], c,
-                        max_tokens=mt, prefill=prefill)
+                        max_tokens=max_tokens, prefill=prefill)
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
 
-    tried: list[str] = []
-    model = _stage_model(cfg, sid)
-    last_err = ""
-    for cand_model in [model] + _fallbacks(cfg, sid):
-        tried.append(cand_model)
-        txt, err = call(cand_model, user, max_tokens)
-        if err and any(k in str(err) for k in _MODEL_ERR):
-            last_err = err
-            continue                       # 모델 문제 → 다음 후보로
-        if err:
-            return None, err, round(time.time() - t0, 1), cand_model
-        res = _parse_or_none(txt)
-        if res is not None:
-            note = "" if cand_model == model else f"(대체 모델 사용: {cand_model})"
-            return res, note, round(time.time() - t0, 1), cand_model
-        # JSON 이 아니거나 복구 실패 → 한 번만 더, 더 짧게 쓰라고
-        txt2, err2 = call(cand_model,
-                          user + "\n\n★앞서 JSON 형식이 아니었다. 설명·서론 없이 "
-                                 "**JSON 하나만** 출력하라. 배열 항목은 2개 이내로 짧게.",
-                          max_tokens)
-        if not err2:
-            res = _parse_or_none(txt2)
-            if res is not None:
-                return res, "(재시도 성공)", round(time.time() - t0, 1), cand_model
-        last_err = err2 or "JSON 파싱 실패 (재시도 후에도)"
-        return None, last_err, round(time.time() - t0, 1), cand_model
+    mi, hint, last_err = 0, "", ""
+    for attempt in range(1, tries + 1):
+        model = models[min(mi, len(models) - 1)]
+        txt, err = call(model, user + hint)
 
-    return None, f"쓸 수 있는 모델 없음 — 시도: {', '.join(tried)} / {last_err}", \
-        round(time.time() - t0, 1), model
+        if err and any(k in str(err) for k in _MODEL_ERR):
+            log.append(f"{attempt}회 {model}: 모델 거부 → 대체")
+            last_err = err
+            mi += 1
+            if mi >= len(models):
+                break
+            continue
+
+        if err:
+            log.append(f"{attempt}회 {model}: {str(err)[:80]}")
+            last_err = err
+            if attempt < tries:
+                time.sleep(backoff * attempt)      # 일시 오류 → 쉬었다 재시도
+            continue
+
+        if not want_json:
+            log.append(f"{attempt}회 {model}: 성공")
+            note = "" if model == primary else f"(대체 모델: {model})"
+            if attempt > 1:
+                note = (note + f" ({attempt}회째 성공)").strip()
+            return txt, note, round(time.time() - t0, 1), model, log
+
+        res = _parse_or_none(txt, required)
+        if res is not None:
+            log.append(f"{attempt}회 {model}: 성공")
+            note = "" if model == primary else f"(대체 모델: {model})"
+            if attempt > 1:
+                note = (note + f" ({attempt}회째 성공)").strip()
+            return res, note, round(time.time() - t0, 1), model, log
+
+        log.append(f"{attempt}회 {model}: JSON 형식 아님/키 부족")
+        last_err = "JSON 형식 아님 (필수 키 없음)"
+        hint = ("\n\n★앞 응답이 JSON 형식이 아니었다. 설명·서론·코드펜스 없이 "
+                "**JSON 하나만** 출력하라. 배열 항목은 2개 이내로 짧게.")
+        if attempt >= 2:                     # 두 번 틀리면 모델을 바꿔 본다
+            mi += 1
+        if attempt < tries:
+            time.sleep(min(backoff, 1.5))
+
+    return (None, f"{tries}회 시도 모두 실패 — {last_err} [{' / '.join(log)}]",
+            round(time.time() - t0, 1), models[min(mi, len(models) - 1)], log)
+
+
+# 단계별 필수 키 — 이게 없으면 '형식만 JSON' 인 쓰레기로 보고 재시도한다
+_REQUIRED = {
+    "p1": ("구간", "최고점수", "점수흐름", "관찰"),
+    "p2": ("원인", "핫구역", "전파경로", "요약"),
+    "p3": ("검증", "즉시조치", "요약"),
+}
+
+
+def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
+              cfg: dict) -> tuple[dict | None, str, float, str]:
+    """JSON 단계 — _call_stage 의 얇은 껍데기 (기존 호출부 유지)."""
+    res, note, took, model, _log = _call_stage(sid, user, prefill, max_tokens, cfg,
+                                               want_json=True,
+                                               required=_REQUIRED.get(sid, ()))
+    return (res if isinstance(res, dict) else None), note, took, model
 
 
 _KOREAN_RULE = "★한국어로만. 추론 과정 금지. 데이터에 없는 것을 지어내지 마라.\n"
@@ -442,7 +506,7 @@ def _stage3(overview: str, obs: list[dict], p2: dict | None, chunks: list[dict],
 
 
 def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | None,
-                 cfg: dict) -> tuple[str, str, float]:
+                 cfg: dict) -> tuple[str, str, float, str]:
     """최종 — 최대 모델이 검증까지 끝난 재료로 관제 리포트를 쓴다."""
     from llm_client import build_system_prompt, chat, scrub
     a = _acfg(cfg)
@@ -464,15 +528,12 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
             "## 조치\n(우선순위대로 불릿)\n"
             "## 주의\n(다음 구간에서 지켜볼 것 + 의심으로 남은 부분)\n"
             "'## 종합 판정' 부터 바로 시작하라.")
-    txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
-                     {"role": "user", "content": user}],
-                    _stage_cfg(cfg, "final"),
-                    max_tokens=int(a["final_max_tokens"]),
-                    prefill="## 종합 판정\n")
-    took = round(time.time() - t0, 1)
-    if err:
-        return "", err, took
-    return scrub(txt), "", took
+    txt, note, took, model, _log = _call_stage(
+        "final", user, "## 종합 판정\n", int(a["final_max_tokens"]), cfg,
+        want_json=False)
+    if not txt:
+        return "", note or "최종 리포트 생성 실패", took, model
+    return scrub(str(txt)), note, took, model
 
 
 def _fallback_final(meta: dict, obs: list[dict], p2: dict | None, p3: dict | None) -> str:
@@ -495,6 +556,27 @@ def _fallback_final(meta: dict, obs: list[dict], p2: dict | None, p3: dict | Non
 
 
 # ────────────────────────── 실행·저장 ──────────────────────────
+def _graph_svg(seq, cfg: dict) -> str:
+    """분석 구간 점수 그래프 (SVG 문자열).
+
+    글자만 있으면 판단 근거를 눈으로 못 본다. 리포트 바로 위에 같은 구간의
+    점수 추이를 붙여, LLM 이 말한 시각·최고점을 그래프에서 바로 확인하게 한다.
+    실패해도 분석은 그대로 간다 — 그림은 부가물이다.
+    """
+    if not seq:
+        return ""
+    try:
+        from graphs import render
+        rows = [r for _, _, r in seq]
+        t0, t1 = seq[0][0], seq[-1][0]
+        minutes = max(10, int((t1 - t0).total_seconds() / 60) + 2)
+        center = t0 + (t1 - t0) / 2
+        return render(rows, center, minutes=minutes, width=1100, cfg=cfg) or ""
+    except Exception as e:
+        print(f"[분석] ⚠️ 그래프 생성 실패(무시): {e}")
+        return ""
+
+
 def _store_dir(cfg: dict) -> str:
     d = (cfg.get("storage", {}) or {}).get("dir", "data")
     if not os.path.isabs(d):
@@ -571,18 +653,26 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     # ── 최종 ──
     prog["roles"]["final"]["status"] = "작성중"
     prog["stage"] = "final"
-    body, ef, tkf = _stage_final(overview, obs, p2, p3, cfg)
+    body, ef, tkf, mf = _stage_final(overview, obs, p2, p3, cfg)
+    # 최종은 마크다운이어야 한다. 모델이 JSON 이나 산문을 뱉으면 리포트 자리에
+    # 원문이 그대로 박히므로, 헤딩이 없으면 실패로 보고 골격으로 대체한다.
+    if body and "##" not in body:
+        ef = (ef or "") + " (마크다운 형식 아님 — 골격으로 대체)"
+        body = ""
     if not body:
         body = _fallback_final(meta, obs, p2, p3)
-    prog["roles"]["final"].update(status="완료" if not ef else "실패",
-                                  took_s=tkf, error=ef or None)
+    prog["roles"]["final"].update(status="완료" if body and "실패" not in str(ef or "")
+                                  else "실패", took_s=tkf,
+                                  error=ef if "실패" in str(ef or "") else None)
     # 최종도 단계 기록에 남긴다 — UI 가 pipeline 순서대로 카드를 그리므로
     # 여기 없으면 빈 카드가 뜬다. 본문은 rec["final"] 에 따로 있다.
+    _fin_ok = bool(body) and "실패" not in str(ef or "")
     stages_out["final"] = {
-        "ok": not ef, "name": STAGES["final"]["name"], "icon": STAGES["final"]["icon"],
-        "model": _stage_model(cfg, "final"), "took_s": tkf,
+        "ok": _fin_ok, "name": STAGES["final"]["name"], "icon": STAGES["final"]["icon"],
+        "model": mf or _stage_model(cfg, "final"), "took_s": tkf,
         "result": {"통합리포트": "아래 본문 참조", "글자수": len(body)},
-        "error": ef or None,
+        "error": None if _fin_ok else (ef or None),
+        "note": ef if (_fin_ok and ef) else None,
     }
 
     rec = {
@@ -592,6 +682,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "took_s": round(time.time() - t0, 1),
         "pipeline": ["p1", "p2", "p3", "final"],
+        "graph": _graph_svg(seq, cfg),          # 리포트 위에 붙일 구간 점수 그래프
         "roles": stages_out, "final": body, "final_error": ef or None,
     }
     path = os.path.join(_store_dir(cfg), rec["id"] + ".json")

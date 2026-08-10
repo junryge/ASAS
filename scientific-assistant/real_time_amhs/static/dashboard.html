@@ -624,6 +624,10 @@ async function loadAnalysis(aid){
       ${esc(r.day)} · ${esc(r.span)} · ${r.minutes}분 · 최고 ${pk.emoji||''} ${esc(pk.level||'')}
       ${pk.score||''}점 (${esc(pk.time||'')}, ${esc(pk.area||'')}) · 사건 ${r.incidents}건
       · 소요 ${r.took_s}초 <span class="mono" style="font-size:10.5px">${esc(r.id)}</span></div>
+    ${r.graph ? `<div style="border:1px solid var(--line);border-radius:10px;padding:8px;
+         background:var(--panel);margin-bottom:8px;overflow-x:auto">
+         <div class="note" style="margin:0 0 4px 4px">분석 구간 점수 추이 — 아래 판정의 근거 데이터</div>
+         ${r.graph}</div>` : ''}
     <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--panel);font-size:13px;line-height:1.7">
       ${anMd(r.final)}</div>
     ${r.final_error?`<div class="warn" style="margin-top:8px">통합 LLM 실패 — 역할 결과로 조립 (${esc(r.final_error)})</div>`:''}
