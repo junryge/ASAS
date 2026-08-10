@@ -365,7 +365,8 @@
 <!-- ── 🧪 분석 (4-LLM 병렬) ── -->
 <div class="page hidden" id="tab-analysis">
   <div class="card">
-    <h2>4-LLM 병렬 분석 <span class="note">— 역할이 다른 LLM 4개가 같은 데이터를 나눠 분석하고 통합 리포트로 종합</span></h2>
+    <h2>4-LLM 파이프라인 분석
+      <span class="note">— 1차(구간 병렬) → 2차 해석 → 3차 원자료 대조 검증 → 최종 판정</span></h2>
     <div class="bd">
       <div class="row" style="margin-bottom:8px">
         <label>날짜</label>
@@ -384,7 +385,7 @@
         <button class="act pri" id="btnan" style="flex:0 0 auto">🧪 분석 실행</button>
         <span class="note" id="anmsg"></span>
       </div>
-      <div id="anroles" style="display:none;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0"></div>
+      <div id="anroles" style="display:none;grid-template-columns:repeat(4,1fr);gap:14px;margin:10px 0"></div>
       <div id="anout"></div>
     </div>
   </div>
@@ -538,25 +539,30 @@ function pollAnalysis(){
   AN_TIMER = setInterval(tick, 2000);
 }
 
+const AN_ORDER = ['p1','p2','p3','final'];
+
 function renderAnRoles(s){
   const box = $('#anroles');
   const roles = (s.progress||{}).roles || {};
-  const ids = Object.keys(roles);
+  const ids = AN_ORDER.filter(id=>roles[id]);
   if(!ids.length){ box.style.display='none'; return; }
   box.style.display='grid';
-  box.innerHTML = ids.map(id=>{
+  box.innerHTML = ids.map((id,i)=>{
     const r=roles[id];
+    const running = /분석중|작성중/.test(r.status||'');
     const st = r.status==='완료' ? '<span style="color:var(--ok)">✅ 완료</span>'
              : r.status==='실패' ? `<span style="color:var(--crit)" title="${esc(r.error||'')}">❌ 실패</span>`
-             : '<span style="color:var(--cy)">⏳ 분석중…</span>';
-    return `<div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--panel)">
+             : running ? `<span style="color:var(--cy)">⏳ ${esc(r.status)}</span>`
+             : '<span class="dim">· 대기</span>';
+    return `<div style="border:1px solid ${running?'var(--cy)':'var(--line)'};border-radius:10px;
+                 padding:9px 11px;background:var(--panel);position:relative">
       <div style="font-weight:650;font-size:12.5px">${r.icon||''} ${esc(r.name||id)}</div>
-      <div class="mono note" style="font-size:10.5px;margin:3px 0">${esc(r.model||'')}</div>
+      <div class="mono note" style="font-size:10px;margin:3px 0;word-break:break-all">${esc(r.model||'')}</div>
       <div style="font-size:12px">${st}${r.took_s!=null?` <span class="dim">${r.took_s}초</span>`:''}</div>
+      ${id==='p1'?'<div class="note" style="font-size:10px;color:var(--tx3)">구간을 쪼개 동시 실행</div>':''}
+      ${i<ids.length-1?'<div style="position:absolute;right:-7px;top:50%;color:var(--tx3);font-size:12px">→</div>':''}
     </div>`;
-  }).join('')
-  + ((s.progress||{}).stage==='final'
-     ? `<div style="grid-column:1/-1" class="note">⑤ 통합 리포트 작성 중…</div>` : '');
+  }).join('');
 }
 
 function anMd(md){
@@ -580,11 +586,38 @@ function anVal(v){
   return esc(String(v??''));
 }
 
+/* 3차 검증 표 — 확인/의심/반박을 색으로 구분해서 한눈에 보이게 */
+function anVerify(rows){
+  if(!Array.isArray(rows) || !rows.length) return '<span class="dim">검증 항목 없음</span>';
+  const chip = v => v==='확인' ? '<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">확인</span>'
+                  : v==='반박' ? '<span class="chip lv초위험">반박</span>'
+                  : '<span class="chip lv위험">의심</span>';
+  return `<table class="pol" style="margin:4px 0"><thead><tr>
+      <th>1·2차 주장</th><th style="width:58px">판정</th><th style="width:40%">원자료 근거</th>
+    </tr></thead><tbody>${rows.map(o=>`<tr>
+      <td>${esc(String(o['주장']??''))}</td>
+      <td>${chip(String(o['판정']??''))}</td>
+      <td class="note">${esc(String(o['근거']??''))}</td></tr>`).join('')}</tbody></table>`;
+}
+
+/* 1차 관찰 — 구간 조각별 카드 (병렬로 돈 결과라 나란히 보여준다) */
+function anObs(obs){
+  if(!Array.isArray(obs) || !obs.length) return '<span class="dim">관찰 없음</span>';
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:6px">
+    ${obs.map(o=>`<div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">
+      <div style="font-weight:650;font-size:11.5px;color:var(--cy)">${esc(String(o['구간']??''))}</div>
+      <div style="font-size:11.5px;margin:2px 0">${esc(String(o['점수흐름']??''))}</div>
+      <div class="note" style="font-size:11px">최고 ${esc(String(o['최고점수']??''))}점
+        ${esc(String(o['최고시각']??''))} ${(o['이상구역']||[]).map(esc).join(', ')}</div>
+      ${(o['관찰']||[]).map(x=>`<div style="font-size:11px;margin-top:2px">• ${esc(String(x))}</div>`).join('')}
+    </div>`).join('')}</div>`;
+}
+
 async function loadAnalysis(aid){
   const r = await api('/api/analysis/'+encodeURIComponent(aid));
   if(r.error){ $('#anout').innerHTML=`<div class="warn">${esc(r.error)}</div>`; return; }
   const pk = r.peak||{};
-  const roleIds = ['risk','zone','path','action'];
+  const roleIds = (r.pipeline && r.pipeline.length) ? r.pipeline : AN_ORDER;
   $('#anout').innerHTML = `
     <div class="note" style="margin:10px 0 8px">
       ${esc(r.day)} · ${esc(r.span)} · ${r.minutes}분 · 최고 ${pk.emoji||''} ${esc(pk.level||'')}
@@ -593,15 +626,30 @@ async function loadAnalysis(aid){
     <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--panel);font-size:13px;line-height:1.7">
       ${anMd(r.final)}</div>
     ${r.final_error?`<div class="warn" style="margin-top:8px">통합 LLM 실패 — 역할 결과로 조립 (${esc(r.final_error)})</div>`:''}
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px">
+    <div style="display:grid;gap:8px;margin-top:10px">
       ${roleIds.map(id=>{
         const o=(r.roles||{})[id]||{};
+        const res=o.result||{};
+        let bodyHtml;
+        if(!o.ok){
+          bodyHtml = `<div style="color:var(--crit);font-size:12px">실패 — ${esc(o.error||'?')}</div>`;
+        }else if(id==='p1'){
+          bodyHtml = `<div class="note" style="font-size:11px;margin-bottom:5px">구간 ${res['조각수']}개를 병렬 분석 · 성공 ${res['성공']}개</div>`
+                   + anObs(res['관찰']);
+        }else if(id==='p3'){
+          bodyHtml = `<div style="font-size:12px;margin:3px 0"><span class="dim">요약</span> ${esc(String(res['요약']??''))}</div>`
+                   + anVerify(res['검증'])
+                   + ['확인된사실','즉시조치','모니터링','에스컬레이션'].map(k=> res[k]!=null
+                       ? `<div style="font-size:12px;margin:3px 0"><span class="dim">${k}</span> ${anVal(res[k])}</div>` : '').join('');
+        }else{
+          bodyHtml = Object.entries(res).map(([k,v])=>
+              `<div style="font-size:12px;margin:3px 0"><span class="dim">${esc(k)}</span> ${anVal(v)}</div>`).join('');
+        }
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)">
           <div style="font-weight:650;font-size:12.5px;margin-bottom:5px">${o.icon||''} ${esc(o.name||id)}
-            <span class="mono note" style="font-size:10px">${esc(o.model||'')} · ${o.took_s??'–'}초</span></div>
-          ${o.ok ? Object.entries(o.result||{}).map(([k,v])=>
-              `<div style="font-size:12px;margin:3px 0"><span class="dim">${esc(k)}</span> ${anVal(v)}</div>`).join('')
-            : `<div style="color:var(--crit);font-size:12px">실패 — ${esc(o.error||'?')}</div>`}
+            <span class="mono note" style="font-size:10px">${esc(o.model||'')} · ${o.took_s??'–'}초</span>
+            ${o.ok&&o.error?`<span class="note" style="color:var(--major)">일부 실패: ${esc(o.error)}</span>`:''}</div>
+          ${bodyHtml}
         </div>`;
       }).join('')}
     </div>`;
