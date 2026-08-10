@@ -25,8 +25,6 @@ from fastapi.responses import FileResponse, JSONResponse
 
 BASE = Path(__file__).resolve().parent
 HTML = BASE / "INDEX" / "Daily_Report_System.html"
-GUIDE = BASE / "INDEX" / "guide.html"          # 사용법 가이드 팝업 화면
-IMAGE_DIR = BASE / "INDEX" / "IMAGE"           # 가이드 이미지(A1~A4.PNG) 폴더
 DB = BASE / "reports_db.json"
 CONFIG = BASE / "config.json"
 LOCK = threading.Lock()
@@ -72,23 +70,6 @@ def index():
     if not HTML.exists():
         return JSONResponse({"error": "INDEX/Daily_Report_System.html not found"}, status_code=404)
     return FileResponse(HTML, media_type="text/html")
-
-
-@app.get("/guide.html")
-def guide():
-    """제목 옆 '가이드' 버튼이 여는 사용법 팝업 화면."""
-    if not GUIDE.exists():
-        return JSONResponse({"error": "INDEX/guide.html not found"}, status_code=404)
-    return FileResponse(GUIDE, media_type="text/html")
-
-
-@app.get("/IMAGE/{name}")
-def guide_image(name: str):
-    """가이드 이미지(A1.PNG ~ A4.PNG) 제공."""
-    path = (IMAGE_DIR / name).resolve()
-    if IMAGE_DIR.resolve() not in path.parents or not path.is_file():
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return FileResponse(path)
 
 
 @app.get("/api/config")
