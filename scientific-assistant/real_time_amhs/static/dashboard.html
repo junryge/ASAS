@@ -238,6 +238,8 @@
     <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">1분 추론 누적 시 산출</div></div>
 </div>
 
+<div id="fcnow" class="llmnow hidden" title="최근 추세로 계산한 임계 돌파 예보 — 클릭하면 선행 지표 분석"></div>
+
 <div id="llmnow" class="llmnow hidden"></div>
 
 <div id="warnbox"></div>
@@ -380,6 +382,19 @@
 <!-- ── 정책 ── -->
 <div class="page hidden" id="tab-policy">
   <div class="card">
+    <h2>선행 감지 <span class="note" id="fcstat"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">점수가 임계를 <b style="color:var(--tx2)">넘기 전에</b> 추세로 미리 띄웁니다.
+        조건(상승 기울기 · 지속 · 도달 예상 시간)을 모두 만족할 때만 화면 위에 경보 줄이 나타납니다.</p>
+      <div id="fcnowbox" class="note">불러오는 중…</div>
+      <div class="row" style="margin-top:10px">
+        <button class="act" onclick="openLeading()">선행 지표 분석 열기</button>
+        <span class="note">과거 사건에서 어느 지표가 점수보다 먼저 움직였는지 — 조치 우선순위를 정하는 근거</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>감지 · 확인 · 에스컬레이션 정책</h2>
     <div class="bd">
       <p class="note" style="margin:0 0 12px">감지는 항상 실시간입니다. <b style="color:var(--tx2)">“이상 없음” 판정은
@@ -485,12 +500,86 @@ async function pollStatus(){
       + `\n기준 시각(데이터 최신) ${(k.recur_ref||'').replace('T',' ').slice(0,16)}`;
     renderAcc(k.llm_match);
   }catch(e){}
+
+  try{ renderForecast(await api('/api/forecast')); }catch(e){}
+}
+
+/* ── 🔮 선행 감지 — '이대로면 N분 뒤 임계 돌파' ──
+   점수가 50을 넘은 뒤에야 케이스가 생기는 구조라, 넘기 전에 미리 띄운다.
+   경보 조건을 못 채우면 줄 자체를 숨긴다 (조용할 땐 안 보이는 게 맞다). */
+function renderForecast(fc){
+  const box = $('#fcnow');
+  if(!box) return;
+  FC = fc || null;
+  // 정책 탭 쪽 상태 — 경보가 없을 때 '왜 없는지' 를 보여줘야 설정을 조정할 수 있다
+  const st = $('#fcnowbox');
+  if(st && fc){
+    st.innerHTML = fc.warn
+      ? `<b style="color:var(--major)">경보 중</b> — ${fc.eta_min}분 뒤 ${fc.floor}점 돌파 예상
+         (현재 ${fc.current}점, 분당 ${fc.slope>0?'+':''}${fc.slope}점, 확신 ${fc.confidence}%)`
+      : `<b style="color:var(--ok)">조용함</b> — ${esc(fc.reason||'')}
+         ${fc.current!=null?`<span class="dim">· 현재 ${fc.current}점 · 표본 ${fc.points}분</span>`:''}`;
+  }
+  if($('#fcstat')) $('#fcstat').textContent = fc && fc.ok===false ? '· 꺼짐' : '';
+  if(!fc || !fc.warn){ box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const dr = (fc.drivers||[]).slice(0,3).map(d =>
+      `<span class="chip lv경계">${esc(d.label)} ${d.now}${esc(d.unit||'')}</span>`).join('');
+  box.innerHTML =
+      `<span class="tag" style="color:var(--major)"><i style="background:var(--major)"></i>선행 감지</span>`
+    + `<b style="color:var(--major)">${fc.eta_min}분 뒤 임계(${fc.floor}점) 돌파 예상</b>`
+    + `<span class="dim">현재 ${fc.current}점 · 분당 ${fc.slope>0?'+':''}${fc.slope}점`
+    + ` · ${fc.horizon||15}분 뒤 ${fc.projected}점 ${fc.emoji} ${esc(fc.level)}</span>`
+    + `<span class="cf" style="color:${fc.confidence>=70?'var(--major)':'var(--tx2)'}">확신 ${fc.confidence}%</span>`
+    + (dr ? `<span class="dim">함께 오르는 지표</span>${dr}` : '')
+    + `<span class="dim" style="margin-left:auto">클릭 → 선행 지표 분석</span>`;
+  box.onclick = openLeading;
 }
 
 /* ── LLM 판단 일치 (1분 추론 사후검증) ──
    ★ 검증된 '정탐률'이 아니라 '이후 데이터와 일치했나' 다. 표본이 차기 전엔
    퍼센트를 내지 않고 건수만 보여준다 — 그게 튜닝에도 더 쓸모 있다. */
-let ACC = null;
+let ACC = null, FC = null;
+
+/* ── 선행 지표 분석 — '어느 지표가 점수보다 몇 분 먼저 움직였나' ──
+   과거 저장분에서 임계 돌파 시점을 찾아 지표별 선행 시간의 중앙값을 낸다.
+   표본이 적으면 숫자를 믿게 만들지 말고 적다고 말해야 한다. */
+async function openLeading(){
+  $('#gtitle').textContent = '선행 지표 — 점수보다 먼저 움직인 지표';
+  document.querySelector('.gbox').classList.add('wide');
+  $('#gmin').classList.add('hidden');
+  $('#gmask').classList.remove('hidden');
+  $('#gbody').innerHTML = '<div class="empty">저장된 날짜를 훑는 중…</div>';
+  try{
+    const d = await api('/api/forecast/leading');
+    if(!d.ok){ $('#gbody').innerHTML = `<div class="empty">${esc(d.error||'분석 실패')}</div>`; return; }
+    const rows = (d.metrics||[]).filter(m=>m.samples>0);
+    const fc = FC && FC.warn ? FC : null;
+    $('#gbody').innerHTML = `
+      ${fc ? `<div class="warn" style="margin:0 0 10px">지금 <b>${fc.eta_min}분 뒤 ${fc.floor}점 돌파</b> 예상 —
+              현재 ${fc.current}점, 분당 ${fc.slope>0?'+':''}${fc.slope}점 (확신 ${fc.confidence}%)</div>` : ''}
+      <p class="note" style="margin:0 0 10px">
+        저장된 <b style="color:var(--tx2)">${(d.days||[]).length}일</b>에서 점수가 ${d.floor}점을 넘은
+        <b style="color:var(--tx2)">${d.events}건</b>을 찾아, 그 앞 ${d.lookback_min}분에서 각 지표가
+        <b>확실히 오르기 시작한 시각</b>을 쟀습니다. 값은 사건마다의 <b>중앙값</b>입니다.<br>
+        <span class="dim">※ '확실히 오른 시점' 기준이라 최초 미세 움직임보다는 짧게 나옵니다 —
+        절대 시간보다 <b style="color:var(--tx2)">지표 사이의 순서</b>를 보세요.</span>
+        ${d.note ? `<br><b style="color:var(--major)">${esc(d.note)}</b>` : ''}
+      </p>
+      ${rows.length ? `<table class="pol"><thead><tr>
+          <th style="width:44px">순위</th><th>지표</th><th style="width:110px">중앙 선행</th>
+          <th style="width:92px">사건 적중</th><th style="width:74px">표본</th><th>AMOS 컬럼</th>
+        </tr></thead><tbody>${rows.map((m,i)=>`<tr>
+          <td>${i+1}</td>
+          <td><b style="color:var(--tx)">${esc(m.label)}</b></td>
+          <td><b style="color:${i===0?'var(--cy)':'var(--tx2)'}">${m.median_lead}분 먼저</b>
+              ${m.censored ? `<br><span class="note" style="font-size:10.5px">그보다 이른 건 ${m.censored}회</span>`:''}</td>
+          <td>${m.hit_rate}%</td><td>${m.samples}건</td>
+          <td class="mono" style="font-size:11px;color:var(--tx3)">${esc(m.raw)}</td>
+        </tr>`).join('')}</tbody></table>`
+        : '<div class="empty">아직 임계를 넘은 사건이 없어 분석할 게 없습니다 — 데이터가 쌓이면 채워집니다.</div>'}`;
+  }catch(e){ $('#gbody').innerHTML = '<div class="empty">분석 실패 — 서버 확인</div>'; }
+}
 function renderAcc(a){
   ACC = a || null;
   if(!a || a.error){

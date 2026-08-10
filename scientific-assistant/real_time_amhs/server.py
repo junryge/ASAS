@@ -41,7 +41,11 @@ STATE = {
     "error": None,
     "amos_warn": None,
     "scans": 0,
+    "forecast": None,          # 선행 감지 결과 (forecast.predict)
 }
+
+# 선행 지표 분석 캐시 — 며칠치 CSV 를 훑어야 해서 매 요청 재계산하면 느리다
+LEADING_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
 
 
 # ────────────────────────────── 폴링 루프 ──────────────────────────────
@@ -104,6 +108,7 @@ def _poll_loop() -> None:
             if res.get("ok"):
                 _auto_judge(res.get("cases") or [])
                 _minute_llm(STATE.get("last_rows") or [])
+                _update_forecast()
         except Exception as e:
             STATE.update(connected=False, error=f"{type(e).__name__}: {e}",
                          last_scan=datetime.now().isoformat())
@@ -170,6 +175,26 @@ def _auto_judge(case_ids: list[str]) -> None:
 
         threading.Thread(target=work, daemon=True).start()
     STORE.save()
+
+
+def _update_forecast() -> None:
+    """선행 감지 — 최근 추세로 '임계 돌파 N분 전' 을 미리 띄운다.
+
+    수집 루프에서 매 회 부른다. 계산은 최근 20분 점수만 쓰는 가벼운 회귀라
+    수집을 지연시키지 않는다. 실패해도 관제는 계속돼야 하므로 조용히 넘어간다.
+    """
+    try:
+        from forecast import predict
+        fc = predict(STATE.get("last_rows") or [], CFG)
+        prev = STATE.get("forecast") or {}
+        STATE["forecast"] = fc
+        # 경보가 새로 뜬 순간만 콘솔에 한 줄 (매분 도배 방지)
+        if fc.get("warn") and not prev.get("warn"):
+            print(f"[선행] ⚠️ {fc['eta_min']}분 뒤 임계 돌파 예상 "
+                  f"— 현재 {fc['current']}점, 분당 {fc['slope']:+.2f}점 "
+                  f"(확신 {fc['confidence']}%)")
+    except Exception as e:
+        STATE["forecast"] = {"ok": False, "warn": False, "reason": f"{type(e).__name__}: {e}"}
 
 
 # ─────────────────────── 추이 그래프 지표 목록 ───────────────────────
@@ -594,6 +619,43 @@ def _recur_1h(ref: datetime) -> dict:
     recur = max(0, runs - 1)
     return {"rate": round(100 * recur / runs, 1) if runs else None,
             "runs": runs, "recur": recur, "minutes": minutes, "floor": floor}
+
+
+@app.route("/api/forecast")
+def api_forecast():
+    """선행 감지 — 지금 추세로 본 임계 돌파 예보.
+
+    수집 루프가 매 회 계산해 STATE 에 넣어 둔 것을 그대로 준다(요청마다 재계산
+    안 함). 아직 한 번도 안 돌았으면 그 자리에서 한 번 계산한다.
+    """
+    fc = STATE.get("forecast")
+    if fc is None:
+        _update_forecast()
+        fc = STATE.get("forecast")
+    return jsonify(fc or {"ok": False, "warn": False, "reason": "아직 수집 전"})
+
+
+@app.route("/api/forecast/leading")
+def api_forecast_leading():
+    """선행 지표 — 과거 사건에서 어느 지표가 몇 분 먼저 움직였나.
+
+    저장된 날짜 CSV 를 훑으므로 60초 캐시. days= 로 날짜를 직접 줄 수 있다.
+    """
+    import time as _t
+    days = [d for d in (request.args.get("days", "") or "").split(",") if d.strip()]
+    look = max(10, min(int(request.args.get("lookback", 60) or 60), 240))
+    key = f"{','.join(days)}|{look}"
+    now = _t.time()
+    if (LEADING_CACHE["data"] and LEADING_CACHE["key"] == key
+            and now - LEADING_CACHE["at"] < 60):
+        return jsonify({**LEADING_CACHE["data"], "cached": True})
+    try:
+        from forecast import leading
+        data = leading(days or None, CFG, lookback_min=look)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    LEADING_CACHE.update(at=now, data=data, key=key)
+    return jsonify({**data, "cached": False})
 
 
 @app.route("/api/kpi")

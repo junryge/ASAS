@@ -221,6 +221,22 @@
     "close_requires_ack": true,
     "_close_doc": "'이상 없음' 판정은 케이스를 닫지 않고 재확인 예약만 갱신한다."
   },
+  "forecast": {
+    "_doc": "선행 감지 — 최근 추세로 '임계 돌파 N분 전'을 미리 띄운다. 학습 불필요.",
+    "enabled": true,
+    "window_min": 20,
+    "_window_doc": "추세를 볼 최근 구간(분)",
+    "horizon_min": 15,
+    "_horizon_doc": "이 시간 안에 넘을 것 같을 때만 경보",
+    "min_slope": 0.6,
+    "_slope_doc": "분당 최소 상승(점) — 이보다 완만하면 무시",
+    "sustain_min": 5,
+    "_sustain_doc": "최근 이만큼은 대체로 오르막이어야 함",
+    "min_points": 8,
+    "_points_doc": "추세 계산 최소 표본(분)",
+    "quiet_below": 20,
+    "_quiet_doc": "현재 점수가 이보다 낮으면 예보 생략(잡음 구간)"
+  },
   "evaluation": {
     "_doc": "누적 구간을 다시 평가해 리포트로 내보내는 주기. 감지 자체와 무관.",
     "periods": [
