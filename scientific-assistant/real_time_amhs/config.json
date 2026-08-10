@@ -1,0 +1,586 @@
+{
+  "_doc": "AMHS Sentinel — 데모스와 완전 독립된 LLM 실시간 관제 시스템 설정",
+  "logpresso_base": "http://10.40.42.167:8888/logpresso",
+  "api_key": "",
+  "_api_key_doc": "여기에 키를 직접 넣어도 됨(스크립트처럼). 비우면 api_key_file 을 읽는다.",
+  "api_key_file": "api_key.txt",
+  "table_name": "test_table3",
+  "query": {
+    "poll_interval_s": 60,
+    "_poll_doc": "수집 주기 — 몇 초마다 가져올지. 기본 1분. 대시보드에서 변경 가능.",
+    "poll_options": [
+      10,
+      30,
+      60,
+      300,
+      600
+    ],
+    "_poll_options_doc": "선택 가능한 수집 주기(초): 10초 / 30초 / 1분 / 5분 / 10분",
+    "window": "10m",
+    "_window_doc": "실시간 조회 구간 (1분마다 이 구간을 가져온다). 대시보드에서 변경 가능.",
+    "window_options": [
+      "1m",
+      "5m",
+      "10m",
+      "20m",
+      "30m",
+      "40m",
+      "50m",
+      "60m"
+    ],
+    "_window_options_doc": "대시보드에서 고르는 데이터 구간. 1분만 볼 사람도, 60분 누적을 볼 사람도 있다.",
+    "limit": 2000,
+    "timeout_s": 300,
+    "max_retries": 3,
+    "chunk_minutes": 10,
+    "_chunk_doc": "긴 구간(리포트)은 이 단위로 끊어 조회 후 합친다",
+    "max_bytes": 31457280,
+    "_max_bytes_doc": "한 청크 응답이 30MB 초과면 그 구간만 절반으로 재귀 분할",
+    "sort_col": "_time",
+    "_sort_doc": "구간 조회 정렬 컬럼. 테이블에 없으면 \"\" 로 비워 정렬 생략",
+    "use_proxy": false,
+    "_use_proxy_doc": "기본 false = 시스템 프록시 우회. Windows urllib 이 IE 프록시를 타서 사내 IP 조회가 막히는 것 방지. 프록시를 꼭 거쳐야 하면 true."
+  },
+  "amos": {
+    "_doc": "AMOS 이상감지 — ATLAS 2개 테이블의 downward/upward_anomaly_cols 를 각각 BOTTLENECK_/QUEUE_ 이름으로 바꿔 기본 데이터에 시각으로 붙인다.",
+    "_확인방법": "python lp_query.py --schema -t ATLAS_BOTTLENECK_ANOMALY   ← 실제 컬럼 확인 후 *_col 교체",
+    "source": "atlas_tables",
+    "filter": "MCP_NM == \"BR\"",
+    "base_time_col": "datetime",
+    "_base_time_col_doc": "기존 데이터(test_table3)의 시각 컬럼",
+    "bottleneck": {
+      "table": "ATLAS_BOTTLENECK_ANOMALY",
+      "time_col": "EVENT_DT",
+      "_time_col_doc": "ATLAS 의 데이터 시각 컬럼 (예 '2026-07-27 0:00'). _time 은 수집시각이라 안 씀.",
+      "src_downward": "downward_anomaly_cols",
+      "src_upward": "upward_anomaly_cols",
+      "_src_doc": "★ATLAS 원본 컬럼명 (두 테이블 모두 같은 이름)",
+      "downward_col": "BOTTLENECK_downward_anomaly_cols",
+      "upward_col": "BOTTLENECK_upward_anomaly_cols",
+      "_dst_doc": "★CSV 에 저장될 이름 (접두어를 붙여 두 테이블을 구분)"
+    },
+    "queue": {
+      "table": "ATLAS_QUEUE_ANOMALY",
+      "time_col": "EVENT_DT",
+      "src_downward": "downward_anomaly_cols",
+      "src_upward": "upward_anomaly_cols",
+      "downward_col": "QUEUE_downward_anomaly_cols",
+      "upward_col": "QUEUE_upward_anomaly_cols"
+    },
+    "join_tolerance_s": 60,
+    "_join_doc": "분 단위 데이터 기준. 같은 분으로 맞추고 못 찾으면 이 오차 내 최근접을 쓴다.",
+    "target_columns": [
+      "BOTTLENECK_downward_anomaly_cols",
+      "BOTTLENECK_upward_anomaly_cols",
+      "QUEUE_downward_anomaly_cols",
+      "QUEUE_upward_anomaly_cols"
+    ]
+  },
+  "llm": {
+    "enabled": true,
+    "url": "http://hcp.llm.skhynix.com/v1/chat/completions",
+    "model": "gaia-Qwen3.5-397B-A17B",
+    "api_key_file": "token.txt",
+    "_api_key_doc": "★이 폴더 안의 자체 키 파일. 데모스 TOKEN.TXT 와 무관 (완전 독립).",
+    "api_key_env": "GAIA_API_KEY",
+    "auto_judge": true,
+    "_auto_judge_doc": "실시간 감지 즉시 LLM 이 판단하게 한다 (신규 케이스·등급 상향 시)",
+    "auto_judge_min_level": "경계",
+    "_auto_judge_min_doc": "이 등급 이상만 자동 판단 (경계|위험|초위험)",
+    "timeout_s": 90,
+    "max_tokens": 2048,
+    "temperature": 0.2,
+    "skills_dir": "../m16_hub_skills",
+    "skills": [
+      "m16_hub_일반_v3.5.md",
+      "m16_hub_임계값_v3.5.md",
+      "m16_hub_카파시_v3.5.md",
+      "m16_hub_결과해석_도메인_고객인용V3.5.md"
+    ],
+    "persona": "페르소나_통합.txt",
+    "per_minute": {
+      "_doc": "1분마다 그 분 데이터를 LLM 이 판단해 data/YYYYMMDD_LLM.CSV 에 1행씩 남긴다. TOTAL.CSV 와 datetime 으로 조인된다.",
+      "enabled": true,
+      "every_min": 1,
+      "_every_min_doc": "1=매분, 5=5분마다, 0=끔(케이스 발생 시에만 판단)",
+      "light_below": 50,
+      "_light_below_doc": "이 점수 미만(정상 구간)은 짧게 묻는다 — 예/아니오 + 한 줄. 하루 1440번이라 낭비를 줄인다",
+      "skip_if_busy": true,
+      "_skip_doc": "이전 추론이 안 끝났으면 그 분은 건너뛴다(오류=지연스킵). 데이터 수집은 절대 밀리지 않게",
+      "csv_suffix": "_LLM",
+      "max_per_cycle": 3,
+      "_max_per_cycle_doc": "한 폴링에서 처리할 추론 개수. 최신 1건을 먼저 하고 남은 자리로 과거 빈 분을 메운다",
+      "backfill": true,
+      "_backfill_doc": "폴링이 밀려 빈 분이나 기동 전 수집 구간을 뒤에서 순차로 메운다. false 면 최신 분만",
+      "light_max_tokens": 500,
+      "_light_max_tokens_doc": "정상 구간(짧은 프롬프트) 응답 토큰. 너무 작으면 본문이 비어 온다",
+      "full_max_tokens": 1200,
+      "_full_max_tokens_doc": "경계 이상(상세 프롬프트) 응답 토큰",
+      "json_prefill": true,
+      "_json_prefill_doc": "★assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다. 이 게이트웨이는 /no_think 를 안 듣고 'Thinking Process: …' 평문 추론을 먼저 써서 토큰을 다 쓴다. 프리필하면 추론을 건너뛰어 빠르고 안정적이다. 서버가 assistant 프리필을 무시하면 false 로 두고 토큰을 올린다",
+      "judge_max_chars": 200,
+      "_judge_max_chars_doc": "판단·근거·조치·오류 각 칸의 최대 글자수. 넘치면 잘리고 … 가 붙는다"
+    },
+    "accuracy": {
+      "_doc": "사후검증 — LLM 판단 이후 실제 데이터 흐름과 일치했는지 채점. LLM 재호출 없이 저장된 TOTAL.CSV 스코어만 읽는다. ★정탐률이 아니라 '판단 일치율'이다.",
+      "enabled": true,
+      "window_min": 20,
+      "_window_doc": "검증 창(분). 사건 한 사이클이 대략 20분",
+      "sustain_min": 5,
+      "_sustain_doc": "임계 이상이 이만큼 연속되면 '실제 이상이었다'로 본다",
+      "recover_min": 5,
+      "_recover_doc": "판단 직후 이 분 안에 임계 아래로 회복되면 과다탐지",
+      "min_sample": 10,
+      "_min_sample_doc": "채점 건수가 이보다 적으면 퍼센트를 내지 않는다(건수만 표시)",
+      "floor": null,
+      "_floor_doc": "임계 점수. null 이면 grade 밴드 최저값(50) 사용"
+    },
+    "no_think": true,
+    "_no_think_doc": "★Qwen3 계열은 사고(reasoning) 모델이다. 끄지 않으면 사고 토큰만 쓰다 max_tokens 에 걸려 본문이 빈 응답으로 온다. 마지막 user 메시지에 '/no_think' 주입. 사고 과정을 보고 싶으면 false (대신 max_tokens 를 크게)",
+    "disable_thinking_kwarg": false,
+    "_disable_thinking_kwarg_doc": "서버가 지원할 때만 true — 요청에 chat_template_kwargs.enable_thinking=false 를 실어 보낸다. 지원 안 하면 400 이 날 수 있어 기본 false",
+    "json_prefill_text": "{\"실제이상\": \"",
+    "_json_prefill_text_doc": "프리필 문자열. '{' 만 넣으면 모델이 JSON 대신 산문을 이어 쓰므로 첫 키까지 넣어 값부터 채우게 한다. 응답에는 안 실려오므로 코드가 되붙인다",
+    "report_max_tokens": 1800,
+    "_report_max_tokens_doc": "구간 리포트 본문 응답 토큰. 리포트는 '## 주요 발견' 을 프리필해 산문을 막는다",
+    "day_report_max_tokens": 4000,
+    "_day_report_max_tokens_doc": "하루 사건 리포트(5섹션) 응답 토큰. 사건이 많으면 늘린다"
+  },
+  "grade": {
+    "_doc": "점수 등급 (데모스 스킬과 동일 기준)",
+    "normal_max": 49,
+    "bands": [
+      {
+        "min": 50,
+        "max": 70,
+        "level": "경계",
+        "emoji": "🟠",
+        "severity": "경계/주의(확인필요)"
+      },
+      {
+        "min": 71,
+        "max": 84,
+        "level": "위험",
+        "emoji": "🔴",
+        "severity": "위험/경고(모니터링 필요)"
+      },
+      {
+        "min": 85,
+        "max": 100,
+        "level": "초위험",
+        "emoji": "⛔",
+        "severity": "초위험/심각(조치필요)"
+      }
+    ]
+  },
+  "policy": {
+    "_doc": "감지·확인·에스컬레이션 정책. 감지는 항상 실시간이며 아래는 라우팅/재확인 주기만 규정한다.",
+    "routing": [
+      {
+        "level": "초위험",
+        "on_detect": [
+          "관제실 팝업",
+          "당직 반장 SMS"
+        ],
+        "unack_5m": [
+          "파트장 호출"
+        ],
+        "unack_15m": [
+          "팀장 에스컬레이션"
+        ],
+        "recheck_min": 1
+      },
+      {
+        "level": "위험",
+        "on_detect": [
+          "관제 대시보드 알림",
+          "메신저 채널"
+        ],
+        "unack_5m": [
+          "당직 반장 메신저"
+        ],
+        "unack_15m": [
+          "파트장 호출"
+        ],
+        "recheck_min": 3
+      },
+      {
+        "level": "경계",
+        "on_detect": [
+          "관제 대시보드 알림"
+        ],
+        "unack_5m": [],
+        "unack_15m": [
+          "당직 반장 메신저"
+        ],
+        "recheck_min": 5
+      }
+    ],
+    "suppression_window_min": 30,
+    "_suppression_doc": "종결 후에도 이 시간 동안 같은 설비/위치 재발은 같은 케이스로 묶는다.",
+    "close_requires_ack": true,
+    "_close_doc": "'이상 없음' 판정은 케이스를 닫지 않고 재확인 예약만 갱신한다."
+  },
+  "evaluation": {
+    "_doc": "누적 구간을 다시 평가해 리포트로 내보내는 주기. 감지 자체와 무관.",
+    "periods": [
+      {
+        "every": "1m",
+        "enabled": false,
+        "scope": "직전 1분",
+        "filter": "CRITICAL_ONLY",
+        "channels": [
+          "관제 대시보드"
+        ]
+      },
+      {
+        "every": "5m",
+        "enabled": false,
+        "scope": "직전 5분",
+        "filter": "CRITICAL_ONLY",
+        "channels": [
+          "메신저"
+        ]
+      },
+      {
+        "every": "30m",
+        "enabled": true,
+        "scope": "직전 30분",
+        "filter": "ALL",
+        "channels": [
+          "관제 대시보드"
+        ]
+      },
+      {
+        "every": "8h",
+        "enabled": true,
+        "scope": "교대 구간",
+        "filter": "ALL",
+        "channels": [
+          "메신저",
+          "메일"
+        ]
+      }
+    ]
+  },
+  "feedback": {
+    "_doc": "리포트 피드백 → 다음 리포트의 임계치/요약 방식에 반영",
+    "store": "data/feedback.jsonl",
+    "apply_last_n": 20,
+    "threshold_nudge": 2,
+    "_nudge_doc": "'과다 탐지' 누적 시 임계 점수를 +N, '누락' 누적 시 -N 조정 (최대 ±10)"
+  },
+  "storage": {
+    "cases": "data/cases.json",
+    "reports": "data/reports",
+    "raw_snapshots": "data/snapshots",
+    "daily_csv_dir": "data",
+    "_daily_csv_doc": "1분마다 수집한 데이터를 날짜별로 누적 저장 → data/20260727_TOTAL.CSV",
+    "dedupe_cols": [
+      "_id",
+      "file",
+      "hot_area"
+    ],
+    "_dedupe_doc": "시각(datetime) + 이 컬럼들이 같아야 같은 행. _id/file 을 넣어야 같은 분에 여러 행이 와도 안 버려진다. 없는 컬럼은 자동 무시."
+  },
+  "server": {
+    "_doc": "데모스(5000번대)·코드어시(10009)와 겹치지 않는 독립 포트. host 0.0.0.0 = 외부(사내망) 접속 허용",
+    "host": "0.0.0.0",
+    "port": 8989,
+    "auto_open": true,
+    "_auto_open_doc": "server.py 실행 시 대시보드를 브라우저로 자동 실행. 끄려면 false (또는 NO_BROWSER=1)"
+  },
+  "ui": {
+    "_doc": "화면 설정. metric_groups = 실시간/과거 화면 위 '추이 그래프'의 지표 묶음. 화면의 그룹 버튼으로 골라 쓴다. key = 값이 들어있는 CSV 컬럼, raw = 화면에 보여줄 컬럼명. 그 날 CSV 에 값이 없는 항목은 자동으로 빠진다.",
+    "metric_groups": [
+      {
+        "id": "amos",
+        "name": "AMOS 컬럼",
+        "desc": "발동이벤트_요약 기준 — AMOS 실제 컬럼명으로 표시",
+        "metrics": [
+          {
+            "key": "unified_risk_score",
+            "raw": "unified_risk_score",
+            "label": "스코어",
+            "unit": "점",
+            "color": "#3DDBE8",
+            "max": 100,
+            "bands": true
+          },
+          {
+            "key": "M16HUB_ra",
+            "raw": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
+            "label": "M16HUB 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M14_ra",
+            "raw": "M14.QUE.LOAD.AVGLOADTIME1MIN",
+            "label": "M14 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M14B_ra",
+            "raw": "M14B.QUE.TIME.AVGTOTALTIME1MIN",
+            "label": "M14B 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M16A_ra",
+            "raw": "M16A.QUE.LOAD.AVGLOADTIME1MIN",
+            "label": "M16A 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M16B_ra",
+            "raw": "M16B.QUE.LOAD.AVGLOADTIME1MIN",
+            "label": "M16B 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M16HUB_rd_fab",
+            "raw": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
+            "label": "M16HUB FAB저장율",
+            "unit": "%",
+            "color": "#FFA53D",
+            "max": 100
+          },
+          {
+            "key": "M16HUB_stb_util",
+            "raw": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
+            "label": "M16HUB STB저장율",
+            "unit": "%",
+            "color": "#F2C94C",
+            "max": 100
+          },
+          {
+            "key": "M16HUB_rev_count",
+            "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
+            "label": "M16HUB 리프터막힘",
+            "unit": "회",
+            "color": "#FF6FB5"
+          },
+          {
+            "key": "M14_rd_oht",
+            "raw": "M14.QUE.OHT.OHTUTIL",
+            "label": "M14 OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "M14B_rd_oht",
+            "raw": "M14B.QUE.OHT.OHTUTIL",
+            "label": "M14B OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "M16A_rd_oht",
+            "raw": "M16A.QUE.OHT.OHTUTIL",
+            "label": "M16A OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "M16B_rd_oht",
+            "raw": "M16B.QUE.OHT.OHTUTIL",
+            "label": "M16B OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "sla_M14",
+            "raw": "M14.QUE.ALL.TRANSPORT4MINOVERRATIO",
+            "label": "M14 4분초과율",
+            "unit": "%",
+            "color": "#3DDBE8",
+            "max": 100
+          },
+          {
+            "key": "sla_M16A",
+            "raw": "M16A.QUE.ALL.TRANSPORT4MINOVERRATIO",
+            "label": "M16A 4분초과율",
+            "unit": "%",
+            "color": "#3DDBE8",
+            "max": 100
+          },
+          {
+            "key": "sla_M16B",
+            "raw": "M16B.QUE.ALL.TRANSPORT4MINOVERRATIO",
+            "label": "M16B 4분초과율",
+            "unit": "%",
+            "color": "#3DDBE8",
+            "max": 100
+          },
+          {
+            "key": "sorter_M14",
+            "raw": "M14.SORTER.ABN.SORTERWAITCOUNTOVER",
+            "label": "M14 소터대기",
+            "unit": "건",
+            "color": "#5FB8FF"
+          },
+          {
+            "key": "sorter_M14B",
+            "raw": "M14B.SORTER.ABN.SORTERWAITCOUNTOVER",
+            "label": "M14B 소터대기",
+            "unit": "건",
+            "color": "#5FB8FF"
+          },
+          {
+            "key": "sorter_M16A",
+            "raw": "M16A.SORTER.ABN.SORTERWAITCOUNTOVER",
+            "label": "M16A 소터대기",
+            "unit": "건",
+            "color": "#5FB8FF"
+          },
+          {
+            "key": "sorter_M16B",
+            "raw": "M16B.SORTER.ABN.SORTERWAITCOUNTOVER",
+            "label": "M16B 소터대기",
+            "unit": "건",
+            "color": "#5FB8FF"
+          }
+        ]
+      },
+      {
+        "id": "csv",
+        "name": "CSV 컬럼",
+        "desc": "저장된 CSV 컬럼명 그대로 — 점수 계열(M16HUB_score·flow_score·hot_score) 포함",
+        "metrics": [
+          {
+            "key": "unified_risk_score",
+            "raw": "unified_risk_score",
+            "label": "스코어",
+            "unit": "점",
+            "color": "#3DDBE8",
+            "max": 100,
+            "bands": true
+          },
+          {
+            "key": "M16HUB_ra",
+            "raw": "M16HUB_ra",
+            "label": "M16HUB 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M16HUB_rd_fab",
+            "raw": "M16HUB_rd_fab",
+            "label": "M16HUB FAB저장율",
+            "unit": "%",
+            "color": "#FFA53D",
+            "max": 100
+          },
+          {
+            "key": "M16HUB_stb_util",
+            "raw": "M16HUB_stb_util",
+            "label": "M16HUB STB저장율",
+            "unit": "%",
+            "color": "#F2C94C",
+            "max": 100
+          },
+          {
+            "key": "M16HUB_rev_count",
+            "raw": "M16HUB_rev_count",
+            "label": "M16HUB 리프터막힘",
+            "unit": "회",
+            "color": "#FF6FB5"
+          },
+          {
+            "key": "M16HUB_score",
+            "raw": "M16HUB_score",
+            "label": "M16HUB 점수",
+            "unit": "점",
+            "color": "#FF8FA3",
+            "max": 100
+          },
+          {
+            "key": "M14_ra",
+            "raw": "M14_ra",
+            "label": "M14 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M14B_ra",
+            "raw": "M14B_ra",
+            "label": "M14B 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M16A_ra",
+            "raw": "M16A_ra",
+            "label": "M16A 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M16B_ra",
+            "raw": "M16B_ra",
+            "label": "M16B 반송시간",
+            "unit": "분",
+            "color": "#FF6B5E"
+          },
+          {
+            "key": "M14_rd_oht",
+            "raw": "M14_rd_oht",
+            "label": "M14 OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "M14B_rd_oht",
+            "raw": "M14B_rd_oht",
+            "label": "M14B OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "M16A_rd_oht",
+            "raw": "M16A_rd_oht",
+            "label": "M16A OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "M16B_rd_oht",
+            "raw": "M16B_rd_oht",
+            "label": "M16B OHT가동률",
+            "unit": "%",
+            "color": "#7C9CFF",
+            "max": 100
+          },
+          {
+            "key": "flow_score",
+            "raw": "flow_score",
+            "label": "흐름 점수",
+            "unit": "점",
+            "color": "#B39DFF",
+            "max": 100
+          },
+          {
+            "key": "hot_score",
+            "raw": "hot_score",
+            "label": "최고 구역 점수",
+            "unit": "점",
+            "color": "#FFB55C",
+            "max": 100
+          }
+        ]
+      }
+    ]
+  }
+}

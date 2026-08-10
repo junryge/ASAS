@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMHS SENTINEL_M16BR — LLM 실시간 이상감지 · 관제</title>
+<style>
+  :root{
+    --bg:#080A0F; --panel:#0D1119; --panel2:#131926; --line:#1C2431; --line2:#26303f;
+    --tx:#E6EDF6; --tx2:#8FA0B6; --tx3:#5E6E85;
+    --cy:#3DDBE8; --crit:#FF4D5E; --major:#FF9F2E; --minor:#F2D338; --ok:#2FD68A;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif}
+
+  /* ── 상단 바 (오프닝 화면 없이 바로 관제) ── */
+  .top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
+       border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+  .logo{display:flex;align-items:center;gap:9px}
+  .logo .mk{width:26px;height:26px;border-radius:7px;border:2px solid var(--cy);
+            display:grid;place-items:center}
+  .logo .mk i{width:8px;height:8px;border-radius:50%;background:var(--cy);display:block}
+  .logo b{font-size:14px;letter-spacing:1.4px;font-weight:700}
+  .logo span{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.2px}
+  .tabs{display:flex;gap:4px;margin-left:10px}
+  .tabs button{background:transparent;border:1px solid transparent;color:var(--tx2);
+               padding:6px 14px;border-radius:7px;cursor:pointer;font:inherit;font-size:12.5px}
+  .tabs button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:600}
+  .chan{margin-left:auto;display:flex;gap:14px;font-size:11.5px;color:var(--tx2)}
+  .chan i{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:5px}
+  .chan i.off{background:var(--crit)}
+  .clk{text-align:right;font-variant-numeric:tabular-nums}
+  .clk b{font-size:17px;font-weight:600;letter-spacing:.5px}
+  .clk span{display:block;font-size:10.5px;color:var(--tx3)}
+
+  /* ── KPI ── */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);
+        background:var(--panel)}
+  .kpi{padding:11px 18px;border-right:1px solid var(--line)}
+  .kpi:last-child{border-right:0}
+  .kpi .l{font-size:11.5px;color:var(--tx3)}
+  .kpi .v{font-size:23px;font-weight:700;line-height:1.25;letter-spacing:-.5px}
+  .kpi .v u{font-size:11.5px;font-weight:500;color:var(--tx3);text-decoration:none;margin-left:3px}
+  .kpi .s{font-size:11px;color:var(--tx3)}
+  .c-cy{color:var(--cy)} .c-cr{color:var(--crit)} .c-mj{color:var(--major)} .c-ok{color:var(--ok)}
+
+  /* ── 레이아웃 ── */
+  .main{display:block}
+  .pane{min-height:calc(100vh - 118px)}
+
+  .hd{display:flex;align-items:center;gap:9px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .hd h2{margin:0;font-size:13px;font-weight:650}
+  .filters{display:flex;gap:5px;margin-left:4px}
+  .filters button{background:transparent;border:1px solid var(--line2);color:var(--tx2);
+                  border-radius:20px;padding:3px 11px;font:inherit;font-size:11.5px;cursor:pointer}
+  .filters button.on{background:#12303a;border-color:#1d4b57;color:var(--cy)}
+  .stream{margin-left:auto;font-size:11.5px;color:var(--tx3);display:flex;align-items:center;gap:7px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
+       box-shadow:0 0 0 0 rgba(47,214,138,.6);animation:p 2s infinite}
+  .dot.off{background:var(--crit);animation:none}
+  @keyframes p{70%{box-shadow:0 0 0 7px rgba(47,214,138,0)}100%{box-shadow:0 0 0 0 rgba(47,214,138,0)}}
+
+  /* ── 케이스 목록 ── */
+  table.cases{width:100%;border-collapse:collapse}
+  table.cases th{font-size:11px;color:var(--tx3);font-weight:600;text-align:left;
+                 padding:8px 14px;border-bottom:1px solid var(--line)}
+  table.cases td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.cases tr.crow{cursor:pointer}
+  table.cases tr.fresh{background:rgba(61,219,232,.07);
+        box-shadow:inset 3px 0 0 var(--cy);animation:flash 1.6s ease-out}
+  @keyframes flash{from{background:rgba(61,219,232,.22)}to{background:rgba(61,219,232,.07)}}
+  table.cases tr.crow:hover{background:var(--panel2)}
+  table.cases tr.crow.sel{background:#101a24;box-shadow:inset 3px 0 0 var(--cy)}
+  .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
+  .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+  .ttl{font-weight:600;font-size:13.5px}
+  .sub{font-size:11.5px;color:var(--tx3);margin-top:3px}
+  .chip{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10.5px;
+        font-weight:700;letter-spacing:.3px;margin-right:6px}
+  .lv초위험{background:rgba(255,77,94,.15);color:var(--crit)}
+  .lv위험{background:rgba(255,159,46,.15);color:var(--major)}
+  .lv경계{background:rgba(242,211,56,.15);color:var(--minor)}
+  .dim{color:var(--tx3);font-size:12px;white-space:nowrap}
+  .stt{font-size:12px;font-weight:600}
+  .stt.활성{color:var(--crit)} .stt.확인{color:var(--major)} .stt.종결{color:var(--tx3)}
+
+  /* ── 상세 ── */
+  .side .sec{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .side h3{margin:0 0 8px;font-size:11.5px;color:var(--tx3);font-weight:650}
+  .dt-hd{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .dt-hd .id{font-size:12.5px;color:var(--tx2)}
+  .dt-ttl{font-size:17px;font-weight:700;margin:9px 0 12px;line-height:1.35}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .grid4 .l{font-size:10.5px;color:var(--tx3)}
+  .grid4 .v{font-size:13px;font-weight:600;margin-top:2px}
+  .step{display:flex;align-items:center;margin:15px 0 4px}
+  .step .n{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;width:56px}
+  .step .n i{width:9px;height:9px;border-radius:50%;background:#26303f}
+  .step .n.on i{background:var(--cy)}
+  .step .n.cur i{background:var(--crit);box-shadow:0 0 0 4px rgba(255,77,94,.18)}
+  .step .n span{font-size:10.5px;color:var(--tx3)}
+  .step .n.on span,.step .n.cur span{color:var(--tx2)}
+  .step .ln{height:1px;background:#26303f;flex:1;margin-bottom:19px}
+  .llmbox{background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:12px}
+  .llmbox .tag{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--cy);
+               font-weight:650;margin-bottom:7px}
+  .llmbox .tag i{width:7px;height:7px;border-radius:50%;background:var(--cy)}
+  ol.act{margin:10px 0 0;padding:0;list-style:none;counter-reset:a}
+  ol.act li{counter-increment:a;font-size:12.5px;padding:4px 0 4px 26px;position:relative;color:var(--tx2)}
+  ol.act li::before{content:counter(a,decimal-leading-zero);position:absolute;left:0;
+                    color:var(--cy);font-size:11px;font-weight:700;top:5px}
+  pre.snap{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+           padding:11px;margin:0;overflow:auto;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
+           color:#8ecfdc;white-space:pre-wrap;word-break:break-all}
+  table.mx{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:9px}
+  table.mx td{padding:7px 10px;border-bottom:1px solid var(--line)}
+  table.mx td:nth-child(2){text-align:right;font-weight:700}
+  table.mx td:nth-child(3){text-align:right;color:var(--tx3);font-size:11.5px;width:88px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .zchip{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;
+         padding:2px 8px;font-size:11.5px;color:var(--tx2)}
+  .dirline{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:4px}
+  .dirline:last-child{margin-bottom:0}
+  .dirline b{font-size:10.5px;flex:none;width:74px;letter-spacing:.2px}
+  .zchip.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px}
+  ul.tl{list-style:none;margin:0;padding:0;font-size:12.5px}
+  ul.tl li{padding:5px 0 5px 15px;border-left:1px solid var(--line2);position:relative;color:var(--tx2)}
+  ul.tl li::before{content:"";position:absolute;left:-3.5px;top:12px;width:6px;height:6px;
+                   border-radius:50%;background:var(--cy)}
+  ul.tl .k{color:var(--tx3);margin-right:7px;font-variant-numeric:tabular-nums}
+
+  button.act,a.act{background:var(--panel2);border:1px solid var(--line2);color:var(--tx);
+             border-radius:8px;padding:10px 14px;cursor:pointer;font:inherit;font-size:12.5px}
+  a.act{text-decoration:none;display:inline-block}
+  button.act:hover,a.act:hover{background:#1a2331;border-color:#324459}
+  button.act.pri{background:#123039;border-color:#1d4b57;color:var(--cy);font-weight:650;flex:1}
+  button.act:disabled{opacity:.4;cursor:not-allowed}
+  a.act.off{opacity:.4;pointer-events:none}
+  /* 헤더 줄에 들어가는 컨트롤은 표 헤더 높이에 맞춰 작게 */
+  .stream button.act,.stream a.act{padding:5px 11px;font-size:11.5px;border-radius:6px}
+  .stream input,.stream select{padding:4px 7px;font-size:11.5px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  input,select,textarea{background:var(--bg);color:var(--tx);border:1px solid var(--line2);
+        border-radius:7px;padding:7px 10px;font:inherit;font-size:12.5px}
+  textarea{width:100%;resize:vertical;min-height:60px}
+  .note{color:var(--tx3);font-size:11.5px;line-height:1.65}
+  .warn{background:rgba(255,159,46,.09);border:1px solid rgba(255,159,46,.3);color:var(--major);
+        padding:9px 12px;border-radius:8px;font-size:12px;margin:12px 16px}
+  .empty{color:var(--tx3);text-align:center;padding:44px 16px;font-size:13px}
+  pre.md{white-space:pre-wrap;font:inherit;margin:0}
+  .page{padding:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+  .card>h2{margin:0;padding:11px 15px;font-size:13px;border-bottom:1px solid var(--line)}
+  .card .bd{padding:14px 15px}
+  table.pol{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.pol th{text-align:left;color:var(--tx3);font-weight:600;font-size:11.5px;
+               padding:7px 9px;border-bottom:1px solid var(--line)}
+  table.pol td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  .hidden{display:none!important}
+
+  /* ── LLM 최근 판단 한 줄 (KPI 아래) ── */
+  .llmnow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+          padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line);
+          font-size:12.5px;cursor:pointer}
+  .llmnow:hover{background:var(--panel2)}
+  .llmnow .tag{display:inline-flex;align-items:center;gap:6px;color:var(--cy);
+               font-weight:650;font-size:11.5px;white-space:nowrap}
+  .llmnow .tag i{width:7px;height:7px;border-radius:50%;background:var(--cy);flex:none}
+  .llmnow .jt{color:var(--tx);flex:1;min-width:220px}
+  .llmnow .cf{font-weight:700;white-space:nowrap}
+  .llmnow .bar{width:52px;height:4px;border-radius:2px;background:var(--line2);flex:none}
+  .llmnow .bar i{display:block;height:4px;border-radius:2px}
+
+  /* ── 스코어 추이 스트립 (항상 보이는 실시간 그래프) ── */
+  .strip{border-bottom:1px solid var(--line);background:var(--panel)}
+  .striphd{display:flex;align-items:center;gap:8px;padding:9px 16px 0;font-size:12px}
+  .striphd b{font-size:12px;font-weight:650}
+  .stripbox{padding:5px 16px 9px}
+  .stripbox svg{width:100%;height:auto;display:block;cursor:crosshair;border-radius:6px}
+  .lgd{display:flex;gap:9px;margin-left:auto;font-size:10.5px;color:var(--tx3)}
+  .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
+  .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:340px}
+  #kpi-acc{cursor:pointer}
+  #kpi-acc:hover{background:var(--panel2)}
+  .mgrp{display:inline-flex;gap:3px}
+  .mgrp button{background:transparent;border:1px solid var(--line2);color:var(--tx3);
+               border-radius:6px;padding:3px 9px;font:inherit;font-size:11px;cursor:pointer}
+  .mgrp button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:650}
+
+  /* ── 더블클릭 그래프 ── */
+  .gmask{position:fixed;inset:0;background:rgba(4,7,12,.78);z-index:50;
+         display:flex;align-items:center;justify-content:center;padding:24px}
+  .gbox{background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+        max-width:1120px;width:100%;max-height:92vh;overflow:auto;
+        }
+  .gbox.wide{max-width:1280px;
+        box-shadow:0 18px 60px rgba(0,0,0,.6)}
+  .ghd{display:flex;align-items:center;gap:10px;padding:12px 16px;
+       border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+  .ghd b{font-size:13.5px}
+  .gbody{padding:14px 16px}
+  .gbody svg{width:100%;height:auto;display:block;border-radius:8px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo">
+    <span class="mk"><i></i></span>
+    <span><b>AMHS SENTINEL_M16BR</b><span>LLM 실시간 이상감지 · 관제</span></span>
+  </div>
+  <div class="tabs">
+    <button data-tab="live" class="on">실시간 관제</button>
+    <button data-tab="past">과거 데이터 조회</button>
+    <button data-tab="report">리포트 · 피드백</button>
+    <button data-tab="policy">정책</button>
+  </div>
+  <div class="chan">
+    <span><i id="ch-lp"></i>로그프레소</span>
+    <span><i id="ch-llm"></i>LLM</span>
+    <span><i id="ch-amos"></i>AMOS</span>
+  </div>
+  <div class="clk"><b id="clk">–</b><span id="clkd">KST</span></div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">활성 케이스</div>
+    <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
+  <div class="kpi"><div class="l">감지 지연</div>
+    <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
+  <div class="kpi" id="kpi-recur"><div class="l">재발률 (1h)</div>
+    <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
+  <div class="kpi" id="kpi-acc" title="1분마다 LLM 이 판단한 것을 이후 실제 데이터 흐름과 대조한 값입니다. 검증된 정탐률이 아닙니다.">
+    <div class="l">LLM 판단 일치 <span class="note" style="font-size:10px">· 클릭 상세</span></div>
+    <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">1분 추론 누적 시 산출</div></div>
+</div>
+
+<div id="llmnow" class="llmnow hidden"></div>
+
+<div id="warnbox"></div>
+
+<!-- 더블클릭 그래프 -->
+<div id="gmask" class="gmask hidden">
+  <div class="gbox">
+    <div class="ghd">
+      <b id="gtitle">구간 그래프</b>
+      <div class="row" style="margin-left:auto">
+        <select id="gmin">
+          <option value="30">30분</option>
+          <option value="60" selected>1시간</option>
+          <option value="120">2시간</option>
+          <option value="360">6시간</option>
+        </select>
+        <button class="act" id="gclose">닫기</button>
+      </div>
+    </div>
+    <div id="gbody" class="gbody"><div class="empty">불러오는 중…</div></div>
+  </div>
+</div>
+
+<!-- ── 실시간 관제 ── -->
+<div class="main" id="tab-live">
+  <div class="pane">
+    <div class="strip">
+      <div class="striphd"><b>추이</b>
+        <span class="mgrp" id="stripgrp"></span>
+        <select id="stripsel" class="msel" title="볼 지표 선택"></select>
+        <span class="note" id="stripinfo">—</span>
+        <span class="note">· 클릭 → 그 시각 구간 그래프</span>
+        <span class="lgd gradelgd">
+          <span><i style="background:#2FD68A"></i>정상</span>
+          <span><i style="background:#F2D338"></i>경계</span>
+          <span><i style="background:#FF9F2E"></i>위험</span>
+          <span><i style="background:#FF4D5E"></i>초위험</span>
+        </span>
+      </div>
+      <div class="stripbox" id="strip"></div>
+    </div>
+    <div class="hd">
+      <h2>실시간 데이터 <span class="note" id="feedinfo"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
+      <div class="filters">
+        <button data-f="all" class="on">전체 <b id="n-all">0</b></button>
+        <button data-f="정상">정상 <b id="n-정상">0</b></button>
+        <button data-f="경계">경계 <b id="n-경계">0</b></button>
+        <button data-f="위험">위험 <b id="n-위험">0</b></button>
+        <button data-f="초위험">초위험 <b id="n-초위험">0</b></button>
+      </div>
+      <div class="stream">
+        <label style="color:var(--tx3)">수집 주기</label>
+        <select id="selPoll" title="몇 초마다 가져올지"></select>
+        <span class="dot" id="dot"></span><span id="streamtx">연결 확인 중</span>
+      </div>
+    </div>
+    <table class="cases">
+      <thead><tr>
+        <th style="width:132px">시간</th>
+        <th style="width:150px">CASE</th>
+        <th style="width:104px">스코어</th>
+        <th>reason</th>
+        <th style="width:240px">AMOS HID구역</th>
+        <th style="width:300px">AMOS QUEUE지표</th>
+      </tr></thead>
+      <tbody id="cases"><tr><td colspan="6" class="empty">불러오는 중…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── 과거 데이터 조회 (실시간 관제와 동일 · 보는 날짜만 다름) ── -->
+<div class="main hidden" id="tab-past">
+  <div class="pane">
+    <div class="strip">
+      <div class="striphd"><b>추이</b>
+        <span class="mgrp" id="pstripgrp"></span>
+        <select id="pstripsel" class="msel" title="볼 지표 선택"></select>
+        <span class="note" id="pstripinfo">—</span>
+        <span class="note">· 클릭 → 그 시각 구간 그래프</span>
+        <span class="lgd gradelgd">
+          <span><i style="background:#2FD68A"></i>정상</span>
+          <span><i style="background:#F2D338"></i>경계</span>
+          <span><i style="background:#FF9F2E"></i>위험</span>
+          <span><i style="background:#FF4D5E"></i>초위험</span>
+        </span>
+      </div>
+      <div class="stripbox" id="pstrip"></div>
+    </div>
+    <div class="hd">
+      <h2>과거 데이터 <span class="note" id="pinfo"></span><span class="note" id="pllm" style="margin-left:6px"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
+      <div class="filters" id="pfilters">
+        <button data-f="all" class="on">전체 <b id="pn-all">0</b></button>
+        <button data-f="정상">정상 <b id="pn-정상">0</b></button>
+        <button data-f="경계">경계 <b id="pn-경계">0</b></button>
+        <button data-f="위험">위험 <b id="pn-위험">0</b></button>
+        <button data-f="초위험">초위험 <b id="pn-초위험">0</b></button>
+      </div>
+      <div class="stream">
+        <label style="color:var(--tx3)">날짜</label>
+        <input type="date" id="pdate" title="아무 날짜나 고르면 서버에서 가져옵니다">
+        <select id="pday" title="이미 저장된 날짜 빠른 선택 (data/YYYYMMDD_TOTAL.CSV)"></select>
+        <button class="act" id="pload" title="선택한 날짜 조회 — 저장본이 없으면 서버에서 자동으로 가져옵니다">조회</button>
+        <button class="act" id="pget" title="저장본이 있어도 서버에서 다시 가져옵니다">다시 확보</button>
+        <a class="act" id="pcsv" href="#" download>CSV</a>
+      </div>
+    </div>
+    <table class="cases">
+      <thead><tr>
+        <th style="width:132px">시간</th>
+        <th style="width:150px">CASE</th>
+        <th style="width:104px">스코어</th>
+        <th>reason</th>
+        <th style="width:240px">AMOS HID구역</th>
+        <th style="width:300px">AMOS QUEUE지표</th>
+      </tr></thead>
+      <tbody id="pcases"><tr><td colspan="6" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── 리포트 · 피드백 ── -->
+<div class="page hidden" id="tab-report">
+  <div class="card">
+    <h2>LLM 리포트</h2>
+    <div class="bd">
+      <h3 class="note" style="margin:0 0 7px">날짜 검색 — 로그프레소에서 직접 조회 (실시간 관제와 별개)</h3>
+      <div class="row" style="margin-bottom:8px">
+        <label>날짜</label>
+        <input type="date" id="rdate">
+        <button class="act pri" id="btnday" style="flex:0 0 auto">사건 보고서 생성</button>
+        <button class="act" id="btndayhtml"
+          title="데모스 개인 에이전트 '사건발생 보고서' 와 같은 화면 — 체크박스 표·수동 기입·저장 포함">HTML 열기</button>
+        <span class="note">하루 사건(점수 50↑) 기준 5섹션 보고서 — 데모스 개인 에이전트와 같은 형식</span>
+      </div>
+      <div id="repout"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 정책 ── -->
+<div class="page hidden" id="tab-policy">
+  <div class="card">
+    <h2>감지 · 확인 · 에스컬레이션 정책</h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 12px">감지는 항상 실시간입니다. <b style="color:var(--tx2)">“이상 없음” 판정은
+        케이스를 닫지 않고 재확인 예약만 갱신</b>하며, 종결 후에도 억제 창 동안 재발이 같은 케이스로 묶입니다.</p>
+      <table class="pol"><thead><tr>
+        <th>심각도</th><th>감지 즉시</th><th>미확인 5분</th><th>미확인 15분</th><th>재확인 주기</th>
+      </tr></thead><tbody id="routing"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>평가 주기 설정</h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 12px">감지는 항상 실시간입니다. 아래는
+        <b style="color:var(--tx2)">누적 구간을 다시 평가해 리포트로 내보내는</b> 주기입니다.</p>
+      <table class="pol"><thead><tr>
+        <th>주기</th><th>사용</th><th>평가 범위</th><th>필터</th><th>수신 채널</th>
+      </tr></thead><tbody id="evalrows"></tbody></table>
+      <p class="note" style="margin-top:12px">짧은 주기(1·5분)는 노이즈가 커서 <b style="color:var(--tx2)">초위험만</b>
+        필터링해 보내는 것을 권장합니다. 주기를 늘리는 방향이 아니라 <b style="color:var(--tx2)">수신 대상과 필터를
+        좁히는 방향</b>으로 조정하세요 — 감지 자체를 늦추면 누락이 생깁니다.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (u,o) => (await fetch(u,o)).json();
+const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hhmm = s => (s||'').slice(11,16);
+/* 점수 등급 — 50 미만 정상 / 50~70 경계 / 71~84 위험 / 85~100 초위험.
+   위험·초위험은 사람 확인이 필요한 구간이다 (config.grade.bands 와 같은 기준). */
+const gradeOf = s => s>=85 ? {n:'초위험', c:'var(--crit)',  chk:true}
+                   : s>=71 ? {n:'위험',   c:'var(--major)', chk:true}
+                   : s>=50 ? {n:'경계',   c:'var(--minor)', chk:false}
+                           : {n:'정상',   c:'var(--tx2)',   chk:false};
+
+let CASES=[], SEL=null, FILTER='all', POLL=30;
+let LAST_LATEST=null, NEW_AT=null;
+
+/* 탭 */
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  ['live','past','report','policy'].forEach(t =>
+    $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
+  if(b.dataset.tab==='past'){
+    initPast();
+    if(PDAY) loadPastLlm(PDAY);          // 과거 탭 = 그 날짜 LLM 판단
+  }else if(ACC){
+    renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
+  }
+});
+
+/* 시계 */
+setInterval(()=>{
+  const d=new Date();
+  $('#clk').textContent=d.toLocaleTimeString('ko-KR',{hour12:false});
+  $('#clkd').textContent=d.toLocaleDateString('ko-KR')+' KST';
+},1000);
+
+/* 상태 + KPI */
+async function pollStatus(){
+  try{
+    const s = await api('/api/status'), st = s.state||{};
+    POLL = s.poll_interval_s;
+    $('#dot').className = 'dot'+(st.connected?'':' off');
+    const sv = st.saved || {};
+    $('#streamtx').textContent = st.connected
+      ? `STREAMING · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 수집`
+        + (st.gap_min > 5 ? ` · ${st.gap_min}분 구간 보충` : '')
+        + (sv.files?.length ? ` → ${sv.files[0]}` : '')
+        + ` · 임계 ${s.alarm_floor}점`
+      : `연결 끊김 — ${st.error||'대기'}`;
+    $('#ch-lp').className  = st.connected?'':'off';
+    $('#ch-amos').className= st.amos_warn?'off':'';
+    renderPolicy(s.policy, s.evaluation);
+    $('#warnbox').innerHTML = st.amos_warn
+      ? `<div class="warn">AMOS 조인 경고 — ${esc(st.amos_warn)}</div>` : '';
+    if(st.error) $('#warnbox').innerHTML +=
+      `<div class="warn">로그프레소 — ${esc(st.error)}</div>`;
+  }catch(e){ $('#dot').className='dot off'; $('#streamtx').textContent='서버 응답 없음'; }
+
+  try{
+    const k = await api('/api/kpi');
+    $('#k-active').innerHTML   = `${k.active}<u>건</u>`;
+    $('#k-active-s').textContent = `최근 30분 신규 ${k.active_new_30m}건`;
+    $('#k-lat').innerHTML      = `${k.detect_latency_ms??'–'}<u>ms</u>`;
+    $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
+    // 재발률 — 임계(50점) 이상이 가라앉았다 다시 올라온 비율. 표본이 없으면 '–'
+    if(k.recur_rate_1h == null){
+      $('#k-recur').innerHTML     = `–<u>%</u>`;
+      $('#k-recur-s').textContent = `최근 1시간 ${k.recur_floor??50}점 이상 없음`;
+    }else{
+      $('#k-recur').innerHTML     = `${k.recur_rate_1h}<u>%</u>`;
+      $('#k-recur-s').textContent = `최근 1시간 정체 ${k.recur_base}구간 · 재발 ${k.recur_events}회`
+        + ` (${k.recur_minutes}분)`;
+    }
+    $('#kpi-recur').title =
+      `${k.recur_floor??50}점 이상 구간이 임계 아래로 내려갔다가 다시 올라온 비율입니다.`
+      + `\n· 분모 = 최근 1시간 ${k.recur_floor??50}점 이상 구간 수`
+      + `\n· 분자 = 그중 다시 올라온 횟수 (구간 수 − 1)`
+      + `\n· 예) 3구간이면 재발 2회 → 67%`
+      + `\n기준 시각(데이터 최신) ${(k.recur_ref||'').replace('T',' ').slice(0,16)}`;
+    renderAcc(k.llm_match);
+  }catch(e){}
+}
+
+/* ── LLM 판단 일치 (1분 추론 사후검증) ──
+   ★ 검증된 '정탐률'이 아니라 '이후 데이터와 일치했나' 다. 표본이 차기 전엔
+   퍼센트를 내지 않고 건수만 보여준다 — 그게 튜닝에도 더 쓸모 있다. */
+let ACC = null;
+function renderAcc(a){
+  ACC = a || null;
+  if(!a || a.error){
+    $('#k-acc').textContent = '–';
+    $('#k-acc-s').textContent = a && a.error ? '집계 실패' : '1분 추론 누적 시 산출';
+    return;
+  }
+  // 과거 탭을 보는 중이면 그 날짜 표시를 실시간 값으로 덮지 않는다
+  if($('#tab-past').classList.contains('hidden')) renderLlmNow(a);
+  const cnt = `적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
+            + (a.effect ? ` · 조치효과 ${a.effect}` : '');
+  // 확신도 평균을 카드 밑줄에 항상 붙인다
+  const cf = a.conf_avg!=null ? `확신도 평균 ${a.conf_avg}% (${a.conf_n}건) · ` : '';
+  if(a.human_rate != null){
+    $('#k-acc').innerHTML = `${a.human_rate}<u>%</u>`;
+    $('#k-acc-s').textContent = `${cf}확인 ${a.human_ok+a.human_ng}건 기준 · 자동 ${cnt}`;
+  }else if(a.match_rate != null){
+    $('#k-acc').innerHTML = `${a.match_rate}<u>%</u>`;
+    $('#k-acc-s').textContent = `${cf}${cnt} · 대기 ${a.waiting}`;
+  }else{
+    // 표본 부족 — 퍼센트 대신 건수
+    $('#k-acc').innerHTML = a.base
+      ? `<span style="font-size:15px">${cnt}</span>`
+      : '–';
+    $('#k-acc-s').textContent = a.base
+      ? `${cf}표본 ${a.base}/${a.min_sample}건 · 대기 ${a.waiting}`
+      : `${cf}1분 추론 ${a.rows||0}건 · 대기 ${a.waiting} · ${a.window_min}분 뒤 채점`;
+  }
+}
+
+// 실시간 탭이면 오늘, 과거 탭을 보고 있으면 그 날짜의 LLM CSV 를 연다
+/* LLM 이 방금 뭐라고 판단했는지 — 모달 안 열고도 보이게 (200자 요약이라 한 줄에 들어간다) */
+function renderLlmNow(a, past){
+  const box = $('#llmnow');
+  const r = a && a.latest;
+  if(!r || (!r.판단 && !r.오류)){
+    box.classList.remove('hidden');
+    box.innerHTML = `<span class="tag"><i style="background:var(--tx3)"></i>LLM 판단</span>`
+      + `<span class="dim">${past
+          ? esc(fmtDay((a&&a.day)||past)) + ' — 이 날짜에는 LLM 판단 기록이 없습니다 (상세에서 빈 구간 메움 가능)'
+          : '아직 LLM 판단 기록이 없습니다 — 1분마다 쌓입니다'}</span>`;
+    box.onclick = () => openAcc(past || null);
+    box.title = '';
+    return;
+  }
+  box.classList.remove('hidden');
+  const c = (r.확신도==='' || r.확신도==null) ? null : Math.max(0, Math.min(100, +r.확신도||0));
+  const col = c==null ? 'var(--tx3)' : c>=80 ? 'var(--ok)' : c>=60 ? 'var(--minor)' : 'var(--major)';
+  const yn = r.실제이상==='예' ? `<span class="chip lv위험">이상 예</span>`
+           : r.실제이상==='아니오' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">이상 아니오</span>`
+           : '';
+  box.innerHTML =
+      `<span class="tag"><i></i>LLM ${past ? '판단' : '최근 판단'}</span>`
+    + (past ? `<span class="dim">${esc(fmtDay(a.day||past))}</span>` : '')
+    + `<span class="dim">${esc((r.datetime||'').slice(11,16))}</span>`
+    + (()=>{ const s=parseFloat(r.스코어), g=gradeOf(s);
+             return isFinite(s)
+               ? `<span style="color:${g.c}">${esc(r.스코어)}점 ${g.n}</span>`
+                 + (g.chk ? `<span class="chip lv초위험">사람 확인 필요</span>` : '')
+               : `<span class="dim">–</span>`; })()
+    + yn
+    + (c==null ? `<span class="dim">확신도 –</span>`
+       : `<span class="cf" style="color:${col}">확신도 ${c}%</span>`
+         + `<span class="bar"><i style="width:${c}%;background:${col}"></i></span>`)
+    + `<span class="jt">${r.판단 ? esc(r.판단)
+         : `<span style="color:var(--crit)">${esc(r.오류||'')}</span>`}</span>`
+    + (r.판정 ? `<span class="dim">판정 ${esc(r.판정)}</span>`
+              : `<span class="dim">채점 대기</span>`);
+  box.title = [r.근거 ? '근거 · ' + r.근거 : '', r.조치 ? '조치 · ' + r.조치 : '']
+              .filter(Boolean).join('\n') || '클릭하면 전체 내역이 열립니다';
+  box.onclick = () => openAcc(past || null);
+}
+
+/* 과거 탭 — 그 날짜의 LLM 판단을 같은 줄에 보여준다 */
+async function loadPastLlm(day){
+  if(!day) return;
+  try{
+    const a = await api(`/api/accuracy?day=${encodeURIComponent(day)}`);
+    PACC = a;
+    renderLlmNow(a, day);
+    $('#pllm').innerHTML = a.rows
+      ? `LLM 판단 <b style="color:var(--tx2)">${a.rows}건</b>`
+        + (a.conf_avg!=null ? ` · 확신도 평균 ${a.conf_avg}%` : '')
+        + ` · 적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
+        + (a.waiting ? ` · 대기 ${a.waiting}` : '')
+      : `<span style="color:var(--major)">LLM 판단 없음</span>`;
+  }catch(e){ $('#pllm').textContent = ''; }
+}
+
+$('#kpi-acc').onclick = () => openAcc(
+  $('#tab-past').classList.contains('hidden') ? null : (PDAY || null));
+
+let ACCDAY = null;
+async function openAcc(day){
+  ACCDAY = day || new Date().toLocaleDateString('sv-SE').replace(/-/g,'');
+  $('#gtitle').textContent = 'LLM 판단 일치 — 1분 추론 사후검증 (LLM CSV 원본)';
+  document.querySelector('.gbox').classList.add('wide');
+  $('#gmin').classList.add('hidden');          // 구간 선택은 그래프용 — 여기선 숨김
+  $('#gmask').classList.remove('hidden');
+  $('#gbody').innerHTML = '<div class="empty">불러오는 중…</div>';
+  try{
+    const a = await api(`/api/accuracy?day=${encodeURIComponent(ACCDAY)}&rows=1500`);
+    const rows = a.rows_data || [];
+    const scoreCell = v => {
+      const s = parseFloat(v); if(!isFinite(s)) return '<span class="dim">–</span>';
+      const g = gradeOf(s);
+      return `<b style="color:${g.c}" title="${g.n}">${esc(v)}점</b>`;
+    };
+    const vchip = (v, r) => v==='적중' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">적중</span>`
+                    : v==='과다탐지' ? `<span class="chip lv위험">과다탐지</span>`
+                    : v==='누락' ? `<span class="chip lv초위험">누락</span>`
+                    : v==='조치효과' ? `<span class="chip lv경계">조치효과</span>`
+                    : v==='정탐' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">정탐(확인)</span>`
+                    : v==='오탐' ? `<span class="chip lv위험">오탐(확인)</span>`
+                    : v==='판정불가' ? `<span class="dim">판정불가</span>`
+                    : (r && r.대기분!=null
+                        ? `<span class="dim">채점 대기 <b style="color:var(--tx2)">${r.대기분}분</b></span>`
+                        : `<span class="dim">대기</span>`);
+    const file = `${a.day}_LLM.CSV`;
+    $('#gbody').innerHTML = `
+      <div class="row" style="margin:0 0 8px">
+        <b class="mono" style="font-size:12.5px;color:var(--cy)">${esc(file)}</b>
+        <span class="note">1분 1행 · ${a.rows}행 · 검증 창 ${a.window_min}분 · ${a.sustain_min}분 유지 기준</span>
+        <span class="note">| 추론 ${(a.state&&a.state.calls)||0}회${
+          a.state&&a.state.errors ? ` · <span style="color:var(--crit)">실패 ${a.state.errors}</span>` : ''}${
+          a.state&&a.state.skipped ? ` · 지연스킵 ${a.state.skipped}` : ''}${
+          a.state&&a.state.last_ms!=null ? ` · 최근 ${a.state.last_ms}ms` : ''}${
+          a.backlog ? ` · <span style="color:var(--major)">미판단 ${a.backlog}분</span>` : ''}</span>
+        <button class="act" id="accfill" style="padding:4px 10px;font-size:11.5px"
+          title="그 날 수집됐는데 아직 LLM 판단이 없는 분을 통째로 메웁니다 (LLM 을 그만큼 호출합니다)">
+          ${a.backfill&&a.backfill.running ? '메우는 중…' : '빈 구간 메움'}</button>
+        <label class="note" style="margin-left:auto">날짜</label>
+        <input type="date" id="accdate" value="${esc(a.day.slice(0,4)+'-'+a.day.slice(4,6)+'-'+a.day.slice(6,8))}"
+               style="padding:4px 7px;font-size:11.5px">
+        <a class="act" style="padding:4px 10px;font-size:11.5px"
+           href="/api/data/${esc(a.day)}_LLM.csv" download>CSV 내려받기</a>
+      </div>
+      <p class="note" style="margin:0 0 10px">
+        <b style="color:var(--major)">이 값은 검증된 정탐률이 아닙니다</b> —
+        LLM 판단이 이후 실제 데이터 흐름과 일치했는지만 봅니다.
+        조치로 빨리 회복된 건은 '조치효과' 로 빼고 분모에서 제외합니다.
+        아래에서 직접 정탐/오탐을 눌러주시면 그게 최종 판정입니다.<br>
+        <b>판정이 '채점 대기' 인 건 정상입니다</b> — LLM 판단은 이미 끝났고,
+        그 판단이 맞았는지는 이후 ${a.window_min}분 실제 흐름을 봐야 알 수 있어 그때 채워집니다.
+        (같은 시각을 <b>${esc(a.day)}_TOTAL.CSV</b> 와 <span class="mono">datetime</span> 으로 맞춰 보면 그때 원데이터가 나옵니다)<br>
+        <b>확신도</b> = LLM 이 자기 판단을 얼마나 확신하는지 (0~100).<br>
+        <b>점수 등급</b> —
+        <span style="color:var(--ok)">50 미만 정상</span> ·
+        <span style="color:var(--minor)">50~70 경계</span> ·
+        <span style="color:var(--major)">71~84 위험</span> ·
+        <span style="color:var(--crit)">85~100 초위험</span>
+        <b style="color:var(--crit)">— 위험·초위험은 무조건 사람 확인이 필요합니다</b>
+      </p>
+      <table class="pol"><thead><tr>
+        <th style="width:62px">시각</th><th style="width:92px">점수</th>
+        <th style="width:66px">실제이상</th>
+        <th style="width:66px" title="LLM 이 자기 판단을 얼마나 확신하는지 (0~100)">확신도</th>
+        <th>판단</th><th style="width:92px">판정</th>
+        <th style="width:270px">판정근거</th><th style="width:106px">확인</th>
+      </tr></thead><tbody>` + (rows.length ? rows.map(r=>`<tr>
+        <td title="${esc(r.datetime)}">${esc((r.datetime||'').slice(11,16))}</td>
+        <td>${scoreCell(r.스코어)}${gradeOf(parseFloat(r.스코어)).chk
+             ? `<br><span class="note" style="color:var(--crit);font-size:10.5px;white-space:nowrap">사람 확인 필요</span>` : ''}</td>
+        <td>${r.실제이상 ? `<b style="color:${r.실제이상==='예'?'var(--crit)':'var(--ok)'}">${esc(r.실제이상)}</b>` : '<span class="dim">–</span>'}</td>
+        <td>${r.확신도!=='' && r.확신도!=null ? esc(r.확신도)+'%' : '<span class="dim">–</span>'}</td>
+        <td title="${esc(r.근거||'')}">${r.판단 ? esc(r.판단)
+             : (r.오류 ? `<span style="color:var(--crit)">${esc(r.오류)}</span>` : '<span class="dim">–</span>')}</td>
+        <td>${vchip((r.판정||'').trim(), r)}</td>
+        <td class="note">${esc(r.판정근거||'') || (r.대기분!=null
+             ? `LLM 판단은 끝났습니다 — 이후 ${a.window_min}분 실제 흐름을 봐야 채점됩니다`
+             : '')}</td>
+        <td><button class="act hv" data-dt="${esc(r.datetime)}" data-v="정탐"
+              style="padding:2px 7px;font-size:11px">정탐</button>
+            <button class="act hv" data-dt="${esc(r.datetime)}" data-v="오탐"
+              style="padding:2px 7px;font-size:11px">오탐</button></td>
+      </tr>`).join('') : '<tr><td colspan="8" class="empty">아직 추론 기록이 없습니다 — 1분마다 쌓입니다</td></tr>')
+      + `</tbody></table>`;
+    $('#accdate').onchange = e => openAcc(e.target.value.replace(/-/g,''));
+    $('#accfill').onclick = async () => {
+      const btn = $('#accfill');
+      if(btn.textContent.includes('메우는 중')) return;
+      if(!confirm(`${ACCDAY} 에 수집됐는데 LLM 판단이 없는 분을 전부 판단합니다.\n`
+        + `분당 1회씩 LLM 을 호출하므로 시간이 걸립니다. 진행할까요?`)) return;
+      btn.disabled = true; btn.textContent = '메우는 중…';
+      try{
+        const r = await post('/api/accuracy/backfill', {date: ACCDAY});
+        if(!r.ok){ alert(r.error || '시작 실패'); btn.disabled=false; btn.textContent='빈 구간 메움'; return; }
+        // 진행 상황을 몇 초마다 다시 읽어 화면을 갱신
+        const tick = setInterval(async () => {
+          const st = await api('/api/accuracy/backfill');
+          if(!st.running){ clearInterval(tick); openAcc(ACCDAY); }
+        }, 4000);
+      }catch(e){ btn.disabled=false; btn.textContent='빈 구간 메움'; }
+    };
+    $('#gbody').querySelectorAll('button.hv').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      await post('/api/accuracy/verdict', {datetime: b.dataset.dt, verdict: b.dataset.v});
+      openAcc(ACCDAY);
+    });
+  }catch(e){ $('#gbody').innerHTML = '<div class="empty">불러오지 못했습니다</div>'; }
+}
+
+function renderPolicy(p, ev){
+  if(p && p.routing && !$('#routing').dataset.done){
+    $('#routing').dataset.done='1';
+    $('#routing').innerHTML = p.routing.map(r=>`<tr>
+      <td><span class="chip lv${esc(r.level)}">${esc(r.level)}</span></td>
+      <td>${(r.on_detect||[]).map(esc).join('<br>')||'–'}</td>
+      <td>${(r.unack_5m||[]).map(esc).join('<br>')||'–'}</td>
+      <td>${(r.unack_15m||[]).map(esc).join('<br>')||'–'}</td>
+      <td>${r.recheck_min}분</td></tr>`).join('')
+      + `<tr><td colspan="5" class="note">억제 창 ${p.suppression_window_min}분 · 종결은 확인 처리 후 가능</td></tr>`;
+  }
+  if(ev && ev.periods && !$('#evalrows').dataset.done){
+    $('#evalrows').dataset.done='1';
+    $('#evalrows').innerHTML = ev.periods.map(e=>`<tr>
+      <td><b>${esc(e.every)}</b></td>
+      <td>${e.enabled?'<span style="color:var(--ok)">사용</span>':'<span class="note">미사용</span>'}</td>
+      <td>${esc(e.scope)}</td><td>${esc(e.filter)}</td>
+      <td>${(e.channels||[]).map(esc).join(', ')}</td></tr>`).join('');
+  }
+}
+
+/* 목록 — 수집한 전체 데이터를 4등급으로, 경계 이상은 케이스와 연결 */
+let FEED = [];
+
+/* ── 실시간·과거 공통 렌더 (표 모양은 완전히 동일, 보는 날짜만 다르다) ── */
+function applyFilter(rows, filter, byId){
+  if(filter!=='all')   return rows.filter(r=>r.level===filter);
+  return rows;
+}
+
+function rowsHtml(list, byId, newAt){
+  if(!list.length) return `<tr><td colspan="6" class="empty">해당 등급 데이터 없음</td></tr>`;
+  return list.map(r=>{
+    const isNew = newAt && r.datetime===newAt;
+    return `<tr class="crow${isNew?' fresh':''}" data-at="${esc(r.at)}">
+      <td><div>${esc((r.datetime||'').slice(11) || r.time)}</div>
+          <div class="dim">${esc((r.datetime||'').slice(0,10))}</div></td>
+      <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
+          r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
+      <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
+          <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
+      <td><div title="${esc(r.reason_raw||'')}">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '–'))}</div></td>
+      <td>${dirCell(r.bott_down, r.bott_up)}</td>
+      <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
+    </tr>`;}).join('');
+}
+
+/* 더블클릭 → 구간 그래프 (실시간·과거 각 표에 개별 바인딩) */
+function bindGraph(tbodySel){
+  document.querySelectorAll(tbodySel+' tr.crow').forEach(el =>
+    el.ondblclick = () => openGraph(el.dataset.at));
+}
+
+/* ── 스코어 추이 스트립 — 하루치를 항상 띄워두고 폴링마다 갱신 ──
+   graphs.py 와 같은 색 체계(다크 밴드 + --cy 선)로 그린다. 순수 SVG. */
+const STRIP_BANDS = [[0,50,'#0F1622'],[50,71,'#2B2612'],[71,85,'#33210F'],[85,100,'#331419']];
+const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 9, STRIP_B = 17;
+
+function dayStartOf(rows){
+  const s = (rows[0]?.at || '').slice(0,10);
+  return s ? new Date(s + 'T00:00:00') : new Date(new Date().toDateString());
+}
+
+/* 지표 묶음 — /api/feed 가 준다 (config.ui.metric_groups 기반, 값 있는 것만) */
+const SCORE_KEY = 'unified_risk_score';
+const FALLBACK_M = {key:SCORE_KEY, raw:SCORE_KEY, label:'스코어', unit:'점',
+                    color:'#3DDBE8', max:100, bands:true};
+let GROUPS = [];
+let STRIPG = null,  STRIPK  = SCORE_KEY;    // 실시간 탭 (묶음, 지표)
+let PSTRIPG = null, PSTRIPK = SCORE_KEY;    // 과거 탭 — 서로 독립
+
+function groupOf(gid){
+  return GROUPS.find(g=>g.id===gid) || GROUPS[0] || {id:null, name:'지표', metrics:[FALLBACK_M]};
+}
+
+function metricOf(gid, key){
+  const ms = groupOf(gid).metrics || [];
+  return ms.find(m=>m.key===key) || ms[0] || FALLBACK_M;
+}
+
+/* 지표 값 — 스코어는 rows 최상위, 나머지는 m{} 에 실려온다 */
+function mval(r, key){
+  const v = key===SCORE_KEY ? r.score : (r.m || {})[key];
+  return (v===null || v===undefined || v==='') ? null : +v;
+}
+
+function fmtV(v, unit){
+  const a = Math.abs(v);
+  return (a>=100 ? v.toFixed(0) : a>=10 ? v.toFixed(1) : v.toFixed(2)).replace(/\.0+$/,'') + unit;
+}
+
+function stripSvg(rows, mt){
+  const iw = STRIP_W - STRIP_L - STRIP_R, ih = STRIP_H - STRIP_T - STRIP_B;
+  const d0 = dayStartOf(rows), t0 = d0.getTime(), t1 = t0 + 86400000;
+  const X = t => STRIP_L + iw * ((t - t0) / (t1 - t0));
+
+  const vals = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
+  const isScore = !!mt.bands;
+  // 스코어는 0~100 고정 + 등급 밴드, 나머지는 값 범위에 맞춰 자동 스케일
+  let lo = 0, hi = mt.max || 100;
+  if(!isScore){
+    lo = vals.length ? Math.min(...vals) : 0;
+    hi = vals.length ? Math.max(...vals) : 1;
+    const pad = (hi - lo) * 0.12 || Math.abs(hi)*0.1 || 1;
+    lo = Math.max(0, lo - pad); hi = hi + pad;
+    if(mt.max) hi = Math.min(hi, mt.max);
+    if(hi <= lo) hi = lo + 1;
+  }
+  const Y = v => STRIP_T + ih * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo));
+
+  const o = [`<svg viewBox="0 0 ${STRIP_W} ${STRIP_H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">`,
+             `<rect width="${STRIP_W}" height="${STRIP_H}" fill="#0D1119"/>`];
+  if(isScore){
+    STRIP_BANDS.forEach(([bl,bh,c]) =>
+      o.push(`<rect x="${STRIP_L}" y="${Y(bh).toFixed(1)}" width="${iw}" height="${(Y(bl)-Y(bh)).toFixed(1)}" fill="${c}"/>`));
+  }
+  const ticks = isScore ? [50,71,85,100] : [lo, lo+(hi-lo)/2, hi];
+  ticks.forEach(v => {
+    o.push(`<line x1="${STRIP_L}" y1="${Y(v).toFixed(1)}" x2="${STRIP_L+iw}" y2="${Y(v).toFixed(1)}" stroke="#2E3A4C" stroke-width=".7" stroke-dasharray="3 3"/>`);
+    o.push(`<text x="${STRIP_L-4}" y="${(Y(v)+3.4).toFixed(1)}" font-size="8.5" fill="#8FA0B6" text-anchor="end">${
+      isScore ? v : (Math.abs(v)>=10 ? v.toFixed(0) : v.toFixed(1))}</text>`);
+  });
+  for(let h=0; h<=24; h+=2){
+    const x = X(t0 + h*3600000);
+    o.push(`<line x1="${x.toFixed(1)}" y1="${STRIP_T}" x2="${x.toFixed(1)}" y2="${STRIP_T+ih}" stroke="#1C2431" stroke-width=".6"/>`);
+    o.push(`<text x="${x.toFixed(1)}" y="${STRIP_H-5}" font-size="8.5" fill="#5E6E85" text-anchor="middle">${String(h).padStart(2,'0')}:00</text>`);
+  }
+  const pts = rows.slice().sort((a,b)=> a.at < b.at ? -1 : 1)
+    .map(r=>({x:X(new Date(r.at).getTime()), v:mval(r, mt.key), at:r.at, lv:r.level}))
+    .filter(p=>p.v!==null && !isNaN(p.v))
+    .map(p=>({...p, y:Y(p.v)}));
+  if(pts.length > 1){
+    const line = pts.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    o.push(`<path d="M${pts[0].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
+    o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
+  }
+  // 스코어는 경계 이상만 등급 색 점으로
+  if(isScore){
+    pts.filter(p=>p.v>=50).forEach(p =>
+      o.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2" fill="${
+        p.lv==='초위험'?'#FF4D5E':p.lv==='위험'?'#FF9F2E':'#F2D338'}"/>`));
+  }
+  // 최고점
+  if(pts.length){
+    const pk = pts.reduce((a,b)=> b.v>a.v?b:a);
+    const c = isScore ? '#FF4D5E' : mt.color;
+    o.push(`<circle cx="${pk.x.toFixed(1)}" cy="${pk.y.toFixed(1)}" r="3.6" fill="none" stroke="${c}" stroke-width="1.5"/>`);
+    o.push(`<text x="${Math.min(STRIP_L+iw-52, Math.max(STRIP_L+2, pk.x-22)).toFixed(1)}" y="${Math.max(STRIP_T+9, pk.y-6).toFixed(1)}" font-size="9" fill="${c}" font-weight="700">▲${fmtV(pk.v, mt.unit)}</text>`);
+  }
+  // 현재 시각 (오늘일 때만)
+  const now = new Date();
+  if(now.getTime() >= t0 && now.getTime() < t1){
+    const nx = X(now.getTime());
+    o.push(`<line x1="${nx.toFixed(1)}" y1="${STRIP_T}" x2="${nx.toFixed(1)}" y2="${STRIP_T+ih}" stroke="#E6EDF6" stroke-width="1" opacity=".55"/>`);
+  }
+  o.push('</svg>');
+  return o.join('');
+}
+
+/* 묶음 버튼 + 지표 선택 상자 채우기 (실시간·과거 각각) */
+function fillMetricUI(grpSel, selSel, gid, key){
+  if(!GROUPS.length) return;
+  const gEl = $(grpSel), sEl = $(selSel);
+  if(gEl){
+    const sig = GROUPS.map(g=>g.id).join(',') + '|' + gid;
+    if(gEl.dataset.sig !== sig){
+      gEl.dataset.sig = sig;
+      gEl.innerHTML = GROUPS.map(g=>`<button type="button" data-g="${esc(g.id)}"${
+        g.id===gid ? ' class="on"' : ''} title="${esc(g.desc||'')}">${esc(g.name)}</button>`).join('');
+    }
+  }
+  if(sEl){
+    const ms = groupOf(gid).metrics || [];
+    const sig = gid + '|' + ms.length;
+    if(sEl.dataset.sig !== sig){
+      sEl.dataset.sig = sig;
+      // 컬럼명을 대괄호로 같이 보여준다 — 어느 컬럼인지 바로 알게
+      sEl.innerHTML = ms.map(m=>`<option value="${esc(m.key)}">${esc(m.label)}${
+        m.unit ? ' ('+esc(m.unit)+')' : ''} [${esc(m.raw || m.key)}]</option>`).join('');
+    }
+    sEl.value = key;
+    if(sEl.selectedIndex < 0) sEl.selectedIndex = 0;   // 묶음에 없는 지표면 첫 항목
+  }
+}
+
+/* 스트립 클릭 → 가장 가까운 데이터 시각의 구간 그래프 */
+function drawStrip(boxSel, infoSel, rows, gid, key){
+  const box = $(boxSel);
+  if(!box) return;
+  const live = boxSel === '#strip';
+  fillMetricUI(live ? '#stripgrp' : '#pstripgrp', live ? '#stripsel' : '#pstripsel', gid, key);
+  const mt = metricOf(gid, key);
+  const isScore = !!mt.bands;
+  // 등급 범례는 스코어일 때만 의미가 있다
+  const lgd = box.closest('.strip')?.querySelector('.gradelgd');
+  if(lgd) lgd.classList.toggle('hidden', !isScore);
+  if(!rows.length){
+    box.innerHTML = '<div class="empty" style="padding:26px 0">데이터 없음</div>';
+    $(infoSel).textContent = '—';
+    return;
+  }
+  box.innerHTML = stripSvg(rows, mt);
+  const vs = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
+  const raw = `<span class="zchip mono" style="padding:0 5px">${esc(mt.raw || mt.key)}</span>`;
+  if(!vs.length){
+    $(infoSel).innerHTML = `${esc((rows[0].datetime||'').slice(0,10))} · ${raw} `
+      + `<span style="color:var(--major)">값 없음</span>`;
+  }else{
+    const pk = rows.filter(r=>mval(r,mt.key)!==null)
+                   .reduce((a,b)=> mval(b,mt.key) > mval(a,mt.key) ? b : a);
+    $(infoSel).innerHTML = `${esc((rows[0].datetime||'').slice(0,10))} · ${raw} · ${vs.length}분 · `
+      + `최고 <b style="color:${isScore?'var(--crit)':esc(mt.color)}">${esc(fmtV(mval(pk,mt.key), mt.unit))}</b> `
+      + `${esc((pk.datetime||'').slice(11))} · 평균 ${esc(fmtV(vs.reduce((a,b)=>a+b,0)/vs.length, mt.unit))}`;
+  }
+  const svg = box.querySelector('svg');
+  if(!svg) return;
+  svg.onclick = ev => {
+    const b = svg.getBoundingClientRect();
+    const frac = (ev.clientX - b.left) / b.width;               // viewBox 좌표로 환산
+    const vx = frac * STRIP_W;
+    const iw = STRIP_W - STRIP_L - STRIP_R;
+    const d0 = dayStartOf(rows).getTime();
+    const tms = d0 + 86400000 * Math.max(0, Math.min(1, (vx - STRIP_L) / iw));
+    let best = null, bd = Infinity;
+    rows.forEach(r=>{ const d = Math.abs(new Date(r.at).getTime() - tms); if(d < bd){ bd = d; best = r; } });
+    if(best) openGraph(best.at);
+  };
+}
+
+async function pollCases(){
+  try{
+    // 종결 케이스도 목록에 연결돼야 하므로 전체를 받는다
+    const [cs, fd] = await Promise.all([api('/api/cases?all=1'), api('/api/feed')]);
+    CASES = cs.cases||[];
+    FEED  = fd.rows||[];
+    const cnt = fd.counts||{};
+    $('#n-all').textContent = fd.total||0;
+    ['정상','경계','위험','초위험'].forEach(l => $('#n-'+l).textContent = cnt[l]||0);
+
+    // 최신 데이터가 들어왔는지 바로 보이게
+    const d = fd.day ? `${fd.day.slice(0,4)}-${fd.day.slice(4,6)}-${fd.day.slice(6,8)}` : '';
+    const from_ = (fd.earliest||'').slice(11), to_ = (fd.latest||'').slice(11);
+    $('#feedinfo').innerHTML =
+      (fd.fallback ? `<span style="color:var(--major)">오늘 데이터 없음 → ${esc(d)} 표시</span> · ` : `${esc(d)} · `)
+      + (from_ ? `<b style="color:var(--tx2)">${esc(from_)}~${esc(to_)}</b>` : '–')
+      + (fd.total > fd.shown
+          ? ` · <span style="color:var(--major)">${fd.shown}/${fd.total}행만 표시</span>`
+          : ` · ${fd.total}행`)
+      + ` · 갱신 ${new Date().toLocaleTimeString('ko-KR',{hour12:false})}`;
+    if(fd.latest && fd.latest !== LAST_LATEST){ NEW_AT = fd.latest; LAST_LATEST = fd.latest; }
+
+    const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
+    $('#cases').innerHTML = rowsHtml(applyFilter(FEED, FILTER, byId), byId, NEW_AT);
+    bindGraph('#cases');
+    // 스코어 추이는 필터와 무관하게 하루치 전체 (폴링마다 갱신 = 실시간)
+    if(fd.groups){ GROUPS = fd.groups; if(!STRIPG) STRIPG = GROUPS[0]?.id; }
+    drawStrip('#strip', '#stripinfo', FEED, STRIPG, STRIPK);
+  }catch(e){ console.error('목록 갱신 실패', e); }
+}
+
+/* ── 과거 데이터 조회 — 저장된 CSV 를 날짜로 읽어 같은 표에 뿌린다 ── */
+let PFEED = [], PFILTER = 'all', PDAY = null, PINIT = false, PACC = null;
+const fmtDay = d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+
+async function initPast(){
+  if(PINIT) return;
+  PINIT = true;
+  await loadPastDays();
+  // 저장된 날짜가 있으면 최신 날짜, 없으면 오늘을 기본으로 잡아 바로 조회한다
+  const day = $('#pday').value || new Date().toLocaleDateString('sv-SE').replace(/-/g,'');
+  $('#pdate').value = `${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)}`;
+  await loadPast(day);
+}
+
+async function loadPastDays(keep){
+  try{
+    const d = await api('/api/data/days');
+    const days = d.days || [];
+    $('#pday').innerHTML = days.length
+      ? days.map(x=>`<option value="${esc(x.day)}">${esc(fmtDay(x.day))} · ${x.rows}행</option>`).join('')
+      : `<option value="">저장된 날짜 없음</option>`;
+    if(keep && days.some(x=>x.day===keep)) $('#pday').value = keep;
+  }catch(e){ $('#pday').innerHTML = '<option value="">목록 조회 실패</option>'; }
+}
+
+function pickedDay(){
+  return ($('#pdate').value||'').replace(/-/g,'') || $('#pday').value || '';
+}
+
+function paintPast(){
+  const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
+  $('#pcases').innerHTML = rowsHtml(applyFilter(PFEED, PFILTER, byId), byId, null);
+  bindGraph('#pcases');
+  drawStrip('#pstrip', '#pstripinfo', PFEED, PSTRIPG, PSTRIPK);
+}
+
+/* 조회 중에는 날짜 컨트롤을 잠근다 (하루치 확보는 몇 분 걸릴 수 있다) */
+let PBUSY = false;
+function pastBusy(on){
+  PBUSY = on;
+  ['#pload','#pget','#pday','#pdate'].forEach(s => $(s).disabled = on);
+}
+
+/* 날짜를 고르면 저장된 CSV 를 읽고, 없으면 그 자리에서 서버(로그프레소)로 확보한다 */
+async function loadPast(day, opt){
+  opt = opt || {};
+  day = day || pickedDay();
+  if(!day){ $('#pinfo').textContent = '— 날짜를 고르세요'; return; }
+  if(PBUSY) return;
+  PDAY = day;
+  pastBusy(true);
+  $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">불러오는 중…</td></tr>';
+  $('#pcsv').href = `/api/data/${day}.csv`;
+  try{
+    if(opt.force && !await fetchDay(day)) return;    // '다시 확보'
+    let fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
+    // 저장된 게 없으면 서버에서 그 날짜를 확보한 뒤 다시 읽는다
+    if(!(fd.rows||[]).length && !opt.force && opt.autoFetch !== false){
+      if(await fetchDay(day)) fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
+      else return;
+    }
+    PFEED = fd.rows || [];
+    if(fd.groups){ GROUPS = fd.groups; if(!PSTRIPG) PSTRIPG = GROUPS[0]?.id; }
+    const cnt = fd.counts || {};
+    $('#pn-all').textContent = fd.total || 0;
+    ['정상','경계','위험','초위험'].forEach(l => $('#pn-'+l).textContent = cnt[l]||0);
+    $('#pcsv').classList.toggle('off', !PFEED.length);
+    const from_ = (fd.earliest||'').slice(11), to_ = (fd.latest||'').slice(11);
+    $('#pinfo').innerHTML = PFEED.length
+      ? `${esc(fmtDay(day))} · <b style="color:var(--tx2)">${esc(from_)}~${esc(to_)}</b>`
+        + (fd.total > fd.shown
+            ? ` · <span style="color:var(--major)">${fd.shown}/${fd.total}행만 표시</span>`
+            : ` · ${fd.total}행`)
+      : `<span style="color:var(--major)">${esc(fmtDay(day))} 데이터 없음 — 그 날짜는 로그프레소에도 기록이 없습니다</span>`;
+    paintPast();
+    loadPastLlm(day);
+  }catch(e){
+    console.error('과거 조회 실패', e);
+    $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
+    $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">조회 실패</td></tr>';
+  }finally{ pastBusy(false); }
+}
+
+/* 서버에 그 날짜 확보를 시킨다. 성공하면 날짜 목록도 갱신. */
+async function fetchDay(day){
+  $('#pinfo').innerHTML = `${esc(fmtDay(day))} 서버에서 가져오는 중… `
+    + `<span class="dim">로그프레소 하루치는 몇 분 걸릴 수 있습니다</span>`;
+  $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">서버 조회 중…</td></tr>';
+  try{
+    const r = await post('/api/collect', {date: day});
+    if(!r.ok){
+      $('#pinfo').innerHTML = `<span style="color:var(--crit)">${esc(fmtDay(day))} 확보 실패 — ${esc(r.error||'')}</span>`;
+      $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">확보 실패</td></tr>';
+      return false;
+    }
+    await loadPastDays(day);
+    return true;
+  }catch(e){
+    $('#pinfo').innerHTML = '<span style="color:var(--crit)">확보 실패 — 서버 응답 없음</span>';
+    $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">확보 실패</td></tr>';
+    return false;
+  }
+}
+
+/* 지표 묶음 버튼 / 지표 선택 — 실시간·과거 각각 독립 */
+function redrawLive(){ drawStrip('#strip','#stripinfo',FEED,STRIPG,STRIPK); }
+function redrawPast(){ drawStrip('#pstrip','#pstripinfo',PFEED,PSTRIPG,PSTRIPK); }
+
+$('#stripsel').onchange  = () => { STRIPK  = $('#stripsel').value;  redrawLive(); };
+$('#pstripsel').onchange = () => { PSTRIPK = $('#pstripsel').value; redrawPast(); };
+$('#stripgrp').onclick = e => {
+  const b = e.target.closest('button[data-g]'); if(!b) return;
+  STRIPG = b.dataset.g;
+  // 바꾼 묶음에 같은 지표가 없으면 그 묶음의 첫 지표(스코어)로
+  if(!(groupOf(STRIPG).metrics||[]).some(m=>m.key===STRIPK))
+    STRIPK = (groupOf(STRIPG).metrics||[{key:SCORE_KEY}])[0].key;
+  redrawLive();
+};
+$('#pstripgrp').onclick = e => {
+  const b = e.target.closest('button[data-g]'); if(!b) return;
+  PSTRIPG = b.dataset.g;
+  if(!(groupOf(PSTRIPG).metrics||[]).some(m=>m.key===PSTRIPK))
+    PSTRIPK = (groupOf(PSTRIPG).metrics||[{key:SCORE_KEY}])[0].key;
+  redrawPast();
+};
+
+$('#pload').onclick  = () => loadPast();
+$('#pget').onclick   = () => loadPast(pickedDay(), {force:true});
+$('#pdate').onchange = () => loadPast();
+$('#pday').onchange  = () => {
+  const d = $('#pday').value;
+  if(!d) return;
+  $('#pdate').value = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  loadPast(d);
+};
+
+document.querySelectorAll('#pfilters button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#pfilters button').forEach(x=>x.classList.toggle('on',x===b));
+  PFILTER = b.dataset.f; paintPast();
+});
+/* ── 더블클릭 → 구간 그래프 ── */
+let GAT = null;
+async function openGraph(at){
+  GAT = at;
+  document.querySelector('.gbox').classList.remove('wide');
+  $('#gmin').classList.remove('hidden');
+  const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
+  $('#gtitle').textContent = r
+    ? `${r.datetime} · ${r.area} · ${Math.round(r.score)}점 ${r.emoji} ${r.level}`
+    : '구간 그래프';
+  $('#gmask').classList.remove('hidden');
+  await drawGraph();
+}
+async function drawGraph(){
+  if(!GAT) return;
+  const m = $('#gmin').value;
+  $('#gbody').innerHTML = '<div class="empty">그리는 중…</div>';
+  try{
+    const res = await fetch(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}`);
+    $('#gbody').innerHTML = await res.text();
+  }catch(e){ $('#gbody').innerHTML = '<div class="empty">그래프를 불러오지 못했습니다</div>'; }
+}
+$('#gmin').onchange = drawGraph;
+$('#gclose').onclick = () => $('#gmask').classList.add('hidden');
+$('#gmask').onclick = e => { if(e.target.id==='gmask') $('#gmask').classList.add('hidden'); };
+document.addEventListener('keydown', e => {
+  if(e.key==='Escape') $('#gmask').classList.add('hidden');
+});
+
+/* downward / upward 를 표시와 내용을 함께 나눠서 보여준다 (CSV 의 AMOS 4개 컬럼) */
+function dirCell(down, up, mono){
+  down = down||[]; up = up||[];
+  if(!down.length && !up.length) return '<span class="dim">—</span>';
+  const cls = mono ? 'zchip mono' : 'zchip';
+  const line = (mark, name, arr, color) => arr.length
+    ? `<div class="dirline"><b style="color:${color}">${mark} ${name}</b>`
+      + arr.map(v=>`<span class="${cls}">${esc(v)}</span>`).join('') + `</div>`
+    : '';
+  return line('▼', 'downward', down, 'var(--cy)')
+       + line('▲', 'upward',   up,   'var(--major)');
+}
+
+const shortId = id => String(id||'').replace(/^C\d{8}/,'C');
+const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)'
+                   : l==='경계'?'var(--minor)':'var(--ok)';
+
+/* 정상 행(케이스 없음) 상세 */
+document.querySelectorAll('#tab-live .filters button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tab-live .filters button').forEach(x=>x.classList.toggle('on',x===b));
+  FILTER = b.dataset.f; pollCases();
+});
+
+/* 상세 */
+const elapsed = iso => {
+  if(!iso) return '–';
+  const m = Math.floor((Date.now()-new Date(iso))/60000);
+  if(m < 0) return '방금';                 // 시계 차이로 음수가 나오면 '방금'
+  return m<60 ? `${m}분` : `${Math.floor(m/60)}시간 ${m%60}분`;
+};
+
+/* 리포트 — 하루 사건 보고서 (데모스 개인 에이전트 '사건발생 보고서' 와 같은 5섹션) */
+const dayParam = () => ($('#rdate').value || '').replace(/-/g,'');
+
+$('#btnday').onclick = async () => {
+  const d = dayParam();
+  if(!d){ alert('날짜를 먼저 고르세요'); return; }
+  const btn=$('#btnday'), label=btn.textContent;
+  btn.disabled=true; btn.textContent='생성 중…';
+  $('#repout').innerHTML = `<div class="note" style="margin:12px 0">${d} 보고서 생성 중… (로그프레소 조회 + LLM 분석)</div>`;
+  try{
+    const rep = await post('/api/report', {date: $('#rdate').value, kind:'day'});
+    if(rep.error){ $('#repout').innerHTML=`<div class="warn" style="margin:12px 0">${esc(rep.error)}</div>`; return; }
+    const s=rep.summary||{};
+    $('#repout').innerHTML =
+      `<div class="ok-line" style="margin:12px 0">✓ ${esc(s.span||d)} 보고서 생성 완료 — ${s.count||0}건 ·
+        최고 ${s.top_emoji||''} ${esc(s.top_level||'정상')} ${Math.round(s.top_score||0)}점
+        ${rep.llm_error?`<span class="note" style="color:var(--major)">· LLM 미연결(통계 요약)</span>`:''}
+        ${rep.fetch_warn?`<span class="note" style="color:var(--major)">· ${esc(rep.fetch_warn)}</span>`:''}
+      </div>
+      <div class="row" style="margin:8px 0 4px">
+        <button class="act pri" id="btnopen" style="flex:0 0 auto">HTML 열기</button>
+        <a class="act" href="/api/report/day.html?date=${encodeURIComponent(d)}&download=1" style="flex:0 0 auto">내려받기</a>
+      </div>`;
+    $('#btnopen').onclick=()=>window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`,'_blank');
+  } finally { btn.disabled=false; btn.textContent=label; }
+};
+
+/* 체크박스 표·수동 기입·저장이 들어간 인터랙티브 보고서는 별도 창으로 (데모스와 동일) */
+$('#btndayhtml').onclick = () => {
+  const d = dayParam();
+  if(!d){ alert('날짜를 먼저 고르세요'); return; }
+  window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`, '_blank');
+};
+
+
+/* 수집 설정 — 데이터 구간 / 수집 주기 */
+const pollLabel = s => s < 60 ? `${s}초` : `${s/60}분`;
+
+async function initSettings(){
+  const s = await api('/api/window');
+  $('#selPoll').innerHTML = s.poll_options
+    .map(p => `<option value="${p}" ${p===s.poll_interval_s?'selected':''}>${pollLabel(p)}</option>`).join('');
+  POLL = s.poll_interval_s;
+}
+$('#selPoll').onchange = async e => {
+  const r = await post('/api/window', {poll_interval_s: parseInt(e.target.value)});
+  if(r.error) alert(r.error); else { POLL = r.poll_interval_s; pollStatus(); }
+};
+
+/* 시작 — 스플래시 없이 바로 */
+(function initDate(){
+  const d = new Date();
+  $('#rdate').value = new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+})();
+initSettings(); pollStatus(); pollCases();
+setInterval(pollStatus,5000);
+setInterval(pollCases,3000);
+</script>
+</body>
+</html>
