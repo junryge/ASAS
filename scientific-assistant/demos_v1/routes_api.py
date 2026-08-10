@@ -164,11 +164,26 @@ def register_api_routes(app):
         return jsonify({"boot_id": SERVER_BOOT_ID})
 
 
+    def _uio_dir():
+        """UIO 폴더 위치 — 대소문자 안 가리고 찾는다.
+        윈도우는 대소문자 무시라 'UIO' 하드코딩이 돌았지만, 리눅스/실제 폴더명이
+        'uio' 인 환경에서는 404 가 났다 ('UIO index.html not found')."""
+        for name in ("UIO", "uio", "Uio"):
+            d = os.path.join(BASE_DIR, name)
+            if os.path.isfile(os.path.join(d, "index.html")):
+                return d
+        # index.html 이 없어도 폴더라도 있으면 그걸로 (정적 파일 서빙용)
+        for name in ("UIO", "uio", "Uio"):
+            d = os.path.join(BASE_DIR, name)
+            if os.path.isdir(d):
+                return d
+        return os.path.join(BASE_DIR, "UIO")
+
     @app.route("/uio")
     @app.route("/uio/")
     def uio_page():
         """UIO 2D Pixel Office 페이지 서빙 (base href 주입으로 상대경로 해결)"""
-        uio_path = os.path.join(BASE_DIR, "UIO", "index.html")
+        uio_path = os.path.join(_uio_dir(), "index.html")
         if os.path.exists(uio_path):
             with open(uio_path, "r", encoding="utf-8") as f:
                 html = f.read()
@@ -182,8 +197,7 @@ def register_api_routes(app):
     def uio_static(filename):
         """UIO 정적 파일 서빙 (img, sound 등)"""
         from flask import send_from_directory
-        uio_dir = os.path.join(BASE_DIR, "UIO")
-        return send_from_directory(uio_dir, filename)
+        return send_from_directory(_uio_dir(), filename)
 
 
     @app.route("/beno/<path:filename>")
