@@ -144,7 +144,37 @@
     "report_max_tokens": 1800,
     "_report_max_tokens_doc": "구간 리포트 본문 응답 토큰. 리포트는 '## 주요 발견' 을 프리필해 산문을 막는다",
     "day_report_max_tokens": 4000,
-    "_day_report_max_tokens_doc": "하루 사건 리포트(5섹션) 응답 토큰. 사건이 많으면 늘린다"
+    "_day_report_max_tokens_doc": "하루 사건 리포트(5섹션) 응답 토큰. 사건이 많으면 늘린다",
+    "analysis": {
+      "_doc": "4-LLM 병렬 분석 (분석 탭). 역할별 모델은 GAIA 게이트웨이 모델명으로 바꿔 쓴다.",
+      "roles": {
+        "risk": {
+          "model": "gaia-Qwen3.5-397B-A17B",
+          "_doc": "① 위험도 종합"
+        },
+        "zone": {
+          "model": "gaia-Qwen3.5-397B-A17B",
+          "_doc": "② 구역 진단"
+        },
+        "path": {
+          "model": "gaia-Qwen3.5-397B-A17B",
+          "_doc": "③ 전파 경로"
+        },
+        "action": {
+          "model": "gaia-Qwen3.5-397B-A17B",
+          "_doc": "④ 조치 요약"
+        },
+        "final": {
+          "model": "gaia-Qwen3.5-397B-A17B",
+          "_doc": "⑤ 통합 리포트"
+        }
+      },
+      "_roles_doc": "게이트웨이에 gaia- 로 시작하는 다른 모델이 있으면 역할마다 다르게 지정 (예: gaia-GLM-5.1). 지금은 확인된 모델이 1종이라 전부 같게 시작한다",
+      "digest_max_chars": 7000,
+      "role_max_tokens": 900,
+      "final_max_tokens": 2200,
+      "timeout_s": 120
+    }
   },
   "grade": {
     "_doc": "점수 등급 (데모스 스킬과 동일 기준)",

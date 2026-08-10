@@ -215,6 +215,7 @@
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
     <button data-tab="past">과거 데이터 조회</button>
+    <button data-tab="analysis">분석</button>
     <button data-tab="report">리포트 · 피드백</button>
     <button data-tab="policy">정책</button>
   </div>
@@ -361,6 +362,39 @@
 </div>
 
 <!-- ── 리포트 · 피드백 ── -->
+<!-- ── 🧪 분석 (4-LLM 병렬) ── -->
+<div class="page hidden" id="tab-analysis">
+  <div class="card">
+    <h2>4-LLM 병렬 분석 <span class="note">— 역할이 다른 LLM 4개가 같은 데이터를 나눠 분석하고 통합 리포트로 종합</span></h2>
+    <div class="bd">
+      <div class="row" style="margin-bottom:8px">
+        <label>날짜</label>
+        <select id="anday" title="저장된 날짜 (data/YYYYMMDD_TOTAL.CSV)"></select>
+        <input type="date" id="andate" title="목록에 없는 날짜 직접 지정">
+        <label style="margin-left:10px">범위</label>
+        <select id="anmode" onchange="anModeChange()">
+          <option value="day">하루 전체</option>
+          <option value="range">시간 구간</option>
+        </select>
+        <span id="anrange" style="display:none;align-items:center;gap:4px">
+          <input type="time" id="anstart" value="08:00">
+          <span class="note">~</span>
+          <input type="time" id="anend" value="10:00">
+        </span>
+        <button class="act pri" id="btnan" style="flex:0 0 auto">🧪 분석 실행</button>
+        <span class="note" id="anmsg"></span>
+      </div>
+      <div id="anroles" style="display:none;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0"></div>
+      <div id="anout"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>지난 분석</h2>
+    <div class="bd"><div id="anlist" class="note">불러오는 중…</div></div>
+  </div>
+</div>
+
 <div class="page hidden" id="tab-report">
   <div class="card">
     <h2>LLM 리포트</h2>
@@ -438,15 +472,159 @@ let LAST_LATEST=null, NEW_AT=null;
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
-  ['live','past','report','policy'].forEach(t =>
+  ['live','past','analysis','report','policy'].forEach(t =>
     $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
   if(b.dataset.tab==='past'){
     initPast();
     if(PDAY) loadPastLlm(PDAY);          // 과거 탭 = 그 날짜 LLM 판단
+  }else if(b.dataset.tab==='analysis'){
+    initAnalysis();
   }else if(ACC){
     renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
   }
 });
+
+/* ══════════ 🧪 분석 탭 — 4-LLM 병렬 분석 ══════════
+   ①위험도 종합 ②구역 진단 ③전파 경로 ④조치 요약 이 병렬로 돌고
+   ⑤통합 리포트가 종합한다. 서버가 백그라운드로 돌리고 여기선 2초 폴링. */
+let AN_TIMER=null, AN_INIT=false;
+
+async function initAnalysis(){
+  loadAnalysisList();
+  if(AN_INIT) return;
+  AN_INIT=true;
+  try{
+    const d = await api('/api/data/days');
+    const sel = $('#anday');
+    sel.innerHTML = (d.days||[]).slice().reverse().map(x=>
+      `<option value="${esc(x.day)}">${esc(x.day)} (${x.rows}행)</option>`).join('')
+      || '<option value="">저장된 날짜 없음</option>';
+  }catch(e){}
+  // 아직 돌고 있으면 이어서 폴링 (탭을 나갔다 와도)
+  try{ const s=await api('/api/analysis/status'); if(s.running) pollAnalysis(); }catch(e){}
+}
+
+function anModeChange(){
+  $('#anrange').style.display = $('#anmode').value==='range' ? 'inline-flex' : 'none';
+}
+
+$('#btnan').onclick = async () => {
+  const day = ($('#andate').value||'').replace(/-/g,'') || $('#anday').value;
+  if(!day){ $('#anmsg').textContent='날짜를 고르세요'; return; }
+  const body = {day};
+  if($('#anmode').value==='range'){ body.start=$('#anstart').value; body.end=$('#anend').value; }
+  $('#anmsg').textContent='시작 중…';
+  const r = await post('/api/analysis/run', body);
+  if(r.error){ $('#anmsg').textContent='❌ '+r.error; return; }
+  $('#anmsg').textContent='';
+  $('#anout').innerHTML='';
+  pollAnalysis();
+};
+
+function pollAnalysis(){
+  clearInterval(AN_TIMER);
+  const tick = async () => {
+    try{
+      const s = await api('/api/analysis/status');
+      renderAnRoles(s);
+      if(!s.running && (s.progress||{}).done){
+        clearInterval(AN_TIMER); AN_TIMER=null;
+        if(s.progress.error){ $('#anmsg').textContent='❌ '+s.progress.error; return; }
+        if(s.last_id){ loadAnalysis(s.last_id); loadAnalysisList(); }
+      }
+    }catch(e){}
+  };
+  tick();
+  AN_TIMER = setInterval(tick, 2000);
+}
+
+function renderAnRoles(s){
+  const box = $('#anroles');
+  const roles = (s.progress||{}).roles || {};
+  const ids = Object.keys(roles);
+  if(!ids.length){ box.style.display='none'; return; }
+  box.style.display='grid';
+  box.innerHTML = ids.map(id=>{
+    const r=roles[id];
+    const st = r.status==='완료' ? '<span style="color:var(--ok)">✅ 완료</span>'
+             : r.status==='실패' ? `<span style="color:var(--crit)" title="${esc(r.error||'')}">❌ 실패</span>`
+             : '<span style="color:var(--cy)">⏳ 분석중…</span>';
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--panel)">
+      <div style="font-weight:650;font-size:12.5px">${r.icon||''} ${esc(r.name||id)}</div>
+      <div class="mono note" style="font-size:10.5px;margin:3px 0">${esc(r.model||'')}</div>
+      <div style="font-size:12px">${st}${r.took_s!=null?` <span class="dim">${r.took_s}초</span>`:''}</div>
+    </div>`;
+  }).join('')
+  + ((s.progress||{}).stage==='final'
+     ? `<div style="grid-column:1/-1" class="note">⑤ 통합 리포트 작성 중…</div>` : '');
+}
+
+function anMd(md){
+  // 통합 리포트용 초경량 md → html (헤딩·불릿·굵게만)
+  return String(md||'').split('\n').map(ln=>{
+    ln = esc(ln);
+    if(/^##\s+/.test(ln)) return `<h3 style="margin:14px 0 6px;color:var(--cy);font-size:14px">${ln.replace(/^##\s+/,'')}</h3>`;
+    if(/^-\s+/.test(ln))  return `<div style="margin:2px 0 2px 6px">• ${ln.replace(/^-\s+/,'')}</div>`;
+    return ln ? `<div style="margin:2px 0">${ln}</div>` : '';
+  }).join('').replace(/\*\*(.+?)\*\*/g,'<b style="color:var(--tx)">$1</b>');
+}
+
+function anVal(v){
+  if(Array.isArray(v)){
+    if(v.length && typeof v[0]==='object')
+      return `<table class="pol" style="margin:4px 0"><tbody>${v.map(o=>
+        `<tr>${Object.values(o).map(x=>`<td>${esc(String(x))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    return v.map(x=>`<span class="chip lv경계" style="margin:1px 2px">${esc(String(x))}</span>`).join(' ');
+  }
+  if(v && typeof v==='object') return `<span class="mono" style="font-size:11px">${esc(JSON.stringify(v))}</span>`;
+  return esc(String(v??''));
+}
+
+async function loadAnalysis(aid){
+  const r = await api('/api/analysis/'+encodeURIComponent(aid));
+  if(r.error){ $('#anout').innerHTML=`<div class="warn">${esc(r.error)}</div>`; return; }
+  const pk = r.peak||{};
+  const roleIds = ['risk','zone','path','action'];
+  $('#anout').innerHTML = `
+    <div class="note" style="margin:10px 0 8px">
+      ${esc(r.day)} · ${esc(r.span)} · ${r.minutes}분 · 최고 ${pk.emoji||''} ${esc(pk.level||'')}
+      ${pk.score||''}점 (${esc(pk.time||'')}, ${esc(pk.area||'')}) · 사건 ${r.incidents}건
+      · 소요 ${r.took_s}초 <span class="mono" style="font-size:10.5px">${esc(r.id)}</span></div>
+    <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--panel);font-size:13px;line-height:1.7">
+      ${anMd(r.final)}</div>
+    ${r.final_error?`<div class="warn" style="margin-top:8px">통합 LLM 실패 — 역할 결과로 조립 (${esc(r.final_error)})</div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px">
+      ${roleIds.map(id=>{
+        const o=(r.roles||{})[id]||{};
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)">
+          <div style="font-weight:650;font-size:12.5px;margin-bottom:5px">${o.icon||''} ${esc(o.name||id)}
+            <span class="mono note" style="font-size:10px">${esc(o.model||'')} · ${o.took_s??'–'}초</span></div>
+          ${o.ok ? Object.entries(o.result||{}).map(([k,v])=>
+              `<div style="font-size:12px;margin:3px 0"><span class="dim">${esc(k)}</span> ${anVal(v)}</div>`).join('')
+            : `<div style="color:var(--crit);font-size:12px">실패 — ${esc(o.error||'?')}</div>`}
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function loadAnalysisList(){
+  try{
+    const d = await api('/api/analysis/list');
+    const items = d.items||[];
+    $('#anlist').innerHTML = items.length
+      ? `<table class="pol"><thead><tr><th>날짜</th><th>범위</th><th>분</th><th>최고</th>
+           <th>역할 성공</th><th>생성</th><th></th></tr></thead><tbody>`
+        + items.map(x=>{
+            const pk=x.peak||{};
+            return `<tr><td>${esc(x.day)}</td><td>${esc(x.span)}</td><td>${x.minutes}</td>
+              <td>${pk.emoji||''} ${pk.score||''}점</td><td>${x.roles_ok}/4</td>
+              <td class="mono" style="font-size:11px">${esc((x.generated_at||'').replace('T',' ').slice(5,16))}</td>
+              <td><a href="#" style="color:var(--cy)" onclick="loadAnalysis('${esc(x.id)}');return false;">열기</a></td></tr>`;
+          }).join('')+`</tbody></table>`
+      : '아직 분석 기록이 없습니다 — 날짜를 고르고 <b style="color:var(--tx2)">🧪 분석 실행</b>을 누르세요.';
+  }catch(e){ $('#anlist').textContent='목록 조회 실패'; }
+}
+/* ══════════ /분석 탭 ══════════ */
 
 /* 시계 */
 setInterval(()=>{

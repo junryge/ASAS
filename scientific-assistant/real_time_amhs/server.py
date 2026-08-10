@@ -621,6 +621,67 @@ def _recur_1h(ref: datetime) -> dict:
             "runs": runs, "recur": recur, "minutes": minutes, "floor": floor}
 
 
+# ── 🧪 4-LLM 병렬 분석 (분석 탭) ──
+# 실행은 스레드 1개만 — 4-LLM 호출이 겹치면 게이트웨이에 부담이라 동시 1건 제한.
+ANALYSIS: dict = {"running": False, "progress": {}, "last_id": None}
+
+
+@app.route("/api/analysis/run", methods=["POST"])
+def api_analysis_run():
+    """4-LLM 병렬 분석 시작 — 백그라운드. body: {day, start?, end?} (HH:MM)."""
+    if ANALYSIS["running"]:
+        return jsonify({"error": "이미 분석이 돌고 있습니다 — 끝나면 다시 시도"}), 409
+    body = request.get_json(silent=True) or {}
+    day = "".join(ch for ch in str(body.get("day") or "") if ch.isdigit())[:8]
+    if len(day) != 8:
+        return jsonify({"error": "day(YYYYMMDD) 필요"}), 400
+    start = str(body.get("start") or "")[:5]
+    end = str(body.get("end") or "")[:5]
+
+    ANALYSIS.update(running=True, progress={"stage": "start", "done": False},
+                    day=day, span=f"{start or '00:00'}~{end or '24:00'}")
+
+    def work():
+        try:
+            from analysis import run_analysis
+            r = run_analysis(day, CFG, start, end, progress=ANALYSIS["progress"])
+            ANALYSIS["last_id"] = r.get("id")
+            if not r.get("ok"):
+                ANALYSIS["progress"].update(done=True, error=r.get("error"))
+        except Exception as e:
+            ANALYSIS["progress"].update(done=True, error=f"{type(e).__name__}: {e}")
+        finally:
+            ANALYSIS["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"ok": True, "started": True})
+
+
+@app.route("/api/analysis/status")
+def api_analysis_status():
+    return jsonify({"running": ANALYSIS["running"], "progress": ANALYSIS["progress"],
+                    "last_id": ANALYSIS["last_id"],
+                    "day": ANALYSIS.get("day"), "span": ANALYSIS.get("span")})
+
+
+@app.route("/api/analysis/list")
+def api_analysis_list():
+    try:
+        from analysis import list_analyses
+        return jsonify({"items": list_analyses(CFG)})
+    except Exception as e:
+        return jsonify({"items": [], "error": f"{type(e).__name__}: {e}"})
+
+
+@app.route("/api/analysis/<aid>")
+def api_analysis_get(aid):
+    from analysis import get_analysis
+    r = get_analysis(aid, CFG)
+    if not r:
+        return jsonify({"error": "없는 분석"}), 404
+    return jsonify(r)
+
+
 @app.route("/api/forecast")
 def api_forecast():
     """선행 감지 — 지금 추세로 본 임계 돌파 예보.
