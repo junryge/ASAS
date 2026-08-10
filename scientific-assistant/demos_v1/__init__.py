@@ -50,6 +50,14 @@ def create_app():
     except Exception as _se:
         print(f"  ⚠️  세션 저장·검색 라우트 등록 실패(무시): {_se}")
 
+    # ⏰ 예약 작업 (매일/간격 프롬프트 실행) — 실패해도 본체는 정상 동작
+    try:
+        from demos_v1.routes_schedule import register_schedule_routes
+        register_schedule_routes(app)
+        print("  ⏰ 예약 작업 라우트 등록 완료 (/api/schedules/*, 30초 주기 워커)")
+    except Exception as _sce:
+        print(f"  ⚠️  예약 작업 라우트 등록 실패(무시): {_sce}")
+
     # 헤르메스(재해석) 엔진 라우트 — 실패해도 데모스 본체는 정상 동작
     try:
         from demos_v1.hermes.routes import register_hermes_routes

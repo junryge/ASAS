@@ -11,3 +11,4 @@ spark_api.txt
 scientific-assistant/demos_data/sessions.db
 scientific-assistant/demos_data/sessions.db-*
 scientific-assistant/demos_data/agents/
+scientific-assistant/demos_data/schedules/

@@ -492,6 +492,33 @@ def _truncate_text_to_tokens(text, allow_tokens, count):
     return new, max(0, len(text) - (head + max(0, tail)))
 
 
+def _msgs_chars(msgs) -> int:
+    """messages 리스트의 본문 총 글자수 (usage 추정용)."""
+    return sum(len(str(m.get("content", "") or "")) for m in (msgs or []))
+
+
+def _usage_info(in_chars: int, out_chars: int, api_usage=None) -> dict:
+    """토큰 사용량 요약 — end 이벤트에 실어 UI 가 답변 밑에 표시한다.
+
+    API 가 usage 를 실측으로 주면 그대로 쓰고(measured=True), 안 주면 글자수 기반
+    추정치만 준다. 추정 계수 0.5 tok/char 는 _fit_messages_to_ctx 의 API 가드
+    (tpc=0.5)와 같은 가정 — 한국어/코드 혼합 기준 보수적 근사치다.
+    """
+    u = {
+        "prompt_chars": int(in_chars), "completion_chars": int(out_chars),
+        "prompt_tokens_est": int(in_chars * 0.5),
+        "completion_tokens_est": int(out_chars * 0.5),
+        "measured": False,
+    }
+    if isinstance(api_usage, dict) and (api_usage.get("total_tokens")
+                                        or api_usage.get("completion_tokens")):
+        u.update(prompt_tokens=api_usage.get("prompt_tokens"),
+                 completion_tokens=api_usage.get("completion_tokens"),
+                 total_tokens=api_usage.get("total_tokens"),
+                 measured=True)
+    return u
+
+
 def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512,
                          hard_char_cap=True, tpc=2.6):
     """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단.
@@ -1326,10 +1353,10 @@ def _stream_chat_sse(data):
                     return out
 
                 try:
-                    _finish = None
+                    _finish, _acc = None, ""
                     for ev in _gguf_stream_once(_fit_msgs, _fit_reply, emit=_emit):
                         if isinstance(ev, tuple) and ev and ev[0] == "__end__":
-                            _finish = ev[2]
+                            _acc, _finish = ev[1], ev[2]
                         else:
                             yield ev
                     # flush: 금지어 꼬리 → 그래프 주입기로 흘려보내고 → 그래프 마저 삽입
@@ -1342,7 +1369,8 @@ def _stream_chat_sse(data):
                             yield _tok_evt(_p)
                         for _p in _inj.flush():
                             yield _tok_evt(_p)
-                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length")}
+                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": (_finish == "length"),
+                               "usage": _usage_info(_msgs_chars(_fit_msgs), len(_acc))}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
                 except Exception as e:
@@ -1392,13 +1420,17 @@ def _stream_chat_sse(data):
                     _smsgs, _srb, _ = _fit_messages_to_ctx(
                         _smsgs, _plan["n_ctx"], _plan["reply"],
                         model=_utils_mod.gguf_model, safety=_plan["safety"], hard_char_cap=_ctx_guard)
-                    _finish = None
+                    _finish, _facc = None, ""
                     for ev in _gguf_stream_once(_smsgs, _srb):
                         if isinstance(ev, tuple) and ev and ev[0] == "__end__":
-                            _finish = ev[2]
+                            _facc, _finish = ev[1], ev[2]
                         else:
                             yield ev
-                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": False}
+                    _in_all = (sum(len(p) for p in _chunks) + _msgs_chars(_base)
+                               + len(_instr) + _msgs_chars(_smsgs))
+                    _out_all = sum(len(p) for p in _partials) + len(_facc)
+                    end_evt = {"type": "end", "finish_reason": _finish, "truncated": False,
+                               "usage": _usage_info(_in_all, _out_all)}
                     yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
                 except Exception as e:
@@ -1499,6 +1531,26 @@ def _stream_chat_sse(data):
                        "detail": detail, "model": model}
                 yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
                 return
+            # ── 토큰 사용량 집계: 원문(delta.content) 글자수 누적 + 서버 usage 실측 캡처 ──
+            # end 이벤트는 [DONE]/스트림 종료 시점에 1회만 보낸다 — vLLM 은 실측 usage 를
+            # finish_reason '뒤' 별도 청크로 주므로, fr 시점에 보내면 실측을 놓친다.
+            _out_chars, _api_usage, _fr_seen, _flushed = 0, None, None, False
+
+            def _end_evt():
+                return {"type": "end", "finish_reason": _fr_seen,
+                        "truncated": (_fr_seen == "length"),
+                        "usage": _usage_info(_msgs_chars(api_messages), _out_chars, _api_usage)}
+
+            def _final_flush():
+                nonlocal _flushed
+                if _flushed:
+                    return
+                _flushed = True
+                tail = _termf.feed(_tf.flush()) + _termf.flush()
+                if tail:
+                    yield from _stream_vis(tail)
+                yield from _flush_pending()
+
             for line in r.iter_lines(decode_unicode=True):
                 if chat_stop_flag.get("stop"):
                     yield "data: [DONE]\n\n"
@@ -1507,13 +1559,16 @@ def _stream_chat_sse(data):
                     continue
                 body = line[5:].strip()
                 if body == "[DONE]":
-                    yield from _flush_pending()
+                    yield from _final_flush()
+                    yield f"data: {json.dumps(_end_evt(), ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
                     return
                 try:
                     obj = json.loads(body)
                 except Exception:
                     continue
+                if isinstance(obj.get("usage"), dict):   # vLLM 은 마지막 청크에 실측 usage
+                    _api_usage = obj["usage"]
                 choices = obj.get("choices") or []
                 if not choices:
                     continue
@@ -1521,6 +1576,7 @@ def _stream_chat_sse(data):
                 # delta.reasoning_content(추론 채널)는 절대 본문으로 내보내지 않음 — 무시
                 tok = delta.get("content") or ""
                 if tok:
+                    _out_chars += len(tok)   # 표시 전 원문 기준 (think 포함 = 실제 생성량)
                     vis = _tf.feed(tok)          # <think> 구간 실시간 제거
                     if vis:
                         vis = _termf.feed(vis)   # 금지어 실시간 치환
@@ -1528,13 +1584,10 @@ def _stream_chat_sse(data):
                             yield from _stream_vis(vis)
                 fr = choices[0].get("finish_reason")
                 if fr:
-                    tail = _termf.feed(_tf.flush()) + _termf.flush()
-                    if tail:
-                        yield from _stream_vis(tail)
-                    yield from _flush_pending()
-                    end_evt = {"type": "end", "finish_reason": fr, "truncated": (fr == "length")}
-                    yield f"data: {json.dumps(end_evt, ensure_ascii=False)}\n\n"
-            yield from _flush_pending()
+                    _fr_seen = fr
+                    yield from _final_flush()
+            yield from _final_flush()
+            yield f"data: {json.dumps(_end_evt(), ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             err = {"type": "error", "error": str(e), "model": model}

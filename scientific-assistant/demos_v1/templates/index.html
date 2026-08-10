@@ -57,7 +57,7 @@ body.sb-collapsed .chat-box-fixed{left:48px}
 /* Chat - Fixed Bottom */
 .chat-box-fixed{position:fixed;bottom:0;left:250px;right:0;background:#fff;border-top:2px solid #e5e3de;padding:6px 32px;z-index:100;box-shadow:0 -2px 10px rgba(0,0,0,.05);transition:left .2s ease}
 .chat-box-fixed:focus-within{border-top-color:#6366f1}
-.chat-box-fixed-inner{max-width:800px;margin:0 auto}
+.chat-box-fixed-inner{max-width:800px;margin:0 auto;position:relative}
 .chat-input{width:100%;border:none;outline:none;font-size:13px;resize:none;min-height:20px;max-height:100px;font-family:inherit;line-height:1.4}
 .chat-input::placeholder{color:#aaa;font-size:12px}
 .chat-footer{display:flex;justify-content:space-between;align-items:center;margin-top:2px}
@@ -752,6 +752,48 @@ pre{position:relative}
   <button id="uioBackBtn" onclick="toggleUioMode()">← 접기</button>
 </div>
 
+<!-- ⏰ 예약 작업 팝업 -->
+<div id="schedPopup" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;width:min(860px,94vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.25);">
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+      <b style="font-size:15px;">⏰ 예약 작업</b>
+      <span style="font-size:11.5px;color:#94a3b8;">매일 HH:MM 또는 N분 간격으로 프롬프트를 자동 실행 — 결과는 markdown 으로 쌓입니다</span>
+      <button onclick="closeSchedulePopup()" style="margin-left:auto;border:none;background:none;font-size:18px;cursor:pointer;color:#64748b;">✕</button>
+    </div>
+    <div style="display:flex;gap:0;flex:1;min-height:0;">
+      <div style="flex:1.1;padding:14px 18px;overflow-y:auto;border-right:1px solid #f1f5f9;">
+        <div id="schedJobs" style="font-size:12.5px;color:#475569;">불러오는 중…</div>
+        <div style="margin-top:14px;border-top:1px dashed #e2e8f0;padding-top:12px;">
+          <b style="font-size:12.5px;color:#334155;">새 작업 / 수정</b>
+          <input id="schId" type="hidden">
+          <input id="schName" placeholder="이름 (예: 아침 반송 요약)" style="width:100%;margin-top:8px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:12.5px;box-sizing:border-box;">
+          <textarea id="schPrompt" placeholder="실행할 프롬프트 (예: 어제 M16 허브 반송 현황을 5줄로 요약해줘)" style="width:100%;margin-top:6px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:12.5px;min-height:70px;box-sizing:border-box;resize:vertical;"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
+            <select id="schEnv" style="padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;"></select>
+            <select id="schMode" onchange="schModeChange()" style="padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;">
+              <option value="daily">매일</option><option value="interval">간격</option>
+            </select>
+            <input id="schTime" type="time" value="07:00" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;">
+            <span id="schEveryWrap" style="display:none;align-items:center;gap:4px;font-size:12px;color:#475569;">
+              <input id="schEvery" type="number" value="60" min="1" max="1440" style="width:64px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;">분마다</span>
+            <input id="schSkills" placeholder="스킬 (쉼표, 선택)" style="flex:1;min-width:120px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button onclick="saveSchedule()" style="padding:7px 16px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;">저장</button>
+            <button onclick="resetSchedForm()" style="padding:7px 12px;background:#f1f5f9;color:#475569;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;">비우기</button>
+            <span id="schMsg" style="font-size:11.5px;color:#94a3b8;align-self:center;"></span>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;padding:14px 18px;overflow-y:auto;min-width:0;">
+        <b style="font-size:12.5px;color:#334155;">📄 실행 결과 <span id="schResTitle" style="color:#94a3b8;font-weight:400;"></span></b>
+        <div id="schResults" style="font-size:12px;color:#64748b;margin-top:8px;">왼쪽에서 작업의 '결과' 를 누르세요.</div>
+        <pre id="schResBody" style="display:none;white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:12px;line-height:1.6;margin-top:8px;max-height:52vh;overflow-y:auto;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="sidebar" id="sidebar">
   <button class="sidebar-toggle-mini" onclick="toggleSidebar()" title="펼치기">☰</button>
   <div class="sidebar-inner">
@@ -770,6 +812,7 @@ pre{position:relative}
     </div>
     <div id="sessSearchOut" style="display:none;max-height:250px;overflow-y:auto;margin-bottom:4px;"></div>
     <div id="sessionList" style="max-height:250px;overflow-y:auto;margin-bottom:4px;"></div>
+    <button class="sidebar-btn" onclick="openSchedulePopup()" style="width:100%;margin-bottom:4px;" title="매일 HH:MM 또는 N분 간격으로 프롬프트를 자동 실행 (/예약)">⏰ 예약 작업</button>
     <div class="session-actions" id="sessionActions" style="display:none">
       <button onclick="archiveSelectedSessions()">📦 보관</button>
       <button class="danger" onclick="deleteSelectedSessions()">🗑️ 삭제</button>
@@ -970,7 +1013,8 @@ pre{position:relative}
     <div class="chat-box-fixed-inner">
       <div class="auto-skill-preview" id="autoSkillPreview"></div>
       <div class="chat-attach-preview" id="chatAttachPreview" style="display:none"></div>
-      <textarea class="chat-input" id="input" placeholder="질문을 하거나 수행하려는 분석을 설명하세요..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';checkPptStyleVisibility()"></textarea>
+      <div id="slashMenu" style="display:none;position:absolute;left:14px;right:14px;bottom:100%;margin-bottom:6px;max-height:300px;overflow-y:auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);z-index:300;"></div>
+      <textarea class="chat-input" id="input" placeholder="질문하거나 분석을 설명하세요...  ( / 를 입력하면 명령 목록 )" onkeydown="if(slashKeydown(event))return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSendStop()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px';checkPptStyleVisibility();slashOnInput(this)"></textarea>
       <input type="file" id="chatFileInput" multiple style="display:none" onchange="handleChatFileSelect(this.files)">
       <div class="chat-footer">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -2371,6 +2415,11 @@ async function send(){
         } else if(_modelName){
           _info = `\n[${_modelName}]`;
         }
+        // 📊 토큰 사용량 — end 이벤트의 usage(실측 또는 글자수 추정)를 답변 밑에 표시 + 세션 누적
+        if(_endInfo && _endInfo.usage){
+          recordUsage(_endInfo.usage);
+          _info += '\n' + fmtUsage(_endInfo.usage);
+        }
         // 토큰 한도 도달 경고
         let _truncWarn = '';
         if(_endInfo && _endInfo.truncated){
@@ -2795,6 +2844,7 @@ function saveCurrentSession(bump){
     systemPrompt: document.getElementById('systemPromptInput')?.value || '',
     systemPromptId: currentPromptId || '',
     thinkMode: document.getElementById('thinkToggle')?.checked || false,
+    usage: usageBySession[currentSessionId] || null,   // 📊 토큰 누적 (세션과 함께 보존)
     msgsHtml: document.getElementById('msgs').innerHTML,
     updatedAt: bump ? Date.now() : ((sessions[currentSessionId] && sessions[currentSessionId].updatedAt) || Date.now())
   };
@@ -2939,6 +2989,336 @@ async function openSearchHit(sid){
   loadSession(sid);
 }
 /* ══════════ /세션 서버 저장 · 전문검색 ══════════ */
+
+/* ══════════ 📊 토큰 사용량 (메시지별 표시 + 세션 누적) ══════════
+   서버가 end 이벤트에 usage 를 실어 보낸다 — API 가 실측(usage)을 주면 실측,
+   아니면 글자수×0.5 추정(≈ 표시). 누적은 세션 스냅샷에 저장돼 서버에도 동기화된다. */
+let usageBySession = {};
+
+function _fmtTok(n){ n=Math.max(0, Math.round(n||0)); return n>=1000 ? (n/1000).toFixed(1)+'k' : String(n); }
+
+function recordUsage(u){
+  if(!u || !currentSessionId) return;
+  const meas = !!u.measured;
+  const pt = meas ? (u.prompt_tokens||0) : (u.prompt_tokens_est||0);
+  const ct = meas ? (u.completion_tokens||0) : (u.completion_tokens_est||0);
+  const cum = usageBySession[currentSessionId] || (usageBySession[currentSessionId]={pt:0,ct:0,n:0,measured:true});
+  cum.pt += pt; cum.ct += ct; cum.n += 1;
+  cum.measured = cum.measured && meas;   // 하나라도 추정이면 누적도 추정 표시
+}
+
+function fmtUsage(u){
+  const meas = !!u.measured;
+  const pt = meas ? (u.prompt_tokens||0) : (u.prompt_tokens_est||0);
+  const ct = meas ? (u.completion_tokens||0) : (u.completion_tokens_est||0);
+  const tag = meas ? '' : '≈';
+  const cum = usageBySession[currentSessionId];
+  let s = `📊 토큰 입력 ${tag}${_fmtTok(pt)} · 출력 ${tag}${_fmtTok(ct)}`;
+  if(cum && cum.n > 1) s += ` · 세션 누적 ${cum.measured?'':'≈'}${_fmtTok(cum.pt+cum.ct)} (${cum.n}회)`;
+  s += meas ? ' (실측)' : ' (추정)';
+  return s;
+}
+
+function usageSummaryText(){
+  const cur = usageBySession[currentSessionId];
+  let all = {pt:0, ct:0, n:0};
+  Object.values(usageBySession).forEach(c=>{ all.pt+=c.pt; all.ct+=c.ct; all.n+=c.n; });
+  let s = '📊 토큰 사용량\n';
+  s += cur ? `- 이 세션: 입력 ${_fmtTok(cur.pt)} · 출력 ${_fmtTok(cur.ct)} · 합계 ${_fmtTok(cur.pt+cur.ct)} (${cur.n}회)\n`
+           : '- 이 세션: 아직 기록 없음\n';
+  s += `- 브라우저에 열린 전체 세션: 합계 ${_fmtTok(all.pt+all.ct)} (${all.n}회)`;
+  return s;
+}
+/* ══════════ /토큰 사용량 ══════════ */
+
+/* ══════════ ⌨️ 슬래시 커맨드 — 입력창에서 / 로 시작하면 명령 팔레트 ══════════
+   전부 클라이언트에서 실행된다 (서버 왕복 없음). 명령이 아니면 평소처럼 전송. */
+function _slashChatMsg(text){
+  // 명령 결과를 대화창에 회색 카드로 보여준다 — history 에는 넣지 않는다 (LLM 컨텍스트 오염 방지)
+  addMsg('assistant', text, text);
+}
+
+const SLASH_CMDS = [
+  {cmd:'/도움말', alias:['/help','/?'], args:'', desc:'명령 목록 보기',
+   run(){ _slashChatMsg('⌨️ 슬래시 커맨드\n' + SLASH_CMDS.map(c=>`- ${c.cmd} ${c.args||''} — ${c.desc}`).join('\n')); }},
+  {cmd:'/새세션', alias:['/new'], args:'', desc:'새 세션 시작',
+   run(){ createNewSession(); }},
+  {cmd:'/지우기', alias:['/clear'], args:'', desc:'현재 세션 대화 비우기',
+   run(){ if(!confirm('현재 세션의 대화를 비울까요?')) return;
+          history=[]; document.getElementById('msgs').innerHTML='';
+          delete usageBySession[currentSessionId]; saveCurrentSession(true); }},
+  {cmd:'/검색', alias:['/search','/find'], args:'<검색어>', desc:'과거 대화 본문 검색 (서버)',
+   run(rest){ const el=document.getElementById('sessSearch');
+              if(el){ el.value=rest||''; } searchServerSessions(); }},
+  {cmd:'/스킬', alias:['/skill'], args:'<이름>', desc:'스킬 켜기/끄기 (이름 일부로 검색)',
+   run(rest){ slashToggleSkill(rest); }},
+  {cmd:'/자동스킬', alias:['/autoskill'], args:'', desc:'자동 스킬 라우팅 ON/OFF',
+   run(){ toggleAutoSkill(); _slashChatMsg('🧠 자동 스킬: ' + (autoSkillMode?'ON':'OFF')); }},
+  {cmd:'/모델', alias:['/model','/env'], args:'<모델|auto>', desc:'LLM 환경 전환 (없으면 목록)',
+   run(rest){ slashSetEnv(rest); }},
+  {cmd:'/헤르메스', alias:['/hermes'], args:'', desc:'🔮 헤르메스(장기기억·자기학습) ON/OFF',
+   run(){ if(selSkills.includes('hermes')){ selSkills=selSkills.filter(s=>s!=='hermes'); _slashChatMsg('🔮 헤르메스: OFF'); }
+          else { selSkills.push('hermes'); _slashChatMsg('🔮 헤르메스: ON — 이번 세션 답변부터 적용'); }
+          try{ renderSkills(); updateLoaded(); }catch(e){} }},
+  {cmd:'/토큰', alias:['/tokens','/usage'], args:'', desc:'토큰 사용량 (이 세션 · 전체)',
+   run(){ _slashChatMsg(usageSummaryText()); }},
+  {cmd:'/예약', alias:['/schedule'], args:'', desc:'⏰ 예약 작업 열기',
+   run(){ try{ openSchedulePopup(); }catch(e){ _slashChatMsg('⏰ 예약 작업 UI 를 열 수 없습니다: '+e.message); } }},
+];
+
+function _slashCatalogSkills(){
+  const out=[];
+  try{ Object.values(catalog).forEach(d=>(d.skills||[]).forEach(s=>{ if(s.available) out.push(s); })); }catch(e){}
+  return out;
+}
+
+function slashToggleSkill(rest){
+  const q=(rest||'').trim().toLowerCase();
+  if(!q){
+    _slashChatMsg('📌 선택된 스킬: ' + (selSkills.length?selSkills.join(', '):'없음')
+      + (autoLoadedSkills.length?'\n🧠 자동: '+autoLoadedSkills.join(', '):'')
+      + '\n\n사용법: /스킬 <이름 일부>');
+    return;
+  }
+  const all=_slashCatalogSkills();
+  const hits=all.filter(s=>s.id.toLowerCase().includes(q)||String(s.name||'').toLowerCase().includes(q));
+  if(!hits.length){ _slashChatMsg(`❌ '${rest}' 와 맞는 스킬이 없습니다.`); return; }
+  const exact=hits.find(s=>s.id.toLowerCase()===q);
+  if(hits.length>1 && !exact){
+    _slashChatMsg('🔎 여러 개가 걸립니다 — 정확한 이름으로 다시:\n'
+      + hits.slice(0,15).map(s=>`- ${s.id} (${s.desc||s.name})`).join('\n'));
+    return;
+  }
+  const s=exact||hits[0];
+  if(selSkills.includes(s.id)){ selSkills=selSkills.filter(x=>x!==s.id); _slashChatMsg(`➖ 스킬 해제: ${s.id}`); }
+  else{ selSkills.push(s.id);
+        autoLoadedSkills=[];
+        if(autoSkillMode){ autoSkillMode=false; const t=document.getElementById('autoSkillToggle'); if(t)t.classList.remove('on'); }
+        _slashChatMsg(`➕ 스킬 선택: ${s.id} — ${s.desc||''}`); }
+  try{ localStorage.setItem('demos_selSkills', JSON.stringify(selSkills)); renderSkills(); updateLoaded(); }catch(e){}
+}
+
+function slashSetEnv(rest){
+  const q=(rest||'').trim().toLowerCase();
+  const ids=Object.keys(envs);
+  if(!q){
+    _slashChatMsg('🖥️ 사용 가능한 모델 (현재: '+selEnvs.join(',')+')\n- auto — 자동 선택\n'
+      + ids.map(id=>`- ${id} — ${envs[id].name} (${envs[id].model})`).join('\n')
+      + '\n\n사용법: /모델 <아이디>');
+    return;
+  }
+  if(q==='auto'){ selEnvs=['auto']; renderEnvs(); updateStatus(); _slashChatMsg('🤖 모델: AUTO'); return; }
+  const hits=ids.filter(id=>id.toLowerCase().includes(q)
+      || String(envs[id].name||'').toLowerCase().includes(q)
+      || String(envs[id].model||'').toLowerCase().includes(q));
+  if(!hits.length){ _slashChatMsg(`❌ '${rest}' 와 맞는 모델이 없습니다. /모델 로 목록을 보세요.`); return; }
+  if(hits.length>1 && !ids.includes(q)){
+    _slashChatMsg('🔎 여러 개가 걸립니다:\n'+hits.map(id=>`- ${id} — ${envs[id].name}`).join('\n')); return;
+  }
+  const id=ids.includes(q)?q:hits[0];
+  selEnvs=[id]; renderEnvs(); updateStatus();
+  _slashChatMsg(`🖥️ 모델 전환: ${envs[id].name} (${envs[id].model})`);
+}
+
+let _slashSel = 0;   // 팔레트에서 키보드로 고른 항목
+
+function _slashFiltered(val){
+  const head=(val.split(/\s/)[0]||'').toLowerCase();
+  return SLASH_CMDS.filter(c=>c.cmd.toLowerCase().startsWith(head)
+      || (c.alias||[]).some(a=>a.toLowerCase().startsWith(head)));
+}
+
+function slashOnInput(ta){
+  const menu=document.getElementById('slashMenu');
+  if(!menu) return;
+  const v=ta.value;
+  if(!v.startsWith('/') || v.startsWith('//')){ menu.style.display='none'; return; }
+  const list=_slashFiltered(v);
+  if(!list.length){ menu.style.display='none'; return; }
+  if(_slashSel>=list.length) _slashSel=0;
+  menu.innerHTML=list.map((c,i)=>
+    `<div data-i="${i}" onmousedown="event.preventDefault();slashPick(${i})" style="display:flex;gap:10px;align-items:baseline;padding:8px 12px;cursor:pointer;${i===_slashSel?'background:#eef2ff;':''}border-bottom:1px solid #f1f5f9;">
+       <b style="font-size:13px;color:#4338ca;white-space:nowrap;">${c.cmd}</b>
+       <span style="font-size:11.5px;color:#94a3b8;white-space:nowrap;">${c.args||''}</span>
+       <span style="font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.desc}</span>
+     </div>`).join('');
+  menu.style.display='block';
+}
+
+function slashPick(i){
+  const ta=document.getElementById('input');
+  const list=_slashFiltered(ta.value);
+  const c=list[i]; if(!c) return;
+  const parts=ta.value.split(/\s+/);
+  if(c.args && parts.length<2){          // 인자가 필요한 명령 → 명령어만 채우고 계속 입력
+    ta.value=c.cmd+' ';
+    _slashSel=0; slashOnInput(ta); ta.focus();
+  } else {
+    slashExec(c, parts.slice(1).join(' '));
+  }
+}
+
+function slashExec(c, rest){
+  const ta=document.getElementById('input');
+  ta.value=''; ta.style.height='auto';
+  document.getElementById('slashMenu').style.display='none';
+  _slashSel=0;
+  try{ c.run(rest||''); }catch(e){ _slashChatMsg('❌ 명령 실행 오류: '+e.message); }
+}
+
+function slashKeydown(ev){
+  const ta=ev.target, menu=document.getElementById('slashMenu');
+  const open = menu && menu.style.display!=='none' && ta.value.startsWith('/');
+  if(!open){
+    // 팔레트가 닫혀 있어도 '/명령 …' 상태에서 Enter 면 명령으로 실행
+    if(ev.key==='Enter' && !ev.shiftKey && ta.value.startsWith('/') && !ta.value.startsWith('//')){
+      const parts=ta.value.trim().split(/\s+/);
+      const c=SLASH_CMDS.find(x=>x.cmd===parts[0]||(x.alias||[]).includes(parts[0]));
+      if(c){ ev.preventDefault(); slashExec(c, parts.slice(1).join(' ')); return true; }
+    }
+    return false;
+  }
+  const list=_slashFiltered(ta.value);
+  if(ev.key==='ArrowDown'){ ev.preventDefault(); _slashSel=(_slashSel+1)%list.length; slashOnInput(ta); return true; }
+  if(ev.key==='ArrowUp'){ ev.preventDefault(); _slashSel=(_slashSel-1+list.length)%list.length; slashOnInput(ta); return true; }
+  if(ev.key==='Escape'){ menu.style.display='none'; return true; }
+  if(ev.key==='Tab'){ ev.preventDefault(); slashPick(_slashSel); return true; }
+  if(ev.key==='Enter' && !ev.shiftKey){
+    ev.preventDefault();
+    const parts=ta.value.trim().split(/\s+/);
+    const exact=SLASH_CMDS.find(x=>x.cmd===parts[0]||(x.alias||[]).includes(parts[0]));
+    if(exact){ slashExec(exact, parts.slice(1).join(' ')); }
+    else slashPick(_slashSel);
+    return true;
+  }
+  return false;
+}
+/* ══════════ /슬래시 커맨드 ══════════ */
+
+/* ══════════ ⏰ 예약 작업 (스케줄러 UI) ══════════ */
+let _schCurJob = null;
+
+function openSchedulePopup(){
+  if(!currentUser || !currentUser.id){ alert('로그인이 필요합니다'); return; }
+  document.getElementById('schedPopup').style.display='flex';
+  resetSchedForm();
+  loadSchedules();
+}
+function closeSchedulePopup(){ document.getElementById('schedPopup').style.display='none'; }
+function schModeChange(){
+  const m=document.getElementById('schMode').value;
+  document.getElementById('schTime').style.display = m==='daily' ? '' : 'none';
+  document.getElementById('schEveryWrap').style.display = m==='interval' ? 'inline-flex' : 'none';
+}
+function resetSchedForm(){
+  ['schId','schName','schPrompt','schSkills'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('schMode').value='daily';
+  document.getElementById('schTime').value='07:00';
+  document.getElementById('schEvery').value='60';
+  document.getElementById('schMsg').textContent='';
+  schModeChange();
+}
+
+async function loadSchedules(){
+  const box=document.getElementById('schedJobs');
+  try{
+    const d=await (await fetch('/api/schedules?user_id='+encodeURIComponent(currentUser.id))).json();
+    // env 셀렉트 채우기
+    const sel=document.getElementById('schEnv');
+    if(sel && !sel.options.length){
+      (d.envs||[]).forEach(e=>{
+        const o=document.createElement('option'); o.value=e.id; o.textContent='🖥️ '+(e.name||e.id);
+        sel.appendChild(o);
+      });
+    }
+    const jobs=d.jobs||[];
+    if(!jobs.length){ box.innerHTML='<span style="color:#94a3b8;">등록된 작업이 없습니다 — 아래에서 만들어 보세요.</span>'; return; }
+    box.innerHTML = jobs.map(j=>{
+      const when = j.mode==='interval' ? `${j.every_min}분마다` : `매일 ${j.time}`;
+      const st = j.last_status ? (j.last_status==='ok'?'✅':'❌') : '·';
+      const lr = j.last_run ? j.last_run.replace('T',' ').slice(5,16) : '아직 없음';
+      return `<div style="border:1px solid ${j.enabled?'#e2e8f0':'#fecaca'};border-radius:10px;padding:9px 11px;margin-bottom:8px;${j.enabled?'':'opacity:.6;'}">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <b style="font-size:12.5px;color:#1e293b;">${_sessEsc(j.name)}</b>
+          <span style="font-size:11px;color:#6366f1;background:#eef2ff;border-radius:6px;padding:1px 7px;">${when}</span>
+          <span style="font-size:11px;color:#94a3b8;margin-left:auto;">${st} ${lr}${j.run_count?` · ${j.run_count}회`:''}</span>
+        </div>
+        <div style="font-size:11.5px;color:#64748b;margin:4px 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_sessEsc(j.prompt)}</div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="runScheduleNow('${j.id}')" style="padding:3px 10px;font-size:11px;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;border-radius:6px;cursor:pointer;">지금 실행</button>
+          <button onclick="showSchedResults('${j.id}','${_sessEsc(j.name)}')" style="padding:3px 10px;font-size:11px;border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:6px;cursor:pointer;">결과</button>
+          <button onclick="editSchedule('${j.id}')" style="padding:3px 10px;font-size:11px;border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:6px;cursor:pointer;">수정</button>
+          <button onclick="toggleSchedule('${j.id}')" style="padding:3px 10px;font-size:11px;border:1px solid #e2e8f0;background:#fff;color:${j.enabled?'#b45309':'#15803d'};border-radius:6px;cursor:pointer;">${j.enabled?'끄기':'켜기'}</button>
+          <button onclick="deleteSchedule('${j.id}')" style="padding:3px 10px;font-size:11px;border:1px solid #fecaca;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;">삭제</button>
+        </div>
+      </div>`;
+    }).join('');
+    window._schJobs = jobs;
+  }catch(e){ box.innerHTML='<span style="color:#dc2626;">목록 조회 실패 — 서버 확인</span>'; }
+}
+
+async function saveSchedule(){
+  const job={ id:document.getElementById('schId').value||undefined,
+    name:document.getElementById('schName').value.trim()||'예약 작업',
+    prompt:document.getElementById('schPrompt').value.trim(),
+    env:document.getElementById('schEnv').value,
+    mode:document.getElementById('schMode').value,
+    time:document.getElementById('schTime').value||'07:00',
+    every_min:parseInt(document.getElementById('schEvery').value)||60,
+    skills:document.getElementById('schSkills').value.split(',').map(s=>s.trim()).filter(Boolean) };
+  if(!job.prompt){ document.getElementById('schMsg').textContent='프롬프트를 입력하세요'; return; }
+  const r=await (await fetch('/api/schedules',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({user_id:currentUser.id, job})})).json();
+  document.getElementById('schMsg').textContent = r.error ? ('❌ '+r.error) : '✅ 저장됨';
+  if(!r.error){ resetSchedForm(); loadSchedules(); }
+}
+function editSchedule(id){
+  const j=(window._schJobs||[]).find(x=>x.id===id); if(!j) return;
+  document.getElementById('schId').value=j.id;
+  document.getElementById('schName').value=j.name;
+  document.getElementById('schPrompt').value=j.prompt;
+  document.getElementById('schEnv').value=j.env||'';
+  document.getElementById('schMode').value=j.mode;
+  document.getElementById('schTime').value=j.time||'07:00';
+  document.getElementById('schEvery').value=j.every_min||60;
+  document.getElementById('schSkills').value=(j.skills||[]).join(', ');
+  schModeChange();
+}
+async function toggleSchedule(id){
+  await fetch('/api/schedules/'+id+'/toggle?user_id='+encodeURIComponent(currentUser.id),{method:'POST'});
+  loadSchedules();
+}
+async function deleteSchedule(id){
+  if(!confirm('이 예약 작업을 삭제할까요? (결과 파일은 남습니다)')) return;
+  await fetch('/api/schedules/'+id+'?user_id='+encodeURIComponent(currentUser.id),{method:'DELETE'});
+  loadSchedules();
+}
+async function runScheduleNow(id){
+  const r=await (await fetch('/api/schedules/'+id+'/run?user_id='+encodeURIComponent(currentUser.id),{method:'POST'})).json();
+  document.getElementById('schMsg').textContent = r.error?('❌ '+r.error):(r.already?'이미 실행 중':'▶ 실행 시작 — 잠시 후 결과에서 확인');
+  setTimeout(loadSchedules, 4000);
+  if(_schCurJob===id) setTimeout(()=>showSchedResults(id,''), 5000);
+}
+async function showSchedResults(id, name){
+  _schCurJob=id;
+  document.getElementById('schResTitle').textContent=name?('— '+name):'';
+  const box=document.getElementById('schResults'), body=document.getElementById('schResBody');
+  body.style.display='none';
+  box.textContent='불러오는 중…';
+  const d=await (await fetch('/api/schedules/'+id+'/results?user_id='+encodeURIComponent(currentUser.id))).json();
+  const files=d.files||[];
+  box.innerHTML = (d.running?'<div style="color:#6366f1;margin-bottom:6px;">⏳ 지금 실행 중…</div>':'')
+    + (files.length ? files.map(f=>
+        `<a href="#" onclick="showSchedResult('${id}','${f.name}');return false;" style="display:block;padding:4px 2px;color:#4338ca;text-decoration:none;font-size:12px;">📄 ${f.name.replace('.md','').replace('_',' ')} <span style="color:#94a3b8;">(${(f.size/1024).toFixed(1)}KB)</span></a>`).join('')
+      : '아직 실행 결과가 없습니다.');
+}
+async function showSchedResult(id, fn){
+  const d=await (await fetch('/api/schedules/'+id+'/result?user_id='+encodeURIComponent(currentUser.id)+'&f='+encodeURIComponent(fn))).json();
+  const body=document.getElementById('schResBody');
+  body.textContent=d.content||d.error||'';
+  body.style.display='block';
+}
+/* ══════════ /예약 작업 ══════════ */
 
 function renderSessionList(){
   const el=document.getElementById('sessionList');
@@ -3493,6 +3873,7 @@ function loadSession(id){
   if(s._remote){ hydrateSession(id).then(ok=>{ if(ok){ currentSessionId=null; loadSession(id); } }); return; }
   currentSessionId=id;
   history=s.history||[];
+  if(s.usage) usageBySession[id]=s.usage;   // 📊 토큰 누적 복원
   document.getElementById('msgs').innerHTML=s.msgsHtml||'';
   injectDeleteButtons();
   if(s.writingStyle){ document.getElementById('writingStyle').value=s.writingStyle; syncStyleDropToSidebar(); }
