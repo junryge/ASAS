@@ -664,6 +664,44 @@ def api_analysis_status():
                     "day": ANALYSIS.get("day"), "span": ANALYSIS.get("span")})
 
 
+@app.route("/api/analysis/models")
+def api_analysis_models():
+    """게이트웨이가 이 키에 허용한 모델 목록 (/v1/models).
+
+    모델 이름이 바뀌면 400/403 으로 단계가 통째로 죽는다. 화면에서 바로
+    확인할 수 있어야 config 를 고칠 수 있다.
+    """
+    import urllib.error
+    import urllib.request
+    lc = CFG.get("llm", {}) or {}
+    base = str(lc.get("url", "")).split("/chat/completions")[0]
+    if not base:
+        return jsonify({"error": "llm.url 없음"}), 400
+    headers = {}
+    try:
+        from llm_client import _api_key
+        key = _api_key(CFG)
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(base + "/models", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        return jsonify({"error": f"HTTP {e.code}",
+                        "detail": e.read()[:400].decode("utf-8", "replace")}), 502
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 502
+    ids = [m.get("id") for m in (data.get("data") or []) if m.get("id")]
+    used = {sid: (((lc.get("analysis") or {}).get("roles") or {}).get(sid) or {}).get("model")
+            for sid in ("p1", "p2", "p3", "final")}
+    return jsonify({"models": ids, "gaia": [m for m in ids if str(m).lower().startswith("gaia")],
+                    "used": used,
+                    "missing": [f"{k}={v}" for k, v in used.items() if v and v not in ids]})
+
+
 @app.route("/api/analysis/list")
 def api_analysis_list():
     try:

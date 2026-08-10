@@ -383,6 +383,7 @@
           <input type="time" id="anend" value="10:00">
         </span>
         <button class="act pri" id="btnan" style="flex:0 0 auto">🧪 분석 실행</button>
+        <button class="act" onclick="checkAnModels()" title="게이트웨이가 이 키에 허용한 모델 확인 (/v1/models)">모델 확인</button>
         <span class="note" id="anmsg"></span>
       </div>
       <div id="anroles" style="display:none;grid-template-columns:repeat(4,1fr);gap:14px;margin:10px 0"></div>
@@ -648,11 +649,42 @@ async function loadAnalysis(aid){
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)">
           <div style="font-weight:650;font-size:12.5px;margin-bottom:5px">${o.icon||''} ${esc(o.name||id)}
             <span class="mono note" style="font-size:10px">${esc(o.model||'')} · ${o.took_s??'–'}초</span>
-            ${o.ok&&o.error?`<span class="note" style="color:var(--major)">일부 실패: ${esc(o.error)}</span>`:''}</div>
+            ${o.ok&&o.error?`<span class="note" style="color:var(--major)">일부 실패: ${esc(o.error)}</span>`:''}
+            ${o.note?`<span class="note" style="color:var(--cy)">${esc(o.note)}</span>`:''}</div>
           ${bodyHtml}
         </div>`;
       }).join('')}
     </div>`;
+}
+
+/* 게이트웨이 허용 모델 확인 — 400/403 으로 단계가 죽을 때 원인을 바로 보게 */
+async function checkAnModels(){
+  const out = $('#anout');
+  out.innerHTML = '<div class="note">모델 목록 조회 중…</div>';
+  try{
+    const d = await api('/api/analysis/models');
+    if(d.error){ out.innerHTML = `<div class="warn">모델 조회 실패 — ${esc(d.error)}
+      ${d.detail?`<pre class="snap" style="margin-top:6px">${esc(d.detail)}</pre>`:''}</div>`; return; }
+    const used = d.used||{};
+    out.innerHTML = `
+      <div class="note" style="margin:10px 0 6px">게이트웨이 허용 모델 <b style="color:var(--tx2)">${(d.models||[]).length}종</b>
+        (gaia 계열 ${(d.gaia||[]).length}종)</div>
+      ${(d.missing||[]).length
+        ? `<div class="warn">설정된 모델 중 목록에 없는 것: <b>${d.missing.map(esc).join(', ')}</b>
+             — config.json 의 llm.analysis.roles 를 아래 목록에서 골라 고치세요</div>` : ''}
+      <table class="pol" style="margin-top:8px"><thead><tr><th style="width:120px">단계</th><th>설정된 모델</th><th style="width:70px">사용 가능</th></tr></thead><tbody>
+        ${['p1','p2','p3','final'].map(k=>{
+          const m = used[k]||'(기본값)';
+          const ok = (d.models||[]).includes(m);
+          return `<tr><td>${k}</td><td class="mono" style="font-size:11.5px">${esc(m)}</td>
+            <td>${ok?'<span style="color:var(--ok)">✅</span>':'<span style="color:var(--crit)">❌</span>'}</td></tr>`;
+        }).join('')}
+      </tbody></table>
+      <div class="note" style="margin-top:8px">전체 목록</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+        ${(d.models||[]).map(m=>`<span class="chip ${String(m).toLowerCase().startsWith('gaia')?'lv경계':''}"
+             style="font-size:11px">${esc(m)}</span>`).join('')}</div>`;
+  }catch(e){ out.innerHTML = '<div class="warn">모델 조회 실패 — 서버 확인</div>'; }
 }
 
 async function loadAnalysisList(){

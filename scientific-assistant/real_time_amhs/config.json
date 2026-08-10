@@ -153,12 +153,12 @@
           "_doc": "1차 — 데이터 훑기 (구간 조각 병렬, 사실 관찰만)"
         },
         "p2": {
-          "model": "gaia-GLM-5.1",
+          "model": "gaia-Qwen3.6-35B-A3B",
           "_doc": "2차 — 원인·전파 해석"
         },
         "p3": {
-          "model": "gaia-solution-Qwen3-235B-A22B-Instruct-2507-FP8",
-          "_doc": "3차 — 원자료 대조 검증(확인/의심/반박) + 조치. 자기검증 편향을 피하려 모델을 바꾼다"
+          "model": "gaia-cc-gpt-oss-120b",
+          "_doc": "3차 — 원자료 대조 검증. 1·2차와 다른 계열이라 자기검증 편향이 적다"
         },
         "final": {
           "model": "gaia-Qwen3.5-397B-A17B",
@@ -168,11 +168,21 @@
       "chunk_max": 3,
       "_chunk_doc": "1차 병렬 조각 수 상한 (구간이 짧으면 자동으로 줄어든다)",
       "digest_max_chars": 7000,
-      "p1_max_tokens": 800,
-      "p2_max_tokens": 1000,
-      "p3_max_tokens": 1000,
+      "p1_max_tokens": 1500,
+      "p2_max_tokens": 1400,
+      "p3_max_tokens": 1600,
       "final_max_tokens": 2200,
-      "timeout_s": 150
+      "timeout_s": 150,
+      "_models_doc": "게이트웨이가 이 팀에 허용한 모델만 쓴다. gaia-GLM-5.1 은 400(Invalid model name), gaia-solution-Qwen3-235B 는 403(team not allowed) 이라 제외",
+      "fallback_models": [
+        "gaia-Qwen3.5-397B-A17B",
+        "gaia-GLM-5.2",
+        "gaia-cc-gpt-oss-120b",
+        "gaia-Qwen3.6-35B-A3B",
+        "gaia-lst-gpt-oss-120b",
+        "GaiA-LLM-Latest"
+      ],
+      "_fallback_doc": "지정 모델이 400/403 으로 거부되면 이 순서로 자동 대체한다"
     }
   },
   "grade": {

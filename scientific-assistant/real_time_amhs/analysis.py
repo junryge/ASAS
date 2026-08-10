@@ -1,11 +1,15 @@
 """
 real_time_amhs/analysis.py — 4-LLM 파이프라인 분석 (분석 탭)
 
-구조 (모델 4종 — GAIA 게이트웨이 실측 이름)
-    1차  gaia-GLM-5.2                                  데이터 훑기 (★병렬)
-    2차  gaia-GLM-5.1                                  원인·전파 분석
-    3차  gaia-solution-Qwen3-235B-A22B-Instruct-2507-FP8  교차 검증 + 조치
-    최종 gaia-Qwen3.5-397B-A17B                        통합 판정 리포트
+구조 (모델 4종 — 게이트웨이가 이 팀에 허용한 이름만 쓴다)
+    1차  gaia-GLM-5.2            데이터 훑기 (★병렬)
+    2차  gaia-Qwen3.6-35B-A3B    원인·전파 분석
+    3차  gaia-cc-gpt-oss-120b    교차 검증 + 조치 (1·2차와 다른 계열)
+    최종 gaia-Qwen3.5-397B-A17B  통합 판정 리포트
+
+    ※ gaia-GLM-5.1 은 목록에 있으나 호출 시 400 Invalid model name 이 났고,
+      gaia-solution-Qwen3-235B… 는 403 team not allowed 였다. 그래서 뺐다.
+      모델이 거부되면 _fallbacks() 가 자동으로 다른 모델로 갈아탄다.
 
 왜 이 구조인가
     - **1차가 병렬이다.** 분석 구간을 시간 조각으로 쪼개 GLM-5.2 를 조각마다
@@ -45,10 +49,9 @@ STAGES = {
     "p1": {"name": "1차 — 데이터 훑기", "icon": "🔍",
            "model": "gaia-GLM-5.2", "parallel": True},
     "p2": {"name": "2차 — 원인·전파 분석", "icon": "🧩",
-           "model": "gaia-GLM-5.1", "parallel": False},
+           "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
     "p3": {"name": "3차 — 교차 검증·조치", "icon": "⚖️",
-           "model": "gaia-solution-Qwen3-235B-A22B-Instruct-2507-FP8",
-           "parallel": False},
+           "model": "gaia-cc-gpt-oss-120b", "parallel": False},
     "final": {"name": "최종 — 통합 판정", "icon": "📋",
               "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
 }
@@ -56,9 +59,9 @@ STAGES = {
 DEFAULTS = {
     "digest_max_chars": 7000,
     "chunk_max": 3,              # 1차 병렬 조각 수 상한
-    "p1_max_tokens": 800,
-    "p2_max_tokens": 1000,
-    "p3_max_tokens": 1000,
+    "p1_max_tokens": 1500,
+    "p2_max_tokens": 1400,
+    "p3_max_tokens": 1600,
     "final_max_tokens": 2200,
     "timeout_s": 150,
 }
@@ -226,37 +229,137 @@ def _chunks(seq, cfg: dict) -> list[dict]:
 
 
 # ────────────────────────── LLM 호출 공통 ──────────────────────────
-def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
-              cfg: dict) -> tuple[dict | None, str, float]:
-    """단계 1회 호출 → (JSON, 오류, 소요초)."""
-    from llm_client import _json_candidates, build_system_prompt, chat, scrub
-    t0 = time.time()
+def _repair_json(t: str) -> dict | None:
+    """잘린 JSON 살리기 — 열린 괄호를 닫고 다시 파싱한다.
+
+    max_tokens 에 걸려 배열 중간에서 끊기면 균형 잡힌 {…} 가 없어 통째로
+    버려진다. 문자열을 닫고 열린 [ { 를 역순으로 닫아 주면 대부분 살아난다.
+    """
+    s = str(t or "").strip()
+    i = s.find("{")
+    if i < 0:
+        return None
+    s = s[i:]
+    depth, instr, esc = [], False, False
+    for ch in s:
+        if instr:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                instr = False
+            continue
+        if ch == '"':
+            instr = True
+        elif ch in "[{":
+            depth.append(ch)
+        elif ch in "]}":
+            if depth:
+                depth.pop()
+    fixed = s.rstrip().rstrip(",")
+    if instr:
+        fixed += '"'
+    for ch in reversed(depth):
+        fixed += "}" if ch == "{" else "]"
     try:
-        txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
-                         {"role": "user", "content": user}],
-                        _stage_cfg(cfg, sid), max_tokens=max_tokens, prefill=prefill)
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}", round(time.time() - t0, 1)
-    took = round(time.time() - t0, 1)
-    if err:
-        return None, err, took
-    for cand in reversed(_json_candidates(scrub(txt or ""))):
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        return None
+
+
+def _parse_or_none(txt: str) -> dict | None:
+    from llm_client import _json_candidates, scrub
+    t = scrub(txt or "")
+    for cand in reversed(_json_candidates(t)):
         try:
-            return json.loads(cand), "", took
+            v = json.loads(cand)
+            if isinstance(v, dict):
+                return v
         except json.JSONDecodeError:
             continue
-    return None, "JSON 파싱 실패", took
+    v = _repair_json(t)                    # 잘린 응답 구제
+    return v if isinstance(v, dict) else None
+
+
+def _fallbacks(cfg: dict, sid: str) -> list[str]:
+    """이 단계에서 쓸 수 있는 대체 모델 — 지정 모델이 400/403 이면 갈아탄다."""
+    a = (cfg.get("llm", {}) or {}).get("analysis") or {}
+    fb = a.get("fallback_models")
+    if isinstance(fb, list) and fb:
+        return [m for m in fb if m and m != _stage_model(cfg, sid)]
+    return [m for m in ("gaia-Qwen3.5-397B-A17B", "gaia-GLM-5.2",
+                        "gaia-cc-gpt-oss-120b", "gaia-Qwen3.6-35B-A3B")
+            if m != _stage_model(cfg, sid)]
+
+
+_MODEL_ERR = ("Invalid model name", "team not allowed", "HTTP 400", "HTTP 403", "HTTP 404")
+
+
+def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
+              cfg: dict) -> tuple[dict | None, str, float, str]:
+    """단계 1회 호출 → (JSON, 오류, 소요초, 실제로 쓴 모델).
+
+    두 가지를 자동으로 넘어간다 — 둘 다 실제 게이트웨이에서 겪은 실패다.
+      · 모델 거부(400 Invalid model / 403 not allowed) → 대체 모델로 재시도
+      · JSON 이 아니거나 잘림 → 괄호 복구 → 그래도 안 되면 1회 재요청(짧게)
+    """
+    from llm_client import build_system_prompt, chat
+    t0 = time.time()
+    sys_msg = {"role": "system", "content": build_system_prompt(cfg)}
+
+    def call(model: str, u: str, mt: int):
+        c = dict(cfg)
+        lc = dict(cfg.get("llm", {}))
+        lc["model"] = model
+        c["llm"] = lc
+        try:
+            return chat([sys_msg, {"role": "user", "content": u}], c,
+                        max_tokens=mt, prefill=prefill)
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
+
+    tried: list[str] = []
+    model = _stage_model(cfg, sid)
+    last_err = ""
+    for cand_model in [model] + _fallbacks(cfg, sid):
+        tried.append(cand_model)
+        txt, err = call(cand_model, user, max_tokens)
+        if err and any(k in str(err) for k in _MODEL_ERR):
+            last_err = err
+            continue                       # 모델 문제 → 다음 후보로
+        if err:
+            return None, err, round(time.time() - t0, 1), cand_model
+        res = _parse_or_none(txt)
+        if res is not None:
+            note = "" if cand_model == model else f"(대체 모델 사용: {cand_model})"
+            return res, note, round(time.time() - t0, 1), cand_model
+        # JSON 이 아니거나 복구 실패 → 한 번만 더, 더 짧게 쓰라고
+        txt2, err2 = call(cand_model,
+                          user + "\n\n★앞서 JSON 형식이 아니었다. 설명·서론 없이 "
+                                 "**JSON 하나만** 출력하라. 배열 항목은 2개 이내로 짧게.",
+                          max_tokens)
+        if not err2:
+            res = _parse_or_none(txt2)
+            if res is not None:
+                return res, "(재시도 성공)", round(time.time() - t0, 1), cand_model
+        last_err = err2 or "JSON 파싱 실패 (재시도 후에도)"
+        return None, last_err, round(time.time() - t0, 1), cand_model
+
+    return None, f"쓸 수 있는 모델 없음 — 시도: {', '.join(tried)} / {last_err}", \
+        round(time.time() - t0, 1), model
 
 
 _KOREAN_RULE = "★한국어로만. 추론 과정 금지. 데이터에 없는 것을 지어내지 마라.\n"
 
 
 # ────────────────────────── 단계별 실행 ──────────────────────────
-def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list[str]]:
+def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list[str], list[str]]:
     """1차 (병렬) — 조각마다 GLM-5.2 가 '사실 관찰'만 뽑는다."""
     a = _acfg(cfg)
     results: list = [None] * len(chunks)
     errors: list[str] = []
+    models_used: set = set()
 
     def work(i: int, ch: dict):
         user = (f"[역할] 너는 반송 데이터 1차 분석가다. 아래 {ch['span']} 구간 "
@@ -268,8 +371,11 @@ def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list
                 '"이상구역": ["구역명"], '
                 '"관찰": ["사실 관찰 2~4개 — 수치 포함"], '
                 '"특이지표": ["눈에 띄게 변한 지표와 수치"]}' % ch["span"])
-        res, err, took = _ask_json("p1", user, '{"구간": "', int(a["p1_max_tokens"]), cfg)
+        res, err, took, used = _ask_json("p1", user, '{"구간": "',
+                                         int(a["p1_max_tokens"]), cfg)
         results[i] = res
+        if used:
+            models_used.add(used)
         if err:
             errors.append(f"조각{i+1}({ch['span']}): {err}")
         done = sum(1 for r in results if r is not None) + len(errors)
@@ -283,11 +389,11 @@ def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list
     for t in threads:
         t.join(max(1.0, deadline - time.time()))
     obs = [r for r in results if r]
-    return obs, errors
+    return obs, errors, sorted(models_used)
 
 
-def _stage2(overview: str, obs: list[dict], cfg: dict) -> tuple[dict | None, str, float]:
-    """2차 — GLM-5.1 이 1차 관찰을 취합해 원인·전파를 해석한다."""
+def _stage2(overview: str, obs: list[dict], cfg: dict) -> tuple[dict | None, str, float, str]:
+    """2차 — 1차 관찰을 취합해 원인·전파를 해석한다."""
     a = _acfg(cfg)
     user = (f"[역할] 너는 반송 데이터 2차 분석가다. 전체 통계와 1차 분석가들의 "
             f"구간별 관찰을 받아 **원인과 전파 순서**를 해석하라.\n\n"
@@ -304,7 +410,7 @@ def _stage2(overview: str, obs: list[dict], cfg: dict) -> tuple[dict | None, str
 
 
 def _stage3(overview: str, obs: list[dict], p2: dict | None, chunks: list[dict],
-            cfg: dict) -> tuple[dict | None, str, float]:
+            cfg: dict) -> tuple[dict | None, str, float, str]:
     """3차 — 다른 모델이 1·2차 주장을 **원자료와 직접 대조**해 검증한다.
 
     검증가에게 1·2차의 '말'만 주면 그럴듯함만 보고 통과시킨다. 그래서 분단위
@@ -427,10 +533,11 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     # ── 1차 (병렬) ──
     prog["roles"]["p1"]["status"] = f"분석중 0/{len(chunks)}"
     t1 = time.time()
-    obs, errs1 = _stage1(chunks, cfg, prog)
+    obs, errs1, m1 = _stage1(chunks, cfg, prog)
     stages_out["p1"] = {
         "ok": bool(obs), "name": STAGES["p1"]["name"], "icon": STAGES["p1"]["icon"],
-        "model": _stage_model(cfg, "p1"), "took_s": round(time.time() - t1, 1),
+        "model": ", ".join(m1) or _stage_model(cfg, "p1"),
+        "took_s": round(time.time() - t1, 1),
         "result": {"조각수": len(chunks), "성공": len(obs), "관찰": obs},
         "error": "; ".join(errs1) if errs1 and not obs else
                  ("; ".join(errs1) if errs1 else None),
@@ -441,19 +548,25 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
 
     # ── 2차 ──
     prog["roles"]["p2"]["status"] = "분석중"
-    p2, e2, tk2 = _stage2(overview, obs, cfg)
+    p2, e2, tk2, m2 = _stage2(overview, obs, cfg)
     stages_out["p2"] = {"ok": p2 is not None, "name": STAGES["p2"]["name"],
-                        "icon": STAGES["p2"]["icon"], "model": _stage_model(cfg, "p2"),
-                        "took_s": tk2, "result": p2, "error": e2 or None}
-    prog["roles"]["p2"].update(status="완료" if p2 else "실패", took_s=tk2, error=e2 or None)
+                        "icon": STAGES["p2"]["icon"], "model": m2 or _stage_model(cfg, "p2"),
+                        "took_s": tk2, "result": p2,
+                        "error": None if p2 else (e2 or None),
+                        "note": e2 if (p2 and e2) else None}
+    prog["roles"]["p2"].update(status="완료" if p2 else "실패", took_s=tk2,
+                               error=None if p2 else (e2 or None))
 
     # ── 3차 ──
     prog["roles"]["p3"]["status"] = "분석중"
-    p3, e3, tk3 = _stage3(overview, obs, p2, chunks, cfg)
+    p3, e3, tk3, m3 = _stage3(overview, obs, p2, chunks, cfg)
     stages_out["p3"] = {"ok": p3 is not None, "name": STAGES["p3"]["name"],
-                        "icon": STAGES["p3"]["icon"], "model": _stage_model(cfg, "p3"),
-                        "took_s": tk3, "result": p3, "error": e3 or None}
-    prog["roles"]["p3"].update(status="완료" if p3 else "실패", took_s=tk3, error=e3 or None)
+                        "icon": STAGES["p3"]["icon"], "model": m3 or _stage_model(cfg, "p3"),
+                        "took_s": tk3, "result": p3,
+                        "error": None if p3 else (e3 or None),
+                        "note": e3 if (p3 and e3) else None}
+    prog["roles"]["p3"].update(status="완료" if p3 else "실패", took_s=tk3,
+                               error=None if p3 else (e3 or None))
 
     # ── 최종 ──
     prog["roles"]["final"]["status"] = "작성중"
