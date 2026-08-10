@@ -41,6 +41,15 @@ def create_app():
     except Exception as _le:
         print(f"  ⚠️  루프엔진 라우트 스킵: {_le}")
 
+    # 세션 서버 저장 + 전문검색 — 실패해도 본체는 정상 동작(localStorage 유지)
+    try:
+        from demos_v1.routes_sessions import register_session_routes
+        _fts = register_session_routes(app)
+        print(f"  🗂  세션 저장·검색 라우트 등록 완료 (/api/sessions/*, "
+              f"검색엔진 {'FTS5' if _fts else 'LIKE 폴백'})")
+    except Exception as _se:
+        print(f"  ⚠️  세션 저장·검색 라우트 등록 실패(무시): {_se}")
+
     # 헤르메스(재해석) 엔진 라우트 — 실패해도 데모스 본체는 정상 동작
     try:
         from demos_v1.hermes.routes import register_hermes_routes

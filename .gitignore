@@ -6,3 +6,8 @@ OHS/XSOHS_extracted/
 2차데이터/
 OHT_관련2_combined.zip
 spark_api.txt
+
+# 데모스 세션 저장소 (사용자 대화 사본 — 커밋 금지)
+scientific-assistant/demos_data/sessions.db
+scientific-assistant/demos_data/sessions.db-*
+scientific-assistant/demos_data/agents/
