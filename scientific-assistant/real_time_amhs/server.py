@@ -388,7 +388,9 @@ def api_feed():
             "datetime": (r.get("datetime") or dt.strftime("%Y-%m-%d %H:%M")).strip(),
             "time": dt.strftime("%H:%M"), "area": area,
             "score": sc, "level": g["level"], "emoji": g["emoji"], "severity": g["severity"],
-            "reason": summarize_reason(raw_reason, area) or raw_reason,
+            # 원문 fallback 금지 — 요약이 비면 룰 코드·금지어가 그대로 새어
+            # 나갔다. summarize_reason 이 항상 한글 한 줄을 돌려준다.
+            "reason": summarize_reason(raw_reason, area),
             "reason_raw": raw_reason,
             "zones": hid_zones(bott), "items": items,
             # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)

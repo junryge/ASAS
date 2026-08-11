@@ -14,7 +14,7 @@ import threading
 from datetime import datetime
 
 from lp_client import load_config
-from sentinel import CaseStore, _row_dt, _score, alarm_floor, grade
+from sentinel import CaseStore, _row_dt, _score, alarm_floor, grade, summarize_reason
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -209,7 +209,12 @@ def build_day_report(day: str, cfg: dict | None = None, use_llm: bool = True) ->
     incidents = [{
         "no": r["번호"], "time": r["시각"], "span": r["구간"], "dur": r["지속분"],
         "area": r["시작영역"], "score": r["최고점수"], "level": r["최고등급"],
+        # reason 은 **원문 그대로** 둔다 — report_graphs.parse_reason_metrics 가
+        # 이걸 파싱해 어떤 지표가 실제로 발동했는지 고른다.
+        # 사람에게 보여줄 때는 reason_kr(한글 요약)만 쓴다. 원문을 그대로 찍으면
+        # 룰 코드와 금지어('역증가')가 화면에 노출된다.
         "reason": r.get("발동사유", ""),
+        "reason_kr": summarize_reason(r.get("발동사유", ""), r.get("시작영역", "")),
     } for r in mat["incidents"]]
 
     body, llm_err = "", None
@@ -475,7 +480,7 @@ def _fallback_body(incidents: list[dict], summary: dict) -> str:
     lines = ["## 주요 발견"]
     for i in incidents:
         lines.append(f"- {i['time']} {i['area']} {i['emoji']} {i['level']} {i['score']:.0f}점"
-                     + (f" — {i['reason']}" if i["reason"] else "")
+                     + (f" — {i['reason_kr']}" if i.get("reason_kr") else "")
                      + (f" (구간 {', '.join(i['zones'][:4])})" if i["zones"] else ""))
     lines += ["", "## 다음 구간 예측 · 선제 조치 제안",
               f"- 이 구간 최고 {summary['top_emoji']} {summary['top_level']} "

@@ -345,7 +345,7 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 - 점수: {score:.0f}점 ({grade.get('emoji','')} {grade.get('level','')}) / 최고 구역: {area}
 - AMOS HID 구역: {', '.join(zones) or '없음'}
 - AMOS QUEUE 지표: {' / '.join(items) or '없음'}
-- 발동 사유: {summarize_reason(reason, area) or reason or '없음'}"""
+- 발동 사유: {summarize_reason(reason, area) or '없음'}"""
 
     if light:
         user = head + "\n\n" + rule + """

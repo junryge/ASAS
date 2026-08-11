@@ -103,36 +103,64 @@ _RULE_KR = [
 ]
 
 
-def summarize_reason(reason: str, area: str = "") -> str:
-    """reason 원문에서 발동 룰을 뽑아 한글 한 줄로. 룰 코드는 노출하지 않는다.
+def _reason_blocks(txt: str) -> list[tuple[str, str]]:
+    """'발동:' 뒤의 `영역[룰,룰,…]` 을 (영역, 블록) 목록으로 뽑는다.
 
-    예) 'hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,R-D(STB=100.0%)]; M14[R-A_sus]'
-        → 'M16HUB 반송지연 지속 · 리프터막힘 · Storage FULL'
+    ★닫는 ']' 가 없어도 끝까지 읽는다. reason 은 길어지면 잘려서 들어오는
+      경우가 있는데(룰마다 괄호 안에 수치가 붙어 금방 길어진다), 예전에는
+      '[…]' 를 못 찾아 요약이 빈 문자열이 되고 → 호출부가 **원문을 그대로**
+      화면에 뿌렸다. 그래서 화면에 이런 게 튀어나왔다:
+        hot_area=M16HUB; S3확정; 발동: M16HUB[R-A'(AVGTOTALTIME1MIN=6.30분…
+      룰 코드도 금지어('역증가')도 그대로 노출됐다.
     """
     import re
-    txt = reason or ""
-    if not txt:
-        return ""
-
-    # '발동:' 뒤에서 hot_area 의 대괄호 블록을 우선 사용, 없으면 첫 블록
     seg = txt.split("발동:", 1)[1] if "발동:" in txt else txt
-    block = ""
-    if area:
-        m = re.search(re.escape(area) + r"\[([^\]]*)\]", seg)
-        if m:
-            block = m.group(1)
-    if not block:
-        m = re.search(r"\[([^\]]*)\]", seg)
-        block = m.group(1) if m else ""
+    return [(m.group(1), m.group(2))
+            for m in re.finditer(r"([A-Za-z0-9_]+)\s*\[([^\]]*)(?:\]|$)", seg)]
 
+
+def _rule_names(block: str) -> list[str]:
+    """룰 코드 블록 → 한글 이름 목록. R-A' 처럼 프라임이 붙어도 잡는다."""
+    import re
     names, seen = [], set()
     for code, kr in _RULE_KR:                      # 긴 코드부터 매칭
         if re.search(r"R?-?" + code + r"\b", block) and kr not in seen:
             seen.add(kr)
             names.append(kr)
-    if not names:
+    return names
+
+
+def summarize_reason(reason: str, area: str = "") -> str:
+    """reason 원문에서 발동 룰을 뽑아 한글 한 줄로. 룰 코드는 노출하지 않는다.
+
+    예) 'hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,R-D(STB=100.0%)]; M14[R-A_sus]'
+        → 'M16HUB 반송지연 지속 · 리프터막힘 · Storage FULL'
+
+    ★어떤 경우에도 원문(룰 코드·영문 컬럼명·'역증가' 같은 금지어)을 돌려주지
+      않는다. 못 알아본 룰이 있어도 한글로 '이상 감지' 라고만 말한다.
+      원문이 필요하면 호출부가 따로 갖고 있는 reason_raw 를 쓴다(툴팁).
+    """
+    txt = reason or ""
+    if not txt:
         return ""
-    return f"{area} " .lstrip() + " · ".join(names) if area else " · ".join(names)
+
+    blocks = _reason_blocks(txt)
+    block = ""
+    if area:
+        block = next((b for a, b in blocks if a.upper() == area.upper()), "")
+    if not block and blocks:
+        block = blocks[0][1]
+    if not block:
+        # 대괄호 형식이 아예 아니다 — 문장 전체에서 룰 코드를 찾아본다
+        block = txt.split("발동:", 1)[-1]
+
+    names = _rule_names(block)
+    head = f"{area} " if area else ""
+    if not names:
+        # 룰 코드를 하나도 못 알아봤다(새 룰이거나 형식이 바뀜).
+        # 원문을 뱉지 말고 한글로만 알린다.
+        return (head + "이상 감지").strip()
+    return head + " · ".join(names)
 
 
 def hid_zones(tokens: str) -> list[str]:
@@ -275,7 +303,7 @@ class CaseStore:
         return {
             "zones": hid_zones(bott),
             "items": queue,
-            "reason": summarize_reason(raw_reason, area) or raw_reason[:80],
+            "reason": summarize_reason(raw_reason, area),   # 원문 fallback 금지
             "reason_raw": raw_reason,
             "chain": (row.get("propagation_chain") or "").strip(),
             "flow": (row.get("flow_signals") or "").strip(),
