@@ -60,13 +60,19 @@ STAGES = {
 DEFAULTS = {
     "digest_max_chars": 7000,
     "chunk_max": 3,              # 1차 병렬 조각 수 상한
+    # 2·3차는 추론이 새어 나와도 그 뒤 JSON 이 들어갈 만큼 여유를 준다.
+    # (1400/1600 이던 시절, 모델이 추론문을 쓰다 토큰이 끝나 JSON 을 시작도
+    #  못 하고 매번 실패했다.)
     "p1_max_tokens": 1500,
-    "p2_max_tokens": 1400,
-    "p3_max_tokens": 1600,
+    "p2_max_tokens": 2400,
+    "p3_max_tokens": 2800,
     "final_max_tokens": 2200,
+    "max_tokens_cap": 4096,  # 실패 후 토큰을 올려 재시도할 때의 상한
     "timeout_s": 150,
     "retries": 1,            # '느린 실패'(타임아웃·형식오류) 재시도 횟수. 속도 우선
     "retry_backoff_s": 1,    # 재시도 전 대기(초)
+    "json_mode": True,       # response_format={"type":"json_object"} 로 JSON 강제
+    "disable_thinking": True,  # chat_template_kwargs 로 사고 템플릿 차단
 }
 
 
@@ -357,6 +363,72 @@ def _fallbacks(cfg: dict, sid: str) -> list[str]:
 
 _MODEL_ERR = ("Invalid model name", "team not allowed", "HTTP 400", "HTTP 403", "HTTP 404")
 
+# ── 사고(추론) 유출 차단 — 프롬프트가 아니라 게이트웨이 기능으로 막는다 ──
+# 2·3차가 계속 실패한 진짜 이유: 모델이 '/no_think' 를 무시하고 본문에 추론을
+# 길게 쓰다가 max_tokens 에 걸려 JSON 을 시작도 못 했다.
+#   2차 Qwen3.6  「사용자의 요청은 … 페르소나 및 규칙 확인: …」  (한국어 추론)
+#   3차 gpt-oss  「We need to produce JSON with fields …」        (영어 추론)
+# 부탁(프롬프트)으로는 안 막힌다. response_format 으로 JSON 이외 출력을
+# 서버가 거부하게 만들고, chat_template_kwargs 로 사고 템플릿을 끈다.
+#
+# 게이트웨이가 이 키를 모르면 400 이 온다. 400 은 **즉답**이라 공짜이므로
+# 옵션을 한 단계씩 빼면서 다시 부른다 (full → response_format 만 → 없음).
+# 어느 단계가 통했는지는 모델별로 기억해 다음 호출부터 바로 쓴다.
+_OPT_TIER: dict = {}
+
+
+def _opt_tiers(a: dict, model: str, want_json: bool) -> list:
+    if not want_json:
+        return [None]
+    full: dict = {}
+    if a.get("json_mode", True):
+        full["response_format"] = {"type": "json_object"}
+    if a.get("disable_thinking", True):
+        full["chat_template_kwargs"] = {"enable_thinking": False}
+        if "gpt-oss" in str(model).lower():
+            full["reasoning_effort"] = "low"
+    tiers: list = []
+    if full:
+        tiers.append(full)
+        if "response_format" in full and len(full) > 1:
+            tiers.append({"response_format": full["response_format"]})
+    tiers.append(None)
+    return tiers
+
+
+# 모델이 JSON 대신 '생각' 을 쓴 흔적. 실패 사유를 화면에 정확히 적고,
+# 이 경우엔 토큰을 늘려 다시 부르기 위해 구분한다.
+_LEAK_HINTS = (
+    "we need to", "we should", "let me", "let's", "first,", "the user",
+    "사용자의 요청", "사용자가", "먼저,", "먼저 ", "해야 한다", "확인:", "정리하면",
+    "역할 확인", "규칙 확인", "페르소나", "분석해 보면", "생각해",
+)
+
+
+def _looks_like_reasoning(txt) -> bool:
+    t = " ".join(str(txt or "").split())
+    if not t or t.lstrip().startswith("{"):
+        return False
+    head = t[:400].lower()
+    return any(h in head for h in _LEAK_HINTS) or "{" not in t
+
+
+def _opt_name(extra) -> str:
+    return ", ".join(extra) if isinstance(extra, dict) and extra else "옵션 없음"
+
+
+# 400 이지만 옵션이 아니라 **모델** 문제인 경우 — 옵션을 빼봐야 소용없다
+_MODEL_HARD = ("invalid model", "model not found", "does not exist",
+               "team not allowed", "no such model", "unknown model")
+
+
+def _opt_rejected(err: str) -> bool:
+    """옵션 때문에 거부된 것으로 볼 응답인가 (400/422 계열)."""
+    e = str(err or "")
+    if not ("HTTP 400" in e or "HTTP 422" in e):
+        return False
+    return not any(k in e.lower() for k in _MODEL_HARD)
+
 
 def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
                 want_json: bool = True, required: tuple = (),
@@ -395,16 +467,35 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
     use_pre = bool(a.get("use_prefill", False))
     pre = prefill if (use_pre and want_json) else (prefill if not want_json else None)
 
-    def call(model: str, u: str):
+    def call(model: str, u: str, mt: int, extra: dict | None = None):
         c = dict(cfg)
         lc = dict(cfg.get("llm", {}))
         lc["model"] = model
         c["llm"] = lc
         try:
             return chat([sys_msg, {"role": "user", "content": u}], c,
-                        max_tokens=max_tokens, prefill=pre)
+                        max_tokens=mt, prefill=pre, extra=extra)
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
+
+    def call_opt(model: str, u: str, mt: int):
+        """게이트웨이 옵션을 붙여 부르되, 400 이면 옵션을 빼면서 다시 부른다.
+
+        이 재시도는 '느린 실패' 예산(retries)을 쓰지 않는다 — 400 은 생성 없이
+        즉시 돌아오므로 시간이 거의 안 든다.
+        """
+        tiers = _opt_tiers(a, model, want_json)
+        ti = min(int(_OPT_TIER.get(model, 0)), len(tiers) - 1)
+        txt, err = call(model, u, mt, tiers[ti])
+        while err and tiers[ti] is not None and _opt_rejected(err) and ti < len(tiers) - 1:
+            ti += 1
+            log.append(f"{model}: 옵션 거부 → 축소 재시도({_opt_name(tiers[ti])})")
+            txt, err = call(model, u, mt, tiers[ti])
+        # 모델 자체가 400 인 경우(Invalid model name)까지 '옵션 탓' 으로
+        # 기억하면 안 된다. 400 이 아닌 결과로 끝났을 때만 학습한다.
+        if not err or not _opt_rejected(err):
+            _OPT_TIER[model] = ti
+        return txt, err
 
     def done(res, model, slow_n):
         note = "" if model == primary else f"(대체 모델: {model})"
@@ -416,12 +507,27 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
         return bool(cancel is not None and cancel.is_set())
 
     mi, slow, hint, last_err = 0, 0, "", ""
+    mt = int(max_tokens)
+    mt_cap = int(a.get("max_tokens_cap", 4096))
+    # '추론문 쓰다 토큰 소진' 은 토큰만 늘리면 대부분 살아난다. 이 경우에 한해
+    # 재시도 예산을 1회 돌려준다 (retries 를 통째로 올리면 모든 실패가 느려진다).
+    leaks, leak_budget = 0, int(a.get("leak_retries", 1))
+
+    def escalate() -> bool:
+        nonlocal mt, leaks, slow
+        if mt >= mt_cap or leaks >= leak_budget:
+            return False
+        leaks += 1
+        slow -= 1                       # 이 시도는 '추론 유출' 로 보고 예산 환급
+        mt = min(mt_cap, int(mt * 1.8))
+        log.append(f"→ 추론이 새어 토큰이 끝났다. max_tokens {mt} 로 올려 재시도")
+        return True
     while mi < len(models) and slow < tries:
         if stopped():
             log.append("중지 요청 — 호출 생략")
             return None, "중지됨", round(time.time() - t0, 1), models[mi], log
         model = models[mi]
-        txt, err = call(model, user + hint)
+        txt, err = call_opt(model, user + hint, mt)
 
         # 모델 거부 — 즉답이라 비용이 거의 없다. 재시도 예산을 쓰지 않는다.
         if err and any(k in str(err) for k in _MODEL_ERR):
@@ -432,8 +538,10 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
 
         slow += 1                                   # 여기서부터는 '비싼' 시도
         if err:
-            log.append(f"{slow}회 {model}: {str(err)[:80]}")
+            log.append(f"{slow}회 {model}({mt}토큰): {str(err)[:80]}")
             last_err = err
+            if "본문 없는 응답" in str(err) and escalate():   # 사고 토큰만 쓰고 잘림
+                continue
             if slow < tries:
                 time.sleep(backoff)
             continue
@@ -448,10 +556,17 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
             return done(res, model, slow)
 
         head = " ".join(str(txt or "").split())[:180]
-        log.append(f"{slow}회 {model}: JSON 형식 아님/키 부족 · 응답앞부분「{head}」")
-        last_err = f"JSON 형식 아님 (필수 키 없음) · 모델이 보낸 앞부분: 「{head}」"
-        hint = ("\n\n★앞 응답이 JSON 형식이 아니었다. 설명·서론·코드펜스 없이 "
-                "**JSON 하나만** 출력하라. 배열 항목은 2개 이내로 짧게.")
+        leak = _looks_like_reasoning(txt)
+        why = "추론문만 쓰다 토큰 소진" if leak else "JSON 형식 아님/키 부족"
+        log.append(f"{slow}회 {model}({mt}토큰): {why} · 응답앞부분「{head}」")
+        last_err = f"{why} · 모델이 보낸 앞부분: 「{head}」"
+        hint = ("\n\n★앞 응답이 JSON 이 아니었다. 생각·서론·코드펜스 없이 "
+                "**JSON 하나만** 출력하라. 첫 글자는 '{' 다. 배열 항목은 2개 이내로 짧게.")
+        # 추론을 쓰다 잘린 것이라면 같은 토큰으로 다시 불러도 또 잘린다.
+        # 추론이 새어 나와도 그 뒤 JSON 이 들어갈 만큼 늘려서 다시 부른다
+        # (파서는 앞의 산문을 건너뛰고 JSON 을 찾아낸다).
+        if leak and escalate():
+            continue
 
     return (None, f"실패 — {last_err} [{' / '.join(log)}]",
             round(time.time() - t0, 1), models[min(mi, len(models) - 1)], log)
@@ -461,9 +576,15 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
 _LAST_LOG: dict = {}
 
 
+# 프롬프트의 **맨 끝** 지시가 가장 잘 먹는다. 스키마 뒤에 한 줄 더 못박는다.
+_JSON_TAIL = ("\n\n★지금 바로 '{' 로 시작하는 JSON 객체 하나만 출력한다. "
+              "생각·서론·설명·코드펜스를 한 글자도 쓰지 마라.")
+
+
 def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
               cfg: dict, cancel=None) -> tuple[dict | None, str, float, str]:
     """JSON 단계 — _call_stage 의 얇은 껍데기 (기존 호출부 유지)."""
+    user = user.rstrip() + _JSON_TAIL
     res, note, took, model, log = _call_stage(sid, user, prefill, max_tokens, cfg,
                                               want_json=True,
                                               required=_REQUIRED.get(sid, ()),

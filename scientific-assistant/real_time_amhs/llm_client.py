@@ -140,11 +140,20 @@ def _api_key(cfg: dict) -> str:
 
 def chat(messages: list[dict], cfg: dict | None = None,
          max_tokens: int | None = None, temperature: float | None = None,
-         json_prefill: bool = False, prefill: str | None = None):
+         json_prefill: bool = False, prefill: str | None = None,
+         extra: dict | None = None):
     """OpenAI 호환 호출 → (text, None) 또는 (None, error).
 
     json_prefill=True 면 assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다
     (사고 모델이 평문 추론을 먼저 쓰는 것을 막는다).
+
+    extra 는 payload 에 그대로 얹는 게이트웨이 옵션이다. 프롬프트로 부탁하는
+    대신 서버 기능으로 강제할 때 쓴다 —
+      · response_format={"type":"json_object"}  → JSON 이외 출력 자체를 막는다
+      · chat_template_kwargs={"enable_thinking": False} → 템플릿에서 사고 차단
+      · reasoning_effort="low" (gpt-oss 계열)
+    게이트웨이가 모르는 키를 받으면 400 을 내므로, 호출부가 400 을 보고
+    옵션을 하나씩 빼면서 재시도한다 (analysis._call_stage).
     """
     cfg = cfg or load_config()
     lc = cfg.get("llm", {})
@@ -172,6 +181,9 @@ def chat(messages: list[dict], cfg: dict | None = None,
     # 서버가 지원하면 템플릿 수준에서도 사고를 끈다 (vLLM/Qwen 계열)
     if lc.get("disable_thinking_kwarg", False):
         payload["chat_template_kwargs"] = {"enable_thinking": False}
+    # 호출부가 지정한 게이트웨이 옵션 (response_format 등) — 위 기본값보다 우선
+    if isinstance(extra, dict):
+        payload.update(extra)
     # ★ JSON 프리필 — assistant 턴을 미리 채워 모델이 그 뒤를 이어 쓰게 만든다.
     #   이 게이트웨이는 /no_think 를 안 듣고 추론을 먼저 쓴다.
     #   '{' 만 넣으면 모델이 JSON 이 아니라 그 뒤에 산문을 이어 쓰므로

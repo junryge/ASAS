@@ -169,8 +169,8 @@
       "_chunk_doc": "1차 병렬 조각 수 상한 (구간이 짧으면 자동으로 줄어든다)",
       "digest_max_chars": 7000,
       "p1_max_tokens": 1500,
-      "p2_max_tokens": 1400,
-      "p3_max_tokens": 1600,
+      "p2_max_tokens": 2400,
+      "p3_max_tokens": 2800,
       "final_max_tokens": 2200,
       "timeout_s": 150,
       "_models_doc": "단계별 지정 모델. 대체 후보는 gaia 접두 모델만 쓴다 (gaia 없는 gpt-oss-120b 는 사용하지 않음). 모델이 400/403 이면 자동 대체",
@@ -199,7 +199,12 @@
           "gaia-GLM-5.2",
           "GaiA-LLM-Latest"
         ]
-      }
+      },
+      "max_tokens_cap": 4096,
+      "_tokens_doc": "2·3차는 추론이 새어 나와도 그 뒤 JSON 이 들어갈 만큼 넉넉히 준다. 1400/1600 이던 시절 모델이 추론문을 쓰다 토큰이 끝나 JSON 을 시작도 못 하고 실패했다. 실패가 '추론문만 쓰다 토큰 소진' 으로 보이면 max_tokens_cap 까지 1.8배씩 올려 다시 부른다.",
+      "json_mode": true,
+      "disable_thinking": true,
+      "_json_mode_doc": "게이트웨이 기능으로 사고 유출을 막는다. response_format={\"type\":\"json_object\"} 로 JSON 이외 출력을 서버가 거부하게 하고, chat_template_kwargs={\"enable_thinking\":false} 로 사고 템플릿을 끈다(gpt-oss 계열은 reasoning_effort=low 도 함께). 게이트웨이가 이 키를 모르면 400 이 오는데, 400 은 즉답이라 공짜이므로 옵션을 한 단계씩 빼며 자동 재시도한다(전체 → response_format 만 → 없음). false 로 두면 옵션을 아예 안 보낸다."
     }
   },
   "grade": {
