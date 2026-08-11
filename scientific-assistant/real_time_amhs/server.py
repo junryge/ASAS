@@ -328,7 +328,8 @@ def api_feed():
 
     경계 이상은 케이스(case_id)와 연결되고, 정상은 데이터 행 그대로 보여준다.
     """
-    from sentinel import _row_dt, _score, grade, hid_zones, summarize_reason
+    from sentinel import (_row_dt, _score, grade, hid_zones, reason_metrics,
+                          summarize_reason)
 
     # 오늘 쌓인 전체 데이터. 오늘이 아직 비었으면 가장 최근 날짜를 대신 보여준다.
     from store_csv import list_days, read_day
@@ -392,6 +393,9 @@ def api_feed():
             # 나갔다. summarize_reason 이 항상 한글 한 줄을 돌려준다.
             "reason": summarize_reason(raw_reason, area),
             "reason_raw": raw_reason,
+            # 한글 요약 옆 '실제지표' 칸 — 그 룰이 실제로 보는 raw 컬럼명
+            "metrics": [{"raw": x["raw"], "label": x["label"]}
+                        for x in reason_metrics(raw_reason, area)],
             "zones": hid_zones(bott), "items": items,
             # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)
             "bott_down": hid_zones(bd), "bott_up": hid_zones(bu),

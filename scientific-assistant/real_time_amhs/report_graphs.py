@@ -89,19 +89,26 @@ def parse_reason_metrics(reason):
 
     body = (reason or "").split("발동:", 1)[-1]
     body = re.split(r"흐름:|운영자조치:", body)[0]
-    for m in re.finditer(r"(M16HUB|M14B|M16A|M16B|M14)\s*\[(.*?)\]", body):
+    # ★닫는 ']' 가 없어도 끝까지 읽는다 — reason 은 길어지면 잘려 들어온다.
+    #   영역 이름도 고정 목록 대신 일반 토큰으로 받는다 (아래 _RAW 맵이
+    #   모르는 영역이면 기본 컬럼명을 만들어 쓴다).
+    for m in re.finditer(r"([A-Za-z0-9_]+)\s*\[([^\]]*)(?:\]|$)", body):
         area, inner = m.group(1), m.group(2)
-        if "AVGTOTALTIME1MIN" in inner or "AVGLOADTIME1MIN" in inner:
+        # ★룰 코드로도 잡는다. 예전엔 괄호 안 수치 문구("AVGTOTALTIME1MIN=6.3분")
+        #   가 있을 때만 지표를 붙였는데, reason 이 'R-A_sus,R-C,R-D' 처럼
+        #   코드만 올 때가 있어 지표가 통째로 비었다. R-A' 같은 프라임도 잡는다.
+        has = lambda code: re.search(r"R-?" + code + r"(_\w+)?\b", inner) is not None
+        if has("A") or "AVGTOTALTIME1MIN" in inner or "AVGLOADTIME1MIN" in inner:
             add(f"{area}_ra", _RA_RAW.get(area, f"{area}.QUE.TIME.AVGTOTALTIME1MIN"),
                 f"{area} 반송시간", "분")
-        if "FAB저장" in inner:
+        if has("D") or "FAB저장" in inner:
             add("M16HUB_rd_fab", _FAB_RAW, "M16HUB FAB저장율", "%")
-        if re.search(r"\bSTB", inner):
+        if has("D") or re.search(r"\bSTB", inner):
             add("M16HUB_stb_util", _STB_RAW, "M16HUB STB저장율", "%")
         if "OHT=" in inner or "OHT가동" in inner:
             add(f"{area}_rd_oht", _OHT_RAW.get(area, f"{area}.QUE.OHT.OHTUTIL"),
                 f"{area} OHT가동률", "%")
-        if "R-C" in inner:
+        if has("C"):
             add("M16HUB_rev_count", _REV_RAW, "M16HUB 리프터막힘", "회")
         if "SLA(" in inner or "4분초과" in inner:
             add(f"sla_{area}", _SLA_RAW.get(area, f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO"),
@@ -109,6 +116,8 @@ def parse_reason_metrics(reason):
         if "SORT(" in inner or "소터" in inner:
             add(f"sorter_{area}", _SORTER_RAW.get(area, f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER"),
                 f"{area} 소터대기", "건")
+        # R-B(Queue 누적/상승)는 대응하는 단일 raw 컬럼이 정의돼 있지 않다.
+        # 없는 컬럼명을 지어내지 않는다 — 큐 근거는 AMOS QUEUE지표 칸에 있다.
     return out
 
 

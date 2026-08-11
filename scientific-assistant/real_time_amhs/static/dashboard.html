@@ -303,10 +303,11 @@
         <th style="width:150px">CASE</th>
         <th style="width:104px">스코어</th>
         <th>reason</th>
-        <th style="width:240px">AMOS HID구역</th>
-        <th style="width:300px">AMOS QUEUE지표</th>
+        <th style="width:250px">실제지표</th>
+        <th style="width:210px">AMOS HID구역</th>
+        <th style="width:270px">AMOS QUEUE지표</th>
       </tr></thead>
-      <tbody id="cases"><tr><td colspan="6" class="empty">불러오는 중…</td></tr></tbody>
+      <tbody id="cases"><tr><td colspan="7" class="empty">불러오는 중…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -353,10 +354,11 @@
         <th style="width:150px">CASE</th>
         <th style="width:104px">스코어</th>
         <th>reason</th>
-        <th style="width:240px">AMOS HID구역</th>
-        <th style="width:300px">AMOS QUEUE지표</th>
+        <th style="width:250px">실제지표</th>
+        <th style="width:210px">AMOS HID구역</th>
+        <th style="width:270px">AMOS QUEUE지표</th>
       </tr></thead>
-      <tbody id="pcases"><tr><td colspan="6" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
+      <tbody id="pcases"><tr><td colspan="7" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1189,8 +1191,20 @@ function applyFilter(rows, filter, byId){
   return rows;
 }
 
+/* 발동 룰이 실제로 보는 raw 지표 컬럼명. 한글 요약만으로는 '무슨 숫자를
+   보고 그렇게 판단했나' 를 알 수 없어 옆 칸에 같이 보여준다. */
+function metricCell(ms){
+  if(!ms || !ms.length) return '<span class="dim">–</span>';
+  const all = ms.map(m=>m.raw).join('\n');
+  const show = ms.slice(0,4);
+  return `<div class="mono" style="font-size:10.5px;line-height:1.5" title="${esc(all)}">`
+    + show.map(m=>`<div title="${esc(m.label||'')}">${esc(m.raw)}</div>`).join('')
+    + (ms.length>4 ? `<div class="dim">외 ${ms.length-4}개</div>` : '')
+    + '</div>';
+}
+
 function rowsHtml(list, byId, newAt){
-  if(!list.length) return `<tr><td colspan="6" class="empty">해당 등급 데이터 없음</td></tr>`;
+  if(!list.length) return `<tr><td colspan="7" class="empty">해당 등급 데이터 없음</td></tr>`;
   return list.map(r=>{
     const isNew = newAt && r.datetime===newAt;
     return `<tr class="crow${isNew?' fresh':''}" data-at="${esc(r.at)}">
@@ -1201,6 +1215,7 @@ function rowsHtml(list, byId, newAt){
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
       <td><div title="${esc(r.reason_raw||'')}">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '–'))}</div></td>
+      <td>${metricCell(r.metrics)}</td>
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
       <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
     </tr>`;}).join('');

@@ -163,6 +163,38 @@ def summarize_reason(reason: str, area: str = "") -> str:
     return head + " · ".join(names)
 
 
+def reason_metrics(reason: str, area: str = "") -> list[dict]:
+    """발동한 룰 → **실제 raw 지표 컬럼명**. 화면 '실제지표' 칸에 쓴다.
+
+    한글 요약("반송지연 지속 · 리프터막힘")만 보면 '무슨 숫자를 보고 그렇게
+    판단했나' 를 알 수 없다. 룰마다 대응하는 실제 컬럼을 같이 보여준다.
+        반송지연  → M16HUB.QUE.TIME.AVGTOTALTIME1MIN
+        리프터막힘 → M16HUB.QUE.LFT.3F_LFT_REVERSALCNT
+        Storage FULL → M16HUB.STRATE.STB.3F_STORAGE_UTIL 등
+
+    매핑은 report_graphs.parse_reason_metrics 하나만 쓴다 (리포트 그래프가
+    'reason 이 실제로 발동시킨 컬럼' 을 고를 때 쓰는 것과 같은 표).
+    area 를 주면 그 영역 블록만 본다 — 요약 문구와 칸이 어긋나지 않게.
+
+    반환 [{"col","raw","label","unit"}, …] (등장 순서, 중복 제거)
+    """
+    txt = reason or ""
+    if not txt:
+        return []
+    try:
+        from report_graphs import parse_reason_metrics
+    except Exception:
+        return []
+    if area:
+        blk = next((b for a, b in _reason_blocks(txt) if a.upper() == area.upper()), "")
+        if blk:
+            txt = f"발동: {area}[{blk}]"
+    try:
+        return parse_reason_metrics(txt)
+    except Exception:
+        return []
+
+
 def hid_zones(tokens: str) -> list[str]:
     """HID_32_FROM_SUM_A → HID32 (순서 보존·중복 제거)."""
     out, seen = [], set()
