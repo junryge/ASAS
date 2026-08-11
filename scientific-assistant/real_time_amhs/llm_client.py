@@ -269,6 +269,46 @@ def _inject_no_think(messages: list[dict]) -> list[dict]:
     return out
 
 
+# ── JSON 강제 호출 ────────────────────────────────────────────────
+# 사고 모델은 '/no_think' 를 무시하고 본문에 추론을 쓰다가 max_tokens 에 걸려
+# JSON 을 못 끝낸다(1분 판단의 '판단' 이 문장 중간에 끊기던 원인). 부탁 대신
+# 게이트웨이 기능으로 막는다. 이 키를 모르는 게이트웨이는 400 을 내므로
+# 옵션을 한 단계씩 빼며 다시 부른다 — 400 은 즉답이라 사실상 공짜다.
+_JSON_TIER: dict = {}
+
+
+def _json_opts(model: str) -> list:
+    full = {"response_format": {"type": "json_object"},
+            "chat_template_kwargs": {"enable_thinking": False}}
+    if "gpt-oss" in str(model).lower():
+        full["reasoning_effort"] = "low"
+    return [full, {"response_format": full["response_format"]}, None]
+
+
+def chat_json(messages: list[dict], cfg: dict | None = None,
+              max_tokens: int | None = None, prefill: str | None = None):
+    """JSON 응답 전용 호출 → (text, error).
+
+    게이트웨이가 response_format 을 받으면 프리필은 필요 없다(오히려 GLM·
+    gpt-oss 에서는 프리필 뒤에 코드펜스를 다시 열거나 프리필 안에 영어 추론을
+    써서 JSON 을 깨뜨렸다). 옵션이 안 먹는 게이트웨이에서만 프리필로 물러난다.
+    """
+    cfg = cfg or load_config()
+    model = (cfg.get("llm") or {}).get("model", "")
+    tiers = _json_opts(model)
+    i = min(int(_JSON_TIER.get(model, 0)), len(tiers) - 1)
+    while True:
+        extra = tiers[i]
+        txt, err = chat(messages, cfg, max_tokens=max_tokens,
+                        prefill=(prefill if extra is None else None), extra=extra)
+        if err and extra is not None and ("HTTP 400" in str(err) or "HTTP 422" in str(err)):
+            i += 1                       # 옵션을 모르는 게이트웨이 — 한 단계 빼고 재시도
+            continue
+        if not err or not ("HTTP 400" in str(err) or "HTTP 422" in str(err)):
+            _JSON_TIER[model] = i        # 모델 자체가 400 인 경우는 학습하지 않는다
+        return txt, err
+
+
 _THINK_RE = re.compile(r"<think>[\s\S]*?</think>|<think>[\s\S]*$", re.I)
 
 
@@ -354,8 +394,10 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 
 ★출력 규칙: 한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
 첫 글자가 '{' 여야 하고 JSON 만 출력한다.
-★'판단'은 200자 이내로 요약하라. 길게 늘려 쓰지 말고 핵심만 한 문장.
-{"실제이상":"예|아니오","판단":"200자 이내 한국어 요약","확신도":0~100 정수}"""
+★'판단'은 **완결된 문장**으로 쓴다. 160자 안에서 끝내라 — 중간에 끊기면 안 된다.
+  빈 말("정상입니다") 대신 근거가 되는 수치·구역을 넣어라.
+  예) "M16HUB 반송시간 2.7분으로 기준 이하, 저장율도 평시 수준이라 정상 운영입니다."
+{"실제이상":"예|아니오","판단":"근거 수치를 포함한 완결 문장 (160자 이내)","확신도":0~100 정수}"""
         max_tok = int((cfg.get("llm", {}).get("per_minute") or {}).get("light_max_tokens", 400))
     else:
         user = head + f"""
@@ -366,8 +408,11 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 
 ★출력 규칙: 한국어로만. 추론 과정을 쓰지 마라('Thinking Process' 금지).
 첫 글자가 '{{' 여야 하고 JSON 만 출력한다.
-★'판단'은 200자 이내로 요약하라. 길게 늘려 쓰지 말고 핵심 원인만 한 문장.
-근거·조치는 각 항목 100자 이내로 짧게.
+★'판단'은 **완결된 문장**으로 쓴다. 160자 안에서 끝내라 — 중간에 끊기면 안 된다.
+  '어느 구역에서 / 무엇이 / 어떤 수치라서' 가 다 들어가야 한다. 형용사로 늘리지 마라.
+  예) "M16HUB STB 저장율 99.4%로 포화되어 리프터 반출이 막혔고, 반송시간이 6.3분
+      (기준 9분)까지 올라 정체가 시작됐습니다."
+근거·조치는 각 항목 80자 이내로 짧게.
 {{"실제이상":"예|아니오","판단":"200자 이내 한국어 요약 원인 진단","확신도":0~100 정수,"근거":["근거1","근거2"],"조치":["조치1","조치2"]}}
 
 '실제이상' = 지금 대응이 필요한 진짜 이상이면 "예", 일시적 변동이면 "아니오".
@@ -376,9 +421,13 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
         max_tok = int((cfg.get("llm", {}).get("per_minute") or {}).get("full_max_tokens", 900))
 
     pm = cfg.get("llm", {}).get("per_minute") or {}
-    txt, err = chat([{"role": "system", "content": build_system_prompt(cfg)},
-                     {"role": "user", "content": user}], cfg, max_tokens=max_tok,
-                    json_prefill=pm.get("json_prefill", True))
+    # ★chat_json: response_format 으로 JSON 을 강제하고 사고 템플릿을 끈다.
+    #   게이트웨이가 그걸 모르면 예전처럼 프리필로 물러난다.
+    pre = ((cfg.get("llm", {}).get("json_prefill_text") or '{"실제이상": "')
+           if pm.get("json_prefill", True) else None)
+    txt, err = chat_json([{"role": "system", "content": build_system_prompt(cfg)},
+                          {"role": "user", "content": user}], cfg,
+                         max_tokens=max_tok, prefill=pre)
     if err:
         return None, err
     res = _parse_json(txt)

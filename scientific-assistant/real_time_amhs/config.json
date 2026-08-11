@@ -112,14 +112,16 @@
       "_max_per_cycle_doc": "한 폴링에서 처리할 추론 개수. 최신 1건을 먼저 하고 남은 자리로 과거 빈 분을 메운다",
       "backfill": true,
       "_backfill_doc": "폴링이 밀려 빈 분이나 기동 전 수집 구간을 뒤에서 순차로 메운다. false 면 최신 분만",
-      "light_max_tokens": 500,
+      "light_max_tokens": 800,
       "_light_max_tokens_doc": "정상 구간(짧은 프롬프트) 응답 토큰. 너무 작으면 본문이 비어 온다",
-      "full_max_tokens": 1200,
+      "full_max_tokens": 1600,
       "_full_max_tokens_doc": "경계 이상(상세 프롬프트) 응답 토큰",
       "json_prefill": true,
-      "_json_prefill_doc": "★assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다. 이 게이트웨이는 /no_think 를 안 듣고 'Thinking Process: …' 평문 추론을 먼저 써서 토큰을 다 쓴다. 프리필하면 추론을 건너뛰어 빠르고 안정적이다. 서버가 assistant 프리필을 무시하면 false 로 두고 토큰을 올린다",
+      "_json_prefill_doc": "★assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다. 지금은 chat_json 이 response_format={\"type\":\"json_object\"} 로 JSON 을 먼저 강제하고, 게이트웨이가 그 옵션을 모를 때(400)만 이 프리필로 물러난다. 옵션이 먹는 게이트웨이에서는 프리필을 안 쓰는 편이 안정적이다 — GLM·gpt-oss 는 프리필 뒤에 코드펜스를 다시 열거나 프리필 안에 영어 추론을 써서 JSON 을 깨뜨렸다.",
       "judge_max_chars": 200,
-      "_judge_max_chars_doc": "판단·근거·조치·오류 각 칸의 최대 글자수. 넘치면 잘리고 … 가 붙는다"
+      "_judge_max_chars_doc": "판단·근거·조치·오류 각 칸의 최대 글자수. 넘치면 잘리고 … 가 붙는다",
+      "judge_text_max_chars": 260,
+      "_judge_text_doc": "'판단' 칸 최대 글자수 — 사람이 읽는 본문이라 근거·조치(judge_max_chars)보다 여유를 준다. 프롬프트는 160자로 부탁하므로 보통 잘릴 일이 없고, 넘치면 마침표·쉼표·띄어쓰기 경계에서 자른다(문장 중간 끊김 방지)."
     },
     "accuracy": {
       "_doc": "사후검증 — LLM 판단 이후 실제 데이터 흐름과 일치했는지 채점. LLM 재호출 없이 저장된 TOTAL.CSV 스코어만 읽는다. ★정탐률이 아니라 '판단 일치율'이다.",

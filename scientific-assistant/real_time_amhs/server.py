@@ -46,6 +46,8 @@ STATE = {
 
 # 선행 지표 분석 캐시 — 며칠치 CSV 를 훑어야 해서 매 요청 재계산하면 느리다
 LEADING_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
+# 임계 격자 탐색은 며칠치를 수십 번 되감아 몇 초 걸린다 — 짧게 캐시
+TUNE_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
 
 
 # ────────────────────────────── 폴링 루프 ──────────────────────────────
@@ -470,6 +472,25 @@ def api_graph():
     return app.response_class(svg, mimetype="image/svg+xml")
 
 
+@app.route("/api/contrib")
+def api_contrib():
+    """스코어 기여도 추정 — 그 1분의 점수를 어느 지표가 밀어올렸나.
+
+    /api/contrib?at=2026-07-28T08:11:00  → 구간 그래프 모달에 붙일 HTML 조각.
+    점수식을 푼 값이 아니라 '평소 대비 편차' 기반 **추정**이다(화면에도 명시).
+    """
+    from contrib import explain_html
+    from store_csv import read_day
+    at = parse_dt(request.args.get("at")) or datetime.now()
+    rows = read_day(at.strftime("%Y%m%d"), CFG) or STATE.get("last_rows") or []
+    try:
+        return app.response_class(explain_html(rows, at, CFG), mimetype="text/html")
+    except Exception as e:
+        return app.response_class(
+            f'<div class="empty">기여도 분해 실패 — {type(e).__name__}: {e}</div>',
+            mimetype="text/html")
+
+
 @app.route("/api/accuracy")
 def api_accuracy():
     """1분 LLM 판단 + 사후검증 결과. ?day=YYYYMMDD (기본 오늘), ?rows=1 이면 행까지."""
@@ -645,14 +666,29 @@ def api_analysis_run():
     start = str(body.get("start") or "")[:5]
     end = str(body.get("end") or "")[:5]
 
+    # 단계별 모델 지정 — 안 고르면 config.llm.analysis.roles 기본값을 쓴다.
+    # 이번 실행에만 적용하고 config.json 은 건드리지 않는다.
+    from analysis import STAGES
+    picked = body.get("models") or {}
+    cfg = CFG
+    over = {sid: str(picked.get(sid) or "").strip()
+            for sid in STAGES if str(picked.get(sid) or "").strip()}
+    if over:
+        import copy
+        cfg = copy.deepcopy(CFG)
+        a_cfg = cfg.setdefault("llm", {}).setdefault("analysis", {})
+        roles = a_cfg.setdefault("roles", {})
+        for sid, mdl in over.items():
+            roles.setdefault(sid, {})["model"] = mdl
+
     ANALYSIS.update(running=True, progress={"stage": "start", "done": False},
                     day=day, span=f"{start or '00:00'}~{end or '24:00'}",
-                    cancel=threading.Event())
+                    models=over, cancel=threading.Event())
 
     def work():
         try:
             from analysis import run_analysis
-            r = run_analysis(day, CFG, start, end, progress=ANALYSIS["progress"],
+            r = run_analysis(day, cfg, start, end, progress=ANALYSIS["progress"],
                              cancel=ANALYSIS["cancel"])
             ANALYSIS["last_id"] = r.get("id")
             if not r.get("ok"):
@@ -774,6 +810,48 @@ def api_forecast():
         _update_forecast()
         fc = STATE.get("forecast")
     return jsonify(fc or {"ok": False, "warn": False, "reason": "아직 수집 전"})
+
+
+@app.route("/api/forecast/score")
+def api_forecast_score():
+    """선행 감지 사후 채점 — 낸 경보가 맞았나. ?day= 하루, 없으면 최근 여러 날.
+
+    저장된 CSV 를 1분씩 되감아 그때 예보를 다시 돌린다(판정 규칙은 실시간과
+    같은 forecast._decide 하나를 공유). 적중/오보/놓침을 세고 실제 선행분을 낸다.
+    """
+    from forecast import score, score_days
+    day = (request.args.get("day") or "").strip()
+    try:
+        if day:
+            return jsonify(score(day, CFG))
+        limit = max(1, min(30, int(request.args.get("limit", 14) or 14)))
+        return jsonify(score_days(None, CFG, None, limit))
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/forecast/tune")
+def api_forecast_tune():
+    """임계 격자 탐색 — 지금 값보다 나은 min_slope·sustain_min 이 있나.
+
+    격자를 다 돌아야 해서 몇 초 걸린다. 60초 캐시.
+    """
+    import time as _t
+    limit = max(1, min(30, int(request.args.get("limit", 7) or 7)))
+    key = f"tune|{limit}"
+    now = _t.time()
+    if (TUNE_CACHE["data"] and TUNE_CACHE["key"] == key
+            and now - TUNE_CACHE["at"] < 60):
+        return jsonify({**TUNE_CACHE["data"], "cached": True})
+    try:
+        from forecast import tune
+        t0 = _t.time()
+        data = tune(None, CFG, limit=limit)
+        data["took_s"] = round(_t.time() - t0, 1)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    TUNE_CACHE.update(at=now, data=data, key=key)
+    return jsonify({**data, "cached": False})
 
 
 @app.route("/api/forecast/leading")

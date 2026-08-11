@@ -105,16 +105,31 @@ def judge_minute(row: dict, cfg: dict | None = None) -> dict:
     }
     if res:
         def txt(v, limit):
-            """리스트는 ' / ' 로 합치고, 길면 자른다 (CSV·화면이 터지지 않게)."""
+            """리스트는 ' / ' 로 합치고, 길면 자른다 (CSV·화면이 터지지 않게).
+
+            ★문장 중간에서 뚝 끊지 않는다. 예전엔 그냥 limit 자에서 잘라
+              "…반송시간이 6.3분까지 올" 처럼 말이 끊긴 채로 화면에 남았다.
+              마침표 → 쉼표 → 띄어쓰기 순으로 물러나며 경계에서 자른다.
+            """
             t = " / ".join(str(x).strip() for x in v if str(x).strip()) \
                 if isinstance(v, list) else str(v or "").strip()
             t = " ".join(t.split())                 # 줄바꿈·중복공백 정리
-            return t if len(t) <= limit else t[:limit - 1].rstrip() + "…"
+            if len(t) <= limit:
+                return t
+            head = t[:limit]
+            for seps in (".!?", ",;/·", " "):
+                cut = max((head.rfind(ch) for ch in seps), default=-1)
+                if cut >= limit * 0.6:              # 너무 짧아지면 그 경계는 버린다
+                    return head[:cut + 1].rstrip(" ,;/·") + "…"
+            return head.rstrip() + "…"
 
+        # '판단' 은 사람이 읽는 본문이라 근거·조치보다 여유를 준다.
+        # (프롬프트는 160자로 부탁하므로 보통은 잘릴 일이 없다 — 이건 안전망이다)
+        jcap = int(pm.get("judge_text_max_chars", max(cap, 260)) or 260)
         out.update({
             "실제이상": (res.get("실제이상") or "").strip(),
             "확신도": res.get("확신도", ""),
-            "판단": txt(res.get("판단"), cap),
+            "판단": txt(res.get("판단"), jcap),
             "근거": txt(res.get("근거"), cap),
             "조치": txt(res.get("조치"), cap),
         })

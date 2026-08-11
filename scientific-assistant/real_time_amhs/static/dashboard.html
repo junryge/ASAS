@@ -390,6 +390,16 @@
         <button class="act" onclick="checkAnModels()" title="게이트웨이가 이 키에 허용한 모델 확인 (/v1/models)">모델 확인</button>
         <span class="note" id="anmsg"></span>
       </div>
+      <div class="row" style="margin-top:6px;align-items:flex-start">
+        <label style="align-self:center">모델</label>
+        <div id="anpick" style="display:flex;gap:8px;flex-wrap:wrap;flex:1"></div>
+        <button class="act" onclick="anResetModels()" style="flex:0 0 auto;padding:3px 10px;font-size:11.5px"
+                title="네 단계를 모두 config.json 기본값으로">기본값으로</button>
+      </div>
+      <div class="note" style="margin:2px 0 4px">
+        비워두면 config.json 의 기본 모델을 씁니다. 여기서 고른 값은 <b>이번 실행에만</b> 적용되고
+        config.json 은 바뀌지 않습니다. 목록은 게이트웨이가 이 키에 허용한 모델입니다.
+      </div>
       <div id="anroles" style="display:none;grid-template-columns:repeat(4,1fr);gap:14px;margin:10px 0"></div>
       <div id="anout"></div>
     </div>
@@ -497,6 +507,7 @@ let AN_TIMER=null, AN_INIT=false, AN_OPEN=null;
 
 async function initAnalysis(){
   loadAnalysisList();
+  anLoadPickers();
   if(AN_INIT) return;
   AN_INIT=true;
   try{
@@ -517,7 +528,7 @@ function anModeChange(){
 $('#btnan').onclick = async () => {
   const day = ($('#andate').value||'').replace(/-/g,'') || $('#anday').value;
   if(!day){ $('#anmsg').textContent='날짜를 고르세요'; return; }
-  const body = {day};
+  const body = {day, models: anPickedModels()};
   if($('#anmode').value==='range'){ body.start=$('#anstart').value; body.end=$('#anend').value; }
   $('#anmsg').textContent='시작 중…';
   const r = await post('/api/analysis/run', body);
@@ -703,6 +714,51 @@ async function loadAnalysis(aid){
 }
 
 /* 게이트웨이 허용 모델 확인 — 400/403 으로 단계가 죽을 때 원인을 바로 보게 */
+/* ── 단계별 모델 선택 ────────────────────────────────────────────────
+   기본값은 config.json 의 llm.analysis.roles. 고른 값은 이번 실행에만 쓰이고
+   서버가 config 사본에 얹어 돌린다(원본 config.json 은 안 건드림). */
+const AN_STAGES = [['p1','1차 데이터 훑기'],['p2','2차 원인·전파'],
+                   ['p3','3차 교차 검증'],['final','최종 통합']];
+let AN_MODELS = null;            // {models:[], used:{}} — 한 번만 받아 캐시
+
+function anPickedModels(){
+  const out = {};
+  AN_STAGES.forEach(([k])=>{
+    const el = document.getElementById('anm-'+k);
+    if(el && el.value) out[k] = el.value;
+  });
+  return out;
+}
+function anResetModels(){
+  AN_STAGES.forEach(([k])=>{ const el=document.getElementById('anm-'+k); if(el) el.value=''; });
+}
+async function anLoadPickers(){
+  const box = $('#anpick'); if(!box) return;
+  if(!AN_MODELS){
+    try{ AN_MODELS = await api('/api/analysis/models'); }
+    catch(e){ AN_MODELS = {error:'조회 실패'}; }
+  }
+  const d = AN_MODELS || {};
+  const list = (d.models||[]);
+  const used = d.used||{};
+  box.innerHTML = AN_STAGES.map(([k,label])=>{
+    const def = used[k] || '';
+    const opts = list.length
+      ? list.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')
+      : '';
+    return `<div style="min-width:210px;flex:1">
+      <div class="note" style="font-size:11px;margin-bottom:2px">${esc(label)}</div>
+      <select id="anm-${k}" style="width:100%" title="${esc(def||'config 기본값')}">
+        <option value="">기본값${def?` — ${esc(def)}`:''}</option>${opts}
+      </select></div>`;
+  }).join('');
+  if(d.error || !list.length){
+    box.insertAdjacentHTML('beforeend',
+      `<div class="note" style="flex-basis:100%;color:var(--major)">
+         모델 목록을 못 받았습니다(${esc(d.error||'빈 목록')}) — 기본값으로만 실행됩니다.</div>`);
+  }
+}
+
 async function checkAnModels(){
   const out = $('#anout');
   out.innerHTML = '<div class="note">모델 목록 조회 중…</div>';
@@ -937,6 +993,8 @@ async function openLeading(){
     $('#gbody').innerHTML = `
       ${fc ? `<div class="warn" style="margin:0 0 10px">지금 <b>${fc.eta_min}분 뒤 ${fc.floor}점 돌파</b> 예상 —
               현재 ${fc.current}점, 분당 ${fc.slope>0?'+':''}${fc.slope}점 (확신 ${fc.confidence}%)</div>` : ''}
+      <div id="fcscore"><div class="empty">경보 성적 채점 중…</div></div>
+      <h4 style="margin:18px 0 6px;font-size:13px">② 어느 지표가 먼저 움직이나</h4>
       <p class="note" style="margin:0 0 10px">
         저장된 <b style="color:var(--tx2)">${(d.days||[]).length}일</b>에서 점수가 ${d.floor}점을 넘은
         <b style="color:var(--tx2)">${d.events}건</b>을 찾아, 그 앞 ${d.lookback_min}분에서 각 지표가
@@ -957,8 +1015,93 @@ async function openLeading(){
           <td class="mono" style="font-size:11px;color:var(--tx3)">${esc(m.raw)}</td>
         </tr>`).join('')}</tbody></table>`
         : '<div class="empty">아직 임계를 넘은 사건이 없어 분석할 게 없습니다 — 데이터가 쌓이면 채워집니다.</div>'}`;
+    fcScore();
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">분석 실패 — 서버 확인</div>'; }
 }
+
+/* ── 선행 감지 사후 채점 ────────────────────────────────────────────
+   경보만 띄우고 맞았는지 안 보면 min_slope 같은 값이 영원히 '감' 으로 남는다.
+   저장된 CSV 를 1분씩 되감아 그때 예보를 다시 돌리고 실제 돌파와 대조한다. */
+const pct = v => (v==null ? '–' : v+'%');
+function tile(n, label, color){
+  return `<div style="flex:1;min-width:96px;border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px;background:var(--panel)">
+    <div style="font-size:19px;font-weight:700;color:${color}">${n}</div>
+    <div class="note" style="font-size:11px">${label}</div></div>`;
+}
+async function fcScore(){
+  const box = $('#fcscore'); if(!box) return;
+  try{
+    const d = await api('/api/forecast/score');
+    if(!d.ok){ box.innerHTML = `<div class="empty">${esc(d.error||'채점 실패')}</div>`; return; }
+    const per = (d.per_day||[]).filter(p=>p.hit+p.false+p.miss>0);
+    box.innerHTML = `
+      <h4 style="margin:0 0 6px;font-size:13px">① 지금 임계로 낸 경보, 맞았나
+        <span class="note">— 저장된 ${(d.days||[]).length}일을 되감아 채점</span></h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        ${tile(d.hit,'적중 — 경보 뒤 실제 돌파','var(--ok)')}
+        ${tile(d.false,'오보 — 경보했는데 안 넘음','var(--major)')}
+        ${tile(d.miss,'놓침 — 경보 없이 돌파','var(--crit)')}
+        ${tile(pct(d.precision),'정밀도 — 경보 중 맞은 비율','var(--tx)')}
+        ${tile(pct(d.recall),'재현율 — 돌파 중 맞힌 비율','var(--tx)')}
+        ${tile(d.median_lead!=null?d.median_lead+'분':'–','중앙 선행 — 얼마나 먼저','var(--cy)')}
+      </div>
+      <p class="note" style="margin:0 0 8px">
+        현재 임계: 기울기 <b style="color:var(--tx2)">${d.params.min_slope}</b>점/분 ·
+        지속 <b style="color:var(--tx2)">${d.params.sustain_min}</b>분 ·
+        창 ${d.params.window_min}분 · 예보범위 ${d.params.horizon_min}분
+        ${d.note ? `<br><b style="color:var(--major)">${esc(d.note)}</b>` : ''}
+      </p>
+      ${per.length ? `<table class="pol"><thead><tr><th>날짜</th><th>적중</th><th>오보</th>
+        <th>놓침</th><th>정밀도</th><th>재현율</th><th>중앙 선행</th></tr></thead><tbody>
+        ${per.map(p=>`<tr><td class="mono">${esc(p.day)}</td><td>${p.hit}</td>
+          <td>${p.false}</td><td>${p.miss}</td><td>${pct(p.precision)}</td>
+          <td>${pct(p.recall)}</td>
+          <td>${p.median_lead!=null?p.median_lead+'분':'–'}</td></tr>`).join('')}
+        </tbody></table>` : ''}
+      <div style="margin:8px 0 4px">
+        <button class="btn" id="btntune">임계 탐색 — 지금보다 나은 값이 있나</button>
+        <span class="note">기울기·지속을 격자로 훑어 F1(정밀도·재현율 조화평균)이
+          가장 높은 조합을 찾습니다. 몇 초 걸립니다.</span>
+      </div>
+      <div id="tunebox"></div>`;
+    $('#btntune').onclick = fcTune;
+  }catch(e){ box.innerHTML = '<div class="empty">채점 실패 — 서버 확인</div>'; }
+}
+async function fcTune(){
+  const b = $('#btntune'), box = $('#tunebox');
+  b.disabled = true; b.textContent = '탐색 중…';
+  try{
+    const d = await api('/api/forecast/tune');
+    if(!d.ok){ box.innerHTML = `<div class="empty">${esc(d.error||'탐색 실패')}</div>`; return; }
+    const g = d.grid||[];
+    box.innerHTML = `
+      <p class="note" style="margin:6px 0">
+        ${d.better
+          ? `<b style="color:var(--ok)">더 나은 조합이 있습니다</b> — 기울기
+             <b style="color:var(--tx2)">${d.best.min_slope}</b>, 지속
+             <b style="color:var(--tx2)">${d.best.sustain_min}분</b>
+             (F1 ${d.current_score.f1} → <b style="color:var(--ok)">${d.best.f1}</b>).
+             config.json 의 forecast.min_slope / sustain_min 을 바꾸면 적용됩니다.`
+          : `<b style="color:var(--tx2)">지금 값이 이 데이터에서는 최선입니다</b> (F1 ${d.current_score.f1}).`}
+        ${d.took_s?`<span class="dim"> · ${d.took_s}초</span>`:''}
+        ${d.note ? `<br><b style="color:var(--major)">${esc(d.note)}</b>` : ''}
+      </p>
+      <table class="pol"><thead><tr><th>기울기</th><th>지속</th><th>적중</th><th>오보</th>
+        <th>놓침</th><th>정밀도</th><th>재현율</th><th>F1</th><th>중앙 선행</th></tr></thead><tbody>
+        ${g.map(r=>{
+          const cur = r.min_slope==d.current.min_slope && r.sustain_min==d.current.sustain_min;
+          return `<tr${cur?' style="background:rgba(56,189,248,.08)"':''}>
+            <td class="mono">${r.min_slope}${cur?' <span class="note">(현재)</span>':''}</td>
+            <td class="mono">${r.sustain_min}분</td><td>${r.hit}</td><td>${r.false}</td>
+            <td>${r.miss}</td><td>${pct(r.precision)}</td><td>${pct(r.recall)}</td>
+            <td><b style="color:var(--tx)">${r.f1}</b></td>
+            <td>${r.median_lead!=null?r.median_lead+'분':'–'}</td></tr>`;}).join('')}
+      </tbody></table>`;
+  }catch(e){ box.innerHTML = '<div class="empty">탐색 실패 — 서버 확인</div>'; }
+  finally{ b.disabled = false; b.textContent = '임계 탐색 — 지금보다 나은 값이 있나'; }
+}
+
 function renderAcc(a){
   ACC = a || null;
   if(!a || a.error){
@@ -1592,8 +1735,14 @@ async function drawGraph(){
   const m = $('#gmin').value;
   $('#gbody').innerHTML = '<div class="empty">그리는 중…</div>';
   try{
-    const res = await fetch(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}`);
-    $('#gbody').innerHTML = await res.text();
+    // 그래프 + 기여도 추정을 같이 띄운다 — '왜 이 점수인가' 가 그래프 옆에 있어야
+    // 관제가 다음 행동을 정할 수 있다. 기여도는 실패해도 그래프는 나오게 따로 처리.
+    const [svg, con] = await Promise.all([
+      fetch(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}`).then(r=>r.text()),
+      fetch(`/api/contrib?at=${encodeURIComponent(GAT)}`).then(r=>r.text()).catch(()=>''),
+    ]);
+    $('#gbody').innerHTML = svg
+      + (con ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">${con}</div>` : '');
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">그래프를 불러오지 못했습니다</div>'; }
 }
 $('#gmin').onchange = drawGraph;
