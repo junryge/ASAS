@@ -4,12 +4,13 @@ real_time_amhs/analysis.py — 4-LLM 파이프라인 분석 (분석 탭)
 구조 (모델 4종 — 게이트웨이가 이 팀에 허용한 이름만 쓴다)
     1차  gaia-GLM-5.2            데이터 훑기 (★병렬)
     2차  gaia-Qwen3.6-35B-A3B    원인·전파 분석
-    3차  gaia-Qwen3.6-35B-A3B    교차 검증 + 조치 (gpt-oss 계열은 쓰지 않음)
+    3차  gaia-lst-gpt-oss-120b   교차 검증 + 조치 (1·2차·최종과 다른 계열)
     최종 gaia-Qwen3.5-397B-A17B  통합 판정 리포트
 
-    ※ gpt-oss 계열은 사용하지 않는다. 모델이 거부되면(400/403) _fallbacks() 가
-      자동으로 갈아타고, 느린 실패는 retries(기본 1)만큼만 더 시도한다.
-      그래도 안 되면 그 단계는 코드가 센 숫자로 채우고 다음으로 넘어간다.
+    ※ 대체 후보는 gaia 접두 모델만 쓴다(gaia 없는 gpt-oss-120b 는 제외).
+      모델이 거부되면(400/403) _fallbacks() 가 자동으로 갈아타고, 느린 실패는
+      retries(기본 1)만큼만 더 시도한다. 그래도 안 되면 그 단계는 코드가 센
+      숫자로 채우고 다음으로 넘어간다.
 
 왜 이 구조인가
     - **1차가 병렬이다.** 분석 구간을 시간 조각으로 쪼개 GLM-5.2 를 조각마다
@@ -51,7 +52,7 @@ STAGES = {
     "p2": {"name": "2차 — 원인·전파 분석", "icon": "🧩",
            "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
     "p3": {"name": "3차 — 교차 검증·조치", "icon": "⚖️",
-           "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
+           "model": "gaia-lst-gpt-oss-120b", "parallel": False},
     "final": {"name": "최종 — 통합 판정", "icon": "📋",
               "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
 }
@@ -300,7 +301,7 @@ def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
 
 
 # 단계마다 대체 순서를 다르게 둔다. 검증(3차)은 앞 단계와 다른 모델을 먼저
-# 시도해 '다른 눈' 성격을 지킨다. gpt-oss 계열은 사용하지 않기로 해서 뺐다.
+# 시도해 '다른 눈' 성격을 지킨다. 대체 후보는 gaia 접두 모델만 쓴다.
 _FALLBACK_BY_ROLE = {
     "p1": ("gaia-Qwen3.6-35B-A3B", "gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest"),
     "p2": ("gaia-GLM-5.2", "gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest"),
