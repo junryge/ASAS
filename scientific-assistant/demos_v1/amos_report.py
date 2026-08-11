@@ -685,16 +685,37 @@ def _transform_amos_table(table_html):
     return table_html.replace(body, body2, 1)
 
 
+_H_AMOS = r"<h[123]\b[^>]*>[^<]*AMOS[^<]*감지[^<]*</h[123]>"
+_H_ACTUAL = r"<h[123]\b[^>]*>[^<]*실제[^<]*발생[^<]*내역[^<]*</h[123]>"
+_H_REPORT = r"<h1\b[^>]*>[^<]*(?:이벤트\s*발생\s*확인건|반송\s*이벤트)[^<]*</h1>"
+
+
+def _is_incident_report(body_html):
+    """사건발생 보고서인가 — 여기서만 인터랙티브 블록을 넣는다.
+
+    데모스는 아무 문서나 HTML 로 내보내는 범용 채팅이라, 무조건 넣으면
+    엉뚱한 문서에 AMOS 툴바가 붙는다. 아래 셋 중 하나면 보고서로 본다.
+    """
+    return bool(re.search(_H_AMOS, body_html)
+                or re.search(_H_ACTUAL, body_html)
+                or re.search(_H_REPORT, body_html))
+
+
 def amosify(body_html):
     """body_html 에 AMOS 인터랙티브 블록 주입. 반환 (body_html, has_amos).
-    실패 시 원본 그대로 (보고서 생성 절대 안 깨짐)."""
+    실패 시 원본 그대로 (보고서 생성 절대 안 깨짐).
+
+    ★2번 AMOS 표가 비어도(사건 0건이거나 LLM 이 '내역 없음' 만 썼어도)
+      3번 '실제 이상 발생내역' 의 수동 기입은 **무조건** 들어간다.
+      AMOS 가 못 잡은 이상을 사람이 적는 칸이라, 감지 결과와 무관하게
+      항상 열려 있어야 한다 (페르소나: "수동 기입은 항상 가능해야 한다").
+      예전엔 AMOS 헤딩이 없으면 통째로 건너뛰어 3번이 사라졌다.
+    """
     try:
-        if "AMOS" not in body_html:
+        if not _is_incident_report(body_html):
             return body_html, False
-        # 1) AMOS 헤딩 + 바로 다음 <table> 변환
-        hm = re.search(r"<h[123]\b[^>]*>[^<]*AMOS[^<]*감지[^<]*</h[123]>", body_html)
-        if not hm:
-            return body_html, False
+        # 1) AMOS 헤딩 + 바로 다음 <table> 변환 (헤딩이 없으면 이 단계만 건너뛴다)
+        hm = re.search(_H_AMOS, body_html)
 
         # 0) 총평 섹션의 '점수 등급 기준' 표 제거 (등급 기준은 헤딩 인라인으로 충분 — 고객 요청)
         def _strip_grade_table(html):
@@ -703,18 +724,23 @@ def amosify(body_html):
                 if ("경계" in seg) and ("초위험" in seg) and re.search(r"50\s*~\s*70", seg):
                     return html[:tm0.start()] + html[tm0.end():]
             return html
-        head_part = body_html[:hm.start()]
-        head_part2 = _strip_grade_table(head_part)
-        if head_part2 != head_part:
-            body_html = head_part2 + body_html[hm.start():]
-            hm = re.search(r"<h[123]\b[^>]*>[^<]*AMOS[^<]*감지[^<]*</h[123]>", body_html)
-        after = body_html[hm.end():]
-        tm = re.search(r"<table\b[^>]*>[\s\S]*?</table>", after)
-        if tm:
-            new_table = ('<div class="table-wrap">'
-                         + _transform_amos_table(tm.group(0))
-                         + "</div>")
-            body_html = body_html[:hm.end()] + after[:tm.start()] + new_table + after[tm.end():]
+        if hm:
+            head_part = body_html[:hm.start()]
+            head_part2 = _strip_grade_table(head_part)
+            if head_part2 != head_part:
+                body_html = head_part2 + body_html[hm.start():]
+                hm = re.search(_H_AMOS, body_html)
+            after = body_html[hm.end():]
+            # 표는 '다음 헤딩 전' 까지만 찾는다 — 2번이 '내역 없음' 한 줄이면
+            # 뒤쪽 다른 섹션의 표를 AMOS 표로 착각해 뜯어고치면 안 된다.
+            nxt_h = re.search(r"<h[12]\b", after)
+            zone = after[:nxt_h.start()] if nxt_h else after
+            tm = re.search(r"<table\b[^>]*>[\s\S]*?</table>", zone)
+            if tm:
+                new_table = ('<div class="table-wrap">'
+                             + _transform_amos_table(tm.group(0))
+                             + "</div>")
+                body_html = body_html[:hm.end()] + after[:tm.start()] + new_table + after[tm.end():]
 
         # 2) '실제 이상 발생내역' 헤딩 아래 내용을 인터랙티브 스켈레톤으로 교체(없으면 삽입)
         rm = re.search(r"<h[123]\b[^>]*>[^<]*실제[^<]*발생[^<]*내역[^<]*</h[123]>", body_html)
@@ -724,13 +750,19 @@ def amosify(body_html):
             cut = nx.start() if nx else len(tail)
             body_html = body_html[:rm.end()] + SECTION3_HTML + tail[cut:]
         else:
-            # 헤딩 자체가 없으면 AMOS 표 뒤에 섹션째 삽입
-            hm2 = re.search(r"</table>\s*</div>", body_html)
+            # 3번 헤딩이 아예 없다 (LLM 이 빼먹었거나 사건 0건인 날).
+            # 그래도 수동 기입은 있어야 하므로 섹션째 만들어 넣는다.
+            # 자리: 2번 섹션 끝 → 없으면 '4. 위험 이벤트 상세' 앞 → 그것도 없으면 맨 끝.
             ins = "<h2>3. 실제 이상 발생내역</h2>" + SECTION3_HTML
-            if hm2:
-                body_html = body_html[:hm2.end()] + ins + body_html[hm2.end():]
-            else:
-                body_html += ins
+            at = None
+            if hm:                                   # 2번 헤딩 뒤 다음 헤딩 직전
+                nx = re.search(r"<h[12]\b", body_html[hm.end():])
+                at = hm.end() + nx.start() if nx else len(body_html)
+            if at is None:
+                dm0 = re.search(r"<h[123]\b[^>]*>[^<]*위험[^<]*이벤트[^<]*상세[^<]*</h[123]>",
+                                body_html)
+                at = dm0.start() if dm0 else len(body_html)
+            body_html = body_html[:at] + ins + body_html[at:]
 
         # 3) 리포트 그래프를 '위험 이벤트 상세' 헤딩 아래로 이동 (샘플5 배치)
         gm = re.search(r'<div class="hub-report-graph"[\s\S]*?</div>\s*', body_html)
