@@ -734,6 +734,19 @@ def api_analysis_list():
         return jsonify({"items": [], "error": f"{type(e).__name__}: {e}"})
 
 
+@app.route("/api/analysis/delete", methods=["POST"])
+def api_analysis_delete():
+    """분석 기록 삭제 — body: {ids: [...]} (여러 건 한 번에)."""
+    ids = (request.get_json(silent=True) or {}).get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids 필요"}), 400
+    try:
+        from analysis import delete_analyses
+        return jsonify(delete_analyses(ids, CFG))
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/analysis/<aid>")
 def api_analysis_get(aid):
     from analysis import get_analysis

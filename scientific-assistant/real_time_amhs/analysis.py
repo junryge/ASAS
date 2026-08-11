@@ -271,6 +271,17 @@ def _repair_json(t: str) -> dict | None:
         return None
 
 
+def _strip_fences(t: str) -> str:
+    """```json … ``` 코드펜스를 벗긴다.
+
+    GLM-5.2 가 프리필 뒤에 펜스를 다시 열어 '{"구간": "```json {"구간": "…'
+    같은 응답을 만들었다. 펜스를 먼저 지워야 JSON 스캔이 걸린다.
+    """
+    t = str(t or "")
+    t = re.sub(r"```[a-zA-Z]*\s*", "", t)
+    return t.replace("```", "")
+
+
 def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
     """JSON 추출 — 단, **산문이 JSON 으로 둔갑하는 것을 막는다.**
 
@@ -288,7 +299,7 @@ def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
         hit = sum(1 for k in required if k in v)
         return hit >= min(2, len(required))
 
-    t = scrub(txt or "")
+    t = _strip_fences(scrub(txt or ""))
     for cand in reversed(_json_candidates(t)):
         try:
             v = json.loads(cand)
@@ -297,7 +308,24 @@ def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
         if ok(v):
             return v
     v = _repair_json(t)                    # 잘린 응답 구제
-    return v if ok(v) else None
+    if ok(v):
+        return v
+    # 앞에 군더더기가 붙어 첫 '{' 가 가짜인 경우 — 각 '{' 지점부터 다시 시도.
+    #   예: '{"구간": "```json {"구간": "09:01…'  (프리필이 앞에 겹친 형태)
+    for i, ch in enumerate(t):
+        if ch != "{" or i == 0:
+            continue
+        v = _repair_json(t[i:])
+        if ok(v):
+            return v
+        for cand in reversed(_json_candidates(t[i:])):
+            try:
+                v = json.loads(cand)
+            except json.JSONDecodeError:
+                continue
+            if ok(v):
+                return v
+    return None
 
 
 # 단계마다 대체 순서를 다르게 둔다. 검증(3차)은 앞 단계와 다른 모델을 먼저
@@ -358,6 +386,15 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
     models = [primary] + _fallbacks(cfg, sid)
     log: list[str] = []
 
+    # ★프리필(assistant 턴 미리 채우기)은 기본으로 쓰지 않는다.
+    #   Qwen 계열에는 잘 들었지만 다른 모델에서 역효과가 컸다 —
+    #     GLM-5.2   : 프리필 뒤에 ```json 펜스를 다시 열어 JSON 이 깨짐
+    #     Qwen3.6   : 프리필만 되돌려주고 본문을 안 씀
+    #     gpt-oss   : 프리필 안에 영어 추론("We need to output JSON…")을 씀
+    #   프리필 없이 부르고 응답에서 JSON 을 찾아내는 편이 훨씬 안정적이다.
+    use_pre = bool(a.get("use_prefill", False))
+    pre = prefill if (use_pre and want_json) else (prefill if not want_json else None)
+
     def call(model: str, u: str):
         c = dict(cfg)
         lc = dict(cfg.get("llm", {}))
@@ -365,7 +402,7 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
         c["llm"] = lc
         try:
             return chat([sys_msg, {"role": "user", "content": u}], c,
-                        max_tokens=max_tokens, prefill=prefill)
+                        max_tokens=max_tokens, prefill=pre)
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
 
@@ -446,7 +483,9 @@ _REQUIRED = {
 
 
 
-_KOREAN_RULE = "★한국어로만. 추론 과정 금지. 데이터에 없는 것을 지어내지 마라.\n"
+_KOREAN_RULE = ("★한국어로만. 추론 과정·서론·설명 금지. 데이터에 없는 것을 지어내지 마라.\n"
+                "★출력은 **JSON 객체 하나만**. 코드펜스(```) 쓰지 마라. "
+                "'{' 로 시작해 '}' 로 끝나야 한다.\n")
 
 
 # ────────────────────────── 단계별 실행 ──────────────────────────
@@ -849,6 +888,32 @@ def get_analysis(aid: str, cfg: dict | None = None) -> dict | None:
         return None
     with open(p, encoding="utf-8") as f:
         return json.load(f)
+
+
+def delete_analyses(ids, cfg: dict | None = None) -> dict:
+    """분석 기록 삭제 (여러 건). 반환 {deleted, missing, invalid}.
+
+    id 형식을 정규식으로 못박아 경로 탈출(../)을 막는다 — 파일명을 그대로
+    경로에 붙이는 자리라 여기서 막지 않으면 임의 파일이 지워질 수 있다.
+    """
+    cfg = cfg or load_config()
+    d = _store_dir(cfg)
+    deleted, missing, invalid = [], [], []
+    for aid in (ids or []):
+        aid = str(aid or "")
+        if not re.fullmatch(r"A\d{8}_\d{6}", aid):
+            invalid.append(aid)
+            continue
+        p = os.path.join(d, aid + ".json")
+        if not os.path.isfile(p):
+            missing.append(aid)
+            continue
+        try:
+            os.remove(p)
+            deleted.append(aid)
+        except OSError as e:
+            invalid.append(f"{aid}({e})")
+    return {"deleted": deleted, "missing": missing, "invalid": invalid}
 
 
 if __name__ == "__main__":

@@ -491,7 +491,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
 /* ══════════ 🧪 분석 탭 — 4-LLM 병렬 분석 ══════════
    ①위험도 종합 ②구역 진단 ③전파 경로 ④조치 요약 이 병렬로 돌고
    ⑤통합 리포트가 종합한다. 서버가 백그라운드로 돌리고 여기선 2초 폴링. */
-let AN_TIMER=null, AN_INIT=false;
+let AN_TIMER=null, AN_INIT=false, AN_OPEN=null;
 
 async function initAnalysis(){
   loadAnalysisList();
@@ -638,6 +638,7 @@ function anObs(obs){
 
 async function loadAnalysis(aid){
   const r = await api('/api/analysis/'+encodeURIComponent(aid));
+  AN_OPEN = r && !r.error ? aid : null;
   if(r.error){ $('#anout').innerHTML=`<div class="warn">${esc(r.error)}</div>`; return; }
   const pk = r.peak||{};
   const roleIds = (r.pipeline && r.pipeline.length) ? r.pipeline : AN_ORDER;
@@ -727,22 +728,74 @@ async function checkAnModels(){
   }catch(e){ out.innerHTML = '<div class="warn">모델 조회 실패 — 서버 확인</div>'; }
 }
 
+let AN_SEL = new Set();          // 다중 삭제용 선택 목록
+
 async function loadAnalysisList(){
   try{
     const d = await api('/api/analysis/list');
     const items = d.items||[];
-    $('#anlist').innerHTML = items.length
-      ? `<table class="pol"><thead><tr><th>날짜</th><th>범위</th><th>분</th><th>최고</th>
-           <th>역할 성공</th><th>생성</th><th></th></tr></thead><tbody>`
-        + items.map(x=>{
-            const pk=x.peak||{};
-            return `<tr><td>${esc(x.day)}</td><td>${esc(x.span)}</td><td>${x.minutes}</td>
-              <td>${pk.emoji||''} ${pk.score||''}점</td><td>${x.roles_ok}/4</td>
-              <td class="mono" style="font-size:11px">${esc((x.generated_at||'').replace('T',' ').slice(5,16))}</td>
-              <td><a href="#" style="color:var(--cy)" onclick="loadAnalysis('${esc(x.id)}');return false;">열기</a></td></tr>`;
-          }).join('')+`</tbody></table>`
-      : '아직 분석 기록이 없습니다 — 날짜를 고르고 <b style="color:var(--tx2)">🧪 분석 실행</b>을 누르세요.';
+    AN_SEL.forEach(id=>{ if(!items.some(x=>x.id===id)) AN_SEL.delete(id); });  // 사라진 건 정리
+    if(!items.length){
+      $('#anlist').innerHTML='아직 분석 기록이 없습니다 — 날짜를 고르고 <b style="color:var(--tx2)">🧪 분석 실행</b>을 누르세요.';
+      return;
+    }
+    $('#anlist').innerHTML =
+      `<div class="row" style="margin-bottom:6px">
+         <label class="note" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer">
+           <input type="checkbox" id="anallchk" onchange="anToggleAll(this.checked)"> 전체 선택</label>
+         <button class="act" id="anbulkdel" onclick="anDeleteSelected()" disabled
+                 style="padding:3px 10px;font-size:11.5px;color:var(--crit);border-color:#5a2530">
+           선택 삭제 <span id="anselN">0</span></button>
+         <span class="note" style="margin-left:auto">${items.length}건</span>
+       </div>
+       <table class="pol"><thead><tr><th style="width:34px"></th><th>날짜</th><th>범위</th><th>분</th>
+         <th>최고</th><th>역할 성공</th><th>생성</th><th style="width:96px"></th></tr></thead><tbody>`
+      + items.map(x=>{
+          const pk=x.peak||{};
+          const ck = AN_SEL.has(x.id) ? 'checked' : '';
+          return `<tr><td><input type="checkbox" ${ck} onchange="anToggle('${esc(x.id)}',this.checked)"></td>
+            <td>${esc(x.day)}</td><td>${esc(x.span)}</td><td>${x.minutes}</td>
+            <td>${pk.emoji||''} ${pk.score||''}점</td><td>${x.roles_ok}/${x.roles_n||4}</td>
+            <td class="mono" style="font-size:11px">${esc((x.generated_at||'').replace('T',' ').slice(5,16))}</td>
+            <td><a href="#" style="color:var(--cy)" onclick="loadAnalysis('${esc(x.id)}');return false;">열기</a>
+              &nbsp;<a href="#" style="color:var(--crit)" onclick="anDelete('${esc(x.id)}');return false;">삭제</a></td></tr>`;
+        }).join('')+`</tbody></table>`;
+    anSyncSel();
   }catch(e){ $('#anlist').textContent='목록 조회 실패'; }
+}
+
+function anSyncSel(){
+  const n = AN_SEL.size, b = $('#anbulkdel');
+  if($('#anselN')) $('#anselN').textContent = n;
+  if(b) b.disabled = !n;
+}
+function anToggle(id, on){ on ? AN_SEL.add(id) : AN_SEL.delete(id); anSyncSel(); }
+function anToggleAll(on){
+  document.querySelectorAll('#anlist tbody input[type=checkbox]').forEach((c,i)=>{ c.checked=on; });
+  AN_SEL.clear();
+  if(on) document.querySelectorAll('#anlist tbody tr').forEach(tr=>{
+    const a = tr.querySelector('a[onclick^="loadAnalysis"]');
+    const m = a && a.getAttribute('onclick').match(/loadAnalysis\('([^']+)'/);
+    if(m) AN_SEL.add(m[1]);
+  });
+  anSyncSel();
+}
+
+async function anDeleteIds(ids, msg){
+  if(!ids.length) return;
+  if(!confirm(msg)) return;
+  const r = await post('/api/analysis/delete', {ids});
+  if(r.error){ alert(r.error); return; }
+  (r.deleted||[]).forEach(id=>AN_SEL.delete(id));
+  // 지금 열려 있는 분석이 지워졌으면 화면도 비운다
+  if(AN_OPEN && (r.deleted||[]).includes(AN_OPEN)){ $('#anout').innerHTML=''; AN_OPEN=null; }
+  $('#anmsg').textContent = `삭제 ${(r.deleted||[]).length}건`
+    + ((r.missing||[]).length ? ` · 없음 ${(r.missing).length}` : '');
+  loadAnalysisList();
+}
+function anDelete(id){ anDeleteIds([id], '이 분석 기록을 삭제할까요?'); }
+function anDeleteSelected(){
+  anDeleteIds([...AN_SEL], `선택한 ${AN_SEL.size}건을 삭제할까요?`);
 }
 /* ══════════ /분석 탭 ══════════ */
 
