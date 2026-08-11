@@ -204,7 +204,12 @@
       "_tokens_doc": "2·3차는 추론이 새어 나와도 그 뒤 JSON 이 들어갈 만큼 넉넉히 준다. 1400/1600 이던 시절 모델이 추론문을 쓰다 토큰이 끝나 JSON 을 시작도 못 하고 실패했다. 실패가 '추론문만 쓰다 토큰 소진' 으로 보이면 max_tokens_cap 까지 1.8배씩 올려 다시 부른다.",
       "json_mode": true,
       "disable_thinking": true,
-      "_json_mode_doc": "게이트웨이 기능으로 사고 유출을 막는다. response_format={\"type\":\"json_object\"} 로 JSON 이외 출력을 서버가 거부하게 하고, chat_template_kwargs={\"enable_thinking\":false} 로 사고 템플릿을 끈다(gpt-oss 계열은 reasoning_effort=low 도 함께). 게이트웨이가 이 키를 모르면 400 이 오는데, 400 은 즉답이라 공짜이므로 옵션을 한 단계씩 빼며 자동 재시도한다(전체 → response_format 만 → 없음). false 로 두면 옵션을 아예 안 보낸다."
+      "_json_mode_doc": "게이트웨이 기능으로 사고 유출을 막는다. response_format={\"type\":\"json_object\"} 로 JSON 이외 출력을 서버가 거부하게 하고, chat_template_kwargs={\"enable_thinking\":false} 로 사고 템플릿을 끈다(gpt-oss 계열은 reasoning_effort=low 도 함께). 게이트웨이가 이 키를 모르면 400 이 오는데, 400 은 즉답이라 공짜이므로 옵션을 한 단계씩 빼며 자동 재시도한다(전체 → response_format 만 → 없음). false 로 두면 옵션을 아예 안 보낸다.",
+      "transient_retries": 3,
+      "transient_backoff_s": 1.0,
+      "_transient_doc": "게이트웨이 일시 장애(503/502/500/429 등) 전용 재시도 예산 — 단계 전체 합계. 503 은 모델 잘못도 프롬프트 잘못도 아니라 nginx/litellm 앞단이 잠깐 못 받는 상태다(백엔드 vLLM 재시작·혼잡). 1·2·4초 기다렸다가 그때마다 다음 대체 모델(=다른 백엔드)로 옮겨 다시 부른다. '느린 실패'(retries) 예산과 별개다.",
+      "leak_retries": 1,
+      "_leak_doc": "모델이 추론문만 쓰다 토큰이 끝났을 때만 주는 추가 시도 횟수. 이때는 max_tokens 를 max_tokens_cap 까지 1.8배 올려 다시 부른다."
     }
   },
   "grade": {

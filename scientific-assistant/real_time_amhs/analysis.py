@@ -417,6 +417,36 @@ def _opt_name(extra) -> str:
     return ", ".join(extra) if isinstance(extra, dict) and extra else "옵션 없음"
 
 
+# ── 게이트웨이 일시 장애 ────────────────────────────────────────────
+# 503 은 모델 잘못도, 프롬프트 잘못도 아니다. nginx/litellm 앞단이 잠깐
+# 못 받는 상태다 (백엔드 vLLM 재시작·혼잡). 실제로 이런 게 왔다:
+#   HTTP 503 litellm.ServiceUnavailableError: Hosted_vllmException -
+#   <html><title>503 Service Temporarily Unavailable</title>…nginx…
+# 이건 잠깐 기다렸다 다시 부르면 대개 살아난다. 그런데 예전엔 '느린 실패' 로
+# 세어 retries(1) 를 바로 다 쓰고 한 번에 포기했다 → 1차 3조각이 전부 죽었다.
+# 그래서 일시 장애는 **따로 예산**을 두고, 기다렸다가 **다른 모델(다른 백엔드)**
+# 로 옮겨가며 다시 부른다.
+_TRANSIENT = ("http 429", "http 500", "http 502", "http 503", "http 504",
+              "serviceunavailable", "service unavailable", "temporarily unavailable",
+              "bad gateway", "overloaded", "rate limit", "ratelimit",
+              "too many requests", "connection reset", "remote end closed",
+              "게이트웨이 일시 불가")   # _short_err 로 이미 줄인 문구도 알아본다
+
+
+def _is_transient(err) -> bool:
+    return any(k in str(err or "").lower() for k in _TRANSIENT)
+
+
+def _short_err(err) -> str:
+    """화면·로그용 한 줄 요약. 503 은 nginx HTML 이 통째로 딸려와 길다."""
+    e = " ".join(str(err or "").split())
+    if _is_transient(e):
+        m = re.search(r"\b(4\d\d|5\d\d)\b", e)
+        return (f"게이트웨이 일시 불가 ({m.group(1) if m else '5xx'}) — "
+                f"서버 혼잡이거나 재시작 중")
+    return e[:160]
+
+
 # 400 이지만 옵션이 아니라 **모델** 문제인 경우 — 옵션을 빼봐야 소용없다
 _MODEL_HARD = ("invalid model", "model not found", "does not exist",
                "team not allowed", "no such model", "unknown model")
@@ -512,6 +542,9 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
     # '추론문 쓰다 토큰 소진' 은 토큰만 늘리면 대부분 살아난다. 이 경우에 한해
     # 재시도 예산을 1회 돌려준다 (retries 를 통째로 올리면 모든 실패가 느려진다).
     leaks, leak_budget = 0, int(a.get("leak_retries", 1))
+    # 게이트웨이 일시 장애(503 등) 전용 예산 — 단계 전체 합계
+    trans, trans_budget = 0, int(a.get("transient_retries", 3))
+    trans_back = float(a.get("transient_backoff_s", 1.0))
 
     def escalate() -> bool:
         nonlocal mt, leaks, slow
@@ -529,6 +562,25 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
         model = models[mi]
         txt, err = call_opt(model, user + hint, mt)
 
+        # 게이트웨이 일시 장애 — 모델·프롬프트 잘못이 아니다. 잠깐 기다렸다가
+        # 다음 모델(다른 백엔드)로 옮겨 다시 부른다. '느린 실패' 예산과 별개.
+        if err and _is_transient(err):
+            last_err = err
+            if trans >= trans_budget:
+                log.append(f"{model}: {_short_err(err)} — 계속 실패, 포기")
+                break
+            trans += 1
+            wait = round(trans_back * (2 ** (trans - 1)), 1)
+            nxt = mi + 1 if mi + 1 < len(models) else mi
+            where = f"대체 모델 {models[nxt]}" if nxt != mi else "같은 모델"
+            log.append(f"{model}: {_short_err(err)} → {wait}초 후 {where} 로 "
+                       f"재시도 ({trans}/{trans_budget})")
+            if stopped():
+                break
+            time.sleep(wait)
+            mi = nxt
+            continue
+
         # 모델 거부 — 즉답이라 비용이 거의 없다. 재시도 예산을 쓰지 않는다.
         if err and any(k in str(err) for k in _MODEL_ERR):
             log.append(f"{model}: 모델 거부 → 대체")
@@ -538,7 +590,7 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
 
         slow += 1                                   # 여기서부터는 '비싼' 시도
         if err:
-            log.append(f"{slow}회 {model}({mt}토큰): {str(err)[:80]}")
+            log.append(f"{slow}회 {model}({mt}토큰): {_short_err(err)}")
             last_err = err
             if "본문 없는 응답" in str(err) and escalate():   # 사고 토큰만 쓰고 잘림
                 continue
@@ -568,7 +620,7 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
         if leak and escalate():
             continue
 
-    return (None, f"실패 — {last_err} [{' / '.join(log)}]",
+    return (None, f"실패 — {_short_err(last_err)}",
             round(time.time() - t0, 1), models[min(mi, len(models) - 1)], log)
 
 
@@ -729,6 +781,17 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
     if not txt:
         return "", note or "최종 리포트 생성 실패", took, model
     return scrub(str(txt)), note, took, model
+
+
+def _fail_kind(err) -> str:
+    """실패를 사용자 말로 구분한다 — 서버가 죽은 건지, LLM 이 못 한 건지."""
+    txt = " ".join(err) if isinstance(err, (list, tuple)) else str(err or "")
+    return "gateway" if _is_transient(txt) else "llm"
+
+
+def _fill_status(err) -> str:
+    return ("게이트웨이 불가 · 숫자만 채움" if _fail_kind(err) == "gateway"
+            else "LLM 실패 · 숫자만 채움")
 
 
 # ── 단계 실패 시 채워 넣을 통계 결과 ───────────────────────────────
@@ -896,10 +959,10 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
         "took_s": round(time.time() - t1, 1),
         "result": {"조각수": len(chunks), "성공": 0 if p1_filled else len(obs),
                    "관찰": obs, "채움": p1_filled},
-        "error": "; ".join(errs1) if errs1 and not obs else
-                 ("; ".join(errs1) if errs1 else None),
+        "error": "; ".join(errs1) if errs1 else None,
+        "fail_kind": _fail_kind(errs1) if p1_filled else None,
     }
-    prog["roles"]["p1"].update(status=("LLM 실패 · 숫자만 채움" if p1_filled else
+    prog["roles"]["p1"].update(status=(_fill_status(errs1) if p1_filled else
                                        ("완료" if obs else "실패")),
                                took_s=stages_out["p1"]["took_s"],
                                error=stages_out["p1"]["error"])
@@ -914,8 +977,9 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
                         "icon": STAGES["p2"]["icon"], "model": m2 or _stage_model(cfg, "p2"),
                         "took_s": tk2, "result": p2,
                         "error": e2 if p2_filled else None,
+                        "fail_kind": _fail_kind(e2) if p2_filled else None,
                         "note": e2 if (not p2_filled and e2) else None}
-    prog["roles"]["p2"].update(status="LLM 실패 · 숫자만 채움" if p2_filled else "완료",
+    prog["roles"]["p2"].update(status=_fill_status(e2) if p2_filled else "완료",
                                took_s=tk2, error=e2 if p2_filled else None)
 
     # ── 3차 ──
@@ -928,8 +992,9 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
                         "icon": STAGES["p3"]["icon"], "model": m3 or _stage_model(cfg, "p3"),
                         "took_s": tk3, "result": p3,
                         "error": e3 if p3_filled else None,
+                        "fail_kind": _fail_kind(e3) if p3_filled else None,
                         "note": e3 if (not p3_filled and e3) else None}
-    prog["roles"]["p3"].update(status="LLM 실패 · 숫자만 채움" if p3_filled else "완료",
+    prog["roles"]["p3"].update(status=_fill_status(e3) if p3_filled else "완료",
                                took_s=tk3, error=e3 if p3_filled else None)
 
     # ── 최종 ──
