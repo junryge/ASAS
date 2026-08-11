@@ -45,6 +45,17 @@ DEFAULTS = {
     "sustain_min": 5,
     "min_points": 8,
     "quiet_below": 20,
+    # ④ 다지표 — 점수 기울기 하나만 보지 않고 선행 지표를 같이 본다 (아래 설명)
+    "multi": {
+        "enabled": True,
+        "metrics": [],            # 비우면 leading() 이 뽑은 상위 지표를 자동 사용
+        "top_k": 3,
+        "min_rising": 2,          # 이만큼 오르고 있어야 '선행 신호 있음'
+        "rise_pct": 25,           # 지표가 '오르고 있다' 로 볼 상승률(창 환산 %)
+        "assist_slope": 0.25,     # 선행 신호가 있으면 점수 기울기를 여기까지 완화
+        "assist_horizon_min": 30,  # 선행 신호가 있으면 이만큼 먼 미래까지 예보
+        "require_for_warn": False,  # True 면 선행 신호 없는 경보는 억제(오보↓)
+    },
 }
 
 
@@ -135,16 +146,40 @@ def _driver_metrics(cfg: dict) -> list[dict]:
     return uniq
 
 
-def _decide(pts: list[tuple[float, float]], floor: float, f: dict) -> dict:
+def _mcfg(f: dict) -> dict:
+    m = dict(DEFAULTS["multi"])
+    m.update((f or {}).get("multi") or {})
+    return m
+
+
+def _decide(pts: list[tuple[float, float]], floor: float, f: dict,
+            sig: dict | None = None) -> dict:
     """창 하나(분오프셋, 점수)로 경보 판정. **판정 규칙은 여기 한 곳뿐이다.**
 
     실시간 predict() 와 사후 채점 score() 가 같은 함수를 부른다. 두 곳에
     따로 쓰면 규칙이 조금씩 어긋나 '채점 결과'가 실제 화면과 달라진다 —
     그러면 채점을 믿고 임계를 조정할 수 없다.
+
+    sig = 같은 시각의 **선행 지표 신호** {"n": 오르는 개수, "names": [...],
+    "checked": 본 개수}. 점수는 결과이고 지표가 원인이라, 지표가 같이 오르면
+    같은 상승도 더 믿을 수 있다.
+      · 선행 신호가 있으면  → 기울기 기준을 assist_slope 로 낮추고
+                              예보 범위를 assist_horizon_min 까지 늘린다 (조기 감지)
+      · 선행 신호가 없으면  → 기본 기준 그대로. require_for_warn 이면 아예 억제
+                              (점수만 잠깐 튀는 헛경보를 줄인다)
     """
+    m = _mcfg(f)
+    sig = sig or {"n": 0, "names": [], "checked": 0}
+    use_multi = bool(m.get("enabled", True)) and sig.get("checked", 0) > 0
+    has_lead = use_multi and int(sig.get("n", 0)) >= int(m["min_rising"])
+    slope_min = float(m["assist_slope"]) if has_lead else float(f["min_slope"])
+    horizon = (float(m["assist_horizon_min"]) if has_lead
+               else float(f["horizon_min"]))
+
     base = {"warn": False, "eta_min": None, "current": None, "projected": None,
             "slope": 0.0, "confidence": 0, "sustain": 0, "points": len(pts),
-            "reason": ""}
+            "lead_n": int(sig.get("n", 0)), "lead_names": list(sig.get("names", [])),
+            "assisted": False, "horizon_used": horizon, "reason": ""}
     if len(pts) < int(f["min_points"]):
         return {**base, "reason": f"표본 부족 — {len(pts)}분 (최소 {f['min_points']}분)"}
 
@@ -164,24 +199,34 @@ def _decide(pts: list[tuple[float, float]], floor: float, f: dict) -> dict:
     steps = max(1, len(tail) - 1)
     base["sustain"] = round(100.0 * ups / steps)
 
-    if slope < float(f["min_slope"]):
-        return {**base, "reason": f"상승세 약함 — 분당 {slope:+.2f}점 (기준 {f['min_slope']})"}
+    if use_multi and m.get("require_for_warn") and not has_lead:
+        return {**base, "reason": f"선행 지표가 같이 오르지 않음 "
+                                  f"({sig.get('n', 0)}/{m['min_rising']}개) — 경보 보류"}
+    if slope < slope_min:
+        why = "선행 신호 반영 기준" if has_lead else "기준"
+        return {**base, "reason": f"상승세 약함 — 분당 {slope:+.2f}점 ({why} {slope_min})"}
     if base["sustain"] < 60:
         return {**base, "reason": f"최근 {f['sustain_min']}분 오르내림 — 상승 비율 {base['sustain']}%"}
 
     eta = (floor - cur) / slope
-    if eta <= 0 or eta > float(f["horizon_min"]):
-        return {**base, "reason": f"도달 예상 {eta:.0f}분 — 예보 범위({f['horizon_min']}분) 밖"}
+    if eta <= 0 or eta > horizon:
+        return {**base, "reason": f"도달 예상 {eta:.0f}분 — 예보 범위({horizon:.0f}분) 밖"}
 
     # 신뢰도 — 오르막 지속 비율 + 기울기 여유 + 표본 수를 섞은 0~100.
     #   통계적 신뢰구간이 아니라 '얼마나 일관되게 오르고 있나' 지표다.
-    conf = (0.5 * base["sustain"]
-            + 30.0 * min(1.0, slope / (float(f["min_slope"]) * 3))
-            + 20.0 * min(1.0, len(pts) / float(f["window_min"])))
-    return {**base, "warn": True, "eta_min": int(round(eta)),
-            "projected": round(min(100.0, cur + slope * float(f["horizon_min"])), 1),
+    #   선행 지표가 같이 오르면 '점수만 튄 게 아니다' 라는 뜻이라 더 얹는다.
+    conf = (0.45 * base["sustain"]
+            + 25.0 * min(1.0, slope / (float(f["min_slope"]) * 3))
+            + 15.0 * min(1.0, len(pts) / float(f["window_min"]))
+            + (15.0 * min(1.0, sig.get("n", 0) / max(1, int(m["min_rising"])))
+               if use_multi else 15.0 * min(1.0, slope / (float(f["min_slope"]) * 3))))
+    lead_txt = (f" · 선행 지표 {sig['n']}개 동반({', '.join(sig['names'][:3])})"
+                if has_lead else "")
+    return {**base, "warn": True, "eta_min": int(round(eta)), "assisted": has_lead,
+            "projected": round(min(100.0, cur + slope * horizon), 1),
             "confidence": int(max(0, min(100, round(conf)))),
-            "reason": f"분당 {slope:+.2f}점 · 최근 {f['sustain_min']}분 상승 {base['sustain']}%"}
+            "reason": (f"분당 {slope:+.2f}점 · 최근 {f['sustain_min']}분 상승 "
+                       f"{base['sustain']}%{lead_txt}")}
 
 
 def predict(rows: list[dict], cfg: dict | None = None) -> dict:
@@ -200,14 +245,28 @@ def predict(rows: list[dict], cfg: dict | None = None) -> dict:
     base = {"ok": True, "warn": False, "eta_min": None, "at": None,
             "current": None, "projected": None, "slope": 0.0, "level": "정상",
             "emoji": "🟢", "confidence": 0, "sustain": 0, "points": 0,
-            "floor": floor, "drivers": [], "reason": ""}
+            "floor": floor, "drivers": [], "reason": "",
+            "lead_n": 0, "lead_names": [], "assisted": False,
+            "lead_source": "", "lead_keys": []}
 
     if not f.get("enabled", True):
         return {**base, "ok": False, "reason": "예보 꺼짐(config.forecast.enabled)"}
 
-    pts, ref = _series(rows, "unified_risk_score", int(f["window_min"]))
-    d = _decide(pts, floor, f)
-    out = {**base, **d, "at": ref.strftime("%H:%M") if ref else None}
+    win = int(f["window_min"])
+    pts, ref = _series(rows, "unified_risk_score", win)
+
+    # 선행 지표가 같이 오르고 있나 — 점수는 결과, 지표가 원인이다
+    m = _mcfg(f)
+    sig, lm = {"n": 0, "names": [], "checked": 0}, {"source": "", "keys": []}
+    if m.get("enabled", True):
+        lm = lead_metrics(cfg, f)
+        pk = {x["key"]: _series(rows, x["key"], win, ref)[0] for x in lm["metrics"]}
+        sig = _signal_from(pk, {x["key"]: (x.get("label") or x["key"])
+                                for x in lm["metrics"]}, win, m)
+
+    d = _decide(pts, floor, f, sig)
+    out = {**base, **d, "at": ref.strftime("%H:%M") if ref else None,
+           "lead_source": lm.get("source", ""), "lead_keys": lm.get("keys", [])}
     if not out["warn"]:
         return out
     g = _grade_of(min(100.0, out["projected"] or 0), cfg)
@@ -255,6 +314,121 @@ def _drivers(rows: list[dict], cfg: dict, win_min: int) -> list[dict]:
 #   오보  = 넘지 않았다
 #   놓침  = 임계를 넘었는데 직전 horizon_min 안에 경보가 없었다
 #   선행분 = 돌파 시각 − 첫 경보 시각 (적중일 때만)
+# ── 선행 지표 신호 ────────────────────────────────────────────────
+# 어느 지표를 볼 것인가는 **과거가 정한다**. leading() 이 '점수보다 몇 분 먼저
+# 움직였나' 를 이미 재고 있으므로, 그중 가장 먼저 움직인 상위 몇 개를 쓴다.
+# 이력이 없으면(첫 가동) 추이 그래프의 지표 전체를 그냥 후보로 둔다 —
+# 학습된 목록이 아님을 source 로 밝힌다.
+_LEAD_PICK: dict = {"at": 0.0, "keys": None, "source": "", "detail": []}
+
+
+def lead_metrics(cfg: dict, f: dict | None = None, ttl_s: float = 600.0) -> dict:
+    """이번 판정에 쓸 선행 지표 목록 → {keys, metrics, source, detail}."""
+    import time as _t
+    from lp_client import load_config
+    cfg = cfg or load_config()
+    f = f or _cfg(cfg)
+    m = _mcfg(f)
+    allm = {x["key"]: x for x in _driver_metrics(cfg)}
+
+    fixed = [k for k in (m.get("metrics") or []) if k in allm]
+    if fixed:
+        return {"keys": fixed, "metrics": [allm[k] for k in fixed],
+                "source": "config 지정", "detail": []}
+
+    now = _t.time()
+    if _LEAD_PICK["keys"] is not None and now - _LEAD_PICK["at"] < ttl_s:
+        keys = [k for k in _LEAD_PICK["keys"] if k in allm]
+        return {"keys": keys, "metrics": [allm[k] for k in keys],
+                "source": _LEAD_PICK["source"], "detail": _LEAD_PICK["detail"]}
+
+    keys, source, detail = [], "", []
+    try:
+        d = leading(None, cfg)
+        rows = [x for x in (d.get("metrics") or [])
+                if x.get("samples") and x.get("median_lead") is not None]
+        if rows and d.get("events", 0) >= 3:
+            rows.sort(key=lambda x: (-(x["median_lead"] or 0), -x["hit_rate"]))
+            keys = [x["key"] for x in rows[:int(m["top_k"])] if x["key"] in allm]
+            source = f"선행 분석 학습 ({d.get('events')}건)"
+            detail = [{"key": x["key"], "label": x["label"],
+                       "median_lead": x["median_lead"], "hit_rate": x["hit_rate"]}
+                      for x in rows[:int(m["top_k"])]]
+    except Exception:
+        pass
+    if not keys:
+        keys = list(allm)[:max(int(m["top_k"]), 3)]
+        source = "이력 부족 — 추이 지표로 대체"
+    _LEAD_PICK.update(at=now, keys=keys, source=source, detail=detail)
+    return {"keys": keys, "metrics": [allm[k] for k in keys],
+            "source": source, "detail": detail}
+
+
+def _rise_pct(pts: list[tuple[float, float]], win_min: float) -> float:
+    """창 안에서 얼마나 올랐나 — 변동폭 대비 %. 단위가 달라도 비교되게."""
+    if len(pts) < 4:
+        return 0.0
+    slope = _theil_sen(pts)
+    vals = [v for _, v in pts]
+    span = max(vals) - min(vals)
+    if slope <= 0 or span <= 0:
+        return 0.0
+    return max(0.0, min(100.0, 100.0 * (slope * win_min) / span))
+
+
+def _signal_from(pts_by_key: dict, labels: dict, win_min: float, m: dict) -> dict:
+    n, names = 0, []
+    for k, pts in pts_by_key.items():
+        if _rise_pct(pts, win_min) >= float(m["rise_pct"]):
+            n += 1
+            names.append(labels.get(k, k))
+    return {"n": n, "names": names, "checked": len(pts_by_key)}
+
+
+# (날짜, 창길이, 지표목록) → 인덱스별 선행 신호. 격자 탐색이 min_slope 만
+# 바꿔가며 수십 번 채점하는데, 선행 신호는 그 값과 무관하므로 한 번만 센다.
+_SIG_CACHE: dict = {}
+
+
+def _sig_series(day: str, rows: list[dict], seq: list, lm: dict,
+                win_min: float, m: dict) -> list[dict]:
+    from sentinel import _row_dt
+    key = (day, round(win_min, 2), tuple(lm["keys"]), float(m["rise_pct"]), len(seq))
+    hit = _SIG_CACHE.get(key)
+    if hit is not None:
+        return hit
+
+    labels = {x["key"]: (x.get("label") or x["key"]) for x in lm["metrics"]}
+    # 지표별 (시각, 값) 을 한 번만 만들고 창은 인덱스로 자른다
+    series = {k: [] for k in lm["keys"]}
+    for r in rows or []:
+        d = _row_dt(r)
+        if d is None:
+            continue
+        for k in lm["keys"]:
+            v = _num(r.get(k))
+            if v is not None:
+                series[k].append((d, v))
+    for k in series:
+        series[k].sort(key=lambda x: x[0])
+
+    out = []
+    for i in range(len(seq)):
+        ref = seq[i][0]
+        pk = {}
+        for k, arr in series.items():
+            w = [((d - ref).total_seconds() / 60.0, v) for d, v in arr
+                 if 0 >= (d - ref).total_seconds() / 60.0 >= -win_min]
+            if w:
+                pk[k] = w
+        out.append(_signal_from(pk, labels, win_min, m))
+    if len(_SIG_CACHE) > 64:                 # 메모리 상한 — 오래된 것부터 버린다
+        for k in list(_SIG_CACHE)[:32]:
+            _SIG_CACHE.pop(k, None)
+    _SIG_CACHE[key] = out
+    return out
+
+
 def _seq_of(rows: list[dict]) -> list[tuple[datetime, float]]:
     from sentinel import _row_dt
     seq = []
@@ -296,9 +470,19 @@ def score(day: str, cfg: dict | None = None, params: dict | None = None,
     floor = alarm_floor(cfg)
     horizon = float(f["horizon_min"])
 
-    seq = _seq_of(rows if rows is not None else (read_day(day, cfg) or []))
+    src = rows if rows is not None else (read_day(day, cfg) or [])
+    seq = _seq_of(src)
     if len(seq) < int(f["min_points"]) + 2:
         return {"ok": False, "day": day, "error": f"{day} 데이터 부족 ({len(seq)}분)"}
+
+    # 선행 신호는 임계(min_slope 등)와 무관하다 → 격자 탐색이 같은 걸 수십 번
+    # 다시 계산하지 않도록 (창 길이, 지표 목록) 단위로 캐시해 재사용한다.
+    m = _mcfg(f)
+    sigs, lead_src = None, ""
+    if m.get("enabled", True):
+        lm = lead_metrics(cfg, f)
+        lead_src = lm.get("source", "")
+        sigs = _sig_series(day, src, seq, lm, float(f["window_min"]), m)
 
     # 임계 돌파 시각 (아래→위)
     crossings = [seq[i][0] for i in range(1, len(seq))
@@ -306,14 +490,17 @@ def score(day: str, cfg: dict | None = None, params: dict | None = None,
 
     warnings, cur_ep = [], None
     for i in range(len(seq)):
-        d = _decide(_window_pts(seq, i, float(f["window_min"])), floor, f)
+        d = _decide(_window_pts(seq, i, float(f["window_min"])), floor, f,
+                    (sigs[i] if sigs else None))
         t = seq[i][0]
         if d["warn"]:
             if cur_ep is None:
                 cur_ep = {"at": t, "last": t, "eta_min": d["eta_min"],
                           "slope": d["slope"], "confidence": d["confidence"],
                           "current": d["current"], "projected": d["projected"],
-                          "n": 1}
+                          "assisted": d.get("assisted", False),
+                          "lead_n": d.get("lead_n", 0),
+                          "lead_names": d.get("lead_names", []), "n": 1}
             else:
                 cur_ep["last"] = t
                 cur_ep["n"] += 1
@@ -350,6 +537,8 @@ def score(day: str, cfg: dict | None = None, params: dict | None = None,
     rec = round(100.0 * n_h / (n_h + n_m)) if (n_h + n_m) else None
     f1 = (round(2 * prec * rec / (prec + rec)) if (prec and rec) else 0)
     return {"ok": True, "day": day, "floor": floor, "minutes": len(seq),
+            "multi": bool(m.get("enabled", True)), "lead_source": lead_src,
+            "assisted": sum(1 for w in warnings if w.get("assisted")),
             "params": {k: f[k] for k in ("window_min", "horizon_min", "min_slope",
                                          "sustain_min", "min_points", "quiet_below")},
             "warnings": warnings,
@@ -400,6 +589,58 @@ def score_days(days: list[str] | None = None, cfg: dict | None = None,
             "events": hit + miss,
             "note": ("" if hit + miss >= 5 else
                      f"돌파 사건 {hit + miss}건 — 표본이 적어 참고용입니다(5건 이상 권장)")}
+
+
+def compare(days: list[str] | None = None, cfg: dict | None = None,
+            limit: int = 14) -> dict:
+    """다지표 선행 감지가 **정말 나은지** 같은 데이터로 맞대본다.
+
+    바꿨는데 좋아졌는지 모르면 안 바꾼 것만 못하다. 기존(점수 기울기만) 과
+    다지표를 같은 날짜·같은 임계로 각각 채점해 나란히 보여준다.
+    판단은 사람이 한다 — 어느 쪽이 낫다고 자동으로 바꾸지 않는다.
+    """
+    from lp_client import load_config
+    from store_csv import list_days, read_day
+    cfg = cfg or load_config()
+    if not days:
+        days = [d["day"] for d in (list_days(cfg) or [])][-limit:]
+    cache = {d: (read_day(d, cfg) or []) for d in days}
+
+    m0 = _mcfg(_cfg(cfg))
+    off = score_days(days, cfg, {"multi": {**m0, "enabled": False}}, limit, cache)
+    on = score_days(days, cfg, {"multi": {**m0, "enabled": True,
+                                          "require_for_warn": False}}, limit, cache)
+    # 세 번째 안 — 선행 지표가 같이 오르지 않으면 아예 억제. 이걸 켤지 말지는
+    # config 를 고쳐 하루 굴려보는 게 아니라 이 표를 보고 정하면 된다.
+    strict = score_days(days, cfg, {"multi": {**m0, "enabled": True,
+                                              "require_for_warn": True}}, limit, cache)
+    lm = lead_metrics(cfg)
+
+    def gain(a, b, higher=True):
+        if a is None or b is None:
+            return None
+        return round(b - a) if higher else round(a - b)
+
+    return {"ok": True, "days": on["days"], "events": on["events"],
+            "lead_source": lm.get("source", ""), "lead_detail": lm.get("detail", []),
+            "lead_keys": lm.get("keys", []),
+            "off": {k: off[k] for k in ("hit", "false", "miss", "precision",
+                                        "recall", "f1", "median_lead")},
+            "on": {k: on[k] for k in ("hit", "false", "miss", "precision",
+                                      "recall", "f1", "median_lead")},
+            "strict": {k: strict[k] for k in ("hit", "false", "miss", "precision",
+                                              "recall", "f1", "median_lead")},
+            "current": {"enabled": bool(m0.get("enabled", True)),
+                        "require_for_warn": bool(m0.get("require_for_warn", False))},
+            "best": max((("off", off), ("on", on), ("strict", strict)),
+                        key=lambda kv: (kv[1]["f1"] or 0,
+                                        kv[1]["median_lead"] or 0))[0],
+            "delta": {"hit": on["hit"] - off["hit"],
+                      "false": on["false"] - off["false"],
+                      "miss": on["miss"] - off["miss"],
+                      "f1": gain(off["f1"], on["f1"]),
+                      "median_lead": gain(off["median_lead"], on["median_lead"])},
+            "note": on["note"]}
 
 
 # 튜닝 격자 — 기울기·지속을 훑는다. 창 길이(window_min)는 기울기 계산을 통째로

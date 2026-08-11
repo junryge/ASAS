@@ -48,6 +48,7 @@ STATE = {
 LEADING_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
 # 임계 격자 탐색은 며칠치를 수십 번 되감아 몇 초 걸린다 — 짧게 캐시
 TUNE_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
+CMP_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
 
 
 # ────────────────────────────── 폴링 루프 ──────────────────────────────
@@ -828,6 +829,31 @@ def api_forecast_score():
         return jsonify(score_days(None, CFG, None, limit))
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/forecast/compare")
+def api_forecast_compare():
+    """다지표 선행 감지 A/B — 기존(점수 기울기만) vs 다지표를 같은 날로 채점.
+
+    바꿨는데 좋아졌는지 모르면 안 바꾼 것만 못하다. 자동으로 갈아타지 않고
+    숫자만 보여준다 — 켜고 끄는 건 config.forecast.multi.enabled.
+    """
+    import time as _t
+    limit = max(1, min(30, int(request.args.get("limit", 14) or 14)))
+    key = f"cmp|{limit}"
+    now = _t.time()
+    if (CMP_CACHE["data"] and CMP_CACHE["key"] == key
+            and now - CMP_CACHE["at"] < 60):
+        return jsonify({**CMP_CACHE["data"], "cached": True})
+    try:
+        from forecast import compare
+        t0 = _t.time()
+        data = compare(None, CFG, limit)
+        data["took_s"] = round(_t.time() - t0, 1)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    CMP_CACHE.update(at=now, data=data, key=key)
+    return jsonify({**data, "cached": False})
 
 
 @app.route("/api/forecast/tune")

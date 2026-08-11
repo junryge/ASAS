@@ -955,14 +955,19 @@ function renderForecast(fc){
       + `<span class="dim">감시 중 — ${esc(fc.reason || '조건 미달')}</span>`
       + (fc.current!=null ? `<span class="dim">현재 ${fc.current}점 · 분당 ${fc.slope>0?'+':''}${fc.slope}점`
           + ` · 표본 ${fc.points}분 · 임계 ${fc.floor}점</span>` : '')
+      + (fc.lead_n ? `<span class="dim" title="${esc((fc.lead_names||[]).join(', '))}">선행 지표 ${fc.lead_n}개 상승 중</span>` : '')
       + `<span class="dim" style="margin-left:auto">클릭 → 선행 지표 분석</span>`;
     return;
   }
   const dr = (fc.drivers||[]).slice(0,3).map(d =>
       `<span class="chip lv경계">${esc(d.label)} ${d.now}${esc(d.unit||'')}</span>`).join('');
+  // 선행 지표가 같이 오르면 그 사실을 앞에 붙인다 — 같은 경보라도 근거가 다르다
+  const lead = fc.assisted
+    ? `<span class="chip lv위험" title="선행 지표가 같이 올라 기준을 완화해 더 일찍 띄운 경보입니다: ${
+        esc((fc.lead_names||[]).join(', '))}">선행 지표 ${fc.lead_n}개 동반</span>` : '';
   box.innerHTML =
       `<span class="tag" style="color:var(--major)"><i style="background:var(--major)"></i>선행 감지</span>`
-    + `<b style="color:var(--major)">${fc.eta_min}분 뒤 임계(${fc.floor}점) 돌파 예상</b>`
+    + `<b style="color:var(--major)">${fc.eta_min}분 뒤 임계(${fc.floor}점) 돌파 예상</b>` + lead
     + `<span class="dim">현재 ${fc.current}점 · 분당 ${fc.slope>0?'+':''}${fc.slope}점`
     + ` · ${fc.horizon||15}분 뒤 ${fc.projected}점 ${fc.emoji} ${esc(fc.level)}</span>`
     + `<span class="cf" style="color:${fc.confidence>=70?'var(--major)':'var(--tx2)'}">확신 ${fc.confidence}%</span>`
@@ -994,7 +999,8 @@ async function openLeading(){
       ${fc ? `<div class="warn" style="margin:0 0 10px">지금 <b>${fc.eta_min}분 뒤 ${fc.floor}점 돌파</b> 예상 —
               현재 ${fc.current}점, 분당 ${fc.slope>0?'+':''}${fc.slope}점 (확신 ${fc.confidence}%)</div>` : ''}
       <div id="fcscore"><div class="empty">경보 성적 채점 중…</div></div>
-      <h4 style="margin:18px 0 6px;font-size:13px">② 어느 지표가 먼저 움직이나</h4>
+      <div id="fccmp" style="margin-top:14px"></div>
+      <h4 style="margin:18px 0 6px;font-size:13px">③ 어느 지표가 먼저 움직이나</h4>
       <p class="note" style="margin:0 0 10px">
         저장된 <b style="color:var(--tx2)">${(d.days||[]).length}일</b>에서 점수가 ${d.floor}점을 넘은
         <b style="color:var(--tx2)">${d.events}건</b>을 찾아, 그 앞 ${d.lookback_min}분에서 각 지표가
@@ -1066,8 +1072,62 @@ async function fcScore(){
       </div>
       <div id="tunebox"></div>`;
     $('#btntune').onclick = fcTune;
+    fcCompare();
   }catch(e){ box.innerHTML = '<div class="empty">채점 실패 — 서버 확인</div>'; }
 }
+/* ── 다지표 선행 감지 A/B ────────────────────────────────────────────
+   '지표를 같이 본다' 로 바꿨는데 정말 나아졌는지 같은 날짜로 맞대본다.
+   자동으로 갈아타지 않는다 — 숫자만 보여주고 켜고 끄는 건 사람이 정한다. */
+async function fcCompare(){
+  const box = $('#fccmp'); if(!box) return;
+  box.innerHTML = '<div class="note">다지표 비교 채점 중…</div>';
+  try{
+    const d = await api('/api/forecast/compare');
+    if(!d.ok){ box.innerHTML = `<div class="empty">${esc(d.error||'비교 실패')}</div>`; return; }
+    const cur = d.current||{};
+    const curKey = !cur.enabled ? 'off' : (cur.require_for_warn ? 'strict' : 'on');
+    const row = (key, nm, sub, v) => {
+      const isCur = key===curKey, isBest = key===d.best;
+      return `<tr${isBest?' style="background:rgba(34,197,94,.10)"':''}>
+      <td><b style="color:var(--tx)">${nm}</b>${isCur?' <span class="note">(지금 설정)</span>':''}
+        ${isBest&&!isCur?' <span class="chip lv경계" style="font-size:9.5px">이 데이터 최선</span>':''}
+        <div class="note" style="font-size:10.5px">${sub}</div></td>
+      <td>${v.hit}</td><td>${v.false}</td>
+      <td>${v.miss}</td><td>${pct(v.precision)}</td><td>${pct(v.recall)}</td>
+      <td><b>${v.f1}</b></td><td>${v.median_lead!=null?v.median_lead+'분':'–'}</td></tr>`;};
+    const dl = d.delta||{};
+    const arrow = (n, good) => n==null||n===0 ? '<span class="dim">변화 없음</span>'
+      : `<b style="color:${(n>0)===good?'var(--ok)':'var(--crit)'}">${n>0?'+':''}${n}</b>`;
+    box.innerHTML = `
+      <h4 style="margin:0 0 6px;font-size:13px">② 지표까지 같이 보면 나아지나
+        <span class="note">— 같은 날짜·같은 임계로 양쪽 채점</span></h4>
+      <p class="note" style="margin:0 0 6px">
+        점수는 <b style="color:var(--tx2)">결과</b>이고 지표가 <b style="color:var(--tx2)">원인</b>입니다.
+        선행 지표가 같이 오르면 같은 상승이라도 더 믿을 수 있어, 기울기 기준을 낮추고
+        더 먼 미래까지 봅니다(그만큼 일찍 뜹니다).<br>
+        보는 지표: <b style="color:var(--tx2)">${esc((d.lead_keys||[]).join(', ')||'없음')}</b>
+        <span class="dim">(${esc(d.lead_source||'')})</span>
+        ${d.note ? `<br><b style="color:var(--major)">${esc(d.note)}</b>` : ''}
+      </p>
+      <table class="pol"><thead><tr><th>방식</th><th>적중</th><th>오보</th><th>놓침</th>
+        <th>정밀도</th><th>재현율</th><th>F1</th><th>중앙 선행</th></tr></thead><tbody>
+        ${row('off', '기존 — 점수 기울기만', 'multi.enabled = false', d.off)}
+        ${row('on', '다지표 — 보조', 'enabled=true · require_for_warn=false', d.on)}
+        ${row('strict', '다지표 — 선행 신호 필수', 'enabled=true · require_for_warn=true', d.strict)}
+      </tbody></table>
+      <p class="note" style="margin:6px 0 0">
+        적중 ${arrow(dl.hit, true)} · 오보 ${arrow(dl.false, false)} ·
+        놓침 ${arrow(dl.miss, false)} · F1 ${arrow(dl.f1, true)} ·
+        선행 시간 ${arrow(dl.median_lead, true)}분
+        <span class="dim">(기존 → 다지표 보조)</span>
+        ${d.took_s?`<span class="dim"> · ${d.took_s}초</span>`:''}<br>
+        <span class="dim">세 줄은 <b>같은 데이터·같은 임계</b>로 방식만 바꿔 채점한 것입니다.
+        바꾸려면 config.json 의 forecast.multi 에서 enabled / require_for_warn 을 고치세요 —
+        여기서 자동으로 갈아타지 않습니다.</span>
+      </p>`;
+  }catch(e){ box.innerHTML = '<div class="empty">비교 실패 — 서버 확인</div>'; }
+}
+
 async function fcTune(){
   const b = $('#btntune'), box = $('#tunebox');
   b.disabled = true; b.textContent = '탐색 중…';
