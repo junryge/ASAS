@@ -383,6 +383,8 @@
           <input type="time" id="anend" value="10:00">
         </span>
         <button class="act pri" id="btnan" style="flex:0 0 auto">🧪 분석 실행</button>
+        <button class="act" id="btnanstop" style="flex:0 0 auto;display:none;color:var(--crit);border-color:#5a2530"
+                title="진행 중인 LLM 호출이 끝나는 대로 멈춥니다 (그때까지 결과는 저장)">■ 분석 중지</button>
         <button class="act" onclick="checkAnModels()" title="게이트웨이가 이 키에 허용한 모델 확인 (/v1/models)">모델 확인</button>
         <span class="note" id="anmsg"></span>
       </div>
@@ -523,6 +525,14 @@ $('#btnan').onclick = async () => {
   pollAnalysis();
 };
 
+/* 중지 — 이미 나간 LLM 호출은 못 끊으므로 '다음 단계 경계에서' 멈춘다 */
+$('#btnanstop').onclick = async () => {
+  const b = $('#btnanstop');
+  b.disabled = true; b.textContent = '중지 중…';
+  const r = await post('/api/analysis/stop', {});
+  $('#anmsg').textContent = r.msg || '중지 요청됨';
+};
+
 function pollAnalysis(){
   clearInterval(AN_TIMER);
   const tick = async () => {
@@ -531,6 +541,8 @@ function pollAnalysis(){
       renderAnRoles(s);
       if(!s.running && (s.progress||{}).done){
         clearInterval(AN_TIMER); AN_TIMER=null;
+        renderAnRoles({running:false, progress:s.progress});
+        if((s.progress||{}).cancelled) $('#anmsg').textContent='■ 중지됨 — 그때까지 결과는 저장했습니다';
         if(s.progress.error){ $('#anmsg').textContent='❌ '+s.progress.error; return; }
         if(s.last_id){ loadAnalysis(s.last_id); loadAnalysisList(); }
       }
@@ -544,6 +556,14 @@ const AN_ORDER = ['p1','p2','p3','final'];
 
 function renderAnRoles(s){
   const box = $('#anroles');
+  // 실행/중지 버튼 상태 — 돌고 있을 때만 중지가 보인다
+  const run = !!s.running, stopBtn = $('#btnanstop');
+  if(stopBtn){
+    stopBtn.style.display = run ? '' : 'none';
+    if(run && !s.cancelling){ stopBtn.disabled = false; stopBtn.textContent = '■ 분석 중지'; }
+    if(s.cancelling){ stopBtn.disabled = true; stopBtn.textContent = '중지 중…'; }
+  }
+  if($('#btnan')) $('#btnan').disabled = run;
   const roles = (s.progress||{}).roles || {};
   const ids = AN_ORDER.filter(id=>roles[id]);
   if(!ids.length){ box.style.display='none'; return; }
@@ -621,6 +641,7 @@ async function loadAnalysis(aid){
   const pk = r.peak||{};
   const roleIds = (r.pipeline && r.pipeline.length) ? r.pipeline : AN_ORDER;
   $('#anout').innerHTML = `
+    ${r.cancelled?`<div class="warn" style="margin:10px 0 0">■ 중지된 분석 — 중지 시점까지의 결과입니다</div>`:''}
     <div class="note" style="margin:10px 0 8px">
       ${esc(r.day)} · ${esc(r.span)} · ${r.minutes}분 · 최고 ${pk.emoji||''} ${esc(pk.level||'')}
       ${pk.score||''}점 (${esc(pk.time||'')}, ${esc(pk.area||'')}) · 사건 ${r.incidents}건

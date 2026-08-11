@@ -623,7 +623,8 @@ def _recur_1h(ref: datetime) -> dict:
 
 # ── 🧪 4-LLM 병렬 분석 (분석 탭) ──
 # 실행은 스레드 1개만 — 4-LLM 호출이 겹치면 게이트웨이에 부담이라 동시 1건 제한.
-ANALYSIS: dict = {"running": False, "progress": {}, "last_id": None}
+ANALYSIS: dict = {"running": False, "progress": {}, "last_id": None,
+                  "cancel": None}
 
 
 @app.route("/api/analysis/run", methods=["POST"])
@@ -639,12 +640,14 @@ def api_analysis_run():
     end = str(body.get("end") or "")[:5]
 
     ANALYSIS.update(running=True, progress={"stage": "start", "done": False},
-                    day=day, span=f"{start or '00:00'}~{end or '24:00'}")
+                    day=day, span=f"{start or '00:00'}~{end or '24:00'}",
+                    cancel=threading.Event())
 
     def work():
         try:
             from analysis import run_analysis
-            r = run_analysis(day, CFG, start, end, progress=ANALYSIS["progress"])
+            r = run_analysis(day, CFG, start, end, progress=ANALYSIS["progress"],
+                             cancel=ANALYSIS["cancel"])
             ANALYSIS["last_id"] = r.get("id")
             if not r.get("ok"):
                 ANALYSIS["progress"].update(done=True, error=r.get("error"))
@@ -657,10 +660,30 @@ def api_analysis_run():
     return jsonify({"ok": True, "started": True})
 
 
+@app.route("/api/analysis/stop", methods=["POST"])
+def api_analysis_stop():
+    """분석 중지 — 다음 단계 경계에서 멈춘다.
+
+    이미 나간 LLM 호출은 응답이 올 때까지 못 끊는다(블로킹 소켓). 그래서
+    '즉시 중단' 이 아니라 '진행 중인 호출이 끝나는 대로 중단' 이다.
+    그때까지 나온 단계 결과는 그대로 저장된다.
+    """
+    ev = ANALYSIS.get("cancel")
+    if not ANALYSIS.get("running") or ev is None:
+        return jsonify({"ok": True, "running": False, "msg": "돌고 있는 분석이 없습니다"})
+    ev.set()
+    ANALYSIS["progress"]["cancelling"] = True
+    return jsonify({"ok": True, "running": True,
+                    "msg": "중지 요청됨 — 진행 중인 LLM 호출이 끝나면 멈춥니다"})
+
+
 @app.route("/api/analysis/status")
 def api_analysis_status():
+    ev = ANALYSIS.get("cancel")
     return jsonify({"running": ANALYSIS["running"], "progress": ANALYSIS["progress"],
                     "last_id": ANALYSIS["last_id"],
+                    "cancelling": bool(ev is not None and ev.is_set()
+                                       and ANALYSIS["running"]),
                     "day": ANALYSIS.get("day"), "span": ANALYSIS.get("span")})
 
 

@@ -334,8 +334,8 @@ _MODEL_ERR = ("Invalid model name", "team not allowed", "HTTP 400", "HTTP 403", 
 
 
 def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
-                want_json: bool = True,
-                required: tuple = ()) -> tuple[object, str, float, str, list[str]]:
+                want_json: bool = True, required: tuple = (),
+                cancel=None) -> tuple[object, str, float, str, list[str]]:
     """단계 1회 호출. (결과, 안내/오류, 초, 모델, 로그)
 
     ★속도 우선. '느린 실패' 는 기본 1번만 더 해본다 — 재시도마다 LLM 한 번을
@@ -378,8 +378,14 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
             note = (note + f" ({slow_n}회째 성공)").strip()
         return res, note, round(time.time() - t0, 1), model, log
 
+    def stopped():
+        return bool(cancel is not None and cancel.is_set())
+
     mi, slow, hint, last_err = 0, 0, "", ""
     while mi < len(models) and slow < tries:
+        if stopped():
+            log.append("중지 요청 — 호출 생략")
+            return None, "중지됨", round(time.time() - t0, 1), models[mi], log
         model = models[mi]
         txt, err = call(model, user + hint)
 
@@ -417,11 +423,12 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
 
 
 def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
-              cfg: dict) -> tuple[dict | None, str, float, str]:
+              cfg: dict, cancel=None) -> tuple[dict | None, str, float, str]:
     """JSON 단계 — _call_stage 의 얇은 껍데기 (기존 호출부 유지)."""
     res, note, took, model, _log = _call_stage(sid, user, prefill, max_tokens, cfg,
                                                want_json=True,
-                                               required=_REQUIRED.get(sid, ()))
+                                               required=_REQUIRED.get(sid, ()),
+                                               cancel=cancel)
     return (res if isinstance(res, dict) else None), note, took, model
 
 
@@ -440,7 +447,8 @@ _KOREAN_RULE = "★한국어로만. 추론 과정 금지. 데이터에 없는 �
 
 
 # ────────────────────────── 단계별 실행 ──────────────────────────
-def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list[str], list[str]]:
+def _stage1(chunks: list[dict], cfg: dict, prog: dict,
+            cancel=None) -> tuple[list[dict], list[str], list[str]]:
     """1차 (병렬) — 조각마다 GLM-5.2 가 '사실 관찰'만 뽑는다."""
     a = _acfg(cfg)
     results: list = [None] * len(chunks)
@@ -458,7 +466,7 @@ def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list
                 '"관찰": ["사실 관찰 2~4개 — 수치 포함"], '
                 '"특이지표": ["눈에 띄게 변한 지표와 수치"]}' % ch["span"])
         res, err, took, used = _ask_json("p1", user, '{"구간": "',
-                                         int(a["p1_max_tokens"]), cfg)
+                                         int(a["p1_max_tokens"]), cfg, cancel)
         results[i] = res
         if used:
             models_used.add(used)
@@ -478,7 +486,8 @@ def _stage1(chunks: list[dict], cfg: dict, prog: dict) -> tuple[list[dict], list
     return obs, errors, sorted(models_used)
 
 
-def _stage2(overview: str, obs: list[dict], cfg: dict) -> tuple[dict | None, str, float, str]:
+def _stage2(overview: str, obs: list[dict], cfg: dict,
+            cancel=None) -> tuple[dict | None, str, float, str]:
     """2차 — 1차 관찰을 취합해 원인·전파를 해석한다."""
     a = _acfg(cfg)
     user = (f"[역할] 너는 반송 데이터 2차 분석가다. 전체 통계와 1차 분석가들의 "
@@ -492,11 +501,11 @@ def _stage2(overview: str, obs: list[dict], cfg: dict) -> tuple[dict | None, str
             '"선행신호": "가장 먼저 움직인 지표와 시각", '
             '"구역진단": [{"구역": "이름", "상태": "한 줄", "근거": "수치"}], '
             '"요약": "3문장 이내"}')
-    return _ask_json("p2", user, '{"원인": "', int(a["p2_max_tokens"]), cfg)
+    return _ask_json("p2", user, '{"원인": "', int(a["p2_max_tokens"]), cfg, cancel)
 
 
 def _stage3(overview: str, obs: list[dict], p2: dict | None, chunks: list[dict],
-            cfg: dict) -> tuple[dict | None, str, float, str]:
+            cfg: dict, cancel=None) -> tuple[dict | None, str, float, str]:
     """3차 — 다른 모델이 1·2차 주장을 **원자료와 직접 대조**해 검증한다.
 
     검증가에게 1·2차의 '말'만 주면 그럴듯함만 보고 통과시킨다. 그래서 분단위
@@ -524,11 +533,11 @@ def _stage3(overview: str, obs: list[dict], p2: dict | None, chunks: list[dict],
             '"모니터링": ["지켜볼 것 1~3개"], '
             '"에스컬레이션": "필요 없으면 \\"불필요\\", 필요하면 누구에게 무엇을", '
             '"요약": "2문장 — 무엇이 확인됐고 무엇이 의심인가"}')
-    return _ask_json("p3", user, '{"검증": [{"주장": "', int(a["p3_max_tokens"]), cfg)
+    return _ask_json("p3", user, '{"검증": [{"주장": "', int(a["p3_max_tokens"]), cfg, cancel)
 
 
 def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | None,
-                 cfg: dict) -> tuple[str, str, float, str]:
+                 cfg: dict, cancel=None) -> tuple[str, str, float, str]:
     """최종 — 최대 모델이 검증까지 끝난 재료로 관제 리포트를 쓴다."""
     from llm_client import build_system_prompt, chat, scrub
     a = _acfg(cfg)
@@ -552,7 +561,7 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
             "'## 종합 판정' 부터 바로 시작하라.")
     txt, note, took, model, _log = _call_stage(
         "final", user, "## 종합 판정\n", int(a["final_max_tokens"]), cfg,
-        want_json=False)
+        want_json=False, cancel=cancel)
     if not txt:
         return "", note or "최종 리포트 생성 실패", took, model
     return scrub(str(txt)), note, took, model
@@ -677,8 +686,13 @@ def _store_dir(cfg: dict) -> str:
 
 
 def run_analysis(day: str, cfg: dict | None = None, start: str = "",
-                 end: str = "", progress: dict | None = None) -> dict:
-    """4-LLM 파이프라인 1회 — 완료까지 블로킹 (서버는 스레드에서 부른다)."""
+                 end: str = "", progress: dict | None = None, cancel=None) -> dict:
+    """4-LLM 파이프라인 1회 — 완료까지 블로킹 (서버는 스레드에서 부른다).
+
+    cancel(threading.Event)이 서면 **다음 단계 경계에서** 멈춘다. 이미 나간
+    LLM 호출은 응답이 올 때까지 못 끊으므로(urllib 블로킹), 중지는 즉시가
+    아니라 '진행 중인 호출이 끝나는 대로' 다. 그때까지 나온 결과는 저장한다.
+    """
     cfg = cfg or load_config()
     day = "".join(ch for ch in str(day) if ch.isdigit())[:8]
     span = f"{start or '00:00'}~{end or '24:00'}"
@@ -705,7 +719,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     # ── 1차 (병렬) ──
     prog["roles"]["p1"]["status"] = f"분석중 0/{len(chunks)}"
     t1 = time.time()
-    obs, errs1, m1 = _stage1(chunks, cfg, prog)
+    obs, errs1, m1 = _stage1(chunks, cfg, prog, cancel)
     p1_filled = False
     if not obs:                          # 전부 실패 → 통계로 채워 다음 단계를 살린다
         obs = _fill_p1(chunks, seq, cfg)
@@ -727,7 +741,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
 
     # ── 2차 ──
     prog["roles"]["p2"]["status"] = "분석중"
-    p2, e2, tk2, m2 = _stage2(overview, obs, cfg)
+    p2, e2, tk2, m2 = _stage2(overview, obs, cfg, cancel)
     p2_filled = p2 is None
     if p2_filled:
         p2 = _fill_p2(meta, obs, cfg)
@@ -741,7 +755,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
 
     # ── 3차 ──
     prog["roles"]["p3"]["status"] = "분석중"
-    p3, e3, tk3, m3 = _stage3(overview, obs, p2, chunks, cfg)
+    p3, e3, tk3, m3 = _stage3(overview, obs, p2, chunks, cfg, cancel)
     p3_filled = p3 is None
     if p3_filled:
         p3 = _fill_p3(meta, cfg)
@@ -756,7 +770,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     # ── 최종 ──
     prog["roles"]["final"]["status"] = "작성중"
     prog["stage"] = "final"
-    body, ef, tkf, mf = _stage_final(overview, obs, p2, p3, cfg)
+    body, ef, tkf, mf = _stage_final(overview, obs, p2, p3, cfg, cancel)
     # 최종은 마크다운 4섹션이어야 한다. 프리필('## 종합 판정')이 항상 붙으므로
     # '##' 유무만 보면 산문도 통과한다 → 헤딩이 2개 이상인지로 판정한다.
     if body and body.count("## ") < 2:
@@ -785,6 +799,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "took_s": round(time.time() - t0, 1),
         "pipeline": ["p1", "p2", "p3", "final"],
+        "cancelled": bool(cancel is not None and cancel.is_set()),
         "graph": _graph_svg(seq, cfg),          # 리포트 위에 붙일 구간 점수 그래프
         "roles": stages_out, "final": body, "final_error": ef or None,
     }
@@ -792,7 +807,8 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     with open(path, "w", encoding="utf-8") as f:
         json.dump(rec, f, ensure_ascii=False, indent=2)
     rec["path"] = path
-    prog.update(stage="done", done=True, id=rec["id"])
+    prog.update(stage="done", done=True, id=rec["id"],
+                cancelled=rec["cancelled"])
     return {"ok": True, **rec}
 
 
