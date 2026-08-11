@@ -2898,6 +2898,21 @@ def register_api_routes(app):
         ]
         body_html = md_lib.markdown(md_text, extensions=extensions)
 
+        # ── AMOS 인터랙티브 보고서 (사건발생 확인건): 체크박스·실제발생 표·수동기입·저장 JS 주입 ──
+        #   ★실제 다운로드 HTML 은 여기(md→html 생성기)에서 만들어진다. 배선이
+        #     routes_chat 쪽에만 있으면 2·3번(체크박스·수동기입)이 통째로 빠진다.
+        _amos_css = _amos_toolbar = _amos_js = ""
+        _maxw = "900px"
+        try:
+            from demos_v1.amos_report import amosify, AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+            body_html, _has_amos = amosify(body_html)
+            if _has_amos:
+                _amos_css, _amos_toolbar, _amos_js = AMOS_CSS, TOOLBAR_HTML, AMOS_JS
+                _maxw = "1120px"
+                print("  📋 [AMOS] 인터랙티브 보고서 블록 주입 완료 (md-to-html)")
+        except Exception as _amerr:
+            print(f"  📋 [AMOS] 주입 실패(무시, 일반 HTML 생성): {_amerr}")
+
         full_html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -2905,7 +2920,7 @@ def register_api_routes(app):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
 <style>
-  body {{ font-family: 'Pretendard','Noto Sans KR',sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; line-height: 1.7; }}
+  body {{ font-family: 'Pretendard','Noto Sans KR',sans-serif; max-width: {_maxw}; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a2e; line-height: 1.7; }}
   h1,h2,h3 {{ color: #16213e; border-bottom: 2px solid #e2e8f0; padding-bottom: .3em; }}
   h1 {{ font-size: 1.45rem; }} h2 {{ font-size: 1.15rem; }}
   table {{ border-collapse: collapse; width: 100%; margin: 1em 0; font-size: .86em; }}
@@ -2917,10 +2932,13 @@ def register_api_routes(app):
   blockquote {{ border-left: 4px solid #6366f1; margin: 1em 0; padding: .5em 1em; background: #f8fafc; }}
   a {{ color: #6366f1; }}
   img {{ max-width: 100%; border-radius: 8px; }}
+{_amos_css}
 </style>
 </head>
 <body>
+{_amos_toolbar}
 {body_html}
+{_amos_js}
 </body>
 </html>"""
 
