@@ -157,8 +157,8 @@
           "_doc": "2차 — 원인·전파 해석"
         },
         "p3": {
-          "model": "gaia-Qwen3.5-397B-A17B",
-          "_doc": "3차 — 원자료 대조 검증. gaia-cc-gpt-oss-120b 는 게이트웨이에 없어 교체"
+          "model": "gaia-lst-gpt-oss-120b",
+          "_doc": "3차 — 원자료 대조 검증. 1·2차(GLM·Qwen)·최종과 다른 gpt-oss 계열이라 자기검증 편향이 가장 적다"
         },
         "final": {
           "model": "gaia-Qwen3.5-397B-A17B",
@@ -174,16 +174,33 @@
       "final_max_tokens": 2200,
       "timeout_s": 150,
       "_models_doc": "실호출로 확인해 죽은 모델은 뺐다 — gaia-GLM-5.1(400 Invalid model name), gaia-solution-Qwen3-235B(403 team not allowed), gaia-cc-gpt-oss-120b(없음). '모델 확인' 버튼으로 게이트웨이 목록을 보고 고칠 수 있다",
-      "fallback_models": [
-        "gaia-Qwen3.5-397B-A17B",
-        "gaia-GLM-5.2",
-        "gaia-Qwen3.6-35B-A3B",
-        "GaiA-LLM-Latest"
-      ],
-      "_fallback_doc": "지정 모델이 400/403 으로 거부되면 이 순서로 자동 대체한다",
+      "_fallback_doc": "단계별 대체 순서. 3차는 검증이 목적이라 gpt-oss 계열을 먼저 두어 갈아타더라도 1·2차와 다른 눈을 유지한다. 마지막 후보로만 같은 계열을 쓴다",
       "retries": 3,
       "_retries_doc": "단계별 최대 시도 횟수. 모델 거부는 즉시 다른 모델로, 일시 오류는 쉬었다 재시도, JSON 실패는 지시를 강화해 재요청",
-      "retry_backoff_s": 2
+      "retry_backoff_s": 2,
+      "fallback_by_role": {
+        "p1": [
+          "gaia-Qwen3.6-35B-A3B",
+          "gaia-Qwen3.5-397B-A17B",
+          "GaiA-LLM-Latest"
+        ],
+        "p2": [
+          "gaia-GLM-5.2",
+          "gaia-Qwen3.5-397B-A17B",
+          "GaiA-LLM-Latest"
+        ],
+        "p3": [
+          "gpt-oss-120b",
+          "GaiA-LLM-Latest",
+          "gaia-Qwen3.5-397B-A17B",
+          "gaia-Qwen3.6-35B-A3B"
+        ],
+        "final": [
+          "gaia-GLM-5.2",
+          "gaia-Qwen3.6-35B-A3B",
+          "GaiA-LLM-Latest"
+        ]
+      }
     }
   },
   "grade": {

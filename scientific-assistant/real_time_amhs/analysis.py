@@ -4,13 +4,14 @@ real_time_amhs/analysis.py — 4-LLM 파이프라인 분석 (분석 탭)
 구조 (모델 4종 — 게이트웨이가 이 팀에 허용한 이름만 쓴다)
     1차  gaia-GLM-5.2            데이터 훑기 (★병렬)
     2차  gaia-Qwen3.6-35B-A3B    원인·전파 분석
-    3차  gaia-Qwen3.5-397B-A17B  교차 검증 + 조치 (1·2차와 다른 계열 · 실호출 확인됨)
+    3차  gaia-lst-gpt-oss-120b   교차 검증 + 조치 (1·2차·최종과 다른 계열)
     최종 gaia-Qwen3.5-397B-A17B  통합 판정 리포트
 
     ※ 실호출로 죽은 것을 뺀 결과다 — gaia-GLM-5.1(400 Invalid model name),
       gaia-solution-Qwen3-235B…(403 team not allowed), gaia-cc-gpt-oss-120b(없음).
       그래도 모델이 거부되면 _fallbacks() 가 자동으로 갈아타고, 모든 단계는
-      최대 retries(기본 3)회까지 재시도한다.
+      최대 retries(기본 3)회까지 재시도한다. 3차의 대체 순서는 gpt-oss 계열을
+      먼저 두어, 갈아타더라도 '다른 눈' 이라는 성격을 최대한 유지한다.
 
 왜 이 구조인가
     - **1차가 병렬이다.** 분석 구간을 시간 조각으로 쪼개 GLM-5.2 를 조각마다
@@ -52,7 +53,7 @@ STAGES = {
     "p2": {"name": "2차 — 원인·전파 분석", "icon": "🧩",
            "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
     "p3": {"name": "3차 — 교차 검증·조치", "icon": "⚖️",
-           "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
+           "model": "gaia-lst-gpt-oss-120b", "parallel": False},
     "final": {"name": "최종 — 통합 판정", "icon": "📋",
               "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
 }
@@ -300,15 +301,33 @@ def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
     return v if ok(v) else None
 
 
+# 3차(검증)는 1·2차와 **다른 계열**이어야 의미가 있다. 그래서 대체 순서도
+# 단계마다 다르게 둔다 — 검증 단계는 gpt-oss 계열을 먼저 시도하고,
+# 앞 단계가 쓴 모델은 맨 뒤로 민다.
+_FALLBACK_BY_ROLE = {
+    "p1": ("gaia-Qwen3.6-35B-A3B", "gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest"),
+    "p2": ("gaia-GLM-5.2", "gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest"),
+    # 검증 — 다른 계열(gpt-oss) 우선, 마지막에야 앞 단계와 같은 계열로
+    "p3": ("gpt-oss-120b", "GaiA-LLM-Latest", "gaia-Qwen3.5-397B-A17B",
+           "gaia-Qwen3.6-35B-A3B"),
+    "final": ("gaia-GLM-5.2", "gaia-Qwen3.6-35B-A3B", "GaiA-LLM-Latest"),
+}
+
+
 def _fallbacks(cfg: dict, sid: str) -> list[str]:
-    """이 단계에서 쓸 수 있는 대체 모델 — 지정 모델이 400/403 이면 갈아탄다."""
+    """이 단계의 대체 모델 순서 — 지정 모델이 400/403 이면 이 순서로 갈아탄다.
+
+    config.llm.analysis.fallback_by_role.{sid} → fallback_models → 위 기본값.
+    """
     a = (cfg.get("llm", {}) or {}).get("analysis") or {}
+    cur = _stage_model(cfg, sid)
+    by_role = (a.get("fallback_by_role") or {}).get(sid)
+    if isinstance(by_role, list) and by_role:
+        return [m for m in by_role if m and m != cur]
     fb = a.get("fallback_models")
     if isinstance(fb, list) and fb:
-        return [m for m in fb if m and m != _stage_model(cfg, sid)]
-    return [m for m in ("gaia-Qwen3.5-397B-A17B", "gaia-GLM-5.2",
-                        "gaia-Qwen3.6-35B-A3B", "GaiA-LLM-Latest")
-            if m != _stage_model(cfg, sid)]
+        return [m for m in fb if m and m != cur]
+    return [m for m in _FALLBACK_BY_ROLE.get(sid, ()) if m != cur]
 
 
 _MODEL_ERR = ("Invalid model name", "team not allowed", "HTTP 400", "HTTP 403", "HTTP 404")
