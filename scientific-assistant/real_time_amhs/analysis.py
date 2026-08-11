@@ -66,8 +66,8 @@ DEFAULTS = {
     "p3_max_tokens": 1600,
     "final_max_tokens": 2200,
     "timeout_s": 150,
-    "retries": 3,            # 단계별 최대 시도 횟수
-    "retry_backoff_s": 2,    # 일시 오류 재시도 간격(회차에 비례)
+    "retries": 1,            # '느린 실패'(타임아웃·형식오류) 재시도 횟수. 속도 우선
+    "retry_backoff_s": 1,    # 재시도 전 대기(초)
 }
 
 
@@ -336,22 +336,26 @@ _MODEL_ERR = ("Invalid model name", "team not allowed", "HTTP 400", "HTTP 403", 
 def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
                 want_json: bool = True,
                 required: tuple = ()) -> tuple[object, str, float, str, list[str]]:
-    """단계 1회 — **성공할 때까지 최대 N회 재시도**. (결과, 안내/오류, 초, 모델, 로그)
+    """단계 1회 호출. (결과, 안내/오류, 초, 모델, 로그)
 
-    실패는 세 종류이고 대응이 다르다.
-      · 모델 거부(400 Invalid model / 403 not allowed / 404) → 다음 대체 모델로.
-        같은 모델로 다시 걸어도 영원히 같은 답이라 즉시 갈아탄다.
-      · 일시 오류(타임아웃·5xx·네트워크) → 잠깐 쉬었다 같은 모델로 다시.
-      · JSON 이 아니거나 잘림 → 괄호 복구 시도 → 안 되면 '짧게 JSON 만' 을
-        덧붙여 다시. 그래도 안 되면 모델을 바꿔 본다.
+    ★속도 우선. '느린 실패' 는 기본 1번만 더 해본다 — 재시도마다 LLM 한 번을
+      통째로 더 기다려야 해서, 3번씩 돌면 분석이 눈에 띄게 느려진다.
+      대신 실패해도 파이프라인은 멈추지 않는다. 호출부가 통계로 채워 넣고
+      다음 단계로 넘어간다(_fill_*).
+
+    실패 종류를 구분한다.
+      · 모델 거부(400/403/404) — 게이트웨이가 **즉시** 돌려주므로 사실상 공짜다.
+        재시도 예산과 따로 세고, 후보 모델을 끝까지 훑는다.
+      · 느린 실패(타임아웃·5xx·JSON 형식 오류) — 생성까지 다 기다린 실패라
+        비싸다. retries(기본 1) 만큼만 더 해본다.
 
     want_json=False 면 마크다운 본문을 그대로 받는다 (최종 단계).
     """
     from llm_client import build_system_prompt, chat
     t0 = time.time()
     a = _acfg(cfg)
-    tries = max(1, int(a.get("retries", 3)))
-    backoff = float(a.get("retry_backoff_s", 2))
+    tries = max(1, int(a.get("retries", 1)))       # '느린 실패' 재시도 횟수
+    backoff = float(a.get("retry_backoff_s", 1))
     sys_msg = {"role": "system", "content": build_system_prompt(cfg)}
     primary = _stage_model(cfg, sid)
     models = [primary] + _fallbacks(cfg, sid)
@@ -368,52 +372,57 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
 
-    mi, hint, last_err = 0, "", ""
-    for attempt in range(1, tries + 1):
-        model = models[min(mi, len(models) - 1)]
+    def done(res, model, slow_n):
+        note = "" if model == primary else f"(대체 모델: {model})"
+        if slow_n > 1:
+            note = (note + f" ({slow_n}회째 성공)").strip()
+        return res, note, round(time.time() - t0, 1), model, log
+
+    mi, slow, hint, last_err = 0, 0, "", ""
+    while mi < len(models) and slow < tries:
+        model = models[mi]
         txt, err = call(model, user + hint)
 
+        # 모델 거부 — 즉답이라 비용이 거의 없다. 재시도 예산을 쓰지 않는다.
         if err and any(k in str(err) for k in _MODEL_ERR):
-            log.append(f"{attempt}회 {model}: 모델 거부 → 대체")
+            log.append(f"{model}: 모델 거부 → 대체")
             last_err = err
             mi += 1
-            if mi >= len(models):
-                break
             continue
 
+        slow += 1                                   # 여기서부터는 '비싼' 시도
         if err:
-            log.append(f"{attempt}회 {model}: {str(err)[:80]}")
+            log.append(f"{slow}회 {model}: {str(err)[:80]}")
             last_err = err
-            if attempt < tries:
-                time.sleep(backoff * attempt)      # 일시 오류 → 쉬었다 재시도
+            if slow < tries:
+                time.sleep(backoff)
             continue
 
         if not want_json:
-            log.append(f"{attempt}회 {model}: 성공")
-            note = "" if model == primary else f"(대체 모델: {model})"
-            if attempt > 1:
-                note = (note + f" ({attempt}회째 성공)").strip()
-            return txt, note, round(time.time() - t0, 1), model, log
+            log.append(f"{slow}회 {model}: 성공")
+            return done(txt, model, slow)
 
         res = _parse_or_none(txt, required)
         if res is not None:
-            log.append(f"{attempt}회 {model}: 성공")
-            note = "" if model == primary else f"(대체 모델: {model})"
-            if attempt > 1:
-                note = (note + f" ({attempt}회째 성공)").strip()
-            return res, note, round(time.time() - t0, 1), model, log
+            log.append(f"{slow}회 {model}: 성공")
+            return done(res, model, slow)
 
-        log.append(f"{attempt}회 {model}: JSON 형식 아님/키 부족")
+        log.append(f"{slow}회 {model}: JSON 형식 아님/키 부족")
         last_err = "JSON 형식 아님 (필수 키 없음)"
         hint = ("\n\n★앞 응답이 JSON 형식이 아니었다. 설명·서론·코드펜스 없이 "
                 "**JSON 하나만** 출력하라. 배열 항목은 2개 이내로 짧게.")
-        if attempt >= 2:                     # 두 번 틀리면 모델을 바꿔 본다
-            mi += 1
-        if attempt < tries:
-            time.sleep(min(backoff, 1.5))
 
-    return (None, f"{tries}회 시도 모두 실패 — {last_err} [{' / '.join(log)}]",
+    return (None, f"실패 — {last_err} [{' / '.join(log)}]",
             round(time.time() - t0, 1), models[min(mi, len(models) - 1)], log)
+
+
+def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
+              cfg: dict) -> tuple[dict | None, str, float, str]:
+    """JSON 단계 — _call_stage 의 얇은 껍데기 (기존 호출부 유지)."""
+    res, note, took, model, _log = _call_stage(sid, user, prefill, max_tokens, cfg,
+                                               want_json=True,
+                                               required=_REQUIRED.get(sid, ()))
+    return (res if isinstance(res, dict) else None), note, took, model
 
 
 # 단계별 필수 키 — 이게 없으면 '형식만 JSON' 인 쓰레기로 보고 재시도한다
@@ -424,13 +433,7 @@ _REQUIRED = {
 }
 
 
-def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
-              cfg: dict) -> tuple[dict | None, str, float, str]:
-    """JSON 단계 — _call_stage 의 얇은 껍데기 (기존 호출부 유지)."""
-    res, note, took, model, _log = _call_stage(sid, user, prefill, max_tokens, cfg,
-                                               want_json=True,
-                                               required=_REQUIRED.get(sid, ()))
-    return (res if isinstance(res, dict) else None), note, took, model
+
 
 
 _KOREAN_RULE = "★한국어로만. 추론 과정 금지. 데이터에 없는 것을 지어내지 마라.\n"
@@ -555,6 +558,74 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
     return scrub(str(txt)), note, took, model
 
 
+# ── 단계 실패 시 채워 넣을 통계 결과 ───────────────────────────────
+# LLM 이 못 하면 구멍을 남기지 않고 데이터로 채운다. 뒤 단계가 쓸 재료가
+# 있어야 파이프라인이 의미 있게 이어지고, 화면에도 빈 카드가 안 뜬다.
+# 채운 것은 반드시 '(통계 자동)' 으로 표시해 LLM 판단과 구분한다.
+def _fill_p1(chunks: list[dict], seq, cfg: dict) -> list[dict]:
+    """1차 대체 — 조각별 점수 흐름을 코드로 요약."""
+    from sentinel import summarize_reason
+    floor = alarm_floor(cfg)
+    out = []
+    for ch in chunks:
+        lo, hi = ch["span"].split("~")
+        part = [(d, sc, r) for d, sc, r in seq if lo <= d.strftime("%H:%M") <= hi]
+        if not part:
+            continue
+        scores = [sc for _, sc, _ in part]
+        pk = max(part, key=lambda x: x[1])
+        over = [x for x in part if x[1] >= floor]
+        areas = sorted({(r.get("hot_area") or "").strip() for _, _, r in over if r.get("hot_area")})
+        why = summarize_reason(str(pk[2].get("reason") or ""), pk[2].get("hot_area") or "")
+        out.append({
+            "구간": ch["span"], "최고점수": int(pk[1]), "최고시각": f"{pk[0]:%H:%M}",
+            "점수흐름": f"{min(scores):.0f}~{max(scores):.0f}점 (평균 {sum(scores)/len(scores):.0f}점)",
+            "이상구역": areas or ["-"],
+            "관찰": [f"임계 {floor}점 이상 {len(over)}분",
+                    f"최고 {pk[1]:.0f}점 {pk[0]:%H:%M}" + (f" — {why}" if why else "")],
+            "특이지표": [], "_source": "통계 자동 (LLM 실패)",
+        })
+    return out
+
+
+def _fill_p2(meta: dict, obs: list[dict], cfg: dict) -> dict:
+    """2차 대체 — 핫구역·전파를 관찰과 통계에서 뽑는다."""
+    pk = meta.get("peak") or {}
+    areas, first = [], ""
+    for o in obs:
+        for a in (o.get("이상구역") or []):
+            if a and a != "-" and a not in areas:
+                areas.append(a)
+                if not first:
+                    first = f"{a} {o.get('최고시각','')}"
+    return {
+        "원인": (f"최고 {pk.get('score','')}점({pk.get('time','')}, {pk.get('area','')}) "
+               f"구간의 상승 — LLM 해석 실패로 통계만 제시합니다."),
+        "핫구역": [pk.get("area") or "-"],
+        "전파경로": (" → ".join(areas) if len(areas) > 1 else "단일 구역"),
+        "선행신호": first or "-",
+        "구역진단": [{"구역": a, "상태": "임계 이상 관측", "근거": "1차 관찰"} for a in areas[:4]],
+        "요약": f"사건 {meta.get('incidents',0)}건 · 최고 {pk.get('level','')} {pk.get('score','')}점.",
+        "_source": "통계 자동 (LLM 실패)",
+    }
+
+
+def _fill_p3(meta: dict, cfg: dict) -> dict:
+    """3차 대체 — 검증은 LLM 몫이라 대신 못 한다. 그 사실을 명시한다."""
+    pk = meta.get("peak") or {}
+    return {
+        "검증": [{"주장": "(LLM 검증 실패)", "판정": "의심",
+                "근거": "검증 단계가 실패해 1·2차 주장을 원자료와 대조하지 못했습니다"}],
+        "확인된사실": [f"최고 {pk.get('score','')}점 {pk.get('time','')} ({pk.get('area','')}) "
+                   f"— 스크립트 집계값"],
+        "즉시조치": ["검증 미완료 — 관제가 직접 원자료를 확인하십시오"],
+        "모니터링": [f"{pk.get('area','-')} 구간 재상승 여부"],
+        "에스컬레이션": "불필요",
+        "요약": "검증 단계 실패. 아래 1·2차 내용은 대조되지 않았으니 그대로 믿지 마십시오.",
+        "_source": "통계 자동 (LLM 실패)",
+    }
+
+
 def _fallback_final(meta: dict, obs: list[dict], p2: dict | None, p3: dict | None) -> str:
     """최종 LLM 실패 시 — 있는 재료로 골격은 채운다."""
     pk = meta.get("peak") or {}
@@ -635,47 +706,60 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     prog["roles"]["p1"]["status"] = f"분석중 0/{len(chunks)}"
     t1 = time.time()
     obs, errs1, m1 = _stage1(chunks, cfg, prog)
+    p1_filled = False
+    if not obs:                          # 전부 실패 → 통계로 채워 다음 단계를 살린다
+        obs = _fill_p1(chunks, seq, cfg)
+        p1_filled = bool(obs)
     stages_out["p1"] = {
-        "ok": bool(obs), "name": STAGES["p1"]["name"], "icon": STAGES["p1"]["icon"],
+        "ok": bool(obs) and not p1_filled,
+        "name": STAGES["p1"]["name"], "icon": STAGES["p1"]["icon"],
         "model": ", ".join(m1) or _stage_model(cfg, "p1"),
         "took_s": round(time.time() - t1, 1),
-        "result": {"조각수": len(chunks), "성공": len(obs), "관찰": obs},
+        "result": {"조각수": len(chunks), "성공": 0 if p1_filled else len(obs),
+                   "관찰": obs, "채움": p1_filled},
         "error": "; ".join(errs1) if errs1 and not obs else
                  ("; ".join(errs1) if errs1 else None),
     }
-    prog["roles"]["p1"].update(status="완료" if obs else "실패",
+    prog["roles"]["p1"].update(status=("통계 대체" if p1_filled else
+                                       ("완료" if obs else "실패")),
                                took_s=stages_out["p1"]["took_s"],
                                error=stages_out["p1"]["error"])
 
     # ── 2차 ──
     prog["roles"]["p2"]["status"] = "분석중"
     p2, e2, tk2, m2 = _stage2(overview, obs, cfg)
-    stages_out["p2"] = {"ok": p2 is not None, "name": STAGES["p2"]["name"],
+    p2_filled = p2 is None
+    if p2_filled:
+        p2 = _fill_p2(meta, obs, cfg)
+    stages_out["p2"] = {"ok": not p2_filled, "name": STAGES["p2"]["name"],
                         "icon": STAGES["p2"]["icon"], "model": m2 or _stage_model(cfg, "p2"),
                         "took_s": tk2, "result": p2,
-                        "error": None if p2 else (e2 or None),
-                        "note": e2 if (p2 and e2) else None}
-    prog["roles"]["p2"].update(status="완료" if p2 else "실패", took_s=tk2,
-                               error=None if p2 else (e2 or None))
+                        "error": e2 if p2_filled else None,
+                        "note": e2 if (not p2_filled and e2) else None}
+    prog["roles"]["p2"].update(status="통계 대체" if p2_filled else "완료",
+                               took_s=tk2, error=e2 if p2_filled else None)
 
     # ── 3차 ──
     prog["roles"]["p3"]["status"] = "분석중"
     p3, e3, tk3, m3 = _stage3(overview, obs, p2, chunks, cfg)
-    stages_out["p3"] = {"ok": p3 is not None, "name": STAGES["p3"]["name"],
+    p3_filled = p3 is None
+    if p3_filled:
+        p3 = _fill_p3(meta, cfg)
+    stages_out["p3"] = {"ok": not p3_filled, "name": STAGES["p3"]["name"],
                         "icon": STAGES["p3"]["icon"], "model": m3 or _stage_model(cfg, "p3"),
                         "took_s": tk3, "result": p3,
-                        "error": None if p3 else (e3 or None),
-                        "note": e3 if (p3 and e3) else None}
-    prog["roles"]["p3"].update(status="완료" if p3 else "실패", took_s=tk3,
-                               error=None if p3 else (e3 or None))
+                        "error": e3 if p3_filled else None,
+                        "note": e3 if (not p3_filled and e3) else None}
+    prog["roles"]["p3"].update(status="통계 대체" if p3_filled else "완료",
+                               took_s=tk3, error=e3 if p3_filled else None)
 
     # ── 최종 ──
     prog["roles"]["final"]["status"] = "작성중"
     prog["stage"] = "final"
     body, ef, tkf, mf = _stage_final(overview, obs, p2, p3, cfg)
-    # 최종은 마크다운이어야 한다. 모델이 JSON 이나 산문을 뱉으면 리포트 자리에
-    # 원문이 그대로 박히므로, 헤딩이 없으면 실패로 보고 골격으로 대체한다.
-    if body and "##" not in body:
+    # 최종은 마크다운 4섹션이어야 한다. 프리필('## 종합 판정')이 항상 붙으므로
+    # '##' 유무만 보면 산문도 통과한다 → 헤딩이 2개 이상인지로 판정한다.
+    if body and body.count("## ") < 2:
         ef = (ef or "") + " (마크다운 형식 아님 — 골격으로 대체)"
         body = ""
     if not body:

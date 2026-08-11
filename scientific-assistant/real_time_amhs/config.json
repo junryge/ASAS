@@ -175,9 +175,9 @@
       "timeout_s": 150,
       "_models_doc": "실호출로 확인해 죽은 모델은 뺐다 — gaia-GLM-5.1(400 Invalid model name), gaia-solution-Qwen3-235B(403 team not allowed), gaia-cc-gpt-oss-120b(없음). '모델 확인' 버튼으로 게이트웨이 목록을 보고 고칠 수 있다",
       "_fallback_doc": "단계별 대체 순서. 3차는 검증이 목적이라 gpt-oss 계열을 먼저 두어 갈아타더라도 1·2차와 다른 눈을 유지한다. 마지막 후보로만 같은 계열을 쓴다",
-      "retries": 3,
-      "_retries_doc": "단계별 최대 시도 횟수. 모델 거부는 즉시 다른 모델로, 일시 오류는 쉬었다 재시도, JSON 실패는 지시를 강화해 재요청",
-      "retry_backoff_s": 2,
+      "retries": 1,
+      "_retries_doc": "'느린 실패'(타임아웃·형식오류) 재시도 횟수. 재시도 1번마다 LLM 을 통째로 한 번 더 기다리므로 기본 1(=한 번만 더). 모델 거부(400/403)는 즉답이라 이 예산과 별개로 후보 모델을 끝까지 훑는다. 실패한 단계는 통계로 채우고 계속 간다",
+      "retry_backoff_s": 1,
       "fallback_by_role": {
         "p1": [
           "gaia-Qwen3.6-35B-A3B",
