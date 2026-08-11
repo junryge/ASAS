@@ -592,7 +592,7 @@ def _fill_p1(chunks: list[dict], seq, cfg: dict) -> list[dict]:
             "이상구역": areas or ["-"],
             "관찰": [f"임계 {floor}점 이상 {len(over)}분",
                     f"최고 {pk[1]:.0f}점 {pk[0]:%H:%M}" + (f" — {why}" if why else "")],
-            "특이지표": [], "_source": "통계 자동 (LLM 실패)",
+            "특이지표": [], "_source": "LLM 실패 — 코드가 계산한 숫자로 채움 (해석 아님)",
         })
     return out
 
@@ -615,7 +615,7 @@ def _fill_p2(meta: dict, obs: list[dict], cfg: dict) -> dict:
         "선행신호": first or "-",
         "구역진단": [{"구역": a, "상태": "임계 이상 관측", "근거": "1차 관찰"} for a in areas[:4]],
         "요약": f"사건 {meta.get('incidents',0)}건 · 최고 {pk.get('level','')} {pk.get('score','')}점.",
-        "_source": "통계 자동 (LLM 실패)",
+        "_source": "LLM 실패 — 코드가 계산한 숫자로 채움 (해석 아님)",
     }
 
 
@@ -631,7 +631,7 @@ def _fill_p3(meta: dict, cfg: dict) -> dict:
         "모니터링": [f"{pk.get('area','-')} 구간 재상승 여부"],
         "에스컬레이션": "불필요",
         "요약": "검증 단계 실패. 아래 1·2차 내용은 대조되지 않았으니 그대로 믿지 마십시오.",
-        "_source": "통계 자동 (LLM 실패)",
+        "_source": "LLM 실패 — 코드가 계산한 숫자로 채움 (해석 아님)",
     }
 
 
@@ -734,7 +734,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
         "error": "; ".join(errs1) if errs1 and not obs else
                  ("; ".join(errs1) if errs1 else None),
     }
-    prog["roles"]["p1"].update(status=("통계 대체" if p1_filled else
+    prog["roles"]["p1"].update(status=("LLM 실패 · 숫자만 채움" if p1_filled else
                                        ("완료" if obs else "실패")),
                                took_s=stages_out["p1"]["took_s"],
                                error=stages_out["p1"]["error"])
@@ -750,7 +750,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
                         "took_s": tk2, "result": p2,
                         "error": e2 if p2_filled else None,
                         "note": e2 if (not p2_filled and e2) else None}
-    prog["roles"]["p2"].update(status="통계 대체" if p2_filled else "완료",
+    prog["roles"]["p2"].update(status="LLM 실패 · 숫자만 채움" if p2_filled else "완료",
                                took_s=tk2, error=e2 if p2_filled else None)
 
     # ── 3차 ──
@@ -764,7 +764,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
                         "took_s": tk3, "result": p3,
                         "error": e3 if p3_filled else None,
                         "note": e3 if (not p3_filled and e3) else None}
-    prog["roles"]["p3"].update(status="통계 대체" if p3_filled else "완료",
+    prog["roles"]["p3"].update(status="LLM 실패 · 숫자만 채움" if p3_filled else "완료",
                                took_s=tk3, error=e3 if p3_filled else None)
 
     # ── 최종 ──

@@ -572,7 +572,8 @@ function renderAnRoles(s){
     const r=roles[id];
     const running = /분석중|작성중/.test(r.status||'');
     const st = r.status==='완료' ? '<span style="color:var(--ok)">✅ 완료</span>'
-             : r.status==='통계 대체' ? `<span style="color:var(--major)" title="${esc(r.error||'')}">⚠ 통계 대체</span>`
+             : r.status==='LLM 실패 · 숫자만 채움'
+               ? `<span style="color:var(--major)" title="${esc(r.error||'')}">⚠ LLM 실패 · 숫자만 채움</span>`
              : r.status==='실패' ? `<span style="color:var(--crit)" title="${esc(r.error||'')}">❌ 실패</span>`
              : running ? `<span style="color:var(--cy)">⏳ ${esc(r.status)}</span>`
              : '<span class="dim">· 대기</span>';
@@ -679,7 +680,7 @@ async function loadAnalysis(aid){
             ${o.ok&&o.error?`<span class="note" style="color:var(--major)">일부 실패: ${esc(o.error)}</span>`:''}
             ${o.note?`<span class="note" style="color:var(--cy)">${esc(o.note)}</span>`:''}
             ${(!o.ok && res && Object.keys(res).length)
-              ? `<span class="chip lv위험" title="${esc(o.error||'')}">LLM 실패 → 통계로 채움</span>`:''}</div>
+              ? `<span class="chip lv위험" title="${esc(o.error||'')}">⚠ LLM 실패 — 아래는 LLM 해석이 아니라 코드가 센 숫자입니다</span>`:''}</div>
           ${bodyHtml}
         </div>`;
       }).join('')}
