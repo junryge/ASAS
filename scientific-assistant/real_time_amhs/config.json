@@ -153,12 +153,12 @@
           "_doc": "1차 — 데이터 훑기 (구간 조각 병렬, 사실 관찰만)"
         },
         "p2": {
-          "model": "gaia-Qwen3.6-35B-A3B",
+          "model": "gaia-GLM-5.1",
           "_doc": "2차 — 원인·전파 해석"
         },
         "p3": {
-          "model": "gaia-lst-gpt-oss-120b",
-          "_doc": "3차 — 원자료 대조 검증. 1·2차(GLM·Qwen)·최종과 다른 gpt-oss 계열이라 자기검증 편향이 가장 적다"
+          "model": "gaia-Qwen3.6-35B-A3B",
+          "_doc": "3차 — 원자료 대조 검증. gpt-oss 계열은 쓰지 않기로 해 Qwen3.6 으로. 2차와 같은 모델이지만 프롬프트(검증자)와 입력(원자료)이 달라 역할은 구분된다"
         },
         "final": {
           "model": "gaia-Qwen3.5-397B-A17B",
@@ -173,8 +173,8 @@
       "p3_max_tokens": 1600,
       "final_max_tokens": 2200,
       "timeout_s": 150,
-      "_models_doc": "실호출로 확인해 죽은 모델은 뺐다 — gaia-GLM-5.1(400 Invalid model name), gaia-solution-Qwen3-235B(403 team not allowed), gaia-cc-gpt-oss-120b(없음). '모델 확인' 버튼으로 게이트웨이 목록을 보고 고칠 수 있다",
-      "_fallback_doc": "단계별 대체 순서. 3차는 검증이 목적이라 gpt-oss 계열을 먼저 두어 갈아타더라도 1·2차와 다른 눈을 유지한다. 마지막 후보로만 같은 계열을 쓴다",
+      "_models_doc": "gpt-oss 계열은 사용하지 않는다. gaia-GLM-5.1 은 이전에 400 이 났으니 '모델 확인' 으로 살아있는지 보고 죽어 있으면 fallback 이 자동으로 넘어간다",
+      "_fallback_doc": "단계별 대체 순서. 검증(3차)은 앞 단계와 다른 모델을 먼저 두어 갈아타더라도 '다른 눈' 을 유지한다. gpt-oss 계열은 쓰지 않는다",
       "retries": 1,
       "_retries_doc": "'느린 실패'(타임아웃·형식오류) 재시도 횟수. 재시도 1번마다 LLM 을 통째로 한 번 더 기다리므로 기본 1(=한 번만 더). 모델 거부(400/403)는 즉답이라 이 예산과 별개로 후보 모델을 끝까지 훑는다. 실패한 단계는 통계로 채우고 계속 간다",
       "retry_backoff_s": 1,
@@ -186,18 +186,17 @@
         ],
         "p2": [
           "gaia-GLM-5.2",
-          "gaia-Qwen3.5-397B-A17B",
-          "GaiA-LLM-Latest"
+          "gaia-Qwen3.6-35B-A3B",
+          "gaia-Qwen3.5-397B-A17B"
         ],
         "p3": [
-          "gpt-oss-120b",
-          "GaiA-LLM-Latest",
           "gaia-Qwen3.5-397B-A17B",
-          "gaia-Qwen3.6-35B-A3B"
+          "GaiA-LLM-Latest",
+          "gaia-GLM-5.2"
         ],
         "final": [
-          "gaia-GLM-5.2",
           "gaia-Qwen3.6-35B-A3B",
+          "gaia-GLM-5.2",
           "GaiA-LLM-Latest"
         ]
       }

@@ -660,8 +660,17 @@ async function loadAnalysis(aid){
         const res=o.result||{};
         let bodyHtml;
         const filled = !o.ok && res && Object.keys(res).length;   // LLM 실패 → 통계로 채운 결과
+        // 실패 사유를 카드에 바로 보여준다 — 툴팁에만 있으면 원인을 못 찾는다
+        const failBox = (!o.ok && (o.error || (o.log||[]).length))
+          ? `<div style="border:1px solid #5a2530;border-radius:8px;padding:7px 9px;margin:4px 0;
+                 background:rgba(255,77,94,.07)">
+               <div style="color:var(--crit);font-size:11.5px;font-weight:650">실패 사유</div>
+               <div style="font-size:11.5px;color:var(--tx2);margin-top:2px;word-break:break-all">${esc(o.error||'')}</div>
+               ${(o.log||[]).length ? `<div class="mono" style="font-size:10.5px;color:var(--tx3);margin-top:4px">
+                 ${(o.log||[]).map(x=>esc(x)).join('<br>')}</div>` : ''}
+             </div>` : '';
         if(!o.ok && !filled){
-          bodyHtml = `<div style="color:var(--crit);font-size:12px">실패 — ${esc(o.error||'?')}</div>`;
+          bodyHtml = failBox;
         }else if(id==='p1'){
           bodyHtml = `<div class="note" style="font-size:11px;margin-bottom:5px">구간 ${res['조각수']}개를 병렬 분석 · 성공 ${res['성공']}개</div>`
                    + anObs(res['관찰']);
@@ -674,6 +683,7 @@ async function loadAnalysis(aid){
           bodyHtml = Object.entries(res).map(([k,v])=>
               `<div style="font-size:12px;margin:3px 0"><span class="dim">${esc(k)}</span> ${anVal(v)}</div>`).join('');
         }
+        if(!o.ok && filled) bodyHtml = failBox + bodyHtml;   // 채운 결과 위에 사유 먼저
         return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)">
           <div style="font-weight:650;font-size:12.5px;margin-bottom:5px">${o.icon||''} ${esc(o.name||id)}
             <span class="mono note" style="font-size:10px">${esc(o.model||'')} · ${o.took_s??'–'}초</span>

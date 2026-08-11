@@ -153,9 +153,13 @@ def chat(messages: list[dict], cfg: dict | None = None,
 
     model = lc.get("model", "gaia-Qwen3.5-397B-A17B")
     msgs = messages
-    # ★ Qwen3 계열은 사고(reasoning) 모델이다. 그냥 부르면 사고 토큰만 쓰다
-    #   max_tokens 에 걸려 본문이 빈 응답으로 온다. 데모스와 같은 방식으로 사고를 끈다.
-    if lc.get("no_think", True) and "qwen3" in str(model).lower():
+    # ★ 사고(reasoning) 모델은 그냥 부르면 사고 토큰만 쓰다 max_tokens 에 걸려
+    #   본문이 비거나 추론문만 온다. 그래서 '/no_think' 를 넣어 사고를 끈다.
+    #   ※ 예전엔 이름에 'qwen3' 가 있을 때만 넣었다. 그러다 gaia-GLM-5.2(1차),
+    #     gaia-lst-gpt-oss-120b(3차) 처럼 이름이 다른 사고 모델이 통째로
+    #     빠져나가 JSON 대신 추론문을 뱉고 단계가 전부 실패했다.
+    #     이제 게이트웨이의 사고 모델 계열을 모두 포함한다 (config 로 조정 가능).
+    if lc.get("no_think", True) and _is_reasoning_model(model, lc):
         msgs = _inject_no_think(messages)
 
     payload = {
@@ -209,8 +213,14 @@ def chat(messages: list[dict], cfg: dict | None = None,
                           f"완료토큰={usage.get('completion_tokens')}) — "
                           f"사고 토큰만 쓰고 잘렸을 가능성. max_tokens 를 올리거나 "
                           f"config.llm.no_think 를 확인하세요")
-        if pre and not txt.lstrip().startswith(pre.strip()[:8]):
-            txt = pre + txt            # 프리필은 응답에 안 실려 오므로 되붙인다
+        # 프리필은 보통 응답에 안 실려 오므로 되붙인다. 단, 모델이 프리필을
+        # 통째로 다시 쓴 경우엔 붙이면 안 된다 ('{"구간": "' + '{"구간":"…' = 깨진 JSON).
+        # 공백 차이('{"구간": "' vs '{"구간":"')로 못 알아보던 버그가 있어
+        # 공백을 지우고 비교한다.
+        if pre:
+            _sq = lambda t: "".join(str(t).split())
+            if not _sq(txt).startswith(_sq(pre)[:12]):
+                txt = pre + txt
         return scrub(txt), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
@@ -219,8 +229,21 @@ def chat(messages: list[dict], cfg: dict | None = None,
         return None, f"{type(e).__name__}: {e}"
 
 
+# 사고(reasoning) 모델 이름 조각 — 하나라도 들어 있으면 '/no_think' 를 넣는다.
+# config.llm.reasoning_models 로 갈아끼울 수 있다.
+_REASONING_HINTS = ("qwen3", "qwen3.5", "qwen3.6", "glm", "gpt-oss", "gaia", "deepseek", "r1")
+
+
+def _is_reasoning_model(model: str, lc: dict | None = None) -> bool:
+    hints = (lc or {}).get("reasoning_models")
+    if not isinstance(hints, (list, tuple)) or not hints:
+        hints = _REASONING_HINTS
+    m = str(model or "").lower()
+    return any(str(h).lower() in m for h in hints)
+
+
 def _inject_no_think(messages: list[dict]) -> list[dict]:
-    """Qwen3 계열 사고 비활성 — 마지막 user 메시지에 '/no_think' 를 붙인다.
+    """사고 비활성 — 마지막 user 메시지에 '/no_think' 를 붙인다.
 
     데모스(demos_v1/gguf.py `_inject_no_think_for_qwen3`) 와 같은 방식.
     사고를 끄지 않으면 max_tokens 를 사고에 다 써버려 본문이 비어 온다.

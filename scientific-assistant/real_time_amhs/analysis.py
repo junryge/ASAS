@@ -4,14 +4,12 @@ real_time_amhs/analysis.py — 4-LLM 파이프라인 분석 (분석 탭)
 구조 (모델 4종 — 게이트웨이가 이 팀에 허용한 이름만 쓴다)
     1차  gaia-GLM-5.2            데이터 훑기 (★병렬)
     2차  gaia-Qwen3.6-35B-A3B    원인·전파 분석
-    3차  gaia-lst-gpt-oss-120b   교차 검증 + 조치 (1·2차·최종과 다른 계열)
+    3차  gaia-Qwen3.6-35B-A3B    교차 검증 + 조치 (gpt-oss 계열은 쓰지 않음)
     최종 gaia-Qwen3.5-397B-A17B  통합 판정 리포트
 
-    ※ 실호출로 죽은 것을 뺀 결과다 — gaia-GLM-5.1(400 Invalid model name),
-      gaia-solution-Qwen3-235B…(403 team not allowed), gaia-cc-gpt-oss-120b(없음).
-      그래도 모델이 거부되면 _fallbacks() 가 자동으로 갈아타고, 모든 단계는
-      최대 retries(기본 3)회까지 재시도한다. 3차의 대체 순서는 gpt-oss 계열을
-      먼저 두어, 갈아타더라도 '다른 눈' 이라는 성격을 최대한 유지한다.
+    ※ gpt-oss 계열은 사용하지 않는다. 모델이 거부되면(400/403) _fallbacks() 가
+      자동으로 갈아타고, 느린 실패는 retries(기본 1)만큼만 더 시도한다.
+      그래도 안 되면 그 단계는 코드가 센 숫자로 채우고 다음으로 넘어간다.
 
 왜 이 구조인가
     - **1차가 병렬이다.** 분석 구간을 시간 조각으로 쪼개 GLM-5.2 를 조각마다
@@ -53,7 +51,7 @@ STAGES = {
     "p2": {"name": "2차 — 원인·전파 분석", "icon": "🧩",
            "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
     "p3": {"name": "3차 — 교차 검증·조치", "icon": "⚖️",
-           "model": "gaia-lst-gpt-oss-120b", "parallel": False},
+           "model": "gaia-Qwen3.6-35B-A3B", "parallel": False},
     "final": {"name": "최종 — 통합 판정", "icon": "📋",
               "model": "gaia-Qwen3.5-397B-A17B", "parallel": False},
 }
@@ -301,15 +299,13 @@ def _parse_or_none(txt: str, required: tuple = ()) -> dict | None:
     return v if ok(v) else None
 
 
-# 3차(검증)는 1·2차와 **다른 계열**이어야 의미가 있다. 그래서 대체 순서도
-# 단계마다 다르게 둔다 — 검증 단계는 gpt-oss 계열을 먼저 시도하고,
-# 앞 단계가 쓴 모델은 맨 뒤로 민다.
+# 단계마다 대체 순서를 다르게 둔다. 검증(3차)은 앞 단계와 다른 모델을 먼저
+# 시도해 '다른 눈' 성격을 지킨다. gpt-oss 계열은 사용하지 않기로 해서 뺐다.
 _FALLBACK_BY_ROLE = {
     "p1": ("gaia-Qwen3.6-35B-A3B", "gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest"),
     "p2": ("gaia-GLM-5.2", "gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest"),
-    # 검증 — 다른 계열(gpt-oss) 우선, 마지막에야 앞 단계와 같은 계열로
-    "p3": ("gpt-oss-120b", "GaiA-LLM-Latest", "gaia-Qwen3.5-397B-A17B",
-           "gaia-Qwen3.6-35B-A3B"),
+    # 검증 — 앞 단계와 다른 모델 우선
+    "p3": ("gaia-Qwen3.5-397B-A17B", "GaiA-LLM-Latest", "gaia-GLM-5.2"),
     "final": ("gaia-GLM-5.2", "gaia-Qwen3.6-35B-A3B", "GaiA-LLM-Latest"),
 }
 
@@ -413,8 +409,9 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
             log.append(f"{slow}회 {model}: 성공")
             return done(res, model, slow)
 
-        log.append(f"{slow}회 {model}: JSON 형식 아님/키 부족")
-        last_err = "JSON 형식 아님 (필수 키 없음)"
+        head = " ".join(str(txt or "").split())[:180]
+        log.append(f"{slow}회 {model}: JSON 형식 아님/키 부족 · 응답앞부분「{head}」")
+        last_err = f"JSON 형식 아님 (필수 키 없음) · 모델이 보낸 앞부분: 「{head}」"
         hint = ("\n\n★앞 응답이 JSON 형식이 아니었다. 설명·서론·코드펜스 없이 "
                 "**JSON 하나만** 출력하라. 배열 항목은 2개 이내로 짧게.")
 
@@ -422,13 +419,18 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
             round(time.time() - t0, 1), models[min(mi, len(models) - 1)], log)
 
 
+# 단계별 시도 로그 — 실패 원인을 화면에서 바로 보려고 남긴다 {sid: [줄, …]}
+_LAST_LOG: dict = {}
+
+
 def _ask_json(sid: str, user: str, prefill: str, max_tokens: int,
               cfg: dict, cancel=None) -> tuple[dict | None, str, float, str]:
     """JSON 단계 — _call_stage 의 얇은 껍데기 (기존 호출부 유지)."""
-    res, note, took, model, _log = _call_stage(sid, user, prefill, max_tokens, cfg,
-                                               want_json=True,
-                                               required=_REQUIRED.get(sid, ()),
-                                               cancel=cancel)
+    res, note, took, model, log = _call_stage(sid, user, prefill, max_tokens, cfg,
+                                              want_json=True,
+                                              required=_REQUIRED.get(sid, ()),
+                                              cancel=cancel)
+    _LAST_LOG.setdefault(sid, []).extend(log)
     return (res if isinstance(res, dict) else None), note, took, model
 
 
@@ -562,6 +564,7 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
     txt, note, took, model, _log = _call_stage(
         "final", user, "## 종합 판정\n", int(a["final_max_tokens"]), cfg,
         want_json=False, cancel=cancel)
+    _LAST_LOG.setdefault("final", []).extend(_log)
     if not txt:
         return "", note or "최종 리포트 생성 실패", took, model
     return scrub(str(txt)), note, took, model
@@ -704,6 +707,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
                       "model": _stage_model(cfg, sid), "status": "대기"}
                 for sid, s in STAGES.items()}
 
+    _LAST_LOG.clear()
     prog.update(stage="digest", roles=_init_roles(), done=False, error=None)
 
     seq = _window_seq(day, cfg, start, end)
@@ -724,7 +728,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     if not obs:                          # 전부 실패 → 통계로 채워 다음 단계를 살린다
         obs = _fill_p1(chunks, seq, cfg)
         p1_filled = bool(obs)
-    stages_out["p1"] = {
+    stages_out["p1"] = {"log": _LAST_LOG.get("p1") or [],
         "ok": bool(obs) and not p1_filled,
         "name": STAGES["p1"]["name"], "icon": STAGES["p1"]["icon"],
         "model": ", ".join(m1) or _stage_model(cfg, "p1"),
@@ -745,7 +749,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     p2_filled = p2 is None
     if p2_filled:
         p2 = _fill_p2(meta, obs, cfg)
-    stages_out["p2"] = {"ok": not p2_filled, "name": STAGES["p2"]["name"],
+    stages_out["p2"] = {"log": _LAST_LOG.get("p2") or [],"ok": not p2_filled, "name": STAGES["p2"]["name"],
                         "icon": STAGES["p2"]["icon"], "model": m2 or _stage_model(cfg, "p2"),
                         "took_s": tk2, "result": p2,
                         "error": e2 if p2_filled else None,
@@ -759,7 +763,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     p3_filled = p3 is None
     if p3_filled:
         p3 = _fill_p3(meta, cfg)
-    stages_out["p3"] = {"ok": not p3_filled, "name": STAGES["p3"]["name"],
+    stages_out["p3"] = {"log": _LAST_LOG.get("p3") or [],"ok": not p3_filled, "name": STAGES["p3"]["name"],
                         "icon": STAGES["p3"]["icon"], "model": m3 or _stage_model(cfg, "p3"),
                         "took_s": tk3, "result": p3,
                         "error": e3 if p3_filled else None,
@@ -785,6 +789,7 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     # 여기 없으면 빈 카드가 뜬다. 본문은 rec["final"] 에 따로 있다.
     _fin_ok = bool(body) and "실패" not in str(ef or "")
     stages_out["final"] = {
+        "log": _LAST_LOG.get("final") or [],
         "ok": _fin_ok, "name": STAGES["final"]["name"], "icon": STAGES["final"]["icon"],
         "model": mf or _stage_model(cfg, "final"), "took_s": tkf,
         "result": {"통합리포트": "아래 본문 참조", "글자수": len(body)},
