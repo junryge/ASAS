@@ -21,7 +21,7 @@ from lp_client import load_config
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _lock = threading.Lock()
-_keys_cache: dict[str, set] = {}      # {날짜: {이미 쓴 키}}
+_keys_cache: dict[str, set] = {}      # {파일경로: {이미 쓴 키}}
 
 
 def data_dir(cfg: dict | None = None) -> str:
@@ -47,18 +47,29 @@ def _key_of(row: dict, time_col: str, key_cols: list[str]) -> str:
 
 
 def _load_keys(day: str, path: str, time_col: str, key_cols: list[str]) -> set:
-    """파일에 이미 있는 키를 읽어둔다 (재시작 후에도 중복 방지)."""
-    if day in _keys_cache:
-        return _keys_cache[day]
+    """파일에 이미 있는 키를 읽어둔다 (재시작 후에도 중복 방지).
+
+    ★캐시는 **날짜가 아니라 파일 경로** 기준이다. 날짜로만 잡으면
+      저장 폴더가 바뀌었을 때(설정 변경·다중 인스턴스·테스트) 다른 폴더에서
+      읽은 키를 그대로 써서 **새 파일에 아무것도 안 쓰인다** — 실시간 관제가
+      데이터를 조용히 버리게 된다.
+    ★파일이 사라졌으면(외부에서 지웠거나 폴더가 바뀜) 캐시도 버린다.
+      안 그러면 "이미 있다" 고 착각해 영원히 다시 안 쓴다.
+    """
+    exists = os.path.isfile(path)
+    if not exists:
+        _keys_cache[path] = set()
+        return _keys_cache[path]
+    if path in _keys_cache:
+        return _keys_cache[path]
     keys = set()
-    if os.path.isfile(path):
-        try:
-            with open(path, "r", encoding="utf-8-sig", newline="") as f:
-                for r in csv.DictReader(f):
-                    keys.add(_key_of(r, time_col, key_cols))
-        except Exception as e:
-            print(f"[CSV] ⚠️ 기존 파일 읽기 실패({path}): {e}")
-    _keys_cache[day] = keys
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            for r in csv.DictReader(f):
+                keys.add(_key_of(r, time_col, key_cols))
+    except Exception as e:
+        print(f"[CSV] ⚠️ 기존 파일 읽기 실패({path}): {e}")
+    _keys_cache[path] = keys
     return keys
 
 

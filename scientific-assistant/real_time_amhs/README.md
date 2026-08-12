@@ -50,6 +50,40 @@ LP_OFFLINE=1 python server.py
 
 ---
 
+## 데이터 출처 — 로그프레소 / 주피터 CSV
+
+`config.json` 의 `source.mode` 로 고른다.
+
+| mode | 받는 곳 | 비고 |
+|---|---|---|
+| `logpresso` (기본) | 로그프레소 + AMOS 2개 테이블 조인 | 90컬럼 |
+| `jupyter` | 예측 잡이 떨궈 놓는 날짜별 발동이벤트 CSV | **143컬럼** — 룰별 점수(`*_pts_*`) 45개 포함 |
+
+주피터 모드는 로그프레소를 아예 안 쓴다. 매 폴링마다 그 날짜 파일을 통째로
+받아 넣되, 이미 있는 시각은 건너뛰므로 **증분 수집이 공짜로 된다** — 중간에
+빠진 분도 다음 주기에 저절로 메워진다.
+
+```bash
+# ① 브라우저에서 복사한 URL 로 설정값 뽑기 (세션용 _xsrf 는 자동으로 떼어냄)
+python jupyter_csv.py --url "http://…/predict_tobe/20260811_발동이벤트.csv?_xsrf=…"
+#   → {"base_url": "http://…", "path": "/files/…/{day}_발동이벤트.csv"}
+
+# ② config.json 의 source.mode 를 "jupyter" 로, 위 두 값을 넣는다
+#    비밀번호는 셋 중 아무 데나 —
+#      source.jupyter.password        (편함. 단 config.json 은 깃에 올라간다)
+#      jupyter_password.txt           (.gitignore 됨)
+#      환경변수 JUPYTER_PASSWORD
+
+# ③ 접속·로그인 확인 (저장 안 함)
+python jupyter_csv.py --check
+
+# ④ 한 번 받아보기
+python jupyter_csv.py 20260811
+```
+
+받은 원본은 `data/raw/{day}_발동이벤트.csv` 로 그대로 남는다 (파싱이 이상할 때
+원본과 대조하려고). 화면 상단 표시도 `주피터 CSV` 로 바뀐다.
+
 ## 회귀 테스트 (설치 필요 없음)
 
 실시간 관제라 조용히 망가지면 안 된다. **한 번 잡은 버그를 케이스로 박아둔다.**
@@ -70,6 +104,7 @@ python -m unittest tests.test_reason -v          # 하나만 자세히
 | `test_contrib.py` | 평소가 0인 지표(MAD 0)가 z 폭주로 100%를 먹지 않는다. 상시 포화를 스파이크와 구분한다. 화면에 '추정'임을 반드시 밝힌다 |
 | `test_amos_block.py` | **2번 AMOS 표가 비어도 3번 수동 기입은 항상 있다.** 무관한 문서엔 안 붙는다. `amos_block.py` 와 데모스 `amos_report.py` 가 **같은 코드**인지 검사 |
 | `test_text.py` | LLM 판단이 문장 중간에서 안 끊긴다. 일일 리포트에 원문이 안 샌다 |
+| `test_jupyter.py` | 주피터 로그인→내려받기→저장. 또 받아도 중복이 안 쌓인다. 143컬럼이 안 깎인다. **저장 폴더가 바뀌거나 파일이 지워져도 행을 조용히 버리지 않는다** |
 
 옛 버그를 일부러 되살려 그물이 실제로 잡는지 확인했다 (변이 5종 → 전부 FAILED).
 

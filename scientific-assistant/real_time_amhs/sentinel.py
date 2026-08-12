@@ -452,27 +452,60 @@ def catch_up_range(cfg: dict | None = None) -> tuple[str, str, int]:
     return start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"), gap
 
 
+def source_mode(cfg: dict | None = None) -> str:
+    """데이터를 어디서 받나 — "logpresso"(기본) 또는 "jupyter".
+
+    config.source.mode 로 고른다. jupyter 는 예측 잡이 떨궈 놓는 날짜별
+    발동이벤트 CSV 를 그대로 받아 쓴다 (로그프레소·AMOS 조인 불필요).
+    """
+    cfg = cfg or load_config()
+    src = cfg.get("source") or {}
+    mode = str(src.get("mode") or "logpresso").strip().lower()
+    if mode == "jupyter" and not ((src.get("jupyter") or {}).get("enabled", True)):
+        return "logpresso"
+    return mode if mode in ("logpresso", "jupyter") else "logpresso"
+
+
 def scan_once(store: CaseStore, rows: list[dict] | None = None,
               cfg: dict | None = None) -> dict:
     """1회 스캔 — 로그프레소 조회 → 임계 초과분을 케이스에 반영."""
     cfg = cfg or load_config()
     warn, saved, gap = None, None, None
     if rows is None:
-        # 마지막 저장 시각 ~ 현재까지 (없으면 오늘 00:00부터) — 빈 구간을 메운다
-        start, end, gap = catch_up_range(cfg)
-        # 기존 데이터 + AMOS 4개 컬럼(ATLAS 2개 테이블 조인)
-        rows, err = fetch_amos(from_dt=start, to_dt=end)
-        if err and not err.get("warn"):
-            return {"ok": False, "error": err.get("reason"), "detected": 0, "rows": 0}
-        if err:
-            warn = err.get("reason")       # 조인 경고는 감지를 막지 않는다
+        if source_mode(cfg) == "jupyter":
+            # ── 주피터 CSV 경로 — 로그프레소를 거치지 않는다 ──
+            #   예측 잡이 그 날짜 파일을 계속 갱신하므로, 매 주기 통째로 받아
+            #   append_rows 로 넣는다. 이미 있는 시각은 건너뛰므로 결과적으로
+            #   증분 수집이 되고, 중간에 빠진 분도 다음 주기에 저절로 메워진다.
+            from jupyter_csv import fetch_day
+            r = fetch_day("", cfg, verbose=False)
+            if not r.get("ok"):
+                return {"ok": False, "error": r.get("error"),
+                        "detected": 0, "rows": 0, "source": "jupyter"}
+            saved = {"written": r["written"], "skipped": r["skipped"],
+                     "files": r.get("files") or []}
+            gap = None
+            # ★방금 파싱한 행을 그대로 쓴다. CSV 를 다시 읽으면 파일명 날짜와
+            #   행의 날짜가 어긋날 때(자정 전후, 파일에 전날 꼬리가 섞인 경우)
+            #   엉뚱한 빈 날짜를 보게 된다.
+            rows = r.get("data") or []
+        else:
+            # 마지막 저장 시각 ~ 현재까지 (없으면 오늘 00:00부터) — 빈 구간을 메운다
+            start, end, gap = catch_up_range(cfg)
+            # 기존 데이터 + AMOS 4개 컬럼(ATLAS 2개 테이블 조인)
+            rows, err = fetch_amos(from_dt=start, to_dt=end)
+            if err and not err.get("warn"):
+                return {"ok": False, "error": err.get("reason"),
+                        "detected": 0, "rows": 0}
+            if err:
+                warn = err.get("reason")   # 조인 경고는 감지를 막지 않는다
 
-        # 가져온 데이터를 날짜별 CSV 에 한 줄씩 누적 (나중에 그대로 열어볼 수 있게)
-        try:
-            from store_csv import append_rows
-            saved = append_rows(rows, cfg)
-        except Exception as e:
-            print(f"[CSV] ⚠️ 저장 실패: {e}")
+            # 가져온 데이터를 날짜별 CSV 에 한 줄씩 누적 (나중에 그대로 열어볼 수 있게)
+            try:
+                from store_csv import append_rows
+                saved = append_rows(rows, cfg)
+            except Exception as e:
+                print(f"[CSV] ⚠️ 저장 실패: {e}")
 
     floor = alarm_floor(cfg)
     touched = []
@@ -495,6 +528,7 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
         "amos_warn": warn,
         "saved": saved,
         "gap_min": gap,            # 이번에 메운 빈 구간(분)
+        "source": source_mode(cfg),
         "all_rows": rows,          # 정상 포함 전체 — 화면 피드용
     }
 

@@ -3,3 +3,4 @@ data/
 __pycache__/
 api_key.txt
 token.txt
+jupyter_password.txt

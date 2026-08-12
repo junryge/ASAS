@@ -40,6 +40,7 @@ STATE = {
     "connected": False,
     "error": None,
     "amos_warn": None,
+    "source": None,            # 데이터 출처 — logpresso / jupyter
     "scans": 0,
     "forecast": None,          # 선행 감지 결과 (forecast.predict)
 }
@@ -97,6 +98,7 @@ def _poll_loop() -> None:
                 connected=bool(res.get("ok")),
                 error=None if res.get("ok") else res.get("error"),
                 amos_warn=res.get("amos_warn"),
+                source=res.get("source"),
                 scans=STATE["scans"] + 1,
                 window=CFG.get("query", {}).get("window", "10m"),
                 last_rows=res.pop("all_rows", None) or STATE.get("last_rows"),
@@ -1182,8 +1184,19 @@ if __name__ == "__main__":
     threading.Thread(target=_poll_loop, daemon=True).start()
     print("=" * 62)
     print("  AMHS Sentinel_M16BR — 독립 LLM 관제 시스템 (데모스 비의존)")
-    print(f"  로그프레소 : {CFG.get('logpresso_base')}  table={CFG.get('table_name')}")
-    print(f"  AMOS      : {CFG['amos']['bottleneck']['table']} + {CFG['amos']['queue']['table']}")
+    from sentinel import source_mode
+    if source_mode(CFG) == "jupyter":
+        from jupyter_csv import cfg_of, file_url
+        _jc = cfg_of(CFG)
+        try:
+            _ju = file_url(datetime.now().strftime("%Y%m%d"), _jc)
+        except Exception as _e:
+            _ju = f"(URL 설정 오류: {_e})"
+        print(f"  데이터원   : 주피터 CSV (로그프레소 미사용)")
+        print(f"               {_ju}")
+    else:
+        print(f"  로그프레소 : {CFG.get('logpresso_base')}  table={CFG.get('table_name')}")
+        print(f"  AMOS      : {CFG['amos']['bottleneck']['table']} + {CFG['amos']['queue']['table']}")
     print(f"  모델       : {CFG.get('llm', {}).get('model')}")
     print(f"  폴링       : {CFG.get('query', {}).get('poll_interval_s')}초"
           + ("   [OFFLINE fixture 모드]" if os.getenv("LP_OFFLINE") == "1" else ""))

@@ -5,6 +5,26 @@
   "_api_key_doc": "여기에 키를 직접 넣어도 됨(스크립트처럼). 비우면 api_key_file 을 읽는다.",
   "api_key_file": "api_key.txt",
   "table_name": "test_table3",
+  "source": {
+    "_doc": "데이터를 어디서 받나. mode=logpresso(기본) 또는 jupyter. jupyter 는 예측 잡이 떨궈 놓는 날짜별 발동이벤트 CSV 를 그대로 받아 쓴다 — 로그프레소·AMOS 조인이 필요 없고, 예측기가 만든 값(룰별 점수 포함)을 손실 없이 그대로 본다.",
+    "mode": "logpresso",
+    "jupyter": {
+      "_doc": "주피터 파일서버에서 CSV 내려받기. 매 폴링마다 그 날짜 파일을 통째로 받아 store_csv.append_rows 로 넣는다. 이미 있는 시각은 건너뛰므로 중복이 안 쌓이고, 빠진 분도 다음 주기에 저절로 메워진다.",
+      "enabled": true,
+      "base_url": "http://aiu-amhas-prediction-que.aipp01.skhynix.com",
+      "path": "/files/pjt_shared_pool/job/m16a_hubroom_event_prediction/predict_tobe/{day}_발동이벤트.csv",
+      "_path_doc": "{day} 자리에 YYYYMMDD 가 들어간다. 브라우저에서 복사한 URL 로 값을 뽑으려면: python jupyter_csv.py --url \"<붙여넣기>\" (세션용 _xsrf 는 자동으로 떼어낸다 — 매번 로그인해 새로 딴다)",
+      "password": "",
+      "_password_doc": "여기에 바로 넣어도 되고, 이 폴더의 jupyter_password.txt (.gitignore 됨) 나 환경변수 JUPYTER_PASSWORD 로 둬도 된다. config.json 은 깃에 올라가니 저장소를 공유하면 뒤 두 개가 안전하다.",
+      "token": "",
+      "_token_doc": "토큰 방식 주피터면 여기에 (?token= 로 붙는다). 비밀번호와 둘 중 하나.",
+      "timeout_s": 60,
+      "encoding": "utf-8-sig",
+      "save_raw": true,
+      "_save_raw_doc": "받은 원본을 data/raw/{day}_발동이벤트.csv 로 남긴다. 파싱이 이상할 때 원본과 대조할 수 있게.",
+      "verify_min_rows": 1
+    }
+  },
   "query": {
     "poll_interval_s": 60,
     "_poll_doc": "수집 주기 — 몇 초마다 가져올지. 기본 1분. 대시보드에서 변경 가능.",
