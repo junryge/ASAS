@@ -11,7 +11,7 @@
 | `detect.py` | **Chronos-2 로 이동평균 예측 → 선제 감지** |
 | `evaluate.py` | 사건 단위 채점 (recall/precision/**lead 분포**) |
 | `main.py` | 학습 → 감지 → 채점 한 번에 |
-| `fetch_history.py` | (보조) 과거 기간 DB→날짜별 CSV 추출 |
+| `aws_idc_history_downloader.py` | (보조) 과거 기간 DB→날짜별 CSV 다운로드 |
 
 ---
 
@@ -63,15 +63,27 @@ ml_v2/
 python3 ../RAW/decode_raw.py --out ./RAW      # 4/1~5/31 CSV 61개
 ```
 
-**6·7월은 DB 에서 직접 추출** (`fetch_history.py`):
+**6·7월은 DB 에서 직접 다운로드** (`aws_idc_history_downloader.py`):
 ```bash
-export ORA_USER=... ORA_PASS=... ORA_DSN=host:port/service
-python fetch_history.py --from 2026-06-01 --to 2026-07-31 \
+pip install oracledb
+export ORA_USER=STAREAD  ORA_PASS='****'  ORA_DSN=10.40.41.103:1521/ICASTARPP
+
+python aws_idc_history_downloader.py --from 2026-06-01 --to 2026-07-31 \
     --columns-from RAW/M16A_HUBROOM_PR_20260401.CSV --out RAW
 ```
 → `RAW/` 에 4~7월이 모두 모여 그대로 학습에 쓰인다 (컬럼 265개 동일 보장).
-실시간 수집기(`aws_idc_realtime_collector.py`)는 SYSDATE 기준 90분 고정이라
-과거 구간을 못 뽑으므로, 과거 추출은 이 스크립트를 쓴다.
+
+이 스크립트는 기존 실시간 수집기(`aws_idc_realtime_collector.py`)의 개조판이다.
+원본은 쿼리가 `SYSDATE - 90/1440` 로 고정되어 과거를 못 뽑으므로, 시간조건만
+날짜 바인드(`:d0 ~ :d1`)로 바꾸고 기간 루프·날짜별 저장을 추가했다.
+컬럼 정의·PIVOT 방식·로깅은 원본 그대로.
+
+| 옵션 | 설명 |
+|---|---|
+| `--split day` | `M16A_HUBROOM_PR_20260701.CSV` (기본, 4~5월과 동일) |
+| `--split hour` | `M16A_HUBROOM_PR_2026070101.csv` (시간별, `--ext .csv` 와 함께) |
+| `--columns-from` | 기존 CSV 헤더에서 컬럼 읽기 (265컬럼 일치). 생략 시 내장 59컬럼 |
+| `--overwrite` | 기존 파일 덮어쓰기 (기본은 건너뜀 → 중단 후 이어받기 가능) |
 
 ### ① 학습 — 4월~7월로 한 번만 (결과를 파일로 저장해 재사용)
 ```bash
