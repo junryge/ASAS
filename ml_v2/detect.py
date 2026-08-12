@@ -249,7 +249,16 @@ def exceed_prob(q10, q50, q90, threshold) -> float:
 # ──────────────────────────────────────────────────────────────
 def run(series, threshold, window=10, horizon=15, context=90,
         p_on=0.6, p_off=0.4, stride=1, model="chronos_2", device=None,
-        verbose=True):
+        verbose=True, batch=256):
+    """
+    매 분 인과적으로 판정한다.
+
+    성능: 시점 하나씩 호출하면 호출 오버헤드가 GPU 계산을 압도한다
+    (44,640분 = 44,640회 호출). Chronos-2 는 (n_series, n_variates, history)
+    로 여러 시계열을 한 번에 받으므로, 예측이 필요한 시점들을 batch 개씩
+    묶어 한 번에 호출한다 → 호출 수가 1/batch 로 줄어든다.
+    각 시점의 입력은 그 시점까지의 이력뿐이라 배치해도 인과성은 유지된다.
+    """
     times = series.times
     N = len(times)
     raw = series.get(TARGET)
@@ -265,26 +274,21 @@ def run(series, threshold, window=10, horizon=15, context=90,
             print(f" ⚠ Chronos-2 로드 실패 → baseline 폴백: {f.err}")
         print("=" * 72)
 
-    rows = []
-    active = False          # 히스테리시스 상태
-    last = None             # stride 사이 재사용
-    for t in range(N):
-        cur = sm[t]
+    # ── 1) 예측이 필요한 시점 수집 ─────────────────────────
+    #    · 이미 임계 초과면 예측 불필요(stage 3)
+    #    · 전체 이력창(context)이 확보된 시점만 → 길이가 같아 배치 가능
+    stride = max(1, stride)
+    need = [t for t in range(context - 1, N)
+            if sm[t] < threshold and (t - (context - 1)) % stride == 0]
 
-        # 1) 이미 초과 → stage 3 (진행 중)
-        if cur >= threshold:
-            rows.append([times[t], raw[t], 3, 1.0, "", "진행중",
-                         f"이동평균 {cur:.1f} ≥ 임계 {threshold}"])
-            active = True
-            continue
-
-        # 2) 예측 (stride 간격으로만 모델 호출)
-        if t % max(1, stride) == 0 or last is None:
-            if t < 15:
-                rows.append([times[t], raw[t], 0, 0.0, "", "", "정상"])
-                continue
-            ctx = sm[max(0, t - context):t + 1]
-            fc = f.predict([ctx], horizon)[0]
+    # ── 2) 배치 예측 ───────────────────────────────────────
+    pred: dict[int, tuple] = {}
+    bs = max(1, batch)
+    for i in range(0, len(need), bs):
+        chunk = need[i:i + bs]
+        ctxs = [sm[t - context + 1:t + 1] for t in chunk]
+        fcs = f.predict(ctxs, horizon)
+        for t, fc in zip(chunk, fcs):
             best_p, lead = 0.0, None
             for h in range(horizon):
                 p = exceed_prob(fc["q10"][h], fc["q50"][h], fc["q90"][h], threshold)
@@ -292,10 +296,29 @@ def run(series, threshold, window=10, horizon=15, context=90,
                     best_p = p
                 if lead is None and p >= p_on:
                     lead = h + 1
-            last = (best_p, lead)
+            pred[t] = (best_p, lead)
+        if verbose and (i // bs) % 20 == 0:
+            print(f"  예측 {min(i+bs, len(need))}/{len(need)} 시점 "
+                  f"(호출 {i//bs+1}/{(len(need)+bs-1)//bs}, backend={f.backend})")
+
+    # ── 3) 순차 판정 (히스테리시스는 시간순이어야 함) ────────
+    rows = []
+    active = False
+    last = (0.0, None)
+    for t in range(N):
+        cur = sm[t]
+        if cur >= threshold:                       # 진행 중
+            rows.append([times[t], raw[t], 3, 1.0, "", "진행중",
+                         f"이동평균 {cur:.1f} ≥ 임계 {threshold}"])
+            active = True
+            continue
+        if t in pred:
+            last = pred[t]
+        elif t < context - 1:                      # 이력 부족 구간
+            rows.append([times[t], raw[t], 0, 0.0, "", "", "정상(이력부족)"])
+            continue
         best_p, lead = last
 
-        # 3) 히스테리시스로 단계 판정
         if best_p >= p_on:
             active = True
         elif best_p < p_off:
@@ -309,8 +332,6 @@ def run(series, threshold, window=10, horizon=15, context=90,
         else:
             rows.append([times[t], raw[t], 0, best_p, "", "", "정상"])
 
-        if verbose and t % 20000 == 0 and t:
-            print(f"  진행 {t}/{N} ... (backend={f.backend})")
     if verbose and f.backend == "baseline" and f.err:
         print(f"  ※ 실행 중 baseline 폴백됨 — 원인: {f.err}")
     return rows, f.backend
@@ -342,6 +363,8 @@ def main():
     ap.add_argument("--p-on", type=float, default=0.6)
     ap.add_argument("--p-off", type=float, default=0.4)
     ap.add_argument("--stride", type=int, default=1)
+    ap.add_argument("--batch", type=int, default=256,
+                    help="한 번의 모델 호출에 묶을 시점 수 (클수록 빠름, GPU 메모리↑)")
     ap.add_argument("--model", default="chronos_2")
     ap.add_argument("--device", default=None)
     ap.add_argument("--out", required=True)
@@ -370,7 +393,8 @@ def main():
         print(f"[주의] 대상데이터에서 임계 산출 = {thr} (leakage 가능)")
 
     rows, backend = run(sd, thr, a.window, a.horizon, a.context,
-                        a.p_on, a.p_off, a.stride, a.model, a.device)
+                        a.p_on, a.p_off, a.stride, a.model, a.device,
+                        batch=a.batch)
     save(rows, a.out)
     n2 = sum(1 for r in rows if r[2] == 2)
     n3 = sum(1 for r in rows if r[2] == 3)

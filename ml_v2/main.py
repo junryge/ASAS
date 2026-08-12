@@ -66,7 +66,7 @@ def cmd_all(a):
     print(f"[2/3 감지] {len(ev)}분  {ev.times[0]:%Y-%m-%d} ~ {ev.times[-1]:%Y-%m-%d}")
     rows, backend = D.run(ev, thr, a.window, a.horizon, a.context,
                           a.p_on, a.p_off, a.stride, a.model, a.device,
-                          verbose=True)
+                          verbose=True, batch=a.batch)
     acts = a.out_actions or "actions.csv"
     D.save(rows, acts)
     print(f"   액션 저장: {acts}")
@@ -118,6 +118,8 @@ def main():
     p.add_argument("--p-on", type=float, default=0.6)
     p.add_argument("--p-off", type=float, default=0.4)
     p.add_argument("--stride", type=int, default=1)
+    p.add_argument("--batch", type=int, default=256,
+                   help="모델 호출당 묶을 시점 수 (클수록 빠름, GPU 메모리↑)")
     p.add_argument("--gap", type=int, default=10)
     p.add_argument("--pre", type=int, default=20, help="사전감지 인정 창(분)")
     p.add_argument("--model", default="chronos_2")
