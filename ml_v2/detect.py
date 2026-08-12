@@ -247,11 +247,11 @@ def exceed_prob(q10, q50, q90, threshold) -> float:
 # ──────────────────────────────────────────────────────────────
 # 메인 감지 루프
 # ──────────────────────────────────────────────────────────────
-def run(series, threshold, window=10, horizon=15, context=90,
-        p_on=0.6, p_off=0.4, stride=1, model="chronos_2", device=None,
-        verbose=True, batch=256):
+def predict_curves(series, threshold, window=10, horizon=15, context=90,
+                   stride=1, model="chronos_2", device=None,
+                   verbose=True, batch=256):
     """
-    매 분 인과적으로 판정한다.
+    매 분 인과적으로 예측해 '지평별 초과확률 곡선'을 만든다.
 
     성능: 시점 하나씩 호출하면 호출 오버헤드가 GPU 계산을 압도한다
     (44,640분 = 44,640회 호출). Chronos-2 는 (n_series, n_variates, history)
@@ -281,40 +281,54 @@ def run(series, threshold, window=10, horizon=15, context=90,
     need = [t for t in range(context - 1, N)
             if sm[t] < threshold and (t - (context - 1)) % stride == 0]
 
-    # ── 2) 배치 예측 ───────────────────────────────────────
-    pred: dict[int, tuple] = {}
+    # ── 2) 배치 예측 → 시점별 '지평별 초과확률 곡선' 저장 ───
+    #    p_on/p_off 는 예측 이후의 문턱값일 뿐이므로, 확률 곡선을 남겨두면
+    #    모델을 다시 돌리지 않고 여러 p_on 을 평가할 수 있다 (sweep).
+    curves: dict[int, list[float]] = {}
     bs = max(1, batch)
+    n_calls = (len(need) + bs - 1) // bs
     for i in range(0, len(need), bs):
         chunk = need[i:i + bs]
         ctxs = [sm[t - context + 1:t + 1] for t in chunk]
         fcs = f.predict(ctxs, horizon)
         for t, fc in zip(chunk, fcs):
-            best_p, lead = 0.0, None
-            for h in range(horizon):
-                p = exceed_prob(fc["q10"][h], fc["q50"][h], fc["q90"][h], threshold)
-                if p > best_p:
-                    best_p = p
-                if lead is None and p >= p_on:
-                    lead = h + 1
-            pred[t] = (best_p, lead)
-        if verbose and (i // bs) % 20 == 0:
+            curves[t] = [exceed_prob(fc["q10"][h], fc["q50"][h], fc["q90"][h],
+                                     threshold) for h in range(horizon)]
+        if verbose and ((i // bs) % 10 == 0 or i + bs >= len(need)):
             print(f"  예측 {min(i+bs, len(need))}/{len(need)} 시점 "
-                  f"(호출 {i//bs+1}/{(len(need)+bs-1)//bs}, backend={f.backend})")
+                  f"(호출 {i//bs+1}/{n_calls}, backend={f.backend})")
 
-    # ── 3) 순차 판정 (히스테리시스는 시간순이어야 함) ────────
+    if verbose and f.backend == "baseline" and f.err:
+        print(f"  ※ 실행 중 baseline 폴백됨 — 원인: {f.err}")
+    return {"times": times, "raw": raw, "sm": sm, "curves": curves,
+            "threshold": threshold, "horizon": horizon, "context": context,
+            "backend": f.backend}
+
+
+def decide(pre: dict, p_on=0.6, p_off=0.4):
+    """
+    예측 결과(확률 곡선)로 단계를 판정한다. 모델 호출 없음 → p_on 스윕이 공짜.
+    히스테리시스는 시간순이어야 하므로 순차 루프.
+    """
+    times, raw, sm = pre["times"], pre["raw"], pre["sm"]
+    curves, thr, H = pre["curves"], pre["threshold"], pre["horizon"]
+    ctx = pre["context"]
     rows = []
     active = False
     last = (0.0, None)
-    for t in range(N):
+    for t in range(len(times)):
         cur = sm[t]
-        if cur >= threshold:                       # 진행 중
+        if cur >= thr:                                   # 진행 중
             rows.append([times[t], raw[t], 3, 1.0, "", "진행중",
-                         f"이동평균 {cur:.1f} ≥ 임계 {threshold}"])
+                         f"이동평균 {cur:.1f} ≥ 임계 {thr}"])
             active = True
             continue
-        if t in pred:
-            last = pred[t]
-        elif t < context - 1:                      # 이력 부족 구간
+        if t in curves:
+            c = curves[t]
+            best_p = max(c)
+            lead = next((h + 1 for h in range(H) if c[h] >= p_on), None)
+            last = (best_p, lead)
+        elif t < ctx - 1:                                # 이력 부족 구간
             rows.append([times[t], raw[t], 0, 0.0, "", "", "정상(이력부족)"])
             continue
         best_p, lead = last
@@ -331,10 +345,16 @@ def run(series, threshold, window=10, horizon=15, context=90,
                          f"상승 조짐 (확률 {best_p:.2f})"])
         else:
             rows.append([times[t], raw[t], 0, best_p, "", "", "정상"])
+    return rows
 
-    if verbose and f.backend == "baseline" and f.err:
-        print(f"  ※ 실행 중 baseline 폴백됨 — 원인: {f.err}")
-    return rows, f.backend
+
+def run(series, threshold, window=10, horizon=15, context=90,
+        p_on=0.6, p_off=0.4, stride=1, model="chronos_2", device=None,
+        verbose=True, batch=256):
+    """예측 + 판정 (기존 인터페이스 유지)."""
+    pre = predict_curves(series, threshold, window, horizon, context,
+                         stride, model, device, verbose, batch)
+    return decide(pre, p_on, p_off), pre["backend"]
 
 
 def save(rows, path):
