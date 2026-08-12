@@ -80,9 +80,9 @@ def build_sql(n_cols: int) -> str:
     )
 
 
-def fetch_day(conn, sql, cols, day: datetime) -> dict[str, dict[str, str]]:
-    """하루치를 {시각: {컬럼: 값}} 으로."""
-    binds = {"d0": day, "d1": day + timedelta(days=1)}
+def fetch_range(conn, sql, cols, t0: datetime, t1: datetime) -> dict[str, dict]:
+    """[t0, t1) 구간을 {시각: {컬럼: 값}} 으로."""
+    binds = {"d0": t0, "d1": t1}
     binds.update({f"c{i}": nm for i, nm in enumerate(cols)})
     table: dict[str, dict[str, str]] = {}
     with conn.cursor() as cur:
@@ -112,8 +112,14 @@ def main():
                     help="컬럼 목록을 읽어올 기존 CSV (예: RAW/...20260401.CSV)")
     ap.add_argument("--out", default="RAW", help="저장 폴더")
     ap.add_argument("--prefix", default="M16A_HUBROOM_PR_")
+    ap.add_argument("--split", choices=["day", "hour"], default="day",
+                    help="파일 분할 단위. day=20260701 (기본, 기존 4~5월과 동일) / "
+                         "hour=2026070101")
+    ap.add_argument("--ext", default=".CSV", help="확장자 (.CSV 또는 .csv)")
     ap.add_argument("--overwrite", action="store_true", help="기존 파일도 덮어씀")
     a = ap.parse_args()
+    if not a.ext.startswith("."):
+        a.ext = "." + a.ext
 
     cols = read_columns(a.columns_from)
     d0 = datetime.strptime(a.d_from, "%Y-%m-%d")
@@ -122,38 +128,46 @@ def main():
         sys.exit("--to 가 --from 보다 앞섭니다")
     os.makedirs(a.out, exist_ok=True)
 
+    # 분할 단위 설정
+    if a.split == "hour":
+        step, dfmt, expect, unit = timedelta(hours=1), "%Y%m%d%H", 60, "시간"
+    else:
+        step, dfmt, expect, unit = timedelta(days=1), "%Y%m%d", 1440, "일"
+    end = d1 + timedelta(days=1)          # --to 당일 포함
+
     print(f"컬럼 {len(cols)}개 (기준: {os.path.basename(a.columns_from)})")
-    print(f"기간 {a.d_from} ~ {a.d_to}  →  {a.out}/")
+    print(f"기간 {a.d_from} ~ {a.d_to}  →  {a.out}/"
+          f"{a.prefix}{d0:{dfmt}}{a.ext} 형식 ({a.split} 단위)")
     sql = build_sql(len(cols))
     conn = connect()
     print(f"접속 OK: {os.getenv('ORA_DSN')}\n")
 
     total_rows, done, skipped = 0, 0, 0
-    day = d0
-    while day <= d1:
-        name = f"{a.prefix}{day:%Y%m%d}.CSV"
+    cur_t = d0
+    while cur_t < end:
+        name = f"{a.prefix}{cur_t:{dfmt}}{a.ext}"
         path = os.path.join(a.out, name)
         if os.path.exists(path) and not a.overwrite:
             print(f"  {name}  (이미 있음 — 건너뜀)")
             skipped += 1
-            day += timedelta(days=1)
+            cur_t += step
             continue
-        t0 = time.time()
+        t_start = time.time()
         try:
-            table = fetch_day(conn, sql, cols, day)
+            table = fetch_range(conn, sql, cols, cur_t, cur_t + step)
         except Exception as e:
             print(f"  {name}  ❌ 쿼리 실패: {e}")
-            day += timedelta(days=1)
+            cur_t += step
             continue
         n = write_csv(path, cols, table)
         total_rows += n
         done += 1
-        warn = "  ⚠ 1440분 미달" if n < 1400 else ""
-        print(f"  {name}  {n}행  ({time.time()-t0:.1f}s){warn}")
-        day += timedelta(days=1)
+        warn = f"  ⚠ {expect}분 미달" if n < expect * 0.97 else ""
+        print(f"  {name}  {n}행  ({time.time()-t_start:.1f}s){warn}")
+        cur_t += step
 
     conn.close()
-    print(f"\n완료: {done}일 저장 · {skipped}일 건너뜀 · 총 {total_rows}행")
+    print(f"\n완료: {done}{unit} 저장 · {skipped}{unit} 건너뜀 · 총 {total_rows}행")
     print(f"확인:  python data.py --data \"{a.out}/*.CSV\" --window 10 --pct 0.99")
 
 
