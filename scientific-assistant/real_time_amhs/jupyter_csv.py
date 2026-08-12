@@ -28,6 +28,8 @@ real_time_amhs/jupyter_csv.py — 주피터 파일서버에서 발동이벤트 C
     python jupyter_csv.py 20260811        # 날짜 지정
     python jupyter_csv.py --check         # 접속·로그인만 확인 (저장 안 함)
     python jupyter_csv.py --raw 20260811  # 원본 그대로 data/raw 에만 저장
+    python jupyter_csv.py --backfill 30   # 과거 30일 한꺼번에
+    python jupyter_csv.py --backfill 20260801 20260811   # 그 구간
 """
 from __future__ import annotations
 
@@ -303,6 +305,48 @@ def fetch_day(day: str = "", cfg: dict | None = None,
     return out
 
 
+def backfill(days: list[str] | None = None, cfg: dict | None = None,
+             back: int = 0, verbose: bool = True) -> dict:
+    """과거 날짜를 한꺼번에 받아 채운다.
+
+    days 를 주면 그 날짜들, 없으면 오늘부터 back 일 전까지.
+    이미 저장된 날도 다시 받는다 — 같은 시각은 건너뛰지만, 컬럼이 모자란
+    옛 파일은 append_rows 가 헤더를 넓혀 주므로 이 참에 정리된다.
+    없는 날짜(404)는 건너뛰고 계속한다 — 중간에 멈추면 안 된다.
+    """
+    from datetime import timedelta
+    cfg = cfg or load_config()
+    if not days:
+        n = max(1, int(back or 7))
+        today = datetime.now()
+        days = [(today - timedelta(days=i)).strftime("%Y%m%d")
+                for i in range(n)][::-1]
+    days = ["".join(ch for ch in str(d) if ch.isdigit())[:8] for d in days]
+
+    ok, miss, fail, written = [], [], [], 0
+    for d in days:
+        r = fetch_day(d, cfg, verbose=False)
+        if r.get("ok"):
+            ok.append(d)
+            written += r["written"]
+            if verbose:
+                print(f"  ✅ {d}  {r['rows']}행 · 신규 {r['written']} · "
+                      f"중복 {r['skipped']}")
+        elif "404" in str(r.get("error")):
+            miss.append(d)
+            if verbose:
+                print(f"  ·  {d}  (파일 없음 — 건너뜀)")
+        else:
+            fail.append({"day": d, "error": r.get("error")})
+            if verbose:
+                print(f"  ❌ {d}  {str(r.get('error'))[:80]}")
+    if verbose:
+        print(f"\n받음 {len(ok)}일 · 신규 {written}행 · 없음 {len(miss)}일 "
+              f"· 실패 {len(fail)}일")
+    return {"ok": not fail, "days": ok, "missing": miss, "failed": fail,
+            "written": written}
+
+
 def check(cfg: dict | None = None) -> dict:
     """접속·로그인·URL 만 확인 (저장 안 함) — 설정 맞췄는지 볼 때."""
     cfg = cfg or load_config()
@@ -338,6 +382,22 @@ if __name__ == "__main__":
         b, p = split_url(args[i + 1])
         print(json.dumps({"base_url": b, "path": p}, ensure_ascii=False, indent=2))
         raise SystemExit(0)
+    if "--backfill" in args:
+        i = args.index("--backfill")
+        rest = [a for a in args[i + 1:] if a.isdigit()]
+        if len(rest) >= 2 and len(rest[0]) == 8 and len(rest[1]) == 8:
+            from datetime import timedelta
+            d0 = datetime.strptime(rest[0], "%Y%m%d")
+            d1 = datetime.strptime(rest[1], "%Y%m%d")
+            span = [(d0 + timedelta(days=k)).strftime("%Y%m%d")
+                    for k in range((d1 - d0).days + 1)]
+            print(f"📥 {rest[0]}~{rest[1]} {len(span)}일 받는 중…")
+            r = backfill(span)
+        else:
+            n = int(rest[0]) if rest else 7
+            print(f"📥 최근 {n}일 받는 중…")
+            r = backfill(None, back=n)
+        raise SystemExit(0 if r["ok"] else 1)
     day = next((a for a in args if a.isdigit()), "")
     if "--raw" in args:
         cfg = load_config()

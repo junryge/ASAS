@@ -129,20 +129,64 @@ _fields_cache: dict[str, list] = {}
 
 
 def _fields(path: str, row: dict) -> list:
-    """그 파일의 컬럼 순서. 기존 파일이 있으면 그 헤더를 그대로 쓴다."""
-    if path in _fields_cache:
-        return _fields_cache[path]
-    fields = None
-    if os.path.isfile(path) and os.path.getsize(path) > 0:
-        try:
-            with open(path, "r", encoding="utf-8-sig", newline="") as f:
-                fields = next(csv.reader(f), None)
-        except Exception:
-            fields = None
-    if not fields:
-        fields = list(row.keys())
-    _fields_cache[path] = fields
+    """그 파일의 컬럼 순서. 기존 파일이 있으면 그 헤더를 그대로 쓴다.
+
+    ★행에 파일 헤더에 없는 컬럼이 있으면 **파일을 넓혀서 다시 쓴다**.
+      예전엔 헤더를 그대로 두고 DictWriter(extrasaction="ignore") 로 썼는데,
+      그러면 새 컬럼이 **아무 말 없이 버려진다**. 실제로 데이터 출처가
+      로그프레소(90컬럼) → 주피터 CSV(143컬럼) 로 바뀌던 날, 그날 파일이
+      이미 90컬럼으로 만들어져 있으면 룰별 점수(*_pts_*) 45개가 통째로
+      사라졌다. 관제 데이터가 소리 없이 없어지는 건 최악이다.
+    """
+    fields = _fields_cache.get(path)
+    if fields is None:
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            try:
+                with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                    fields = next(csv.reader(f), None)
+            except Exception:
+                fields = None
+        if not fields:
+            fields = list(row.keys())
+        _fields_cache[path] = fields
+
+    extra = [k for k in row.keys() if k not in fields]
+    if extra:
+        fields = _widen(path, fields, extra)
     return fields
+
+
+def _widen(path: str, fields: list, extra: list) -> list:
+    """헤더에 없던 컬럼이 생겼다 — 파일을 새 헤더로 다시 쓴다.
+
+    기존 행은 새 컬럼이 빈 값으로 채워진다. 원자적으로 교체하므로
+    중간에 죽어도 원본이 남는다.
+    """
+    new_fields = list(fields) + [k for k in extra if k not in fields]
+    if not (os.path.isfile(path) and os.path.getsize(path) > 0):
+        _fields_cache[path] = new_fields
+        return new_fields
+    tmp = path + ".widen.tmp"
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as fr, \
+                open(tmp, "w", encoding="utf-8-sig", newline="") as fw:
+            w = csv.DictWriter(fw, fieldnames=new_fields, extrasaction="ignore")
+            w.writeheader()
+            for r in csv.DictReader(fr):
+                w.writerow({k: r.get(k, "") for k in new_fields})
+        os.replace(tmp, path)
+        print(f"[CSV] 🔧 컬럼 확장 {len(fields)}→{len(new_fields)}개 "
+              f"({os.path.basename(path)}) — 새 컬럼 {len(extra)}개 "
+              f"{', '.join(extra[:4])}{'…' if len(extra) > 4 else ''}")
+    except Exception as e:
+        print(f"[CSV] ⚠️ 컬럼 확장 실패({path}): {e} — 기존 헤더로 계속")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return fields
+    _fields_cache[path] = new_fields
+    return new_fields
 
 
 def read_day(day: str, cfg: dict | None = None) -> list[dict]:

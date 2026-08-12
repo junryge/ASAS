@@ -436,7 +436,24 @@ def api_collect():
     {"date": "YYYYMMDD"} 또는 {} (오늘 00:00~현재)
     """
     b = request.get_json(silent=True) or {}
+    from sentinel import source_mode
     try:
+        # 주피터 CSV 모드는 로그프레소를 안 쓴다 — 그 날짜 파일을 받아 넣는다.
+        if source_mode(CFG) == "jupyter":
+            from jupyter_csv import backfill, fetch_day
+            if b.get("back"):                     # 과거 N일 한꺼번에
+                r = backfill(None, CFG, back=int(b["back"]), verbose=False)
+            elif b.get("from") and b.get("to"):   # 구간
+                from datetime import timedelta
+                d0 = parse_dt(b["from"]) or datetime.now()
+                d1 = parse_dt(b["to"]) or datetime.now()
+                span = [(d0 + timedelta(days=k)).strftime("%Y%m%d")
+                        for k in range((d1 - d0).days + 1)]
+                r = backfill(span, CFG, verbose=False)
+            else:
+                r = fetch_day(b.get("date") or "", CFG, verbose=False)
+            return (jsonify(r), 200) if r.get("ok") else (jsonify(r), 502)
+
         from collect import collect, collect_day
         if b.get("date"):
             r = collect_day(b["date"], CFG)

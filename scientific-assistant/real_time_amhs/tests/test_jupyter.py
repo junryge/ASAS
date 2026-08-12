@@ -16,6 +16,7 @@ from copy import deepcopy
 from . import util  # noqa: F401
 import jupyter_csv as J
 import sentinel
+from jupyter_csv import backfill as backfill_days
 from lp_client import load_config
 
 MOCK = os.path.join(util.BASE, "tests", "mock_jupyter.py")
@@ -225,6 +226,108 @@ class KeysCache(unittest.TestCase):
             self.assertEqual(store_csv.append_rows([dict(self.ROW)], cfg)["written"], 1)
         finally:
             shutil.rmtree(d, ignore_errors=True)
+
+
+class WidenColumns(unittest.TestCase):
+    """컬럼이 늘어나면 파일을 넓혀서 다시 쓴다.
+
+    ★로그프레소(90컬럼)로 만들어진 그날 파일에 주피터(143컬럼) 행이 들어오면,
+      예전엔 DictWriter(extrasaction="ignore") 가 새 컬럼 53개를 **아무 말 없이
+      버렸다**. 룰별 점수(*_pts_*) 45개가 통째로 사라진다.
+    """
+
+    OLD = {"datetime": "2026-08-11 00:00", "hot_area": "M16HUB",
+           "unified_risk_score": "31", "file": "a.csv"}
+    NEW = {"datetime": "2026-08-11 00:01", "hot_area": "M16HUB",
+           "unified_risk_score": "62", "file": "a.csv",
+           "stage": "3", "M16HUB_pts_RA": "25", "M16HUB_pts_RC": "10",
+           "continuity_min": "2"}
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="widen")
+        self.cfg = deepcopy(load_config())
+        self.cfg.setdefault("storage", {})["daily_csv_dir"] = self.tmp
+        self.path = os.path.join(self.tmp, "20260811_TOTAL.CSV")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _read(self):
+        import csv as _csv
+        with open(self.path, encoding="utf-8-sig", newline="") as f:
+            return list(_csv.DictReader(f))
+
+    def test_새_컬럼이_안_버려진다(self):
+        import store_csv
+        store_csv.append_rows([dict(self.OLD)], self.cfg)
+        store_csv.append_rows([dict(self.NEW)], self.cfg)
+        rows = self._read()
+        self.assertEqual(len(rows), 2)
+        for k in ("stage", "M16HUB_pts_RA", "M16HUB_pts_RC", "continuity_min"):
+            self.assertIn(k, rows[1], f"{k} 가 버려졌다")
+        self.assertEqual(rows[1]["M16HUB_pts_RA"], "25")
+
+    def test_기존_행은_빈칸으로_남는다(self):
+        import store_csv
+        store_csv.append_rows([dict(self.OLD)], self.cfg)
+        store_csv.append_rows([dict(self.NEW)], self.cfg)
+        rows = self._read()
+        self.assertEqual(rows[0]["unified_risk_score"], "31")   # 기존 값 보존
+        self.assertEqual(rows[0]["M16HUB_pts_RA"], "")          # 새 컬럼은 빈칸
+
+    def test_컬럼이_같으면_다시_쓰지_않는다(self):
+        import store_csv
+        store_csv.append_rows([dict(self.OLD)], self.cfg)
+        before = os.path.getmtime(self.path)
+        time.sleep(0.02)
+        store_csv.append_rows([dict(self.OLD, datetime="2026-08-11 00:02")], self.cfg)
+        rows = self._read()
+        self.assertEqual(len(rows[0]), len(self.OLD))
+        self.assertEqual(len(rows), 2)
+        self.assertGreaterEqual(os.path.getmtime(self.path), before)
+
+
+@unittest.skipUnless(os.path.isfile(FIXTURE), "샘플 CSV 없음")
+class Backfill(unittest.TestCase):
+    """과거 날짜 한꺼번에 받기 — 없는 날은 건너뛰고 계속해야 한다."""
+
+    @classmethod
+    def setUpClass(cls):
+        env = dict(os.environ, MOCK_PW=PW, MOCK_CSV=FIXTURE)
+        cls.srv = subprocess.Popen([sys.executable, MOCK, str(PORT + 1)], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        if not _up(PORT + 1):
+            cls.srv.terminate()
+            raise unittest.SkipTest("가짜 주피터 서버가 안 뜸")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.terminate()
+        cls.srv.wait(timeout=5)
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="bf")
+        self.cfg = deepcopy(load_config())
+        self.cfg["source"] = {"mode": "jupyter", "jupyter": {
+            "enabled": True, "base_url": f"http://127.0.0.1:{PORT + 1}",
+            "path": "/files/x/{day}_발동이벤트.csv", "password": PW}}
+        self.cfg.setdefault("storage", {})["daily_csv_dir"] = self.tmp
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_구간을_받는다(self):
+        r = backfill_days(["20260809", "20260810", "20260811"], self.cfg)
+        self.assertTrue(r["ok"], r["failed"])
+        self.assertEqual(len(r["days"]), 3)
+        self.assertGreater(r["written"], 0)
+
+    def test_없는_날짜는_건너뛰고_계속한다(self):
+        """중간에 파일 없는 날이 있어도 멈추면 안 된다."""
+        r = backfill_days(["19990101", "20260811", "19990102"], self.cfg)
+        self.assertTrue(r["ok"], r["failed"])
+        self.assertEqual(r["days"], ["20260811"])
+        self.assertEqual(len(r["missing"]), 2)
 
 
 if __name__ == "__main__":

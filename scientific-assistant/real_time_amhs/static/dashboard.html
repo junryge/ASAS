@@ -345,6 +345,13 @@
         <select id="pday" title="이미 저장된 날짜 빠른 선택 (data/YYYYMMDD_TOTAL.CSV)"></select>
         <button class="act" id="pload" title="선택한 날짜 조회 — 저장본이 없으면 서버에서 자동으로 가져옵니다">조회</button>
         <button class="act" id="pget" title="저장본이 있어도 서버에서 다시 가져옵니다">다시 확보</button>
+        <select id="pback" title="과거 며칠치를 한꺼번에 받아 채웁니다" style="width:96px">
+          <option value="">과거 채우기</option>
+          <option value="7">최근 7일</option>
+          <option value="14">최근 14일</option>
+          <option value="30">최근 30일</option>
+          <option value="60">최근 60일</option>
+        </select>
         <a class="act" id="pcsv" href="#" download>CSV</a>
       </div>
     </div>
@@ -875,6 +882,7 @@ async function pollStatus(){
     const sv = st.saved || {};
     // 데이터 출처 — 주피터 CSV 모드면 '로그프레소' 라고 쓰면 안 된다
     const jup = st.source === 'jupyter';
+    SRC = st.source || SRC;
     $('#streamtx').textContent = st.connected
       ? `STREAMING · ${jup?'주피터 CSV':'로그프레소'} · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 수집`
         + (st.gap_min > 5 ? ` · ${st.gap_min}분 구간 보충` : '')
@@ -983,7 +991,7 @@ function renderForecast(fc){
 /* ── LLM 판단 일치 (1분 추론 사후검증) ──
    ★ 검증된 '정탐률'이 아니라 '이후 데이터와 일치했나' 다. 표본이 차기 전엔
    퍼센트를 내지 않고 건수만 보여준다 — 그게 튜닝에도 더 쓸모 있다. */
-let ACC = null, FC = null;
+let ACC = null, FC = null, SRC = null;   // SRC = 데이터 출처(logpresso/jupyter)
 
 /* ── 선행 지표 분석 — '어느 지표가 점수보다 몇 분 먼저 움직였나' ──
    과거 저장분에서 임계 돌파 시점을 찾아 지표별 선행 시간의 중앙값을 낸다.
@@ -1692,7 +1700,7 @@ async function loadPast(day, opt){
   if(PBUSY) return;
   PDAY = day;
   pastBusy(true);
-  $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">불러오는 중…</td></tr>';
+  $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">불러오는 중…</td></tr>';
   $('#pcsv').href = `/api/data/${day}.csv`;
   try{
     if(opt.force && !await fetchDay(day)) return;    // '다시 확보'
@@ -1720,27 +1728,53 @@ async function loadPast(day, opt){
   }catch(e){
     console.error('과거 조회 실패', e);
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
-    $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">조회 실패</td></tr>';
+    $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">조회 실패</td></tr>';
   }finally{ pastBusy(false); }
 }
 
+/* 과거 N일 한꺼번에 채우기 — 이미 저장된 날도 다시 받는다.
+   같은 시각은 건너뛰지만, 컬럼이 모자란 옛 파일은 이 참에 헤더가 넓어진다. */
+$('#pback').onchange = async function(){
+  const n = this.value; this.value = '';
+  if(!n) return;
+  if(!confirm(`최근 ${n}일치를 서버에서 받아 채웁니다.\n`
+            + `이미 저장된 날도 다시 받아 빠진 컬럼을 채웁니다. 계속할까요?`)) return;
+  $('#pinfo').innerHTML = `최근 ${n}일 받는 중… <span class="dim">몇 분 걸릴 수 있습니다</span>`;
+  try{
+    const r = await post('/api/collect', {back: Number(n)});
+    if(r.error && !r.days){
+      $('#pinfo').innerHTML = `<span style="color:var(--crit)">채우기 실패 — ${esc(r.error)}</span>`;
+      return;
+    }
+    const miss = (r.missing||[]).length, fail = (r.failed||[]).length;
+    $('#pinfo').innerHTML = `<b style="color:var(--ok)">${(r.days||[]).length}일</b> 받음 · `
+      + `신규 <b>${r.written||0}</b>행`
+      + (miss ? ` · <span class="dim">파일 없는 날 ${miss}일</span>` : '')
+      + (fail ? ` · <span style="color:var(--crit)">실패 ${fail}일</span>` : '');
+    await loadPastDays();
+  }catch(e){
+    $('#pinfo').innerHTML = '<span style="color:var(--crit)">채우기 실패 — 서버 응답 없음</span>';
+  }
+};
+
 /* 서버에 그 날짜 확보를 시킨다. 성공하면 날짜 목록도 갱신. */
 async function fetchDay(day){
+  const jup = SRC === 'jupyter';
   $('#pinfo').innerHTML = `${esc(fmtDay(day))} 서버에서 가져오는 중… `
-    + `<span class="dim">로그프레소 하루치는 몇 분 걸릴 수 있습니다</span>`;
-  $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">서버 조회 중…</td></tr>';
+    + `<span class="dim">${jup ? '주피터 CSV 를 받습니다' : '로그프레소 하루치는 몇 분 걸릴 수 있습니다'}</span>`;
+  $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">서버 조회 중…</td></tr>';
   try{
     const r = await post('/api/collect', {date: day});
     if(!r.ok){
       $('#pinfo').innerHTML = `<span style="color:var(--crit)">${esc(fmtDay(day))} 확보 실패 — ${esc(r.error||'')}</span>`;
-      $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">확보 실패</td></tr>';
+      $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">확보 실패</td></tr>';
       return false;
     }
     await loadPastDays(day);
     return true;
   }catch(e){
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">확보 실패 — 서버 응답 없음</span>';
-    $('#pcases').innerHTML = '<tr><td colspan="6" class="empty">확보 실패</td></tr>';
+    $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">확보 실패</td></tr>';
     return false;
   }
 }
