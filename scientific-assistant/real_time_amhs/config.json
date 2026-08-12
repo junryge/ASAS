@@ -7,7 +7,7 @@
   "table_name": "test_table3",
   "source": {
     "_doc": "데이터를 어디서 받나. mode=logpresso(기본) 또는 jupyter. jupyter 는 예측 잡이 떨궈 놓는 날짜별 발동이벤트 CSV 를 그대로 받아 쓴다 — 로그프레소·AMOS 조인이 필요 없고, 예측기가 만든 값(룰별 점수 포함)을 손실 없이 그대로 본다.",
-    "mode": "logpresso",
+    "mode": "jupyter",
     "jupyter": {
       "_doc": "주피터 파일서버에서 CSV 내려받기. 매 폴링마다 그 날짜 파일을 통째로 받아 store_csv.append_rows 로 넣는다. 이미 있는 시각은 건너뛰므로 중복이 안 쌓이고, 빠진 분도 다음 주기에 저절로 메워진다.",
       "enabled": true,
