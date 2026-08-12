@@ -50,6 +50,29 @@ LP_OFFLINE=1 python server.py
 
 ---
 
+## 회귀 테스트 (설치 필요 없음)
+
+실시간 관제라 조용히 망가지면 안 된다. **한 번 잡은 버그를 케이스로 박아둔다.**
+
+```bash
+cd real_time_amhs
+python -m unittest discover -s tests -t .        # 83개, 0.3초, 네트워크·LLM 불필요
+python -m unittest tests.test_reason -v          # 하나만 자세히
+```
+
+무엇을 지키는가 — 전부 실제로 화면에서 터졌던 것들이다.
+
+| 파일 | 지키는 것 |
+|---|---|
+| `test_reason.py` | reason 원문(룰 코드·`역증가`·영문 컬럼)이 화면에 새지 않는다. 닫는 `]` 가 잘려 와도 한글 요약이 나온다. 실제지표 칸이 비지 않는다 |
+| `test_llm_json.py` | 추론문 뒤에 붙은 JSON·잘린 JSON을 건져낸다. 산문을 JSON으로 받지 않는다. `response_format` 400이면 옵션을 빼며 재시도하되 `Invalid model name` 400은 바로 모델 교체. 503(nginx HTML)은 한 줄로 줄이고 일시장애로 분류 |
+| `test_forecast.py` | 판정 규칙(`_decide`)이 실시간·채점 **양쪽에서 같다**. 스파이크 1분에 경보 안 나간다. 적중/오보/놓침을 정확히 센다. 다지표가 선행 시간을 늘리고 `require_for_warn` 이 오보를 줄인다 |
+| `test_contrib.py` | 평소가 0인 지표(MAD 0)가 z 폭주로 100%를 먹지 않는다. 상시 포화를 스파이크와 구분한다. 화면에 '추정'임을 반드시 밝힌다 |
+| `test_amos_block.py` | **2번 AMOS 표가 비어도 3번 수동 기입은 항상 있다.** 무관한 문서엔 안 붙는다. `amos_block.py` 와 데모스 `amos_report.py` 가 **같은 코드**인지 검사 |
+| `test_text.py` | LLM 판단이 문장 중간에서 안 끊긴다. 일일 리포트에 원문이 안 샌다 |
+
+옛 버그를 일부러 되살려 그물이 실제로 잡는지 확인했다 (변이 5종 → 전부 FAILED).
+
 ## 구성
 
 | 파일 | 역할 |

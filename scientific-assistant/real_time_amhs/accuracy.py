@@ -73,6 +73,27 @@ def _f(v, d=0.0):
 
 
 # ────────────────────────────── 1분 추론 ──────────────────────────────
+def clip(v, limit):
+    """리스트는 ' / ' 로 합치고, 길면 자른다 (CSV·화면이 터지지 않게).
+
+    ★문장 중간에서 뚝 끊지 않는다. 예전엔 그냥 limit 자에서 잘라
+      "…반송시간이 6.3분까지 올" 처럼 말이 끊긴 채로 화면에 남았다.
+      마침표 → 쉼표 → 띄어쓰기 순으로 물러나며 경계에서 자른다.
+      (테스트에서 직접 부를 수 있게 모듈 레벨에 둔다 — tests/test_text.py)
+    """
+    t = " / ".join(str(x).strip() for x in v if str(x).strip()) \
+        if isinstance(v, list) else str(v or "").strip()
+    t = " ".join(t.split())                 # 줄바꿈·중복공백 정리
+    if len(t) <= limit:
+        return t
+    head = t[:limit]
+    for seps in (".!?", ",;/·", " "):
+        cut = max((head.rfind(ch) for ch in seps), default=-1)
+        if cut >= limit * 0.6:              # 너무 짧아지면 그 경계는 버린다
+            return head[:cut + 1].rstrip(" ,;/·") + "…"
+    return head.rstrip() + "…"
+
+
 def judge_minute(row: dict, cfg: dict | None = None) -> dict:
     """그 1분 데이터에 대한 LLM 판단 → LLM.CSV 한 행.
 
@@ -104,24 +125,8 @@ def judge_minute(row: dict, cfg: dict | None = None) -> dict:
         "소요ms": ms, "오류": (" ".join(str(err).split())[:cap] if err else ""),
     }
     if res:
-        def txt(v, limit):
-            """리스트는 ' / ' 로 합치고, 길면 자른다 (CSV·화면이 터지지 않게).
+        txt = clip
 
-            ★문장 중간에서 뚝 끊지 않는다. 예전엔 그냥 limit 자에서 잘라
-              "…반송시간이 6.3분까지 올" 처럼 말이 끊긴 채로 화면에 남았다.
-              마침표 → 쉼표 → 띄어쓰기 순으로 물러나며 경계에서 자른다.
-            """
-            t = " / ".join(str(x).strip() for x in v if str(x).strip()) \
-                if isinstance(v, list) else str(v or "").strip()
-            t = " ".join(t.split())                 # 줄바꿈·중복공백 정리
-            if len(t) <= limit:
-                return t
-            head = t[:limit]
-            for seps in (".!?", ",;/·", " "):
-                cut = max((head.rfind(ch) for ch in seps), default=-1)
-                if cut >= limit * 0.6:              # 너무 짧아지면 그 경계는 버린다
-                    return head[:cut + 1].rstrip(" ,;/·") + "…"
-            return head.rstrip() + "…"
 
         # '판단' 은 사람이 읽는 본문이라 근거·조치보다 여유를 준다.
         # (프롬프트는 160자로 부탁하므로 보통은 잘릴 일이 없다 — 이건 안전망이다)
