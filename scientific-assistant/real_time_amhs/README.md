@@ -104,6 +104,25 @@ python jupyter_csv.py --backfill 20260801 20260811   # 그 구간
 [CSV] 🔧 컬럼 확장 90→143개 (20260812_TOTAL.CSV) — 새 컬럼 53개 stage, …
 ```
 
+### 비밀번호·키는 저장소에 두지 않는다
+
+`config.json` 은 깃에 올라간다. 비밀은 아래 두 곳 중 하나에 둔다 (`.gitignore` 됨).
+
+```
+real_time_amhs/token.txt               LLM(GAIA) API 키
+real_time_amhs/api_key.txt             로그프레소 API 키
+real_time_amhs/jupyter_password.txt    주피터 비밀번호
+```
+
+환경변수도 된다 — `GAIA_API_KEY` · `LP_API_KEY` · `JUPYTER_PASSWORD`.
+코드는 **config → 키 파일 → 환경변수** 순으로 찾는다.
+
+`tests/test_secrets.py` 가 이걸 강제한다. 실제로 두 번 새어 나가서 넣었다 —
+`config.json` 에 직접 넣은 것 한 번, 그리고 **테스트용 가짜 서버의 기본값**에
+딸려 들어간 것 한 번(`os.environ.get("MOCK_PW", "실제비번")` — 눈에 잘 안 띈다).
+그래서 대입문만 보지 않고 **그 줄의 모든 문자열**을 본다. 걸리면 파일·줄번호만
+알려주고 **값은 찍지 않는다** (실패 로그에 비밀이 남으면 안 되니까).
+
 받은 원본은 `data/raw/{day}_발동이벤트.csv` 로 그대로 남는다 (파싱이 이상할 때
 원본과 대조하려고). 화면 상단 표시도 `주피터 CSV` 로 바뀐다.
 
@@ -127,6 +146,7 @@ python -m unittest tests.test_reason -v          # 하나만 자세히
 | `test_contrib.py` | 평소가 0인 지표(MAD 0)가 z 폭주로 100%를 먹지 않는다. 상시 포화를 스파이크와 구분한다. 화면에 '추정'임을 반드시 밝힌다 |
 | `test_amos_block.py` | **2번 AMOS 표가 비어도 3번 수동 기입은 항상 있다.** 무관한 문서엔 안 붙는다. `amos_block.py` 와 데모스 `amos_report.py` 가 **같은 코드**인지 검사 |
 | `test_text.py` | LLM 판단이 문장 중간에서 안 끊긴다. 일일 리포트에 원문이 안 샌다 |
+| `test_secrets.py` | **저장소에 실제 비밀번호·키가 들어가면 실패한다.** config 의 비밀 칸이 비어 있는지, 키 파일이 `.gitignore` 됐는지도 검사 |
 | `test_jupyter.py` | 주피터 로그인→내려받기→저장. 또 받아도 중복이 안 쌓인다. 143컬럼이 안 깎인다. **저장 폴더가 바뀌거나 파일이 지워져도 행을 조용히 버리지 않는다.** 컬럼이 늘면 파일을 넓힌다. 백필은 없는 날을 건너뛰고 계속한다 |
 
 옛 버그를 일부러 되살려 그물이 실제로 잡는지 확인했다 (변이 5종 → 전부 FAILED).
