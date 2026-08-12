@@ -8,6 +8,7 @@ import os, sys, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
+# 테스트 전용 더미. 진짜 비밀번호를 여기에 두면 저장소에 커밋된다.
 PW = os.environ.get("MOCK_PW", "테스트용-더미-비번")
 with open(os.environ.get("MOCK_CSV") or os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
