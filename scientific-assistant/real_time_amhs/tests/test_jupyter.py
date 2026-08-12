@@ -330,5 +330,55 @@ class Backfill(unittest.TestCase):
         self.assertEqual(len(r["missing"]), 2)
 
 
+@unittest.skipUnless(os.path.isfile(FIXTURE), "샘플 CSV 없음")
+class ListDays(unittest.TestCase):
+    """서버에 어느 날짜가 있는지 — 과거를 받기 전에 이걸 먼저 봐야 헛돌지 않는다."""
+
+    @classmethod
+    def setUpClass(cls):
+        env = dict(os.environ, MOCK_PW=PW, MOCK_CSV=FIXTURE)
+        cls.srv = subprocess.Popen([sys.executable, MOCK, str(PORT + 2)], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        if not _up(PORT + 2):
+            cls.srv.terminate()
+            raise unittest.SkipTest("가짜 주피터 서버가 안 뜸")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.terminate()
+        cls.srv.wait(timeout=5)
+
+    def _cfg(self, path="/files/x/{day}_발동이벤트.csv"):
+        c = deepcopy(load_config())
+        c["source"] = {"mode": "jupyter", "jupyter": {
+            "enabled": True, "base_url": f"http://127.0.0.1:{PORT + 2}",
+            "path": path, "password": PW}}
+        c.setdefault("storage", {})["daily_csv_dir"] = tempfile.mkdtemp(prefix="ld")
+        return c
+
+    def test_날짜_목록을_받는다(self):
+        items, err = J.list_days(self._cfg())
+        self.assertEqual(err, "")
+        self.assertEqual([i["day"] for i in items],
+                         ["20260809", "20260810", "20260811"])
+
+    def test_CSV_아닌_파일은_뺀다(self):
+        items, _ = J.list_days(self._cfg())
+        self.assertTrue(all(i["name"].endswith(".csv") for i in items))
+
+    def test_files_접두를_떼고_목록_API_를_부른다(self):
+        """/files/… 는 다운로드 경로다. 목록은 /api/contents/… 를 쓴다."""
+        items, err = J.list_days(self._cfg("/files/pjt/job/{day}_발동이벤트.csv"))
+        self.assertEqual(err, "", err)
+        self.assertTrue(items)
+
+    def test_설정이_비면_알려준다(self):
+        c = deepcopy(load_config())
+        c["source"] = {"mode": "jupyter", "jupyter": {"base_url": "", "path": ""}}
+        items, err = J.list_days(c)
+        self.assertEqual(items, [])
+        self.assertIn("base_url", err)
+
+
 if __name__ == "__main__":
     unittest.main()

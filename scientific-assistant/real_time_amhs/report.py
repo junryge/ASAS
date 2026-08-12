@@ -45,14 +45,23 @@ def cases_from_query(from_dt: str, to_dt: str, cfg: dict | None = None):
     except Exception as e:
         print(f"[CSV] ⚠️ 읽기 실패: {e}")
 
-    # ② 저장분이 없으면 로그프레소에서 그 날짜로 직접 조회
+    # ② 저장분이 없으면 출처에서 그 구간을 확보한 뒤 다시 읽는다.
+    #   ★여기서 fetch_amos() 를 직접 부르면 안 된다 — 출처를 주피터로 바꿔도
+    #     리포트만 로그프레소를 친다. collect() 한 곳에서 갈라지게 둔다.
     if not rows:
-        from lp_query import fetch_amos
-        rows, err = fetch_amos(from_dt=from_dt, to_dt=to_dt)
-        if err and not err.get("warn"):
-            return None, err
-        warn = err.get("reason") if err else None
-        src = "로그프레소 직접 조회"
+        from collect import collect
+        from sentinel import source_mode
+        mode = source_mode(cfg)
+        r = collect(from_dt, to_dt, cfg, verbose=False)
+        if not r.get("ok"):
+            return None, {"reason": r.get("error") or "데이터 확보 실패"}
+        warn = r.get("warn")
+        try:
+            from store_csv import read_range
+            rows = read_range(from_dt, to_dt, cfg)
+        except Exception as e:
+            return None, {"reason": f"확보 후 읽기 실패: {e}"}
+        src = f"{'주피터 CSV' if mode == 'jupyter' else '로그프레소'} 재확보 {len(rows)}행"
     else:
         src = f"저장 CSV {len(rows)}행"
     print(f"[리포트] {from_dt}~{to_dt} — {src}")

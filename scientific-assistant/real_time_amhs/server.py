@@ -59,15 +59,29 @@ def _bootstrap_today() -> None:
     중간에 서버가 꺼져 있던 구간까지 메운다. 이미 저장된 분은 중복으로 걸러지므로
     여러 번 돌려도 안전하다. 이후 수집은 폴링 루프가 증분으로 이어간다.
     """
+    from sentinel import source_mode
     now = datetime.now()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     day = now.strftime("%Y%m%d")
-    print(f"[기동] 오늘({day}) 00:00 ~ {now:%H:%M} 하루치 확보 중…")
+    jup = source_mode(CFG) == "jupyter"
+    print(f"[기동] 오늘({day}) 00:00 ~ {now:%H:%M} 하루치 확보 중… "
+          f"({'주피터 CSV' if jup else '로그프레소'})")
     t0 = time.time()
     try:
-        from collect import collect
-        r = collect(start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"),
-                    CFG, verbose=False)
+        if jup:
+            # ★출처가 주피터면 여기서도 주피터로 받는다. 예전엔 이 자리에서만
+            #   collect()(=로그프레소)를 불러서, 설정을 바꿔도 기동 때 한 번은
+            #   로그프레소를 치고 있었다.
+            from jupyter_csv import fetch_day
+            jr = fetch_day(day, CFG, verbose=False)
+            r = {"ok": jr.get("ok"), "error": jr.get("error"),
+                 "rows": jr.get("rows", 0), "written": jr.get("written", 0),
+                 "skipped": jr.get("skipped", 0), "files": jr.get("files") or [],
+                 "minutes": jr.get("rows", 0)}
+        else:
+            from collect import collect
+            r = collect(start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"),
+                        CFG, verbose=False)
         if not r.get("ok"):
             print(f"[기동] ⚠️ 확보 실패 — {r.get('error')}")
             STATE["bootstrap"] = {"ok": False, "error": r.get("error")}

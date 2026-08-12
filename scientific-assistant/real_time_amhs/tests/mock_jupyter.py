@@ -4,7 +4,7 @@
   POST /login   → 비밀번호 맞으면 세션 쿠키, 틀리면 폼 재출력(200, 'Invalid password')
   GET  /files/… → 세션 쿠키 없으면 403, 있으면 CSV
 """
-import os, sys, threading, time, urllib.parse
+import json, os, sys, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
@@ -43,6 +43,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, "<html><body><form><input name='password'>"
                                    "</form></body></html>",
                               cookies=["_xsrf=abc123; Path=/"])
+        if path.startswith("/api/contents"):
+            if self._cookies().get("session_id") not in SESS:
+                return self._send(403, "<html>Forbidden</html>")
+            days = ["20260809", "20260810", "20260811"]
+            return self._send(200, json.dumps({"content": [
+                {"name": f"{d}_발동이벤트.csv", "size": 5243, "type": "file",
+                 "last_modified": f"2026-08-{d[6:]}T23:59:00Z"} for d in days
+            ] + [{"name": "메모.md", "size": 10, "type": "file"}]},
+                ensure_ascii=False), "application/json")
         if path.startswith("/files/"):
             if self._cookies().get("session_id") not in SESS:
                 return self._send(403, "<html>Forbidden</html>")

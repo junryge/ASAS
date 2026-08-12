@@ -30,9 +30,18 @@ FMT = "%Y%m%d%H%M%S"
 
 def collect(from_dt: str, to_dt: str, cfg: dict | None = None,
             verbose: bool = True) -> dict:
-    """구간 데이터를 가져와 날짜 CSV 에 누적. (확보 결과 dict)"""
+    """구간 데이터를 가져와 날짜 CSV 에 누적. (확보 결과 dict)
+
+    ★출처(config.source.mode)에 따라 여기서 갈라진다. **확보는 전부 이 함수를
+      거친다** — 기동 확보·수동 확보·리포트 재조회가 각자 로그프레소를 부르면,
+      출처를 주피터로 바꿔도 어딘가는 계속 로그프레소를 친다(실제로 그랬다).
+    """
     cfg = cfg or load_config()
     t0 = time.time()
+
+    from sentinel import source_mode
+    if source_mode(cfg) == "jupyter":
+        return _collect_jupyter(from_dt, to_dt, cfg, verbose, t0)
 
     rows, err = fetch_amos(from_dt=from_dt, to_dt=to_dt)
     if err and not err.get("warn"):
@@ -70,6 +79,54 @@ def collect(from_dt: str, to_dt: str, cfg: dict | None = None,
         if warn:
             print(f"  ⚠️ {warn}")
     return res
+
+
+def _collect_jupyter(from_dt: str, to_dt: str, cfg: dict, verbose: bool,
+                     t0: float) -> dict:
+    """주피터 CSV 경로 — 구간이 걸친 날짜 파일을 받아 넣는다.
+
+    주피터는 '날짜 파일' 단위라 구간(시:분)을 그대로 못 쓴다. 구간이 걸친
+    날짜를 전부 받고, 저장은 append_rows 가 시각으로 중복을 거른다.
+    """
+    from datetime import timedelta
+    from jupyter_csv import fetch_day
+    try:
+        d0 = datetime.strptime(str(from_dt)[:8], "%Y%m%d")
+        d1 = datetime.strptime(str(to_dt)[:8], "%Y%m%d")
+    except ValueError:
+        d0 = d1 = datetime.now()
+    days = [(d0 + timedelta(days=k)).strftime("%Y%m%d")
+            for k in range(max(0, (d1 - d0).days) + 1)]
+
+    rows = written = skipped = 0
+    files, errs, got = set(), [], []
+    for d in days:
+        r = fetch_day(d, cfg, verbose=False)
+        if r.get("ok"):
+            got.append(d)
+            rows += r["rows"]
+            written += r["written"]
+            skipped += r["skipped"]
+            files.update(r.get("files") or [])
+        elif "404" in str(r.get("error")):
+            continue                       # 그 날짜 파일이 아직 없다 — 정상
+        else:
+            errs.append(f"{d}: {r.get('error')}")
+
+    if not got and errs:
+        if verbose:
+            print(f"  ❌ 주피터 확보 실패 — {errs[0]}")
+        return {"ok": False, "error": errs[0], "rows": 0, "written": 0,
+                "source": "jupyter"}
+    out = {"ok": True, "rows": rows, "written": written, "skipped": skipped,
+           "minutes": rows, "files": sorted(files), "days": got,
+           "source": "jupyter", "took_s": round(time.time() - t0, 1),
+           "warn": "; ".join(errs) if errs else None}
+    if verbose:
+        print(f"  ✅ 주피터 {len(got)}일 · {rows}행 조회 · 신규 {written}행 저장 "
+              f"· 중복 {skipped}"
+              + (f" → {', '.join(out['files'])}" if out["files"] else ""))
+    return out
 
 
 def collect_day(day: str, cfg: dict | None = None) -> dict:

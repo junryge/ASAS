@@ -28,6 +28,8 @@ real_time_amhs/jupyter_csv.py — 주피터 파일서버에서 발동이벤트 C
     python jupyter_csv.py 20260811        # 날짜 지정
     python jupyter_csv.py --check         # 접속·로그인만 확인 (저장 안 함)
     python jupyter_csv.py --raw 20260811  # 원본 그대로 data/raw 에만 저장
+    python jupyter_csv.py --list          # 서버에 어느 날짜가 있는지 먼저 본다
+    python jupyter_csv.py --backfill all  # 있는 날짜 전부
     python jupyter_csv.py --backfill 30   # 과거 30일 한꺼번에
     python jupyter_csv.py --backfill 20260801 20260811   # 그 구간
 """
@@ -305,6 +307,55 @@ def fetch_day(day: str = "", cfg: dict | None = None,
     return out
 
 
+def list_days(cfg: dict | None = None) -> tuple[list[dict], str]:
+    """서버에 실제로 있는 날짜 파일 목록 → ([{day, name, size, mtime}], 오류).
+
+    주피터의 목록 API 를 쓴다: GET /api/contents/<폴더>?content=1
+    과거를 받기 전에 **어느 날짜가 있는지** 먼저 봐야 헛돌지 않는다
+    (예측 잡이 오래된 파일을 지우는 경우가 흔하다).
+    """
+    cfg = cfg or load_config()
+    c = cfg_of(cfg)
+    base = str(c.get("base_url") or "").rstrip("/")
+    path = str(c.get("path") or "")
+    if not base or not path:
+        return [], "config.source.jupyter 의 base_url / path 가 비어 있습니다"
+
+    # path 에서 폴더만 떼어낸다. '/files/' 접두는 목록 API 에선 안 쓴다.
+    folder = path.partition("?")[0].rsplit("/", 1)[0]
+    for pre in ("/files/", "/lab/tree/", "/tree/", "/view/"):
+        if folder.startswith(pre):
+            folder = "/" + folder[len(pre):]
+            break
+    api = base + "/api/contents" + urllib.parse.quote(folder, safe="/%") + "?content=1"
+
+    s, err = login(c)
+    if err:
+        return [], err
+    try:
+        raw = s.get(api, {"Accept": "application/json"}).read()
+        data = json.loads(raw.decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        return [], (f"목록 조회 실패 HTTP {e.code} — 이 서버는 목록 API 를 "
+                    f"막아 뒀을 수 있습니다. 날짜를 직접 지정해 받으세요")
+    except Exception as e:
+        return [], f"목록 조회 실패: {type(e).__name__}: {e}"
+
+    items = data.get("content")
+    if not isinstance(items, list):
+        return [], "목록 응답 형식이 예상과 다릅니다"
+    out = []
+    for it in items:
+        name = str(it.get("name") or "")
+        m = re.match(r"(\d{8})", name)
+        if m and name.lower().endswith(".csv"):
+            out.append({"day": m.group(1), "name": name,
+                        "size": it.get("size"),
+                        "mtime": (it.get("last_modified") or "")[:19]})
+    out.sort(key=lambda d: d["day"])
+    return out, ""
+
+
 def backfill(days: list[str] | None = None, cfg: dict | None = None,
              back: int = 0, verbose: bool = True) -> dict:
     """과거 날짜를 한꺼번에 받아 채운다.
@@ -382,8 +433,29 @@ if __name__ == "__main__":
         b, p = split_url(args[i + 1])
         print(json.dumps({"base_url": b, "path": p}, ensure_ascii=False, indent=2))
         raise SystemExit(0)
+    if "--list" in args:
+        items, err = list_days()
+        if err:
+            print("❌", err)
+            raise SystemExit(1)
+        print(f"서버에 있는 날짜 파일 {len(items)}개")
+        for it in items:
+            sz = it["size"]
+            print(f"  {it['day']}  {it['name']}"
+                  + (f"  {sz/1024:.0f}KB" if isinstance(sz, (int, float)) else "")
+                  + (f"  {it['mtime']}" if it["mtime"] else ""))
+        raise SystemExit(0)
     if "--backfill" in args:
         i = args.index("--backfill")
+        if "all" in args[i + 1:i + 2]:
+            items, err = list_days()
+            if err:
+                print("❌", err)
+                raise SystemExit(1)
+            ds = [it["day"] for it in items]
+            print(f"📥 서버에 있는 {len(ds)}일 전부 받는 중…")
+            r = backfill(ds)
+            raise SystemExit(0 if r["ok"] else 1)
         rest = [a for a in args[i + 1:] if a.isdigit()]
         if len(rest) >= 2 and len(rest[0]) == 8 and len(rest[1]) == 8:
             from datetime import timedelta
