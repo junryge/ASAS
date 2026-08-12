@@ -83,17 +83,34 @@ class Forecaster:
                 qs, _ = self.pipe.predict_quantiles(
                     context=ctx, prediction_length=horizon,
                     quantile_levels=[0.1, 0.5, 0.9])
+                # 반환 축 순서가 버전에 따라 다를 수 있음:
+                #   [series, horizon, quantile]  또는  [series, quantile, horizon]
                 out = []
                 for s in range(qs.shape[0]):
-                    arr = qs[s].tolist()
+                    a = qs[s]
+                    if a.shape[0] == horizon and a.shape[-1] == 3:
+                        arr = a.tolist()                       # [horizon][3]
+                    elif a.shape[0] == 3:
+                        t = a.tolist()                         # [3][horizon]
+                        arr = [[t[0][h], t[1][h], t[2][h]] for h in range(horizon)]
+                    else:
+                        raise ValueError(
+                            f"예상 못한 predict_quantiles 형태: {tuple(a.shape)} "
+                            f"(horizon={horizon})")
                     out.append({"q10": [float(r[0]) for r in arr],
                                 "q50": [float(r[1]) for r in arr],
                                 "q90": [float(r[2]) for r in arr]})
                 return out
             except Exception as e:
+                # 실모델 예측 실패 → 즉시 알린다 (조용한 폴백은 결과를 오인시킴)
                 self.err = repr(e)
                 self.pipe = None
                 self.backend = "baseline"
+                print("=" * 72)
+                print("⚠ 실모델 예측 실패 → baseline 으로 폴백합니다.")
+                print(f"   원인: {self.err}")
+                print("   이 결과는 Chronos-2 성적이 아닙니다. 원인 해결 후 재실행하세요.")
+                print("=" * 72)
         return [_baseline(c, horizon) for c in contexts]
 
 
@@ -215,7 +232,9 @@ def run(series, threshold, window=10, horizon=15, context=90,
             rows.append([times[t], raw[t], 0, best_p, "", "", "정상"])
 
         if verbose and t % 20000 == 0 and t:
-            print(f"  진행 {t}/{N} ...")
+            print(f"  진행 {t}/{N} ... (backend={f.backend})")
+    if verbose and f.backend == "baseline" and f.err:
+        print(f"  ※ 실행 중 baseline 폴백됨 — 원인: {f.err}")
     return rows, f.backend
 
 
