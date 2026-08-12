@@ -11,6 +11,7 @@
 | `detect.py` | **Chronos-2 로 이동평균 예측 → 선제 감지** |
 | `evaluate.py` | 사건 단위 채점 (recall/precision/**lead 분포**) |
 | `main.py` | 학습 → 감지 → 채점 한 번에 |
+| `fetch_history.py` | (보조) 과거 기간 DB→날짜별 CSV 추출 |
 
 ---
 
@@ -60,8 +61,17 @@ ml_v2/
 4~5월 학습 데이터는 저장소에서 복원 가능:
 ```bash
 python3 ../RAW/decode_raw.py --out ./RAW      # 4/1~5/31 CSV 61개
-# 6·7월 CSV 를 같은 폴더에 함께 넣으면 4~7월 학습이 된다
 ```
+
+**6·7월은 DB 에서 직접 추출** (`fetch_history.py`):
+```bash
+export ORA_USER=... ORA_PASS=... ORA_DSN=host:port/service
+python fetch_history.py --from 2026-06-01 --to 2026-07-31 \
+    --columns-from RAW/M16A_HUBROOM_PR_20260401.CSV --out RAW
+```
+→ `RAW/` 에 4~7월이 모두 모여 그대로 학습에 쓰인다 (컬럼 265개 동일 보장).
+실시간 수집기(`aws_idc_realtime_collector.py`)는 SYSDATE 기준 90분 고정이라
+과거 구간을 못 뽑으므로, 과거 추출은 이 스크립트를 쓴다.
 
 ### ① 학습 — 4월~7월로 한 번만 (결과를 파일로 저장해 재사용)
 ```bash
