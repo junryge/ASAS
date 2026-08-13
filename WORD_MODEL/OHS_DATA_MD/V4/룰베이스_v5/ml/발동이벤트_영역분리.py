@@ -21,24 +21,18 @@
 # 사용법
 #   python 발동이벤트_영역분리.py 20260812_발동이벤트.csv
 #   python 발동이벤트_영역분리.py .\predict_tobe\*_발동이벤트.csv -o .\영역별
-#   python 발동이벤트_영역분리.py 20260812_발동이벤트.csv --rank --summary
+#   python 발동이벤트_영역분리.py 20260812_발동이벤트.csv --summary
 #   python 발동이벤트_영역분리.py 20260812_발동이벤트.csv --grade
 #
 # 옵션
 #   -o, --out          출력 폴더 (기본: 입력 파일과 같은 폴더)
 #   --areas            나눌 영역 (기본: M16HUB,M14,M14B,M16A,M16B)
 #   --all-areas        M16 / M16_PKT / M16_WT 도 포함 (score 한 칸뿐)
-#   --rank             그 시각 영역 기여 순위 컬럼 추가 (등급보다 안전)
 #   --grade            영역등급.json 임계로 등급 컬럼 추가
 #   --grade-config     임계 파일 경로 (기본: 스크립트 옆 영역등급.json)
 #   --summary          영역별 raw 분포와 임계별 비율 출력 (임계 다시 잡을 때)
 #   --strip-prefix     컬럼명에서 영역 접두사 제거 (M16B_score_raw → score_raw)
 #   --no-suffix-cols   sla_M14 / sorter_M14 류를 영역 파일에 넣지 않음
-#
-# --rank 가 붙이는 컬럼 (권장)
-#   area_rank      그 시각 5개 영역 중 이 영역의 raw 순위 (1=가장 큼)
-#   area_share     전체 영역 raw 합에서 이 영역이 차지한 비율 %
-#   top_area       그 시각 raw 가 가장 큰 영역 이름
 #
 # --grade 가 붙이는 컬럼
 #   area_grade      영역등급.json 임계에 따른 등급
@@ -147,7 +141,7 @@ def print_summary(header, body, areas):
     print('  ' + '─' * 64)
 
 
-def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, add_rank, summary):
+def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, summary):
     with open(fp, encoding='utf-8-sig', newline='') as f:
         rows = list(csv.reader(f))
     if not rows:
@@ -171,16 +165,6 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, add_rank, summ
     common = [c for c in header if owner[c] is None]
 
     hidx = {c: i for i, c in enumerate(header)}
-    rank_src = [a for a in areas if a + '_score_raw' in hidx]
-    ranks = []                       # 행마다 {영역: (순위, 비율%)} , top영역
-    if add_rank and rank_src:
-        for r in body:
-            vals = {a: fnum(r[hidx[a + '_score_raw']]) for a in rank_src}
-            tot = sum(vals.values())
-            order = sorted(vals.items(), key=lambda x: (-x[1], x[0]))
-            pos = {a: i + 1 for i, (a, _) in enumerate(order)}
-            share = {a: (vals[a] / tot * 100 if tot > 0 else 0.0) for a in rank_src}
-            ranks.append((pos, share, order[0][0] if order and order[0][1] > 0 else ''))
 
     base = os.path.basename(fp)
     stem = base[:-4] if base.lower().endswith('.csv') else base
@@ -202,9 +186,6 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, add_rank, summ
         raw_pos = take.index(a + '_score_raw') if (a + '_score_raw') in take else None
         th = gcfg.get(a) if gcfg else None
         do_grade = th is not None and raw_pos is not None
-        do_rank = bool(ranks) and a in rank_src
-        if do_rank:
-            out_head += ['area_rank', 'area_share', 'top_area']
         if do_grade:
             out_head += ['area_grade', 'area_saturated']
 
@@ -212,21 +193,13 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, add_rank, summ
         with open(op, 'w', newline='', encoding='utf-8-sig') as f:
             w = csv.writer(f)
             w.writerow(out_head)
-            for n, r in enumerate(body):
+            for r in body:
                 vals = [r[i] for i in idxs]
-                if do_rank:
-                    pos, share, top = ranks[n]
-                    vals += [pos[a], f'{share[a]:.1f}', top]
                 if do_grade:
                     vals += list(grade_of(vals[raw_pos], th))
                 w.writerow(vals)
         made.append(op)
-        tag = []
-        if do_rank:
-            tag.append('순위3')
-        if do_grade:
-            tag.append('등급2')
-        extra = f" (+{'+'.join(tag)})" if tag else ''
+        extra = ' (+등급2)' if do_grade else ''
         print(f'     ✅ {a:<8} {len(take)}컬럼{extra} → {os.path.basename(op)}')
 
     if summary:
@@ -240,7 +213,6 @@ def main():
     ap.add_argument('-o', '--out', default=None, help='출력 폴더 (기본: 입력과 같은 폴더)')
     ap.add_argument('--areas', default=None, help='나눌 영역 (쉼표 구분)')
     ap.add_argument('--all-areas', action='store_true', help='M16/M16_PKT/M16_WT 도 포함')
-    ap.add_argument('--rank', action='store_true', help='영역 기여 순위 컬럼 추가')
     ap.add_argument('--grade', action='store_true', help='영역등급.json 임계로 등급 추가')
     ap.add_argument('--grade-config', default=None, help='임계 파일 경로')
     ap.add_argument('--summary', action='store_true', help='raw 분포·임계별 비율 출력')
@@ -272,7 +244,7 @@ def main():
         out_dir = a.out or (os.path.dirname(os.path.abspath(fp)))
         os.makedirs(out_dir, exist_ok=True)
         total += split_one(fp, out_dir, areas, not a.no_suffix_cols,
-                           a.strip_prefix, gcfg, a.rank, a.summary)
+                           a.strip_prefix, gcfg, a.summary)
 
     print(f'\n🎉 완료 — {len(total)}개 파일 생성')
     if total:
