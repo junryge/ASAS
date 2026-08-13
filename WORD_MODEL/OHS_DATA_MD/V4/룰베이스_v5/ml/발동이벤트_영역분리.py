@@ -34,6 +34,15 @@
 #   --strip-prefix     컬럼명에서 영역 접두사 제거 (M16B_score_raw → score_raw)
 #   --no-suffix-cols   sla_M14 / sorter_M14 류를 영역 파일에 넣지 않음
 #
+# 운영 (run_ml.py 에서 스레드로)
+#   import 발동이벤트_영역분리 as area_split
+#   threading.Thread(target=area_split.run_watch,
+#                    kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
+#                    daemon=True).start()
+#   → 매분 predict_tobe 의 그날 발동이벤트를 읽어 predict_tobe/fab분리/ 에 5개로 쓴다.
+#     LO_LOW_AMOS·lo_mac_maxcapa 가 컬럼을 채운 뒤에 돌아야 하므로 run_ml 의 맨 끝에서
+#     시작하고, lag 초만큼 늦게 돈다(기본 20초).
+#
 # --score 가 붙이는 컬럼 — unified 와 같은 방식으로 만든다
 #   area_score      min(100, round(score_raw × 100 ÷ 분모))
 #   area_level      50=경계 / 71=위험 / 85=초위험  (unified 와 동일 기준)
@@ -45,7 +54,10 @@ import csv
 import glob
 import json
 import os
+import re
 import sys
+import time
+from datetime import datetime
 
 csv.field_size_limit(10 ** 7)
 
@@ -57,21 +69,36 @@ ALL_AREAS = sorted(DEFAULT_AREAS + EXTRA_AREAS, key=len, reverse=True)
 SATURATE_AT = 50        # 영역 점수가 잘리는 상한 (융합에 들어가는 최대)
 DEFAULT_DENOM = 70      # 분모 기본값 — 설정 파일이 없을 때
 SUMMARY_THS = [10, 15, 20, 25, 27, 30, 32, 35, 37, 40, 42, 45, 50]
+SUBDIR = 'fab분리'      # 운영 출력 하위 폴더
+WATCH_LAG = 20          # 다른 기입기(LO_LOW_AMOS·MAXCAPA)가 쓴 뒤에 돌도록 늦추는 초
 
 
 def load_denoms(path, areas):
-    """영역별 점수 환산 분모를 읽는다. 없으면 기본값."""
+    """영역별 실효 분모를 만든다.
+
+    영역등급.json
+        "분모": 70                       전 영역 공통 (영역별 dict 도 허용)
+        "조정": {"M16HUB": 120, ...}     영역별 가감 % — 100 그대로 / 120 20% 높임
+    점수 = raw × 100 ÷ 분모 × 조정 ÷ 100  이므로, 실효 분모 = 분모 ÷ (조정/100)
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     fp = path or os.path.join(here, '영역등급.json')
-    d = {}
+    base, adj = DEFAULT_DENOM, {}
     if os.path.exists(fp):
         with open(fp, encoding='utf-8') as f:
             cfg = json.load(f)
-        d = dict(cfg.get('분모') or cfg.get('denom') or {})
+        base = cfg.get('분모', cfg.get('denom', DEFAULT_DENOM))
+        adj = dict(cfg.get('조정') or cfg.get('adjust') or {})
     else:
-        print(f'  ⚠️ 분모 파일 없음: {fp} — 전 영역 {DEFAULT_DENOM} 사용')
-    out = {a: float(d.get(a, DEFAULT_DENOM)) for a in areas}
-    print('  [분모] ' + ' · '.join(f'{a} {v:g}' for a, v in out.items()))
+        print(f'  ⚠️ 설정 파일 없음: {fp} — 전 영역 분모 {DEFAULT_DENOM} · 조정 100 사용')
+
+    out, shown = {}, []
+    for a in areas:
+        b = float(base[a]) if isinstance(base, dict) else float(base)   # 영역별 분모도 허용
+        p = float(adj.get(a, 100)) or 100
+        out[a] = b / (p / 100.0)
+        shown.append(f'{a} {b:g}' + (f'×{p:g}%' if p != 100 else ''))
+    print('  [점수설정] 분모 ' + ' · '.join(shown))
     return out
 
 
@@ -205,6 +232,80 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary):
     if summary:
         print_summary(header, body, [a for a in areas if a + '_score_raw' in hidx])
     return made
+
+
+def resolve_event(path):
+    """폴더면 그 안의 최신 *발동이벤트*.csv 를 고른다.
+    파일명의 날짜(YYYYMMDD)가 큰 것 우선 — mtime 은 다른 기입기가 계속 바꾸므로 안 쓴다."""
+    if os.path.isdir(path):
+        cands = [f for f in os.listdir(path)
+                 if f.lower().endswith('.csv') and '발동이벤트' in f and '_M1' not in f]
+        if not cands:
+            return None
+        dated = [(m.group(1), f) for f in cands
+                 for m in [re.search(r'(\d{8})', f)] if m]
+        if dated:
+            return os.path.join(path, max(dated)[1])
+        return max((os.path.join(path, f) for f in cands), key=os.path.getmtime)
+    return path if os.path.exists(path) else None
+
+
+def run_watch(event='./predict_tobe', out=None, interval=60, lag=WATCH_LAG,
+              areas=None, score=True, subdir=SUBDIR):
+    """운영 진입점 — 매분 그날 발동이벤트를 영역별로 다시 쓴다.
+
+        threading.Thread(target=발동이벤트_영역분리.run_watch,
+                         kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
+                         daemon=True).start()
+
+    · 원본이 바뀐 때만 다시 쓴다(mtime+크기 비교) — 매분 통째로 쓰지 않는다
+    · 자정이 지나면 새 날짜 파일로 자동 전환, 전날 파일도 한 번 더 마무리한다
+    · 출력은 <event>/fab분리/ (out 을 주면 그쪽)
+    """
+    areas = areas or list(DEFAULT_AREAS)
+    denoms = load_denoms(None, areas) if score else {}
+    out_dir = out or os.path.join(event, subdir)
+    seen = {}          # 파일경로 → (mtime, size)
+    last_day = None
+    print(f'[영역분리] 감시 시작 — {event} → {out_dir} · {interval}초 · {lag}초 지연')
+
+    while True:
+        try:
+            time.sleep(lag)
+            fp = resolve_event(event)
+            if not fp:
+                print(f'  ⚠️ 발동이벤트 파일 없음: {os.path.abspath(event)} (대기)')
+            else:
+                # 자정 전환 — 전날 파일을 한 번 더 마무리
+                m = re.search(r'(\d{8})', os.path.basename(fp))
+                day = m.group(1) if m else None
+                todo = [fp]
+                if last_day and day and day != last_day:
+                    prev = [os.path.join(event, f) for f in os.listdir(event)
+                            if last_day in f and '발동이벤트' in f and '_M1' not in f]
+                    todo = prev + todo
+                    print(f'  🌙 날짜 전환 {last_day} → {day} — 전날 파일 마무리')
+                last_day = day or last_day
+
+                for t in todo:
+                    try:
+                        st = os.stat(t)
+                    except OSError:
+                        continue
+                    key = (st.st_mtime, st.st_size)
+                    if seen.get(t) == key:
+                        continue          # 안 바뀜 — 건너뜀
+                    os.makedirs(out_dir, exist_ok=True)
+                    made = split_one(t, out_dir, areas, True, False, denoms, False)
+                    if made:
+                        seen[t] = key
+                        print(f'  [{datetime.now():%H:%M:%S}] {os.path.basename(t)} '
+                              f'→ {len(made)}개')
+        except PermissionError:
+            pass                          # 다른 기입기가 쓰는 중 — 다음 사이클에
+        except Exception as e:
+            print(f'  ⚠️ 영역분리 오류: {e}')
+        time.sleep(max(1, interval - lag))
 
 
 def main():
