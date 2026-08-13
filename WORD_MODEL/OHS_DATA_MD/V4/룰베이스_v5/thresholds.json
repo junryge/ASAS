@@ -46,8 +46,6 @@
   "TH_MLUD_JOB": 50,
   "TH_MLUD_MANUAL": 30,
   "TH_CNV_FULL_RATIO": 0.85,
-  "_comment_area_weight": "영역별 점수 가중 — unified_risk_score 합산에만 적용. hot_area/affected_areas/단계는 무영향. 1.0=현행, 0.5=기여 절반. 미기재 영역은 1.0",
-  "AREA_WEIGHT": {
-    "M16B": 0.5
-  }
+  "_comment_area_weight": "영역별 점수 가중 — unified_risk_score 합산에만 적용. hot_area/affected_areas/단계는 무영향. 1.0=현행, 0.5=기여 절반. 미기재 영역은 1.0. 비어있음=전 영역 1.0 (M16B 0.5 가중 취소됨)",
+  "AREA_WEIGHT": {}
 }

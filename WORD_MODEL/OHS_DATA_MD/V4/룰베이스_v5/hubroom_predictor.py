@@ -152,8 +152,11 @@ TH_SORTER_TRANSFER_FAIL = _T('TH_SORTER_TRANSFER_FAIL', 1)
 #   · 값 1.0 = 현행 유지. 0.5 = 그 영역 점수 기여를 정확히 절반.
 #   · thresholds.json 에 {"AREA_WEIGHT": {"M16B": 0.5}} 로 넣으면
 #     코드 수정 없이 조정 가능 (재시작 필요).
+#   · 기본값은 비움 = 전 영역 1.0. (M16B 0.5 가중은 취소됨 —
+#     M16B_score_raw 가 가중 전 원본값이라 단독 제공 시 융합 점수와 어긋나서)
+#     _TD 는 json 을 기본값에 '병합'하므로, 되살리려면 json 에 값을 넣어야 한다.
 # ============================================================
-AREA_WEIGHT = _TD('AREA_WEIGHT', {'M16B': 0.5})
+AREA_WEIGHT = _TD('AREA_WEIGHT', {})
 
 
 def _aw(area):
