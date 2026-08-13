@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>반송 정체 조기경보</title>
+<style>
+  :root{
+    --ink:#17212B; --ink-2:#3D4A57; --ink-3:#69757F;
+    --ground:#F5F7F9; --surface:#FFFFFF; --surface-2:#EEF2F5;
+    --line:#DCE3E8; --line-2:#C6D0D8;
+    --accent:#B45309; --accent-soft:#FDF3E7; --accent-line:#E9C48F;
+    --ok:#0F766E; --ok-soft:#E7F2F0;
+    --bad:#9F1239; --bad-soft:#FBEAEE;
+    --sans:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,
+           'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',system-ui,sans-serif;
+    --mono:ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ink:#E8EDF1; --ink-2:#B3BEC7; --ink-3:#85929C;
+      --ground:#111820; --surface:#18212B; --surface-2:#1F2A35;
+      --line:#2A3641; --line-2:#3A4854;
+      --accent:#F0A857; --accent-soft:#2A2116; --accent-line:#5C4526;
+      --ok:#4FBFA8; --ok-soft:#132622;
+      --bad:#E8798F; --bad-soft:#2A1620;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#E8EDF1; --ink-2:#B3BEC7; --ink-3:#85929C;
+    --ground:#111820; --surface:#18212B; --surface-2:#1F2A35;
+    --line:#2A3641; --line-2:#3A4854;
+    --accent:#F0A857; --accent-soft:#2A2116; --accent-line:#5C4526;
+    --ok:#4FBFA8; --ok-soft:#132622;
+    --bad:#E8798F; --bad-soft:#2A1620;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:17px; line-height:1.72;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:0 24px 96px}
+
+  /* ── 헤더 ── */
+  header{padding:72px 0 44px; border-bottom:1px solid var(--line)}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 18px;
+  }
+  h1{
+    margin:0; font-size:clamp(34px,5.6vw,50px); line-height:1.08;
+    letter-spacing:-.025em; font-weight:800; text-wrap:balance;
+  }
+  .lede{
+    margin:20px 0 0; font-size:20px; line-height:1.65; color:var(--ink-2);
+    max-width:38em; text-wrap:pretty;
+  }
+
+  /* ── 섹션 ── */
+  section{padding:52px 0; border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:none}
+  .kicker{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--ink-3); margin:0 0 12px;
+  }
+  h2{
+    margin:0 0 20px; font-size:27px; line-height:1.25;
+    letter-spacing:-.018em; font-weight:750; text-wrap:balance;
+  }
+  h3{margin:32px 0 10px; font-size:18px; font-weight:700; letter-spacing:-.01em}
+  p{margin:0 0 16px; max-width:40em; text-wrap:pretty}
+  p:last-child{margin-bottom:0}
+  strong{font-weight:700; color:var(--ink)}
+  .muted{color:var(--ink-2)}
+
+  /* ── 핵심 수치 타일 ── */
+  .stats{
+    display:grid; gap:14px; margin:0;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  }
+  .stat{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:6px; padding:20px 22px;
+  }
+  .stat .n{
+    font-family:var(--mono); font-variant-numeric:tabular-nums;
+    font-size:34px; line-height:1.1; font-weight:700; letter-spacing:-.03em;
+  }
+  .stat .n .u{font-size:17px; font-weight:600; margin-left:3px; color:var(--ink-2)}
+  .stat .k{font-size:14px; color:var(--ink-3); margin-top:8px; line-height:1.5}
+  .stat.hl{background:var(--accent-soft); border-color:var(--accent-line)}
+  .stat.hl .n{color:var(--accent)}
+  .stat.good .n{color:var(--ok)}
+
+  /* ── 도해 ── */
+  figure{margin:28px 0 0}
+  .chart{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:6px; padding:22px 20px 16px; overflow-x:auto;
+  }
+  .chart svg{display:block; width:100%; height:auto; min-width:520px}
+  figcaption{
+    margin-top:12px; font-size:14.5px; color:var(--ink-3); line-height:1.6;
+    max-width:44em;
+  }
+  .legend{
+    display:flex; flex-wrap:wrap; gap:18px; margin:0 0 14px;
+    font-family:var(--mono); font-size:12px; color:var(--ink-2);
+  }
+  .legend span{display:flex; align-items:center; gap:7px}
+  .swatch{width:16px; height:2.5px; border-radius:2px; display:block}
+
+  /* ── 3단 흐름 ── */
+  .flow{display:grid; gap:12px; grid-template-columns:1fr; margin:0}
+  @media(min-width:680px){ .flow{grid-template-columns:repeat(3,1fr)} }
+  .step{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:6px; padding:22px; position:relative;
+  }
+  .step .no{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.1em;
+    color:var(--accent); margin-bottom:10px;
+  }
+  .step h4{margin:0 0 8px; font-size:17px; font-weight:700}
+  .step p{font-size:15px; color:var(--ink-2); margin:0; line-height:1.62}
+
+  /* ── 표 ── */
+  .tw{overflow-x:auto; margin:0}
+  table{
+    width:100%; min-width:480px; border-collapse:collapse;
+    font-size:15.5px; background:var(--surface);
+    border:1px solid var(--line); border-radius:6px;
+  }
+  caption{
+    caption-side:top; text-align:left; font-size:14px; color:var(--ink-3);
+    padding:0 0 10px; font-family:var(--mono);
+  }
+  th,td{padding:13px 16px; text-align:left; border-bottom:1px solid var(--line)}
+  thead th{
+    font-size:12.5px; font-weight:700; letter-spacing:.04em;
+    color:var(--ink-3); text-transform:uppercase; background:var(--surface-2);
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td.num{
+    font-family:var(--mono); font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+  }
+  tr.pick{background:var(--accent-soft)}
+  tr.pick td{color:var(--ink)}
+  tr.pick td:first-child{font-weight:700; color:var(--accent)}
+  .tag{
+    display:inline-block; font-family:var(--mono); font-size:11px;
+    padding:2px 8px; border-radius:99px; border:1px solid var(--accent-line);
+    color:var(--accent); background:var(--surface); margin-left:8px;
+    vertical-align:1px;
+  }
+
+  /* ── 강조 박스 ── */
+  .note{
+    background:var(--surface); border:1px solid var(--line);
+    border-left:3px solid var(--accent); border-radius:0 6px 6px 0;
+    padding:20px 22px; margin:26px 0 0;
+  }
+  .note .t{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 8px;
+  }
+  .note p{font-size:16px; margin:0; color:var(--ink-2)}
+
+  ul{margin:0; padding-left:1.15em; max-width:40em}
+  li{margin-bottom:11px; color:var(--ink-2)}
+  li:last-child{margin-bottom:0}
+  li strong{color:var(--ink)}
+
+  footer{
+    padding:36px 0 0; font-family:var(--mono); font-size:12.5px;
+    color:var(--ink-3); line-height:1.8; border-top:1px solid var(--line);
+  }
+</style>
+<style>
+  @media print {
+    body { background:#fff; }
+    .wrap { max-width:none; padding:0 10mm 10mm; }
+    header { padding-top:0; }
+    section { padding:20px 0; break-inside:avoid; }
+    .stat,.step,.note,table,.chart,figure { break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">M16A HUBROOM · 반송 정체 예측</p>
+  <h1>정체가 터지기 10분 전에<br>미리 알려드립니다</h1>
+  <p class="lede">
+    지금 막힌 걸 알려주는 게 아니라, <strong>앞으로 막힐 것을</strong> 알려줍니다.
+    2026년 7월 한 달 실측 결과, 심각한 정체를 <strong>하나도 놓치지 않았습니다.</strong>
+  </p>
+</header>
+
+<section>
+  <p class="kicker">한눈에</p>
+  <div class="stats">
+    <div class="stat good">
+      <div class="n">4<span class="u">/ 4건</span></div>
+      <div class="k">심각한 정체를 전부 감지<br>(놓친 것 없음)</div>
+    </div>
+    <div class="stat hl">
+      <div class="n">9.8<span class="u">분</span></div>
+      <div class="k">평균적으로 이만큼<br>미리 알림</div>
+    </div>
+    <div class="stat">
+      <div class="n">3<span class="u">건</span></div>
+      <div class="k">4건 중 3건은<br>10분 이상 먼저</div>
+    </div>
+    <div class="stat">
+      <div class="n">2~3<span class="u">일에 1번</span></div>
+      <div class="k">확인차 울리는 경보<br>(헛울림) 빈도</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">문제</p>
+  <h2>정체에는 두 종류가 있습니다</h2>
+  <p>
+    반송시간은 1분 단위로 심하게 튑니다. 그래서 <strong>순간값만 보면</strong>
+    잠깐 튀었다 사라지는 것까지 모두 "정체"로 세게 됩니다.
+    실제로 4~6월 데이터에서 그렇게 센 정체 657건 중 <strong>513건(78%)이 1분 만에 사라졌습니다.</strong>
+  </p>
+  <p>
+    1분 만에 끝나는 건 미리 알릴 수도 없고, 알릴 필요도 없습니다.
+    그래서 <strong>10분 평균으로 바꿔서 봤습니다.</strong> 그러자 잠깐 튀는 건 사라지고
+    <strong>진짜 정체 23건</strong>(평균 52분 지속)만 남았습니다.
+  </p>
+
+  <figure>
+    <div class="chart">
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--line-2)"></i>1분마다의 값 (심하게 튄다)</span>
+        <span><i class="swatch" style="background:var(--accent)"></i>10분 평균 (진짜 흐름)</span>
+        <span><i class="swatch" style="background:var(--bad);height:0;border-top:2px dashed var(--bad)"></i>정체 기준선</span>
+      </div>
+      <svg viewBox="0 0 640 176" role="img"
+           aria-label="1분 단위 값은 기준선을 여러 번 잠깐씩 넘지만, 10분 평균은 마지막에 한 번 지속적으로 넘는다">
+        <line x1="20" y1="58" x2="620" y2="58" stroke="var(--bad)"
+              stroke-width="1.5" stroke-dasharray="5 4"/>
+        <text x="624" y="62" font-size="11" font-family="ui-monospace,monospace"
+              fill="var(--bad)" text-anchor="end" opacity="0">기준</text>
+        <polyline fill="none" stroke="var(--line-2)" stroke-width="1.6"
+          points="20,118 44,96 68,128 92,74 116,120 140,104 164,132 188,88 212,112
+                  236,68 260,124 284,92 308,116 332,60 356,108 380,80 404,100
+                  428,52 452,96 476,72 500,88 524,44 548,80 572,58 596,70 620,38"/>
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2.6"
+          stroke-linejoin="round" stroke-linecap="round"
+          points="20,116 44,113 68,112 92,108 116,110 140,107 164,109 188,104
+                  212,105 236,99 260,102 284,97 308,98 332,90 356,92 380,86
+                  404,86 428,78 452,80 476,74 500,73 524,64 548,62 572,56 596,50 620,44"/>
+        <circle cx="332" cy="60" r="3.5" fill="none" stroke="var(--line-2)" stroke-width="1.4"/>
+        <circle cx="428" cy="52" r="3.5" fill="none" stroke="var(--line-2)" stroke-width="1.4"/>
+        <circle cx="524" cy="44" r="3.5" fill="none" stroke="var(--line-2)" stroke-width="1.4"/>
+        <text x="332" y="42" font-size="11" font-family="ui-monospace,monospace"
+              fill="var(--ink-3)" text-anchor="middle">잠깐 튐</text>
+        <text x="596" y="164" font-size="11" font-family="ui-monospace,monospace"
+              fill="var(--accent)" text-anchor="end">진짜 정체</text>
+        <line x1="20" y1="150" x2="620" y2="150" stroke="var(--line)" stroke-width="1"/>
+      </svg>
+    </div>
+    <figcaption>
+      회색 선(1분값)은 기준선을 여러 번 잠깐씩 넘습니다 — 이건 노이즈입니다.
+      주황 선(10분 평균)은 마지막에 한 번, 지속적으로 넘습니다 — 이것이 실제 정체입니다.
+      우리는 주황 선만 봅니다.
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="kicker">방법</p>
+  <h2>세 단계로 동작합니다</h2>
+  <div class="flow">
+    <div class="step">
+      <div class="no">1단계</div>
+      <h4>기준을 배웁니다</h4>
+      <p>4~6월 3개월(91일) 실제 데이터에서 "이 라인에서 어느 정도가 심각한 정체인가"를
+         스스로 찾아냅니다. 사람이 숫자를 정하지 않습니다.</p>
+    </div>
+    <div class="step">
+      <div class="no">2단계</div>
+      <h4>앞을 내다봅니다</h4>
+      <p>매 1분, 직전 <strong>90분</strong>의 흐름을 보고 <strong>앞으로 30분</strong>을
+         예측합니다. 예측은 "얼마가 될 것"이 아니라 "기준을 넘을 가능성이 몇 %"로 나옵니다.</p>
+    </div>
+    <div class="step">
+      <div class="no">3단계</div>
+      <h4>미리 알립니다</h4>
+      <p>넘을 가능성이 설정한 수준에 도달하면 경보를 냅니다.
+         "몇 분 뒤에 넘을 것으로 보인다"까지 함께 알려줍니다.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p class="t">예측에 쓰는 것</p>
+    <p>Amazon 이 공개한 시계열 예측 모델(Chronos-2)을 사용합니다. 우리 데이터로
+       따로 학습시키지 않아도 되는 모델이라, <strong>새 라인·새 설비에도 바로 적용</strong>할 수 있습니다.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">결과</p>
+  <h2>학습에 쓰지 않은 7월로 검증했습니다</h2>
+  <p>
+    4~6월로 기준을 배우고, <strong>한 번도 본 적 없는 7월</strong>에 그대로 적용했습니다.
+    실전과 같은 조건입니다.
+  </p>
+
+  <figure>
+    <div class="chart">
+      <svg viewBox="0 0 640 150" role="img"
+           aria-label="14시 02분에 경보가 울리고 10분 뒤인 14시 12분에 정체가 시작되어 90분간 이어졌다">
+        <rect x="360" y="46" width="240" height="34" rx="3"
+              fill="var(--bad-soft)" stroke="var(--bad)" stroke-width="1"/>
+        <text x="480" y="68" font-size="12.5" font-family="ui-monospace,monospace"
+              fill="var(--bad)" text-anchor="middle">정체 지속 90분</text>
+
+        <line x1="40" y1="63" x2="360" y2="63" stroke="var(--line-2)" stroke-width="1.5"/>
+
+        <line x1="200" y1="34" x2="200" y2="92" stroke="var(--accent)" stroke-width="2.5"/>
+        <circle cx="200" cy="63" r="5" fill="var(--accent)"/>
+        <text x="200" y="26" font-size="12.5" font-family="ui-monospace,monospace"
+              fill="var(--accent)" text-anchor="middle" font-weight="600">경보 14:02</text>
+
+        <line x1="360" y1="34" x2="360" y2="92" stroke="var(--bad)" stroke-width="2.5"/>
+        <text x="360" y="26" font-size="12.5" font-family="ui-monospace,monospace"
+              fill="var(--bad)" text-anchor="middle" font-weight="600">정체 시작 14:12</text>
+
+        <line x1="200" y1="112" x2="360" y2="112" stroke="var(--accent)" stroke-width="1.2"/>
+        <line x1="200" y1="106" x2="200" y2="118" stroke="var(--accent)" stroke-width="1.2"/>
+        <line x1="360" y1="106" x2="360" y2="118" stroke="var(--accent)" stroke-width="1.2"/>
+        <text x="280" y="136" font-size="13" font-family="ui-monospace,monospace"
+              fill="var(--accent)" text-anchor="middle" font-weight="700">10분 먼저</text>
+      </svg>
+    </div>
+    <figcaption>실제 감지 예시 — 정체가 시작되기 10분 전에 경보가 나갔습니다.</figcaption>
+  </figure>
+
+  <h3>민감도는 고객이 정합니다</h3>
+  <p>
+    "얼마나 미리 알까"와 "확인차 울리는 경보를 얼마나 참을까"는 맞바꾸는 관계입니다.
+    아래에서 <strong>원하시는 쪽을 고르면 그대로 맞춰 드립니다.</strong>
+  </p>
+
+  <div class="tw">
+    <table>
+      <caption>2026년 7월 실측 · 심각한 정체 4건</caption>
+      <thead>
+        <tr>
+          <th>설정</th>
+          <th>놓친 정체</th>
+          <th>평균 몇 분 먼저</th>
+          <th>10분+ 먼저</th>
+          <th>확인 경보</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="pick">
+          <td>민감<span class="tag">권고</span></td>
+          <td class="num">0건</td>
+          <td class="num">9.8분</td>
+          <td class="num">3건 / 4건</td>
+          <td class="num">2~3일에 1번</td>
+        </tr>
+        <tr>
+          <td>균형</td>
+          <td class="num">0건</td>
+          <td class="num">3.8분</td>
+          <td class="num">0건</td>
+          <td class="num">8일에 1번</td>
+        </tr>
+        <tr>
+          <td>보수</td>
+          <td class="num">0건</td>
+          <td class="num">3.8분</td>
+          <td class="num">0건</td>
+          <td class="num">한 달에 1번</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <p class="t">어느 설정이든 놓치지 않습니다</p>
+    <p>세 설정 모두 7월 심각 정체 <strong>4건을 전부 감지</strong>했습니다.
+       설정은 "놓치느냐"가 아니라 <strong>"얼마나 미리 알리느냐"</strong>를 바꿉니다.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">확인 경보</p>
+  <h2>울렸는데 아무 일 없으면 어떻게 되나요</h2>
+  <p>
+    <strong>2~3일에 한 번</strong> 정도입니다. 담당자가 화면을 확인하는 데 몇 분이면 됩니다.
+    반대로 정체를 놓치면 반송이 밀리고 라인이 영향을 받습니다.
+    <strong>몇 분 확인과 라인 지연 중 어느 쪽 비용이 큰지</strong>는 명확합니다.
+  </p>
+  <p>
+    그래도 알람이 부담되신다면 <strong>2단 구성</strong>을 권합니다.
+  </p>
+  <div class="flow" style="grid-template-columns:1fr">
+    <div class="step">
+      <div class="no">1차 · 주의</div>
+      <h4>화면 색만 바뀝니다 — 알람은 울리지 않습니다</h4>
+      <p>민감하게 설정해 10분 전부터 표시합니다. 알람이 아니므로 부담이 없고,
+         미리 볼 사람은 미리 봅니다.</p>
+    </div>
+    <div class="step">
+      <div class="no">2차 · 확정</div>
+      <h4>알람이 울립니다 — 한 달에 1번 수준</h4>
+      <p>엄격하게 설정해 확실할 때만 발령합니다. 울리면 믿을 수 있습니다.</p>
+    </div>
+  </div>
+  <div class="note">
+    <p class="t">한 줄</p>
+    <p>미리 아는 것은 <strong>화면으로</strong>, 알람은 <strong>확실할 때만</strong>.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">솔직하게</p>
+  <h2>이건 안 됩니다</h2>
+  <ul>
+    <li><strong>갑자기 터지는 정체는 미리 못 잡습니다.</strong>
+        서서히 쌓이는 정체(전체의 83%)는 미리 보이지만, 예고 없이 튀는 경우는
+        어떤 방법으로도 예측 대상이 아닙니다. 그건 <strong>즉시 감지</strong>로 대응합니다.</li>
+    <li><strong>7월 한 달, 심각 정체 4건으로 검증했습니다.</strong>
+        7월이 비교적 조용한 달이었습니다. 사건이 많았던 5·6월로 추가 검증을 진행해
+        신뢰도를 더 확인할 계획입니다.</li>
+    <li><strong>정체 기준은 데이터에서 정한 것입니다.</strong>
+        현장에서 "이건 문제였다"고 기록한 사건 이력과 대조하면 더 정확한 평가가 됩니다.
+        기록을 주시면 그 기준으로 다시 검증하겠습니다.</li>
+  </ul>
+</section>
+
+<section>
+  <p class="kicker">다음</p>
+  <h2>바로 붙일 수 있습니다</h2>
+  <p>
+    이미 매분 수집되는 데이터를 그대로 사용합니다. 별도 센서나 설비 변경이 필요 없습니다.
+    실시간 감시로 전환하면 <strong>매 1분 자동으로 판정</strong>해 경보를 냅니다.
+  </p>
+  <ul>
+    <li>민감도 설정 확정 (위 표에서 선택)</li>
+    <li>실시간 감시 연결 — 매분 판정 후 화면·알람 전달</li>
+    <li>사건 이력 대조로 정확도 재검증</li>
+  </ul>
+</section>
+
+<footer>
+  학습 2026-04-01 ~ 06-30 (91일) · 평가 2026-07-01 ~ 07-31 (31일, 학습 미사용)<br>
+  판정 기준 10분 이동평균 · 예측 직전 90분 → 앞 30분 · 예측 모델 Chronos-2
+</footer>
+
+</div>
+</body>
+</html>

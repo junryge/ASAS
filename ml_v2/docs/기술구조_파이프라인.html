@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>정체 예측 파이프라인</title>
+<style>
+  :root{
+    --ink:#17212B; --ink-2:#3D4A57; --ink-3:#69757F;
+    --ground:#F5F7F9; --surface:#FFFFFF; --surface-2:#EDF1F4;
+    --line:#DCE3E8; --line-2:#BFCAD3;
+    --accent:#B45309; --accent-soft:#FDF3E7; --accent-line:#E9C48F;
+    --ok:#0F766E; --bad:#9F1239;
+    --sans:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,
+           'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',system-ui,sans-serif;
+    --mono:ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ink:#E8EDF1; --ink-2:#B3BEC7; --ink-3:#85929C;
+      --ground:#111820; --surface:#18212B; --surface-2:#1E2833;
+      --line:#2A3641; --line-2:#455360;
+      --accent:#F0A857; --accent-soft:#2A2116; --accent-line:#5C4526;
+      --ok:#4FBFA8; --bad:#E8798F;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#E8EDF1; --ink-2:#B3BEC7; --ink-3:#85929C;
+    --ground:#111820; --surface:#18212B; --surface-2:#1E2833;
+    --line:#2A3641; --line-2:#455360;
+    --accent:#F0A857; --accent-soft:#2A2116; --accent-line:#5C4526;
+    --ok:#4FBFA8; --bad:#E8798F;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:16.5px; line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:0 24px 88px}
+
+  header{padding:64px 0 36px; border-bottom:1px solid var(--line)}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.13em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 16px;
+  }
+  h1{
+    margin:0; font-size:clamp(30px,4.8vw,42px); line-height:1.12;
+    letter-spacing:-.022em; font-weight:800; text-wrap:balance;
+  }
+  .lede{margin:16px 0 0; font-size:18.5px; color:var(--ink-2); max-width:40em}
+
+  section{padding:46px 0; border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:none}
+  .kicker{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--ink-3); margin:0 0 11px;
+  }
+  h2{margin:0 0 18px; font-size:25px; line-height:1.28;
+     letter-spacing:-.016em; font-weight:750; text-wrap:balance}
+  h3{margin:30px 0 10px; font-size:17px; font-weight:700}
+  p{margin:0 0 15px; max-width:40em; text-wrap:pretty}
+  p:last-child{margin-bottom:0}
+  strong{font-weight:700; color:var(--ink)}
+  code{
+    font-family:var(--mono); font-size:.88em; background:var(--surface-2);
+    padding:2px 6px; border-radius:4px; color:var(--ink);
+  }
+
+  figure{margin:26px 0 0}
+  .fig{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:6px; padding:20px 18px 14px; overflow-x:auto;
+  }
+  .fig svg{display:block; width:100%; max-width:100%; height:auto; min-width:600px}
+  figcaption{margin-top:11px; font-size:14.5px; color:var(--ink-3);
+             line-height:1.6; max-width:46em}
+
+  pre{
+    margin:18px 0 0; background:var(--surface); border:1px solid var(--line);
+    border-left:3px solid var(--accent-line); border-radius:0 6px 6px 0;
+    padding:16px 18px; overflow-x:auto; font-family:var(--mono);
+    font-size:13.5px; line-height:1.62; color:var(--ink);
+  }
+  pre .c{color:var(--ink-3)}
+  pre .k{color:var(--accent)}
+
+  .tw{overflow-x:auto; margin:20px 0 0}
+  table{width:100%; min-width:520px; border-collapse:collapse; font-size:15px;
+        background:var(--surface); border:1px solid var(--line); border-radius:6px}
+  th,td{padding:12px 15px; text-align:left; border-bottom:1px solid var(--line);
+        vertical-align:top}
+  thead th{font-size:12px; font-weight:700; letter-spacing:.04em;
+           color:var(--ink-3); text-transform:uppercase; background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:none}
+  td.f{font-family:var(--mono); font-size:13.5px; white-space:nowrap; color:var(--accent)}
+  td.m{font-family:var(--mono); font-size:13px; white-space:nowrap}
+
+  .note{
+    background:var(--surface); border:1px solid var(--line);
+    border-left:3px solid var(--accent); border-radius:0 6px 6px 0;
+    padding:18px 20px; margin:24px 0 0;
+  }
+  .note .t{font-family:var(--mono); font-size:11.5px; letter-spacing:.1em;
+           text-transform:uppercase; color:var(--accent); margin:0 0 7px}
+  .note p{font-size:15.5px; margin:0; color:var(--ink-2)}
+
+  ul,ol{margin:0; padding-left:1.2em; max-width:40em}
+  li{margin-bottom:10px; color:var(--ink-2)}
+  li:last-child{margin-bottom:0}
+  li strong{color:var(--ink)}
+  li code{font-size:.86em}
+
+  footer{padding:32px 0 0; border-top:1px solid var(--line);
+         font-family:var(--mono); font-size:12.5px; color:var(--ink-3); line-height:1.8}
+</style>
+<style>
+  @media print {
+    body { background:#fff; }
+    .wrap { max-width:none; padding:0 10mm 10mm; }
+    header { padding-top:0; }
+    section { padding:18px 0; break-inside:avoid; }
+    .fig,figure,pre,table,.note { break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">ml_v2 · 코드 구성과 데이터 흐름</p>
+  <h1>무엇을 보고, 어떻게 판단하는가</h1>
+  <p class="lede">
+    수집된 265개 컬럼에서 <strong>실제로 쓰는 것은 1개</strong>입니다.
+    그 하나를 10분 평균으로 다듬어, 직전 90분으로 앞 30분을 예측합니다.
+  </p>
+</header>
+
+<section>
+  <p class="kicker">전체 흐름</p>
+  <h2>데이터가 지나가는 5단계</h2>
+
+  <figure>
+    <div class="fig">
+      <svg viewBox="0 0 880 250" role="img"
+           aria-label="수집기 CSV에서 신호 1개를 뽑아 10분 이동평균으로 만들고, Chronos-2가 90분을 보고 30분을 예측한 분포를 초과확률로 바꾼 뒤 단계를 판정한다. 판정 결과는 실제 사건과 대조해 채점한다.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="ara" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+
+        <g font-family="ui-monospace,monospace" font-size="12">
+          <!-- 1 -->
+          <rect x="8" y="58" width="132" height="56" rx="4"
+                fill="var(--surface-2)" stroke="currentColor" stroke-width="1"/>
+          <text x="74" y="80" text-anchor="middle" font-size="12.5" fill="currentColor">수집기 CSV</text>
+          <text x="74" y="98" text-anchor="middle" font-size="11" fill="var(--ink-3)">분당 1행</text>
+
+          <!-- 2 -->
+          <rect x="196" y="58" width="132" height="56" rx="4"
+                fill="var(--surface-2)" stroke="currentColor" stroke-width="1"/>
+          <text x="262" y="80" text-anchor="middle" font-size="12.5" fill="currentColor">신호 추출</text>
+          <text x="262" y="98" text-anchor="middle" font-size="11" fill="var(--ink-3)">data.load</text>
+
+          <!-- 3 -->
+          <rect x="384" y="58" width="132" height="56" rx="4"
+                fill="var(--surface-2)" stroke="currentColor" stroke-width="1"/>
+          <text x="450" y="80" text-anchor="middle" font-size="12.5" fill="currentColor">10분 이동평균</text>
+          <text x="450" y="98" text-anchor="middle" font-size="11" fill="var(--ink-3)">moving_avg</text>
+
+          <!-- 4 -->
+          <rect x="572" y="58" width="132" height="56" rx="4"
+                fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+          <text x="638" y="80" text-anchor="middle" font-size="12.5" fill="var(--accent)">Chronos-2</text>
+          <text x="638" y="98" text-anchor="middle" font-size="11" fill="var(--accent)">90분 → 30분</text>
+
+          <!-- 5 -->
+          <rect x="748" y="58" width="124" height="56" rx="4"
+                fill="var(--surface-2)" stroke="currentColor" stroke-width="1"/>
+          <text x="810" y="80" text-anchor="middle" font-size="12.5" fill="currentColor">단계 판정</text>
+          <text x="810" y="98" text-anchor="middle" font-size="11" fill="var(--ink-3)">decide</text>
+
+          <!-- 화살표 + 라벨 -->
+          <g stroke="currentColor" stroke-width="1.3" color="var(--ink-2)">
+            <line x1="142" y1="86" x2="192" y2="86" marker-end="url(#ar)"/>
+            <line x1="330" y1="86" x2="380" y2="86" marker-end="url(#ar)"/>
+            <line x1="518" y1="86" x2="568" y2="86" marker-end="url(#ar)"/>
+          </g>
+          <line x1="706" y1="86" x2="744" y2="86" stroke="var(--accent)"
+                stroke-width="1.4" marker-end="url(#ara)"/>
+
+          <g font-size="10.5" fill="var(--ink-3)" text-anchor="middle">
+            <text x="167" y="76">265컬럼</text>
+            <text x="355" y="76">신호 1개</text>
+            <text x="543" y="76">평활값</text>
+            <text x="725" y="76" fill="var(--accent)">초과확률</text>
+          </g>
+
+          <!-- 채점 분기 -->
+          <line x1="810" y1="116" x2="810" y2="166" stroke="currentColor"
+                stroke-width="1.3" color="var(--ink-2)" marker-end="url(#ar)"/>
+          <rect x="700" y="168" width="172" height="52" rx="4"
+                fill="var(--surface-2)" stroke="currentColor" stroke-width="1"/>
+          <text x="786" y="189" text-anchor="middle" font-size="12.5" fill="currentColor">채점</text>
+          <text x="786" y="206" text-anchor="middle" font-size="11" fill="var(--ink-3)">evaluate</text>
+
+          <rect x="384" y="168" width="200" height="52" rx="4"
+                fill="none" stroke="currentColor" stroke-width="1"
+                stroke-dasharray="4 3"/>
+          <text x="484" y="189" text-anchor="middle" font-size="12.5" fill="currentColor">실제 사건 (정답)</text>
+          <text x="484" y="206" text-anchor="middle" font-size="11" fill="var(--ink-3)">find_events</text>
+          <line x1="586" y1="194" x2="696" y2="194" stroke="currentColor"
+                stroke-width="1.3" color="var(--ink-2)" marker-end="url(#ar)"/>
+
+          <line x1="450" y1="116" x2="450" y2="164" stroke="currentColor"
+                stroke-width="1.3" color="var(--ink-2)" marker-end="url(#ar)"/>
+          <text x="462" y="146" font-size="10.5" fill="var(--ink-3)">같은 평활값</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      예측(위 경로)과 정답(아래 점선)이 <strong>같은 이동평균</strong>을 쓰는 것이 핵심입니다 —
+      판정 기준과 채점 기준이 어긋나면 지표가 운영 의미를 잃습니다.
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="kicker">파일</p>
+  <h2>코드는 4개 + 보조 2개</h2>
+  <div class="tw">
+    <table>
+      <thead><tr><th>파일</th><th>역할</th><th>핵심 함수</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="f">data.py</td>
+          <td>CSV 로딩 · 이동평균 · <strong>사건(정답) 정의</strong> · 학습결과 저장</td>
+          <td class="m">load · moving_avg<br>find_events · learn</td>
+        </tr>
+        <tr>
+          <td class="f">detect.py</td>
+          <td><strong>Chronos-2 예측</strong> → 초과확률 곡선 → 단계 판정</td>
+          <td class="m">predict_curves<br>decide · Forecaster</td>
+        </tr>
+        <tr>
+          <td class="f">evaluate.py</td>
+          <td>사건 단위 채점 (recall · precision · lead 분포)</td>
+          <td class="m">alarm_spans<br>evaluate</td>
+        </tr>
+        <tr>
+          <td class="f">main.py</td>
+          <td>진입점 — <code>learn</code> / <code>all</code> / <code>sweep</code></td>
+          <td class="m">cmd_learn · cmd_all<br>cmd_sweep</td>
+        </tr>
+        <tr>
+          <td class="f">aws_idc_<br>history_downloader.py</td>
+          <td>(보조) Oracle 에서 과거 기간 → 날짜별 CSV</td>
+          <td class="m">fetch_range</td>
+        </tr>
+        <tr>
+          <td class="f">RAW/decode_raw.py</td>
+          <td>(보조) 보관된 분할·인코딩 데이터 복원</td>
+          <td class="m">decode_b64</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <p class="t">의존성</p>
+    <p><code>data.py</code> · <code>evaluate.py</code> 는 <strong>표준 라이브러리만</strong> 씁니다
+       (pandas 불필요). Chronos-2 가 없으면 내장 baseline 예측기로 폴백해 로직만 검증됩니다.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">보는 데이터</p>
+  <h2>265개 컬럼 중 1개만 예측합니다</h2>
+  <p>
+    수집 CSV 는 분당 265개 컬럼입니다. 그중 <strong>예측 대상은 HUB 평균 반송시간 하나</strong>입니다.
+    나머지는 로드만 하고 예측에 넣지 않습니다 — 확장 대비로 정의만 되어 있습니다.
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>컬럼</th><th>쓰임</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="m">CRT_TM</td>
+          <td>시각 (분당 1행 정렬·병합 기준)</td>
+        </tr>
+        <tr>
+          <td class="m" style="color:var(--accent)">M16HUB.QUE.TIME.<br>AVGTOTALTIME1MIN</td>
+          <td><strong>예측 대상</strong> — 이 값의 10분 평균이 판정 기준이자 예측 타깃</td>
+        </tr>
+        <tr>
+          <td class="m">M14.QUE.CNV.SOUTH/<br>NORTHCURRENTQCNT</td>
+          <td>선행지표로 정의됨 (남·북 컨베이어 큐) — <em>현재 예측 미사용</em></td>
+        </tr>
+        <tr>
+          <td class="m">M16HUB.STRATE.ALL.<br>FABSTORAGERATIO</td>
+          <td>선행지표 (FAB 저장률) — <em>현재 예측 미사용</em></td>
+        </tr>
+        <tr>
+          <td class="m">M16HUB.QUE.ALL.<br>CURRENTQCOMPLETED</td>
+          <td>선행지표 (완료 반송량) — <em>현재 예측 미사용</em></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <p class="t">왜 1개인가</p>
+    <p>먼저 <strong>단일 신호로 목표를 달성하는지</strong> 확인하는 단계입니다.
+       선행지표를 예측 입력(covariate)으로 넣는 것은 lead 를 더 늘리려 할 때의 다음 카드입니다.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">시점 t</p>
+  <h2>매 1분, 90분을 보고 30분을 내다봅니다</h2>
+
+  <figure>
+    <div class="fig">
+      <svg viewBox="0 0 880 230" role="img"
+           aria-label="현재 시점을 기준으로 왼쪽 90분의 이동평균만 입력으로 넣고, 오른쪽 30분의 분포를 예측한다. 예측 상단이 임계선을 넘는 첫 지점까지의 거리가 사전 감지 시간이다.">
+        <!-- context 영역 -->
+        <rect x="30" y="40" width="420" height="120" rx="3"
+              fill="var(--surface-2)" stroke="currentColor" stroke-width="1"
+              stroke-dasharray="4 3"/>
+        <text x="240" y="30" text-anchor="middle" font-family="ui-monospace,monospace"
+              font-size="12" fill="var(--ink-2)">입력 · 직전 90분 (--context 90)</text>
+
+        <!-- horizon 영역 -->
+        <rect x="450" y="40" width="290" height="120" rx="3"
+              fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1"/>
+        <text x="595" y="30" text-anchor="middle" font-family="ui-monospace,monospace"
+              font-size="12" fill="var(--accent)">예측 · 앞 30분 (--horizon 30)</text>
+
+        <!-- 임계선 -->
+        <line x1="30" y1="66" x2="820" y2="66" stroke="var(--bad)"
+              stroke-width="1.5" stroke-dasharray="5 4"/>
+        <text x="826" y="70" font-family="ui-monospace,monospace" font-size="11"
+              fill="var(--bad)">임계</text>
+
+        <!-- 관측 이동평균 -->
+        <polyline fill="none" stroke="currentColor" stroke-width="2.4"
+          stroke-linejoin="round"
+          points="30,140 78,136 126,138 174,130 222,132 270,124 318,120 366,112
+                  414,106 450,100"/>
+
+        <!-- 예측 밴드 -->
+        <path d="M450,100 L498,92 L546,82 L594,70 L642,58 L690,44 L738,30
+                 L738,74 L690,74 L642,80 L594,86 L546,92 L498,98 L450,104 Z"
+              fill="var(--accent)" opacity="0.16"/>
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2.4"
+          stroke-dasharray="6 4" stroke-linejoin="round"
+          points="450,100 498,95 546,87 594,78 642,69 690,59 738,52"/>
+        <polyline fill="none" stroke="var(--accent)" stroke-width="1.2"
+          opacity="0.7" points="450,100 498,92 546,82 594,70 642,58 690,44 738,30"/>
+
+        <!-- 현재 시점 -->
+        <line x1="450" y1="34" x2="450" y2="176" stroke="currentColor" stroke-width="2"/>
+        <text x="450" y="192" text-anchor="middle" font-family="ui-monospace,monospace"
+              font-size="12" fill="currentColor" font-weight="600">지금 (t)</text>
+
+        <!-- 교차점 -->
+        <circle cx="594" cy="70" r="4.5" fill="var(--accent)"/>
+        <line x1="594" y1="70" x2="594" y2="176" stroke="var(--accent)"
+              stroke-width="1.2" stroke-dasharray="3 3"/>
+        <line x1="450" y1="204" x2="594" y2="204" stroke="var(--accent)" stroke-width="1.2"/>
+        <line x1="450" y1="198" x2="450" y2="210" stroke="var(--accent)" stroke-width="1.2"/>
+        <line x1="594" y1="198" x2="594" y2="210" stroke="var(--accent)" stroke-width="1.2"/>
+        <text x="522" y="224" text-anchor="middle" font-family="ui-monospace,monospace"
+              font-size="12.5" fill="var(--accent)" font-weight="700">사전 감지 = 12분</text>
+
+        <line x1="30" y1="176" x2="820" y2="176" stroke="currentColor"
+              stroke-width="1" opacity="0.35"/>
+      </svg>
+    </div>
+    <figcaption>
+      실선은 관측된 이동평균, 점선과 띠는 예측 분포(q10~q90)입니다.
+      <strong>예측 상단이 임계선을 넘는 첫 지점</strong>까지의 거리가 사전 감지 시간이 됩니다.
+      입력에는 t 이후 값이 한 번도 들어가지 않습니다.
+    </figcaption>
+  </figure>
+
+  <pre><span class="c"># detect.py — 시점 t 의 입력은 t 까지의 평활값 90개</span>
+ctx = sm[t - context + 1 : t + 1]          <span class="c"># 90개</span>
+q   = chronos.predict_quantiles(ctx_3d,
+          prediction_length=30,
+          quantile_levels=[0.1, 0.5, 0.9])</pre>
+</section>
+
+<section>
+  <p class="kicker">확률로 바꾸기</p>
+  <h2>분포를 "넘을 확률"로 환산합니다</h2>
+  <p>
+    예측은 값이 아니라 분포로 나옵니다(q10 · q50 · q90). 이 세 점으로 누적분포를 근사해
+    각 지평마다 <strong>임계를 넘을 확률</strong>을 계산합니다. 그러면 30분 길이의 확률 곡선이 하나 생깁니다.
+  </p>
+
+  <figure>
+    <div class="fig">
+      <svg viewBox="0 0 880 210" role="img"
+           aria-label="지평이 멀어질수록 임계 초과 확률이 올라가고, 경보 문턱을 처음 넘는 지평이 사전 감지 시간이 된다.">
+        <!-- 축 -->
+        <line x1="60" y1="170" x2="820" y2="170" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="60" y1="24" x2="60" y2="170" stroke="currentColor" stroke-width="1.2"/>
+        <g font-family="ui-monospace,monospace" font-size="11" fill="var(--ink-3)">
+          <text x="52" y="30" text-anchor="end">1.0</text>
+          <text x="52" y="102" text-anchor="end">0.5</text>
+          <text x="52" y="174" text-anchor="end">0</text>
+          <text x="60" y="190" text-anchor="middle">t+1</text>
+          <text x="440" y="190" text-anchor="middle">t+15</text>
+          <text x="820" y="190" text-anchor="middle">t+30</text>
+          <text x="440" y="206" text-anchor="middle" fill="var(--ink-2)">예측 지평 (분)</text>
+        </g>
+
+        <!-- p_on 문턱 -->
+        <line x1="60" y1="112" x2="820" y2="112" stroke="var(--ok)"
+              stroke-width="1.5" stroke-dasharray="5 4"/>
+        <text x="826" y="116" font-family="ui-monospace,monospace" font-size="11"
+              fill="var(--ok)">p_on</text>
+
+        <!-- 확률 곡선 -->
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2.6"
+          stroke-linejoin="round" stroke-linecap="round"
+          points="60,164 111,160 162,155 213,148 264,138 315,127 366,116
+                  417,104 468,90 519,75 570,62 621,50 672,42 723,36 774,31 820,28"/>
+
+        <!-- 첫 교차 -->
+        <circle cx="396" cy="112" r="5" fill="var(--accent)"/>
+        <line x1="396" y1="112" x2="396" y2="170" stroke="var(--accent)"
+              stroke-width="1.3" stroke-dasharray="3 3"/>
+        <text x="396" y="100" text-anchor="middle" font-family="ui-monospace,monospace"
+              font-size="12" fill="var(--accent)" font-weight="700">여기 = lead</text>
+      </svg>
+    </div>
+    <figcaption>
+      확률 곡선이 경보 문턱(<code>p_on</code>)을 <strong>처음 넘는 지평</strong>이 사전 감지 시간입니다.
+      <code>p_on</code> 은 예측 이후의 값이므로, 모델을 다시 돌리지 않고 여러 값을 비교할 수 있습니다
+      (<code>sweep</code> 명령).
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="kicker">판정</p>
+  <h2>네 단계로 나눕니다</h2>
+  <div class="tw">
+    <table>
+      <thead><tr><th>단계</th><th>조건</th><th>의미</th></tr></thead>
+      <tbody>
+        <tr><td class="m">3</td>
+            <td class="m">이동평균 ≥ 임계</td>
+            <td>이미 정체 진행 중</td></tr>
+        <tr><td class="m" style="color:var(--accent)">2</td>
+            <td class="m">확률 ≥ p_on</td>
+            <td><strong>선제 경보</strong> — 몇 분 뒤 넘을 것으로 예측</td></tr>
+        <tr><td class="m">1</td>
+            <td class="m">p_off ≤ 확률 &lt; p_on</td>
+            <td>관찰 (경보 아님)</td></tr>
+        <tr><td class="m">0</td>
+            <td class="m">확률 &lt; p_off</td>
+            <td>정상</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:18px">
+    켜짐(<code>p_on</code>)과 꺼짐(<code>p_off</code>) 문턱을 다르게 둡니다.
+    하나로 두면 문턱 근처에서 경보가 켜졌다 꺼졌다 반복하기 때문입니다.
+  </p>
+  <pre><span class="c"># detect.py — 히스테리시스</span>
+<span class="k">if</span> best_p &gt;= p_on:   active = <span class="k">True</span>
+<span class="k">elif</span> best_p &lt; p_off: active = <span class="k">False</span>
+<span class="c"># 그 사이 구간은 이전 상태를 유지 → 요동 억제</span></pre>
+</section>
+
+<section>
+  <p class="kicker">정답과 채점</p>
+  <h2>무엇을 "맞췄다"고 보는가</h2>
+  <p>
+    정답 사건은 <strong>같은 이동평균</strong>으로 만듭니다. 임계를 넘고 <strong>10분 이상 지속</strong>된
+    구간만 사건으로 셉니다 — 1분 만에 사라지는 것은 애초에 예측 대상이 아니기 때문입니다.
+  </p>
+  <pre><span class="c"># data.py — 정답 사건 정의</span>
+<span class="k">def</span> find_events(times, smoothed, raw, threshold,
+                min_duration=10, gap=10):
+    <span class="c"># 1) smoothed &gt;= threshold 인 구간 수집</span>
+    <span class="c"># 2) gap 분 이내 간격은 같은 사건으로 병합</span>
+    <span class="c"># 3) 지속 min_duration 분 미만은 버림  ← 블립 제거</span></pre>
+  <h3>매칭 규칙</h3>
+  <ul>
+    <li><strong>감지</strong> — 경보 구간이 <code>[사건시작 − pre, 사건종료]</code> 와 겹치면 인정
+        (<code>--pre</code> 기본 35분)</li>
+    <li><strong>사전 감지 시간</strong> — 사건 시작 시각 − 가장 이른 경보 시작 시각</li>
+    <li><strong>헛울림</strong> — 어떤 사건과도 겹치지 않는 경보 구간</li>
+    <li>연속 경보는 <code>gap</code> 분 이내면 하나의 경보로 병합 (같은 사건에 대한 반복 계수 방지)</li>
+  </ul>
+</section>
+
+<section>
+  <p class="kicker">신뢰성</p>
+  <h2>미래를 훔쳐보지 않도록 세 가지를 지킵니다</h2>
+  <ol>
+    <li><strong>임계는 학습기간에서만</strong> 산출합니다. 평가기간 데이터로 임계를 정하면
+        성적이 부풀려집니다. (4~6월로 정하고 7월에 그대로 적용)</li>
+    <li><strong>이동평균은 과거만 봅니다.</strong> 중심이동평균을 쓰면 미래 값이 섞여 들어갑니다.</li>
+    <li><strong>예측 입력은 t 시점까지</strong>로 잘립니다. 배치로 여러 시점을 한 번에 계산해도
+        각 시점의 입력은 독립이라 인과성이 유지됩니다.</li>
+  </ol>
+  <div class="note">
+    <p class="t">속도 설계</p>
+    <p>시점을 하나씩 호출하면 호출 준비 비용이 계산 비용을 압도합니다.
+       Chronos-2 가 다계열 입력을 받으므로 <strong>256 시점을 한 번에</strong> 묶습니다 —
+       44,471 시점이 <strong>174 회 호출</strong>로 처리됩니다.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">실행</p>
+  <h2>명령 세 개</h2>
+  <pre><span class="c"># 1. 학습 — 기준을 뽑아 model_config.json 에 저장</span>
+python main.py learn --train <span class="k">"RAW/M16A_HUBROOM_PR_202604*.CSV"</span> \
+    <span class="k">"RAW/...202605*.CSV"</span> <span class="k">"RAW/...202606*.CSV"</span>
+
+<span class="c"># 2. 스윕 — 모델 1회 실행으로 p_on 값들을 비교</span>
+python main.py sweep --config model_config.json \
+    --eval <span class="k">"RAW/M16A_HUBROOM_PR_202607*.CSV"</span> \
+    --model chronos_2 --device cuda --horizon 30
+
+<span class="c"># 3. 확정 — 고른 p_on 으로 최종 실행</span>
+python main.py all --config model_config.json \
+    --eval <span class="k">"RAW/M16A_HUBROOM_PR_202607*.CSV"</span> \
+    --model chronos_2 --device cuda --horizon 30 --p-on 0.30 \
+    --out-actions actions.csv --out-report report.csv</pre>
+  <div class="tw">
+    <table>
+      <thead><tr><th>산출물</th><th>내용</th></tr></thead>
+      <tbody>
+        <tr><td class="m">model_config.json</td>
+            <td>학습된 임계 · 이동평균 창 · 사건 조건 · 분포 통계</td></tr>
+        <tr><td class="m">actions.csv</td>
+            <td>분당 판정 — 시각 · 단계 · 확률 · 사전감지분 · 사유</td></tr>
+        <tr><td class="m">report.csv</td>
+            <td>사건별 표 — 정체 구간 · 감지시각 · lead · 헛울림 목록</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  ml_v2 · data.py · detect.py · evaluate.py · main.py<br>
+  예측 모델 Chronos-2 (zero-shot, 가중치 학습 없음) · 판정 기준 10분 이동평균 · 입력 90분 → 예측 30분
+</footer>
+
+</div>
+</body>
+</html>
