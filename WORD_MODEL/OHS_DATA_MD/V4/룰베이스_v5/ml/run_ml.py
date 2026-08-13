@@ -4,6 +4,7 @@ M16A HUBROOM 수집 + 룰 예측 + ML 예측 + 로그프레소 기입 + 하이�
 - 수집기 스레드 (백그라운드 데몬)
 - ML 예측기 스레드 (백그라운드 데몬)
 - 로그프레소 기입기 스레드 (백그라운드 데몬) — 발동이벤트.csv에 이상감지 4컬럼
+- 영역분리 스레드 (백그라운드 데몬) — 발동이벤트.csv를 predict_tobe/fab분리/ 로 분리
 - 하이브리드 예측기 스레드 (백그라운드 데몬) — 룰×ML 양방향 매트릭스 융합
 - 룰 예측기 (메인 스레드)
 - Ctrl+C 한 번으로 같이 종료
@@ -39,6 +40,14 @@ except Exception as e:
     print(f'⚠ lo_mac_maxcapa 로드 실패 — MAXCAPA 기입 비활성: {e}')
     _MC_AVAILABLE = False
 
+# 영역(FAB)별 분리기 — predict_tobe/fab분리/ 에 영역별 발동이벤트 생성
+try:
+    import 발동이벤트_영역분리 as area_split
+    _AS_AVAILABLE = True
+except Exception as e:
+    print(f'⚠ 발동이벤트_영역분리 로드 실패 — 영역분리 비활성: {e}')
+    _AS_AVAILABLE = False
+
 # 하이브리드는 v4.1 호환 작업 후 별도 활성화 — 일단 비활성 유지
 # import hybrid_predictor
 
@@ -73,6 +82,17 @@ if _LP_AVAILABLE:
 #   Oracle 직접 접속이 필요하면: kwargs 에 source='db' (mcs_config.ini 필요)
 if _MC_AVAILABLE:
     threading.Thread(target=lo_mac_maxcapa.run_watch,
+                     kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
+                     daemon=True).start()
+
+# ★★ 진짜 마지막: 영역(FAB)별 분리기 (백그라운드 데몬)
+#   위 두 기입기가 4컬럼씩 채운 뒤에 돌아야 분리 파일에도 그 값이 들어간다.
+#   그래서 기본 20초 지연(lag)을 두고, 스레드도 제일 마지막에 시작한다.
+#   · 원본(YYYYMMDD_발동이벤트.csv)은 읽기만 한다 — 절대 수정·삭제하지 않음
+#   · 출력: predict_tobe/fab분리/YYYYMMDD_발동이벤트_{영역}.csv (5개)
+#   · 원본이 바뀐 때만 다시 쓰고, 자정에는 전날 파일도 한 번 더 마무리
+if _AS_AVAILABLE:
+    threading.Thread(target=area_split.run_watch,
                      kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
                      daemon=True).start()
 

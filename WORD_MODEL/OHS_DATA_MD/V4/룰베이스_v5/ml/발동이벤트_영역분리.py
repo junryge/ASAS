@@ -10,6 +10,9 @@
 #     → 20260812_발동이벤트_M14.csv      (공통 34칸 + M14 19칸)
 #     → ... M14B / M16A / M16B
 #
+# 원본은 절대 건드리지 않는다 — 읽기만 하고, 결과는 항상 새 파일로 쓴다.
+# 출력 경로가 입력과 같아지면 그 영역은 건너뛴다(아래 safety 확인).
+#
 # 컬럼 분류
 #   · 공통     접두사가 없는 것 — datetime, unified_risk_score, hot_area,
 #              reason, propagation_chain, layer1_total …
@@ -217,6 +220,10 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary):
             out_head += ['area_score', 'area_level', 'area_saturated']
 
         op = os.path.join(out_dir, f'{stem}_{a}.csv')
+        # ★ 원본 보호 — 출력이 입력과 같은 파일이면 절대 쓰지 않는다
+        if os.path.abspath(op) == os.path.abspath(fp):
+            print(f'     ⛔ {a:<8} 출력이 원본과 같아 건너뜀: {op}')
+            continue
         with open(op, 'w', newline='', encoding='utf-8-sig') as f:
             w = csv.writer(f)
             w.writerow(out_head)
