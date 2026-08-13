@@ -28,18 +28,18 @@
 #   -o, --out          출력 폴더 (기본: 입력 파일과 같은 폴더)
 #   --areas            나눌 영역 (기본: M16HUB,M14,M14B,M16A,M16B)
 #   --all-areas        M16 / M16_PKT / M16_WT 도 포함 (score 한 칸뿐)
-#   --grade            영역등급.json 임계로 등급 컬럼 추가
-#   --grade-config     임계 파일 경로 (기본: 스크립트 옆 영역등급.json)
+#   --score            영역 점수(0~100)와 등급 컬럼 추가
+#   --score-config     분모 파일 경로 (기본: 스크립트 옆 영역등급.json)
 #   --summary          영역별 raw 분포와 임계별 비율 출력 (임계 다시 잡을 때)
 #   --strip-prefix     컬럼명에서 영역 접두사 제거 (M16B_score_raw → score_raw)
 #   --no-suffix-cols   sla_M14 / sorter_M14 류를 영역 파일에 넣지 않음
 #
-# --grade 가 붙이는 컬럼
-#   area_grade      영역등급.json 임계에 따른 등급
-#   area_saturated  raw 가 50 을 넘어 융합에 다 반영되지 못한 상태면 'Y'
-#   ※ 임계는 영역마다 다르다. 전체 unified_risk_score 의 50/71/85 를 raw 에
-#     그대로 대면 M14B(최대 40)는 영원히 경계에 닿지 못한다.
-#     기본값은 8/12 하루치로 잡은 잠정값이니 --summary 로 다시 잡을 것.
+# --score 가 붙이는 컬럼 — unified 와 같은 방식으로 만든다
+#   area_score      min(100, round(score_raw × 100 ÷ 분모))
+#   area_level      50=경계 / 71=위험 / 85=초위험  (unified 와 동일 기준)
+#   area_saturated  score_raw 가 50 을 넘어 융합에 다 반영되지 못했으면 'Y'
+#   ※ 분모는 영역등급.json 에서 바꾼다. 8/12 기준 70 이 전체 등급 발생률
+#     (1.1%)과 가장 비슷했다. 50 이면 M16HUB 가 25% 로 경계가 넘친다.
 import argparse
 import csv
 import glob
@@ -54,24 +54,25 @@ EXTRA_AREAS = ['M16', 'M16_PKT', 'M16_WT']
 # 긴 이름을 먼저 봐야 M16B_ 가 M16_ 로 잘못 잡히지 않는다
 ALL_AREAS = sorted(DEFAULT_AREAS + EXTRA_AREAS, key=len, reverse=True)
 
-SATURATE_AT = 50        # 영역 점수가 잘리는 상한
-GRADE_ORDER = ['초위험', '위험', '경계']
+SATURATE_AT = 50        # 영역 점수가 잘리는 상한 (융합에 들어가는 최대)
+DEFAULT_DENOM = 70      # 분모 기본값 — 설정 파일이 없을 때
 SUMMARY_THS = [10, 15, 20, 25, 27, 30, 32, 35, 37, 40, 42, 45, 50]
 
 
-def load_grade_config(path):
+def load_denoms(path, areas):
+    """영역별 점수 환산 분모를 읽는다. 없으면 기본값."""
     here = os.path.dirname(os.path.abspath(__file__))
     fp = path or os.path.join(here, '영역등급.json')
-    if not os.path.exists(fp):
-        print(f'  ⚠️ 임계 파일 없음: {fp} — 등급을 붙이지 않습니다')
-        return {}
-    with open(fp, encoding='utf-8') as f:
-        cfg = json.load(f)
-    cfg = {k: v for k, v in cfg.items() if not str(k).startswith('_')}
-    print(f'  [임계] {os.path.basename(fp)} — ' +
-          ' · '.join(f"{a} {'/'.join(str(v.get(g,'-')) for g in GRADE_ORDER[::-1])}"
-                     for a, v in cfg.items()))
-    return cfg
+    d = {}
+    if os.path.exists(fp):
+        with open(fp, encoding='utf-8') as f:
+            cfg = json.load(f)
+        d = dict(cfg.get('분모') or cfg.get('denom') or {})
+    else:
+        print(f'  ⚠️ 분모 파일 없음: {fp} — 전 영역 {DEFAULT_DENOM} 사용')
+    out = {a: float(d.get(a, DEFAULT_DENOM)) for a in areas}
+    print('  [분모] ' + ' · '.join(f'{a} {v:g}' for a, v in out.items()))
+    return out
 
 
 def area_of(col):
@@ -95,13 +96,12 @@ def fnum(v):
         return 0.0
 
 
-def grade_of(raw, th):
-    """th = {'경계':32,'위험':35,'초위험':40}"""
+def score_of(raw, denom):
+    """raw → 0~100 점수 · 등급 · 포화여부. unified 와 같은 방식."""
     v = fnum(raw)
-    for g in GRADE_ORDER:                 # 초위험 → 위험 → 경계 순으로 검사
-        if g in th and v >= th[g]:
-            return g, ('Y' if v >= SATURATE_AT else '')
-    return '', ('Y' if v >= SATURATE_AT else '')
+    s = min(100, round(v * 100 / denom)) if denom > 0 else 0
+    lv = '초위험' if s >= 85 else '위험' if s >= 71 else '경계' if s >= 50 else ''
+    return s, lv, ('Y' if v >= SATURATE_AT else '')
 
 
 def print_summary(header, body, areas):
@@ -141,7 +141,7 @@ def print_summary(header, body, areas):
     print('  ' + '─' * 64)
 
 
-def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, summary):
+def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary):
     with open(fp, encoding='utf-8-sig', newline='') as f:
         rows = list(csv.reader(f))
     if not rows:
@@ -184,10 +184,10 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, summary):
             out_head = [c[len(a) + 1:] if c.startswith(a + '_') else c for c in out_head]
 
         raw_pos = take.index(a + '_score_raw') if (a + '_score_raw') in take else None
-        th = gcfg.get(a) if gcfg else None
-        do_grade = th is not None and raw_pos is not None
-        if do_grade:
-            out_head += ['area_grade', 'area_saturated']
+        dn = denoms.get(a) if denoms else None
+        do_score = dn is not None and raw_pos is not None
+        if do_score:
+            out_head += ['area_score', 'area_level', 'area_saturated']
 
         op = os.path.join(out_dir, f'{stem}_{a}.csv')
         with open(op, 'w', newline='', encoding='utf-8-sig') as f:
@@ -195,11 +195,11 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, gcfg, summary):
             w.writerow(out_head)
             for r in body:
                 vals = [r[i] for i in idxs]
-                if do_grade:
-                    vals += list(grade_of(vals[raw_pos], th))
+                if do_score:
+                    vals += list(score_of(vals[raw_pos], dn))
                 w.writerow(vals)
         made.append(op)
-        extra = ' (+등급2)' if do_grade else ''
+        extra = f' (+점수3·분모{dn:g})' if do_score else ''
         print(f'     ✅ {a:<8} {len(take)}컬럼{extra} → {os.path.basename(op)}')
 
     if summary:
@@ -213,8 +213,8 @@ def main():
     ap.add_argument('-o', '--out', default=None, help='출력 폴더 (기본: 입력과 같은 폴더)')
     ap.add_argument('--areas', default=None, help='나눌 영역 (쉼표 구분)')
     ap.add_argument('--all-areas', action='store_true', help='M16/M16_PKT/M16_WT 도 포함')
-    ap.add_argument('--grade', action='store_true', help='영역등급.json 임계로 등급 추가')
-    ap.add_argument('--grade-config', default=None, help='임계 파일 경로')
+    ap.add_argument('--score', action='store_true', help='영역 점수(0~100)·등급 컬럼 추가')
+    ap.add_argument('--score-config', default=None, help='분모 파일 경로')
     ap.add_argument('--summary', action='store_true', help='raw 분포·임계별 비율 출력')
     ap.add_argument('--strip-prefix', action='store_true', help='컬럼명에서 영역 접두사 제거')
     ap.add_argument('--no-suffix-cols', action='store_true',
@@ -237,14 +237,14 @@ def main():
     print(f'발동이벤트 영역분리 — 대상 {len(files)}개 파일 · 영역 {", ".join(areas)}')
     print('=' * 64)
 
-    gcfg = load_grade_config(a.grade_config) if a.grade else {}
+    denoms = load_denoms(a.score_config, areas) if a.score else {}
 
     total = []
     for fp in files:
         out_dir = a.out or (os.path.dirname(os.path.abspath(fp)))
         os.makedirs(out_dir, exist_ok=True)
         total += split_one(fp, out_dir, areas, not a.no_suffix_cols,
-                           a.strip_prefix, gcfg, a.summary)
+                           a.strip_prefix, denoms, a.summary)
 
     print(f'\n🎉 완료 — {len(total)}개 파일 생성')
     if total:
