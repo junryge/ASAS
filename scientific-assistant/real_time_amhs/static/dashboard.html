@@ -15,7 +15,38 @@
   body{margin:0;background:var(--bg);color:var(--tx);
        font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif}
 
-  /* ── 상단 바 (오프닝 화면 없이 바로 관제) ── */
+  /* ── 오프닝: 어느 시스템을 볼지 고른다 ──
+     지금 실제로 도는 건 ALL(전체) 하나다. 나머지 FAB 은 자리만 잡아 뒀고,
+     수집이 붙는 날 SYSTEMS 의 ready 를 켜면 그대로 들어간다. */
+  .open{position:fixed;inset:0;z-index:100;overflow:auto;padding:28px;
+        display:grid;place-items:center;
+        background:radial-gradient(1100px 640px at 50% -12%,#102130 0%,var(--bg) 62%)}
+  .open.hidden{display:none}
+  .open .box{width:100%;max-width:880px}
+  .open .oh{display:flex;align-items:center;gap:12px}
+  .open .oh .mk{width:34px;height:34px;border-radius:9px;border:2px solid var(--cy);
+                display:grid;place-items:center;flex:0 0 auto}
+  .open .oh .mk i{width:10px;height:10px;border-radius:50%;background:var(--cy);display:block}
+  .open h1{margin:0;font-size:18px;letter-spacing:2px;font-weight:700}
+  .open .sub{font-size:11.5px;color:var(--tx3);letter-spacing:.3px}
+  .open .ask{margin:24px 0 11px;font-size:12.5px;color:var(--tx2)}
+  .sysgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+  @media(max-width:720px){.sysgrid{grid-template-columns:repeat(2,1fr)}}
+  .sys{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+       padding:15px 16px 13px;color:var(--tx);font:inherit;cursor:pointer;
+       transition:border-color .12s,background .12s,transform .12s}
+  .sys:hover{border-color:var(--line2);background:var(--panel2);transform:translateY(-1px)}
+  .sys .cd{font-size:19px;font-weight:700;letter-spacing:.6px;line-height:1.2}
+  .sys .nm{font-size:11.5px;color:var(--tx2);margin-top:3px}
+  .sys .st{margin-top:12px;font-size:10.5px;letter-spacing:.3px;color:var(--ok)}
+  .sys.on{border-color:#1d4b57;background:#0e2630}
+  .sys.on .cd{color:var(--cy)}
+  .sys.wip{cursor:not-allowed;opacity:.45}
+  .sys.wip:hover{transform:none;border-color:var(--line);background:var(--panel)}
+  .sys.wip .st{color:var(--tx3)}
+  .open .note{margin-top:15px;font-size:11.5px;color:var(--tx3);line-height:1.7}
+
+  /* ── 상단 바 ── */
   .top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
        border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
   .logo{display:flex;align-items:center;gap:9px}
@@ -24,6 +55,12 @@
   .logo .mk i{width:8px;height:8px;border-radius:50%;background:var(--cy);display:block}
   .logo b{font-size:14px;letter-spacing:1.4px;font-weight:700}
   .logo span{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.2px}
+  /* 지금 어느 시스템을 보고 있는지 — 누르면 오프닝으로 돌아가 바꾼다 */
+  .syschip{display:flex;align-items:center;gap:7px;background:#12303a;border:1px solid #1d4b57;
+           color:var(--cy);border-radius:8px;padding:5px 11px;font:inherit;font-size:12.5px;
+           font-weight:700;letter-spacing:.5px;cursor:pointer;white-space:nowrap}
+  .syschip:hover{background:#164050}
+  .syschip u{text-decoration:none;color:var(--tx3);font-weight:400;font-size:10.5px;letter-spacing:0}
   .tabs{display:flex;gap:4px;margin-left:10px}
   .tabs button{background:transparent;border:1px solid transparent;color:var(--tx2);
                padding:6px 14px;border-radius:7px;cursor:pointer;font:inherit;font-size:12.5px}
@@ -207,11 +244,30 @@
 </head>
 <body>
 
+<!-- ══════ 오프닝 — 시스템 선택 ══════
+     고르기 전에는 수집을 시작하지 않는다. 안 고른 화면이 데이터로 차 버리면
+     지금 뭘 보고 있는 건지 알 수 없다. -->
+<div class="open" id="open">
+  <div class="box">
+    <div class="oh">
+      <span class="mk"><i></i></span>
+      <div><h1>AMHS SENTINEL</h1>
+           <span class="sub">LLM 실시간 이상감지 · 관제</span></div>
+    </div>
+    <div class="ask">관제할 시스템을 고르세요.</div>
+    <div class="sysgrid" id="sysgrid"></div>
+    <div class="note" id="opennote"></div>
+  </div>
+</div>
+
 <div class="top">
   <div class="logo">
     <span class="mk"><i></i></span>
-    <span><b>AMHS SENTINEL_M16BR</b><span>LLM 실시간 이상감지 · 관제</span></span>
+    <span><b>AMHS SENTINEL</b><span>LLM 실시간 이상감지 · 관제</span></span>
   </div>
+  <button class="syschip" id="syschip" title="다른 시스템으로 바꾸기">
+    <span id="syschip-cd">–</span><u>바꾸기</u>
+  </button>
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
     <button data-tab="past">과거 데이터 조회</button>
@@ -490,6 +546,65 @@ const gradeOf = s => s>=85 ? {n:'초위험', c:'var(--crit)',  chk:true}
 
 let CASES=[], SEL=null, FILTER='all', POLL=30;
 let LAST_LATEST=null, NEW_AT=null;
+
+/* ══════════ 오프닝 — 어느 시스템을 볼지 ══════════
+   지금 붙어 있는 데이터(주피터 예측 CSV)는 전체를 한 파일에 담고 있어서
+   ALL 하나만 실제로 돈다. 나머지 FAB 은 **자리만** 잡아 뒀다 —
+   각 FAB 의 수집이 붙는 날 ready 를 true 로 바꾸면 그대로 열린다.
+   (여기 목록이 유일한 정의다. 화면 어디에도 FAB 이름을 또 적지 마라.) */
+const SYSTEMS = [
+  {code:'ALL',    name:'전체 시스템 통합', ready:true },
+  {code:'M14',    name:'M14 FAB',         ready:false},
+  {code:'M14B',   name:'M14B FAB',        ready:false},
+  {code:'M16A',   name:'M16A FAB',        ready:false},
+  {code:'M16B',   name:'M16B FAB',        ready:false},
+  {code:'M14HUB', name:'M14 HUBROOM',     ready:false},
+];
+let SYS = null, LIVE_STARTED = false;
+
+function renderOpen(){
+  $('#sysgrid').innerHTML = SYSTEMS.map(s => `
+    <button class="sys ${s.ready?'':'wip'} ${SYS===s.code?'on':''}"
+            data-sys="${s.code}" ${s.ready?'':'disabled'}>
+      <div class="cd">${esc(s.code)}</div>
+      <div class="nm">${esc(s.name)}</div>
+      <div class="st">${s.ready?'● 운영 중':'○ 준비 중'}</div>
+    </button>`).join('');
+  document.querySelectorAll('#sysgrid .sys').forEach(b =>
+    b.onclick = () => pickSystem(b.dataset.sys));
+  const wip = SYSTEMS.filter(s=>!s.ready).map(s=>s.code).join(' · ');
+  $('#opennote').innerHTML =
+    `<b style="color:var(--tx2)">ALL</b> 은 지금 돌고 있는 전체 통합 관제입니다.<br>`
+    + `${esc(wip)} 는 아직 수집이 붙지 않았습니다 — 화면 자리만 잡아 뒀습니다.`;
+}
+
+/* 고른 순간에야 수집이 시작된다 — 두 번 눌러도 타이머는 하나만 돈다 */
+function startLive(){
+  if(LIVE_STARTED) return;
+  LIVE_STARTED = true;
+  initSettings(); pollStatus(); pollCases();
+  setInterval(pollStatus,5000);
+  setInterval(pollCases,3000);
+}
+
+function pickSystem(code){
+  const s = SYSTEMS.find(x => x.code === code);
+  if(!s || !s.ready) return;                 // 준비 중은 들어가지 않는다
+  SYS = s.code;
+  $('#syschip-cd').textContent = s.code;
+  $('#syschip').title = `${s.code} — ${s.name} (누르면 바꿉니다)`;
+  document.title = `AMHS SENTINEL_${s.code} — LLM 실시간 이상감지 · 관제`;
+  $('#open').classList.add('hidden');
+  /* 새로고침해도 고른 시스템으로 돌아오게 — 관제 화면은 하루 종일 떠 있다 */
+  try{ history.replaceState(null,'',`?sys=${encodeURIComponent(s.code)}`); }catch(e){}
+  startLive();
+}
+
+$('#syschip').onclick = () => { renderOpen(); $('#open').classList.remove('hidden'); };
+document.addEventListener('keydown', e => {          // 이미 고른 상태면 Esc 로 닫기
+  if(e.key==='Escape' && SYS && !$('#open').classList.contains('hidden'))
+    $('#open').classList.add('hidden');
+});
 
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
@@ -1928,14 +2043,18 @@ $('#selPoll').onchange = async e => {
   if(r.error) alert(r.error); else { POLL = r.poll_interval_s; pollStatus(); }
 };
 
-/* 시작 — 스플래시 없이 바로 */
+/* 시작 — 오프닝에서 시스템을 고른 뒤에 수집이 돈다 (startLive) */
 (function initDate(){
   const d = new Date();
   $('#rdate').value = new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 })();
-initSettings(); pollStatus(); pollCases();
-setInterval(pollStatus,5000);
-setInterval(pollCases,3000);
+(function boot(){
+  renderOpen();
+  const q = (new URLSearchParams(location.search).get('sys') || '').toUpperCase();
+  const hit = SYSTEMS.find(s => s.code === q && s.ready);
+  if(hit) pickSystem(hit.code);              // ?sys=ALL → 새로고침해도 바로 관제
+  else    $('#open').classList.remove('hidden');
+})();
 </script>
 </body>
 </html>
