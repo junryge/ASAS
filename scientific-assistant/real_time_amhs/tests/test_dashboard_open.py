@@ -15,7 +15,7 @@ import unittest
 
 from . import util
 
-SYSTEMS = ("ALL", "M14", "M14B", "M16A", "M16B", "M14HUB")
+SYSTEMS = ("ALL", "M14", "M14B", "M16A", "M16B", "M16HUB")
 
 
 def _html():
@@ -38,15 +38,15 @@ class OpeningScreen(unittest.TestCase):
         codes = re.findall(r"code:\s*'([^']+)'", block)
         self.assertEqual(tuple(codes), SYSTEMS)
 
-    def test_ALL_만_운영중이다(self):
-        """나머지는 아직 수집이 안 붙었다 — 들어가면 빈 화면만 본다."""
+    def test_여섯_시스템_전부_운영중이다(self):
+        """FAB 별 fab분리 CSV 가 붙어서 전부 실시간이다. ready:false 가
+        남아 있으면 그 FAB 은 눌러도 안 들어간다."""
         block = self.js.split("const SYSTEMS", 1)[1].split("];", 1)[0]
         pairs = re.findall(r"code:\s*'([^']+)'.*?ready:\s*(true|false)", block)
         ready = {c: v == "true" for c, v in pairs}
         self.assertEqual(len(ready), len(SYSTEMS))
-        self.assertTrue(ready["ALL"])
-        for code in SYSTEMS[1:]:
-            self.assertFalse(ready[code], f"{code} 가 운영중으로 켜져 있습니다")
+        for code in SYSTEMS:
+            self.assertTrue(ready[code], f"{code} 가 준비 중으로 꺼져 있습니다")
 
     def test_고르기_전에는_수집이_안_돈다(self):
         """★최상위에서 폴링을 시작하면 안 고른 화면이 데이터로 차 버린다.

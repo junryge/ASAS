@@ -74,17 +74,25 @@
   .sys.hero .cd{display:block;font-size:56px;line-height:.95}
   .sys.hero .nm{display:block;margin-top:8px;font-size:17px;color:#0B3A46}
 
-  /* 준비 중 — 수집이 안 붙어서 눌리지 않는다 */
-  .sys.wip{display:flex;flex-direction:column;justify-content:space-between;min-height:108px;
+  /* FAB 작은 타일 — 전부 실시간이라 눌린다. wip 는 수집이 아직 안 붙은
+     시스템에만 붙는 예외 표시(점선·비활성)다. */
+  .sys.fab{display:flex;flex-direction:column;justify-content:space-between;min-height:108px;
            padding:22px 24px;border-radius:22px;background:#0D1119;border:1px solid #1C2431;
-           cursor:not-allowed}
-  .sys.wip .tp{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-  .sys.wip .cd{font-size:26px;line-height:1;color:#A9BACD}
-  .sys.wip .kind{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+           transition:border-color .14s,background .14s,transform .14s}
+  .sys.fab:hover{border-color:#2c5f6b;background:#0e1d26;transform:translateY(-2px)}
+  .sys.fab .tp{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .sys.fab .cd{font-size:26px;line-height:1;color:#E6EDF6}
+  .sys.fab .kind{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
                  color:#5E6E85}
-  .sys.wip .st{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;
+  .sys.fab .st{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;
                color:#7C8DA3}
-  .sys.wip .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid #5E6E85}
+  .sys.fab .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid #5E6E85}
+  .sys.fab .st.live{color:#2FD68A}
+  .sys.fab .st.live i{border:0;background:#2FD68A;animation:blip 1.9s ease-in-out infinite}
+  @keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
+  .sys.fab.wip{cursor:not-allowed;border-style:dashed}
+  .sys.fab.wip:hover{transform:none;border-color:#1C2431;background:#0D1119}
+  .sys.fab.wip .cd{color:#A9BACD}
 
   .open .note{display:flex;flex-direction:column;gap:5px;padding-top:44px;font-size:14px;
               color:#8FA0B6}
@@ -594,7 +602,15 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const api = async (u,o) => (await fetch(u,o)).json();
+/* ★모든 /api/ 호출에 지금 보고 있는 시스템(?sys=)이 자동으로 붙는다.
+   서버가 시스템별로 데이터·케이스·리포트를 따로 들고 있어서, 이게 빠지면
+   M14 화면이 ALL 데이터를 보게 된다. 새 호출을 만들 땐 api()/post() 를
+   쓰거나, 직접 URL 을 만들면 withSys() 로 감싸라. */
+const withSys = u => {
+  if(!u.startsWith('/api/') || !SYS) return u;
+  return u + (u.includes('?') ? '&' : '?') + 'sys=' + encodeURIComponent(SYS);
+};
+const api = async (u,o) => (await fetch(withSys(u),o)).json();
 const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = s => (s||'').slice(11,16);
@@ -609,22 +625,22 @@ let CASES=[], SEL=null, FILTER='all', POLL=30;
 let LAST_LATEST=null, NEW_AT=null;
 
 /* ══════════ 오프닝 — 어느 시스템을 볼지 ══════════
-   지금 붙어 있는 데이터(주피터 예측 CSV)는 전체를 한 파일에 담고 있어서
-   ALL 하나만 실제로 돈다. 나머지 FAB 은 **자리만** 잡아 뒀다 —
-   각 FAB 의 수집이 붙는 날 ready 를 true 로 바꾸면 그대로 열린다.
-   (여기 목록이 유일한 정의다. 화면 어디에도 FAB 이름을 또 적지 마라.) */
+   전부 실시간이다. ALL 은 통합 파일({day}_발동이벤트.csv), FAB 5개는
+   fab분리 폴더의 자기 파일({day}_발동이벤트_M14.csv …)을 같은 주기로 받는다.
+   서버 쪽 정의는 config.source.jupyter.fabs — 여기 코드 목록과 항상 같아야
+   한다 (tests/test_fabs.py 가 두 목록이 어긋나면 실패한다). */
 const SYSTEMS = [
-  {code:'ALL',    name:'전체 시스템 통합', kind:'INTEGRATED', ready:true },
-  {code:'M14',    name:'M14 FAB',         kind:'FAB',        ready:false},
-  {code:'M14B',   name:'M14B FAB',        kind:'FAB',        ready:false},
-  {code:'M16A',   name:'M16A FAB',        kind:'FAB',        ready:false},
-  {code:'M16B',   name:'M16B FAB',        kind:'FAB',        ready:false},
-  {code:'M14HUB', name:'M14 HUBROOM',     kind:'HUBROOM',    ready:false},
+  {code:'ALL',    name:'전체 시스템 통합', kind:'INTEGRATED', ready:true},
+  {code:'M14',    name:'M14 FAB',         kind:'FAB',        ready:true},
+  {code:'M14B',   name:'M14B FAB',        kind:'FAB',        ready:true},
+  {code:'M16A',   name:'M16A FAB',        kind:'FAB',        ready:true},
+  {code:'M16B',   name:'M16B FAB',        kind:'FAB',        ready:true},
+  {code:'M16HUB', name:'M16 HUBROOM',     kind:'HUBROOM',    ready:true},
 ];
 let SYS = null, LIVE_STARTED = false;
 
 function renderOpen(){
-  /* 첫 칸(ALL)은 통합 관제라 크게, 나머지는 오른쪽에 2열로 */
+  /* 첫 칸(ALL)은 통합 관제라 크게, FAB 5개는 오른쪽에 2열로 */
   const [all, ...rest] = SYSTEMS;
   $('#sysgrid').innerHTML = `
     <button class="sys hero" data-sys="${all.code}" ${all.ready?'':'disabled'}>
@@ -635,12 +651,12 @@ function renderOpen(){
       </span>
     </button>
     <div class="rest">${rest.map(s => `
-      <button class="sys wip" data-sys="${s.code}" ${s.ready?'':'disabled'}>
+      <button class="sys fab ${s.ready?'':'wip'}" data-sys="${s.code}" ${s.ready?'':'disabled'}>
         <span class="tp">
           <span class="cd dsp">${esc(s.code)}</span>
           <span class="kind">${esc(s.kind)}</span>
         </span>
-        <span class="st"><i></i>${s.ready?'운영 중':'준비 중'}</span>
+        <span class="st ${s.ready?'live':''}"><i></i>${s.ready?'운영 중':'준비 중'}</span>
       </button>`).join('')}</div>`;
   document.querySelectorAll('#sysgrid .sys').forEach(b =>
     b.onclick = () => pickSystem(b.dataset.sys));
@@ -649,8 +665,9 @@ function renderOpen(){
   $('#opcnt').textContent = `${on} / ${SYSTEMS.length} 라인 수집 중`;
   const wip = SYSTEMS.filter(s => !s.ready).map(s => s.code).join(' · ');
   $('#opennote').innerHTML =
-    `<div><b>ALL</b> 은 지금 돌고 있는 전체 통합 관제입니다.</div>`
-    + `<div>${esc(wip)} 는 아직 수집이 붙지 않았습니다 — 화면 자리만 잡아 뒀습니다.</div>`
+    `<div><b>ALL</b> 은 전체 통합, FAB 을 고르면 그 구역 점수(area_score)로만 봅니다.</div>`
+    + (wip ? `<div>${esc(wip)} 는 아직 수집이 붙지 않았습니다 — 자리만 잡아 뒀습니다.</div>`
+           : `<div>여섯 화면 모두 같은 주기로 실시간 수집됩니다.</div>`)
     + (SYS ? `<div style="padding-top:6px"><kbd>Esc</kbd> 를 누르면 돌아갑니다.</div>` : '');
 }
 
@@ -767,6 +784,14 @@ function startLive(){
 function pickSystem(code){
   const s = SYSTEMS.find(x => x.code === code);
   if(!s || !s.ready) return;                 // 준비 중은 들어가지 않는다
+  if(LIVE_STARTED && SYS && SYS !== s.code){
+    /* ★이미 다른 시스템을 보던 중의 전환은 **새로 연다**. 케이스 목록·
+       LLM 판단·분석 기록·과거 탭이 전부 이전 시스템 데이터로 차 있어서,
+       변수만 바꾸면 폴링이 돌 때까지 두 시스템이 섞여 보인다 (실제로
+       M14 → M16HUB 전환 직후 M14 케이스가 그대로 떠 있었다). */
+    location.href = '?sys=' + encodeURIComponent(s.code);
+    return;
+  }
   SYS = s.code;
   $('#syschip-cd').textContent = s.code;
   $('#syschip').title = `${s.code} — ${s.name} (누르면 바꿉니다)`;
@@ -1599,7 +1624,7 @@ async function openAcc(day){
         <input type="date" id="accdate" value="${esc(a.day.slice(0,4)+'-'+a.day.slice(4,6)+'-'+a.day.slice(6,8))}"
                style="padding:4px 7px;font-size:11.5px">
         <a class="act" style="padding:4px 10px;font-size:11.5px"
-           href="/api/data/${esc(a.day)}_LLM.csv" download>CSV 내려받기</a>
+           href="${withSys(`/api/data/${esc(a.day)}_LLM.csv`)}" download>CSV 내려받기</a>
       </div>
       <p class="note" style="margin:0 0 10px">
         <b style="color:var(--major)">이 값은 검증된 정탐률이 아닙니다</b> —
@@ -1991,7 +2016,7 @@ async function loadPast(day, opt){
   PDAY = day;
   pastBusy(true);
   $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">불러오는 중…</td></tr>';
-  $('#pcsv').href = `/api/data/${day}.csv`;
+  $('#pcsv').href = withSys(`/api/data/${day}.csv`);
   try{
     if(opt.force && !await fetchDay(day)) return;    // '다시 확보'
     let fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
@@ -2126,8 +2151,8 @@ async function drawGraph(){
     // 그래프 + 기여도 추정을 같이 띄운다 — '왜 이 점수인가' 가 그래프 옆에 있어야
     // 관제가 다음 행동을 정할 수 있다. 기여도는 실패해도 그래프는 나오게 따로 처리.
     const [svg, con] = await Promise.all([
-      fetch(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}`).then(r=>r.text()),
-      fetch(`/api/contrib?at=${encodeURIComponent(GAT)}`).then(r=>r.text()).catch(()=>''),
+      fetch(withSys(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}`)).then(r=>r.text()),
+      fetch(withSys(`/api/contrib?at=${encodeURIComponent(GAT)}`)).then(r=>r.text()).catch(()=>''),
     ]);
     $('#gbody').innerHTML = svg
       + (con ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">${con}</div>` : '');
@@ -2192,9 +2217,9 @@ $('#btnday').onclick = async () => {
       </div>
       <div class="row" style="margin:8px 0 4px">
         <button class="act pri" id="btnopen" style="flex:0 0 auto">HTML 열기</button>
-        <a class="act" href="/api/report/day.html?date=${encodeURIComponent(d)}&download=1" style="flex:0 0 auto">내려받기</a>
+        <a class="act" href="${withSys(`/api/report/day.html?date=${encodeURIComponent(d)}&download=1`)}" style="flex:0 0 auto">내려받기</a>
       </div>`;
-    $('#btnopen').onclick=()=>window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`,'_blank');
+    $('#btnopen').onclick=()=>window.open(withSys(`/api/report/day.html?date=${encodeURIComponent(d)}`),'_blank');
   } finally { btn.disabled=false; btn.textContent=label; }
 };
 
@@ -2202,7 +2227,7 @@ $('#btnday').onclick = async () => {
 $('#btndayhtml').onclick = () => {
   const d = dayParam();
   if(!d){ alert('날짜를 먼저 고르세요'); return; }
-  window.open(`/api/report/day.html?date=${encodeURIComponent(d)}`, '_blank');
+  window.open(withSys(`/api/report/day.html?date=${encodeURIComponent(d)}`), '_blank');
 };
 
 

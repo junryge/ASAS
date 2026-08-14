@@ -97,15 +97,21 @@ class NoLogpressoInJupyterMode(unittest.TestCase):
         self.assertEqual(r["source"], "jupyter")
 
     def test_기동_확보(self):
-        """서버 기동 때 한 번 도는 자리 — 여기가 로그프레소를 치고 있었다."""
+        """서버 기동 때 한 번 도는 자리 — 여기가 로그프레소를 치고 있었다.
+
+        (시스템별 컨텍스트로 바뀐 뒤에는 CFG 와 함께 CTX 도 갈아끼운다 —
+        컨텍스트가 옛 설정으로 이미 만들어져 있으면 바꾼 설정이 안 먹는다.)
+        """
         import server
-        old_cfg = server.CFG
-        server.CFG = self.cfg
+        old_cfg, old_ctx = server.CFG, server.CTX
+        server.CFG, server.CTX = self.cfg, {}
         try:
             server._bootstrap_today()
+            st = server.get_ctx("ALL")["state"]
         finally:
-            server.CFG = old_cfg
-        self.assertIsNot(server.STATE.get("bootstrap"), None)
+            server.CFG, server.CTX = old_cfg, old_ctx
+        self.assertIsNot(st.get("bootstrap"), None)
+        self.assertTrue(st["bootstrap"].get("ok"), st["bootstrap"])
 
     def test_스캔(self):
         store = sentinel.CaseStore(self.cfg)

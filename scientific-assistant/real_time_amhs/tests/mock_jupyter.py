@@ -16,6 +16,29 @@ with open(os.environ.get("MOCK_CSV") or os.path.join(
     CSV = _f.read()
 SESS = set()
 
+# FAB 별 파일(fab분리 폴더) — 실물과 같은 특징만 축약:
+#   · unified_risk_score(전체 점수)와 hot_area(전체 기준 M16HUB)가 그대로 있고
+#   · 그 FAB 자신의 점수는 area_score / area_level 이다
+#   · {FAB}_pts_* 룰 점수 컬럼이 있다 (기여도 분해가 이걸 쓴다)
+# 정규화(area_score→unified, hot_area→FAB)가 안 되면 화면이 전체 점수를
+# 보게 되므로, 두 점수를 일부러 다르게 둔다.
+FABS = ("M14", "M14B", "M16A", "M16B", "M16HUB")
+
+
+def fab_csv(day: str, fab: str) -> bytes:
+    d = f"{day[:4]}-{day[4:6]}-{day[6:8]}"
+    head = ("file,datetime,date,time,unified_risk_score,unified_risk_level,"
+            f"hot_area,reason,{fab}_score,{fab}_pts_RA_sus,{fab}_pts_SLA,"
+            f"{fab}_ra,sla_{fab},area_score,area_level,area_saturated")
+    scores = [(5, ""), (55, "경계"), (72, "위험"), (88, "초위험")]
+    rows = [
+        f"HUB_PR.csv,{d} 00:0{i},{d},00:0{i},44,경계,M16HUB,"
+        f"\"hot_area=M16HUB; 발동: M16HUB[R-A_sus]; {fab}[R-A_sus,SLA(9.9%4분초과)]\","
+        f"{sc},5,5,3.1{i},9.9,{sc},{lv},"
+        for i, (sc, lv) in enumerate(scores)
+    ]
+    return ("\n".join([head] + rows) + "\n").encode("utf-8")
+
 
 class Srv(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -56,9 +79,15 @@ class H(BaseHTTPRequestHandler):
             if self._cookies().get("session_id") not in SESS:
                 return self._send(403, "<html>Forbidden</html>")
             name = urllib.parse.unquote(path.rsplit("/", 1)[-1])
-            if not name.endswith("발동이벤트.csv"):
-                return self._send(404, "<html>Not Found</html>")
             if not name[:8].isdigit() or name[:4] != "2026":
+                return self._send(404, "<html>Not Found</html>")
+            # FAB 별 파일 — …/fab분리/20260814_발동이벤트_M14.csv
+            for fab in FABS:
+                if name.endswith(f"발동이벤트_{fab}.csv"):
+                    if "fab분리" not in urllib.parse.unquote(path):
+                        return self._send(404, "<html>Not Found</html>")
+                    return self._send(200, fab_csv(name[:8], fab), "text/csv")
+            if not name.endswith("발동이벤트.csv"):
                 return self._send(404, "<html>Not Found</html>")
             return self._send(200, CSV, "text/csv")
         return self._send(404, "<html>Not Found</html>")

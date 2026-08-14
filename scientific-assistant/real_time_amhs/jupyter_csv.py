@@ -250,6 +250,33 @@ def parse_csv(raw: bytes, c: dict) -> list[dict]:
     return [{(k or "").lstrip("﻿").strip(): v for k, v in r.items()} for r in rows]
 
 
+def _fab_rows(rows: list[dict], sys: str) -> list[dict]:
+    """FAB 파일의 행을 **받는 순간** 공통 형태로 정규화한다.
+
+    FAB 파일에는 전체 시스템 점수(unified_risk_score=전체, hot_area=전체 기준)
+    가 그대로 들어 있고, 그 FAB 자신의 점수는 **area_score / area_level** 이다.
+    여기서 안 바꾸면 M14 화면이 전체 점수로 등급을 매기고, 케이스 area 가
+    M16HUB 로 찍힌다 — 화면 전체가 남의 데이터를 보게 된다.
+
+    한 번만, 여기서만 바꾼다. 그러면 그래프·예보·기여도·리포트·정확도 등
+    unified_risk_score / hot_area 를 읽는 **모든 하위 모듈이 수정 없이** 그대로
+    동작한다 (기여도는 {sys}_pts_* 컬럼을 hot_area 로 찾는데, 정규화된
+    hot_area=sys 라 FAB 파일의 자기 컬럼과 정확히 맞아떨어진다).
+
+    원본은 all_* 로 남긴다 — 전체 대비 얼마나 다른지 비교할 수 있게.
+    """
+    for r in rows:
+        r["all_hot_area"] = r.get("hot_area") or ""
+        r["hot_area"] = sys
+        if "area_score" in r:
+            r["all_score"] = r.get("unified_risk_score") or ""
+            r["unified_risk_score"] = str(r.get("area_score") or "0").strip() or "0"
+        if "area_level" in r:
+            r["all_level"] = r.get("unified_risk_level") or ""
+            r["unified_risk_level"] = r.get("area_level") or ""
+    return rows
+
+
 def _save_raw(day: str, raw: bytes, cfg: dict) -> str:
     from store_csv import data_dir
     d = os.path.join(data_dir(cfg), "raw")
@@ -282,6 +309,9 @@ def fetch_day(day: str = "", cfg: dict | None = None,
 
     raw_path = _save_raw(day, raw, cfg) if c.get("save_raw", True) else ""
     rows = parse_csv(raw, c)
+    fab = str(cfg.get("_sys") or "").strip().upper()
+    if fab and fab != "ALL":
+        rows = _fab_rows(rows, fab)        # ★FAB 파일은 여기서 정규화된다
     if len(rows) < int(c.get("verify_min_rows", 1)):
         msg = f"내려받았지만 행이 {len(rows)}개뿐입니다 ({len(raw)}바이트)"
         if verbose:
@@ -422,11 +452,22 @@ def check(cfg: dict | None = None) -> dict:
 if __name__ == "__main__":
     import sys
     args = [a for a in sys.argv[1:]]
+    # --sys M14 → 그 FAB 의 파일(fab분리 폴더)·저장 폴더(data/M14)로 동작.
+    #   과거 데이터를 FAB 별로 채울 때: python jupyter_csv.py --backfill all --sys M14
+    CLI_CFG = load_config()
+    if "--sys" in args:
+        i = args.index("--sys")
+        from lp_client import sys_cfg
+        CLI_CFG = sys_cfg(CLI_CFG, args[i + 1])
+        del args[i:i + 2]
+        if CLI_CFG.get("_sys"):
+            print(f"[시스템] {CLI_CFG['_sys']} — 저장: "
+                  f"{CLI_CFG['storage']['daily_csv_dir']}/")
     if "--help" in args or "-h" in args:
         print(__doc__)
         raise SystemExit(0)
     if "--check" in args:
-        print(json.dumps(check(), ensure_ascii=False, indent=2))
+        print(json.dumps(check(CLI_CFG), ensure_ascii=False, indent=2))
         raise SystemExit(0)
     if "--url" in args:                      # 브라우저 URL → config 값 뽑아주기
         i = args.index("--url")
@@ -434,7 +475,7 @@ if __name__ == "__main__":
         print(json.dumps({"base_url": b, "path": p}, ensure_ascii=False, indent=2))
         raise SystemExit(0)
     if "--list" in args:
-        items, err = list_days()
+        items, err = list_days(CLI_CFG)
         if err:
             print("❌", err)
             raise SystemExit(1)
@@ -448,13 +489,13 @@ if __name__ == "__main__":
     if "--backfill" in args:
         i = args.index("--backfill")
         if "all" in args[i + 1:i + 2]:
-            items, err = list_days()
+            items, err = list_days(CLI_CFG)
             if err:
                 print("❌", err)
                 raise SystemExit(1)
             ds = [it["day"] for it in items]
             print(f"📥 서버에 있는 {len(ds)}일 전부 받는 중…")
-            r = backfill(ds)
+            r = backfill(ds, CLI_CFG)
             raise SystemExit(0 if r["ok"] else 1)
         rest = [a for a in args[i + 1:] if a.isdigit()]
         if len(rest) >= 2 and len(rest[0]) == 8 and len(rest[1]) == 8:
@@ -464,19 +505,19 @@ if __name__ == "__main__":
             span = [(d0 + timedelta(days=k)).strftime("%Y%m%d")
                     for k in range((d1 - d0).days + 1)]
             print(f"📥 {rest[0]}~{rest[1]} {len(span)}일 받는 중…")
-            r = backfill(span)
+            r = backfill(span, CLI_CFG)
         else:
             n = int(rest[0]) if rest else 7
             print(f"📥 최근 {n}일 받는 중…")
-            r = backfill(None, back=n)
+            r = backfill(None, CLI_CFG, back=n)
         raise SystemExit(0 if r["ok"] else 1)
     day = next((a for a in args if a.isdigit()), "")
     if "--raw" in args:
-        cfg = load_config()
+        cfg = CLI_CFG
         d = "".join(ch for ch in (day or datetime.now().strftime("%Y%m%d"))
                     if ch.isdigit())[:8]
         raw, err = download(d, cfg)
         print(err or f"{len(raw)}바이트 → {_save_raw(d, raw, cfg)}")
     else:
-        r = fetch_day(day)
+        r = fetch_day(day, CLI_CFG)
         raise SystemExit(0 if r.get("ok") else 1)

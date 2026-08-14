@@ -19,121 +19,183 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from lp_client import load_config, parse_dt, ping
+from lp_client import fab_codes, load_config, parse_dt, ping, sys_cfg
 from lp_query import build, query
 from report import build_report, feedback_status, save_feedback
 from sentinel import CaseStore, alarm_floor, scan_once
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CFG = load_config()
-STORE = CaseStore(CFG)
 
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"))
 
-# 빈 구간 메움(backfill) 진행 상태
-BACKFILL: dict = {"running": False, "day": None, "started": None, "result": None}
 
-# 폴링 상태 (대시보드 헤더의 STREAMING · latency 표시용)
-STATE = {
-    "last_scan": None,
-    "latency_ms": None,
-    "connected": False,
-    "error": None,
-    "amos_warn": None,
-    "source": None,            # 데이터 출처 — logpresso / jupyter
-    "scans": 0,
-    "forecast": None,          # 선행 감지 결과 (forecast.predict)
-}
+# ─────────────────────── 시스템(FAB) 별 컨텍스트 ───────────────────────
+# ALL(전체 통합) + FAB 별 화면이 **한 서버**에서 같이 돈다. 케이스 저장소·
+# 폴링 상태·캐시가 시스템마다 따로 있어야 M14 화면이 ALL 케이스를 보는
+# 사고가 안 난다. 설정은 sys_cfg() 의 얕은 뷰라 수집 주기 같은 공유 설정은
+# 전 시스템에 즉시 반영된다.
+def systems() -> list[str]:
+    """관제 시스템 목록 — ALL + config.source.jupyter.fabs (주피터 모드일 때만).
 
-# 선행 지표 분석 캐시 — 며칠치 CSV 를 훑어야 해서 매 요청 재계산하면 느리다
-LEADING_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
-# 임계 격자 탐색은 며칠치를 수십 번 되감아 몇 초 걸린다 — 짧게 캐시
-TUNE_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
-CMP_CACHE: dict = {"at": 0.0, "data": None, "key": ""}
+    FAB 별 파일은 주피터에만 있다. 로그프레소 모드면 ALL 하나다.
+    """
+    from sentinel import source_mode
+    if source_mode(CFG) != "jupyter":
+        return ["ALL"]
+    return ["ALL"] + [s for s in fab_codes(CFG) if s != "ALL"]
+
+
+def _blank_state() -> dict:
+    """폴링 상태 (대시보드 헤더의 STREAMING · latency 표시용)."""
+    return {"last_scan": None, "latency_ms": None, "connected": False,
+            "error": None, "amos_warn": None,
+            "source": None,            # 데이터 출처 — logpresso / jupyter
+            "scans": 0,
+            "forecast": None}          # 선행 감지 결과 (forecast.predict)
+
+
+CTX_LOCK = threading.Lock()
+CTX: dict[str, dict] = {}
+
+
+def get_ctx(sys: str | None = "ALL") -> dict:
+    """시스템 컨텍스트 — 없으면 만든다. 모르는 코드는 ALL 로 (화면이 죽는
+    것보다 전체 화면이 낫다)."""
+    s = str(sys or "ALL").strip().upper() or "ALL"
+    if s not in systems():
+        s = "ALL"
+    with CTX_LOCK:
+        if s not in CTX:
+            c = sys_cfg(CFG, s)
+            CTX[s] = {
+                "sys": s, "cfg": c, "store": CaseStore(c),
+                "state": _blank_state(),
+                "watched": 0.0,        # 마지막으로 이 시스템 화면이 물어본 시각
+                # 빈 구간 메움(backfill) 진행 상태
+                "backfill": {"running": False, "day": None, "started": None,
+                             "result": None},
+                # 선행 지표 분석 캐시 — 며칠치 CSV 를 훑어서 매 요청 재계산하면 느리다
+                "leading": {"at": 0.0, "data": None, "key": ""},
+                # 임계 격자 탐색은 며칠치를 수십 번 되감아 몇 초 걸린다 — 짧게 캐시
+                "tune": {"at": 0.0, "data": None, "key": ""},
+                "cmp": {"at": 0.0, "data": None, "key": ""},
+            }
+        return CTX[s]
+
+
+def rctx() -> dict:
+    """요청의 ?sys= 로 컨텍스트를 고른다 (없으면 ALL). 화면이 보고 있다는
+    표시(watched)도 여기서 남긴다 — FAB 의 분당 LLM 은 보고 있을 때만 돈다."""
+    c = get_ctx(request.args.get("sys"))
+    c["watched"] = time.time()
+    return c
 
 
 # ────────────────────────────── 폴링 루프 ──────────────────────────────
 def _bootstrap_today() -> None:
-    """기동 시 오늘 하루치를 통째로 확보한다 (00:00 ~ 현재).
+    """기동 시 **모든 시스템**의 오늘 하루치를 확보한다 (00:00 ~ 현재).
 
     중간에 서버가 꺼져 있던 구간까지 메운다. 이미 저장된 분은 중복으로 걸러지므로
     여러 번 돌려도 안전하다. 이후 수집은 폴링 루프가 증분으로 이어간다.
+    FAB 파일이 아직 없는 날(404)은 경고만 남기고 계속 간다.
     """
     from sentinel import source_mode
     now = datetime.now()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     day = now.strftime("%Y%m%d")
     jup = source_mode(CFG) == "jupyter"
+    ss = systems()
     print(f"[기동] 오늘({day}) 00:00 ~ {now:%H:%M} 하루치 확보 중… "
-          f"({'주피터 CSV' if jup else '로그프레소'})")
-    t0 = time.time()
-    try:
-        if jup:
-            # ★출처가 주피터면 여기서도 주피터로 받는다. 예전엔 이 자리에서만
-            #   collect()(=로그프레소)를 불러서, 설정을 바꿔도 기동 때 한 번은
-            #   로그프레소를 치고 있었다.
-            from jupyter_csv import fetch_day
-            jr = fetch_day(day, CFG, verbose=False)
-            r = {"ok": jr.get("ok"), "error": jr.get("error"),
-                 "rows": jr.get("rows", 0), "written": jr.get("written", 0),
-                 "skipped": jr.get("skipped", 0), "files": jr.get("files") or [],
-                 "minutes": jr.get("rows", 0)}
-        else:
-            from collect import collect
-            r = collect(start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"),
-                        CFG, verbose=False)
-        if not r.get("ok"):
-            print(f"[기동] ⚠️ 확보 실패 — {r.get('error')}")
-            STATE["bootstrap"] = {"ok": False, "error": r.get("error")}
-            return
-        print(f"[기동] ✅ {r['rows']}행({r['minutes']}분) 조회 · 신규 {r['written']}행 저장 · "
-              f"중복 {r['skipped']}"
-              + (f" → {', '.join(r['files'])}" if r.get("files") else "")
-              + f"  [{round(time.time()-t0,1)}초]")
-        if r.get("warn"):
-            print(f"[기동] ⚠️ {r['warn']}")
-        STATE["bootstrap"] = {"ok": True, "minutes": r["minutes"],
-                              "written": r["written"], "at": datetime.now().isoformat()}
-    except Exception as e:
-        print(f"[기동] ⚠️ 확보 예외: {type(e).__name__}: {e}")
-        STATE["bootstrap"] = {"ok": False, "error": str(e)}
+          f"({'주피터 CSV' if jup else '로그프레소'} · {' '.join(ss)})")
+    for sys in ss:
+        ctx = get_ctx(sys)
+        t0 = time.time()
+        tag = f"[기동:{sys}]"
+        try:
+            if jup:
+                # ★출처가 주피터면 여기서도 주피터로 받는다. 예전엔 이 자리에서만
+                #   collect()(=로그프레소)를 불러서, 설정을 바꿔도 기동 때 한 번은
+                #   로그프레소를 치고 있었다.
+                from jupyter_csv import fetch_day
+                jr = fetch_day(day, ctx["cfg"], verbose=False)
+                r = {"ok": jr.get("ok"), "error": jr.get("error"),
+                     "rows": jr.get("rows", 0), "written": jr.get("written", 0),
+                     "skipped": jr.get("skipped", 0), "files": jr.get("files") or [],
+                     "minutes": jr.get("rows", 0)}
+            else:
+                from collect import collect
+                r = collect(start.strftime("%Y%m%d%H%M%S"), now.strftime("%Y%m%d%H%M%S"),
+                            ctx["cfg"], verbose=False)
+            if not r.get("ok"):
+                print(f"{tag} ⚠️ 확보 실패 — {r.get('error')}")
+                ctx["state"]["bootstrap"] = {"ok": False, "error": r.get("error")}
+                continue
+            print(f"{tag} ✅ {r['rows']}행({r['minutes']}분) 조회 · 신규 {r['written']}행 저장 · "
+                  f"중복 {r['skipped']}"
+                  + (f" → {', '.join(r['files'])}" if r.get("files") else "")
+                  + f"  [{round(time.time()-t0,1)}초]")
+            if r.get("warn"):
+                print(f"{tag} ⚠️ {r['warn']}")
+            ctx["state"]["bootstrap"] = {"ok": True, "minutes": r["minutes"],
+                                         "written": r["written"],
+                                         "at": datetime.now().isoformat()}
+        except Exception as e:
+            print(f"{tag} ⚠️ 확보 예외: {type(e).__name__}: {e}")
+            ctx["state"]["bootstrap"] = {"ok": False, "error": str(e)}
+
+
+def _llm_on(ctx: dict, interval: int) -> bool:
+    """이 시스템의 분당 LLM 을 돌릴까.
+
+    ALL 은 항상. FAB 은 **화면이 실제로 보고 있을 때만** — 6개 시스템이 매분
+    4단계 LLM 을 다 돌리면 게이트웨이가 503 을 뱉는다 (1차 청크가 통째로
+    죽은 적이 있다). 데이터 수집·케이스 감지는 이 게이트와 무관하게 전부 돈다.
+    """
+    if ctx["sys"] == "ALL":
+        return True
+    return (time.time() - ctx["watched"]) < max(300, interval * 3)
 
 
 def _poll_loop() -> None:
-    """수집 루프 — 주기·구간을 매 회 config 에서 다시 읽어 즉시 반영한다."""
+    """수집 루프 — 매 회 모든 시스템을 돌고, 주기는 config 에서 다시 읽는다."""
     _bootstrap_today()                 # ① 하루치 먼저 확보
     while True:                        # ② 이후 증분 수집
-        t0 = time.time()
-        try:
-            res = scan_once(STORE, cfg=CFG)
-            STATE.update(
-                last_scan=datetime.now().isoformat(),
-                latency_ms=int((time.time() - t0) * 1000),
-                connected=bool(res.get("ok")),
-                error=None if res.get("ok") else res.get("error"),
-                amos_warn=res.get("amos_warn"),
-                source=res.get("source"),
-                scans=STATE["scans"] + 1,
-                window=CFG.get("query", {}).get("window", "10m"),
-                last_rows=res.pop("all_rows", None) or STATE.get("last_rows"),
-                saved=res.get("saved"),
-                gap_min=res.get("gap_min"),
-            )
-            sv = res.get("saved") or {}
-            if STATE["scans"] == 1 or sv.get("written"):
-                print(f"[수집] {res.get('gap_min')}분 구간 · {res.get('rows')}행 조회 · "
-                      f"신규 {sv.get('written', 0)}행 저장"
-                      + (f" → {sv['files'][0]}" if sv.get("files") else ""))
-            if res.get("ok"):
-                _auto_judge(res.get("cases") or [])
-                _minute_llm(STATE.get("last_rows") or [])
-                _update_forecast()
-        except Exception as e:
-            STATE.update(connected=False, error=f"{type(e).__name__}: {e}",
-                         last_scan=datetime.now().isoformat())
+        interval = max(5, int(CFG.get("query", {}).get("poll_interval_s", 60)))
+        for sys in systems():
+            ctx = get_ctx(sys)
+            st = ctx["state"]
+            t0 = time.time()
+            try:
+                res = scan_once(ctx["store"], cfg=ctx["cfg"])
+                st.update(
+                    last_scan=datetime.now().isoformat(),
+                    latency_ms=int((time.time() - t0) * 1000),
+                    connected=bool(res.get("ok")),
+                    error=None if res.get("ok") else res.get("error"),
+                    amos_warn=res.get("amos_warn"),
+                    source=res.get("source"),
+                    scans=st["scans"] + 1,
+                    window=CFG.get("query", {}).get("window", "10m"),
+                    last_rows=res.pop("all_rows", None) or st.get("last_rows"),
+                    saved=res.get("saved"),
+                    gap_min=res.get("gap_min"),
+                )
+                sv = res.get("saved") or {}
+                if st["scans"] == 1 or sv.get("written"):
+                    print(f"[수집:{sys}] {res.get('rows')}행 조회 · "
+                          f"신규 {sv.get('written', 0)}행 저장"
+                          + (f" → {sv['files'][0]}" if sv.get("files") else ""))
+                if res.get("ok"):
+                    _auto_judge(ctx, res.get("cases") or [])
+                    if _llm_on(ctx, interval):
+                        _minute_llm(ctx)
+                    _update_forecast(ctx)
+            except Exception as e:
+                st.update(connected=False, error=f"{type(e).__name__}: {e}",
+                          last_scan=datetime.now().isoformat())
 
         # 주기를 나눠 자며 변경을 빠르게 반영
-        interval = max(5, int(CFG.get("query", {}).get("poll_interval_s", 60)))
         slept = 0
         while slept < interval:
             time.sleep(min(2, interval - slept))
@@ -142,19 +204,22 @@ def _poll_loop() -> None:
                 break                       # 주기가 바뀌면 즉시 다음 수집으로
 
 
-def _minute_llm(rows: list[dict]) -> None:
+def _minute_llm(ctx: dict) -> None:
     """1분 추론 + 검증 창이 찬 과거 행 채점 — 수집 루프를 막지 않게 별도 스레드."""
+    rows = ctx["state"].get("last_rows") or []
+    cfg, sys = ctx["cfg"], ctx["sys"]
+
     def work():
         try:
             from accuracy import run_minute, verify_day
-            out = run_minute(rows, CFG)
+            out = run_minute(rows, cfg)
             if out and out.get("오류"):
-                print(f"[LLM/1분] ⚠️ {out['datetime']} — {out['오류']}")
-            v = verify_day(datetime.now().strftime("%Y%m%d"), CFG)
+                print(f"[LLM/1분:{sys}] ⚠️ {out['datetime']} — {out['오류']}")
+            v = verify_day(datetime.now().strftime("%Y%m%d"), cfg)
             if v.get("scored"):
-                print(f"[검증] {v['scored']}건 채점 (대기 {v['waiting']}건)")
+                print(f"[검증:{sys}] {v['scored']}건 채점 (대기 {v['waiting']}건)")
         except Exception as e:
-            print(f"[LLM/1분] ⚠️ 예외: {type(e).__name__}: {e}")
+            print(f"[LLM/1분:{sys}] ⚠️ 예외: {type(e).__name__}: {e}")
 
     threading.Thread(target=work, daemon=True).start()
 
@@ -162,15 +227,16 @@ def _minute_llm(rows: list[dict]) -> None:
 _LEVEL_ORD = {"경계": 1, "위험": 2, "초위험": 3}
 
 
-def _auto_judge(case_ids: list[str]) -> None:
+def _auto_judge(ctx: dict, case_ids: list[str]) -> None:
     """실시간 감지 즉시 LLM 이 판단하게 한다 (신규·등급상향 케이스만)."""
-    lc = CFG.get("llm", {})
+    store, cfg = ctx["store"], ctx["cfg"]
+    lc = cfg.get("llm", {})
     if not (lc.get("enabled", True) and lc.get("auto_judge", True)):
         return
     floor = _LEVEL_ORD.get(lc.get("auto_judge_min_level", "경계"), 1)
 
     for cid in case_ids:
-        c = STORE.by_id(cid)
+        c = store.by_id(cid)
         if not c or not c.pop("_new", False):
             continue
         if _LEVEL_ORD.get(c.get("level"), 0) < floor:
@@ -179,41 +245,44 @@ def _auto_judge(case_ids: list[str]) -> None:
         def work(case_id=cid):
             try:
                 from llm_client import judge_case
-                cc = STORE.by_id(case_id)
+                cc = store.by_id(case_id)
                 if not cc:
                     return
-                res, err = judge_case(cc, CFG)
+                res, err = judge_case(cc, cfg)
                 if err:
-                    print(f"[LLM] ⚠️ {case_id} 자동 판단 실패: {err}")
+                    print(f"[LLM:{ctx['sys']}] ⚠️ {case_id} 자동 판단 실패: {err}")
                     return
                 cc["llm"] = {**res, "at": datetime.now().isoformat(), "auto": True}
-                STORE.save()
-                print(f"[LLM] 🤖 {case_id} 자동 판단 완료 (확신도 {res.get('확신도')}%)")
+                store.save()
+                print(f"[LLM:{ctx['sys']}] 🤖 {case_id} 자동 판단 완료 "
+                      f"(확신도 {res.get('확신도')}%)")
             except Exception as e:
-                print(f"[LLM] ⚠️ {case_id} 자동 판단 예외: {e}")
+                print(f"[LLM:{ctx['sys']}] ⚠️ {case_id} 자동 판단 예외: {e}")
 
         threading.Thread(target=work, daemon=True).start()
-    STORE.save()
+    store.save()
 
 
-def _update_forecast() -> None:
+def _update_forecast(ctx: dict) -> None:
     """선행 감지 — 최근 추세로 '임계 돌파 N분 전' 을 미리 띄운다.
 
     수집 루프에서 매 회 부른다. 계산은 최근 20분 점수만 쓰는 가벼운 회귀라
     수집을 지연시키지 않는다. 실패해도 관제는 계속돼야 하므로 조용히 넘어간다.
     """
+    st = ctx["state"]
     try:
         from forecast import predict
-        fc = predict(STATE.get("last_rows") or [], CFG)
-        prev = STATE.get("forecast") or {}
-        STATE["forecast"] = fc
+        fc = predict(st.get("last_rows") or [], ctx["cfg"])
+        prev = st.get("forecast") or {}
+        st["forecast"] = fc
         # 경보가 새로 뜬 순간만 콘솔에 한 줄 (매분 도배 방지)
         if fc.get("warn") and not prev.get("warn"):
-            print(f"[선행] ⚠️ {fc['eta_min']}분 뒤 임계 돌파 예상 "
+            print(f"[선행:{ctx['sys']}] ⚠️ {fc['eta_min']}분 뒤 임계 돌파 예상 "
                   f"— 현재 {fc['current']}점, 분당 {fc['slope']:+.2f}점 "
                   f"(확신 {fc['confidence']}%)")
     except Exception as e:
-        STATE["forecast"] = {"ok": False, "warn": False, "reason": f"{type(e).__name__}: {e}"}
+        st["forecast"] = {"ok": False, "warn": False,
+                          "reason": f"{type(e).__name__}: {e}"}
 
 
 # ─────────────────────── 추이 그래프 지표 목록 ───────────────────────
@@ -319,17 +388,20 @@ def favicon():
 # ────────────────────────────── 상태 ──────────────────────────────
 @app.route("/api/status")
 def api_status():
+    C = rctx()
     return jsonify({
-        "state": STATE,
-        "alarm_floor": alarm_floor(CFG),
-        "poll_interval_s": CFG.get("query", {}).get("poll_interval_s", 30),
+        "state": C["state"],
+        "alarm_floor": alarm_floor(C["cfg"]),
+        "poll_interval_s": C["cfg"].get("query", {}).get("poll_interval_s", 30),
         "offline": os.getenv("LP_OFFLINE") == "1",
-        "table": CFG.get("table_name"),
-        "base": CFG.get("logpresso_base"),
-        "model": CFG.get("llm", {}).get("model"),
-        "policy": CFG.get("policy", {}),
-        "evaluation": CFG.get("evaluation", {}),
+        "table": C["cfg"].get("table_name"),
+        "base": C["cfg"].get("logpresso_base"),
+        "model": C["cfg"].get("llm", {}).get("model"),
+        "policy": C["cfg"].get("policy", {}),
+        "evaluation": C["cfg"].get("evaluation", {}),
         "server_time": datetime.now().isoformat(),
+        "sys": C["sys"],
+        "systems": systems(),
     })
 
 
@@ -379,6 +451,7 @@ def api_feed():
 
     경계 이상은 케이스(case_id)와 연결되고, 정상은 데이터 행 그대로 보여준다.
     """
+    C = rctx()
     from sentinel import (_row_dt, _score, grade, hid_zones, reason_metrics,
                           summarize_reason)
 
@@ -388,10 +461,10 @@ def api_feed():
     day = asked or datetime.now().strftime("%Y%m%d")
     rows, shown_day, fallback = [], day, False
     try:
-        rows = read_day(day, CFG)
+        rows = read_day(day, C["cfg"])
         if not rows and not asked:
-            for d in list_days(CFG):                 # 최신순
-                r2 = read_day(d["day"], CFG)
+            for d in list_days(C["cfg"]):                 # 최신순
+                r2 = read_day(d["day"], C["cfg"])
                 if r2:
                     rows, shown_day, fallback = r2, d["day"], True
                     break
@@ -400,10 +473,10 @@ def api_feed():
     # 폴링 버퍼 폴백은 '오늘' 요청일 때만. 과거 날짜를 물었는데 없으면 없는 것이다
     # (안 그러면 7/25 를 물었는데 오늘 버퍼가 나와서 날짜가 뒤바뀐다)
     if not rows and not asked:
-        rows = STATE.get("last_rows") or []
+        rows = C["state"].get("last_rows") or []
 
     # 추이 그래프에서 고를 수 있는 지표 묶음 — 값을 같이 실어보낸다
-    groups = metric_groups(CFG)
+    groups = metric_groups(C["cfg"])
     mkeys = sorted({m["key"] for g in groups for m in g["metrics"]})
     seen_keys = set()
 
@@ -412,7 +485,7 @@ def api_feed():
         dt, sc = _row_dt(r), _score(r)
         if dt is None:
             continue
-        g = grade(sc, CFG)
+        g = grade(sc, C["cfg"])
         area = (r.get("hot_area") or "").strip() or "UNKNOWN"
         bd = (r.get("BOTTLENECK_downward_anomaly_cols") or "").strip()
         bu = (r.get("BOTTLENECK_upward_anomaly_cols") or "").strip()
@@ -422,7 +495,7 @@ def api_feed():
         items = " ".join(x for x in (qd, qu) if x).split()
         # 이 시각이 속한 케이스 찾기
         cid = None
-        for c in STORE.cases:
+        for c in C["store"].cases:
             if c["area"] == area and c["opened_at"] <= dt.isoformat() <= (
                     c.get("last_seen") or c["opened_at"]):
                 cid = c["id"]
@@ -472,7 +545,7 @@ def api_feed():
                     "day": shown_day, "fallback": fallback,
                     "latest": out[0]["datetime"] if out else None,
                     "earliest": out[-1]["datetime"] if out else None,
-                    "window": CFG.get("query", {}).get("window", "10m")})
+                    "window": C["cfg"].get("query", {}).get("window", "10m")})
 
 
 @app.route("/api/collect", methods=["POST"])
@@ -481,32 +554,33 @@ def api_collect():
 
     {"date": "YYYYMMDD"} 또는 {} (오늘 00:00~현재)
     """
+    C = rctx()
     b = request.get_json(silent=True) or {}
     from sentinel import source_mode
     try:
         # 주피터 CSV 모드는 로그프레소를 안 쓴다 — 그 날짜 파일을 받아 넣는다.
-        if source_mode(CFG) == "jupyter":
+        if source_mode(C["cfg"]) == "jupyter":
             from jupyter_csv import backfill, fetch_day
             if b.get("back"):                     # 과거 N일 한꺼번에
-                r = backfill(None, CFG, back=int(b["back"]), verbose=False)
+                r = backfill(None, C["cfg"], back=int(b["back"]), verbose=False)
             elif b.get("from") and b.get("to"):   # 구간
                 from datetime import timedelta
                 d0 = parse_dt(b["from"]) or datetime.now()
                 d1 = parse_dt(b["to"]) or datetime.now()
                 span = [(d0 + timedelta(days=k)).strftime("%Y%m%d")
                         for k in range((d1 - d0).days + 1)]
-                r = backfill(span, CFG, verbose=False)
+                r = backfill(span, C["cfg"], verbose=False)
             else:
-                r = fetch_day(b.get("date") or "", CFG, verbose=False)
+                r = fetch_day(b.get("date") or "", C["cfg"], verbose=False)
             return (jsonify(r), 200) if r.get("ok") else (jsonify(r), 502)
 
         from collect import collect, collect_day
         if b.get("date"):
-            r = collect_day(b["date"], CFG)
+            r = collect_day(b["date"], C["cfg"])
         else:
             now = datetime.now()
             r = collect(now.strftime("%Y%m%d000000"), now.strftime("%Y%m%d%H%M%S"),
-                        CFG, verbose=False)
+                        C["cfg"], verbose=False)
         return (jsonify(r), 200) if r.get("ok") else (jsonify(r), 502)
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -518,6 +592,7 @@ def api_graph():
 
     /api/graph?at=2026-07-28T08:11:00&minutes=60
     """
+    C = rctx()
     from graphs import render
     from store_csv import read_day
 
@@ -530,11 +605,11 @@ def api_graph():
     rows = []
     for d in {(at - timedelta(minutes=minutes)).strftime("%Y%m%d"),
               at.strftime("%Y%m%d"), (at + timedelta(minutes=minutes)).strftime("%Y%m%d")}:
-        rows.extend(read_day(d, CFG))
+        rows.extend(read_day(d, C["cfg"]))
     if not rows:
-        rows = STATE.get("last_rows") or []
+        rows = C["state"].get("last_rows") or []
 
-    svg = render(rows, at, minutes, cfg=CFG)
+    svg = render(rows, at, minutes, cfg=C["cfg"])
     return app.response_class(svg, mimetype="image/svg+xml")
 
 
@@ -545,12 +620,13 @@ def api_contrib():
     /api/contrib?at=2026-07-28T08:11:00  → 구간 그래프 모달에 붙일 HTML 조각.
     점수식을 푼 값이 아니라 '평소 대비 편차' 기반 **추정**이다(화면에도 명시).
     """
+    C = rctx()
     from contrib import explain_html
     from store_csv import read_day
     at = parse_dt(request.args.get("at")) or datetime.now()
-    rows = read_day(at.strftime("%Y%m%d"), CFG) or STATE.get("last_rows") or []
+    rows = read_day(at.strftime("%Y%m%d"), C["cfg"]) or C["state"].get("last_rows") or []
     try:
-        return app.response_class(explain_html(rows, at, CFG), mimetype="text/html")
+        return app.response_class(explain_html(rows, at, C["cfg"]), mimetype="text/html")
     except Exception as e:
         return app.response_class(
             f'<div class="empty">기여도 분해 실패 — {type(e).__name__}: {e}</div>',
@@ -560,23 +636,24 @@ def api_contrib():
 @app.route("/api/accuracy")
 def api_accuracy():
     """1분 LLM 판단 + 사후검증 결과. ?day=YYYYMMDD (기본 오늘), ?rows=1 이면 행까지."""
+    C = rctx()
     from accuracy import acc_cfg, summary, verify_day
     from store_csv import read_llm_day
     day = (request.args.get("day") or "").strip() or datetime.now().strftime("%Y%m%d")
     # 그 날짜를 열 때 채점을 한 번 돌린다 (과거 날짜도 판정이 채워지게)
     try:
-        verify_day(day, CFG)
+        verify_day(day, C["cfg"])
     except Exception as e:
         print(f"[검증] ⚠️ {day} 채점 실패: {e}")
-    out = summary(day, CFG)
-    out["backfill"] = dict(BACKFILL)
+    out = summary(day, C["cfg"])
+    out["backfill"] = dict(C["backfill"])
     try:
         from accuracy import backlog
-        out["backlog"] = backlog(STATE.get("last_rows") or [], CFG)
+        out["backlog"] = backlog(C["state"].get("last_rows") or [], C["cfg"])
     except Exception:
         out["backlog"] = None
     if request.args.get("rows"):
-        rows = read_llm_day(day, CFG)
+        rows = read_llm_day(day, C["cfg"])
         rows.sort(key=lambda r: r.get("datetime") or "", reverse=True)
         try:
             lim = max(1, min(2000, int(request.args.get("rows", 300))))
@@ -584,7 +661,7 @@ def api_accuracy():
             lim = 300
         rows = rows[:lim]
         # 아직 판정이 안 된 행에 '몇 분 뒤에 채점되는지' 를 붙여준다
-        win = acc_cfg(CFG)["window_min"]
+        win = acc_cfg(C["cfg"])["window_min"]
         now = datetime.now()
         for r in rows:
             if not (r.get("판정") or "").strip() and (r.get("실제이상") or "").strip():
@@ -602,6 +679,7 @@ def api_accuracy_backfill():
 
     폴링은 최근 구간만 본다. 서버를 늦게 켰거나 꺼져 있던 구간은 이걸로 채운다.
     """
+    C = rctx()
     b = request.get_json(silent=True) or {}
     day = "".join(ch for ch in str(b.get("date") or "") if ch.isdigit())[:8] \
         or datetime.now().strftime("%Y%m%d")
@@ -610,18 +688,18 @@ def api_accuracy_backfill():
     except (TypeError, ValueError):
         limit = 0
 
-    if BACKFILL.get("running"):
-        return jsonify({"ok": False, "error": "이미 메우는 중입니다", "state": BACKFILL}), 409
+    if C["backfill"].get("running"):
+        return jsonify({"ok": False, "error": "이미 메우는 중입니다", "state": C["backfill"]}), 409
 
     def work():
-        BACKFILL.update(running=True, day=day, started=datetime.now().isoformat(), result=None)
+        C["backfill"].update(running=True, day=day, started=datetime.now().isoformat(), result=None)
         try:
             from accuracy import backfill_day
-            BACKFILL["result"] = backfill_day(day, CFG, limit)
+            C["backfill"]["result"] = backfill_day(day, C["cfg"], limit)
         except Exception as e:
-            BACKFILL["result"] = {"error": f"{type(e).__name__}: {e}"}
+            C["backfill"]["result"] = {"error": f"{type(e).__name__}: {e}"}
         finally:
-            BACKFILL["running"] = False
+            C["backfill"]["running"] = False
 
     threading.Thread(target=work, daemon=True).start()
     return jsonify({"ok": True, "started": True, "day": day, "limit": limit})
@@ -629,12 +707,14 @@ def api_accuracy_backfill():
 
 @app.route("/api/accuracy/backfill")
 def api_accuracy_backfill_state():
-    return jsonify(BACKFILL)
+    C = rctx()
+    return jsonify(C["backfill"])
 
 
 @app.route("/api/accuracy/verdict", methods=["POST"])
 def api_accuracy_verdict():
     """운영자가 직접 누른 판정 — 자동 판정을 덮어쓴다. {datetime, verdict:정탐|오탐}"""
+    C = rctx()
     from accuracy import set_human
     b = request.get_json(silent=True) or {}
     dt = (b.get("datetime") or "").strip()
@@ -642,15 +722,16 @@ def api_accuracy_verdict():
     if not dt or v not in ("정탐", "오탐"):
         return jsonify({"ok": False, "error": "datetime 과 verdict(정탐|오탐) 필요"}), 400
     day = "".join(ch for ch in dt if ch.isdigit())[:8]
-    ok = set_human(day, dt, v, CFG)
+    ok = set_human(day, dt, v, C["cfg"])
     return jsonify({"ok": ok})
 
 
 @app.route("/api/data/days")
 def api_data_days():
     """누적 저장된 날짜 CSV 목록 (20260727_TOTAL.CSV ...)."""
+    C = rctx()
     from store_csv import data_dir, list_days
-    return jsonify({"dir": data_dir(CFG), "days": list_days(CFG)})
+    return jsonify({"dir": data_dir(C["cfg"]), "days": list_days(C["cfg"])})
 
 
 @app.route("/api/data/<day>.csv")
@@ -660,17 +741,18 @@ def api_data_csv(day):
     /api/data/20260729.csv      → 20260729_TOTAL.CSV (데이터)
     /api/data/20260729_LLM.csv  → 20260729_LLM.CSV   (1분 LLM 판단·판정)
     """
+    C = rctx()
     from store_csv import day_path, llm_path
     d = "".join(ch for ch in day if ch.isdigit())[:8]
     want_llm = "LLM" in day.upper()
-    p = llm_path(d, CFG) if want_llm else day_path(d, CFG)
+    p = llm_path(d, C["cfg"]) if want_llm else day_path(d, C["cfg"])
     if not os.path.isfile(p):
         return jsonify({"error": f"{os.path.basename(p)} 없음"}), 404
     return send_from_directory(os.path.dirname(p), os.path.basename(p),
                                as_attachment=True)
 
 
-def _recur_1h(ref: datetime) -> dict:
+def _recur_1h(ref: datetime, C: dict) -> dict:
     """재발률 — '50점(임계) 이상이 가라앉았다가 다시 올라왔나' 를 분단위 점수로 센다.
 
     최근 60분 점수를 보고 임계 이상 구간(런)을 끊는다. 임계 미만으로 내려간 뒤
@@ -681,11 +763,11 @@ def _recur_1h(ref: datetime) -> dict:
     없으면 rate 는 None (0% 로 굳어 보이지 않게).
     """
     from sentinel import _row_dt, _score
-    floor = alarm_floor(CFG)
-    rows = STATE.get("last_rows") or []
+    floor = alarm_floor(C["cfg"])
+    rows = C["state"].get("last_rows") or []
     try:                                      # 폴링 구간이 60분보다 짧으면 저장분으로 보충
         from store_csv import read_day
-        saved = read_day(ref.strftime("%Y%m%d"), CFG)
+        saved = read_day(ref.strftime("%Y%m%d"), C["cfg"])
         if saved:
             seen_dt = {(r.get("datetime") or "") for r in rows}
             rows = list(rows) + [r for r in saved
@@ -723,6 +805,7 @@ ANALYSIS: dict = {"running": False, "progress": {}, "last_id": None,
 @app.route("/api/analysis/run", methods=["POST"])
 def api_analysis_run():
     """4-LLM 병렬 분석 시작 — 백그라운드. body: {day, start?, end?} (HH:MM)."""
+    C = rctx()
     if ANALYSIS["running"]:
         return jsonify({"error": "이미 분석이 돌고 있습니다 — 끝나면 다시 시도"}), 409
     body = request.get_json(silent=True) or {}
@@ -736,18 +819,19 @@ def api_analysis_run():
     # 이번 실행에만 적용하고 config.json 은 건드리지 않는다.
     from analysis import STAGES
     picked = body.get("models") or {}
-    cfg = CFG
+    cfg = C["cfg"]
     over = {sid: str(picked.get(sid) or "").strip()
             for sid in STAGES if str(picked.get(sid) or "").strip()}
     if over:
         import copy
-        cfg = copy.deepcopy(CFG)
+        cfg = copy.deepcopy(C["cfg"])
         a_cfg = cfg.setdefault("llm", {}).setdefault("analysis", {})
         roles = a_cfg.setdefault("roles", {})
         for sid, mdl in over.items():
             roles.setdefault(sid, {})["model"] = mdl
 
     ANALYSIS.update(running=True, progress={"stage": "start", "done": False},
+                    sys=C["sys"],
                     day=day, span=f"{start or '00:00'}~{end or '24:00'}",
                     models=over, cancel=threading.Event())
 
@@ -802,16 +886,17 @@ def api_analysis_models():
     모델 이름이 바뀌면 400/403 으로 단계가 통째로 죽는다. 화면에서 바로
     확인할 수 있어야 config 를 고칠 수 있다.
     """
+    C = rctx()
     import urllib.error
     import urllib.request
-    lc = CFG.get("llm", {}) or {}
+    lc = C["cfg"].get("llm", {}) or {}
     base = str(lc.get("url", "")).split("/chat/completions")[0]
     if not base:
         return jsonify({"error": "llm.url 없음"}), 400
     headers = {}
     try:
         from llm_client import _api_key
-        key = _api_key(CFG)
+        key = _api_key(C["cfg"])
         if key:
             headers["Authorization"] = f"Bearer {key}"
     except Exception:
@@ -835,9 +920,10 @@ def api_analysis_models():
 
 @app.route("/api/analysis/list")
 def api_analysis_list():
+    C = rctx()
     try:
         from analysis import list_analyses
-        return jsonify({"items": list_analyses(CFG)})
+        return jsonify({"items": list_analyses(C["cfg"])})
     except Exception as e:
         return jsonify({"items": [], "error": f"{type(e).__name__}: {e}"})
 
@@ -845,20 +931,22 @@ def api_analysis_list():
 @app.route("/api/analysis/delete", methods=["POST"])
 def api_analysis_delete():
     """분석 기록 삭제 — body: {ids: [...]} (여러 건 한 번에)."""
+    C = rctx()
     ids = (request.get_json(silent=True) or {}).get("ids") or []
     if not isinstance(ids, list) or not ids:
         return jsonify({"error": "ids 필요"}), 400
     try:
         from analysis import delete_analyses
-        return jsonify(delete_analyses(ids, CFG))
+        return jsonify(delete_analyses(ids, C["cfg"]))
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/analysis/<aid>")
 def api_analysis_get(aid):
+    C = rctx()
     from analysis import get_analysis
-    r = get_analysis(aid, CFG)
+    r = get_analysis(aid, C["cfg"])
     if not r:
         return jsonify({"error": "없는 분석"}), 404
     return jsonify(r)
@@ -868,13 +956,14 @@ def api_analysis_get(aid):
 def api_forecast():
     """선행 감지 — 지금 추세로 본 임계 돌파 예보.
 
-    수집 루프가 매 회 계산해 STATE 에 넣어 둔 것을 그대로 준다(요청마다 재계산
+    수집 루프가 매 회 계산해 C["state"] 에 넣어 둔 것을 그대로 준다(요청마다 재계산
     안 함). 아직 한 번도 안 돌았으면 그 자리에서 한 번 계산한다.
     """
-    fc = STATE.get("forecast")
+    C = rctx()
+    fc = C["state"].get("forecast")
     if fc is None:
-        _update_forecast()
-        fc = STATE.get("forecast")
+        _update_forecast(C)
+        fc = C["state"].get("forecast")
     return jsonify(fc or {"ok": False, "warn": False, "reason": "아직 수집 전"})
 
 
@@ -885,13 +974,14 @@ def api_forecast_score():
     저장된 CSV 를 1분씩 되감아 그때 예보를 다시 돌린다(판정 규칙은 실시간과
     같은 forecast._decide 하나를 공유). 적중/오보/놓침을 세고 실제 선행분을 낸다.
     """
+    C = rctx()
     from forecast import score, score_days
     day = (request.args.get("day") or "").strip()
     try:
         if day:
-            return jsonify(score(day, CFG))
+            return jsonify(score(day, C["cfg"]))
         limit = max(1, min(30, int(request.args.get("limit", 14) or 14)))
-        return jsonify(score_days(None, CFG, None, limit))
+        return jsonify(score_days(None, C["cfg"], None, limit))
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
@@ -903,21 +993,22 @@ def api_forecast_compare():
     바꿨는데 좋아졌는지 모르면 안 바꾼 것만 못하다. 자동으로 갈아타지 않고
     숫자만 보여준다 — 켜고 끄는 건 config.forecast.multi.enabled.
     """
+    C = rctx()
     import time as _t
     limit = max(1, min(30, int(request.args.get("limit", 14) or 14)))
     key = f"cmp|{limit}"
     now = _t.time()
-    if (CMP_CACHE["data"] and CMP_CACHE["key"] == key
-            and now - CMP_CACHE["at"] < 60):
-        return jsonify({**CMP_CACHE["data"], "cached": True})
+    if (C["cmp"]["data"] and C["cmp"]["key"] == key
+            and now - C["cmp"]["at"] < 60):
+        return jsonify({**C["cmp"]["data"], "cached": True})
     try:
         from forecast import compare
         t0 = _t.time()
-        data = compare(None, CFG, limit)
+        data = compare(None, C["cfg"], limit)
         data["took_s"] = round(_t.time() - t0, 1)
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-    CMP_CACHE.update(at=now, data=data, key=key)
+    C["cmp"].update(at=now, data=data, key=key)
     return jsonify({**data, "cached": False})
 
 
@@ -927,21 +1018,22 @@ def api_forecast_tune():
 
     격자를 다 돌아야 해서 몇 초 걸린다. 60초 캐시.
     """
+    C = rctx()
     import time as _t
     limit = max(1, min(30, int(request.args.get("limit", 7) or 7)))
     key = f"tune|{limit}"
     now = _t.time()
-    if (TUNE_CACHE["data"] and TUNE_CACHE["key"] == key
-            and now - TUNE_CACHE["at"] < 60):
-        return jsonify({**TUNE_CACHE["data"], "cached": True})
+    if (C["tune"]["data"] and C["tune"]["key"] == key
+            and now - C["tune"]["at"] < 60):
+        return jsonify({**C["tune"]["data"], "cached": True})
     try:
         from forecast import tune
         t0 = _t.time()
-        data = tune(None, CFG, limit=limit)
+        data = tune(None, C["cfg"], limit=limit)
         data["took_s"] = round(_t.time() - t0, 1)
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-    TUNE_CACHE.update(at=now, data=data, key=key)
+    C["tune"].update(at=now, data=data, key=key)
     return jsonify({**data, "cached": False})
 
 
@@ -951,27 +1043,29 @@ def api_forecast_leading():
 
     저장된 날짜 CSV 를 훑으므로 60초 캐시. days= 로 날짜를 직접 줄 수 있다.
     """
+    C = rctx()
     import time as _t
     days = [d for d in (request.args.get("days", "") or "").split(",") if d.strip()]
     look = max(10, min(int(request.args.get("lookback", 60) or 60), 240))
     key = f"{','.join(days)}|{look}"
     now = _t.time()
-    if (LEADING_CACHE["data"] and LEADING_CACHE["key"] == key
-            and now - LEADING_CACHE["at"] < 60):
-        return jsonify({**LEADING_CACHE["data"], "cached": True})
+    if (C["leading"]["data"] and C["leading"]["key"] == key
+            and now - C["leading"]["at"] < 60):
+        return jsonify({**C["leading"]["data"], "cached": True})
     try:
         from forecast import leading
-        data = leading(days or None, CFG, lookback_min=look)
+        data = leading(days or None, C["cfg"], lookback_min=look)
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-    LEADING_CACHE.update(at=now, data=data, key=key)
+    C["leading"].update(at=now, data=data, key=key)
     return jsonify({**data, "cached": False})
 
 
 @app.route("/api/kpi")
 def api_kpi():
     """상단 지표 — 실제 계산 가능한 값만. 근거 없는 수치는 null 로 둔다."""
-    act = STORE.active()
+    C = rctx()
+    act = C["store"].active()
 
     def _dt(s):
         try:
@@ -982,7 +1076,7 @@ def api_kpi():
     # ★기준 시각 = '데이터의 최신 시각'. 벽시계로 재면 로그프레소가 몇 분 밀리거나
     #   과거 날짜를 재생할 때 모든 케이스가 '1시간 밖' 이 돼 재발률이 늘 0% 로 굳는다.
     seen = [d for d in (_dt(c.get("last_seen") or c.get("opened_at"))
-                        for c in STORE.cases) if d]
+                        for c in C["store"].cases) if d]
     ref = max(seen) if seen else datetime.now()
 
     def age_min(c, field="opened_at"):
@@ -992,12 +1086,12 @@ def api_kpi():
     unack = [c for c in act if not c.get("acked_at")]
     new30 = [c for c in act if age_min(c) <= 30]
 
-    rc = _recur_1h(ref)
+    rc = _recur_1h(ref, C)
 
     # LLM 판단 일치 — 1분 추론의 사후검증 결과 (★정탐률이 아니다)
     try:
         from accuracy import summary as acc_summary
-        acc = acc_summary(None, CFG)
+        acc = acc_summary(None, C["cfg"])
     except Exception as e:
         acc = {"error": f"{type(e).__name__}: {e}"}
 
@@ -1006,7 +1100,7 @@ def api_kpi():
         "active_new_30m": len(new30),
         "unack": len(unack),
         "unack_over_5m": len([c for c in unack if age_min(c) >= 5]),
-        "detect_latency_ms": STATE.get("latency_ms"),
+        "detect_latency_ms": C["state"].get("latency_ms"),
         "recur_rate_1h": rc["rate"],
         "recur_base": rc["runs"],
         "recur_events": rc["recur"],
@@ -1016,30 +1110,33 @@ def api_kpi():
         "llm_match": acc,
         "by_level": {lv: len([c for c in act if c["level"] == lv])
                      for lv in ("경계", "위험", "초위험")},
-        "alarm_floor": alarm_floor(CFG),
+        "alarm_floor": alarm_floor(C["cfg"]),
     })
 
 
 # ────────────────────────────── 케이스 ──────────────────────────────
 @app.route("/api/cases")
 def api_cases():
+    C = rctx()
     if request.args.get("all") == "1":
-        return jsonify({"cases": STORE.cases})
-    return jsonify({"cases": STORE.active()})
+        return jsonify({"cases": C["store"].cases})
+    return jsonify({"cases": C["store"].active()})
 
 
 @app.route("/api/cases/<cid>")
 def api_case(cid):
-    c = STORE.by_id(cid)
+    C = rctx()
+    c = C["store"].by_id(cid)
     return (jsonify(c), 200) if c else (jsonify({"error": "없는 케이스"}), 404)
 
 
 @app.route("/api/cases/<cid>/<action>", methods=["POST"])
 def api_case_action(cid, action):
     """확인 처리 / 이상 없음(재확인 예약만 갱신) / 종결."""
+    C = rctx()
     body = request.get_json(silent=True) or {}
     who, note = body.get("who", "운영자"), body.get("note", "")
-    fn = {"ack": STORE.ack, "normal": STORE.mark_normal, "close": STORE.close}.get(action)
+    fn = {"ack": C["store"].ack, "normal": C["store"].mark_normal, "close": C["store"].close}.get(action)
     if not fn:
         return jsonify({"error": "ack | normal | close 만 가능"}), 400
     c = fn(cid, who, note)
@@ -1053,24 +1150,26 @@ def api_case_action(cid, action):
 @app.route("/api/cases/<cid>/judge", methods=["POST"])
 def api_case_judge(cid):
     """LLM 판단 (스킬 4종 기반)."""
-    c = STORE.by_id(cid)
+    C = rctx()
+    c = C["store"].by_id(cid)
     if not c:
         return jsonify({"error": "없는 케이스"}), 404
     try:
         from llm_client import judge_case
-        res, err = judge_case(c, CFG)
+        res, err = judge_case(c, C["cfg"])
     except Exception as e:
         res, err = None, f"{type(e).__name__}: {e}"
     if err:
         return jsonify({"error": err}), 502
     c["llm"] = {**res, "at": datetime.now().isoformat()}
-    STORE.save()
+    C["store"].save()
     return jsonify(c["llm"])
 
 
 @app.route("/api/scan", methods=["POST"])
 def api_scan():
-    return jsonify(scan_once(STORE, cfg=CFG))
+    C = rctx()
+    return jsonify(scan_once(C["store"], cfg=C["cfg"]))
 
 
 # ────────────────────────────── 리포트 ──────────────────────────────
@@ -1088,6 +1187,7 @@ def _parse_dt(s: str | None, default: datetime) -> datetime:
 @app.route("/api/report", methods=["POST"])
 def api_report():
     """구간 지정 → 평가 실행."""
+    C = rctx()
     """구간 리포트 — 기본은 로그프레소를 날짜로 직접 조회(관제와 분리).
 
     {"date": "2026-07-27"}                      → 그 날 하루 전체
@@ -1103,14 +1203,14 @@ def api_report():
         # ★ 날짜 지정 = 하루 사건 리포트 (데모스 개인 에이전트 '사건발생 보고서' 와 같은 5섹션)
         if b.get("kind", "day") == "day":
             from report import build_day_report
-            return jsonify(build_day_report(d.strftime("%Y%m%d"), CFG,
+            return jsonify(build_day_report(d.strftime("%Y%m%d"), C["cfg"],
                                             use_llm=b.get("use_llm", True)))
         start, end = d, d.replace(hour=23, minute=59, second=59)
     else:
         end = _parse_dt(b.get("end"), datetime.now())
         start = _parse_dt(b.get("start"), end - timedelta(minutes=30))
 
-    rep = build_report(STORE, start, end, CFG,
+    rep = build_report(C["store"], start, end, C["cfg"],
                        use_llm=b.get("use_llm", True),
                        source=b.get("source", "query"))
     return jsonify(rep)
@@ -1123,14 +1223,15 @@ def api_report_day_html():
     /api/report/day.html?date=20260728  (없으면 오늘)
     체크박스 표·시간 시분 분리·O/X 판정·수동 기입·저장 툴바가 들어간다.
     """
+    C = rctx()
     from report import build_day_report, day_report_html, load_day_report
     d = "".join(ch for ch in (request.args.get("date") or "") if ch.isdigit())[:8] \
         or datetime.now().strftime("%Y%m%d")
     use_llm = request.args.get("llm", "1") != "0"
     # 이미 생성해 둔 보고서가 있으면 그대로 연다 (다시 뽑으면 LLM 문장이 달라지므로)
-    rep = (None if request.args.get("fresh") == "1" else load_day_report(d, CFG)) \
-        or build_day_report(d, CFG, use_llm=use_llm)
-    html = day_report_html(rep, CFG)
+    rep = (None if request.args.get("fresh") == "1" else load_day_report(d, C["cfg"])) \
+        or build_day_report(d, C["cfg"], use_llm=use_llm)
+    html = day_report_html(rep, C["cfg"])
     resp = app.response_class(html, mimetype="text/html; charset=utf-8")
     if request.args.get("download") == "1":
         # ★파일명에 한글을 쓰려면 RFC 5987 인코딩 — HTTP 헤더는 latin-1 만 담긴다
@@ -1144,7 +1245,8 @@ def api_report_day_html():
 
 @app.route("/api/reports")
 def api_reports():
-    d = os.path.join(BASE_DIR, CFG.get("storage", {}).get("reports", "data/reports"))
+    C = rctx()
+    d = os.path.join(BASE_DIR, C["cfg"].get("storage", {}).get("reports", "data/reports"))
     if not os.path.isdir(d):
         return jsonify({"reports": []})
     out = []
@@ -1165,7 +1267,8 @@ def api_reports():
 
 @app.route("/api/reports/<rid>")
 def api_report_get(rid):
-    p = os.path.join(BASE_DIR, CFG.get("storage", {}).get("reports", "data/reports"), rid + ".json")
+    C = rctx()
+    p = os.path.join(BASE_DIR, C["cfg"].get("storage", {}).get("reports", "data/reports"), rid + ".json")
     if not os.path.isfile(p):
         return jsonify({"error": "없는 리포트"}), 404
     with open(p, "r", encoding="utf-8") as f:
@@ -1175,16 +1278,18 @@ def api_report_get(rid):
 # ────────────────────────────── 피드백 ──────────────────────────────
 @app.route("/api/feedback", methods=["POST"])
 def api_feedback():
+    C = rctx()
     b = request.get_json(silent=True) or {}
     res = save_feedback(b.get("report_id", ""), b.get("verdict", ""),
                         b.get("missed", ""), b.get("comment", ""),
-                        b.get("who", "운영자"), CFG)
+                        b.get("who", "운영자"), C["cfg"])
     return (jsonify(res), 400) if res.get("error") else jsonify(res)
 
 
 @app.route("/api/feedback/status")
 def api_feedback_status():
-    return jsonify(feedback_status(CFG))
+    C = rctx()
+    return jsonify(feedback_status(C["cfg"]))
 
 
 # ────────────────────────────── 로그프레소 조회 ──────────────────────────────

@@ -59,6 +59,93 @@ def load_config(reload: bool = False) -> dict:
     return _config_cache
 
 
+# ────────────────────────── 시스템(FAB) 별 설정 뷰 ──────────────────────────
+def fab_codes(cfg: dict | None = None) -> list[str]:
+    """FAB 시스템 코드 목록 — config.source.jupyter.fabs 의 키 순서 그대로."""
+    cfg = cfg or load_config()
+    fabs = ((cfg.get("source") or {}).get("jupyter") or {}).get("fabs") or {}
+    return [str(k).upper() for k in fabs]
+
+
+def _fab_strip(sys: str) -> list[dict]:
+    """FAB 화면의 추이 그래프 기본 지표 — 그 FAB 파일에 실제로 있는 컬럼만.
+
+    feed 가 '값이 있는 지표만' 걸러 주므로 여기 목록은 후보일 뿐이다.
+    unified_risk_score 는 받는 순간 area_score 로 정규화돼 있다(아래 sys_cfg).
+    """
+    s = sys
+    out = [
+        {"key": "unified_risk_score", "raw": "area_score", "label": "스코어",
+         "unit": "점", "color": "#3DDBE8", "max": 100, "bands": True},
+        {"key": f"{s}_ra", "raw": f"{s}_ra", "label": f"{s} 반송시간",
+         "unit": "분", "color": "#FF6B5E"},
+        {"key": f"{s}_rb_diff30", "raw": f"{s}_rb_diff30", "label": "Queue 증감(30분)",
+         "unit": "건", "color": "#FFA53D"},
+        {"key": f"sla_{s}", "raw": f"sla_{s}", "label": "4분초과율",
+         "unit": "%", "color": "#F2C94C", "max": 100},
+        {"key": f"sorter_{s}", "raw": f"sorter_{s}", "label": "소터 대기",
+         "unit": "건", "color": "#B48DF2"},
+    ]
+    if s == "M16HUB":               # 허브룸만 있는 지표 (ALL 기본 화면과 동일)
+        out += [
+            {"key": "M16HUB_rd_fab", "raw": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
+             "label": "FAB저장율", "unit": "%", "color": "#FFA53D", "max": 100},
+            {"key": "M16HUB_stb_util", "raw": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
+             "label": "STB저장율", "unit": "%", "color": "#F2C94C", "max": 100},
+            {"key": "M16HUB_rev_count", "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
+             "label": "리프터막힘", "unit": "회", "color": "#FF6FB5"},
+        ]
+    return out
+
+
+def sys_cfg(cfg: dict, sys: str | None) -> dict:
+    """시스템(FAB) 별 설정 뷰 — 저장 위치와 주피터 파일 경로만 갈아끼운 사본.
+
+    핵심 규칙 두 가지:
+      ① **얕은 사본**이다. query·llm·grade 같은 공유 설정은 같은 객체를
+        그대로 가리켜서, 대시보드에서 수집 주기를 바꾸면 모든 FAB 에 즉시
+        반영된다 (깊은 복사를 하면 FAB 쪽만 옛 설정에 얼어붙는다).
+      ② 저장은 전부 data/{sys}/ 아래로 — 날짜 CSV·케이스·리포트·분석이
+        ALL 과 섞이면 어느 화면의 데이터인지 알 수 없게 된다.
+
+    파일 경로는 source.jupyter.fab_path 의 {fab} 에 fabs[sys](접미사)를 넣는다.
+    화면 코드와 파일명이 다르면 config 의 fabs 값만 바꾸면 된다.
+    """
+    s = str(sys or "ALL").strip().upper()
+    if s in ("", "ALL"):
+        return cfg
+    c = dict(cfg)
+    c["_sys"] = s
+
+    st = dict(cfg.get("storage") or {})
+    base = st.get("daily_csv_dir", "data")
+    sub = os.path.join(base, s)
+    st["daily_csv_dir"] = sub                      # 날짜 CSV·LLM 판단·raw
+    st["dir"] = sub                                # 분석(analysis) 저장
+    st["cases"] = os.path.join(sub, "cases.json")  # 케이스
+    st["reports"] = os.path.join(sub, "reports")   # 하루 리포트
+    st["raw_snapshots"] = os.path.join(sub, "snapshots")
+    c["storage"] = st
+
+    src = dict(cfg.get("source") or {})
+    j = dict(src.get("jupyter") or {})
+    suffix = (j.get("fabs") or {}).get(s) or s
+    if j.get("fab_path"):
+        j["path"] = str(j["fab_path"]).replace("{fab}", str(suffix))
+    src["jupyter"] = j
+    c["source"] = src
+
+    # 추이 그래프 지표 — FAB 파일의 실제 컬럼으로 갈아끼운다. ui 의 기존
+    # 설정(metric_groups/strip_metrics)은 ALL(M16HUB 중심) 기준이라 FAB
+    # 화면에는 없는 컬럼들이다. 시스템별로 직접 지정하고 싶으면
+    # ui["strip_metrics_M14"] 처럼 코드가 붙은 키를 만들면 그걸 쓴다.
+    ui = dict(cfg.get("ui") or {})
+    ui.pop("metric_groups", None)
+    ui["strip_metrics"] = ui.get(f"strip_metrics_{s}") or _fab_strip(s)
+    c["ui"] = ui
+    return c
+
+
 def load_api_key(cfg: dict | None = None) -> str:
     """로그프레소 API 키.
 
