@@ -659,6 +659,12 @@ function renderOpen(){
    ★오프닝을 닫으면 반드시 멈춘다. 관제 화면은 며칠씩 떠 있어서, 안 멈추면
      보이지도 않는 캔버스가 계속 돌며 CPU 를 먹는다. */
 let OP_RAF = null, OP_RO = null;
+/* 흐르는 속도 — 원본 디자인은 .18 이었는데 거의 멈춰 보였다.
+   ★빠르게/느리게는 이 두 숫자만 만지면 된다.
+   60fps 기준 px/프레임. 아래에서 경과 시간으로 보정하므로 화면이 144Hz 든
+   30fps 든 **눈에 보이는 속도는 같다** (원본은 프레임 수에 그대로 붙어
+   있어서 주사율 높은 모니터에선 2배 넘게 빨랐다). */
+const OP_SPEED = 1.1, OP_SPIN = 0.016;
 
 function opBgStart(){
   const cv = $('#opcv');
@@ -676,19 +682,25 @@ function opBgStart(){
     const kinds = ['chip','chip','die','die'];
     parts = Array.from({length: Math.round(w * h / 42000)}, () => ({
       x: Math.random()*w, y: Math.random()*h,
-      vx: (Math.random()-.5)*.18, vy: (Math.random()-.5)*.18,
+      vx: (Math.random()-.5)*OP_SPEED, vy: (Math.random()-.5)*OP_SPEED,
       s: 9 + Math.random()*13, kind: kinds[(Math.random()*kinds.length)|0],
-      rot: Math.random()*Math.PI, vr: (Math.random()-.5)*.004,
+      rot: Math.random()*Math.PI, vr: (Math.random()-.5)*OP_SPIN,
       alt: Math.random() < .3,                   // 3할은 초록, 나머지는 청록
     }));
   };
   resize();
   try{ OP_RO = new ResizeObserver(resize); OP_RO.observe(cv); }catch(e){}
 
-  const tick = () => {
+  let prev = 0;
+  const tick = (now) => {
+    /* 지난 프레임과의 간격으로 보정한다 (60fps = 1). 탭을 오래 가려 두면
+       간격이 몇 초씩 벌어지므로 3프레임어치로 잘라 순간이동을 막는다. */
+    if(now === undefined) now = performance.now();
+    const dt = prev ? Math.min((now - prev) / 16.667, 3) : 1;
+    prev = now;
     ctx.clearRect(0, 0, w, h);
     for(const p of parts){
-      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      p.x += p.vx*dt; p.y += p.vy*dt; p.rot += p.vr*dt;
       if(p.x < -20) p.x = w+20;  if(p.x > w+20) p.x = -20;
       if(p.y < -20) p.y = h+20;  if(p.y > h+20) p.y = -20;
     }
