@@ -15,36 +15,104 @@
   body{margin:0;background:var(--bg);color:var(--tx);
        font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif}
 
-  /* ── 오프닝: 어느 시스템을 볼지 고른다 ──
+  /* ══ 오프닝: 관제할 시스템 선택 ══
      지금 실제로 도는 건 ALL(전체) 하나다. 나머지 FAB 은 자리만 잡아 뒀고,
-     수집이 붙는 날 SYSTEMS 의 ready 를 켜면 그대로 들어간다. */
-  .open{position:fixed;inset:0;z-index:100;overflow:auto;padding:28px;
-        display:grid;place-items:center;
-        background:radial-gradient(1100px 640px at 50% -12%,#102130 0%,var(--bg) 62%)}
+     수집이 붙는 날 SYSTEMS 의 ready 를 켜면 그대로 들어간다.
+     ALL 은 통합 관제라 크게(hero), FAB 5개는 한 줄로 — 지금 무엇이 살아
+     있는지 화면만 봐도 알게 한다. */
+  .open{position:fixed;inset:0;z-index:100;overflow:auto;display:flex;background:var(--bg)}
   .open.hidden{display:none}
-  .open .box{width:100%;max-width:880px}
-  .open .oh{display:flex;align-items:center;gap:12px}
-  .open .oh .mk{width:34px;height:34px;border-radius:9px;border:2px solid var(--cy);
-                display:grid;place-items:center;flex:0 0 auto}
-  .open .oh .mk i{width:10px;height:10px;border-radius:50%;background:var(--cy);display:block}
-  .open h1{margin:0;font-size:18px;letter-spacing:2px;font-weight:700}
-  .open .sub{font-size:11.5px;color:var(--tx3);letter-spacing:.3px}
-  .open .ask{margin:24px 0 11px;font-size:12.5px;color:var(--tx2)}
-  .sysgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
-  @media(max-width:720px){.sysgrid{grid-template-columns:repeat(2,1fr)}}
-  .sys{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;
-       padding:15px 16px 13px;color:var(--tx);font:inherit;cursor:pointer;
-       transition:border-color .12s,background .12s,transform .12s}
-  .sys:hover{border-color:var(--line2);background:var(--panel2);transform:translateY(-1px)}
-  .sys .cd{font-size:19px;font-weight:700;letter-spacing:.6px;line-height:1.2}
-  .sys .nm{font-size:11.5px;color:var(--tx2);margin-top:3px}
-  .sys .st{margin-top:12px;font-size:10.5px;letter-spacing:.3px;color:var(--ok)}
-  .sys.on{border-color:#1d4b57;background:#0e2630}
-  .sys.on .cd{color:var(--cy)}
-  .sys.wip{cursor:not-allowed;opacity:.45}
-  .sys.wip:hover{transform:none;border-color:var(--line);background:var(--panel)}
-  .sys.wip .st{color:var(--tx3)}
-  .open .note{margin-top:15px;font-size:11.5px;color:var(--tx3);line-height:1.7}
+  /* 배경 — 위쪽 청록 글로우 + 아주 옅은 격자(관제실 느낌). 내용은 안 가린다 */
+  .open::before{content:'';position:fixed;inset:0;pointer-events:none;background:
+    radial-gradient(940px 520px at 50% -10%,rgba(61,219,232,.15),transparent 68%),
+    radial-gradient(680px 420px at 92% 112%,rgba(61,219,232,.055),transparent 70%)}
+  .open::after{content:'';position:fixed;inset:0;pointer-events:none;opacity:.5;background:
+    repeating-linear-gradient(0deg,transparent 0 43px,rgba(150,180,210,.04) 43px 44px),
+    repeating-linear-gradient(90deg,transparent 0 43px,rgba(150,180,210,.04) 43px 44px);
+    -webkit-mask-image:radial-gradient(820px 560px at 50% 42%,#000 26%,transparent 76%);
+    mask-image:radial-gradient(820px 560px at 50% 42%,#000 26%,transparent 76%)}
+  .open .box{position:relative;z-index:1;margin:auto;width:100%;max-width:1000px;
+             padding:44px 26px 40px}
+
+  /* 상단 로고 줄 */
+  .ohead{display:flex;align-items:center;gap:14px;padding-bottom:20px;
+         border-bottom:1px solid var(--line)}
+  .ohead .mk{position:relative;width:46px;height:46px;border-radius:13px;flex:0 0 auto;
+             border:2px solid var(--cy);display:grid;place-items:center;
+             box-shadow:0 0 26px -6px rgba(61,219,232,.5)}
+  .ohead .mk i{width:12px;height:12px;border-radius:50%;background:var(--cy);display:block;
+               box-shadow:0 0 12px rgba(61,219,232,.9)}
+  .ohead .mk::after{content:'';position:absolute;inset:-2px;border-radius:13px;
+                    border:2px solid var(--cy);animation:ring 2.6s ease-out infinite}
+  @keyframes ring{0%{opacity:.55;transform:scale(1)}70%{opacity:0;transform:scale(1.35)}
+                  100%{opacity:0;transform:scale(1.35)}}
+  .open h1{margin:0;font-size:23px;font-weight:750;letter-spacing:4.5px;line-height:1.15}
+  .open .sub{margin-top:3px;font-size:11.5px;color:var(--tx3);letter-spacing:.6px}
+  .oclk{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums}
+  .oclk b{display:block;font-size:26px;font-weight:600;letter-spacing:1px;line-height:1.1}
+  .oclk span{font-size:11px;color:var(--tx3)}
+
+  /* 선택 안내 줄 */
+  .oask{display:flex;align-items:center;gap:13px;margin:26px 0 14px}
+  .oask b{font-size:12px;font-weight:650;color:var(--tx2);letter-spacing:2.4px;
+          white-space:nowrap}
+  .oask hr{flex:1;height:1px;border:0;margin:0;
+           background:linear-gradient(90deg,var(--line2),transparent)}
+
+  /* 타일 */
+  .sysgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  @media(max-width:860px){.sysgrid{grid-template-columns:repeat(2,1fr)}}
+  .sys{position:relative;overflow:hidden;text-align:left;color:var(--tx);font:inherit;
+       cursor:pointer;border:1px solid var(--line);border-radius:14px;
+       background:linear-gradient(180deg,var(--panel2),var(--panel));
+       padding:16px 15px 14px;
+       transition:transform .15s,border-color .15s,box-shadow .15s}
+  .sys::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;opacity:0;
+               background:linear-gradient(90deg,var(--cy),rgba(61,219,232,0));
+               transition:opacity .15s}
+  .sys:hover{transform:translateY(-3px);border-color:#2c5f6b;
+             box-shadow:0 16px 34px -16px #000,0 0 0 1px rgba(61,219,232,.14)}
+  .sys:hover::before{opacity:1}
+  .sys:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+  .sys .cd{font-size:17px;font-weight:750;letter-spacing:.9px;line-height:1.2}
+  .sys .nm{margin-top:4px;font-size:11px;color:var(--tx3);letter-spacing:.2px}
+  .sys .pill{margin-top:13px}
+
+  /* ALL — 통합 관제. 한 줄 전체를 쓴다 */
+  .sys.hero{grid-column:1/-1;display:flex;align-items:center;gap:20px;
+            padding:24px 26px;border-color:#245a68;
+            background:linear-gradient(115deg,#0d2a35 0%,#111c28 52%,var(--panel) 100%)}
+  .sys.hero::before{opacity:.9}
+  .sys.hero .cd{font-size:38px;letter-spacing:3px;color:var(--cy);line-height:1;
+                text-shadow:0 0 26px rgba(61,219,232,.35)}
+  .sys.hero .nm{margin-top:7px;font-size:13px;color:var(--tx2)}
+  .sys.hero .cov{margin-top:5px;font-size:10.5px;color:var(--tx3);letter-spacing:1.1px}
+  .sys.hero .pill{margin:0;align-self:center}
+  .sys.hero .go{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12.5px;
+                font-weight:650;color:var(--cy);letter-spacing:.6px;white-space:nowrap}
+  .sys.hero .go em{font-style:normal;font-size:19px;line-height:1;
+                   transition:transform .15s}
+  .sys.hero:hover .go em{transform:translateX(5px)}
+
+  /* 준비 중 — 눌러도 안 들어간다. 점선으로 '아직 자리만' 임을 보여준다 */
+  .sys.wip{cursor:not-allowed;border-style:dashed;background:rgba(13,17,25,.55)}
+  .sys.wip .cd{color:var(--tx3)}
+  .sys.wip:hover{transform:none;border-color:var(--line);box-shadow:none}
+  .sys.wip:hover::before{opacity:0}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid;border-radius:999px;
+        padding:3.5px 10px;font-size:10.5px;font-weight:650;letter-spacing:.4px}
+  .pill i{width:6px;height:6px;border-radius:50%;background:currentColor;display:block}
+  .pill.live{color:var(--ok);border-color:rgba(47,214,138,.4);background:rgba(47,214,138,.09)}
+  .pill.live i{animation:blip 1.9s ease-in-out infinite}
+  @keyframes blip{0%,100%{opacity:1}50%{opacity:.2}}
+  .pill.wait{color:var(--tx3);border-color:var(--line2)}
+
+  .open .note{display:flex;flex-wrap:wrap;align-items:center;gap:9px 16px;margin-top:22px;
+              padding-top:16px;border-top:1px solid var(--line);
+              font-size:11.5px;color:var(--tx3)}
+  .open .note kbd{border:1px solid var(--line2);border-radius:5px;padding:1px 6px;
+                  font:inherit;font-size:10.5px;color:var(--tx2);background:var(--panel2)}
 
   /* ── 상단 바 ── */
   .top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
@@ -249,12 +317,15 @@
      지금 뭘 보고 있는 건지 알 수 없다. -->
 <div class="open" id="open">
   <div class="box">
-    <div class="oh">
+    <div class="ohead">
       <span class="mk"><i></i></span>
-      <div><h1>AMHS SENTINEL</h1>
-           <span class="sub">LLM 실시간 이상감지 · 관제</span></div>
+      <div>
+        <h1>AMHS SENTINEL</h1>
+        <div class="sub">LLM 실시간 이상감지 · 관제 시스템</div>
+      </div>
+      <div class="oclk"><b id="oclk">–</b><span id="oclkd">KST</span></div>
     </div>
-    <div class="ask">관제할 시스템을 고르세요.</div>
+    <div class="oask"><b>관제 시스템 선택</b><hr></div>
     <div class="sysgrid" id="sysgrid"></div>
     <div class="note" id="opennote"></div>
   </div>
@@ -562,20 +633,33 @@ const SYSTEMS = [
 ];
 let SYS = null, LIVE_STARTED = false;
 
+const pill = ready => ready ? '<span class="pill live"><i></i>운영 중</span>'
+                           : '<span class="pill wait"><i></i>준비 중</span>';
+
 function renderOpen(){
-  $('#sysgrid').innerHTML = SYSTEMS.map(s => `
-    <button class="sys ${s.ready?'':'wip'} ${SYS===s.code?'on':''}"
-            data-sys="${s.code}" ${s.ready?'':'disabled'}>
+  /* 첫 칸(ALL)은 통합 관제라 한 줄 전체를 쓴다 — 나머지는 그 아래 한 줄 */
+  $('#sysgrid').innerHTML = SYSTEMS.map((s,i) => i === 0 ? `
+    <button class="sys hero ${s.ready?'':'wip'}" data-sys="${s.code}" ${s.ready?'':'disabled'}>
+      <div>
+        <div class="cd">${esc(s.code)}</div>
+        <div class="nm">${esc(s.name)} 관제</div>
+        <div class="cov">${SYSTEMS.slice(1).map(x=>esc(x.code)).join(' · ')}</div>
+      </div>
+      ${pill(s.ready)}
+      <span class="go">관제 시작<em>›</em></span>
+    </button>` : `
+    <button class="sys ${s.ready?'':'wip'}" data-sys="${s.code}" ${s.ready?'':'disabled'}>
       <div class="cd">${esc(s.code)}</div>
       <div class="nm">${esc(s.name)}</div>
-      <div class="st">${s.ready?'● 운영 중':'○ 준비 중'}</div>
+      ${pill(s.ready)}
     </button>`).join('');
   document.querySelectorAll('#sysgrid .sys').forEach(b =>
     b.onclick = () => pickSystem(b.dataset.sys));
-  const wip = SYSTEMS.filter(s=>!s.ready).map(s=>s.code).join(' · ');
+  const wip = SYSTEMS.filter(s => !s.ready).length;
   $('#opennote').innerHTML =
-    `<b style="color:var(--tx2)">ALL</b> 은 지금 돌고 있는 전체 통합 관제입니다.<br>`
-    + `${esc(wip)} 는 아직 수집이 붙지 않았습니다 — 화면 자리만 잡아 뒀습니다.`;
+    `<span>준비 중 ${wip}개 — 아직 수집이 붙지 않아 자리만 잡아 뒀습니다</span>`
+    + `<span>고르기 전에는 수집이 시작되지 않습니다</span>`
+    + (SYS ? `<span style="margin-left:auto"><kbd>Esc</kbd> 닫기</span>` : '');
 }
 
 /* 고른 순간에야 수집이 시작된다 — 두 번 눌러도 타이머는 하나만 돈다 */
@@ -980,12 +1064,15 @@ function anDeleteSelected(){
 }
 /* ══════════ /분석 탭 ══════════ */
 
-/* 시계 */
-setInterval(()=>{
-  const d=new Date();
-  $('#clk').textContent=d.toLocaleTimeString('ko-KR',{hour12:false});
-  $('#clkd').textContent=d.toLocaleDateString('ko-KR')+' KST';
-},1000);
+/* 시계 — 오프닝(고르기 전)에도 돈다. 관제 화면에서 시각은 항상 보여야 한다 */
+function tickClock(){
+  const d = new Date();
+  const t = d.toLocaleTimeString('ko-KR',{hour12:false});
+  const s = d.toLocaleDateString('ko-KR')+' KST';
+  $('#clk').textContent=t;  $('#clkd').textContent=s;
+  $('#oclk').textContent=t; $('#oclkd').textContent=s;
+}
+tickClock(); setInterval(tickClock,1000);
 
 /* 상태 + KPI */
 async function pollStatus(){
