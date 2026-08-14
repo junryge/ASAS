@@ -275,8 +275,40 @@ def _num(v):
 # ────────────────────────────── 화면 ──────────────────────────────
 @app.route("/")
 def index():
-    # 오프닝/스플래시 없음 — 바로 관제 화면
-    return send_from_directory(app.static_folder, "dashboard.html")
+    """오프닝(시스템 선택) → 관제 화면.
+
+    ★캐시를 끈다. 관제 화면은 한 번 띄우면 며칠씩 그대로 떠 있고, 그 사이
+      dashboard.html 을 새로 올려도 브라우저가 예전 걸 계속 쓴다. 실제로
+      오프닝 화면을 추가했는데 "안 나온다" 였다 — 파일은 바뀌었는데 화면이
+      옛날 것이었다. HTML 한 장(250KB)이라 매번 받아도 부담이 없다.
+    """
+    resp = send_from_directory(app.static_folder, "dashboard.html")
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers.pop("ETag", None)
+    resp.headers.pop("Last-Modified", None)
+    return resp
+
+
+@app.route("/api/version")
+def version():
+    """지금 서버가 **어느 파일**을 내보내고 있는지 — 화면이 옛날 것 같을 때
+    여기부터 본다. 브라우저 캐시 문제인지, 파일을 안 덮어쓴 것인지 갈린다."""
+    p = os.path.join(app.static_folder, "dashboard.html")
+    try:
+        st = os.stat(p)
+        with open(p, encoding="utf-8") as f:
+            body = f.read()
+    except OSError as e:
+        return jsonify({"ok": False, "error": str(e), "path": p})
+    return jsonify({
+        "ok": True,
+        "path": p,
+        "bytes": st.st_size,
+        "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+        "오프닝화면": "const SYSTEMS" in body,      # 있으면 새 파일
+        "AMOS표시등": "ch-amos" in body,            # 있으면 옛날 파일
+    })
 
 
 @app.route("/favicon.ico")
