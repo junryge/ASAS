@@ -48,7 +48,7 @@
 #
 # --score 가 붙이는 컬럼 — unified 와 같은 방식으로 만든다
 #   area_score      min(100, round(score_raw × 100 ÷ 분모))
-#   area_level      50=경계 / 71=위험 / 85=초위험  (unified 와 동일 기준)
+#   area_level      60=경계 / 71=위험 / 85=초위험  (영역등급.json 의 등급기준)
 #   area_saturated  score_raw 가 50 을 넘어 융합에 다 반영되지 못했으면 'Y'
 #   ※ 분모는 영역등급.json 에서 바꾼다. 8/12 기준 70 이 전체 등급 발생률
 #     (1.1%)과 가장 비슷했다. 50 이면 M16HUB 가 25% 로 경계가 넘친다.
@@ -71,6 +71,7 @@ ALL_AREAS = sorted(DEFAULT_AREAS + EXTRA_AREAS, key=len, reverse=True)
 
 SATURATE_AT = 50        # 영역 점수가 잘리는 상한 (융합에 들어가는 최대)
 DEFAULT_DENOM = 70      # 분모 기본값 — 설정 파일이 없을 때
+DEFAULT_BANDS = {'경계': 60, '위험': 71, '초위험': 85}   # 영역 등급 구간
 SUMMARY_THS = [10, 15, 20, 25, 27, 30, 32, 35, 37, 40, 42, 45, 50]
 SUBDIR = 'fab분리'      # 운영 출력 하위 폴더
 WATCH_LAG = 20          # 다른 기입기(LO_LOW_AMOS·MAXCAPA)가 쓴 뒤에 돌도록 늦추는 초
@@ -86,12 +87,13 @@ def load_denoms(path, areas):
     """
     here = os.path.dirname(os.path.abspath(__file__))
     fp = path or os.path.join(here, '영역등급.json')
-    base, adj = DEFAULT_DENOM, {}
+    base, adj, bands = DEFAULT_DENOM, {}, dict(DEFAULT_BANDS)
     if os.path.exists(fp):
         with open(fp, encoding='utf-8') as f:
             cfg = json.load(f)
         base = cfg.get('분모', cfg.get('denom', DEFAULT_DENOM))
         adj = dict(cfg.get('조정') or cfg.get('adjust') or {})
+        bands = dict(cfg.get('등급기준') or cfg.get('bands') or DEFAULT_BANDS)
     else:
         print(f'  ⚠️ 설정 파일 없음: {fp} — 전 영역 분모 {DEFAULT_DENOM} · 조정 100 사용')
 
@@ -102,7 +104,9 @@ def load_denoms(path, areas):
         out[a] = b / (p / 100.0)
         shown.append(f'{a} {b:g}' + (f'×{p:g}%' if p != 100 else ''))
     print('  [점수설정] 분모 ' + ' · '.join(shown))
-    return out
+    print('  [등급기준] ' + ' / '.join(f'{k} {v}점↑' for k, v in
+                                       sorted(bands.items(), key=lambda x: x[1])))
+    return out, bands
 
 
 def area_of(col):
@@ -126,11 +130,16 @@ def fnum(v):
         return 0.0
 
 
-def score_of(raw, denom):
-    """raw → 0~100 점수 · 등급 · 포화여부. unified 와 같은 방식."""
+def score_of(raw, denom, bands=None):
+    """raw → 0~100 점수 · 등급 · 포화여부."""
+    b = bands or DEFAULT_BANDS
     v = fnum(raw)
     s = min(100, round(v * 100 / denom)) if denom > 0 else 0
-    lv = '초위험' if s >= 85 else '위험' if s >= 71 else '경계' if s >= 50 else ''
+    lv = ''
+    for name in ('초위험', '위험', '경계'):      # 높은 등급부터
+        if name in b and s >= b[name]:
+            lv = name
+            break
     return s, lv, ('Y' if v >= SATURATE_AT else '')
 
 
@@ -171,7 +180,7 @@ def print_summary(header, body, areas):
     print('  ' + '─' * 64)
 
 
-def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary):
+def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary, bands=None):
     with open(fp, encoding='utf-8-sig', newline='') as f:
         rows = list(csv.reader(f))
     if not rows:
@@ -230,7 +239,7 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary):
             for r in body:
                 vals = [r[i] for i in idxs]
                 if do_score:
-                    vals += list(score_of(vals[raw_pos], dn))
+                    vals += list(score_of(vals[raw_pos], dn, bands))
                 w.writerow(vals)
         made.append(op)
         extra = f' (+점수3·분모{dn:g})' if do_score else ''
@@ -270,7 +279,7 @@ def run_watch(event='./predict_tobe', out=None, interval=60, lag=WATCH_LAG,
     · 출력은 <event>/fab분리/ (out 을 주면 그쪽)
     """
     areas = areas or list(DEFAULT_AREAS)
-    denoms = load_denoms(None, areas) if score else {}
+    denoms, bands = load_denoms(None, areas) if score else ({}, None)
     out_dir = out or os.path.join(event, subdir)
     seen = {}          # 파일경로 → (mtime, size)
     last_day = None
@@ -303,7 +312,7 @@ def run_watch(event='./predict_tobe', out=None, interval=60, lag=WATCH_LAG,
                     if seen.get(t) == key:
                         continue          # 안 바뀜 — 건너뜀
                     os.makedirs(out_dir, exist_ok=True)
-                    made = split_one(t, out_dir, areas, True, False, denoms, False)
+                    made = split_one(t, out_dir, areas, True, False, denoms, False, bands)
                     if made:
                         seen[t] = key
                         print(f'  [{datetime.now():%H:%M:%S}] {os.path.basename(t)} '
@@ -345,14 +354,14 @@ def main():
     print(f'발동이벤트 영역분리 — 대상 {len(files)}개 파일 · 영역 {", ".join(areas)}')
     print('=' * 64)
 
-    denoms = load_denoms(a.score_config, areas) if a.score else {}
+    denoms, bands = load_denoms(a.score_config, areas) if a.score else ({}, None)
 
     total = []
     for fp in files:
         out_dir = a.out or (os.path.dirname(os.path.abspath(fp)))
         os.makedirs(out_dir, exist_ok=True)
         total += split_one(fp, out_dir, areas, not a.no_suffix_cols,
-                           a.strip_prefix, denoms, a.summary)
+                           a.strip_prefix, denoms, a.summary, bands)
 
     print(f'\n🎉 완료 — {len(total)}개 파일 생성')
     if total:
