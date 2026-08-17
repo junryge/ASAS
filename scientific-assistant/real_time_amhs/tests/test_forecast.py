@@ -186,6 +186,11 @@ class MultiCompare(unittest.TestCase):
         cls.cfg = load_config()
         rnd = random.Random(11)
         p, stb, ra = [], [], []
+        # ★곡선을 임계(alarm_floor) **상대값**으로 깐다. 절대값(50 기준)으로
+        #   깔았다가 운영에서 임계를 60으로 올리자 사건이 임계를 못 넘어
+        #   테스트가 통째로 무의미해졌다 — 임계가 또 바뀌어도 버티게 한다.
+        from sentinel import alarm_floor
+        fl = alarm_floor(cls.cfg)
 
         def q(n):
             for _ in range(n):
@@ -197,20 +202,20 @@ class MultiCompare(unittest.TestCase):
             p.append(17 + i * 0.35 + rnd.uniform(-1, 1))
             stb.append(90 + i * 0.55)
             ra.append(2.5 + i * 0.12)
-        for i in range(20):                  # 점수 본격 상승 → 돌파
-            p.append(23 + i * 1.5 + rnd.uniform(-1, 1))
+        for i in range(20):                  # 점수 본격 상승 → 임계 돌파 (fl+2 근처까지)
+            p.append((fl - 27) + i * 1.5 + rnd.uniform(-1, 1))
             stb.append(98 + rnd.uniform(-0.3, 0.3))
             ra.append(4.3 + i * 0.06)
         for i in range(30):
-            p.append(max(10, 53 - i * 1.6))
+            p.append(max(10, (fl + 3) - i * 1.6))
             stb.append(97 - i * 0.25)
             ra.append(max(2.5, 5.4 - i * 0.1))
-        for i in range(20):                  # 점수만 튀는 헛경보 (지표 조용)
-            p.append(22 + i * 1.1)
+        for i in range(20):                  # 점수만 튀는 헛경보 (임계 못 미침, 지표 조용)
+            p.append((fl - 38) + i * 1.1)
             stb.append(90 + rnd.uniform(-1, 1))
             ra.append(2.5 + rnd.uniform(-0.2, 0.2))
         for i in range(25):
-            p.append(max(10, 44 - i * 1.4))
+            p.append(max(10, (fl - 6) - i * 1.4))
             stb.append(90 + rnd.uniform(-1, 1))
             ra.append(2.5 + rnd.uniform(-0.2, 0.2))
         q(60)

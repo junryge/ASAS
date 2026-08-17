@@ -614,11 +614,11 @@ const api = async (u,o) => (await fetch(withSys(u),o)).json();
 const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = s => (s||'').slice(11,16);
-/* 점수 등급 — 50 미만 정상 / 50~70 경계 / 71~84 위험 / 85~100 초위험.
+/* 점수 등급 — 60 미만 정상 / 60~70 경계 / 71~84 위험 / 85~100 초위험.
    위험·초위험은 사람 확인이 필요한 구간이다 (config.grade.bands 와 같은 기준). */
 const gradeOf = s => s>=85 ? {n:'초위험', c:'var(--crit)',  chk:true}
                    : s>=71 ? {n:'위험',   c:'var(--major)', chk:true}
-                   : s>=50 ? {n:'경계',   c:'var(--minor)', chk:false}
+                   : s>=60 ? {n:'경계',   c:'var(--minor)', chk:false}
                            : {n:'정상',   c:'var(--tx2)',   chk:false};
 
 let CASES=[], SEL=null, FILTER='all', POLL=30;
@@ -1637,7 +1637,7 @@ async function openAcc(day){
         <b>확신도</b> = LLM 이 자기 판단을 얼마나 확신하는지 (0~100).<br>
         <b>점수 등급</b> —
         <span style="color:var(--ok)">50 미만 정상</span> ·
-        <span style="color:var(--minor)">50~70 경계</span> ·
+        <span style="color:var(--minor)">60~70 경계</span> ·
         <span style="color:var(--major)">71~84 위험</span> ·
         <span style="color:var(--crit)">85~100 초위험</span>
         <b style="color:var(--crit)">— 위험·초위험은 무조건 사람 확인이 필요합니다</b>

@@ -514,10 +514,10 @@ def _level_from_score(s):
         s = float(s)
     except (TypeError, ValueError):
         return "정상"
-    return "초위험" if s >= 85 else ("위험" if s >= 71 else ("경계" if s >= 50 else "정상"))
+    return "초위험" if s >= 85 else ("위험" if s >= 71 else ("경계" if s >= 60 else "정상"))
 
 
-def derive_incidents_from_evt(rows, gap_min=60, min_score=50):
+def derive_incidents_from_evt(rows, gap_min=60, min_score=60):
     """발동이벤트 rows → 사건 목록.
     ★ 점수 기준: unified_risk_score ≥ min_score(경계+) 인 구간을 사건으로 잡는다.
       (전엔 stage=3 기준이라 점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생김.

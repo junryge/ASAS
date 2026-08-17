@@ -169,7 +169,7 @@ class FabFetch(unittest.TestCase):
             self.assertEqual(r["hot_area"], "M16B")
         # 전체 점수(44)가 아니라 그 FAB 의 area_score 가 스코어다
         scores = sorted(float(r["unified_risk_score"]) for r in rows)
-        self.assertEqual(scores, [5.0, 55.0, 72.0, 88.0])
+        self.assertEqual(scores, [5.0, 65.0, 72.0, 88.0])
         self.assertTrue(all(r["all_score"] == "44" for r in rows))
 
     def test_케이스가_FAB_이름으로_잡힌다(self):

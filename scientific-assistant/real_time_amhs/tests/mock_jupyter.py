@@ -30,7 +30,7 @@ def fab_csv(day: str, fab: str) -> bytes:
     head = ("file,datetime,date,time,unified_risk_score,unified_risk_level,"
             f"hot_area,reason,{fab}_score,{fab}_pts_RA_sus,{fab}_pts_SLA,"
             f"{fab}_ra,sla_{fab},area_score,area_level,area_saturated")
-    scores = [(5, ""), (55, "경계"), (72, "위험"), (88, "초위험")]
+    scores = [(5, ""), (65, "경계"), (72, "위험"), (88, "초위험")]
     rows = [
         f"HUB_PR.csv,{d} 00:0{i},{d},00:0{i},44,경계,M16HUB,"
         f"\"hot_area=M16HUB; 발동: M16HUB[R-A_sus]; {fab}[R-A_sus,SLA(9.9%4분초과)]\","

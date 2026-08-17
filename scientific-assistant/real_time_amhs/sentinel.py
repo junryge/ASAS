@@ -536,7 +536,7 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
 if __name__ == "__main__":
     cfg = load_config()
     st = CaseStore(cfg)
-    print(f"알람 임계 : {alarm_floor(cfg)}점 (기본 50 + 피드백 보정 {_threshold_nudge(cfg):+d})")
+    print(f"알람 임계 : {alarm_floor(cfg)}점 (기본 60 + 피드백 보정 {_threshold_nudge(cfg):+d})")
     res = scan_once(st, cfg=cfg)
     print(json.dumps(res, ensure_ascii=False, indent=2))
     for c in st.active():
