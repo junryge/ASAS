@@ -196,6 +196,69 @@ class FabFetch(unittest.TestCase):
         self.assertNotIn("all_score", r["data"][0])
 
 
+class FabMetrics(unittest.TestCase):
+    """추이 그래프 지표 — 실제 컬럼명으로 표시돼야 한다.
+
+    스코어만 예외로 area_score 를 그대로 두고(그 FAB 자기 점수라는 표시),
+    나머지는 실제 AMOS 지표 컬럼명이다. 특히 반송시간은 구역마다
+    QUE.TIME / QUE.LOAD 가 갈린다 — 여기서 틀리면 화면의 '실제지표' 칸이
+    존재하지 않는 컬럼명을 보여준다.
+    """
+
+    def _amos(self, sys):
+        from lp_client import _fab_groups
+        gs = _fab_groups(sys)
+        self.assertEqual([g["id"] for g in gs], ["amos", "csv"],
+                         "ALL 과 같은 두 묶음(AMOS/CSV)이어야 한다")
+        return {m["key"]: m["raw"] for m in gs[0]["metrics"]}, \
+               {m["key"]: m["raw"] for m in gs[1]["metrics"]}
+
+    def test_스코어는_area_score_그대로(self):
+        for s in FABS:
+            amos, csv = self._amos(s)
+            self.assertEqual(amos["unified_risk_score"], "area_score")
+            self.assertEqual(csv["unified_risk_score"], "area_score")
+
+    def test_반송시간_실제_컬럼명(self):
+        """★TIME/LOAD 구분 — 발동이벤트_요약.py 의 _RA_RAW 와 같은 표."""
+        want = {"M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
+                "M14":    "M14.QUE.LOAD.AVGLOADTIME1MIN",
+                "M14B":   "M14B.QUE.TIME.AVGTOTALTIME1MIN",
+                "M16A":   "M16A.QUE.LOAD.AVGLOADTIME1MIN",
+                "M16B":   "M16B.QUE.LOAD.AVGLOADTIME1MIN"}
+        for s, raw in want.items():
+            amos, _ = self._amos(s)
+            self.assertEqual(amos[f"{s}_ra"], raw)
+
+    def test_SLA_소터_OHT_실제_컬럼명(self):
+        amos, _ = self._amos("M16B")
+        self.assertEqual(amos["sla_M16B"], "M16B.QUE.ALL.TRANSPORT4MINOVERRATIO")
+        self.assertEqual(amos["sorter_M16B"], "M16B.SORTER.ABN.SORTERWAITCOUNTOVER")
+        self.assertEqual(amos["M16B_rd_oht"], "M16B.QUE.OHT.OHTUTIL")
+
+    def test_허브룸_전용_지표(self):
+        amos, _ = self._amos("M16HUB")
+        self.assertEqual(amos["M16HUB_rd_fab"], "M16HUB.STRATE.ALL.FABSTORAGERATIO")
+        self.assertEqual(amos["M16HUB_stb_util"], "M16HUB.STRATE.STB.3F_STORAGE_UTIL")
+        self.assertEqual(amos["M16HUB_rev_count"], "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT")
+        self.assertNotIn("M16HUB_rd_oht", amos, "허브룸엔 rd_oht 가 없다")
+
+    def test_CSV_묶음은_컬럼명_그대로(self):
+        _, csv = self._amos("M14")
+        self.assertEqual(csv["M14_ra"], "M14_ra")
+        self.assertEqual(csv["sla_M14"], "sla_M14")
+        self.assertIn("M14_cnv_skew", csv, "cnv_skew 는 M14 에만 있는 실제 컬럼")
+
+    def test_sys_cfg_가_묶음을_붙인다(self):
+        cfg = deepcopy(load_config())
+        c = sys_cfg(cfg, "M16A")
+        gs = c["ui"]["metric_groups"]
+        self.assertEqual([g["id"] for g in gs], ["amos", "csv"])
+        keys = {m["key"] for m in gs[0]["metrics"]}
+        self.assertIn("M16A_ra", keys)
+        self.assertIn("M16A_sorter_fail", keys)
+
+
 class DashboardSync(unittest.TestCase):
     """화면 목록과 서버(config) 목록이 어긋나면 고르는 순간 빈 화면이 된다."""
 

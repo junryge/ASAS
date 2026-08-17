@@ -67,26 +67,58 @@ def fab_codes(cfg: dict | None = None) -> list[str]:
     return [str(k).upper() for k in fabs]
 
 
-def _fab_strip(sys: str) -> list[dict]:
-    """FAB 화면의 추이 그래프 기본 지표 — 그 FAB 파일에 실제로 있는 컬럼만.
+# 반송시간의 실제 AMOS 컬럼 — 구역마다 QUE.TIME / QUE.LOAD 가 갈린다.
+# 발동이벤트_요약.py / report_graphs._RA_RAW 와 같은 표. 여기서 어긋나면
+# 화면의 '실제지표' 칸이 존재하지 않는 컬럼명을 보여주게 된다.
+_RA_RAW = {
+    "M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
+    "M14":    "M14.QUE.LOAD.AVGLOADTIME1MIN",
+    "M14B":   "M14B.QUE.TIME.AVGTOTALTIME1MIN",
+    "M16A":   "M16A.QUE.LOAD.AVGLOADTIME1MIN",
+    "M16B":   "M16B.QUE.LOAD.AVGLOADTIME1MIN",
+}
 
-    feed 가 '값이 있는 지표만' 걸러 주므로 여기 목록은 후보일 뿐이다.
-    unified_risk_score 는 받는 순간 area_score 로 정규화돼 있다(아래 sys_cfg).
+
+def _fab_strip(sys: str) -> list[dict]:
+    """FAB 화면의 추이 그래프 지표 — **그 FAB 파일에 실제로 있는 컬럼** 전부.
+
+    fab분리 CSV 실물 헤더 기준이다 (구역 공통: {S}_ra·ra_count·rb_diff30·
+    rb_diff10·sla_{S}·{S}_sla_cnt·sorter_{S}·{S}_score_raw / 구역마다 다른 것:
+    rd_oht 는 허브룸 제외, cnv_skew 는 M14만, rd_fab·stb_util·rev_count·
+    rc_trend 는 허브룸만, sorter_fail 은 M16A·M16B). 그 날 CSV 에 없는 컬럼은
+    feed 가 자동으로 걸러 주므로, 없는 구역에 끼어 있어도 화면에는 안 나온다.
+    raw 는 실제 AMOS 컬럼명 — 파생값(CSV 에만 있는 계산 컬럼)은 컬럼명 그대로.
     """
     s = sys
     out = [
+        # 점수 — 받는 순간 area_score 가 unified_risk_score 로 정규화돼 있다
         {"key": "unified_risk_score", "raw": "area_score", "label": "스코어",
          "unit": "점", "color": "#3DDBE8", "max": 100, "bands": True},
-        {"key": f"{s}_ra", "raw": f"{s}_ra", "label": f"{s} 반송시간",
-         "unit": "분", "color": "#FF6B5E"},
+        {"key": f"{s}_score_raw", "raw": f"{s}_score_raw", "label": "구역점수(raw)",
+         "unit": "점", "color": "#6EE9F3"},
+        # 반송시간 (R-A) — raw 는 구역별 실제 컬럼
+        {"key": f"{s}_ra", "raw": _RA_RAW.get(s, f"{s}.QUE.TIME.AVGTOTALTIME1MIN"),
+         "label": f"{s} 반송시간", "unit": "분", "color": "#FF6B5E"},
+        {"key": f"{s}_ra_count", "raw": f"{s}_ra_count", "label": "반송지연 건수",
+         "unit": "건", "color": "#FF8F7A"},
+        # Queue 증감 (R-B)
         {"key": f"{s}_rb_diff30", "raw": f"{s}_rb_diff30", "label": "Queue 증감(30분)",
          "unit": "건", "color": "#FFA53D"},
-        {"key": f"sla_{s}", "raw": f"sla_{s}", "label": "4분초과율",
-         "unit": "%", "color": "#F2C94C", "max": 100},
-        {"key": f"sorter_{s}", "raw": f"sorter_{s}", "label": "소터 대기",
-         "unit": "건", "color": "#B48DF2"},
+        {"key": f"{s}_rb_diff10", "raw": f"{s}_rb_diff10", "label": "Queue 증감(10분)",
+         "unit": "건", "color": "#FFC37A"},
+        # SLA
+        {"key": f"sla_{s}", "raw": f"{s}.QUE.ALL.TRANSPORT4MINOVERRATIO",
+         "label": "4분초과율", "unit": "%", "color": "#F2C94C", "max": 100},
+        {"key": f"{s}_sla_cnt", "raw": f"{s}_sla_cnt", "label": "4분초과 건수",
+         "unit": "건", "color": "#E8D97E"},
+        # 소터
+        {"key": f"sorter_{s}", "raw": f"{s}.SORTER.ABN.SORTERWAITCOUNTOVER",
+         "label": "소터대기", "unit": "건", "color": "#B48DF2"},
+        {"key": f"{s}_sorter_fail", "raw": f"{s}_sorter_fail", "label": "소터 실패",
+         "unit": "건", "color": "#CBAAF7"},
     ]
-    if s == "M16HUB":               # 허브룸만 있는 지표 (ALL 기본 화면과 동일)
+    if s == "M16HUB":
+        # 허브룸 전용 (R-C 리프터 · R-D 저장율) — rd_oht 는 없다
         out += [
             {"key": "M16HUB_rd_fab", "raw": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
              "label": "FAB저장율", "unit": "%", "color": "#FFA53D", "max": 100},
@@ -94,8 +126,39 @@ def _fab_strip(sys: str) -> list[dict]:
              "label": "STB저장율", "unit": "%", "color": "#F2C94C", "max": 100},
             {"key": "M16HUB_rev_count", "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
              "label": "리프터막힘", "unit": "회", "color": "#FF6FB5"},
+            {"key": "M16HUB_rc_trend", "raw": "M16HUB_rc_trend", "label": "리프터막힘 추세",
+             "unit": "", "color": "#FF9FCB"},
         ]
+    else:
+        # 일반 FAB (R-D = OHT)
+        out.append(
+            {"key": f"{s}_rd_oht", "raw": f"{s}.QUE.OHT.OHTUTIL",
+             "label": "OHT가동률", "unit": "%", "color": "#2FD68A", "max": 100})
+    if s == "M14":
+        out.append(
+            {"key": "M14_cnv_skew", "raw": "M14_cnv_skew", "label": "컨베이어 편중",
+             "unit": "", "color": "#7FDBCA"})
     return out
+
+
+def _fab_groups(sys: str) -> list[dict]:
+    """FAB 화면의 지표 묶음 — ALL 화면과 같은 두 버튼.
+
+      · AMOS 컬럼 — 실제 지표 컬럼명(M14.QUE.LOAD.AVGLOADTIME1MIN …)으로 표시.
+        스코어만 예외로 area_score 를 그대로 보여준다 (그 FAB 의 자기 점수라는
+        걸 화면에서 알 수 있게). 파생 계산 컬럼(ra_count·rb_diff 등)은 AMOS
+        원본이 없으므로 CSV 컬럼명 그대로다.
+      · CSV 컬럼 — 전부 CSV 컬럼명 그대로.
+    """
+    amos = _fab_strip(sys)
+    csv = [dict(m, raw=("area_score" if m["key"] == "unified_risk_score"
+                        else m["key"])) for m in amos]
+    return [
+        {"id": "amos", "name": "AMOS 컬럼",
+         "desc": f"{sys} 실제 지표 컬럼명으로 표시", "metrics": amos},
+        {"id": "csv", "name": "CSV 컬럼",
+         "desc": "fab분리 CSV 컬럼명 그대로", "metrics": csv},
+    ]
 
 
 def sys_cfg(cfg: dict, sys: str | None) -> dict:
@@ -136,12 +199,13 @@ def sys_cfg(cfg: dict, sys: str | None) -> dict:
     c["source"] = src
 
     # 추이 그래프 지표 — FAB 파일의 실제 컬럼으로 갈아끼운다. ui 의 기존
-    # 설정(metric_groups/strip_metrics)은 ALL(M16HUB 중심) 기준이라 FAB
-    # 화면에는 없는 컬럼들이다. 시스템별로 직접 지정하고 싶으면
-    # ui["strip_metrics_M14"] 처럼 코드가 붙은 키를 만들면 그걸 쓴다.
+    # 설정(metric_groups/strip_metrics)은 ALL 기준이라 FAB 화면에는 대부분
+    # 없는 컬럼들이다. ALL 과 똑같이 'AMOS 컬럼 / CSV 컬럼' 두 묶음을 준다.
+    # 시스템별로 직접 지정하고 싶으면 ui["metric_groups_M14"] 처럼 코드가
+    # 붙은 키를 만들면 그걸 쓴다.
     ui = dict(cfg.get("ui") or {})
-    ui.pop("metric_groups", None)
-    ui["strip_metrics"] = ui.get(f"strip_metrics_{s}") or _fab_strip(s)
+    ui.pop("strip_metrics", None)
+    ui["metric_groups"] = ui.get(f"metric_groups_{s}") or _fab_groups(s)
     c["ui"] = ui
     return c
 
