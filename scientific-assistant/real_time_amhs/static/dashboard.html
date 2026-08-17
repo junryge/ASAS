@@ -576,6 +576,33 @@
   </div>
 
   <div class="card">
+    <h2>LLM 판단 일치 — 시스템별 설정 <span class="note" id="lpnote"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">
+        'LLM 판단 일치'의 재료입니다 — 시스템마다 매 주기, 아직 판단 안 한 분(分)을
+        LLM 에 물어 기록하고 30분 뒤 실제 데이터로 채점합니다.
+        <b style="color:var(--tx2)">느리면 그 시스템의 추론 주기를 늘리거나, 주기당 건수를
+        줄이거나, 판단을 '보는 화면만'으로</b> 바꾸세요. 채점(검증) 자체는 LLM 을 안 써서 무료입니다.</p>
+      <div class="row" style="margin:0 0 8px">
+        <label class="note">1분 추론 전체
+          <select id="lp-en"><option value="1">사용</option><option value="0">중지</option></select></label>
+        <span class="note dim">중지하면 여섯 시스템 모두 새 판단을 만들지 않습니다 (기록·채점은 유지)</span>
+      </div>
+      <table class="pol"><thead><tr>
+        <th style="width:110px">시스템</th><th style="width:170px">판단</th>
+        <th style="width:140px">추론 주기</th><th style="width:130px">주기당 메움</th><th></th>
+      </tr></thead><tbody id="lprows">
+        <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
+      </tbody></table>
+      <div class="row" style="margin-top:10px;align-items:center">
+        <button class="act pri" id="lp-save" style="flex:0 0 auto">저장 · 적용</button>
+        <span class="note">저장하면 <b style="color:var(--tx2)">바로 반영</b>되고(다음 수집 주기부터)
+          config.json 에도 적혀 재시작해도 유지됩니다.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>감지 · 확인 · 에스컬레이션 정책</h2>
     <div class="bd">
       <p class="note" style="margin:0 0 12px">감지는 항상 실시간입니다. <b style="color:var(--tx2)">“이상 없음” 판정은
@@ -817,7 +844,10 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     if(PDAY) loadPastLlm(PDAY);          // 과거 탭 = 그 날짜 LLM 판단
   }else if(b.dataset.tab==='analysis'){
     initAnalysis();
-  }else if(ACC){
+  }else if(b.dataset.tab==='policy'){
+    initLlmPolicy();
+  }
+  if(b.dataset.tab!=='past' && b.dataset.tab!=='analysis' && ACC){
     renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
   }
 });
@@ -1690,6 +1720,53 @@ async function openAcc(day){
     });
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">불러오지 못했습니다</div>'; }
 }
+
+/* ── LLM 판단 일치 설정 (정책 탭) — 시스템 6개 각각, 저장 버튼으로 반영 ──
+   저장 = 메모리 즉시 적용(다음 수집 주기부터) + config.json 기록(재시작 유지). */
+let LP_INIT = false;
+const LP_MODES = [['on','판단 (항상)'],['watched','보는 화면만'],['off','끔']];
+
+function lpRow(s, opts){
+  const sel = (id, list, cur, unit) => `<select id="${id}">` + list.map(v =>
+    `<option value="${v}" ${String(v)===String(cur)?'selected':''}>${v}${unit}</option>`).join('') + '</select>';
+  return `<tr>
+    <td><b style="color:${s.sys==='ALL'?'var(--cy)':'var(--tx)'}">${esc(s.sys)}</b></td>
+    <td><select id="lpm-${s.sys}">${LP_MODES.map(([v,t]) =>
+      `<option value="${v}" ${v===s.mode?'selected':''}>${t}</option>`).join('')}</select></td>
+    <td>${sel(`lpe-${s.sys}`, opts.every_options, s.every_min, '분마다')}</td>
+    <td>${sel(`lpc-${s.sys}`, opts.cap_options, s.max_per_cycle, '건')}</td>
+    <td class="note">${s.sys==='ALL' ? '전체 통합' : ''}</td>
+  </tr>`;
+}
+
+async function initLlmPolicy(){
+  try{
+    const d = await api('/api/llm_policy');
+    LP_SYS = d.systems.map(s=>s.sys);
+    $('#lp-en').value = d.enabled ? '1' : '0';
+    $('#lprows').innerHTML = d.systems.map(s => lpRow(s, d)).join('');
+    if(LP_INIT) return;
+    LP_INIT = true;
+    $('#lp-save').onclick = async () => {
+      const by = {};
+      LP_SYS.forEach(s => by[s] = {
+        mode: $(`#lpm-${s}`).value,
+        every_min: parseInt($(`#lpe-${s}`).value),
+        max_per_cycle: parseInt($(`#lpc-${s}`).value),
+      });
+      const btn = $('#lp-save');
+      btn.disabled = true; btn.textContent = '저장 중…';
+      try{
+        const r = await post('/api/llm_policy',
+                             {enabled: $('#lp-en').value === '1', by_sys: by, save: true});
+        if(r.error){ alert(r.error); $('#lpnote').textContent = '— 저장 실패'; return; }
+        $('#lpnote').textContent = `— 저장됨 · 바로 반영 (${
+          r.systems.filter(s=>s.mode!=='off').length}/${r.systems.length} 시스템 판단 중)`;
+      } finally { btn.disabled = false; btn.textContent = '저장 · 적용'; }
+    };
+  }catch(e){ $('#lpnote').textContent = '— 설정 불러오기 실패 (서버 구버전?)'; }
+}
+let LP_SYS = [];
 
 function renderPolicy(p, ev){
   if(p && p.routing && !$('#routing').dataset.done){

@@ -38,13 +38,22 @@ _HIT, _FP, _FN, _EFFECT, _WAIT = "적중", "과다탐지", "누락", "조치효�
 
 
 def pm_cfg(cfg: dict) -> dict:
+    """분당 판단 설정 — 전역 기본값 위에 **그 시스템(by_sys)** 값을 덮는다.
+
+    cfg 가 sys_cfg() 뷰면 _sys 에 시스템 코드가 있다. 정책 탭에서 시스템
+    6개를 따로 설정하므로, 여기서 안 합치면 FAB 이 전역값으로만 돈다.
+    mode(on/watched/off)는 스케줄 게이트(server._llm_on)가 보고, 여기서는
+    off 면 enabled 를 끈다 (backfill 같은 다른 경로도 같이 멈추게).
+    """
     c = (cfg.get("llm", {}).get("per_minute") or {})
+    o = (c.get("by_sys") or {}).get(str(cfg.get("_sys") or "ALL").upper()) or {}
+    mode = str(o.get("mode", "on")).strip().lower()
     return {
-        "enabled": c.get("enabled", True),
-        "every_min": int(c.get("every_min", 1) or 0),
-        "light_below": float(c.get("light_below", 50)),
+        "enabled": bool(c.get("enabled", True)) and mode != "off",
+        "every_min": int(o.get("every_min", c.get("every_min", 1)) or 0),
+        "light_below": float(c.get("light_below", 60)),
         "skip_if_busy": c.get("skip_if_busy", True),
-        "max_per_cycle": int(c.get("max_per_cycle", 3) or 1),
+        "max_per_cycle": int(o.get("max_per_cycle", c.get("max_per_cycle", 3)) or 1),
         "backfill": c.get("backfill", True),
         "judge_max_chars": int(c.get("judge_max_chars", 200) or 200),
     }

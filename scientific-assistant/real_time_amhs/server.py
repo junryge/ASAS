@@ -145,21 +145,35 @@ def _bootstrap_today() -> None:
             ctx["state"]["bootstrap"] = {"ok": False, "error": str(e)}
 
 
+def _llm_mode(sys: str) -> str:
+    """이 시스템의 분당 판단 모드 — on / watched / off.
+
+    정책 탭에서 시스템 6개를 따로 정한다 (llm.per_minute.by_sys). 지정이
+    없으면 옛 전역 스위치(fab_minute)와 호환: ALL=on, FAB=fab_minute.
+    """
+    lc = CFG.get("llm", {})
+    by = (lc.get("per_minute") or {}).get("by_sys") or {}
+    mode = str((by.get(sys) or {}).get("mode", "")).strip().lower()
+    if mode in ("on", "watched", "off"):
+        return mode
+    if sys == "ALL":
+        return "on"
+    return {"always": "on", "watched": "watched",
+            "off": "off"}.get(str(lc.get("fab_minute", "always")).lower(), "on")
+
+
 def _llm_on(ctx: dict, interval: int) -> bool:
     """이 시스템의 분당 LLM 판단을 돌릴까.
 
-    ALL 은 항상. FAB 은 config.llm.fab_minute 로 고른다:
-      · "always"(기본) — 안 보고 있어도 돈다. 'LLM 판단 일치' 가 여섯 화면
-        모두 채워진다. 부하는 괜찮다 — 분당 판단은 accuracy._busy 락으로
-        **전 시스템이 한 번에 하나씩만** 게이트웨이를 치고, 아래 폴링 루프가
-        시스템마다 시작 시차를 둔다 (4단계 병렬 분석과는 다른 가벼운 호출).
-      · "watched" — 화면이 실제로 보고 있는 FAB 만 (게이트웨이가 힘들 때)
-      · "off"     — FAB 은 안 돌린다
+      · on(기본)  — 안 보고 있어도 돈다. 'LLM 판단 일치' 가 그 화면에 쌓인다.
+        부하는 괜찮다 — 분당 판단은 accuracy._busy 락으로 **전 시스템이
+        한 번에 하나씩만** 게이트웨이를 치고, 폴링 루프가 시스템마다 시작
+        시차를 둔다 (4단계 병렬 분석과는 다른 가벼운 호출).
+      · watched — 화면이 실제로 보고 있을 때만 (게이트웨이가 힘들 때)
+      · off     — 안 돌린다
     데이터 수집·케이스 감지는 이 설정과 무관하게 전부 돈다.
     """
-    if ctx["sys"] == "ALL":
-        return True
-    mode = str(CFG.get("llm", {}).get("fab_minute", "always")).strip().lower()
+    mode = _llm_mode(ctx["sys"])
     if mode == "off":
         return False
     if mode == "watched":
@@ -427,6 +441,106 @@ def api_status():
 def api_ping():
     ok, msg = ping()
     return jsonify({"ok": ok, "message": msg, "base": CFG.get("logpresso_base")})
+
+
+def _persist_llm_policy() -> str:
+    """지금 메모리의 분당 판단 설정을 config.json 에 그대로 적는다 → 오류 문자열.
+
+    파일을 새로 읽어 llm 블록만 갈아끼우고 원자적으로 교체한다 — 파일에
+    있는 다른 설정(사용자가 손으로 고친 것 포함)은 건드리지 않는다.
+    """
+    from lp_client import CONFIG_PATH
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+            disk = json.load(f)
+        pm_mem = (CFG.get("llm", {}) or {}).get("per_minute") or {}
+        pm = disk.setdefault("llm", {}).setdefault("per_minute", {})
+        for k in ("enabled", "every_min", "max_per_cycle", "by_sys"):
+            if k in pm_mem:
+                pm[k] = pm_mem[k]
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(disk, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, CONFIG_PATH)
+        return ""
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
+@app.route("/api/llm_policy", methods=["GET", "POST"])
+def api_llm_policy():
+    """분당 LLM 판단(=LLM 판단 일치의 재료) 설정 — 정책 탭, **시스템 6개 각각**.
+
+    느리다는 체감의 주범이 이것이다: 시스템마다 매 주기 '아직 판단 안 한 분'
+    을 최대 max_per_cycle 건씩 LLM 에 물어본다 (전 시스템 직렬화라 게이트웨이
+    는 한 번에 하나지만, 큐가 길면 다른 LLM 호출이 밀린다).
+
+    POST {"enabled"?: bool,
+          "by_sys"?: {"M14": {"mode": "on|watched|off",
+                              "every_min": 1, "max_per_cycle": 3}, …},
+          "save"?: true}
+    ★메모리에 먼저 적용(다음 주기부터 바로 반영)하고, save=true 면
+      config.json 에도 적는다 — 저장 버튼 하나로 '즉시 반영 + 재시작 유지'.
+    """
+    lc = CFG.setdefault("llm", {})
+    pm = lc.setdefault("per_minute", {})
+    EV, CAP = (1, 2, 5, 10, 15), (1, 2, 3, 5, 10)
+    saved = None
+    if request.method == "POST":
+        b = request.get_json(silent=True) or {}
+        if "enabled" in b:
+            pm["enabled"] = bool(b["enabled"])
+        if "by_sys" in b:
+            if not isinstance(b["by_sys"], dict):
+                return jsonify({"error": "by_sys 는 {시스템: 설정} 객체"}), 400
+            known = set(systems())
+            clean = {}
+            for s_, row in b["by_sys"].items():
+                s_ = str(s_).upper()
+                if s_ not in known:
+                    return jsonify({"error": f"모르는 시스템 {s_} (가능: {sorted(known)})"}), 400
+                row = row or {}
+                mode = str(row.get("mode", "on")).strip().lower()
+                if mode not in ("on", "watched", "off"):
+                    return jsonify({"error": f"{s_}.mode 는 on|watched|off"}), 400
+                try:
+                    ev = int(row.get("every_min", pm.get("every_min", 1)))
+                    cap = int(row.get("max_per_cycle", pm.get("max_per_cycle", 3)))
+                except (TypeError, ValueError):
+                    return jsonify({"error": f"{s_} 의 every_min/max_per_cycle 은 정수"}), 400
+                if ev not in EV:
+                    return jsonify({"error": f"{s_}.every_min 은 {list(EV)} 중 하나"}), 400
+                if cap not in CAP:
+                    return jsonify({"error": f"{s_}.max_per_cycle 은 {list(CAP)} 중 하나"}), 400
+                clean[s_] = {"mode": mode, "every_min": ev, "max_per_cycle": cap}
+            # ★객체를 갈아끼우지 않고 내용만 고친다 — sys_cfg 뷰들이 같은
+            #   llm 블록을 참조하므로, 통째로 바꾸면 FAB 만 옛 설정으로 돈다.
+            by = pm.setdefault("by_sys", {})
+            by.update(clean)
+        if b.get("save"):
+            err = _persist_llm_policy()
+            saved = not err
+            if err:
+                return jsonify({"error": f"config.json 저장 실패 — {err} "
+                                         f"(메모리에는 적용됨)", "applied": True}), 500
+        rows = " · ".join(f"{s_}={_llm_mode(s_)}" for s_ in systems())
+        print(f"[정책] LLM 판단 → 전체 {pm.get('enabled', True)} · {rows}"
+              + (" · 저장됨" if saved else ""))
+    by = pm.get("by_sys") or {}
+    return jsonify({
+        "enabled": bool(pm.get("enabled", True)),
+        "every_options": list(EV), "cap_options": list(CAP),
+        "systems": [{
+            "sys": s_,
+            "mode": _llm_mode(s_),
+            "every_min": int((by.get(s_) or {}).get("every_min",
+                                                    pm.get("every_min", 1)) or 1),
+            "max_per_cycle": int((by.get(s_) or {}).get("max_per_cycle",
+                                                        pm.get("max_per_cycle", 3)) or 3),
+        } for s_ in systems()],
+        "saved": saved,
+    })
 
 
 @app.route("/api/window", methods=["GET", "POST"])
