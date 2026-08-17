@@ -553,7 +553,7 @@
         <button class="act pri" id="btnday" style="flex:0 0 auto">사건 보고서 생성</button>
         <button class="act" id="btndayhtml"
           title="데모스 개인 에이전트 '사건발생 보고서' 와 같은 화면 — 체크박스 표·수동 기입·저장 포함">HTML 열기</button>
-        <span class="note">하루 사건(점수 50↑) 기준 5섹션 보고서 — 데모스 개인 에이전트와 같은 형식</span>
+        <span class="note">하루 사건(점수 60↑) 기준 5섹션 보고서 — 데모스 개인 에이전트와 같은 형식</span>
       </div>
       <div id="repout"></div>
     </div>
@@ -1221,18 +1221,18 @@ async function pollStatus(){
     $('#k-active-s').textContent = `최근 30분 신규 ${k.active_new_30m}건`;
     $('#k-lat').innerHTML      = `${k.detect_latency_ms??'–'}<u>ms</u>`;
     $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
-    // 재발률 — 임계(50점) 이상이 가라앉았다 다시 올라온 비율. 표본이 없으면 '–'
+    // 재발률 — 임계(60점) 이상이 가라앉았다 다시 올라온 비율. 표본이 없으면 '–'
     if(k.recur_rate_1h == null){
       $('#k-recur').innerHTML     = `–<u>%</u>`;
-      $('#k-recur-s').textContent = `최근 1시간 ${k.recur_floor??50}점 이상 없음`;
+      $('#k-recur-s').textContent = `최근 1시간 ${k.recur_floor??60}점 이상 없음`;
     }else{
       $('#k-recur').innerHTML     = `${k.recur_rate_1h}<u>%</u>`;
       $('#k-recur-s').textContent = `최근 1시간 정체 ${k.recur_base}구간 · 재발 ${k.recur_events}회`
         + ` (${k.recur_minutes}분)`;
     }
     $('#kpi-recur').title =
-      `${k.recur_floor??50}점 이상 구간이 임계 아래로 내려갔다가 다시 올라온 비율입니다.`
-      + `\n· 분모 = 최근 1시간 ${k.recur_floor??50}점 이상 구간 수`
+      `${k.recur_floor??60}점 이상 구간이 임계 아래로 내려갔다가 다시 올라온 비율입니다.`
+      + `\n· 분모 = 최근 1시간 ${k.recur_floor??60}점 이상 구간 수`
       + `\n· 분자 = 그중 다시 올라온 횟수 (구간 수 − 1)`
       + `\n· 예) 3구간이면 재발 2회 → 67%`
       + `\n기준 시각(데이터 최신) ${(k.recur_ref||'').replace('T',' ').slice(0,16)}`;
@@ -1254,7 +1254,7 @@ async function pollStatus(){
 }
 
 /* ── 🔮 선행 감지 — '이대로면 N분 뒤 임계 돌파' ──
-   점수가 50을 넘은 뒤에야 케이스가 생기는 구조라, 넘기 전에 미리 띄운다.
+   점수가 임계(60)를 넘은 뒤에야 케이스가 생기는 구조라, 넘기 전에 미리 띄운다.
    경보 조건을 못 채우면 줄 자체를 숨긴다 (조용할 땐 안 보이는 게 맞다). */
 function renderForecast(fc){
   const box = $('#fcnow');
@@ -1636,7 +1636,7 @@ async function openAcc(day){
         (같은 시각을 <b>${esc(a.day)}_TOTAL.CSV</b> 와 <span class="mono">datetime</span> 으로 맞춰 보면 그때 원데이터가 나옵니다)<br>
         <b>확신도</b> = LLM 이 자기 판단을 얼마나 확신하는지 (0~100).<br>
         <b>점수 등급</b> —
-        <span style="color:var(--ok)">50 미만 정상</span> ·
+        <span style="color:var(--ok)">60 미만 정상</span> ·
         <span style="color:var(--minor)">60~70 경계</span> ·
         <span style="color:var(--major)">71~84 위험</span> ·
         <span style="color:var(--crit)">85~100 초위험</span>
@@ -1840,9 +1840,12 @@ function stripSvg(rows, mt){
     o.push(`<path d="M${pts[0].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
     o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
   }
-  // 스코어는 경계 이상만 등급 색 점으로
+  // 스코어는 경계 이상만 등급 색 점으로 (경계=노랑 / 위험=주황 / 초위험=빨강).
+  // ★점수 숫자(>=50)로 거르면 안 된다 — 임계를 60으로 올렸는데 50점대
+  //   (이제 정상)에 노란 점이 계속 찍혔다. 등급(lv)은 서버가 config 임계로
+  //   매기므로, 등급으로 거르면 임계가 또 바뀌어도 여기는 손댈 필요가 없다.
   if(isScore){
-    pts.filter(p=>p.v>=50).forEach(p =>
+    pts.filter(p=>p.lv && p.lv!=='정상').forEach(p =>
       o.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2" fill="${
         p.lv==='초위험'?'#FF4D5E':p.lv==='위험'?'#FF9F2E':'#F2D338'}"/>`));
   }
