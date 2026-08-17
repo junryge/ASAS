@@ -146,15 +146,25 @@ def _bootstrap_today() -> None:
 
 
 def _llm_on(ctx: dict, interval: int) -> bool:
-    """이 시스템의 분당 LLM 을 돌릴까.
+    """이 시스템의 분당 LLM 판단을 돌릴까.
 
-    ALL 은 항상. FAB 은 **화면이 실제로 보고 있을 때만** — 6개 시스템이 매분
-    4단계 LLM 을 다 돌리면 게이트웨이가 503 을 뱉는다 (1차 청크가 통째로
-    죽은 적이 있다). 데이터 수집·케이스 감지는 이 게이트와 무관하게 전부 돈다.
+    ALL 은 항상. FAB 은 config.llm.fab_minute 로 고른다:
+      · "always"(기본) — 안 보고 있어도 돈다. 'LLM 판단 일치' 가 여섯 화면
+        모두 채워진다. 부하는 괜찮다 — 분당 판단은 accuracy._busy 락으로
+        **전 시스템이 한 번에 하나씩만** 게이트웨이를 치고, 아래 폴링 루프가
+        시스템마다 시작 시차를 둔다 (4단계 병렬 분석과는 다른 가벼운 호출).
+      · "watched" — 화면이 실제로 보고 있는 FAB 만 (게이트웨이가 힘들 때)
+      · "off"     — FAB 은 안 돌린다
+    데이터 수집·케이스 감지는 이 설정과 무관하게 전부 돈다.
     """
     if ctx["sys"] == "ALL":
         return True
-    return (time.time() - ctx["watched"]) < max(300, interval * 3)
+    mode = str(CFG.get("llm", {}).get("fab_minute", "always")).strip().lower()
+    if mode == "off":
+        return False
+    if mode == "watched":
+        return (time.time() - ctx["watched"]) < max(300, interval * 3)
+    return True
 
 
 def _poll_loop() -> None:
@@ -162,7 +172,7 @@ def _poll_loop() -> None:
     _bootstrap_today()                 # ① 하루치 먼저 확보
     while True:                        # ② 이후 증분 수집
         interval = max(5, int(CFG.get("query", {}).get("poll_interval_s", 60)))
-        for sys in systems():
+        for i, sys in enumerate(systems()):
             ctx = get_ctx(sys)
             st = ctx["state"]
             t0 = time.time()
@@ -189,7 +199,7 @@ def _poll_loop() -> None:
                 if res.get("ok"):
                     _auto_judge(ctx, res.get("cases") or [])
                     if _llm_on(ctx, interval):
-                        _minute_llm(ctx)
+                        _minute_llm(ctx, delay=i * 4.0)
                     _update_forecast(ctx)
             except Exception as e:
                 st.update(connected=False, error=f"{type(e).__name__}: {e}",
@@ -204,13 +214,21 @@ def _poll_loop() -> None:
                 break                       # 주기가 바뀌면 즉시 다음 수집으로
 
 
-def _minute_llm(ctx: dict) -> None:
-    """1분 추론 + 검증 창이 찬 과거 행 채점 — 수집 루프를 막지 않게 별도 스레드."""
+def _minute_llm(ctx: dict, delay: float = 0.0) -> None:
+    """1분 추론 + 검증 창이 찬 과거 행 채점 — 수집 루프를 막지 않게 별도 스레드.
+
+    delay: 시스템별 시작 시차(초). 여섯 시스템이 같은 순간에 몰리면
+    accuracy._busy 락(skip_if_busy)에 걸려 한 놈만 돌고 나머지는 그 주기를
+    건너뛴다 — 시차를 두면 락이 비어 있을 때 도착해 매 주기 고르게 돈다.
+    (건너뛰어도 다음 주기에 과거로 거슬러 메우므로 영구 공백은 없다.)
+    """
     rows = ctx["state"].get("last_rows") or []
     cfg, sys = ctx["cfg"], ctx["sys"]
 
     def work():
         try:
+            if delay > 0:
+                time.sleep(delay)
             from accuracy import run_minute, verify_day
             out = run_minute(rows, cfg)
             if out and out.get("오류"):

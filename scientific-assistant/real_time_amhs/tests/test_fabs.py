@@ -259,6 +259,46 @@ class FabMetrics(unittest.TestCase):
         self.assertIn("M16A_sorter_fail", keys)
 
 
+class FabMinuteLlm(unittest.TestCase):
+    """FAB 분당 LLM 판단 게이트 — 'LLM 판단 일치' 가 여섯 화면 모두 채워져야
+    한다. 예전엔 화면을 보고 있을 때만 돌아서, 안 보는 FAB 의 판단 기록이
+    비어 있었다."""
+
+    def _ctx(self, sys, watched=0.0):
+        return {"sys": sys, "watched": watched}
+
+    def _on(self, ctx, mode=None):
+        import server
+        old = server.CFG.get("llm", {}).get("fab_minute")
+        if mode is not None:
+            server.CFG.setdefault("llm", {})["fab_minute"] = mode
+        else:
+            server.CFG.get("llm", {}).pop("fab_minute", None)
+        try:
+            return server._llm_on(ctx, 60)
+        finally:
+            if old is None:
+                server.CFG.get("llm", {}).pop("fab_minute", None)
+            else:
+                server.CFG["llm"]["fab_minute"] = old
+
+    def test_기본은_전부_돈다(self):
+        """설정이 없으면 always — 안 보고 있어도 FAB 판단이 쌓인다."""
+        self.assertTrue(self._on(self._ctx("M14", watched=0.0)))
+        self.assertTrue(self._on(self._ctx("M16HUB", watched=0.0)))
+
+    def test_ALL_은_어떤_설정에도_돈다(self):
+        for mode in ("always", "watched", "off"):
+            self.assertTrue(self._on(self._ctx("ALL"), mode))
+
+    def test_watched_모드는_보고_있을_때만(self):
+        self.assertFalse(self._on(self._ctx("M14", watched=0.0), "watched"))
+        self.assertTrue(self._on(self._ctx("M14", watched=time.time()), "watched"))
+
+    def test_off_모드는_FAB_안_돌린다(self):
+        self.assertFalse(self._on(self._ctx("M14", watched=time.time()), "off"))
+
+
 class DashboardSync(unittest.TestCase):
     """화면 목록과 서버(config) 목록이 어긋나면 고르는 순간 빈 화면이 된다."""
 
