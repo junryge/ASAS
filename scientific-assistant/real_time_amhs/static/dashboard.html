@@ -1759,7 +1759,7 @@ function bindGraph(tbodySel){
 
 /* ── 스코어 추이 스트립 — 하루치를 항상 띄워두고 폴링마다 갱신 ──
    graphs.py 와 같은 색 체계(다크 밴드 + --cy 선)로 그린다. 순수 SVG. */
-const STRIP_BANDS = [[0,50,'#0F1622'],[50,71,'#2B2612'],[71,85,'#33210F'],[85,100,'#331419']];
+const STRIP_BANDS = [[0,60,'#0F1622'],[60,71,'#2B2612'],[71,85,'#33210F'],[85,100,'#331419']];
 const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 9, STRIP_B = 17;
 
 function dayStartOf(rows){
@@ -1820,7 +1820,7 @@ function stripSvg(rows, mt){
     STRIP_BANDS.forEach(([bl,bh,c]) =>
       o.push(`<rect x="${STRIP_L}" y="${Y(bh).toFixed(1)}" width="${iw}" height="${(Y(bl)-Y(bh)).toFixed(1)}" fill="${c}"/>`));
   }
-  const ticks = isScore ? [50,71,85,100] : [lo, lo+(hi-lo)/2, hi];
+  const ticks = isScore ? [60,71,85,100] : [lo, lo+(hi-lo)/2, hi];
   ticks.forEach(v => {
     o.push(`<line x1="${STRIP_L}" y1="${Y(v).toFixed(1)}" x2="${STRIP_L+iw}" y2="${Y(v).toFixed(1)}" stroke="#2E3A4C" stroke-width=".7" stroke-dasharray="3 3"/>`);
     o.push(`<text x="${STRIP_L-4}" y="${(Y(v)+3.4).toFixed(1)}" font-size="8.5" fill="#8FA0B6" text-anchor="end">${

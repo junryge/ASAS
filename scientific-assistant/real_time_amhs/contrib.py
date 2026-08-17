@@ -135,7 +135,7 @@ def explain(rows: list[dict], at, cfg: dict | None = None) -> dict:
     # 평소 수준 = 그날 조용한 구간(점수 < 임계). 너무 적으면 전체를 쓴다.
     quiet = [r for d, r in seq if _score(r) < floor]
     base_rows = quiet if len(quiet) >= 20 else [r for _, r in seq]
-    base_note = ("정상 구간(50점 미만) 기준" if len(quiet) >= 20
+    base_note = (f"정상 구간({floor}점 미만) 기준" if len(quiet) >= 20
                  else "정상 구간이 적어 하루 전체 기준")
 
     fired_raw = {m["raw"] for m in

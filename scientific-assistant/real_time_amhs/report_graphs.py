@@ -39,10 +39,10 @@ _FAB_RAW = 'M16HUB.STRATE.ALL.FABSTORAGERATIO'
 _STB_RAW = 'M16HUB.STRATE.STB.3F_STORAGE_UTIL'
 _REV_RAW = 'M16HUB.QUE.LFT.3F_LFT_REVERSALCNT'
 
-# 등급 배경 밴드 (1~100 척도 — 경계50/위험71/초위험85, 50 미만은 알람 없음(회색))
+# 등급 배경 밴드 (1~100 척도 — 경계60/위험71/초위험85, 60 미만은 알람 없음(회색))
 _BANDS = [
-    (0, 50, "#f1f5f9"),      # 알람 없음 (등급 미표기)
-    (50, 71, "#ffedd5"),     # 🟠 경계
+    (0, 60, "#f1f5f9"),      # 알람 없음 (등급 미표기)
+    (60, 71, "#ffedd5"),     # 🟠 경계
     (71, 85, "#fee2e2"),     # 🔴 위험
     (85, 100, "#fecaca"),    # ⛔ 초위험
 ]
@@ -249,7 +249,7 @@ def render_hub_evt_24h(rows, title=None, width=900, incidents=None):
             continue
         yh, yl = Y1(min(hi, ymax)), Y1(lo)
         out.append(f'<rect x="{L}" y="{yh}" width="{pw}" height="{yl-yh}" fill="{color}"/>')
-    for v in (50, 71, 85, 100):
+    for v in (60, 71, 85, 100):
         yy = Y1(v)
         out.append(f'<line x1="{L}" y1="{yy}" x2="{L+pw}" y2="{yy}" stroke="#e2e8f0" stroke-width=".5" stroke-dasharray="2 3"/>')
         out.append(f'<text x="{L-6}" y="{yy+3}" font-size="9" fill="#94a3b8" text-anchor="end">{v}</text>')
@@ -521,7 +521,7 @@ def derive_incidents_from_evt(rows, gap_min=60, min_score=60):
     """발동이벤트 rows → 사건 목록.
     ★ 점수 기준: unified_risk_score ≥ min_score(경계+) 인 구간을 사건으로 잡는다.
       (전엔 stage=3 기준이라 점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생김.
-       이제 '진짜 정체(점수 50+)'만 사건 → 시작·피크가 실제 몰림과 일치.)
+       이제 '진짜 정체(점수 60+)'만 사건 → 시작·피크가 실제 몰림과 일치.)
       gap_min 분 동안 점수 미달이면 종료. predictor(INCIDENT_END_GAP_MIN=60)와 동일하게 60분."""
     data = []
     for r in rows:
