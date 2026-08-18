@@ -707,8 +707,11 @@
     }
     .strike-btn.active:hover { filter: brightness(1.12); }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <!-- ★공장 서버는 인터넷이 없다. CDN 으로 걸어 두면 현장에서 marked(마크다운
+       렌더)와 Chart.js(그래프)가 조용히 죽는다 — 연구 결과가 생으로 보이고
+       KIM 의 차트는 영영 안 그려진다. vendor/ 에 내장한다 (npm 원본 그대로). -->
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -2355,7 +2358,11 @@
       return Object.entries(availableEnvs).filter(([id]) => !String(id).startsWith('gguf-'));
     }
     // 에이전트 역할/스킬에 맞는 API 모델 자동 추천 (서버에 있는 모델 중 키워드 매칭)
-    function recommendEnv(key){
+    // ★usedEnvs 를 주면 이미 배정된 모델을 피한다. 예전엔 우선순위가 다들
+    //   '35b' 라서 8명 중 6명이 전부 같은 모델(dev)로 몰렸다 — 병렬로 돌긴
+    //   하는데 같은 모델 여섯이라, '여러 모델의 다른 시각으로 연구한다' 는
+    //   UIO 의 목적이 조용히 사라졌다. 캐릭터마다 다른 모델을 준다.
+    function recommendEnv(key, usedEnvs){
       const apis = apiEnvEntries();
       if (!apis.length) return 'auto';
       const PRI = {
@@ -2368,15 +2375,27 @@
         yoon: ['35b','gemma','gpt-oss'],         // PPT
         jung: ['gpt-oss','gemma','35b'],
       }[key] || ['35b','gemma','gpt-oss'];
-      for (const kw of PRI){
-        const hit = apis.find(([id, env]) => (id + ' ' + (env.name||'')).toLowerCase().includes(kw));
-        if (hit) return hit[0];
+      const score = ([id, env]) => {
+        const s = (id + ' ' + (env.name||'')).toLowerCase();
+        const i = PRI.findIndex(kw => s.includes(kw));
+        return i < 0 ? PRI.length : i;
+      };
+      const ranked = [...apis].sort((a,b) => score(a)-score(b));
+      if (usedEnvs) {
+        const fresh = ranked.find(([id]) => !usedEnvs.has(id));
+        if (fresh) return fresh[0];            // 안 쓴 모델 중 제일 맞는 것
       }
-      return apis[0][0];
+      return ranked[0][0];                     // 모델 수 < 에이전트 수면 재사용
     }
     function ensureAgentEnvs(){
-      for (const k of Object.keys(agentBaseData)){
-        if (!agentEnvMap[k] || String(agentEnvMap[k]).startsWith('gguf-')) agentEnvMap[k] = recommendEnv(k);
+      // CEO 먼저(가장 강한 모델 선점) → 나머지는 서로 다른 모델로 분산
+      const used = new Set(Object.values(agentEnvMap).filter(v => v && v !== 'auto'));
+      const order = ['ceo', ...Object.keys(agentBaseData).filter(k => k !== 'ceo')];
+      for (const k of order){
+        if (!agentEnvMap[k] || String(agentEnvMap[k]).startsWith('gguf-')) {
+          agentEnvMap[k] = recommendEnv(k, used);
+          if (agentEnvMap[k] && agentEnvMap[k] !== 'auto') used.add(agentEnvMap[k]);
+        }
       }
     }
     // 에이전트의 실제 사용 모델 (항상 API, 절대 gguf 아님)
@@ -2386,7 +2405,9 @@
       return v || 'auto';
     }
     function autoRecommendModels(){
-      for (const k of Object.keys(agentBaseData)) agentEnvMap[k] = recommendEnv(k);
+      // 전부 비우고 다시 분산 배정 (안 비우면 기존 배정이 used 에 잡혀 재추천이 안 됨)
+      for (const k of Object.keys(agentBaseData)) delete agentEnvMap[k];
+      ensureAgentEnvs();
       renderModelAssign();
     }
     // CEO 뷰: 에이전트별 모델 배정 그리드 렌더
@@ -2842,6 +2863,12 @@
 
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
+      // Chart.js 가 없으면(스크립트 로드 실패) 던지지 말고 원본 JSON 이라도 보인다
+      if (typeof Chart === 'undefined') {
+        const wrap = canvas.closest('.chart-canvas-wrap');
+        if (wrap) wrap.innerHTML = `<pre style="font-size:11px;padding:8px;white-space:pre-wrap;">${escapeHtml(jsonStr.trim())}</pre>`;
+        return;
+      }
       if (_chartInstances[canvasId]) _chartInstances[canvasId].destroy();
       _chartInstances[canvasId] = new Chart(canvas.getContext('2d'), config);
     }
@@ -3884,7 +3911,8 @@
             const stage = agentStages[ak] || 'waiting';
             const label = STAGE_LABELS[stage] || stage;
             const info = agentAssignments[ak];
-            html += `<div style="font-size:12px;color:var(--muted);padding:2px 0;">${label} ${name}: ${info.role}</div>`;
+            const mname = availableEnvs[aEnv(ak)]?.name || aEnv(ak);   // 어떤 모델이 일하는지 보이게
+            html += `<div style="font-size:12px;color:var(--muted);padding:2px 0;">${label} ${name}: ${info.role} <span style="color:#6366f1;">· ${mname}</span></div>`;
           }
           statusEl.innerHTML = html;
         }
@@ -3966,44 +3994,44 @@
       }
 
       // 신뢰도 70 미만 → 자동 재작업
-      updateProgress('③ 자체 검토 (신뢰도 확인)...');
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
-        if (r.error || !r.content) continue;
-        if (r.confidence < 70) {
-          agentStages[r.agent] = 'reworking';
-          updateProgress('③ 신뢰도 미달 재작업: ' + (agentBaseData[r.agent]?.name || r.agent));
-          reviewLog.push({agent:r.agent, stage:'self_review', action:'rework', reason:`신뢰도 ${r.confidence}/100 미달`});
-          try {
-            const retryResp = await fetch('/api/chat', {
-              method:'POST', headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({
-                env:[aEnv(r.agent)],
-                messages:[
-                  {role:'user', content:`이전 답변의 신뢰도가 ${r.confidence}점으로 낮습니다. 더 정확하고 근거가 충분한 답변을 다시 작성하세요.\n\n원래 과제: ${task}${confidencePrompt}`}
-                ],
-                skills:r.skills||[], effort:3, max_tokens:userMaxTokens, think_mode:false,
-              })
-            });
-            const retryData = await retryResp.json();
-            if(retryData.content){
-              results[i] = {agent:r.agent, content:retryData.content, confidence:parseConfidence(retryData.content || ''), skills:r.skills};
-              researchState.results[r.agent] = {content:retryData.content, confidence:results[i].confidence};
-            }
-          } catch(e){}
-          agentStages[r.agent] = 'peer_review';
-          updateProgress();
-        } else {
-          agentStages[r.agent] = 'peer_review';
-        }
-      }
+      // ★③④ 는 원래 한 명씩 순서대로(await in loop) 돌았다. 현장 모델은
+      //   호출 하나에 10~60초라, 5명 재작업 + 5건 크로스리뷰면 몇 분을 그냥
+      //   기다렸다 — 'API 병렬' 이라면서 병렬인 건 ② 하나뿐이었다.
+      //   에이전트마다 제 것만 만지므로 전부 동시에 돌려도 안전하다.
+      updateProgress('③ 자체 검토 (신뢰도 확인, 병렬)...');
+      await Promise.all(results.map(async (r, i) => {
+        if (r.error || !r.content) return;
+        if (r.confidence >= 70) { agentStages[r.agent] = 'peer_review'; return; }
+        agentStages[r.agent] = 'reworking';
+        updateProgress('③ 신뢰도 미달 재작업: ' + (agentBaseData[r.agent]?.name || r.agent));
+        reviewLog.push({agent:r.agent, stage:'self_review', action:'rework', reason:`신뢰도 ${r.confidence}/100 미달`});
+        try {
+          const retryResp = await fetch('/api/chat', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              env:[aEnv(r.agent)],
+              messages:[
+                {role:'user', content:`이전 답변의 신뢰도가 ${r.confidence}점으로 낮습니다. 더 정확하고 근거가 충분한 답변을 다시 작성하세요.\n\n원래 과제: ${task}${confidencePrompt}`}
+              ],
+              skills:r.skills||[], effort:3, max_tokens:userMaxTokens, think_mode:false,
+            })
+          });
+          const retryData = await retryResp.json();
+          if(retryData.content){
+            results[i] = {agent:r.agent, content:retryData.content, confidence:parseConfidence(retryData.content || ''), skills:r.skills};
+            researchState.results[r.agent] = {content:retryData.content, confidence:results[i].confidence};
+          }
+        } catch(e){}
+        agentStages[r.agent] = 'peer_review';
+        updateProgress();
+      }));
 
-      // ④ 크로스 리뷰 (Peer Review)
-      updateProgress('④ 크로스 리뷰 진행 중...');
+      // ④ 크로스 리뷰 (Peer Review, 병렬)
+      updateProgress('④ 크로스 리뷰 진행 중 (병렬)...');
       const successes = results.filter(r => r.content && !r.error);
-      for (const r of successes) {
+      await Promise.all(successes.map(async (r) => {
         const peer = PEER_MAP[r.agent];
-        if (!peer || !successes.find(s => s.agent === peer)) continue;
+        if (!peer || !successes.find(s => s.agent === peer)) return;
         try {
           const peerResp = await fetch('/api/chat', {
             method:'POST', headers:{'Content-Type':'application/json'},
@@ -4017,7 +4045,7 @@
           const isLgtm = (peerData.content||'').includes('LGTM');
           reviewLog.push({agent:r.agent, reviewer:peer, stage:'peer_review', lgtm:isLgtm, feedback:peerData.content?.substring(0,200)});
         } catch(e){}
-      }
+      }));
 
       // ⑤⑥ CEO 자동 검토 + 반려 재작업 루프 (최대 2회)
       updateProgress('⑤ CEO 자동 검토 중...');
@@ -4058,11 +4086,11 @@
           break;
         }
 
-        // 반려 에이전트 재작업
+        // 반려 에이전트 재작업 (★병렬 — 반려가 여럿이면 한 명씩 기다릴 이유가 없다)
         retryCount++;
-        updateProgress(`⑥ CEO 반려 ${rejects.length}건 → 재작업 (${retryCount}/${CEO_MAX_RETRY})...`);
+        updateProgress(`⑥ CEO 반려 ${rejects.length}건 → 재작업 (${retryCount}/${CEO_MAX_RETRY}, 병렬)...`);
 
-        for (const rej of rejects) {
+        await Promise.all(rejects.map(async (rej) => {
           agentStages[rej.agent] = 'reworking';
           updateProgress();
 
@@ -4079,7 +4107,7 @@
 
           // 재작업 요청
           const orig = currentResults.find(r => r.agent === rej.agent);
-          if (!orig) continue;
+          if (!orig) return;
           try {
             const reworkResp = await fetch('/api/chat', {
               method:'POST', headers:{'Content-Type':'application/json'},
@@ -4098,7 +4126,7 @@
           } catch(e){}
           agentStages[rej.agent] = 'ceo_review';
           updateProgress();
-        }
+        }));
       }
 
       // ⑦ CEO 최종 종합 보고서
@@ -4116,7 +4144,8 @@
         const name = agentBaseData[r.agent]?.name||r.agent;
         const role = agentAssignments[r.agent]?.role||'';
         const content = r.content.length > maxPerAgent ? r.content.substring(0,maxPerAgent)+'\n...(이하 생략)' : r.content;
-        return `=== [${name}] ${role} (신뢰도:${r.confidence}) ===\n${content}`;
+        const usedModel = researchState.results[r.agent]?.model || '';   // ★연구 기록: 이 결과를 낸 모델
+        return `=== [${name}] ${role} (신뢰도:${r.confidence}${usedModel?` · 모델:${usedModel}`:''}) ===\n${content}`;
       }).join('\n\n');
 
       const reviewSummary = reviewLog.filter(l=>l.stage==='ceo_review').map(l=>
@@ -4142,7 +4171,8 @@
         if(prog) prog.remove();
 
         // 파이프라인 요약
-        const pipelineSummary = `[하네스 파이프라인] ${finalSuccesses.length}명 투입 | 리뷰 ${retryCount+1}라운드 | ${reviewLog.filter(l=>l.stage==='peer_review'&&l.lgtm).length}/${reviewLog.filter(l=>l.stage==='peer_review').length} 크로스리뷰 LGTM`;
+        const modelList = finalSuccesses.map(r=>`${agentBaseData[r.agent]?.name||r.agent}:${(researchState.results[r.agent]?.model||aEnv(r.agent))}`).join(' · ');
+      const pipelineSummary = `[하네스 파이프라인] ${finalSuccesses.length}명 투입 | 리뷰 ${retryCount+1}라운드 | ${reviewLog.filter(l=>l.stage==='peer_review'&&l.lgtm).length}/${reviewLog.filter(l=>l.stage==='peer_review').length} 크로스리뷰 LGTM<br>[모델] ${modelList}`;
 
         chatArea.innerHTML += `
           <div class="message">
