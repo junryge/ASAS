@@ -87,6 +87,42 @@ class ManualEntryAlways(unittest.TestCase):
         out, has = amosify(None or "")
         self.assertFalse(has)
 
+    def test_LLM_이_옛_등급을_써도_화면에선_60으로(self):
+        """★스킬 문서를 60으로 고쳐도 LLM 이 '1. 한 줄 총평: 등급 (50~70 …)'
+        을 계속 쓰는 일이 있다 (지난 보고서를 참고해 베낀다). 화면에 나가는
+        마지막 길목에서 표기를 바로잡는다."""
+        from amos_block import _fix_grade_text as fx
+        for src in ("<h2>1. 한 줄 총평: 등급 (50~70 🟠 경계 / 71~84 🔴 위험 "
+                    "/ 85~100 ⛔ 초위험)</h2>",
+                    "<h2>1. 한 줄 총평:등급(50~70 🟠 경계/ 71~84 🔴 위험 "
+                    "/ 85~100 ⛔ 초위험)</h2>",
+                    "<td>🟠 경계</td><td>50 ~ 70</td>",
+                    "<td>🟠 경계</td><td>54~70</td>"):
+            out = fx(src)
+            self.assertIn("60~70", out, src)
+            self.assertNotIn("50~70", out)
+            self.assertNotIn("50 ~ 70", out)
+        self.assertIn("점수 60 이상",
+                      fx("<p>금일 점수 50 이상 사건 없음 — 경계 없음</p>"))
+
+    def test_등급과_무관한_숫자는_안_건드린다(self):
+        """실제 데이터의 50 을 등급으로 착각해 고치면 값이 틀려진다."""
+        from amos_block import _fix_grade_text as fx
+        for keep in ("<p>총 50건 처리 · 평균 50점</p>",
+                     "<p>08:50~70호기 점검</p>",
+                     "<td>M16HUB</td><td>50</td>"):
+            self.assertEqual(fx(keep), keep)
+
+    def test_보고서_전체에도_적용된다(self):
+        html = (H1 + "<h2>1. 한 줄 총평: 등급 (50~70 🟠 경계 / 71~84 🔴 위험 "
+                "/ 85~100 ⛔ 초위험)</h2><p>총 2건.</p>"
+                "<h2>2. AMOS 이상 감지 내역</h2>" + AMOS_TABLE +
+                "<h2>3. 실제 이상 발생내역</h2><p>…</p>")
+        out, has = amosify(html)
+        self.assertTrue(has)
+        self.assertNotIn("50~70", out)
+        self.assertIn("60~70", out)
+
     def test_등급_기준표는_새_기준_60에서도_지워진다(self):
         """총평의 '점수 등급 기준' 표는 헤딩 인라인과 중복이라 지운다(고객 요청).
 

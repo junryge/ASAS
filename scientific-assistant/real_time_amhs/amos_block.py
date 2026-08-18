@@ -702,6 +702,29 @@ def _is_incident_report(body_html):
                 or re.search(_H_REPORT, body_html))
 
 
+# 등급 하한이 바뀌면(50→60) LLM 이 옛 숫자를 그대로 쓰는 일이 있다. 스킬
+# 문서를 고쳐도 지난 보고서를 참고해 베끼기 때문이다. 화면에 나가는 마지막
+# 길목에서 표기만 바로잡는다 — 등급을 말하는 문맥(같은 줄에 71·85 나 '경계')
+# 에서만 고쳐서, 실제 데이터의 50점·55건 같은 숫자는 건드리지 않는다.
+_GRADE_LO = 60
+_RE_GRADE_RANGE = re.compile(r"(?<![\d.])5\d\s*~\s*70(?![\d.])")
+_RE_GRADE_OVER = re.compile(r"점수\s*5\d(\s*(?:점)?\s*(?:이상|미만))")
+
+
+def _fix_grade_text(html):
+    """'5x~70' → '60~70' (등급 기준을 말하는 줄에서만)."""
+    if not html or ("~" not in html and "점수 5" not in html):
+        return html   # '50 ~ 70' 처럼 공백이 낀 형태도 있어 '~' 만 본다
+    out = []
+    for line in html.split("\n"):
+        if ("71" in line and "85" in line) or "경계" in line:
+            line = _RE_GRADE_RANGE.sub(str(_GRADE_LO) + "~70", line)
+            line = _RE_GRADE_OVER.sub(
+                lambda m: "점수 " + str(_GRADE_LO) + m.group(1), line)
+        out.append(line)
+    return "\n".join(out)
+
+
 def amosify(body_html):
     """body_html 에 AMOS 인터랙티브 블록 주입. 반환 (body_html, has_amos).
     실패 시 원본 그대로 (보고서 생성 절대 안 깨짐).
@@ -715,6 +738,11 @@ def amosify(body_html):
     try:
         if not _is_incident_report(body_html):
             return body_html, False
+        # 0) 등급 기준 표기를 현재 기준으로 바로잡는다.
+        #    ★LLM 이 옛 기준(50~70)을 쓰는 일이 있다 — 스킬 문서를 고쳐도
+        #      학습된 표현이 남고, 지난 보고서를 참고해 그대로 베끼기도 한다.
+        #      화면에 나가는 마지막 길목에서 한 번 더 바로잡는다.
+        body_html = _fix_grade_text(body_html)
         # 1) AMOS 헤딩 + 바로 다음 <table> 변환 (헤딩이 없으면 이 단계만 건너뛴다)
         hm = re.search(_H_AMOS, body_html)
 
