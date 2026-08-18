@@ -34,6 +34,20 @@ def _exact_in(field: str, token: str) -> bool:
     return any(token == part.strip() for part in field.split(','))
 
 
+def _compound_in(field: str, token: str) -> bool:
+    """한글 복합어 **안쪽까지** 본다 — '논문' 이 '논문검색' 에 들어 있나.
+
+    ★한국어는 낱말을 붙여 쓴다. 스킬엔 '논문검색' 이라 적혀 있는데 사람은
+      '논문 검색' 이라 친다. 이걸 '부분 일치' 로 약하게 세면, 흔해 빠진
+      '검색' 을 통째로 가진 범용 스킬한테 진다. 복합어를 이루는 조각은
+      약한 근거가 아니라 제대로 된 근거다.
+    """
+    if not _HANGUL.search(token) or len(token) < 2:
+        return False
+    return any(token in part.strip() for part in field.split(',')
+               if _HANGUL.search(part))
+
+
 class ToolRouter:
     def __init__(self, registry: ToolRegistry) -> None:
         self._registry = registry
@@ -44,42 +58,54 @@ class ToolRouter:
     # ★흔한 말과 희귀한 말을 같은 1점으로 세면 안 된다. '분석' 은 32개 스킬에,
     #   '엑셀' 은 1개에만 있는데 똑같이 1점이라, "엑셀 파일 정리해줘" 가
     #   xlsx 를 놓치고 agent-build-engineer 를 물어 왔다. 희귀할수록 높게 준다.
+    #
+    # ★★한국어는 띄어쓰기로 낱말이 안 갈라진다. 스킬 설명엔 '논문검색' 이라고
+    #   붙여 써 있는데 사람은 '논문 검색' 이라고 친다. 낱말 단위로 세면
+    #   '논문' 의 문서빈도가 0 이 되어 IDF 가 통째로 헛돈다. 실제로
+    #   '논문 검색' 이 pubmed 를 놓치고, 흔한 '검색' 만 가진 범용
+    #   agent-search-specialist 를 물어 왔다.
+    #   그래서 '점수를 매길 때 쓰는 일치 기준' 과 똑같은 기준으로 센다 —
+    #   한글은 부분 포함, 영문은 낱말 단위. 질의어마다 한 번만 세면 되니
+    #   (389개 문서 × 질의어 몇 개) 값도 싸다.
     def _build_idf(self, docs: list[str]) -> None:
         self._n_docs = max(1, len(docs))
-        df: dict[str, int] = {}
-        for d in docs:
-            for w in set(re.findall(r"[a-z0-9]+|[가-힣]+", d.lower())):
-                df[w] = df.get(w, 0) + 1
-        self._idf = {w: math.log(1 + self._n_docs / (1 + c)) for w, c in df.items()}
+        self._docs = [d.lower() for d in docs]
+        self._doc_words = [set(re.findall(r"[a-z0-9]+|[가-힣]+", d)) for d in self._docs]
+        self._idf = {}
 
     def _idf_of(self, token: str) -> float:
         """모르는 말은 '아주 희귀하다' 로 본다 (오탐보다 미탐이 나쁘다)."""
-        if not self._idf:
+        if not getattr(self, "_docs", None):
             return 1.0
-        best = self._idf.get(token)
-        if best is not None:
-            return best
-        # 부분 일치(엑셀 → 엑셀파일)는 조금 깎아서 인정
-        for w, v in self._idf.items():
-            if len(token) >= 2 and (token in w or w in token):
-                best = max(best or 0.0, v * 0.7)
-        return best if best is not None else math.log(1 + self._n_docs)
+        hit = self._idf.get(token)
+        if hit is not None:
+            return hit
+        if _HANGUL.search(token):
+            df = sum(1 for d in self._docs if token in d)      # 복합어 안쪽까지
+        else:
+            df = sum(1 for ws in self._doc_words if token in ws)
+            if df == 0 and len(token) >= 4:
+                df = sum(1 for d in self._docs if token in d)
+        val = math.log(1 + self._n_docs / (1 + df))
+        self._idf[token] = val
+        return val
 
     def route(self, prompt: str, limit: int = 5) -> list[RoutedMatch]:
         raw = [t for t in re.split(r"[\s/\-_,.]+", prompt.lower()) if t]
-        tokens: set[str] = set()
-        for t in raw:
-            tokens |= _variants(t)
-        if not tokens:
+        # ★한 낱말은 한 번만 센다. '정리해줘' 를 조사 떼고 '정리' 로도 보는데,
+        #   둘 다 점수를 주면 같은 말을 두 번 센 셈이라 어미가 붙은 질의일수록
+        #   엉뚱한 스킬이 부풀어 오른다. 변형끼리는 '가장 잘 맞는 하나' 만.
+        groups = [_variants(t) for t in raw]
+        if not any(groups):
             return []
 
         tools = self._registry.list_all()
-        if len(self._idf) == 0 or self._n_docs != len(tools):
+        if not getattr(self, "_docs", None) or self._n_docs != len(tools):
             self._build_idf([f"{t.name} {t.description}" for t in tools])
 
         scored: list[RoutedMatch] = []
         for tool in tools:
-            score, solid = self._score_parts(tokens, tool.name, tool.description)
+            score, solid = self._score_parts(groups, tool.name, tool.description)
             # ★확실한 근거(이름/키워드/설명 본문에 그 말이 실제로 있음)가
             #   하나도 없으면 아예 내보내지 않는다 — '모르겠다' 가 정답인
             #   질의에 억지로 상위 5개를 채워 주면, 에이전트는 엉뚱한 스킬을
@@ -100,9 +126,13 @@ class ToolRouter:
             self._idf, self._n_docs = {}, 0
         return self._score_parts(tokens, name, description)[0]
 
-    def _score_parts(self, tokens: set[str], name: str,
+    def _score_parts(self, tokens, name: str,
                      description: str = '') -> tuple[float, bool]:
         """이름 > 등록 키워드 > 본문 설명 순으로 무겁게 센다.
+
+        tokens 는 낱말 묶음들의 목록이다 — 한 묶음은 같은 낱말의 변형들
+        ('정리해줘', '정리')이고, 묶음마다 가장 높은 점수 하나만 센다.
+        낱낱의 집합을 주면 각각을 홀로 선 묶음으로 본다.
 
         되돌려 주는 값은 (점수, 확실한_근거가_있나).
 
@@ -123,31 +153,41 @@ class ToolRouter:
         else:
             kw, body = '', ds
 
+        groups = [{t} for t in tokens] if isinstance(tokens, (set, frozenset)) \
+            else list(tokens)
+        dwords = _words(ds)
+
         total = 0.0
         solid = False
-        for token in tokens:
-            if len(token) < 2 and not _HANGUL.search(token):
-                continue                      # 'a','를' 같은 한 글자는 버린다
-            w = self._idf_of(token)
-            if token == nm:
-                total += w * 6.0              # 이름과 정확히 같다
-                solid = True
-            elif _exact_in(kw, token):
-                total += w * 4.0              # 등록 키워드와 정확히 같다
-                solid = True
-            elif token in nm:
-                total += w * 2.0              # 이름에 들어 있다
-                solid = True
-            elif token in kw:
-                total += w * 1.5              # 키워드에 부분적으로
-                solid = True
-            elif token in body:
-                total += w                    # 본문 설명에만
-                solid = True
-            elif len(token) >= 4:
-                # 어미만 다른 경우(uppercase/upper). 짧은 말끼리 걸치면
-                # 아무 뜻 없는 우연이라, 양쪽 다 4글자 이상일 때만 센다.
-                if any(len(wd) >= 4 and (token in wd or wd in token)
-                       for wd in _words(ds)):
-                    total += w * 0.6
+        for group in groups:
+            best, best_solid = 0.0, False
+            for token in group:
+                if len(token) < 2 and not _HANGUL.search(token):
+                    continue                  # 'a','를' 같은 한 글자는 버린다
+                w = self._idf_of(token)
+                hit, is_solid = 0.0, True
+                if token == nm:
+                    hit = w * 6.0             # 이름과 정확히 같다
+                elif _exact_in(kw, token):
+                    hit = w * 4.0             # 등록 키워드와 정확히 같다
+                elif _compound_in(kw, token):
+                    hit = w * 3.5             # 키워드 복합어의 한 조각 ('논문'⊂'논문검색')
+                elif token in nm:
+                    hit = w * 2.0             # 이름에 들어 있다
+                elif token in kw:
+                    hit = w * 1.5             # 키워드에 부분적으로
+                elif token in body:
+                    hit = w                   # 본문 설명에만
+                elif len(token) >= 4 and any(
+                        len(wd) >= 4 and (token in wd or wd in token)
+                        for wd in dwords):
+                    # 어미만 다른 경우(uppercase/upper). 짧은 말끼리 걸치면
+                    # 아무 뜻 없는 우연이라, 양쪽 다 4글자 이상일 때만 센다.
+                    hit, is_solid = w * 0.6, False
+                else:
+                    continue
+                if hit > best:
+                    best, best_solid = hit, is_solid
+            total += best
+            solid = solid or best_solid
         return total, solid
