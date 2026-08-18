@@ -1257,7 +1257,9 @@ async function pollStatus(){
     $('#dot').className = 'dot'+(st.connected?'':' off');
     const sv = st.saved || {};
     // 데이터 출처 — 주피터 CSV 모드면 '로그프레소' 라고 쓰면 안 된다
-    const jup = st.source === 'jupyter';
+    // ★출처 라벨은 **설정값**을 먼저 본다. state.source 는 수집이 성공해야
+    //   채워져서, 한 번 실패하면 '로그프레소' 로 잘못 표시됐다.
+    const jup = (st.source || s.source_mode) === 'jupyter';
     SRC = st.source || SRC;
     /* ★원본 CSV 의 최신 시각과 지금의 차이 — 화면이 뒤처져 보일 때
        원인이 어디인지 여기서 갈린다. 예측 잡이 아직 안 쓴 것이면 우리가
@@ -1279,6 +1281,8 @@ async function pollStatus(){
       : `연결 끊김 — ${esc(st.error||'대기')}`;
     if(s.cuts && s.cuts.warn) CUTS = s.cuts;   // 이 시스템의 등급 컷
     $('#ch-lp').className  = st.connected?'':'off';
+    $('#ch-lp').title = st.connected ? '수집 정상'
+      : ('마지막 수집 실패 — ' + (st.error || '사유 미상'));
     $('#ch-lp-tx').textContent = jup ? '주피터 CSV' : '로그프레소';
     renderPolicy(s.policy, s.evaluation);
     // AMOS 채널 표시는 뺐다 — 주피터 CSV 에 AMOS 컬럼이 이미 들어 있어서

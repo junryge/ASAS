@@ -464,6 +464,15 @@ def version():
         "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
         "오프닝화면": "const SYSTEMS" in body,      # 있으면 새 파일
         "AMOS표시등": "ch-amos" in body,            # 있으면 옛날 파일
+        # 정책 탭 카드가 실제로 이 파일에 들어 있는지 — "정책에 안 보인다" 확인용
+        "정책_스코어카드": 'id="sprows"' in body,
+        "정책_LLM카드": 'id="lprows"' in body,
+        "정책_재시도": "apiRetry" in body,
+        # 서버 쪽 엔드포인트도 같이 (파일만 새것이고 서버가 옛날일 수 있다)
+        "API_score_policy": any(str(r) == "/api/score_policy"
+                                for r in app.url_map.iter_rules()),
+        "API_llm_policy": any(str(r) == "/api/llm_policy"
+                              for r in app.url_map.iter_rules()),
     })
 
 
@@ -489,6 +498,9 @@ def api_status():
         "server_time": datetime.now().isoformat(),
         "sys": C["sys"],
         "systems": systems(),
+        # ★설정상의 출처. state.source 는 '마지막 수집이 성공했을 때' 채워지므로,
+        #   실패하면 비어서 화면이 '로그프레소' 로 떨어져 거짓말을 했다.
+        "source_mode": __import__("sentinel").source_mode(C["cfg"]),
         # 이 시스템의 등급 컷 — 화면(gradeOf·추이 밴드·범례)이 이 값으로 그린다
         "cuts": dict(zip(("warn", "danger", "critical"), grade_cuts(C["cfg"]))),
     })
