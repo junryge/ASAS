@@ -150,3 +150,57 @@ class ReasoningLeak(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnalysisThreshold(unittest.TestCase):
+    """LLM 모델 분석(4단계) 프롬프트의 임계·등급 — 시스템별 컷을 따라가야 한다.
+
+    ★'[사건 목록] (점수 50+ …)' 이 문자열로 박혀 있었다. 경계 하한을 60 으로
+      올린 뒤에도 LLM 에게 "50점 이상이 사건" 이라고 알려주고 있었고,
+      daily.MIN_SCORE 도 50 이라 이벤트 목록·일일통계가 50 기준으로 세어졌다.
+    """
+
+    @staticmethod
+    def _seq(scores):
+        from datetime import datetime
+        out = []
+        for i, s in enumerate(scores):
+            r = {"datetime": f"2026-08-18 00:{i:02d}", "unified_risk_score": s,
+                 "hot_area": "M16HUB", "reason": "발동: M16HUB[R-C]"}
+            out.append((datetime.strptime(r["datetime"], "%Y-%m-%d %H:%M"),
+                        float(s), r))
+        return out
+
+    def setUp(self):
+        import copy
+        from lp_client import load_config
+        self.cfg = copy.deepcopy(load_config())
+        self.cfg.setdefault("grade", {})["by_sys"] = {
+            "M16B": {"warn": 70, "danger": 80, "critical": 90}}
+
+    def test_프롬프트에_50이_박혀있지_않다(self):
+        from analysis import _overview
+        txt, meta = _overview(self._seq((5, 55, 65, 72, 88, 40)), self.cfg, "00:00~00:05")
+        self.assertIn("점수 60+", txt)
+        self.assertNotIn("점수 50+", txt)
+        self.assertIn("60~70 경계", txt)
+        self.assertEqual(meta["floor"], 60)
+
+    def test_FAB_은_자기_컷을_설명한다(self):
+        from analysis import _overview
+        from lp_client import sys_cfg
+        txt, meta = _overview(self._seq((5, 55, 65, 72, 88, 40)),
+                              sys_cfg(self.cfg, "M16B"), "00:00~00:05")
+        self.assertEqual(meta["floor"], 70)
+        self.assertIn("점수 70+", txt)
+        self.assertIn("70~79 경계", txt)
+        self.assertIn("90~100 초위험", txt)
+
+    def test_이벤트_목록도_시스템_임계로_잡힌다(self):
+        """M16B(임계 70)에서는 65점이 이벤트 시작이 아니어야 한다."""
+        from analysis import _overview
+        from lp_client import sys_cfg
+        _, m_all = _overview(self._seq((5, 65, 66, 40)), self.cfg, "x")
+        _, m_fab = _overview(self._seq((5, 65, 66, 40)), sys_cfg(self.cfg, "M16B"), "x")
+        self.assertEqual(m_all["incidents"], 1, "ALL(60) 에서는 65점이 이벤트")
+        self.assertEqual(m_fab["incidents"], 0, "M16B(70) 에서는 이벤트 아님")

@@ -6,7 +6,7 @@ AMHS Sentinel_M16BR — 하루 사건 리포트 자료 (독립)
 `m16_hub_skills/발동이벤트_요약.py` 의 ③ 사건목록 · ④ AMOS 이상감지 표를
 저장된 날짜 CSV 에서 그대로 재현한다 (스킬을 import 하지 않고 같은 규칙만 따른다).
 
-  ③ 사건목록      점수 50 이상 구간을 사건으로 (간격 60분), 시각 = 최고점 시각
+  ③ 이벤트목록    임계(경계 시작점) 이상 구간을 이벤트로 (간격 60분), 시각 = 최고점 시각
   ④ AMOS 이상감지 사건 구간의 HID 구간 + 심각도 + 발동 지표(raw 컬럼)
 
 이 두 표가 리포트 프롬프트의 유일한 근거다. 페르소나가 요구하는 5섹션 형식은
@@ -23,7 +23,23 @@ _SEV = {"경계": "경계/주의(확인필요)",
         "위험": "위험/경고(모니터링 필요)",
         "초위험": "초위험/심각(조치필요)"}
 
-GAP_MIN, MIN_SCORE = 60, 50          # 스킬과 동일 — 점수 50+ / 간격 60분
+GAP_MIN = 60                         # 스킬과 동일 — 간격 60분
+MIN_SCORE = 60                       # 폴백 기본값. 실제로는 아래 _floor() 가
+                                     # config(정책 탭에서 시스템별로 저장)를 읽는다.
+
+
+def _floor(cfg: dict | None = None) -> int:
+    """이벤트 판정 임계 — **이 시스템의** 경계 시작점.
+
+    ★상수로 박아 두면 안 된다. 경계 하한을 50→60 으로 올렸을 때 여기가
+      50 인 채로 남아, 화면 등급은 60 기준인데 이벤트 목록·일일통계는
+      50 기준으로 세는 상태가 됐다 (LLM 프롬프트에도 그대로 들어갔다).
+    """
+    try:
+        from sentinel import grade_cuts
+        return grade_cuts(cfg)[0]
+    except Exception:
+        return MIN_SCORE
 
 
 def _minutes(rows: list[dict], cfg: dict) -> list[dict]:
@@ -54,14 +70,16 @@ def _minutes(rows: list[dict], cfg: dict) -> list[dict]:
     return out
 
 
-def incidents(mins: list[dict]) -> list[dict]:
-    """③ 사건목록 — 점수 50 이상 구간을 사건으로 묶는다 (간격 60분).
+def incidents(mins: list[dict], cfg: dict | None = None) -> list[dict]:
+    """③ 이벤트 목록 — 임계 이상 구간을 이벤트로 묶는다 (간격 60분).
 
     시각은 구간의 **최고점 시각**이다 (스킬·predictor 와 동일).
+    임계는 그 시스템의 경계 시작점 (정책 탭에서 FAB 마다 다르게 잡는다).
     """
+    floor = _floor(cfg)
     incs, cur = [], None
     for m in mins:
-        alarm = m["score"] >= MIN_SCORE
+        alarm = m["score"] >= floor
         if cur is None:
             if alarm:
                 cur = {"s": m, "e": m, "last": m["dt"], "peak": m}
@@ -75,7 +93,7 @@ def incidents(mins: list[dict]) -> list[dict]:
             cur = None
     if cur:
         incs.append(cur)
-    return [c for c in incs if c["peak"]["score"] >= MIN_SCORE]
+    return [c for c in incs if c["peak"]["score"] >= floor]
 
 
 def incident_rows(incs: list[dict]) -> list[dict]:
@@ -151,18 +169,19 @@ def day_material(day: str, cfg: dict | None = None) -> dict:
     day = "".join(ch for ch in str(day) if ch.isdigit())[:8]
     rows = read_day(day, cfg)
     mins = _minutes(rows, cfg)
-    incs = incidents(mins)
+    incs = incidents(mins, cfg)
 
     lv = {}
     for m in mins:
         lv[m["level"]] = lv.get(m["level"], 0) + 1
     peak = max(mins, key=lambda m: m["score"], default=None)
-    risk_min = sum(1 for m in mins if m["score"] >= MIN_SCORE)
+    floor = _floor(cfg)
+    risk_min = sum(1 for m in mins if m["score"] >= floor)
 
-    # 정체 집중 시간대 (시간별 50점 이상 분수)
+    # 정체 집중 시간대 (시간별 임계 이상 분수)
     by_hour: dict[int, int] = {}
     for m in mins:
-        if m["score"] >= MIN_SCORE:
+        if m["score"] >= floor:
             by_hour[m["dt"].hour] = by_hour.get(m["dt"].hour, 0) + 1
     busy = ", ".join(f"{h:02d}시 {n}분" for h, n in
                      sorted(by_hour.items(), key=lambda x: -x[1])[:5]) or "없음"
@@ -192,7 +211,7 @@ if __name__ == "__main__":
     cfg = load_config()
     d = sys.argv[1] if len(sys.argv) > 1 else datetime.now().strftime("%Y%m%d")
     m = day_material(d, cfg)
-    print(f"[{m['date_ko']}] 총 {m['minutes']}분 · 50점↑ {m['risk_minutes']}분 · "
+    print(f"[{m['date_ko']}] 총 {m['minutes']}분 · 임계↑ {m['risk_minutes']}분 · "
           f"사건 {len(m['incidents'])}건")
     if m["peak"]:
         p = m["peak"]

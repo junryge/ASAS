@@ -151,20 +151,24 @@ def _overview(seq, cfg: dict, span: str) -> tuple[str, dict]:
     g = grade(peak_s, cfg)
     raw = [{**r, "datetime": d.strftime("%Y-%m-%d %H:%M")} for d, s, r in seq]
     mins = day_minutes(raw, cfg)
-    inc_objs = day_incidents(mins)
+    inc_objs = day_incidents(mins, cfg)
     incs = incident_rows(inc_objs)
 
-    bands = ", ".join(f"{b['min']}~{b['max']} {b['level']}"
-                      for b in (cfg.get("grade", {}) or {}).get("bands", []))
-    L = [f"[판정 기준] 알람 임계 {floor}점 · 등급: "
-         f"{(cfg.get('grade',{}) or {}).get('normal_max',49)} 이하 정상, {bands}",
+    # ★등급 기준은 **이 시스템의 컷**으로 (정책 탭에서 FAB 마다 다르게 잡는다).
+    #   cfg.grade.bands 를 그대로 읽으면 FAB 분석이 ALL 기준을 설명하게 된다.
+    from sentinel import grade_cuts
+    w, d_, c_ = grade_cuts(cfg)
+    bands = f"{w}~{d_-1} 경계, {d_}~{c_-1} 위험, {c_}~100 초위험"
+    L = [f"[판정 기준] 알람 임계 {floor}점 · 등급: {w-1} 이하 정상, {bands}",
          "",
          f"[전체 통계] 구간 {span} · {len(seq)}분",
          f"- 최고 {g['emoji']} {g['level']} {peak_s:.0f}점 ({peak_d:%H:%M}, "
          f"{peak_r.get('hot_area') or '-'}) · 평균 {sum(scores)/len(scores):.0f}점 "
          f"· 최저 {min(scores):.0f}점 · 임계 이상 {sum(1 for s in scores if s >= floor)}분"]
 
-    L.append("\n[사건 목록] (점수 50+ 연속 구간 · 시각=최고점)")
+    # ★임계를 하드코딩하지 마라 — 50 으로 박혀 있어서, 임계를 60 으로 올린
+    #   뒤에도 LLM 에게 "50점 이상이 사건" 이라고 알려주고 있었다.
+    L.append(f"\n[이벤트 목록] (점수 {floor}+ 연속 구간 · 시각=최고점)")
     if incs:
         for i in incs:
             L.append(f"- #{i['번호']} {i['구간']} ({i['지속분']}분) 최고 {i['최고점수']}점 "
