@@ -438,6 +438,44 @@ const Workspace = {
           if (skipReasons.length < 5) skipReasons.push(`${file.webkitRelativePath || file.name}: ${j.reason}`);
           continue;
         }
+        // 프로젝트 zip → 서버가 통째로 풀었다. 바로 전부 첨부해 준다.
+        // ★풀어만 놓고 첨부를 사람이 다시 하게 하면, 붙인 줄 알고 질문했다가
+        //   "그런 코드 없다" 는 답을 듣는다.
+        if (j.status === "extracted") {
+          ok += j.count || 0;
+          (j.files || []).forEach(p => {
+            const parts = p.split("/");
+            for (let i = 1; i < parts.length; i++) uploadedDirs.add(parts.slice(0, i).join("/"));
+          });
+          if (attachAfter) {
+            try {
+              // 목록이 200개에서 잘렸으면 경로 대신 폴더째로 달라고 한다 —
+              // 안 그러면 큰 프로젝트가 앞 200개만 붙는다.
+              const req = (j.truncated_list && j.root_prefix)
+                ? { prefix: j.root_prefix }
+                : { paths: j.files };
+              req.user_id = _wsUid() || undefined;
+              // api() 가 안에서 JSON.stringify 한다 — 객체를 그대로 넘긴다
+              const bulk = await api("api/code/workspace/files", {
+                method: "POST", body: req,
+              });
+              const have = new Set(State.workspaceFiles.map(x => x.filename));
+              (bulk.files || []).forEach(f => {
+                if (!have.has(f.filename)) State.workspaceFiles.push(f);
+              });
+              toast(`프로젝트 ${bulk.count}개 파일 첨부됨`, "ok");
+            } catch (e) {
+              toast("풀기는 됐는데 첨부 실패: " + e.message, "warn");
+            }
+          }
+          const sk = j.skipped || {};
+          const skTotal = Object.values(sk).reduce((a, b) => a + b, 0);
+          if (skTotal) {
+            skip += skTotal;
+            Object.entries(sk).forEach(([why, n]) => skipReasons.push(`${why}: ${n}개`));
+          }
+          continue;
+        }
         // 업로드된 path 의 모든 상위 폴더를 펼침 대상에 추가
         if (j.path) {
           const parts = j.path.split("/");

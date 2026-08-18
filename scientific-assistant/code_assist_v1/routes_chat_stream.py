@@ -284,10 +284,17 @@ def register_chat_stream_routes(app):
                 )
 
         # 워크스페이스 첨부
+        # ★예산을 고른 모델의 컨텍스트에 맞춘다. 예전엔 16,000자 고정이라
+        #   128k 짜리 모델을 붙여 놔도 프로젝트가 파일 네댓 개에서 잘렸다.
+        #   질문도 같이 넘긴다 — 예산이 모자랄 때 잘려 나갈 것이 '나중에 올린
+        #   파일' 이 아니라 '질문과 상관없는 파일' 이 되도록.
         ws_block = None
         ws_files = data.get("workspace_files") or []
         if ws_files:
-            ws_block = build_workspace_block(ws_files)
+            _n_ctx = cfg.get("n_ctx") or cfg.get("context") or cfg.get("context_window")
+            ws_block = build_workspace_block(
+                ws_files, n_ctx=_n_ctx, query=_last_user_query(messages),
+            )
 
         # 최종 메시지 조립
         # 일부 vLLM 백엔드(Qwen3.6 등)의 채팅 템플릿은 system 메시지를 정확히 1개,

@@ -66,6 +66,106 @@ def _ws_root(uid: str) -> str:
     return root
 
 
+# ── 프로젝트(zip) 첨부 ──
+# ★예전엔 .zip 이 확장자 목록에 없어서 415 로 거부됐다. 프로젝트를 통째로
+#   주려면 파일을 하나씩 수백 번 올려야 했다. zip 하나로 끝나게 한다.
+ZIP_EXT = {".zip"}
+ZIP_MAX_FILES = 3000          # 폭탄 방지 — 이보다 많으면 앞에서 끊고 알려 준다
+ZIP_MAX_TOTAL_MB = 300        # 풀었을 때 총 크기 상한
+ZIP_SKIP_DIRS = {
+    "__pycache__", ".git", ".svn", ".hg", "node_modules", ".venv", "venv",
+    "env", ".idea", ".vscode", "dist", "build", ".next", ".cache",
+    ".pytest_cache", ".mypy_cache", "site-packages", ".tox", "target",
+}
+ZIP_SKIP_EXT = {
+    ".pyc", ".pyo", ".so", ".dll", ".dylib", ".exe", ".bin", ".o", ".a",
+    ".class", ".jar", ".war", ".zip", ".tar", ".gz", ".7z", ".rar",
+    ".mp4", ".mov", ".avi", ".mp3", ".wav", ".iso", ".db", ".sqlite",
+    ".lock", ".map", ".min.js", ".woff", ".woff2", ".ttf", ".eot",
+}
+
+
+def _zip_skip_reason(name: str) -> str | None:
+    """이 항목을 건너뛸 이유. 없으면 None."""
+    parts = [p for p in name.replace("\\", "/").split("/") if p]
+    if not parts:
+        return "빈 경로"
+    if any(p in ZIP_SKIP_DIRS for p in parts[:-1]):
+        return "제외 폴더"
+    leaf = parts[-1]
+    if leaf.startswith("."):
+        return "숨김 파일"
+    ext = os.path.splitext(leaf)[1].lower()
+    if ext in ZIP_SKIP_EXT:
+        return "코드 아님"
+    return None
+
+
+def _extract_zip(fileobj, root: str) -> dict:
+    """zip 을 워크스페이스에 안전하게 푼다.
+
+    ★zip 안의 경로는 못 믿는다. '../../etc/passwd' 같은 이름이 들어 있으면
+      워크스페이스 밖에 쓰게 된다(zip slip). 항목마다 정규화한 뒤 root 밖으로
+      나가면 버린다.
+    ★압축을 풀었을 때 크기도 못 믿는다(zip bomb). 개수·총량 상한을 둔다.
+    """
+    import zipfile
+
+    added, skipped, total = [], {}, 0
+
+    def _skip(why):
+        skipped[why] = skipped.get(why, 0) + 1
+
+    try:
+        zf = zipfile.ZipFile(fileobj)
+    except zipfile.BadZipFile:
+        return {"error": "zip 파일이 아니거나 깨졌다"}
+
+    with zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            if len(added) >= ZIP_MAX_FILES:
+                _skip(f"개수 상한 {ZIP_MAX_FILES} 초과")
+                continue
+            why = _zip_skip_reason(info.filename)
+            if why:
+                _skip(why)
+                continue
+            if total + info.file_size > ZIP_MAX_TOTAL_MB * 1024 * 1024:
+                _skip(f"총량 상한 {ZIP_MAX_TOTAL_MB}MB 초과")
+                continue
+
+            raw = [p for p in info.filename.replace("\\", "/").split("/") if p and p != "."]
+            # ★'..' 를 조용히 지우면 '../../etc/passwd' 가 'etc/passwd' 로 둔갑해
+            #   워크스페이스 안에 남는다. 밖으로 새지는 않지만, 넣으려던 게
+            #   아닌 파일이 생긴다. 그런 항목은 아예 거부한다.
+            if ".." in raw:
+                _skip("경로 이탈")
+                continue
+            parts = raw
+            if not parts:
+                _skip("잘못된 경로")
+                continue
+            safe = [_safe_name_unicode(p) for p in parts]
+            dest = _safe_join(root, *safe)
+            if not dest:                     # zip slip — 워크스페이스 밖
+                _skip("경로 이탈")
+                continue
+
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            try:
+                with zf.open(info) as src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out, 64 * 1024)
+            except Exception:
+                _skip("풀기 실패")
+                continue
+            total += info.file_size
+            added.append(os.path.relpath(dest, root).replace("\\", "/"))
+
+    return {"added": added, "skipped": skipped, "total_bytes": total}
+
+
 def register_workspace_routes(app):
 
     @app.route("/api/code/workspace/tree")
@@ -128,7 +228,7 @@ def register_workspace_routes(app):
         is_folder_upload = bool(relpath)
 
         ext = os.path.splitext(f.filename)[1].lower()
-        if not is_folder_upload and ext and ext not in ALLOWED_UPLOAD_EXT:
+        if not is_folder_upload and ext and ext not in ALLOWED_UPLOAD_EXT and ext not in ZIP_EXT:
             return jsonify({"error": f"지원하지 않는 확장자: {ext}"}), 415
 
         f.stream.seek(0, os.SEEK_END)
@@ -138,6 +238,28 @@ def register_workspace_routes(app):
             if is_folder_upload:
                 return jsonify({"status": "skipped", "reason": f"크기 초과 ({MAX_UPLOAD_MB}MB)", "path": relpath}), 200
             return jsonify({"error": f"파일 크기 초과 ({MAX_UPLOAD_MB}MB)"}), 413
+
+        # 프로젝트 zip → 워크스페이스에 통째로 풀어 준다
+        if ext in ZIP_EXT and not is_folder_upload:
+            res = _extract_zip(f.stream, root)
+            if "error" in res:
+                return jsonify(res), 400
+            print(f"[ws] zip 해제: {len(res['added'])}개 · {res['total_bytes']}바이트 "
+                  f"· 건너뜀 {sum(res['skipped'].values())}개")
+            # 목록이 잘렸을 때 프런트가 '이 폴더 전부' 로 다시 물어볼 수 있게
+            # 공통 최상위 폴더를 알려 준다. 없으면(파일이 루트에 흩어져 있으면) 빈 문자열.
+            tops = {p.split("/")[0] for p in res["added"] if "/" in p}
+            root_prefix = tops.pop() if len(tops) == 1 else ""
+            return jsonify({
+                "status": "extracted",
+                "kind": "zip",
+                "count": len(res["added"]),
+                "files": res["added"][:200],      # 응답이 너무 커지지 않게
+                "truncated_list": len(res["added"]) > 200,
+                "root_prefix": root_prefix,
+                "skipped": res["skipped"],        # 왜 건너뛰었는지 그대로 보여 준다
+                "total_bytes": res["total_bytes"],
+            })
 
         if relpath:
             parts = [p for p in relpath.split("/") if p and p not in (".", "..")]
@@ -164,6 +286,72 @@ def register_workspace_routes(app):
         rel_path = os.path.relpath(target_path, root).replace("\\", "/")
         print(f"[ws] uploaded: {rel_path} ({size} bytes)")
         return jsonify({"status": "uploaded", "path": rel_path, "size": size})
+
+    @app.route("/api/code/workspace/files", methods=["POST"])
+    def api_ws_files():
+        """여러 파일을 한 번에 읽는다 (프로젝트 첨부용).
+
+        ★예전엔 프런트가 파일 하나마다 요청을 보냈다. 300개짜리 프로젝트를
+          붙이면 요청이 300번 — 느리고, 중간에 하나 실패하면 조용히 빠졌다.
+          prefix 를 주면 그 폴더 아래 전부, paths 를 주면 그것만 읽는다.
+        """
+        root = _ws_root(_get_uid())
+        data = request.get_json(force=True, silent=True) or {}
+        paths = data.get("paths")
+        prefix = (data.get("prefix") or "").strip().replace("\\", "/").strip("/")
+        limit = int(data.get("limit") or 2000)
+
+        if not paths:
+            paths = []
+            base = _safe_join(root, prefix) if prefix else root
+            if not base or not os.path.isdir(base):
+                return jsonify({"error": "폴더 없음"}), 404
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [d for d in dirnames
+                               if d not in ZIP_SKIP_DIRS and not d.startswith(".")]
+                for fn in sorted(filenames):
+                    rel = os.path.relpath(os.path.join(dirpath, fn), root)
+                    paths.append(rel.replace("\\", "/"))
+            paths.sort()
+
+        out, skipped = [], {}
+
+        def _skip(why):
+            skipped[why] = skipped.get(why, 0) + 1
+
+        for rel in paths[:limit]:
+            rel = str(rel).strip().replace("\\", "/")
+            full = _safe_join(root, rel)
+            if not full or not os.path.isfile(full):
+                _skip("파일 없음")
+                continue
+            if _zip_skip_reason(rel):
+                _skip("코드 아님")
+                continue
+            if os.path.getsize(full) > MAX_VIEW_MB * 1024 * 1024:
+                _skip("크기 초과")
+                continue
+            content = None
+            for enc in ("utf-8", "cp949"):
+                try:
+                    with open(full, "r", encoding=enc) as fh:
+                        content = fh.read()
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+                except Exception:
+                    break
+            if content is None:
+                _skip("텍스트 아님")
+                continue
+            out.append({"filename": rel, "content": content})
+
+        return jsonify({
+            "files": out,
+            "count": len(out),
+            "skipped": skipped,
+            "truncated": len(paths) > limit,
+        })
 
     @app.route("/api/code/workspace/save", methods=["POST"])
     def api_ws_save():
