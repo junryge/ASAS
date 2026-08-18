@@ -468,14 +468,28 @@ def _msg_text(m):
     return str(c)
 
 
+_HANGUL_RE = re.compile(r"[가-힣]")
+# 한글은 한 글자가 대략 한 토큰이다. 영문·숫자는 3~4자에 하나.
+_KO_TPC = 1.0
+
+
 def _make_token_counter(model=None, tpc=2.6):
     """토큰 수 카운터 반환. 과소평가 절대 금지(과소평가하면 트림이 부족해 컨텍스트 초과).
     GGUF(크래시 위험)는 밀집 CSV 최악값 2.6 tokens/char 하한을 쓴다.
-    API(128K 네이티브, 초과해도 서버가 에러로 처리)는 현실값(≈0.5)을 써서 정상 텍스트를 헛되이 자르지 않는다."""
+    API(128K 네이티브, 초과해도 서버가 에러로 처리)는 현실값(≈0.5)을 써서 정상 텍스트를 헛되이 자르지 않는다.
+
+    ★한글은 따로 센다. 예전엔 글자 종류를 안 가리고 tpc 하나로 뭉갰는데,
+      API 경로(tpc=0.5)에서 한국어를 **절반으로** 과소평가했다 — 이 함수
+      설명이 '과소평가 절대 금지' 인데 정작 그러고 있었다.
+      16k 스파크 모델에서 한글 16,000~22,500자 구간이 그 틈이었다:
+      추정으로는 예산 안이라 트림을 안 하는데 실제로는 넘어가 업스트림이
+      400 을 뱉는다. 128k 모델에서는 잘 안 닿아서 안 드러났다.
+      GGUF(tpc=2.6)는 이미 1.0 보다 크므로 동작이 그대로다."""
     DENSE = tpc  # tokens per char 하한 (GGUF=2.6 보수적, API=0.5 현실적)
     def count(text):
         s = str(text)
-        floor = int(len(s) * DENSE) + 1
+        ko = len(_HANGUL_RE.findall(s))
+        floor = int(max(len(s) * DENSE, ko * _KO_TPC + (len(s) - ko) * DENSE)) + 1
         if model is not None:
             b = s.encode("utf-8", "ignore")
             try:

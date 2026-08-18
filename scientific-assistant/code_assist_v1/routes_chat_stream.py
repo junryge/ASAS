@@ -33,6 +33,7 @@ from code_assist_v1.engine import (
     trim_message_history,
 )
 from code_assist_v1 import knowledge_store as ks
+from code_assist_v1 import ctxbudget as cb
 
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
@@ -238,15 +239,53 @@ def register_chat_stream_routes(app):
             if kind == "gguf":
                 max_tokens = min(max_tokens, 4096)  # GGUF 는 보수적으로
 
-        # 히스토리 트림
-        messages = trim_message_history(messages, max_turns=MAX_HISTORY_TURNS)
+        # ── 컨텍스트 예산 ──
+        # ★예전엔 아무도 합계를 안 봤다. 스킬·지식·첨부가 각자 제 상한만 지켜서
+        #   작은 모델에선 이미 넘치고 있었다 (16k 모델에 입력 12,858 + 답변
+        #   16,384 = 29,242). 넘치면 API 는 거절하고 GGUF 는 크래시한다.
+        #   그리고 스킬 예산은 DEFAULT_N_CTX(=4096)로 계산돼서, 128k 모델을
+        #   골라도 늘 2,000자였다. 이제 고른 모델 기준으로 먼저 나눈다.
+        n_ctx = cb.resolve_n_ctx(cfg, kind)
+        ws_files_in = data.get("workspace_files") or []
+        enable_kb = bool(data.get("enable_knowledge", False))
+
+        # 시스템 프롬프트는 못 줄이므로 먼저 만들어 실측한다 (스킬 제외)
+        try:
+            base_text = build_coding_system_prompt(
+                skill_ids=[], user_extra=user_extra, n_ctx=n_ctx,
+                can_edit=bool(ws_files_in),
+            )
+        except Exception:
+            base_text = ""
+        budget = cb.plan(
+            n_ctx, max_tokens, cb.est_tokens(base_text),
+            want_skills=bool(skill_ids),
+            want_knowledge=enable_kb,
+            want_workspace=bool(ws_files_in),
+        )
+        max_tokens = budget.reply
+        if budget.system_overflow:
+            # ★예산으로 못 고치는 상황 — 시스템 프롬프트만으로 모델 한도를
+            #   넘는다. 그냥 보내면 API 는 400, GGUF 는 크래시다. 사용자에게는
+            #   둘 다 그냥 "안 되네" 로 보이므로, 무엇이 문제인지 말해 준다.
+            return Response(_sse({
+                "error": (f"고른 모델의 컨텍스트({n_ctx:,} 토큰)가 시스템 프롬프트"
+                          f"({cb.est_tokens(base_text):,} 토큰)보다 작습니다. "
+                          f"스킬을 줄이거나 더 큰 모델을 고르세요."),
+                "status": 413,
+            }), mimetype="text/event-stream", status=413)
+
+        # 이력은 턴 수가 아니라 토큰으로 자른다 — 코드 붙은 12턴과 인사말
+        # 12턴은 크기가 백 배 다른데 예전엔 똑같이 12턴을 남겼다.
+        messages, dropped = cb.trim_history(messages, budget.history)
 
         # 시스템 프롬프트 (코딩 페르소나 + 스킬 본문)
         try:
             system_text = build_coding_system_prompt(
-                skill_ids=skill_ids, user_extra=user_extra, n_ctx=DEFAULT_N_CTX,
+                skill_ids=skill_ids, user_extra=user_extra, n_ctx=n_ctx,
                 # 첨부된 파일이 있어야 고칠 대상이 있다
-                can_edit=bool(data.get("workspace_files")),
+                can_edit=bool(ws_files_in),
+                skill_budget_chars=cb.est_chars(budget.skills),
             )
         except Exception as e:
             return Response(
@@ -283,6 +322,7 @@ def register_chat_stream_routes(app):
                     query=q,
                     knowledge_results=results,
                     intent_search_only=_is_search_only_intent(q),
+                    max_total=cb.est_chars(budget.knowledge),
                 )
 
         # 워크스페이스 첨부
@@ -293,9 +333,9 @@ def register_chat_stream_routes(app):
         ws_block = None
         ws_files = data.get("workspace_files") or []
         if ws_files:
-            _n_ctx = cfg.get("n_ctx") or cfg.get("context") or cfg.get("context_window")
             ws_block = build_workspace_block(
-                ws_files, n_ctx=_n_ctx, query=_last_user_query(messages),
+                ws_files, query=_last_user_query(messages),
+                max_total=cb.est_chars(budget.workspace),
             )
 
         # 최종 메시지 조립
@@ -315,7 +355,44 @@ def register_chat_stream_routes(app):
             else:
                 final_msgs.append(m)
 
+        # ── 마지막 안전망 ──
+        # ★예산대로 나눠 담아도 어림셈이라 어긋날 수 있다. 여기서 실제로 재서
+        #   넘으면 답변 자리를 줄이고, 그래도 넘으면 첨부를 뒤에서부터 깎는다.
+        #   넘긴 채로 보내면 API 는 400 을 뱉고 GGUF 는 죽는다 — 둘 다
+        #   사용자에게는 그냥 "안 되네" 로 보인다.
+        est_in = sum(cb.est_tokens(str(m.get("content") or "")) + 8 for m in final_msgs) + 16
+        over = est_in + max_tokens + budget.safety - n_ctx
+        if over > 0:
+            shrink = min(max_tokens - 512, over)
+            if shrink > 0:
+                max_tokens -= shrink
+                over -= shrink
+        if over > 0 and ws_block:
+            # 첨부가 제일 크다 — 여기서 깎는다
+            keep_chars = max(1000, cb.est_chars(budget.workspace) - cb.est_chars(over) - 500)
+            ws_block = build_workspace_block(
+                ws_files, query=_last_user_query(messages), max_total=keep_chars,
+            )
+            system_chunks = [system_text]
+            if kb_block:
+                system_chunks.append(kb_block["content"])
+            if ws_block:
+                system_chunks.append(ws_block["content"])
+            final_msgs[0] = {"role": "system", "content": "\n\n".join(system_chunks)}
+            est_in = sum(cb.est_tokens(str(m.get("content") or "")) + 8
+                         for m in final_msgs) + 16
+            print(f"[ctx] 안전망 작동 — 첨부를 {keep_chars:,}자로 줄임")
+
         timeout_s = 600 if data.get("disable_fallback", True) else 120
+
+        ctx_report = {
+            **budget.to_json(),
+            "est_input_tokens": est_in,
+            "history_dropped": dropped,
+        }
+        print(f"[ctx] n_ctx={n_ctx:,} 입력≈{est_in:,} 답변={max_tokens:,} "
+              f"(첨부 {budget.workspace:,} 스킬 {budget.skills:,} "
+              f"지식 {budget.knowledge:,} 이력 {budget.history:,}, 버린 턴 {dropped})")
 
         meta = {
             "model_used": cfg.get("model") or cfg.get("name"),
@@ -326,6 +403,9 @@ def register_chat_stream_routes(app):
             "system_prompt_length": len(system_text)
                 + (len(kb_block["content"]) if kb_block else 0)
                 + (len(ws_block["content"]) if ws_block else 0),
+            # ★어디에 컨텍스트를 썼는지 보이게 한다. 안 보이면 "왜 답이
+            #   이상하지" 를 영영 못 푼다.
+            "context": ctx_report,
         }
 
         def generate():

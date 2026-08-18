@@ -27,6 +27,7 @@ def build_coding_system_prompt(
     user_extra: str = "",
     n_ctx: int = 32768,
     can_edit: bool = False,
+    skill_budget_chars: int | None = None,
 ) -> str:
     """코딩 어시스턴트 시스템 프롬프트 (스킬 본문 포함).
 
@@ -42,8 +43,11 @@ def build_coding_system_prompt(
     skill_ids = skill_ids or []
     if skill_ids:
         parts.append(SKILL_INJECT_HEADER.strip())
-        # 컨텍스트 예산: 시스템 프롬프트 1500 + ctx 의 50% 까지 스킬에 할당
-        budget = max(2000, int(n_ctx * 0.4) - 1500)
+        # ★예산은 ctxbudget 이 모델 크기를 보고 나눠 준 값을 쓴다. 예전엔
+        #   여기서 DEFAULT_N_CTX(=4096)로 계산해서, 128k 모델을 골라도 늘
+        #   2,000자였다 — 고른 모델이 뭐든 상관이 없었다.
+        budget = (skill_budget_chars if skill_budget_chars
+                  else max(2000, int(n_ctx * 0.4) - 1500))
         used = 0
         for sid in skill_ids:
             content = load_skill_content(sid, max_chars=4000)
@@ -70,17 +74,19 @@ def build_knowledge_block(
     query: str,
     knowledge_results: list[dict],
     intent_search_only: bool = False,
+    max_total: int | None = None,
 ) -> Optional[dict]:
     """BM25 검색 결과 → system 메시지 dict 또는 None."""
     if not knowledge_results:
         return None
 
+    cap = max_total if max_total else MAX_KNOWLEDGE_INJECT_CHARS
     body_parts = [KNOWLEDGE_INJECT_HEADER.strip(), f"검색어: {query}", ""]
     total = 0
     for r in knowledge_results:
         chunk = (r.get("content") or "")[:4000]
-        if total + len(chunk) > MAX_KNOWLEDGE_INJECT_CHARS:
-            chunk = chunk[: max(0, MAX_KNOWLEDGE_INJECT_CHARS - total)]
+        if total + len(chunk) > cap:
+            chunk = chunk[: max(0, cap - total)]
             if not chunk:
                 break
         body_parts.append(f"--- 📄 {r.get('filename', '?')} (관련도 {r.get('score', 0):.1f}) ---")
@@ -170,6 +176,7 @@ def build_workspace_block(
     workspace_files: list[dict],
     n_ctx: int | None = None,
     query: str = "",
+    max_total: int | None = None,
 ) -> Optional[dict]:
     """첨부된 파일들을 system 메시지로 묶음.
 
@@ -180,7 +187,13 @@ def build_workspace_block(
     if not workspace_files:
         return None
 
-    max_total, max_file = workspace_budget(n_ctx)
+    _auto_total, max_file = workspace_budget(n_ctx)
+    # ★밖에서 예산을 주면 그걸 따른다. 안 주면 예전처럼 모델 크기로 잡는다.
+    #   전체 합을 보는 건 ctxbudget 뿐이므로, 실제 요청에선 늘 밖에서 준다.
+    if max_total is None:
+        max_total = _auto_total
+    else:
+        max_file = max(1200, max_total // 8)
     ordered = _rank_files(workspace_files, query)
 
     parts = [WORKSPACE_INJECT_HEADER.strip()]
