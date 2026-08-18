@@ -30,6 +30,41 @@ CFG = load_config()
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"))
 
 
+# ─────────────────────── 느린 요청 로그 ───────────────────────
+# "저장이 오래 걸린다" 같은 말을 숫자로 바꾸기 위한 것. 개발 PC 에서는 4ms 인
+# 요청이 현장에서 느리면, 원인이 코드가 아니라 그 서버의 무언가(디스크·수집
+# 스레드·백신 등)라는 뜻이다. 어느 요청이 몇 초 걸렸는지 남겨야 좁힐 수 있다.
+SLOW_MS = 1000                      # 이보다 오래 걸린 요청만 남긴다
+SLOW_LOG: list = []                 # 최근 50건 (화면에서 볼 수 있게)
+
+
+@app.before_request
+def _t_start():
+    request.environ["_t0"] = time.time()
+
+
+@app.after_request
+def _t_end(resp):
+    t0 = request.environ.get("_t0")
+    if t0:
+        ms = int((time.time() - t0) * 1000)
+        resp.headers["X-Elapsed-ms"] = str(ms)
+        if ms >= SLOW_MS and request.path.startswith("/api/"):
+            rec = {"at": datetime.now().strftime("%H:%M:%S"),
+                   "method": request.method, "path": request.full_path[:120],
+                   "ms": ms}
+            SLOW_LOG.append(rec)
+            del SLOW_LOG[:-50]
+            print(f"[느림] {rec['method']} {rec['path']} — {ms}ms")
+    return resp
+
+
+@app.route("/api/slow")
+def api_slow():
+    """최근 느린 요청 목록 — 현장에서 원인을 좁힐 때."""
+    return jsonify({"threshold_ms": SLOW_MS, "items": list(reversed(SLOW_LOG))})
+
+
 # ─────────────────────── 시스템(FAB) 별 컨텍스트 ───────────────────────
 # ALL(전체 통합) + FAB 별 화면이 **한 서버**에서 같이 돈다. 케이스 저장소·
 # 폴링 상태·캐시가 시스템마다 따로 있어야 M14 화면이 ALL 케이스를 보는
@@ -181,6 +216,17 @@ def _llm_on(ctx: dict, interval: int) -> bool:
     return True
 
 
+def _llm_work(ctx: dict, cases: list, llm_on: bool, order: int) -> None:
+    """LLM 관련 후속 작업 — 수집 루프 밖에서 돈다 (수집을 절대 막지 않게)."""
+    try:
+        if cases:
+            _auto_judge(ctx, cases)
+        if llm_on:
+            _minute_llm(ctx, delay=order * 4.0)
+    except Exception as e:
+        print(f"[LLM:{ctx['sys']}] ⚠️ 후속 작업 예외: {type(e).__name__}: {e}")
+
+
 def _poll_loop() -> None:
     """수집 루프 — 매 회 모든 시스템을 돌고, 주기는 config 에서 다시 읽는다."""
     _bootstrap_today()                 # ① 하루치 먼저 확보
@@ -204,6 +250,7 @@ def _poll_loop() -> None:
                     last_rows=res.pop("all_rows", None) or st.get("last_rows"),
                     saved=res.get("saved"),
                     gap_min=res.get("gap_min"),
+                    source_latest=res.get("latest"),   # 원본 CSV 의 최신 행 시각
                 )
                 sv = res.get("saved") or {}
                 if st["scans"] == 1 or sv.get("written"):
@@ -211,10 +258,18 @@ def _poll_loop() -> None:
                           f"신규 {sv.get('written', 0)}행 저장"
                           + (f" → {sv['files'][0]}" if sv.get("files") else ""))
                 if res.get("ok"):
-                    _auto_judge(ctx, res.get("cases") or [])
-                    if _llm_on(ctx, interval):
-                        _minute_llm(ctx, delay=i * 4.0)
+                    # ★데이터가 우선이다. 선행 감지는 가벼우니 바로 하고,
+                    #   LLM(케이스 자동 판단·분당 판단)은 **별도 스레드**로
+                    #   떼어 보낸다. 여기서 직접 부르면 게이트웨이가 느린 날
+                    #   그만큼 다음 시스템 수집이 통째로 밀린다 — 화면 데이터가
+                    #   몇 분씩 뒤처지는 원인이었다.
                     _update_forecast(ctx)
+                    cases = res.get("cases") or []
+                    llm_on = _llm_on(ctx, interval)
+                    if cases or llm_on:
+                        threading.Thread(
+                            target=_llm_work, args=(ctx, cases, llm_on, i),
+                            daemon=True).start()
             except Exception as e:
                 st.update(connected=False, error=f"{type(e).__name__}: {e}",
                           last_scan=datetime.now().isoformat())

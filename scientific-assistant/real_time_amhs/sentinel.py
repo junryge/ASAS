@@ -570,6 +570,12 @@ def scan_once(store: CaseStore, rows: list[dict] | None = None,
         "amos_warn": warn,
         "saved": saved,
         "gap_min": gap,            # 이번에 메운 빈 구간(분)
+        # ★받아온 파일에서 **가장 최근 행의 시각**. 화면이 뒤처져 보일 때
+        #   원인이 어디인지 이걸로 갈린다 — 이 값이 이미 몇 분 전이면
+        #   예측 잡(원본 CSV)이 늦은 것이고, 이 값은 최신인데 화면이 옛날이면
+        #   우리 쪽(수집·표시)이 늦은 것이다.
+        "latest": max((d.isoformat() for d in
+                       (_row_dt(r) for r in rows) if d), default=None),
         "source": source_mode(cfg),
         "all_rows": rows,          # 정상 포함 전체 — 화면 피드용
     }
