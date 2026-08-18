@@ -189,14 +189,38 @@ def _widen(path: str, fields: list, extra: list) -> list:
     return new_fields
 
 
+# 읽어 둔 날짜 CSV — {경로: (mtime_ns, size, rows)}
+# ★화면이 3초마다 /api/feed 를 부르고 그때마다 하루치를 통째로 다시 읽었다.
+#   현장에서 이 읽기가 30초씩 걸려(디스크·백신·네트워크 드라이브) 요청이
+#   줄줄이 밀렸다 — "데이터가 안 뜬다"·"저장이 오래 걸린다" 의 진짜 원인.
+#   파일이 안 바뀌었으면 다시 읽지 않는다. 바뀌면(수집이 한 줄 쓰면)
+#   mtime·크기가 달라지므로 저절로 새로 읽는다 — 오래된 값을 볼 일이 없다.
+_day_cache: dict[str, tuple] = {}
+_DAY_CACHE_MAX = 4          # 오늘 + 최근 몇 개면 충분 (메모리 보호)
+
+
 def read_day(day: str, cfg: dict | None = None) -> list[dict]:
-    """날짜 CSV 전체 읽기. '2026-07-27' / '20260727' 모두 허용."""
+    """날짜 CSV 전체 읽기. '2026-07-27' / '20260727' 모두 허용.
+
+    같은 파일을 다시 읽지 않는다 (mtime·크기가 같으면 캐시).
+    """
     day = "".join(ch for ch in str(day) if ch.isdigit())[:8]
     path = day_path(day, cfg)
-    if not os.path.isfile(path):
+    try:
+        st = os.stat(path)
+    except OSError:
+        _day_cache.pop(path, None)
         return []
+    sig = (st.st_mtime_ns, st.st_size)
+    hit = _day_cache.get(path)
+    if hit and hit[0] == sig[0] and hit[1] == sig[1]:
+        return hit[2]
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
-        return [dict(r) for r in csv.DictReader(f)]
+        rows = [dict(r) for r in csv.DictReader(f)]
+    if len(_day_cache) >= _DAY_CACHE_MAX:
+        _day_cache.pop(next(iter(_day_cache)), None)
+    _day_cache[path] = (sig[0], sig[1], rows)
+    return rows
 
 
 def read_range(from_dt: str, to_dt: str, cfg: dict | None = None) -> list[dict]:

@@ -729,6 +729,12 @@ def api_window():
                     "poll_interval_s": q.get("poll_interval_s", 60), "poll_options": popts})
 
 
+# /api/feed 응답 캐시 — {키: (원본표시, 응답)}
+# 화면이 3초마다 부르는데 데이터는 1분에 한 번 바뀐다. 원본이 그대로면
+# 같은 응답을 다시 만들 이유가 없다 (행 수백 개를 매번 가공·직렬화했다).
+FEED_CACHE: dict = {}
+
+
 @app.route("/api/feed")
 def api_feed():
     """수집한 전체 데이터 — 정상 포함 4등급으로 분류해서 내려준다.
@@ -758,6 +764,20 @@ def api_feed():
     # (안 그러면 7/25 를 물었는데 오늘 버퍼가 나와서 날짜가 뒤바뀐다)
     if not rows and not asked:
         rows = C["state"].get("last_rows") or []
+
+    # ★원본이 그대로면 지난 응답을 그대로 준다 (아래 out 생성이 비싸다)
+    try:
+        from store_csv import day_path
+        _p = day_path(shown_day, C["cfg"])
+        _st = os.stat(_p)
+        _sig = (_st.st_mtime_ns, _st.st_size, len(C["store"].cases),
+                request.args.get("limit"), C["sys"], shown_day)
+    except OSError:
+        _sig = None
+    if _sig:
+        _hit = FEED_CACHE.get(C["sys"])
+        if _hit and _hit[0] == _sig:
+            return jsonify(_hit[1])
 
     # 추이 그래프에서 고를 수 있는 지표 묶음 — 값을 같이 실어보낸다
     groups = metric_groups(C["cfg"])
@@ -820,7 +840,7 @@ def api_feed():
         limit = max(1, min(5000, int(request.args.get("limit", 1500))))
     except ValueError:
         limit = 1500
-    return jsonify({"rows": out[:limit], "counts": counts, "total": len(out),
+    payload = {"rows": out[:limit], "counts": counts, "total": len(out),
                     "shown": min(limit, len(out)),
                     # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
                     "groups": [dict(g, metrics=[m for m in g["metrics"] if m["key"] in seen_keys])
@@ -829,7 +849,10 @@ def api_feed():
                     "day": shown_day, "fallback": fallback,
                     "latest": out[0]["datetime"] if out else None,
                     "earliest": out[-1]["datetime"] if out else None,
-                    "window": C["cfg"].get("query", {}).get("window", "10m")})
+               "window": C["cfg"].get("query", {}).get("window", "10m")}
+    if _sig:
+        FEED_CACHE[C["sys"]] = (_sig, payload)
+    return jsonify(payload)
 
 
 @app.route("/api/collect", methods=["POST"])
