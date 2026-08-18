@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -44,6 +45,122 @@ _feedback_store: FeedbackStore | None = None
 # 1. 스킬 → ToolRegistry 자동 등록
 # ============================================================
 
+def _read_frontmatter(path: str, max_bytes: int = 8192) -> dict:
+    """SKILL.md 앞머리(--- ... ---)에서 name/description 만 싸게 읽는다.
+
+    PyYAML 에 의존하지 않는다(설치 부담 없이 어디서나 돌아야 한다). 값이
+    여러 줄이거나 따옴표로 감싸여 있어도 잡고, 형식이 이상하면 그냥 비운다 —
+    스킬 하나 때문에 등록 전체가 죽으면 안 된다.
+    """
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            head = f.read(max_bytes)
+    except Exception:
+        return {}
+    if not head.lstrip().startswith('---'):
+        return {}
+    body = head.lstrip()[3:]
+    end = body.find('\n---')
+    if end == -1:
+        return {}
+    out, key, buf = {}, None, []
+    for line in body[:end].splitlines():
+        m = re.match(r'^([A-Za-z_][\w-]*)\s*:\s*(.*)$', line)
+        if m:
+            if key:
+                out[key] = ' '.join(buf).strip()
+            key, buf = m.group(1).lower(), [m.group(2)]
+        elif key and line.strip():
+            buf.append(line.strip())
+    if key:
+        out[key] = ' '.join(buf).strip()
+    for k, v in list(out.items()):
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+            v = v[1:-1]
+        out[k] = v.replace('\\"', '"')
+    return out
+
+
+# ── 단계적 공개(progressive disclosure) ──
+# Agent Skills 규격은 스킬을 3단으로 나눠 읽는다.
+#   1단 이름+설명   — 라우팅에만 쓴다. 전 스킬(389개) 항상 메모리에.
+#   2단 SKILL.md 본문 — **고른 뒤에만** 읽는다. 여기가 이 함수.
+#   3단 딸린 파일   — 본문이 가리키면 그때 연다. 여기선 '있다' 고만 알려 준다.
+# ★예전엔 본문을 앞에서 2000자로 뚝 잘랐다. 문장 한가운데서 끊기니 마지막
+#   절차가 반토막 나고, 뒤쪽에 있는 정작 필요한 항목은 통째로 사라졌다.
+_MAX_BODY = 6000
+
+
+def _sections(text: str) -> list[tuple[str, str]]:
+    """마크다운을 (제목, 내용) 덩어리로 자른다. 앞머리는 제목 '' 로."""
+    out: list[tuple[str, str]] = []
+    title, buf = '', []
+    for line in text.splitlines():
+        if re.match(r'^#{1,3} +\S', line):
+            if buf or title:
+                out.append((title, '\n'.join(buf).strip()))
+            title, buf = line.strip(), []
+        else:
+            buf.append(line)
+    if buf or title:
+        out.append((title, '\n'.join(buf).strip()))
+    return out
+
+
+def load_skill_body(path: str, payload: str = '', max_chars: int = _MAX_BODY) -> str:
+    """SKILL.md 본문을 섹션 경계에서 끊어 돌려준다.
+
+    payload(그 순간의 질의)에 나오는 말이 걸린 섹션을 먼저 넣는다 — 길이가
+    모자라 버려야 한다면, 버릴 것은 '뒤쪽' 이 아니라 '상관없는 쪽' 이다.
+    """
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except Exception as e:
+        return f'Error reading {path}: {e}'
+
+    if len(text) <= max_chars:
+        return text + _bundled_note(path)
+
+    secs = _sections(text)
+    want = {w for w in re.findall(r'[a-z0-9]{3,}|[가-힣]{2,}', payload.lower())}
+
+    def hit(sec: tuple[str, str]) -> int:
+        blob = (sec[0] + ' ' + sec[1]).lower()
+        return sum(1 for w in want if w in blob)
+
+    # 원래 순서를 지키되, 자리가 모자라면 안 걸린 섹션부터 버린다
+    keep, used = [], 0
+    order = sorted(range(len(secs)), key=lambda i: (-hit(secs[i]), i))
+    chosen = set()
+    for i in order:
+        block = (secs[i][0] + '\n' + secs[i][1]).strip()
+        if used + len(block) > max_chars and chosen:
+            continue
+        chosen.add(i)
+        used += len(block) + 2
+    for i, sec in enumerate(secs):
+        if i in chosen:
+            keep.append((sec[0] + '\n' + sec[1]).strip())
+    dropped = len(secs) - len(chosen)
+    tail = f'\n\n_(관련 낮은 섹션 {dropped}개 생략 — 필요하면 원문 참고)_' if dropped else ''
+    return '\n\n'.join(keep)[:max_chars] + tail + _bundled_note(path)
+
+
+def _bundled_note(skill_md_path: str) -> str:
+    """3단: 같은 폴더에 딸린 참고 파일이 있으면 '있다' 고만 알려 준다."""
+    try:
+        d = os.path.dirname(skill_md_path)
+        extra = [f for f in sorted(os.listdir(d))
+                 if f != 'SKILL.md' and not f.startswith('.')]
+    except Exception:
+        return ''
+    if not extra:
+        return ''
+    return '\n\n_딸린 파일: ' + ', '.join(extra[:10]) + '_'
+
+
 def build_skill_registry(
     skills_dir: str | None = None,
     skill_keywords: dict | None = None,
@@ -74,20 +191,27 @@ def build_skill_registry(
         if not os.path.isfile(skill_md):
             continue
 
-        # description 구성: 키워드 + 스킬명
+        # description 구성 = SKILL.md 앞머리(frontmatter)의 description
+        #   + 한국어 키워드.
+        # ★Agent Skills 규격에서 라우팅은 'name + description' 으로 한다
+        #   (progressive disclosure 1단계). 예전엔 description 을
+        #   f"{폴더명}: {폴더명}" 으로 만들어서, 스킬이 스스로 써 둔 풍부한
+        #   설명을 통째로 버렸다 — 'spreadsheet 를 다루는 스킬' 이라고
+        #   적혀 있는데도 "엑셀" 질의가 xlsx 를 못 찾았다.
+        front = _read_frontmatter(skill_md)
         kw_list = keywords.get(folder_name, [])
-        kw_text = ', '.join(kw_list[:10]) if kw_list else folder_name
-        description = f'{folder_name}: {kw_text}'
+        parts = [folder_name]
+        if kw_list:
+            parts.append(', '.join(kw_list[:12]))     # 한국어 검색어
+        if front.get('description'):
+            parts.append(front['description'])
+        description = ': '.join(parts[:2]) + (
+            ' — ' + parts[2] if len(parts) > 2 else '')
 
-        # handler: SKILL.md 내용 읽기 (lazy)
+        # handler: SKILL.md 본문 읽기 (2단계 — 고른 뒤에만 읽는다)
         def make_handler(path: str):
             def handler(payload: str) -> str:
-                try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    return content[:2000] if len(content) > 2000 else content
-                except Exception as e:
-                    return f'Error reading {path}: {e}'
+                return load_skill_body(path, payload)
             return handler
 
         registry.register(Tool(
@@ -154,15 +278,63 @@ def get_router() -> ToolRouter:
 # 2. 스킬 라우팅 강화
 # ============================================================
 
+# ── 라우팅 기록(telemetry) ──
+# ★테스트에서 7/8 이 나와도, 실제 사람들이 던지는 말에서 몇 점인지는 다른
+#   얘기다. 무엇을 물었고 무엇을 골랐는지 남겨 둬야 나중에 재고 고친다.
+#   1등과 2등의 점수 차(margin)를 같이 남긴다 — 차가 거의 없으면 그건
+#   '찍은' 것이고, 평가셋에 넣어야 할 질의다.
+_ROUTE_LOG: list[dict] = []
+_ROUTE_LOG_MAX = 300
+
+
+def _log_route(query: str, matches: list[dict]) -> None:
+    top = matches[0] if matches else None
+    second = matches[1]['score'] if len(matches) > 1 else 0.0
+    _ROUTE_LOG.append({
+        'ts': time.time(),
+        'query': query[:120],
+        'top': top['name'] if top else None,
+        'score': top['score'] if top else 0.0,
+        'margin': round((top['score'] - second), 3) if top else 0.0,
+        'n': len(matches),
+    })
+    if len(_ROUTE_LOG) > _ROUTE_LOG_MAX:
+        del _ROUTE_LOG[:len(_ROUTE_LOG) - _ROUTE_LOG_MAX]
+
+
+def harness_route_stats(limit: int = 50) -> dict:
+    """최근 라우팅 상태 — 못 고른 비율과 '아슬아슬하게' 고른 질의들."""
+    recent = _ROUTE_LOG[-limit:]
+    total = len(_ROUTE_LOG)
+    miss = sum(1 for r in _ROUTE_LOG if not r['top'])
+    close = [r for r in _ROUTE_LOG if r['top'] and r['margin'] < 1.0]
+    return {
+        'total': total,
+        'no_match': miss,
+        'no_match_pct': round(miss * 100.0 / total, 1) if total else 0.0,
+        'low_margin': len(close),
+        'low_margin_queries': [r['query'] for r in close[-10:]],
+        'recent': list(reversed(recent)),
+    }
+
+
 def harness_route(query: str, limit: int = 5) -> list[dict]:
     """하네스 라우터로 프롬프트에 매칭되는 스킬 반환.
 
     Returns:
         [{"name": "biopython", "score": 3, "description": "..."}, ...]
+
+    근거가 없으면 빈 목록을 준다 — 억지로 상위 N개를 채우지 않는다.
     """
     router = get_router()
     matches = router.route(query, limit=limit)
-    return [{'name': m.name, 'score': m.score, 'description': m.description} for m in matches]
+    out = [{'name': m.name, 'score': m.score, 'description': m.description}
+           for m in matches]
+    try:
+        _log_route(query, out)
+    except Exception:
+        pass                                  # 기록 실패가 라우팅을 막으면 안 된다
+    return out
 
 
 def harness_search(query: str, limit: int = 20) -> list[dict]:
@@ -452,6 +624,23 @@ def register_harness_routes(app):
         limit = data.get('limit', 5)
         matches = harness_route(query, limit=limit)
         return flask_jsonify({'query': query, 'matches': matches})
+
+    @app.route('/api/harness/route-stats')
+    def api_harness_route_stats():
+        """라우팅이 실제로 잘 맞고 있나 — 못 고른 비율·아슬아슬한 질의."""
+        return flask_jsonify(harness_route_stats(
+            limit=int(flask_request.args.get('limit', '50'))))
+
+    @app.route('/api/harness/skill/<name>')
+    def api_harness_skill(name):
+        """2단계 공개 — 고른 스킬의 SKILL.md 본문만 그때 읽는다."""
+        tool = get_registry().get(name)
+        if tool is None:
+            return flask_jsonify({'error': f'없는 스킬: {name}'}), 404
+        q = flask_request.args.get('q', '')
+        return flask_jsonify({'name': tool.name,
+                              'description': tool.description,
+                              'body': tool.handler(q)})
 
     @app.route('/api/harness/reload', methods=['POST'])
     def api_harness_reload():
