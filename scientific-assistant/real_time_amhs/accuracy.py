@@ -390,8 +390,17 @@ def summary(day: str | None = None, cfg: dict | None = None) -> dict:
                 latest = r
     conf_avg = round(sum(confs) / len(confs), 1) if confs else None
 
+    # ★이게 켜져 있는지 화면에 알려 준다.
+    #   예전엔 안 알려 줬다. 그래서 정책에서 '1분 추론 전체 = 중지' 인 채로
+    #   카드가 "1분 추론 0건 · 대기 0 · 20분 뒤 채점" 을 띄웠다 — 곧 채워질
+    #   것처럼 보이는데 실은 아무도 만들지 않으니 영영 0 이다.
+    #   (시스템별 행이 '판단 (항상)' 이라 더 헷갈렸다)
+    pm = pm_cfg(cfg)
+    running = bool(pm["enabled"] and pm["every_min"] > 0)
+
     return {
         "day": day, "rows": len(rows),
+        "enabled": running,
         "conf_avg": conf_avg, "conf_n": len(confs),
         "latest": ({"datetime": latest.get("datetime"), "스코어": latest.get("스코어"),
                     "등급": latest.get("등급"), "실제이상": latest.get("실제이상"),

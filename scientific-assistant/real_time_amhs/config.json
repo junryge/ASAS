@@ -128,12 +128,12 @@
       "m16_hub_결과해석_도메인_고객인용V3.5.md"
     ],
     "persona": "페르소나_통합.txt",
-    "fab_minute": "off",
+    "fab_minute": "always",
     "_fab_minute_doc": "FAB 화면의 분당 LLM 판단. always=항상(기본, LLM 판단 일치가 여섯 화면 모두 채워짐) / watched=화면이 보고 있는 FAB만 / off=FAB은 안 돌림. 전 시스템이 락으로 직렬화되고 시작 시차를 둬서 게이트웨이를 한 번에 하나만 친다. ALL 은 이 설정과 무관하게 항상 돈다.",
     "per_minute": {
       "_doc": "1분마다 그 분 데이터를 LLM 이 판단해 data/YYYYMMDD_LLM.CSV 에 1행씩 남긴다. TOTAL.CSV 와 datetime 으로 조인된다.",
-      "enabled": false,
-      "_enabled_doc": "★기본 꺼짐. 실시간 관제는 **데이터가 우선**이고 LLM 판단은 나중에 해도 된다. 게이트웨이가 느린 날 6개 시스템이 매분 부르면 큐가 밀린다. 필요할 때 화면의 정책 탭에서 켜라(저장하면 이 값이 바뀐다). 끈 동안에도 수집·감지·케이스·사후검증 채점은 전부 돈다.",
+      "enabled": true,
+      "_enabled_doc": "★켬. 1분마다 그 분 데이터를 LLM 이 판단해 data/YYYYMMDD_LLM.CSV 에 남기고, 30분 뒤 실제 데이터로 채점한다 — 'LLM 판단 일치' 의 재료다. 이게 꺼져 있으면 그 카드는 영영 0 이다(하루 날린 적 있음). 느리면 끄지 말고 시스템별 주기(every_min)를 늘리거나 주기당 건수(max_per_cycle)를 줄여라 — 수집·감지·케이스는 이 설정과 무관하게 돈다.",
       "every_min": 1,
       "_every_min_doc": "1=매분, 5=5분마다, 0=끔(케이스 발생 시에만 판단)",
       "light_below": 60,

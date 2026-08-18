@@ -616,6 +616,8 @@
           <select id="lp-en"><option value="1">사용</option><option value="0">중지</option></select></label>
         <span class="note dim">중지하면 여섯 시스템 모두 새 판단을 만들지 않습니다 (기록·채점은 유지)</span>
       </div>
+      <div id="lp-offwarn" class="note" style="display:none;color:var(--wn);
+           border:1px solid var(--wn);border-radius:8px;padding:8px 10px;margin:0 0 8px"></div>
       <table class="pol"><thead><tr>
         <th style="width:110px">시스템</th><th style="width:170px">판단</th>
         <th style="width:140px">추론 주기</th><th style="width:130px">주기당 메움</th><th></th>
@@ -862,6 +864,13 @@ $('#syschip').onclick = () => openShow();
 document.addEventListener('keydown', e => {          // 이미 고른 상태면 Esc 로 닫기
   if(e.key==='Escape' && SYS && !$('#open').classList.contains('hidden')) openHide();
 });
+
+/* 정책 탭으로 보내기 — 탭 전환은 버튼 클릭에 달려 있으므로 그 버튼을 누른다
+   (카드에서 '정책 탭에서 켜기' 를 눌렀을 때 쓴다) */
+function goPolicyTab(){
+  const b = document.querySelector('.tabs button[data-tab="policy"]');
+  if(b) b.click();
+}
 
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
@@ -1573,6 +1582,15 @@ function renderAcc(a){
     $('#k-acc-s').textContent = a && a.error ? '집계 실패' : '1분 추론 누적 시 산출';
     return;
   }
+  // ★꺼져 있으면 꺼져 있다고 말한다. 예전엔 '1분 추론 0건 · 20분 뒤 채점'
+  //   이라고 띄워서 곧 채워질 것처럼 보였는데, 만드는 쪽이 꺼져 있으니
+  //   영영 0 이었다. 하루를 그렇게 날렸다.
+  if(a.enabled === false){
+    $('#k-acc').innerHTML = `<span style="font-size:15px;color:var(--wn)">중지됨</span>`;
+    $('#k-acc-s').innerHTML = `1분 추론이 꺼져 있어 데이터가 쌓이지 않습니다 · `
+      + `<a href="#" onclick="goPolicyTab();return false" style="color:var(--cy)">정책 탭에서 켜기</a>`;
+    return;
+  }
   // 과거 탭을 보는 중이면 그 날짜 표시를 실시간 값으로 덮지 않는다
   if($('#tab-past').classList.contains('hidden')) renderLlmNow(a);
   const cnt = `적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
@@ -1873,12 +1891,29 @@ function lpRow(s, opts){
   </tr>`;
 }
 
+/* ★전체 스위치가 '중지' 면 아래 시스템 행들은 아무 의미가 없다.
+   예전엔 전체가 중지인데도 행마다 '판단 (항상)' 이라고 떠 있어서, 주기·건수를
+   맞춰 놓고 왜 데이터가 없나 하루를 헤맸다. 흐리게 하고 이유를 적는다. */
+function lpMasterHint(){
+  const off = $('#lp-en').value !== '1';
+  const box = $('#lprows');
+  if(box) box.style.opacity = off ? '.42' : '1';
+  const w = $('#lp-offwarn');
+  if(w){
+    w.style.display = off ? 'block' : 'none';
+    w.textContent = '⚠️ 전체가 중지라 아래 설정은 동작하지 않습니다 — '
+                  + '새 판단이 하나도 만들어지지 않고 "LLM 판단 일치" 도 비어 있습니다.';
+  }
+}
+
 async function initLlmPolicy(){
   try{
     const d = await apiRetry('/api/llm_policy');
     LP_SYS = d.systems.map(s=>s.sys);
     $('#lp-en').value = d.enabled ? '1' : '0';
     $('#lprows').innerHTML = d.systems.map(s => lpRow(s, d)).join('');
+    lpMasterHint();
+    $('#lp-en').onchange = lpMasterHint;
     if(LP_INIT) return;
     LP_INIT = true;
     $('#lp-save').onclick = async () => {
