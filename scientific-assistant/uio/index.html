@@ -2846,15 +2846,19 @@
     // ── Chart.js instances ──
     const _chartInstances = {};
 
-    function renderChartBlock(canvasId, jsonStr) {
+    // 모델이 뱉은 chart JSON 을 Chart.js config 로 (주석·홑따옴표·콜백 허용)
+    function _parseChartConfig(jsonStr) {
       let raw = jsonStr.replace(/\/\/[^\n]*/g, '');
-      // function 콜백 문자열 제거 (JSON.parse 호환)
       raw = raw.replace(/"function\(.*?\)\s*\{[\s\S]*?\}"/g, 'null');
-      let config;
-      try { config = JSON.parse(raw); } catch(e) {
+      try { return JSON.parse(raw); } catch(e) {
         raw = raw.replace(/,\s*([\]}])/g, '$1').replace(/'/g, '"');
-        try { config = JSON.parse(raw); } catch(e2) { return; }
+        try { return JSON.parse(raw); } catch(e2) { return null; }
       }
+    }
+
+    function renderChartBlock(canvasId, jsonStr) {
+      const config = _parseChartConfig(jsonStr);
+      if (!config) return;
       if (!config.type) config.type = 'bar';
       if (!config.options) config.options = {};
       config.options.responsive = true;
@@ -3804,6 +3808,34 @@
       return rejects;
     }
 
+    // ── LLM 호출 재시도 ──
+    // ★현장 LLM 은 가끔 그냥 안 된다 (일시 과부하·타임아웃·502). 예전엔 한 번
+    //   실패하면 그 에이전트가 통째로 빠진 채 보고서가 나왔다 — 연구가 슬쩍
+    //   부실해지는데 사용자는 모른다. 잠깐 쉬고 두 번까지 다시 던진다.
+    //   (서버 쪽 모델 폴백과 별개 — 이건 요청 자체가 죽었을 때다)
+    async function apiChatWithRetry(body, tries = 3){
+      const delays = [2000, 5000];
+      let lastErr = '';
+      for (let t = 0; t < tries; t++) {
+        try {
+          const resp = await fetch('/api/chat', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(body)
+          });
+          const data = await resp.json();
+          if (!data.error && data.content) return data;
+          lastErr = data.error || '빈 응답';
+        } catch(e) {
+          lastErr = e.message || String(e);
+        }
+        if (t < tries - 1) {
+          console.warn(`[재시도 ${t+1}/${tries-1}] LLM 호출 실패: ${lastErr}`);
+          await new Promise(res => setTimeout(res, delays[Math.min(t, delays.length-1)]));
+        }
+      }
+      throw new Error(`${tries}회 시도 실패: ${lastErr}`);
+    }
+
     // 에이전트 상태 텍스트
     const STAGE_LABELS = {
       waiting:'⏳ 대기', working:'🟡 작업 중', self_review:'🔍 자체검토',
@@ -3812,9 +3844,10 @@
       error:'💥 오류', done:'✅ 완료'
     };
 
-    async function executeResearch(mode){
+    async function executeResearch(mode, taskOverride){
       const taskInput = document.getElementById('researchTaskInput');
-      const task = taskInput ? taskInput.value.trim() : '';
+      // ★재시도 버튼은 입력창이 사라진 뒤에 눌린다 — 과제를 인자로도 받는다
+      const task = (taskOverride || (taskInput ? taskInput.value.trim() : '')).trim();
       if(!task){ alert('연구 과제를 입력해주세요.'); return; }
 
       const modeDef = RESEARCH_MODES[mode];
@@ -3947,16 +3980,12 @@
         const agentName = agentBaseData[ak]?.name || ak;
         const subtaskPrompt = `[${modeDef.name}] 과제: "${task}"\n\n당신은 ${agentName}이고, 역할은 "${info.role}"입니다.\n당신의 전문 영역에서 이 과제를 분석하고 결과를 제출하세요.\n반드시 한국어로 답변하세요.${feedbackHint}${confidencePrompt}`;
         try {
-          const resp = await fetch('/api/chat', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-              env:[aEnv(ak)], messages:[{role:'user',content:subtaskPrompt}],  // ← 에이전트별 API 모델
-              skills: info.skills || [], effort:2, format:'auto', writing_style:'auto',
-              max_tokens:userMaxTokens, think_mode:false,
-            })
+          // ★재시도 포함 — LLM 이 잠깐 안 되면 쉬었다 다시 던진다
+          const data = await apiChatWithRetry({
+            env:[aEnv(ak)], messages:[{role:'user',content:subtaskPrompt}],  // ← 에이전트별 API 모델
+            skills: info.skills || [], effort:2, format:'auto', writing_style:'auto',
+            max_tokens:userMaxTokens, think_mode:false,
           });
-          const data = await resp.json();
-          if(data.error) throw new Error(data.error);
           const confidence = parseConfidence(data.content || '');
           researchState.results[ak] = {content:data.content, model:data.model_used, confidence};
           researchState.completed++;
@@ -4135,7 +4164,11 @@
 
       const finalSuccesses = currentResults.filter(r => r.content && !r.error);
       if(finalSuccesses.length === 0){
-        chatArea.innerHTML += `<div class="message"><div class="msg-avatar" style="background:#ef4444;color:#fff;">!</div><div class="msg-body">❌ 모든 에이전트가 실패했습니다.</div></div>`;
+        chatArea.innerHTML += `<div class="message"><div class="msg-avatar" style="background:#ef4444;color:#fff;">!</div>
+          <div class="msg-body">❌ 모든 에이전트가 실패했습니다. (LLM 서버 상태를 확인하세요)
+            <button onclick="executeResearch(researchState.mode, researchState.task)"
+              style="display:block;margin-top:8px;padding:9px 16px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">🔄 같은 과제로 다시 시도</button>
+          </div></div>`;
         researchState.status = 'failed'; saveResearchState(); return;
       }
 
@@ -4155,17 +4188,14 @@
       chatArea.innerHTML += `<div style="padding:12px;color:#f59e0b;">🔄 CEO 최종 보고서 작성 중...</div>`;
 
       try {
-        const synthResp = await fetch('/api/chat', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
-            env:[aEnv('ceo')], messages:[{role:'user',content:task}],
-            skills:[], effort:3, format:'report', writing_style:'auto',
-            max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
-            system_prompt: `당신은 CEO입니다. 아래 ${finalSuccesses.length}명의 에이전트가 분석한 결과를 통합하여 최종 보고서를 작성하세요.\n반드시 한국어로 작성하세요.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}\n\n[리뷰 이력]\n${reviewSummary||'전체 1회 승인'}\n\n[통합 원칙]\n1. 모든 에이전트의 핵심 내용 포함\n2. 중복 제거, 하나의 자연스러운 보고서로 통합\n3. 제목 → 요약 → 본문 → 결론 구조\n4. 보고서를 끝까지 완성하세요`
-          })
+        // ★최종 보고서 합성 실패가 제일 뼈아프다 — 재시도 포함
+        const synthData = await apiChatWithRetry({
+          env:[aEnv('ceo')], messages:[{role:'user',content:task}],
+          skills:[], effort:3, format:'report', writing_style:'auto',
+          max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
+          system_prompt: `당신은 CEO입니다. 아래 ${finalSuccesses.length}명의 에이전트가 분석한 결과를 통합하여 최종 보고서를 작성하세요.\n반드시 한국어로 작성하세요.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}\n\n[리뷰 이력]\n${reviewSummary||'전체 1회 승인'}\n\n[통합 원칙]\n1. 모든 에이전트의 핵심 내용 포함\n2. 중복 제거, 하나의 자연스러운 보고서로 통합\n3. 제목 → 요약 → 본문 → 결론 구조\n4. 보고서를 끝까지 완성하세요`
         });
-        const synthData = await synthResp.json();
-        const finalReport = synthData.content || synthData.error || '합성 실패';
+        const finalReport = synthData.content;
 
         const prog = document.getElementById('researchProgress');
         if(prog) prog.remove();
@@ -4187,6 +4217,10 @@
             <button onclick="approveResearch()" style="flex:1;padding:10px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">✅ 확인</button>
             <button onclick="requestRevision()" style="flex:1;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">🔄 정정</button>
             <button onclick="archiveResearch()" style="flex:1;padding:10px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">📦 폐기</button>
+          </div>
+          <div style="display:flex;gap:8px;padding:0 12px 12px;">
+            <button onclick="downloadResearchReport()" style="flex:1;padding:8px;background:var(--card);color:#a5b4fc;border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">📥 MD 다운로드</button>
+            <button onclick="downloadResearchReportHtml()" style="flex:1;padding:8px;background:var(--card);color:#7dd3fc;border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">📥 HTML 다운로드 (차트 포함)</button>
           </div>
         `;
         setTimeout(() => initChartsInChat(), 100);
@@ -4223,7 +4257,11 @@
         try { allAgentsReportToCeo(); } catch(e){}
 
       } catch(e) {
-        chatArea.innerHTML += `<div class="message"><div class="msg-avatar" style="background:#ef4444;color:#fff;">!</div><div class="msg-body">❌ 합성 실패: ${e.message}</div></div>`;
+        chatArea.innerHTML += `<div class="message"><div class="msg-avatar" style="background:#ef4444;color:#fff;">!</div>
+          <div class="msg-body">❌ 최종 보고서 합성 실패: ${escapeHtml(e.message)}
+            <button onclick="executeResearch(researchState.mode, researchState.task)"
+              style="display:block;margin-top:8px;padding:9px 16px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">🔄 같은 과제로 다시 시도</button>
+          </div></div>`;
       }
 
       setTimeout(()=>{ agentKeys.forEach(k => setAgentStatus(k, 'idle')); }, 5000);
@@ -4236,7 +4274,8 @@
         <div style="padding:12px;text-align:center;">
           <div style="color:#22c55e;font-weight:700;font-size:16px;margin-bottom:8px;">✅ 확인 완료 - 연구 승인</div>
           <div style="color:var(--muted);font-size:12px;margin-bottom:12px;">결과에 만족합니다. 보고서를 다운로드할 수 있습니다.</div>
-          <button onclick="downloadResearchReport()" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">📥 보고서 다운로드</button>
+          <button onclick="downloadResearchReport()" style="padding:10px 18px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">📥 MD 다운로드</button>
+          <button onclick="downloadResearchReportHtml()" style="padding:10px 18px;margin-left:8px;background:#0ea5e9;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">📥 HTML 다운로드</button>
         </div>
       `;
       researchState.status = 'approved';
@@ -4297,8 +4336,10 @@
     }
 
     // 보고서 다운로드
-    function downloadResearchReport(){
-      if(!researchState || !researchState.finalReport) return;
+    // 보고서 본문(MD)은 한 곳에서 만든다 — MD/HTML 다운로드가 서로 다른
+    // 내용을 주면 안 된다.
+    function _researchReportMd(){
+      if(!researchState || !researchState.finalReport) return null;
       const modeName = RESEARCH_MODES[researchState.mode]?.name || researchState.mode;
       let content = `# ${modeName} 보고서\n`;
       content += `과제: ${researchState.task}\n`;
@@ -4310,15 +4351,107 @@
       for(const [ak, r] of Object.entries(researchState.results || {})){
         const name = agentBaseData[ak]?.name || ak;
         const role = researchState.assignments[ak]?.role || '';
-        content += `### ${name} (${role})\n${r.content || r.error || '결과 없음'}\n\n`;
+        const model = r.model ? ` · 모델: ${r.model}` : '';   // 연구 기록: 누가 어떤 모델로
+        content += `### ${name} (${role}${model})\n${r.content || r.error || '결과 없음'}\n\n`;
       }
-      const blob = new Blob([content], {type:'text/markdown;charset=utf-8'});
+      return {content, modeName};
+    }
+
+    function _blobDownload(content, mime, filename){
+      const blob = new Blob([content], {type: mime});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `CEO_${modeName.replace(/[^가-힣a-zA-Z0-9]/g,'')}_${new Date().toISOString().slice(0,10)}.md`;
-      a.click();
+      a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
+    }
+
+    function _reportFilename(modeName, ext){
+      return `CEO_${modeName.replace(/[^가-힣a-zA-Z0-9]/g,'')}_${new Date().toISOString().slice(0,10)}.${ext}`;
+    }
+
+    function downloadResearchReport(){
+      const r = _researchReportMd();
+      if(!r) return;
+      _blobDownload(r.content, 'text/markdown;charset=utf-8', _reportFilename(r.modeName, 'md'));
+    }
+
+    // ```chart 블록 → PNG <img> (숨은 캔버스에 그려서 굽는다)
+    // ★다운받은 HTML 은 혼자 열린다 — 공장 PC 에는 인터넷도 이 페이지도 없다.
+    //   차트를 살아 있는 Chart.js 로 넣으면 라이브러리를 통째로 끼워야 하니,
+    //   지금 이 페이지의 Chart.js 로 미리 그림을 구워 넣는다.
+    async function _chartBlockToImg(code){
+      const fallback = `<pre style="background:#f4f4f5;padding:10px;border-radius:6px;overflow:auto;">${escapeHtml(code.trim())}</pre>`;
+      if (typeof Chart === 'undefined') return fallback;
+      const config = _parseChartConfig(code);
+      if (!config) return fallback;
+      if (!config.type) config.type = 'bar';
+      config.options = Object.assign({}, config.options, {
+        responsive: false, animation: false,
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280; canvas.height = 640;               // 2배로 그려 선명하게
+      canvas.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(canvas);
+      try {
+        const chart = new Chart(canvas.getContext('2d'), config);
+        await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const png = canvas.toDataURL('image/png');
+        chart.destroy();
+        return `<img src="${png}" alt="chart" style="max-width:100%;width:640px;">`;
+      } catch(e) {
+        return fallback;
+      } finally {
+        canvas.remove();
+      }
+    }
+
+    async function downloadResearchReportHtml(){
+      const r = _researchReportMd();
+      if(!r) return;
+      // 1) 차트 블록을 PNG 로 먼저 굽고 자리표시자로 바꿔 둔다
+      //    (marked 가 코드블록으로 먹어 버리기 전에)
+      let md = r.content;
+      const re = /```chart\s*([\s\S]*?)```/g;
+      const imgs = [];
+      let out = '', last = 0, m;
+      while ((m = re.exec(md)) !== null) {
+        out += md.slice(last, m.index);
+        imgs.push(await _chartBlockToImg(m[1]));
+        out += `\n\n%%CHART${imgs.length - 1}%%\n\n`;
+        last = m.index + m[0].length;
+      }
+      out += md.slice(last);
+      // 2) 마크다운 → HTML
+      let body;
+      if (typeof marked !== 'undefined') body = marked.parse(out);
+      else body = '<pre style="white-space:pre-wrap;">' + escapeHtml(out) + '</pre>';
+      body = body.replace(/%%CHART(\d+)%%/g, (_, i) => imgs[+i] || '');
+      // 3) 자립형 문서로 감싼다 (외부 참조 0)
+      const html = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(r.modeName)} 보고서</title>
+<style>
+  body{font-family:"Malgun Gothic","Segoe UI",sans-serif;max-width:860px;margin:0 auto;
+       padding:32px 20px;color:#1f2937;line-height:1.7;}
+  h1{border-bottom:3px solid #6366f1;padding-bottom:8px;}
+  h2{border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-top:36px;color:#374151;}
+  h3{margin-top:26px;color:#4b5563;}
+  code{background:#f4f4f5;padding:2px 5px;border-radius:4px;font-size:0.9em;}
+  pre{background:#f4f4f5;padding:12px;border-radius:8px;overflow:auto;}
+  pre code{background:none;padding:0;}
+  table{border-collapse:collapse;width:100%;margin:12px 0;}
+  th,td{border:1px solid #d1d5db;padding:7px 10px;text-align:left;}
+  th{background:#f3f4f6;}
+  blockquote{border-left:4px solid #6366f1;margin:12px 0;padding:4px 14px;color:#6b7280;}
+  hr{border:none;border-top:1px solid #e5e7eb;margin:28px 0;}
+  img{max-width:100%;}
+  @media print{ body{padding:0;} }
+</style></head><body>
+${body}
+<hr><p style="font-size:12px;color:#9ca3af;">UIO CEO Multi-Agent Office · ${new Date().toLocaleString('ko-KR')}</p>
+</body></html>`;
+      _blobDownload(html, 'text/html;charset=utf-8', _reportFilename(r.modeName, 'html'));
     }
 
     // 완료 목록 (보관함) 보기
@@ -4488,22 +4621,19 @@
 
       // 해당 에이전트만 재실행 (피드백 포함)
       const promises = targetAgents.map(async (ak) => {
-        const info = modeDef.agents[ak];
+        // ★Expert Pool 로 편성이 바뀌었을 수 있다 — 이번 연구의 실제 편성 우선
+        const info = researchState.assignments?.[ak] || modeDef.agents[ak] || {role:'', skills:[]};
         const prevResult = researchState.results[ak]?.content || '';
         const prompt = `[수정 요청] CEO 피드백: "${feedback}"\n\n이전 분석 결과:\n${prevResult}\n\n위 피드백을 반영하여 다시 분석해주세요.\n과제: "${researchState.task}"\n역할: ${info.role}\n반드시 한국어로 답변하세요.`;
 
         try {
-          const resp = await fetch('/api/chat', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-              env:[aEnv(ak)], messages:[{role:'user',content:prompt}],
-              skills:info.skills, effort:2, format:'auto', writing_style:'auto', max_tokens:userMaxTokens, think_mode:false,
-            })
+          const data = await apiChatWithRetry({
+            env:[aEnv(ak)], messages:[{role:'user',content:prompt}],
+            skills:info.skills||[], effort:2, format:'auto', writing_style:'auto', max_tokens:userMaxTokens, think_mode:false,
           });
-          const data = await resp.json();
-          researchState.results[ak] = data.error ? {error:data.error} : {content:data.content, model:data.model_used};
-          setAgentStatus(ak, data.error ? 'error' : 'done');
-          return {agent:ak, content:data.content, error:data.error};
+          researchState.results[ak] = {content:data.content, model:data.model_used};
+          setAgentStatus(ak, 'done');
+          return {agent:ak, content:data.content};
         } catch(e){
           setAgentStatus(ak, 'error');
           return {agent:ak, error:e.message};
@@ -4523,15 +4653,11 @@
       }).join('\n\n');
 
       try {
-        const synthResp = await fetch('/api/chat', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
-            env:[aEnv('ceo')], messages:[{role:'user',content:researchState.task}],
-            skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
-            system_prompt: `CEO로서 수정된 분석 결과를 통합 보고서로 작성하세요.\n한국어로 작성.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
-          })
+        const sd = await apiChatWithRetry({
+          env:[aEnv('ceo')], messages:[{role:'user',content:researchState.task}],
+          skills:[], effort:3, format:'report', writing_style:'auto', max_tokens:userSynthMaxTokens, n_ctx:userNCtx, think_mode:false,
+          system_prompt: `CEO로서 수정된 분석 결과를 통합 보고서로 작성하세요.\n한국어로 작성.\n모든 내용을 빠짐없이 포함하여 완전한 보고서를 작성하세요.\n\n${synthParts}`
         });
-        const sd = await synthResp.json();
         chatArea.innerHTML += `
           <div class="message">
             <div class="msg-avatar" style="background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;">📋</div>
@@ -4543,6 +4669,10 @@
           <div id="researchActions" style="display:flex;gap:8px;padding:12px;">
             <button onclick="approveResearch()" style="flex:1;padding:10px;background:#22c55e;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">✅ 승인</button>
             <button onclick="requestRevision()" style="flex:1;padding:10px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">🔄 다시 수정</button>
+          </div>
+          <div style="display:flex;gap:8px;padding:0 12px 12px;">
+            <button onclick="downloadResearchReport()" style="flex:1;padding:8px;background:var(--card);color:#a5b4fc;border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">📥 MD 다운로드</button>
+            <button onclick="downloadResearchReportHtml()" style="flex:1;padding:8px;background:var(--card);color:#7dd3fc;border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">📥 HTML 다운로드 (차트 포함)</button>
           </div>
         `;
         setTimeout(() => initChartsInChat(), 100);
