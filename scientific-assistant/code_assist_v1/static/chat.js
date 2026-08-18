@@ -230,6 +230,8 @@ const Chat = {
       assistantNode.innerHTML = renderMd(buffer);
       attachCopyButtons(assistantNode);
       State.messages.push({ role: "assistant", content: buffer });
+      // 모델이 수정을 제안했으면 미리보기 + 적용 버튼을 붙인다
+      Chat.offerEdits(assistantNode, buffer);
 
       // 자동 세션 저장 (하네스 미가용 시 조용히 무시)
       try {
@@ -281,6 +283,90 @@ const Chat = {
 };
 
 // 마크다운 렌더 (marked.js 사용, 폐쇄망 폴백 mini parser)
+// ── 모델이 낸 수정을 워크스페이스에 반영 ──
+// ★여기가 '채팅' 과 '에이전트' 의 갈림길이다. 예전엔 모델이 코드를 뱉으면
+//   사람이 눈으로 골라 손으로 붙여 넣었다.
+//   먼저 미리보기(diff)를 보여 주고, 사람이 눌러야 실제로 쓴다 — 모델이
+//   멋대로 파일을 갈아엎게 두지 않는다.
+Chat.offerEdits = async function (node, text) {
+  if (!/```(edit|write):/.test(text || "")) return;
+  let prev;
+  try {
+    prev = await api("api/code/edits/preview", {
+      method: "POST", body: { text, user_id: _wsUid() || undefined },
+    });
+  } catch (e) {
+    console.warn("[edits] 미리보기 실패:", e.message);
+    return;
+  }
+  if (!prev.edits || !prev.edits.length) return;
+
+  const box = document.createElement("div");
+  box.className = "edit-offer";
+  const okList = prev.edits.filter(e => e.ok);
+  const badList = prev.edits.filter(e => !e.ok);
+
+  const head = document.createElement("div");
+  head.className = "edit-offer-head";
+  head.textContent = `📝 파일 수정 제안 — 적용 가능 ${okList.length}건`
+    + (badList.length ? ` · 거절 ${badList.length}건` : "");
+  box.appendChild(head);
+
+  prev.edits.forEach(e => {
+    const row = document.createElement("div");
+    row.className = "edit-row " + (e.ok ? "ok" : "bad");
+    row.innerHTML = `<code>${e.path}</code> <span class="edit-why">${e.ok ? "" : e.reason}</span>`;
+    if (e.diff) {
+      const pre = document.createElement("pre");
+      pre.className = "edit-diff";
+      pre.textContent = e.diff;
+      row.appendChild(pre);
+    }
+    box.appendChild(row);
+  });
+
+  if (okList.length) {
+    const btn = document.createElement("button");
+    btn.className = "btn-apply-edits";
+    btn.textContent = `워크스페이스에 적용 (${okList.length}건)`;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = "적용 중…";
+      try {
+        const r = await api("api/code/edits/apply", {
+          method: "POST", body: { text, user_id: _wsUid() || undefined },
+        });
+        btn.textContent = `✓ ${r.applied}건 적용됨`
+          + (r.failed ? ` · ${r.failed}건 거절` : "");
+        toast(`${r.applied}건 적용`, r.failed ? "warn" : "ok");
+        // 적용된 내용이 다음 질문에도 반영되도록 첨부본을 새로 읽는다.
+        // ★안 하면 모델은 고치기 전 코드를 계속 보고 같은 수정을 또 낸다.
+        const paths = [...new Set(r.edits.filter(x => x.ok).map(x => x.path))];
+        if (paths.length) {
+          try {
+            const bulk = await api("api/code/workspace/files", {
+              method: "POST", body: { paths, user_id: _wsUid() || undefined },
+            });
+            (bulk.files || []).forEach(f => {
+              const cur = State.workspaceFiles.find(x => x.filename === f.filename);
+              if (cur) cur.content = f.content;
+              else State.workspaceFiles.push(f);
+            });
+          } catch {}
+        }
+        Chat.refreshChips();
+        if (window.Workspace?.refresh) Workspace.refresh();
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "적용 실패 — 다시";
+        toast("적용 실패: " + e.message, "error");
+      }
+    };
+    box.appendChild(btn);
+  }
+  node.appendChild(box);
+};
+
 function renderMd(text) {
   if (!text) return "";
   if (window.marked) {

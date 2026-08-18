@@ -245,6 +245,8 @@ def register_chat_stream_routes(app):
         try:
             system_text = build_coding_system_prompt(
                 skill_ids=skill_ids, user_extra=user_extra, n_ctx=DEFAULT_N_CTX,
+                # 첨부된 파일이 있어야 고칠 대상이 있다
+                can_edit=bool(data.get("workspace_files")),
             )
         except Exception as e:
             return Response(

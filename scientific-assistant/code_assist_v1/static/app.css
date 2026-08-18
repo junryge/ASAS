@@ -533,3 +533,30 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 ::-webkit-scrollbar-track { background: var(--bg-1); }
 ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #444c56; }
+
+/* ── 파일 수정 제안 (코딩 에이전트) ── */
+.edit-offer {
+  margin-top: 12px; border: 1px solid #30363d; border-radius: 8px;
+  background: var(--bg-1); overflow: hidden;
+}
+.edit-offer-head {
+  padding: 8px 12px; font-size: 13px; font-weight: 600;
+  background: #1c2128; border-bottom: 1px solid #30363d;
+}
+.edit-row { padding: 8px 12px; border-bottom: 1px solid #21262d; font-size: 12px; }
+.edit-row:last-of-type { border-bottom: none; }
+.edit-row code { color: #79c0ff; }
+.edit-row.bad code { color: #8b949e; text-decoration: line-through; }
+.edit-why { color: var(--error, #f85149); margin-left: 8px; }
+.edit-diff {
+  margin: 6px 0 0; padding: 8px; background: #0d1117; border-radius: 6px;
+  font-size: 11.5px; line-height: 1.45; max-height: 260px; overflow: auto;
+  white-space: pre; color: #c9d1d9;
+}
+.btn-apply-edits {
+  display: block; width: calc(100% - 24px); margin: 10px 12px 12px;
+  padding: 9px 12px; border: none; border-radius: 6px; cursor: pointer;
+  background: #238636; color: #fff; font-size: 13px; font-weight: 600;
+}
+.btn-apply-edits:hover:not(:disabled) { background: #2ea043; }
+.btn-apply-edits:disabled { background: #30363d; color: #8b949e; cursor: default; }

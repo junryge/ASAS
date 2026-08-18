@@ -54,13 +54,14 @@ def _build_frontmatter(meta: dict) -> str:
 
 
 def _sync_harness():
-    """skills/ 변경 시 ToolRegistry 갱신."""
-    try:
-        from code_assist_v1.harness_setup import sync_skills, HARNESS_AVAILABLE
-        if HARNESS_AVAILABLE:
-            sync_skills()
-    except Exception:
-        pass
+    """(없앰) 예전엔 skills/ 를 하네스 ToolRegistry 에 밀어 넣었다.
+
+    ★그 레지스트리는 데모스가 scientific-skills 389개로 쓰는 **공용** 물건
+      이다. 여기서 손대면 남의 것을 오염시킨다. 게다가 code_assist_v1/skills/
+      는 비어 있어서 실제로 넣는 것도 없었다. 호출부는 남겨 두되 아무것도
+      하지 않는다 — 코드 어시스턴트는 자기 skill_filter 로 스킬을 읽는다.
+    """
+    return
 
 
 def register_skill_routes(app):

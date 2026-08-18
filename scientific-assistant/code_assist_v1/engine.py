@@ -17,6 +17,7 @@ from code_assist_v1.prompts import (
     KNOWLEDGE_INJECT_HEADER,
     WORKSPACE_INJECT_HEADER,
     SKILL_INJECT_HEADER,
+    EDIT_PROTOCOL,
 )
 from code_assist_v1.skill_filter import load_skill_content
 
@@ -25,12 +26,18 @@ def build_coding_system_prompt(
     skill_ids: list[str] | None = None,
     user_extra: str = "",
     n_ctx: int = 32768,
+    can_edit: bool = False,
 ) -> str:
     """코딩 어시스턴트 시스템 프롬프트 (스킬 본문 포함).
 
     knowledge / workspace 는 별도 system 메시지로 주입한다 (build_knowledge_block / build_workspace_block).
     """
     parts: list[str] = [CODING_SYSTEM_PROMPT.strip(), ANTI_HALLUCINATION.strip()]
+
+    # ★첨부된 파일이 있을 때만 수정 계약을 넣는다. 볼 파일도 없는데 "고쳐서
+    #   내놔라" 고 시키면, 모델이 있지도 않은 파일에 edit 블록을 지어낸다.
+    if can_edit:
+        parts.append(EDIT_PROTOCOL.strip())
 
     skill_ids = skill_ids or []
     if skill_ids:

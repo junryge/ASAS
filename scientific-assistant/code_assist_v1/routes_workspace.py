@@ -353,6 +353,34 @@ def register_workspace_routes(app):
             "truncated": len(paths) > limit,
         })
 
+    @app.route("/api/code/edits/preview", methods=["POST"])
+    def api_edits_preview():
+        """모델 답변에서 수정 블록을 뽑아 diff 만 만든다 (파일은 안 건드림)."""
+        return _edits_endpoint(dry_run=True)
+
+    @app.route("/api/code/edits/apply", methods=["POST"])
+    def api_edits_apply():
+        """모델이 제안한 수정을 실제 워크스페이스에 반영한다."""
+        return _edits_endpoint(dry_run=False)
+
+    def _edits_endpoint(dry_run: bool):
+        from code_assist_v1.edits import parse_edits, apply_edits
+        root = _ws_root(_get_uid())
+        data = request.get_json(force=True, silent=True) or {}
+        text = data.get("text") or ""
+        if not text.strip():
+            return jsonify({"error": "text 필요"}), 400
+        edits = parse_edits(text)
+        if not edits:
+            return jsonify({"applied": 0, "failed": 0, "edits": [],
+                            "message": "수정 블록이 없다"})
+        res = apply_edits(edits, root, _safe_join, dry_run=dry_run)
+        out = res.to_json()
+        out["dry_run"] = dry_run
+        if not dry_run:
+            print(f"[ws] 수정 적용: {res.applied}건 성공 · {res.failed}건 거절")
+        return jsonify(out)
+
     @app.route("/api/code/workspace/save", methods=["POST"])
     def api_ws_save():
         root = _ws_root(_get_uid())
