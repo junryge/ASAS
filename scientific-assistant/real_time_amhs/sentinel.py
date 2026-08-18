@@ -24,21 +24,63 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # ────────────────────────────── 등급 ──────────────────────────────
-def grade(score: float, cfg: dict | None = None) -> dict:
-    """점수 → 등급 밴드. 임계 미만은 정상(무알람)."""
+_LEVEL_META = {"경계": ("🟠", "경계/주의(확인필요)"),
+               "위험": ("🔴", "위험/경고(모니터링 필요)"),
+               "초위험": ("⛔", "초위험/심각(조치필요)")}
+
+
+def grade_cuts(cfg: dict | None = None) -> tuple[int, int, int]:
+    """등급 시작점 3개 (경계·위험·초위험) — **이 시스템** 기준.
+
+    기본은 config.grade.bands 의 min 들. grade.by_sys[시스템] 이 있으면
+    그 값(warn/danger/critical)으로 덮는다. FAB 마다 점수 분포가 달라서
+    임계가 다를 수 있다 — 정책 탭에서 시스템별로 저장한다.
+    """
     cfg = cfg or load_config()
-    g = cfg.get("grade", {})
+    g = cfg.get("grade", {}) or {}
+    mins = [b.get("min") for b in (g.get("bands") or [])[:3]] + [None] * 3
+    base = [int(m) if isinstance(m, (int, float)) else d
+            for m, d in zip(mins, (60, 71, 85))]
+    o = (g.get("by_sys") or {}).get(str(cfg.get("_sys") or "ALL").upper()) or {}
+    return (int(o.get("warn", base[0])), int(o.get("danger", base[1])),
+            int(o.get("critical", base[2])))
+
+
+def _sys_grade(cfg: dict) -> dict:
+    """이 시스템의 등급 블록 — by_sys 오버라이드가 있으면 밴드를 합성한다.
+
+    오버라이드가 없으면 config.grade 를 **그대로** 돌려준다 (사용자가 밴드를
+    직접 꾸민 경우 그 모양 유지).
+    """
+    g = cfg.get("grade", {}) or {}
+    o = (g.get("by_sys") or {}).get(str(cfg.get("_sys") or "ALL").upper())
+    if not o:
+        return g
+    w, d, c = grade_cuts(cfg)
+
+    def band(lo, hi, lv):
+        em, sev = _LEVEL_META[lv]
+        return {"min": lo, "max": hi, "level": lv, "emoji": em, "severity": sev}
+    return {"normal_max": w - 1,
+            "bands": [band(w, d - 1, "경계"), band(d, c - 1, "위험"),
+                      band(c, 100, "초위험")]}
+
+
+def grade(score: float, cfg: dict | None = None) -> dict:
+    """점수 → 등급 밴드. 임계 미만은 정상(무알람). 시스템별 컷 반영."""
+    cfg = cfg or load_config()
+    g = _sys_grade(cfg)
     for b in g.get("bands", []):
         if b["min"] <= score <= b["max"]:
             return b
-    return {"level": "정상", "emoji": "🟢", "severity": "정상", "min": 0, "max": g.get("normal_max", 49)}
+    return {"level": "정상", "emoji": "🟢", "severity": "정상", "min": 0, "max": g.get("normal_max", 59)}
 
 
 def alarm_floor(cfg: dict | None = None) -> int:
-    """알람 최소 점수 (피드백 보정 반영)."""
+    """알람 최소 점수 (피드백 보정 반영). 시스템별 컷 반영."""
     cfg = cfg or load_config()
-    bands = cfg.get("grade", {}).get("bands", [])
-    base = min((b["min"] for b in bands), default=50)
+    bands = _sys_grade(cfg).get("bands", [])
+    base = min((b["min"] for b in bands), default=60)
     return max(1, min(100, base + _threshold_nudge(cfg)))
 
 

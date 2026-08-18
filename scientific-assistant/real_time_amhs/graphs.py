@@ -55,8 +55,16 @@ _SCORE_COLOR = "#3DDBE8"   # --cy
 _SEL_COLOR = "#E6EDF6"     # 더블클릭한 시각 표시색 (밝게)
 _EVT_COLOR = "#FF9F2E"     # --major
 _CRIT_COLOR = "#FF4D5E"    # --crit
-# 등급 밴드 — 다크 배경 위에 등급색을 옅게 깐 톤
-_BANDS = [(0, 60, _BG2), (60, 71, "#2B2612"), (71, 85, "#33210F"), (85, 100, "#331419")]
+# 등급 밴드 — 다크 배경 위에 등급색을 옅게 깐 톤. 경계선은 시스템별
+# 설정(grade.by_sys)을 따르므로 그릴 때 cfg 로 계산한다.
+_BAND_COLORS = (_BG2, "#2B2612", "#33210F", "#331419")
+
+
+def _bands_of(cfg) -> list:
+    from sentinel import grade_cuts
+    w, d, c = grade_cuts(cfg or {})
+    edges = (0, w, d, c, 100)
+    return [(edges[i], edges[i + 1], _BAND_COLORS[i]) for i in range(4)]
 
 
 def _kind_color(col: str, idx: int) -> str:
@@ -149,7 +157,8 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
                 '해당 구간에 데이터가 없습니다</text></svg>'
                 % (width, _BG, width // 2, _TX2))
 
-    floor = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=60)
+    from sentinel import grade_cuts
+    floor = grade_cuts(cfg)[0]
     t0, t1 = pts[0][0], pts[-1][0]
     span = max(1.0, (t1 - t0).total_seconds())
     incs = _incidents(pts, floor)
@@ -184,10 +193,11 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     def SY(v):
         return top_score + SCORE_H * (1 - max(0.0, min(100.0, v)) / 100.0)
 
-    for lo_, hi_, col in _BANDS:
+    bands = _bands_of(cfg)
+    for lo_, hi_, col in bands:
         y2, y1 = SY(lo_), SY(hi_)
         o.append(f'<rect x="{L}" y="{y1:.1f}" width="{pw}" height="{y2-y1:.1f}" fill="{col}"/>')
-    for v in (60, 71, 85, 100):
+    for v in [b[0] for b in bands[1:]] + [100]:
         y = SY(v)
         o.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L+pw}" y2="{y:.1f}" stroke="{_GRID}" '
                  f'stroke-width="0.8" stroke-dasharray="3 3"/>')

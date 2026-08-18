@@ -576,6 +576,32 @@
   </div>
 
   <div class="card">
+    <h2>스코어 등급 — 시스템별 설정 <span class="note" id="spnote"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">
+        FAB 마다 점수 분포가 달라 등급 경계도 다를 수 있습니다.
+        <b style="color:var(--tx2)">경계 시작점 미만은 정상(무알람)</b>이고,
+        알람·케이스·등급 색·그래프 밴드가 전부 이 컷으로 계산됩니다.
+        조건: 1 ≤ 경계 &lt; 위험 &lt; 초위험 ≤ 100.</p>
+      <table class="pol"><thead><tr>
+        <th style="width:110px">시스템</th>
+        <th style="width:150px">🟠 경계 시작</th>
+        <th style="width:150px">🔴 위험 시작</th>
+        <th style="width:150px">⛔ 초위험 시작</th>
+        <th></th>
+      </tr></thead><tbody id="sprows">
+        <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
+      </tbody></table>
+      <div class="row" style="margin-top:10px;align-items:center">
+        <button class="act pri" id="sp-save" style="flex:0 0 auto">저장 · 적용</button>
+        <span class="note">저장하면 <b style="color:var(--tx2)">바로 반영</b>되고
+          config.json 에도 적혀 재시작해도 유지됩니다. '기본' 을 누르면 그 시스템은
+          공통 기본값(config.grade.bands)으로 돌아갑니다.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>LLM 판단 일치 — 시스템별 설정 <span class="note" id="lpnote"></span></h2>
     <div class="bd">
       <p class="note" style="margin:0 0 10px">
@@ -641,12 +667,13 @@ const api = async (u,o) => (await fetch(withSys(u),o)).json();
 const post = (u,b) => api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = s => (s||'').slice(11,16);
-/* 점수 등급 — 60 미만 정상 / 60~70 경계 / 71~84 위험 / 85~100 초위험.
-   위험·초위험은 사람 확인이 필요한 구간이다 (config.grade.bands 와 같은 기준). */
-const gradeOf = s => s>=85 ? {n:'초위험', c:'var(--crit)',  chk:true}
-                   : s>=71 ? {n:'위험',   c:'var(--major)', chk:true}
-                   : s>=60 ? {n:'경계',   c:'var(--minor)', chk:false}
-                           : {n:'정상',   c:'var(--tx2)',   chk:false};
+/* 점수 등급 — 컷은 시스템마다 다르다 (정책 탭에서 설정, /api/status 가
+   그 시스템 값을 내려준다). 위험·초위험은 사람 확인이 필요한 구간. */
+let CUTS = {warn:60, danger:71, critical:85};   // 서버 응답으로 갱신됨
+const gradeOf = s => s>=CUTS.critical ? {n:'초위험', c:'var(--crit)',  chk:true}
+                   : s>=CUTS.danger   ? {n:'위험',   c:'var(--major)', chk:true}
+                   : s>=CUTS.warn     ? {n:'경계',   c:'var(--minor)', chk:false}
+                                      : {n:'정상',   c:'var(--tx2)',   chk:false};
 
 let CASES=[], SEL=null, FILTER='all', POLL=30;
 let LAST_LATEST=null, NEW_AT=null;
@@ -845,6 +872,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   }else if(b.dataset.tab==='analysis'){
     initAnalysis();
   }else if(b.dataset.tab==='policy'){
+    initScorePolicy();
     initLlmPolicy();
   }
   if(b.dataset.tab!=='past' && b.dataset.tab!=='analysis' && ACC){
@@ -1235,6 +1263,7 @@ async function pollStatus(){
         + (sv.files?.length ? ` → ${sv.files[0]}` : '')
         + ` · 임계 ${s.alarm_floor}점`
       : `연결 끊김 — ${st.error||'대기'}`;
+    if(s.cuts && s.cuts.warn) CUTS = s.cuts;   // 이 시스템의 등급 컷
     $('#ch-lp').className  = st.connected?'':'off';
     $('#ch-lp-tx').textContent = jup ? '주피터 CSV' : '로그프레소';
     renderPolicy(s.policy, s.evaluation);
@@ -1665,11 +1694,11 @@ async function openAcc(day){
         그 판단이 맞았는지는 이후 ${a.window_min}분 실제 흐름을 봐야 알 수 있어 그때 채워집니다.
         (같은 시각을 <b>${esc(a.day)}_TOTAL.CSV</b> 와 <span class="mono">datetime</span> 으로 맞춰 보면 그때 원데이터가 나옵니다)<br>
         <b>확신도</b> = LLM 이 자기 판단을 얼마나 확신하는지 (0~100).<br>
-        <b>점수 등급</b> —
-        <span style="color:var(--ok)">60 미만 정상</span> ·
-        <span style="color:var(--minor)">60~70 경계</span> ·
-        <span style="color:var(--major)">71~84 위험</span> ·
-        <span style="color:var(--crit)">85~100 초위험</span>
+        <b>점수 등급</b> (${SYS||'ALL'} 기준) —
+        <span style="color:var(--ok)">${CUTS.warn} 미만 정상</span> ·
+        <span style="color:var(--minor)">${CUTS.warn}~${CUTS.danger-1} 경계</span> ·
+        <span style="color:var(--major)">${CUTS.danger}~${CUTS.critical-1} 위험</span> ·
+        <span style="color:var(--crit)">${CUTS.critical}~100 초위험</span>
         <b style="color:var(--crit)">— 위험·초위험은 무조건 사람 확인이 필요합니다</b>
       </p>
       <table class="pol"><thead><tr>
@@ -1719,6 +1748,57 @@ async function openAcc(day){
       openAcc(ACCDAY);
     });
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">불러오지 못했습니다</div>'; }
+}
+
+/* ── 스코어 등급 설정 (정책 탭) — 시스템 6개 각각의 등급 컷 ──
+   저장 = 즉시 적용(케이스·등급색·그래프 밴드) + config.json 기록. */
+let SP_INIT = false, SP_SYS = [], SP_RESET = new Set();
+
+function spRow(s){
+  const num = (id, v) =>
+    `<input type="number" id="${id}" value="${v}" min="1" max="100"
+       style="width:76px;background:var(--panel2);border:1px solid var(--line2);
+              color:var(--tx);border-radius:7px;padding:5px 8px;font:inherit">`;
+  return `<tr>
+    <td><b style="color:${s.sys==='ALL'?'var(--cy)':'var(--tx)'}">${esc(s.sys)}</b></td>
+    <td>${num(`spw-${s.sys}`, s.warn)}</td>
+    <td>${num(`spd-${s.sys}`, s.danger)}</td>
+    <td>${num(`spc-${s.sys}`, s.critical)}</td>
+    <td><button class="act" data-spreset="${s.sys}" style="padding:4px 10px">기본</button>
+        <span class="note" id="spst-${s.sys}">${s.custom?'개별 설정':'기본값'}</span></td>
+  </tr>`;
+}
+
+async function initScorePolicy(){
+  try{
+    const d = await api('/api/score_policy');
+    SP_SYS = d.systems.map(s=>s.sys);
+    SP_RESET.clear();
+    $('#sprows').innerHTML = d.systems.map(spRow).join('');
+    document.querySelectorAll('[data-spreset]').forEach(b => b.onclick = () => {
+      SP_RESET.add(b.dataset.spreset);          // 저장 때 이 시스템은 기본으로
+      $(`#spst-${b.dataset.spreset}`).textContent = '저장하면 기본값으로';
+    });
+    if(SP_INIT) return;
+    SP_INIT = true;
+    $('#sp-save').onclick = async () => {
+      const by = {};
+      SP_SYS.forEach(s => by[s] = SP_RESET.has(s) ? null : {
+        warn: parseInt($(`#spw-${s}`).value),
+        danger: parseInt($(`#spd-${s}`).value),
+        critical: parseInt($(`#spc-${s}`).value),
+      });
+      const btn = $('#sp-save');
+      btn.disabled = true; btn.textContent = '저장 중…';
+      try{
+        const r = await post('/api/score_policy', {by_sys: by, save: true});
+        if(r.error){ alert(r.error); $('#spnote').textContent = '— 저장 실패'; return; }
+        $('#spnote').textContent = '— 저장됨 · 바로 반영';
+        initScorePolicy();                       // 표를 서버 확정값으로
+        pollStatus(); pollCases();               // 지금 화면 등급도 새 컷으로
+      } finally { btn.disabled = false; btn.textContent = '저장 · 적용'; }
+    };
+  }catch(e){ $('#spnote').textContent = '— 설정 불러오기 실패 (서버 구버전?)'; }
 }
 
 /* ── LLM 판단 일치 설정 (정책 탭) — 시스템 6개 각각, 저장 버튼으로 반영 ──
@@ -1836,7 +1916,8 @@ function bindGraph(tbodySel){
 
 /* ── 스코어 추이 스트립 — 하루치를 항상 띄워두고 폴링마다 갱신 ──
    graphs.py 와 같은 색 체계(다크 밴드 + --cy 선)로 그린다. 순수 SVG. */
-const STRIP_BANDS = [[0,60,'#0F1622'],[60,71,'#2B2612'],[71,85,'#33210F'],[85,100,'#331419']];
+const stripBands = () => [[0,CUTS.warn,'#0F1622'],[CUTS.warn,CUTS.danger,'#2B2612'],
+  [CUTS.danger,CUTS.critical,'#33210F'],[CUTS.critical,100,'#331419']];
 const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 9, STRIP_B = 17;
 
 function dayStartOf(rows){
@@ -1894,10 +1975,10 @@ function stripSvg(rows, mt){
   const o = [`<svg viewBox="0 0 ${STRIP_W} ${STRIP_H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">`,
              `<rect width="${STRIP_W}" height="${STRIP_H}" fill="#0D1119"/>`];
   if(isScore){
-    STRIP_BANDS.forEach(([bl,bh,c]) =>
+    stripBands().forEach(([bl,bh,c]) =>
       o.push(`<rect x="${STRIP_L}" y="${Y(bh).toFixed(1)}" width="${iw}" height="${(Y(bl)-Y(bh)).toFixed(1)}" fill="${c}"/>`));
   }
-  const ticks = isScore ? [60,71,85,100] : [lo, lo+(hi-lo)/2, hi];
+  const ticks = isScore ? [CUTS.warn,CUTS.danger,CUTS.critical,100] : [lo, lo+(hi-lo)/2, hi];
   ticks.forEach(v => {
     o.push(`<line x1="${STRIP_L}" y1="${Y(v).toFixed(1)}" x2="${STRIP_L+iw}" y2="${Y(v).toFixed(1)}" stroke="#2E3A4C" stroke-width=".7" stroke-dasharray="3 3"/>`);
     o.push(`<text x="${STRIP_L-4}" y="${(Y(v)+3.4).toFixed(1)}" font-size="8.5" fill="#8FA0B6" text-anchor="end">${

@@ -22,7 +22,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from lp_client import fab_codes, load_config, parse_dt, ping, sys_cfg
 from lp_query import build, query
 from report import build_report, feedback_status, save_feedback
-from sentinel import CaseStore, alarm_floor, scan_once
+from sentinel import CaseStore, alarm_floor, grade_cuts, scan_once
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CFG = load_config()
@@ -434,6 +434,8 @@ def api_status():
         "server_time": datetime.now().isoformat(),
         "sys": C["sys"],
         "systems": systems(),
+        # 이 시스템의 등급 컷 — 화면(gradeOf·추이 밴드·범례)이 이 값으로 그린다
+        "cuts": dict(zip(("warn", "danger", "critical"), grade_cuts(C["cfg"]))),
     })
 
 
@@ -466,6 +468,89 @@ def _persist_llm_policy() -> str:
         return ""
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
+def _persist_score_policy() -> str:
+    """메모리의 시스템별 등급 컷(grade.by_sys)을 config.json 에 적는다 → 오류."""
+    from lp_client import CONFIG_PATH
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+            disk = json.load(f)
+        mem = (CFG.get("grade", {}) or {}).get("by_sys")
+        g = disk.setdefault("grade", {})
+        if mem:
+            g["by_sys"] = mem
+        else:
+            g.pop("by_sys", None)
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(disk, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, CONFIG_PATH)
+        return ""
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
+@app.route("/api/score_policy", methods=["GET", "POST"])
+def api_score_policy():
+    """스코어 등급 컷 — **시스템 6개 각각**. FAB 마다 점수 분포가 다르다.
+
+    POST {"by_sys": {"M14": {"warn": 55, "danger": 70, "critical": 85}
+                     또는 null(기본으로 되돌리기), …},
+          "save"?: true}
+    warn=경계 시작 / danger=위험 시작 / critical=초위험 시작.
+    1 ≤ warn < danger < critical ≤ 100. warn 미만은 정상(무알람).
+    ★메모리에 먼저 적용(등급·알람·케이스·그래프가 즉시 이 컷으로 계산)하고,
+      save=true 면 config.json 에도 적는다.
+    """
+    g = CFG.setdefault("grade", {})
+    saved = None
+    if request.method == "POST":
+        b = request.get_json(silent=True) or {}
+        if "by_sys" in b:
+            if not isinstance(b["by_sys"], dict):
+                return jsonify({"error": "by_sys 는 {시스템: 설정|null} 객체"}), 400
+            known = set(systems())
+            sets, resets = {}, []
+            for s_, row in b["by_sys"].items():
+                s_ = str(s_).upper()
+                if s_ not in known:
+                    return jsonify({"error": f"모르는 시스템 {s_} (가능: {sorted(known)})"}), 400
+                if row is None:
+                    resets.append(s_)
+                    continue
+                try:
+                    w = int(row.get("warn")); d_ = int(row.get("danger")); c = int(row.get("critical"))
+                except (TypeError, ValueError):
+                    return jsonify({"error": f"{s_}: warn/danger/critical 은 정수(점)"}), 400
+                if not (1 <= w < d_ < c <= 100):
+                    return jsonify({"error": f"{s_}: 1 ≤ 경계({w}) < 위험({d_}) < "
+                                             f"초위험({c}) ≤ 100 이어야 합니다"}), 400
+                sets[s_] = {"warn": w, "danger": d_, "critical": c}
+            # ★객체 갈아끼우기 금지 — sys_cfg 뷰들이 grade 블록을 공유한다
+            by = g.setdefault("by_sys", {})
+            for s_ in resets:
+                by.pop(s_, None)
+            by.update(sets)
+            if not by:
+                g.pop("by_sys", None)
+        if b.get("save"):
+            err = _persist_score_policy()
+            saved = not err
+            if err:
+                return jsonify({"error": f"config.json 저장 실패 — {err} "
+                                         f"(메모리에는 적용됨)", "applied": True}), 500
+        rows = " · ".join(f"{s_}={'/'.join(map(str, grade_cuts(sys_cfg(CFG, s_))))}"
+                          for s_ in systems())
+        print(f"[정책] 스코어 컷 → {rows}" + (" · 저장됨" if saved else ""))
+    by = g.get("by_sys") or {}
+    out = []
+    for s_ in systems():
+        w, d_, c = grade_cuts(sys_cfg(CFG, s_))
+        out.append({"sys": s_, "warn": w, "danger": d_, "critical": c,
+                    "custom": s_ in by})
+    return jsonify({"systems": out, "saved": saved})
 
 
 @app.route("/api/llm_policy", methods=["GET", "POST"])
