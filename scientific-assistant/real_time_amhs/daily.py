@@ -190,6 +190,7 @@ def day_material(day: str, cfg: dict | None = None) -> dict:
         "day": day,
         "date_ko": f"{day[:4]}년 {int(day[4:6])}월 {int(day[6:8])}일" if len(day) == 8 else day,
         "minutes": len(mins),
+        "floor": floor,              # ★이벤트 판정 임계 — 리포트 문구가 이 값을 쓴다
         "risk_minutes": risk_min,
         "by_level": lv,
         "peak": ({"time": peak["time"], "score": int(peak["score"]),

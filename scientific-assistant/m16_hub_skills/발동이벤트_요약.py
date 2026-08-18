@@ -284,7 +284,7 @@ def main():
         inc_rows.append({
             "번호": i,
             "시각": pk["time"],                                # ★ 최고점(진짜 몰림) 시각
-            "구간": f'{c["s"]["time"]}~{c["e"]["time"]}',      # 시작~종료(점수 50+ 구간)
+            "구간": f'{c["s"]["time"]}~{c["e"]["time"]}',      # 시작~종료(점수 60+ 구간)
             "지속분": dur,
             "최고등급": _grade_label(pk["level"]),
             "최고점수": int(pk["score"]),

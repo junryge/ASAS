@@ -167,7 +167,7 @@
       "min_sample": 10,
       "_min_sample_doc": "채점 건수가 이보다 적으면 퍼센트를 내지 않는다(건수만 표시)",
       "floor": null,
-      "_floor_doc": "임계 점수. null 이면 grade 밴드 최저값(50) 사용"
+      "_floor_doc": "임계 점수. null 이면 그 시스템의 경계 시작점(기본 60) 사용"
     },
     "no_think": true,
     "_no_think_doc": "★Qwen3 계열은 사고(reasoning) 모델이다. 끄지 않으면 사고 토큰만 쓰다 max_tokens 에 걸려 본문이 빈 응답으로 온다. 마지막 user 메시지에 '/no_think' 주입. 사고 과정을 보고 싶으면 false (대신 max_tokens 를 크게)",

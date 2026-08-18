@@ -440,7 +440,8 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
     items = " ".join(x for x in (qd, qu) if x).split()
 
     # ★ 등급 기준을 규칙으로 못박는다. 이게 없으면 29점(정상)인데도 '예' 가 나온다.
-    floor = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=50)
+    from sentinel import grade_cuts
+    floor = grade_cuts(cfg)[0]      # ★시스템별 컷 (정책 탭에서 FAB 마다 다르다)
     rule = (f'★판정 규칙(반드시 따른다): 스코어 {floor:.0f}점 미만은 정상이므로 '
             f'"실제이상"은 "아니오" 다. {floor:.0f}점 이상일 때만 "예" 를 쓸 수 있다.\n'
             f'  현재 스코어 {score:.0f}점 → '
@@ -615,12 +616,12 @@ def make_day_report(mat: dict, cfg: dict | None = None):
 date = {mat['day']}  ({mat['date_ko']})
 
 ■ 하루 통계
-- 수집 {mat['minutes']}분 · 점수 50 이상(정체) {mat['risk_minutes']}분
+- 수집 {mat['minutes']}분 · 점수 {_fl(mat)} 이상(정체) {mat['risk_minutes']}분
 - 등급 분포: {lv}
 - 하루 최고: {(pk.get('time') or '-')} {pk.get('emoji','')} {pk.get('level','정상')} {pk.get('score',0)}점 ({pk.get('area','-')})
 - 정체 집중: {mat.get('busy','없음')}
 
-■ ③ 사건목록 (점수 50+ · 간격 60분 · 시각=최고점)
+■ ③ 이벤트목록 (점수 {_fl(mat)}+ · 간격 60분 · 시각=최고점)
 {inc_tbl}
 
 ■ ④ AMOS 이상감지
@@ -765,11 +766,28 @@ def _detail_md(mat: dict) -> str:
     return "\n\n".join(out)
 
 
+def _fl(mat: dict) -> int:
+    """리포트 문구에 쓸 이벤트 판정 임계.
+
+    ★'점수 50 이상' 처럼 박아 두면 안 된다 — 경계 하한을 60 으로 올린 뒤에도
+      리포트 본문이 계속 50 이라고 말했다. day_material 이 넣어 준 값을 쓰고,
+      없으면(옛 캐시) 그때 config 에서 읽는다.
+    """
+    v = mat.get("floor")
+    if v:
+        return int(v)
+    try:
+        from sentinel import grade_cuts
+        return grade_cuts()[0]
+    except Exception:
+        return 60
+
 def _advice_md(mat: dict) -> str:
     """5번 에이전트 제안 — 공통 근본 원인 + 구체 조치 두 불릿 (통계만으로)."""
     incs = mat.get("incidents") or []
     if not incs:
-        return "- **공통 근본 원인**: 없음 (금일 점수 50 이상 사건 없음).\n- **구체 조치**: 현행 감시 유지."
+        return (f"- **공통 근본 원인**: 없음 (금일 점수 {_fl(mat)} 이상 이벤트 없음)."
+                "\n- **구체 조치**: 현행 감시 유지.")
     return (f"- **공통 근본 원인**: 정체가 {mat.get('busy','–')} 에 집중돼 "
             "허브 저장·리프터 처리 여력이 부족했던 구간입니다.\n"
             "- **구체 조치**: 해당 시간대 상류 유입 속도 조절과 허브 저장 공간 확보를 "
@@ -815,7 +833,7 @@ def _ko_section_fallback(head: str, mat: dict) -> str:
         return _advice_md(mat)
     if "1." in h or "총평" in h:
         if not incs:
-            return f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
+            return f"금일 점수 {_fl(mat)} 이상 이벤트 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
         return (f"금일 총 {len(incs)}건 · 최고 {pk.get('emoji','')} {pk.get('level','')} "
                 f"{pk.get('score',0)}점 ({pk.get('time','')} {pk.get('area','')}). "
                 f"정체 {mat.get('risk_minutes',0)}분.")
@@ -850,7 +868,7 @@ def assemble_day_report(mat: dict, blocks: dict | None = None) -> str:
                 f"{pk.get('score',0)}점 ({pk.get('time','')} {pk.get('area','')}). "
                 f"정체 {mat.get('risk_minutes',0)}분.")
     else:
-        head = f"금일 점수 50 이상 사건 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
+        head = f"금일 점수 {_fl(mat)} 이상 이벤트 없음 (최고 {pk.get('score',0)}점, 정상 운영)."
 
     L = [f"# 📅 {mat['date_ko']} M16 BR 반송 이벤트 발생 확인건", "",
          "## 1. 한 줄 총평:등급(60~70 🟠 경계/ 71~84 🔴 위험 / 85~100 ⛔ 초위험)", "",

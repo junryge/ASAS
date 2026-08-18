@@ -538,7 +538,7 @@ def _applied_summary(cfg: dict) -> dict:
             recs = []
     n = fb.get("apply_last_n", 20)
     recent = recs[-n:]
-    base = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=50)
+    base = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=60)
     counts = {v: sum(1 for r in recent if r.get("verdict") == v) for v in _VERDICTS}
     return {
         "total": len(recs),

@@ -63,7 +63,7 @@ def acc_cfg(cfg: dict) -> dict:
     c = (cfg.get("llm", {}).get("accuracy") or {})
     floor = c.get("floor")
     if floor is None:
-        floor = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=50)
+        floor = min((b["min"] for b in cfg.get("grade", {}).get("bands", [])), default=60)
     return {
         "enabled": c.get("enabled", True),
         "window_min": int(c.get("window_min", 20)),
