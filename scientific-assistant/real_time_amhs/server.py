@@ -331,7 +331,7 @@ _STRIP_DEFAULT = [
     {"key": "M16HUB_stb_util", "raw": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
      "label": "M16HUB STB저장율", "unit": "%", "color": "#F2C94C", "max": 100},
     {"key": "M16HUB_rev_count", "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
-     "label": "M16HUB 리프터막힘", "unit": "회", "color": "#FF6FB5"},
+     "label": "M16HUB 리프터 정체", "unit": "회", "color": "#FF6FB5"},
 ]
 
 

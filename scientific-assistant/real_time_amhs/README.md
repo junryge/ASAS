@@ -471,7 +471,7 @@ KPI 카드 `LLM 판단 일치` 를 **클릭하면 그 날 LLM CSV 내용이 그�
 | 시각 | 점수 | 실제이상 | 확신도 | 판단 | 판정 | 판정근거 | 확인 |
 |---|---|---|---|---|---|---|---|
 | 08:05 | 41점 | 예 | 70% | 상승 추세 지속 | 적중 | 이후 9분 연속 50점 이상 유지 · 최고 88점 | 정탐 오탐 |
-| 08:14 | 51점 | 예 | 80% | 리프터막힘 정체 | 과다탐지 | 5분 내 50점 아래로 회복 · 최고 44점 | 정탐 오탐 |
+| 08:14 | 51점 | 예 | 80% | 리프터 정체 정체 | 과다탐지 | 5분 내 50점 아래로 회복 · 최고 44점 | 정탐 오탐 |
 | 08:16 | 38점 | 아니오 | 60% | 회복 국면 | 적중 | 창 안 최고 31점 — 계속 50점 아래 | 정탐 오탐 |
 
 * 날짜를 바꿔 과거 날짜의 판단도 볼 수 있고, CSV 원본을 내려받을 수 있다
@@ -514,9 +514,9 @@ KPI 카드 `LLM 판단 일치` 를 **클릭하면 그 날 LLM CSV 내용이 그�
 라벨·컬럼명은 `m16_hub_skills/발동이벤트_요약.py` 와 같은 표기를 쓴다.
 
 ```
-M16HUB 리프터막힘 (회) [M16HUB.QUE.LFT.3F_LFT_REVERSALCNT]
+M16HUB 리프터 정체 (회) [M16HUB.QUE.LFT.3F_LFT_REVERSALCNT]
 M16HUB 반송시간 (분)  [M16HUB.QUE.TIME.AVGTOTALTIME1MIN]
-M16A 소터대기 (건)    [M16A.SORTER.ABN.SORTERWAITCOUNTOVER]
+M16A 분류기 대기 (건)    [M16A.SORTER.ABN.SORTERWAITCOUNTOVER]
 ```
 
 * 스코어(`unified_risk_score`) — 0~100 고정, 등급 밴드(60/71/85), 경계 이상은 등급 색 점
@@ -534,7 +534,7 @@ M16A 소터대기 (건)    [M16A.SORTER.ABN.SORTERWAITCOUNTOVER]
 
 | 묶음 | 표기 | 항목 |
 |---|---|---|
-| `AMOS 컬럼` (기본) | AMOS 실제 컬럼명 `M16HUB.QUE.LFT.3F_LFT_REVERSALCNT` | 20개 — 발동이벤트_요약 매핑 그대로 (4분초과율·소터대기 포함) |
+| `AMOS 컬럼` (기본) | AMOS 실제 컬럼명 `M16HUB.QUE.LFT.3F_LFT_REVERSALCNT` | 20개 — 발동이벤트_요약 매핑 그대로 (4분초과율·분류기 대기 포함) |
 | `CSV 컬럼` | 저장된 CSV 컬럼명 `M16HUB_rev_count` | 16개 — 점수 계열(`M16HUB_score`·`flow_score`·`hot_score`) 포함 |
 
 묶음을 바꿔도 같은 지표가 있으면 그대로 유지되고, 없으면 그 묶음의 첫 항목(스코어)으로
@@ -549,11 +549,11 @@ M16A 소터대기 (건)    [M16A.SORTER.ABN.SORTERWAITCOUNTOVER]
     {"key":"unified_risk_score","raw":"unified_risk_score","label":"스코어",
      "unit":"점","color":"#3DDBE8","max":100,"bands":true},
     {"key":"M16HUB_rev_count","raw":"M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
-     "label":"M16HUB 리프터막힘","unit":"회","color":"#FF6FB5"}
+     "label":"M16HUB 리프터 정체","unit":"회","color":"#FF6FB5"}
   ]},
   { "id":"csv", "name":"CSV 컬럼", "metrics":[
     {"key":"M16HUB_rev_count","raw":"M16HUB_rev_count",
-     "label":"M16HUB 리프터막힘","unit":"회","color":"#FF6FB5"}
+     "label":"M16HUB 리프터 정체","unit":"회","color":"#FF6FB5"}
   ]}
 ]}
 ```

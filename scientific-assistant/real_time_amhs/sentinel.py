@@ -137,10 +137,10 @@ _RULE_KR = [
     (r"R-?B_fast\b", "Queue 상승"),
     (r"R-?A\b", "반송지연"),
     (r"R-?B\b", "Queue 누적"),
-    (r"R-?C\b", "리프터막힘"),
+    (r"R-?C\b", "리프터 정체"),
     (r"R-?D\b", "Storage FULL"),
     (r"MAXCAPA", "운영자 용량변경"),
-    (r"SORT", "소터대기"),
+    (r"SORT", "분류기 대기"),
     (r"SLA", "4분초과"),
 ]
 
@@ -176,7 +176,7 @@ def summarize_reason(reason: str, area: str = "") -> str:
     """reason 원문에서 발동 룰을 뽑아 한글 한 줄로. 룰 코드는 노출하지 않는다.
 
     예) 'hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,R-D(STB=100.0%)]; M14[R-A_sus]'
-        → 'M16HUB 반송지연 지속 · 리프터막힘 · Storage FULL'
+        → 'M16HUB 반송지연 지속 · 리프터 정체 · Storage FULL'
 
     ★어떤 경우에도 원문(룰 코드·영문 컬럼명·'역증가' 같은 금지어)을 돌려주지
       않는다. 못 알아본 룰이 있어도 한글로 '이상 감지' 라고만 말한다.
@@ -208,10 +208,10 @@ def summarize_reason(reason: str, area: str = "") -> str:
 def reason_metrics(reason: str, area: str = "") -> list[dict]:
     """발동한 룰 → **실제 raw 지표 컬럼명**. 화면 '실제지표' 칸에 쓴다.
 
-    한글 요약("반송지연 지속 · 리프터막힘")만 보면 '무슨 숫자를 보고 그렇게
+    한글 요약("반송지연 지속 · 리프터 정체")만 보면 '무슨 숫자를 보고 그렇게
     판단했나' 를 알 수 없다. 룰마다 대응하는 실제 컬럼을 같이 보여준다.
         반송지연  → M16HUB.QUE.TIME.AVGTOTALTIME1MIN
-        리프터막힘 → M16HUB.QUE.LFT.3F_LFT_REVERSALCNT
+        리프터 정체 → M16HUB.QUE.LFT.3F_LFT_REVERSALCNT
         Storage FULL → M16HUB.STRATE.STB.3F_STORAGE_UTIL 등
 
     매핑은 report_graphs.parse_reason_metrics 하나만 쓴다 (리포트 그래프가

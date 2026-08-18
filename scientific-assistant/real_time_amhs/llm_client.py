@@ -25,16 +25,76 @@ from lp_client import load_config
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 스킬 규칙과 동일한 금지어 — LLM이 어겨도 여기서 결정적으로 제거
+# 스킬 규칙(페르소나 §용어 표준)과 동일 — LLM이 어겨도 여기서 결정적으로 제거.
+# ★순서가 중요하다: 긴 표현을 먼저 지워야 짧은 규칙이 조각을 남기지 않는다
+#   (예 '리프터 역방향 카운트' 를 먼저 잡아야 '카운트' 가 홀로 안 남는다).
 _FORBIDDEN = [
-    ("리프터 역방향 카운트", "리프터막힘"),
-    ("리프터 역방향", "리프터막힘"),
+    # 리프터 — '역방향'·'카운트' 두 단어는 어디에도 노출 금지
+    ("리프터 역방향 카운트", "리프터 정체"),
+    ("리프터 역방향", "리프터 정체"),
     ("역방향 카운트", "정체"),
+    ("리프터 막힘", "리프터 정체"),
+    ("리프터막힘", "리프터 정체"),
+    ("막힌 리프터", "정체 리프터"),
+    ("막힌 곳", "정체 구간"),
     ("역방향", "정체"),
     ("역증가", "정체"),
     ("역류", "밀림"),
     ("광역정체", "정체"),
+    # 정체 표현
+    ("물류 정체", "반송 정체"),
+    ("물류 이동", "반송"),
+    ("적체", "정체"),
+    # Storage
+    ("저장공간 사용률", "Storage 사용률"),
+    ("저장공간 포화", "Storage FULL"),
+    ("저장포화", "Storage FULL"),
+    ("저장창고", "Storage"),
+    ("저장공간", "Storage"),
+    ("저장율", "Storage 사용률"),
+    ("100% 포화", "100% FULL"),
+    ("포화 상태", "FULL 상태"),
+    ("만석", "FULL"),
+    # 용어
+    ("M16 허브룸", "M16 HUBROOM"),
+    ("허브룸", "HUBROOM"),
+    ("반송카", "OHT"),
+    ("진원지", "시작 영역"),
+    ("감독관 의견", "에이전트 의견"),
+    ("감독관의견", "에이전트 의견"),
+    ("감독관 제언", "에이전트 제언"),
+    # 과장 표현
+    ("치솟았습니다", "상승했습니다"),
+    ("치솟음", "상승"),
+    ("급증", "상승"),
 ]
+
+# 한 글자짜리는 통짜 치환하면 엉뚱한 말이 깨진다 — '큐' 는 '디스크큐' 같은
+# 조어 안에, '짐' 은 '짐작' 안에 들어 있다. 앞은 한글이 아니어야 하고, 뒤는
+# **조사이거나 낱말 끝**일 때만 바꾼다 (큐가·짐이 는 바꾸고 짐작 은 놔둔다).
+_JOSA = r"(?=이|가|은|는|을|를|의|와|과|도|만|에|으로|로|부터|까지|[^가-힣]|$)"
+_FORBIDDEN_RE = [
+    (r"(?<![가-힣A-Za-z])큐" + _JOSA, "Queue"),
+    (r"(?<![가-힣])짐" + _JOSA, "Carrier"),
+]
+
+# 바꿔 넣은 말에 붙는 조사를 받침에 맞게 고친다.
+#   저장공간이 → Storage이(X) → Storage가(O)
+#   진원지는   → 시작 영역는(X) → 시작 영역은(O)
+_OPEN = ("Storage", "Carrier", "Queue", "OHT")            # 모음으로 끝남
+_CLOSED = ("HUBROOM", "FULL", "시작 영역")                 # 받침으로 끝남
+_TO_OPEN = [("이", "가"), ("은", "는"), ("을", "를"), ("과", "와"), ("으로", "로")]
+
+
+def _fix_josa(text: str) -> str:
+    import re
+    for w in _OPEN:
+        for closed, open_ in _TO_OPEN:
+            text = re.sub(re.escape(w) + closed + r"(?![가-힣])", w + open_, text)
+    for w in _CLOSED:
+        for closed, open_ in _TO_OPEN:
+            text = re.sub(re.escape(w) + open_ + r"(?![가-힣])", w + closed, text)
+    return text
 
 _skills_cache: dict | None = None
 
@@ -78,11 +138,18 @@ def load_skills(cfg: dict | None = None) -> dict:
 
 
 def scrub(text: str) -> str:
-    """스킬 금지어 결정적 제거 (raw 컬럼명은 ASCII 라 훼손되지 않음)."""
+    """스킬 금지어 결정적 제거 + 용어 표준 적용.
+
+    ★raw 컬럼명(M16HUB.QUE.LFT.3F_LFT_REVERSALCNT 등)은 ASCII 라 훼손되지
+      않는다 — 페르소나도 '컬럼명은 그대로, 읽는 문장만 변환' 이라고 못박는다.
+    """
     import re
     for a, b in _FORBIDDEN:
         text = text.replace(a, b)
+    for pat, b in _FORBIDDEN_RE:
+        text = re.sub(pat, b, text)
     text = re.sub(r"\s*카운트\s*", " ", text)
+    text = _fix_josa(text)
     return re.sub(r"[ \t]{2,}", " ", text)
 
 
@@ -491,7 +558,7 @@ def make_report(cases: list[dict], span: str, cfg: dict | None = None):
 스킬 규칙에 따라 관제 리포트를 마크다운으로 작성하라. 구성:
 
 ## 주요 발견
-(사건별 원인을 인과로 — Storage FULL → 리프터막힘 → Queue 밀림 → 반송지연 연쇄로 짚는다. 3~5줄)
+(사건별 원인을 인과로 — Storage FULL → 리프터 정체 → Queue 밀림 → 반송지연 연쇄로 짚는다. 3~5줄)
 
 ## 다음 구간 예측 · 선제 조치 제안
 (이 추세가 이어질 때 다음 구간에 무엇이 우려되는지 + 지금 할 선제 조치. 3~5줄)

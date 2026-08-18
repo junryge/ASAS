@@ -327,7 +327,7 @@ def main():
             if "OHT=" in inner or "OHT가동" in inner:
                 _add(f"{area} OHT가동률", f"{area}.QUE.OHT.OHTUTIL")
             if "R-C" in inner:
-                _add("M16HUB 리프터막힘", "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT")
+                _add("M16HUB 리프터 정체", "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT")
             if "SLA(" in inner or "4분초과" in inner:
                 _add(f"{area} 4분초과율", f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO")
             if "SORT(" in inner or "소터" in inner:

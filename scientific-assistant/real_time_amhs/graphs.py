@@ -46,9 +46,9 @@ _COLOR_BY_KIND = {
     "ra": "#FF6B5E",        # 반송시간
     "rd_fab": "#FFA53D",    # FAB저장율
     "stb_util": "#F2C94C",  # STB저장율
-    "rev_count": "#FF6FB5",  # 리프터막힘
+    "rev_count": "#FF6FB5",  # 리프터 정체
     "sla": "#3DDBE8",       # 4분초과율
-    "sorter": "#5FB8FF",    # 소터대기
+    "sorter": "#5FB8FF",    # 분류기 대기
     "rd_oht": "#7C9CFF",    # OHT가동률
 }
 _SCORE_COLOR = "#3DDBE8"   # --cy
@@ -98,11 +98,11 @@ def parse_reason_metrics(reason: str) -> list[dict]:
         if "OHT=" in inner or "OHT가동" in inner:
             add(f"{area}_rd_oht", f"{area}.QUE.OHT.OHTUTIL", f"{area} OHT가동률", "%")
         if "R-C" in inner:
-            add("M16HUB_rev_count", _REV, "M16HUB 리프터막힘", "회")
+            add("M16HUB_rev_count", _REV, "M16HUB 리프터 정체", "회")
         if "SLA(" in inner or "4분초과" in inner:
             add(f"sla_{area}", f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO", f"{area} 4분초과율", "%")
         if "SORT(" in inner or "소터" in inner:
-            add(f"sorter_{area}", f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER", f"{area} 소터대기", "건")
+            add(f"sorter_{area}", f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER", f"{area} 분류기 대기", "건")
     return out
 
 

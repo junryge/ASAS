@@ -113,7 +113,7 @@ def _fab_strip(sys: str) -> list[dict]:
          "unit": "건", "color": "#E8D97E"},
         # 소터
         {"key": f"sorter_{s}", "raw": f"{s}.SORTER.ABN.SORTERWAITCOUNTOVER",
-         "label": "소터대기", "unit": "건", "color": "#B48DF2"},
+         "label": "분류기 대기", "unit": "건", "color": "#B48DF2"},
         {"key": f"{s}_sorter_fail", "raw": f"{s}_sorter_fail", "label": "소터 실패",
          "unit": "건", "color": "#CBAAF7"},
     ]
@@ -125,8 +125,8 @@ def _fab_strip(sys: str) -> list[dict]:
             {"key": "M16HUB_stb_util", "raw": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
              "label": "STB저장율", "unit": "%", "color": "#F2C94C", "max": 100},
             {"key": "M16HUB_rev_count", "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
-             "label": "리프터막힘", "unit": "회", "color": "#FF6FB5"},
-            {"key": "M16HUB_rc_trend", "raw": "M16HUB_rc_trend", "label": "리프터막힘 추세",
+             "label": "리프터 정체", "unit": "회", "color": "#FF6FB5"},
+            {"key": "M16HUB_rc_trend", "raw": "M16HUB_rc_trend", "label": "리프터 정체 추세",
              "unit": "", "color": "#FF9FCB"},
         ]
     else:

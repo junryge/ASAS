@@ -83,3 +83,50 @@ class DayReportLeak(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GlossaryScrub(unittest.TestCase):
+    """페르소나 §용어 표준 — LLM 이 어겨도 화면에는 표준 표현만 나간다.
+
+    ★'역방향'·'카운트' 는 어디에도 노출 금지(페르소나 규칙 4). 그 외에도
+      적체→정체, 저장공간→Storage, 허브룸→HUBROOM, 큐→Queue, 짐→Carrier,
+      반송카→OHT, 진원지→시작 영역, 감독관→에이전트 로 바꾼다.
+    """
+
+    BAN = ("역방향", "카운트", "역증가", "적체", "리프터막힘", "허브룸",
+           "저장공간", "저장율", "포화", "만석", "치솟", "급증", "반송카",
+           "진원지", "감독관", "물류")
+
+    def test_금지어가_결과에_남지_않는다(self):
+        from llm_client import scrub
+        for src in ("3F 리프터 역방향 카운트 증가로 적체가 발생, 큐가 밀림",
+                    "M16 허브룸 저장공간이 100% 포화, 짐이 쌓임",
+                    "저장율 급증으로 물류 정체가 치솟았습니다",
+                    "감독관 의견: 반송카 지연, 진원지는 HUBROOM"):
+            out = scrub(src)
+            for w in self.BAN:
+                self.assertNotIn(w, out, f"{src!r} → {out!r} 에 '{w}' 남음")
+
+    def test_조사가_깨지지_않는다(self):
+        """저장공간이 → Storage가 / 진원지는 → 시작 영역은."""
+        from llm_client import scrub
+        self.assertIn("Storage가", scrub("저장공간이 부족"))
+        self.assertIn("시작 영역은", scrub("진원지는 M16HUB"))
+        self.assertIn("Carrier를", scrub("짐을 못 내림"))
+        self.assertIn("Queue가", scrub("큐가 밀림"))
+
+    def test_컬럼명과_일반어는_안_건드린다(self):
+        """raw 컬럼은 그대로 보여야 하고('실제지표' 칸), 엉뚱한 말도 안 깨야."""
+        from llm_client import scrub
+        for keep in ("M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
+                     "짐작건대 Queue 누적",
+                     "디스크큐 사용률"):
+            self.assertEqual(scrub(keep), keep)
+
+    def test_룰명이_새_표준이다(self):
+        from sentinel import summarize_reason
+        out = summarize_reason("발동: M16HUB[R-C,R-D]; M16A[SORT]", "M16HUB")
+        self.assertIn("리프터 정체", out)
+        self.assertNotIn("리프터막힘", out)
+        self.assertIn("분류기 대기",
+                      summarize_reason("발동: M16A[SORT]", "M16A"))

@@ -49,8 +49,8 @@ _BANDS = [
 _SCORE_COLOR = "#2563eb"
 _KIND_COLOR = {
     "반송시간": "#dc2626", "FAB저장율": "#ea580c", "STB저장율": "#d97706",
-    "OHT가동률": "#7c3aed", "4분초과율": "#0891b2", "소터대기": "#16a34a",
-    "리프터막힘": "#be185d",
+    "OHT가동률": "#7c3aed", "4분초과율": "#0891b2", "분류기 대기": "#16a34a",
+    "리프터 정체": "#be185d",
 }
 _PALETTE = ["#dc2626", "#ea580c", "#d97706", "#16a34a", "#0891b2",
             "#2563eb", "#7c3aed", "#be185d", "#0d9488", "#b45309"]
@@ -109,13 +109,13 @@ def parse_reason_metrics(reason):
             add(f"{area}_rd_oht", _OHT_RAW.get(area, f"{area}.QUE.OHT.OHTUTIL"),
                 f"{area} OHT가동률", "%")
         if has("C"):
-            add("M16HUB_rev_count", _REV_RAW, "M16HUB 리프터막힘", "회")
+            add("M16HUB_rev_count", _REV_RAW, "M16HUB 리프터 정체", "회")
         if "SLA(" in inner or "4분초과" in inner:
             add(f"sla_{area}", _SLA_RAW.get(area, f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO"),
                 f"{area} 4분초과율", "%")
         if "SORT(" in inner or "소터" in inner:
             add(f"sorter_{area}", _SORTER_RAW.get(area, f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER"),
-                f"{area} 소터대기", "건")
+                f"{area} 분류기 대기", "건")
         # R-B(Queue 누적/상승)는 대응하는 단일 raw 컬럼이 정의돼 있지 않다.
         # 없는 컬럼명을 지어내지 않는다 — 큐 근거는 AMOS QUEUE지표 칸에 있다.
     return out

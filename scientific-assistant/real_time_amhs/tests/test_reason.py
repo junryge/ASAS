@@ -34,14 +34,14 @@ class SummarizeReason(unittest.TestCase):
         """★이게 실제 장애였다. 닫는 ']' 가 없어도 룰을 읽어야 한다."""
         out = summarize_reason(CUT, "M16HUB")
         self.assertTrue(out.startswith("M16HUB "), out)
-        self.assertIn("리프터막힘", out)
+        self.assertIn("리프터 정체", out)
         self.assertIn("Storage FULL", out)
         self._no_leak(out)
 
     def test_정상_블록(self):
         out = summarize_reason(FULL, "M16HUB")
         self.assertIn("반송지연 지속", out)
-        self.assertIn("리프터막힘", out)
+        self.assertIn("리프터 정체", out)
         self._no_leak(out)
 
     def test_영역이_여러개면_hot_area_것을_고른다(self):
@@ -49,7 +49,7 @@ class SummarizeReason(unittest.TestCase):
         self.assertTrue(out.startswith("M14 "), out)
         self.assertIn("반송지연 지속", out)
         self.assertIn("Storage FULL", out)
-        self.assertNotIn("리프터막힘", out)     # 그건 M16HUB 블록 것
+        self.assertNotIn("리프터 정체", out)     # 그건 M16HUB 블록 것
         self._no_leak(out)
 
     def test_대괄호가_아예_없어도_읽는다(self):
