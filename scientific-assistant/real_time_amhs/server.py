@@ -181,43 +181,81 @@ def _llm_on(ctx: dict, interval: int) -> bool:
     return True
 
 
+def _poll_order() -> list[str]:
+    """수집 순서 — 최근에 화면이 물어본 시스템부터. 나머지는 원래 순서.
+
+    watched 는 rctx() 가 요청마다 찍는다. 아무도 안 보고 있으면 그대로.
+    """
+    ss = systems()
+    seen = [(s_, get_ctx(s_)["watched"]) for s_ in ss]
+    fresh = [s_ for s_, w in seen if time.time() - w < 120]
+    if not fresh:
+        return ss
+    fresh.sort(key=lambda s_: -get_ctx(s_)["watched"])
+    return fresh + [s_ for s_ in ss if s_ not in fresh]
+
+
+def _scan_one(sys: str, interval: int, order: int) -> None:
+    """시스템 하나 수집 + 후속(케이스 판단·분당 LLM·선행 감지).
+
+    ★수집(주피터 CSV 내려받기)은 네트워크 대기가 대부분이라 스레드로 겹쳐도
+      서로 안 막는다. 저장은 store_csv 가 락으로 직렬화하고, 시스템마다
+      파일·폴더가 달라 섞이지도 않는다.
+    """
+    ctx = get_ctx(sys)
+    st = ctx["state"]
+    t0 = time.time()
+    try:
+        res = scan_once(ctx["store"], cfg=ctx["cfg"])
+        st.update(
+            last_scan=datetime.now().isoformat(),
+            latency_ms=int((time.time() - t0) * 1000),
+            connected=bool(res.get("ok")),
+            error=None if res.get("ok") else res.get("error"),
+            amos_warn=res.get("amos_warn"),
+            source=res.get("source"),
+            scans=st["scans"] + 1,
+            window=CFG.get("query", {}).get("window", "10m"),
+            last_rows=res.pop("all_rows", None) or st.get("last_rows"),
+            saved=res.get("saved"),
+            gap_min=res.get("gap_min"),
+        )
+        sv = res.get("saved") or {}
+        if st["scans"] == 1 or sv.get("written"):
+            print(f"[수집:{sys}] {res.get('rows')}행 조회 · "
+                  f"신규 {sv.get('written', 0)}행 저장"
+                  + (f" → {sv['files'][0]}" if sv.get("files") else ""))
+        if res.get("ok"):
+            _auto_judge(ctx, res.get("cases") or [])
+            if _llm_on(ctx, interval):
+                _minute_llm(ctx, delay=order * 4.0)
+            _update_forecast(ctx)
+    except Exception as e:
+        st.update(connected=False, error=f"{type(e).__name__}: {e}",
+                  last_scan=datetime.now().isoformat())
+
+
 def _poll_loop() -> None:
-    """수집 루프 — 매 회 모든 시스템을 돌고, 주기는 config 에서 다시 읽는다."""
+    """수집 루프 — 매 회 모든 시스템을 **동시에** 수집한다.
+
+    예전엔 여섯 개를 차례로 돌았다. 한 회차가 CSV 를 통째로 내려받아 몇 초씩
+    걸리는데 그게 6번 줄줄이 이어져서, 뒤쪽 시스템은 갱신이 한참 늦었다
+    ("데이터가 안 뜬다"). 네트워크 대기가 대부분이라 겹쳐 받으면 한 회차가
+    가장 느린 하나만큼으로 줄어든다.
+    """
     _bootstrap_today()                 # ① 하루치 먼저 확보
     while True:                        # ② 이후 증분 수집
         interval = max(5, int(CFG.get("query", {}).get("poll_interval_s", 60)))
-        for i, sys in enumerate(systems()):
-            ctx = get_ctx(sys)
-            st = ctx["state"]
-            t0 = time.time()
-            try:
-                res = scan_once(ctx["store"], cfg=ctx["cfg"])
-                st.update(
-                    last_scan=datetime.now().isoformat(),
-                    latency_ms=int((time.time() - t0) * 1000),
-                    connected=bool(res.get("ok")),
-                    error=None if res.get("ok") else res.get("error"),
-                    amos_warn=res.get("amos_warn"),
-                    source=res.get("source"),
-                    scans=st["scans"] + 1,
-                    window=CFG.get("query", {}).get("window", "10m"),
-                    last_rows=res.pop("all_rows", None) or st.get("last_rows"),
-                    saved=res.get("saved"),
-                    gap_min=res.get("gap_min"),
-                )
-                sv = res.get("saved") or {}
-                if st["scans"] == 1 or sv.get("written"):
-                    print(f"[수집:{sys}] {res.get('rows')}행 조회 · "
-                          f"신규 {sv.get('written', 0)}행 저장"
-                          + (f" → {sv['files'][0]}" if sv.get("files") else ""))
-                if res.get("ok"):
-                    _auto_judge(ctx, res.get("cases") or [])
-                    if _llm_on(ctx, interval):
-                        _minute_llm(ctx, delay=i * 4.0)
-                    _update_forecast(ctx)
-            except Exception as e:
-                st.update(connected=False, error=f"{type(e).__name__}: {e}",
-                          last_scan=datetime.now().isoformat())
+        order = _poll_order()          # 보고 있는 시스템이 앞 — LLM 시차도 이 순서로
+        threads = []
+        for i, sys in enumerate(order):
+            t = threading.Thread(target=_scan_one, args=(sys, interval, i),
+                                 daemon=True)
+            t.start()
+            threads.append(t)
+        # 다음 주기가 겹치지 않게 이번 회차는 끝까지 기다린다 (주기 안에서만)
+        for t in threads:
+            t.join(timeout=max(10, interval))
 
         # 주기를 나눠 자며 변경을 빠르게 반영
         slept = 0

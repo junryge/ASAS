@@ -261,18 +261,20 @@
   table.pol td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
   .hidden{display:none!important}
 
-  /* ── LLM 최근 판단 한 줄 (KPI 아래) ── */
-  .llmnow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-          padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line);
-          font-size:12.5px;cursor:pointer}
+  /* ── LLM 최근 판단 한 줄 (KPI 아래) ──
+     관제실에서 멀찍이 서서도 읽히게 본문을 키웠다 (현장 요청). */
+  .llmnow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+          padding:11px 16px;background:var(--panel);border-bottom:1px solid var(--line);
+          font-size:15px;line-height:1.5;cursor:pointer}
   .llmnow:hover{background:var(--panel2)}
-  .llmnow .tag{display:inline-flex;align-items:center;gap:6px;color:var(--cy);
-               font-weight:650;font-size:11.5px;white-space:nowrap}
-  .llmnow .tag i{width:7px;height:7px;border-radius:50%;background:var(--cy);flex:none}
-  .llmnow .jt{color:var(--tx);flex:1;min-width:220px}
-  .llmnow .cf{font-weight:700;white-space:nowrap}
-  .llmnow .bar{width:52px;height:4px;border-radius:2px;background:var(--line2);flex:none}
-  .llmnow .bar i{display:block;height:4px;border-radius:2px}
+  .llmnow .tag{display:inline-flex;align-items:center;gap:7px;color:var(--cy);
+               font-weight:700;font-size:13.5px;white-space:nowrap}
+  .llmnow .tag i{width:8px;height:8px;border-radius:50%;background:var(--cy);flex:none}
+  .llmnow .jt{color:var(--tx);flex:1;min-width:240px;font-size:15.5px;font-weight:500}
+  .llmnow .cf{font-weight:700;white-space:nowrap;font-size:15px}
+  .llmnow .bar{width:64px;height:5px;border-radius:3px;background:var(--line2);flex:none}
+  .llmnow .bar i{display:block;height:5px;border-radius:3px}
+  .llmnow .chip{font-size:12.5px}
 
   /* ── 스코어 추이 스트립 (항상 보이는 실시간 그래프) ── */
   .strip{border-bottom:1px solid var(--line);background:var(--panel)}
