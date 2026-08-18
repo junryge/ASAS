@@ -1752,6 +1752,42 @@ async function openAcc(day){
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">불러오지 못했습니다</div>'; }
 }
 
+/* 정책 탭 요청 — 수집 루프가 CSV 를 파싱하는 동안 응답이 늦어질 수 있다.
+   그때 표가 '불러오는 중…' 에 멈춰 버려서 "정책이 있다가 없다가" 로 보였다.
+   기다렸다 두 번까지 다시 부르고, 그래도 안 되면 '다시 시도' 를 띄운다. */
+async function apiRetry(url, tries = 3, waitMs = 1200){
+  let last;
+  for(let i = 0; i < tries; i++){
+    try{
+      const ac = new AbortController();
+      const tm = setTimeout(() => ac.abort(), 15000);
+      try{
+        const r = await fetch(withSys(url), {signal: ac.signal});
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        return await r.json();
+      } finally { clearTimeout(tm); }
+    }catch(e){
+      last = e;
+      if(i < tries - 1) await new Promise(r => setTimeout(r, waitMs * (i + 1)));
+    }
+  }
+  throw last;
+}
+
+function policyFail(rowsId, noteId, retryFn){
+  const el = $('#' + rowsId);
+  // 이미 표가 그려져 있으면 지우지 않는다 — 있던 게 사라지는 게 제일 나쁘다
+  if(!el.querySelector('select,input')){
+    el.innerHTML = `<tr><td colspan="5" class="empty">
+      불러오지 못했습니다 (서버가 바쁠 수 있습니다)
+      <button class="act" id="${rowsId}-retry" style="margin-left:10px;padding:3px 10px">다시 시도</button>
+    </td></tr>`;
+    const b = $('#' + rowsId + '-retry');
+    if(b) b.onclick = retryFn;
+  }
+  $('#' + noteId).textContent = '— 불러오기 실패 · 다시 시도하세요';
+}
+
 /* ── 스코어 등급 설정 (정책 탭) — 시스템 6개 각각의 등급 컷 ──
    저장 = 즉시 적용(케이스·등급색·그래프 밴드) + config.json 기록. */
 let SP_INIT = false, SP_SYS = [], SP_RESET = new Set();
@@ -1773,7 +1809,7 @@ function spRow(s){
 
 async function initScorePolicy(){
   try{
-    const d = await api('/api/score_policy');
+    const d = await apiRetry('/api/score_policy');
     SP_SYS = d.systems.map(s=>s.sys);
     SP_RESET.clear();
     $('#sprows').innerHTML = d.systems.map(spRow).join('');
@@ -1800,7 +1836,7 @@ async function initScorePolicy(){
         pollStatus(); pollCases();               // 지금 화면 등급도 새 컷으로
       } finally { btn.disabled = false; btn.textContent = '저장 · 적용'; }
     };
-  }catch(e){ $('#spnote').textContent = '— 설정 불러오기 실패 (서버 구버전?)'; }
+  }catch(e){ policyFail('sprows', 'spnote', initScorePolicy); }
 }
 
 /* ── LLM 판단 일치 설정 (정책 탭) — 시스템 6개 각각, 저장 버튼으로 반영 ──
@@ -1823,7 +1859,7 @@ function lpRow(s, opts){
 
 async function initLlmPolicy(){
   try{
-    const d = await api('/api/llm_policy');
+    const d = await apiRetry('/api/llm_policy');
     LP_SYS = d.systems.map(s=>s.sys);
     $('#lp-en').value = d.enabled ? '1' : '0';
     $('#lprows').innerHTML = d.systems.map(s => lpRow(s, d)).join('');
@@ -1846,7 +1882,7 @@ async function initLlmPolicy(){
           r.systems.filter(s=>s.mode!=='off').length}/${r.systems.length} 시스템 판단 중)`;
       } finally { btn.disabled = false; btn.textContent = '저장 · 적용'; }
     };
-  }catch(e){ $('#lpnote').textContent = '— 설정 불러오기 실패 (서버 구버전?)'; }
+  }catch(e){ policyFail('lprows', 'lpnote', initLlmPolicy); }
 }
 let LP_SYS = [];
 
