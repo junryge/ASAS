@@ -2896,6 +2896,11 @@ def register_api_routes(app):
             "tables", "fenced_code", "codehilite", "toc",
             "nl2br", "sane_lists", "smarty",
         ]
+        try:                       # 옛 등급 기준(50~70)이 섞여 와도 화면은 현재 기준으로
+            from demos_v1.amos_report import _fix_grade_text as _fgt
+            md_text = _fgt(md_text)
+        except Exception:
+            pass
         body_html = md_lib.markdown(md_text, extensions=extensions)
 
         # ── AMOS 인터랙티브 보고서 (사건발생 확인건): 체크박스·실제발생 표·수동기입·저장 JS 주입 ──

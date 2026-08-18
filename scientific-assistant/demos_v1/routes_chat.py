@@ -349,7 +349,13 @@ def _maybe_generate_md_html(answer, loaded, resp_data):
                 if _nxt.lstrip().startswith("|") and "---" not in _nxt:
                     _md_in.append("|" + "|".join(["---"] * max(1, _ln.count("|") - 1)) + "|")
         extensions = ["tables", "fenced_code", "codehilite", "toc", "nl2br", "sane_lists"]
-        body_html = md_lib.markdown("\n".join(_md_in), extensions=extensions)
+        _md_joined = "\n".join(_md_in)
+        try:                       # 옛 등급 기준(50~70)이 섞여 와도 화면은 현재 기준으로
+            from demos_v1.amos_report import _fix_grade_text as _fgt
+            _md_joined = _fgt(_md_joined)
+        except Exception:
+            pass
+        body_html = md_lib.markdown(_md_joined, extensions=extensions)
         # ── AMOS 인터랙티브 보고서 (사건발생 확인건 — 샘플5 형식): 체크박스·수동기입·저장 JS 주입 ──
         _amos_css = _amos_toolbar = _amos_js = ""
         _maxw = "900px"
