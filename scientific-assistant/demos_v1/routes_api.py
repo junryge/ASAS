@@ -285,6 +285,38 @@ def register_api_routes(app):
         print(f"  🎯 [AUTO-SKILLS] query='{query[:50]}', 키워드 매칭 결과: {[sid for sid, _ in results]}")
 
         # 하네스 라우터 결과 병합 (기존 키워드 매칭 + 하네스 토큰 매칭 + Expert Pool + 조합 추천)
+        #
+        # ★네 군데 점수를 그냥 한 줄에 놓고 정렬하면 안 된다. 척도가 다르다:
+        #     키워드 매칭 = 맞은 글자 수        ('임계값' → 3)
+        #     하네스 라우터 = IDF 가중 점수      (보통 10~35)
+        #     Expert Pool = 관련도 + 2 / 조합 = 1
+        #   그래서 하네스가 2순위로 얹은 것이 키워드 1순위를 눌렀다. 실제로
+        #   '임계값 어떻게 조정해' 가 brainstorming 을 1위로, '발동이벤트
+        #   결과 해석' 이 shap 을 1위로 올렸다 — 라우터가 정답을 맞혀 놔도
+        #   병합에서 순서가 뒤집히면 아무 소용이 없다.
+        #
+        #   각 출처를 그 출처 안에서의 상대값(0~100)으로 바꿔 놓고 합친다.
+        #   여러 출처가 같은 스킬을 짚으면 그건 더 확실한 근거이므로 웃돈.
+        def _norm(pairs, ceiling=100.0):
+            top = max((s for _, s in pairs), default=0) or 1
+            return [(sid, ceiling * s / top) for sid, s in pairs]
+
+        merged: dict[str, float] = {}
+        agree: dict[str, int] = {}
+
+        def _add(sid, score):
+            if sid in MANUAL_ONLY_SKILLS:
+                return
+            agree[sid] = agree.get(sid, 0) + 1
+            merged[sid] = max(merged.get(sid, 0.0), score)
+
+        # 옛 키워드 매칭의 천장을 조금 낮게 둔다. 둘 다 1위를 내놓고 서로
+        # 다를 때(예: '논문 검색' → agent-search-specialist vs pubmed-database)
+        # 동점이 되어 순서가 들쭉날쭉했다. 라우터 쪽이 평가셋에서 재어 본
+        # 정확도가 높으니 동점은 라우터가 가져간다.
+        for sid, sc in _norm(results, ceiling=92.0):
+            _add(sid, sc)
+
         if HARNESS_AVAILABLE:
             try:
                 from harness_bridge import harness_route, suggest_skill_combinations
@@ -293,13 +325,12 @@ def register_api_routes(app):
                 harness_matches = harness_route(query, limit=2)
                 if harness_matches:
                     print(f"  🎯 [AUTO-SKILLS] 하네스 라우터 추천: {[hm['name'] for hm in harness_matches]}")
-                existing_ids = {sid for sid, _ in results}
-                for hm in harness_matches:
-                    if hm['name'] not in existing_ids and hm['name'] not in MANUAL_ONLY_SKILLS:
-                        results.append((hm['name'], hm['score']))
-                        boosted.append(hm['name'])
-                        existing_ids.add(hm['name'])   # ★중복버그 수정: 이후 단계(Expert/조합)가 재추가 못하게
+                before = set(merged)
+                for sid, sc in _norm([(hm['name'], hm['score']) for hm in harness_matches]):
+                    _add(sid, sc)
+                boosted.extend(s for s in merged if s not in before)
                 # 2) Expert Pool: 관련도 높은 스킬 최대 1개만 추가 (컨텍스트 보호: 3→1)
+                #    보조 신호라 위 두 출처보다 낮은 천장을 준다.
                 try:
                     from harness_bridge import get_router
                     assignments = select_experts(query, get_router(), min_agents=1, max_agents=2)
@@ -308,22 +339,26 @@ def register_api_routes(app):
                         for sid in assign.skills:
                             if ep_added >= 1:
                                 break
-                            if sid not in existing_ids and sid not in MANUAL_ONLY_SKILLS:
-                                results.append((sid, assign.relevance_score + 2))
+                            if sid not in merged and sid not in MANUAL_ONLY_SKILLS:
+                                _add(sid, 45.0)
                                 boosted.append(sid)
-                                existing_ids.add(sid)
                                 ep_added += 1
                 except Exception:
                     pass
-                # 3) 선택된 스킬과 함께 쓰면 좋을 보조 스킬 추천
-                selected = [sid for sid, _ in results]
-                combos = suggest_skill_combinations(query, selected, limit=1)   # 컨텍스트 보호: 2→1
+                # 3) 선택된 스킬과 함께 쓰면 좋을 보조 스킬 추천 (가장 약한 신호)
+                combos = suggest_skill_combinations(query, list(merged), limit=1)
                 for combo_sid in combos:
-                    if combo_sid not in existing_ids and combo_sid not in MANUAL_ONLY_SKILLS:
-                        results.append((combo_sid, 1))
+                    if combo_sid not in merged and combo_sid not in MANUAL_ONLY_SKILLS:
+                        _add(combo_sid, 20.0)
                         boosted.append(combo_sid)
             except Exception:
                 pass
+
+        # 여러 출처가 함께 짚은 스킬에 웃돈 (출처 하나당 +12, 최대 +24)
+        results = sorted(
+            ((sid, sc + min(24.0, 12.0 * (agree.get(sid, 1) - 1)))
+             for sid, sc in merged.items()),
+            key=lambda x: -x[1])
 
         # 실제 SKILL.md가 있는 스킬만 필터링 + max_skills 제한
         # 전수 scan_skills() 대신, 후보 결과별로 SKILL.md 존재만 가볍게 확인
