@@ -1,0 +1,9 @@
+# 예측에 필요한 것 — 이 2개면 된다
+chronos-forecasting>=2.0    # amazon/chronos-2 (Chronos2Pipeline)
+torch>=2.1                  # GPU 쓰려면 CUDA 빌드로 설치
+
+# 아래는 선택
+# oracledb                  # DB 에서 과거 데이터를 직접 받을 때만
+#                           # (aws_idc_history_downloader.py)
+
+# pandas 는 필요 없음 — data.py · evaluate.py · main.py 는 표준 라이브러리만 사용
