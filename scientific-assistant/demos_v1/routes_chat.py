@@ -706,7 +706,7 @@ def _builtin_hub_summary(headers, rows):
             return None
 
         def _lvl(s):
-            return "초위험" if s >= 90 else "위험" if s >= 75 else "경계" if s >= 54 else "정상"
+            return "초위험" if s >= 85 else "위험" if s >= 71 else "경계" if s >= 60 else "정상"
         _EMO = {"경계": "🟠 경계", "위험": "🔴 위험", "초위험": "⛔ 초위험", "정상": "정상"}
 
         n_total = len(drows)
@@ -723,7 +723,7 @@ def _builtin_hub_summary(headers, rows):
             lv = _lvl(sc)
             tm = str(r.get("time") or (r.get("datetime") or "")[-5:] or "")
             day = day or str(r.get("date") or "")
-            if sc >= 54:
+            if sc >= 60:
                 n_cong += 1
                 if lv in dist:
                     dist[lv] += 1
@@ -739,7 +739,7 @@ def _builtin_hub_summary(headers, rows):
 
         out = ["=== [발동이벤트 자동요약 — 내장 분석기가 계산. 재계산 말고 이걸로 진단하세요] ==="]
         out.append(
-            f"[① 일일통계] 보고일자 {day} | 총 {n_total}분 | 정상 {n_total - n_cong}분 | 정체(54점↑) {n_cong}분"
+            f"[① 일일통계] 보고일자 {day} | 총 {n_total}분 | 정상 {n_total - n_cong}분 | 정체(60점↑) {n_cong}분"
         )
         out.append(
             f"등급분포: 🟠경계 {dist['경계']} · 🔴위험 {dist['위험']} · ⛔초위험 {dist['초위험']}"

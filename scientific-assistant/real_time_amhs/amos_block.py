@@ -722,7 +722,7 @@ def amosify(body_html):
         def _strip_grade_table(html):
             for tm0 in re.finditer(r"<table\b[^>]*>[\s\S]*?</table>", html):
                 seg = tm0.group(0)
-                if ("경계" in seg) and ("초위험" in seg) and re.search(r"50\s*~\s*70", seg):
+                if ("경계" in seg) and ("초위험" in seg) and re.search(r"(?:50|60)\s*~\s*70", seg):
                     return html[:tm0.start()] + html[tm0.end():]
             return html
         if hm:

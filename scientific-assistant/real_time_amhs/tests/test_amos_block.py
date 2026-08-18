@@ -87,6 +87,25 @@ class ManualEntryAlways(unittest.TestCase):
         out, has = amosify(None or "")
         self.assertFalse(has)
 
+    def test_등급_기준표는_새_기준_60에서도_지워진다(self):
+        """총평의 '점수 등급 기준' 표는 헤딩 인라인과 중복이라 지운다(고객 요청).
+
+        ★지우는 정규식이 '50~70' 고정이라, 경계 하한을 60으로 올린 순간
+          새 리포트의 기준표(60~70)가 안 지워지고 남았다 — 둘 다 잡아야 한다.
+        """
+        for lo in ("50", "60"):
+            grade_tbl = (f"<table><tr><th>등급</th><th>점수</th></tr>"
+                         f"<tr><td>🟠 경계</td><td>{lo}~70</td></tr>"
+                         f"<tr><td>🔴 위험</td><td>71~84</td></tr>"
+                         f"<tr><td>⛔ 초위험</td><td>85~100</td></tr></table>")
+            html = (H1 + "<h2>1. 한 줄 총평</h2><p>총 2건.</p>" + grade_tbl
+                    + "<h2>2. AMOS 이상 감지 내역</h2>" + AMOS_TABLE
+                    + "<h2>3. 실제 이상 발생내역</h2><p>…</p>")
+            out, has = amosify(html)
+            self.assertTrue(has)
+            self.assertNotIn(f"{lo}~70", out, f"{lo}~70 기준표가 남아 있습니다")
+            self.assertIn("amos-detection-table", out, "AMOS 표 변환은 그대로여야 한다")
+
 
 def _code_only(path):
     """주석·독스트링을 뺀 코드 줄 — 두 복사본이 같은지 볼 때 쓴다."""

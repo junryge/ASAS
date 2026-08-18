@@ -12,7 +12,7 @@
 출력: <outdir>/발동이벤트_요약.csv  (경계 이상 위험 구간을 시간순으로 묶은 표)
 
 규칙:
-- '경계' 이상(점수 >=50) 인 분(minute)만 위험으로 보고, 30분 이내로 가까운
+- '경계' 이상(점수 >=60) 인 분(minute)만 위험으로 보고, 30분 이내로 가까운
   위험 분들은 한 구간으로 병합(짧은 진동 흡수). 이게 하루 보고서의 시간대 표가 됨.
 - 구간마다: 시간대 / 지속 / 최고위험레벨 / 최고점수 / 진원지 / 대표 전파경로 / 발동룰 / 특이신호
 - stdlib 만 사용 (pandas 불필요).
@@ -26,7 +26,7 @@ from collections import Counter
 from datetime import datetime
 
 LEVEL_ORDER = {"정상": 0, "관심": 1, "주의": 2, "경계": 3, "위험": 4, "초위험": 5}
-RISK_LEVEL_MIN = 3          # '경계' 이상(50점↑)을 활동 구간으로 (정상/관심/주의 폐지)
+RISK_LEVEL_MIN = 3          # '경계' 이상(60점↑)을 활동 구간으로 (정상/관심/주의 폐지)
 
 
 def _norm_key(k):
@@ -35,7 +35,7 @@ def _norm_key(k):
 
 def _level_from(level_str, score):
     """★ 점수(unified_risk_score) 기준으로 등급 산출.
-    회사 기준(1~100 척도): 50점 미만은 알람 없음, 경계 50~70 / 위험 71~84 / 초위험 85~100.
+    회사 기준(1~100 척도): 60점 미만은 알람 없음, 경계 60~70 / 위험 71~84 / 초위험 85~100.
     무조건 점수로 판정한다(정상/관심/주의 폐지)."""
     try:
         s = float(score)
@@ -43,7 +43,7 @@ def _level_from(level_str, score):
         return "정상"
     if s >= 85: return "초위험"
     if s >= 71: return "위험"
-    if s >= 50: return "경계"
+    if s >= 60: return "경계"
     return "정상"
 
 
@@ -176,11 +176,11 @@ def main():
     # ───────────────────────────────────────────────────────────
     # 일일 보고서용 자료 추출 (스킬이 이걸로 보고서를 쓴다)
     #   ① 하루 통계  ② 24시간 시간대별 프로파일(정상 시간 포함)
-    #   ※ '정체' 판정 = unified_risk_score >= 50 (50 미만은 알람 없음)
+    #   ※ '정체' 판정 = unified_risk_score >= 60 (60 미만은 알람 없음)
     # ───────────────────────────────────────────────────────────
     n_total = len(minutes)
     grade_ct = Counter(m["level"] for m in minutes)
-    risk_mins = [m for m in minutes if m["score"] >= 50]
+    risk_mins = [m for m in minutes if m["score"] >= 60]
     peak_all = max(minutes, key=lambda x: (x["lvl_n"], x["score"])) if minutes else None
     busy = Counter(m["dt"].strftime("%H") + "시" for m in risk_mins).most_common(5)
     busy_str = ", ".join(f"{h}({c}분)" for h, c in busy) or "-"
@@ -198,7 +198,7 @@ def main():
         "날짜": day_str,
         "총분": n_total,
         "정상분": grade_ct.get("정상", 0),
-        "정체분(50+)": len(risk_mins),
+        "정체분(60+)": len(risk_mins),
         "경계": grade_ct.get("경계", 0),
         "위험": grade_ct.get("위험", 0),
         "초위험": grade_ct.get("초위험", 0),
@@ -215,7 +215,7 @@ def main():
     profile_rows = []
     for hh in sorted(hour_buckets):
         hm = hour_buckets[hh]
-        risk = [x for x in hm if x["score"] >= 50]
+        risk = [x for x in hm if x["score"] >= 60]
         if not risk:                      # 정체 없는(정상) 시간은 분석표에서 제외
             continue
         peak = max(hm, key=lambda x: (x["lvl_n"], x["score"]))
@@ -249,7 +249,7 @@ def main():
         return p
 
     p1 = _wcsv("발동이벤트_1_일일통계.csv",
-               ["보고일자", "날짜", "총분", "정상분", "정체분(50+)", "경계", "위험", "초위험",
+               ["보고일자", "날짜", "총분", "정상분", "정체분(60+)", "경계", "위험", "초위험",
                 "최고점수", "최고시각", "최고진원지", "정체집중시간대"], stats_rows)
     p2 = _wcsv("발동이벤트_2_시간프로파일.csv",
                ["시간", "최고점수", "최고등급", "정체분", "진원지", "발동룰"],
@@ -257,7 +257,7 @@ def main():
 
     # ───────────────────────────────────────────────────────────
     # ③ 사건목록 — 발동이벤트에서 사건 자동 추출
-    #    ★ 점수 기준: 점수 50 이상(경계+) 구간을 사건으로. (전엔 stage=3 기준이라 점수 낮은
+    #    ★ 점수 기준: 점수 60 이상(경계+) 구간을 사건으로. (전엔 stage=3 기준이라 점수 낮은
     #      시각이 사건 시작으로 잡혀 가짜 장기사건 발생 → 점수 기준으로 교정. predictor와 동일.)
     #    '사건단위 분석' 요청 시 스킬이 이 표로 이벤트 보고서를 쓴다.
     # ───────────────────────────────────────────────────────────
@@ -389,7 +389,7 @@ def main():
     print(f"  ④ AMOS이상감지: {len(amos_rows)}건 → {p4}")
 
     # 콘솔 요약
-    print(f"[발동이벤트 일일자료] 총 {n_total}분 중 정체(50점↑) {len(risk_mins)}분 "
+    print(f"[발동이벤트 일일자료] 총 {n_total}분 중 정체(60점↑) {len(risk_mins)}분 "
           f"| 정상 {grade_ct.get('정상', 0)}분")
     if peak_all:
         print(f"하루 최고: {peak_all['time']} {peak_all['level']} "
