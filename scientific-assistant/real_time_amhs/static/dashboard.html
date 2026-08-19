@@ -134,6 +134,8 @@
   /* 꺼둔 것과 고장난 것은 다른 색이어야 한다 — 빨강은 '고쳐야 한다' 는 뜻이다 */
   .chan i.idle{background:var(--tx3)}
   .chan i.warn{background:var(--major)}
+  .mlrow{cursor:pointer}
+  .mlrow:hover td{background:var(--panel2)}
   .clk{text-align:right;font-variant-numeric:tabular-nums}
   .clk b{font-size:17px;font-weight:600;letter-spacing:.5px}
   .clk span{display:block;font-size:10.5px;color:var(--tx3)}
@@ -391,6 +393,23 @@
       </div>
     </div>
     <div id="gbody" class="gbody"><div class="empty">불러오는 중…</div></div>
+  </div>
+</div>
+
+<!-- ── ML 조기예측 "왜 이랬나" ──
+     ★근거(계산)를 먼저 그리고, LLM 설명은 나중에 채운다. LLM 이 느리거나
+       죽어도 근거는 이미 화면에 있다 — 설명이 없는 것과 아무것도 없는
+       것은 다르다. -->
+<div id="wmask" class="gmask hidden">
+  <div class="gbox">
+    <div class="ghd">
+      <b id="wtitle">왜 이랬나</b>
+      <div class="row" style="margin-left:auto">
+        <button class="act" id="wagain">다시 묻기</button>
+        <button class="act" id="wclose">닫기</button>
+      </div>
+    </div>
+    <div id="wbody" class="gbody"><div class="empty">불러오는 중…</div></div>
   </div>
 </div>
 
@@ -1014,6 +1033,121 @@ function renderMlStages(d){
   }).join('');
 }
 
+/* ══════════ ML "왜 이랬나" ══════════
+   ★확률과 단계만 줄줄이 찍혀 있으면 화면을 보고 할 수 있는 일이 없다.
+     그 1분에 실제로 무슨 일이 있었는지 — ML 추이 + 같은 시각 실시간 관제
+     기여 지표 — 를 근거로 먼저 그리고, LLM 설명을 그 위에 얹는다.
+   ★순서가 중요하다. 근거는 계산이라 즉시 나오고, LLM 은 수 초~수십 초
+     걸린다. 근거를 먼저 그려 두면 LLM 이 죽어도 빈 화면이 아니다. */
+let WAT = null;
+
+function mlWhy(at){
+  WAT = at;
+  $('#wtitle').textContent = `왜 이랬나 — ${String(at).slice(5,16)}`;
+  $('#wmask').classList.remove('hidden');
+  $('#wbody').innerHTML = '<div class="empty">근거를 모으는 중…</div>';
+  loadWhy();
+}
+
+function whyNum(v, digits){
+  return (v===null || v===undefined || v==='') ? '–'
+       : (digits!=null ? Number(v).toFixed(digits) : v);
+}
+
+function whyEvidenceHtml(d){
+  const ml = d.ml||{}, rule = d.rule||{}, ag = d.agree||{};
+  let h = '';
+
+  if(ml.ok){
+    const dP = (v,u)=> v==null ? '' :
+      `<span style="color:${v>0?'var(--crit)':v<0?'var(--ok)':'var(--tx3)'}">
+        ${v>0?'▲':v<0?'▼':'–'} ${Math.abs(v).toFixed(2)}${u||''}</span>`;
+    h += `<h3 style="font-size:13px;margin:0 0 6px">ML 조기예측</h3>
+      <div class="kpis" style="grid-template-columns:repeat(4,1fr);
+           border:1px solid var(--line);border-radius:9px;margin:0 0 10px">
+        <div class="kpi"><div class="l">10분 내 초과 확률</div>
+          <div class="v">${ml.p10==null?'–':(ml.p10*100).toFixed(0)+'%'}</div>
+          <div class="s">${esc(ml.level10||'')} · 최근 20분 ${dP(ml.d_p10)}</div></div>
+        <div class="kpi"><div class="l">30분 내 초과 확률</div>
+          <div class="v">${ml.p30==null?'–':(ml.p30*100).toFixed(0)+'%'}</div>
+          <div class="s">${esc(ml.level30||'')}</div></div>
+        <div class="kpi"><div class="l">단계</div>
+          <div class="v" style="font-size:19px;color:${ML_STAGE_COLOR[ml.stage]||'var(--tx)'}">
+            ${esc(ml.stage_name||'')}</div>
+          <div class="s">${ml.onset?`${esc(ml.onset.at)} 부터`:'전환 없음'}</div></div>
+        <div class="kpi"><div class="l">10분 평균 반송시간</div>
+          <div class="v">${whyNum(ml.smoothed,2)}<u>분</u></div>
+          <div class="s">임계 ${whyNum(ml.threshold)}분${
+            ml.near_pct?` · 임계의 ${ml.near_pct}%`:''} · 최근 20분 ${dP(ml.d_smoothed,'분')}</div></div>
+      </div>`;
+    if(ml.reason) h += `<div class="note" style="margin:0 0 12px">ML 이 붙인 사유 — ${esc(ml.reason)}</div>`;
+  }else{
+    h += `<div class="note" style="margin:0 0 12px;color:var(--major)">
+            ML 근거 없음 — ${esc(ml.error||'사유 미상')}</div>`;
+  }
+
+  // ★같은 시각 현장. ML 이 '넘겠다' 고 할 때 무슨 일이 있었는지는 이쪽에만 있다.
+  h += `<h3 style="font-size:13px;margin:14px 0 6px">같은 시각 실시간 관제
+        <span class="note dim">· 룰베이스 0~100점 (ML 과 눈금이 다릅니다)</span></h3>`;
+  if(rule.ok){
+    h += `<div class="note" style="margin:0 0 6px">점수 <b style="color:var(--tx)">${whyNum(rule.score,1)}</b>
+          (${esc(rule.level||'')}) · 경보 기준 ${whyNum(rule.floor)}점</div>`;
+    h += (rule.items||[]).length
+      ? `<div class="tw"><table class="pol"><thead><tr>
+           <th>지표</th><th style="width:110px">그때 값</th>
+           <th style="width:110px">평소</th><th style="width:90px">기여</th></tr></thead><tbody>`
+        + rule.items.map(i=>`<tr>
+            <td>${esc(i.label||'')}
+              <div class="mono dim" style="font-size:10px">${esc(i.col||'')}</div></td>
+            <td class="mono">${whyNum(i.value)}${esc(i.unit||'')}</td>
+            <td class="mono dim">${whyNum(i.base)}${esc(i.unit||'')}</td>
+            <td class="mono">${whyNum(i.pct,0)}%</td></tr>`).join('')
+        + `</tbody></table></div>
+           <div class="note dim" style="margin-top:4px">${esc(rule.note||'')}
+             · 점수식을 푼 값이 아니라 평소 대비 편차 기반 <b>추정</b>입니다</div>`
+      : `<div class="empty">기여도로 잡힌 지표가 없습니다</div>`;
+  }else{
+    h += `<div class="note" style="color:var(--major)">근거 없음 — ${esc(rule.error||'사유 미상')}</div>`;
+  }
+
+  h += `<div class="note" style="margin:12px 0 0;padding:8px 10px;border:1px solid var(--line2);
+          border-radius:8px;background:var(--panel2)">
+          <b>두 시스템 비교</b> — ${esc(ag.verdict||'')}
+          <span class="dim">· 서로의 판정을 입력으로 쓰지 않는 독립 판단입니다</span></div>`;
+  return h;
+}
+
+async function loadWhy(){
+  if(!WAT) return;
+  const body = $('#wbody'), btn = $('#wagain');
+  btn.disabled = true;
+  try{
+    // 1) 근거만 먼저 — 계산이라 즉시 나온다
+    const base = await (await fetch(`/api/ml/why?at=${encodeURIComponent(WAT)}&llm=0`)).json();
+    body.innerHTML = whyEvidenceHtml(base)
+      + `<div id="whyllm" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+           <div class="empty">해석을 묻는 중… (수 초~수십 초)</div></div>`;
+    // 2) LLM 설명을 그 위에 얹는다
+    const d = await (await fetch(`/api/ml/why?at=${encodeURIComponent(WAT)}`)).json();
+    const box = $('#whyllm');
+    if(!box) return;
+    if(d.why){
+      box.innerHTML = `<h3 style="font-size:13px;margin:0 0 6px">해석</h3>
+        <div class="note" style="font-size:12.5px;line-height:1.75;color:var(--tx)">
+          ${esc(d.why).replace(/\*\*(.+?)\*\*/g,'<b style="color:var(--tx)">$1</b>')
+                      .replace(/\n/g,'<br>')}</div>
+        <div class="note dim" style="margin-top:6px">위 근거만 읽고 쓴 설명입니다 — 숫자는 근거표를 보세요</div>`;
+    }else{
+      // ★설명이 없는 것과 아무것도 없는 것은 다르다. 근거는 위에 그대로 있다.
+      box.innerHTML = `<div class="note" style="color:var(--major)">
+          해석을 받지 못했습니다 — ${esc(d.llm_error||'사유 미상')}
+          <span class="dim">· 위 근거는 그대로 유효합니다</span></div>`;
+    }
+  }catch(e){
+    body.innerHTML = `<div class="empty">불러오지 못했습니다 — ${esc(e.message||e)}</div>`;
+  }finally{ btn.disabled = false; }
+}
+
 function renderMlSpans(d){
   const s = d.spans || [];
   $('#mlspans').innerHTML = s.length ? s.slice().reverse().map(x => `<tr>
@@ -1162,7 +1296,10 @@ async function initMl(opt){
     $('#mlrows').innerHTML = rows.length ? rows.map(x => {
       const st2 = String(x.stage||'0').trim();
       const p10 = parseFloat(x.ml_score_10m||0), p30 = parseFloat(x.ml_score_30m||0);
-      return `<tr>
+      // ★확률과 단계만 보고는 할 수 있는 게 없다. 줄을 더블클릭하면
+      //   그 1분에 무슨 일이 있었는지를 근거와 함께 연다.
+      return `<tr class="mlrow" title="더블클릭 — 왜 이랬는지 보기"
+                  ondblclick="mlWhy('${esc(x.datetime||'')}')">
         <td class="mono">${esc((x.datetime||'').slice(5,16))}</td>
         <td class="mono" style="color:${p10>=d.p_on?'var(--crit)':'var(--tx2)'}">${(p10*100).toFixed(0)}%</td>
         <td class="mono" style="color:${p30>=d.p_on?'var(--crit)':'var(--tx2)'}">${(p30*100).toFixed(0)}%</td>
@@ -2774,8 +2911,12 @@ $('#gmin').onchange = drawGraph;
 $('#gclose').onclick = () => $('#gmask').classList.add('hidden');
 $('#gmask').onclick = e => { if(e.target.id==='gmask') $('#gmask').classList.add('hidden'); };
 document.addEventListener('keydown', e => {
-  if(e.key==='Escape') $('#gmask').classList.add('hidden');
+  if(e.key==='Escape'){ $('#gmask').classList.add('hidden');
+                        $('#wmask').classList.add('hidden'); }
 });
+$('#wclose').onclick = () => $('#wmask').classList.add('hidden');
+$('#wmask').onclick = e => { if(e.target.id==='wmask') $('#wmask').classList.add('hidden'); };
+$('#wagain').onclick = loadWhy;
 
 /* downward / upward 를 표시와 내용을 함께 나눠서 보여준다 (CSV 의 AMOS 4개 컬럼) */
 function dirCell(down, up, mono){

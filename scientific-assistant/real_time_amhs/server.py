@@ -758,6 +758,36 @@ def api_ml_rows():
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/ml/why")
+def api_ml_why():
+    """그 1분에 ML 이 왜 그렇게 판정했나 — 근거 + LLM 설명.
+
+    /api/ml/why?at=2026-08-19 03:12  (&llm=0 이면 계산 근거만)
+
+    ★근거를 먼저 계산하고 LLM 에게는 그것만 읽힌다. 원본 CSV 를 던지고
+      '분석해 줘' 하면 숫자를 지어낸다.
+    ★LLM 이 죽어도 근거는 그대로 돌려준다 — 설명이 없는 것과 아무것도 없는
+      것은 다르다.
+    """
+    at = parse_dt(request.args.get("at"))
+    if at is None:
+        return jsonify({"ok": False, "error": "at (시각) 이 필요합니다"}), 400
+    try:
+        import ml_feed
+        import ml_why
+        # ★실시간 근거는 **ML 이 보는 시스템**(ml.sys, 기본 ALL)에서 읽는다.
+        #   화면의 ?sys= 를 따라가면 M14 를 보다가 ML 을 열었을 때 엉뚱한
+        #   시스템의 점수를 근거라고 들이밀게 된다.
+        ml_sys = str(ml_feed.cfg_of(CFG).get("sys") or "ALL").upper()
+        cfg = get_ctx(ml_sys)["cfg"]
+        out = ml_why.explain(at, cfg,
+                             use_llm=(request.args.get("llm", "1") != "0"))
+        return jsonify(out)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/llm_policy", methods=["GET", "POST"])
 def api_llm_policy():
     """분당 LLM 판단(=LLM 판단 일치의 재료) 설정 — 정책 탭, **시스템 6개 각각**.
