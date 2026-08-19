@@ -221,3 +221,55 @@ class PromptAndUi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 받기버튼이_안_사라진다(unittest.TestCase):
+    """★받기 링크가 '그 메시지' 안에 DOM 으로만 붙어 있었다. 세션을 다시
+    열면 Chat.clear() 로 메시지를 통째로 지우고 저장된 본문만 다시 그리므로,
+    받기 줄은 같이 사라졌다. 새로고침도 마찬가지다 — 다시 받을 방법이 없었다.
+
+    화면 동작이라 브라우저로 확인했고, 여기서는 그 구조가 되돌아가지 않게
+    잠근다 (정적 검사임을 밝혀 둔다).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        base = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "static")
+        cls.src = {}
+        for name in ("index.html", "chat.js", "sessions.js", "workspace.js",
+                     "app.js", "app.css"):
+            with open(os.path.join(base, name), encoding="utf-8") as f:
+                cls.src[name] = f.read()
+
+    def test_메시지_밖에_고정_자리가_있다(self):
+        self.assertIn('id="chatDlBar"', self.src["index.html"])
+
+    def test_서버_상태를_보고_그린다(self):
+        """★DOM 에만 있으면 새로고침에 사라진다. 워크스페이스에 물어야 한다."""
+        js = self.src["chat.js"]
+        self.assertIn("Chat.refreshDownloadBar", js)
+        self.assertIn("api/code/workspace/changes", js)
+
+    def test_사라지는_길목마다_다시_그린다(self):
+        for name, why in (("app.js", "새로고침·새 세션"),
+                          ("sessions.js", "세션 복원"),
+                          ("workspace.js", "워크스페이스 갱신")):
+            self.assertIn("refreshDownloadBar", self.src[name],
+                          f"{why} 뒤에 받기 바를 다시 안 그린다")
+
+    def test_세션_복원때_수정제안도_되살린다(self):
+        """본문에 ```edit:``` 이 남아 있으므로 다시 그릴 수 있다."""
+        self.assertIn("Chat.offerEdits", self.src["sessions.js"])
+
+    def test_window에_없는_객체를_찾지_않는다(self):
+        """★이 파일들은 일반 스크립트다 — 최상위 const 는 window 에 안 붙는다.
+        window.Workspace?.refresh() 는 한 번도 실행되지 않았고, 그래서 수정을
+        적용해도 워크스페이스 트리와 '고친 파일' 목록이 갱신되지 않았다."""
+        for name in ("chat.js", "workspace.js", "app.js", "sessions.js"):
+            for obj in ("Chat", "Workspace", "Skills", "Sessions", "Knowledge"):
+                self.assertNotIn(f"window.{obj}?.", self.src[name],
+                                 f"{name}: window.{obj} 는 항상 undefined 다")
+
+    def test_바에_스타일이_있다(self):
+        self.assertIn(".chat-dl", self.src["app.css"])

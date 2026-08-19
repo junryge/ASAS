@@ -19,6 +19,9 @@ const Workspace = {
       console.log(`[ws] tree: ${Workspace.files.length}개 파일`, Workspace.files.map(f => f.path));
       Workspace.render();
       if (Workspace.renderChanged) Workspace.renderChanged();   // 고친 파일 목록도 함께
+      // ★채팅 쪽 받기 바도 같이 맞춘다 — 파일을 지웠는데 '고친 파일 3개'
+      //   가 그대로 떠 있으면 눌러도 404 가 난다.
+      if (typeof Chat !== "undefined") Chat.refreshDownloadBar();
     } catch (e) {
       toast("워크스페이스 로드 실패: " + e.message, "error");
     }

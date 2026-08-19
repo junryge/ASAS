@@ -142,6 +142,7 @@ $("#sidebarAddBtn").addEventListener("click", () => {
     State.messages = [];
     State.session_id = null;
     Chat.clear();
+    Chat.refreshDownloadBar();   // 채팅은 비워도 고친 파일은 그대로다
     toast("새 세션 시작");
   }
 });
@@ -158,6 +159,7 @@ $("#newSessionBtn").addEventListener("click", () => {
   State.messages = [];
   State.session_id = null;
   Chat.clear();
+  Chat.refreshDownloadBar();     // 채팅은 비워도 고친 파일은 그대로다
   refreshMetaBar();
   toast("새 세션 시작");
 });
@@ -380,4 +382,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadModels();
   setTab("skills");
   Workspace.refresh();
+  // ★새로고침해도 받기 바가 남아 있어야 한다 (예전엔 메시지 DOM 에만 있었다)
+  Chat.refreshDownloadBar();
 });

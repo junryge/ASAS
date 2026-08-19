@@ -355,7 +355,11 @@ Chat.offerEdits = async function (node, text) {
           } catch {}
         }
         Chat.refreshChips();
-        if (window.Workspace?.refresh) Workspace.refresh();
+        // ★window.Workspace 는 늘 undefined 다 — 이 파일들은 일반 스크립트라
+        //   최상위 const 가 window 에 안 붙는다. 그래서 이 줄은 한 번도
+        //   실행되지 않았고, 수정을 적용해도 워크스페이스 트리와 '고친 파일'
+        //   목록이 갱신되지 않았다. 이름으로 직접 본다.
+        if (typeof Workspace !== "undefined") Workspace.refresh();
         // 적용했으면 바로 받을 수 있게 — 고친 파일만
         addDownloadRow(box, paths);
       } catch (e) {
@@ -384,7 +388,36 @@ function addDownloadRow(box, paths) {
         : "")
     + ` <a href="api/code/workspace/download?${q.slice(1)}" download>📦 전체 받기</a>`;
   box.appendChild(row);
+  Chat.refreshDownloadBar();
 }
+
+/* ══════════ 채팅 옆 고정 다운로드 바 ══════════
+   ★없어지던 이유: 받기 링크가 '그 메시지' 안에 DOM 으로만 붙어 있었다.
+     세션을 다시 열면 Chat.clear() 로 메시지를 통째로 지우고 저장된 본문만
+     다시 그리므로, DOM 으로만 있던 받기 줄은 같이 사라졌다. 새로고침도
+     마찬가지다.
+   ★그래서 메시지에서 떼어 낸다. 워크스페이스에 고친 파일이 남아 있는 한
+     화면 위에 계속 떠 있어야 한다 — 언제든 다시 받을 수 있어야 하니까. */
+Chat.refreshDownloadBar = async function () {
+  const bar = document.getElementById("chatDlBar");
+  if (!bar) return;
+  const uid = (typeof _wsUid === "function" && _wsUid()) || "";
+  const q = uid ? "&user_id=" + encodeURIComponent(uid) : "";
+  let d;
+  try {
+    d = await api("api/code/workspace/changes" + (uid ? "?user_id=" + encodeURIComponent(uid) : ""));
+  } catch { bar.style.display = "none"; return; }
+  if (!d || !d.count) { bar.style.display = "none"; bar.innerHTML = ""; return; }
+
+  const names = (d.items || []).slice(0, 3).map(i => i.path).join(", ");
+  bar.style.display = "flex";
+  bar.innerHTML =
+    `<span class="chat-dl-n">✏️ 고친 파일 ${d.count}개</span>`
+    + `<span class="chat-dl-p" title="${(d.items || []).map(i => i.path).join("\n")}">`
+    + `${names}${d.count > 3 ? ` 외 ${d.count - 3}개` : ""}</span>`
+    + `<a class="chat-dl-a" href="api/code/workspace/download?changed=1${q}" download>📥 고친 파일만 받기</a>`
+    + `<a class="chat-dl-a" href="api/code/workspace/download?${q.slice(1)}" download>📦 전체 받기</a>`;
+};
 
 function renderMd(text) {
   if (!text) return "";

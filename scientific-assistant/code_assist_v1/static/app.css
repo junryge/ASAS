@@ -286,6 +286,27 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* ── 고친 파일 받기 (채팅 아래 고정) ──
+   ★메시지에 딸려 있으면 세션을 다시 열 때 같이 사라진다. 워크스페이스에
+     고친 파일이 남아 있는 한 여기 계속 떠 있어야 한다. */
+.chat .chat-dl {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  font-size: 12px; padding: 7px 32px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent, #4a9) 10%, var(--bg-2));
+}
+.chat .chat-dl-n { font-weight: 700; white-space: nowrap; }
+.chat .chat-dl-p {
+  color: var(--muted); flex: 1 1 120px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat .chat-dl-a {
+  color: inherit; text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 10px; background: var(--card);
+}
+.chat .chat-dl-a:hover { border-color: var(--accent, #4a9); }
+
 .chat .meta-bar {
   font-size: 11px; color: var(--muted);
   padding: 4px 32px; border-top: 1px solid var(--border);

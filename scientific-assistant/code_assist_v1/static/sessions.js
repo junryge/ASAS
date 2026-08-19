@@ -91,7 +91,13 @@ const Sessions = {
       State.messages = data.messages || [];
       State.session_id = sid;
       Chat.clear();
-      State.messages.forEach(m => Chat.appendMessage(m.role, m.content));
+      // ★수정 제안 패널은 DOM 으로만 있어서 세션을 다시 열면 사라졌다.
+      //   본문에 ```edit:``` 블록이 그대로 남아 있으므로 다시 그릴 수 있다.
+      State.messages.forEach(m => {
+        const node = Chat.appendMessage(m.role, m.content);
+        if (m.role === "assistant" && node) Chat.offerEdits(node, m.content);
+      });
+      Chat.refreshDownloadBar();
       toast(`세션 로드: ${sid.slice(0,8)}`, "ok");
       Sessions.render();
     } catch (e) {

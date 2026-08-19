@@ -73,6 +73,11 @@
       </div>
     </div>
 
+    <!-- ★고친 파일 받기는 메시지에 딸려 있으면 안 된다. 세션을 다시 열거나
+         새 질문을 하면 그 메시지 DOM 이 사라지면서 같이 없어졌다.
+         워크스페이스 상태(서버)에 물어 그리므로 새로고침해도 남아 있다. -->
+    <div class="chat-dl" id="chatDlBar" style="display:none"></div>
+
     <div class="meta-bar" id="metaBar">
       <span class="pill" id="metaModel">model: -</span>
       <span class="pill" id="metaSkills">skills: 0</span>
