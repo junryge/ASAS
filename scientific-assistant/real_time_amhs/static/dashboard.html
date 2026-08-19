@@ -131,6 +131,9 @@
   .chan{margin-left:auto;display:flex;gap:14px;font-size:11.5px;color:var(--tx2)}
   .chan i{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:5px}
   .chan i.off{background:var(--crit)}
+  /* 꺼둔 것과 고장난 것은 다른 색이어야 한다 — 빨강은 '고쳐야 한다' 는 뜻이다 */
+  .chan i.idle{background:var(--tx3)}
+  .chan i.warn{background:var(--major)}
   .clk{text-align:right;font-variant-numeric:tabular-nums}
   .clk b{font-size:17px;font-weight:600;letter-spacing:.5px}
   .clk span{display:block;font-size:10.5px;color:var(--tx3)}
@@ -1575,8 +1578,34 @@ async function fcTune(){
   finally{ b.disabled = false; b.textContent = '임계 탐색 — 지금보다 나은 값이 있나'; }
 }
 
+/* ── 헤더 LLM 램프 ──
+   ★예전엔 이 램프가 HTML 에만 있고 JS 가 한 번도 안 건드렸다 — 즉 **늘
+     초록**이었다. LLM 이 하루 통째로 안 돌던 날에도 초록이었다. 램프가
+     제 일을 했으면 아침에 바로 알았을 것이다.
+   ★'꺼둔 것' 과 '고장난 것' 은 다른 색으로 구분한다. 일부러 끈 걸 빨강으로
+     띄우면 다들 무시하게 되고, 그러면 진짜 고장도 같이 묻힌다. */
+function llmLamp(a){
+  const i = $('#ch-llm');
+  if(!i) return;
+  const st = (a && a.state) || {};
+  if(!a || a.error){
+    i.className = 'warn'; i.title = 'LLM 상태를 못 읽었습니다';
+  }else if(a.enabled === false){
+    i.className = 'idle'; i.title = '1분 추론 중지됨 — 정책 탭에서 켤 수 있습니다 (판단이 쌓이지 않습니다)';
+  }else if(st.last_error){
+    i.className = 'off';  i.title = 'LLM 호출 실패 — ' + st.last_error;
+  }else if(st.calls){
+    i.className = '';     i.title = `판단 ${st.calls}건`
+      + (st.errors ? ` · 실패 ${st.errors}건` : '')
+      + (st.last_at ? ` · 최근 ${String(st.last_at).slice(11,16)}` : '');
+  }else{
+    i.className = 'warn'; i.title = '켜져 있지만 아직 호출 없음 (곧 첫 판단이 돕니다)';
+  }
+}
+
 function renderAcc(a){
   ACC = a || null;
+  llmLamp(a);              // ★어떤 경로로 빠져나가든 램프는 항상 갱신한다
   if(!a || a.error){
     $('#k-acc').textContent = '–';
     $('#k-acc-s').textContent = a && a.error ? '집계 실패' : '1분 추론 누적 시 산출';

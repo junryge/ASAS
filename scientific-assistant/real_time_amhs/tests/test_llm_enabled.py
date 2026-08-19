@@ -113,5 +113,38 @@ class CardTellsTruth(unittest.TestCase):
         self.assertIn("function lpMasterHint", self.html)
 
 
+class HeaderLampIsAlive(unittest.TestCase):
+    """헤더 LLM 램프.
+
+    ★예전엔 이 램프가 HTML 에만 있고 JS 가 한 번도 안 건드렸다 — 즉 늘
+      초록이었다. LLM 이 하루 통째로 안 돌던 날에도 초록이었다.
+      램프가 제 일을 했으면 아침에 바로 알았다.
+    """
+
+    def setUp(self):
+        with open(os.path.join(_ROOT, "static", "dashboard.html"), encoding="utf-8") as f:
+            self.html = f.read()
+
+    def test_램프를_실제로_갱신한다(self):
+        self.assertIn("function llmLamp", self.html)
+        self.assertIn("$('#ch-llm')", self.html,
+                      "ch-llm 을 JS 가 안 잡으면 램프는 장식일 뿐이다")
+
+    def test_어떤_경로로도_램프는_갱신된다(self):
+        """renderAcc 는 조기 return 이 있다 — 램프는 그 앞에 있어야 한다."""
+        body = self.html.split("function renderAcc(a){", 1)[1]
+        lamp = body.index("llmLamp(a)")
+        first_return = body.index("return;")
+        self.assertLess(lamp, first_return,
+                        "조기 return 뒤에 램프를 켜면 집계 실패 때 갱신이 안 된다")
+
+    def test_꺼둔_것과_고장난_것을_구분한다(self):
+        """★일부러 끈 걸 빨강으로 띄우면 다들 무시하게 되고,
+        그러면 진짜 고장도 같이 묻힌다."""
+        self.assertIn(".chan i.idle", self.html)
+        self.assertIn("'idle'", self.html)
+        self.assertIn("'off'", self.html)
+
+
 if __name__ == "__main__":
     unittest.main()
