@@ -77,7 +77,7 @@ _DESIGN_SYSTEM_PROMPT = """너는 PowerPoint 디자인 디렉터다. 사용자 �
   star, arrow_right, arrow_left, arrow_up, arrow_down, chevron, callout,
   cloud, line, textbox
 
-캔버스: 10인치 × 7.5인치 (가로). 좌표는 inch 단위.
+캔버스: {CANVAS} (가로). 좌표는 inch 단위.
 
 ==== 슬라이드 구성 — 자동 기획 (사용자가 시키지 않아도 너가 결정) ====
 사용자가 raw MD나 주제만 던졌을 때, 너가 알아서 다음 패턴으로 5~8장 기획한다:
@@ -127,7 +127,7 @@ _DESIGN_SYSTEM_PROMPT = """너는 PowerPoint 디자인 디렉터다. 사용자 �
 
 ==== JSON 규칙 ====
 1. 응답 전체가 유효한 JSON 객체. 다른 텍스트 절대 금지.
-2. 좌표 (x, y) 는 도형의 좌상단. (x+w) ≤ 10, (y+h) ≤ 7.5
+2. 좌표 (x, y) 는 도형의 좌상단. (x+w) ≤ {CW}, (y+h) ≤ {CH}
 3. 도형끼리 겹치지 말고 충분한 여백 (최소 0.2인치)
 4. 슬라이드당 도형 5~12개 권장. 너무 많으면 어수선
 5. 한글 OK. font_size 는 12~80 사이 (제목 32~60, 본문 14~22)
@@ -208,16 +208,39 @@ def _preprocess_md_for_llm(md: str, max_chars: int = 4000,
     return text
 
 
+                            # (가로, 세로) inch
+PPTX_CANVAS = (10.0, 7.5)       # 4:3 — python-pptx 기본 슬라이드
+BENTO_CANVAS = (13.333, 7.5)    # 16:9 — Bento 캔버스(1280×720)와 같은 비율
+
+
+def _design_prompt(theme: str, canvas: tuple = PPTX_CANVAS) -> str:
+    """디자인 시스템 프롬프트 완성 (캔버스 크기·액센트 컬러 채워 넣기).
+
+    ★자리표시자를 안 채우면 모델이 '{CW}인치' 를 글자 그대로 읽는다.
+    """
+    accent = THEME_PRESETS.get(theme, THEME_PRESETS[DEFAULT_THEME])["accent"]
+    accent_hex = f"#{accent[0]:02X}{accent[1]:02X}{accent[2]:02X}"
+    cw, ch = float(canvas[0]), float(canvas[1])
+    return (_DESIGN_SYSTEM_PROMPT
+            .replace("{CANVAS}", f"{cw:g}인치 × {ch:g}인치")
+            .replace("{CW}", f"{cw:g}").replace("{CH}", f"{ch:g}")
+            + f"\n현재 테마 액센트 컬러: {accent_hex}\n")
+
+
 def _call_llm_for_design(model_id: str, user_input: str, theme: str,
-                         max_tokens: int = 8192) -> tuple[dict | None, str | None]:
-    """선택된 모델로 디자인 JSON 생성. (design_dict, error_msg) 반환."""
+                         max_tokens: int = 8192,
+                         canvas: tuple = PPTX_CANVAS) -> tuple[dict | None, str | None]:
+    """선택된 모델로 디자인 JSON 생성. (design_dict, error_msg) 반환.
+
+    ★캔버스 비율을 출력 형식에 맞춘다. pptx 는 4:3(10×7.5), Bento 는
+      16:9(13.333×7.5) 다. 안 맞추면 넓은 화면 양옆이 통째로 비거나, 반대로
+      도형이 화면 밖으로 나간다.
+    """
     cfg = ENV_CONFIG.get(model_id)
     if not cfg:
         return None, f"모델을 찾을 수 없음: {model_id}"
 
-    accent = THEME_PRESETS.get(theme, THEME_PRESETS[DEFAULT_THEME])["accent"]
-    accent_hex = f"#{accent[0]:02X}{accent[1]:02X}{accent[2]:02X}"
-    sys_prompt = _DESIGN_SYSTEM_PROMPT + f"\n현재 테마 액센트 컬러: {accent_hex}\n"
+    sys_prompt = _design_prompt(theme, canvas)
 
     # MD 전처리 (코드·긴 표 제거) — 작은 LLM 의 '복사 본능' 차단
     preprocessed = _preprocess_md_for_llm(user_input)
@@ -334,20 +357,60 @@ def register_ppt_routes(app):
 
     @app.route("/api/ppt/from-llm", methods=["POST"])
     def api_ppt_from_llm():
-        """MD/주제 + 모델 선택 → LLM이 디자인 JSON → .pptx."""
+        """MD/주제 + 모델 선택 → LLM이 디자인 JSON → .bento.html (또는 .pptx).
+
+        ★설계는 LLM 이 한다. 여기서 바뀐 건 '그 설계를 무엇으로 그리느냐'
+          뿐이다 — format="bento"(기본) / "pptx".
+        body: {"input": "...", "model": "...", "template": "...",
+               "format": "bento|pptx", "theme": "dark|light|corporate|hynix"}
+        """
         data = request.json or {}
         user_input = (data.get("input") or data.get("md") or
                       data.get("prompt") or "").strip()
         model_id = (data.get("model") or "").strip()
         template = (data.get("template") or DEFAULT_THEME).strip()
+        fmt = str(data.get("format") or "bento").lower()
         if not user_input:
             return jsonify({"error": "입력이 비어있습니다."}), 400
         if not model_id:
             return jsonify({"error": "모델을 선택하세요."}), 400
-        # LLM 호출
-        design, err = _call_llm_for_design(model_id, user_input, template)
+
+        canvas = PPTX_CANVAS if fmt == "pptx" else BENTO_CANVAS
+        design, err = _call_llm_for_design(model_id, user_input, template,
+                                           canvas=canvas)
         if err:
             return jsonify({"error": err}), 500
+
+        if fmt != "pptx":
+            from demos_v1 import bento_builder as bb
+            theme = (data.get("theme") or template or bb.DEFAULT_THEME)
+            try:
+                html, doc = bb.build_from_design(
+                    design, theme=theme, canvas=canvas,
+                    footer=(data.get("footer") or "").strip())
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                return jsonify({"error": f"렌더링 실패: {e}",
+                                "design": design}), 500
+            title = (design.get("meta") or {}).get("title") or "llm_design"
+            info = _save_bento(html, title)
+            slides = design.get("slides", [])
+            print(f"[ppt] LLM→Bento: {info['filename']} · {len(doc['slides'])}장 "
+                  f"· 모델 {model_id}")
+            return jsonify({
+                "ok": True, "format": "bento",
+                "id": info["id"], "filename": info["filename"],
+                "size": info["size"], "slide_count": len(doc["slides"]),
+                "model": model_id, "template": template,
+                "theme": theme if theme in bb.THEMES else bb.DEFAULT_THEME,
+                "download_url": f"/api/ppt/bento/download/{info['id']}",
+                "slides_summary": [
+                    {"type": s.get("type", "?"), "title": s.get("title", "")}
+                    for s in slides
+                ],
+                "_debug": design.get("_debug", {}),
+            })
+
         # 렌더
         try:
             pptx_bytes = render_outline_to_pptx(design, template=template)
@@ -359,6 +422,7 @@ def register_ppt_routes(app):
         slides = design.get("slides", [])
         return jsonify({
             "ok": True,
+            "format": "pptx",
             "id": info["id"],
             "filename": info["filename"],
             "size": info["size"],
@@ -485,6 +549,98 @@ def register_ppt_routes(app):
         except Exception as e:
             return jsonify({"error": f"파싱 실패: {e}"}), 500
 
+    def _save_bento(html: str, hint: str) -> dict:
+        """완성된 .bento.html 을 캐시에 저장 → {id, filename, path, size}.
+
+        pptx 와 같은 폴더를 쓰되 확장자로 구분한다 (정리 규칙을 하나로).
+        """
+        import time, uuid
+        from demos_v1.ppt_builder import PPT_CACHE_DIR
+        bid = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        safe = re.sub(r"[^\w가-힣]+", "_", hint or "")[:40] or "발표자료"
+        fname = f"{safe}_{bid}.bento.html"
+        path = os.path.join(PPT_CACHE_DIR, fname)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+        return {"id": bid, "filename": fname, "path": path,
+                "size": os.path.getsize(path)}
+
+    def _bento_path(bid: str) -> str | None:
+        from demos_v1.ppt_builder import PPT_CACHE_DIR
+        if not bid or "/" in bid or "\\" in bid or ".." in bid:
+            return None
+        for fn in os.listdir(PPT_CACHE_DIR):
+            if bid in fn and fn.endswith(".bento.html"):
+                return os.path.join(PPT_CACHE_DIR, fn)
+        return None
+
+    # ══════════ Bento (단일 HTML 발표자료) ══════════
+    # ★.pptx 는 그대로 둔다 — 회사에 pptx 로 내야 하는 자리가 있다.
+    #   Bento 는 '받는 사람이 아무것도 설치 안 해도 되는' 기본 출력이다.
+    @app.route("/api/ppt/bento", methods=["POST"])
+    def api_ppt_bento():
+        """MD 또는 outline → .bento.html 한 파일.
+
+        body: {"md": "...", 또는 "outline": {...},
+               "theme": "dark|light|corporate|hynix",
+               "title": "...", "footer": "..."}
+        """
+        from demos_v1 import bento_builder as bb
+        data = request.json or {}
+        outline = data.get("outline")
+        if not outline:
+            md = (data.get("md") or "").strip()
+            if not md:
+                return jsonify({"error": "md 또는 outline 이 필요합니다."}), 400
+            try:
+                outline = parse_md_to_outline(md)
+            except Exception as e:
+                return jsonify({"error": f"MD 파싱 실패: {e}"}), 400
+        slides = outline.get("slides") or []
+        if not slides:
+            return jsonify({"error": "슬라이드가 비어있습니다."}), 400
+
+        meta = outline.get("meta") or {}
+        title = (data.get("title") or meta.get("title") or "발표자료").strip()
+        try:
+            html, doc = bb.build(
+                slides, title=title,
+                theme=data.get("theme") or bb.DEFAULT_THEME,
+                footer=(data.get("footer") or "").strip(),
+            )
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({"error": f"변환 실패: {e}"}), 500
+
+        info = _save_bento(html, title)
+        print(f"[ppt] Bento 생성: {info['filename']} · {len(doc['slides'])}장 · "
+              f"{info['size']:,}바이트")
+        return jsonify({
+            "ok": True, "id": info["id"], "filename": info["filename"],
+            "size": info["size"], "slide_count": len(doc["slides"]),
+            "theme": data.get("theme") or bb.DEFAULT_THEME,
+            "download_url": f"/api/ppt/bento/download/{info['id']}",
+            "slides_summary": [
+                {"type": s.get("type", "content"), "title": s.get("title", "")}
+                for s in slides
+            ],
+        })
+
+    @app.route("/api/ppt/bento/themes", methods=["GET"])
+    def api_ppt_bento_themes():
+        from demos_v1 import bento_builder as bb
+        return jsonify({"default": bb.DEFAULT_THEME, "themes": [
+            {"id": k, "background": v["background"], "accent": v["accent"]}
+            for k, v in bb.THEMES.items()]})
+
+    @app.route("/api/ppt/bento/download/<bid>", methods=["GET"])
+    def api_ppt_bento_download(bid):
+        path = _bento_path(bid)
+        if not path or not os.path.exists(path):
+            return jsonify({"error": "파일을 찾을 수 없습니다."}), 404
+        return send_file(path, mimetype="text/html", as_attachment=True,
+                         download_name=os.path.basename(path))
+
     @app.route("/api/ppt/download/<ppt_id>", methods=["GET"])
     def api_ppt_download(ppt_id):
         """저장된 .pptx 다운로드."""
@@ -498,4 +654,4 @@ def register_ppt_routes(app):
             download_name=os.path.basename(path),
         )
 
-    print("[ppt] 라우트 등록 완료 (from-md, from-md-file, from-blocks, preview-outline, download)")
+    print("[ppt] 라우트 등록 완료 (bento, from-md, from-md-file, from-blocks, preview-outline, download)")

@@ -6220,6 +6220,8 @@ function pptShowLoading(msg){
 }
 function pptShowResult(data){
   const panel=document.getElementById('pptResultPanel');
+  const isBento = (data.format==='bento') ||
+                  (typeof data.filename==='string' && data.filename.endsWith('.bento.html'));
   if(data.error){ panel.innerHTML=`<div style="color:#ef4444;"><b>❌ 실패</b><br><br>${data.error}</div>`; return; }
   const slides=(data.slides_summary||[]).map((s,i)=>
     `<div style="padding:6px 10px;background:#f1f5f9;border-radius:4px;margin-bottom:4px;display:flex;gap:8px;font-size:11px;">
@@ -6247,13 +6249,44 @@ function pptShowResult(data){
       <div style="font-size:11px;color:#64748b;">슬라이드: ${data.slide_count||0}개 · 크기 ${((data.size||0)/1024).toFixed(1)} KB</div>
     </div>
     <a href="${data.download_url}" download
-       style="display:block;padding:10px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;text-decoration:none;border-radius:6px;font-weight:700;text-align:center;margin-bottom:14px;font-size:13px;">💾 .pptx 다운로드</a>
+       style="display:block;padding:10px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;text-decoration:none;border-radius:6px;font-weight:700;text-align:center;margin-bottom:14px;font-size:13px;">💾 ${isBento?'.bento.html 내려받기 (브라우저로 열면 바로 발표)':'.pptx 다운로드'}</a>
     <div style="font-size:11px;color:#64748b;margin-bottom:6px;">슬라이드 구성</div>${slides}
     ${debugHtml}`;
 }
 function pptSelectedTemplate(){
   const sel=document.getElementById('pptTemplateSelect');
   return (sel&&sel.value)?sel.value:'minimal';
+}
+/* ── 출력 형식 ──
+   Bento = HTML 한 파일. 받는 사람이 PowerPoint 없이 브라우저로 바로 연다.
+   .pptx 는 그대로 둔다 — 회사에 pptx 로 내야 하는 자리가 있다. */
+function pptSelectedFormat(){
+  const sel=document.getElementById('pptFormatSelect');
+  return (sel&&sel.value)?sel.value:'bento';
+}
+function pptBentoTheme(){
+  const sel=document.getElementById('pptBentoTheme');
+  return (sel&&sel.value)?sel.value:'dark';
+}
+function pptToggleFormat(){
+  const bento = pptSelectedFormat()!=='pptx';
+  const b=document.getElementById('pptBentoThemeRow');
+  const p=document.getElementById('pptPptxThemeRow');
+  if(b) b.style.display = bento?'flex':'none';
+  if(p) p.style.display = bento?'none':'flex';
+}
+/* 빠른 변환(LLM 없이) — 형식에 맞는 엔드포인트로 보낸다 */
+async function pptFastConvert(md, tpl){
+  if(pptSelectedFormat()==='pptx'){
+    const r=await fetch('/api/ppt/from-md',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({md, template: tpl})});
+    return await r.json();
+  }
+  const r=await fetch('/api/ppt/bento',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({md, theme: pptBentoTheme()})});
+  return await r.json();
 }
 // 🔄 PPT 설계 팝업 완전 초기화
 function pptResetAll(){
@@ -6271,6 +6304,11 @@ function pptResetAll(){
   // 4) 테마 → minimal
   const tplSel=document.getElementById('pptTemplateSelect');
   if(tplSel) tplSel.value='minimal';
+  const fmtSel=document.getElementById('pptFormatSelect');
+  if(fmtSel) fmtSel.value='bento';
+  const btSel=document.getElementById('pptBentoTheme');
+  if(btSel) btSel.value='dark';
+  pptToggleFormat();
   // 5) 모델 드롭다운 → 첫 번째
   ['pptLlmModelSelect','pptMdLlmModelSelect','pptFileLlmModelSelect'].forEach(id=>{
     const el=document.getElementById(id);
@@ -6355,17 +6393,17 @@ async function pptGenerateFromMd(){
     try{
       const r=await fetch('/api/ppt/from-llm',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({input: md, model, template: tpl})
+        body: JSON.stringify({input: md, model, template: tpl,
+                              format: pptSelectedFormat(), theme: pptBentoTheme()})
       });
       pptShowResult(await r.json());
     }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
     return;
   }
   // 빠른 변환 (결정론)
-  pptShowLoading(`MD → PPT 변환 중... (테마: ${tpl})`);
+  pptShowLoading(`MD → 슬라이드 변환 중... (${pptSelectedFormat()==='pptx'?'pptx · '+tpl:'Bento · '+pptBentoTheme()})`);
   try{
-    const r=await fetch('/api/ppt/from-md',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({md, template: tpl})});
-    pptShowResult(await r.json());
+    pptShowResult(await pptFastConvert(md, tpl));
   }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
 }
 function pptToggleFileMode(){
@@ -6429,18 +6467,24 @@ async function pptGenerateFromFile(file){
     try{
       const r=await fetch('/api/ppt/from-llm',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({input: text, model, template: tpl})
+        body: JSON.stringify({input: text, model, template: tpl,
+                              format: pptSelectedFormat(), theme: pptBentoTheme()})
       });
       pptShowResult(await r.json());
     }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
     return;
   }
   // 빠른 변환 (결정론)
-  pptShowLoading(`파일 업로드 중... (${file.name}, 테마: ${tpl})`);
-  const fd=new FormData(); fd.append('file',file); fd.append('template',tpl);
+  pptShowLoading(`파일 변환 중... (${file.name})`);
   try{
-    const r=await fetch('/api/ppt/from-md-file',{method:'POST',body:fd});
-    pptShowResult(await r.json());
+    if(pptSelectedFormat()==='pptx'){
+      // ★파일을 서버가 직접 읽게 둔다 — 인코딩(cp949 등)을 서버가 더 잘 푼다
+      const fd=new FormData(); fd.append('file',file); fd.append('template',tpl);
+      const r=await fetch('/api/ppt/from-md-file',{method:'POST',body:fd});
+      pptShowResult(await r.json());
+    } else {
+      pptShowResult(await pptFastConvert(text, tpl));
+    }
   }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
 }
 // 🤖 LLM 디자인 모드
@@ -6487,7 +6531,8 @@ async function pptGenerateFromLlm(){
   try{
     const r=await fetch('/api/ppt/from-llm',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({input, model, template: tpl})
+      body:JSON.stringify({input, model, template: tpl,
+                           format: pptSelectedFormat(), theme: pptBentoTheme()})
     });
     pptShowResult(await r.json());
   }catch(e){ pptShowResult({error:'네트워크 오류: '+e.message}); }
@@ -6502,6 +6547,7 @@ async function pptGenerateFromLlm(){
     pptLoadMdLlmModels();   // MD 텍스트 탭 모델 드롭다운
     pptLoadFileLlmModels(); // 파일 업로드 탭 모델 드롭다운
     pptBindSync();
+    pptToggleFormat();
   };
 })();
 // 드롭존 이벤트
@@ -6773,7 +6819,7 @@ async function searchHermesSessions(){
       <div>
         <div style="font-size:16px;font-weight:700;color:#a16207;">📑 PPT 설계</div>
         <div style="font-size:11px;color:#78716c;margin-top:2px;">
-          MD 입력 → 빠른 변환 또는 LLM 자동 디자인 → .pptx
+          MD 입력 → 빠른 변환 또는 LLM 자동 디자인 → .bento.html / .pptx
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
@@ -6786,8 +6832,30 @@ async function searchHermesSessions(){
     </div>
     <div style="flex:1;display:flex;overflow:hidden;">
       <div style="flex:1;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;padding:14px;">
-        <!-- 🎨 테마 선택 -->
+        <!-- 📦 출력 형식 — Bento(한 파일 HTML) 가 기본, pptx 는 그대로 남겨 둔다 -->
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <label style="font-size:11px;color:#64748b;white-space:nowrap;font-weight:700;">📦 형식</label>
+          <select id="pptFormatSelect" onchange="pptToggleFormat()"
+                  style="flex:1;padding:6px 10px;background:#f8fafc;color:#1e293b;
+                         border:1px solid #cbd5e1;border-radius:6px;font-size:12px;cursor:pointer;">
+            <option value="bento">Bento — HTML 한 파일 (열면 바로 발표·편집)</option>
+            <option value="pptx">PowerPoint — .pptx</option>
+          </select>
+        </div>
+        <!-- 🎨 Bento 테마 -->
+        <div id="pptBentoThemeRow" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <label style="font-size:11px;color:#64748b;white-space:nowrap;font-weight:700;">🎨 테마</label>
+          <select id="pptBentoTheme"
+                  style="flex:1;padding:6px 10px;background:#f8fafc;color:#1e293b;
+                         border:1px solid #cbd5e1;border-radius:6px;font-size:12px;cursor:pointer;">
+            <option value="dark">Dark — 어두운 배경, 청록 액센트</option>
+            <option value="hynix">Hynix — 감청 배경, 주황 액센트</option>
+            <option value="light">Light — 흰 배경</option>
+            <option value="corporate">Corporate — 밝은 남색, 정장</option>
+          </select>
+        </div>
+        <!-- 🎨 pptx 테마 -->
+        <div id="pptPptxThemeRow" style="display:none;align-items:center;gap:8px;margin-bottom:10px;">
           <label style="font-size:11px;color:#64748b;white-space:nowrap;font-weight:700;">🎨 테마</label>
           <select id="pptTemplateSelect"
                   style="flex:1;padding:6px 10px;background:#f8fafc;color:#1e293b;

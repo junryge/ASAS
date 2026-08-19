@@ -1,0 +1,2 @@
+be89e3603095b92e7ae89b32df921cc595d9dfcd 2026-08-19
+bento-slides 1.0.18 · MIT · https://github.com/nyblnet/bento
