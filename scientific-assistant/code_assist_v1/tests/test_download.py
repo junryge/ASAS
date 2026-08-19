@@ -271,5 +271,15 @@ class 받기버튼이_안_사라진다(unittest.TestCase):
                 self.assertNotIn(f"window.{obj}?.", self.src[name],
                                  f"{name}: window.{obj} 는 항상 undefined 다")
 
+    def test_이미_적용된_제안에도_받기가_붙는다(self):
+        """★적용 버튼이 안 만들어지면 그 아래 받기 줄도 안 생겼다.
+        이미 적용한 대화를 다시 열면 "이미 적용했습니다" 만 있고 받을
+        데가 없었다."""
+        js = self.src["chat.js"]
+        i = js.index("if (doneList.length && !okList.length)")
+        j = js.index("if (okList.length)", i)
+        self.assertIn("addDownloadRow", js[i:j],
+                      "이미 적용된 제안에 받기 줄을 안 붙인다")
+
     def test_바에_스타일이_있다(self):
         self.assertIn(".chat-dl", self.src["app.css"])

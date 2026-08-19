@@ -337,6 +337,13 @@ Chat.offerEdits = async function (node, text) {
     box.appendChild(row);
   });
 
+  // ★이미 적용한 제안이면 적용 버튼이 안 만들어진다. 그런데 받기 줄은
+  //   그 버튼을 누른 뒤에만 붙고 있었다 — 그래서 대화를 다시 열면
+  //   "이미 적용했습니다" 만 있고 **받을 데가 없었다**. 여기서 바로 붙인다.
+  if (doneList.length && !okList.length) {
+    addDownloadRow(box, [...new Set(doneList.map(e => e.path))]);
+  }
+
   if (okList.length) {
     const btn = document.createElement("button");
     btn.className = "btn-apply-edits";
