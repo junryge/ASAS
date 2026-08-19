@@ -46,6 +46,16 @@ class Edit:
     ok: bool = False
     reason: str = ""
     diff: str = ""
+    already: bool = False      # 전에 이미 적용한 수정인가
+
+    @property
+    def sig(self) -> str:
+        """이 수정을 가리키는 지문. 같은 파일에 같은 내용을 바꾸는 수정이면
+        같은 값이 나온다 — 그래야 '이미 적용했다' 를 알아볼 수 있다."""
+        import hashlib
+        body = "\0".join([self.kind, self.path.strip().replace("\\", "/"),
+                          self.search, self.replace, self.content])
+        return hashlib.sha1(body.encode("utf-8", "replace")).hexdigest()[:16]
 
 
 @dataclass
@@ -66,9 +76,11 @@ class ApplyResult:
             "failed": self.failed,
             "edits": [
                 {"kind": e.kind, "path": e.path, "ok": e.ok,
-                 "reason": e.reason, "diff": e.diff}
+                 "reason": e.reason, "diff": e.diff,
+                 "sig": e.sig, "already": e.already}
                 for e in self.edits
             ],
+            "already": sum(1 for e in self.edits if e.already),
         }
 
 
@@ -163,18 +175,29 @@ def apply_edits(
     root: str,
     safe_join,
     dry_run: bool = False,
+    force: bool = False,
 ) -> ApplyResult:
     """수정들을 워크스페이스에 반영한다.
 
     safe_join(root, *parts) -> str | None : 워크스페이스 밖이면 None.
     dry_run 이면 파일을 건드리지 않고 diff 만 만든다(미리보기).
+    force 면 이미 적용한 수정도 다시 적용한다.
     """
     res = ApplyResult(edits=list(edits))
     # 같은 파일에 여러 수정이 오면 순서대로 쌓아 올린다
     buf: dict[str, str] = {}
+    # ★한 번 적용한 수정을 또 적용하면 안 된다. edit 는 SEARCH 가 이미
+    #   바뀌어 있어서 "파일 내용과 다르다" 로 실패하고 — 사람은 그걸 보고
+    #   '고장났나' 한다. write 는 더 나쁘다: 그 뒤에 손으로 고친 것을
+    #   조용히 덮어쓴다.
+    done = set() if force else applied_sigs(root)
 
     for e in res.edits:
         if e.reason and not e.ok:      # 파싱 단계에서 이미 거절됨
+            continue
+        if e.sig in done:
+            e.already = True
+            e.ok, e.reason = True, "이미 적용됨"
             continue
 
         rel = e.path.strip().replace("\\", "/").lstrip("/")
@@ -236,8 +259,11 @@ def apply_edits(
             with open(full, "w", encoding="utf-8") as f:
                 f.write(text)
             changed.append({"path": rel, "new": new_file})
+        fresh = [e for e in res.edits if e.ok and not e.already]
         if changed:
-            record_changes(root, changed, [e for e in res.edits if e.ok])
+            record_changes(root, changed, fresh)
+        if fresh:
+            mark_applied(root, [e.sig for e in fresh])
 
     return res
 
@@ -249,6 +275,49 @@ def apply_edits(
 #   구분할 수 없다. 그래서 적용할 때 직접 남긴다.
 CHANGES_FILE = ".edits.json"
 _MAX_CHANGES = 500
+
+# ★'무엇이 바뀌었나'(위) 와 '무엇을 적용했나'(아래) 는 다른 질문이다.
+#   앞엣것은 받을 파일 목록이고, 뒤엣것은 같은 제안을 두 번 적용하지 않기
+#   위한 기록이다. 파일이 지워져도 '적용했다' 는 사실은 남아야 한다.
+APPLIED_FILE = ".applied.json"
+_MAX_APPLIED = 2000
+
+
+def applied_path(root: str) -> str:
+    return os.path.join(root, APPLIED_FILE)
+
+
+def applied_sigs(root: str) -> set:
+    """전에 적용한 수정들의 지문."""
+    p = applied_path(root)
+    if not os.path.isfile(p):
+        return set()
+    try:
+        import json
+        with open(p, "r", encoding="utf-8") as f:
+            v = json.load(f)
+        return set(v) if isinstance(v, list) else set()
+    except Exception:
+        return set()
+
+
+def mark_applied(root: str, sigs: list) -> None:
+    """적용 기록을 남긴다. 실패해도 적용 자체를 되돌리지는 않는다."""
+    import json
+    try:
+        cur = applied_sigs(root)
+        new = [s for s in sigs if s and s not in cur]
+        if not new:
+            return
+        out = list(cur) + new
+        if len(out) > _MAX_APPLIED:
+            out = out[-_MAX_APPLIED:]
+        tmp = applied_path(root) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(out, f)
+        os.replace(tmp, applied_path(root))
+    except Exception as e:
+        print(f"[edits] 적용 기록 실패(적용은 됨): {e}")
 
 
 def changes_path(root: str) -> str:

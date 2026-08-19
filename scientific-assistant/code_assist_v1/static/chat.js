@@ -303,20 +303,32 @@ Chat.offerEdits = async function (node, text) {
 
   const box = document.createElement("div");
   box.className = "edit-offer";
-  const okList = prev.edits.filter(e => e.ok);
+  // ★이미 적용한 건 다시 적용하면 안 된다. edit 는 SEARCH 가 이미 바뀌어
+  //   있어 실패하고, write 는 그 뒤에 손으로 고친 것을 조용히 덮어쓴다.
+  const doneList = prev.edits.filter(e => e.already);
+  const okList = prev.edits.filter(e => e.ok && !e.already);
   const badList = prev.edits.filter(e => !e.ok);
 
   const head = document.createElement("div");
   head.className = "edit-offer-head";
-  head.textContent = `📝 파일 수정 제안 — 적용 가능 ${okList.length}건`
-    + (badList.length ? ` · 거절 ${badList.length}건` : "");
+  head.textContent = okList.length
+    ? `📝 파일 수정 제안 — 적용 가능 ${okList.length}건`
+      + (doneList.length ? ` · 이미 적용 ${doneList.length}건` : "")
+      + (badList.length ? ` · 거절 ${badList.length}건` : "")
+    : (doneList.length && !badList.length
+        ? `✓ 이 수정은 이미 적용했습니다 (${doneList.length}건)`
+        : `📝 파일 수정 제안 — 적용할 것 없음`
+          + (doneList.length ? ` · 이미 적용 ${doneList.length}건` : "")
+          + (badList.length ? ` · 거절 ${badList.length}건` : ""));
   box.appendChild(head);
 
   prev.edits.forEach(e => {
     const row = document.createElement("div");
-    row.className = "edit-row " + (e.ok ? "ok" : "bad");
-    row.innerHTML = `<code>${e.path}</code> <span class="edit-why">${e.ok ? "" : e.reason}</span>`;
-    if (e.diff) {
+    row.className = "edit-row " + (e.already ? "done" : e.ok ? "ok" : "bad");
+    const why = e.already ? "이미 적용됨" : (e.ok ? "" : e.reason);
+    row.innerHTML = `<code>${e.already ? "✓ " : ""}${e.path}</code>`
+      + ` <span class="edit-why">${why}</span>`;
+    if (e.diff && !e.already) {
       const pre = document.createElement("pre");
       pre.className = "edit-diff";
       pre.textContent = e.diff;
@@ -336,8 +348,11 @@ Chat.offerEdits = async function (node, text) {
         const r = await api("api/code/edits/apply", {
           method: "POST", body: { text, user_id: _wsUid() || undefined },
         });
+        // ★적용했으면 버튼이 다시 눌리면 안 된다. 새로고침해도 서버
+        //   기록(.applied.json)이 남아 있어 '이미 적용됨' 으로 뜬다.
         btn.textContent = `✓ ${r.applied}건 적용됨`
           + (r.failed ? ` · ${r.failed}건 거절` : "");
+        btn.classList.add("done");
         toast(`${r.applied}건 적용`, r.failed ? "warn" : "ok");
         // 적용된 내용이 다음 질문에도 반영되도록 첨부본을 새로 읽는다.
         // ★안 하면 모델은 고치기 전 코드를 계속 보고 같은 수정을 또 낸다.

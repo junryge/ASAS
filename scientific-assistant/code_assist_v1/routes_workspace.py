@@ -374,11 +374,13 @@ def register_workspace_routes(app):
         if not edits:
             return jsonify({"applied": 0, "failed": 0, "edits": [],
                             "message": "수정 블록이 없다"})
-        res = apply_edits(edits, root, _safe_join, dry_run=dry_run)
+        res = apply_edits(edits, root, _safe_join, dry_run=dry_run,
+                          force=bool(data.get("force")))
         out = res.to_json()
         out["dry_run"] = dry_run
         if not dry_run:
-            print(f"[ws] 수정 적용: {res.applied}건 성공 · {res.failed}건 거절")
+            print(f"[ws] 수정 적용: {res.applied}건 성공 · {res.failed}건 거절"
+                  + (f" · {out['already']}건 이미 적용됨" if out.get("already") else ""))
         return jsonify(out)
 
     @app.route("/api/code/workspace/changes")
@@ -403,7 +405,7 @@ def register_workspace_routes(app):
           그 둘만 받으면 된다.
         """
         import io, zipfile as _zip
-        from code_assist_v1.edits import changed_files, CHANGES_FILE
+        from code_assist_v1.edits import changed_files, CHANGES_FILE, APPLIED_FILE
 
         root = _ws_root(_get_uid())
         one = (request.args.get("path") or "").strip().replace("\\", "/")
@@ -425,7 +427,7 @@ def register_workspace_routes(app):
                 dirnames[:] = [d for d in dirnames
                                if d not in ZIP_SKIP_DIRS and not d.startswith(".")]
                 for fn in sorted(filenames):
-                    if fn == CHANGES_FILE:
+                    if fn in (CHANGES_FILE, APPLIED_FILE):
                         continue                    # 내부 기록은 안 넣는다
                     rel = os.path.relpath(os.path.join(dirpath, fn), root)
                     rels.append(rel.replace("\\", "/"))

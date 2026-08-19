@@ -568,6 +568,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .edit-row:last-of-type { border-bottom: none; }
 .edit-row code { color: #79c0ff; }
 .edit-row.bad code { color: #8b949e; text-decoration: line-through; }
+/* ★이미 적용한 수정 — 다시 적용하면 안 된다는 걸 한눈에 */
+.edit-row.done { opacity: .72; }
+.edit-row.done code { color: #56d364; }
+.btn-apply-edits.done { opacity: .7; pointer-events: none; }
 .edit-why { color: var(--error, #f85149); margin-left: 8px; }
 .edit-diff {
   margin: 6px 0 0; padding: 8px; background: #0d1117; border-radius: 6px;

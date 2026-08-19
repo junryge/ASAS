@@ -20,6 +20,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from code_assist_v1 import edits as E                             # noqa: E402
 from code_assist_v1.edits import parse_edits, apply_edits          # noqa: E402
 
 
@@ -235,3 +236,105 @@ class Endpoint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 적용_기록(unittest.TestCase):
+    """★한 번 적용한 수정을 또 적용하면 안 된다.
+
+    edit 는 SEARCH 가 이미 바뀌어 있어 "파일 내용과 다르다" 로 실패하고 —
+    사람은 그걸 보고 '고장났나' 한다. write 는 더 나쁘다: 그 뒤에 손으로
+    고친 것을 조용히 덮어쓴다.
+    """
+
+    BLOCK = (
+        "```edit:app/main.py\n"
+        "<<<<<<< SEARCH\n"
+        "def hello():\n"
+        "    return 1\n"
+        "=======\n"
+        "def hello():\n"
+        "    return 2\n"
+        ">>>>>>> REPLACE\n"
+        "```\n"
+    )
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="applied_")
+        os.makedirs(os.path.join(self.root, "app"), exist_ok=True)
+        with open(os.path.join(self.root, "app", "main.py"), "w",
+                  encoding="utf-8") as f:
+            f.write("def hello():\n    return 1\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def apply(self, text=None, **kw):
+        return E.apply_edits(E.parse_edits(text or self.BLOCK),
+                             self.root, _safe_join, **kw)
+
+    def test_처음엔_적용된다(self):
+        r = self.apply()
+        self.assertEqual(r.applied, 1)
+        self.assertFalse(r.edits[0].already)
+        with open(os.path.join(self.root, "app", "main.py"), encoding="utf-8") as f:
+            self.assertIn("return 2", f.read())
+
+    def test_두_번째는_이미_적용됨으로_넘어간다(self):
+        self.apply()
+        r = self.apply()
+        e = r.edits[0]
+        self.assertTrue(e.already)
+        self.assertEqual(e.reason, "이미 적용됨")
+        self.assertEqual(r.to_json()["already"], 1)
+
+    def test_두_번째에_파일을_안_건드린다(self):
+        """★write 였다면 그 뒤 손수정을 덮어썼을 자리다."""
+        self.apply()
+        p = os.path.join(self.root, "app", "main.py")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("def hello():\n    return 2  # 사람이 손으로 덧붙임\n")
+        before = open(p, encoding="utf-8").read()
+        self.apply()
+        self.assertEqual(open(p, encoding="utf-8").read(), before,
+                         "이미 적용한 수정이 손수정을 덮어썼다")
+
+    def test_write도_두_번_안_쓴다(self):
+        w = "```write:app/new.py\nx = 1\n```\n"
+        self.assertEqual(self.apply(w).applied, 1)
+        p = os.path.join(self.root, "app", "new.py")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("x = 1\ny = 2  # 사람이 덧붙임\n")
+        self.apply(w)
+        self.assertIn("사람이 덧붙임", open(p, encoding="utf-8").read())
+
+    def test_미리보기에도_이미_적용됨이_보인다(self):
+        """화면이 '적용' 버튼을 다시 띄우면 안 된다."""
+        self.apply()
+        r = self.apply(dry_run=True)
+        self.assertTrue(r.edits[0].already)
+
+    def test_force면_다시_적용한다(self):
+        """일부러 되돌리고 싶은 사람은 있을 수 있다 — 길은 남겨 둔다."""
+        self.apply()
+        p = os.path.join(self.root, "app", "main.py")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("def hello():\n    return 1\n")
+        r = self.apply(force=True)
+        self.assertFalse(r.edits[0].already)
+        self.assertIn("return 2", open(p, encoding="utf-8").read())
+
+    def test_다른_수정은_안_막는다(self):
+        self.apply()
+        other = self.BLOCK.replace("return 2", "return 3")
+        self.assertFalse(self.apply(other).edits[0].already)
+
+    def test_기록이_사라져도_안_죽는다(self):
+        self.apply()
+        os.remove(E.applied_path(self.root))
+        self.assertIsInstance(E.applied_sigs(self.root), set)
+
+    def test_기록_파일은_내려받기에_안_들어간다(self):
+        """내부 기록이지 사용자 코드가 아니다."""
+        self.apply()
+        self.assertTrue(os.path.isfile(E.applied_path(self.root)))
+        self.assertEqual(E.APPLIED_FILE, ".applied.json")
