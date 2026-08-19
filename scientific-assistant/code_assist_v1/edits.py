@@ -226,12 +226,96 @@ def apply_edits(
         e.reason = "미리보기" if dry_run else ("새 파일" if before is None else "적용")
 
     if not dry_run:
+        changed = []
         for rel, text in buf.items():
             full = safe_join(root, *rel.split("/"))
             if not full:
                 continue
             os.makedirs(os.path.dirname(full), exist_ok=True)
+            new_file = not os.path.isfile(full)
             with open(full, "w", encoding="utf-8") as f:
                 f.write(text)
+            changed.append({"path": rel, "new": new_file})
+        if changed:
+            record_changes(root, changed, [e for e in res.edits if e.ok])
 
     return res
+
+
+# ── 무엇이 바뀌었나 ──
+# ★프로젝트를 통째로 다시 받는 건 낭비다. 300개짜리 프로젝트에서 두 파일을
+#   고쳤으면 그 둘만 받으면 된다. 그러려면 '무엇이 언제 바뀌었나' 를 알아야
+#   하는데, 파일 mtime 만으로는 '내가 고친 것' 과 '올릴 때부터 있던 것' 을
+#   구분할 수 없다. 그래서 적용할 때 직접 남긴다.
+CHANGES_FILE = ".edits.json"
+_MAX_CHANGES = 500
+
+
+def changes_path(root: str) -> str:
+    return os.path.join(root, CHANGES_FILE)
+
+
+def read_changes(root: str) -> list[dict]:
+    p = changes_path(root)
+    if not os.path.isfile(p):
+        return []
+    try:
+        import json
+        with open(p, "r", encoding="utf-8") as f:
+            v = json.load(f)
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+
+def record_changes(root: str, changed: list[dict], edits: list) -> None:
+    """방금 적용한 수정을 기록. 실패해도 적용 자체를 되돌리지는 않는다."""
+    import json
+    from datetime import datetime
+    try:
+        log = read_changes(root)
+        stamp = datetime.now().isoformat(timespec="seconds")
+        by_path = {}
+        for e in edits:
+            by_path.setdefault(e.path, []).append(e.kind)
+        for c in changed:
+            log.append({
+                "path": c["path"],
+                "at": stamp,
+                "kind": "새 파일" if c["new"] else "수정",
+                "ops": by_path.get(c["path"], []),
+            })
+        if len(log) > _MAX_CHANGES:
+            log = log[-_MAX_CHANGES:]
+        tmp = changes_path(root) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(log, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, changes_path(root))
+    except Exception as e:
+        print(f"[edits] 변경 기록 실패(적용은 됨): {e}")
+
+
+def changed_files(root: str) -> list[dict]:
+    """지금까지 바뀐 파일 목록 (같은 파일은 마지막 것으로 합친다).
+
+    ★같은 파일을 다섯 번 고쳤다고 목록에 다섯 번 나오면 못 읽는다.
+      대신 몇 번 고쳤는지를 센다.
+    """
+    seen: dict[str, dict] = {}
+    for r in read_changes(root):
+        p = r.get("path")
+        if not p:
+            continue
+        cur = seen.get(p)
+        if cur is None:
+            seen[p] = {**r, "count": 1}
+        else:
+            cur["count"] += 1
+            cur["at"] = r.get("at") or cur["at"]
+            if r.get("kind") == "새 파일":
+                cur["kind"] = "새 파일"
+    out = list(seen.values())
+    # 존재하지 않는 파일(지운 것)은 뺀다 — 받을 게 없다
+    out = [r for r in out if os.path.isfile(os.path.join(root, *r["path"].split("/")))]
+    out.sort(key=lambda r: r.get("at") or "", reverse=True)
+    return out

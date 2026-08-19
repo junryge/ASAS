@@ -560,3 +560,38 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 }
 .btn-apply-edits:hover:not(:disabled) { background: #2ea043; }
 .btn-apply-edits:disabled { background: #30363d; color: #8b949e; cursor: default; }
+
+/* ── 긴 코드 접기 ──
+   모델이 파일을 통째로 뱉어도 화면이 코드로 뒤덮이지 않게. 지우지 않고 접는다. */
+pre.folded { max-height: 320px; overflow: hidden; position: relative; }
+pre.folded::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 90px;
+  background: linear-gradient(transparent, var(--bg-1, #0d1117));
+  pointer-events: none;
+}
+.fold-btn {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px;
+  z-index: 2; padding: 4px 14px; border-radius: 14px; cursor: pointer;
+  border: 1px solid #30363d; background: #1c2128; color: #79c0ff; font-size: 11.5px;
+}
+.fold-btn:hover { background: #21262d; }
+pre { position: relative; }
+
+/* ── 적용 후 내려받기 줄 ── */
+.edit-dl { display: flex; gap: 10px; flex-wrap: wrap; padding: 8px 12px 12px; }
+.edit-dl a {
+  font-size: 12px; color: #7dd3fc; text-decoration: none;
+  border: 1px solid #30363d; border-radius: 6px; padding: 5px 10px; background: var(--bg-1);
+}
+.edit-dl a:hover { background: #1c2128; }
+
+/* ── 고친 파일 목록 (워크스페이스 상단) ── */
+.ws-changed { border-bottom: 1px solid #21262d; padding: 8px 10px; background: #11161d; }
+.ws-changed-h { font-size: 11.5px; color: #8b949e; margin-bottom: 5px;
+                display: flex; justify-content: space-between; align-items: center; }
+.ws-changed-h a { color: #7dd3fc; font-size: 11px; text-decoration: none; }
+.ws-changed-h a:hover { text-decoration: underline; }
+.ws-changed-i { font-size: 11.5px; color: #c9d1d9; padding: 1px 0;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-changed-i b { color: #3fb950; margin-right: 4px; }
+.ws-changed-i .dim { color: #6e7681; }

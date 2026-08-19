@@ -18,6 +18,7 @@ const Workspace = {
       Workspace.files = data.items || [];
       console.log(`[ws] tree: ${Workspace.files.length}개 파일`, Workspace.files.map(f => f.path));
       Workspace.render();
+      if (Workspace.renderChanged) Workspace.renderChanged();   // 고친 파일 목록도 함께
     } catch (e) {
       toast("워크스페이스 로드 실패: " + e.message, "error");
     }
@@ -523,6 +524,44 @@ $("#btnWsCollapseAll").addEventListener("click", () => Workspace.collapseAll());
 $("#btnWsUploadFile").addEventListener("click", () => $("#wsFileInput").click());
 $("#btnWsUploadDir").addEventListener("click", () => Workspace.openFolderDropModal());
 $("#btnWsClear").addEventListener("click", () => Workspace.clearAll());
+
+// ── 내려받기 ──
+// ★프로젝트를 통째로 다시 받는 건 낭비다. 300개 중 두 개를 고쳤으면 그 둘만.
+function _wsDl(changed) {
+  const u = _wsUid();
+  const qs = [changed ? "changed=1" : "", u ? "user_id=" + encodeURIComponent(u) : ""]
+    .filter(Boolean).join("&");
+  location.href = "api/code/workspace/download" + (qs ? "?" + qs : "");
+}
+$("#btnWsDlChanged").addEventListener("click", async () => {
+  // 고친 게 없으면 서버가 404 를 준다 — 눌러 놓고 아무 일도 안 일어나면
+  // '고장' 으로 읽히므로, 먼저 확인하고 말해 준다.
+  try {
+    const d = await api("api/code/workspace/changes" + _wsUidQs());
+    if (!d.count) { toast("아직 적용한 수정이 없습니다", "warn"); return; }
+    _wsDl(true);
+  } catch (e) { toast("확인 실패: " + e.message, "error"); }
+});
+$("#btnWsDlAll").addEventListener("click", () => _wsDl(false));
+
+// 고친 파일 목록을 트리 위에 띄운다 — 무엇이 바뀌었는지 한눈에
+Workspace.renderChanged = async function () {
+  const box = $("#wsChanged");
+  if (!box) return;
+  try {
+    const d = await api("api/code/workspace/changes" + _wsUidQs());
+    if (!d.count) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "block";
+    box.innerHTML = `<div class="ws-changed-h">✏️ 고친 파일 ${d.count}개
+        <a href="#" id="wsChDl">변경분 받기</a></div>`
+      + d.items.slice(0, 12).map(i =>
+          `<div class="ws-changed-i" title="${i.at || ""}">
+             <b>${i.kind === "새 파일" ? "＋" : "~"}</b> ${i.path}
+             ${i.count > 1 ? `<span class="dim">×${i.count}</span>` : ""}</div>`).join("")
+      + (d.count > 12 ? `<div class="ws-changed-i dim">외 ${d.count - 12}개</div>` : "");
+    $("#wsChDl").onclick = e => { e.preventDefault(); _wsDl(true); };
+  } catch (e) { box.style.display = "none"; }
+};
 
 // ── 드래그앤드롭으로 폴더/파일 업로드 (웹킷 다이얼로그가 폴더를 1개만 인식하는 윈도우 케이스 대비) ──
 async function _entriesToFiles(entries, prefix = "") {

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-from flask import request, jsonify
+from flask import request, jsonify, send_from_directory, send_file
 from werkzeug.utils import secure_filename
 
 from code_assist_v1.config import WORKSPACE_DIR, MAX_UPLOAD_MB, ALLOWED_UPLOAD_EXT
@@ -380,6 +380,72 @@ def register_workspace_routes(app):
         if not dry_run:
             print(f"[ws] 수정 적용: {res.applied}건 성공 · {res.failed}건 거절")
         return jsonify(out)
+
+    @app.route("/api/code/workspace/changes")
+    def api_ws_changes():
+        """지금까지 바뀐 파일 목록 — 무엇을 받을지 고르라고."""
+        from code_assist_v1.edits import changed_files
+        root = _ws_root(_get_uid())
+        items = changed_files(root)
+        for it in items:
+            full = _safe_join(root, *it["path"].split("/"))
+            it["size"] = os.path.getsize(full) if full and os.path.isfile(full) else 0
+        return jsonify({"count": len(items), "items": items})
+
+    @app.route("/api/code/workspace/download")
+    def api_ws_download():
+        """워크스페이스를 zip 으로 내려받는다.
+
+        ?changed=1  → 고친 파일만 (기본은 전부)
+        ?path=a/b.py → 그 파일 하나만 (zip 아님)
+
+        ★프로젝트를 통째로 다시 받는 건 낭비다. 300개 중 두 개를 고쳤으면
+          그 둘만 받으면 된다.
+        """
+        import io, zipfile as _zip
+        from code_assist_v1.edits import changed_files, CHANGES_FILE
+
+        root = _ws_root(_get_uid())
+        one = (request.args.get("path") or "").strip().replace("\\", "/")
+        if one:
+            full = _safe_join(root, *[p for p in one.split("/") if p and p != ".."])
+            if not full or not os.path.isfile(full):
+                return jsonify({"error": "파일 없음"}), 404
+            return send_from_directory(os.path.dirname(full),
+                                       os.path.basename(full), as_attachment=True)
+
+        only_changed = request.args.get("changed") in ("1", "true", "yes")
+        if only_changed:
+            rels = [r["path"] for r in changed_files(root)]
+            if not rels:
+                return jsonify({"error": "고친 파일이 없습니다 — 아직 적용한 수정이 없습니다"}), 404
+        else:
+            rels = []
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [d for d in dirnames
+                               if d not in ZIP_SKIP_DIRS and not d.startswith(".")]
+                for fn in sorted(filenames):
+                    if fn == CHANGES_FILE:
+                        continue                    # 내부 기록은 안 넣는다
+                    rel = os.path.relpath(os.path.join(dirpath, fn), root)
+                    rels.append(rel.replace("\\", "/"))
+            rels.sort()
+            if not rels:
+                return jsonify({"error": "워크스페이스가 비어 있습니다"}), 404
+
+        buf = io.BytesIO()
+        with _zip.ZipFile(buf, "w", _zip.ZIP_DEFLATED) as zf:
+            for rel in rels:
+                full = _safe_join(root, *rel.split("/"))
+                if full and os.path.isfile(full):
+                    zf.write(full, rel)
+        buf.seek(0)
+        from datetime import datetime as _dt
+        stamp = _dt.now().strftime("%Y%m%d_%H%M")
+        name = f"workspace_{'changed_' if only_changed else ''}{stamp}.zip"
+        print(f"[ws] zip 내려받기: {len(rels)}개 파일 ({'변경분' if only_changed else '전체'})")
+        return send_file(buf, mimetype="application/zip",
+                         as_attachment=True, download_name=name)
 
     @app.route("/api/code/workspace/save", methods=["POST"])
     def api_ws_save():

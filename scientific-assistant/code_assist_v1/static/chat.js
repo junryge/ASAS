@@ -356,6 +356,8 @@ Chat.offerEdits = async function (node, text) {
         }
         Chat.refreshChips();
         if (window.Workspace?.refresh) Workspace.refresh();
+        // 적용했으면 바로 받을 수 있게 — 고친 파일만
+        addDownloadRow(box, paths);
       } catch (e) {
         btn.disabled = false;
         btn.textContent = "적용 실패 — 다시";
@@ -366,6 +368,23 @@ Chat.offerEdits = async function (node, text) {
   }
   node.appendChild(box);
 };
+
+// ★고친 뒤 바로 받을 수 있어야 한다. 프로젝트를 통째로 다시 받는 건 낭비다 —
+//   300개 중 두 개를 고쳤으면 그 둘만 받으면 된다.
+function addDownloadRow(box, paths) {
+  if (box.querySelector(".edit-dl")) return;
+  const uid = (typeof _wsUid === "function" && _wsUid()) || "";
+  const q = uid ? "&user_id=" + encodeURIComponent(uid) : "";
+  const row = document.createElement("div");
+  row.className = "edit-dl";
+  row.innerHTML =
+    `<a href="api/code/workspace/download?changed=1${q}" download>📥 고친 파일만 받기</a>`
+    + (paths && paths.length === 1
+        ? ` <a href="api/code/workspace/download?path=${encodeURIComponent(paths[0])}${q}" download>📄 ${paths[0]}</a>`
+        : "")
+    + ` <a href="api/code/workspace/download?${q.slice(1)}" download>📦 전체 받기</a>`;
+  box.appendChild(row);
+}
 
 function renderMd(text) {
   if (!text) return "";
@@ -419,8 +438,34 @@ function attachCopyButtons(root) {
     };
     pre.appendChild(btn);
   });
+  collapseLongCode(root);
   // highlight.js 적용
   if (window.hljs) {
     $$("pre code", root).forEach(c => { try { hljs.highlightElement(c); } catch {} });
   }
+}
+
+// ── 긴 코드 블록은 접는다 ──
+// ★모델에게 '바뀐 부분만 내놔라' 라고 시켜도 가끔 파일을 통째로 뱉는다.
+//   그러면 화면이 코드로 뒤덮여서 정작 무엇이 바뀌었는지 안 보인다.
+//   지우지는 않는다 — 사용자가 일부러 '전체 코드 보여줘' 라고 했을 수도
+//   있으니, 접어 두고 펼 수 있게만 한다.
+const CODE_FOLD_LINES = 30;
+function collapseLongCode(root) {
+  $$("pre", root).forEach(pre => {
+    if (pre.dataset.folded) return;
+    const code = pre.querySelector("code") || pre;
+    const n = (code.textContent || "").split("\n").length;
+    if (n <= CODE_FOLD_LINES) return;
+    pre.dataset.folded = "1";
+    pre.classList.add("folded");
+    const bar = document.createElement("button");
+    bar.className = "fold-btn";
+    bar.textContent = `▼ ${n}줄 — 펼치기`;
+    bar.onclick = () => {
+      const on = pre.classList.toggle("folded");
+      bar.textContent = on ? `▼ ${n}줄 — 펼치기` : `▲ 접기`;
+    };
+    pre.appendChild(bar);
+  });
 }
