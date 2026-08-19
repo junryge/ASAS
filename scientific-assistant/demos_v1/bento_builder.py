@@ -234,10 +234,145 @@ def _slide_code(i, b, t) -> dict:
             "transition": "fade", "notes": b.get("notes", ""), "elements": els}
 
 
+# ── MD 파서가 글머리를 알아서 바꿔 놓는 종류들 ──
+# ★ppt_builder._apply_smart_layout 이 content 를 statement/quote/bignumber/
+#   compare2/grid 로 자동 변환한다. 그래서 실제 덱에서 'content' 는 오히려
+#   드물다. 이 다섯을 안 그리면 제목만 남고 내용이 통째로 사라진다 —
+#   실제로 그렇게 나왔다(글머리 두 줄짜리 장이 빈 장으로).
+def _slide_statement(i, b, t) -> dict:
+    """한 줄 선언 — 가운데 큼직하게."""
+    els = _head(i, b.get("title") or "", t)
+    stmt = str(b.get("statement") or "")
+    size = 44 if len(stmt) <= 30 else (34 if len(stmt) <= 70 else 26)
+    els.append(_text(f"s{i}st", MARGIN, CONTENT_TOP + 40, W - MARGIN * 2, 240,
+                     _esc_br(stmt), size, t["color"], weight=700,
+                     align="center", valign="middle", line=1.4,
+                     family=t["fontFamily"]))
+    return {"id": _sid("s", i), "background": t["background"],
+            "transition": "fade", "notes": b.get("notes", ""), "elements": els}
+
+
+def _slide_quote(i, b, t) -> dict:
+    """인용 — 큰 따옴표 + 본문 + 출처."""
+    els = _head(i, b.get("title") or "", t)
+    q = str(b.get("quote") or "")
+    size = 36 if len(q) <= 60 else (28 if len(q) <= 140 else 22)
+    els.append(_text(f"s{i}qm", MARGIN, CONTENT_TOP - 14, 90, 100, "“", 96,
+                     t["accent"], weight=800, family=t["fontFamily"],
+                     opacity=0.55))
+    els.append(_text(f"s{i}q", MARGIN + 96, CONTENT_TOP + 20,
+                     W - MARGIN * 2 - 96, 240, _esc_br(q), size, t["color"],
+                     weight=600, line=1.45, family=t["fontFamily"]))
+    if b.get("cite"):
+        els.append(_text(f"s{i}c", MARGIN + 96, FOOT - 90, W - MARGIN * 2 - 96,
+                         40, "— " + _esc(b["cite"]), 18, t["sub"],
+                         family=t["fontFamily"]))
+    return {"id": _sid("s", i), "background": t["background"],
+            "transition": "fade", "notes": b.get("notes", ""), "elements": els}
+
+
+def _slide_bignumber(i, b, t) -> dict:
+    """수치 강조 — 거대한 숫자 + 작은 라벨."""
+    els = _head(i, b.get("title") or "", t)
+    num = str(b.get("number") or "")
+    size = 150 if len(num) <= 5 else (110 if len(num) <= 9 else 76)
+    els.append(_text(f"s{i}n", MARGIN, CONTENT_TOP + 20, W - MARGIN * 2, 200,
+                     _esc(num), size, t["accent"], weight=800, align="center",
+                     valign="middle", line=1.1, family=t["fontFamily"]))
+    if b.get("label"):
+        els.append(_text(f"s{i}l", MARGIN, CONTENT_TOP + 240, W - MARGIN * 2,
+                         70, _esc_br(b["label"]), 24, t["sub"], align="center",
+                         line=1.35, family=t["fontFamily"]))
+    return {"id": _sid("s", i), "background": t["background"],
+            "transition": "fade", "notes": b.get("notes", ""), "elements": els}
+
+
+def _card(i, k, x, y, w, h, head, items, t, *, accent=None) -> list:
+    """제목 + 항목 몇 개짜리 카드 하나."""
+    accent = accent or t["accent"]
+    els = [
+        _rect(f"s{i}c{k}", x, y, w, h, t["band"], radius=14),
+        _rect(f"s{i}c{k}b", x, y, w, 6, accent, radius=3),
+        _text(f"s{i}c{k}h", x + 22, y + 26, w - 44, 76, _esc_br(head), 24,
+              t["color"], weight=700, line=1.25, family=t["fontFamily"]),
+    ]
+    if items:
+        body = "<br>".join(
+            f'<span style="color:{accent}">·</span> {_esc(s)}' for s in items[:6])
+        els.append(_text(f"s{i}c{k}t", x + 22, y + 112, w - 44, h - 130, body,
+                         17, t["sub"], line=1.55, family=t["fontFamily"]))
+    return els
+
+
+def _slide_compare2(i, b, t) -> dict:
+    """좌우 비교 — 카드 두 장, 색을 달리해서 구분한다."""
+    els = _head(i, b.get("title") or "", t)
+    gap, top = 40, CONTENT_TOP
+    cw = (W - MARGIN * 2 - gap) // 2
+    ch = FOOT - top - 30
+    els += _card(i, 0, MARGIN, top, cw, ch, b.get("left_title") or "",
+                 b.get("left_items") or [], t)
+    els += _card(i, 1, MARGIN + cw + gap, top, cw, ch,
+                 b.get("right_title") or "", b.get("right_items") or [], t,
+                 accent=t["sub"])
+    return {"id": _sid("s", i), "background": t["background"],
+            "transition": "fade", "notes": b.get("notes", ""), "elements": els}
+
+
+def _slide_grid(i, b, t) -> dict:
+    """카드 격자 — 3개면 한 줄, 4개면 2×2."""
+    els = _head(i, b.get("title") or "", t)
+    cards = [c for c in (b.get("cards") or []) if isinstance(c, dict)][:6]
+    n = len(cards) or 1
+    cols = 2 if n == 4 else min(n, 3)
+    rows = -(-n // cols)
+    gap, top = 32, CONTENT_TOP
+    cw = (W - MARGIN * 2 - gap * (cols - 1)) // cols
+    ch = (FOOT - top - 30 - gap * (rows - 1)) // rows
+    for k, c in enumerate(cards):
+        x = MARGIN + (k % cols) * (cw + gap)
+        y = top + (k // cols) * (ch + gap)
+        desc = [s for s in str(c.get("desc") or "").split(" · ") if s]
+        els += _card(i, k, x, y, cw, ch, c.get("title") or "", desc, t)
+    return {"id": _sid("s", i), "background": t["background"],
+            "transition": "fade", "notes": b.get("notes", ""), "elements": els}
+
+
 _MAKERS = {
     "title": _slide_title, "section": _slide_section,
     "content": _slide_content, "table": _slide_table, "code": _slide_code,
+    "statement": _slide_statement, "quote": _slide_quote,
+    "bignumber": _slide_bignumber, "compare2": _slide_compare2,
+    "grid": _slide_grid,
 }
+
+
+def _slide_fallback(i, b, t) -> dict:
+    """모르는 종류 — 있는 글자라도 전부 내보낸다.
+
+    ★빈 장을 내놓는 것이 제일 나쁘다. 사람이 '내용을 안 썼나' 하고 넘어가
+      버린다. 못 그리겠으면 못 그리겠다고 화면에 보여야 한다.
+    """
+    els = _head(i, b.get("title") or b.get("type") or "", t)
+    lines = []
+    for k, v in b.items():
+        if k in ("type", "title", "notes"):
+            continue
+        if isinstance(v, str) and v.strip():
+            lines.append(v.strip())
+        elif isinstance(v, list):
+            for it in v[:8]:
+                if isinstance(it, str):
+                    lines.append(it)
+                elif isinstance(it, dict):
+                    lines.append(" · ".join(str(x) for x in it.values() if x))
+    body = "<br>".join(f'<span style="color:{t["accent"]}">•</span> {_esc(s)}'
+                       for s in lines[:12]) or "(내용 없음)"
+    els.append(_text(f"s{i}fb", MARGIN, CONTENT_TOP, W - MARGIN * 2,
+                     FOOT - CONTENT_TOP - 20, body, 22, t["color"],
+                     line=1.5, family=t["fontFamily"]))
+    return {"id": _sid("s", i), "background": t["background"],
+            "transition": "fade", "notes": b.get("notes", ""), "elements": els}
 
 
 def build_doc(blocks: list[dict], *, title: str = "", theme: str = DEFAULT_THEME,
@@ -251,7 +386,7 @@ def build_doc(blocks: list[dict], *, title: str = "", theme: str = DEFAULT_THEME
     slides = []
     for i, b in enumerate(blocks or [], start=1):
         kind = str(b.get("type") or "content").lower()
-        mk = _MAKERS.get(kind, _slide_content)
+        mk = _MAKERS.get(kind, _slide_fallback)
         s = mk(i, b, t)
         # 쪽번호·꼬리말은 표지 빼고
         if i > 1:
@@ -525,7 +660,7 @@ def design_to_doc(design: dict, *, theme: str = DEFAULT_THEME,
                               family=t["fontFamily"]))
         else:
             mk = _MAKERS.get(str(sd.get("type") or "content").lower(),
-                             _slide_content)
+                             _slide_fallback)
             s = mk(i, sd, t)
         slides.append(s)
 

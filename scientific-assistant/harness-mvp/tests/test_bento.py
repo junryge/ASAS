@@ -130,6 +130,73 @@ class Doc(unittest.TestCase):
         self.assertEqual(bb.theme_of("없는테마"), bb.THEMES[bb.DEFAULT_THEME])
 
 
+class SmartLayout(unittest.TestCase):
+    """★MD 파서(ppt_builder._apply_smart_layout)는 글머리 슬라이드를
+    statement/quote/bignumber/compare2/grid 로 알아서 바꿔 놓는다.
+    그래서 실제 덱에 'content' 는 오히려 드물다 — 이걸 안 그리면 제목만
+    남고 내용이 통째로 사라진다 (실제로 빈 장이 나왔다)."""
+
+    CASES = {
+        "statement": {"type": "statement", "title": "t", "statement": "한 줄 결론"},
+        "quote": {"type": "quote", "title": "t", "quote": "인용문", "cite": "출처"},
+        "bignumber": {"type": "bignumber", "title": "t", "number": "7.8분",
+                      "label": "리프터 대기"},
+        "compare2": {"type": "compare2", "title": "t",
+                     "left_title": "왼쪽", "left_items": ["ㄱ", "ㄴ"],
+                     "right_title": "오른쪽", "right_items": ["ㄷ"]},
+        "grid": {"type": "grid", "title": "t", "cards": [
+            {"title": "카드1", "desc": "설명1"}, {"title": "카드2", "desc": ""},
+            {"title": "카드3", "desc": "설명3"}]},
+    }
+
+    def _texts(self, block):
+        d = bb.build_doc([block])
+        return " ".join(e.get("html", "") for e in d["slides"][0]["elements"]
+                        if e["type"] == "text")
+
+    def test_다섯_종류가_내용을_보여준다(self):
+        want = {
+            "statement": ["한 줄 결론"],
+            "quote": ["인용문", "출처"],
+            "bignumber": ["7.8분", "리프터 대기"],
+            "compare2": ["왼쪽", "오른쪽", "ㄱ", "ㄴ", "ㄷ"],
+            "grid": ["카드1", "카드2", "카드3", "설명1", "설명3"],
+        }
+        for kind, block in self.CASES.items():
+            got = self._texts(block)
+            for w in want[kind]:
+                self.assertIn(w, got, f"{kind} 슬라이드에서 '{w}' 가 사라졌다")
+
+    def test_모든_종류에_렌더러가_있다(self):
+        """★파서가 내놓는 종류와 그리는 종류가 어긋나면 조용히 빈 장이 된다."""
+        import demos_v1.ppt_builder as pb
+        import inspect
+        src = inspect.getsource(pb._apply_smart_layout)
+        kinds = set(re.findall(r'"type": "([a-z0-9_]+)"', src))
+        self.assertTrue(kinds, "파서에서 종류를 못 읽었다")
+        self.assertEqual(kinds - set(bb._MAKERS), set(),
+                         "파서는 내놓는데 Bento 가 못 그리는 종류가 있다")
+
+    def test_모르는_종류도_빈_장을_안_만든다(self):
+        """못 그리겠으면 글자라도 내보낸다 — 빈 장이 제일 나쁘다."""
+        got = self._texts({"type": "듣도보도못한것", "title": "t",
+                           "wow": "살아남아야 하는 글", "items": ["가", "나"]})
+        for w in ("살아남아야 하는 글", "가", "나"):
+            self.assertIn(w, got)
+
+    def test_실제_MD가_통째로_살아남는다(self):
+        """★회귀 — 글머리 두 줄짜리 장이 빈 장으로 나왔다."""
+        import demos_v1.ppt_builder as pb
+        md = ("# 반송 정체 분석\n부제\n\n## 1. 현황\n"
+              "- 리프터 대기시간이 늘고 있다\n  - 3.2분 → 7.8분\n"
+              "- ML 조기예측이 10분 앞을 가리킨다\n")
+        d = bb.build_doc(pb.parse_md_to_outline(md)["slides"])
+        body = " ".join(e.get("html", "") for s in d["slides"]
+                        for e in s["elements"] if e["type"] == "text")
+        for w in ("리프터 대기시간이 늘고 있다", "3.2분", "ML 조기예측"):
+            self.assertIn(w, body, f"'{w}' 가 슬라이드에서 사라졌다")
+
+
 class Embed(unittest.TestCase):
     def test_문서를_껍데기에_넣는다(self):
         html, doc = bb.build(BLOCKS, title="T")
