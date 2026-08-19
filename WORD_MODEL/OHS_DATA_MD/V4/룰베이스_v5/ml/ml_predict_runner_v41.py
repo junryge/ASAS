@@ -5,9 +5,17 @@
 # 기존 v4.1(XGBoost 2모델: model_v41_10m/30m.json + feature_builder_v41)을
 # Chronos-2 zero-shot 예측(ml_v2)으로 갈아끼운 것이다.
 #
-# run_ml.py 는 예전 그대로 둔다 — 파일명·함수명·출력 위치를 유지했다.
-#     import ml_predict_runner_v41 as ml_runner
-#     threading.Thread(target=ml_runner.run_watch, daemon=True).start()
+# 룰베이스(run_ml.py)와 프로세스를 분리해 이 파일을 단독 실행한다.
+#   chronos-forecasting / torch 가 별도 파이썬에 설치돼 있어 같은 프로세스로는
+#   import 가 안 되기 때문이다. 창 두 개를 띄워 각각 돌린다.
+#
+#       (룰베이스)  python run_ml.py
+#       (ML)        <chronos 파이썬> ml_predict_runner_v41.py     ← 이 파일
+#
+#   두 프로세스는 파일로만 만난다 — 서로 import 하지 않는다.
+#       읽기 : predict/M16A_HUBROOM_PR.csv   (수집기가 매분 갱신)
+#       쓰기 : ml_predict/{YYYYMMDD}_predictions.csv
+#   룰베이스의 발동이벤트.csv 는 건드리지 않는다.
 #
 # ── 무엇이 바뀌었나 ─────────────────────────────────────────────
 #   전                                  후
@@ -40,9 +48,19 @@
 #   ml_score_30m = 앞으로 30분 안에 임계를 넘을 확률 (지평 1~30분 최대)
 #   → 누적 확률이라 30m >= 10m 이 항상 성립한다.
 #
-# ── 단독 실행 ──────────────────────────────────────────────────
-#   python ml_predict_runner_v41.py --once
-#   python ml_predict_runner_v41.py --model D:\경로\chronos_2 --device cuda
+# ── 실행 ───────────────────────────────────────────────────────
+#   python ml_predict_runner_v41.py                     계속 실행 (매분 판정)
+#   python ml_predict_runner_v41.py --once              한 번만 (점검용)
+#   python ml_predict_runner_v41.py --model D:\모델\chronos_2 --device cuda
+#
+#   윈도우면 배치파일로 두면 편하다 (run_chronos.bat):
+#       @echo off
+#       D:\python311\python.exe "%~dp0ml_predict_runner_v41.py"
+#       pause
+#
+# ── 정상 기동 확인 ─────────────────────────────────────────────
+#   ✅ 모델 로드: backend=chronos_2      ← 이게 떠야 실모델
+#   ⚠ Chronos-2 로드 실패 …             ← 뜨면 baseline (--model 경로 확인)
 import argparse
 import csv
 import os
