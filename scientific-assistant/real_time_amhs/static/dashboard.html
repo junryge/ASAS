@@ -1108,8 +1108,16 @@ function whyEvidenceHtml(d){
   h += `<h3 style="font-size:13px;margin:14px 0 6px">같은 시각 실시간 관제
         <span class="note dim">· 룰베이스 0~100점 (ML 과 눈금이 다릅니다)</span></h3>`;
   if(rule.ok){
-    h += `<div class="note" style="margin:0 0 6px">점수 <b style="color:var(--tx)">${whyNum(rule.score,1)}</b>
-          (${esc(rule.level||'')}) · 경보 기준 ${whyNum(rule.floor)}점</div>`;
+    /* ★점수 한 점만 보여 주면 '높다' 는 알아도 올라오는 중인지 모른다.
+       ML 쪽과 같은 눈으로 볼 수 있게 변화량과 넘은 시각을 같이 준다. */
+    const ds = rule.d_score;
+    const dsHtml = ds==null ? '' :
+      ` · 최근 20분 <span style="color:${ds>0?'var(--crit)':ds<0?'var(--ok)':'var(--tx3)'}">
+         ${ds>0?'▲':ds<0?'▼':'–'} ${Math.abs(ds).toFixed(1)}점</span>`;
+    h += `<div class="note" style="margin:0 0 6px">점수(<span class="mono">unified_risk_score</span>)
+          <b style="color:var(--tx)">${whyNum(rule.score,1)}</b>
+          (${esc(rule.level||'')}) · 경보 기준 ${whyNum(rule.floor)}점${dsHtml}
+          ${rule.onset?` · <b>${esc(rule.onset)}</b> 부터 기준 초과`:''}</div>`;
     h += (rule.items||[]).length
       ? `<div class="tw"><table class="pol"><thead><tr>
            <th>지표</th><th style="width:110px">그때 값</th>
@@ -1131,6 +1139,9 @@ function whyEvidenceHtml(d){
   h += `<div class="note" style="margin:12px 0 0;padding:8px 10px;border:1px solid var(--line2);
           border-radius:8px;background:var(--panel2)">
           <b>두 시스템 비교</b> — ${esc(ag.verdict||'')}
+          ${ag.lead_min!=null ? `<div class="dim" style="margin-top:3px">
+             ML 선제경보 ${esc(ag.ml_at||'–')} · 룰베이스 ${whyNum(rule.floor)}점 초과 ${esc(ag.rule_at||'–')}
+             — 경보끼리 견준 것입니다(관찰 단계는 빼고)</div>` : ''}
           <span class="dim">· 서로의 판정을 입력으로 쓰지 않는 독립 판단입니다</span></div>`;
   return h;
 }

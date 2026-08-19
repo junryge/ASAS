@@ -163,6 +163,58 @@ class 근거(unittest.TestCase):
         t = self.ev()["evidence_text"]
         self.assertNotIn("AVGTOTALTIME1MIN", t, "근거글에 컬럼명이 값 자리에 들어갔다")
 
+    def test_점수도_추이를_준다(self):
+        """★ML 쪽만 추이를 주고 룰 쪽은 한 점만 주면, '누가 먼저 말했나'
+        를 화면이 주장만 하고 보여 주지는 못한다."""
+        rule = self.ev()["rule"]
+        self.assertTrue(rule["trend"], "점수 추이가 비었다")
+        self.assertIn("score", rule["trend"][0])
+        self.assertIsNotNone(rule["d_score"])
+        self.assertGreater(rule["d_score"], 0, "올라오는 중인데 변화량이 0 이하다")
+
+    def test_점수가_언제_넘었는지_짚는다(self):
+        """경보 기준을 넘은 시각 — 이게 있어야 ML 과 몇 분 차이인지 센다."""
+        self.assertEqual(self.ev()["rule"]["onset"], "03:05")
+
+    def test_누가_먼저_말했는지_센다(self):
+        """★ML 선제경보 03:10 vs 룰 60점 03:05 — 룰이 5분 먼저다.
+        '독립 두 시스템 비교' 는 이 숫자가 없으면 말뿐이다."""
+        ag = self.ev()["agree"]
+        self.assertEqual(ag["ml_at"], "03:10")
+        self.assertEqual(ag["rule_at"], "03:05")
+        self.assertEqual(ag["lead_min"], -5)
+        self.assertIn("룰베이스가 5분 먼저", ag["verdict"])
+
+    def test_경보끼리_견준다(self):
+        """★관찰(단계1)과 경보(60점)를 견주면 ML 이 늘 먼저인 것처럼 보인다.
+        ML 은 03:08 에 관찰로 올랐지만 경보는 03:10 이다."""
+        ml = self.ev()["ml"]
+        self.assertEqual(ml["onset"]["at"], "03:10")     # 지금 단계가 언제부터
+        self.assertEqual(ml["alarm_at"], "03:10")        # 경보를 언제 넘었나
+        self.assertNotEqual(ml["alarm_at"], "03:08")
+
+    def test_관찰_단계에서는_경보시각이_없다(self):
+        """★03:09 는 ML 이 '관찰'(단계1)로만 올라간 상태다. 이걸 룰의 경보
+        시각과 견주면 'ML 이 먼저 말했다' 는 없는 사실이 만들어진다."""
+        ev = ml_why.explain(datetime(2026, 8, 19, 3, 9), self.cfg, use_llm=False)
+        ml = ev["ml"]
+        self.assertEqual(ml["stage"], "1")
+        self.assertEqual(ml["onset"]["at"], "03:08")   # 관찰로 올라간 시각
+        self.assertIsNone(ml["alarm_at"], "경보를 넘지도 않았는데 시각이 있다")
+        ag = ev["agree"]
+        self.assertFalse(ag["ml_fired"])
+        self.assertIsNone(ag["lead_min"], "관찰을 경보와 견주어 선후를 셌다")
+
+    def test_평온하면_넘은_시각이_없다(self):
+        ev = ml_why.explain(datetime(2026, 8, 19, 2, 50), self.cfg, use_llm=False)
+        self.assertIsNone(ev["rule"]["onset"])
+
+    def test_근거글에_점수_추이도_넣는다(self):
+        """LLM 이 못 본 숫자는 쓸 수 없다."""
+        t = self.ev()["evidence_text"]
+        self.assertIn("점수 변화", t)
+        self.assertIn("넘은 건 03:05", t)
+
     def test_두_시스템_비교를_말해_준다(self):
         """★'누가 맞다' 가 아니라 '같은 말을 했나' 를 본다."""
         ag = self.ev()["agree"]

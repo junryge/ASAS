@@ -74,6 +74,7 @@ def ml_evidence(at: datetime, cfg: dict) -> dict:
     # 단계가 언제 올라갔나 — 이 줄이 '언제부터 이랬나' 의 답이다
     stage_now = str(row.get("stage") or "0").strip()
     onset = None
+    alarm_at = None
     prev = None
     for d, r in seq:
         if d > dt0:
@@ -81,6 +82,11 @@ def ml_evidence(at: datetime, cfg: dict) -> dict:
         st = str(r.get("stage") or "0").strip()
         if prev is not None and st != prev and st >= "1":
             onset = {"at": d.strftime("%H:%M"), "from": prev, "to": st}
+        # ★'누가 먼저 말했나' 를 셀 때 쓰는 시각은 이것이다. 룰베이스의
+        #   '경보 기준을 넘은 시각' 과 짝이 맞아야 한다 — 관찰(단계1)과
+        #   경보(60점)를 견주면 ML 이 늘 먼저인 것처럼 보인다.
+        if prev is not None and prev < "2" <= st:
+            alarm_at = d.strftime("%H:%M")
         prev = st
 
     def _delta(key):
@@ -106,11 +112,50 @@ def ml_evidence(at: datetime, cfg: dict) -> dict:
         "near_pct": round(smoothed / thr * 100, 1) if (smoothed and thr) else None,
         "lead_min": row.get("lead_min") or "", "reason": row.get("reason") or "",
         "backend": row.get("backend") or "",
-        "onset": onset,
+        "onset": onset, "alarm_at": alarm_at,
         "d_p10": _delta("p10"), "d_p30": _delta("p30"),
         "d_smoothed": _delta("smoothed"),
         "trend": trend,
     }
+
+
+def _score_trend(rows: list, at: datetime, floor: float):
+    """점수 추이 + 20분 변화 + 경보 기준을 언제 넘었나 → (trend, d, onset).
+
+    ★'언제 넘었나' 가 있어야 ML 과 어느 쪽이 먼저였는지 셀 수 있다.
+      이게 없으면 두 시스템 비교는 말뿐이다.
+    """
+    from sentinel import _row_dt, _score
+    seq = []
+    for r in rows or []:
+        d = _row_dt(r)
+        if d is not None:
+            seq.append((d, _score(r)))
+    if not seq:
+        return [], None, None
+    seq.sort(key=lambda x: x[0])
+
+    lo, hi = at - timedelta(minutes=WINDOW_MIN), at + timedelta(minutes=WINDOW_MIN)
+    win = [(d, s) for d, s in seq if lo <= d <= hi]
+    trend = [{"t": d.strftime("%H:%M"), "score": round(s, 1)} for d, s in win]
+
+    d_score = None
+    if len(win) >= 2:
+        near = min(win, key=lambda x: abs((x[0] - at).total_seconds()))
+        d_score = round(near[1] - win[0][1], 1)
+
+    # 지금 넘어 있는 상태라면, 이번에 언제부터 넘었나 (거꾸로 훑는다)
+    onset = None
+    cur = min(seq, key=lambda x: abs((x[0] - at).total_seconds()))
+    if cur[1] >= floor:
+        prev = None
+        for d, s in seq:
+            if d > cur[0]:
+                break
+            if prev is not None and prev < floor <= s:
+                onset = d.strftime("%H:%M")
+            prev = s
+    return trend, d_score, onset
 
 
 # ── 2) 룰베이스(실시간 관제) 쪽 근거 ──────────────────────────────
@@ -140,11 +185,18 @@ def rule_evidence(at: datetime, cfg: dict) -> dict:
     items = [i for i in (ex.get("items") or []) if i.get("fired")] \
         or list(ex.get("items") or [])
     items = sorted(items, key=lambda i: -(i.get("pct") or 0))[:TOP_ITEMS]
+
+    # ★점수 한 점만 주면 '높다' 는 알아도 올라오는 중인지 모른다. ML 쪽에는
+    #   추이를 붙여 놓고 룰 쪽만 스냅샷이면, '누가 먼저 말했나' 를 화면이
+    #   주장만 하고 보여 주지는 못한다.
+    floor = ex.get("floor", alarm_floor(cfg))
+    trend, d_score, onset = _score_trend(rows, at, floor)
     return {
         "ok": True,
         "score": ex.get("score"), "level": ex.get("level"),
-        "floor": ex.get("floor", alarm_floor(cfg)),
+        "floor": floor,
         "note": ex.get("note") or "",
+        "trend": trend, "d_score": d_score, "onset": onset,
         # ★contrib 의 'raw' 는 값이 아니라 **원본 컬럼명**이다
         #   (M16HUB.QUE.TIME.AVGTOTALTIME1MIN). 숫자는 'value' 다. 이걸
         #   헷갈리면 LLM 에게 값 대신 컬럼명을 줘서, 숫자를 지어내게 만든다.
@@ -162,10 +214,31 @@ def agreement(ml: dict, rule: dict, p_on: float) -> dict:
     ml_fired = bool(ml.get("ok")) and str(ml.get("stage") or "0") >= "2"
     rule_ok = bool(rule.get("ok"))
     rule_fired = rule_ok and (rule.get("score") or 0) >= (rule.get("floor") or 60)
+    # ★누가 먼저 말했나 — 이걸 세지 않으면 '독립 두 시스템 비교' 는 말뿐이다.
+    lead = None
+    a, b = ml.get("alarm_at"), rule.get("onset")
+    if a and b:
+        try:
+            fmt = "%H:%M"
+            m = datetime.strptime(a, fmt)
+            r = datetime.strptime(b, fmt)
+            lead = int((r - m).total_seconds() // 60)     # +면 ML 이 먼저
+        except ValueError:
+            lead = None
+
     if not rule_ok:
         verdict = "룰베이스 쪽 근거를 못 읽어 비교할 수 없습니다"
     elif ml_fired and rule_fired:
-        verdict = "둘 다 이상하다고 봤습니다"
+        if lead is None:
+            verdict = "둘 다 이상하다고 봤습니다"
+        elif lead > 0:
+            verdict = (f"둘 다 이상하다고 봤고, ML 이 {lead}분 먼저 "
+                       f"말했습니다 (ML {a} · 룰 {b})")
+        elif lead < 0:
+            verdict = (f"둘 다 이상하다고 봤고, 룰베이스가 {abs(lead)}분 먼저 "
+                       f"말했습니다 (룰 {b} · ML {a})")
+        else:
+            verdict = f"둘 다 {a} 에 동시에 이상하다고 봤습니다"
     elif ml_fired and not rule_fired:
         verdict = ("ML 만 먼저 반응했습니다 — 아직 점수로는 안 드러난 "
                    "조짐일 수 있습니다")
@@ -175,7 +248,8 @@ def agreement(ml: dict, rule: dict, p_on: float) -> dict:
     else:
         verdict = "둘 다 평온합니다"
     return {"ml_fired": ml_fired, "rule_fired": rule_fired,
-            "rule_readable": rule_ok, "verdict": verdict}
+            "rule_readable": rule_ok, "verdict": verdict,
+            "lead_min": lead, "ml_at": a, "rule_at": b}
 
 
 # ── 4) 근거를 LLM 이 읽을 수 있게 ────────────────────────────────
@@ -216,6 +290,10 @@ def evidence_text(ev: dict) -> str:
     if rule.get("ok"):
         L += ["", "[같은 시각 실시간 관제 (룰베이스, 0~100점)]",
               f"- 점수 {rule['score']} ({rule['level']}) · 경보 기준 {rule['floor']}점"]
+        if rule.get("d_score") is not None:
+            L.append(f"- 최근 {WINDOW_MIN}분 점수 변화: {rule['d_score']:+.1f}점")
+        if rule.get("onset"):
+            L.append(f"- 경보 기준({rule['floor']}점)을 넘은 건 {rule['onset']} 부터입니다")
         if rule.get("items"):
             L.append(f"- 점수를 밀어올린 지표 ({rule.get('note') or '평소 대비 편차 기준'}):")
             for i in rule["items"]:
