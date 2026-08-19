@@ -252,10 +252,140 @@ class LLM설명(unittest.TestCase):
         self.assertIn("지어내지 마라", seen["sys"])
         self.assertIn("독립된 두 시스템", seen["sys"])
 
+    # ★현장에서 실제로 이렇게 나왔다 — 영어 사고과정을 통째로 쏟고, 그러다
+    #   max_tokens 에 걸려 답은 문장 중간에 잘렸다. 부탁으로는 안 막힌다.
+    사고과정_영문 = """Thinking Process:
+
+1. Analyze the Request:
+* Role: SK Hynix M16 HUBROOM Transport Control Analysis Agent.
+* Task: Explain why the ML early prediction made its judgment.
+* Constraints: Use only the numbers in the [Evidence].
+
+2. Analyze the Evidence:
+* Time: 2026-08-19 16:27
+* ML: 10min probability 0%, Stage 정상
+
+3. Drafting the Content:
+* Draft: ML 과 룰베이스 모두 정상 상태입니다. 반송 정체"""
+
+    def test_영문_사고과정은_안_쓴다(self):
+        """★이게 화면에 그대로 나왔다. 관제가 뭘 알겠나."""
+        ev = self._with_llm(lambda *a, **k: (self.사고과정_영문, None))
+        self.assertEqual(ev["used"], "규칙")
+        self.assertNotIn("Thinking Process", ev["why"])
+        self.assertNotIn("Analyze the Request", ev["why"])
+        self.assertTrue(ev["llm_error"])
+
+    def test_한국어_서론도_잘라_낸다(self):
+        """★사고과정이 한국어로 올 때도 있다. 그건 언어 검사로 못 거른다 —
+        소제목 앞을 통째로 잘라야 한다."""
+        ev = self._with_llm(lambda *a, **k: (
+            "먼저 요청을 분석하겠습니다. 역할은 관제 분석 에이전트이고, "
+            "근거의 숫자만 써야 합니다. 이제 초안을 작성합니다.\n\n"
+            "**무슨 일인가** — 10분 평균이 임계의 91%입니다.\n"
+            "**왜 이렇게 나왔나** — 최근 20분 동안 2.1분 올랐습니다.\n"
+            "**무엇을 보면 되나** — 추이가 이어지는지 보세요.", None))
+        self.assertEqual(ev["used"], "llm")
+        self.assertNotIn("요청을 분석", ev["why"], "서론이 그대로 남았다")
+        self.assertNotIn("초안을 작성", ev["why"])
+        self.assertTrue(ev["why"].lstrip().startswith("**무슨 일인가"))
+
+    def test_영어로_답하면_거른다(self):
+        eng = ("**무슨 일인가** — The transport time is rising.\n"
+               "**왜 이렇게 나왔나** — The average exceeded the threshold.\n"
+               "**무엇을 보면 되나** — Watch the lifter queue.")
+        ev = self._with_llm(lambda *a, **k: (eng, None))
+        self.assertEqual(ev["used"], "규칙")
+        self.assertIn("한국어", ev["llm_error"])
+
+    def test_중간에_잘리면_거른다(self):
+        """★잘린 답을 보여 주면 사람이 그게 전부인 줄 안다."""
+        cut = ("**무슨 일인가** — 반송시간이 임계에 접근했습니다.\n"
+               "**왜 이렇게 나왔나** — 최근 20분 동안 10분 평균이 올라\n"
+               "**무엇을 보면 되나** — 리프터 대기가 계속 늘어나는지 보고 있으면")
+        ev = self._with_llm(lambda *a, **k: (cut, None))
+        self.assertEqual(ev["used"], "규칙")
+        self.assertIn("잘림", ev["llm_error"])
+
+    def test_형식을_지키면_그대로_쓴다(self):
+        good = ("**무슨 일인가** — 10분 평균이 임계의 91%까지 올라왔습니다.\n"
+                "**왜 이렇게 나왔나** — 최근 20분 동안 2.1분 올랐고 "
+                "룰베이스도 74점으로 경보 기준을 넘었습니다.\n"
+                "**무엇을 보면 되나** — 반송시간이 계속 오르는지 보세요.")
+        ev = self._with_llm(lambda *a, **k: (good, None))
+        self.assertEqual(ev["used"], "llm")
+        self.assertIn("91%", ev["why"])
+
+    def test_사고블록도_떼어_낸다(self):
+        ev = self._with_llm(lambda *a, **k: (
+            "<think>사용자는 관제 담당자다…</think>\n"
+            "**무슨 일인가** — 정상입니다.\n"
+            "**왜 이렇게 나왔나** — 확률이 0% 입니다.\n"
+            "**무엇을 보면 되나** — 추이가 뒤집히는지 보세요.", None))
+        self.assertEqual(ev["used"], "llm")
+        self.assertNotIn("think", ev["why"])
+
+    def test_사고차단_옵션을_먼저_건다(self):
+        """★'/no_think' 는 무시당한다 — 이 저장소가 JSON 경로에서 이미 배운
+        것이다. 게이트웨이 옵션으로 강제하고, 400 이면 빼고 다시 부른다."""
+        calls = []
+
+        def fake(messages, cfg=None, **kw):
+            calls.append(kw.get("extra"))
+            if len(calls) == 1:
+                return None, "API 400: unknown field chat_template_kwargs"
+            return ("**무슨 일인가** — 정상입니다.\n"
+                    "**왜 이렇게 나왔나** — 확률이 0% 입니다.\n"
+                    "**무엇을 보면 되나** — 추이를 보세요.", None)
+
+        ev = self._with_llm(fake)
+        self.assertEqual(len(calls), 2, "400 을 받고 옵션을 빼고 다시 안 불렀다")
+        self.assertEqual(calls[0], {"chat_template_kwargs": {"enable_thinking": False}})
+        self.assertIsNone(calls[1])
+        self.assertEqual(ev["used"], "llm")
+
+    def test_규칙_요약도_한국어_세_줄이다(self):
+        """★모델이 못 쓰면 우리가 쓴다. 숫자는 이미 다 계산해 뒀다."""
+        ev = self._with_llm(lambda *a, **k: (None, "게이트웨이 죽음"))
+        for h in ml_why.HEADS:
+            self.assertIn(h, ev["why"], f"'{h}' 가 없다")
+        self.assertIn("14.765", ev["why"] + ev["evidence_text"])
+        import llm_client
+        self.assertTrue(llm_client._is_korean(ev["why"], 0.25))
+
+    def test_어떤_모델을_썼는지_알려_준다(self):
+        """★모르면 답이 이상할 때 무엇을 바꿔야 할지 알 수 없다."""
+        seen = {}
+
+        def fake(messages, cfg=None, **kw):
+            seen["model"] = (cfg or {}).get("llm", {}).get("model")
+            return ("**무슨 일인가** — 정상입니다.\n"
+                    "**왜 이렇게 나왔나** — 확률이 0% 입니다.\n"
+                    "**무엇을 보면 되나** — 추이를 보세요.", None)
+
+        import llm_client
+        rc, rp = llm_client.chat, llm_client.build_system_prompt
+        llm_client.chat = fake
+        llm_client.build_system_prompt = lambda cfg=None: "(페르소나)"
+        try:
+            ev = ml_why.explain(AT, self.cfg, use_llm=True, model="gaia-GLM-5.2")
+        finally:
+            llm_client.chat, llm_client.build_system_prompt = rc, rp
+        self.assertEqual(ev["model"], "gaia-GLM-5.2")
+        self.assertEqual(seen["model"], "gaia-GLM-5.2", "고른 모델로 안 물었다")
+
+    def test_고를_수_있는_모델을_준다(self):
+        ms = ml_why.models(self.cfg)
+        self.assertTrue(ms, "모델 목록이 비었다")
+        self.assertTrue(all(m.get("id") for m in ms))
+        self.assertEqual(len({m["id"] for m in ms}), len(ms), "중복이 있다")
+        self.assertEqual(ml_why.default_model(self.cfg), ms[0]["id"])
+
     def test_LLM이_죽어도_근거는_남는다(self):
-        """★설명이 없는 것과 아무것도 없는 것은 다르다."""
+        """★설명이 없는 것과 아무것도 없는 것은 다르다.
+        이제는 근거로 쓴 한국어 요약까지 낸다 — 대신 '규칙' 이라고 밝힌다."""
         ev = self._with_llm(lambda *a, **k: (None, "API 500"))
-        self.assertNotIn("why", ev)
+        self.assertEqual(ev["used"], "규칙")
         self.assertEqual(ev["llm_error"], "API 500")
         self.assertTrue(ev["ml"]["ok"])
         self.assertIn("14.765", ev["evidence_text"])

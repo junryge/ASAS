@@ -23,7 +23,7 @@ ML 과 룰베이스는 독립이다
 """
 from __future__ import annotations
 
-import os
+import re
 from datetime import datetime, timedelta
 
 WINDOW_MIN = 20          # 앞뒤로 몇 분을 같이 보나
@@ -247,11 +247,158 @@ _SYSTEM_EXTRA = """
 """
 
 
-def explain(at, cfg: dict, use_llm: bool = True) -> dict:
-    """그 1분에 대한 근거 + (되면) LLM 설명.
+HEADS = ("무슨 일인가", "왜 이렇게 나왔나", "무엇을 보면 되나")
+MAX_TOKENS = 1400          # ★사고 모델이 서론을 쓰다 답을 못 끝내던 폭을 감안
 
-    ★LLM 이 죽어도 근거는 그대로 돌려준다. 설명이 없는 것과 아무것도 없는
-      것은 다르다.
+
+def models(cfg: dict) -> list[dict]:
+    """고를 수 있는 모델 — 기본 모델 + 분석 4단계 모델.
+
+    ★어떤 모델이 답했는지 모르면, 답이 이상할 때 무엇을 바꿔야 할지 알 수
+      없다. 고를 수 있게 하고, 쓴 모델을 화면에 적는다.
+    """
+    lc = (cfg.get("llm") or {})
+    out, seen = [], set()
+
+    def add(mid, note):
+        mid = str(mid or "").strip()
+        if mid and mid not in seen:
+            seen.add(mid)
+            out.append({"id": mid, "note": note})
+
+    add((lc.get("ml_why") or {}).get("model"), "ML 해석 지정")
+    add(lc.get("model"), "기본")
+    roles = ((lc.get("analysis") or {}).get("roles") or {})
+    for key, label in (("final", "최종 통합"), ("p2", "원인 해석"),
+                       ("p1", "데이터 훑기"), ("p3", "대조 검증")):
+        add((roles.get(key) or {}).get("model"), label)
+    return out
+
+
+def default_model(cfg: dict) -> str:
+    m = models(cfg)
+    return m[0]["id"] if m else ""
+
+
+_HEAD_RE = re.compile(r"\*{0,2}\s*(무슨 일인가|왜 이렇게 나왔나|무엇을 보면 되나)\s*\*{0,2}")
+_END_OK = ("다.", "요.", "다", "요", ".", "!", "?", "요·")
+
+
+def _clean_answer(raw: str) -> tuple[str, str]:
+    """모델 출력에서 답만 꺼낸다 → (본문, 거절사유).
+
+    ★실제로 이런 게 왔다 —
+        "Thinking Process:\n1. Analyze the Request: * Role: SK Hynix …"
+      영어 사고과정을 통째로 쏟고, 그러다 max_tokens 에 걸려 답은 문장
+      중간에 잘렸다. 부탁으로는 안 막힌다. 나온 걸 검사해서 걸러야 한다.
+    """
+    import llm_client
+    t = llm_client._strip_think(raw or "")
+    # 첫 소제목 앞은 전부 서론·사고과정이다 — 잘라 버린다
+    m = _HEAD_RE.search(t)
+    if not m:
+        return "", "형식이 어긋남 (소제목이 없음 — 사고과정만 왔을 수 있음)"
+    t = t[m.start():].strip()
+
+    got = [h for h in HEADS if h in t]
+    if len(got) < len(HEADS):
+        return "", f"형식이 어긋남 (빠진 항목: {', '.join(h for h in HEADS if h not in got)})"
+    if not llm_client._is_korean(t, 0.25):
+        return "", "한국어가 아님 (영어로 답했습니다)"
+    # ★마지막 항목이 문장 중간에 끊긴 것 — 잘린 답을 보여 주면 안 된다
+    tail = t.rstrip().rstrip("*_ ").rstrip()
+    if not tail.endswith(_END_OK):
+        return "", "답이 중간에 잘림 (사고과정에 토큰을 다 씀)"
+    return llm_client.scrub(t), ""
+
+
+def _ask(cfg: dict, model: str, user: str) -> tuple[str, str, str]:
+    """한 번 물어본다 → (본문, 사유, 실제 쓴 모델).
+
+    ★사고 차단은 '부탁' 이 아니라 게이트웨이 옵션으로 건다. 이 저장소가
+      JSON 경로에서 이미 배운 것이다 — '/no_think' 는 무시당한다.
+      모르는 키를 받은 게이트웨이는 400 을 내므로, 400 이면 옵션을 빼고
+      한 번 더 부른다 (400 은 즉답이라 사실상 공짜다).
+    """
+    import llm_client
+    lc = dict(cfg.get("llm") or {})
+    use = str(model or "").strip() or default_model(cfg)
+    c2 = dict(cfg)
+    if use:
+        lc["model"] = use
+        c2 = {**cfg, "llm": lc}
+    sysmsg = llm_client.build_system_prompt(c2) + "\n" + _SYSTEM_EXTRA
+    msgs = [{"role": "system", "content": sysmsg},
+            {"role": "user", "content": "[근거]\n" + user}]
+
+    tiers = [{"chat_template_kwargs": {"enable_thinking": False}}, None]
+    last = ""
+    for extra in tiers:
+        txt, err = llm_client.chat(msgs, cfg=c2, temperature=0.2,
+                                   max_tokens=MAX_TOKENS, extra=extra)
+        if err:
+            last = err
+            if "400" in str(err):          # 게이트웨이가 모르는 옵션 — 빼고 재시도
+                continue
+            return "", err, use
+        body, why = _clean_answer(txt or "")
+        if body:
+            return body, "", use
+        last = why
+        break
+    return "", last or "LLM 빈 응답", use
+
+
+def plain_why(ev: dict) -> str:
+    """LLM 없이 근거만으로 쓴 한국어 요약.
+
+    ★"모델이 이상한 답을 냈습니다" 로 끝내면 관제는 아무것도 못 한다.
+      숫자는 이미 다 계산해 뒀으니 문장으로 옮기는 건 우리가 할 수 있다.
+    """
+    ml, rule, ag = ev["ml"], ev["rule"], ev["agree"]
+    L = []
+    if ml.get("ok"):
+        near = f" (임계 {ml['threshold']}분의 {ml['near_pct']}%)" if ml.get("near_pct") else ""
+        L.append(f"**무슨 일인가** — {ev['at']} 기준 단계는 “{ml['stage_name']}”이고, "
+                 f"10분 평균 반송시간은 {ml['smoothed']}분{near}입니다. "
+                 f"10분 내 임계 초과 확률은 {_pct(ml['p10'])}입니다.")
+        why = []
+        if ml.get("d_smoothed") is not None:
+            move = "올라오는 중" if ml["d_smoothed"] > 0 else (
+                "내려가는 중" if ml["d_smoothed"] < 0 else "변화 없음")
+            why.append(f"최근 {WINDOW_MIN}분 동안 10분 평균이 {ml['d_smoothed']:+.2f}분 움직여 {move}입니다")
+        if ml.get("onset"):
+            why.append(f"이 단계는 {ml['onset']['at']}부터입니다")
+        if rule.get("ok") and rule.get("items"):
+            top = rule["items"][0]
+            # ★조사('로/으로')가 단위에 따라 갈리므로 아예 조사를 안 쓰는
+            #   문장으로 짠다 — 억지로 붙이면 '8.6분 로' 같은 게 나온다
+            why.append(f"같은 시각 실시간 관제 점수는 {rule['score']}점({rule['level']})이고, "
+                       f"가장 크게 기여한 건 {top['label']}입니다 "
+                       f"(평소 {top['base']}{top['unit']} → {top['value']}{top['unit']}, "
+                       f"기여 {top['pct']}%)")
+        L.append(("**왜 이렇게 나왔나** — " + ". ".join(why) + ".") if why
+                 else "**왜 이렇게 나왔나** — 추가로 짚을 변화가 없습니다.")
+    else:
+        L.append(f"**무슨 일인가** — {ev['at']} 의 ML 예측을 찾지 못했습니다 "
+                 f"({ml.get('error')}).")
+        L.append("**왜 이렇게 나왔나** — 근거가 없어 설명할 수 없습니다.")
+    L.append(f"**무엇을 보면 되나** — {ag['verdict'].rstrip('.')}. "
+             + ("10분 평균이 임계에 계속 붙는지 보세요."
+                if (ml.get("near_pct") or 0) >= 70 else "추이가 뒤집히는지 보세요."))
+    out = "\n".join(L)
+    try:                       # 조사 다듬기는 이미 있는 것을 쓴다
+        import llm_client
+        return llm_client._fix_josa(out)
+    except Exception:
+        return out
+
+
+def explain(at, cfg: dict, use_llm: bool = True, model: str = "") -> dict:
+    """그 1분에 대한 근거 + 설명.
+
+    ★LLM 이 죽어도, 영어로 답해도, 답을 못 끝내도 — 근거는 그대로 두고
+      한국어 요약이라도 낸다. 그리고 무엇으로 만들었는지 밝힌다.
     """
     import ml_feed
     if not isinstance(at, datetime):
@@ -264,25 +411,25 @@ def explain(at, cfg: dict, use_llm: bool = True) -> dict:
     rule = rule_evidence(at, cfg)
     ev = {"ok": True, "at": at.strftime("%Y-%m-%d %H:%M"),
           "ml": ml, "rule": rule,
-          "agree": agreement(ml, rule, _f(mc.get("p_on"), 0.30))}
+          "agree": agreement(ml, rule, _f(mc.get("p_on"), 0.30)),
+          "models": models(cfg)}
     ev["evidence_text"] = evidence_text(ev)
 
     if not use_llm:
         return ev
     if not ml.get("ok") and not rule.get("ok"):
         ev["llm_error"] = "근거가 없어 LLM 에 묻지 않았습니다"
+        ev["why"], ev["used"] = plain_why(ev), "규칙"
         return ev
     try:
-        import llm_client
-        sysmsg = llm_client.build_system_prompt(cfg) + "\n" + _SYSTEM_EXTRA
-        txt, err = llm_client.chat(
-            [{"role": "system", "content": sysmsg},
-             {"role": "user", "content": "[근거]\n" + ev["evidence_text"]}],
-            cfg=cfg, temperature=0.2, max_tokens=700)
-        if err or not (txt or "").strip():
-            ev["llm_error"] = err or "LLM 빈 응답"
+        body, why_err, used_model = _ask(cfg, model, ev["evidence_text"])
+        ev["model"] = used_model
+        if body:
+            ev["why"], ev["used"] = body, "llm"
         else:
-            ev["why"] = llm_client.scrub(txt.strip())
+            ev["llm_error"] = why_err
+            ev["why"], ev["used"] = plain_why(ev), "규칙"
     except Exception as e:
         ev["llm_error"] = f"{type(e).__name__}: {e}"
+        ev["why"], ev["used"] = plain_why(ev), "규칙"
     return ev

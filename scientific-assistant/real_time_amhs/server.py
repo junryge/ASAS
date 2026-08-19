@@ -781,11 +781,31 @@ def api_ml_why():
         ml_sys = str(ml_feed.cfg_of(CFG).get("sys") or "ALL").upper()
         cfg = get_ctx(ml_sys)["cfg"]
         out = ml_why.explain(at, cfg,
-                             use_llm=(request.args.get("llm", "1") != "0"))
+                             use_llm=(request.args.get("llm", "1") != "0"),
+                             model=(request.args.get("model") or "").strip())
         return jsonify(out)
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/ml/why/models")
+def api_ml_why_models():
+    """ML 해석에 쓸 수 있는 모델 목록.
+
+    ★어떤 모델이 답했는지 모르면, 답이 이상할 때 무엇을 바꿔야 할지 알 수
+      없다. 고를 수 있게 하고, 쓴 모델을 화면에 적는다.
+    """
+    try:
+        import ml_feed
+        import ml_why
+        ml_sys = str(ml_feed.cfg_of(CFG).get("sys") or "ALL").upper()
+        cfg = get_ctx(ml_sys)["cfg"]
+        return jsonify({"models": ml_why.models(cfg),
+                        "default": ml_why.default_model(cfg)})
+    except Exception as e:
+        return jsonify({"models": [], "default": "",
+                        "error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/llm_policy", methods=["GET", "POST"])

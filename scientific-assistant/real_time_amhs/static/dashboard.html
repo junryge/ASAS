@@ -405,6 +405,9 @@
     <div class="ghd">
       <b id="wtitle">왜 이랬나</b>
       <div class="row" style="margin-left:auto">
+        <!-- ★어떤 모델이 답했는지 모르면, 답이 이상할 때 무엇을 바꿔야
+             할지 알 수 없다. 고르게 하고 쓴 모델을 아래에 적는다. -->
+        <select id="wmodel" title="해석에 쓸 모델"></select>
         <button class="act" id="wagain">다시 묻기</button>
         <button class="act" id="wclose">닫기</button>
       </div>
@@ -1040,13 +1043,28 @@ function renderMlStages(d){
    ★순서가 중요하다. 근거는 계산이라 즉시 나오고, LLM 은 수 초~수십 초
      걸린다. 근거를 먼저 그려 두면 LLM 이 죽어도 빈 화면이 아니다. */
 let WAT = null;
+let WMODELS = null;
+
+/* 모델 목록은 한 번만 받아 둔다 */
+async function wLoadModels(){
+  if(WMODELS) return WMODELS;
+  try{
+    const d = await (await fetch('/api/ml/why/models')).json();
+    WMODELS = d.models || [];
+    const sel = $('#wmodel');
+    sel.innerHTML = WMODELS.map((m,i) =>
+      `<option value="${esc(m.id)}">${esc(m.id)}${m.note?` — ${esc(m.note)}`:''}</option>`).join('')
+      || '<option value="">(모델 없음)</option>';
+  }catch(e){ WMODELS = []; }
+  return WMODELS;
+}
 
 function mlWhy(at){
   WAT = at;
   $('#wtitle').textContent = `왜 이랬나 — ${String(at).slice(5,16)}`;
   $('#wmask').classList.remove('hidden');
   $('#wbody').innerHTML = '<div class="empty">근거를 모으는 중…</div>';
-  loadWhy();
+  wLoadModels().then(loadWhy);
 }
 
 function whyNum(v, digits){
@@ -1128,21 +1146,26 @@ async function loadWhy(){
       + `<div id="whyllm" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
            <div class="empty">해석을 묻는 중… (수 초~수십 초)</div></div>`;
     // 2) LLM 설명을 그 위에 얹는다
-    const d = await (await fetch(`/api/ml/why?at=${encodeURIComponent(WAT)}`)).json();
+    const mq = ($('#wmodel').value ? '&model=' + encodeURIComponent($('#wmodel').value) : '');
+    const d = await (await fetch(`/api/ml/why?at=${encodeURIComponent(WAT)}${mq}`)).json();
     const box = $('#whyllm');
     if(!box) return;
-    if(d.why){
-      box.innerHTML = `<h3 style="font-size:13px;margin:0 0 6px">해석</h3>
-        <div class="note" style="font-size:12.5px;line-height:1.75;color:var(--tx)">
-          ${esc(d.why).replace(/\*\*(.+?)\*\*/g,'<b style="color:var(--tx)">$1</b>')
-                      .replace(/\n/g,'<br>')}</div>
-        <div class="note dim" style="margin-top:6px">위 근거만 읽고 쓴 설명입니다 — 숫자는 근거표를 보세요</div>`;
+    /* ★무엇으로 만들었는지 밝힌다. 규칙으로 써 놓고 'LLM 해석' 이라고
+       하면 거짓말이다. 모델이 영어로 답하거나 답을 못 끝내는 일이 실제로
+       있었고, 그때는 근거만으로 쓴 요약으로 내려간다. */
+    let how;
+    if(d.used === 'llm'){
+      how = `<span style="color:var(--ok)">🤖 ${esc(d.model||'모델')} 해석</span>`;
     }else{
-      // ★설명이 없는 것과 아무것도 없는 것은 다르다. 근거는 위에 그대로 있다.
-      box.innerHTML = `<div class="note" style="color:var(--major)">
-          해석을 받지 못했습니다 — ${esc(d.llm_error||'사유 미상')}
-          <span class="dim">· 위 근거는 그대로 유효합니다</span></div>`;
+      how = `<span style="color:var(--major)">📐 근거만으로 쓴 요약</span>`
+          + (d.llm_error ? ` <span class="dim">— 모델 답을 못 씀: ${esc(d.llm_error)}</span>` : '');
     }
+    box.innerHTML = `<h3 style="font-size:13px;margin:0 0 6px">해석
+        <span class="note" style="font-weight:400">· ${how}</span></h3>
+      <div class="note" style="font-size:12.5px;line-height:1.75;color:var(--tx)">
+        ${esc(d.why||'').replace(/\*\*(.+?)\*\*/g,'<b style="color:var(--tx)">$1</b>')
+                        .replace(/\n/g,'<br>')}</div>
+      <div class="note dim" style="margin-top:6px">위 근거만 읽고 쓴 설명입니다 — 숫자는 근거표를 보세요</div>`;
   }catch(e){
     body.innerHTML = `<div class="empty">불러오지 못했습니다 — ${esc(e.message||e)}</div>`;
   }finally{ btn.disabled = false; }
