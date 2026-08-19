@@ -17,7 +17,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response
 
 from lp_client import fab_codes, load_config, parse_dt, ping, sys_cfg
 from lp_query import build, query
@@ -693,6 +693,52 @@ def api_ml_fetch():
                         "error": res["error"] or None})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/ml/export")
+def api_ml_export():
+    """기간 CSV 한 덩어리로 내려받기 — /api/ml/export?from=…&to=…
+
+    ★하루씩 30번 눌러 한 달치를 모을 수는 없다. 분석에 바로 쓰라고
+      원본 칸 그대로 이어 붙인다.
+    """
+    f = request.args.get("from") or ""
+    t = request.args.get("to") or f
+    try:
+        import ml_feed
+        days = ml_feed.day_range(f, t)
+        if not days:
+            return jsonify({"error": "from/to 날짜가 올바르지 않습니다 (YYYYMMDD)"}), 400
+        body = ml_feed.export_csv(f, t, CFG)
+        name = f"ML_{days[0]}_{days[-1]}.csv" if len(days) > 1 else f"{days[0]}_ML.csv"
+        return Response(
+            body.encode("utf-8-sig"), mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/ml/backfill", methods=["POST"])
+def api_ml_backfill():
+    """기간을 통째로 받아오기 (빠진 날 메우기) — {from, to, refetch?}
+
+    ★이미 받아 둔 날은 건너뛴다. 한 달치를 다시 받느라 파일서버를 몇 십 번
+      두드릴 이유가 없다. refetch=true 면 다시 받는다.
+    """
+    b = request.get_json(silent=True) or {}
+    f = str(b.get("from") or request.args.get("from") or "")
+    t = str(b.get("to") or request.args.get("to") or f)
+    try:
+        import ml_feed
+        if not ml_feed.day_range(f, t):
+            return jsonify({"error": "from/to 날짜가 올바르지 않습니다 (YYYYMMDD)"}), 400
+        res = ml_feed.fetch_range(f, t, CFG,
+                                  skip_existing=not bool(b.get("refetch")))
+        print(f"[ML] 기간 수집 {f}~{t} — 받음 {res['fetched']}일 · "
+              f"건너뜀 {res['skipped']}일 · 실패 {res['failed']}일 · 신규 {res['added']}행")
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/ml/rows")

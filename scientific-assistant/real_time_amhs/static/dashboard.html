@@ -515,13 +515,22 @@
       <span class="note dim">※ 우리 점수(0~100)와 눈금이 달라 추이 그래프에 겹쳐 그리지 않습니다.</span>
     </p>
 
-    <div class="row" style="margin:0 0 10px;gap:8px;align-items:center;flex-wrap:wrap">
-      <label class="note">날짜
+    <div class="row" style="margin:0 0 8px;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="note">보는 날짜
         <input type="date" id="mlday" style="margin-left:5px"></label>
       <button id="mltoday" class="btn">오늘</button>
       <button id="mlfetch" class="btn">지금 받기</button>
-      <a id="mlcsv" class="btn" download style="text-decoration:none">CSV 내려받기</a>
       <span class="note dim" id="mllive">· 20초마다 자동 갱신</span>
+    </div>
+    <div class="row" style="margin:0 0 10px;gap:8px;align-items:center;flex-wrap:wrap;
+         padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--panel2)">
+      <span class="note">기간</span>
+      <input type="date" id="mlfrom"> <span class="note dim">~</span> <input type="date" id="mlto">
+      <button id="mlrange7" class="btn" style="font-size:11px">최근 7일</button>
+      <button id="mlrange30" class="btn" style="font-size:11px">최근 30일</button>
+      <button id="mlbackfill" class="btn">기간 받아오기</button>
+      <button id="mlexport" class="btn">기간 CSV 내려받기</button>
+      <span class="note dim">한 달치를 하루씩 누를 수는 없으니 기간으로 받습니다</span>
     </div>
     <div id="mldiag" class="note" style="display:none;margin:0 0 12px;padding:9px 11px;
          border:1px solid var(--line2);border-radius:8px;background:var(--panel2)"></div>
@@ -1069,6 +1078,53 @@ function mlIsToday(){
   return d === s;
 }
 
+/* ── 기간 받아오기 · 기간 CSV ──
+   ★하루씩 눌러 한 달치를 모을 수는 없다. 연구·대조에 쓰려면 기간이 기본이다. */
+function mlRangeVals(){
+  const f = ($('#mlfrom').value || '').replace(/-/g,'');
+  const t = ($('#mlto').value || '').replace(/-/g,'');
+  return {f, t};
+}
+function mlSetRange(days){
+  const end = new Date();
+  const start = new Date(Date.now() - (days-1)*86400000);
+  const s = d => d.toISOString().slice(0,10);
+  $('#mlfrom').value = s(start); $('#mlto').value = s(end);
+}
+function mlRangeReady(){
+  const {f, t} = mlRangeVals();
+  if(!/^\d{8}$/.test(f) || !/^\d{8}$/.test(t)){
+    alert('기간의 시작일과 종료일을 고르세요.');
+    return null;
+  }
+  return {f, t};
+}
+async function mlBackfill(){
+  const r = mlRangeReady(); if(!r) return;
+  const b = $('#mlbackfill'), box = $('#mldiag');
+  b.disabled = true; b.textContent = '받는 중…';
+  box.style.display = 'block';
+  box.innerHTML = `${r.f} ~ ${r.t} 기간을 받는 중… <span class="dim">(하루에 한 번씩 두드립니다 — 기간이 길면 시간이 걸립니다)</span>`;
+  try{
+    const d = await post('/api/ml/backfill', {from: r.f, to: r.t});
+    if(d.error){ box.innerHTML = `<b style="color:var(--crit)">실패</b> — ${esc(d.error)}`; return; }
+    box.innerHTML = `<b style="color:var(--ok)">기간 수집 완료</b> — ${d.days}일 중 `
+      + `받음 ${d.fetched}일 · 이미 있어 건너뜀 ${d.skipped}일`
+      + (d.failed ? ` · <span style="color:var(--crit)">실패 ${d.failed}일</span>` : '')
+      + ` · 신규 ${d.added}행`
+      + ((d.errors||[]).length ? `<div class="dim" style="margin-top:4px">${
+          d.errors.map(esc).join('<br>')}</div>` : '');
+    await initMl();
+  }catch(e){
+    box.innerHTML = `<b style="color:var(--crit)">서버 응답 없음</b> — ${esc(e.message||e)}`;
+  }finally{ b.disabled = false; b.textContent = '기간 받아오기'; }
+}
+function mlExport(){
+  const r = mlRangeReady(); if(!r) return;
+  // 파일 다운로드는 링크로 — fetch 로 받으면 큰 기간에서 메모리를 두 번 쓴다
+  location.href = withSys(`/api/ml/export?from=${r.f}&to=${r.t}`);
+}
+
 async function initMl(opt){
   const quiet = !!(opt && opt.quiet);
   const note = $('#mlnote');
@@ -1079,6 +1135,11 @@ async function initMl(opt){
     // 날짜를 바꾸면 그 날짜로 다시 읽는다 (과거 조회)
     $('#mlday').onchange = () => initMl();
     $('#mltoday').onclick = () => { $('#mlday').value = ''; initMl(); };
+    $('#mlrange7').onclick  = () => mlSetRange(7);
+    $('#mlrange30').onclick = () => mlSetRange(30);
+    $('#mlbackfill').onclick = mlBackfill;
+    $('#mlexport').onclick = mlExport;
+    if(!$('#mlfrom').value) mlSetRange(7);      // 기본 최근 7일
   }
   const day = mlDay();
   const qs = day ? ('?day=' + day) : '';
@@ -1086,7 +1147,6 @@ async function initMl(opt){
   //   계속 다시 읽으면, 보고 있던 화면이 이유 없이 깜빡인다.
   mlAutoRefresh(mlIsToday());
   $('#mllive').textContent = mlIsToday() ? '· 20초마다 자동 갱신' : '· 과거 날짜 (자동 갱신 없음)';
-  $('#mlcsv').href = withSys('/api/data/' + (day || new Date().toISOString().slice(0,10).replace(/-/g,'')) + '_ML.csv');
   $('#mlfetch').textContent = mlIsToday() ? '지금 받기' : '이 날짜 받기';
   try{
     if(!quiet) note.textContent = '— 불러오는 중…';

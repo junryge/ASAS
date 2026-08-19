@@ -208,6 +208,79 @@ def summary(day: str = "", cfg: dict | None = None) -> dict:
     }
 
 
+def day_range(d_from: str, d_to: str) -> list[str]:
+    """'20260801','20260819' → 그 사이 날짜 목록 (양끝 포함).
+
+    거꾸로 넣어도 알아서 바로잡는다 — 화면에서 실수하기 쉬운 자리다.
+    """
+    from datetime import timedelta
+    a = "".join(ch for ch in str(d_from) if ch.isdigit())[:8]
+    b = "".join(ch for ch in str(d_to) if ch.isdigit())[:8]
+    if len(a) != 8 or len(b) != 8:
+        return []
+    if a > b:
+        a, b = b, a
+    try:
+        cur = datetime.strptime(a, "%Y%m%d")
+        end = datetime.strptime(b, "%Y%m%d")
+    except ValueError:
+        return []
+    out = []
+    while cur <= end and len(out) < 400:          # 400일이면 충분하고, 사고도 막는다
+        out.append(cur.strftime("%Y%m%d"))
+        cur += timedelta(days=1)
+    return out
+
+
+def read_range(d_from: str, d_to: str, cfg: dict | None = None) -> list[dict]:
+    """여러 날을 한 목록으로 — 시각순. 없는 날은 그냥 건너뛴다."""
+    cfg = cfg or load_config()
+    rows: list[dict] = []
+    for d in day_range(d_from, d_to):
+        rows.extend(read_day(d, cfg))
+    rows.sort(key=lambda r: (r.get("datetime") or ""))
+    return rows
+
+
+def export_csv(d_from: str, d_to: str, cfg: dict | None = None) -> str:
+    """그 기간을 CSV 한 덩어리로. 원본 칸 그대로 — 분석에 바로 쓰라고."""
+    import io
+    rows = read_range(d_from, d_to, cfg)
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=COLS, extrasaction="ignore")
+    w.writeheader()
+    w.writerows(rows)
+    return buf.getvalue()
+
+
+def fetch_range(d_from: str, d_to: str, cfg: dict | None = None,
+                skip_existing: bool = True) -> dict:
+    """기간을 통째로 받아온다 (빠진 날 메우기).
+
+    skip_existing 이면 이미 받아 둔 날은 건너뛴다 — 한 달치를 다시 받느라
+    파일서버를 몇 십 번 두드릴 이유가 없다. 오늘은 아직 쌓이는 중이라 늘 받는다.
+    """
+    cfg = cfg or load_config()
+    today = datetime.now().strftime("%Y%m%d")
+    days = day_range(d_from, d_to)
+    got = skipped = failed = added = 0
+    errors: list[str] = []
+    for d in days:
+        if skip_existing and d != today and read_day(d, cfg):
+            skipped += 1
+            continue
+        r = fetch_day(d, cfg)
+        if r["error"]:
+            failed += 1
+            if len(errors) < 5:
+                errors.append(f"{d}: {r['error'][:80]}")
+        else:
+            got += 1
+            added += r["added"]
+    return {"days": len(days), "fetched": got, "skipped": skipped,
+            "failed": failed, "added": added, "errors": errors}
+
+
 if __name__ == "__main__":                       # 손으로 한 번 받아 보기
     import sys
     d = sys.argv[1] if len(sys.argv) > 1 else ""
