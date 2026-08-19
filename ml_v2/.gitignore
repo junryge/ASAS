@@ -20,3 +20,7 @@ model_config.json
 
 __pycache__/
 *.pyc
+
+# 실시간 러너 산출물
+ml_predict/
+realtime_state.json
