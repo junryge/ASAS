@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUBROOM 반송정체 선제예측</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&display=swap">
+<style>
+/* ─────────────────────────────────────────────────────────
+   토큰 — 라이트가 기본, 다크는 토큰만 재정의
+   계기판(instrument) 팔레트: 차가운 슬레이트 중립 + 틸 액센트
+   단계색(0~3)은 액센트와 분리된 의미색
+   ───────────────────────────────────────────────────────── */
+:root{
+  --ground:#F1F4F4;
+  --surface:#FFFFFF;
+  --surface-2:#E9EEEE;
+  --ink:#0F1718;
+  --ink-2:#33474A;
+  --muted:#5C6E71;
+  --rule:#D5DFDF;
+  --rule-strong:#B9C8C8;
+  --accent:#0E6A6E;
+  --accent-ink:#0A4E51;
+  --accent-wash:#E2EFEE;
+  --s0:#68797C;
+  --s1:#2C6892;
+  --s2:#A96806;
+  --s3:#A83A26;
+  --s0-wash:#E8ECEC;
+  --s1-wash:#E2EDF5;
+  --s2-wash:#F7EBDA;
+  --s3-wash:#F7E6E2;
+  --code-bg:#101A1B;
+  --code-ink:#D8E5E4;
+  --shadow:0 1px 2px rgba(15,23,24,.05), 0 8px 24px -16px rgba(15,23,24,.28);
+
+  --f-head:"IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+  --f-body:"IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0D1415;
+    --surface:#141E1F;
+    --surface-2:#1B2728;
+    --ink:#E4EDEC;
+    --ink-2:#B4C6C6;
+    --muted:#8CA0A1;
+    --rule:#253435;
+    --rule-strong:#334748;
+    --accent:#45AFA9;
+    --accent-ink:#7FCFC8;
+    --accent-wash:#11302F;
+    --s0:#8C9EA1;
+    --s1:#63A6D4;
+    --s2:#D9A24E;
+    --s3:#E28270;
+    --s0-wash:#1D2829;
+    --s1-wash:#132937;
+    --s2-wash:#2E2415;
+    --s3-wash:#33201C;
+    --code-bg:#0A1112;
+    --code-ink:#CBDCDB;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1415;
+  --surface:#141E1F;
+  --surface-2:#1B2728;
+  --ink:#E4EDEC;
+  --ink-2:#B4C6C6;
+  --muted:#8CA0A1;
+  --rule:#253435;
+  --rule-strong:#334748;
+  --accent:#45AFA9;
+  --accent-ink:#7FCFC8;
+  --accent-wash:#11302F;
+  --s0:#8C9EA1;
+  --s1:#63A6D4;
+  --s2:#D9A24E;
+  --s3:#E28270;
+  --s0-wash:#1D2829;
+  --s1-wash:#132937;
+  --s2-wash:#2E2415;
+  --s3-wash:#33201C;
+  --code-bg:#0A1112;
+  --code-ink:#CBDCDB;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--f-body);
+  font-weight:400;
+  font-size:16px;
+  line-height:1.72;
+  letter-spacing:-.003em;
+  word-break:keep-all;
+}
+
+/* ── 레이아웃 ───────────────────────────────────────────── */
+.wrap{
+  max-width:1180px;
+  margin:0 auto;
+  padding:0 24px 96px;
+  display:grid;
+  grid-template-columns:222px minmax(0,1fr);
+  gap:56px;
+  align-items:start;
+}
+@media (max-width:900px){
+  .wrap{grid-template-columns:minmax(0,1fr); gap:0}
+}
+
+/* ── 머리말 ─────────────────────────────────────────────── */
+.masthead{
+  border-bottom:1px solid var(--rule);
+  background:var(--surface);
+}
+.masthead-in{
+  max-width:1180px;margin:0 auto;padding:52px 24px 40px;
+}
+.eyebrow{
+  font-family:var(--f-mono);
+  font-size:11.5px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;
+  color:var(--accent);
+  margin:0 0 18px;
+}
+h1{
+  font-family:var(--f-head);
+  font-weight:700;
+  font-size:clamp(30px,4.6vw,46px);
+  line-height:1.16;
+  letter-spacing:-.028em;
+  margin:0 0 14px;
+  text-wrap:balance;
+}
+.dek{
+  font-size:17px;color:var(--ink-2);max-width:62ch;margin:0 0 30px;
+  font-weight:300;line-height:1.66;
+}
+.dek b{font-weight:600;color:var(--ink)}
+
+.facts{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(178px,1fr));
+  gap:1px;
+  background:var(--rule);
+  border:1px solid var(--rule);
+}
+.fact{background:var(--surface);padding:14px 16px}
+.fact dt{
+  font-family:var(--f-mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+  margin:0 0 5px;
+}
+.fact dd{margin:0;font-size:14px;font-weight:500;line-height:1.45}
+.fact dd code{font-size:12.5px}
+
+/* ── 목차 레일 ───────────────────────────────────────────── */
+nav.rail{
+  position:sticky;top:0;
+  padding:44px 0 32px;
+  max-height:100vh;overflow-y:auto;
+}
+@media (max-width:900px){
+  nav.rail{
+    position:static;max-height:none;
+    padding:28px 0 0;
+    border-bottom:1px solid var(--rule);margin-bottom:8px;
+  }
+}
+.rail-title{
+  font-family:var(--f-mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+  margin:0 0 12px;
+}
+.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.rail a{
+  display:grid;grid-template-columns:26px 1fr;gap:2px;
+  padding:5px 0;
+  color:var(--muted);text-decoration:none;
+  font-size:13.5px;line-height:1.35;
+  border-left:2px solid transparent;padding-left:10px;
+  transition:color .12s, border-color .12s;
+}
+.rail a .n{font-family:var(--f-mono);font-size:11.5px;opacity:.72}
+.rail a:hover{color:var(--ink)}
+.rail a.on{color:var(--accent);border-left-color:var(--accent);font-weight:500}
+.rail a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+/* ── 본문 ───────────────────────────────────────────────── */
+main{padding-top:44px;min-width:0}
+section{margin:0 0 60px;scroll-margin-top:24px}
+h2{
+  font-family:var(--f-head);font-weight:600;
+  font-size:clamp(21px,2.5vw,26px);line-height:1.28;
+  letter-spacing:-.022em;margin:0 0 6px;text-wrap:balance;
+  display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:baseline;
+}
+h2 .num{
+  font-family:var(--f-mono);font-size:12px;font-weight:500;
+  color:var(--accent);letter-spacing:.06em;
+}
+.sub{color:var(--muted);font-size:14.5px;margin:0 0 22px;font-weight:300}
+h3{
+  font-family:var(--f-head);font-weight:600;font-size:16.5px;
+  letter-spacing:-.012em;margin:30px 0 10px;
+}
+h3 .tag{
+  font-family:var(--f-mono);font-size:11px;color:var(--muted);
+  font-weight:400;margin-right:8px;letter-spacing:.04em;
+}
+p{margin:0 0 14px;max-width:66ch}
+ul,ol{margin:0 0 14px;padding-left:20px;max-width:66ch}
+li{margin:0 0 6px}
+b,strong{font-weight:600}
+a{color:var(--accent);text-underline-offset:2px}
+hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
+
+code{
+  font-family:var(--f-mono);font-size:.865em;
+  background:var(--surface-2);padding:1px 5px;border-radius:3px;
+  letter-spacing:0;
+}
+pre{
+  background:var(--code-bg);color:var(--code-ink);
+  font-family:var(--f-mono);font-size:12.6px;line-height:1.62;
+  padding:16px 18px;margin:0 0 16px;
+  overflow-x:auto;border-radius:4px;
+  letter-spacing:0;
+}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+pre .c{color:#7FA9A6}
+pre .k{color:#7FCFC8}
+
+/* ── 표 ─────────────────────────────────────────────────── */
+.tbl{overflow-x:auto;margin:0 0 18px;border:1px solid var(--rule);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.8px;line-height:1.55}
+th,td{padding:9px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+thead th{
+  font-family:var(--f-mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  background:var(--surface-2);border-bottom:1px solid var(--rule-strong);
+  white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:13px}
+td code{font-size:12.4px}
+.tbl--tight td,.tbl--tight th{padding:7px 12px}
+tr.hl td{background:var(--accent-wash)}
+tr.hl td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+
+/* ── 단계 칩 ─────────────────────────────────────────────── */
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:var(--f-mono);font-size:11.5px;font-weight:500;
+  padding:2px 9px 2px 7px;border-radius:2px;white-space:nowrap;
+  letter-spacing:.02em;
+}
+.chip::before{content:"";width:3px;height:12px;border-radius:1px;background:currentColor}
+.c0{color:var(--s0);background:var(--s0-wash)}
+.c1{color:var(--s1);background:var(--s1-wash)}
+.c2{color:var(--s2);background:var(--s2-wash)}
+.c3{color:var(--s3);background:var(--s3-wash)}
+
+/* ── 강조 박스 ───────────────────────────────────────────── */
+.note{
+  border-left:3px solid var(--accent);
+  background:var(--accent-wash);
+  padding:14px 18px;margin:0 0 18px;
+  font-size:14.5px;line-height:1.62;
+}
+.note p{margin:0 0 8px;max-width:none}
+.note p:last-child{margin:0}
+.note .lbl{
+  font-family:var(--f-mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--accent-ink);
+  display:block;margin-bottom:6px;
+}
+.warn{border-left-color:var(--s3);background:var(--s3-wash)}
+.warn .lbl{color:var(--s3)}
+
+/* ── 원인 대비 (657 → 18) ────────────────────────────────── */
+.contrast{
+  display:grid;grid-template-columns:1fr auto 1fr;gap:0;
+  border:1px solid var(--rule);background:var(--surface);
+  margin:0 0 20px;
+}
+@media (max-width:620px){.contrast{grid-template-columns:1fr}}
+.pane{padding:20px 22px}
+.pane + .arrow + .pane{border-left:1px solid var(--rule)}
+@media (max-width:620px){
+  .pane + .arrow + .pane{border-left:0;border-top:1px solid var(--rule)}
+}
+.arrow{
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--f-mono);color:var(--accent);font-size:18px;
+  padding:0 4px;
+}
+@media (max-width:620px){.arrow{display:none}}
+.pane h4{
+  font-family:var(--f-mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+  margin:0 0 14px;
+}
+.pane.good h4{color:var(--accent)}
+.big{
+  font-family:var(--f-head);font-weight:700;
+  font-size:38px;line-height:1;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;
+  margin:0 0 3px;color:var(--ink-2);
+}
+.pane.good .big{color:var(--accent)}
+.big small{font-size:15px;font-weight:500;letter-spacing:0;margin-left:3px}
+.pane dl{margin:14px 0 0;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.2px}
+.pane dt{color:var(--muted)}
+.pane dd{margin:0;font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:12.6px}
+
+/* ── 지뢰 목록 ───────────────────────────────────────────── */
+.mines{list-style:none;padding:0;margin:0;max-width:none;
+  display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.mines li{
+  margin:0;background:var(--surface);padding:13px 16px;
+  display:grid;grid-template-columns:26px 1fr;gap:12px;font-size:14px;line-height:1.6;
+}
+.mines .mn{
+  font-family:var(--f-mono);font-size:12px;color:var(--s3);font-weight:500;
+  padding-top:2px;
+}
+.mines .sym{display:block;font-weight:600;margin-bottom:2px}
+.mines .fix{color:var(--ink-2);font-size:13.4px}
+
+/* ── 체크리스트 ─────────────────────────────────────────── */
+.todo{list-style:none;padding:0;margin:0 0 16px}
+.todo li{
+  display:grid;grid-template-columns:20px 1fr;gap:11px;
+  padding:8px 0;border-bottom:1px solid var(--rule);font-size:14.2px;line-height:1.6;
+}
+.todo li:last-child{border-bottom:0}
+.todo .box{
+  width:13px;height:13px;border:1.5px solid var(--rule-strong);border-radius:2px;
+  margin-top:5px;
+}
+
+/* ── 다이어그램 ─────────────────────────────────────────── */
+.figure{
+  border:1px solid var(--rule);background:var(--surface);
+  padding:24px 20px 18px;margin:0 0 20px;overflow-x:auto;
+}
+.figure svg{display:block;margin:0 auto;max-width:100%;height:auto}
+figcaption{
+  font-size:12.6px;color:var(--muted);margin-top:14px;text-align:center;
+  font-family:var(--f-mono);letter-spacing:.02em;
+}
+.tree{
+  font-family:var(--f-mono);font-size:12.6px;line-height:1.75;
+  background:var(--surface);border:1px solid var(--rule);
+  padding:16px 18px;margin:0 0 18px;overflow-x:auto;white-space:pre;
+  color:var(--ink-2);
+}
+.tree b{color:var(--ink);font-weight:600}
+.tree i{color:var(--muted);font-style:normal}
+
+footer{
+  border-top:1px solid var(--rule);margin-top:24px;padding-top:20px;
+  font-size:12.6px;color:var(--muted);font-family:var(--f-mono);line-height:1.7;
+}
+
+@media print{
+  body{background:#fff;font-size:10.5pt;line-height:1.5}
+  .masthead{background:#fff}
+  nav.rail{display:none}
+  .wrap{grid-template-columns:1fr;padding-bottom:0;max-width:none}
+  section{break-inside:auto;margin-bottom:26px}
+  h2,h3{break-after:avoid}
+  .tbl,.figure,.contrast,pre,.mines{break-inside:avoid}
+  pre{background:#f4f6f6;color:#101a1b;border:1px solid #ccd}
+  a{color:inherit;text-decoration:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-in">
+    <p class="eyebrow">Handover · ml_v2</p>
+    <h1>HUBROOM 반송정체 선제예측</h1>
+    <p class="dek">
+      SK하이닉스 M16A FAB · HUBROOM OHT 반송 정체를 <b>터지기 전에</b> 알린다.
+      이 문서 하나로 배경·설계·알고리즘·운영·재발방지까지 파악하고 이어서 작업할 수 있다.
+      코드를 고치기 전에 <b>§3 바꾸면 안 되는 설계</b>와 <b>§10 이미 밟은 지뢰</b>를 먼저 읽을 것.
+    </p>
+    <dl class="facts">
+      <div class="fact"><dt>대상</dt><dd>M16A FAB · HUBROOM OHT</dd></div>
+      <div class="fact"><dt>목표 리드타임</dt><dd>10분</dd></div>
+      <div class="fact"><dt>모델</dt><dd><code>amazon/chronos-2</code> zero-shot</dd></div>
+      <div class="fact"><dt>7월 평가</dt><dd>recall 100% · 평균 lead 9.8분</dd></div>
+      <div class="fact"><dt>위치</dt><dd><code>ml_v2/</code> · <code>claude/ml-failure-rate-0e1fja</code></dd></div>
+    </dl>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="rail" aria-label="목차">
+  <p class="rail-title">목차</p>
+  <ol>
+    <li><a href="#s1"><span class="n">01</span><span>한 장 요약</span></a></li>
+    <li><a href="#s2"><span class="n">02</span><span>왜 실패했나</span></a></li>
+    <li><a href="#s3"><span class="n">03</span><span>바꾸면 안 되는 설계</span></a></li>
+    <li><a href="#s4"><span class="n">04</span><span>데이터 규격</span></a></li>
+    <li><a href="#s5"><span class="n">05</span><span>알고리즘 상세</span></a></li>
+    <li><a href="#s6"><span class="n">06</span><span>파일 지도</span></a></li>
+    <li><a href="#s7"><span class="n">07</span><span>실행 명령 4개</span></a></li>
+    <li><a href="#s8"><span class="n">08</span><span>산출물 스키마</span></a></li>
+    <li><a href="#s9"><span class="n">09</span><span>현재 성적</span></a></li>
+    <li><a href="#s10"><span class="n">10</span><span>이미 밟은 지뢰</span></a></li>
+    <li><a href="#s11"><span class="n">11</span><span>한계</span></a></li>
+    <li><a href="#s12"><span class="n">12</span><span>남은 작업</span></a></li>
+    <li><a href="#s13"><span class="n">13</span><span>튜닝 위치</span></a></li>
+    <li><a href="#s14"><span class="n">14</span><span>막힐 때</span></a></li>
+    <li><a href="#sa"><span class="n">부록</span><span>환경</span></a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ═══ 1 ═══ -->
+<section id="s1">
+  <h2><span class="num">01</span><span>한 장 요약</span></h2>
+  <p class="sub">수집기 CSV 한 줄이 경보가 되기까지</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 760 262" role="img" aria-label="파이프라인: 수집기 CSV에서 이동평균, Chronos-2 예측, 초과확률, 단계 판정까지의 흐름">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,1 L9,5 L0,9" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+
+        <!-- 1 -->
+        <rect x="8" y="16" width="150" height="52" fill="var(--surface-2)" stroke="var(--rule-strong)"/>
+        <text x="83" y="38" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="500">수집기 CSV</text>
+        <text x="83" y="55" text-anchor="middle" fill="var(--muted)" font-size="10.5">분당 1행 · 직전 90분</text>
+
+        <!-- 2 -->
+        <rect x="196" y="16" width="150" height="52" fill="var(--surface-2)" stroke="var(--rule-strong)"/>
+        <text x="271" y="38" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="500">10분 이동평균</text>
+        <text x="271" y="55" text-anchor="middle" fill="var(--muted)" font-size="10.5">블립 78% 제거</text>
+
+        <!-- 3 -->
+        <rect x="384" y="16" width="164" height="52" fill="var(--accent-wash)" stroke="var(--accent)"/>
+        <text x="466" y="38" text-anchor="middle" fill="var(--accent-ink)" font-size="12.5" font-weight="600">Chronos-2</text>
+        <text x="466" y="55" text-anchor="middle" fill="var(--accent-ink)" font-size="10.5">90분 → 앞 30분</text>
+
+        <!-- 4 -->
+        <rect x="586" y="16" width="166" height="52" fill="var(--surface-2)" stroke="var(--rule-strong)"/>
+        <text x="669" y="38" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="500">q10 / q50 / q90</text>
+        <text x="669" y="55" text-anchor="middle" fill="var(--muted)" font-size="10.5">분위수 예측</text>
+
+        <line x1="160" y1="42" x2="192" y2="42" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+        <line x1="348" y1="42" x2="380" y2="42" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+        <line x1="550" y1="42" x2="582" y2="42" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+
+        <!-- 꺾임 -->
+        <path d="M669,70 L669,96 L466,96 L466,116" fill="none" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+
+        <!-- 5 -->
+        <rect x="384" y="120" width="164" height="52" fill="var(--surface-2)" stroke="var(--rule-strong)"/>
+        <text x="466" y="142" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="500">임계 초과 확률</text>
+        <text x="466" y="159" text-anchor="middle" fill="var(--muted)" font-size="10.5">CDF 근사 P(X &gt; 임계)</text>
+
+        <path d="M384,146 L352,146" fill="none" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+
+        <!-- 6 -->
+        <rect x="196" y="120" width="150" height="52" fill="var(--surface-2)" stroke="var(--rule-strong)"/>
+        <text x="271" y="142" text-anchor="middle" fill="var(--ink)" font-size="12.5" font-weight="500">단계 판정</text>
+        <text x="271" y="159" text-anchor="middle" fill="var(--muted)" font-size="10.5">히스테리시스 p_on/p_off</text>
+
+        <path d="M271,174 L271,202" fill="none" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+
+        <!-- 단계 -->
+        <g font-size="11">
+          <rect x="8"   y="206" width="122" height="42" fill="var(--s0-wash)"/>
+          <rect x="8"   y="206" width="3"   height="42" fill="var(--s0)"/>
+          <text x="22" y="223" fill="var(--s0)" font-weight="600">0 정상</text>
+          <text x="22" y="239" fill="var(--muted)" font-size="10">—</text>
+
+          <rect x="140" y="206" width="122" height="42" fill="var(--s1-wash)"/>
+          <rect x="140" y="206" width="3"   height="42" fill="var(--s1)"/>
+          <text x="154" y="223" fill="var(--s1)" font-weight="600">1 관찰</text>
+          <text x="154" y="239" fill="var(--muted)" font-size="10">상승 조짐</text>
+
+          <rect x="272" y="206" width="146" height="42" fill="var(--s2-wash)"/>
+          <rect x="272" y="206" width="3"   height="42" fill="var(--s2)"/>
+          <text x="286" y="223" fill="var(--s2)" font-weight="600">2 선제경보</text>
+          <text x="286" y="239" fill="var(--muted)" font-size="10">N분 뒤 초과 예상</text>
+
+          <rect x="428" y="206" width="146" height="42" fill="var(--s3-wash)"/>
+          <rect x="428" y="206" width="3"   height="42" fill="var(--s3)"/>
+          <text x="442" y="223" fill="var(--s3)" font-weight="600">3 정체 진행중</text>
+          <text x="442" y="239" fill="var(--muted)" font-size="10">이미 임계 초과</text>
+        </g>
+
+        <rect x="586" y="206" width="166" height="42" fill="var(--accent-wash)" stroke="var(--accent)"/>
+        <text x="669" y="223" text-anchor="middle" fill="var(--accent-ink)" font-size="11" font-weight="600">결과 적재</text>
+        <text x="669" y="239" text-anchor="middle" fill="var(--accent-ink)" font-size="9.5">{날짜}_ml_chronos_2.csv</text>
+        <path d="M578,227 L582,227" fill="none" stroke="var(--accent)" stroke-width="1.4" marker-end="url(#ar)"/>
+      </g>
+    </svg>
+    <figcaption>수집기 CSV → 이동평균 → Chronos-2 → 초과확률 → 단계 → 경보·적재</figcaption>
+  </figure>
+
+  <div class="note">
+    <span class="lbl">핵심</span>
+    <p>이 프로젝트의 성패를 가른 것은 <b>모델이 아니라 라벨 정의</b>다. 자세한 근거는 §2.</p>
+  </div>
+</section>
+
+<!-- ═══ 2 ═══ -->
+<section id="s2">
+  <h2><span class="num">02</span><span>왜 이전 ML 은 실패했나</span></h2>
+  <p class="sub">근본 원인 — 예측 불가능한 대상을 예측하라고 시켰다</p>
+
+  <p>원본 데이터를 <b>순간값 임계(16.7)</b>로 "정체"를 세었더니 이렇게 나왔다.</p>
+
+  <div class="contrast">
+    <div class="pane">
+      <h4>순간값 라벨 — 실패</h4>
+      <p class="big">657<small>건</small></p>
+      <dl>
+        <dt>지속 1분</dt><dd>513건 (78%)</dd>
+        <dt>평균 지속</dt><dd>1분</dd>
+        <dt>임계 20 으로 올리면</dt><dd>5분+ 사건 0건</dd>
+      </dl>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="pane good">
+      <h4>10분 이동평균 라벨 — 성공</h4>
+      <p class="big">18<small>건</small></p>
+      <dl>
+        <dt>평균 지속</dt><dd>52분</dd>
+        <dt>최장 지속</dt><dd>156분</dd>
+        <dt>사전 징후 있음</dt><dd>15/18 = 83%</dd>
+      </dl>
+    </div>
+  </div>
+
+  <p>
+    즉 "정체"의 <b>78%가 1분 만에 사라지는 센서 블립</b>이었다.
+    임계를 높여도 지속시간이 오히려 짧아졌다 — 신호가 아니라 <b>노이즈를 세고 있었다는 증거</b>다.
+    모델을 아무리 좋은 걸 써도 예측 불가능한 대상을 예측하라고 시킨 것이 실패 원인이다.
+  </p>
+  <p>
+    이동평균으로 바꾸자 사건이 657 → 18건으로 줄었고, 그중 <b>83%가 사전 징후를 가져 예측이 가능</b>해졌다.
+    남은 17%는 급발성(buildup 없이 터짐)이라 원리적으로 미리 못 잡는다.
+    이건 한계로 인정하고 즉시감지 <span class="chip c3">stage 3</span> 로 대응한다.
+  </p>
+  <p style="color:var(--muted);font-size:13.5px">근거 원문: <code>docs/FINDINGS_RAW분석.md</code></p>
+</section>
+
+<!-- ═══ 3 ═══ -->
+<section id="s3">
+  <h2><span class="num">03</span><span>바꾸면 안 되는 설계 결정 5개</span></h2>
+  <p class="sub">다른 세션이 "개선"하려다 되돌리기 쉬운 것들 — 이유와 함께</p>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th class="num">#</th><th>결정</th><th>이유</th><th>되돌리면</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><b>10분 이동평균</b>을 예측 타깃이자 판정 기준으로</td><td>블립 78% 제거 (§2)</td><td>예측 불가능한 노이즈를 쫓아 다시 실패</td></tr>
+        <tr><td class="num">2</td><td>이동평균은 <b>과거만 보는 인과적(causal)</b> 구현</td><td>중앙이동평균은 미래를 봄 = 누설</td><td>성적이 허위로 좋아짐</td></tr>
+        <tr><td class="num">3</td><td>임계는 <b>학습기간 분위수에서 자동 산출</b> <code>--pct 0.99</code></td><td>손으로 정한 임계가 실패했음 — 큐 100 은 최저값 107 보다 낮아 항상 초과, 저장률 30 은 최대 26 이라 한 번도 안 울림</td><td>임계가 데이터와 안 맞아 무용지물</td></tr>
+        <tr><td class="num">4</td><td>임계 산출은 <b>학습기간에서만</b>, 평가기간은 절대 안 봄</td><td>누설 방지</td><td>성적 부풀림</td></tr>
+        <tr><td class="num">5</td><td>예측 입력은 <b>시점 t 까지만</b> 자름</td><td>누설 방지</td><td>성적 부풀림</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note warn">
+    <span class="lbl">주의</span>
+    <p>Chronos-2 는 <b>zero-shot</b> 이다. "학습"이라고 부르는 ①단계는 <b>가중치를 훈련하지 않는다.</b>
+    임계·통계만 뽑아 <code>model_config.json</code> 에 저장한다.
+    모델 파일을 fine-tune 하려 들지 말 것 — 그게 이 아키텍처의 장점이다.</p>
+  </div>
+</section>
+
+<!-- ═══ 4 ═══ -->
+<section id="s4">
+  <h2><span class="num">04</span><span>데이터 규격</span></h2>
+  <p class="sub">분당 1행 CSV · 필수 컬럼은 단 2개</p>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th>컬럼</th><th>필수</th><th>설명</th></tr></thead>
+      <tbody>
+        <tr><td><code>CRT_TM</code></td><td>필수</td><td>시각 <code>YYYY-MM-DD HH:MM:SS</code></td></tr>
+        <tr class="hl"><td><code>M16HUB.QUE.TIME.AVGTOTALTIME1MIN</code></td><td>필수</td><td><b>예측 대상</b> — HUB 평균 반송시간</td></tr>
+        <tr><td>나머지 263개</td><td>—</td><td>현재 예측에 안 씀. <code>data.LEADING</code> 에 5개만 정의(확장 대비)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <ul>
+    <li>파일이 날짜별로 쪼개져 있어도 됨 — 글롭으로 병합 후 시각순 자동 정렬</li>
+    <li>결측은 직전 값으로 채움 (<code>Series.filled</code>)</li>
+    <li>학습기간과 평가기간이 <b>겹치면 안 된다</b></li>
+  </ul>
+
+  <h3><span class="tag">data.LEADING</span>선행지표 — 현재 미사용, covariate 확장용</h3>
+  <div class="tbl tbl--tight">
+    <table>
+      <tbody>
+        <tr><td><code>M14.QUE.CNV.SOUTHCURRENTQCNT</code></td><td>남측 컨베이어 큐</td></tr>
+        <tr><td><code>M14.QUE.CNV.NORTHCURRENTQCNT</code></td><td>북측 컨베이어 큐</td></tr>
+        <tr><td><code>M16HUB.STRATE.ALL.FABSTORAGERATIO</code></td><td>FAB 저장률</td></tr>
+        <tr><td><code>M16HUB.QUE.ALL.CURRENTQCOMPLETED</code></td><td>완료 반송량 (줄면 적체)</td></tr>
+        <tr><td><code>M16HUB.QUE.M14TOM16.MESCURRENTQCNT</code></td><td>M14→M16 큐</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 5 ═══ -->
+<section id="s5">
+  <h2><span class="num">05</span><span>알고리즘 상세</span></h2>
+  <p class="sub">이동평균 → 사건정의 → 예측 → 초과확률 → 히스테리시스</p>
+
+  <h3><span class="tag">5-1</span>이동평균 <code>data.moving_avg</code></h3>
+  <p><code>window=10</code>. 시점 <code>t</code> 는 <code>t-9 ~ t</code> 만 본다. <b>미래를 안 본다.</b></p>
+
+  <h3><span class="tag">5-2</span>임계 <code>data.learn_threshold</code></h3>
+  <p>학습기간 이동평균값의 p99. 4~6월 기준 <b>14.765</b>.</p>
+
+  <h3><span class="tag">5-3</span>사건 = 정답 라벨 <code>data.find_events</code></h3>
+<pre><code>이동평균 &gt;= 임계 인 구간
+  <span class="c">→ gap(10분) 이내 간격은 같은 사건으로 병합</span>
+  <span class="c">→ 지속 min_duration(10분) 미만은 버림   ← 블립 제거</span></code></pre>
+
+  <h3><span class="tag">5-4</span>예측 <code>detect.Forecaster</code></h3>
+  <p>Chronos-2 에 직전 <code>context=90</code>분을 넣어 앞 <code>horizon=30</code>분의 q10/q50/q90 을 받는다.</p>
+  <ul>
+    <li><b>호출 규격이 Bolt 와 다르다.</b> Chronos-2 는 <code>predict_quantiles(inputs, …)</code> 이고
+      <code>inputs</code> 는 <b>3-D 텐서 <code>(n_series, n_variates, history_length)</code></b>.
+      Bolt 는 <code>context=</code> 2-D. 그래서 <code>Forecaster._forms()</code> 가 5가지 호출 형태를
+      순서대로 시도하고 성공한 형태를 기억한다.</li>
+    <li>정상 시 이 줄이 뜬다 — <code>[모델 호출 형태] inputs 3-D (n_series,n_variates,history)</code></li>
+    <li>모델을 못 찾으면 내장 <code>_baseline</code>(선형추세 + 잔차분위수)으로 폴백하고
+      <b>"이 결과는 Chronos-2 성적이 아닙니다" 경고를 띄운다.</b></li>
+  </ul>
+
+  <h3><span class="tag">5-5</span>초과 확률 <code>detect.exceed_prob</code></h3>
+  <p>q10/q50/q90 세 점을 (값, 누적확률)로 놓고 선형보간해 CDF 를 근사 → <code>P(X &gt; 임계)</code>.
+     분위수 밴드가 좁으면(= 모델이 확신하면) 확률이 급격히 0/1 로 갈린다.</p>
+
+  <h3><span class="tag">5-6</span>단계 판정 <code>detect.decide</code> · <code>realtime.judge</code></h3>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>단계</th><th>조건</th><th>뜻</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip c3">3</span></td><td>현재 이동평균 &ge; 임계</td><td>정체 <b>진행중</b> (이미 터짐)</td></tr>
+        <tr><td><span class="chip c2">2</span></td><td>최대확률 &ge; <code>p_on</code> 이고 lead 존재</td><td><b>선제경보</b> — N분 뒤 초과 예상</td></tr>
+        <tr><td><span class="chip c1">1</span></td><td>최대확률 &ge; <code>p_off</code></td><td>관찰 (상승 조짐)</td></tr>
+        <tr><td><span class="chip c0">0</span></td><td>그 외</td><td>정상</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><b>히스테리시스</b> — 한 번 켜지면(<code>&ge; p_on</code>) <code>p_off</code> 밑으로 떨어질 때까지 유지한다.
+     문턱 하나만 쓰면 경계에서 경보가 깜빡거린다(alarm flapping).</p>
+  <p><code>lead</code> = 예측 지평 안에서 처음으로 확률이 <code>p_on</code> 을 넘는 시점(분).</p>
+
+  <h3><span class="tag">5-7</span>채점 <code>evaluate.py</code></h3>
+  <p><b>분 단위가 아니라 사건 단위</b>로 센다.</p>
+  <ul>
+    <li>사건 시작 <code>pre</code>분 전 ~ 시작 사이에 stage&ge;2 가 있으면 <b>감지</b></li>
+    <li><code>lead</code> = 사건 시작 − 첫 경보 시각</li>
+    <li>어느 사건에도 안 붙는 경보 구간 = <b>헛울림</b></li>
+  </ul>
+</section>
+
+<!-- ═══ 6 ═══ -->
+<section id="s6">
+  <h2><span class="num">06</span><span>파일 지도</span></h2>
+  <p class="sub">무엇이 어디에 있나</p>
+
+<div class="tree">ml_v2/
+├── <b>data.py</b>        <i>로딩 · 이동평균 · 사건정의 · 학습결과 저장   (표준 라이브러리만)</i>
+├── <b>detect.py</b>      <i>Chronos-2 예측 → 초과확률 → 단계 판정</i>
+├── <b>evaluate.py</b>    <i>사건 단위 채점</i>
+├── <b>main.py</b>        <i>학습·평가 진입점 (learn / sweep / all)</i>
+├── <b>realtime.py</b>    <i>실시간 러너 (매분 판정)</i>
+├── aws_idc_history_downloader.py   <i>(보조) Oracle → 날짜별 CSV</i>
+├── HANDOVER.md   <i>← 이 문서의 마크다운판</i>
+├── 실행명령어.md  <i>복붙용 명령어</i>
+├── 인수인계.md    <i>요약본</i>
+├── 명령어.md      <i>옵션 설명</i>
+├── RESULTS.md     <i>성적 상세</i>
+├── README.md      <i>설계 배경</i>
+└── docs/          <i>고객설명·기술구조·이 HTML</i></div>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th>파일</th><th>핵심 함수</th></tr></thead>
+      <tbody>
+        <tr><td><code>data.py</code></td><td><code>load</code> <code>moving_avg</code> <code>find_events</code> <code>learn_threshold</code> <code>learn</code> <code>save_config</code> <code>load_config</code></td></tr>
+        <tr><td><code>detect.py</code></td><td><code>Forecaster.predict</code> <code>exceed_prob</code> <code>predict_curves</code>(모델 호출) <code>decide</code>(후처리) <code>run</code></td></tr>
+        <tr><td><code>evaluate.py</code></td><td><code>read_actions</code> <code>alarm_spans</code> <code>evaluate</code> <code>print_report</code> <code>save_report</code></td></tr>
+        <tr><td><code>main.py</code></td><td><code>cmd_learn</code> <code>cmd_sweep</code> <code>cmd_all</code></td></tr>
+        <tr><td><code>realtime.py</code></td><td><code>read_snapshot</code> <code>judge</code> <code>load_state</code>/<code>save_state</code> <code>append_result</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="lbl">구조 주의</span>
+    <p><code>predict_curves</code>(모델 호출)와 <code>decide</code>(순수 후처리)가 <b>분리돼 있다.</b>
+    그래서 <code>sweep</code> 이 모델을 1번만 돌리고 p_on 을 여러 개 비교할 수 있다.
+    이 분리를 없애지 말 것 — 합치면 스윕이 N배 느려진다.</p>
+  </div>
+</section>
+
+<!-- ═══ 7 ═══ -->
+<section id="s7">
+  <h2><span class="num">07</span><span>실행 — 명령 4개</span></h2>
+  <p class="sub">복붙용 전체는 <code>실행명령어.md</code></p>
+
+<pre><code><span class="c"># 설치</span>
+pip install "chronos-forecasting&gt;=2.0" torch
+
+<span class="c"># ① 학습 — 기준 산출 (한 번만, 모델 불필요, ~1분)</span>
+python main.py <span class="k">learn</span> --train "RAW/M16A_HUBROOM_PR_202604*.CSV" "RAW/M16A_HUBROOM_PR_202605*.CSV" "RAW/M16A_HUBROOM_PR_202606*.CSV" --out-config model_config.json
+
+<span class="c"># ② 평가(스윕) — 모델 1회 실행으로 p_on 비교</span>
+python main.py <span class="k">sweep</span> --config model_config.json --eval "RAW/M16A_HUBROOM_PR_202607*.CSV" --model chronos_2 --device cuda --horizon 30 --stride 3
+
+<span class="c"># ③ 평가(확정)</span>
+python main.py <span class="k">all</span> --config model_config.json --eval "RAW/M16A_HUBROOM_PR_202607*.CSV" --model chronos_2 --device cuda --horizon 30 --p-on 0.30 --out-actions actions.csv --out-report report.csv
+
+<span class="c"># ④ 실시간 (운영)</span>
+python <span class="k">realtime.py</span> --config model_config.json --input predict/M16A_HUBROOM_PR.csv --model chronos_2 --device cuda --p-on 0.30</code></pre>
+
+  <h3>실시간(④) 동작</h3>
+  <ul>
+    <li>수집기가 <code>predict/M16A_HUBROOM_PR.csv</code> 를 매분 덮어쓴다 — <b>직전 90분 · 분당 1행</b>.
+        수집기 <code>WINDOW_MIN=90</code> 이 <code>--context 90</code> 과 정확히 일치한다.</li>
+    <li>러너는 매분 <code>00초 + --offset 8초</code> 에 읽는다 (수집기 쓰기 완료 대기). 읽기는 5회 재시도.</li>
+    <li>마지막 시각이 직전과 같으면(아직 미갱신) 2초 뒤 재확인 → <b>중복 판정 없음</b></li>
+    <li>자체 이력을 <code>--history 600</code>분 유지하고 <code>realtime_state.json</code> 에 저장 →
+        <b>재시작해도 10분 이동평균이 안 끊긴다</b></li>
+    <li>모델은 <b>기동 시 1회만</b> 로드</li>
+    <li><code>--once</code> 로 단발 점검, <code>--on-alert "명령"</code> 으로 외부 연동
+        (<code>ALERT_TIME</code> <code>ALERT_STAGE</code> <code>ALERT_PROB</code> <code>ALERT_LEAD</code>
+        <code>ALERT_SMOOTHED</code> <code>ALERT_THRESHOLD</code> <code>ALERT_REASON</code> 환경변수 전달)</li>
+  </ul>
+</section>
+
+<!-- ═══ 8 ═══ -->
+<section id="s8">
+  <h2><span class="num">08</span><span>산출물 스키마</span></h2>
+  <p class="sub">어떤 파일이 언제 생기고 무슨 컬럼을 갖나</p>
+
+  <h3><span class="tag">①</span><code>model_config.json</code> — ②③④의 입력</h3>
+<pre><code>{
+  "target": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",
+  "window": 10, "pct": 0.99, "min_duration": 10, "gap": 10,
+  "threshold": 14.765,
+  "smoothed_p50": …, "smoothed_p95": …, "smoothed_p99": …, "smoothed_max": …,
+  "train_span": "2026-04-01 ~ 2026-06-30",
+  "train_rows": 109440, "train_days": 91,
+  "train_events": 23, "train_events_per_month": 7.6,
+  "train_event_mean_duration": 51.8, "train_event_max_duration": 235,
+  "leading_available": […]
+}</code></pre>
+
+  <h3><span class="tag">②③</span><code>actions.csv</code> — 분당 판정</h3>
+  <p><code>datetime, raw_value, stage, prob, lead_min, kind, reason</code></p>
+
+  <h3><span class="tag">②③</span><code>report.csv</code> — 사건별 표 (엑셀로 열기)</h3>
+  <p><code>구분, 사건#, 정체시작, 정체종료, 지속(분), 이동평균피크, 순간최고, 감지시각, lead(분), lead구간, 확률, 사유</code></p>
+  <p>맨 윗줄은 요약 코멘트. <code>구분</code> 이 <code>헛울림</code> 인 행은 오경보 목록.</p>
+
+  <h3><span class="tag">④</span><code>ml_predict/{날짜}_ml_chronos_2.csv</code> — 실시간, 매분 append</h3>
+  <p><code>datetime, raw_value, smoothed, stage, stage_name, prob, lead_min, threshold, reason</code></p>
+<pre><code>2026-08-19 06:48:00,12.927,9.613,2,선제경보,1.0,7,14.765,약 7분 뒤 임계 초과 예상</code></pre>
+  <p>날짜는 <b>데이터 시각</b> 기준 → 자정 넘으면 자동으로 새 파일.</p>
+
+  <h3><span class="tag">④</span><code>realtime_state.json</code> — 재시작 대비</h3>
+  <p><code>{"history": [[시각, 값], …], "active": bool, "last": "마지막 처리 시각"}</code></p>
+</section>
+
+<!-- ═══ 9 ═══ -->
+<section id="s9">
+  <h2><span class="num">09</span><span>현재 성적</span></h2>
+  <p class="sub">7월 평가 · 4~6월 학습 · 실모델 <code>backend=chronos_2</code></p>
+
+  <p>학습기간 심각사건 23건(월 7.6건) / 평가기간 <b>4건</b>.</p>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th class="num">p_on</th><th class="num">Recall</th><th class="num">Precision</th><th class="num">평균 lead</th><th class="num">≥10분 전</th><th class="num">헛울림</th><th class="num">/일</th></tr></thead>
+      <tbody>
+        <tr class="hl"><td class="num"><b>0.30</b></td><td class="num"><b>100%</b></td><td class="num">25%</td><td class="num"><b>9.8분</b></td><td class="num"><b>3/4</b></td><td class="num">12</td><td class="num">0.4</td></tr>
+        <tr><td class="num">0.40</td><td class="num">100%</td><td class="num">31%</td><td class="num">8.2분</td><td class="num">2/4</td><td class="num">9</td><td class="num">0.3</td></tr>
+        <tr><td class="num">0.50</td><td class="num">100%</td><td class="num">50%</td><td class="num">3.8분</td><td class="num">0/4</td><td class="num">4</td><td class="num">0.1</td></tr>
+        <tr><td class="num">0.60</td><td class="num">100%</td><td class="num">80%</td><td class="num">3.8분</td><td class="num">0/4</td><td class="num">1</td><td class="num">0.0</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    <b>모든 설정에서 recall 100%</b> — 심각 정체를 하나도 안 놓쳤다.
+    <code>p_on</code> 은 "얼마나 미리 알리나 ↔ 헛울림을 얼마나 참나" 다이얼이다.
+    데드락은 놓치면 손실이 크고 헛울림은 확인 한 번이면 되므로 <b>0.30 권고</b>.
+  </p>
+
+  <h3>Chronos-2 vs baseline <span class="tag" style="margin-left:6px">같은 조건, p_on 0.6</span></h3>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>지표</th><th class="num">baseline</th><th class="num">Chronos-2</th></tr></thead>
+      <tbody>
+        <tr><td>Precision</td><td class="num">33%</td><td class="num"><b>80%</b></td></tr>
+        <tr><td>헛울림/일</td><td class="num">0.3</td><td class="num"><b>0.03</b></td></tr>
+        <tr><td>평균 lead</td><td class="num">9.2분</td><td class="num">3.8분</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Chronos-2 는 정확해서 예측밴드가 좁다 → <b>확실할 때만 울린다</b>(헛울림 1/10).
+    대신 늦게 울리므로 p_on 을 낮춰 lead 를 되찾는 구조다.
+    즉 이득은 "<b>같은 lead 에서 헛울림이 훨씬 적다</b>"로 나타난다.
+  </p>
+</section>
+
+<!-- ═══ 10 ═══ -->
+<section id="s10">
+  <h2><span class="num">10</span><span>이미 밟은 지뢰</span></h2>
+  <p class="sub">같은 함정에 두 번 빠지지 않도록</p>
+
+  <ol class="mines">
+    <li><span class="mn">01</span><span>
+      <span class="sym">임계가 전혀 안 맞음</span>
+      <span class="fix">손으로 정한 값. 큐 100 은 최저 107 보다 낮아 항상 초과, 저장률 30 은 최대 26 이라 무발화 → <b>학습기간 분위수로 자동 산출</b></span></span></li>
+    <li><span class="mn">02</span><span>
+      <span class="sym"><code>TypeError: predict_quantiles() missing 'inputs'</code></span>
+      <span class="fix">Chronos-2 는 <code>inputs=</code>, Bolt 는 <code>context=</code>. <b>API 가 다르다</b></span></span></li>
+    <li><span class="mn">03</span><span>
+      <span class="sym"><code>Expected 3-d tensor … got shape (1, 16)</code></span>
+      <span class="fix">Chronos-2 <code>inputs</code> 는 3-D <code>(n_series, n_variates, history)</code> → <code>t2d.unsqueeze(1)</code></span></span></li>
+    <li><span class="mn">04</span><span>
+      <span class="sym"><code>ValueError: Could not infer frequency</code></span>
+      <span class="fix"><code>predict_df</code> 사용 시 <code>freq="min"</code> 필요. 지금은 텐서 경로라 무관</span></span></li>
+    <li><span class="mn">05</span><span>
+      <span class="sym">헤더는 <code>backend=chronos_2</code> 인데 채점은 <code>(backend=baseline)</code></span>
+      <span class="fix"><b>조용한 폴백.</b> 지금은 실패 사유를 즉시 출력하고 "Chronos-2 성적 아님" 경고를 띄운다. <b>채점 줄의 backend 를 반드시 확인할 것</b></span></span></li>
+    <li><span class="mn">06</span><span>
+      <span class="sym">추론이 극단적으로 느림 (44,640회 호출)</span>
+      <span class="fix">GPU 연산이 아니라 <b>호출당 오버헤드</b>가 지배. <code>--batch 256</code> 으로 배치화 → 호출 수 1/256</span></span></li>
+    <li><span class="mn">07</span><span>
+      <span class="sym">p_on 스윕이 모델을 3번 돌림</span>
+      <span class="fix"><code>predict_curves</code>(모델) / <code>decide</code>(후처리) 분리 + <code>main.py sweep</code>. <b>이 분리를 합치지 말 것</b></span></span></li>
+    <li><span class="mn">08</span><span>
+      <span class="sym">글롭이 안 먹힘 <code>OSError: Invalid argument</code></span>
+      <span class="fix">단일파일 로더를 쓴 실수. <code>data.load</code>(글롭 병합) 사용. 셸에서 <b>따옴표 필수</b> <code>"RAW/*.CSV"</code></span></span></li>
+    <li><span class="mn">09</span><span>
+      <span class="sym">HTML 문서 한글 깨짐</span>
+      <span class="fix"><code>&lt;meta charset="utf-8"&gt;</code> 누락</span></span></li>
+    <li><span class="mn">10</span><span>
+      <span class="sym">사건이 1분짜리 투성이</span>
+      <span class="fix">§2 — 순간값 라벨. 이동평균으로 전환</span></span></li>
+  </ol>
+</section>
+
+<!-- ═══ 11 ═══ -->
+<section id="s11">
+  <h2><span class="num">11</span><span>한계</span></h2>
+  <p class="sub">정직하게</p>
+  <ol>
+    <li><b>평가기간 심각사건이 4건뿐</b> — 7월이 조용했다. recall 100% 는 4건 기준이라 표본이 작다. → 5·6월 교차검증 필요.</li>
+    <li><b>정답이 "이동평균 임계초과"</b> — 운영자가 실제로 문제라고 인식한 사건 로그와 대조해야 진짜 정확도를 안다.</li>
+    <li><b>급발성 정체(17%)는 원리적으로 미리 못 잡는다.</b> 현재 구조는 buildup 형(83%) 대상.</li>
+    <li>저장소 컨테이너는 PyPI/HuggingFace 가 막혀 있어 <b>거기서는 실모델 검증 불가</b>.
+        로직·CSV 적재·상태복원은 검증됐고, 실모델 경로는 GPU 장비에서 확인해야 한다.</li>
+  </ol>
+</section>
+
+<!-- ═══ 12 ═══ -->
+<section id="s12">
+  <h2><span class="num">12</span><span>남은 작업</span></h2>
+  <p class="sub">우선순위 순</p>
+
+  <ul class="todo">
+    <li><span class="box"></span><span><b>5·6월 교차검증</b> — 명령 ②③에서 <code>--eval</code> 만 바꾸면 됨 (사건 수 확보)</span></li>
+    <li><span class="box"></span><span>실제 사건 이력과 대조해 정확도 재검증</span></li>
+    <li><span class="box"></span><span><code>--on-alert</code> 로 메신저·Logpresso 연동</span></li>
+    <li><span class="box"></span><span>(확장) <code>data.LEADING</code> 5개 선행지표를 covariate 로 투입 — Chronos-2 는 multivariate zero-shot 을 지원한다. 현재는 타깃 단변량만 쓴다.</span></li>
+    <li><span class="box"></span><span>(선택) 기존 CUSUM 4감지기와 결합 — v1 실험에서 CUSUM 은 lead 가 길고 Chronos 는 정확했다. union 결합 시 recall↑, confirm 결합 시 precision↑</span></li>
+  </ul>
+
+  <div class="note">
+    <span class="lbl">재학습 주기</span>
+    <p><b>3개월마다 ①만 다시 돌린다</b> (<code>--train</code> 을 최근 3개월로).
+    <code>model_config.json</code> 이 갱신되고 ②③④ 는 그대로 쓴다.
+    직전 config 는 백업해 두면 성적 비교가 된다.</p>
+  </div>
+</section>
+
+<!-- ═══ 13 ═══ -->
+<section id="s13">
+  <h2><span class="num">13</span><span>결과를 바꾸고 싶을 때 고칠 위치</span></h2>
+  <p class="sub">튜닝 다이얼</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>바꾸고 싶은 것</th><th>위치</th></tr></thead>
+      <tbody>
+        <tr><td>더 일찍 알리고 싶다</td><td><code>--p-on</code> 낮추기 (0.30 → 0.20). 헛울림 늘어남</td></tr>
+        <tr><td>헛울림 줄이고 싶다</td><td><code>--p-on</code> 올리기. lead 짧아짐</td></tr>
+        <tr><td>더 먼 미래까지 보고 싶다</td><td><code>--horizon</code> 늘리기 (30 → 45)</td></tr>
+        <tr><td>사건을 더/덜 잡고 싶다</td><td>① 재실행 시 <code>--pct</code> (0.99 → 0.97 이면 사건↑)</td></tr>
+        <tr><td>"심각"의 최소 지속</td><td>① 재실행 시 <code>--min-duration</code> (기본 10분)</td></tr>
+        <tr><td>다른 컬럼을 예측 대상으로</td><td><code>data.TARGET</code> 수정 후 ①부터 재실행</td></tr>
+        <tr><td>판정 주기</td><td>④ <code>--interval</code> (기본 60초)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 14 ═══ -->
+<section id="s14">
+  <h2><span class="num">14</span><span>막힐 때</span></h2>
+  <p class="sub">증상 → 해결</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>증상</th><th>해결</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend=baseline</code></td><td>모델 폴더 못 찾음 → <code>--model D:\경로\chronos_2</code></td></tr>
+        <tr><td><code>모든 호출 형태 실패</code></td><td>chronos 버전 문제. 출력된 에러 4~5줄 확인 (§10-2, 10-3)</td></tr>
+        <tr><td><code>CSV 없음</code></td><td>글롭에 따옴표 필수 — <code>"RAW/*.CSV"</code></td></tr>
+        <tr><td>너무 느림</td><td><code>--stride 5 --batch 512</code> (④는 무관)</td></tr>
+        <tr><td>사건 0건</td><td>평가기간이 조용했거나 임계가 높음 → <code>--pct 0.97</code> 로 재학습</td></tr>
+        <tr><td>④ <code>입력 오류</code></td><td>수집기 미가동 또는 <code>--input</code> 경로 오류</td></tr>
+        <tr><td>④ 결과가 안 쌓임</td><td>수집기 파일의 마지막 시각이 안 바뀜(수집기 정지)</td></tr>
+        <tr><td>④ 한 줄만 나오고 끝</td><td><code>--once</code> 가 붙어 있음</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══ 부록 ═══ -->
+<section id="sa">
+  <h2><span class="num">부록</span><span>환경</span></h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>항목</th><th>요구</th></tr></thead>
+      <tbody>
+        <tr><td>Python</td><td>3.9 이상 (검증 3.13)</td></tr>
+        <tr><td>패키지</td><td><code>chronos-forecasting&gt;=2.0</code>, <code>torch</code> — <b>끝.</b> <code>pandas</code> 불필요</td></tr>
+        <tr><td>GPU</td><td>선택. 없으면 <code>--device</code> 생략 (④는 분당 1회라 CPU 로 충분)</td></tr>
+        <tr><td>모델</td><td><code>amazon/chronos-2</code>. 폐쇄망이면<br><code>huggingface-cli download amazon/chronos-2 --local-dir ./chronos_2</code> 후 폴더 복사</td></tr>
+        <tr><td><code>oracledb</code></td><td><code>aws_idc_history_downloader.py</code> 쓸 때만. 비밀번호는 <code>ORA_PASS</code> 환경변수 (코드에 하드코딩 금지)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    ml_v2 · HUBROOM 반송정체 선제예측 · 마크다운판 HANDOVER.md 와 동일 내용<br>
+    관련 문서 — 실행명령어.md · 인수인계.md · RESULTS.md · docs/고객설명_조기경보.html · docs/기술구조_파이프라인.html
+  </footer>
+</section>
+
+</main>
+</div>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.rail a'));
+  var map = {};
+  links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
+  var secs = Array.prototype.slice.call(document.querySelectorAll('main section'));
+  if (!('IntersectionObserver' in window)) return;
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if (!e.isIntersecting) return;
+      links.forEach(function(a){ a.classList.remove('on'); });
+      var a = map[e.target.id];
+      if (a) a.classList.add('on');
+    });
+  }, { rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+  secs.forEach(function(s){ io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
