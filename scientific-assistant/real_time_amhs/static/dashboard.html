@@ -344,8 +344,8 @@
   </button>
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
-    <button data-tab="past">과거 데이터 조회</button>
     <button data-tab="ml" id="tabbtn-ml">ML 조기예측</button>
+    <button data-tab="past">과거 데이터 조회</button>
     <button data-tab="analysis">LLM 모델 분석</button>
     <button data-tab="report">리포트 · 피드백</button>
     <button data-tab="policy">정책</button>
@@ -514,6 +514,17 @@
       같은 사건을 각각 언제 알렸는지 비교할 수 있습니다.
       <span class="note dim">※ 우리 점수(0~100)와 눈금이 달라 추이 그래프에 겹쳐 그리지 않습니다.</span>
     </p>
+
+    <div class="row" style="margin:0 0 10px;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="note">날짜
+        <input type="date" id="mlday" style="margin-left:5px"></label>
+      <button id="mltoday" class="btn">오늘</button>
+      <button id="mlfetch" class="btn">지금 받기</button>
+      <a id="mlcsv" class="btn" download style="text-decoration:none">CSV 내려받기</a>
+      <span class="note dim" id="mllive">· 20초마다 자동 갱신</span>
+    </div>
+    <div id="mldiag" class="note" style="display:none;margin:0 0 12px;padding:9px 11px;
+         border:1px solid var(--line2);border-radius:8px;background:var(--panel2)"></div>
 
     <div id="mlnow" class="kpis" style="border:1px solid var(--line);border-radius:9px;
          grid-template-columns:repeat(4,1fr);margin:0 0 14px"></div>
@@ -923,10 +934,26 @@ function renderMlNow(d){
   const L = d.latest;
   const box = $('#mlnow');
   if(!L){
+    // ★왜 비었는지까지 말해 준다. 수집 오류가 있으면 그게 답이고, 없으면
+    //   아직 첫 주기가 안 돈 것이다 — 둘은 대응이 다르다.
+    const st = d.state || {};
+    let why, act;
+    if(d.enabled === false){
+      why = '설정에서 꺼져 있습니다'; act = 'config 의 <span class="mono">ml.enabled</span> 를 켜세요';
+    }else if(st.error){
+      why = '수집이 실패하고 있습니다'; act = esc(st.error);
+    }else if(!st.at){
+      why = '아직 한 번도 받지 않았습니다';
+      act = '서버를 방금 켰다면 1분 안에 첫 수집이 돕니다 — <b>[지금 받기]</b> 로 바로 확인할 수 있습니다';
+    }else{
+      why = '오늘 예측 파일에 아직 행이 없습니다';
+      act = 'ML 쪽에서 오늘 파일을 만들기 전일 수 있습니다 — <b>[지금 받기]</b> 로 확인하세요';
+    }
     box.innerHTML = `<div class="kpi" style="grid-column:1/-1">
-      <div class="l">ML 조기예측</div><div class="v">–</div>
-      <div class="s">${d.enabled===false ? '설정에서 꺼져 있습니다 (config 의 ml.enabled)'
-                                          : '오늘 예측 데이터가 아직 없습니다'}</div></div>`;
+      <div class="l">ML 조기예측</div>
+      <div class="v" style="font-size:17px;color:var(--major)">${why}</div>
+      <div class="s">${act}</div></div>`;
+    $('#mlgauge').innerHTML = '';
     return;
   }
   const col = ML_STAGE_COLOR[L.stage] || 'var(--tx)';
@@ -988,18 +1015,89 @@ function renderMlSpans(d){
     : `<tr><td colspan="4" class="empty">오늘 선제경보·진행 구간이 없습니다 (평온)</td></tr>`;
 }
 
-async function initMl(){
-  const note = $('#mlnote');
+/* ★'데이터가 안 보인다' 를 화면에서 답할 수 있게. 예전엔 빈 화면만 보여서
+   '아직 안 받은 것' 인지 '로그인이 막힌 것' 인지 구분이 안 됐다. */
+async function mlFetchNow(){
+  const b = $('#mlfetch'), box = $('#mldiag');
+  b.disabled = true; b.textContent = '받는 중…';
+  box.style.display = 'block';
+  box.innerHTML = '주피터에서 예측 파일을 받는 중…';
   try{
-    note.textContent = '— 불러오는 중…';
-    const d = await apiRetry('/api/ml');
+    const dq = mlDay();
+    const r = await post('/api/ml/fetch' + (dq ? '?day='+dq : ''), {});
+    if(r.ok){
+      box.innerHTML = `<b style="color:var(--ok)">받았습니다</b> — ${r.rows}행`
+        + (r.added ? ` (신규 ${r.added})` : ' (새로 추가된 분 없음)')
+        + `<div class="dim mono" style="font-size:10.5px;margin-top:4px">${esc(r.url||'')}</div>`;
+      await initMl();
+    }else{
+      box.innerHTML = `<b style="color:var(--crit)">받지 못했습니다</b> — ${esc(r.error||'사유 미상')}`
+        + `<div class="dim mono" style="font-size:10.5px;margin-top:4px">시도한 주소: ${esc(r.url||'–')}</div>`
+        + `<div class="dim" style="margin-top:4px">404 면 그 날짜 파일이 아직 없는 것이고, `
+        + `403·HTML 이 왔다면 로그인(비밀번호) 문제입니다.</div>`;
+    }
+  }catch(e){
+    box.innerHTML = `<b style="color:var(--crit)">서버 응답 없음</b> — ${esc(e.message||e)}`;
+  }finally{ b.disabled = false; b.textContent = '지금 받기'; }
+}
+
+/* ★관제 화면이다 — 탭을 띄워 둔 채로 값이 멈춰 있으면 안 된다.
+   수집은 서버가 1분마다 하고, 화면은 그보다 조금 자주 다시 읽는다.
+   ★보고 있지 않을 때는 멈춘다. 안 그러면 하루 종일 켜 두는 화면이
+     쓰지도 않을 요청을 계속 던진다. */
+let ML_TIMER = null;
+function mlAutoRefresh(on){
+  if(ML_TIMER){ clearInterval(ML_TIMER); ML_TIMER = null; }
+  if(!on) return;
+  ML_TIMER = setInterval(() => {
+    const page = $('#tab-ml');
+    if(!page || page.classList.contains('hidden') || document.hidden) return;
+    initMl({quiet: true});          // 조용히 — '불러오는 중' 을 매번 깜빡이지 않게
+  }, 20000);
+}
+
+/* 고른 날짜 (yyyymmdd). 비어 있으면 오늘. */
+function mlDay(){
+  const v = ($('#mlday') && $('#mlday').value || '').replace(/-/g,'');
+  return /^\d{8}$/.test(v) ? v : '';
+}
+function mlIsToday(){
+  const d = mlDay();
+  if(!d) return true;
+  const t = new Date();
+  const s = t.getFullYear() + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0');
+  return d === s;
+}
+
+async function initMl(opt){
+  const quiet = !!(opt && opt.quiet);
+  const note = $('#mlnote');
+  const fb = $('#mlfetch');
+  if(fb && !fb.dataset.on){
+    fb.dataset.on = '1';
+    fb.onclick = mlFetchNow;
+    // 날짜를 바꾸면 그 날짜로 다시 읽는다 (과거 조회)
+    $('#mlday').onchange = () => initMl();
+    $('#mltoday').onclick = () => { $('#mlday').value = ''; initMl(); };
+  }
+  const day = mlDay();
+  const qs = day ? ('?day=' + day) : '';
+  // ★과거 날짜를 보는 중엔 자동 갱신을 끈다 — 지난 날짜는 더 안 변하는데
+  //   계속 다시 읽으면, 보고 있던 화면이 이유 없이 깜빡인다.
+  mlAutoRefresh(mlIsToday());
+  $('#mllive').textContent = mlIsToday() ? '· 20초마다 자동 갱신' : '· 과거 날짜 (자동 갱신 없음)';
+  $('#mlcsv').href = withSys('/api/data/' + (day || new Date().toISOString().slice(0,10).replace(/-/g,'')) + '_ML.csv');
+  $('#mlfetch').textContent = mlIsToday() ? '지금 받기' : '이 날짜 받기';
+  try{
+    if(!quiet) note.textContent = '— 불러오는 중…';
+    const d = await apiRetry('/api/ml' + qs);
     if(d.error){ note.textContent = '— ' + d.error; return; }
     renderMlNow(d); renderMlStages(d); renderMlSpans(d);
     const st = d.state || {};
     note.innerHTML = `— ${esc(d.day)} · ${d.rows}행`
       + (st.error ? ` · <span style="color:var(--crit)">수집 오류: ${esc(st.error)}</span>` : '')
       + (d.latest ? ` · 최근 ${esc((d.latest.datetime||'').slice(11,16))}` : '');
-    const r = await apiRetry('/api/ml/rows?limit=240');
+    const r = await apiRetry('/api/ml/rows?limit=1500' + (day ? '&day='+day : ''));
     const rows = (r.rows||[]).slice().reverse();
     $('#mlrows').innerHTML = rows.length ? rows.map(x => {
       const st2 = String(x.stage||'0').trim();
@@ -1014,8 +1112,10 @@ async function initMl(){
         <td class="note">${esc(x.reason||'')}${x.lead_min?` · ${esc(x.lead_min)}분 뒤`:''}</td></tr>`;
     }).join('') : `<tr><td colspan="7" class="empty">기록 없음</td></tr>`;
   }catch(e){
-    note.textContent = '— 불러오기 실패';
-    $('#mlnow').innerHTML = `<div class="kpi" style="grid-column:1/-1">
+    // ★자동 갱신이 한 번 실패했다고 이미 잘 보이던 화면을 지우면 안 된다.
+    //   잠깐 끊긴 것뿐일 수 있고, 다음 주기에 저절로 돌아온다.
+    note.textContent = quiet ? '— 갱신 실패 (다음 주기에 재시도)' : '— 불러오기 실패';
+    if(!quiet) $('#mlnow').innerHTML = `<div class="kpi" style="grid-column:1/-1">
       <div class="l">ML 조기예측</div><div class="v">–</div>
       <div class="s">서버 응답 없음 — <a href="#" onclick="initMl();return false"
         style="color:var(--cy)">다시 시도</a></div></div>`;
@@ -1048,6 +1148,9 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
   ['live','past','ml','analysis','report','policy'].forEach(t =>
     $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
+  // ★ML 탭을 떠나면 자동 갱신을 멈춘다. 하루 종일 켜 두는 화면이라,
+  //   안 보는 탭이 계속 요청을 던지면 그만큼 쓸데없는 부하다.
+  if(b.dataset.tab !== 'ml') mlAutoRefresh(false);
   if(b.dataset.tab==='past'){
     initPast();
     if(PDAY) loadPastLlm(PDAY);          // 과거 탭 = 그 날짜 LLM 판단

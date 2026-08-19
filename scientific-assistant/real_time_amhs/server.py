@@ -665,6 +665,36 @@ def api_ml():
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/ml/fetch", methods=["POST"])
+def api_ml_fetch():
+    """지금 바로 받아 보기 — 왜 비어 있는지 화면에서 답이 나오게.
+
+    ★수집은 폴링 루프 안에서만 돌아서, 방금 켠 서버는 한 주기(기본 60초)를
+      기다려야 첫 데이터가 생긴다. 그동안 화면은 '데이터가 아직 없습니다' 만
+      띄우는데, 그게 '기다리는 중' 인지 '로그인 실패' 인지 구분이 안 됐다.
+      여기서 실제로 받아 보고 **시도한 URL과 실패 사유를 그대로** 돌려준다.
+    """
+    day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
+    try:
+        import ml_feed
+        import jupyter_csv as jc
+        c = ml_feed.cfg_of(CFG)
+        d = day or datetime.now().strftime("%Y%m%d")
+        try:
+            url = jc.file_url(d, c)
+        except Exception as e:
+            url = f"(URL 조립 실패: {e})"
+        if not ml_feed.enabled(CFG):
+            return jsonify({"ok": False, "url": url, "day": d,
+                            "error": "config 의 ml.enabled 가 꺼져 있거나 ml.path 가 비었습니다"})
+        res = ml_feed.fetch_day(d, CFG)
+        return jsonify({"ok": not res["error"], "url": url, "day": d,
+                        "rows": res["rows"], "added": res["added"],
+                        "error": res["error"] or None})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/ml/rows")
 def api_ml_rows():
     """그 날 예측 원본 행 (표·그래프용). 최근 것부터."""
@@ -1109,12 +1139,19 @@ def api_data_csv(day):
 
     /api/data/20260729.csv      → 20260729_TOTAL.CSV (데이터)
     /api/data/20260729_LLM.csv  → 20260729_LLM.CSV   (1분 LLM 판단·판정)
+    /api/data/20260819_ML.csv   → 20260819_ML.CSV    (ML 조기예측 원본)
     """
     C = rctx()
     from store_csv import day_path, llm_path
     d = "".join(ch for ch in day if ch.isdigit())[:8]
-    want_llm = "LLM" in day.upper()
-    p = llm_path(d, C["cfg"]) if want_llm else day_path(d, C["cfg"])
+    up = day.upper()
+    if "_ML" in up:                    # ★'LLM' 안에도 'LM' 이 있다 — 밑줄까지 봐야 안 헷갈린다
+        import ml_feed
+        p = ml_feed.ml_path(d, C["cfg"])
+    elif "LLM" in up:
+        p = llm_path(d, C["cfg"])
+    else:
+        p = day_path(d, C["cfg"])
     if not os.path.isfile(p):
         return jsonify({"error": f"{os.path.basename(p)} 없음"}), 404
     return send_from_directory(os.path.dirname(p), os.path.basename(p),

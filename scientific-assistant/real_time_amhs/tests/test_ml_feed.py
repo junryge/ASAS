@@ -236,5 +236,62 @@ class Ingest(Base):
         self.assertIn("404", r["error"])
 
 
+class DashboardWiring(unittest.TestCase):
+    """화면이 실제로 그 기능을 부르는지 (문구·호출이 코드에 있는지)."""
+
+    def setUp(self):
+        with open(os.path.join(_ROOT, "static", "dashboard.html"), encoding="utf-8") as f:
+            self.html = f.read()
+
+    def test_실시간_관제_바로_다음_탭이다(self):
+        i_live = self.html.index('data-tab="live"')
+        i_ml = self.html.index('data-tab="ml"')
+        i_past = self.html.index('data-tab="past"')
+        self.assertLess(i_live, i_ml)
+        self.assertLess(i_ml, i_past, "ML 탭이 '실시간 관제' 바로 뒤여야 한다")
+
+    def test_자동_갱신을_한다(self):
+        """★관제 화면이다 — 띄워 둔 채로 값이 멈춰 있으면 안 된다."""
+        self.assertIn("function mlAutoRefresh", self.html)
+        self.assertIn("ML_TIMER", self.html)
+
+    def test_다른_탭이면_자동_갱신을_멈춘다(self):
+        """★하루 종일 켜 두는 화면이라, 안 보는 탭이 요청을 계속 던지면 낭비다."""
+        self.assertIn("if(b.dataset.tab !== 'ml') mlAutoRefresh(false)", self.html)
+
+    def test_과거_날짜를_고를_수_있다(self):
+        self.assertIn('id="mlday"', self.html)
+        self.assertIn("function mlDay", self.html)
+        self.assertIn("'/api/ml' + qs", self.html)
+
+    def test_과거_날짜는_자동_갱신을_끈다(self):
+        """지난 날짜는 더 안 변한다 — 계속 다시 읽으면 화면만 깜빡인다."""
+        self.assertIn("mlAutoRefresh(mlIsToday())", self.html)
+
+    def test_CSV_내려받기가_있다(self):
+        self.assertIn('id="mlcsv"', self.html)
+        self.assertIn("_ML.csv", self.html)
+
+    def test_왜_비었는지_말해_준다(self):
+        """★빈 화면만 보여 주면 '기다리는 중' 인지 '로그인 실패' 인지 모른다."""
+        self.assertIn("아직 한 번도 받지 않았습니다", self.html)
+        self.assertIn("function mlFetchNow", self.html)
+        self.assertIn("시도한 주소", self.html)
+
+
+class DownloadRoute(unittest.TestCase):
+    """/api/data/<day>_ML.csv 가 ML 파일을 준다."""
+
+    def test_ML과_LLM을_안_헷갈린다(self):
+        """★'LLM' 안에도 'LM' 이 있다 — 밑줄까지 봐야 구분된다.
+        여기서 헷갈리면 ML 을 눌렀는데 LLM 파일이 내려온다."""
+        with open(os.path.join(_ROOT, "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('if "_ML" in up:', src)
+        i_ml = src.index('if "_ML" in up:')
+        i_llm = src.index('elif "LLM" in up:')
+        self.assertLess(i_ml, i_llm, "_ML 검사가 먼저여야 한다")
+
+
 if __name__ == "__main__":
     unittest.main()
