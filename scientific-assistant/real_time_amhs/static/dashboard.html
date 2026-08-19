@@ -345,6 +345,7 @@
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
     <button data-tab="past">과거 데이터 조회</button>
+    <button data-tab="ml" id="tabbtn-ml">ML 조기예측</button>
     <button data-tab="analysis">LLM 모델 분석</button>
     <button data-tab="report">리포트 · 피드백</button>
     <button data-tab="policy">정책</button>
@@ -496,6 +497,46 @@
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="7" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
+  </div>
+</div>
+
+<!-- ── ML 조기예측 (chronos-2) ──
+     ★우리 룰베이스와 완전히 독립인 별도 시스템이다. 눈금도 다르다
+       (우리 0~100점 / ML 은 분 단위 반송시간). 그래서 실시간 화면에
+       섞지 않고 여기 따로 둔다. -->
+<div class="page hidden" id="tab-ml">
+  <div class="card">
+    <h2>ML 조기예측 <span class="note" id="mlnote"></span></h2>
+    <p class="note" style="margin:2px 0 12px">
+      반송시간 <b style="color:var(--tx2)">10분 평균</b>이 임계를 넘을 확률을 1분마다 냅니다
+      (Amazon <span class="mono">chronos-2</span>, 재학습 없음).
+      <b style="color:var(--tx2)">룰베이스와 독립</b>입니다 — 서로의 판정을 입력으로 쓰지 않아
+      같은 사건을 각각 언제 알렸는지 비교할 수 있습니다.
+      <span class="note dim">※ 우리 점수(0~100)와 눈금이 달라 추이 그래프에 겹쳐 그리지 않습니다.</span>
+    </p>
+
+    <div id="mlnow" class="kpis" style="border:1px solid var(--line);border-radius:9px;
+         grid-template-columns:repeat(4,1fr);margin:0 0 14px"></div>
+
+    <div id="mlgauge" style="margin:0 0 16px"></div>
+
+    <h3 style="font-size:13px;margin:18px 0 6px">오늘 단계별 시간</h3>
+    <div id="mlstages" class="note">–</div>
+
+    <h3 style="font-size:13px;margin:18px 0 6px">선제경보·진행 구간</h3>
+    <div class="tw"><table class="pol"><thead><tr>
+      <th style="width:150px">시작</th><th style="width:150px">끝</th>
+      <th style="width:100px">단계</th><th>예고(분)</th></tr></thead>
+      <tbody id="mlspans"></tbody></table></div>
+
+    <h3 style="font-size:13px;margin:18px 0 6px">최근 기록
+      <span class="note">· 1분에 한 줄</span></h3>
+    <div class="tw" style="max-height:420px;overflow:auto"><table class="pol"><thead><tr>
+      <th style="width:130px">시각</th><th style="width:90px">10분 확률</th>
+      <th style="width:90px">30분 확률</th><th style="width:100px">단계</th>
+      <th style="width:100px">10분평균</th><th style="width:80px">순간값</th>
+      <th>사유</th></tr></thead>
+      <tbody id="mlrows"></tbody></table></div>
   </div>
 </div>
 
@@ -854,6 +895,7 @@ function pickSystem(code){
     return;
   }
   SYS = s.code;
+  syncMlTab();                     // ML 예측이 없는 FAB 이면 탭을 숨긴다
   $('#syschip-cd').textContent = s.code;
   $('#syschip').title = `${s.code} — ${s.name} (누르면 바꿉니다)`;
   document.title = `AMHS SENTINEL_${s.code} — LLM 실시간 이상감지 · 관제`;
@@ -868,6 +910,132 @@ document.addEventListener('keydown', e => {          // 이미 고른 상태면 
   if(e.key==='Escape' && SYS && !$('#open').classList.contains('hidden')) openHide();
 });
 
+/* ══════════ ML 조기예측 탭 ══════════
+   ★따로 두는 이유: 우리 점수는 0~100(컷 60/71/85), ML 은 분(分) 단위
+     반송시간(임계 14.765분)에 확률 0~1 이다. 같은 그래프에 겹치면 거짓말이
+     된다. 두 시스템은 서로의 판정을 입력으로 쓰지 않는 독립 판단이라,
+     나란히 두고 '같은 사건을 각각 언제 알렸나' 를 보는 게 옳은 사용법이다. */
+const ML_STAGE_COLOR = {'0':'var(--tx3)','1':'var(--minor)','2':'var(--crit)','3':'var(--crit)'};
+
+function mlPct(p){ return (p==null? '–' : (p*100).toFixed(0)+'%'); }
+
+function renderMlNow(d){
+  const L = d.latest;
+  const box = $('#mlnow');
+  if(!L){
+    box.innerHTML = `<div class="kpi" style="grid-column:1/-1">
+      <div class="l">ML 조기예측</div><div class="v">–</div>
+      <div class="s">${d.enabled===false ? '설정에서 꺼져 있습니다 (config 의 ml.enabled)'
+                                          : '오늘 예측 데이터가 아직 없습니다'}</div></div>`;
+    return;
+  }
+  const col = ML_STAGE_COLOR[L.stage] || 'var(--tx)';
+  // 10분평균이 임계에 얼마나 가까운지 — 확률만 보면 '왜 0인지' 를 알 수 없다
+  const near = (L.smoothed!=null && L.threshold) ? (L.smoothed/L.threshold*100).toFixed(0) : null;
+  box.innerHTML = `
+    <div class="kpi"><div class="l">10분 내 임계 초과</div>
+      <div class="v" style="color:${L.p10>=d.p_on?'var(--crit)':'var(--tx)'}">${mlPct(L.p10)}</div>
+      <div class="s">${esc(L.level10)} · 기준시각 ${esc((L.for10||'').slice(11,16))}</div></div>
+    <div class="kpi"><div class="l">30분 내 임계 초과</div>
+      <div class="v" style="color:${L.p30>=d.p_on?'var(--crit)':'var(--tx)'}">${mlPct(L.p30)}</div>
+      <div class="s">${esc(L.level30)} · 기준시각 ${esc((L.for30||'').slice(11,16))}</div></div>
+    <div class="kpi"><div class="l">단계</div>
+      <div class="v" style="color:${col};font-size:20px">${esc(L.stage_name)}</div>
+      <div class="s">${esc(L.stage_desc||'')}${L.lead_min?` · 약 ${esc(L.lead_min)}분 뒤`:''}</div></div>
+    <div class="kpi"><div class="l">10분 평균 반송시간</div>
+      <div class="v">${L.smoothed==null?'–':L.smoothed.toFixed(2)}<u>분</u></div>
+      <div class="s">임계 ${L.threshold==null?'–':L.threshold}분${near?` · 임계의 ${near}%`:''}
+        · 순간값 ${L.raw==null?'–':L.raw.toFixed(2)}</div></div>`;
+
+  // 임계까지 얼마나 남았나 — 막대 하나로
+  const pct = (L.smoothed!=null && L.threshold) ? Math.min(100, L.smoothed/L.threshold*100) : 0;
+  $('#mlgauge').innerHTML = `
+    <div class="note" style="margin-bottom:5px">지금 10분 평균이 임계에서 어디쯤인가
+      <span class="dim">— 확률이 0 이어도 이 막대로 여유를 볼 수 있습니다</span></div>
+    <div style="position:relative;height:16px;background:var(--panel2);
+                border:1px solid var(--line2);border-radius:8px;overflow:hidden">
+      <div style="width:${pct.toFixed(1)}%;height:100%;
+                  background:${pct>=95?'var(--crit)':pct>=80?'var(--major)':'var(--ok)'}"></div>
+      <div style="position:absolute;right:6px;top:0;line-height:16px;font-size:10.5px;
+                  color:var(--tx2)">임계 ${L.threshold==null?'–':L.threshold}분</div>
+    </div>
+    <div class="note dim" style="margin-top:4px">
+      ${L.smoothed==null?'':L.smoothed.toFixed(2)}분 / ${L.threshold}분
+      · 확률은 ${(d.p_on*100).toFixed(0)}% 부터 선제경보, ${(d.p_off*100).toFixed(0)}% 아래로 내려가야 해제(깜빡임 방지)
+    </div>`;
+}
+
+function renderMlStages(d){
+  const b = d.by_stage || {}, lab = d.stage_labels || {};
+  const tot = Object.values(b).reduce((a,c)=>a+c,0) || 1;
+  $('#mlstages').innerHTML = Object.keys(lab).map(k => {
+    const n = b[k]||0;
+    return `<span style="display:inline-block;margin-right:14px">
+      <i style="display:inline-block;width:9px;height:9px;border-radius:50%;
+                background:${ML_STAGE_COLOR[k]};margin-right:5px"></i>
+      ${esc(lab[k])} <b style="color:var(--tx)">${n}</b>분
+      <span class="dim">(${(n/tot*100).toFixed(0)}%)</span></span>`;
+  }).join('');
+}
+
+function renderMlSpans(d){
+  const s = d.spans || [];
+  $('#mlspans').innerHTML = s.length ? s.slice().reverse().map(x => `<tr>
+      <td class="mono">${esc((x.from||'').slice(5,16))}</td>
+      <td class="mono">${esc((x.to||'').slice(5,16))}</td>
+      <td><span style="color:${ML_STAGE_COLOR[x.stage]}">${esc(d.stage_labels[x.stage]||x.stage)}</span></td>
+      <td class="mono">${esc(x.lead||'–')}</td></tr>`).join('')
+    : `<tr><td colspan="4" class="empty">오늘 선제경보·진행 구간이 없습니다 (평온)</td></tr>`;
+}
+
+async function initMl(){
+  const note = $('#mlnote');
+  try{
+    note.textContent = '— 불러오는 중…';
+    const d = await apiRetry('/api/ml');
+    if(d.error){ note.textContent = '— ' + d.error; return; }
+    renderMlNow(d); renderMlStages(d); renderMlSpans(d);
+    const st = d.state || {};
+    note.innerHTML = `— ${esc(d.day)} · ${d.rows}행`
+      + (st.error ? ` · <span style="color:var(--crit)">수집 오류: ${esc(st.error)}</span>` : '')
+      + (d.latest ? ` · 최근 ${esc((d.latest.datetime||'').slice(11,16))}` : '');
+    const r = await apiRetry('/api/ml/rows?limit=240');
+    const rows = (r.rows||[]).slice().reverse();
+    $('#mlrows').innerHTML = rows.length ? rows.map(x => {
+      const st2 = String(x.stage||'0').trim();
+      const p10 = parseFloat(x.ml_score_10m||0), p30 = parseFloat(x.ml_score_30m||0);
+      return `<tr>
+        <td class="mono">${esc((x.datetime||'').slice(5,16))}</td>
+        <td class="mono" style="color:${p10>=d.p_on?'var(--crit)':'var(--tx2)'}">${(p10*100).toFixed(0)}%</td>
+        <td class="mono" style="color:${p30>=d.p_on?'var(--crit)':'var(--tx2)'}">${(p30*100).toFixed(0)}%</td>
+        <td style="color:${ML_STAGE_COLOR[st2]}">${esc(d.stage_labels[st2]||x.stage_name||'')}</td>
+        <td class="mono">${esc(x.smoothed||'')}</td>
+        <td class="mono dim">${esc(x.raw_value||'')}</td>
+        <td class="note">${esc(x.reason||'')}${x.lead_min?` · ${esc(x.lead_min)}분 뒤`:''}</td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="empty">기록 없음</td></tr>`;
+  }catch(e){
+    note.textContent = '— 불러오기 실패';
+    $('#mlnow').innerHTML = `<div class="kpi" style="grid-column:1/-1">
+      <div class="l">ML 조기예측</div><div class="v">–</div>
+      <div class="s">서버 응답 없음 — <a href="#" onclick="initMl();return false"
+        style="color:var(--cy)">다시 시도</a></div></div>`;
+  }
+}
+
+/* ★ML 예측은 ALL 출처(m16a_hubroom_event_prediction)에서만 나온다.
+   FAB 화면에서 빈 탭을 보여 주면 '고장났나' 로 읽히므로 아예 숨긴다. */
+function syncMlTab(){
+  const b = $('#tabbtn-ml');
+  if(!b) return;
+  const on = !ML_SYS || !SYS || SYS === ML_SYS;
+  b.style.display = on ? '' : 'none';
+  if(!on && b.classList.contains('on')){
+    const live = document.querySelector('.tabs button[data-tab="live"]');
+    if(live) live.click();
+  }
+}
+let ML_SYS = 'ALL';
+
 /* 정책 탭으로 보내기 — 탭 전환은 버튼 클릭에 달려 있으므로 그 버튼을 누른다
    (카드에서 '정책 탭에서 켜기' 를 눌렀을 때 쓴다) */
 function goPolicyTab(){
@@ -878,13 +1046,15 @@ function goPolicyTab(){
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
-  ['live','past','analysis','report','policy'].forEach(t =>
+  ['live','past','ml','analysis','report','policy'].forEach(t =>
     $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
   if(b.dataset.tab==='past'){
     initPast();
     if(PDAY) loadPastLlm(PDAY);          // 과거 탭 = 그 날짜 LLM 판단
   }else if(b.dataset.tab==='analysis'){
     initAnalysis();
+  }else if(b.dataset.tab==='ml'){
+    initMl();
   }else if(b.dataset.tab==='policy'){
     initScorePolicy();
     initLlmPolicy();

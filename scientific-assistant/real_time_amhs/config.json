@@ -715,5 +715,29 @@
         ]
       }
     ]
+  },
+  "ml": {
+    "_doc": "ML 조기예측(chronos-2) — 반송시간 10분평균이 임계를 넘을 확률을 1분마다 낸다. 우리 룰베이스와 완전히 독립이다(서로의 판정을 입력으로 쓰지 않는다). ★눈금이 다르다: 우리는 점수 0~100(컷 60/71/85), ML 은 분(分) 단위 반송시간. 그래서 TOTAL.CSV 에 합치지 않고 data/{day}_ML.CSV 로 따로 두고 datetime 으로만 조인한다.",
+    "enabled": true,
+    "path": "/files/pjt_shared_pool/job/m16a_hubroom_event_prediction/ml_predict/{day}_predictions.csv",
+    "_path_doc": "같은 주피터 서버·같은 비밀번호. source.jupyter 설정을 그대로 쓰고 이 경로만 바꿔 쓴다.",
+    "sys": "ALL",
+    "_sys_doc": "ML 예측은 이 시스템 화면에서만 보인다. m16a_hubroom_event_prediction 잡이 내는 값이라 ALL 과 같은 출처다 — FAB 별 예측은 아직 없다.",
+    "p_on": 0.3,
+    "_p_on_doc": "선제경보 문턱(확률). ML 쪽 model_config 와 같은 값이어야 화면 설명이 맞는다. 0.30 = 7월 검증에서 놓친 사건 0건·평균 9.8분 예고·헛울림 하루 0.4회.",
+    "p_off": 0.2,
+    "_p_off_doc": "한 번 켜진 경보가 꺼지는 문턱(히스테리시스). 0.30 에서 켜지고 0.20 아래로 내려가야 꺼진다 — 문턱 근처에서 깜빡이는 걸 막는다.",
+    "level_bands": [
+      [
+        0.6,
+        "위험"
+      ],
+      [
+        0.3,
+        "경계"
+      ]
+    ],
+    "_level_doc": "확률 → 등급. ML CSV 의 ml_level_10m/30m 이 이 기준으로 채워져 온다 (우리 등급 어휘와 같은 말).",
+    "threshold_doc": "임계 14.765분 = 2026-04~06 실측 상위 1%. 3개월마다 재계산한다."
   }
 }

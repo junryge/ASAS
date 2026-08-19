@@ -264,6 +264,7 @@ def _poll_loop() -> None:
                     #   그만큼 다음 시스템 수집이 통째로 밀린다 — 화면 데이터가
                     #   몇 분씩 뒤처지는 원인이었다.
                     _update_forecast(ctx)
+                    _fetch_ml(ctx)
                     cases = res.get("cases") or []
                     llm_on = _llm_on(ctx, interval)
                     if cases or llm_on:
@@ -348,6 +349,30 @@ def _auto_judge(ctx: dict, case_ids: list[str]) -> None:
 
         threading.Thread(target=work, daemon=True).start()
     store.save()
+
+
+def _fetch_ml(ctx: dict) -> None:
+    """ML 조기예측 CSV 받아 두기 — ALL 에서만, 수집 루프 안에서 가볍게.
+
+    ★같은 주피터 서버·같은 비밀번호라 파일 하나 더 받는 것뿐이다. 실패해도
+      관제는 그대로 돌아야 하므로 조용히 넘어가고 상태만 남긴다.
+    """
+    if str(ctx["sys"]).upper() != str(CFG.get("ml", {}).get("sys", "ALL")).upper():
+        return
+    st = ctx["state"]
+    try:
+        import ml_feed
+        if not ml_feed.enabled(CFG):
+            st["ml"] = {"enabled": False}
+            return
+        res = ml_feed.fetch_day(cfg=CFG)
+        st["ml"] = {"enabled": True, "rows": res["rows"], "added": res["added"],
+                    "error": res["error"] or None,
+                    "at": datetime.now().isoformat()}
+        if res["added"]:
+            print(f"[ML:{ctx['sys']}] 예측 {res['added']}행 추가 (누적 {res['rows']})")
+    except Exception as e:
+        st["ml"] = {"enabled": True, "error": f"{type(e).__name__}: {e}"}
 
 
 def _update_forecast(ctx: dict) -> None:
@@ -618,6 +643,43 @@ def api_score_policy():
         out.append({"sys": s_, "warn": w, "danger": d_, "critical": c,
                     "custom": s_ in by})
     return jsonify({"systems": out, "saved": saved})
+
+
+@app.route("/api/ml")
+def api_ml():
+    """ML 조기예측 — 최근 상태 + 그 날 집계. ALL 화면의 'ML 조기예측' 탭용.
+
+    ★우리 점수(0~100)와 눈금이 다르다(분 단위). 화면에서 같은 그래프에
+      겹치지 말 것 — 별도 탭으로 두는 이유가 이것이다.
+    """
+    day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
+    try:
+        import ml_feed
+        s = ml_feed.summary(day, CFG)
+        s["sys"] = str(CFG.get("ml", {}).get("sys", "ALL")).upper()
+        s["p_on"] = float(CFG.get("ml", {}).get("p_on", 0.30))
+        s["p_off"] = float(CFG.get("ml", {}).get("p_off", 0.20))
+        s["state"] = (get_ctx(s["sys"])["state"].get("ml") or {})
+        return jsonify(s)
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/ml/rows")
+def api_ml_rows():
+    """그 날 예측 원본 행 (표·그래프용). 최근 것부터."""
+    day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
+    try:
+        limit = max(1, min(2000, int(request.args.get("limit", 240))))
+    except (TypeError, ValueError):
+        limit = 240
+    try:
+        import ml_feed
+        rows = ml_feed.read_day(day or datetime.now().strftime("%Y%m%d"), CFG)
+        rows.sort(key=lambda r: (r.get("datetime") or ""))
+        return jsonify({"rows": rows[-limit:], "total": len(rows)})
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/llm_policy", methods=["GET", "POST"])
