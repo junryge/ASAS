@@ -328,6 +328,111 @@ def _call_llm_for_design(model_id: str, user_input: str, theme: str,
     return design, None
 
 
+def _auto_model() -> str:
+    """모델을 안 고르면 우리가 고른다.
+
+    ★"모델을 선택하세요" 는 사용자가 답을 아는 질문이 아니다. 쓸 수 있는
+      것 중 하나를 잡아 준다. 사내 API 를 먼저 본다(집에서는 토큰이 없으니
+      자동으로 GGUF 로 내려간다).
+    """
+    api, gguf = [], []
+    for env_id, cfg in ENV_CONFIG.items():
+        (gguf if str(cfg.get("url", "")).startswith("python://") else api
+         ).append(env_id)
+    if api and API_TOKEN:
+        return api[0]
+    if gguf:
+        try:                              # 이미 올라와 있는 모델이 있으면 그걸
+            from demos_v1 import utils as _u
+            loaded = getattr(_u, "gguf_loaded_path", None)
+            if loaded:
+                for e in gguf:
+                    if ENV_CONFIG[e].get("_gguf_path") == loaded:
+                        return e
+        except Exception:
+            pass
+        return gguf[0]
+    return ""
+
+
+def _llm_text(model_id: str, system: str, user: str,
+              max_tokens: int = 4096) -> tuple[str, str]:
+    """모델 한 번 부르기 → (본문, 오류). API·GGUF 갈래를 여기서 흡수한다."""
+    cfg = ENV_CONFIG.get(model_id)
+    if not cfg:
+        return "", f"모델을 찾을 수 없음: {model_id}"
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": user}]
+    url = cfg.get("url", "")
+    if url.startswith("python://"):
+        try:
+            from demos_v1.gguf import gguf_chat, load_gguf_model
+            from demos_v1 import utils as _u
+            target = cfg.get("_gguf_path")
+            if target and getattr(_u, "gguf_loaded_path", None) != target:
+                if not load_gguf_model(target):
+                    return "", f"GGUF 로드 실패: {target}"
+            text, err = gguf_chat(messages, temperature=0.3,
+                                  max_tokens=max_tokens)
+            return (text or ""), (f"GGUF 추론 오류: {err}" if err else "")
+        except Exception as e:
+            return "", f"GGUF 호출 예외: {e}"
+    if not API_TOKEN:
+        return "", "API_TOKEN 이 비어있음 (TOKEN.TXT 확인)"
+    try:
+        resp = requests.post(
+            url, headers={"Content-Type": "application/json",
+                          "Authorization": f"Bearer {API_TOKEN}"},
+            json={"model": cfg.get("model", model_id), "messages": messages,
+                  "temperature": 0.3, "max_tokens": max_tokens, "stream": False},
+            timeout=120, verify=False)
+        if resp.status_code != 200:
+            return "", f"API {resp.status_code}: {resp.text[:200]}"
+        return (resp.json().get("choices", [{}])[0]
+                .get("message", {}).get("content", "")), ""
+    except Exception as e:
+        return "", f"API 호출 예외: {e}"
+
+
+def _extract_json(raw: str):
+    """모델이 코드펜스나 잡담을 붙여도 JSON 만 꺼낸다."""
+    txt = (raw or "").strip()
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", txt)
+    if m:
+        txt = m.group(1)
+    else:
+        i, j = txt.find("{"), txt.rfind("}")
+        if i >= 0 and j > i:
+            txt = txt[i:j + 1]
+    try:
+        return json.loads(txt)
+    except json.JSONDecodeError:
+        return None
+
+
+def _call_llm_for_outline(model_id: str, text: str,
+                          title_hint: str = "") -> tuple[dict | None, str]:
+    """모델에게 **무슨 내용인지만** 받는다 → 블록 목록.
+
+    ★도형 좌표를 시키지 않는다. 작은 모델은 겹치거나 화면 밖으로 나가는
+      걸 잘 낸다. 배치는 우리 렌더러가 한다.
+    """
+    from demos_v1 import auto_deck as ad
+    body = _preprocess_md_for_llm(text, max_chars=6000, aggressive=False)
+    raw, err = _llm_text(model_id, ad.AUTO_SYSTEM_PROMPT, body)
+    if err:
+        return None, err
+    if not raw.strip():
+        return None, "LLM 빈 응답"
+    obj = _extract_json(raw)
+    if obj is None:
+        return None, f"JSON 파싱 실패 (앞부분: {raw.strip()[:120]})"
+    outline = ad.normalize_outline(obj, title_hint=title_hint)
+    if outline is None:
+        return None, "쓸 만한 슬라이드가 없었음"
+    return outline, ""
+
+
 def register_ppt_routes(app):
     """Flask 앱에 PPT 설계 모드 라우트 등록."""
 
@@ -435,6 +540,76 @@ def register_ppt_routes(app):
                 for s in slides
             ],
             "_debug": design.get("_debug", {}),
+        })
+
+    # ══════════ 알아서 만들기 ══════════
+    # ★"MD 문법을 알아야 하고, 탭을 고르고, 모델을 고르고" 는 도구가 사람한테
+    #   일을 시키는 것이다. 붙여 넣고 버튼 하나면 나와야 한다.
+    @app.route("/api/ppt/auto", methods=["POST"])
+    def api_ppt_auto():
+        """적은 내용 → 발표자료. 모델이 있으면 쓰고, 없거나 실패하면 규칙으로.
+
+        body: {"text": "...", "theme": "...", "model": "자동|<모델ID>",
+               "format": "bento|pptx", "title": "...", "footer": "..."}
+        """
+        from demos_v1 import auto_deck as ad
+        from demos_v1 import bento_builder as bb
+        data = request.json or {}
+        text = (data.get("text") or data.get("input") or data.get("md") or "").strip()
+        if not text:
+            return jsonify({"error": "내용을 적어 주세요."}), 400
+        fmt = str(data.get("format") or "bento").lower()
+        hint = (data.get("title") or "").strip()
+
+        model_id = (data.get("model") or "").strip()
+        if model_id in ("", "auto", "자동"):
+            model_id = _auto_model()
+
+        outline, used, note = None, "규칙", ""
+        if model_id:
+            outline, why = _call_llm_for_outline(model_id, text, hint)
+            if outline:
+                used = "llm"
+            else:
+                note = why or "모델 응답을 쓸 수 없었습니다"
+                print(f"[ppt] 알아서: LLM 실패 → 규칙으로 ({note})")
+        if outline is None:
+            # ★"모델이 안 붙어서 못 만들었습니다" 는 답이 아니다. 뭐라도 나와야
+            #   한다. 대신 무엇으로 만들었는지는 정직하게 알린다.
+            outline = ad.plain_to_outline(text, title_hint=hint)
+
+        slides = outline.get("slides") or []
+        title = (outline.get("meta") or {}).get("title") or hint or "발표자료"
+        try:
+            if fmt == "pptx":
+                info = save_pptx(render_outline_to_pptx(
+                    outline, template=(data.get("template") or DEFAULT_THEME)),
+                    hint=title)
+                dl = f"/api/ppt/download/{info['id']}"
+            else:
+                html, doc = bb.build(
+                    slides, title=title,
+                    theme=data.get("theme") or bb.DEFAULT_THEME,
+                    footer=(data.get("footer") or "").strip())
+                info = _save_bento(html, title)
+                slides = doc["slides"]
+                dl = f"/api/ppt/bento/download/{info['id']}"
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({"error": f"변환 실패: {e}"}), 500
+
+        print(f"[ppt] 알아서: {info['filename']} · {len(slides)}장 · {used}"
+              + (f" ({model_id})" if used == "llm" else ""))
+        return jsonify({
+            "ok": True, "format": "pptx" if fmt == "pptx" else "bento",
+            "id": info["id"], "filename": info["filename"],
+            "size": info["size"], "slide_count": len(slides),
+            "used": used, "model": model_id if used == "llm" else "",
+            "note": note, "download_url": dl,
+            "slides_summary": [
+                {"type": s.get("type", "content"), "title": s.get("title", "")}
+                for s in (outline.get("slides") or [])
+            ],
         })
 
     @app.route("/api/ppt/from-md", methods=["POST"])
