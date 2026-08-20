@@ -1231,6 +1231,14 @@ def _stream_chat_sse(data):
                     sys_parts.append(_blk)
                     _mem.mark_used(_mem_uid, _mem_used)
                     print(f"  🧠 [기억] {len(_mem_used)}건 넣음")
+                # ★기억은 배경에서 뽑히기까지 시간이 걸린다. 그런데 "지난
+                #   대화 뭐였지?" 는 지금 답이 있어야 하는 물음이다. 세션은
+                #   이미 저장돼 있으니 바로 훑는다 — 첫날부터 답할 수 있다.
+                # ★전부 읽지 않는다. 세션당 짧은 요약 한 줄이다.
+                _pblk, _psid = _mem.past_block(_mem_uid, _q)
+                if _pblk:
+                    sys_parts.append(_pblk)
+                    print(f"  🧠 [지난대화] {len(_psid)}개 훑음")
         except Exception as _e:
             print(f"  🧠 [기억] 넣기 실패(대화는 계속): {_e}")
 

@@ -716,3 +716,93 @@ class 지난_세션에서_채우기(Base):
 
     def test_user_id_없으면_거절(self):
         self.assertIn("error", M.backfill(""))
+
+
+class 지난_세션_훑기(Base):
+    """★기억(memories)은 배경에서 뽑히기까지 시간이 걸린다. 그런데 "지난
+    대화 뭐였지?" 는 지금 답이 있어야 하는 물음이다. 세션은 이미 저장돼
+    있으니 바로 훑는다."""
+
+    def setUp(self):
+        super().setUp()
+        from demos_v1 import routes_sessions as RS
+        self._sold = RS.DB_PATH
+        RS.DB_PATH = os.path.join(self.tmp, "sessions.db")
+        RS._HAS_FTS = None
+        RS._init()
+        self.RS = RS
+        self._put("s1", "임계값 회의", "선제경보 임계값은 0.30 으로 가기로 했다. "
+                                      "0.25 는 헛울림이 너무 많았다.", 1000)
+        self._put("s2", "리포트 규칙", "리포트는 앞으로 항상 한국어로 쓴다. "
+                                      "영어 섞지 않는다.", 2000)
+
+    def tearDown(self):
+        self.RS.DB_PATH = self._sold
+        self.RS._HAS_FTS = None
+        super().tearDown()
+
+    def _put(self, sid, name, body, at, uid=U):
+        con = self.RS._connect()
+        con.execute("INSERT OR REPLACE INTO sessions(user_id,sid,name,updated_at,"
+                    "archived,msg_count,preview,body,payload) VALUES(?,?,?,?,0,2,?,?,?)",
+                    (uid, sid, name, at, "", body, "{}"))
+        con.commit(); con.close()
+
+    def test_관련_세션을_찾는다(self):
+        got = M.past_sessions(U, "임계값 얼마로 했지")
+        self.assertTrue(got)
+        self.assertEqual(got[0]["sid"], "s1")
+        self.assertIn("0.30", got[0]["gist"])
+
+    def test_전부_안_읽고_한_줄로_준다(self):
+        """★지난 대화 열 개를 통째로 넣으면 컨텍스트가 그것만으로 찬다."""
+        long_body = "아주 긴 회의록입니다. " * 300
+        self._put("big", "긴 회의", long_body, 3000)
+        got = next(g for g in M.past_sessions(U, "회의록") if g["sid"] == "big")
+        self.assertLessEqual(len(got["gist"]), M.SESS_LINE + 4)
+
+    def test_걸린_낱말_근처를_보여_준다(self):
+        g = M.past_sessions(U, "헛울림")[0]["gist"]
+        self.assertIn("헛울림", g)
+
+    def test_관련_없으면_안_준다(self):
+        self.assertEqual(M.past_sessions(U, "오늘 점심 뭐 먹지"), [])
+
+    def test_기억을_묻는_말이면_최근_걸_준다(self):
+        got = M.past_sessions(U, "지난 대화 뭐였지?")
+        self.assertTrue(got)
+        self.assertEqual(got[0]["sid"], "s2")     # 가장 최근
+
+    def test_남의_세션은_안_본다(self):
+        self._put("theirs", "남의 것", "임계값 이야기가 여기도 있다", 9000, uid="other")
+        self.assertNotIn("theirs", [g["sid"] for g in M.past_sessions(U, "임계값")])
+
+    def test_LLM을_부르지_않는다(self):
+        """★응답 경로다. 여기서 모델을 또 부르면 질문 한 번에 두 번 기다린다."""
+        import demos_v1.memory as mod
+        called = []
+        real = mod.embed
+        mod.embed = lambda *a, **k: called.append(1)
+        try:
+            M.past_block(U, "임계값 얼마")
+        finally:
+            mod.embed = real
+        self.assertEqual(called, [])
+
+    def test_예산을_안_넘는다(self):
+        for i in range(10):
+            self._put(f"x{i}", f"회의 {i}", "임계값 관련 논의가 길게 이어졌다. " * 20,
+                      100 + i)
+        blk, used = M.past_block(U, "임계값", budget_chars=300)
+        body = sum(len(l) + 1 for l in blk.split("\n") if l.startswith("- "))
+        self.assertLessEqual(body, 300)
+        self.assertTrue(used)
+
+    def test_발췌라고_밝힌다(self):
+        """★전문인 줄 알면 '거기 없던데' 가 된다."""
+        blk, _ = M.past_block(U, "임계값")
+        self.assertIn("발췌", blk)
+        self.assertIn("지어내지", blk)
+
+    def test_세션이_없으면_빈_글(self):
+        self.assertEqual(M.past_block("아무도아님", "임계값"), ("", []))

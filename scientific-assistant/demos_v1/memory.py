@@ -944,3 +944,111 @@ def backfill(user_id: str, limit: int = BACKFILL_MAX_SESSIONS) -> dict:
             "note": (f"조각 {queued}개를 담았습니다. 배경 일꾼이 {TICK_SEC}초마다 "
                      f"하나씩 뽑습니다 — 바로 돌리려면 /api/memory/tick 을 "
                      f"여러 번 부르세요.")}
+
+
+# ══════════════════════════════════════════════════════════════
+# 지난 세션 훑기 — 뽑기를 기다리지 않고 바로 답한다
+# ══════════════════════════════════════════════════════════════
+# ★기억(memories)은 배경에서 뽑히기까지 시간이 걸린다. 그런데 "지난 대화
+#   뭐였지?" 는 지금 당장 답이 있어야 하는 물음이다. 세션은 이미 저장돼
+#   있으니 그걸 바로 훑으면 된다 — 붙인 첫날부터 답할 수 있다.
+# ★전부 읽어 넣지 않는다. 세션 하나당 **짧은 요약 한 줄**이다.
+#   지난 대화 열 개를 통째로 넣으면 컨텍스트가 그것만으로 찬다.
+SESS_MAX = 5             # 몇 세션까지 훑나
+SESS_LINE = 160          # 세션 한 줄 길이
+
+
+def _sess_gist(body: str, toks: list[str]) -> str:
+    """세션 본문에서 한 줄 요약. 걸린 낱말 주변을 우선 보여 준다.
+
+    ★LLM 을 부르지 않는다. 이건 응답 경로다 — 여기서 모델을 또 부르면
+      질문 한 번에 두 번 기다리게 된다.
+    """
+    txt = _norm(body)
+    if not txt:
+        return ""
+    for t in toks:
+        i = txt.find(t)
+        if i >= 0:
+            s = max(0, i - 60)
+            return ("…" if s else "") + txt[s:s + SESS_LINE].strip() + "…"
+    return txt[:SESS_LINE].strip() + ("…" if len(txt) > SESS_LINE else "")
+
+
+def past_sessions(user_id: str, query: str, limit: int = SESS_MAX) -> list[dict]:
+    """지난 세션에서 관련된 것 → [{sid, name, at, gist}].
+
+    걸리는 게 없고 기억을 묻는 말이면 최근 것을 준다.
+    """
+    if not user_id:
+        return []
+    try:
+        from demos_v1 import routes_sessions as RS
+        con = RS._connect()
+    except Exception:
+        return []
+    try:
+        rows = con.execute(
+            "SELECT sid, name, updated_at, body FROM sessions"
+            " WHERE user_id=? AND archived=0 ORDER BY updated_at DESC LIMIT 200",
+            (user_id,)).fetchall()
+    except Exception:
+        return []
+    finally:
+        con.close()
+
+    toks = _tokens(query)
+    scored = []
+    for r in rows:
+        body = r["body"] or ""
+        s = _kw_score(body + " " + (r["name"] or ""), toks)
+        if s > 0:
+            scored.append((s, r))
+    if not scored:
+        if not is_meta(query):
+            return []
+        scored = [(0.0, r) for r in rows[:limit]]
+    scored.sort(key=lambda x: (-x[0], -(x[1]["updated_at"] or 0)))
+
+    out = []
+    for _s, r in scored[:limit]:
+        g = _sess_gist(r["body"] or "", toks)
+        if g:
+            out.append({"sid": r["sid"], "name": r["name"] or "",
+                        "at": int(r["updated_at"] or 0), "gist": g})
+    return out
+
+
+def _when(ts: int) -> str:
+    if not ts:
+        return ""
+    try:
+        from datetime import datetime
+        return datetime.fromtimestamp(ts / (1000 if ts > 10 ** 11 else 1)
+                                      ).strftime("%m-%d")
+    except Exception:
+        return ""
+
+
+def past_block(user_id: str, query: str, budget_chars: int = 900,
+               limit: int = SESS_MAX) -> tuple[str, list[str]]:
+    """지난 세션 요약 블록 → (글, 세션 id들)."""
+    items = past_sessions(user_id, query, limit)
+    if not items:
+        return "", []
+    lines, used, n = [], [], 0
+    for it in items:
+        head = (it["name"] or it["sid"])[:30]
+        when = _when(it["at"])
+        line = f"- ({when} · {head}) {it['gist']}" if when else f"- ({head}) {it['gist']}"
+        if n + len(line) + 1 > budget_chars:
+            break
+        lines.append(line)
+        used.append(it["sid"])
+        n += len(line) + 1
+    if not lines:
+        return "", []
+    head = ("═══════ 지난 대화 훑어보기 ═══════\n"
+            "아래는 이 사용자의 예전 대화에서 **발췌한 조각**이다. 요약이지 전문이 아니다.\n"
+            "여기 없는 내용을 지어내지 말고, 더 필요하면 어느 대화인지 되물어라.\n")
+    return head + "\n".join(lines), used
