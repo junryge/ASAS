@@ -32,7 +32,9 @@ import threading
 import time
 import uuid
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ★세션 DB(routes_sessions)와 **같은 폴더**에 둔다. 데이터가 두 군데로
+#   흩어지면 백업·이관에서 한쪽이 조용히 빠진다.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "demos_data", "memory.db")
 
 _lock = threading.RLock()

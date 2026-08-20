@@ -12,3 +12,9 @@ scientific-assistant/demos_data/sessions.db
 scientific-assistant/demos_data/sessions.db-*
 scientific-assistant/demos_data/agents/
 scientific-assistant/demos_data/schedules/
+# 기억 저장소 — 대화에서 뽑은 내용이 그대로 들어간다. 세션 사본과 같은 급이다.
+scientific-assistant/demos_data/memory.db
+scientific-assistant/demos_data/memory.db-*
+# 코드 어시스턴트 워크스페이스 내부 기록 (사용자 코드 옆에 생긴다)
+**/.edits.json
+**/.applied.json
