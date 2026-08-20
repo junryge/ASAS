@@ -189,6 +189,13 @@ class 찾기(Base):
         """★'반송' 이 '반송시간' 안에 있다 — 단어 단위로만 보면 못 찾는다."""
         self.assertTrue(any("14.765" in t for t in self.find("반송 얼마나 걸려?")))
 
+    def test_조사가_붙어도_찾는다(self):
+        """★"반송이" 로는 "반송시간" 을 못 찾는다. 한국어는 조사가 붙어
+        단어가 달라진다 — 이걸 안 떼면 대부분의 실제 질문이 빗나간다."""
+        for q in ("반송이 얼마나 걸리나", "임계값은 얼마", "임계값이 뭐야",
+                  "임계값을 알려줘"):
+            self.assertTrue(self.find(q), f"'{q}' 로 아무것도 못 찾는다")
+
     def test_관련_없으면_억지로_안_올린다(self):
         top = M.search(U, "점심 뭐 먹지", top=3, use_embed=False)
         self.assertTrue(all(h["score"] <= 1.0 for h in top),
@@ -241,6 +248,29 @@ class 넣어주기(Base):
                                   cfg={"embedding": {"enabled": False}})
         self.assertGreater(len(wide_used), 2, "예산이 넉넉한데도 적게 넣는다")
 
+    def test_관련_없으면_아예_안_넣는다(self):
+        """★예전엔 안 걸려도 최근 것을 밀어 넣었다. 그러면 무관한 질문에도
+        기억이 끼어든다 — 잘못된 기억이 모델을 자신 있게 틀리게 만드는
+        바로 그 경로다."""
+        for q in ("zzz", "오늘 점심 뭐 먹을까", "파이썬으로 정렬하는 법 알려줘"):
+            blk, used = M.block(U, q, cfg={"embedding": {"enabled": False}})
+            self.assertEqual(blk, "", f"'{q}' 에 기억이 끼었다")
+            self.assertEqual(used, [])
+
+    def test_기억을_묻는_말에는_보여_준다(self):
+        """★"지난 대화 기억나?" 는 걸릴 단어가 없는 게 당연하다. 여기서
+        빈손이면 사람은 '기억이 안 되는구나' 로 읽는다 — 실제로 그랬다."""
+        for q in ("지난 대화 기억나?", "전에 얘기한 거 뭐였지?",
+                  "우리 예전에 뭐 정했더라", "아까 뭐라고 했지",
+                  "기억하고 있어?"):
+            self.assertTrue(M.is_meta(q), f"'{q}' 를 기억 질문으로 못 알아본다")
+            blk, _ = M.block(U, q, cfg={"embedding": {"enabled": False}})
+            self.assertTrue(blk, f"'{q}' 에 아무것도 안 보여 준다")
+
+    def test_보통_질문은_기억_질문이_아니다(self):
+        for q in ("zzz", "오늘 점심 뭐 먹을까", "리포트 만들어줘"):
+            self.assertFalse(M.is_meta(q), q)
+
     def test_기억이_없으면_빈_글(self):
         text, used = M.block("아무도아님", "임계값")
         self.assertEqual(text, "")
@@ -270,18 +300,22 @@ class 임베딩(Base):
         real = mod.embed
         mod.embed = fn
         try:
-            return M.search(U, "반송이 얼마나 걸리나", top=3)
+            # ★후보가 자리보다 많아야 다시 줄 세울 이유가 있다 (top < 후보 수)
+            return M.search(U, "반송이 얼마나 걸리나", top=1)
         finally:
             mod.embed = real
 
-    def test_임베딩이_있으면_섞어_쓴다(self):
+    def test_임베딩이_있으면_순서를_바꾼다(self):
+        """★임베딩은 **키워드로 걸린 후보들의 순서**를 바꾼다.
+        키워드에 아예 안 걸린 기억까지 끌어올리지는 못한다 — 그러려면
+        기억마다 벡터를 저장해 둬야 하는데, 매 질문에 수백 건을 임베딩하는
+        건 응답 경로에 못 붙일 비용이다. 지금은 여기까지다."""
         def fake(texts, cfg=None):
-            # '한국어' 기억에 억지로 높은 점수를 주도록 벡터를 만든다
-            return [[1.0, 0.0] if "한국어" in t else [0.0, 1.0] for t in texts] \
-                if len(texts) > 1 else [[1.0, 0.0]]
+            # 'AMOS' 를 맨 뒤로 밀도록 벡터를 만든다
+            return [[0.0, 1.0] if "AMOS" in t else [1.0, 0.0] for t in texts]
         got = self._with_embed(fake)
-        self.assertIn("한국어", got[0]["text"], [g["text"] for g in got])
         self.assertIn("sim", got[0])
+        self.assertNotIn("AMOS", got[0]["text"], [g["text"] for g in got])
 
     def test_임베딩이_죽어도_결과가_나온다(self):
         def dead(texts, cfg=None):

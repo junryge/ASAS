@@ -32,7 +32,23 @@ def register_memory_routes(app) -> None:
             return jsonify({"error": "user_id 와 q 가 필요합니다"}), 400
         hits = M.search(uid, q, top=int(request.args.get("top") or M.DEFAULT_TOP))
         blk, used = M.block(uid, q)
-        return jsonify({"hits": hits, "block": blk, "used": used})
+        st = M.stats(uid)
+        # ★"왜 안 들어갔나" 를 사람 말로 답한다. 이게 없으면 안 될 때
+        #   원인이 기억인지 모델인지 사용자가 가릴 수가 없다.
+        if st["live"] == 0 and st["pending"] == 0:
+            why = (f"'{uid}' 로 쌓인 기억이 없습니다. 기억은 사용자별로 따로 "
+                   f"모입니다 — 다른 아이디로 대화했다면 그쪽에 있습니다. "
+                   f"대화 {M.KEEP_TAIL + M.CAPTURE_EVERY}턴쯤 지나야 담기기 시작합니다.")
+        elif st["live"] == 0 and st["pending"]:
+            why = (f"담아 둔 조각이 {st['pending']}개 있는데 아직 안 뽑았습니다. "
+                   f"배경 일꾼이 {M.TICK_SEC}초마다 돕니다 — "
+                   f"POST /api/memory/tick 으로 바로 돌릴 수 있습니다.")
+        elif not blk:
+            why = f"기억은 {st['live']}건 있는데 이 질문과 걸리는 게 없습니다."
+        else:
+            why = f"기억 {st['live']}건 중 {len(used)}건이 들어갑니다."
+        return jsonify({"hits": hits, "block": blk, "used": used,
+                        "stats": st, "why": why})
 
     @app.route("/api/memory/forget", methods=["POST"])
     def api_memory_forget():

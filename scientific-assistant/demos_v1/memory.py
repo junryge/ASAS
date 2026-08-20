@@ -358,8 +358,44 @@ def forget(user_id: str, mid: str) -> bool:
 _HANGUL = re.compile(r"[가-힣]")
 
 
+# 한국어는 조사가 붙어 단어가 달라진다 — "반송이" 로는 "반송시간" 을 못 찾는다.
+# 형태소 분석기 없이, 흔한 조사만 떼어 낸 형태를 같이 넣는다.
+_JOSA = ("으로부터", "에서부터", "이라고", "으로는", "에게서", "이라는", "한테는",
+         "으로", "에서", "에게", "한테", "보다", "처럼", "까지", "부터", "라고",
+         "이랑", "만큼", "조차", "마저", "이나", "라도", "은", "는", "이", "가",
+         "을", "를", "에", "의", "도", "만", "과", "와", "로", "랑", "야", "여")
+
+
 def _tokens(q: str) -> list[str]:
-    return [t for t in re.findall(r"[0-9a-zA-Z]{2,}|[가-힣]{2,}", str(q or "").lower())][:24]
+    raw = re.findall(r"[0-9a-zA-Z]{2,}|[가-힣]{2,}", str(q or "").lower())
+    out, seen = [], set()
+    for t in raw[:24]:
+        for v in (t, _strip_josa(t)):
+            if v and len(v) >= 2 and v not in seen:
+                seen.add(v)
+                out.append(v)
+    return out
+
+
+def _strip_josa(t: str) -> str:
+    """조사를 뗀 형태. 떼고 나면 너무 짧아지는 건 그대로 둔다."""
+    if not _HANGUL.search(t):
+        return t
+    for j in _JOSA:
+        if t.endswith(j) and len(t) - len(j) >= 2:
+            return t[:-len(j)]
+    return t
+
+
+# 기억 자체를 묻는 말 — 걸릴 단어가 없는 게 당연하니 최근 것을 보여 준다
+_META = re.compile(
+    r"(지난|예전|이전|아까|전에|저번|어제|그때)\s*(대화|얘기|이야기|것|거)?"
+    r"|기억(나|해|하|이|을|은|하고)|까먹|잊(어|었)|뭐라고\s*했|무슨\s*얘기"
+    r"|정했|정한\s*(거|것)|알고\s*있")
+
+
+def is_meta(query: str) -> bool:
+    return bool(_META.search(str(query or "")))
 
 
 def _kw_score(text: str, toks: list[str]) -> float:
@@ -405,7 +441,16 @@ def search(user_id: str, query: str, top: int = DEFAULT_TOP,
         c["score"] += min(1.0, 0.15 * float(c.get("hits") or 0))
 
     hit = [c for c in cands if c["score"] > 0]
-    pool = hit or sorted(cands, key=lambda c: -(c.get("at") or 0))[:40]
+    # ★걸리는 게 없으면 **넣지 않는다.** 예전엔 최근 것을 그냥 밀어 넣었는데,
+    #   그러면 "zzz" 같은 무관한 질문에도 기억이 끼어든다 — 잘못된 기억이
+    #   모델을 자신 있게 틀리게 만드는 바로 그 경로다.
+    #   딱 하나 예외: 기억 자체를 묻는 말("지난 대화 기억나?")은 걸릴 단어가
+    #   없는 게 당연하다. 그때는 최근 것을 보여 준다.
+    if not hit:
+        if not is_meta(query):
+            return []
+        hit = sorted(cands, key=lambda c: -(c.get("at") or 0))[:40]
+    pool = hit
 
     if use_embed and len(pool) > top:
         ranked = _embed_rank(query, pool, cfg)
