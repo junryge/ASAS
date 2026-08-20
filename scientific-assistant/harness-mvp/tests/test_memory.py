@@ -422,3 +422,114 @@ class 현황(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 배선(Base):
+    """★모듈이 아무리 좋아도 대화 경로에 안 붙으면 아무 일도 안 일어난다."""
+
+    def test_잘릴_때_담긴다(self):
+        """_fit_messages_to_ctx 가 버리는 메시지를 on_drop 으로 넘긴다."""
+        from demos_v1.routes_chat import _fit_messages_to_ctx
+        msgs = ([{"role": "system", "content": "너는 도우미다"}]
+                + [{"role": "user" if i % 2 == 0 else "assistant",
+                    "content": f"임계값 논의 {i} 번째 " + "가" * 400}
+                   for i in range(12)])
+        got = []
+        out, _, _ = _fit_messages_to_ctx(msgs, 2000, 300, tpc=1.0,
+                                         on_drop=lambda d: got.extend(d))
+        self.assertLess(len(out), len(msgs), "아무것도 안 잘렸다 — 시험이 안 된다")
+        self.assertTrue(got, "잘렸는데 아무것도 안 넘겨줬다")
+        self.assertTrue(all(m.get("role") in ("user", "assistant") for m in got))
+
+    def test_담기가_실패해도_대화는_계속된다(self):
+        """★기억은 거들 뿐이다. 여기서 예외가 나면 채팅이 죽는다."""
+        from demos_v1.routes_chat import _fit_messages_to_ctx
+
+        def boom(dropped):
+            raise RuntimeError("디스크 꽉 참")
+
+        msgs = ([{"role": "system", "content": "s"}]
+                + [{"role": "user", "content": "긴 내용 " + "가" * 400}
+                   for _ in range(12)])
+        out, cap, _ = _fit_messages_to_ctx(msgs, 2000, 300, tpc=1.0, on_drop=boom)
+        self.assertTrue(out)
+        self.assertGreater(cap, 0)
+
+    def test_안_잘리면_안_부른다(self):
+        from demos_v1.routes_chat import _fit_messages_to_ctx
+        got = []
+        _fit_messages_to_ctx([{"role": "user", "content": "짧다"}], 8000, 300,
+                             on_drop=lambda d: got.extend(d))
+        self.assertEqual(got, [])
+
+
+class 일꾼(Base):
+    """뽑기는 LLM 을 부른다 — 배경에서 돌고, 실패해도 큐가 막히지 않아야 한다."""
+
+    def setUp(self):
+        super().setUp()
+        M.enqueue(U, "s1", [
+            {"role": "user", "content": "선제경보 임계값은 0.30 으로 가자. "
+                                        "0.25 는 헛울림이 너무 많았어."},
+            {"role": "assistant", "content": "0.30 으로 맞추겠습니다."}])
+
+    def test_뽑아서_적는다(self):
+        out = M.extract_once(lambda msgs, mt=0: (json.dumps(
+            [{"kind": "결정", "text": "선제경보 임계값은 0.30 으로 한다"}],
+            ensure_ascii=False), ""))
+        self.assertEqual(out["got"], 1)
+        self.assertEqual(M.pending_count(U), 0)
+        self.assertIn("0.30", M.all_memories(U)[0]["text"])
+
+    def test_근거를_LLM에_준다(self):
+        seen = {}
+
+        def fake(msgs, mt=0):
+            seen["sys"] = msgs[0]["content"]
+            seen["user"] = msgs[1]["content"]
+            return "[]", ""
+
+        M.extract_once(fake)
+        self.assertIn("결정", seen["sys"])
+        self.assertIn("요약", seen["sys"])          # 요약은 기억이 아니라는 지시
+        self.assertIn("임계값", seen["user"])
+
+    def test_건질_게_없어도_큐를_비운다(self):
+        """★못 뽑은 조각을 남겨 두면 매번 다시 부른다 — 돈과 시간이 샌다."""
+        out = M.extract_once(lambda msgs, mt=0: ("[]", ""))
+        self.assertEqual(out["got"], 0)
+        self.assertEqual(M.pending_count(U), 0)
+
+    def test_LLM이_죽으면_다시_시도한다(self):
+        out = M.extract_once(lambda msgs, mt=0: ("", "API 500"))
+        self.assertEqual(out["tries"], 1)
+        self.assertEqual(M.pending_count(U), 1)
+
+    def test_계속_죽으면_포기하고_넘어간다(self):
+        """★큐 맨 앞에 박혀 있으면 뒤가 영영 안 돈다."""
+        for _ in range(3):
+            M.extract_once(lambda msgs, mt=0: ("", "API 500"))
+        self.assertEqual(M.pending_count(U), 0)
+
+    def test_예외가_나도_큐가_안_막힌다(self):
+        def boom(msgs, mt=0):
+            raise RuntimeError("게이트웨이 끊김")
+        self.assertIn("error", M.extract_once(boom))
+        self.assertEqual(M.pending_count(U), 1)
+
+    def test_큐가_비면_조용히_쉰다(self):
+        M.extract_once(lambda msgs, mt=0: ("[]", ""))
+        self.assertTrue(M.extract_once(lambda msgs, mt=0: ("[]", ""))["idle"])
+
+    def test_한_바퀴에_여러_개를_처리한다(self):
+        M.enqueue(U, "s2", [{"role": "user", "content": "리포트는 한국어로 쓰기로 했다. " * 3}])
+        n = [0]
+
+        def fake(msgs, mt=0):
+            n[0] += 1
+            return json.dumps([{"kind": "관례", "text": f"규칙 {n[0]} 을 지킨다"}],
+                              ensure_ascii=False), ""
+
+        r = M.tick(fake, per_tick=3)
+        self.assertEqual(r["extracted"], 2)
+        self.assertEqual(M.pending_count(U), 0)

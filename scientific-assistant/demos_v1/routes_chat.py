@@ -553,7 +553,7 @@ def _usage_info(in_chars: int, out_chars: int, api_usage=None) -> dict:
 
 
 def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512,
-                         hard_char_cap=True, tpc=2.6):
+                         hard_char_cap=True, tpc=2.6, on_drop=None):
     """messages 가 (입력 + reply_cap + safety) <= n_ctx 가 되도록 트림/절단.
     1) 오래된 user/assistant 메시지 제거 → 2) 그래도 크면 가장 큰 메시지 본문 절단.
     hard_char_cap=True(GGUF): 토크나이저 무관 '하드 글자수' 안전장치까지 적용(크래시 방지).
@@ -570,11 +570,19 @@ def _fit_messages_to_ctx(messages, n_ctx, reply_cap, model=None, safety=512,
     input_budget = max(512, n_ctx - reply_cap - safety)
 
     # 1) system·마지막 메시지 유지, 오래된 user/assistant 부터 제거
+    # ★여기서 버려지는 것들 안에 '어제 정한 것' 이 들어 있다. 그냥 버리면
+    #   내일 다시 묻게 된다 — on_drop 으로 넘겨 기억에 남길 기회를 준다.
+    dropped = []
     while mtoks(msgs) > input_budget and len(msgs) > 1:
         idx = next((i for i, m in enumerate(msgs[:-1]) if m.get("role") in ("user", "assistant")), -1)
         if idx < 0:
             break
-        msgs.pop(idx)
+        dropped.append(msgs.pop(idx))
+    if dropped and callable(on_drop):
+        try:
+            on_drop(dropped)
+        except Exception as e:      # 기억이 실패해도 대화는 계속돼야 한다
+            print(f"[기억] 담기 실패(대화는 계속): {e}")
 
     # 2) 단일 대용량 메시지(붙여넣기 등) → 본문 절단
     if mtoks(msgs) > input_budget:
@@ -1193,6 +1201,33 @@ def _stream_chat_sse(data):
     if skill_ids and not loaded_skills:
         print(f"  ⚠️ [SSE-SKILLS] 요청된 스킬 중 SKILL.md 본문 로드 0건 — 폴더 비었거나 ID 매칭 실패")
 
+    # ══ 기억 넣어주기 (Recall) ══
+    # ★지난 대화에서 정해진 것을 다시 묻지 않게 한다. 관련 없으면 무시하라는
+    #   말을 블록 안에 넣어 뒀다 — 엉뚱한 기억이 끼어 답을 비틀면 안 된다.
+    # ★실패해도 대화는 그대로 간다. 기억은 거들 뿐이다.
+    _mem_uid = str(data.get("user_id") or "").strip()
+    _mem_used = []
+    if _mem_uid and data.get("use_memory", True):
+        try:
+            from demos_v1 import memory as _mem
+            _q = ""
+            for _m in reversed(messages):
+                if _m.get("role") == "user":
+                    _c = _m.get("content", "")
+                    if isinstance(_c, list):
+                        _c = " ".join(x.get("text", "") for x in _c
+                                      if isinstance(x, dict) and x.get("type") == "text")
+                    _q = str(_c)[:600]
+                    break
+            if _q:
+                _blk, _mem_used = _mem.block(_mem_uid, _q)
+                if _blk:
+                    sys_parts.append(_blk)
+                    _mem.mark_used(_mem_uid, _mem_used)
+                    print(f"  🧠 [기억] {len(_mem_used)}건 넣음")
+        except Exception as _e:
+            print(f"  🧠 [기억] 넣기 실패(대화는 계속): {_e}")
+
     api_messages = list(messages)
     if sys_parts:
         merged_system = "\n\n".join(sys_parts)
@@ -1561,9 +1596,17 @@ def _stream_chat_sse(data):
     if _ctx_guard:
         _api_reg_key = ENV_TO_REGISTRY.get(env_id)
         _api_ctx = MODEL_REGISTRY.get(_api_reg_key, {}).get("context_window", 128000) if _api_reg_key else 128000
+        # ★잘려 나가는 메시지를 기억 큐에 담는다. 큐에 넣기만 하므로 빠르다
+        #   (뽑아내는 일은 예약 워커가 한다) — 여기서 느려지면 안 된다.
+        def _keep_dropped(dropped, _uid=_mem_uid, _sid=str(data.get("session_id") or "")):
+            if not _uid:
+                return
+            from demos_v1 import memory as _mem
+            _mem.enqueue(_uid, _sid, dropped)
+
         api_messages, max_tokens_a, _api_fit_warn = _fit_messages_to_ctx(
             api_messages, _api_ctx, max_tokens_a, model=None, safety=1024,
-            hard_char_cap=False, tpc=0.5)
+            hard_char_cap=False, tpc=0.5, on_drop=_keep_dropped)
 
     payload = {
         "model": model,

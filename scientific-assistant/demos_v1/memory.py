@@ -680,3 +680,88 @@ def stats(user_id: str) -> dict:
                 "db": DB_PATH}
     finally:
         con.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# 배경 일꾼 — 큐에서 꺼내 뽑고, 가끔 정리한다
+# ══════════════════════════════════════════════════════════════
+# ★뽑기는 LLM 호출이라 느리다. 그래서 응답 경로가 아니라 여기서 돈다.
+#   느려도 아무도 기다리지 않는다.
+TICK_SEC = 45
+CONSOLIDATE_EVERY = 60 * 60      # 한 시간에 한 번
+_worker_started = False
+_last_consolidate = 0.0
+
+
+def _default_chat(messages: list[dict], max_tokens: int = 1200):
+    """예약 작업이 쓰는 것과 같은 게이트웨이·토큰을 쓴다 (새 배선 안 만든다)."""
+    from demos_v1.routes_schedule import _complete
+    return _complete("", messages, max_tokens)
+
+
+def extract_once(chat=None) -> dict:
+    """큐에서 하나 꺼내 기억으로 만든다 → {"got": n} / {"idle": True}."""
+    rows = take_pending(1)
+    if not rows:
+        return {"idle": True}
+    row = rows[0]
+    chat = chat or _default_chat
+    try:
+        body, err = chat([{"role": "system", "content": EXTRACT_PROMPT},
+                          {"role": "user", "content": row["body"][:12000]}], 1200)
+    except Exception as e:
+        body, err = "", f"{type(e).__name__}: {e}"
+    if err or not (body or "").strip():
+        n = bump_pending(row["id"])
+        return {"error": err or "빈 응답", "tries": n}
+
+    items = parse_extracted(body, sid=row.get("sid") or "")
+    got = add(row["user_id"], items)
+    drop_pending(row["id"])       # ★건질 게 없었어도 처리된 것이다. 다시 안 본다.
+    return {"got": got, "found": len(items), "user": row["user_id"]}
+
+
+def tick(chat=None, per_tick: int = 2) -> dict:
+    """한 바퀴 — 몇 개 뽑고, 시간이 됐으면 정리한다."""
+    global _last_consolidate
+    out = {"extracted": 0, "consolidated": None}
+    for _ in range(max(1, per_tick)):
+        r = extract_once(chat)
+        if r.get("idle"):
+            break
+        out["extracted"] += int(r.get("got") or 0)
+
+    now = time.time()
+    if now - _last_consolidate >= CONSOLIDATE_EVERY:
+        _last_consolidate = now
+        init()
+        con = _connect()
+        try:
+            users = [r["user_id"] for r in con.execute(
+                "SELECT DISTINCT user_id FROM memories WHERE dropped=0").fetchall()]
+        finally:
+            con.close()
+        out["consolidated"] = {u: consolidate(u) for u in users}
+    return out
+
+
+def start_worker(chat=None) -> bool:
+    """데몬 스레드 하나. 두 번 불러도 하나만 돈다."""
+    global _worker_started
+    if _worker_started:
+        return False
+    _worker_started = True
+
+    def loop():
+        while True:
+            time.sleep(TICK_SEC)
+            try:
+                r = tick(chat)
+                if r.get("extracted"):
+                    print(f"  🧠 [기억] {r['extracted']}건 새로 적음")
+            except Exception as e:      # 일꾼이 죽으면 기억이 영영 안 쌓인다
+                print(f"  🧠 [기억] 일꾼 오류(계속): {e}")
+
+    threading.Thread(target=loop, daemon=True).start()
+    print(f"  🧠 기억 일꾼 시작 ({TICK_SEC}초 주기)")
+    return True

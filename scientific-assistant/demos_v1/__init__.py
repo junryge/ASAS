@@ -58,6 +58,16 @@ def create_app():
     except Exception as _sce:
         print(f"  ⚠️  예약 작업 라우트 등록 실패(무시): {_sce}")
 
+    # 🧠 기억 (잘려 나가는 대화에서 오래 갈 것만 건진다) — 실패해도 본체는 정상
+    try:
+        from demos_v1.routes_memory import register_memory_routes
+        register_memory_routes(app)
+        from demos_v1 import memory as _memmod
+        _memmod.start_worker()
+        print("  🧠 기억 라우트 등록 완료 (/api/memory/*)")
+    except Exception as _me:
+        print(f"  ⚠️  기억 등록 실패(무시): {_me}")
+
     # 헤르메스(재해석) 엔진 라우트 — 실패해도 데모스 본체는 정상 동작
     try:
         from demos_v1.hermes.routes import register_hermes_routes
