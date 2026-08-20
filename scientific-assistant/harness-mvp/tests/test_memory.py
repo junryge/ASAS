@@ -623,3 +623,96 @@ class 언제_담나(Base):
         before = len(msgs)
         M.capture_if_long(U, "s1", msgs)
         self.assertEqual(len(msgs), before)
+
+
+class 지난_세션에서_채우기(Base):
+    """★기억 기능은 붙인 날부터 쌓인다. 그전 대화는 비어 있어서 처음 켠
+    사람에게는 고장으로 보인다 — 지난 대화는 이미 sessions.db 에 있다."""
+
+    def setUp(self):
+        super().setUp()
+        import sqlite3
+        from demos_v1 import routes_sessions as RS
+        self._sold = RS.DB_PATH
+        RS.DB_PATH = os.path.join(self.tmp, "sessions.db")
+        RS._HAS_FTS = None
+        RS._init()
+        self.RS = RS
+
+    def tearDown(self):
+        self.RS.DB_PATH = self._sold
+        self.RS._HAS_FTS = None
+        super().tearDown()
+
+    def _put(self, sid, turns, uid=U):
+        sess = {"id": sid, "history": [
+            {"role": "user" if i % 2 == 0 else "assistant",
+             "content": f"임계값 이야기 {i} 번째로 꽤 긴 내용이 이어집니다."}
+            for i in range(turns)]}
+        con = self.RS._connect()
+        con.execute("INSERT OR REPLACE INTO sessions"
+                    "(user_id, sid, name, updated_at, archived, msg_count,"
+                    " preview, body, payload) VALUES(?,?,?,?,0,?,?,?,?)",
+                    (uid, sid, sid, 1, turns, "", "",
+                     json.dumps(sess, ensure_ascii=False)))
+        con.commit(); con.close()
+
+    def test_지난_세션을_큐에_담는다(self):
+        self._put("s1", 10)
+        self._put("s2", 10)
+        r = M.backfill(U)
+        self.assertEqual(r["sessions"], 2)
+        self.assertGreaterEqual(r["queued"], 2)
+        self.assertGreater(M.pending_count(U), 0)
+
+    def test_두_번_눌러도_또_안_쌓인다(self):
+        """★같은 대화를 또 담으면 LLM 값이 두 배로 나간다."""
+        self._put("s1", 10)
+        M.backfill(U)
+        n = M.pending_count(U)
+        r = M.backfill(U)
+        self.assertEqual(r["queued"], 0)
+        self.assertEqual(r["skipped"], 1)
+        self.assertEqual(M.pending_count(U), n)
+
+    def test_LLM을_부르지_않는다(self):
+        """★세션 30개를 한 번에 뽑으면 몇 분씩 멈춘다. 담기만 한다."""
+        self._put("s1", 10)
+        import demos_v1.memory as mod
+        called = []
+        real = mod.extract_once
+        mod.extract_once = lambda *a, **k: called.append(1)
+        try:
+            M.backfill(U)
+        finally:
+            mod.extract_once = real
+        self.assertEqual(called, [])
+
+    def test_긴_세션은_나눠_담는다(self):
+        """한 덩어리가 너무 크면 모델이 앞부분만 본다."""
+        self._put("big", 60)
+        self.assertGreater(M.backfill(U)["queued"], 1)
+
+    def test_짧은_세션은_건너뛴다(self):
+        self._put("tiny", 1)
+        self.assertEqual(M.backfill(U)["queued"], 0)
+
+    def test_남의_세션은_안_본다(self):
+        self._put("mine", 10)
+        self._put("theirs", 10, uid="other")
+        M.backfill(U)
+        con = M._connect()
+        try:
+            sids = {r["sid"] for r in con.execute(
+                "SELECT sid FROM pending WHERE user_id=?", (U,)).fetchall()}
+        finally:
+            con.close()
+        self.assertNotIn("theirs", sids)
+
+    def test_세션이_없으면_0건이라고_말한다(self):
+        r = M.backfill(U)
+        self.assertEqual(r["sessions"], 0)
+        self.assertEqual(r["queued"], 0)
+
+    def test_user_id_없으면_거절(self):
+        self.assertIn("error", M.backfill(""))

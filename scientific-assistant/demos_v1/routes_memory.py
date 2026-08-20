@@ -72,6 +72,24 @@ def register_memory_routes(app) -> None:
                          "text": text[:M.MAX_TEXT], "why": "직접 적음"}])
         return jsonify({"ok": True, "added": n})
 
+    @app.route("/api/memory/backfill", methods=["POST"])
+    def api_memory_backfill():
+        """지난 세션에서 기억을 채운다.
+
+        ★기억 기능은 붙인 날부터 쌓인다. 그전 대화는 비어 있어서 처음 켠
+          사람에게는 고장으로 보인다 — 지난 대화는 이미 저장돼 있으니
+          거기서 채운다.
+        """
+        uid = _uid()
+        if not uid:
+            return jsonify({"error": "user_id 가 필요합니다"}), 400
+        b = request.get_json(silent=True) or {}
+        try:
+            lim = int(b.get("limit") or M.BACKFILL_MAX_SESSIONS)
+        except (TypeError, ValueError):
+            lim = M.BACKFILL_MAX_SESSIONS
+        return jsonify(M.backfill(uid, lim))
+
     @app.route("/api/memory/tick", methods=["POST"])
     def api_memory_tick():
         """지금 바로 한 바퀴 돌린다 — 45초를 기다리지 않고 확인하려고."""

@@ -875,3 +875,72 @@ def capture_if_long(user_id: str, sid: str, messages: list) -> int:
         return 0
     _set_captured(user_id, sid or "", end)
     return len(chunk)
+
+
+# ══════════════════════════════════════════════════════════════
+# 지난 세션에서 기억 채우기 (backfill)
+# ══════════════════════════════════════════════════════════════
+# ★기억 기능은 붙인 날부터 쌓인다. 그전 대화는 비어 있으니 "기억이 하나도
+#   없다" 가 된다 — 처음 켠 사람에게는 고장으로 보인다.
+#   그런데 지난 대화는 이미 sessions.db 에 통째로 있다. 거기서 채우면 된다.
+BACKFILL_MAX_SESSIONS = 30      # 한 번에 이만큼까지 (LLM 값이 그만큼 나간다)
+
+
+def backfill(user_id: str, limit: int = BACKFILL_MAX_SESSIONS) -> dict:
+    """저장된 세션에서 조각을 만들어 큐에 넣는다 → {"sessions", "queued"}.
+
+    ★여기서도 LLM 을 부르지 않는다. 큐에 넣기만 하고 뽑기는 일꾼이 한다 —
+      세션 30개를 한 번에 뽑으면 몇 분씩 멈춘다.
+    ★이미 담은 세션은 건너뛴다. 두 번 눌러도 같은 게 또 쌓이지 않는다.
+    """
+    if not user_id:
+        return {"error": "user_id 가 필요합니다"}
+    init()
+    try:
+        from demos_v1 import routes_sessions as RS
+    except Exception as e:
+        return {"error": f"세션 저장소를 못 읽습니다: {e}"}
+
+    try:
+        con = RS._connect()
+        try:
+            rows = con.execute(
+                "SELECT sid, name, payload FROM sessions"
+                " WHERE user_id=? ORDER BY updated_at DESC LIMIT ?",
+                (user_id, max(1, int(limit)))).fetchall()
+        finally:
+            con.close()
+    except Exception as e:
+        return {"error": f"세션을 못 읽습니다: {e}"}
+
+    seen = 0
+    queued = 0
+    skipped = 0
+    for r in rows:
+        sid = str(r["sid"])
+        seen += 1
+        if _captured_upto(user_id, sid) > 0:      # 이미 담은 세션
+            skipped += 1
+            continue
+        try:
+            sess = json.loads(r["payload"])
+        except Exception:
+            continue
+        turns = [m for m in (sess.get("history") or [])
+                 if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
+        if len(turns) < 2:
+            continue
+        # 긴 세션은 나눠 담는다 — 한 덩어리가 너무 크면 모델이 앞부분만 본다
+        step = 20
+        put = 0
+        for i in range(0, len(turns), step):
+            if enqueue(user_id, sid, turns[i:i + step]) > 0:
+                put += 1
+        if put:
+            _set_captured(user_id, sid, len(turns))
+            queued += put
+    return {"sessions": seen, "queued": queued, "skipped": skipped,
+            "pending": pending_count(user_id),
+            "note": (f"조각 {queued}개를 담았습니다. 배경 일꾼이 {TICK_SEC}초마다 "
+                     f"하나씩 뽑습니다 — 바로 돌리려면 /api/memory/tick 을 "
+                     f"여러 번 부르세요.")}
