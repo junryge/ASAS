@@ -125,6 +125,37 @@ def load_glob(pattern: str, wanted: list[str] | None = None) -> SeriesData:
     return SeriesData(times, cols)
 
 
+def load_any(patterns, wanted: list[str] | None = None) -> SeriesData:
+    """
+    파일/글롭 여러 개를 시각순으로 병합 로드.
+    patterns: ["RAW/*.CSV"] 또는 ["a.CSV","b.CSV"] 또는 ["RAW/APR_MAY.CSV"].
+    RAW 폴더에 CSV 를 몇 개를 넣든 알아서 이어붙인다.
+    """
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    files: list[str] = []
+    for p in patterns:
+        matched = sorted(glob.glob(p))
+        files.extend(matched if matched else [p])
+    if not files:
+        raise FileNotFoundError(f"CSV 없음: {patterns}")
+    times: list[datetime] = []
+    cols: dict[str, list] = {}
+    for path in files:
+        sd = load_csv(path, wanted)
+        base = len(times)
+        times.extend(sd.times)
+        for c in set(cols) | set(sd.columns):
+            cols.setdefault(c, [None] * base)
+            cols[c].extend(sd.columns.get(c, [None] * len(sd.times)))
+        for c in cols:
+            if len(cols[c]) < len(times):
+                cols[c].extend([None] * (len(times) - len(cols[c])))
+    order = sorted(range(len(times)), key=lambda i: times[i])
+    return SeriesData([times[i] for i in order],
+                      {c: [v[i] for i in order] for c, v in cols.items()})
+
+
 # HUBROOM 핵심 신호 (04_임계값.md 근거)
 CORE_SIGNALS = [
     "M16HUB.QUE.TIME.AVGTOTALTIME1MIN",

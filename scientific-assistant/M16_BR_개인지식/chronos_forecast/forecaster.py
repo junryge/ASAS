@@ -81,6 +81,25 @@ class BaselineForecaster:
         return out
 
 
+def _resolve_model(model_path: str) -> str:
+    """
+    로컬에 받아둔 모델 폴더를 자동 감지.
+      · model_path 가 실제 폴더면 그대로 사용 (예: ./models/chronos-2)
+      · 아니면 흔한 위치(./models/chronos-2, ./chronos-2 ...) 를 탐색
+      · 없으면 HF 식별자 문자열 그대로 (온라인 자동 다운로드)
+    → 모델을 폴더에 '집어넣기만' 하면 자동으로 로컬본을 씀 (오프라인 OK).
+    """
+    import os
+    if os.path.isdir(model_path):
+        return model_path
+    base = os.path.basename(model_path)  # 예: chronos-2
+    for cand in (f"./models/{base}", f"./{base}", f"models/{base}",
+                 "./models/chronos-2", "./chronos-2"):
+        if os.path.isdir(cand):
+            return cand
+    return model_path  # HF 식별자
+
+
 def _auto_device() -> str:
     """cuda > mps > cpu 순으로 사용 가능한 디바이스 자동 선택."""
     try:
@@ -96,43 +115,64 @@ def _auto_device() -> str:
 
 class ChronosForecaster:
     """
-    amazon/chronos-bolt-* 래퍼 (예측 계층 / Forecast).
+    Chronos 예측 계층 (Forecast). 최신 Chronos-2 우선, chronos-bolt 도 지원.
     문서 구조의 1단: 과거 시계열 → 미래 quantile 분포(q10/q50/q90).
     torch/chronos 미설치 또는 모델 로드 실패 시 BaselineForecaster 로 폴백.
 
     모델 선택:
-      · amazon/chronos-bolt-base  (205M, GPU 권장, 정확도 최고)
-      · amazon/chronos-bolt-small (48M)
-      · amazon/chronos-bolt-mini  (21M)
-      · amazon/chronos-bolt-tiny  (9M, CPU 실시간에 적합)
+      · amazon/chronos-2          (최신, 120M, 다변량·covariate zero-shot 지원,
+                                    GIFT-Eval SOTA, chronos-bolt 대비 90%+ 승률)  ← 기본
+      · amazon/chronos-bolt-base  (2세대, 205M)
+      · amazon/chronos-bolt-tiny  (2세대, 9M, CPU 실시간)
+
+    로더는 Chronos2Pipeline(chronos>=2.0) → BaseChronosPipeline(bolt) → baseline
+    순으로 시도한다. 단변량 예측 인터페이스(predict)는 세 경로 모두 동일.
+    covariate(다변량) 예측은 forecaster_cov.py 의 predict_df 경로 사용.
     """
 
-    def __init__(self, model_path: str = "amazon/chronos-bolt-base",
+    def __init__(self, model_path: str = "amazon/chronos-2",
                  device: str | None = None, torch_dtype=None):
-        self.model_path = model_path
+        self.model_path = _resolve_model(model_path)
         self.device = device or _auto_device()
         self._torch_dtype = torch_dtype
         self._pipeline = None
+        self._kind = None            # "chronos2" | "bolt"
         self._fallback = BaselineForecaster()
         self._load_error = None
         self._load()
 
     def _load(self):
+        errs = []
+        # 1) 최신 Chronos-2 (chronos-forecasting >= 2.0)
+        try:
+            from chronos import Chronos2Pipeline
+            self._pipeline = Chronos2Pipeline.from_pretrained(
+                self.model_path, device_map=self.device,
+            )
+            self._kind = "chronos2"
+            self.backend = self.model_path.split("/")[-1]
+            return
+        except Exception as e:
+            errs.append(f"Chronos2Pipeline: {e!r}")
+        # 2) chronos-bolt (BaseChronosPipeline)
         try:
             import torch
             from chronos import BaseChronosPipeline
-            # dtype: GPU면 bfloat16, CPU면 float32 (CPU는 bf16 느림/미지원 가능)
             dtype = self._torch_dtype
             if dtype is None:
                 dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
             self._pipeline = BaseChronosPipeline.from_pretrained(
                 self.model_path, device_map=self.device, torch_dtype=dtype,
             )
+            self._kind = "bolt"
             self.backend = self.model_path.split("/")[-1]
-        except Exception as e:  # 모델/라이브러리/네트워크 문제 → 폴백
-            self._pipeline = None
-            self.backend = "baseline-ewma"
-            self._load_error = repr(e)
+            return
+        except Exception as e:
+            errs.append(f"BaseChronosPipeline: {e!r}")
+        # 3) 폴백
+        self._pipeline = None
+        self.backend = "baseline-ewma"
+        self._load_error = " | ".join(errs)
 
     @property
     def using_real_model(self) -> bool:

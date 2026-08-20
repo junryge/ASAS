@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Chronos-Bolt → TightLoop Sentinel 파이프라인 (실행 진입점)
+Chronos-2 → TightLoop Sentinel 파이프라인 (실행 진입점)
 =========================================================
-문서 구조 그대로:  [예측] Chronos-Bolt  →  [행동] TightLoop Sentinel
+문서 구조 그대로:  [예측] Chronos-2  →  [행동] TightLoop Sentinel
 
     과거 반송시간 시계열
           │
           ▼  (매 1분, 인과적 — 직전까지 데이터만)
-    Chronos-Bolt.predict(context, horizon=10)  →  q10/q50/q90 (10분 뒤 분포)
+    Chronos.predict(context, horizon=10)  →  q10/q50/q90 (10분 뒤 분포)
           │
           ▼
     Sentinel.step(q10,q50,q90)  →  경보단계 · 예비조정 · center · tail · lead
@@ -22,7 +22,7 @@ Chronos-Bolt → TightLoop Sentinel 파이프라인 (실행 진입점)
         --data  M16A_HUBROOM_PR_20260601~20260630.CSV \
         --signal M16HUB.QUE.TIME.AVGTOTALTIME1MIN \
         --horizon 10 \
-        --model amazon/chronos-bolt-base \
+        --model amazon/chronos-2 \
         --threshold 12.0 \
         --out actions_202606.csv
 
@@ -37,7 +37,7 @@ from __future__ import annotations
 import argparse
 import csv
 
-from data_loader import load_csv, CORE_SIGNALS
+from data_loader import load_csv, load_any, CORE_SIGNALS
 from calibrate import percentile
 from forecaster import ChronosForecaster, BaselineForecaster
 from sentinel import TightLoopSentinel, SentinelConfig
@@ -53,13 +53,18 @@ def forward_fill(vals):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Chronos-Bolt → TightLoop Sentinel")
-    ap.add_argument("--data", required=True, help="평가/운영 대상 CSV")
+    ap = argparse.ArgumentParser(description="Chronos-2 → TightLoop Sentinel")
+    ap.add_argument("--data", required=True, nargs="+",
+                    help="대상 CSV. 파일 하나/여러 개/글롭 가능 (예: RAW/*.CSV)")
+    ap.add_argument("--config", default=None,
+                    help="fit.py 가 만든 학습 config(json). 임계·signal·horizon 자동적용")
     ap.add_argument("--signal", default="M16HUB.QUE.TIME.AVGTOTALTIME1MIN")
     ap.add_argument("--horizon", type=int, default=10, help="예측 지평(분). 기본 10")
     ap.add_argument("--context", type=int, default=180, help="예측 입력 context 길이(분)")
-    ap.add_argument("--model", default="amazon/chronos-bolt-base",
-                    help="chronos-bolt-{tiny,mini,small,base}")
+    ap.add_argument("--stride", type=int, default=1,
+                    help="백테스트 평가 간격(분). CPU에서 한 달치는 5~10 권장. 실시간은 1")
+    ap.add_argument("--model", default="amazon/chronos-2",
+                    help="amazon/chronos-2 (최신·기본) 또는 chronos-bolt-{tiny,base}")
     ap.add_argument("--device", default=None, help="cuda/mps/cpu (기본 자동)")
     ap.add_argument("--threshold", type=float, default=None, help="임계값(수동)")
     ap.add_argument("--train", default=None, help="임계 자동학습용 학습 CSV")
@@ -71,8 +76,26 @@ def main():
     ap.add_argument("--no-real", action="store_true", help="baseline 예측기 강제")
     args = ap.parse_args()
 
-    # 1) 데이터 로드
-    sd = load_csv(args.data, list({args.signal, *CORE_SIGNALS}) + ["CRT_TM"])
+    # 0) 학습 config 적용 (fit.py 산출물) — 명시 인자가 없으면 config 값 사용
+    if args.config:
+        import json
+        with open(args.config, encoding="utf-8") as fp:
+            cfg = json.load(fp)
+        args.signal = cfg.get("signal", args.signal)
+        if args.threshold is None:
+            args.threshold = cfg.get("threshold")
+        # horizon/p_on/p_off 는 사용자가 기본값 그대로면 config 로 덮음
+        if ap.get_default("horizon") == args.horizon:
+            args.horizon = cfg.get("horizon", args.horizon)
+        if ap.get_default("p_on") == args.p_on:
+            args.p_on = cfg.get("p_on", args.p_on)
+        if ap.get_default("p_off") == args.p_off:
+            args.p_off = cfg.get("p_off", args.p_off)
+        print(f"[config] {args.config} 적용: signal={args.signal} "
+              f"horizon={args.horizon} threshold={args.threshold}")
+
+    # 1) 데이터 로드 (파일/여러개/글롭 병합)
+    sd = load_any(args.data, list({args.signal, *CORE_SIGNALS}) + ["CRT_TM"])
     if args.signal not in sd.columns:
         raise SystemExit(f"신호 {args.signal} 가 데이터에 없음")
     values = sd.signal(args.signal)
@@ -84,7 +107,7 @@ def main():
         threshold = args.threshold
         thr_src = "수동"
     elif args.train:
-        tr = load_csv(args.train, [args.signal, "CRT_TM"])
+        tr = load_any(args.train, [args.signal, "CRT_TM"])
         tv = sorted(v for v in tr.signal(args.signal) if v is not None)
         threshold = round(percentile(tv, args.pct), 3)
         thr_src = f"학습CSV p{args.pct*100:.0f}"
@@ -101,7 +124,7 @@ def main():
         f = ChronosForecaster(model_path=args.model, device=args.device)
         backend = f.backend
         if not f.using_real_model:
-            print(f"⚠ Chronos-Bolt 로드 실패 → baseline 폴백. 원인: {f._load_error}")
+            print(f"⚠ Chronos 모델 로드 실패 → baseline 폴백. 원인: {f._load_error}")
             print("  (torch/chronos 설치 및 모델 다운로드 가능한 환경에서 실행하세요)")
 
     # 4) 행동 계층 (Sentinel)
@@ -109,22 +132,27 @@ def main():
     sen = TightLoopSentinel(cfg)
 
     print("=" * 72)
-    print(" Chronos-Bolt → TightLoop Sentinel")
+    print(" Chronos-2 → TightLoop Sentinel")
     print(f" 신호: {args.signal}")
     print(f" 예측 backend: {backend} | 지평 {args.horizon}분 | 임계 {threshold} ({thr_src})")
     print(f" 데이터: {len(times)}분  {times[0]} ~ {times[-1]}")
     print("=" * 72)
 
     # 5) 매분 파이프라인 (인과적)
+    #    --stride>1 이면 stride 간격으로만 모델 호출, 사이 분은 직전 액션 유지
+    #    (CPU 백테스트 가속용. 실시간 운영은 stride=1).
     actions = []
+    last_action = None
+    stride = max(1, args.stride)
     for t in range(len(filled)):
         ctx = filled[max(0, t - args.context):t + 1]
         if len(ctx) < 5:
             actions.append(None)
             continue
-        fc = f.predict(ctx, horizon=args.horizon)
-        a = sen.step(fc["q10"], fc["q50"], fc["q90"])
-        actions.append(a)
+        if t % stride == 0:
+            fc = f.predict(ctx, horizon=args.horizon)
+            last_action = sen.step(fc["q10"], fc["q50"], fc["q90"])
+        actions.append(last_action)
 
     # 6) 문제 예측 시각 집계 (stage>=2 경보 구간)
     alarms, on0 = [], None
@@ -168,7 +196,7 @@ def main():
         print(f"\n분당 액션 저장: {args.out}")
 
     if backend == "baseline-ewma":
-        print("\n※ 실 Chronos-Bolt 아님(baseline). 사내 GPU 환경에서 --model 로 실모델 사용.")
+        print("\n※ 실 Chronos 모델 아님(baseline). 사내 GPU 환경에서 --model amazon/chronos-2 로 실모델 사용.")
 
 
 if __name__ == "__main__":

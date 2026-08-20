@@ -1,0 +1,23 @@
+# 모델 가중치 — git 에 넣지 말 것 (수백 MB, HF 에서 받는 것)
+models/
+chronos-2/
+chronos-bolt-tiny/
+chronos-bolt-mini/
+chronos-bolt-small/
+chronos-bolt-base/
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+
+# 원본/수집 데이터 (사내 데이터 — repo 에 올리지 않음)
+RAW/
+*.CSV
+*.csv
+
+# 산출물
+actions*.csv
+
+# 파이썬
+__pycache__/
+*.pyc

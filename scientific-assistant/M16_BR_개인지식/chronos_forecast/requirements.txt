@@ -1,8 +1,7 @@
-# Chronos-Bolt → TightLoop Sentinel 파이프라인 의존성
-# 사내/GPU 환경에서 설치 후 run_chronos_sentinel.py 실행.
-# (data_loader / calibrate / sentinel 은 표준 라이브러리만 사용 → 아래는 예측계층용)
+# Chronos-2 → TightLoop Sentinel 파이프라인 의존성
+# 사내/GPU 환경에서 설치 후 실행. (data_loader/calibrate/sentinel 은 표준 라이브러리만)
 
-chronos-forecasting>=1.4.0    # amazon/chronos-bolt-* 로더 (BaseChronosPipeline)
+chronos-forecasting>=2.0.0    # amazon/chronos-2 (Chronos2Pipeline) — 최신
 torch>=2.1                    # GPU면 CUDA 빌드 권장 (cuda>mps>cpu 자동선택)
-# 선택: AutoGluon 경로로 covariate/파인튜닝까지 하려면
-# autogluon.timeseries>=1.1
+pandas>=2.0                   # covariate 경로(predict_df) 및 다변량 러너용
+# chronos-bolt(2세대)도 같은 패키지로 로드됨(BaseChronosPipeline).

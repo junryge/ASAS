@@ -1,0 +1,26 @@
+# 모델 가중치 (HF 에서 받는 것 — git 에 넣지 않음)
+chronos_2/
+models/
+*.safetensors
+*.pt
+*.bin
+
+# 데이터 (사내 데이터)
+RAW/
+RAW6/
+RAW7/
+RAW8/
+*.CSV
+*.csv
+
+# 산출물
+actions*.csv
+report*.csv
+model_config.json
+
+__pycache__/
+*.pyc
+
+# 실시간 러너 산출물
+ml_predict/
+realtime_state.json

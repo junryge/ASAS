@@ -8,34 +8,89 @@
 
 ---
 
+## 🎓 학습 → 평가 워크플로우 (Apr~May 학습 → June 평가)
+
+> Chronos-2 는 **zero-shot** — 신경망 가중치는 학습하지 않는다(그게 강점).
+> 여기서 "학습" = 데이터에서 **임계값 + 선행지표 covariate** 를 맞추는 것.
+
+```bash
+# ── 1단계: 학습 (Apr~May 에서 임계·covariate 산출 → config 저장)
+python3 fit.py --train "RAW/M16A_HUBROOM_PR_20260401~20260531.CSV" \
+    --horizon 10 --pct 0.99 --out fit_config.json
+
+# ── 2단계: 평가 (6월에 Chronos-2 예측 + Sentinel, 학습 config 적용)
+python3 run_chronos_sentinel.py --config fit_config.json \
+    --data "RAW/M16A_HUBROOM_PR_20260601~20260630.CSV" \
+    --model ./models/chronos-2 --device cpu --out actions_202606.csv
+```
+
+- `fit.py` 가 임계(정상분포 p99) + 선행지표 covariate 를 **학습기간에서만** 산출 → leakage 없음.
+- `--config` 로 그 값이 평가에 자동 적용됨.
+- 모델은 로컬 폴더(`./models/chronos-2`)에 넣어두면 자동 감지 (오프라인).
+
+---
+
 ## ⭐ 메인 파이프라인 (문서 구조 그대로)
 
 ```
-[예측·Forecast]  Chronos-Bolt      →  미래 값 분포 (q10/q50/q90)
+[예측·Forecast]  Chronos-2          →  미래 값 분포 (q10/q50/q90)
 [행동·Action]    TightLoop Sentinel →  경보단계·예비조정·center·tail·lead
 ```
 
-**실행 (사내/GPU 환경, torch+chronos 설치 후):**
+**모델은 최신 `amazon/chronos-2`** (2025-10 공개, 120M, GIFT-Eval SOTA,
+chronos-bolt 대비 90%+ 승률, **다변량·covariate zero-shot 지원**). chronos-bolt 도
+같은 코드로 로드 가능(`--model amazon/chronos-bolt-base`).
+
+**① 단변량 실행 (반송시간만, 기본):**
 ```bash
 pip install -r requirements.txt
 python3 run_chronos_sentinel.py \
     --data  M16A_HUBROOM_PR_20260601~20260630.CSV \
     --signal M16HUB.QUE.TIME.AVGTOTALTIME1MIN \
-    --horizon 10 --model amazon/chronos-bolt-base \
+    --horizon 10 --model amazon/chronos-2 \
     --threshold 12.0 --out actions_202606.csv
 ```
 → "문제 예측 시각" 리스트 + 분당 액션 CSV. 지평 10분 = 오탐 적고 신뢰도 높음.
-torch/chronos 미설치 시 baseline 예측기로 파이프라인만 동작(경고).
+
+**② 다변량 실행 (고도화 — 리프터·완료량 covariate 주입):**
+```bash
+python3 run_chronos2_covariates.py \
+    --data JUNE.CSV --horizon 10 --stride 5 \
+    --threshold 12.0 --covariates auto     # EDA 선행지표 자동선택
+```
+→ Chronos-2 `predict_df` 로 선행지표를 예측에 반영. 30분 지평에서 특히 이득
+(FINDINGS_ml고도화.md 참고).
 
 임계 자동학습: `--train APR_MAY.CSV --pct 0.99` (학습기간 분위수로 임계 산출).
+torch/chronos 미설치 시 ①은 baseline 폴백으로 파이프라인만 동작, ②는 실모델 전용.
+
+### 💻 CPU로 실행 (GPU 없어도 됨)
+
+Chronos-2 는 **CPU 추론 지원** (RAM 약 8GB 필요, GPU 대비 4~10배 느림).
+**실시간 운영(1분당 1회)은 CPU로 충분.** 느린 건 한 달치를 1분단위로 전부
+백테스트할 때뿐 → `--stride` 로 평가 간격을 늘려 가속.
+
+```bash
+# CPU 실시간/소량
+python3 run_chronos_sentinel.py --data JUNE.CSV --horizon 10 \
+    --model amazon/chronos-2 --device cpu --threshold 12.0
+
+# CPU 한 달치 백테스트 (5분 간격으로 가속)
+python3 run_chronos_sentinel.py --data JUNE.CSV --horizon 10 \
+    --model amazon/chronos-2 --device cpu --stride 5 --out actions.csv
+```
+
+CPU에서 더 가볍고 빠르게 원하면 `--model amazon/chronos-bolt-tiny`(9M) 도 가능
+(단 covariate 미지원 = 단변량 전용, 정확도는 chronos-2 가 우위).
 
 **핵심 파일:**
 | 파일 | 역할 |
 |---|---|
-| `run_chronos_sentinel.py` | **메인 진입점** — Chronos→Sentinel end-to-end, 문제예측시각 출력 |
-| `forecaster.py` | Chronos-Bolt 어댑터(예측계층). device 자동(cuda>mps>cpu), 없으면 baseline 폴백 |
+| `run_chronos_sentinel.py` | **메인 진입점(단변량)** — Chronos-2→Sentinel, 문제예측시각 출력 |
+| `run_chronos2_covariates.py` | **다변량 진입점** — Chronos-2 covariate(predict_df)로 선행지표 주입 |
+| `forecaster.py` | Chronos 어댑터. Chronos2Pipeline→bolt→baseline 폴백, device 자동 |
 | `sentinel.py` | **TightLoop Sentinel 행동계층** — 분포→경보·예비·center·tail (bounded·causal) |
-| `requirements.txt` | 예측계층 의존성 (chronos-forecasting, torch) |
+| `requirements.txt` | 예측계층 의존성 (chronos-forecasting>=2.0, torch, pandas) |
 
 ## 그 밖의 도구
 
