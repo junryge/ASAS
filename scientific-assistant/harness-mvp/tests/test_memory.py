@@ -533,3 +533,59 @@ class 일꾼(Base):
         r = M.tick(fake, per_tick=3)
         self.assertEqual(r["extracted"], 2)
         self.assertEqual(M.pending_count(U), 0)
+
+
+class 언제_담나(Base):
+    """★처음엔 '컨텍스트가 넘쳐 잘릴 때' 만 담았다. API 모델은 128K 라 그런
+    일이 거의 없다 — 하루 종일 얘기해도 기억이 한 줄도 안 쌓인다."""
+
+    def turns(self, n):
+        return [{"role": "user" if i % 2 == 0 else "assistant",
+                 "content": f"임계값 관련 이야기 {i} 번째입니다. 꽤 긴 내용이 이어집니다."}
+                for i in range(n)]
+
+    def test_짧은_대화는_안_담는다(self):
+        """★조금씩 자주 담으면 LLM 호출만 늘고 건질 건 없다.
+        꼬리를 뺀 나머지가 CAPTURE_EVERY 만큼 쌓여야 한 번 담는다."""
+        self.assertEqual(M.capture_if_long(U, "s1", self.turns(4)), 0)
+        # 꼬리 빼면 3개 — 아직 문턱(6) 미만이다
+        self.assertEqual(M.capture_if_long(U, "s1", self.turns(7)), 0)
+        self.assertEqual(M.pending_count(U), 0)
+
+    def test_길어지면_넘치기_전에도_담는다(self):
+        n = M.capture_if_long(U, "s1", self.turns(12))
+        self.assertGreater(n, 0)
+        self.assertEqual(M.pending_count(U), 1)
+
+    def test_최근_몇_개는_남겨_둔다(self):
+        """아직 살아 있는 얘기다 — 지금 대화에 그대로 있다."""
+        self.assertEqual(M.capture_if_long(U, "s1", self.turns(12)),
+                         12 - M.KEEP_TAIL)
+
+    def test_같은_대화를_두_번_안_담는다(self):
+        """★매 턴 다시 담으면 큐가 같은 내용으로 차고 LLM 값이 그만큼 나간다."""
+        msgs = self.turns(12)
+        M.capture_if_long(U, "s1", msgs)
+        self.assertEqual(M.capture_if_long(U, "s1", msgs), 0)
+        self.assertEqual(M.pending_count(U), 1)
+
+    def test_더_길어지면_이어서_담는다(self):
+        M.capture_if_long(U, "s1", self.turns(12))
+        self.assertGreater(M.capture_if_long(U, "s1", self.turns(24)), 0)
+        self.assertEqual(M.pending_count(U), 2)
+
+    def test_대화가_다르면_따로_센다(self):
+        M.capture_if_long(U, "s1", self.turns(12))
+        self.assertGreater(M.capture_if_long(U, "s2", self.turns(12)), 0)
+
+    def test_user_id_가_없으면_아무것도_안_한다(self):
+        """★로그인 안 한 요청까지 담으면 남의 기억이 섞인다."""
+        self.assertEqual(M.capture_if_long("", "s1", self.turns(12)), 0)
+        self.assertEqual(M.pending_count(), 0)
+
+    def test_담아도_대화에서_빼지_않는다(self):
+        """이건 '복사해 두기' 지 '자르기' 가 아니다."""
+        msgs = self.turns(12)
+        before = len(msgs)
+        M.capture_if_long(U, "s1", msgs)
+        self.assertEqual(len(msgs), before)

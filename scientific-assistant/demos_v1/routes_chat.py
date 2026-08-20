@@ -1219,6 +1219,12 @@ def _stream_chat_sse(data):
                                       if isinstance(x, dict) and x.get("type") == "text")
                     _q = str(_c)[:600]
                     break
+            # ★넘칠 때만 담으면 API(128K)에서는 영영 안 담긴다. 길어지면
+            #   넘치기 전에도 담는다 — 대화에서 빼지는 않는다.
+            _n = _mem.capture_if_long(_mem_uid, str(data.get("session_id") or ""),
+                                      messages)
+            if _n:
+                print(f"  🧠 [기억] {_n}개 메시지 담음 (대화가 길어져서)")
             if _q:
                 _blk, _mem_used = _mem.block(_mem_uid, _q)
                 if _blk:

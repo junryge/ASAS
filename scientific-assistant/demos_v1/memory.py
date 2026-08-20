@@ -765,3 +765,68 @@ def start_worker(chat=None) -> bool:
     threading.Thread(target=loop, daemon=True).start()
     print(f"  🧠 기억 일꾼 시작 ({TICK_SEC}초 주기)")
     return True
+
+
+# ══════════════════════════════════════════════════════════════
+# 언제 담을 것인가
+# ══════════════════════════════════════════════════════════════
+# ★처음엔 '컨텍스트가 넘쳐 잘릴 때' 만 담았다. 그런데 API 모델은 128K 라
+#   그런 일이 거의 없다 — 하루 종일 얘기해도 기억이 한 줄도 안 쌓인다.
+#   그래서 **대화가 길어지면** 넘치기 전에도 담는다. 원본(magic-context)도
+#   한도의 몇 % 에서 미리 도는 방식이다.
+# ★담아도 대화에서 빼지는 않는다. 이건 '복사해 두기' 지 '자르기' 가 아니다.
+KEEP_TAIL = 4            # 최근 이만큼은 아직 살아 있는 얘기라 안 담는다
+CAPTURE_EVERY = 6        # 담지 않은 메시지가 이만큼 쌓이면 한 번 담는다
+
+
+def _captured_upto(user_id: str, sid: str) -> int:
+    init()
+    con = _connect()
+    try:
+        con.execute("""CREATE TABLE IF NOT EXISTS captured (
+                        user_id TEXT NOT NULL, sid TEXT NOT NULL,
+                        upto INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (user_id, sid))""")
+        r = con.execute("SELECT upto FROM captured WHERE user_id=? AND sid=?",
+                        (user_id, sid)).fetchone()
+        return int(r["upto"]) if r else 0
+    finally:
+        con.close()
+
+
+def _set_captured(user_id: str, sid: str, upto: int) -> None:
+    with _lock:
+        con = _connect()
+        try:
+            con.execute("""CREATE TABLE IF NOT EXISTS captured (
+                            user_id TEXT NOT NULL, sid TEXT NOT NULL,
+                            upto INTEGER NOT NULL DEFAULT 0,
+                            PRIMARY KEY (user_id, sid))""")
+            con.execute("INSERT INTO captured(user_id, sid, upto) VALUES(?,?,?)"
+                        " ON CONFLICT(user_id, sid) DO UPDATE SET upto=excluded.upto",
+                        (user_id, sid, int(upto)))
+            con.commit()
+        finally:
+            con.close()
+
+
+def capture_if_long(user_id: str, sid: str, messages: list) -> int:
+    """대화가 길어졌으면 아직 안 담은 앞부분을 담는다 → 담은 메시지 수.
+
+    ★같은 대화를 매 턴 다시 담으면 안 된다. 어디까지 담았는지 기억해 둔다
+      (안 그러면 큐가 같은 내용으로 가득 차고 LLM 값도 그만큼 나간다).
+    """
+    if not user_id:
+        return 0
+    init()
+    turns = [m for m in (messages or [])
+             if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
+    end = max(0, len(turns) - KEEP_TAIL)
+    done = _captured_upto(user_id, sid or "")
+    if end - done < CAPTURE_EVERY:
+        return 0
+    chunk = turns[done:end]
+    if enqueue(user_id, sid or "", chunk) <= 0:
+        return 0
+    _set_captured(user_id, sid or "", end)
+    return len(chunk)
