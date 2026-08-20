@@ -221,6 +221,10 @@ def main():
     ap.add_argument("--top", type=int, default=25, help="화면 표시 상위 N개")
     ap.add_argument("--include-degenerate", action="store_true",
                     help="분위수 임계가 무의미한 컬럼(0/1 플래그 등)도 화면에 표시")
+    ap.add_argument("--only-normal", action="store_true",
+                    help="판정 '정상' 컬럼만 CSV 에 쓴다 (고객 전달용)")
+    ap.add_argument("--max-missing", type=float, default=None,
+                    help="결측률이 이 값(%%)을 넘는 컬럼 제외. 예: --max-missing 10")
     ap.add_argument("--sort", default="ep_max",
                     choices=["ep_max", "ep_n", "over_n", "ep_mean", "name"],
                     help="화면 정렬 기준 (기본: 최장 에피소드)")
@@ -350,6 +354,30 @@ def main():
     if not results:
         print("분석 가능한 숫자 컬럼이 없습니다."); return 1
 
+    # 전달용 필터 — 컬럼 하나를 빼면 그 컬럼의 에피소드·시점·순위도 같이 뺀다
+    if a.only_normal or a.max_missing is not None:
+        keep = set()
+        for name, st, _ in results:
+            if a.only_normal and not st["ok"]:
+                continue
+            if a.max_missing is not None:
+                tot = st["n"] + st["missing"]
+                if tot and st["missing"] / tot * 100 > a.max_missing:
+                    continue
+            keep.add(name)
+        cond = ([" 판정=정상"] if a.only_normal else []) + \
+               ([f" 결측≤{a.max_missing:g}%"] if a.max_missing is not None else [])
+        print(f"\n[필터]{' ·'.join(cond)} → {len(keep)}개 유지 "
+              f"/ {len(results) - len(keep)}개 제외")
+        results = [x for x in results if x[0] in keep]
+        col_rows = [r for r in col_rows if r[0] in keep]
+        ep_rows = [r for r in ep_rows if r[0] in keep]
+        pt_rows = [r for r in pt_rows if r[0] in keep]
+        evcol_rows = [r for r in evcol_rows if r[1] in keep]
+        rank = {n: v for n, v in rank.items() if n in keep}
+        if not results:
+            print("필터 후 남은 컬럼이 없습니다."); return 1
+
     # ── ① 컬럼 표 ─────────────────────────────────────────
     key = {"ep_max": lambda x: -x[1]["ep_max"],
            "ep_n": lambda x: -x[1]["ep_n"],
@@ -403,6 +431,7 @@ def main():
     # ── 파일 ──────────────────────────────────────────────
     os.makedirs(a.out_dir, exist_ok=True)
     j = lambda f: os.path.join(a.out_dir, f)
+
     print(f"\n[파일]")
 
     n1 = write_csv(j("top1_columns.csv"), [
