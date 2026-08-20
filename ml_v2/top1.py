@@ -250,6 +250,9 @@ def main():
                     help="사건 목록만 뽑고 끝 (컬럼 분석 생략 — 몇 초면 끝난다)")
     ap.add_argument("--events-config", default="model_config.json",
                     help="사건 기준을 읽을 config (없으면 자동 산출)")
+    ap.add_argument("--max-event-missing", type=float, default=None,
+                    help="사건 구간 결측률이 이 값(%%)을 넘으면 가짜로 보고 제외. "
+                         "예: --max-event-missing 50")
     ap.add_argument("--lead", type=int, default=30,
                     help="사건 시작 몇 분 전까지 함께 볼지 (선행지표 탐색)")
     ap.add_argument("--min-lift", type=float, default=2.0,
@@ -293,6 +296,22 @@ def main():
         ev_thr = (cfg or {}).get(
             "threshold", percentile([v for v in ev_sm if v is not None], 0.99))
         events = episodes(sd.times, ev_sm, ev_thr, ev_mind, ev_gap)
+
+        # 결측 구간이 만들어낸 가짜 사건 제외 (포워드필 부작용)
+        if a.max_event_missing is not None:
+            ev_raw0 = sd.get(ev_target)
+            keep_ev, drop_ev = [], []
+            for e in events:
+                m, _ = event_missing(ev_raw0, e)
+                (drop_ev if m * 100 > a.max_event_missing else keep_ev).append(e)
+            if drop_ev:
+                print(f"  제외   : 결측 {a.max_event_missing:g}% 초과 사건 "
+                      f"{len(drop_ev)}건 — "
+                      + ", ".join(f'{e["t_start"]:%m-%d %H:%M}({e["duration"]}분)'
+                                  for e in drop_ev))
+            events = keep_ev
+            for k, e in enumerate(events, 1):      # 번호 다시 매김
+                e["no"] = k
         ev_by_no = {e["no"]: e for e in events}
         src = f"config {a.events_config}" if cfg else "자동 산출"
         print(f"  사건   : {len(events)}건  ({ev_target} · {ev_win}분 이동평균 "
