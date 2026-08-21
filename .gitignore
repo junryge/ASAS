@@ -18,3 +18,8 @@ scientific-assistant/demos_data/memory.db-*
 # 코드 어시스턴트 워크스페이스 내부 기록 (사용자 코드 옆에 생긴다)
 **/.edits.json
 **/.applied.json
+
+# 2D 감정캐릭터 (real_time_amhs/avatar_2d)
+# ★token.txt 는 API 키다. README 도 "절대 배포물에 포함 금지" 라고 적어 뒀다.
+scientific-assistant/real_time_amhs/avatar_2d/token.txt
+scientific-assistant/real_time_amhs/avatar_2d/data/

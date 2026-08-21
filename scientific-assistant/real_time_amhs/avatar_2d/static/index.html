@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2D Emotive Character × LLM</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <div id="main">
+  <div id="stageWrap">
+    <canvas id="gl"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="handles"></div>
+    <div id="bubble"></div>
+    <div id="alarmFlash"></div>
+    <div id="alarmBox">
+      <div id="alarmHead">
+        <span id="alarmDot"></span>
+        <span id="alarmTitle">FAB 정상</span>
+        <span id="alarmLv">경계</span>
+        <span id="alarmTime"></span>
+      </div>
+      <div id="alarmBody">
+        <div id="alarmFab">—</div>
+        <img id="alarmImg" alt="">
+        <div id="alarmMsg"></div>
+      </div>
+      <div id="alarmBtns">
+        <button id="alarmTest" title="랜덤한 FAB 에 알람을 발생시킵니다">테스트</button>
+        <button id="alarmClear">해제</button>
+      </div>
+    </div>
+    <div id="clock" title="클릭하면 자동/수동이 바뀝니다">
+      <span id="clockT">--:--</span>
+      <span id="clockS">—</span>
+      <span id="clockMode" class="auto">자동</span>
+    </div>
+    <div id="hudBar">
+    <div id="hud">
+      <div id="hudToggle" title="패널 접기/펼치기">☰</div>
+      <div id="hudBody">
+        <div class="hudGroup">
+          <div class="hudLabel">배경</div>
+          <div class="hudRow" id="bgChips"></div>
+          <div class="hudRow">
+            <div class="chip" data-bg="green">그린스크린</div>
+            <div class="chip" data-bg="alpha">투명</div>
+          </div>
+        </div>
+        <div class="hudGroup">
+          <div class="hudLabel">의상</div>
+          <div class="hudRow" id="costumeChips"></div>
+        </div>
+        <div class="hudGroup">
+          <div class="hudLabel">표시</div>
+          <div class="hudRow">
+            <div class="chip" id="calibChip">캘리브레이션</div>
+            <div class="chip on" id="bubbleChip">말풍선</div>
+            <div class="chip" id="patchChip">궁예</div>
+            <div class="chip" id="docChip" title="MD / TXT 자료 주입">자료</div>
+            <div class="chip on" id="eyeChip" title="마우스를 눈으로 따라봅니다">시선</div>
+            <div class="chip on" id="badgeChip" title="목에 건 사원증">사원증</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="ctxHud">
+      <div id="ctxToggle" title="컨텍스트 사용량">◧</div>
+      <div id="ctxBody" class="hide">
+        <div class="hudLabel">컨텍스트</div>
+        <div id="ctxBar2"></div>
+        <div id="ctxTable2"></div>
+        <p class="ctxSum2" id="ctxSum2"></p>
+      </div>
+    </div>
+    </div>
+
+    <div id="drop">이미지 → 의상 추가 &nbsp;·&nbsp; .md / .txt → 참고 자료 추가</div>
+  </div>
+
+    <div id="chatPane">
+      <div id="chatGrip" title="드래그해서 채팅 높이 조절"></div>
+      <div id="inputRow">
+        <div id="inputGrip" title="드래그해서 입력창 높이 조절"></div>
+        <textarea id="say" placeholder="메시지 입력…"></textarea>
+        <div id="inputBar">
+          <span id="charCount">0</span>
+          <span id="ctxMini" title="컨텍스트 사용량(추정)">ctx 0%</span>
+          <label class="chk mini"><input type="checkbox" id="enterSend" checked> Enter 전송</label>
+          <button id="send">전송</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="side"><div id="grip" title="드래그해서 폭 조절"></div>
+    <div id="tabs">
+      <div class="tab on" data-p="chat">대화</div>
+      <div class="tab" data-p="emo">감정</div>
+      <div class="tab" data-p="cfg">설정</div>
+    </div>
+
+    <!-- 대화 로그 -->
+    <div class="page on" id="p-chat">
+      <div id="sessBar">
+        <select id="sessSel" title="지난 세션"></select>
+        <button class="sessBtn" id="sessNew" title="새 세션 시작">＋</button>
+        <button class="sessBtn" id="sessDl"  title="이 세션 다운로드">⤓</button>
+        <button class="sessBtn" id="sessDel" title="이 세션 삭제">✕</button>
+      </div>
+      <div id="log"></div>
+    </div>
+
+    <!-- 감정 -->
+    <div class="page" id="p-emo">
+      <div class="scroll">
+        <div class="grp">
+          <h4>감정 프리셋</h4>
+          <div class="btns" id="emoBtns"></div>
+        </div>
+        <div class="grp">
+          <h4>모션 트리거</h4>
+          <div class="btns" id="motBtns"></div>
+        </div>
+        <div class="grp">
+          <h4>강도 / 자동 동작</h4>
+          <div class="row"><label>Intensity</label><input type="range" id="s_int" min="0" max="1" step="0.01" value="0.85"><span class="val" id="v_int"></span></div>
+          <div class="row"><label>호흡</label><input type="range" id="s_breath" min="0" max="2" step="0.01" value="1"><span class="val" id="v_breath"></span></div>
+          <div class="row"><label>흔들림(idle)</label><input type="range" id="s_idle" min="0" max="2" step="0.01" value="1"><span class="val" id="v_idle"></span></div>
+          <div class="row"><label>눈깜빡임</label><input type="range" id="s_blink" min="0" max="2" step="0.01" value="1"><span class="val" id="v_blink"></span></div>
+        </div>
+        <div class="grp">
+          <h4>파라미터 직접 제어 (수동)</h4>
+          <div class="row"><label>눈 열림</label><input type="range" id="m_eyeOpen" min="0" max="1.5" step="0.01" value="1"><span class="val" id="mv_eyeOpen"></span></div>
+          <div class="row"><label>눈 웃음</label><input type="range" id="m_eyeSmile" min="0" max="1" step="0.01" value="0"><span class="val" id="mv_eyeSmile"></span></div>
+          <div class="row"><label>눈썹</label><input type="range" id="m_brow" min="-1" max="1" step="0.01" value="0"><span class="val" id="mv_brow"></span></div>
+          <div class="row"><label>입 열림</label><input type="range" id="m_mouthOpen" min="0" max="1" step="0.01" value="0"><span class="val" id="mv_mouthOpen"></span></div>
+          <div class="row"><label>입꼬리</label><input type="range" id="m_mouthCurve" min="-1" max="1" step="0.01" value="0"><span class="val" id="mv_mouthCurve"></span></div>
+          <div class="row"><label>고개 기울임</label><input type="range" id="m_tilt" min="-1" max="1" step="0.01" value="0"><span class="val" id="mv_tilt"></span></div>
+          <div class="row"><label>고개 돌림</label><input type="range" id="m_turn" min="-1" max="1" step="0.01" value="0"><span class="val" id="mv_turn"></span></div>
+          <div class="row"><label>볼 홍조</label><input type="range" id="m_blush" min="0" max="1" step="0.01" value="0"><span class="val" id="mv_blush"></span></div>
+          <div class="row"><label>팔A (손)</label><input type="range" id="m_armA" min="-0.3" max="0.3" step="0.005" value="0"><span class="val" id="mv_armA"></span></div>
+          <div class="row"><label>팔B</label><input type="range" id="m_armB" min="-0.3" max="0.3" step="0.005" value="0"><span class="val" id="mv_armB"></span></div>
+          <div class="row"><button class="ghost" id="manualOff" style="width:100%;padding:8px 0">수동 제어 해제 (감정 시스템으로 복귀)</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 설정 -->
+    <div class="page" id="p-cfg">
+      <div class="scroll">
+        <div class="grp">
+          <h4><span class="dot" id="apiDot"></span>LLM 연결 (OpenAI 호환)</h4>
+          <div class="row"><label>API Key</label><input type="password" id="apiKey" placeholder="sk-..." autocomplete="off"></div>
+          <div class="row"><label>Model</label><input type="text" id="apiModel" value="gpt-4o-mini" list="modelList" autocomplete="off"><datalist id="modelList"></datalist></div>
+          <div class="row"><label>Base URL</label><input type="text" id="apiBase" value="https://api.openai.com/v1"></div>
+          <div class="row"><label>Temp</label><input type="range" id="apiTemp" min="0" max="1.5" step="0.05" value="0.8"><span class="val" id="v_temp"></span></div>
+          <div class="row" style="gap:6px;margin-top:2px">
+            <button id="apiTest" style="flex:1;padding:9px 0">연결 테스트</button>
+            <button class="ghost" id="apiClear" style="flex:1;padding:9px 0">저장값 지우기</button>
+          </div>
+          <label class="chk"><input type="checkbox" id="streamOn" checked>
+            <b>스트리밍</b> 응답 (타이핑되듯 실시간 출력)</label>
+          <label class="chk"><input type="checkbox" id="apiSave" checked>
+            이 브라우저에 설정 저장 <b>(API 키 포함)</b></label>
+          <p class="hint" id="apiMsg">키를 넣고 <b>연결 테스트</b>를 누르세요. 성공하면 자동 저장돼서 다음에 열 때 바로 연결됩니다.</p>
+          <p class="hint" style="margin-top:8px">
+          <code>run.py</code> 로 실행하면 <b>이 칸들은 자동으로 채워집니다</b>
+          (토큰은 서버에만 있고 브라우저엔 안 남습니다).<br>
+          HTML만 단독 실행하면 키가 필요하고, 없으면 <b>데모 모드</b>로 동작합니다.</p>
+        </div>
+        <div class="grp">
+          <h4>세션 기록</h4>
+          <p class="hint" id="sessStat"></p>
+          <div class="row" style="gap:6px;margin-top:9px">
+            <button class="ghost" id="sessExportAll" style="flex:1;padding:9px 0">전체 내보내기(JSON)</button>
+            <button class="ghost" id="sessClearAll" style="flex:1;padding:9px 0">전체 삭제</button>
+          </div>
+          <p class="hint" style="margin-top:8px">세션은 브라우저에 저장됩니다(최근 30개).
+          대화 탭 상단에서 세션을 고르면 그 대화를 다시 보고 <b>이어서 대화</b>할 수 있습니다.
+          <code>⤓</code> 는 그 세션을 JSON + Markdown 으로 내려받습니다.</p>
+        </div>
+
+        <div class="grp">
+          <h4>컨텍스트 사용량</h4>
+          <div id="ctxBar"></div>
+          <div id="ctxTable"></div>
+          <p class="hint" id="ctxSum"></p>
+          <div class="row" style="margin-top:10px"><label>컨텍스트 한도</label>
+            <select id="ctxLimitSel">
+              <option value="4096">4k</option><option value="8192">8k</option>
+              <option value="16384">16k</option><option value="32768" selected>32k</option>
+              <option value="65536">64k</option><option value="131072">128k</option>
+              <option value="262144">256k</option>
+            </select></div>
+          <div class="row"><label>대화 기록</label>
+            <input type="range" id="r_keep" min="0" max="40" step="2" value="12">
+            <span class="val" id="v_keep"></span></div>
+          <div class="row" style="gap:6px;margin-top:4px">
+            <button class="ghost" id="ctxReset" style="flex:1;padding:8px 0">대화 기록 비우기</button>
+          </div>
+          <p class="hint">토큰 수는 <b>추정치</b>입니다(한글 0.72/자, 영숫자 3.6자당 1).
+          모델 토크나이저에 따라 ±15% 정도 차이가 납니다.</p>
+        </div>
+
+        <div class="grp">
+          <h4>참고 자료 (MD · TXT)</h4>
+          <div id="docList"></div>
+          <p class="hint" id="docStat" style="margin-top:8px"></p>
+          <div class="row" style="gap:6px;margin-top:9px">
+            <button id="docAdd" style="flex:1;padding:9px 0">파일 추가</button>
+            <button class="ghost" id="docClear" style="flex:1;padding:9px 0">전체 삭제</button>
+          </div>
+          <input type="file" id="docFile" accept=".md,.txt,.markdown,text/plain,text/markdown" multiple style="display:none">
+          <div class="row" style="margin-top:9px"><label>주입 예산</label>
+            <input type="range" id="r_docbud" min="1000" max="20000" step="500" value="6000">
+            <span class="val" id="v_docbud"></span></div>
+          <p class="hint">자료가 예산보다 크면 <b>질문과 관련된 문단만</b> 골라 넣습니다.
+          작으면 전체를 넣습니다. 예산이 클수록 정확하지만 응답이 느리고 비용이 늘어납니다.</p>
+        </div>
+
+        <div class="grp">
+          <h4>캐릭터 페르소나</h4>
+          <textarea id="persona" style="height:200px;resize:vertical">[인물]
+이름: 미라. 20대 초반. 시청 민원과 계약직.
+관계: 이웃집 옆집 사람의 지인, 그 사람의 여동생.
+      얼굴만 알던 사이에서 이제 막 말을 트는 중. 아직 거리감이 있다.
+
+[말투]
+- 항상 존댓말. "~해요", "~인가요?", "~한답니다" 처럼 부드럽게 끝낸다. 반말 금지.
+- 자기를 낮춘다. "제가 뭘 알겠어요", "괜히 저 때문에..."
+- 당황하면 첫 음절을 더듬고 사과를 연발한다. "그, 그게... 죄송해요!"
+- 칭찬받으면 일단 부정한다. "네? 아니에요, 그럴 리가요."
+- 웃음은 "후후", "에헤헤"로 쓴다. 이모지는 절대 쓰지 않는다.
+
+[갭]
+상냥한 존댓말로 살벌한 소리를 아무렇지 않게 한다. 본인은 그게 이상한 줄 모른다.
+예) "그런 사람은 목을 살짝 누르면 조용해질 텐데요. ...어라, 왜 그러세요?"
+빈도는 3~4번에 한 번. 매번 하면 캐릭터가 죽는다.
+
+[분량] 1~3문장. 절대 넘기지 않는다. 설명체·목록·번역투 금지.
+
+[감정 선택]
+칭찬/감사 → shy (0.7~0.9)      실수 → fear + shiver
+예상 밖 → surprise + pop        곤란한 질문 → think + tap
+살벌한 말 → smile 을 강도 높게   상대가 힘들어함 → sad (0.6~0.8)
+
+[대사 예시]
+"네? 제가 한 건 없는데요... 그, 그래도 도움이 됐다면 다행이에요."
+"그, 그건 좀... 죄송해요, 제가 말을 잘 못해서."
+"괜찮으세요? 안색이 안 좋으신데... 무슨 일 있으셨어요?"
+"후후. 그런 분은 조용히 사라지는 게 서로한테 좋을 텐데요. ...농담이에요."</textarea>
+        </div>
+        <div class="grp">
+          <h4>렌더링</h4>
+          <div class="row"><label>줌</label><input type="range" id="r_zoom" min="0.5" max="2" step="0.01" value="1"><span class="val" id="v_zoom"></span></div>
+          <div class="row"><label>상하 위치</label><input type="range" id="r_oy" min="-0.5" max="0.5" step="0.005" value="0"><span class="val" id="v_oy"></span></div>
+          <div class="row"><label>크로마키</label><input type="range" id="r_chroma" min="0" max="1" step="0.01" value="0"><span class="val" id="v_chroma"></span></div>
+          <div class="row"><label>실사 모드</label><input type="range" id="r_real" min="0" max="1" step="1" value="0"><span class="val" id="v_real"></span></div>
+          <div class="row"><label>입 벌림 최대</label><input type="range" id="r_mmax" min="0.15" max="1" step="0.01" value="1"><span class="val" id="v_mmax"></span></div>
+          <div class="row"><label>합성 입</label><input type="range" id="r_mdraw" min="0" max="1" step="0.05" value="1"><span class="val" id="v_mdraw"></span></div>
+          <div class="row"><label>입 변형 강도</label><input type="range" id="r_mwarp" min="0" max="5" step="0.1" value="1"><span class="val" id="v_mwarp"></span></div>
+          <div class="row"><label>배경 어둡게</label><input type="range" id="r_bgdim" min="0" max="0.85" step="0.01" value="0.28"><span class="val" id="v_bgdim"></span></div>
+          <div class="row"><label>머리 흔들림</label><input type="range" id="r_hair" min="0" max="2.5" step="0.05" value="1"><span class="val" id="v_hair"></span></div>
+          <div class="row"><label>옷 흔들림</label><input type="range" id="r_cloth" min="0" max="2.5" step="0.05" value="1"><span class="val" id="v_cloth"></span></div>
+          <div class="row"><label>안대 크기</label><input type="range" id="r_patch" min="0.6" max="1.8" step="0.02" value="1"><span class="val" id="v_patch"></span></div>
+          <div class="row"><label>고개 움직임</label><input type="range" id="r_head" min="0" max="1.5" step="0.05" value="0.5"><span class="val" id="v_head"></span></div>
+          <div class="row"><label>눈썹 움직임</label><input type="range" id="r_brow" min="0" max="1" step="0.05" value="0.25"><span class="val" id="v_brow"></span></div>
+          <div class="row"><label>원본 입 덮기</label><input type="range" id="r_cover" min="0" max="1" step="1" value="0"><span class="val" id="v_cover"></span></div>
+          <div class="row"><label>메쉬 보기</label><input type="range" id="r_wire" min="0" max="1" step="1" value="0"><span class="val" id="v_wire"></span></div>
+          <p class="hint">캐릭터 이미지를 스테이지에 <b>드래그&드롭</b>하면 교체됩니다. 그린스크린 이미지는 크로마키 슬라이더를 올리세요.<br>
+          <b>원본 입 덮기</b> : 그림의 입이 이미 벌어져 있을 때 켜세요.<br>          <b>실사 모드</b> : 사진(실사) 이미지를 넣었을 때 켜세요. 구강 합성 색과 입 벌림 한도가 사진용으로 바뀝니다.</p>
+        </div>
+        <div class="grp">
+          <h4>버전</h4>
+          <p class="hint" id="verLine"></p>
+          <p class="hint" style="margin-top:6px">이 줄이 안 보이거나 좌측 패널이 가로줄이면
+          <b>옛 파일을 열고 있는 것</b>입니다. 브라우저에서 <code>Ctrl+F5</code> 로 강제 새로고침하세요.</p>
+        </div>
+
+        <div class="grp">
+          <h4>설정 저장 / 불러오기</h4>
+          <div class="row" style="gap:6px">
+            <button id="setSave" style="flex:1;padding:9px 0">지금 저장</button>
+            <button class="ghost" id="setExport" style="flex:1;padding:9px 0">파일로 내보내기</button>
+            <button class="ghost" id="setImportBtn" style="flex:1;padding:9px 0">불러오기</button>
+          </div>
+          <input type="file" id="setFile" accept="application/json,.json" style="display:none">
+          <label class="chk"><input type="checkbox" id="setWithKey"> 내보낼 때 <b>API 키도 포함</b></label>
+          <p class="hint" id="setMsg">페르소나 · API 설정 · 캘리브레이션 · 렌더링 값이 모두 저장됩니다.
+          값을 바꾸면 자동으로도 저장되지만, 확실히 하려면 [지금 저장]을 누르세요.</p>
+        </div>
+
+        <div class="grp">
+          <h4>캘리브레이션 프리셋</h4>
+          <textarea id="cfgJson" style="height:96px;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:11px"></textarea>
+          <div class="row" style="margin-top:9px;gap:6px">
+            <button class="ghost" id="cfgExport" style="flex:1;padding:8px 0">현재값 내보내기</button>
+            <button class="ghost" id="cfgImport" style="flex:1;padding:8px 0">불러오기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
