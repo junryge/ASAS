@@ -789,6 +789,37 @@ def api_ml_why():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/avatar")
+def api_avatar():
+    """2D 감정캐릭터 앱이 어디 떠 있나 + 지금 살아 있나.
+
+    ★이건 관제 시스템이 아니다. 따로 뜨는 앱이라 systems() 에 넣지 않는다
+      (넣으면 수집 대상이 되고 test_fabs 의 두 목록도 어긋난다).
+    ★죽어 있는지 미리 알려 준다. 안 그러면 눌렀을 때 빈 화면만 나오고,
+      사용자는 관제 화면이 고장난 줄 안다.
+    """
+    av = (CFG.get("avatar") or {})
+    url = str(av.get("url") or "").strip()
+    port = int(av.get("port") or 8585)
+    if not url:
+        # 화면이 보고 있는 호스트를 그대로 쓴다 — 주소를 두 군데 적지 않으려고
+        host = (request.host or "").split(":")[0] or "127.0.0.1"
+        url = f"http://{host}:{port}/"
+
+    alive, why = False, ""
+    try:
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=1.0) as r:
+            alive = 200 <= r.status < 400
+    except Exception as e:
+        why = f"{type(e).__name__}"
+    return jsonify({"enabled": bool(av.get("enabled", True)), "url": url,
+                    "alive": alive, "why": why,
+                    "hint": "avatar_2d 폴더에서 python run.py 로 따로 띄웁니다"})
+
+
 @app.route("/api/ml/why/models")
 def api_ml_why_models():
     """ML 해석에 쓸 수 있는 모델 목록.

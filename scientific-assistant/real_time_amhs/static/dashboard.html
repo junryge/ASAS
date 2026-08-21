@@ -89,6 +89,13 @@
   .sys.fab .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid #5E6E85}
   .sys.fab .st.live{color:#2FD68A}
   .sys.fab .st.live i{border:0;background:#2FD68A;animation:blip 1.9s ease-in-out infinite}
+  /* 2D 감정캐릭터 — ★관제 시스템이 아니라 따로 뜨는 앱이다. 눌러도 관제
+     화면이 바뀌지 않고 새 탭이 열린다. 그래서 색을 달리해 구분한다. */
+  .sys.fab.app{border-color:#2A2340;background:#120E1E}
+  .sys.fab.app:hover{border-color:#6A4FBF;background:#191233}
+  .sys.fab.app .cd{color:#D9CEFF}
+  .sys.fab.app .kind{color:#8A78C4}
+  .sys.fab.app .st.off{color:#C77B7B}
   @keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
   .sys.fab.wip{cursor:not-allowed;border-style:dashed}
   .sys.fab.wip:hover{transform:none;border-color:#1C2431;background:#0D1119}
@@ -783,6 +790,44 @@ const SYSTEMS = [
 ];
 let SYS = null, LIVE_STARTED = false;
 
+/* ── 2D 감정캐릭터 카드 ──
+   ★관제 시스템이 아니다. 눌러도 관제 화면이 바뀌지 않고 새 탭이 열린다.
+     그래서 pickSystem 을 타지 않는다(수집 대상이 아니므로 SYSTEMS 에도
+     없다 — 넣으면 서버 systems() 와 어긋나 test_fabs 가 깨진다).
+   ★꺼져 있으면 미리 알려 준다. 안 그러면 눌렀을 때 빈 화면만 나오고
+     사용자는 관제 화면이 고장난 줄 안다. */
+let AVATAR = null;
+
+async function wireAvatar(){
+  const btn = $('#sys-avatar'), st = $('#avstate');
+  if(!btn) return;
+  try{
+    AVATAR = await (await fetch('/api/avatar')).json();
+  }catch(e){ AVATAR = null; }
+
+  if(!AVATAR || AVATAR.enabled === false){
+    btn.style.display = 'none';
+    return;
+  }
+  if(AVATAR.alive){
+    st.className = 'st live';
+    st.innerHTML = '<i></i>실행 중 · 새 탭으로 열기';
+  }else{
+    st.className = 'st off';
+    st.innerHTML = '<i></i>꺼져 있음 — 따로 실행하세요';
+  }
+  btn.title = AVATAR.url + (AVATAR.alive ? '' : ' (아직 안 떠 있습니다)');
+  btn.onclick = () => {
+    if(!AVATAR.alive){
+      alert('2D 감정캐릭터가 아직 안 떠 있습니다.\n\n'
+            + 'avatar_2d 폴더에서 따로 띄우세요:\n'
+            + '    python run.py\n\n주소: ' + AVATAR.url);
+      return;
+    }
+    window.open(AVATAR.url, '_blank', 'noopener');
+  };
+}
+
 function renderOpen(){
   /* 첫 칸(ALL)은 통합 관제라 크게, FAB 5개는 오른쪽에 2열로 */
   const [all, ...rest] = SYSTEMS;
@@ -801,9 +846,17 @@ function renderOpen(){
           <span class="kind">${esc(s.kind)}</span>
         </span>
         <span class="st ${s.ready?'live':''}"><i></i>${s.ready?'운영 중':'준비 중'}</span>
-      </button>`).join('')}</div>`;
-  document.querySelectorAll('#sysgrid .sys').forEach(b =>
+      </button>`).join('')}
+      <button class="sys fab app" id="sys-avatar" title="새 탭으로 열립니다">
+        <span class="tp">
+          <span class="cd dsp">AVATAR_2D</span>
+          <span class="kind">APP</span>
+        </span>
+        <span class="st" id="avstate"><i></i>확인 중…</span>
+      </button></div>`;
+  document.querySelectorAll('#sysgrid .sys[data-sys]').forEach(b =>
     b.onclick = () => pickSystem(b.dataset.sys));
+  wireAvatar();
 
   const on = SYSTEMS.filter(s => s.ready).length;
   $('#opcnt').textContent = `${on} / ${SYSTEMS.length} 라인 수집 중`;
