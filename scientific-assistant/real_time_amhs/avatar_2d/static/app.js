@@ -2089,13 +2089,30 @@ function mdHtml(text){
   closeAll(); if(code) out.push('</pre>');
   return out.join('');
 }
-/* 말풍선용 — 표·코드를 읽어 줄 수는 없다. 걷어내고 앞부분만 말한다. */
+/* 말풍선용 — 표·코드는 읽어 줄 수 없으니 걷어낸다.
+   ★줄바꿈은 **살린다.** 예전엔 \s+ 로 전부 뭉개서 "M16HUB 72점 M14 10점"
+     처럼 한 줄로 붙어 나왔다. 말풍선 CSS 는 이미 white-space:pre-wrap 이라
+     \n 만 남겨 두면 줄이 갈라진다. 줄 안의 공백만 정리한다. */
 function speakable(t){
-  t=String(t||'').replace(/```[\s\S]*?```/g,' ').replace(/^\|.*$/gm,' ')
-    .replace(/^#{1,6}\s*/gm,'').replace(/\*\*([^*]+)\*\*/g,'$1')
-    .replace(/`([^`]+)`/g,'$1').replace(/^---+$/gm,' ')
-    .replace(/\s+/g,' ').trim();
-  return t.length>220 ? t.slice(0,220)+'…' : t;
+  t = String(t||'')
+    .replace(/```[\s\S]*?```/g,'\n')     // 코드블록 통째로
+    .replace(/^\|.*$/gm,'')              // 표 행
+    .replace(/^#{1,6}\s*/gm,'')          // 제목 기호
+    .replace(/^\s*---+\s*$/gm,'')        // 구분선
+    .replace(/\*\*([^*]+)\*\*/g,'$1')
+    .replace(/`([^`]+)`/g,'$1')
+    .replace(/[ \t]+/g,' ')              // 줄 안의 공백만
+    .replace(/[ \t]*\n[ \t]*/g,'\n')     // 줄 끝/앞 공백
+    .replace(/\n{3,}/g,'\n\n')           // 빈 줄 과다
+    .trim();
+  if(t.length<=260) return t;
+  /* 자를 때도 줄 단위로 — 문장 중간에서 끊으면 읽다 만 것처럼 보인다 */
+  const lines=t.split('\n'); let out='';
+  for(const ln of lines){
+    if((out+ln).length>260) break;
+    out += (out?'\n':'') + ln;
+  }
+  return (out || t.slice(0,260)) + '…';
 }
 
 function push(who,text,tag,meta,replaying){

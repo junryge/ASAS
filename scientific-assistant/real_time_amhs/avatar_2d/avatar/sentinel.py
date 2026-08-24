@@ -370,9 +370,101 @@ def evidence():
     return _evidence_from(d, head)
 
 
+# 룰 코드 → 화면 표기. 관제는 'R-A' 라고 쓰지 'RA' 라고 안 쓴다.
+_RNAME = {"RA": "R-A", "RA_sus": "R-A′", "RB": "R-B", "RB_fast": "R-B fast",
+          "RC": "R-C", "RD": "R-D"}
+MAX_COND = 4          # 한 룰의 조건이 5개(R-D)까지 있다 — 근거가 너무 길어진다
+
+
+def _fired_lines(row, rules_by_code):
+    """켜진 룰을 **실제 AMOS 컬럼·임계·실측값**으로 풀어 쓴다.
+
+    ★'RA+RD' 같은 내부 코드만 던지면 관제는 무슨 일인지 모른다 (실제 지적).
+      readings 에 룰별 컬럼·임계·그 1분 값이 이미 다 들어 있는데 안 쓰고
+      있었다.
+
+    ★정직하게 — 룰이 켜졌다고 그 1분 값이 임계를 넘은 것은 아니다.
+      R-A′ 는 '최근 5분 중 3분', R-B 는 '31분 전 대비' 처럼 창(window)으로
+      판정한다. 그래서 이 1분 값이 임계 미만이어도 룰은 켜질 수 있고,
+      그때는 판정 방식을 같이 적어 준다 — 안 그러면 "값은 낮은데 왜
+      켜졌냐" 가 된다.
+    """
+    fired = row.get("fired") or []
+    if not fired:
+        return []
+    by_rule = {}
+    for rd in (row.get("readings") or []):
+        by_rule.setdefault(rd.get("rule"), []).append(rd)
+
+    out = ["  켜진 룰 — 실제로 무엇이 걸렸나:"]
+    for code in fired:
+        meta = rules_by_code.get(code) or {}
+        name = _RNAME.get(code, code)
+        label = meta.get("label") or ""
+        pts = row.get("pts", {}).get(code)
+        head = "   · {} {}{}".format(
+            name, label,
+            " ({}점)".format(int(pts)) if isinstance(pts, (int, float)) and pts else "")
+        conds = by_rule.get(code) or []
+        if not conds:
+            # MAXCAPA 처럼 감시 컬럼이 CSV 에 없는 룰 — signals 텍스트가 유일한 근거
+            extra = ""
+            if code == "MAXCAPA" and row.get("maxcapa"):
+                extra = " — 내려간 컬럼: " + ", ".join(row["maxcapa"])
+            out.append(head + extra)
+            if meta.get("when"):
+                out.append("       판정: {}".format(meta["when"]))
+            continue
+        # 임계를 넘은 조건을 먼저, 그 다음 값이 있는 것, 마지막이 값 없는 것
+        conds.sort(key=lambda c: (0 if c.get("over") else
+                                  1 if c.get("has_value") else 2))
+        out.append(head + (" — 아래 조건 중 하나로 켜짐"
+                           if len(conds) > 1 else ""))
+        for c in conds[:MAX_COND]:
+            thr = c.get("thr")
+            op = {"<=": "≤", "diff10": "10분 +", ">=": "≥"}.get(
+                c.get("op") or ">=", "≥")
+            unit = c.get("unit") or ""
+            thr_s = ("임계 {}{}{}".format(op, _g(thr), unit)
+                     if thr is not None else "임계 미정의")
+            if c.get("has_value"):
+                val_s = "값 {}{}".format(_g(c.get("value")), unit)
+                if c.get("over"):
+                    val_s += " ← 넘음"
+            else:
+                val_s = "CSV 에 값 없음"
+            amos = c.get("amos") or ""
+            out.append("       {} · {} · {}{}".format(
+                c.get("label") or "", thr_s, val_s,
+                " [{}]".format(amos) if amos else ""))
+        if len(conds) > MAX_COND:
+            out.append("       (조건 {}개 더 있음)".format(len(conds) - MAX_COND))
+        # 이 1분 값으로는 아무것도 안 넘었는데 룰이 켜졌다 — 왜인지 갈라 말한다
+        if not any(c.get("over") for c in conds):
+            blind = [c for c in conds if not c.get("has_value")]
+            if blind:
+                # R-D 처럼 조건 일부가 CSV 에 안 실려 오는 경우가 이쪽이다.
+                # "조건 하나만 걸려도 켜짐" 이라고만 하면 왜 켜졌는지 여전히 모른다.
+                out.append("       ※ 보이는 값은 임계 미만이다 — CSV 에 값이 "
+                           "안 오는 조건 {}개 중 하나에서 걸렸을 가능성이 크다"
+                           .format(len(blind)))
+            elif meta.get("when"):
+                out.append("       ※ 이 1분 값은 임계 미만인데 룰이 켜졌다 — "
+                           "판정 방식: {}".format(meta["when"]))
+    return out
+
+
+def _g(v):
+    """숫자를 사람이 읽는 꼴로 (12.0 → 12)."""
+    if isinstance(v, float) and v == int(v):
+        return str(int(v))
+    return str(v)
+
+
 def _evidence_from(d, head):
     """비교 응답(d) → 근거 텍스트. 현재/과거가 머리말만 다르고 몸은 같다."""
     cuts = d.get("cuts") or {}
+    rules_by_code = {r.get("code"): r for r in (d.get("rules") or [])}
     L = list(head)
     L.append("등급 컷: 경계 {warn} · 위험 {danger} · 초위험 {critical}".format(
         warn=cuts.get("warn"), danger=cuts.get("danger"),
@@ -394,21 +486,27 @@ def _evidence_from(d, head):
             delta = row.get("delta")
             dtxt = ("{:+g}".format(delta) if isinstance(delta, (int, float))
                     else "이전값없음")
-            L.append("{f}: 영역 {a}/{cap} · 위험도 {rk} {lv} · 켜진룰 {fr} "
-                     "· {m}분변화 {d}".format(
-                         f=row.get("fab"), a=row.get("area"),
-                         cap=d.get("area_cap"), rk=row.get("risk"),
-                         lv=row.get("level"), fr=fired,
-                         m=d.get("delta_min"), d=dtxt))
+            L.append("{f}: 영역 {a}/{cap} · 위험도 {rk} {lv} · {m}분변화 {d}"
+                     .format(f=row.get("fab"), a=row.get("area"),
+                             cap=d.get("area_cap"), rk=row.get("risk"),
+                             lv=row.get("level"),
+                             m=d.get("delta_min"), d=dtxt))
             if row.get("mismatch"):
                 L.append("  ⚠ {}".format(row["mismatch"]))
-            # 임계 넘은 실측값 — '왜' 를 물으면 이걸 짚어야 한다
-            for rd in (row.get("readings") or []):
-                if rd.get("over"):
-                    L.append("  · {lb} {v}{u} (임계 {op}{t})".format(
-                        lb=rd.get("label"), v=rd.get("value"),
-                        u=rd.get("unit") or "", op=rd.get("op") or "≥",
-                        t=rd.get("thr")))
+            # ★켜진 룰을 코드가 아니라 실제 컬럼·임계·실측값으로 풀어 쓴다
+            L.extend(_fired_lines(row, rules_by_code))
+            # 룰은 안 켜졌지만 임계를 넘긴 값이 있으면 그것도 알린다
+            over_only = [rd for rd in (row.get("readings") or [])
+                         if rd.get("over") and rd.get("rule") not in
+                         (row.get("fired") or [])]
+            for rd in over_only[:3]:
+                L.append("  · (아직 룰 미발동) {lb} {v}{u} · 임계 {op}{t} [{a}]"
+                         .format(lb=rd.get("label"), v=_g(rd.get("value")),
+                                 u=rd.get("unit") or "",
+                                 op={"<=": "≤", "diff10": "10분 +",
+                                     ">=": "≥"}.get(rd.get("op") or ">=", "≥"),
+                                 t=_g(rd.get("thr")),
+                                 a=rd.get("amos") or "컬럼 미상"))
     if d.get("blind"):
         L.append("구조 주의: {} 는 단독으로는 전체 경보(경계 {}점)에 못 간다 "
                  "— FAB 위험도로 봐야 한다.".format(
@@ -481,6 +579,20 @@ def plain_status(d=None, past=False):
             for x in worst))
     else:
         parts.append("경계 이상인 FAB 없음")
+    # ★켜진 룰이 있으면 코드가 아니라 컬럼·값으로 붙인다 — 이 요약은 LLM 을
+    #   안 거치고 그대로 화면에 나가므로, 여기서 'RA+RD' 를 쓰면 그대로 보인다.
+    detail = []
+    for x in rows[1:]:
+        for rd in (x.get("readings") or []):
+            if rd.get("over") and rd.get("rule") in (x.get("fired") or []):
+                detail.append("{f} {lb} {v}{u}(임계 {op}{t})".format(
+                    f=x["fab"], lb=rd.get("label"), v=_g(rd.get("value")),
+                    u=rd.get("unit") or "",
+                    op={"<=": "≤", "diff10": "10분 +", ">=": "≥"}.get(
+                        rd.get("op") or ">=", "≥"),
+                    t=_g(rd.get("thr"))))
+    if detail:
+        parts.append("임계 넘은 값: " + " · ".join(detail[:4]))
     # ★두 시각을 다 말한다 — 지금이 몇 시고, 이 값이 언제 값인지
     head = "지금 {} · 데이터 {} 기준".format(
         time.strftime("%H:%M"), d.get("at"))

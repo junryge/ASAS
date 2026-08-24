@@ -178,8 +178,10 @@ class 근거_텍스트(_Sentinel):
         self.feed(fake_compare(at=now_kst(1)))
         ev = sentinel.evidence()
         self.assertTrue(ev["ok"])
+        # ★'RA+RD' 같은 코드 나열은 일부러 없앴다 — 실제 컬럼으로 말해야 한다
+        self.assertNotIn("켜진룰 RA+RD", ev["text"])
         for must in ("31.0", "72", "36.0", "60", "71", "85", "15.98",
-                     "M16HUB", "RA+RD", "M16B"):
+                     "M16HUB", "R-A", "M16B"):
             self.assertIn(must, ev["text"], must)
         for n in (31.0, 72.0, 15.98):
             self.assertIn(n, ev["numbers"])
@@ -629,6 +631,79 @@ class 세션_공유(unittest.TestCase):
         self.assertNotIn("http://", html)    # 사내망 — 외부 자원 금지
 
 
+class 룰을_실제_컬럼으로_말한다(_Sentinel):
+    """'RA+RD' 는 내부 코드다 — 관제는 그게 뭔지 모른다 (실제 지적)."""
+
+    @staticmethod
+    def _rich(hub_fired=("RA", "RD")):
+        d = fake_compare(at=now_kst(1))
+        hub = d["rows"][1]
+        hub["fired"] = list(hub_fired)
+        hub["pts"] = {"RA": 10, "RD": 7}
+        hub["readings"] = [
+            {"rule": "RA", "label": "반송시간", "unit": "분", "op": ">=",
+             "thr": 9.0, "value": 15.98, "over": True, "has_value": True,
+             "amos": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN"},
+            {"rule": "RD", "label": "FAB 저장율", "unit": "%", "op": ">=",
+             "thr": 25.75, "value": 1.18, "over": False, "has_value": True,
+             "amos": "M16HUB.STRATE.ALL.FABSTORAGERATIO"},
+            {"rule": "RD", "label": "3F→3F MLUD", "unit": "건", "op": ">=",
+             "thr": 50, "value": None, "over": None, "has_value": False,
+             "amos": "M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB"},
+        ]
+        d["rules"] = [
+            {"code": "RA", "pts": 10, "label": "반송·적재 시간 초과",
+             "when": "최근 10분 중 1회라도 임계 이상"},
+            {"code": "RD", "pts": 7, "label": "저장·설비 포화",
+             "when": "조건 하나만 걸려도 켜짐"},
+        ]
+        return d
+
+    def test_근거에_컬럼과_임계와_실측값이_나온다(self):
+        self.feed(self._rich())
+        t = sentinel.evidence()["text"]
+        self.assertIn("M16HUB.QUE.TIME.AVGTOTALTIME1MIN", t)
+        self.assertIn("반송·적재 시간 초과", t)      # 한글 이름
+        self.assertIn("임계 ≥9분", t)
+        self.assertIn("값 15.98분", t)
+        self.assertIn("넘음", t)
+        self.assertIn("M16HUB.STRATE.ALL.FABSTORAGERATIO", t)
+        # 코드만 나열하던 옛 형식은 사라져야 한다
+        self.assertNotIn("켜진룰 RA+RD", t)
+
+    def test_창_판정이면_왜_켜졌는지_밝힌다(self):
+        """값은 임계 미만인데 룰이 켜지는 경우 — 설명 없으면 '값 낮은데 왜?'"""
+        d = self._rich(hub_fired=("RA",))
+        d["rows"][1]["readings"][0].update(value=5.0, over=False)
+        self.feed(d)
+        t = sentinel.evidence()["text"]
+        self.assertIn("임계 미만인데 룰이 켜졌다", t)
+        self.assertIn("최근 10분 중 1회", t)
+
+    def test_CSV에_값이_없는_조건이면_그렇게_말한다(self):
+        """R-D 처럼 조건 일부가 CSV 에 안 오면 '판정 방식' 얘기가 아니라
+        '값이 안 오는 조건에서 걸렸다' 가 맞는 설명이다."""
+        self.feed(self._rich(hub_fired=("RD",)))
+        t = sentinel.evidence()["text"]
+        self.assertIn("CSV 에 값이 안 오는 조건", t)
+        self.assertIn("CSV 에 값 없음", t)
+
+    def test_상태_요약도_컬럼_값으로_말한다(self):
+        """LLM 을 안 거치고 그대로 화면에 나가는 경로 — 여기 코드가 새면
+        그대로 보인다."""
+        self.feed(self._rich())
+        s = sentinel.plain_status()
+        self.assertIn("임계 넘은 값", s)
+        self.assertIn("반송시간 15.98분", s)
+        self.assertNotIn("RA", s)
+        self.assertNotIn("RD", s)
+
+    def test_프롬프트가_룰코드_사용을_금지한다(self):
+        self.assertIn("룰 코드", allm.AGENT_RULES)
+        self.assertIn("그대로 말하지 마라", allm.AGENT_RULES)
+        self.assertIn("AMOS", allm.AGENT_RULES)
+
+
 class 줄바꿈(unittest.TestCase):
     """응답이 한 덩어리로 붙어 나오던 문제 — 프롬프트와 파싱 양쪽."""
 
@@ -659,6 +734,29 @@ class 줄바꿈(unittest.TestCase):
         part = ('{"emotion":"smile","intensity":0.6,"motion":"nod",'
                 '"text":"첫 줄\\n- M16')
         self.assertEqual(allm.partial_parse(part)["text"], "첫 줄\n- M16")
+
+    def test_말풍선도_줄바꿈을_살린다(self):
+        """speakable() 이 \\s+ 로 전부 뭉개서 말풍선이 한 줄로 붙어 나왔다.
+        말풍선 CSS 는 white-space:pre-wrap 이라 \\n 만 남기면 갈라진다."""
+        import re as _re
+        js = os.path.join(AV, "static", "app.js")
+        with open(js, encoding="utf-8") as f:
+            src = f.read()
+        body = src[src.index("function speakable("):]
+        body = body[:body.index("\nfunction ")]
+        # 줄바꿈까지 죽이는 치환이 남아 있으면 안 된다
+        self.assertNotIn(r"\s+/g,' '", body,
+                         "\\s+ 치환이 줄바꿈을 뭉갠다")
+        self.assertIn(r"[ \t]+", body, "줄 안의 공백만 정리해야 한다")
+        # 말풍선 CSS 가 pre-wrap 이어야 \n 이 보인다
+        css = os.path.join(AV, "static", "app.css")
+        with open(css, encoding="utf-8") as f:
+            c = f.read()
+        blk = c[c.index("#bubble{"):]
+        blk = blk[:blk.index("}")]
+        self.assertIn("pre-wrap", blk + c[c.index("#bubble{") - 400:
+                                          c.index("#bubble{")],
+                      "말풍선에 white-space:pre-wrap 이 없다")
 
 
 class 설정_일치(unittest.TestCase):
