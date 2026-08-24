@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+<!-- 소형창 사이드바 서랍 (미니 모드에서만 보인다) -->
+<div id="drawerMask"></div>
+<div id="drawerBtn" title="대화·감정·설정 열기 (지난 대화도 여기서)">☰</div>
 <div id="app">
   <div id="main">
   <div id="stageWrap">
@@ -225,6 +228,21 @@
             <span class="val" id="v_docbud"></span></div>
           <p class="hint">자료가 예산보다 크면 <b>질문과 관련된 문단만</b> 골라 넣습니다.
           작으면 전체를 넣습니다. 예산이 클수록 정확하지만 응답이 느리고 비용이 늘어납니다.</p>
+        </div>
+
+        <div class="grp">
+          <h4>관제 에이전트 규칙 (기본 프롬프트)</h4>
+          <p class="hint">페르소나와 <b>별개로</b> 서버가 항상 붙이는 규칙입니다 —
+          근거 밖 숫자 금지, 데이터 시각 먼저 말하기, 룰 코드 대신 실제 컬럼명,
+          줄바꿈 등. <b>무엇을 가르쳤는지 여기서 확인하고 고칠 수 있습니다.</b>
+          고치면 서버(data/settings.json)에 저장되어 다른 PC 에서도 같이 적용됩니다.</p>
+          <textarea id="agentRules" style="height:220px;resize:vertical"
+                    placeholder="불러오는 중…"></textarea>
+          <div class="row" style="margin-top:8px;align-items:center;gap:8px">
+            <button id="rulesSave">규칙 저장</button>
+            <button id="rulesReset">기본값으로</button>
+            <span class="hint" id="rulesMsg" style="margin:0"></span>
+          </div>
         </div>
 
         <div class="grp">

@@ -10,6 +10,8 @@ _LOCK = threading.Lock()
 
 class Settings:
     KEYS = ("docBudget", "ctxLimit", "keepMsgs", "temperature")
+    # ★문자열 설정은 숫자 변환을 타면 안 된다 (agentRules 는 프롬프트 본문)
+    TEXT_KEYS = ("agentRules",)
 
     def __init__(self, path):
         self.path = path
@@ -20,7 +22,7 @@ class Settings:
         try:
             if self.path.is_file():
                 saved = json.loads(self.path.read_text(encoding="utf-8")) or {}
-                for k in self.KEYS:
+                for k in self.KEYS + self.TEXT_KEYS:
                     if k in saved:
                         self.data[k] = saved[k]
         except Exception:
@@ -45,6 +47,10 @@ class Settings:
                             if k == "temperature" else int(patch[k])
                     except (TypeError, ValueError):
                         pass
+            for k in self.TEXT_KEYS:
+                if k in patch:
+                    # 빈 문자열 = 기본값으로 되돌리기 (llm.agent_rules 가 판단)
+                    self.data[k] = str(patch[k] or "")[:20000]
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 self.path.write_text(json.dumps(self.data, ensure_ascii=False),

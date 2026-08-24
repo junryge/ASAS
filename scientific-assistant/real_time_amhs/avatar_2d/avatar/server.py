@@ -187,7 +187,14 @@ class Handler(SimpleHTTPRequestHandler):
                 App.model, App.models, App.upstream))
 
         if path == "/api/settings":
-            return self._json(200, App.settings.all())
+            d = App.settings.all()
+            # ★사용자가 '뭘 가르쳤는지' 볼 수 있어야 한다 — 지금 실제로 쓰이는
+            #   규칙과 기본값을 같이 준다 (되돌리기 버튼이 기본값을 알아야 한다)
+            d["agentRules"] = llm.agent_rules(d)
+            d["agentRulesDefault"] = llm.AGENT_RULES
+            d["agentRulesCustom"] = bool(str(d.get("agentRules") or "").strip()
+                                         and d["agentRules"] != llm.AGENT_RULES)
+            return self._json(200, d)
 
         if path == "/api/docs":
             return self._json(200, {"docs": App.doc_store.list(),
@@ -271,7 +278,11 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
 
         if path == "/api/settings":
-            return self._json(200, App.settings.update(self._body()))
+            d = App.settings.update(self._body())
+            d["agentRules"] = llm.agent_rules(d)
+            d["agentRulesDefault"] = llm.AGENT_RULES
+            d["agentRulesCustom"] = d["agentRules"] != llm.AGENT_RULES
+            return self._json(200, d)
 
         if path == "/api/docs":
             b = self._body()

@@ -232,9 +232,37 @@
   #attachChip b{color:var(--dim);margin-left:4px}
   #attachFile{display:none}
   .hide{display:none !important}
-  /* ── 미니 모드 (소형 하단 위젯) — 캐릭터+말풍선+알람+입력만 ── */
-  body.mini #side, body.mini #hudBar, body.mini #clock,
+  /* ── 미니 모드 (소형 하단 위젯) — 캐릭터+말풍선+알람+입력만 ──
+     ★사이드바는 숨기지 않고 **서랍**으로 만든다. 소형창에서도 지난 대화·
+       감정·설정을 봐야 한다 (창이 작다고 기능을 없애면 안 된다). */
+  body.mini #hudBar, body.mini #clock,
   body.mini #drop, body.mini #chatGrip, body.mini #inputGrip{display:none !important}
+  body.mini #side{
+    position:fixed; right:0; top:0; bottom:0; z-index:9020;
+    width:min(300px,88vw) !important; max-width:88vw;
+    transform:translateX(100%); transition:transform .22s ease;
+    box-shadow:-8px 0 24px rgba(0,0,0,.45); border-left:1px solid var(--line);
+    background:var(--panel);
+  }
+  body.mini.drawer #side{transform:translateX(0)}
+  body.mini #grip{display:none}
+  /* 서랍 여닫이 버튼 — 소형창에서만 보인다 */
+  #drawerBtn{display:none}
+  body.mini #drawerBtn{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; right:8px; top:8px; z-index:9030;
+    width:34px; height:34px; border-radius:9px; cursor:pointer;
+    background:rgba(20,26,36,.86); border:1px solid var(--line);
+    color:var(--fg); font-size:15px; user-select:none;
+  }
+  body.mini #drawerBtn:hover{border-color:var(--accent2)}
+  body.mini.drawer #drawerBtn{right:min(308px,calc(88vw + 8px))}
+  /* 서랍 밖을 눌러 닫기 */
+  #drawerMask{display:none}
+  body.mini.drawer #drawerMask{
+    display:block; position:fixed; inset:0; z-index:9010;
+    background:rgba(0,0,0,.35);
+  }
   body.mini #app{padding:0}
   body.mini #stageWrap{border-radius:0}
   body.mini #chatPane{max-height:38vh}

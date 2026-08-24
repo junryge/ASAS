@@ -101,6 +101,17 @@ AGENT_RULES = (
     "5. 과장·추측·아는 척 금지. 캐릭터 말투는 유지하되 숫자는 건조하게 정확히.")
 
 
+def agent_rules(settings=None):
+    """실제로 쓰이는 에이전트 규칙 — 설정에 저장된 게 있으면 그것.
+
+    ★사용자가 '뭘 가르쳤는지' 볼 수 있어야 한다. 코드에만 있으면 아무도
+      모른 채로 동작이 바뀐다. 설정 탭에서 보고 고치고 되돌릴 수 있게
+      settings.agentRules 로 뺀다. 비어 있으면 기본값(AGENT_RULES).
+    """
+    v = str((settings or {}).get("agentRules") or "").strip()
+    return v or AGENT_RULES
+
+
 def build_messages(persona, user_text, history, doc_store, settings,
                    skill_store=None, evidence_text="", attach=None):
     """system + 최근 대화 + user. (기존 sysPrompt 의 파이썬판)
@@ -110,7 +121,7 @@ def build_messages(persona, user_text, history, doc_store, settings,
     attach=(이름, 본문) 이면 **그 파일을 통째로**(예산 상한) 먼저 넣는다 —
     방금 첨부한 파일은 질문과 단어가 안 겹쳐도 봐야 하는 파일이다.
     """
-    sysmsg = (persona or "").strip() + "\n\n" + AGENT_RULES + "\n\n"
+    sysmsg = (persona or "").strip() + "\n\n" + agent_rules(settings) + "\n\n"
     if evidence_text:
         sysmsg += ("[관제 근거]\n" + evidence_text +
                    "\n(이 블록의 숫자만 사용한다. 부족하면 부족하다고 말한다.)\n\n")

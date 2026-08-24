@@ -1474,9 +1474,65 @@ function clearAlarm(){
    '소형창' 은 화면 우하단에 작은 팝업 창으로 새로 띄운다 (?mini=1). */
 function setMini(on){
   document.body.classList.toggle('mini', !!on);
+  if(!on) document.body.classList.remove('drawer');
   const c=$('#miniChip'); if(c) c.classList.toggle('on', !!on);
   computeView(); placeHandles(); placeBubble();
 }
+/* ---------- 관제 에이전트 규칙 (기본 프롬프트) 보기·수정 ----------
+   페르소나 말고 '서버가 항상 붙이는 규칙'. 코드에만 있으면 무엇을 가르쳤는지
+   아무도 모른다. 설정 탭에서 보고 고치고 되돌린다. */
+let RULES_DEFAULT = '';
+async function loadAgentRules(){
+  if(!window.SERVER) return;
+  const ta=$('#agentRules'); if(!ta) return;
+  try{
+    const r=await fetch('/api/settings',{cache:'no-store'});
+    if(!r.ok) return;
+    const s=await r.json();
+    RULES_DEFAULT = s.agentRulesDefault || '';
+    ta.value = s.agentRules || RULES_DEFAULT;
+    const m=$('#rulesMsg');
+    if(m) m.textContent = s.agentRulesCustom ? '수정된 규칙을 쓰는 중' : '기본값 사용 중';
+  }catch(e){}
+}
+(function initAgentRules(){
+  const ta=$('#agentRules'), save=$('#rulesSave'), reset=$('#rulesReset'),
+        msg=$('#rulesMsg');
+  if(!ta || !save) return;
+  const put = async (val, note)=>{
+    if(!window.SERVER){ if(msg) msg.textContent='서버(run.py)로 실행할 때만 저장됩니다'; return; }
+    try{
+      const r=await fetch('/api/settings',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({agentRules: val})});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const s=await r.json();
+      ta.value = s.agentRules || '';
+      if(msg) msg.textContent = note;
+      sys('관제 에이전트 규칙을 ' + note + ' — 다음 대화부터 적용됩니다.');
+    }catch(e){ if(msg) msg.textContent='저장 실패: '+e.message; }
+  };
+  save.onclick  = ()=> put(ta.value, '저장했습니다');
+  if(reset) reset.onclick = ()=>{
+    if(!confirm('기본값으로 되돌릴까요? 수정한 내용은 사라집니다.')) return;
+    put('', '기본값으로 되돌렸습니다');    // 빈 값 = 기본값 사용
+  };
+})();
+
+/* 소형창 사이드바 서랍 — 대화(지난 세션)·감정·설정을 여기서 본다 */
+function setDrawer(on){
+  document.body.classList.toggle('drawer', !!on);
+  const b=$('#drawerBtn'); if(b) b.textContent = on ? '✕' : '☰';
+  if(on && window.SERVER){ loadSessions().then(refreshSessUI).catch(()=>{}); }
+}
+(function initDrawer(){
+  const b=$('#drawerBtn'), m=$('#drawerMask');
+  if(b) b.onclick = ()=> setDrawer(!document.body.classList.contains('drawer'));
+  if(m) m.onclick = ()=> setDrawer(false);
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape' && document.body.classList.contains('drawer')) setDrawer(false);
+  });
+})();
 (function initMini(){
   const mc=$('#miniChip'), pc=$('#popChip');
   if(mc) mc.onclick = ()=> setMini(!document.body.classList.contains('mini'));
@@ -2030,9 +2086,9 @@ function beginStream(){
 function pushStream(t){
   talk = 0.45;                                   // 토큰이 오는 동안 입을 계속 움직인다
   if(!bubbleOn) return;
-  /* 말풍선은 '말' 이다 — 표·코드·제목 기호를 소리내 읽을 수는 없다.
-     원문은 채팅창(md 렌더)에 그대로 있고, 여기는 걷어낸 앞부분만. */
-  t = speakable(t);
+  /* 말풍선은 '말' 이다 — 표·코드는 못 읽고, 항목 나열은 채팅창 몫이다.
+     원문은 채팅창(md 렌더)에 전부 남는다. */
+  t = briefFor(t);
   const n=t.length;
   bubble.style.fontSize = n>320 ? '12.5px' : n>160 ? '13.5px' : '15px';
   bubble.textContent = t;
@@ -2042,7 +2098,7 @@ function pushStream(t){
 function endStream(t){
   talk = 0.25;
   if(!bubbleOn) return;
-  const hold = Math.min(9000, 2600 + t.length*28);
+  const hold = Math.min(9000, 2600 + briefFor(t).length*28);
   clearTimeout(hideTimer);
   hideTimer = setTimeout(()=>bubble.classList.remove('on'), hold);
 }
@@ -2115,6 +2171,31 @@ function speakable(t){
   return (out || t.slice(0,260)) + '…';
 }
 
+/* 말풍선용 요약 — 캐릭터는 '간단하게', 채팅창은 '전부'.
+   ★긴 답을 말풍선에 그대로 밀어 넣으면 중간에서 잘려 "말을 하다 만" 것처럼
+     보인다 (실제 지적). 그래서 캐릭터는 머리말(무슨 일인지)만 말하고,
+     항목 나열(- 로 시작하는 줄)은 채팅창에 맡긴다. 잘린 게 아니라
+     **나눠 맡은 것**이라는 걸 사용자가 알도록 안내 줄을 붙인다. */
+const BRIEF_MAX = 130;
+function briefFor(t){
+  const s = speakable(t);
+  const lines = s.split('\n');
+  const head = [];
+  let dropped = 0;
+  for(const ln of lines){
+    const v = ln.trim();
+    if(!v) continue;
+    if(/^[-*·]\s/.test(v)){ dropped++; continue; }        // 항목은 채팅창 몫
+    if(head.join(' ').length >= BRIEF_MAX){ dropped++; continue; }
+    head.push(v);
+  }
+  let out = head.join('\n').trim();
+  if(!out) out = s.slice(0, BRIEF_MAX);                    // 전부 항목뿐이면
+  if(out.length > BRIEF_MAX + 40) out = out.slice(0, BRIEF_MAX + 40) + '…';
+  if(dropped >= 2) out += '\n(자세한 건 채팅창에 적어 뒀어요)';
+  return out;
+}
+
 function push(who,text,tag,meta,replaying){
   const d=document.createElement('div'); d.className='msg '+who;
   if(tag){ const s=document.createElement('span'); s.className='tag'; s.textContent=tag; d.appendChild(s); }
@@ -2137,7 +2218,7 @@ function push(who,text,tag,meta,replaying){
       d.title='클릭하면 다시 재생';
       d.onclick=()=>{
         setEmotion(meta.emotion, meta.intensity, meta.motion);
-        speak(speakable(meta.text));
+        speak(briefFor(meta.text));
         d.classList.add('played');
         setTimeout(()=>d.classList.remove('played'), 700);
       };
@@ -2648,7 +2729,7 @@ async function send(){
     history.push({role:'assistant',content:JSON.stringify(r)});
     setEmotion(r.emotion, r.intensity, r.motion);
     push('ai', r.text, `${EMO[r.emotion].ko} · ${Math.round(r.intensity*100)}% · ${MOTION[r.motion].ko}`, r);
-    if(!useStream) speak(speakable(r.text));
+    if(!useStream) speak(briefFor(r.text));   // 캐릭터는 간단히 · 채팅창은 전부
   }catch(e){
     setEmotion('fear',0.8,'shiver');
     push('ai','(연결 실패) '+e.message,'error');
@@ -2877,6 +2958,7 @@ function applyServerConfig(c){
   /* 서버에 보관된 세션·자료 */
   await loadSessions(); refreshSessUI();
   await reloadDocs();
+  await loadAgentRules();        // 설정 탭 '기본 프롬프트' 채우기
 
   $('#apiBase').value = c.baseUrl || '/v1';
   if(c.model) $('#apiModel').value = c.model;
@@ -2903,7 +2985,12 @@ if(RESTORED && $('#apiKey').value.trim()){
 }else{
   sys('데모 모드로 실행 중입니다. 설정 탭에서 API 키를 넣고 [연결 테스트]를 누르세요.');
 }
-setTimeout(()=>{ setEmotion('smile',0.8,'nod'); speak('안녕! 나 움직이지? 말 걸어봐.'); }, 900);
+/* 첫 인사 — 데모 문구('나 움직이지?')가 아니라 관제 에이전트로서 인사한다.
+   무엇을 물어보면 되는지까지 말해 줘야 사용자가 첫 질문을 던진다. */
+setTimeout(()=>{
+  setEmotion('smile', 0.8, 'nod');
+  speak('안녕하세요! 언제나 저한테 FAB 관련 질문 물어봐 주세요.');
+}, 900);
 requestAnimationFrame(frame);
 window.addEventListener('resize',()=>{ computeView(); placeHandles(); placeBubble(); });
 

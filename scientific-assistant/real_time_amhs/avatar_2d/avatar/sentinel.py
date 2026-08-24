@@ -370,10 +370,35 @@ def evidence():
     return _evidence_from(d, head)
 
 
-# 룰 코드 → 화면 표기. 관제는 'R-A' 라고 쓰지 'RA' 라고 안 쓴다.
-_RNAME = {"RA": "R-A", "RA_sus": "R-A′", "RB": "R-B", "RB_fast": "R-B fast",
-          "RC": "R-C", "RD": "R-D"}
-MAX_COND = 4          # 한 룰의 조건이 5개(R-D)까지 있다 — 근거가 너무 길어진다
+# 룰 코드 → 한글 이름.
+# ★코드(RA·R-D…)를 근거에 **한 글자도 넣지 않는다.** 넣어 두면 LLM 이 그대로
+#   베껴서 "R-D 룰이 켜짐" 이라고 말한다 (실제로 그랬다). 관제는 그 코드를
+#   모르므로, 근거에 없으면 말할 수도 없다 — 프롬프트로 부탁하는 것보다
+#   재료에서 빼는 쪽이 확실하다.
+_KO = {"RA": "반송·적재 시간 초과", "RA_sus": "그 상태가 이어짐",
+       "RB": "대기 물량 30분 증가", "RB_fast": "10분새 급증",
+       "RC": "리프터 역증가·컨베이어 쏠림", "RD": "저장·설비 포화",
+       "SLA": "4분 초과 반송 비율", "SORT": "소터 대기·이재 실패",
+       "MAXCAPA": "설비 상한 하락",
+       "FLOW": "흐름(30분 평균 대비 배수)", "FUSE": "융합 집계",
+       "SCORE": "판정 결과"}
+# 룰 설명(when) 안에도 코드가 숨어 있다 — "임계는 R-A 의 70%" 같은 것
+_CODE_RE = re.compile(
+    r"\bR[-‑]?(A_sus|B_fast|A′|A'|A|B|C|D)\b|\b(RA_sus|RB_fast|RA|RB|RC|RD)\b")
+
+
+def _no_code(s):
+    """문장에서 룰 코드를 한글 이름으로 바꾼다."""
+    def rep(m):
+        raw = (m.group(0) or "").replace("-", "").replace("‑", "") \
+            .replace("′", "_sus").replace("'", "_sus").upper()
+        # _KO 의 키는 RA_sus·RB_fast 처럼 접미사가 소문자다
+        key = raw.replace("_SUS", "_sus").replace("_FAST", "_fast")
+        return _KO.get(key, "해당 룰")
+    return _CODE_RE.sub(rep, str(s or ""))
+
+
+MAX_COND = 4          # 한 룰의 조건이 5개(저장·설비 포화)까지 있다 — 너무 길어진다
 
 
 def _fired_lines(row, rules_by_code):
@@ -399,11 +424,11 @@ def _fired_lines(row, rules_by_code):
     out = ["  켜진 룰 — 실제로 무엇이 걸렸나:"]
     for code in fired:
         meta = rules_by_code.get(code) or {}
-        name = _RNAME.get(code, code)
-        label = meta.get("label") or ""
+        # 한글 이름만 쓴다 — 코드는 근거에 남기지 않는다
+        name = _no_code(meta.get("label") or "") or _KO.get(code, "룰")
         pts = row.get("pts", {}).get(code)
-        head = "   · {} {}{}".format(
-            name, label,
+        head = "   · {}{}".format(
+            name,
             " ({}점)".format(int(pts)) if isinstance(pts, (int, float)) and pts else "")
         conds = by_rule.get(code) or []
         if not conds:
@@ -413,7 +438,7 @@ def _fired_lines(row, rules_by_code):
                 extra = " — 내려간 컬럼: " + ", ".join(row["maxcapa"])
             out.append(head + extra)
             if meta.get("when"):
-                out.append("       판정: {}".format(meta["when"]))
+                out.append("       판정: {}".format(_no_code(meta["when"])))
             continue
         # 임계를 넘은 조건을 먼저, 그 다음 값이 있는 것, 마지막이 값 없는 것
         conds.sort(key=lambda c: (0 if c.get("over") else
@@ -450,7 +475,7 @@ def _fired_lines(row, rules_by_code):
                            .format(len(blind)))
             elif meta.get("when"):
                 out.append("       ※ 이 1분 값은 임계 미만인데 룰이 켜졌다 — "
-                           "판정 방식: {}".format(meta["when"]))
+                           "판정 방식: {}".format(_no_code(meta["when"])))
     return out
 
 

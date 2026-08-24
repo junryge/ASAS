@@ -9,6 +9,9 @@
 """
 import io
 import json
+import re
+import shutil
+import subprocess
 import os
 import sys
 import tempfile
@@ -24,6 +27,10 @@ if AV not in sys.path:
     sys.path.insert(0, AV)
 
 from avatar import commands, config as acfg, llm as allm, sentinel, skills  # noqa: E402
+
+# 근거·화면에 남으면 안 되는 룰 코드 (관제는 이 말을 모른다)
+_CODE_LEAK = re.compile(
+    r"\bR[-‑]?(?:A_sus|B_fast|A′|A'|A|B|C|D)\b|\b(?:RA_sus|RB_fast|RA|RB|RC|RD)\b")
 
 # 진짜 _get — 테스트들이 몽키패치하기 전에 잡아 둔다 (오염 방지)
 _REAL_GET = sentinel._get
@@ -180,8 +187,9 @@ class 근거_텍스트(_Sentinel):
         self.assertTrue(ev["ok"])
         # ★'RA+RD' 같은 코드 나열은 일부러 없앴다 — 실제 컬럼으로 말해야 한다
         self.assertNotIn("켜진룰 RA+RD", ev["text"])
+        # 룰은 코드가 아니라 한글 이름으로 나온다 (관제는 'R-A' 를 모른다)
         for must in ("31.0", "72", "36.0", "60", "71", "85", "15.98",
-                     "M16HUB", "R-A", "M16B"):
+                     "M16HUB", "반송·적재 시간 초과", "M16B"):
             self.assertIn(must, ev["text"], must)
         for n in (31.0, 72.0, 15.98):
             self.assertIn(n, ev["numbers"])
@@ -757,6 +765,323 @@ class 줄바꿈(unittest.TestCase):
         self.assertIn("pre-wrap", blk + c[c.index("#bubble{") - 400:
                                           c.index("#bubble{")],
                       "말풍선에 white-space:pre-wrap 이 없다")
+
+
+class 룰코드가_한_글자도_안_샌다(_Sentinel):
+    """'R-D 룰이 켜졌다' 는 관제가 모르는 말이다 (실제 지적).
+
+    ★프롬프트로 "쓰지 마라" 부탁하는 것으로는 못 막는다 — 재료에 있으면
+      모델은 베낀다. 그래서 **근거 텍스트에서 코드를 없앤다.**
+    """
+
+    def test_모든_표기법을_한글로_바꾼다(self):
+        f = sentinel._no_code
+        self.assertEqual(f("R-A 가 켜짐"), "반송·적재 시간 초과 가 켜짐")
+        self.assertEqual(f("RA_sus"), "그 상태가 이어짐")
+        self.assertEqual(f("R-B fast"), "대기 물량 30분 증가 fast")
+        self.assertEqual(f("R-C 와 R-D"), "리프터 역증가·컨베이어 쏠림 와 저장·설비 포화")
+        self.assertEqual(f("임계는 R-A 의 70%"), "임계는 반송·적재 시간 초과 의 70%")
+
+    def test_코드가_아닌_말은_안_건드린다(self):
+        """'RATIO' 안의 RA, 컬럼명 안의 R-D 비슷한 토막을 지우면 근거가 망가진다."""
+        f = sentinel._no_code
+        self.assertEqual(f("M16HUB.STRATE.ALL.FABSTORAGERATIO"),
+                         "M16HUB.STRATE.ALL.FABSTORAGERATIO")
+        self.assertEqual(f("RACK 상태"), "RACK 상태")
+        self.assertEqual(f("정상"), "정상")
+
+    def test_근거_전문에_룰코드가_없다(self):
+        d = 룰을_실제_컬럼으로_말한다._rich()
+        # 판정 설명에도 코드를 심어 둔다 — 여기가 옛날에 새던 자리
+        d["rules"][0]["when"] = "최근 10분 중 1회 · R-A 기준"
+        d["rules"][1]["when"] = "임계는 R-B 의 30%"
+        self.feed(d)
+        t = sentinel.evidence()["text"]
+        leaked = _CODE_LEAK.findall(t)
+        self.assertEqual(leaked, [], "근거에 룰 코드가 남았다: %r" % (leaked,))
+        self.assertIn("반송·적재 시간 초과", t)
+        self.assertIn("저장·설비 포화", t)
+
+    def test_읽은_값이_없는_룰의_판정설명에도_없다(self):
+        """★변이 검증에서 살아남은 구멍 — 조건(readings)이 하나도 없는 룰은
+        다른 갈래를 탄다. 거기 판정 설명에 코드가 그대로 실려 나갔다."""
+        d = 룰을_실제_컬럼으로_말한다._rich(hub_fired=("RA_sus",))
+        d["rows"][1]["readings"] = []          # CSV 매핑이 없는 룰
+        d["rules"] = [{"code": "RA_sus", "pts": 5, "label": "그 상태가 이어짐",
+                       "when": "최근 5분 중 3분 이상 · 임계는 R-A 의 70%"}]
+        self.feed(d)
+        t = sentinel.evidence()["text"]
+        self.assertIn("판정:", t, "판정 설명 갈래를 안 탔다 — 시험이 헛돈다")
+        self.assertEqual(_CODE_LEAK.findall(t), [],
+                         "값 없는 룰의 판정 설명으로 코드가 샌다")
+        self.assertIn("반송·적재 시간 초과 의 70%", t)
+
+    def test_상태_요약에도_없다(self):
+        """LLM 을 안 거치고 그대로 화면에 나가는 경로."""
+        self.feed(룰을_실제_컬럼으로_말한다._rich())
+        self.assertEqual(_CODE_LEAK.findall(sentinel.plain_status()), [])
+
+    def test_배점표_원본에도_코드가_없다(self):
+        """근거는 fab_score.RULES 의 when 을 그대로 실어 나른다 — 원본이
+        깨끗해야 다른 경로(문서·API)로도 안 샌다."""
+        import fab_score
+        for r in fab_score.RULES:
+            for k in ("label", "when"):
+                v = str(r.get(k) or "")
+                self.assertEqual(_CODE_LEAK.findall(v), [],
+                                 "RULES[%s].%s 에 코드가 있다: %r"
+                                 % (r["code"], k, v))
+
+
+class 말풍선은_간단히_채팅창은_전부(unittest.TestCase):
+    """캐릭터가 긴 답을 말풍선에 밀어 넣으면 중간에서 잘려 '말하다 만' 것처럼
+    보인다 (실제 지적). 캐릭터는 머리말만, 항목 나열은 채팅창이 맡는다."""
+
+    @classmethod
+    def setUpClass(cls):
+        js = os.path.join(AV, "static", "app.js")
+        with open(js, encoding="utf-8") as f:
+            cls.src = f.read()
+
+    def _brief(self, text):
+        """app.js 의 briefFor 를 그대로 떼어 node 로 돌린다 — 소스만 보고
+        '있는 것 같다' 하는 검사는 동작을 보장하지 못한다."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 없음 — 소스 검사만 수행")
+        s = self.src
+        body = s[s.index("function speakable("):s.index("\nfunction push(")]
+        prog = (body + "\nconst __in=JSON.parse(process.argv[2]);"
+                "process.stdout.write(briefFor(__in));")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(prog)
+            p = f.name
+        try:
+            out = subprocess.run([node, p, json.dumps(text)],
+                                 capture_output=True, timeout=20)
+            self.assertEqual(out.returncode, 0, out.stderr.decode("utf-8", "replace"))
+            return out.stdout.decode("utf-8")
+        finally:
+            os.unlink(p)
+
+    LONG = ("2026-08-06 23:59 데이터 기준으로 M16HUB 구역에서 반송·적재 시간 "
+            "초과가 감지돼요.\n"
+            "- M16HUB.QUE.TIME.AVGTOTALTIME1MIN 임계 ≥9분 · 값 15.98분\n"
+            "- M16HUB.STRATE.ALL.FABSTORAGERATIO 임계 ≥25.75% · 값 1.18%\n"
+            "- M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB CSV 에 값 없음\n"
+            "- M14 는 정상이에요\n")
+
+    def test_항목_나열은_채팅창_몫이다(self):
+        b = self._brief(self.LONG)
+        self.assertIn("M16HUB", b)
+        self.assertNotIn("AVGTOTALTIME1MIN", b, "말풍선이 항목까지 읽으려 든다")
+        self.assertIn("채팅창", b, "덜 말한 게 아니라 나눠 맡았다고 알려야 한다")
+
+    def test_짧은_답은_손대지_않는다(self):
+        one = "지금은 전 구역 정상이에요."
+        self.assertEqual(self._brief(one), one)
+
+    def test_머리말_줄바꿈은_살린다(self):
+        b = self._brief("첫 줄이에요.\n둘째 줄이에요.")
+        self.assertEqual(b, "첫 줄이에요.\n둘째 줄이에요.")
+
+    def test_전부_항목이어도_말은_한다(self):
+        """머리말이 없다고 말풍선이 비면 캐릭터가 벙어리가 된다."""
+        b = self._brief("- M16HUB 72점\n- M14 36점\n- M14B 31점\n")
+        self.assertTrue(b.strip(), "말풍선이 비었다")
+        self.assertIn("M16HUB", b)
+
+    def test_한_줄만_길어도_잘린_티를_낸다(self):
+        b = self._brief("가" * 400)
+        self.assertLess(len(b), 400)
+        self.assertIn("…", b)
+
+    def test_말하는_경로가_전부_요약을_쓴다(self):
+        """한 군데라도 speakable 을 그대로 쓰면 거기서만 긴 말이 새 나온다."""
+        s = self.src
+        self.assertNotIn("speak(speakable(", s)
+        self.assertIn("speak(briefFor(", s)
+        # 스트리밍 중에도 같아야 한다 (스트림은 pushStream 이 그린다)
+        blk = s[s.index("function pushStream("):s.index("function endStream(")]
+        self.assertIn("briefFor(t)", blk)
+        # 말풍선 유지 시간도 '실제로 보이는 길이' 기준이어야 한다
+        blk2 = s[s.index("function endStream("):]
+        blk2 = blk2[:blk2.index("\nfunction ")]
+        self.assertIn("briefFor(t).length", blk2)
+
+    def test_채팅창은_원문_그대로_받는다(self):
+        """말풍선을 줄인 김에 채팅창까지 줄이면 정보가 사라진다."""
+        s = self.src
+        blk = s[s.index("async function send("):]
+        blk = blk[:blk.index("\nfunction ") if "\nfunction " in blk else len(blk)]
+        self.assertIn("push('ai', r.text", blk,
+                      "채팅창에 원문(r.text)이 아니라 요약이 들어간다")
+
+
+class 소형창_사이드바_서랍(unittest.TestCase):
+    """창이 작다고 기능을 없애면 안 된다 — 지난 대화·감정·설정을 서랍으로."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            cls.css = f.read()
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            cls.html = f.read()
+
+    def test_여닫이_버튼과_덮개가_있다(self):
+        self.assertIn('id="drawerBtn"', self.html)
+        self.assertIn('id="drawerMask"', self.html)
+
+    def test_서랍_안에_세_탭이_다_있다(self):
+        """사이드바를 따로 만들지 않고 **원래 사이드바를 서랍으로** 민다 —
+        탭이 갈라지면 소형창에서만 기능이 달라진다."""
+        self.assertIn("body.mini #side{", self.css)
+        blk = self.css[self.css.index("body.mini #side{"):]
+        blk = blk[:blk.index("}")]
+        self.assertIn("translateX(100%)", blk, "닫힌 상태가 없다")
+        self.assertIn("body.mini.drawer #side{transform:translateX(0)}", self.css)
+        for tab in ("대화", "감정", "설정"):
+            self.assertIn(tab, self.html)
+
+    def test_덮개가_채팅_위에_온다(self):
+        """★z-index 115 였을 때 채팅 <p> 가 클릭을 먹어 서랍이 안 닫혔다."""
+        m = re.search(r"body\.mini\.drawer #drawerMask\{[^}]*z-index:(\d+)", self.css)
+        self.assertIsNotNone(m, "덮개 z-index 를 못 찾았다")
+        self.assertGreaterEqual(int(m.group(1)), 9000)
+        # 서랍 본체와 버튼은 덮개보다 위여야 누를 수 있다
+        side = int(re.search(r"body\.mini #side\{[^}]*z-index:(\d+)",
+                             self.css).group(1))
+        btn = int(re.search(r"body\.mini #drawerBtn\{[^}]*z-index:(\d+)",
+                            self.css).group(1))
+        mask = int(m.group(1))
+        self.assertGreater(side, mask)
+        self.assertGreater(btn, side)
+
+    def test_닫는_길이_세_가지다(self):
+        blk = self.js[self.js.index("function setDrawer("):]
+        blk = blk[:blk.index("(function initMini(")]
+        self.assertIn("drawerMask", blk, "덮개를 눌러 닫기가 없다")
+        self.assertIn("Escape", blk, "ESC 로 닫기가 없다")
+        self.assertIn("setDrawer(!document.body.classList.contains('drawer'))", blk,
+                      "버튼이 토글이 아니다")
+
+    def test_서랍을_열면_지난_대화를_불러온다(self):
+        blk = self.js[self.js.index("function setDrawer("):]
+        blk = blk[:blk.index("(function initDrawer(")]
+        self.assertIn("loadSessions()", blk,
+                      "열어도 다른 PC 세션이 안 보이면 서랍을 만든 뜻이 없다")
+
+    def test_소형창을_끄면_서랍도_닫힌다(self):
+        """큰 화면으로 돌아왔는데 서랍 상태가 남으면 사이드바가 겹쳐 보인다."""
+        blk = self.js[self.js.index("function setMini("):]
+        blk = blk[:blk.index("\n/*")]
+        self.assertIn("classList.remove('drawer')", blk)
+
+
+class _NoDocs:
+    """자료 없음 — 규칙 조립만 보려는 테스트용."""
+
+    def context(self, *a, **k):
+        return ""
+
+
+class 에이전트_규칙_보기와_수정(unittest.TestCase):
+    """페르소나 말고 '서버가 항상 붙이는 규칙' — 코드에만 있으면 무엇을
+    가르쳤는지 아무도 모른다."""
+
+    def setUp(self):
+        from avatar import settings as aset
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "settings.json"
+        self.aset = aset
+        self.st = aset.Settings(self.path)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_기본은_코드의_규칙(self):
+        self.assertEqual(allm.agent_rules(None), allm.AGENT_RULES)
+        self.assertEqual(allm.agent_rules({}), allm.AGENT_RULES)
+
+    def test_고친_규칙이_실제로_쓰인다(self):
+        """설정 화면에서 고쳤는데 프롬프트가 안 바뀌면 '보여주기'일 뿐이다."""
+        mine = "1. 무조건 한 문장으로만 답한다."
+        self.assertEqual(allm.agent_rules({"agentRules": mine}), mine)
+        msgs = allm.build_messages("페르소나", "지금 상태?", [], _NoDocs(),
+                                   {"agentRules": mine, "docBudget": 6000,
+                                    "keepMsgs": 12})
+        sysmsg = msgs[0]["content"]
+        self.assertIn(mine, sysmsg)
+        self.assertNotIn(allm.AGENT_RULES, sysmsg, "기본 규칙이 같이 붙었다")
+
+    def test_비우면_기본값으로_돌아간다(self):
+        """'기본값으로' 버튼은 빈 문자열을 보낸다 — 그게 곧 되돌리기다."""
+        for blank in ("", "   ", "\n\n", None):
+            self.assertEqual(allm.agent_rules({"agentRules": blank}),
+                             allm.AGENT_RULES, repr(blank))
+
+    def test_규칙은_숫자로_변환되지_않는다(self):
+        """★KEYS 에 넣으면 int() 를 타서 규칙이 통째로 버려진다."""
+        self.assertIn("agentRules", self.aset.Settings.TEXT_KEYS)
+        self.assertNotIn("agentRules", self.aset.Settings.KEYS)
+        d = self.st.update({"agentRules": "1. 규칙 123 번"})
+        self.assertEqual(d["agentRules"], "1. 규칙 123 번")
+
+    def test_저장하면_다시_켜도_남는다(self):
+        """다른 PC 에서도 같은 규칙이어야 한다 — 서버 파일에 남는다."""
+        self.st.update({"agentRules": "내가 고친 규칙"})
+        again = self.aset.Settings(self.path)
+        self.assertEqual(again.get("agentRules"), "내가 고친 규칙")
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))
+                         ["agentRules"], "내가 고친 규칙")
+
+    def test_다른_설정을_고쳐도_규칙은_안_날아간다(self):
+        self.st.update({"agentRules": "내 규칙"})
+        self.st.update({"temperature": 0.5})
+        self.assertEqual(self.st.get("agentRules"), "내 규칙")
+        self.assertEqual(self.st.get("temperature"), 0.5)
+
+    def test_너무_긴_규칙은_잘라_담는다(self):
+        self.st.update({"agentRules": "가" * 50000})
+        self.assertLessEqual(len(self.st.get("agentRules")), 20000)
+
+    def test_설정_API_가_기본값도_같이_준다(self):
+        """'기본값으로' 버튼이 기본값을 모르면 되돌릴 수가 없다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index('if path == "/api/settings":'):]
+        # GET/POST 두 갈래 모두에서 채워 줘야 한다
+        self.assertEqual(src.count("agentRulesDefault"), 2, src.count("agentRulesDefault"))
+        self.assertEqual(src.count("agentRulesCustom"), 2)
+        self.assertIn("llm.agent_rules", blk)
+
+    def test_화면에_보이고_고칠_수_있다(self):
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn('id="agentRules"', html)
+        self.assertIn('id="rulesSave"', html)
+        self.assertIn('id="rulesReset"', html)
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("agentRulesDefault", js)
+        blk = js[js.index("(function initAgentRules("):]
+        blk = blk[:blk.index("/* 소형창 사이드바 서랍")]
+        self.assertIn("method:'POST'", blk, "저장이 서버로 안 간다")
+        self.assertIn("confirm(", blk, "되돌리기에 확인이 없다 — 되돌리면 원본이 사라진다")
+
+
+class 첫_인사(unittest.TestCase):
+    def test_관제_에이전트로_인사한다(self):
+        """'나 움직이지? 말 걸어봐' 는 데모 문구다 — 무엇을 물어보면 되는지
+        말해 줘야 사용자가 첫 질문을 던진다."""
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("안녕하세요", js)
+        self.assertIn("FAB 관련 질문", js)
+        self.assertNotIn("말 걸어봐", js)
 
 
 class 설정_일치(unittest.TestCase):
