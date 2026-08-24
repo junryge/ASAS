@@ -636,6 +636,106 @@ class 문서_생성(unittest.TestCase):
         for bad in ("http://", "https://", "<script"):
             self.assertNotIn(bad, html, f"{bad} 가 들어 있다")
 
+    def test_MD_에도_ALL_이_들어간다(self):
+        """에이전트 학습용 md. HTML 쪽만 고치고 md 를 안 고치면
+        에이전트가 옛 사실을 배운다."""
+        import fab_score_doc as D
+        cfg = load_config()
+        md = D.build_md(cfg)
+        warn, danger, crit = grade_cuts(cfg)
+        self.assertIn("| 룰 | ALL |", md, "컬럼 표에 ALL 열이 없다")
+        for f in F.fabs(cfg):
+            self.assertIn(f"`{f}`", md, f)
+        self.assertIn("area_score", md)
+        self.assertIn("all_score", md)
+        self.assertIn(f"{warn}", md)
+        self.assertIn(f"영역점수 상한 {F.AREA_CAP}", md)
+
+    def test_MD_숫자가_코드와_같다(self):
+        """md 를 손으로 고치면 코드와 갈라진다 — 생성물이어야 한다."""
+        import fab_score_doc as D
+        cfg = load_config()
+        md = D.build_md(cfg)
+        for f in F.fabs(cfg):
+            t = F.solo_ceiling(f, cfg, "typical")
+            mx = F.max_area(f, cfg)
+            self.assertIn(f"| `{f}` |", md)
+            row = next(l for l in md.splitlines() if l.startswith(f"| `{f}` | "))
+            self.assertIn(f"**{t['score']}**", row, f"{f} 통상 단독상한")
+            self.assertIn(f"{mx['area_max']}/{F.AREA_CAP}", row, f"{f} 영역 천장")
+        # 임계값도 코드에서 나온 값이어야 한다
+        self.assertIn("≥ 9분", md)        # M16HUB R-A
+        self.assertIn("임계 미정의", md)   # M14B SLA
+
+    def test_MD_는_생성물이라고_밝힌다(self):
+        import fab_score_doc as D
+        md = D.build_md(load_config())
+        self.assertIn("생성", md.splitlines()[2])
+        self.assertIn("손으로 고치지 마라", md)
+
+    def test_MD_에_확인_안_된_것이_남아_있다(self):
+        """모르는 걸 아는 척하면 에이전트가 그걸 사실로 배운다."""
+        import fab_score_doc as D
+        md = D.build_md(load_config())
+        self.assertIn("아직 확인 안 된 것", md)
+        self.assertIn("M14B", md.split("아직 확인 안 된 것")[1])
+
+    def test_MD_마크다운이_깨지지_않는다(self):
+        """겹친 ** 나 열 수가 안 맞는 표는 에이전트가 잘못 읽는다."""
+        import re
+        import fab_score_doc as D
+        md = D.build_md(load_config())
+        for i, line in enumerate(md.splitlines(), 1):
+            if line.startswith("#"):
+                self.assertEqual(line.count("**"), 0, f"{i}행 제목에 겹친 굵게: {line}")
+            self.assertEqual(line.count("**") % 2, 0, f"{i}행 ** 짝이 안 맞음")
+            # ★'**a **b****' 처럼 굵게가 겹치면 짝수라 위 검사를 통과한다.
+            #   굵게 안에 다시 ** 가 들어간 경우를 직접 잡는다.
+            for m in re.finditer(r"\*\*(.+?)\*\*", line):
+                self.assertNotIn("**", m.group(1),
+                                 f"{i}행 굵게 안에 굵게: {line[:70]}")
+
+    def test_MD_규칙이_제목으로_뽑혀_있다(self):
+        """에이전트가 규칙 하나하나에 앵커를 잡을 수 있어야 한다.
+        굵은 글씨 한 줄로 두면 목차에도 안 잡히고 인용도 안 된다."""
+        import re
+        import fab_score_doc as D
+        md = D.build_md(load_config())
+        # ★"## 8." 로 자르면 "### 8." 에서도 잘린다 — 줄 시작으로 맞춘다
+        body = md.split("\n## 8. ")[1].split("\n## 9. ")[0]
+        heads = re.findall(r"^### (\d+)\. (.+)$", body, re.M)
+        self.assertGreaterEqual(len(heads), 8, "규칙이 ### 제목으로 안 나왔다")
+        self.assertEqual([n for n, _t in heads],
+                         [str(i) for i in range(1, len(heads) + 1)])
+        for _n, t in heads:
+            self.assertNotIn("*", t, f"제목에 마크업이 섞였다: {t}")
+        # 규칙마다 ✅ 가 있고, 대부분 ❌ 도 같이 있어야 한다
+        self.assertEqual(body.count("✅"), len(heads))
+        self.assertGreaterEqual(body.count("❌"), len(heads) - 1)
+        # 표마다 헤더/구분선/본문 열 수가 같아야 한다
+        lines = md.splitlines()
+        for i, line in enumerate(lines):
+            if not line.startswith("| ---"):
+                continue
+            n = line.count("|")
+            self.assertEqual(lines[i - 1].count("|"), n, f"{i}행 표 헤더 열 수")
+            j = i + 1
+            while j < len(lines) and lines[j].startswith("|"):
+                self.assertEqual(lines[j].count("|"), n,
+                                 f"{j + 1}행 표 본문 열 수: {lines[j][:60]}")
+                j += 1
+
+    def test_명령줄로_MD_가_만들어진다(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "x.md")
+            r = subprocess.run([sys.executable, "fab_score_doc.py", "--md", out],
+                               cwd=util.BASE, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertGreater(os.path.getsize(out), 8000)
+            with open(out, encoding="utf-8") as f:
+                self.assertIn("# M16 HUBROOM", f.read())
+
     def test_명령줄로_파일이_만들어진다(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:

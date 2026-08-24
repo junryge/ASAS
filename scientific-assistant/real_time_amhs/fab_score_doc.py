@@ -861,11 +861,360 @@ def build(cfg=None) -> str:
 """
 
 
+# ══════════════════════════ 에이전트 학습용 Markdown ══════════════════════════
+OUT_MD = os.path.join(DOC_DIR, "FAB별_위험도_스코어.md")
+
+
+def _md_thr(fab: str, rule: str, cfg) -> str:
+    items = F.watch(fab, cfg).get(rule) or []
+    if not items:
+        return "—"
+    out = []
+    for it in items:
+        thr, op = it.get("thr"), it.get("op") or ">="
+        if thr is None:
+            out.append({"ratio30": "배수판정", "sum": "집계", "score": "결과",
+                        "text": "결과"}.get(op, "**임계 미정의**"))
+            continue
+        sign = {"<=": "≤", "diff10": "10분 +", ">=": "≥"}.get(op, "≥")
+        cell = f"{sign} {fmt(thr)}{it.get('unit') or ''}"
+        if it.get("normal") is not None:
+            cell += f" (평상 {fmt(it['normal'])})"
+        out.append(cell)
+    return "<br>".join(out)
+
+
+def _md_col(fab: str, rule: str, cfg) -> str:
+    items = F.watch(fab, cfg).get(rule) or []
+    if not items:
+        return "—"
+    out = []
+    for it in items:
+        csv = it.get("csv") or ""
+        out.append(f"`{it['amos']}`" + (f"<br>csv `{csv}`" if csv
+                                        else "<br>_csv 없음_"))
+    return "<br>".join(out)
+
+
+def build_md(cfg=None) -> str:
+    """에이전트에 먹일 Markdown.
+
+    ★사람이 읽는 HTML 문서와 다르게 써야 한다. 에이전트에게 필요한 것은
+      설명이 아니라 **규칙과 함정**이다. 그래서
+        · 표는 그대로 (사실)
+        · '이렇게 하면 틀린다' 를 ❌/✅ 로 명시
+        · 코드에서 뭘 부르면 되는지
+        · 확인 안 된 것은 확인 안 됐다고
+      숫자는 전부 fab_score.py 에서 뽑는다 — 손으로 적으면 갈라진다.
+    """
+    from lp_client import load_config
+    from sentinel import grade_cuts
+    cfg = cfg or load_config()
+    fabs = F.fabs(cfg)
+    warn, danger, crit = grade_cuts(cfg)
+    L = []
+    w = L.append
+
+    w("# M16 HUBROOM — FAB별 위험도 스코어 (에이전트용 참조)")
+    w("")
+    w("> 이 파일은 `python fab_score_doc.py --md` 로 **생성**된다. "
+      "손으로 고치지 마라 — 다음 생성 때 지워진다. "
+      "임계가 바뀌면 `config.json` 의 `fab_score.thresholds` 를 고치고 다시 생성한다.")
+    w("")
+    w(f"- 출처: 스코어 산출 문서 (`hubroom_predictor.py` 의 `eval_area_rules` / "
+      f"`evaluate_unified`, `thresholds.json`)")
+    w(f"- 코드: `real_time_amhs/fab_score.py`")
+    w(f"- 등급 컷은 `config.grade` 에서 읽는다 (현재 경계 **{warn}** · "
+      f"위험 **{danger}** · 초위험 **{crit}**)")
+    w("")
+
+    # ── 0. 제일 먼저 알아야 할 것 ──
+    w("## 0. 틀리기 쉬운 것 먼저")
+    w("")
+    w(f"| 헷갈리는 짝 | 사실 |")
+    w(f"| --- | --- |")
+    w(f"| `{F.AREA_CAP}` vs `{warn}` | **{F.AREA_CAP} 은 영역점수 상한**"
+      f"(9룰 합 63을 자르는 값), **{warn} 은 경계 등급 컷**. 아무 관계 없다. |")
+    w(f"| ALL 점수 vs FAB 위험도 | 둘 다 0~100 이고 등급 컷도 같지만 "
+      f"**잰 대상이 다르다.** ALL 은 실제로 경보가 나는 값, "
+      f"FAB 은 그 영역의 영역점수를 100점으로 편 값. |")
+    w(f"| `unified_risk_score` | 통합 파일에서는 전체 점수, "
+      f"**FAB 분리 파일의 정규화된 행에서는 그 FAB 의 점수**(= `area_score`). "
+      f"전체 점수는 `all_score` 로 밀려나 있다. |")
+    w(f"| 경계 컷 50 vs {warn} | 50 은 **옛 값**. 2026-08 에 {warn} 으로 "
+      f"올라갔다. 기존 스코어 산출 문서의 `50/71/85` 표기는 낡았다. |")
+    w("")
+
+    # ── 1. 점수 구조 ──
+    w("## 1. 점수가 만들어지는 순서")
+    w("")
+    w("```")
+    w("1분 CSV 한 줄")
+    w("  → 영역마다 9개 룰을 임계와 대조 (켜짐/꺼짐)")
+    w(f"  → 영역점수 = min({F.AREA_CAP}, Σ 켜진 룰 배점)      ← 영역당 0~{F.AREA_CAP}")
+    w("  → raw = Σ(영역점수 × 가중치) + 흐름 + SLA + Sorter + MAXCAPA")
+    w(f"  → 전체 점수 = min(100, round(raw × 100 ÷ {F.RAW_FULL}))")
+    w("```")
+    w("")
+    w(f"- 대상 영역 {len(fabs) + len(F.EXTRA_AREAS)}개: "
+      + " · ".join([f"`{x}`" for x in fabs]
+                   + [f"`{n}`" for n, _c in F.EXTRA_AREAS])
+      + f" (뒤 {len(F.EXTRA_AREAS)}개는 `{{영역}}_score` 만 있고 상세 컬럼이 없다)")
+    w(f"- 영역 가중치: " + ", ".join(
+        f"`{f}` {F.area_weight(f, cfg):g}" for f in fabs))
+    w(f"- **SLA·Sorter·MAXCAPA 는 두 번 반영된다** — 영역점수 안에 이미 들어 있고 "
+      f"융합에서 한 번 더 더해진다. 실질 가중치가 두 배다.")
+    w("")
+
+    # ── 2. 배점 ──
+    w("## 2. 9개 룰 배점 (모든 영역 공통)")
+    w("")
+    w("| 룰 | 배점 | 무엇을 보나 | 언제 켜지나 |")
+    w("| --- | ---: | --- | --- |")
+    for r in F.RULES:
+        pts = f"{r['pts']}×n" if r.get("per") else r["pts"]
+        w(f"| `{_rname(r['code'])}` | {pts} | {r['label']} | {r.get('when') or ''} |")
+    w("")
+    w(f"- 전부 켜지면 {sum(r['pts'] for r in F.RULES)}점 → 상한 {F.AREA_CAP} 적용")
+    w(f"- **배점이 다섯 FAB 에서 완전히 같다.** 그래서 영역점수는 "
+      f"그대로 FAB 간 비교가 된다. 다른 것은 임계값뿐이다.")
+    w("")
+
+    # ── 3. 임계 격자 ──
+    w("## 3. FAB별 임계값")
+    w("")
+    w("| 룰 | 배점 | " + " | ".join(fabs) + " |")
+    w("| --- | ---: | " + " | ".join("---" for _ in fabs) + " |")
+    for r in F.RULES:
+        pts = f"{r['pts']}×n" if r.get("per") else r["pts"]
+        cells = " | ".join(_md_thr(f, r["code"], cfg) for f in fabs)
+        w(f"| `{_rname(r['code'])}` | {pts} | {cells} |")
+    w("")
+    w("- `R-A′` 임계 = `R-A` × 0.7, `R-B fast` 임계 = `R-B` × 0.3 (정수 반올림)")
+    w("")
+
+    # ── 4. 컬럼 격자 (ALL 포함) ──
+    w("## 4. ALL · FAB별 실제 보고 있는 컬럼")
+    w("")
+    w("| 룰 | ALL | " + " | ".join(fabs) + " |")
+    w("| --- | --- | " + " | ".join("---" for _ in fabs) + " |")
+    for r in F.RULES:
+        allc = _md_col("ALL", r["code"], cfg)
+        if allc == "—":
+            allc = "_영역별로만_"
+        cells = " | ".join(_md_col(f, r["code"], cfg) for f in fabs)
+        w(f"| `{_rname(r['code'])}` | {allc} | {cells} |")
+    for code in ("FLOW", "FUSE", "SCORE"):
+        allc = _md_col("ALL", code, cfg)
+        w(f"| `{code}` _(ALL 전용)_ | {allc} | "
+          + " | ".join("—" for _ in fabs) + " |")
+    w("")
+    w("- `ALL` 은 영역 룰(R-A…R-D)을 **직접 보지 않는다** — 영역별로만 본다. "
+      "대신 `FLOW`·`FUSE`·`SCORE` 항이 ALL 에만 있다. 자세한 건 5절.")
+    w("- 반송시간만 갈린다 — `M16HUB`·`M14B` 는 `QUE.TIME.AVGTOTALTIME1MIN`"
+      "(총 반송시간), `M14`·`M16A`·`M16B` 는 `QUE.LOAD.AVGLOADTIME1MIN`"
+      "(적재시간). 같은 R-A 인데 **재는 것이 다르다.**")
+    w("- _csv 없음_ 은 그 값이 발동이벤트 CSV 에 안 실려 온다는 뜻이다. "
+      "룰은 켜지는데 화면에서 근거 값을 볼 수 없다.")
+    w("")
+
+    # ── 5. ALL ──
+    w("## 5. ALL 이 보는 컬럼")
+    w("")
+    w("**ALL 은 영역이 아니다.** 자기 임계로 룰을 켜지 않고, 여덟 영역 점수에 "
+      "네 항을 더한 합이다. 그래서 자기 임계값도 없고 '이 시스템만 걸리면 몇 점' "
+      "이라는 단독 상한도 없다. **그렇다고 보는 컬럼이 없는 것은 아니다** — "
+      "융합 단계에서 보는 것이 따로 있다.")
+    w("")
+    w("| 항 | 컬럼 | 판정 |")
+    w("| --- | --- | --- |")
+    for code in F.ALL_RULE_ORDER:
+        items = F.watch("ALL", cfg).get(code) or []
+        r = next(x for x in F.ALL_RULES if x["code"] == code)
+        for i, it in enumerate(items):
+            head = f"`{code}` {r['label']}" if i == 0 else ""
+            csv = f" / csv `{it['csv']}`" if it.get("csv") else ""
+            how = {"ratio30": "30분 평균 대비 배수 (3.0배↑ 30 · 2.0배↑ 15 · 1.5배↑ 5)",
+                   "sum": "집계값", "score": "판정 결과", "text": "판정 결과"}
+            w(f"| {head} | `{it['amos']}`{csv} | {how.get(it.get('op'), '')} |")
+    w("")
+    j_all = F.join_columns("ALL", cfg)
+    w(f"> ⚠️ **확인된 구멍** — ALL 화면이 그리는 지표 {j_all['n_screen']}개 중 "
+      f"ALL 점수 계산에 들어가는 것은 {j_all['n_used']}개(스코어 자신)뿐이다. "
+      f"정작 점수를 만드는 " +
+      ", ".join(f"`{x['key']}`" for x in j_all["only_rule"]
+                if x["key"].endswith(("_total", "_score"))) +
+      " 는 **ALL 화면 지표 목록(`config.ui.metric_groups`)에 없다.** "
+      "CSV 에는 실려 온다.")
+    w("")
+
+    # ── 6. 점수 컬럼 이름 ──
+    w("## 6. 그 FAB 의 점수는 어느 컬럼인가 — ★제일 자주 틀리는 곳")
+    w("")
+    w("| 어디서 온 행 | 그 FAB 점수 | 전체 점수 |")
+    w("| --- | --- | --- |")
+    w("| 통합 파일 `{day}_발동이벤트.csv` | `{FAB}_score` | `unified_risk_score` |")
+    w("| FAB 분리 파일 `fab분리/…_{FAB}.csv` | **`area_score`** | `unified_risk_score` |")
+    w("| 정규화된 행 (`jupyter_csv._fab_rows`) | `unified_risk_score` (= area_score) | `all_score` |")
+    w("")
+    w("FAB 분리 파일을 받는 순간 `area_score` 가 `unified_risk_score` 자리로 "
+      "옮겨 간다 (안 그러면 M14 화면이 전체 점수로 등급을 매긴다). "
+      "원본 전체 점수는 `all_score` 로 밀려난다. **`all_score` 가 있으면 "
+      "정규화된 행**이다.")
+    w("")
+    w("```python")
+    w("# ✅ 이렇게")
+    w("v, col = fab_score._stored_area(row, 'M14')   # 이름을 알아서 찾고,")
+    w("                                              # 어디서 찾았는지도 준다")
+    w("a = fab_score.all_row(row)                    # 정규화된 행이면 all_score 를 본다")
+    w("")
+    w("# ❌ 이렇게 하면 한 FAB 점수를 전체 점수라고 화면에 띄운다")
+    w("total = float(row['unified_risk_score'])      # 정규화된 행에서는 M14 점수다")
+    w("```")
+    w("")
+
+    # ── 7. 구조적 사실 ──
+    w("## 7. 구조 — 한 FAB 만으로는 경보가 안 난다")
+    w("")
+    w("| FAB | 가중치 | 흐름노드 | MAXCAPA컬럼 | 통상 단독상한 | 최대 단독상한 | "
+      "영역점수 천장 | 위험도 천장 |")
+    w("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for f in fabs:
+        t = F.solo_ceiling(f, cfg, "typical")
+        m = F.solo_ceiling(f, cfg, "max")
+        mx = F.max_area(f, cfg)
+        w(f"| `{f}` | {t['weight']:g} | {t['flow_nodes']} | {t['maxcapa_cols']} | "
+          f"**{t['score']}** | {m['score']} | {mx['area_max']}/{F.AREA_CAP} | "
+          f"{mx['risk_max']} |")
+    w("")
+    blind = [f for f in fabs if F.solo_ceiling(f, cfg, "typical")["score"] < warn]
+    hard = [f for f in fabs if F.solo_ceiling(f, cfg, "max")["score"] < warn]
+    w(f"- **통상 조건에서 경계({warn})에 못 가는 FAB: "
+      f"{', '.join(blind) if blind else '없음'}** — 다섯 FAB 전부다.")
+    w(f"- 최대 조건까지 끌어올려도 못 가는 곳: "
+      f"{', '.join(hard) if hard else '없음'}")
+    w(f"- 근거: 스코어 산출 문서가 **예측기를 직접 호출해** 낸 검증표에 "
+      f"\"허브 한 곳에 룰 전부 + 흐름 심각 = 44점\" 이라는 줄이 있고, "
+      f"같은 조건을 이 계산에 넣으면 "
+      f"{F.solo_ceiling('M16HUB', cfg, 'typical')['score']}점이 나온다.")
+    for f in fabs:
+        mx = F.max_area(f, cfg)
+        if not mx["capped"]:
+            why = ", ".join(f"{_rname(c)}({r})" for c, (r, _p) in mx["lost"].items())
+            w(f"- `{f}` 는 {why} 때문에 영역점수가 {mx['area_max']}점이 천장이다 "
+              f"→ 위험도 {mx['risk_max']}점"
+              + (f" (**초위험 {crit}점에 못 간다**)" if mx["risk_max"] < crit else ""))
+    w("")
+
+    # ── 8. 규칙 ──
+    w("## 8. 이 데이터를 다룰 때의 규칙")
+    w("")
+    rules = [
+        ("비교는 절대 임계로 한다",
+         "배점이 모든 FAB 에서 같으니 영역점수 25점은 어디서든 같은 25점이다.",
+         "평소 대비 편차(robust-z)로 FAB 을 비교하면 **늘 나쁜 FAB 이 '정상'** "
+         "으로 보인다. 기준선도 같이 나쁘기 때문이다. 순위가 뒤집힌다. "
+         "`contrib.py` 의 z 는 *한 FAB 안에서* '무엇이 점수를 올렸나' 를 볼 때만 쓴다."),
+        ("원본 값을 나란히 놓고 비교하지 않는다",
+         "임계를 넘었느냐(=점수)를 비교한다.",
+         "반송시간 임계가 M16HUB 9.0분 · M16A 3.2분으로 세 배 가까이 다르다. "
+         "M16A 3.4분과 M16HUB 3.4분은 전혀 다른 상태다."),
+        ("영역점수는 재현이지 추정이 아니다",
+         "`{FAB}_pts_*` 9개를 더하면 영역점수가 나온다. 저장된 값과 맞춰 본다.",
+         "저장값과 어긋나면 한쪽을 골라 맞는 척하지 말고 "
+         "`area_score()['mismatch']` 로 알린다."),
+        ("임계가 문서에 없으면 None 으로 둔다",
+         "화면·문서에 '임계 미정의' 라고 뜬다.",
+         "0 으로 채우면 '항상 켜짐' 이 되어 정반대 거짓말이 된다."),
+        ("등급 컷을 코드에 박지 않는다",
+         "`sentinel.grade_cuts(cfg)` 로 `config.grade` 에서 읽는다.",
+         "2026-08 에 경계가 50→60 으로 바뀌었다. 또 바뀐다."),
+        ("컬럼 목록을 새로 정의하지 않는다",
+         "ALL 은 `config.ui.metric_groups`, FAB 은 `lp_client._fab_strip()` — "
+         "이미 있다. `fab_score.screen_metrics()` 가 그걸 가져온다.",
+         "두 곳에 적으면 반드시 갈라진다."),
+        ("비교는 통합 파일 행으로 한다",
+         "FAB 분리 파일은 자기 영역 컬럼만 있어 비교가 안 된다.",
+         "화면의 `?sys=` 를 따라가면 안 된다."),
+        ("데이터가 없으면 0 이 아니라 None 이다",
+         "'30분 전 데이터 없음' 과 '변화 없음(0)' 은 다르다.", ""),
+    ]
+    for i, (title, ok, no) in enumerate(rules, 1):
+        w(f"### {i}. {title}")
+        w("")
+        w(f"- ✅ {ok}")
+        if no:
+            w(f"- ❌ {no}")
+        w("")
+
+    # ── 9. API ──
+    w("## 9. 코드에서 쓰는 법")
+    w("")
+    w("```python")
+    w("import fab_score as F")
+    w("from lp_client import load_config")
+    w("cfg = load_config()")
+    w("")
+    w("F.compare(rows, at, cfg)      # ALL + FAB 5 를 한 시각으로 나란히 → rows[]")
+    w("F.area_score(row, 'M14', cfg) # 그 1분의 영역점수 (pts 합, 상한 적용, mismatch)")
+    w("F.all_row(row, cfg)           # ALL 줄 (융합 5항, 룰별 걸린 영역 수)")
+    w("F.risk(area)                  # 영역점수 0~50 → 위험도 0~100")
+    w("F.watch('M16HUB', cfg)        # 그 시스템이 보는 컬럼·임계 ('ALL' 도 된다)")
+    w("F.screen_metrics(sys, cfg)    # 화면이 이미 그리는 지표 목록 (있는 정의)")
+    w("F.join_columns(sys, cfg)      # 화면 지표 ⇄ 룰/임계 + 양쪽 구멍")
+    w("F.max_area('M14B', cfg)       # 받을 수 있는 천장 (룰 없는 칸 반영)")
+    w("F.solo_ceiling(f, cfg, mode)  # 단독 상한 'typical' | 'max'")
+    w("F.fuse_check(row, cfg)        # 융합 공식 재현 검증")
+    w("```")
+    w("")
+    w("HTTP")
+    w("")
+    w("```")
+    w("GET /api/fab/compare?day=YYYYMMDD&at=YYYY-MM-DD HH:MM")
+    w("GET /api/fab/columns")
+    w("GET /docs/fab-score          # 사람이 읽는 HTML 문서")
+    w("```")
+    w("")
+
+    # ── 10. 미확인 ──
+    w("## 10. 아직 확인 안 된 것 (추측으로 메우지 마라)")
+    w("")
+    w("1. **`M14B` 의 SLA 임계** — `sla_M14B` 컬럼은 CSV 에 실려 오는데 "
+      "스코어 산출 문서의 SLA 표에 M14B 행이 없다. `None` 으로 두었다. "
+      "`thresholds.json` 확인 후 `config.fab_score.thresholds.M14B.SLA` 에 넣는다.")
+    w("2. **`{FAB}_score` 가 상한을 넘긴 행** — 샘플에 "
+      f"`M16HUB_score = 55` (> {F.AREA_CAP}) 인 행이 있다. 손으로 만든 시험 행일 "
+      "수도 있고, 예측기가 그 컬럼에는 상한을 안 거는 것일 수도 있다. "
+      "실데이터에서 나오는지 확인이 필요하다.")
+    w("3. **`M16HUB_rd_fab` 의 눈금** — 임계는 25.75(%)인데 실제 값이 "
+      "0.59 / 1.18 로 들어온다. 같은 단위인지 확인이 필요하다. "
+      "그래서 룰의 켜짐/꺼짐은 값이 아니라 **`{FAB}_pts_*` 로 판정한다.**")
+    w("")
+    w("---")
+    w("")
+    w(f"_생성: `python fab_score_doc.py --md` · "
+      f"등급 컷 {warn}/{danger}/{crit} (`config.grade`) · "
+      f"영역점수 상한 {F.AREA_CAP} · 환산 기준 raw {F.RAW_FULL}_")
+    w("")
+    return "\n".join(L)
+
+
 if __name__ == "__main__":
     import sys
     os.makedirs(DOC_DIR, exist_ok=True)
-    out = sys.argv[1] if len(sys.argv) > 1 else OUT
-    html_text = build()
-    with open(out, "w", encoding="utf-8") as fh:
-        fh.write(html_text)
-    print(f"✅ {out}  ({len(html_text):,} bytes)")
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    md_only = "--md" in sys.argv
+    both = not md_only or "--html" in sys.argv
+
+    if both:
+        out = args[0] if args and not md_only else OUT
+        text = build()
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(f"✅ {out}  ({len(text):,} bytes)")
+    if md_only or "--all" in sys.argv:
+        out = args[0] if args and md_only else OUT_MD
+        text = build_md()
+        with open(out, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(f"✅ {out}  ({len(text):,} bytes)")
