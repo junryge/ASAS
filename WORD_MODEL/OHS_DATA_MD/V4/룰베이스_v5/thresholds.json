@@ -38,6 +38,8 @@
   "WINDOW_MIN": 90,
   "INCIDENT_END_GAP_MIN": 60,
   "PREDICT_LOOKBACK_MIN": 60,
+  "_comment_min_incident": "사건 시작/종료 기준 점수. 등급 하한(경계)과 같은 값이어야 한다. 50→60 (2026-08) — 경계 구간을 60~70 으로 올리면서 같이 올림. 코드 기본값도 60 이지만, 예전 코드(50)가 도는 서버에서도 확실히 적용되도록 여기 명시한다.",
+  "MIN_INCIDENT_SCORE": 60,
   "TH_SORTER_TRANSFER_FAIL": 1,
   "TH_FLOW_X1_5": 1.5,
   "TH_FLOW_X2_0": 2.0,

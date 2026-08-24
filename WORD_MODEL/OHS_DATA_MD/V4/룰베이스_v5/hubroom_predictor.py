@@ -104,7 +104,9 @@ INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 60)  # ★ v6: 10→60분, 진
 PREDICT_LOOKBACK_MIN = _T('PREDICT_LOOKBACK_MIN', 60)
 # ★ 사건 정의 = '점수 이 값 이상(경계+)' 으로 시작/종료. (전엔 stage 3 기준이라
 #   점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생기던 문제 → 점수 기준으로 교정)
-MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 50)
+#   등급 하한(경계)과 같은 값이어야 한다 — 아래 unified_risk_level 의 60 과 짝.
+#   50 → 60 (2026-08 변경): 경계 구간을 60~70 으로 올리면서 사건 시작 기준도 같이 올렸다.
+MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 60)
 
 # ============================================================
 # 영역별 임계값 (2026-03-24 14:39 ~ 04-30 학습 분포 p95/p99 기반)
@@ -673,12 +675,13 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
     raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score
     unified_risk_score = min(100, round(raw_score * 100 / 220))
 
-    # ★ 위험도 등급 (회사 표준 50/71/85): 경계 50~70 / 위험 71~84 / 초위험 85~100. 50 미만은 등급 공란 (정상 라벨 없음).
+    # ★ 위험도 등급 60/71/85: 경계 60~70 / 위험 71~84 / 초위험 85~100.
+    #   60 미만은 등급 공란 (정상 라벨 없음). 경계 하한은 MIN_INCIDENT_SCORE 와 같은 값.
     if unified_risk_score >= 85:
         unified_risk_level = '초위험'
     elif unified_risk_score >= 71:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 50:
+    elif unified_risk_score >= MIN_INCIDENT_SCORE:
         unified_risk_level = '경계'
     else:
         unified_risk_level = ''
