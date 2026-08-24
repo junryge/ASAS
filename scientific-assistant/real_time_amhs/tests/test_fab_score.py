@@ -403,14 +403,42 @@ class ALL_도_비교_대상(unittest.TestCase):
             a = F.all_row(r)
             self.assertEqual(a["score"], float(r["unified_risk_score"]))
 
-    def test_ALL_에는_임계도_단독상한도_없다(self):
-        """ALL 은 영역이 아니다 — 자기 임계로 룰을 켜지 않고, 자기가 전체라
-        '단독으로 몇 점' 이라는 개념이 없다. 있는 척하면 안 된다."""
+    def test_ALL_에는_영역점수도_단독상한도_없다(self):
+        """ALL 은 영역이 아니다 — 영역점수도, '단독으로 몇 점' 도 없다.
+        ★있는 척해서도 안 되지만, **보는 컬럼이 없다고 해서도 안 된다.**"""
         a = F.all_row(rows()[0])
         self.assertNotIn("solo", a)
-        self.assertNotIn("readings", a)
         self.assertNotIn("area", a)
-        self.assertEqual(F.watch("ALL"), {})
+        self.assertNotIn("pts", a)
+
+    def test_ALL_도_보는_컬럼이_있다(self):
+        """융합 단계에서 보는 것이 따로 있다 — 흐름 노드 10개와 집계 컬럼들.
+        '영역 룰이 없다' 와 '보는 컬럼이 없다' 는 전혀 다른 말이다."""
+        w = F.watch("ALL")
+        self.assertTrue(w, "ALL 의 감시 컬럼이 비어 있다")
+        self.assertEqual(len(w["FLOW"]), 10, "흐름 노드는 10개다")
+        for key in ("sla_score_total", "sorter_score_total", "mc_score_total",
+                    "flow_score", "unified_risk_score"):
+            self.assertTrue(
+                any(it.get("csv") == key for items in w.values() for it in items),
+                f"{key} 가 ALL 감시 목록에 없다")
+        rd = F.all_row(rows()[0])["readings"]
+        self.assertGreaterEqual(len(rd), 18)
+        self.assertTrue(any(r["has_value"] for r in rd))
+
+    def test_흐름_노드는_임계가_아니라_배수로_판정한다(self):
+        """30분 평균 대비 배수라서 영역별 기준값이 없다. 임계를 지어내면
+        안 된다."""
+        for it in F.watch("ALL")["FLOW"]:
+            self.assertIsNone(it["thr"])
+            self.assertEqual(it["op"], "ratio30")
+
+    def test_흐름_노드_수가_한_곳에서만_정해진다(self):
+        """FLOW_NODES 를 손으로 또 적으면 FLOW_COLS 와 갈라진다."""
+        for area, n in F.FLOW_NODES.items():
+            self.assertEqual(
+                n, sum(1 for a, _x, _y in F.FLOW_COLS if a == area), area)
+        self.assertEqual(sum(F.FLOW_NODES.values()), len(F.FLOW_COLS))
 
     def test_ALL_만_가진_것이_들어있다(self):
         a = F.all_row(rows()[0])
@@ -448,6 +476,106 @@ class ALL_도_비교_대상(unittest.TestCase):
         self.assertEqual(d["unified"]["score"], d["all"]["score"])
         self.assertEqual(d["unified"]["hot_area"], d["all"]["hot_area"])
         self.assertEqual(len(d["fabs"]), 5)
+
+
+class 점수_컬럼_이름(unittest.TestCase):
+    """★이 시스템은 이미 area_score 라는 이름을 쓰고 있다. 새 이름을 지어내지
+    않고 쓰던 이름을 따라간다."""
+
+    def test_통합_파일은_FAB_score_를_쓴다(self):
+        v, col = F._stored_area({"M14_score": "15"}, "M14")
+        self.assertEqual((v, col), (15.0, "M14_score"))
+
+    def test_FAB_분리_파일은_area_score_를_쓴다(self):
+        """fab분리 CSV 에는 {FAB}_score 가 없고 area_score 가 그 자리다."""
+        v, col = F._stored_area({"area_score": "22"}, "M14")
+        self.assertEqual((v, col), (22.0, "area_score"))
+
+    def test_정규화된_행은_unified_risk_score_가_그_FAB_점수다(self):
+        """jupyter_csv._fab_rows 가 area_score 를 거기로 옮긴다.
+        (lp_client._fab_strip 도 이 키를 raw='area_score' 로 그린다)"""
+        row = {"unified_risk_score": "30", "all_score": "72", "hot_area": "M14"}
+        v, col = F._stored_area(row, "M14")
+        self.assertEqual(v, 30.0)
+        self.assertIn("area_score", col)
+
+    def test_정규화된_행에서_남의_FAB_점수를_집지_않는다(self):
+        """hot_area 가 M14 인 행에 M16B 를 물으면 30 을 주면 안 된다."""
+        row = {"unified_risk_score": "30", "all_score": "72", "hot_area": "M14"}
+        self.assertEqual(F._stored_area(row, "M16B"), (None, ""))
+
+    def test_ALL_은_정규화된_행에서_all_score_를_본다(self):
+        """정규화된 행의 unified_risk_score 는 그 FAB 점수다. 그대로 읽으면
+        한 FAB 점수를 전체 점수라고 화면에 띄우게 된다."""
+        row = {"unified_risk_score": "30", "all_score": "72", "hot_area": "M14"}
+        a = F.all_row(row)
+        self.assertEqual(a["score"], 72.0)
+        self.assertTrue(a["from_fab_file"])
+        self.assertEqual(a["score_col"], "all_score")
+
+    def test_통합_행은_그대로_unified_risk_score(self):
+        a = F.all_row({"unified_risk_score": "44", "hot_area": "M16HUB"})
+        self.assertEqual(a["score"], 44.0)
+        self.assertFalse(a["from_fab_file"])
+
+    def test_어긋났다고_할_때_어느_이름인지_밝힌다(self):
+        a = F.area_score({"M14_pts_RA": "10", "area_score": "99"}, "M14")
+        self.assertIn("area_score", a["mismatch"])
+        self.assertEqual(a["stored_col"], "area_score")
+
+
+class 컬럼_정의는_이미_있는_것을_쓴다(unittest.TestCase):
+    """★화면 지표 목록을 이 파일이 새로 정하면 두 곳이 갈라진다."""
+
+    def test_ALL_은_config_ui_metric_groups_에서_가져온다(self):
+        cfg = load_config()
+        got = [m["key"] for m in F.screen_metrics("ALL", cfg)]
+        want = [m["key"] for g in cfg["ui"]["metric_groups"]
+                if g.get("id") == "amos" for m in g["metrics"] if m.get("key")]
+        self.assertEqual(got, want)
+        self.assertGreater(len(got), 10)
+
+    def test_FAB_은_lp_client_fab_strip_에서_가져온다(self):
+        from lp_client import _fab_strip
+        cfg = load_config()
+        for f in F.fabs(cfg):
+            self.assertEqual([m["key"] for m in F.screen_metrics(f, cfg)],
+                             [m["key"] for m in _fab_strip(f)], f)
+
+    def test_화면_지표와_룰이_붙는다(self):
+        cfg = load_config()
+        j = F.join_columns("M14", cfg)
+        by = {m["key"]: m for m in j["metrics"]}
+        self.assertEqual(by["M14_ra"]["rules"], ["RA", "RA_sus"])
+        self.assertEqual(by["M14_ra"]["thr"], [3.3, 2.31])
+        self.assertFalse(by["M14_ra_count"]["used"], "참고 표시용 지표다")
+
+    def test_ALL_화면에_점수를_만드는_항이_빠져_있다(self):
+        """실제로 확인된 구멍 — flow/sla/sorter/mc 합계가 ALL 화면 지표
+        목록에 없다. 없어졌다고 조용히 넘기지 말고 표시해야 한다."""
+        j = F.join_columns("ALL", load_config())
+        missing = {x["key"] for x in j["only_rule"]}
+        for k in ("flow_score", "sla_score_total", "sorter_score_total",
+                  "mc_score_total"):
+            self.assertIn(k, missing)
+
+    def test_CSV_에_값이_없는_컬럼도_숨기지_않는다(self):
+        j = F.join_columns("M16HUB", load_config())
+        self.assertTrue(j["no_csv"], "MAXCAPA 등은 CSV 에 값이 안 온다")
+        self.assertTrue(all(x["raw"] for x in j["no_csv"]))
+
+    def test_API_도_ALL_을_준다(self):
+        """화면이 여섯 시스템인데 API 가 다섯만 주면 화면이 ALL 을 못 그린다."""
+        import server
+        c = server.app.test_client()
+        d = json.loads(c.get("/api/fab/columns").get_data())
+        self.assertTrue(d["ok"], d.get("error"))
+        self.assertEqual(d["systems"][0], "ALL")
+        self.assertEqual(set(d["fabs"]), set(["ALL"] + F.fabs(load_config())))
+        self.assertTrue(d["fabs"]["ALL"]["is_all"])
+        self.assertTrue(d["fabs"]["ALL"]["watch"], "ALL 감시 컬럼이 비었다")
+        self.assertNotIn("solo", d["fabs"]["ALL"], "ALL 에는 단독 상한이 없다")
+        self.assertIn("solo", d["fabs"]["M14"])
 
 
 class 상한과_등급컷은_다른_숫자(unittest.TestCase):

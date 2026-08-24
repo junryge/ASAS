@@ -103,17 +103,84 @@ def _rname(code: str) -> str:
             "RC": "R-C", "RD": "R-D"}.get(code, code)
 
 
+def _all_cell(code: str, cfg) -> str:
+    """ALL 칸 — 영역 룰(R-A…R-D)은 ALL 이 직접 안 본다. 그렇다고 '없음' 이
+    아니라 '영역별로만 본다' 가 맞는 말이다. SLA·소터·MAXCAPA 는 ALL 에
+    **집계 컬럼**이 따로 있다."""
+    items = F.watch("ALL", cfg).get(code) or []
+    if not items:
+        return '<span class="none">영역별로만</span>'
+    out = []
+    for it in items:
+        out.append(f'<span class="amos">{e(it["amos"])}</span><br>'
+                   f'<span class="th">CSV {e(it["csv"])}</span>')
+    return '<div class="colstack">' + "</div><div class='colstack'>".join(out) + "</div>"
+
+
 def grid_columns(fabs, cfg) -> str:
-    """룰 × FAB 컬럼 격자 — '이 FAB 이 실제로 보고 있는 컬럼' 정의."""
-    head = "".join(f'<th>{e(f)}</th>' for f in fabs)
+    """룰 × (ALL + FAB) 컬럼 격자 — '실제로 보고 있는 컬럼' 정의."""
+    head = '<th>ALL</th>' + "".join(f'<th>{e(f)}</th>' for f in fabs)
     rows = []
     for r in F.RULES:
         code = r["code"]
-        cells = "".join(f'<td class="col">{_col_cell(f, code, cfg)}</td>' for f in fabs)
+        cells = (f'<td class="col allcol">{_all_cell(code, cfg)}</td>'
+                 + "".join(f'<td class="col">{_col_cell(f, code, cfg)}</td>'
+                           for f in fabs))
         rows.append(f'<tr><td class="rule">{e(_rname(code))}'
                     f'<span class="rdesc">{e(r["label"])}</span></td>{cells}</tr>')
+    # ALL 만 갖는 항 — 흐름과 융합 집계. FAB 칸은 비운다.
+    for code in ("FLOW", "FUSE", "SCORE"):
+        r = next(x for x in F.ALL_RULES if x["code"] == code)
+        rows.append(
+            f'<tr class="allonly"><td class="rule">{e(code)}'
+            f'<span class="rdesc">{e(r["label"])}</span></td>'
+            f'<td class="col allcol">{_all_cell(code, cfg)}</td>'
+            f'<td class="col th" colspan="{len(fabs)}">ALL 에만 있는 항입니다 '
+            f'— 영역 점수에는 안 들어갑니다</td></tr>')
     return (f'<div class="tw"><table class="grid cols"><thead><tr>'
             f'<th>룰</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+
+
+def join_table(sys: str, cfg) -> str:
+    """화면이 이미 그리는 지표 ⇄ 룰/임계."""
+    j = F.join_columns(sys, cfg)
+    rows = ""
+    for m in j["metrics"]:
+        if m["used"]:
+            tag = " · ".join(_rname(c) for c in m["rules"])
+            # 임계로 판정하지 않는 항(집계·판정결과·배수)에 '임계 미정의' 라고
+            # 쓰면 빠뜨린 것처럼 읽힌다. 무엇으로 판정하는지 그대로 적는다.
+            how = {"sum": "집계값", "score": "판정 결과", "text": "판정 결과",
+                   "ratio30": "30분 평균 대비 배수"}
+            thr = " / ".join(
+                (how.get(op) or "임계 미정의") if t is None else fmt(t)
+                for t, op in zip(m["thr"], m["op"]))
+            cls = ""
+        else:
+            tag = '<span class="none">쓰지 않음</span>'
+            thr = '<span class="th">참고 표시용</span>'
+            cls = ' class="off"'
+        rows += (f'<tr{cls}><td class="mono" style="font-size:11.5px">{e(m["key"])}</td>'
+                 f'<td>{e(m["label"])}</td>'
+                 f'<td class="col"><span class="amos">{e(m["raw"])}</span></td>'
+                 f'<td>{tag}</td><td class="n">{thr}</td></tr>')
+    for x in j["only_rule"]:
+        rows += (f'<tr class="miss"><td class="mono" style="font-size:11.5px">'
+                 f'{e(x["key"])}</td><td>{e(x["label"])}</td>'
+                 f'<td class="col"><span class="amos">{e(x["raw"])}</span></td>'
+                 f'<td>{" · ".join(_rname(c) for c in x["rules"])}</td>'
+                 f'<td class="n"><span class="undef">화면에 없음</span></td></tr>')
+    return (f'<div class="tw"><table><thead><tr><th>CSV 컬럼</th><th>이름</th>'
+            f'<th>AMOS 컬럼</th><th>쓰는 룰</th><th class="n">임계</th>'
+            f'</tr></thead><tbody>{rows}</tbody></table></div>'
+            f'<p class="pipe-note" style="margin-top:8px">화면 지표 '
+            f'<b>{j["n_screen"]}개</b> 중 룰이 실제로 쓰는 것 '
+            f'<b>{j["n_used"]}개</b>'
+            + (f' · 룰은 보는데 화면 목록에 없는 컬럼 '
+               f'<b style="color:var(--g2)">{len(j["only_rule"])}개</b>'
+               if j["only_rule"] else "")
+            + (f' · CSV 에 값이 안 실려 오는 컬럼 {len(j["no_csv"])}개'
+               if j["no_csv"] else "") + '</p>')
 
 
 def six_rows(fabs, cfg, warn, danger, crit) -> str:
@@ -385,6 +452,12 @@ EXTRA_CSS = """
 .fabtbl tr.off td{color:var(--faint);background:var(--surface2)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:860px){.two{grid-template-columns:1fr}}
+/* ALL 칸은 배경을 달리 둔다 — 영역이 아니라는 걸 표에서 바로 보이게 */
+.grid td.allcol{background:var(--accent-soft);border-right:1px solid var(--accent-line)}
+.grid tr.allonly td{background:var(--surface2)}
+.grid tr.allonly td.allcol{background:var(--accent-soft)}
+tr.off td{color:var(--faint)}
+tr.miss td{background:var(--g2bg)}
 """
 
 
@@ -546,9 +619,12 @@ def build(cfg=None) -> str:
 
   <!-- 2. 컬럼 격자 -->
   <section>
-    <div class="sechead"><span class="step">비교 2</span><h2>FAB 별로 실제 보고 있는 컬럼</h2></div>
+    <div class="sechead"><span class="step">비교 2</span><h2>ALL · FAB 별로 실제 보고 있는 컬럼</h2></div>
     <p class="subtitle">
-      같은 룰이라도 FAB 마다 다른 컬럼을 봅니다. 위가 AMOS 실제 컬럼명,
+      같은 룰이라도 FAB 마다 다른 컬럼을 봅니다. <b>ALL 칸</b>은 따로 읽으십시오 —
+      ALL 은 영역 룰(R-A…R-D)을 직접 보지 않고 <b>영역별로만</b> 봅니다.
+      대신 표 아래쪽에 ALL 만 갖는 항(흐름·융합 집계·판정)이 따로 있습니다.
+      위가 AMOS 실제 컬럼명,
       아래가 그 값이 실려 오는 발동이벤트 CSV 컬럼입니다.
       <b>CSV 에 값이 없는 컬럼</b>은 관제 화면에 숫자가 안 뜬다는 뜻입니다 —
       룰은 켜지는데 근거 값을 볼 수 없는 구간입니다.
@@ -559,6 +635,78 @@ def build(cfg=None) -> str:
       <p>M16HUB · M14B 는 <span class="mono">QUE.TIME.AVGTOTALTIME1MIN</span>(총 반송시간),
         M14 · M16A · M16B 는 <span class="mono">QUE.LOAD.AVGLOADTIME1MIN</span>(적재시간)입니다.
         같은 'R-A' 이지만 재는 것이 다릅니다. 임계가 다른 이유의 절반이 여기 있습니다.</p>
+    </div>
+  </section>
+
+  <!-- 2-2. 화면 지표 ⇄ 룰 -->
+  <section>
+    <div class="sechead"><span class="step">비교 2-2</span><h2>화면이 그리는 지표와, 룰이 실제로 쓰는 컬럼</h2></div>
+    <p class="subtitle">
+      관제 화면의 추이 그래프 목록은 이미 정해져 있습니다 —
+      ALL 은 <code class="mono">config.ui.metric_groups</code>,
+      FAB 은 <code class="mono">lp_client._fab_strip()</code> 입니다.
+      이 문서는 그 목록을 <b>새로 만들지 않고 그대로 가져와서</b>, 각 지표가
+      어느 룰의 어느 임계에 걸리는지를 붙였습니다. 두 곳에 적으면 반드시
+      갈라지기 때문입니다.
+    </p>
+    <p class="subtitle">그러자 <b>화면에 있는데 점수에는 안 쓰이는 지표</b>와,
+      반대로 <b>점수는 쓰는데 화면에 없는 컬럼</b>이 드러났습니다.</p>
+
+    <div class="note key">
+      <h4>ALL 화면은 점수를 만드는 값을 거의 안 보여 줍니다</h4>
+      <p>ALL 화면이 그리는 지표 <b>{F.join_columns("ALL", cfg)["n_screen"]}개</b>
+        중, ALL 점수 계산에 실제로 들어가는 것은
+        <b>{F.join_columns("ALL", cfg)["n_used"]}개</b>(스코어 자신)뿐입니다.
+        나머지는 FAB 별 지표를 참고로 늘어놓은 것입니다.</p>
+      <p>정작 ALL 점수를 만드는 네 항 —
+        <span class="mono">flow_score</span> ·
+        <span class="mono">sla_score_total</span> ·
+        <span class="mono">sorter_score_total</span> ·
+        <span class="mono">mc_score_total</span> — 은
+        <b>ALL 화면 지표 목록에 없습니다.</b> CSV 에는 실려 옵니다.
+        "왜 60점인가" 를 화면에서 짚으려면 이 넷이 있어야 합니다.
+        <code class="mono">config.ui.metric_groups</code> 에 추가하면 바로 그려집니다.</p>
+    </div>
+
+    <h3 class="sub-h">ALL</h3>
+    {join_table("ALL", cfg)}
+    {"".join(f'<h3 class="sub-h">{e(f)}</h3>' + join_table(f, cfg) for f in fabs)}
+  </section>
+
+  <!-- 2-3. 점수 컬럼 이름 -->
+  <section>
+    <div class="sechead"><span class="step">이름</span><h2>그 FAB 의 점수는 어느 컬럼인가 — area_score</h2></div>
+    <p class="subtitle">
+      같은 값이 파일에 따라 다른 이름으로 실려 옵니다. 이 시스템은 이미
+      <span class="mono">area_score</span> 라는 이름을 쓰고 있고,
+      이 문서와 계산도 <b>그 이름을 그대로 따라갑니다.</b>
+    </p>
+    <div class="tw"><table><thead><tr>
+      <th>어디서 온 행</th><th>그 FAB 점수 컬럼</th><th>전체 점수 컬럼</th>
+      <th>비고</th></tr></thead><tbody>
+      <tr><td>통합 파일 <span class="mono">{{day}}_발동이벤트.csv</span></td>
+        <td class="mono">{{FAB}}_score</td>
+        <td class="mono">unified_risk_score</td>
+        <td class="th">둘 다 그대로 들어 있습니다</td></tr>
+      <tr><td>FAB 분리 파일 <span class="mono">fab분리/…_{{FAB}}.csv</span></td>
+        <td class="mono"><b>area_score</b></td>
+        <td class="mono">unified_risk_score</td>
+        <td class="th">전체 점수도 같이 들어 있습니다 — 그 FAB 점수가 아닙니다</td></tr>
+      <tr><td>정규화된 행 <span class="th">(jupyter_csv._fab_rows)</span></td>
+        <td class="mono">unified_risk_score <span class="th">(= area_score)</span></td>
+        <td class="mono">all_score</td>
+        <td class="th">받는 즉시 자리를 바꿉니다. 원본은 all_score 로 밀려납니다</td></tr>
+    </tbody></table></div>
+    <div class="note warn">
+      <h4>정규화된 행을 전체 점수로 읽으면 한 FAB 점수를 전체라고 띄우게 됩니다</h4>
+      <p>FAB 분리 파일을 받는 순간 <span class="mono">area_score</span> 가
+        <span class="mono">unified_risk_score</span> 자리로 옮겨 갑니다
+        (안 그러면 M14 화면이 전체 점수로 등급을 매깁니다).
+        그래서 그 행에서 전체 점수를 보려면
+        <span class="mono">all_score</span> 를 봐야 합니다.
+        <code class="mono">fab_score</code> 는
+        <span class="mono">all_score</span> 가 있으면 정규화된 행으로 알아보고
+        스스로 자리를 바로잡습니다 — 조용히 틀린 숫자를 내지 않습니다.</p>
     </div>
   </section>
 

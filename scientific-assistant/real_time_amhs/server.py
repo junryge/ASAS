@@ -531,16 +531,29 @@ def api_fab_columns():
         import fab_score
         cfg = get_ctx("ALL")["cfg"]
         warn, danger, crit = grade_cuts(cfg)
+
+        def one(s):
+            """★ALL 도 넣는다 — 화면이 여섯 시스템인데 다섯만 주면 안 된다.
+            ALL 은 영역이 아니라서 영역 룰·단독 상한이 없지만, 융합 단계에서
+            보는 컬럼(흐름 노드 10개 + 집계)은 분명히 있다."""
+            d = {"watch": fab_score.watch(s, cfg),
+                 "rules": fab_score.rules_of(s),
+                 "screen": fab_score.screen_metrics(s, cfg),
+                 "join": fab_score.join_columns(s, cfg),
+                 "is_all": s == "ALL"}
+            if s != "ALL":
+                d.update({"weight": fab_score.area_weight(s, cfg),
+                          "max_area": fab_score.max_area(s, cfg),
+                          "solo": {m: fab_score.solo_ceiling(s, cfg, m)
+                                   for m in ("typical", "max")}})
+            return d
+
         return jsonify({
-            "ok": True, "rules": fab_score.RULES,
+            "ok": True, "rules": fab_score.RULES, "all_rules": fab_score.ALL_RULES,
             "area_cap": fab_score.AREA_CAP, "raw_full": fab_score.RAW_FULL,
             "cuts": {"warn": warn, "danger": danger, "critical": crit},
-            "fabs": {f: {"watch": fab_score.watch(f, cfg),
-                         "weight": fab_score.area_weight(f, cfg),
-                         "max_area": fab_score.max_area(f, cfg),
-                         "solo": {m: fab_score.solo_ceiling(f, cfg, m)
-                                  for m in ("typical", "max")}}
-                     for f in fab_score.fabs(cfg)},
+            "systems": ["ALL"] + fab_score.fabs(cfg),
+            "fabs": {s: one(s) for s in ["ALL"] + fab_score.fabs(cfg)},
             "doc": "/docs/fab-score",
         })
     except Exception as e:

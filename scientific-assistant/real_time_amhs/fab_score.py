@@ -210,13 +210,78 @@ WATCH: dict[str, dict[str, list[dict]]] = {
     },
 }
 
+# ── ALL(전체)이 보는 컬럼 ──
+# ALL 은 영역이 아니라서 R-A 같은 영역 룰이 없다. 그렇다고 보는 컬럼이 없는
+# 것은 아니다 — **융합 단계에서 보는 것들**이 따로 있다. 이걸 빼면 "ALL 은
+# 컬럼이 없다" 는 틀린 말이 된다.
+#
+#   FLOW  10개 흐름 노드. 임계값이 아니라 **최근 30분 평균 대비 몇 배**로
+#         판정한다 (3.0배↑ 30점 · 2.0배↑ 15점 · 1.5배↑ 5점). 그래서 영역별
+#         기준값이 없다 — 이 표에 thr 이 없는 이유다.
+#   집계  SLA·Sorter·MAXCAPA 가 걸린 영역 수를 모아 놓은 CSV 컬럼.
+#   판정  점수·최고구역·단계처럼 ALL 만 갖는 결과 컬럼.
+FLOW_COLS = [
+    ("M16HUB", "HUB_OHT_QCNT", "M16HUB.QUE.OHT.CURRENTOHTQCNT"),
+    ("M16HUB", "M14_TO_M16", "M16HUB.QUE.M14TOM16.MESCURRENTQCNT"),
+    ("M14", "M14_CNV_TO_HUB", "M14.QUE.CNV.M14ATOM16ACURRNETQCNT"),
+    ("M14", "M14_TO_HUB_JOB", "M14.QUE.ALL.3F_TO_HUB_JOB"),
+    ("M14B", "M14B_7F_TO_HUB", "M14B.QUE.ALL.7F_TO_HUB_JOB"),
+    ("M14B", "M14B_LFT_4ABLD_SUM", "M14B.LFT.4ABLD_ALL.TOTAL_CURRENTQCNT_SUM"),
+    ("M14B", "M14B_LFT_4ABLD_TO_HUB_SUM",
+     "M14B.LFT.4ABLD_ALL.7F_TO_4F_CURRENTQCNT_SUM"),
+    ("M16A", "M16A_6F_TO_HUB", "M16A.QUE.ALL.6F_TO_HUB_JOB"),
+    ("M16A", "M16A_2F_TO_HUB", "M16A.QUE.ALL.2F_TO_HUB_JOB"),
+    ("M16B", "M16B_10F_TO_HUB", "M16B.QUE.ALL.10F_TO_HUB_JOB"),
+]
+
+WATCH_ALL = {
+    "FLOW": [{"amos": amos, "csv": "", "label": f"{area} · {node}",
+              "unit": "배", "op": "ratio30", "thr": None, "area": area}
+             for area, node, amos in FLOW_COLS],
+    "SLA": [{"amos": "(집계)", "csv": "sla_score_total",
+             "label": "SLA 합계 — 걸린 영역 수 × 5", "unit": "점",
+             "op": "sum", "thr": None}],
+    "SORT": [{"amos": "(집계)", "csv": "sorter_score_total",
+              "label": "Sorter 합계 — 걸린 영역 수 × 3", "unit": "점",
+              "op": "sum", "thr": None}],
+    "MAXCAPA": [{"amos": "(집계)", "csv": "mc_score_total",
+                 "label": "MAXCAPA 합계 — 내려간 컬럼 수 × 10 × 영역수",
+                 "unit": "점", "op": "sum", "thr": None},
+                {"amos": "(집계)", "csv": "maxcapa_signals",
+                 "label": "어느 컬럼이 내려갔나", "unit": "", "op": "text",
+                 "thr": None}],
+    "FUSE": [{"amos": "(집계)", "csv": "flow_score", "label": "흐름 항 점수",
+              "unit": "점", "op": "sum", "thr": None},
+             {"amos": "(집계)", "csv": "layer1_total", "label": "1층 합계",
+              "unit": "점", "op": "sum", "thr": None}],
+    "SCORE": [{"amos": "unified_risk_score", "csv": "unified_risk_score",
+               "label": "전체 점수", "unit": "점", "op": "score", "thr": None},
+              {"amos": "hot_area", "csv": "hot_area", "label": "최고 위험 구역",
+               "unit": "", "op": "text", "thr": None},
+              {"amos": "stage", "csv": "stage", "label": "단계",
+               "unit": "", "op": "text", "thr": None}],
+}
+ALL_RULES = [
+    {"code": "FLOW", "pts": 30, "label": "흐름 — 30분 평균 대비 배수",
+     "when": "노드마다 3.0배↑ 30 · 2.0배↑ 15 · 1.5배↑ 5", "per": True},
+    {"code": "SLA", "pts": 5, "label": "SLA — 걸린 영역 수만큼", "per": True},
+    {"code": "SORT", "pts": 3, "label": "Sorter — 걸린 영역 수만큼", "per": True},
+    {"code": "MAXCAPA", "pts": 10, "label": "MAXCAPA — 내려간 컬럼 수만큼",
+     "per": True},
+    {"code": "FUSE", "pts": 0, "label": "융합 집계"},
+    {"code": "SCORE", "pts": 0, "label": "판정 결과"},
+]
+ALL_RULE_ORDER = [r["code"] for r in ALL_RULES]
+
 # 점수만 있고 상세 컬럼이 없는 영역 — 문서의 '대상 영역 8개' 중 나머지 셋.
 # 비교표에 함께 세워야 "전체 점수가 왜 그 숫자인가" 가 맞아떨어진다.
 EXTRA_AREAS = [("M16", "M16_score"), ("M16_PKT", "M16_PKT_score"),
                ("M16_WT", "M16_WT_score")]
 
-# 흐름 항이 보는 노드 — 영역별 개수가 다르다(단독 상한 계산에 쓴다)
-FLOW_NODES = {"M16HUB": 2, "M14": 2, "M14B": 3, "M16A": 2, "M16B": 1}
+# 흐름 항이 보는 노드 — 영역별 개수가 다르다(단독 상한 계산에 쓴다).
+# FLOW_COLS 에서 세므로 두 곳에 숫자를 적지 않는다.
+FLOW_NODES = {a: sum(1 for x, _n, _c in FLOW_COLS if x == a)
+              for a, _n, _c in FLOW_COLS}
 
 
 # ────────────────────────────── 설정 덮어쓰기 ──────────────────────────────
@@ -232,7 +297,8 @@ def watch(fab: str, cfg: dict | None = None) -> dict[str, list[dict]]:
     현장에서 thresholds.json 이 바뀌면 파이썬을 고치지 않고 여기만 맞춘다.
     """
     f = str(fab or "").upper()
-    base = {k: [dict(x) for x in v] for k, v in (WATCH.get(f) or {}).items()}
+    src = WATCH_ALL if f == "ALL" else (WATCH.get(f) or {})
+    base = {k: [dict(x) for x in v] for k, v in src.items()}
     c = _cfg(cfg)
     over = ((c.get("watch") or {}).get(f) or {})
     for rule, items in over.items():
@@ -246,6 +312,75 @@ def watch(fab: str, cfg: dict | None = None) -> dict[str, list[dict]]:
         for it, v in zip(items, vals):
             it["thr"] = v
     return base
+
+
+def screen_metrics(sys: str, cfg: dict | None = None) -> list[dict]:
+    """**화면이 이미 그리고 있는** 지표 목록 — 새로 정의하지 않는다.
+
+      ALL  config.ui.metric_groups 의 'AMOS 컬럼' 묶음 (20개)
+      FAB  lp_client._fab_strip(FAB)  (12개 안팎)
+
+    ★이 파일이 WATCH 로 따로 표를 만든 것은 '어느 룰의 어느 임계에 걸리는가'
+      를 붙이기 위해서지, 컬럼 목록을 새로 정하려던 게 아니다. 목록은 여기,
+      이미 있는 정의에서 가져온다. 두 곳에 적으면 반드시 갈라진다.
+    """
+    s = str(sys or "ALL").strip().upper()
+    if s in ("", "ALL"):
+        groups = ((cfg or {}).get("ui") or {}).get("metric_groups") or []
+        for g in groups:
+            if str(g.get("id") or "").lower() == "amos":
+                return [dict(m) for m in (g.get("metrics") or []) if m.get("key")]
+        return [dict(m) for m in ((groups[0].get("metrics") if groups else []) or [])
+                if m.get("key")]
+    from lp_client import _fab_strip
+    return [dict(m) for m in _fab_strip(s)]
+
+
+def join_columns(sys: str, cfg: dict | None = None) -> dict:
+    """화면 지표 ⇄ 룰/임계 를 맞춰 본다.
+
+    돌려주는 것
+      metrics  화면 지표마다 → 어느 룰이 쓰는지, 임계는 얼마인지
+               ('룰이 안 쓰는 지표' 는 참고용 표시 지표라는 뜻이다)
+      only_rule 룰은 보는데 화면 목록에 없는 컬럼 (화면에서 근거를 못 본다)
+    """
+    s = str(sys or "ALL").strip().upper() or "ALL"
+    w = watch(s, cfg)
+    by_csv: dict[str, list[tuple[str, dict]]] = {}
+    for rule in rule_order(s):
+        for it in (w.get(rule) or []):
+            if it.get("csv"):
+                by_csv.setdefault(it["csv"], []).append((rule, it))
+
+    out, seen = [], set()
+    for m in screen_metrics(s, cfg):
+        key = m.get("key")
+        seen.add(key)
+        used = by_csv.get(key) or []
+        out.append({
+            "key": key, "raw": m.get("raw") or key,
+            "label": m.get("label") or key, "unit": m.get("unit") or "",
+            "rules": [r for r, _ in used],
+            "thr": [it.get("thr") for _, it in used],
+            "op": [it.get("op") for _, it in used],
+            "used": bool(used),
+        })
+    only_rule = []
+    for csv_col, used in by_csv.items():
+        if csv_col in seen:
+            continue
+        rule, it = used[0]
+        only_rule.append({"key": csv_col, "raw": it["amos"], "label": it["label"],
+                          "rules": [r for r, _ in used], "thr": it.get("thr")})
+    # 컬럼이 아예 없는 룰 항목(MAXCAPA 등)도 알려 준다 — 화면에 값이 안 뜬다
+    no_csv = []
+    for rule in rule_order(s):
+        for it in (w.get(rule) or []):
+            if not it.get("csv"):
+                no_csv.append({"rule": rule, "raw": it["amos"],
+                               "label": it["label"], "thr": it.get("thr")})
+    return {"sys": s, "metrics": out, "only_rule": only_rule, "no_csv": no_csv,
+            "n_used": sum(1 for m in out if m["used"]), "n_screen": len(out)}
 
 
 def area_weight(fab: str, cfg: dict | None = None) -> float:
@@ -291,15 +426,25 @@ def _over(val, op, thr) -> bool | None:
     return val >= thr
 
 
-def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
-    """그 1분에 이 FAB 의 감시 컬럼들이 각각 얼마였나.
+def rule_order(sys: str) -> list[str]:
+    """그 시스템의 룰 순서. ALL 은 영역 룰이 아니라 융합 항을 쓴다."""
+    return ALL_RULE_ORDER if str(sys or "").upper() == "ALL" else RULE_ORDER
 
-    CSV 에 값이 없는 컬럼도 **뺴지 않고** 넣는다. 화면에서 '이 FAB 은 이걸 본다'
+
+def rules_of(sys: str) -> list[dict]:
+    return ALL_RULES if str(sys or "").upper() == "ALL" else RULES
+
+
+def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
+    """그 1분에 이 시스템의 감시 컬럼들이 각각 얼마였나 (ALL 포함).
+
+    CSV 에 값이 없는 컬럼도 **빼지 않고** 넣는다. 화면에서 '이건 이걸 본다'
     를 보여 주는 게 목적이라, 값이 안 실려 오는 컬럼이라는 사실 자체가 정보다.
     """
     out = []
-    for rule in RULE_ORDER:
-        for it in (watch(fab, cfg).get(rule) or []):
+    w = watch(fab, cfg)
+    for rule in rule_order(fab):
+        for it in (w.get(rule) or []):
             v = _num(row.get(it["csv"])) if it.get("csv") else None
             out.append({
                 "rule": rule, "amos": it["amos"], "csv": it.get("csv") or "",
@@ -329,6 +474,46 @@ def _maxcapa_hits(row: dict, fab: str) -> list[str]:
 
 
 # ────────────────────────────── 영역 점수 ──────────────────────────────
+def _is_fab_row(row: dict) -> bool:
+    """jupyter_csv._fab_rows() 가 정규화한 FAB 분리 파일의 행인가.
+
+    정규화하면 area_score 가 unified_risk_score 자리로 옮겨 가고, 원래 전체
+    점수는 all_score 로 밀려난다. all_score 가 있으면 그 행이다.
+    """
+    return bool(str(row.get("all_score") or "").strip())
+
+
+def _stored_area(row: dict, fab: str) -> tuple[float | None, str]:
+    """그 FAB 의 **저장된** 영역점수를 찾는다 — 파일마다 이름이 다르다.
+
+    ★이 시스템은 이미 area_score 라는 이름을 쓰고 있다. 새로 지어내지 않고
+      쓰던 이름을 그대로 따라간다.
+
+      통합 파일 ({day}_발동이벤트.csv)      {FAB}_score
+      FAB 분리 파일 (fab분리/…_{FAB}.csv)   area_score   ← 그 FAB 자기 점수
+      정규화된 행 (jupyter_csv._fab_rows)   unified_risk_score
+                                            (area_score 를 여기로 옮겼다.
+                                             lp_client._fab_strip 이 이 키를
+                                             raw='area_score' 로 그린다)
+
+    찾은 값과 **어느 컬럼에서 찾았는지**를 같이 준다 — 어긋났다고 말할 때
+    어느 이름이 어긋났는지 못 밝히면 확인할 수가 없다.
+    """
+    f = str(fab or "").upper()
+    for col in (f"{f}_score", "area_score"):
+        v = _num(row.get(col))
+        if v is not None:
+            return v, col
+    # 정규화된 FAB 행이면 unified_risk_score 가 그 FAB 의 점수다.
+    # ★hot_area 도 FAB 코드로 바뀌어 있으므로 남의 FAB 점수를 집지 않는다.
+    if _is_fab_row(row) and str(row.get("hot_area") or "").strip().upper() == f:
+        v = _num(row.get("unified_risk_score"))
+        if v is not None:
+            return v, "unified_risk_score(=area_score)"
+    return None, ""
+
+
+
 def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
     """한 FAB 의 그 1분 점수 — 룰별 배점을 더하고 50에서 자른다.
 
@@ -345,7 +530,7 @@ def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
             fired.append(code)
     total = sum(pts.values())
     capped = min(float(AREA_CAP), total)
-    stored = _num(row.get(f"{f}_score"))
+    stored, stored_col = _stored_area(row, f)
     stored_raw = _num(row.get(f"{f}_score_raw"))
     has_pts = any(row.get(f"{f}_pts_{c}") not in (None, "") for c in RULE_ORDER)
 
@@ -355,13 +540,14 @@ def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
 
     mismatch = ""
     if has_pts and stored is not None and abs(capped - stored) > 0.51:
-        mismatch = (f"룰 배점 합 {capped:g} ≠ 저장된 {f}_score {stored:g} — "
+        mismatch = (f"룰 배점 합 {capped:g} ≠ 저장된 {stored_col} {stored:g} — "
                     f"예측기 배점이 바뀌었을 수 있습니다")
     return {
         "fab": f, "area": round(capped, 1), "raw": round(total, 1),
         "capped": total > AREA_CAP, "pts": pts, "fired": fired,
         "signals": str(row.get(f"{f}_signals") or "").strip(),
-        "stored": stored, "stored_raw": stored_raw, "mismatch": mismatch,
+        "stored": stored, "stored_col": stored_col, "stored_raw": stored_raw,
+        "mismatch": mismatch,
         "has_pts": has_pts, "weight": area_weight(f, cfg),
         "maxcapa": _maxcapa_hits(row, f),
     }
@@ -480,7 +666,12 @@ def all_row(row: dict, cfg: dict | None = None) -> dict:
     from sentinel import grade
     from lp_client import load_config
     cfg = cfg or load_config()
-    sc = _num(row.get("unified_risk_score")) or 0.0
+
+    # ★FAB 분리 파일의 행이면 unified_risk_score 는 **그 FAB 의 점수**다
+    #   (정규화가 area_score 를 거기로 옮겨 놨다). 그대로 읽으면 한 FAB 의
+    #   점수를 전체 점수라고 화면에 띄우게 된다. 원본은 all_score 에 있다.
+    from_fab_file = _is_fab_row(row)
+    sc = _num(row.get("all_score" if from_fab_file else "unified_risk_score")) or 0.0
     g = grade(sc, cfg)
 
     # 룰마다 '몇 개 영역에서 켜졌나' — 전체 점수가 왜 그 숫자인지 한눈에 본다
@@ -504,6 +695,9 @@ def all_row(row: dict, cfg: dict | None = None) -> dict:
         "fab": "ALL", "is_all": True,
         "score": round(sc, 1), "level": g["level"], "emoji": g["emoji"],
         "measures": "8개 영역 융합 → raw ÷ %d × 100" % RAW_FULL,
+        "from_fab_file": from_fab_file,
+        "score_col": "all_score" if from_fab_file else "unified_risk_score",
+        "readings": readings(row, "ALL", cfg),
         "areas_hit": len(hit_fabs) + n_extra, "areas_total": len(fabs(cfg)) + len(extra),
         "hit_fabs": hit_fabs,
         "per_rule": per_rule,
