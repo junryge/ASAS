@@ -1192,6 +1192,32 @@ class 스킬_시드(unittest.TestCase):
         self.assertIn("skills.seed_hub_skills(cls.skill_store, base_dir)", blk)
         self.assertIn("skills.seed_fab_score(cls.skill_store, base_dir)", blk)
 
+    def test_원래_자리가_없어도_동봉본으로_심는다(self):
+        """★현장에서 real_time_amhs 만 풀어 쓰면 원래 자리가 없다 —
+        그때 스킬이 하나도 안 심기면 에이전트가 도메인을 통째로 모른다."""
+        import shutil as _sh
+        fake = Path(self.tmp.name) / "wrap" / "real_time_amhs" / "avatar_2d"
+        fake.mkdir(parents=True)
+        (fake.parent / "m16_hub_skills").mkdir()
+        src = Path(util.BASE) / "m16_hub_skills"
+        if not src.is_dir():
+            src = Path(util.BASE).parent / "m16_hub_skills"
+        if not src.is_dir():
+            self.skipTest("현장 스킬 폴더 없음")
+        for f in src.glob("*.md"):
+            _sh.copy(f, fake.parent / "m16_hub_skills" / f.name)
+        self.assertEqual(set(skills.seed_hub_skills(self.store, fake)),
+                         set(skills.HUB_SKILLS))
+
+    def test_원래_자리가_있으면_그쪽이_먼저다(self):
+        """현장에서 고친 스킬이 동봉본에 덮이면 안 된다."""
+        wrap = Path(self.tmp.name) / "sa"
+        base = wrap / "real_time_amhs" / "avatar_2d"
+        base.mkdir(parents=True)
+        (wrap / "m16_hub_skills").mkdir()
+        (base.parent / "m16_hub_skills").mkdir()
+        self.assertEqual(skills._hub_dir(base), str(wrap / "m16_hub_skills"))
+
     def test_현장_스킬_네_개를_심는다(self):
         got = skills.seed_hub_skills(self.store, self.base)
         if not got:

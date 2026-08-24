@@ -302,8 +302,18 @@ HUB_SKILLS = {
 
 
 def _hub_dir(base_dir):
-    """avatar_2d → real_time_amhs → scientific-assistant/m16_hub_skills"""
+    """현장 스킬 폴더를 찾는다.
+
+    ★현장에서는 real_time_amhs 만 풀어 쓰는 경우가 있다 — 그때 원래 자리
+      (scientific-assistant/m16_hub_skills)가 없으면 스킬이 하나도 안 심긴다.
+      그래서 동봉본(real_time_amhs/m16_hub_skills)도 본다. **원래 자리가
+      먼저다** — 현장에서 고친 것이 있으면 그쪽이 진짜다.
+    """
     rt = os.path.dirname(str(base_dir))            # real_time_amhs
+    for d in (os.path.join(os.path.dirname(rt), "m16_hub_skills"),
+              os.path.join(rt, "m16_hub_skills")):
+        if os.path.isdir(d):
+            return d
     return os.path.join(os.path.dirname(rt), "m16_hub_skills")
 
 
