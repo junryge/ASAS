@@ -20,7 +20,13 @@ RULES_TEXT = ("출력 규칙: 반드시 JSON 객체 하나만 출력한다.\n"
               "- emotion: " + ", ".join(config.EMO_KEYS) + " 중 하나\n"
               "- intensity: 0.0~1.0 숫자\n"
               "- motion: " + ", ".join(config.MOTION_KEYS) + " 중 하나 (없으면 none)\n"
-              "- text: 실제 대사 (한국어)")
+              "- text: 실제 대사 (한국어)\n"
+              # ★줄바꿈을 안 알려 주면 전부 한 덩어리로 붙여 쓴다 (실제 그랬다).
+              #   JSON 문자열이라 반드시 \\n 으로 이스케이프해야 한다.
+              "  ★여러 항목을 말할 때는 줄바꿈(\\n)으로 나눈다. 항목 나열은 "
+              "\"- \" 로 시작하는 줄로 쓴다. 한 덩어리로 붙여 쓰지 마라.\n"
+              "  예: \"text\": \"08:20 기준이에요.\\n- M16HUB 72점 위험\\n"
+              "- M14 10점 정상\"")
 
 SCHEMA = {
     "type": "object",
@@ -28,8 +34,12 @@ SCHEMA = {
         "emotion":   {"type": "string", "enum": config.EMO_KEYS},
         "intensity": {"type": "number", "description": "0.0~1.0 감정 강도"},
         "motion":    {"type": "string", "enum": config.MOTION_KEYS},
+        # ★'1~3문장' 은 잡담 기준이었다 — 데이터 답까지 짧게 뭉치게 만들었다.
+        #   길이는 상황에 맡기고, 줄바꿈으로 나누라는 것만 못박는다.
         "text":      {"type": "string",
-                      "description": "캐릭터가 실제로 말할 대사(한국어, 1~3문장)"},
+                      "description": "캐릭터가 실제로 말할 대사(한국어). "
+                                     "잡담은 1~3문장, 데이터 설명은 길어도 된다. "
+                                     "여러 항목은 줄바꿈(\\n)으로 나눠 쓴다"},
     },
     "required": ["emotion", "intensity", "motion", "text"],
     "additionalProperties": False,
@@ -77,6 +87,9 @@ AGENT_RULES = (
     "읽지 말고, 오르는 중인지·어느 룰 때문인지까지 본다.\n"
     "4. 데이터 분석 답변의 text 는 길어도 된다 (수치·근거 포함). "
     "잡담의 text 는 1~3문장으로 짧게.\n"
+    "4-1. 데이터 답은 **줄바꿈(\\n)으로 나눠 쓴다.** 한 줄에 한 가지만. "
+    "FAB 여러 개를 말할 때는 FAB 마다 \"- \" 로 시작하는 줄을 쓴다. "
+    "한 문단으로 붙여 쓰면 관제 화면에서 못 읽는다.\n"
     "5. 과장·추측·아는 척 금지. 캐릭터 말투는 유지하되 숫자는 건조하게 정확히.")
 
 

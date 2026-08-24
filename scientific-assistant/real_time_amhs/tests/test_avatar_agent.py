@@ -629,6 +629,38 @@ class 세션_공유(unittest.TestCase):
         self.assertNotIn("http://", html)    # 사내망 — 외부 자원 금지
 
 
+class 줄바꿈(unittest.TestCase):
+    """응답이 한 덩어리로 붙어 나오던 문제 — 프롬프트와 파싱 양쪽."""
+
+    def test_프롬프트가_줄바꿈을_시킨다(self):
+        """안 시키면 모델이 전부 붙여 쓴다 (실제 증상). 지시가 세 군데
+        다 있어야 한다 — 출력규칙·스키마 설명·에이전트 규칙."""
+        self.assertIn("줄바꿈", allm.RULES_TEXT)
+        self.assertIn("\\n", allm.RULES_TEXT)
+        self.assertIn("줄바꿈", allm.SCHEMA["properties"]["text"]["description"])
+        self.assertIn("줄바꿈", allm.AGENT_RULES)
+        # '1~3문장' 만 시키면 데이터 답까지 뭉친다 — 길어도 된다고 해야 한다
+        self.assertIn("길어도 된다",
+                      allm.SCHEMA["properties"]["text"]["description"])
+
+    def test_이스케이프된_줄바꿈이_살아난다(self):
+        raw = ('{"emotion":"smile","intensity":0.6,"motion":"nod",'
+               '"text":"첫 줄\\n- M16HUB 72점"}')
+        self.assertEqual(allm.finalize(raw)["text"], "첫 줄\n- M16HUB 72점")
+
+    def test_날것_줄바꿈도_살려낸다(self):
+        """모델이 JSON 문자열 안에 진짜 개행을 넣으면 json.loads 는 깨진다.
+        그때 통째로 버리면 답이 사라진다 — 부분 파서가 건져야 한다."""
+        raw = ('{"emotion":"smile","intensity":0.6,"motion":"nod",'
+               '"text":"첫 줄\n- M16HUB 72점"}')
+        self.assertEqual(allm.finalize(raw)["text"], "첫 줄\n- M16HUB 72점")
+
+    def test_스트리밍_중에도_줄바꿈이_보인다(self):
+        part = ('{"emotion":"smile","intensity":0.6,"motion":"nod",'
+                '"text":"첫 줄\\n- M16')
+        self.assertEqual(allm.partial_parse(part)["text"], "첫 줄\n- M16")
+
+
 class 설정_일치(unittest.TestCase):
     def test_아바타_FAB_목록이_관제와_같다(self):
         """아바타 FABS 가 관제 시스템(ALL + FAB 5)과 어긋나면 그 FAB 알람을
