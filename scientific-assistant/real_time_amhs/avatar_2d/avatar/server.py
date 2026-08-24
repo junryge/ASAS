@@ -15,6 +15,7 @@ HTTP 서버 — 정적 파일(static/) + 앱 API(/api/*) + LLM 프록시(/v1/*).
   /v1/*                      게이트웨이 원시 프록시 (토큰은 서버만 안다)
 """
 import json
+import re
 import socket
 import ssl
 import sys
@@ -25,7 +26,8 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 
-from . import commands, config, docs, llm, sentinel, sessions, settings, skills
+from . import commands, config, csvdata, docs, llm, sentinel, sessions, \
+    settings, skills
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -68,6 +70,9 @@ class App:
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
+        cls.uploads_dir = cls.data_dir / "uploads"
+        cls.uploads_dir.mkdir(parents=True, exist_ok=True)
+        cls.uploads = {}                 # {이름: {"summary","numbers"}} 분석 캐시
 
     @classmethod
     def connect(cls, upstream, token, model, models):
@@ -306,6 +311,34 @@ class Handler(SimpleHTTPRequestHandler):
                                         "warnings": warnings})
             return self._err(400, "op 는 save|delete|validate")
 
+        if path == "/api/upload":
+            # 큰 파일(특히 발동이벤트 CSV) — 자료함(300KB 캡)이 아니라 여기로.
+            # 저장하고, CSV 면 그 자리에서 분석해 요약을 만들어 둔다.
+            b = self._body()
+            name = re.sub(r"[^\w가-힣.\- ]", "_", str(b.get("name") or ""))[:120]
+            text = str(b.get("text") or "")
+            if not name or not text:
+                return self._err(400, "name/text 가 비었습니다")
+            try:
+                (App.uploads_dir / name).write_text(text, encoding="utf-8")
+            except Exception as e:  # noqa: BLE001
+                return self._err(500, "저장 실패: {}".format(e))
+            if name.lower().endswith((".csv", ".tsv")):
+                a = csvdata.analyze(name, text, self._cuts())
+                App.uploads[name] = a
+                self._say("200  /api/upload  {}  ({}자, 분석 {})".format(
+                    name, len(text), "OK" if a["ok"] else "실패"))
+                return self._json(200, {"ok": True, "name": name,
+                                        "analyzed": a["ok"],
+                                        "summary": a["summary"][:1200],
+                                        "error": a["error"]})
+            App.uploads[name] = {"ok": True, "summary": text[:8000],
+                                 "numbers": set(), "error": ""}
+            self._say("200  /api/upload  {}  ({}자)".format(name, len(text)))
+            return self._json(200, {"ok": True, "name": name,
+                                    "analyzed": False,
+                                    "summary": "", "error": ""})
+
         if path == "/api/ctx":
             return self._api_ctx(self._body())
 
@@ -380,13 +413,24 @@ class Handler(SimpleHTTPRequestHandler):
                               "본다' 고 말하고, 숫자를 지어내지 마라."
                               .format(ev["err"]))
 
-        # ── 채팅 첨부 — 브라우저가 add 로 올린 뒤 이름만 넘긴다 ──
+        # ── 채팅 첨부 — 업로드(분석 요약) 먼저, 자료함(원문) 다음 ──
         attach = None
         aname = str(b.get("attach") or "").strip()
         if aname:
-            body = App.doc_store.get(aname)
-            if body is not None:
-                attach = (aname, body)
+            up = self._upload_of(aname)
+            if up is not None:
+                # CSV 는 원문 대신 **계산된 분석 요약**을 넣는다. 수 MB 원문을
+                # 자르면 못 본 구간을 지어낸다 — 요약의 숫자는 가드에 태운다.
+                attach = (aname, up["summary"])
+                ev.setdefault("numbers", set())
+                ev["numbers"] = set(ev.get("numbers") or set()) | set(
+                    up.get("numbers") or set())
+                ev["ok"] = True
+                ev["fallback"] = up["summary"]
+            else:
+                body = App.doc_store.get(aname)
+                if body is not None:
+                    attach = (aname, body)
 
         msgs = llm.build_messages(persona, text, history, App.doc_store, st,
                                   skill_store=App.skill_store,
@@ -434,19 +478,52 @@ class Handler(SimpleHTTPRequestHandler):
         self._say("200  /api/chat  {}  {}ms  (stream, {}이벤트)".format(
             model, int((time.time() - t0) * 1000), n))
 
+    def _upload_of(self, name):
+        """업로드된 파일의 분석 캐시 — 서버 재시작 뒤에도 파일이 있으면 다시 분석."""
+        a = App.uploads.get(name)
+        if a is not None:
+            return a
+        p = App.uploads_dir / name
+        if not p.is_file():
+            return None
+        try:
+            text = p.read_text(encoding="utf-8")
+        except Exception:
+            return None
+        if name.lower().endswith((".csv", ".tsv")):
+            a = csvdata.analyze(name, text, self._cuts())
+        else:
+            a = {"ok": True, "summary": text[:8000], "numbers": set(),
+                 "error": ""}
+        App.uploads[name] = a
+        return a
+
+    def _cuts(self):
+        """등급 컷 — 관제 서버가 살아 있으면 거기 값, 아니면 60/71/85."""
+        c = sentinel.columns()
+        if c["ok"]:
+            k = c["data"].get("cuts") or {}
+            try:
+                return (int(k["warn"]), int(k["danger"]), int(k["critical"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        return (60, 71, 85)
+
     def _guard(self, reply, ev):
         """숫자 가드 — 데이터 질문에서 근거에 없는 숫자가 나오면 그 답을
-        버리고 실측 요약으로 바꾼다. 그럴듯한 거짓 숫자가 제일 위험하다."""
+        버리고 결정적 요약으로 바꾼다. 그럴듯한 거짓 숫자가 제일 위험하다.
+        폴백은 질문 맥락을 따른다 — 첨부 분석 중이면 그 분석 요약."""
         if not ev.get("ok") or not isinstance(reply, dict):
             return reply
         ok, bad = sentinel.check_numbers(str(reply.get("text", "")),
                                          ev["numbers"])
         if ok:
             return reply
-        self._say("     ↳ 숫자 가드: 근거에 없는 수 {} — 실측 요약으로 대체"
+        self._say("     ↳ 숫자 가드: 근거에 없는 수 {} — 결정적 요약으로 대체"
                   .format(bad[:5]))
-        return {"text": ("방금 답에 실측에 없는 숫자가 섞여서 지웠어요. "
-                         "실측값만 다시 말할게요 — " + sentinel.plain_status()),
+        fb = ev.get("fallback") or sentinel.plain_status()
+        return {"text": ("방금 답에 근거에 없는 숫자가 섞여서 지웠어요. "
+                         "계산된 값만 다시 말할게요 —\n" + fb),
                 "emotion": "shy", "intensity": 0.6, "motion": "shake"}
 
     def _sse_oneshot(self, reply):

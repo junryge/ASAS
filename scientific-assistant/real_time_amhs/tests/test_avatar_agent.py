@@ -7,6 +7,7 @@
   ④ 부작용(생성·삭제)은 슬래시 명령으로만 — 자연어 추측 금지.
   ⑤ 알람은 서버가 기억한다. 정상 복귀 후 60분 관찰 유지(사건 닫힘 규칙).
 """
+import io
 import json
 import os
 import sys
@@ -23,6 +24,9 @@ if AV not in sys.path:
     sys.path.insert(0, AV)
 
 from avatar import commands, config as acfg, llm as allm, sentinel, skills  # noqa: E402
+
+# 진짜 _get — 테스트들이 몽키패치하기 전에 잡아 둔다 (오염 방지)
+_REAL_GET = sentinel._get
 
 
 # ── 가짜 관제 응답 (실물 /api/fab/compare 형태 축약) ─────────────────────
@@ -130,7 +134,7 @@ class 숫자_가드(unittest.TestCase):
                      "intensity": 1.0, "motion": "shiver"}
         out = Handler._guard(dummy, bad_reply, ev)
         self.assertNotIn("88", out["text"])
-        self.assertIn("실측", out["text"])
+        self.assertIn("계산된 값", out["text"])
         good = {"text": "위험도 72점이에요", "emotion": "fear",
                 "intensity": 0.9, "motion": "none"}
         self.assertIs(Handler._guard(dummy, good, ev), good)
@@ -296,6 +300,7 @@ class 명령(unittest.TestCase):
         sentinel._alog, sentinel._last_levels, sentinel._alog_path = [], {}, None
 
     def tearDown(self):
+        sentinel._get = _REAL_GET
         self.tmp.cleanup()
 
     def test_명령이_아니면_None(self):
@@ -364,6 +369,120 @@ class 대화_조립(unittest.TestCase):
                                     {"docBudget": 6000, "keepMsgs": 4},
                                     attach=("a.csv", "짧은 내용"))
         self.assertNotIn("잘렸다고", msgs2[0]["content"])
+
+
+class 첨부_CSV_분석(unittest.TestCase):
+    """발동이벤트 CSV 첨부 — 원문을 자르지 말고 서버가 계산해서 답한다."""
+
+    @staticmethod
+    def _csv(n=180):
+        rows = ["datetime,unified_risk_score,hot_area,stage_name,M16HUB_score"]
+        for i in range(n):
+            # 08:00~08:59 사이에 산 하나: 최고 88점, 60 이상 구간 하나
+            sc = 20
+            if 60 <= i < 90:
+                sc = 60 + min(28, i - 60)          # 60..88
+            rows.append("2026-08-23 {:02d}:{:02d},{},M16HUB,1단계,{}".format(
+                7 + i // 60, i % 60, sc, min(50, sc // 2)))
+        return "\n".join(rows)
+
+    def test_계산이_맞는다(self):
+        from avatar import csvdata
+        a = csvdata.analyze("발동이벤트.csv", self._csv(), (60, 71, 85))
+        self.assertTrue(a["ok"], a["error"])
+        s = a["summary"]
+        self.assertIn("행 180개", s)
+        self.assertIn("최고점: 88점", s)
+        self.assertIn("2026-08-23 07:00 ~ 2026-08-23 09:59", s)
+        self.assertIn("경계(60) 이상 구간 1곳", s)
+        self.assertIn("2026-08-23 08:00 ~ 2026-08-23 08:29", s)
+        self.assertIn("M16HUB 최고 44점", s)
+        # 등급 분포 — 60..70 이 경계 11분, 71..84 가 위험 14분, 85+ 5분
+        self.assertIn("경계 11분 · 위험 14분 · 초위험 5분", s)
+        for n in (88.0, 180.0, 60.0):
+            self.assertIn(n, a["numbers"])
+
+    def test_점수_컬럼이_없으면_없다고_한다(self):
+        from avatar import csvdata
+        a = csvdata.analyze("x.csv", "a,b\n1,2\n3,4", (60, 71, 85))
+        self.assertTrue(a["ok"])
+        self.assertIn("점수 컬럼", a["summary"])
+        self.assertIn("못 합니다", a["summary"])
+
+    def test_깨진_파일은_실패라고_한다(self):
+        from avatar import csvdata
+        a = csvdata.analyze("x.csv", "", (60, 71, 85))
+        self.assertFalse(a["ok"])
+
+    def test_업로드_후_첨부하면_분석이_근거로_들어간다(self):
+        """400KB 제한으로 CSV 를 거절 → LLM 이 '파일을 못 본다' 하던
+        흐름의 회귀 테스트. 업로드→분석→attach 로 요약이 잡혀야 한다."""
+        from avatar.server import App, Handler
+        with tempfile.TemporaryDirectory() as tmp:
+            App.init(Path(tmp))
+            sentinel._get = lambda path: (None, "죽음")     # 관제 없이도 돼야 함
+            sentinel._cols_cache.update(at=time.time(), columns=None)
+            App.uploads_dir = Path(tmp) / "up"
+            App.uploads_dir.mkdir()
+            App.uploads = {}
+            (App.uploads_dir / "발동이벤트.csv").write_text(
+                self._csv(), encoding="utf-8")
+            dummy = types.SimpleNamespace(_say=lambda *_: None,
+                                          _cuts=lambda: (60, 71, 85))
+            up = Handler._upload_of(
+                types.SimpleNamespace(_say=lambda *_: None,
+                                      _cuts=lambda: (60, 71, 85)),
+                "발동이벤트.csv")
+            del dummy
+            self.assertIsNotNone(up)
+            self.assertIn("최고점: 88점", up["summary"])
+            self.assertIn(88.0, up["numbers"])
+
+    def test_가드_폴백이_첨부_분석을_쓴다(self):
+        """첨부 분석 대화에서 헛숫자가 나오면 관제 요약이 아니라
+        그 파일의 분석 요약으로 바꿔야 한다."""
+        from avatar.server import Handler
+        dummy = types.SimpleNamespace(_say=lambda *_: None)
+        ev = {"ok": True, "numbers": {88.0, 180.0},
+              "fallback": "[첨부 데이터 분석 — x.csv]\n최고점: 88점"}
+        bad = {"text": "최고점이 95점이네요!", "emotion": "joy",
+               "intensity": 0.8, "motion": "none"}
+        out = Handler._guard(dummy, bad, ev)
+        self.assertIn("최고점: 88점", out["text"])
+        self.assertNotIn("95", out["text"])
+
+
+class 옛_관제_서버_안내(unittest.TestCase):
+    def test_404_는_버전_문제라고_말한다(self):
+        """'연결 안 됨' 이라고 하면 네트워크만 뒤진다 — 실제로 그랬다.
+        404 = 서버는 떠 있는데 API 가 없다 = server.py 가 옛 버전."""
+        # 진짜 _get 의 404 분기를 확인한다 — 404 만 주는 서버를 띄워서
+        import http.server
+        import threading
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            import avatar.config as ac
+            old = dict(ac.SENTINEL)
+            ac.SENTINEL["url"] = "http://127.0.0.1:{}".format(srv.server_port)
+            sentinel._get = _REAL_GET
+            sentinel._cache.update(at=0.0, compare=None)
+            r = sentinel.compare(force=True)
+            self.assertFalse(r["ok"])
+            self.assertIn("옛 버전", r["err"])
+            self.assertIn("server.py", r["err"])
+            ac.SENTINEL.update(old)
+        finally:
+            srv.shutdown()
 
 
 class 세션_공유(unittest.TestCase):

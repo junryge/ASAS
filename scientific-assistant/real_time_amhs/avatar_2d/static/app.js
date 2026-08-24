@@ -1595,8 +1595,9 @@ const SdRunner = (function(){
     const fromRight = xTarget < wr.width/2;   // 버튼이 왼쪽이면 오른쪽에서 진입
     const x0=fromRight ? wr.width+W : -W;
     const x1=fromRight ? -W-20 : wr.width+W+20;
-    /* 콘솔에서 window.SD_DUR=600 처럼 속도를 바꿀 수 있다 (ms, 작을수록 빠름) */
-    const dur=window.SD_DUR||850, pressAt=Math.abs(xTarget-x0)/Math.abs(x1-x0);
+    /* 콘솔에서 window.SD_DUR=900 처럼 속도를 바꿀 수 있다 (ms, 작을수록 빠름).
+       850 은 너무 빨라서 지나가는 게 안 보였다 — 1400 이 '후다닥' 정도. */
+    const dur=window.SD_DUR||1400, pressAt=Math.abs(xTarget-x0)/Math.abs(x1-x0);
     let pressed=false; const t0=performance.now();
     function step(now){
       const t=Math.min(1,(now-t0)/dur);
@@ -1645,6 +1646,7 @@ async function pollSentinel(){
       sentinelDown = true;
       sys('관제 연결 끊김 — '+(s.err||'')+' · 알람 자동 감시가 멈췄습니다. '
           +'(real_time_amhs 서버 확인)');
+      const tb=$('#alarmTest'); if(tb) tb.style.display='';   // 테스트 버튼 복귀
     }
     return;                    // 데이터를 못 보는 동안 기존 알람은 건드리지 않는다
   }
@@ -1653,6 +1655,9 @@ async function pollSentinel(){
     else sys('관제 연결됨 — 경계/위험/초위험 자동 감시 중'
              +(s.at?' (데이터 '+s.at+')':''));
     sentinelDown = false;
+    /* 실데이터 감시가 붙었으니 [테스트] 버튼은 치운다 — 진짜 알람과
+       섞이면 어느 쪽인지 모른다. 관제가 끊기면 다시 보여 준다. */
+    const tb=$('#alarmTest'); if(tb) tb.style.display='none';
   }
   const worst = (s.alarms||[])[0];
   if(worst){
@@ -2172,16 +2177,42 @@ function setAttachChip(){
     const f = file.files && file.files[0];
     file.value='';
     if(!f) return;
-    if(f.size > 400*1024){ sys('첨부는 400KB 이하 텍스트 파일만 돼요: '+f.name); return; }
-    const text = await f.text();
+    /* CSV(발동이벤트)는 하루치가 수 MB 다 — 서버가 저장하고 그 자리에서
+       분석한다. 작은 텍스트만 자료함으로. 400KB 제한으로 발동이벤트
+       CSV 를 거절하던 문제의 수정. */
+    const isBig = /\.(csv|tsv)$/i.test(f.name) || f.size > 300*1024;
+    const cap = isBig ? 20*1024*1024 : 400*1024;
+    if(f.size > cap){ sys('첨부는 '+(cap/1024/1024|0||1)+'MB 이하만 돼요: '+f.name); return; }
+    /* 인코딩 — utf-8 이 깨지면 cp949(euc-kr)로 다시 읽는다 */
+    let text;
     try{
-      const r = await fetch('/api/docs', {method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({op:'add', name:f.name, text})});
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      pendingAttach = f.name; setAttachChip();
-      await reloadDocs();
-      sys('📎 '+f.name+' 첨부됨 — 다음 질문에 이 파일을 우선 근거로 봅니다. (자료함에도 저장됨)');
+      const buf = await f.arrayBuffer();
+      try{ text = new TextDecoder('utf-8', {fatal:true}).decode(buf); }
+      catch(_){ text = new TextDecoder('euc-kr').decode(buf); }
+    }catch(e){ sys('파일을 읽지 못했어요: '+e.message); return; }
+    try{
+      if(isBig){
+        const r = await fetch('/api/upload', {method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({name:f.name, text})});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const d = await r.json();
+        pendingAttach = d.name || f.name; setAttachChip();  // 서버가 정리한 이름으로
+        if(d.analyzed){
+          sys('📎 '+f.name+' 첨부·분석됨 — 이제 질문하면 이 분석을 근거로 답해요.');
+          push('ai', d.summary, '첨부 분석');
+        }else{
+          sys('📎 '+f.name+' 첨부됨'+(d.error?' (분석 실패: '+d.error+')':''));
+        }
+      }else{
+        const r = await fetch('/api/docs', {method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({op:'add', name:f.name, text})});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        pendingAttach = f.name; setAttachChip();
+        await reloadDocs();
+        sys('📎 '+f.name+' 첨부됨 — 다음 질문에 이 파일을 우선 근거로 봅니다. (자료함에도 저장됨)');
+      }
     }catch(e){ sys('첨부 실패: '+e.message); }
   };
 })();

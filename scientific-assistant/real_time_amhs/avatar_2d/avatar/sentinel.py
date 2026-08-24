@@ -133,6 +133,13 @@ def _get(path):
         with opener.open(req, timeout=TIMEOUT_S) as r:
             return json.loads(r.read().decode("utf-8")), ""
     except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # ★서버는 떠 있는데 이 API 를 모른다 = server.py 가 옛 버전이다.
+            #   "연결 안 됨" 이라고 하면 사용자가 네트워크만 뒤진다 (실제 그랬다).
+            return None, ("관제 서버는 떠 있는데 {} 가 없습니다 (HTTP 404) — "
+                          "real_time_amhs 의 server.py 가 옛 버전입니다. "
+                          "새 server.py + fab_score.py 로 바꾸고 재시작하세요."
+                          .format(path))
         return None, "HTTP {}".format(e.code)
     except Exception as e:  # noqa: BLE001 — 죽어 있음/타임아웃/파싱 전부 '못 읽음'
         return None, "{}: {}".format(type(e).__name__, e)
