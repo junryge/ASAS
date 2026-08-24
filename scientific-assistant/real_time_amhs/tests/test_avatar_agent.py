@@ -26,7 +26,8 @@ AV = os.path.join(util.BASE, "avatar_2d")
 if AV not in sys.path:
     sys.path.insert(0, AV)
 
-from avatar import commands, config as acfg, llm as allm, sentinel, skills  # noqa: E402
+from avatar import commands, config as acfg, llm as allm, sentinel, \
+    skills, terms  # noqa: E402
 
 # 근거·화면에 남으면 안 되는 룰 코드 (관제는 이 말을 모른다)
 _CODE_LEAK = re.compile(
@@ -177,7 +178,8 @@ class 숫자_가드(unittest.TestCase):
         self.assertIn("계산된 값", out["text"])
         good = {"text": "위험도 72점이에요", "emotion": "fear",
                 "intensity": 0.9, "motion": "none"}
-        self.assertIs(Handler._guard(dummy, good, ev), good)
+        # 가드가 룰 코드·용어를 손보므로 같은 객체가 아니라 같은 내용이다
+        self.assertEqual(Handler._guard(dummy, good, ev), good)
 
 
 class 근거_텍스트(_Sentinel):
@@ -189,7 +191,7 @@ class 근거_텍스트(_Sentinel):
         self.assertNotIn("켜진룰 RA+RD", ev["text"])
         # 룰은 코드가 아니라 한글 이름으로 나온다 (관제는 'R-A' 를 모른다)
         for must in ("31.0", "72", "36.0", "60", "71", "85", "15.98",
-                     "M16HUB", "반송·적재 시간 초과", "M16B"):
+                     "M16HUB", "반송지연", "M16B"):
             self.assertIn(must, ev["text"], must)
         for n in (31.0, 72.0, 15.98):
             self.assertIn(n, ev["numbers"])
@@ -660,9 +662,9 @@ class 룰을_실제_컬럼으로_말한다(_Sentinel):
              "amos": "M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB"},
         ]
         d["rules"] = [
-            {"code": "RA", "pts": 10, "label": "반송·적재 시간 초과",
+            {"code": "RA", "pts": 10, "label": "반송지연",
              "when": "최근 10분 중 1회라도 임계 이상"},
-            {"code": "RD", "pts": 7, "label": "저장·설비 포화",
+            {"code": "RD", "pts": 7, "label": "Storage FULL",
              "when": "조건 하나만 걸려도 켜짐"},
         ]
         return d
@@ -671,7 +673,7 @@ class 룰을_실제_컬럼으로_말한다(_Sentinel):
         self.feed(self._rich())
         t = sentinel.evidence()["text"]
         self.assertIn("M16HUB.QUE.TIME.AVGTOTALTIME1MIN", t)
-        self.assertIn("반송·적재 시간 초과", t)      # 한글 이름
+        self.assertIn("반송지연", t)      # 현장 공식 한글명
         self.assertIn("임계 ≥9분", t)
         self.assertIn("값 15.98분", t)
         self.assertIn("넘음", t)
@@ -708,8 +710,20 @@ class 룰을_실제_컬럼으로_말한다(_Sentinel):
 
     def test_프롬프트가_룰코드_사용을_금지한다(self):
         self.assertIn("룰 코드", allm.AGENT_RULES)
-        self.assertIn("그대로 말하지 마라", allm.AGENT_RULES)
+        self.assertIn("쓰지 마라", allm.AGENT_RULES)
         self.assertIn("AMOS", allm.AGENT_RULES)
+
+    def test_프롬프트_자신이_룰코드를_안_적는다(self):
+        """★'RA, RB, RD 를 쓰지 마라' 라고 적으면 그 코드를 **가르치는** 것이다.
+        실제로 근거·스킬을 다 막았는데도 대답에 R-D 가 나왔다."""
+        self.assertEqual(terms.CODE_RE.findall(allm.AGENT_RULES), [],
+                         "금지 규칙이 금지할 코드를 그대로 적어 뒀다")
+
+    def test_프롬프트가_현장_용어를_쓴다(self):
+        for banned in ("허브룸", "역증가", "저장공간 포화"):
+            self.assertNotIn("\n" + banned, allm.AGENT_RULES)
+        self.assertIn("Storage FULL", allm.AGENT_RULES)
+        self.assertIn("HUBROOM", allm.AGENT_RULES)
 
 
 class 줄바꿈(unittest.TestCase):
@@ -776,11 +790,15 @@ class 룰코드가_한_글자도_안_샌다(_Sentinel):
 
     def test_모든_표기법을_한글로_바꾼다(self):
         f = sentinel._no_code
-        self.assertEqual(f("R-A 가 켜짐"), "반송·적재 시간 초과 가 켜짐")
-        self.assertEqual(f("RA_sus"), "그 상태가 이어짐")
-        self.assertEqual(f("R-B fast"), "대기 물량 30분 증가 fast")
-        self.assertEqual(f("R-C 와 R-D"), "리프터 역증가·컨베이어 쏠림 와 저장·설비 포화")
-        self.assertEqual(f("임계는 R-A 의 70%"), "임계는 반송·적재 시간 초과 의 70%")
+        self.assertEqual(f("R-A 가 켜짐"), "반송지연 가 켜짐")
+        self.assertEqual(f("RA_sus"), "반송지연 지속")
+        self.assertEqual(f("R-B fast"), "Queue 누적 fast")
+        self.assertEqual(f("R-C 와 R-D"), "리프터 정체 와 Storage FULL")
+        self.assertEqual(f("임계는 R-A 의 70%"), "임계는 반송지연 의 70%")
+        # ★프라임(R-A′)은 정규식이 놓치기 쉽다 — ′ 가 단어문자가 아니라서
+        #   경계가 깨지고 "반송지연′" 처럼 꼬리가 남는다
+        self.assertEqual(f("R-A′ 지속"), "반송지연 지속 지속")
+        self.assertEqual(f("R-A' 판정"), "반송지연 지속 판정")
 
     def test_코드가_아닌_말은_안_건드린다(self):
         """'RATIO' 안의 RA, 컬럼명 안의 R-D 비슷한 토막을 지우면 근거가 망가진다."""
@@ -799,22 +817,22 @@ class 룰코드가_한_글자도_안_샌다(_Sentinel):
         t = sentinel.evidence()["text"]
         leaked = _CODE_LEAK.findall(t)
         self.assertEqual(leaked, [], "근거에 룰 코드가 남았다: %r" % (leaked,))
-        self.assertIn("반송·적재 시간 초과", t)
-        self.assertIn("저장·설비 포화", t)
+        self.assertIn("반송지연", t)
+        self.assertIn("Storage FULL", t)
 
     def test_읽은_값이_없는_룰의_판정설명에도_없다(self):
         """★변이 검증에서 살아남은 구멍 — 조건(readings)이 하나도 없는 룰은
         다른 갈래를 탄다. 거기 판정 설명에 코드가 그대로 실려 나갔다."""
         d = 룰을_실제_컬럼으로_말한다._rich(hub_fired=("RA_sus",))
         d["rows"][1]["readings"] = []          # CSV 매핑이 없는 룰
-        d["rules"] = [{"code": "RA_sus", "pts": 5, "label": "그 상태가 이어짐",
+        d["rules"] = [{"code": "RA_sus", "pts": 5, "label": "반송지연 지속",
                        "when": "최근 5분 중 3분 이상 · 임계는 R-A 의 70%"}]
         self.feed(d)
         t = sentinel.evidence()["text"]
         self.assertIn("판정:", t, "판정 설명 갈래를 안 탔다 — 시험이 헛돈다")
         self.assertEqual(_CODE_LEAK.findall(t), [],
                          "값 없는 룰의 판정 설명으로 코드가 샌다")
-        self.assertIn("반송·적재 시간 초과 의 70%", t)
+        self.assertIn("반송지연 의 70%", t)
 
     def test_상태_요약에도_없다(self):
         """LLM 을 안 거치고 그대로 화면에 나가는 경로."""
@@ -872,7 +890,33 @@ class 말풍선은_간단히_채팅창은_전부(unittest.TestCase):
             "- M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB CSV 에 값 없음\n"
             "- M14 는 정상이에요\n")
 
-    def test_항목_나열은_채팅창_몫이다(self):
+    SCORED = ("2026-08-06 23:59 데이터 기준으로 말씀드리면, M16HUB 는 72점 위험 "
+              "이고 M14 는 36점 정상이에요.\n"
+              "- M16HUB.QUE.TIME.AVGTOTALTIME1MIN 임계 ≥9분 · 값 15.98분\n"
+              "- M16HUB.STRATE.ALL.FABSTORAGERATIO 임계 ≥25.75% · 값 1.18%\n"
+              "- 30분 변화 +8 · 전체 경보(경계 60점)에는 아직 못 갑니다\n")
+
+    def test_점수만_말하고_상세는_채팅창으로_넘긴다(self):
+        """★말풍선이 할 일은 결론 하나다 — 몇 점인지. 근거는 채팅창 몫."""
+        b = self._brief(self.SCORED)
+        self.assertEqual(b, "M16HUB 72점 위험 · M14 36점 정상\n상세한 내용은 채팅창에 있어요")
+
+    def test_임계_설명을_점수로_읽지_않는다(self):
+        """'경계 60점' 은 컷 설명이지 어느 FAB 의 점수가 아니다."""
+        b = self._brief(self.SCORED)
+        self.assertNotIn("60점", b)
+
+    def test_점수가_넷_이상이면_셋까지만(self):
+        b = self._brief("M14 10점 정상, M14B 12점 정상, M16A 15점 정상, "
+                        "M16B 8점 정상, M16HUB 72점 위험이에요.")
+        self.assertEqual(b.split("\n")[0].count("·"), 2)
+        self.assertIn("M14 10점", b)
+
+    def test_점수가_전부면_안내를_안_붙인다(self):
+        """더 할 말이 없는데 '채팅창에 있어요' 라고 하면 헛말이 된다."""
+        self.assertEqual(self._brief("M16HUB 72점 위험"), "M16HUB 72점 위험")
+
+    def test_점수가_없는_답은_머리말만(self):
         b = self._brief(self.LONG)
         self.assertIn("M16HUB", b)
         self.assertNotIn("AVGTOTALTIME1MIN", b, "말풍선이 항목까지 읽으려 든다")
@@ -890,7 +934,12 @@ class 말풍선은_간단히_채팅창은_전부(unittest.TestCase):
         """머리말이 없다고 말풍선이 비면 캐릭터가 벙어리가 된다."""
         b = self._brief("- M16HUB 72점\n- M14 36점\n- M14B 31점\n")
         self.assertTrue(b.strip(), "말풍선이 비었다")
-        self.assertIn("M16HUB", b)
+        self.assertIn("M16HUB 72점", b)
+
+    def test_항목_안의_점수도_읽어_낸다(self):
+        """점수가 표·목록 안에 있어도 결론은 결론이다."""
+        b = self._brief("- M16HUB 72점 위험\n- M14 36점 정상\n- 나머지는 정상\n")
+        self.assertTrue(b.startswith("M16HUB 72점 위험 · M14 36점 정상"))
 
     def test_한_줄만_길어도_잘린_티를_낸다(self):
         b = self._brief("가" * 400)
@@ -1082,6 +1131,202 @@ class 첫_인사(unittest.TestCase):
         self.assertIn("안녕하세요", js)
         self.assertIn("FAB 관련 질문", js)
         self.assertNotIn("말 걸어봐", js)
+
+
+class 현장_스킬을_그대로_쓴다(unittest.TestCase):
+    """★이름을 지어내면 안 된다 — m16_hub_skills 에 공식 한글명·용어 표준이
+    이미 있다. 우리가 따로 쓰면 두 벌이 어긋난다 (실제 지적)."""
+
+    HUB = os.path.join(os.path.dirname(util.BASE), "m16_hub_skills")
+
+    def test_룰_한글명이_카파시_스킬_표와_같다(self):
+        """m16_hub_카파시 §4 '9개 룰' 표가 원본이다."""
+        path = os.path.join(self.HUB, "m16_hub_카파시_v3.5.md")
+        if not os.path.isfile(path):
+            self.skipTest("현장 스킬 없음")
+        with open(path, encoding="utf-8") as f:
+            md = f.read()
+        # 표에 적힌 한글명이 우리 표에도 있어야 한다 (용어 표준 적용 후 이름 포함)
+        for want in ("반송지연", "4분초과"):
+            self.assertIn(want, md, "원본 표가 바뀌었다 — 우리 표도 봐야 한다")
+            self.assertIn(want, terms.KO.values())
+
+    def test_용어_표준_금지어를_안_쓴다(self):
+        """결과해석 스킬이 '역증가·역류·역방향' 을 **금지** 라고 못박았다."""
+        import fab_score
+        names = list(terms.KO.values()) + [r["label"] for r in fab_score.RULES]
+        for n in names:
+            for banned in ("역증가", "역류", "역방향", "저장공간 포화", "허브룸"):
+                self.assertNotIn(banned, n, "금지 용어가 룰 이름에 있다: " + n)
+
+    def test_배점표_라벨과_한글명이_한_벌이다(self):
+        """fab_score.RULES 와 terms.KO 가 어긋나면 근거와 대답이 딴말을 한다."""
+        import fab_score
+        for r in fab_score.RULES:
+            self.assertEqual(r["label"], terms.KO[r["code"]], r["code"])
+
+    def test_용어_표준으로_바로잡는다(self):
+        self.assertEqual(terms.house_style("리프터 역증가로 허브룸 적체"),
+                         "리프터 정체로 HUBROOM 정체")
+        self.assertEqual(terms.house_style("저장공간 포화"), "Storage FULL")
+        self.assertEqual(terms.house_style("M16 허브룸"), "M16 HUBROOM")
+
+
+class 스킬_시드(unittest.TestCase):
+    """현장 스킬이 에이전트 안에 들어와 있어야 한다 — '거기 내용이 전부 있다'."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = skills.SkillStore(Path(self.tmp.name) / "skills")
+        self.base = Path(util.BASE) / "avatar_2d"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_서버가_켜질_때_현장_스킬을_심는다(self):
+        """심는 코드가 있어도 부르지 않으면 에이전트는 아무것도 모른다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("cls.skill_store = skills.SkillStore"):]
+        blk = blk[:blk.index("sentinel.init(")]
+        self.assertIn("skills.seed_hub_skills(cls.skill_store, base_dir)", blk)
+        self.assertIn("skills.seed_fab_score(cls.skill_store, base_dir)", blk)
+
+    def test_현장_스킬_네_개를_심는다(self):
+        got = skills.seed_hub_skills(self.store, self.base)
+        if not got:
+            self.skipTest("현장 스킬 폴더 없음")
+        self.assertEqual(set(got), set(skills.HUB_SKILLS))
+        md = self.store.read("m16-hub-threshold")
+        self.assertIn("AVGTOTALTIME1MIN", md, "임계-컬럼 표가 안 들어왔다")
+
+    def test_두_번_심어도_덮지_않는다(self):
+        if not skills.seed_hub_skills(self.store, self.base):
+            self.skipTest("현장 스킬 폴더 없음")
+        self.assertEqual(skills.seed_hub_skills(self.store, self.base), [])
+
+    def test_설명은_원본의_description_을_쓴다(self):
+        if not skills.seed_hub_skills(self.store, self.base):
+            self.skipTest("현장 스킬 폴더 없음")
+        d = [x for x in self.store.list() if x["name"] == "m16-hub-threshold"][0]
+        self.assertIn("임계", d["description"])
+
+    def test_룰코드가_남은_fab_score_스킬은_다시_심는다(self):
+        """옛 시드에 'R-A' 표가 그대로 있었다 — 사용자가 고쳤든 아니든 결함이다."""
+        self.store.save("fab-score", skills.compose(
+            "fab-score", "옛 시드", "| `R-A` | 10 | 반송지연 |"))
+        skills.seed_fab_score(self.store, self.base)
+        self.assertFalse(terms.has_code(self.store.read("fab-score")))
+
+    def test_깨끗한_스킬은_안_건드린다(self):
+        mine = skills.compose("fab-score", "내가 고친 것", "내 메모")
+        self.store.save("fab-score", mine)
+        self.assertFalse(skills.seed_fab_score(self.store, self.base))
+        self.assertEqual(self.store.read("fab-score"), mine)
+
+
+class 룰코드를_세_자리에서_막는다(unittest.TestCase):
+    """근거만 막았더니 스킬 문서에서 새어 나왔다 (실제 증상:
+    "저장·설비 포화 룰(R-D) 활성화"). 재료·대답 양쪽을 다 막는다."""
+
+    class _Store:
+        def __init__(self, text):
+            self.text = text
+
+        def context(self, *a, **k):
+            return self.text
+
+    SKILL_TABLE = ("| `R-A` | 10 | 반송지연 | 최근 10분 중 1회 |\n"
+                   "| `R-D` | 7 | Storage FULL | STB 저장율 |\n"
+                   "| 영역 | 임계 | 컬럼 |\n"
+                   "| M16HUB | 9.0 | AVGTOTALTIME1MIN |")
+
+    def _sys(self, **kw):
+        kw.setdefault("doc_store", self._Store(""))
+        msgs = allm.build_messages(
+            "페르소나", "지금 상태?", [], kw.pop("doc_store"),
+            {"docBudget": 6000, "keepMsgs": 12}, **kw)
+        return msgs[0]["content"]
+
+    def test_스킬_표의_코드가_프롬프트에_안_들어간다(self):
+        sysmsg = self._sys(skill_store=self._Store(self.SKILL_TABLE))
+        self.assertEqual(terms.CODE_RE.findall(sysmsg), [],
+                         "스킬에서 룰 코드가 프롬프트로 새 들어갔다")
+        # 실제 컬럼은 **살아 있어야** 한다 — 그게 대답에 나와야 할 내용이다
+        self.assertIn("AVGTOTALTIME1MIN", sysmsg)
+        self.assertIn("반송지연", sysmsg)
+
+    def test_참고_자료의_코드도_막는다(self):
+        sysmsg = self._sys(doc_store=self._Store(self.SKILL_TABLE))
+        self.assertEqual(terms.CODE_RE.findall(sysmsg), [])
+
+    def test_첨부_파일의_코드도_막는다(self):
+        sysmsg = self._sys(attach=("표.md", self.SKILL_TABLE))
+        self.assertEqual(terms.CODE_RE.findall(sysmsg), [])
+
+    def test_대답에_섞여_나와도_바꿔서_내보낸다(self):
+        """재료를 다 막아도 모델은 **예전 대화**를 보고 코드를 다시 꺼낸다."""
+        from avatar.server import Handler
+        reply = {"text": "저장·설비 포화 룰(R-D) 활성화, R-A 도 켜졌어요",
+                 "emotion": "fear", "intensity": 0.8, "motion": "none"}
+        out = Handler._guard(object.__new__(Handler), reply,
+                             {"ok": False, "numbers": set()})
+        self.assertEqual(terms.CODE_RE.findall(out["text"]), [])
+        self.assertIn("Storage FULL", out["text"])
+        self.assertIn("반송지연", out["text"])
+
+
+class 대화_복사(unittest.TestCase):
+    """★현장은 http://<사내 IP> 로 연다 — navigator.clipboard 가 아예 없다.
+    그래서 [복사] 를 눌러도 아무 일도 안 일어났다 (실제 증상)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            cls.css = f.read()
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            cls.html = f.read()
+
+    def test_보안_컨텍스트가_아니면_옛_방식으로_복사한다(self):
+        blk = self.js[self.js.index("async function copyText("):]
+        blk = blk[:blk.index("/* 복사 버튼 하나")]
+        self.assertIn("window.isSecureContext", blk,
+                      "http 에서 clipboard 가 없다는 걸 확인하지 않는다")
+        self.assertIn("legacyCopy", blk, "대비책이 없다")
+        self.assertIn("execCommand", self.js)
+
+    def test_실패하면_실패라고_말한다(self):
+        """조용히 아무 일도 안 일어나는 게 제일 나쁘다."""
+        blk = self.js[self.js.index("function copyBtn("):]
+        blk = blk[:blk.index("\nfunction push(")]
+        self.assertIn("복사 실패", blk)
+        self.assertIn("Ctrl+C", blk)
+
+    def test_내_질문도_복사할_수_있다(self):
+        """길게 쓴 질문을 다시 못 쓰는 건 불편이 아니라 일이 막히는 것이다."""
+        blk = self.js[self.js.index("function push(who,text,tag,meta,replaying)"):]
+        blk = blk[:blk.index("\n  logEl.appendChild(d);")]
+        me = blk[blk.index("if(who==='me'){"):]
+        me = me[:me.index("if(who==='ai'){")]
+        self.assertIn("copyBtn", me, "내 질문에는 복사 버튼이 안 붙는다")
+
+    def test_대화_전체_복사_버튼이_있다(self):
+        self.assertIn('id="sessCopy"', self.html)
+        self.assertIn("$('#sessCopy').onclick", self.js)
+        blk = self.js[self.js.index("$('#sessCopy').onclick"):]
+        blk = blk[:blk.index("$('#sessDel')")]
+        self.assertIn("sessionToMarkdown", blk)
+
+    def test_복사_버튼이_늘_보인다(self):
+        """★opacity:0 + hover 로만 띄우면 소형창·터치에선 못 누른다."""
+        m = re.search(r"\.msg \.copy\{[^}]*opacity:([\d.]+)", self.css)
+        self.assertIsNotNone(m)
+        self.assertGreater(float(m.group(1)), 0.0, "복사 버튼이 보이지 않는다")
+        self.assertIn(".msg:hover .copy{opacity:1}", self.css)
+        self.assertIn(".msg{position:relative}", self.css,
+                      "내 질문(.msg.me)에 붙은 복사 버튼이 엉뚱한 데 뜬다")
 
 
 class 설정_일치(unittest.TestCase):

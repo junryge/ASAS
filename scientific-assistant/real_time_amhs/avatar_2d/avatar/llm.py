@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 from . import config
+from . import terms
 
 RULES_TEXT = ("출력 규칙: 반드시 JSON 객체 하나만 출력한다.\n"
               "키 순서는 반드시 emotion, intensity, motion, text 순으로 쓴다.\n"
@@ -74,17 +75,22 @@ def is_data_question(text):
 #   프로덕트 관점: 시키는 것만 하지 말고 '무엇을 해결해야 하나' 를 먼저 짚는다
 AGENT_RULES = (
     "[관제 에이전트 규칙]\n"
-    "너는 M16 허브룸 관제 데이터를 실시간으로 보는 버추얼 에이전트다.\n"
+    "너는 M16 HUBROOM 관제 데이터를 실시간으로 보는 버추얼 에이전트다.\n"
     "1. 수치·등급·구역 이름은 [관제 근거] 블록에 있는 것만 말한다. "
     "근거에 없는 숫자를 만들면 안 된다. 근거가 없으면 '지금은 확인이 안 돼요' 라고 한다.\n"
     "1-1. 데이터 답의 **첫 문장에 데이터 시각**을 말한다 — "
     "\"2026-08-24 15:32 데이터 기준으로…\" 처럼. 시각 없는 점수는 "
     "어제 값을 지금 값으로 읽게 만든다.\n"
-    "1-2. **룰 코드(RA, RA_sus, RB, RC, RD, SLA, SORT, MAXCAPA)를 그대로 "
-    "말하지 마라.** 관제는 그 코드를 모른다. 근거에 적힌 한글 이름과 "
-    "실제 AMOS 컬럼명·임계·실측값으로 말한다. "
-    "예: \"RA와 RD\" (X) → \"반송시간(M16HUB.QUE.TIME.AVGTOTALTIME1MIN)이 "
-    "임계 9.0분을 넘었고, 저장·설비 포화 조건이 걸렸어요\" (O)\n"
+    "1-2. **내부 룰 코드(영문 약칭)를 쓰지 마라.** 관제는 그 코드를 모른다. "
+    "근거에 적힌 한글 룰 이름과 **실제 AMOS 컬럼명·임계·실측값**으로 말한다. "
+    "룰이 켜졌다고만 하지 말고 어느 컬럼이 얼마여서 켜졌는지를 붙인다. "
+    "예: \"반송지연은 M16HUB.QUE.TIME.AVGTOTALTIME1MIN 이 임계 9.0분인데 "
+    "15.98분이라 켜졌어요\"\n"
+    "1-2-1. 룰 이름은 현장 표준을 쓴다 — 반송지연 · 반송지연 지속 · "
+    "Queue 누적 · Queue 급증 · 리프터 정체 · Storage FULL · 4분초과 · "
+    "분류기 대기 · 운영자 용량변경. "
+    "'역증가 · 역류 · 역방향 · 적체 · 허브룸' 은 쓰지 않는다 "
+    "(각각 정체 · 정체 · HUBROOM).\n"
     "1-3. 근거에 '이 1분 값은 임계 미만인데 룰이 켜졌다' 고 적혀 있으면 "
     "그 판정 방식(최근 5분 중 3분 · 31분 전 대비 등)을 반드시 같이 말한다 — "
     "안 그러면 '값은 낮은데 왜 켜졌냐' 는 질문을 만든다.\n"
@@ -133,17 +139,20 @@ def build_messages(persona, user_text, history, doc_store, settings,
                 .format(cap) if len(str(body or "")) > cap else "")
         sysmsg += ("[방금 첨부한 파일: {}]\n{}{}\n"
                    "질문이 이 파일에 대한 것이면 이 내용을 최우선 근거로 쓴다.\n\n"
-                   .format(name, cut, note))
+                   .format(name, terms.no_code(cut), note))
     if skill_store is not None:
         sk = skill_store.context(user_text,
                                  int(settings.get("docBudget", 6000)) // 2)
         if sk:
-            sysmsg += ("[스킬 — 도메인 지식]\n" + sk +
+            # ★스킬 문서(SKILL.md)의 배점표가 'R-A'·'R-D' 로 적혀 있다 —
+            #   근거만 소독해 놓고 여기를 안 막으면 모델은 스킬에서 베낀다.
+            #   실제로 "저장·설비 포화 룰(R-D) 활성화" 라고 답했다.
+            sysmsg += ("[스킬 — 도메인 지식]\n" + terms.no_code(sk) +
                        "\n스킬의 규칙·함정은 판단 기준으로 쓰되, "
                        "현재 수치는 [관제 근거] 를 따른다.\n\n")
     ctx = doc_store.context(user_text, int(settings.get("docBudget", 6000)))
     if ctx:
-        sysmsg += ("[참고 자료]\n" + ctx +
+        sysmsg += ("[참고 자료]\n" + terms.no_code(ctx) +
                    "\n위 자료에 있는 내용은 근거로 삼아 답한다. "
                    "자료에 없는 것은 아는 척하지 않고 모른다고 말한다.\n"
                    "자료를 인용하더라도 캐릭터의 말투는 그대로 유지한다.\n\n")

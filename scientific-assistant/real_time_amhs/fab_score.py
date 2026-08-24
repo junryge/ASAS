@@ -47,23 +47,23 @@ from __future__ import annotations
 # ────────────────────────── 룰 배점 (모든 영역 공통) ──────────────────────────
 # 이 표가 FAB 간 비교를 가능하게 하는 근거다 — 배점이 같으니 점수가 같은 뜻이다.
 RULES = [
-    {"code": "RA",      "pts": 10, "label": "반송·적재 시간 초과",
+    {"code": "RA",      "pts": 10, "label": "반송지연",
      "when": "최근 10분 중 1회라도 임계 이상"},
-    {"code": "RA_sus",  "pts": 5,  "label": "그 상태가 이어짐",
+    {"code": "RA_sus",  "pts": 5,  "label": "반송지연 지속",
      "when": "최근 5분 중 3분 이상 · 임계는 시간 초과 기준의 70%"},
-    {"code": "RB",      "pts": 10, "label": "대기 물량 30분 증가",
+    {"code": "RB",      "pts": 10, "label": "Queue 누적",
      "when": "31분 전 값과 비교"},
-    {"code": "RB_fast", "pts": 5,  "label": "10분새 급증",
+    {"code": "RB_fast", "pts": 5,  "label": "Queue 급증",
      "when": "11분 전과 비교 · 임계는 30분 증가 기준의 30%"},
-    {"code": "RC",      "pts": 8,  "label": "리프터 역증가 · 컨베이어 쏠림",
+    {"code": "RC",      "pts": 8,  "label": "리프터 정체",
      "when": "총합은 주는데 개별은 늘어남 (20분 전 대비)"},
-    {"code": "RD",      "pts": 7,  "label": "저장·설비 포화",
+    {"code": "RD",      "pts": 7,  "label": "Storage FULL",
      "when": "조건 하나만 걸려도 켜짐"},
-    {"code": "SLA",     "pts": 5,  "label": "4분 초과 반송 비율",
+    {"code": "SLA",     "pts": 5,  "label": "4분초과",
      "when": "비율이 임계를 넘거나 초과건수가 10분새 +20"},
-    {"code": "SORT",    "pts": 3,  "label": "소터 대기 · 이재 실패",
+    {"code": "SORT",    "pts": 3,  "label": "분류기 대기",
      "when": "이재 실패는 1건만 나도 켜짐"},
-    {"code": "MAXCAPA", "pts": 10, "label": "설비 상한 하락", "per": True,
+    {"code": "MAXCAPA", "pts": 10, "label": "운영자 용량변경", "per": True,
      "when": "임계 이하로 내려간 컬럼 1개당 10점"},
 ]
 RULE_ORDER = [r["code"] for r in RULES]

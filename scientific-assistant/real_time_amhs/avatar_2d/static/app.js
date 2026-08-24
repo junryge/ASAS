@@ -1239,6 +1239,13 @@ $('#sessDl').onclick = async ()=>{
     sys('이 세션을 JSON + Markdown 으로 내려받았습니다.');
   }
 };
+/* 대화 전체를 한 번에 — 보고서에 붙여 넣을 때 메시지마다 누를 수는 없다 */
+$('#sessCopy').onclick = async ()=>{
+  if(!curSession || !curSession.msgs.length){ sys('복사할 대화가 없습니다.'); return; }
+  const ok = await copyText(sessionToMarkdown(curSession));
+  sys(ok ? '이 대화 전체를 Markdown 으로 복사했습니다.'
+         : '복사가 막혀 있어요. ⤓ 로 내려받아 쓰거나, 글자를 드래그해 Ctrl+C 하세요.');
+};
 $('#sessDel').onclick = ()=>{
   if(!curSession) return;
   const i=sessions.findIndex(x=>x.id===curSession.id);
@@ -2171,18 +2178,36 @@ function speakable(t){
   return (out || t.slice(0,260)) + '…';
 }
 
-/* 말풍선용 요약 — 캐릭터는 '간단하게', 채팅창은 '전부'.
-   ★긴 답을 말풍선에 그대로 밀어 넣으면 중간에서 잘려 "말을 하다 만" 것처럼
-     보인다 (실제 지적). 그래서 캐릭터는 머리말(무슨 일인지)만 말하고,
-     항목 나열(- 로 시작하는 줄)은 채팅창에 맡긴다. 잘린 게 아니라
-     **나눠 맡은 것**이라는 걸 사용자가 알도록 안내 줄을 붙인다. */
+/* 말풍선용 요약 — 캐릭터는 '점수만', 채팅창은 '전부'.
+   ★긴 답을 말풍선에 밀어 넣으면 중간에서 잘려 "말하다 만" 것처럼 보인다.
+     말풍선이 할 일은 **결론(몇 점·무슨 등급)** 하나다. 근거·컬럼·항목은
+     채팅창이 맡고, 거기 있다고만 알려 준다. */
 const BRIEF_MAX = 130;
+const BRIEF_TAIL = '상세한 내용은 채팅창에 있어요';
+/* 'M16HUB 72점 위험' 같은 결론만 뽑는다. 앞자리는 FAB/ALL 이름(영문·숫자)만
+   인정한다 — '경계 60점' 같은 임계 설명까지 점수로 읽으면 안 된다. */
+const SCORE_RE =
+  /\b([A-Z][A-Z0-9]{1,9})\s*(?:구역)?\s*(?:은|는|이|가|:)?\s*(\d{1,3})\s*점\s*(초위험|위험|경계|관심|정상)?/g;
+
 function briefFor(t){
   const s = speakable(t);
-  const lines = s.split('\n');
+  /* ① 점수가 있으면 점수만 말한다 */
+  const facts = [], seen = new Set();
+  let m; SCORE_RE.lastIndex = 0;
+  while((m = SCORE_RE.exec(s)) !== null){
+    if(seen.has(m[1])) continue;                    // 같은 FAB 은 한 번만
+    seen.add(m[1]);
+    facts.push(m[1] + ' ' + m[2] + '점' + (m[3] ? ' ' + m[3] : ''));
+    if(facts.length >= 3) break;                    // 말풍선에 셋이면 충분
+  }
+  if(facts.length){
+    const line = facts.join(' · ');
+    return line + (s.length > line.length + 4 ? '\n' + BRIEF_TAIL : '');
+  }
+  /* ② 점수가 없는 답(정상 안내·오류·설명)이면 머리말만 */
   const head = [];
   let dropped = 0;
-  for(const ln of lines){
+  for(const ln of s.split('\n')){
     const v = ln.trim();
     if(!v) continue;
     if(/^[-*·]\s/.test(v)){ dropped++; continue; }        // 항목은 채팅창 몫
@@ -2192,8 +2217,49 @@ function briefFor(t){
   let out = head.join('\n').trim();
   if(!out) out = s.slice(0, BRIEF_MAX);                    // 전부 항목뿐이면
   if(out.length > BRIEF_MAX + 40) out = out.slice(0, BRIEF_MAX + 40) + '…';
-  if(dropped >= 2) out += '\n(자세한 건 채팅창에 적어 뒀어요)';
+  if(dropped >= 2) out += '\n' + BRIEF_TAIL;
   return out;
+}
+
+/* ---------- 복사 ----------
+   ★navigator.clipboard 는 **보안 컨텍스트(https 또는 localhost)에서만** 있다.
+     현장은 http://<사내 IP>:8790 으로 열어서 그 객체가 아예 undefined 다 —
+     그래서 [복사] 를 눌러도 아무 일도 안 일어났다 (실제 증상). 옛 방식
+     (execCommand)으로 반드시 대비하고, 그것도 실패하면 실패라고 말한다. */
+function legacyCopy(s){
+  const ta=document.createElement('textarea');
+  ta.value=s; ta.setAttribute('readonly','');
+  ta.style.cssText='position:fixed;top:0;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0, ta.value.length);
+  let ok=false;
+  try{ ok=document.execCommand('copy'); }catch(e){ ok=false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+async function copyText(s){
+  s = String(s==null?'':s);
+  if(!s) return false;
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(s);
+      return true;
+    }
+  }catch(e){/* 권한 거부 — 아래 옛 방식으로 */}
+  return legacyCopy(s);
+}
+/* 복사 버튼 하나 만들기 — 결과를 버튼 글자로 알린다 (조용한 실패 금지) */
+function copyBtn(getText, label){
+  const cp=document.createElement('span');
+  cp.className='copy'; cp.textContent=label||'복사';
+  cp.onclick=async(e)=>{
+    e.stopPropagation();
+    const ok=await copyText(getText());
+    cp.textContent = ok ? '복사됨' : '복사 실패';
+    if(!ok) sys('복사가 막혀 있어요. 글자를 드래그해서 Ctrl+C 로 복사해 주세요.');
+    setTimeout(()=>cp.textContent=label||'복사', 1400);
+  };
+  return cp;
 }
 
 function push(who,text,tag,meta,replaying){
@@ -2206,11 +2272,14 @@ function push(who,text,tag,meta,replaying){
   }else{
     d.appendChild(document.createTextNode(text));
   }
+  d._raw = d._raw || text;
+  if(who==='me'){
+    /* 내가 쓴 질문도 복사할 수 있어야 한다 — 길게 쓴 질문을 다시 못 쓰는 건
+       그냥 불편이 아니라 일이 막히는 것이다 */
+    d.appendChild(copyBtn(()=>d._raw));
+  }
   if(who==='ai'){
-    const cp=document.createElement('span'); cp.className='copy'; cp.textContent='복사';
-    cp.onclick=(e)=>{ e.stopPropagation();
-      navigator.clipboard.writeText(d._raw||text)
-        .then(()=>{ cp.textContent='복사됨'; setTimeout(()=>cp.textContent='복사',1200); }); };
+    const cp=copyBtn(()=>d._raw||text);
     d.appendChild(cp);
     if(meta){
       /* 클릭하면 그때 그 표정·모션으로 다시 말한다 */

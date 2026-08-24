@@ -20,6 +20,8 @@ skills.py — 버추얼 에이전트의 스킬 (데모스 skills.py 의 핵심�
 import os
 import re
 
+from . import terms
+
 MAX_LINES = 500          # 데모스 권장치 — 넘으면 경고 (막지는 않는다)
 MAX_INJECT = 4           # 한 질문에 주입할 스킬 수
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -286,12 +288,73 @@ DRAFT_PROMPT = (
     "- 한국어로, {}줄 이하로\n".format(MAX_LINES))
 
 
+# 현장 도메인 스킬 — real_time_amhs 옆(scientific-assistant/m16_hub_skills)에
+# 이미 있는 것을 그대로 쓴다. ★새로 쓰지 않는다: 룰 한글명·용어 표준·임계값·
+# 결과 해석 규칙이 전부 거기 있고, 우리가 다시 쓰면 두 벌이 어긋난다.
+# 이름은 ASCII 만 (NAME_RE) — 한글 이름은 저장이 거부된다. 무슨 스킬인지는
+# 원본의 description 이 한글로 들고 온다.
+HUB_SKILLS = {
+    "m16-hub-result": "m16_hub_결과해석_도메인_고객인용V3.5.md",
+    "m16-hub-threshold": "m16_hub_임계값_v3.5.md",
+    "m16-hub-capacity": "m16_hub_카파시_v3.5.md",
+    "m16-hub-general": "m16_hub_일반_v3.5.md",
+}
+
+
+def _hub_dir(base_dir):
+    """avatar_2d → real_time_amhs → scientific-assistant/m16_hub_skills"""
+    rt = os.path.dirname(str(base_dir))            # real_time_amhs
+    return os.path.join(os.path.dirname(rt), "m16_hub_skills")
+
+
+def seed_hub_skills(store, base_dir):
+    """현장 스킬 md 를 스킬 저장소에 심는다. 심은 이름 목록을 돌려준다."""
+    src_dir = _hub_dir(base_dir)
+    done = []
+    for name, fname in HUB_SKILLS.items():
+        if store.read(name):
+            continue                                # 사용자가 고쳤을 수 있다
+        path = os.path.join(src_dir, fname)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                body = f.read()
+        except OSError:
+            continue
+        # 원본에 YAML 머리말(name/description)이 이미 있다 — 이름만 우리 규칙
+        # (소문자·하이픈)으로 맞춰 다시 씌운다.
+        desc = _desc_of(body) or name
+        ok, _e, _w = store.save(name, compose(name, desc, _strip_fm(body)))
+        if ok:
+            done.append(name)
+    return done
+
+
+def _strip_fm(md):
+    m = _FM_RE.match(str(md or ""))
+    return md[m.end():] if m else md
+
+
+def _desc_of(md):
+    m = _FM_RE.match(str(md or ""))
+    if not m:
+        return ""
+    for line in m.group(1).splitlines():
+        if line.strip().lower().startswith("description:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
 def seed_fab_score(store, base_dir):
     """real_time_amhs 의 FAB 스코어 md 를 fab-score 스킬로 심는다.
 
-    이미 있으면 건드리지 않는다 — 사용자가 고쳤을 수 있다.
+    이미 있으면 건드리지 않는다 — 사용자가 고쳤을 수 있다. 단 **룰 코드가
+    남아 있으면 다시 심는다**: 그 표(`R-A`·`R-D`)를 보고 모델이 코드를
+    그대로 베껴 답했다. 결함이라 사용자 편집 여부와 무관하게 고쳐야 한다.
     """
-    if store.read("fab-score"):
+    old = store.read("fab-score")
+    if old and not terms.has_code(old):
         return False
     src = os.path.join(os.path.dirname(str(base_dir)), "docs",
                        "FAB별_위험도_스코어.md")
@@ -300,8 +363,8 @@ def seed_fab_score(store, base_dir):
     with open(src, encoding="utf-8") as f:
         body = f.read()
     md = compose("fab-score",
-                 "M16 허브룸 FAB 별 위험도 스코어 — 룰 배점, FAB 별 임계값과 컬럼, "
+                 "M16 HUBROOM FAB 별 위험도 스코어 — 룰 배점, FAB 별 임계값과 컬럼, "
                  "점수 컬럼 이름(area_score), 자주 틀리는 것",
-                 body)
+                 terms.no_code(body))
     ok, _e, _w = store.save("fab-score", md)
     return ok

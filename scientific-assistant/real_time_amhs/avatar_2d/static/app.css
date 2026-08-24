@@ -192,16 +192,22 @@
   #log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;min-height:0}
   .msg{max-width:92%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.6;
     white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;user-select:text}
-  .msg.ai{position:relative}
+  .msg{position:relative}     /* 복사 버튼 기준 — me/ai 둘 다 필요하다 */
   .msg.replay{cursor:pointer;transition:background .15s,box-shadow .15s}
   .msg.replay:hover{background:#232c3a;box-shadow:inset 0 0 0 1px var(--accent2)}
   .msg.replay:after{content:"▶ 다시 재생";position:absolute;right:10px;bottom:-16px;
     font-size:9.5px;color:var(--accent2);opacity:0;transition:opacity .15s}
   .msg.replay:hover:after{opacity:.9}
   .msg.played{background:rgba(90,169,217,.25)}
-  .msg .copy{position:absolute;right:6px;top:6px;opacity:0;font-size:10px;color:var(--dim);
-    background:rgba(0,0,0,.35);border-radius:5px;padding:2px 6px;cursor:pointer;transition:opacity .15s}
-  .msg.ai:hover .copy{opacity:1}
+  /* ★복사 버튼은 항상 보인다. opacity:0 + hover 로만 띄우면 소형창·터치에서는
+     hover 가 없어 아예 못 누른다 (그러면 '복사가 안 된다' 가 된다). */
+  /* ★위(top)에 붙이면 긴 답에서는 화면 밖으로 밀려 못 누른다 —
+     채팅은 아래로 스크롤되므로 아래쪽에 붙여야 늘 손이 닿는다. */
+  .msg .copy{position:absolute;right:6px;bottom:6px;opacity:.38;font-size:10px;color:var(--dim);
+    background:rgba(0,0,0,.35);border-radius:5px;padding:2px 6px;cursor:pointer;
+    user-select:none;transition:opacity .15s,color .15s}
+  .msg:hover .copy{opacity:1}
+  .msg .copy:hover{color:#fff}
   .msg.me{align-self:flex-end;background:#2c3a4d}
   .msg.ai{align-self:flex-start;background:var(--panel2);border:1px solid var(--line)}
   .msg .tag{display:block;font-size:10.5px;color:var(--dim);margin-bottom:3px;letter-spacing:.4px}

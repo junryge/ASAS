@@ -27,7 +27,7 @@ from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 
 from . import commands, config, csvdata, docs, llm, sentinel, sessions, \
-    settings, skills
+    settings, skills, terms
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -66,7 +66,11 @@ class App:
         cls.sess_store = sessions.SessionStore(cls.data_dir / "sessions.json")
         cls.settings = settings.Settings(cls.data_dir / "settings.json")
         cls.skill_store = skills.SkillStore(cls.data_dir / "skills")
-        # FAB 스코어 도메인 지식을 스킬로 심는다 (있으면 안 건드림)
+        # 도메인 지식을 스킬로 심는다 (있으면 안 건드림).
+        # ★현장 스킬(m16_hub_skills)을 먼저 — 룰 한글명·용어 표준·임계값이
+        #   거기 있다. 우리가 새로 쓰면 두 벌이 어긋난다.
+        for nm in skills.seed_hub_skills(cls.skill_store, base_dir):
+            sys.stdout.write("  스킬 시드: {} (현장 스킬)\n".format(nm))
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
@@ -527,9 +531,15 @@ class Handler(SimpleHTTPRequestHandler):
         return (60, 71, 85)
 
     def _guard(self, reply, ev):
-        """숫자 가드 — 데이터 질문에서 근거에 없는 숫자가 나오면 그 답을
-        버리고 결정적 요약으로 바꾼다. 그럴듯한 거짓 숫자가 제일 위험하다.
-        폴백은 질문 맥락을 따른다 — 첨부 분석 중이면 그 분석 요약."""
+        """나가기 직전 검사 — ① 룰 코드·용어 ② 근거에 없는 숫자.
+
+        ①은 근거·스킬을 이미 소독했는데도 필요하다. 모델은 **예전 대화**를
+        보고 코드를 다시 꺼낸다 (대화 기록은 우리가 못 지운다). 마지막 자리에서
+        한 번 더 바꾼다 — 사용자는 'R-D' 가 아니라 실제 컬럼을 봐야 한다.
+        ②는 그럴듯한 거짓 숫자가 제일 위험하기 때문. 폴백은 질문 맥락을 따른다.
+        """
+        if isinstance(reply, dict) and reply.get("text"):
+            reply = dict(reply, text=terms.clean(reply["text"]))
         if not ev.get("ok") or not isinstance(reply, dict):
             return reply
         ok, bad = sentinel.check_numbers(str(reply.get("text", "")),
