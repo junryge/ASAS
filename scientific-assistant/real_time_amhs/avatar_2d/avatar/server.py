@@ -223,14 +223,21 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send(200, skills.to_html(name, md).encode("utf-8"),
                               "text/html; charset=utf-8")
 
-        if path == "/api/sessions/md":
+        if path in ("/api/sessions/md", "/api/sessions/html"):
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]
                                       if "?" in self.path else "")
             sid = (q.get("id") or [""])[0]
             for s in App.sess_store.get_all():
                 if s.get("id") == sid:
-                    md = App.sess_store.to_markdown(s).encode("utf-8")
-                    return self._send(200, md, "text/markdown; charset=utf-8")
+                    md = App.sess_store.to_markdown(s)
+                    if path.endswith("/md"):
+                        return self._send(200, md.encode("utf-8"),
+                                          "text/markdown; charset=utf-8")
+                    # 세션 공유용 단독 HTML — 스킬과 같은 변환기를 쓴다
+                    title = "대화 기록 " + str(s.get("ts") or "")
+                    return self._send(200,
+                                      skills.to_html(title, md).encode("utf-8"),
+                                      "text/html; charset=utf-8")
             return self._err(404, "세션 없음")
 
         if path.startswith("/v1"):
@@ -246,8 +253,13 @@ class Handler(SimpleHTTPRequestHandler):
     # ── POST / PUT ───────────────────────────────────────────────────────
     def do_PUT(self):
         if self.path.split("?", 1)[0] == "/api/sessions":
-            ok = App.sess_store.put_all(self._body().get("sessions"))
-            return self._json(200 if ok else 400, {"ok": ok})
+            b = self._body()
+            ok = App.sess_store.put_all(b.get("sessions"),
+                                        deleted=b.get("deleted"))
+            # 병합 결과를 돌려준다 — 브라우저가 다른 PC 세션까지 바로 본다
+            return self._json(200 if ok else 400,
+                              {"ok": ok,
+                               "sessions": App.sess_store.get_all() if ok else []})
         return self._err(404, "알 수 없는 경로: " + self.path)
 
     def do_POST(self):

@@ -38,20 +38,38 @@ class SessionStore:
         with _LOCK:
             return self.sessions
 
-    def put_all(self, sessions):
-        """브라우저가 보낸 전체 목록을 한도에 맞춰 저장한다."""
+    def put_all(self, sessions, deleted=None):
+        """브라우저가 보낸 목록을 서버 목록과 **병합**한다.
+
+        ★교체가 아니라 병합이다. 예전에는 통째 교체여서, 두 PC 가 같이
+          쓰면 나중에 저장한 쪽이 먼저 쪽의 세션을 조용히 지웠다 —
+          "다른 컴에서 쓴 세션이 안 보인다" 의 실제 원인.
+          · 같은 id 는 보낸 쪽이 이긴다 (자기 세션의 최신 상태니까)
+          · 서버에만 있는 세션은 남긴다 (다른 PC 의 것)
+          · 지우기는 deleted 로 명시해야 지워진다 — 병합에서 빠진 것을
+            삭제로 해석하면 남의 세션을 또 지우게 된다
+        """
         if not isinstance(sessions, list):
             return False
-        out, acc = [], 0
-        for s in sessions[:config.SESS_MAX]:
-            if not isinstance(s, dict) or "id" not in s:
-                continue
-            sz = len(json.dumps(s, ensure_ascii=False))
-            if acc + sz > config.SESS_BYTES:
-                break
-            out.append(s)
-            acc += sz
+        drop = {str(x) for x in (deleted or []) if x}
+        incoming = {s["id"]: s for s in sessions
+                    if isinstance(s, dict) and "id" in s}
         with _LOCK:
+            merged = dict(incoming)
+            for s in self.sessions:
+                sid = s.get("id")
+                if sid and sid not in merged:
+                    merged[sid] = s
+            rows = [s for sid, s in merged.items() if sid not in drop]
+            # 최신 세션이 먼저 — ts('YYYY-MM-DD HH:MM…') 는 문자열 정렬로 충분
+            rows.sort(key=lambda s: str(s.get("ts") or ""), reverse=True)
+            out, acc = [], 0
+            for s in rows[:config.SESS_MAX]:
+                sz = len(json.dumps(s, ensure_ascii=False))
+                if acc + sz > config.SESS_BYTES:
+                    break
+                out.append(s)
+                acc += sz
             self.sessions = out
             self._save()
         return True

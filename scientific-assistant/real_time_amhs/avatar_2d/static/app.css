@@ -242,6 +242,10 @@
   body.mini .msg{font-size:12px;padding:6px 9px}
   body.mini #say{min-height:34px;max-height:70px}
   body.mini #alarmBox{transform:scale(.9);transform-origin:bottom right}
+  /* ── SD 러너 — 접기/펼치기를 달려와서 누르는 꼬마 ── */
+  .sdRun{position:absolute;left:0;top:0;z-index:80;pointer-events:none;
+    filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))}
+  .sdpress{transform:scale(.8) !important;transition:transform .12s}
   .msg.sys{align-self:center;background:none;color:var(--dim);font-size:11.5px;text-align:center;max-width:100%}
   #inputRow{flex:0 0 auto;display:flex;flex-direction:column;gap:0;padding:0;max-width:100%;
     border-top:1px solid var(--line);position:relative;background:var(--panel)}

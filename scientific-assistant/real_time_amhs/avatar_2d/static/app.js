@@ -1217,17 +1217,33 @@ refreshSessUI();
 
 $('#sessNew').onclick = ()=>newSession();
 $('#sessSel').onchange = (e)=>{ if(e.target.value!==curSession.id) openSession(e.target.value); };
-$('#sessDl').onclick = ()=>{
+/* 목록을 여는 순간 서버에서 다시 읽는다 — 다른 PC 가 방금 만든 세션이 보이게 */
+$('#sessSel').addEventListener('focus', async ()=>{
+  if(!window.SERVER) return;
+  await loadSessions(); refreshSessUI();
+});
+$('#sessDl').onclick = async ()=>{
   if(!curSession || !curSession.msgs.length){ sys('저장할 대화가 없습니다.'); return; }
   const base = 'session_'+curSession.ts.replace(/[^0-9]/g,'').slice(0,12);
   downloadBlob(base+'.json', JSON.stringify(curSession, null, 2), 'application/json');
   setTimeout(()=>downloadBlob(base+'.md', sessionToMarkdown(curSession), 'text/markdown'), 400);
-  sys('이 세션을 JSON + Markdown 으로 내려받았습니다.');
+  if(window.SERVER){
+    /* 공유용 HTML 은 서버가 만든다 — 디바운스 저장을 먼저 밀어넣는다 */
+    saveSessions(); clearTimeout(sessPushTimer); await pushSessions();
+    try{
+      const r = await fetch('/api/sessions/html?id='+encodeURIComponent(curSession.id));
+      if(r.ok) setTimeout(async()=>downloadBlob(base+'.html', await r.text(), 'text/html'), 800);
+    }catch(e){}
+    sys('이 세션을 JSON + Markdown + HTML 로 내려받았습니다. (html 은 그대로 공유하면 됩니다)');
+  }else{
+    sys('이 세션을 JSON + Markdown 으로 내려받았습니다.');
+  }
 };
 $('#sessDel').onclick = ()=>{
   if(!curSession) return;
   const i=sessions.findIndex(x=>x.id===curSession.id);
   if(i>=0) sessions.splice(i,1);
+  deletedSess.push(curSession.id);          // 병합 서버에는 삭제를 명시해야 한다
   persistSessions();
   curSession = newSessionObj();
   logEl.innerHTML=''; history.length=0;
@@ -1240,6 +1256,7 @@ $('#sessExportAll').onclick = ()=>{
   downloadBlob('sessions_all.json', JSON.stringify(sessions, null, 2), 'application/json');
 };
 $('#sessClearAll').onclick = ()=>{
+  deletedSess.push(...sessions.map(s=>s.id));   // 전체 삭제도 명시로
   sessions.length=0;
   persistSessions();
   curSession = newSessionObj();
@@ -1473,6 +1490,141 @@ function setMini(on){
   };
   if(new URLSearchParams(location.search).get('mini')==='1')
     setTimeout(()=>setMini(true), 0);
+})();
+
+/* ---------- SD 러너 — 접기/펼치기를 꼬마 캐릭터가 달려와서 누른다 ----------
+   ☰(패널)·◧(컨텍스트) 토글을 누르면, 미니 SD 캐릭터가 허둥지둥 화면 위를
+   가로질러 달려와 버튼을 꾹 누르고(그 순간 실제로 접힘/펼침) 지나간다.
+   그림: assets/sd_run.png 가 있으면 그걸 쓴다(초록 배경은 여기서 투명 처리).
+         없으면 코드로 그린 꼬마(검은 머리·정장·땀방울)로 움직인다.
+   애니메이션 중에 또 누르면 그냥 즉시 토글 — 기다리게 하지 않는다. */
+const SdRunner = (function(){
+  let sprite=null, running=false;
+
+  function chroma(img){
+    /* 초록 배경 → 투명 + 내용만 남게 잘라낸다 */
+    const c=document.createElement('canvas');
+    c.width=img.naturalWidth; c.height=img.naturalHeight;
+    const g=c.getContext('2d', {willReadFrequently:true});
+    g.drawImage(img,0,0);
+    const d=g.getImageData(0,0,c.width,c.height), px=d.data;
+    let minX=c.width, minY=c.height, maxX=0, maxY=0;
+    for(let i=0;i<px.length;i+=4){
+      const r=px[i], gr=px[i+1], b=px[i+2];
+      if(gr>90 && gr>r*1.35 && gr>b*1.35){ px[i+3]=0; continue; }
+      const p=i/4, x=p%c.width, y=(p-x)/c.width;
+      if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y;
+    }
+    if(maxX<=minX) return null;
+    g.putImageData(d,0,0);
+    const out=document.createElement('canvas');
+    out.width=maxX-minX+2; out.height=maxY-minY+2;
+    out.getContext('2d').drawImage(c, minX, minY, out.width, out.height,
+                                   0, 0, out.width, out.height);
+    return out;
+  }
+
+  function drawFallback(){
+    /* 파일이 없을 때 — 본체를 닮은 꼬마를 직접 그린다 (머리 큰 2등신) */
+    const c=document.createElement('canvas'); c.width=72; c.height=88;
+    const g=c.getContext('2d');
+    if(!g.roundRect) g.roundRect=function(x,y,w,h){ this.rect(x,y,w,h); };  // 옛 브라우저
+    g.lineWidth=2; g.lineJoin='round';
+    // 몸(정장)
+    g.fillStyle='#3a4356'; g.strokeStyle='#232a38';
+    g.beginPath(); g.roundRect(22,46,28,26,7); g.fill(); g.stroke();
+    // 팔 둘 다 번쩍 (허둥지둥)
+    g.beginPath(); g.roundRect(10,38,12,8,4); g.fill(); g.stroke();
+    g.beginPath(); g.roundRect(50,38,12,8,4); g.fill(); g.stroke();
+    // 다리
+    g.fillStyle='#2c3140';
+    g.beginPath(); g.roundRect(26,70,8,14,3); g.fill();
+    g.beginPath(); g.roundRect(38,70,8,14,3); g.fill();
+    // 머리 (크게)
+    g.fillStyle='#ffe3d0'; g.strokeStyle='#2b2b34';
+    g.beginPath(); g.arc(36,26,20,0,7); g.fill(); g.stroke();
+    // 머리카락
+    g.fillStyle='#2e3440';
+    g.beginPath(); g.arc(36,22,20,Math.PI*0.95,Math.PI*2.05); g.fill();
+    g.beginPath(); g.roundRect(14,20,10,16,5); g.fill();
+    g.beginPath(); g.roundRect(48,20,10,16,5); g.fill();
+    // 머리띠
+    g.strokeStyle='#c8cfda'; g.lineWidth=3;
+    g.beginPath(); g.arc(36,24,19,Math.PI*1.15,Math.PI*1.85); g.stroke();
+    // 눈 (>_<)·입·볼
+    g.strokeStyle='#2b2b34'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(26,28); g.lineTo(31,31); g.moveTo(26,34); g.lineTo(31,31); g.stroke();
+    g.beginPath(); g.moveTo(46,28); g.lineTo(41,31); g.moveTo(46,34); g.lineTo(41,31); g.stroke();
+    g.fillStyle='#d94a5a';
+    g.beginPath(); g.ellipse(36,38,4,3,0,0,7); g.fill();
+    // 땀방울
+    g.fillStyle='#9fd2ff';
+    g.beginPath(); g.ellipse(56,14,3,4,0.5,0,7); g.fill();
+    g.beginPath(); g.ellipse(14,12,2.5,3.5,-0.5,0,7); g.fill();
+    return c;
+  }
+
+  async function load(){
+    if(sprite) return sprite;
+    sprite = await new Promise(res=>{
+      const im=new Image();
+      im.onload = ()=>res(chroma(im) || drawFallback());
+      im.onerror= ()=>res(drawFallback());
+      im.src='assets/sd_run.png';
+    });
+    return sprite;
+  }
+
+  async function run(btn, onPress){
+    if(running){ onPress(); return; }          // 바쁘면 그냥 즉시 토글
+    const wrap=$('#stageWrap');
+    if(!wrap || !btn){ onPress(); return; }
+    running=true;
+    const sp=await load();
+    const H=64, W=Math.max(24, Math.round(sp.width*H/sp.height));
+    const el=document.createElement('canvas');
+    el.width=sp.width; el.height=sp.height;
+    el.getContext('2d').drawImage(sp,0,0);
+    el.className='sdRun';
+    el.style.width=W+'px'; el.style.height=H+'px';
+    wrap.appendChild(el);
+
+    const wr=wrap.getBoundingClientRect(), br=btn.getBoundingClientRect();
+    const y0=Math.max(2, br.top-wr.top+br.height/2-H+6);
+    const xTarget=br.left-wr.left+br.width/2-W/2;
+    const fromRight = xTarget < wr.width/2;   // 버튼이 왼쪽이면 오른쪽에서 진입
+    const x0=fromRight ? wr.width+W : -W;
+    const x1=fromRight ? -W-20 : wr.width+W+20;
+    /* 콘솔에서 window.SD_DUR=600 처럼 속도를 바꿀 수 있다 (ms, 작을수록 빠름) */
+    const dur=window.SD_DUR||850, pressAt=Math.abs(xTarget-x0)/Math.abs(x1-x0);
+    let pressed=false; const t0=performance.now();
+    function step(now){
+      const t=Math.min(1,(now-t0)/dur);
+      const x=x0+(x1-x0)*t;
+      const wob=Math.sin(t*dur/28);                 // 잰걸음 — 빨리 동동거린다
+      el.style.transform='translate('+x+'px,'+(y0-Math.abs(wob)*6)+'px) '
+        +'rotate('+(wob*11)+'deg)'+(fromRight?' scaleX(-1)':'');
+      if(!pressed && t>=pressAt){
+        pressed=true;
+        btn.classList.add('sdpress');
+        setTimeout(()=>btn.classList.remove('sdpress'), 260);
+        onPress();                              // ★누르는 그 순간 실제 토글
+      }
+      if(t<1){ requestAnimationFrame(step); }
+      else{ el.remove(); running=false; }
+    }
+    requestAnimationFrame(step);
+  }
+  return {run};
+})();
+/* 토글 버튼에 러너를 끼운다 — 원래 동작은 러너가 '누르는 순간' 실행된다 */
+(function hookSdRunner(){
+  for(const id of ['hudToggle','ctxToggle']){
+    const btn=$('#'+id);
+    if(!btn || !btn.onclick) continue;
+    const orig=btn.onclick.bind(btn);
+    btn.onclick=()=>SdRunner.run(btn, orig);
+  }
 })();
 
 /* ── 관제 실데이터 감시 ──
@@ -2102,17 +2254,30 @@ async function loadSessions(){
   try{ const r=localStorage.getItem(SESS_KEY); if(r) sessions=JSON.parse(r)||[]; }
   catch(e){ sessions=[]; console.warn('세션 불러오기 실패', e); }
 }
+/* 삭제는 병합 서버에 명시해야 지워진다 — 목록에서 뺀 것만으로는
+   다른 PC 세션과 구분이 안 된다 */
+let deletedSess = [];
+async function pushSessions(){
+  if(window.SERVER){
+    try{
+      const r = await fetch('/api/sessions',{method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sessions, deleted:deletedSess})});
+      if(r.ok){
+        const d = await r.json();
+        // 서버가 병합 결과를 준다 — 다른 PC 의 세션이 여기서 합쳐진다
+        if(Array.isArray(d.sessions)) sessions = d.sessions;
+        deletedSess = [];
+        refreshSessUI();
+      }
+    }catch(e){}
+  }else{
+    try{ localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); }catch(e){}
+  }
+}
 function persistSessions(){
   clearTimeout(sessPushTimer);
-  sessPushTimer=setTimeout(()=>{
-    if(window.SERVER){
-      fetch('/api/sessions',{method:'PUT',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({sessions})}).catch(()=>{});
-    }else{
-      try{ localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); }catch(e){}
-    }
-  }, 600);
+  sessPushTimer=setTimeout(pushSessions, 600);
 }
 function saveSessions(){
   // 현재 세션을 목록에 반영

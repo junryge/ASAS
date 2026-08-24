@@ -366,6 +366,60 @@ class 대화_조립(unittest.TestCase):
         self.assertNotIn("잘렸다고", msgs2[0]["content"])
 
 
+class 세션_공유(unittest.TestCase):
+    """두 PC 가 같은 서버를 쓸 때 세션이 서로를 지우면 안 된다."""
+
+    def setUp(self):
+        from avatar import sessions as asess
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = asess.SessionStore(Path(self.tmp.name) / "sessions.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @staticmethod
+    def _s(sid, ts, title="t"):
+        return {"id": sid, "ts": ts, "title": title,
+                "msgs": [{"who": "me", "text": "질문"},
+                         {"who": "ai", "text": "답", "tag": ""}]}
+
+    def test_다른_PC_세션을_덮어_지우지_않는다(self):
+        """★예전 버그 그대로 — PC-A 가 저장한 뒤 PC-B(자기 목록만 앎)가
+        저장하면 A 의 세션이 사라졌다. 병합이면 둘 다 남는다."""
+        self.store.put_all([self._s("a1", "2026-08-24 05:00")])
+        self.store.put_all([self._s("b1", "2026-08-24 05:10")])
+        ids = {s["id"] for s in self.store.get_all()}
+        self.assertEqual(ids, {"a1", "b1"},
+                         "나중에 저장한 PC 가 먼저 PC 의 세션을 지웠다")
+
+    def test_같은_세션은_보낸_쪽이_이긴다(self):
+        self.store.put_all([self._s("a1", "2026-08-24 05:00", "옛날")])
+        self.store.put_all([self._s("a1", "2026-08-24 05:00", "고침")])
+        self.assertEqual(len(self.store.get_all()), 1)
+        self.assertEqual(self.store.get_all()[0]["title"], "고침")
+
+    def test_삭제는_명시해야_지워진다(self):
+        self.store.put_all([self._s("a1", "2026-08-24 05:00")])
+        self.store.put_all([], deleted=None)
+        self.assertEqual(len(self.store.get_all()), 1,
+                         "목록에서 빠진 것을 삭제로 해석하면 남의 세션이 죽는다")
+        self.store.put_all([], deleted=["a1"])
+        self.assertEqual(self.store.get_all(), [])
+
+    def test_최신이_먼저다(self):
+        self.store.put_all([self._s("old", "2026-08-24 04:00"),
+                            self._s("new", "2026-08-24 06:00")])
+        self.assertEqual([s["id"] for s in self.store.get_all()],
+                         ["new", "old"])
+
+    def test_html_공유본이_나온다(self):
+        md = self.store.to_markdown(self._s("a1", "2026-08-24 05:00"))
+        html = skills.to_html("대화 기록", md)
+        self.assertIn("<!doctype html", html)
+        self.assertIn("질문", html)
+        self.assertNotIn("http://", html)    # 사내망 — 외부 자원 금지
+
+
 class 설정_일치(unittest.TestCase):
     def test_아바타_FAB_목록이_관제와_같다(self):
         """아바타 FABS 가 관제 시스템(ALL + FAB 5)과 어긋나면 그 FAB 알람을
