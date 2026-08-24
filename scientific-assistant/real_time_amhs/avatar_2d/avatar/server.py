@@ -406,12 +406,18 @@ class Handler(SimpleHTTPRequestHandler):
         # ── 데이터 질문이면 근거를 먼저 계산해 넣는다 (없으면 없다고) ──
         ev = {"ok": False, "text": "", "numbers": set()}
         if llm.is_data_question(text):
-            ev = sentinel.evidence()
+            # "어제 8시에 어땠어?" — 과거 시각이 읽히면 그 시각을 조회한다
+            when = sentinel.parse_when(text)
+            if when:
+                ev = sentinel.evidence_at(*when)
+                if ev["ok"]:
+                    ev["fallback"] = sentinel.plain_status_at(*when)
+            else:
+                ev = sentinel.evidence()
             if not ev["ok"]:
-                ev["text"] = ("관제 서버에 연결이 안 된다 ({}). 현재 수치는 "
-                              "알 수 없다 — 반드시 '지금은 관제 데이터를 못 "
-                              "본다' 고 말하고, 숫자를 지어내지 마라."
-                              .format(ev["err"]))
+                ev["text"] = ("관제 서버에서 데이터를 못 받았다 ({}). 수치는 "
+                              "알 수 없다 — 반드시 '데이터를 못 본다' 고 "
+                              "말하고, 숫자를 지어내지 마라.".format(ev["err"]))
 
         # ── 채팅 첨부 — 업로드(분석 요약) 먼저, 자료함(원문) 다음 ──
         attach = None

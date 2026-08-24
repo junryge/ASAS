@@ -564,6 +564,31 @@ class 컬럼_정의는_이미_있는_것을_쓴다(unittest.TestCase):
         self.assertTrue(j["no_csv"], "MAXCAPA 등은 CSV 에 값이 안 온다")
         self.assertTrue(all(x["raw"] for x in j["no_csv"]))
 
+    def test_compare_API_는_짧은_캐시로_CSV_재읽기를_막는다(self):
+        """아바타가 5초마다 두드린다 — 매번 하루 CSV 를 다시 읽으면 수집·LLM
+        과 겹칠 때 응답이 늘어져 저쪽에서 '끊김' 으로 보인다 (현장 증상)."""
+        import server
+        import store_csv
+        server._FAB_CMP_CACHE.update(key=None, at=0.0, out=None)
+        calls = {"n": 0}
+        orig = store_csv.read_day
+
+        def counting(day, cfg):
+            calls["n"] += 1
+            return orig(day, cfg)
+        store_csv.read_day = counting
+        try:
+            c = server.app.test_client()
+            r1 = json.loads(c.get("/api/fab/compare").get_data())
+            r2 = json.loads(c.get("/api/fab/compare").get_data())
+            self.assertTrue(r1["ok"] and r2["ok"])
+            self.assertEqual(calls["n"], 1,
+                             "두 번째 호출이 CSV 를 또 읽었다 — 캐시가 안 탄다")
+            self.assertEqual(r1["at"], r2["at"])
+        finally:
+            store_csv.read_day = orig
+            server._FAB_CMP_CACHE.update(key=None, at=0.0, out=None)
+
     def test_API_도_ALL_을_준다(self):
         """화면이 여섯 시스템인데 API 가 다섯만 주면 화면이 ALL 을 못 그린다."""
         import server

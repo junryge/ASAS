@@ -23,6 +23,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import config
@@ -30,10 +31,17 @@ from . import config
 # 폴링 캐시 — 브라우저가 3초마다 두드려도 관제 서버에는 이 주기로만 간다
 CACHE_S = 5.0
 STALE_MIN = 10          # 데이터 시각이 이보다 오래되면 '오래된 데이터'
-TIMEOUT_S = 3.0
+# ★타임아웃 3초는 너무 빡빡했다. 관제 서버는 이 API 에서 하루 CSV 를 통째로
+#   읽는데, 수집·LLM 분석과 겹치면 3초를 넘는 순간이 있다 — 그때마다
+#   "끊김/복구" 가 번갈아 떠서 화면이 시끄러웠다 (실제 현장 증상).
+TIMEOUT_S = 8.0
+# 한 번 삐끗한 것은 끊김이 아니다 — 마지막 성공이 이 안이면 그 값으로 버틴다.
+# 이걸 넘겨야 진짜 끊김이다. (버티는 동안엔 degraded 로 표시 — 산 척과 다르다:
+# 최근 성공값이 실제로 있고, 몇 초 전 값인지도 같이 알린다)
+GRACE_S = 60.0
 
 _lock = threading.Lock()
-_cache = {"at": 0.0, "compare": None, "err": ""}
+_cache = {"at": 0.0, "compare": None, "err": "", "good_at": 0.0}
 _cols_cache = {"at": 0.0, "columns": None, "err": ""}
 
 # ── 알람 이력 (data/alarms.json) ──
@@ -146,21 +154,36 @@ def _get(path):
 
 
 def compare(force=False):
-    """/api/fab/compare — 캐시 5초. 반환 {ok, data|None, err, cached}."""
+    """/api/fab/compare — 캐시 5초 + 유예 60초.
+
+    반환 {ok, data|None, err, cached, degraded, held_s}
+      · 성공: 그 값 (good_at 갱신)
+      · 실패 + 마지막 성공이 GRACE_S 안: **그 값으로 버틴다** (degraded=True,
+        held_s=몇 초 전 값인지). 한 번 삐끗할 때마다 "끊김" 을 외치면
+        화면이 끊김/복구로 도배된다 — 실제 현장 증상이었다.
+      · 실패 + 유예도 지남: 그때가 진짜 끊김이다. ok=False.
+        (성공한 적이 없으면 유예도 없다 — 산 척은 여전히 금지)
+    """
     now = time.time()
     with _lock:
         if not force and _cache["compare"] is not None \
                 and now - _cache["at"] < CACHE_S:
-            return {"ok": True, "data": _cache["compare"],
-                    "err": "", "cached": True}
+            return {"ok": True, "data": _cache["compare"], "err": "",
+                    "cached": True, "degraded": False, "held_s": 0}
     data, err = _get("/api/fab/compare")
     with _lock:
         if data and data.get("ok"):
-            _cache.update(at=now, compare=data, err="")
-            return {"ok": True, "data": data, "err": "", "cached": False}
+            _cache.update(at=now, compare=data, err="", good_at=now)
+            return {"ok": True, "data": data, "err": "", "cached": False,
+                    "degraded": False, "held_s": 0}
         _cache["err"] = err or str((data or {}).get("error") or "응답 이상")
-        # ★실패해도 옛 캐시를 슬쩍 주지 않는다 — 죽었으면 죽었다고.
-        return {"ok": False, "data": None, "err": _cache["err"], "cached": False}
+        held = now - (_cache["good_at"] or 0)
+        if _cache["compare"] is not None and held < GRACE_S:
+            return {"ok": True, "data": _cache["compare"],
+                    "err": _cache["err"], "cached": True,
+                    "degraded": True, "held_s": int(held)}
+        return {"ok": False, "data": None, "err": _cache["err"],
+                "cached": False, "degraded": False, "held_s": 0}
 
 
 def columns():
@@ -239,7 +262,87 @@ def watch():
         del last_bad
     return {"ok": True, "alarms": alarms, "at": d.get("at") or "",
             "stale": age is not None and age > STALE_MIN,
-            "age_min": age, "hold": hold, "hold_min": HOLD_MIN, "err": ""}
+            "age_min": age, "hold": hold, "hold_min": HOLD_MIN,
+            "degraded": bool(r.get("degraded")),
+            "held_s": int(r.get("held_s") or 0), "err": r.get("err") or ""}
+
+
+# ────────────────────────────── 과거 시각 조회 ──────────────────────────────
+def parse_when(text, now=None):
+    """질문 속의 날짜·시각 — 추측이 아니라 정해진 표현만 읽는다.
+
+    반환 (day "YYYYMMDD", at "YYYY-MM-DD HH:MM"|None) 또는 None(과거 조회 아님).
+      · 날짜: 2026-08-23 / 2026년 8월 23일 / 8월 23일 / 오늘·어제·그제
+      · 시각: 8시 20분 / 08:20  (★'3시간' 의 '시' 는 시각이 아니다)
+      · 시각만 있으면 오늘. '지금/현재/실시간' 이 있으면 과거 조회가 아니다.
+    """
+    t = str(text or "")
+    if re.search(r"지금|현재|실시간", t):
+        return None
+    now = now or time.localtime()
+    day = None
+    m = re.search(r"(20\d{2})[-./년]\s*(\d{1,2})[-./월]\s*(\d{1,2})일?", t)
+    if m:
+        day = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    elif re.search(r"그제|그저께", t):
+        lt = time.localtime(time.time() - 2 * 86400)
+        day = (lt.tm_year, lt.tm_mon, lt.tm_mday)
+    elif "어제" in t:
+        lt = time.localtime(time.time() - 86400)
+        day = (lt.tm_year, lt.tm_mon, lt.tm_mday)
+    elif "오늘" in t:
+        day = (now.tm_year, now.tm_mon, now.tm_mday)
+    else:
+        m = re.search(r"(\d{1,2})월\s*(\d{1,2})일", t)
+        if m:
+            day = (now.tm_year, int(m.group(1)), int(m.group(2)))
+
+    hh = mm = None
+    m = re.search(r"(\d{1,2})\s*시(?!간)\s*(?:(\d{1,2})\s*분)?", t)
+    if m:
+        hh, mm = int(m.group(1)), int(m.group(2) or 0)
+        if re.search(r"오후|저녁|밤", t[:m.start()]) and hh < 12:
+            hh += 12
+    else:
+        m = re.search(r"\b(\d{1,2}):(\d{2})\b", t)
+        if m:
+            hh, mm = int(m.group(1)), int(m.group(2))
+
+    if day is None and hh is None:
+        return None
+    if day is None:
+        day = (now.tm_year, now.tm_mon, now.tm_mday)   # 시각만 → 오늘
+    if not (1 <= day[1] <= 12 and 1 <= day[2] <= 31):
+        return None
+    day_s = "{:04d}{:02d}{:02d}".format(*day)
+    at_s = None
+    if hh is not None and 0 <= hh <= 23 and 0 <= mm <= 59:
+        at_s = "{:04d}-{:02d}-{:02d} {:02d}:{:02d}".format(*day, hh, mm)
+    return (day_s, at_s)
+
+
+def _fetch_at(day, at):
+    """과거 한 시각의 비교 — 캐시 없이 그 자리에서 (자주 안 부른다)."""
+    q = "/api/fab/compare?day=" + urllib.parse.quote(str(day))
+    if at:
+        q += "&at=" + urllib.parse.quote(str(at))
+    data, err = _get(q)
+    if data and data.get("ok"):
+        return {"ok": True, "data": data, "err": ""}
+    return {"ok": False, "data": None,
+            "err": err or str((data or {}).get("error") or "응답 이상")}
+
+
+def evidence_at(day, at=None):
+    """과거 시각의 근거 — 요청한 시각과 실제 찾은 행의 시각을 둘 다 밝힌다."""
+    r = _fetch_at(day, at)
+    if not r["ok"]:
+        return {"ok": False, "text": "", "numbers": set(), "err": r["err"]}
+    req = at or "{}-{}-{} (그날 마지막 행)".format(day[:4], day[4:6], day[6:8])
+    head = ["[과거 데이터 근거 — 사용자가 물은 시각: {}]".format(req),
+            "실제 찾은 데이터 시각: {} — 대답에 이 시각을 반드시 말하라"
+            .format(r["data"].get("at"))]
+    return _evidence_from(r["data"], head)
 
 
 # ────────────────────────────── 근거 (evidence) ──────────────────────────────
@@ -256,13 +359,21 @@ def evidence():
         return {"ok": False, "text": "", "numbers": set(),
                 "err": r["err"]}
     d = r["data"]
-    cuts = d.get("cuts") or {}
     age = _data_age_min(d.get("at"))
-    L = []
-    L.append("[관제 근거 — 실제 측정값. 이 블록에 있는 숫자만 말할 수 있다]")
-    L.append("데이터 시각: {} ({}분 전)".format(d.get("at"), age if age is not None else "?"))
+    head = ["[관제 근거 — 실제 측정값. 이 블록에 있는 숫자만 말할 수 있다]",
+            "지금 시각: {}".format(time.strftime("%Y-%m-%d %H:%M")),
+            "데이터 시각: {} ({}분 전) — 대답 첫머리에 이 시각을 말하라"
+            .format(d.get("at"), age if age is not None else "?")]
     if age is not None and age > STALE_MIN:
-        L.append("⚠ 오래된 데이터다 — 반드시 '지금 값이 아니라 {}분 전 값' 이라고 밝혀라.".format(age))
+        head.append("⚠ 오래된 데이터다 — 반드시 '지금 값이 아니라 {}분 전 값' "
+                    "이라고 밝혀라.".format(age))
+    return _evidence_from(d, head)
+
+
+def _evidence_from(d, head):
+    """비교 응답(d) → 근거 텍스트. 현재/과거가 머리말만 다르고 몸은 같다."""
+    cuts = d.get("cuts") or {}
+    L = list(head)
     L.append("등급 컷: 경계 {warn} · 위험 {danger} · 초위험 {critical}".format(
         warn=cuts.get("warn"), danger=cuts.get("danger"),
         critical=cuts.get("critical")))
@@ -343,14 +454,19 @@ def check_numbers(reply, allowed):
 
 
 # ────────────────────────────── 결정적 요약 (폴백) ──────────────────────────────
-def plain_status():
-    """LLM 없이/검증 실패 시 내보내는 상태 요약 — 숫자는 전부 근거 그대로."""
-    r = compare()
-    if not r["ok"]:
-        return ("관제 서버에 연결이 안 돼요. ({}) real_time_amhs 서버가 떠 "
-                "있는지 확인해 주세요. 지금은 상태를 알 수 없어요 — "
-                "모르는 건 모른다고 말할게요.".format(r["err"]))
-    d = r["data"]
+def plain_status(d=None, past=False):
+    """LLM 없이/검증 실패 시 내보내는 상태 요약 — 숫자는 전부 근거 그대로.
+
+    ★날짜·시각을 반드시 말한다 — '지금 몇 시고, 이 값은 언제 값인지'.
+      점수만 던지면 어제 값을 지금 값으로 읽는다 (실제 요청 사항).
+    """
+    if d is None:
+        r = compare()
+        if not r["ok"]:
+            return ("관제 서버에 연결이 안 돼요. ({}) real_time_amhs 서버가 떠 "
+                    "있는지 확인해 주세요. 지금은 상태를 알 수 없어요 — "
+                    "모르는 건 모른다고 말할게요.".format(r["err"]))
+        d = r["data"]
     age = _data_age_min(d.get("at"))
     rows = d.get("rows") or []
     all_row = rows[0] if rows and rows[0].get("is_all") else None
@@ -365,10 +481,23 @@ def plain_status():
             for x in worst))
     else:
         parts.append("경계 이상인 FAB 없음")
-    head = "{} 기준".format(d.get("at"))
-    if age is not None and age > STALE_MIN:
-        head += " (⚠ {}분 전 데이터)".format(age)
+    # ★두 시각을 다 말한다 — 지금이 몇 시고, 이 값이 언제 값인지
+    head = "지금 {} · 데이터 {} 기준".format(
+        time.strftime("%H:%M"), d.get("at"))
+    # 일부러 과거를 물었을 때 '오래된 값' 경고는 군더더기다
+    if not past and age is not None and age > STALE_MIN:
+        head += " (⚠ {}분 전 값)".format(age)
     return head + " — " + " · ".join(parts) + "."
+
+
+def plain_status_at(day, at=None):
+    """과거 한 시각의 결정적 요약 — /상태 어제 08:20 같은 조회."""
+    r = _fetch_at(day, at)
+    if not r["ok"]:
+        return "과거 데이터를 못 읽었어요 ({}).".format(r["err"])
+    msg = plain_status(r["data"], past=True)
+    return "과거 조회예요 (물은 시각: {}) — {}".format(
+        at or "{}-{}-{} 마지막 행".format(day[:4], day[4:6], day[6:8]), msg)
 
 
 # ────────────────────────────── 진단 (데이터 문제 찾기) ──────────────────────────────

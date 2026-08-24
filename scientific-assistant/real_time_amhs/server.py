@@ -494,6 +494,12 @@ def doc_fab_score():
     return resp
 
 
+# 아바타가 5초마다 두드린다 — 매번 하루 CSV(1440×143)를 다시 읽으면
+# 수집·LLM 과 겹칠 때 응답이 늘어져 저쪽에서 '끊김' 으로 보인다.
+_FAB_CMP_CACHE = {"key": None, "at": 0.0, "out": None}
+_FAB_CMP_TTL = 3.0
+
+
 @app.route("/api/fab/compare")
 def api_fab_compare():
     """한 시각을 잡고 다섯 FAB 을 나란히 세운다.
@@ -504,16 +510,25 @@ def api_fab_compare():
       비교가 안 된다 — 화면의 ?sys= 를 따라가면 안 되는 이유다.
     """
     try:
+        import time as _time
         import fab_score
         from store_csv import list_days, read_day
         cfg = get_ctx("ALL")["cfg"]
         day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
+        at_q = (request.args.get("at") or "").strip()
+        key = (day, at_q)
+        now = _time.time()
+        if _FAB_CMP_CACHE["out"] is not None and _FAB_CMP_CACHE["key"] == key \
+                and now - _FAB_CMP_CACHE["at"] < _FAB_CMP_TTL:
+            return jsonify(_FAB_CMP_CACHE["out"])
         if not day:
             days = list_days(cfg)
             day = days[-1]["day"] if days else datetime.now().strftime("%Y%m%d")
         rows = read_day(day, cfg)
-        out = fab_score.compare(rows, parse_dt(request.args.get("at")), cfg)
+        out = fab_score.compare(rows, parse_dt(at_q or None), cfg)
         out["day"] = day
+        if out.get("ok"):
+            _FAB_CMP_CACHE.update(key=key, at=now, out=out)
         return jsonify(out)
     except Exception as e:
         import traceback; traceback.print_exc()

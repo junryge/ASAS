@@ -20,7 +20,8 @@ import re
 from . import sentinel, skills
 
 HELP = ("명령어예요:\n"
-        "/상태 — 지금 관제 점수·등급 (실측값 그대로)\n"
+        "/상태 — 지금 관제 점수·등급 (실측값 그대로, 데이터 시각 포함)\n"
+        "/상태 어제 08:20 — 과거 시각 조회 (2026-08-23 14시 처럼도 됨)\n"
         "/진단 — 데이터 문제 찾기 (재현 불일치·임계 미정의·오래된 데이터…)\n"
         "/알람기록 — 언제 어떤 알람이 울렸는지 (서버가 기억)\n"
         "/스킬 목록 · /스킬 보기 <이름> · /스킬 만들기 <이름> [주제] · /스킬 삭제 <이름>\n"
@@ -46,7 +47,15 @@ def handle(text, store, gateway=None, model="", history=None, temperature=0.3):
     if t in ("/도움말", "/help", "/?"):
         return _reply(HELP, "smile", 0.6, "nod")
 
-    if t in ("/상태", "/status"):
+    m = re.match(r"^/(?:상태|status)(?:\s+(.+))?$", t)
+    if m:
+        # /상태 어제 08:20 · /상태 2026-08-23 · /상태 8월 23일 14시 — 과거 조회
+        if m.group(1):
+            when = sentinel.parse_when(m.group(1))
+            if when is None:
+                return _reply("시각을 못 읽었어요. 예: /상태 어제 08:20 · "
+                              "/상태 2026-08-23 14시", "shy", 0.5, "shake")
+            return _reply(sentinel.plain_status_at(*when), "think", 0.6, "none")
         msg = sentinel.plain_status()
         w = sentinel.watch()
         if w["ok"] and w["alarms"]:

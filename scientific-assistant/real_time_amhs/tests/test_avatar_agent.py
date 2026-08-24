@@ -60,7 +60,7 @@ class _Sentinel(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        sentinel._cache.update(at=0.0, compare=None, err="")
+        sentinel._cache.update(at=0.0, compare=None, err="", good_at=0.0)
         sentinel._cols_cache.update(at=0.0, columns=None, err="")
         sentinel._alog_path = None
         sentinel._alog = []
@@ -74,7 +74,7 @@ class _Sentinel(unittest.TestCase):
 
     def feed(self, payload, err=""):
         sentinel._get = lambda path: (payload, err)
-        sentinel._cache.update(at=0.0, compare=None)   # 캐시 무효화
+        sentinel._cache.update(at=0.0, compare=None, good_at=0.0)   # 캐시 무효화
 
 
 class 관제_읽기(_Sentinel):
@@ -96,6 +96,39 @@ class 관제_읽기(_Sentinel):
         self.assertTrue(w["ok"])
         self.assertEqual([a["fab"] for a in w["alarms"]], ["M16HUB", "M14"])
         self.assertEqual(w["alarms"][0]["level"], "위험")
+
+    def test_한_번_삐끗한_것은_끊김이_아니다(self):
+        """타임아웃 한 번마다 끊김/복구가 번갈아 뜨던 현장 증상의 수정.
+        성공 직후의 실패는 유예(60초) 안이면 마지막 성공값으로 버틴다 —
+        degraded 표시와 몇 초 전 값인지를 같이 준다."""
+        self.feed(fake_compare(at=now_kst(1)))
+        self.assertTrue(sentinel.compare(force=True)["ok"])
+        # ★feed() 는 캐시를 지운다 — 유예는 '성공 기록이 있는' 상태에서의
+        #   실패라서, 캐시는 살려 두고 _get 만 실패로 바꿔야 한다
+        sentinel._get = lambda path: (None, "timed out")
+        r = sentinel.compare(force=True)
+        self.assertTrue(r["ok"], "유예 안의 실패가 끊김으로 나갔다")
+        self.assertTrue(r["degraded"])
+        # 다음 폴링(5초 캐시 창이 지난 뒤)에도 끊김이 아니라 유지여야 한다
+        sentinel._cache["at"] = 0.0
+        w = sentinel.watch()
+        self.assertTrue(w["ok"])
+        self.assertTrue(w["degraded"])
+        self.assertEqual([a["fab"] for a in w["alarms"]], ["M16HUB"],
+                         "유지 중에도 알람 상태는 그대로 보여야 한다")
+
+    def test_유예가_지나면_진짜_끊김이다(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel.compare(force=True)
+        sentinel._cache["good_at"] = time.time() - sentinel.GRACE_S - 1
+        sentinel._get = lambda path: (None, "timed out")
+        r = sentinel.compare(force=True)
+        self.assertFalse(r["ok"], "유예가 끝났는데 옛 값으로 산 척했다")
+
+    def test_성공한_적이_없으면_유예도_없다(self):
+        """산 척 금지 — 시작부터 죽어 있으면 바로 죽었다고 한다."""
+        self.feed(None, "connection refused")
+        self.assertFalse(sentinel.compare(force=True)["ok"])
 
     def test_오래된_데이터는_stale(self):
         self.feed(fake_compare(at="2026-07-28 08:20"))
@@ -369,6 +402,63 @@ class 대화_조립(unittest.TestCase):
                                     {"docBudget": 6000, "keepMsgs": 4},
                                     attach=("a.csv", "짧은 내용"))
         self.assertNotIn("잘렸다고", msgs2[0]["content"])
+
+
+class 시각_표시와_과거_조회(_Sentinel):
+    """점수만 던지면 어제 값을 지금 값으로 읽는다 — 시각을 반드시 말한다."""
+
+    def test_상태_요약에_지금과_데이터_시각이_다_있다(self):
+        at = now_kst(1)
+        self.feed(fake_compare(at=at))
+        s = sentinel.plain_status()
+        self.assertIn("지금 ", s)
+        self.assertIn("데이터 {} 기준".format(at), s)
+
+    def test_근거에_두_시각과_말하라는_지시가_있다(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        t = sentinel.evidence()["text"]
+        self.assertIn("지금 시각:", t)
+        self.assertIn("데이터 시각:", t)
+        self.assertIn("이 시각을 말하라", t)
+
+    def test_과거_표현_읽기(self):
+        self.assertIsNone(sentinel.parse_when("지금 상태 어때"))
+        self.assertIsNone(sentinel.parse_when("3시간 동안 정체였어?"),
+                          "'3시간' 의 '시' 는 시각이 아니다")
+        self.assertIsNone(sentinel.parse_when("점수 알려줘"))
+        d, a = sentinel.parse_when("2026-08-23 08:20 상태")
+        self.assertEqual((d, a), ("20260823", "2026-08-23 08:20"))
+        d, a = sentinel.parse_when("8월 23일 오후 2시 상태")
+        self.assertEqual((d, a[-5:]), ("20260823", "14:00"))
+        d, a = sentinel.parse_when("어제 상태 어땠어")
+        self.assertIsNone(a)              # 시각 없음 → 그날 마지막 행
+
+    def test_과거_조회는_요청시각과_찾은시각을_다_밝힌다(self):
+        asked = []
+
+        def fake(path):
+            asked.append(path)
+            return fake_compare(at="2026-08-23 08:20"), ""
+        sentinel._get = fake
+        ev = sentinel.evidence_at("20260823", "2026-08-23 08:30")
+        self.assertTrue(ev["ok"])
+        self.assertIn("물은 시각: 2026-08-23 08:30", ev["text"])
+        self.assertIn("실제 찾은 데이터 시각: 2026-08-23 08:20", ev["text"])
+        self.assertIn("day=20260823", asked[0])
+        self.assertIn("08%3A30", asked[0])          # at 이 쿼리로 나갔다
+        # 과거 조회 요약도 두 시각을 밝힌다
+        s = sentinel.plain_status_at("20260823", "2026-08-23 08:30")
+        self.assertIn("물은 시각", s)
+        self.assertIn("2026-08-23 08:20", s)
+
+    def test_상태_명령의_과거_조회(self):
+        sentinel._get = lambda path: (fake_compare(at="2026-08-23 08:20"), "")
+        store = skills.SkillStore(Path(self.tmp.name) / "sk")
+        r = commands.handle("/상태 2026-08-23 8시 30분", store)
+        self.assertIn("과거 조회", r["text"])
+        self.assertIn("2026-08-23 08:20", r["text"])
+        r2 = commands.handle("/상태 아무말이나", store)
+        self.assertIn("시각을 못 읽었", r2["text"])
 
 
 class 첨부_CSV_분석(unittest.TestCase):
