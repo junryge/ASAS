@@ -25,7 +25,7 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 
-from . import config, docs, llm, sessions, settings
+from . import commands, config, docs, llm, sentinel, sessions, settings, skills
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -52,6 +52,8 @@ class App:
     settings = None
     gateway = None
 
+    skill_store = None
+
     @classmethod
     def init(cls, base_dir):
         cls.base_dir = base_dir
@@ -61,6 +63,11 @@ class App:
         cls.doc_store = docs.DocStore(cls.data_dir / "docs.json")
         cls.sess_store = sessions.SessionStore(cls.data_dir / "sessions.json")
         cls.settings = settings.Settings(cls.data_dir / "settings.json")
+        cls.skill_store = skills.SkillStore(cls.data_dir / "skills")
+        # FAB 스코어 도메인 지식을 스킬로 심는다 (있으면 안 건드림)
+        if skills.seed_fab_score(cls.skill_store, base_dir):
+            sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
+        sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
 
     @classmethod
     def connect(cls, upstream, token, model, models):
@@ -184,6 +191,38 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/sessions":
             return self._json(200, {"sessions": App.sess_store.get_all()})
 
+        # ── 관제 (real_time_amhs) ────────────────────────────────────────
+        if path == "/api/fab/status":
+            # 브라우저 알람 폴링. 서버 캐시 5초라 관제 서버엔 그 주기로만 간다.
+            return self._json(200, sentinel.watch())
+
+        if path == "/api/fab/diagnose":
+            d = sentinel.diagnose()
+            d["text"] = sentinel.diagnose_text()
+            return self._json(200, d)
+
+        if path == "/api/alarms":
+            return self._json(200, {"alarms": sentinel.history(100),
+                                    "hold_min": sentinel.HOLD_MIN})
+
+        # ── 스킬 ─────────────────────────────────────────────────────────
+        if path == "/api/skills":
+            return self._json(200, {"skills": App.skill_store.list()})
+
+        if path in ("/api/skills/md", "/api/skills/html"):
+            q = urllib.parse.parse_qs(self.path.split("?", 1)[1]
+                                      if "?" in self.path else "")
+            name = (q.get("name") or [""])[0]
+            md = App.skill_store.read(name)
+            if md is None:
+                return self._err(404, "스킬 없음: " + name)
+            if path.endswith("/md"):
+                # ★전문 그대로 — 자르지 않는다
+                return self._send(200, md.encode("utf-8"),
+                                  "text/markdown; charset=utf-8")
+            return self._send(200, skills.to_html(name, md).encode("utf-8"),
+                              "text/html; charset=utf-8")
+
         if path == "/api/sessions/md":
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1]
                                       if "?" in self.path else "")
@@ -235,6 +274,26 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"ok": bool(ok),
                                     "docs": App.doc_store.list()})
 
+        if path == "/api/skills":
+            b = self._body()
+            op = b.get("op")
+            if op == "save":
+                name = str(b.get("name", "")).strip()
+                md = b.get("md") or skills.compose(
+                    name, b.get("description", ""), b.get("body", ""))
+                ok, errors, warnings = App.skill_store.save(name, md)
+                return self._json(200 if ok else 400,
+                                  {"ok": ok, "errors": errors,
+                                   "warnings": warnings})
+            if op == "delete":
+                return self._json(200, {"ok": App.skill_store.delete(
+                    str(b.get("name", "")).strip())})
+            if op == "validate":
+                ok, errors, warnings = skills.validate(b.get("md", ""))
+                return self._json(200, {"ok": ok, "errors": errors,
+                                        "warnings": warnings})
+            return self._err(400, "op 는 save|delete|validate")
+
         if path == "/api/ctx":
             return self._api_ctx(self._body())
 
@@ -275,12 +334,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     # ── LLM 대화 ─────────────────────────────────────────────────────────
     def _api_chat(self, b):
-        if not App.gateway:
-            return self._err(503, "게이트웨이가 연결되지 않았습니다. run.py 로 실행하세요.")
         text = str(b.get("text", "")).strip()
         if not text:
             return self._err(400, "text 가 비었습니다")
-        persona = str(b.get("persona", ""))
         history = b.get("history") or []
         model = str(b.get("model") or App.model)
         st = App.settings.all()
@@ -289,7 +345,40 @@ class Handler(SimpleHTTPRequestHandler):
         except (TypeError, ValueError):
             temp = 0.8
 
-        msgs = llm.build_messages(persona, text, history, App.doc_store, st)
+        # ── 슬래시 명령 — LLM 을 안 거치는 결정적 경로 (게이트웨이 없어도 됨)
+        cmd = commands.handle(text, App.skill_store, App.gateway, model,
+                              history, temperature=0.3)
+        if cmd is not None:
+            self._say("200  /api/chat  (명령: {})".format(text.split()[0]))
+            if b.get("stream"):
+                return self._sse_oneshot(cmd)
+            return self._json(200, {"reply": cmd})
+
+        if not App.gateway:
+            return self._err(503, "게이트웨이가 연결되지 않았습니다. run.py 로 실행하세요.")
+        persona = str(b.get("persona", ""))
+
+        # ── 데이터 질문이면 근거를 먼저 계산해 넣는다 (없으면 없다고) ──
+        ev = {"ok": False, "text": "", "numbers": set()}
+        if llm.is_data_question(text):
+            ev = sentinel.evidence()
+            if not ev["ok"]:
+                ev["text"] = ("관제 서버에 연결이 안 된다 ({}). 현재 수치는 "
+                              "알 수 없다 — 반드시 '지금은 관제 데이터를 못 "
+                              "본다' 고 말하고, 숫자를 지어내지 마라."
+                              .format(ev["err"]))
+
+        # ── 채팅 첨부 — 브라우저가 add 로 올린 뒤 이름만 넘긴다 ──
+        attach = None
+        aname = str(b.get("attach") or "").strip()
+        if aname:
+            body = App.doc_store.get(aname)
+            if body is not None:
+                attach = (aname, body)
+
+        msgs = llm.build_messages(persona, text, history, App.doc_store, st,
+                                  skill_store=App.skill_store,
+                                  evidence_text=ev["text"], attach=attach)
         t0 = time.time()
 
         if not b.get("stream"):
@@ -298,6 +387,7 @@ class Handler(SimpleHTTPRequestHandler):
             if reply is None:
                 self._say("ERR  /api/chat  {}ms  {}".format(ms, err[:160]))
                 return self._err(502, err)
+            reply = self._guard(reply, ev)
             self._say("200  /api/chat  {}  {}ms".format(model, ms))
             return self._json(200, {"reply": reply})
 
@@ -320,6 +410,9 @@ class Handler(SimpleHTTPRequestHandler):
         n = 0
         try:
             for kind, payload in App.gateway.chat_stream(model, temp, msgs):
+                if kind == "final":
+                    # ★스트리밍의 마지막에서 숫자 가드 — final 이 화면의 최종본이다
+                    payload = self._guard(payload, ev)
                 chunk({kind: payload})
                 n += 1
             self.wfile.write(b"0\r\n\r\n")
@@ -328,6 +421,48 @@ class Handler(SimpleHTTPRequestHandler):
             pass
         self._say("200  /api/chat  {}  {}ms  (stream, {}이벤트)".format(
             model, int((time.time() - t0) * 1000), n))
+
+    def _guard(self, reply, ev):
+        """숫자 가드 — 데이터 질문에서 근거에 없는 숫자가 나오면 그 답을
+        버리고 실측 요약으로 바꾼다. 그럴듯한 거짓 숫자가 제일 위험하다."""
+        if not ev.get("ok") or not isinstance(reply, dict):
+            return reply
+        ok, bad = sentinel.check_numbers(str(reply.get("text", "")),
+                                         ev["numbers"])
+        if ok:
+            return reply
+        self._say("     ↳ 숫자 가드: 근거에 없는 수 {} — 실측 요약으로 대체"
+                  .format(bad[:5]))
+        return {"text": ("방금 답에 실측에 없는 숫자가 섞여서 지웠어요. "
+                         "실측값만 다시 말할게요 — " + sentinel.plain_status()),
+                "emotion": "shy", "intensity": 0.6, "motion": "shake"}
+
+    def _sse_oneshot(self, reply):
+        """명령 응답을 스트리밍 모양으로 — 브라우저가 stream 을 켜 놨어도
+        같은 경로로 받게 한다."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Transfer-Encoding", "chunked")
+        for k, v in CORS_HEADERS.items():
+            self.send_header(k, v)
+        self.end_headers()
+
+        def chunk(obj):
+            data = ("data: " + json.dumps(obj, ensure_ascii=False) + "\n\n") \
+                .encode("utf-8")
+            self.wfile.write(b"%X\r\n" % len(data) + data + b"\r\n")
+            self.wfile.flush()
+        try:
+            chunk({"emo": {"emotion": reply["emotion"],
+                           "intensity": reply["intensity"],
+                           "motion": reply["motion"]}})
+            chunk({"text": reply["text"]})
+            chunk({"final": reply})
+            self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     # ── /v1 원시 프록시 (모델 목록 등) ───────────────────────────────────
     def _chunk_raw(self, data):

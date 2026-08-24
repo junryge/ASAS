@@ -1,0 +1,439 @@
+# -*- coding: utf-8 -*-
+"""
+sentinel.py — 버추얼 에이전트의 눈. real_time_amhs(관제 서버)를 읽는다.
+
+왜 필요한가
+    아바타가 "M16HUB 위험이에요!" 라고 말하려면 실제 점수를 봐야 한다.
+    LLM 에게 "지금 상태 어때?" 를 그냥 물으면 **숫자를 지어낸다** — 그래서
+    여기서 관제 서버의 숫자를 먼저 받아 근거(evidence)로 만들고, LLM 은
+    그 근거 안에서만 말하게 한다 (llm.py 의 숫자 가드가 강제).
+
+정직 규칙 — 이 파일 전체의 원칙
+    · 관제 서버가 죽어 있으면 "죽어 있다" 고 말한다. 옛 캐시로 산 척 안 한다.
+    · 데이터 시각이 오래됐으면(기본 10분) 근거에 '오래된 데이터' 라고 박는다.
+    · 근거에 없는 것은 근거에 없다 — 지어낼 재료를 주지 않는다.
+
+관제 서버 쪽 계약 (real_time_amhs)
+    GET /api/fab/compare   ALL + FAB 5 를 한 시각으로 나란히 (fab_score.compare)
+    GET /api/fab/columns   시스템별 감시 컬럼·임계·화면 조인
+    응답의 rows[0] 는 ALL, 이후는 FAB 점수순. 등급 컷은 cuts{warn,danger,critical}.
+"""
+import json
+import re
+import threading
+import time
+import urllib.error
+import urllib.request
+
+from . import config
+
+# 폴링 캐시 — 브라우저가 3초마다 두드려도 관제 서버에는 이 주기로만 간다
+CACHE_S = 5.0
+STALE_MIN = 10          # 데이터 시각이 이보다 오래되면 '오래된 데이터'
+TIMEOUT_S = 3.0
+
+_lock = threading.Lock()
+_cache = {"at": 0.0, "compare": None, "err": ""}
+_cols_cache = {"at": 0.0, "columns": None, "err": ""}
+
+# ── 알람 이력 (data/alarms.json) ──
+# "언제 알람이 울렸었지?" 에 답하려면 서버가 기억해야 한다 — 브라우저는
+# 닫히면 끝이다. watch() 가 등급 변화를 볼 때마다 여기 적는다.
+HOLD_MIN = 60            # 정상 복귀 후 알람을 내리기까지의 관찰 시간(분)
+                         # — 관제(real_time_amhs)의 '사건은 60분 뒤 닫힘' 과 같은 규칙
+ALOG_MAX = 500
+_alog_path = None        # init() 이 채운다
+_alog = []               # [{t, fab, level, score, kind}]  kind: on|change|off
+_last_levels = {}        # {fab: level} 직전 관측
+
+
+def init(data_dir):
+    """알람 이력 저장 위치. server.App.init 이 부른다."""
+    global _alog_path, _alog
+    import os
+    _alog_path = os.path.join(str(data_dir), "alarms.json")
+    try:
+        with open(_alog_path, encoding="utf-8") as f:
+            _alog = json.load(f) or []
+    except Exception:
+        _alog = []
+
+
+def _alog_save():
+    if not _alog_path:
+        return
+    try:
+        with open(_alog_path, "w", encoding="utf-8") as f:
+            json.dump(_alog[-ALOG_MAX:], f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _record(alarms):
+    """등급 변화만 적는다 — 폴링마다 적으면 이력이 아니라 소음이 된다."""
+    global _last_levels
+    now_lv = {a["fab"]: a["level"] for a in alarms}
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    changed = False
+    with _lock:
+        for fab, lv in now_lv.items():
+            prev = _last_levels.get(fab, "정상")
+            if prev == lv:
+                continue
+            kind = "on" if prev == "정상" else "change"
+            sc = next((a.get("score") for a in alarms if a["fab"] == fab), None)
+            _alog.append({"t": stamp, "fab": fab, "level": lv,
+                          "score": sc, "kind": kind, "prev": prev})
+            changed = True
+        for fab, prev in list(_last_levels.items()):
+            if fab not in now_lv and prev != "정상":
+                _alog.append({"t": stamp, "fab": fab, "level": "정상",
+                              "score": None, "kind": "off", "prev": prev})
+                changed = True
+        _last_levels = {**{f: "정상" for f in _last_levels}, **now_lv}
+        if changed:
+            del _alog[:-ALOG_MAX]
+            _alog_save()
+
+
+def history(n=20):
+    with _lock:
+        return list(_alog[-n:])
+
+
+def history_text(n=8):
+    """근거·채팅용 — 최근 알람 이력 몇 줄."""
+    h = history(n)
+    if not h:
+        return "기록된 알람 없음 (감시 시작 이후 경계 이상이 없었다)"
+    L = []
+    for e in h:
+        if e["kind"] == "off":
+            L.append("{t} {f} 해제 ({p} → 정상)".format(
+                t=e["t"], f=e["fab"], p=e.get("prev", "?")))
+        else:
+            L.append("{t} {f} {lv} 발생{s}".format(
+                t=e["t"], f=e["fab"], lv=e["level"],
+                s=" ({}점)".format(e["score"]) if e.get("score") is not None else ""))
+    return "\n".join(L)
+
+
+def base_url():
+    s = getattr(config, "SENTINEL", {}) or {}
+    return str(s.get("url") or "http://127.0.0.1:8989").rstrip("/")
+
+
+def _get(path):
+    """관제 서버 HTTP GET. 실패하면 (None, 이유) — 예외를 밖으로 안 던진다."""
+    url = base_url() + path
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        # 관제 서버는 같은 망(대개 같은 PC)이다 — 프록시를 타면 오히려 막힌다
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=TIMEOUT_S) as r:
+            return json.loads(r.read().decode("utf-8")), ""
+    except urllib.error.HTTPError as e:
+        return None, "HTTP {}".format(e.code)
+    except Exception as e:  # noqa: BLE001 — 죽어 있음/타임아웃/파싱 전부 '못 읽음'
+        return None, "{}: {}".format(type(e).__name__, e)
+
+
+def compare(force=False):
+    """/api/fab/compare — 캐시 5초. 반환 {ok, data|None, err, cached}."""
+    now = time.time()
+    with _lock:
+        if not force and _cache["compare"] is not None \
+                and now - _cache["at"] < CACHE_S:
+            return {"ok": True, "data": _cache["compare"],
+                    "err": "", "cached": True}
+    data, err = _get("/api/fab/compare")
+    with _lock:
+        if data and data.get("ok"):
+            _cache.update(at=now, compare=data, err="")
+            return {"ok": True, "data": data, "err": "", "cached": False}
+        _cache["err"] = err or str((data or {}).get("error") or "응답 이상")
+        # ★실패해도 옛 캐시를 슬쩍 주지 않는다 — 죽었으면 죽었다고.
+        return {"ok": False, "data": None, "err": _cache["err"], "cached": False}
+
+
+def columns():
+    """/api/fab/columns — 임계·컬럼 정의는 잘 안 바뀌므로 60초 캐시."""
+    now = time.time()
+    with _lock:
+        if _cols_cache["columns"] is not None and now - _cols_cache["at"] < 60:
+            return {"ok": True, "data": _cols_cache["columns"], "err": ""}
+    data, err = _get("/api/fab/columns")
+    with _lock:
+        if data and data.get("ok"):
+            _cols_cache.update(at=now, columns=data, err="")
+            return {"ok": True, "data": data, "err": ""}
+        return {"ok": False, "data": None, "err": err or "응답 이상"}
+
+
+# ────────────────────────────── 시각 ──────────────────────────────
+def _data_age_min(at_str):
+    """'2026-07-28 08:20' → 지금으로부터 몇 분 전인가. 못 읽으면 None."""
+    try:
+        t = time.mktime(time.strptime(str(at_str), "%Y-%m-%d %H:%M"))
+        return max(0, int((time.time() - t) / 60))
+    except Exception:
+        return None
+
+
+# ────────────────────────────── 감시 (알람) ──────────────────────────────
+LEVEL_ORDER = {"정상": 0, "경계": 1, "위험": 2, "초위험": 3}
+
+
+def watch():
+    """브라우저 알람 폴링용 — 지금 경계 이상인 시스템 목록.
+
+    반환: {ok, alarms:[{fab, level, score}...] (등급 나쁜 순), at, stale, err}
+    관제 서버가 죽어 있으면 ok=False — 화면은 '관제 연결 끊김' 을 보여야지
+    '정상' 을 보여선 안 된다.
+    """
+    r = compare()
+    if not r["ok"]:
+        return {"ok": False, "alarms": [], "at": "", "stale": False,
+                "err": r["err"]}
+    d = r["data"]
+    age = _data_age_min(d.get("at"))
+    alarms = []
+    for row in d.get("rows") or []:
+        lv = str(row.get("level") or "정상")
+        if LEVEL_ORDER.get(lv, 0) >= 1:
+            alarms.append({"fab": row.get("fab"), "level": lv,
+                           "score": row.get("score")})
+    alarms.sort(key=lambda a: -LEVEL_ORDER.get(a["level"], 0))
+    _record(alarms)              # 이력은 서버가 기억한다 — 브라우저는 닫히면 끝
+
+    # ── 관찰 유지(HOLD) — 관제의 '사건은 60분 뒤 닫힘' 과 같은 규칙 ──
+    # 데이터가 정상으로 돌아와도, 마지막 경계+ 로부터 HOLD_MIN 이 지나기
+    # 전에는 hold 로 알려 준다. 화면은 경광등을 유지하되 "정상 복귀 —
+    # 관찰 중" 으로 표시한다 (재발이 흔해서 바로 끄면 놓친다).
+    hold = None
+    if not alarms:
+        last_bad = None
+        for e in reversed(history(50)):
+            if e["kind"] in ("on", "change"):
+                last_bad = e
+                break
+            if e["kind"] == "off":
+                # off 이후 HOLD_MIN 안이면 관찰 중
+                try:
+                    t = time.mktime(time.strptime(e["t"], "%Y-%m-%d %H:%M"))
+                    mins = int((time.time() - t) / 60)
+                except Exception:
+                    break
+                if mins < HOLD_MIN:
+                    hold = {"fab": e["fab"], "prev": e.get("prev", "?"),
+                            "since_min": mins,
+                            "left_min": HOLD_MIN - mins}
+                break
+        del last_bad
+    return {"ok": True, "alarms": alarms, "at": d.get("at") or "",
+            "stale": age is not None and age > STALE_MIN,
+            "age_min": age, "hold": hold, "hold_min": HOLD_MIN, "err": ""}
+
+
+# ────────────────────────────── 근거 (evidence) ──────────────────────────────
+def evidence():
+    """LLM 에게 줄 근거 텍스트 + 그 안의 숫자 집합.
+
+    반환 {ok, text, numbers:set, err}
+    ★numbers 는 llm.py 숫자 가드의 화이트리스트다 — 근거에 넣은 숫자만
+      대답에 나올 수 있다. 여기 빠뜨리면 맞는 말도 막히므로, 화면에 보이는
+      숫자는 전부 텍스트에 적는다.
+    """
+    r = compare()
+    if not r["ok"]:
+        return {"ok": False, "text": "", "numbers": set(),
+                "err": r["err"]}
+    d = r["data"]
+    cuts = d.get("cuts") or {}
+    age = _data_age_min(d.get("at"))
+    L = []
+    L.append("[관제 근거 — 실제 측정값. 이 블록에 있는 숫자만 말할 수 있다]")
+    L.append("데이터 시각: {} ({}분 전)".format(d.get("at"), age if age is not None else "?"))
+    if age is not None and age > STALE_MIN:
+        L.append("⚠ 오래된 데이터다 — 반드시 '지금 값이 아니라 {}분 전 값' 이라고 밝혀라.".format(age))
+    L.append("등급 컷: 경계 {warn} · 위험 {danger} · 초위험 {critical}".format(
+        warn=cuts.get("warn"), danger=cuts.get("danger"),
+        critical=cuts.get("critical")))
+    for row in d.get("rows") or []:
+        if row.get("is_all"):
+            fuse = row.get("fuse") or {}
+            L.append("ALL(전체): {s}점 {lv} · 최고구역 {hot} · {stg}".format(
+                s=row.get("score"), lv=row.get("level"),
+                hot=row.get("hot_area") or "-",
+                stg=row.get("stage_name") or "단계없음"))
+            L.append("  융합: 영역합 {a} + 흐름 {f} + SLA {sl} + 소터 {so} "
+                     "+ MAXCAPA {m} = raw {rw}".format(
+                         a=fuse.get("areas"), f=fuse.get("flow"),
+                         sl=fuse.get("sla"), so=fuse.get("sorter"),
+                         m=fuse.get("maxcapa"), rw=fuse.get("raw")))
+        else:
+            fired = "+".join(row.get("fired") or []) or "없음"
+            delta = row.get("delta")
+            dtxt = ("{:+g}".format(delta) if isinstance(delta, (int, float))
+                    else "이전값없음")
+            L.append("{f}: 영역 {a}/{cap} · 위험도 {rk} {lv} · 켜진룰 {fr} "
+                     "· {m}분변화 {d}".format(
+                         f=row.get("fab"), a=row.get("area"),
+                         cap=d.get("area_cap"), rk=row.get("risk"),
+                         lv=row.get("level"), fr=fired,
+                         m=d.get("delta_min"), d=dtxt))
+            if row.get("mismatch"):
+                L.append("  ⚠ {}".format(row["mismatch"]))
+            # 임계 넘은 실측값 — '왜' 를 물으면 이걸 짚어야 한다
+            for rd in (row.get("readings") or []):
+                if rd.get("over"):
+                    L.append("  · {lb} {v}{u} (임계 {op}{t})".format(
+                        lb=rd.get("label"), v=rd.get("value"),
+                        u=rd.get("unit") or "", op=rd.get("op") or "≥",
+                        t=rd.get("thr")))
+    if d.get("blind"):
+        L.append("구조 주의: {} 는 단독으로는 전체 경보(경계 {}점)에 못 간다 "
+                 "— FAB 위험도로 봐야 한다.".format(
+                     ", ".join(d["blind"]), cuts.get("warn")))
+    L.append("[최근 알람 이력]")
+    L.append(history_text(8))
+    text = "\n".join(L)
+    return {"ok": True, "text": text, "numbers": _numbers(text), "err": ""}
+
+
+def _numbers(text):
+    """텍스트 속 숫자 집합 — 정규화해서 (12.0 == 12) 비교가 되게."""
+    out = set()
+    for m in re.findall(r"-?\d+(?:\.\d+)?", text or ""):
+        try:
+            out.add(round(float(m), 2))
+        except ValueError:
+            pass
+    return out
+
+
+def check_numbers(reply, allowed):
+    """대답 속 숫자가 전부 근거에 있는가 → (통과여부, 위반숫자들).
+
+    ★이 가드가 '헛소리 차단' 의 핵심이다. LLM 이 근거에 없는 점수를
+      지어내면 여기서 걸린다. 다만 너무 빡빡하면 맞는 말도 막으므로:
+      · 0~10 의 작은 정수(개수 세기·문장 나열)는 허용
+      · 근거 숫자의 반올림(24.0 → 24)은 허용
+    """
+    bad = []
+    for n in _numbers(reply):
+        if n in allowed:
+            continue
+        if float(n).is_integer() and 0 <= n <= 10:
+            continue
+        if round(n) in allowed or round(n, 1) in allowed:
+            continue
+        # 반대 방향 반올림 — 근거 15.98 을 "16분" 이라고 말하는 건 거짓이 아니다
+        if any(round(a) == n or round(a, 1) == n for a in allowed):
+            continue
+        bad.append(n)
+    return (not bad), bad
+
+
+# ────────────────────────────── 결정적 요약 (폴백) ──────────────────────────────
+def plain_status():
+    """LLM 없이/검증 실패 시 내보내는 상태 요약 — 숫자는 전부 근거 그대로."""
+    r = compare()
+    if not r["ok"]:
+        return ("관제 서버에 연결이 안 돼요. ({}) real_time_amhs 서버가 떠 "
+                "있는지 확인해 주세요. 지금은 상태를 알 수 없어요 — "
+                "모르는 건 모른다고 말할게요.".format(r["err"]))
+    d = r["data"]
+    age = _data_age_min(d.get("at"))
+    rows = d.get("rows") or []
+    all_row = rows[0] if rows and rows[0].get("is_all") else None
+    parts = []
+    if all_row:
+        parts.append("전체 {s}점 {lv}".format(
+            s=all_row.get("score"), lv=all_row.get("level")))
+    worst = [x for x in rows[1:] if LEVEL_ORDER.get(x.get("level"), 0) >= 1]
+    if worst:
+        parts.append("주의 구역: " + ", ".join(
+            "{f} {lv}({rk}점)".format(f=x["fab"], lv=x["level"], rk=x["risk"])
+            for x in worst))
+    else:
+        parts.append("경계 이상인 FAB 없음")
+    head = "{} 기준".format(d.get("at"))
+    if age is not None and age > STALE_MIN:
+        head += " (⚠ {}분 전 데이터)".format(age)
+    return head + " — " + " · ".join(parts) + "."
+
+
+# ────────────────────────────── 진단 (데이터 문제 찾기) ──────────────────────────────
+def diagnose():
+    """도메인 지식으로 데이터 문제를 찾는다 — '무엇을 해결해야 하나'.
+
+    화면에 보이는 증상이 아니라 **데이터 자체의 문제**를 본다:
+      · 점수 재현 불일치 (pts 합 ≠ 저장 점수 — 예측기 배점 변경 신호)
+      · 임계 미정의 (룰은 도는데 기준이 없음)
+      · 룰은 보는데 CSV 에 값이 안 오는 컬럼 (화면에서 근거를 못 봄)
+      · 화면에 없는 점수 구성 항 (왜 그 점수인지 화면에서 못 짚음)
+      · 오래된 데이터 (수집이 멈췄을 가능성)
+    반환 {ok, problems:[{what, why, fix}...], err}
+    """
+    problems = []
+    r = compare()
+    if not r["ok"]:
+        return {"ok": False, "problems": [], "err": r["err"]}
+    d = r["data"]
+    age = _data_age_min(d.get("at"))
+    if age is not None and age > STALE_MIN:
+        problems.append({
+            "what": "데이터가 {}분 전 것".format(age),
+            "why": "수집(주피터 CSV)이 멈췄거나 그 날짜 파일이 아직 없다",
+            "fix": "관제 서버 로그에서 [수집] 줄과 주피터 로그인 오류를 확인"})
+    for row in d.get("rows") or []:
+        if row.get("mismatch"):
+            problems.append({
+                "what": "{} 점수 재현 불일치".format(row.get("fab")),
+                "why": row["mismatch"],
+                "fix": "예측기(hubroom_predictor.py) 배점이 바뀌었는지 확인 — "
+                       "바뀌었으면 fab_score 의 RULES 를 맞춘다"})
+    c = columns()
+    if c["ok"]:
+        for s, info in (c["data"].get("fabs") or {}).items():
+            j = info.get("join") or {}
+            undef = [m["key"] for m in (j.get("metrics") or [])
+                     if m.get("used") and any(t is None for t in m.get("thr") or [])
+                     and any(o not in ("sum", "score", "text", "ratio30")
+                             for o in m.get("op") or [">="])]
+            if undef:
+                problems.append({
+                    "what": "{} 임계 미정의: {}".format(s, ", ".join(undef)),
+                    "why": "룰은 이 컬럼을 보는데 기준값이 없다 — 판정 불가",
+                    "fix": "thresholds.json 확인 후 config.fab_score.thresholds 에 기입"})
+            miss = [x["key"] for x in (j.get("only_rule") or [])]
+            if miss:
+                problems.append({
+                    "what": "{} 화면에 없는 점수 구성 항: {}".format(
+                        s, ", ".join(miss[:6])),
+                    "why": "점수는 이 값으로 만들어지는데 추이 그래프 목록에 없다 "
+                           "— '왜 이 점수인가' 를 화면에서 못 짚는다",
+                    "fix": "config.ui.metric_groups 에 추가하면 바로 그려진다"})
+            nocsv = j.get("no_csv") or []
+            if nocsv:
+                problems.append({
+                    "what": "{} CSV 에 값이 안 오는 감시 컬럼 {}개".format(
+                        s, len(nocsv)),
+                    "why": "룰은 켜지는데 근거 값이 화면에 안 뜬다 (예: {})".format(
+                        (nocsv[0].get("raw") or "")[:60]),
+                    "fix": "예측 잡이 해당 컬럼을 CSV 에 실어 주도록 요청"})
+    return {"ok": True, "problems": problems, "err": ""}
+
+
+def diagnose_text():
+    """진단 결과를 사람이 읽을 한 덩어리로. LLM 근거로도 그대로 쓴다."""
+    d = diagnose()
+    if not d["ok"]:
+        return "관제 서버에 연결이 안 돼서 진단할 수 없어요. ({})".format(d["err"])
+    if not d["problems"]:
+        return "지금 데이터에서 짚이는 문제가 없어요. (재현 일치 · 임계 정의됨 · 데이터 최신)"
+    L = ["짚이는 문제 {}건:".format(len(d["problems"]))]
+    for i, p in enumerate(d["problems"], 1):
+        L.append("{}. {} — {}. 조치: {}".format(i, p["what"], p["why"], p["fix"]))
+    return "\n".join(L)

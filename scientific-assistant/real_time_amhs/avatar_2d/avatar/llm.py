@@ -46,10 +46,67 @@ MODES = [
 _ESC = {"n": "\n", "t": "\t", "r": "", "b": "", "f": "", '"': '"', "\\": "\\", "/": "/"}
 
 
-def build_messages(persona, user_text, history, doc_store, settings):
-    """system + 최근 대화 + user. (기존 sysPrompt 의 파이썬판)"""
+# ── 데이터 질문 감지 — 추측이 아니라 낱말 목록 (하네스: 오발보다 명시) ──
+DATA_WORDS = ("점수", "스코어", "알람", "경계", "위험", "초위험", "등급",
+              "반송", "관제", "상태", "데이터", "진단", "허브", "허브룸",
+              "리프터", "소터", "분류기", "저장율", "저장률", "포화", "큐",
+              "정체", "지표", "임계", "컬럼", "fab", "m14", "m16", "sla",
+              "oht", "queue", "maxcapa", "amhs")
+
+
+def is_data_question(text):
+    t = str(text or "").lower()
+    return any(w in t for w in DATA_WORDS)
+
+
+# 버추얼 에이전트 규칙 — 페르소나 뒤에 붙는 직무 정의.
+#   하네스 관점: 근거 밖 발화 금지 (숫자 가드가 뒤에서 실제로 막는다)
+#   프로덕트 관점: 시키는 것만 하지 말고 '무엇을 해결해야 하나' 를 먼저 짚는다
+AGENT_RULES = (
+    "[관제 에이전트 규칙]\n"
+    "너는 M16 허브룸 관제 데이터를 실시간으로 보는 버추얼 에이전트다.\n"
+    "1. 수치·등급·구역 이름은 [관제 근거] 블록에 있는 것만 말한다. "
+    "근거에 없는 숫자를 만들면 안 된다. 근거가 없으면 '지금은 확인이 안 돼요' 라고 한다.\n"
+    "2. 대답 순서: ① 무엇이 문제인가(어느 구역이 왜) ② 근거 수치 "
+    "③ 지금 할 일 ④ 데이터 자체의 문제가 보이면(재현 불일치·임계 미정의·"
+    "오래된 데이터) 그것부터 짚는다.\n"
+    "3. 사용자가 시킨 것 이면의 진짜 문제를 찾는다 — '점수 알려줘' 에 점수만 "
+    "읽지 말고, 오르는 중인지·어느 룰 때문인지까지 본다.\n"
+    "4. 데이터 분석 답변의 text 는 길어도 된다 (수치·근거 포함). "
+    "잡담의 text 는 1~3문장으로 짧게.\n"
+    "5. 과장·추측·아는 척 금지. 캐릭터 말투는 유지하되 숫자는 건조하게 정확히.")
+
+
+def build_messages(persona, user_text, history, doc_store, settings,
+                   skill_store=None, evidence_text="", attach=None):
+    """system + 최근 대화 + user. (기존 sysPrompt 의 파이썬판)
+
+    주입 순서: 페르소나 → 에이전트 규칙 → 관제 근거 → 첨부 → 스킬 → 자료 → 출력 규칙.
+    근거를 스킬보다 앞에 둔다 — 실측값과 문서가 부딪히면 실측값이 이긴다.
+    attach=(이름, 본문) 이면 **그 파일을 통째로**(예산 상한) 먼저 넣는다 —
+    방금 첨부한 파일은 질문과 단어가 안 겹쳐도 봐야 하는 파일이다.
+    """
+    sysmsg = (persona or "").strip() + "\n\n" + AGENT_RULES + "\n\n"
+    if evidence_text:
+        sysmsg += ("[관제 근거]\n" + evidence_text +
+                   "\n(이 블록의 숫자만 사용한다. 부족하면 부족하다고 말한다.)\n\n")
+    if attach:
+        name, body = attach
+        cap = int(settings.get("docBudget", 6000))
+        cut = str(body or "")[:cap]
+        note = ("\n(파일이 길어 앞 {}자만 실었다 — 잘렸다고 밝혀라)"
+                .format(cap) if len(str(body or "")) > cap else "")
+        sysmsg += ("[방금 첨부한 파일: {}]\n{}{}\n"
+                   "질문이 이 파일에 대한 것이면 이 내용을 최우선 근거로 쓴다.\n\n"
+                   .format(name, cut, note))
+    if skill_store is not None:
+        sk = skill_store.context(user_text,
+                                 int(settings.get("docBudget", 6000)) // 2)
+        if sk:
+            sysmsg += ("[스킬 — 도메인 지식]\n" + sk +
+                       "\n스킬의 규칙·함정은 판단 기준으로 쓰되, "
+                       "현재 수치는 [관제 근거] 를 따른다.\n\n")
     ctx = doc_store.context(user_text, int(settings.get("docBudget", 6000)))
-    sysmsg = (persona or "").strip() + "\n\n"
     if ctx:
         sysmsg += ("[참고 자료]\n" + ctx +
                    "\n위 자료에 있는 내용은 근거로 삼아 답한다. "

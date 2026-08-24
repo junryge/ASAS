@@ -62,6 +62,8 @@
             <div class="chip" id="docChip" title="MD / TXT 자료 주입">자료</div>
             <div class="chip on" id="eyeChip" title="마우스를 눈으로 따라봅니다">시선</div>
             <div class="chip on" id="badgeChip" title="목에 건 사원증">사원증</div>
+            <div class="chip" id="miniChip" title="소형 하단 위젯 모드 (패널 숨김)">미니</div>
+            <div class="chip" id="popChip" title="화면 우하단에 작은 창으로 띄웁니다">소형창</div>
           </div>
         </div>
       </div>
@@ -87,6 +89,10 @@
         <div id="inputGrip" title="드래그해서 입력창 높이 조절"></div>
         <textarea id="say" placeholder="메시지 입력…"></textarea>
         <div id="inputBar">
+          <button id="attachBtn" title="파일 첨부 — 다음 질문의 우선 근거 (md/txt/csv/json/log)">📎</button>
+          <span id="attachChip" class="hide" title="클릭하면 첨부 취소"></span>
+          <input type="file" id="attachFile" class="hide"
+                 accept=".md,.txt,.csv,.tsv,.json,.log,.yaml,.yml,.py,.js,.html">
           <span id="charCount">0</span>
           <span id="ctxMini" title="컨텍스트 사용량(추정)">ctx 0%</span>
           <label class="chk mini"><input type="checkbox" id="enterSend" checked> Enter 전송</label>

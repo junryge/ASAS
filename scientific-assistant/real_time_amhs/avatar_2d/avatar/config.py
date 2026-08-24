@@ -65,11 +65,27 @@ COSTUMES = [
 BADGE = {"name": "미라", "en": "MIRA", "dept": "물류기술팀 · AMHS", "id": "SKH-2026-0417"}
 BADGE_LOGO = "assets/logo.png"
 
+# ── 관제 서버 (real_time_amhs) ────────────────────────────────────────────
+# 버추얼 에이전트의 데이터 소스. run.py --sentinel 로 덮을 수 있다.
+#   url        관제 서버 주소 (기본: 같은 PC 의 8989)
+#   poll_ms    브라우저 알람 폴링 주기 (서버 캐시 5초라 더 줄여도 소용없다)
+SENTINEL = {
+    "url": "http://127.0.0.1:8989",
+    "poll_ms": 5000,
+}
+
 # ── FAB 알람 ──────────────────────────────────────────────────────────────
+# ★관제 서버의 시스템 목록(ALL + FAB 5)과 같아야 한다. 예전 목록(M14/M16HUB/
+#   M16)은 실제 관제와 어긋나서 M14B·M16A·M16B 알람을 못 그렸다.
+#   건물 그림은 3장뿐이라 M14B 는 M14 그림, M16A·M16B 는 M16 그림을 같이 쓴다
+#   (그림이 늘면 img 만 바꾸면 된다). ALL 은 전체 융합이라 허브 그림.
 FABS = [
+    {"key": "ALL",    "name": "전체",    "img": "assets/fab_m16hub.png"},
     {"key": "M14",    "name": "M14",     "img": "assets/fab_m14.png"},
+    {"key": "M14B",   "name": "M14B",    "img": "assets/fab_m14.png"},
+    {"key": "M16A",   "name": "M16A",    "img": "assets/fab_m16.png"},
+    {"key": "M16B",   "name": "M16B",    "img": "assets/fab_m16.png"},
     {"key": "M16HUB", "name": "M16 HUB", "img": "assets/fab_m16hub.png"},
-    {"key": "M16",    "name": "M16",     "img": "assets/fab_m16.png"},
 ]
 
 # lines 의 {n} 자리에 FAB 이름이 들어간다. pace 가 None 이면 제자리.
@@ -133,4 +149,5 @@ def public_config(model="", models=None, upstream=""):
         "fabs": FABS,
         "levels": LEVELS,
         "sessMax": SESS_MAX,
+        "sentinel": {"pollMs": int(SENTINEL.get("poll_ms", 5000))},
     }

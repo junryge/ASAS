@@ -1305,16 +1305,24 @@ function buildBgChips(){
   applyBg();
 }
 buildBgChips();
-/* ---------- FAB 알람 (테스트) ----------
-   [테스트] 를 누르면 세 FAB 중 '하나만' 무작위로 뽑아 알람을 울린다.
-   해제할 때까지 빨간불이 깜빡이고 미라가 어느 FAB 인지 계속 말한다. */
-const FABS = [
+/* ---------- FAB 알람 ----------
+   실데이터: pollSentinel() 이 관제(real_time_amhs) 등급을 읽어 자동으로
+   fireAlarm/clearAlarm 을 부른다. [테스트] 는 무작위 발생 (그대로).
+   ★FABS/LEVELS 의 원본은 서버(avatar/config.py)다 — /api/config 로 받아
+     아래 폴백을 덮는다. 예전엔 여기 복사본이 진짜였는데, 서버 목록과
+     어긋나서 M14B·M16A·M16B 알람을 그릴 수 없었다. 폴백은 HTML 단독
+     실행(데모)용으로만 남긴다. */
+let FABS = [
   {key:'M14',    name:'M14',     img:"assets/fab_m14.png"},
   {key:'M16HUB', name:'M16 HUB', img:"assets/fab_m16hub.png"},
   {key:'M16',    name:'M16',     img:"assets/fab_m16.png"},
 ];
+function applyAlarmConfig(c){
+  if(Array.isArray(c.fabs)   && c.fabs.length)   FABS   = c.fabs;
+  if(Array.isArray(c.levels) && c.levels.length) LEVELS = c.levels;
+}
 /* 등급 : 경계 → 위험 → 초위험. 색·속도·경고음·대사가 전부 달라진다 */
-const LEVELS = [
+let LEVELS = [
   {key:'lv1', name:'경계',   nag:8000, tones:[880],            emo:['think','surprise'], inten:0.70, pace:null,
    lines:[
      (n)=>`${n} FAB에 경계 알람이 떴어요. 한 번 봐주세요.`,
@@ -1362,7 +1370,10 @@ function beep(tones, vol){
 function alarmSay(){
   if(!alarm) return;
   const L=alarm.lv;
-  const f = L.lines[alarm.line % L.lines.length](alarm.fab.name);
+  /* 서버 config 의 대사는 '{n}' 자리표 문자열, 로컬 폴백은 함수 — 둘 다 받는다 */
+  const raw = L.lines[alarm.line % L.lines.length];
+  const f = typeof raw==='function' ? raw(alarm.fab.name)
+                                    : String(raw).replace(/\{n\}/g, alarm.fab.name);
   const e = L.emo[alarm.line % L.emo.length];
   alarm.line++;
   setEmotion(e, L.inten, L.key==='lv1' ? 'tap' : 'shiver');
@@ -1376,11 +1387,36 @@ function paintAlarmTime(){
   if(el) el.textContent = String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
 }
 const LV_CSS = {lv1:'232,193,74', lv2:'255,122,61', lv3:'255,43,61'};
-function fireAlarm(fab, lv){
-  if(alarm) return;                                   // 이미 울리는 중
-  const f = fab || FABS[Math.floor(Math.random()*FABS.length)];   // FAB 셋 중 하나
-  const L = lv  || LEVELS[Math.floor(Math.random()*LEVELS.length)]; // 등급 셋 중 하나
-  alarm = {fab:f, lv:L, t0:Date.now(), line:0, nag:null, tick:null};
+/* 알람을 대사 없이 조용히 내린다 — 등급/구역 '교체' 때 쓴다.
+   교체마다 "해제됐어요!" 를 말하면 실제로는 상황이 나빠지는 중인데
+   좋아진 것처럼 들린다. */
+function silentClear(){
+  if(!alarm) return;
+  clearInterval(alarm.nag); clearInterval(alarm.tick);
+  alarm = null;
+  const box=$('#alarmBox'), fl=$('#alarmFlash');
+  box.classList.remove('on','lv1','lv2','lv3');
+  fl.classList.remove('on','lv1','lv2','lv3');
+}
+function fireAlarm(fab, lv, src){
+  const f = fab || FABS[Math.floor(Math.random()*FABS.length)];
+  const L = lv  || LEVELS[Math.floor(Math.random()*LEVELS.length)];
+  if(alarm){
+    /* 같은 구역·같은 등급이면 그대로 (재발화로 대사가 초기화되면 시끄럽다).
+       단 관찰 모드(quiet)였다면 재발이다 — 재촉을 다시 켠다. */
+    if(alarm.fab.key===f.key && alarm.lv.key===L.key){
+      alarm.src = src||alarm.src;
+      if(alarm.quiet){
+        alarm.quiet=false;
+        sys('알람 재발 — '+f.name+' '+L.name);
+        alarmSay();
+        alarm.nag = setInterval(alarmSay, L.nag);
+      }
+      return;
+    }
+    silentClear();                     // 다른 구역/등급 → 교체
+  }
+  alarm = {fab:f, lv:L, t0:Date.now(), line:0, nag:null, tick:null, src:src||'test'};
   const box=$('#alarmBox'), fl=$('#alarmFlash');
   box.classList.remove('lv1','lv2','lv3'); fl.classList.remove('lv1','lv2','lv3');
   box.classList.add('on', L.key);  fl.classList.add('on', L.key);
@@ -1415,6 +1451,85 @@ function clearAlarm(){
   $('#alarmTest').onclick = ()=>{ if(alarm) clearAlarm(); fireAlarm(); };
   $('#alarmClear').onclick = ()=> clearAlarm();
 })();
+
+/* ---------- 미니 모드 (소형 하단 위젯) ----------
+   패널·HUD 를 숨기고 캐릭터+말풍선+알람+입력창만 남긴다.
+   '소형창' 은 화면 우하단에 작은 팝업 창으로 새로 띄운다 (?mini=1). */
+function setMini(on){
+  document.body.classList.toggle('mini', !!on);
+  const c=$('#miniChip'); if(c) c.classList.toggle('on', !!on);
+  computeView(); placeHandles(); placeBubble();
+}
+(function initMini(){
+  const mc=$('#miniChip'), pc=$('#popChip');
+  if(mc) mc.onclick = ()=> setMini(!document.body.classList.contains('mini'));
+  if(pc) pc.onclick = ()=>{
+    const w=430, h=580;
+    const x=Math.max(0,(screen.availWidth||1200)-w-8);
+    const y=Math.max(0,(screen.availHeight||800)-h-8);
+    const win=window.open(location.pathname+'?mini=1','avatar_mini',
+      'width='+w+',height='+h+',left='+x+',top='+y);
+    if(!win) sys('팝업이 차단됐어요 — 브라우저의 팝업 허용을 켜 주세요.');
+  };
+  if(new URLSearchParams(location.search).get('mini')==='1')
+    setTimeout(()=>setMini(true), 0);
+})();
+
+/* ── 관제 실데이터 감시 ──
+   /api/fab/status (아바타 서버가 real_time_amhs 를 5초 캐시로 대신 읽음).
+   등급이 경계 이상인 시스템이 있으면 가장 나쁜 것 하나를 알람으로.
+   ★관제가 끊기면 '끊겼다' 고 말한다 — 조용히 정상인 척하는 게 최악이다.
+   ★실데이터 알람(src='real')만 자동 해제한다. 테스트 알람은 사람이 끈다. */
+let sentinelDown = null;      // null=아직 모름, true/false=상태
+async function pollSentinel(){
+  if(!window.SERVER) return;
+  let s;
+  try{
+    const r = await fetch('/api/fab/status', {cache:'no-store'});
+    s = await r.json();
+  }catch(e){ s = {ok:false, err:e.message}; }
+  if(!s.ok){
+    if(sentinelDown!==true){
+      sentinelDown = true;
+      sys('관제 연결 끊김 — '+(s.err||'')+' · 알람 자동 감시가 멈췄습니다. '
+          +'(real_time_amhs 서버 확인)');
+    }
+    return;                    // 데이터를 못 보는 동안 기존 알람은 건드리지 않는다
+  }
+  if(sentinelDown!==false){
+    if(sentinelDown===true) sys('관제 연결 복구 — 알람 자동 감시 재개');
+    else sys('관제 연결됨 — 경계/위험/초위험 자동 감시 중'
+             +(s.at?' (데이터 '+s.at+')':''));
+    sentinelDown = false;
+  }
+  const worst = (s.alarms||[])[0];
+  if(worst){
+    const f = FABS.find(x=>x.key===worst.fab)
+              || {key:worst.fab, name:worst.fab, img:'assets/fab_m16hub.png'};
+    const L = LEVELS.find(x=>x.name===worst.level);
+    if(L) fireAlarm(f, L, 'real');
+  }else if(alarm && alarm.src==='real'){
+    /* 정상 복귀 — 바로 끄지 않는다. 관제의 '사건 60분 뒤 닫힘' 과 같은
+       규칙으로 1시간 관찰을 유지한다 (서버가 hold 로 남은 시간을 준다).
+       재촉 대사·경고음은 멈춘다 — "아직 위험" 은 이제 거짓말이니까. */
+    if(s.hold){ holdAlarm(s.hold); }
+    else{ clearAlarm(); }
+  }
+}
+function holdAlarm(h){
+  if(!alarm) return;
+  if(!alarm.quiet){
+    alarm.quiet = true;
+    clearInterval(alarm.nag); alarm.nag = null;
+    setEmotion('smile', 0.6, 'nod');
+    speak(alarm.fab.name+' 수치가 정상으로 내려왔어요. '
+          +h.left_min+'분 동안 재발 없는지 지켜볼게요.');
+    sys('알람 관찰 모드 — '+alarm.fab.name+' 정상 복귀, '
+        +h.left_min+'분 뒤 자동 해제 (재발 시 다시 울림)');
+  }
+  $('#alarmMsg').textContent = alarm.fab.name+' 정상 복귀 — '
+    +h.left_min+'분 관찰 후 자동 해제됩니다 (재발하면 다시 울려요)';
+}
 
 /* ---------- 시간표 자동 전환 ----------
    지금 시각이 속한 구간의 배경(=의상·사원증까지)으로 알아서 바꾼다.
@@ -1758,6 +1873,9 @@ function beginStream(){
 function pushStream(t){
   talk = 0.45;                                   // 토큰이 오는 동안 입을 계속 움직인다
   if(!bubbleOn) return;
+  /* 말풍선은 '말' 이다 — 표·코드·제목 기호를 소리내 읽을 수는 없다.
+     원문은 채팅창(md 렌더)에 그대로 있고, 여기는 걷어낸 앞부분만. */
+  t = speakable(t);
   const n=t.length;
   bubble.style.fontSize = n>320 ? '12.5px' : n>160 ? '13.5px' : '15px';
   bubble.textContent = t;
@@ -1776,14 +1894,67 @@ function showChatTab(){
   const t=document.querySelector('.tab[data-p=chat]');
   if(t && !t.classList.contains('on')) t.click();
 }
+/* ── 응답 마크다운 렌더 ──
+   스킬 전문(/스킬 보기)·진단 결과가 표·코드째로 오는데 텍스트 노드로
+   꽂으면 못 읽는다. 이스케이프 먼저 → 제목/표/코드/목록/굵게만 변환.
+   그 이상 문법은 원문 그대로 두는 게 정직하다 (변환기 흉내 금지). */
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function mdInline(s){
+  return esc(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+}
+function mdHtml(text){
+  const out=[]; let code=false, table=false, list=false;
+  const closeAll=()=>{ if(table){out.push('</table>');table=false;} if(list){out.push('</ul>');list=false;} };
+  for(const line of String(text||'').split('\n')){
+    if(line.trim().startsWith('```')){ closeAll(); out.push(code?'</pre>':'<pre>'); code=!code; continue; }
+    if(code){ out.push(esc(line)); continue; }
+    if(/^\s*\|[\s|:\-]+\|?\s*$/.test(line) && /-/.test(line)) continue;   // 표 구분선
+    if(line.startsWith('|')){
+      if(!table){ closeAll(); out.push('<table>'); table=true; }
+      out.push('<tr>'+line.trim().replace(/^\||\|$/g,'').split('|')
+        .map(c=>'<td>'+mdInline(c.trim())+'</td>').join('')+'</tr>');
+      continue;
+    }
+    if(table){ out.push('</table>'); table=false; }
+    const h=line.match(/^(#{1,4})\s+(.*)$/);
+    if(h){ closeAll(); const n=Math.min(4,h[1].length)+2;   // h3~h6 로 낮춰 채팅에 맞춤
+      out.push('<h'+n+'>'+mdInline(h[2])+'</h'+n+'>'); continue; }
+    if(/^\s*[-*·]\s+/.test(line)){
+      if(!list){ out.push('<ul>'); list=true; }
+      out.push('<li>'+mdInline(line.replace(/^\s*[-*·]\s+/,''))+'</li>'); continue;
+    }
+    if(list && !line.trim()){ out.push('</ul>'); list=false; continue; }
+    if(/^---+\s*$/.test(line.trim())){ closeAll(); out.push('<hr>'); continue; }
+    if(line.trim()) out.push('<p>'+mdInline(line)+'</p>');
+  }
+  closeAll(); if(code) out.push('</pre>');
+  return out.join('');
+}
+/* 말풍선용 — 표·코드를 읽어 줄 수는 없다. 걷어내고 앞부분만 말한다. */
+function speakable(t){
+  t=String(t||'').replace(/```[\s\S]*?```/g,' ').replace(/^\|.*$/gm,' ')
+    .replace(/^#{1,6}\s*/gm,'').replace(/\*\*([^*]+)\*\*/g,'$1')
+    .replace(/`([^`]+)`/g,'$1').replace(/^---+$/gm,' ')
+    .replace(/\s+/g,' ').trim();
+  return t.length>220 ? t.slice(0,220)+'…' : t;
+}
+
 function push(who,text,tag,meta,replaying){
   const d=document.createElement('div'); d.className='msg '+who;
   if(tag){ const s=document.createElement('span'); s.className='tag'; s.textContent=tag; d.appendChild(s); }
-  d.appendChild(document.createTextNode(text));
+  if(who==='ai'){
+    const c=document.createElement('div'); c.className='md';
+    c.innerHTML=mdHtml(text);
+    d.appendChild(c); d._content=c; d._raw=text;
+  }else{
+    d.appendChild(document.createTextNode(text));
+  }
   if(who==='ai'){
     const cp=document.createElement('span'); cp.className='copy'; cp.textContent='복사';
     cp.onclick=(e)=>{ e.stopPropagation();
-      navigator.clipboard.writeText(d.childNodes[tag?1:0].nodeValue||text)
+      navigator.clipboard.writeText(d._raw||text)
         .then(()=>{ cp.textContent='복사됨'; setTimeout(()=>cp.textContent='복사',1200); }); };
     d.appendChild(cp);
     if(meta){
@@ -1792,7 +1963,7 @@ function push(who,text,tag,meta,replaying){
       d.title='클릭하면 다시 재생';
       d.onclick=()=>{
         setEmotion(meta.emotion, meta.intensity, meta.motion);
-        speak(meta.text);
+        speak(speakable(meta.text));
         d.classList.add('played');
         setTimeout(()=>d.classList.remove('played'), 700);
       };
@@ -1820,9 +1991,48 @@ function chatPayload(userText, stream){
     history: history.slice(-keepMsgs),
     model: $('#apiModel').value.trim(),
     temperature: parseFloat($('#apiTemp').value),
-    stream: !!stream
+    stream: !!stream,
+    attach: pendingAttach || ''      // 📎 로 방금 올린 파일 — 이번 질문의 최우선 근거
   });
 }
+
+/* ── 채팅 첨부 (📎) ──
+   파일을 서버 자료함(/api/docs)에 올리고, 다음 질문 하나에 통째로 주입한다.
+   자료함에 남으므로 이후 질문에도 검색으로 걸린다. */
+let pendingAttach = '';
+function setAttachChip(){
+  const c = $('#attachChip');
+  if(!c) return;
+  if(pendingAttach){
+    c.classList.remove('hide');
+    c.innerHTML = '📎 ' + esc(pendingAttach) + ' <b>✕</b>';
+  }else{ c.classList.add('hide'); }
+}
+(function initAttach(){
+  const btn=$('#attachBtn'), file=$('#attachFile'), chip=$('#attachChip');
+  if(!btn || !file) return;
+  btn.onclick = ()=>{
+    if(!window.SERVER){ sys('첨부는 run.py 서버로 실행할 때 쓸 수 있습니다.'); return; }
+    file.click();
+  };
+  chip.onclick = ()=>{ pendingAttach=''; setAttachChip(); };
+  file.onchange = async ()=>{
+    const f = file.files && file.files[0];
+    file.value='';
+    if(!f) return;
+    if(f.size > 400*1024){ sys('첨부는 400KB 이하 텍스트 파일만 돼요: '+f.name); return; }
+    const text = await f.text();
+    try{
+      const r = await fetch('/api/docs', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({op:'add', name:f.name, text})});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      pendingAttach = f.name; setAttachChip();
+      await reloadDocs();
+      sys('📎 '+f.name+' 첨부됨 — 다음 질문에 이 파일을 우선 근거로 봅니다. (자료함에도 저장됨)');
+    }catch(e){ sys('첨부 실패: '+e.message); }
+  };
+})();
 
 async function askLLM(userText){
   if(!window.SERVER) return demoLLM(userText);
@@ -2213,7 +2423,7 @@ async function send(){
         }
         if(ev.text!==undefined && ev.text!==last){
           last=ev.text; pushStream(ev.text);
-          liveEl.childNodes[1].nodeValue = ev.text;
+          if(liveEl._content) liveEl._content.textContent = ev.text;
         }
       });
       endStream(r.text);
@@ -2225,12 +2435,15 @@ async function send(){
     history.push({role:'assistant',content:JSON.stringify(r)});
     setEmotion(r.emotion, r.intensity, r.motion);
     push('ai', r.text, `${EMO[r.emotion].ko} · ${Math.round(r.intensity*100)}% · ${MOTION[r.motion].ko}`, r);
-    if(!useStream) speak(r.text);
+    if(!useStream) speak(speakable(r.text));
   }catch(e){
     setEmotion('fear',0.8,'shiver');
     push('ai','(연결 실패) '+e.message,'error');
     sys('API 호출 실패 — run.py 터미널의 로그를 확인하세요. (토큰/모델/사내망)');
-  }finally{ sendBtn.disabled=false; sayEl.focus(); renderCtx(); }
+  }finally{
+    pendingAttach=''; setAttachChip();   // 첨부는 그 질문 한 번 — 파일은 자료함에 남아 있다
+    sendBtn.disabled=false; sayEl.focus(); renderCtx();
+  }
 }
 sendBtn.onclick=send;
 
@@ -2427,6 +2640,12 @@ function applyServerConfig(c){
   window.SERVER = true;
 
   applyServerConfig(c);
+  applyAlarmConfig(c);                      // FAB 6개·등급 — 서버가 원본
+
+  /* 관제 실데이터 감시 시작 */
+  const pollMs = (c.sentinel && c.sentinel.pollMs) || 5000;
+  pollSentinel();
+  setInterval(pollSentinel, pollMs);
 
   /* 서버측 설정(자료 예산 등)을 슬라이더에 반영 */
   try{

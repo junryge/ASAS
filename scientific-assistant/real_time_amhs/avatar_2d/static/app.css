@@ -205,6 +205,43 @@
   .msg.me{align-self:flex-end;background:#2c3a4d}
   .msg.ai{align-self:flex-start;background:var(--panel2);border:1px solid var(--line)}
   .msg .tag{display:block;font-size:10.5px;color:var(--dim);margin-bottom:3px;letter-spacing:.4px}
+  /* ── 응답 마크다운 — 스킬 전문·진단 표가 읽히게 ── */
+  .msg .md{min-width:0}
+  .msg .md p{margin:3px 0}
+  .msg .md h3,.msg .md h4,.msg .md h5,.msg .md h6{margin:9px 0 4px;font-size:13px;color:var(--accent2)}
+  .msg .md h3{font-size:14px}
+  .msg .md ul{margin:3px 0;padding-left:18px}
+  .msg .md li{margin:2px 0}
+  .msg .md code{font-family:Consolas,'D2Coding',monospace;font-size:11.5px;
+    background:rgba(120,150,190,.16);border-radius:4px;padding:1px 4px}
+  .msg .md pre{font-family:Consolas,'D2Coding',monospace;font-size:11.5px;line-height:1.5;
+    background:#141a24;border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;margin:6px 0;overflow-x:auto;white-space:pre}
+  .msg .md table{border-collapse:collapse;margin:6px 0;font-size:11.5px;display:block;
+    max-width:100%;overflow-x:auto}
+  .msg .md td{border:1px solid var(--line);padding:4px 8px;vertical-align:top;white-space:nowrap}
+  .msg .md tr:first-child td{background:rgba(120,150,190,.14);font-weight:700}
+  .msg .md hr{border:0;border-top:1px solid var(--line);margin:8px 0}
+  /* ── 채팅 첨부 ── */
+  #attachBtn{background:none;border:1px solid var(--line);border-radius:8px;
+    color:var(--dim);cursor:pointer;font-size:13px;padding:2px 8px}
+  #attachBtn:hover{color:var(--fg);border-color:var(--accent2)}
+  #attachChip{font-size:11px;color:var(--accent2);cursor:pointer;
+    border:1px solid var(--accent2);border-radius:10px;padding:1px 8px;
+    max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #attachChip b{color:var(--dim);margin-left:4px}
+  #attachFile{display:none}
+  .hide{display:none !important}
+  /* ── 미니 모드 (소형 하단 위젯) — 캐릭터+말풍선+알람+입력만 ── */
+  body.mini #side, body.mini #hudBar, body.mini #clock,
+  body.mini #drop, body.mini #chatGrip, body.mini #inputGrip{display:none !important}
+  body.mini #app{padding:0}
+  body.mini #stageWrap{border-radius:0}
+  body.mini #chatPane{max-height:38vh}
+  body.mini #log{padding:6px;gap:6px}
+  body.mini .msg{font-size:12px;padding:6px 9px}
+  body.mini #say{min-height:34px;max-height:70px}
+  body.mini #alarmBox{transform:scale(.9);transform-origin:bottom right}
   .msg.sys{align-self:center;background:none;color:var(--dim);font-size:11.5px;text-align:center;max-width:100%}
   #inputRow{flex:0 0 auto;display:flex;flex-direction:column;gap:0;padding:0;max-width:100%;
     border-top:1px solid var(--line);position:relative;background:var(--panel)}

@@ -61,6 +61,14 @@ class DocStore:
             self._save()
         return True
 
+    def get(self, name):
+        """이름으로 본문 — 채팅 첨부가 '방금 그 파일' 을 통째로 쓸 때."""
+        with _LOCK:
+            for d in self.docs:
+                if d["name"] == name:
+                    return d["text"]
+        return None
+
     def toggle(self, name, on):
         with _LOCK:
             for d in self.docs:
