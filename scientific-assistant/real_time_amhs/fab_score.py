@@ -458,6 +458,66 @@ def solo_ceiling(fab: str, cfg: dict | None = None, mode: str = "typical") -> di
     }
 
 
+# ────────────────────────────── ALL (전체) ──────────────────────────────
+def all_row(row: dict, cfg: dict | None = None) -> dict:
+    """전체(ALL) 를 FAB 과 같은 줄에 세운다.
+
+    ★왜 따로 만드나 — ALL 은 FAB 이 아니다.
+      FAB 은 '영역' 이고 9개 룰을 임계와 대조해 0~50 점을 받는다.
+      ALL 은 그 8개 영역 점수에 흐름·SLA·Sorter·MAXCAPA 를 더해 raw 를 만들고
+      raw 220 을 100 으로 환산한 값이다. 그래서 ALL 에는
+        · 자기 임계값이 없고 (영역이 아니니까)
+        · 단독 상한도 없고 (자기가 전체니까)
+        · 영역점수(0~50)도 없다 (이미 0~100 이다)
+      대신 ALL 만 가진 것이 있다 — 융합 5개 항, 8개 영역 중 몇 곳이 걸렸나,
+      룰별로 몇 개 영역에서 켜졌나, 단계·최고구역.
+
+    ★눈금 주의 — ALL 의 100점과 FAB 위험도의 100점은 **뜻이 다르다.**
+      ALL 60점은 실제로 경보가 나는 지점이고, FAB 60점은 그 FAB 의 영역점수가
+      30점(상한 50 중)이라는 뜻이다. 같은 자에 올려 놓고 보되, 화면과 문서에
+      무엇을 잰 값인지 반드시 같이 적는다.
+    """
+    from sentinel import grade
+    from lp_client import load_config
+    cfg = cfg or load_config()
+    sc = _num(row.get("unified_risk_score")) or 0.0
+    g = grade(sc, cfg)
+
+    # 룰마다 '몇 개 영역에서 켜졌나' — 전체 점수가 왜 그 숫자인지 한눈에 본다
+    per_rule, hit_fabs = {}, []
+    for code in RULE_ORDER:
+        n = sum(1 for f in fabs(cfg) if (_num(row.get(f"{f}_pts_{code}")) or 0) > 0)
+        per_rule[code] = n
+    for f in fabs(cfg):
+        a = area_score(row, f, cfg)
+        if a["area"] > 0:
+            hit_fabs.append(f)
+
+    fuse = fuse_check(row, cfg)
+    extra = []
+    for name, col in EXTRA_AREAS:
+        v = _num(row.get(col))
+        if v is not None:
+            extra.append({"area_name": name, "col": col, "score": round(v, 1)})
+    n_extra = sum(1 for x in extra if x["score"] > 0)
+    return {
+        "fab": "ALL", "is_all": True,
+        "score": round(sc, 1), "level": g["level"], "emoji": g["emoji"],
+        "measures": "8개 영역 융합 → raw ÷ %d × 100" % RAW_FULL,
+        "areas_hit": len(hit_fabs) + n_extra, "areas_total": len(fabs(cfg)) + len(extra),
+        "hit_fabs": hit_fabs,
+        "per_rule": per_rule,
+        "fuse": fuse,
+        "extra_areas": extra,
+        "hot_area": str(row.get("hot_area") or "").strip(),
+        "stage": str(row.get("stage") or "").strip(),
+        "stage_name": str(row.get("stage_name") or "").strip(),
+        "flow_signals": str(row.get("flow_signals") or "").strip(),
+        "maxcapa_signals": str(row.get("maxcapa_signals") or "").strip(),
+        "reason": str(row.get("reason") or "").strip(),
+    }
+
+
 # ────────────────────────────── 한 시각 비교 ──────────────────────────────
 def _row_at(rows: list[dict], at):
     from sentinel import _row_dt
@@ -482,11 +542,28 @@ def _delta(rows: list[dict], at, fab: str, now: float, back_min: int, cfg) -> fl
     return round(now - area_score(r0, fab, cfg)["area"], 1)
 
 
+def _all_delta(rows: list[dict], at, now: float, back_min: int) -> float | None:
+    """전체 점수의 back_min 분 전 대비 변화. 그때 행이 없으면 None."""
+    if at is None:
+        return None
+    from datetime import timedelta
+    _d0, r0 = _row_at(rows, at - timedelta(minutes=back_min))
+    if r0 is None:
+        return None
+    return round(now - (_num(r0.get("unified_risk_score")) or 0.0), 1)
+
+
 def compare(rows: list[dict], at=None, cfg: dict | None = None) -> dict:
-    """한 시각을 잡고 FAB 을 나란히 세운다 — 이 파일의 화면용 진입점.
+    """한 시각을 잡고 **ALL + FAB 다섯**을 나란히 세운다 — 화면용 진입점.
 
     rows 는 **ALL 시스템**(전체 CSV)의 행이어야 한다. FAB 분리 파일은 자기
     영역 컬럼만 있어서 비교가 안 된다.
+
+    ★반환값 rows[] 가 화면이 그대로 돌면 되는 목록이다 — 첫 줄이 ALL,
+      그 다음이 FAB 다섯. 관제 화면의 시스템 고르기(ALL + FAB 5)와 같은
+      구성이라, 화면에 있는 시스템이 비교표에 없는 일이 생기지 않는다.
+      score 는 여섯 줄 모두 0~100 이지만 **잰 대상이 다르다** — 각 줄의
+      measures 에 무엇을 잰 값인지 적어 둔다.
     """
     from sentinel import grade, grade_cuts
     from lp_client import load_config
@@ -505,10 +582,13 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None) -> dict:
         r = risk(a["area"])
         g = grade(r, cfg)
         a.update({
-            "risk": r, "level": g["level"], "emoji": g["emoji"],
+            "is_all": False,
+            "risk": r, "score": r, "level": g["level"], "emoji": g["emoji"],
+            "measures": f"영역점수 {a['area']:g}/{AREA_CAP} 를 100점으로 편 값",
             "contrib": round(a["area"] * a["weight"], 1),
             "delta": _delta(rows, dt, f, a["area"], back, cfg),
             "solo": solo_ceiling(f, cfg),
+            "max_area": max_area(f, cfg),
             "readings": readings(row, f, cfg),
         })
         out.append(a)
@@ -523,26 +603,36 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None) -> dict:
             extra.append({"area_name": name, "col": col, "score": round(v, 1),
                           "risk": risk(v)})
 
-    uni = _num(row.get("unified_risk_score")) or 0.0
-    ug = grade(uni, cfg)
+    # ★ALL 을 첫 줄에 세운다. 관제 화면의 시스템 고르기가 ALL + FAB 5 이므로
+    #   비교표도 같은 여섯 줄이어야 한다 (하나라도 빠지면 "내 시스템이 없다").
+    a_all = all_row(row, cfg)
+    a_all.update({"rank": 0, "risk": a_all["score"],
+                  "delta": _all_delta(rows, dt, a_all["score"], back)})
+    six = [a_all] + out
+
     blind = [d["fab"] for d in out if d["solo"]["score"] < warn]
     return {
         "ok": True,
         "at": dt.strftime("%Y-%m-%d %H:%M"),
         "cuts": {"warn": warn, "danger": danger, "critical": crit},
-        "unified": {"score": round(uni, 1), "level": ug["level"], "emoji": ug["emoji"],
-                    "hot_area": str(row.get("hot_area") or "").strip(),
-                    "stage": str(row.get("stage") or "").strip(),
-                    "stage_name": str(row.get("stage_name") or "").strip(),
+        # 화면은 이 목록만 돌면 된다 — 첫 줄 ALL, 그 다음 FAB 다섯
+        "rows": six,
+        "all": a_all,
+        # 옛 이름들 — 이미 쓰고 있는 화면이 깨지지 않게 그대로 둔다
+        "unified": {"score": a_all["score"], "level": a_all["level"],
+                    "emoji": a_all["emoji"], "hot_area": a_all["hot_area"],
+                    "stage": a_all["stage"], "stage_name": a_all["stage_name"],
                     "flow_score": _num(row.get("flow_score")),
-                    "reason": str(row.get("reason") or "").strip()},
+                    "reason": a_all["reason"]},
         "fabs": out, "extra_areas": extra, "delta_min": back,
         "rules": RULES, "area_cap": AREA_CAP, "raw_full": RAW_FULL,
         "blind": blind,
-        "note": (f"영역점수는 9개 룰의 배점(합 50 상한)이 모든 FAB 에서 같아 "
-                 f"그대로 비교됩니다. 위험도는 그 점수를 100점으로 편 값이고 "
-                 f"등급 컷은 {warn}/{danger}/{crit} 입니다 — "
-                 f"**FAB 자체 등급이라 전체 점수와 같은 뜻이 아닙니다.**"),
+        "note": (f"여섯 줄 모두 0~100 이고 등급 컷도 같습니다 "
+                 f"(경계 {warn} · 위험 {danger} · 초위험 {crit}). "
+                 f"다만 **잰 대상이 다릅니다** — ALL 은 8개 영역을 융합한 "
+                 f"전체 점수(실제로 경보가 나는 값)이고, FAB 은 그 영역의 "
+                 f"영역점수({AREA_CAP} 상한)를 100점으로 편 값입니다. "
+                 f"{AREA_CAP} 은 등급 컷이 아니라 영역점수 상한입니다."),
     }
 
 
@@ -598,14 +688,23 @@ if __name__ == "__main__":
     if not d.get("ok"):
         print(d.get("error"))
         raise SystemExit(1)
-    print(f"■ {d['at']}  전체 {d['unified']['score']}점 "
-          f"{d['unified']['emoji']}{d['unified']['level']}  "
-          f"최고구역 {d['unified']['hot_area']}")
+    c = d["cuts"]
+    print(f"■ {d['at']}   등급 컷 경계 {c['warn']} · 위험 {c['danger']} · "
+          f"초위험 {c['critical']}")
+    a = d["all"]
+    print(f"  ALL      전체 {a['score']:5.1f}/100 {a['emoji']}{a['level']:4s}  "
+          f"영역 {a['areas_hit']}/{a['areas_total']} 걸림 · 최고구역 "
+          f"{a['hot_area']} · {a['stage_name']}")
+    print(f"           raw {a['fuse']['raw']:g} = 영역합 {a['fuse']['areas']:g} + "
+          f"흐름 {a['fuse']['flow']:g} + SLA {a['fuse']['sla']:g} + "
+          f"소터 {a['fuse']['sorter']:g} + MC {a['fuse']['maxcapa']:g}")
     for f in d["fabs"]:
-        print(f"  {f['rank']}. {f['fab']:8s} 영역 {f['area']:5.1f}/50  "
+        print(f"  {f['rank']}. {f['fab']:8s} 영역 {f['area']:5.1f}/{AREA_CAP}  "
               f"위험도 {f['risk']:3d} {f['emoji']}{f['level']:4s}  "
               f"룰 {'+'.join(f['fired']) or '-':28s} "
               f"단독상한 {f['solo']['score']}점")
+    print(f"  ※ {AREA_CAP} 은 영역점수 상한이지 등급 컷이 아니다 "
+          f"(경계는 {c['warn']}).")
     print("  사각지대(단독으로는 경계에 못 닿는 FAB):", ", ".join(d["blind"]) or "없음")
     if "--json" in sys.argv:
         print(json.dumps(d, ensure_ascii=False, indent=2))

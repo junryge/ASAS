@@ -116,6 +116,88 @@ def grid_columns(fabs, cfg) -> str:
             f'<th>룰</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
 
 
+def six_rows(fabs, cfg, warn, danger, crit) -> str:
+    """관제 화면의 여섯 시스템(ALL + FAB 5)이 각각 무엇을 잰 값인가.
+
+    ★이 표가 없으면 ALL 60점과 FAB 60점을 같은 뜻으로 읽는다.
+      둘 다 0~100 이고 등급 컷도 같지만, 잰 대상이 다르다.
+    """
+    body = (
+        '<tr><td class="area">ALL</td>'
+        '<td>8개 영역 융합 <span class="th">(영역합 + 흐름 + SLA + Sorter '
+        '+ MAXCAPA)</span></td>'
+        f'<td class="n">raw &divide; {F.RAW_FULL} &times; 100</td>'
+        '<td class="n">0~100</td>'
+        f'<td><b>실제로 경보가 나는 값</b> — {warn}점부터 사건이 열립니다</td>'
+        '<td class="n"><span class="none">없음</span></td></tr>')
+    for f in fabs:
+        mx = F.max_area(f, cfg)
+        so = F.solo_ceiling(f, cfg, "typical")
+        body += (
+            f'<tr><td class="area">{e(f)}</td>'
+            f'<td>그 영역의 9개 룰 <span class="th">(임계와 대조해 켜짐/꺼짐)'
+            f'</span></td>'
+            f'<td class="n">영역점수 &times; 2</td>'
+            f'<td class="n">0~{mx["risk_max"]}</td>'
+            f'<td>그 FAB <b>자체</b> 등급 — 전체 경보와는 별개</td>'
+            f'<td class="n">{so["score"]}점</td></tr>')
+    return (f'<div class="tw"><table><thead><tr>'
+            f'<th>시스템</th><th>무엇을 보나</th><th class="n">어떻게 점수가 되나</th>'
+            f'<th class="n">나올 수 있는 범위</th><th>이 점수의 뜻</th>'
+            f'<th class="n">단독 상한</th></tr></thead>'
+            f'<tbody>{body}</tbody></table></div>')
+
+
+def all_block(cfg) -> str:
+    """ALL 만 가진 것 — 융합 5개 항, 룰별 걸린 영역 수. 실측 한 줄로 보여준다."""
+    import csv as _csv
+    path = os.path.join(BASE_DIR, "fixtures", "발동이벤트_샘플.csv")
+    if not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8-sig") as fh:
+        rs = list(_csv.DictReader(fh))
+    r = rs[0]
+    a = F.all_row(r, cfg)
+    fu = a["fuse"]
+
+    parts = [("영역점수합", fu["areas"], "8개 영역 점수 × 가중치"),
+             ("흐름", fu["flow"], "10개 흐름 노드가 30분 평균의 몇 배인가"),
+             ("SLA", fu["sla"], "SLA 가 걸린 영역 수 × 5"),
+             ("Sorter", fu["sorter"], "소터가 걸린 영역 수 × 3"),
+             ("MAXCAPA", fu["maxcapa"], "상한이 내려간 컬럼 수 × 10 × 영역수")]
+    prow = "".join(f'<div class="calc-row"><div class="lbl">{e(n)}</div>'
+                   f'<div class="exp th">{e(d)}</div>'
+                   f'<div class="val">{v:g}</div></div>' for n, v, d in parts)
+
+    rr = "".join(
+        f'<tr><td class="rule">{e(_rname(c))}<span class="rdesc">'
+        f'{e(F.RULE_BY_CODE[c]["label"])}</span></td>'
+        f'<td class="n">{F.RULE_BY_CODE[c]["pts"]}</td>'
+        f'<td class="n"><b>{a["per_rule"][c]}</b> / {len(F.fabs(cfg))}</td>'
+        f'<td class="th">{"·".join(f for f in F.fabs(cfg) if (F._num(r.get(f"{f}_pts_{c}")) or 0) > 0) or "—"}</td>'
+        f'</tr>' for c in F.RULE_ORDER)
+
+    return (
+        f'<div class="calc"><div style="font-size:12.5px;color:var(--muted);'
+        f'margin-bottom:10px">실측 한 줄 — <span class="mono">'
+        f'{e(r.get("datetime"))}</span></div>{prow}'
+        f'<div class="calc-total"><div class="lbl">raw 합계</div>'
+        f'<div class="exp mono">min(100, round({fu["raw"]:g} &times; 100 '
+        f'&divide; {F.RAW_FULL}))</div>'
+        f'<div class="val">{fu["calc"]}</div></div></div>'
+        f'<h3 class="sub-h">룰마다 몇 개 영역에서 켜졌나</h3>'
+        f'<p class="subtitle">ALL 점수가 왜 그 숫자인지는 여기서 읽힙니다. '
+        f'한 영역에서 아홉 룰이 다 켜지는 것보다, 여러 영역에서 한두 룰씩 '
+        f'켜지는 쪽이 점수를 더 올립니다.</p>'
+        f'<div class="tw"><table class="grid"><thead><tr><th>룰</th>'
+        f'<th class="n">배점</th><th class="n">걸린 영역</th>'
+        f'<th>어디에서</th></tr></thead><tbody>{rr}</tbody></table></div>'
+        f'<p class="pipe-note" style="margin-top:10px">이 한 줄에서 '
+        f'영역 {a["areas_hit"]}/{a["areas_total"]} 곳이 걸렸고, 최고구역은 '
+        f'<span class="mono">{e(a["hot_area"])}</span>, '
+        f'단계는 {e(a["stage_name"]) or "—"} 입니다.</p>')
+
+
 def solo_table(fabs, cfg, warn: int) -> str:
     """단독 상한 — 이 문서에서 가장 중요한 표. 두 시나리오를 같이 보여 준다."""
     rows = []
@@ -151,14 +233,22 @@ def scale_table(cfg, warn, danger, crit) -> str:
     """영역점수 → 위험도 → 등급 환산표."""
     from sentinel import grade
     rows = []
+    prev = None
     for a in (0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50):
         r = F.risk(a)
         g = grade(r, cfg)
         cls = {"경계": "p1", "위험": "p2", "초위험": "p3"}.get(g["level"], "p0")
-        rows.append(f'<tr><td class="n">{a}</td><td class="n"><b>{r}</b></td>'
+        # 등급이 바뀌는 줄에 선을 긋는다 — 컷이 어디인지 눈으로 찾게
+        edge = (' style="border-top:2px solid var(--g1)"'
+                if prev is not None and g["level"] != prev else "")
+        mark = (f' <span class="th">← 컷 {r}</span>'
+                if prev is not None and g["level"] != prev else "")
+        prev = g["level"]
+        rows.append(f'<tr{edge}><td class="n">{a}</td><td class="n"><b>{r}</b>{mark}</td>'
                     f'<td><span class="pill {cls}">{e(g["emoji"])} {e(g["level"])}</span></td>'
                     f'<td class="th">{e(_what(a))}</td></tr>')
-    return (f'<div class="tw"><table><thead><tr><th class="n">영역점수 (0~50)</th>'
+    return (f'<div class="tw"><table><thead><tr>'
+            f'<th class="n">영역점수 (0~{F.AREA_CAP} · 상한)</th>'
             f'<th class="n">위험도 (0~100)</th><th>FAB 자체 등급</th>'
             f'<th>대략 이런 상태</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
@@ -364,9 +454,16 @@ def build(cfg=None) -> str:
       숫자는 전부 <code class="mono">fab_score.py</code> 에서 뽑아 생성했습니다.
     </p>
     <div class="formula-strip mono">
+      <b>ALL</b> = min(100, round(raw &times; 100 &divide; {F.RAW_FULL})) &nbsp;·&nbsp;
       <b>FAB 위험도</b> = 영역점수 &times; 2 &nbsp;·&nbsp;
-      <b>영역점수</b> = min({F.AREA_CAP}, &Sigma; 켜진 룰 배점) &nbsp;·&nbsp;
-      등급 컷 {warn} / {danger} / {crit}
+      <b>영역점수</b> = min({F.AREA_CAP}, &Sigma; 켜진 룰 배점)
+    </div>
+    <div class="formula-strip mono" style="margin-top:10px;
+         background:var(--g1bg);border-color:var(--g1)">
+      <b style="color:var(--g1)">등급 컷</b> &nbsp; 경계 <b>{warn}</b> &nbsp;·&nbsp;
+      위험 <b>{danger}</b> &nbsp;·&nbsp; 초위험 <b>{crit}</b>
+      &nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">
+      ★위 식의 {F.AREA_CAP} 은 <b>영역점수 상한</b>이지 등급 컷이 아닙니다.</span>
     </div>
   </div>
 </header>
@@ -386,10 +483,48 @@ def build(cfg=None) -> str:
       (문서는 영역합 48, 여기는 상한 {F.AREA_CAP} — 그 차이만큼입니다).
       서로 다른 경로로 같은 답이 나왔습니다.</p>
     <p>경계 하한은 2026-08 에 50 → <b>{warn}</b> 으로 올라갔습니다.
-      기존 문서의 <span class="mono">50/71/85</span> 표기는 옛 값이고,
-      이 문서는 <code class="mono">config.grade</code> 의 현재 값을 읽습니다.
-      경계가 올라간 만큼 <b>단독 FAB 사각지대는 더 넓어졌습니다.</b></p>
+      경계가 올라간 만큼 <b>단독 FAB 사각지대는 더 넓어졌습니다.</b>
+      (컷과 상한을 구분하는 이야기는 바로 아래 절에 따로 적었습니다.)</p>
   </div>
+
+  <!-- 0. ALL 포함 여섯 시스템 -->
+  <section>
+    <div class="sechead"><span class="step">먼저</span><h2>관제 화면의 여섯 시스템 — 같은 자, 다른 대상</h2></div>
+    <p class="subtitle">
+      관제 화면은 <b>ALL + FAB 다섯</b> 을 고르게 되어 있습니다. 여섯 줄 모두
+      0~100 점이고 등급 컷도 같은 {warn} / {danger} / {crit} 입니다.
+      <b>그런데 잰 대상이 다릅니다.</b> 이걸 모르고 나란히 읽으면
+      "M16HUB 는 24점인데 왜 ALL 은 19점이냐" 같은 질문에서 막힙니다.
+    </p>
+    {six_rows(fabs, cfg, warn, danger, crit)}
+    <div class="note key">
+      <h4>{F.AREA_CAP} 은 등급 컷이 아닙니다 — 영역점수 상한입니다</h4>
+      <p>숫자 두 개가 붙어 다녀서 헷갈리기 쉽습니다. 갈라 두겠습니다.</p>
+      <p><b>{F.AREA_CAP}</b> — 한 영역에서 아홉 룰이 다 켜지면 합이 63 인데,
+        거기서 자르는 <b>상한</b>입니다. 한 곳이 전체를 밀어올리지 못하게
+        막는 장치입니다. 등급과 아무 상관이 없습니다.</p>
+      <p><b>{warn} / {danger} / {crit}</b> — 경계 · 위험 · 초위험이 시작되는
+        <b>등급 컷</b>입니다. 2026-08 에 경계가 50 → <b>{warn}</b> 으로
+        올라갔습니다. 기존 스코어 산출 문서의 <span class="mono">50/71/85</span>
+        표기는 <b>옛 값</b>이고, 이 문서는 <code class="mono">config.grade</code>
+        의 현재 값을 읽어 씁니다.</p>
+    </div>
+  </section>
+
+  <!-- 0-2. ALL 은 어떻게 만들어지나 -->
+  <section>
+    <div class="sechead"><span class="step">ALL</span><h2>ALL 은 영역이 아니다 — 그래서 임계도 단독 상한도 없다</h2></div>
+    <p class="subtitle">
+      뒤이어 나오는 임계값 격자·컬럼 격자에 <b>ALL 칸이 없는 이유</b>입니다.
+      ALL 은 자기 컬럼을 보고 룰을 켜는 영역이 아니라, 여덟 영역의 점수에
+      네 개 항을 더해 만든 <b>합</b>입니다. 그래서 자기 임계값이 없고,
+      '이 시스템만 걸리면 몇 점' 이라는 단독 상한도 없습니다 —
+      자기가 전체이기 때문입니다.
+    </p>
+    <p class="subtitle">대신 ALL 만 가진 것이 있습니다. 융합 다섯 항과,
+      <b>룰마다 몇 개 영역에서 켜졌는가</b> 입니다.</p>
+    {all_block(cfg)}
+  </section>
 
   <!-- 1. 임계값 격자 -->
   <section>

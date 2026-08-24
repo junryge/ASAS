@@ -364,6 +364,125 @@ class 비교_결과(unittest.TestCase):
         self.assertEqual(F._maxcapa_hits(r, "M14"), [])
 
 
+class ALL_도_비교_대상(unittest.TestCase):
+    """★ALL 을 빼먹었던 버그를 여기서 못 돌아오게 막는다.
+
+    관제 화면은 ALL + FAB 다섯을 고르게 되어 있다. 비교표에 ALL 이 없으면
+    "내가 보는 시스템이 표에 없다" 가 된다.
+    """
+
+    def test_화면의_시스템_목록과_비교표가_같다(self):
+        """dashboard.html 의 SYSTEMS 코드 목록을 그대로 읽어 맞춘다.
+        화면에만 시스템을 추가하고 비교표를 안 고치면 여기서 걸린다."""
+        import re
+        path = os.path.join(util.BASE, "static", "dashboard.html")
+        with open(path, encoding="utf-8") as f:
+            body = f.read()
+        block = re.search(r"const SYSTEMS\s*=\s*\[(.*?)\];", body, re.S)
+        self.assertTrue(block, "dashboard.html 에서 SYSTEMS 를 못 찾았다")
+        screen = re.findall(r"code:'([^']+)'", block.group(1))
+        self.assertIn("ALL", screen)
+
+        d = F.compare(rows(), None)
+        # 순서는 다르다 — FAB 은 점수 순으로 세운다(그게 비교의 목적). 다만
+        # **빠지거나 더 있으면** 안 된다.
+        self.assertEqual(set(x["fab"] for x in d["rows"]), set(screen),
+                         "화면 시스템 목록과 비교표 줄이 어긋난다")
+        self.assertEqual(len(d["rows"]), len(screen), "중복 줄이 있다")
+        self.assertEqual(d["rows"][0]["fab"], "ALL", "ALL 이 첫 줄이어야 한다")
+
+    def test_첫_줄이_ALL_이다(self):
+        d = F.compare(rows(), None)
+        self.assertTrue(d["rows"][0]["is_all"])
+        self.assertEqual(d["rows"][0]["fab"], "ALL")
+        self.assertEqual(d["rows"][0]["rank"], 0)
+        self.assertFalse(any(x["is_all"] for x in d["rows"][1:]))
+
+    def test_ALL_점수는_전체_점수_그대로다(self):
+        for r in rows():
+            a = F.all_row(r)
+            self.assertEqual(a["score"], float(r["unified_risk_score"]))
+
+    def test_ALL_에는_임계도_단독상한도_없다(self):
+        """ALL 은 영역이 아니다 — 자기 임계로 룰을 켜지 않고, 자기가 전체라
+        '단독으로 몇 점' 이라는 개념이 없다. 있는 척하면 안 된다."""
+        a = F.all_row(rows()[0])
+        self.assertNotIn("solo", a)
+        self.assertNotIn("readings", a)
+        self.assertNotIn("area", a)
+        self.assertEqual(F.watch("ALL"), {})
+
+    def test_ALL_만_가진_것이_들어있다(self):
+        a = F.all_row(rows()[0])
+        self.assertIn("fuse", a)
+        self.assertIn("per_rule", a)
+        self.assertEqual(set(a["per_rule"]), set(F.RULE_ORDER))
+        self.assertTrue(a["hot_area"])
+
+    def test_룰별_걸린_영역_수가_pts_와_맞는다(self):
+        r = rows()[0]
+        a = F.all_row(r)
+        for c in F.RULE_ORDER:
+            want = sum(1 for f in F.fabs()
+                       if (F._num(r.get(f"{f}_pts_{c}")) or 0) > 0)
+            self.assertEqual(a["per_rule"][c], want, c)
+
+    def test_여섯_줄_모두_무엇을_잰_값인지_적혀_있다(self):
+        """같은 0~100 인데 뜻이 다르다. 안 적으면 ALL 60 과 FAB 60 을
+        같은 뜻으로 읽는다."""
+        d = F.compare(rows(), None)
+        for x in d["rows"]:
+            self.assertTrue(x.get("measures"), x["fab"])
+            self.assertIn("score", x)
+            self.assertTrue(0 <= x["score"] <= 100)
+
+    def test_ALL_변화량도_데이터_없으면_None(self):
+        t = datetime(2026, 8, 20, 10, 0)
+        r = {"datetime": t.strftime("%Y-%m-%d %H:%M"), "unified_risk_score": "40"}
+        d = F.compare([r], t)
+        self.assertIsNone(d["rows"][0]["delta"])
+
+    def test_옛_이름도_그대로_남는다(self):
+        """unified 키를 쓰는 화면이 이미 있다 — 이름을 바꾸면 조용히 깨진다."""
+        d = F.compare(rows(), None)
+        self.assertEqual(d["unified"]["score"], d["all"]["score"])
+        self.assertEqual(d["unified"]["hot_area"], d["all"]["hot_area"])
+        self.assertEqual(len(d["fabs"]), 5)
+
+
+class 상한과_등급컷은_다른_숫자(unittest.TestCase):
+    """50 은 영역점수 상한, 60 은 경계 컷. 붙어 다녀서 헷갈리기 쉽다."""
+
+    def test_상한은_등급컷과_무관하다(self):
+        cfg = deepcopy(load_config())
+        warn = grade_cuts(cfg)[0]
+        self.assertNotEqual(F.AREA_CAP, warn,
+                            "우연히 같아지면 이 구분이 안 보인다")
+        # 경계 컷을 바꿔도 상한은 그대로여야 한다
+        cfg["grade"] = deepcopy(cfg["grade"])
+        cfg["grade"]["bands"] = deepcopy(cfg["grade"]["bands"])
+        cfg["grade"]["bands"][0] = dict(cfg["grade"]["bands"][0], min=50)
+        row = {f"M16HUB_pts_{c}": str(F.RULE_BY_CODE[c]["pts"])
+               for c in F.RULE_ORDER}
+        self.assertEqual(F.area_score(row, "M16HUB", cfg)["area"], F.AREA_CAP)
+
+    def test_경계는_영역점수_30_에서_시작한다(self):
+        """위험도 60 = 영역점수 30. 화면에서 '몇 점부터 경계냐' 를 물으면
+        이 환산을 대야 한다."""
+        cfg = load_config()
+        warn = grade_cuts(cfg)[0]
+        self.assertEqual(F.risk(30), warn)
+        self.assertLess(F.risk(25), warn)
+
+    def test_문서가_둘을_구분해_적는다(self):
+        import fab_score_doc as D
+        html = D.build(load_config())
+        cfg = load_config()
+        warn = grade_cuts(cfg)[0]
+        self.assertIn("등급 컷이 아닙니다", html)
+        self.assertIn(f"경계 <b>{warn}</b>", html)
+
+
 class 문서_생성(unittest.TestCase):
     def test_생성되고_핵심_숫자가_들어간다(self):
         import fab_score_doc as D

@@ -258,9 +258,16 @@ footer code{font-size:12px}
       숫자는 전부 <code class="mono">fab_score.py</code> 에서 뽑아 생성했습니다.
     </p>
     <div class="formula-strip mono">
+      <b>ALL</b> = min(100, round(raw &times; 100 &divide; 220)) &nbsp;·&nbsp;
       <b>FAB 위험도</b> = 영역점수 &times; 2 &nbsp;·&nbsp;
-      <b>영역점수</b> = min(50, &Sigma; 켜진 룰 배점) &nbsp;·&nbsp;
-      등급 컷 60 / 71 / 85
+      <b>영역점수</b> = min(50, &Sigma; 켜진 룰 배점)
+    </div>
+    <div class="formula-strip mono" style="margin-top:10px;
+         background:var(--g1bg);border-color:var(--g1)">
+      <b style="color:var(--g1)">등급 컷</b> &nbsp; 경계 <b>60</b> &nbsp;·&nbsp;
+      위험 <b>71</b> &nbsp;·&nbsp; 초위험 <b>85</b>
+      &nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">
+      ★위 식의 50 은 <b>영역점수 상한</b>이지 등급 컷이 아닙니다.</span>
     </div>
   </div>
 </header>
@@ -280,10 +287,48 @@ footer code{font-size:12px}
       (문서는 영역합 48, 여기는 상한 50 — 그 차이만큼입니다).
       서로 다른 경로로 같은 답이 나왔습니다.</p>
     <p>경계 하한은 2026-08 에 50 → <b>60</b> 으로 올라갔습니다.
-      기존 문서의 <span class="mono">50/71/85</span> 표기는 옛 값이고,
-      이 문서는 <code class="mono">config.grade</code> 의 현재 값을 읽습니다.
-      경계가 올라간 만큼 <b>단독 FAB 사각지대는 더 넓어졌습니다.</b></p>
+      경계가 올라간 만큼 <b>단독 FAB 사각지대는 더 넓어졌습니다.</b>
+      (컷과 상한을 구분하는 이야기는 바로 아래 절에 따로 적었습니다.)</p>
   </div>
+
+  <!-- 0. ALL 포함 여섯 시스템 -->
+  <section>
+    <div class="sechead"><span class="step">먼저</span><h2>관제 화면의 여섯 시스템 — 같은 자, 다른 대상</h2></div>
+    <p class="subtitle">
+      관제 화면은 <b>ALL + FAB 다섯</b> 을 고르게 되어 있습니다. 여섯 줄 모두
+      0~100 점이고 등급 컷도 같은 60 / 71 / 85 입니다.
+      <b>그런데 잰 대상이 다릅니다.</b> 이걸 모르고 나란히 읽으면
+      "M16HUB 는 24점인데 왜 ALL 은 19점이냐" 같은 질문에서 막힙니다.
+    </p>
+    <div class="tw"><table><thead><tr><th>시스템</th><th>무엇을 보나</th><th class="n">어떻게 점수가 되나</th><th class="n">나올 수 있는 범위</th><th>이 점수의 뜻</th><th class="n">단독 상한</th></tr></thead><tbody><tr><td class="area">ALL</td><td>8개 영역 융합 <span class="th">(영역합 + 흐름 + SLA + Sorter + MAXCAPA)</span></td><td class="n">raw &divide; 220 &times; 100</td><td class="n">0~100</td><td><b>실제로 경보가 나는 값</b> — 60점부터 사건이 열립니다</td><td class="n"><span class="none">없음</span></td></tr><tr><td class="area">M14</td><td>그 영역의 9개 룰 <span class="th">(임계와 대조해 켜짐/꺼짐)</span></td><td class="n">영역점수 &times; 2</td><td class="n">0~100</td><td>그 FAB <b>자체</b> 등급 — 전체 경보와는 별개</td><td class="n">45점</td></tr><tr><td class="area">M14B</td><td>그 영역의 9개 룰 <span class="th">(임계와 대조해 켜짐/꺼짐)</span></td><td class="n">영역점수 &times; 2</td><td class="n">0~80</td><td>그 FAB <b>자체</b> 등급 — 전체 경보와는 별개</td><td class="n">38점</td></tr><tr><td class="area">M16A</td><td>그 영역의 9개 룰 <span class="th">(임계와 대조해 켜짐/꺼짐)</span></td><td class="n">영역점수 &times; 2</td><td class="n">0~100</td><td>그 FAB <b>자체</b> 등급 — 전체 경보와는 별개</td><td class="n">45점</td></tr><tr><td class="area">M16B</td><td>그 영역의 9개 룰 <span class="th">(임계와 대조해 켜짐/꺼짐)</span></td><td class="n">영역점수 &times; 2</td><td class="n">0~90</td><td>그 FAB <b>자체</b> 등급 — 전체 경보와는 별개</td><td class="n">27점</td></tr><tr><td class="area">M16HUB</td><td>그 영역의 9개 룰 <span class="th">(임계와 대조해 켜짐/꺼짐)</span></td><td class="n">영역점수 &times; 2</td><td class="n">0~100</td><td>그 FAB <b>자체</b> 등급 — 전체 경보와는 별개</td><td class="n">45점</td></tr></tbody></table></div>
+    <div class="note key">
+      <h4>50 은 등급 컷이 아닙니다 — 영역점수 상한입니다</h4>
+      <p>숫자 두 개가 붙어 다녀서 헷갈리기 쉽습니다. 갈라 두겠습니다.</p>
+      <p><b>50</b> — 한 영역에서 아홉 룰이 다 켜지면 합이 63 인데,
+        거기서 자르는 <b>상한</b>입니다. 한 곳이 전체를 밀어올리지 못하게
+        막는 장치입니다. 등급과 아무 상관이 없습니다.</p>
+      <p><b>60 / 71 / 85</b> — 경계 · 위험 · 초위험이 시작되는
+        <b>등급 컷</b>입니다. 2026-08 에 경계가 50 → <b>60</b> 으로
+        올라갔습니다. 기존 스코어 산출 문서의 <span class="mono">50/71/85</span>
+        표기는 <b>옛 값</b>이고, 이 문서는 <code class="mono">config.grade</code>
+        의 현재 값을 읽어 씁니다.</p>
+    </div>
+  </section>
+
+  <!-- 0-2. ALL 은 어떻게 만들어지나 -->
+  <section>
+    <div class="sechead"><span class="step">ALL</span><h2>ALL 은 영역이 아니다 — 그래서 임계도 단독 상한도 없다</h2></div>
+    <p class="subtitle">
+      뒤이어 나오는 임계값 격자·컬럼 격자에 <b>ALL 칸이 없는 이유</b>입니다.
+      ALL 은 자기 컬럼을 보고 룰을 켜는 영역이 아니라, 여덟 영역의 점수에
+      네 개 항을 더해 만든 <b>합</b>입니다. 그래서 자기 임계값이 없고,
+      '이 시스템만 걸리면 몇 점' 이라는 단독 상한도 없습니다 —
+      자기가 전체이기 때문입니다.
+    </p>
+    <p class="subtitle">대신 ALL 만 가진 것이 있습니다. 융합 다섯 항과,
+      <b>룰마다 몇 개 영역에서 켜졌는가</b> 입니다.</p>
+    <div class="calc"><div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">실측 한 줄 — <span class="mono">2026-08-11 00:00</span></div><div class="calc-row"><div class="lbl">영역점수합</div><div class="exp th">8개 영역 점수 × 가중치</div><div class="val">55</div></div><div class="calc-row"><div class="lbl">흐름</div><div class="exp th">10개 흐름 노드가 30분 평균의 몇 배인가</div><div class="val">0</div></div><div class="calc-row"><div class="lbl">SLA</div><div class="exp th">SLA 가 걸린 영역 수 × 5</div><div class="val">2.5</div></div><div class="calc-row"><div class="lbl">Sorter</div><div class="exp th">소터가 걸린 영역 수 × 3</div><div class="val">0</div></div><div class="calc-row"><div class="lbl">MAXCAPA</div><div class="exp th">상한이 내려간 컬럼 수 × 10 × 영역수</div><div class="val">10</div></div><div class="calc-total"><div class="lbl">raw 합계</div><div class="exp mono">min(100, round(67.5 &times; 100 &divide; 220))</div><div class="val">31</div></div></div><h3 class="sub-h">룰마다 몇 개 영역에서 켜졌나</h3><p class="subtitle">ALL 점수가 왜 그 숫자인지는 여기서 읽힙니다. 한 영역에서 아홉 룰이 다 켜지는 것보다, 여러 영역에서 한두 룰씩 켜지는 쪽이 점수를 더 올립니다.</p><div class="tw"><table class="grid"><thead><tr><th>룰</th><th class="n">배점</th><th class="n">걸린 영역</th><th>어디에서</th></tr></thead><tbody><tr><td class="rule">R-A<span class="rdesc">반송·적재 시간 초과</span></td><td class="n">10</td><td class="n"><b>1</b> / 5</td><td class="th">M16HUB</td></tr><tr><td class="rule">R-A′<span class="rdesc">그 상태가 이어짐</span></td><td class="n">5</td><td class="n"><b>4</b> / 5</td><td class="th">M14·M14B·M16A·M16B</td></tr><tr><td class="rule">R-B<span class="rdesc">대기 물량 30분 증가</span></td><td class="n">10</td><td class="n"><b>0</b> / 5</td><td class="th">—</td></tr><tr><td class="rule">R-B fast<span class="rdesc">10분새 급증</span></td><td class="n">5</td><td class="n"><b>0</b> / 5</td><td class="th">—</td></tr><tr><td class="rule">R-C<span class="rdesc">리프터 역증가 · 컨베이어 쏠림</span></td><td class="n">8</td><td class="n"><b>1</b> / 5</td><td class="th">M16HUB</td></tr><tr><td class="rule">R-D<span class="rdesc">저장·설비 포화</span></td><td class="n">7</td><td class="n"><b>1</b> / 5</td><td class="th">M16HUB</td></tr><tr><td class="rule">SLA<span class="rdesc">4분 초과 반송 비율</span></td><td class="n">5</td><td class="n"><b>1</b> / 5</td><td class="th">M16B</td></tr><tr><td class="rule">SORT<span class="rdesc">소터 대기 · 이재 실패</span></td><td class="n">3</td><td class="n"><b>0</b> / 5</td><td class="th">—</td></tr><tr><td class="rule">MAXCAPA<span class="rdesc">설비 상한 하락</span></td><td class="n">10</td><td class="n"><b>1</b> / 5</td><td class="th">M16A</td></tr></tbody></table></div><p class="pipe-note" style="margin-top:10px">이 한 줄에서 영역 5/8 곳이 걸렸고, 최고구역은 <span class="mono">M16HUB</span>, 단계는 1단계 조기경보 입니다.</p>
+  </section>
 
   <!-- 1. 임계값 격자 -->
   <section>
@@ -389,7 +434,7 @@ footer code{font-size:12px}
       그래서 영역점수에 2를 곱해 <b>위험도</b>로 폈습니다. 값을 바꾸는 게 아니라
       자를 바꾸는 것이라, FAB 간 순위는 그대로입니다.
     </p>
-    <div class="tw"><table><thead><tr><th class="n">영역점수 (0~50)</th><th class="n">위험도 (0~100)</th><th>FAB 자체 등급</th><th>대략 이런 상태</th></tr></thead><tbody><tr><td class="n">0</td><td class="n"><b>0</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">켜진 룰 없음</td></tr><tr><td class="n">5</td><td class="n"><b>10</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A′ 하나</td></tr><tr><td class="n">10</td><td class="n"><b>20</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A 하나 또는 R-A′+SORT</td></tr><tr><td class="n">15</td><td class="n"><b>30</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A + R-A′</td></tr><tr><td class="n">20</td><td class="n"><b>40</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A + R-A′ + 소터·SLA</td></tr><tr><td class="n">25</td><td class="n"><b>50</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A + R-C + R-D</td></tr><tr><td class="n">30</td><td class="n"><b>60</b></td><td><span class="pill p1">🟠 경계</span></td><td class="th">R-A + R-A′ + R-C + R-D</td></tr><tr><td class="n">35</td><td class="n"><b>70</b></td><td><span class="pill p1">🟠 경계</span></td><td class="th">여기에 SLA 까지</td></tr><tr><td class="n">40</td><td class="n"><b>80</b></td><td><span class="pill p2">🔴 위험</span></td><td class="th">R-B 계열까지 합류</td></tr><tr><td class="n">45</td><td class="n"><b>90</b></td><td><span class="pill p3">⛔ 초위험</span></td><td class="th">여덟 룰 언저리</td></tr><tr><td class="n">50</td><td class="n"><b>100</b></td><td><span class="pill p3">⛔ 초위험</span></td><td class="th">상한 — 더 나빠져도 50</td></tr></tbody></table></div>
+    <div class="tw"><table><thead><tr><th class="n">영역점수 (0~50 · 상한)</th><th class="n">위험도 (0~100)</th><th>FAB 자체 등급</th><th>대략 이런 상태</th></tr></thead><tbody><tr><td class="n">0</td><td class="n"><b>0</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">켜진 룰 없음</td></tr><tr><td class="n">5</td><td class="n"><b>10</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A′ 하나</td></tr><tr><td class="n">10</td><td class="n"><b>20</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A 하나 또는 R-A′+SORT</td></tr><tr><td class="n">15</td><td class="n"><b>30</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A + R-A′</td></tr><tr><td class="n">20</td><td class="n"><b>40</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A + R-A′ + 소터·SLA</td></tr><tr><td class="n">25</td><td class="n"><b>50</b></td><td><span class="pill p0">🟢 정상</span></td><td class="th">R-A + R-C + R-D</td></tr><tr style="border-top:2px solid var(--g1)"><td class="n">30</td><td class="n"><b>60</b> <span class="th">← 컷 60</span></td><td><span class="pill p1">🟠 경계</span></td><td class="th">R-A + R-A′ + R-C + R-D</td></tr><tr><td class="n">35</td><td class="n"><b>70</b></td><td><span class="pill p1">🟠 경계</span></td><td class="th">여기에 SLA 까지</td></tr><tr style="border-top:2px solid var(--g1)"><td class="n">40</td><td class="n"><b>80</b> <span class="th">← 컷 80</span></td><td><span class="pill p2">🔴 위험</span></td><td class="th">R-B 계열까지 합류</td></tr><tr style="border-top:2px solid var(--g1)"><td class="n">45</td><td class="n"><b>90</b> <span class="th">← 컷 90</span></td><td><span class="pill p3">⛔ 초위험</span></td><td class="th">여덟 룰 언저리</td></tr><tr><td class="n">50</td><td class="n"><b>100</b></td><td><span class="pill p3">⛔ 초위험</span></td><td class="th">상한 — 더 나빠져도 50</td></tr></tbody></table></div>
     <div class="note key">
       <h4>이 등급은 그 FAB 자체 등급입니다 — 전체 등급과 같은 뜻이 아닙니다</h4>
       <p>FAB 위험도가 <b>초위험</b>인데 전체 점수는 <b>등급 없음</b>일 수 있습니다.
