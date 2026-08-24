@@ -746,5 +746,33 @@
     "port": 8585,
     "url": "",
     "_url_doc": "비워 두면 지금 보고 있는 화면의 호스트에 위 port 를 붙여 쓴다. 다른 PC 에서 돌리면 여기에 전체 주소를 적는다."
+  },
+  "fab_score": {
+    "_doc": "FAB(영역)별 위험도 스코어. 배점·상한은 예측기(hubroom_predictor.py)가 정하는 것이라 코드에 있고, 여기서는 **임계값만** 덮는다. thresholds.json 이 바뀌면 파이썬을 고치지 말고 여기를 맞춘 뒤 python fab_score_doc.py 로 문서를 다시 만들면 화면과 문서가 같이 갱신된다.",
+    "_thresholds_doc": "thresholds.{FAB}.{룰코드} = [값…] — WATCH 의 항목 순서대로 채워진다. 값을 null 로 두면 '임계 미정의' 로 표시된다 (0 과 다르다: 0 은 항상 켜짐, null 은 판정 불가). 룰코드: RA RA_sus RB RB_fast RC RD SLA SORT MAXCAPA",
+    "thresholds": {
+      "_예시": {
+        "_doc": "M14B 의 SLA 임계가 스코어 산출 문서에 없다. 확인되면 아래를 thresholds 바로 밑으로 옮기고 _예시 는 지운다.",
+        "M14B": {
+          "SLA": [
+            null
+          ]
+        }
+      }
+    },
+    "area_weight": {
+      "_doc": "thresholds.json 의 AREA_WEIGHT. 합산에만 쓰이고 hot_area·단계 판정에는 영향이 없다. 현재 M16B 만 0.5, 나머지는 1.0.",
+      "M16B": 0.5
+    },
+    "flow_nodes": {
+      "_doc": "흐름 항이 그 영역에서 보는 노드 개수. '이 FAB 단독으로 전체 몇 점까지 가나'(solo_ceiling) 계산에만 쓴다.",
+      "M16HUB": 2,
+      "M14": 2,
+      "M14B": 3,
+      "M16A": 2,
+      "M16B": 1
+    },
+    "delta_min": 30,
+    "_delta_min_doc": "FAB 비교 화면에서 '몇 분 전 대비 변화' 를 볼 때의 그 분."
   }
 }

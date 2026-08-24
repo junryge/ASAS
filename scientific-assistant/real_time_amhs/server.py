@@ -471,6 +471,82 @@ def index():
     return resp
 
 
+@app.route("/docs/fab-score")
+def doc_fab_score():
+    """FAB 별 위험도 스코어 설명 문서.
+
+    ★없으면 그 자리에서 만든다. 현장에 파일 하나 더 챙겨 가라고 하면
+      결국 아무도 안 본다. 만들기 실패해도 관제 화면은 안 죽는다.
+    """
+    import fab_score_doc
+    path = fab_score_doc.OUT
+    if not os.path.isfile(path):
+        try:
+            os.makedirs(fab_score_doc.DOC_DIR, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(fab_score_doc.build(CFG))
+        except Exception as e:
+            return (f"<h3>문서를 만들지 못했습니다</h3><pre>{type(e).__name__}: {e}"
+                    f"</pre><p>real_time_amhs 폴더에서 "
+                    f"<code>python fab_score_doc.py</code> 를 직접 돌려 보십시오.</p>"), 500
+    resp = send_from_directory(fab_score_doc.DOC_DIR, os.path.basename(path))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/fab/compare")
+def api_fab_compare():
+    """한 시각을 잡고 다섯 FAB 을 나란히 세운다.
+
+    /api/fab/compare?day=20260811&at=2026-08-11 00:02   (at 없으면 마지막 행)
+
+    ★전체(ALL) CSV 를 읽는다. FAB 분리 파일은 자기 영역 컬럼만 있어서
+      비교가 안 된다 — 화면의 ?sys= 를 따라가면 안 되는 이유다.
+    """
+    try:
+        import fab_score
+        from store_csv import list_days, read_day
+        cfg = get_ctx("ALL")["cfg"]
+        day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
+        if not day:
+            days = list_days(cfg)
+            day = days[-1]["day"] if days else datetime.now().strftime("%Y%m%d")
+        rows = read_day(day, cfg)
+        out = fab_score.compare(rows, parse_dt(request.args.get("at")), cfg)
+        out["day"] = day
+        return jsonify(out)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/fab/columns")
+def api_fab_columns():
+    """FAB 별로 '실제 보고 있는 컬럼' 정의 — 룰·AMOS 컬럼·임계·CSV 컬럼.
+
+    화면과 문서가 같은 곳을 보게 하려고 API 로도 낸다. 임계를 config 에서
+    고치면 여기·문서·비교 계산이 한꺼번에 따라간다.
+    """
+    try:
+        import fab_score
+        cfg = get_ctx("ALL")["cfg"]
+        warn, danger, crit = grade_cuts(cfg)
+        return jsonify({
+            "ok": True, "rules": fab_score.RULES,
+            "area_cap": fab_score.AREA_CAP, "raw_full": fab_score.RAW_FULL,
+            "cuts": {"warn": warn, "danger": danger, "critical": crit},
+            "fabs": {f: {"watch": fab_score.watch(f, cfg),
+                         "weight": fab_score.area_weight(f, cfg),
+                         "max_area": fab_score.max_area(f, cfg),
+                         "solo": {m: fab_score.solo_ceiling(f, cfg, m)
+                                  for m in ("typical", "max")}}
+                     for f in fab_score.fabs(cfg)},
+            "doc": "/docs/fab-score",
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/version")
 def version():
     """지금 서버가 **어느 파일**을 내보내고 있는지 — 화면이 옛날 것 같을 때
