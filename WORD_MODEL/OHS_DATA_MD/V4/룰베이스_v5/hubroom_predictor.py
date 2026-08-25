@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)
+M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 7영역)
 ======================================================
-8개 FAB 영역 통합 룰베이스 데드락 예측기.
-   대상 영역: M16HUB, M14, M14B, M16A, M16B, M16, M16_PKT, M16_WT
+7개 FAB 영역 통합 룰베이스 데드락 예측기.
+   대상 영역: M16HUB, M14, M14B, M16A, M16B, M16, M16_WT
+   ※ M16_PKT 제외 (2026-08 고객 요청 — 관련 컬럼·점수 전부 미사용)
+   ※ M16HUB.STRATE.STB.3F_STORAGE_UTIL 미사용 (2026-08 고객 요청 —
+      R-D 는 M16HUB.STRATE.ALL.FABSTORAGERATIO 만 사용)
    학습 임계값: 2026-03-24 14:39 ~ 2026-04-30 정상분포 (p95/p99) 기반
    테스트 구간 : 2026-05-01 ~ (사용자가 5월로 검증 예정)
 
@@ -17,7 +20,7 @@ M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)
         - M16A.SORTER.ABN.SORTERTRANSFERFAIL
         - M16B.SORTER.ABN.SORTERTRANSFERFAIL
    3) R-A' 컬럼명 영역별 차이 (검증완료):
-        - M16HUB / M14B / M16_PKT / M16_WT  →  QUE.TIME.AVGTOTALTIME1MIN
+        - M16HUB / M14B / M16_WT            →  QUE.TIME.AVGTOTALTIME1MIN
         - M14   / M16A  / M16B              →  QUE.LOAD.AVGLOADTIME1MIN
    4) 계획서 269컬럼 vs 실제 수집 265컬럼 차이는 폐기 19 / 추가 4(AOTRANSDELAY) /
       추가 11(v3 collector 호환) — 본 예측기는 실제 수집 컬럼만 사용.
@@ -114,7 +117,8 @@ MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 60)
 # ============================================================
 TH_RA = _TD('TH_RA', {
     'M16HUB':  9.0, 'M14':     3.3, 'M14B':    5.0,
-    'M16A':    3.2, 'M16B':    3.5, 'M16_PKT': 7.5, 'M16_WT':  2.8,
+    'M16A':    3.2, 'M16B':    3.5, 'M16_WT':  2.8,
+    # M16_PKT 제외 (2026-08 고객 요청) — 룰베이스에서 M16_PKT 영역 전체 미사용
 })
 TH_RA_SUSTAINED_RATIO = _T('TH_RA_SUSTAINED_RATIO', 0.67)
 TH_RA_SUSTAINED_COUNT = _T('TH_RA_SUSTAINED_COUNT', 3)
@@ -128,7 +132,8 @@ TH_RB_10 = _TD('TH_RB_10', {k: max(10, int(v * 0.3)) for k, v in TH_RB_30.items(
 
 TH_RC_REVERSE = _T('TH_RC_REVERSE', 2)
 TH_RD_FABSTORAGE = _T('TH_RD_FABSTORAGE', 25.0)
-TH_RD_HUB_STB_UTIL = _T('TH_RD_HUB_STB_UTIL', 99.0)
+# TH_RD_HUB_STB_UTIL 제거 (2026-08 고객 요청) — R-D 는 FABSTORAGERATIO 만 사용,
+#   M16HUB.STRATE.STB.3F_STORAGE_UTIL 은 룰베이스에서 사용하지 않는다.
 TH_RD_OHT_UTIL = _T('TH_RD_OHT_UTIL', 95.0)
 
 # ★ v5 신규 룰 임계
@@ -203,7 +208,6 @@ RA_COL = {
     'M14B':    'M14B.QUE.TIME.AVGTOTALTIME1MIN',
     'M16A':    'M16A.QUE.LOAD.AVGLOADTIME1MIN',
     'M16B':    'M16B.QUE.LOAD.AVGLOADTIME1MIN',
-    'M16_PKT': 'M16_PKT.QUE.TIME.AVGTOTALTIME1MIN',
     'M16_WT':  'M16_WT.QUE.TIME.AVGTOTALTIME1MIN',
 }
 RB_COL = {
@@ -324,7 +328,7 @@ def iter_unified_rows(filepath):
                         'sla_ratio': safe_float(g(SLA_COL['M16HUB'])),
                         'sla_cnt': safe_int(g('M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT')),
                         'sorter': safe_int(g(SORTER_COL['M16HUB'])),
-                        'hub_stb_util': safe_float(g('M16HUB.STRATE.STB.3F_STORAGE_UTIL')),
+                        # STB.3F_STORAGE_UTIL 은 사용하지 않음 (2026-08 고객 요청 — R-D 는 FABSTORAGERATIO 만)
                         'oht_qcnt': safe_int(g('M16HUB.QUE.OHT.CURRENTOHTQCNT')),
                         'oht_alarm': safe_int(g('M16HUB.OHT.ALERT.OHTMCPALARMCNT')),
                         'aotransdelay': safe_int(g('M16HUB.QUE.ABN.AOTRANSDELAY')),
@@ -419,11 +423,7 @@ def iter_unified_rows(filepath):
                         'sfab_ret': safe_int(g('M16.QUE.SFAB.RETURNQUEUETOTAL')),
                     }
 
-                    d['M16_PKT'] = {
-                        'ra': safe_float(g(RA_COL['M16_PKT'])),
-                        'rd_oht': safe_float(g('M16_PKT.QUE.OHT.OHTUTIL')),
-                        'aotransdelay': safe_int(g('M16_PKT.QUE.ABN.AOTRANSDELAY')),
-                    }
+                    # M16_PKT 는 로딩하지 않음 (2026-08 고객 요청 — 영역 전체 제외)
 
                     d['M16_WT'] = {
                         'ra': safe_float(g(RA_COL['M16_WT'])),
@@ -510,8 +510,6 @@ def eval_area_rules(area, window):
     if area == 'M16HUB':
         out['rd_fab'] = latest.get('rd_fab') or 0
         out['rd_oht'] = latest.get('rd_oht') or 0
-        stb = latest.get('hub_stb_util') or 0
-        out['hub_stb_util'] = stb
         # ★ v5 신규 — R-MLUD: MLUD 잡 누적 (메신저 "MLUD 정체" 패턴)
         mlud_job = latest.get('mlud_job') or 0
         mlud_manual = latest.get('mlud_manual') or 0
@@ -524,9 +522,9 @@ def eval_area_rules(area, window):
         cnv_ratio = (cnv_cur / cnv_capa) if cnv_capa > 0 else 0
         out['cnv_ratio'] = cnv_ratio
         out['cnv_full_trig'] = cnv_ratio >= TH_CNV_FULL_RATIO
-        # R-D 통합 트리거 — 기존 FAB/STB + 신규 MLUD/CNV (R-D 우산 아래로)
+        # R-D 통합 트리거 — FAB저장률 + 신규 MLUD/CNV (R-D 우산 아래로)
+        #   ※ STB(3F_STORAGE_UTIL) 항은 제거됨 (2026-08 고객 요청 — FABSTORAGERATIO 만 사용)
         out['rd_trig'] = ((out['rd_fab'] >= TH_RD_FABSTORAGE)
-                          or (stb >= TH_RD_HUB_STB_UTIL)
                           or out['mlud_trig']
                           or out['cnv_full_trig'])
     elif area in RD_OHT_COL:
@@ -767,7 +765,6 @@ def _predict_fault_type(ctx):
         if r.get('rc_trig') and (r.get('rev_count', 0) or 0) >= 4: return 'HUB-리프터역증가'
         if r.get('rd_trig'):
             if (r.get('rd_fab', 0) or 0) >= TH_RD_FABSTORAGE: return 'HUB-FAB정체'
-            if (r.get('hub_stb_util', 0) or 0) >= TH_RD_HUB_STB_UTIL: return 'HUB-STB정체'
         if r.get('rb_trig'):         return 'HUB-큐누적'
         if r.get('ra_trig'):         return 'HUB-반송지연'
         return 'HUB-신호'
@@ -890,7 +887,7 @@ class IncidentTracker:
                 continue
             am = c['area_max'].setdefault(area, {})
             for k in ('ra_value', 'rb_diff_30', 'rev_count',
-                      'rd_fab', 'rd_oht', 'hub_stb_util',
+                      'rd_fab', 'rd_oht',
                       'sla_ratio', 'sla_cnt', 'sorter_val'):
                 v = r.get(k)
                 if v is None:
@@ -980,12 +977,12 @@ EVENT_FIELDS = [
     'affected_areas', 'propagation_chain',
     'flow_signals', 'maxcapa_signals',
     'M16HUB_score', 'M14_score', 'M14B_score', 'M16A_score', 'M16B_score',
-    'M16_score', 'M16_PKT_score', 'M16_WT_score',
+    'M16_score', 'M16_WT_score',
     'M16HUB_signals', 'M14_signals', 'M14B_signals', 'M16A_signals', 'M16B_signals',
     'M16HUB_ra', 'M14_ra', 'M14B_ra', 'M16A_ra', 'M16B_ra',
     'M16HUB_rb_diff30', 'M14_rb_diff30', 'M14B_rb_diff30', 'M16A_rb_diff30',
     'M16B_rb_diff30',                            # ★ A 보강: 대칭 복구
-    'M16HUB_rd_fab', 'M16HUB_stb_util',
+    'M16HUB_rd_fab',
     'M16HUB_rev_count', 'M16HUB_rev_lids',
     'sla_M14', 'sla_M14B', 'sla_M16A', 'sla_M16B', 'sla_M16HUB',  # ★ A 보강: sla_M14B
     'sorter_M14', 'sorter_M14B', 'sorter_M16A', 'sorter_M16B',
@@ -1158,7 +1155,7 @@ def _build_reason(ctx):
                 sub.append("R-C'(CNV쏠림)")
         if r.get('rd_trig'):
             if area == 'M16HUB':
-                sub.append(f"R-D(FAB저장={r.get('rd_fab', 0):.1f}%,STB={r.get('hub_stb_util', 0):.1f}%)")
+                sub.append(f"R-D(FAB저장={r.get('rd_fab', 0):.1f}%)")
             else:
                 sub.append(f"R-D(OHT={r.get('rd_oht', 0):.1f}%)")
         if r.get('sla_trig'):
@@ -1204,7 +1201,7 @@ def event_to_row(ev, file_name):
         A('M16HUB', 'area_score', 0), A('M14', 'area_score', 0),
         A('M14B', 'area_score', 0), A('M16A', 'area_score', 0),
         A('M16B', 'area_score', 0), A('M16', 'area_score', 0),
-        A('M16_PKT', 'area_score', 0), A('M16_WT', 'area_score', 0),
+        A('M16_WT', 'area_score', 0),
         '+'.join(A('M16HUB', 'area_signals', []) or []),
         '+'.join(A('M14', 'area_signals', []) or []),
         '+'.join(A('M14B', 'area_signals', []) or []),
@@ -1216,7 +1213,7 @@ def event_to_row(ev, file_name):
         A('M16HUB', 'rb_diff_30', 0), A('M14', 'rb_diff_30', 0),
         A('M14B', 'rb_diff_30', 0), A('M16A', 'rb_diff_30', 0),
         A('M16B', 'rb_diff_30', 0),                                  # ★ A 보강
-        _fmt(A('M16HUB', 'rd_fab')), _fmt(A('M16HUB', 'hub_stb_util')),
+        _fmt(A('M16HUB', 'rd_fab')),
         A('M16HUB', 'rev_count', 0), ','.join(A('M16HUB', 'rev_lids', []) or []),
         _fmt(A('M14', 'sla_ratio')), _fmt(A('M14B', 'sla_ratio')),   # ★ A 보강: M14B
         _fmt(A('M16A', 'sla_ratio')), _fmt(A('M16B', 'sla_ratio')),
@@ -1281,8 +1278,6 @@ def _predict_fault_type_from_incident(c):
         if rev >= TH_RC_REVERSE:                        return 'HUB-리프터역증가'
         fab = am.get('rd_fab', 0) or 0
         if fab >= TH_RD_FABSTORAGE:                     return 'HUB-FAB정체'
-        stb = am.get('hub_stb_util', 0) or 0
-        if stb >= TH_RD_HUB_STB_UTIL:                   return 'HUB-STB정체'
         rb = am.get('rb_diff_30', 0) or 0
         if rb >= TH_RB_30.get('M16HUB', 100):           return 'HUB-큐누적'
         ra = am.get('ra_value', 0) or 0
@@ -1303,7 +1298,7 @@ def incident_to_row(c, file_name):
 
     # 영역별 발동 룰
     tr_parts = []
-    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_PKT', 'M16_WT']:
+    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_WT']:
         rules = c.get('triggered_rules', {}).get(area)
         if rules:
             tr_parts.append(f"{area}:{'+'.join(sorted(rules))}")
@@ -1312,7 +1307,7 @@ def incident_to_row(c, file_name):
     # 핵심 위험요인 (영역별 max값 / 임계값 비교)
     rf_parts = []
     rel_parts = []
-    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16_PKT', 'M16_WT']:
+    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16_WT']:
         am = c.get('area_max', {}).get(area)
         if not am:
             continue
@@ -1335,10 +1330,6 @@ def incident_to_row(c, file_name):
             if rdf >= TH_RD_FABSTORAGE:
                 rf_parts.append(f"M16HUB.FABSTORAGERATIO={rdf:.1f}%(>={TH_RD_FABSTORAGE}%)")
                 rel_parts.append(f"[M16HUB R-D] FABSTORAGERATIO={rdf:.1f}% (기준 {TH_RD_FABSTORAGE}%)")
-            stb = am.get('hub_stb_util') or 0
-            if stb >= TH_RD_HUB_STB_UTIL:
-                rf_parts.append(f"M16HUB.STB_STORAGE_UTIL={stb:.1f}%(>={TH_RD_HUB_STB_UTIL}%)")
-                rel_parts.append(f"[M16HUB R-D] STB.3F_STORAGE_UTIL={stb:.1f}% (기준 {TH_RD_HUB_STB_UTIL}%)")
         else:
             oht = am.get('rd_oht') or 0
             if oht >= TH_RD_OHT_UTIL:
@@ -1447,7 +1438,8 @@ def append_incident_row(out_dir, incident, file_name):
 # ============================================================
 # Predictor
 # ============================================================
-AREAS_ALL = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_PKT', 'M16_WT']
+# M16_PKT 제외 (2026-08 고객 요청) — 8영역 → 7영역
+AREAS_ALL = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_WT']
 
 
 

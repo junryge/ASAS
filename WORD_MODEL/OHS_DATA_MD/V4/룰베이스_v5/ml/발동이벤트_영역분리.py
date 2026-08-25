@@ -30,7 +30,7 @@
 # 옵션
 #   -o, --out          출력 폴더 (기본: 입력 파일과 같은 폴더)
 #   --areas            나눌 영역 (기본: M16HUB,M14,M14B,M16A,M16B)
-#   --all-areas        M16 / M16_PKT / M16_WT 도 포함 (score 한 칸뿐)
+#   --all-areas        M16 / M16_WT 도 포함 (score 한 칸뿐)
 #   --score            영역 점수(0~100)와 등급 컬럼 추가
 #   --score-config     분모 파일 경로 (기본: 스크립트 옆 영역등급.json)
 #   --summary          영역별 raw 분포와 임계별 비율 출력 (임계 다시 잡을 때)
@@ -65,7 +65,8 @@ from datetime import datetime
 csv.field_size_limit(10 ** 7)
 
 DEFAULT_AREAS = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B']
-EXTRA_AREAS = ['M16', 'M16_PKT', 'M16_WT']
+# M16_PKT 제외 (2026-08 고객 요청) — 예측기에서 영역 자체가 빠져 컬럼도 더는 없다
+EXTRA_AREAS = ['M16', 'M16_WT']
 # 긴 이름을 먼저 봐야 M16B_ 가 M16_ 로 잘못 잡히지 않는다
 ALL_AREAS = sorted(DEFAULT_AREAS + EXTRA_AREAS, key=len, reverse=True)
 
@@ -329,7 +330,7 @@ def main():
     ap.add_argument('inputs', nargs='+', help='발동이벤트 CSV (여러 개·와일드카드 가능)')
     ap.add_argument('-o', '--out', default=None, help='출력 폴더 (기본: 입력과 같은 폴더)')
     ap.add_argument('--areas', default=None, help='나눌 영역 (쉼표 구분)')
-    ap.add_argument('--all-areas', action='store_true', help='M16/M16_PKT/M16_WT 도 포함')
+    ap.add_argument('--all-areas', action='store_true', help='M16/M16_WT 도 포함')
     ap.add_argument('--score', action='store_true', help='영역 점수(0~100)·등급 컬럼 추가')
     ap.add_argument('--score-config', default=None, help='분모 파일 경로')
     ap.add_argument('--summary', action='store_true', help='raw 분포·임계별 비율 출력')
