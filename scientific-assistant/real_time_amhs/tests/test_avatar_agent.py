@@ -1462,6 +1462,20 @@ class 노벨_대사창(unittest.TestCase):
         self.assertIn("M16HUB · 9.0 · AVGTOTALTIME1MIN", out)
         self.assertNotIn("|", out)
 
+    def test_대사창이_캐릭터를_안_가린다(self):
+        """배경을 진하게 깔면 노벨이 아니라 검은 띠가 된다 — 반투명으로."""
+        i = self.css.index("#vn{position:absolute")
+        blk = self.css[i:self.css.index("}", i)]
+        alphas = [float(a) for a in
+                  re.findall(r"rgba\(10, ?14, ?21, ?([\d.]+)\)", blk)]
+        self.assertTrue(alphas, "대사창 배경을 못 찾았다")
+        self.assertLessEqual(max(alphas), 0.6,
+                             "대사창이 너무 진해 캐릭터를 가린다")
+        # 대신 글자는 읽혀야 한다
+        j = self.css.index("#vnText{")
+        tblk = self.css[j:self.css.index("}", j)]
+        self.assertIn("text-shadow", tblk, "반투명 위에서 글자가 안 읽힌다")
+
     def test_화면에_대사창이_있다(self):
         for i in ('id="vn"', 'id="vnName"', 'id="vnText"', 'id="vnPage"',
                   'id="vnPrev"', 'id="vnNext"', 'id="vnClose"'):
@@ -1490,9 +1504,30 @@ class 노벨_대사창(unittest.TestCase):
     def test_옛_설정에서는_꺼_뒀던_것만_존중한다(self):
         """★bubble:true 는 '말풍선을 고른 것' 이 아니라 옛 기본값이다.
         그걸 말풍선 모드로 읽어서 기존 사용자가 대사창을 영영 못 봤다."""
-        self.assertIn("if(o.ui.bubble === false) sayMode = 'off';", self.js)
+        self.assertIn(
+            "if(o.ui.sayMode === undefined && o.ui.bubble === false) sayMode = 'off';",
+            self.js)
         self.assertNotIn("o.ui.bubble ? 'bubble' : 'off'", self.js,
                          "옛 기본값을 '말풍선 선택' 으로 읽으면 노벨이 안 뜬다")
+
+    def test_bubble_은_대사를_켰나_라는_뜻으로_저장한다(self):
+        """★여기에 bubbleOn(=말풍선 모드인가)을 넣으면 노벨일 때 false 가
+        저장되고, 다음에 열 때 그게 '대사 끔' 으로 읽혀 노벨이 사라진다.
+        (칩으로 고른 값이 새로고침하면 '끔' 이 되던 실제 증상)"""
+        self.assertIn("bubble: sayMode !== 'off',", self.js)
+        self.assertNotIn("bubble:bubbleOn", self.js)
+
+    def test_자동_저장된_방식은_안_따른다(self):
+        """★옛 버전이 자동으로 써 넣은 sayMode 를 따르면 새 기본값(노벨)이
+        영영 안 뜬다 — PC 마다 칩을 손으로 눌러야 했다."""
+        self.assertIn("o.ui.sayModeSet && o.ui.sayMode", self.js)
+        self.assertIn("sayMode = o.ui.sayMode; sayModeSet = true;", self.js,
+                      "직접 고른 방식을 읽기만 하고 적용하지 않는다")
+        self.assertIn("sayModeSet:sayModeSet", self.js)
+        blk = self.js[self.js.index("$('#bubbleChip').onclick"):]
+        blk = blk[:blk.index("\n};")]
+        self.assertIn("sayModeSet = true", blk,
+                      "칩으로 고른 것을 '직접 고름' 으로 표시하지 않는다")
 
     def test_넘기기_규칙이_노벨답다(self):
         blk = self.js[self.js.index("function vnAdvance("):]
@@ -1530,6 +1565,32 @@ class 알람_패널_위치(unittest.TestCase):
         self.assertIn("#alarmBox.on{opacity:1", self.css,
                       "경계 이상인데도 흐리면 알람 노릇을 못 한다")
         self.assertIn("#alarmBox:hover{opacity:1", self.css)
+
+    def test_대사창보다_위에_있다(self):
+        """★알람이 대사창에 덮여 안 보이면 알람이 아니다. 옮겨 놓은 패널을
+        다시 못 잡던 문제도 여기서 났다."""
+        box = int(re.search(r"#alarmBox\{position:absolute[^}]*z-index:(\d+)",
+                            self.css).group(1))
+        vn = int(re.search(r"#vn\{position:absolute[^}]*z-index:(\d+)",
+                           self.css).group(1))
+        self.assertGreater(box, vn)
+
+    def test_끌어서_옮길_수_있다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("(function initAlarmDrag(){"):]
+        blk = blk[:blk.index("\nfunction applyAlarmPos(")]
+        self.assertIn("head.addEventListener('mousedown'", blk)
+        self.assertIn("touchstart", blk, "터치로는 못 옮긴다")
+        self.assertIn("dblclick", blk, "잘못 옮겼을 때 되돌릴 길이 없다")
+        self.assertIn("saveSettings()", blk, "놓은 자리를 안 기억한다")
+        # 화면 밖으로 나가면 되찾을 방법이 없다
+        self.assertIn("Math.max(4, Math.min(l,", blk)
+        self.assertIn("Math.max(4, Math.min(t,", blk)
+        self.assertIn("cursor:grab", self.css)
+        # 자리는 설정에 저장되고 다시 읽힌다
+        self.assertIn("alarmPos:alarmPos", js)
+        self.assertIn("o.ui.alarmPos", js)
 
     def test_소형창에서_서랍_버튼과_안_겹친다(self):
         m = re.search(r"body\.mini #alarmBox\{right:(\d+)px", self.css)

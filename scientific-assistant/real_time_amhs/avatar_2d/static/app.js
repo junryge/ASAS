@@ -529,6 +529,8 @@ let emotion='neutral', intensity=0.85, manual=false;
 const SAY_MODES = ['novel', 'bubble', 'off'];
 const SAY_LABEL = {novel:'노벨', bubble:'말풍선', off:'대사 끔'};
 let sayMode='novel';    // novel|bubble|off
+let sayModeSet=false;   // 사용자가 칩을 눌러 직접 골랐나 (자동 저장과 구분)
+let alarmPos=null;      // FAB 알람 패널을 옮겨 둔 자리 {l,t} (null = 기본 우상단)
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
 let hudOpen=true;       // 좌측 패널 펼침 여부
@@ -1057,7 +1059,12 @@ function collectSettings(withKey){
   o.cfgs=COSTUMES.map(c=>c.cfg);
   o.ui={ sayH:$('#say').style.height||'',
          sideW:$('#side').style.width||'', chatH:$('#chatPane').style.height||'',
-         enterSend:$('#enterSend').checked, bubble:bubbleOn, sayMode:sayMode, patch:patchOn,
+         enterSend:$('#enterSend').checked,
+         /* ★bubble 은 '대사를 켰나' 라는 옛 뜻 그대로 저장한다.
+            bubbleOn(=말풍선 모드인가) 을 넣으면 노벨일 때 false 가 저장되고,
+            다음에 열 때 그게 '대사 끔' 으로 읽혀 노벨이 사라진다. */
+         bubble: sayMode !== 'off',
+         sayMode:sayMode, sayModeSet:sayModeSet, alarmPos:alarmPos, patch:patchOn,
          stream:$('#streamOn').checked, hud:hudOpen, ctx:ctxOpen, ctxLimit:ctxLimit,
          eye:eyeFollow, badge:badgeOn, autoScene:autoScene,
          personaBackup:personaBackup, costume:costumeIdx, bg:bgIdx };
@@ -1094,12 +1101,17 @@ function applySettings(o, live){
     if(o.ui.hud!==undefined){ hudOpen=o.ui.hud;
       const hb=$('#hudBody'), ht=$('#hudToggle');
       if(hb){ hb.classList.toggle('hide', !hudOpen); ht.textContent = hudOpen?'☰':'⊞'; } }
-    /* 옛 설정에서 넘어올 때 — **꺼 뒀던 것만** 존중한다.
-       ★bubble:true 는 '말풍선을 고른 것' 이 아니라 그냥 옛 기본값이다.
-         그걸 말풍선 모드로 읽으면 기존 사용자는 노벨 대사창을 영영 못 본다
-         (실제로 그랬다). 껐던 사람만 그대로 꺼 둔다. */
-    if(o.ui.bubble === false) sayMode = 'off';
-    if(o.ui.sayMode && SAY_MODES.indexOf(o.ui.sayMode)>=0) sayMode = o.ui.sayMode;
+    /* 옛 설정(sayMode 가 아예 없던 시절)에서 넘어올 때만 본다.
+       ★bubble:true 는 '말풍선을 고른 것' 이 아니라 그냥 옛 기본값이므로
+         말풍선 모드로 읽으면 안 된다 — 껐던 사람만 그대로 꺼 둔다. */
+    if(o.ui.sayMode === undefined && o.ui.bubble === false) sayMode = 'off';
+    /* ★사용자가 **직접 고른** 것만 존중한다. 표시가 없는 sayMode 는
+       옛 버전이 자동으로 써 넣은 값이라, 그걸 따르면 새 기본값(노벨)이
+       영영 안 뜬다 — PC 마다 칩을 손으로 눌러야 했다 (실제 증상). */
+    if(o.ui.sayModeSet && o.ui.sayMode && SAY_MODES.indexOf(o.ui.sayMode)>=0){
+      sayMode = o.ui.sayMode; sayModeSet = true;
+    }
+    if(o.ui.alarmPos!==undefined){ alarmPos=o.ui.alarmPos; applyAlarmPos(); }
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
@@ -1487,6 +1499,69 @@ function clearAlarm(){
   $('#alarmTest').onclick = ()=>{ if(alarm) clearAlarm(); fireAlarm(); };
   $('#alarmClear').onclick = ()=> clearAlarm();
 })();
+
+/* ---------- FAB 알람 패널 옮기기 ----------
+   위로 올려 놨지만 화면 구성은 사람마다 다르다 — 가리는 자리면 직접 치울 수
+   있어야 한다. 제목줄을 잡고 끌면 움직이고, 놓은 자리는 기억한다.
+   화면 밖으로는 못 나간다(놓친 패널을 되찾을 방법이 없다). */
+(function initAlarmDrag(){
+  const box=$('#alarmBox'), head=$('#alarmHead'), wrap=$('#stageWrap');
+  if(!box || !head || !wrap) return;
+  let dx=0, dy=0, on=false;
+
+  function place(l, t){
+    const w=wrap.getBoundingClientRect(), b=box.getBoundingClientRect();
+    l = Math.max(4, Math.min(l, w.width  - b.width  - 4));
+    t = Math.max(4, Math.min(t, w.height - b.height - 4));
+    box.style.left=l+'px'; box.style.top=t+'px';
+    box.style.right='auto'; box.style.bottom='auto';
+    return {l, t};
+  }
+  function down(e){
+    if(e.button!==undefined && e.button!==0) return;
+    const b=box.getBoundingClientRect(), w=wrap.getBoundingClientRect();
+    dx = e.clientX - b.left; dy = e.clientY - b.top;
+    place(b.left - w.left, b.top - w.top);       // right/top 기준을 left/top 으로
+    on=true; box.classList.add('dragging');
+    e.preventDefault();
+  }
+  function move(e){
+    if(!on) return;
+    const w=wrap.getBoundingClientRect();
+    place(e.clientX - w.left - dx, e.clientY - w.top - dy);
+  }
+  function up(){
+    if(!on) return;
+    on=false; box.classList.remove('dragging');
+    alarmPos = {l:box.style.left, t:box.style.top};
+    saveSettings();                               // 놓은 자리를 기억한다
+  }
+  head.addEventListener('mousedown', down);
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+  /* 터치도 같은 길로 */
+  head.addEventListener('touchstart', e=>{ if(e.touches[0]) down(e.touches[0]); }, {passive:false});
+  window.addEventListener('touchmove', e=>{ if(on && e.touches[0]) move(e.touches[0]); }, {passive:true});
+  window.addEventListener('touchend', up);
+  /* 두 번 누르면 원래 자리(우상단)로 — 잘못 옮겼을 때 되돌릴 길 */
+  head.addEventListener('dblclick', ()=>{
+    box.style.left=''; box.style.top=''; box.style.right=''; box.style.bottom='';
+    alarmPos=null; saveSettings();
+    sys('FAB 알람 패널을 제자리로 돌렸습니다.');
+  });
+  window.addEventListener('resize', ()=>{
+    if(!alarmPos) return;
+    place(parseFloat(box.style.left)||0, parseFloat(box.style.top)||0);
+  });
+  applyAlarmPos();
+})();
+
+function applyAlarmPos(){
+  const box=$('#alarmBox');
+  if(!box || !alarmPos) return;
+  box.style.left=alarmPos.l; box.style.top=alarmPos.t;
+  box.style.right='auto'; box.style.bottom='auto';
+}
 
 /* ---------- 미니 모드 (소형 하단 위젯) ----------
    패널·HUD 를 숨기고 캐릭터+말풍선+알람+입력창만 남긴다.
@@ -2053,6 +2128,7 @@ function applySayMode(){
 }
 $('#bubbleChip').onclick=()=>{
   sayMode = SAY_MODES[(SAY_MODES.indexOf(sayMode)+1) % SAY_MODES.length];
+  sayModeSet = true;                       // 이제부터는 이 선택을 지킨다
   applySayMode();
   saveSettings();
 };
