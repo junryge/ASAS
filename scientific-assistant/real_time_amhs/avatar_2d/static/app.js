@@ -1094,8 +1094,11 @@ function applySettings(o, live){
     if(o.ui.hud!==undefined){ hudOpen=o.ui.hud;
       const hb=$('#hudBody'), ht=$('#hudToggle');
       if(hb){ hb.classList.toggle('hide', !hudOpen); ht.textContent = hudOpen?'☰':'⊞'; } }
-    /* 옛 설정(bubble: true/false)도 읽는다 — 켜 뒀으면 말풍선, 껐으면 끔 */
-    if(o.ui.bubble!==undefined) sayMode = o.ui.bubble ? 'bubble' : 'off';
+    /* 옛 설정에서 넘어올 때 — **꺼 뒀던 것만** 존중한다.
+       ★bubble:true 는 '말풍선을 고른 것' 이 아니라 그냥 옛 기본값이다.
+         그걸 말풍선 모드로 읽으면 기존 사용자는 노벨 대사창을 영영 못 본다
+         (실제로 그랬다). 껐던 사람만 그대로 꺼 둔다. */
+    if(o.ui.bubble === false) sayMode = 'off';
     if(o.ui.sayMode && SAY_MODES.indexOf(o.ui.sayMode)>=0) sayMode = o.ui.sayMode;
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }

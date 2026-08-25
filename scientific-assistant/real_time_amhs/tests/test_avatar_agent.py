@@ -1487,9 +1487,12 @@ class 노벨_대사창(unittest.TestCase):
         self.assertIn("sayMode:sayMode", self.js)
         self.assertIn("o.ui.sayMode", self.js, "저장한 방식을 다시 안 읽는다")
 
-    def test_옛_설정도_읽는다(self):
-        """예전에 말풍선을 꺼 뒀던 사람이 갑자기 대사창을 맞으면 안 된다."""
-        self.assertIn("o.ui.bubble ? 'bubble' : 'off'", self.js)
+    def test_옛_설정에서는_꺼_뒀던_것만_존중한다(self):
+        """★bubble:true 는 '말풍선을 고른 것' 이 아니라 옛 기본값이다.
+        그걸 말풍선 모드로 읽어서 기존 사용자가 대사창을 영영 못 봤다."""
+        self.assertIn("if(o.ui.bubble === false) sayMode = 'off';", self.js)
+        self.assertNotIn("o.ui.bubble ? 'bubble' : 'off'", self.js,
+                         "옛 기본값을 '말풍선 선택' 으로 읽으면 노벨이 안 뜬다")
 
     def test_넘기기_규칙이_노벨답다(self):
         blk = self.js[self.js.index("function vnAdvance("):]
