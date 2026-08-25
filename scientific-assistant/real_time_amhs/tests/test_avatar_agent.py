@@ -2895,17 +2895,13 @@ class 분석_답이_루프를_탄다(unittest.TestCase):
             cls.src = f.read()
 
     def _blk(self):
-        i = self.src.index("def _analysis_loop(")
+        i = self.src.index("def _analysis_checks(")   # 검사 묶음 + 루프 본체
         return self.src[i:self.src.index("    def _guard(", i)]
 
     def test_무엇을_보는지(self):
         b = self._blk()
         for must in ("기간", "등급 분포", "최고점"):
             self.assertIn(must, b, must)
-
-    def test_첨부가_없으면_안_돈다(self):
-        b = self._blk()
-        self.assertIn("if not aname or not isinstance(reply, dict):", b)
 
     def test_잡담에는_안_돈다(self):
         """모든 대답을 두 번 부르면 느리고 비싸다."""
@@ -2929,6 +2925,196 @@ class 분석_답이_루프를_탄다(unittest.TestCase):
         i = self.src.index("reply = self._analysis_loop(")
         j = self.src.index("reply = self._guard(reply, ev)", i)
         self.assertLess(i, j)
+
+
+class 루프가_실제로_도는가(_Sentinel):
+    """★말로만 '루프가 있다' 면 안 된다 — **평소 경로**에서 도는지 본다.
+
+    실제 사고: 루프를 비스트리밍 분기에만 달아 놨는데, 브라우저는
+    스트리밍이 기본으로 켜져 있다. 그래서 한 번도 안 돌았다.
+    여기서는 가짜 게이트웨이로 /api/chat 을 그대로 태워서
+    '두 번째 호출이 있었나 · 화면에 나가는 최종본이 고친 답인가' 를 본다.
+    """
+
+    CSV = ("datetime,unified_risk_score,hot_area\n"
+           "2026-08-24 00:00,30,M16HUB\n"
+           "2026-08-24 00:01,88,M16HUB\n"
+           "2026-08-24 00:02,40,M16HUB\n")
+
+    # 검사에 걸리는 답 (기간·행·등급·최고점이 없다)
+    POOR = {"text": "그냥 좀 높았어요.", "emotion": "neutral",
+            "intensity": 0.5, "motion": "none"}
+    # 다시 쓴 답 — 숫자는 근거에 있는 것만 (88) + 0~10 작은 정수
+    GOOD = {"text": ("00:00~00:02 기간, 3행(3분)입니다. 정상 2분 · 경계 0분 · "
+                     "위험 0분 · 초위험 1분, 최고점은 88점(00:01)."),
+            "emotion": "neutral", "intensity": 0.5, "motion": "none"}
+
+    class _GW:
+        """chat_stream 은 첫 답을, chat(재시도)은 고친 답을 준다."""
+
+        def __init__(self, first, second):
+            self.first, self.second, self.calls = first, second, 0
+
+        def chat(self, model, temp, msgs):
+            self.calls += 1
+            return self.second, ""
+
+        def chat_stream(self, model, temp, msgs):
+            yield ("emo", {"emotion": "neutral"})
+            yield ("final", self.first)
+
+    def setUp(self):
+        super().setUp()
+        from avatar import server as asrv
+        self.asrv = asrv
+        self._saved = {k: getattr(asrv.App, k, None)
+                       for k in ("gateway", "uploads", "uploads_dir",
+                                 "doc_store", "settings", "skill_store",
+                                 "sess_store", "base_dir", "model")}
+        asrv.App.init(Path(self.tmp.name) / "dist")
+        asrv.App.model = "m"
+        (asrv.App.uploads_dir / "발동이벤트.csv").write_text(
+            self.CSV, encoding="utf-8")
+        self.feed(fake_compare(at=now_kst(1)))
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            setattr(self.asrv.App, k, v)
+        super().tearDown()
+
+    def _h(self):
+        H = self.asrv.Handler
+        h = H.__new__(H)
+        h.wfile = io.BytesIO()
+        h._say = lambda *a, **k: None
+        h.send_response = lambda *a: None
+        h.send_header = lambda *a: None
+        h.end_headers = lambda: None
+        h.sent = []
+        h._json = lambda code, obj: h.sent.append((code, obj))
+        h._err = lambda code, msg: h.sent.append((code, {"error": msg}))
+        return h
+
+    @staticmethod
+    def _final(h):
+        """SSE 로 흘러나간 바이트에서 final 을 꺼낸다 — 화면이 쓰는 그 값."""
+        out = None
+        for line in h.wfile.getvalue().decode("utf-8", "replace").splitlines():
+            line = line.strip()
+            if not line.startswith("data:"):
+                continue
+            try:
+                j = json.loads(line[5:].strip())
+            except ValueError:
+                continue
+            if "final" in j:
+                out = j["final"]
+        return out
+
+    def _ask(self, text, gw, stream=True, attach="발동이벤트.csv"):
+        self.asrv.App.gateway = gw
+        h = self._h()
+        h._api_chat({"text": text, "attach": attach, "stream": stream})
+        return self._final(h) if stream else (h.sent[0][1]["reply"]
+                                              if h.sent else None)
+
+    # ── 여기가 핵심 ──────────────────────────────────────────────────
+    def test_스트리밍에서도_돈다(self):
+        """★브라우저 기본값이 스트리밍이다. 여기서 안 돌면 안 도는 것이다."""
+        gw = self._GW(self.POOR, self.GOOD)
+        final = self._ask("이 파일 분석해줘", gw)
+        self.assertEqual(gw.calls, 1, "스트리밍 경로에서 루프가 안 돌았다")
+        self.assertIn("최고점", final["text"])
+        self.assertIn("88", final["text"])
+
+    def test_비스트리밍에서도_돈다(self):
+        gw = self._GW(self.POOR, self.GOOD)
+        reply = self._ask("이 파일 분석해줘", gw, stream=False)
+        self.assertEqual(gw.calls, 1)
+        self.assertIn("최고점", reply["text"])
+
+    def test_이미_다_말했으면_다시_안_부른다(self):
+        """통과하는 답에 또 부르면 값도 안 늘고 요금만 는다."""
+        gw = self._GW(self.GOOD, self.POOR)
+        final = self._ask("이 파일 분석해줘", gw)
+        self.assertEqual(gw.calls, 0)
+        self.assertIn("최고점", final["text"])
+
+    def test_잡담에는_안_돈다(self):
+        gw = self._GW(self.POOR, self.GOOD)
+        self._ask("고마워", gw)
+        self.assertEqual(gw.calls, 0)
+
+    def test_고쳐도_미달이면_첫_답을_쓴다(self):
+        """두 번째가 더 나빠질 수도 있다 — 통과했을 때만 바꾼다."""
+        gw = self._GW(self.POOR, {"text": "여전히 몰라요", "emotion": "shy",
+                                  "intensity": 0.5, "motion": "none"})
+        final = self._ask("이 파일 분석해줘", gw)
+        self.assertEqual(gw.calls, 1)
+        self.assertEqual(final["text"], self.POOR["text"])
+
+    def test_첨부가_없어도_관제_근거가_있으면_돈다(self):
+        """'지금 어때?' 도 데이터 분석이다 — 시각·등급·점수는 있어야 한다."""
+        good = {"text": "05:00 기준 M16HUB 72점, 위험입니다.",
+                "emotion": "neutral", "intensity": 0.5, "motion": "none"}
+        gw = self._GW(self.POOR, good)
+        final = self._ask("지금 현황 어때", gw, attach="")
+        self.assertEqual(gw.calls, 1, "근거가 있는데 루프가 안 돌았다")
+        self.assertIn("위험", final["text"])
+
+    def test_근거도_첨부도_없으면_안_돈다(self):
+        """검사할 재료가 없는데 다그치면 지어내라는 소리가 된다."""
+        self.feed(None, "죽음")
+        gw = self._GW(self.POOR, self.GOOD)
+        self._ask("지금 현황 어때", gw, attach="")
+        self.assertEqual(gw.calls, 0)
+
+    def test_현황도_데이터_질문이다(self):
+        """★'상태' 만 낱말 목록에 있고 '현황' 이 없었다 — 사람은 같은 뜻으로
+        쓴다. 근거를 아예 안 붙이고 대답하고 있었다."""
+        self.assertTrue(allm.is_data_question("지금 현황 어때"))
+
+    # ── 스킬 만들기도 같은 하네스를 탄다 ─────────────────────────────
+    HALF = ("# 테스트 스킬\n\n## 언제 쓰나\n큐가 밀릴 때 쓴다. 이 절차는 "
+            "반송지연이 이어질 때 무엇부터 보는지를 정한다.\n\n## 절차\n"
+            "1. 큐 대기 수를 본다\n2. 저장율을 본다\n3. 리프터 정체를 본다\n"
+            "4. 반송시간을 본다\n5. 무엇이 먼저였는지 시각으로 잇는다\n")
+    FULL = HALF + ("\n## 함정\n한 순간 튄 값을 사건으로 읽지 않는다. "
+                   "이어진 구간이 진짜 사건이다. 값 없음과 0 을 구분한다.\n")
+
+    class _SkillGW:
+        """스킬 초안은 _plain_llm 이 gateway._request 로 직접 부른다."""
+
+        def __init__(self, outs):
+            self.outs, self.calls = list(outs), 0
+
+        def _request(self, payload):
+            import contextlib
+            out = self.outs[min(self.calls, len(self.outs) - 1)]
+            self.calls += 1
+            body = json.dumps(
+                {"choices": [{"message": {"content": out}}]}).encode("utf-8")
+            return contextlib.closing(io.BytesIO(body))
+
+    def test_스킬_만들기도_루프를_탄다(self):
+        """절이 빠진 초안은 그대로 저장되면 안 된다 — 지적을 붙여 다시 시킨다."""
+        gw = self._SkillGW([self.HALF, self.FULL])
+        self.asrv.App.gateway = gw
+        h = self._h()
+        h._api_chat({"text": "/스킬 만들기 test-skill 큐 밀림 판단",
+                     "stream": True})
+        self.assertEqual(gw.calls, 2, "빠진 절을 두고 한 번에 끝냈다")
+        body = self.asrv.App.skill_store.read("test-skill")
+        self.assertIn("## 함정", body, "미달 초안이 그대로 저장됐다")
+
+    def test_스킬_루프도_스트리밍_경로로_나간다(self):
+        gw = self._SkillGW([self.FULL])
+        self.asrv.App.gateway = gw
+        h = self._h()
+        h._api_chat({"text": "/스킬 만들기 test-skill2 큐 밀림 판단",
+                     "stream": True})
+        self.assertEqual(gw.calls, 1)
+        self.assertIsNotNone(self._final(h), "명령 응답이 SSE 로 안 나갔다")
 
 
 class 설정_일치(unittest.TestCase):

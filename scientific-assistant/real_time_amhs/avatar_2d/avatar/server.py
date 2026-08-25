@@ -535,7 +535,8 @@ class Handler(SimpleHTTPRequestHandler):
             # ★한 순간만 집어 말하고 끝내던 문제. 첨부를 두고 분석을 물었으면
             #   기간·행 수·분포·구간이 답에 있어야 한다. 없으면 그 지적을 붙여
             #   한 번 더 시킨다 (검사는 결정적 규칙 — LLM 을 또 부르지 않는다).
-            reply = self._analysis_loop(reply, aname, text, msgs, model, temp)
+            reply = self._analysis_loop(reply, aname, text, msgs, model, temp,
+                                        ev=ev)
             reply = self._guard(reply, ev)
             self._say("200  /api/chat  {}  {}ms".format(model, ms))
             return self._json(200, {"reply": reply})
@@ -560,7 +561,12 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             for kind, payload in App.gateway.chat_stream(model, temp, msgs):
                 if kind == "final":
-                    # ★스트리밍의 마지막에서 숫자 가드 — final 이 화면의 최종본이다
+                    # ★스트리밍이 **평소 경로**다 (브라우저는 stream 이 켜져
+                    #   있다). 루프를 비스트리밍 쪽에만 달아 두면 실제로는
+                    #   한 번도 안 돈다 — 실제로 그랬다. final 은 화면의
+                    #   최종본이니 여기서 루프·가드를 같은 순서로 태운다.
+                    payload = self._analysis_loop(payload, aname, text, msgs,
+                                                  model, temp, ev=ev)
                     payload = self._guard(payload, ev)
                 chunk({kind: payload})
                 n += 1
@@ -610,29 +616,60 @@ class Handler(SimpleHTTPRequestHandler):
 
     ANALYSIS_ASK = re.compile(r"분석|요약|어때|살펴|봐\s*줘|정리|추이|현황")
 
-    def _analysis_loop(self, reply, aname, question, msgs, model, temp):
-        """첨부 분석 답이 부실하면 이유를 붙여 한 번 더 — harness.run_loop."""
-        if not aname or not isinstance(reply, dict):
+    def _analysis_checks(self, aname, ev):
+        """이 답에 무엇이 들어 있어야 하나 — 재료에 따라 다르다.
+
+        첨부(전 행 계산)가 있으면 하루치 분석의 요건을, 첨부 없이 관제 근거만
+        있으면 '언제 · 몇 점 · 무슨 등급' 을 요구한다. 재료가 아예 없으면
+        검사할 것도 없다 (지어내라고 다그치는 꼴이 된다).
+        """
+        if aname:
+            up = self._upload_of(aname)
+            if up is not None and (up.get("rows") or []):
+                return [
+                    harness.mentions_any(
+                        ["기간", "~", "부터"], "기간",
+                        "자료의 **기간**(시작~끝)을 첫머리에 말해 주세요."),
+                    harness.mentions_any(
+                        ["행", "분"], "분량",
+                        "몇 행(몇 분)짜리 자료인지 말해 주세요."),
+                    harness.mentions_any(
+                        ["정상", "경계", "위험", "초위험"], "등급 분포",
+                        "등급 분포(정상/경계/위험/초위험이 각각 몇 분)를 "
+                        "말해 주세요."),
+                    harness.mentions_any(
+                        ["최고", "최대", "peak", "가장"], "최고점",
+                        "최고점과 그 시각을 말해 주세요."),
+                ]
+            return []
+        # 첨부 없이 "지금 어때?" — 근거가 살아 있을 때만 검사한다
+        if not (ev or {}).get("ok") or not (ev or {}).get("text"):
+            return []
+        return [
+            harness.mentions_any(
+                [":"], "데이터 시각",
+                "몇 시 몇 분 데이터인지 먼저 말해 주세요."),
+            harness.mentions_any(
+                ["정상", "경계", "위험", "초위험"], "등급",
+                "지금이 정상/경계/위험/초위험 중 무엇인지 말해 주세요."),
+            harness.mentions_any(
+                ["점", "score", "스코어"], "점수",
+                "점수를 숫자로 말해 주세요."),
+        ]
+
+    def _analysis_loop(self, reply, aname, question, msgs, model, temp, ev=None):
+        """분석 답이 부실하면 이유를 붙여 한 번 더 — harness.run_loop.
+
+        스트리밍·비스트리밍 **양쪽**에서 부른다. 검사는 결정적 규칙이라
+        LLM 을 또 부르지 않는다 (다시 쓰라고 시킬 때만 한 번 더 부른다).
+        """
+        if not isinstance(reply, dict):
             return reply
         if not self.ANALYSIS_ASK.search(str(question or "")):
             return reply
-        up = self._upload_of(aname)
-        if up is None or not (up.get("rows") or []):
+        checks = self._analysis_checks(aname, ev)
+        if not checks:
             return reply
-        checks = [
-            harness.mentions_any(
-                ["기간", "~", "부터"], "기간",
-                "자료의 **기간**(시작~끝)을 첫머리에 말해 주세요."),
-            harness.mentions_any(
-                ["행", "분"], "분량",
-                "몇 행(몇 분)짜리 자료인지 말해 주세요."),
-            harness.mentions_any(
-                ["정상", "경계", "위험", "초위험"], "등급 분포",
-                "등급 분포(정상/경계/위험/초위험이 각각 몇 분)를 말해 주세요."),
-            harness.mentions_any(
-                ["최고", "최대", "peak", "가장"], "최고점",
-                "최고점과 그 시각을 말해 주세요."),
-        ]
         tried = [reply]
 
         def _gen(feedback):
