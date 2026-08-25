@@ -1594,6 +1594,25 @@ class 알람_패널_위치(unittest.TestCase):
         self.assertIn("alarmPos:alarmPos", js)
         self.assertIn("o.ui.alarmPos", js)
 
+    def test_기록_창도_끌어서_옮긴다(self):
+        """가운데 떠 있으면 캐릭터·대사창을 가린다 — 치울 수 있어야 한다."""
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("(function initAlogDrag(){"):]
+        blk = blk[:blk.index("\nfunction applyAlogPos(")]
+        self.assertIn("head.addEventListener('mousedown'", blk)
+        self.assertIn("touchstart", blk)
+        self.assertIn("dblclick", blk, "가운데로 되돌릴 길이 없다")
+        self.assertIn("Math.max(4, Math.min(l,", blk, "화면 밖으로 나간다")
+        down = blk[blk.index("function down(e){"):blk.index("function move(e){")]
+        self.assertIn("classList.contains('vnBtn')", down,
+                      "닫기·내려받기 버튼을 눌러도 드래그로 먹힌다")
+        self.assertIn("alogPos:alogPos", js, "옮긴 자리를 안 기억한다")
+        self.assertIn("o.ui.alogPos", js)
+        self.assertIn("#alogHead{", self.css)
+        i = self.css.index("#alogHead{")
+        self.assertIn("cursor:grab", self.css[i:self.css.index("}", i)])
+
     def test_소형창에서_서랍_버튼과_안_겹친다(self):
         m = re.search(r"body\.mini #alarmBox\{right:(\d+)px", self.css)
         self.assertIsNotNone(m, "소형창 위치 조정이 없다")
@@ -1993,25 +2012,30 @@ class 참고_자료_등록(unittest.TestCase):
         self.adocs.seed_column_dict(self.st, self.BASE)
         return {d["name"] for d in self.st.list()}
 
-    def test_분석_스킬을_데모스에서_가져온다(self):
-        """새로 쓰지 않는다 — 데모스(scientific-skills)에 있는 것을 그대로."""
+    def test_통계_방법은_데모스에서_가져온다(self):
+        """새로 쓰지 않는다 — 데모스에 있는 것을 그대로. (파일 포맷 카탈로그는
+        제외 — 관제 데이터와 무관하다)"""
         got = self.adocs.seed_docs(self.st, self.BASE)
         if not got:
             self.skipTest("scientific-skills 폴더 없음")
-        self.assertIn("데이터분석_탐색적분석(EDA).md", got)
-        body = self.st.get("데이터분석_탐색적분석(EDA).md")
+        self.assertIn("데이터분석_통계검정.md", got)
+        body = self.st.get("데이터분석_통계검정.md")
         self.assertIn("에서 가져옴", body, "출처를 안 밝힌다")
-        self.assertIn("Exploratory Data Analysis", body, "원문이 안 들어왔다")
 
     def test_영어_문서에_한글_색인을_붙인다(self):
         """★원문이 영어라 한국어 질문과 겹치는 낱말이 없다 — 색인이 없으면
         등록만 되고 한 번도 안 걸린다."""
         if not self.adocs.seed_docs(self.st, self.BASE):
             self.skipTest("scientific-skills 폴더 없음")
-        body = self.st.get("데이터분석_탐색적분석(EDA).md")
+        body = self.st.get("데이터분석_통계검정.md")
         self.assertIn("한글 색인", body)
-        for w in ("이상치", "결측", "분포", "추이"):
+        for w in ("검정", "유의", "효과크기"):
             self.assertIn(w, body, w)
+
+    def test_관제_데이터_보는법도_자료에_있다(self):
+        self._seed()
+        self.assertIn("데이터분석_관제데이터_보는법.md",
+                      {d["name"] for d in self.st.list()})
 
     def test_현장_자료도_전부_등록한다(self):
         got = self._seed()
@@ -2048,10 +2072,11 @@ class 참고_자료_등록(unittest.TestCase):
         if not self._seed():
             self.skipTest("자료 없음")
         cases = [("3F_STORAGE_UTIL 이 뭐야", ("관제_임계값.md", "관제_컬럼사전.md")),
+                 ("이 CSV 어떻게 봐야 해", ("데이터분석_관제데이터_보는법.md",)),
                  ("점수 어떻게 계산해", ("관제_룰과_점수산식.md",
                                         "관제_FAB별_위험도_스코어.md")),
                  ("보고서 용어 표준 알려줘", ("관제_결과해석과_용어표준.md",)),
-                 ("이 파일 이상치 분석해줘", ("데이터분석_탐색적분석(EDA).md",))]
+                 ("이 파일 이상치 분석해줘", ("데이터분석_관제데이터_보는법.md",))]
         for q, want in cases:
             ctx = self.st.context(q, 700)
             self.assertTrue(ctx, q + " → 아무 자료도 안 걸림")
@@ -2330,26 +2355,43 @@ class 스킬도_전부_등록(unittest.TestCase):
         skills.seed_fab_score(self.sk, self.BASE)
         return {d["name"] for d in self.sk.list()}
 
-    def test_아홉_개가_다_들어간다(self):
+    def test_열네_개가_다_들어간다(self):
         got = self._seed()
         want = {"m16-hub-result", "m16-hub-threshold", "m16-hub-capacity",
-                "m16-hub-general", "eda", "stats", "stats-choose",
-                "stats-assume", "fab-score"}
+                "m16-hub-general", "data-analysis", "stats-choose",
+                "stats-assume", "fab-score",
+                "skill-creator", "writing-skills", "prompt-engineer",
+                "skill-template", "skill-patterns", "skill-workflow"}
         self.assertEqual(want - got, set(), "빠진 스킬: %r" % (want - got,))
 
-    def test_분석_스킬도_데모스에서_그대로(self):
-        got = skills.seed_analysis_skills(self.sk, self.BASE)
-        if not got:
-            self.skipTest("분석 스킬 폴더 없음")
-        self.assertIn("eda", got)
-        self.assertIn("Exploratory Data Analysis", self.sk.read("eda"))
+    def test_데이터_분석_스킬은_이_시스템_것이다(self):
+        """★데모스의 exploratory-data-analysis 는 .pdb/.fasta/.bam 같은
+        **과학 파일 포맷 카탈로그**다. 붙여 두면 서윤이 분자동역학 얘기를
+        꺼낸다 — 관제 데이터로 쓴 것이어야 한다."""
+        self._seed()
+        md = self.sk.read("data-analysis")
+        self.assertIsNotNone(md, "관제 데이터 분석 스킬이 없다")
+        # ★같은 낱말이 문서 곳곳에 있으므로 **그 내용이 있어야 할 자리**로 본다
+        for must in ("발동이벤트", "unified_risk_score",
+                     "등급 컷 60 / 71 / 85",          # 컷을 틀리게 아는 것이 흔하다
+                     "표본 6행",                       # 표본만 보고 말하지 말 것
+                     "## 2. 무엇을 물어보면 계산해 주나",  # 재계산으로 뭘 물을지
+                     "## 3. 분석 순서", "## 5. 자주 틀리는 것"):
+            self.assertIn(must, md, must)
+        for never in (".fasta", ".pdb", "microscopy", "genomics"):
+            self.assertNotIn(never, md, "엉뚱한 과학 파일 얘기가 들어 있다")
+
+    def test_과학_파일_카탈로그는_안_심는다(self):
+        got = self._seed()
+        self.assertNotIn("eda", got, "파일 포맷 카탈로그가 스킬로 들어갔다")
+        from avatar import docs as adocs
+        self.assertNotIn("데이터분석_탐색적분석(EDA).md", adocs.SEED_DOCS,
+                         "참고 자료로도 넣으면 '분석' 질문마다 걸린다")
 
     def test_설명은_한글이라_한국어_질문에_걸린다(self):
-        """원문 description 은 영어다 — 그대로 두면 한국어 질문에 안 걸린다."""
-        if not skills.seed_analysis_skills(self.sk, self.BASE):
-            self.skipTest("분석 스킬 폴더 없음")
-        d = [x for x in self.sk.list() if x["name"] == "eda"][0]
-        for w in ("이상치", "결측", "분포"):
+        self._seed()
+        d = [x for x in self.sk.list() if x["name"] == "data-analysis"][0]
+        for w in ("이상치", "결측", "분포", "추이"):
             self.assertIn(w, d["description"], w)
 
     def test_서버가_켜질_때_부른다(self):
@@ -2374,7 +2416,7 @@ class 스킬_고르기(unittest.TestCase):
         skills.seed_hub_skills(self.sk, self.BASE)
         skills.seed_analysis_skills(self.sk, self.BASE)
         skills.seed_fab_score(self.sk, self.BASE)
-        if len(self.sk.list()) < 9:
+        if len(self.sk.list()) < 14:
             self.skipTest("스킬 시드 원본 없음")
 
     def tearDown(self):
@@ -2387,9 +2429,9 @@ class 스킬_고르기(unittest.TestCase):
         return got[0] if got else None
 
     def test_질문이_맞는_스킬로_간다(self):
-        for q, want in [("이상치 어떻게 봐", "eda"),
-                        ("결측치 있나 봐줘", "eda"),
-                        ("검정 뭐 써야 해", "stats"),
+        for q, want in [("이상치 어떻게 봐", "data-analysis"),
+                        ("결측치 있나 봐줘", "data-analysis"),
+                        ("이 CSV 분석해줘", "data-analysis"),
                         ("가정 점검 해야 해?", "stats-assume"),
                         ("임계값 얼마야", "m16-hub-threshold"),
                         ("용어 표준 뭐야", "m16-hub-result")]:
@@ -2399,11 +2441,12 @@ class 스킬_고르기(unittest.TestCase):
         """★'어떻게' 는 거의 모든 설명에 있다 ("무엇을 왜 어떻게 하는지") —
         빼지 않으면 뜻 있는 낱말과 같은 점수를 먹어 엉뚱한 스킬이 이긴다."""
         self.assertIn("어떻게", skills.SkillStore.STOP)
-        self.assertEqual(self._first("이상치 어떻게 봐"), "eda")
+        self.assertEqual(self._first("이상치 어떻게 봐"), "data-analysis")
 
     def test_짧고_분명한_질문도_받는다(self):
         """★본문 두 낱말을 요구하면 '검정 뭐 써야 해' 가 아무것도 못 받는다."""
         self.assertIsNotNone(self._first("검정 뭐 써야 해"))
+        self.assertIsNotNone(self._first("분포 보여줘"))
 
     def test_잡담에는_스킬을_안_붙인다(self):
         for q in ("안녕", "고마워", "ㅋㅋ"):
@@ -2425,6 +2468,181 @@ class 스킬_고르기(unittest.TestCase):
         self.assertIn(para, sysmsg, "아예 안 실렸다 — 시험이 헛돈다")
         self.assertEqual(sysmsg.count(para), 1,
                          "같은 문단이 스킬·자료로 두 번 실렸다")
+
+
+class 서윤이_스킬을_만든다(unittest.TestCase):
+    """'스킬 만들자' 하면 곧장 만들지 말고 **되묻는다** — MD·HTML·둘 다.
+    파일이 생기는 일이라 형식을 먼저 정해야 한다."""
+
+    BASE = Path(util.BASE) / "avatar_2d"
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def test_만드는_법_스킬이_등록된다(self):
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            sk = skills.SkillStore(Path(tmp.name) / "sk")
+            got = skills.seed_analysis_skills(sk, self.BASE)
+            for must in ("skill-creator", "writing-skills", "prompt-engineer"):
+                self.assertIn(must, got, must)
+            md = sk.read("skill-creator")
+            self.assertIn("SKILL.md", md, "형식 설명이 없다")
+        finally:
+            tmp.cleanup()
+
+    def test_스킬_만들자는_말을_알아듣는다(self):
+        import re as _re
+        m = _re.search(r"const WANT_SKILL = (/.+/);", self.js)
+        self.assertIsNotNone(m, "알아듣는 규칙이 없다")
+        pat = _re.compile("스킬.{0,12}(만들|맹글|생성|제작|뽑아|정리해)")
+        for q in ("스킬 만들어줘", "지금 얘기 스킬로 만들어 줄래?",
+                  "이거 스킬 생성해줘", "스킬로 정리해줘"):
+            self.assertTrue(pat.search(q), q)
+        for q in ("스킬 목록 보여줘", "오늘 상태 어때"):
+            self.assertIsNone(pat.search(q), q + " 까지 만들기로 새면 안 된다")
+
+    def test_형식을_되묻는다(self):
+        blk = self.js[self.js.index("function askSkillFormat("):]
+        blk = blk[:blk.index("async function makeSkill(")]
+        self.assertIn("MD, HTML, 아니면 둘 다", blk)
+        for label in ("'MD','md'", "'HTML','html'", "'둘 다','both'"):
+            self.assertIn(label, blk, label)
+        self.assertIn("그만", blk, "취소할 길이 없다")
+        self.assertIn("skillName", blk, "이름을 못 정한다")
+
+    def test_이름_규칙을_지킨다(self):
+        blk = self.js[self.js.index("async function makeSkill("):]
+        blk = blk[:blk.index("async function reloadSkills(")]
+        self.assertIn("/^[a-z0-9]+(-[a-z0-9]+)*$/", blk,
+                      "이름 검사 없이 보내면 서버에서 거절당한다")
+
+    def test_고른_형식만_내려받는다(self):
+        blk = self.js[self.js.index("async function makeSkill("):]
+        blk = blk[:blk.index("async function reloadSkills(")]
+        self.assertIn("fmt==='both' ? ['md','html'] : [fmt]", blk)
+        self.assertIn("/api/skills/", blk)
+        self.assertIn("downloadBlob", blk)
+
+    def test_실패하면_내려받지_않는다(self):
+        """초안이 검증에 걸렸는데 빈 파일을 주면 더 나쁘다."""
+        blk = self.js[self.js.index("async function makeSkill("):]
+        blk = blk[:blk.index("async function reloadSkills(")]
+        self.assertIn("스킬을 만들었어요", blk)
+        self.assertIn("return;   // 실패면 내려받기 없음", blk)
+
+    def test_슬래시_명령은_그대로_통과한다(self):
+        """/스킬 만들기 는 이미 형식을 정한 길이다 — 또 물으면 안 된다."""
+        blk = self.js[self.js.index("async function send(){"):]
+        blk = blk[:blk.index("  try{")]
+        self.assertIn("!text.startsWith('/')", blk)
+
+    def test_초안_지시가_스킬_꼴을_요구한다(self):
+        """★네 줄짜리 지시로는 '요약문' 이 나온다. 다음 사람이 그대로 따라
+        할 수 있어야 스킬이다."""
+        pr = skills.DRAFT_PROMPT
+        for must in ("## 언제 쓰나", "## 무엇을 보나", "## 절차",
+                     "## 판단 기준", "## 함정"):
+            self.assertIn(must, pr, must)
+        self.assertIn("지어내면", pr, "없는 값을 지어내지 말라는 말이 없다")
+        self.assertIn("한글 이름", pr, "룰 코드로 쓰라고 두면 안 된다")
+        self.assertIn("좋은 스킬", pr, "좋고 나쁜 예가 없다")
+        self.assertIn("[이 차례로 쓴다", pr, "쓰는 차례를 안 정해 준다")
+        self.assertGreater(len(pr), 900, "지시가 너무 짧다 — 요약문이 나온다")
+
+    def test_채울_틀이_스킬로_심겨_있다(self):
+        """'프롬프트 형태·MD·카파시 톤' — 채울 자리를 보여 주는 틀."""
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            sk = skills.SkillStore(Path(tmp.name) / "sk")
+            got = skills.seed_analysis_skills(sk, self.BASE)
+            for must in ("skill-template", "skill-patterns", "skill-workflow"):
+                self.assertIn(must, got, must)
+            t = skills.draft_template(sk)
+            self.assertIn("| 항목 | AMOS 컬럼 | 임계 |", t, "표 자리가 없다")
+            for sec in ("## 언제 쓰나", "## 절차", "## 판단 기준", "## 함정"):
+                self.assertIn(sec, t, sec)
+            self.assertNotIn("## 쓸 때 규칙", t,
+                             "사람용 안내까지 초안 재료로 실린다")
+        finally:
+            tmp.cleanup()
+
+    def test_초안이_그_틀을_실제로_쓴다(self):
+        """★틀을 심어 두고 안 쓰면 장식이다."""
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("tmpl = skills.draft_template(store)"):]
+        blk = blk[:blk.index("body, err = _plain_llm")]
+        self.assertIn("[채울 틀 — 이 꼴로 쓴다]", blk)
+        self.assertIn("sysmsg", blk)
+
+    def test_틀을_코드에_또_적지_않는다(self):
+        """사용자가 틀 스킬을 고치면 초안도 같이 바뀌어야 한다."""
+        with open(os.path.join(AV, "avatar", "skills.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def draft_template(store):")
+        blk = src[i:src.index("\ndef ", i + 10)]
+        self.assertIn("store.read(TEMPLATE_SKILL)", blk)
+        self.assertNotIn("## 언제 쓰나", blk, "틀을 코드에 베껴 적었다")
+
+    def test_틀이_없어도_돈다(self):
+        """사용자가 틀 스킬을 지웠다고 스킬 만들기가 죽으면 안 된다."""
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            sk = skills.SkillStore(Path(tmp.name) / "sk")
+            self.assertEqual(skills.draft_template(sk), "")
+        finally:
+            tmp.cleanup()
+
+    def test_꼴을_안_갖추면_다시_시킨다(self):
+        self.assertEqual(skills.draft_gaps(
+            "## 언제 쓰나\n## 절차\n## 함정"), [])
+        self.assertEqual(skills.draft_gaps("# 제목\n요약만 있음"),
+                         ["## 언제 쓰나", "## 절차", "## 함정"])
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("gaps = skills.draft_gaps(body)"):]
+        blk = blk[:blk.index("desc =")]
+        self.assertIn("다음 절이 빠졌어요", blk, "빠진 절을 짚어 다시 안 시킨다")
+        self.assertIn("_plain_llm", blk)
+
+    def test_못_채운_절은_밝힌다(self):
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("이 절은 못 채웠어요", src,
+                      "빈 스킬을 완성품처럼 주면 안 된다")
+
+    def test_첨부_분석이_초안_재료에_들어간다(self):
+        """★'이 데이터로 스킬 만들어줘' 의 재료는 대화가 아니라 그 데이터다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("# ── 슬래시 명령"):src.index("if cmd is not None:")]
+        self.assertIn("[첨부 분석:", blk)
+        self.assertIn("csvdata.query(", blk, "재계산 결과가 재료에 안 들어간다")
+        self.assertIn("extra=extra", blk)
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            csrc = f.read()
+        i = csrc.index("def _create(")
+        cblk = csrc[i:csrc.index("def _plain_llm(", i)]
+        self.assertIn("material += str(extra)", cblk)
+        self.assertLess(cblk.index("material += str(extra)"),
+                        cblk.index("[최근 대화]"),
+                        "첨부 분석이 대화 뒤에 오면 예산에 밀린다")
+
+    def test_서버_없이는_안내만_한다(self):
+        blk = self.js[self.js.index("async function send(){"):]
+        blk = blk[:blk.index("  try{")]
+        self.assertIn("window.SERVER", blk)
+
+    def test_묻지_않고_바로_만들지_않는다(self):
+        """★스킬 만들기는 파일이 생기는 일이다 — 형식을 먼저 물어야 한다."""
+        blk = self.js[self.js.index("async function send(){"):]
+        blk = blk[:blk.index("  try{")]
+        self.assertIn("askSkillFormat(text)", blk)
+        self.assertNotIn("makeSkill(", blk,
+                         "되묻지 않고 곧장 만들어 버린다")
 
 
 class 설정_일치(unittest.TestCase):

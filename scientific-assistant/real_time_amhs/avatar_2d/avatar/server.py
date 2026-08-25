@@ -450,8 +450,20 @@ class Handler(SimpleHTTPRequestHandler):
             temp = 0.8
 
         # ── 슬래시 명령 — LLM 을 안 거치는 결정적 경로 (게이트웨이 없어도 됨)
+        # ★붙어 있는 첨부의 **계산된 분석**을 재료로 같이 넘긴다. 이게 없으면
+        #   "이 데이터로 스킬 만들어줘" 가 대화 요약만 보고 쓴다 — 데이터에서
+        #   나온 스킬이 아니게 된다.
+        extra = ""
+        aname0 = str(b.get("attach") or "").strip()
+        if aname0:
+            up0 = self._upload_of(aname0)
+            if up0 is not None:
+                extra = "[첨부 분석: {}]\n{}".format(aname0, up0["summary"])
+                q0 = csvdata.query(up0.get("rows") or [], text, self._cuts())
+                if q0:
+                    extra += "\n\n" + q0["lines"]
         cmd = commands.handle(text, App.skill_store, App.gateway, model,
-                              history, temperature=0.3)
+                              history, temperature=0.3, extra=extra)
         if cmd is not None:
             self._say("200  /api/chat  (명령: {})".format(text.split()[0]))
             if b.get("stream"):

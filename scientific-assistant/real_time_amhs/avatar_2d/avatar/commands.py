@@ -38,7 +38,8 @@ def is_command(text):
     return str(text or "").strip().startswith("/")
 
 
-def handle(text, store, gateway=None, model="", history=None, temperature=0.3):
+def handle(text, store, gateway=None, model="", history=None, temperature=0.3,
+           extra=""):
     """명령 처리. 명령이 아니면 None (일반 대화로 진행)."""
     t = str(text or "").strip()
     if not t.startswith("/"):
@@ -79,13 +80,13 @@ def handle(text, store, gateway=None, model="", history=None, temperature=0.3):
     m = re.match(r"^/스킬(?:\s+(.*))?$", t)
     if m:
         return _skill(m.group(1) or "", store, gateway, model,
-                      history, temperature)
+                      history, temperature, extra)
 
     return _reply("모르는 명령이에요. " + HELP, "shy", 0.5, "shake")
 
 
 # ────────────────────────────── /스킬 ──────────────────────────────
-def _skill(rest, store, gateway, model, history, temperature):
+def _skill(rest, store, gateway, model, history, temperature, extra=""):
     rest = rest.strip()
     if rest in ("", "목록", "list"):
         items = store.list()
@@ -118,13 +119,13 @@ def _skill(rest, store, gateway, model, history, temperature):
     m = re.match(r"^(만들기|만들어|create)\s+(\S+)(?:\s+(.+))?$", rest)
     if m:
         return _create(m.group(2), m.group(3) or "", store, gateway,
-                       model, history, temperature)
+                       model, history, temperature, extra)
 
     return _reply("스킬 명령은 목록 / 보기 <이름> / 만들기 <이름> [주제] / "
                   "삭제 <이름> 이에요.", "shy", 0.5)
 
 
-def _create(name, topic, store, gateway, model, history, temperature):
+def _create(name, topic, store, gateway, model, history, temperature, extra=""):
     if not skills.NAME_RE.match(name) or len(name) > 64:
         return _reply("스킬 이름은 소문자+숫자+하이픈만 돼요 (예: oht-check). "
                       "'{}' 는 안 돼요.".format(name), "shy", 0.6, "shake")
@@ -137,20 +138,49 @@ def _create(name, topic, store, gateway, model, history, temperature):
 
     # 재료 = 최근 대화 + (있으면) 관제 근거. 재료에 없는 건 못 쓰게 프롬프트로 못박는다.
     hist_txt = "\n".join(
-        "{}: {}".format("사용자" if h.get("role") == "user" else "미라",
+        "{}: {}".format("사용자" if h.get("role") == "user" else "서윤",
                         str(h.get("content", ""))[:800])
         for h in (history or [])[-12:] if isinstance(h, dict))
     ev = sentinel.evidence()
-    material = ("[최근 대화]\n" + (hist_txt or "(없음)") + "\n\n"
-                + ("[관제 근거]\n" + ev["text"] if ev["ok"] else ""))
+    # ★첨부 분석을 **맨 앞**에 둔다. "이 데이터로 스킬 만들어줘" 의 재료는
+    #   대화가 아니라 그 데이터다 — 뒤에 두면 예산에 밀려 안 실린다.
+    material = ""
+    if extra:
+        material += str(extra)[:6000] + "\n\n"
+    material += ("[최근 대화]\n" + (hist_txt or "(없음)") + "\n\n"
+                 + ("[관제 근거]\n" + ev["text"] if ev["ok"] else ""))
     ask = "스킬 이름: {}\n주제: {}\n\n재료:\n{}".format(
-        name, topic or "최근 대화의 핵심 지식", material)
+        name, topic or ("첨부 데이터에서 얻은 판단 절차" if extra
+                        else "최근 대화의 핵심 지식"), material)
 
-    msgs = [{"role": "system", "content": skills.DRAFT_PROMPT},
+    # ★틀(skill-template 스킬)을 그대로 실어 준다 — 서윤은 이 틀을 채워 쓴다.
+    #   차례를 말로만 설명하는 것보다, 채울 자리를 보여 주는 쪽이 확실하다.
+    tmpl = skills.draft_template(store)
+    sysmsg = skills.DRAFT_PROMPT
+    if tmpl:
+        sysmsg += ("\n[채울 틀 — 이 꼴로 쓴다]\n" + tmpl
+                   + "\n(꺾쇠 <> 안은 재료에서 나온 사실로 바꾼다. "
+                     "재료에 없으면 그 줄을 지운다)\n")
+    msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": ask}]
     body, err = _plain_llm(gateway, model, temperature, msgs)
     if not body:
         return _reply("스킬 초안 생성이 실패했어요: {}".format(err), "sad", 0.7)
+
+    # ★꼴을 안 갖춘 초안은 그냥 요약문이다 — 빠진 절을 짚어 한 번 더 시킨다.
+    #   (검증 전에 거른다. 저장하고 나서 고치라고 하면 아무도 안 고친다)
+    gaps = skills.draft_gaps(body)
+    if gaps:
+        msgs += [{"role": "assistant", "content": body},
+                 {"role": "user", "content":
+                  "다음 절이 빠졌어요: {}. 같은 재료로 다시 쓰되 그 절을 "
+                  "반드시 넣어 주세요. 없는 사실은 여전히 지어내지 마세요."
+                  .format(", ".join(gaps))}]
+        again, err2 = _plain_llm(gateway, model, temperature, msgs)
+        if again and not skills.draft_gaps(again):
+            body = again
+        elif again and len(skills.draft_gaps(again)) < len(gaps):
+            body = again
 
     desc = (topic or "대화에서 만든 스킬").replace("<", "").replace(">", "")[:180]
     md = skills.compose(name, desc, body)
@@ -159,6 +189,9 @@ def _create(name, topic, store, gateway, model, history, temperature):
         return _reply("초안이 검증에 걸렸어요: {}".format(" / ".join(errors)),
                       "sad", 0.7)
     note = (" (경고: " + " / ".join(warnings) + ")") if warnings else ""
+    left = skills.draft_gaps(body)
+    if left:
+        note += " — 이 절은 못 채웠어요: " + ", ".join(left) + " (재료가 부족)"
     return _reply(
         "'{}' 스킬을 만들었어요{}.\n"
         "· 전문 보기: /스킬 보기 {}\n"

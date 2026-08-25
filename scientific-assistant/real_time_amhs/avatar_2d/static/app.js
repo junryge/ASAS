@@ -531,6 +531,7 @@ const SAY_LABEL = {novel:'노벨', bubble:'말풍선', off:'대사 끔'};
 let sayMode='novel';    // novel|bubble|off
 let sayModeSet=false;   // 사용자가 칩을 눌러 직접 골랐나 (자동 저장과 구분)
 let alarmPos=null;      // FAB 알람 패널을 옮겨 둔 자리 {l,t} (null = 기본 우상단)
+let alogPos=null;       // 알람 기록 창을 옮겨 둔 자리 {l,t} (null = 가운데)
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
 let hudOpen=true;       // 좌측 패널 펼침 여부
@@ -1080,7 +1081,8 @@ function collectSettings(withKey){
             bubbleOn(=말풍선 모드인가) 을 넣으면 노벨일 때 false 가 저장되고,
             다음에 열 때 그게 '대사 끔' 으로 읽혀 노벨이 사라진다. */
          bubble: sayMode !== 'off',
-         sayMode:sayMode, sayModeSet:sayModeSet, alarmPos:alarmPos, patch:patchOn,
+         sayMode:sayMode, sayModeSet:sayModeSet,
+         alarmPos:alarmPos, alogPos:alogPos, patch:patchOn,
          stream:$('#streamOn').checked, hud:hudOpen, ctx:ctxOpen, ctxLimit:ctxLimit,
          eye:eyeFollow, badge:badgeOn, autoScene:autoScene,
          personaBackup:personaBackup, costume:costumeIdx, bg:bgIdx };
@@ -1128,6 +1130,7 @@ function applySettings(o, live){
       sayMode = o.ui.sayMode; sayModeSet = true;
     }
     if(o.ui.alarmPos!==undefined){ alarmPos=o.ui.alarmPos; applyAlarmPos(); }
+    if(o.ui.alogPos!==undefined){ alogPos=o.ui.alogPos; applyAlogPos(); }
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
@@ -1563,6 +1566,7 @@ function alogFmt(e){
 async function openAlog(){
   const w=$('#alogWrap'); if(!w) return;
   w.classList.add('on');
+  applyAlogPos();          // 지난번에 옮겨 둔 자리로
   if(window.SERVER){
     try{
       const r=await fetch('/api/alarms',{cache:'no-store'});
@@ -1613,6 +1617,59 @@ function alogText(){
   });
   return L.join('\n');
 }
+/* 기록 창도 끌어서 옮긴다 — 가운데 떠 있으면 캐릭터·대사창을 가린다.
+   알람 패널과 같은 규칙: 머리를 잡고 끌고, 화면 밖으로는 못 나가고,
+   놓은 자리를 기억한다. 두 번 누르면 가운데로 돌아온다. */
+(function initAlogDrag(){
+  const box=$('#alogWrap'), head=$('#alogHead'), wrap=$('#stageWrap');
+  if(!box || !head || !wrap) return;
+  let dx=0, dy=0, on=false;
+  function place(l, t){
+    const w=wrap.getBoundingClientRect(), b=box.getBoundingClientRect();
+    l = Math.max(4, Math.min(l, w.width  - b.width  - 4));
+    t = Math.max(4, Math.min(t, w.height - b.height - 4));
+    box.style.left=l+'px'; box.style.top=t+'px'; box.style.transform='none';
+    return {l, t};
+  }
+  function down(e){
+    if(e.button!==undefined && e.button!==0) return;
+    if(e.target && e.target.classList && e.target.classList.contains('vnBtn')) return;
+    const b=box.getBoundingClientRect(), w=wrap.getBoundingClientRect();
+    dx = e.clientX - b.left; dy = e.clientY - b.top;
+    place(b.left - w.left, b.top - w.top);   // 가운데 정렬(transform)을 좌표로
+    on=true; box.classList.add('dragging');
+    e.preventDefault();
+  }
+  function move(e){
+    if(!on) return;
+    const w=wrap.getBoundingClientRect();
+    place(e.clientX - w.left - dx, e.clientY - w.top - dy);
+  }
+  function up(){
+    if(!on) return;
+    on=false; box.classList.remove('dragging');
+    alogPos = {l:box.style.left, t:box.style.top};
+    saveSettings();
+  }
+  head.addEventListener('mousedown', down);
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+  head.addEventListener('touchstart', e=>{ if(e.touches[0]) down(e.touches[0]); }, {passive:false});
+  window.addEventListener('touchmove', e=>{ if(on && e.touches[0]) move(e.touches[0]); }, {passive:true});
+  window.addEventListener('touchend', up);
+  head.addEventListener('dblclick', e=>{
+    if(e.target && e.target.classList && e.target.classList.contains('vnBtn')) return;
+    box.style.left=''; box.style.top=''; box.style.transform='';
+    alogPos=null; saveSettings();
+  });
+})();
+
+function applyAlogPos(){
+  const box=$('#alogWrap');
+  if(!box || !alogPos) return;
+  box.style.left=alogPos.l; box.style.top=alogPos.t; box.style.transform='none';
+}
+
 (function initAlog(){
   const t=$('#alarmTitle');
   if(t) t.ondblclick = (e)=>{ e.stopPropagation(); openAlog(); };
@@ -3170,11 +3227,86 @@ async function demoLLM(text){
 
 /* ---------- 전송 ---------- */
 const sayEl=$('#say'), sendBtn=$('#send');
+/* ---------- 스킬 만들기 — 형식을 되묻는다 ----------
+   "스킬 만들어줘" 는 **부작용이 있는 일**이다 (파일이 생긴다). 곧장 만들지
+   말고 무슨 형식으로 드릴지 먼저 묻는다 — MD / HTML / 둘 다.
+   이름도 같이 받는다 (소문자·숫자·하이픈만 되므로 기본값을 채워 준다). */
+const WANT_SKILL = /스킬.{0,12}(만들|맹글|생성|제작|뽑아|정리해)/;
+function skillDefaultName(){
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  return 'skill-' + z(d.getMonth()+1) + z(d.getDate()) + '-' + z(d.getHours()) + z(d.getMinutes());
+}
+function askSkillFormat(topic){
+  const d=document.createElement('div'); d.className='msg ai';
+  const p=document.createElement('div'); p.className='md';
+  p.innerHTML = mdHtml(
+    '스킬로 만들어 드릴게요. **MD, HTML, 아니면 둘 다** 드릴까요?\n\n'
+    + '- 이름은 소문자·숫자·하이픈만 돼요 (예: `oht-check`)\n'
+    + '- 지금 대화와 관제 근거를 재료로 초안을 씁니다');
+  d.appendChild(p);
+  const row=document.createElement('div'); row.className='skillAsk';
+  const nameIn=document.createElement('input');
+  nameIn.className='skillName'; nameIn.value=skillDefaultName();
+  nameIn.maxLength=64; nameIn.title='스킬 이름';
+  row.appendChild(nameIn);
+  [['MD','md'],['HTML','html'],['둘 다','both']].forEach(([label,fmt])=>{
+    const b=document.createElement('button'); b.textContent=label;
+    b.onclick=()=>{ row.querySelectorAll('button').forEach(x=>x.disabled=true);
+                    makeSkill(nameIn.value.trim(), topic, fmt); };
+    row.appendChild(b);
+  });
+  const no=document.createElement('button');
+  no.textContent='그만'; no.className='ghost';
+  no.onclick=()=>{ row.querySelectorAll('button').forEach(x=>x.disabled=true);
+                   sys('스킬 만들기를 취소했어요.'); };
+  row.appendChild(no);
+  d.appendChild(row);
+  logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight;
+  speak('스킬로 만들어 드릴게요. MD, HTML, 아니면 둘 다 드릴까요?');
+  setEmotion('smile', 0.7, 'nod');
+}
+async function makeSkill(name, topic, fmt){
+  if(!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)){
+    sys('이름은 소문자·숫자·하이픈만 돼요 (예: oht-check). 다시 눌러 주세요.');
+    return;
+  }
+  sys('스킬 초안을 쓰는 중이에요… (대화와 관제 근거를 재료로 씁니다)');
+  setEmotion('think', 0.6, 'none');
+  let r;
+  try{
+    r = await askLLM('/스킬 만들기 ' + name + (topic ? ' ' + topic : ''));
+  }catch(e){ push('ai','(스킬 만들기 실패) '+e.message,'error'); return; }
+  push('ai', r.text, '스킬 만들기', r);
+  speak(briefFor(r.text), r.text);
+  if(!/스킬을 만들었어요/.test(r.text || '')) return;   // 실패면 내려받기 없음
+  const want = fmt==='both' ? ['md','html'] : [fmt];
+  for(const kind of want){
+    try{
+      const res = await fetch('/api/skills/' + kind + '?name=' + encodeURIComponent(name));
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const body = await res.text();
+      downloadBlob(name + (kind==='md' ? '.md' : '.html'), body,
+                   kind==='md' ? 'text/markdown' : 'text/html');
+    }catch(e){ sys(kind.toUpperCase()+' 내려받기 실패: '+e.message); }
+  }
+  sys('내려받았어요: ' + want.map(k=>name+'.'+k).join(' · ')
+      + ' · 전문은 /스킬 보기 ' + name);
+  await reloadSkills();
+}
+async function reloadSkills(){ /* 스킬 목록을 쓰는 화면이 생기면 여기서 갱신 */ }
+
 async function send(){
   const text=sayEl.value.trim(); if(!text) return;
   sayEl.value=''; if(typeof updateCount==='function') updateCount();
   sendBtn.disabled=true;
   push('me',text);
+  /* ★슬래시 명령(/스킬 만들기 …)은 그대로 통과 — 이미 형식을 정한 길이다 */
+  if(!text.startsWith('/') && WANT_SKILL.test(text)){
+    if(!window.SERVER){ sys('스킬 만들기는 run.py 서버로 실행할 때 돼요.'); }
+    else { askSkillFormat(text); }
+    sendBtn.disabled=false; sayEl.focus();
+    return;
+  }
   setEmotion('think', 0.5, 'none');
   try{
     let r;

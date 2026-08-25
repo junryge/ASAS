@@ -295,14 +295,53 @@ def _inline(s):
 
 
 # ────────────────────────────── LLM 로 스킬 초안 ──────────────────────────────
+# ★스킬 작성 규칙 — 데모스의 skill-creator·writing-skills 를 이 시스템 말로
+#   옮긴 것. 예전 프롬프트는 네 줄짜리라 "요약문" 이 나왔지, 다음에 쓸 수 있는
+#   스킬이 안 나왔다. 스킬은 **다음 사람이 그대로 따라 할 수 있어야** 한다.
 DRAFT_PROMPT = (
-    "너는 스킬 작성기다. 아래 재료(대화·근거)에서 재사용할 지식을 뽑아 "
-    "SKILL.md 본문을 만든다.\n"
-    "규칙:\n"
-    "- 마크다운 본문만 출력한다 (YAML 머리말은 서버가 붙인다)\n"
-    "- 재료에 있는 사실만 쓴다. 재료에 없는 숫자·규칙을 지어내지 않는다\n"
-    "- '언제 쓰나' / '규칙' / '함정' 세 절을 갖춘다\n"
-    "- 한국어로, {}줄 이하로\n".format(MAX_LINES))
+    "너는 SKILL.md 작성기다. 아래 재료(대화·관제 근거·첨부 분석)에서 "
+    "**다시 쓸 수 있는 절차**를 뽑아 스킬 본문을 만든다.\n"
+    "\n"
+    "[반드시 지킬 것]\n"
+    "1. 마크다운 본문만 출력한다. YAML 머리말(---)은 서버가 붙이므로 쓰지 마라.\n"
+    "2. **재료에 있는 사실만** 쓴다. 재료에 없는 숫자·임계·컬럼명을 지어내면 "
+    "   그 스킬은 다음 사람을 속인다. 모르는 값은 '확인 필요' 라고 적는다.\n"
+    "3. 룰은 한글 이름으로 쓴다 (반송지연·Queue 누적·리프터 정체·Storage FULL "
+    "   ·4분초과·분류기 대기·운영자 용량변경). 영문 약칭을 쓰지 마라.\n"
+    "4. 한국어로 쓰고, {} 줄을 넘기지 마라.\n"
+    "\n"
+    "[이 차례로 쓴다 — 절 제목을 그대로 쓴다]\n"
+    "# <제목 한 줄>\n"
+    "## 언제 쓰나\n"
+    "   어떤 질문·상황에서 이 스킬을 꺼내는지. 한두 줄.\n"
+    "## 무엇을 보나\n"
+    "   봐야 할 컬럼·지표·임계를 표로. | 항목 | 컬럼 | 임계 | 뜻 |\n"
+    "   재료에 컬럼명이 있으면 반드시 그대로 적는다.\n"
+    "## 절차\n"
+    "   1) 2) 3) 번호를 매겨, 그대로 따라 하면 같은 결론이 나오게 쓴다.\n"
+    "   각 단계에 '무엇을 보고 → 무엇으로 판단' 을 넣는다.\n"
+    "## 판단 기준\n"
+    "   어떤 값이면 정상/경계/위험인지. 근거에 컷이 있으면 그 값을 쓴다.\n"
+    "## 함정\n"
+    "   틀리기 쉬운 것. 최소 두 개. (겪은 것이 재료에 있으면 그것부터)\n"
+    "## 예시\n"
+    "   재료에 실제 사례가 있으면 값과 함께 한 건. 없으면 이 절을 빼라.\n"
+    "\n"
+    "[좋은 스킬 / 나쁜 스킬]\n"
+    "· 나쁨: \"OHT 가동률을 확인한다\" — 무엇을 보고 얼마면 문제인지가 없다.\n"
+    "· 좋음: \"M14.QUE.OHT.OHTUTIL 이 95% 이상이면 유입을 줄인다 "
+    "(임계 95, 근거: 관제 임계표)\"\n"
+    "· 나쁨: 대화를 요약한다. · 좋음: 다음에 같은 일이 왔을 때 할 일을 적는다."
+    "\n").format(MAX_LINES)
+
+# 초안이 스킬 꼴을 갖췄는지 — 없으면 한 번 더 시킨다 (검증 전에 거른다)
+NEED_SECTIONS = ("## 언제 쓰나", "## 절차", "## 함정")
+
+
+def draft_gaps(body):
+    """빠진 절 목록. 비어 있으면 스킬 꼴을 갖춘 것."""
+    txt = str(body or "")
+    return [s for s in NEED_SECTIONS if s not in txt]
 
 
 # 현장 도메인 스킬 — real_time_amhs 옆(scientific-assistant/m16_hub_skills)에
@@ -376,39 +415,81 @@ def _desc_of(md):
 # 데이터 분석 스킬 — 데모스(scientific-skills)의 것을 그대로 등록한다.
 # ★참고 자료에도 같은 내용이 있지만, 스킬 목록(/스킬 목록)에서 보이고 스킬로
 #   주입돼야 "무엇을 할 줄 아는가" 가 드러난다. 중복 주입은 llm 쪽에서 막는다.
+# ★데모스의 exploratory-data-analysis 는 .pdb/.fasta/.bam 같은 **과학 파일
+#   포맷 카탈로그**다 (현미경·유전체·화학). 관제 CSV 분석에는 쓸모가 없고,
+#   붙여 두면 서윤이 분자동역학 얘기를 꺼낸다 — 그래서 스킬로 안 심는다.
+#   대신 이 시스템의 데이터로 쓴 data-analysis 를 심는다 (analysis_skills/).
+#   일반 통계 방법(검정 선택·가정 점검)은 파일 포맷과 무관하므로 남긴다.
 ANALYSIS_SKILLS = {
-    "eda": ("exploratory-data-analysis", "SKILL.md",
-            "탐색적 데이터 분석(EDA) — CSV·표를 처음 받았을 때 구조·결측치·"
-            "이상치·분포·요약통계·상관·시계열 추이를 어떤 순서로 볼지"),
-    "stats": ("statistical-analysis", "SKILL.md",
-              "통계 검정 — 가설 검정, 유의성·p값, 효과크기, 표본 수, "
-              "평균·비율 비교, 상관·회귀, 결과 보고 방법"),
+    "data-analysis": ("data-analysis", "SKILL.md",
+                      "관제 데이터(발동이벤트·사건단위 CSV) 분석 방법 — "
+                      "무엇부터 볼지, 이상치·결측·분포·추이·구간, 전 행 재계산으로 "
+                      "무엇을 물어볼 수 있는지, 보고 형식, 자주 틀리는 것"),
     "stats-choose": ("statistical-analysis", "references/test_selection_guide.md",
                      "어떤 검정을 쓸지 고르기 — 자료 종류·집단 수·짝지음·"
                      "정규성에 따른 검정 선택표"),
     "stats-assume": ("statistical-analysis", "references/assumptions_and_diagnostics.md",
                      "검정 전 가정 점검 — 정규성·등분산·독립성·이상치 영향, "
                      "가정이 깨졌을 때의 대안"),
+    # 스킬을 **만드는** 법 — 서윤이 대화·데이터에서 새 스킬을 뽑아낼 때 본다.
+    # (이건 파일 포맷 얘기가 아니라 SKILL.md 형식·작성법이라 그대로 쓸 수 있다)
+    "skill-creator": ("skill-creator", "SKILL.md",
+                      "스킬 만들기 — SKILL.md 구조(YAML 머리말 name/description), "
+                      "폴더 구성, 좋은 설명 쓰는 법, 검증과 반복"),
+    "writing-skills": ("writing-skills", "SKILL.md",
+                       "스킬 잘 쓰는 법 — 언제 쓰는 스킬인지 드러내기, 분량, "
+                       "예시와 함정 넣기, 점진적 공개"),
+    "prompt-engineer": ("anthropic-prompt-engineer", "SKILL.md",
+                        "프롬프트 작성 — 지시를 명확히, 예시와 형식 지정, "
+                        "역할·제약·출력 형식 잡는 법"),
+    # 채워 넣는 **틀** — 초안을 쓸 때 이걸 그대로 채운다 (아래 draft_template)
+    "skill-template": ("skill-template", "SKILL.md",
+                       "새 스킬을 쓸 때 채우는 틀 — 표로 무엇을 보는지, "
+                       "번호로 절차, 판단 기준, 함정. 관제 스킬과 같은 꼴"),
+    "skill-patterns": ("skill-creator", "references/output-patterns.md",
+                       "출력 형식 패턴 — 템플릿·표·단계별 출력을 어떻게 "
+                       "정해 주는지"),
+    "skill-workflow": ("skill-creator", "references/workflows.md",
+                       "절차형 스킬 패턴 — 여러 단계를 순서대로 밟게 쓰는 법"),
 }
 
+TEMPLATE_SKILL = "skill-template"
 
-def _analysis_dir(base_dir):
+
+def draft_template(store):
+    """초안에 실을 **틀**. 스킬로 심어 둔 것을 그대로 읽어 쓴다.
+
+    ★틀을 코드에 또 적지 않는다 — 사용자가 스킬을 고치면 초안도 같이 바뀌어야
+      한다. 틀이 없으면 빈 문자열 (DRAFT_PROMPT 의 차례 설명만으로도 돈다).
+    """
+    md = store.read(TEMPLATE_SKILL) if store else None
+    if not md:
+        return ""
+    body = strip_front(md).strip()
+    # '쓸 때 규칙' 아래는 사람용 안내라 초안 재료로는 필요 없다
+    cut = body.find("## 쓸 때 규칙")
+    return (body[:cut] if cut > 0 else body).strip()
+
+
+def _analysis_dir(base_dir, skill):
+    """스킬마다 폴더가 다르다 — data-analysis 는 우리가 쓴 것(analysis_skills),
+    통계 방법은 데모스(scientific-skills)에도 동봉본에도 있을 수 있다."""
     rt = os.path.dirname(str(base_dir))            # real_time_amhs
-    for d in (os.path.join(os.path.dirname(rt), "scientific-skills"),
-              os.path.join(rt, "analysis_skills")):
-        if os.path.isdir(d):
+    for d in (os.path.join(rt, "analysis_skills"),
+              os.path.join(os.path.dirname(rt), "scientific-skills")):
+        if os.path.isdir(os.path.join(d, skill)):
             return d
     return ""
 
 
 def seed_analysis_skills(store, base_dir):
     """데이터 분석 스킬을 스킬 저장소에 등록한다. 등록한 이름 목록."""
-    root = _analysis_dir(base_dir)
-    if not root:
-        return []
     done = []
     for name, (skill, rel, desc) in ANALYSIS_SKILLS.items():
         if store.read(name):
+            continue
+        root = _analysis_dir(base_dir, skill)
+        if not root:
             continue
         path = os.path.join(root, skill, rel)
         if not os.path.isfile(path):
