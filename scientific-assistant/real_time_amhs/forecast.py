@@ -556,10 +556,10 @@ def score_days(days: list[str] | None = None, cfg: dict | None = None,
     cache {day: rows} 를 주면 CSV 를 다시 안 읽는다 (tune 이 넘겨준다).
     """
     from lp_client import load_config
-    from store_csv import list_days
+    from store_csv import recent_days
     cfg = cfg or load_config()
     if not days:
-        days = [d["day"] for d in (list_days(cfg) or [])][-limit:]
+        days = recent_days(limit, cfg)      # ★최근 N일 (예전엔 가장 오래된 N일)
     per, hit, fa, miss, leads = [], 0, 0, 0, []
     for day in days:
         r = score(day, cfg, params, (cache or {}).get(day))
@@ -600,10 +600,10 @@ def compare(days: list[str] | None = None, cfg: dict | None = None,
     판단은 사람이 한다 — 어느 쪽이 낫다고 자동으로 바꾸지 않는다.
     """
     from lp_client import load_config
-    from store_csv import list_days, read_day
+    from store_csv import read_day, recent_days
     cfg = cfg or load_config()
     if not days:
-        days = [d["day"] for d in (list_days(cfg) or [])][-limit:]
+        days = recent_days(limit, cfg)      # ★최근 N일 (예전엔 가장 오래된 N일)
     cache = {d: (read_day(d, cfg) or []) for d in days}
 
     m0 = _mcfg(_cfg(cfg))
@@ -665,9 +665,9 @@ def tune(days: list[str] | None = None, cfg: dict | None = None,
     windows = list(windows or [int(base["window_min"])])
 
     # 날짜별 CSV 는 한 번만 읽어 격자 전체가 나눠 쓴다
-    from store_csv import list_days, read_day
+    from store_csv import read_day, recent_days
     if not days:
-        days = [d["day"] for d in (list_days(cfg) or [])][-limit:]
+        days = recent_days(limit, cfg)      # ★최근 N일 (예전엔 가장 오래된 N일)
     cache = {d: (read_day(d, cfg) or []) for d in days}
 
     grid = []
@@ -714,12 +714,12 @@ def leading(days: list[str] | None = None, cfg: dict | None = None,
     """
     from lp_client import load_config
     from sentinel import alarm_floor, _row_dt
-    from store_csv import list_days, read_day
+    from store_csv import read_day, recent_days
     cfg = cfg or load_config()
     floor = alarm_floor(cfg)
 
     if not days:
-        days = [d["day"] for d in (list_days(cfg) or [])][-14:]
+        days = recent_days(14, cfg)         # ★최근 14일
     metrics = _driver_metrics(cfg)
     if not metrics:
         return {"ok": False, "error": "비교할 지표 목록이 없습니다(config.ui)"}
@@ -836,11 +836,11 @@ if __name__ == "__main__":
     import json
     import sys
     from lp_client import load_config
-    from store_csv import read_day, list_days
+    from store_csv import latest_day, read_day
     cfg = load_config()
     if len(sys.argv) > 1 and sys.argv[1] == "--leading":
         print(json.dumps(leading(sys.argv[2:] or None, cfg), ensure_ascii=False, indent=2))
     else:
         day = sys.argv[1] if len(sys.argv) > 1 else \
-            (list_days(cfg) or [{"day": datetime.now().strftime("%Y%m%d")}])[-1]["day"]
+            (latest_day(cfg) or datetime.now().strftime("%Y%m%d"))
         print(json.dumps(predict(read_day(day, cfg), cfg), ensure_ascii=False, indent=2))

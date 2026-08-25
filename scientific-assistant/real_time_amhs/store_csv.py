@@ -386,6 +386,26 @@ def list_days(cfg: dict | None = None) -> list[dict]:
     return out
 
 
+# ★list_days 는 **최신순**이다. 그래서 [-1] 은 '가장 오래된 날' 이다.
+#   실제로 여러 곳이 [-1] 을 '최신' 인 줄 알고 써서, 8월 25일에 7월 28일
+#   데이터를 '현재 상태' 로 보여 주고 있었다 (파일이 0728·0819 두 개였다).
+#   다시는 헷갈리지 않게 이름을 붙여 둔다 — 순서를 몰라도 되게.
+def latest_day(cfg: dict | None = None) -> str | None:
+    """확보된 가장 **최근** 날짜 (없으면 None).
+
+    ★행이 없는 파일은 건너뛴다. 수집이 막 시작돼 머리글만 있는 파일이
+      '최신' 이 되면, 볼 게 있는 어제를 두고 빈 오늘을 골라 버린다.
+    """
+    d = [x for x in list_days(cfg) if x["rows"] > 0]
+    return d[0]["day"] if d else None
+
+
+def recent_days(limit: int, cfg: dict | None = None) -> list[str]:
+    """최근 limit 일 — **오래된 날부터** 늘어놓는다 (그래야 그래프·추이가 맞다)."""
+    d = [x["day"] for x in list_days(cfg)]     # 최신순
+    return list(reversed(d[:max(0, int(limit))]))
+
+
 if __name__ == "__main__":
     cfg = load_config()
     print(f"저장 위치: {data_dir(cfg)}")

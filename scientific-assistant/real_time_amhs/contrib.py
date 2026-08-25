@@ -238,10 +238,11 @@ if __name__ == "__main__":
     import sys
     from datetime import datetime
     from lp_client import load_config
-    from store_csv import list_days, read_day
+    from store_csv import latest_day, read_day
     cfg = load_config()
+    # ★[-1] 은 '가장 오래된 날' 이었다 (list_days 는 최신순)
     day = sys.argv[1] if len(sys.argv) > 1 else \
-        (list_days(cfg) or [{"day": datetime.now().strftime("%Y%m%d")}])[-1]["day"]
+        (latest_day(cfg) or datetime.now().strftime("%Y%m%d"))
     rows = read_day(day, cfg)
     if len(sys.argv) > 2:
         at = datetime.strptime(f"{day} {sys.argv[2]}", "%Y%m%d %H:%M")

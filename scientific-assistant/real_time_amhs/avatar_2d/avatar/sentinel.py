@@ -403,6 +403,8 @@ def chart():
             "cuts": d.get("cuts") or {"warn": 60, "danger": 71, "critical": 85},
             "area_cap": d.get("area_cap"), "delta_min": d.get("delta_min"),
             "blind": d.get("blind") or [], "fabs": out,
+            "warn": d.get("warn") or "",          # "오늘 수집이 없어 …" 그대로
+            "fallback_day": d.get("fallback_day"), "day": d.get("day") or "",
             "degraded": bool(r.get("degraded")), "err": r.get("err") or ""}
 
 
@@ -513,6 +515,11 @@ def evidence():
         head.append("⚠⚠ 하루가 넘었다 — 이건 실시간이 아니다. 첫 문장에서 "
                     "'관제 수집이 멈춰 실시간 값이 아니다' 라고 먼저 말하고, "
                     "그다음에 수치를 말하라.")
+    # ★관제가 '오늘 수집이 없어 옛 날짜를 보고 있다' 고 알려 주면 그대로
+    #   전한다 — 이 사실을 안 말하면 옛 값을 현재로 읽는다 (실제로 그랬다).
+    if d.get("warn"):
+        head.append("⚠ 관제 알림: {} — 이 문장을 대답 첫머리에 그대로 전하라."
+                    .format(d["warn"]))
     return _evidence_from(d, head)
 
 

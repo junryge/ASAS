@@ -45,7 +45,7 @@
          '현재 상태' 를 물으면 대답과 같이 자동으로 열린다. -->
     <div id="chartWrap">
       <div id="chartHead">
-        <b>현재 상태</b>
+        <b title="머리를 잡고 끌면 옮겨져요 · 두 번 누르면 제자리">현재 상태</b>
         <span class="hint" id="chartAt"></span>
         <span class="vnBtn" id="chartPin" title="계속 열어 둡니다">고정</span>
         <span class="vnBtn" id="chartClose">✕</span>
@@ -59,6 +59,9 @@
         <span id="alarmLv">경계</span>
         <span id="alarmTime"></span>
       </div>
+      <!-- 정상일 때도 '실시간으로 확인하는' 자리 — FAB별 현재 점수와
+           데이터 시각. 예전엔 'FAB 정상' 글자만 있어서 볼 게 없었다. -->
+      <div id="alarmLive"></div>
       <div id="alarmBody">
         <div id="alarmFab">—</div>
         <img id="alarmImg" alt="">

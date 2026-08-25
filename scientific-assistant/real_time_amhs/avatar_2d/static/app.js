@@ -532,6 +532,7 @@ let sayMode='novel';    // novel|bubble|off
 let sayModeSet=false;   // 사용자가 칩을 눌러 직접 골랐나 (자동 저장과 구분)
 let alarmPos=null;      // FAB 알람 패널을 옮겨 둔 자리 {l,t} (null = 기본 우상단)
 let alogPos=null;       // 알람 기록 창을 옮겨 둔 자리 {l,t} (null = 가운데)
+let chartPos=null;      // 현재 상태 그래프를 옮겨 둔 자리 (null = 좌상단)
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
 let hudOpen=true;       // 좌측 패널 펼침 여부
@@ -1091,7 +1092,8 @@ function collectSettings(withKey){
             다음에 열 때 그게 '대사 끔' 으로 읽혀 노벨이 사라진다. */
          bubble: sayMode !== 'off',
          sayMode:sayMode, sayModeSet:sayModeSet,
-         alarmPos:alarmPos, alogPos:alogPos, patch:patchOn,
+         alarmPos:alarmPos, alogPos:alogPos, chartPos:chartPos,
+         patch:patchOn,
          stream:$('#streamOn').checked, hud:hudOpen, ctx:ctxOpen, ctxLimit:ctxLimit,
          eye:eyeFollow, badge:badgeOn, autoScene:autoScene,
          personaBackup:personaBackup, costume:costumeIdx, bg:bgIdx };
@@ -1140,6 +1142,7 @@ function applySettings(o, live){
     }
     if(o.ui.alarmPos!==undefined){ alarmPos=o.ui.alarmPos; applyAlarmPos(); }
     if(o.ui.alogPos!==undefined){ alogPos=o.ui.alogPos; applyAlogPos(); }
+    if(o.ui.chartPos!==undefined){ chartPos=o.ui.chartPos; applyChartPos(); }
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
@@ -2125,6 +2128,9 @@ function renderChart(){
   if(at) at.textContent=(d.at||'')+(d.age_text?' · '+d.age_text:'')
     +(d.live?' · 실시간':'');
   const note=[];
+  /* ★관제가 '오늘 수집이 없어 옛 날짜를 보고 있다' 고 하면 그것부터 —
+     이게 안 보이면 8월에 7월 값을 현재 상태로 읽는다 (실제로 그랬다). */
+  if(d.warn) note.push('⛔ '+esc(d.warn));
   /* ★"40780분 전" 은 사람이 못 읽는다 (실제 지적) — 서버가 '28일 3시간 전'
      으로 만들어 준다. 하루가 넘으면 그건 실시간이 아니라 멈춘 수집이다. */
   if(d.stale) note.push('⚠ 지금 값이 아닙니다 — <b>'+esc(d.age_text||'')+'</b> 값입니다.'
@@ -2151,6 +2157,23 @@ async function loadChart(){
     }
   }
   renderChart();
+  paintAlarmLive(chartData);
+}
+
+/* 알람 패널의 실시간 줄 — 정상일 때도 '지금 몇 점인지' 가 보여야 한다.
+   ★예전엔 정상이면 'FAB 정상' 글자 하나뿐이라 볼 게 없었다. 실시간으로
+     확인하려고 보는 자리인데 정작 수치가 없었다. */
+function paintAlarmLive(d){
+  const el=$('#alarmLive');
+  if(!el) return;
+  if(!d || !d.ok || !(d.fabs||[]).length){ el.classList.remove('on'); return; }
+  const L=(d.fabs||[]).slice(0,6).map(f=>
+    `<span class="f${esc(f.level)}">${esc(f.fab)} <b>${gnum(f.score)}</b></span>`);
+  if(d.warn) L.push(`<span class="stale">⛔ 오늘 수집 없음 · ${esc(d.day||'')} 자료</span>`);
+  else if(d.stale) L.push(`<span class="stale">⚠ ${esc(d.age_text||'')} 값</span>`);
+  else if(d.at) L.push(`<span style="width:100%">데이터 ${esc(d.at)}</span>`);
+  el.innerHTML=L.join('');
+  el.classList.add('on');
 }
 
 function openChart(){
@@ -2179,6 +2202,70 @@ function maybeOpenChart(text){
   }
   openChart();
 }
+
+/* ---------- 그래프 창 옮기기 ----------
+   알람 패널·기록 창과 **같은 규칙**이다: 머리를 잡고 끌고, 화면 밖으로는
+   못 나가고, 놓은 자리를 기억하고, 되살릴 때 다시 화면 안으로 당긴다.
+   ★자리를 잃어도 [그래프] 칩을 두 번 누르면(닫고 열고) 안 돌아온다 —
+     기억한 자리가 그대로이기 때문이다. 그래서 머리 두 번 누르기로
+     제자리(좌상단)로 돌아오게 해 둔다. */
+function applyChartPos(tries){
+  const box=$('#chartWrap');
+  if(!box || !chartPos) return;
+  box.style.left=chartPos.l; box.style.top=chartPos.t;
+  box.style.right='auto'; box.style.bottom='auto';
+  const c=clampInWrap(box, parseFloat(chartPos.l)||0, parseFloat(chartPos.t)||0);
+  if(!c){ retryLater(applyChartPos, tries===undefined?8:tries); return; }
+  box.style.left=c.l+'px'; box.style.top=c.t+'px';
+  chartPos={l:box.style.left, t:box.style.top};
+}
+(function initChartDrag(){
+  const box=$('#chartWrap'), head=$('#chartHead'), wrap=$('#stageWrap');
+  if(!box || !head || !wrap) return;
+  let dx=0, dy=0, on=false;
+  function place(l, t){
+    const c=clampInWrap(box, l, t);
+    if(!c) return;
+    box.style.left=c.l+'px'; box.style.top=c.t+'px';
+    box.style.right='auto'; box.style.bottom='auto';
+  }
+  function down(e){
+    if(e.button!==undefined && e.button!==0) return;
+    /* [고정]·[✕] 는 버튼이다 — 끌기로 먹으면 못 누른다 */
+    if(e.target && e.target.classList && e.target.classList.contains('vnBtn')) return;
+    const b=box.getBoundingClientRect(), w=wrap.getBoundingClientRect();
+    dx=e.clientX-b.left; dy=e.clientY-b.top;
+    place(b.left-w.left, b.top-w.top);
+    on=true; box.classList.add('dragging');
+    e.preventDefault();
+  }
+  function move(e){
+    if(!on) return;
+    const w=wrap.getBoundingClientRect();
+    place(e.clientX-w.left-dx, e.clientY-w.top-dy);
+  }
+  function up(){
+    if(!on) return;
+    on=false; box.classList.remove('dragging');
+    chartPos={l:box.style.left, t:box.style.top};
+    saveSettings();
+  }
+  head.addEventListener('mousedown', down);
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+  head.addEventListener('touchstart', e=>{ if(e.touches[0]) down(e.touches[0]); }, {passive:false});
+  window.addEventListener('touchmove', e=>{ if(on && e.touches[0]) move(e.touches[0]); }, {passive:true});
+  window.addEventListener('touchend', up);
+  head.addEventListener('dblclick', e=>{
+    if(e.target && e.target.classList && e.target.classList.contains('vnBtn')) return;
+    box.style.left=''; box.style.top=''; box.style.right=''; box.style.bottom='';
+    chartPos=null; saveSettings();
+  });
+  window.addEventListener('resize', ()=>{
+    if(!chartPos) return;
+    place(parseFloat(box.style.left)||0, parseFloat(box.style.top)||0);
+  });
+})();
 
 (function initChart(){
   const c=$('#chartChip');
@@ -2214,7 +2301,10 @@ async function pollSentinel(){
        섞이면 어느 쪽인지 모른다. 관제가 끊기면 다시 보여 준다. */
     const tb=$('#alarmTest'); if(tb) tb.style.display='none';
   }
-  if(chartOn) loadChart();          // 열려 있는 동안만 — 닫혀 있으면 안 부른다
+  /* ★알람 패널의 실시간 줄에도 이 값이 필요하다 — 그래프를 닫아 놨다고
+     정상일 때 볼 게 없어지면 '실시간 확인' 이 안 된다. 관제 응답은
+     서버가 5초 캐시하므로 폴링마다 불러도 관제 서버엔 안 간다. */
+  loadChart();
   const worst = (s.alarms||[])[0];
   if(worst){
     const f = FABS.find(x=>x.key===worst.fab)

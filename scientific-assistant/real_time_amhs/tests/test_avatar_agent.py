@@ -1561,13 +1561,29 @@ class 알람_패널_위치(unittest.TestCase):
         self.assertIn("top:12px", blk)
         self.assertNotIn("bottom:", blk, "아래에 있으면 대사창과 겹친다")
 
-    def test_평소에는_흐리고_울릴_때만_또렷하다(self):
-        m = re.search(r"opacity:([\d.]+);transition", self._box())
-        self.assertIsNotNone(m, "평소 흐리게 하는 설정이 없다")
-        self.assertLess(float(m.group(1)), 1.0)
+    def test_정상일_때도_또렷하게_보인다(self):
+        """★opacity .62 로 흐리게 해 뒀더니 배경에 묻혀 "팝업창 어디 있냐" 가
+        됐다 (실제 지적). 이 패널은 실시간으로 쳐다보는 자리다 — 또렷하게.
+        거슬리지 않게 하는 건 투명도가 아니라 크기·색으로 한다."""
+        m = re.search(r"opacity:([\d.]+)", self._box())
+        self.assertIsNotNone(m, "투명도 설정을 못 찾았다")
+        self.assertEqual(float(m.group(1)), 1.0, "흐리면 안 보인다")
         self.assertIn("#alarmBox.on{opacity:1", self.css,
                       "경계 이상인데도 흐리면 알람 노릇을 못 한다")
-        self.assertIn("#alarmBox:hover{opacity:1", self.css)
+
+    def test_정상일_때도_실시간_수치가_보인다(self):
+        """★'FAB 정상' 글자 하나뿐이면 실시간으로 확인할 게 없다."""
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn('id="alarmLive"', html)
+        self.assertIn("paintAlarmLive(chartData)", js)
+        i = js.index("function paintAlarmLive(")
+        blk = js[i:js.index("\nfunction openChart(", i)]
+        self.assertIn("f.score", blk, "점수를 안 그린다")
+        self.assertIn("d.at", blk, "데이터 시각을 안 그린다")
+        self.assertIn("d.warn", blk, "수집 멈춤을 안 알린다")
 
     def test_대사창보다_위에_있다(self):
         """★알람이 대사창에 덮여 안 보이면 알람이 아니다. 옮겨 놓은 패널을
@@ -3443,8 +3459,14 @@ class 그래프_화면(unittest.TestCase):
         self.assertIn("if(!d.ok)", blk)
         self.assertIn("못 읽었습니다", blk)
 
-    def test_닫혀_있으면_서버를_안_두드린다(self):
-        self.assertIn("if(chartOn) loadChart();", self.js)
+    def test_닫혀_있어도_알람_패널의_실시간_줄은_채운다(self):
+        """★그래프를 닫아 놨다고 정상일 때 볼 게 없어지면 '실시간 확인' 이
+        안 된다. 관제 응답은 서버가 5초 캐시하므로 폴링마다 불러도 관제
+        서버까지는 안 간다."""
+        i = self.js.index("async function pollSentinel(")
+        blk = self.js[i:self.js.index("const worst", i)]
+        self.assertIn("loadChart();", blk)
+        self.assertNotIn("if(chartOn) loadChart();", blk)
 
     def test_칩과_상자가_화면에_있다(self):
         self.assertIn('id="chartWrap"', self.html)

@@ -512,7 +512,7 @@ def api_fab_compare():
     try:
         import time as _time
         import fab_score
-        from store_csv import list_days, read_day
+        from store_csv import latest_day, list_days, read_day
         cfg = get_ctx("ALL")["cfg"]
         day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
         at_q = (request.args.get("at") or "").strip()
@@ -521,12 +521,32 @@ def api_fab_compare():
         if _FAB_CMP_CACHE["out"] is not None and _FAB_CMP_CACHE["key"] == key \
                 and now - _FAB_CMP_CACHE["at"] < _FAB_CMP_TTL:
             return jsonify(_FAB_CMP_CACHE["out"])
+        # ── 어느 날을 '현재 상태' 로 볼 것인가 ────────────────────────
+        # ★예전: days[-1] — list_days 는 **최신순**이라 이건 '가장 오래된 날'
+        #   이다. 파일이 0728·0819 두 개일 때 8월 25일에 7월 28일을 현재
+        #   상태로 보여 줬다 (실제 증상: "왜 자꾸 7월 28일 보냐").
+        # ★지금: **오늘**을 먼저 본다. 오늘 수집이 없으면 최근 날로 물러서되
+        #   물러섰다는 사실을 응답에 남긴다 — 옛 데이터를 현재라고 내놓는
+        #   것이 이 시스템에서 제일 위험하다.
+        fallback = None
         if not day:
-            days = list_days(cfg)
-            day = days[-1]["day"] if days else datetime.now().strftime("%Y%m%d")
+            today = datetime.now().strftime("%Y%m%d")
+            has_today = any(d["day"] == today and d["rows"] > 0
+                            for d in list_days(cfg))
+            day = today
+            if not has_today:
+                newest = latest_day(cfg)
+                if newest:
+                    fallback = {"asked_day": today, "used_day": newest}
+                    day = newest
         rows = read_day(day, cfg)
         out = fab_score.compare(rows, parse_dt(at_q or None), cfg)
         out["day"] = day
+        if fallback:
+            out["fallback_day"] = fallback
+            out["warn"] = ("오늘({}) 수집 데이터가 없어 {} 자료를 보고 있습니다 "
+                           "— 실시간이 아닙니다. 수집이 멈췄는지 확인하세요."
+                           .format(fallback["asked_day"], fallback["used_day"]))
         if out.get("ok"):
             _FAB_CMP_CACHE.update(key=key, at=now, out=out)
         return jsonify(out)

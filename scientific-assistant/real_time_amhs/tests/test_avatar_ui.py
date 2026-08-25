@@ -104,6 +104,11 @@ class _Page(unittest.TestCase):
             u = route.request.url
             if "/api/fab/chart" in u:
                 body = chart if chart is not None else CHART
+            elif "/api/fab/status" in u:
+                body = {"ok": True, "alarms": [], "at": CHART["at"],
+                        "stale": bool(CHART.get("stale")), "hold": None,
+                        "hold_min": 60, "degraded": False, "held_s": 0,
+                        "age_min": CHART.get("age_min"), "err": ""}
             elif u.rstrip("/").endswith("/api/ctx"):
                 # ★계측은 페이지가 뜨자마자 나간다 — goto 뒤에 route 를 걸면
                 #   이미 지나간 뒤라 안 걸린다 (그래서 로컬 근사값이 보였다)
@@ -160,6 +165,36 @@ class FAB_알람_패널이_화면에_있다(_Page):
         r = self.rect(pg, "#alarmBox")
         self.assertTrue(r["shown"])
         self.assertLess(st["r"] - r["r"], 40, "제자리(우상단)로 안 돌아왔다")
+
+
+class 알람_패널에_실시간_수치가_보인다(_Page):
+    """★"fab 정상 팝업창 어디있냐" — 패널은 있었는데 opacity .62 라 배경에
+    묻혔고, 정상일 땐 'FAB 정상' 글자뿐이라 볼 것도 없었다."""
+
+    def test_또렷하다(self):
+        pg, _ = self.open()
+        op = pg.eval_on_selector("#alarmBox", "e=>getComputedStyle(e).opacity")
+        self.assertEqual(float(op), 1.0, "흐리면 배경에 묻혀 안 보인다")
+
+    def test_FAB별_점수가_실제로_그려진다(self):
+        pg, errs = self.open()
+        pg.wait_for_timeout(1600)          # 폴링 한 바퀴
+        self.assertTrue(self.rect(pg, "#alarmLive")["shown"],
+                        "실시간 줄이 안 그려졌다")
+        txt = pg.inner_text("#alarmLive")
+        self.assertIn("M16HUB", txt)
+        self.assertIn("72", txt)
+        # 이 자료는 오래된 것이라 시각 대신 경고가 뜬다 — 그것도 실시간
+        # 확인의 일부다 ("지금 값이 아니다" 를 못 보면 옛 값을 현재로 읽는다)
+        self.assertIn("28일 7시간 전", txt)
+        self.assertEqual(errs, [])
+
+    def test_그래프를_안_열어도_보인다(self):
+        """★그래프를 닫아 놨다고 볼 게 없어지면 '실시간 확인' 이 안 된다."""
+        pg, _ = self.open()
+        pg.wait_for_timeout(1600)
+        self.assertFalse(self.rect(pg, "#chartWrap")["shown"])
+        self.assertTrue(self.rect(pg, "#alarmLive")["shown"])
 
 
 class 현재_상태_그래프가_보인다(_Page):
