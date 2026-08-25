@@ -1582,7 +1582,9 @@ class 알람_패널_위치(unittest.TestCase):
         blk = blk[:blk.index("\nfunction applyAlarmPos(")]
         self.assertIn("head.addEventListener('mousedown'", blk)
         self.assertIn("touchstart", blk, "터치로는 못 옮긴다")
-        self.assertIn("dblclick", blk, "잘못 옮겼을 때 되돌릴 길이 없다")
+        # 되돌리기는 알람 기록 창의 [패널 원위치] 로 옮겼다 — 제목 두 번 누르기는
+        # '알람 기록 열기' 가 가져갔다 (같은 몸짓에 두 기능을 물리면 안 된다)
+        self.assertIn("alogReset", js, "잘못 옮겼을 때 되돌릴 길이 없다")
         self.assertIn("saveSettings()", blk, "놓은 자리를 안 기억한다")
         # 화면 밖으로 나가면 되찾을 방법이 없다
         self.assertIn("Math.max(4, Math.min(l,", blk)
@@ -1967,6 +1969,347 @@ class 등록한_자료도_분석한다(unittest.TestCase):
         self.assertIn("an.textContent='분석'", blk)
         self.assertIn("pendingAttach = d.name", blk,
                       "눌러도 그 자료가 분석 대상이 되지 않는다")
+
+
+class 참고_자료_등록(unittest.TestCase):
+    """'필요한 건 전부 등록해 — 서윤이 확인 가능하게.'
+    ★등록만 하고 한 번도 안 걸리면 등록한 게 아니다. 질문이 실제로 그 자료로
+    가는지까지 본다."""
+
+    BASE = Path(util.BASE) / "avatar_2d"
+
+    def setUp(self):
+        from avatar import docs as adocs
+        self.adocs = adocs
+        self.tmp = tempfile.TemporaryDirectory()
+        self.st = adocs.DocStore(Path(self.tmp.name) / "docs.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _seed(self):
+        self.adocs.seed_docs(self.st, self.BASE)
+        self.adocs.seed_local_docs(self.st, self.BASE)
+        self.adocs.seed_column_dict(self.st, self.BASE)
+        return {d["name"] for d in self.st.list()}
+
+    def test_분석_스킬을_데모스에서_가져온다(self):
+        """새로 쓰지 않는다 — 데모스(scientific-skills)에 있는 것을 그대로."""
+        got = self.adocs.seed_docs(self.st, self.BASE)
+        if not got:
+            self.skipTest("scientific-skills 폴더 없음")
+        self.assertIn("데이터분석_탐색적분석(EDA).md", got)
+        body = self.st.get("데이터분석_탐색적분석(EDA).md")
+        self.assertIn("에서 가져옴", body, "출처를 안 밝힌다")
+        self.assertIn("Exploratory Data Analysis", body, "원문이 안 들어왔다")
+
+    def test_영어_문서에_한글_색인을_붙인다(self):
+        """★원문이 영어라 한국어 질문과 겹치는 낱말이 없다 — 색인이 없으면
+        등록만 되고 한 번도 안 걸린다."""
+        if not self.adocs.seed_docs(self.st, self.BASE):
+            self.skipTest("scientific-skills 폴더 없음")
+        body = self.st.get("데이터분석_탐색적분석(EDA).md")
+        self.assertIn("한글 색인", body)
+        for w in ("이상치", "결측", "분포", "추이"):
+            self.assertIn(w, body, w)
+
+    def test_현장_자료도_전부_등록한다(self):
+        got = self._seed()
+        for must in ("관제_임계값.md", "관제_룰과_점수산식.md",
+                     "관제_결과해석과_용어표준.md", "관제_FAB별_위험도_스코어.md",
+                     "관제_컬럼사전.md"):
+            self.assertIn(must, got, must)
+
+    def test_한도_안에_들어간다(self):
+        from avatar import config as c
+        self._seed()
+        total = sum(d["chars"] for d in self.st.list())
+        self.assertLess(total, c.DOCS_BYTES,
+                        "시드만으로 한도를 넘으면 사용자 자료가 밀려난다")
+
+    def test_서버가_켜질_때_전부_등록한다(self):
+        """★함수만 있고 안 부르면 자료함이 텅 빈 채로 돈다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("cls.doc_store = docs.DocStore"):
+                  src.index("sentinel.init(")]
+        for call in ("docs.seed_docs(cls.doc_store, base_dir)",
+                     "docs.seed_local_docs(cls.doc_store, base_dir)",
+                     "docs.seed_column_dict(cls.doc_store, base_dir)"):
+            self.assertIn(call, blk, call + " 를 안 부른다")
+
+    def test_두_번_심어도_안_늘어난다(self):
+        a = self._seed()
+        b = self._seed()
+        self.assertEqual(a, b)
+
+    def test_질문이_맞는_자료로_간다(self):
+        """등록해 놓고 엉뚱한 자료가 걸리면 답이 틀어진다."""
+        if not self._seed():
+            self.skipTest("자료 없음")
+        cases = [("3F_STORAGE_UTIL 이 뭐야", ("관제_임계값.md", "관제_컬럼사전.md")),
+                 ("점수 어떻게 계산해", ("관제_룰과_점수산식.md",
+                                        "관제_FAB별_위험도_스코어.md")),
+                 ("보고서 용어 표준 알려줘", ("관제_결과해석과_용어표준.md",)),
+                 ("이 파일 이상치 분석해줘", ("데이터분석_탐색적분석(EDA).md",))]
+        for q, want in cases:
+            ctx = self.st.context(q, 700)
+            self.assertTrue(ctx, q + " → 아무 자료도 안 걸림")
+            head = ctx.splitlines()[0]
+            self.assertTrue(any(w in head for w in want),
+                            "{} → {} (기대: {})".format(q, head, want))
+
+    def test_잡담에는_자료를_안_붙인다(self):
+        """★예전엔 겹치는 낱말이 없어도 아무 문단이나 실려 예산을 먹었다."""
+        if not self._seed():
+            self.skipTest("자료 없음")
+        for q in ("안녕", "고마워", "ㅋㅋ"):
+            self.assertEqual(self.st.context(q, 700), "", q)
+
+    def test_컬럼_이름_통째_일치가_이긴다(self):
+        """★'3f','storage','util' 조각이 다 걸리고 낱말까지 더 겹치는 엉뚱한
+        절이 있어도, 컬럼 이름이 통째로 있는 절이 이겨야 한다."""
+        self.st.add("A.md", "## M14B 절\n3f storage util 이 뭐야 기준 설명입니다")
+        self.st.add("B.md", "## M16HUB 절\n| `M16HUB.STRATE.STB.3F_STORAGE_UTIL` | 99.3 |")
+        # 예산은 둘을 다 담지 못할 만큼 — 그래야 '고르는' 길을 탄다
+        ctx = self.st.context("3F_STORAGE_UTIL 이 뭐야", 100)
+        self.assertIn("B.md", ctx.splitlines()[0],
+                      "조각 점수만 보면 엉뚱한 절이 이긴다")
+
+
+class UI_에서도_등록된다(unittest.TestCase):
+    """자동 등록과 별개로 사람이 직접 넣을 수 있어야 한다."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            cls.html = f.read()
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def test_표도_받는다(self):
+        i = self.html.index('id="docFile"')
+        blk = self.html[i:i + 240]
+        for ext in (".csv", ".tsv", ".md", ".txt"):
+            self.assertIn(ext, blk, ext + " 를 못 올린다")
+
+    def test_확장자를_통째로_안_뗀다(self):
+        """★.csv 가 사라지면 표인 줄 모른다."""
+        i = self.js.index("$('#docFile').onchange")
+        blk = self.js[i:self.js.index("\nbind('r_docbud'", i)]
+        self.assertIn("keep ? f.name", blk)
+        self.assertNotIn("f.name.replace(/\\.[^.]+$/,'')", blk)
+
+    def test_cp949_도_읽는다(self):
+        """사내 CSV 는 cp949 가 흔하다 — utf-8 로만 읽으면 깨진다."""
+        i = self.js.index("$('#docFile').onchange")
+        blk = self.js[i:self.js.index("\nbind('r_docbud'", i)]
+        self.assertIn("euc-kr", blk)
+
+
+class 컬럼_사전(unittest.TestCase):
+    """'데이터 이게 무엇인지' — 컬럼 뜻이 있어야 CSV 를 읽을 수 있다.
+    ★새로 쓰지 않고 fab_score.WATCH 를 그대로 편다."""
+
+    BASE = Path(util.BASE) / "avatar_2d"
+
+    def setUp(self):
+        from avatar import docs as adocs
+        self.body = adocs.build_column_dict(self.BASE)
+        if not self.body:
+            self.skipTest("fab_score 를 못 불러옴")
+
+    def test_실제_정의에서_나온다(self):
+        import fab_score
+        cols = {c.get("amos") for r in fab_score.WATCH.values()
+                for cs in r.values() for c in (cs or []) if c.get("amos")}
+        miss = [c for c in cols if c not in self.body]
+        self.assertEqual(miss, [], "사전에 빠진 감시 컬럼: %r" % (miss[:5],))
+
+    def test_룰은_한글명으로_적는다(self):
+        self.assertEqual(terms.CODE_RE.findall(self.body), [],
+                         "사전에 룰 코드가 들어갔다")
+        self.assertIn("반송지연", self.body)
+        self.assertIn("Storage FULL", self.body)
+
+    def test_임계와_단위가_같이_있다(self):
+        self.assertIn("| 임계 | 단위 |", self.body)
+        self.assertIn("99.3", self.body)
+
+    def test_FAB_마다_절을_나눈다(self):
+        """★표 하나로 두면 덩어리가 커서 예산에 안 들어가 통째로 버려진다."""
+        for f in ("M14", "M14B", "M16A", "M16B", "M16HUB"):
+            self.assertIn("## {} 감시 컬럼".format(f), self.body, f)
+
+    def test_점수_컬럼도_설명한다(self):
+        self.assertIn("unified_risk_score", self.body)
+        self.assertIn("area_score", self.body)
+
+
+class 첨부_한도_6MB(unittest.TestCase):
+    def test_화면과_서버가_같은_한도다(self):
+        from avatar import server as asrv
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("const CSV_MAX = 6*1024*1024;", js)
+        self.assertEqual(asrv.UPLOAD_MAX, 6 * 1024 * 1024)
+
+    def test_서버도_막는다(self):
+        """★브라우저를 거치지 않고 올릴 수도 있다 — 서버가 분명히 거절해야
+        원인이 보인다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index('if path == "/api/upload":')
+        blk = src[i:src.index("/api/ctx", i)]
+        self.assertIn('if len(text.encode("utf-8")) > UPLOAD_MAX:', blk,
+                      "한도 판정이 없다 — 큰 파일이 그대로 들어온다")
+        self.assertIn("413", blk, "한도 초과를 성공처럼 돌려주면 안 된다")
+
+    def test_넘으면_얼마인지_말해_준다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        i = js.index("if(f.size > cap){")
+        blk = js[i:i + 420]
+        self.assertIn("MB 인데 한도는", blk, "왜 거절됐는지 알 수가 없다")
+
+
+class 분석_능력을_실제로_쓴다(unittest.TestCase):
+    """'그냥 두는 게 아니다 — 버추얼 에이전트가 사용해야지.'"""
+
+    def test_규칙이_분석_절차를_가리킨다(self):
+        self.assertIn("[참고 자료] 의 분석 절차", allm.AGENT_RULES)
+        self.assertIn("결측·이상치", allm.AGENT_RULES)
+
+    def test_숫자는_계산값만_쓰라고_못박는다(self):
+        """참고 자료는 '어떻게 볼지' 이지 이 파일의 값이 아니다."""
+        self.assertIn("이 파일의 값을 담고 있지 않다", allm.AGENT_RULES)
+
+    def test_재계산_블록을_쓰라고_알려_준다(self):
+        self.assertIn("재계산", allm.AGENT_RULES)
+        self.assertIn("시각·시간대·FAB·컬럼·개수", allm.AGENT_RULES)
+
+
+class 알람_기록(_Sentinel):
+    """'경계·위험·초위험 따로 기록 — FAB, 날짜, 시간, 점수, 해제여부.
+    해제할 때 내용을 남길 수 있게.'"""
+
+    def test_등급마다_한_줄씩_남는다(self):
+        sentinel._record([{"fab": "M16HUB", "level": "경계", "score": 63}])
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        sentinel._record([{"fab": "M16HUB", "level": "초위험", "score": 91}])
+        lv = [e["level"] for e in sentinel.history()]
+        self.assertEqual(lv, ["경계", "위험", "초위험"],
+                         "등급이 올라간 것이 따로 안 남는다")
+
+    def test_필요한_칸이_다_있다(self):
+        sentinel._record([{"fab": "M14B", "level": "위험", "score": 78}])
+        e = sentinel.history()[-1]
+        for k in ("fab", "date", "time", "score", "level", "cleared", "note", "id"):
+            self.assertIn(k, e, k)
+        self.assertEqual(e["fab"], "M14B")
+        self.assertEqual(e["score"], 78)
+        self.assertRegex(e["date"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertRegex(e["time"], r"^\d{2}:\d{2}$")
+        self.assertFalse(e["cleared"], "발생한 순간부터 해제로 잡히면 안 된다")
+
+    def test_해제하면_내용이_남고_닫힌다(self):
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        sentinel._record([{"fab": "M16HUB", "level": "초위험", "score": 88}])
+        n = sentinel.clear_note("M16HUB", "STB 적재 줄이고 리프터 점검함")
+        self.assertEqual(n, 2, "열려 있던 건이 다 안 닫혔다")
+        opened = [e for e in sentinel.history() if e["kind"] != "off"]
+        self.assertTrue(all(e["cleared"] for e in opened))
+        self.assertTrue(all("리프터 점검" in e["note"] for e in opened))
+        self.assertTrue(opened[0]["cleared_at"], "해제 시각이 안 남는다")
+        off = [e for e in sentinel.history() if e["kind"] == "off"][-1]
+        self.assertIn("리프터 점검", off["note"],
+                      "해제 줄 자체에 남긴 내용이 없다")
+
+    def test_옛_사건은_다시_안_건드린다(self):
+        """★한 번 닫힌 건까지 거슬러 다시 닫으면 옛 기록의 해제 시각이
+        오늘로 덮인다 — 언제 끝난 일인지 알 수 없게 된다."""
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        sentinel.clear_note("M16HUB", "1차 조치", when="2026-08-23 10:00")
+        sentinel._last_levels = {}
+        sentinel._record([{"fab": "M16HUB", "level": "초위험", "score": 91}])
+        sentinel.clear_note("M16HUB", "2차 조치", when="2026-08-24 20:00")
+        ev = [e for e in sentinel.history() if e["kind"] != "off"]
+        first = next(e for e in ev if e["level"] == "위험")
+        self.assertEqual(first["cleared_at"], "2026-08-23 10:00",
+                         "옛 사건의 해제 시각이 덮였다")
+        self.assertEqual(first["note"], "1차 조치")
+
+    def test_다른_FAB_은_안_건드린다(self):
+        sentinel._record([{"fab": "M14", "level": "경계", "score": 61},
+                          {"fab": "M16A", "level": "위험", "score": 75}])
+        sentinel.clear_note("M14", "조치함")
+        by = {e["fab"]: e for e in sentinel.history() if e["kind"] != "off"}
+        self.assertTrue(by["M14"]["cleared"])
+        self.assertFalse(by["M16A"]["cleared"], "남의 FAB 건까지 닫았다")
+
+    def test_기록에_따로_메모를_달_수_있다(self):
+        sentinel._record([{"fab": "M16B", "level": "경계", "score": 62}])
+        eid = sentinel.history()[-1]["id"]
+        self.assertEqual(sentinel.note(eid, "설비 점검 예정"), 1)
+        self.assertEqual(sentinel.history()[-1]["note"], "설비 점검 예정")
+        self.assertEqual(sentinel.note("없는id", "x"), 0)
+
+    def test_파일에_남아_다시_켜도_보인다(self):
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        sentinel.clear_note("M16HUB", "환기 조치")
+        with open(os.path.join(self.tmp.name, "alarms.json"), encoding="utf-8") as f:
+            saved = json.load(f)
+        self.assertTrue(any(e.get("note") == "환기 조치" for e in saved))
+
+    def test_화면에_표로_나온다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("function renderAlog(){"):js.index("function alogText(")]
+        for col in ("FAB", "날짜", "시간", "등급", "점수", "해제", "조치 내용"):
+            self.assertIn(col, blk, col + " 칸이 없다")
+        self.assertIn("e.kind!=='off'", blk, "해제 줄까지 사건처럼 세면 개수가 틀린다")
+        self.assertIn("(e.cleared?'':'open')", blk, "미해제 건에 표시가 안 붙는다")
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            self.assertIn("#alogBody tr.open", f.read(), "미해제 건이 눈에 안 띈다")
+
+    def test_제목을_두_번_누르면_열린다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("(function initAlog(){"):]
+        blk = blk[:blk.index("\n})();")]
+        self.assertIn("t.ondblclick", blk)
+        self.assertIn("openAlog()", blk)
+        # 자리 되돌리기는 기록 창 버튼으로 옮겼다 — 두 기능이 같은 몸짓을 쓰면 안 된다
+        self.assertIn("alogReset", blk)
+        drag = js[js.index("(function initAlarmDrag(){"):js.index("function applyAlarmPos(")]
+        self.assertNotIn("dblclick", drag)
+
+    def test_해제할_때_한_줄_남기고_저장한다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("(function initAlarm(){"):js.index("/* ---------- 알람 기록 창")]
+        self.assertIn("classList.add('asking')", blk, "해제 즉시 사라져 기록할 틈이 없다")
+        self.assertIn("op:'clear'", blk, "남긴 내용이 서버로 안 간다")
+        self.assertIn("Escape", blk, "취소할 길이 없다")
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn('id="alarmNoteIn"', html)
+
+    def test_내려받을_수_있다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("function alogText(){"):js.index("(function initAlog(){")]
+        for col in ("FAB", "날짜", "등급", "조치 내용"):
+            self.assertIn(col, blk, col)
+        self.assertIn("alogText()", js)
+
+    def test_서버가_메모를_받아_준다(self):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index('if path == "/api/alarms":\n            # 알람 기록')
+        blk = src[i:src.index('if path == "/api/upload":', i)]
+        self.assertIn("sentinel.note(", blk)
+        self.assertIn("sentinel.clear_note(", blk)
 
 
 class 설정_일치(unittest.TestCase):

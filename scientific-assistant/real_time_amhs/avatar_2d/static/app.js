@@ -1207,14 +1207,22 @@ $('#docChip').onclick=()=>{
 };
 $('#docAdd').onclick=()=>$('#docFile').click();
 $('#docClear').onclick=()=>{ docOp('clear'); sys('참고 자료를 전부 삭제했습니다. (서버)'); };
-$('#docFile').onchange=(e)=>{
+$('#docFile').onchange=async(e)=>{
   const files=[...(e.target.files||[])];
-  files.forEach(f=>{
-    const rd=new FileReader();
-    rd.onload=()=>addDoc(f.name.replace(/\.[^.]+$/,''), rd.result);
-    rd.readAsText(f, 'utf-8');
-  });
   e.target.value='';
+  for(const f of files){
+    /* ★확장자를 통째로 떼면 안 된다 — .csv 가 사라지면 표인 줄 모른다.
+       그리고 사내 CSV 는 cp949 가 흔하다 (utf-8 로만 읽으면 깨진다). */
+    const keep = /\.(csv|tsv|json|log|ya?ml)$/i.test(f.name);
+    const name = keep ? f.name : f.name.replace(/\.(md|markdown|txt)$/i,'');
+    let text;
+    try{
+      const buf = await f.arrayBuffer();
+      try{ text = new TextDecoder('utf-8', {fatal:true}).decode(buf); }
+      catch(_){ text = new TextDecoder('euc-kr').decode(buf); }
+    }catch(err){ sys('파일을 읽지 못했어요: '+f.name); continue; }
+    addDoc(name, text);
+  }
 };
 bind('r_docbud','v_docbud',x=>{ docBudget=x; refreshDocsUI(); renderCtx(); pushServerSettings(); }, x=>Math.round(x/1000)+'k');
 bind('r_keep','v_keep',x=>{ keepMsgs=x; renderCtx(); pushServerSettings(); }, x=>x+'개');
@@ -1513,7 +1521,114 @@ function clearAlarm(){
 }
 (function initAlarm(){
   $('#alarmTest').onclick = ()=>{ if(alarm) clearAlarm(); fireAlarm(); };
-  $('#alarmClear').onclick = ()=> clearAlarm();
+  /* ★해제는 기록의 끝이다 — 무엇을 했는지 한 줄이라도 남아야 다음에 쓴다.
+     비워 두고 저장해도 된다 (강제하면 대충 아무거나 적게 된다). */
+  $('#alarmClear').onclick = ()=>{
+    const box=$('#alarmBox');
+    if(!alarm){ clearAlarm(); return; }
+    box.classList.add('asking');
+    const inp=$('#alarmNoteIn'); if(inp){ inp.value=''; inp.focus(); }
+  };
+  const done = async ()=>{
+    const box=$('#alarmBox'), inp=$('#alarmNoteIn');
+    const memo = inp ? inp.value.trim() : '';
+    const fab = alarm ? alarm.fab.name : '';
+    box.classList.remove('asking');
+    clearAlarm();
+    if(window.SERVER && fab){
+      try{
+        await fetch('/api/alarms', {method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({op:'clear', fab, text:memo})});
+      }catch(e){}
+    }
+    if(memo) sys('기록에 남겼습니다 — ' + fab + ': ' + memo);
+  };
+  const ok=$('#alarmNoteOk'); if(ok) ok.onclick = done;
+  const inp=$('#alarmNoteIn');
+  if(inp) inp.onkeydown = (e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); done(); }
+    if(e.key==='Escape'){ $('#alarmBox').classList.remove('asking'); }
+  };
+})();
+
+/* ---------- 알람 기록 창 ----------
+   FAB 제목을 두 번 누르면 열린다. 경계·위험·초위험이 언제 어느 FAB 에서
+   몇 점으로 났고, 해제됐는지, 무슨 조치를 했는지 한 표로 본다. */
+let ALOG = [];
+function alogFmt(e){
+  const d=(e.date||e.t||'').slice(0,10), t=(e.time||(e.t||'').slice(11))||'';
+  return {d, t};
+}
+async function openAlog(){
+  const w=$('#alogWrap'); if(!w) return;
+  w.classList.add('on');
+  if(window.SERVER){
+    try{
+      const r=await fetch('/api/alarms',{cache:'no-store'});
+      if(r.ok){ const j=await r.json(); ALOG = j.alarms||[]; }
+    }catch(e){}
+  }
+  renderAlog();
+}
+function renderAlog(){
+  const b=$('#alogBody'); if(!b) return;
+  const rows = ALOG.filter(e=>e.kind!=='off');      // 발생 건만 (해제는 상태로)
+  $('#alogStat').textContent =
+    rows.length ? (rows.length+'건 · 미해제 '+rows.filter(e=>!e.cleared).length+'건')
+                : '아직 기록 없음';
+  if(!rows.length){ b.innerHTML='<p class="hint">경계 이상으로 올라간 기록이 아직 없습니다.</p>'; return; }
+  const head='<tr><th>FAB</th><th>날짜</th><th>시간</th><th>등급</th><th>점수</th>'
+           + '<th>해제</th><th>조치 내용</th></tr>';
+  const body = rows.slice().reverse().map(e=>{
+    const f=alogFmt(e);
+    const cl = e.cleared ? ('해제 '+(e.cleared_at||'').slice(11)) : '<b>미해제</b>';
+    return '<tr class="'+(e.cleared?'':'open')+'">'
+      + '<td>'+esc(e.fab||'')+'</td><td>'+esc(f.d)+'</td><td>'+esc(f.t)+'</td>'
+      + '<td class="lv '+esc(e.level||'')+'">'+esc(e.level||'')+'</td>'
+      + '<td>'+(e.score==null?'':esc(String(e.score)))+'</td>'
+      + '<td>'+cl+'</td>'
+      + '<td><input class="noteIn" data-id="'+esc(e.id||'')+'" value="'+esc(e.note||'')
+      + '" placeholder="조치 내용을 적어 두세요"></td></tr>';
+  }).join('');
+  b.innerHTML = '<table>'+head+body+'</table>';
+  b.querySelectorAll('.noteIn').forEach(inp=>{
+    inp.onchange = async ()=>{
+      if(!window.SERVER){ sys('기록 저장은 run.py 서버로 실행할 때 됩니다.'); return; }
+      try{
+        const r=await fetch('/api/alarms',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({op:'note', id:inp.dataset.id, text:inp.value})});
+        if(r.ok){ const j=await r.json(); ALOG=j.alarms||ALOG; }
+      }catch(e){}
+    };
+  });
+}
+function alogText(){
+  const L=['FAB\t날짜\t시간\t등급\t점수\t해제\t조치 내용'];
+  ALOG.filter(e=>e.kind!=='off').forEach(e=>{
+    const f=alogFmt(e);
+    L.push([e.fab, f.d, f.t, e.level, (e.score==null?'':e.score),
+            (e.cleared?('해제 '+(e.cleared_at||'')):'미해제'), (e.note||'')].join('\t'));
+  });
+  return L.join('\n');
+}
+(function initAlog(){
+  const t=$('#alarmTitle');
+  if(t) t.ondblclick = (e)=>{ e.stopPropagation(); openAlog(); };
+  const c=$('#alogClose'); if(c) c.onclick = ()=> $('#alogWrap').classList.remove('on');
+  const d=$('#alogDl');
+  if(d) d.onclick = ()=> downloadBlob('fab_알람기록.tsv', alogText(), 'text/tab-separated-values');
+  const rs=$('#alogReset');
+  if(rs) rs.onclick = ()=>{
+    const box=$('#alarmBox');
+    box.style.left=''; box.style.top=''; box.style.right=''; box.style.bottom='';
+    alarmPos=null; saveSettings();
+    sys('FAB 알람 패널을 제자리로 돌렸습니다.');
+  };
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape') $('#alogWrap').classList.remove('on');
+  });
 })();
 
 /* ---------- FAB 알람 패널 옮기기 ----------
@@ -1559,12 +1674,8 @@ function clearAlarm(){
   head.addEventListener('touchstart', e=>{ if(e.touches[0]) down(e.touches[0]); }, {passive:false});
   window.addEventListener('touchmove', e=>{ if(on && e.touches[0]) move(e.touches[0]); }, {passive:true});
   window.addEventListener('touchend', up);
-  /* 두 번 누르면 원래 자리(우상단)로 — 잘못 옮겼을 때 되돌릴 길 */
-  head.addEventListener('dblclick', ()=>{
-    box.style.left=''; box.style.top=''; box.style.right=''; box.style.bottom='';
-    alarmPos=null; saveSettings();
-    sys('FAB 알람 패널을 제자리로 돌렸습니다.');
-  });
+  /* 제자리로 되돌리기는 기록 창의 [패널 원위치] 버튼에 있다 —
+     제목 두 번 누르기는 '알람 기록 열기' 가 가져갔다 (더 자주 쓰는 쪽). */
   window.addEventListener('resize', ()=>{
     if(!alarmPos) return;
     place(parseFloat(box.style.left)||0, parseFloat(box.style.top)||0);
@@ -2588,6 +2699,9 @@ function chatPayload(userText, stream){
 /* ── 채팅 첨부 (📎) ──
    파일을 서버 자료함(/api/docs)에 올리고, 다음 질문 하나에 통째로 주입한다.
    자료함에 남으므로 이후 질문에도 검색으로 걸린다. */
+/* 첨부 CSV 한도 — 6MB. 발동이벤트 하루치(1440행 × 140여 컬럼)가 약 2MB 라
+   하루치는 넉넉히 들어가고, 실수로 며칠치를 통째로 올리는 것은 막는다. */
+const CSV_MAX = 6*1024*1024;
 let pendingAttach = '';
 function setAttachChip(){
   const c = $('#attachChip');
@@ -2614,8 +2728,14 @@ function setAttachChip(){
        분석한다. 작은 텍스트만 자료함으로. 400KB 제한으로 발동이벤트
        CSV 를 거절하던 문제의 수정. */
     const isBig = /\.(csv|tsv)$/i.test(f.name) || f.size > 300*1024;
-    const cap = isBig ? 20*1024*1024 : 400*1024;
-    if(f.size > cap){ sys('첨부는 '+(cap/1024/1024|0||1)+'MB 이하만 돼요: '+f.name); return; }
+    const cap = isBig ? CSV_MAX : 400*1024;      // CSV 6MB · 일반 텍스트 400KB
+    if(f.size > cap){
+      sys('첨부 한도를 넘었어요 — ' + f.name + ' 는 '
+          + (f.size/1024/1024).toFixed(1) + 'MB 인데 한도는 '
+          + (cap/1024/1024).toFixed(cap>=1024*1024?0:1) + 'MB 입니다. '
+          + (isBig ? '하루치로 잘라서 올려 주세요.' : '텍스트는 400KB 까지예요.'));
+      return;
+    }
     /* 인코딩 — utf-8 이 깨지면 cp949(euc-kr)로 다시 읽는다 */
     let text;
     try{
@@ -2973,7 +3093,7 @@ function refreshDocsUI(){
   const list=$('#docList');
   if(list){
     list.innerHTML='';
-    if(!DOCS.length){ list.innerHTML='<p class="hint">아직 없음. 아래 버튼이나 스테이지에 .md / .txt 를 드래그&드롭하세요.</p>'; }
+    if(!DOCS.length){ list.innerHTML='<p class="hint">아직 없음. 아래 버튼이나 스테이지에 .md / .txt / .csv 를 드래그&드롭하세요. 표(CSV)는 [분석] 을 누르면 전 행을 계산해 답합니다.</p>'; }
     DOCS.forEach((d)=>{
       const row=document.createElement('div'); row.className='docRow';
       const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=d.on;

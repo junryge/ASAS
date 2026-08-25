@@ -71,6 +71,15 @@ class App:
         #   거기 있다. 우리가 새로 쓰면 두 벌이 어긋난다.
         for nm in skills.seed_hub_skills(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: {} (현장 스킬)\n".format(nm))
+        # 데이터 분석 방법은 데모스(scientific-skills)에 이미 있다 —
+        # 새로 쓰지 말고 참고 자료로 등록해 둔다.
+        for nm in docs.seed_docs(cls.doc_store, base_dir):
+            sys.stdout.write("  참고 자료 시드: {}\n".format(nm))
+        for nm in docs.seed_local_docs(cls.doc_store, base_dir):
+            sys.stdout.write("  참고 자료 시드: {} (현장 자료)\n".format(nm))
+        nm = docs.seed_column_dict(cls.doc_store, base_dir)
+        if nm:
+            sys.stdout.write("  참고 자료 시드: {} (감시 컬럼 뜻·임계)\n".format(nm))
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
@@ -116,6 +125,9 @@ def lan_ips():
     except Exception:
         pass
     return ips
+
+
+UPLOAD_MAX = 6 * 1024 * 1024      # 첨부 CSV 한도 6MB (화면의 CSV_MAX 와 같은 값)
 
 
 def _looks_csv(text):
@@ -227,7 +239,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, d)
 
         if path == "/api/alarms":
-            return self._json(200, {"alarms": sentinel.history(100),
+            return self._json(200, {"alarms": sentinel.history(200),
                                     "hold_min": sentinel.HOLD_MIN})
 
         # ── 스킬 ─────────────────────────────────────────────────────────
@@ -335,6 +347,21 @@ class Handler(SimpleHTTPRequestHandler):
                                         "warnings": warnings})
             return self._err(400, "op 는 save|delete|validate")
 
+        if path == "/api/alarms":
+            # 알람 기록에 사람이 남기는 내용 — 해제 사유·조치.
+            # ★기록만 있고 '무엇을 했는지' 가 없으면 나중에 아무 도움이 안 된다.
+            b = self._body()
+            op = str(b.get("op") or "").strip()
+            if op == "note":
+                n = sentinel.note(str(b.get("id") or ""), b.get("text"))
+                return self._json(200, {"ok": bool(n), "updated": n,
+                                        "alarms": sentinel.history(200)})
+            if op == "clear":
+                n = sentinel.clear_note(str(b.get("fab") or ""), b.get("text"))
+                return self._json(200, {"ok": True, "closed": n,
+                                        "alarms": sentinel.history(200)})
+            return self._err(400, "op 는 note/clear")
+
         if path == "/api/upload":
             # 큰 파일(특히 발동이벤트 CSV) — 자료함(300KB 캡)이 아니라 여기로.
             # 저장하고, CSV 면 그 자리에서 분석해 요약을 만들어 둔다.
@@ -343,6 +370,12 @@ class Handler(SimpleHTTPRequestHandler):
             text = str(b.get("text") or "")
             if not name or not text:
                 return self._err(400, "name/text 가 비었습니다")
+            # ★서버도 막는다 — 브라우저를 거치지 않고 올릴 수도 있고,
+            #   한도를 넘긴 파일은 여기서 분명히 거절해야 원인이 보인다.
+            if len(text.encode("utf-8")) > UPLOAD_MAX:
+                return self._err(413, "첨부 한도({}MB)를 넘었습니다: {:.1f}MB"
+                                 .format(UPLOAD_MAX // (1024 * 1024),
+                                         len(text.encode("utf-8")) / 1048576.0))
             try:
                 (App.uploads_dir / name).write_text(text, encoding="utf-8")
             except Exception as e:  # noqa: BLE001

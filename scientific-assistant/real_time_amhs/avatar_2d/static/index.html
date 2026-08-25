@@ -30,10 +30,21 @@
       <span id="vnTip">▼</span>
     </div>
     <div id="alarmFlash"></div>
+    <!-- 알람 기록 — FAB 정상(제목)을 두 번 누르면 열린다 -->
+    <div id="alogWrap">
+      <div id="alogHead">
+        <b>FAB 알람 기록</b>
+        <span class="hint" id="alogStat"></span>
+        <span class="vnBtn" id="alogReset" title="알람 패널을 원래 자리로">패널 원위치</span>
+        <span class="vnBtn" id="alogDl">내려받기</span>
+        <span class="vnBtn" id="alogClose">✕</span>
+      </div>
+      <div id="alogBody"></div>
+    </div>
     <div id="alarmBox">
       <div id="alarmHead">
         <span id="alarmDot"></span>
-        <span id="alarmTitle">FAB 정상</span>
+        <span id="alarmTitle" title="두 번 누르면 알람 기록 (경계·위험·초위험)">FAB 정상</span>
         <span id="alarmLv">경계</span>
         <span id="alarmTime"></span>
       </div>
@@ -45,6 +56,11 @@
       <div id="alarmBtns">
         <button id="alarmTest" title="랜덤한 FAB 에 알람을 발생시킵니다">테스트</button>
         <button id="alarmClear">해제</button>
+      </div>
+      <!-- 해제할 때 무엇을 했는지 한 줄 — 기록에 남는다 -->
+      <div id="alarmNote">
+        <input id="alarmNoteIn" maxlength="200" placeholder="무슨 조치였나요? (선택)">
+        <button id="alarmNoteOk" title="기록에 남기고 해제">저장</button>
       </div>
     </div>
     <div id="clock" title="클릭하면 자동/수동이 바뀝니다">
@@ -235,7 +251,7 @@
             <button id="docAdd" style="flex:1;padding:9px 0">파일 추가</button>
             <button class="ghost" id="docClear" style="flex:1;padding:9px 0">전체 삭제</button>
           </div>
-          <input type="file" id="docFile" accept=".md,.txt,.markdown,text/plain,text/markdown" multiple style="display:none">
+          <input type="file" id="docFile" accept=".md,.markdown,.txt,.csv,.tsv,.json,.log,.yaml,.yml,text/plain,text/markdown" multiple style="display:none">
           <div class="row" style="margin-top:9px"><label>주입 예산</label>
             <input type="range" id="r_docbud" min="1000" max="20000" step="500" value="6000">
             <span class="val" id="v_docbud"></span></div>

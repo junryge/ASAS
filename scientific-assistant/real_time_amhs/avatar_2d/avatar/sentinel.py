@@ -91,18 +91,70 @@ def _record(alarms):
                 continue
             kind = "on" if prev == "정상" else "change"
             sc = next((a.get("score") for a in alarms if a["fab"] == fab), None)
-            _alog.append({"t": stamp, "fab": fab, "level": lv,
-                          "score": sc, "kind": kind, "prev": prev})
+            _alog.append(_entry(stamp, fab, lv, sc, kind, prev))
             changed = True
         for fab, prev in list(_last_levels.items()):
             if fab not in now_lv and prev != "정상":
-                _alog.append({"t": stamp, "fab": fab, "level": "정상",
-                              "score": None, "kind": "off", "prev": prev})
+                _alog.append(_entry(stamp, fab, "정상", None, "off", prev))
+                _close(fab, stamp, "")          # 열려 있던 건을 닫는다
                 changed = True
         _last_levels = {**{f: "정상" for f in _last_levels}, **now_lv}
         if changed:
             del _alog[:-ALOG_MAX]
             _alog_save()
+
+
+def _entry(stamp, fab, level, score, kind, prev):
+    """기록 한 줄 — 사람이 표로 볼 것이므로 날짜·시간을 나눠 담는다.
+    ★해제 여부(cleared)와 메모(note)를 처음부터 자리 잡아 둔다. 나중에
+      붙이려면 옛 기록에 그 칸이 없어 화면이 들쭉날쭉해진다."""
+    d, _, t = str(stamp).partition(" ")
+    return {"id": "{}-{}-{}".format(fab, stamp.replace(" ", "_"), kind),
+            "t": stamp, "date": d, "time": t, "fab": fab, "level": level,
+            "score": score, "kind": kind, "prev": prev,
+            "cleared": kind == "off", "cleared_at": stamp if kind == "off" else "",
+            "note": ""}
+
+
+def _close(fab, stamp, note):
+    """그 FAB 의 아직 안 닫힌 발생 기록들을 해제 처리한다 (_lock 안에서 호출)."""
+    for e in reversed(_alog):
+        if e.get("fab") != fab or e.get("kind") == "off":
+            continue
+        if e.get("cleared"):
+            break                       # 이미 닫힌 건부터는 옛 사건이다
+        e["cleared"] = True
+        e["cleared_at"] = stamp
+        if note and not e.get("note"):
+            e["note"] = note
+
+
+def note(entry_id, text):
+    """기록에 메모를 단다 (해제 사유·조치 내용). 단 건수를 돌려준다."""
+    text = str(text or "").strip()[:500]
+    n = 0
+    with _lock:
+        for e in _alog:
+            if e.get("id") == entry_id:
+                e["note"] = text
+                n += 1
+        if n:
+            _alog_save()
+    return n
+
+
+def clear_note(fab, text, when=None):
+    """사용자가 알람을 해제하면서 남긴 내용 — 그 FAB 의 열린 건을 닫고 메모."""
+    stamp = when or time.strftime("%Y-%m-%d %H:%M")
+    text = str(text or "").strip()[:500]
+    with _lock:
+        before = [e for e in _alog if e.get("fab") == fab and not e.get("cleared")]
+        _close(fab, stamp, text)
+        _alog.append(_entry(stamp, fab, "정상", None, "off", ""))
+        _alog[-1]["note"] = text
+        del _alog[:-ALOG_MAX]
+        _alog_save()
+    return len(before)
 
 
 def history(n=20):
