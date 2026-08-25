@@ -521,7 +521,8 @@ const REAL_SCALE = {
 };
 
 let emotion='neutral', intensity=0.85, manual=false;
-let bubbleOn=true;      // 말풍선 표시 여부 (loadSettings 보다 먼저 선언돼야 한다)
+let sayMode='novel';    // 대사 표시 방식: novel|bubble|off (loadSettings 보다 먼저)
+let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
 let hudOpen=true;       // 좌측 패널 펼침 여부
 let ctxOpen=false;      // 컨텍스트 패널 — 처음엔 접혀 있다
@@ -1049,7 +1050,7 @@ function collectSettings(withKey){
   o.cfgs=COSTUMES.map(c=>c.cfg);
   o.ui={ sayH:$('#say').style.height||'',
          sideW:$('#side').style.width||'', chatH:$('#chatPane').style.height||'',
-         enterSend:$('#enterSend').checked, bubble:bubbleOn, patch:patchOn,
+         enterSend:$('#enterSend').checked, bubble:bubbleOn, sayMode:sayMode, patch:patchOn,
          stream:$('#streamOn').checked, hud:hudOpen, ctx:ctxOpen, ctxLimit:ctxLimit,
          eye:eyeFollow, badge:badgeOn, autoScene:autoScene,
          personaBackup:personaBackup, costume:costumeIdx, bg:bgIdx };
@@ -1086,8 +1087,9 @@ function applySettings(o, live){
     if(o.ui.hud!==undefined){ hudOpen=o.ui.hud;
       const hb=$('#hudBody'), ht=$('#hudToggle');
       if(hb){ hb.classList.toggle('hide', !hudOpen); ht.textContent = hudOpen?'☰':'⊞'; } }
-    if(o.ui.bubble!==undefined){ bubbleOn=o.ui.bubble;
-      const bc=$('#bubbleChip'); if(bc) bc.classList.toggle('on',bubbleOn); }
+    /* 옛 설정(bubble: true/false)도 읽는다 — 켜 뒀으면 말풍선, 껐으면 끔 */
+    if(o.ui.bubble!==undefined) sayMode = o.ui.bubble ? 'bubble' : 'off';
+    if(o.ui.sayMode && SAY_MODES.indexOf(o.ui.sayMode)>=0) sayMode = o.ui.sayMode;
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
@@ -2026,11 +2028,23 @@ $('#patchChip').onclick=()=>{
   saveSettings();
 };
 
-$('#bubbleChip').onclick=()=>{
-  bubbleOn=!bubbleOn;
+/* 대사 표시 방식 — 노벨(전문) → 말풍선(요약) → 끔 순으로 돈다.
+   ★말풍선은 캐릭터 옆에 떠서 자리가 좁다. 그래서 요약할 수밖에 없었고,
+     "다 안 말한다" 는 말이 나왔다. 노벨 대사창은 화면 폭을 다 쓰므로
+     **응답 전문**을 쪽 단위로 넘겨 볼 수 있다 — 그래서 이쪽이 기본이다. */
+const SAY_MODES = ['novel', 'bubble', 'off'];
+const SAY_LABEL = {novel:'노벨', bubble:'말풍선', off:'대사 끔'};
+function applySayMode(){
+  const c=$('#bubbleChip');
+  if(c){ c.textContent = SAY_LABEL[sayMode]; c.classList.toggle('on', sayMode!=='off'); }
+  bubbleOn = (sayMode === 'bubble');          // 옛 코드가 보는 값
   clearTimeout(hideTimer); clearInterval(bubbleTimer);
-  $('#bubbleChip').classList.toggle('on',bubbleOn);
-  if(!bubbleOn) bubble.classList.remove('on');
+  if(sayMode!=='bubble') bubble.classList.remove('on');
+  if(sayMode!=='novel') vnHide();
+}
+$('#bubbleChip').onclick=()=>{
+  sayMode = SAY_MODES[(SAY_MODES.indexOf(sayMode)+1) % SAY_MODES.length];
+  applySayMode();
   saveSettings();
 };
 
@@ -2052,14 +2066,94 @@ function placeBubble(){
   bubble.style.left=x+'px'; bubble.style.top=y+'px';
 }
 
+/* ══════════ 비주얼 노벨 대사창 ══════════
+   말풍선이 못 하던 것: **응답 전문**을 보여 주기. 대사창은 화면 폭을 다 쓰고
+   쪽 넘김이 있으니 잘라 말할 이유가 없다 — 요약(briefFor)은 말풍선 모드
+   전용으로 남는다. */
+const VN_PAGE = 240;                 // 한 쪽에 담을 글자 수 (줄은 안 쪼갠다)
+const VN = {pages:[], i:0, timer:null, typing:false, full:''};
+const vnEl=$('#vn'), vnText=$('#vnText'), vnPage=$('#vnPage'), vnTip=$('#vnTip');
+
+/* 줄 단위로 묶는다 — 문장 중간에서 쪽이 갈리면 읽다 만 것처럼 보인다.
+   한 줄이 통째로 길면 그 줄만 한 쪽을 차지한다 (대사창은 스크롤된다). */
+function vnSplit(text){
+  const out=[]; let cur='';
+  for(const ln of String(text||'').split('\n')){
+    if(cur && (cur.length + ln.length + 1) > VN_PAGE){ out.push(cur); cur=ln; }
+    else cur = cur ? cur+'\n'+ln : ln;
+  }
+  if(cur.trim() || !out.length) out.push(cur);
+  return out;
+}
+function vnHide(){
+  clearInterval(VN.timer); VN.typing=false;
+  vnEl.classList.remove('on','more');
+}
+function vnRender(instant){
+  const p = VN.pages[VN.i] || '';
+  vnPage.textContent = (VN.i+1) + ' / ' + VN.pages.length;
+  $('#vnPrev').classList.toggle('off', VN.i<=0);
+  $('#vnNext').classList.toggle('off', VN.i>=VN.pages.length-1);
+  vnEl.classList.toggle('more', VN.i < VN.pages.length-1);
+  clearInterval(VN.timer);
+  vnText.scrollTop = 0;
+  if(instant){ vnText.textContent=p; VN.typing=false; return; }
+  const n=p.length;
+  const speed = Math.max(8, Math.min(26, 3400/Math.max(1,n)));
+  const step  = n>240 ? 3 : n>120 ? 2 : 1;
+  let i=0; VN.typing=true; vnText.textContent='';
+  VN.timer=setInterval(()=>{
+    i=Math.min(n, i+step);
+    vnText.textContent = p.slice(0,i);
+    vnText.scrollTop = vnText.scrollHeight;
+    if(i>=n){ clearInterval(VN.timer); VN.typing=false; }
+  }, speed*step);
+}
+function vnShow(text, jumpLast){
+  VN.full = String(text||'');
+  VN.pages = vnSplit(VN.full);
+  VN.i = jumpLast ? VN.pages.length-1 : 0;
+  vnEl.classList.add('on');
+  vnRender(!!jumpLast);            // 스트리밍 중엔 타자기 없이 바로
+}
+function vnGo(d){
+  const j = VN.i + d;
+  if(j<0 || j>=VN.pages.length) return;
+  VN.i=j; vnRender(false);
+}
+/* 대사창을 누르면: 타자기 진행 중이면 즉시 완성, 아니면 다음 쪽 (노벨의 규칙) */
+function vnAdvance(){
+  if(VN.typing){ vnRender(true); return; }
+  if(VN.i < VN.pages.length-1) vnGo(1); else vnHide();
+}
+vnEl.onclick=(e)=>{
+  const id = e.target && e.target.id;
+  if(id==='vnPrev'){ e.stopPropagation(); vnGo(-1); return; }
+  if(id==='vnNext'){ e.stopPropagation(); vnGo(1); return; }
+  if(id==='vnClose'){ e.stopPropagation(); vnHide(); return; }
+  vnAdvance();
+};
+document.addEventListener('keydown', e=>{
+  if(!vnEl.classList.contains('on')) return;
+  const t=e.target, tag=t && t.tagName;
+  if(tag==='TEXTAREA' || tag==='INPUT' || tag==='SELECT') return;  // 입력 중엔 무시
+  if(e.key==='Escape'){ vnHide(); }
+  else if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); vnAdvance(); }
+  else if(e.key==='ArrowLeft'){ vnGo(-1); }
+  else if(e.key==='ArrowRight'){ vnGo(1); }
+});
+
 let bubbleTimer=null, hideTimer=null;
-function speak(text){
+function speak(text, full){
   clearTimeout(hideTimer);          // 이전 말풍선의 숨김 타이머가 새 말풍선을 지우는 것 방지
   const n = text.length;
   /* 긴 답변일수록 빠르게 — 고정 속도면 200자에 7초씩 걸린다 */
   const speed = Math.max(9, Math.min(34, 4200/Math.max(1,n)));
   talk = n*speed/1000 + 0.2;
 
+  /* 노벨 모드는 **전문**(full)을 쪽으로 나눠 보여 준다. full 이 없으면
+     text 가 곧 전문이다 (인사·오류 같은 짧은 말). */
+  if(sayMode==='novel'){ vnShow(sayText(full || text)); return; }
   if(!bubbleOn){ return; }
   /* 글자 수에 따라 폰트를 줄여 말풍선이 화면을 덮지 않게 한다 */
   bubble.style.fontSize = n>320 ? '12.5px' : n>160 ? '13.5px' : '15px';
@@ -2086,12 +2180,16 @@ function speak(text){
 /* ── 스트리밍용 말풍선 ── */
 function beginStream(){
   clearTimeout(hideTimer); clearInterval(bubbleTimer);
+  if(sayMode==='novel'){ vnShow(''); return; }
   if(!bubbleOn) return;
   bubble.textContent=''; bubble.style.fontSize='15px';
   bubble.classList.add('on'); bubble.scrollTop=0; placeBubble();
 }
 function pushStream(t){
   talk = 0.45;                                   // 토큰이 오는 동안 입을 계속 움직인다
+  /* 노벨은 오는 대로 전문을 담고 마지막 쪽을 보여 준다 — 타자기는 서버가
+     대신 쳐 주는 셈이라 여기서 또 칠 필요가 없다 */
+  if(sayMode==='novel'){ vnShow(sayText(t), true); return; }
   if(!bubbleOn) return;
   /* 말풍선은 '말' 이다 — 표·코드는 못 읽고, 항목 나열은 채팅창 몫이다.
      원문은 채팅창(md 렌더)에 전부 남는다. */
@@ -2104,6 +2202,8 @@ function pushStream(t){
 }
 function endStream(t){
   talk = 0.25;
+  /* 다 받았으면 첫 쪽부터 다시 — 스트리밍 중엔 끝만 보고 있었다 */
+  if(sayMode==='novel'){ vnShow(sayText(t)); return; }
   if(!bubbleOn) return;
   const hold = Math.min(9000, 2600 + briefFor(t).length*28);
   clearTimeout(hideTimer);
@@ -2156,10 +2256,16 @@ function mdHtml(text){
    ★줄바꿈은 **살린다.** 예전엔 \s+ 로 전부 뭉개서 "M16HUB 72점 M14 10점"
      처럼 한 줄로 붙어 나왔다. 말풍선 CSS 는 이미 white-space:pre-wrap 이라
      \n 만 남겨 두면 줄이 갈라진다. 줄 안의 공백만 정리한다. */
-function speakable(t){
-  t = String(t||'')
-    .replace(/```[\s\S]*?```/g,'\n')     // 코드블록 통째로
-    .replace(/^\|.*$/gm,'')              // 표 행
+/* 소리내 읽을 수 있는 꼴로만 다듬는다 — **자르지는 않는다.**
+   ★노벨 대사창은 전문을 보여 주는 곳이라 길이 제한을 걸면 안 된다.
+     (여기에 260자 컷이 섞여 있어서 대사창이 뒷부분을 통째로 잃었다)
+   표는 지우지 않고 ' · ' 로 편다 — 지우면 그만큼 내용이 사라진다. */
+function sayText(t){
+  return String(t||'')
+    .replace(/```/g,'')                                    // 코드 울타리만
+    .replace(/^\s*\|?[-: |]+\|[-: |]*$/gm,'')              // 표 구분선
+    .replace(/^\s*\|(.+)\|\s*$/gm,
+      (m,row)=>row.split('|').map(c=>c.trim()).filter(Boolean).join(' · '))
     .replace(/^#{1,6}\s*/gm,'')          // 제목 기호
     .replace(/^\s*---+\s*$/gm,'')        // 구분선
     .replace(/\*\*([^*]+)\*\*/g,'$1')
@@ -2168,6 +2274,9 @@ function speakable(t){
     .replace(/[ \t]*\n[ \t]*/g,'\n')     // 줄 끝/앞 공백
     .replace(/\n{3,}/g,'\n\n')           // 빈 줄 과다
     .trim();
+}
+function speakable(t){
+  t = sayText(t);
   if(t.length<=260) return t;
   /* 자를 때도 줄 단위로 — 문장 중간에서 끊으면 읽다 만 것처럼 보인다 */
   const lines=t.split('\n'); let out='';
@@ -2178,33 +2287,55 @@ function speakable(t){
   return (out || t.slice(0,260)) + '…';
 }
 
-/* 말풍선용 요약 — 캐릭터는 '점수만', 채팅창은 '전부'.
+/* 말풍선용 요약 — 캐릭터는 '언제·무슨 등급' 만, 채팅창은 '전부'.
    ★긴 답을 말풍선에 밀어 넣으면 중간에서 잘려 "말하다 만" 것처럼 보인다.
-     말풍선이 할 일은 **결론(몇 점·무슨 등급)** 하나다. 근거·컬럼·항목은
-     채팅창이 맡고, 거기 있다고만 알려 준다. */
+     말풍선이 할 일은 딱 두 가지다 — **언제 데이터인지**와 **정상/경계/
+     위험/초위험**. 점수·컬럼·근거·항목은 전부 채팅창 몫이고, 거기 있다고만
+     알려 준다. (숫자를 말풍선에 넣으면 그걸 읽느라 결론이 밀린다) */
 const BRIEF_MAX = 130;
 const BRIEF_TAIL = '상세한 내용은 채팅창에 있어요';
-/* 'M16HUB 72점 위험' 같은 결론만 뽑는다. 앞자리는 FAB/ALL 이름(영문·숫자)만
-   인정한다 — '경계 60점' 같은 임계 설명까지 점수로 읽으면 안 된다. */
-const SCORE_RE =
-  /\b([A-Z][A-Z0-9]{1,9})\s*(?:구역)?\s*(?:은|는|이|가|:)?\s*(\d{1,3})\s*점\s*(초위험|위험|경계|관심|정상)?/g;
+const GRADE = '초위험|위험|경계|관심|정상';
+/* 데이터 시각 — "2026-08-06 23:59" · "2026-08-06" · "8월 23일 08:20" */
+const WHEN_RE = new RegExp(
+  '(\\d{4}-\\d{2}-\\d{2}(?:\\s+\\d{1,2}:\\d{2})?)' +
+  '|(\\d{1,2}월\\s*\\d{1,2}일(?:\\s*\\d{1,2}:\\d{2}|\\s*\\d{1,2}시(?:\\s*\\d{1,2}분)?)?)');
+/* 'M16HUB 는 72점 위험' → M16HUB 위험. 앞자리는 FAB/ALL 이름(영문·숫자)만
+   인정하고, 등급 뒤에 숫자가 오면(=‘경계 60점’ 같은 컷 설명) 버린다. */
+const FACT_RE = new RegExp(
+  '\\b([A-Z][A-Z0-9]{1,9})\\s*(?:구역)?\\s*(?:은|는|이|가|:)?\\s*' +
+  '(?:\\d{1,3}\\s*점\\s*)?(' + GRADE + ')(?!\\s*\\d)', 'g');
+/* FAB 이름 없이 등급만 말하는 답 — "지금은 전 구역 정상이에요" */
+const BARE_RE = new RegExp('(' + GRADE + ')(?!\\s*\\d)');
 
+const BRIEF_SHORT = 60;
 function briefFor(t){
   const s = speakable(t);
-  /* ① 점수가 있으면 점수만 말한다 */
+  /* ⓪ 짧은 한 줄짜리는 그대로 말한다 — "지금은 전 구역 정상이에요" 를
+       "정상" 으로 줄이면 말이 아니라 표가 된다. 줄일 게 있을 때만 줄인다. */
+  if(s.length <= BRIEF_SHORT && s.indexOf('\n') < 0) return s;
+  /* ① 날짜 + 등급만 뽑는다 */
+  const w = s.match(WHEN_RE);
+  const when = w ? (w[1] || w[2]) : '';
   const facts = [], seen = new Set();
-  let m; SCORE_RE.lastIndex = 0;
-  while((m = SCORE_RE.exec(s)) !== null){
+  let m; FACT_RE.lastIndex = 0;
+  while((m = FACT_RE.exec(s)) !== null){
     if(seen.has(m[1])) continue;                    // 같은 FAB 은 한 번만
     seen.add(m[1]);
-    facts.push(m[1] + ' ' + m[2] + '점' + (m[3] ? ' ' + m[3] : ''));
+    facts.push(m[1] + ' ' + m[2]);
     if(facts.length >= 3) break;                    // 말풍선에 셋이면 충분
   }
-  if(facts.length){
-    const line = facts.join(' · ');
+  const parts = [];
+  if(when) parts.push(when);
+  if(facts.length) parts.push(facts.join(' · '));
+  else {
+    const b = s.match(BARE_RE);
+    if(b) parts.push(b[1]);
+  }
+  if(parts.length){
+    const line = parts.join(' · ');
     return line + (s.length > line.length + 4 ? '\n' + BRIEF_TAIL : '');
   }
-  /* ② 점수가 없는 답(정상 안내·오류·설명)이면 머리말만 */
+  /* ② 날짜도 등급도 없는 답(오류·잡담·설명)이면 머리말만 */
   const head = [];
   let dropped = 0;
   for(const ln of s.split('\n')){
@@ -2287,7 +2418,7 @@ function push(who,text,tag,meta,replaying){
       d.title='클릭하면 다시 재생';
       d.onclick=()=>{
         setEmotion(meta.emotion, meta.intensity, meta.motion);
-        speak(briefFor(meta.text));
+        speak(briefFor(meta.text), meta.text);
         d.classList.add('played');
         setTimeout(()=>d.classList.remove('played'), 700);
       };
@@ -2798,7 +2929,7 @@ async function send(){
     history.push({role:'assistant',content:JSON.stringify(r)});
     setEmotion(r.emotion, r.intensity, r.motion);
     push('ai', r.text, `${EMO[r.emotion].ko} · ${Math.round(r.intensity*100)}% · ${MOTION[r.motion].ko}`, r);
-    if(!useStream) speak(briefFor(r.text));   // 캐릭터는 간단히 · 채팅창은 전부
+    if(!useStream) speak(briefFor(r.text), r.text);  // 말풍선은 요약 · 노벨은 전문
   }catch(e){
     setEmotion('fear',0.8,'shiver');
     push('ai','(연결 실패) '+e.message,'error');
@@ -3054,6 +3185,7 @@ if(RESTORED && $('#apiKey').value.trim()){
 }else{
   sys('데모 모드로 실행 중입니다. 설정 탭에서 API 키를 넣고 [연결 테스트]를 누르세요.');
 }
+applySayMode();          // 저장된 표시 방식(노벨/말풍선/끔)을 화면에 반영
 /* 첫 인사 — 데모 문구('나 움직이지?')가 아니라 관제 에이전트로서 인사한다.
    무엇을 물어보면 되는지까지 말해 줘야 사용자가 첫 질문을 던진다. */
 setTimeout(()=>{

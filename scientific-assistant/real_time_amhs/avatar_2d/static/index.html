@@ -17,6 +17,18 @@
     <canvas id="fx"></canvas>
     <div id="handles"></div>
     <div id="bubble"></div>
+    <!-- 비주얼 노벨 대사창 — 말풍선과 달리 **응답 전문**을 페이지로 넘겨 본다 -->
+    <div id="vn">
+      <div id="vnName">버추얼 에이전트</div>
+      <div id="vnText"></div>
+      <div id="vnBar">
+        <span class="vnBtn" id="vnPrev" title="이전 쪽">◀</span>
+        <span id="vnPage">1 / 1</span>
+        <span class="vnBtn" id="vnNext" title="다음 쪽 (클릭 · Enter · Space)">▶</span>
+        <span class="vnBtn" id="vnClose" title="닫기 (Esc)">✕</span>
+      </div>
+      <span id="vnTip">▼</span>
+    </div>
     <div id="alarmFlash"></div>
     <div id="alarmBox">
       <div id="alarmHead">
@@ -60,7 +72,7 @@
           <div class="hudLabel">표시</div>
           <div class="hudRow">
             <div class="chip" id="calibChip">캘리브레이션</div>
-            <div class="chip on" id="bubbleChip">말풍선</div>
+            <div class="chip on" id="bubbleChip" title="대사 표시 방식 — 노벨(전문) · 말풍선(요약) · 끔">노벨</div>
             <div class="chip" id="patchChip">궁예</div>
             <div class="chip" id="docChip" title="MD / TXT 자료 주입">자료</div>
             <div class="chip on" id="eyeChip" title="마우스를 눈으로 따라봅니다">시선</div>

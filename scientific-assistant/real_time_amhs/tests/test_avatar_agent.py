@@ -764,8 +764,9 @@ class 줄바꿈(unittest.TestCase):
         js = os.path.join(AV, "static", "app.js")
         with open(js, encoding="utf-8") as f:
             src = f.read()
-        body = src[src.index("function speakable("):]
-        body = body[:body.index("\nfunction ")]
+        # 다듬기는 sayText 가 한다 (speakable 은 그 결과를 자를 뿐)
+        body = src[src.index("function sayText("):]
+        body = body[:body.index("\nfunction speakable(")]
         # 줄바꿈까지 죽이는 치환이 남아 있으면 안 된다
         self.assertNotIn(r"\s+/g,' '", body,
                          "\\s+ 치환이 줄바꿈을 뭉갠다")
@@ -868,7 +869,8 @@ class 말풍선은_간단히_채팅창은_전부(unittest.TestCase):
         if not node:
             self.skipTest("node 없음 — 소스 검사만 수행")
         s = self.src
-        body = s[s.index("function speakable("):s.index("\nfunction push(")]
+        # sayText 부터 떼야 한다 — speakable 이 그걸 부른다
+        body = s[s.index("function sayText("):s.index("\nfunction push(")]
         prog = (body + "\nconst __in=JSON.parse(process.argv[2]);"
                 "process.stdout.write(briefFor(__in));")
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
@@ -896,35 +898,46 @@ class 말풍선은_간단히_채팅창은_전부(unittest.TestCase):
               "- M16HUB.STRATE.ALL.FABSTORAGERATIO 임계 ≥25.75% · 값 1.18%\n"
               "- 30분 변화 +8 · 전체 경보(경계 60점)에는 아직 못 갑니다\n")
 
-    def test_점수만_말하고_상세는_채팅창으로_넘긴다(self):
-        """★말풍선이 할 일은 결론 하나다 — 몇 점인지. 근거는 채팅창 몫."""
+    def test_날짜와_등급만_말한다(self):
+        """★말풍선이 할 일은 '언제·무슨 등급' 둘 뿐이다. 점수·컬럼은 채팅창."""
         b = self._brief(self.SCORED)
-        self.assertEqual(b, "M16HUB 72점 위험 · M14 36점 정상\n상세한 내용은 채팅창에 있어요")
+        self.assertEqual(
+            b, "2026-08-06 23:59 · M16HUB 위험 · M14 정상\n상세한 내용은 채팅창에 있어요")
 
-    def test_임계_설명을_점수로_읽지_않는다(self):
-        """'경계 60점' 은 컷 설명이지 어느 FAB 의 점수가 아니다."""
-        b = self._brief(self.SCORED)
-        self.assertNotIn("60점", b)
+    def test_점수_숫자는_말풍선에_안_들어간다(self):
+        b = self._brief(self.SCORED).replace("2026-08-06 23:59", "")
+        for n in ("72", "36", "15.98", "99.3", "60", "점"):
+            self.assertNotIn(n, b, n)
 
-    def test_점수가_넷_이상이면_셋까지만(self):
-        b = self._brief("M14 10점 정상, M14B 12점 정상, M16A 15점 정상, "
-                        "M16B 8점 정상, M16HUB 72점 위험이에요.")
-        self.assertEqual(b.split("\n")[0].count("·"), 2)
-        self.assertIn("M14 10점", b)
+    def test_임계_설명을_등급으로_읽지_않는다(self):
+        """'경계 60점' 은 컷 설명이지 지금 등급이 아니다."""
+        b = self._brief("2026-08-24 09:00 데이터 기준입니다.\n"
+                        "- 전체 경보(경계 60점)에는 아직 못 갑니다\n"
+                        "- 지켜볼 구간은 M16HUB 입니다\n")
+        self.assertNotIn("경계", b)
 
-    def test_점수가_전부면_안내를_안_붙인다(self):
-        """더 할 말이 없는데 '채팅창에 있어요' 라고 하면 헛말이 된다."""
-        self.assertEqual(self._brief("M16HUB 72점 위험"), "M16HUB 72점 위험")
+    def test_FAB_없이_등급만_말해도_잡는다(self):
+        b = self._brief("2026-08-24 09:00 기준입니다.\n"
+                        "- 지금은 전 구역 정상이에요\n"
+                        "- 지켜볼 것도 없습니다\n")
+        self.assertTrue(b.startswith("2026-08-24 09:00 · 정상"), b)
 
-    def test_점수가_없는_답은_머리말만(self):
-        b = self._brief(self.LONG)
-        self.assertIn("M16HUB", b)
-        self.assertNotIn("AVGTOTALTIME1MIN", b, "말풍선이 항목까지 읽으려 든다")
-        self.assertIn("채팅창", b, "덜 말한 게 아니라 나눠 맡았다고 알려야 한다")
+    def test_한글_날짜도_읽는다(self):
+        b = self._brief("8월 23일 08:20 데이터로 보면 M16HUB 는 위험이에요.\n"
+                        "- 반송지연이 걸렸고\n- Storage FULL 도 같이 걸렸습니다\n")
+        self.assertTrue(b.startswith("8월 23일 08:20 · M16HUB 위험"), b)
 
-    def test_짧은_답은_손대지_않는다(self):
+    def test_FAB_이_넷_이상이면_셋까지만(self):
+        b = self._brief("2026-08-24 09:00 기준으로 M14 정상, M14B 정상, "
+                        "M16A 정상, M16B 정상, M16HUB 위험 입니다. 자세한 값은 아래에.")
+        self.assertEqual(b.split("\n")[0].count("·"), 3)   # 날짜 + FAB 셋
+        self.assertIn("M14 정상", b)
+
+    def test_짧은_한_줄은_손대지_않는다(self):
+        """★"지금은 전 구역 정상이에요" 를 "정상" 으로 줄이면 말이 아니라 표다."""
         one = "지금은 전 구역 정상이에요."
         self.assertEqual(self._brief(one), one)
+        self.assertEqual(self._brief("M16HUB 위험"), "M16HUB 위험")
 
     def test_머리말_줄바꿈은_살린다(self):
         b = self._brief("첫 줄이에요.\n둘째 줄이에요.")
@@ -932,14 +945,24 @@ class 말풍선은_간단히_채팅창은_전부(unittest.TestCase):
 
     def test_전부_항목이어도_말은_한다(self):
         """머리말이 없다고 말풍선이 비면 캐릭터가 벙어리가 된다."""
-        b = self._brief("- M16HUB 72점\n- M14 36점\n- M14B 31점\n")
+        b = self._brief("- M16HUB 위험\n- M14 정상\n- M14B 정상\n")
         self.assertTrue(b.strip(), "말풍선이 비었다")
-        self.assertIn("M16HUB 72점", b)
+        self.assertIn("M16HUB 위험", b)
 
-    def test_항목_안의_점수도_읽어_낸다(self):
-        """점수가 표·목록 안에 있어도 결론은 결론이다."""
+    def test_항목_안의_등급도_읽어_낸다(self):
+        """등급이 표·목록 안에 있어도 결론은 결론이다."""
         b = self._brief("- M16HUB 72점 위험\n- M14 36점 정상\n- 나머지는 정상\n")
-        self.assertTrue(b.startswith("M16HUB 72점 위험 · M14 36점 정상"))
+        self.assertTrue(b.startswith("M16HUB 위험 · M14 정상"), b)
+
+    def test_날짜도_등급도_없는_답은_머리말만(self):
+        """오류·설명처럼 등급이 없는 답도 말은 해야 한다."""
+        b = self._brief(
+            "관제 서버에 연결이 안 돼서 지금 값을 못 읽고 있어요. 서버가 떠 있는지 봐 주세요.\n"
+            "- server.py 가 옛 버전이면 이 API 가 없습니다\n"
+            "- 포트 8989 가 막혀 있을 수도 있어요\n")
+        self.assertIn("연결이 안", b)
+        self.assertNotIn("8989", b, "말풍선이 항목까지 읽으려 든다")
+        self.assertIn("채팅창", b, "덜 말한 게 아니라 나눠 맡았다고 알려야 한다")
 
     def test_한_줄만_길어도_잘린_티를_낸다(self):
         b = self._brief("가" * 400)
@@ -1353,6 +1376,163 @@ class 대화_복사(unittest.TestCase):
         self.assertIn(".msg:hover .copy{opacity:1}", self.css)
         self.assertIn(".msg{position:relative}", self.css,
                       "내 질문(.msg.me)에 붙은 복사 버튼이 엉뚱한 데 뜬다")
+
+
+class 노벨_대사창(unittest.TestCase):
+    """말풍선은 캐릭터 옆이라 자리가 좁아 요약할 수밖에 없었다 —
+    "전부 다 이야기를 안 하네" 가 거기서 나왔다. 대사창은 화면 폭을 다 쓰고
+    쪽 넘김이 있으니 **응답 전문**을 보여 줄 수 있다."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            cls.css = f.read()
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            cls.html = f.read()
+
+    def _run(self, expr, arg=None):
+        """app.js 의 sayText/vnSplit 을 떼어 node 로 실제 돌린다."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 없음")
+        s = self.js
+        body = s[s.index("function sayText("):s.index("\nfunction push(")]
+        body += s[s.index("const VN_PAGE ="):s.index("function vnHide(")]
+        body = body.replace("const vnEl=$('#vn'), vnText=$('#vnText'), "
+                            "vnPage=$('#vnPage'), vnTip=$('#vnTip');", "")
+        prog = (body + "\nconst A=JSON.parse(process.argv[2]);"
+                "process.stdout.write(JSON.stringify(" + expr + "));")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(prog)
+            path = f.name
+        try:
+            r = subprocess.run([node, path, json.dumps(arg)],
+                               capture_output=True, timeout=20)
+            self.assertEqual(r.returncode, 0,
+                             r.stderr.decode("utf-8", "replace"))
+            return json.loads(r.stdout.decode("utf-8"))
+        finally:
+            os.unlink(path)
+
+    LONG = ("2026-08-06 23:59 데이터 기준입니다.\n"
+            + "\n".join("- M16HUB.QUE.TIME.COL{} 임계 >=9분 · 값 15.98분".format(i)
+                        for i in range(30))
+            + "\n조치: STB 적재를 줄여 주세요.")
+
+    def test_대사창은_자르지_않는다(self):
+        """★speakable 의 260자 컷이 섞여 있어 뒷부분을 통째로 잃었다."""
+        out = self._run("sayText(A)", self.LONG)
+        self.assertIn("조치: STB 적재를 줄여 주세요.", out)
+        self.assertNotIn("…", out)
+        self.assertGreater(len(out), 800)
+
+    def test_말풍선은_여전히_짧게_자른다(self):
+        """대사창을 고치면서 말풍선까지 길어지면 캐릭터를 덮는다."""
+        out = self._run("speakable(A)", self.LONG)
+        self.assertLessEqual(len(out), 300)
+        self.assertIn("…", out)
+
+    def test_쪽을_나눠도_내용이_안_사라진다(self):
+        """★쪽 나누기에서 한 줄이라도 빠지면 '다 안 말한' 것이 된다."""
+        pages = self._run("vnSplit(sayText(A))", self.LONG)
+        joined = "\n".join(pages)
+        for line in self._run("sayText(A)", self.LONG).split("\n"):
+            self.assertIn(line, joined, line[:40])
+
+    def test_쪽은_줄_중간에서_안_끊긴다(self):
+        """문장 중간에서 쪽이 갈리면 읽다 만 것처럼 보인다."""
+        src = self._run("sayText(A)", self.LONG).split("\n")
+        for p in self._run("vnSplit(sayText(A))", self.LONG):
+            for line in p.split("\n"):
+                self.assertIn(line, src, line[:40])
+
+    def test_짧은_답은_한_쪽(self):
+        self.assertEqual(self._run("vnSplit(A)", "M16HUB 위험이에요."),
+                         ["M16HUB 위험이에요."])
+
+    def test_표는_지우지_말고_펴서_보여준다(self):
+        """표 행을 통째로 지우면 그만큼 내용이 사라진다."""
+        out = self._run("sayText(A)",
+                        "| 영역 | 임계 | 컬럼 |\n|---|---|---|\n"
+                        "| M16HUB | 9.0 | AVGTOTALTIME1MIN |")
+        self.assertIn("AVGTOTALTIME1MIN", out)
+        self.assertIn("M16HUB · 9.0 · AVGTOTALTIME1MIN", out)
+        self.assertNotIn("|", out)
+
+    def test_화면에_대사창이_있다(self):
+        for i in ('id="vn"', 'id="vnName"', 'id="vnText"', 'id="vnPage"',
+                  'id="vnPrev"', 'id="vnNext"', 'id="vnClose"'):
+            self.assertIn(i, self.html, i)
+
+    def test_대사창은_전문을_받는다(self):
+        """★여기서 speakable(요약본)을 쓰면 대사창을 만든 뜻이 없다."""
+        seen = 0
+        for line in self.js.split("\n"):
+            if "sayMode==='novel'" in line and "vnShow(" in line:
+                seen += 1
+                self.assertNotIn("briefFor", line, line)
+                self.assertNotIn("speakable(", line, line + " ← 요약본을 넘긴다")
+        self.assertGreaterEqual(seen, 3, "대사창으로 가는 길이 너무 적다")
+
+    def test_대사_방식은_세_가지고_노벨이_기본(self):
+        self.assertIn("const SAY_MODES = ['novel', 'bubble', 'off'];", self.js)
+        self.assertIn("let sayMode='novel'", self.js)
+        blk = self.js[self.js.index("$('#bubbleChip').onclick"):]
+        blk = blk[:blk.index("\n};")]
+        self.assertIn("SAY_MODES.indexOf(sayMode)+1", blk, "칩이 순환하지 않는다")
+        self.assertIn("saveSettings()", blk, "고른 방식이 안 저장된다")
+        self.assertIn("sayMode:sayMode", self.js)
+        self.assertIn("o.ui.sayMode", self.js, "저장한 방식을 다시 안 읽는다")
+
+    def test_옛_설정도_읽는다(self):
+        """예전에 말풍선을 꺼 뒀던 사람이 갑자기 대사창을 맞으면 안 된다."""
+        self.assertIn("o.ui.bubble ? 'bubble' : 'off'", self.js)
+
+    def test_넘기기_규칙이_노벨답다(self):
+        blk = self.js[self.js.index("function vnAdvance("):]
+        blk = blk[:blk.index("vnEl.onclick")]
+        self.assertIn("if(VN.typing){ vnRender(true); return; }", blk,
+                      "타자기 도중 누르면 즉시 완성되어야 한다")
+        key = self.js[self.js.index("if(!vnEl.classList.contains('on')) return;"):]
+        key = key[:key.index("\n});")]
+        self.assertIn("Escape", key)
+        self.assertIn("ArrowLeft", key)
+        self.assertIn("tag==='TEXTAREA'", key, "입력 중에 스페이스가 쪽을 넘긴다")
+
+
+class 알람_패널_위치(unittest.TestCase):
+    """대사창이 아래를 쓰므로 알람은 위로. 그리고 평소엔 안 거슬리게."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            cls.css = f.read()
+
+    def _box(self):
+        i = self.css.index("#alarmBox{position:absolute")
+        return self.css[i:self.css.index("}", i)]
+
+    def test_위로_올라갔다(self):
+        blk = self._box()
+        self.assertIn("top:12px", blk)
+        self.assertNotIn("bottom:", blk, "아래에 있으면 대사창과 겹친다")
+
+    def test_평소에는_흐리고_울릴_때만_또렷하다(self):
+        m = re.search(r"opacity:([\d.]+);transition", self._box())
+        self.assertIsNotNone(m, "평소 흐리게 하는 설정이 없다")
+        self.assertLess(float(m.group(1)), 1.0)
+        self.assertIn("#alarmBox.on{opacity:1", self.css,
+                      "경계 이상인데도 흐리면 알람 노릇을 못 한다")
+        self.assertIn("#alarmBox:hover{opacity:1", self.css)
+
+    def test_소형창에서_서랍_버튼과_안_겹친다(self):
+        m = re.search(r"body\.mini #alarmBox\{right:(\d+)px", self.css)
+        self.assertIsNotNone(m, "소형창 위치 조정이 없다")
+        self.assertGreaterEqual(int(m.group(1)), 42,
+                                "☰ 버튼(우상단 34px)과 겹친다")
 
 
 class 설정_일치(unittest.TestCase):
