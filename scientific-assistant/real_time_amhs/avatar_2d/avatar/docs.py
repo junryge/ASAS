@@ -16,6 +16,11 @@ from . import config
 
 _LOCK = threading.Lock()
 
+# 질문 상투어 (skills.SkillStore.STOP 과 같은 뜻)
+STOP = {"어떻게", "어떻", "떻게", "뭐야", "무엇", "알려줘", "알려", "려줘",
+        "보여줘", "보여", "여줘", "해야", "하는", "있나", "있어", "봐줘",
+        "인가", "인지", "얼마", "어디", "그럼", "이거", "그거", "해줘"}
+
 
 class DocStore:
     def __init__(self, path):
@@ -106,8 +111,23 @@ class DocStore:
         # 예산 초과 -> 문단 분해 + 질의어 겹침 점수순
         chunks = []
         for d in act:
-            for c in re.split(r"\n(?=#{1,6}\s)|\n\s*\n", d["text"]):
-                t = c.strip()
+            parts = [c.strip() for c in
+                     re.split(r"\n(?=#{1,6}\s)|\n\s*\n", d["text"])]
+            # ★제목만 있는 조각은 **다음 본문에 붙인다.** 따로 두면 두 가지가
+            #   다 나쁘다 — 15자 컷에 걸려 버려지거나(그 제목이 유일한 단서인
+            #   문서는 영영 안 걸린다), 컷을 낮추면 제목 조각만 잔뜩 실린다.
+            merged, hold = [], ""
+            for t in parts:
+                if not t:
+                    continue
+                if re.match(r"^#{1,6}\s\S", t) and "\n" not in t:
+                    hold = (hold + "\n" + t).strip() if hold else t
+                    continue
+                merged.append((hold + "\n" + t).strip() if hold else t)
+                hold = ""
+            if hold:
+                merged.append(hold)
+            for t in merged:
                 if len(t) > 15:
                     chunks.append({"name": d["name"], "t": t, "score": 0})
 
@@ -118,8 +138,13 @@ class DocStore:
         #   길이가 점수라, 통째 일치가 확실히 앞선다.
         terms += [t for t in re.findall(r"[a-z0-9][a-z0-9_.]{3,}", q)
                   if ("_" in t or "." in t)]
+        # 질문 상투어는 뺀다 — '어떻게' 는 거의 모든 문서에 있어 뜻 있는
+        # 낱말과 같은 점수를 먹는다 (스킬 쪽과 같은 규칙)
+        terms = [t for t in terms if t not in STOP]
         for c in chunks:
-            low = c["t"].lower()
+            # ★문서 **이름**도 같이 본다 — '우리팀_야간점검.md' 는 그 자체가
+            #   강한 단서인데 본문만 보면 놓친다
+            low = (c["name"] + "\n" + c["t"]).lower()
             for w in terms:
                 if w in low:
                     # 컬럼 이름 통째 일치(_ · . 포함)는 크게 — 'storage','util'
@@ -133,13 +158,29 @@ class DocStore:
             return ""
         chunks = hit
 
-        out = ""
-        for c in chunks:
-            if len(out) + len(c["t"]) + len(c["name"]) + 8 > budget:
-                continue
-            out += "### " + c["name"] + "\n" + c["t"] + "\n\n"
-            if len(out) > budget * 0.96:
+        # ★문서마다 돌아가며 채운다. 점수순으로만 담으면 덩치 큰 문서 하나가
+        #   예산을 통째로 먹어서, 정작 그 질문에 딱 맞는 **작은 문서**(사용자가
+        #   방금 올린 md 같은)가 한 조각도 못 들어간다 — 실제로 그랬다.
+        by_doc = {}
+        for c in chunks:                       # 이미 점수순
+            by_doc.setdefault(c["name"], []).append(c)
+        order = sorted(by_doc, key=lambda n: -by_doc[n][0]["score"])
+        out, round_i = "", 0
+        while True:
+            put = False
+            for name in order:
+                lst = by_doc[name]
+                if round_i >= len(lst):
+                    continue
+                c = lst[round_i]
+                piece = "### " + name + "\n" + c["t"] + "\n\n"
+                if len(out) + len(piece) > budget:
+                    continue
+                out += piece
+                put = True
+            if not put:
                 break
+            round_i += 1
         return out or chunks[0]["t"][:budget]
 
 

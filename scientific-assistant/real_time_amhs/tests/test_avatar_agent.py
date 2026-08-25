@@ -2077,12 +2077,15 @@ class 참고_자료_등록(unittest.TestCase):
                                         "관제_FAB별_위험도_스코어.md")),
                  ("보고서 용어 표준 알려줘", ("관제_결과해석과_용어표준.md",)),
                  ("이 파일 이상치 분석해줘", ("데이터분석_관제데이터_보는법.md",))]
+        names = {d["name"] for d in self.st.list()}
         for q, want in cases:
-            ctx = self.st.context(q, 700)
+            ctx = self.st.context(q, 3000)
             self.assertTrue(ctx, q + " → 아무 자료도 안 걸림")
-            head = ctx.splitlines()[0]
-            self.assertTrue(any(w in head for w in want),
-                            "{} → {} (기대: {})".format(q, head, want))
+            # 실린 문서 이름들 — 문서 **안**의 소제목(### …)과 헷갈리면 안 된다
+            got = [b.split("\n", 1)[0].strip() for b in ctx.split("### ")]
+            got = [g for g in got if g in names]
+            self.assertTrue(any(w in got for w in want),
+                            "{} → {} (기대: {})".format(q, got, want))
 
     def test_잡담에는_자료를_안_붙인다(self):
         """★예전엔 겹치는 낱말이 없어도 아무 문단이나 실려 예산을 먹었다."""
@@ -2643,6 +2646,126 @@ class 서윤이_스킬을_만든다(unittest.TestCase):
         self.assertIn("askSkillFormat(text)", blk)
         self.assertNotIn("makeSkill(", blk,
                          "되묻지 않고 곧장 만들어 버린다")
+
+
+class 첨부가_주제일_때_시각(unittest.TestCase):
+    """★서윤이 24일 파일을 설명하면서 "2026-08-06 기준으로…" 로 시작했다.
+    관제 근거가 먼저 오고 거기 "대답 첫머리에 이 시각을 말하라" 가 붙어 있어
+    그걸 그대로 따른 것이다 (실제 증상)."""
+
+    class _St:
+        def context(self, *a, **k):
+            return ""
+
+    EV = ("[관제 근거 — 실제 측정값]\n지금 시각: 2026-08-25 06:00\n"
+          "데이터 시각: 2026-08-06 23:59 (26802분 전) — 대답 첫머리에 이 시각을 말하라\n")
+    ATT = ("[첨부 데이터 분석 — 20260824_발동이벤트.csv]\n행 1559개 · 컬럼 143개\n"
+           "기간: 2026-08-24 00:00 ~ 2026-08-24 23:59\n"
+           "등급 분포: 정상 1557분 · 경계 2분\n")
+
+    def _sys(self, attach=True):
+        return allm.build_messages(
+            "서윤", "이 파일 분석해줘", [], self._St(),
+            {"docBudget": 6000, "keepMsgs": 12}, skill_store=self._St(),
+            evidence_text=self.EV,
+            attach=("20260824_발동이벤트.csv", self.ATT) if attach else None
+        )[0]["content"]
+
+    def test_첨부가_관제_근거보다_먼저다(self):
+        s = self._sys()
+        self.assertLess(s.index("[방금 첨부한 파일: 20260824_발동이벤트.csv]"),
+                        s.index("[관제 근거 — 지금 화면 상태"),
+                        "관제 근거가 먼저면 그 시각으로 대답을 시작한다")
+
+    def test_관제_근거의_첫머리_지시를_걷어낸다(self):
+        s = self._sys()
+        self.assertNotIn("대답 첫머리에 이 시각을 말하라", s,
+                         "첨부가 주제인데 화면 시각을 첫머리에 말하라고 남아 있다")
+
+    def test_첨부가_없으면_그_지시는_그대로_둔다(self):
+        """화면 상태를 물었을 때는 그 시각을 말해야 한다 — 지우면 안 된다."""
+        self.assertIn("대답 첫머리에 이 시각을 말하라", self._sys(attach=False))
+
+    def test_관제_근거에_무관하다고_적는다(self):
+        self.assertIn("[관제 근거 — 지금 화면 상태. 첨부와 무관하다]", self._sys())
+
+    def test_첨부_기간을_말하라고_한다(self):
+        s = self._sys()
+        self.assertIn("시각은 **이 파일의 기간**을 말한다", s)
+        self.assertIn("1-1-1", allm.AGENT_RULES)
+        self.assertIn("첨부 파일에 대한 질문이면 그 파일의 기간", allm.AGENT_RULES)
+
+    def test_하루_전체를_말하라고_한다(self):
+        """★한 순간(최고점 1분)만 집어 말하고 끝내던 문제."""
+        s = self._sys()
+        self.assertIn("빠짐없이", s)
+        self.assertIn("하루 전체를 말한다", s)
+
+
+class 자료가_한_문서에_먹히지_않는다(unittest.TestCase):
+    """★덩치 큰 문서 하나가 예산을 다 먹어서, 그 질문에 딱 맞는 작은 문서가
+    (사용자가 방금 올린 md 같은) 한 조각도 못 들어갔다."""
+
+    def setUp(self):
+        from avatar import docs as adocs
+        self.tmp = tempfile.TemporaryDirectory()
+        self.st = adocs.DocStore(Path(self.tmp.name) / "d.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _names(self, ctx):
+        have = {d["name"] for d in self.st.list()}
+        out = []
+        for b in ctx.split("### "):
+            h = b.split("\n", 1)[0].strip()
+            if h in have and h not in out:
+                out.append(h)
+        return out
+
+    def test_작은_문서도_들어간다(self):
+        big = "\n\n".join("## 큰문서 절 {}\n야간 점검 얘기가 여기도 있다. "
+                           "길게 채운다. " * 6 for i in range(40))
+        self.st.add("큰문서.md", big)
+        self.st.add("우리팀_야간점검.md",
+                    "# 야간 점검 절차\n\n## 순서\n1. 23시에 저장율을 본다\n")
+        got = self._names(self.st.context("야간 점검 어떻게 해?", 1500))
+        self.assertIn("우리팀_야간점검.md", got,
+                      "큰 문서가 예산을 다 먹어 작은 문서가 빠졌다: %r" % (got,))
+
+    def _filler(self):
+        """예산을 넘겨 **문단 고르기 길**을 타게 하는 채움 문서.
+        (전체가 예산 안에 들면 통째로 반환돼 시험이 헛돈다)"""
+        # ★'어떻게' 를 일부러 넣는다 — 진짜 문서들이 그렇다 ("무엇을 왜
+        #   어떻게 하는지"). 상투어를 안 빼면 이 문서가 아무 질문에나 붙는다.
+        self.st.add("채움.md", "\n\n".join(
+            "## 채움 절 {}\n이것을 어떻게 하는지 해줘 하는 내용을 길게 채운다. " * 8
+            for _ in range(30)))
+
+    def test_제목만_있는_문단도_살린다(self):
+        """★'# 야간 점검 절차' 는 15자가 안 돼 통째로 버려졌다 — 그 제목이
+        유일한 단서인 문서는 영영 안 걸렸다. 다음 본문에 붙인다."""
+        self._filler()
+        self.st.add("점검.md", "# 야간 점검 절차\n\n## 순서\n1. 저장율을 본다\n")
+        ctx = self.st.context("야간 점검 절차", 900)
+        self.assertIn("야간 점검 절차", ctx)
+
+    def test_문서_이름도_단서다(self):
+        """본문에는 없고 **이름에만** 있는 낱말로도 찾아야 한다."""
+        self._filler()
+        self.st.add("우리팀_야간점검.md", "## 순서\n1. 저장율을 본다\n2. 연락한다\n")
+        got = self._names(self.st.context("야간점검", 900))
+        self.assertIn("우리팀_야간점검.md", got,
+                      "이름에만 있는 낱말은 못 찾는다: %r" % (got,))
+
+    def test_질문_상투어만_있으면_안_붙인다(self):
+        """★'어떻게' 는 거의 모든 문서에 있다 — 안 빼면 아무 문서나 붙는다."""
+        from avatar import docs as adocs
+        self.assertIn("어떻게", adocs.STOP)
+        self._filler()
+        self.st.add("점검.md", "# 야간 점검 절차\n\n## 순서\n1. 저장율을 본다\n")
+        self.assertEqual(self.st.context("어떻게 해줘", 900), "",
+                         "상투어만 있는 질문에 자료가 붙는다")
 
 
 class 설정_일치(unittest.TestCase):
