@@ -88,22 +88,39 @@ class SkillStore:
         return True
 
     # ── 질문 매칭 주입 ────────────────────────────────────────────────────
+    # ★질문 상투어는 빼고 센다. '어떻게' 는 거의 모든 설명에 들어 있어서
+    #   ("무엇을 왜 어떻게 하는지") 뜻 있는 낱말과 같은 점수를 먹었다 —
+    #   "이상치 어떻게 봐" 가 엉뚱한 스킬로 갔다. 조각(어떻·떻게)도 같이 뺀다.
+    STOP = {"어떻게", "어떻", "떻게", "뭐야", "무엇", "뭔가", "알려줘", "알려",
+            "려줘", "보여줘", "보여", "여줘", "해야", "하는", "있나", "있어",
+            "봐줘", "인가", "인지", "얼마", "어디", "그럼", "이거", "그거",
+            "저거", "좀만", "해줘", "주세", "세요", "합니", "니까", "까요"}
+
     def context(self, question, budget=6000):
         """질문과 겹치는 스킬 본문을 예산 안에서 골라 주입 텍스트로.
 
         docs.py 와 같은 철학 — 형태소 분석기 없이 2글자 이상 토큰 겹침.
         스킬이 몇 개 안 되므로(개인 도구) 전수 비교로 충분하다.
         """
-        q_tokens = _tokens(question)
+        q_tokens = _tokens(question) - self.STOP
         if not q_tokens:
             return ""
         scored = []
         for s in self.list():
             md = self.read(s["name"]) or ""
-            body_tokens = _tokens(s["name"] + " " + s["description"] + " " + md)
-            hit = len(q_tokens & body_tokens)
-            if hit >= 2:
-                scored.append((hit, s["name"], md))
+            head_tokens = _tokens(s["name"] + " " + s["description"])
+            body_tokens = _tokens(md)
+            # 낱말 **길이**로 센다 — 개수로만 세면 '이상치' 가 통째로 걸린
+            # 스킬과 조각('이상')만 걸린 스킬이 같은 점수가 된다
+            hit_head = sum(len(w) for w in q_tokens & head_tokens)
+            hit = sum(len(w) for w in q_tokens & (head_tokens | body_tokens))
+            # ★본문 두 낱말을 요구하면 "검정 뭐 써야 해" 처럼 짧고 분명한
+            #   질문이 아무것도 못 받는다. 설명(description)은 사람이 고른
+            #   말이라 하나만 걸려도 신호가 세다 — 그때는 통과시킨다.
+            if hit >= 4 or hit_head >= 2:
+                # 설명 일치를 크게 — 본문이 긴 스킬이 낱말 수로만 이기면
+                # '이상치' 질문에 엉뚱한 스킬이 먼저 붙는다
+                scored.append((hit_head * 10 + hit, s["name"], md))
         scored.sort(key=lambda x: -x[0])
         out, used = [], 0
         for _hit, name, md in scored[:MAX_INJECT]:
@@ -354,6 +371,57 @@ def _desc_of(md):
         if line.strip().lower().startswith("description:"):
             return line.split(":", 1)[1].strip()
     return ""
+
+
+# 데이터 분석 스킬 — 데모스(scientific-skills)의 것을 그대로 등록한다.
+# ★참고 자료에도 같은 내용이 있지만, 스킬 목록(/스킬 목록)에서 보이고 스킬로
+#   주입돼야 "무엇을 할 줄 아는가" 가 드러난다. 중복 주입은 llm 쪽에서 막는다.
+ANALYSIS_SKILLS = {
+    "eda": ("exploratory-data-analysis", "SKILL.md",
+            "탐색적 데이터 분석(EDA) — CSV·표를 처음 받았을 때 구조·결측치·"
+            "이상치·분포·요약통계·상관·시계열 추이를 어떤 순서로 볼지"),
+    "stats": ("statistical-analysis", "SKILL.md",
+              "통계 검정 — 가설 검정, 유의성·p값, 효과크기, 표본 수, "
+              "평균·비율 비교, 상관·회귀, 결과 보고 방법"),
+    "stats-choose": ("statistical-analysis", "references/test_selection_guide.md",
+                     "어떤 검정을 쓸지 고르기 — 자료 종류·집단 수·짝지음·"
+                     "정규성에 따른 검정 선택표"),
+    "stats-assume": ("statistical-analysis", "references/assumptions_and_diagnostics.md",
+                     "검정 전 가정 점검 — 정규성·등분산·독립성·이상치 영향, "
+                     "가정이 깨졌을 때의 대안"),
+}
+
+
+def _analysis_dir(base_dir):
+    rt = os.path.dirname(str(base_dir))            # real_time_amhs
+    for d in (os.path.join(os.path.dirname(rt), "scientific-skills"),
+              os.path.join(rt, "analysis_skills")):
+        if os.path.isdir(d):
+            return d
+    return ""
+
+
+def seed_analysis_skills(store, base_dir):
+    """데이터 분석 스킬을 스킬 저장소에 등록한다. 등록한 이름 목록."""
+    root = _analysis_dir(base_dir)
+    if not root:
+        return []
+    done = []
+    for name, (skill, rel, desc) in ANALYSIS_SKILLS.items():
+        if store.read(name):
+            continue
+        path = os.path.join(root, skill, rel)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                body = f.read()
+        except OSError:
+            continue
+        ok, _e, _w = store.save(name, compose(name, desc, _strip_fm(body)))
+        if ok:
+            done.append(name)
+    return done
 
 
 def seed_fab_score(store, base_dir):

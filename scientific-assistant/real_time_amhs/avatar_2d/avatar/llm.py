@@ -149,6 +149,7 @@ def build_messages(persona, user_text, history, doc_store, settings,
         sysmsg += ("[방금 첨부한 파일: {}]\n{}{}\n"
                    "질문이 이 파일에 대한 것이면 이 내용을 최우선 근거로 쓴다.\n\n"
                    .format(name, terms.no_code(cut), note))
+    sk = ""
     if skill_store is not None:
         sk = skill_store.context(user_text,
                                  int(settings.get("docBudget", 6000)) // 2)
@@ -160,6 +161,19 @@ def build_messages(persona, user_text, history, doc_store, settings,
                        "\n스킬의 규칙·함정은 판단 기준으로 쓰되, "
                        "현재 수치는 [관제 근거] 를 따른다.\n\n")
     ctx = doc_store.context(user_text, int(settings.get("docBudget", 6000)))
+    # ★같은 글이 스킬과 자료 양쪽에 등록돼 있다 (분석 스킬은 둘 다에 있다).
+    #   그대로 두면 한 질문에 같은 문단이 두 번 실려 예산을 두 배로 먹는다.
+    #   이미 스킬로 들어간 문단은 자료에서 뺀다.
+    if ctx and sk:
+        keep = []
+        for c in ctx.split("\n\n"):
+            # 자료 문단은 '### 이름' 머리말이 붙어 온다 — 그걸 떼고 본문만
+            # 비교해야 스킬로 이미 들어간 글인지 알 수 있다
+            body = c.split("\n", 1)[1] if c.startswith("### ") and "\n" in c else c
+            if len(body.strip()) >= 40 and body.strip() in sk:
+                continue
+            keep.append(c)
+        ctx = "\n\n".join(keep).strip()
     if ctx:
         sysmsg += ("[참고 자료]\n" + terms.no_code(ctx) +
                    "\n위 자료에 있는 내용은 근거로 삼아 답한다. "

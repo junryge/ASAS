@@ -186,6 +186,10 @@ SEED_LOCAL = [
     ("m16_hub_skills/m16_hub_카파시_v3.5.md", "관제_룰과_점수산식.md"),
     ("m16_hub_skills/m16_hub_결과해석_도메인_고객인용V3.5.md", "관제_결과해석과_용어표준.md"),
     ("m16_hub_skills/m16_hub_일반_v3.5.md", "관제_실행과_사용법.md"),
+    ("../m16_hub_skills/페르소나_통합.txt", "관제_보고_페르소나.txt"),
+    ("m16_hub_skills/페르소나_통합.txt", "관제_보고_페르소나.txt"),
+    ("../m16_hub_skills/발동이벤트_요약.py", "관제_발동이벤트_요약방식.py.txt"),
+    ("m16_hub_skills/발동이벤트_요약.py", "관제_발동이벤트_요약방식.py.txt"),
 ]
 
 

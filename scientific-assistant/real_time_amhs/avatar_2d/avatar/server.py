@@ -80,6 +80,8 @@ class App:
         nm = docs.seed_column_dict(cls.doc_store, base_dir)
         if nm:
             sys.stdout.write("  참고 자료 시드: {} (감시 컬럼 뜻·임계)\n".format(nm))
+        for nm in skills.seed_analysis_skills(cls.skill_store, base_dir):
+            sys.stdout.write("  스킬 시드: {} (데이터 분석)\n".format(nm))
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)

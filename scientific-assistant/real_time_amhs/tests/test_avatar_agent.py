@@ -2312,6 +2312,121 @@ class 알람_기록(_Sentinel):
         self.assertIn("sentinel.clear_note(", blk)
 
 
+class 스킬도_전부_등록(unittest.TestCase):
+    """'스킬도 전부 다 등록되지!' — 현장 4 + 분석 4 + 스코어 1 = 9개."""
+
+    BASE = Path(util.BASE) / "avatar_2d"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sk = skills.SkillStore(Path(self.tmp.name) / "sk")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _seed(self):
+        skills.seed_hub_skills(self.sk, self.BASE)
+        skills.seed_analysis_skills(self.sk, self.BASE)
+        skills.seed_fab_score(self.sk, self.BASE)
+        return {d["name"] for d in self.sk.list()}
+
+    def test_아홉_개가_다_들어간다(self):
+        got = self._seed()
+        want = {"m16-hub-result", "m16-hub-threshold", "m16-hub-capacity",
+                "m16-hub-general", "eda", "stats", "stats-choose",
+                "stats-assume", "fab-score"}
+        self.assertEqual(want - got, set(), "빠진 스킬: %r" % (want - got,))
+
+    def test_분석_스킬도_데모스에서_그대로(self):
+        got = skills.seed_analysis_skills(self.sk, self.BASE)
+        if not got:
+            self.skipTest("분석 스킬 폴더 없음")
+        self.assertIn("eda", got)
+        self.assertIn("Exploratory Data Analysis", self.sk.read("eda"))
+
+    def test_설명은_한글이라_한국어_질문에_걸린다(self):
+        """원문 description 은 영어다 — 그대로 두면 한국어 질문에 안 걸린다."""
+        if not skills.seed_analysis_skills(self.sk, self.BASE):
+            self.skipTest("분석 스킬 폴더 없음")
+        d = [x for x in self.sk.list() if x["name"] == "eda"][0]
+        for w in ("이상치", "결측", "분포"):
+            self.assertIn(w, d["description"], w)
+
+    def test_서버가_켜질_때_부른다(self):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("cls.skill_store = skills.SkillStore"):
+                  src.index("sentinel.init(")]
+        self.assertIn("skills.seed_analysis_skills(cls.skill_store, base_dir)", blk)
+
+    def test_두_번_심어도_안_늘어난다(self):
+        self.assertEqual(self._seed(), self._seed())
+
+
+class 스킬_고르기(unittest.TestCase):
+    """등록만으로는 안 된다 — 질문이 **맞는 스킬**에 닿아야 쓴 것이다."""
+
+    BASE = Path(util.BASE) / "avatar_2d"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sk = skills.SkillStore(Path(self.tmp.name) / "sk")
+        skills.seed_hub_skills(self.sk, self.BASE)
+        skills.seed_analysis_skills(self.sk, self.BASE)
+        skills.seed_fab_score(self.sk, self.BASE)
+        if len(self.sk.list()) < 9:
+            self.skipTest("스킬 시드 원본 없음")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _first(self, q):
+        c = self.sk.context(q, 1200)
+        got = [l.replace("### 스킬: ", "") for l in c.splitlines()
+               if l.startswith("### 스킬: ")]
+        return got[0] if got else None
+
+    def test_질문이_맞는_스킬로_간다(self):
+        for q, want in [("이상치 어떻게 봐", "eda"),
+                        ("결측치 있나 봐줘", "eda"),
+                        ("검정 뭐 써야 해", "stats"),
+                        ("가정 점검 해야 해?", "stats-assume"),
+                        ("임계값 얼마야", "m16-hub-threshold"),
+                        ("용어 표준 뭐야", "m16-hub-result")]:
+            self.assertEqual(self._first(q), want, q)
+
+    def test_질문_상투어는_안_센다(self):
+        """★'어떻게' 는 거의 모든 설명에 있다 ("무엇을 왜 어떻게 하는지") —
+        빼지 않으면 뜻 있는 낱말과 같은 점수를 먹어 엉뚱한 스킬이 이긴다."""
+        self.assertIn("어떻게", skills.SkillStore.STOP)
+        self.assertEqual(self._first("이상치 어떻게 봐"), "eda")
+
+    def test_짧고_분명한_질문도_받는다(self):
+        """★본문 두 낱말을 요구하면 '검정 뭐 써야 해' 가 아무것도 못 받는다."""
+        self.assertIsNotNone(self._first("검정 뭐 써야 해"))
+
+    def test_잡담에는_스킬을_안_붙인다(self):
+        for q in ("안녕", "고마워", "ㅋㅋ"):
+            self.assertEqual(self.sk.context(q, 1200), "", q)
+
+    def test_같은_글이_두_번_안_실린다(self):
+        """★분석 스킬은 스킬과 참고 자료 양쪽에 등록돼 있다. 한 질문에 같은
+        문단이 두 번 실리면 예산을 두 배로 먹는다."""
+        from avatar import docs as adocs
+        para = ("이상치 판정은 사분위 범위로 본다. 상자그림 밖의 점을 표시하고 "
+                "그 시각의 원본 행을 같이 확인한다.")
+        self.sk.save("dup-test", skills.compose(
+            "dup-test", "이상치 판정 방법 — 사분위 범위와 상자그림", para))
+        st = adocs.DocStore(Path(self.tmp.name) / "d.json")
+        st.add("이상치자료.md", para + "\n\n" + ("빈칸 채우기 문단. " * 60))
+        sysmsg = allm.build_messages("서윤", "이상치 판정 어떻게 해", [], st,
+                                     {"docBudget": 600, "keepMsgs": 12},
+                                     skill_store=self.sk)[0]["content"]
+        self.assertIn(para, sysmsg, "아예 안 실렸다 — 시험이 헛돈다")
+        self.assertEqual(sysmsg.count(para), 1,
+                         "같은 문단이 스킬·자료로 두 번 실렸다")
+
+
 class 설정_일치(unittest.TestCase):
     def test_아바타_FAB_목록이_관제와_같다(self):
         """아바타 FABS 가 관제 시스템(ALL + FAB 5)과 어긋나면 그 FAB 알람을
