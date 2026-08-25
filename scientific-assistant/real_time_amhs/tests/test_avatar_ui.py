@@ -276,6 +276,61 @@ class 현재_상태_그래프가_보인다(_Page):
         self.assertFalse(self.rect(pg, "#chartWrap")["shown"])
 
 
+class 사이드바_접기_펼치기(_Page):
+    """오른쪽 사이드바(대화·감정·설정)를 접어 무대를 넓게 본다.
+
+    ★접는 버튼은 사이드바 안에 있다 — 접었을 때 되펼 손잡이가 화면에
+      남아 있지 않으면 되돌릴 길이 없다. 알람 패널에서 이미 겪은 실수다.
+    """
+
+    def _w(self, pg, sel):
+        return pg.eval_on_selector(
+            sel, "e=>Math.round(e.getBoundingClientRect().width)")
+
+    def test_접으면_무대가_넓어진다(self):
+        pg, errs = self.open()
+        before = self._w(pg, "#stageWrap")
+        pg.click("#sideFold")
+        pg.wait_for_timeout(300)
+        self.assertFalse(self.rect(pg, "#side")["shown"])
+        self.assertGreater(self._w(pg, "#stageWrap"), before + 100)
+        self.assertEqual(errs, [])
+
+    def test_접어도_되펼_손잡이가_남는다(self):
+        pg, _ = self.open()
+        self.assertFalse(self.rect(pg, "#sideOpen")["shown"],
+                         "펼친 상태인데 손잡이가 떠 있다")
+        pg.click("#sideFold")
+        pg.wait_for_timeout(300)
+        r = self.rect(pg, "#sideOpen")
+        self.assertTrue(r["shown"], "되펼 길이 없다")
+        pg.click("#sideOpen")
+        pg.wait_for_timeout(300)
+        self.assertTrue(self.rect(pg, "#side")["shown"])
+
+    def test_단축키로도_된다(self):
+        pg, _ = self.open()
+        pg.keyboard.press("Control+\\")
+        pg.wait_for_timeout(300)
+        self.assertFalse(self.rect(pg, "#side")["shown"])
+        pg.keyboard.press("Control+\\")
+        pg.wait_for_timeout(300)
+        self.assertTrue(self.rect(pg, "#side")["shown"])
+
+    def test_다시_열어도_접힌_채로_기억한다(self):
+        """★되살리는 길에서 죽으면 화면이 통째로 안 뜬다 (TDZ 사고와 같은 자리)."""
+        pg, errs = self.open(ui={"sideOpen": False})
+        self.assertFalse(self.rect(pg, "#side")["shown"])
+        self.assertTrue(self.rect(pg, "#sideOpen")["shown"])
+        self.assertTrue(self.rect(pg, "#gl")["shown"], "캐릭터가 안 그려졌다")
+        self.assertEqual(errs, [], "되살리는 중에 오류가 났다")
+
+    def test_알람_패널은_접어도_보인다(self):
+        """무대가 넓어질 뿐 관제는 계속 봐야 한다."""
+        pg, _ = self.open(ui={"sideOpen": False})
+        self.assertTrue(self.rect(pg, "#alarmBox")["shown"])
+
+
 CTX = {"persona": 120, "rules": 900, "evidence": 400, "attach": 1500,
        "skills": 2200, "docs": 1800, "history": 300, "input": 12,
        "total": 7232, "limit": 32768, "pct": 22}

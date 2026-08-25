@@ -353,6 +353,27 @@
   #grip{position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:col-resize;z-index:30}
   #grip:before{content:"";position:absolute;left:4px;top:0;bottom:0;width:2px;background:transparent;transition:background .15s}
   #grip:hover:before,#grip.on:before{background:var(--accent2)}
+  /* ── 사이드바 접기·펼치기 ────────────────────────────────────────
+     ★접었을 때 되펼 손잡이가 **화면에 남아 있어야** 한다. 접는 버튼이
+       접힌 패널 안에 있으면 되돌릴 길이 없다 (알람 패널에서 겪은 그 실수). */
+  #sideFold{position:absolute;left:-11px;top:50%;transform:translateY(-50%);
+    width:22px;height:52px;display:flex;align-items:center;justify-content:center;
+    z-index:31;cursor:pointer;font-size:11px;color:var(--dim);
+    border-radius:8px 0 0 8px;background:var(--panel);
+    border:1px solid var(--line);border-right:0;user-select:none}
+  #sideFold:hover{color:#fff;border-color:var(--accent2)}
+  #sideOpen{position:fixed;right:0;top:50%;transform:translateY(-50%);
+    width:22px;height:52px;display:none;align-items:center;justify-content:center;
+    z-index:32;cursor:pointer;font-size:11px;color:var(--dim);
+    border-radius:8px 0 0 8px;background:var(--panel);
+    border:1px solid var(--line);border-right:0;user-select:none;
+    box-shadow:-4px 0 14px rgba(0,0,0,.35)}
+  #sideOpen:hover{color:#fff;border-color:var(--accent2)}
+  body.sideoff #side{display:none}
+  body.sideoff #sideOpen{display:flex}
+  /* 소형창(미니)은 서랍이 따로 있다 — 여기서 또 접으면 서로 싸운다 */
+  body.mini #sideFold,body.mini #sideOpen{display:none!important}
+  body.mini.sideoff #side{display:flex}
 
   #chatPane{flex:0 0 148px;height:148px;min-height:90px;position:relative;
     background:var(--panel);border-top:1px solid var(--line);

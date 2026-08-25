@@ -534,6 +534,7 @@ let alarmPos=null;      // FAB 알람 패널을 옮겨 둔 자리 {l,t} (null = 
 let alogPos=null;       // 알람 기록 창을 옮겨 둔 자리 {l,t} (null = 가운데)
 let ALOG_CFG={hold_min:60, keep:500};   // 알람 동작 설정 (서버가 기억)
 let chartPos=null;      // 현재 상태 그래프를 옮겨 둔 자리 (null = 좌상단)
+let sideOpen=true;      // 오른쪽 사이드바 펼침 여부
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
 let hudOpen=true;       // 좌측 패널 펼침 여부
@@ -1094,6 +1095,7 @@ function collectSettings(withKey){
          bubble: sayMode !== 'off',
          sayMode:sayMode, sayModeSet:sayModeSet,
          alarmPos:alarmPos, alogPos:alogPos, chartPos:chartPos,
+         sideOpen:sideOpen,
          patch:patchOn,
          stream:$('#streamOn').checked, hud:hudOpen, ctx:ctxOpen, ctxLimit:ctxLimit,
          eye:eyeFollow, badge:badgeOn, autoScene:autoScene,
@@ -1144,6 +1146,7 @@ function applySettings(o, live){
     if(o.ui.alarmPos!==undefined){ alarmPos=o.ui.alarmPos; applyAlarmPos(); }
     if(o.ui.alogPos!==undefined){ alogPos=o.ui.alogPos; applyAlogPos(); }
     if(o.ui.chartPos!==undefined){ chartPos=o.ui.chartPos; applyChartPos(); }
+    if(o.ui.sideOpen!==undefined) setSide(!!o.ui.sideOpen, true);
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
@@ -3792,6 +3795,40 @@ $('#enterSend').addEventListener('change',()=>{
   saveSettings();
   sayEl.placeholder = $('#enterSend').checked ? '메시지 입력…' : '메시지 입력…  ·  Ctrl+Enter 전송';
 });
+
+/* ---------- 오른쪽 사이드바 접기·펼치기 ----------
+   무대(캐릭터·그래프·알람)를 넓게 보고 싶을 때가 있다. 접으면 #main 이
+   남은 폭을 다 쓴다.
+   ★접는 버튼(▶)은 사이드바 안에 있으니, 접었을 때 되펼 손잡이(◀)를
+     **화면 가장자리에 따로** 남긴다 — 되돌릴 길이 없으면 그건 기능이
+     아니라 사고다 (알람 패널에서 이미 겪었다).
+   ★소형창(미니)은 서랍이 따로 있어 여기서 접지 않는다. */
+function setSide(on, quiet){
+  sideOpen = !!on;
+  document.body.classList.toggle('sideoff', !sideOpen);
+  const f=$('#sideFold'); if(f) f.textContent = sideOpen ? '▶' : '◀';
+  /* ★설정을 되살리는 중(quiet)에는 다시 앉히지 않는다. loadSettings 는
+     스크립트 위쪽에서 도는데, computeView 는 아직 선언 전인 const(calib …)를
+     읽어 TDZ 오류로 죽는다 — 화면이 통째로 안 뜨던 그 사고와 같은 종류다.
+     그때는 어차피 초기화가 끝나며 한 번 더 앉힌다. */
+  if(!quiet){
+    if(typeof computeView==='function') computeView();
+    if(typeof placeHandles==='function') placeHandles();
+    if(typeof placeBubble==='function') placeBubble();
+    saveSettings();
+  }
+}
+function toggleSide(){ setSide(!sideOpen); }
+
+(function initSideFold(){
+  const f=$('#sideFold'), o=$('#sideOpen');
+  if(f) f.onclick = toggleSide;
+  if(o) o.onclick = ()=> setSide(true);
+  /* 손이 키보드에 있을 때를 위해 — 입력 중에도 안전한 조합으로 */
+  document.addEventListener('keydown', e=>{
+    if((e.ctrlKey||e.metaKey) && e.key==='\\'){ e.preventDefault(); toggleSide(); }
+  });
+})();
 
 /* 사이드 폭(가로) / 채팅 높이(세로) 드래그 */
 (function(){
