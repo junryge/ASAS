@@ -1535,6 +1535,83 @@ class 알람_패널_위치(unittest.TestCase):
                                 "☰ 버튼(우상단 34px)과 겹친다")
 
 
+class 화면이_뜨는가(unittest.TestCase):
+    """★두 번째 방문부터 화면이 아예 안 뜨던 사고의 재발 방지.
+
+    app.js 는 시작하면서 저장된 설정(localStorage)을 바로 읽는다. 그때 쓰는
+    이름이 **파일 아래쪽에서 const 로 선언**돼 있으면, 선언 줄을 지나기 전이라
+    ReferenceError 가 나고 **스크립트 전체가 죽는다** — 캐릭터도 대사창도
+    아무것도 안 뜬다.
+
+    처음 방문엔 저장값이 없어 그 줄을 안 타므로 멀쩡하다. 설정이 한 번
+    저장된 뒤부터 죽는다 — 그래서 개발 중엔 안 보이고 현장에서 터진다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    @staticmethod
+    def _code_only(js):
+        """주석과 문자열을 지운다 — 거기 적힌 낱말은 변수가 아니다."""
+        js = re.sub(r"/\*[\s\S]*?\*/", " ", js)
+        js = re.sub(r"//[^\n]*", " ", js)
+        js = re.sub(r"'(?:\\.|[^'\\\n])*'", "''", js)
+        js = re.sub(r'"(?:\\.|[^"\\\n])*"', '""', js)
+        return js
+
+    def _top_decls(self):
+        """파일 맨 왼쪽(들여쓰기 없음)에 선언된 const/let → 선언 위치."""
+        out = {}
+        for m in re.finditer(r"^(?:const|let)\s+([A-Za-z_$][\w$]*)", self.js, re.M):
+            out.setdefault(m.group(1), m.start())
+        return out
+
+    def test_설정을_읽을_때_쓰는_이름이_먼저_선언돼_있다(self):
+        js = self.js
+        start = js.index("function applySettings(o, live){")
+        body = self._code_only(js[start:js.index("\nfunction loadSettings(", start)])
+        init = js.index("const RESTORED = loadSettings();")
+        late = []
+        for name, at in self._top_decls().items():
+            if at <= init:
+                continue                      # 이미 선언을 지난 뒤다 — 안전
+            # o.ui.bubble 처럼 **속성 이름**은 변수가 아니다 — 앞의 점을 뺀다
+            if re.search(r"(?<![.\w$])" + re.escape(name) + r"\b", body):
+                late.append((name, js[:at].count("\n") + 1))
+        self.assertEqual(
+            late, [],
+            "설정을 읽는 자리에서 아직 선언 안 된 이름을 쓴다 "
+            "(두 번째 방문부터 화면이 안 뜬다): %r" % (late,))
+
+    def test_대사_표시_방식_선언이_설정_읽기보다_위다(self):
+        """실제로 터졌던 그 짝 — 값으로도 한 번 더 못박는다."""
+        js = self.js
+        self.assertLess(js.index("const SAY_MODES"),
+                        js.index("const RESTORED = loadSettings();"))
+        self.assertLess(js.index("const SAY_LABEL"),
+                        js.index("const RESTORED = loadSettings();"))
+
+    def test_선언이_한_번씩만_있다(self):
+        """위로 옮기면서 아래 것을 안 지우면 'already declared' 로 또 죽는다."""
+        for name in ("SAY_MODES", "SAY_LABEL"):
+            self.assertEqual(
+                len(re.findall(r"^const " + name + r"\s*=", self.js, re.M)), 1,
+                name + " 선언이 두 번 있다")
+
+    def test_문법이_깨지지_않았다(self):
+        """구문 오류 하나로도 화면 전체가 안 뜬다 — node 로 한 번 훑는다."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 없음")
+        for f in ("app.js",):
+            r = subprocess.run([node, "--check", os.path.join(AV, "static", f)],
+                               capture_output=True, timeout=30)
+            self.assertEqual(r.returncode, 0,
+                             r.stderr.decode("utf-8", "replace"))
+
+
 class 설정_일치(unittest.TestCase):
     def test_아바타_FAB_목록이_관제와_같다(self):
         """아바타 FABS 가 관제 시스템(ALL + FAB 5)과 어긋나면 그 FAB 알람을

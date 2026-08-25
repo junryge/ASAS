@@ -521,7 +521,14 @@ const REAL_SCALE = {
 };
 
 let emotion='neutral', intensity=0.85, manual=false;
-let sayMode='novel';    // 대사 표시 방식: novel|bubble|off (loadSettings 보다 먼저)
+/* 대사 표시 방식 — ★이 세 줄은 loadSettings() 보다 **위**에 있어야 한다.
+   const 는 선언 줄을 지나기 전엔 손댈 수 없어서(TDZ), 아래쪽에 두면
+   저장된 sayMode 를 읽는 순간 ReferenceError 로 스크립트가 통째로 죽는다
+   — 화면이 아예 안 뜬다. 첫 방문엔 저장값이 없어 멀쩡하고 **두 번째
+   방문부터** 죽어서 더 헷갈렸다. */
+const SAY_MODES = ['novel', 'bubble', 'off'];
+const SAY_LABEL = {novel:'노벨', bubble:'말풍선', off:'대사 끔'};
+let sayMode='novel';    // novel|bubble|off
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
 let hudOpen=true;       // 좌측 패널 펼침 여부
@@ -2028,12 +2035,11 @@ $('#patchChip').onclick=()=>{
   saveSettings();
 };
 
-/* 대사 표시 방식 — 노벨(전문) → 말풍선(요약) → 끔 순으로 돈다.
+/* 노벨(전문) → 말풍선(요약) → 끔 순으로 돈다.
    ★말풍선은 캐릭터 옆에 떠서 자리가 좁다. 그래서 요약할 수밖에 없었고,
      "다 안 말한다" 는 말이 나왔다. 노벨 대사창은 화면 폭을 다 쓰므로
-     **응답 전문**을 쪽 단위로 넘겨 볼 수 있다 — 그래서 이쪽이 기본이다. */
-const SAY_MODES = ['novel', 'bubble', 'off'];
-const SAY_LABEL = {novel:'노벨', bubble:'말풍선', off:'대사 끔'};
+     **응답 전문**을 쪽 단위로 넘겨 볼 수 있다 — 그래서 이쪽이 기본이다.
+   (SAY_MODES/SAY_LABEL 선언은 loadSettings 보다 위에 있다 — 위 주석 참고) */
 function applySayMode(){
   const c=$('#bubbleChip');
   if(c){ c.textContent = SAY_LABEL[sayMode]; c.classList.toggle('on', sayMode!=='off'); }
