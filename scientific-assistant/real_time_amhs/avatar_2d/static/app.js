@@ -549,7 +549,23 @@ const SCHEDULE = [
   {from:'19:31', to:'06:59', bg:'집'},
 ];
 let badgeOn=true;       // 목에 건 사원증
-const BADGE = {name:'미라', en:'MIRA', dept:'물류기술팀 · AMHS', id:'SKH-2026-0417'};
+/* ---------- 에이전트 이름 ----------
+   ★한 곳에서만 정한다. 사원증·대사창 이름표·인사말이 따로 놀면
+     "얘 이름이 뭐야" 가 된다. 페르소나에 '이름: OO' 이 있으면 그걸 따르므로,
+     설정에서 페르소나만 고치면 사원증과 대사창이 같이 바뀐다. */
+const AGENT_NAME = '서윤';
+const AGENT_EN   = 'SEOYUN';
+const NAME_ROMAN = {'서윤':'SEOYUN', '미라':'MIRA'};
+function agentName(){
+  const el = document.getElementById('persona');
+  const m = (el && el.value || '').match(/^\s*이름\s*[:：]\s*([^\s.,·\n]+)/m);
+  return (m && m[1]) || AGENT_NAME;
+}
+function agentEn(){
+  const n = agentName();
+  return NAME_ROMAN[n] || (n === AGENT_NAME ? AGENT_EN : '');
+}
+const BADGE = {name:AGENT_NAME, en:AGENT_EN, dept:'물류기술팀 · AMHS', id:'SKH-2026-0417'};
 const logoImg = new Image(); logoImg.src = "assets/logo.png";
 let badgeA=0, badgeAV=0;   // 사원증 흔들림(2차 스프링)
 let eyeFollow=true;     // 마우스 시선 추적
@@ -963,10 +979,10 @@ function drawBadge(dt){
   // 이름
   fx.textAlign='left'; fx.textBaseline='alphabetic'; fx.fillStyle='#20262f';
   fx.font=`700 ${Math.max(6,H*0.135)}px "Malgun Gothic","Apple SD Gothic Neo",sans-serif`;
-  fx.fillText(BADGE.name, px+pw+W*0.07, py+ph*0.42);
+  fx.fillText(agentName(), px+pw+W*0.07, py+ph*0.42);
   fx.fillStyle='#7b8492';
   fx.font=`500 ${Math.max(5,H*0.088)}px sans-serif`;
-  fx.fillText(BADGE.en, px+pw+W*0.07, py+ph*0.78);
+  fx.fillText(agentEn(), px+pw+W*0.07, py+ph*0.78);
   // 부서
   fx.fillStyle='#5c6572';
   let dfs = Math.max(5, H*0.080), maxW = W*0.82;
@@ -2172,6 +2188,7 @@ function vnSplit(text){
 }
 function vnHide(){
   clearInterval(VN.timer); VN.typing=false;
+  talk = 0;                       // 창을 닫았는데 입만 움직이면 이상하다
   vnEl.classList.remove('on','more');
 }
 function vnRender(instant){
@@ -2182,10 +2199,20 @@ function vnRender(instant){
   vnEl.classList.toggle('more', VN.i < VN.pages.length-1);
   clearInterval(VN.timer);
   vnText.scrollTop = 0;
-  if(instant){ vnText.textContent=p; VN.typing=false; return; }
   const n=p.length;
   const speed = Math.max(8, Math.min(26, 3400/Math.max(1,n)));
   const step  = n>240 ? 3 : n>120 ? 2 : 1;
+  /* ★쪽을 넘길 때마다 입이 움직여야 '말하는 것' 으로 보인다.
+     talk 은 줄어드는 타이머다 (frame() 이 이걸 보고 입을 연다) — 글자를
+     치는 동안만큼 채워 준다. 이걸 안 하면 화살표로 넘길 때 대사만 바뀌고
+     캐릭터는 가만히 있어서 '읽는 화면' 이지 '말하는 사람' 이 아니다. */
+  const dur = n*speed*step/1000;
+  if(instant){
+    vnText.textContent=p; VN.typing=false;
+    talk = Math.max(talk, Math.min(1.2, 0.25 + n/500));   // 짧게라도 마무리 말
+    return;
+  }
+  talk = Math.max(talk, dur + 0.2);
   let i=0; VN.typing=true; vnText.textContent='';
   VN.timer=setInterval(()=>{
     i=Math.min(n, i+step);
@@ -2195,6 +2222,8 @@ function vnRender(instant){
   }, speed*step);
 }
 function vnShow(text, jumpLast){
+  const nm=$('#vnName');
+  if(nm) nm.textContent = '버추얼 에이전트 ' + agentName();
   VN.full = String(text||'');
   VN.pages = vnSplit(VN.full);
   VN.i = jumpLast ? VN.pages.length-1 : 0;
@@ -2237,8 +2266,10 @@ function speak(text, full){
   talk = n*speed/1000 + 0.2;
 
   /* 노벨 모드는 **전문**(full)을 쪽으로 나눠 보여 준다. full 이 없으면
-     text 가 곧 전문이다 (인사·오류 같은 짧은 말). */
-  if(sayMode==='novel'){ vnShow(sayText(full || text)); return; }
+     text 가 곧 전문이다 (인사·오류 같은 짧은 말).
+     입 움직임(talk)은 대사창이 직접 잡는다 — 여기서 잡은 값은 요약본
+     길이라 실제로 말하는 시간과 안 맞는다. */
+  if(sayMode==='novel'){ talk = 0; vnShow(sayText(full || text)); return; }
   if(!bubbleOn){ return; }
   /* 글자 수에 따라 폰트를 줄여 말풍선이 화면을 덮지 않게 한다 */
   bubble.style.fontSize = n>320 ? '12.5px' : n>160 ? '13.5px' : '15px';
@@ -2520,6 +2551,24 @@ function push(who,text,tag,meta,replaying){
 }
 function sys(t){ const d=document.createElement('div'); d.className='msg sys'; d.textContent=t;
   logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight; }
+/* 긴 안내(첨부 분석 등) — 보여는 주되 **대화 기억에는 안 남긴다.**
+   기본은 접어 두고, 눌러야 펼친다. 복사도 된다. */
+function sysBlock(text, label){
+  const d=document.createElement('div'); d.className='msg sys block';
+  const h=document.createElement('div'); h.className='sysHead';
+  h.textContent = '▸ ' + (label||'안내') + ' (눌러서 펼치기 · 대화 기억에는 안 남습니다)';
+  const b=document.createElement('div'); b.className='md';
+  b.innerHTML = mdHtml(text);
+  d.appendChild(h); d.appendChild(b);
+  d.appendChild(copyBtn(()=>text));
+  h.onclick = ()=>{
+    const on = d.classList.toggle('open');
+    h.textContent = (on?'▾ ':'▸ ') + (label||'안내') +
+                    (on?'' : ' (눌러서 펼치기 · 대화 기억에는 안 남습니다)');
+  };
+  logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight;
+  return d;
+}
 
 /* =====================  LLM  =====================
    프롬프트 조립·자료 검색·response_format 폴백·스트리밍 파싱은
@@ -2532,7 +2581,7 @@ function chatPayload(userText, stream){
     model: $('#apiModel').value.trim(),
     temperature: parseFloat($('#apiTemp').value),
     stream: !!stream,
-    attach: pendingAttach || ''      // 📎 로 방금 올린 파일 — 이번 질문의 최우선 근거
+    attach: pendingAttach || ''      // 📎 로 붙여 둔 파일 — 뗄 때까지 최우선 근거
   });
 }
 
@@ -2545,6 +2594,7 @@ function setAttachChip(){
   if(!c) return;
   if(pendingAttach){
     c.classList.remove('hide');
+    c.title = '이 파일을 계속 근거로 봅니다 — 누르면 뗍니다';
     c.innerHTML = '📎 ' + esc(pendingAttach) + ' <b>✕</b>';
   }else{ c.classList.add('hide'); }
 }
@@ -2582,8 +2632,14 @@ function setAttachChip(){
         const d = await r.json();
         pendingAttach = d.name || f.name; setAttachChip();  // 서버가 정리한 이름으로
         if(d.analyzed){
-          sys('📎 '+f.name+' 첨부·분석됨 — 이제 질문하면 이 분석을 근거로 답해요.');
-          push('ai', d.summary, '첨부 분석');
+          sys('📎 '+f.name+' 첨부·분석됨 — 이제부터 이 분석을 근거로 답해요. '
+              +'계속 물어보셔도 됩니다. (칩의 ✕ 를 누르면 뗍니다)');
+          /* ★분석 요약은 **안내**지 에이전트의 대답이 아니다.
+             push('ai',…) 로 넣으면 대화 기억(세션)에 그대로 저장돼서,
+             나중에 그 세션을 열면 첨부 데이터가 대화인 척 남는다.
+             화면에는 보여 주되(sysBlock) 기억에는 안 넣는다 — 분석 원본은
+             서버가 들고 있으니 물어보면 답에 실려 나온다. */
+          sysBlock(d.summary, '첨부 분석');
         }else{
           sys('📎 '+f.name+' 첨부됨'+(d.error?' (분석 실패: '+d.error+')':''));
         }
@@ -2594,7 +2650,8 @@ function setAttachChip(){
         if(!r.ok) throw new Error('HTTP '+r.status);
         pendingAttach = f.name; setAttachChip();
         await reloadDocs();
-        sys('📎 '+f.name+' 첨부됨 — 다음 질문에 이 파일을 우선 근거로 봅니다. (자료함에도 저장됨)');
+        sys('📎 '+f.name+' 첨부됨 — 이제부터 이 파일을 우선 근거로 봅니다. '
+            +'계속 물어보셔도 됩니다. (칩의 ✕ 를 누르면 뗌 · 자료함에도 저장됨)');
       }
     }catch(e){ sys('첨부 실패: '+e.message); }
   };
@@ -2748,6 +2805,7 @@ function newSession(){
   curSession = newSessionObj();
   logEl.innerHTML='';
   history.length=0;
+  pendingAttach=''; setAttachChip();     // 새 대화에 옛 첨부가 따라오면 안 된다
   refreshSessUI(); renderCtx();
   sys('새 세션을 시작했습니다.');
 }
@@ -2923,9 +2981,22 @@ function refreshDocsUI(){
       const nm=document.createElement('span'); nm.className='docName'; nm.textContent=d.name;
       const sz=document.createElement('span'); sz.className='docSize';
       sz.textContent = (d.chars||0).toLocaleString()+'자 · 약 '+Math.round((d.chars||0)/1.6).toLocaleString()+'토큰';
+      /* ★등록해 둔 자료도 '분석' 할 수 있어야 한다. 자료함은 원래 키워드로
+         일부만 뽑아 넣는 곳이라, 표(CSV)를 넣어도 계산을 못 했다. 여기를
+         누르면 그 자료를 붙여(📎) 두고, 이후 질문마다 **전 행을 다시 계산**해
+         답한다 — 첨부와 같은 길이다. */
+      const an=document.createElement('span'); an.className='docDel docAnal';
+      an.textContent='분석'; an.title='이 자료를 붙여 두고 전 행을 계산해 답합니다';
+      an.onclick=()=>{
+        pendingAttach = d.name; setAttachChip();
+        sys('📊 '+d.name+' 을(를) 분석 대상으로 붙였습니다 — 이제 물어보면 '
+            +'이 자료의 전 행을 계산해 답해요. (칩의 ✕ 를 누르면 뗌)');
+        showChatTab();
+      };
       const del=document.createElement('span'); del.className='docDel'; del.textContent='삭제';
       del.onclick=()=>docOp('delete',{name:d.name});
-      row.appendChild(cb); row.appendChild(nm); row.appendChild(sz); row.appendChild(del);
+      row.appendChild(cb); row.appendChild(nm); row.appendChild(sz);
+      row.appendChild(an); row.appendChild(del);
       list.appendChild(row);
     });
     const st2=docsSummary();
@@ -3020,7 +3091,9 @@ async function send(){
     push('ai','(연결 실패) '+e.message,'error');
     sys('API 호출 실패 — run.py 터미널의 로그를 확인하세요. (토큰/모델/사내망)');
   }finally{
-    pendingAttach=''; setAttachChip();   // 첨부는 그 질문 한 번 — 파일은 자료함에 남아 있다
+    /* ★첨부는 뗄 때까지 붙어 있는다. 한 질문 뒤에 지우면 '이 파일에서
+       그럼 저건 어때?' 를 못 한다 — 파일을 다시 올려야 했다 (실제 지적).
+       뗄 때는 칩의 ✕, 또는 새 세션. 무엇이 붙어 있는지는 칩이 계속 보여 준다. */
     sendBtn.disabled=false; sayEl.focus(); renderCtx();
   }
 }
@@ -3275,7 +3348,8 @@ applySayMode();          // 저장된 표시 방식(노벨/말풍선/끔)을 화
    무엇을 물어보면 되는지까지 말해 줘야 사용자가 첫 질문을 던진다. */
 setTimeout(()=>{
   setEmotion('smile', 0.8, 'nod');
-  speak('안녕하세요! 언제나 저한테 FAB 관련 질문 물어봐 주세요.');
+  speak('안녕하세요! 버추얼 에이전트 ' + agentName() +
+        '이에요. 언제나 저한테 FAB 관련 질문 물어봐 주세요.');
 }, 900);
 requestAnimationFrame(frame);
 window.addEventListener('resize',()=>{ computeView(); placeHandles(); placeBubble(); });

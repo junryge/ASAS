@@ -260,6 +260,13 @@
     user-select:none;transition:opacity .15s,color .15s}
   .msg:hover .copy{opacity:1}
   .msg .copy:hover{color:#fff}
+  /* 안내 블록 — 첨부 분석처럼 긴 안내. 대화가 아니므로 색을 죽이고 접어 둔다 */
+  .msg.sys.block{align-self:stretch;max-width:100%;padding:7px 10px;
+    background:rgba(255,255,255,.035);border:1px dashed var(--line);border-radius:10px}
+  .msg.sys.block .sysHead{cursor:pointer;font-size:11px;color:var(--dim);user-select:none}
+  .msg.sys.block .sysHead:hover{color:#fff}
+  .msg.sys.block .md{display:none;margin-top:7px;font-size:12px}
+  .msg.sys.block.open .md{display:block}
   .msg.me{align-self:flex-end;background:#2c3a4d}
   .msg.ai{align-self:flex-start;background:var(--panel2);border:1px solid var(--line)}
   .msg .tag{display:block;font-size:10.5px;color:var(--dim);margin-bottom:3px;letter-spacing:.4px}

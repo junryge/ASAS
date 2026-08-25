@@ -118,6 +118,15 @@ def lan_ips():
     return ips
 
 
+def _looks_csv(text):
+    """확장자가 없어도 표면 표다 — 머리줄과 다음 줄의 칸 수가 같고 2칸 이상."""
+    lines = [l for l in str(text or "").splitlines()[:5] if l.strip()]
+    if len(lines) < 2:
+        return False
+    n = lines[0].count(",")
+    return n >= 1 and all(l.count(",") == n for l in lines[1:])
+
+
 class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -348,7 +357,7 @@ class Handler(SimpleHTTPRequestHandler):
                                         "summary": a["summary"][:1200],
                                         "error": a["error"]})
             App.uploads[name] = {"ok": True, "summary": text[:8000],
-                                 "numbers": set(), "error": ""}
+                                 "numbers": set(), "rows": [], "error": ""}
             self._say("200  /api/upload  {}  ({}자)".format(name, len(text)))
             return self._json(200, {"ok": True, "name": name,
                                     "analyzed": False,
@@ -442,12 +451,23 @@ class Handler(SimpleHTTPRequestHandler):
             if up is not None:
                 # CSV 는 원문 대신 **계산된 분석 요약**을 넣는다. 수 MB 원문을
                 # 자르면 못 본 구간을 지어낸다 — 요약의 숫자는 가드에 태운다.
-                attach = (aname, up["summary"])
+                body = up["summary"]
                 ev.setdefault("numbers", set())
-                ev["numbers"] = set(ev.get("numbers") or set()) | set(
+                nums = set(ev.get("numbers") or set()) | set(
                     up.get("numbers") or set())
+                # ★요약에 없는 것을 물으면(“14시엔?”, “M14B 최대는?”) 답할
+                #   근거가 없었다. 질문에 맞춰 **원본 전 행을 다시 계산**해서
+                #   붙인다 — 첨부가 붙어 있는 동안 매 질문마다 돈다.
+                q = csvdata.query(up.get("rows") or [], text, self._cuts())
+                if q:
+                    body += "\n\n" + q["lines"]
+                    nums |= set(q.get("numbers") or set())
+                    self._say("     ↳ 첨부 재계산: {}행 기준".format(
+                        len(up.get("rows") or [])))
+                attach = (aname, body)
+                ev["numbers"] = nums
                 ev["ok"] = True
-                ev["fallback"] = up["summary"]
+                ev["fallback"] = body
             else:
                 body = App.doc_store.get(aname)
                 if body is not None:
@@ -505,17 +525,23 @@ class Handler(SimpleHTTPRequestHandler):
         if a is not None:
             return a
         p = App.uploads_dir / name
-        if not p.is_file():
+        text = None
+        if p.is_file():
+            try:
+                text = p.read_text(encoding="utf-8")
+            except Exception:
+                text = None
+        if text is None:
+            # ★설정에 **등록해 둔 자료**도 분석 대상이다. 자료함은 원래
+            #   키워드로 일부만 뽑아 넣는 곳이라, 표를 넣어도 계산을 못 했다.
+            text = App.doc_store.get(name)
+        if text is None:
             return None
-        try:
-            text = p.read_text(encoding="utf-8")
-        except Exception:
-            return None
-        if name.lower().endswith((".csv", ".tsv")):
+        if name.lower().endswith((".csv", ".tsv")) or _looks_csv(text):
             a = csvdata.analyze(name, text, self._cuts())
         else:
             a = {"ok": True, "summary": text[:8000], "numbers": set(),
-                 "error": ""}
+                 "rows": [], "error": ""}
         App.uploads[name] = a
         return a
 

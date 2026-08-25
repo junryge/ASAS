@@ -44,12 +44,8 @@ def _pick(cols, cands):
     return None
 
 
-def analyze(name, text, cuts=(60, 71, 85)):
-    """CSV 원문 → {ok, summary, numbers, error}.
-
-    summary 는 사람이 읽는 한 덩어리 텍스트 (LLM 근거로도 그대로 쓴다).
-    모르는 형식이면 아는 만큼만 말하고, 모른다고 적는다 — 지어내지 않는다.
-    """
+def parse(text):
+    """CSV 원문 → (rows, error). 전 행을 읽는다 (MAX_ROWS 는 폭주 방지)."""
     text = str(text or "").lstrip("﻿")
     try:
         rows = []
@@ -58,11 +54,24 @@ def analyze(name, text, cuts=(60, 71, 85)):
                 break
             rows.append(r)
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "summary": "", "numbers": set(),
-                "error": "CSV 파싱 실패: {}".format(e)}
+        return [], "CSV 파싱 실패: {}".format(e)
     if not rows:
-        return {"ok": False, "summary": "", "numbers": set(),
-                "error": "행이 없습니다 (헤더뿐이거나 빈 파일)"}
+        return [], "행이 없습니다 (헤더뿐이거나 빈 파일)"
+    return rows, ""
+
+
+def analyze(name, text, cuts=(60, 71, 85)):
+    """CSV 원문 → {ok, summary, numbers, rows, error}.
+
+    summary 는 사람이 읽는 한 덩어리 텍스트 (LLM 근거로도 그대로 쓴다).
+    모르는 형식이면 아는 만큼만 말하고, 모른다고 적는다 — 지어내지 않는다.
+    ★rows 를 같이 돌려준다 — 이어지는 질문은 요약이 아니라 **원본 전체**를
+      다시 계산해서 답해야 한다 (query 참조).
+    """
+    rows, err = parse(text)
+    if err:
+        return {"ok": False, "summary": "", "numbers": set(), "rows": [],
+                "error": err}
 
     cols = list(rows[0].keys())
     tcol = _pick(cols, TIME_COLS)
@@ -146,13 +155,15 @@ def analyze(name, text, cuts=(60, 71, 85)):
     # 표본 몇 줄 — 구조를 보여 준다 (숫자를 더 말할 근거가 되기도 한다)
     keep = [c for c in ([tcol, scol] + ["hot_area", "stage_name", "reason"])
             if c and c in cols][:5] or cols[:5]
+    L.append("※ 위 수치는 {}행 **전부**를 계산한 값입니다. "
+             "아래는 구조를 보여 주는 표본일 뿐입니다.".format(len(rows)))
     L.append("표본 {}행 ({}):".format(min(SAMPLE_ROWS, len(rows)),
                                      " | ".join(keep)))
     for r in rows[:SAMPLE_ROWS]:
         L.append("  " + " | ".join(str(r.get(c) or "")[:60] for c in keep))
 
     summary = "\n".join(L)
-    return {"ok": True, "summary": summary,
+    return {"ok": True, "summary": summary, "rows": rows,
             "numbers": _numbers(summary), "error": ""}
 
 
@@ -164,3 +175,137 @@ def _numbers(text):
         except ValueError:
             pass
     return out
+
+
+# ══════════════ 이어지는 질문에 답하기 ══════════════
+# ★요약은 정해진 항목만 담는다. "14시에 뭐였어?", "M14B 최대는?" 처럼
+#   요약에 없는 것을 물으면 답할 근거가 없어서 "확인이 안 된다" 가 나왔다.
+#   그래서 **질문을 보고 원본 전체를 다시 계산**한다. 첨부가 붙어 있는 동안
+#   매 질문마다 도는 자리라, 계산은 한 번 훑기(O(행))로만 한다.
+
+_T_RANGE = re.compile(
+    r"(\d{1,2})\s*(?:시|:00)?\s*(?:~|-|부터|에서)\s*(\d{1,2})\s*시")
+_T_POINT = re.compile(r"(\d{1,2})\s*시\s*(\d{1,2})?\s*분?|(\d{1,2}):(\d{2})")
+_ASK_MAX = re.compile(r"최대|최고|제일 (?:높|큰)|피크")
+_ASK_MIN = re.compile(r"최소|최저|제일 (?:낮|작)")
+_ASK_AVG = re.compile(r"평균")
+_ASK_CNT = re.compile(r"몇 ?분|몇 ?번|횟수|건수|얼마나")
+
+
+def _hhmm(t):
+    """'2026-08-23 08:20' · '08:20' → (8, 20). 못 읽으면 None."""
+    m = re.search(r"(\d{1,2}):(\d{2})", str(t or ""))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _stats(vals):
+    sv = sorted(vals)
+    return sv[0], sv[len(sv) // 2], sv[-1], sum(sv) / len(sv)
+
+
+def query(rows, question, cuts=(60, 71, 85)):
+    """질문에 맞춰 **전 행**을 다시 계산한다 → {lines, numbers} 또는 None.
+
+    답할 거리가 없으면 None — 근거를 억지로 부풀리지 않는다.
+    """
+    if not rows:
+        return None
+    q = str(question or "")
+    cols = list(rows[0].keys())
+    tcol = _pick(cols, TIME_COLS)
+    scol = _pick(cols, SCORE_COLS)
+    warn = cuts[0]
+    L, hit = [], False
+
+    # ── 어느 컬럼을 볼 것인가 — 질문에 나온 컬럼/FAB 이 있으면 그것 ──
+    want = []
+    ql = q.lower()
+    for c in cols:
+        cl = str(c).lower().strip()
+        if len(cl) >= 4 and cl in ql:
+            want.append(c)
+    for f in FABS:
+        if re.search(r"\b" + f + r"\b", q, re.I):
+            c = _pick(cols, ("{}_score".format(f).lower(),))
+            if c and c not in want:
+                want.append(c)
+    # ★잡담에까지 통계를 붙이면 안 된다 — 데이터를 물었을 때만 기본 점수 컬럼.
+    asks_data = bool(_ASK_MAX.search(q) or _ASK_MIN.search(q) or
+                     _ASK_AVG.search(q) or _ASK_CNT.search(q) or
+                     _T_RANGE.search(q) or _T_POINT.search(q) or
+                     re.search(r"점수|등급|추이|경계|위험|초위험|분포|구간", q))
+    if not want and scol and asks_data:
+        want = [scol]
+    want = want[:3]
+
+    # ── 시각 하나를 물었나 ("14시 20분에", "08:20") ──
+    pt = None
+    mr = _T_RANGE.search(q)
+    if not mr:
+        mp = _T_POINT.search(q)
+        if mp:
+            if mp.group(3) is not None:
+                pt = (int(mp.group(3)), int(mp.group(4)))
+            else:
+                pt = (int(mp.group(1)), int(mp.group(2) or 0))
+    if pt and tcol:
+        best, bestd = None, None
+        for r in rows:
+            hm = _hhmm(r.get(tcol))
+            if not hm:
+                continue
+            d = abs((hm[0] * 60 + hm[1]) - (pt[0] * 60 + pt[1]))
+            if bestd is None or d < bestd:
+                best, bestd = r, d
+        if best is not None:
+            hit = True
+            L.append("{:02d}:{:02d} 에 가장 가까운 행 ({}):".format(
+                pt[0], pt[1], str(best.get(tcol) or "").strip()))
+            for c in want:
+                v = _num(best.get(c))
+                L.append("   · {} = {}".format(
+                    c, "{:g}".format(v) if v is not None else "값 없음"))
+            if bestd:
+                L.append("   (정확히 그 시각의 행은 없어 {}분 차이 나는 행을 봤다)"
+                         .format(bestd))
+
+    # ── 시간대를 물었나 ("14시~18시") ──
+    lo = hi = None
+    if mr and tcol:
+        lo, hi = int(mr.group(1)), int(mr.group(2))
+
+    # ── 컬럼별 통계 — 전 행 기준 (구간을 물었으면 그 구간만) ──
+    for c in want:
+        seq = []
+        for r in rows:
+            v = _num(r.get(c))
+            if v is None:
+                continue
+            if lo is not None:
+                hm = _hhmm(r.get(tcol))
+                if not hm or not (lo <= hm[0] <= hi):
+                    continue
+            seq.append((str(r.get(tcol) or "").strip(), v))
+        if not seq:
+            if lo is not None:
+                hit = True
+                L.append("{} — {}시~{}시 구간에 값이 없습니다".format(c, lo, hi))
+            continue
+        vals = [v for _t, v in seq]
+        mn, md, mx, avg = _stats(vals)
+        t_max = max(seq, key=lambda x: x[1])
+        t_min = min(seq, key=lambda x: x[1])
+        where = " ({}시~{}시)".format(lo, hi) if lo is not None else " (전 구간)"
+        hit = True
+        L.append("{}{} — {}행 계산: 최소 {:g}({}) · 중앙 {:g} · 평균 {:.1f} · "
+                 "최대 {:g}({})".format(c, where, len(seq), mn, t_min[0], md,
+                                       avg, mx, t_max[0]))
+        if _ASK_CNT.search(q):
+            n = sum(1 for v in vals if v >= warn)
+            L.append("   · 경계({}) 이상: {}행 / {}행".format(warn, n, len(seq)))
+
+    if not hit:
+        return None
+    head = ["[첨부 원본 재계산 — 질문에 맞춰 전 행을 다시 셌다]"]
+    txt = "\n".join(head + L)
+    return {"lines": txt, "numbers": _numbers(txt)}

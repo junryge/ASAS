@@ -1676,6 +1676,299 @@ class 화면이_뜨는가(unittest.TestCase):
                              r.stderr.decode("utf-8", "replace"))
 
 
+class 에이전트_이름(unittest.TestCase):
+    """이름은 '서윤'. ★한 곳에서만 정한다 — 사원증·대사창 이름표·인사말이
+    따로 놀면 "얘 이름이 뭐야" 가 된다."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            cls.html = f.read()
+
+    def _run(self, persona, expr):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 없음")
+        s = self.js
+        body = s[s.index("const AGENT_NAME ="):s.index("const BADGE =")]
+        prog = ("const P=JSON.parse(process.argv[2]);\n"
+                "const document={getElementById:()=>({value:P})};\n"
+                + body + "\nprocess.stdout.write(JSON.stringify(" + expr + "));")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(prog)
+            path = f.name
+        try:
+            r = subprocess.run([node, path, json.dumps(persona)],
+                               capture_output=True, timeout=20)
+            self.assertEqual(r.returncode, 0,
+                             r.stderr.decode("utf-8", "replace"))
+            return json.loads(r.stdout.decode("utf-8"))
+        finally:
+            os.unlink(path)
+
+    def test_기본_이름은_서윤(self):
+        self.assertIn("const AGENT_NAME = '서윤';", self.js)
+        self.assertEqual(self._run("", "agentName()"), "서윤")
+        self.assertEqual(self._run("", "agentEn()"), "SEOYUN")
+
+    def test_페르소나의_이름을_따른다(self):
+        """설정에서 페르소나만 고치면 사원증·이름표가 같이 바뀌어야 한다."""
+        self.assertEqual(self._run("[인물]\n이름: 하린. 20대", "agentName()"), "하린")
+        self.assertEqual(self._run("이름 : 지우.", "agentName()"), "지우")
+
+    def test_이름을_못_찾으면_기본값(self):
+        self.assertEqual(self._run("아무 말", "agentName()"), "서윤")
+
+    def test_모르는_이름에_엉뚱한_영문을_안_붙인다(self):
+        """'하린' 에 SEOYUN 이 찍히면 사원증이 거짓말을 한다."""
+        self.assertEqual(self._run("이름: 하린.", "agentEn()"), "")
+
+    def test_사원증이_지금_이름을_그린다(self):
+        """★고정값(BADGE.name)을 그리면 페르소나를 바꿔도 사원증만 옛 이름이다."""
+        blk = self.js[self.js.index("function drawBadge("):]
+        blk = blk[:blk.index("\nfunction drawFX(")]
+        self.assertIn("fx.fillText(agentName(),", blk)
+        self.assertIn("fx.fillText(agentEn(),", blk)
+        self.assertNotIn("fx.fillText(BADGE.name", blk)
+
+    def test_대사창_이름표가_버추얼_에이전트_서윤(self):
+        self.assertIn('<div id="vnName">버추얼 에이전트 서윤</div>', self.html)
+        blk = self.js[self.js.index("function vnShow("):]
+        blk = blk[:blk.index("\nfunction vnGo(")]
+        self.assertIn("'버추얼 에이전트 ' + agentName()", blk,
+                      "이름표가 고정 문구라 페르소나를 바꿔도 안 따라온다")
+
+    def test_첫_인사에_이름이_들어간다(self):
+        self.assertIn("'안녕하세요! 버추얼 에이전트 ' + agentName()", self.js)
+        self.assertIn("FAB 관련 질문 물어봐 주세요", self.js)
+
+    def test_페르소나_기본값이_서윤이고_관제_담당이다(self):
+        self.assertIn("이름: 서윤.", self.html)
+        self.assertNotIn("이름: 미라.", self.html)
+        self.assertIn("AMHS 관제", self.html)
+
+    def test_규칙에는_이름을_안_적는다(self):
+        """규칙과 페르소나 양쪽에 이름을 적으면 바꿨을 때 서로 다른 이름을
+        말한다 — 이름은 페르소나 한 곳에만 둔다."""
+        self.assertNotIn("서윤", allm.AGENT_RULES)
+        self.assertIn("이름과 말투는 페르소나를 따른다", allm.AGENT_RULES)
+
+
+class 말하는_것처럼_보이나(unittest.TestCase):
+    """★쪽을 넘기면 대사만 바뀌고 캐릭터는 가만히 있었다 — 그러면 '읽는
+    화면' 이지 '말하는 사람' 이 아니다. talk 은 줄어드는 타이머고,
+    frame() 이 그걸 보고 입을 연다."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def _blk(self, start, end):
+        i = self.js.index(start)
+        return self.js[i:self.js.index(end, i)]
+
+    def test_쪽을_그릴_때마다_입이_움직인다(self):
+        blk = self._blk("function vnRender(", "\nfunction vnShow(")
+        self.assertIn("talk = Math.max(talk, dur + 0.2);", blk,
+                      "타자기가 도는 동안 입이 안 움직인다")
+        self.assertIn("talk = Math.max(talk, Math.min(1.2,", blk,
+                      "즉시 완성(한 번 더 누름)일 때 입이 안 움직인다")
+
+    def test_말하는_시간이_글자수를_따른다(self):
+        """짧은 쪽인데 오래 입을 움직이면 벙긋대는 것처럼 보인다."""
+        blk = self._blk("function vnRender(", "\nfunction vnShow(")
+        self.assertIn("const dur = n*speed*step/1000;", blk)
+
+    def test_창을_닫으면_입도_멈춘다(self):
+        blk = self._blk("function vnHide(", "\nfunction vnRender(")
+        self.assertIn("talk = 0;", blk, "창을 닫았는데 입만 움직인다")
+
+    def test_노벨에서는_요약본_길이로_입을_안_잡는다(self):
+        """speak() 가 받은 건 요약본이다 — 그 길이로 잡으면 실제로 말하는
+        시간과 안 맞는다. 대사창이 직접 잡는다."""
+        line = [l for l in self.js.split("\n")
+                if "sayMode==='novel'" in l and "vnShow(sayText(full" in l][0]
+        self.assertIn("talk = 0;", line)
+
+
+class 첨부는_뗄_때까지_붙어_있는다(unittest.TestCase):
+    """★한 질문 뒤에 첨부를 지워서 '이 파일에서 그럼 저건?' 을 못 했다.
+    파일을 매번 다시 올려야 했다 (실제 지적)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def test_보낸_뒤에_첨부를_안_지운다(self):
+        i = self.js.index("async function send(){")
+        blk = self.js[i:self.js.index("\nsendBtn.onclick=send;", i)]
+        fin = blk[blk.index("}finally{"):]
+        self.assertNotIn("pendingAttach=''", fin,
+                         "질문 한 번에 첨부가 떨어져 대화를 이어갈 수 없다")
+
+    def test_뗄_길은_있다(self):
+        """계속 붙어 있으면 뗄 방법이 반드시 있어야 한다."""
+        i = self.js.index("chip.onclick =")
+        self.assertIn("pendingAttach=''", self.js[i:i+90])
+
+    def test_새_세션이면_떨어진다(self):
+        """새 대화에 옛 첨부가 따라오면 엉뚱한 근거로 답한다."""
+        i = self.js.index("function newSession(){")
+        blk = self.js[i:self.js.index("\n}", i)]
+        self.assertIn("pendingAttach=''", blk)
+
+    def test_붙어_있다는_걸_알려_준다(self):
+        i = self.js.index("function setAttachChip(){")
+        blk = self.js[i:self.js.index("\n}", i)]
+        self.assertIn("계속 근거로 봅니다", blk, "칩만 보고는 계속 쓰이는지 모른다")
+        self.assertIn("계속 물어보셔도 됩니다", self.js,
+                      "첨부 직후 안내가 '다음 질문 한 번' 처럼 읽힌다")
+
+
+class 첨부는_대화_기억에_안_남는다(unittest.TestCase):
+    """★첨부 분석 요약이 대화 기억(세션)에 저장돼서, 나중에 그 세션을 열면
+    첨부 데이터가 대화인 척 남아 있었다 (실제 지적)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            cls.css = f.read()
+
+    def test_분석_요약을_대화로_넣지_않는다(self):
+        i = self.js.index("if(d.analyzed){")
+        blk = self.js[i:self.js.index("}else{", i)]
+        self.assertIn("sysBlock(d.summary", blk)
+        self.assertNotIn("push('ai', d.summary", blk,
+                         "분석 요약이 ai 대화로 들어가면 세션에 저장된다")
+
+    def test_세션에는_me_와_ai_만_저장된다(self):
+        """sysBlock 이 안전한 근거 — push 가 저장하는 조건 자체."""
+        i = self.js.index("function push(who,text,tag,meta,replaying){")
+        blk = self.js[i:self.js.index("\n  return d;\n}", i)]
+        self.assertIn("(who==='me'||who==='ai')", blk)
+
+    def test_안내_블록은_접혀_있고_펼칠_수_있다(self):
+        blk = self.js[self.js.index("function sysBlock("):]
+        blk = blk[:blk.index("\n/* =====================  LLM")]
+        self.assertIn("classList.toggle('open')", blk)
+        head = [l for l in blk.split("\n") if "h.textContent = '▸ '" in l][0]
+        self.assertIn("대화 기억에는 안 남습니다", head,
+                      "접혀 있는 상태에서 왜 여기 있는지 알 길이 없다")
+        self.assertIn("copyBtn", blk, "긴 분석을 복사할 수 없다")
+        self.assertIn(".msg.sys.block .md{display:none", self.css)
+        self.assertIn(".msg.sys.block.open .md{display:block}", self.css)
+
+
+class 첨부_전_행을_다시_계산한다(unittest.TestCase):
+    """★요약은 정해진 항목만 담는다. "14시엔?", "M14B 최대는?" 처럼 요약에
+    없는 것을 물으면 답할 근거가 없어 '확인이 안 된다' 가 나왔다.
+    그래서 질문에 맞춰 **원본 전 행**을 다시 계산한다."""
+
+    @staticmethod
+    def _rows(n=1440):
+        out = []
+        for i in range(n):
+            h, m = divmod(i, 60)
+            out.append({"datetime": "2026-08-23 {:02d}:{:02d}".format(h, m),
+                        "unified_risk_score": str(i % 97),
+                        "M14B_score": str((i * 7) % 50)})
+        return out
+
+    def setUp(self):
+        from avatar import csvdata
+        self.cv = csvdata
+        self.rows = self._rows()
+
+    def test_시각_하나를_물으면_그_행을_찾는다(self):
+        q = self.cv.query(self.rows, "14시 20분에 점수 얼마였어?")
+        self.assertIsNotNone(q)
+        self.assertIn("14:20", q["lines"])
+        self.assertIn("2026-08-23 14:20", q["lines"])
+
+    def test_정확한_행이_없으면_그렇게_말한다(self):
+        rows = [r for r in self.rows if not r["datetime"].endswith(":20")]
+        q = self.cv.query(rows, "14시 20분 어때?")
+        self.assertIn("분 차이 나는 행을 봤다", q["lines"])
+
+    def test_FAB_을_물으면_그_컬럼을_전_행_계산한다(self):
+        q = self.cv.query(self.rows, "M14B 최대는?")
+        self.assertIn("M14B_score", q["lines"])
+        self.assertIn("1440행 계산", q["lines"], "일부만 보고 답한다")
+
+    def test_시간대를_물으면_그_구간만_센다(self):
+        q = self.cv.query(self.rows, "14시~18시 사이 점수 어때")
+        self.assertIn("(14시~18시)", q["lines"])
+        self.assertIn("300행 계산", q["lines"])
+
+    def test_몇_분이냐고_물으면_센다(self):
+        q = self.cv.query(self.rows, "경계 넘은 게 몇 분이야")
+        self.assertIn("경계(60) 이상:", q["lines"])
+
+    def test_잡담에는_통계를_안_붙인다(self):
+        """모든 질문에 표를 붙이면 근거가 소음이 된다."""
+        for q in ("안녕", "오늘 기분 어때?", "고마워"):
+            self.assertIsNone(self.cv.query(self.rows, q), q)
+
+    def test_숫자는_가드_화이트리스트로_나간다(self):
+        q = self.cv.query(self.rows, "M14B 최대는?")
+        self.assertIn(49.0, q["numbers"])
+
+    def test_요약이_전_행_기준임을_밝힌다(self):
+        """'표본 6행' 만 보이면 일부만 본 것으로 읽힌다 (실제 오해)."""
+        text = "datetime,unified_risk_score\n" + "\n".join(
+            "2026-08-23 {:02d}:{:02d},{}".format(*divmod(i, 60), i % 97)
+            for i in range(200))
+        d = self.cv.analyze("t.csv", text)
+        self.assertIn("200행 **전부**를 계산한 값", d["summary"])
+        self.assertEqual(len(d["rows"]), 200, "원본 행을 안 들고 있으면 재계산 못 한다")
+
+    def test_매_질문마다_재계산이_붙는다(self):
+        """서버가 실제로 이 길을 타는지 — 안 부르면 만든 뜻이 없다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("up = self._upload_of(aname)")
+        blk = src[i:src.index("attach = (aname, body)", i)]
+        self.assertIn("csvdata.query(up.get(\"rows\") or [], text", blk)
+        self.assertIn("nums |= set(q.get(\"numbers\")", blk,
+                      "재계산한 숫자가 가드를 못 통과한다")
+
+
+class 등록한_자료도_분석한다(unittest.TestCase):
+    """'설정에서 참고 자료 등록해서 분석 가능하게' — 자료함은 원래 키워드로
+    일부만 뽑아 넣는 곳이라, 표를 넣어도 계산을 못 했다."""
+
+    def test_확장자가_없어도_표면_표로_본다(self):
+        from avatar.server import _looks_csv
+        self.assertTrue(_looks_csv("a,b,c\n1,2,3\n4,5,6"))
+        self.assertFalse(_looks_csv("그냥 설명 글입니다\n두 번째 줄"))
+        self.assertFalse(_looks_csv("한 줄뿐"))
+
+    def test_자료함도_분석_대상으로_찾는다(self):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def _upload_of(self, name):")
+        blk = src[i:src.index("def _cuts(self):", i)]
+        self.assertIn("App.doc_store.get(name)", blk,
+                      "업로드한 파일만 분석하면 등록한 자료는 계산이 안 된다")
+        self.assertIn("_looks_csv(text)", blk)
+
+    def test_자료_목록에_분석_버튼이_있다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        i = js.index("function refreshDocsUI(){")
+        blk = js[i:js.index("$('#docStat')", i)]
+        self.assertIn("an.textContent='분석'", blk)
+        self.assertIn("pendingAttach = d.name", blk,
+                      "눌러도 그 자료가 분석 대상이 되지 않는다")
+
+
 class 설정_일치(unittest.TestCase):
     def test_아바타_FAB_목록이_관제와_같다(self):
         """아바타 FABS 가 관제 시스템(ALL + FAB 5)과 어긋나면 그 FAB 알람을
