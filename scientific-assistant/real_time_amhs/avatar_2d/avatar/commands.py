@@ -17,7 +17,7 @@ commands.py — 채팅창 슬래시 명령. LLM 을 거치지 않는 결정적 �
 """
 import re
 
-from . import sentinel, skills
+from . import harness, sentinel, skills
 
 HELP = ("명령어예요:\n"
         "/상태 — 지금 관제 점수·등급 (실측값 그대로, 데이터 시각 포함)\n"
@@ -163,24 +163,44 @@ def _create(name, topic, store, gateway, model, history, temperature, extra=""):
                      "재료에 없으면 그 줄을 지운다)\n")
     msgs = [{"role": "system", "content": sysmsg},
             {"role": "user", "content": ask}]
-    body, err = _plain_llm(gateway, model, temperature, msgs)
-    if not body:
-        return _reply("스킬 초안 생성이 실패했어요: {}".format(err), "sad", 0.7)
+    # ── 루프: 짓는다 → 검사한다 → 부족하면 이유를 붙여 다시 짓는다 ──
+    # ★한 번 만들고 끝내면 "그럴듯한 것" 이 나온다 (절이 빠지고, 재료에 없는
+    #   숫자가 섞인다 — 실제로 겪었다). 검사는 결정적 규칙으로만 한다.
+    checks = [
+        harness.has_sections(skills.NEED_SECTIONS),
+        harness.min_length(200),
+        harness.no_placeholder(),
+        harness.no_rule_codes(),
+        harness.numbers_in_material(),
+    ]
+    tried, last_err = [], [""]
 
-    # ★꼴을 안 갖춘 초안은 그냥 요약문이다 — 빠진 절을 짚어 한 번 더 시킨다.
-    #   (검증 전에 거른다. 저장하고 나서 고치라고 하면 아무도 안 고친다)
-    gaps = skills.draft_gaps(body)
-    if gaps:
-        msgs += [{"role": "assistant", "content": body},
-                 {"role": "user", "content":
-                  "다음 절이 빠졌어요: {}. 같은 재료로 다시 쓰되 그 절을 "
-                  "반드시 넣어 주세요. 없는 사실은 여전히 지어내지 마세요."
-                  .format(", ".join(gaps))}]
-        again, err2 = _plain_llm(gateway, model, temperature, msgs)
-        if again and not skills.draft_gaps(again):
-            body = again
-        elif again and len(skills.draft_gaps(again)) < len(gaps):
-            body = again
+    def _gen(feedback):
+        m = list(msgs)
+        if feedback:
+            m += [{"role": "assistant", "content": tried[-1]},
+                  {"role": "user", "content":
+                   feedback + "\n같은 재료로 다시 쓰세요. 없는 사실은 "
+                   "여전히 지어내지 마세요."}]
+        out, e = _plain_llm(gateway, model, temperature, m)
+        last_err[0] = e
+        if out:
+            tried.append(out)
+        return out
+
+    res = harness.run_loop(_gen, checks, material=material)
+    body = res["artifact"]
+    if not body:
+        # ★err 은 옛 단발 호출의 변수였다 — 루프로 바꾸면서 정의가 사라져
+        #   초안 실패 때 NameError 로 죽는다 (실패 경로라 눈에 안 띈다)
+        return _reply("스킬 초안 생성이 실패했어요: {}".format(last_err[0]),
+                      "sad", 0.7)
+    loop_note = ""
+    if not res["ok"] and res["verdict"] is not None:
+        loop_note = " — {}회 고쳐 썼는데 이건 못 맞췄어요: {}".format(
+            res["rounds"], res["verdict"].gaps_text())
+    elif res["rounds"] > 1:
+        loop_note = " ({}회 고쳐 썼어요)".format(res["rounds"])
 
     desc = (topic or "대화에서 만든 스킬").replace("<", "").replace(">", "")[:180]
     md = skills.compose(name, desc, body)
@@ -189,9 +209,7 @@ def _create(name, topic, store, gateway, model, history, temperature, extra=""):
         return _reply("초안이 검증에 걸렸어요: {}".format(" / ".join(errors)),
                       "sad", 0.7)
     note = (" (경고: " + " / ".join(warnings) + ")") if warnings else ""
-    left = skills.draft_gaps(body)
-    if left:
-        note += " — 이 절은 못 채웠어요: " + ", ".join(left) + " (재료가 부족)"
+    note += loop_note
     return _reply(
         "'{}' 스킬을 만들었어요{}.\n"
         "· 전문 보기: /스킬 보기 {}\n"

@@ -2577,7 +2577,7 @@ class 서윤이_스킬을_만든다(unittest.TestCase):
         with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
             src = f.read()
         blk = src[src.index("tmpl = skills.draft_template(store)"):]
-        blk = blk[:blk.index("body, err = _plain_llm")]
+        blk = blk[:blk.index("# ── 루프:")]
         self.assertIn("[채울 틀 — 이 꼴로 쓴다]", blk)
         self.assertIn("sysmsg", blk)
 
@@ -2600,22 +2600,32 @@ class 서윤이_스킬을_만든다(unittest.TestCase):
             tmp.cleanup()
 
     def test_꼴을_안_갖추면_다시_시킨다(self):
+        """이제 하네스 루프가 맡는다 — 검사에 걸리면 이유를 붙여 다시 짓는다."""
         self.assertEqual(skills.draft_gaps(
             "## 언제 쓰나\n## 절차\n## 함정"), [])
-        self.assertEqual(skills.draft_gaps("# 제목\n요약만 있음"),
-                         ["## 언제 쓰나", "## 절차", "## 함정"])
         with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
             src = f.read()
-        blk = src[src.index("gaps = skills.draft_gaps(body)"):]
-        blk = blk[:blk.index("desc =")]
-        self.assertIn("다음 절이 빠졌어요", blk, "빠진 절을 짚어 다시 안 시킨다")
+        blk = src[src.index("checks = ["):src.index("desc =")]
+        self.assertIn("harness.run_loop(_gen, checks", blk,
+                      "검사에 걸려도 다시 안 시킨다")
+        self.assertIn("feedback + ", blk, "무엇이 문제인지 안 알려 주고 다시 시킨다")
         self.assertIn("_plain_llm", blk)
 
     def test_못_채운_절은_밝힌다(self):
         with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
             src = f.read()
-        self.assertIn("이 절은 못 채웠어요", src,
+        self.assertIn("이건 못 맞췄어요", src,
                       "빈 스킬을 완성품처럼 주면 안 된다")
+        self.assertIn("gaps_text()", src)
+
+    def test_초안_실패_경로가_안_죽는다(self):
+        """★루프로 바꾸면서 옛 변수(err)가 사라졌다 — 실패 경로라 눈에 안 띈다."""
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("def _create(")
+        blk = src[i:src.index("def _plain_llm(", i)]
+        self.assertIn("last_err[0]", blk)
+        self.assertNotIn(".format(err)", blk, "정의되지 않은 변수를 쓴다")
 
     def test_첨부_분석이_초안_재료에_들어간다(self):
         """★'이 데이터로 스킬 만들어줘' 의 재료는 대화가 아니라 그 데이터다."""
@@ -2766,6 +2776,159 @@ class 자료가_한_문서에_먹히지_않는다(unittest.TestCase):
         self.st.add("점검.md", "# 야간 점검 절차\n\n## 순서\n1. 저장율을 본다\n")
         self.assertEqual(self.st.context("어떻게 해줘", 900), "",
                          "상투어만 있는 질문에 자료가 붙는다")
+
+
+class 하네스_루프(unittest.TestCase):
+    """데모스 loop_engine 의 구조 — 짓는다 → 검사한다 → 부족하면 이유를 붙여
+    다시 짓는다. ★검사는 결정적 규칙으로만 한다 (LLM 을 또 부르지 않는다)."""
+
+    def setUp(self):
+        from avatar import harness as h
+        self.h = h
+
+    def test_통과하면_한_번에_끝난다(self):
+        calls = []
+        r = self.h.run_loop(lambda fb: (calls.append(fb) or "## 언제 쓰나\n" + "가" * 300),
+                            [self.h.has_sections(["## 언제 쓰나"]),
+                             self.h.min_length(200)])
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["rounds"], 1, "통과했는데 또 돌았다")
+
+    def test_부족하면_이유를_붙여_다시_시킨다(self):
+        seen = []
+
+        def gen(fb):
+            seen.append(fb)
+            return "## 언제 쓰나\n" + "가" * 300 if len(seen) > 1 else "짧음"
+        r = self.h.run_loop(gen, [self.h.has_sections(["## 언제 쓰나"]),
+                                  self.h.min_length(200)])
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["rounds"], 2)
+        self.assertIn("빠진 절", seen[1], "무엇이 문제인지 안 알려 주고 다시 시킨다")
+        self.assertIn("너무 짧습니다", seen[1])
+
+    def test_최대_라운드에서_멈춘다(self):
+        n = []
+        r = self.h.run_loop(lambda fb: (n.append(1) or "짧음"),
+                            [self.h.min_length(200)], max_rounds=3)
+        self.assertFalse(r["ok"])
+        self.assertEqual(len(n), 3, "무한루프 방지가 안 된다")
+        self.assertIn("너무 짧습니다", r["verdict"].gaps_text(),
+                      "무엇이 모자란지 안 밝힌다")
+
+    def test_가장_나은_라운드를_남긴다(self):
+        """3라운드가 1라운드보다 나쁠 수도 있다."""
+        outs = ["## 언제 쓰나\n" + "가" * 300, "짧음", "짧음"]
+
+        def gen(fb):
+            return outs.pop(0)
+        r = self.h.run_loop(gen, [self.h.has_sections(["## 언제 쓰나"]),
+                                  self.h.min_length(200),
+                                  self.h.no_placeholder(),
+                                  self.h.mentions_any(["없는말"], "없는검사", "실패")],
+                            max_rounds=3)
+        self.assertFalse(r["ok"])
+        self.assertIn("## 언제 쓰나", r["artifact"], "더 나쁜 라운드를 골랐다")
+
+    def test_재료에_없는_숫자를_잡는다(self):
+        c = self.h.numbers_in_material()
+        ok, why = c.run("임계는 9.0 분입니다.", "재료: 임계 9.0 분")
+        self.assertTrue(ok, why)
+        ok, why = c.run("임계는 42.7 분입니다.", "재료: 임계 9.0 분")
+        self.assertFalse(ok)
+        self.assertIn("42.7", why)
+
+    def test_목록_번호와_작은_수는_봐준다(self):
+        """그것까지 잡으면 아무 문장도 못 쓴다."""
+        c = self.h.numbers_in_material()
+        # ★번호가 10을 넘어야 '작은 정수는 봐준다' 규칙과 겹치지 않는다 —
+        #   그래야 목록 번호를 떼는 코드가 실제로 시험된다
+        ok, why = c.run("11. 열한째 단계\n12. 열두째 단계\n3개를 본다",
+                        "재료: 아무것도 없음")
+        self.assertTrue(ok, why)
+
+    def test_룰_코드를_잡는다(self):
+        c = self.h.no_rule_codes()
+        self.assertFalse(c.run("R-D 가 켜졌다", "")[0])
+        self.assertTrue(c.run("Storage FULL 이 켜졌다", "")[0])
+
+    def test_채우다_만_자리를_잡는다(self):
+        c = self.h.no_placeholder()
+        self.assertFalse(c.run("## 절차\nTODO", "")[0])
+        self.assertFalse(c.run("## 절차\n<여기에 채움>", "")[0])
+
+    def test_권고는_불합격이_아니다(self):
+        r = self.h.run_loop(
+            lambda fb: "가" * 300,
+            [self.h.min_length(200),
+             self.h.mentions_any(["없는말"], "권고", "있으면 좋다", critical=False)],
+            max_rounds=2)
+        self.assertTrue(r["ok"], "권고 하나 때문에 계속 다시 쓴다")
+        self.assertEqual(r["rounds"], 1)
+
+
+class 스킬_만들기가_루프를_탄다(unittest.TestCase):
+    def test_검사_묶음이_걸려_있다(self):
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("checks = ["):src.index("res = harness.run_loop")]
+        for must in ("has_sections", "min_length", "no_placeholder",
+                     "no_rule_codes", "numbers_in_material"):
+            self.assertIn(must, blk, must)
+        self.assertIn("harness.run_loop(_gen, checks, material=material)", src,
+                      "재료를 안 넘기면 '재료에 없는 숫자' 를 못 잡는다")
+
+    def test_못_맞춘_것을_밝힌다(self):
+        with open(os.path.join(AV, "avatar", "commands.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("이건 못 맞췄어요", src, "빈 스킬을 완성품처럼 준다")
+        self.assertIn("회 고쳐 썼", src)
+
+
+class 분석_답이_루프를_탄다(unittest.TestCase):
+    """★한 순간만 집어 말하고 끝내던 문제 — 기간·분량·등급 분포·최고점이
+    답에 없으면 그 지적을 붙여 한 번 더 시킨다."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            cls.src = f.read()
+
+    def _blk(self):
+        i = self.src.index("def _analysis_loop(")
+        return self.src[i:self.src.index("    def _guard(", i)]
+
+    def test_무엇을_보는지(self):
+        b = self._blk()
+        for must in ("기간", "등급 분포", "최고점"):
+            self.assertIn(must, b, must)
+
+    def test_첨부가_없으면_안_돈다(self):
+        b = self._blk()
+        self.assertIn("if not aname or not isinstance(reply, dict):", b)
+
+    def test_잡담에는_안_돈다(self):
+        """모든 대답을 두 번 부르면 느리고 비싸다."""
+        b = self._blk()
+        self.assertIn("ANALYSIS_ASK.search", b)
+        import re as _re
+        pat = _re.compile(r"분석|요약|어때|살펴|봐\s*줘|정리|추이|현황")
+        self.assertTrue(pat.search("이 파일 분석해줘"))
+        self.assertIsNone(pat.search("고마워"))
+
+    def test_다시_쓴_답이_통과할_때만_바꾼다(self):
+        """두 번째가 더 나빠질 수도 있다."""
+        b = self._blk()
+        self.assertIn('return tried[-1] if (res["ok"] and len(tried) > 1) else tried[0]', b)
+
+    def test_숫자를_새로_짓지_말라고_한다(self):
+        self.assertIn("숫자를 새로 지어내지 마세요", self._blk())
+
+    def test_가드보다_먼저_돈다(self):
+        """루프가 만든 답도 숫자 가드를 통과해야 한다."""
+        i = self.src.index("reply = self._analysis_loop(")
+        j = self.src.index("reply = self._guard(reply, ev)", i)
+        self.assertLess(i, j)
 
 
 class 설정_일치(unittest.TestCase):

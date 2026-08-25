@@ -26,8 +26,8 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 
-from . import commands, config, csvdata, docs, llm, sentinel, sessions, \
-    settings, skills, terms
+from . import commands, config, csvdata, docs, harness, llm, sentinel, \
+    sessions, settings, skills, terms
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -531,6 +531,11 @@ class Handler(SimpleHTTPRequestHandler):
             if reply is None:
                 self._say("ERR  /api/chat  {}ms  {}".format(ms, err[:160]))
                 return self._err(502, err)
+            # ── 분석 답도 루프를 태운다 ──
+            # ★한 순간만 집어 말하고 끝내던 문제. 첨부를 두고 분석을 물었으면
+            #   기간·행 수·분포·구간이 답에 있어야 한다. 없으면 그 지적을 붙여
+            #   한 번 더 시킨다 (검사는 결정적 규칙 — LLM 을 또 부르지 않는다).
+            reply = self._analysis_loop(reply, aname, text, msgs, model, temp)
             reply = self._guard(reply, ev)
             self._say("200  /api/chat  {}  {}ms".format(model, ms))
             return self._json(200, {"reply": reply})
@@ -602,6 +607,56 @@ class Handler(SimpleHTTPRequestHandler):
             except (KeyError, TypeError, ValueError):
                 pass
         return (60, 71, 85)
+
+    ANALYSIS_ASK = re.compile(r"분석|요약|어때|살펴|봐\s*줘|정리|추이|현황")
+
+    def _analysis_loop(self, reply, aname, question, msgs, model, temp):
+        """첨부 분석 답이 부실하면 이유를 붙여 한 번 더 — harness.run_loop."""
+        if not aname or not isinstance(reply, dict):
+            return reply
+        if not self.ANALYSIS_ASK.search(str(question or "")):
+            return reply
+        up = self._upload_of(aname)
+        if up is None or not (up.get("rows") or []):
+            return reply
+        checks = [
+            harness.mentions_any(
+                ["기간", "~", "부터"], "기간",
+                "자료의 **기간**(시작~끝)을 첫머리에 말해 주세요."),
+            harness.mentions_any(
+                ["행", "분"], "분량",
+                "몇 행(몇 분)짜리 자료인지 말해 주세요."),
+            harness.mentions_any(
+                ["정상", "경계", "위험", "초위험"], "등급 분포",
+                "등급 분포(정상/경계/위험/초위험이 각각 몇 분)를 말해 주세요."),
+            harness.mentions_any(
+                ["최고", "최대", "peak", "가장"], "최고점",
+                "최고점과 그 시각을 말해 주세요."),
+        ]
+        tried = [reply]
+
+        def _gen(feedback):
+            if not feedback:
+                return json.dumps(tried[0], ensure_ascii=False)
+            m = list(msgs) + [
+                {"role": "assistant",
+                 "content": json.dumps(tried[-1], ensure_ascii=False)},
+                {"role": "user", "content":
+                 feedback + "\n같은 근거만 쓰고, 숫자를 새로 지어내지 마세요."}]
+            again, _e = App.gateway.chat(model, temp, m)
+            if again:
+                tried.append(again)
+                return json.dumps(again, ensure_ascii=False)
+            return ""
+
+        res = harness.run_loop(_gen, checks, material="", max_rounds=2)
+        gaps = res["verdict"].gaps_text() if res["verdict"] else ""
+        if res["rounds"] > 1:
+            self._say("     ↳ 분석 루프: {}회 · {}".format(
+                res["rounds"], ("남은 것: " + gaps[:60]) if gaps else "다 채움"))
+        # 다시 쓴 답이 검사를 통과했을 때만 바꾼다 — 통과 못 했으면 첫 답이
+        # 낫다 (두 번째가 더 나빠질 수도 있다)
+        return tried[-1] if (res["ok"] and len(tried) > 1) else tried[0]
 
     def _guard(self, reply, ev):
         """나가기 직전 검사 — ① 룰 코드·용어 ② 근거에 없는 숫자.
