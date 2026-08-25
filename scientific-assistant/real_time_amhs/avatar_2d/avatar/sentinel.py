@@ -56,16 +56,94 @@ _alog = []               # [{t, fab, level, score, kind}]  kind: on|change|off
 _last_levels = {}        # {fab: level} 직전 관측
 
 
+_acsv_path = None        # 알람 기록 CSV (사람이 엑셀로 여는 것)
+
+# 기록 CSV 의 칸 — 요청 그대로: FAB영역 · 날짜 · 시간 · 스코어 · 해제여부 + 내용
+CSV_COLS = ["일시", "날짜", "시간", "FAB영역", "등급", "스코어", "종류",
+            "이전등급", "해제여부", "해제시각", "내용"]
+KIND_KO = {"on": "발생", "change": "등급변경", "off": "해제",
+           "note": "내용기입"}
+
+
 def init(data_dir):
     """알람 이력 저장 위치. server.App.init 이 부른다."""
-    global _alog_path, _alog
+    global _alog_path, _alog, _acsv_path
     import os
     _alog_path = os.path.join(str(data_dir), "alarms.json")
+    # ★JSON 은 프로그램이 읽는 것이고, 사람은 엑셀로 본다. 사건이 생길 때마다
+    #   CSV 에도 **바로 덧붙인다** — 나중에 한 번에 쓰면 서버가 죽을 때 날아간다.
+    _acsv_path = os.path.join(str(data_dir), "alarms.csv")
     try:
         with open(_alog_path, encoding="utf-8") as f:
             _alog = json.load(f) or []
     except Exception:
         _alog = []
+
+
+def alarm_config(settings=None):
+    """알람 동작 설정 — 화면(알람 기록 창)에서 고칠 수 있어야 한다.
+
+    ★이름을 `config` 로 지었다가 **모듈 `config` 를 가려서** base_url() 이
+      관제 주소를 못 읽었다 (기본값으로 붙어 '연결 거부'). 모듈과 같은
+      이름의 함수를 만들면 안 된다.
+
+    ★HOLD_MIN 이 코드에만 있으면 "왜 60분이나 안 꺼지냐" 를 아무도 못 고친다.
+    """
+    s = settings or {}
+    try:
+        hold = int(s.get("alarmHoldMin") or HOLD_MIN)
+    except (TypeError, ValueError):
+        hold = HOLD_MIN
+    try:
+        keep = int(s.get("alarmKeep") or ALOG_MAX)
+    except (TypeError, ValueError):
+        keep = ALOG_MAX
+    return {"hold_min": max(0, min(24 * 60, hold)),
+            "keep": max(10, min(5000, keep)),
+            "csv": _acsv_path or ""}
+
+
+def _csv_cell(v):
+    v = "" if v is None else str(v)
+    if any(c in v for c in ',"\n\r'):
+        return '"' + v.replace('"', '""') + '"'
+    return v
+
+
+def _csv_row(e):
+    return ",".join(_csv_cell(x) for x in [
+        e.get("t"), e.get("date"), e.get("time"), e.get("fab"),
+        e.get("level"), e.get("score"), KIND_KO.get(e.get("kind"), e.get("kind")),
+        e.get("prev"), "해제" if e.get("cleared") else "미해제",
+        e.get("cleared_at"), e.get("note")])
+
+
+def _csv_append(entries):
+    """사건 한 건이 생길 때마다 CSV 한 줄. (_lock 안에서 부른다)"""
+    if not _acsv_path or not entries:
+        return
+    import os
+    try:
+        new = not os.path.exists(_acsv_path) or os.path.getsize(_acsv_path) == 0
+        with open(_acsv_path, "a", encoding="utf-8-sig", newline="") as f:
+            if new:
+                f.write(",".join(CSV_COLS) + "\r\n")
+            for e in entries:
+                f.write(_csv_row(e) + "\r\n")
+    except Exception:
+        pass                 # 기록 실패로 관제를 멈추진 않는다
+
+
+def history_csv(n=0):
+    """지금까지의 기록 전체를 CSV 문자열로 (내려받기용).
+
+    ★파일을 그대로 주지 않고 메모리의 기록에서 만든다 — 메모(내용)를
+      나중에 고치면 CSV 파일의 옛 줄은 그대로라, 최신 상태와 어긋난다.
+    """
+    rows = history(n) if n else history(10 ** 9)
+    L = [",".join(CSV_COLS)]
+    L.extend(_csv_row(e) for e in rows)
+    return "\r\n".join(L) + "\r\n"
 
 
 def _alog_save():
@@ -83,7 +161,7 @@ def _record(alarms):
     global _last_levels
     now_lv = {a["fab"]: a["level"] for a in alarms}
     stamp = time.strftime("%Y-%m-%d %H:%M")
-    changed = False
+    fresh = []                      # 이번에 새로 생긴 줄 — CSV 에 덧붙일 것
     with _lock:
         for fab, lv in now_lv.items():
             prev = _last_levels.get(fab, "정상")
@@ -91,15 +169,18 @@ def _record(alarms):
                 continue
             kind = "on" if prev == "정상" else "change"
             sc = next((a.get("score") for a in alarms if a["fab"] == fab), None)
-            _alog.append(_entry(stamp, fab, lv, sc, kind, prev))
-            changed = True
+            e = _entry(stamp, fab, lv, sc, kind, prev)
+            _alog.append(e)
+            fresh.append(e)
         for fab, prev in list(_last_levels.items()):
             if fab not in now_lv and prev != "정상":
-                _alog.append(_entry(stamp, fab, "정상", None, "off", prev))
+                e = _entry(stamp, fab, "정상", None, "off", prev)
+                _alog.append(e)
+                fresh.append(e)
                 _close(fab, stamp, "")          # 열려 있던 건을 닫는다
-                changed = True
         _last_levels = {**{f: "정상" for f in _last_levels}, **now_lv}
-        if changed:
+        if fresh:
+            _csv_append(fresh)                  # 사건마다 바로 — 나중에 몰아 쓰면 날아간다
             del _alog[:-ALOG_MAX]
             _alog_save()
 
@@ -132,13 +213,15 @@ def _close(fab, stamp, note):
 def note(entry_id, text):
     """기록에 메모를 단다 (해제 사유·조치 내용). 단 건수를 돌려준다."""
     text = str(text or "").strip()[:500]
-    n = 0
+    n, wrote = 0, []
     with _lock:
         for e in _alog:
             if e.get("id") == entry_id:
                 e["note"] = text
+                wrote.append(dict(e, kind="note"))
                 n += 1
         if n:
+            _csv_append(wrote)      # 내용 기입도 한 줄 — 기록은 덧붙이기만 한다
             _alog_save()
     return n
 
@@ -152,6 +235,7 @@ def clear_note(fab, text, when=None):
         _close(fab, stamp, text)
         _alog.append(_entry(stamp, fab, "정상", None, "off", ""))
         _alog[-1]["note"] = text
+        _csv_append([_alog[-1]])    # 해제 사유가 CSV 에 안 남으면 기록이 반쪽이다
         del _alog[:-ALOG_MAX]
         _alog_save()
     return len(before)
@@ -362,10 +446,8 @@ def chart():
     if cols["ok"]:
         for ru in (cols["data"].get("rules") or []):
             rules[ru.get("code")] = ru
-    out = []
+    out, all_row = [], None
     for row in d.get("rows") or []:
-        if row.get("is_all"):
-            continue                     # 전체(ALL)는 FAB 막대와 축이 다르다
         reads = []
         for c in (row.get("readings") or [])[:MAX_READ]:
             # ★has_value 가 빠져 오면 값이 있어도 '값 없음(빗금)' 으로 그린다 —
@@ -390,10 +472,28 @@ def chart():
             meta = rules.get(code) or {}
             fired.append(_no_code(meta.get("label") or "") or
                          _KO.get(code, "룰"))
-        out.append({"fab": row.get("fab"), "score": row.get("score"),
-                    "level": row.get("level") or "정상",
-                    "delta": row.get("delta"), "area": row.get("area"),
-                    "fired": fired, "readings": reads})
+        item = {"fab": row.get("fab"), "score": row.get("score"),
+                "level": row.get("level") or "정상",
+                "delta": row.get("delta"), "area": row.get("area"),
+                "fired": fired, "readings": reads,
+                "is_all": bool(row.get("is_all"))}
+        if row.get("is_all"):
+            # ★전체(ALL)가 화면에서 빠져 있었다 (실제 지적). 관제가 제일 먼저
+            #   보는 값인데 없었다. 다만 **잰 것이 다르다** — FAB 은 자기 영역
+            #   점수를 편 값이고 ALL 은 영역합·흐름·SLA·소터·용량변경을 융합한
+            #   값이다. 그래서 같은 막대 줄에 섞지 않고 맨 위에 따로 세운다.
+            #   (등급 컷 60/71/85 는 둘 다 같으므로 축은 같이 써도 된다)
+            item.update({
+                "fab": row.get("fab") or "ALL",
+                "hot_area": row.get("hot_area") or "",
+                "stage_name": row.get("stage_name") or "",
+                "fuse": row.get("fuse") or {},
+                "measures": "영역합·흐름·4분초과·분류기·운영자 용량변경을 "
+                            "융합한 전체 점수",
+            })
+            all_row = item
+            continue
+        out.append(item)
     out.sort(key=lambda f: -(f["score"] or 0))
     age = _data_age_min(d.get("at"))
     return {"ok": True, "at": d.get("at") or "", "age_min": age,
@@ -403,6 +503,7 @@ def chart():
             "cuts": d.get("cuts") or {"warn": 60, "danger": 71, "critical": 85},
             "area_cap": d.get("area_cap"), "delta_min": d.get("delta_min"),
             "blind": d.get("blind") or [], "fabs": out,
+            "all": all_row,                       # 전체(ALL) — 맨 위에 따로 선다
             "warn": d.get("warn") or "",          # "오늘 수집이 없어 …" 그대로
             "fallback_day": d.get("fallback_day"), "day": d.get("day") or "",
             "degraded": bool(r.get("degraded")), "err": r.get("err") or ""}

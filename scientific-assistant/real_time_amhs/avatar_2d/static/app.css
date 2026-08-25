@@ -93,6 +93,20 @@
   #alogWrap.dragging{transition:none}
   #alogWrap.dragging #alogHead{cursor:grabbing}
   #alogHead .hint{margin:0;flex:1}
+  /* 설정 — 알람 동작을 화면에서 고친다 (코드에만 있으면 아무도 못 고친다) */
+  #alogCfg{display:none;gap:12px;align-items:center;flex-wrap:wrap;
+    padding:9px 12px;border-bottom:1px solid var(--line);font-size:11.5px;
+    background:rgba(255,255,255,.03)}
+  #alogCfg.on{display:flex}
+  #alogCfg label{display:flex;align-items:center;gap:6px;color:#c9d3e0}
+  #alogCfg input{width:74px;padding:4px 6px;border-radius:7px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--txt);
+    font-size:11.5px}
+  #alogCfg button{padding:4px 12px;border-radius:7px;cursor:pointer;
+    border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);
+    color:var(--txt);font-size:11.5px}
+  #alogCfg button:hover{border-color:var(--accent2)}
+  #alogCfg .hint{margin:0;flex:1;min-width:120px}
   #alogBody{overflow:auto;padding:8px 12px 12px}
   #alogBody table{width:100%;border-collapse:collapse;font-size:11.5px}
   #alogBody th,#alogBody td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.07);
@@ -140,6 +154,14 @@
   .cbar .cval{text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
   .cbar .clv{font-weight:700}
   .cbar .cdelta{color:var(--dim);font-size:10px}
+  /* 전체(ALL) — FAB 과 잰 것이 다르니 눈으로도 구분되게 */
+  .cbar.callrow{padding:3px 0 5px;border-bottom:1px dashed rgba(255,255,255,.14)}
+  .cbar.callrow .cname{font-weight:800;color:#e9eef6}
+  .cbar.callrow .ctrack{height:16px}
+  #chartBody .callsub{color:var(--dim);font-size:10px;line-height:1.5;
+    margin:4px 0 2px}
+  #alarmLive .fall{font-weight:800;padding-right:4px;
+    border-right:1px solid rgba(255,255,255,.18)}
   .lv정상{--cC:78,201,160;color:#4ec9a0} .lv경계{--cC:232,193,74;color:#e8c14a}
   .lv위험{--cC:255,122,61;color:#ff7a3d} .lv초위험{--cC:255,43,61;color:#ff2b3d}
   /* 실제 컬럼 — 임계 대비 실측. 축은 그 줄의 max(값, 임계) 라 줄마다 다르다 */

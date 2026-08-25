@@ -245,8 +245,26 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, d)
 
         if path == "/api/alarms":
-            return self._json(200, {"alarms": sentinel.history(200),
-                                    "hold_min": sentinel.HOLD_MIN})
+            cfg = sentinel.alarm_config(App.settings.all())
+            return self._json(200, {"alarms": sentinel.history(cfg["keep"]),
+                                    "hold_min": cfg["hold_min"],
+                                    "config": cfg,
+                                    "cols": sentinel.CSV_COLS})
+
+        if path == "/api/alarms/csv":
+            # 엑셀이 바로 여는 CSV (BOM). 파일이 아니라 지금 기록에서 만든다 —
+            # 내용을 나중에 고쳐도 받는 파일은 최신 상태여야 한다.
+            body = sentinel.history_csv().encode("utf-8-sig")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition",
+                             'attachment; filename="fab_alarms.csv"')
+            self.send_header("Content-Length", str(len(body)))
+            for k, v in CORS_HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         # ── 스킬 ─────────────────────────────────────────────────────────
         if path == "/api/skills":
@@ -366,6 +384,22 @@ class Handler(SimpleHTTPRequestHandler):
                 n = sentinel.clear_note(str(b.get("fab") or ""), b.get("text"))
                 return self._json(200, {"ok": True, "closed": n,
                                         "alarms": sentinel.history(200)})
+            if op == "config":
+                # 알람 동작 설정 — 관찰 유지(분) · 기록 보관 건수
+                st = {}
+                for k, src in (("alarmHoldMin", "hold_min"),
+                               ("alarmKeep", "keep")):
+                    if b.get(src) is not None:
+                        st[k] = b.get(src)
+                if st:
+                    App.settings.update(st)
+                cfg = sentinel.alarm_config(App.settings.all())
+                sentinel.HOLD_MIN = cfg["hold_min"]     # 감시 로직이 바로 따른다
+                sentinel.ALOG_MAX = cfg["keep"]
+                self._say("     ↳ 알람 설정: 관찰 {}분 · 보관 {}건"
+                          .format(cfg["hold_min"], cfg["keep"]))
+                return self._json(200, {"ok": True, "config": cfg,
+                                        "hold_min": cfg["hold_min"]})
             return self._err(400, "op 는 note/clear")
 
         if path == "/api/upload":

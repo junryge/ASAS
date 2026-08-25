@@ -2313,7 +2313,7 @@ class 알람_기록(_Sentinel):
     def test_화면에_표로_나온다(self):
         with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
             js = f.read()
-        blk = js[js.index("function renderAlog(){"):js.index("function alogText(")]
+        blk = js[js.index("function renderAlog(){"):js.index("/* 서버 없이 HTML")]
         for col in ("FAB", "날짜", "시간", "등급", "점수", "해제", "조치 내용"):
             self.assertIn(col, blk, col + " 칸이 없다")
         self.assertIn("e.kind!=='off'", blk, "해제 줄까지 사건처럼 세면 개수가 틀린다")
@@ -2344,13 +2344,19 @@ class 알람_기록(_Sentinel):
             html = f.read()
         self.assertIn('id="alarmNoteIn"', html)
 
-    def test_내려받을_수_있다(self):
+    def test_CSV_로_내려받는다(self):
+        """★엑셀로 여는 게 목적이다 — TSV 는 더블클릭하면 한 칸에 다 들어간다."""
         with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
             js = f.read()
-        blk = js[js.index("function alogText(){"):js.index("(function initAlog(){")]
-        for col in ("FAB", "날짜", "등급", "조치 내용"):
-            self.assertIn(col, blk, col)
-        self.assertIn("alogText()", js)
+        blk = js[js.index("(function initAlog(){"):]
+        blk = blk[:blk.index("\n})();")]
+        self.assertIn("/api/alarms/csv", blk, "서버가 만든 CSV 를 안 받는다")
+        self.assertIn("fab_알람기록.csv", blk, "서버 없을 때 받을 길이 없다")
+        # 서버 없이 열었을 때의 폴백 — 칸 이름이 서버와 같아야 한다
+        fb = js[js.index("const ALOG_COLS="):js.index("function alogCsv(")]
+        for col in ("FAB영역", "날짜", "스코어", "해제여부", "내용"):
+            self.assertIn(col, fb, col)
+        self.assertIn("\\uFEFF", js, "BOM 이 없으면 엑셀에서 한글이 깨진다")
 
     def test_서버가_메모를_받아_준다(self):
         with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
@@ -3591,6 +3597,205 @@ class 컨텍스트_사용량이_실제와_같다(unittest.TestCase):
         for k in allm.CTX_KEYS:
             self.assertIn("'{}'".format(k), js, k)
             self.assertIn("{}:".format(k), js, k + " 라벨/색")
+
+
+class 전체_ALL_도_화면에_있다(_Sentinel):
+    """★"fab 정상 확인 알람 확인 하는 부분 왜 all 은 없나" — 실제 지적.
+
+    관제가 제일 먼저 보는 값인데 그래프에서 빠져 있었다. 다만 **잰 것이
+    다르다** — FAB 은 자기 영역 점수를 편 값, ALL 은 영역합·흐름·4분초과·
+    분류기·용량변경을 융합한 값이다. 그래서 섞지 않고 따로 세운다.
+    """
+
+    def _chart(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel._cols_cache.update(at=time.time(),
+                                    columns={"ok": True, "rules": []})
+        return sentinel.chart()
+
+    def test_ALL_이_따로_온다(self):
+        c = self._chart()
+        self.assertIsNotNone(c.get("all"), "ALL 이 빠졌다")
+        self.assertEqual(c["all"]["fab"], "ALL")
+        self.assertTrue(c["all"]["is_all"])
+
+    def test_FAB_막대에는_안_섞인다(self):
+        """★같은 줄에 두면 '잰 것이 다른 값' 을 나란히 비교하게 된다."""
+        self.assertNotIn("ALL", [f["fab"] for f in self._chart()["fabs"]])
+
+    def test_무엇을_잰_값인지_같이_준다(self):
+        a = self._chart()["all"]
+        self.assertIn("융합", a["measures"])
+        self.assertEqual(a["hot_area"], "M16HUB")
+        self.assertEqual(a["fuse"]["raw"], 67.5)
+
+    def test_알람_감시에도_ALL_이_들어간다(self):
+        d = fake_compare(at=now_kst(1))
+        d["rows"][0]["level"] = "경계"          # ALL 이 경계로
+        self.feed(d)
+        w = sentinel.watch()
+        self.assertIn("ALL", [a["fab"] for a in w["alarms"]])
+
+    def test_화면도_ALL_을_그린다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("function chartBars("):js.index("function chartReads(")]
+        self.assertIn("d.all", blk, "그래프가 ALL 을 안 그린다")
+        self.assertIn("전체 (ALL)", blk)
+        live = js[js.index("function paintAlarmLive("):
+                  js.index("\nfunction openChart(")]
+        self.assertIn("d.all", live, "알람 패널 실시간 줄에 ALL 이 없다")
+
+
+class 알람_기록을_CSV_로_남긴다(_Sentinel):
+    """★"알람해제 할때 내용을 기입할수 있도록 하고 csv로 남겨라" — 요청 그대로.
+
+    기록은 남기는 것으로 끝이 아니다. **누가 무엇을 해서 껐는지**가 남아야
+    다음 사람이 쓴다. 사람은 엑셀로 보므로 CSV 로 쌓는다.
+    """
+
+    def _csv(self):
+        from pathlib import Path
+        return Path(sentinel._acsv_path).read_text(encoding="utf-8-sig")
+
+    def test_칸이_요청한_대로다(self):
+        for c in ("FAB영역", "날짜", "시간", "스코어", "해제여부", "내용"):
+            self.assertIn(c, sentinel.CSV_COLS, c)
+
+    def test_사건마다_바로_쌓인다(self):
+        """★나중에 몰아 쓰면 서버가 죽을 때 그대로 날아간다."""
+        sentinel._record([{"fab": "M16HUB", "level": "경계", "score": 63}])
+        self.assertIn("M16HUB", self._csv())
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        rows = [l for l in self._csv().strip().splitlines()[1:] if l]
+        self.assertEqual(len(rows), 2)
+        self.assertIn("등급변경", rows[1])
+
+    def test_해제_내용이_남는다(self):
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        sentinel.clear_note("M16HUB", "리프터 재기동함")
+        self.assertIn("리프터 재기동함", self._csv())
+        self.assertIn("해제", self._csv())
+
+    def test_쉼표와_따옴표가_칸을_안_깬다(self):
+        sentinel._record([{"fab": "M14", "level": "경계", "score": 61}])
+        sentinel.clear_note("M14", '큐 정리, "임시" 조치함')
+        line = [l for l in self._csv().splitlines() if "임시" in l][0]
+        self.assertIn('"큐 정리, ""임시"" 조치함"', line)
+
+    def test_머리글은_한_번만(self):
+        for lv in ("경계", "위험"):
+            sentinel._record([{"fab": "M14", "level": lv, "score": 61}])
+        self.assertEqual(self._csv().count("FAB영역"), 1)
+
+    def test_내려받기는_지금_상태로_만든다(self):
+        """★파일은 덧붙이기만 한다 — 내용을 고쳐도 옛 줄은 그대로다.
+        받는 파일은 **고친 뒤의 상태**여야 한다."""
+        sentinel._record([{"fab": "M16HUB", "level": "위험", "score": 72}])
+        eid = sentinel.history(5)[0]["id"]
+        sentinel.note(eid, "야간 당직 확인")
+        got = sentinel.history_csv()
+        self.assertEqual(got.count("야간 당직 확인"), 1)
+        self.assertTrue(got.startswith(",".join(sentinel.CSV_COLS)))
+
+    def test_기록이_없어도_머리글은_준다(self):
+        self.assertTrue(sentinel.history_csv().startswith("일시,날짜,시간"))
+
+    def test_CSV_를_못_써도_관제는_안_멈춘다(self):
+        sentinel._acsv_path = "/그런/경로/없음/a.csv"
+        sentinel._record([{"fab": "M14", "level": "경계", "score": 61}])
+        self.assertEqual(len(sentinel.history(5)), 1, "기록 자체가 안 남았다")
+
+
+class 알람_설정을_화면에서_고친다(unittest.TestCase):
+    """★관찰 유지 60분이 코드에만 있으면 "왜 안 꺼지냐" 를 아무도 못 고친다."""
+
+    def test_기본값(self):
+        c = sentinel.alarm_config({})
+        self.assertEqual(c["hold_min"], sentinel.HOLD_MIN)
+        self.assertEqual(c["keep"], sentinel.ALOG_MAX)
+
+    def test_설정을_따른다(self):
+        c = sentinel.alarm_config({"alarmHoldMin": 30, "alarmKeep": 200})
+        self.assertEqual((c["hold_min"], c["keep"]), (30, 200))
+
+    def test_말도_안_되는_값은_막는다(self):
+        self.assertEqual(sentinel.alarm_config({"alarmHoldMin": -5})["hold_min"], 0)
+        self.assertEqual(sentinel.alarm_config({"alarmHoldMin": 99999})["hold_min"],
+                         24 * 60)
+        self.assertEqual(sentinel.alarm_config({"alarmKeep": 1})["keep"], 10)
+        self.assertEqual(sentinel.alarm_config({"alarmKeep": "x"})["keep"],
+                         sentinel.ALOG_MAX)
+
+    def test_설정에_자리가_있다(self):
+        from avatar import config as acfg, settings as aset
+        for k in ("alarmHoldMin", "alarmKeep"):
+            self.assertIn(k, acfg.DEFAULT_SETTINGS, k)
+            self.assertIn(k, aset.Settings.KEYS, k + " 가 저장이 안 된다")
+
+    def test_서버가_길을_열어_뒀다(self):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('path == "/api/alarms/csv"', src)
+        self.assertIn('op == "config"', src)
+        blk = src[src.index('if op == "config"'):src.index('if op == "config"') + 900]
+        self.assertIn("sentinel.HOLD_MIN = ", blk, "고쳐도 감시가 안 따른다")
+        self.assertIn("sentinel.ALOG_MAX = ", blk)
+
+    def test_화면에_설정과_내려받기가_있다(self):
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        for i in ("alogCfgBtn", "cfgHold", "cfgKeep", "cfgSave"):
+            self.assertIn('id="{}"'.format(i), html, i)
+        self.assertIn("CSV 내려받기", html)
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("/api/alarms/csv", js)
+        self.assertIn("op:'config'", js)
+
+
+class 모듈_이름을_가리지_않는다(unittest.TestCase):
+    """★sentinel 에 `def config(...)` 를 만들었더니 **모듈 config 를 가려서**
+    base_url() 이 관제 주소를 못 읽었다 — 기본 주소로 붙어 '연결 거부' 가 됐다.
+    한 줄짜리 이름 실수가 관제 연결을 통째로 끊는다."""
+
+    MODS = ("commands", "csvdata", "docs", "harness", "llm", "sentinel",
+            "sessions", "settings", "skills", "terms", "config")
+
+    def test_임포트한_모듈_이름으로_함수를_만들지_않는다(self):
+        import ast
+        bad = []
+        for fn in os.listdir(os.path.join(AV, "avatar")):
+            if not fn.endswith(".py"):
+                continue
+            path = os.path.join(AV, "avatar", fn)
+            with open(path, encoding="utf-8") as f:
+                tree = ast.parse(f.read(), fn)
+            imported = set()
+            for n in ast.walk(tree):
+                if isinstance(n, ast.ImportFrom):
+                    for a in n.names:
+                        imported.add(a.asname or a.name)
+                elif isinstance(n, ast.Import):
+                    for a in n.names:
+                        imported.add(a.asname or a.name.split(".")[0])
+            for n in tree.body:            # 모듈 최상위만 본다
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef)) and n.name in imported:
+                    bad.append("{}:{} {}".format(fn, n.lineno, n.name))
+        self.assertEqual(bad, [],
+                         "임포트한 모듈과 같은 이름을 덮어썼다: " + ", ".join(bad))
+
+    def test_관제_주소를_제대로_읽는다(self):
+        """가려졌을 때 실제로 깨지던 그 지점."""
+        from avatar import config as acfg
+        old = dict(acfg.SENTINEL)
+        try:
+            acfg.SENTINEL["url"] = "http://10.0.0.9:1234"
+            self.assertEqual(sentinel.base_url(), "http://10.0.0.9:1234")
+        finally:
+            acfg.SENTINEL.clear()
+            acfg.SENTINEL.update(old)
 
 
 class 설정_일치(unittest.TestCase):

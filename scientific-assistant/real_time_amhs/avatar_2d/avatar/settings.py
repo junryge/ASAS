@@ -9,7 +9,10 @@ _LOCK = threading.Lock()
 
 
 class Settings:
-    KEYS = ("docBudget", "ctxLimit", "keepMsgs", "temperature")
+    # alarmHoldMin/alarmKeep — 알람 기록 창의 [설정] 에서 고친다.
+    # ★코드에만 있으면 "왜 60분이나 안 꺼지냐" 를 아무도 못 고친다.
+    KEYS = ("docBudget", "ctxLimit", "keepMsgs", "temperature",
+            "alarmHoldMin", "alarmKeep")
     # ★문자열 설정은 숫자 변환을 타면 안 된다 (agentRules 는 프롬프트 본문)
     TEXT_KEYS = ("agentRules",)
 

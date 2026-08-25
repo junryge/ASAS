@@ -532,6 +532,7 @@ let sayMode='novel';    // novel|bubble|off
 let sayModeSet=false;   // 사용자가 칩을 눌러 직접 골랐나 (자동 저장과 구분)
 let alarmPos=null;      // FAB 알람 패널을 옮겨 둔 자리 {l,t} (null = 기본 우상단)
 let alogPos=null;       // 알람 기록 창을 옮겨 둔 자리 {l,t} (null = 가운데)
+let ALOG_CFG={hold_min:60, keep:500};   // 알람 동작 설정 (서버가 기억)
 let chartPos=null;      // 현재 상태 그래프를 옮겨 둔 자리 (null = 좌상단)
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
 let patchOn=false;      // 궁예 모드(안대)
@@ -1584,10 +1585,38 @@ async function openAlog(){
   if(window.SERVER){
     try{
       const r=await fetch('/api/alarms',{cache:'no-store'});
-      if(r.ok){ const j=await r.json(); ALOG = j.alarms||[]; }
+      if(r.ok){ const j=await r.json();
+                ALOG = j.alarms||[];
+                if(j.config) ALOG_CFG = j.config;   // 설정도 같이 받아 둔다
+                loadAlogCfg(); }
     }catch(e){}
   }
   renderAlog();
+}
+function loadAlogCfg(){
+  const h=$('#cfgHold'), k=$('#cfgKeep'), m=$('#cfgMsg');
+  if(h) h.value = ALOG_CFG.hold_min;
+  if(k) k.value = ALOG_CFG.keep;
+  if(m) m.textContent = window.SERVER
+    ? '기록 CSV: data/alarms.csv (사건마다 바로 쌓입니다)'
+    : 'run.py 서버로 실행해야 저장됩니다.';
+}
+async function saveAlogCfg(){
+  const m=$('#cfgMsg');
+  if(!window.SERVER){ if(m) m.textContent='run.py 서버로 실행해야 저장됩니다.'; return; }
+  const hold=parseInt($('#cfgHold').value,10), keep=parseInt($('#cfgKeep').value,10);
+  try{
+    const r=await fetch('/api/alarms',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({op:'config', hold_min:hold, keep:keep})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    ALOG_CFG=j.config||ALOG_CFG;
+    loadAlogCfg();
+    if(m) m.textContent='저장했습니다.';
+    sys('알람 설정 — 정상 복귀 후 관찰 '+ALOG_CFG.hold_min+'분 · 기록 보관 '
+        +ALOG_CFG.keep+'건');
+  }catch(e){ if(m) m.textContent='저장 실패: '+e.message; }
 }
 function renderAlog(){
   const b=$('#alogBody'); if(!b) return;
@@ -1622,14 +1651,25 @@ function renderAlog(){
     };
   });
 }
-function alogText(){
-  const L=['FAB\t날짜\t시간\t등급\t점수\t해제\t조치 내용'];
-  ALOG.filter(e=>e.kind!=='off').forEach(e=>{
+/* 서버 없이 HTML 만 열었을 때의 폴백 CSV. 칸은 서버(sentinel.CSV_COLS)와
+   같은 순서로 맞춘다 — 두 벌이 어긋나면 받는 사람이 헷갈린다. */
+const ALOG_COLS=['일시','날짜','시간','FAB영역','등급','스코어','종류',
+                 '이전등급','해제여부','해제시각','내용'];
+const ALOG_KIND={on:'발생', change:'등급변경', off:'해제', note:'내용기입'};
+function csvCell(v){
+  v = (v===null||v===undefined) ? '' : String(v);
+  return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+}
+function alogCsv(){
+  const L=[ALOG_COLS.join(',')];
+  ALOG.forEach(e=>{
     const f=alogFmt(e);
-    L.push([e.fab, f.d, f.t, e.level, (e.score==null?'':e.score),
-            (e.cleared?('해제 '+(e.cleared_at||'')):'미해제'), (e.note||'')].join('\t'));
+    L.push([e.t, f.d, f.t, e.fab, e.level, (e.score==null?'':e.score),
+            (ALOG_KIND[e.kind]||e.kind), e.prev,
+            (e.cleared?'해제':'미해제'), (e.cleared_at||''), (e.note||'')]
+           .map(csvCell).join(','));
   });
-  return L.join('\n');
+  return '\uFEFF'+L.join('\r\n')+'\r\n';
 }
 /* 기록 창도 끌어서 옮긴다 — 가운데 떠 있으면 캐릭터·대사창을 가린다.
    알람 패널과 같은 규칙: 머리를 잡고 끌고, 화면 밖으로는 못 나가고,
@@ -1717,9 +1757,25 @@ function applyAlogPos(tries){
   if(t) t.ondblclick = (e)=>{ e.stopPropagation(); openAlog(); };
   const c=$('#alogClose'); if(c) c.onclick = ()=> $('#alogWrap').classList.remove('on');
   const d=$('#alogDl');
-  if(d) d.onclick = ()=> downloadBlob('fab_알람기록.tsv', alogText(), 'text/tab-separated-values');
+  if(d) d.onclick = ()=> {
+    /* ★서버가 만든 CSV 를 받는다 — 화면이 다시 만들면 칸이 어긋난다.
+       서버가 없으면(HTML 단독) 화면 기록으로 만들어 준다. */
+    if(window.SERVER){ location.href='/api/alarms/csv'; return; }
+    downloadBlob('fab_알람기록.csv', alogCsv(), 'text/csv;charset=utf-8');
+  };
   const rs=$('#alogReset');
   if(rs) rs.onclick = ()=> resetAlarmPos();
+  /* ── 설정 — 알람 동작을 화면에서 고친다 ──────────────────────────
+     ★관찰 유지 60분이 코드에만 있으면 "왜 안 꺼지냐" 를 아무도 못 고친다.
+       서버가 기억하고(설정 파일) 감시 로직이 바로 따른다. */
+  const cb=$('#alogCfgBtn'), cw=$('#alogCfg');
+  if(cb && cw) cb.onclick = ()=>{
+    cw.classList.toggle('on');
+    cb.classList.toggle('on', cw.classList.contains('on'));
+    if(cw.classList.contains('on')) loadAlogCfg();
+  };
+  const sv=$('#cfgSave');
+  if(sv) sv.onclick = ()=> saveAlogCfg();
   document.addEventListener('keydown', e=>{
     if(e.key==='Escape') $('#alogWrap').classList.remove('on');
   });
@@ -2044,24 +2100,47 @@ function gnum(v){
 }
 const OPSYM={'<=':'≤','>=':'≥','diff10':'10분 +'};
 
+function chartBar(f, cuts, cls){
+  const sc=Math.max(0, Math.min(100, Number(f.score)||0));
+  const cut=[cuts.warn,cuts.danger,cuts.critical]
+    .filter(c=>isFinite(c))
+    .map(c=>`<i class="ccut" style="left:${Math.max(0,Math.min(100,c))}%"></i>`)
+    .join('');
+  const dl=(f.delta===null||f.delta===undefined) ? ''
+    : `<div class="cdelta">30분 ${f.delta>0?'+':''}${gnum(f.delta)}</div>`;
+  return `<div class="cbar ${cls||''} lv${esc(f.level)}">
+    <div class="cname" title="${esc(f.fab)}">${esc(f.fab)}</div>
+    <div class="ctrack"><div class="cfill" style="width:${sc}%"></div>${cut}</div>
+    <div class="cval"><span class="clv">${gnum(f.score)}</span>
+      <span style="color:var(--dim)">${esc(f.level)}</span>${dl}</div>
+  </div>`;
+}
 function chartBars(d){
   const cuts=d.cuts||{warn:60,danger:71,critical:85};
-  const L=['<div class="csec">FAB 위험도 (0~100 · 눈금 = 경계·위험·초위험)</div>'];
-  for(const f of (d.fabs||[])){
-    const sc=Math.max(0, Math.min(100, Number(f.score)||0));
-    const cut=[cuts.warn,cuts.danger,cuts.critical]
-      .filter(c=>isFinite(c))
-      .map(c=>`<i class="ccut" style="left:${Math.max(0,Math.min(100,c))}%"></i>`)
-      .join('');
-    const dl=(f.delta===null||f.delta===undefined) ? ''
-      : `<div class="cdelta">30분 ${f.delta>0?'+':''}${gnum(f.delta)}</div>`;
-    L.push(`<div class="cbar lv${esc(f.level)}">
-      <div class="cname" title="${esc(f.fab)}">${esc(f.fab)}</div>
-      <div class="ctrack"><div class="cfill" style="width:${sc}%"></div>${cut}</div>
-      <div class="cval"><span class="clv">${gnum(f.score)}</span>
-        <span style="color:var(--dim)">${esc(f.level)}</span>${dl}</div>
-    </div>`);
+  const L=[];
+  /* ★전체(ALL)가 빠져 있었다 (실제 지적) — 관제가 제일 먼저 보는 값이다.
+     단 **잰 것이 다르다**: FAB 은 자기 영역 점수를 편 값, ALL 은 영역합·흐름·
+     4분초과·분류기·용량변경을 융합한 값. 그래서 같은 줄에 섞지 않고 맨 위에
+     따로 세우고, 무엇을 잰 값인지 밑에 적는다. */
+  if(d.all){
+    const a=d.all;
+    L.push('<div class="csec">전체 (ALL) — 융합 점수</div>');
+    L.push(chartBar(a, cuts, 'callrow'));
+    const sub=[];
+    if(a.hot_area)   sub.push('최고구역 '+esc(a.hot_area));
+    if(a.stage_name) sub.push(esc(a.stage_name));
+    const fu=a.fuse||{};
+    if(fu.raw!==undefined && fu.raw!==null)
+      sub.push(`영역합 ${gnum(fu.areas)} + 흐름 ${gnum(fu.flow)} + 4분초과 ${gnum(fu.sla)}`
+               +` + 분류기 ${gnum(fu.sorter)} + 용량변경 ${gnum(fu.maxcapa)} = ${gnum(fu.raw)}`);
+    if(sub.length) L.push(`<div class="callsub">${sub.join(' · ')}</div>`);
   }
+  L.push('<div class="csec">FAB별 위험도 (0~100 · 눈금 = 경계·위험·초위험)</div>');
+  for(const f of (d.fabs||[])){
+    L.push(chartBar(f, cuts));
+  }
+  if(!(d.fabs||[]).length && !d.all)
+    L.push('<div class="cnote">그릴 값이 없습니다.</div>');
   return L.join('');
 }
 
@@ -2166,9 +2245,11 @@ async function loadChart(){
 function paintAlarmLive(d){
   const el=$('#alarmLive');
   if(!el) return;
-  if(!d || !d.ok || !(d.fabs||[]).length){ el.classList.remove('on'); return; }
-  const L=(d.fabs||[]).slice(0,6).map(f=>
-    `<span class="f${esc(f.level)}">${esc(f.fab)} <b>${gnum(f.score)}</b></span>`);
+  if(!d || !d.ok || (!(d.fabs||[]).length && !d.all)){ el.classList.remove('on'); return; }
+  /* ★ALL 을 맨 앞에 — 관제가 제일 먼저 보는 값인데 빠져 있었다 */
+  const items=(d.all ? [d.all] : []).concat((d.fabs||[]).slice(0,6));
+  const L=items.map(f=>
+    `<span class="f${esc(f.level)}${f.is_all?' fall':''}">${esc(f.fab)} <b>${gnum(f.score)}</b></span>`);
   if(d.warn) L.push(`<span class="stale">⛔ 오늘 수집 없음 · ${esc(d.day||'')} 자료</span>`);
   else if(d.stale) L.push(`<span class="stale">⚠ ${esc(d.age_text||'')} 값</span>`);
   else if(d.at) L.push(`<span style="width:100%">데이터 ${esc(d.at)}</span>`);

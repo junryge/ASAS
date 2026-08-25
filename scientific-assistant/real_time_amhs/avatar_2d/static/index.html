@@ -36,8 +36,18 @@
         <b>FAB 알람 기록</b>
         <span class="hint" id="alogStat"></span>
         <span class="vnBtn" id="alogReset" title="알람 패널을 원래 자리로">패널 원위치</span>
-        <span class="vnBtn" id="alogDl">내려받기</span>
+        <span class="vnBtn" id="alogCfgBtn" title="관찰 유지 시간·기록 보관 건수">설정</span>
+        <span class="vnBtn" id="alogDl" title="지금 기록을 CSV 로 (엑셀에서 바로 열림)">CSV 내려받기</span>
         <span class="vnBtn" id="alogClose">✕</span>
+      </div>
+      <!-- 설정 — [설정] 을 누르면 열린다. 서버가 기억하고 바로 적용된다. -->
+      <div id="alogCfg">
+        <label>정상 복귀 후 관찰
+          <input type="number" id="cfgHold" min="0" max="1440" step="5"> 분</label>
+        <label>기록 보관
+          <input type="number" id="cfgKeep" min="10" max="5000" step="10"> 건</label>
+        <button id="cfgSave">저장</button>
+        <span class="hint" id="cfgMsg"></span>
       </div>
       <div id="alogBody"></div>
     </div>
