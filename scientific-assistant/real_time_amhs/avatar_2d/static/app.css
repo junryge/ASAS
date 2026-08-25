@@ -102,6 +102,63 @@
   #alogBody td.lv{font-weight:700}
   #alogBody td.lv.경계{color:#e8c14a} #alogBody td.lv.위험{color:#ff7a3d}
   #alogBody td.lv.초위험{color:#ff2b3d} #alogBody td.lv.정상{color:#4ec9a0}
+
+  /* ── 현재 상태 그래프 ──────────────────────────────────────────────
+     표로 읽던 것을 눈으로 본다.
+     ★자리: 좌상단. 아래(대사창 #vn)는 bottom:0 에 34vh 까지 커지고, 우상단은
+       알람 패널이 쓴다 — 좌하단에 두니 대사창에 절반이 먹혔다 (실제로 확인).
+     ★z-index 10: 대사창(8) 위. 단 알람(9)보다 위인 건 의도적이다 — 이 상자는
+       사용자가 직접 연 것이고 ✕ 로 바로 닫힌다. 알람은 상자를 닫으면 보인다. */
+  #chartWrap{position:absolute;left:12px;top:12px;z-index:10;display:none;
+    flex-direction:column;width:min(400px,46%);max-height:calc(100% - 24px);
+    border-radius:12px;overflow:hidden;background:rgba(14,19,28,.90);
+    border:1px solid var(--line);box-shadow:0 14px 40px rgba(0,0,0,.5);
+    color:#e9eef6;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  #chartWrap.on{display:flex}
+  #chartHead{display:flex;align-items:center;gap:8px;padding:8px 11px;
+    border-bottom:1px solid var(--line);font-size:12.5px}
+  #chartHead .hint{margin:0;flex:1;font-size:10.5px}
+  #chartHead .vnBtn.on{color:#8fd0ff;border-color:rgba(143,208,255,.6)}
+  #chartBody{overflow:auto;padding:9px 11px 12px;font-size:11.5px}
+  #chartBody .csec{color:var(--dim);font-size:10.5px;letter-spacing:.03em;
+    margin:9px 0 5px}
+  #chartBody .csec:first-child{margin-top:0}
+  /* FAB 점수 막대 — 축은 0..100 고정. 컷(경계/위험/초위험) 눈금을 겹쳐 둔다 */
+  .cbar{display:grid;grid-template-columns:52px 1fr 62px;align-items:center;
+    gap:7px;margin:3px 0}
+  .cbar .cname{color:#c9d3e0;font-size:11px;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .cbar .ctrack{position:relative;height:13px;border-radius:4px;
+    background:rgba(255,255,255,.07);overflow:hidden}
+  .cbar .cfill{position:absolute;left:0;top:0;bottom:0;border-radius:4px;
+    background:rgb(var(--cC,78,201,160));transition:width .3s}
+  .cbar .ccut{position:absolute;top:0;bottom:0;width:1px;
+    background:rgba(255,255,255,.34)}
+  .cbar .cval{text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
+  .cbar .clv{font-weight:700}
+  .cbar .cdelta{color:var(--dim);font-size:10px}
+  .lv정상{--cC:78,201,160;color:#4ec9a0} .lv경계{--cC:232,193,74;color:#e8c14a}
+  .lv위험{--cC:255,122,61;color:#ff7a3d} .lv초위험{--cC:255,43,61;color:#ff2b3d}
+  /* 실제 컬럼 — 임계 대비 실측. 축은 그 줄의 max(값, 임계) 라 줄마다 다르다 */
+  .cread{margin:5px 0}
+  .cread .crow{display:flex;justify-content:space-between;gap:8px;
+    font-size:10.5px;color:#c9d3e0}
+  .cread .camos{color:var(--dim);font-size:9.5px;font-family:ui-monospace,
+    SFMono-Regular,Menlo,monospace;word-break:break-all}
+  .cread .ctrack{position:relative;height:8px;border-radius:3px;margin-top:2px;
+    background:rgba(255,255,255,.07);overflow:hidden}
+  .cread .cfill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;
+    background:rgba(120,190,255,.75)}
+  .cread.over .cfill{background:rgba(255,122,61,.9)}
+  .cread .cthr{position:absolute;top:-2px;bottom:-2px;width:2px;
+    background:rgba(255,255,255,.7)}
+  .cread.novalue .ctrack{background:repeating-linear-gradient(45deg,
+    rgba(255,255,255,.05) 0 5px,rgba(255,255,255,.10) 5px 10px)}
+  /* 최근 추이 — 화면을 켠 뒤 모은 점수 (관제가 주는 과거치가 아니다) */
+  #chartBody .ctrend{width:100%;height:44px;display:block}
+  #chartBody .cnote{color:var(--dim);font-size:10px;margin-top:7px;
+    line-height:1.5}
+  body.mini #chartWrap{display:none!important}   /* 소형창에는 자리가 없다 */
   #alogBody .noteIn{width:100%;padding:3px 6px;border-radius:6px;font-size:11px;
     background:#101620;border:1px solid var(--line);color:var(--fg)}
   #alogBody tr.open{background:rgba(255,122,61,.07)}
@@ -137,6 +194,9 @@
   /* 끌어서 옮긴다 — 화면 어디를 가리든 사용자가 치울 수 있어야 한다 */
   #alarmHead{cursor:grab}
   #alarmBox.dragging{opacity:1;cursor:grabbing;transition:none}
+  /* 제자리로 돌린 직후 — '어디로 갔는지' 를 잠깐 보여 준다 */
+  #alarmBox.found{opacity:1;background:rgba(15,20,29,.92);
+    border-color:rgba(120,190,255,.85);box-shadow:0 0 0 3px rgba(120,190,255,.28)}
   #alarmBox.dragging #alarmHead{cursor:grabbing}
   /* 경계 이상이면 원래대로 또렷하게 (여기서만 눈을 끈다) */
   #alarmBox.on{opacity:1;background:rgba(15,20,29,.88);color:#e9eef6;

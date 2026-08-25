@@ -582,8 +582,17 @@ const SESS_KEY = 'avatar2d.sessions.v1';   // 사용처보다 먼저 선언 (TDZ
 let SRV_CTX=null, ctxFetchTimer=null;      // 서버 컨텍스트 계측 캐시 (TDZ 방지: 상단 선언)
 let sessPushTimer=null, setSrvTimer=null;  // 서버 저장 디바운스 타이머
 const SESS_MAX = 30;
-const CTX_COLORS = {persona:'#d94a5a', docs:'#5aa9d9', rules:'#8f93b5', history:'#4ec9a0', input:'#e0a45c'};
-const CTX_LABEL  = {persona:'페르소나', docs:'참고 자료', rules:'출력 규칙', history:'대화 기록', input:'입력'};
+/* 서버가 주는 칸 목록 — computeCtx·renderCtx 가 같은 것을 봐야 한다 */
+const KEYS_ALL=['persona','rules','evidence','attach','skills','docs',
+                'history','input'];
+/* ★칸이 프롬프트에 실리는 순서 그대로다. 예전엔 스킬·근거·첨부 칸이
+   아예 없어서, 실려 있는데도 화면에서는 '없는 것' 으로 보였다. */
+const CTX_COLORS = {persona:'#d94a5a', rules:'#8f93b5', evidence:'#e05c8a',
+  attach:'#c07de0', skills:'#e8c14a', docs:'#5aa9d9', history:'#4ec9a0',
+  input:'#e0a45c'};
+const CTX_LABEL  = {persona:'페르소나', rules:'에이전트 규칙', evidence:'관제 근거',
+  attach:'첨부 파일', skills:'스킬', docs:'참고 자료', history:'대화 기록',
+  input:'입력'};
 let personaBackup='';   // 궁예 모드 진입 전 페르소나 보관
 let blinkT=1.2, blinkPhase=0, blinkOne=-1;
 let gaze=[0,0], gazeT=[0,0], gazeTimer=1.5;
@@ -1259,6 +1268,8 @@ refreshDocsUI();
     $('#badgeChip').classList.toggle('on', badgeOn);
     saveSettings();
   };
+  /* FAB 알람 패널을 잃어버렸을 때의 유일하게 확실한 길 */
+  const ac=$('#alarmChip'); if(ac) ac.onclick=()=> resetAlarmPos();
 })();
 
 /* ---------- 세션 ---------- */
@@ -1662,12 +1673,40 @@ function alogText(){
     box.style.left=''; box.style.top=''; box.style.transform='';
     alogPos=null; saveSettings();
   });
+  /* 창을 줄이면 옮겨 둔 자리가 화면 밖이 된다 — 알람 패널과 같은 규칙 */
+  window.addEventListener('resize', ()=>{
+    if(!alogPos) return;
+    place(parseFloat(box.style.left)||0, parseFloat(box.style.top)||0);
+  });
 })();
 
-function applyAlogPos(){
+/* ★옮겨 둔 자리를 그대로 되살리면 **패널이 사라진다.**
+   #stageWrap 은 overflow:hidden 이라 화면 밖 좌표면 통째로 잘린다.
+   설정은 서버에 저장돼 PC 사이를 오간다 — 넓은 화면에서 오른쪽 끝에
+   옮겨 둔 자리가 좁은 화면으로 넘어오면 바로 그 꼴이 난다 (실제 증상).
+   되살릴 때마다 화면 안으로 당긴다. 레이아웃 전이면 크기를 못 재니
+   다음 프레임에 다시 시도한다(몇 번만 — 숨어 있는 창은 영영 0 이다). */
+function clampInWrap(box, l, t){
+  const wrap=$('#stageWrap');
+  if(!wrap) return null;
+  const w=wrap.getBoundingClientRect(), b=box.getBoundingClientRect();
+  if(!w.width || !b.width) return null;              // 아직 못 잼
+  return {l: Math.max(4, Math.min(l, w.width  - b.width  - 4)),
+          t: Math.max(4, Math.min(t, w.height - b.height - 4))};
+}
+function retryLater(fn, n){
+  if(n <= 0) return;
+  requestAnimationFrame(()=> fn(n - 1));
+}
+
+function applyAlogPos(tries){
   const box=$('#alogWrap');
   if(!box || !alogPos) return;
   box.style.left=alogPos.l; box.style.top=alogPos.t; box.style.transform='none';
+  const c = clampInWrap(box, parseFloat(alogPos.l)||0, parseFloat(alogPos.t)||0);
+  if(!c){ retryLater(applyAlogPos, tries===undefined?8:tries); return; }
+  box.style.left=c.l+'px'; box.style.top=c.t+'px';
+  alogPos={l:box.style.left, t:box.style.top};
 }
 
 (function initAlog(){
@@ -1677,12 +1716,7 @@ function applyAlogPos(){
   const d=$('#alogDl');
   if(d) d.onclick = ()=> downloadBlob('fab_알람기록.tsv', alogText(), 'text/tab-separated-values');
   const rs=$('#alogReset');
-  if(rs) rs.onclick = ()=>{
-    const box=$('#alarmBox');
-    box.style.left=''; box.style.top=''; box.style.right=''; box.style.bottom='';
-    alarmPos=null; saveSettings();
-    sys('FAB 알람 패널을 제자리로 돌렸습니다.');
-  };
+  if(rs) rs.onclick = ()=> resetAlarmPos();
   document.addEventListener('keydown', e=>{
     if(e.key==='Escape') $('#alogWrap').classList.remove('on');
   });
@@ -1740,11 +1774,29 @@ function applyAlogPos(){
   applyAlarmPos();
 })();
 
-function applyAlarmPos(){
+function applyAlarmPos(tries){
   const box=$('#alarmBox');
   if(!box || !alarmPos) return;
   box.style.left=alarmPos.l; box.style.top=alarmPos.t;
   box.style.right='auto'; box.style.bottom='auto';
+  const c = clampInWrap(box, parseFloat(alarmPos.l)||0, parseFloat(alarmPos.t)||0);
+  if(!c){ retryLater(applyAlarmPos, tries===undefined?8:tries); return; }
+  box.style.left=c.l+'px'; box.style.top=c.t+'px';
+  alarmPos={l:box.style.left, t:box.style.top};
+}
+
+/* 제자리로 — 패널이 안 보일 때 되찾는 길. ★기존 되돌리기 버튼은
+   '알람 기록' 창 안에 있고, 그 창은 알람 제목을 두 번 눌러야 열린다.
+   패널이 안 보이면 제목도 못 누른다 — 되찾을 길이 막혀 있었다.
+   그래서 HUD [표시] 에 칩을 뒀다 (패널과 상관없이 늘 눌린다). */
+function resetAlarmPos(quiet){
+  const box=$('#alarmBox');
+  if(!box) return;
+  box.style.left=''; box.style.top=''; box.style.right=''; box.style.bottom='';
+  alarmPos=null; saveSettings();
+  box.classList.add('found');                       // 어디로 갔는지 잠깐 보여 준다
+  setTimeout(()=> box.classList.remove('found'), 1600);
+  if(!quiet) sys('FAB 알람 패널을 제자리(우상단)로 돌렸습니다.');
 }
 
 /* ---------- 미니 모드 (소형 하단 위젯) ----------
@@ -1968,6 +2020,175 @@ const SdRunner = (function(){
    ★관제가 끊기면 '끊겼다' 고 말한다 — 조용히 정상인 척하는 게 최악이다.
    ★실데이터 알람(src='real')만 자동 해제한다. 테스트 알람은 사람이 끈다. */
 let sentinelDown = null;      // null=아직 모름, true/false=상태
+/* ═══════════ 현재 상태 그래프 ═════════════════════════════════════════
+   "현재 상태 물어보면 데이터와 따로 화면에 그래프도 같이" — 요청 그대로다.
+   · FAB 점수 막대: 축 0..100 고정 + 등급 컷(경계/위험/초위험) 눈금.
+     축을 값에 맞춰 늘리면 10점짜리도 꽉 차 보인다 — 그러면 그래프가 거짓말을 한다.
+   · 실제 컬럼: AMOS 컬럼 이름 · 임계 · 그 1분 실측값. 줄마다 축이 다르므로
+     (분 · % · 개수가 섞인다) 임계선을 같이 그린다.
+   · 값이 안 오는 조건은 0 이 아니라 **빗금**으로 — 0 으로 그리면 '멀쩡하다'
+     로 읽힌다 (실제로 R-D 조건 일부가 CSV 에 안 실려 온다).
+   그리는 데 쓰는 숫자는 전부 /api/fab/chart 가 준 것이다 — 화면이 만들어
+   내는 값은 없다. */
+let chartOn=false, chartPin=false, chartData=null;
+const chartTrend=[];            // [{t, top}] — 패널을 연 뒤 모은 것만
+const CHART_TREND_MAX=90;
+
+function gnum(v){
+  if(v===null || v===undefined || !isFinite(v)) return '—';
+  const n=Number(v);
+  return Number.isInteger(n) ? String(n) : String(Math.round(n*100)/100);
+}
+const OPSYM={'<=':'≤','>=':'≥','diff10':'10분 +'};
+
+function chartBars(d){
+  const cuts=d.cuts||{warn:60,danger:71,critical:85};
+  const L=['<div class="csec">FAB 위험도 (0~100 · 눈금 = 경계·위험·초위험)</div>'];
+  for(const f of (d.fabs||[])){
+    const sc=Math.max(0, Math.min(100, Number(f.score)||0));
+    const cut=[cuts.warn,cuts.danger,cuts.critical]
+      .filter(c=>isFinite(c))
+      .map(c=>`<i class="ccut" style="left:${Math.max(0,Math.min(100,c))}%"></i>`)
+      .join('');
+    const dl=(f.delta===null||f.delta===undefined) ? ''
+      : `<div class="cdelta">30분 ${f.delta>0?'+':''}${gnum(f.delta)}</div>`;
+    L.push(`<div class="cbar lv${esc(f.level)}">
+      <div class="cname" title="${esc(f.fab)}">${esc(f.fab)}</div>
+      <div class="ctrack"><div class="cfill" style="width:${sc}%"></div>${cut}</div>
+      <div class="cval"><span class="clv">${gnum(f.score)}</span>
+        <span style="color:var(--dim)">${esc(f.level)}</span>${dl}</div>
+    </div>`);
+  }
+  return L.join('');
+}
+
+function chartReads(d){
+  /* 경계 이상인 FAB 의 실제 컬럼을 보여 준다. 전부 정상이면 가장 높은 FAB 것.
+     ★모든 FAB 의 모든 조건을 늘어놓으면 그래프가 아니라 표가 된다. */
+  const bad=(d.fabs||[]).filter(f=>f.level && f.level!=='정상');
+  const pick=(bad.length?bad:(d.fabs||[]).slice(0,1)).slice(0,2);
+  const L=[];
+  for(const f of pick){
+    const rs=(f.readings||[]).filter(r=>r.thr!==null && r.thr!==undefined);
+    if(!rs.length) continue;
+    const fired=(f.fired||[]).length ? ' · '+esc((f.fired||[]).join(', ')) : '';
+    L.push(`<div class="csec">${esc(f.fab)} 실제 컬럼 — 임계 대비 실측${fired}</div>`);
+    for(const r of rs){
+      const thr=Number(r.thr), val=r.has_value?Number(r.value):null;
+      const scale=Math.max(thr, val===null?0:val) || 1;
+      const w=val===null ? 0 : Math.max(0, Math.min(100, val/scale*100));
+      const tp=Math.max(0, Math.min(100, thr/scale*100));
+      const cls='cread'+(r.over?' over':'')+(val===null?' novalue':'');
+      L.push(`<div class="${cls}">
+        <div class="crow"><span>${esc(r.label||'')}</span>
+          <span>${val===null?'값 없음':gnum(val)+esc(r.unit||'')}
+            <span style="color:var(--dim)">/ ${OPSYM[r.op]||'≥'}${gnum(thr)}${esc(r.unit||'')}</span>
+          </span></div>
+        <div class="ctrack"><div class="cfill" style="width:${w}%"></div>
+          <i class="cthr" style="left:${tp}%"></i></div>
+        ${r.amos?`<div class="camos">${esc(r.amos)}</div>`:''}
+      </div>`);
+    }
+  }
+  return L.join('');
+}
+
+function chartTrendSvg(){
+  if(chartTrend.length < 2) return '';
+  const W=360, H=44, n=chartTrend.length;
+  const pts=chartTrend.map((p,i)=>{
+    const x=(n===1?0:i/(n-1))*W;
+    const y=H - Math.max(0, Math.min(100, p.top))/100*H;
+    return `${Math.round(x*10)/10},${Math.round(y*10)/10}`;
+  }).join(' ');
+  return `<div class="csec">최고 점수 추이 — 이 패널을 연 뒤 ${n}회</div>
+    <svg class="ctrend" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+         role="img" aria-label="최고 점수 추이">
+      <polyline points="${pts}" fill="none" stroke="rgba(120,190,255,.9)"
+        stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    </svg>`;
+}
+
+function renderChart(){
+  const body=$('#chartBody'), at=$('#chartAt');
+  if(!body) return;
+  const d=chartData;
+  if(!d){ body.innerHTML='<p class="cnote">불러오는 중…</p>'; return; }
+  if(!d.ok){
+    if(at) at.textContent='';
+    /* ★관제가 죽었으면 빈 그래프를 그리면 안 된다 — 0 점 막대는 '정상' 으로
+       읽힌다. 못 본다고 말한다. */
+    body.innerHTML=`<p class="cnote">관제 데이터를 못 읽었습니다 — ${esc(d.err||'연결 실패')}<br>
+      그래프는 데이터가 있을 때만 그립니다 (0 점으로 그리면 정상으로 보입니다).</p>`;
+    return;
+  }
+  if(at) at.textContent=(d.at||'')+(d.age_text?' · '+d.age_text:'')
+    +(d.live?' · 실시간':'');
+  const note=[];
+  /* ★"40780분 전" 은 사람이 못 읽는다 (실제 지적) — 서버가 '28일 3시간 전'
+     으로 만들어 준다. 하루가 넘으면 그건 실시간이 아니라 멈춘 수집이다. */
+  if(d.stale) note.push('⚠ 지금 값이 아닙니다 — <b>'+esc(d.age_text||'')+'</b> 값입니다.'
+    +(d.age_min>1440?'<br>관제 수집이 멈춘 것으로 보입니다 (real_time_amhs 서버의 [수집] 로그를 확인하세요).':''));
+  if((d.blind||[]).length) note.push('값이 안 오는 영역: '+esc(d.blind.join(', ')));
+  note.push('빗금 = CSV 에 값이 안 오는 조건 (0 이 아닙니다). 흰 눈금 = 임계.');
+  body.innerHTML = chartBars(d) + chartReads(d) + chartTrendSvg()
+    + `<p class="cnote">${note.join('<br>')}</p>`;
+}
+
+async function loadChart(){
+  if(!window.SERVER){ chartData={ok:false, err:'서버(run.py)로 실행해야 합니다'};
+                      renderChart(); return; }
+  try{
+    const r=await fetch('/api/fab/chart', {cache:'no-store'});
+    chartData=await r.json();
+  }catch(e){ chartData={ok:false, err:e.message}; }
+  if(chartData && chartData.ok){
+    const top=Math.max(0, ...(chartData.fabs||[]).map(f=>Number(f.score)||0));
+    const last=chartTrend[chartTrend.length-1];
+    if(!last || last.t!==chartData.at){        // 같은 1분 값을 두 번 안 쌓는다
+      chartTrend.push({t:chartData.at, top});
+      if(chartTrend.length>CHART_TREND_MAX) chartTrend.shift();
+    }
+  }
+  renderChart();
+}
+
+function openChart(){
+  const w=$('#chartWrap'); if(!w) return;
+  chartOn=true; w.classList.add('on');
+  const c=$('#chartChip'); if(c) c.classList.add('on');
+  loadChart();
+}
+function closeChart(){
+  const w=$('#chartWrap'); if(!w) return;
+  chartOn=false; w.classList.remove('on');
+  const c=$('#chartChip'); if(c) c.classList.remove('on');
+}
+/* 현재 상태를 물었나 — 물었으면 대답과 같이 그래프를 띄운다.
+   ★과거를 물은 것(어제·8월 3일…)에는 안 띄운다. 그래프는 '지금' 이라서,
+     어제 얘기 옆에 지금 그래프를 띄우면 그게 어제 것으로 읽힌다. */
+const STATUS_ASK=/현재|지금|실시간|상태|현황|어때|점수|위험도|등급|알람/;
+const PAST_ASK=/어제|그제|그저께|\d+월\s*\d+일|20\d{2}[-./]\d{1,2}[-./]\d{1,2}|첨부|파일/;
+function maybeOpenChart(text){
+  const t=String(text||'');
+  if(PAST_ASK.test(t) || !STATUS_ASK.test(t)){
+    /* 지금 얘기가 아니면 치운다 — 어제 얘기 옆에 남아 있으면 그게 어제
+       그래프로 읽힌다. [고정] 을 눌러 뒀으면 그대로 둔다. */
+    if(chartOn && !chartPin) closeChart();
+    return;
+  }
+  openChart();
+}
+
+(function initChart(){
+  const c=$('#chartChip');
+  if(c) c.onclick=()=> chartOn ? closeChart() : openChart();
+  const x=$('#chartClose'); if(x) x.onclick=()=>{ chartPin=false;
+    const p=$('#chartPin'); if(p) p.classList.remove('on'); closeChart(); };
+  const p=$('#chartPin');
+  if(p) p.onclick=()=>{ chartPin=!chartPin; p.classList.toggle('on', chartPin); };
+})();
+
 async function pollSentinel(){
   if(!window.SERVER) return;
   let s;
@@ -1993,6 +2214,7 @@ async function pollSentinel(){
        섞이면 어느 쪽인지 모른다. 관제가 끊기면 다시 보여 준다. */
     const tb=$('#alarmTest'); if(tb) tb.style.display='none';
   }
+  if(chartOn) loadChart();          // 열려 있는 동안만 — 닫혀 있으면 안 부른다
   const worst = (s.alarms||[])[0];
   if(worst){
     const f = FABS.find(x=>x.key===worst.fab)
@@ -3031,37 +3253,39 @@ function scheduleCtxFetch(){
     try{
       const r=await fetch('/api/ctx',{method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({q:$('#say').value,
+        /* ★첨부도 같이 보낸다 — 대화는 첨부를 싣는데 계측만 빼면
+           화면이 실제보다 작게 나온다 */
+        body:JSON.stringify({q:$('#say').value, attach:pendingAttach||'',
           persona:$('#persona').value, history:history.slice(-keepMsgs)})});
       if(r.ok) SRV_CTX=await r.json();
     }catch(e){}
   }, 500);
 }
 
+/* ★두 갈래(서버 계측 / 서버 없을 때의 근사)가 **같은 모양**을 내놓아야 한다.
+   칸이 하나라도 없으면 그리는 쪽에서 c[k].toLocaleString() 이 터지고,
+   그 순간 renderCtx 뒤가 통째로 안 돈다 — 실제로 그렇게 화면이 죽었다.
+   총합도 KEYS_ALL 전체로 더한다. 예전엔 5칸만 더해서, 스킬·근거·첨부가
+   실려 있어도 합계에 안 잡혔다. */
+function ctxShape(seg){
+  const N=v=>Number.isFinite(Number(v))?Number(v):0;
+  const out={};
+  for(const k of KEYS_ALL) out[k]=N(seg[k]);
+  out.total = KEYS_ALL.reduce((s,k)=>s+out[k], 0);
+  out.limit = ctxLimit;
+  out.pct   = Math.min(999, Math.round(out.total/Math.max(1,ctxLimit)*100));
+  return out;
+}
 function computeCtx(userText){
-  if(SRV_CTX){
-    const seg={...SRV_CTX};
-    seg.input = estTokens(userText||'');
-    seg.total = seg.persona+seg.docs+seg.rules+seg.history+seg.input;
-    seg.limit = ctxLimit;
-    seg.pct   = Math.min(999, Math.round(seg.total/Math.max(1,ctxLimit)*100));
-    return seg;
-  }
-  /* 서버가 없을 때의 로컬 근사 (자료는 서버 전용이라 0) */
-  const persona = $('#persona').value.trim();
-  const rules   = "출력 규칙: 반드시 JSON 객체 하나만 출력한다. 키 순서는 emotion, intensity, motion, text";
-  const hist    = history.slice(-keepMsgs).map(m=>m.content).join('\n');
-  const seg = {
-    persona: estTokens(persona),
-    docs:    0,
+  if(SRV_CTX) return ctxShape({...SRV_CTX, input:estTokens(userText||'')});
+  /* 서버가 없을 때의 로컬 근사 (자료·스킬·근거는 서버 전용이라 0) */
+  const rules = "출력 규칙: 반드시 JSON 객체 하나만 출력한다. 키 순서는 emotion, intensity, motion, text";
+  return ctxShape({
+    persona: estTokens($('#persona').value.trim()),
     rules:   estTokens(rules) + 40,
-    history: estTokens(hist),
+    history: estTokens(history.slice(-keepMsgs).map(m=>m.content).join('\n')),
     input:   estTokens(userText||''),
-  };
-  seg.total = seg.persona+seg.docs+seg.rules+seg.history+seg.input;
-  seg.limit = ctxLimit;
-  seg.pct   = Math.min(999, Math.round(seg.total/Math.max(1,ctxLimit)*100));
-  return seg;
+  });
 }
 
 function renderCtx(){
@@ -3077,7 +3301,7 @@ function renderCtx(){
   const tg=$('#ctxToggle');
   if(tg) tg.className = c.pct>90 ? 'over' : c.pct>70 ? 'warn' : '';
 
-  const KEYS=['persona','docs','rules','history','input'];
+  const KEYS=KEYS_ALL;   // 한 곳에서만 정한다
   const paint=(bar,tbl,sum,sumCls)=>{
     if(!bar) return;
     bar.innerHTML='';
@@ -3086,7 +3310,7 @@ function renderCtx(){
       const d=document.createElement('div');
       d.style.width = (c[k]/Math.max(c.limit,c.total)*100)+'%';
       d.style.background = CTX_COLORS[k];
-      d.title = CTX_LABEL[k]+' '+c[k].toLocaleString()+' 토큰';
+      d.title = CTX_LABEL[k]+' '+(c[k]||0).toLocaleString()+' 토큰';
       bar.appendChild(d);
     });
     tbl.innerHTML='';
@@ -3094,7 +3318,7 @@ function renderCtx(){
       const r=document.createElement('div'); r.className='ctxRow';
       r.innerHTML = '<i style="background:'+CTX_COLORS[k]+'"></i>'
         + '<span>'+CTX_LABEL[k]+'</span>'
-        + '<b>'+c[k].toLocaleString()+'</b>'
+        + '<b>'+(c[k]||0).toLocaleString()+'</b>'
         + '<em>'+(c.total? Math.round(c[k]/c.total*100):0)+'%</em>';
       tbl.appendChild(r);
     });
@@ -3336,7 +3560,11 @@ async function send(){
     history.push({role:'user',content:text});
     history.push({role:'assistant',content:JSON.stringify(r)});
     setEmotion(r.emotion, r.intensity, r.motion);
-    push('ai', r.text, `${EMO[r.emotion].ko} · ${Math.round(r.intensity*100)}% · ${MOTION[r.motion].ko}`, r);
+    /* ★"저 앞 알 수 없는 값은 뭐냐" — 실제 지적. '부끄 · 80% · 없음' 만
+       적혀 있으니 관제 수치로 읽힌다. 무엇인지 밝혀 적는다. */
+    push('ai', r.text, `표정 ${EMO[r.emotion].ko} · 세기 ${Math.round(r.intensity*100)}% · 동작 ${MOTION[r.motion].ko}`, r);
+    /* 현재 상태를 물었으면 대답 옆에 그래프도 — 요청 그대로 */
+    maybeOpenChart(text);
     if(!useStream) speak(briefFor(r.text), r.text);  // 말풍선은 요약 · 노벨은 전문
   }catch(e){
     setEmotion('fear',0.8,'shiver');

@@ -235,6 +235,10 @@ class Handler(SimpleHTTPRequestHandler):
             # 브라우저 알람 폴링. 서버 캐시 5초라 관제 서버엔 그 주기로만 간다.
             return self._json(200, sentinel.watch())
 
+        if path == "/api/fab/chart":
+            # 화면 그래프 — 점수 막대 + 실제 컬럼의 임계 대비 실측값
+            return self._json(200, sentinel.chart())
+
         if path == "/api/fab/diagnose":
             d = sentinel.diagnose()
             d["text"] = sentinel.diagnose_text()
@@ -416,22 +420,37 @@ class Handler(SimpleHTTPRequestHandler):
 
     # ── 컨텍스트 계측 ────────────────────────────────────────────────────
     def _api_ctx(self, b):
+        """컨텍스트 사용량 — ★대화가 실제로 쓰는 조립기로 잰다.
+
+        예전엔 여기서 따로 계산했다. 그래서 **스킬은 아예 안 세고**(0),
+        참고 자료는 스킬과 겹친 문단을 빼기 전 값이라, 화면 숫자가 실제로
+        실리는 양과 달랐다 — "참고자료 MD 가 왜 등록이 안 되어 있지?" 가
+        그 증상이다. 자료는 들어가고 있었는데 화면이 못 세고 있었다.
+        """
         st = App.settings.all()
         persona = str(b.get("persona", ""))
         q = str(b.get("q", ""))
         hist = b.get("history") or []
-        keep = int(st.get("keepMsgs", 12))
-        hist_txt = "\n".join(str(m.get("content", "")) for m in hist[-keep:]
-                             if isinstance(m, dict))
-        seg = {
-            "persona": docs.est_tokens(persona.strip()),
-            "docs": docs.est_tokens(
-                App.doc_store.context(q, int(st.get("docBudget", 6000)))),
-            "rules": docs.est_tokens(llm.RULES_TEXT) + 40,
-            "history": docs.est_tokens(hist_txt),
-            "input": docs.est_tokens(q),
-        }
-        seg["total"] = sum(seg.values())
+
+        # 대화와 같은 재료 — 근거·첨부까지 그대로 (없으면 없는 대로)
+        ev_text = ""
+        if llm.is_data_question(q):
+            ev = sentinel.evidence()
+            ev_text = ev["text"] if ev["ok"] else ""
+        attach = None
+        aname = str(b.get("attach") or "").strip()
+        if aname:
+            up = self._upload_of(aname)
+            if up is not None:
+                attach = (aname, up["summary"])
+            else:
+                body = App.doc_store.get(aname)
+                if body is not None:
+                    attach = (aname, body)
+
+        seg = llm.measure(persona, q, hist, App.doc_store, st,
+                          skill_store=App.skill_store,
+                          evidence_text=ev_text, attach=attach)
         seg["limit"] = int(st.get("ctxLimit", 32768))
         seg["pct"] = min(999, round(seg["total"] / max(1, seg["limit"]) * 100))
         return self._json(200, seg)

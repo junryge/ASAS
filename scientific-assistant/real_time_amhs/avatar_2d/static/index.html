@@ -41,6 +41,17 @@
       </div>
       <div id="alogBody"></div>
     </div>
+    <!-- 현재 상태 그래프 — 점수 막대 + 실제 AMOS 컬럼의 임계 대비 실측값.
+         '현재 상태' 를 물으면 대답과 같이 자동으로 열린다. -->
+    <div id="chartWrap">
+      <div id="chartHead">
+        <b>현재 상태</b>
+        <span class="hint" id="chartAt"></span>
+        <span class="vnBtn" id="chartPin" title="계속 열어 둡니다">고정</span>
+        <span class="vnBtn" id="chartClose">✕</span>
+      </div>
+      <div id="chartBody"></div>
+    </div>
     <div id="alarmBox">
       <div id="alarmHead">
         <span id="alarmDot"></span>
@@ -93,6 +104,8 @@
             <div class="chip" id="docChip" title="MD / TXT 자료 주입">자료</div>
             <div class="chip on" id="eyeChip" title="마우스를 눈으로 따라봅니다">시선</div>
             <div class="chip on" id="badgeChip" title="목에 건 사원증">사원증</div>
+            <div class="chip" id="alarmChip" title="FAB 알람 패널이 안 보이면 누르세요 — 우상단 제자리로 돌아옵니다">FAB알람</div>
+            <div class="chip" id="chartChip" title="현재 상태 그래프 — FAB 점수 막대 + 실제 컬럼의 임계 대비 실측값">그래프</div>
             <div class="chip" id="popChip" title="화면 우하단에 작은 창으로 띄웁니다">소형창</div>
           </div>
         </div>

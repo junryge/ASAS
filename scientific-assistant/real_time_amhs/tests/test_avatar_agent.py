@@ -263,7 +263,10 @@ class 진단(_Sentinel):
         self.feed(d)
         sentinel._cols_cache.update(at=time.time(), columns={"ok": True, "fabs": {}})
         txt = sentinel.diagnose_text()
-        self.assertIn("분 전 것", txt)
+        # ★한 달 가까이 멈춘 수집을 "40780분 전" 이라고 적으면 사람이 못
+        #   읽고 '조금 늦은 값' 으로 넘긴다 (실제 지적) — 일 단위로 말한다
+        self.assertIn("일", txt)
+        self.assertNotIn("분 전 것", txt)
         self.assertIn("재현 불일치", txt)
         self.assertIn("조치:", txt)
 
@@ -1954,7 +1957,9 @@ class 첨부_전_행을_다시_계산한다(unittest.TestCase):
         """서버가 실제로 이 길을 타는지 — 안 부르면 만든 뜻이 없다."""
         with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
             src = f.read()
-        i = src.index("up = self._upload_of(aname)")
+        # ★_api_chat 안을 본다 — _upload_of 는 계측(_api_ctx)에서도 부른다
+        c = src.index("def _api_chat(")
+        i = src.index("up = self._upload_of(aname)", c)
         blk = src[i:src.index("attach = (aname, body)", i)]
         self.assertIn("csvdata.query(up.get(\"rows\") or [], text", blk)
         self.assertIn("nums |= set(q.get(\"numbers\")", blk,
@@ -3115,6 +3120,455 @@ class 루프가_실제로_도는가(_Sentinel):
                      "stream": True})
         self.assertEqual(gw.calls, 1)
         self.assertIsNotNone(self._final(h), "명령 응답이 SSE 로 안 나갔다")
+
+
+class FAB_알람_패널을_잃어버리지_않는다(unittest.TestCase):
+    """★'FAB 정상 팝업이 없어졌다' — 실시간으로 보는 그 패널이다.
+
+    원인: 옮겨 둔 자리를 그대로 되살린다. #stageWrap 이 overflow:hidden 이라
+    화면 밖 좌표면 **통째로 잘려** 아예 안 보인다. 설정은 서버에 있어 PC 를
+    오가므로, 넓은 화면에서 오른쪽에 옮겨 두면 좁은 화면에서 사라진다.
+    되찾을 버튼은 '알람 기록' 창 안에 있는데, 그 창은 잘려 버린 패널의
+    제목을 두 번 눌러야 열렸다 — 길이 막혀 있었다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.src = f.read()
+
+    def _clamp(self, wrap, box, pos):
+        """clampInWrap 을 그대로 떼어 node 로 돌린다 (소스 검사가 아니라 동작)."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 없음")
+        s = self.src
+        body = s[s.index("function clampInWrap("):s.index("function retryLater(")]
+        prog = ("const $=()=>({getBoundingClientRect:()=>WRAP});\n"
+                "const WRAP=%s, BOX=%s;\n" % (json.dumps(wrap), json.dumps(box))
+                + body.replace("const w=wrap.getBoundingClientRect(), "
+                               "b=box.getBoundingClientRect();",
+                               "const w=WRAP, b=BOX;")
+                + "\nconst r=clampInWrap({}, %d, %d);"
+                  "process.stdout.write(JSON.stringify(r));" % (pos[0], pos[1]))
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(prog)
+            p = f.name
+        try:
+            out = subprocess.run([node, p], capture_output=True, timeout=20)
+            self.assertEqual(out.returncode, 0,
+                             out.stderr.decode("utf-8", "replace"))
+            return json.loads(out.stdout.decode("utf-8"))
+        finally:
+            os.unlink(p)
+
+    WRAP = {"width": 900, "height": 600}
+    BOX = {"width": 212, "height": 120}
+
+    def test_넓은_화면_자리가_좁은_화면에서_안_잘린다(self):
+        """1600 폭에서 오른쪽 끝(1350)에 둔 패널 — 900 폭에서는 화면 밖이다."""
+        r = self._clamp(self.WRAP, self.BOX, (1350, 20))
+        self.assertLessEqual(r["l"] + self.BOX["width"], self.WRAP["width"],
+                             "패널이 화면 밖에 남아 잘린다")
+        self.assertEqual(r["l"], 900 - 212 - 4)
+
+    def test_음수_자리도_당겨_온다(self):
+        r = self._clamp(self.WRAP, self.BOX, (-300, -80))
+        self.assertGreaterEqual(r["l"], 0)
+        self.assertGreaterEqual(r["t"], 0)
+
+    def test_멀쩡한_자리는_안_건드린다(self):
+        r = self._clamp(self.WRAP, self.BOX, (100, 40))
+        self.assertEqual((r["l"], r["t"]), (100, 40))
+
+    def test_아직_못_재면_나중에_다시(self):
+        """레이아웃 전에는 크기가 0 이다 — 그때 0 으로 당기면 왼쪽 위로
+        튀어 버린다. null 을 주고 다음 프레임에 다시 재야 한다."""
+        self.assertIsNone(self._clamp({"width": 0, "height": 0},
+                                      self.BOX, (100, 40)))
+        self.assertIsNone(self._clamp(self.WRAP, {"width": 0, "height": 0},
+                                      (100, 40)))
+        self.assertIn("retryLater(applyAlarmPos", self.src)
+        self.assertIn("retryLater(applyAlogPos", self.src)
+
+    def test_되살릴_때_반드시_당긴다(self):
+        """applyAlarmPos 가 저장값을 그대로 쓰면 이 버그가 그대로 돌아온다."""
+        i = self.src.index("function applyAlarmPos(")
+        blk = self.src[i:self.src.index("function resetAlarmPos(", i)]
+        self.assertIn("clampInWrap(box", blk)
+        j = self.src.index("function applyAlogPos(")
+        self.assertIn("clampInWrap(box",
+                      self.src[j:self.src.index("\n}", j)])
+
+    def test_패널_없이도_되찾을_길이_있다(self):
+        """★되찾기 버튼이 잃어버린 패널 안에 있으면 그건 길이 아니다.
+        HUD [표시] 칩은 패널과 상관없이 늘 눌린다."""
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn('id="alarmChip"', html)
+        self.assertIn("$('#alarmChip')", self.src)
+        blk = self.src[self.src.index("function resetAlarmPos("):]
+        blk = blk[:blk.index("\n}")]
+        self.assertIn("alarmPos=null", blk)
+        self.assertIn("saveSettings()", blk)
+        for prop in ("left", "top", "right", "bottom"):
+            self.assertIn("box.style.{}=''".format(prop), blk,
+                          "{} 를 안 비우면 옮긴 자리가 남는다".format(prop))
+
+    def test_창을_줄여도_기록창이_안_잘린다(self):
+        blk = self.src[self.src.index("(function initAlogDrag()"):
+                       self.src.index("function applyAlogPos(")]
+        self.assertIn("addEventListener('resize'", blk)
+
+
+class 데이터가_몇_분_전인가(unittest.TestCase):
+    """★"지금 40780분 전 값??" — 실제 지적. 사람은 그 숫자를 못 읽는다.
+
+    28일 멈춘 수집과 40분 늦은 값은 완전히 다른 사건인데, 분으로만 적으면
+    둘 다 '그냥 큰 숫자' 로 보여 그냥 넘어간다.
+    """
+
+    def test_사람이_읽는_단위로_바꾼다(self):
+        self.assertEqual(sentinel.age_text(0), "0분 전")
+        self.assertEqual(sentinel.age_text(45), "45분 전")
+        self.assertEqual(sentinel.age_text(60), "1시간 전")
+        self.assertEqual(sentinel.age_text(95), "1시간 35분 전")
+        self.assertEqual(sentinel.age_text(1440), "1일 전")
+        self.assertEqual(sentinel.age_text(40780), "28일 7시간 전")
+        self.assertEqual(sentinel.age_text(None), "시각 불명")
+
+    def test_큰_수를_분으로_안_내보낸다(self):
+        for m in (1440, 40780):
+            self.assertNotIn("분 전", sentinel.age_text(m), m)
+
+
+class 오래된_데이터를_실시간이라_안_한다(_Sentinel):
+    def test_하루가_넘으면_실시간이_아니라고_먼저_말하게_한다(self):
+        """40780분 전 데이터를 '현재 상태' 로 답하던 흐름의 회귀 테스트."""
+        self.feed(fake_compare(at="2026-07-28 08:20"))
+        ev = sentinel.evidence()
+        self.assertTrue(ev["ok"])
+        self.assertIn("실시간이 아니다", ev["text"])
+        self.assertIn("일 ", ev["text"].split("데이터 시각:")[1][:60])
+        self.assertNotIn("40780분 전 값' 이라고", ev["text"])
+
+    def test_방금_값에는_그런_말을_안_붙인다(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        ev = sentinel.evidence()
+        self.assertNotIn("실시간이 아니다", ev["text"])
+        self.assertNotIn("오래된 데이터다", ev["text"])
+
+    def test_말한_숫자가_가드에_막히지_않는다(self):
+        """★근거 머리말의 '28일 7시간' 은 대답에 나와야 할 숫자다 —
+        화이트리스트에 없으면 맞는 말이 숫자 가드에 막힌다."""
+        self.feed(fake_compare(at="2026-07-28 08:20"))
+        ev = sentinel.evidence()
+        age = sentinel._data_age_min("2026-07-28 08:20")
+        d, h = age // 1440, (age % 1440) // 60
+        ok, bad = sentinel.check_numbers(
+            "데이터가 {}일 {}시간 전 것이에요.".format(d, h), ev["numbers"])
+        self.assertTrue(ok, bad)
+
+
+class 현재_상태_그래프(_Sentinel):
+    """"현재 상태 물어보면 데이터와 따로 화면에 그래프도 같이" — 요청 그대로.
+
+    그래프가 그리는 숫자는 전부 서버가 준 것이어야 한다. 화면이 만들어 낸
+    값이 하나라도 섞이면 그 그래프는 근거가 아니다.
+    """
+
+    def _chart(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel._cols_cache.update(at=time.time(), columns={
+            "ok": True, "rules": [{"code": "RA", "label": "반송지연"},
+                                  {"code": "RD", "label": "Storage FULL"}]})
+        return sentinel.chart()
+
+    def test_FAB별_점수와_등급이_나온다(self):
+        c = self._chart()
+        self.assertTrue(c["ok"])
+        fabs = {f["fab"]: f for f in c["fabs"]}
+        self.assertIn("M16HUB", fabs)
+        self.assertEqual(fabs["M16HUB"]["score"], 72)
+        self.assertEqual(fabs["M16HUB"]["level"], "위험")
+        self.assertEqual(c["cuts"]["warn"], 60)
+
+    def test_전체_ALL_은_막대에서_뺀다(self):
+        """ALL 은 축이 다르다(융합 점수) — 같은 막대에 두면 비교가 거짓이 된다."""
+        self.assertNotIn("ALL", [f["fab"] for f in self._chart()["fabs"]])
+
+    def test_나쁜_순서로_준다(self):
+        """★관제가 주는 차례를 그대로 쓰면 안 된다 — 나쁜 것이 아래로 밀리면
+        눈이 먼저 가야 할 막대를 못 본다. 일부러 거꾸로 넣어서 확인한다."""
+        d = fake_compare(at=now_kst(1))
+        d["rows"] = [d["rows"][0], d["rows"][2], d["rows"][1]]   # 10점 먼저
+        self.feed(d)
+        sentinel._cols_cache.update(at=time.time(),
+                                    columns={"ok": True, "rules": []})
+        got = [(f["fab"], f["score"]) for f in sentinel.chart()["fabs"]]
+        self.assertEqual(got[0][0], "M16HUB", got)
+        self.assertEqual([s for _f, s in got],
+                         sorted([s for _f, s in got], reverse=True))
+
+    def test_실제_컬럼과_임계와_실측값이_같이_온다(self):
+        c = self._chart()
+        hub = [f for f in c["fabs"] if f["fab"] == "M16HUB"][0]
+        r = hub["readings"][0]
+        for k in ("label", "thr", "value", "over", "op", "unit", "has_value"):
+            self.assertIn(k, r, k)
+        self.assertEqual(r["thr"], 9.0)
+        self.assertEqual(r["value"], 15.98)
+        self.assertTrue(r["over"])
+
+    def test_비율을_서버가_안_만든다(self):
+        """★임계 방향이 ≥ 와 ≤ 두 가지다 — 한 숫자(%)로 뭉개면 거짓이 된다.
+        값·임계·방향을 그대로 주고 막대는 화면이 그린다."""
+        r = self._chart()["fabs"][0]["readings"][0]
+        self.assertNotIn("ratio", r)
+        self.assertNotIn("pct", r)
+
+    def test_룰_코드는_한_글자도_안_나간다(self):
+        c = self._chart()
+        self.assertFalse(_CODE_LEAK.search(json.dumps(c, ensure_ascii=False)),
+                         "그래프 자료에 룰 코드가 샜다")
+        hub = [f for f in c["fabs"] if f["fab"] == "M16HUB"][0]
+        self.assertIn("반송지연", hub["fired"])
+
+    def test_관제가_죽으면_빈_그래프를_안_준다(self):
+        """★0 점 막대는 화면에서 '정상' 으로 읽힌다 — 못 본다고 해야 한다."""
+        self.feed(None, "URLError: 연결 거부")
+        c = sentinel.chart()
+        self.assertFalse(c["ok"])
+        self.assertEqual(c["fabs"], [])
+        self.assertIn("URLError", c["err"])
+
+    def test_오래된_값은_사람이_읽게_알린다(self):
+        self.feed(fake_compare(at="2026-07-28 08:20"))
+        c = sentinel.chart()
+        self.assertTrue(c["stale"])
+        self.assertFalse(c["live"])
+        self.assertIn("일", c["age_text"])
+        self.assertNotIn("분 전", c["age_text"])
+
+    def test_서버가_길을_열어_뒀다(self):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('path == "/api/fab/chart"', src)
+        self.assertIn("sentinel.chart()", src)
+
+
+class 그래프_화면(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+        with open(os.path.join(AV, "static", "index.html"), encoding="utf-8") as f:
+            cls.html = f.read()
+        with open(os.path.join(AV, "static", "app.css"), encoding="utf-8") as f:
+            cls.css = f.read()
+
+    def _bars(self, data):
+        """chartBars 를 그대로 떼어 node 로 돌린다 — 막대 길이를 실제로 잰다."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 없음")
+        s = self.js
+        body = (s[s.index("function gnum("):s.index("function chartReads(")])
+        prog = ("const esc=s=>String(s);\n" + body
+                + "\nprocess.stdout.write(chartBars(JSON.parse(process.argv[2])));")
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(prog)
+            p = f.name
+        try:
+            out = subprocess.run([node, p, json.dumps(data)],
+                                 capture_output=True, timeout=20)
+            self.assertEqual(out.returncode, 0,
+                             out.stderr.decode("utf-8", "replace"))
+            return out.stdout.decode("utf-8")
+        finally:
+            os.unlink(p)
+
+    DATA = {"cuts": {"warn": 60, "danger": 71, "critical": 85},
+            "fabs": [{"fab": "M16HUB", "score": 72, "level": "위험", "delta": 8},
+                     {"fab": "M14", "score": 10, "level": "정상", "delta": None}]}
+
+    def test_축은_0에서_100_고정이다(self):
+        """★축을 값에 맞춰 늘리면 10점짜리도 꽉 차 보인다 — 그래프가 거짓말을
+        한다. 72점은 72%, 10점은 10% 여야 한다."""
+        h = self._bars(self.DATA)
+        self.assertIn("width:72%", h)
+        self.assertIn("width:10%", h)
+
+    def test_등급_컷_눈금이_같이_그려진다(self):
+        h = self._bars(self.DATA)
+        for c in (60, 71, 85):
+            self.assertIn("left:{}%".format(c), h, c)
+
+    def test_100을_넘겨도_안_넘친다(self):
+        h = self._bars({"cuts": self.DATA["cuts"],
+                        "fabs": [{"fab": "X", "score": 140, "level": "초위험"}]})
+        self.assertIn("width:100%", h)
+        self.assertNotIn("width:140%", h)
+
+    def test_이전값이_없으면_변화를_안_지어낸다(self):
+        h = self._bars(self.DATA)
+        self.assertEqual(h.count("30분"), 1, "delta 가 null 인데 변화를 적었다")
+
+    def test_상태_질문에만_뜬다(self):
+        """과거·첨부 얘기 옆에 '지금' 그래프를 띄우면 그게 그 날 것으로 읽힌다."""
+        i = self.js.index("const STATUS_ASK=")
+        blk = self.js[i:self.js.index("function maybeOpenChart(")]
+        import re as _re
+        st = _re.compile(_re.search(r"const STATUS_ASK=/(.+?)/;", blk).group(1))
+        pa = _re.compile(_re.search(r"const PAST_ASK=/(.+?)/;", blk).group(1))
+        for q in ("현재 상태 알려줘", "지금 어때", "M16HUB 점수 얼마야"):
+            self.assertTrue(st.search(q), q)
+            self.assertIsNone(pa.search(q), q)
+        for q in ("어제 상태 어땠어", "첨부 파일 분석해줘", "8월 3일 점수"):
+            self.assertTrue(pa.search(q), q)
+        self.assertIsNone(st.search("고마워"))
+
+    def test_값이_안_오는_조건은_0으로_안_그린다(self):
+        """★0 으로 그리면 '멀쩡하다' 로 읽힌다 — 실제로 일부 조건은 CSV 에
+        값이 안 실려 온다. 빗금으로 구분한다."""
+        self.assertIn("novalue", self.js)
+        self.assertIn(".cread.novalue .ctrack{background:repeating-linear-gradient",
+                      self.css.replace("\n    ", "").replace("\n  ", ""))
+
+    def test_관제가_죽으면_빈_그래프를_안_그린다(self):
+        i = self.js.index("function renderChart(")
+        blk = self.js[i:self.js.index("async function loadChart(")]
+        self.assertIn("if(!d.ok)", blk)
+        self.assertIn("못 읽었습니다", blk)
+
+    def test_닫혀_있으면_서버를_안_두드린다(self):
+        self.assertIn("if(chartOn) loadChart();", self.js)
+
+    def test_칩과_상자가_화면에_있다(self):
+        self.assertIn('id="chartWrap"', self.html)
+        self.assertIn('id="chartChip"', self.html)
+        self.assertIn("$('#chartChip')", self.js)
+
+    def test_대사창_위에_그린다(self):
+        """★대사창(#vn, z-index 8)은 bottom:0 에서 34vh 까지 큰다. 그 아래에
+        두면 그래프가 절반만 보인다 — 실제로 그랬다 (스크린샷으로 확인).
+        겹치는지 자체는 브라우저로 잰다 (tests/test_avatar_ui.py)."""
+        i = self.css.index("#chartWrap{")
+        z = self.css[i:i + 400]
+        m = re.search(r"z-index:(\d+)", z)
+        self.assertIsNotNone(m)
+        self.assertGreater(int(m.group(1)), 8, "대사창에 덮인다")
+        self.assertIn("top:12px", z, "아래에 두면 대사창과 부딪힌다")
+
+
+class 대화_꼬리표를_읽을_수_있다(unittest.TestCase):
+    """★"저 앞 알 수 없는 값은 뭐냐" — '부끄 · 80% · 없음' 만 적혀 있으니
+    관제 수치로 읽힌다. 무엇인지 밝혀 적는다."""
+
+    def test_무엇인지_적는다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        i = js.index("push('ai', r.text, `표정 ")
+        line = js[i:js.index("\n", i)]
+        for w in ("표정", "세기", "동작"):
+            self.assertIn(w, line, w)
+
+
+class 컨텍스트_사용량이_실제와_같다(unittest.TestCase):
+    """★"컨텍스트 파업에 참고자료 MD 가 왜 등록이 안 되어 있지?" — 실제 지적.
+
+    자료는 들어가고 있었다. **화면이 못 세고 있었다.** 계측이 대화와 다른
+    코드로 따로 계산했기 때문이다:
+      · 스킬은 칸 자체가 없어서 0 (실제로는 예산의 절반까지 실린다)
+      · 자료는 스킬과 겹친 문단을 빼기 전 값
+      · 근거·첨부는 아예 안 셌다
+    이제 **대화가 쓰는 조립기(build_messages)로 잰다.**
+    """
+
+    BASE = Path(util.BASE) / "avatar_2d"
+
+    def setUp(self):
+        from avatar import docs as adocs
+        self.tmp = tempfile.TemporaryDirectory()
+        self.docs = adocs.DocStore(Path(self.tmp.name) / "d.json")
+        self.sk = skills.SkillStore(Path(self.tmp.name) / "sk")
+        self.docs.add("관제_자료.md",
+                      "# 임계값\n\n"
+                      + "반송시간 임계는 9분이고 저장율 임계는 25.75% 다. " * 40)
+        skills.seed_hub_skills(self.sk, self.BASE)
+        self.st = {"docBudget": 6000, "keepMsgs": 12}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _both(self, q, **kw):
+        """(계측값, 실제 프롬프트에서 센 값)."""
+        seg = allm.measure("페르소나", q, [], self.docs, self.st,
+                           skill_store=self.sk, **kw)
+        msgs = allm.build_messages("페르소나", q, [], self.docs, self.st,
+                                   skill_store=self.sk, **kw)
+        return seg, msgs[0]["content"]
+
+    def test_참고_자료를_실제로_센다(self):
+        seg, sysmsg = self._both("반송시간 임계 얼마야")
+        self.assertIn("[참고 자료]", sysmsg, "자료가 안 실렸다 — 시나리오가 틀렸다")
+        self.assertGreater(seg["docs"], 0, "자료가 실렸는데 0 으로 센다")
+
+    def test_스킬도_센다(self):
+        """★예전엔 칸 자체가 없어서 스킬이 몇 천 토큰이어도 0 이었다."""
+        seg, sysmsg = self._both("용어 표준 뭐야")
+        if "[스킬 — 도메인 지식]" not in sysmsg:
+            self.skipTest("스킬 시드 원본 없음")
+        self.assertGreater(seg["skills"], 0)
+        self.assertIn("skills", allm.CTX_KEYS)
+
+    def test_근거와_첨부도_센다(self):
+        seg, sysmsg = self._both("지금 점수 어때",
+                                 evidence_text="M16HUB 72점 위험" * 30,
+                                 attach=("x.csv", "행 1440개 · 최고점 88점" * 30))
+        self.assertIn("[관제 근거", sysmsg)
+        self.assertGreater(seg["evidence"], 0)
+        self.assertGreater(seg["attach"], 0)
+
+    def test_합이_실제_프롬프트_크기와_비슷하다(self):
+        """★칸을 다 세는지 확인하는 유일한 방법 — 총합을 실물과 맞춰 본다.
+        고정 문구(블록 머리말·꼬리말)가 있으니 정확히 같진 않지만,
+        하나라도 통째로 빠지면 크게 어긋난다."""
+        from avatar import docs as adocs
+        seg, sysmsg = self._both("반송시간 임계 얼마야")
+        real = adocs.est_tokens(sysmsg)
+        self.assertGreater(seg["total"], real * 0.7,
+                           "센 값이 실제보다 훨씬 작다 — 빠진 칸이 있다")
+        self.assertLess(seg["total"], real * 1.1)
+
+    def test_자료가_스킬과_겹치면_뺀_뒤의_값을_센다(self):
+        """같은 글이 스킬·자료 양쪽에 있으면 대화는 한 번만 싣는다 —
+        계측이 두 번 세면 화면이 실제보다 크게 나온다."""
+        body = self.sk.read("m16-hub-result")
+        if not body:
+            self.skipTest("스킬 시드 원본 없음")
+        self.docs.add("겹친자료.md", body)
+        seg, sysmsg = self._both("용어 표준 뭐야")
+        from avatar import docs as adocs
+        self.assertLess(seg["docs"] + seg["skills"],
+                        adocs.est_tokens(sysmsg) + 1)
+
+    def test_서버가_그_함수를_쓴다(self):
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("def _api_ctx("):src.index("def _api_chat(")]
+        self.assertIn("llm.measure(", blk, "계측을 또 따로 계산하면 다시 어긋난다")
+        self.assertIn("skill_store=App.skill_store", blk)
+        self.assertNotIn("docs.est_tokens(llm.RULES_TEXT)", blk)
+
+    def test_화면도_같은_칸을_그린다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        for k in allm.CTX_KEYS:
+            self.assertIn("'{}'".format(k), js, k)
+            self.assertIn("{}:".format(k), js, k + " 라벨/색")
 
 
 class 설정_일치(unittest.TestCase):

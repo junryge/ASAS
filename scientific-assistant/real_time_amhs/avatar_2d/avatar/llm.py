@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 from . import config
+from . import docs as _docs
 from . import terms
 
 RULES_TEXT = ("출력 규칙: 반드시 JSON 객체 하나만 출력한다.\n"
@@ -132,8 +133,21 @@ def agent_rules(settings=None):
     return v or AGENT_RULES
 
 
+def _seg(parts, key, text):
+    """조각 하나를 재서 적는다 (parts 가 None 이면 그냥 지나간다).
+
+    ★계측을 **프롬프트를 만드는 바로 그 자리**에서 한다. 화면의 '컨텍스트
+      사용량' 이 따로 계산하고 있어서 스킬은 아예 안 세고, 참고 자료도
+      실제로 실리는 것과 다른 값을 보여 주고 있었다 (실제 지적).
+    """
+    if parts is not None and text:
+        parts[key] = parts.get(key, 0) + _docs.est_tokens(text)
+    return text
+
+
 def build_messages(persona, user_text, history, doc_store, settings,
-                   skill_store=None, evidence_text="", attach=None):
+                   skill_store=None, evidence_text="", attach=None,
+                   parts=None):
     """system + 최근 대화 + user. (기존 sysPrompt 의 파이썬판)
 
     주입 순서: 페르소나 → 에이전트 규칙 → 관제 근거 → 첨부 → 스킬 → 자료 → 출력 규칙.
@@ -141,7 +155,8 @@ def build_messages(persona, user_text, history, doc_store, settings,
     attach=(이름, 본문) 이면 **그 파일을 통째로**(예산 상한) 먼저 넣는다 —
     방금 첨부한 파일은 질문과 단어가 안 겹쳐도 봐야 하는 파일이다.
     """
-    sysmsg = (persona or "").strip() + "\n\n" + agent_rules(settings) + "\n\n"
+    sysmsg = (_seg(parts, "persona", (persona or "").strip()) + "\n\n"
+              + _seg(parts, "rules", agent_rules(settings)) + "\n\n")
     # ★첨부가 있으면 **첨부를 먼저** 놓는다. 관제 근거를 앞에 두면 거기 적힌
     #   "대답 첫머리에 이 시각을 말하라"(지금 화면의 데이터 시각)를 그대로 따라
     #   "2026-08-06 기준…" 으로 시작해 놓고 24일 파일을 설명한다 — 실제로 그랬다.
@@ -152,6 +167,7 @@ def build_messages(persona, user_text, history, doc_store, settings,
         cut = str(body or "")[:cap]
         note = ("\n(파일이 길어 앞 {}자만 실었다 — 잘렸다고 밝혀라)"
                 .format(cap) if len(str(body or "")) > cap else "")
+        _seg(parts, "attach", cut)
         sysmsg += ("[방금 첨부한 파일: {}] ← 이 질문의 주제\n{}{}\n"
                    "· 이 파일에 대한 질문이면 **이 블록이 최우선 근거**다.\n"
                    "· 시각은 **이 파일의 기간**을 말한다. 아래 [관제 근거] 의 "
@@ -167,6 +183,7 @@ def build_messages(persona, user_text, history, doc_store, settings,
         if attach:
             evidence_text = re.sub(r"\s*—\s*대답 첫머리에 이 시각을 말하라",
                                    "", evidence_text)
+        _seg(parts, "evidence", evidence_text)
         sysmsg += ("[관제 근거{}]\n".format(" — 지금 화면 상태. 첨부와 무관하다"
                                             if attach else "") + evidence_text +
                    "\n(이 블록의 숫자만 사용한다. 부족하면 부족하다고 말한다.)\n\n")
@@ -178,6 +195,7 @@ def build_messages(persona, user_text, history, doc_store, settings,
             # ★스킬 문서(SKILL.md)의 배점표가 'R-A'·'R-D' 로 적혀 있다 —
             #   근거만 소독해 놓고 여기를 안 막으면 모델은 스킬에서 베낀다.
             #   실제로 "저장·설비 포화 룰(R-D) 활성화" 라고 답했다.
+            _seg(parts, "skills", sk)
             sysmsg += ("[스킬 — 도메인 지식]\n" + terms.no_code(sk) +
                        "\n스킬의 규칙·함정은 판단 기준으로 쓰되, "
                        "현재 수치는 [관제 근거] 를 따른다.\n\n")
@@ -196,18 +214,44 @@ def build_messages(persona, user_text, history, doc_store, settings,
             keep.append(c)
         ctx = "\n\n".join(keep).strip()
     if ctx:
+        _seg(parts, "docs", ctx)
         sysmsg += ("[참고 자료]\n" + terms.no_code(ctx) +
                    "\n위 자료에 있는 내용은 근거로 삼아 답한다. "
                    "자료에 없는 것은 아는 척하지 않고 모른다고 말한다.\n"
                    "자료를 인용하더라도 캐릭터의 말투는 그대로 유지한다.\n\n")
-    sysmsg += RULES_TEXT
+    sysmsg += _seg(parts, "rules", RULES_TEXT)
 
     keep = int(settings.get("keepMsgs", 12))
     hist = [m for m in (history or [])
             if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
     hist = hist[-keep:] if keep > 0 else []
+    _seg(parts, "history", "\n".join(str(m.get("content", "")) for m in hist))
+    _seg(parts, "input", user_text)
     return [{"role": "system", "content": sysmsg}] + hist \
            + [{"role": "user", "content": user_text}]
+
+
+# 화면 '컨텍스트 사용량' 이 쓰는 칸 (순서 = 프롬프트에 실리는 순서)
+CTX_KEYS = ("persona", "rules", "evidence", "attach", "skills", "docs",
+            "history", "input")
+
+
+def measure(persona, user_text, history, doc_store, settings,
+            skill_store=None, evidence_text="", attach=None):
+    """실제 프롬프트를 **그대로 만들어 보고** 칸별 토큰을 잰다.
+
+    ★따로 계산하면 반드시 어긋난다. 실제로 어긋나 있었다 — 스킬은 아예
+      안 셌고(0), 자료는 스킬과 겹친 문단을 빼기 전 값이라 화면 숫자가
+      실제로 실리는 양과 달랐다.
+    """
+    parts = {}
+    build_messages(persona, user_text, history, doc_store, settings,
+                   skill_store=skill_store, evidence_text=evidence_text,
+                   attach=attach, parts=parts)
+    seg = {k: int(parts.get(k, 0)) for k in CTX_KEYS}
+    seg["rules"] += 40                      # 역할·구분자 등 고정 오버헤드
+    seg["total"] = sum(seg[k] for k in CTX_KEYS)
+    return seg
 
 
 def partial_parse(buf):

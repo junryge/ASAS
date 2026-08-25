@@ -263,6 +263,24 @@ def _data_age_min(at_str):
         return None
 
 
+def age_text(mins):
+    """★"40780분 전" 은 사람이 못 읽는다 (실제 지적). 28일이면 28일이라고
+    한다. 수집이 한 달 멈춘 것과 40분 늦은 것은 완전히 다른 사건인데,
+    분으로만 적으면 둘 다 그냥 큰 숫자로 보인다.
+    """
+    if mins is None:
+        return "시각 불명"
+    m = int(mins)
+    if m < 60:
+        return "{}분 전".format(m)
+    if m < 60 * 24:
+        h, mm = divmod(m, 60)
+        return "{}시간 {}분 전".format(h, mm) if mm else "{}시간 전".format(h)
+    d, rem = divmod(m, 60 * 24)
+    h = rem // 60
+    return "{}일 {}시간 전".format(d, h) if h else "{}일 전".format(d)
+
+
 # ────────────────────────────── 감시 (알람) ──────────────────────────────
 LEVEL_ORDER = {"정상": 0, "경계": 1, "위험": 2, "초위험": 3}
 
@@ -318,6 +336,74 @@ def watch():
             "age_min": age, "hold": hold, "hold_min": HOLD_MIN,
             "degraded": bool(r.get("degraded")),
             "held_s": int(r.get("held_s") or 0), "err": r.get("err") or ""}
+
+
+# ────────────────────────────── 화면 그래프 ──────────────────────────────
+MAX_READ = 8          # 한 FAB 에 조건이 너무 많으면 그래프가 아니라 표가 된다
+
+
+def chart():
+    """화면에 그릴 '지금 상태' — 표로 읽던 것을 눈으로 보게 한다.
+
+    반환 {ok, at, age_min, stale, cuts, area_cap, fabs:[...], err}
+      fabs[i] = {fab, score, level, delta, area, fired(한글), readings:[...]}
+      readings[j] = {label, amos, unit, op, thr, value, over, has_value}
+
+    ★비율(%)을 서버가 만들지 않는다. 임계 방향이 두 가지(≥ / ≤)라 한 숫자로
+      뭉개면 거짓이 된다 — 값·임계·방향을 그대로 주고, 막대는 화면이 그린다.
+    ★룰 코드는 한 글자도 안 내보낸다 (근거·대답과 같은 규칙).
+    """
+    r = compare()
+    if not r["ok"]:
+        return {"ok": False, "fabs": [], "at": "", "err": r["err"]}
+    d = r["data"]
+    cols = columns()
+    rules = {}
+    if cols["ok"]:
+        for ru in (cols["data"].get("rules") or []):
+            rules[ru.get("code")] = ru
+    out = []
+    for row in d.get("rows") or []:
+        if row.get("is_all"):
+            continue                     # 전체(ALL)는 FAB 막대와 축이 다르다
+        reads = []
+        for c in (row.get("readings") or [])[:MAX_READ]:
+            # ★has_value 가 빠져 오면 값이 있어도 '값 없음(빗금)' 으로 그린다 —
+            #   있는 데이터를 없다고 그리는 쪽이 더 나쁘다. 값으로 판단한다.
+            has = (bool(c.get("has_value")) if "has_value" in c
+                   else c.get("value") is not None)
+            reads.append({
+                "label": _no_code(c.get("label") or ""),
+                "amos": c.get("amos") or "",
+                "unit": c.get("unit") or "",
+                "op": c.get("op") or ">=",
+                "thr": c.get("thr"),
+                "value": c.get("value") if has else None,
+                "has_value": has,
+                "over": bool(c.get("over")),
+            })
+        # 넘은 것을 먼저 — 그래프에서 눈이 먼저 가야 할 순서
+        reads.sort(key=lambda c: (0 if c["over"] else
+                                  1 if c["has_value"] else 2))
+        fired = []
+        for code in (row.get("fired") or []):
+            meta = rules.get(code) or {}
+            fired.append(_no_code(meta.get("label") or "") or
+                         _KO.get(code, "룰"))
+        out.append({"fab": row.get("fab"), "score": row.get("score"),
+                    "level": row.get("level") or "정상",
+                    "delta": row.get("delta"), "area": row.get("area"),
+                    "fired": fired, "readings": reads})
+    out.sort(key=lambda f: -(f["score"] or 0))
+    age = _data_age_min(d.get("at"))
+    return {"ok": True, "at": d.get("at") or "", "age_min": age,
+            "age_text": age_text(age),          # "28일 3시간 전" — 분은 못 읽는다
+            "stale": age is not None and age > STALE_MIN,
+            "live": age is not None and age <= STALE_MIN,   # 실시간인가
+            "cuts": d.get("cuts") or {"warn": 60, "danger": 71, "critical": 85},
+            "area_cap": d.get("area_cap"), "delta_min": d.get("delta_min"),
+            "blind": d.get("blind") or [], "fabs": out,
+            "degraded": bool(r.get("degraded")), "err": r.get("err") or ""}
 
 
 # ────────────────────────────── 과거 시각 조회 ──────────────────────────────
@@ -415,11 +501,18 @@ def evidence():
     age = _data_age_min(d.get("at"))
     head = ["[관제 근거 — 실제 측정값. 이 블록에 있는 숫자만 말할 수 있다]",
             "지금 시각: {}".format(time.strftime("%Y-%m-%d %H:%M")),
-            "데이터 시각: {} ({}분 전) — 대답 첫머리에 이 시각을 말하라"
-            .format(d.get("at"), age if age is not None else "?")]
+            "데이터 시각: {} ({}) — 대답 첫머리에 이 시각을 말하라"
+            .format(d.get("at"), age_text(age))]
     if age is not None and age > STALE_MIN:
-        head.append("⚠ 오래된 데이터다 — 반드시 '지금 값이 아니라 {}분 전 값' "
-                    "이라고 밝혀라.".format(age))
+        # ★분으로만 적으면 "40780분 전" 같은 말이 그대로 나간다 — 사람은
+        #   그걸 못 읽고, 한 달 멈춘 수집을 '조금 늦은 값' 으로 넘긴다.
+        head.append("⚠ 오래된 데이터다 — 반드시 '지금 값이 아니라 {} 값' "
+                    "이라고 밝혀라. 분 단위로 바꿔 말하지 마라 "
+                    "(‘{}분 전’ 은 사람이 못 읽는다).".format(age_text(age), age))
+    if age is not None and age > 60 * 24:
+        head.append("⚠⚠ 하루가 넘었다 — 이건 실시간이 아니다. 첫 문장에서 "
+                    "'관제 수집이 멈춰 실시간 값이 아니다' 라고 먼저 말하고, "
+                    "그다음에 수치를 말하라.")
     return _evidence_from(d, head)
 
 
@@ -657,7 +750,7 @@ def plain_status(d=None, past=False):
         time.strftime("%H:%M"), d.get("at"))
     # 일부러 과거를 물었을 때 '오래된 값' 경고는 군더더기다
     if not past and age is not None and age > STALE_MIN:
-        head += " (⚠ {}분 전 값)".format(age)
+        head += " (⚠ {} 값)".format(age_text(age))
     return head + " — " + " · ".join(parts) + "."
 
 
@@ -691,7 +784,7 @@ def diagnose():
     age = _data_age_min(d.get("at"))
     if age is not None and age > STALE_MIN:
         problems.append({
-            "what": "데이터가 {}분 전 것".format(age),
+            "what": "데이터가 {} 것".format(age_text(age)),
             "why": "수집(주피터 CSV)이 멈췄거나 그 날짜 파일이 아직 없다",
             "fix": "관제 서버 로그에서 [수집] 줄과 주피터 로그인 오류를 확인"})
     for row in d.get("rows") or []:
