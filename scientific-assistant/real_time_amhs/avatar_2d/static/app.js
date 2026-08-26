@@ -586,16 +586,18 @@ let SRV_CTX=null, ctxFetchTimer=null;      // 서버 컨텍스트 계측 캐시 
 let sessPushTimer=null, setSrvTimer=null;  // 서버 저장 디바운스 타이머
 const SESS_MAX = 30;
 /* 서버가 주는 칸 목록 — computeCtx·renderCtx 가 같은 것을 봐야 한다 */
-const KEYS_ALL=['persona','rules','evidence','attach','skills','docs',
+const KEYS_ALL=['persona','rules','evidence','mcp','attach','skills','docs',
                 'history','input'];
 /* ★칸이 프롬프트에 실리는 순서 그대로다. 예전엔 스킬·근거·첨부 칸이
-   아예 없어서, 실려 있는데도 화면에서는 '없는 것' 으로 보였다. */
+   아예 없어서, 실려 있는데도 화면에서는 '없는 것' 으로 보였다.
+   ★MCP(외부 도구)도 같은 이유로 칸을 준다 — 안 주면 QA 요청이력이 통째로
+     실려 있는데 화면 합계에서는 빠져 보인다. */
 const CTX_COLORS = {persona:'#d94a5a', rules:'#8f93b5', evidence:'#e05c8a',
-  attach:'#c07de0', skills:'#e8c14a', docs:'#5aa9d9', history:'#4ec9a0',
-  input:'#e0a45c'};
+  mcp:'#4ec2c9', attach:'#c07de0', skills:'#e8c14a', docs:'#5aa9d9',
+  history:'#4ec9a0', input:'#e0a45c'};
 const CTX_LABEL  = {persona:'페르소나', rules:'에이전트 규칙', evidence:'관제 근거',
-  attach:'첨부 파일', skills:'스킬', docs:'참고 자료', history:'대화 기록',
-  input:'입력'};
+  mcp:'외부 도구 (MCP)', attach:'첨부 파일', skills:'스킬', docs:'참고 자료',
+  history:'대화 기록', input:'입력'};
 let personaBackup='';   // 궁예 모드 진입 전 페르소나 보관
 let blinkT=1.2, blinkPhase=0, blinkOne=-1;
 let gaze=[0,0], gazeT=[0,0], gazeTimer=1.5;

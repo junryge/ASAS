@@ -147,10 +147,11 @@ def _seg(parts, key, text):
 
 def build_messages(persona, user_text, history, doc_store, settings,
                    skill_store=None, evidence_text="", attach=None,
-                   parts=None):
+                   parts=None, mcp_text=""):
     """system + 최근 대화 + user. (기존 sysPrompt 의 파이썬판)
 
-    주입 순서: 페르소나 → 에이전트 규칙 → 관제 근거 → 첨부 → 스킬 → 자료 → 출력 규칙.
+    주입 순서: 페르소나 → 에이전트 규칙 → 관제 근거 → 외부 도구 → 첨부 →
+    스킬 → 자료 → 출력 규칙.
     근거를 스킬보다 앞에 둔다 — 실측값과 문서가 부딪히면 실측값이 이긴다.
     attach=(이름, 본문) 이면 **그 파일을 통째로**(예산 상한) 먼저 넣는다 —
     방금 첨부한 파일은 질문과 단어가 안 겹쳐도 봐야 하는 파일이다.
@@ -187,6 +188,17 @@ def build_messages(persona, user_text, history, doc_store, settings,
         sysmsg += ("[관제 근거{}]\n".format(" — 지금 화면 상태. 첨부와 무관하다"
                                             if attach else "") + evidence_text +
                    "\n(이 블록의 숫자만 사용한다. 부족하면 부족하다고 말한다.)\n\n")
+    # ★MCP 결과를 [관제 근거] 안에 섞으면 안 된다. 그 블록에는 "대답 첫머리에
+    #   데이터 시각을 말하라" 가 붙어 있어서, 요청이력을 물었는데 "2026-08-26
+    #   04:20 데이터 기준으로 개선요청이…" 라고 시작한다 — 첨부에서 겪은 사고와
+    #   같은 자리다. 별도 블록으로 빼고 시각 규칙이 안 붙는다고 못 박는다.
+    if mcp_text:
+        _seg(parts, "mcp", mcp_text)
+        sysmsg += ("[외부 도구 — MCP]\n" + terms.no_code(mcp_text) +
+                   "\n· 이 블록은 관제 실측이 아니라 **외부 시스템 조회 결과**다."
+                   " 데이터 시각을 앞세우지 마라 — 여기엔 관제 시각이 없다.\n"
+                   "· 여기 없는 건수·상태를 지어내지 않는다. 조회가 실패했다고"
+                   " 적혀 있으면 실패했다고 말한다.\n\n")
     sk = ""
     if skill_store is not None:
         sk = skill_store.context(user_text,
@@ -232,12 +244,12 @@ def build_messages(persona, user_text, history, doc_store, settings,
 
 
 # 화면 '컨텍스트 사용량' 이 쓰는 칸 (순서 = 프롬프트에 실리는 순서)
-CTX_KEYS = ("persona", "rules", "evidence", "attach", "skills", "docs",
+CTX_KEYS = ("persona", "rules", "evidence", "mcp", "attach", "skills", "docs",
             "history", "input")
 
 
 def measure(persona, user_text, history, doc_store, settings,
-            skill_store=None, evidence_text="", attach=None):
+            skill_store=None, evidence_text="", attach=None, mcp_text=""):
     """실제 프롬프트를 **그대로 만들어 보고** 칸별 토큰을 잰다.
 
     ★따로 계산하면 반드시 어긋난다. 실제로 어긋나 있었다 — 스킬은 아예
@@ -247,7 +259,7 @@ def measure(persona, user_text, history, doc_store, settings,
     parts = {}
     build_messages(persona, user_text, history, doc_store, settings,
                    skill_store=skill_store, evidence_text=evidence_text,
-                   attach=attach, parts=parts)
+                   attach=attach, parts=parts, mcp_text=mcp_text)
     seg = {k: int(parts.get(k, 0)) for k in CTX_KEYS}
     seg["rules"] += 40                      # 역할·구분자 등 고정 오버헤드
     seg["total"] = sum(seg[k] for k in CTX_KEYS)

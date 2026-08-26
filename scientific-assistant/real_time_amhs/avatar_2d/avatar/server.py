@@ -15,6 +15,7 @@ HTTP 서버 — 정적 파일(static/) + 앱 API(/api/*) + LLM 프록시(/v1/*).
   /v1/*                      게이트웨이 원시 프록시 (토큰은 서버만 안다)
 """
 import json
+import os
 import re
 import socket
 import ssl
@@ -26,8 +27,8 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 
-from . import commands, config, csvdata, docs, harness, llm, sentinel, \
-    sessions, settings, skills, terms
+from . import commands, config, csvdata, docs, harness, llm, mcp_client, \
+    sentinel, sessions, settings, skills, terms
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -55,6 +56,7 @@ class App:
     gateway = None
 
     skill_store = None
+    mcp_hub = None       # 외부 도구 (MCP) — 질문에 걸릴 때만 띄운다
 
     @classmethod
     def init(cls, base_dir):
@@ -84,10 +86,28 @@ class App:
             sys.stdout.write("  스킬 시드: {} (데이터 분석)\n".format(nm))
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
+        cls.mcp_hub = cls._make_hub(base_dir)
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
         cls.uploads_dir = cls.data_dir / "uploads"
         cls.uploads_dir.mkdir(parents=True, exist_ok=True)
         cls.uploads = {}                 # {이름: {"summary","numbers"}} 분석 캐시
+
+    @classmethod
+    def _make_hub(cls, base_dir):
+        """config.MCP_SERVERS → Hub. 여기서는 **띄우지 않는다** — 질문에
+        걸릴 때 처음 뜬다. 안 물어보면 프로세스가 하나도 안 생긴다."""
+        # 서버 스크립트 경로는 real_time_amhs 기준이다 (base_dir 은 avatar_2d)
+        root = os.path.dirname(str(base_dir))
+        srv = []
+        for s in (getattr(config, "MCP_SERVERS", None) or []):
+            s = dict(s)
+            s["cwd"] = s.get("cwd") or root
+            srv.append(s)
+        n = len([s for s in srv if s.get("enabled", True)])
+        if n:
+            sys.stdout.write("  MCP 서버 {}개 등록 (질문에 걸리면 그때 띄운다)\n"
+                             .format(n))
+        return mcp_client.Hub(srv)
 
     @classmethod
     def connect(cls, upstream, token, model, models):
@@ -482,9 +502,12 @@ class Handler(SimpleHTTPRequestHandler):
                 if body is not None:
                     attach = (aname, body)
 
+        # ★계측은 실제 프롬프트를 그대로 만들어 재야 맞는다. MCP 도 마찬가지다 —
+        #   여기서 빼면 화면 숫자가 실제로 실리는 양보다 적게 나온다.
         seg = llm.measure(persona, q, hist, App.doc_store, st,
                           skill_store=App.skill_store,
-                          evidence_text=ev_text, attach=attach)
+                          evidence_text=ev_text, attach=attach,
+                          mcp_text=self._mcp_text(q))
         seg["limit"] = int(st.get("ctxLimit", 32768))
         seg["pct"] = min(999, round(seg["total"] / max(1, seg["limit"]) * 100))
         return self._json(200, seg)
@@ -575,7 +598,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         msgs = llm.build_messages(persona, text, history, App.doc_store, st,
                                   skill_store=App.skill_store,
-                                  evidence_text=ev["text"], attach=attach)
+                                  evidence_text=ev["text"], attach=attach,
+                                  mcp_text=self._mcp_text(text))
         t0 = time.time()
 
         if not b.get("stream"):
@@ -629,6 +653,25 @@ class Handler(SimpleHTTPRequestHandler):
             pass
         self._say("200  /api/chat  {}  {}ms  (stream, {}이벤트)".format(
             model, int((time.time() - t0) * 1000), n))
+
+    def _mcp_text(self, text):
+        """질문에 걸리는 MCP 서버를 불러 근거 글을 만든다 (없으면 빈 글).
+
+        ★MCP 가 죽어도 대화는 계속돼야 한다. 여기서 예외가 새면 질문 하나가
+          통째로 500 이 된다 — 외부 도구 하나 때문에 서윤이 입을 닫는다.
+          그래서 무엇이 터지든 삼키고 빈 글을 준다.
+        """
+        hub = App.mcp_hub
+        if hub is None or not text:
+            return ""
+        try:
+            out, used = hub.gather(text)
+        except Exception as e:  # noqa: BLE001
+            self._say("     ↳ MCP 실패: {}".format(str(e)[:120]))
+            return ""
+        if used:
+            self._say("     ↳ MCP 도구 {}회 · {}자".format(used, len(out)))
+        return out
 
     def _upload_of(self, name):
         """업로드된 파일의 분석 캐시 — 서버 재시작 뒤에도 파일이 있으면 다시 분석."""

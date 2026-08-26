@@ -74,6 +74,43 @@ SENTINEL = {
     "poll_ms": 5000,
 }
 
+# ── MCP 서버 (외부 도구) ──────────────────────────────────────────────────
+# 서윤이 관제 밖의 자료를 볼 때 쓴다. 폐쇄망이라 공식 SDK 는 안 쓰고
+# stdio JSON-RPC 로 직접 붙는다 (avatar/mcp_client.py).
+#
+#   key       내부 이름
+#   name      근거 블록에 찍힐 이름 (사람이 읽는다)
+#   enabled   False 면 아예 안 띄운다
+#   when      질문에 이 말이 있어야 띄운다. 없으면 **평소엔 비용 0**
+#   command/args/cwd/env   띄우는 방법
+#   calls     부를 도구들. pick 은 질문에서 인자를 뽑는 규칙
+#
+# ★읽기 전용만 연다. 등록·수정·삭제는 일부러 안 준다 — 서윤이 사람 대신
+#   요청을 지우거나 상태를 바꾸면 이력 관리의 의미가 없어진다.
+MCP_SERVERS = [
+    {
+        "key": "qa", "name": "QA 요청이력", "enabled": True,
+        "when": ["요청", "개선", "이슈", "민원", "접수", "요청이력",
+                 "개선요청", "요청관리", "응답", "반려", "보류", "적용완료"],
+        "command": None,          # None = 지금 파이썬 (sys.executable)
+        "args": ["qa/mcp_server.py"],
+        "cwd": None,              # None = real_time_amhs 폴더 (server.py 가 채운다)
+        "env": {"QA_BASE": "http://127.0.0.1:10500"},
+        "timeout": 20,
+        "calls": [
+            {"tool": "qa_meta", "label": "현황"},
+            {"tool": "qa_items", "label": "관련 요청",
+             # 질문에 FAB 이름이 있으면 그것만 찾는다. 없으면 이 도구는 건너뛴다.
+             "pick": {"target": {"kind": "oneof",
+                                 "values": ["M16HUB", "M16A", "M16B",
+                                            "M14B", "M14"]}}},
+            {"tool": "qa_item", "label": "지목한 건",
+             "pick": {"seq": {"kind": "regex", "re": r"(?:No\.?|#)\s*(\d+)",
+                              "int": True}}},
+        ],
+    },
+]
+
 # ── FAB 알람 ──────────────────────────────────────────────────────────────
 # ★관제 서버의 시스템 목록(ALL + FAB 5)과 같아야 한다. 예전 목록(M14/M16HUB/
 #   M16)은 실제 관제와 어긋나서 M14B·M16A·M16B 알람을 못 그렸다.
