@@ -117,6 +117,72 @@ class 제외된_영역은_안_그린다(unittest.TestCase):
         self.assertIn('"M16_PKT", "M16_WT"', src, "컬럼 쪽 방어가 사라졌다")
 
 
+class 글자_지표도_제대로_나온다(unittest.TestCase):
+    """★"all, fab 다른 지표들도 제대로 나오지?" — 확인해 보니 안 나왔다.
+
+    hot_area · flow_signals · maxcapa_signals 는 **글자** 컬럼인데
+    readings() 가 무조건 숫자로 읽어(_num) 'M16HUB' 가 None 이 됐다.
+    값이 멀쩡히 있는데 화면에는 늘 '값 없음' 으로 떴다 — 관제가 제일
+    먼저 보는 '최고 위험 구역' 이 그것이다.
+    """
+
+    ROW = {"hot_area": "M16HUB", "stage": "3", "flow_score": "15",
+           "layer1_total": "32", "unified_risk_score": "19",
+           "flow_signals": "M16A_2F_TO_HUB=2.0x(위험)"}
+
+    def _all(self):
+        import fab_score as F
+        return {r["label"]: r for r in F.readings(self.ROW, "ALL")}
+
+    def test_최고_위험_구역이_나온다(self):
+        r = self._all()["최고 위험 구역"]
+        self.assertEqual(r["value"], "M16HUB")
+        self.assertTrue(r["has_value"])
+        self.assertTrue(r["is_text"])
+
+    def test_흐름_신호도_나온다(self):
+        r = self._all()["흐름 — 어느 노드가 몇 배인가"]
+        self.assertEqual(r["value"], "M16A_2F_TO_HUB=2.0x(위험)")
+        self.assertTrue(r["has_value"])
+
+    def test_숫자_지표는_그대로_숫자다(self):
+        r = self._all()["전체 점수"]
+        self.assertEqual(r["value"], 19.0)
+        self.assertFalse(r["is_text"])
+
+    def test_빈_글자는_값_없음이다(self):
+        import fab_score as F
+        got = {r["label"]: r for r in F.readings({"hot_area": "  "}, "ALL")}
+        self.assertFalse(got["최고 위험 구역"]["has_value"])
+
+    def test_값_컬럼이_없는_정의_항목은_따로_표시된다(self):
+        """★흐름 노드 10개는 CSV 에 값 컬럼이 없다 — 빈 줄 열 개가 되면 안 된다."""
+        import fab_score as F
+        rs = F.readings(self.ROW, "ALL")
+        defs = [r for r in rs if r["no_csv"]]
+        self.assertEqual(len(defs), 10)
+        self.assertTrue(all(not r["has_value"] for r in defs))
+        shown = [r for r in rs if not r["no_csv"]]
+        self.assertGreaterEqual(sum(1 for r in shown if r["has_value"]), 5,
+                                "값이 뜨는 항목이 너무 적다")
+
+    def test_아바타_그래프는_정의_항목을_안_그린다(self):
+        import os
+        with open(os.path.join(util.BASE, "avatar_2d", "avatar", "sentinel.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('if not c.get("no_csv")', src,
+                      "값 컬럼 없는 항목까지 게이지를 그린다")
+
+    def test_근거는_값_없음과_정의_항목을_구분해_말한다(self):
+        import os
+        with open(os.path.join(util.BASE, "avatar_2d", "avatar", "sentinel.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("값 컬럼이 없는 항목", src)
+        self.assertIn("CSV 에 값 없음", src)
+
+
 class 하루_그래프도_빈_계열을_거른다(unittest.TestCase):
     """report_graphs 는 원래 걸러 왔다 — 되돌아가지 않게 못 박는다."""
 

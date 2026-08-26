@@ -449,7 +449,9 @@ def chart():
     out, all_row = [], None
     for row in d.get("rows") or []:
         reads = []
-        for c in (row.get("readings") or [])[:MAX_READ]:
+        # 값 컬럼이 없는 정의 항목은 애초에 뺀다 (게이지가 안 그려진다)
+        reads_src = [c for c in (row.get("readings") or []) if not c.get("no_csv")]
+        for c in reads_src[:MAX_READ]:
             # ★has_value 가 빠져 오면 값이 있어도 '값 없음(빗금)' 으로 그린다 —
             #   있는 데이터를 없다고 그리는 쪽이 더 나쁘다. 값으로 판단한다.
             has = (bool(c.get("has_value")) if "has_value" in c
@@ -463,6 +465,11 @@ def chart():
                 "value": c.get("value") if has else None,
                 "has_value": has,
                 "over": bool(c.get("over")),
+                "is_text": bool(c.get("is_text")),
+                # ★값 컬럼이 아예 없는 정의 항목은 게이지를 그릴 수 없다.
+                #   빈 막대 열 개를 세우느니 안 그리는 게 낫다.
+                "no_csv": bool(c.get("no_csv")),
+                "record_only": bool(c.get("record_only")),
             })
         # 넘은 것을 먼저 — 그래프에서 눈이 먼저 가야 할 순서
         reads.sort(key=lambda c: (0 if c["over"] else
@@ -717,6 +724,9 @@ def _fired_lines(row, rules_by_code):
                 val_s = "값 {}{}".format(_g(c.get("value")), unit)
                 if c.get("over"):
                     val_s += " ← 넘음"
+            elif c.get("no_csv"):
+                # 값 컬럼이 없는 정의 항목 — '수집이 빠졌다' 와 구분해야 한다
+                val_s = "값 컬럼이 없는 항목 (무엇을 보는지의 정의)"
             else:
                 val_s = "CSV 에 값 없음"
             amos = c.get("amos") or ""

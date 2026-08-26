@@ -437,7 +437,14 @@ class ALL_도_비교_대상(unittest.TestCase):
         '영역 룰이 없다' 와 '보는 컬럼이 없다' 는 전혀 다른 말이다."""
         w = F.watch("ALL")
         self.assertTrue(w, "ALL 의 감시 컬럼이 비어 있다")
-        self.assertEqual(len(w["FLOW"]), 10, "흐름 노드는 10개다")
+        # ★흐름 노드 10개 + 실제로 값이 실려 오는 flow_signals 1개.
+        #   노드 10개는 CSV 에 값 컬럼이 없어(no_csv) 화면에 뜰 수가 없다 —
+        #   무엇을 보는지의 정의일 뿐이라, 실려 오는 글자 컬럼을 같이 둔다.
+        self.assertEqual(len([x for x in w["FLOW"] if x.get("no_csv")]), 10,
+                         "흐름 노드는 10개다")
+        sig = [x for x in w["FLOW"] if x.get("csv") == "flow_signals"]
+        self.assertEqual(len(sig), 1, "실제로 실려 오는 컬럼이 하나는 있어야 한다")
+        self.assertEqual(sig[0]["op"], "text")
         for key in ("sla_score_total", "sorter_score_total", "mc_score_total",
                     "flow_score", "unified_risk_score"):
             self.assertTrue(
@@ -450,7 +457,9 @@ class ALL_도_비교_대상(unittest.TestCase):
     def test_흐름_노드는_임계가_아니라_배수로_판정한다(self):
         """30분 평균 대비 배수라서 영역별 기준값이 없다. 임계를 지어내면
         안 된다."""
-        for it in F.watch("ALL")["FLOW"]:
+        nodes = [x for x in F.watch("ALL")["FLOW"] if x.get("no_csv")]
+        self.assertEqual(len(nodes), 10)
+        for it in nodes:
             self.assertIsNone(it["thr"])
             self.assertEqual(it["op"], "ratio30")
 

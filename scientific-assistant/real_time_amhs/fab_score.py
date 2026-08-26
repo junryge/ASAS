@@ -246,9 +246,16 @@ FLOW_COLS = [
 ]
 
 WATCH_ALL = {
-    "FLOW": [{"amos": amos, "csv": "", "label": f"{area} · {node}",
-              "unit": "배", "op": "ratio30", "thr": None, "area": area}
-             for area, node, amos in FLOW_COLS],
+    # ★흐름 노드 10개는 **CSV 에 값 컬럼이 없다** — 무엇을 보는지 알려 주는
+    #   정의일 뿐이라, 이것만 두면 화면에 빈 줄 열 개가 선다.
+    #   실제로 실려 오는 flow_signals(어느 노드가 몇 배인지 글자)를 같이 준다.
+    "FLOW": [{"amos": "(집계)", "csv": "flow_signals",
+              "label": "흐름 — 어느 노드가 몇 배인가", "unit": "",
+              "op": "text", "thr": None}]
+            + [{"amos": amos, "csv": "", "label": f"{area} · {node}",
+                "unit": "배", "op": "ratio30", "thr": None, "area": area,
+                "no_csv": True}
+               for area, node, amos in FLOW_COLS],
     "SLA": [{"amos": "(집계)", "csv": "sla_score_total",
              "label": "SLA 합계 — 걸린 영역 수 × 5", "unit": "점",
              "op": "sum", "thr": None}],
@@ -457,7 +464,16 @@ def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
     w = watch(fab, cfg)
     for rule in rule_order(fab):
         for it in (w.get(rule) or []):
-            v = _num(row.get(it["csv"])) if it.get("csv") else None
+            # ★op="text" 는 글자 컬럼이다 (hot_area·flow_signals·maxcapa_signals).
+            #   예전엔 이것도 _num() 으로 읽어서 'M16HUB' 가 None 이 됐다 —
+            #   값이 멀쩡히 있는데 화면에는 늘 '값 없음' 으로 떴다.
+            is_text = (it.get("op") or "") == "text"
+            if not it.get("csv"):
+                v = None
+            elif is_text:
+                v = str(row.get(it["csv"]) or "").strip() or None
+            else:
+                v = _num(row.get(it["csv"]))
             out.append({
                 "rule": rule, "amos": it["amos"], "csv": it.get("csv") or "",
                 "label": it["label"], "unit": it.get("unit") or "",
@@ -469,6 +485,11 @@ def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
                 #   '임계 미정의(값이 없어 판정 불가)' 와 구분해야 한다 —
                 #   이건 값이 있는데 **일부러 판정에서 뺀** 것이다.
                 "record_only": bool(it.get("record_only")),
+                "is_text": is_text,
+                # ★값 컬럼이 아예 없는 정의 항목 (흐름 노드 10개 등).
+                #   화면은 이걸 한 줄로 묶어야 한다 — 빈 줄 열 개는 화면이
+                #   아니라 소음이다.
+                "no_csv": bool(it.get("no_csv")) or not it.get("csv"),
             })
     return out
 
