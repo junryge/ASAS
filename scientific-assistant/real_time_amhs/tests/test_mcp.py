@@ -21,6 +21,7 @@ import os
 import socket
 import sys
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -237,8 +238,8 @@ class 도구가_제_값을_준다(_Fake):
 
     def test_현황(self):
         t = self._call("qa_meta")
-        self.assertIn("총 2건", t)
-        self.assertIn("미결 2건", t)
+        self.assertIn("요청 2건", t)
+        self.assertIn("검토중 1건", t)
         self.assertIn("M16HUB", t)
         self.assertIn("김반송", t)
 
@@ -354,7 +355,7 @@ class 필요할_때만_띄운다(_Fake):
         txt, n = h.gather("M16HUB 개선요청 뭐 올라와 있어?")
         self.assertEqual(n, 1)
         self.assertIn("QA 요청이력", txt)
-        self.assertIn("총 2건", txt)
+        self.assertIn("요청 2건", txt)
 
     def test_한_번_띄운_것을_다시_쓴다(self):
         h = self._hub()
@@ -371,7 +372,7 @@ class 필요할_때만_띄운다(_Fake):
         old.proc.wait(timeout=5)
         txt, n = h.gather("요청 현황")
         self.assertEqual(n, 1)
-        self.assertIn("총 2건", txt)
+        self.assertIn("요청 2건", txt)
 
     def test_못_띄워도_대화는_이어진다(self):
         """★서버 하나 못 떠서 서윤이 입을 닫으면 안 된다."""
@@ -551,6 +552,92 @@ class 관제가_죽었을_때_요청이력으로_답하지_않는다(unittest.Te
         self.assertIn("not ev.get(\"ok\")", src[i:i + 120])
 
 
+class 현황_글이_헷갈리지_않는다(_Fake):
+    """★서윤이 실제로 이렇게 답했다 (사장님 지적):
+
+        "현재 조회 현황은 0건이며, 총 4건이 완료된 기록만 남아 있어요"
+
+    실제 자료는 총 5건 · 보류 1건 · 적용완료 4건이다. 우리가 준 글이
+        총 5건 · 미결 5건 · 고객확인 완료 0건
+        상태별: 보류 1건 · 적용완료 4건
+    였다 — '완료' 가 두 뜻으로 들어 있고, '미결 5건' 과 '적용완료 4건' 이
+    모순돼 보인다. 총 5건도 보류 1건도 통째로 사라졌다. 가장 중요한 게.
+    """
+
+    def setUp(self):
+        _Fake.setUp(self)
+        DATA["meta"] = dict(META, total=5, confirmed=0, open=5,
+                            tags=["ALL"], people=["김윤환TL님"],
+                            counts={"보류": 1, "적용완료": 4})
+        self.addCleanup(lambda: DATA.update(meta=None))
+
+    def test_총_건수를_먼저_말한다(self):
+        t = SRV.t_meta({})
+        self.assertTrue(t.startswith("요청 5건"), t.splitlines()[0])
+
+    def test_안_끝난_것이_안_사라진다(self):
+        self.assertIn("보류 1건", SRV.t_meta({}))
+
+    def test_완료가_두_뜻으로_안_쓰인다(self):
+        """★'고객확인 완료' 와 '적용완료' 가 한 줄에 있으면 섞어 읽는다."""
+        for line in SRV.t_meta({}).splitlines():
+            if "완료" in line and "적용완료" in line:
+                self.assertNotIn("고객", line, "한 줄에 두 '완료' 가 있다")
+
+    def test_미결이라는_말을_안_쓴다(self):
+        """★'미결 5건' 과 '적용완료 4건' 은 서로 모순돼 보인다 —
+        앞은 고객확인 얘기고 뒤는 진행상태 얘기인데."""
+        self.assertNotIn("미결", SRV.t_meta({}))
+
+    def test_고객확인은_분모까지_적는다(self):
+        self.assertIn("5건 중 0건", SRV.t_meta({}))
+
+    def test_많은_상태부터_적는다(self):
+        t = SRV.t_meta({})
+        i = t.index("진행 상태")
+        self.assertLess(t.index("적용완료", i), t.index("보류", i))
+
+
+class 관제_끊김을_요청조회_실패로_말하지_않는다(unittest.TestCase):
+    """★서윤이 이렇게 답했다 (사장님 지적):
+
+        "최근 요청은 서버가 끊기면서 실패했기 때문에, 잠시 후에 다시
+         시도해 주시면 좋을 것 같아요"
+
+    요청조회는 **멀쩡히 성공**했다. 끊긴 건 관제다. 둘은 다른 서버인데
+    서윤이 붙여 말했다.
+    """
+
+    ST = {"docBudget": 6000}
+    MCP = "[QA 요청이력]\n· 현황\n요청 5건 (등록된 전부)"
+
+    def _tail(self, mcp=None, down=True):
+        s = llm.build_messages("서윤이다.", "qa 요청 상황 확인해봐", [], _빈자료(),
+                               self.ST, evidence_text="관제 데이터를 못 받았다.",
+                               mcp_text=mcp if mcp is not None else self.MCP,
+                               evidence_down=down)[0]["content"]
+        return s[s.index("[외부 도구"):]
+
+    def test_성공했으면_성공했다고_못_박는다(self):
+        t = self._tail()
+        self.assertIn("이 조회는 **성공했다**", t)
+        self.assertIn("다른 서버", t)
+
+    def test_다시_시도하라고_말하지_말라고_한다(self):
+        self.assertIn("나중에 다시 시도하라고 말하지", self._tail())
+
+    def test_진짜_실패했으면_그_줄을_안_붙인다(self):
+        """★실패했는데 '성공했다' 고 적으면 그게 더 큰 거짓말이다."""
+        t = self._tail(mcp="[요청이력] 조회에 실패했다 — 요청관리 서버에 못 붙었다.")
+        self.assertNotIn("이 조회는 **성공했다**", t)
+
+    def test_총_건수와_안_끝난_것을_말하라고_시킨다(self):
+        """★"총 4건이 완료된 기록만" — 총 5건도 보류 1건도 빠뜨렸다."""
+        t = self._tail()
+        self.assertIn("숫자를 빠뜨리지 마라", t)
+        self.assertIn("아직 안 끝난 것", t)
+
+
 class 컨텍스트_계측에_칸이_있다(unittest.TestCase):
     """★칸이 없으면 실려 있는데도 화면에서는 '없는 것' 으로 보인다 —
     참고자료 MD 때 똑같이 겪었다."""
@@ -720,6 +807,129 @@ class 설정이_말이_된다(unittest.TestCase):
         for q in ("M16HUB 개선요청 뭐 올라와 있어?", "이슈 접수된 거 있나",
                   "보류된 요청 알려줘"):
             self.assertTrue(h.matched(q), q)
+
+
+class 끊긴_파이프에_안_터진다(_Fake):
+    """★서윤 콘솔에 이게 찍혔다 (사장님 로그):
+
+        ↳ MCP 도구 2회 · 174자
+        ↳ MCP 실패: [Errno 22] Invalid argument
+
+    윈도우에서 **닫힌 파이프**에 쓰면 나는 오류다. 원인은 경합이었다 —
+    화면의 컨텍스트 계측(/api/ctx)과 대화(/api/chat)가 동시에 같은 MCP
+    프로세스를 쓰는데, 한쪽이 "죽었네" 하고 닫는 순간 다른 쪽이 쓴다.
+    """
+
+    def _hub(self):
+        h = mcp_client.Hub([
+            dict(s, cwd=util.BASE, command=sys.executable,
+                 args=[os.path.join(util.BASE, "qa", "mcp_server.py")],
+                 env={"QA_BASE": self.base})
+            for s in config.MCP_SERVERS])
+        self.addCleanup(h.close)
+        return h
+
+    def test_예외가_새어_나가지_않는다(self):
+        """★윈도우는 OSError, 리눅스는 ValueError — **같은 사고인데 이름이
+        다르다**. 하나만 잡으면 다른 쪽에서 대화가 통째로 실패한다."""
+        import threading
+        h = self._hub()
+        h.gather("요청 현황")
+        leaked = []
+
+        def hit(i):
+            try:
+                for _ in range(6):
+                    h.gather("요청 현황 {}".format(i), use_cache=False)
+            except Exception as e:            # noqa: BLE001
+                leaked.append("{}: {}".format(type(e).__name__, e))
+
+        def killer():
+            for _ in range(5):
+                time.sleep(0.03)
+                c = h._live.get("qa")
+                if c:
+                    try:
+                        c.close()
+                    except Exception:          # noqa: BLE001
+                        pass
+
+        ths = [threading.Thread(target=hit, args=(i,)) for i in range(6)]
+        ths.append(threading.Thread(target=killer))
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join(30)
+        self.assertEqual(leaked, [], "예외가 새어 나갔다 — 대화가 통째로 실패한다")
+
+    def test_끊겨도_다시_붙어_값을_준다(self):
+        h = self._hub()
+        h.gather("요청 현황")
+        h._live["qa"].proc.kill()
+        h._live["qa"].proc.wait(timeout=5)
+        txt, n = h.gather("요청 현황", use_cache=False)
+        self.assertIn("요청 2건", txt, "다시 안 붙었다")
+        self.assertGreaterEqual(n, 1)
+
+    def test_부르는_도중_끊기면_다시_붙어_받아_온다(self):
+        """★_client() 가 죽은 걸 알고 새로 띄우는 것과는 **다른 경로**다.
+        이미 손에 쥔 연결이 도중에 끊기는 경우 — 사장님 로그가 그것이다
+        ("도구 2회" 뒤에 실패). 재시도가 없으면 그 질문이 통째로 빈손이 된다."""
+        h = self._hub()
+        h.gather("요청 현황")
+        c = h._live["qa"]
+        c.proc.kill()
+        c.proc.wait(timeout=5)
+        txt, bad = h._call_retry(h.servers[0], c, "qa_meta", {})
+        self.assertFalse(bad, "다시 안 붙었다: {}".format(txt))
+        self.assertIn("요청 2건", txt)
+
+    def test_한_서버는_한_번에_하나만_돈다(self):
+        """★자물쇠가 없으면 두 스레드가 같은 파이프를 동시에 쓴다."""
+        h = self._hub()
+        lk = h._srv_lock("qa")
+        self.assertIs(lk, h._srv_lock("qa"), "부를 때마다 새 자물쇠를 만든다")
+
+    def test_끊김과_도구실패를_구분한다(self):
+        """★도구가 실패한 것까지 '끊겼다' 로 보고 다시 띄우면 낭비다."""
+        self.assertTrue(mcp_client._looks_dead("서버에 못 썼다 ([Errno 22])"))
+        self.assertTrue(mcp_client._looks_dead("서버가 끊겼다 (tools/call)"))
+        self.assertFalse(mcp_client._looks_dead("그런 도구가 없다: xx"))
+        self.assertFalse(mcp_client._looks_dead("요청관리 서버에 못 붙었다"))
+
+
+class 윈도우_인코딩에_안_죽는다(unittest.TestCase):
+    """★자식이 한글을 stdout 으로 내보낸다. 윈도우 파이프의 기본 인코딩은
+    지역 코드페이지라, 못 쓰는 글자가 하나라도 있으면 **자식이 죽는다**.
+    그러면 부모는 죽은 파이프에 쓰다가 [Errno 22] 를 맞는다."""
+
+    def test_UTF8_로_못_박는다(self):
+        p = os.path.join(util.BASE, "qa", "mcp_server.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("def _force_utf8()", src)
+        self.assertIn('encoding="utf-8"', src)
+        i = src.index("def serve(")
+        self.assertIn("_force_utf8()", src[i:i + 260], "serve 가 안 부른다")
+
+    def test_좁은_인코딩에서도_한글이_온다(self):
+        """진짜 자식을 띄워 확인한다 — 소스만 보면 못 잡는다."""
+        import subprocess
+        env = dict(os.environ, PYTHONIOENCODING="ascii",
+                   QA_BASE="http://127.0.0.1:1")     # 붙을 필요 없다
+        p = subprocess.Popen(
+            [sys.executable, os.path.join(util.BASE, "qa", "mcp_server.py")],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, env=env, cwd=util.BASE,
+            text=True, encoding="utf-8", errors="replace", bufsize=1)
+        self.addCleanup(p.kill)
+        p.stdin.write(json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n")
+        p.stdin.flush()
+        line = p.stdout.readline()
+        self.assertTrue(line, "자식이 죽었다 — 인코딩")
+        self.assertIn("요청", line, "한글이 깨졌다")
+        self.assertIsNone(p.poll(), "한 번 쓰고 죽었다")
 
 
 class 왜_안_되는지_알려_준다(unittest.TestCase):

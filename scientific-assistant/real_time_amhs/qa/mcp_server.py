@@ -103,13 +103,30 @@ def _find(seq):
 
 
 def t_meta(_):
+    """현황 — ★말이 헷갈리면 안 된다.
+
+    예전엔 한 줄에 이렇게 적었다:
+        총 5건 · 미결 5건 · 고객확인 완료 0건
+        상태별: 보류 1건 · 적용완료 4건
+    '완료' 가 두 가지 뜻(고객확인 완료 / 적용완료)으로 들어 있고, '미결 5건'
+    과 '적용완료 4건' 이 서로 모순돼 보인다. 실제로 서윤이 이걸
+        "조회 현황은 0건이며, 총 4건이 완료된 기록만 남아 있어요"
+    로 읽었다 — 총 5건도, 보류 1건도 통째로 사라졌다. 가장 중요한 게.
+    """
     m = _get("/api/meta")
     counts = m.get("counts") or {}
-    return ("총 {}건 · 미결 {}건 · 고객확인 완료 {}건\n"
-            "상태별: {}\n대상: {}\n사람: {}".format(
-                m.get("total"), m.get("open"), m.get("confirmed"),
-                " · ".join("{} {}건".format(k, v)
-                           for k, v in counts.items()) or "없음",
+    total = m.get("total") or 0
+    conf = m.get("confirmed") or 0
+    # 상태는 많은 것부터 — 읽는 사람이 먼저 봐야 할 순서
+    order = sorted(counts.items(), key=lambda kv: -kv[1])
+    return ("요청 {}건 (등록된 전부)\n"
+            "진행 상태: {}\n"
+            "고객 최종확인: {}건 중 {}건 확인됨\n"
+            "대상: {}\n"
+            "올린 사람: {}".format(
+                total,
+                " · ".join("{} {}건".format(k, v) for k, v in order) or "없음",
+                total, conf,
                 ", ".join(m.get("tags") or []) or "없음",
                 ", ".join(m.get("people") or []) or "없음"))
 
@@ -213,7 +230,25 @@ def handle(msg):
     return err(-32601, "모르는 method: {}".format(method))
 
 
+def _force_utf8():
+    """stdin/stdout 을 UTF-8 로 못 박는다.
+
+    ★윈도우에서는 파이프의 기본 인코딩이 지역 코드페이지(한국은 cp949)다.
+      우리가 내보내는 글에는 '·' '—' '★' 같은 글자가 있어서 cp949 로는
+      못 쓴다 → UnicodeEncodeError 로 **이 프로세스가 죽는다**.
+      그러면 부모는 죽은 파이프에 쓰다가 [Errno 22] Invalid argument 를
+      맞는다 — 실제로 그 증상이 났다. 원인은 여기다.
+    """
+    for f, kw in ((sys.stdin, {}), (sys.stdout, {"newline": "\n"})):
+        try:
+            f.reconfigure(encoding="utf-8", errors="replace", **kw)
+        except Exception:      # noqa: BLE001  (아주 옛 파이썬·이상한 스트림)
+            pass
+
+
 def serve(stdin=None, stdout=None):
+    if stdin is None and stdout is None:
+        _force_utf8()
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     for line in stdin:

@@ -53,8 +53,16 @@ class Client:
     def _write(self, obj):
         if self.proc.poll() is not None or self.proc.stdin is None:
             raise McpError("서버가 이미 끝났다")
-        self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
+            self.proc.stdin.flush()
+        except (OSError, ValueError) as e:
+            # ★같은 사고인데 예외 이름이 다르다:
+            #     윈도우  OSError [Errno 22] Invalid argument
+            #     리눅스  ValueError: I/O operation on closed file
+            #   둘 다 안 잡으면 대화 한 줄이 통째로 실패한다.
+            #   규격 오류로 바꿔 위에서 다시 붙게 한다.
+            raise McpError("서버에 못 썼다 ({})".format(e))
 
     def _rpc(self, method, params=None):
         with self._lock:
@@ -63,7 +71,10 @@ class Client:
             self._write({"jsonrpc": "2.0", "id": mid, "method": method,
                          "params": params or {}})
             while True:
-                line = self.proc.stdout.readline()
+                try:
+                    line = self.proc.stdout.readline()
+                except (OSError, ValueError) as e:
+                    raise McpError("서버에서 못 읽었다 ({})".format(e))
                 if not line:
                     raise McpError("서버가 끊겼다 ({})".format(method))
                 try:
@@ -177,6 +188,12 @@ def _arg_of(text, spec):
     return None
 
 
+def _looks_dead(msg):
+    """이 실패가 '연결이 끊긴 것' 인가 (도구 자체의 실패가 아니라)."""
+    m = str(msg or "")
+    return any(w in m for w in ("못 썼다", "못 읽었다", "끊겼다", "이미 끝났다"))
+
+
 class Hub:
     """config.MCP_SERVERS 를 보고 필요한 것만 띄워 쓴다.
 
@@ -197,6 +214,19 @@ class Hub:
         self._lock = threading.RLock()
         self._say = say or (lambda *_a: None)
         self._cache = {}          # {질문: (잰 시각, 글, 도구 수)}
+        # ★서버마다 자물쇠 하나. 아바타 서버는 스레드로 도는데, 화면의
+        #   컨텍스트 계측(/api/ctx)과 대화(/api/chat)가 **동시에** 같은 MCP
+        #   프로세스를 쓴다. 한쪽이 "죽었네" 하고 닫는 순간 다른 쪽은 닫힌
+        #   파이프에 쓴다 — 윈도우는 거기서 [Errno 22] Invalid argument 를
+        #   낸다 (실제 증상). 한 서버의 조회는 한 번에 하나만 돌게 한다.
+        self._srv_locks = {}
+
+    def _srv_lock(self, key):
+        with self._lock:
+            lk = self._srv_locks.get(key)
+            if lk is None:
+                lk = self._srv_locks[key] = threading.RLock()
+            return lk
 
     def _all_alive(self):
         """띄워 둔 서버가 전부 살아 있나.
@@ -213,6 +243,58 @@ class Hub:
         """이 질문에 걸리는 서버 목록 (화면 계측·시험용)."""
         return [s for s in self.servers
                 if _hits(text, s.get("when"), s.get("when_re"))]
+
+    def _run_calls(self, s, c, text, lines):
+        """한 서버의 도구들을 차례로 부른다 → 부른 횟수.
+        ★_srv_lock 안에서만 부른다 (동시 접근이 파이프를 깬다)."""
+        used = 0
+        for call in s.get("calls") or []:
+            args = dict(call.get("args") or {})
+            for k, spec in (call.get("pick") or {}).items():
+                v = _arg_of(text, spec)
+                if v is None:
+                    args = None
+                    break
+                args[k] = v
+            if args is None:
+                continue      # 질문에서 인자를 못 뽑았다 — 이 도구는 건너뛴다
+            # ★있으면 좁히고, 없으면 그냥 전체를 본다. 이걸 required 로
+            #   두면 안 된다 — 등록된 요청의 대상이 전부 'ALL' 이라
+            #   FAB 이름으로만 좁히게 해 놨더니 **목록이 한 번도 안 나왔다**.
+            #   건수만 오고 "그래서 그 5건이 뭔데" 에 답을 못 했다.
+            for k, spec in (call.get("pick_opt") or {}).items():
+                v = _arg_of(text, spec)
+                if v is not None:
+                    args[k] = v
+            txt, bad = self._call_retry(s, c, call["tool"], args)
+            c = self._live.get(s["key"], c)      # 다시 붙었을 수 있다
+            used += 1
+            if txt:
+                lines.append("· {}{}\n{}".format(
+                    call.get("label") or call["tool"],
+                    " (실패)" if bad else "", txt))
+        return used
+
+    def _call_retry(self, s, c, tool, args):
+        """도구 하나 — 파이프가 끊겼으면 **한 번만** 다시 붙어 재시도한다.
+
+        ★윈도우에서 자식이 죽으면(인코딩·강제종료 등) 부모는 [Errno 22]
+          Invalid argument 를 맞는다. 한 번 죽었다고 그 질문을 통째로
+          버릴 이유가 없다 — 새로 띄우면 대개 그대로 된다.
+        """
+        txt, bad = c.call(tool, args)
+        if not bad:
+            return txt, bad
+        if not _looks_dead(txt) or c.proc.poll() is None:
+            return txt, bad          # 진짜 도구 실패다 — 다시 걸어도 같다
+        self._say("     ↳ MCP 끊겨서 다시 붙는다 ({})".format(txt[:60]))
+        try:
+            with self._lock:
+                self._live.pop(s["key"], None)
+            c2 = self._client(s)
+        except Exception as e:  # noqa: BLE001
+            return "다시 붙지 못했다: {}".format(e), True
+        return c2.call(tool, args)
 
     def _client(self, s):
         with self._lock:
@@ -248,36 +330,15 @@ class Hub:
         out, used = [], 0
         for s in self.matched(text):
             lines = []
-            try:
-                c = self._client(s)
-            except Exception as e:  # noqa: BLE001
-                out.append("[{}] 붙지 못했다 ({}). 이 자료는 확인 못 한다."
-                           .format(s.get("name") or s["key"], e))
-                continue
-            for call in s.get("calls") or []:
-                args = dict(call.get("args") or {})
-                for k, spec in (call.get("pick") or {}).items():
-                    v = _arg_of(text, spec)
-                    if v is None:
-                        args = None
-                        break
-                    args[k] = v
-                if args is None:
-                    continue      # 질문에서 인자를 못 뽑았다 — 이 도구는 건너뛴다
-                # ★있으면 좁히고, 없으면 그냥 전체를 본다. 이걸 required 로
-                #   두면 안 된다 — 등록된 요청의 대상이 전부 'ALL' 이라
-                #   FAB 이름으로만 좁히게 해 놨더니 **목록이 한 번도 안 나왔다**.
-                #   건수만 오고 "그래서 그 5건이 뭔데" 에 답을 못 했다.
-                for k, spec in (call.get("pick_opt") or {}).items():
-                    v = _arg_of(text, spec)
-                    if v is not None:
-                        args[k] = v
-                txt, bad = c.call(call["tool"], args)
-                used += 1
-                if txt:
-                    lines.append("· {}{}\n{}".format(
-                        call.get("label") or call["tool"],
-                        " (실패)" if bad else "", txt))
+            # ★이 서버에 대한 조회는 한 번에 하나만 (위 _srv_locks 설명 참조)
+            with self._srv_lock(s["key"]):
+                try:
+                    c = self._client(s)
+                except Exception as e:  # noqa: BLE001
+                    out.append("[{}] 붙지 못했다 ({}). 이 자료는 확인 못 한다."
+                               .format(s.get("name") or s["key"], e))
+                    continue
+                used += self._run_calls(s, c, text, lines)
             if lines:
                 out.append("[{}]\n".format(s.get("name") or s["key"])
                            + "\n".join(lines))
@@ -290,6 +351,43 @@ class Hub:
                                     key=lambda k: self._cache[k][0])[:32]:
                         self._cache.pop(k, None)
         return got, used
+
+    def status(self):
+        """지금 MCP 가 어떤 상태인가 — 화면·진단용.
+
+        ★"MCP 안 되는 것 같은데" 를 반복하지 않으려면, **눈으로 볼 수 있는
+          자리**가 있어야 한다. 어떤 주소를 보는지, 붙었는지, 왜 못 붙었는지.
+        """
+        out = []
+        for s in self.servers:
+            key = s["key"]
+            c = self._live.get(key)
+            alive = bool(c is not None and c.proc.poll() is None)
+            row = {"key": key, "name": s.get("name") or key,
+                   "addr": (s.get("env") or {}).get("QA_BASE") or "",
+                   "script": (s.get("args") or [""])[0],
+                   "started": c is not None, "alive": alive,
+                   "server": (c.server if c else {}) or {},
+                   "tools": [], "err": ""}
+            # 실제로 한 번 두들겨 본다 — 떠 있다고 붙는다는 뜻은 아니다
+            try:
+                cc = c if alive else self._client(s)
+                row["started"] = True
+                row["alive"] = True
+                row["server"] = cc.server
+                row["tools"] = [t["name"] for t in cc.tools()]
+                txt, bad = cc.call("qa_meta") if "qa_meta" in row["tools"] \
+                    else ("", False)
+                row["ok"] = not bad
+                row["sample"] = (txt or "").splitlines()[:1]
+                if bad:
+                    row["err"] = txt[:200]
+            except Exception as e:  # noqa: BLE001
+                row["ok"] = False
+                row["err"] = str(e)[:200]
+            out.append(row)
+        return {"ok": True, "servers": out,
+                "none": not self.servers}
 
     def close(self):
         with self._lock:
