@@ -6,8 +6,9 @@ M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 7영역)
 7개 FAB 영역 통합 룰베이스 데드락 예측기.
    대상 영역: M16HUB, M14, M14B, M16A, M16B, M16, M16_WT
    ※ M16_PKT 제외 (2026-08 고객 요청 — 관련 컬럼·점수 전부 미사용)
-   ※ M16HUB.STRATE.STB.3F_STORAGE_UTIL 미사용 (2026-08 고객 요청 —
-      R-D 는 M16HUB.STRATE.ALL.FABSTORAGERATIO 만 사용)
+   ※ M16HUB.STRATE.STB.3F_STORAGE_UTIL 은 판정 미사용 (2026-08 고객 요청 —
+      R-D 는 M16HUB.STRATE.ALL.FABSTORAGERATIO 만 판정. 값은 기록용으로만
+      발동이벤트 M16HUB_stb_util 컬럼에 계속 남긴다)
    학습 임계값: 2026-03-24 14:39 ~ 2026-04-30 정상분포 (p95/p99) 기반
    테스트 구간 : 2026-05-01 ~ (사용자가 5월로 검증 예정)
 
@@ -328,7 +329,8 @@ def iter_unified_rows(filepath):
                         'sla_ratio': safe_float(g(SLA_COL['M16HUB'])),
                         'sla_cnt': safe_int(g('M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT')),
                         'sorter': safe_int(g(SORTER_COL['M16HUB'])),
-                        # STB.3F_STORAGE_UTIL 은 사용하지 않음 (2026-08 고객 요청 — R-D 는 FABSTORAGERATIO 만)
+                        # STB 는 기록용으로만 수집 — R-D 판정에는 쓰지 않음 (2026-08 고객 요청, FABSTORAGERATIO 만 판정)
+                        'hub_stb_util': safe_float(g('M16HUB.STRATE.STB.3F_STORAGE_UTIL')),
                         'oht_qcnt': safe_int(g('M16HUB.QUE.OHT.CURRENTOHTQCNT')),
                         'oht_alarm': safe_int(g('M16HUB.OHT.ALERT.OHTMCPALARMCNT')),
                         'aotransdelay': safe_int(g('M16HUB.QUE.ABN.AOTRANSDELAY')),
@@ -510,6 +512,8 @@ def eval_area_rules(area, window):
     if area == 'M16HUB':
         out['rd_fab'] = latest.get('rd_fab') or 0
         out['rd_oht'] = latest.get('rd_oht') or 0
+        # STB 는 값만 기록 (발동이벤트 M16HUB_stb_util 컬럼용) — 판정에는 미사용
+        out['hub_stb_util'] = latest.get('hub_stb_util') or 0
         # ★ v5 신규 — R-MLUD: MLUD 잡 누적 (메신저 "MLUD 정체" 패턴)
         mlud_job = latest.get('mlud_job') or 0
         mlud_manual = latest.get('mlud_manual') or 0
@@ -887,7 +891,7 @@ class IncidentTracker:
                 continue
             am = c['area_max'].setdefault(area, {})
             for k in ('ra_value', 'rb_diff_30', 'rev_count',
-                      'rd_fab', 'rd_oht',
+                      'rd_fab', 'rd_oht', 'hub_stb_util',
                       'sla_ratio', 'sla_cnt', 'sorter_val'):
                 v = r.get(k)
                 if v is None:
@@ -982,7 +986,7 @@ EVENT_FIELDS = [
     'M16HUB_ra', 'M14_ra', 'M14B_ra', 'M16A_ra', 'M16B_ra',
     'M16HUB_rb_diff30', 'M14_rb_diff30', 'M14B_rb_diff30', 'M16A_rb_diff30',
     'M16B_rb_diff30',                            # ★ A 보강: 대칭 복구
-    'M16HUB_rd_fab',
+    'M16HUB_rd_fab', 'M16HUB_stb_util',   # stb 는 기록용 값 — 판정 미사용
     'M16HUB_rev_count', 'M16HUB_rev_lids',
     'sla_M14', 'sla_M14B', 'sla_M16A', 'sla_M16B', 'sla_M16HUB',  # ★ A 보강: sla_M14B
     'sorter_M14', 'sorter_M14B', 'sorter_M16A', 'sorter_M16B',
@@ -1213,7 +1217,7 @@ def event_to_row(ev, file_name):
         A('M16HUB', 'rb_diff_30', 0), A('M14', 'rb_diff_30', 0),
         A('M14B', 'rb_diff_30', 0), A('M16A', 'rb_diff_30', 0),
         A('M16B', 'rb_diff_30', 0),                                  # ★ A 보강
-        _fmt(A('M16HUB', 'rd_fab')),
+        _fmt(A('M16HUB', 'rd_fab')), _fmt(A('M16HUB', 'hub_stb_util')),
         A('M16HUB', 'rev_count', 0), ','.join(A('M16HUB', 'rev_lids', []) or []),
         _fmt(A('M14', 'sla_ratio')), _fmt(A('M14B', 'sla_ratio')),   # ★ A 보강: M14B
         _fmt(A('M16A', 'sla_ratio')), _fmt(A('M16B', 'sla_ratio')),
