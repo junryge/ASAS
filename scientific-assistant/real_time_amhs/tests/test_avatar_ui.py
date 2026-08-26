@@ -276,6 +276,64 @@ class 현재_상태_그래프가_보인다(_Page):
         self.assertFalse(self.rect(pg, "#chartWrap")["shown"])
 
 
+class ALL_지표가_화면에_실제로_찍힌다(_Page):
+    """★"all쪽도??확인 했지??" — ALL 지표는 임계(thr)가 없다.
+
+    그래서 아래 '임계 대비 실측' 게이지에는 **하나도** 안 걸렸다. 흐름 신호도
+    1층 합계도 화면에서 통째로 빠져 있었는데, 소스만 보면 멀쩡해 보였다.
+    여기서는 브라우저가 실제로 그린 글자를 읽어 확인한다.
+    """
+
+    ALL = dict(CHART, all={
+        "fab": "ALL", "score": 61, "value": 61, "vmax": 100, "level": "경계",
+        "delta": None, "col": "unified_risk_score", "hot_area": "M16HUB",
+        "stage_name": "3단계 확정",
+        "notes": [
+            {"label": "흐름 — 어느 노드가 몇 배인가",
+             "value": "M16A_2F_TO_HUB=2.0x(위험)", "unit": ""},
+            {"label": "흐름 항 점수", "value": 15, "unit": "점"},
+            {"label": "1층 합계", "value": 32, "unit": "점"},
+            {"label": "최고 위험 구역", "value": "M16HUB", "unit": ""},
+        ],
+        "readings": []})
+
+    def _pg(self):
+        pg, errs = self.open(chart=self.ALL)
+        pg.click("#chartChip")
+        pg.wait_for_timeout(500)
+        return pg, errs
+
+    def _sub(self):
+        pg, errs = self._pg()
+        return pg.inner_text(".callsub"), errs
+
+    def test_흐름_신호가_글자_그대로_보인다(self):
+        sub, errs = self._sub()
+        self.assertIn("M16A_2F_TO_HUB=2.0x(위험)", sub,
+                      "글자 값이 사라졌다 — gnum() 에 넣으면 '—' 가 된다")
+        self.assertEqual(errs, [])
+
+    def test_숫자_지표는_단위까지_붙는다(self):
+        sub, _ = self._sub()
+        self.assertIn("15점", sub)
+        self.assertIn("32점", sub)
+
+    def test_이미_적은_값을_두_번_안_적는다(self):
+        sub, _ = self._sub()
+        self.assertEqual(sub.count("M16HUB"), 1,
+                         "최고구역을 두 줄에 걸쳐 두 번 적었다")
+
+    def test_글자_값이_대시로_안_바뀐다(self):
+        """값만 따로 읽는다 — 라벨에도 '—' 가 들어 있어서(흐름 — 어느…)
+        줄 전체로 재면 못 잡는다."""
+        pg, _ = self._pg()
+        vals = pg.eval_on_selector_all(
+            ".callsub b", "els=>els.map(e=>e.textContent.trim())")
+        self.assertTrue(vals, "값이 하나도 안 그려졌다")
+        self.assertNotIn("—", vals, "gnum() 이 글자를 '—' 로 바꿨다")
+        self.assertIn("M16A_2F_TO_HUB=2.0x(위험)", vals)
+
+
 class 사이드바_접기_펼치기(_Page):
     """오른쪽 사이드바(대화·감정·설정)를 접어 무대를 넓게 본다.
 

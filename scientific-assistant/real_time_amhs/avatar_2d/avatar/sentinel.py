@@ -519,6 +519,15 @@ def chart():
                 "measures": "영역합·흐름·4분초과·분류기·운영자 용량변경을 "
                             "융합한 전체 점수",
             })
+            # ★ALL 지표는 임계가 없다(집계·글자). 그래서 '임계 대비 게이지'
+            #   로는 하나도 안 그려졌다 — 흐름 신호·최고 위험 구역이 화면에서
+            #   통째로 빠져 있었다. 값이 있는 것만 요약 줄로 따로 실어 준다.
+            item["notes"] = [
+                {"label": _no_code(c.get("label") or ""),
+                 "value": c.get("value"), "unit": c.get("unit") or ""}
+                for c in reads_src
+                if c.get("has_value") and c.get("csv") != "unified_risk_score"
+            ][:6]
             all_row = item
             continue
         out.append(item)

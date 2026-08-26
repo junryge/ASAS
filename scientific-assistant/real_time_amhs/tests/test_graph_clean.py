@@ -183,6 +183,59 @@ class 글자_지표도_제대로_나온다(unittest.TestCase):
         self.assertIn("CSV 에 값 없음", src)
 
 
+class ALL_값이_화면까지_간다(unittest.TestCase):
+    """★ALL 지표는 **임계가 없다**(집계·글자). 그래서 '임계 대비 게이지' 에
+    하나도 안 걸려, 흐름 신호·최고 위험 구역이 화면에서 통째로 빠져 있었다.
+    값이 있는 것은 요약 줄로라도 나와야 한다."""
+
+    def _all(self):
+        import time
+        import fab_score as F
+        from lp_client import load_config
+        from store_csv import read_day
+        sys_path = __import__("sys").path
+        base = util.BASE + "/avatar_2d"
+        if base not in sys_path:
+            sys_path.insert(0, base)
+        from avatar import sentinel as S
+        cfg = load_config()
+        rows = read_day("20260728", cfg)
+        if not rows:
+            self.skipTest("고정 자료 없음")
+        out = F.compare(rows, None, cfg, day="20260728")
+        S._get = lambda p: (out if "compare" in p else {"ok": True, "rules": []}, "")
+        S._cache.update(at=0.0, compare=None, good_at=0.0)
+        S._cols_cache.update(at=time.time(), columns={"ok": True, "rules": []})
+        return S.chart()["all"]
+
+    def test_요약_지표가_실린다(self):
+        a = self._all()
+        labels = [n["label"] for n in (a.get("notes") or [])]
+        self.assertTrue(labels, "ALL 값이 하나도 안 실린다")
+        self.assertTrue(any("흐름" in x for x in labels), labels)
+
+    def test_전체_점수는_두_번_안_적는다(self):
+        """막대에 이미 있는 값이다."""
+        a = self._all()
+        self.assertNotIn("전체 점수", [n["label"] for n in (a.get("notes") or [])])
+
+    def test_값_없는_것은_안_싣는다(self):
+        a = self._all()
+        for n in (a.get("notes") or []):
+            self.assertIsNotNone(n["value"])
+
+    def test_화면이_글자_값을_숫자로_안_바꾼다(self):
+        """★gnum() 에 글자를 넣으면 '—' 가 된다 — 흐름 신호가 그렇게 사라졌다."""
+        import os
+        with open(os.path.join(util.BASE, "avatar_2d", "static", "app.js"),
+                  encoding="utf-8") as f:
+            js = f.read()
+        i = js.index("for(const n of (a.notes||[]))")
+        blk = js[i:i + 500]
+        self.assertIn("typeof v==='number'", blk, "글자도 gnum 에 넣고 있다")
+        self.assertIn("shown.has", blk, "이미 적은 값을 또 적는다")
+
+
 class 하루_그래프도_빈_계열을_거른다(unittest.TestCase):
     """report_graphs 는 원래 걸러 왔다 — 되돌아가지 않게 못 박는다."""
 

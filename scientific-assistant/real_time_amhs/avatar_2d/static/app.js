@@ -2188,6 +2188,20 @@ function chartBars(d){
     const sub=[];
     if(a.hot_area)   sub.push('최고구역 '+esc(a.hot_area));
     if(a.stage_name) sub.push(esc(a.stage_name));
+    /* ★ALL 지표는 임계가 없어서 아래 '임계 대비 실측' 게이지에 하나도 안
+       걸린다. 흐름 신호·1층 합계 같은 값이 화면에서 통째로 빠져 있었다.
+       ★값이 글자일 수 있다(흐름 신호·최고 위험 구역) — gnum() 에 넣으면
+         숫자가 아니라 '—' 가 된다. 숫자일 때만 gnum 을 태운다.
+       ★위에 이미 적은 것(최고구역·단계)은 두 번 쓰지 않는다. */
+    const shown = new Set([a.hot_area, a.stage_name].filter(Boolean));
+    for(const n of (a.notes||[])){
+      const v = n.value;
+      if(v===null || v===undefined || v==='') continue;
+      if(shown.has(String(v))) continue;
+      const txt = (typeof v==='number' || (v!=='' && !isNaN(Number(v))))
+        ? gnum(v)+String(n.unit||'') : String(v);
+      sub.push(`${esc(n.label)} <b>${esc(txt)}</b>`);
+    }
     const fu=a.fuse||{};
     if(fu.raw!==undefined && fu.raw!==null)
       sub.push(`영역합 ${gnum(fu.areas)} + 흐름 ${gnum(fu.flow)} + 4분초과 ${gnum(fu.sla)}`
