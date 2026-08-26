@@ -75,7 +75,7 @@ class _Page(unittest.TestCase):
     #   틀리면 '옮겨 둔 자리' 를 심지 못해 테스트가 그냥 통과해 버린다.
     STORE = "avatar2d.settings.v2"
 
-    def open(self, chart=None, ui=None, ctx=None):
+    def open(self, chart=None, ui=None, ctx=None, watching=None):
         """브라우저를 열고 (page, 콘솔오류목록) 을 준다. /api/* 는 전부 가짜."""
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
@@ -108,7 +108,11 @@ class _Page(unittest.TestCase):
                 body = {"ok": True, "alarms": [], "at": CHART["at"],
                         "stale": bool(CHART.get("stale")), "hold": None,
                         "hold_min": 60, "degraded": False, "held_s": 0,
-                        "age_min": CHART.get("age_min"), "err": ""}
+                        "age_min": CHART.get("age_min"), "err": "",
+                        "watching": watching if watching is not None else {
+                            "on": True, "period_s": 10, "ticks": 42,
+                            "fails": 0, "since_s": 3720, "last_ago_s": 3,
+                            "ok": True, "err": "", "alarms": 0}}
             elif u.rstrip("/").endswith("/api/ctx"):
                 # ★계측은 페이지가 뜨자마자 나간다 — goto 뒤에 route 를 걸면
                 #   이미 지나간 뒤라 안 걸린다 (그래서 로컬 근사값이 보였다)
@@ -274,6 +278,40 @@ class 현재_상태_그래프가_보인다(_Page):
         pg.click("#chartClose")
         pg.wait_for_timeout(200)
         self.assertFalse(self.rect(pg, "#chartWrap")["shown"])
+
+
+class 상시_감시가_화면에_보인다(_Page):
+    """★"실행시키면 보고 있는 걸로 하면 안 된다" — 서버가 정말 계속 보고
+    있는지, 멎었으면 멎었다고 나오는지 눈으로 확인한다."""
+
+    def _live(self, watching=None):
+        pg, errs = self.open(watching=watching)
+        pg.wait_for_timeout(1600)          # 폴링 한 바퀴
+        return pg.inner_text("#alarmLive"), errs
+
+    def test_보고_있으면_보고_있다고_나온다(self):
+        txt, errs = self._live()
+        self.assertIn("상시 감시", txt)
+        self.assertIn("1시간", txt, "언제부터 보고 있는지가 안 나온다")
+        self.assertEqual(errs, [])
+
+    def test_멎으면_멎었다고_나온다(self):
+        """★조용히 멈추면 '보고 있는 줄' 알고 그냥 넘어간다."""
+        txt, errs = self._live({"on": False, "period_s": 10, "ticks": 12,
+                                "fails": 3, "since_s": 0, "last_ago_s": 900,
+                                "ok": False, "err": "죽음", "alarms": 0})
+        self.assertIn("상시 감시 멈춤", txt)
+        self.assertEqual(errs, [])
+
+    def test_멎은_것은_눈에_띈다(self):
+        pg, _ = self.open(watching={"on": False, "period_s": 10, "ticks": 0,
+                                    "fails": 0, "since_s": 0,
+                                    "last_ago_s": None, "ok": False,
+                                    "err": "", "alarms": 0})
+        pg.wait_for_timeout(1600)
+        cls = pg.eval_on_selector_all(
+            "#alarmLive span", "els=>els.map(e=>e.className)")
+        self.assertIn("stale", cls, "멎었는데 평소와 같은 색이다")
 
 
 class ALL_지표가_화면에_실제로_찍힌다(_Page):

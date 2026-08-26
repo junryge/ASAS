@@ -88,6 +88,13 @@ class App:
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
         cls.mcp_hub = cls._make_hub(base_dir)
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
+        # ★브라우저가 열려 있을 때만 보면 감시가 아니다. 창을 닫아도, 아무도
+        #   안 봐도 서버가 계속 본다 — 밤에 떴다 사라진 알람도 이력에 남는다.
+        sec = float(config.SENTINEL.get("watch_sec", sentinel.WATCH_SEC) or 0)
+        if sec > 0:
+            sentinel.start_watch(sec, say=lambda s: sys.stdout.write(s + "\n"))
+        else:
+            sys.stdout.write("  상시 감시 꺼짐 (config.SENTINEL.watch_sec=0)\n")
         cls.uploads_dir = cls.data_dir / "uploads"
         cls.uploads_dir.mkdir(parents=True, exist_ok=True)
         cls.uploads = {}                 # {이름: {"summary","numbers"}} 분석 캐시
@@ -253,7 +260,11 @@ class Handler(SimpleHTTPRequestHandler):
         # ── 관제 (real_time_amhs) ────────────────────────────────────────
         if path == "/api/fab/status":
             # 브라우저 알람 폴링. 서버 캐시 5초라 관제 서버엔 그 주기로만 간다.
-            return self._json(200, sentinel.watch())
+            # ★watching 을 같이 준다 — 서버가 정말 상시로 보고 있는지 화면이
+            #   알아야 한다. 스레드가 죽었는데 화면만 멀쩡하면 '보고 있는 줄'
+            #   알고 넘어간다.
+            return self._json(200, dict(sentinel.watch(),
+                                        watching=sentinel.watch_status()))
 
         if path == "/api/fab/chart":
             # 화면 그래프 — 점수 막대 + 실제 컬럼의 임계 대비 실측값

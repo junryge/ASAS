@@ -2131,6 +2131,10 @@ const SdRunner = (function(){
    ★관제가 끊기면 '끊겼다' 고 말한다 — 조용히 정상인 척하는 게 최악이다.
    ★실데이터 알람(src='real')만 자동 해제한다. 테스트 알람은 사람이 끈다. */
 let sentinelDown = null;      // null=아직 모름, true/false=상태
+/* 서버의 상시 감시 상태 {on, period_s, ticks, since_s, ...}.
+   ★paintAlarmLive 가 이 값을 읽는다. 여기서 선언해 두지 않으면 그 함수가
+     먼저 도는 순간 TDZ 로 스크립트 전체가 죽는다 — 이미 두 번 겪었다. */
+let watching = null;
 /* ═══════════ 현재 상태 그래프 ═════════════════════════════════════════
    "현재 상태 물어보면 데이터와 따로 화면에 그래프도 같이" — 요청 그대로다.
    · FAB 점수 막대: 축 0..100 고정 + 등급 컷(경계/위험/초위험) 눈금.
@@ -2335,8 +2339,27 @@ function paintAlarmLive(d){
   if(d.warn) L.push(`<span class="stale">⛔ 오늘 수집 없음 · ${esc(d.day||'')} 자료</span>`);
   else if(d.stale) L.push(`<span class="stale">⚠ ${esc(d.age_text||'')} 값</span>`);
   else if(d.at) L.push(`<span style="width:100%">데이터 ${esc(d.at)}</span>`);
+  /* ★서버가 **정말** 상시로 보고 있는지 적는다. 예전엔 브라우저가 폴링할
+     때만 봤다 — 창을 닫으면 아무도 안 봤고, 화면만 '감시 중' 으로 보였다.
+     감시 스레드가 죽으면 여기서 바로 드러나야 한다. */
+  const w = watching;
+  if(w){
+    L.push(w.on
+      ? `<span class="watch" title="브라우저를 닫아도 서버가 계속 봅니다 (${gnum(w.period_s)}초마다)"
+          >👁 상시 감시 ${ago(w.since_s)}째 · ${gnum(w.ticks)}회</span>`
+      : `<span class="stale" title="서버의 상시 감시가 멎었습니다 — 창을 닫으면 아무도 안 봅니다"
+          >⛔ 상시 감시 멈춤</span>`);
+  }
   el.innerHTML=L.join('');
   el.classList.add('on');
+}
+/* 초 → 사람이 읽는 길이 */
+function ago(s){
+  s = Math.max(0, Math.round(Number(s)||0));
+  if(s < 60) return s+'초';
+  if(s < 3600) return Math.floor(s/60)+'분';
+  if(s < 86400) return Math.floor(s/3600)+'시간';
+  return Math.floor(s/86400)+'일';
 }
 
 function openChart(){
@@ -2446,6 +2469,9 @@ async function pollSentinel(){
     const r = await fetch('/api/fab/status', {cache:'no-store'});
     s = await r.json();
   }catch(e){ s = {ok:false, err:e.message}; }
+  /* ★관제가 끊겨도(ok=false) 감시 상태는 챙긴다 — "관제가 죽은 것" 과
+     "우리가 아예 안 보고 있는 것" 은 다른 사고다. */
+  watching = s.watching || null;
   if(!s.ok){
     if(sentinelDown!==true){
       sentinelDown = true;

@@ -422,6 +422,130 @@ def watch():
             "held_s": int(r.get("held_s") or 0), "err": r.get("err") or ""}
 
 
+# ─────────────────────── 상시 감시 (브라우저와 무관) ───────────────────────
+# ★watch() 는 브라우저가 폴링할 때만 돌았다. 창을 닫으면 아무도 안 본다 —
+#   밤에 알람이 떴다 사라져도 이력에 한 줄도 안 남는다. "실행시키면 보고
+#   있는 걸로 하면 안 된다" 가 그 지적이다.
+#   그래서 서버가 스스로 돈다. 브라우저는 그 결과를 받아 볼 뿐이다.
+WATCH_SEC = 10.0         # 서버가 스스로 보는 주기 (관제 캐시 5초보다 길게)
+# ★아무리 짧게 설정해도 이보다 자주는 안 본다 — 설정 오타 하나로 관제
+#   서버를 두들기면 안 된다 (0.01 을 넣으면 초당 100번이다).
+WATCH_MIN_SEC = 2.0
+
+
+class Watcher(threading.Thread):
+    """서버가 켜져 있는 동안 계속 본다. 브라우저가 없어도 이력이 쌓인다."""
+
+    def __init__(self, period_s=WATCH_SEC, say=None):
+        threading.Thread.__init__(self, name="sentinel-watch", daemon=True)
+        self.period_s = max(WATCH_MIN_SEC, float(period_s))
+        self._say = say or (lambda *_a: None)
+        # ★_stop 이라고 짓지 마라 — threading.Thread 가 내부에서 쓰는 이름이라
+        #   덮어쓰면 is_alive() 가 "'Event' object is not callable" 로 터진다.
+        self._quit = threading.Event()
+        self.started_at = 0.0
+        self.ticks = 0            # 몇 번 봤나
+        self.fails = 0            # 관제에 못 붙은 횟수 (연속 아님 — 누적)
+        self.last_at = 0.0        # 마지막으로 본 시각 (epoch)
+        self.last_ok = False
+        self.last_err = ""
+        self.last_alarms = []
+        self._seen = {}           # {fab: level} — 바뀔 때만 말한다
+
+    def run(self):
+        self.started_at = time.time()
+        self._say("[감시] 상시 감시 시작 — {:.0f}초마다".format(self.period_s))
+        while not self._quit.is_set():
+            self.tick()
+            self._quit.wait(self.period_s)
+        self._say("[감시] 상시 감시 멈춤 ({}회 봄)".format(self.ticks))
+
+    def tick(self):
+        """한 번 본다. ★무엇이 터져도 스레드가 죽으면 안 된다 — 죽으면
+        아무 소리 없이 감시가 멎고, 화면은 여전히 '보고 있음' 으로 보인다."""
+        try:
+            w = watch()
+        except Exception as e:              # noqa: BLE001
+            self.ticks += 1
+            self.fails += 1
+            self.last_at, self.last_ok = time.time(), False
+            self.last_err = str(e)[:200]
+            return None
+        self.ticks += 1
+        self.last_at = time.time()
+        self.last_ok = bool(w.get("ok"))
+        self.last_err = str(w.get("err") or "")
+        self.last_alarms = w.get("alarms") or []
+        if not self.last_ok:
+            self.fails += 1
+        self._announce(w)
+        return w
+
+    def _announce(self, w):
+        """등급이 바뀐 것만 콘솔에 적는다 — 폴링마다 적으면 소음이다.
+        ★화면 없이 돌릴 때 이 줄이 유일한 증거다."""
+        now = {a.get("fab"): a.get("level") for a in (w.get("alarms") or [])}
+        for fab, lv in now.items():
+            if self._seen.get(fab) != lv:
+                sc = next((a.get("score") for a in w["alarms"]
+                           if a.get("fab") == fab), None)
+                self._say("[감시] {} {} ({}점)".format(fab, lv, sc))
+        for fab, prev in self._seen.items():
+            if fab not in now:
+                self._say("[감시] {} 정상 복귀 (직전 {})".format(fab, prev))
+        self._seen = now
+
+    def stop(self, timeout=3.0):
+        self._quit.set()
+        if self.is_alive():
+            self.join(timeout=timeout)
+
+    def status(self):
+        """화면이 '정말 보고 있나' 를 확인하는 값."""
+        return {"on": bool(self.is_alive()),
+                "period_s": self.period_s,
+                "ticks": self.ticks,
+                "fails": self.fails,
+                "since_s": int(time.time() - self.started_at)
+                           if self.started_at else 0,
+                "last_ago_s": int(time.time() - self.last_at)
+                              if self.last_at else None,
+                "ok": self.last_ok,
+                "err": self.last_err,
+                "alarms": len(self.last_alarms)}
+
+
+_watcher = None
+
+
+def start_watch(period_s=WATCH_SEC, say=None):
+    """상시 감시를 켠다. 이미 돌고 있으면 그대로 둔다."""
+    global _watcher
+    if _watcher is not None and _watcher.is_alive():
+        return _watcher
+    _watcher = Watcher(period_s, say)
+    _watcher.start()
+    return _watcher
+
+
+def stop_watch():
+    global _watcher
+    if _watcher is not None:
+        _watcher.stop()
+        _watcher = None
+
+
+def watch_status():
+    """켜져 있나 · 몇 번 봤나 · 마지막이 몇 초 전인가.
+    ★스레드가 죽어도 화면이 '보고 있음' 으로 보이면 안 된다 — on 은
+      is_alive() 를 그대로 쓴다."""
+    if _watcher is None:
+        return {"on": False, "period_s": 0, "ticks": 0, "fails": 0,
+                "since_s": 0, "last_ago_s": None, "ok": False,
+                "err": "", "alarms": 0}
+    return _watcher.status()
+
+
 # ────────────────────────────── 화면 그래프 ──────────────────────────────
 MAX_READ = 8          # 한 FAB 에 조건이 너무 많으면 그래프가 아니라 표가 된다
 
