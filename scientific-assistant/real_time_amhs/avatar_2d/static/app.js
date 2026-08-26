@@ -2103,19 +2103,27 @@ function gnum(v){
 }
 const OPSYM={'<=':'≤','>=':'≥','diff10':'10분 +'};
 
+/* ★그리는 값은 **CSV 에 있는 그 컬럼**이다 (실제 지적).
+     ALL = unified_risk_score (0~100) · FAB = {FAB}_score = 영역 점수 (0~50)
+   축이 서로 다르므로 vmax 를 서버가 같이 준다. 등급 컷(60/71/85)은
+   위험도 0~100 기준이니 축에 맞춰 옮겨 찍는다 (0~50 축이면 30/35.5/42.5).
+   예전엔 FAB 도 '위험도'(영역점수×2)를 그려서, M16HUB_score 가 12 인데
+   화면엔 24 로 보였다 — 관제가 아는 숫자와 화면 숫자가 달랐다. */
 function chartBar(f, cuts, cls){
-  const sc=Math.max(0, Math.min(100, Number(f.score)||0));
+  const vmax=Number(f.vmax)||100;
+  const val=Number(f.value!==undefined ? f.value : f.score)||0;
+  const pct=v=>Math.max(0, Math.min(100, v/vmax*100));
   const cut=[cuts.warn,cuts.danger,cuts.critical]
     .filter(c=>isFinite(c))
-    .map(c=>`<i class="ccut" style="left:${Math.max(0,Math.min(100,c))}%"></i>`)
+    .map(c=>`<i class="ccut" style="left:${pct(c*vmax/100)}%"></i>`)
     .join('');
   const dl=(f.delta===null||f.delta===undefined) ? ''
     : `<div class="cdelta">30분 ${f.delta>0?'+':''}${gnum(f.delta)}</div>`;
   return `<div class="cbar ${cls||''} lv${esc(f.level)}">
-    <div class="cname" title="${esc(f.fab)}">${esc(f.fab)}</div>
-    <div class="ctrack"><div class="cfill" style="width:${sc}%"></div>${cut}</div>
-    <div class="cval"><span class="clv">${gnum(f.score)}</span>
-      <span style="color:var(--dim)">${esc(f.level)}</span>${dl}</div>
+    <div class="cname" title="${esc(f.col||f.fab)}">${esc(f.fab)}</div>
+    <div class="ctrack"><div class="cfill" style="width:${pct(val)}%"></div>${cut}</div>
+    <div class="cval"><span class="clv">${gnum(val)}</span>
+      <span style="color:var(--dim)">/${gnum(vmax)} ${esc(f.level)}</span>${dl}</div>
   </div>`;
 }
 function chartBars(d){
@@ -2127,7 +2135,7 @@ function chartBars(d){
      따로 세우고, 무엇을 잰 값인지 밑에 적는다. */
   if(d.all){
     const a=d.all;
-    L.push('<div class="csec">전체 (ALL) — 융합 점수</div>');
+    L.push(`<div class="csec">전체 (ALL) — <code>${esc(a.col||'unified_risk_score')}</code> · 0~${gnum(a.vmax||100)}</div>`);
     L.push(chartBar(a, cuts, 'callrow'));
     const sub=[];
     if(a.hot_area)   sub.push('최고구역 '+esc(a.hot_area));
@@ -2138,7 +2146,9 @@ function chartBars(d){
                +` + 분류기 ${gnum(fu.sorter)} + 용량변경 ${gnum(fu.maxcapa)} = ${gnum(fu.raw)}`);
     if(sub.length) L.push(`<div class="callsub">${sub.join(' · ')}</div>`);
   }
-  L.push('<div class="csec">FAB별 위험도 (0~100 · 눈금 = 경계·위험·초위험)</div>');
+  const fmax=((d.fabs||[])[0]||{}).vmax || d.area_cap || 50;
+  L.push(`<div class="csec">FAB별 영역 점수 — <code>{FAB}_score</code> · 0~${gnum(fmax)}`
+        +` (눈금 = 경계·위험·초위험)</div>`);
   for(const f of (d.fabs||[])){
     L.push(chartBar(f, cuts));
   }
@@ -2252,7 +2262,8 @@ function paintAlarmLive(d){
   /* ★ALL 을 맨 앞에 — 관제가 제일 먼저 보는 값인데 빠져 있었다 */
   const items=(d.all ? [d.all] : []).concat((d.fabs||[]).slice(0,6));
   const L=items.map(f=>
-    `<span class="f${esc(f.level)}${f.is_all?' fall':''}">${esc(f.fab)} <b>${gnum(f.score)}</b></span>`);
+    `<span class="f${esc(f.level)}${f.is_all?' fall':''}" title="${esc(f.col||'')}"
+      >${esc(f.fab)} <b>${gnum(f.value!==undefined?f.value:f.score)}</b></span>`);
   if(d.warn) L.push(`<span class="stale">⛔ 오늘 수집 없음 · ${esc(d.day||'')} 자료</span>`);
   else if(d.stale) L.push(`<span class="stale">⚠ ${esc(d.age_text||'')} 값</span>`);
   else if(d.at) L.push(`<span style="width:100%">데이터 ${esc(d.at)}</span>`);

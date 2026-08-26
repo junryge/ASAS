@@ -140,8 +140,10 @@
   #chartBody .csec{color:var(--dim);font-size:10.5px;letter-spacing:.03em;
     margin:9px 0 5px}
   #chartBody .csec:first-child{margin-top:0}
+  #chartBody .csec code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:#8fd0ff;font-size:10px}
   /* FAB 점수 막대 — 축은 0..100 고정. 컷(경계/위험/초위험) 눈금을 겹쳐 둔다 */
-  .cbar{display:grid;grid-template-columns:52px 1fr 62px;align-items:center;
+  .cbar{display:grid;grid-template-columns:52px 1fr 78px;align-items:center;
     gap:7px;margin:3px 0}
   .cbar .cname{color:#c9d3e0;font-size:11px;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis}

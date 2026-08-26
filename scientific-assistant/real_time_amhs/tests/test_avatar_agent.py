@@ -3647,6 +3647,67 @@ class 전체_ALL_도_화면에_있다(_Sentinel):
         self.assertIn("d.all", live, "알람 패널 실시간 줄에 ALL 이 없다")
 
 
+class 화면_점수는_CSV_컬럼_그대로다(_Sentinel):
+    """★"ALL 스코어는 unified_risk_score, 나머지는 FAB별 area_score 다" — 실제 지적.
+
+    예전엔 FAB 도 '위험도'(영역점수를 100점으로 편 값)를 그렸다. CSV 의
+    M16HUB_score 가 12 인데 화면엔 24 로 보였다 — 관제가 아는 숫자와 화면
+    숫자가 다르면 그 화면은 못 쓴다.
+    """
+
+    def _chart(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel._cols_cache.update(at=time.time(),
+                                    columns={"ok": True, "rules": []})
+        return sentinel.chart()
+
+    def test_ALL_은_unified_risk_score(self):
+        a = self._chart()["all"]
+        self.assertEqual(a["col"], "unified_risk_score")
+        self.assertEqual(a["vmax"], 100)
+        self.assertEqual(a["value"], a["score"])
+
+    def test_FAB_은_영역_점수다(self):
+        """★위험도(×2)가 아니라 {FAB}_score 그대로."""
+        f = [x for x in self._chart()["fabs"] if x["fab"] == "M16HUB"][0]
+        self.assertEqual(f["value"], f["area"], "영역 점수가 아니다")
+        self.assertEqual(f["value"], 36.0)          # fake_compare 의 area
+        self.assertEqual(f["risk"], 72)             # 위험도는 따로 남긴다
+        self.assertNotEqual(f["value"], f["risk"], "편 값을 그리고 있다")
+
+    def test_어느_컬럼인지_밝힌다(self):
+        c = self._chart()
+        self.assertEqual(
+            [f["col"] for f in c["fabs"] if f["fab"] == "M16HUB"][0],
+            "M16HUB_score")
+
+    def test_축이_서로_다르다(self):
+        """★0~50 과 0~100 을 같은 축에 그리면 FAB 이 두 배로 커 보인다."""
+        c = self._chart()
+        self.assertEqual(c["all"]["vmax"], 100)
+        self.assertTrue(all(f["vmax"] == c["area_cap"] for f in c["fabs"]),
+                        [f["vmax"] for f in c["fabs"]])
+        self.assertEqual(c["area_cap"], 50)
+
+    def test_등급은_위험도_기준_그대로다(self):
+        """보여 주는 값이 바뀌어도 판정은 안 바뀐다 — 알람이 흔들리면 안 된다."""
+        f = [x for x in self._chart()["fabs"] if x["fab"] == "M16HUB"][0]
+        self.assertEqual(f["level"], "위험")
+
+    def test_화면이_그_값을_그린다(self):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            js = f.read()
+        blk = js[js.index("function chartBar("):js.index("function chartBars(")]
+        self.assertIn("f.vmax", blk, "축 최대를 안 쓴다 — 0~50 을 0~100 로 그린다")
+        self.assertIn("f.value", blk, "CSV 값을 안 그린다")
+        head = js[js.index("function chartBars("):js.index("function chartReads(")]
+        self.assertIn("unified_risk_score", head, "어느 컬럼인지 안 밝힌다")
+        self.assertIn("{FAB}_score", head)
+        live = js[js.index("function paintAlarmLive("):
+                  js.index("\nfunction openChart(")]
+        self.assertIn("f.value", live, "알람 패널이 아직 편 값을 그린다")
+
+
 class 알람_기록을_CSV_로_남긴다(_Sentinel):
     """★"알람해제 할때 내용을 기입할수 있도록 하고 csv로 남겨라" — 요청 그대로.
 

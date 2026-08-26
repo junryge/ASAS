@@ -472,11 +472,28 @@ def chart():
             meta = rules.get(code) or {}
             fired.append(_no_code(meta.get("label") or "") or
                          _KO.get(code, "룰"))
+        # ★화면에 그릴 값은 **CSV 에 있는 그 컬럼**이어야 한다 (실제 지적).
+        #   ALL  = unified_risk_score (0~100)
+        #   FAB  = {FAB}_score = 영역 점수 (0~AREA_CAP, 보통 50)
+        #   예전엔 FAB 도 score(=영역점수를 100점으로 편 '위험도')를 그렸다.
+        #   M16HUB_score 가 12 인데 화면엔 24 로 보였다 — 관제가 아는 숫자와
+        #   화면 숫자가 다르면 그 화면은 못 쓴다.
+        cap = d.get("area_cap") or 50
+        is_all = bool(row.get("is_all"))
         item = {"fab": row.get("fab"), "score": row.get("score"),
                 "level": row.get("level") or "정상",
                 "delta": row.get("delta"), "area": row.get("area"),
                 "fired": fired, "readings": reads,
-                "is_all": bool(row.get("is_all"))}
+                "is_all": is_all,
+                # 화면이 그대로 쓰는 값 — 축이 서로 다르므로 최대치도 같이 준다
+                "value": row.get("score") if is_all else row.get("area"),
+                "vmax": 100 if is_all else cap,
+                "col": (row.get("score_col") or "unified_risk_score") if is_all
+                       else (row.get("stored_col")
+                             or "{}_score".format(row.get("fab") or "")),
+                # 등급은 위험도(0~100) 기준이라 그대로 남긴다 — 축이 다르면
+                # 컷 눈금도 축에 맞춰 옮겨야 한다 (화면이 vmax 로 환산한다)
+                "risk": row.get("risk", row.get("score"))}
         if row.get("is_all"):
             # ★전체(ALL)가 화면에서 빠져 있었다 (실제 지적). 관제가 제일 먼저
             #   보는 값인데 없었다. 다만 **잰 것이 다르다** — FAB 은 자기 영역
