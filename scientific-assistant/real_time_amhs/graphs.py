@@ -167,6 +167,21 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         ((t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts), key=lambda x: x[2])
     pts_sc = [(t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
     metrics = parse_reason_metrics(peak_r.get("reason") or "")
+    # ★값이 두 점도 안 되는 지표는 **패널을 만들지 않는다.** 예전엔 88px 짜리
+    #   빈 칸을 그려 놓고 "데이터 없음" 만 적었다 — 그래프가 길어지기만 하고
+    #   볼 것은 없다. 대신 어느 컬럼이 안 오는지 한 줄로 밝힌다 (그 사실도
+    #   정보다 — 수집이 빠진 것인지 확인해야 하니까).
+    def _has_line(md):
+        n = 0
+        for _t, r in pts:
+            if _f(r.get(md["col"])) is not None:
+                n += 1
+                if n >= 2:
+                    return True
+        return False
+
+    empty = [m for m in metrics if not _has_line(m)]
+    metrics = [m for m in metrics if _has_line(m)]
     area = (peak_r.get("hot_area") or "").strip()
 
     L, R = 62, 22
@@ -176,7 +191,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
     sec_head = 30 if metrics else 0
     top_score = head
     y_met0 = top_score + SCORE_H + 18 + sec_head
-    height = y_met0 + (MET_H + GAP) * len(metrics) + 34
+    height = y_met0 + (MET_H + GAP) * len(metrics) + 34 + (16 if empty else 0)
 
     def X(t):
         return L + pw * ((t - t0).total_seconds() / span)
@@ -266,10 +281,6 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         o.append(f'<text x="{L-38}" y="{y+26}" font-size="9" fill="{_TX2}" '
                  f'font-family="ui-monospace,Menlo,Consolas,monospace">{_e(md["raw"])}</text>')
 
-        if len(vals) < 2:
-            o.append(f'<text x="{L-38}" y="{y+44}" font-size="9.5" fill="{_TX3}">데이터 없음</text>')
-            continue
-
         vmin = min(v for _, v in vals)
         vmax = max(v for _, v in vals)
         rng = (vmax - vmin) or 1.0
@@ -325,6 +336,14 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         o.append(f'<text x="{x:.1f}" y="{ybase}" font-size="9.5" fill="{_TX2}" '
                  f'text-anchor="middle">{tick:%H:%M}</text>')
         tick += timedelta(minutes=step)
+
+    # ★값이 안 오는 컬럼은 패널 대신 한 줄로 — 빈 칸을 그리지 않으면서도
+    #   "이건 왜 안 보이나" 에 답이 된다 (수집이 빠진 것인지 확인해야 한다).
+    if empty:
+        names = " · ".join(_e(m["label"]) for m in empty[:6])
+        more = f" 외 {len(empty)-6}개" if len(empty) > 6 else ""
+        o.append(f'<text x="{L-46}" y="{ybase+14:.1f}" font-size="9.5" '
+                 f'fill="{_TX3}">이 구간에 값이 안 온 컬럼: {names}{more}</text>')
 
     o.append("</svg>")
     return "".join(o)
