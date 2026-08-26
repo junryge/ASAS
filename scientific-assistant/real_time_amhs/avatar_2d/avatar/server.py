@@ -518,7 +518,8 @@ class Handler(SimpleHTTPRequestHandler):
         seg = llm.measure(persona, q, hist, App.doc_store, st,
                           skill_store=App.skill_store,
                           evidence_text=ev_text, attach=attach,
-                          mcp_text=self._mcp_text(q))
+                          mcp_text=self._mcp_text(q),
+                          evidence_down=llm.is_data_question(q) and not ev_text)
         seg["limit"] = int(st.get("ctxLimit", 32768))
         seg["pct"] = min(999, round(seg["total"] / max(1, seg["limit"]) * 100))
         return self._json(200, seg)
@@ -607,10 +608,16 @@ class Handler(SimpleHTTPRequestHandler):
                 if body is not None:
                     attach = (aname, body)
 
+        # ★관제가 죽었는데 MCP(요청이력)에는 구체적인 숫자가 있으면, 모델은
+        #   눈에 보이는 숫자를 집어 "요청이 올라와 있어요" 로 답해 버린다 —
+        #   관제 상태를 물었는데 엉뚱한 걸 답하는 셈이다 (실제 증상).
+        #   그래서 '지금 관제를 못 본다' 를 MCP 칸에도 박아 준다.
+        down = llm.is_data_question(text) and not ev.get("ok")
         msgs = llm.build_messages(persona, text, history, App.doc_store, st,
                                   skill_store=App.skill_store,
                                   evidence_text=ev["text"], attach=attach,
-                                  mcp_text=self._mcp_text(text))
+                                  mcp_text=self._mcp_text(text),
+                                  evidence_down=down)
         t0 = time.time()
 
         if not b.get("stream"):

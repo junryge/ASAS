@@ -465,6 +465,56 @@ class 서윤에게_전달된다(unittest.TestCase):
         self.assertNotIn("R-D", tail, "룰 코드가 그대로 실렸다")
 
 
+class 관제가_죽었을_때_요청이력으로_답하지_않는다(unittest.TestCase):
+    """★"젠장 서버가 끊겼다 — 요청이 올라와 있어요 라고 답하네" (실제 지적).
+
+    관제가 끊기면 [관제 근거] 는 "못 받았다" 인데, [외부 도구] 칸에는
+    "총 5건" 같은 **구체적인 숫자**가 있다. 모델은 눈에 보이는 숫자를 집어
+    상태 질문에 요청이력으로 답해 버린다. 그러면 관제가 끊긴 걸 물었는데
+    엉뚱한 걸 답하는 셈이다.
+    """
+
+    ST = {"docBudget": 6000}
+    DOWN = ("관제 서버에서 데이터를 못 받았다 (연결 거부). 수치는 알 수 없다 — "
+            "반드시 '데이터를 못 본다' 고 말하고, 숫자를 지어내지 마라.")
+    MCP = "[QA 요청이력]\n· 현황\n총 5건 · 미결 5건"
+
+    def _tail(self, **kw):
+        kw.setdefault("mcp_text", self.MCP)
+        s = llm.build_messages("서윤이다.", "지금 상태 어때?", [], _빈자료(),
+                               self.ST, **kw)[0]["content"]
+        return s[s.index("[외부 도구"):]
+
+    def test_끊겼으면_그렇게_못_박는다(self):
+        t = self._tail(evidence_text=self.DOWN, evidence_down=True)
+        self.assertIn("관제 데이터를 못 받은 상태", t)
+        self.assertIn("답이 **될 수 없다**", t)
+
+    def test_먼저_못_본다고_말하라고_시킨다(self):
+        t = self._tail(evidence_text=self.DOWN, evidence_down=True)
+        self.assertIn("먼저 '관제 데이터를 못 보고 있다' 고", t)
+
+    def test_멀쩡할_때는_그_경고를_안_붙인다(self):
+        """★평소에도 붙이면 관제가 살아 있는데 '못 본다' 고 말하게 된다."""
+        t = self._tail(evidence_text="M16HUB 72점 위험")
+        self.assertNotIn("관제 데이터를 못 받은 상태", t)
+
+    def test_요청_건수와_알람_건수를_안_섞게_한다(self):
+        """★'5건' 을 알람 5건으로 읽으면 그것도 거짓말이다."""
+        t = self._tail(evidence_text="M16HUB 72점 위험")
+        self.assertIn("요청 접수 건수", t)
+        self.assertIn("FAB 점수·알람 건수와", t)
+
+    def test_서버가_끊김을_실제로_넘긴다(self):
+        """★llm 에 인자만 만들어 두고 server 가 안 넘기면 아무 소용이 없다."""
+        p = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("evidence_down=down", src, "대화 경로가 안 넘긴다")
+        i = src.index("down = ")
+        self.assertIn("not ev.get(\"ok\")", src[i:i + 120])
+
+
 class 컨텍스트_계측에_칸이_있다(unittest.TestCase):
     """★칸이 없으면 실려 있는데도 화면에서는 '없는 것' 으로 보인다 —
     참고자료 MD 때 똑같이 겪었다."""

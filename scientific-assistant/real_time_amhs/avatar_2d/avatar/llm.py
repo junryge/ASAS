@@ -147,7 +147,7 @@ def _seg(parts, key, text):
 
 def build_messages(persona, user_text, history, doc_store, settings,
                    skill_store=None, evidence_text="", attach=None,
-                   parts=None, mcp_text=""):
+                   parts=None, mcp_text="", evidence_down=False):
     """system + 최근 대화 + user. (기존 sysPrompt 의 파이썬판)
 
     주입 순서: 페르소나 → 에이전트 규칙 → 관제 근거 → 외부 도구 → 첨부 →
@@ -194,11 +194,23 @@ def build_messages(persona, user_text, history, doc_store, settings,
     #   같은 자리다. 별도 블록으로 빼고 시각 규칙이 안 붙는다고 못 박는다.
     if mcp_text:
         _seg(parts, "mcp", mcp_text)
+        # ★관제가 죽었을 때가 제일 위험하다. [관제 근거] 는 "못 받았다" 인데
+        #   이 칸에는 "요청 5건" 같은 **구체적인 숫자**가 있다. 그러면 모델은
+        #   눈에 보이는 숫자를 집어 "요청이 올라와 있어요" 로 답해 버린다 —
+        #   관제가 끊긴 걸 물었는데 엉뚱한 걸 답하는 셈이다 (실제 증상).
+        down = ("\n· ★지금 **관제 데이터를 못 받은 상태**다. 이 블록은 요청이력일"
+                " 뿐, 지금 상태·점수·알람의 답이 **될 수 없다**. 상태를 물으면"
+                " 먼저 '관제 데이터를 못 보고 있다' 고 분명히 말한다. 요청이력은"
+                " 그 뒤에 '다만 요청이력은 이렇다' 로 덧붙이는 것이지, 그것으로"
+                " 상태 질문에 답하지 않는다.\n" if evidence_down else "")
         sysmsg += ("[외부 도구 — MCP]\n" + terms.no_code(mcp_text) +
                    "\n· 이 블록은 관제 실측이 아니라 **외부 시스템 조회 결과**다."
                    " 데이터 시각을 앞세우지 마라 — 여기엔 관제 시각이 없다.\n"
                    "· 여기 없는 건수·상태를 지어내지 않는다. 조회가 실패했다고"
-                   " 적혀 있으면 실패했다고 말한다.\n\n")
+                   " 적혀 있으면 실패했다고 말한다.\n"
+                   "· 여기 적힌 건수는 **요청 접수 건수**다. FAB 점수·알람 건수와"
+                   " 아무 상관이 없다 — 섞어서 말하면 안 된다.\n"
+                   + down + "\n")
     sk = ""
     if skill_store is not None:
         sk = skill_store.context(user_text,
@@ -249,7 +261,8 @@ CTX_KEYS = ("persona", "rules", "evidence", "mcp", "attach", "skills", "docs",
 
 
 def measure(persona, user_text, history, doc_store, settings,
-            skill_store=None, evidence_text="", attach=None, mcp_text=""):
+            skill_store=None, evidence_text="", attach=None, mcp_text="",
+            evidence_down=False):
     """실제 프롬프트를 **그대로 만들어 보고** 칸별 토큰을 잰다.
 
     ★따로 계산하면 반드시 어긋난다. 실제로 어긋나 있었다 — 스킬은 아예
@@ -259,7 +272,8 @@ def measure(persona, user_text, history, doc_store, settings,
     parts = {}
     build_messages(persona, user_text, history, doc_store, settings,
                    skill_store=skill_store, evidence_text=evidence_text,
-                   attach=attach, parts=parts, mcp_text=mcp_text)
+                   attach=attach, parts=parts, mcp_text=mcp_text,
+                   evidence_down=evidence_down)
     seg = {k: int(parts.get(k, 0)) for k in CTX_KEYS}
     seg["rules"] += 40                      # 역할·구분자 등 고정 오버헤드
     seg["total"] = sum(seg[k] for k in CTX_KEYS)
