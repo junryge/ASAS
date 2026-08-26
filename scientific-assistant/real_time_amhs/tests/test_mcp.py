@@ -638,6 +638,81 @@ class 관제_끊김을_요청조회_실패로_말하지_않는다(unittest.TestC
         self.assertIn("아직 안 끝난 것", t)
 
 
+class 목록이_한_줄로_안_나온다(unittest.TestCase):
+    """★"글자 /n 처리 좀 해라... 한 줄로 쭉 나오면 우짜노" — 실제 지적.
+
+    말풍선 CSS 는 이미 white-space:pre-wrap 이라 \\n 만 오면 줄이 갈라진다.
+    문제는 모델이 안 넣는 것. 규칙으로 시켜도 붙여 쓴다 — 그래서 **결정적
+    규칙으로 서버가 나눈다** (LLM 을 다시 부르지 않는다).
+    """
+
+    ONE = ("요청 5건이에요. #5 [적용완료] 제안 · 이준력 — 스킬.FAB 알람 구축 "
+           "#4 [적용완료] 요청 · 윤재철TL님 — 스코어 산점 제작 "
+           "#3 [보류] 요청 · 김윤환 — 지표 사용한 이유")
+
+    def test_번호_목록을_줄로_가른다(self):
+        r = llm.reflow_list(self.ONE)
+        self.assertEqual(r.count("\n"), 3, r)
+        self.assertTrue(r.splitlines()[1].startswith("#5"))
+
+    def test_빈_줄이_안_생긴다(self):
+        """★\\s* 로 쓰면 길이 0 매치가 겹쳐 \\n\\n 이 된다."""
+        self.assertNotIn("\n\n", llm.reflow_list(self.ONE))
+
+    def test_점_목록도_가른다(self):
+        r = llm.reflow_list(
+            "현황을 정리해 드릴게요. - 적용완료 4건입니다 - 보류 1건이에요 "
+            "- 고객확인은 5건 중 0건입니다 - 대상은 전부 ALL 이고요")
+        self.assertEqual(r.count("\n"), 4, r)
+
+    def test_이미_나뉜_것은_안_건드린다(self):
+        t = "가\n#1 [대기] 하나\n#2 [보류] 둘"
+        self.assertEqual(llm.reflow_list(t), t)
+
+    def test_짧은_줄은_안_건드린다(self):
+        """★멀쩡한 문장을 쪼개면 그게 더 나쁘다. 짧은 잡담에도 '- ' 나
+        '#3 [' 이 섞일 수 있는데, 그때 쪼개면 말이 토막 난다."""
+        for t in ("#1 [대기] 하나뿐이에요",
+                  "네 - 맞아요 - 그렇습니다",
+                  "#1 [대기] 이거랑 #2 [보류] 저거요"):
+            self.assertEqual(llm.reflow_list(t), t, t)
+
+    def test_항목이_하나면_안_가른다(self):
+        """★한 개짜리는 목록이 아니다. 가르면 문장 중간이 끊긴다."""
+        for t in ("아주 긴 문장인데요 #3 [보류] 요청 하나만 있고 나머지는 그냥 "
+                  "말이 계속 이어지는 문장입니다 네네 길이를 충분히 넘겨서 "
+                  "길이 안전장치에 먼저 걸리지 않게 만듭니다",
+                  "이번 건은 길게 설명드릴게요 - 그러니까 이런 사정이 있었고 "
+                  "저런 경위로 이렇게 되었다는 이야기입니다 네 이 문장도 "
+                  "충분히 길게 늘여서 길이 조건을 넘겨 둡니다"):
+            self.assertGreater(len(t), 60, "시험 글이 짧아 길이 안전장치에 걸린다")
+            self.assertEqual(llm.reflow_list(t), t, t)
+
+    def test_날짜의_붙임표는_안_건드린다(self):
+        """★'2026-08-26' 을 목록으로 보면 날짜가 쪼개진다."""
+        t = ("적용일은 2026-08-26 이고 요청일은 2026-08-24 입니다 "
+             "아주 긴 문장을 만들어 길이를 넘겨 봅니다")
+        self.assertEqual(llm.reflow_list(t), t)
+
+    def test_빈_글도_안_터진다(self):
+        self.assertEqual(llm.reflow_list(""), "")
+        self.assertEqual(llm.reflow_list(None), "")
+
+    def test_실제_응답_경로에서_돈다(self):
+        """★함수만 만들어 두고 finalize 가 안 부르면 소용이 없다."""
+        out = llm.finalize(json.dumps(
+            {"emotion": "neutral", "intensity": 0.5, "motion": "none",
+             "text": self.ONE}, ensure_ascii=False))
+        self.assertIn("\n", out["text"], "실제 답에 줄바꿈이 없다")
+
+    def test_프롬프트에도_시킨다(self):
+        s = llm.build_messages("서윤이다.", "요청 뭐 있어?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[QA 요청이력]\n· 현황\n요청 5건")[0]["content"]
+        t = s[s.index("[외부 도구"):]
+        self.assertIn("한 건에 한 줄", t)
+
+
 class 컨텍스트_계측에_칸이_있다(unittest.TestCase):
     """★칸이 없으면 실려 있는데도 화면에서는 '없는 것' 으로 보인다 —
     참고자료 MD 때 똑같이 겪었다."""

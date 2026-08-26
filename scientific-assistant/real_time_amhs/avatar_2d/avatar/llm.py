@@ -222,6 +222,9 @@ def build_messages(persona, user_text, history, doc_store, settings,
                    " 아무 상관이 없다 — 섞어서 말하면 안 된다.\n"
                    "· 숫자를 빠뜨리지 마라. 총 건수와 **아직 안 끝난 것**(보류·"
                    "대기·검토중)을 반드시 말한다 — 그게 사람이 궁금한 것이다.\n"
+                   "· 여러 건을 말할 때는 **한 건에 한 줄**이다. 줄바꿈(\\n)으로"
+                   " 나누고 각 줄은 \"#번호 [상태] 내용\" 꼴로 쓴다. 한 줄로 쭉"
+                   " 붙여 쓰면 관제 화면에서 못 읽는다.\n"
                    + ok_line + down + "\n")
     sk = ""
     if skill_store is not None:
@@ -342,6 +345,31 @@ def partial_parse(buf):
     return out
 
 
+# 목록처럼 생긴 답을 줄로 가른다 — "#5 … #4 … #3 …" 이 한 줄로 붙어 나온다
+_ITEM_RE = re.compile(r"(?<!^)\s+(?=#\d+\s*[\[\(])")     # "#5 [적용완료]" 앞
+_BULLET_RE = re.compile(r"(?<!^)\s+(?=-\s+\S)")           # " - 항목" 앞
+
+
+def reflow_list(text):
+    """한 줄로 붙어 나온 목록을 줄바꿈으로 가른다.
+
+    ★규칙으로 시켜도 모델은 한 문단으로 붙여 쓴다. 요청 5건이 한 줄로
+      쭉 나오면 관제 화면에서 못 읽는다 — 실제 지적이다.
+      그래서 **결정적 규칙으로 여기서 나눈다** (LLM 을 다시 부르지 않는다).
+      이미 줄이 나뉘어 있으면 그 줄은 건드리지 않는다.
+    """
+    out = []
+    for ln in str(text or "").split("\n"):
+        # 짧은 줄은 목록이 아니다 — 건드리면 멀쩡한 문장을 쪼갠다
+        if len(ln) > 60:
+            for rx in (_ITEM_RE, _BULLET_RE):
+                if len(rx.findall(ln)) >= 2:
+                    ln = rx.sub("\n", ln)
+                    break
+        out.append(ln)
+    return "\n".join(out)
+
+
 def finalize(raw):
     """전체 응답 문자열 -> {text, emotion, intensity, motion}."""
     o = None
@@ -362,7 +390,7 @@ def finalize(raw):
     except (TypeError, ValueError):
         inten = 0.7
     return {
-        "text": str(o.get("text", "")).strip() or "...",
+        "text": reflow_list(str(o.get("text", "")).strip()) or "...",
         "emotion": o["emotion"] if o.get("emotion") in config.EMO_KEYS else "neutral",
         "intensity": inten,
         "motion": o["motion"] if o.get("motion") in config.MOTION_KEYS else "none",
