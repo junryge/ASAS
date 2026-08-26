@@ -364,8 +364,22 @@ def build_column_dict(base_dir):
     L += ["", "## 점수 컬럼 (unified_risk_score · area_score)",
           "- `unified_risk_score` — 전체 위험도(1~100). 등급 컷 60/71/85 "
           "(경계/위험/초위험).",
-          "- `{FAB}_score` · `area_score` — 영역 점수(최대 50). 룰 배점의 합.",
-          "- `hot_area` — 가장 높은 영역, `stage_name` — 단계, `reason` — 발동 룰."]
+          "- `area_score` — **FAB 영역 점수(1~100)**. "
+          "min(100, 룰 배점 합 × 100 ÷ 분모(70)). 등급 컷은 전체와 같은 "
+          "60/71/85 다. FAB 분리 파일(`data/{FAB}/`)에 `area_level` 과 "
+          "같이 들어 있다.",
+          "- `{FAB}_score` — 통합 파일의 그 FAB 룰 배점 합(융합 상한 50). "
+          "`area_score` 와 **다른 수**다 — 등급은 `area_score` 로 붙는다.",
+          "- `hot_area` — 가장 높은 영역, `stage_name` — 단계, `reason` — 발동 룰.",
+          "",
+          "### 2026-08 룰베이스 변경",
+          "- Storage FULL 은 `M16HUB.STRATE.ALL.FABSTORAGERATIO` 만 판정한다. "
+          "`STB.3F_STORAGE_UTIL` 은 **값만 기록**하고 판정에 안 쓴다 — "
+          "STB 가 높다고 Storage FULL 이 켜졌다고 말하면 안 된다.",
+          "- `M16_PKT` 영역은 **제외**됐다. 예측기에서 영역 자체가 빠져 "
+          "`M16_PKT_score` 컬럼도 더는 오지 않는다.",
+          "- 영역 가중치는 전 영역 1.0 이다 (M16B 0.5 는 취소).",
+          "- 경계·사건 시작 기준은 60 이다 (50 에서 올랐다)."]
     return "\n".join(L)
 
 

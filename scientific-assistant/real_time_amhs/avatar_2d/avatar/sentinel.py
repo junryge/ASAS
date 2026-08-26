@@ -707,7 +707,11 @@ def _fired_lines(row, rules_by_code):
             op = {"<=": "≤", "diff10": "10분 +", ">=": "≥"}.get(
                 c.get("op") or ">=", "≥")
             unit = c.get("unit") or ""
-            thr_s = ("임계 {}{}{}".format(op, _g(thr), unit)
+            # ★"임계 미정의(기준이 없어 판정 불가)" 와 "기록용(일부러 판정에서
+            #   뺀 것)" 은 다른 말이다. 2026-08 부터 STB 저장율이 그렇다 —
+            #   값은 계속 오지만 R-D 판정에는 안 쓴다.
+            thr_s = ("판정 미사용 (값만 기록)" if c.get("record_only")
+                     else "임계 {}{}{}".format(op, _g(thr), unit)
                      if thr is not None else "임계 미정의")
             if c.get("has_value"):
                 val_s = "값 {}{}".format(_g(c.get("value")), unit)
@@ -930,6 +934,7 @@ def diagnose():
             j = info.get("join") or {}
             undef = [m["key"] for m in (j.get("metrics") or [])
                      if m.get("used") and any(t is None for t in m.get("thr") or [])
+                     and not m.get("record_only")   # 일부러 뺀 것은 문제가 아니다
                      and any(o not in ("sum", "score", "text", "ratio30")
                              for o in m.get("op") or [">="])]
             if undef:

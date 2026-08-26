@@ -761,8 +761,7 @@
       }
     },
     "area_weight": {
-      "_doc": "thresholds.json 의 AREA_WEIGHT. 합산에만 쓰이고 hot_area·단계 판정에는 영향이 없다. 현재 M16B 만 0.5, 나머지는 1.0.",
-      "M16B": 0.5
+      "_doc": "thresholds.json 의 AREA_WEIGHT. 합산에만 쓰이고 hot_area·단계 판정에는 영향이 없다. ★M16B 0.5 는 2026-08 에 취소됐다 — 전 영역 1.0 이라 비워 둔다."
     },
     "flow_nodes": {
       "_doc": "흐름 항이 그 영역에서 보는 노드 개수. '이 FAB 단독으로 전체 몇 점까지 가나'(solo_ceiling) 계산에만 쓴다.",

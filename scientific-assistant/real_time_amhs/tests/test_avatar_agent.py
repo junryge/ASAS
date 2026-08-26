@@ -2183,7 +2183,23 @@ class 컬럼_사전(unittest.TestCase):
 
     def test_임계와_단위가_같이_있다(self):
         self.assertIn("| 임계 | 단위 |", self.body)
-        self.assertIn("99.3", self.body)
+        self.assertIn("25.75", self.body)          # R-D FAB 저장율
+
+    def test_2026_08_변경이_사전에_적혀_있다(self):
+        """★서윤이 옛 규칙으로 설명하면 관제와 다른 말을 한다."""
+        self.assertIn("STB", self.body)
+        self.assertIn("값만 기록", self.body)
+        self.assertNotIn("99.3", self.body, "STB 임계가 아직 살아 있다")
+        self.assertIn("M16_PKT", self.body)
+        self.assertIn("제외", self.body)
+        self.assertIn("1.0", self.body)             # 가중치 복원
+
+    def test_area_score_설명이_예측기와_같다(self):
+        """★사전이 "영역 점수(최대 50)" 이라고 하면 서윤이 그렇게 설명한다.
+        실제로는 0~100 이고 분모는 70 이다 — 여기가 틀리면 답도 틀린다."""
+        self.assertIn("1~100", self.body)
+        self.assertIn("70", self.body)
+        self.assertNotIn("영역 점수(최대 50)", self.body)
 
     def test_FAB_마다_절을_나눈다(self):
         """★표 하나로 두면 덩어리가 커서 예산에 안 들어가 통째로 버려진다."""

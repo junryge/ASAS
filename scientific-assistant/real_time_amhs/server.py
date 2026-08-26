@@ -408,8 +408,11 @@ _STRIP_DEFAULT = [
      "label": "M16HUB 반송시간", "unit": "분", "color": "#FF6B5E"},
     {"key": "M16HUB_rd_fab", "raw": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
      "label": "M16HUB FAB저장율", "unit": "%", "color": "#FFA53D", "max": 100},
+    # ★2026-08 — R-D 판정에서 제외됐다. 값은 계속 기록하므로 그래프에는
+    #   남기되, 이름에 '기록용' 을 박아 원인으로 읽히지 않게 한다.
     {"key": "M16HUB_stb_util", "raw": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
-     "label": "M16HUB STB저장율", "unit": "%", "color": "#F2C94C", "max": 100},
+     "label": "M16HUB STB저장율 (기록용·판정 미사용)", "unit": "%",
+     "color": "#F2C94C", "max": 100, "record_only": True},
     {"key": "M16HUB_rev_count", "raw": "M16HUB.QUE.LFT.3F_LFT_REVERSALCNT",
      "label": "M16HUB 리프터 정체", "unit": "회", "color": "#FF6FB5"},
 ]

@@ -162,12 +162,27 @@ class 재현(unittest.TestCase):
                 checked += 1
         self.assertGreaterEqual(checked, 15, "실제로 확인한 칸이 너무 적다")
 
+    # ★고정 자료(fixture)는 **2026-08 이전** 예측기가 낸 것이다. 그때는
+    #   M16B 가중이 0.5 였다 (지금은 1.0 으로 복원). 융합 공식이 맞는지는
+    #   그 자료를 만든 가중치로 확인해야 한다 — 지금 가중치로 재면
+    #   "공식이 틀렸다" 가 아니라 "가중치가 바뀌었다" 를 보는 셈이다.
+    OLD_CFG = None
+
+    @classmethod
+    def _old_cfg(cls):
+        if cls.OLD_CFG is None:
+            c = deepcopy(load_config())
+            c.setdefault("fab_score", {})["area_weight"] = {"M16B": 0.5}
+            cls.OLD_CFG = c
+        return cls.OLD_CFG
+
     def test_융합_공식이_전체_점수를_재현한다(self):
-        ok = [r for r in rows() if F.fuse_check(r)["match"]]
+        cfg = self._old_cfg()
+        ok = [r for r in rows() if F.fuse_check(r, cfg)["match"]]
         self.assertGreaterEqual(len(ok), 3,
                                 "실물 형식 행에서 전체 점수가 재현돼야 한다")
         for r in ok:
-            fc = F.fuse_check(r)
+            fc = F.fuse_check(r, cfg)
             self.assertEqual(fc["calc"], int(fc["stored"]))
 
     def test_signals_텍스트와_켜진_룰이_맞는다(self):
@@ -301,12 +316,17 @@ class 단독_상한(unittest.TestCase):
         s = F.solo_ceiling("M16HUB", load_config(), "typical")["score"]
         self.assertLessEqual(abs(s - 44), 2, f"허브 단독 상한이 {s} — 문서는 44")
 
-    def test_M16B_는_가중치와_흐름노드_때문에_최대로도_못_간다(self):
+    def test_M16B_는_흐름노드가_하나라_최대로도_못_간다(self):
+        """★2026-08 — M16B 가중 0.5 는 취소됐다(전 영역 1.0). 그런데도
+        흐름 노드가 1개뿐이라 단독으로는 40점, 경계 60 에 못 닿는다.
+        (FAB 비교 문서: "가중치는 1.0 으로 복원됐지만 그래도 60 에는
+        닿지 못합니다")"""
         cfg = load_config()
         warn = grade_cuts(cfg)[0]
         t = F.solo_ceiling("M16B", cfg, "typical")
         m = F.solo_ceiling("M16B", cfg, "max")
-        self.assertEqual(t["weight"], 0.5)
+        self.assertEqual(t["weight"], 1.0, "M16B 가중이 아직 0.5 다")
+        self.assertEqual(t["flow_nodes"], 1)
         self.assertEqual(t["score"], m["score"], "흐름 노드 1개·MAXCAPA 0 이라 같다")
         self.assertLess(m["score"], warn)
 
@@ -341,7 +361,8 @@ class 비교_결과(unittest.TestCase):
     def test_점수만_있는_영역_셋도_같이_나온다(self):
         d = F.compare(rows(), None)
         names = {x["area_name"] for x in d["extra_areas"]}
-        self.assertEqual(names, {"M16", "M16_PKT", "M16_WT"})
+        # ★M16_PKT 제외 (2026-08) — 예측기에서 영역 자체가 빠졌다
+        self.assertEqual(names, {"M16", "M16_WT"})
 
     def test_그_FAB_이_보는_값이_읽혀_나온다(self):
         d = F.compare(rows(), None)

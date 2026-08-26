@@ -103,8 +103,11 @@ def parse_reason_metrics(reason):
                 f"{area} 반송시간", "분")
         if has("D") or "FAB저장" in inner:
             add("M16HUB_rd_fab", _FAB_RAW, "M16HUB FAB저장율", "%")
-        if has("D") or re.search(r"\bSTB", inner):
-            add("M16HUB_stb_util", _STB_RAW, "M16HUB STB저장율", "%")
+        # ★2026-08 — R-D 판정에서 STB 가 빠졌다. R-D 가 켜졌다고 STB 를
+        #   원인 그래프에 그리면 '이것 때문에 켜졌다' 로 읽힌다.
+        #   근거 문구에 STB 가 실제로 적혔을 때만 그린다 (값 기록은 유지).
+        if re.search(r"\bSTB", inner):
+            add("M16HUB_stb_util", _STB_RAW, "M16HUB STB저장율 (기록용)", "%")
         if "OHT=" in inner or "OHT가동" in inner:
             add(f"{area}_rd_oht", _OHT_RAW.get(area, f"{area}.QUE.OHT.OHTUTIL"),
                 f"{area} OHT가동률", "%")

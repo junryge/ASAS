@@ -94,7 +94,8 @@ def parse_reason_metrics(reason: str) -> list[dict]:
         if "FAB저장" in inner:
             add("M16HUB_rd_fab", _FAB, "M16HUB FAB저장율", "%")
         if re.search(r"\bSTB", inner):
-            add("M16HUB_stb_util", _STB, "M16HUB STB저장율", "%")
+            # R-D 판정에서 빠진 값이다 (2026-08) — 기록용임을 이름에 남긴다
+            add("M16HUB_stb_util", _STB, "M16HUB STB저장율 (기록용)", "%")
         if "OHT=" in inner or "OHT가동" in inner:
             add(f"{area}_rd_oht", f"{area}.QUE.OHT.OHTUTIL", f"{area} OHT가동률", "%")
         if "R-C" in inner:

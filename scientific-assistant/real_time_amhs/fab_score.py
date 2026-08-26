@@ -75,7 +75,9 @@ AREA_CAP = 50          # 융합에 들어갈 때 잘리는 상한 (예측기의 
 #   raw 35 가 70점(위험)이 된다. 실제로 그 오보를 냈다. 올바른 값은 50점.
 AREA_DENOM = 70        # 영역등급.json 의 "분모" (config.fab_score.denom 로 덮음)
 RAW_FULL = 220         # raw → 100점 환산 기준값 (도달 가능 최댓값이 아니다)
-AREA_WEIGHT = {"M16B": 0.5}   # thresholds.json 의 AREA_WEIGHT. 나머지는 1.0
+# ★M16B 가중 0.5 는 **취소**됐다 (2026-08) — 전 영역 1.0.
+#   config.fab_score.area_weight 로 덮을 수 있게 두되 기본은 비운다.
+AREA_WEIGHT: dict[str, float] = {}   # thresholds.json 의 AREA_WEIGHT. 기본 1.0
 
 # 융합(STEP 4)에서 한 번 더 더해지는 항 — 그래서 실질 가중치가 두 배다
 FUSE_AGAIN = {"SLA": 5, "SORT": 3, "MAXCAPA": 10}
@@ -101,8 +103,13 @@ WATCH: dict[str, dict[str, list[dict]]] = {
                 "op": ">=", "thr": 4}],
         "RD": [{"amos": "M16HUB.STRATE.ALL.FABSTORAGERATIO", "csv": "M16HUB_rd_fab",
                 "label": "FAB 저장율", "unit": "%", "op": ">=", "thr": 25.75},
+               # ★2026-08 고객 요청 — R-D 판정에서 STB 항 제거.
+               #   값은 계속 수집·기록된다(M16HUB_stb_util 컬럼 유지)므로
+               #   화면에는 보여 주되 **임계 판정은 하지 않는다**.
+               #   thr=None + record_only 로, '넘음' 표시가 절대 안 붙는다.
                {"amos": "M16HUB.STRATE.STB.3F_STORAGE_UTIL", "csv": "M16HUB_stb_util",
-                "label": "STB 저장율", "unit": "%", "op": ">=", "thr": 99.3},
+                "label": "STB 저장율 (기록용·판정 미사용)", "unit": "%",
+                "op": ">=", "thr": None, "record_only": True},
                {"amos": "M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB", "csv": "",
                 "label": "3F→3F MLUD", "unit": "건", "op": ">=", "thr": 50},
                {"amos": "M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT", "csv": "",
@@ -279,8 +286,9 @@ ALL_RULE_ORDER = [r["code"] for r in ALL_RULES]
 
 # 점수만 있고 상세 컬럼이 없는 영역 — 문서의 '대상 영역 8개' 중 나머지 셋.
 # 비교표에 함께 세워야 "전체 점수가 왜 그 숫자인가" 가 맞아떨어진다.
-EXTRA_AREAS = [("M16", "M16_score"), ("M16_PKT", "M16_PKT_score"),
-               ("M16_WT", "M16_WT_score")]
+# ★M16_PKT 제외 (2026-08 고객 요청) — 예측기에서 영역 자체가 빠져
+#   M16_PKT_score 컬럼도 더는 안 온다. 발동이벤트는 135 → 134 컬럼.
+EXTRA_AREAS = [("M16", "M16_score"), ("M16_WT", "M16_WT_score")]
 
 # 흐름 항이 보는 노드 — 영역별 개수가 다르다(단독 상한 계산에 쓴다).
 # FLOW_COLS 에서 세므로 두 곳에 숫자를 적지 않는다.
@@ -457,6 +465,10 @@ def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
                 "normal": it.get("normal"),
                 "value": v, "over": _over(v, it.get("op") or ">=", it.get("thr")),
                 "has_value": v is not None,
+                # ★기록만 하고 판정에는 안 쓰는 컬럼 (2026-08 R-D 의 STB).
+                #   '임계 미정의(값이 없어 판정 불가)' 와 구분해야 한다 —
+                #   이건 값이 있는데 **일부러 판정에서 뺀** 것이다.
+                "record_only": bool(it.get("record_only")),
             })
     return out
 
