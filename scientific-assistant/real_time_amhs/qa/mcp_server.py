@@ -230,5 +230,34 @@ def serve(stdin=None, stdout=None):
             stdout.flush()
 
 
+def selfcheck():
+    """`python qa/mcp_server.py --check` — 주소가 맞는지만 본다.
+
+    ★"왜 안 되지" 의 답은 거의 늘 **주소**다. 요청관리를 10.139.x.x 에 띄워
+      놓고 여기는 127.0.0.1 을 보고 있으면 조용히 아무것도 안 나온다.
+      그걸 한 줄로 알려 준다.
+    """
+    print("보는 주소: {}".format(BASE))
+    try:
+        m = _get("/api/meta")
+    except Exception as e:  # noqa: BLE001
+        print("붙지 못했다: {}".format(e))
+        print("")
+        print("  · 그 주소에서 qa/app.py 가 떠 있나?  (python app.py)")
+        print("  · 다른 PC 면 주소를 줘야 한다:")
+        print("      python run.py --qa http://<그 PC>:10500")
+        print("      또는  set QA_BASE=http://<그 PC>:10500")
+        print("  · 방화벽에서 10500 이 열려 있나?")
+        return 1
+    print("붙었다 — 총 {}건 · 미결 {}건 · 대상 {}".format(
+        m.get("total"), m.get("open"),
+        ", ".join(m.get("tags") or []) or "없음"))
+    n = len((_get("/api/items") or {}).get("items") or [])
+    print("목록 조회 {}건".format(n))
+    return 0
+
+
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        sys.exit(selfcheck())
     serve()

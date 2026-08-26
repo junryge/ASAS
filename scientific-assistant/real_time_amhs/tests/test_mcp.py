@@ -403,6 +403,42 @@ class 필요할_때만_띄운다(_Fake):
         self.assertEqual(n, 0)
         self.assertEqual(txt, "")
 
+    def test_같은_질문은_다시_조회하지_않는다(self):
+        """★화면의 컨텍스트 계측이 **타이핑을 멈출 때마다** /api/ctx 를 부르고,
+        보내면 대화가 또 부른다. 캐시가 없으면 한 문장에 도구가 여러 번 돈다."""
+        h = self._hub()
+        t1, n1 = h.gather("요청 현황")
+        t2, n2 = h.gather("요청 현황")
+        self.assertEqual(t1, t2)
+        self.assertEqual(n1, 1)
+        self.assertEqual(n2, 0, "같은 질문을 또 조회했다")
+
+    def test_캐시를_끄면_다시_조회한다(self):
+        h = self._hub()
+        h.gather("요청 현황")
+        self.assertEqual(h.gather("요청 현황", use_cache=False)[1], 1)
+
+    def test_다른_질문은_따로_조회한다(self):
+        h = self._hub()
+        h.gather("요청 현황")
+        self.assertEqual(h.gather("보류된 요청")[1], 1, "엉뚱한 캐시를 줬다")
+
+    def test_캐시가_죽은_서버를_가리지_않는다(self):
+        """★서버가 끝났는데 15초 동안 옛 답을 그대로 주면, 그 사이에
+        '요청이력은 이렇다' 고 말한다 — 실은 아무것도 못 보고 있는데."""
+        h = self._hub()
+        h.gather("요청 현황")
+        h._live["qa"].proc.kill()
+        h._live["qa"].proc.wait(timeout=5)
+        self.assertFalse(h._all_alive())
+        self.assertEqual(h.gather("요청 현황")[1], 1, "죽었는데 캐시를 줬다")
+
+    def test_시간이_지나면_다시_조회한다(self):
+        h = self._hub()
+        h.gather("요청 현황")
+        h.CACHE_S = 0.0
+        self.assertEqual(h.gather("요청 현황")[1], 1, "묵은 값을 계속 준다")
+
     def test_대상은_질문에_있는_FAB_으로(self):
         h = self._hub(calls=[
             {"tool": "qa_items", "label": "관련 요청",
@@ -684,6 +720,61 @@ class 설정이_말이_된다(unittest.TestCase):
         for q in ("M16HUB 개선요청 뭐 올라와 있어?", "이슈 접수된 거 있나",
                   "보류된 요청 알려줘"):
             self.assertTrue(h.matched(q), q)
+
+
+class 왜_안_되는지_알려_준다(unittest.TestCase):
+    """★"왜 안 되지??" 를 반복하게 만들면 안 된다. 원인은 늘 셋 중 하나다 —
+    주소가 다르다 / 파일이 없다 / 서버가 안 떴다. 셋 다 말해 줘야 한다."""
+
+    SRC = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+
+    def _src(self):
+        with open(self.SRC, encoding="utf-8") as f:
+            return f.read()
+
+    def test_켤_때_보는_주소를_찍는다(self):
+        """★안 찍으면 127.0.0.1 을 보고 있는 줄 모른다."""
+        s = self._src()
+        self.assertIn('addr = (s.get("env") or {}).get("QA_BASE")', s)
+        self.assertIn("MCP: {} \u2192 {}", s)
+
+    def test_바깥_환경변수가_이긴다(self):
+        """★요청관리가 다른 PC 면 코드를 고치게 만들면 안 된다."""
+        s = self._src()
+        i = s.index("env = dict(s.get(\"env\") or {})")
+        self.assertIn("os.environ.get(k)", s[i:i + 260])
+
+    def test_run_py_에_qa_옵션이_있다(self):
+        p = os.path.join(util.BASE, "avatar_2d", "run.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('"--qa"', src)
+        self.assertIn('os.environ["QA_BASE"]', src)
+
+    def test_파일이_없으면_끄고_말해_준다(self):
+        """★avatar_2d 를 real_time_amhs 밖에 풀면 qa/mcp_server.py 가 없다.
+        그러면 물어볼 때마다 조용히 실패한다."""
+        s = self._src()
+        self.assertIn("MCP '{}' 끔 — 파일이 없습니다", s)
+        self.assertIn('s["enabled"] = False', s)
+
+    def test_걸렸는데_빈손이면_그렇게_말한다(self):
+        """★조용히 빈 글을 넘기면 서윤이 아무 말도 안 한다 — 사용자는
+        MCP 가 도는지조차 모른다."""
+        s = self._src()
+        self.assertIn("MCP 걸렸는데 결과 없음", s)
+        i = s.index("elif hub.matched(text):")
+        self.assertIn("확인할 수 없다", s[i:i + 420])
+        self.assertIn("건수를 지어내지", s[i:i + 420])
+
+    def test_서버에_붙는지_혼자_확인할_수_있다(self):
+        """★전부 띄우지 않고도 주소가 맞는지 재 볼 수 있어야 한다."""
+        p = os.path.join(util.BASE, "qa", "mcp_server.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("def selfcheck()", src)
+        self.assertIn('"--check" in sys.argv', src)
+        self.assertIn("보는 주소:", src)
 
 
 class 모듈_이름이_안_가린다(unittest.TestCase):

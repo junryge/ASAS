@@ -109,11 +109,42 @@ class App:
         for s in (getattr(config, "MCP_SERVERS", None) or []):
             s = dict(s)
             s["cwd"] = s.get("cwd") or root
+            # ★바깥 환경변수가 이긴다. 요청관리가 다른 PC 에 있을 때
+            #   (사내에서는 대개 그렇다) 코드를 고치게 만들면 안 된다 —
+            #   run.py --qa 나 QA_BASE 환경변수로 준다.
+            env = dict(s.get("env") or {})
+            for k in list(env):
+                if os.environ.get(k):
+                    env[k] = os.environ[k]
+            s["env"] = env
             srv.append(s)
-        n = len([s for s in srv if s.get("enabled", True)])
-        if n:
+        # ★스크립트가 실제로 있는지 **켤 때** 본다. avatar_2d 를
+        #   real_time_amhs 밖에 풀면 qa/mcp_server.py 가 없다 — 그러면
+        #   물어볼 때마다 조용히 실패하고, 사용자는 "왜 안 되지" 만 반복한다.
+        for s in srv:
+            a = list(s.get("args") or [])
+            if not a or not str(a[0]).endswith(".py"):
+                continue
+            path = a[0] if os.path.isabs(a[0]) \
+                else os.path.join(s.get("cwd") or root, a[0])
+            if os.path.isfile(path):
+                s["args"] = [os.path.abspath(path)] + a[1:]
+                continue
+            s["enabled"] = False
+            sys.stdout.write(
+                "  [!] MCP '{}' 끔 — 파일이 없습니다: {}\n"
+                "      avatar_2d 를 real_time_amhs **안에** 두고 실행하세요.\n"
+                .format(s.get("name") or s["key"], path))
+        live = [s for s in srv if s.get("enabled", True)]
+        for s in live:
+            # ★어느 주소를 볼지 **켤 때 찍는다**. 안 찍으면 127.0.0.1 을 보고
+            #   있는 줄 모르고 "왜 안 되지" 만 반복한다 (실제로 그랬다).
+            addr = (s.get("env") or {}).get("QA_BASE") or "(기본값)"
+            sys.stdout.write("  MCP: {} → {}\n"
+                             .format(s.get("name") or s["key"], addr))
+        if live:
             sys.stdout.write("  MCP 서버 {}개 등록 (질문에 걸리면 그때 띄운다)\n"
-                             .format(n))
+                             .format(len(live)))
         return mcp_client.Hub(srv)
 
     @classmethod
@@ -689,6 +720,13 @@ class Handler(SimpleHTTPRequestHandler):
             return ""
         if used:
             self._say("     ↳ MCP 도구 {}회 · {}자".format(used, len(out)))
+        elif hub.matched(text):
+            # ★걸렸는데 아무것도 안 나왔다 — 조용히 넘어가면 "왜 안 되지" 가 된다.
+            #   콘솔에 남기고, 서윤도 "못 봤다" 고 말할 수 있게 글로 넘긴다.
+            self._say("     ↳ MCP 걸렸는데 결과 없음 (요청관리 서버 확인)")
+            return ("[요청이력] 조회에 실패했다 — 요청관리 서버에 못 붙었다."
+                    " 요청이력은 **확인할 수 없다** 고 말하고, 건수를 지어내지"
+                    " 마라.")
         return out
 
     def _upload_of(self, name):

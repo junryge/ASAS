@@ -172,10 +172,17 @@ def main():
     ap.add_argument("--no-browser", action="store_true", help="브라우저 자동 실행 안 함")
     ap.add_argument("--sentinel", default="",
                     help="관제(real_time_amhs) 서버 주소 (기본 http://127.0.0.1:8989)")
+    # ★요청관리(qa/app.py)가 다른 PC 에 있으면 이걸 줘야 한다. 기본이
+    #   127.0.0.1 이라, 사내에서 10.139.x.x:10500 로 띄워 놓고도 "못 붙었다"
+    #   가 나왔다 — 코드를 고치게 만들면 안 된다.
+    ap.add_argument("--qa", default="",
+                    help="요청관리(qa/app.py) 주소 (기본 http://127.0.0.1:10500)")
     args = ap.parse_args()
     if args.sentinel:
         from avatar import config as _cfg
         _cfg.SENTINEL["url"] = args.sentinel.rstrip("/")
+    if args.qa:
+        os.environ["QA_BASE"] = args.qa.rstrip("/")
 
     if not (BASE_DIR / "static" / "index.html").is_file():
         print("\n  [!] static/index.html 이 없습니다. 압축을 통째로 풀었는지 확인하세요.")

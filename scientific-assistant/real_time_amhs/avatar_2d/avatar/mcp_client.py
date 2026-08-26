@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 PROTO = "2025-06-18"
 
@@ -184,11 +185,29 @@ class Hub:
     · 서버가 죽어 있어도 대화는 계속돼야 한다 — 실패는 글로 적어 넘긴다.
     """
 
+    # ★같은 질문을 짧은 시간에 여러 번 묻는다. 화면의 컨텍스트 계측이
+    #   **타이핑을 멈출 때마다**(500ms) /api/ctx 를 부르고, 보내면 대화가
+    #   또 부른다 — 한 문장에 도구가 여러 번 돌아 눈에 띄게 느려졌다.
+    #   같은 글은 이 시간 안에서 한 번만 실제로 조회한다.
+    CACHE_S = 15.0
+
     def __init__(self, servers=None, say=None):
         self.servers = [s for s in (servers or []) if s.get("enabled", True)]
         self._live = {}
         self._lock = threading.RLock()
         self._say = say or (lambda *_a: None)
+        self._cache = {}          # {질문: (잰 시각, 글, 도구 수)}
+
+    def _all_alive(self):
+        """띄워 둔 서버가 전부 살아 있나.
+
+        ★캐시가 **죽은 서버를 가리면 안 된다**. 서버가 끝났는데 15초 동안
+          옛 답을 그대로 주면, 그 사이에 '요청이력은 이렇다' 고 말한다 —
+          실은 아무것도 못 보고 있는데. 하나라도 죽었으면 캐시를 건너뛰고
+          다시 붙어 본다 (그때 실패하면 실패라고 적어 넘긴다).
+        """
+        with self._lock:
+            return all(c.proc.poll() is None for c in self._live.values())
 
     def matched(self, text):
         """이 질문에 걸리는 서버 목록 (화면 계측·시험용)."""
@@ -212,8 +231,20 @@ class Hub:
                 c.server.get("version") or ""))
             return c
 
-    def gather(self, text):
-        """질문에 걸리는 서버들을 불러 근거 글을 만든다 → (글, 부른 도구 수)."""
+    def gather(self, text, use_cache=True):
+        """질문에 걸리는 서버들을 불러 근거 글을 만든다 → (글, 부른 도구 수).
+
+        ★같은 글이면 CACHE_S 안에서는 다시 안 조회한다 (계측 + 대화가
+          같은 질문으로 두 번 부른다). 캐시로 준 것은 도구 수 0 으로 알린다 —
+          "몇 번 돌았나" 를 부풀리면 안 된다.
+        """
+        key = str(text or "")
+        now = time.time()
+        if use_cache and self._all_alive():
+            with self._lock:
+                hit = self._cache.get(key)
+                if hit and now - hit[0] < self.CACHE_S:
+                    return hit[1], 0
         out, used = [], 0
         for s in self.matched(text):
             lines = []
@@ -250,7 +281,15 @@ class Hub:
             if lines:
                 out.append("[{}]\n".format(s.get("name") or s["key"])
                            + "\n".join(lines))
-        return "\n\n".join(out), used
+        got = "\n\n".join(out)
+        if use_cache and got:
+            with self._lock:
+                self._cache[key] = (now, got, used)
+                if len(self._cache) > 64:      # 오래된 것부터 버린다
+                    for k in sorted(self._cache,
+                                    key=lambda k: self._cache[k][0])[:32]:
+                        self._cache.pop(k, None)
+        return got, used
 
     def close(self):
         with self._lock:
