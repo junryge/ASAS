@@ -67,15 +67,43 @@ HIST = {"history": [{"created_at": "2026-08-26 11:00", "actor": "이설비",
                      "new_value": "검토중"}]}
 
 
+# 지금 어떤 자료를 세워 둘지 — 시험이 갈아 끼운다 (실제 등록 데이터 재현용)
+DATA = {"items": None, "meta": None}
+
+
+def _filter(items, qs):
+    """app.py 의 fetch_items 와 같은 규칙으로 좁힌다 (필요한 것만)."""
+    import urllib.parse
+    p = {k: v[0] for k, v in urllib.parse.parse_qs(qs).items()}
+    out = items
+    if p.get("status"):
+        out = [r for r in out if r.get("status") == p["status"]]
+    if p.get("category"):
+        out = [r for r in out if r.get("category") == p["category"]]
+    if p.get("target"):
+        out = [r for r in out if p["target"] in (r.get("target") or "")]
+    if p.get("requester"):
+        out = [r for r in out if p["requester"] in (r.get("requester") or "")]
+    if p.get("q"):
+        q = p["q"]
+        out = [r for r in out
+               if q in (r.get("content") or "") or q in (r.get("requester") or "")
+               or q in (r.get("target") or "")]
+    return out
+
+
 class 가짜_요청관리(BaseHTTPRequestHandler):
-    """app.py 대신 세워 두는 최소 서버 — flask 없이 돈다."""
+    """app.py 대신 세워 두는 최소 서버 — flask 없이 돈다.
+    ★조건(q/status/target)을 **실제로 걸러야** 한다. 자식 프로세스가 HTTP 로
+      물어보므로 파이썬 안에서 _get 을 갈아 끼우는 것으로는 안 잡힌다."""
 
     def do_GET(self):                      # noqa: N802
-        p = self.path.split("?")[0]
+        p, _, qs = self.path.partition("?")
         if p == "/api/meta":
-            body = META
+            body = DATA["meta"] or META
         elif p == "/api/items":
-            body = ITEMS
+            src = DATA["items"] if DATA["items"] is not None else ITEMS["items"]
+            body = {"items": _filter(src, qs)}
         elif p.endswith("/history"):
             body = HIST
         else:
@@ -467,6 +495,114 @@ class 컨텍스트_계측에_칸이_있다(unittest.TestCase):
         blk = js[i:i + 700]
         self.assertIn("'mcp'", blk, "화면 칸 목록에 없다 — 합계에서 빠져 보인다")
         self.assertIn("mcp:", blk, "색·이름이 없다")
+
+
+# ═══ 6-2. 실제로 등록된 데이터 모양 ══════════════════════════════════════
+REAL = {"items": [
+    {"id": i, "seq": i, "status": st, "category": cat, "requester": who,
+     "target": "ALL", "tags": ["ALL"], "request_date": d, "content": c,
+     "confirmed_at": None, "applied_date": None,
+     "responses": [], "attachments": []}
+    for i, (st, cat, who, d, c) in enumerate([
+        ("적용완료", "요청", "김윤환TL님", "2026-08-24",
+         "M16HUB.STRATE.ALL.FABSTORAGERATIO 만 사용"),
+        ("적용완료", "요청", "김윤환TL님", "2026-08-24", "R-A룰에서 M16_PKT 제외하기"),
+        ("보류", "요청", "김윤환", "2026-08-24",
+         "AVGTOTALTIME10MIN 말고 AVGTOTALTIME1MIN 사용한 이유"),
+        ("적용완료", "요청", "윤재철TL님/김윤환TL님", "2026-08-25",
+         "FAB별_위험도_스코어_산점 제작"),
+        ("적용완료", "제안", "이준력", "2026-08-25", "스킬.FAB 알람 시스템 구축"),
+    ], 1)]}
+
+
+class 실제_등록_데이터로_찾는다(_Fake):
+    """★현장에 등록된 5건은 **대상이 전부 ALL** 이다. 목록을 FAB 이름으로만
+    좁히게 해 놨더니 목록이 **한 번도 안 나왔다** — "총 5건" 만 말하고
+    그 5건이 뭔지는 못 말했다. 그 사고를 여기서 못 박는다."""
+
+    def setUp(self):
+        _Fake.setUp(self)
+        DATA["items"] = REAL["items"]
+        DATA["meta"] = dict(META, tags=["ALL"], total=5,
+                            counts={"보류": 1, "적용완료": 4},
+                            people=["김윤환", "김윤환TL님",
+                                    "윤재철TL님/김윤환TL님", "이준력"])
+        self.addCleanup(lambda: DATA.update(items=None, meta=None))
+        self.hub = mcp_client.Hub([
+            dict(s, cwd=util.BASE, command=sys.executable,
+                 args=[os.path.join(util.BASE, "qa", "mcp_server.py")],
+                 env={"QA_BASE": self.base})
+            for s in config.MCP_SERVERS])
+        self.addCleanup(self.hub.close)
+
+    def rows(self, q):
+        txt, _ = self.hub.gather(q)
+        return [l for l in txt.split("\n") if l.startswith("#")]
+
+    def test_대상이_전부_ALL_이어도_목록이_나온다(self):
+        r = self.rows("요청 뭐 올라와 있어?")
+        self.assertEqual(len(r), 5, "목록이 안 나온다 — 건수만 말하게 된다")
+
+    def test_상태로_좁힌다(self):
+        r = self.rows("보류된 요청 뭐야")
+        self.assertEqual(len(r), 1)
+        self.assertIn("AVGTOTALTIME1MIN", r[0])
+
+    def test_사람으로_좁힌다(self):
+        r = self.rows("김윤환TL님이 올린 요청")
+        self.assertEqual(len(r), 3)
+
+    def test_컬럼_이름만_말해도_찾는다(self):
+        """★"AVGTOTALTIME1MIN 왜 썼어?" — 답이 보류 건에 그대로 있는데
+        '요청' 이라는 낱말이 없다고 안 걸려서 못 찾아 줬다."""
+        r = self.rows("AVGTOTALTIME1MIN 왜 썼어?")
+        self.assertEqual(len(r), 1)
+        self.assertIn("보류", r[0])
+
+    def test_룰_이름_뒤에_한글이_붙어도_찾는다(self):
+        r = self.rows("R-A룰 왜 바꿨어")
+        self.assertEqual(len(r), 1)
+        self.assertIn("M16_PKT", r[0])
+
+    def test_한글_밑줄_이름도_찾는다(self):
+        r = self.rows("FAB별_위험도_스코어 그거 누가 요청했어")
+        self.assertTrue(r, "한글에 밑줄이 섞인 이름을 못 찾는다")
+        self.assertIn("윤재철", r[0])
+
+    def test_관제_질문에는_여전히_안_뜬다(self):
+        """★코드로 걸리게 했다고 FAB 이름까지 코드로 보면, 관제 대화마다
+        요청이력을 뒤진다."""
+        for q in ("M16HUB 지금 몇 점이야?", "M14 반송시간 알려줘",
+                  "ALL 점수 얼마야", "지금 상태 어때", "M16B 어때"):
+            self.assertEqual(self.hub.matched(q), [], q)
+
+
+class 질문에서_인자를_뽑는다(unittest.TestCase):
+    """_arg_of 만 따로 — 목록·상세가 엉뚱한 것을 찾는 원인은 대개 여기다."""
+
+    def test_긴_이름을_먼저_본다(self):
+        """★["M14","M14B"] 순서면 "M14B 요청" 에서 M14 가 먼저 걸려
+        엉뚱한 FAB 을 찾는다. 설정 순서에 기대면 안 된다."""
+        spec = {"kind": "oneof", "values": ["M14", "M14B", "M16A", "M16HUB"]}
+        self.assertEqual(mcp_client._arg_of("M14B 요청 뭐 있어", spec), "M14B")
+        self.assertEqual(mcp_client._arg_of("M16HUB 요청", spec), "M16HUB")
+        self.assertEqual(mcp_client._arg_of("M14 요청", spec), "M14")
+
+    def test_없으면_None(self):
+        spec = {"kind": "oneof", "values": ["M14"]}
+        self.assertIsNone(mcp_client._arg_of("요청 현황", spec))
+
+    def test_any_는_앞에서부터_시도한다(self):
+        spec = {"kind": "any", "of": [
+            {"kind": "regex", "re": r"(R-[A-Z])(?![A-Z])"},
+            {"kind": "regex", "re": r"([가-힣]{2,4})님"}]}
+        self.assertEqual(mcp_client._arg_of("R-A룰 김윤환님", spec), "R-A")
+        self.assertEqual(mcp_client._arg_of("김윤환님 요청", spec), "김윤환")
+        self.assertIsNone(mcp_client._arg_of("요청 현황", spec))
+
+    def test_숫자로_바꿔_준다(self):
+        spec = {"kind": "regex", "re": r"#(\d+)", "int": True}
+        self.assertEqual(mcp_client._arg_of("#12 요청", spec), 12)
 
 
 # ═══ 7. 설정 ═════════════════════════════════════════════════════════════

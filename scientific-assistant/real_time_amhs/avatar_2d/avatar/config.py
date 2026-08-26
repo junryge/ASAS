@@ -94,7 +94,20 @@ MCP_SERVERS = [
     {
         "key": "qa", "name": "QA 요청이력", "enabled": True,
         "when": ["요청", "개선", "이슈", "민원", "접수", "요청이력",
-                 "개선요청", "요청관리", "응답", "반려", "보류", "적용완료"],
+                 "개선요청", "요청관리", "응답", "반려", "보류", "적용완료",
+                 "제안", "문의", "검토중", "미결", "이력"],
+        # ★낱말이 하나도 없어도 **컬럼·룰 이름**이 나오면 본다.
+        #   "AVGTOTALTIME1MIN 왜 썼어?" 의 답이 보류 건에 그대로 있는데
+        #   '요청' 이라는 말이 없다고 안 걸려서 못 찾아 줬다.
+        #   ★맨 FAB 이름(M16HUB·M14·ALL)은 코드로 안 본다 — 그러면 "M16HUB
+        #     지금 몇 점이야?" 같은 관제 질문마다 요청이력을 뒤진다.
+        #     그래서 '밑줄·점이 있거나 아주 긴 것' 만 코드로 친다.
+        #   AVGTOTALTIME1MIN · M16_PKT · FABSTORAGERATIO ·
+        #   M16HUB.STRATE.ALL.FABSTORAGERATIO · R-A · FAB별_위험도_스코어
+        "when_re": (r"\b(?:[A-Z][A-Z0-9]*[_.][A-Z0-9_.]*[A-Z0-9]"
+                    r"|[A-Z][A-Z0-9]{9,})\b"
+                    r"|R-[A-Z](?![A-Z])"
+                    r"|[가-힣A-Z0-9]+_[가-힣A-Z0-9_]+"),
         "command": None,          # None = 지금 파이썬 (sys.executable)
         "args": ["qa/mcp_server.py"],
         "cwd": None,              # None = real_time_amhs 폴더 (server.py 가 채운다)
@@ -102,11 +115,31 @@ MCP_SERVERS = [
         "timeout": 20,
         "calls": [
             {"tool": "qa_meta", "label": "현황"},
-            {"tool": "qa_items", "label": "관련 요청",
-             # 질문에 FAB 이름이 있으면 그것만 찾는다. 없으면 이 도구는 건너뛴다.
-             "pick": {"target": {"kind": "oneof",
-                                 "values": ["M16HUB", "M16A", "M16B",
-                                            "M14B", "M14"]}}},
+            # ★목록은 **항상** 준다. 예전엔 FAB 이름이 있을 때만 줬는데,
+            #   등록된 요청의 대상이 전부 'ALL' 이라 한 번도 안 나왔다 —
+            #   "총 5건" 만 말하고 그 5건이 뭔지는 못 말했다.
+            #   질문에 단서가 있으면 그걸로 좁히고, 없으면 최근 것부터 준다.
+            {"tool": "qa_items", "label": "관련 요청", "pick_opt": {
+                "status": {"kind": "oneof",
+                           "values": ["대기", "검토중", "적용완료",
+                                      "보류", "반려"]},
+                "target": {"kind": "oneof",
+                           "values": ["M16HUB", "M16A", "M16B", "M14B",
+                                      "M14", "ALL"]},
+                # 검색어 — 컬럼·룰 이름이 먼저, 없으면 사람 이름
+                "q": {"kind": "any", "of": [
+                    # AVGTOTALTIME1MIN · M16_PKT · M16HUB.STRATE.…
+                    {"kind": "regex",
+                     "re": r"\b([A-Z][A-Z0-9]*[_.][A-Z0-9_.]*[A-Z0-9])\b"},
+                    {"kind": "regex", "re": r"\b([A-Z][A-Z0-9]{9,})\b"},
+                    # R-A 룰 / R-D 룰 — 뒤에 한글이 붙으면 \b 가 안 선다
+                    {"kind": "regex", "re": r"(R-[A-Z])(?![A-Z])"},
+                    # FAB별_위험도_스코어 처럼 한글에 밑줄이 섞인 이름
+                    {"kind": "regex", "re": r"([가-힣A-Z0-9]+_[가-힣A-Z0-9_]+)"},
+                    # 김윤환TL님 · 이준력님 — '님' 이 붙은 것만 (오검출 방지)
+                    {"kind": "regex", "re": r"([가-힣]{2,4}(?:TL)?)님"},
+                ]},
+            }},
             {"tool": "qa_item", "label": "지목한 건",
              "pick": {"seq": {"kind": "regex", "re": r"(?:No\.?|#)\s*(\d+)",
                               "int": True}}},

@@ -135,14 +135,24 @@ class Client:
 
 
 # ── 여러 서버를 묶어 근거 글로 ────────────────────────────────────────────
-def _hits(text, words):
-    """질문에 이 서버를 부를 말이 들어 있나."""
+def _hits(text, words, when_re=None):
+    """질문에 이 서버를 부를 말이 들어 있나.
+
+    ★when_re 도 본다. "AVGTOTALTIME1MIN 왜 썼어?" 처럼 **컬럼·룰 이름만**
+      나오는 질문이 있다 — 그 답이 요청이력(보류 건)에 그대로 있는데,
+      '요청' 이라는 낱말이 없다고 안 걸려서 못 찾아 줬다.
+    """
     t = str(text or "")
-    return [w for w in (words or []) if w and w in t]
+    got = [w for w in (words or []) if w and w in t]
+    if not got and when_re:
+        m = re.search(when_re, t)
+        if m:
+            got = [m.group(0)]
+    return got
 
 
 def _arg_of(text, spec):
-    """질문에서 인자 하나를 뽑는다. spec 은 config 의 'pick' 항목."""
+    """질문에서 인자 하나를 뽑는다. spec 은 config 의 'pick'/'pick_opt' 항목."""
     kind = spec.get("kind")
     if kind == "regex":
         m = re.search(spec["re"], text or "")
@@ -151,8 +161,17 @@ def _arg_of(text, spec):
         v = m.group(spec.get("group", 1))
         return int(v) if spec.get("int") else v
     if kind == "oneof":
-        for v in spec.get("values") or []:
+        # ★긴 것부터 본다. ["M14","M14B"] 순서면 "M14B" 질문에서 M14 가
+        #   먼저 걸려 엉뚱한 FAB 을 찾는다.
+        for v in sorted(spec.get("values") or [], key=len, reverse=True):
             if v in (text or ""):
+                return v
+        return None
+    if kind == "any":
+        # 여러 규칙을 차례로 시도한다 (코드명 먼저, 없으면 사람 이름 …)
+        for one in spec.get("of") or []:
+            v = _arg_of(text, one)
+            if v is not None:
                 return v
     return None
 
@@ -173,7 +192,8 @@ class Hub:
 
     def matched(self, text):
         """이 질문에 걸리는 서버 목록 (화면 계측·시험용)."""
-        return [s for s in self.servers if _hits(text, s.get("when"))]
+        return [s for s in self.servers
+                if _hits(text, s.get("when"), s.get("when_re"))]
 
     def _client(self, s):
         with self._lock:
@@ -213,6 +233,14 @@ class Hub:
                     args[k] = v
                 if args is None:
                     continue      # 질문에서 인자를 못 뽑았다 — 이 도구는 건너뛴다
+                # ★있으면 좁히고, 없으면 그냥 전체를 본다. 이걸 required 로
+                #   두면 안 된다 — 등록된 요청의 대상이 전부 'ALL' 이라
+                #   FAB 이름으로만 좁히게 해 놨더니 **목록이 한 번도 안 나왔다**.
+                #   건수만 오고 "그래서 그 5건이 뭔데" 에 답을 못 했다.
+                for k, spec in (call.get("pick_opt") or {}).items():
+                    v = _arg_of(text, spec)
+                    if v is not None:
+                        args[k] = v
                 txt, bad = c.call(call["tool"], args)
                 used += 1
                 if txt:
