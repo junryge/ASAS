@@ -69,7 +69,11 @@ RULES = [
 RULE_ORDER = [r["code"] for r in RULES]
 RULE_BY_CODE = {r["code"]: r for r in RULES}
 
-AREA_CAP = 50          # 한 영역 점수 상한 — 한 곳이 전체를 밀어올리는 것 방지
+AREA_CAP = 50          # 융합에 들어갈 때 잘리는 상한 (예측기의 SATURATE_AT)
+# ★area_score 의 분모. 예측기(발동이벤트_영역분리.py)의 DEFAULT_DENOM 과
+#   같은 값이어야 한다 — 여기를 AREA_CAP(50) 으로 쓰면 점수가 40% 부풀어
+#   raw 35 가 70점(위험)이 된다. 실제로 그 오보를 냈다. 올바른 값은 50점.
+AREA_DENOM = 70        # 영역등급.json 의 "분모" (config.fab_score.denom 로 덮음)
 RAW_FULL = 220         # raw → 100점 환산 기준값 (도달 가능 최댓값이 아니다)
 AREA_WEIGHT = {"M16B": 0.5}   # thresholds.json 의 AREA_WEIGHT. 나머지는 1.0
 
@@ -553,8 +557,54 @@ def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
     }
 
 
+def area_denoms(cfg: dict | None = None) -> dict:
+    """영역별 **실효 분모** — 발동이벤트_영역분리.py 의 load_denoms 와 같은 규칙.
+
+        점수 = raw × 100 ÷ 분모 × 조정 ÷ 100   →   실효 분모 = 분모 ÷ (조정/100)
+
+    현장 설정은 영역등급.json 에 있고, 여기서는 config.json 의
+    fab_score.denom / fab_score.adjust 로 덮는다.
+    """
+    fs = _cfg(cfg or {}) or {}
+    base = fs.get("denom", AREA_DENOM)
+    adj = fs.get("adjust") or {}
+    out = {}
+    for f in fabs(cfg):
+        try:
+            b = float(base[f]) if isinstance(base, dict) else float(base)
+        except (KeyError, TypeError, ValueError):
+            b = float(AREA_DENOM)
+        try:
+            p = float(adj.get(f, 100)) or 100.0
+        except (TypeError, ValueError):
+            p = 100.0
+        out[f] = b / (p / 100.0) if b > 0 else float(AREA_DENOM)
+    return out
+
+
+def area_score_100(raw: float, fab: str = "", cfg: dict | None = None) -> int:
+    """raw(룰 배점 합, 상한 없음) → **area_score 0~100**.
+
+    ★예측기(발동이벤트_영역분리.py)의 정의 그대로다:
+          area_score = min(100, round(score_raw × 100 ÷ 실효분모))
+      분모 기본값은 **70**. 예전엔 여기서 AREA_CAP(50)으로 나눴는데,
+      그건 '융합에 들어갈 때 잘리는 상한' 이지 점수 분모가 아니다.
+      그래서 raw 35 가 70점(위험)으로 나와 **경계 60 인데 35에서 울렸다**
+      (실제 지적). 올바른 값은 50점 — 정상이다.
+    """
+    den = area_denoms(cfg).get(str(fab or "").upper(), float(AREA_DENOM))
+    if den <= 0:
+        return 0
+    return int(min(100, round(max(0.0, float(raw)) * 100.0 / den)))
+
+
 def risk(area: float) -> int:
-    """영역점수(0~50) → 0~100. 등급과 붙이려고 눈금만 편 것이다."""
+    """(옛 이름) 영역점수 → 0~100.
+
+    ★분모가 AREA_CAP(50) 이라 예측기와 40% 어긋났다. 새 코드는
+      area_score_100(raw, fab, cfg) 을 쓴다 — 이 함수는 옛 호출부 호환용으로만
+      남기고, 등급 판정에는 쓰지 않는다.
+    """
     return int(round(max(0.0, min(float(AREA_CAP), float(area))) * 100.0 / AREA_CAP))
 
 
@@ -725,6 +775,40 @@ def _row_at(rows: list[dict], at):
     return (d, r) if abs((d - at).total_seconds()) <= 300 else (None, None)
 
 
+def fab_area_at(day: str, at, fab: str, cfg: dict | None = None) -> dict | None:
+    """FAB **분리 파일**(data/{FAB}/{day}_TOTAL.CSV)의 그 시각 area_score.
+
+    ★이게 그 FAB 의 **진짜 점수**다. 통합(ALL) 파일의 {FAB}_pts_* 를 더해
+      되계산하는 것보다 이쪽이 원본이다 — 예측기가 배점을 바꾸면 되계산은
+      틀리지만 area_score 는 예측기가 직접 적어 준 값이라 안 틀린다.
+      (실제 지적: "FAB 폴더 안에 area_score 컬럼 다 있는데 왜 다른 걸 보냐")
+
+    반환 {area, col, at, day} 또는 None (그 파일·그 시각이 없으면).
+    """
+    from lp_client import load_config, sys_cfg
+    from store_csv import read_day
+    cfg = cfg or load_config()
+    f = str(fab or "").upper()
+    try:
+        rows = read_day(day, sys_cfg(cfg, f))
+    except Exception:                                  # noqa: BLE001
+        return None
+    if not rows:
+        return None
+    dt, row = _row_at(rows, at)
+    if row is None:
+        return None
+    for col in ("area_score", "unified_risk_score", f"{f}_score", "score"):
+        v = _num(row.get(col))
+        if v is not None:
+            return {"area": round(float(v), 1), "col": col, "at": dt, "day": day,
+                    # 예측기가 같이 적어 준 등급·포화 — 우리가 다시 매기지 않는다
+                    "level": str(row.get("area_level") or "").strip(),
+                    "saturated": str(row.get("area_saturated") or "").strip() == "Y",
+                    "raw": _num(row.get("area_score_raw") or row.get(f"{f}_score_raw"))}
+    return None
+
+
 def _delta(rows: list[dict], at, fab: str, now: float, back_min: int, cfg) -> float | None:
     """back_min 분 전 대비 영역점수 변화. 그때 행이 없으면 None (0 이 아니다)."""
     if at is None:
@@ -747,11 +831,17 @@ def _all_delta(rows: list[dict], at, now: float, back_min: int) -> float | None:
     return round(now - (_num(r0.get("unified_risk_score")) or 0.0), 1)
 
 
-def compare(rows: list[dict], at=None, cfg: dict | None = None) -> dict:
+def compare(rows: list[dict], at=None, cfg: dict | None = None,
+            day: str | None = None) -> dict:
     """한 시각을 잡고 **ALL + FAB 다섯**을 나란히 세운다 — 화면용 진입점.
 
     rows 는 **ALL 시스템**(전체 CSV)의 행이어야 한다. FAB 분리 파일은 자기
     영역 컬럼만 있어서 비교가 안 된다.
+
+    day 를 주면 각 FAB 의 **분리 파일**(data/{FAB}/{day}_TOTAL.CSV)에서
+    area_score 를 읽어 그 FAB 점수로 쓴다 — 예측기가 직접 적어 준 원본이라,
+    통합 파일의 배점 합으로 되계산하는 것보다 정확하다. 없으면 되계산으로
+    물러서고, 두 값이 다르면 mismatch 에 적는다.
 
     ★반환값 rows[] 가 화면이 그대로 돌면 되는 목록이다 — 첫 줄이 ALL,
       그 다음이 FAB 다섯. 관제 화면의 시스템 고르기(ALL + FAB 5)와 같은
@@ -771,14 +861,42 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None) -> dict:
     back = int(_cfg(cfg).get("delta_min") or 30)
 
     out = []
+    day_q = "".join(ch for ch in str(day or "") if ch.isdigit())[:8] \
+        or (dt.strftime("%Y%m%d") if dt is not None else "")
     for f in fabs(cfg):
         a = area_score(row, f, cfg)
-        r = risk(a["area"])
+        # ★FAB 분리 파일(data/{FAB}/{day}_TOTAL.CSV)의 area_score 가 있으면
+        #   그것이 원본이다 — 통합 파일에서 되계산한 값보다 우선한다.
+        #   (실제 지적: "FAB 폴더에 area_score 컬럼 다 있는데 왜 다른 걸 보냐")
+        own = fab_area_at(day_q, dt, f, cfg) if day_q else None
+        # ★눈금을 섞지 않는다 — 둘은 다른 수다.
+        #     area       0~50   룰 배점 합을 융합 상한에서 자른 값 (융합 기여분)
+        #     area_score 0~100  예측기가 매기는 점수 = min(100, raw×100÷분모)
+        #   등급(60/71/85)은 **area_score** 에 붙는다.
+        if own is not None and own["col"] == "area_score":
+            r = int(round(float(own["area"])))        # 예측기가 적어 준 그 값
+            a["source"], a["score_col"] = "fab_file", own["col"]
+        else:
+            r = area_score_100(a.get("raw", a["area"]), f, cfg)
+            a["source"] = "calc"
+            a["score_col"] = "{}_score_raw ÷ 분모".format(f)
+            if own is not None:                        # area_score 는 아니지만 값은 있다
+                a["file_value"] = own["area"]
+                a["file_col"] = own["col"]
+        a["area_score"] = r
         g = grade(r, cfg)
+        # ★예측기가 area_level 을 이미 적어 줬으면 그걸 쓴다 — 우리가 다시
+        #   매기면 등급 기준이 두 벌이 되어 언젠가 어긋난다.
+        if own and own.get("level"):
+            g = dict(g, level=own["level"])
         a.update({
             "is_all": False,
+            "saturated": bool(own and own.get("saturated")),
             "risk": r, "score": r, "level": g["level"], "emoji": g["emoji"],
-            "measures": f"영역점수 {a['area']:g}/{AREA_CAP} 를 100점으로 편 값",
+            "measures": (f"FAB 분리 파일의 area_score {r:g}점 (예측기 값)"
+                         if a.get("source") == "fab_file"
+                         else f"raw {a.get('raw', 0):g} × 100 ÷ 분모 "
+                              f"{area_denoms(cfg).get(f, AREA_DENOM):g} = {r:g}점"),
             "contrib": round(a["area"] * a["weight"], 1),
             "delta": _delta(rows, dt, f, a["area"], back, cfg),
             "solo": solo_ceiling(f, cfg),
@@ -795,7 +913,7 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None) -> dict:
         v = _num(row.get(col))
         if v is not None:
             extra.append({"area_name": name, "col": col, "score": round(v, 1),
-                          "risk": risk(v)})
+                          "risk": area_score_100(v, name, cfg)})
 
     # ★ALL 을 첫 줄에 세운다. 관제 화면의 시스템 고르기가 ALL + FAB 5 이므로
     #   비교표도 같은 여섯 줄이어야 한다 (하나라도 빠지면 "내 시스템이 없다").

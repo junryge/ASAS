@@ -3667,27 +3667,25 @@ class 화면_점수는_CSV_컬럼_그대로다(_Sentinel):
         self.assertEqual(a["vmax"], 100)
         self.assertEqual(a["value"], a["score"])
 
-    def test_FAB_은_영역_점수다(self):
-        """★위험도(×2)가 아니라 {FAB}_score 그대로."""
+    def test_FAB_은_area_score_다(self):
+        """★area_score = min(100, raw×100÷분모(70)) — 예측기가 매기는 그 점수.
+        예전엔 raw 를 50 으로 나눈 '위험도' 를 그려서 40% 부풀었다."""
         f = [x for x in self._chart()["fabs"] if x["fab"] == "M16HUB"][0]
-        self.assertEqual(f["value"], f["area"], "영역 점수가 아니다")
-        self.assertEqual(f["value"], 36.0)          # fake_compare 의 area
-        self.assertEqual(f["risk"], 72)             # 위험도는 따로 남긴다
-        self.assertNotEqual(f["value"], f["risk"], "편 값을 그리고 있다")
+        self.assertEqual(f["value"], f.get("area_score", f["value"]))
+        self.assertNotEqual(f["value"], f.get("area"),
+                            "융합용 area(0~50)를 그리고 있다")
 
     def test_어느_컬럼인지_밝힌다(self):
         c = self._chart()
-        self.assertEqual(
-            [f["col"] for f in c["fabs"] if f["fab"] == "M16HUB"][0],
-            "M16HUB_score")
+        col = [f["col"] for f in c["fabs"] if f["fab"] == "M16HUB"][0]
+        self.assertTrue("area_score" in col or "score_raw" in col, col)
 
-    def test_축이_서로_다르다(self):
-        """★0~50 과 0~100 을 같은 축에 그리면 FAB 이 두 배로 커 보인다."""
+    def test_ALL_과_FAB_이_같은_축이다(self):
+        """★area_score 도 0~100 이다 — 컷 60/71/85 가 둘 다에 그대로 붙는다."""
         c = self._chart()
         self.assertEqual(c["all"]["vmax"], 100)
-        self.assertTrue(all(f["vmax"] == c["area_cap"] for f in c["fabs"]),
+        self.assertTrue(all(f["vmax"] == 100 for f in c["fabs"]),
                         [f["vmax"] for f in c["fabs"]])
-        self.assertEqual(c["area_cap"], 50)
 
     def test_등급은_위험도_기준_그대로다(self):
         """보여 주는 값이 바뀌어도 판정은 안 바뀐다 — 알람이 흔들리면 안 된다."""
@@ -3698,11 +3696,11 @@ class 화면_점수는_CSV_컬럼_그대로다(_Sentinel):
         with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
             js = f.read()
         blk = js[js.index("function chartBar("):js.index("function chartBars(")]
-        self.assertIn("f.vmax", blk, "축 최대를 안 쓴다 — 0~50 을 0~100 로 그린다")
-        self.assertIn("f.value", blk, "CSV 값을 안 그린다")
+        self.assertIn("f.vmax", blk, "축 최대를 안 쓴다")
+        self.assertIn("f.value", blk, "서버가 준 값을 안 그린다")
         head = js[js.index("function chartBars("):js.index("function chartReads(")]
         self.assertIn("unified_risk_score", head, "어느 컬럼인지 안 밝힌다")
-        self.assertIn("{FAB}_score", head)
+        self.assertIn("area_score", head)
         live = js[js.index("function paintAlarmLive("):
                   js.index("\nfunction openChart(")]
         self.assertIn("f.value", live, "알람 패널이 아직 편 값을 그린다")

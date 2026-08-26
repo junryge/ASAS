@@ -580,9 +580,13 @@ class 컬럼_정의는_이미_있는_것을_쓴다(unittest.TestCase):
         try:
             c = server.app.test_client()
             r1 = json.loads(c.get("/api/fab/compare").get_data())
+            first = calls["n"]
             r2 = json.loads(c.get("/api/fab/compare").get_data())
             self.assertTrue(r1["ok"] and r2["ok"])
-            self.assertEqual(calls["n"], 1,
+            # 한 번 계산할 때 ALL 파일 + FAB 분리 파일들을 읽는다
+            # (store_csv.read_day 는 mtime·크기가 같으면 파일을 안 다시 연다)
+            self.assertGreaterEqual(first, 1)
+            self.assertEqual(calls["n"], first,
                              "두 번째 호출이 CSV 를 또 읽었다 — 캐시가 안 탄다")
             self.assertEqual(r1["at"], r2["at"])
         finally:

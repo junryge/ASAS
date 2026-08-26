@@ -540,7 +540,9 @@ def api_fab_compare():
                     fallback = {"asked_day": today, "used_day": newest}
                     day = newest
         rows = read_day(day, cfg)
-        out = fab_score.compare(rows, parse_dt(at_q or None), cfg)
+        # day 를 넘겨야 FAB 분리 파일(data/{FAB}/{day}_TOTAL.CSV)의
+        # area_score 를 그 FAB 점수로 쓴다
+        out = fab_score.compare(rows, parse_dt(at_q or None), cfg, day=day)
         out["day"] = day
         if fallback:
             out["fallback_day"] = fallback

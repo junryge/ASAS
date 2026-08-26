@@ -1638,20 +1638,46 @@ function renderAlog(){
       + '<td class="lv '+esc(e.level||'')+'">'+esc(e.level||'')+'</td>'
       + '<td>'+(e.score==null?'':esc(String(e.score)))+'</td>'
       + '<td>'+cl+'</td>'
-      + '<td><input class="noteIn" data-id="'+esc(e.id||'')+'" value="'+esc(e.note||'')
+      + '<td><input class="noteIn" data-id="'+escAttr(e.id||'')+'" value="'+escAttr(e.note||'')
       + '" placeholder="조치 내용을 적어 두세요"></td></tr>';
   }).join('');
   b.innerHTML = '<table>'+head+body+'</table>';
+  /* ★조치 내용 저장 — 예전엔 onchange 뿐이라 **포커스를 빼야만** 저장됐다.
+     적고 바로 창을 닫으면 그대로 날아갔고, 저장됐다는 표시도 없어서
+     "저장이 안 되네" 가 됐다 (실제 지적).
+       · 타이핑이 멎으면(600ms) 알아서 저장
+       · Enter 로도 저장
+       · 창을 닫거나 페이지를 떠날 때 남은 것 마저 저장
+       · 저장되면 칸에 표시가 뜬다 (안 되면 왜 안 됐는지도) */
   b.querySelectorAll('.noteIn').forEach(inp=>{
-    inp.onchange = async ()=>{
-      if(!window.SERVER){ sys('기록 저장은 run.py 서버로 실행할 때 됩니다.'); return; }
+    let t=null;
+    const save = async (why)=>{
+      clearTimeout(t);
+      if(inp.value === (inp.dataset.saved||'')) return;      // 바뀐 게 없다
+      /* ★같은 값을 세 번 보내던 문제 — 타이핑 멈춤·포커스 빠짐·창 닫힘이
+         겹치면 응답이 오기 전에 세 번 다 통과한다. 보내는 중인 값을 기억해
+         한 번만 나가게 한다. */
+      if(inp._busy === inp.value) return;
+      inp._busy = inp.value;
+      if(!window.SERVER){ noteMark(inp, 'run.py 서버로 실행할 때 저장돼요', false); return; }
+      const text=inp.value;
       try{
         const r=await fetch('/api/alarms',{method:'POST',
           headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({op:'note', id:inp.dataset.id, text:inp.value})});
-        if(r.ok){ const j=await r.json(); ALOG=j.alarms||ALOG; }
-      }catch(e){}
+          body: JSON.stringify({op:'note', id:inp.dataset.id, text:text})});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const j=await r.json();
+        ALOG=j.alarms||ALOG;
+        inp.dataset.saved=text;
+        noteMark(inp, '저장됨', true);
+      }catch(e){ noteMark(inp, '저장 실패: '+e.message, false); }
+      finally{ if(inp._busy===text) inp._busy=null; }
     };
+    inp.dataset.saved = inp.value;
+    inp._save = save;
+    inp.oninput = ()=>{ clearTimeout(t); t=setTimeout(()=>save('idle'), 600); };
+    inp.onchange = ()=> save('change');
+    inp.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); save('enter'); } };
   });
 }
 /* 서버 없이 HTML 만 열었을 때의 폴백 CSV. 칸은 서버(sentinel.CSV_COLS)와
@@ -1663,6 +1689,27 @@ function csvCell(v){
   v = (v===null||v===undefined) ? '' : String(v);
   return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
 }
+/* 저장됐다는 것을 그 칸에서 바로 보여 준다 — 표시가 없으면 안 된 줄 안다 */
+function noteMark(inp, msg, ok){
+  inp.classList.toggle('saved', !!ok);
+  inp.classList.toggle('failed', !ok);
+  inp.title = msg;
+  const td=inp.parentElement;
+  if(!td) return;
+  let m=td.querySelector('.noteMsg');
+  if(!m){ m=document.createElement('span'); m.className='noteMsg'; td.appendChild(m); }
+  m.textContent = ok ? '✓ 저장됨' : ('⚠ '+msg);
+  m.className = 'noteMsg' + (ok ? ' ok' : ' bad');
+  if(ok) setTimeout(()=>{ if(m.textContent==='✓ 저장됨') m.textContent=''; }, 2500);
+}
+/* 창을 닫거나 페이지를 떠날 때 아직 안 넘긴 내용을 마저 넘긴다 */
+function flushNotes(){
+  document.querySelectorAll('#alogBody .noteIn').forEach(inp=>{
+    if(inp._save) inp._save('flush');
+  });
+}
+window.addEventListener('beforeunload', flushNotes);
+
 function alogCsv(){
   const L=[ALOG_COLS.join(',')];
   ALOG.forEach(e=>{
@@ -1758,7 +1805,7 @@ function applyAlogPos(tries){
 (function initAlog(){
   const t=$('#alarmTitle');
   if(t) t.ondblclick = (e)=>{ e.stopPropagation(); openAlog(); };
-  const c=$('#alogClose'); if(c) c.onclick = ()=> $('#alogWrap').classList.remove('on');
+  const c=$('#alogClose'); if(c) c.onclick = ()=>{ flushNotes(); $('#alogWrap').classList.remove('on'); };
   const d=$('#alogDl');
   if(d) d.onclick = ()=> {
     /* ★서버가 만든 CSV 를 받는다 — 화면이 다시 만들면 칸이 어긋난다.
@@ -1780,7 +1827,7 @@ function applyAlogPos(tries){
   const sv=$('#cfgSave');
   if(sv) sv.onclick = ()=> saveAlogCfg();
   document.addEventListener('keydown', e=>{
-    if(e.key==='Escape') $('#alogWrap').classList.remove('on');
+    if(e.key==='Escape'){ flushNotes(); $('#alogWrap').classList.remove('on'); }
   });
 })();
 
@@ -2120,7 +2167,8 @@ function chartBar(f, cuts, cls){
   const dl=(f.delta===null||f.delta===undefined) ? ''
     : `<div class="cdelta">30분 ${f.delta>0?'+':''}${gnum(f.delta)}</div>`;
   return `<div class="cbar ${cls||''} lv${esc(f.level)}">
-    <div class="cname" title="${esc(f.col||f.fab)}">${esc(f.fab)}</div>
+    <div class="cname" title="${esc(f.col||f.fab)}${f.source==='calc'?' (되계산)':''}"
+      >${esc(f.fab)}${f.source==='calc'?'<span class="csrc">*</span>':''}${f.saturated?'<span class="csat" title="raw 가 융합 상한(50)을 넘어 다 반영되지 못했습니다">▲</span>':''}</div>
     <div class="ctrack"><div class="cfill" style="width:${pct(val)}%"></div>${cut}</div>
     <div class="cval"><span class="clv">${gnum(val)}</span>
       <span style="color:var(--dim)">/${gnum(vmax)} ${esc(f.level)}</span>${dl}</div>
@@ -2146,9 +2194,11 @@ function chartBars(d){
                +` + 분류기 ${gnum(fu.sorter)} + 용량변경 ${gnum(fu.maxcapa)} = ${gnum(fu.raw)}`);
     if(sub.length) L.push(`<div class="callsub">${sub.join(' · ')}</div>`);
   }
-  const fmax=((d.fabs||[])[0]||{}).vmax || d.area_cap || 50;
-  L.push(`<div class="csec">FAB별 영역 점수 — <code>{FAB}_score</code> · 0~${gnum(fmax)}`
-        +` (눈금 = 경계·위험·초위험)</div>`);
+  /* ★FAB 도 ALL 과 **같은 0~100 축**이다. area_score = min(100, raw×100÷분모(70)).
+     컷 60/71/85 가 이 값에 그대로 붙는다 — 예전엔 분모를 50 으로 써서 raw 35 가
+     70점(위험)이 됐다. "경계 60인데 왜 35에서 울리냐" 가 그것이다. */
+  L.push(`<div class="csec">FAB별 영역 점수 — <code>area_score</code> · 0~100`
+        +` (눈금 = 경계 ${gnum(cuts.warn)} · 위험 ${gnum(cuts.danger)} · 초위험 ${gnum(cuts.critical)})</div>`);
   for(const f of (d.fabs||[])){
     L.push(chartBar(f, cuts));
   }
@@ -2229,6 +2279,8 @@ function renderChart(){
     +(d.age_min>1440?'<br>관제 수집이 멈춘 것으로 보입니다 (real_time_amhs 서버의 [수집] 로그를 확인하세요).':''));
   if((d.blind||[]).length) note.push('값이 안 오는 영역: '+esc(d.blind.join(', ')));
   note.push('빗금 = CSV 에 값이 안 오는 조건 (0 이 아닙니다). 흰 눈금 = 임계.');
+  if((d.fabs||[]).some(f=>f.source==='calc'))
+    note.push('* = FAB 분리 파일이 없어 raw 로 되계산한 값 (data/{FAB}/ 확인).');
   body.innerHTML = chartBars(d) + chartReads(d) + chartTrendSvg()
     + `<p class="cnote">${note.join('<br>')}</p>`;
 }
@@ -2910,6 +2962,9 @@ function showChatTab(){
    꽂으면 못 읽는다. 이스케이프 먼저 → 제목/표/코드/목록/굵게만 변환.
    그 이상 문법은 원문 그대로 두는 게 정직하다 (변환기 흉내 금지). */
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/* 속성값(value="…") 안에 넣을 때는 따옴표까지 막아야 한다 —
+   조치 내용에 " 가 하나 있으면 그 칸이 통째로 깨진다 */
+function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
 function mdInline(s){
   return esc(s)
     .replace(/`([^`]+)`/g,'<code>$1</code>')

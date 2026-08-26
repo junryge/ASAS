@@ -113,6 +113,16 @@
     text-align:left;vertical-align:top}
   #alogBody th{color:var(--dim);font-weight:600;position:sticky;top:0;
     background:rgba(14,19,28,.97)}
+  /* 조치 내용 — 저장됐는지 그 자리에서 보인다 */
+  #alogBody .noteIn{width:100%;padding:4px 7px;border-radius:7px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--txt);
+    font-size:11.5px}
+  #alogBody .noteIn:focus{outline:none;border-color:var(--accent2)}
+  #alogBody .noteIn.saved{border-color:rgba(78,201,160,.75)}
+  #alogBody .noteIn.failed{border-color:rgba(255,122,61,.85)}
+  #alogBody .noteMsg{display:block;margin-top:3px;font-size:10px}
+  #alogBody .noteMsg.ok{color:#4ec9a0}
+  #alogBody .noteMsg.bad{color:#ff7a3d}
   #alogBody td.lv{font-weight:700}
   #alogBody td.lv.경계{color:#e8c14a} #alogBody td.lv.위험{color:#ff7a3d}
   #alogBody td.lv.초위험{color:#ff2b3d} #alogBody td.lv.정상{color:#4ec9a0}
@@ -156,6 +166,8 @@
   .cbar .cval{text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
   .cbar .clv{font-weight:700}
   .cbar .cdelta{color:var(--dim);font-size:10px}
+  .cbar .csrc{color:var(--dim);font-size:10px;margin-left:2px}
+  .cbar .csat{color:#e8c14a;font-size:9px;margin-left:2px}
   /* 전체(ALL) — FAB 과 잰 것이 다르니 눈으로도 구분되게 */
   .cbar.callrow{padding:3px 0 5px;border-bottom:1px dashed rgba(255,255,255,.14)}
   .cbar.callrow .cname{font-weight:800;color:#e9eef6}

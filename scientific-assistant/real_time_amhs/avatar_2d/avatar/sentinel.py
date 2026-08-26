@@ -478,21 +478,25 @@ def chart():
         #   예전엔 FAB 도 score(=영역점수를 100점으로 편 '위험도')를 그렸다.
         #   M16HUB_score 가 12 인데 화면엔 24 로 보였다 — 관제가 아는 숫자와
         #   화면 숫자가 다르면 그 화면은 못 쓴다.
-        cap = d.get("area_cap") or 50
         is_all = bool(row.get("is_all"))
         item = {"fab": row.get("fab"), "score": row.get("score"),
                 "level": row.get("level") or "정상",
                 "delta": row.get("delta"), "area": row.get("area"),
                 "fired": fired, "readings": reads,
                 "is_all": is_all,
-                # 화면이 그대로 쓰는 값 — 축이 서로 다르므로 최대치도 같이 준다
-                "value": row.get("score") if is_all else row.get("area"),
-                "vmax": 100 if is_all else cap,
+                # 화면이 그대로 쓰는 값 — **둘 다 0~100 이다**
+                #   ALL = unified_risk_score
+                #   FAB = area_score = min(100, raw×100÷분모(70))
+                # 예전엔 FAB 을 0~50 축으로 그리고 분모도 50 을 써서, raw 35 가
+                # 70점(위험)으로 나와 "경계 60인데 35에서 울린다" 가 됐다.
+                "value": row.get("score") if is_all
+                         else row.get("area_score", row.get("score")),
+                "vmax": 100,
                 "col": (row.get("score_col") or "unified_risk_score") if is_all
-                       else (row.get("stored_col")
-                             or "{}_score".format(row.get("fab") or "")),
-                # 등급은 위험도(0~100) 기준이라 그대로 남긴다 — 축이 다르면
-                # 컷 눈금도 축에 맞춰 옮겨야 한다 (화면이 vmax 로 환산한다)
+                       else (row.get("score_col") or "area_score"),
+                "source": row.get("source") or "",
+                "saturated": bool(row.get("saturated")),
+                "area": row.get("area"),          # 융합 기여분 (0~50) — 참고용
                 "risk": row.get("risk", row.get("score"))}
         if row.get("is_all"):
             # ★전체(ALL)가 화면에서 빠져 있었다 (실제 지적). 관제가 제일 먼저
@@ -520,6 +524,7 @@ def chart():
             "cuts": d.get("cuts") or {"warn": 60, "danger": 71, "critical": 85},
             "area_cap": d.get("area_cap"), "delta_min": d.get("delta_min"),
             "blind": d.get("blind") or [], "fabs": out,
+
             "all": all_row,                       # 전체(ALL) — 맨 위에 따로 선다
             "warn": d.get("warn") or "",          # "오늘 수집이 없어 …" 그대로
             "fallback_day": d.get("fallback_day"), "day": d.get("day") or "",
