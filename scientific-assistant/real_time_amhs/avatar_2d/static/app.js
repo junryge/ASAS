@@ -20,6 +20,17 @@ const COSTUMES = [
        중앙(손깍지)은 건드리지 않고 소매 쪽만 움직이도록 바깥으로 뺐다 */
     patch:{ armA:[0.352,0.852], armB:[0.636,0.852],
             armA_rad:[0.058,0.050], armB_rad:[0.058,0.050] }},
+  /* ★나중에 추가한 옷. 새 옷은 **뒤에만 붙인다** — BACKGROUNDS 가 의상을
+     인덱스로 가리켜서(공장=2 · 회의실=0 · 정문=1 · 테라스=3 · 집=4)
+     중간에 끼우면 배경이 엉뚱한 옷을 입힌다.
+     badge : 이 옷을 고르면 사원증을 켤지/끌지. 없으면 지금 상태 유지.
+     ★이 목록은 폴백이다 — 원본은 avatar/config.py 이고 /api/config 로 덮인다
+       (real_time_amhs/tests/test_avatar_costume.py 가 두 목록을 묶는다). */
+  {name:'평상복',   src:"assets/casual.png",     cfg:null, real:false, badge:false},
+  {name:'셔츠',     src:"assets/shirt.png",      cfg:null, real:false, badge:true},
+  {name:'자켓',     src:"assets/jacket.png",     cfg:null, real:false, badge:true},
+  {name:'테크자켓', src:"assets/tech.png",       cfg:null, real:false, badge:true},
+  {name:'민소매',   src:"assets/sleeveless.png", cfg:null, real:false, badge:true},
 ];
 let costumeIdx = 0;
 
@@ -487,9 +498,22 @@ const NX=100, NY=150;
 /* ---- 텍스처 ---- */
 const tex = gl.createTexture();
 let IMG_W=430, IMG_H=676, texReady=false;
-function loadImage(src){
+const MISSING_WARNED = new Set();
+function loadImage(src, onFail){
   const im = new Image();
   im.crossOrigin='anonymous';
+  /* ★그림 파일이 없으면 texReady 가 false 로 남아 **화면이 그냥 빈다**.
+     새 옷을 설정에 적어 두고 png 를 아직 안 넣었을 때가 그렇다 — 무엇이
+     없는지 말해 주고 직전 옷으로 되돌린다. 같은 파일로 두 번 알리지 않는다. */
+  im.onerror = ()=>{
+    console.warn('의상 그림을 못 찾았습니다: ' + src);
+    if(!MISSING_WARNED.has(src)){
+      MISSING_WARNED.add(src);
+      alert('의상 그림이 없습니다.\n\n  ' + src
+            + '\n\navatar_2d/static/ 아래에 넣고 새로고침하세요.');
+    }
+    if(onFail) onFail();
+  };
   im.onload = ()=>{
     IMG_W=im.naturalWidth; IMG_H=im.naturalHeight;
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -2673,10 +2697,11 @@ $('#cfgImport').onclick=()=>{
 
 /* ---------- 의상 교체 ----------
    프레이밍이 같은 그림끼리는 캘리브레이션을 그대로 쓴다 */
-function setCostume(i){
+function setCostume(i, fromFail){
   if(i<0 || i>=COSTUMES.length) return;
   // 지금까지 조절한 값을 이전 의상에 저장해 둔다
   if(COSTUMES[costumeIdx]) COSTUMES[costumeIdx].cfg = JSON.parse(JSON.stringify(CFG));
+  const prevIdx = costumeIdx;
   costumeIdx = i;
   const c = COSTUMES[i];
   let base = c.cfg;
@@ -2695,8 +2720,16 @@ function setCostume(i){
   // 슬라이더 UI 도 같이 맞춘다
   const set=(id,v)=>{ const e=$('#'+id); if(e){ e.value=v; e.dispatchEvent(new Event('input')); } };
   set('r_real', c.real?1:0);
+  /* 옷에 사원증 규칙이 있으면 같이 맞춘다 (평상복은 뗀다).
+     ★배경 때문에 바뀐 경우엔 setBg 가 뒤이어 배경 값으로 덮는다 —
+       장면이 정한 것이 옷보다 우선이다. */
+  if(c.badge!==undefined && c.badge!==badgeOn){
+    badgeOn = c.badge;
+    const bc=$('#badgeChip'); if(bc) bc.classList.toggle('on', badgeOn);
+  }
   texReady = false;
-  loadImage(c.src);
+  // 그림이 없으면 빈 화면이 되므로 직전 옷으로 돌아간다 (한 번만 시도)
+  loadImage(c.src, fromFail ? null : () => { if(prevIdx !== i) setCostume(prevIdx, true); });
   document.querySelectorAll('#costumeChips .chip').forEach((el,k)=>el.classList.toggle('on', k===i));
   placeHandles();
   saveSettings();
@@ -4062,7 +4095,7 @@ function applyServerConfig(c){
   if(Array.isArray(c.costumes) && c.costumes.length){
     COSTUMES.length=0;
     c.costumes.forEach(k=>COSTUMES.push({name:k.name, src:k.src, cfg:null,
-      real:!!k.real, patch:k.patch||null}));
+      real:!!k.real, patch:k.patch||null, badge:k.badge}));
     if(costumeIdx>=COSTUMES.length) costumeIdx=0;
     buildCostumeChips();
   }

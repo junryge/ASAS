@@ -59,6 +59,23 @@ COSTUMES = [
     {"name": "잠옷",   "src": "assets/pj.png",    "real": False,
      "patch": {"armA": [0.352, 0.852], "armB": [0.636, 0.852],
                "armA_rad": [0.058, 0.050], "armB_rad": [0.058, 0.050]}},
+
+    # ── 나중에 추가한 옷 ────────────────────────────────────────────
+    # ★새 옷은 **뒤에만 붙인다**. BACKGROUNDS 가 의상을 인덱스로 가리키므로
+    #   (공장=2 · 회의실=0 · 정문=1 · 테라스=3 · 집=4) 중간에 끼워 넣으면
+    #   배경이 엉뚱한 옷을 입힌다.
+    # ★badge: 그 옷을 고르면 사원증을 켤지/끌지. 없으면 지금 상태를 유지한다
+    #   (배경의 badge 와 같은 규칙). 배경으로 옷이 바뀐 경우엔 배경 쪽 값이
+    #   이긴다 — 장면이 정한 것이 옷보다 우선이다.
+    #   평상복만 사원증을 뗀다. 나머지 넷은 근무 중에 입는 옷이다.
+    # ★손 위치(armA/armB)는 patch 를 안 걸었다. 그림을 받아 보고 재야 하는
+    #   값이라 눈대중으로 적으면 기본값보다 나빠진다. 화면 오른쪽 조절
+    #   손잡이로 맞추면 의상별로 저장된다(설정에 cfgs 로 남는다).
+    {"name": "평상복",   "src": "assets/casual.png",     "real": False, "badge": False},
+    {"name": "셔츠",     "src": "assets/shirt.png",      "real": False, "badge": True},
+    {"name": "자켓",     "src": "assets/jacket.png",     "real": False, "badge": True},
+    {"name": "테크자켓", "src": "assets/tech.png",       "real": False, "badge": True},
+    {"name": "민소매",   "src": "assets/sleeveless.png", "real": False, "badge": True},
 ]
 
 # ── 사원증 ────────────────────────────────────────────────────────────────
