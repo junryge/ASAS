@@ -2760,6 +2760,144 @@ const readAs = (f, how) => new Promise((ok, no) => {
   how === 'text' ? r.readAsText(f, 'utf-8') : r.readAsDataURL(f);
 });
 
+/* ── 크로마키(초록 배경) 빼기 ────────────────────────────────────────
+   받은 그림이 초록 배경이면 그대로 쓸 수 없다. 기존 의상 다섯 벌은 전부
+   **배경이 투명**이고 440x630 틀에 맞춰져 있다 (재 보니 위 여백 2.7% ·
+   좌우 3~4% · 아래는 딱 붙음). 새 그림도 같은 틀로 맞춰야 캘리브레이션이
+   크게 어긋나지 않는다.
+
+   ★색으로 싹 지우지 않고 **테두리에서 번져 들어가며** 지운다. 옷에 있는
+     초록(금장미 자수의 잎사귀 같은 것)까지 같이 지워지면 안 된다 — 바깥과
+     이어져 있는 초록만 배경이다.
+   ★이미 투명한 그림(기존 의상)은 건드리지 않는다. */
+const ART_W = 440, ART_H = 630, ART_TOP = 0.027;   // 기존 다섯 벌에서 잰 값
+
+function _px(img){
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+  c.getContext('2d', {willReadFrequently:true}).drawImage(img, 0, 0);
+  return c;
+}
+
+/* 테두리를 훑어 배경이 크로마(초록/파랑)인지 본다. 아니면 null */
+function _chromaOf(d, w, h){
+  const hit = [], put = (x,y)=>{
+    const o = (y*w+x)*4;
+    if(d[o+3] < 200) return;                       // 이미 투명하면 크로마가 아니다
+    hit.push([d[o], d[o+1], d[o+2]]);
+  };
+  const n = 32;
+  for(let i=0;i<n;i++){
+    const x = Math.floor(i*(w-1)/(n-1)), y = Math.floor(i*(h-1)/(n-1));
+    put(x,0); put(x,h-1); put(0,y); put(w-1,y);
+  }
+  if(hit.length < n) return null;                  // 테두리가 이미 뚫려 있다
+  const avg = hit.reduce((a,c)=>[a[0]+c[0],a[1]+c[1],a[2]+c[2]],[0,0,0]).map(v=>v/hit.length);
+  const [r,g,b] = avg;
+  const dg = g - Math.max(r,b), db = b - Math.max(r,g);
+  const ch = dg >= db ? {ch:'g', d:dg} : {ch:'b', d:db};
+  if(ch.d < 40) return null;                       // 초록·파랑 배경이 아니다
+  // 테두리가 정말 고른 한 색인가 (그림이 걸쳐 있으면 아니다)
+  const far = hit.filter(c => Math.abs(c[0]-r)+Math.abs(c[1]-g)+Math.abs(c[2]-b) > 150);
+  if(far.length > hit.length*0.25) return null;
+  return {rgb:avg, ...ch};
+}
+
+/* 테두리에서 번져 들어가며 배경만 지운다 */
+function _keyOut(cv){
+  const ctx = cv.getContext('2d', {willReadFrequently:true});
+  const w = cv.width, h = cv.height;
+  const im = ctx.getImageData(0,0,w,h), d = im.data;
+  const info = _chromaOf(d, w, h);
+  if(!info) return false;                          // 크로마 배경이 아니다
+
+  const [br,bg,bb] = info.rgb;
+  const near = (o) => {                            // 배경색에 가까운가
+    const dr = d[o]-br, dg = d[o+1]-bg, db = d[o+2]-bb;
+    return dr*dr + dg*dg + db*db < 92*92;
+  };
+  const back = new Uint8Array(w*h);
+  const stack = [];
+  for(let x=0;x<w;x++){ stack.push(x, x+(h-1)*w); }
+  for(let y=0;y<h;y++){ stack.push(y*w, y*w+w-1); }
+  while(stack.length){
+    const p = stack.pop();
+    if(back[p]) continue;
+    const o = p*4;
+    if(d[o+3] < 8){ back[p] = 1; }                 // 이미 투명한 곳도 배경
+    else if(!near(o)) continue;
+    back[p] = 1;
+    const x = p % w, y = (p - x) / w;
+    if(x > 0)   stack.push(p-1);
+    if(x < w-1) stack.push(p+1);
+    if(y > 0)   stack.push(p-w);
+    if(y < h-1) stack.push(p+w);
+  }
+
+  /* 경계는 반투명으로 부드럽게 + 초록 번짐(spill)을 눌러 준다.
+     안 하면 인물 둘레에 초록 테가 남는다. */
+  const key = info.ch === 'g' ? 1 : 2, oth = info.ch === 'g' ? [0,2] : [0,1];
+  for(let p=0;p<w*h;p++){
+    const o = p*4;
+    if(back[p]){ d[o+3] = 0; continue; }
+    const x = p % w, y = (p - x) / w;
+    let edge = false;
+    for(let dy=-2; dy<=2 && !edge; dy++)
+      for(let dx=-2; dx<=2; dx++){
+        const nx = x+dx, ny = y+dy;
+        if(nx<0||ny<0||nx>=w||ny>=h) continue;
+        if(back[ny*w+nx]){ edge = true; break; }
+      }
+    if(!edge) continue;
+    const m = Math.max(d[o+oth[0]], d[o+oth[1]]);
+    if(d[o+key] > m){
+      const over = d[o+key] - m;
+      d[o+key] = m + over*0.2;                     // 번진 초록을 눌러 준다
+      if(over > 60) d[o+3] = Math.min(d[o+3], 255 - Math.min(255, (over-60)*3));
+    }
+  }
+  ctx.putImageData(im, 0, 0);
+  return true;
+}
+
+/* 기존 의상과 같은 틀(440x630)로. 인물만 잘라 위 여백 2.7% · 아래 딱 붙임 */
+function _fit(cv){
+  const ctx = cv.getContext('2d', {willReadFrequently:true});
+  const w = cv.width, h = cv.height;
+  const d = ctx.getImageData(0,0,w,h).data;
+  let x0=w, y0=h, x1=-1, y1=-1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    if(d[(y*w+x)*4+3] > 16){
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+    }
+  }
+  if(x1 < 0) return cv;                            // 전부 투명 — 그대로 둔다
+  const cw = x1-x0+1, chh = y1-y0+1;
+  const out = document.createElement('canvas');
+  out.width = ART_W; out.height = ART_H;
+  const oc = out.getContext('2d');
+  oc.imageSmoothingQuality = 'high';
+  // 위 여백만 남기고 아래는 끝까지 — 기존 다섯 벌이 그렇다
+  const availH = ART_H * (1 - ART_TOP), availW = ART_W * 0.93;
+  const k = Math.min(availW/cw, availH/chh);
+  const dw = cw*k, dh = chh*k;
+  oc.drawImage(cv, x0, y0, cw, chh, (ART_W-dw)/2, ART_H-dh, dw, dh);
+  return out;
+}
+
+/* 받은 그림을 기존 의상과 같은 모양으로 (초록 배경이면 빼고 틀에 맞춘다).
+   손댈 게 없으면 원본 그대로 돌려준다. */
+async function normalizeCostume(dataUrl){
+  const img = await new Promise((ok, no)=>{
+    const i = new Image();
+    i.onload = ()=>ok(i); i.onerror = ()=>no(new Error('그림을 열지 못했습니다'));
+    i.src = dataUrl;
+  });
+  const cv = _px(img);
+  if(!_keyOut(cv)) return {data:dataUrl, keyed:false};
+  return {data:_fit(cv).toDataURL('image/png'), keyed:true};
+}
+
 /* 의상 그림 한 장. 서버로 띄웠으면 **파일로 남긴다** — 예전엔 data URL 로
    메모리에만 들고 있어서 새로고침하면 사라졌고, config.py 에 미리 적어 둔
    의상과도 이어지지 않아 같은 그림인데 칩이 두 개가 됐다.
@@ -2767,7 +2905,10 @@ const readAs = (f, how) => new Promise((ok, no) => {
    만들지 않고 그 칸으로 간다 — 사원증 규칙이 거기 붙어 있다. */
 async function addCostumeFile(f){
   const name = (f.name || '커스텀').replace(/\.[^.]+$/, '').slice(0, 10);
-  const data = await readAs(f, 'dataurl');
+  let data = await readAs(f, 'dataurl'), keyed = false;
+  // 초록 배경이면 빼고 기존 의상과 같은 틀로 맞춘다
+  try{ ({data, keyed} = await normalizeCostume(data)); }
+  catch(e){ return {ok:false, msg:(f.name||name) + ' — ' + e.message}; }
   if(window.SERVER){
     try{
       const r = await fetch('/api/costume', {
@@ -2778,12 +2919,12 @@ async function addCostumeFile(f){
         if(r.slot >= 0 && COSTUMES[r.slot]){
           COSTUMES[r.slot].cfg = null;              // 새 그림이니 캘리브레이션 초기화
           setCostume(r.slot);
-          return {ok:true, msg:COSTUMES[r.slot].name + ' ← ' + r.src};
+          return {ok:true, msg:COSTUMES[r.slot].name + ' ← ' + r.src + (keyed?' (초록 배경 제거)':'')};
         }
         COSTUMES.push({name, src:r.src, cfg:null, real:false});
         buildCostumeChips();
         setCostume(COSTUMES.length-1);
-        return {ok:true, msg:name + ' ← ' + r.src + ' (새 의상)'};
+        return {ok:true, msg:name + ' ← ' + r.src + ' (새 의상' + (keyed?' · 초록 배경 제거':'') + ')'};
       }
       return {ok:false, msg:(f.name||name) + ' — '
               + ((r && r.error && r.error.message) || '저장 실패')};

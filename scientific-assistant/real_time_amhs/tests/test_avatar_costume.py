@@ -236,5 +236,71 @@ class DropHandler(unittest.TestCase):
         self.assertIn("r.slot >= 0", m)
 
 
+class ChromaKey(unittest.TestCase):
+    """초록 배경(크로마키) 빼기 — 화면 쪽(app.js) 을 글자로 검사한다.
+
+    기존 의상 다섯 벌은 **배경이 투명**이고 440x630 틀에 맞춰져 있다
+    (재 보니 위 여백 2.7% · 아래는 딱 붙음). 새로 받는 그림은 초록 배경이라
+    그대로 쓰면 초록 네모가 화면에 붙는다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def _fn(self, name):
+        m = re.search(r"function " + name + r"\(.*?\n\}", self.js, re.S)
+        self.assertIsNotNone(m, name + " 이(가) 없다")
+        return m.group(0)
+
+    def test_기존_의상은_배경이_투명하다(self):
+        """새 그림을 맞출 기준 — 흰색이 아니라 투명이다."""
+        import struct
+        import zlib
+        p = os.path.join(AV, "static", "assets", "suit.png")
+        d = open(p, "rb").read()
+        w, h, _bd, ct = struct.unpack(">IIBB", d[16:26])
+        self.assertEqual((w, h), (440, 630), "기준 틀이 바뀌었다")
+        self.assertEqual(ct, 6, "RGBA 가 아니다 — 투명 배경일 수 없다")
+
+    def test_틀_크기가_기존과_같다(self):
+        self.assertIn("ART_W = 440", self.js)
+        self.assertIn("ART_H = 630", self.js)
+
+    def test_색으로_싹_지우지_않고_테두리에서_번져_들어간다(self):
+        """옷에 있는 초록(금장미 자수의 잎사귀)까지 지워지면 안 된다 —
+        바깥과 이어져 있는 초록만 배경이다."""
+        f = self._fn("_keyOut")
+        self.assertIn("stack", f, "번져 들어가는(flood fill) 방식이 아니다")
+        # 테두리 전체를 시작점으로 넣는가
+        self.assertIn("(h-1)*w", f)
+        self.assertIn("y*w+w-1", f)
+
+    def test_이미_투명한_그림은_안_건드린다(self):
+        """기존 의상을 다시 넣어도 그대로여야 한다."""
+        f = self._fn("_chromaOf")
+        self.assertIn("d[o+3] < 200", f, "이미 투명한 테두리를 크로마로 본다")
+
+    def test_초록이_옅으면_크로마로_안_본다(self):
+        f = self._fn("_chromaOf")
+        self.assertIn("< 40", f, "문턱값이 없다 — 아무 그림이나 배경을 뚫는다")
+
+    def test_초록_번짐을_눌러_준다(self):
+        """안 하면 인물 둘레에 초록 테가 남는다."""
+        self.assertIn("번진 초록", self._fn("_keyOut"))
+
+    def test_아래는_딱_붙이고_위만_여백을_둔다(self):
+        """기존 다섯 벌이 그렇다 (아래 여백 0.000)."""
+        f = self._fn("_fit")
+        self.assertIn("ART_H-dh", f)
+        self.assertIn("ART_TOP", self.js)
+
+    def test_넣을_때_자동으로_거친다(self):
+        m = re.search(r"async function addCostumeFile\(f\)\{.*?\n\}",
+                      self.js, re.S).group(0)
+        self.assertIn("normalizeCostume(", m)
+
+
 if __name__ == "__main__":
     unittest.main()
