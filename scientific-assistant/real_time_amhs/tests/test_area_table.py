@@ -254,6 +254,59 @@ class DashboardFabCols(unittest.TestCase):
         self.assertIn("const ncol = 7 +", m)
         self.assertIn('colspan="${ncol}"', m)
 
+    # ── 추이 그래프에 FAB 겹쳐보기 ──────────────────────────────────
+    def test_겹쳐보기_체크박스가_실시간과_과거_모두_있다(self):
+        self.assertIn('id="stripfab"', self.h)
+        self.assertIn('id="pstripfab"', self.h)
+
+    def test_FAB_선_색은_재서_고른_값이다(self):
+        """눈으로 고른 색이 아니다. 이 배경(#0D1119)에서 다섯이 서로, 그리고
+        본선(시안)·등급 점(노랑·주황·빨강)과도 구분되는지 OKLab ΔE 로 재서
+        고른 값이다 — 적록색약 8.1 · 정상시야 15.9 · 등급 밴드 위 대비
+        3.08:1 이상. 바꾸려면 눈대중 말고 다시 재고 이 표도 같이 고칠 것:
+        파랑과 보라는 눈에는 달라 보여도 적록색약에서 ΔE 1.3 까지 붙는다."""
+        want = {"M14": "#3f93f7", "M14B": "#3d8f40", "M16A": "#824df9",
+                "M16B": "#b973c6", "M16HUB": "#d7038b"}
+        m = re.search(r"const FAB_COLOR = \{(.*?)\};", self.h, re.S)
+        self.assertIsNotNone(m, "FAB_COLOR 표가 없다")
+        flat = m.group(1).replace(" ", "").replace("\n", "")
+        for f, c in want.items():
+            self.assertIn(f"{f}:'{c}'", flat)
+
+    def test_상태색을_FAB_선에_쓰지_않는다(self):
+        """관제 화면에서 노랑·주황·빨강은 '등급' 이라는 뜻이고 시안은 전체
+        점수다. FAB 선에 그 색을 쓰면 그냥 선인데 경보로 읽힌다."""
+        flat = re.search(r"const FAB_COLOR = \{(.*?)\};", self.h, re.S).group(1).lower()
+        for c in ("#f2d338", "#ff9f2e", "#ff4d5e", "#3ddbe8"):
+            self.assertNotIn(c, flat)
+
+    def test_스코어일_때만_겹쳐_그린다(self):
+        """분·건·% 같은 지표에 0~100 점수를 얹으면 y축이 두 개인 그래프가
+        된다 — 읽는 사람이 반드시 잘못 읽는다."""
+        m = re.search(r"function fabPaths\(.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "fabPaths 가 없다")
+        self.assertIn("mt.bands", m.group(0))
+
+    def test_FAB_선이_본선보다_가늘다(self):
+        """색이 아니라 굵기로도 '무엇이 전체 점수인지' 가 구분돼야 한다."""
+        fp = re.search(r"function fabPaths\(.*?\n\}", self.h, re.S).group(0)
+        fw = float(re.search(r'stroke-width="([\d.]+)"', fp).group(1))
+        main = float(re.search(r'stroke="\$\{mt\.color\}" stroke-width="([\d.]+)"',
+                               self.h).group(1))
+        self.assertLess(fw, main)
+
+    def test_FAB_선은_본선_면채움_뒤에_그린다(self):
+        """본선 면채움(opacity .13)이 나중에 덮이면 FAB 색이 그만큼 물든다."""
+        m = re.search(r"opacity=\"\.13\".*?fabPaths.*?stroke=\"\$\{mt\.color\}\"",
+                      self.h, re.S)
+        self.assertIsNotNone(m, "면채움 → FAB → 본선 순서가 아니다")
+
+    def test_체크박스는_색만으로_구분하지_않는다(self):
+        """색약이거나 흑백으로 인쇄해도 어느 FAB 인지 알아야 한다."""
+        m = re.search(r"function fillFabSel\(.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "fillFabSel 이 없다")
+        self.assertIn("${esc(f)}</label>", m.group(0))
+
     def test_표_글자가_본문보다_크지_않다(self):
         """컬럼이 늘어난 표다. 어느 칸이든 본문(13.5px)보다 커지면 한 행이
         높아져서 한 화면에 들어오는 행 수가 줄어든다."""

@@ -236,6 +236,18 @@
      룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
   table.cases td.rcol{font-size:12px;line-height:1.5}
   table.cases td.rcol .rln{white-space:normal}
+  /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
+     범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
+  .fabsel{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .fabsel>b{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--tx3)}
+  .fabsel label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;
+    font-size:11px;color:var(--tx3);user-select:none}
+  .fabsel label:hover{color:var(--tx2)}
+  .fabsel label.on{color:var(--tx)}
+  .fabsel input{appearance:none;-webkit-appearance:none;margin:0;cursor:pointer;
+    width:11px;height:11px;border-radius:3px;border:1.5px solid #46536B;background:none}
+  .fabsel input:checked{background:var(--fc);border-color:var(--fc)}
+  .fabsel input:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
   .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
   .ttl{font-weight:600;font-size:12.5px}
@@ -483,6 +495,7 @@
         <select id="stripsel" class="msel" title="볼 지표 선택"></select>
         <span class="note" id="stripinfo">—</span>
         <span class="note">· 클릭 → 그 시각 구간 그래프</span>
+        <span class="fabsel" id="stripfab"></span>
         <span class="lgd gradelgd">
           <span><i style="background:#2FD68A"></i>정상</span>
           <span><i style="background:#F2D338"></i>경계</span>
@@ -531,6 +544,7 @@
         <select id="pstripsel" class="msel" title="볼 지표 선택"></select>
         <span class="note" id="pstripinfo">—</span>
         <span class="note">· 클릭 → 그 시각 구간 그래프</span>
+        <span class="fabsel" id="pstripfab"></span>
         <span class="lgd gradelgd">
           <span><i style="background:#2FD68A"></i>정상</span>
           <span><i style="background:#F2D338"></i>경계</span>
@@ -836,6 +850,19 @@ const gradeOf = s => s>=CUTS.critical ? {n:'초위험', c:'var(--crit)',  chk:tr
      (CUTS) 으로 칠하면 정책 탭에서 FAB 별로 바꾼 값이 화면에 안 나타나고,
      서버가 매긴 등급과 다른 색이 난다. */
 let FABS = [], FCUTS = {};
+
+/* ── 추이에 겹쳐 그릴 FAB 영역점수 ──
+   ★색은 눈으로 고르지 않았다. 이 배경(#0D1119)에서 다섯이 서로, 그리고
+     본선(시안)·등급 점(노랑·주황·빨강)과도 구분되는지 계산해서 골랐다.
+     OKLab ΔE 기준 — 적록색약 8.1 · 정상시야 15.9 · 등급 밴드 위 대비
+     3.08:1 이상. 손대려면 눈대중 말고 다시 재고 바꿀 것 (파랑과 보라는
+     눈에는 달라 보여도 적록색약에서 ΔE 1.3 까지 붙는다).
+   ★주황·빨강 계열은 일부러 뺐다. 관제 화면에서 그 색은 '위험' 이라는
+     뜻이라, 그냥 FAB 선인데 경보로 읽힌다. */
+const FAB_COLOR = {M14:'#3f93f7', M14B:'#3d8f40', M16A:'#824df9',
+                   M16B:'#b973c6', M16HUB:'#d7038b'};
+const fabColor = f => FAB_COLOR[f] || '#8FA0B6';
+let FABSEL = new Set(), PFABSEL = new Set();      // 실시간·과거 따로 고른다
 
 const fabLv = (v, c) => !c ? '정상'
                      : v>=c.critical ? '초위험' : v>=c.danger ? '위험'
@@ -2803,6 +2830,10 @@ function setFabs(fd){
   const sig = SYS + '|' + list.join(',');
   if(sig === FABSIG) return;
   FABSIG = sig; FABS = list; syncFabCols();
+  /* 시스템이 바뀌면 FAB 목록도 바뀔 수 있다. 없어진 FAB 을 골라 둔 채로
+     두면 체크는 살아 있는데 선은 안 그려진다. */
+  [FABSEL, PFABSEL].forEach(set =>
+    [...set].forEach(f => { if(!list.includes(f)) set.delete(f); }));
 }
 
 /* 그 행의 FAB 점수 한 칸 — 값을 **모르면 0 이 아니라 빈 칸**이다
@@ -2921,7 +2952,25 @@ function fmtV(v, unit){
   return (a>=100 ? v.toFixed(0) : a>=10 ? v.toFixed(1) : v.toFixed(2)).replace(/\.0+$/,'') + unit;
 }
 
-function stripSvg(rows, mt){
+/* 체크한 FAB 의 영역점수(area_score)를 같은 축에 겹쳐 그린다.
+   ★스코어(0~100)일 때만이다. 분·건·% 같은 다른 지표에 0~100 점수를 얹으면
+     y축이 두 개인 그래프가 된다 — 읽는 사람이 반드시 잘못 읽는다.
+   ★본선보다 가늘게(1.1 vs 1.4) 긋고 면을 채우지 않는다. 색이 아니라 굵기로도
+     '무엇이 전체 점수인지' 가 구분돼야 한다. */
+function fabPaths(rows, mt, sel, X, Y){
+  if(!mt.bands || !sel || !sel.size || !FABS.length) return '';
+  const sorted = rows.slice().sort((a,b)=> a.at < b.at ? -1 : 1);
+  return FABS.filter(f=>sel.has(f)).map(f=>{
+    const p = sorted
+      .map(r=>({x:X(new Date(r.at).getTime()), v:(r.fab||{})[f]}))
+      .filter(q=>q.v!==null && q.v!==undefined && !isNaN(q.v));
+    if(p.length < 2) return '';
+    const d = p.map((q,i)=>`${i?'L':'M'}${q.x.toFixed(1)},${Y(q.v).toFixed(1)}`).join(' ');
+    return `<path d="${d}" fill="none" stroke="${fabColor(f)}" stroke-width="1.1" opacity=".95"/>`;
+  }).join('');
+}
+
+function stripSvg(rows, mt, sel){
   const iw = STRIP_W - STRIP_L - STRIP_R, ih = STRIP_H - STRIP_T - STRIP_B;
   const d0 = dayStartOf(rows), t0 = d0.getTime(), t1 = t0 + 86400000;
   const X = t => STRIP_L + iw * ((t - t0) / (t1 - t0));
@@ -2964,7 +3013,12 @@ function stripSvg(rows, mt){
   if(pts.length > 1){
     const line = pts.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
     o.push(`<path d="M${pts[0].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
+    /* ★FAB 선을 본선보다 **먼저** 그린다. 본선의 면채움(opacity .13)이
+       나중에 덮이면 FAB 색이 그만큼 물든다. 순서: 면채움 → FAB → 본선. */
+    o.push(fabPaths(rows, mt, sel, X, Y));
     o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
+  }else{
+    o.push(fabPaths(rows, mt, sel, X, Y));      // 본선 값이 없어도 FAB 은 그린다
   }
   // 스코어는 경계 이상만 등급 색 점으로 (경계=노랑 / 위험=주황 / 초위험=빨강).
   // ★점수 숫자(>=50)로 거르면 안 된다 — 임계를 60으로 올렸는데 50점대
@@ -3018,6 +3072,37 @@ function fillMetricUI(grpSel, selSel, gid, key){
   }
 }
 
+/* 정보줄 꼬리 — 겹쳐 그린 FAB 의 그날 최고점. 그래프에 선만 얹으면
+   '얼마나 올랐나' 를 눈금으로 어림해야 해서, 숫자를 같이 적어 준다. */
+function fabInfo(rows, mt, sel){
+  if(!mt.bands || !sel || !sel.size) return '';
+  const out = FABS.filter(f=>sel.has(f)).map(f=>{
+    const vs = rows.map(r=>(r.fab||{})[f]).filter(v=>v!==null && v!==undefined && !isNaN(v));
+    if(!vs.length) return `<b style="color:${fabColor(f)}">${esc(f)}</b> <span class="dim">값 없음</span>`;
+    return `<b style="color:${fabColor(f)}">${esc(f)}</b> 최고 ${Math.round(Math.max(...vs))}`;
+  });
+  return out.length ? ' · ' + out.join(' · ') : '';
+}
+
+/* FAB 겹쳐보기 체크박스 — 서버가 준 FAB 목록으로 만든다. 체크한 네모가
+   그 FAB 선 색으로 차서 범례를 겸한다 (색만으로 구분하지 않게 이름을 같이). */
+function fillFabSel(elSel, chosen, isScore){
+  const el = $(elSel);
+  if(!el) return;
+  /* 스코어가 아닌 지표(분·건·%)를 보고 있으면 숨긴다 — 눈금이 다른 축에
+     0~100 점수를 얹을 수는 없다. */
+  const show = isScore && FABS.length > 0;
+  el.classList.toggle('hidden', !show);
+  if(!show){ el.innerHTML = ''; el.dataset.sig = ''; return; }
+  const sig = FABS.join(',') + '|' + [...chosen].sort().join(',');
+  if(el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  el.innerHTML = '<b>FAB 겹쳐보기</b>' + FABS.map(f => `<label class="${
+      chosen.has(f) ? 'on' : ''}" style="--fc:${fabColor(f)}" title="${
+      esc(f)} 영역점수(area_score)를 이 그래프에 겹쳐 그립니다"><input type="checkbox" data-fab="${
+      esc(f)}"${chosen.has(f) ? ' checked' : ''}>${esc(f)}</label>`).join('');
+}
+
 /* 스트립 클릭 → 가장 가까운 데이터 시각의 구간 그래프 */
 function drawStrip(boxSel, infoSel, rows, gid, key){
   const box = $(boxSel);
@@ -3029,12 +3114,14 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
   // 등급 범례는 스코어일 때만 의미가 있다
   const lgd = box.closest('.strip')?.querySelector('.gradelgd');
   if(lgd) lgd.classList.toggle('hidden', !isScore);
+  const fsel = live ? FABSEL : PFABSEL;
+  fillFabSel(live ? '#stripfab' : '#pstripfab', fsel, isScore);
   if(!rows.length){
     box.innerHTML = '<div class="empty" style="padding:26px 0">데이터 없음</div>';
     $(infoSel).textContent = '—';
     return;
   }
-  box.innerHTML = stripSvg(rows, mt);
+  box.innerHTML = stripSvg(rows, mt, fsel);
   const vs = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
   const raw = `<span class="zchip mono" style="padding:0 5px">${esc(mt.raw || mt.key)}</span>`;
   if(!vs.length){
@@ -3045,7 +3132,8 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
                    .reduce((a,b)=> mval(b,mt.key) > mval(a,mt.key) ? b : a);
     $(infoSel).innerHTML = `${esc((rows[0].datetime||'').slice(0,10))} · ${raw} · ${vs.length}분 · `
       + `최고 <b style="color:${isScore?'var(--crit)':esc(mt.color)}">${esc(fmtV(mval(pk,mt.key), mt.unit))}</b> `
-      + `${esc((pk.datetime||'').slice(11))} · 평균 ${esc(fmtV(vs.reduce((a,b)=>a+b,0)/vs.length, mt.unit))}`;
+      + `${esc((pk.datetime||'').slice(11))} · 평균 ${esc(fmtV(vs.reduce((a,b)=>a+b,0)/vs.length, mt.unit))}`
+      + fabInfo(rows, mt, fsel);
   }
   const svg = box.querySelector('svg');
   if(!svg) return;
@@ -3228,6 +3316,22 @@ async function fetchDay(day){
 /* 지표 묶음 버튼 / 지표 선택 — 실시간·과거 각각 독립 */
 function redrawLive(){ drawStrip('#strip','#stripinfo',FEED,STRIPG,STRIPK); }
 function redrawPast(){ drawStrip('#pstrip','#pstripinfo',PFEED,PSTRIPG,PSTRIPK); }
+
+/* 체크 → 그 FAB 선을 켜고 끈다. 컨테이너에 한 번만 걸어 둔다 (체크박스는
+   FAB 목록이 바뀔 때마다 다시 만들어지므로 개별로 걸면 사라진다). */
+function wireFabSel(elSel, set, redraw){
+  const el = $(elSel);
+  if(!el) return;
+  el.onchange = e => {
+    const f = e.target && e.target.dataset ? e.target.dataset.fab : null;
+    if(!f) return;
+    e.target.checked ? set.add(f) : set.delete(f);
+    el.dataset.sig = '';                 // 라벨 on/off 를 다시 칠하게
+    redraw();
+  };
+}
+wireFabSel('#stripfab',  FABSEL,  () => redrawLive());
+wireFabSel('#pstripfab', PFABSEL, () => redrawPast());
 
 $('#stripsel').onchange  = () => { STRIPK  = $('#stripsel').value;  redrawLive(); };
 $('#pstripsel').onchange = () => { PSTRIPK = $('#pstripsel').value; redrawPast(); };
