@@ -254,6 +254,33 @@ class DashboardFabCols(unittest.TestCase):
         self.assertIn("const ncol = 7 +", m)
         self.assertIn('colspan="${ncol}"', m)
 
+    def test_표_글자가_본문보다_크지_않다(self):
+        """컬럼이 늘어난 표다. 어느 칸이든 본문(13.5px)보다 커지면 한 행이
+        높아져서 한 화면에 들어오는 행 수가 줄어든다."""
+        for name, pat in (("종합점수", r"\.ttl\{[^}]*font-size:([\d.]+)px"),
+                          ("FAB 점수", r"td\.fcol b\{[^}]*font-size:([\d.]+)px"),
+                          ("HI_FAB", r"td\.hcol b\{[^}]*font-size:([\d.]+)px"),
+                          ("reason", r"td\.rcol\{[^}]*font-size:([\d.]+)px")):
+            m = re.search(pat, self.h)
+            self.assertIsNotNone(m, f"{name} 글자 크기 지정이 없다")
+            self.assertLessEqual(float(m.group(1)), 13.5, f"{name} 가 본문보다 크다")
+
+    def test_reason_을_룰_단위로_끊는다(self):
+        """한 줄로 흘리면 좁아진 칸에서 룰 이름 가운데가 갈라진다."""
+        m = re.search(r"function reasonCell\(r\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "reasonCell 이 없다")
+        self.assertIn("·", m.group(0), "' · ' 로 이어진 것을 끊어야 한다")
+        self.assertIn(r"\r?\n", m.group(0), "진짜 개행도 같이 끊어야 한다")
+
+    def test_reason_원문은_툴팁에_남는다(self):
+        """요약만 보이고 원문(reason_raw)을 잃으면 근거를 확인할 수 없다."""
+        m = re.search(r"function reasonCell\(r\)\{.*?\n\}", self.h, re.S).group(0)
+        self.assertIn("reason_raw", m)
+
+    def test_reason_칸을_rowsHtml_이_쓴다(self):
+        m = re.search(r"function rowsHtml\(.*?\n\}", self.h, re.S).group(0)
+        self.assertIn("${reasonCell(r)}", m)
+
     def test_행에_HI_FAB_과_FAB_칸을_넣는다(self):
         m = re.search(r"function rowsHtml\(.*?\n\}", self.h, re.S).group(0)
         self.assertIn("${hiCell(r)}${fabCells(r)}", m)

@@ -222,17 +222,21 @@
   table.cases th.fcol{text-align:right}
   table.cases td.fcol{text-align:right;white-space:nowrap;
     font-variant-numeric:tabular-nums}
-  table.cases td.fcol b{font-size:14px;font-weight:700}
+  table.cases td.fcol b{font-size:12px;font-weight:700}
   table.cases th.hcol,table.cases td.hcol{white-space:nowrap}
-  table.cases td.hcol b{font-size:13px;font-weight:700}
+  table.cases td.hcol b{font-size:11.5px;font-weight:700}
   /* 제일 높은 FAB 은 옅게 깔아 준다 — 숫자 다섯 중 어느 것이 HI_FAB 인지
      눈으로 바로 잇게 (색만으로는 같은 등급끼리 구분이 안 된다) */
   table.cases td.fcol.top{background:rgba(61,219,232,.07);
     box-shadow:inset 0 0 0 1px rgba(61,219,232,.18)}
   table.cases th.fcol.top{color:var(--cy)}
+  /* reason — 발동 룰을 한 줄에 하나씩. 칸이 좁아져서 한 줄로 흘리면
+     룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
+  table.cases td.rcol{font-size:12px;line-height:1.5}
+  table.cases td.rcol .rln{white-space:normal}
   .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
-  .ttl{font-weight:600;font-size:13.5px}
+  .ttl{font-weight:600;font-size:12.5px}
   .sub{font-size:11.5px;color:var(--tx3);margin-top:3px}
   .chip{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10.5px;
         font-weight:700;letter-spacing:.3px;margin-right:6px}
@@ -2818,6 +2822,21 @@ function fabCells(r){
   }).join('');
 }
 
+/* reason — 발동 룰을 **한 줄에 하나씩** 적는다.
+   summarize_reason 은 룰 이름을 ' · ' 로 이어 한 줄로 준다. FAB 컬럼이
+   붙은 뒤로는 이 칸이 좁아져서, 한 줄로 흘리면 아무 데서나 접혀 룰 이름
+   가운데가 갈라진다 ('리프터 정 / 체'). 룰 단위로 끊어 준다.
+   ★원문에 진짜 개행이 들어오는 경우도 같이 처리한다 (줄바꿈·중점 둘 다).
+   ★첫 조각에는 영역 이름이 붙어 있다 ('M16HUB 반송지연 지속') — 서버가
+     그렇게 만든 것이라 떼지 않는다. 떼면 어느 영역인지 알 수 없다. */
+function reasonCell(r){
+  const t = String(r.reason || (r.level==='정상' ? '정상 운영' : '–'));
+  const parts = t.split(/\s*·\s*|\r?\n/).map(x=>x.trim()).filter(Boolean);
+  return `<td class="rcol"><div title="${esc(r.reason_raw||'')}">${
+    (parts.length ? parts : [t]).map(p=>`<div class="rln">${esc(p)}</div>`).join('')
+  }</div></td>`;
+}
+
 /* HI_FAB — 그 분에 제일 높은 FAB. 예측기가 지목한 hot_area 와 다르면
    같이 알려 준다 (둘 다 근거가 있는 값이라 조용히 덮으면 안 된다). */
 function hiCell(r){
@@ -2848,7 +2867,7 @@ function rowsHtml(list, byId, newAt){
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
       ${hiCell(r)}${fabCells(r)}
-      <td><div title="${esc(r.reason_raw||'')}">${esc(r.reason || (r.level==='정상' ? '정상 운영' : '–'))}</div></td>
+      ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
       <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
