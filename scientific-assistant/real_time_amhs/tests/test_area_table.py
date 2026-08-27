@@ -355,6 +355,30 @@ class DashboardFabCols(unittest.TestCase):
         m = re.search(r"async function pollCases\(\)\{.*?\n\}", self.h, re.S).group(0)
         self.assertIn("STRIP_SIG", m)
 
+    def test_FAB_칸에_네모를_두르지_않는다(self):
+        """등급은 글자색이 이미 말한다. 칸마다 상자가 생기면 표가 시끄럽고,
+        어느 FAB 이 제일 높은지는 바로 왼쪽 HI_FAB 칸이 이름으로 말해 준다."""
+        css = re.search(r"table\.cases td\.fcol\.\w+[^}]*\}", self.h)
+        if css:
+            body = css.group(0)
+            self.assertNotIn("box-shadow", body, "FAB 칸에 테두리가 있다")
+            self.assertNotIn("background", body, "FAB 칸에 배경 상자가 있다")
+
+    def test_최고_FAB_표시가_글자색을_덮지_않는다(self):
+        """등급을 말하는 것이 그 색이다. 여기서 덮으면 정작 필요한 것을 지운다."""
+        m = re.search(r"table\.cases td\.fcol\.hifab b\{([^}]*)\}", self.h)
+        self.assertIsNotNone(m, "최고 FAB 표시 규칙이 없다")
+        self.assertNotIn("color", m.group(1))
+
+    def test_표_전용_클래스가_다른_규칙과_안_겹친다(self):
+        """★'top' 을 쓰다가 상단 바(.top — display:flex · background)가 그대로
+        걸려서 숫자마다 네모가 생겼다. 표에서 만드는 이름은 다른 데서 쓰지
+        않는 것이어야 한다."""
+        for cls in ("hifab", "fcol", "hcol", "rcol", "rln", "morerow"):
+            # 그 이름으로 시작하는 최상위 규칙(.이름{)이 있으면 겹친 것이다
+            bare = re.findall(r"\n\s*\.%s[\s,{]" % cls, self.h)
+            self.assertEqual(bare, [], f".{cls} 가 표 밖 규칙과 겹친다")
+
     def test_구간_그래프에도_켠_FAB_을_넘긴다(self):
         """추이에 겹쳐 놓고 더블클릭했는데 거기서 사라지면 안 된다."""
         m = re.search(r"function graphFabs\(\)\{.*?\n\}", self.h, re.S)

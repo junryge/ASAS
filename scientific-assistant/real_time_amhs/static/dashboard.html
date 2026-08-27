@@ -231,11 +231,13 @@
   table.cases td.fcol b{font-size:12px;font-weight:700}
   table.cases th.hcol,table.cases td.hcol{white-space:nowrap}
   table.cases td.hcol b{font-size:11.5px;font-weight:700}
-  /* 제일 높은 FAB 은 옅게 깔아 준다 — 숫자 다섯 중 어느 것이 HI_FAB 인지
-     눈으로 바로 잇게 (색만으로는 같은 등급끼리 구분이 안 된다) */
-  table.cases td.fcol.top{background:rgba(61,219,232,.07);
-    box-shadow:inset 0 0 0 1px rgba(61,219,232,.18)}
-  table.cases th.fcol.top{color:var(--cy)}
+  /* ★제일 높은 FAB 에 네모를 두르던 것을 뗐다. 등급을 글자색이 이미 말해
+     주는데 칸마다 상자가 생기니 표가 시끄러웠다. 어느 FAB 이 제일 높은지는
+     바로 왼쪽 HI_FAB 칸이 이름으로 말해 준다 — 두 번 말할 이유가 없다.
+     굵기만 한 단계 올려 눈에 먼저 들어오게 한다 — ★글자색은 건드리지
+     않는다. 등급을 말하는 것이 그 색이라, 여기서 덮으면 정작 필요한 것을
+     지우는 셈이다. */
+  table.cases td.fcol.hifab b{font-weight:800}
   /* reason — 발동 룰을 한 줄에 하나씩. 칸이 좁아져서 한 줄로 흘리면
      룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
   table.cases td.rcol{font-size:12px;line-height:1.5}
@@ -2869,7 +2871,10 @@ function fabCells(r){
   const sc = r.fab || {};
   return FABS.map(f=>{
     const v = sc[f];
-    const top = (r.hi_fab === f) ? ' top' : '';
+    /* ★클래스 이름은 'top' 이 아니다 — 상단 바(.top)와 이름이 겹쳐서
+       칸에 display:flex 와 배경(--panel)이 그대로 걸렸다. 그래서 숫자마다
+       네모가 생겼다. 표 전용 이름을 쓴다. */
+    const top = (r.hi_fab === f) ? ' hifab' : '';
     if(v===undefined || v===null)
       return `<td class="fcol${top}"><span class="dim">–</span></td>`;
     // 예측기가 적어 준 등급이 컷 판정과 다르면 서버가 fab_lv 로 알려 준다
