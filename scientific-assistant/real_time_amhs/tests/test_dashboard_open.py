@@ -98,6 +98,30 @@ class OpeningScreen(unittest.TestCase):
                   and "function openHide" not in ln]
         self.assertEqual(direct, [], "openHide() 를 안 거치고 숨깁니다: " + str(direct))
 
+    def test_FAB_타일이_위_줄_카드보다_작다(self):
+        """오프닝의 계층 — 위 줄(ALL·AVATAR_2D)이 크고 아래 FAB 다섯은 작다.
+        다섯이 위 줄만큼 커지면 화면이 카드로 가득 차서 무엇을 먼저 눌러야
+        하는지가 사라진다."""
+        def _h(sel):
+            m = re.search(re.escape(sel) + r"\{[^}]*min-height:(\d+)px", self.html)
+            self.assertIsNotNone(m, sel + " 의 min-height 가 없다")
+            return int(m.group(1))
+
+        def _cd(sel):
+            m = re.search(re.escape(sel) + r" \.cd\{[^}]*font-size:([\d.]+)px", self.html)
+            self.assertIsNotNone(m, sel + " .cd 의 크기가 없다")
+            return float(m.group(1))
+
+        self.assertLess(_h(".sys.fab"), _h(".sys.hero"))
+        self.assertLess(_h(".sys.fab"), _h(".sys.app"))
+        self.assertLess(_cd(".sys.fab"), _cd(".sys.hero"))
+
+    def test_FAB_상태줄만_따로_줄인다(self):
+        """.sys .st 는 아바타 카드도 같이 쓴다. 거기를 줄이면 위 줄의 큰
+        카드까지 같이 작아진다."""
+        self.assertIn(".sys.fab .st{", self.html)
+
+
     def test_상단_AMOS_표시등이_없다(self):
         """주피터 CSV 에 AMOS 컬럼이 들어 있어 조인을 안 한다 —
         표시등은 항상 빨간색이라 연결이 끊긴 것처럼 보였다."""

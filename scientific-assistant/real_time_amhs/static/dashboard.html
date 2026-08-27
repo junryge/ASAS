@@ -65,7 +65,7 @@
   .sysgrid{display:grid;gap:20px;padding-top:48px}
   .sysgrid .lead{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
   .sysgrid .lead.solo{grid-template-columns:1fr}     /* 아바타를 껐을 때 */
-  .sysgrid .rest{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
+  .sysgrid .rest{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
   .sys{font:inherit;color:inherit;text-align:left;border:0;background:none;cursor:pointer}
   .sys:focus-visible{outline:2px solid #3DDBE8;outline-offset:3px}
 
@@ -86,14 +86,18 @@
      ★코드와 종류를 가로로 붙이면 M16HUB + HUBROOM 이 서로 밀어내 줄이
        깨진다. 그래서 세로로 쌓는다.
      wip 는 수집이 아직 안 붙은 시스템에만 붙는 예외 표시(점선·비활성)다. */
-  .sys.fab{display:flex;flex-direction:column;justify-content:space-between;min-height:122px;
-           padding:22px 24px;border-radius:22px;background:#0D1119;border:1px solid #1C2431;
+  .sys.fab{display:flex;flex-direction:column;justify-content:space-between;min-height:88px;
+           padding:15px 17px;border-radius:16px;background:#0D1119;border:1px solid #1C2431;
            transition:border-color .14s,background .14s,transform .14s}
   .sys.fab:hover{border-color:#2c5f6b;background:#0e1d26;transform:translateY(-2px)}
-  .sys.fab .tp{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
-  .sys.fab .cd{font-size:26px;line-height:1;color:#E6EDF6}
-  .sys.fab .kind{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  .sys.fab .tp{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+  .sys.fab .cd{font-size:20px;line-height:1;color:#E6EDF6}
+  .sys.fab .kind{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
                  color:#5E6E85}
+  /* ★상태 줄은 아바타 카드(.sys.app)와 같이 쓰는 규칙이라 여기서만 줄인다.
+     .sys .st 를 건드리면 위 줄의 큰 카드까지 같이 작아진다. */
+  .sys.fab .st{margin-top:9px;font-size:11px;gap:6px}
+  .sys.fab .st i{width:7px;height:7px}
   /* 상태 줄은 FAB 타일과 아바타 카드가 같이 쓴다 */
   .sys .st{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;
            color:#7C8DA3}
