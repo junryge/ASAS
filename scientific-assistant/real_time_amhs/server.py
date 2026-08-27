@@ -1614,6 +1614,29 @@ def api_analysis_get(aid):
     return jsonify(r)
 
 
+@app.route("/api/analysis/<aid>/ask", methods=["POST"])
+def api_analysis_ask(aid):
+    """끝난 분석을 두고 이어서 묻는다.
+
+    body: {q, history?: [{role,content}...], model?}
+    ★분석이 본 원자료(overview)를 근거로 답한다 — 리포트 본문만 되씹으면
+      본문에 없는 것을 물었을 때 숫자를 지어낸다.
+    """
+    C = rctx()
+    b_ = request.get_json(silent=True) or {}
+    q = str(b_.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "q(질문) 필요"}), 400
+    try:
+        from analysis import ask
+        r = ask(aid, q, b_.get("history") or [], C["cfg"],
+                str(b_.get("model") or "").strip())
+        return jsonify(r), (200 if r.get("ok") else 400)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/forecast")
 def api_forecast():
     """선행 감지 — 지금 추세로 본 임계 돌파 예보.

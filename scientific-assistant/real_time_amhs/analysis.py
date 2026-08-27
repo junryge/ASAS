@@ -1036,6 +1036,12 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
         "pipeline": ["p1", "p2", "p3", "final"],
         "cancelled": bool(cancel is not None and cancel.is_set()),
         "graph": _graph_svg(seq, cfg),          # 리포트 위에 붙일 구간 점수 그래프
+        # ★근거 원자료를 같이 저장한다. 분석이 끝난 뒤 "그래서 14시엔?" 같은
+        #   이어지는 질문에 답하려면 이게 있어야 한다 — 없으면 리포트 본문만
+        #   보고 되씹게 되고, 그러면 숫자를 지어낸다.
+        "overview": overview,
+        "sys": str(cfg.get("_sys") or "ALL").upper(),
+        "cuts": list(__import__("sentinel").grade_cuts(cfg)),
         "roles": stages_out, "final": body, "final_error": ef or None,
     }
     path = os.path.join(_store_dir(cfg), rec["id"] + ".json")
@@ -1078,6 +1084,92 @@ def get_analysis(aid: str, cfg: dict | None = None) -> dict | None:
         return None
     with open(p, encoding="utf-8") as f:
         return json.load(f)
+
+
+# ────────────────────── 분석 뒤 이어 묻기 (채팅) ──────────────────────
+ASK_KEEP = 8            # 프롬프트에 붙일 최근 문답 수
+ASK_MAX_TOKENS = 900
+
+
+def _ask_evidence(rec: dict) -> str:
+    """이어 묻기에 실을 근거 — **분석이 실제로 본 것**만 싣는다.
+
+    ★리포트 본문만 주면 안 된다. "그래서 14시엔 몇 점이야?" 같은 질문은
+      본문에 없고 원자료(overview)에 있다. 본문만 있으면 모델이 지어낸다.
+    """
+    L = []
+    ov = str(rec.get("overview") or "").strip()
+    if ov:
+        L.append("[분석이 본 원자료]\n" + ov)
+    body = str(rec.get("final") or "").strip()
+    if body:
+        L.append("[분석 리포트 본문]\n" + body)
+    # 단계별 관찰 — 본문에 안 실린 세부가 여기 남아 있다
+    for sid in ("p1", "p2", "p3"):
+        r = (rec.get("roles") or {}).get(sid) or {}
+        out = r.get("result") or r.get("out") or r.get("json")
+        if not out:
+            continue
+        try:
+            txt = json.dumps(out, ensure_ascii=False)[:1500]
+        except Exception:      # noqa: BLE001
+            txt = str(out)[:1500]
+        L.append("[{} — {}]\n{}".format(sid, r.get("name") or sid, txt))
+    return "\n\n".join(L)
+
+
+def ask(aid: str, question: str, history=None, cfg: dict | None = None,
+        model: str = "") -> dict:
+    """끝난 분석을 두고 이어서 묻는다 → {ok, answer, error, model}.
+
+    ★근거 밖의 숫자를 만들지 않게 못 박는다. 분석과 **같은 판정 기준**(그
+      시스템의 컷)을 쓴다 — 분석은 M14 컷으로 했는데 이어 묻기가 ALL 컷으로
+      답하면 같은 점수를 두고 등급이 갈린다.
+    """
+    cfg = cfg or load_config()
+    q = str(question or "").strip()
+    if not q:
+        return {"ok": False, "error": "질문이 비었습니다"}
+    rec = get_analysis(aid, cfg)
+    if not rec:
+        return {"ok": False, "error": "없는 분석입니다 ({})".format(aid)}
+
+    ev = _ask_evidence(rec)
+    if not ev:
+        return {"ok": False, "error": "이 분석에는 근거가 남아 있지 않습니다 "
+                                      "(옛 기록 — 다시 분석하면 됩니다)"}
+    cuts = rec.get("cuts") or []
+    cut_s = ("등급 컷 경계 {}/위험 {}/초위험 {}".format(*cuts)
+             if len(cuts) == 3 else "등급 컷 정보 없음")
+    head = (
+        "너는 방금 끝난 AMHS 구간 분석의 결과를 놓고 질문에 답하는 관제 "
+        "분석가다.\n"
+        "- 대상: {sys} · {day} {span} · {cut}\n"
+        "- **아래 근거에 있는 숫자만** 쓴다. 없는 것은 '그건 이 분석에 없다' "
+        "고 말하고, 무엇을 다시 돌리면 알 수 있는지 알려 준다.\n"
+        "- 등급은 위 컷으로 말한다. 다른 기준을 끌어오지 마라.\n"
+        "- 여러 항목은 줄바꿈으로 나눠 쓴다. 한 줄에 한 가지만.\n"
+        "- 짧고 건조하게. 근거 수치를 같이 적는다."
+    ).format(sys=rec.get("sys") or "ALL", day=rec.get("day") or "",
+             span=rec.get("span") or "", cut=cut_s)
+
+    msgs = [{"role": "system", "content": head + "\n\n" + ev}]
+    for m in (history or [])[-ASK_KEEP:]:
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant"):
+            msgs.append({"role": m["role"], "content": str(m.get("content", ""))[:4000]})
+    msgs.append({"role": "user", "content": q[:2000]})
+
+    from llm_client import chat
+    c = dict(cfg)
+    mdl = str(model or "").strip()
+    if mdl:
+        c.setdefault("llm", {})
+        c["llm"] = dict(c.get("llm") or {}, model=mdl)
+    txt, err = chat(msgs, c, max_tokens=ASK_MAX_TOKENS)
+    if txt is None:
+        return {"ok": False, "error": _short_err(err), "model": mdl}
+    return {"ok": True, "answer": _strip_fences(str(txt)).strip(),
+            "model": mdl or (c.get("llm") or {}).get("model") or ""}
 
 
 def delete_analyses(ids, cfg: dict | None = None) -> dict:

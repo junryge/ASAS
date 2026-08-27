@@ -1669,8 +1669,98 @@ async function loadAnalysis(aid){
           ${bodyHtml}
         </div>`;
       }).join('')}
-    </div>`;
+    </div>` + anChatBox(aid);
+  AN_CHAT = [];                 // 다른 분석을 열면 대화를 새로 시작한다
+  anChatPaint();
 }
+
+/* ══════════ 분석 뒤 이어 묻기 ══════════
+   ★리포트만 읽고 끝나면 "그래서 14시엔?" 을 물을 데가 없다. 분석이 본
+     원자료(overview)를 서버가 같이 들고 있어서, 그걸 근거로 답한다.
+     근거 밖 숫자는 안 만든다 — 서버 프롬프트가 못 박는다. */
+let AN_CHAT = [], AN_CHAT_BUSY = false;
+
+function anChatBox(aid){
+  return `
+  <div id="anchat" data-aid="${esc(aid)}"
+       style="margin-top:12px;border:1px solid var(--line);border-radius:10px;
+              background:var(--panel);padding:10px 12px">
+    <div style="font-weight:650;font-size:12.5px;margin-bottom:6px">
+      이 분석에 대해 더 묻기
+      <span class="note" style="font-size:10.5px">— 위 분석이 본 자료 안에서만 답합니다</span>
+    </div>
+    <div id="anchatlog" style="max-height:320px;overflow-y:auto;margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px">
+      <input id="anchatq" placeholder="예: 14시엔 몇 점이었어? / 어느 구역이 제일 오래 걸렸어?"
+             style="flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);
+                    border-radius:8px;padding:7px 10px;color:var(--tx);font-family:inherit;font-size:12.5px">
+      <button id="anchatsend" class="btn" style="white-space:nowrap">묻기</button>
+    </div>
+    <div class="note" style="font-size:10.5px;margin-top:5px">
+      ${['이 구간 제일 큰 원인이 뭐야?','임계 넘은 시간대만 알려줘',
+         '다음에 뭘 확인하면 돼?'].map(x=>
+        `<a href="#" class="anq" style="color:var(--cy);margin-right:10px">${esc(x)}</a>`).join('')}
+    </div>
+  </div>`;
+}
+
+function anChatPaint(){
+  const el = document.getElementById('anchatlog');
+  if(!el) return;
+  el.innerHTML = AN_CHAT.length ? AN_CHAT.map(m=>`
+    <div style="margin:6px 0">
+      <div class="note" style="font-size:10.5px;color:${m.role==='user'?'var(--cy)':'var(--tx3)'}">
+        ${m.role==='user'?'나':'분석가'}</div>
+      <div style="font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;
+                  color:${m.error?'var(--crit)':'var(--tx)'}">${esc(m.content)}</div>
+    </div>`).join('')
+    : `<div class="note" style="font-size:11.5px">아직 주고받은 게 없습니다.</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function anChatAsk(q){
+  const box = document.getElementById('anchat');
+  if(!box || AN_CHAT_BUSY) return;
+  q = String(q||'').trim();
+  if(!q) return;
+  const aid = box.dataset.aid;
+  AN_CHAT.push({role:'user', content:q});
+  AN_CHAT.push({role:'assistant', content:'…생각 중'});
+  AN_CHAT_BUSY = true; anChatPaint();
+  const inp = document.getElementById('anchatq'); if(inp) inp.value = '';
+  try{
+    /* 지금까지의 문답을 같이 보낸다 — '그럼 그건?' 같은 이어지는 말이 통한다.
+       마지막 두 줄(방금 질문 + 자리표시)은 뺀다. */
+    const hist = AN_CHAT.slice(0,-2).filter(m=>!m.error);
+    const r = await post(`/api/analysis/${encodeURIComponent(aid)}/ask`,
+                         {q, history: hist});
+    AN_CHAT[AN_CHAT.length-1] = r && r.ok
+      ? {role:'assistant', content:r.answer||'(빈 답)'}
+      : {role:'assistant', content:'답을 못 받았습니다 — '+((r&&r.error)||'알 수 없음'),
+         error:true};
+  }catch(e){
+    AN_CHAT[AN_CHAT.length-1] = {role:'assistant',
+      content:'답을 못 받았습니다 — '+e.message, error:true};
+  }finally{
+    AN_CHAT_BUSY = false; anChatPaint();
+  }
+}
+
+/* 채팅 상자는 분석을 열 때마다 새로 그려지므로 이벤트를 위임으로 건다 */
+document.addEventListener('click', e=>{
+  if(e.target && e.target.id === 'anchatsend'){
+    anChatAsk((document.getElementById('anchatq')||{}).value);
+  }else if(e.target && e.target.classList && e.target.classList.contains('anq')){
+    e.preventDefault();
+    anChatAsk(e.target.textContent);
+  }
+});
+document.addEventListener('keydown', e=>{
+  if(e.key === 'Enter' && e.target && e.target.id === 'anchatq'){
+    e.preventDefault();
+    anChatAsk(e.target.value);
+  }
+});
 
 /* 게이트웨이 허용 모델 확인 — 400/403 으로 단계가 죽을 때 원인을 바로 보게 */
 /* ── 단계별 모델 선택 ────────────────────────────────────────────────

@@ -864,6 +864,21 @@ def _all_delta(rows: list[dict], at, now: float, back_min: int) -> float | None:
     return round(now - (_num(r0.get("unified_risk_score")) or 0.0), 1)
 
 
+def _fab_cfg(cfg, fab):
+    """그 FAB 의 설정 뷰 — 등급 컷이 시스템별로 다르다.
+
+    ★lp_client.sys_cfg 는 얕은 사본에 _sys 만 바꾼다. grade 블록은 공유하므로
+      정책을 고치면 여기도 바로 따라온다.
+    """
+    if not cfg:
+        return {}          # ★None 을 돌려주면 grade() 가 터진다
+    try:
+        from lp_client import sys_cfg
+        return sys_cfg(cfg, str(fab or "").upper()) or cfg
+    except Exception:      # noqa: BLE001  (설정이 없어도 매기는 건 계속돼야 한다)
+        return cfg
+
+
 def compare(rows: list[dict], at=None, cfg: dict | None = None,
             day: str | None = None) -> dict:
     """한 시각을 잡고 **ALL + FAB 다섯**을 나란히 세운다 — 화면용 진입점.
@@ -917,13 +932,22 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None,
                 a["file_value"] = own["area"]
                 a["file_col"] = own["col"]
         a["area_score"] = r
-        g = grade(r, cfg)
+        # ★FAB 마다 **자기 컷**으로 매긴다. 예전엔 루프 밖에서 한 번 읽은
+        #   cfg 로 여섯 줄을 다 매겼다 — ALL 화면에서 부르면 M14 를 40 으로
+        #   낮춰 놔도 ALL 의 60 으로 매겨져서, 정책 탭에서 시스템별로
+        #   설정한 것이 화면에 하나도 안 나타났다 (실제 지적).
+        fcfg = _fab_cfg(cfg, f)
+        g = grade(r, fcfg)
         # ★예측기가 area_level 을 이미 적어 줬으면 그걸 쓴다 — 우리가 다시
         #   매기면 등급 기준이 두 벌이 되어 언젠가 어긋난다.
         if own and own.get("level"):
             g = dict(g, level=own["level"])
+        fw, fd, fc = grade_cuts(fcfg)
         a.update({
             "is_all": False,
+            # ★이 줄의 등급이 어느 컷으로 매겨진 것인지 같이 준다. 안 주면
+            #   화면이 ALL 컷으로 다시 칠해서 서버와 다른 색을 낸다.
+            "cuts": {"warn": fw, "danger": fd, "critical": fc},
             "saturated": bool(own and own.get("saturated")),
             "risk": r, "score": r, "level": g["level"], "emoji": g["emoji"],
             "measures": (f"FAB 분리 파일의 area_score {r:g}점 (예측기 값)"

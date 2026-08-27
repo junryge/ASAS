@@ -2163,6 +2163,10 @@ const OPSYM={'<=':'≤','>=':'≥','diff10':'10분 +'};
    예전엔 FAB 도 '위험도'(영역점수×2)를 그려서, M16HUB_score 가 12 인데
    화면엔 24 로 보였다 — 관제가 아는 숫자와 화면 숫자가 달랐다. */
 function chartBar(f, cuts, cls){
+  /* ★줄마다 **자기 컷**이 있으면 그걸 쓴다. 정책 탭에서 FAB 마다 컷을 다르게
+     잡을 수 있는데, 한 컷으로 여섯 줄을 다 칠하면 서버가 "경계" 라고 준 줄이
+     화면에서는 "정상" 색으로 그려진다 — 눈금 위치도 틀린다. */
+  cuts = f.cuts || cuts;
   const vmax=Number(f.vmax)||100;
   const val=Number(f.value!==undefined ? f.value : f.score)||0;
   const pct=v=>Math.max(0, Math.min(100, v/vmax*100));
@@ -2218,7 +2222,7 @@ function chartBars(d){
      컷 60/71/85 가 이 값에 그대로 붙는다 — 예전엔 분모를 50 으로 써서 raw 35 가
      70점(위험)이 됐다. "경계 60인데 왜 35에서 울리냐" 가 그것이다. */
   L.push(`<div class="csec">FAB별 영역 점수 — <code>area_score</code> · 0~100`
-        +` (눈금 = 경계 ${gnum(cuts.warn)} · 위험 ${gnum(cuts.danger)} · 초위험 ${gnum(cuts.critical)})</div>`);
+        +` (눈금 = 경계 ${gnum(cuts.warn)} · 위험 ${gnum(cuts.danger)} · 초위험 ${gnum(cuts.critical)}${(d.fabs||[]).some(f=>f.cuts && f.cuts.warn!==cuts.warn) ? " · FAB 마다 다름" : ""})</div>`);
   for(const f of (d.fabs||[])){
     L.push(chartBar(f, cuts));
   }
