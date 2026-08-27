@@ -1089,6 +1089,32 @@ def get_analysis(aid: str, cfg: dict | None = None) -> dict | None:
 # ────────────────────── 분석 뒤 이어 묻기 (채팅) ──────────────────────
 ASK_KEEP = 8            # 프롬프트에 붙일 최근 문답 수
 ASK_MAX_TOKENS = 900
+ASK_LOG_MAX = 200       # 한 분석에 남길 문답 수 (넘으면 오래된 것부터 버린다)
+_ASK_LOCK = threading.Lock()
+
+
+def _ask_log(aid: str, cfg: dict, rows: list) -> None:
+    """문답을 그 분석 파일에 덧붙인다.
+
+    ★남기지 않으면 창을 닫는 순간 사라진다. "지난 분석에 뭘 물어봤더라" 를
+      다시 볼 수 있어야 한다 — 알람 기록을 CSV 로 남긴 것과 같은 이유다.
+    ★파일을 다시 읽어서 붙인다. 손에 든 사본에 붙이면 그 사이에 들어온
+      다른 문답을 덮어쓴다.
+    """
+    if not rows:
+        return
+    with _ASK_LOCK:
+        try:
+            p = os.path.join(_store_dir(cfg), aid + ".json")
+            with open(p, encoding="utf-8") as f:
+                rec = json.load(f)
+            log = list(rec.get("chat") or [])
+            log.extend(rows)
+            rec["chat"] = log[-ASK_LOG_MAX:]
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(rec, f, ensure_ascii=False, indent=2)
+        except Exception:      # noqa: BLE001  (기록 실패로 답을 못 주면 안 된다)
+            pass
 
 
 def _ask_evidence(rec: dict) -> str:
@@ -1118,9 +1144,66 @@ def _ask_evidence(rec: dict) -> str:
     return "\n\n".join(L)
 
 
+def _ask_cuts(rec, cfg):
+    """그 분석의 등급 컷. 옛 기록엔 안 적혀 있다 — 그때는 지금 설정에서 읽는다.
+
+    ★"등급 컷 정보 없음" 을 그대로 프롬프트에 넣으면 모델이 기준 없이
+      말한다. 실제로 그랬다.
+    """
+    c = rec.get("cuts")
+    if isinstance(c, (list, tuple)) and len(c) == 3:
+        return [int(x) for x in c]
+    try:
+        from lp_client import sys_cfg
+        from sentinel import grade_cuts
+        return list(grade_cuts(sys_cfg(cfg, str(rec.get("sys") or "ALL"))))
+    except Exception:      # noqa: BLE001
+        return [60, 71, 85]
+
+
+def _clean_answer(txt: str) -> str:
+    """모델이 흘린 생각 과정을 걷어낸다.
+
+    ★사고 모델이 "Thinking Process:" / "1. Analyze the Request:" 같은 **영문
+      추론**을 본문에 그대로 썼다 (실제 증상). <think> 태그로 감싸 주면
+      _strip_think 가 걷지만, 태그 없이 쓰면 그대로 화면에 나온다.
+      그래서 머리말로 시작하면 그 뒤 **한국어 본문부터** 살린다.
+    """
+    from llm_client import _strip_think
+    t = _strip_think(_strip_fences(str(txt or ""))).strip()
+    if not t:
+        return t
+    head = re.match(r"^\s*(?:#+\s*)?(thinking process|thought process|reasoning|"
+                    r"analysis|let me think|step \d)\b", t, re.I)
+    if head or _looks_like_reasoning(t):
+        # 한국어가 처음 나오는 줄부터가 진짜 답이다
+        lines = t.splitlines()
+        for k, ln in enumerate(lines):
+            if re.search(r"[가-힣]", ln) and not re.match(r"^\s*[*\-\d]", ln):
+                body = "\n".join(lines[k:]).strip()
+                if len(body) >= 10:
+                    return body
+    return t
+
+
+ASK_RULES = (
+    "- **반드시 한국어로만** 답한다. 영어로 쓰지 마라.\n"
+    "- 생각 과정·계획·검토 내용을 쓰지 마라. **결론만** 쓴다.\n"
+    "  ('Thinking Process', '1. Analyze the Request' 같은 머리말 금지)\n"
+    "- 아래 근거에 있는 숫자만 쓴다. 없는 것은 '그건 이 분석에 없다' 고 "
+    "말하고, 무엇을 다시 돌리면 알 수 있는지 알려 준다.\n"
+    "- 등급은 위 컷으로 말한다. 다른 기준을 끌어오지 마라.\n"
+    "- 여러 항목은 줄바꿈으로 나눠 쓴다. 한 줄에 한 가지만.\n"
+    "- 짧고 건조하게. 근거 수치를 같이 적는다."
+)
+
+
 def ask(aid: str, question: str, history=None, cfg: dict | None = None,
-        model: str = "") -> dict:
+        model: str = "", extra_prompt: str = "") -> dict:
     """끝난 분석을 두고 이어서 묻는다 → {ok, answer, error, model}.
+
+    model        이 질문에 쓸 모델 (안 주면 config.llm.model)
+    extra_prompt 사용자가 덧붙이는 지시 (화면에서 적는다)
 
     ★근거 밖의 숫자를 만들지 않게 못 박는다. 분석과 **같은 판정 기준**(그
       시스템의 컷)을 쓴다 — 분석은 M14 컷으로 했는데 이어 묻기가 ALL 컷으로
@@ -1138,38 +1221,52 @@ def ask(aid: str, question: str, history=None, cfg: dict | None = None,
     if not ev:
         return {"ok": False, "error": "이 분석에는 근거가 남아 있지 않습니다 "
                                       "(옛 기록 — 다시 분석하면 됩니다)"}
-    cuts = rec.get("cuts") or []
-    cut_s = ("등급 컷 경계 {}/위험 {}/초위험 {}".format(*cuts)
-             if len(cuts) == 3 else "등급 컷 정보 없음")
+    w, d_, c_ = _ask_cuts(rec, cfg)
     head = (
         "너는 방금 끝난 AMHS 구간 분석의 결과를 놓고 질문에 답하는 관제 "
         "분석가다.\n"
-        "- 대상: {sys} · {day} {span} · {cut}\n"
-        "- **아래 근거에 있는 숫자만** 쓴다. 없는 것은 '그건 이 분석에 없다' "
-        "고 말하고, 무엇을 다시 돌리면 알 수 있는지 알려 준다.\n"
-        "- 등급은 위 컷으로 말한다. 다른 기준을 끌어오지 마라.\n"
-        "- 여러 항목은 줄바꿈으로 나눠 쓴다. 한 줄에 한 가지만.\n"
-        "- 짧고 건조하게. 근거 수치를 같이 적는다."
+        "- 대상: {sys} · {day} {span} · 등급 컷 경계 {w}/위험 {d}/초위험 {c}\n"
+        + ASK_RULES
     ).format(sys=rec.get("sys") or "ALL", day=rec.get("day") or "",
-             span=rec.get("span") or "", cut=cut_s)
+             span=rec.get("span") or "", w=w, d=d_, c=c_)
+    ap = str(extra_prompt or "").strip()[:2000]
+    if ap:
+        # ★사용자 지시는 **규칙 뒤**에 온다. 앞에 두면 위 규칙을 덮어 쓴다.
+        head += "\n\n[추가 지시 — 사용자가 적은 것]\n" + ap
 
     msgs = [{"role": "system", "content": head + "\n\n" + ev}]
     for m in (history or [])[-ASK_KEEP:]:
         if isinstance(m, dict) and m.get("role") in ("user", "assistant"):
             msgs.append({"role": m["role"], "content": str(m.get("content", ""))[:4000]})
-    msgs.append({"role": "user", "content": q[:2000]})
+    msgs.append({"role": "user", "content": q[:2000] + "\n\n(한국어로, 결론만)"})
 
-    from llm_client import chat
+    from llm_client import chat, _is_reasoning_model, _inject_no_think
     c = dict(cfg)
-    mdl = str(model or "").strip()
-    if mdl:
-        c.setdefault("llm", {})
+    mdl = str(model or "").strip() or (c.get("llm") or {}).get("model") or ""
+    if model:
         c["llm"] = dict(c.get("llm") or {}, model=mdl)
-    txt, err = chat(msgs, c, max_tokens=ASK_MAX_TOKENS)
+    # ★사고 모델은 부탁만으로는 안 멈춘다. 템플릿에서 끄고, 그래도 안 되면
+    #   /no_think 를 붙인다. 게이트웨이가 옵션을 모르면 400 이 오므로 한
+    #   단계씩 빼며 다시 부른다 (400 은 즉답이라 사실상 공짜다).
+    tiers = [{"chat_template_kwargs": {"enable_thinking": False}}, None]
+    if "gpt-oss" in mdl.lower():
+        tiers.insert(0, {"chat_template_kwargs": {"enable_thinking": False},
+                         "reasoning_effort": "low"})
+    send = _inject_no_think(msgs) if _is_reasoning_model(mdl, c.get("llm")) else msgs
+    txt = last = None
+    for ex in tiers:
+        txt, err = chat(send, c, max_tokens=ASK_MAX_TOKENS, extra=ex)
+        if txt is not None:
+            break
+        last = err
     if txt is None:
-        return {"ok": False, "error": _short_err(err), "model": mdl}
-    return {"ok": True, "answer": _strip_fences(str(txt)).strip(),
-            "model": mdl or (c.get("llm") or {}).get("model") or ""}
+        return {"ok": False, "error": _short_err(last), "model": mdl}
+    ans = _clean_answer(txt)
+    at = datetime.now().isoformat(timespec="seconds")
+    _ask_log(aid, cfg, [{"role": "user", "content": q, "at": at},
+                        {"role": "assistant", "content": ans or "(빈 답)",
+                         "at": at, "model": mdl}])
+    return {"ok": True, "answer": ans or "(빈 답)", "model": mdl}
 
 
 def delete_analyses(ids, cfg: dict | None = None) -> dict:

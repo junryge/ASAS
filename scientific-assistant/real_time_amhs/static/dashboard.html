@@ -1670,8 +1670,12 @@ async function loadAnalysis(aid){
         </div>`;
       }).join('')}
     </div>` + anChatBox(aid);
-  AN_CHAT = [];                 // 다른 분석을 열면 대화를 새로 시작한다
+  /* ★지난 문답을 되살린다 — 창을 닫아도 남아 있어야 한다 (서버가 분석
+     파일에 같이 저장한다). 다른 분석을 열면 그 분석의 기록으로 갈아탄다. */
+  AN_CHAT = (r.chat || []).map(m=>({role:m.role, content:m.content,
+                                    at:m.at, model:m.model}));
   anChatPaint();
+  anChatModels();
 }
 
 /* ══════════ 분석 뒤 이어 묻기 ══════════
@@ -1690,6 +1694,22 @@ function anChatBox(aid){
       <span class="note" style="font-size:10.5px">— 위 분석이 본 자료 안에서만 답합니다</span>
     </div>
     <div id="anchatlog" style="max-height:320px;overflow-y:auto;margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span class="note" style="font-size:11px;white-space:nowrap">모델</span>
+      <select id="anchatm" style="background:var(--bg);border:1px solid var(--line);
+              border-radius:8px;padding:5px 8px;color:var(--tx);font-family:inherit;
+              font-size:11.5px;max-width:260px">
+        <option value="">기본 (config.llm.model)</option>
+      </select>
+      <button id="anchatp" class="btn" style="font-size:11.5px;padding:5px 9px"
+              title="이 대화에만 얹을 지시를 적습니다">프롬프트</button>
+    </div>
+    <div id="anchatpbox" style="display:none;margin-bottom:6px">
+      <textarea id="anchatpt" rows="3" placeholder="예: 표로 정리해줘 / 조치 위주로 짧게 / 시간대별로 나눠서"
+        style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);
+               border-radius:8px;padding:7px 10px;color:var(--tx);font-family:inherit;font-size:12px"></textarea>
+      <div class="note" style="font-size:10.5px">이 지시는 규칙(한국어·근거 밖 숫자 금지) 뒤에 붙습니다.</div>
+    </div>
     <div style="display:flex;gap:6px">
       <input id="anchatq" placeholder="예: 14시엔 몇 점이었어? / 어느 구역이 제일 오래 걸렸어?"
              style="flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);
@@ -1704,13 +1724,26 @@ function anChatBox(aid){
   </div>`;
 }
 
+/* 질문에 쓸 모델 목록 — 분석 단계 고르기와 같은 곳에서 받아 온다 */
+async function anChatModels(){
+  const sel = document.getElementById('anchatm');
+  if(!sel) return;
+  try{
+    if(!AN_MODELS) AN_MODELS = await api('/api/analysis/models');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">기본 (config.llm.model)</option>'
+      + (AN_MODELS.models||[]).map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+    sel.value = cur;
+  }catch(e){}
+}
+
 function anChatPaint(){
   const el = document.getElementById('anchatlog');
   if(!el) return;
   el.innerHTML = AN_CHAT.length ? AN_CHAT.map(m=>`
     <div style="margin:6px 0">
       <div class="note" style="font-size:10.5px;color:${m.role==='user'?'var(--cy)':'var(--tx3)'}">
-        ${m.role==='user'?'나':'분석가'}</div>
+        ${m.role==='user'?'나':'분석가'}${m.model?' · '+esc(m.model):''}${m.at?' · '+esc(String(m.at).slice(11,16)):''}</div>
       <div style="font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;
                   color:${m.error?'var(--crit)':'var(--tx)'}">${esc(m.content)}</div>
     </div>`).join('')
@@ -1732,8 +1765,10 @@ async function anChatAsk(q){
     /* 지금까지의 문답을 같이 보낸다 — '그럼 그건?' 같은 이어지는 말이 통한다.
        마지막 두 줄(방금 질문 + 자리표시)은 뺀다. */
     const hist = AN_CHAT.slice(0,-2).filter(m=>!m.error);
+    const mdl = (document.getElementById('anchatm')||{}).value || '';
+    const pt  = (document.getElementById('anchatpt')||{}).value || '';
     const r = await post(`/api/analysis/${encodeURIComponent(aid)}/ask`,
-                         {q, history: hist});
+                         {q, history: hist, model: mdl, prompt: pt});
     AN_CHAT[AN_CHAT.length-1] = r && r.ok
       ? {role:'assistant', content:r.answer||'(빈 답)'}
       : {role:'assistant', content:'답을 못 받았습니다 — '+((r&&r.error)||'알 수 없음'),
@@ -1750,6 +1785,9 @@ async function anChatAsk(q){
 document.addEventListener('click', e=>{
   if(e.target && e.target.id === 'anchatsend'){
     anChatAsk((document.getElementById('anchatq')||{}).value);
+  }else if(e.target && e.target.id === 'anchatp'){
+    const b = document.getElementById('anchatpbox');
+    if(b) b.style.display = (b.style.display === 'none' ? '' : 'none');
   }else if(e.target && e.target.classList && e.target.classList.contains('anq')){
     e.preventDefault();
     anChatAsk(e.target.textContent);

@@ -1630,7 +1630,8 @@ def api_analysis_ask(aid):
     try:
         from analysis import ask
         r = ask(aid, q, b_.get("history") or [], C["cfg"],
-                str(b_.get("model") or "").strip())
+                str(b_.get("model") or "").strip(),
+                str(b_.get("prompt") or ""))
         return jsonify(r), (200 if r.get("ok") else 400)
     except Exception as e:
         import traceback; traceback.print_exc()

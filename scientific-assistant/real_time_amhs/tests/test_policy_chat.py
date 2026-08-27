@@ -215,7 +215,9 @@ class 이어서_물을_수_있다(_분석하나):
             {"role": "assistant", "content": "앞선 답"}])
         self.assertEqual(len(msgs), 4)          # system + 이력2 + 질문
         self.assertEqual(msgs[1]["content"], "앞선 질문")
-        self.assertEqual(msgs[-1]["content"], "그럼 그건?")
+        # 질문 끝에 "(한국어로, 결론만)" 을 덧붙인다 — 앞부분만 본다
+        self.assertTrue(msgs[-1]["content"].startswith("그럼 그건?"),
+                        msgs[-1]["content"])
 
     def test_이력이_길면_잘라_보낸다(self):
         long = [{"role": "user", "content": "q{}".format(i)} for i in range(40)]
@@ -249,6 +251,243 @@ class 이어서_물을_수_있다(_분석하나):
         r = analysis.ask(REC["id"], "뭐", None, self.cfg)
         self.assertFalse(r["ok"])
         self.assertIn("근거가 남아 있지 않", r["error"])
+
+
+BAD_EN = """Thinking Process:
+
+1. **Analyze the Request:**
+* Role: Control Analyst answering questions.
+* Constraint 1: Use only numbers from the provided evidence.
+
+2. **Analyze the Evidence:**
+* Max Score: 43 points (Threshold 60).
+
+3. **Drafting the Answer:**
+정체는 없었습니다.
+- 최고 43점 (임계 60점 미만)"""
+
+
+class 영문_생각과정이_안_나온다(_분석하나):
+    """★"왜....영문으로 나오냐;;;헐" — 사고 모델이 영문 추론을 본문에 그대로
+    썼다. <think> 태그로 감싸면 걷히는데, 태그 없이 쓰면 화면에 다 나온다."""
+
+    def test_영문_머리말을_걷어낸다(self):
+        out, _ = self.ask("왜 이래?", reply=BAD_EN)
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["answer"].startswith("정체는 없었습니다"), out["answer"])
+        self.assertNotIn("Thinking Process", out["answer"])
+        self.assertNotIn("Analyze the Request", out["answer"])
+
+    def test_think_태그도_걷어낸다(self):
+        out, _ = self.ask("왜?", reply="<think>영어로 고민</think>\n답입니다")
+        self.assertEqual(out["answer"], "답입니다")
+
+    def test_멀쩡한_한국어_답은_안_건드린다(self):
+        """★멀쩡한 답을 잘라 먹으면 그게 더 나쁘다."""
+        good = "정상입니다.\n- 최고 43점\n- 임계 60점 미만"
+        out, _ = self.ask("어때?", reply=good)
+        self.assertEqual(out["answer"], good)
+
+    def test_한국어로만_답하라고_시킨다(self):
+        _, msgs = self.ask("뭐야")
+        s = msgs[0]["content"]
+        self.assertIn("한국어로만", s)
+        self.assertIn("영어로 쓰지 마라", s)
+
+    def test_생각과정을_쓰지_말라고_시킨다(self):
+        _, msgs = self.ask("뭐야")
+        self.assertIn("결론만", msgs[0]["content"])
+        self.assertIn("Thinking Process", msgs[0]["content"])
+
+    def test_질문_끝에도_못_박는다(self):
+        """★규칙은 system 에 있고 모델은 마지막 줄을 제일 잘 듣는다."""
+        _, msgs = self.ask("뭐야")
+        self.assertIn("한국어로, 결론만", msgs[-1]["content"])
+
+
+class 사고를_게이트웨이에서_끈다(_분석하나):
+    """★부탁만으로는 안 멈춘다. 템플릿에서 끄고, 게이트웨이가 그 옵션을
+    모르면(400) 한 단계 빼고 다시 부른다."""
+
+    def ask_opts(self, q="뭐야", model="", fail_first=0):
+        calls = []
+
+        def fake_chat(msgs, cfg=None, **kw):
+            calls.append({"extra": kw.get("extra"), "last": msgs[-1]["content"]})
+            if len(calls) <= fail_first:
+                return None, {"reason": "400 unknown field"}
+            return "답이오", None
+        import llm_client
+        with mock.patch.object(llm_client, "chat", fake_chat):
+            out = analysis.ask(REC["id"], q, None, self.cfg, model)
+        return out, calls
+
+    def test_사고를_끄는_옵션을_보낸다(self):
+        _, calls = self.ask_opts()
+        self.assertEqual(calls[0]["extra"],
+                         {"chat_template_kwargs": {"enable_thinking": False}})
+
+    def test_옵션을_모르는_게이트웨이면_빼고_다시(self):
+        out, calls = self.ask_opts(fail_first=1)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(calls[-1]["extra"])
+
+    def test_다_실패하면_실패라고_한다(self):
+        out, calls = self.ask_opts(fail_first=9)
+        self.assertFalse(out["ok"])
+        self.assertTrue(out["error"])
+
+    def test_gpt_oss_는_추론_강도까지_낮춘다(self):
+        _, calls = self.ask_opts(model="gaia-cc-gpt-oss-120b")
+        self.assertEqual(calls[0]["extra"].get("reasoning_effort"), "low")
+
+    def test_사고모델이면_no_think_도_붙인다(self):
+        _, calls = self.ask_opts(model="gaia-Qwen3.6-35B-A3B")
+        self.assertIn("/no_think", calls[0]["last"])
+
+
+class 모델과_프롬프트를_고를_수_있다(_분석하나):
+
+    def test_모델을_지정하면_그걸_쓴다(self):
+        seen = {}
+
+        def fake_chat(msgs, cfg=None, **kw):
+            seen["model"] = (cfg.get("llm") or {}).get("model")
+            return "답", None
+        import llm_client
+        with mock.patch.object(llm_client, "chat", fake_chat):
+            out = analysis.ask(REC["id"], "뭐", None, self.cfg, "내가고른모델")
+        self.assertEqual(seen["model"], "내가고른모델")
+        self.assertEqual(out["model"], "내가고른모델")
+
+    def test_안_지정하면_기본_모델(self):
+        out, _ = self.ask("뭐")
+        self.assertTrue(out["model"])          # config.llm.model
+
+    def test_추가_지시가_실린다(self):
+        seen = {}
+
+        def fake_chat(msgs, cfg=None, **kw):
+            seen["sys"] = msgs[0]["content"]
+            return "답", None
+        import llm_client
+        with mock.patch.object(llm_client, "chat", fake_chat):
+            analysis.ask(REC["id"], "뭐", None, self.cfg, "", "표로 정리해줘")
+        self.assertIn("[추가 지시", seen["sys"])
+        self.assertIn("표로 정리해줘", seen["sys"])
+
+    def test_추가_지시는_규칙_뒤에_온다(self):
+        """★앞에 두면 '한국어로만' 같은 규칙을 덮어 쓴다."""
+        seen = {}
+
+        def fake_chat(msgs, cfg=None, **kw):
+            seen["sys"] = msgs[0]["content"]
+            return "답", None
+        import llm_client
+        with mock.patch.object(llm_client, "chat", fake_chat):
+            analysis.ask(REC["id"], "뭐", None, self.cfg, "", "영어로 써")
+        s = seen["sys"]
+        self.assertLess(s.index("한국어로만"), s.index("[추가 지시"))
+
+
+class 문답을_기록으로_남긴다(_분석하나):
+    """★"지난 분석에 질문한 내용 기록 남겨야 돼" — 창을 닫으면 사라졌다."""
+
+    def test_물으면_파일에_쌓인다(self):
+        self.ask("첫 질문")
+        self.ask("둘째 질문")
+        rec = analysis.get_analysis(REC["id"], self.cfg)
+        log = rec.get("chat") or []
+        self.assertEqual(len(log), 4)          # 질문2 + 답2
+        self.assertEqual(log[0]["content"], "첫 질문")
+        self.assertEqual(log[-1]["content"], "답이오")
+
+    def test_언제_어느_모델로_물었는지_남는다(self):
+        self.ask("질문")
+        m = (analysis.get_analysis(REC["id"], self.cfg).get("chat") or [])[-1]
+        self.assertTrue(m.get("at"))
+        self.assertTrue(m.get("model"))
+
+    def test_분석_본문은_안_망가진다(self):
+        """★파일을 다시 쓰는 자리다 — 원래 내용이 날아가면 안 된다."""
+        self.ask("질문")
+        rec = analysis.get_analysis(REC["id"], self.cfg)
+        self.assertEqual(rec["final"], REC["final"])
+        self.assertEqual(rec["overview"], REC["overview"])
+
+    def test_너무_쌓이면_오래된_것부터_버린다(self):
+        old = analysis.ASK_LOG_MAX
+        analysis.ASK_LOG_MAX = 4
+        self.addCleanup(lambda: setattr(analysis, "ASK_LOG_MAX", old))
+        for i in range(5):
+            self.ask("q{}".format(i))
+        log = analysis.get_analysis(REC["id"], self.cfg).get("chat") or []
+        self.assertEqual(len(log), 4)
+        # 문답은 쌍(질문+답)으로 쌓인다 — 4개면 마지막 두 쌍이 남는다
+        self.assertEqual(log[0]["content"], "q3")
+
+    def test_실패한_질문은_안_남긴다(self):
+        """★답을 못 받았는데 기록에 남으면 나중에 그걸 답으로 읽는다."""
+        self.ask("실패할 질문", err={"reason": "죽음"})
+        log = (analysis.get_analysis(REC["id"], self.cfg) or {}).get("chat") or []
+        self.assertEqual(log, [])
+
+    def test_기록_저장이_실패해도_답은_준다(self):
+        with mock.patch.object(analysis, "_store_dir",
+                               side_effect=OSError("못 씀")):
+            pass
+        out, _ = self.ask("질문")
+        self.assertTrue(out["ok"])
+
+
+class 옛_기록에도_컷을_채운다(_분석하나):
+    """★cuts 를 안 저장하던 시절 기록이 있다. "등급 컷 정보 없음" 을 그대로
+    넣으면 모델이 기준 없이 말한다 (실제 증상)."""
+
+    def test_없으면_지금_설정에서_읽는다(self):
+        """★기본값(60/71/85)으로 때우면 안 된다 — 그 시스템에 설정된 컷을
+        읽어야 한다. 기본값과 다른 값으로 재야 구분이 된다."""
+        old = dict(REC); old.pop("cuts")
+        old["sys"] = "M14"
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(old, f, ensure_ascii=False)
+        self.cfg = cfg_with({"M14": {"warn": 33, "danger": 44, "critical": 77}})
+        _, msgs = self.ask("뭐")
+        self.assertIn("등급 컷 경계 33/위험 44/초위험 77", msgs[0]["content"])
+        self.assertNotIn("정보 없음", msgs[0]["content"])
+
+    def test_있으면_그걸_쓴다(self):
+        _, msgs = self.ask("뭐")
+        self.assertIn("경계 40/위험 55/초위험 70", msgs[0]["content"])
+
+    def test_설정을_못_읽어도_기본값으로(self):
+        self.assertEqual(analysis._ask_cuts({}, None), [60, 71, 85])
+
+
+class 화면에_모델과_기록이_붙는다(unittest.TestCase):
+
+    def setUp(self):
+        p = os.path.join(util.BASE, "static", "dashboard.html")
+        with open(p, encoding="utf-8") as f:
+            self.html = f.read()
+
+    def test_모델_고르는_칸이_있다(self):
+        self.assertIn('id="anchatm"', self.html)
+        self.assertIn("anChatModels", self.html)
+
+    def test_프롬프트_적는_칸이_있다(self):
+        self.assertIn('id="anchatpt"', self.html)
+
+    def test_고른_모델과_프롬프트를_보낸다(self):
+        i = self.html.index("async function anChatAsk")
+        blk = self.html[i:i + 1400]
+        self.assertIn("model: mdl", blk)
+        self.assertIn("prompt: pt", blk)
+
+    def test_지난_문답을_되살린다(self):
+        i = self.html.index("+ anChatBox(aid);")
+        self.assertIn("r.chat || []", self.html[i:i + 400])
 
 
 class 분석이_근거를_저장한다(unittest.TestCase):
@@ -287,7 +526,10 @@ class 화면에_채팅이_붙는다(unittest.TestCase):
     def test_다른_분석을_열면_대화를_새로_시작한다(self):
         """★안 비우면 앞 분석 얘기를 다음 분석에 이어서 한다."""
         i = self.html.index("+ anChatBox(aid);")
-        self.assertIn("AN_CHAT = []", self.html[i:i + 200])
+        blk = self.html[i:i + 400]
+        # 이어붙이지 말고 **갈아끼워야** 한다 (그 분석의 기록으로)
+        self.assertIn("AN_CHAT = (r.chat", blk)
+        self.assertNotIn("AN_CHAT.push", blk)
 
     def test_보내는_중에_또_안_보낸다(self):
         self.assertIn("AN_CHAT_BUSY", self.html)
