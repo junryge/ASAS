@@ -57,8 +57,15 @@
   .oask h2{margin:0;font-size:64px;line-height:1.02;letter-spacing:-.02em;font-weight:800;
            font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",Figtree,sans-serif}
 
-  .sysgrid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:20px;padding-top:48px}
-  .sysgrid .rest{grid-column:span 2;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  /* 두 줄로 나눈다 —
+       위(lead) : ALL(전체 통합 관제) + AVATAR_2D(따로 뜨는 앱)
+       아래(rest): FAB · HUBROOM 5개
+     ★위 줄의 둘은 눌렀을 때 하는 일이 다르다(화면 전환 vs 새 탭). 나란히
+       두는 대신 색을 갈라 놓았다 — 아래 .sys.app 참고. */
+  .sysgrid{display:grid;gap:20px;padding-top:48px}
+  .sysgrid .lead{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
+  .sysgrid .lead.solo{grid-template-columns:1fr}     /* 아바타를 껐을 때 */
+  .sysgrid .rest{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
   .sys{font:inherit;color:inherit;text-align:left;border:0;background:none;cursor:pointer}
   .sys:focus-visible{outline:2px solid #3DDBE8;outline-offset:3px}
 
@@ -74,29 +81,42 @@
   .sys.hero .cd{display:block;font-size:56px;line-height:.95}
   .sys.hero .nm{display:block;margin-top:8px;font-size:17px;color:#0B3A46}
 
-  /* FAB 작은 타일 — 전부 실시간이라 눌린다. wip 는 수집이 아직 안 붙은
-     시스템에만 붙는 예외 표시(점선·비활성)다. */
-  .sys.fab{display:flex;flex-direction:column;justify-content:space-between;min-height:108px;
+  /* FAB 작은 타일 — 전부 실시간이라 눌린다. 아래 줄에 다섯이 나란히 서므로
+     타일 하나가 좁다.
+     ★코드와 종류를 가로로 붙이면 M16HUB + HUBROOM 이 서로 밀어내 줄이
+       깨진다. 그래서 세로로 쌓는다.
+     wip 는 수집이 아직 안 붙은 시스템에만 붙는 예외 표시(점선·비활성)다. */
+  .sys.fab{display:flex;flex-direction:column;justify-content:space-between;min-height:122px;
            padding:22px 24px;border-radius:22px;background:#0D1119;border:1px solid #1C2431;
            transition:border-color .14s,background .14s,transform .14s}
   .sys.fab:hover{border-color:#2c5f6b;background:#0e1d26;transform:translateY(-2px)}
-  .sys.fab .tp{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .sys.fab .tp{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
   .sys.fab .cd{font-size:26px;line-height:1;color:#E6EDF6}
   .sys.fab .kind{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
                  color:#5E6E85}
-  .sys.fab .st{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;
-               color:#7C8DA3}
-  .sys.fab .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid #5E6E85}
-  .sys.fab .st.live{color:#2FD68A}
-  .sys.fab .st.live i{border:0;background:#2FD68A;animation:blip 1.9s ease-in-out infinite}
-  /* 2D 감정캐릭터 — ★관제 시스템이 아니라 따로 뜨는 앱이다. 눌러도 관제
-     화면이 바뀌지 않고 새 탭이 열린다. 그래서 색을 달리해 구분한다. */
-  .sys.fab.app{border-color:#2A2340;background:#120E1E}
-  .sys.fab.app:hover{border-color:#6A4FBF;background:#191233}
-  .sys.fab.app .cd{color:#D9CEFF}
-  .sys.fab.app .kind{color:#8A78C4}
-  .sys.fab.app .st.off{color:#C77B7B}
+  /* 상태 줄은 FAB 타일과 아바타 카드가 같이 쓴다 */
+  .sys .st{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;
+           color:#7C8DA3}
+  .sys .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid #5E6E85}
+  .sys .st.live{color:#2FD68A}
+  .sys .st.live i{border:0;background:#2FD68A;animation:blip 1.9s ease-in-out infinite}
   @keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
+
+  /* 2D 감정캐릭터 — ★관제 시스템이 아니라 따로 뜨는 앱이다. 눌러도 관제
+     화면이 바뀌지 않고 새 탭이 열린다. ALL 과 같은 줄에 같은 크기로 세우되
+     색을 갈라 구분한다(청록 = 관제 화면 / 보라 = 새 탭으로 뜨는 앱). */
+  .sys.app{display:flex;flex-direction:column;justify-content:space-between;min-height:236px;
+           padding:30px;border-radius:28px;background:#120E1E;border:1px solid #2A2340;
+           transition:border-color .16s,background .16s,transform .16s}
+  .sys.app:hover{border-color:#6A4FBF;background:#191233;transform:translateY(-2px)}
+  .sys.app .pill{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
+                 padding:6px 14px 6px 11px;border-radius:999px;
+                 background:rgba(167,139,250,.15);font-size:11px;font-weight:700;
+                 letter-spacing:.12em;color:#A78BFA}
+  .sys.app .pill i{display:block;width:8px;height:8px;border-radius:999px;background:#A78BFA}
+  .sys.app .cd{display:block;font-size:40px;line-height:.98;color:#D9CEFF}
+  .sys.app .nm{display:block;margin-top:8px;font-size:15px;color:#8A78C4}
+  .sys.app .st.off{color:#C77B7B}
   .sys.fab.wip{cursor:not-allowed;border-style:dashed}
   .sys.fab.wip:hover{transform:none;border-color:#1C2431;background:#0D1119}
   .sys.fab.wip .cd{color:#A9BACD}
@@ -107,13 +127,24 @@
   .open .note kbd{border:1px solid #26303F;border-radius:6px;padding:1px 6px;font:inherit;
                   font-size:12px;color:#A9BACD}
 
+  /* 한 줄에 다섯은 970px 언저리까지 글자가 안 깨진다(브라우저로 재 봤다).
+     그 아래 — 위 줄이 어차피 세로로 쌓이는 지점 — 부터 접는다. */
   @media(max-width:960px){
     .open{padding:32px 20px}
     .ohead{flex-wrap:wrap;gap:16px}
     .oask{padding-top:40px}
     .oask h2{font-size:40px}
-    .sysgrid{grid-template-columns:1fr;padding-top:32px}
-    .sysgrid .rest{grid-column:auto}
+    .sysgrid{padding-top:32px}
+    .sysgrid .lead{grid-template-columns:1fr}
+    .sysgrid .rest{grid-template-columns:repeat(3,1fr)}
+    /* 위아래로 쌓이면 아바타 카드가 236px 를 차지할 이유가 없다 */
+    .sys.app{min-height:auto}
+  }
+  @media(max-width:640px){
+    .sysgrid .rest{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:440px){
+    .sysgrid .rest{grid-template-columns:1fr}
   }
 
   /* ── 상단 바 ── */
@@ -815,6 +846,10 @@ async function wireAvatar(){
 
   if(!AVATAR || AVATAR.enabled === false){
     btn.style.display = 'none';
+    /* ★숨기기만 하면 옆칸이 빈 채로 남아 ALL 이 반쪽 폭으로 쪼그라든다.
+       위 줄을 한 칸짜리로 되돌려 ALL 이 그 줄을 다 쓰게 한다. */
+    const lead = btn.closest('.lead');
+    if(lead) lead.classList.add('solo');
     return;
   }
   if(AVATAR.alive){
@@ -837,16 +872,27 @@ async function wireAvatar(){
 }
 
 function renderOpen(){
-  /* 첫 칸(ALL)은 통합 관제라 크게, FAB 5개는 오른쪽에 2열로 */
+  /* 위 줄은 큰 카드 둘 — ALL(전체 통합 관제)과 AVATAR_2D(따로 뜨는 앱).
+     아래 줄에 나머지 FAB · HUBROOM 5개를 깐다. */
   const [all, ...rest] = SYSTEMS;
   $('#sysgrid').innerHTML = `
-    <button class="sys hero" data-sys="${all.code}" ${all.ready?'':'disabled'}>
-      <span class="pill"><i></i>${all.ready?'운영 중':'준비 중'}</span>
-      <span>
-        <span class="cd dsp">${esc(all.code)}</span>
-        <span class="nm">${esc(all.name)}</span>
-      </span>
-    </button>
+    <div class="lead">
+      <button class="sys hero" data-sys="${all.code}" ${all.ready?'':'disabled'}>
+        <span class="pill"><i></i>${all.ready?'운영 중':'준비 중'}</span>
+        <span>
+          <span class="cd dsp">${esc(all.code)}</span>
+          <span class="nm">${esc(all.name)}</span>
+        </span>
+      </button>
+      <button class="sys app" id="sys-avatar" title="새 탭으로 열립니다">
+        <span class="pill"><i></i>APP</span>
+        <span>
+          <span class="cd dsp">AVATAR_2D</span>
+          <span class="nm">2D 감정캐릭터</span>
+        </span>
+        <span class="st" id="avstate"><i></i>확인 중…</span>
+      </button>
+    </div>
     <div class="rest">${rest.map(s => `
       <button class="sys fab ${s.ready?'':'wip'}" data-sys="${s.code}" ${s.ready?'':'disabled'}>
         <span class="tp">
@@ -854,14 +900,7 @@ function renderOpen(){
           <span class="kind">${esc(s.kind)}</span>
         </span>
         <span class="st ${s.ready?'live':''}"><i></i>${s.ready?'운영 중':'준비 중'}</span>
-      </button>`).join('')}
-      <button class="sys fab app" id="sys-avatar" title="새 탭으로 열립니다">
-        <span class="tp">
-          <span class="cd dsp">AVATAR_2D</span>
-          <span class="kind">APP</span>
-        </span>
-        <span class="st" id="avstate"><i></i>확인 중…</span>
-      </button></div>`;
+      </button>`).join('')}</div>`;
   document.querySelectorAll('#sysgrid .sys[data-sys]').forEach(b =>
     b.onclick = () => pickSystem(b.dataset.sys));
   wireAvatar();

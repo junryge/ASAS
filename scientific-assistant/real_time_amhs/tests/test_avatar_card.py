@@ -44,13 +44,20 @@ class 화면(unittest.TestCase):
                   encoding="utf-8") as f:
             cls.html = f.read()
 
-    def test_카드가_M16HUB_다음에_온다(self):
-        """오른쪽 타일 묶음(rest) 안, FAB 들을 그린 **뒤**에 붙는다."""
-        i = self.html.index("${rest.map(s =>")
+    def test_카드가_ALL_옆에_온다(self):
+        """위 줄(lead) 안, ALL 바로 다음이다 — 아래 FAB 묶음(rest) 이 아니다."""
+        lead = self.html.index('<div class="lead">')
+        hero = self.html.index('class="sys hero"')
         j = self.html.index('id="sys-avatar"')
-        k = self.html.index("</div>`;", j)
-        self.assertLess(i, j, "FAB 목록보다 앞에 있다")
-        self.assertLess(j, k, "rest 묶음 밖으로 나갔다")
+        rest = self.html.index('<div class="rest">')
+        self.assertLess(lead, hero, "lead 묶음 밖으로 나갔다")
+        self.assertLess(hero, j, "ALL 보다 앞에 있다")
+        self.assertLess(j, rest, "아래 FAB 묶음으로 내려갔다")
+
+    def test_아바타를_끄면_ALL_이_줄을_다_쓴다(self):
+        """★숨기기만 하면 옆칸이 빈 채로 남아 ALL 이 반쪽 폭으로 쪼그라든다."""
+        self.assertIn(".sysgrid .lead.solo", self.html)
+        self.assertIn("classList.add('solo')", self.html)
 
     def test_관제_전환을_타지_않는다(self):
         """★pickSystem 은 수집·화면을 통째로 그 시스템으로 바꾼다.
