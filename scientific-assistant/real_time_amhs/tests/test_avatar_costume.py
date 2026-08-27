@@ -96,5 +96,100 @@ class CostumeList(unittest.TestCase):
                           "지킨다: " + ", ".join(miss))
 
 
+class SaveCostumeImage(unittest.TestCase):
+    """끌어다 놓은 의상 그림 저장 — avatar/server.save_costume_image().
+
+    ★예전엔 data URL 로 메모리에만 들고 있어서 새로고침하면 사라졌다.
+      이제 assets/ 에 파일로 남고, config.py 에 미리 적어 둔 의상이면
+      그 자리(slot)를 채운 것으로 알려 준다.
+    ★브라우저가 주는 파일 이름은 **믿지 않는다** — 이 창은 로컬이지만
+      이름 하나로 저장 폴더 밖에 파일을 쓰게 두면 안 된다.
+    """
+
+    PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+           "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+    def setUp(self):
+        import base64
+        import importlib.util
+        import sys
+        import tempfile
+        self.b64 = base64.b64encode
+        self.raw = base64.b64decode(self.PNG)
+        self.tmp = tempfile.mkdtemp(prefix="avcos")
+        if AV not in sys.path:
+            sys.path.insert(0, AV)
+        from avatar import server as S
+        self.S = S
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _save(self, name, blob=None):
+        return self.S.save_costume_image(
+            self.tmp, name, self.b64(self.raw if blob is None else blob).decode())
+
+    def _files(self):
+        d = os.path.join(self.tmp, "assets")
+        return sorted(os.listdir(d)) if os.path.isdir(d) else []
+
+    def test_저장되고_경로를_돌려준다(self):
+        r = self._save("casual.png")
+        self.assertTrue(r.get("ok"), r)
+        self.assertEqual(r["src"], "assets/casual.png")
+        self.assertEqual(self._files(), ["casual.png"])
+
+    def test_설정에_적어_둔_의상이면_그_자리를_알려준다(self):
+        """새 칩을 또 만들면 같은 그림인데 칩이 두 개가 된다."""
+        cfg = _py_costumes()
+        want = next(i for i, c in enumerate(cfg.COSTUMES)
+                    if c["src"] == "assets/casual.png")
+        self.assertEqual(self._save("casual.png")["slot"], want)
+
+    def test_모르는_이름이면_자리가_없다(self):
+        self.assertEqual(self._save("처음보는옷.png")["slot"], -1)
+
+    def test_data_URL_그대로_줘도_된다(self):
+        r = self.S.save_costume_image(
+            self.tmp, "shirt.png",
+            "data:image/png;base64," + self.b64(self.raw).decode())
+        self.assertTrue(r.get("ok"), r)
+
+    def test_저장_폴더_밖으로_못_나간다(self):
+        """브라우저가 '../../avatar/config.py' 를 줘도 assets 안에만 쓴다."""
+        r = self._save("../../avatar/config.py")
+        self.assertTrue(r.get("ok"), r)
+        self.assertTrue(r["src"].startswith("assets/"), r["src"])
+        self.assertEqual(self._files(), ["config.png"])
+        # 상위 어디에도 새 파일이 생기지 않았다
+        self.assertEqual(sorted(os.listdir(self.tmp)), ["assets"])
+
+    def test_이름만_png_인_것은_거른다(self):
+        """확장자를 믿으면 스크립트가 assets 에 남는다 — 앞머리로 본다."""
+        r = self._save("evil.png", b"<?php echo 1; ?>")
+        self.assertIn("error", r)
+        self.assertEqual(self._files(), [])
+
+    def test_jpg_와_webp_는_받는다(self):
+        self.assertTrue(self._save("a.jpg", b"\xff\xd8\xff" + b"0" * 20).get("ok"))
+        self.assertTrue(self._save("b.webp", b"RIFF" + b"0" * 20).get("ok"))
+
+    def test_너무_크면_거른다(self):
+        r = self._save("big.png", b"\x89PNG\r\n\x1a\n" + b"0" * (13 * 1024 * 1024))
+        self.assertIn("error", r)
+        self.assertEqual(r.get("code"), 413)
+
+    def test_빈_것과_깨진_것을_거른다(self):
+        self.assertIn("error", self.S.save_costume_image(self.tmp, "x.png", ""))
+        self.assertIn("error", self.S.save_costume_image(self.tmp, "x.png", "!!!not base64!!!"))
+        self.assertEqual(self._files(), [])
+
+    def test_이름이_비어도_저장은_된다(self):
+        r = self._save("")
+        self.assertTrue(r.get("ok"), r)
+        self.assertEqual(r["src"], "assets/costume.png")
+
+
 if __name__ == "__main__":
     unittest.main()

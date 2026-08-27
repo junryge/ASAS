@@ -9,6 +9,7 @@ HTTP 서버 — 정적 파일(static/) + 앱 API(/api/*) + LLM 프록시(/v1/*).
   POST /api/ctx              컨텍스트 사용량 추정
   GET  /api/docs             자료 목록
   POST /api/docs             {op:add|toggle|delete|clear, ...}
+  POST /api/costume          의상 그림 저장 (브라우저에서 끌어다 놓은 png)
   GET  /api/sessions         세션 전체
   PUT  /api/sessions         세션 전체 저장 (한도는 서버가 강제)
   GET  /api/sessions/md?id=  세션 하나를 Markdown 으로
@@ -36,6 +37,66 @@ CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
     "Access-Control-Max-Age": "86400",
 }
+
+
+# ── 의상 그림 저장 ────────────────────────────────────────────────────────
+# 브라우저에서 그림을 끌어다 놓으면 예전엔 data URL 로 **메모리에만** 들고
+# 있었다. 새로고침하면 사라지고, config.py 에 적어 둔 의상과도 이어지지 않아
+# 같은 그림인데 칩이 두 개가 됐다. 여기서 static/assets/ 에 파일로 남긴다.
+#
+# ★핸들러 밖의 함수로 둔다 — 소켓을 띄우지 않고 테스트할 수 있어야 한다.
+_IMG_MAGIC = ((b"\x89PNG\r\n\x1a\n", ".png"),
+              (b"\xff\xd8\xff", ".jpg"),
+              (b"RIFF", ".webp"))
+IMG_MAX = 12 * 1024 * 1024
+
+
+def save_costume_image(static_dir, filename, data):
+    """끌어다 놓은 그림을 assets/ 에 저장한다.
+
+    반환 {ok, src, slot, bytes} 또는 {error, code}.
+    slot 은 config.COSTUMES 에서 그 src 를 쓰는 자리(없으면 -1) — 미리 적어 둔
+    의상의 그림을 채운 것이면 새 칩을 만들지 말라는 뜻이다.
+    """
+    import base64
+    data = str(data or "")
+    if data[:5] == "data:" and "," in data:
+        data = data.split(",", 1)[1]
+    try:
+        blob = base64.b64decode(data, validate=True)
+    except Exception:                                  # noqa: BLE001
+        return {"error": "그림 데이터를 읽지 못했습니다", "code": 400}
+    if not blob:
+        return {"error": "빈 파일입니다", "code": 400}
+    if len(blob) > IMG_MAX:
+        return {"error": "그림이 너무 큽니다 (최대 12MB)", "code": 413}
+
+    # ★확장자를 믿지 않는다 — 앞머리(매직 바이트)로 실제 형식을 본다.
+    #   evil.png 라고 이름만 바꾼 스크립트가 assets 에 남으면 안 된다.
+    ext = next((e for magic, e in _IMG_MAGIC if blob.startswith(magic)), "")
+    if not ext:
+        return {"error": "png · jpg · webp 만 넣을 수 있습니다", "code": 400}
+
+    # ★파일명은 **바탕이름만** 쓰고 글자도 추린다. 브라우저가 준 이름을 그대로
+    #   쓰면 '../../avatar/config.py' 같은 것이 들어온다.
+    stem = os.path.splitext(os.path.basename(str(filename or "")))[0]
+    stem = re.sub(r"[^A-Za-z0-9가-힣._-]", "_", stem).strip("._-")[:40] or "costume"
+    assets = os.path.join(str(static_dir or ""), "assets")
+    try:
+        os.makedirs(assets, exist_ok=True)
+        dest = os.path.join(assets, stem + ext)
+        # 정말 assets 안인지 다시 본다 (심볼릭 링크·상대경로 방어)
+        if os.path.dirname(os.path.realpath(dest)) != os.path.realpath(assets):
+            return {"error": "잘못된 파일 이름입니다", "code": 400}
+        with open(dest, "wb") as f:
+            f.write(blob)
+    except OSError as e:
+        return {"error": f"저장하지 못했습니다: {e}", "code": 500}
+
+    src = "assets/" + stem + ext
+    slot = next((i for i, c in enumerate(config.COSTUMES)
+                 if c.get("src") == src), -1)
+    return {"ok": True, "src": src, "slot": slot, "bytes": len(blob)}
 
 
 class App:
@@ -243,6 +304,13 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _save_costume(self, b):
+        r = save_costume_image(App.static_dir, b.get("filename") or b.get("name"),
+                               b.get("data"))
+        if r.get("error"):
+            return self._err(r.pop("code", 400), r["error"])
+        return self._json(200, r)
+
     def do_OPTIONS(self):
         self.send_response(204)
         for k, v in CORS_HEADERS.items():
@@ -394,6 +462,9 @@ class Handler(SimpleHTTPRequestHandler):
             d["agentRulesDefault"] = llm.AGENT_RULES
             d["agentRulesCustom"] = d["agentRules"] != llm.AGENT_RULES
             return self._json(200, d)
+
+        if path == "/api/costume":
+            return self._save_costume(self._body())
 
         if path == "/api/docs":
             b = self._body()

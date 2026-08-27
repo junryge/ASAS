@@ -2762,8 +2762,40 @@ wrap.addEventListener('drop',e=>{
   }
   if(!/^image\//.test(f.type)) return;
   const rd=new FileReader();
-  rd.onload=()=>{
+  rd.onload=async ()=>{
     const name = (f.name||'커스텀').replace(/\.[^.]+$/,'').slice(0,10);
+    /* ★서버로 띄웠으면 **파일로 남긴다**. 예전엔 data URL 로 메모리에만
+       들고 있어서 새로고침하면 사라졌고, config.py 에 미리 적어 둔 의상과도
+       이어지지 않았다 (같은 그림인데 칩이 두 개가 됐다).
+       파일 이름이 config 의 src 와 같으면 그 자리를 채운 것이므로 새 칩을
+       만들지 않고 그 칸으로 간다 — 사원증 규칙이 거기 붙어 있다. */
+    if(window.SERVER){
+      try{
+        const r = await fetch('/api/costume', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({filename: f.name || name, data: rd.result})
+        }).then(x=>x.json());
+        if(r && r.ok){
+          if(r.slot >= 0 && COSTUMES[r.slot]){
+            COSTUMES[r.slot].cfg = null;            // 새 그림이니 캘리브레이션 초기화
+            setCostume(r.slot);
+            sys('의상 그림 저장됨 — ' + COSTUMES[r.slot].name + ' (' + r.src + ')');
+          }else{
+            COSTUMES.push({name, src:r.src, cfg:null, real:false});
+            buildCostumeChips();
+            setCostume(COSTUMES.length-1);
+            sys('의상 추가·저장됨 — ' + r.src);
+          }
+          calib=true; $('#calibChip').classList.add('on'); renderHandles();
+          return;
+        }
+        sys('의상 저장 실패 — ' + ((r && r.error && r.error.message) || '알 수 없음')
+            + ' · 이번만 화면에 올립니다');
+      }catch(e){
+        sys('의상 저장 실패(' + e.message + ') · 이번만 화면에 올립니다');
+      }
+    }
+    // 서버 없이 HTML 만 열었을 때(데모) — 예전처럼 이 창에서만 쓴다
     COSTUMES.push({name, src:rd.result});
     const el=document.createElement('div');
     el.className='chip'; el.textContent=name;
@@ -2771,7 +2803,7 @@ wrap.addEventListener('drop',e=>{
     $('#costumeChips').appendChild(el);
     setCostume(COSTUMES.length-1);
     calib=true; $('#calibChip').classList.add('on'); renderHandles();
-    sys('의상 추가됨 · 프레이밍이 다르면 캘리브레이션 핸들로 맞추세요');
+    sys('의상 추가됨(이 창에서만) · 프레이밍이 다르면 캘리브레이션 핸들로 맞추세요');
   };
   rd.readAsDataURL(f);
 });
