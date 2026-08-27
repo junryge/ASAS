@@ -1115,11 +1115,17 @@ def api_feed():
 
     # ★원본이 그대로면 지난 응답을 그대로 준다 (아래 out 생성이 비싸다)
     try:
+        import fab_score as _fab_score
         from store_csv import day_path
         _p = day_path(shown_day, C["cfg"])
         _st = os.stat(_p)
         _sig = (_st.st_mtime_ns, _st.st_size, len(C["store"].cases),
-                request.args.get("limit"), C["sys"], shown_day)
+                request.args.get("limit"), C["sys"], shown_day,
+                # ★FAB 다섯 점수는 **분리 파일**에서 읽는다. 그 파일이 바뀌면
+                #   지금 보는 파일이 그대로여도 다시 계산해야 한다 — 빼먹으면
+                #   FAB 컬럼만 옛 값에 얼어붙는다 (수집이 파일마다 따로 떨어질
+                #   수 있고, 오래된 값을 보여주는 게 안 보여주는 것보다 나쁘다).
+                _fab_score.files_sig(shown_day, C["cfg"]))
     except OSError:
         _sig = None
     if _sig:
@@ -1131,6 +1137,18 @@ def api_feed():
     groups = metric_groups(C["cfg"])
     mkeys = sorted({m["key"] for g in groups for m in g["metrics"]})
     seen_keys = set()
+
+    # FAB 다섯 점수 — **어느 화면에서든** 같이 내려준다. 원본이 FAB 분리
+    # 파일(data/{FAB}/{day}_TOTAL.CSV)이라 M14 를 보는 중에도 다섯을 다
+    # 읽어올 수 있다. 값을 모르는 FAB 은 area_table 이 빼고 주고, 화면은
+    # 빈 칸으로 그린다 (0 으로 채우면 '그 FAB 정상' 으로 읽힌다).
+    ftab = None
+    try:
+        import fab_score
+        ftab = fab_score.area_table(rows, day=shown_day, cfg=C["cfg"])
+    except Exception as e:                              # noqa: BLE001
+        # FAB 점수가 없어도 목록 자체는 떠야 한다 (컬럼만 빈다)
+        print(f"[FEED] ⚠️ FAB 점수 계산 실패 — 컬럼을 비웁니다: {e}")
 
     out = []
     for r in rows:
@@ -1153,6 +1171,14 @@ def api_feed():
                 cid = c["id"]
                 break
         raw_reason = (r.get("reason") or "").strip()
+        # FAB 다섯 점수 + 제일 높은 FAB (위 ftab 참고)
+        fx = {}
+        if ftab:
+            _fr = ftab["rows"].get(dt.replace(second=0, microsecond=0).isoformat())
+            if _fr:
+                fx = {"fab": _fr["s"], "hi_fab": _fr["hi"]}
+                if _fr.get("lv"):        # 예측기 등급이 컷 판정과 다른 것만
+                    fx["fab_lv"] = _fr["lv"]
         m = {}
         for k in mkeys:
             v = _num(r.get(k))
@@ -1178,6 +1204,7 @@ def api_feed():
             "queue_down": qd.split(), "queue_up": qu.split(),
             "chain": (r.get("propagation_chain") or "").strip(),
             "case_id": cid,
+            **fx,
         })
 
     out.sort(key=lambda x: x["at"], reverse=True)
@@ -1197,7 +1224,11 @@ def api_feed():
                     "day": shown_day, "fallback": fallback,
                     "latest": out[0]["datetime"] if out else None,
                     "earliest": out[-1]["datetime"] if out else None,
-               "window": C["cfg"].get("query", {}).get("window", "10m")}
+               "window": C["cfg"].get("query", {}).get("window", "10m"),
+               # FAB 마다 등급 컷이 다르다 — 화면이 이 컷으로 글자색을 칠한다.
+               # 행마다 싣지 않고 한 번만 준다 (하루 1440행이라 무거워진다).
+               "fabs": (ftab or {}).get("fabs") or [],
+               "fab_cuts": (ftab or {}).get("cuts") or {}}
     if _sig:
         FEED_CACHE[C["sys"]] = (_sig, payload)
     return jsonify(payload)

@@ -1005,6 +1005,143 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None,
     }
 
 
+def files_sig(day: str, cfg: dict | None = None) -> tuple:
+    """FAB 분리 파일 다섯의 (mtime, 크기) — 피드 캐시 서명용.
+
+    area_table() 이 이 파일들을 읽으므로, 화면 캐시는 이 파일이 바뀐 것도
+    알아야 한다. 지금 보는 시스템의 파일만 보고 캐시하면 FAB 컬럼만 옛
+    값에 얼어붙는다 — 오래된 값을 보여주는 게 안 보여주는 것보다 나쁘다.
+
+    stat 다섯 번이라 읽기보다 훨씬 싸다. 없는 파일도 자리를 남겨서
+    '생겼다/없어졌다' 가 서명에 잡히게 한다.
+    """
+    import os
+    try:
+        from lp_client import load_config, sys_cfg
+        from store_csv import day_path
+    except Exception:                                   # noqa: BLE001
+        return ()
+    cfg = cfg or load_config()
+    out = []
+    for f in fabs(cfg):
+        try:
+            st = os.stat(day_path(day, sys_cfg(cfg, f)))
+            out.append((f, st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((f, None, None))
+    return tuple(out)
+
+
+def area_table(rows: list[dict], day: str | None = None,
+               cfg: dict | None = None) -> dict:
+    """하루치 행 전부의 **FAB 다섯 점수(0~100)** 를 한 번에 낸다 — 목록용.
+
+    compare() 는 한 시각만 세우지만 관제 목록은 하루치(1440행)를 통째로
+    그린다. 행마다 compare()/fab_area_at() 을 부르면 FAB 분리 파일을 행
+    수만큼 다시 훑고 정렬하게 돼서(1440×5) 화면이 멈춘다. 그래서 **FAB 당
+    파일 한 번**만 읽어 분 단위로 색인해 두고 행을 훑는다.
+
+    ★점수 정의는 compare() 와 **똑같다** — FAB 분리 파일의 area_score 가
+      있으면 그게 원본이고, 없을 때만 통합 파일의 배점 합으로 되계산한다.
+      정의를 여기서 새로 지으면 같은 시각인데 목록과 비교표가 다른 수를
+      보여준다. 다른 것은 '한 번에 훑는다' 뿐이다.
+
+    ★어느 화면에서 불러도 된다. 다섯 점수의 원본은 **FAB 분리 파일**이라
+      (data/{FAB}/{day}_TOTAL.CSV) 지금 보고 있는 시스템이 M14 든 ALL 이든
+      똑같이 읽어 온다. rows 는 되계산 fallback 에만 쓴다.
+
+    반환
+        fabs  비교 대상 FAB 과 그 순서
+        cuts  {FAB: {warn, danger, critical}} — FAB 마다 컷이 다르다.
+              화면은 이 컷으로 글자색을 칠한다. 한 벌만 내려 주고 ALL 컷으로
+              칠하게 두면 서버와 다른 색이 난다 (compare() 가 줄마다 cuts 를
+              같이 주는 것과 같은 이유).
+        rows  {분(ISO): {s: {FAB: 점수}, hi: 제일 높은 FAB, hi_score: 그 점수,
+                         lv: {FAB: 등급}}}
+              s 에 **없는 FAB 은 값을 모르는 것**이다 (그 날 분리 파일이
+              없거나 그 분이 비었다). 0 과 구분해야 해서 빼고 보낸다.
+              lv 는 **예측기가 적어 준 등급이 컷 판정과 다를 때만** 넣는다
+              (compare() 가 area_level 을 우선하는 것과 같은 규칙). 매 행마다
+              다 실으면 하루치가 그만큼 무거워진다.
+    """
+    from sentinel import _row_dt, grade, grade_cuts
+    from lp_client import load_config
+    cfg = cfg or load_config()
+    codes = fabs(cfg)
+
+    def _key(d):
+        return d.replace(second=0, microsecond=0).isoformat()
+
+    # ── FAB 분리 파일을 FAB 당 한 번만 읽어 분 단위로 색인 ──────────────
+    own: dict[str, dict] = {}
+    day_q = "".join(ch for ch in str(day or "") if ch.isdigit())[:8]
+    if day_q:
+        from lp_client import sys_cfg
+        from store_csv import read_day
+        for f in codes:
+            try:
+                frows = read_day(day_q, sys_cfg(cfg, f))
+            except Exception:                          # noqa: BLE001
+                continue                               # 그 FAB 만 되계산으로
+            ix = {}
+            for fr in frows or []:
+                d = _row_dt(fr)
+                if d is None:
+                    continue
+                # 정규화된 FAB 행은 area_score 가 unified_risk_score 자리로
+                # 옮겨져 있다 (jupyter_csv._fab_rows) — 둘 다 본다.
+                for col in ("area_score", "unified_risk_score"):
+                    v = _num(fr.get(col))
+                    if v is not None:
+                        ix[_key(d)] = {"area": int(round(float(v))),
+                                       "level": str(fr.get("area_level") or "").strip()}
+                        break
+            if ix:
+                own[f] = ix
+
+    cuts, fcfgs = {}, {}
+    for f in codes:
+        fcfgs[f] = _fab_cfg(cfg, f)
+        w, dg, c = grade_cuts(fcfgs[f])
+        cuts[f] = {"warn": w, "danger": dg, "critical": c}
+
+    out: dict[str, dict] = {}
+    for r in rows or []:
+        d = _row_dt(r)
+        if d is None:
+            continue
+        k = _key(d)
+        s, lv = {}, {}
+        for f in codes:
+            o = (own.get(f) or {}).get(k)
+            if o is not None:
+                s[f] = o["area"]
+                # 예측기 등급이 우리 컷 판정과 다르면 그 사실을 실어 보낸다.
+                # 우리가 조용히 다시 매기면 등급 기준이 두 벌이 된다.
+                if o["level"] and o["level"] != grade(s[f], fcfgs[f])["level"]:
+                    lv[f] = o["level"]
+            else:
+                # ★되계산은 **그 FAB 이름이 붙은 컬럼**이 이 행에 있을 때만
+                #   한다. _stored_area() 는 {f}_score 가 없으면 area_score 로
+                #   물러서는데, M14 분리 파일 행에서 M16A 를 물으면 그 값이
+                #   M14 자기 점수라 남의 점수를 M16A 것으로 집어온다.
+                a = area_score(r, f, cfg)
+                if a["has_pts"] or _num(r.get(f"{f}_score")) is not None:
+                    s[f] = area_score_100(a.get("raw", a["area"]), f, cfg)
+                # 근거가 없으면 **넣지 않는다**. 0 으로 채우면 화면이 그
+                # FAB 을 '정상' 으로 읽는다 — 모르는 것과 괜찮은 것은 다르다.
+        hi, hs = "", -1
+        for f in codes:                     # 동점이면 fabs() 순서가 앞선 FAB
+            if f in s and s[f] > hs:
+                hi, hs = f, s[f]
+        # 다섯이 전부 0 이면 '제일 높은 FAB' 이라는 말이 성립하지 않는다.
+        # 아무 데도 안 걸린 분에 M14 를 지목하면 그게 오보다.
+        out[k] = {"s": s, "hi": (hi if hs > 0 else ""), "hi_score": max(hs, 0)}
+        if lv:
+            out[k]["lv"] = lv
+    return {"fabs": codes, "cuts": cuts, "rows": out}
+
+
 def fuse_check(row: dict, cfg: dict | None = None) -> dict:
     """저장된 컬럼만으로 전체 점수를 다시 계산해 본다 (문서 STEP 4 재현).
 
