@@ -265,6 +265,21 @@ class DashboardFabCols(unittest.TestCase):
             self.assertIsNotNone(m, f"{name} 글자 크기 지정이 없다")
             self.assertLessEqual(float(m.group(1)), 13.5, f"{name} 가 본문보다 크다")
 
+    def test_FAB_머리글과_숫자가_같은_정렬이다(self):
+        """머리글(M14)과 그 아래 숫자가 다른 쪽으로 붙으면 어느 칸의 수인지
+        눈으로 잇기 어렵다. 좁은 칸 다섯이 나란히 있어서 더 그렇다."""
+        th = re.search(r"th\.fcol\{[^}]*text-align:(\w+)", self.h)
+        td = re.search(r"td\.fcol\{[^}]*text-align:(\w+)", self.h)
+        self.assertIsNotNone(th, "FAB 머리글 정렬 지정이 없다")
+        self.assertIsNotNone(td, "FAB 숫자 정렬 지정이 없다")
+        self.assertEqual(th.group(1), td.group(1), "머리글과 숫자가 따로 논다")
+        self.assertEqual(td.group(1), "center")
+
+    def test_자릿수가_달라도_세로줄이_맞는다(self):
+        """7 / 36 / 100 이 섞여도 흔들리지 않게."""
+        m = re.search(r"td\.fcol\{[^}]*\}", self.h, re.S)
+        self.assertIn("tabular-nums", m.group(0))
+
     def test_reason_을_룰_단위로_끊는다(self):
         """한 줄로 흘리면 좁아진 칸에서 룰 이름 가운데가 갈라진다."""
         m = re.search(r"function reasonCell\(r\)\{.*?\n\}", self.h, re.S)

@@ -219,8 +219,10 @@
   /* FAB 다섯 점수 — 늘 떠 있는 컬럼이라 **정상은 흰색**으로 둔다.
      정상까지 등급색(초록)으로 칠하면 하루 1440행이 색으로 가득 차서
      정작 올라간 FAB 이 안 보인다. 눈이 가야 하는 건 경계 이상뿐이다. */
-  table.cases th.fcol{text-align:right}
-  table.cases td.fcol{text-align:right;white-space:nowrap;
+  /* 머리글(M14…)과 그 아래 숫자를 같이 가운데로. tabular-nums 라 자릿수가
+     달라도(7 / 36 / 100) 세로줄이 흐트러지지 않는다. */
+  table.cases th.fcol{text-align:center}
+  table.cases td.fcol{text-align:center;white-space:nowrap;
     font-variant-numeric:tabular-nums}
   table.cases td.fcol b{font-size:12px;font-weight:700}
   table.cases th.hcol,table.cases td.hcol{white-space:nowrap}
