@@ -302,5 +302,116 @@ class ChromaKey(unittest.TestCase):
         self.assertIn("normalizeCostume(", m)
 
 
+class Calibration(unittest.TestCase):
+    """의상별 캘리브레이션(patch) — 그림에서 재서 넣은 값이다.
+
+    ★그림마다 인물이 있는 자리가 다르다. 기본값 그대로 두면 눈 깜빡임이
+      엉뚱한 데서 일어나고 팔이 허공을 잡는다.
+    """
+
+    def setUp(self):
+        self.cfg = _py_costumes()
+
+    def _by(self, name):
+        return next(c for c in self.cfg.COSTUMES if c['name'] == name)
+
+    def test_새_의상은_모두_손_위치를_갖는다(self):
+        for n in ('평상복', '셔츠', '자켓', '테크자켓', '민소매'):
+            p = self._by(n).get('patch') or {}
+            self.assertIn('armA', p, n + ' 에 손 위치가 없다')
+            self.assertIn('armB', p, n + ' 에 손 위치가 없다')
+
+    def test_왼손이_오른손보다_왼쪽이다(self):
+        for c in self.cfg.COSTUMES:
+            p = c.get('patch') or {}
+            if 'armA' in p:
+                self.assertLess(p['armA'][0], p['armB'][0],
+                                c['name'] + ' 의 두 팔이 뒤집혔다')
+
+    def test_손_위치가_그림_안이다(self):
+        for c in self.cfg.COSTUMES:
+            p = c.get('patch') or {}
+            for k in ('armA', 'armB'):
+                if k in p:
+                    x, y = p[k]
+                    self.assertTrue(0.05 < x < 0.95, f"{c['name']} {k} x={x}")
+                    self.assertTrue(0.4 < y < 0.95, f"{c['name']} {k} y={y}")
+
+    def test_맞잡은_손은_영역을_좁게_잡는다(self):
+        """두 팔 영역이 겹치면 손가락이 찢어진다 (잠옷에서 겪은 것)."""
+        for n in ('잠옷', '테크자켓'):
+            p = self._by(n)['patch']
+            gap = p['armB'][0] - p['armA'][0]
+            self.assertLess(p['armA_rad'][0] * 2, gap,
+                            n + ' 의 두 팔 영역이 겹친다')
+
+    def test_얼굴이_내려간_만큼_눈도_내렸다(self):
+        """새 그림은 인물이 기존보다 아래에 있다. 얼굴만 옮기고 눈을 안
+        옮기면 눈 깜빡임이 이마에서 일어난다."""
+        for n in ('평상복', '자켓', '테크자켓', '민소매'):
+            p = self._by(n)['patch']
+            self.assertIn('faceC', p, n)
+            self.assertIn('eyeL', p, n)
+            # 눈은 얼굴보다 위에 있어야 한다
+            self.assertLess(p['eyeL'][1], p['faceC'][1], n)
+            self.assertLess(p['eyeL'][1], p['mouth'][1], n)
+
+    @staticmethod
+    def _js_patches():
+        """app.js 폴백 목록에서 이름별 patch 를 숫자로 뽑는다.
+
+        중괄호 짝을 세어 자른다 — 키가 늘면 문자열로 자르던 방식은 깨진다.
+        """
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            raw = f.read()
+        blk = raw[raw.index("const COSTUMES = ["):]
+        blk = blk[:blk.index("\n];")]
+        out = {}
+        for m in re.finditer(r"name:'([^']+)'", blk):
+            name = m.group(1)
+            nxt = blk.find("name:'", m.end())
+            seg = blk[m.end():nxt if nxt > 0 else len(blk)]
+            j = seg.find("patch:{")
+            if j < 0:
+                out[name] = {}
+                continue
+            i, depth = j + 6, 0
+            while i < len(seg):
+                if seg[i] == '{':
+                    depth += 1
+                elif seg[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            body = seg[j + 7:i]
+            vals = {}
+            for km in re.finditer(r"(\w+)\s*:\s*\[([-\d.,\s]+)\]", body):
+                vals[km.group(1)] = [float(x) for x in km.group(2).split(",")]
+            for km in re.finditer(r"(\w+)\s*:\s*([-\d.]+)\s*(?=[,}])", body):
+                vals.setdefault(km.group(1), float(km.group(2)))
+            out[name] = vals
+        return out
+
+    def test_화면_폴백에도_같은_값이_있다(self):
+        """두 곳이 어긋나면 혼자 띄웠을 때만 팔이 딴 데를 잡는다.
+        (실제로 무진복이 그랬다 — config.py 에만 patch 가 있었다.)"""
+        got = self._js_patches()
+        for c in self.cfg.COSTUMES:
+            want = c.get("patch") or {}
+            if not want:
+                continue
+            have = got.get(c["name"], {})
+            for k, v in want.items():
+                self.assertIn(k, have, f"{c['name']} 의 {k} 가 app.js 에 없다")
+                if isinstance(v, list):
+                    self.assertEqual([round(x, 4) for x in v],
+                                     [round(x, 4) for x in have[k]],
+                                     f"{c['name']} 의 {k} 값이 다르다")
+                else:
+                    self.assertAlmostEqual(v, have[k], places=4,
+                                           msg=f"{c['name']} 의 {k} 값이 다르다")
+
+
 if __name__ == "__main__":
     unittest.main()

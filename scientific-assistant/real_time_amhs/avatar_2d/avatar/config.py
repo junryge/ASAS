@@ -68,14 +68,26 @@ COSTUMES = [
     #   (배경의 badge 와 같은 규칙). 배경으로 옷이 바뀐 경우엔 배경 쪽 값이
     #   이긴다 — 장면이 정한 것이 옷보다 우선이다.
     #   평상복만 사원증을 뗀다. 나머지 넷은 근무 중에 입는 옷이다.
-    # ★손 위치(armA/armB)는 patch 를 안 걸었다. 그림을 받아 보고 재야 하는
-    #   값이라 눈대중으로 적으면 기본값보다 나빠진다. 화면 오른쪽 조절
-    #   손잡이로 맞추면 의상별로 저장된다(설정에 cfgs 로 남는다).
-    {"name": "평상복",   "src": "assets/casual.png",     "real": False, "badge": False},
-    {"name": "셔츠",     "src": "assets/shirt.png",      "real": False, "badge": True},
-    {"name": "자켓",     "src": "assets/jacket.png",     "real": False, "badge": True},
-    {"name": "테크자켓", "src": "assets/tech.png",       "real": False, "badge": True},
-    {"name": "민소매",   "src": "assets/sleeveless.png", "real": False, "badge": True},
+    # ★patch 는 **그림에서 재서** 넣었다 (눈대중 아님).
+    #   얼굴 — 새 그림은 인물이 기존보다 0.012~0.018 아래에 있다. 그만큼
+    #   눈·입·볼·목을 내렸다. 안 내리면 눈 깜빡임이 이마에서 일어난다.
+    #   손 — 옷마다 손이 다른 데 있다:
+    #     평상복   짧은 소매 · 손을 가슴 앞에 (반팔과 같은 배치)
+    #     셔츠     흰 장갑 주먹을 허리에
+    #     자켓     검정 장갑 주먹을 허리에
+    #     테크자켓 앞에서 맞잡음 — 좁게 잡아야 손가락이 안 찢어진다 (잠옷과 같은 이유)
+    #     민소매   맨팔이 옆으로 · 손은 뒤로 — 팔 자체를 잡는다
+    #   더 만지려면 화면 오른쪽 캘리브레이션 손잡이로 옮기면 의상별로 저장된다.
+    {"name": "평상복",   "src": "assets/casual.png",     "real": False, "badge": False,
+     "patch": {"eyeL": [0.405, 0.274], "eyeR": [0.572, 0.272], "mouth": [0.489, 0.362], "cheekL": [0.398, 0.314], "cheekR": [0.582, 0.312], "headC": [0.505, 0.222], "faceC": [0.49, 0.332], "neckY": 0.417, "neckPivot": [0.492, 0.467], "armA": [0.382, 0.848], "armB": [0.598, 0.848], "armA_rad": [0.07, 0.056], "armB_rad": [0.07, 0.056]}},
+    {"name": "셔츠",     "src": "assets/shirt.png",      "real": False, "badge": True,
+     "patch": {"armA": [0.395, 0.85], "armB": [0.605, 0.85], "armA_rad": [0.072, 0.058], "armB_rad": [0.072, 0.058]}},
+    {"name": "자켓",     "src": "assets/jacket.png",     "real": False, "badge": True,
+     "patch": {"eyeL": [0.405, 0.277], "eyeR": [0.572, 0.275], "mouth": [0.489, 0.365], "cheekL": [0.398, 0.317], "cheekR": [0.582, 0.315], "headC": [0.505, 0.225], "faceC": [0.49, 0.335], "neckY": 0.42, "neckPivot": [0.492, 0.47], "armA": [0.372, 0.858], "armB": [0.608, 0.858], "armA_rad": [0.075, 0.058], "armB_rad": [0.075, 0.058]}},
+    {"name": "테크자켓", "src": "assets/tech.png",       "real": False, "badge": True,
+     "patch": {"eyeL": [0.405, 0.277], "eyeR": [0.572, 0.275], "mouth": [0.489, 0.365], "cheekL": [0.398, 0.317], "cheekR": [0.582, 0.315], "headC": [0.505, 0.225], "faceC": [0.49, 0.335], "neckY": 0.42, "neckPivot": [0.492, 0.47], "armA": [0.352, 0.86], "armB": [0.56, 0.86], "armA_rad": [0.055, 0.045], "armB_rad": [0.055, 0.045]}},
+    {"name": "민소매",   "src": "assets/sleeveless.png", "real": False, "badge": True,
+     "patch": {"eyeL": [0.405, 0.28], "eyeR": [0.572, 0.278], "mouth": [0.489, 0.368], "cheekL": [0.398, 0.32], "cheekR": [0.582, 0.318], "headC": [0.505, 0.228], "faceC": [0.49, 0.338], "neckY": 0.423, "neckPivot": [0.492, 0.473], "armA": [0.19, 0.726], "armB": [0.81, 0.726], "armA_rad": [0.062, 0.105], "armB_rad": [0.062, 0.105]}},
 ]
 
 # ── 사원증 ────────────────────────────────────────────────────────────────
