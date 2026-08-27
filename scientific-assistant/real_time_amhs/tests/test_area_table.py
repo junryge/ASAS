@@ -307,6 +307,54 @@ class DashboardFabCols(unittest.TestCase):
         self.assertIsNotNone(m, "fillFabSel 이 없다")
         self.assertIn("${esc(f)}</label>", m.group(0))
 
+    # ── 속도 ────────────────────────────────────────────────────────
+    def test_바뀐_게_없으면_표를_다시_그리지_않는다(self):
+        """폴링은 3초마다인데 데이터는 1분에 한 번 바뀐다. 스무 번 중
+        열아홉 번은 똑같은 표를 다시 그리는 것이었다 — 하루치 1440행을
+        통째로 갈아치우면 브라우저가 214ms 멎는다(실측). 스크롤 위치도
+        그때마다 날아갔다."""
+        m = re.search(r"async function pollCases\(\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "pollCases 가 없다")
+        body = m.group(0)
+        self.assertIn("feedSig(", body, "서명 없이 매번 그린다")
+        self.assertIn("RENDER_SIG", body)
+        # 서명이 같으면 innerHTML 을 건드리지 않아야 한다
+        guard = body[body.index("RENDER_SIG"):]
+        self.assertIn("$('#cases').innerHTML", guard)
+
+    def test_서명에_표를_바꾸는_것이_다_들어있다(self):
+        """하나라도 빠지면 화면이 옛것에 머문다."""
+        m = re.search(r"function feedSig\(.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "feedSig 가 없다")
+        b = m.group(0)
+        for k in ("fd.day", "fd.latest", "fd.total", "filter", "cap", "newAt",
+                  "counts", "last_seen"):
+            self.assertIn(k, b, f"서명에 {k} 가 없다")
+
+    def test_한_번에_그리는_행에_상한이_있다(self):
+        """1440행 x 13칸 = 18,720칸을 통째로 그리면 브라우저가 멎는다."""
+        self.assertIn("const ROW_STEP", self.h)
+        m = re.search(r"function rowsHtml\(list, byId, newAt, cap\)", self.h)
+        self.assertIsNotNone(m, "rowsHtml 이 상한을 안 받는다")
+        body = re.search(r"function rowsHtml\(.*?\n\}", self.h, re.S).group(0)
+        self.assertIn("list.slice(0, cap)", body)
+        self.assertIn("data-more", body, "잘린 뒤 더 보는 길이 없다")
+
+    def test_남은_행이_몇_개인지_밝힌다(self):
+        """말없이 자르면 '데이터가 없어졌다' 로 읽힌다."""
+        body = re.search(r"function rowsHtml\(.*?\n\}", self.h, re.S).group(0)
+        self.assertIn("행 표시 중", body)
+
+    def test_필터를_바꾸면_상한을_처음으로_되돌린다(self):
+        """경계만 보다가 전체로 갔는데 상한이 그대로면 '왜 아래가 잘렸지'
+        가 된다."""
+        self.assertIn("ROW_CAP = ROW_STEP; pollCases();", self.h)
+        self.assertIn("PROW_CAP = ROW_STEP; paintPast();", self.h)
+
+    def test_추이도_바뀔_때만_다시_그린다(self):
+        m = re.search(r"async function pollCases\(\)\{.*?\n\}", self.h, re.S).group(0)
+        self.assertIn("STRIP_SIG", m)
+
     def test_구간_그래프에도_켠_FAB_을_넘긴다(self):
         """추이에 겹쳐 놓고 더블클릭했는데 거기서 사라지면 안 된다."""
         m = re.search(r"function graphFabs\(\)\{.*?\n\}", self.h, re.S)

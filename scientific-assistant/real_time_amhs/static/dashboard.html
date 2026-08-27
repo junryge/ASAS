@@ -240,6 +240,7 @@
      룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
   table.cases td.rcol{font-size:12px;line-height:1.5}
   table.cases td.rcol .rln{white-space:normal}
+  table.cases tr.morerow td{text-align:center;padding:14px;background:var(--panel)}
   /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
      범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
   .fabsel{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
@@ -2787,6 +2788,27 @@ function renderPolicy(p, ev){
 /* 목록 — 수집한 전체 데이터를 4등급으로, 경계 이상은 케이스와 연결 */
 let FEED = [];
 
+/* ── 왜 상한을 두나 ──
+   하루치는 1440행이고 한 행이 13칸이라 통째로 그리면 18,720칸이다. 실측으로
+   문자열 만들기 43ms + innerHTML 파싱 171ms = 214ms 동안 브라우저가 멎는다.
+   그걸 **3초마다** 했다. 관제는 위쪽 최신 행부터 보므로 처음엔 이만큼만
+   그리고 '더 보기' 로 늘린다. */
+const ROW_STEP = 300;
+let ROW_CAP = ROW_STEP, PROW_CAP = ROW_STEP;
+
+/* ── 왜 서명을 두나 ──
+   데이터는 1분에 한 번 바뀌는데 폴링은 3초마다 돈다. 스무 번 중 열아홉 번은
+   **똑같은 표를 다시 그리는 것**이다. 바뀐 게 없으면 건드리지 않는다.
+   ★서명에 든 것이 표를 바꾸는 전부다 — 하나라도 빠지면 화면이 옛것에
+     머문다. 행 내용 자체는 서버가 만들고, 서버 응답이 바뀌면 latest/total 이
+     같이 바뀐다 (피드 캐시가 파일 mtime 으로 걸려 있다). */
+function feedSig(fd, filter, cap, newAt){
+  return [fd.day, fd.latest, fd.earliest, fd.total, fd.shown, filter, cap, newAt,
+          JSON.stringify(fd.counts || {}),
+          CASES.map(c => c.id + '@' + (c.last_seen || '')).join(',')].join('|');
+}
+let RENDER_SIG = null, STRIP_SIG = null;
+
 /* ── 실시간·과거 공통 렌더 (표 모양은 완전히 동일, 보는 날짜만 다르다) ── */
 function applyFilter(rows, filter, byId){
   if(filter!=='all')   return rows.filter(r=>r.level===filter);
@@ -2890,11 +2912,17 @@ function hiCell(r){
     dif ? `<span class="dim" title="${esc('예측기 hot_area: '+hot)}"> ≠${esc(hot)}</span>` : ''}</td>`;
 }
 
-function rowsHtml(list, byId, newAt){
+function rowsHtml(list, byId, newAt, cap){
   // 기본 7칸 + (HI_FAB 1 + FAB 다섯)
   const ncol = 7 + (FABS.length ? FABS.length + 1 : 0);
   if(!list.length) return `<tr><td colspan="${ncol}" class="empty">해당 등급 데이터 없음</td></tr>`;
-  return list.map(r=>{
+  // 최신이 위다 — 상한을 걸어도 방금 들어온 행은 항상 보인다
+  const rest = (cap && list.length > cap) ? list.length - cap : 0;
+  const more = rest ? `<tr class="morerow"><td colspan="${ncol}">
+      <button class="act" data-more="1">아래 ${Math.min(rest, ROW_STEP)}행 더 보기</button>
+      <span class="note" style="margin-left:10px">${list.length - rest} / ${list.length}행 표시 중${
+        rest > ROW_STEP ? ` · 남은 ${rest}행` : ''}</span></td></tr>` : '';
+  return (rest ? list.slice(0, cap) : list).map(r=>{
     const isNew = newAt && r.datetime===newAt;
     return `<tr class="crow${isNew?' fresh':''}" data-at="${esc(r.at)}">
       <td><div>${esc((r.datetime||'').slice(11) || r.time)}</div>
@@ -2908,13 +2936,29 @@ function rowsHtml(list, byId, newAt){
       <td>${metricCell(r.metrics)}</td>
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
       <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
-    </tr>`;}).join('');
+    </tr>`;}).join('') + more;
 }
 
 /* 더블클릭 → 구간 그래프 (실시간·과거 각 표에 개별 바인딩) */
 function bindGraph(tbodySel){
   document.querySelectorAll(tbodySel+' tr.crow').forEach(el =>
     el.ondblclick = () => openGraph(el.dataset.at));
+  /* '더 보기' — 상한을 한 단계 올리고 그 표만 다시 그린다. 컨테이너에 걸지
+     않고 여기서 같이 거는 이유는, 표를 다시 그릴 때마다 버튼도 새로 생기기
+     때문이다. */
+  const btn = document.querySelector(tbodySel + ' [data-more]');
+  if(btn) btn.onclick = () => {
+    if(tbodySel === '#cases'){
+      ROW_CAP += ROW_STEP;
+      const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
+      RENDER_SIG = null;                       // 다음 폴링이 아니라 지금 그린다
+      $('#cases').innerHTML = rowsHtml(applyFilter(FEED, FILTER, byId), byId, NEW_AT, ROW_CAP);
+      bindGraph('#cases');
+    }else{
+      PROW_CAP += ROW_STEP;
+      paintPast();
+    }
+  };
 }
 
 /* ── 스코어 추이 스트립 — 하루치를 항상 띄워두고 폴링마다 갱신 ──
@@ -3177,12 +3221,24 @@ async function pollCases(){
       + ` · 갱신 ${new Date().toLocaleTimeString('ko-KR',{hour12:false})}`;
     if(fd.latest && fd.latest !== LAST_LATEST){ NEW_AT = fd.latest; LAST_LATEST = fd.latest; }
 
-    const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
-    $('#cases').innerHTML = rowsHtml(applyFilter(FEED, FILTER, byId), byId, NEW_AT);
-    bindGraph('#cases');
-    // 스코어 추이는 필터와 무관하게 하루치 전체 (폴링마다 갱신 = 실시간)
+    /* ★바뀐 게 없으면 표를 건드리지 않는다. 예전엔 3초마다 1440행을
+       통째로 다시 그려서(214ms) 화면이 계속 끊겼다 — 데이터는 1분에 한 번
+       바뀌는데도. 스크롤 위치·선택도 그때마다 날아갔다. */
+    const sig = feedSig(fd, FILTER, ROW_CAP, NEW_AT);
+    if(sig !== RENDER_SIG){
+      RENDER_SIG = sig;
+      const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
+      $('#cases').innerHTML = rowsHtml(applyFilter(FEED, FILTER, byId), byId, NEW_AT, ROW_CAP);
+      bindGraph('#cases');
+    }
+    // 스코어 추이도 같은 이유로 — 필터와는 무관하지만 그리는 지표·겹쳐보기가
+    // 바뀌면 다시 그려야 한다 (그쪽은 각자 redraw 를 부른다)
     if(fd.groups){ GROUPS = fd.groups; if(!STRIPG) STRIPG = GROUPS[0]?.id; }
-    drawStrip('#strip', '#stripinfo', FEED, STRIPG, STRIPK);
+    const ssig = [fd.day, fd.latest, fd.total, STRIPG, STRIPK].join('|');
+    if(ssig !== STRIP_SIG){
+      STRIP_SIG = ssig;
+      drawStrip('#strip', '#stripinfo', FEED, STRIPG, STRIPK);
+    }
   }catch(e){ console.error('목록 갱신 실패', e); }
 }
 
@@ -3217,7 +3273,7 @@ function pickedDay(){
 
 function paintPast(){
   const byId = Object.fromEntries(CASES.map(c=>[c.id,c]));
-  $('#pcases').innerHTML = rowsHtml(applyFilter(PFEED, PFILTER, byId), byId, null);
+  $('#pcases').innerHTML = rowsHtml(applyFilter(PFEED, PFILTER, byId), byId, null, PROW_CAP);
   bindGraph('#pcases');
   drawStrip('#pstrip', '#pstripinfo', PFEED, PSTRIPG, PSTRIPK);
 }
@@ -3248,6 +3304,7 @@ async function loadPast(day, opt){
       else return;
     }
     PFEED = fd.rows || [];
+    PROW_CAP = ROW_STEP;               // 날짜가 바뀌었으니 처음부터
     setFabs(fd);                       // 과거 탭도 같은 표 — 같은 컬럼
     if(fd.groups){ GROUPS = fd.groups; if(!PSTRIPG) PSTRIPG = GROUPS[0]?.id; }
     const cnt = fd.counts || {};
@@ -3367,7 +3424,7 @@ $('#pday').onchange  = () => {
 
 document.querySelectorAll('#pfilters button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#pfilters button').forEach(x=>x.classList.toggle('on',x===b));
-  PFILTER = b.dataset.f; paintPast();
+  PFILTER = b.dataset.f; PROW_CAP = ROW_STEP; paintPast();
 });
 /* ── 더블클릭 → 구간 그래프 ── */
 /* 추이에서 켜 둔 FAB 을 구간 그래프에도 그대로 넘긴다. 추이에 겹쳐 놓고
@@ -3438,7 +3495,7 @@ const lvColor = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)'
 /* 정상 행(케이스 없음) 상세 */
 document.querySelectorAll('#tab-live .filters button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#tab-live .filters button').forEach(x=>x.classList.toggle('on',x===b));
-  FILTER = b.dataset.f; pollCases();
+  FILTER = b.dataset.f; ROW_CAP = ROW_STEP; pollCases();
 });
 
 /* 상세 */
