@@ -2752,60 +2752,76 @@ buildCostumeChips();
 const dropEl=$('#drop');
 ['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.add('on');}));
 ['dragleave','drop'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.remove('on');}));
-wrap.addEventListener('drop',e=>{
-  const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(!f) return;
-  if(/\.(md|markdown|txt)$/i.test(f.name) || /^text\//.test(f.type)){
-    const r2=new FileReader();
-    r2.onload=()=>addDoc(f.name.replace(/\.[^.]+$/,''), r2.result);
-    r2.readAsText(f,'utf-8');
-    return;
-  }
-  if(!/^image\//.test(f.type)) return;
-  const rd=new FileReader();
-  rd.onload=async ()=>{
-    const name = (f.name||'커스텀').replace(/\.[^.]+$/,'').slice(0,10);
-    /* ★서버로 띄웠으면 **파일로 남긴다**. 예전엔 data URL 로 메모리에만
-       들고 있어서 새로고침하면 사라졌고, config.py 에 미리 적어 둔 의상과도
-       이어지지 않았다 (같은 그림인데 칩이 두 개가 됐다).
-       파일 이름이 config 의 src 와 같으면 그 자리를 채운 것이므로 새 칩을
-       만들지 않고 그 칸으로 간다 — 사원증 규칙이 거기 붙어 있다. */
-    if(window.SERVER){
-      try{
-        const r = await fetch('/api/costume', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({filename: f.name || name, data: rd.result})
-        }).then(x=>x.json());
-        if(r && r.ok){
-          if(r.slot >= 0 && COSTUMES[r.slot]){
-            COSTUMES[r.slot].cfg = null;            // 새 그림이니 캘리브레이션 초기화
-            setCostume(r.slot);
-            sys('의상 그림 저장됨 — ' + COSTUMES[r.slot].name + ' (' + r.src + ')');
-          }else{
-            COSTUMES.push({name, src:r.src, cfg:null, real:false});
-            buildCostumeChips();
-            setCostume(COSTUMES.length-1);
-            sys('의상 추가·저장됨 — ' + r.src);
-          }
-          calib=true; $('#calibChip').classList.add('on'); renderHandles();
-          return;
+
+const readAs = (f, how) => new Promise((ok, no) => {
+  const r = new FileReader();
+  r.onload = () => ok(r.result);
+  r.onerror = () => no(new Error(f.name + ' 을(를) 읽지 못했습니다'));
+  how === 'text' ? r.readAsText(f, 'utf-8') : r.readAsDataURL(f);
+});
+
+/* 의상 그림 한 장. 서버로 띄웠으면 **파일로 남긴다** — 예전엔 data URL 로
+   메모리에만 들고 있어서 새로고침하면 사라졌고, config.py 에 미리 적어 둔
+   의상과도 이어지지 않아 같은 그림인데 칩이 두 개가 됐다.
+   파일 이름이 config 의 src 와 같으면 그 자리를 채운 것이므로 새 칩을
+   만들지 않고 그 칸으로 간다 — 사원증 규칙이 거기 붙어 있다. */
+async function addCostumeFile(f){
+  const name = (f.name || '커스텀').replace(/\.[^.]+$/, '').slice(0, 10);
+  const data = await readAs(f, 'dataurl');
+  if(window.SERVER){
+    try{
+      const r = await fetch('/api/costume', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({filename: f.name || name, data})
+      }).then(x=>x.json());
+      if(r && r.ok){
+        if(r.slot >= 0 && COSTUMES[r.slot]){
+          COSTUMES[r.slot].cfg = null;              // 새 그림이니 캘리브레이션 초기화
+          setCostume(r.slot);
+          return {ok:true, msg:COSTUMES[r.slot].name + ' ← ' + r.src};
         }
-        sys('의상 저장 실패 — ' + ((r && r.error && r.error.message) || '알 수 없음')
-            + ' · 이번만 화면에 올립니다');
-      }catch(e){
-        sys('의상 저장 실패(' + e.message + ') · 이번만 화면에 올립니다');
+        COSTUMES.push({name, src:r.src, cfg:null, real:false});
+        buildCostumeChips();
+        setCostume(COSTUMES.length-1);
+        return {ok:true, msg:name + ' ← ' + r.src + ' (새 의상)'};
       }
+      return {ok:false, msg:(f.name||name) + ' — '
+              + ((r && r.error && r.error.message) || '저장 실패')};
+    }catch(e){
+      return {ok:false, msg:(f.name||name) + ' — 저장 실패(' + e.message + ')'};
     }
-    // 서버 없이 HTML 만 열었을 때(데모) — 예전처럼 이 창에서만 쓴다
-    COSTUMES.push({name, src:rd.result});
-    const el=document.createElement('div');
-    el.className='chip'; el.textContent=name;
-    el.onclick=()=>setCostume(COSTUMES.length-1);
-    $('#costumeChips').appendChild(el);
-    setCostume(COSTUMES.length-1);
-    calib=true; $('#calibChip').classList.add('on'); renderHandles();
-    sys('의상 추가됨(이 창에서만) · 프레이밍이 다르면 캘리브레이션 핸들로 맞추세요');
-  };
-  rd.readAsDataURL(f);
+  }
+  // 서버 없이 HTML 만 열었을 때(데모) — 이 창에서만 쓴다
+  COSTUMES.push({name, src:data});
+  buildCostumeChips();
+  setCostume(COSTUMES.length-1);
+  return {ok:true, msg:name + ' (이 창에서만)'};
+}
+
+wrap.addEventListener('drop', async e=>{
+  /* ★한 번에 여러 장을 받는다. 예전엔 files[0] 만 봐서, 다섯 벌을 넣으려면
+     다섯 번 끌어야 했고 나머지 넉 장은 말없이 버려졌다. */
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+  if(!files.length) return;
+
+  for(const f of files.filter(f => /\.(md|markdown|txt)$/i.test(f.name)
+                                || /^text\//.test(f.type))){
+    try{ addDoc(f.name.replace(/\.[^.]+$/,''), await readAs(f, 'text')); }
+    catch(err){ sys(err.message); }
+  }
+
+  const imgs = files.filter(f => /^image\//.test(f.type));
+  if(!imgs.length) return;
+  if(imgs.length > 1) sys('의상 그림 ' + imgs.length + '장 넣는 중…');
+  const done = [], fail = [];
+  for(const f of imgs){                     // 하나씩 — 자리 배정이 섞이면 안 된다
+    const r = await addCostumeFile(f);
+    (r.ok ? done : fail).push(r.msg);
+  }
+  calib = true; $('#calibChip').classList.add('on'); renderHandles();
+  if(done.length) sys('의상 저장됨 — ' + done.join(' · '));
+  if(fail.length) sys('못 넣은 것 — ' + fail.join(' · '));
+  if(done.length) sys('프레이밍이 다르면 캘리브레이션 핸들로 손 위치를 맞추세요');
 });
 
 /* ---------- 말풍선 / 로그 ---------- */

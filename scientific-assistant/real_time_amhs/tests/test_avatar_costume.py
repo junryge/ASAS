@@ -191,5 +191,50 @@ class SaveCostumeImage(unittest.TestCase):
         self.assertEqual(r["src"], "assets/costume.png")
 
 
+class DropHandler(unittest.TestCase):
+    """끌어다 놓기 — 화면 쪽(app.js)을 글자로 검사한다."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(AV, "static", "app.js"), encoding="utf-8") as f:
+            cls.js = f.read()
+
+    def _drop(self, code_only=False):
+        m = re.search(r"wrap\.addEventListener\('drop'.*?\n\}\);", self.js, re.S)
+        self.assertIsNotNone(m, "drop 처리가 없다")
+        d = m.group(0)
+        # 주석에 옛 코드를 적어 두면(왜 바꿨는지) 검사에 걸린다 — 걷고 본다
+        return re.sub(r"/\*.*?\*/|//[^\n]*", "", d, flags=re.S) if code_only else d
+
+    def test_한_번에_여러_장을_받는다(self):
+        """예전엔 files[0] 만 봐서 다섯 벌을 넣으려면 다섯 번 끌어야 했고
+        나머지 넉 장은 말없이 버려졌다."""
+        d = self._drop(code_only=True)
+        self.assertIn("Array.from", d)
+        self.assertNotIn("files[0]", d, "첫 장만 보고 나머지를 버린다")
+
+    def test_그림을_하나씩_차례로_넣는다(self):
+        """한꺼번에 보내면 자리(slot) 배정이 섞인다."""
+        d = self._drop()
+        self.assertIn("for(const f of imgs)", d)
+        self.assertIn("await addCostumeFile(f)", d)
+
+    def test_못_넣은_것을_말해준다(self):
+        """조용히 버리면 왜 안 들어갔는지 알 수 없다."""
+        self.assertIn("못 넣은 것", self._drop())
+
+    def test_서버로_띄웠으면_파일로_저장한다(self):
+        m = re.search(r"async function addCostumeFile\(f\)\{.*?\n\}",
+                      self.js, re.S).group(0)
+        self.assertIn("window.SERVER", m)
+        self.assertIn("'/api/costume'", m)
+
+    def test_설정에_있는_자리면_새_칩을_안_만든다(self):
+        """같은 그림인데 칩이 두 개가 되면 안 된다."""
+        m = re.search(r"async function addCostumeFile\(f\)\{.*?\n\}",
+                      self.js, re.S).group(0)
+        self.assertIn("r.slot >= 0", m)
+
+
 if __name__ == "__main__":
     unittest.main()
