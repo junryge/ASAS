@@ -307,6 +307,20 @@ class DashboardFabCols(unittest.TestCase):
         self.assertIsNotNone(m, "fillFabSel 이 없다")
         self.assertIn("${esc(f)}</label>", m.group(0))
 
+    def test_구간_그래프에도_켠_FAB_을_넘긴다(self):
+        """추이에 겹쳐 놓고 더블클릭했는데 거기서 사라지면 안 된다."""
+        m = re.search(r"function graphFabs\(\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "graphFabs 가 없다")
+        self.assertIn("fabs=", m.group(0))
+        self.assertIn("graphFabs()", self.h)
+
+    def test_보고_있는_탭의_선택을_넘긴다(self):
+        """실시간과 과거는 따로 고른다 — 과거를 보는데 실시간 선택이 가면
+        화면에 없는 선이 그래프에만 뜬다."""
+        m = re.search(r"function graphFabs\(\)\{.*?\n\}", self.h, re.S).group(0)
+        self.assertIn("FABSEL", m)
+        self.assertIn("PFABSEL", m)
+
     def test_표_글자가_본문보다_크지_않다(self):
         """컬럼이 늘어난 표다. 어느 칸이든 본문(13.5px)보다 커지면 한 행이
         높아져서 한 화면에 들어오는 행 수가 줄어든다."""
@@ -394,6 +408,99 @@ class FilesSig(unittest.TestCase):
     def test_아무것도_안_바뀌면_서명이_같다(self):
         self._put("M16HUB", 40)
         self.assertEqual(F.files_sig(DAY, self.cfg), F.files_sig(DAY, self.cfg))
+
+
+class GraphOverlay(unittest.TestCase):
+    """구간 그래프(더블클릭)에도 체크한 FAB 을 같이 그린다.
+
+    추이에 겹쳐 놓고 더블클릭했는데 거기서 사라지면 같은 것을 두 번 골라야
+    한다 — 두 화면이 같은 것을 보여주는 게 이 기능의 요점이다.
+    """
+
+    def setUp(self):
+        import datetime as _dt
+        self.cfg = deepcopy(load_config())
+        self.rows, t0 = [], _dt.datetime(2026, 8, 11, 12, 0)
+        for i in range(40):
+            t = t0 + _dt.timedelta(minutes=i)
+            r = {"datetime": t.strftime("%Y-%m-%d %H:%M"),
+                 "unified_risk_score": "40", "hot_area": "M16HUB",
+                 "reason": "발동: M16HUB[R-A_sus]"}
+            for k, v in (("M14", 7), ("M14B", 5), ("M16A", 14),
+                         ("M16B", 9), ("M16HUB", 25)):
+                r[f"{k}_pts_RA"] = str(v)
+                r[f"{k}_score"] = str(v)
+            self.rows.append(r)
+        self.center = t0 + _dt.timedelta(minutes=20)
+
+    def _svg(self, fabs):
+        import graphs
+        return graphs.render(self.rows, self.center, minutes=40,
+                             cfg=self.cfg, fabs=fabs)
+
+    def _fab_lines(self, svg):
+        return svg.count('stroke-width="1.15"')
+
+    def test_체크한_수만큼_선이_늘어난다(self):
+        self.assertEqual(self._fab_lines(self._svg(None)), 0)
+        self.assertEqual(self._fab_lines(self._svg(["M16HUB"])), 1)
+        self.assertEqual(self._fab_lines(self._svg(["M14", "M16A", "M16HUB"])), 3)
+
+    def test_안_주면_예전과_똑같이_그린다(self):
+        """겹쳐보기를 안 켠 사람에게는 화면이 그대로여야 한다."""
+        self.assertEqual(self._svg(None), self._svg([]))
+
+    def test_모르는_FAB_이름은_무시한다(self):
+        """주소창에 아무 이름이나 넣어도 그래프는 나와야 한다."""
+        svg = self._svg(["M99", "', 'DROP", "M16HUB"])
+        self.assertEqual(self._fab_lines(svg), 1)
+
+    def test_FAB_선이_전체_점수선보다_가늘다(self):
+        """전체 점수가 기준선이라는 게 굵기로도 보여야 한다."""
+        svg = self._svg(["M16HUB"])
+        self.assertIn('stroke-width="1.6"', svg)          # 전체 점수
+        self.assertIn('stroke-width="1.15"', svg)         # FAB
+
+    def test_범례에_이름을_적는다(self):
+        """색만으로 구분하면 색약·흑백 인쇄에서 어느 FAB 인지 모른다."""
+        svg = self._svg(["M16HUB"])
+        self.assertIn("M16HUB", svg)
+        self.assertIn("area_score", svg)
+
+    def test_점수는_목록과_같은_함수로_낸다(self):
+        """여기서 따로 계산하면 같은 시각인데 화면마다 다른 수가 나온다."""
+        import graphs
+        t = F.area_table(self.rows, day=None, cfg=self.cfg)
+        want = t["rows"]["2026-08-11T12:00:00"]["s"]["M16HUB"]
+        series = graphs._fab_series(
+            [(__import__("sentinel")._row_dt(r), r) for r in self.rows],
+            ["M16HUB"], self.cfg)
+        self.assertEqual(int(series[0][1][0][1]), want)
+
+
+class ColorTable(unittest.TestCase):
+    """FAB 선 색은 파이썬(fab_score)과 화면(dashboard.html) 두 곳에 있다.
+
+    ★두 벌이라 어긋날 수 있다. 어긋나면 추이 그래프와 구간 그래프가 같은
+      FAB 을 다른 색으로 그린다 — 보는 사람은 다른 FAB 인 줄 안다.
+      그래서 여기서 묶어 둔다.
+    """
+
+    def test_화면과_서버의_색표가_같다(self):
+        import os
+        with open(os.path.join(util.BASE, "static", "dashboard.html"),
+                  encoding="utf-8") as f:
+            h = f.read()
+        m = re.search(r"const FAB_COLOR = \{(.*?)\};", h, re.S)
+        self.assertIsNotNone(m, "화면에 FAB_COLOR 표가 없다")
+        web = dict(re.findall(r"(\w+)\s*:\s*'(#[0-9a-fA-F]{6})'", m.group(1)))
+        self.assertEqual({k: v.lower() for k, v in web.items()},
+                         {k: v.lower() for k, v in F.FAB_COLOR.items()},
+                         "dashboard.html 과 fab_score.FAB_COLOR 가 어긋났다")
+
+    def test_모르는_FAB_도_색이_나온다(self):
+        """설정에 FAB 이 하나 늘어도 그래프가 터지면 안 된다."""
+        self.assertTrue(F.fab_color("M99").startswith("#"))
 
 
 if __name__ == "__main__":

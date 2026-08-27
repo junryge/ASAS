@@ -1005,6 +1005,33 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None,
     }
 
 
+# ── FAB 선 색 ──────────────────────────────────────────────────────────
+# 추이 그래프·구간 그래프에 FAB 영역점수를 겹쳐 그릴 때 쓰는 색.
+#
+# ★눈으로 고른 값이 아니다. 다크 배경(#0D1119)에서 다섯이 서로, 그리고
+#   전체 점수선(시안 #3DDBE8)·등급 점(노랑·주황·빨강)과도 구분되는지
+#   OKLab ΔE 로 재서 골랐다 — 적록색약 8.1(기준 8) · 정상시야 15.9(기준 15) ·
+#   등급 밴드 네 개 위에서 대비 3.08:1 이상.
+#   손으로 고른 조합은 전부 떨어졌다: 파랑과 보라는 눈에는 달라 보여도
+#   적록색약에서 ΔE 1.3 까지 붙는다. 바꾸려면 다시 재고 바꿀 것.
+# ★주황·빨강 계열은 통과하는 조합이 있어도 뺐다. 관제 화면에서 그 색은
+#   '위험' 이라는 뜻이라, 그냥 FAB 선인데 경보로 읽힌다.
+# ★static/dashboard.html 의 FAB_COLOR 와 **같아야 한다**
+#   (tests/test_area_table.py 가 두 표가 어긋나면 실패시킨다).
+FAB_COLOR = {
+    "M14":    "#3f93f7",
+    "M14B":   "#3d8f40",
+    "M16A":   "#824df9",
+    "M16B":   "#b973c6",
+    "M16HUB": "#d7038b",
+}
+FAB_COLOR_FALLBACK = "#8FA0B6"
+
+
+def fab_color(fab: str) -> str:
+    return FAB_COLOR.get(str(fab or "").upper(), FAB_COLOR_FALLBACK)
+
+
 def files_sig(day: str, cfg: dict | None = None) -> tuple:
     """FAB 분리 파일 다섯의 (mtime, 크기) — 피드 캐시 서명용.
 
@@ -1032,7 +1059,7 @@ def files_sig(day: str, cfg: dict | None = None) -> tuple:
     return tuple(out)
 
 
-def area_table(rows: list[dict], day: str | None = None,
+def area_table(rows: list[dict], day: str | list | None = None,
                cfg: dict | None = None) -> dict:
     """하루치 행 전부의 **FAB 다섯 점수(0~100)** 를 한 번에 낸다 — 목록용.
 
@@ -1074,28 +1101,37 @@ def area_table(rows: list[dict], day: str | None = None,
 
     # ── FAB 분리 파일을 FAB 당 한 번만 읽어 분 단위로 색인 ──────────────
     own: dict[str, dict] = {}
-    day_q = "".join(ch for ch in str(day or "") if ch.isdigit())[:8]
+    # day 는 하나여도 되고 여러 개여도 된다 — 구간 그래프는 자정을 걸치면
+    # 이틀치를 본다. 그때 한 날만 색인하면 나머지 날은 되계산으로 떨어져,
+    # 같은 화면 안에서 앞뒤 값의 출처가 달라진다.
+    days = [day] if isinstance(day, str) else list(day or [])
+    day_q = []
+    for d in days:
+        q = "".join(ch for ch in str(d or "") if ch.isdigit())[:8]
+        if q and q not in day_q:
+            day_q.append(q)
     if day_q:
         from lp_client import sys_cfg
         from store_csv import read_day
         for f in codes:
-            try:
-                frows = read_day(day_q, sys_cfg(cfg, f))
-            except Exception:                          # noqa: BLE001
-                continue                               # 그 FAB 만 되계산으로
             ix = {}
-            for fr in frows or []:
-                d = _row_dt(fr)
-                if d is None:
-                    continue
-                # 정규화된 FAB 행은 area_score 가 unified_risk_score 자리로
-                # 옮겨져 있다 (jupyter_csv._fab_rows) — 둘 다 본다.
-                for col in ("area_score", "unified_risk_score"):
-                    v = _num(fr.get(col))
-                    if v is not None:
-                        ix[_key(d)] = {"area": int(round(float(v))),
-                                       "level": str(fr.get("area_level") or "").strip()}
-                        break
+            for dq in day_q:
+                try:
+                    frows = read_day(dq, sys_cfg(cfg, f))
+                except Exception:                      # noqa: BLE001
+                    continue                           # 그 날만 되계산으로
+                for fr in frows or []:
+                    d = _row_dt(fr)
+                    if d is None:
+                        continue
+                    # 정규화된 FAB 행은 area_score 가 unified_risk_score 자리로
+                    # 옮겨져 있다 (jupyter_csv._fab_rows) — 둘 다 본다.
+                    for col in ("area_score", "unified_risk_score"):
+                        v = _num(fr.get(col))
+                        if v is not None:
+                            ix[_key(d)] = {"area": int(round(float(v))),
+                                           "level": str(fr.get("area_level") or "").strip()}
+                            break
             if ix:
                 own[f] = ix
 

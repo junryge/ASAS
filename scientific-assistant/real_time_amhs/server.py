@@ -1295,7 +1295,14 @@ def api_graph():
     if not rows:
         rows = C["state"].get("last_rows") or []
 
-    svg = render(rows, at, minutes, cfg=C["cfg"])
+    # 추이 그래프에서 체크한 FAB 을 그대로 받아 같이 그린다 (?fabs=M14,M16HUB).
+    # 모르는 코드는 버린다 — 주소창으로 아무 이름이나 넣어도 그래프는 나와야 한다.
+    import fab_score
+    known = fab_score.fabs(C["cfg"])
+    want = [f.strip().upper() for f in (request.args.get("fabs") or "").split(",")]
+    picked = [f for f in known if f in want]
+
+    svg = render(rows, at, minutes, cfg=C["cfg"], fabs=picked)
     return app.response_class(svg, mimetype="image/svg+xml")
 
 

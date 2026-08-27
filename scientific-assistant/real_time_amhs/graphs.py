@@ -148,7 +148,53 @@ def _incidents(pts, floor=60):
     return out
 
 
-def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
+def _fab_color(code: str) -> str:
+    """FAB 선 색 — fab_score 가 원본이다 (화면·구간 그래프가 같은 색이어야
+    한다). 못 불러와도 그래프는 나와야 하니 회색으로 물러선다."""
+    try:
+        import fab_score
+        return fab_score.fab_color(code)
+    except Exception:                                  # noqa: BLE001
+        return "#8FA0B6"
+
+
+def _fab_series(pts, fabs, cfg):
+    """[(FAB, [(시각, 점수), …]), …] — 체크한 FAB 만, 값이 있는 분만.
+
+    점수는 fab_score.area_table 이 낸다 — 목록·추이 그래프와 **같은 함수**다.
+    여기서 따로 계산하면 같은 시각인데 화면마다 다른 수가 나온다.
+    """
+    codes = [str(f or "").upper() for f in (fabs or []) if str(f or "").strip()]
+    if not codes or not pts:
+        return []
+    try:
+        import fab_score
+        days = sorted({t.strftime("%Y%m%d") for t, _r in pts})
+        tab = fab_score.area_table([r for _t, r in pts], day=days, cfg=cfg)
+    except Exception as e:                             # noqa: BLE001
+        print(f"[GRAPH] ⚠️ FAB 점수 계산 실패 — 선을 뺍니다: {e}")
+        return []
+    order = [c for c in tab.get("fabs", []) if c in codes]   # 설정 순서를 따른다
+    out = []
+    for c in order:
+        series = []
+        for t, _r in pts:
+            got = tab["rows"].get(t.replace(second=0, microsecond=0).isoformat())
+            v = (got or {}).get("s", {}).get(c)
+            if v is not None:
+                series.append((t, float(v)))
+        if series:
+            out.append((c, series))
+    return out
+
+
+def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
+    """구간 그래프.
+
+    fabs 를 주면 그 FAB 의 영역점수(area_score)를 스코어 패널에 겹쳐 그린다.
+    화면의 추이 그래프에서 체크한 것이 그대로 넘어온다 — 추이에서 켜 놓고
+    더블클릭했는데 여기서 사라지면 같은 걸 두 번 골라야 한다.
+    """
     cfg = cfg or load_config()
     pts = window_rows(rows, center, minutes, cfg)
     if not pts:
@@ -220,6 +266,18 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
         o.append(f'<text x="{L-7}" y="{y+4:.1f}" font-size="10" fill="{_TX2}" '
                  f'text-anchor="end">{v}</text>')
 
+    # ── 체크한 FAB 의 영역점수를 같은 축에 겹쳐 그린다 ──
+    # ★본선보다 **먼저** 긋는다. 전체 점수가 위에 있어야 무엇이 기준선인지
+    #   흐려지지 않는다. 굵기도 본선(1.6)보다 가늘게(1.15) 한다.
+    fab_lines = _fab_series(pts, fabs, cfg)
+    for code, series in fab_lines:
+        if len(series) < 2:
+            continue
+        fd = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{SY(v):.1f}"
+                      for k, (t, v) in enumerate(series))
+        o.append(f'<path d="{fd}" fill="none" stroke="{_fab_color(code)}" '
+                 f'stroke-width="1.15" opacity="0.95"/>')
+
     sv = [(t, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
     d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{SY(v):.1f}" for k, (t, v) in enumerate(sv))
     o.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.6"/>')
@@ -261,6 +319,21 @@ def render(rows, center, minutes=60, width=1000, cfg=None) -> str:
              f'fill="{_SCORE_COLOR}" font-weight="700">스코어</text>')
     o.append(f'<text x="{L+44}" y="{top_score+SCORE_H+14:.1f}" font-size="9.5" fill="{_TX2}" '
              f'font-family="ui-monospace,Menlo,Consolas,monospace">unified_risk_score</text>')
+
+    # ── FAB 범례 — 색만으로 구분하지 않게 이름을 같이 적는다 ──
+    if fab_lines:
+        lx = L + 190
+        for code, series in fab_lines:
+            c = _fab_color(code)
+            o.append(f'<line x1="{lx}" y1="{top_score+SCORE_H+10.5:.1f}" x2="{lx+13}" '
+                     f'y2="{top_score+SCORE_H+10.5:.1f}" stroke="{c}" stroke-width="2.4"/>')
+            top = max((v for _t, v in series), default=0)
+            txt = f'{code} 최고 {top:.0f}' if series else f'{code} 값 없음'
+            o.append(f'<text x="{lx+17}" y="{top_score+SCORE_H+14:.1f}" font-size="9.5" '
+                     f'fill="{c}" font-weight="700">{_e(txt)}</text>')
+            lx += 22 + len(txt) * 6.0
+        o.append(f'<text x="{L}" y="{top_score+SCORE_H+27:.1f}" font-size="9" fill="{_TX2}">'
+                 f'가는 선 = 각 FAB 영역점수(area_score) · 굵은 청록 = 전체 점수</text>')
 
     # ── 지표 섹션 ──
     if metrics:

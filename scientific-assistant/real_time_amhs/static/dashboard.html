@@ -3366,6 +3366,15 @@ document.querySelectorAll('#pfilters button').forEach(b => b.onclick = () => {
   PFILTER = b.dataset.f; paintPast();
 });
 /* ── 더블클릭 → 구간 그래프 ── */
+/* 추이에서 켜 둔 FAB 을 구간 그래프에도 그대로 넘긴다. 추이에 겹쳐 놓고
+   더블클릭했는데 거기서 사라지면 같은 걸 두 번 골라야 한다.
+   보고 있는 탭의 선택을 쓴다 — 실시간과 과거는 따로 고르기 때문이다. */
+function graphFabs(){
+  const set = $('#tab-past').classList.contains('hidden') ? FABSEL : PFABSEL;
+  const on = FABS.filter(f => set.has(f));
+  return on.length ? '&fabs=' + encodeURIComponent(on.join(',')) : '';
+}
+
 let GAT = null;
 async function openGraph(at){
   GAT = at;
@@ -3386,7 +3395,8 @@ async function drawGraph(){
     // 그래프 + 기여도 추정을 같이 띄운다 — '왜 이 점수인가' 가 그래프 옆에 있어야
     // 관제가 다음 행동을 정할 수 있다. 기여도는 실패해도 그래프는 나오게 따로 처리.
     const [svg, con] = await Promise.all([
-      fetch(withSys(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}`)).then(r=>r.text()),
+      fetch(withSys(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}${
+            graphFabs()}`)).then(r=>r.text()),
       fetch(withSys(`/api/contrib?at=${encodeURIComponent(GAT)}`)).then(r=>r.text()).catch(()=>''),
     ]);
     $('#gbody').innerHTML = svg
