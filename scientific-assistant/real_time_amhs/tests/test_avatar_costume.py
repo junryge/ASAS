@@ -345,16 +345,27 @@ class Calibration(unittest.TestCase):
             self.assertLess(p['armA_rad'][0] * 2, gap,
                             n + ' 의 두 팔 영역이 겹친다')
 
-    def test_얼굴이_내려간_만큼_눈도_내렸다(self):
-        """새 그림은 인물이 기존보다 아래에 있다. 얼굴만 옮기고 눈을 안
-        옮기면 눈 깜빡임이 이마에서 일어난다."""
-        for n in ('평상복', '자켓', '테크자켓', '민소매'):
-            p = self._by(n)['patch']
-            self.assertIn('faceC', p, n)
-            self.assertIn('eyeL', p, n)
-            # 눈은 얼굴보다 위에 있어야 한다
-            self.assertLess(p['eyeL'][1], p['faceC'][1], n)
-            self.assertLess(p['eyeL'][1], p['mouth'][1], n)
+    # 얼굴 좌표는 patch 로 옮기지 않는다 — 그림 쪽을 맞췄기 때문이다.
+    FACE_KEYS = ("eyeL", "eyeR", "cheekL", "cheekR", "faceC", "headC",
+                 "neckY", "neckPivot")
+
+    def test_얼굴_좌표를_patch_로_옮기지_않는다(self):
+        """★그림을 기존 캘리브레이션에 **정렬**해서 넣었다 (원본을 다시
+        키잉하면서 눈 위치로 맞췄다). 그래서 눈·볼·목 좌표를 옷마다 따로
+        적을 이유가 없다 — 적기 시작하면 옷을 새로 넣을 때마다 열 개 넘는
+        숫자를 손으로 맞춰야 한다.
+        입만 예외다 (코가 길게 그려진 그림은 입이 코끝에 붙는다)."""
+        for c in self.cfg.COSTUMES:
+            p = c.get("patch") or {}
+            for k in self.FACE_KEYS:
+                self.assertNotIn(k, p,
+                                 f"{c['name']} 이 얼굴 좌표({k})를 따로 옮긴다 — "
+                                 f"그림을 정렬하는 쪽이 맞다")
+
+    # ※ 그림이 실제로 정렬됐는지는 여기서 재지 않는다. 앞머리 길이가
+    #    그림마다 달라 피부만으로는 얼굴 위치를 안정적으로 못 잡는다
+    #    (재 보니 같은 지표가 0.057~0.221 로 흩어졌다). 제대로 재려면 눈
+    #    패치 상관(NCC)이 필요하고, 그건 그림을 만들 때 이미 했다.
 
     @staticmethod
     def _js_patches():

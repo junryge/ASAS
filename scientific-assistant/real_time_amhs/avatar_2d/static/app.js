@@ -30,11 +30,11 @@ const COSTUMES = [
      badge : 이 옷을 고르면 사원증을 켤지/끌지. 없으면 지금 상태 유지.
      ★이 목록은 폴백이다 — 원본은 avatar/config.py 이고 /api/config 로 덮인다
        (real_time_amhs/tests/test_avatar_costume.py 가 두 목록을 묶는다). */
-  {name:'평상복',   src:"assets/casual.png",     cfg:null, real:false, badge:false, patch:{eyeL: [0.405, 0.274], eyeR: [0.572, 0.272], mouth: [0.489, 0.362], cheekL: [0.398, 0.314], cheekR: [0.582, 0.312], headC: [0.505, 0.222], faceC: [0.49, 0.332], neckY: 0.417, neckPivot: [0.492, 0.467], armA: [0.382, 0.848], armB: [0.598, 0.848], armA_rad: [0.07, 0.056], armB_rad: [0.07, 0.056]}},
-  {name:'셔츠',     src:"assets/shirt.png",      cfg:null, real:false, badge:true, patch:{armA: [0.395, 0.85], armB: [0.605, 0.85], armA_rad: [0.072, 0.058], armB_rad: [0.072, 0.058]}},
-  {name:'자켓',     src:"assets/jacket.png",     cfg:null, real:false, badge:true, patch:{eyeL: [0.405, 0.277], eyeR: [0.572, 0.275], mouth: [0.489, 0.365], cheekL: [0.398, 0.317], cheekR: [0.582, 0.315], headC: [0.505, 0.225], faceC: [0.49, 0.335], neckY: 0.42, neckPivot: [0.492, 0.47], armA: [0.372, 0.858], armB: [0.608, 0.858], armA_rad: [0.075, 0.058], armB_rad: [0.075, 0.058]}},
-  {name:'테크자켓', src:"assets/tech.png",       cfg:null, real:false, badge:true, patch:{eyeL: [0.405, 0.277], eyeR: [0.572, 0.275], mouth: [0.489, 0.365], cheekL: [0.398, 0.317], cheekR: [0.582, 0.315], headC: [0.505, 0.225], faceC: [0.49, 0.335], neckY: 0.42, neckPivot: [0.492, 0.47], armA: [0.352, 0.86], armB: [0.56, 0.86], armA_rad: [0.055, 0.045], armB_rad: [0.055, 0.045]}},
-  {name:'민소매',   src:"assets/sleeveless.png", cfg:null, real:false, badge:true, patch:{eyeL: [0.405, 0.28], eyeR: [0.572, 0.278], mouth: [0.489, 0.368], cheekL: [0.398, 0.32], cheekR: [0.582, 0.318], headC: [0.505, 0.228], faceC: [0.49, 0.338], neckY: 0.423, neckPivot: [0.492, 0.473], armA: [0.19, 0.726], armB: [0.81, 0.726], armA_rad: [0.062, 0.105], armB_rad: [0.062, 0.105]}},
+  {name:'평상복',   src:"assets/casual.png",     cfg:null, real:false, badge:false, patch:{mouth: [0.489, 0.358], armA: [0.43, 0.858], armB: [0.57, 0.858], armA_rad: [0.055, 0.048], armB_rad: [0.055, 0.048]}},
+  {name:'셔츠',     src:"assets/shirt.png",      cfg:null, real:false, badge:true, patch:{mouth: [0.489, 0.358], armA: [0.4, 0.85], armB: [0.6, 0.85], armA_rad: [0.065, 0.055], armB_rad: [0.065, 0.055]}},
+  {name:'자켓',     src:"assets/jacket.png",     cfg:null, real:false, badge:true, patch:{mouth: [0.489, 0.358], armA: [0.35, 0.845], armB: [0.63, 0.845], armA_rad: [0.07, 0.055], armB_rad: [0.07, 0.055]}},
+  {name:'테크자켓', src:"assets/tech.png",       cfg:null, real:false, badge:true, patch:{armA: [0.36, 0.86], armB: [0.64, 0.86], armA_rad: [0.055, 0.048], armB_rad: [0.055, 0.048]}},
+  {name:'민소매',   src:"assets/sleeveless.png", cfg:null, real:false, badge:true, patch:{armA: [0.185, 0.78], armB: [0.815, 0.78], armA_rad: [0.06, 0.1], armB_rad: [0.06, 0.1]}},
 ];
 let costumeIdx = 0;
 
