@@ -19,6 +19,7 @@ LLM-WIKI — LLM 도메인 학습용 사내 지식 위키 (Flask 모놀리식 �
 폐쇄망 기준: Node/Docker 불필요, pip-only, 외부 CDN 없음
 """
 import csv
+import html
 import io
 import json
 import math
@@ -26,6 +27,7 @@ import os
 import re
 import secrets
 import sqlite3
+import traceback
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -38,6 +40,11 @@ from flask import (Flask, g, request, redirect, url_for, flash, session,
                    send_file, jsonify, render_template, abort, Response)
 from jinja2 import DictLoader
 from werkzeug.utils import secure_filename
+
+
+def html_escape(x):
+    """오류 화면에 그대로 박아 넣기 전에 무해하게 만든다."""
+    return html.escape(str(x if x is not None else ""), quote=True)
 
 # ---------------------------------------------------------------- 경로/설정
 BASE_DIR = Path(__file__).resolve().parent
@@ -3319,6 +3326,46 @@ TPL["export.html"] = '''{% extends "layout.html" %}{% block content %}
 {% endblock %}'''
 
 app.jinja_loader = DictLoader(TPL)
+
+
+# ------------------------------------------------- 오류를 사람이 읽게
+@app.errorhandler(500)
+@app.errorhandler(Exception)
+def _show_error(e):
+    """★"내부 서버 오류" 만 뜨면 아무도 원인을 못 찾는다. 폐쇄망에서는
+    콘솔을 보러 가는 것도 일이다 — 무엇이 어디서 터졌는지 화면에 적는다.
+
+    ★HTTPException(404·405 등)은 그대로 흘려보낸다. 우리가 낸 오류만 잡는다.
+    """
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException) and e.code != 500:
+        return e
+    tb = traceback.format_exc()
+    print("[오류] " + tb, flush=True)          # 콘솔에도 남긴다
+    where = request.path
+    tip = ""
+    low = (str(e) + tb).lower()
+    if "llm" in low or "urlopen" in low or "http error" in low:
+        tip = ("LLM 쪽으로 보인다 — [설정] 의 API 주소는 /v1 까지만 넣는다 "
+               "(뒤 /chat/completions 는 앱이 붙인다). 모델명 오타도 흔한 원인이다.")
+    elif "no such table" in low or "database" in low or "sqlite" in low:
+        tip = "DB 문제로 보인다 — data/wiki.db 를 확인해라."
+    elif "template" in low or "jinja" in low:
+        tip = "화면 틀 문제로 보인다."
+    body = (
+        "<div style='font:14px/1.7 system-ui;padding:24px;max-width:900px'>"
+        "<h2 style='margin:0 0 6px'>오류가 났다</h2>"
+        f"<div style='color:#666;margin-bottom:12px'>{html_escape(where)}</div>"
+        f"<div style='background:#fee;border:1px solid #fbb;border-radius:8px;"
+        f"padding:10px 12px;margin-bottom:12px'><b>{html_escape(type(e).__name__)}</b>: "
+        f"{html_escape(str(e)[:500])}</div>"
+        + (f"<div style='background:#eef;border:1px solid #bbf;border-radius:8px;"
+           f"padding:10px 12px;margin-bottom:12px'>{html_escape(tip)}</div>" if tip else "")
+        + "<details><summary style='cursor:pointer'>자세히 (추적)</summary>"
+        f"<pre style='background:#f6f6f6;padding:12px;border-radius:8px;"
+        f"overflow:auto;font-size:12px'>{html_escape(tb)}</pre></details>"
+        "<p><a href='/'>← 처음으로</a></p></div>")
+    return body, 500
 
 
 # ---------------------------------------------------------------- 실행
