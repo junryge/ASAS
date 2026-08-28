@@ -1,0 +1,62 @@
+M16 HUBROOM 연결도 이미지를 소스로 올릴 때, 아래 글을 [설명] 란에 그대로
+붙여 넣는다.
+
+★왜 필요한가
+  이미지는 텍스트 추출이 안 된다. 그림만 올리면 LLM 은 아무것도 못 읽는다.
+  app.py 가 그래서 이렇게 막는다 —
+     "이 소스는 추출된 텍스트가 없다 (이미지/추출실패). 설명을 먼저 입력해라."
+     "이미지 소스는 필수 — LLM이 이 설명을 근거로 쓴다"
+  그림은 사람이 보는 것, 이 설명글이 LLM 이 보는 것이다. 둘 다 있어야 한다.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[연결도 이미지용 설명 — 여기부터 복사]
+
+M16 HUBROOM(3F) 기준 FAB 연결도.
+M16 HUBROOM(= M16 Bridge)은 M14와 M16 간 물류 이동을 잇는 3층 공간이다.
+
+건물·층
+  M14 : M14A(3F) / M14B(7F) / M14분석실(B1F)
+  M16 : M16A(6F) / M16B(10F) / M16EUV(2F) / M16WT(2F) / R4(6F)
+  M16 HUBROOM(3F)
+
+연결
+  M14A(3F)      ─CNV(남 4AFC3201 / 북 4AFC3301)─ M16HUBROOM(3F)
+  M14A(3F)      ─LFT─                            M10A(2F)
+  M14B(7F)      ─LFT(4ALF~)─                     M14A
+  M14B(7F)      ─LFT(4ABLD~)─                    M16HUBROOM(3F)
+  M14분석실(B1F) ─LFT─                            M16HUBROOM(3F)
+  M16A(6F)      ─LFT(6ABL60~)─                   M16HUBROOM(3F)
+  M16A(6F)      ─LFT(6ALF~)─                     M16B(10F)
+  M16A(6F)      ─LFT(6ABL01~)─                   M16EUV(2F)
+  M16A(6F)      ─같은 층이나 FAB간 반송으로 간주(OHT명 변경)─ R4(6F)
+  M16EUV(2F)    ─WIS STK(WIS_M16WT, FAB간반송 가상장비)─ M16WT(2F)
+
+경유 예시
+  M14A → CNV → M16HUBROOM → M16
+  M10A → LFT → M14A → M16HUBROOM → M16
+  M14A → CNV → M16HUBROOM → LFT → M16EUV → WIS STK → M16WT
+
+M16 HUBROOM 에는 다수의 MLUD 가 있으며 6FIOB 로 시작한다.
+
+[여기까지 복사]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[장치 배치도·설비 사진용 설명 — 그림에 맞게 골라 쓴다]
+
+FOUP 반송 장치 배치.
+  VHL    FOUP 을 레일로 이동. 각 장치 Port 에서 load / unload
+  OHT    VHL 을 제어하는 주체·시스템
+  LFT    리프터(ZT). 층간 반송. input port → rack master → 목적지 output port
+  CNV    컨베이어. input port → 목적지 output port
+  STK    스토커. FOUP 임시 저장
+  STB    FOUP 임시 저장(ZFS)
+  Sorter FOSB ↔ FOUP 변환. 대기Q 가 많으면 반송할 양이 많다는 방증
+  MLUD   FIO. 사람 Manual Input → Auto Output(OHT load) /
+         OHT Auto Input → Manual Output(사람 get)
+
+포트
+  LFT / CNV / Sorter / MLUD : input port 로 들어가 output port 로 나온다.
+    Manual·Auto × Input·Output → MI / MO / AI / AO 네 가지
+  STK / STB : input port 에 놓이면 rack master 가 shelf 에 저장, 호출 시
+    output port 로 나온다
+  port 는 사람·시스템이 활성화/비활성화 할 수 있다.
