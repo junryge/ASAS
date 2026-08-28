@@ -1141,6 +1141,48 @@ def api_base(url):
     return b
 
 
+# 사고(reasoning) 모델 — 끄지 않으면 사고에만 토큰을 쓰고 본문이 빈다
+_REASONING_HINTS = ("qwen3", "qwq", "deepseek-r", "gpt-oss", "o1", "o3", "thinking")
+
+
+def _is_reasoning(model):
+    m = str(model or "").lower()
+    return any(h in m for h in _REASONING_HINTS)
+
+
+def _no_think(messages):
+    """마지막 user 메시지에 '/no_think' 를 붙인다 (Qwen3 계열 관례)."""
+    out = [dict(m) for m in messages]
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") == "user" and isinstance(out[i].get("content"), str):
+            if "/no_think" not in out[i]["content"]:
+                out[i]["content"] = out[i]["content"].rstrip() + "\n\n/no_think"
+            break
+    return out
+
+
+def _pick_text(data):
+    """응답에서 본문을 꺼낸다.
+
+    ★사고 모델은 content 를 **None** 으로 주고 reasoning_content 에만 쓴다.
+      그대로 돌려주면 호출부가 out[:80] 하다가
+      TypeError: 'NoneType' object is not subscriptable 로 터진다 (실제 증상).
+    """
+    try:
+        msg = data["choices"][0]["message"]
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"LLM 응답 형식 이상: {str(data)[:300]}")
+    for k in ("content", "reasoning_content", "reasoning"):
+        v = msg.get(k) if isinstance(msg, dict) else None
+        if isinstance(v, str) and v.strip():
+            return v
+    fin = (data.get("choices") or [{}])[0].get("finish_reason")
+    raise RuntimeError(
+        "LLM 이 빈 응답을 줬다 (finish_reason={}). 사고 모델이 사고에만 "
+        "토큰을 쓴 경우가 대부분이다 — 모델명을 사고 없는 것으로 바꾸거나 "
+        "max_tokens 를 늘려라.".format(fin))
+
+
 def llm_chat(messages, max_tokens=2500, temperature=0.3):
     base = get_setting("llm_base_url").rstrip("/")
     model = get_setting("llm_model")
@@ -1148,23 +1190,36 @@ def llm_chat(messages, max_tokens=2500, temperature=0.3):
     if not base or not model:
         raise RuntimeError("LLM 설정이 비어있다. [설정]에서 API 주소와 모델명을 입력해라.")
     url = api_base(base) + "/chat/completions"
-    body = json.dumps({"model": model, "messages": messages,
-                       "max_tokens": max_tokens, "temperature": temperature}).encode()
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
-    req = urllib.request.Request(url, data=body, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"LLM API HTTP {e.code}: {e.read()[:300]!r}")
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"LLM API 접속 실패: {e.reason}")
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        raise RuntimeError(f"LLM 응답 형식 이상: {str(data)[:300]}")
+
+    send = _no_think(messages) if _is_reasoning(model) else messages
+    # ★사고를 게이트웨이에서 끈다. 이 키를 모르는 서버는 400 을 내므로
+    #   한 단계씩 빼며 다시 부른다 (400 은 즉답이라 사실상 공짜다).
+    tiers = [{"chat_template_kwargs": {"enable_thinking": False}}, {}]
+    if "gpt-oss" in str(model).lower():
+        tiers.insert(0, {"chat_template_kwargs": {"enable_thinking": False},
+                         "reasoning_effort": "low"})
+    last = None
+    for extra in tiers:
+        payload = {"model": model, "messages": send,
+                   "max_tokens": max_tokens, "temperature": temperature}
+        payload.update(extra)
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                     headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                return _pick_text(json.loads(r.read().decode("utf-8")))
+        except urllib.error.HTTPError as e:
+            detail = e.read()[:300]
+            last = RuntimeError(f"LLM API HTTP {e.code}: {detail!r}")
+            if e.code == 400 and extra:
+                continue           # 옵션을 모르는 게이트웨이 — 빼고 다시
+            raise last
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"LLM API 접속 실패: {e.reason}")
+    raise last or RuntimeError("LLM 호출 실패")
 
 
 def schema_text():
@@ -2187,9 +2242,10 @@ def settings_view():
 @app.route("/settings/test-llm", methods=["POST"])
 def settings_test_llm():
     try:
+        # ★20 으로 두면 사고 모델이 사고에만 다 쓰고 본문이 비어 '실패'로 보인다.
         out = llm_chat([{"role": "user", "content": "연결 확인. '연결 정상'이라고만 답해라."}],
-                       max_tokens=20)
-        flash(f"LLM 연결 성공: {out[:80]}", "ok")
+                       max_tokens=200)
+        flash("LLM 연결 성공: {}".format(str(out or "")[:80]), "ok")
     except RuntimeError as e:
         flash(f"LLM 연결 실패: {e}", "err")
     return redirect(url_for("settings_view"))
