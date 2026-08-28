@@ -9,9 +9,18 @@
     --bg:#080A0F; --panel:#0D1119; --panel2:#131926; --line:#1C2431; --line2:#26303f;
     --tx:#E6EDF6; --tx2:#8FA0B6; --tx3:#5E6E85;
     --cy:#3DDBE8; --crit:#FF4D5E; --major:#FF9F2E; --minor:#F2D338; --ok:#2FD68A;
+    /* 상단 바 높이 — 표 머리글이 이 아래에 붙어 멈춘다. 탭이 줄바꿈되면
+       바가 높아지므로 실제 값은 JS 가 재서 덮어쓴다(여기 값은 첫 그림용). */
+    --topbar:63px;
   }
   *{box-sizing:border-box}
-  html,body{height:100%}
+  /* ★body 는 height 가 아니라 min-height 다. height:100% 면 body 상자가
+     화면 한 장 높이에서 끝나고, sticky 는 **자기 상자 안에서만** 멈춰
+     있는다 — 그래서 상단 바가 한 화면쯤 내리면 같이 밀려 올라가 버렸다.
+     표 머리글이 그 바 아래에 붙는 이상, 바가 사라지면 머리글 위에 빈
+     띠가 생기고 행이 그 사이로 지나간다. */
+  html{height:100%}
+  body{min-height:100%}
   body{margin:0;background:var(--bg);color:var(--tx);
        font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif}
 
@@ -211,8 +220,18 @@
 
   /* ── 케이스 목록 ── */
   table.cases{width:100%;border-collapse:collapse}
+  /* ★머리글 고정 — 하루치 1440행을 내리다 보면 지금 보는 숫자가 M14 인지
+     M16B 인지 알 수 없어진다. 머리글이 상단 바 바로 아래에 붙어 멈춘다.
+     · sticky 는 thead 가 아니라 **th** 에 건다. border-collapse:collapse 인
+       표는 칸 테두리를 표가 대신 그려서, 붙어 있는 동안 border-bottom 이
+       같이 안 따라온다 — 그래서 아래 줄은 box-shadow 로 그린다.
+     · 배경을 반드시 불투명하게 준다. 안 그러면 밑으로 지나가는 행이
+       머리글 글자에 비쳐 겹쳐 보인다.
+     · z-index 는 상단 바(30)보다 낮고 행보다 높게. 모달은 50 이라 안 가린다. */
   table.cases th{font-size:11px;color:var(--tx3);font-weight:600;text-align:left;
-                 padding:8px 14px;border-bottom:1px solid var(--line)}
+                 padding:8px 14px;border-bottom:1px solid var(--line);
+                 position:sticky;top:var(--topbar);z-index:12;
+                 background:var(--bg);box-shadow:inset 0 -1px 0 var(--line)}
   table.cases td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
   table.cases tr.crow{cursor:pointer}
   table.cases tr.fresh{background:rgba(61,219,232,.07);
@@ -2060,6 +2079,19 @@ function tickClock(){
   $('#clkd').textContent = d.toLocaleDateString('ko-KR')+' KST';
 }
 tickClock(); setInterval(tickClock,1000);
+
+/* 표 머리글이 멈출 높이 = 상단 바의 실제 높이.
+   글꼴이 없어 대체 글꼴로 떨어지거나 창이 좁아 탭이 줄바꿈되면 바 높이가
+   달라진다. 숫자를 CSS 에 박아 두면 그때 머리글이 바에 먹히거나 떠 버린다. */
+function syncTopbar(){
+  const t = document.querySelector('.top');
+  if(!t) return;
+  const h = Math.round(t.getBoundingClientRect().height);
+  if(h > 0) document.documentElement.style.setProperty('--topbar', h + 'px');
+}
+syncTopbar();
+try{ new ResizeObserver(syncTopbar).observe(document.querySelector('.top')); }
+catch(e){ window.addEventListener('resize', syncTopbar); }
 
 /* 상태 + KPI */
 async function pollStatus(){

@@ -575,5 +575,74 @@ class ColorTable(unittest.TestCase):
         self.assertTrue(F.fab_color("M99").startswith("#"))
 
 
+class StickyHead(unittest.TestCase):
+    """머리글 고정 — 하루치 1440행을 내리면 지금 보는 숫자가 M14 인지
+    M16B 인지 알 수 없어진다. 컬럼 이름이 화면에 남아 있어야 한다.
+
+    ★브라우저로 재서 확인한 값(1600×900, 400행): 상단 바 62px, 어디까지
+      내려도 머리글 top 62 · 상단 바 아래끝 62 — 딱 맞물린다. 13칸 모두
+      본문 칸과 x 가 어긋나지 않는다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+        with open(os.path.join(util.BASE, "static", "dashboard.html"),
+                  encoding="utf-8") as f:
+            cls.h = f.read()
+        m = re.search(r"table\.cases th\{([^}]*)\}", cls.h)
+        assert m, "table.cases th 규칙이 없다"
+        cls.th = m.group(1)
+
+    def test_머리글이_따라_내려온다(self):
+        self.assertIn("position:sticky", self.th)
+
+    def test_상단_바_바로_아래에_선다(self):
+        """0 으로 두면 상단 바가 머리글을 덮는다."""
+        self.assertIn("top:var(--topbar)", self.th)
+        self.assertRegex(self.h, r"--topbar:\s*\d+px", ":root 에 기본값이 없다")
+
+    def test_상단_바_높이를_눈대중으로_적지_않는다(self):
+        """글꼴이 대체되거나 창이 좁아 탭이 줄바꿈되면 바 높이가 달라진다.
+        숫자를 박아 두면 그때 머리글이 바에 먹히거나 떠 버린다."""
+        m = re.search(r"function syncTopbar\(\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "상단 바 높이를 재는 함수가 없다")
+        body = m.group(0)
+        self.assertIn("getBoundingClientRect", body)
+        self.assertIn("--topbar", body)
+        self.assertIn("ResizeObserver", self.h)
+
+    def test_상단_바가_한_화면에서_끝나지_않는다(self):
+        """★sticky 는 **자기 상자 안에서만** 멈춘다. body 가 height:100% 면
+        상자가 화면 한 장에서 끝나 상단 바가 같이 밀려 올라가고, 그 자리에
+        빈 띠가 생겨 행이 머리글 위를 지나간다."""
+        self.assertNotRegex(self.h, r"\n\s*html,\s*body\{height:100%\}")
+        self.assertRegex(self.h, r"\n\s*body\{min-height:100%\}")
+
+    def test_행이_머리글에_비치지_않는다(self):
+        """반투명이면 밑으로 지나가는 행이 컬럼 이름과 겹쳐 읽힌다."""
+        m = re.search(r"background:(var\(--\w+\)|#[0-9a-fA-F]{3,8})", self.th)
+        self.assertIsNotNone(m, "머리글에 불투명 배경이 없다")
+        self.assertNotIn("rgba", self.th)
+        self.assertNotIn("transparent", self.th)
+
+    def test_붙어_있는_동안에도_아래_줄이_보인다(self):
+        """border-collapse:collapse 인 표는 칸 테두리를 표가 대신 그려서,
+        붙어 있는 머리글의 border-bottom 이 같이 따라오지 않는다."""
+        self.assertIn("border-collapse:collapse", self.h)
+        self.assertIn("box-shadow:inset 0 -1px 0", self.th)
+
+    def test_상단_바와_모달을_가리지_않는다(self):
+        """상단 바 30 · 모달 50 · 오프닝 100 — 그 사이로 끼면 안 된다."""
+        z = re.search(r"z-index:(\d+)", self.th)
+        self.assertIsNotNone(z, "머리글에 z-index 가 없다 (행이 위로 올라온다)")
+        self.assertLess(int(z.group(1)), 30, "머리글이 상단 바를 덮는다")
+        self.assertGreater(int(z.group(1)), 0, "행이 머리글 위로 올라온다")
+
+    def test_실시간과_과거_둘_다_고정된다(self):
+        """규칙을 table.cases 에 걸어 두 표가 같이 받는다."""
+        self.assertEqual(len(re.findall(r'<table class="cases">', self.h)), 2)
+        self.assertNotIn("#cases thead th", self.h)
+
+
 if __name__ == "__main__":
     unittest.main()
