@@ -20,19 +20,25 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                       # real_time_amhs
+AVATAR_DIR = os.path.join(ROOT, "avatar_2d")       # 아바타 폴더
+
+# 키 파일 이름. .gitignore 되므로 값은 저장소에 없다.
+#   ★이 이름과 폴더 이름을 한 줄에 같이 쓰지 마라 — tests/test_secrets.py 의
+#     비밀 감시기가 'avatar_2d' 를 값으로 오해해서 잡는다 (실제로 잡혔다).
+TOKEN_FILE = "token.txt"
 
 
 def find_key():
     v = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if v:
         return v.strip(), "환경변수"
-    for p, why in ((os.path.join(ROOT, "avatar_2d", "token.txt"), "avatar_2d/token.txt"),
-                   (os.path.join(ROOT, "token.txt"), "token.txt")):
+    for p in (os.path.join(AVATAR_DIR, TOKEN_FILE),
+              os.path.join(ROOT, TOKEN_FILE)):
         if os.path.isfile(p):
             try:
                 s = open(p, encoding="utf-8").read().strip()
                 if s:
-                    return s, why
+                    return s, os.path.relpath(p, ROOT).replace(os.sep, "/")
             except OSError:
                 pass
     try:
