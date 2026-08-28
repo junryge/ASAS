@@ -28,7 +28,55 @@ BASE = os.environ.get("QA_BASE", "http://127.0.0.1:10500").rstrip("/")
 TIMEOUT = float(os.environ.get("QA_TIMEOUT", "10"))
 PROTO = "2025-06-18"
 NAME, VERSION = "qa-reqlog", "1.0.0"
-MAX_ROWS = 20          # 프롬프트에 실릴 글이라 무한정 못 준다
+# ── 얼마나 실어 보낼까 ────────────────────────────────────────────────
+# ★프롬프트에 그대로 실리는 글이라 무한정 못 준다. 그런데 **너무 조였더니**
+#   서윤이 요청 내용을 반도 못 봤다. 목록 한 줄이 100자에서 끊겨
+#   "M16HUB 반송 지연 관련 개선 요청드립니다. 현재 R-A 룰이…" 까지만 가고
+#   정작 사람이 물어보는 **요청사항 (1)(2)(3)** 은 한 글자도 안 갔다.
+#   글자 수로만 막지 말고, **좁혀졌으면 통째로 편다**.
+MAX_ROWS = int(os.environ.get("QA_MAX_ROWS", "20"))    # 한 줄 요약을 적을 최소 건수
+HARD_ROWS = 60         # 예산이 남아도 여기까지만 (한 질문에 60줄이면 충분하다)
+# ★건수가 아니라 **예산**이 기준이다. 실제 등록분(9건)을 전부 펴도 2987자로
+#   예산 4000자에 다 들어가는데, 건수 상한 6건에 걸려 한 줄 요약만 갔다.
+#   여기 숫자는 '말도 안 되게 많을 때' 를 막는 안전판일 뿐이다.
+FULL_ROWS = int(os.environ.get("QA_FULL_ROWS", "25"))  # 통째로 펼 건수 안전판
+LIST_BUDGET = int(os.environ.get("QA_LIST_BUDGET", "4000"))   # qa_items 글자 상한
+ITEM_BUDGET = int(os.environ.get("QA_ITEM_BUDGET", "2500"))   # qa_item 글자 상한
+LINE_CUT = 110         # 한 줄 요약에서 본문을 자르는 길이
+
+
+def _fit(lines, budget, tail=""):
+    """예산 안에서 줄을 담는다. 넘치면 **몇 줄을 못 실었는지 밝힌다**.
+
+    ★말없이 자르면 받는 쪽이 '이게 전부' 로 읽는다. 실제로 그래서 서윤이
+      "총 4건이 완료된 기록만 남아 있어요" 라고 답한 적이 있다.
+    """
+    out, used = [], 0
+    for i, ln in enumerate(lines):
+        if used + len(ln) > budget and out:
+            left = len(lines) - i
+            out.append("… 길어서 {}건은 안 실었다. 번호를 대면(예: No.{}) "
+                       "그 건만 펼쳐 볼 수 있다.".format(left, _seq_of(lines[i])))
+            break
+        out.append(ln)
+        used += len(ln) + 1
+    if tail:
+        out.append(tail)
+    return "\n".join(out)
+
+
+def _seq_of(line):
+    """'#37 [적용완료] …' 같은 줄에서 번호만. 못 찾으면 물음표."""
+    t = str(line or "").lstrip()
+    if t.startswith("#"):
+        n = ""
+        for ch in t[1:]:
+            if not ch.isdigit():
+                break
+            n += ch
+        if n:
+            return n
+    return "?"
 
 
 # ── app.py 조회 ───────────────────────────────────────────────────────────
@@ -86,12 +134,61 @@ TOOLS = [
 
 
 def _one_line(it):
-    return "#{} [{}] {} · 요청자 {} · 대상 {} · 요청일 {}{} — {}".format(
+    """목록 한 줄. 본문은 여기서 자른다 — 대신 **뒤에 뭐가 더 있는지** 적는다.
+
+    ★'응답 2건' 을 안 적었더니 서윤이 목록만 보고 "아직 응답이 없습니다" 라고
+      답했다. 실제로는 응답에 결론(적용 예정일)이 들어 있었다. 안 실은 것은
+      없는 것과 다르다 — 있다는 사실은 반드시 남긴다.
+    """
+    body = (it.get("content") or "").replace("\n", " ").strip()
+    more = []
+    if len(body) > LINE_CUT:
+        more.append("본문 더 있음")
+    nr = len(it.get("responses") or [])
+    if nr:
+        more.append("응답 {}건".format(nr))
+    na = len(it.get("attachments") or [])
+    if na:
+        more.append("첨부 {}건".format(na))
+    return "{} — {}{}".format(
+        _head(it), body[:LINE_CUT],
+        "  ({})".format(" · ".join(more)) if more else "")
+
+
+def _head(it):
+    """번호·상태·사람·날짜만. 본문은 붙이지 않는다."""
+    return "#{} [{}] {} · 요청자 {} · 대상 {} · 요청일 {}{}".format(
         it.get("seq"), it.get("status") or "?", it.get("category") or "?",
         it.get("requester") or "-", ", ".join(it.get("tags") or []) or "-",
         it.get("request_date") or "-",
-        " · 확인완료" if it.get("confirmed_at") else "",
-        (it.get("content") or "").replace("\n", " ")[:100])
+        " · 확인완료" if it.get("confirmed_at") else "")
+
+
+def _detail(it):
+    """한 건을 응답·첨부까지 펼친 여러 줄.
+
+    ★응답을 200자에서 자르던 자리다. 사람이 궁금해하는 **결론**(적용 예정일,
+      어느 FAB 만 적용하기로 했는지)은 응답 끝에 온다 — 앞 200자만 보내면
+      정확히 그 부분이 날아간다. 여기서는 자르지 않고, 전체 길이는 부르는
+      쪽이 예산으로 막는다.
+    """
+    L = [_head(it)]
+    body = (it.get("content") or "").strip()
+    if body:
+        L.append("내용: " + body)
+    if it.get("applied_date"):
+        L.append("적용일: " + it["applied_date"])
+    if it.get("confirmed_at"):
+        L.append("고객확인: {} {}".format(it["confirmed_at"][:10],
+                                          it.get("confirmed_by") or ""))
+    for r in it.get("responses") or []:
+        L.append("  ↳ 응답 [{}] {} — {}".format(
+            (r.get("created_at") or "")[:16], r.get("responder") or "?",
+            (r.get("content") or "").replace("\n", " ").strip()))
+    atts = [x.get("filename") for x in (it.get("attachments") or [])]
+    if atts:
+        L.append("  첨부 {}건: {}".format(len(atts), ", ".join(atts)))
+    return "\n".join(L)
 
 
 def _find(seq):
@@ -136,33 +233,52 @@ def t_items(a):
                             ("q", "status", "category", "target", "requester",
                              "confirmed", "from", "to")})
     items = d.get("items") or []
+    note = ""
+    if not items and a.get("q"):
+        # ★검색어가 빗나갔다고 "없다" 로 끝내면 안 된다. 사람이 쓴 말
+        #   ("레일 캡쳐", "PIO") 이 등록된 글자와 안 맞는 일은 흔하다.
+        #   그럴 때 빈손으로 돌아오면 서윤은 "그런 요청 없습니다" 라고
+        #   단언한다 — 실제로는 있는데도.
+        d = _get("/api/items", {k: a.get(k) for k in
+                                ("status", "category", "target", "requester",
+                                 "confirmed", "from", "to")})
+        items = d.get("items") or []
+        if items:
+            note = ("'{}' 로는 못 찾아서 **조건을 풀고 전체를 본다**. "
+                    "아래에서 직접 골라 읽어라.\n".format(a["q"]))
     if not items:
         return "그 조건에 해당하는 요청이 없다."
-    L = ["{}건 (최근 순, 최대 {}건까지 보여준다)".format(len(items), MAX_ROWS)]
-    L += [_one_line(x) for x in items[:MAX_ROWS]]
-    if len(items) > MAX_ROWS:
-        L.append("… 그 밖 {}건은 안 실었다".format(len(items) - MAX_ROWS))
-    return "\n".join(L)
+
+    # ★몇 건 안 되면 **내용을 통째로 편다.** 이게 이 도구의 핵심이다.
+    #   사람은 "M16HUB 야간 오탐 건 어떻게 됐어?" 라고 묻지 "No.37 펼쳐줘"
+    #   라고 묻지 않는다. 그래서 qa_item(번호가 있어야 부른다)은 거의 안
+    #   불렸고, 서윤은 100자짜리 요약만 들고 답해야 했다. 조건으로 좁혀졌다는
+    #   건 사람이 그걸 물었다는 뜻이다 — 그러면 다 보여준다.
+    #
+    #   ★기준은 **건수가 아니라 예산**이다. 건수로 자르면(예: 3건 이하)
+    #     짧은 요청 7건이 예산 절반도 안 쓰면서 전부 잘려 나간다. 실제로
+    #     그랬다 — 7건 1359자에 예산은 4000자였다. 넣을 수 있으면 넣는다.
+    if len(items) <= FULL_ROWS:
+        full = [_detail(x) for x in items]
+        if sum(len(x) + 1 for x in full) <= LIST_BUDGET - 40:
+            return note + "{}건 — 내용과 응답까지 폅니다.\n".format(len(items)) \
+                   + "\n\n".join(full)
+
+    head = note + "{}건 (최근 순).".format(len(items))
+    lines = [_one_line(x) for x in items[:HARD_ROWS]]
+    # 예산이 남으면 MAX_ROWS 를 넘겨서도 싣는다 — 20건에서 딱 끊으면
+    # "그래서 나머지는?" 에 영영 답을 못 한다.
+    body = _fit(lines, LIST_BUDGET - len(head))
+    tail = ("\n… 그 밖 {}건은 안 실었다".format(len(items) - HARD_ROWS)
+            if len(items) > HARD_ROWS else "")
+    return head + "\n" + body + tail
 
 
 def t_item(a):
     it = _find(a.get("seq"))
     if it is None:
         return "No.{} 요청이 없다.".format(a.get("seq"))
-    L = [_one_line(it), "내용: " + (it.get("content") or "").strip()]
-    if it.get("applied_date"):
-        L.append("적용일: " + it["applied_date"])
-    if it.get("confirmed_at"):
-        L.append("고객확인: {} {}".format(it["confirmed_at"][:10],
-                                          it.get("confirmed_by") or ""))
-    for r in it.get("responses") or []:
-        L.append("  ↳ 응답 [{}] {} — {}".format(
-            (r.get("created_at") or "")[:16], r.get("responder") or "?",
-            (r.get("content") or "").replace("\n", " ")[:200]))
-    atts = [x.get("filename") for x in (it.get("attachments") or [])]
-    if atts:
-        L.append("첨부 {}건: {}".format(len(atts), ", ".join(atts)))
-    return "\n".join(L)
+    return _fit(_detail(it).split("\n"), ITEM_BUDGET)
 
 
 def t_history(a):

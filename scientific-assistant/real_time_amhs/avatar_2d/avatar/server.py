@@ -620,7 +620,7 @@ class Handler(SimpleHTTPRequestHandler):
         seg = llm.measure(persona, q, hist, App.doc_store, st,
                           skill_store=App.skill_store,
                           evidence_text=ev_text, attach=attach,
-                          mcp_text=self._mcp_text(q),
+                          mcp_text=self._mcp_text(q, hist),
                           evidence_down=llm.is_data_question(q) and not ev_text)
         seg["limit"] = int(st.get("ctxLimit", 32768))
         seg["pct"] = min(999, round(seg["total"] / max(1, seg["limit"]) * 100))
@@ -718,7 +718,7 @@ class Handler(SimpleHTTPRequestHandler):
         msgs = llm.build_messages(persona, text, history, App.doc_store, st,
                                   skill_store=App.skill_store,
                                   evidence_text=ev["text"], attach=attach,
-                                  mcp_text=self._mcp_text(text),
+                                  mcp_text=self._mcp_text(text, history),
                                   evidence_down=down)
         t0 = time.time()
 
@@ -774,23 +774,30 @@ class Handler(SimpleHTTPRequestHandler):
         self._say("200  /api/chat  {}  {}ms  (stream, {}이벤트)".format(
             model, int((time.time() - t0) * 1000), n))
 
-    def _mcp_text(self, text):
+    def _mcp_text(self, text, history=None):
         """질문에 걸리는 MCP 서버를 불러 근거 글을 만든다 (없으면 빈 글).
 
         ★MCP 가 죽어도 대화는 계속돼야 한다. 여기서 예외가 새면 질문 하나가
           통째로 500 이 된다 — 외부 도구 하나 때문에 서윤이 입을 닫는다.
           그래서 무엇이 터지든 삼키고 빈 글을 준다.
+
+        ★history 를 넘기는 이유: 이어지는 질문("그럼 언제 적용돼?")에는
+          걸릴 낱말이 없어 조회가 안 된다. 그때 **조금 전에 조회해 둔 글을
+          그대로 들고 간다** — 안 그러면 방금 읽은 내용을 잊은 채로 답한다.
         """
         hub = App.mcp_hub
         if hub is None or not text:
             return ""
         try:
-            out, used = hub.gather(text)
+            out, used = hub.gather(text, history=history)
         except Exception as e:  # noqa: BLE001
             self._say("     ↳ MCP 실패: {}".format(str(e)[:120]))
             return ""
         if used:
             self._say("     ↳ MCP 도구 {}회 · {}자".format(used, len(out)))
+        elif out:
+            # 조회는 안 걸렸는데 글이 있다 = 조금 전 결과를 그대로 들고 왔다
+            self._say("     ↳ MCP 직전 조회 이어받음 · {}자".format(len(out)))
         elif hub.matched(text):
             # ★걸렸는데 아무것도 안 나왔다 — 조용히 넘어가면 "왜 안 되지" 가 된다.
             #   콘솔에 남기고, 서윤도 "못 봤다" 고 말할 수 있게 글로 넘긴다.

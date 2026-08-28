@@ -266,16 +266,35 @@ class 도구가_제_값을_준다(_Fake):
         self.assertIn("대기 → 검토중", t)
         self.assertIn("이설비", t)
 
-    def test_목록이_길면_잘랐다고_밝힌다(self):
-        """★말없이 자르면 '이게 전부' 로 읽힌다."""
-        big = {"items": [dict(ITEMS["items"][0], seq=i, id=i)
-                         for i in range(1, 41)]}
-        old = SRV._get
-        SRV._get = lambda p, q=None: big if p == "/api/items" else old(p, q)
-        self.addCleanup(lambda: setattr(SRV, "_get", old))
+    def _many(self, n, content=None):
+        """가짜 목록 n건을 세운다 (본문을 길게 줄 수도 있다)."""
+        base = dict(ITEMS["items"][0])
+        if content is not None:
+            base["content"] = content
+        big = {"items": [dict(base, seq=i, id=i) for i in range(1, n + 1)]}
+        keep = SRV._get
+        SRV._get = lambda p, q=None: big if p == "/api/items" else keep(p, q)
+        self.addCleanup(lambda: setattr(SRV, "_get", keep))
+
+    def test_예산에_들어가면_안_자른다(self):
+        """★건수로 자르면 안 된다. 실제 등록분(9건)을 다 펴도 3천 자라
+        예산에 들어가는데, 예전 건수 상한(20건)에 걸려 잘려 나갔다."""
+        self._many(40)                      # 짧은 본문 40건
         t = self._call("qa_items")
         self.assertIn("40건", t)
-        self.assertIn("그 밖 20건은 안 실었다", t)
+        self.assertNotIn("안 실었다", t, "예산이 남는데 잘랐다")
+        self.assertIn("#40", t, "마지막 건이 빠졌다")
+
+    def test_목록이_길면_잘랐다고_밝힌다(self):
+        """★말없이 자르면 '이게 전부' 로 읽힌다."""
+        self._many(40, content="가" * 400)   # 본문이 길어 예산을 넘긴다
+        t = self._call("qa_items")
+        self.assertIn("40건", t)
+        # ★몇 건을 못 실었는지와, 그 건을 어떻게 볼 수 있는지까지 말해야 한다.
+        #   "안 실었다" 만 있으면 받는 쪽은 거기서 멈춘다.
+        self.assertRegex(t, r"길어서 \d+건은 안 실었다")
+        self.assertIn("번호를 대면", t)
+        self.assertLessEqual(len(t), SRV.LIST_BUDGET + 400, "예산을 넘겼다")
 
 
 # ═══ 4. 진짜로 붙는다 (프로세스를 띄운다) ════════════════════════════════
@@ -329,6 +348,165 @@ class 진짜_프로세스에_붙는다(_Fake):
 
 
 # ═══ 5. Hub — 걸릴 때만 띄운다 ═══════════════════════════════════════════
+class 상세한_내용까지_보낸다(_Fake):
+    """★실제 증상 — "하기는 잘해, 근데 상세한 내용을 물어보면 몰라".
+
+    등록된 요청은 여러 문단짜리다. 목록 한 줄이 100자에서 끊겨
+        "M16HUB 반송 지연 관련 개선 요청드립니다. 현재 R-A 룰이…"
+    까지만 가고, 정작 사람이 묻는 **요청사항 (1)(2)(3)** 과 응답의
+    **결론(적용 예정일)** 은 한 글자도 안 갔다. 응답은 200자에서 잘렸다.
+    """
+
+    LONG = ("M16HUB 반송 지연 개선 요청드립니다. 야간(23~05시)에는 물동이 적어 "
+            "평균이 흔들려 오탐이 잦습니다. 아래 세 가지를 부탁드립니다.\n"
+            "요청사항: (1) 야간은 창을 5분으로 늘려주세요. (2) FABSTORAGERATIO 가 "
+            "0.8 이상일 때만 발동하도록 AND 조건을 걸어주세요. "
+            "(3) 8/12 02:14 오탐은 리포트에서 제외.")
+    ANSWER = ("검토 결과 야간 창 확대는 반영 가능합니다. 다만 AND 조건은 M16HUB "
+              "만 적용하고 나머지 FAB 은 기존대로 두는 것이 좋겠습니다. 이유는 "
+              "M14/M14B 는 스토리지 비율이 상시 낮아 룰이 사실상 죽습니다. "
+              "8/12 오탐은 제외 처리했고 야간 가중치 표를 별도로 뒀습니다. "
+              "적용 예정일은 8/28 입니다.")
+
+    def _stand(self, n=1):
+        one = dict(ITEMS["items"][0], content=self.LONG, seq=7, id=7,
+                   responses=[{"id": 1, "responder": "서지원",
+                               "created_at": "2026-08-21 10:20",
+                               "content": self.ANSWER, "attachments": []}])
+        rows = [dict(one, seq=7 + i, id=7 + i) for i in range(n)]
+        keep = SRV._get
+
+        def fake(p, q=None):
+            if p != "/api/items":
+                return keep(p, q)
+            # ★검색어를 무시하면 '빗나감' 상황 자체를 못 만든다
+            out = rows
+            if (q or {}).get("q"):
+                out = [r for r in out if q["q"] in (r.get("content") or "")]
+            return {"items": out}
+
+        SRV._get = fake
+        self.addCleanup(lambda: setattr(SRV, "_get", keep))
+
+    def _call(self, name, args=None):
+        r = SRV.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": {"name": name, "arguments": args or {}}})
+        return r["result"]["content"][0]["text"]
+
+    def test_좁혀지면_본문을_통째로_준다(self):
+        """★핵심. 사람은 "No.7 펼쳐줘" 가 아니라 "그 요청 뭐야" 라고 묻는다."""
+        self._stand(1)
+        t = self._call("qa_items")
+        self.assertIn("(3) 8/12 02:14 오탐은 리포트에서 제외", t,
+                      "요청사항 끝이 잘렸다")
+
+    def test_응답의_결론까지_준다(self):
+        """★응답 끝에 결론이 온다 — 앞 200자만 보내면 정확히 그게 날아간다."""
+        self._stand(1)
+        for tool, args in (("qa_items", {}), ("qa_item", {"seq": 7})):
+            self.assertIn("적용 예정일은 8/28", self._call(tool, args),
+                          "{} 에서 응답 결론이 잘렸다".format(tool))
+
+    def test_한_줄_요약도_뒤에_뭐가_있는지_밝힌다(self):
+        """★'응답 2건' 을 안 적었더니 목록만 보고 "아직 응답이 없습니다" 라고
+        답했다. 안 실은 것은 없는 것과 다르다."""
+        self._stand(40)                       # 예산을 넘겨 한 줄 요약으로 떨어진다
+        t = self._call("qa_items")
+        self.assertNotIn("내용:", t, "이 시험은 한 줄 요약 상태여야 한다")
+        self.assertIn("본문 더 있음", t)
+        self.assertIn("응답 1건", t)
+
+    def test_검색어가_빗나가도_빈손으로_안_온다(self):
+        """★"그런 요청 없습니다" 라고 단언하게 만들면 안 된다 — 있는데도."""
+        self._stand(1)
+        t = self._call("qa_items", {"q": "있을리없는말123"})
+        self.assertNotIn("해당하는 요청이 없다", t)
+        self.assertIn("조건을 풀고 전체를 본다", t)
+
+
+class 조회한_것을_대화_안에서_기억한다(_Fake):
+    """★실제 증상 — "MCP 문제 이후에 내용을 기억을 못하는것도 문제지".
+
+    "7번 요청 뭐야?" 로 조회가 걸려 내용을 받아 놓고, 바로 다음
+    "그럼 언제 적용돼?" 에는 '요청'·'이력' 같은 낱말이 없어 서버가 아예 안
+    불린다 → 프롬프트에서 MCP 칸이 통째로 빠진다 → 서윤은 **방금 자기가
+    읽은 내용을 못 보는 채로** 답해야 한다.
+    """
+
+    def setUp(self):
+        _Fake.setUp(self)
+        DATA["items"] = REAL["items"]
+        DATA["meta"] = dict(META, tags=["ALL"], total=5)
+        self.addCleanup(lambda: DATA.update(items=None, meta=None))
+        self.hub = mcp_client.Hub([
+            dict(s, cwd=util.BASE, command=sys.executable,
+                 args=[os.path.join(util.BASE, "qa", "mcp_server.py")],
+                 env={"QA_BASE": self.base})
+            for s in config.MCP_SERVERS])
+        self.addCleanup(self.hub.close)
+
+    def _turn(self, q, hist):
+        got, used = self.hub.gather(q, use_cache=False, history=hist)
+        hist += [{"role": "user", "content": q},
+                 {"role": "assistant", "content": "(대답)"}]
+        return got, used
+
+    def test_이어지는_질문에도_직전_조회를_들고_간다(self):
+        hist = []
+        first, used = self._turn("보류된 요청 뭐야", hist)
+        self.assertTrue(used, "첫 질문에서 조회가 걸려야 한다")
+        self.assertIn("AVGTOTALTIME1MIN", first)
+        # 이어지는 질문 — 걸릴 낱말이 하나도 없다
+        nxt, used2 = self._turn("그럼 그건 언제까지야?", hist)
+        self.assertEqual(self.hub.matched("그럼 그건 언제까지야?"), [],
+                         "이 질문은 원래 안 걸리는 질문이어야 시험이 된다")
+        self.assertEqual(used2, 0, "이어받기는 도구를 다시 부르면 안 된다")
+        self.assertIn("AVGTOTALTIME1MIN", nxt, "직전 조회를 잊었다")
+
+    def test_이어받은_것은_이어받았다고_밝힌다(self):
+        """★방금 조회한 것처럼 말하면 안 된다."""
+        hist = []
+        self._turn("보류된 요청 뭐야", hist)
+        nxt, _ = self._turn("그건 언제야?", hist)
+        self.assertIn("조금 전에 조회해 둔", nxt)
+
+    def test_대화가_길어지면_놓는다(self):
+        """★무한정 들고 가면 요청이력 이야기가 끝난 뒤에도 프롬프트에 남는다."""
+        hist = []
+        self._turn("보류된 요청 뭐야", hist)
+        for _ in range(self.hub.CARRY_TURNS):
+            self._turn("그건 언제야?", hist)
+        last, _ = self._turn("그건 언제야?", hist)
+        self.assertEqual(last, "", "너무 오래 들고 간다")
+
+    def test_다른_대화에는_안_샌다(self):
+        """★첫 발화가 다르면 다른 대화다. 남의 조회 결과가 가면 안 된다."""
+        hist = []
+        self._turn("보류된 요청 뭐야", hist)
+        other, _ = self.hub.gather("그건 언제야?", use_cache=False, history=[
+            {"role": "user", "content": "완전히 다른 대화의 첫 질문"},
+            {"role": "assistant", "content": "(대답)"}])
+        self.assertEqual(other, "")
+
+    def test_실패한_조회는_기억하지_않는다(self):
+        """★"붙지 못했다" 를 들고 다니면, 서버가 살아난 뒤에도 계속
+        "확인할 수 없다" 고 말한다."""
+        hub = mcp_client.Hub([
+            dict(s, cwd=util.BASE, command=sys.executable,
+                 args=[os.path.join(util.BASE, "qa", "mcp_server.py")],
+                 env={"QA_BASE": "http://127.0.0.1:1"})     # 죽은 주소
+            for s in config.MCP_SERVERS])
+        self.addCleanup(hub.close)
+        hist = []
+        bad, _ = hub.gather("보류된 요청 뭐야", use_cache=False, history=hist)
+        self.assertTrue(bad, "실패해도 글은 넘어와야 한다")
+        hist += [{"role": "user", "content": "보류된 요청 뭐야"},
+                 {"role": "assistant", "content": "(대답)"}]
+        self.assertEqual(hub.gather("그건 언제야?", use_cache=False,
+                                    history=hist)[0], "",
+                         "실패한 조회를 들고 다닌다")
+
+
 class 필요할_때만_띄운다(_Fake):
 
     def _hub(self, **over):
@@ -784,8 +962,21 @@ class 실제_등록_데이터로_찾는다(_Fake):
         self.addCleanup(self.hub.close)
 
     def rows(self, q):
+        """조회 결과를 **건 단위 덩어리**로 자른다.
+
+        ★줄 단위(startswith('#'))로 세면 안 된다. 좁혀지면 서버가 내용·응답
+          까지 펴서 여러 줄로 주는데, 그러면 머리글 줄에는 번호·상태·사람만
+          있고 정작 찾는 내용은 다음 줄에 있다. 한 건이 몇 줄이든 한 덩어리로
+          봐야 '몇 건인가' 와 '거기 그 말이 있나' 를 같이 볼 수 있다.
+        """
         txt, _ = self.hub.gather(q)
-        return [l for l in txt.split("\n") if l.startswith("#")]
+        out = []
+        for ln in txt.split("\n"):
+            if ln.startswith("#"):
+                out.append(ln)
+            elif out:
+                out[-1] += "\n" + ln
+        return out
 
     def test_대상이_전부_ALL_이어도_목록이_나온다(self):
         r = self.rows("요청 뭐 올라와 있어?")

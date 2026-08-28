@@ -208,12 +208,25 @@ class Hub:
     #   같은 글은 이 시간 안에서 한 번만 실제로 조회한다.
     CACHE_S = 15.0
 
+    # 조회가 안 걸린 질문에서 직전 결과를 들고 갈 범위.
+    # ★무한정 들고 가면 안 된다 — 요청이력 이야기가 끝나고 한참 뒤에도
+    #   그 글이 프롬프트에 남아 엉뚱한 답의 재료가 된다.
+    CARRY_TURNS = 6      # 주고받은 메시지 수 (사람+서윤 = 2개가 한 번)
+    CARRY_S = 900.0      # 15분
+
     def __init__(self, servers=None, say=None):
         self.servers = [s for s in (servers or []) if s.get("enabled", True)]
         self._live = {}
         self._lock = threading.RLock()
         self._say = say or (lambda *_a: None)
         self._cache = {}          # {질문: (잰 시각, 글, 도구 수)}
+        # ★한 번 조회한 것은 **그 대화 안에서 들고 간다.**
+        #   증상: "7번 요청 뭐야?" 로 조회가 걸려 내용을 받아 놓고, 바로 다음
+        #   "그럼 그건 언제 적용돼?" 에는 '요청'·'이력' 같은 낱말이 없어서
+        #   서버가 아예 안 불리고 → 프롬프트에 MCP 칸이 통째로 빠졌다.
+        #   서윤은 방금 자기가 읽은 내용을 못 보는 상태로 답해야 했다.
+        #   {대화열쇠: (그때 history 길이, 잰 시각, 글)}
+        self._carry = {}
         # ★서버마다 자물쇠 하나. 아바타 서버는 스레드로 도는데, 화면의
         #   컨텍스트 계측(/api/ctx)과 대화(/api/chat)가 **동시에** 같은 MCP
         #   프로세스를 쓴다. 한쪽이 "죽었네" 하고 닫는 순간 다른 쪽은 닫힌
@@ -313,7 +326,59 @@ class Hub:
                 c.server.get("version") or ""))
             return c
 
-    def gather(self, text, use_cache=True):
+    @staticmethod
+    def _conv_key(history, text):
+        """이 대화를 가리키는 열쇠 — **첫 사람 발화**.
+
+        /api/chat 에 세션 id 가 안 넘어와서 history 로 짚는다. 첫 발화는
+        대화가 이어져도 안 바뀌므로, 두 번째 질문부터도 같은 열쇠가 나온다.
+        (첫 질문이면 history 가 비어 있으니 지금 질문이 곧 첫 발화다.)
+        """
+        import hashlib
+        first = ""
+        for m in history or []:
+            if isinstance(m, dict) and m.get("role") == "user":
+                t = str(m.get("content") or "").strip()
+                if t:
+                    first = t
+                    break
+        if not first:
+            first = str(text or "").strip()
+        if not first:
+            return ""
+        return hashlib.sha1(first.encode("utf-8", "replace")).hexdigest()[:16]
+
+    def _recall(self, history, text):
+        """조회가 안 걸렸을 때 들고 갈 직전 결과 (없으면 빈 글)."""
+        key = self._conv_key(history, text)
+        if not key:
+            return ""
+        with self._lock:
+            hit = self._carry.get(key)
+        if not hit:
+            return ""
+        at_len, when, got = hit
+        if time.time() - when > self.CARRY_S:
+            return ""
+        if len(history or []) - at_len > self.CARRY_TURNS:
+            return ""
+        # ★방금 조회한 것처럼 말하면 안 된다. 어디서 온 글인지 밝힌다.
+        return ("(아래는 **이 대화에서 조금 전에 조회해 둔** 요청이력이다. "
+                "이번 질문으로 다시 조회하지는 않았다 — 이어지는 질문이라 "
+                "그대로 들고 왔다. 내용은 그때 받은 그대로다.)\n" + got)
+
+    def _remember(self, history, text, got):
+        key = self._conv_key(history, text)
+        if not key or not got:
+            return
+        with self._lock:
+            self._carry[key] = (len(history or []), time.time(), got)
+            if len(self._carry) > 32:      # 오래된 대화부터 버린다
+                for k in sorted(self._carry,
+                                key=lambda k: self._carry[k][1])[:16]:
+                    self._carry.pop(k, None)
+
+    def gather(self, text, use_cache=True, history=None):
         """질문에 걸리는 서버들을 불러 근거 글을 만든다 → (글, 부른 도구 수).
 
         ★같은 글이면 CACHE_S 안에서는 다시 안 조회한다 (계측 + 대화가
@@ -326,6 +391,7 @@ class Hub:
             with self._lock:
                 hit = self._cache.get(key)
                 if hit and now - hit[0] < self.CACHE_S:
+                    self._remember(history, text, hit[1])
                     return hit[1], 0
         out, used = [], 0
         for s in self.matched(text):
@@ -350,7 +416,18 @@ class Hub:
                     for k in sorted(self._cache,
                                     key=lambda k: self._cache[k][0])[:32]:
                         self._cache.pop(k, None)
-        return got, used
+        if got:
+            # ★실패한 조회는 기억하지 않는다. "붙지 못했다" 를 들고 다니면
+            #   이어지는 질문마다 그 글이 따라와서, 서버가 멀쩡해진 뒤에도
+            #   서윤이 계속 "요청이력을 확인할 수 없다" 고 말한다.
+            #   판정 기준은 llm.py 의 mcp_failed 와 같은 것을 쓴다.
+            if used and not ("실패" in got or "못 붙었다" in got):
+                self._remember(history, text, got)
+            return got, used
+        # ★조회가 안 걸렸다. 여기서 빈 글을 주면 서윤은 **방금 자기가 읽은
+        #   내용을 못 보는 채로** 답한다 ("그럼 언제 적용돼?" 처럼 이어지는
+        #   질문에는 '요청'·'이력' 같은 낱말이 없어서 늘 안 걸린다).
+        return self._recall(history, text), 0
 
     def status(self):
         """지금 MCP 가 어떤 상태인가 — 화면·진단용.
