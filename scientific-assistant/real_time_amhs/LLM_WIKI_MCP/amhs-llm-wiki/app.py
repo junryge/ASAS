@@ -481,7 +481,7 @@ def embed_texts(texts):
         return []
     c = emb_conf()
     if c["backend"] == "api":
-        url = c["base"] + "/embeddings"
+        url = api_base(c["base"]) + "/embeddings"
         headers = {"Content-Type": "application/json"}
         if c["key"]:
             headers["Authorization"] = "Bearer " + c["key"]
@@ -752,7 +752,8 @@ def _rerank_api(query, passages):
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
-    req = urllib.request.Request(base + "/rerank", data=body, headers=headers)
+    req = urllib.request.Request(api_base(base) + "/rerank", data=body,
+                                 headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             data = json.loads(r.read().decode("utf-8"))
@@ -1119,13 +1120,27 @@ def llm_ready():
     return bool(get_setting("llm_base_url") and get_setting("llm_model"))
 
 
+# 사람이 쓰던 주소를 통째로 붙여 넣는다. 그러면 아래에서 한 번 더 붙어
+# /chat/completions/chat/completions 가 되고 404 가 난다 (실제로 그랬다).
+_API_TAILS = ("/chat/completions", "/completions", "/embeddings", "/rerank")
+
+
+def api_base(url):
+    """설정에 적힌 주소에서 **base 만** 남긴다. 끝에 붙은 손잡이는 뗀다."""
+    b = str(url or "").strip().rstrip("/")
+    for t in _API_TAILS:
+        if b.endswith(t):
+            return b[: -len(t)].rstrip("/")
+    return b
+
+
 def llm_chat(messages, max_tokens=2500, temperature=0.3):
     base = get_setting("llm_base_url").rstrip("/")
     model = get_setting("llm_model")
     key = get_setting("llm_api_key")
     if not base or not model:
         raise RuntimeError("LLM 설정이 비어있다. [설정]에서 API 주소와 모델명을 입력해라.")
-    url = base + "/chat/completions"
+    url = api_base(base) + "/chat/completions"
     body = json.dumps({"model": model, "messages": messages,
                        "max_tokens": max_tokens, "temperature": temperature}).encode()
     headers = {"Content-Type": "application/json"}
