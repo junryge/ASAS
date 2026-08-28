@@ -1,7 +1,7 @@
 ---
 title: FAB 간 연결 경로
 type: concept
-domain: M16HUB
+domain: 버츄얼 아바타
 tags: [연결, CNV, LFT, 4AFC3201, 4AFC3301, 4ALF, 4ABLD, 6ABL60, 6ALF, 6ABL01, WIS_M16WT, 경로]
 summary: M16 HUBROOM(3F)을 기준으로 각 FAB이 무엇으로 이어지는가 — 연결 수단과 호기명, 경유 예시.
 sources: []

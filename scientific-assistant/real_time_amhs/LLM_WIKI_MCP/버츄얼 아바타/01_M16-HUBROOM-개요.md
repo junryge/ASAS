@@ -1,7 +1,7 @@
 ---
 title: M16 HUBROOM 개요
 type: concept
-domain: M16HUB
+domain: 버츄얼 아바타
 tags: [M16HUBROOM, M16Bridge, FAB, 층현황, 반송]
 summary: M16 HUBROOM(M16 Bridge)은 M14와 M16 사이 물류 이동을 잇는 3층 공간이다. 이 위키의 모든 반송 지식은 이곳을 기준으로 쓰인다.
 sources: []

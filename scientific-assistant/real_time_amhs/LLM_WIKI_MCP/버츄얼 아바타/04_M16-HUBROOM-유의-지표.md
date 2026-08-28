@@ -1,7 +1,7 @@
 ---
 title: M16 HUBROOM 유의 지표
 type: concept
-domain: M16HUB
+domain: 버츄얼 아바타
 tags: [SORTERWAITCOUNTOVER, Sorter, MLUD, 6FIOB, 지표, 정체]
 summary: 반송 정체를 먼저 드러내는 지표 — Sorter 대기(SORTERWAITCOUNTOVER)와 M16 HUBROOM MLUD(6FIOB~) 관련 지표.
 sources: []
