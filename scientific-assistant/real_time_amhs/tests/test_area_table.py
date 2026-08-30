@@ -575,6 +575,71 @@ class ColorTable(unittest.TestCase):
         self.assertTrue(F.fab_color("M99").startswith("#"))
 
 
+class Download(unittest.TestCase):
+    """과거 데이터 내려받기.
+
+    ★원본 CSV(130컬럼짜리 기계 파일) 링크는 원래 있었지만, 툴바 끝에 'CSV'
+      한 글자라 못 찾았고 — 찾아도 **화면에서 보던 표가 아니다**. 사람이
+      받고 싶은 건 방금 보고 있던 그 표다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+        with open(os.path.join(util.BASE, "static", "dashboard.html"),
+                  encoding="utf-8") as f:
+            cls.h = f.read()
+        m = re.search(r"function viewCsv\(list\)\{.*?\n\}", cls.h, re.S)
+        assert m, "viewCsv 가 없다"
+        cls.v = m.group(0)
+
+    def test_고를_수_있게_메뉴로_둔다(self):
+        """'CSV' 글자 하나로는 있는 줄도 모른다."""
+        m = re.search(r'<select id="pdl".*?</select>', self.h, re.S)
+        self.assertIsNotNone(m, "내려받기 메뉴가 없다")
+        for v in ("view", "total", "llm", "ml"):
+            self.assertIn('value="%s"' % v, m.group(0))
+
+    def test_화면의_표를_그대로_받는다(self):
+        """컬럼이 표와 어긋나면 '내가 보던 것' 이 아니다."""
+        for col in ("시간", "CASE", "종합점수", "HI_FAB", "reason",
+                    "실제지표", "AMOS HID구역", "AMOS QUEUE지표"):
+            self.assertIn("'%s'" % col, self.v, col)
+        self.assertIn("...FABS", self.v, "FAB 다섯이 서버 목록을 안 따라간다")
+
+    def test_색으로만_말하던_것을_글자로_푼다(self):
+        """표에서는 등급이 칩 색이고 reason 원문은 툴팁이다 — 파일에는 안 남는다."""
+        self.assertIn("'등급'", self.v)
+        self.assertIn("'reason 원문'", self.v)
+
+    def test_모르는_FAB_은_0_이_아니라_빈칸(self):
+        """★0 으로 채우면 받아 본 사람이 그 FAB 을 '정상' 으로 읽는다."""
+        self.assertRegex(self.v, r"v == null \? '' : v")
+
+    def test_엑셀이_한글을_안_깬다(self):
+        """★BOM 이 없으면 엑셀이 cp949 로 읽어 전부 깨진다."""
+        m = re.search(r"function csvText\(head, rows\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m)
+        self.assertIn("\\ufeff", m.group(0))
+
+    def test_쉼표와_따옴표를_감싼다(self):
+        """reason 원문에는 쉼표가 흔하다 — 안 감싸면 컬럼이 밀린다."""
+        m = re.search(r"function csvCell\(v\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m)
+        body = m.group(0)
+        self.assertIn('replace(/"/g', body, "따옴표를 두 번으로 안 바꾼다")
+        self.assertRegex(body, r'test\(t\)')
+
+    def test_화면_상한을_파일에_걸지_않는다(self):
+        """'더 보기' 는 화면을 가볍게 하려는 것이다. 파일까지 300행에서
+        끊으면 받은 사람은 그게 전부인 줄 안다."""
+        m = re.search(r"\$\('#pdl'\).onchange = function\(\)\{.*?\n\};",
+                      self.h, re.S)
+        self.assertIsNotNone(m, "내려받기 처리가 없다")
+        self.assertNotIn("PROW_CAP", m.group(0), "파일에 화면 상한이 걸렸다")
+        self.assertIn("applyFilter(PFEED, PFILTER", m.group(0),
+                      "보고 있는 필터가 파일에 안 걸린다")
+
+
 class StickyHead(unittest.TestCase):
     """머리글 고정 — 하루치 1440행을 내리면 지금 보는 숫자가 M14 인지
     M16B 인지 알 수 없어진다. 컬럼 이름이 화면에 남아 있어야 한다.
