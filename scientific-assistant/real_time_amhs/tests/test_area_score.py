@@ -131,82 +131,47 @@ class FAB_분리_파일을_읽는다(unittest.TestCase):
         self.assertEqual(r["source"], "fab_file")
         self.assertEqual(r["score_col"], "area_score")
 
-    def test_등급은_정책이_정한다(self):
-        """★예전엔 반대였다 — 파일의 area_level 이 있으면 그걸 그대로 썼다.
+    def test_예측기가_적어_준_등급을_그대로_쓴다(self):
+        """우리가 다시 매기면 기준이 두 벌이 되어 언젠가 어긋난다.
+        ★우리 계산과 **다른** 등급을 넣어야 확인이 된다 — 62점이면 우리는
+        '경계' 라고 매기지만, 파일이 '위험' 이라고 하면 파일을 따라야 한다.
 
-        그러면 **정책 탭에서 컷을 내려도 FAB 줄이 안 따라온다.**
-        실제 증상: "M14 가 70 까지 올라가는데 왜 이상이 없다고 하지?"
-        화면에는 컷이 '경계 35' 라고 떠 있는데 등급만 '정상' 이었다 —
-        예측기가 자기 기준으로 적어 둔 값이 정책을 이기고 있었다.
-
-        ALL 줄은 원래부터 정책으로 매긴다(all_row). 여기만 파일을 따르면
-        한 표 안에서 두 줄이 서로 다른 자로 재는 셈이다.
+        ※한 번 이걸 '정책이 이겨야 한다' 로 바꿨다가 되돌렸다. 현장에서
+          이미 잘 맞고 있었다 — CNV 고장(14:20 발생 · 15:35 복구) 건이
+          그대로 잡혔다. **안 틀린 것을 고치면 안 된다.**
         """
-        self._all(raw=35)
-        self._fab(score=62, level="위험")     # 예측기는 '위험' 이라고 적었다
-        r = self._row()
-        self.assertEqual(r["area_score"], 62)
-        # 기본 컷(경계 60 · 위험 71)으로는 62 가 '경계' 다
-        self.assertEqual(r["level"], "경계", "파일 등급이 정책을 이겼다")
-
-    def test_예측기가_뭐라_했는지는_안_버린다(self):
-        """★조용히 한쪽을 고르면, 나중에 왜 다른지 아무도 모른다."""
         self._all(raw=35)
         self._fab(score=62, level="위험")
         r = self._row()
-        self.assertEqual(r["file_level"], "위험")
-        self.assertIn("예측기는 '위험'", r["level_mismatch"])
-        self.assertIn("경계", r["level_mismatch"])      # 지금 정책이 뭔지
+        self.assertEqual(r["area_score"], 62)
+        self.assertEqual(r["level"], "위험", "우리가 다시 매겼다")
 
-    def test_같으면_어긋났다고_하지_않는다(self):
+    def test_정책으로_매기면_뭐가_될지는_알려만_준다(self):
+        """★바꾸지는 않되, 다르다는 사실은 보여 준다 — 정책을 손볼 때 참고."""
+        self._all(raw=35)
+        self._fab(score=62, level="위험")
+        r = self._row()
+        self.assertEqual(r["level"], "위험")          # 쓰는 값은 그대로
+        self.assertEqual(r["file_level"], "위험")
+        self.assertEqual(r["policy_level"], "경계")   # 정책으로는 이랬을 것
+        self.assertIn("화면은 예측기 값을 씁니다", r["level_note"])
+
+    def test_같으면_아무_말도_안_한다(self):
         self._all(raw=35)
         self._fab(score=62, level="경계")
         r = self._row()
         self.assertEqual(r["file_level"], "경계")
-        self.assertNotIn("level_mismatch", r)
+        self.assertNotIn("policy_level", r)
+        self.assertNotIn("level_note", r)
 
-    def test_정책을_내리면_FAB_줄이_따라온다(self):
-        """★이게 정책 탭이 있는 이유다. 70점이 '정상' 으로 남으면 안 된다."""
-        from copy import deepcopy
+    def test_파일에_등급이_없으면_우리가_매긴다(self):
+        """★파일이 비었을 때까지 안 매기면 등급이 통째로 빈다."""
         self._all(raw=35)
-        self._fab(score=70, level="정상")     # 예측기는 '정상' 이라고 적었다
-        cfg = deepcopy(self.cfg)
-        cfg.setdefault("grade", {}).setdefault("by_sys", {})["M16HUB"] = {
-            "warn": 35, "danger": 50, "critical": 70}
-        out = fab_score.compare(store_csv.read_day("20260826", cfg), None, cfg,
-                                day="20260826")
-        r = [x for x in out["rows"] if x.get("fab") == "M16HUB"][0]
+        self._fab(score=70, level="")
+        r = self._row()
         self.assertEqual(r["score"], 70)
-        self.assertEqual(r["level"], "초위험")
-        self.assertEqual(r["cuts"], {"warn": 35, "danger": 50, "critical": 70})
-
-    def test_area_score_가_아닌_컬럼은_점수로_안_쓰지만_숨기지도_않는다(self):
-        """★"현장에서는 70 이 나왔는데 관제는 아니라고 한다" 의 다른 갈래.
-
-        분리 파일의 컬럼 이름이 area_score 가 아니면(예: score) 눈금을 몰라
-        점수로 쓰지 않고 통합 파일에서 되계산한다. 그건 맞는 판단인데,
-        **말을 안 하면** 화면 숫자가 왜 다른지 알 길이 없다.
-        무엇이 있었는지(file_col · file_value)를 같이 실어 준다.
-        """
-        self._all(raw=3)                      # 되계산하면 4점쯤
-        os.makedirs(os.path.join(self.d, "M16HUB"), exist_ok=True)
-        with open(os.path.join(self.d, "M16HUB", "20260826_TOTAL.CSV"), "w",
-                  encoding="utf-8") as f:
-            f.write("datetime,score\n2026-08-26 10:00,70\n")
-        r = self._row()
-        self.assertEqual(r["source"], "calc")
-        self.assertNotEqual(r["area_score"], 70)
-        self.assertEqual(r["file_col"], "score")
-        self.assertEqual(r["file_value"], 70.0)
-
-    def test_이_점수가_어디서_왔는지_늘_적어_둔다(self):
-        """★관제 화면과 현장 숫자가 다를 때 제일 먼저 볼 것."""
-        self._all(raw=35)
-        self._fab(score=63)
-        r = self._row()
-        for k in ("source", "score_col", "measures", "cuts"):
-            self.assertIn(k, r, k)
-        self.assertEqual(r["source"], "fab_file")
+        self.assertEqual(r["level"], "경계")          # 기본 컷 60~70
+        self.assertNotIn("file_level", r)
 
     def test_포화_표시도_가져온다(self):
         self._all(raw=60)

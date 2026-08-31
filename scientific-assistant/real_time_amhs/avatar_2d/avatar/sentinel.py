@@ -703,12 +703,11 @@ def chart():
                 "col": (row.get("score_col") or "unified_risk_score") if is_all
                        else (row.get("score_col") or "area_score"),
                 "source": row.get("source") or "",
-                # ★예측기가 적어 둔 등급과 지금 정책이 다를 때 그 사실.
-                #   "70점인데 왜 이상이 없다고 하나" 의 답이 여기 있다 —
-                #   예전엔 예측기 등급이 정책을 이겨서 70 이 '정상' 이었다.
-                #   이제는 정책이 이기고, 어긋난 것은 이렇게 말해 준다.
+                # ★등급은 예측기가 적어 준 값을 그대로 쓴다. 정책으로 매기면
+                #   뭐가 됐을지는 **알려만 준다** — 바꾸지 않는다.
                 "file_level": row.get("file_level") or "",
-                "level_mismatch": row.get("level_mismatch") or "",
+                "policy_level": row.get("policy_level") or "",
+                "level_note": row.get("level_note") or "",
                 "cuts": row.get("cuts") or {},
                 "saturated": bool(row.get("saturated")),
                 "area": row.get("area"),          # 융합 기여분 (0~50) — 참고용

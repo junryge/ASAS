@@ -574,7 +574,8 @@ def api_fab_why():
       ② 이 숫자가 어디서 온 것인가. 갈릴 수 있는 자리가 셋이다:
         ① 어느 파일의 어느 컬럼을 읽었나 (FAB 분리 파일 vs 되계산)
         ② 지금 이 시스템의 등급 컷이 얼마인가 (정책 탭 · 시스템별)
-        ③ 예측기가 적어 둔 등급과 지금 정책이 다른가
+        ③ 예측기가 적어 둔 등급과 지금 정책이 다른가 (등급은 예측기 값을
+         그대로 쓴다 — 다르다는 사실만 알려 준다)
       셋 다 한 화면에 적어 준다. 숫자가 다르면 ①, 등급이 다르면 ②나 ③이다.
     """
     try:
@@ -610,8 +611,8 @@ def api_fab_why():
                 "{} : {}점 → {}   (경계 {} · 위험 {} · 초위험 {})   ← {}"
                 .format(f, r.get("score"), r.get("level"), cuts.get("warn"),
                         cuts.get("danger"), cuts.get("critical"), src))
-            if r.get("level_mismatch"):
-                lines.append("      ※ {}".format(r["level_mismatch"]))
+            if r.get("level_note"):
+                lines.append("      ※ {}".format(r["level_note"]))
             if r.get("file_value") is not None:
                 lines.append("      ※ 분리 파일에는 {} = {} 가 있습니다 "
                              "(area_score 가 아니라서 점수로 쓰지 않았습니다)"
@@ -640,7 +641,8 @@ def api_fab_why():
                 "cuts": cuts, "source": r.get("source"),
                 "score_col": r.get("score_col"), "measures": r.get("measures"),
                 "file_level": r.get("file_level") or "",
-                "level_mismatch": r.get("level_mismatch") or "",
+                "policy_level": r.get("policy_level") or "",
+                "level_note": r.get("level_note") or "",
                 "file_value": r.get("file_value"), "file_col": r.get("file_col"),
                 "area": r.get("area"), "saturated": r.get("saturated"),
                 "why": detail_extra.get(f),

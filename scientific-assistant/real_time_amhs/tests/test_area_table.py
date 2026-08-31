@@ -758,7 +758,7 @@ class 이_점수가_어디서_왔나(unittest.TestCase):
         body = s[i:j]
         self.assertIn("score_col", body)          # ① 어느 컬럼
         self.assertIn("cuts", body)               # ② 등급 컷
-        self.assertIn("level_mismatch", body)     # ③ 예측기와 어긋남
+        self.assertIn("level_note", body)         # ③ 예측기와 어긋남
         self.assertIn("file_value", body)         # 안 쓴 값도 말한다
         self.assertIn("FAB 분리 파일", body)
         self.assertIn("되계산", body)
