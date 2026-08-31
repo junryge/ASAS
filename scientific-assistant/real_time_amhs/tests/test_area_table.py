@@ -629,14 +629,36 @@ class Download(unittest.TestCase):
         self.assertIn('replace(/"/g', body, "따옴표를 두 번으로 안 바꾼다")
         self.assertRegex(body, r'test\(t\)')
 
+    def test_몇_행_받는지_메뉴에_박는다(self):
+        """★코드는 늘 전부 담는데 화면이 그렇게 말을 안 해서, '더 보기' 를
+        눌러야 다 받는 줄 아셨다. 숫자를 적어 의심할 여지를 없앤다."""
+        m = re.search(r"function pdlLabel\(\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "받을 행수를 메뉴에 안 적는다")
+        body = m.group(0)
+        self.assertIn("applyFilter(PFEED, PFILTER", body)
+        self.assertNotIn("PROW_CAP", body, "라벨에 화면 상한이 섞였다")
+        self.assertIn("전부", body)
+        # 값이 바뀌는 자리에서 다시 그려야 숫자가 안 어긋난다
+        self.assertGreaterEqual(len(re.findall(r"pdlLabel\(\)", self.h)), 3,
+                                "라벨을 갱신하는 자리가 모자라다")
+
+    def test_서버가_자른_날은_말해_준다(self):
+        """하루가 limit 을 넘으면 파일도 그만큼만 담긴다 — 말 없이 주면 안 된다."""
+        m = re.search(r"\$\('#pdl'\).onchange = function\(\)\{.*?\n\};",
+                      self.h, re.S).group(0)
+        self.assertIn("PTOTAL", m)
+        self.assertIn("PSHOWN", m)
+
     def test_화면_상한을_파일에_걸지_않는다(self):
         """'더 보기' 는 화면을 가볍게 하려는 것이다. 파일까지 300행에서
         끊으면 받은 사람은 그게 전부인 줄 안다."""
         m = re.search(r"\$\('#pdl'\).onchange = function\(\)\{.*?\n\};",
                       self.h, re.S)
         self.assertIsNotNone(m, "내려받기 처리가 없다")
-        self.assertNotIn("PROW_CAP", m.group(0), "파일에 화면 상한이 걸렸다")
-        self.assertIn("applyFilter(PFEED, PFILTER", m.group(0),
+        # ★주석은 걷고 본다 — '상한을 안 본다' 는 설명에도 그 이름이 나온다
+        code = re.sub(r"//.*", "", m.group(0))
+        self.assertNotIn("PROW_CAP", code, "파일에 화면 상한이 걸렸다")
+        self.assertIn("applyFilter(PFEED, PFILTER", code,
                       "보고 있는 필터가 파일에 안 걸린다")
 
 

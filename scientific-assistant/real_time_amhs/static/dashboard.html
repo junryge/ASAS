@@ -602,9 +602,9 @@
           <option value="30">최근 30일</option>
           <option value="60">최근 60일</option>
         </select>
-        <select id="pdl" class="msel" title="내려받기" style="width:132px">
+        <select id="pdl" class="msel" title="내려받기" style="width:196px">
           <option value="">⤓ 내려받기…</option>
-          <option value="view">보고 있는 표</option>
+          <option value="view" id="pdl-view">보고 있는 표</option>
           <option value="total">원본 데이터 (TOTAL)</option>
           <option value="llm">LLM 판단 (LLM)</option>
           <option value="ml">ML 조기예측 (ML)</option>
@@ -3497,6 +3497,8 @@ async function pollCases(){
 
 /* ── 과거 데이터 조회 — 저장된 CSV 를 날짜로 읽어 같은 표에 뿌린다 ── */
 let PFEED = [], PFILTER = 'all', PDAY = null, PINIT = false, PACC = null;
+/* 서버가 limit 으로 잘라 준 날을 알아야 한다 — 내려받기가 그만큼만 담긴다 */
+let PTOTAL = 0, PSHOWN = 0;
 const fmtDay = d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
 
 async function initPast(){
@@ -3560,9 +3562,11 @@ async function loadPast(day, opt){
     setFabs(fd);                       // 과거 탭도 같은 표 — 같은 컬럼
     if(fd.groups){ GROUPS = fd.groups; if(!PSTRIPG) PSTRIPG = GROUPS[0]?.id; }
     const cnt = fd.counts || {};
+    PTOTAL = fd.total || 0; PSHOWN = fd.shown || PFEED.length;
     $('#pn-all').textContent = fd.total || 0;
     ['정상','경계','위험','초위험'].forEach(l => $('#pn-'+l).textContent = cnt[l]||0);
     $('#pdl').disabled = !PFEED.length;
+    pdlLabel();
     const from_ = (fd.earliest||'').slice(11), to_ = (fd.latest||'').slice(11);
     $('#pinfo').innerHTML = PFEED.length
       ? `${esc(fmtDay(day))} · <b style="color:var(--tx2)">${esc(from_)}~${esc(to_)}</b>`
@@ -3618,13 +3622,29 @@ function viewCsv(list){
   ]);
   return csvText(head, rows);
 }
+/* ★'더 보기' 를 눌러야 다 받는 줄 알고 계셨다 — 화면이 그렇게 말을 안 해서다.
+   파일에는 늘 전부 담기지만, **몇 행인지 항목에 박아** 의심할 여지를 없앤다. */
+function pdlLabel(){
+  const o = $('#pdl-view'); if(!o) return;
+  const n = applyFilter(PFEED, PFILTER, {}).length;
+  const what = PFILTER === 'all' ? '전체' : PFILTER;
+  o.textContent = n ? `보고 있는 표 (${what}) — ${n.toLocaleString()}행 전부`
+                    : '보고 있는 표 — 받을 행 없음';
+}
+
 $('#pdl').onchange = function(){
   const what = this.value; this.value = '';
   if(!what || !PDAY) return;
   if(what === 'view'){
     const list = applyFilter(PFEED, PFILTER, {});
     if(!list.length){ alert('내려받을 행이 없습니다.'); return; }
-    // ★상한(더 보기)은 화면에만 거는 것이다. 파일에는 걸린 것 **전부** 담는다.
+    // ★'더 보기' 상한(PROW_CAP)은 화면에만 거는 것이다 — 여기서는 안 본다.
+    //   파일에는 그 날 받아 온 것 **전부**가 담긴다.
+    //   다만 서버가 limit 으로 잘라 준 날은 그 사실을 말해야 한다.
+    if(PSHOWN && PTOTAL && PTOTAL > PSHOWN &&
+       !confirm(`이 날은 서버가 ${PTOTAL.toLocaleString()}행 중 `
+              + `${PSHOWN.toLocaleString()}행만 보내 줬습니다.\n`
+              + `받는 파일도 그만큼입니다. 계속할까요?`)) return;
     saveText(`${SYS}_${PDAY}_${PFILTER === 'all' ? '전체' : PFILTER}_${list.length}행.csv`,
              viewCsv(list));
     return;
@@ -3728,7 +3748,7 @@ $('#pday').onchange  = () => {
 
 document.querySelectorAll('#pfilters button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#pfilters button').forEach(x=>x.classList.toggle('on',x===b));
-  PFILTER = b.dataset.f; PROW_CAP = ROW_STEP; paintPast();
+  PFILTER = b.dataset.f; PROW_CAP = ROW_STEP; paintPast(); pdlLabel();
 });
 /* ── 더블클릭 → 구간 그래프 ── */
 /* 추이에서 켜 둔 FAB 을 구간 그래프에도 그대로 넘긴다. 추이에 겹쳐 놓고
