@@ -505,6 +505,34 @@ def seed_analysis_skills(store, base_dir):
     return done
 
 
+def seed_hubroom(store, base_dir):
+    """M16 HUBROOM 반송 **도메인 지식**을 스킬로 심는다.
+
+    ★위키(MCP)와 무엇이 다른가
+      위키는 낱말이 걸릴 때만 조회한다 — 물어봐야 찾아 본다.
+      이건 **서윤이 늘 지고 다니는 지식**이다. 용어(LFT·ZT·FOSB)·건물 층·
+      경로·호기명은 물어봐서 아는 것이 아니라 **알고 있어야** 대화가 된다.
+      "M14A 에서 M16WT 가려면?" 에 매번 조회하고 있으면 관제가 아니다.
+
+    이미 있으면 건드리지 않는다 — 사용자가 고쳤을 수 있다.
+    """
+    if store.read("m16-hubroom"):
+        return False
+    src = os.path.join(os.path.dirname(str(base_dir)), "docs",
+                       "M16_HUBROOM_반송_도메인지식.md")
+    if not os.path.isfile(src):
+        return False
+    with open(src, encoding="utf-8") as f:
+        body = f.read()
+    md = compose("m16-hubroom",
+                 "M16 HUBROOM 반송 도메인 지식 — 반송 장치(VHL·OHT·LFT·CNV·"
+                 "STK·STB·Sorter·MLUD)와 포트 규칙, 건물·층 현황, FAB 간 연결 "
+                 "수단과 호기명, 경유 경로, 유의 지표(Sorter 대기·MLUD)",
+                 terms.no_code(body))
+    ok, _e, _w = store.save("m16-hubroom", md)
+    return ok
+
+
 def seed_fab_score(store, base_dir):
     """real_time_amhs 의 FAB 스코어 md 를 fab-score 스킬로 심는다.
 

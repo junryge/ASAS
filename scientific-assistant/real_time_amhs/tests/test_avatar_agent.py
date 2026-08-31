@@ -402,6 +402,96 @@ class 스킬(unittest.TestCase):
         self.assertIn("수정본", self.store.read("fab-score"))
 
 
+class 반송_도메인_지식을_지고_다닌다(unittest.TestCase):
+    """★위키(MCP)와 자리가 다르다.
+
+    위키는 낱말이 걸릴 때 **조회**한다 — 물어봐야 찾아 본다.
+    이건 서윤이 **늘 지고 다니는 지식**이다. 용어(LFT·ZT·FOSB)·건물 층·
+    경로·호기명은 물어봐서 아는 것이 아니라 알고 있어야 대화가 된다.
+    "M14A 에서 M16WT 가려면?" 에 매번 조회하고 있으면 관제가 아니다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = skills.SkillStore(Path(self.tmp.name) / "skills")
+        self.base = Path(AV)
+
+    def seed(self):
+        ok = skills.seed_hubroom(self.store, self.base)
+        if not ok:
+            self.skipTest("docs/M16_HUBROOM_반송_도메인지식.md 가 없다")
+        return self.store.read("m16-hubroom")
+
+    def test_심고_규격을_지킨다(self):
+        md = self.seed()
+        ok, errs, _w = skills.validate(md, "m16-hubroom")
+        self.assertTrue(ok, errs)
+
+    def test_찾아지게_설명을_붙인다(self):
+        """★description 이 부실하면 관련 질문에 안 실린다."""
+        md = self.seed()
+        desc = skills.parse_front(md).get("description", "")
+        for w in ("LFT", "CNV", "MLUD", "호기명", "경로"):
+            self.assertIn(w, desc, w)
+
+    def test_도메인_질문에_실린다(self):
+        self.seed()
+        for q in ("LFT 가 뭐야?", "ZT 랑 ZFS 차이가 뭐지",
+                  "M14A 에서 M16WT 어떻게 가?", "Sorter 대기Q 왜 중요해?",
+                  "MLUD 가 무슨 장치야", "FOUP 이 어디를 경유해?"):
+            self.assertTrue(self.store.context(q, 6000), q)
+
+    def test_상태_질문에는_안_실린다(self):
+        """★평소 관제 대화마다 3천 자를 실으면 그게 곧 예산이다."""
+        self.seed()
+        for q in ("지금 M16HUB 몇 점이야?", "어제 8시에 어땠어?",
+                  "ALL 점수 얼마야"):
+            self.assertFalse(self.store.context(q, 6000), q)
+
+    def test_호기명이_안_뭉개진다(self):
+        """★`6ABL60~` 를 '6ABL 계열' 로 뭉개면 현장이 아는 이름이 사라진다.
+        룰 코드 소독(terms.no_code)이 호기명까지 건드리면 안 된다."""
+        md = self.seed()
+        for code in ("4AFC3201", "4AFC3301", "4ALF", "4ABLD", "6ABL60",
+                     "6ALF", "6ABL01", "WIS_M16WT", "6FIOB",
+                     "SORTERWAITCOUNTOVER"):
+            self.assertIn(code, md, code)
+
+    def test_주신_지식이_다_들어_있다(self):
+        md = self.seed()
+        for w in ("M14A", "M14B", "M14분석실", "M16A", "M16B", "M16EUV",
+                  "M16WT", "R4", "M10A", "HUBROOM",
+                  "VHL", "OHT", "LFT", "CNV", "STK", "STB", "Sorter", "MLUD",
+                  "ZT", "ZFS", "FIO", "FOSB", "FOUP",
+                  "MI", "MO", "AI", "AO", "rack master"):
+            self.assertIn(w, md, w)
+
+    def test_룰_코드는_안_들어간다(self):
+        """★스킬에 'R-A' 가 남아 있으면 모델이 그걸 베껴 답한다 (겪은 사고)."""
+        self.assertFalse(terms.has_code(self.seed()))
+
+    def test_지금_수치가_아니라고_못_박는다(self):
+        """★문서의 예시 숫자를 현재 값처럼 말하면 관제 화면과 어긋난다."""
+        md = self.seed()
+        self.assertIn("지금 수치가 없다", md)
+        self.assertIn("지어내지 마라", md)
+
+    def test_사용자가_고친_것을_안_덮는다(self):
+        self.seed()
+        self.store.save("m16-hubroom", skills.compose(
+            "m16-hubroom", "사용자가 고친 것", "수정본"))
+        self.assertFalse(skills.seed_hubroom(self.store, self.base))
+        self.assertIn("수정본", self.store.read("m16-hubroom"))
+
+    def test_서버가_켜질_때_심는다(self):
+        """★심는 코드가 있어도 부르지 않으면 서윤은 아무것도 모른다."""
+        with open(os.path.join(AV, "avatar", "server.py"), encoding="utf-8") as f:
+            src = f.read()
+        blk = src[src.index("cls.skill_store = skills.SkillStore"):]
+        self.assertIn("seed_hubroom", blk[:2000])
+
+
 class 명령(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
