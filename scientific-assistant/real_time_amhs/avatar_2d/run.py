@@ -181,7 +181,8 @@ def main():
     #   한다 — 공식 SDK(FastMCP) 로 streamable-http 를 쓰기 때문에 아바타가
     #   자식 프로세스로 못 띄운다. 다른 PC 에 있으면 이걸 준다.
     ap.add_argument("--wiki", default="",
-                    help="위키 MCP 주소 (기본 http://127.0.0.1:8020/mcp)")
+                    help="위키 MCP 주소 (기본 http://127.0.0.1:8020/mcp). "
+                         "--wiki off 로 아예 끌 수 있다")
     args = ap.parse_args()
     if args.sentinel:
         from avatar import config as _cfg
@@ -189,9 +190,12 @@ def main():
     if args.qa:
         os.environ["QA_BASE"] = args.qa.rstrip("/")
     if args.wiki:
-        u = args.wiki.rstrip("/")
-        # 주소만 주고 /mcp 를 빠뜨리기 쉽다 — 그러면 조용히 404 다
-        os.environ["WIKI_MCP_URL"] = u if u.endswith("/mcp") else u + "/mcp"
+        u = args.wiki.strip().rstrip("/")
+        if u.lower() in ("off", "none", "no", "0"):
+            os.environ["WIKI_MCP_URL"] = "off"       # 아예 끈다
+        else:
+            # 주소만 주고 /mcp 를 빠뜨리기 쉽다 — 그러면 조용히 404 다
+            os.environ["WIKI_MCP_URL"] = u if u.endswith("/mcp") else u + "/mcp"
 
     if not (BASE_DIR / "static" / "index.html").is_file():
         print("\n  [!] static/index.html 이 없습니다. 압축을 통째로 풀었는지 확인하세요.")

@@ -1558,6 +1558,101 @@ class 검색하고_본문까지_읽는다(_Wiki):
         self.assertEqual(mcp_client.Hub._fit({}, "가" * 200), "가" * 200)
 
 
+class 안_떠_있는_서버에_매달리지_않는다(unittest.TestCase):
+    """★실제 증상: 아바타 화면에 "관제 연결 끊김 — TimeoutError" 가 떴다.
+
+    화면의 컨텍스트 계측은 **타이핑을 멈출 때마다**(500ms) /api/ctx 를 부르고,
+    그때마다 MCP 조회가 돈다. 위키가 안 떠 있으면 그 요청들이 전부 붙기를
+    기다리며 쌓인다 — 스레드가 계속 늘고 아바타 프로세스가 무거워진다.
+    관제 감시 스레드까지 느려지면 화면에는 엉뚱하게 관제가 끊겼다고 뜬다.
+
+    stdio 서버는 이 문제가 약하다(로컬 프로세스라 실패가 빠르다). http 로
+    붙는 서버를 넣으면서 생긴 자리다.
+    """
+
+    DEAD = "http://10.255.255.1:8020/mcp"      # 라우팅 안 됨 = 무응답
+
+    def srv(self, **kw):
+        s = {"key": "wiki", "name": "AMHS 위키", "transport": "http",
+             "url": self.DEAD, "when": ["LFT"], "timeout": 20,
+             "calls": [{"tool": "searchWiki",
+                        "pick": {"query": {"kind": "text"}}}]}
+        s.update(kw)
+        return s
+
+    def test_악수는_오래_안_기다린다(self):
+        """★도구 호출은 오래 걸려도 되지만, **안 뜬 서버를 20초** 기다리는
+        것은 그냥 손해다. 그 20초 동안 대화가 멎어 있다."""
+        self.assertLessEqual(mcp_client.HttpClient.HANDSHAKE_S, 5.0)
+        h = mcp_client.Hub([self.srv()])
+        self.addCleanup(h.close)
+        t0 = time.time()
+        h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertLess(time.time() - t0, 8.0)
+
+    def test_한_번_못_붙으면_잠깐_쉰다(self):
+        """두 번째부터는 두들기지 않고 즉시 실패로 답한다."""
+        h = mcp_client.Hub([self.srv()])
+        self.addCleanup(h.close)
+        h.gather("LFT가 뭐야?", use_cache=False)
+        t0 = time.time()
+        for _ in range(5):
+            got, used = h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertLess(time.time() - t0, 1.0, "쉬지 않고 계속 두들긴다")
+        self.assertIn("붙지 못했다", got)      # 실패는 여전히 말해 준다
+
+    def test_쉬는_동안에도_실패를_말한다(self):
+        """★조용히 빈 글을 주면 서윤이 '위키에 없다' 고 답해 버린다.
+        못 본 것과 없는 것은 다르다."""
+        h = mcp_client.Hub([self.srv()])
+        self.addCleanup(h.close)
+        h.gather("LFT가 뭐야?", use_cache=False)
+        got, _ = h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertIn("AMHS 위키", got)
+        self.assertIn("확인 못 한다", got)
+
+    def test_쉬는_시간이_지나면_다시_붙어_본다(self):
+        h = mcp_client.Hub([self.srv()])
+        self.addCleanup(h.close)
+        h.RETRY_S = 0.0
+        h.gather("LFT가 뭐야?", use_cache=False)
+        with h._lock:
+            self.assertIn("wiki", h._down)     # 못 붙은 것은 기억한다
+        t0 = time.time()
+        h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertGreater(time.time() - t0, 0.3, "쉬는 시간이 지나도 안 붙어 본다")
+
+    def test_죽은_서버가_다른_서버를_안_세운다(self):
+        """★붙는 동안 전체 자물쇠를 쥐고 있으면, 안 떠 있는 서버 하나가
+        멀쩡한 서버 조회까지 통째로 세운다."""
+        import inspect
+        src = inspect.getsource(mcp_client.Hub._client)
+        i, j = src.index("_srv_lock"), src.index("_connect(s)")
+        self.assertLess(i, j, "서버별 자물쇠 안에서 붙어야 한다")
+        # 전체 자물쇠(_lock)를 쥔 채로 붙으면 안 된다
+        head = src[:j]
+        self.assertNotIn("with self._lock:\n            c = _connect", head)
+
+    def test_코드_안_고치고_끌_수_있다(self):
+        """★안 떠 있는 서버 때문에 느려질 때, 바로 뗄 수 있어야 한다."""
+        p1 = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+        with open(p1, encoding="utf-8") as f:
+            src = f.read()
+        i = src.index('"{}_MCP_URL".format')
+        self.assertIn('"off"', src[i:i + 400])
+        self.assertIn('s["enabled"] = False', src[i:i + 400])
+        p2 = os.path.join(util.BASE, "avatar_2d", "run.py")
+        with open(p2, encoding="utf-8") as f:
+            run = f.read()
+        self.assertIn('"off"', run[run.index("args.wiki"):])
+
+    def test_진단은_차단기를_무시한다(self):
+        """★서버를 고쳐 놓고 눌렀는데 '쉬는 중' 이라고 답하면 못 고친다."""
+        import inspect
+        src = inspect.getsource(mcp_client.Hub.status)
+        self.assertIn("_down.clear()", src)
+
+
 class 위키_설정이_말이_된다(unittest.TestCase):
 
     def hub(self):

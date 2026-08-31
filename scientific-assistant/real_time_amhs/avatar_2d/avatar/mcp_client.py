@@ -179,6 +179,11 @@ class HttpClient(_Tools):
         붙기는 하는데 도구가 통째로 안 된다.
     """
 
+    # ★붙는 데 이보다 오래 걸리면 안 떠 있는 것으로 본다. 도구 호출은
+    #   오래 걸릴 수 있어도(검색·본문), **안 뜬 서버를 20초씩 기다리는 것**은
+    #   그냥 손해다. 그 20초 동안 이 대화는 멎어 있다.
+    HANDSHAKE_S = 3.0
+
     def __init__(self, url, headers=None, timeout=20):
         self.url = str(url or "").strip()
         if not self.url:
@@ -292,10 +297,14 @@ class HttpClient(_Tools):
 
     # ── 규격 ─────────────────────────────────────────────────────────────
     def _handshake(self):
-        r = self._rpc("initialize", {
-            "protocolVersion": PROTO,
-            "capabilities": {},
-            "clientInfo": {"name": "seoyun-avatar", "version": "1.0.0"}})
+        full, self.timeout = self.timeout, min(self.timeout, self.HANDSHAKE_S)
+        try:
+            r = self._rpc("initialize", {
+                "protocolVersion": PROTO,
+                "capabilities": {},
+                "clientInfo": {"name": "seoyun-avatar", "version": "1.0.0"}})
+        finally:
+            self.timeout = full
         self.server = r.get("serverInfo") or {}
         self.proto = r.get("protocolVersion") or PROTO
         self._notify("notifications/initialized")
@@ -401,6 +410,15 @@ class Hub:
     CARRY_TURNS = 6      # 주고받은 메시지 수 (사람+서윤 = 2개가 한 번)
     CARRY_S = 900.0      # 15분
 
+    # ★못 붙은 서버는 이 시간 동안 다시 안 두들긴다 (차단기).
+    #   왜 필요한가: 화면의 컨텍스트 계측이 **타이핑을 멈출 때마다**(500ms)
+    #   /api/ctx 를 부르고, 그때마다 조회가 돈다. 안 떠 있는 서버가 하나
+    #   있으면 그 요청들이 전부 붙기를 기다리며 쌓인다 — 스레드가 계속
+    #   늘고, 아바타 프로세스 전체가 무거워진다. 관제 감시 스레드까지
+    #   느려지면 화면에는 엉뚱하게 "관제 연결 끊김" 이 뜬다.
+    #   한 번 못 붙었으면 그 사실을 기억하고 즉시 실패로 답한다.
+    RETRY_S = 30.0
+
     def __init__(self, servers=None, say=None):
         self.servers = [s for s in (servers or []) if s.get("enabled", True)]
         self._live = {}
@@ -414,6 +432,8 @@ class Hub:
         #   서윤은 방금 자기가 읽은 내용을 못 보는 상태로 답해야 했다.
         #   {대화열쇠: (그때 history 길이, 잰 시각, 글)}
         self._carry = {}
+        # {서버열쇠: (못 붙은 시각, 이유)} — RETRY_S 동안 다시 안 붙는다
+        self._down = {}
         # ★서버마다 자물쇠 하나. 아바타 서버는 스레드로 도는데, 화면의
         #   컨텍스트 계측(/api/ctx)과 대화(/api/chat)가 **동시에** 같은 MCP
         #   프로세스를 쓴다. 한쪽이 "죽었네" 하고 닫는 순간 다른 쪽은 닫힌
@@ -555,17 +575,35 @@ class Hub:
         return c2.call(tool, args)
 
     def _client(self, s):
-        with self._lock:
-            c = self._live.get(s["key"])
-            if c is not None and c.alive():
-                return c
-            if c is not None:
-                c.close()
-                self._live.pop(s["key"], None)
-            c = _connect(s)
-            self._live[s["key"]] = c
+        key = s["key"]
+        # ★붙는 동안 **전체 자물쇠를 쥐고 있으면 안 된다.** 안 떠 있는 서버
+        #   하나가 다른 서버 조회까지 통째로 세운다. 서버별 자물쇠로 좁힌다.
+        with self._srv_lock(key):
+            with self._lock:
+                c = self._live.get(key)
+                if c is not None and c.alive():
+                    return c
+                if c is not None:
+                    c.close()
+                    self._live.pop(key, None)
+                bad = self._down.get(key)
+            if bad and time.time() - bad[0] < self.RETRY_S:
+                # 아직 쉬는 중이다 — 두들기지 않고 그때 이유를 그대로 준다
+                raise McpError(bad[1])
+            try:
+                c = _connect(s)
+            except Exception as e:                       # noqa: BLE001
+                with self._lock:
+                    self._down[key] = (time.time(), str(e))
+                self._say("     ↳ MCP 못 붙었다: {} ({}) — {:.0f}초 쉬었다 다시"
+                          .format(s.get("name") or key, str(e)[:80],
+                                  self.RETRY_S))
+                raise
+            with self._lock:
+                self._down.pop(key, None)
+                self._live[key] = c
             self._say("     ↳ MCP 연결: {} ({} {}) — {}".format(
-                s.get("name") or s["key"], c.server.get("name") or "?",
+                s.get("name") or key, c.server.get("name") or "?",
                 c.server.get("version") or "", c.where()))
             return c
 
@@ -679,6 +717,10 @@ class Hub:
           자리**가 있어야 한다. 어떤 주소를 보는지, 붙었는지, 왜 못 붙었는지.
         """
         out = []
+        # ★진단 화면은 차단기를 무시하고 **진짜로 두들긴다**. "30초 쉬는 중"
+        #   이라고 답하면, 서버를 고쳐 놓고 눌러도 계속 안 된다고 나온다.
+        with self._lock:
+            self._down.clear()
         for s in self.servers:
             key = s["key"]
             c = self._live.get(key)

@@ -182,8 +182,15 @@ class App:
             #   같은 이유로 바깥 환경변수가 이겨야 한다 — 위키가 다른 PC 에
             #   떠 있을 때 코드를 고치게 만들면 안 된다.
             if s.get("url"):
-                s["url"] = (os.environ.get("{}_MCP_URL".format(s["key"].upper()))
-                            or s["url"])
+                u = (os.environ.get("{}_MCP_URL".format(s["key"].upper()))
+                     or s["url"]).strip()
+                # ★끄는 길을 하나 열어 둔다. 안 떠 있는 서버 때문에 대화가
+                #   느려질 때, 코드를 고치지 않고 바로 뗄 수 있어야 한다.
+                if u.lower() in ("off", "none", "no", "0", ""):
+                    s["enabled"] = False
+                    sys.stdout.write("  [i] MCP '{}' 끔 (요청대로)\n"
+                                     .format(s.get("name") or s["key"]))
+                s["url"] = u
             srv.append(s)
         # ★스크립트가 실제로 있는지 **켤 때** 본다. avatar_2d 를
         #   real_time_amhs 밖에 풀면 qa/mcp_server.py 가 없다 — 그러면
