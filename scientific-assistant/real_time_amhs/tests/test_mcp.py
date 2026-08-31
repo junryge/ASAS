@@ -1653,6 +1653,211 @@ class 안_떠_있는_서버에_매달리지_않는다(unittest.TestCase):
         self.assertIn("_down.clear()", src)
 
 
+class 화면에서_켜고_끈다(_Wiki):
+    """★"MCP 안 되는 것 같은데" 를 콘솔 로그로만 짚을 수는 없다.
+
+    안 떠 있는 서버는 켜 두면 물어볼 때마다 붙으러 갔다가 실패해서 답이
+    느려진다 — 그래서 **끄는 것이 실제 조치**다. 화면에 그 자리가 있어야 한다.
+    """
+
+    def hub(self, **kw):
+        s = {"key": "wiki", "name": "AMHS 위키", "transport": "http",
+             "url": self.url, "when": ["LFT"], "probe": "listDomains",
+             "calls": [{"tool": "searchWiki",
+                        "pick": {"query": {"kind": "text"}}}]}
+        s.update(kw)
+        h = mcp_client.Hub([s])
+        self.addCleanup(h.close)
+        return h
+
+    def test_꺼도_목록에_남는다(self):
+        """★예전엔 꺼진 서버를 Hub 가 아예 안 들고 있었다 — 목록에 없으니
+        화면에서 다시 켤 방법이 없었다."""
+        h = self.hub(enabled=False)
+        self.assertEqual([s["key"] for s in h.servers], ["wiki"])
+        self.assertEqual(h.on(), [])
+        self.assertEqual(h.matched("LFT가 뭐야?"), [])
+        h.set_enabled("wiki", True)
+        self.assertEqual([s["key"] for s in h.matched("LFT가 뭐야?")], ["wiki"])
+
+    def test_끄면_조회를_안_한다(self):
+        """★끄면 들고 다니던 직전 결과도 버린다.
+
+        안 버리면, 껐는데도 서윤이 15분 동안 그 내용을 계속 말한다
+        (이어지는 질문에 직전 조회를 들고 가는 장치가 있다). 틀려서 껐는데
+        계속 나오면 끈 의미가 없다.
+        """
+        h = self.hub()
+        got, used = h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertTrue(used)
+        h.set_enabled("wiki", False)
+        got, used = h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertEqual(used, 0)
+        self.assertEqual(got, "", "껐는데 직전 결과를 계속 들고 다닌다")
+
+    def test_끄면_붙어_있던_것을_놓는다(self):
+        """★안 놓으면 프로세스·세션이 그대로 살아 있는데 화면은 꺼진 것으로
+        보인다. stdio 서버면 자식 프로세스가 계속 떠 있는다."""
+        h = self.hub()
+        h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertIn("wiki", h._live)
+        h.set_enabled("wiki", False)
+        self.assertNotIn("wiki", h._live)
+
+    def test_꺼진_서버는_두들기지_않는다(self):
+        """★껐는데 화면을 열 때마다 붙으러 가면, 끈 이유가 그대로 남는다."""
+        h = self.hub(enabled=False, url="http://10.255.255.1:8020/mcp",
+                     off_reason="화면에서 껐습니다")
+        t0 = time.time()
+        st = h.status()
+        self.assertLess(time.time() - t0, 1.0, "꺼진 서버를 두들긴다")
+        self.assertFalse(st["servers"][0]["enabled"])
+        self.assertIn("화면에서 껐습니다", st["servers"][0]["err"])
+        self.assertEqual(st["on"], 0)
+
+    def test_주소를_바꾸면_다시_붙는다(self):
+        h = self.hub()
+        h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertIn("wiki", h._live)
+        h.set_url("wiki", "http://10.255.255.1:8020/mcp")
+        self.assertNotIn("wiki", h._live)      # 옛 연결을 놓는다
+        self.assertEqual(h.find("wiki")["url"], "http://10.255.255.1:8020/mcp")
+
+    def test_주소에_mcp_를_빠뜨려도_붙여_준다(self):
+        """★빠뜨리기 쉽다 — 그러면 조용히 404 다."""
+        h = self.hub()
+        h.set_url("wiki", "http://10.1.2.3:8020")
+        self.assertEqual(h.find("wiki")["url"], "http://10.1.2.3:8020/mcp")
+        h.set_url("wiki", "http://10.1.2.3:8020/mcp/")
+        self.assertEqual(h.find("wiki")["url"], "http://10.1.2.3:8020/mcp")
+
+    def test_다시_붙기가_차단기를_푼다(self):
+        """★서버를 고쳐 놓고 눌렀는데 '30초 쉬는 중' 이면 못 고친다."""
+        h = self.hub(url="http://10.255.255.1:8020/mcp")
+        h.gather("LFT가 뭐야?", use_cache=False)
+        with h._lock:
+            self.assertIn("wiki", h._down)
+        h.reconnect("wiki")
+        with h._lock:
+            self.assertNotIn("wiki", h._down)
+
+    def test_상태에_켜짐과_붙음을_같이_준다(self):
+        h = self.hub()
+        st = h.status()
+        r = st["servers"][0]
+        self.assertTrue(r["enabled"])
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["transport"], "http")
+        self.assertIn("listDomains", r["tools"])
+        self.assertEqual((st["on"], st["live"]), (1, 1))
+
+
+class 화면_설정이_남는다(unittest.TestCase):
+    """★재시작하면 되돌아가면, 느려서 껐던 사람이 그 일을 또 겪는다."""
+
+    def store(self):
+        import pathlib, tempfile
+        from avatar.settings import Settings
+        d = tempfile.mkdtemp(prefix="mcpset")
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, True))
+        return Settings(pathlib.Path(d) / "settings.json"), pathlib.Path(d)
+
+    def test_껐다는_사실이_파일에_남는다(self):
+        st, d = self.store()
+        st.update({"mcp": {"wiki": {"enabled": False}}})
+        saved = json.loads((d / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["mcp"]["wiki"]["enabled"], False)
+
+    def test_한_서버만_고쳐도_나머지가_안_날아간다(self):
+        """★통째로 갈아끼우면, 화면이 한 줄만 보냈을 때 나머지가 사라진다."""
+        st, _ = self.store()
+        st.update({"mcp": {"wiki": {"enabled": False, "url": "http://a:8020/mcp"}}})
+        st.update({"mcp": {"qa": {"enabled": True}}})
+        m = st.all()["mcp"]
+        self.assertEqual(m["wiki"]["enabled"], False)
+        self.assertEqual(m["wiki"]["url"], "http://a:8020/mcp")
+        self.assertEqual(m["qa"]["enabled"], True)
+
+    def test_같은_서버의_다른_칸을_안_지운다(self):
+        st, _ = self.store()
+        st.update({"mcp": {"wiki": {"url": "http://a:8020/mcp"}}})
+        st.update({"mcp": {"wiki": {"enabled": False}}})
+        self.assertEqual(st.all()["mcp"]["wiki"]["url"], "http://a:8020/mcp")
+
+    def test_이상한_값은_안_받는다(self):
+        st, _ = self.store()
+        st.update({"mcp": "전부 꺼"})
+        st.update({"mcp": {"wiki": "꺼"}})
+        self.assertEqual(st.all()["mcp"], {})
+
+    def test_켤_때_화면_설정을_얹는다(self):
+        """코드 기본값 → 환경변수 → **화면**. 순서가 이래야 한다."""
+        p = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        i = src.index('saved = App.settings.get("mcp")')
+        j = src.index('live = [s for s in srv if s.get("enabled", True)]')
+        self.assertLess(i, j, "화면 설정을 얹기 전에 목록을 확정한다")
+        # 환경변수 처리보다 **뒤에** 와야 한다 (화면이 이긴다)
+        self.assertLess(src.index('"{}_MCP_URL".format'), i)
+
+
+class 화면에_MCP_자리가_있다(unittest.TestCase):
+
+    def _read(self, *parts):
+        p = os.path.join(util.BASE, "avatar_2d", *parts)
+        if not os.path.isfile(p):
+            raise unittest.SkipTest("{} 가 없다".format(p))
+        with open(p, encoding="utf-8") as f:
+            return f.read()
+
+    def test_설정_탭에_칸이_있다(self):
+        h = self._read("static", "index.html")
+        for i in ("mcpList", "mcpRefresh", "mcpReconnect", "mcpDot", "mcpMsg"):
+            self.assertIn('id="{}"'.format(i), h, i)
+        self.assertIn("외부 도구 (MCP)", h)
+
+    def test_따로_띄워야_한다는_것을_적어_둔다(self):
+        """★이걸 모르면 "왜 안 되지" 를 계속 반복한다."""
+        h = self._read("static", "index.html")
+        self.assertIn("mcp_server.py", h)
+        self.assertIn("따로 띄워", h)
+
+    def test_켜고_끄는_길이_붙어_있다(self):
+        j = self._read("static", "app.js")
+        self.assertIn("function mcpLoad", j)
+        self.assertIn("function mcpOp", j)
+        self.assertIn("'/api/mcp'", j)
+        for op in ("'on'", "'off'", "'url'", "'reconnect'"):
+            self.assertIn(op, j, op)
+
+    def test_두들기는_동안_버튼을_잠근다(self):
+        """★죽은 서버는 3초 걸린다. 안 잠그면 계속 눌러 요청이 쌓인다."""
+        j = self._read("static", "app.js")
+        i = j.index("function mcpSetBusy")
+        self.assertIn("disabled", j[i:i + 400])
+
+    def test_첫_화면을_MCP_때문에_늦추지_않는다(self):
+        """★죽은 서버 두들기기 3초 동안 화면이 안 뜨면 안 된다."""
+        j = self._read("static", "app.js")
+        self.assertIn("\n  mcpLoad();", j)
+        self.assertNotIn("await mcpLoad()", j)
+
+    def test_서버에_길이_있다(self):
+        s = self._read("avatar", "server.py")
+        self.assertIn('if path == "/api/mcp":', s)
+        self.assertIn("def _mcp_op", s)
+        i = s.index("def _mcp_op")
+        self.assertIn('App.settings.update({"mcp"', s[i:i + 2200])
+
+    def test_파일이_없어서_꺼진_것은_화면이_못_켠다(self):
+        """★켜졌다고 해 놓고 물어볼 때마다 실패하면, 사람은 다른 데를 뒤진다."""
+        s = self._read("avatar", "server.py")
+        i = s.index("def _mcp_op")
+        self.assertIn('off_reason', s[i:i + 2200])
+        self.assertIn('startswith("서버 파일")', s[i:i + 2200])
+
+
 class 위키_설정이_말이_된다(unittest.TestCase):
 
     def hub(self):
@@ -1666,6 +1871,22 @@ class 위키_설정이_말이_된다(unittest.TestCase):
         self.assertEqual(len(w), 1)
         self.assertEqual(w[0]["transport"], "http")
         self.assertTrue(w[0]["url"].endswith("/mcp"))
+
+    def test_기본_주소가_현장_포트다(self):
+        """★mcp_server.py 의 기본값은 8020 인데 **현장은 8100** 이다.
+
+        기본값이 실제와 다르면, 붙였다고 생각하고 켜 놓은 채로 계속
+        실패한다 (지적: "AMHS 위키 이거 아닌데?? 8020 8100인데").
+        """
+        w = [s for s in config.MCP_SERVERS if s["key"] == "wiki"][0]
+        self.assertIn(":8100/mcp", w["url"])
+        # 문서도 같은 포트를 말해야 한다 — 어긋나면 그대로 또 헤맨다
+        d = os.path.join(util.BASE, "LLM_WIKI_MCP", "연결방법.md")
+        if os.path.isfile(d):
+            with open(d, encoding="utf-8") as f:
+                doc = f.read()
+            self.assertIn("8100", doc)
+            self.assertIn("LLM_WIKI_MCP_PORT", doc)
 
     def test_반송_지식_질문에_걸린다(self):
         for q in ("LFT가 뭐야?", "STK랑 STB 차이가 뭐지",

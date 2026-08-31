@@ -15,6 +15,10 @@ class Settings:
             "alarmHoldMin", "alarmKeep")
     # ★문자열 설정은 숫자 변환을 타면 안 된다 (agentRules 는 프롬프트 본문)
     TEXT_KEYS = ("agentRules",)
+    # MCP 서버별 켜기/끄기·주소 — {서버열쇠: {"enabled": bool, "url": str}}
+    # ★코드(config.MCP_SERVERS)가 아니라 여기가 사람이 화면에서 고친 값이다.
+    #   재시작해도 남아야 한다 — 느려서 껐는데 다시 켜지면 또 겪는다.
+    DICT_KEYS = ("mcp",)
 
     def __init__(self, path):
         self.path = path
@@ -25,7 +29,7 @@ class Settings:
         try:
             if self.path.is_file():
                 saved = json.loads(self.path.read_text(encoding="utf-8")) or {}
-                for k in self.KEYS + self.TEXT_KEYS:
+                for k in self.KEYS + self.TEXT_KEYS + self.DICT_KEYS:
                     if k in saved:
                         self.data[k] = saved[k]
         except Exception:
@@ -54,6 +58,22 @@ class Settings:
                 if k in patch:
                     # 빈 문자열 = 기본값으로 되돌리기 (llm.agent_rules 가 판단)
                     self.data[k] = str(patch[k] or "")[:20000]
+            for k in self.DICT_KEYS:
+                if not isinstance(patch.get(k), dict):
+                    continue
+                # ★통째로 갈아끼우지 않고 **덮어쓴다**. 화면이 한 서버만
+                #   보내도 나머지 서버 설정이 날아가면 안 된다.
+                cur = dict(self.data.get(k) or {})
+                for kk, vv in patch[k].items():
+                    if not isinstance(vv, dict):
+                        continue
+                    one = dict(cur.get(str(kk)[:40]) or {})
+                    if "enabled" in vv:
+                        one["enabled"] = bool(vv["enabled"])
+                    if "url" in vv:
+                        one["url"] = str(vv["url"] or "")[:300]
+                    cur[str(kk)[:40]] = one
+                self.data[k] = cur
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 self.path.write_text(json.dumps(self.data, ensure_ascii=False),

@@ -201,7 +201,11 @@ MCP_SERVERS = [
         #   위키 쪽에서 python mcp_server.py 를 따로 띄워 둬야 한다.
         "key": "wiki", "name": "AMHS 위키", "enabled": True,
         "transport": "http",
-        "url": "http://127.0.0.1:8020/mcp",   # WIKI_MCP_URL 로 덮어쓴다
+        # ★현장은 8100 이다 (mcp_server.py 의 기본값은 8020 — 포트를 옮겨
+        #   띄웠다). 여기 기본값은 **실제로 도는 자리**에 맞춘다.
+        #   다르면 화면(설정 → 외부 도구)에서 주소만 고치면 된다 —
+        #   run.py --wiki, WIKI_MCP_URL 도 같다.
+        "url": "http://127.0.0.1:8100/mcp",
         "timeout": 20,
         # 반송 장치·구조를 묻는 말들.
         # ★"OHT"·"반송" 은 넣지 않는다 — "M14 반송시간 알려줘" 같은 관제
@@ -285,6 +289,9 @@ DEFAULT_SETTINGS = {
     "temperature": 0.8,
     "alarmHoldMin": 60,     # 정상 복귀 뒤 알람을 내리기까지 관찰하는 시간(분)
     "alarmKeep": 500,       # 알람 기록 보관 건수 (CSV 파일은 계속 쌓인다)
+    # MCP 서버별 켜기/끄기·주소 — 화면(설정 → 외부 도구)에서 고친다.
+    # {"wiki": {"enabled": false}} 처럼 **고친 것만** 들어간다.
+    "mcp": {},
 }
 
 # ── 세션 보관 한도 ────────────────────────────────────────────────────────

@@ -420,7 +420,10 @@ class Hub:
     RETRY_S = 30.0
 
     def __init__(self, servers=None, say=None):
-        self.servers = [s for s in (servers or []) if s.get("enabled", True)]
+        # ★꺼진 서버도 **들고 있는다**. 예전엔 여기서 걸러 버려서, 한 번 꺼진
+        #   서버는 화면에서 다시 켤 방법이 없었다 (목록에 아예 없으니까).
+        #   쓸 때(matched) 켜져 있나 본다.
+        self.servers = list(servers or [])
         self._live = {}
         self._lock = threading.RLock()
         self._say = say or (lambda *_a: None)
@@ -459,10 +462,68 @@ class Hub:
         with self._lock:
             return all(c.alive() for c in self._live.values())
 
+    def on(self):
+        """지금 켜져 있는 서버들."""
+        return [s for s in self.servers if s.get("enabled", True)]
+
+    def find(self, key):
+        for s in self.servers:
+            if s["key"] == str(key):
+                return s
+        return None
+
     def matched(self, text):
         """이 질문에 걸리는 서버 목록 (화면 계측·시험용)."""
-        return [s for s in self.servers
+        return [s for s in self.on()
                 if _hits(text, s.get("when"), s.get("when_re"))]
+
+    # ── 화면에서 켜고 끄기 ───────────────────────────────────────────────
+    def set_enabled(self, key, on):
+        """켜기/끄기. ★끌 때는 **붙어 있던 것을 놓는다** — 안 놓으면 자식
+        프로세스가 계속 떠 있고, 화면에는 꺼진 것으로 보인다."""
+        s = self.find(key)
+        if s is None:
+            return False
+        s["enabled"] = bool(on)
+        if not s["enabled"]:
+            self._drop(key)
+        else:
+            with self._lock:
+                self._down.pop(key, None)      # 다시 붙어 볼 기회를 준다
+        return True
+
+    def set_url(self, key, url):
+        """주소 바꾸기 (http 로 붙는 서버만). 바꾸면 다시 붙는다."""
+        s = self.find(key)
+        if s is None or not s.get("url"):
+            return False
+        u = str(url or "").strip().rstrip("/")
+        if u and not u.endswith("/mcp"):
+            u += "/mcp"                        # 빠뜨리기 쉽다 — 조용히 404 다
+        s["url"] = u
+        self._drop(key)
+        return True
+
+    def reconnect(self, key=None):
+        """붙어 있던 것을 놓고 차단기를 푼다 — 다음 질문에 새로 붙는다."""
+        for s in ([self.find(key)] if key else list(self.servers)):
+            if s is not None:
+                self._drop(s["key"])
+        return True
+
+    def _drop(self, key):
+        with self._lock:
+            c = self._live.pop(key, None)
+            self._down.pop(key, None)
+            # ★들고 다니던 직전 결과도 버린다. 안 버리면, 껐는데도 서윤이
+            #   15분 동안 그 내용을 계속 말한다 — 틀려서 껐는데 계속 나온다.
+            self._carry.clear()
+            self._cache.clear()
+        if c is not None:
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _run_calls(self, s, c, text, lines):
         """한 서버의 도구들을 차례로 부른다 → 부른 횟수.
@@ -734,8 +795,18 @@ class Hub:
                    "addr": s.get("url") or (s.get("env") or {}).get("QA_BASE") or "",
                    "script": (s.get("args") or [""])[0] if trans == "stdio" else "",
                    "started": c is not None, "alive": alive,
+                   "enabled": bool(s.get("enabled", True)),
+                   # 왜 꺼져 있나 (파일이 없다 / 사람이 껐다)
+                   "off_reason": s.get("off_reason") or "",
+                   "when": list(s.get("when") or [])[:40],
                    "server": (c.server if c else {}) or {},
-                   "tools": [], "err": ""}
+                   "tools": [], "err": "", "ok": False}
+            # ★꺼진 서버는 두들기지 않는다. 껐는데 화면을 열 때마다 붙으러
+            #   가면, 끈 이유(느리다)가 그대로 남는다.
+            if not row["enabled"]:
+                row["err"] = row["off_reason"] or "꺼져 있습니다"
+                out.append(row)
+                continue
             # 실제로 한 번 두들겨 본다 — 떠 있다고 붙는다는 뜻은 아니다
             try:
                 cc = c if alive else self._client(s)
@@ -757,6 +828,8 @@ class Hub:
                 row["err"] = str(e)[:200]
             out.append(row)
         return {"ok": True, "servers": out,
+                "on": sum(1 for r in out if r["enabled"]),
+                "live": sum(1 for r in out if r.get("ok")),
                 "none": not self.servers}
 
     def close(self):

@@ -35,14 +35,34 @@ STALE_MIN = 10          # 데이터 시각이 이보다 오래되면 '오래된 
 # ★타임아웃 3초는 너무 빡빡했다. 관제 서버는 이 API 에서 하루 CSV 를 통째로
 #   읽는데, 수집·LLM 분석과 겹치면 3초를 넘는 순간이 있다 — 그때마다
 #   "끊김/복구" 가 번갈아 떠서 화면이 시끄러웠다 (실제 현장 증상).
-TIMEOUT_S = 8.0
+# ★8초였다. 그런데 이 값은 **화면이 멈춰 있는 시간**이다 — 브라우저가
+#   /api/fab/status 를 부르면 그 안에서 관제를 기다린다. 관제가 바쁘면
+#   알람 패널이 8초씩 얼어붙는다 (지적: "시간 오래 걸리면 사용 안 돼").
+#   관제는 평소 0.3초면 답한다. 3초 안에 못 답하면 바쁜 것이고, 그때는
+#   기다릴 게 아니라 **마지막 좋은 값을 바로 내주고** 잠깐 쉬는 게 맞다
+#   (아래 BUSY_GRACE_S · BUSY_BACKOFF_S).
+TIMEOUT_S = 3.0
 # 한 번 삐끗한 것은 끊김이 아니다 — 마지막 성공이 이 안이면 그 값으로 버틴다.
 # 이걸 넘겨야 진짜 끊김이다. (버티는 동안엔 degraded 로 표시 — 산 척과 다르다:
 # 최근 성공값이 실제로 있고, 몇 초 전 값인지도 같이 알린다)
 GRACE_S = 60.0
 
+# ★실패에도 결이 다르다. 이걸 안 가르면 사람이 엉뚱한 데를 뒤진다.
+#     거부(ConnectionRefused)  관제가 **안 떠 있다** — 바로 말해야 한다
+#     시간초과(TimeoutError)   관제는 떠 있는데 **바빠서 못 답한다**
+#   실제 증상: 관제를 재시작하면 _bootstrap_today() 가 오늘치(00:00~지금)를
+#   여섯 시스템 몫으로 되메꾼다. 그동안 관제가 무거워 8초 안에 못 답한다.
+#   그때 "관제 연결 끊김" 이라고 하면 네트워크·방화벽을 뒤지게 된다 —
+#   실은 몇 분 기다리면 되는 것이다. 그래서 바쁜 것은 더 오래 버틴다.
+BUSY_GRACE_S = 300.0     # 5분
+# 바쁜 서버를 8초 타임아웃으로 계속 두들기면 더 느려진다 — 잠깐 쉰다
+BUSY_BACKOFF_S = 15.0
+
 _lock = threading.Lock()
-_cache = {"at": 0.0, "compare": None, "err": "", "good_at": 0.0}
+_cache = {"at": 0.0, "compare": None, "err": "", "good_at": 0.0,
+          # 마지막 실패가 어떤 결이었나 ("busy" / "down" / "other") 와
+          # 그 결로 처음 실패한 시각 — "얼마나 됐나" 를 말해 주기 위해서다
+          "why": "", "why_at": 0.0, "skip_until": 0.0}
 _cols_cache = {"at": 0.0, "columns": None, "err": ""}
 
 # ── 알람 이력 (data/alarms.json) ──
@@ -307,20 +327,74 @@ def compare(force=False):
                 and now - _cache["at"] < CACHE_S:
             return {"ok": True, "data": _cache["compare"], "err": "",
                     "cached": True, "degraded": False, "held_s": 0}
+        # ★바쁜 서버를 8초 타임아웃으로 계속 두들기면 더 느려진다. 잠깐 쉰다.
+        #   쉬는 동안에도 마지막 좋은 값은 그대로 내준다 (아래 유예와 같은 길).
+        skipping = (not force and now < _cache["skip_until"]
+                    and _cache["compare"] is not None)
+    if skipping:
+        return _held(now, _cache["err"], "busy")
     data, err = _get("/api/fab/compare")
     with _lock:
         if data and data.get("ok"):
-            _cache.update(at=now, compare=data, err="", good_at=now)
+            _cache.update(at=now, compare=data, err="", good_at=now,
+                          why="", why_at=0.0, skip_until=0.0)
             return {"ok": True, "data": data, "err": "", "cached": False,
                     "degraded": False, "held_s": 0}
         _cache["err"] = err or str((data or {}).get("error") or "응답 이상")
-        held = now - (_cache["good_at"] or 0)
-        if _cache["compare"] is not None and held < GRACE_S:
-            return {"ok": True, "data": _cache["compare"],
-                    "err": _cache["err"], "cached": True,
-                    "degraded": True, "held_s": int(held)}
-        return {"ok": False, "data": None, "err": _cache["err"],
-                "cached": False, "degraded": False, "held_s": 0}
+        why = _why(_cache["err"])
+        if _cache["why"] != why:
+            _cache.update(why=why, why_at=now)      # 이 결로 언제부터인가
+        if why == "busy":
+            _cache["skip_until"] = now + BUSY_BACKOFF_S
+        return _held(now, _cache["err"], why)
+
+
+def _why(err):
+    """이 실패가 무슨 결인가 — "busy"(바쁨) / "down"(안 떠 있음) / "other".
+
+    ★결을 안 가르면 사람이 엉뚱한 데를 뒤진다. 시간초과인데 "연결 끊김"
+      이라고 하면 네트워크·방화벽부터 본다 — 실은 관제가 기동 백필 중이라
+      몇 분 기다리면 되는 것이다.
+    """
+    e = str(err or "")
+    if "TimeoutError" in e or "timed out" in e or "timeout" in e.lower():
+        return "busy"
+    if ("ConnectionRefused" in e or "Errno 111" in e or "Errno 61" in e
+            or "10061" in e or "거부" in e or "refused" in e.lower()):
+        return "down"
+    return "other"
+
+
+def why_text(why, secs):
+    """사람이 읽고 **무엇을 할지 알 수 있는** 한 줄."""
+    m = max(0, int(secs)) // 60
+    ago = "{}분째".format(m) if m >= 1 else "{}초째".format(max(0, int(secs)))
+    if why == "busy":
+        return ("관제가 응답이 느립니다 ({}) — 관제를 방금 재시작했다면 "
+                "오늘치(00:00~지금)를 되메꾸는 중입니다. 대개 몇 분이면 "
+                "끝납니다. 관제 콘솔의 [기동:...] 줄을 보세요.".format(ago))
+    if why == "down":
+        return ("관제 서버가 안 떠 있습니다 ({}) — real_time_amhs 폴더에서 "
+                "python server.py 를 띄우세요.".format(ago))
+    return "관제에서 못 읽었습니다 ({}).".format(ago)
+
+
+def _held(now, err, why):
+    """마지막 좋은 값으로 버틸까, 끊겼다고 할까.
+
+    ★바쁜 것(시간초과)은 더 오래 버틴다. 관제가 살아 있고 곧 돌아올 것을
+      아는데 60초 만에 "끊김" 을 외치면, 화면이 끊김/복구로 도배된다.
+    """
+    grace = BUSY_GRACE_S if why == "busy" else GRACE_S
+    held = now - (_cache["good_at"] or 0)
+    since = now - (_cache["why_at"] or now)
+    say = why_text(why, since)
+    if _cache["compare"] is not None and held < grace:
+        return {"ok": True, "data": _cache["compare"], "err": err,
+                "cached": True, "degraded": True, "held_s": int(held),
+                "why": why, "why_text": say}
+    return {"ok": False, "data": None, "err": err, "cached": False,
+            "degraded": False, "held_s": 0, "why": why, "why_text": say}
 
 
 def columns():
@@ -378,8 +452,11 @@ def watch():
     """
     r = compare()
     if not r["ok"]:
+        # ★무엇을 해야 하는지까지 같이 준다. "연결 끊김" 만 주면 사람이
+        #   네트워크·방화벽을 뒤진다 — 대개는 관제가 기동 백필 중이다.
         return {"ok": False, "alarms": [], "at": "", "stale": False,
-                "err": r["err"]}
+                "err": r["err"], "why": r.get("why") or "",
+                "why_text": r.get("why_text") or ""}
     d = r["data"]
     age = _data_age_min(d.get("at"))
     alarms = []

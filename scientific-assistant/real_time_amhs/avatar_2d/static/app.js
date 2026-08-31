@@ -2159,6 +2159,9 @@ const SdRunner = (function(){
    ★관제가 끊기면 '끊겼다' 고 말한다 — 조용히 정상인 척하는 게 최악이다.
    ★실데이터 알람(src='real')만 자동 해제한다. 테스트 알람은 사람이 끈다. */
 let sentinelDown = null;      // null=아직 모름, true/false=상태
+// 왜 못 읽었나 ("busy"=관제가 바쁨 / "down"=안 떠 있음). 결이 바뀌면 다시
+// 말해 준다 — 안 그러면 "끊김" 한 줄만 뜨고 그 뒤 상황이 안 보인다.
+let sentinelWhy = '';
 /* 서버의 상시 감시 상태 {on, period_s, ticks, since_s, ...}.
    ★paintAlarmLive 가 이 값을 읽는다. 여기서 선언해 두지 않으면 그 함수가
      먼저 도는 순간 TDZ 로 스크립트 전체가 죽는다 — 이미 두 번 겪었다. */
@@ -2505,15 +2508,22 @@ async function pollSentinel(){
      "우리가 아예 안 보고 있는 것" 은 다른 사고다. */
   watching = s.watching || null;
   if(!s.ok){
-    if(sentinelDown!==true){
+    if(sentinelDown!==true || sentinelWhy!==s.why){
       sentinelDown = true;
-      sys('관제 연결 끊김 — '+(s.err||'')+' · 알람 자동 감시가 멈췄습니다. '
-          +'(real_time_amhs 서버 확인)');
+      sentinelWhy = s.why||'';
+      /* ★"연결 끊김" 만 말하면 네트워크·방화벽을 뒤진다. 실패에도 결이
+         있어서(바쁨 / 안 뜸) 서버가 그 결과 할 일을 같이 준다.
+         관제를 방금 재시작했으면 오늘치 백필이 끝날 때까지 몇 분 느리다 —
+         그건 고칠 게 아니라 기다릴 것이다. */
+      sys((s.why==='busy' ? '⏳ ' : '관제 연결 끊김 — ')
+          + (s.why_text || (s.err||'')
+             + ' · 알람 자동 감시가 멈췄습니다. (real_time_amhs 서버 확인)'));
       const tb=$('#alarmTest'); if(tb) tb.style.display='';   // 테스트 버튼 복귀
     }
     return;                    // 데이터를 못 보는 동안 기존 알람은 건드리지 않는다
   }
   if(sentinelDown!==false){
+    sentinelWhy = '';
     if(sentinelDown===true) sys('관제 연결 복구 — 알람 자동 감시 재개');
     else sys('관제 연결됨 — 경계/위험/초위험 자동 감시 중'
              +(s.at?' (데이터 '+s.at+')':''));
@@ -3926,6 +3936,144 @@ function addDoc(name, text){
   sys(`자료 추가됨 · ${name} (${text.length.toLocaleString()}자) — 서버에 저장`);
 }
 
+/* ═══════════ 외부 도구 (MCP) ══════════════════════════════════════
+   켜고 · 끄고 · 주소 고치고 · 다시 붙는다. 상태는 서버가 실제로 두들겨
+   보고 준다 (/api/mcp) — "떠 있다" 와 "붙는다" 는 다르다.
+
+   ★죽은 서버는 두들기는 데 3초쯤 걸린다. 그동안 버튼을 잠가 둔다 —
+     안 잠그면 사람이 계속 눌러서 요청이 쌓인다.                       */
+let MCP = [];
+let mcpBusy = false;
+
+async function mcpLoad(){
+  if(!window.SERVER){
+    const l=$('#mcpList');
+    if(l) l.innerHTML='<p class="hint">run.py 로 실행할 때만 쓸 수 있습니다.</p>';
+    return;
+  }
+  mcpSetBusy(true, '서버에 붙어 보는 중…');
+  try{
+    const r=await fetch('/api/mcp',{cache:'no-store'});
+    const j=await r.json();
+    MCP = j.servers||[];
+    mcpRender(j);
+  }catch(e){ mcpNote('상태를 못 읽었습니다: '+e.message, true); }
+  finally{ mcpSetBusy(false); }
+}
+
+async function mcpOp(op, key, extra){
+  if(mcpBusy) return;
+  mcpSetBusy(true, op==='off' ? '끄는 중…' : '붙어 보는 중…');
+  try{
+    const r=await fetch('/api/mcp',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign({op, key}, extra||{}))});
+    const j=await r.json();
+    if(j.error){ mcpNote(j.error, true); }
+    else{ MCP=j.servers||[]; mcpRender(j); }
+  }catch(e){ mcpNote('처리 실패: '+e.message, true); }
+  finally{ mcpSetBusy(false); }
+}
+
+function mcpSetBusy(on, msg){
+  mcpBusy = on;
+  ['mcpRefresh','mcpReconnect'].forEach(id=>{
+    const b=$('#'+id); if(b) b.disabled = on;
+  });
+  if(msg) mcpNote(msg);
+}
+
+function mcpNote(msg, bad){
+  const e=$('#mcpMsg');
+  if(!e) return;
+  e.textContent = msg||'';
+  e.className = bad ? 'hint mcpErr' : 'hint';
+}
+
+function mcpRender(j){
+  const list=$('#mcpList');
+  if(!list) return;
+  list.innerHTML='';
+  if(!MCP.length){
+    list.innerHTML='<p class="hint">등록된 외부 도구가 없습니다.</p>';
+    mcpNote(''); mcpDot();
+    return;
+  }
+  MCP.forEach(s=>{
+    const row=document.createElement('div'); row.className='mcpRow';
+
+    const top=document.createElement('div'); top.className='mcpTop';
+    const cb=document.createElement('input'); cb.type='checkbox';
+    cb.checked=!!s.enabled; cb.title='켜기 / 끄기';
+    cb.onchange=()=>mcpOp(cb.checked?'on':'off', s.key);
+    const dot=document.createElement('span'); dot.className='mcpDot '+
+      (!s.enabled ? 'off' : (s.ok ? 'ok' : 'bad'));
+    const nm=document.createElement('span'); nm.className='mcpName';
+    nm.textContent=s.name||s.key;
+    const tag=document.createElement('span'); tag.className='mcpTag';
+    /* ★붙는 방식이 다르다는 것을 화면에 적어 둔다. http 쪽은 사람이 미리
+       띄워야 하는데, 그걸 모르면 "왜 안 되지" 를 계속 반복한다. */
+    tag.textContent = s.transport==='http' ? '따로 띄움' : '자동';
+    tag.title = s.transport==='http'
+      ? '떠 있는 서버에 붙습니다 — 그쪽에서 mcp_server.py 를 띄워 둬야 합니다'
+      : '아바타가 질문에 걸릴 때 알아서 띄웁니다';
+    top.appendChild(cb); top.appendChild(dot);
+    top.appendChild(nm); top.appendChild(tag);
+    row.appendChild(top);
+
+    const sub=document.createElement('div'); sub.className='mcpSub';
+    if(!s.enabled){
+      sub.textContent = '꺼짐' + (s.off_reason ? ' — '+s.off_reason : '');
+    }else if(s.ok){
+      sub.innerHTML = '<b>붙었습니다</b> · '
+        + (s.server && s.server.name ? esc(s.server.name)+' ' : '')
+        + (s.server && s.server.version ? esc(s.server.version) : '')
+        + ' · 도구 ' + (s.tools||[]).length + '개';
+      if((s.tools||[]).length) sub.title = s.tools.join(', ');
+    }else{
+      sub.className='mcpSub mcpErr';
+      sub.textContent = '못 붙었습니다 — ' + (s.err||'이유 모름');
+    }
+    row.appendChild(sub);
+
+    const where=document.createElement('div'); where.className='mcpSub';
+    where.textContent = s.addr || s.script || '';
+    if(where.textContent) row.appendChild(where);
+
+    /* 주소는 http 로 붙는 서버만 고칠 수 있다 (stdio 는 프로세스라 주소가 없다) */
+    if(s.transport==='http'){
+      const wrap=document.createElement('div'); wrap.className='mcpUrl';
+      const inp=document.createElement('input'); inp.type='text';
+      inp.value=s.addr||''; inp.placeholder='http://10.x.x.x:8100/mcp';
+      inp.title='다른 PC 에 떠 있으면 여기에 그 주소를 적습니다';
+      const btn=document.createElement('button');
+      btn.textContent='주소 적용'; btn.className='ghost';
+      btn.onclick=()=>mcpOp('url', s.key, {url:inp.value});
+      inp.onkeydown=(e)=>{ if(e.key==='Enter') btn.click(); };
+      wrap.appendChild(inp); wrap.appendChild(btn);
+      row.appendChild(wrap);
+    }
+    list.appendChild(row);
+  });
+  const on=MCP.filter(s=>s.enabled).length;
+  const ok=MCP.filter(s=>s.enabled&&s.ok).length;
+  mcpNote(on ? ('켜진 도구 '+on+'개 중 '+ok+'개 붙었습니다'
+                + (ok<on ? ' — 안 붙은 것은 끄면 대화가 빨라집니다' : ''))
+             : '켜진 외부 도구 없음');
+  mcpDot();
+}
+
+function mcpDot(){
+  const d=$('#mcpDot');
+  if(!d) return;
+  const on=MCP.filter(s=>s.enabled).length;
+  const ok=MCP.filter(s=>s.enabled&&s.ok).length;
+  d.style.background = !on ? '#555' : (ok===on ? '#3ddc84' : '#ff6b6b');
+}
+
+if($('#mcpRefresh'))   $('#mcpRefresh').onclick   = ()=>mcpLoad();
+if($('#mcpReconnect')) $('#mcpReconnect').onclick = ()=>mcpOp('reconnect','');
+
 /* 서버측 설정(자료 예산·컨텍스트 한도·대화 기록 수) 동기화 */
 function pushServerSettings(){
   if(!window.SERVER) return;
@@ -4343,6 +4491,9 @@ function applyServerConfig(c){
   await loadSessions(); refreshSessUI();
   await reloadDocs();
   await loadAgentRules();        // 설정 탭 '기본 프롬프트' 채우기
+  // ★MCP 상태는 **기다리지 않는다**. 죽은 서버를 두들기는 데 3초쯤 걸리는데,
+  //   그 때문에 화면이 늦게 뜨면 안 된다. 뜬 뒤에 조용히 채운다.
+  mcpLoad();
 
   $('#apiBase').value = c.baseUrl || '/v1';
   if(c.model) $('#apiModel').value = c.model;

@@ -129,9 +129,72 @@ class 관제_읽기(_Sentinel):
         self.feed(fake_compare(at=now_kst(1)))
         sentinel.compare(force=True)
         sentinel._cache["good_at"] = time.time() - sentinel.GRACE_S - 1
-        sentinel._get = lambda path: (None, "timed out")
+        sentinel._get = lambda path: (None, "ConnectionRefusedError: 거부")
         r = sentinel.compare(force=True)
         self.assertFalse(r["ok"], "유예가 끝났는데 옛 값으로 산 척했다")
+
+    def test_바쁜_것과_안_뜬_것을_가른다(self):
+        """★실패에도 결이 있다. 시간초과인데 "연결 끊김" 이라고 하면
+        네트워크·방화벽부터 뒤진다 — 실은 관제가 기동 백필 중이라 몇 분
+        기다리면 되는 것이다 (실제로 겪은 자리)."""
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel.compare(force=True)
+        # ① 시간초과 = 바쁨. 60초가 지나도 마지막 값으로 버틴다.
+        sentinel._cache["good_at"] = time.time() - sentinel.GRACE_S - 1
+        sentinel._get = lambda path: (None, "TimeoutError: timed out")
+        r = sentinel.compare(force=True)
+        self.assertTrue(r["ok"], "바쁜 것을 끊김으로 내보냈다")
+        self.assertEqual(r["why"], "busy")
+        self.assertIn("되메꾸는 중", r["why_text"])
+        # ② 그래도 무한정은 아니다
+        sentinel._cache["good_at"] = time.time() - sentinel.BUSY_GRACE_S - 1
+        sentinel._cache["at"] = 0.0
+        sentinel._cache["skip_until"] = 0.0
+        self.assertFalse(sentinel.compare(force=True)["ok"])
+
+    def test_안_떠_있으면_바로_말한다(self):
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel.compare(force=True)
+        sentinel._get = lambda path: (None, "ConnectionRefusedError: [Errno 111]")
+        r = sentinel.compare(force=True)
+        self.assertEqual(r["why"], "down")
+        self.assertIn("python server.py", r["why_text"])
+
+    def test_화면이_오래_얼어붙지_않는다(self):
+        """★브라우저는 /api/fab/status 안에서 관제를 기다린다.
+
+        이 값이 곧 **알람 패널이 멈춰 있는 시간**이다. 관제는 평소 0.3초면
+        답한다 — 8초를 기다릴 이유가 없다. 못 답하면 바쁜 것이고, 그때는
+        기다릴 게 아니라 마지막 좋은 값을 바로 내주고 쉬는 게 맞다.
+        """
+        self.assertLessEqual(sentinel.TIMEOUT_S, 3.0)
+        # 한 번 맞고 나면 그 뒤로는 **관제를 안 건드린다** = 0초
+        self.assertGreater(sentinel.BUSY_BACKOFF_S, sentinel.TIMEOUT_S)
+        # 바쁜 것은 오래 버틴다 — 화면이 비지 않게
+        self.assertGreater(sentinel.BUSY_GRACE_S, sentinel.GRACE_S)
+
+    def test_바쁜_서버를_계속_두들기지_않는다(self):
+        """★8초 타임아웃으로 5초마다 두들기면 관제가 더 느려진다."""
+        self.feed(fake_compare(at=now_kst(1)))
+        sentinel.compare(force=True)
+        hits = []
+
+        def slow(path):
+            hits.append(path)
+            return None, "TimeoutError: timed out"
+        sentinel._get = slow
+        sentinel.compare(force=True)          # 여기서 한 번 맞고 쉬기 시작
+        self.assertEqual(len(hits), 1)
+        for _ in range(5):
+            sentinel._cache["at"] = 0.0       # 5초 캐시 창은 지났다고 치고
+            r = sentinel.compare()
+            self.assertTrue(r["ok"])          # 쉬는 동안에도 값은 준다
+        self.assertEqual(len(hits), 1, "쉬는 중에도 관제를 두들긴다")
+        # 쉬는 시간이 지나면 다시 두들긴다
+        sentinel._cache["skip_until"] = 0.0
+        sentinel._cache["at"] = 0.0
+        sentinel.compare()
+        self.assertEqual(len(hits), 2)
 
     def test_성공한_적이_없으면_유예도_없다(self):
         """산 척 금지 — 시작부터 죽어 있으면 바로 죽었다고 한다."""

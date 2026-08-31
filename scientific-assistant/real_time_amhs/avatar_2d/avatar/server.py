@@ -188,6 +188,7 @@ class App:
                 #   느려질 때, 코드를 고치지 않고 바로 뗄 수 있어야 한다.
                 if u.lower() in ("off", "none", "no", "0", ""):
                     s["enabled"] = False
+                    s["off_reason"] = "실행 옵션(--wiki off)으로 껐습니다"
                     sys.stdout.write("  [i] MCP '{}' 끔 (요청대로)\n"
                                      .format(s.get("name") or s["key"]))
                 s["url"] = u
@@ -205,10 +206,29 @@ class App:
                 s["args"] = [os.path.abspath(path)] + a[1:]
                 continue
             s["enabled"] = False
+            s["off_reason"] = "서버 파일이 없습니다: {}".format(path)
             sys.stdout.write(
                 "  [!] MCP '{}' 끔 — 파일이 없습니다: {}\n"
                 "      avatar_2d 를 real_time_amhs **안에** 두고 실행하세요.\n"
                 .format(s.get("name") or s["key"], path))
+        # ★화면(설정 → 외부 도구)에서 고친 값이 **마지막에** 얹힌다.
+        #   코드 기본값 → 환경변수 → 화면. 사람이 화면에서 끈 것을 재시작이
+        #   되살리면, 껐던 이유(느리다)를 또 겪는다.
+        saved = App.settings.get("mcp") or {}
+        for s in srv:
+            v = saved.get(s["key"])
+            if not isinstance(v, dict):
+                continue
+            if v.get("url") and s.get("url"):
+                s["url"] = str(v["url"])
+            if "enabled" in v:
+                # 파일이 없어서 꺼진 것은 화면이 못 켠다 — 켜 봐야 안 된다
+                if v["enabled"] and s.get("off_reason", "").startswith("서버 파일"):
+                    pass
+                else:
+                    s["enabled"] = bool(v["enabled"])
+                    if not v["enabled"]:
+                        s["off_reason"] = "화면에서 껐습니다"
         live = [s for s in srv if s.get("enabled", True)]
         for s in live:
             # ★어느 주소를 볼지 **켤 때 찍는다**. 안 찍으면 127.0.0.1 을 보고
@@ -320,6 +340,46 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _mcp_op(self, b):
+        """설정 → 외부 도구(MCP) 의 버튼들.
+
+        op = on | off | url | reconnect
+        ★고친 값은 **서버에 저장한다**(data/settings.json). 재시작하면
+          되돌아가면, 느려서 껐던 사람이 그 일을 또 겪는다.
+        """
+        hub = App.mcp_hub
+        if hub is None:
+            return self._json(200, {"ok": False, "error": "MCP 가 없습니다"})
+        op = str((b or {}).get("op") or "").strip()
+        key = str((b or {}).get("key") or "").strip()
+        if op == "reconnect":
+            hub.reconnect(key or None)
+            return self._json(200, dict(hub.status(), did="reconnect"))
+        s = hub.find(key)
+        if s is None:
+            return self._json(200, {"ok": False,
+                                    "error": "모르는 서버: {}".format(key)})
+        if op in ("on", "off"):
+            on = op == "on"
+            # ★파일이 없어서 꺼진 것은 켜 봐야 안 된다. 켜졌다고 해 놓고
+            #   물어볼 때마다 실패하면, 사람은 다른 데를 뒤진다.
+            if on and str(s.get("off_reason") or "").startswith("서버 파일"):
+                return self._json(200, {"ok": False, "error": s["off_reason"]})
+            hub.set_enabled(key, on)
+            s["off_reason"] = "" if on else "화면에서 껐습니다"
+            App.settings.update({"mcp": {key: {"enabled": on}}})
+        elif op == "url":
+            if not s.get("url"):
+                return self._json(200, {"ok": False,
+                                        "error": "이 서버는 주소로 붙지 않습니다"
+                                                 " (자식 프로세스로 띄웁니다)"})
+            hub.set_url(key, (b or {}).get("url"))
+            App.settings.update({"mcp": {key: {"url": s["url"]}}})
+        else:
+            return self._json(200, {"ok": False,
+                                    "error": "모르는 동작: {}".format(op)})
+        return self._json(200, dict(hub.status(), did=op))
+
     def _save_costume(self, b):
         r = save_costume_image(App.static_dir, b.get("filename") or b.get("name"),
                                b.get("data"))
@@ -364,6 +424,20 @@ class Handler(SimpleHTTPRequestHandler):
             d["agentRulesCustom"] = bool(str(d.get("agentRules") or "").strip()
                                          and d["agentRules"] != llm.AGENT_RULES)
             return self._json(200, d)
+
+        if path == "/api/mcp":
+            # ★MCP 가 붙었나를 **눈으로 볼 자리**. 없으면 "왜 안 되지" 를
+            #   콘솔 로그로만 짚어야 한다 — 현장에서는 그게 안 된다.
+            #   두들겨 보느라 몇 초 걸릴 수 있다 (죽은 서버는 3초).
+            hub = App.mcp_hub
+            if hub is None:
+                return self._json(200, {"ok": True, "servers": [], "none": True})
+            try:
+                return self._json(200, hub.status())
+            except Exception as e:  # noqa: BLE001
+                return self._json(200, {"ok": False, "servers": [],
+                                        "error": "{}: {}".format(
+                                            type(e).__name__, e)})
 
         if path == "/api/docs":
             return self._json(200, {"docs": App.doc_store.list(),
@@ -478,6 +552,9 @@ class Handler(SimpleHTTPRequestHandler):
             d["agentRulesDefault"] = llm.AGENT_RULES
             d["agentRulesCustom"] = d["agentRules"] != llm.AGENT_RULES
             return self._json(200, d)
+
+        if path == "/api/mcp":
+            return self._mcp_op(self._body())
 
         if path == "/api/costume":
             return self._save_costume(self._body())
