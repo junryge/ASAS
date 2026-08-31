@@ -284,13 +284,36 @@ class 왜_이_점수가_나왔나(unittest.TestCase):
         self.assertIn("분모 70", ex["math"])
         self.assertEqual(ex["score"], 71)
 
-    def test_사람이_한_일이_대부분이면_그렇다고_먼저_말한다(self):
-        """★운영자 용량변경은 **사람이 용량을 내린 것**이다. 설비 이상이
-        아니다. 컬럼 하나당 10점이라 몇 개만 겹쳐도 점수가 크게 뛴다 —
-        "점수는 높은데 현장은 멀쩡하다" 의 제일 흔한 답이다."""
-        ex = fab_score.explain(self.row(MAXCAPA=30, RA=10), "M14")
+    def test_용량변경만_켜졌으면_계획_작업_쪽으로_읽는다(self):
+        """운영자가 용량을 내렸는데 다른 룰이 하나도 안 켜졌다 —
+        계획 정비일 가능성이 크다. 그래도 왜 내렸는지는 확인해야 한다."""
+        ex = fab_score.explain(self.row(MAXCAPA=30), "M14")
         self.assertIn("사람이 한 일", ex["notes"][0])
-        self.assertIn("75%", ex["notes"][0])
+        self.assertIn("계획 작업", ex["notes"][0])
+
+    def test_다른_룰이_같이_켜졌으면_고장_대응을_의심하라고_한다(self):
+        """★실제로 겪었다. M14 가 70점까지 올라 "사람이 내린 것이니
+        괜찮겠지" 하고 넘길 뻔했는데, 그 시각에 CNV 고장이 나서 **사람이
+        용량을 내려 대응하던 중**이었다 (14:20 발생 · 15:35 복구).
+
+        용량변경은 '멀쩡하다' 가 아니라 '누가 손을 대고 있다' 는 신호다.
+        한쪽으로만 읽으면 진짜 사건을 넘긴다.
+        """
+        ex = fab_score.explain(self.row(MAXCAPA=30, RC=8, RA=10), "M14")
+        n = ex["notes"][0]
+        self.assertIn("같은 시각에", n)
+        self.assertIn("고장", n)
+        self.assertIn("리프터 정체", n)      # CNV 편중이 걸리는 룰
+        self.assertNotIn("계획 작업일 가능성", n)
+
+    def test_CNV_는_어느_룰이_보나(self):
+        """★CNV 고장은 이 두 자리로 들어온다 — 현장 이력과 맞춰 볼 때 본다.
+        리프터 정체(북/남 큐 편중)와 운영자 용량변경(3F_CNV_MAXCAPA)."""
+        w = fab_score.watch("M14")
+        cnv = {r: [i["amos"] for i in items if "CNV" in i["amos"]]
+               for r, items in w.items()}
+        self.assertTrue(cnv.get("RC"), "리프터 정체가 CNV 를 안 본다")
+        self.assertTrue(cnv.get("MAXCAPA"), "용량변경이 CNV 를 안 본다")
 
     def test_사람_몫이_적으면_앞세우지_않는다(self):
         ex = fab_score.explain(self.row(MAXCAPA=10, RA=10, RB=10, RC=8, RD=7),
