@@ -937,11 +937,26 @@ def compare(rows: list[dict], at=None, cfg: dict | None = None,
         #   낮춰 놔도 ALL 의 60 으로 매겨져서, 정책 탭에서 시스템별로
         #   설정한 것이 화면에 하나도 안 나타났다 (실제 지적).
         fcfg = _fab_cfg(cfg, f)
+        # ★등급은 **정책이 정한다**. 예전엔 FAB 분리 파일의 area_level 이
+        #   있으면 그걸 그대로 썼다. 그러면 정책 탭에서 컷을 내려도 FAB 줄이
+        #   안 따라온다 — 실제 증상: "M14 가 70 까지 올라가는데 왜 이상이
+        #   없다고 하지?" (컷은 경계 35 로 보이는데 등급만 '정상' 이었다.
+        #   예측기가 자기 기준으로 '정상' 이라고 적어 둔 값이 이긴 것이다.)
+        #
+        #   ALL 줄은 원래부터 정책으로 매긴다(all_row). 여기만 파일을 따르면
+        #   한 표 안에서 두 줄이 서로 다른 자로 재는 셈이다.
+        #
+        #   예측기가 뭐라고 했는지는 **버리지 않고** 같이 싣는다 — 다르면
+        #   그 사실이 보여야 한다. 조용히 한쪽을 고르면 나중에 왜 다른지 모른다.
         g = grade(r, fcfg)
-        # ★예측기가 area_level 을 이미 적어 줬으면 그걸 쓴다 — 우리가 다시
-        #   매기면 등급 기준이 두 벌이 되어 언젠가 어긋난다.
-        if own and own.get("level"):
-            g = dict(g, level=own["level"])
+        fl = str((own or {}).get("level") or "").strip()
+        if fl and fl != g["level"]:
+            a["file_level"] = fl
+            a["level_mismatch"] = ("예측기는 '{}' 로 적었지만 지금 정책(경계 {})"
+                                   "으로는 '{}' 입니다"
+                                   .format(fl, grade_cuts(fcfg)[0], g["level"]))
+        elif fl:
+            a["file_level"] = fl
         fw, fd, fc = grade_cuts(fcfg)
         a.update({
             "is_all": False,

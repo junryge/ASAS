@@ -131,16 +131,54 @@ class FAB_분리_파일을_읽는다(unittest.TestCase):
         self.assertEqual(r["source"], "fab_file")
         self.assertEqual(r["score_col"], "area_score")
 
-    def test_예측기가_적어_준_등급을_그대로_쓴다(self):
-        """우리가 다시 매기면 기준이 두 벌이 되어 언젠가 어긋난다.
-        ★우리 계산과 **다른** 등급을 넣어야 확인이 된다 — 62점이면 우리는
-        '경계' 라고 매기지만, 파일이 '위험' 이라고 하면 파일을 따라야 한다
-        (영역등급.json 의 기준이 바뀌었을 수 있다)."""
+    def test_등급은_정책이_정한다(self):
+        """★예전엔 반대였다 — 파일의 area_level 이 있으면 그걸 그대로 썼다.
+
+        그러면 **정책 탭에서 컷을 내려도 FAB 줄이 안 따라온다.**
+        실제 증상: "M14 가 70 까지 올라가는데 왜 이상이 없다고 하지?"
+        화면에는 컷이 '경계 35' 라고 떠 있는데 등급만 '정상' 이었다 —
+        예측기가 자기 기준으로 적어 둔 값이 정책을 이기고 있었다.
+
+        ALL 줄은 원래부터 정책으로 매긴다(all_row). 여기만 파일을 따르면
+        한 표 안에서 두 줄이 서로 다른 자로 재는 셈이다.
+        """
+        self._all(raw=35)
+        self._fab(score=62, level="위험")     # 예측기는 '위험' 이라고 적었다
+        r = self._row()
+        self.assertEqual(r["area_score"], 62)
+        # 기본 컷(경계 60 · 위험 71)으로는 62 가 '경계' 다
+        self.assertEqual(r["level"], "경계", "파일 등급이 정책을 이겼다")
+
+    def test_예측기가_뭐라_했는지는_안_버린다(self):
+        """★조용히 한쪽을 고르면, 나중에 왜 다른지 아무도 모른다."""
         self._all(raw=35)
         self._fab(score=62, level="위험")
         r = self._row()
-        self.assertEqual(r["area_score"], 62)
-        self.assertEqual(r["level"], "위험", "우리가 다시 매겼다")
+        self.assertEqual(r["file_level"], "위험")
+        self.assertIn("예측기는 '위험'", r["level_mismatch"])
+        self.assertIn("경계", r["level_mismatch"])      # 지금 정책이 뭔지
+
+    def test_같으면_어긋났다고_하지_않는다(self):
+        self._all(raw=35)
+        self._fab(score=62, level="경계")
+        r = self._row()
+        self.assertEqual(r["file_level"], "경계")
+        self.assertNotIn("level_mismatch", r)
+
+    def test_정책을_내리면_FAB_줄이_따라온다(self):
+        """★이게 정책 탭이 있는 이유다. 70점이 '정상' 으로 남으면 안 된다."""
+        from copy import deepcopy
+        self._all(raw=35)
+        self._fab(score=70, level="정상")     # 예측기는 '정상' 이라고 적었다
+        cfg = deepcopy(self.cfg)
+        cfg.setdefault("grade", {}).setdefault("by_sys", {})["M16HUB"] = {
+            "warn": 35, "danger": 50, "critical": 70}
+        out = fab_score.compare(store_csv.read_day("20260826", cfg), None, cfg,
+                                day="20260826")
+        r = [x for x in out["rows"] if x.get("fab") == "M16HUB"][0]
+        self.assertEqual(r["score"], 70)
+        self.assertEqual(r["level"], "초위험")
+        self.assertEqual(r["cuts"], {"warn": 35, "danger": 50, "critical": 70})
 
     def test_포화_표시도_가져온다(self):
         self._all(raw=60)
