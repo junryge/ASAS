@@ -147,8 +147,6 @@ class App:
             sys.stdout.write("  스킬 시드: {} (데이터 분석)\n".format(nm))
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
-        if skills.seed_hubroom(cls.skill_store, base_dir):
-            sys.stdout.write("  스킬 시드: m16-hubroom (반송 장치·경로·호기명)\n")
         cls.mcp_hub = cls._make_hub(base_dir)
         sentinel.init(cls.data_dir)      # 알람 이력 (data/alarms.json)
         # ★브라우저가 열려 있을 때만 보면 감시가 아니다. 창을 닫아도, 아무도

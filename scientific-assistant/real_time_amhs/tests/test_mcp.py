@@ -2131,11 +2131,58 @@ class 위키_설정이_말이_된다(unittest.TestCase):
             self.assertIn("LLM_WIKI_MCP_PORT", doc)
 
     def test_반송_지식_질문에_걸린다(self):
+        """★지식은 위키에 있고 **서윤은 거기서 가져온다.** 미리 알고 있으면
+        안 된다 — 위키를 고쳐도 서윤이 옛 것을 말하게 된다.
+        그러니 도메인 질문에는 **반드시** 걸려야 한다."""
         for q in ("LFT가 뭐야?", "STK랑 STB 차이가 뭐지",
                   "M16 HUBROOM 이 뭐하는 데야", "Sorter 대기Q 왜 중요해",
                   "FOUP 이 어디를 경유해?", "OHT 가 무엇을 하는 거야",
                   "반송 장치 종류 뭐가 있어"):
             self.assertIn("wiki", self.keys(q), q)
+
+    def test_장치의_다른_이름으로도_걸린다(self):
+        """★현장은 다른 이름으로 부른다 — LFT=ZT · STB=ZFS · MLUD=FIO."""
+        for q in ("ZT 가 뭐야", "ZFS 랑 STK 차이", "FIO 는 무슨 장치야",
+                  "rack master 가 뭐지", "FOSB 가 뭔데", "VHL 이 뭐야"):
+            self.assertIn("wiki", self.keys(q), q)
+
+    def test_호기명으로도_걸린다(self):
+        """★"4AFC3201 이 뭐야" 는 낱말이 하나도 안 걸린다. 호기명은 숫자로
+        시작하는 대문자 코드라 관제 질문에는 안 나온다 — 코드로 잡는다."""
+        for q in ("4AFC3201 이 뭐야", "6ABL60 은 어디 리프터야",
+                  "4ABLD 로 시작하는 게 뭐지", "6FIOB 는 뭐하는 거야",
+                  "SORTERWAITCOUNTOVER 이 뭔데"):
+            self.assertIn("wiki", self.keys(q), q)
+
+    def test_관제_시스템이_아닌_건물로도_걸린다(self):
+        """★M14분석실·M16EUV·M16WT·M10A·R4 는 관제 시스템이 아니다 —
+        이 이름이 나오면 지식 질문이다."""
+        for q in ("M16EUV 랑 M16WT 는 어떻게 이어져", "R4 는 어디야",
+                  "M10A 에서 M16 어떻게 가", "M14분석실은 뭐로 연결돼"):
+            self.assertIn("wiki", self.keys(q), q)
+
+    def test_서윤이_미리_알고_있지_않다(self):
+        """★반송 지식을 스킬로 심어 두면 안 된다.
+
+        지식의 집은 **위키 하나**다. 스킬에 박아 두면 위키를 고쳐도 서윤은
+        옛 것을 말한다 — 두 벌이 되는 순간 어느 쪽이 맞는지 아무도 모른다.
+        서윤은 **위키에서 가져와야** 한다.
+
+        (fab-score·m16-hub-* 는 배점·임계 스킬이라 여기 해당 없다 —
+         용어·장치·경로·호기명만 위키 몫이다.)
+        """
+        p = os.path.join(util.BASE, "avatar_2d", "avatar", "skills.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertNotIn("seed_hubroom", src,
+                         "반송 지식을 스킬로 심고 있다")
+        for w in ("MLUD", "4AFC", "6ABL", "6FIOB", "ZFS", "FOSB", "WIS_M16WT"):
+            self.assertNotIn(w, src, "반송 지식이 스킬에 박혀 있다: " + w)
+        d = os.path.join(util.BASE, "docs")
+        if os.path.isdir(d):
+            for n in os.listdir(d):
+                self.assertNotIn("도메인지식", n,
+                                 "반송 지식이 스킬 원본으로 남아 있다: " + n)
 
     def test_관제_질문에는_안_걸린다(self):
         """★"M14 반송시간 알려줘" 가 걸려서 '반송' 을 낱말에서 뺐다.
