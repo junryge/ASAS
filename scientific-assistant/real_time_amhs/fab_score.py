@@ -1059,6 +1059,95 @@ def files_sig(day: str, cfg: dict | None = None) -> tuple:
     return tuple(out)
 
 
+def divergence(row: dict, cfg: dict | None = None) -> dict | None:
+    """ALL 점수와 FAB 다섯 점수가 **엇갈릴 때** 그게 무슨 뜻인가.
+
+    ★ALL 과 FAB 은 배점표가 겹치지 않는다. 그래서 한쪽만 올라가는 일이
+      구조적으로 생긴다 — 그걸 사람이 매번 눈으로 맞춰 보고 있었다.
+        ALL 에만  FLOW 30점 (30분 평균 대비 배수 · 10개 노드)
+        FAB 에만  RA 10 · RA_sus 5 · RB 10 · RB_fast 5 · RC 8 · RD 7 = 45점
+        공통      SLA 5 · SORT 3 · MAXCAPA 10 (걸린 영역 수만큼)
+
+    돌려주는 네 갈래
+      전체물량   ALL 이 컷 이상인데 FAB 은 전부 정상
+                 → FAB 배점에 없는 것은 FLOW 뿐이다. 물량이 올라온 것이다.
+      단일FAB    ALL 은 컷 미만인데 FAB **한 곳**이 경계 이상
+                 → 한 FAB 만 걸려서는 ALL 이 구조적으로 못 따라온다
+                   (FAB 40점이 ALL 로는 최대 18점). 놓치기 쉬운 자리다.
+      FAB전이    ALL 은 컷 미만인데 FAB **두 곳 이상**이 경계 이상
+                 → ★전이라고 단정하지 않는다. propagation_chain 이 있으면
+                   그 방향을 그대로 쓰고, 없으면 '확정 못 함' 으로 둔다.
+                   없는 인과를 만들면 관제가 엉뚱한 FAB 을 본다.
+      None       엇갈리지 않는다 (둘 다 올랐거나 둘 다 조용하다) — 할 말 없음
+
+    row 에 {FAB}_pts_* 가 없으면(ALL 파일이 아니면) None. 남의 FAB 점수를
+    지어내지 않는다.
+    """
+    from lp_client import load_config, sys_cfg
+    from sentinel import grade_cuts
+    cfg = cfg or load_config()
+    codes = fabs(cfg)
+    if not codes:
+        return None
+
+    all_sc = _num(row.get("unified_risk_score"))
+    if all_sc is None:
+        return None
+    all_cut = grade_cuts(sys_cfg(cfg, "ALL"))[0]
+
+    hot, quiet, known = [], [], 0
+    for f in codes:
+        a = area_score(row, f, cfg)
+        # ★근거가 있는 FAB 만 센다. 없는 것을 0(정상)으로 채우면
+        #   "FAB 전부 정상" 이라는 잘못된 결론이 나온다.
+        if not (a["has_pts"] or _num(row.get(f"{f}_score")) is not None):
+            continue
+        known += 1
+        sc = area_score_100(a.get("raw", a["area"]), f, cfg)
+        cut = grade_cuts(sys_cfg(cfg, f))[0]     # ★FAB 마다 컷이 다르다
+        (hot if sc >= cut else quiet).append({"fab": f, "score": sc, "cut": cut})
+    if not known:
+        return None
+
+    hot.sort(key=lambda x: -x["score"])
+    base = {"all": round(all_sc, 1), "all_cut": all_cut,
+            "hot": hot, "quiet": quiet, "known": known}
+    chain = (row.get("propagation_chain") or "").strip()
+
+    if all_sc >= all_cut and not hot:
+        return {**base, "kind": "전체물량",
+                "text": ("ALL 이 {:.0f}점({}점 이상)인데 FAB 다섯은 전부 자기 "
+                         "경계 미만이다. FAB 배점에 없고 ALL 에만 있는 것은 "
+                         "흐름(30분 평균 대비 배수)뿐이므로, 특정 FAB 고장이 "
+                         "아니라 **전체적으로 물량이 올라온 것**으로 읽어야 "
+                         "한다.").format(all_sc, all_cut)}
+
+    if all_sc < all_cut and len(hot) == 1:
+        h = hot[0]
+        return {**base, "kind": "단일FAB",
+                "text": ("ALL 은 {:.0f}점으로 {}점 미만인데 {} 가 {}점(경계 {}) "
+                         "으로 올라와 있다. 한 FAB 만 걸리면 ALL 이 구조적으로 "
+                         "못 따라온다 — **{} 에서 문제가 진행 중일 수 있다.** "
+                         "ALL 이 조용하다고 정상으로 보면 안 된다."
+                         ).format(all_sc, all_cut, h["fab"], h["score"],
+                                  h["cut"], h["fab"])}
+
+    if all_sc < all_cut and len(hot) >= 2:
+        names = ", ".join("{}({}점)".format(x["fab"], x["score"]) for x in hot)
+        if chain:
+            tail = ("전이 경로가 **{}** 로 적혀 있다 — 그 방향대로 한 FAB 이 "
+                    "다른 FAB 에 영향을 주고 있는 것으로 읽어라.").format(chain)
+        else:
+            tail = ("전이 경로가 비어 있어 **한 FAB 이 옮긴 것인지 각각 따로 "
+                    "생긴 것인지는 확정할 수 없다.** 둘 다 짚되 원인을 하나로 "
+                    "단정하지 마라.")
+        return {**base, "kind": "FAB전이",
+                "text": ("ALL 은 {:.0f}점으로 {}점 미만인데 FAB 두 곳 이상이 "
+                         "경계 이상이다 — {}. {}").format(all_sc, all_cut,
+                                                          names, tail)}
+    return None
+
+
 def area_table(rows: list[dict], day: str | list | None = None,
                cfg: dict | None = None) -> dict:
     """하루치 행 전부의 **FAB 다섯 점수(0~100)** 를 한 번에 낸다 — 목록용.

@@ -14,6 +14,7 @@
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -807,3 +808,113 @@ class 문서_생성(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ALL_과_FAB_이_엇갈릴_때(unittest.TestCase):
+    """★ALL 과 FAB 은 배점표가 겹치지 않아 한쪽만 올라가는 일이 구조적으로 생긴다.
+
+        ALL 에만  FLOW 30점 (30분 평균 대비 배수 · 10개 노드)
+        FAB 에만  RA 10 · RA_sus 5 · RB 10 · RB_fast 5 · RC 8 · RD 7 = 45점
+
+    모델은 이 구조를 알 수 없다. 알려 주지 않으면 "ALL 이 낮으니 정상" 이라고
+    답한다 — 한 FAB 이 무너지고 있어도.
+    """
+
+    FABS = ["M14", "M14B", "M16A", "M16B", "M16HUB"]
+
+    def setUp(self):
+        import copy
+        from lp_client import load_config
+        self.cfg = copy.deepcopy(load_config())
+        self.cfg.setdefault("grade", {})["by_sys"] = {
+            s: {"warn": 35, "danger": 50, "critical": 70}
+            for s in ["ALL"] + self.FABS}
+
+    def _row(self, all_sc, hot=None, chain=""):
+        """hot 에 준 FAB 만 경계 이상으로 올린다."""
+        r = {"unified_risk_score": str(all_sc), "propagation_chain": chain}
+        for f in self.FABS:
+            p = (hot or {}).get(f, 2)
+            r[f"{f}_pts_RA"] = str(p)
+            r[f"{f}_score"] = str(min(50, p))
+        return r
+
+    def test_ALL_만_높으면_물량이다(self):
+        """FAB 배점에 없고 ALL 에만 있는 것은 흐름뿐이다."""
+        d = F.divergence(self._row(48), self.cfg)
+        self.assertEqual(d["kind"], "전체물량")
+        self.assertIn("물량", d["text"])
+        self.assertEqual(d["hot"], [])
+
+    def test_FAB_한_곳만_높으면_그_FAB_을_짚는다(self):
+        """★ALL 이 구조적으로 못 따라오는 자리 — 놓치기 제일 쉽다."""
+        d = F.divergence(self._row(18, {"M16HUB": 30}), self.cfg)
+        self.assertEqual(d["kind"], "단일FAB")
+        self.assertEqual([x["fab"] for x in d["hot"]], ["M16HUB"])
+        self.assertIn("M16HUB", d["text"])
+        self.assertIn("정상으로 보면 안 된다", d["text"])
+
+    def test_두_곳_이상이면_전이를_의심한다(self):
+        d = F.divergence(
+            self._row(20, {"M16HUB": 30, "M14": 28}), self.cfg)
+        self.assertEqual(d["kind"], "FAB전이")
+        self.assertEqual(len(d["hot"]), 2)
+
+    def test_체인이_있으면_그_방향을_쓴다(self):
+        d = F.divergence(
+            self._row(20, {"M16HUB": 30, "M14": 28}, chain="M14 → M16HUB"),
+            self.cfg)
+        self.assertIn("M14 → M16HUB", d["text"])
+
+    def test_체인이_없으면_인과를_단정하지_않는다(self):
+        """★없는 인과를 만들면 관제가 엉뚱한 FAB 을 본다.
+        두 FAB 이 동시에 오른 것은 전이일 수도, 각각 별개일 수도 있다."""
+        d = F.divergence(
+            self._row(20, {"M16HUB": 30, "M14": 28}), self.cfg)
+        self.assertIn("확정할 수 없다", d["text"])
+        self.assertNotIn("영향을 주고 있는", d["text"])
+
+    def test_한_곳과_두_곳이_안_겹친다(self):
+        """★2번(한 곳)과 3번(두 곳)이 둘 다 발동하면 모델이 상반된 지시를 받는다."""
+        one = F.divergence(self._row(18, {"M16HUB": 30}), self.cfg)
+        two = F.divergence(
+            self._row(18, {"M16HUB": 30, "M14": 28}), self.cfg)
+        self.assertEqual(one["kind"], "단일FAB")
+        self.assertEqual(two["kind"], "FAB전이")
+
+    def test_FAB_마다_자기_컷으로_잰다(self):
+        """정책 탭에서 FAB 마다 컷이 다르다 — ALL 컷으로 재면 안 된다."""
+        self.cfg["grade"]["by_sys"]["M14"] = {"warn": 80, "danger": 90,
+                                              "critical": 95}
+        d = F.divergence(
+            self._row(18, {"M16HUB": 30, "M14": 28}), self.cfg)
+        # M14 는 자기 컷 80 이라 43점으로는 경계가 아니다 → 한 곳만 남는다
+        self.assertEqual(d["kind"], "단일FAB")
+        self.assertEqual([x["fab"] for x in d["hot"]], ["M16HUB"])
+
+    def test_엇갈리지_않으면_할_말이_없다(self):
+        """둘 다 올랐거나 둘 다 조용하면 특별히 알릴 것이 없다."""
+        self.assertIsNone(F.divergence(
+            self._row(55, {"M16HUB": 30}), self.cfg), "둘 다 높은데 말을 얹었다")
+        self.assertIsNone(F.divergence(self._row(10), self.cfg))
+
+    def test_근거_없는_FAB_은_정상으로_치지_않는다(self):
+        """★없는 것을 0(정상)으로 채우면 'FAB 전부 정상' 이라는 잘못된 결론이 난다."""
+        self.assertIsNone(
+            F.divergence({"unified_risk_score": "48"}, self.cfg))
+
+    def test_판단_프롬프트에_실린다(self):
+        """계산만 해 놓고 안 보내면 아무 소용이 없다."""
+        import inspect
+        import llm_client
+        src = inspect.getsource(llm_client.judge_snapshot)
+        self.assertIn("fab_score.divergence", src)   # llm_client 는 전체 이름을 쓴다
+        self.assertIn("엇갈린다", src)
+
+    def test_계산이_실패해도_판단은_돈다(self):
+        """부가 정보 하나 때문에 1분 판단이 통째로 멎으면 안 된다."""
+        import inspect
+        import llm_client
+        src = inspect.getsource(llm_client.judge_snapshot)
+        m = re.search(r"div = None\n\s+try:[\s\S]*?except Exception", src)
+        self.assertIsNotNone(m, "divergence 호출이 안 감싸여 있다")

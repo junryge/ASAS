@@ -455,6 +455,24 @@ def judge_snapshot(row: dict, score: float, grade: dict, area: str,
 - AMOS QUEUE 지표: {' / '.join(items) or '없음'}
 - 발동 사유: {summarize_reason(reason, area) or '없음'}"""
 
+    # ★ALL 과 FAB 이 엇갈릴 때 그게 무슨 뜻인지 **계산해서** 붙인다.
+    #   ALL 배점엔 흐름(30점)이 있고 FAB 배점엔 RA/RB/RC/RD(45점)가 있어,
+    #   한쪽만 올라가는 일이 구조적으로 생긴다. 모델이 알 수 없는 구조라
+    #   프롬프트로 알려 주지 않으면 "ALL 이 낮으니 정상" 으로 답한다.
+    div = None
+    try:
+        import fab_score
+        div = fab_score.divergence(row, cfg)
+    except Exception:                                   # noqa: BLE001
+        div = None                                      # 없으면 없는 대로 간다
+    if div:
+        head += ("\n\n★ALL 과 FAB 이 엇갈린다 ({}) — 반드시 반영해서 판단하라.\n"
+                 "{}\n"
+                 "  FAB 점수: {}").format(
+            div["kind"], div["text"],
+            " · ".join("{} {}점(경계 {})".format(x["fab"], x["score"], x["cut"])
+                       for x in (div["hot"] + div["quiet"])) or "없음")
+
     if light:
         user = head + "\n\n" + rule + """
 
