@@ -181,7 +181,7 @@ def main():
     #   한다 — 공식 SDK(FastMCP) 로 streamable-http 를 쓰기 때문에 아바타가
     #   자식 프로세스로 못 띄운다. 다른 PC 에 있으면 이걸 준다.
     ap.add_argument("--wiki", default="",
-                    help="위키 MCP 주소 (기본 http://127.0.0.1:8100/mcp). "
+                    help="위키 MCP 주소 (기본 http://127.0.0.1:8020/mcp). "
                          "--wiki off 로 아예 끌 수 있다")
     args = ap.parse_args()
     if args.sentinel:

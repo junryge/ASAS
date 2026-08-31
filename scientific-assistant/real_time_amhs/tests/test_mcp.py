@@ -1457,6 +1457,50 @@ class 위키에_붙는다(_Wiki):
         self.assertIn("application/json", acc)
         self.assertIn("text/event-stream", acc)
 
+    def test_웹앱_주소를_넣으면_그렇다고_말해_준다(self):
+        """★실제 증상. 위키 웹앱(:8100)을 MCP 주소로 넣으면 그쪽에 /mcp 가
+        없어서 Flask 가 HTML 404 를 준다:
+
+            못 붙었습니다 — 서버가 끊겼다 (HTTP 404 <!doctype html> …)
+
+        이렇게만 말하면 서버는 멀쩡히 떠 있는데 왜 안 되는지 알 길이 없다.
+        MCP 서버는 JSON 만 준다 — HTML 이 오면 그 주소가 아닌 것이다.
+        """
+        class 가짜_웹앱(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = (b"<!doctype html>\n<html lang=en>\n"
+                        b"<title>404 Not Found</title>\n<h1>Not Found</h1>\n"
+                        b"<p>The requested URL was not found on the server.</p>")
+                self.send_response(404)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        srv = HTTPServer(("127.0.0.1", 0), 가짜_웹앱)
+        url = "http://127.0.0.1:{}/mcp".format(srv.server_address[1])
+        th = threading.Thread(target=srv.serve_forever, daemon=True)
+        th.start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        with self.assertRaises(mcp_client.McpError) as e:
+            mcp_client.HttpClient(url, timeout=3)
+        m = str(e.exception)
+        self.assertIn("MCP 서버가 아닙니다", m)
+        self.assertIn("app.py", m)          # 무엇과 헷갈렸는지
+        self.assertIn("mcp_server.py", m)   # 무엇을 띄워야 하는지
+        self.assertIn(url, m)               # 지금 어디를 보고 있는지
+
+    def test_HTML_이_아니면_그_말은_안_한다(self):
+        """★아무 404 에나 이 말을 붙이면, 진짜 세션 만료를 가린다."""
+        c = mcp_client.HttpClient(self.url)
+        self.assertEqual(c._hint(404, '{"error":"session"}'), "")
+        self.assertEqual(c._hint(500, "boom"), "")
+        self.assertIn("MCP 서버가 아닙니다", c._hint(404, "<HTML><body>x</body>"))
+
     def test_안_떠_있으면_끊겼다고_말한다(self):
         """★'끊겼다' 라고 말해야 위에서 새로 붙어 다시 건다 (_looks_dead)."""
         with socket.socket() as s:          # 아무도 안 듣는 포트
@@ -1893,20 +1937,26 @@ class 위키_설정이_말이_된다(unittest.TestCase):
         self.assertEqual(w[0]["transport"], "http")
         self.assertTrue(w[0]["url"].endswith("/mcp"))
 
-    def test_기본_주소가_현장_포트다(self):
-        """★mcp_server.py 의 기본값은 8020 인데 **현장은 8100** 이다.
+    def test_기본_주소가_MCP_포트다(self):
+        """★위키는 프로세스가 **둘**이다. 여기서 한 번 헛짚었다.
 
-        기본값이 실제와 다르면, 붙였다고 생각하고 켜 놓은 채로 계속
-        실패한다 (지적: "AMHS 위키 이거 아닌데?? 8020 8100인데").
+            app.py         Flask 웹앱      기본 :8100   사람이 보는 화면
+            mcp_server.py  FastMCP · MCP   기본 :8020   서윤이 붙는 곳
+
+        웹앱 포트를 기본값으로 두면 /mcp 가 없어서 HTML 404 가 난다 —
+        서버는 멀쩡히 떠 있는데 왜 안 되는지 알 길이 없다.
         """
         w = [s for s in config.MCP_SERVERS if s["key"] == "wiki"][0]
-        self.assertIn(":8100/mcp", w["url"])
-        # 문서도 같은 포트를 말해야 한다 — 어긋나면 그대로 또 헤맨다
+        self.assertIn(":8020/mcp", w["url"])
+        self.assertNotIn(":8100", w["url"], "웹앱 포트를 보고 있다")
+        # 문서가 둘을 갈라 놓아야 한다 — 안 그러면 그대로 또 헤맨다
         d = os.path.join(util.BASE, "LLM_WIKI_MCP", "연결방법.md")
         if os.path.isfile(d):
             with open(d, encoding="utf-8") as f:
                 doc = f.read()
+            self.assertIn("app.py", doc)
             self.assertIn("8100", doc)
+            self.assertIn("8020", doc)
             self.assertIn("LLM_WIKI_MCP_PORT", doc)
 
     def test_반송_지식_질문에_걸린다(self):

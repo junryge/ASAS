@@ -257,6 +257,10 @@ class HttpClient(_Tools):
                 body = e.read().decode("utf-8", "replace")[:200]
             except Exception:  # noqa: BLE001
                 pass
+            hint = self._hint(e.code, body)
+            if hint:
+                self._ok = False
+                raise McpError(hint)
             # ★세션이 만료되면 404/400 이 온다. 이건 '끊겼다' 로 알려야
             #   위에서 새로 붙어 다시 건다 (_looks_dead 가 그 말을 본다).
             if e.code in (400, 404):
@@ -269,6 +273,26 @@ class HttpClient(_Tools):
             raise McpError("서버가 끊겼다 ({}: {})".format(type(e).__name__, e))
         self._ok = True
         return self._messages(raw, ctype)
+
+    def _hint(self, code, body):
+        """이 응답이 **엉뚱한 서버**에서 온 것인가 — 맞으면 그렇다고 말한다.
+
+        ★실제로 겪었다. 위키는 프로세스가 **둘**이다:
+              app.py         Flask 웹앱      기본 :8100
+              mcp_server.py  FastMCP · MCP   기본 :8020
+          웹앱 주소(:8100)를 MCP 로 넣으면 /mcp 가 없어서 Flask 가 HTML 404 를
+          돌려준다. 그걸 "서버가 끊겼다 (HTTP 404 <!doctype html>...)" 라고만
+          하면, 서버는 멀쩡히 떠 있는데 왜 안 되는지 알 길이 없다.
+          MCP 서버는 JSON 만 준다 — HTML 이 오면 그 주소가 아닌 것이다.
+        """
+        b = str(body or "")
+        if "<html" not in b.lower() and "<!doctype" not in b.lower():
+            return ""
+        return ("이 주소는 MCP 서버가 아닙니다 (HTML {} 이 왔습니다). "
+                "위키는 프로세스가 둘입니다 — 웹앱(app.py · 기본 :8100)과 "
+                "MCP 서버(mcp_server.py · 기본 :8020)는 다른 것입니다. "
+                "위키 폴더에서 python mcp_server.py 를 띄우고 그 포트의 "
+                "/mcp 를 넣으세요. 지금 보는 곳: {}".format(code, self.url))
 
     def _rpc(self, method, params=None):
         with self._lock:

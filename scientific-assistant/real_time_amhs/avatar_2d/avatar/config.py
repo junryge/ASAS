@@ -201,11 +201,14 @@ MCP_SERVERS = [
         #   위키 쪽에서 python mcp_server.py 를 따로 띄워 둬야 한다.
         "key": "wiki", "name": "AMHS 위키", "enabled": True,
         "transport": "http",
-        # ★현장은 8100 이다 (mcp_server.py 의 기본값은 8020 — 포트를 옮겨
-        #   띄웠다). 여기 기본값은 **실제로 도는 자리**에 맞춘다.
-        #   다르면 화면(설정 → 외부 도구)에서 주소만 고치면 된다 —
+        # ★★위키는 프로세스가 **둘**이다. 여기서 한 번 헛짚었다.
+        #       app.py         Flask 웹앱      기본 :8100   ← 사람이 보는 화면
+        #       mcp_server.py  FastMCP · MCP   기본 :8020   ← 여기에 붙는다
+        #   :8100 을 넣으면 /mcp 가 없어서 Flask 가 HTML 404 를 준다
+        #   (실제 증상: "서버가 끊겼다 (HTTP 404 <!doctype html>…)").
+        #   화면(설정 → 외부 도구)에서 주소만 고치면 된다 —
         #   run.py --wiki, WIKI_MCP_URL 도 같다.
-        "url": "http://127.0.0.1:8100/mcp",
+        "url": "http://127.0.0.1:8020/mcp",
         "timeout": 20,
         # 반송 장치·구조를 묻는 말들.
         # ★"OHT"·"반송" 은 넣지 않는다 — "M14 반송시간 알려줘" 같은 관제

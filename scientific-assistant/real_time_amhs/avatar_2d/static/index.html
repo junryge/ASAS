@@ -257,6 +257,10 @@
           <b>QA 요청이력</b>은 아바타가 알아서 띄웁니다.
           <b>AMHS 위키</b>는 <code>LLM_WIKI_MCP/amhs-llm-wiki</code> 에서
           <code>python mcp_server.py</code> 를 <b>따로 띄워 둬야</b> 붙습니다.<br>
+          ★위키는 프로세스가 <b>둘</b>입니다 —
+          <code>app.py</code>(사람이 보는 웹앱 · 기본 <b>8100</b>) 과
+          <code>mcp_server.py</code>(MCP · 기본 <b>8020</b>) 는 다른 것입니다.
+          웹앱 주소를 넣으면 <code>/mcp</code> 가 없어서 <b>404</b> 가 납니다.<br>
           안 떠 있는 서버는 <b>끄는 게 낫습니다</b> — 켜 두면 물어볼 때마다
           붙으러 갔다가 실패해서 답이 느려집니다. 여기서 끈 것은 서버에
           저장되어 <b>재시작해도 그대로</b>입니다.</p>

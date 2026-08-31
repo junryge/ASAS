@@ -4044,7 +4044,7 @@ function mcpRender(j){
     if(s.transport==='http'){
       const wrap=document.createElement('div'); wrap.className='mcpUrl';
       const inp=document.createElement('input'); inp.type='text';
-      inp.value=s.addr||''; inp.placeholder='http://10.x.x.x:8100/mcp';
+      inp.value=s.addr||''; inp.placeholder='http://10.x.x.x:8020/mcp';
       inp.title='다른 PC 에 떠 있으면 여기에 그 주소를 적습니다';
       const btn=document.createElement('button');
       btn.textContent='주소 적용'; btn.className='ghost';
