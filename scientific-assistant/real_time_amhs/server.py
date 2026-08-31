@@ -774,6 +774,179 @@ def api_score_policy():
     return jsonify({"systems": out, "saved": saved})
 
 
+def _apply_cuts(sets: dict) -> str:
+    """등급 컷을 메모리 + config.json 에 적는다 → 오류 글 (없으면 빈 글).
+
+    ★화면의 '수동 변경' 과 LLM 자동 조정이 **같은 길**로 나가야 한다.
+      두 길이 생기면 한쪽만 고쳐지는 사고가 난다 (메모리엔 반영됐는데
+      config.json 엔 안 적혀 재시작하면 되돌아가는 식).
+    """
+    g = CFG.setdefault("grade", {})
+    for s_, row in sets.items():
+        w, d_, c = int(row["warn"]), int(row["danger"]), int(row["critical"])
+        if not (1 <= w < d_ < c <= 100):
+            return f"{s_}: 1 ≤ 경계({w}) < 위험({d_}) < 초위험({c}) ≤ 100"
+    # ★객체 갈아끼우기 금지 — sys_cfg 뷰들이 grade 블록을 공유한다
+    by = g.setdefault("by_sys", {})
+    by.update({s_: {"warn": int(r["warn"]), "danger": int(r["danger"]),
+                    "critical": int(r["critical"])} for s_, r in sets.items()})
+    return _persist_score_policy()
+
+
+@app.route("/api/score_policy/tune", methods=["GET", "POST"])
+def api_score_tune():
+    """등급 컷 자동 조정 — 최근 8시간 분포를 LLM 이 보고 유지/변경을 정한다.
+
+    GET  → 설정 + 최근 기록 (변경 로그)
+    POST → 지금 한 번 돌린다. body {hours?, apply?:true, by?}
+           apply=false 면 **제안만** 보고 안 바꾼다 (눌러 보기 전에 확인용).
+    """
+    import score_tune
+    tc = score_tune.cfg_of(CFG)
+    if request.method == "GET":
+        try:
+            lim = max(1, min(200, int(request.args.get("limit", 30))))
+        except ValueError:
+            lim = 30
+        return jsonify({
+            "enabled": bool(tc["enabled"]), "hours": tc["hours"], "at": tc["at"],
+            "max_step": tc["max_step"], "min_rows": tc["min_rows"],
+            "shifts": [f"{a:02d}~{b:02d}" for a, b in score_tune.SHIFTS],
+            "next": _tune_next_text(tc),
+            "running": TUNE["running"],
+            "model": tc.get("model") or "",
+            # ★무엇을 물어보고 있는지 화면에서 볼 수 있어야 한다.
+            #   지시문만으로는 부족해서 실제로 붙는 데이터까지 같이 준다.
+            "prompt": score_tune.system_prompt(CFG),
+            "prompt_custom": bool((tc.get("prompt") or "").strip()),
+            "prompt_default": score_tune.SYSTEM,
+            "history": score_tune.history(CFG, lim),
+        })
+
+    b = request.get_json(silent=True) or {}
+
+    # 지금 누르면 무엇이 모델에게 가는가 — 눌러 보기 전에 확인
+    if b.get("preview"):
+        try:
+            return jsonify(score_tune.preview(CFG, systems(),
+                                              hours=b.get("hours")))
+        except Exception as e:                          # noqa: BLE001
+            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+    # 프롬프트만 바꾸는 호출 (빈 글이면 기본 프롬프트로 되돌린다)
+    if "prompt" in b:
+        pol = CFG.setdefault("policy", {}).setdefault("auto_tune", {})
+        pol["prompt"] = str(b.get("prompt") or "").strip()
+        err = _persist_auto_tune()
+        return jsonify({"saved": not err, "error": err or "",
+                        "custom": bool(pol["prompt"]),
+                        "prompt": score_tune.system_prompt(CFG)})
+
+    # 켜고 끄기만 바꾸는 호출
+    if "enabled" in b and "hours" not in b and not b.get("run"):
+        pol = CFG.setdefault("policy", {}).setdefault("auto_tune", {})
+        pol["enabled"] = bool(b["enabled"])
+        err = _persist_auto_tune()
+        return jsonify({"enabled": pol["enabled"], "saved": not err,
+                        "error": err or ""})
+
+    if TUNE["running"]:
+        return jsonify({"error": "이미 조정이 돌고 있습니다 — 끝나면 다시"}), 409
+    try:
+        hours = max(1, min(48, int(b.get("hours") or tc["hours"])))
+    except (TypeError, ValueError):
+        hours = tc["hours"]
+    rec = _tune_once(hours, str(b.get("by") or "수동"),
+                     apply_it=b.get("apply", True) is not False)
+    code = 200 if not rec.get("error") else 502
+    return jsonify(rec), code
+
+
+def _persist_auto_tune() -> str:
+    """policy.auto_tune 을 config.json 에 적는다 → 오류 글."""
+    from lp_client import CONFIG_PATH
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+            disk = json.load(f)
+        disk.setdefault("policy", {})["auto_tune"] = \
+            (CFG.get("policy", {}) or {}).get("auto_tune") or {}
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(disk, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, CONFIG_PATH)
+        return ""
+    except Exception as e:                              # noqa: BLE001
+        return f"{type(e).__name__}: {e}"
+
+
+# 자동 조정 상태 — 두 번 겹쳐 돌지 않게, 그리고 화면에 '지금 도는 중' 을 준다
+TUNE: dict = {"running": False, "last_slot": None}
+
+
+def _tune_next_text(tc: dict) -> str:
+    """다음 실행 시각 한 줄 — 화면이 '언제 도나' 를 물어보지 않아도 되게."""
+    if not tc.get("enabled"):
+        return "자동 꺼짐"
+    now = datetime.now()
+    for h in tc["at"]:
+        if h > now.hour:
+            return f"오늘 {h:02d}:00"
+    return f"내일 {tc['at'][0]:02d}:00" if tc["at"] else "예정 없음"
+
+
+def _tune_once(hours: int, by: str, apply_it: bool = True) -> dict:
+    """한 번 돌리고 적용까지. 기록은 **적용 여부와 상관없이** 남긴다."""
+    import score_tune
+    TUNE["running"] = True
+    try:
+        rec = score_tune.run(CFG, systems(), hours=hours, by=by)
+        rec["dry"] = not apply_it
+        if apply_it and rec.get("applied") and not rec.get("error"):
+            err = _apply_cuts(rec["applied"])
+            rec["saved"] = not err
+            if err:
+                rec["error"] = f"적용 실패 — {err}"
+            else:
+                chg = " · ".join(
+                    "{}={}/{}/{}".format(s_, r["warn"], r["danger"], r["critical"])
+                    for s_, r in rec["applied"].items())
+                print(f"[정책] LLM 자동 조정({by}) → {chg}")
+        score_tune.record(rec, CFG)
+        return rec
+    except Exception as e:                              # noqa: BLE001
+        rec = {"at": datetime.now().isoformat(timespec="seconds"), "by": by,
+               "hours": hours, "rows": [], "applied": {},
+               "error": f"{type(e).__name__}: {e}"}
+        score_tune.record(rec, CFG)
+        return rec
+    finally:
+        TUNE["running"] = False
+
+
+def _tune_loop() -> None:
+    """2시간마다(config.policy.auto_tune.at) 자동 조정.
+
+    ★분 단위로 깨어나 '그 시각 슬롯을 이미 돌았나' 로 판단한다. sleep 으로
+      다음 시각까지 재우면, 설정을 바꾸거나 서버가 잠깐 멈췄다 살아났을 때
+      한 텀을 통째로 건너뛴다.
+    """
+    import score_tune
+    while True:
+        try:
+            tc = score_tune.cfg_of(CFG)
+            now = datetime.now()
+            slot = now.strftime("%Y%m%d") + f"-{now.hour:02d}"
+            if (tc.get("enabled") and now.hour in tc["at"] and now.minute < 5
+                    and TUNE["last_slot"] != slot and not TUNE["running"]):
+                TUNE["last_slot"] = slot
+                print(f"[정책] 자동 조정 시작 — 최근 {tc['hours']}시간 기준")
+                _tune_once(int(tc["hours"]), f"자동 {now.hour:02d}시")
+        except Exception as e:                          # noqa: BLE001
+            print(f"[정책] ⚠️ 자동 조정 루프 예외: {type(e).__name__}: {e}")
+        time.sleep(60)
+
+
 @app.route("/api/ml")
 def api_ml():
     """ML 조기예측 — 최근 상태 + 그 날 집계. ALL 화면의 'ML 조기예측' 탭용.
@@ -2074,6 +2247,7 @@ def _lan_ips() -> list[str]:
 if __name__ == "__main__":
     s = CFG.get("server", {})
     threading.Thread(target=_poll_loop, daemon=True).start()
+    threading.Thread(target=_tune_loop, daemon=True).start()
     print("=" * 62)
     print("  AMHS Sentinel_M16BR — 독립 LLM 관제 시스템 (데모스 비의존)")
     from sentinel import source_mode

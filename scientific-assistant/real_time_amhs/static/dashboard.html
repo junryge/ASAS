@@ -792,11 +792,61 @@
       </tr></thead><tbody id="sprows">
         <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
       </tbody></table>
-      <div class="row" style="margin-top:10px;align-items:center">
-        <button class="act pri" id="sp-save" style="flex:0 0 auto">저장 · 적용</button>
-        <span class="note">저장하면 <b style="color:var(--tx2)">바로 반영</b>되고
-          config.json 에도 적혀 재시작해도 유지됩니다. '기본' 을 누르면 그 시스템은
-          공통 기본값(config.grade.bands)으로 돌아갑니다.</span>
+      <div class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap">
+        <button class="act pri" id="sp-save" style="flex:0 0 auto">수동 변경</button>
+        <button class="act" id="sp-llm" style="flex:0 0 auto"
+          title="최근 8시간 점수 분포를 LLM 이 보고 지금 컷이 맞는지 판단합니다">
+          🤖 LLM 스코어 변경</button>
+        <label class="note" style="display:flex;align-items:center;gap:5px;
+               cursor:pointer;flex:0 0 auto">
+          <input type="checkbox" id="sp-auto"> 2시간마다 자동</label>
+        <span class="note" id="sp-next">—</span>
+      </div>
+      <p class="note" style="margin:8px 0 0">
+        <b style="color:var(--tx2)">수동 변경</b> — 위 칸에 적은 값을 그대로 적용합니다.
+        '기본' 을 누르면 그 시스템은 공통 기본값(config.grade.bands)으로 돌아갑니다.<br>
+        <b style="color:var(--tx2)">LLM 스코어 변경</b> — 최근
+        <b style="color:var(--tx2)">8시간</b>(교대 한 텀) 분포를 보고
+        <b style="color:var(--tx2)">지금 컷이 맞는지</b> 판단합니다.
+        맞으면 <b style="color:var(--ok)">유지</b>하고 왜 맞는지 알려 주고,
+        안 맞으면 바꿉니다. 한 번에 최대 <b style="color:var(--tx2)">10점</b>까지만
+        옮기고, <b style="color:var(--tx2)">이유(숫자 근거)를 못 대면 안 바꿉니다</b>.
+        자동은 <b style="color:var(--tx2)">2시간마다</b>(OHT 한 사이클) 돕니다.</p>
+      <details id="sp-pbox" style="margin-top:12px;border:1px solid var(--line);
+               border-radius:9px;padding:8px 12px;background:var(--panel)">
+        <summary style="cursor:pointer;font-size:12.5px;color:var(--tx2)">
+          🧾 프롬프트 — 모델에게 무엇을 물어보는가
+          <span class="note" id="sp-pinfo"></span></summary>
+        <p class="note" style="margin:8px 0 6px">
+          <b style="color:var(--tx2)">지시문</b> — 고쳐서 저장할 수 있습니다.
+          비우고 저장하면 기본 지시문으로 돌아갑니다.</p>
+        <textarea id="sp-prompt" spellcheck="false"
+          style="width:100%;height:190px;background:var(--panel2);
+                 border:1px solid var(--line2);color:var(--tx);border-radius:7px;
+                 padding:8px 10px;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;
+                 resize:vertical"></textarea>
+        <div class="row" style="margin-top:6px;align-items:center">
+          <button class="act" id="sp-psave" style="flex:0 0 auto;padding:4px 12px">
+            지시문 저장</button>
+          <button class="act" id="sp-pdef" style="flex:0 0 auto;padding:4px 12px">
+            기본으로</button>
+          <button class="act" id="sp-pview" style="flex:0 0 auto;padding:4px 12px"
+            title="지금 누르면 실제로 무엇이 모델에게 가는지">
+            지금 보낼 내용 보기</button>
+        </div>
+        <div id="sp-pdata"></div>
+      </details>
+      <div id="sp-out" style="margin-top:12px"></div>
+      <h4 style="margin:20px 0 6px;font-size:13px">변경 로그
+        <span class="note" id="sp-loginfo"></span></h4>
+      <div class="tw" style="max-height:340px;overflow:auto">
+        <table class="pol"><thead><tr>
+          <th style="width:132px">시각</th><th style="width:96px">누가</th>
+          <th style="width:78px">시스템</th><th style="width:64px">판정</th>
+          <th style="width:150px">컷</th><th>이유 · 비고</th>
+        </tr></thead><tbody id="sp-log">
+          <tr><td colspan="6" class="empty">불러오는 중…</td></tr>
+        </tbody></table>
       </div>
     </div>
   </div>
@@ -1584,6 +1634,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     initMl();
   }else if(b.dataset.tab==='policy'){
     initScorePolicy();
+    initScoreTune();
     initLlmPolicy();
   }
   if(b.dataset.tab!=='past' && b.dataset.tab!=='analysis' && ACC){
@@ -2735,9 +2786,168 @@ async function initScorePolicy(){
         $('#spnote').textContent = '— 저장됨 · 바로 반영';
         initScorePolicy();                       // 표를 서버 확정값으로
         pollStatus(); pollCases();               // 지금 화면 등급도 새 컷으로
-      } finally { btn.disabled = false; btn.textContent = '저장 · 적용'; }
+      } finally { btn.disabled = false; btn.textContent = '수동 변경'; }
     };
   }catch(e){ policyFail('sprows', 'spnote', initScorePolicy); }
+}
+
+/* ── LLM 스코어 자동 조정 (정책 탭) ────────────────────────────────
+   최근 8시간(교대 한 텀) 분포를 보고 **지금 컷이 맞는지** LLM 이 판단한다.
+   ★맞으면 유지하고 '왜 맞는지' 를 알려 준다 — 안 바꾼 이유도 결과다. */
+const spCuts = a => Array.isArray(a) ? a.join(' / ') : '—';
+const spVer = v => v === '변경'
+  ? `<b style="color:var(--major)">변경</b>`
+  : `<b style="color:var(--ok)">유지</b>`;
+
+function spRowsHtml(rows){
+  return (rows||[]).map(r => {
+    const moved = r.verdict === '변경';
+    return `<tr>
+      <td><b>${esc(r.sys)}</b></td>
+      <td>${spVer(r.verdict)}</td>
+      <td class="mono" style="font-size:11.5px">${
+        moved ? `<span class="dim">${spCuts(r.from)}</span> → <b>${spCuts(r.to)}</b>`
+              : spCuts(r.to)}</td>
+      <td style="font-size:12px">${esc(r.why || '')}${
+        r.note ? `<div class="note" style="font-size:11px">${esc(r.note)}</div>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* 방금 돌린 결과 — 표 밑에 펼친다 */
+function spShow(d){
+  const box = $('#sp-out');
+  if(d.error){
+    box.innerHTML = `<div class="note" style="border-left:3px solid var(--crit);
+      background:#2a1216;padding:10px 12px;border-radius:0 8px 8px 0">
+      <b style="color:var(--crit)">${esc(d.error)}</b>
+      <div style="margin-top:4px">현재 컷은 그대로입니다.</div></div>`;
+    return;
+  }
+  const n = Object.keys(d.applied||{}).length;
+  box.innerHTML = `<div class="note" style="margin-bottom:6px">
+      ${esc((d.at||'').slice(0,16).replace('T',' '))} · ${esc(d.shift||'')} ·
+      최근 <b style="color:var(--tx2)">${d.hours}시간</b> 기준 ·
+      모델 <span class="mono">${esc(d.model||'기본')}</span>
+      ${d.dry ? ' · <b style="color:var(--major)">확인만 (적용 안 함)</b>' : ''}
+      — ${n ? `<b style="color:var(--major)">${n}개 시스템 변경</b>`
+            : `<b style="color:var(--ok)">전부 유지</b>`}
+      ${d.note ? ' · ' + esc(d.note) : ''}</div>
+    <div class="tw"><table class="pol"><thead><tr>
+      <th style="width:78px">시스템</th><th style="width:64px">판정</th>
+      <th style="width:170px">컷</th><th>이유 · 비고</th>
+    </tr></thead><tbody>${spRowsHtml(d.rows)}</tbody></table></div>`;
+}
+
+async function spLoadLog(){
+  try{
+    const d = await api('/api/score_policy/tune?limit=30');
+    $('#sp-auto').checked = !!d.enabled;
+    $('#sp-next').textContent = `· ${d.next} · 최근 ${d.hours}시간 기준 · `
+      + `한 번에 최대 ${d.max_step}점 · 모델 ${d.model || '기본'}`;
+    SP_PDEF = d.prompt_default || '';
+    // ★사람이 고치는 중이면 덮어쓰지 않는다 (로그가 30초마다 갱신될 수 있다)
+    if(document.activeElement !== $('#sp-prompt')){
+      $('#sp-prompt').value = d.prompt || '';
+    }
+    $('#sp-pinfo').textContent = d.prompt_custom ? '· 직접 고친 지시문' : '· 기본 지시문';
+    const runs = d.history || [];
+    if(!runs.length){
+      $('#sp-log').innerHTML = '<tr><td colspan="6" class="empty">아직 기록이 없습니다</td></tr>';
+      $('#sp-loginfo').textContent = '';
+      return;
+    }
+    const chg = runs.filter(r => (r.rows||[]).some(x => x.verdict === '변경')).length;
+    $('#sp-loginfo').textContent = `— 최근 ${runs.length}회 · 그중 변경 ${chg}회`;
+    // 한 번 돌린 것 = 여러 시스템 줄. 시각·누가는 첫 줄에만 적어 읽기 쉽게.
+    $('#sp-log').innerHTML = runs.map(r => {
+      const rows = (r.rows||[]);
+      if(r.error && !rows.length){
+        return `<tr><td class="mono" style="font-size:11.5px">${
+            esc((r.at||'').slice(0,16).replace('T',' '))}</td>
+          <td>${esc(r.by||'')}</td><td colspan="4"
+          style="color:var(--crit)">${esc(r.error)}</td></tr>`;
+      }
+      return rows.map((x,i) => `<tr>
+        <td class="mono" style="font-size:11.5px">${
+          i ? '' : esc((r.at||'').slice(0,16).replace('T',' '))}</td>
+        <td>${i ? '' : esc(r.by||'')}${
+          i || !r.dry ? '' : '<div class="note" style="font-size:10.5px">확인만</div>'}</td>
+        <td><b>${esc(x.sys)}</b></td>
+        <td>${spVer(x.verdict)}</td>
+        <td class="mono" style="font-size:11.5px">${
+          x.verdict === '변경'
+            ? `<span class="dim">${spCuts(x.from)}</span> → <b>${spCuts(x.to)}</b>`
+            : spCuts(x.to)}</td>
+        <td style="font-size:12px">${esc(x.why||'')}${
+          x.note ? `<div class="note" style="font-size:11px">${esc(x.note)}</div>` : ''}</td>
+      </tr>`).join('');
+    }).join('');
+  }catch(e){
+    $('#sp-log').innerHTML = '<tr><td colspan="6" class="empty">기록을 못 읽었습니다</td></tr>';
+  }
+}
+
+/* 프롬프트 — 무엇을 물어보고 있는지 모르면 답을 믿을 수도 없다 */
+let SP_PDEF = '';
+async function spSavePrompt(text){
+  const r = await post('/api/score_policy/tune', {prompt: text});
+  if(r.error){ alert(r.error); return; }
+  $('#sp-prompt').value = r.prompt || '';
+  $('#sp-pinfo').textContent = r.custom ? '· 직접 고친 지시문' : '· 기본 지시문';
+}
+
+function initScoreTune(){
+  $('#sp-llm').onclick = async () => {
+    const b = $('#sp-llm');
+    b.disabled = true; b.textContent = '분석 중… (최대 1분)';
+    $('#sp-out').innerHTML = '<div class="note">최근 8시간 분포를 읽고 모델에 묻는 중…</div>';
+    try{
+      const d = await post('/api/score_policy/tune', {});
+      spShow(d);
+      // 바뀌었으면 위 표와 지금 화면 등급도 새 컷으로
+      if(Object.keys(d.applied||{}).length){
+        initScorePolicy(); pollStatus(); pollCases();
+      }
+      spLoadLog();
+    }catch(e){
+      $('#sp-out').innerHTML = '<div class="note" style="color:var(--crit)">'
+        + '요청 실패 — 서버를 확인하세요</div>';
+    } finally { b.disabled = false; b.textContent = '🤖 LLM 스코어 변경'; }
+  };
+  $('#sp-psave').onclick = () => spSavePrompt($('#sp-prompt').value);
+  $('#sp-pdef').onclick = () => {
+    if(!confirm('기본 지시문으로 되돌립니다. 고쳐 둔 내용은 사라집니다.')) return;
+    spSavePrompt('');
+  };
+  $('#sp-pview').onclick = async () => {
+    const b = $('#sp-pview');
+    b.disabled = true; b.textContent = '읽는 중…';
+    try{
+      const d = await post('/api/score_policy/tune', {preview: true});
+      $('#sp-pdata').innerHTML = d.error
+        ? `<div class="note" style="color:var(--crit);margin-top:8px">${esc(d.error)}</div>`
+        : `<p class="note" style="margin:10px 0 6px">
+             <b style="color:var(--tx2)">붙는 데이터</b> — 최근 ${d.hours}시간 ·
+             ${esc(d.shift)} · 모델 <span class="mono">${esc(d.model||'기본')}</span> ·
+             전체 ${d.chars.toLocaleString()}자</p>
+           <pre style="margin:0;max-height:280px;overflow:auto;background:var(--panel2);
+                border:1px solid var(--line2);border-radius:7px;padding:9px 11px;
+                font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
+                color:var(--tx2);white-space:pre-wrap">${esc(d.user)}</pre>`;
+    }catch(e){
+      $('#sp-pdata').innerHTML = '<div class="note" style="color:var(--crit)">'
+        + '미리보기 실패</div>';
+    } finally { b.disabled = false; b.textContent = '지금 보낼 내용 보기'; }
+  };
+  $('#sp-auto').onchange = async function(){
+    const on = this.checked;
+    try{
+      const r = await post('/api/score_policy/tune', {enabled: on});
+      if(r.error) alert(r.error);
+    }finally{ spLoadLog(); }
+  };
+  spLoadLog();
 }
 
 /* ── LLM 판단 일치 설정 (정책 탭) — 시스템 6개 각각, 저장 버튼으로 반영 ──
@@ -2798,7 +3008,7 @@ async function initLlmPolicy(){
         if(r.error){ alert(r.error); $('#lpnote').textContent = '— 저장 실패'; return; }
         $('#lpnote').textContent = `— 저장됨 · 바로 반영 (${
           r.systems.filter(s=>s.mode!=='off').length}/${r.systems.length} 시스템 판단 중)`;
-      } finally { btn.disabled = false; btn.textContent = '저장 · 적용'; }
+      } finally { btn.disabled = false; btn.textContent = '수동 변경'; }
     };
   }catch(e){ policyFail('lprows', 'lpnote', initLlmPolicy); }
 }
