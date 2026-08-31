@@ -947,6 +947,36 @@ def _tune_loop() -> None:
         time.sleep(60)
 
 
+@app.route("/api/world")
+def api_world():
+    """구간 그래프에서 FAB 을 누르면 열 주소 — OHT 월드모델 **딱 1분** 재생.
+
+    /api/world?at=2026-08-31T10:35:00  →
+      FAB 다섯의 {테이블, 월드모델 FAB/prefix, from~to, 주소} + 월드모델 생사
+
+    ★구간은 그 분의 00초부터 딱 1분이다 (10:35:47 을 눌러도 103500~103600).
+      사람이 화면에서 본 '10:35 한 칸' 과 어긋나면 증거가 되지 않는다.
+    ★조회는 우리가 안 한다. 월드모델(별도 프로세스 · 10005)이 주소만 보고
+      스스로 로그프레소를 친다. 여기서 pandas 를 끌고 오면 관제가 무거워진다.
+    """
+    import world_link
+    at = (request.args.get("at") or "").strip()
+    label = (request.args.get("label") or "").strip()
+    # ★화면이 보고 있는 host 를 그대로 쓴다. localhost 를 박으면 다른 PC 에서
+    #   관제를 열었을 때 그 사람 PC 의 10005 를 찾아간다.
+    host = request.host or ""
+    c = world_link.cfg_of(CFG)
+    if not c.get("enabled", True):
+        return jsonify({"enabled": False, "links": [],
+                        "note": "config.world_model.enabled=false"})
+    try:
+        rows = world_link.links(at, CFG, host, label) if at else []
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"enabled": True, "at": at, "minutes": c["minutes"],
+                    "links": rows, "server": world_link.alive(CFG, host)})
+
+
 @app.route("/api/ml")
 def api_ml():
     """ML 조기예측 — 최근 상태 + 그 날 집계. ALL 화면의 'ML 조기예측' 탭용.

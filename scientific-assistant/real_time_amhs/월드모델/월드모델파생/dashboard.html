@@ -2186,6 +2186,67 @@ connectWS();
 drawMap();
 
 // ============================================================
+// 관제(real_time_amhs)에서 넘어온 1분 자동 로드
+// ============================================================
+// 관제 목록에서 행을 더블클릭 → 구간 그래프 → FAB 버튼을 누르면 이 화면이
+// 아래 주소로 열린다:
+//   /?from=20260831103500&to=20260831103600&table=oht_data_m16br
+//    &fab=M16A&prefix=BR&auto=1&case=2026-08-31 10:35 · M16HUB · 12점 정상
+//
+// ★case 는 화면 위에 그대로 띄운다. 이 화면은 **증거 자료**로 쓰인다 —
+//   어느 건의 그림인지가 같이 찍혀 있어야 며칠 뒤에도 뜻이 통한다.
+async function autoFromQuery() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('auto') !== '1') return;
+  const from = (q.get('from') || '').trim();
+  const to   = (q.get('to')   || '').trim();
+  const tbl  = (q.get('table')|| '').trim();
+  const fab  = (q.get('fab')  || '').trim();
+  const pre  = (q.get('prefix') || '').trim();
+  const cs   = (q.get('case') || '').trim();
+
+  if (cs) showCaseBanner(cs, from, to, tbl);
+  if (!(from.length === 14 && to.length === 14 && tbl)) {
+    console.warn('[관제연동] from/to/table 이 모자라 자동 로드를 건너뜁니다');
+    return;
+  }
+
+  // ★맵(FAB/prefix)을 먼저 맞춘다. M16 은 A·BR·E 세 레이아웃이 있어서,
+  //   틀리면 통째로 다른 구역의 맵 위에 OHT 를 그리게 된다.
+  if (fab && pre && (fab !== currentFab || pre !== currentPrefix)) {
+    try { await applyFab(fab, pre); }
+    catch (e) { console.error('[관제연동] FAB 전환 실패', e); }
+  }
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('lp-from', from); set('lp-to', to); set('lp-table', tbl);
+  console.log(`[관제연동] ${tbl} ${from}~${to} (${fab}/${pre}) 자동 조회`);
+  try { await logpressoLoad(); }
+  catch (e) { console.error('[관제연동] 조회 실패', e); }
+}
+
+function showCaseBanner(text, from, to, tbl) {
+  const span = (t, h) => `${t.slice(8,10)}:${t.slice(10,12)}:${t.slice(12,14)}`;
+  const el = document.createElement('div');
+  el.id = 'case-banner';
+  el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;'
+    + 'background:#0d2b3a;border-bottom:2px solid #06b6d4;color:#e0f6ff;'
+    + 'padding:7px 14px;font-size:13px;display:flex;align-items:center;gap:12px';
+  el.innerHTML =
+    `<b style="color:#06b6d4">관제 연동</b>`
+    + `<span>${text.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</span>`
+    + (from && to ? `<span style="color:#9ad;font-family:monospace">`
+        + `${span(from)} ~ ${span(to)} · ${tbl}</span>` : '')
+    + `<button onclick="this.parentNode.remove();document.body.style.paddingTop=''"
+         style="margin-left:auto;background:transparent;border:1px solid #2b6b80;
+                color:#9ad;border-radius:5px;padding:2px 10px;cursor:pointer">닫기</button>`;
+  document.body.appendChild(el);
+  document.body.style.paddingTop = el.offsetHeight + 'px';
+}
+
+autoFromQuery();
+
+// ============================================================
 // 데드락 핫스팟 패널 업데이트 + 이력 로그 + 위험 배지 오버라이드
 // ============================================================
 let hotspotHistory = [];          // 전체 재생 누적 이벤트 (분 단위 요약)

@@ -394,6 +394,16 @@
   .mgrp button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:650}
 
   /* ── 더블클릭 그래프 ── */
+  /* 구간 그래프 안의 OHT 재생 줄 — 그 1분을 월드모델로 열어 본다 */
+  .ohtbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+          padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .ohtbtns{display:inline-flex;gap:5px;flex-wrap:wrap}
+  .ohtbtns button{background:var(--panel2);border:1px solid var(--line2);
+    color:var(--tx);border-radius:6px;padding:4px 11px;font:inherit;
+    font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .ohtbtns button:hover{background:#16304a;border-color:var(--cy);color:var(--cy)}
+  .ohtbtns button:disabled{opacity:.4;cursor:not-allowed}
+  .ohtbar .down{color:var(--major)}
   .gmask{position:fixed;inset:0;background:rgba(4,7,12,.78);z-index:50;
          display:flex;align-items:center;justify-content:center;padding:24px}
   .gbox{background:var(--panel);border:1px solid var(--line2);border-radius:12px;
@@ -487,6 +497,13 @@
         </select>
         <button class="act" id="gclose">닫기</button>
       </div>
+    </div>
+    <!-- ★그 1분 동안 OHT 가 실제로 어떻게 움직였나 — 월드모델로 재생한다.
+         현재 상태의 **증거 자료**로 쓰인다. -->
+    <div class="ohtbar" id="ohtbar">
+      <span class="note">그 1분 OHT 재생</span>
+      <span class="ohtbtns" id="ohtbtns"></span>
+      <span class="note" id="ohtnote"></span>
     </div>
     <div id="gbody" class="gbody"><div class="empty">불러오는 중…</div></div>
   </div>
@@ -3761,15 +3778,58 @@ function graphFabs(){
 }
 
 let GAT = null;
+/* ── 그 1분 OHT 재생 ────────────────────────────────────────────────
+   구간 그래프에서 FAB 을 누르면 월드모델(별도 프로세스 · 10005)이 그
+   1분만 로그프레소에서 조회해 재생한다.
+   ★현재 상태의 **증거 자료**로 쓰이므로, 어느 케이스인지(시각·FAB·점수·
+     등급)를 주소에 실어 보내 팝업에 같이 찍히게 한다. */
+async function fillOht(at, label){
+  const bar = $('#ohtbar'), box = $('#ohtbtns'), note = $('#ohtnote');
+  if(!bar) return;
+  box.innerHTML = ''; note.textContent = '불러오는 중…'; note.className = 'note';
+  try{
+    const d = await api(`/api/world?at=${encodeURIComponent(at)}`
+                      + `&label=${encodeURIComponent(label || '')}`);
+    if(!d.enabled){ bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    const up = (d.server || {}).ok;
+    box.innerHTML = (d.links || []).map(x =>
+      `<button data-oht="${esc(x.url)}" title="${esc(x.table)} · ${
+        esc(x.wm_fab)}/${esc(x.prefix)} · ${esc(x.from)}~${esc(x.to)}"
+       >${esc(x.fab)}</button>`).join('');
+    box.querySelectorAll('[data-oht]').forEach(b => b.onclick = () => {
+      // ★팝업으로 띄운다 — 관제 화면을 덮지 않고 나란히 두고 본다
+      const w = window.open(b.dataset.oht, 'oht_world',
+        'width=1480,height=920,menubar=no,toolbar=no,location=no');
+      if(!w) alert('팝업이 막혀 있습니다. 이 주소의 팝업을 허용해 주세요.');
+      else w.focus();
+    });
+    const one = (d.links || [])[0] || {};
+    note.textContent = `· ${(one.from||'').slice(8,10)}:${(one.from||'').slice(10,12)}`
+      + `~${(one.to||'').slice(8,10)}:${(one.to||'').slice(10,12)} (${d.minutes}분)`;
+    if(!up){
+      note.innerHTML += ` · <b class="down">월드모델이 안 떠 있습니다</b>`
+        + ` <span class="dim">— ${esc((d.server||{}).how || '')}</span>`;
+      box.querySelectorAll('button').forEach(b => b.disabled = true);
+    }
+  }catch(e){
+    note.textContent = '· OHT 재생 주소를 못 만들었습니다';
+    box.innerHTML = '';
+  }
+}
+
 async function openGraph(at){
   GAT = at;
   document.querySelector('.gbox').classList.remove('wide');
   $('#gmin').classList.remove('hidden');
   const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
-  $('#gtitle').textContent = r
+  const title = r
     ? `${r.datetime} · ${r.area} · ${Math.round(r.score)}점 ${r.emoji} ${r.level}`
     : '구간 그래프';
+  $('#gtitle').textContent = title;
   $('#gmask').classList.remove('hidden');
+  // ★제목 그대로를 증거 라벨로 넘긴다 — 팝업에 어느 건인지 찍힌다
+  fillOht(r ? (r.datetime || at) : at, title);
   await drawGraph();
 }
 async function drawGraph(){
