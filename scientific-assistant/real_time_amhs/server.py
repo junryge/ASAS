@@ -560,6 +560,79 @@ def api_fab_compare():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/fab/why")
+def api_fab_why():
+    """**이 점수는 어디서 온 숫자인가** — 한 FAB 을 놓고 끝까지 따진다.
+
+    /api/fab/why?sys=M14[&day=20260831&at=2026-08-31 10:35]
+
+    ★왜 필요한가. "현장에서는 70 이 나왔는데 관제는 아니라고 한다" 를
+      화면만 보고는 못 가른다. 갈릴 수 있는 자리가 셋이다:
+        ① 어느 파일의 어느 컬럼을 읽었나 (FAB 분리 파일 vs 되계산)
+        ② 지금 이 시스템의 등급 컷이 얼마인가 (정책 탭 · 시스템별)
+        ③ 예측기가 적어 둔 등급과 지금 정책이 다른가
+      셋 다 한 화면에 적어 준다. 숫자가 다르면 ①, 등급이 다르면 ②나 ③이다.
+    """
+    try:
+        import fab_score
+        from store_csv import latest_day, read_day
+        cfg = get_ctx("ALL")["cfg"]
+        want = (request.args.get("sys") or "").strip().upper()
+        day = "".join(ch for ch in (request.args.get("day") or "")
+                      if ch.isdigit())[:8] or datetime.now().strftime("%Y%m%d")
+        rows = read_day(day, cfg)
+        if not rows:
+            day = latest_day(cfg) or day
+            rows = read_day(day, cfg)
+        out = fab_score.compare(rows, parse_dt(request.args.get("at") or None),
+                                cfg, day=day)
+        if not out.get("ok"):
+            return jsonify({"ok": False, "day": day, "error": out.get("error")})
+        got = [r for r in (out.get("rows") or [])
+               if not want or str(r.get("fab") or "").upper() == want]
+        if not got:
+            return jsonify({"ok": False, "error": f"{want} 를 못 찾았습니다",
+                            "systems": [r.get("fab") for r in out.get("rows") or []]})
+        lines, detail = [], []
+        for r in got:
+            f = r.get("fab")
+            cuts = r.get("cuts") or out.get("cuts") or {}
+            src = ("FAB 분리 파일 data/{}/{}_TOTAL.CSV 의 {} 컬럼"
+                   .format(f, day, r.get("score_col"))
+                   if r.get("source") == "fab_file"
+                   else "통합 파일에서 되계산 ({})".format(r.get("score_col")))
+            lines.append(
+                "{} : {}점 → {}   (경계 {} · 위험 {} · 초위험 {})   ← {}"
+                .format(f, r.get("score"), r.get("level"), cuts.get("warn"),
+                        cuts.get("danger"), cuts.get("critical"), src))
+            if r.get("level_mismatch"):
+                lines.append("      ※ {}".format(r["level_mismatch"]))
+            if r.get("file_value") is not None:
+                lines.append("      ※ 분리 파일에는 {} = {} 가 있습니다 "
+                             "(area_score 가 아니라서 점수로 쓰지 않았습니다)"
+                             .format(r.get("file_col"), r.get("file_value")))
+            detail.append({
+                "fab": f, "score": r.get("score"), "level": r.get("level"),
+                "cuts": cuts, "source": r.get("source"),
+                "score_col": r.get("score_col"), "measures": r.get("measures"),
+                "file_level": r.get("file_level") or "",
+                "level_mismatch": r.get("level_mismatch") or "",
+                "file_value": r.get("file_value"), "file_col": r.get("file_col"),
+                "area": r.get("area"), "saturated": r.get("saturated"),
+            })
+        return jsonify({
+            "ok": True, "day": day, "at": out.get("at"),
+            "text": "\n".join(lines),
+            "rows": detail,
+            "help": ("숫자가 현장과 다르면 ← 뒤의 '어디서 읽었나' 를 보세요. "
+                     "숫자는 같은데 등급이 다르면 괄호 안의 컷(정책 탭)이나 "
+                     "※ 줄을 보세요."),
+        })
+    except Exception as e:                              # noqa: BLE001
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/fab/columns")
 def api_fab_columns():
     """FAB 별로 '실제 보고 있는 컬럼' 정의 — 룰·AMOS 컬럼·임계·CSV 컬럼.

@@ -180,6 +180,34 @@ class FAB_분리_파일을_읽는다(unittest.TestCase):
         self.assertEqual(r["level"], "초위험")
         self.assertEqual(r["cuts"], {"warn": 35, "danger": 50, "critical": 70})
 
+    def test_area_score_가_아닌_컬럼은_점수로_안_쓰지만_숨기지도_않는다(self):
+        """★"현장에서는 70 이 나왔는데 관제는 아니라고 한다" 의 다른 갈래.
+
+        분리 파일의 컬럼 이름이 area_score 가 아니면(예: score) 눈금을 몰라
+        점수로 쓰지 않고 통합 파일에서 되계산한다. 그건 맞는 판단인데,
+        **말을 안 하면** 화면 숫자가 왜 다른지 알 길이 없다.
+        무엇이 있었는지(file_col · file_value)를 같이 실어 준다.
+        """
+        self._all(raw=3)                      # 되계산하면 4점쯤
+        os.makedirs(os.path.join(self.d, "M16HUB"), exist_ok=True)
+        with open(os.path.join(self.d, "M16HUB", "20260826_TOTAL.CSV"), "w",
+                  encoding="utf-8") as f:
+            f.write("datetime,score\n2026-08-26 10:00,70\n")
+        r = self._row()
+        self.assertEqual(r["source"], "calc")
+        self.assertNotEqual(r["area_score"], 70)
+        self.assertEqual(r["file_col"], "score")
+        self.assertEqual(r["file_value"], 70.0)
+
+    def test_이_점수가_어디서_왔는지_늘_적어_둔다(self):
+        """★관제 화면과 현장 숫자가 다를 때 제일 먼저 볼 것."""
+        self._all(raw=35)
+        self._fab(score=63)
+        r = self._row()
+        for k in ("source", "score_col", "measures", "cuts"):
+            self.assertIn(k, r, k)
+        self.assertEqual(r["source"], "fab_file")
+
     def test_포화_표시도_가져온다(self):
         self._all(raw=60)
         self._fab(score=86, level="초위험", sat="Y")

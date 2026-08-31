@@ -731,5 +731,45 @@ class StickyHead(unittest.TestCase):
         self.assertNotIn("#cases thead th", self.h)
 
 
+
+class 이_점수가_어디서_왔나(unittest.TestCase):
+    """/api/fab/why — "현장에선 70 인데 관제는 아니라고 한다" 를 가르는 자리.
+
+    ★갈릴 수 있는 곳이 셋이다. 셋 다 한 화면에 적혀야 사람이 짚을 수 있다.
+        ① 어느 파일의 어느 컬럼을 읽었나
+        ② 지금 이 시스템의 등급 컷이 얼마인가 (정책 탭 · 시스템별)
+        ③ 예측기가 적어 둔 등급과 지금 정책이 다른가
+    """
+
+    def src(self):
+        p = os.path.join(util.BASE, "server.py")
+        with open(p, encoding="utf-8") as f:
+            return f.read()
+
+    def test_길이_있다(self):
+        s = self.src()
+        self.assertIn('@app.route("/api/fab/why")', s)
+        self.assertIn("def api_fab_why", s)
+
+    def test_셋을_다_말한다(self):
+        s = self.src()
+        i = s.index("def api_fab_why")
+        j = s.index("@app.route(\"/api/fab/columns\")")
+        body = s[i:j]
+        self.assertIn("score_col", body)          # ① 어느 컬럼
+        self.assertIn("cuts", body)               # ② 등급 컷
+        self.assertIn("level_mismatch", body)     # ③ 예측기와 어긋남
+        self.assertIn("file_value", body)         # 안 쓴 값도 말한다
+        self.assertIn("FAB 분리 파일", body)
+        self.assertIn("되계산", body)
+
+    def test_사람이_읽을_글로_준다(self):
+        """★JSON 만 주면 현장에서 못 본다. 한 줄로 읽히게 낸다."""
+        s = self.src()
+        i = s.index("def api_fab_why")
+        self.assertIn('"text"', s[i:i + 4000])
+        self.assertIn('"help"', s[i:i + 4000])
+
+
 if __name__ == "__main__":
     unittest.main()
