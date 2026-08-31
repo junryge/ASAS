@@ -763,12 +763,26 @@ class 이_점수가_어디서_왔나(unittest.TestCase):
         self.assertIn("FAB 분리 파일", body)
         self.assertIn("되계산", body)
 
-    def test_사람이_읽을_글로_준다(self):
-        """★JSON 만 주면 현장에서 못 본다. 한 줄로 읽히게 낸다."""
+    def body(self):
         s = self.src()
         i = s.index("def api_fab_why")
-        self.assertIn('"text"', s[i:i + 4000])
-        self.assertIn('"help"', s[i:i + 4000])
+        return s[i:s.index('@app.route("/api/fab/columns")')]
+
+    def test_사람이_읽을_글로_준다(self):
+        """★JSON 만 주면 현장에서 못 본다. 한 줄로 읽히게 낸다."""
+        b = self.body()
+        self.assertIn('"text"', b)
+        self.assertIn('"help"', b)
+
+    def test_왜_이_점수인지도_같이_답한다(self):
+        """★"70 까지 올라갔는데 현장은 멀쩡했다" 는 출처가 아니라
+        **구성**을 봐야 답이 나온다 — 무엇이 몇 점씩 더해졌나."""
+        b = self.body()
+        self.assertIn("fab_score.explain", b)
+        self.assertIn("무엇이 더해졌나", b)
+        self.assertIn("계산", b)
+        # 사람이 한 일로 오른 것이면 그렇다고 안내해야 한다
+        self.assertIn("사람이 한 일", b)
 
 
 if __name__ == "__main__":

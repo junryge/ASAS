@@ -566,8 +566,12 @@ def api_fab_why():
 
     /api/fab/why?sys=M14[&day=20260831&at=2026-08-31 10:35]
 
-    ★왜 필요한가. "현장에서는 70 이 나왔는데 관제는 아니라고 한다" 를
-      화면만 보고는 못 가른다. 갈릴 수 있는 자리가 셋이다:
+    ★두 가지를 같이 답한다.
+      ① **왜 이 점수가 나왔나** — 무엇이 몇 점씩 더해졌는지, 그때 실제 값이
+         얼마였는지. "70 까지 올라갔는데 현장은 멀쩡했다. 왜인지 모르겠다"
+         의 답은 여기 있다 — 사람이 용량을 내린 것도, 느슨한 조건 하나가
+         걸린 것도, 같은 사건을 두 번 센 것도 다 점수로 올라온다.
+      ② 이 숫자가 어디서 온 것인가. 갈릴 수 있는 자리가 셋이다:
         ① 어느 파일의 어느 컬럼을 읽었나 (FAB 분리 파일 vs 되계산)
         ② 지금 이 시스템의 등급 컷이 얼마인가 (정책 탭 · 시스템별)
         ③ 예측기가 적어 둔 등급과 지금 정책이 다른가
@@ -584,8 +588,9 @@ def api_fab_why():
         if not rows:
             day = latest_day(cfg) or day
             rows = read_day(day, cfg)
-        out = fab_score.compare(rows, parse_dt(request.args.get("at") or None),
-                                cfg, day=day)
+        at = parse_dt(request.args.get("at") or None)
+        out = fab_score.compare(rows, at, cfg, day=day)
+        _dt, raw_row = fab_score.row_at(rows, at)
         if not out.get("ok"):
             return jsonify({"ok": False, "day": day, "error": out.get("error")})
         got = [r for r in (out.get("rows") or [])
@@ -593,7 +598,7 @@ def api_fab_why():
         if not got:
             return jsonify({"ok": False, "error": f"{want} 를 못 찾았습니다",
                             "systems": [r.get("fab") for r in out.get("rows") or []]})
-        lines, detail = [], []
+        lines, detail, detail_extra = [], [], {}
         for r in got:
             f = r.get("fab")
             cuts = r.get("cuts") or out.get("cuts") or {}
@@ -611,6 +616,25 @@ def api_fab_why():
                 lines.append("      ※ 분리 파일에는 {} = {} 가 있습니다 "
                              "(area_score 가 아니라서 점수로 쓰지 않았습니다)"
                              .format(r.get("file_col"), r.get("file_value")))
+            # ── 왜 이 점수인가 — 무엇이 몇 점씩 더해졌나 ──────────────
+            ex = fab_score.explain(raw_row, f, cfg) if raw_row else None
+            if ex:
+                lines.append("      계산  {}".format(ex["math"]))
+                if ex["parts"]:
+                    lines.append("      무엇이 더해졌나 (합 {:g}점)"
+                                 .format(ex["raw"]))
+                for pt in ex["parts"]:
+                    v = "  ".join(
+                        "{} = {}{} ({} {}{})".format(
+                            x["amos"], x["value"], x["unit"],
+                            "임계", x["thr"],
+                            " 이상" if str(x["op"]).startswith(">") else " 이하")
+                        for x in pt["values"]) or pt["when"]
+                    lines.append("        {:>6.1f}점  {:<12} {}"
+                                 .format(pt["pts"], pt["label"], v))
+                for n in ex["notes"]:
+                    lines.append("      ※ {}".format(n))
+                detail_extra[f] = ex
             detail.append({
                 "fab": f, "score": r.get("score"), "level": r.get("level"),
                 "cuts": cuts, "source": r.get("source"),
@@ -619,14 +643,18 @@ def api_fab_why():
                 "level_mismatch": r.get("level_mismatch") or "",
                 "file_value": r.get("file_value"), "file_col": r.get("file_col"),
                 "area": r.get("area"), "saturated": r.get("saturated"),
+                "why": detail_extra.get(f),
             })
         return jsonify({
             "ok": True, "day": day, "at": out.get("at"),
             "text": "\n".join(lines),
             "rows": detail,
-            "help": ("숫자가 현장과 다르면 ← 뒤의 '어디서 읽었나' 를 보세요. "
-                     "숫자는 같은데 등급이 다르면 괄호 안의 컷(정책 탭)이나 "
-                     "※ 줄을 보세요."),
+            "help": ("점수가 왜 이만큼인지는 '무엇이 더해졌나' 를 보세요 — "
+                     "사람이 한 일(운영자 용량변경)이나 느슨한 조건 하나로 "
+                     "오른 것이면 현장이 멀쩡한 게 맞습니다. "
+                     "숫자 자체가 현장과 다르면 ← 뒤의 '어디서 읽었나' 를, "
+                     "숫자는 같은데 등급이 다르면 괄호 안의 컷(정책 탭)을 "
+                     "보세요."),
         })
     except Exception as e:                              # noqa: BLE001
         import traceback; traceback.print_exc()

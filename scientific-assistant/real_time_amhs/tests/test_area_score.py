@@ -250,3 +250,90 @@ class 화면도_같은_눈금이다(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 왜_이_점수가_나왔나(unittest.TestCase):
+    """★"70 까지 올라갔는데 현장은 문제가 없었다. 왜인지 모르겠다"
+
+    점수만 보면 알 수 없다. 무엇이 켜졌고, 그게 '사람이 한 일' 인지
+    '설비 이상' 인지, 같은 사건을 두 번 센 것은 아닌지까지 봐야 판단이 된다.
+    """
+
+    def row(self, **pts):
+        r = {"datetime": "2026-08-31 10:35"}
+        raw = 0.0
+        for c, v in pts.items():
+            r["M14_pts_{}".format(c)] = str(v)
+            raw += v
+        r["M14_score_raw"] = str(raw)
+        return r
+
+    def test_무엇이_몇_점씩_더해졌나(self):
+        ex = fab_score.explain(self.row(RA=10, RD=7, SORT=3), "M14")
+        self.assertEqual(ex["raw"], 20.0)
+        got = {p["label"]: p["pts"] for p in ex["parts"]}
+        self.assertEqual(got, {"반송지연": 10.0, "Storage FULL": 7.0,
+                               "분류기 대기": 3.0})
+        # 큰 것부터 — 눈이 먼저 가야 할 순서
+        self.assertEqual([p["pts"] for p in ex["parts"]], [10.0, 7.0, 3.0])
+
+    def test_계산을_그대로_보여_준다(self):
+        """★"왜 50이 71이 되냐" 를 매번 설명하지 않아도 되게."""
+        ex = fab_score.explain(self.row(MAXCAPA=30, RD=7, SORT=3, RA=10), "M14")
+        self.assertIn("raw 50", ex["math"])
+        self.assertIn("분모 70", ex["math"])
+        self.assertEqual(ex["score"], 71)
+
+    def test_사람이_한_일이_대부분이면_그렇다고_먼저_말한다(self):
+        """★운영자 용량변경은 **사람이 용량을 내린 것**이다. 설비 이상이
+        아니다. 컬럼 하나당 10점이라 몇 개만 겹쳐도 점수가 크게 뛴다 —
+        "점수는 높은데 현장은 멀쩡하다" 의 제일 흔한 답이다."""
+        ex = fab_score.explain(self.row(MAXCAPA=30, RA=10), "M14")
+        self.assertIn("사람이 한 일", ex["notes"][0])
+        self.assertIn("75%", ex["notes"][0])
+
+    def test_사람_몫이_적으면_앞세우지_않는다(self):
+        ex = fab_score.explain(self.row(MAXCAPA=10, RA=10, RB=10, RC=8, RD=7),
+                               "M14")
+        self.assertNotIn("사람이 한 일", ex["notes"][0])
+
+    def test_같은_사건을_두_번_세는_것을_짚어_준다(self):
+        """★지연 + 지연지속, Queue 누적 + Queue 급증 — 한 사건에 15점씩."""
+        ex = fab_score.explain(
+            self.row(RA=10, RA_sus=5, RB=10, RB_fast=5), "M14")
+        self.assertIn("파생 신호가 2개", ex["notes"][0])
+        self.assertIn("두 번", ex["notes"][0])
+
+    def test_융합에서_한_번_더_더해지는_것을_말한다(self):
+        """★SLA·분류기·용량변경은 ALL 융합에서 또 더해진다 = 실질 두 배."""
+        ex = fab_score.explain(self.row(SLA=5, SORT=3), "M14")
+        fuse = [n for n in ex["notes"] if "한 번 더" in n]
+        self.assertEqual(len(fuse), 2)
+        self.assertTrue(any("4분초과" in n for n in fuse))
+
+    def test_상한에_잘리면_잘렸다고_말한다(self):
+        """★50 에서 잘리면 더 나빠져도 융합 기여분이 안 늘어난다."""
+        ex = fab_score.explain(
+            self.row(RA=10, RA_sus=5, RB=10, RB_fast=5, RC=8, RD=7, SLA=5,
+                     SORT=3, MAXCAPA=20), "M14")
+        self.assertGreater(ex["raw"], fab_score.AREA_CAP)
+        self.assertEqual(ex["area"], float(fab_score.AREA_CAP))
+        self.assertTrue(any("상한" in n for n in ex["notes"]))
+
+    def test_안_켜진_룰은_안_적는다(self):
+        ex = fab_score.explain(self.row(RA=10), "M14")
+        self.assertEqual([p["label"] for p in ex["parts"]], ["반송지연"])
+
+    def test_조사가_맞아야_읽힌다(self):
+        """★"분류기 대기 은" 이라고 나오면 안 읽힌다."""
+        self.assertEqual(fab_score._josa("분류기 대기"), "는")
+        self.assertEqual(fab_score._josa("운영자 용량변경"), "은")
+        self.assertEqual(fab_score._josa("Storage FULL"), "는")   # 영문
+        for n in fab_score.explain(self.row(SLA=5, SORT=3), "M14")["notes"]:
+            self.assertNotIn(" 은 전체", n)
+
+    def test_등급도_같이_준다(self):
+        """★점수만 주면 "그래서 이게 몇 등급인데" 를 또 물어야 한다."""
+        ex = fab_score.explain(self.row(RA=10, RB=10, RD=7), "M14")
+        self.assertIn(ex["level"], ("정상", "경계", "위험", "초위험"))
+        self.assertEqual(set(ex["cuts"]), {"warn", "danger", "critical"})

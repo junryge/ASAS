@@ -590,6 +590,133 @@ def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
     }
 
 
+# 룰을 '무엇으로 읽어야 하나' 로 갈라 둔다.
+#   ★"점수는 70 인데 현장은 멀쩡하다" 의 답이 대개 여기 있다. 점수가 올랐다고
+#     전부 설비 이상이 아니다 — 사람이 용량을 내린 것도, 느슨한 조건 하나가
+#     걸린 것도, 같은 사건을 두 번 센 것도 다 점수로 올라온다.
+RULE_KIND = {
+    "MAXCAPA": ("사람", "운영자가 용량을 임계 아래로 내린 것입니다. 설비 이상이"
+                        " 아니라 계획 작업·정비일 수 있습니다. 컬럼 하나당"
+                        " 10점이라 몇 개만 겹쳐도 점수가 크게 뜁니다."),
+    "RD":      ("느슨", "조건이 하나만 걸려도 켜집니다 — 켜졌다는 것만으로는"
+                        " 심각도를 알 수 없습니다."),
+    "SORT":    ("느슨", "이재 실패는 1건만 나도 켜집니다."),
+    "RA_sus":  ("파생", "반송지연과 같은 것을 '지속' 으로 한 번 더 셉니다"
+                        " (임계는 원 기준의 70%). 둘이 같이 켜지면 한 사건에"
+                        " 15점입니다."),
+    "RB_fast": ("파생", "Queue 누적과 같은 것을 '급증' 으로 한 번 더 셉니다"
+                        " (임계는 30분 기준의 30%). 둘이 같이 켜지면 15점입니다."),
+}
+
+
+def _josa(word: str, pair: str = "은는") -> str:
+    """받침에 맞는 조사. "분류기 대기 **은**" 같은 글이 나오면 안 읽힌다.
+
+    ★영문·숫자로 끝나는 이름(Storage FULL · Queue 누적)도 섞여 있어서
+      한글이 아니면 '는/를/가' 쪽(받침 없음)으로 둔다 — 소리내어 읽었을 때
+      그쪽이 덜 어색하다.
+    """
+    w = str(word or "").rstrip()
+    if not w:
+        return pair[1]
+    ch = w[-1]
+    if "가" <= ch <= "힣":
+        return pair[0] if (ord(ch) - 0xAC00) % 28 else pair[1]
+    return pair[1]
+
+
+def row_at(rows: list[dict], at=None):
+    """그 시각의 원본 행 → (시각, 행). explain() 에 넘길 것을 밖에서 집을 때.
+
+    ★compare() 의 반환에 원본 행을 실어 두지 않는다 — 컬럼이 수백 개라
+      5초마다 도는 응답이 통째로 무거워진다. 필요한 쪽에서 집어 간다.
+    """
+    return _row_at(rows, at)
+
+
+def explain(row: dict, fab: str, cfg: dict | None = None) -> dict:
+    """**왜 이 점수가 나왔나** — 무엇이 몇 점씩 더해졌는지 끝까지 편다.
+
+    ★"점수가 70 까지 올라갔는데 현장은 문제가 없었다. 왜인지 모르겠다" 에
+      답하는 자리다. 점수만 보면 알 수 없다 — 무엇이 켜졌고, 그때 실제 값이
+      얼마였고, 그게 '사람이 한 일' 인지 '설비 이상' 인지까지 봐야 판단이 된다.
+
+    돌려주는 것
+      score      0~100 (등급이 붙는 값)
+      raw / area 룰 배점 합 · 융합 상한(50)에서 자른 값
+      parts[]    켜진 룰마다 {이름, 점수, 조건, 잰 값들, 어떻게 읽나}
+      notes[]    이 점수를 의심할 만한 이유들 (사람이 한 것 · 중복 · 느슨)
+    """
+    from sentinel import grade, grade_cuts
+    f = str(fab or "").upper()
+    a = area_score(row, f, cfg)
+    denom = area_denoms(cfg).get(f, AREA_DENOM)
+    sc = area_score_100(a["raw"], f, cfg)
+    fcfg = _fab_cfg(cfg, f)
+    reads = readings(row, f, cfg)
+    by_rule = {}
+    for c in reads:
+        by_rule.setdefault(c.get("rule") or "", []).append(c)
+
+    # ★순서가 곧 읽는 순서다. 제일 먼저 볼 것을 위에 둔다:
+    #   사람이 한 일 → 같은 사건을 두 번 셈 → 느슨한 조건 → 융합 중복
+    parts, notes, fuse = [], [], []
+    for code in RULE_ORDER:
+        v = a["pts"].get(code) or 0.0
+        if v <= 0:
+            continue
+        meta = RULE_BY_CODE.get(code) or {}
+        kind, why = RULE_KIND.get(code, ("", ""))
+        hit = [c for c in by_rule.get(code, []) if c.get("over")]
+        parts.append({
+            "label": meta.get("label") or code, "pts": round(v, 1),
+            "when": meta.get("when") or "", "kind": kind, "how": why,
+            "fuse_again": FUSE_AGAIN.get(code, 0),
+            "values": [{"amos": c.get("amos"), "value": c.get("value"),
+                        "op": c.get("op"), "thr": c.get("thr"),
+                        "unit": c.get("unit") or ""} for c in hit],
+        })
+        if kind:
+            notes.append(({"사람": 0, "파생": 1, "느슨": 2}.get(kind, 3),
+                          "{} {:g}점 — {}".format(meta.get("label"), v, why)))
+        if FUSE_AGAIN.get(code):
+            lb = meta.get("label")
+            fuse.append("{}{} 전체(ALL) 융합에서 {}점이 **한 번 더** "
+                        "더해집니다 — 실질 가중치가 두 배입니다."
+                        .format(lb, _josa(lb), FUSE_AGAIN[code]))
+    parts.sort(key=lambda x: -x["pts"])
+    notes = [t for _k, t in sorted(notes, key=lambda x: x[0])] + fuse
+    if a["capped"]:
+        notes.append("룰 배점 합 {:g}점이 융합 상한 {}점에서 잘렸습니다 — "
+                     "더 나빠져도 융합 기여분은 안 늘어납니다."
+                     .format(a["raw"], AREA_CAP))
+    if a.get("mismatch"):
+        notes.append(a["mismatch"])
+    human = sum(p["pts"] for p in parts if p["kind"] == "사람")
+    if human and human >= a["raw"] * 0.4:
+        notes.insert(0, "★이 점수의 {:.0f}% 가 **사람이 한 일**(운영자 용량변경)"
+                        "에서 나왔습니다. 설비가 멀쩡한데 점수만 오른 것이라면"
+                        " 대개 이것입니다."
+                     .format(100.0 * human / max(a["raw"], 1)))
+    pair = [p for p in parts if p["kind"] == "파생"]
+    if len(pair) >= 2:
+        notes.insert(0 if not human else 1,
+                     "★파생 신호가 {}개 같이 켜졌습니다. 같은 사건을 원 신호와"
+                     " 파생 신호로 두 번 세면 한 건에 15점씩 붙습니다 — 사건이"
+                     " 여러 개인 것처럼 보일 수 있습니다.".format(len(pair)))
+    w, d, c = grade_cuts(fcfg)
+    return {
+        "fab": f, "score": sc, "raw": a["raw"], "area": a["area"],
+        "level": grade(sc, fcfg)["level"], "cuts": {"warn": w, "danger": d,
+                                                    "critical": c},
+        "denom": denom,
+        "math": "raw {:g} × 100 ÷ 분모 {:g} = {:g}점".format(a["raw"], denom, sc),
+        "parts": parts, "notes": notes,
+        "signals": a.get("signals") or "",
+        "maxcapa": a.get("maxcapa") or [],
+    }
+
+
 def area_denoms(cfg: dict | None = None) -> dict:
     """영역별 **실효 분모** — 발동이벤트_영역분리.py 의 load_denoms 와 같은 규칙.
 
