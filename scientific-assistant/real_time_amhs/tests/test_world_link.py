@@ -284,6 +284,61 @@ class 월드모델_화면(unittest.TestCase):
         self.assertIn("auto", m.group(0))
         self.assertIn("return", m.group(0))
 
+    # ── 여기서부터는 **부르는 순서** 다. 위의 시험들은 글자가 있나만 봐서,
+    #    아래 두 가지로 아무 일도 안 일어나는 동안에도 전부 통과했다.
+
+    @staticmethod
+    def _nocomment(js):
+        """// 주석을 지운다 — 길이는 유지해서 위치가 안 밀리게.
+
+        ★주석에 적어 둔 설명(\"여기서 autoFromQuery() 를 부르면 안 된다\")이
+          호출문으로 잡혔다. 코드만 본다.
+        """
+        return re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), js)
+
+    def test_currentFab_선언보다_먼저_부르지_않는다(self):
+        """★TDZ. currentFab 은 let 이다 — 선언 전에 읽으면 ReferenceError 다.
+
+        autoFromQuery 는 async 라 그 오류가 거부된 프로미스로 삼켜진다.
+        화면에는 아무 일도 안 일어나고, 콘솔을 열어야 알 수 있었다.
+        """
+        code = self._nocomment(self.h)
+        decl = code.index("let currentFab")
+        calls = [m.start() for m in re.finditer(r"(?<!function )\bautoFromQuery\b", code)]
+        self.assertTrue(calls, "autoFromQuery 를 아무도 안 부른다")
+        for at in calls:
+            self.assertGreater(at, decl,
+                               "let currentFab 선언보다 먼저 autoFromQuery 를 부른다")
+
+    def test_부팅이_끝난_뒤에_돈다(self):
+        """★부팅이 currentFab 과 lp-table 을 초기 FAB 으로 되돌린다.
+
+        순서가 반대면, 관제가 지정한 맵·테이블을 초기값이 도로 덮어써서
+        엉뚱한 FAB 의 빈 화면이 뜬다. 사람이 다시 고르게 만들면 안 된다.
+        """
+        self.assertRegex(self.h, r"bootFabs\(\)\s*\.then\(\s*autoFromQuery",
+                         "부팅 뒤에 이어 붙지 않았다")
+        # 부팅과 무관하게 혼자 도는 호출이 남아 있으면 안 된다
+        self.assertNotRegex(self._nocomment(self.h), r"(?m)^\s*autoFromQuery\(\)\s*;",
+                            "부팅과 따로 도는 autoFromQuery() 가 남아 있다")
+
+    def test_입력칸은_맵을_바꾼_뒤에_채운다(self):
+        """★applyFab 이 syncLogpressoTable() 로 lp-table 을 덮어쓴다."""
+        body = re.search(r"async function autoFromQuery\(\)\s*\{[\s\S]*?\n\}",
+                         self.h).group(0)
+        self.assertLess(body.index("applyFab"), body.index("lp-from"),
+                        "입력칸을 먼저 채우면 맵 전환이 테이블명을 덮어쓴다")
+
+    def test_실패를_화면에_말한다(self):
+        """★안 되면 안 된다고 화면이 말해야 한다 — 콘솔만 보면 모른다."""
+        body = re.search(r"async function autoFromQuery\(\)\s*\{[\s\S]*?\n\}",
+                         self.h).group(0)
+        self.assertIn("autoNote", body)
+        self.assertIn("catch", body)
+        note = re.search(r"function autoNote\([\s\S]*?\n\}", self.h)
+        self.assertIsNotNone(note, "autoNote 가 없다")
+        self.assertIn("case-note", note.group(0))
+
 
 if __name__ == "__main__":
     unittest.main()

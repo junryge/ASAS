@@ -2205,24 +2205,56 @@ async function autoFromQuery() {
   const pre  = (q.get('prefix') || '').trim();
   const cs   = (q.get('case') || '').trim();
 
-  if (cs) showCaseBanner(cs, from, to, tbl);
+  showCaseBanner(cs, from, to, tbl);
   if (!(from.length === 14 && to.length === 14 && tbl)) {
-    console.warn('[관제연동] from/to/table 이 모자라 자동 로드를 건너뜁니다');
+    autoNote('from/to/table 이 모자라 자동 조회를 건너뜁니다', true);
     return;
   }
 
   // ★맵(FAB/prefix)을 먼저 맞춘다. M16 은 A·BR·E 세 레이아웃이 있어서,
   //   틀리면 통째로 다른 구역의 맵 위에 OHT 를 그리게 된다.
-  if (fab && pre && (fab !== currentFab || pre !== currentPrefix)) {
-    try { await applyFab(fab, pre); }
-    catch (e) { console.error('[관제연동] FAB 전환 실패', e); }
+  try {
+    if (fab && pre && (fab !== currentFab || pre !== currentPrefix)) {
+      autoNote(`${fab}/${pre} 맵으로 전환 중…`);
+      await applyFab(fab, pre);
+      if (currentFab !== fab || currentPrefix !== pre) {
+        autoNote(`${fab}/${pre} 맵이 없습니다 (지금 ${currentFab}/${currentPrefix})`, true);
+        return;
+      }
+    }
+  } catch (e) {
+    autoNote(`맵 전환 실패: ${e && e.message || e}`, true);
+    return;
   }
 
+  // ★applyFab 이 syncLogpressoTable() 로 테이블명을 덮어쓴다.
+  //   그래서 입력칸은 **맵을 바꾼 뒤에** 채운다.
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('lp-from', from); set('lp-to', to); set('lp-table', tbl);
-  console.log(`[관제연동] ${tbl} ${from}~${to} (${fab}/${pre}) 자동 조회`);
-  try { await logpressoLoad(); }
-  catch (e) { console.error('[관제연동] 조회 실패', e); }
+
+  autoNote(`${hhmmss(from)} ~ ${hhmmss(to)} 조회 중…`);
+  try {
+    await logpressoLoad();
+    autoNote(`${hhmmss(from)} ~ ${hhmmss(to)} · ${tbl}`);
+  } catch (e) {
+    autoNote(`조회 실패: ${e && e.message || e}`, true);
+  }
+}
+
+function hhmmss(t) {
+  return t && t.length === 14 ? `${t.slice(8,10)}:${t.slice(10,12)}:${t.slice(12,14)}` : (t || '');
+}
+
+// 배너에 지금 무슨 단계인지 적는다.
+//   ★전에는 console.error 로만 남겼다. 화면에는 아무 일도 안 일어나서,
+//     "왜 안 되냐" 를 콘솔을 열어 봐야 알 수 있었다. 실패는 눈에 보여야 한다.
+function autoNote(msg, bad) {
+  const el = document.getElementById('case-note');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = bad ? '#ff9b9b' : '#9ad';
+  }
+  (bad ? console.error : console.log)('[관제연동] ' + msg);
 }
 
 function showCaseBanner(text, from, to, tbl) {
@@ -2232,11 +2264,12 @@ function showCaseBanner(text, from, to, tbl) {
   el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;'
     + 'background:#0d2b3a;border-bottom:2px solid #06b6d4;color:#e0f6ff;'
     + 'padding:7px 14px;font-size:13px;display:flex;align-items:center;gap:12px';
+  const esc = t => String(t || '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
   el.innerHTML =
     `<b style="color:#06b6d4">관제 연동</b>`
-    + `<span>${text.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</span>`
-    + (from && to ? `<span style="color:#9ad;font-family:monospace">`
-        + `${span(from)} ~ ${span(to)} · ${tbl}</span>` : '')
+    + (text ? `<span>${esc(text)}</span>` : '')
+    + `<span id="case-note" style="color:#9ad;font-family:monospace">`
+      + `${from && to ? esc(span(from) + ' ~ ' + span(to) + ' · ' + tbl) : ''}</span>`
     + `<button onclick="this.parentNode.remove();document.body.style.paddingTop=''"
          style="margin-left:auto;background:transparent;border:1px solid #2b6b80;
                 color:#9ad;border-radius:5px;padding:2px 10px;cursor:pointer">닫기</button>`;
@@ -2244,7 +2277,13 @@ function showCaseBanner(text, from, to, tbl) {
   document.body.style.paddingTop = el.offsetHeight + 'px';
 }
 
-autoFromQuery();
+// ★여기서 autoFromQuery() 를 부르면 안 된다. 두 가지가 걸린다:
+//     · currentFab/currentPrefix 는 아래쪽에서 let 으로 선언된다.
+//       선언 전에 읽으면 ReferenceError 다(TDZ). async 함수라 그 오류가
+//       조용히 삼켜져서, 화면에는 아무 일도 안 일어난다.
+//     · FAB 카탈로그를 읽는 부팅 코드가 뒤에 돌면서 currentFab 과
+//       lp-table 을 초기 FAB 으로 되돌린다.
+//   그래서 부팅이 끝난 뒤에 부른다 — 이 파일 맨 아래 bootFabs() 참고.
 
 // ============================================================
 // 데드락 핫스팟 패널 업데이트 + 이력 로그 + 위험 배지 오버라이드
@@ -2509,7 +2548,7 @@ async function applyFab(fab, prefix) {
   }
 }
 
-(async () => {
+async function bootFabs() {
   try {
     const resp = await fetch('/api/fabs');
     const data = await resp.json();
@@ -2522,7 +2561,13 @@ async function applyFab(fab, prefix) {
     // 페이지 첫 진입 시 맵(rail graph) 즉시 로드 — 데이터 조회 전에도 노드/엣지가 그려져야 함
     try { await loadRailGraph(); } catch(e) { console.error('rail graph 초기 로드 실패:', e); }
   } catch(e) { console.error('FAB 목록 로드 실패:', e); }
-})();
+}
+
+// ★부팅이 **끝난 뒤에** 관제 연동을 태운다.
+//   부팅은 currentFab 과 lp-table 을 초기 FAB 으로 세팅한다. 순서가 반대면
+//   관제가 지정한 맵·테이블을 초기값이 도로 덮어써서, 눌러 봐야 엉뚱한
+//   FAB 의 빈 화면이 뜬다. 사람이 다시 고르게 만들면 안 된다.
+bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:', e));
 </script>
 <!-- 맵 표시 설정 모달 -->
 <div id="map-settings-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='map-settings-modal')closeMapSettings()">
