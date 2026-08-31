@@ -178,6 +178,12 @@ class App:
                 if os.environ.get(k):
                     env[k] = os.environ[k]
             s["env"] = env
+            # ★http 로 붙는 서버(위키)는 주소가 env 가 아니라 url 이다.
+            #   같은 이유로 바깥 환경변수가 이겨야 한다 — 위키가 다른 PC 에
+            #   떠 있을 때 코드를 고치게 만들면 안 된다.
+            if s.get("url"):
+                s["url"] = (os.environ.get("{}_MCP_URL".format(s["key"].upper()))
+                            or s["url"])
             srv.append(s)
         # ★스크립트가 실제로 있는지 **켤 때** 본다. avatar_2d 를
         #   real_time_amhs 밖에 풀면 qa/mcp_server.py 가 없다 — 그러면
@@ -200,9 +206,12 @@ class App:
         for s in live:
             # ★어느 주소를 볼지 **켤 때 찍는다**. 안 찍으면 127.0.0.1 을 보고
             #   있는 줄 모르고 "왜 안 되지" 만 반복한다 (실제로 그랬다).
-            addr = (s.get("env") or {}).get("QA_BASE") or "(기본값)"
-            sys.stdout.write("  MCP: {} → {}\n"
-                             .format(s.get("name") or s["key"], addr))
+            addr = (s.get("url") or (s.get("env") or {}).get("QA_BASE")
+                    or "(기본값)")
+            sys.stdout.write("  MCP: {} → {}{}\n".format(
+                s.get("name") or s["key"], addr,
+                "  ※위키 쪽에서 mcp_server.py 를 띄워 둬야 붙는다"
+                if s.get("transport") == "http" else ""))
         if live:
             sys.stdout.write("  MCP 서버 {}개 등록 (질문에 걸리면 그때 띄운다)\n"
                              .format(len(live)))
@@ -798,13 +807,21 @@ class Handler(SimpleHTTPRequestHandler):
         elif out:
             # 조회는 안 걸렸는데 글이 있다 = 조금 전 결과를 그대로 들고 왔다
             self._say("     ↳ MCP 직전 조회 이어받음 · {}자".format(len(out)))
-        elif hub.matched(text):
-            # ★걸렸는데 아무것도 안 나왔다 — 조용히 넘어가면 "왜 안 되지" 가 된다.
-            #   콘솔에 남기고, 서윤도 "못 봤다" 고 말할 수 있게 글로 넘긴다.
-            self._say("     ↳ MCP 걸렸는데 결과 없음 (요청관리 서버 확인)")
-            return ("[요청이력] 조회에 실패했다 — 요청관리 서버에 못 붙었다."
-                    " 요청이력은 **확인할 수 없다** 고 말하고, 건수를 지어내지"
-                    " 마라.")
+        else:
+            hit = hub.matched(text)
+            if hit:
+                # ★걸렸는데 아무것도 안 나왔다 — 조용히 넘어가면 "왜 안 되지"
+                #   가 된다. 콘솔에 남기고, 서윤도 "못 봤다" 고 말할 수 있게
+                #   글로 넘긴다.
+                # ★어느 서버인지 이름을 박는다. 예전엔 무조건 "요청이력" 이라고
+                #   적었다 — 위키가 안 떠 있는데 서윤이 "요청관리 서버에 못
+                #   붙었다" 고 말하면, 엉뚱한 서버를 붙잡고 고치게 된다.
+                names = "·".join(s2.get("name") or s2["key"] for s2 in hit)
+                self._say("     ↳ MCP 걸렸는데 결과 없음 ({} 서버 확인)"
+                          .format(names))
+                return ("[{}] 조회에 실패했다 — 서버에 못 붙었다. 이 자료는"
+                        " **확인할 수 없다** 고 말하고, 내용을 지어내지 마라."
+                        .format(names))
         return out
 
     def _upload_of(self, name):

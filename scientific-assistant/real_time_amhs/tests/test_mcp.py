@@ -1209,9 +1209,14 @@ class 왜_안_되는지_알려_준다(unittest.TestCase):
             return f.read()
 
     def test_켤_때_보는_주소를_찍는다(self):
-        """★안 찍으면 127.0.0.1 을 보고 있는 줄 모른다."""
+        """★안 찍으면 127.0.0.1 을 보고 있는 줄 모른다.
+
+        stdio(요청이력)는 env 의 QA_BASE, http(위키)는 url 이다.
+        둘 다 찍혀야 한다 — 한쪽만 보면 나머지는 빈 칸으로 나온다.
+        """
         s = self._src()
-        self.assertIn('addr = (s.get("env") or {}).get("QA_BASE")', s)
+        self.assertIn('(s.get("env") or {}).get("QA_BASE")', s)
+        self.assertIn('s.get("url")', s)
         self.assertIn("MCP: {} \u2192 {}", s)
 
     def test_바깥_환경변수가_이긴다(self):
@@ -1239,9 +1244,13 @@ class 왜_안_되는지_알려_준다(unittest.TestCase):
         MCP 가 도는지조차 모른다."""
         s = self._src()
         self.assertIn("MCP 걸렸는데 결과 없음", s)
-        i = s.index("elif hub.matched(text):")
-        self.assertIn("확인할 수 없다", s[i:i + 420])
-        self.assertIn("건수를 지어내지", s[i:i + 420])
+        i = s.index("hit = hub.matched(text)")
+        self.assertIn("확인할 수 없다", s[i:i + 900])
+        self.assertIn("지어내지 마라", s[i:i + 900])
+        # ★어느 서버인지 이름을 박아야 한다. 무조건 "요청이력" 이라고 적으면,
+        #   위키가 안 떠 있는데 서윤이 요청관리를 붙잡고 고치라고 말한다.
+        self.assertIn('s2.get("name")', s[i:i + 900])
+        self.assertNotIn("요청관리 서버에 못 붙었다", s)
 
     def test_서버에_붙는지_혼자_확인할_수_있다(self):
         """★전부 띄우지 않고도 주소가 맞는지 재 볼 수 있어야 한다."""
@@ -1278,6 +1287,382 @@ class 모듈_이름이_안_가린다(unittest.TestCase):
                     out.add(n.module.split(".")[0])
             self.assertEqual(out - std, set(),
                              os.path.basename(path) + " 가 밖의 것을 쓴다")
+
+
+
+# ═══ 6. 위키(LLM_WIKI_MCP) — streamable-http 로 붙는다 ════════════════════
+# 요청이력은 우리가 짠 stdio 서버다. 위키는 **공식 SDK(FastMCP)** 로 짜여
+# 있고 transport 가 streamable-http 다 — 자식 프로세스로 못 띄운다. 그래서
+# 붙는 쪽(HttpClient)을 새로 만들었고, 여기서 그게 진짜로 도는지 본다.
+#
+# ★핵심 함정: 같은 주소가 두 가지로 답한다.
+#     application/json   악수 응답
+#     text/event-stream  도구 결과 (FastMCP 가 이렇게 준다)
+#   JSON 만 읽으면 **붙기는 하는데 도구가 통째로 안 된다** — 화면에는
+#   "MCP 연결됨" 이 뜨고 답만 비는, 제일 헷갈리는 실패다.
+
+WIKI_PAGE = {
+    "id": 12, "title": "반송 장치 종류와 역할", "domain": "버츄얼 아바타",
+    "tags": "VHL,OHT,LFT,CNV,STK,STB,Sorter,MLUD",
+    "summary": "FOUP이 거치는 반송 장치의 역할과 포트 규칙.",
+    "author": "", "updatedAt": "2026-08-30",
+    "bodyMd": ("## 핵심 용어 정의\n"
+               "- **VHL**: FOUP을 레일로 이동하는 장치.\n"
+               "- **LFT**: 리프터. ZT라고도 불림. 층간 반송을 담당.\n"
+               "- **STK**: 스토커. FOUP 임시 저장.\n"
+               "- **Sorter**: FOSB↔FOUP 변환. 대기Q가 많으면 반송량이 많다는 방증.\n"),
+}
+WIKI_SEARCH = {"query": "LFT가 뭐야", "retrieval": "BM25", "results": [
+    {"score": 8.21, "kind": "page", "id": 12, "title": "반송 장치 종류와 역할",
+     "domain": "버츄얼 아바타", "summary": "FOUP이 거치는 반송 장치…",
+     "snippet": "- **LFT**: 리프터. ZT라고도 불림. 층간 반송을 담당."},
+    {"score": 3.10, "kind": "source", "id": 4, "title": "연결도.png",
+     "domain": "버츄얼 아바타", "summary": "", "snippet": "M14↔M16 연결도"},
+    {"score": 2.02, "kind": "page", "id": 15, "title": "FAB 간 연결 경로",
+     "domain": "버츄얼 아바타", "summary": "", "snippet": "6ABL60~ 경유"},
+]}
+
+
+class 가짜_위키_MCP(BaseHTTPRequestHandler):
+    """FastMCP 흉내 — 악수는 JSON, 도구 결과는 SSE 로 준다."""
+
+    sse = True              # 시험에서 껐다 켰다 한다
+    seen = []               # 받은 헤더를 들여다본다
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code, ctype, body, extra=None):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        req = json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
+        type(self).seen.append(dict(self.headers))
+        if "id" not in req:                       # 알림
+            self._send(202, "text/plain", b"")
+            return
+        m, mid = req.get("method"), req["id"]
+        if m == "initialize":
+            body = json.dumps({"jsonrpc": "2.0", "id": mid, "result": {
+                "protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
+                "serverInfo": {"name": "llm-wiki", "version": "1.0"}}})
+            self._send(200, "application/json", body.encode("utf-8"),
+                       {"mcp-session-id": "sess-42"})
+            return
+        if m == "tools/list":
+            res = {"tools": [{"name": n2} for n2 in
+                             ("listDomains", "searchWiki", "readPage",
+                              "listSources", "readSource")]}
+        elif m == "tools/call":
+            name = (req.get("params") or {}).get("name")
+            args = (req.get("params") or {}).get("arguments") or {}
+            if name == "searchWiki":
+                data = WIKI_SEARCH
+            elif name == "readPage":
+                data = WIKI_PAGE if args.get("pageId") == 12 else \
+                    {"isError": True, "message": "page 없음"}
+            elif name == "listDomains":
+                data = {"domains": [{"slug": "virtual-avatar",
+                                     "name": "버츄얼 아바타", "pageCount": 4}]}
+            else:
+                res = {"content": [{"type": "text", "text": "없는 도구"}],
+                       "isError": True}
+                self._reply(mid, res)
+                return
+            res = {"content": [{"type": "text",
+                                "text": json.dumps(data, ensure_ascii=False)}],
+                   "structuredContent": data}
+        else:
+            body = json.dumps({"jsonrpc": "2.0", "id": mid,
+                               "error": {"code": -32601,
+                                         "message": "모르는 method"}})
+            self._send(200, "application/json", body.encode("utf-8"))
+            return
+        self._reply(mid, res)
+
+    def _reply(self, mid, result):
+        msg = json.dumps({"jsonrpc": "2.0", "id": mid, "result": result},
+                         ensure_ascii=False)
+        if type(self).sse:
+            body = ("event: message\ndata: {}\n\n".format(msg)).encode("utf-8")
+            self._send(200, "text/event-stream", body)
+        else:
+            self._send(200, "application/json", msg.encode("utf-8"))
+
+
+class _Wiki(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = HTTPServer(("127.0.0.1", 0), 가짜_위키_MCP)
+        cls.url = "http://127.0.0.1:{}/mcp".format(cls.httpd.server_address[1])
+        cls.th = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.th.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        가짜_위키_MCP.sse = True
+        가짜_위키_MCP.seen = []
+
+
+class 위키에_붙는다(_Wiki):
+
+    def test_악수하고_도구를_받는다(self):
+        c = mcp_client.HttpClient(self.url)
+        self.assertEqual(c.server.get("name"), "llm-wiki")
+        self.assertIn("searchWiki", [t["name"] for t in c.tools()])
+        self.assertTrue(c.alive())
+
+    def test_도구_결과가_SSE_로_와도_읽는다(self):
+        """★FastMCP 는 도구 결과를 event-stream 으로 준다.
+
+        JSON 만 읽으면 악수는 되고 도구만 안 된다 — 화면에는 '연결됨' 이
+        뜨는데 답이 비는, 제일 헷갈리는 실패다.
+        """
+        c = mcp_client.HttpClient(self.url)
+        txt, bad = c.call("searchWiki", {"query": "LFT가 뭐야"})
+        self.assertFalse(bad)
+        self.assertEqual(json.loads(txt)["results"][0]["id"], 12)
+
+    def test_JSON_으로_와도_읽는다(self):
+        """서버가 SSE 를 안 쓸 수도 있다. 둘 다 받아야 한다."""
+        가짜_위키_MCP.sse = False
+        c = mcp_client.HttpClient(self.url)
+        txt, bad = c.call("readPage", {"pageId": 12})
+        self.assertFalse(bad)
+        self.assertIn("리프터", txt)
+
+    def test_세션을_돌려준다(self):
+        """★악수에서 받은 mcp-session-id 를 다음 요청에 실어야 한다.
+        안 실으면 서버가 400/404 로 끊는다."""
+        c = mcp_client.HttpClient(self.url)
+        c.call("listDomains")
+        self.assertEqual(c.session, "sess-42")
+        self.assertEqual(가짜_위키_MCP.seen[-1].get("Mcp-Session-Id"), "sess-42")
+
+    def test_두_가지를_다_받겠다고_말한다(self):
+        """Accept 에 event-stream 이 빠지면 FastMCP 가 406 을 준다."""
+        mcp_client.HttpClient(self.url)
+        acc = 가짜_위키_MCP.seen[0].get("Accept") or ""
+        self.assertIn("application/json", acc)
+        self.assertIn("text/event-stream", acc)
+
+    def test_안_떠_있으면_끊겼다고_말한다(self):
+        """★'끊겼다' 라고 말해야 위에서 새로 붙어 다시 건다 (_looks_dead)."""
+        with socket.socket() as s:          # 아무도 안 듣는 포트
+            s.bind(("127.0.0.1", 0))
+            dead = "http://127.0.0.1:{}/mcp".format(s.getsockname()[1])
+        with self.assertRaises(mcp_client.McpError) as e:
+            mcp_client.HttpClient(dead, timeout=2)
+        self.assertTrue(mcp_client._looks_dead(str(e.exception)),
+                        "다시 붙을 신호로 안 읽힌다: {}".format(e.exception))
+
+    def test_사내_주소라_프록시를_안_탄다(self):
+        """★관제·월드모델에서 이미 밟았다 — 회사 프록시가 사내 IP 를 못 찾아
+        407 을 준다. 환경변수에 프록시가 있어도 그대로 붙어야 한다.
+
+        (핸들러 목록을 뒤지지 않고 **진짜로 붙여 본다**. 빈 ProxyHandler 는
+         여는 메서드가 없어서 opener.handlers 에 안 들어간다 — 목록만 보면
+         막은 것을 안 막았다고 읽는다.)
+        """
+        for k in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):
+            old = os.environ.get(k)
+            os.environ[k] = "http://127.0.0.1:9"      # 아무도 안 듣는다
+            self.addCleanup(lambda k=k, v=old:
+                            os.environ.__setitem__(k, v) if v is not None
+                            else os.environ.pop(k, None))
+        c = mcp_client.HttpClient(self.url, timeout=5)
+        txt, bad = c.call("listDomains")
+        self.assertFalse(bad)
+        self.assertIn("버츄얼 아바타", txt)
+
+    def test_transport_를_보고_갈라_붙는다(self):
+        c = mcp_client._connect({"key": "w", "transport": "http",
+                                 "url": self.url})
+        self.assertIsInstance(c, mcp_client.HttpClient)
+        self.assertEqual(c.where(), self.url)
+
+
+class 검색하고_본문까지_읽는다(_Wiki):
+    """★조각(500자)만 주면 앞머리만 아는 상태가 된다.
+
+    요청이력에서 그대로 겪은 일이다 — "하기는 잘해.. 근데 상세한 내용을
+    물어보면 몰라". 검색으로 어느 쪽인지 찾았으면 그 쪽 본문을 읽어야 한다.
+    """
+
+    def srv(self, **kw):
+        s = {"key": "wiki", "name": "AMHS 위키", "transport": "http",
+             "url": self.url, "when": ["LFT"],
+             "calls": [{"tool": "searchWiki", "label": "위키 검색",
+                        "args": {"topK": 4},
+                        "pick": {"query": {"kind": "text"}},
+                        "then": {"tool": "readPage", "label": "위키 본문",
+                                 "arg": "pageId", "list": "results",
+                                 "id": "id", "only": {"kind": "page"},
+                                 "max": 2}}]}
+        s.update(kw)
+        return s
+
+    def test_검색_뒤에_본문을_읽는다(self):
+        h = mcp_client.Hub([self.srv()])
+        self.addCleanup(h.close)
+        got, used = h.gather("LFT가 뭐야?")
+        self.assertIn("위키 검색", got)
+        self.assertIn("위키 본문 #12", got)
+        self.assertIn("리프터", got)          # 조각이 아니라 본문에만 있다
+        self.assertEqual(used, 3)             # 검색 1 + 본문 2
+
+    def test_페이지가_아닌_것은_안_읽는다(self):
+        """★kind='source' 를 readPage 에 넣으면 없는 페이지를 친다."""
+        ids = mcp_client.Hub._ids_of(
+            {"list": "results", "id": "id", "only": {"kind": "page"}},
+            json.dumps(WIKI_SEARCH, ensure_ascii=False))
+        self.assertEqual(ids, [12, 15])
+
+    def test_몇_개까지만_읽는다(self):
+        h = mcp_client.Hub([self.srv(calls=[{
+            "tool": "searchWiki", "pick": {"query": {"kind": "text"}},
+            "then": {"tool": "readPage", "arg": "pageId", "list": "results",
+                     "id": "id", "only": {"kind": "page"}, "max": 1}}])])
+        self.addCleanup(h.close)
+        _, used = h.gather("LFT가 뭐야?")
+        self.assertEqual(used, 2)             # 검색 1 + 본문 1
+
+    def test_JSON_이_아니면_그냥_넘어간다(self):
+        """앞 도구가 사람 글을 주면 id 를 못 뽑는다 — 터지면 안 된다."""
+        self.assertEqual(mcp_client.Hub._ids_of({}, "총 5건입니다"), [])
+        self.assertEqual(mcp_client.Hub._ids_of({}, ""), [])
+
+    def test_질문을_그대로_검색어로_쓴다(self):
+        spec = {"kind": "text", "max": 160}
+        self.assertEqual(mcp_client._arg_of("  LFT랑  ZT  차이가 뭐야 ", spec),
+                         "LFT랑 ZT 차이가 뭐야")
+        self.assertIsNone(mcp_client._arg_of("   ", spec))
+
+    def test_긴_본문은_정한_몫까지만_싣는다(self):
+        """★위키 본문은 길다. 통째로 넣으면 관제 근거·첨부가 밀려난다."""
+        cut = mcp_client.Hub._fit({"budget": 40}, "가" * 200)
+        self.assertLess(len(cut), 120)
+        self.assertIn("잘렸다", cut)
+        self.assertIn("전체 200자", cut)      # 얼마나 잘렸는지 말해 준다
+        self.assertEqual(mcp_client.Hub._fit({}, "가" * 200), "가" * 200)
+
+
+class 위키_설정이_말이_된다(unittest.TestCase):
+
+    def hub(self):
+        return mcp_client.Hub(config.MCP_SERVERS)
+
+    def keys(self, q):
+        return [s["key"] for s in self.hub().matched(q)]
+
+    def test_등록되어_있다(self):
+        w = [s for s in config.MCP_SERVERS if s["key"] == "wiki"]
+        self.assertEqual(len(w), 1)
+        self.assertEqual(w[0]["transport"], "http")
+        self.assertTrue(w[0]["url"].endswith("/mcp"))
+
+    def test_반송_지식_질문에_걸린다(self):
+        for q in ("LFT가 뭐야?", "STK랑 STB 차이가 뭐지",
+                  "M16 HUBROOM 이 뭐하는 데야", "Sorter 대기Q 왜 중요해",
+                  "FOUP 이 어디를 경유해?", "OHT 가 무엇을 하는 거야",
+                  "반송 장치 종류 뭐가 있어"):
+            self.assertIn("wiki", self.keys(q), q)
+
+    def test_관제_질문에는_안_걸린다(self):
+        """★"M14 반송시간 알려줘" 가 걸려서 '반송' 을 낱말에서 뺐다.
+        평소 관제 대화마다 위키를 뒤지면 그게 곧 비용이다."""
+        for q in ("M16HUB 지금 몇 점이야?", "M14 반송시간 알려줘",
+                  "ALL 점수 얼마야", "지금 상태 어때", "M16B 어때",
+                  "M14 반송 어떻게 되고 있어?", "어제 8시에 어땠어?"):
+            self.assertNotIn("wiki", self.keys(q), q)
+
+    def test_주소를_밖에서_바꿀_수_있다(self):
+        """★위키가 다른 PC 에 떠 있는 게 보통이다. 코드를 고치게 만들면
+        안 된다 — run.py --wiki 나 WIKI_MCP_URL 로 준다."""
+        p = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('"{}_MCP_URL".format(s["key"].upper())', src)
+        p2 = os.path.join(util.BASE, "avatar_2d", "run.py")
+        with open(p2, encoding="utf-8") as f:
+            run = f.read()
+        self.assertIn('"--wiki"', run)
+        self.assertIn('os.environ["WIKI_MCP_URL"]', run)
+        # ★/mcp 를 빠뜨리면 조용히 404 다 — 붙여 준다
+        self.assertIn('endswith("/mcp")', run)
+
+    def test_요청이력과_안_겹친다(self):
+        """둘이 같은 질문에 다 걸리면 한 번에 도구가 6번 돈다."""
+        self.assertEqual(self.keys("보류된 요청 알려줘"), ["qa"])
+        self.assertEqual(self.keys("LFT가 뭐야?"), ["wiki"])
+
+    def test_요청이력_규칙이_위키에_안_붙는다(self):
+        """★한 블록에 규칙을 다 쏟으면 서로 오염된다.
+
+        요청이력 규칙에는 "여기 적힌 건수는 요청 접수 건수다", "총 건수와
+        아직 안 끝난 것을 반드시 말한다" 가 있다. 위키 결과에 그게 붙으면
+        서윤이 위키 페이지를 놓고 건수를 세려 든다.
+        """
+        wiki = ("[AMHS 위키]\n· 위키 본문 #12\n"
+                "LFT: 리프터. 층간 반송을 담당.")
+        s = llm.build_messages("서윤이다.", "LFT가 뭐야?", [], _빈자료(),
+                               {"docBudget": 6000}, mcp_text=wiki)[0]["content"]
+        self.assertIn("[외부 도구 — MCP]", s)
+        self.assertIn("지금 수치가 아니다", s)          # 위키 규칙
+        self.assertNotIn("요청 접수 건수", s)           # 요청이력 규칙
+        self.assertNotIn("보류·대기·검토중", s)
+
+    def test_위키_규칙이_요청이력에_안_붙는다(self):
+        s = llm.build_messages("서윤이다.", "요청 뭐 있어?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[QA 요청이력]\n· 현황\n총 2건"
+                               )[0]["content"]
+        self.assertIn("요청 접수 건수", s)
+        self.assertNotIn("[AMHS 위키] 는 **지식 문서**다", s)
+
+    def test_둘_다_오면_둘_다_붙는다(self):
+        both = "[QA 요청이력]\n총 2건\n\n[AMHS 위키]\nLFT: 리프터."
+        s = llm.build_messages("서윤이다.", "LFT 요청 있어?", [], _빈자료(),
+                               {"docBudget": 6000}, mcp_text=both)[0]["content"]
+        self.assertIn("요청 접수 건수", s)
+        self.assertIn("지금 수치가 아니다", s)
+
+    def test_위키_숫자를_현재값으로_말하지_말라고_박는다(self):
+        """★위키에는 예시 수치가 적혀 있다. 그걸 현재 값처럼 말하면
+        관제 화면과 어긋난다 — 첨부에서 똑같이 겪은 자리다."""
+        s = llm.build_messages("서윤이다.", "STK 저장율?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[AMHS 위키]\n저장율 90% 초과 반복"
+                               )[0]["content"]
+        self.assertIn("현재 값으로 말하면 안 된다", s)
+
+    def test_잘린_본문을_아는_척하지_말라고_박는다(self):
+        s = llm.build_messages("서윤이다.", "LFT?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[AMHS 위키]\n가나다\n…(뒤가 잘렸다 · 전체 900자)"
+                               )[0]["content"]
+        self.assertIn("안 본 부분을 아는 것처럼 말하지 마라", s)
+
+    def test_읽기_전용만_부른다(self):
+        """★위키는 쓰기 도구(페이지 생성·수정)도 갖고 있다. 서윤이
+        부르는 목록에 그런 게 섞이면 안 된다."""
+        w = [s for s in config.MCP_SERVERS if s["key"] == "wiki"][0]
+        names = [c["tool"] for c in w["calls"]]
+        names += [c["then"]["tool"] for c in w["calls"] if c.get("then")]
+        for n in names:
+            self.assertIn(n, ("searchWiki", "readPage", "listDomains",
+                              "listSources", "readSource"), n)
 
 
 if __name__ == "__main__":

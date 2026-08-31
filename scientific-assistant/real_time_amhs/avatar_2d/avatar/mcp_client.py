@@ -23,6 +23,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 
 PROTO = "2025-06-18"
 
@@ -31,7 +33,35 @@ class McpError(Exception):
     """규격 오류 — 서버가 JSON-RPC error 를 돌려줬거나 끊겼다."""
 
 
-class Client:
+class _Tools:
+    """transport 와 무관한 부분 — tools/list 와 tools/call.
+
+    ★stdio 와 streamable-http 가 같은 규격을 쓴다. 여기를 두 벌로 두면
+      한쪽만 고쳐서 어긋난다 (isError 처리처럼 미묘한 것이 있다).
+    """
+
+    def tools(self):
+        return (self._rpc("tools/list") or {}).get("tools") or []
+
+    def call(self, name, args=None):
+        """도구 하나 → (글, 실패인가).
+
+        ★없는 도구를 두 가지로 돌려준다: JSON-RPC error(우리 서버) 거나
+          isError 결과(공식 SDK 서버). 둘 다 받아야 한다.
+        """
+        try:
+            r = self._rpc("tools/call", {"name": name,
+                                         "arguments": args or {}})
+        except McpError as e:
+            return str(e), True
+        txt = "\n".join(c.get("text") or "" for c in (r.get("content") or [])
+                        if c.get("type") == "text").strip()
+        if not txt and r.get("structuredContent") is not None:
+            txt = json.dumps(r["structuredContent"], ensure_ascii=False)
+        return txt, bool(r.get("isError"))
+
+
+class Client(_Tools):
     """MCP 서버 하나. stdio 로 자식 프로세스를 띄운다."""
 
     def __init__(self, command, args=None, env=None, cwd=None, timeout=20):
@@ -104,25 +134,13 @@ class Client:
         self.proto = r.get("protocolVersion") or ""
         self._notify("notifications/initialized")
 
-    def tools(self):
-        return (self._rpc("tools/list") or {}).get("tools") or []
+    def alive(self):
+        """아직 쓸 수 있나. ★transport 마다 뜻이 달라서 이름을 맞춰 둔다 —
+        stdio 는 자식 프로세스가 살아 있나, http 는 마지막 요청이 닿았나."""
+        return self.proc.poll() is None
 
-    def call(self, name, args=None):
-        """도구 하나 → (글, 실패인가).
-
-        ★없는 도구를 두 가지로 돌려준다: JSON-RPC error(우리 서버) 거나
-          isError 결과(공식 SDK 서버). 둘 다 받아야 한다.
-        """
-        try:
-            r = self._rpc("tools/call", {"name": name,
-                                         "arguments": args or {}})
-        except McpError as e:
-            return str(e), True
-        txt = "\n".join(c.get("text") or "" for c in (r.get("content") or [])
-                        if c.get("type") == "text").strip()
-        if not txt and r.get("structuredContent") is not None:
-            txt = json.dumps(r["structuredContent"], ensure_ascii=False)
-        return txt, bool(r.get("isError"))
+    def where(self):
+        return " ".join(self.proc.args) if hasattr(self.proc, "args") else ""
 
     def close(self):
         for f in (self.proc.stdin, self.proc.stdout):
@@ -138,6 +156,158 @@ class Client:
                 self.proc.kill()
             except Exception:  # noqa: BLE001
                 pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.close()
+
+
+class HttpClient(_Tools):
+    """streamable-http 로 붙는 MCP 서버 (표준 라이브러리만).
+
+    왜 필요한가
+        LLM_WIKI_MCP(위키) 는 공식 SDK(FastMCP)로 짜여 있고 transport 가
+        **streamable-http** 다. 자식 프로세스로 띄우는 stdio 로는 못 붙는다.
+        위키 서버는 mcp 패키지·flask 를 끌고 오므로 아바타와 한 프로세스에
+        넣을 수도 없다 — 그쪽은 그쪽대로 띄우고, 여기서는 붙기만 한다.
+
+    ★응답이 두 가지로 온다
+        같은 주소가 application/json 으로도, text/event-stream(SSE) 으로도
+        답한다. FastMCP 는 **도구 결과를 SSE 로** 준다 — JSON 만 읽으면
+        붙기는 하는데 도구가 통째로 안 된다.
+    """
+
+    def __init__(self, url, headers=None, timeout=20):
+        self.url = str(url or "").strip()
+        if not self.url:
+            raise McpError("주소가 비어 있다")
+        self.timeout = float(timeout)
+        self.extra = dict(headers or {})
+        self.session = ""
+        self.server = {}
+        self.proto = ""
+        self._id = 0
+        self._ok = True
+        self._lock = threading.RLock()
+        # ★사내 주소다 — 프록시를 타면 안 된다. 관제·월드모델에서 이미 밟은
+        #   자리다: 회사 프록시가 사내 IP 를 못 찾아 407 을 돌려준다.
+        self._opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}))
+        self._handshake()
+
+    # ── 낮은 층 ──────────────────────────────────────────────────────────
+    @staticmethod
+    def _sse(raw):
+        """SSE 본문 → 데이터 덩어리들. 'data:' 줄만 모은다."""
+        out = []
+        for chunk in re.split(r"\r?\n\s*\r?\n", raw):
+            body = []
+            for ln in chunk.splitlines():
+                if ln.startswith("data:"):
+                    v = ln[5:]
+                    body.append(v[1:] if v.startswith(" ") else v)
+            if body:
+                out.append("\n".join(body))
+        return out
+
+    def _messages(self, raw, ctype):
+        raw = (raw or "").strip()
+        if not raw:
+            return []
+        chunks = self._sse(raw) if "text/event-stream" in (ctype or "").lower() \
+            else [raw]
+        out = []
+        for c in chunks:
+            try:
+                m = json.loads(c)
+            except ValueError:
+                continue          # 서버가 흘린 잡음(주석·하트비트)은 버린다
+            out.extend(m if isinstance(m, list) else [m])
+        return out
+
+    def _post(self, payload):
+        h = {"Content-Type": "application/json",
+             "Accept": "application/json, text/event-stream"}
+        if self.proto:
+            h["MCP-Protocol-Version"] = self.proto
+        if self.session:
+            h["Mcp-Session-Id"] = self.session
+        h.update(self.extra)
+        req = urllib.request.Request(
+            self.url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers=h, method="POST")
+        try:
+            with self._opener.open(req, timeout=self.timeout) as r:
+                sid = r.headers.get("mcp-session-id")
+                if sid:
+                    self.session = sid
+                ctype = r.headers.get("Content-Type") or ""
+                raw = r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", "replace")[:200]
+            except Exception:  # noqa: BLE001
+                pass
+            # ★세션이 만료되면 404/400 이 온다. 이건 '끊겼다' 로 알려야
+            #   위에서 새로 붙어 다시 건다 (_looks_dead 가 그 말을 본다).
+            if e.code in (400, 404):
+                self.session = ""
+                self._ok = False
+                raise McpError("서버가 끊겼다 (HTTP {} {})".format(e.code, body))
+            raise McpError("HTTP {} {}".format(e.code, body))
+        except Exception as e:  # noqa: BLE001
+            self._ok = False
+            raise McpError("서버가 끊겼다 ({}: {})".format(type(e).__name__, e))
+        self._ok = True
+        return self._messages(raw, ctype)
+
+    def _rpc(self, method, params=None):
+        with self._lock:
+            self._id += 1
+            mid = self._id
+            msgs = self._post({"jsonrpc": "2.0", "id": mid, "method": method,
+                               "params": params or {}})
+            for m in msgs:
+                if m.get("id") != mid:
+                    continue      # 알림·남의 응답은 지나친다
+                if "error" in m:
+                    er = m["error"] or {}
+                    raise McpError("{} ({})".format(er.get("message"),
+                                                    er.get("code")))
+                return m.get("result") or {}
+            raise McpError("응답이 없다 ({})".format(method))
+
+    def _notify(self, method, params=None):
+        with self._lock:
+            try:
+                self._post({"jsonrpc": "2.0", "method": method,
+                            "params": params or {}})
+            except McpError:
+                # 알림은 202 로 빈 몸을 준다. 여기서 터뜨릴 이유가 없다.
+                pass
+
+    # ── 규격 ─────────────────────────────────────────────────────────────
+    def _handshake(self):
+        r = self._rpc("initialize", {
+            "protocolVersion": PROTO,
+            "capabilities": {},
+            "clientInfo": {"name": "seoyun-avatar", "version": "1.0.0"}})
+        self.server = r.get("serverInfo") or {}
+        self.proto = r.get("protocolVersion") or PROTO
+        self._notify("notifications/initialized")
+
+    def alive(self):
+        return self._ok
+
+    def where(self):
+        return self.url
+
+    def close(self):
+        self.session = ""
 
     def __enter__(self):
         return self
@@ -179,6 +349,12 @@ def _arg_of(text, spec):
             if v in (text or ""):
                 return v
         return None
+    if kind == "text":
+        # ★질문 그대로를 인자로. 위키 검색처럼 "무엇을 찾을지" 가 곧 질문인
+        #   도구가 있다. 앞뒤 군말은 잘라 낸다 (BM25 라 긴 문장도 먹는다).
+        t = re.sub(r"\s+", " ", str(text or "")).strip()
+        t = t[:int(spec.get("max", 200))]
+        return t or None
     if kind == "any":
         # 여러 규칙을 차례로 시도한다 (코드명 먼저, 없으면 사람 이름 …)
         for one in spec.get("of") or []:
@@ -186,6 +362,17 @@ def _arg_of(text, spec):
             if v is not None:
                 return v
     return None
+
+
+def _connect(s):
+    """설정 한 칸 → 붙은 클라이언트. transport 로 갈라진다.
+
+    ★transport 를 안 적으면 stdio 다 (지금까지 쓰던 것들이 그대로 돈다).
+    """
+    if str(s.get("transport") or "stdio").lower() in ("http", "streamable-http"):
+        return HttpClient(s.get("url"), s.get("headers"), s.get("timeout", 20))
+    return Client(s.get("command") or sys.executable, s.get("args"),
+                  s.get("env"), s.get("cwd"), s.get("timeout", 20))
 
 
 def _looks_dead(msg):
@@ -250,7 +437,7 @@ class Hub:
           다시 붙어 본다 (그때 실패하면 실패라고 적어 넘긴다).
         """
         with self._lock:
-            return all(c.proc.poll() is None for c in self._live.values())
+            return all(c.alive() for c in self._live.values())
 
     def matched(self, text):
         """이 질문에 걸리는 서버 목록 (화면 계측·시험용)."""
@@ -285,8 +472,66 @@ class Hub:
             if txt:
                 lines.append("· {}{}\n{}".format(
                     call.get("label") or call["tool"],
-                    " (실패)" if bad else "", txt))
+                    " (실패)" if bad else "", self._fit(s, txt)))
+            if not bad and txt and call.get("then"):
+                used += self._run_then(s, c, call["then"], txt, lines)
+                c = self._live.get(s["key"], c)
         return used
+
+    def _run_then(self, s, c, then, prev, lines):
+        """앞 결과에서 id 를 꺼내 **본문까지** 읽는다 → 부른 횟수.
+
+        ★왜 필요한가. 위키 검색은 500자 조각만 준다. 그걸로 답하면 서윤이
+          앞머리만 아는 상태가 된다 — 요청이력에서 그대로 겪은 일이다
+          ("하기는 잘해.. 근데 상세한 내용을 물어보면 몰라"). 검색으로
+          어느 쪽인지 찾았으면 그 쪽 본문을 읽어야 아는 것이다.
+        """
+        ids, used = self._ids_of(then, prev), 0
+        for v in ids[:int(then.get("max", 2))]:
+            txt, bad = self._call_retry(s, c, then["tool"],
+                                        {then.get("arg", "id"): v})
+            c = self._live.get(s["key"], c)
+            used += 1
+            if txt:
+                lines.append("· {} #{}{}\n{}".format(
+                    then.get("label") or then["tool"], v,
+                    " (실패)" if bad else "", self._fit(s, txt)))
+        return used
+
+    @staticmethod
+    def _ids_of(then, prev):
+        """앞 도구가 준 JSON 에서 id 목록. JSON 이 아니면 빈 목록."""
+        try:
+            data = json.loads(prev)
+        except ValueError:
+            return []
+        rows = data.get(then.get("list") or "results") if isinstance(data, dict) \
+            else data
+        if not isinstance(rows, list):
+            return []
+        only = then.get("only") or {}
+        out = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if any(r.get(k) != v for k, v in only.items()):
+                continue
+            v = r.get(then.get("id") or "id")
+            if v is not None and v not in out:
+                out.append(v)
+        return out
+
+    @staticmethod
+    def _fit(s, txt):
+        """서버마다 정한 몫만큼만 싣는다 (0 이나 없으면 그대로).
+
+        ★위키 본문은 길다. 통째로 넣으면 관제 근거·첨부가 밀려난다 —
+          컨텍스트는 한정돼 있고, 밀려나는 쪽이 더 중요한 경우가 많다.
+        """
+        cap = int(s.get("budget") or 0)
+        if cap <= 0 or len(txt) <= cap:
+            return txt
+        return txt[:cap] + "\n…(뒤가 잘렸다 · 전체 {}자)".format(len(txt))
 
     def _call_retry(self, s, c, tool, args):
         """도구 하나 — 파이프가 끊겼으면 **한 번만** 다시 붙어 재시도한다.
@@ -298,7 +543,7 @@ class Hub:
         txt, bad = c.call(tool, args)
         if not bad:
             return txt, bad
-        if not _looks_dead(txt) or c.proc.poll() is None:
+        if not _looks_dead(txt) or c.alive():
             return txt, bad          # 진짜 도구 실패다 — 다시 걸어도 같다
         self._say("     ↳ MCP 끊겨서 다시 붙는다 ({})".format(txt[:60]))
         try:
@@ -312,18 +557,16 @@ class Hub:
     def _client(self, s):
         with self._lock:
             c = self._live.get(s["key"])
-            if c is not None and c.proc.poll() is None:
+            if c is not None and c.alive():
                 return c
             if c is not None:
                 c.close()
                 self._live.pop(s["key"], None)
-            c = Client(s.get("command") or sys.executable,
-                       s.get("args"), s.get("env"), s.get("cwd"),
-                       s.get("timeout", 20))
+            c = _connect(s)
             self._live[s["key"]] = c
-            self._say("     ↳ MCP 연결: {} ({} {})".format(
+            self._say("     ↳ MCP 연결: {} ({} {}) — {}".format(
                 s.get("name") or s["key"], c.server.get("name") or "?",
-                c.server.get("version") or ""))
+                c.server.get("version") or "", c.where()))
             return c
 
     @staticmethod
@@ -439,10 +682,15 @@ class Hub:
         for s in self.servers:
             key = s["key"]
             c = self._live.get(key)
-            alive = bool(c is not None and c.proc.poll() is None)
+            alive = bool(c is not None and c.alive())
+            trans = str(s.get("transport") or "stdio").lower()
             row = {"key": key, "name": s.get("name") or key,
-                   "addr": (s.get("env") or {}).get("QA_BASE") or "",
-                   "script": (s.get("args") or [""])[0],
+                   "transport": trans,
+                   # ★어느 자리를 보고 있는지가 진단의 반이다. stdio 는
+                   #   스크립트, http 는 주소 — 빈 칸으로 두면 "왜 안 되냐" 를
+                   #   또 처음부터 짚어야 한다.
+                   "addr": s.get("url") or (s.get("env") or {}).get("QA_BASE") or "",
+                   "script": (s.get("args") or [""])[0] if trans == "stdio" else "",
                    "started": c is not None, "alive": alive,
                    "server": (c.server if c else {}) or {},
                    "tools": [], "err": ""}
@@ -453,8 +701,11 @@ class Hub:
                 row["alive"] = True
                 row["server"] = cc.server
                 row["tools"] = [t["name"] for t in cc.tools()]
-                txt, bad = cc.call("qa_meta") if "qa_meta" in row["tools"] \
-                    else ("", False)
+                # 맛보기로 부를 도구는 서버마다 다르다 (설정에 적어 둔다)
+                probe = s.get("probe") or ("qa_meta" if "qa_meta" in row["tools"]
+                                           else "")
+                txt, bad = cc.call(probe, s.get("probe_args")) if probe \
+                    and probe in row["tools"] else ("", False)
                 row["ok"] = not bad
                 row["sample"] = (txt or "").splitlines()[:1]
                 if bad:

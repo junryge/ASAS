@@ -177,12 +177,21 @@ def main():
     #   가 나왔다 — 코드를 고치게 만들면 안 된다.
     ap.add_argument("--qa", default="",
                     help="요청관리(qa/app.py) 주소 (기본 http://127.0.0.1:10500)")
+    # ★위키 MCP(LLM_WIKI_MCP/amhs-llm-wiki/mcp_server.py)는 **따로 떠 있어야**
+    #   한다 — 공식 SDK(FastMCP) 로 streamable-http 를 쓰기 때문에 아바타가
+    #   자식 프로세스로 못 띄운다. 다른 PC 에 있으면 이걸 준다.
+    ap.add_argument("--wiki", default="",
+                    help="위키 MCP 주소 (기본 http://127.0.0.1:8020/mcp)")
     args = ap.parse_args()
     if args.sentinel:
         from avatar import config as _cfg
         _cfg.SENTINEL["url"] = args.sentinel.rstrip("/")
     if args.qa:
         os.environ["QA_BASE"] = args.qa.rstrip("/")
+    if args.wiki:
+        u = args.wiki.rstrip("/")
+        # 주소만 주고 /mcp 를 빠뜨리기 쉽다 — 그러면 조용히 404 다
+        os.environ["WIKI_MCP_URL"] = u if u.endswith("/mcp") else u + "/mcp"
 
     if not (BASE_DIR / "static" / "index.html").is_file():
         print("\n  [!] static/index.html 이 없습니다. 압축을 통째로 풀었는지 확인하세요.")
