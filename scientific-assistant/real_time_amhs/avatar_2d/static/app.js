@@ -4064,15 +4064,35 @@ function mcpRender(j){
 }
 
 function mcpDot(){
-  const d=$('#mcpDot');
-  if(!d) return;
   const on=MCP.filter(s=>s.enabled).length;
   const ok=MCP.filter(s=>s.enabled&&s.ok).length;
-  d.style.background = !on ? '#555' : (ok===on ? '#3ddc84' : '#ff6b6b');
+  const d=$('#mcpDot');
+  if(d) d.style.background = !on ? '#555' : (ok===on ? '#3ddc84' : '#ff6b6b');
+  /* 칩에도 같은 것을 보여 준다 — 서랍만 열어도 붙었는지 알 수 있게 */
+  const c=$('#mcpChip');
+  if(c){
+    c.textContent = on ? ('MCP '+ok+'/'+on) : 'MCP';
+    c.classList.toggle('on', on>0 && ok===on);
+    c.title = !on ? '외부 도구 전부 꺼짐 — 누르면 설정의 그 칸으로 갑니다'
+      : (ok===on ? '외부 도구 '+ok+'개 붙었습니다 — 누르면 설정으로'
+                 : '켜진 '+on+'개 중 '+ok+'개만 붙었습니다 — 누르면 설정으로');
+  }
 }
 
 if($('#mcpRefresh'))   $('#mcpRefresh').onclick   = ()=>mcpLoad();
 if($('#mcpReconnect')) $('#mcpReconnect').onclick = ()=>mcpOp('reconnect','');
+
+/* ★칩 하나 — "MCP 를 어디서 켜고 끄냐" 를 못 찾겠다는 말이 나왔다.
+   설정 탭 아홉 번째 칸에 있으면 아무도 못 찾는다. 눌러서 바로 가게 한다. */
+if($('#mcpChip')) $('#mcpChip').onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  document.querySelector('.tab[data-p=cfg]').classList.add('on');
+  $('#p-cfg').classList.add('on');
+  const g=$('#mcpList');
+  if(g && g.parentNode) g.parentNode.scrollIntoView({behavior:'smooth', block:'start'});
+  mcpLoad();                       // 열 때마다 지금 상태를 다시 본다
+};
 
 /* 서버측 설정(자료 예산·컨텍스트 한도·대화 기록 수) 동기화 */
 function pushServerSettings(){

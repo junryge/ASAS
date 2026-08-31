@@ -115,6 +115,7 @@
             <div class="chip on" id="bubbleChip" title="대사 표시 방식 — 노벨(전문) · 말풍선(요약) · 끔">노벨</div>
             <div class="chip" id="patchChip">궁예</div>
             <div class="chip" id="docChip" title="MD / TXT 자료 주입">자료</div>
+            <div class="chip" id="mcpChip" title="외부 도구(MCP) — 요청이력·위키. 누르면 설정의 그 칸으로 갑니다">MCP</div>
             <div class="chip on" id="eyeChip" title="마우스를 눈으로 따라봅니다">시선</div>
             <div class="chip on" id="badgeChip" title="목에 건 사원증">사원증</div>
             <div class="chip" id="alarmChip" title="FAB 알람 패널이 안 보이면 누르세요 — 우상단 제자리로 돌아옵니다">FAB알람</div>
@@ -239,6 +240,28 @@
           (토큰은 서버에만 있고 브라우저엔 안 남습니다).<br>
           HTML만 단독 실행하면 키가 필요하고, 없으면 <b>데모 모드</b>로 동작합니다.</p>
         </div>
+        <!-- 외부 도구 (MCP) — 켜고 끄고, 주소 고치고, 다시 붙기.
+             ★여기가 없으면 "왜 안 되지" 를 콘솔 로그로만 짚어야 한다.
+               현장에서는 그게 안 된다. -->
+        <div class="grp">
+          <h4><span class="dot" id="mcpDot"></span>외부 도구 (MCP)</h4>
+          <div id="mcpList"><p class="hint">불러오는 중…</p></div>
+          <div class="row" style="gap:6px;margin-top:9px">
+            <button class="ghost" id="mcpRefresh" style="flex:1;padding:9px 0">상태 새로고침</button>
+            <button class="ghost" id="mcpReconnect" style="flex:1;padding:9px 0">전부 다시 붙기</button>
+          </div>
+          <p class="hint" id="mcpMsg" style="margin-top:8px"></p>
+          <p class="hint" style="margin-top:8px">
+          서윤이 대화 중에 <b>바깥 시스템을 직접 조회</b>하는 길입니다.
+          질문에 걸리는 낱말이 있을 때만 돕니다 — 평소 대화에서는 안 뜹니다.<br>
+          <b>QA 요청이력</b>은 아바타가 알아서 띄웁니다.
+          <b>AMHS 위키</b>는 <code>LLM_WIKI_MCP/amhs-llm-wiki</code> 에서
+          <code>python mcp_server.py</code> 를 <b>따로 띄워 둬야</b> 붙습니다.<br>
+          안 떠 있는 서버는 <b>끄는 게 낫습니다</b> — 켜 두면 물어볼 때마다
+          붙으러 갔다가 실패해서 답이 느려집니다. 여기서 끈 것은 서버에
+          저장되어 <b>재시작해도 그대로</b>입니다.</p>
+        </div>
+
         <div class="grp">
           <h4>세션 기록</h4>
           <p class="hint" id="sessStat"></p>
@@ -287,28 +310,6 @@
             <span class="val" id="v_docbud"></span></div>
           <p class="hint">자료가 예산보다 크면 <b>질문과 관련된 문단만</b> 골라 넣습니다.
           작으면 전체를 넣습니다. 예산이 클수록 정확하지만 응답이 느리고 비용이 늘어납니다.</p>
-        </div>
-
-        <!-- 외부 도구 (MCP) — 켜고 끄고, 주소 고치고, 다시 붙기.
-             ★여기가 없으면 "왜 안 되지" 를 콘솔 로그로만 짚어야 한다.
-               현장에서는 그게 안 된다. -->
-        <div class="grp">
-          <h4><span class="dot" id="mcpDot"></span>외부 도구 (MCP)</h4>
-          <div id="mcpList"><p class="hint">불러오는 중…</p></div>
-          <div class="row" style="gap:6px;margin-top:9px">
-            <button class="ghost" id="mcpRefresh" style="flex:1;padding:9px 0">상태 새로고침</button>
-            <button class="ghost" id="mcpReconnect" style="flex:1;padding:9px 0">전부 다시 붙기</button>
-          </div>
-          <p class="hint" id="mcpMsg" style="margin-top:8px"></p>
-          <p class="hint" style="margin-top:8px">
-          서윤이 대화 중에 <b>바깥 시스템을 직접 조회</b>하는 길입니다.
-          질문에 걸리는 낱말이 있을 때만 돕니다 — 평소 대화에서는 안 뜹니다.<br>
-          <b>QA 요청이력</b>은 아바타가 알아서 띄웁니다.
-          <b>AMHS 위키</b>는 <code>LLM_WIKI_MCP/amhs-llm-wiki</code> 에서
-          <code>python mcp_server.py</code> 를 <b>따로 띄워 둬야</b> 붙습니다.<br>
-          안 떠 있는 서버는 <b>끄는 게 낫습니다</b> — 켜 두면 물어볼 때마다
-          붙으러 갔다가 실패해서 답이 느려집니다. 여기서 끈 것은 서버에
-          저장되어 <b>재시작해도 그대로</b>입니다.</p>
         </div>
 
         <div class="grp">

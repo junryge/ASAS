@@ -1817,6 +1817,27 @@ class 화면에_MCP_자리가_있다(unittest.TestCase):
             self.assertIn('id="{}"'.format(i), h, i)
         self.assertIn("외부 도구 (MCP)", h)
 
+    def test_찾을_수_있는_자리에_있다(self):
+        """★"어디서 해야 할지 몰라서" 라는 말이 나왔다.
+
+        설정 탭 아홉 번째 칸에 있으면 아무도 못 찾는다. 연결끼리 붙여 둔다 —
+        LLM 연결 **바로 다음**이다. 서랍의 칩에서도 바로 갈 수 있다.
+        """
+        h = self._read("static", "index.html")
+        llm = h.index("LLM 연결")
+        mcp = h.index("외부 도구 (MCP)")
+        self.assertLess(llm, mcp)
+        # 사이에 다른 칸이 끼면 안 된다
+        between = h[llm:mcp]
+        self.assertEqual(between.count("<h4>"), 0,
+                         "LLM 연결과 외부 도구 사이에 다른 칸이 있다")
+        self.assertIn('id="mcpChip"', h, "서랍 칩이 없다")
+        j = self._read("static", "app.js")
+        i = j.index("$('#mcpChip').onclick")
+        self.assertIn("data-p=cfg", j[i:i + 500])
+        self.assertIn("scrollIntoView", j[i:i + 500])
+        self.assertIn("mcpLoad()", j[i:i + 500])
+
     def test_따로_띄워야_한다는_것을_적어_둔다(self):
         """★이걸 모르면 "왜 안 되지" 를 계속 반복한다."""
         h = self._read("static", "index.html")
