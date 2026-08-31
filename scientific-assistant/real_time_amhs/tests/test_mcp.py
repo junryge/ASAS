@@ -2243,6 +2243,53 @@ class 위키_설정이_말이_된다(unittest.TestCase):
         self.assertIn("요청 접수 건수", s)
         self.assertIn("지금 수치가 아니다", s)
 
+    def test_지식_설명은_짧게_줄이지_말라고_박는다(self):
+        """★페르소나에 "1~3문장 · 목록 금지" 가 있다. 그건 **잡담용**이다.
+
+        지식 설명에까지 걸면 "LFT 는 리프터예요" 한 줄로 끝난다 — 층간
+        반송이라는 것도, ZT 라고도 부른다는 것도 다 잘린다. 위키를 읽어 온
+        보람이 없다. 말투는 그대로 두고 분량만 푼다.
+        """
+        s = llm.build_messages("서윤이다.", "LFT가 뭐야?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[AMHS 위키]\nLFT: 리프터."
+                               )[0]["content"]
+        self.assertIn("짧게 줄이지 마라", s)
+        self.assertIn("잡담", s)
+        self.assertIn("말투는 그대로", s)
+        self.assertIn("줄바꿈으로 나눠", s)
+
+    def test_호기명을_뭉개지_말라고_박는다(self):
+        """★`6ABL60~` 를 '6ABL 계열' 로 뭉개면 현장이 아는 이름이 사라진다."""
+        s = llm.build_messages("서윤이다.", "6ABL60 이 뭐야?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[AMHS 위키]\n6ABL60~ 리프터"
+                               )[0]["content"]
+        self.assertIn("원문 그대로", s)
+        self.assertIn("6ABL60", s)
+        self.assertIn("경로를 물으면", s)      # 중간을 건너뛰지 말라고
+
+    def test_잡담에는_분량_규칙을_안_푼다(self):
+        """★위키가 안 걸린 대화까지 길어지면 서윤이 아니다."""
+        s = llm.build_messages("서윤이다.", "요청 뭐 있어?", [], _빈자료(),
+                               {"docBudget": 6000},
+                               mcp_text="[QA 요청이력]\n총 2건")[0]["content"]
+        self.assertNotIn("짧게 줄이지 마라", s)
+
+    def test_본문을_넉넉히_읽는다(self):
+        """★검색 조각(500자)만 보고 답하면 앞머리만 안다. 본문 몫을 따로
+        크게 준다 — 검색은 '어느 쪽인가' 만 알면 된다."""
+        w = [x for x in config.MCP_SERVERS if x["key"] == "wiki"][0]
+        then = w["calls"][0]["then"]
+        self.assertGreaterEqual(then["max"], 3, "본문을 두 쪽만 읽는다")
+        self.assertGreater(then.get("budget", 0), w["budget"],
+                           "본문 몫이 검색 조각 몫보다 작다")
+
+    def test_본문_예산이_검색_예산과_따로_논다(self):
+        h = mcp_client.Hub([])
+        self.assertIn("잘렸다", h._fit({"budget": 10}, "가" * 50))
+        self.assertEqual(h._fit({"budget": 4000}, "가" * 50), "가" * 50)
+
     def test_위키_숫자를_현재값으로_말하지_말라고_박는다(self):
         """★위키에는 예시 수치가 적혀 있다. 그걸 현재 값처럼 말하면
         관제 화면과 어긋난다 — 첨부에서 똑같이 겪은 자리다."""

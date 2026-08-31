@@ -598,9 +598,13 @@ class Hub:
             c = self._live.get(s["key"], c)
             used += 1
             if txt:
+                # ★본문은 검색 조각보다 넉넉히 준다. 검색은 '어느 쪽인가' 만
+                #   알면 되고, 답은 본문에서 나온다 — 같은 몫으로 자르면
+                #   조각에 예산을 쓰고 정작 본문이 잘린다.
                 lines.append("· {} #{}{}\n{}".format(
                     then.get("label") or then["tool"], v,
-                    " (실패)" if bad else "", self._fit(s, txt)))
+                    " (실패)" if bad else "",
+                    self._fit(then if then.get("budget") else s, txt)))
         return used
 
     @staticmethod
