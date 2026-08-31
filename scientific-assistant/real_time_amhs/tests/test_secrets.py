@@ -70,14 +70,31 @@ STRINGS = re.compile(r"""["']([^"'\n]{1,128})["']""")
 
 def _line_hits(line: str):
     """한 줄에서 (이름, 값) 후보. 비밀스러운 이름이 줄에 있으면 그 줄의
-    **모든 문자열**을 값 후보로 본다 (함수 인자로 넘기는 경우 포함)."""
+    **모든 문자열**을 값 후보로 본다 (함수 인자로 넘기는 경우 포함).
+
+    ★단, 그 문자열이 **자기 이름을 달고** 대입돼 있고 그 이름이 비밀스럽지
+      않으면 뺀다. 실제로 이런 줄에서 헛발을 짚었다:
+
+          open(os.path.join(base, "api_key.txt"), encoding="utf-8-sig")
+
+      줄에 api_key 가 있다는 이유로 encoding="utf-8-sig" 를 키로 봤다
+      (9자·소문자·숫자·기호 섞임). 이름이 encoding 인 값은 encoding 이다.
+
+      원래 새어 나갔던 모양은 이 완화에 안 걸린다 —
+          os.environ.get("MOCK_PW", "실제비번")
+      은 '=' 뒤가 함수 호출이라 애초에 이름이 안 붙는다. 그물은 그대로다.
+    """
     out = []
     named = {v: n for n, v in ASSIGN.findall(line)}
     if not SECRETISH.search(line):
         return out
     for v in STRINGS.findall(line):
-        if _looks_secret(v):
-            out.append((named.get(v) or _nearest_name(line) or "?", v))
+        if not _looks_secret(v):
+            continue
+        own = named.get(v)
+        if own and not SECRETISH.search(own):
+            continue                    # encoding=… 처럼 제 이름이 안 수상하다
+        out.append((own or _nearest_name(line) or "?", v))
     return out
 
 
@@ -196,6 +213,11 @@ class NoHardcodedSecrets(unittest.TestCase):
             'password = "change-me"',
             'tokenizer = "Kiwi-v1.2!x"',       # token 이 들어갔지만 다른 말
             'author = "Hong-Gildong!1"',       # auth 가 들어갔지만 다른 말
+            # ★실제로 헛발을 짚은 줄. 줄에 api_key 가 있다는 이유로
+            #   encoding 값을 키로 봤다. 제 이름을 달고 있고 그 이름이
+            #   수상하지 않으면 값도 수상하지 않다.
+            'with open(os.path.join(b, "api_key.txt"), encoding="utf-8-sig") as f:',
+            'requests.post(url, headers=auth, timeout=1, encoding="utf-8-sig")',
         ]
         for ln in fine:
             self.assertEqual(_line_hits(ln), [], f"잘못 잡음: {ln}")
