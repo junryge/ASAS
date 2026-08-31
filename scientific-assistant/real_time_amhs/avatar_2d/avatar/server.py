@@ -220,6 +220,13 @@ class App:
             if not isinstance(v, dict):
                 continue
             if v.get("url") and s.get("url"):
+                # ★화면에서 저장한 값이 코드 기본값을 이긴다. 그게 맞는데,
+                #   **이기고 있다는 사실이 보여야** 한다. 실제로 겪었다:
+                #   기본값을 8020 으로 되돌렸는데도 화면에 예전에 넣어 둔
+                #   8100 이 남아 있어서 계속 HTML 404 가 났다. 코드를 아무리
+                #   고쳐도 안 바뀌니 원인을 못 찾는다.
+                if str(v["url"]) != s["url"]:
+                    s["url_default"] = s["url"]
                 s["url"] = str(v["url"])
             if "enabled" in v:
                 # 파일이 없어서 꺼진 것은 화면이 못 켠다 — 켜 봐야 안 된다
@@ -375,6 +382,16 @@ class Handler(SimpleHTTPRequestHandler):
                                                  " (자식 프로세스로 띄웁니다)"})
             hub.set_url(key, (b or {}).get("url"))
             App.settings.update({"mcp": {key: {"url": s["url"]}}})
+        elif op == "url_default":
+            # ★저장해 둔 주소를 지우고 코드 기본값으로. 없으면 못 돌아간다 —
+            #   화면에 한 번 넣은 값이 영영 남아서 "코드를 고쳐도 안 바뀐다".
+            d = s.get("url_default") or ""
+            if not d:
+                return self._json(200, {"ok": False,
+                                        "error": "이 서버는 기본값이 따로 없습니다"})
+            hub.set_url(key, d)
+            s.pop("url_default", None)
+            App.settings.update({"mcp": {key: {"url": ""}}})
         else:
             return self._json(200, {"ok": False,
                                     "error": "모르는 동작: {}".format(op)})

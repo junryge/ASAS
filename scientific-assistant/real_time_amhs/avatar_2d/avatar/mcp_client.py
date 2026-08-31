@@ -817,6 +817,8 @@ class Hub:
                    #   스크립트, http 는 주소 — 빈 칸으로 두면 "왜 안 되냐" 를
                    #   또 처음부터 짚어야 한다.
                    "addr": s.get("url") or (s.get("env") or {}).get("QA_BASE") or "",
+                   # 화면에서 저장한 값이 코드 기본값을 덮고 있으면 그 사실
+                   "url_default": s.get("url_default") or "",
                    "script": (s.get("args") or [""])[0] if trans == "stdio" else "",
                    "started": c is not None, "alive": alive,
                    "enabled": bool(s.get("enabled", True)),

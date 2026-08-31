@@ -71,7 +71,9 @@ class Settings:
                     if "enabled" in vv:
                         one["enabled"] = bool(vv["enabled"])
                     if "url" in vv:
-                        one["url"] = str(vv["url"] or "")[:300]
+                        u = str(vv["url"] or "")[:300]
+                        # 빈 값 = 저장해 둔 것을 지우고 코드 기본값으로
+                        one.pop("url", None) if not u else one.update(url=u)
                     cur[str(kk)[:40]] = one
                 self.data[k] = cur
             try:

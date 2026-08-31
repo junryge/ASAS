@@ -1677,6 +1677,47 @@ class 안_떠_있는_서버에_매달리지_않는다(unittest.TestCase):
         head = src[:j]
         self.assertNotIn("with self._lock:\n            c = _connect", head)
 
+    def test_화면에_저장한_주소가_이기는_것을_보여_준다(self):
+        """★실제로 하루를 잡아먹은 자리.
+
+        화면에서 한 번 넣은 주소는 data/settings.json 에 남아서 코드 기본값을
+        이긴다. 그게 맞는 동작인데, **이기고 있다는 사실이 안 보였다.**
+        기본값을 8100→8020 으로 되돌렸는데도 저장된 8100 이 남아 계속
+        HTML 404 가 났다 — 코드를 아무리 고쳐도 안 바뀌니 원인을 못 찾는다.
+        """
+        p1 = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+        with open(p1, encoding="utf-8") as f:
+            src = f.read()
+        i = src.index('if v.get("url") and s.get("url"):')
+        self.assertIn('s["url_default"]', src[i:i + 700])
+        # 되돌릴 길이 있어야 한다
+        self.assertIn('elif op == "url_default":', src)
+        j = src.index('elif op == "url_default":')
+        self.assertIn('{"mcp": {key: {"url": ""}}}', src[j:j + 800])
+        # 상태에 실어 보내고
+        p2 = os.path.join(util.BASE, "avatar_2d", "avatar", "mcp_client.py")
+        with open(p2, encoding="utf-8") as f:
+            self.assertIn('"url_default"', f.read())
+        # 화면에 띄우고 되돌리는 단추까지
+        p3 = os.path.join(util.BASE, "avatar_2d", "static", "app.js")
+        with open(p3, encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("s.url_default", js)
+        self.assertIn("기본값으로", js)
+        self.assertIn("'url_default', s.key", js)
+
+    def test_빈_주소를_저장하면_기본값으로_돌아간다(self):
+        """★지우는 길이 없으면 한 번 넣은 값이 영영 남는다."""
+        import pathlib, shutil, tempfile
+        from avatar.settings import Settings
+        d = tempfile.mkdtemp(prefix="mcpurl")
+        self.addCleanup(lambda: shutil.rmtree(d, True))
+        st = Settings(pathlib.Path(d) / "settings.json")
+        st.update({"mcp": {"wiki": {"url": "http://a:8100/mcp"}}})
+        self.assertEqual(st.all()["mcp"]["wiki"]["url"], "http://a:8100/mcp")
+        st.update({"mcp": {"wiki": {"url": ""}}})
+        self.assertNotIn("url", st.all()["mcp"]["wiki"])
+
     def test_코드_안_고치고_끌_수_있다(self):
         """★안 떠 있는 서버 때문에 느려질 때, 바로 뗄 수 있어야 한다."""
         p1 = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
@@ -1921,6 +1962,136 @@ class 화면에_MCP_자리가_있다(unittest.TestCase):
         i = s.index("def _mcp_op")
         self.assertIn('off_reason', s[i:i + 2200])
         self.assertIn('startswith("서버 파일")', s[i:i + 2200])
+
+
+class 위키를_직접_띄우는_길도_있다(unittest.TestCase):
+    """LLM_WIKI_MCP/wiki_mcp_stdio.py — 포트도 설치도 없는 쪽.
+
+    ★왜 또 만들었나. 공식 SDK 쪽(streamable-http)이 현장에서 세 번 걸렸다:
+        · 사람이 따로 띄워야 한다
+        · 포트를 헷갈린다 (웹앱 :8100 · MCP :8020 → HTML 404)
+        · pip install "mcp>=1.27,<2" 가 필요하다 (폐쇄망 반입)
+      이건 아바타가 자식 프로세스로 띄우므로 셋 다 없다.
+    """
+
+    PATH = ("LLM_WIKI_MCP", "wiki_mcp_stdio.py")
+
+    def setUp(self):
+        import sqlite3, tempfile, shutil
+        p = os.path.join(util.BASE, *self.PATH)
+        if not os.path.isfile(p):
+            raise unittest.SkipTest("wiki_mcp_stdio.py 가 없다")
+        self.py = p
+        self.dir = tempfile.mkdtemp(prefix="wikidb")
+        self.addCleanup(lambda: shutil.rmtree(self.dir, ignore_errors=True))
+        self.db = os.path.join(self.dir, "wiki.db")
+        c = sqlite3.connect(self.db)
+        c.executescript(
+            "CREATE TABLE domains(id INTEGER PRIMARY KEY, slug TEXT, name TEXT,"
+            " description TEXT, created_at TEXT);"
+            "CREATE TABLE pages(id INTEGER PRIMARY KEY, domain_id INT, title TEXT,"
+            " slug TEXT, ptype TEXT, tags TEXT, summary TEXT, body_md TEXT,"
+            " author TEXT, source_ids TEXT, created_at TEXT, updated_at TEXT);"
+            "CREATE TABLE sources(id INTEGER PRIMARY KEY, domain_id INT,"
+            " filename TEXT, stored_name TEXT, filetype TEXT, description TEXT,"
+            " extracted_text TEXT, uploader TEXT, created_at TEXT);"
+            "INSERT INTO domains VALUES(1,'virtual-avatar','버츄얼 아바타','','');"
+            "INSERT INTO pages VALUES(12,1,'반송 장치 종류와 역할','x','concept',"
+            "'VHL,LFT','FOUP 이 거치는 장치','LFT 는 리프터다. 층간 반송을 "
+            "담당한다.','','','','2026-08-30');"
+            "INSERT INTO sources VALUES(4,1,'연결도.png','a.png','image',"
+            "'M14 와 M16 연결도','','john','2026-08-30');")
+        c.commit()
+        c.close()
+
+    def talk(self, *calls):
+        """진짜 프로세스를 띄워 stdio 로 주고받는다."""
+        import subprocess
+        reqs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                 "params": {"protocolVersion": mcp_client.PROTO}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"}]
+        for i, (name, args) in enumerate(calls, start=2):
+            reqs.append({"jsonrpc": "2.0", "id": i, "method": "tools/call",
+                         "params": {"name": name, "arguments": args}}
+                        if name else
+                        {"jsonrpc": "2.0", "id": i, "method": "tools/list"})
+        p = subprocess.run(
+            [sys.executable, self.py],
+            input="\n".join(json.dumps(r) for r in reqs),
+            capture_output=True, text=True, timeout=40,
+            env=dict(os.environ, WIKI_DB=self.db))
+        return [json.loads(x) for x in p.stdout.splitlines() if x.strip()]
+
+    def test_악수하고_도구를_준다(self):
+        got = self.talk((None, None))
+        self.assertEqual(got[0]["result"]["serverInfo"]["name"], "llm-wiki")
+        names = [t["name"] for t in got[1]["result"]["tools"]]
+        self.assertEqual(set(names), {"listDomains", "searchWiki", "readPage",
+                                      "listSources", "readSource"})
+
+    def test_읽기_전용이다(self):
+        """★위키를 고치는 도구가 섞이면 안 된다."""
+        got = self.talk((None, None))
+        for t in got[1]["result"]["tools"]:
+            for bad in ("create", "update", "delete", "write", "ingest",
+                        "save", "edit"):
+                self.assertNotIn(bad, t["name"].lower(), t["name"])
+
+    def test_검색하고_본문을_읽는다(self):
+        got = self.talk(("searchWiki", {"query": "LFT 가 뭐야"}),
+                        ("readPage", {"pageId": 12}))
+        s1 = got[1]["result"]["content"][0]["text"]
+        self.assertIn("#12", s1)
+        self.assertIn("반송 장치", s1)
+        self.assertFalse(got[1]["result"]["isError"])
+        s2 = got[2]["result"]["content"][0]["text"]
+        self.assertIn("리프터", s2)          # 조각이 아니라 본문
+
+    def test_없는_것은_isError_로_준다(self):
+        """★JSON-RPC error 를 내면 클라이언트가 연결을 접는다."""
+        got = self.talk(("readPage", {"pageId": 999}))
+        self.assertNotIn("error", got[1])
+        self.assertTrue(got[1]["result"]["isError"])
+
+    def test_검색_순위가_웹앱과_같다(self):
+        """★화면에서 검색한 순서와 서윤이 받는 순서가 다르면
+        "화면엔 이게 위에 뜨는데 왜 딴소리냐" 가 된다."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wiki_stdio", self.py)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        # app.py 의 tokenize 와 같은 규칙 (한글은 2글자 조각까지)
+        self.assertEqual(m.tokenize("LFT 리프터"),
+                         ["lft", "리프터", "리프", "프터"])
+        docs = [{"id": 1, "kind": "page", "title": "리프터", "text": "층간 반송"},
+                {"id": 2, "kind": "page", "title": "스토커", "text": "임시 저장"}]
+        self.assertEqual(m.bm25_search("리프터", docs)[0][1]["id"], 1)
+
+    def test_DB_를_못_찾으면_어디를_봤는지_말한다(self):
+        """★"안 된다" 만 하면 어디를 고쳐야 할지 모른다."""
+        import subprocess
+        p = subprocess.run(
+            [sys.executable, self.py, "--check"], capture_output=True,
+            text=True, timeout=30,
+            env=dict(os.environ, WIKI_DB=os.path.join(self.dir, "없다.db")))
+        self.assertIn("없다.db", p.stdout)
+        self.assertIn("WIKI_DB", p.stdout)
+
+    def test_혼자_확인할_수_있다(self):
+        import subprocess
+        p = subprocess.run(
+            [sys.executable, self.py, "--check"], capture_output=True,
+            text=True, timeout=30, env=dict(os.environ, WIKI_DB=self.db))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("버츄얼 아바타", p.stdout)
+        self.assertIn("페이지 1", p.stdout)
+
+    def test_설정에_바꾸는_법을_적어_뒀다(self):
+        """★코드를 읽는 사람이 이 길이 있다는 걸 알아야 쓴다."""
+        p = os.path.join(util.BASE, "avatar_2d", "avatar", "config.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("wiki_mcp_stdio.py", src)
 
 
 class 위키_설정이_말이_된다(unittest.TestCase):

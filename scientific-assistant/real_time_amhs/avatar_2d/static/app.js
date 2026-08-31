@@ -4042,6 +4042,16 @@ function mcpRender(j){
 
     /* 주소는 http 로 붙는 서버만 고칠 수 있다 (stdio 는 프로세스라 주소가 없다) */
     if(s.transport==='http'){
+      /* ★여기서 저장한 값이 코드 기본값을 **이긴다**. 그게 맞는데, 이기고
+         있다는 사실이 안 보이면 사람이 원인을 못 찾는다 — 실제로 겪었다:
+         기본값을 8020 으로 되돌렸는데 여기 저장된 8100 이 남아서 계속
+         404 가 났다. 코드를 아무리 고쳐도 안 바뀌니 미칠 노릇이다. */
+      if(s.url_default){
+        const w=document.createElement('div'); w.className='mcpSub mcpErr';
+        w.textContent='※ 여기서 저장한 주소를 쓰는 중입니다 — 기본값('
+          + s.url_default + ') 이 무시됩니다';
+        row.appendChild(w);
+      }
       const wrap=document.createElement('div'); wrap.className='mcpUrl';
       const inp=document.createElement('input'); inp.type='text';
       inp.value=s.addr||''; inp.placeholder='http://10.x.x.x:8020/mcp';
@@ -4051,6 +4061,13 @@ function mcpRender(j){
       btn.onclick=()=>mcpOp('url', s.key, {url:inp.value});
       inp.onkeydown=(e)=>{ if(e.key==='Enter') btn.click(); };
       wrap.appendChild(inp); wrap.appendChild(btn);
+      if(s.url_default){
+        const rst=document.createElement('button');
+        rst.textContent='기본값으로'; rst.className='ghost';
+        rst.title='저장해 둔 주소를 지우고 ' + s.url_default + ' 로 돌아갑니다';
+        rst.onclick=()=>mcpOp('url_default', s.key);
+        wrap.appendChild(rst);
+      }
       row.appendChild(wrap);
     }
     list.appendChild(row);
