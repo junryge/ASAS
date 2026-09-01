@@ -189,5 +189,138 @@ class 화면(unittest.TestCase):
         self.assertNotIn("data:image/webp;base64", self.h)
 
 
+APPCSS = os.path.join(util.BASE, "avatar_2d", "static", "app.css")
+
+
+class 자리바꿈(unittest.TestCase):
+    """서햄터를 두 번 누르면 **서윤이 화면에서 사라지고** 서햄터만 남는다.
+    돌아오는 길은 오른쪽 아래 팝업(#petBack)의 서윤을 누르는 것이다.
+
+    ★전에는 서윤을 어깨 위로 줄여 올렸다. "아예 서윤이 빼라, 서햄터만
+      보이게" 라고 해서 감추는 쪽으로 바꿨다. 감추면 **돌아올 길이 없어지는
+      것**이 이 변경의 진짜 위험이라, 팝업이 있는지를 여기서 못 박는다.
+    """
+
+    def setUp(self):
+        self.js = _read(JS)
+        self.h = _read(HTML)
+        self.css = _read(APPCSS)
+
+    # ── 서윤을 감춘다 ────────────────────────────────────────────────
+    def test_서윤을_감춘다(self):
+        m = re.search(r"#stageWrap\.petswap[^{]*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m, "자리바꿈 때 캔버스를 감추는 규칙이 없다")
+        self.assertIn("visibility:hidden", m.group(1).replace(" ", ""))
+
+    def test_감출_때_display_none_을_안_쓴다(self):
+        """★placePet() 이 캔버스 상자로 무대 크기를 잰다. display:none 이면
+        그 상자가 0×0 이 되어 서햄터까지 사라진다."""
+        m = re.search(r"#stageWrap\.petswap[^{]*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m)
+        self.assertNotIn("display:none", m.group(1).replace(" ", ""))
+
+    def test_캔버스_둘_다_감춘다(self):
+        """#gl 만 감추면 #fx(눈물·효과)가 허공에 남는다."""
+        i = self.css.index("#stageWrap.petswap")
+        blk = self.css[i:self.css.index("}", i)]
+        self.assertIn("#gl", blk)
+        self.assertIn("#fx", blk)
+
+    def test_서윤을_VIEW_로_줄이지_않는다(self):
+        """★VIEW 를 건드리면 말풍선·손잡이·마우스 추적이 전부 따라 움직인다.
+        이제는 감추기만 하므로 computeView 에 자리바꿈 분기가 없어야 한다."""
+        i = self.js.index("function computeView(")
+        body = self.js[i:i + 2500]
+        self.assertNotIn("PET.swap", body, "computeView 가 아직 서윤을 줄인다")
+
+    # ── 돌아오는 길 ─────────────────────────────────────────────────
+    def test_되돌아가기_팝업이_있다(self):
+        """서윤이 화면에 없으므로, 이게 없으면 돌아올 길이 막힌다."""
+        self.assertIn('id="petBack"', self.h)
+        self.assertIn("$('#petBack').onclick = ()=>setSwap(false)", self.js)
+
+    def test_팝업이_무대_안에_있다(self):
+        i = self.h.index('id="stageWrap"')
+        j = self.h.index('id="bubble"')
+        self.assertIn('id="petBack"', self.h[i:j])
+
+    def test_팝업이_자리바꿈_중에만_뜬다(self):
+        m = re.search(r"#petBack\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m)
+        self.assertIn("display:none", m.group(1).replace(" ", ""))
+        self.assertIn("#petBack.on{display:flex}", self.css.replace(" ", ""))
+        self.assertIn("pb.classList.toggle('on', on)", self.js)
+
+    def test_팝업을_서햄터가_안_덮는다(self):
+        """★서햄터가 무대를 크게 덮는다. 팝업이 그 아래로 들어가면 눌러도
+        서햄터가 클릭을 먹어 영영 못 돌아온다."""
+        pet = re.search(r"#pet\.swap\{[^}]*z-index:\s*(\d+)", _read(CSS))
+        back = re.search(r"#petBack\{[^}]*z-index:\s*(\d+)", self.css)
+        self.assertIsNotNone(pet)
+        self.assertIsNotNone(back)
+        self.assertGreater(int(back.group(1)), int(pet.group(1)))
+
+    def test_팝업이_클릭을_받는다(self):
+        m = re.search(r"#petBack\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m)
+        self.assertNotIn("pointer-events:none", m.group(1).replace(" ", ""))
+        self.assertIn("cursor:pointer", m.group(1).replace(" ", ""))
+
+    # ── 팝업 얼굴 ───────────────────────────────────────────────────
+    def test_팝업_얼굴을_의상에서_잘라_온다(self):
+        """★자를 자리를 CSS 에 박으면 옷을 갈아입을 때 턱·어깨가 나온다.
+        의상마다 머리 위치(CFG.headC)와 크기(headRad)가 다르다."""
+        i = self.js.index("function petBackFace()")
+        body = self.js[i:self.js.index("function setSwap(")]
+        self.assertIn("CFG.headC", body)
+        self.assertIn("CFG.headRad", body)
+        self.assertIn("COSTUMES[costumeIdx]", body)
+
+    def test_팝업_얼굴이_의상을_따라_바뀐다(self):
+        i = self.js.index("function setCostume(")
+        self.assertIn("petBackFace()", self.js[i:self.js.index("function buildCostumeChips(")])
+
+    def test_잘린_그림이_상자_밖으로_안_나간다(self):
+        """★머리 중심을 가운데로 맞추다 보면 그림 위/옆이 상자 밖으로 밀려
+        빈 칸이 생긴다. Math.min(0,…)/Math.max(B-…) 로 가둔다."""
+        i = self.js.index("function petBackFace()")
+        body = self.js[i:self.js.index("function setSwap(")]
+        self.assertIn("Math.min(0,", body.replace(" ", "").replace("Math.min(0,", "Math.min(0,"))
+        self.assertIn("Math.max(B - W", body)
+        self.assertIn("Math.max(B - H", body)
+
+    # ── 손잡이 ─────────────────────────────────────────────────────
+    def test_서햄터_더블클릭으로_바꾼다(self):
+        i = self.js.index("function onPetPointer(")
+        body = self.js[i:self.js.index("if($('#petChip'))")]
+        self.assertIn("setSwap(!PET.swap)", body)
+        self.assertIn("!dbl", body, "한 번 클릭에도 자리가 바뀐다")
+
+    def test_없는_서윤을_좌표로_찾지_않는다(self):
+        """★자리바꿈 중 서윤은 화면에 없다. 그 자리를 재서 갈라 주던 예전
+        코드가 남아 있으면, 무대 아무 데나 눌러도 되돌아가 버린다."""
+        i = self.js.index("function onPetPointer(")
+        body = self.js[i:self.js.index("if($('#petChip'))")]
+        self.assertNotIn("cssToImg", body)
+        self.assertNotIn("onSeoyun", body)
+
+    def test_사원증을_끈다(self):
+        """★서윤이 없는 동안 사원증만 허공에 남으면 안 된다. 돌아올 때 원래대로."""
+        i = self.js.index("function setSwap(")
+        body = self.js[i:self.js.index("function onPetPointer(")]
+        self.assertIn("_badgeBeforeSwap", body)
+        self.assertIn("badgeOn = false", body)
+
+    def test_서햄터를_끄면_자리도_되돌린다(self):
+        """★끈 채로 자리바꿈이 남아 있으면 서윤도 서햄터도 없는 빈 무대가 된다."""
+        i = self.js.index("function setPet(")
+        body = self.js[i:self.js.index("/* ══════════ 자리바꿈")]
+        self.assertIn("setSwap(false)", body)
+
+    def test_이름이_서햄터다(self):
+        self.assertIn("const PET_NAME = '서햄터'", self.js)
+        self.assertIn("서햄터", self.h)
+
+
 if __name__ == "__main__":
     unittest.main()

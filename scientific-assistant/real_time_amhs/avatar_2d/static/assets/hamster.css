@@ -14,7 +14,10 @@
 */
 #pet{
   position:absolute;                 /* 자리는 app.js 가 어깨에 맞춰 잡는다 */
-  pointer-events:none;               /* 클릭이 캐릭터로 그대로 지나가게 */
+  /* ★클릭을 안 먹는다. 두 번 눌러 자리를 바꾸는 것은 **무대**가 받아
+     좌표로 갈라 준다(app.js onPetPointer) — 여기서 먹으면 캐릭터 끌기·
+     손잡이가 막히고, 자리바꿈 중에는 위에 앉은 작은 서윤도 못 누른다. */
+  pointer-events:none;
   z-index:6;                         /* 캐릭터 위, 말풍선(9)·패널 아래 */
   /* ★원본 그림은 **그린스크린(11,144,56) 위에** 그려져 있었다. 어깨에
      얹으려면 배경이 없어야 해서 크로마키로 빼고 알파를 넣었다. 가장자리에
@@ -27,6 +30,11 @@
   will-change:transform;
 }
 #pet.on{opacity:1}
+/* 자리바꿈 — 서햄터가 주인공. 자리·크기는 app.js 가 잡는다.
+   ★서윤은 이때 화면에서 감춰지므로(app.css #stageWrap.petswap) 앞뒤를
+     다툴 상대가 없다. 다만 되돌아가기 팝업(#petBack · z-index 10)보다는
+     아래에 있어야 한다 — 그걸 덮으면 돌아올 길이 막힌다. */
+#pet.swap{z-index:3}
 #pet .scene{width:100%;height:100%}
 
 #pet .scene{

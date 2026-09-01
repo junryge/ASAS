@@ -829,7 +829,8 @@ function computeView(){
   const fx=document.getElementById('fx');
   if(fx.width!==cw||fx.height!==ch){ fx.width=cw; fx.height=ch; }
   const s = Math.min(cw/IMG_W, ch/IMG_H)*0.95*view.zoom;
-  VIEW={scale:s, ox:(cw-IMG_W*s)/2, oy:(ch-IMG_H*s)/2 + view.oy*ch, cw, ch, dpr};
+  const ox = (cw-IMG_W*s)/2, oy = (ch-IMG_H*s)/2 + view.oy*ch;
+  VIEW={scale:s, ox, oy, cw, ch, dpr};
 }
 // 이미지 정규화좌표 -> 캔버스 CSS px
 function imgToCss(u,v){
@@ -2751,6 +2752,8 @@ function setCostume(i, fromFail){
   loadImage(c.src, fromFail ? null : () => { if(prevIdx !== i) setCostume(prevIdx, true); });
   document.querySelectorAll('#costumeChips .chip').forEach((el,k)=>el.classList.toggle('on', k===i));
   placeHandles();
+  /* 자리바꿈 중이면 되돌아가기 팝업의 얼굴도 새 의상으로 (서윤은 감춰져 있다) */
+  petBackFace();
   saveSettings();
 }
 function buildCostumeChips(){
@@ -3092,7 +3095,13 @@ function placeBubble(){
 
    ★크기는 **캐릭터에 비례**한다. px 로 박으면 창을 줄였을 때 햄스터만
      그대로 남아 서윤보다 커진다.                                        */
-const PET = {on:true, w:0.17, el:null};   /* w = 캐릭터 폭 대비 — 작게 */
+const PET_NAME = '서햄터';
+/* swap : 자리바꿈. 서햄터가 무대 주인공이 되고 서윤이 그 어깨로 올라간다.
+   w    : 어깨에 앉았을 때 크기 (상대 폭)
+   bigW : 주인공일 때 크기 */
+const PET = {on:true, w:0.17, bigW:0.62, el:null, swap:false};
+
+
 
 function placePet(){
   /* ★매 프레임 도는 자리다. querySelector 를 60번/초 부르지 않는다. */
@@ -3106,10 +3115,22 @@ function placePet(){
   const sh = CFG.shoulderR || [0.760, 0.515];
   const [x, y] = imgToCss(sh[0], sh[1]);
   /* 캐릭터 폭에 비례 — 창을 줄이면 같이 줄어든다 */
-  const w = PET.w * IMG_W * VIEW.scale / VIEW.dpr;
-  const h = w * 785/900;                        /* 원본 그림 비율 */
-  /* 발이 어깨에 닿게 — 가로는 가운데, 세로는 아래끝을 기준점에 */
-  const L = x - w/2, T = y - h;
+  let w, h, L, T;
+  if(PET.swap){
+    /* 자리바꿈 — 서햄터가 주인공. 서윤은 감춰져 있으니 무대 한가운데다.
+       ★크기를 무대(캔버스 상자)로 재고 스스로 비율을 지킨다 — 창을 줄이면
+         같이 줄고, 가로로 넓히면 세로에 맞춰 멈춘다. */
+    const r = glc.getBoundingClientRect();
+    w = PET.bigW * Math.min(r.width, r.height/(785/900));
+    h = w * 785/900;
+    L = (r.width - w)/2;
+    T = (r.height - h)/2;
+  }else{
+    w = PET.w * IMG_W * VIEW.scale / VIEW.dpr;
+    h = w * 785/900;                            /* 원본 그림 비율 */
+    /* 발이 어깨에 닿게 — 가로는 가운데, 세로는 아래끝을 기준점에 */
+    L = x - w/2; T = y - h;
+  }
   /* ★값이 안 바뀌었으면 style 을 건드리지 않는다. 60번/초 다시 쓰면
      그때마다 레이아웃이 다시 잡힌다 — 캐릭터가 가만히 있을 때가 더 많다. */
   if(w !== PET.lw || h !== PET.lh || L !== PET.lx || T !== PET.ly){
@@ -3126,11 +3147,106 @@ function setPet(on){
   PET.on = !!on;
   const c = $('#petChip');
   if(c) c.classList.toggle('on', PET.on);
+  if(!PET.on) setSwap(false);        /* 꺼면 자리도 되돌린다 */
   try{ localStorage.setItem('pet', PET.on ? '1' : '0'); }catch(e){}
   placePet();
 }
 
+/* ══════════ 자리바꿈 — 서햄터 ↔ 서윤 ═══════════════════════════════
+   서햄터를 두 번 누르면 **서윤은 화면에서 사라지고** 서햄터만 남는다.
+   되돌아오는 길은 오른쪽 아래 팝업(#petBack)의 서윤을 누르는 것이다.
+
+   ★서윤은 CSS 로 감춘다 — visibility:hidden (app.css #stageWrap.petswap).
+     예전엔 VIEW 를 줄여 어깨에 얹었는데, 이제는 아예 안 보이므로 VIEW 를
+     건드리지 않는다. 말풍선·손잡이·마우스 추적이 VIEW 로 좌표를 잡기
+     때문에, 건드리지 않는 편이 어긋날 곳도 없다.
+   ★display:none 을 쓰면 안 된다 — placePet() 이 캔버스 상자로 무대 크기를
+     재는데 0×0 이 되어 서햄터가 사라진다. */
+let _badgeBeforeSwap = null;
+
+/* 되돌아가기 팝업의 얼굴 — 지금 입은 의상 그림을 머리에 맞춰 잘라 넣는다.
+   ★자를 자리를 CSS 에 박지 않는다. 의상마다 머리 위치·크기가 달라서
+     (CFG.headC / headRad) 박아 두면 옷을 갈아입을 때 턱이나 어깨가 나온다. */
+function petBackFace(){
+  const box = $('#petBack');
+  if(!box || !box.classList.contains('on')) return;
+  const im = $('#petBackImg');
+  const face = im && im.parentNode;
+  if(!im || !face) return;
+  const c = COSTUMES[costumeIdx];
+  if(c && im.getAttribute('src') !== c.src) im.src = c.src;
+  const B  = face.clientWidth || 52;
+  const hc = CFG.headC   || [0.500, 0.210];
+  const hr = CFG.headRad || [0.280, 0.240];
+  const ar = (IMG_H && IMG_W) ? IMG_H / IMG_W : 630 / 440;
+  /* 머리가 상자에 **통째로** 들어갈 만큼만 확대한다 (여유 1.15배).
+     ★가로만 보고 배율을 잡으면 턱이 잘린다 — 머리는 세로가 더 길다
+       (headRad[1] 은 그림 **높이** 기준이라 ar 을 곱해 가로와 견준다).
+     둘 중 작은 쪽이 더 넓게 보이는 배율이라, 그걸 쓴다. */
+  /* ★상자보다 작아지면 둘레에 빈 칸이 생긴다 — 손잡이(headRad)를 크게
+     끌어 놓으면 그렇게 된다. 최소한 상자는 채운다. */
+  const W = Math.max(B, Math.min(B / Math.max(0.05, 2.3 * hr[0]),
+                                 B / Math.max(0.05, 2.3 * hr[1] * ar)));
+  const H = W * ar;
+  /* 머리 중심을 상자 가운데로. 단 그림 바깥이 보이지 않게 가둔다 */
+  const L = Math.min(0, Math.max(B - W, B/2 - hc[0] * W));
+  const T = Math.min(0, Math.max(B - H, B/2 - hc[1] * H));
+  im.style.width = W + 'px'; im.style.height = H + 'px';
+  im.style.left  = L + 'px'; im.style.top    = T + 'px';
+}
+
+function setSwap(on){
+  on = !!on;
+  if(on === PET.swap) return;
+  PET.swap = on;
+  const el = PET.el || (PET.el = $('#pet'));
+  if(el) el.classList.toggle('swap', on);
+  const st = $('#stageWrap');
+  if(st) st.classList.toggle('petswap', on);   /* 서윤(캔버스)을 감춘다 (app.css) */
+  /* ★사원증을 끈다. 서윤이 없는 동안 사원증만 허공에 남아 있으면 안 된다.
+     되돌아올 때 원래대로 켠다. */
+  if(on){
+    _badgeBeforeSwap = badgeOn;
+    badgeOn = false;
+  }else if(_badgeBeforeSwap !== null){
+    badgeOn = _badgeBeforeSwap;
+    _badgeBeforeSwap = null;
+  }
+  const bc = $('#badgeChip');
+  if(bc) bc.classList.toggle('on', badgeOn);
+  const pb = $('#petBack');
+  if(pb) pb.classList.toggle('on', on);
+  petBackFace();                                /* 켠 뒤에 잘라야 상자 크기를 잰다 */
+  placePet();
+  if(typeof sys === 'function'){
+    sys(on ? (PET_NAME + ' 만 남았습니다 — 오른쪽 아래 서윤을 누르면 돌아옵니다.')
+           : ('서윤이 돌아왔습니다. ' + PET_NAME + ' 은(는) 다시 어깨 위로.'));
+  }
+}
+
+/* 서햄터를 두 번 눌렀는지만 본다.
+   ★되돌아오는 것은 여기서 받지 않는다 — 서윤이 화면에 없으므로 "서윤 자리"를
+     좌표로 잴 수가 없다. 그 길은 #petBack 팝업이 맡는다. */
+function onPetPointer(e, dbl){
+  if(!PET.on || !texReady || !dbl) return;
+  const r = glc.getBoundingClientRect();
+  const px = e.clientX - r.left, py = e.clientY - r.top;
+  const el = PET.el || (PET.el = $('#pet'));
+  const onPet = !!el && px >= PET.lx && px <= PET.lx + PET.lw
+                     && py >= PET.ly && py <= PET.ly + PET.lh;
+  if(onPet) setSwap(!PET.swap);
+}
+
 if($('#petChip')) $('#petChip').onclick = ()=>setPet(!PET.on);
+if($('#petBack')) $('#petBack').onclick = ()=>setSwap(false);
+/* ★손잡이는 **무대**에 단다. 서햄터 위에 달면 서햄터가 클릭을 먹어서
+   캐릭터 조작(끌기·손잡이)이 막힌다. 무대에서 받아 **좌표로 갈라** 준다 —
+   그래서 서햄터는 pointer-events:none 그대로고, 캔버스 조작도 그대로 산다. */
+(function(){
+  const st = $('#stageWrap');
+  if(!st) return;
+  st.addEventListener('dblclick', e=>{ onPetPointer(e, true); });
+})();
 try{ if(localStorage.getItem('pet')==='0') PET.on = false; }catch(e){}
 /* 칩 불빛을 저장값에 맞춘다 — 꺼 놨는데 켜진 것처럼 보이면 안 된다 */
 if($('#petChip')) $('#petChip').classList.toggle('on', PET.on);

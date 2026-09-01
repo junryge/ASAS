@@ -22,6 +22,35 @@
     linear-gradient(45deg,transparent 75%,#1b2029 75%),linear-gradient(-45deg,transparent 75%,#1b2029 75%);
     background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0px;background-color:#141821}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  /* ══ 자리바꿈 — 서윤을 아예 감춘다 (서햄터만 보이게) ══════════════
+     ★display:none 이 아니라 visibility 다. placePet() 이 캔버스의
+       getBoundingClientRect() 로 무대 크기를 재는데, display:none 이면
+       그 상자가 0×0 이 되어 서햄터 크기가 0 이 된다. visibility 는 자리를
+       그대로 두고 그리기만 멈춘다.
+     되돌아오는 길은 #petBack 팝업이다 — 화면에 서윤이 안 보이므로
+     "눌러서 돌아오는 곳"을 따로 띄워 주지 않으면 길이 막힌다. */
+  #stageWrap.petswap #gl,
+  #stageWrap.petswap #fx,
+  #stageWrap.petswap #handles{visibility:hidden}
+
+  /* 되돌아가기 팝업 — 자리바꿈 중에만 뜬다 */
+  #petBack{position:absolute;right:14px;bottom:14px;z-index:10;display:none;
+    align-items:center;gap:10px;padding:8px 14px 8px 8px;border-radius:44px;
+    background:rgba(15,20,29,.86);border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 6px 22px rgba(0,0,0,.42);cursor:pointer;
+    transition:border-color .15s,transform .15s}
+  #petBack.on{display:flex}
+  #petBack:hover{border-color:var(--accent2,#5aa9e6);transform:translateY(-1px)}
+  /* 얼굴 — 의상 그림을 머리에 맞춰 확대해서 동그랗게 자른다.
+     자르는 값은 app.js(petBackFace)가 CFG.headC/headRad 로 계산한다 —
+     의상마다 머리 자리가 달라서 CSS 로 박아 두면 옷을 갈아입을 때 어긋난다. */
+  #petBack .pbFace{position:relative;width:52px;height:52px;flex:0 0 52px;
+    border-radius:50%;overflow:hidden;background:#1b2029;
+    border:1px solid rgba(255,255,255,.16)}
+  #petBack .pbFace img{position:absolute;left:0;top:0;max-width:none;display:block}
+  #petBack .pbTxt{display:flex;flex-direction:column;gap:2px;line-height:1.25}
+  #petBack .pbName{font-size:13px;color:#e9eef6;font-weight:600;letter-spacing:-.2px}
+  #petBack .pbHint{font-size:11px;color:var(--dim,#93a0b4)}
   #fx{pointer-events:none}
   #bubble{position:absolute;max-width:min(74%,460px);max-height:46%;overflow-y:auto;
     scrollbar-width:none;-ms-overflow-style:none;
