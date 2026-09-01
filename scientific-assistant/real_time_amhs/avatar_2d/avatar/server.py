@@ -825,10 +825,20 @@ class Handler(SimpleHTTPRequestHandler):
         #   관제 상태를 물었는데 엉뚱한 걸 답하는 셈이다 (실제 증상).
         #   그래서 '지금 관제를 못 본다' 를 MCP 칸에도 박아 준다.
         down = llm.is_data_question(text) and not ev.get("ok")
+        mcp = self._mcp_text(text, history)
+        # ★MCP 로 받아온 글의 숫자도 **근거다.** 안 넣으면 나가기 직전 숫자
+        #   가드가 그걸 '지어낸 수' 로 보고 **답을 통째로 버린다.**
+        #   실제 증상: 위키의 연결 경로를 물었더니 호기명(4AFC3201·6ABL60)과
+        #   층수(3F·6F·10F)가 관제 근거에 없다고 걸려서, 답이 엉뚱한 관제
+        #   상태 요약("전체 17.0점 정상…")으로 바뀌어 나갔다.
+        #   서윤은 제대로 읽어 왔는데 마지막 자리에서 지워지고 있었다.
+        if mcp:
+            ev["numbers"] = (set(ev.get("numbers") or set())
+                             | sentinel.numbers_of(mcp))
         msgs = llm.build_messages(persona, text, history, App.doc_store, st,
                                   skill_store=App.skill_store,
                                   evidence_text=ev["text"], attach=attach,
-                                  mcp_text=self._mcp_text(text, history),
+                                  mcp_text=mcp,
                                   evidence_down=down)
         t0 = time.time()
 

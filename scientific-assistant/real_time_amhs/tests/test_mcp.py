@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from . import util
 
 sys.path.insert(0, os.path.join(util.BASE, "avatar_2d"))
-from avatar import config, llm, mcp_client   # noqa: E402
+from avatar import config, llm, mcp_client, sentinel   # noqa: E402
 
 
 def _load_server():
@@ -1587,10 +1587,14 @@ class 검색하고_본문까지_읽는다(_Wiki):
         self.assertEqual(mcp_client.Hub._ids_of({}, "총 5건입니다"), [])
         self.assertEqual(mcp_client.Hub._ids_of({}, ""), [])
 
-    def test_질문을_그대로_검색어로_쓴다(self):
+    def test_질문을_검색어로_쓴다(self):
+        """★군말(뭐야·알려줘)은 뺀다 — 문서에 없는 말이라 점수만 흩뜨린다.
+        영문·코드(LFT·ZT)는 짧아도 남긴다: 그게 제일 센 신호다."""
         spec = {"kind": "text", "max": 160}
-        self.assertEqual(mcp_client._arg_of("  LFT랑  ZT  차이가 뭐야 ", spec),
-                         "LFT랑 ZT 차이가 뭐야")
+        got = mcp_client._arg_of("  LFT랑  ZT  차이가 뭐야 ", spec)
+        self.assertIn("LFT랑", got)
+        self.assertIn("ZT", got)
+        self.assertNotIn("뭐야", got)
         self.assertIsNone(mcp_client._arg_of("   ", spec))
 
     def test_긴_본문은_정한_몫까지만_싣는다(self):
@@ -2092,6 +2096,104 @@ class 위키를_직접_띄우는_길도_있다(unittest.TestCase):
         with open(p, encoding="utf-8") as f:
             src = f.read()
         self.assertIn("wiki_mcp_stdio.py", src)
+
+
+class 가드가_위키_답을_먹지_않는다(unittest.TestCase):
+    """★실제로 겪은 것. 위키는 제대로 읽어 왔는데 **마지막 자리에서 지워졌다.**
+
+    나가기 직전 숫자 가드(_guard)는 대답의 숫자가 전부 근거에 있는지 본다.
+    그런데 '근거' 를 관제 수치로만 잡고 있었다 — 위키에서 읽어 온 호기명
+    (4AFC3201 · 6ABL60)과 층수(3F · 6F · 10F)가 '지어낸 수' 로 걸려서,
+    **답이 통째로 버려지고** 엉뚱한 관제 상태 요약으로 바뀌어 나갔다.
+
+        Q. FAB 간 연결 경로 알려줘
+        A. 2026-09-01 08:55 데이터 기준으로 현재 상태는 정상이며 17.0점입니다.
+           ← 위키를 물었는데 관제 점수가 나온다
+
+    MCP 로 받아 온 글의 숫자도 **근거다.**
+    """
+
+    WIKI = ("[AMHS 위키]\n· 위키 본문 #15\n"
+            "| M14A(3F) ↔ M16 HUBROOM(3F) | CNV | 남측 4AFC3201 / 북측 4AFC3301 |\n"
+            "| M16A(6F) ↔ M16 HUBROOM(3F) | LFT | 6ABL60~ 로 시작 |\n"
+            "| M16A(6F) ↔ M16B(10F) | LFT | 6ALF 로 시작 |")
+    ANSWER = ("M14A(3F) 에서 M16 으로 가려면 CNV 를 타요. 남측 4AFC3201, "
+              "북측 4AFC3301 이고요. M16A(6F) 는 6ABL60~ 리프터로, "
+              "M16B(10F) 는 6ALF 로 이어져요.")
+
+    def test_관제_숫자만으로는_통째로_걸린다(self):
+        """무엇이 문제였는지 못 박아 둔다 — 되돌아가면 이게 다시 난다."""
+        ok, bad = sentinel.check_numbers(self.ANSWER, {17.0, 2.61})
+        self.assertFalse(ok)
+        for n in (3201.0, 3301.0, 60.0):
+            self.assertIn(n, bad, n)
+
+    def test_MCP_숫자를_보태면_통과한다(self):
+        allowed = {17.0, 2.61} | sentinel.numbers_of(self.WIKI)
+        ok, bad = sentinel.check_numbers(self.ANSWER, allowed)
+        self.assertTrue(ok, "위키 숫자를 보탰는데도 걸린다: {}".format(bad))
+
+    def test_지어낸_수는_여전히_걸린다(self):
+        """★가드를 헐겁게 만들면 안 된다. 위키에도 관제에도 없는 수는 잡는다."""
+        allowed = {17.0} | sentinel.numbers_of(self.WIKI)
+        ok, bad = sentinel.check_numbers(
+            "M16A 는 9999 점이고 리프터가 4321 대예요", allowed)
+        self.assertFalse(ok)
+        self.assertIn(9999.0, bad)
+        self.assertIn(4321.0, bad)
+
+    def test_서버가_MCP_숫자를_근거에_넣는다(self):
+        p = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
+        with open(p, encoding="utf-8") as f:
+            src = f.read()
+        i = src.index("mcp = self._mcp_text(text, history)")
+        blk = src[i:i + 900]
+        self.assertIn("numbers_of(mcp)", blk)
+        self.assertIn('ev["numbers"]', blk)
+        # 가드보다 **먼저** 넣어야 한다 (넣기 전에 검사하면 소용없다)
+        self.assertLess(i, src.index("def _guard"))
+
+    def test_numbers_of_가_공개되어_있다(self):
+        self.assertTrue(hasattr(sentinel, "numbers_of"))
+        self.assertEqual(sentinel.numbers_of("3F 6ABL60 10.5"),
+                         {3.0, 6.0, 60.0, 10.5})
+
+
+class 검색어에서_군말을_뺀다(unittest.TestCase):
+    """★"AMHS 위키 너가 알고 있는 내용 확인해봐" 를 통째로 넘기면 BM25 가
+    문서에 없는 말(너가·알고·확인해봐)에 점수를 나눠 준다. 찾을 말만 남긴다.
+
+    (이것만으로 못 찾던 것이 찾아지지는 않았다 — 진짜 원인은 숫자 가드였다.
+     여기는 검색어를 깨끗하게 하는 것이 목적이다.)
+    """
+
+    SPEC = {"kind": "text", "max": 160}
+
+    def q(self, t):
+        return mcp_client._arg_of(t, self.SPEC)
+
+    def test_상투어를_뺀다(self):
+        self.assertEqual(self.q("AMHS 위키 너가 알고 있는 내용 확인해봐"),
+                         "AMHS 위키")
+        self.assertEqual(self.q("M16 HUBROOM 유의 지표 설명해봐"),
+                         "M16 HUBROOM 유의 지표")
+
+    def test_영문_숫자_코드는_짧아도_남긴다(self):
+        """★그게 제일 센 신호다. 길이로 자르면 LFT·ZT·R4 가 날아간다."""
+        for w in ("LFT", "ZT", "R4", "6ABL60", "4AFC3201", "M16WT", "CNV"):
+            self.assertIn(w, self.q(w + " 가 뭐야"), w)
+
+    def test_다_빼면_원문을_그대로_쓴다(self):
+        """★빈 검색어를 보내면 도구가 아무것도 못 한다."""
+        self.assertTrue(self.q("그거 뭐야"))
+        self.assertIsNone(self.q("   "))
+
+    def test_뜻있는_한글은_남긴다(self):
+        got = self.q("반송 장치 종류 알려줘")
+        self.assertIn("반송", got)
+        self.assertIn("장치", got)
+        self.assertIn("종류", got)
+        self.assertNotIn("알려줘", got)
 
 
 class 위키_설정이_말이_된다(unittest.TestCase):
