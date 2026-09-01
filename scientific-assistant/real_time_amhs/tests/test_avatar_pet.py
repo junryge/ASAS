@@ -577,5 +577,92 @@ class 자리바꿈_인사(unittest.TestCase):
                         "페르소나를 바꾼 뒤에 이름을 읽는다 — 서햄터가 나온다")
 
 
+PY_CMD = os.path.join(util.BASE, "avatar_2d", "avatar", "commands.py")
+PY_LLM = os.path.join(util.BASE, "avatar_2d", "avatar", "llm.py")
+
+
+class FAB_알람도_서햄터가_받는다(unittest.TestCase):
+    """자리를 바꿔도 FAB 실시간 감시는 그대로 돌고, **서햄터가 대신** 알린다.
+
+    ★알람 폴링(pollSentinel)은 아바타와 무관하게 돈다 — 여기서 막힐 일은
+      없다. 문제는 **반응이 안 보이는 것**이었다. 알람은 setEmotion() 으로
+      표정·몸짓을 만드는데, 자리바꿈 중에는 서윤이 감춰져 있어서 그게
+      아무 데도 안 보였다. 알람은 반응이 보여야 알람이다.
+    """
+
+    def setUp(self):
+        self.js = _read(JS)
+        self.css = _read(CSS)
+
+    def test_알람이_말을_거친다(self):
+        """alarmSay()/clearAlarm() 이 speak() 를 쓴다 — speak 는 대사창을
+        그리면서 이름표를 지금 페르소나(서햄터)로 적는다."""
+        i = self.js.index("function alarmSay()")
+        blk = self.js[i:i + 700]
+        self.assertIn("speak(", blk)
+        self.assertIn("setEmotion(", blk)
+
+    def test_서햄터가_몸짓으로_반응한다(self):
+        for fn in ("function setEmotion(", "function trigger("):
+            i = self.js.index(fn)
+            self.assertIn("petMotion(", self.js[i:i + 900], fn + " 가 서햄터를 안 부른다")
+
+    def test_알람_등급이_몸짓으로_갈린다(self):
+        """alarmSay 는 lv1 이면 tap, 그 위면 shiver 를 건다 — 둘 다 받아야
+        경계와 초위험이 다르게 보인다."""
+        i = self.js.index("const PET_MOT ")
+        blk = self.js[i:i + 400]
+        for m in ("tap:", "shiver:", "nod:", "pop:"):
+            self.assertIn(m, blk, m + " 가 빠졌다")
+
+    def test_팔_없는_몸짓은_빼_둔다(self):
+        """★서햄터는 팔을 흔들 수 없다. 억지로 걸면 이상하게 움직인다."""
+        i = self.js.index("const PET_MOT ")
+        blk = self.js[i:i + 400]
+        self.assertNotIn("lean:", blk)
+        self.assertNotIn("cross:", blk)
+
+    def test_몸짓이_되감긴다(self):
+        """★같은 몸짓(부들)을 알람이 반복해서 건다. class 를 뗐다 붙이고
+        레이아웃을 한 번 읽어야 브라우저가 다시 돌린다."""
+        i = self.js.index("function petMotion(")
+        blk = self.js[i:i + 800]
+        self.assertIn("offsetWidth", blk)
+        self.assertIn("classList.remove", blk)
+
+    def test_어깨로_돌아가면_몸짓이_남지_않는다(self):
+        """★안 지우면 마지막 몸짓 class 가 남아, 다음에 같은 몸짓을 걸어도
+        되감기지 않는다."""
+        i = self.js.index("function petMotion(")
+        blk = self.js[i:i + 800]
+        self.assertLess(blk.index("classList.remove"), blk.index("if(!petSwapped()) return;"),
+                        "자리바꿈일 때만 지운다 — 어깨로 돌아가면 남는다")
+        j = self.js.index("function setSwap(")
+        self.assertIn("petMotion('none')", self.js[j:self.js.index("function onPetPointer(")])
+
+    def test_몸짓_크기가_제_몸_기준이다(self):
+        """★px 로 박으면 어깨 위 작은 서햄터가 화면 밖으로 튄다."""
+        i = self.css.index("@keyframes petShake")
+        blk = self.css[i:i + 400]
+        self.assertIn("%)", blk)
+        self.assertNotIn("px)", blk)
+
+    def test_움직임_줄이기에서는_몸짓을_끈다(self):
+        i = self.css.index("prefers-reduced-motion")
+        blk = self.css[i:i + 500]
+        self.assertIn("#pet.m-shiver", blk)
+
+    # ── 서버 쪽 프롬프트 ────────────────────────────────────────────
+    def test_프롬프트에_이름을_안_박는다(self):
+        """★서버 프롬프트가 '서윤' 을 박아 두면, 서햄터로 바꿔도 모델은
+        서윤 말투로 답하거나 지난 대화를 딴 사람 것으로 읽는다."""
+        cmd = _read(PY_CMD)
+        self.assertNotIn('else "서윤"', cmd, "대화 기록에 이름이 박혀 있다")
+        self.assertIn('else "에이전트"', cmd)
+        llm = _read(PY_LLM)
+        self.assertNotIn("말투는 그대로 서윤이다", llm, "위키 규칙에 이름이 박혀 있다")
+        self.assertIn("말투는 **페르소나 그대로**다", llm)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -622,6 +622,30 @@ function paintAgentName(name){
 /* PET 은 아래 자리바꿈 블록에서 선언된다. 화면이 처음 뜰 때 setCostume() 이
    여기를 먼저 지나가므로, 아직 없으면 '자리바꿈 아님' 으로 본다. */
 function petSwapped(){ try{ return !!PET.swap; }catch(e){ return false; } }
+/* 서햄터의 몸짓 — 서윤의 몸짓(setEmotion 의 mot)을 그대로 받아 흉내 낸다.
+   ★자리바꿈 중에는 서윤이 감춰져 있어서 setEmotion 이 만든 표정·몸짓이
+     아무 데도 안 보인다. FAB 알람이 울려도 서햄터는 가만히 있었다 —
+     알람은 **반응이 보여야** 알람이다.
+   ★서햄터는 그림 한 장이라 표정은 못 바꾼다. 몸짓만 고른다 (팔이 없는
+     것들 wave/handup 은 통통으로, lean/cross 는 안 한다). */
+const PET_MOT = {nod:'nod', tap:'nod', shake:'shake', bounce:'bounce',
+                 jump:'bounce', wave:'bounce', handup:'bounce',
+                 pop:'pop', shiver:'shiver'};
+const PET_MOT_CLS = ['m-nod','m-shake','m-bounce','m-pop','m-shiver'];
+function petMotion(mot){
+  const el = document.getElementById('pet');
+  if(!el) return;
+  /* ★어깨로 돌아갈 때도 지운다. 안 지우면 마지막 몸짓 class 가 그대로
+     남아, 다음에 같은 몸짓을 걸어도 되감기지 않는다. */
+  el.classList.remove.apply(el.classList, PET_MOT_CLS);
+  if(!petSwapped()) return;
+  const k = PET_MOT[mot];
+  if(!k) return;
+  /* ★같은 동작을 다시 걸려면 애니메이션을 되감아야 한다. class 를 뗀 직후
+     레이아웃을 한 번 읽어야 브라우저가 '껐다 켠 것' 으로 본다. */
+  void el.offsetWidth;
+  el.classList.add('m-' + k);
+}
 /* 사원증 창구 — 자리바꿈 중에는 서윤이 화면에 없다. 그동안 장면·의상이
    정한 값은 **보관만** 하고, 돌아올 때 그대로 켠다.
    ★이걸 안 거치고 badgeOn 을 직접 쓰면, 자리바꿈 중에 배경을 바꿨을 때
@@ -693,11 +717,12 @@ function setEmotion(name, inten, mot){
     T[k] = base[k] + (e[k]-base[k])*amt*sc;
   });
   if(mot && MOTION[mot] && mot!=='none'){ motion=mot; motionT=0; }
+  petMotion(mot);        /* 자리바꿈 중이면 서햄터가 대신 반응한다 */
   if(e.sym){ symText=e.sym; symT=0; }
   document.documentElement.style.setProperty('--bubbleAccent', EMO_COLOR[name] || '#7d8899');
   syncEmoUI();
 }
-function trigger(mot){ motion=mot; motionT=0; }
+function trigger(mot){ motion=mot; motionT=0; petMotion(mot); }
 
 /* ---------- 프레임 루프 ---------- */
 let last=performance.now(), t=0;
@@ -3349,6 +3374,7 @@ function setSwap(on, quiet){
     }
   }
   paintAgentName();                             /* 무대에 선 사람으로 */
+  petMotion('none');                            /* 지난 몸짓을 지우고 시작한다 */
   const pb = $('#petBack');
   if(pb) pb.classList.toggle('on', on);
   petBackFace();                                /* 켠 뒤에 잘라야 상자 크기를 잰다 */

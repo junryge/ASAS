@@ -2394,6 +2394,10 @@ class 위키_설정이_말이_된다(unittest.TestCase):
         지식 설명에까지 걸면 "LFT 는 리프터예요" 한 줄로 끝난다 — 층간
         반송이라는 것도, ZT 라고도 부른다는 것도 다 잘린다. 위키를 읽어 온
         보람이 없다. 말투는 그대로 두고 분량만 푼다.
+
+        ★말투를 가리킬 때 **이름을 박지 않는다.** 예전엔 "말투는 그대로
+          서윤이다" 였는데, 자리바꿈(서햄터)이나 페르소나 교체로 이름이
+          바뀌면 규칙과 페르소나가 서로 다른 사람을 말하게 된다.
         """
         s = llm.build_messages("서윤이다.", "LFT가 뭐야?", [], _빈자료(),
                                {"docBudget": 6000},
@@ -2401,7 +2405,9 @@ class 위키_설정이_말이_된다(unittest.TestCase):
                                )[0]["content"]
         self.assertIn("짧게 줄이지 마라", s)
         self.assertIn("잡담", s)
-        self.assertIn("말투는 그대로", s)
+        self.assertIn("말투는", s)
+        self.assertIn("페르소나 그대로", s)
+        self.assertNotIn("말투는 그대로 서윤", s, "규칙에 이름이 박혀 있다")
         self.assertIn("줄바꿈으로 나눠", s)
 
     def test_호기명을_뭉개지_말라고_박는다(self):

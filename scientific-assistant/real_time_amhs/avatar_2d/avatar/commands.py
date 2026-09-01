@@ -137,8 +137,10 @@ def _create(name, topic, store, gateway, model, history, temperature, extra=""):
                       "run.py 로 실행했는지 확인해 주세요.", "sad", 0.6)
 
     # 재료 = 최근 대화 + (있으면) 관제 근거. 재료에 없는 건 못 쓰게 프롬프트로 못박는다.
+    # ★이름을 박지 않는다. 자리바꿈(서햄터)이나 페르소나를 바꾸면 말한
+    #   사람과 딴 이름이 붙어, 모델이 대화를 다른 사람 것으로 읽는다.
     hist_txt = "\n".join(
-        "{}: {}".format("사용자" if h.get("role") == "user" else "서윤",
+        "{}: {}".format("사용자" if h.get("role") == "user" else "에이전트",
                         str(h.get("content", ""))[:800])
         for h in (history or [])[-12:] if isinstance(h, dict))
     ev = sentinel.evidence()
