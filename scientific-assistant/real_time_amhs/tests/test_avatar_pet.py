@@ -249,7 +249,7 @@ class 자리바꿈(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIn("display:none", m.group(1).replace(" ", ""))
         self.assertIn("#petBack.on{display:flex}", self.css.replace(" ", ""))
-        self.assertIn("pb.classList.toggle('on', on)", self.js)
+        self.assertIn("pb.classList.toggle('on', on && PET.back)", self.js)
 
     def test_팝업을_서햄터가_안_덮는다(self):
         """★서햄터가 무대를 크게 덮는다. 팝업이 그 아래로 들어가면 눌러도
@@ -662,6 +662,59 @@ class FAB_알람도_서햄터가_받는다(unittest.TestCase):
         llm = _read(PY_LLM)
         self.assertNotIn("말투는 그대로 서윤이다", llm, "위키 규칙에 이름이 박혀 있다")
         self.assertIn("말투는 **페르소나 그대로**다", llm)
+
+
+class 되돌아가기_버튼_끄고_켜기(unittest.TestCase):
+    """우하단 '서윤 — 누르면 돌아옵니다' 팝업을 왼쪽 패널에서 끄고 켠다.
+
+    ★끄면 **돌아올 길이 막히는 것** 아니냐 — 아니다. 서햄터를 두 번 누르면
+      돌아온다(onPetPointer). 그 길이 없었다면 이 칩을 만들면 안 된다.
+      그래서 여기서 그 길이 살아 있는지를 같이 못 박는다.
+    """
+
+    def setUp(self):
+        self.js = _read(JS)
+        self.h = _read(HTML)
+
+    def test_왼쪽_패널에_칩이_있다(self):
+        i = self.h.index('<div class="hudLabel">표시</div>')
+        blk = self.h[i:i + 1800]
+        self.assertIn('id="petBackChip"', blk, "표시 묶음에 없다")
+        self.assertIn("서윤버튼", blk)
+
+    def test_끄면_안_뜬다(self):
+        i = self.js.index("function setPetBack(")
+        blk = self.js[i:i + 700]
+        self.assertIn("PET.back", blk)
+        self.assertIn("PET.swap && PET.back", blk)
+        self.assertIn("pb.classList.toggle('on', on && PET.back)", self.js,
+                      "자리를 바꿀 때 끈 설정을 무시하고 띄운다")
+
+    def test_칩을_누르면_바뀐다(self):
+        self.assertIn("$('#petBackChip').onclick = ()=>setPetBack(!PET.back)", self.js)
+
+    def test_저장된다(self):
+        i = self.js.index("function petSaveState()")
+        self.assertIn("back:PET.back", self.js[i:i + 400])
+        self.assertIn("if(s.back !== undefined) PET.back = !!s.back", self.js)
+
+    def test_복원은_자리바꿈보다_먼저다(self):
+        """★setSwap 이 팝업을 띄울지 정할 때 PET.back 을 본다 — 뒤에 풀면
+        껐는데도 한 번 떴다가 사라진다."""
+        i = self.js.index("if(s.back !== undefined)")
+        j = self.js.index("if(s.swap && PET.on) setSwap(true, true)")
+        self.assertLess(i, j)
+
+    def test_꺼도_돌아올_길이_있다(self):
+        """★이게 없으면 팝업을 끄는 순간 서윤이 영영 안 돌아온다."""
+        i = self.js.index("function onPetPointer(")
+        blk = self.js[i:self.js.index("if($('#petChip'))")]
+        self.assertIn("setSwap(!PET.swap)", blk)
+        self.assertIn("꺼도", self.h[self.h.index('id="petBackChip"'):][:260],
+                      "칩 설명에 돌아오는 길을 안 적어 뒀다")
+
+    def test_칩_불빛이_저장값과_맞는다(self):
+        self.assertIn("$('#petBackChip').classList.toggle('on', PET.back)", self.js)
 
 
 if __name__ == "__main__":

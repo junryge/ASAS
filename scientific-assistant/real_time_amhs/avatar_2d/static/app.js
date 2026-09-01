@@ -3166,10 +3166,11 @@ function placeBubble(){
    ★크기는 **캐릭터에 비례**한다. px 로 박으면 창을 줄였을 때 햄스터만
      그대로 남아 서윤보다 커진다.                                        */
 const PET_NAME = '서햄터';
-/* swap : 자리바꿈. 서햄터가 무대 주인공이 되고 서윤이 그 어깨로 올라간다.
+/* swap : 자리바꿈. 서햄터가 무대 주인공이 되고 서윤은 화면에서 사라진다.
+   back : 되돌아가기 팝업(우하단 '서윤 — 누르면 돌아옵니다')을 띄울지
    w    : 어깨에 앉았을 때 크기 (상대 폭)
    bigW : 주인공일 때 크기 */
-const PET = {on:true, w:0.17, bigW:0.62, el:null, swap:false};
+const PET = {on:true, back:true, w:0.17, bigW:0.62, el:null, swap:false};
 
 
 
@@ -3245,6 +3246,19 @@ function petBackAvoidVn(){
   PET.lvh = h;
   const st = $('#stageWrap');
   if(st) st.style.setProperty('--vnH', h + 'px');
+}
+
+/* 되돌아가기 팝업 끄고 켜기 (왼쪽 패널 '표시 > 서윤버튼').
+   ★꺼도 길이 막히지는 않는다 — 서햄터를 두 번 누르면 돌아온다.
+     그게 없었다면 이 칩을 만들면 안 된다. */
+function setPetBack(on){
+  PET.back = !!on;
+  const c = $('#petBackChip');
+  if(c) c.classList.toggle('on', PET.back);
+  const pb = $('#petBack');
+  if(pb) pb.classList.toggle('on', PET.swap && PET.back);
+  if(PET.swap && PET.back){ petBackFace(); petBackAvoidVn(); }
+  saveSettings();
 }
 
 function setPet(on){
@@ -3376,7 +3390,7 @@ function setSwap(on, quiet){
   paintAgentName();                             /* 무대에 선 사람으로 */
   petMotion('none');                            /* 지난 몸짓을 지우고 시작한다 */
   const pb = $('#petBack');
-  if(pb) pb.classList.toggle('on', on);
+  if(pb) pb.classList.toggle('on', on && PET.back);
   petBackFace();                                /* 켠 뒤에 잘라야 상자 크기를 잰다 */
   petBackAvoidVn();
   placePet();
@@ -3413,6 +3427,7 @@ function onPetPointer(e, dbl){
 }
 
 if($('#petChip')) $('#petChip').onclick = ()=>setPet(!PET.on);
+if($('#petBackChip')) $('#petBackChip').onclick = ()=>setPetBack(!PET.back);
 if($('#petBack')) $('#petBack').onclick = ()=>setSwap(false);
 /* ★손잡이는 **무대**에 단다. 서햄터 위에 달면 서햄터가 클릭을 먹어서
    캐릭터 조작(끌기·손잡이)이 막힌다. 무대에서 받아 **좌표로 갈라** 준다 —
@@ -3427,7 +3442,8 @@ if($('#petBack')) $('#petBack').onclick = ()=>setSwap(false);
    아직 없으면 방금 읽어 온 값을 그대로 돌려준다 (지우지 않는다). */
 function petSaveState(){
   try{
-    return {on:PET.on, swap:PET.swap, persona:_personaBeforeSwap || ''};
+    return {on:PET.on, back:PET.back, swap:PET.swap,
+            persona:_personaBeforeSwap || ''};
   }catch(e){ return PET_SAVED || undefined; }
 }
 
@@ -3444,11 +3460,13 @@ function petSaveState(){
   }
   if(s){
     if(s.on !== undefined) PET.on = !!s.on;
+    if(s.back !== undefined) PET.back = !!s.back;   /* setSwap 보다 먼저 */
     if(s.persona) _personaBeforeSwap = s.persona;
     if(s.swap && PET.on) setSwap(true, true);   /* 조용히 — 열자마자 안내문은 안 띄운다 */
   }
   /* 칩 불빛을 저장값에 맞춘다 — 꺼 놨는데 켜진 것처럼 보이면 안 된다 */
   if($('#petChip')) $('#petChip').classList.toggle('on', PET.on);
+  if($('#petBackChip')) $('#petBackChip').classList.toggle('on', PET.back);
   paintAgentName();
 })();
 
