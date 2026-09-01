@@ -68,6 +68,34 @@
   }
 #pet .eye.l{left:41.3%;top:15.0%;width:4.5%;height:5.9%}
 #pet .eye.r{left:52.3%;top:15.0%;width:4.9%;height:5.9%}
+/* ── 입 ────────────────────────────────────────────────────────────
+   그림에는 다문 입만 그려져 있다. 말할 때 **입술 아래가 벌어지게** 위에
+   덧그린다 — 벌어지는 정도는 app.js 가 --talk (0~1) 로 넣는다.
+
+   ★자리는 그림에 눈금을 대고 재서 골랐다. 입술선이 만나는 꼭짓점이
+     (49.1%, 29.3%) 이다. 그보다 위에 놓으면 인중을 덮어서 얼룩처럼 보였다.
+   ★.head 안에 넣으면 안 된다 — .head 에는 머리만 남기는 원형 마스크가
+     걸려 있어서(19%×20% @ 48.9% 18.6%) 입 자리는 흐려져 사라진다.
+     그래서 마스크 없는 .jaw 로 감싸 **머리와 같은 흔들림**만 물려준다. */
+#pet .jaw{
+    position:absolute;inset:0;
+    animation:breathe calc(4.4s / var(--spd)) ease-in-out infinite,
+              bob calc(4.4s / var(--spd)) ease-in-out infinite;
+    transform-origin:50% 94%;
+  }
+#pet .mouth{
+    position:absolute;left:47.2%;top:29.2%;width:5.2%;height:3.6%;
+    /* 위(입술선)를 축으로 아래로 벌어진다 */
+    transform-origin:50% 0%;
+    transform:scaleY(var(--talk,0));
+    border-radius:48% 48% 50% 50% / 22% 22% 78% 78%;
+    background:
+      radial-gradient(ellipse 60% 44% at 50% 94%, #d8737a 0%, #b4525c 44%, rgba(180,82,92,0) 74%),
+      linear-gradient(#3f171c 0%, #63262c 55%, #783037 100%);
+    box-shadow:inset 0 .05em .16em rgba(0,0,0,.55);
+    /* 살짝 벌어졌을 때도 얼룩이 아니라 입으로 보이게 진하게 시작한다 */
+    opacity:calc(.55 + .45 * var(--talk,0));
+  }
 #pet .die{
     position:absolute;left:38.5%;top:37.2%;width:22%;height:20.5%;
     border-radius:8%;
@@ -124,5 +152,7 @@
   }
 
 @media (prefers-reduced-motion:reduce){
-  #pet .scene,#pet .body,#pet .head,#pet .eye,#pet .die,#pet .spark{animation:none!important}
+  #pet .scene,#pet .body,#pet .head,#pet .jaw,#pet .eye,#pet .die,#pet .spark{animation:none!important}
+  /* ★입(.mouth)은 여기서 빼 둔다 — 흔들림이 아니라 **말하고 있다는 표시**다.
+     이걸 끄면 말하는 동안 입이 다물려 있어 멈춘 것처럼 보인다. */
 }

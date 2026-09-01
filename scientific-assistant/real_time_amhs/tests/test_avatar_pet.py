@@ -370,7 +370,7 @@ class 자리바꿈이_바꾸는_것(unittest.TestCase):
         그리고 있어서, 말을 걸기 전에는 서윤 이름이 그대로 남았다."""
         self.assertEqual(self.js.count("vnName"), 1,
                          "이름표를 여러 곳에서 그린다 — paintAgentName() 하나여야 한다")
-        i = self.js.index("function paintAgentName()")
+        i = self.js.index("function paintAgentName(")
         self.assertIn("vnName", self.js[i:i + 250])
 
     def test_인사말_조사를_받침으로_고른다(self):
@@ -461,6 +461,120 @@ class 자리바꿈이_바꾸는_것(unittest.TestCase):
         blk = self.js[i:i + 600]
         self.assertIn("'--vnH'", blk)
         self.assertIn("getElementById('vn')", blk)
+
+
+class 입(unittest.TestCase):
+    """말할 때 서햄터 입술 아래가 벌어진다.
+
+    ★그림에는 다문 입만 그려져 있다. 캐릭터가 WebGL 인 서윤과 달리
+      서햄터는 그림 한 장이라 워핑할 메쉬가 없다 — 입술선 아래에 벌어지는
+      모양을 하나 덧그리고, 벌어짐만 app.js 가 --talk 로 넣는다.
+    ★신호는 서윤과 **같은 것**(talkEnv)을 쓴다. 따로 흔들면 둘이 어긋난다.
+    """
+
+    def setUp(self):
+        self.css = _read(CSS)
+        self.js = _read(JS)
+        self.h = _read(HTML)
+
+    def test_입이_있다(self):
+        self.assertIn('<div class="mouth">', self.h)
+        self.assertIn("#pet .mouth{", self.css)
+
+    def test_머리_마스크_밖에_둔다(self):
+        """★.head 에는 머리만 남기는 원형 마스크가 걸려 있다
+        (19%×20% @ 48.9% 18.6%). 그 안에 넣으면 입 자리는 흐려져 사라진다."""
+        i = self.h.index('id="pet"')
+        blk = self.h[i:self.h.index('id="petBack"')]
+        head = blk[blk.index('class="head"'):blk.index('class="jaw"')]
+        self.assertNotIn("mouth", head, "입이 머리 마스크 안에 들어가 있다")
+        self.assertIn('<div class="jaw"><div class="mouth">', blk)
+        jaw = self.css[self.css.index("#pet .jaw{"):]
+        jaw = jaw[:jaw.index("}")]
+        self.assertNotIn("mask", jaw)
+
+    def test_머리와_같이_흔들린다(self):
+        """★.head 와 같은 흔들림(breathe·bob)을 물려받아야 머리에 붙어 보인다."""
+        jaw = self.css[self.css.index("#pet .jaw{"):]
+        jaw = jaw[:jaw.index("}")]
+        for a in ("breathe", "bob"):
+            self.assertIn(a, jaw, a + " 가 없다 — 입만 제자리에 남는다")
+
+    def test_입술선_아래에서_벌어진다(self):
+        """★그림에 눈금을 대고 쟀다 — 입술선이 만나는 꼭짓점이
+        (49.1%, 29.3%) 다. 그보다 위에 놓으면 인중을 덮어 얼룩이 된다."""
+        blk = self.css[self.css.index("#pet .mouth{"):]
+        blk = blk[:blk.index("}")]
+        top = float(re.search(r"top:([\d.]+)%", blk).group(1))
+        left = float(re.search(r"left:([\d.]+)%", blk).group(1))
+        wid = float(re.search(r"width:([\d.]+)%", blk).group(1))
+        self.assertGreaterEqual(top, 28.5, "인중을 덮는다 — 입술선보다 위다")
+        self.assertLessEqual(top, 30.5, "턱까지 내려갔다")
+        self.assertAlmostEqual(left + wid / 2, 49.1, delta=1.0, msg="입이 가운데가 아니다")
+        self.assertIn("transform-origin:50% 0%", blk, "위(입술선)를 축으로 안 벌어진다")
+        self.assertIn("scaleY(var(--talk", blk)
+
+    def test_서윤과_같은_신호로_움직인다(self):
+        """★talkEnv 는 음절 타이머가 만드는 봉투다. 따로 흔들면 어긋난다."""
+        i = self.js.index("function petMouth(")
+        blk = self.js[i:i + 900]
+        self.assertIn("talkEnv", blk)
+        self.assertIn("view.mouthMax", blk, "'입 벌림 최대' 가 서햄터엔 안 걸린다")
+
+    def test_어깨_위에서는_안_움직인다(self):
+        """★그때 말하는 사람은 서윤이다."""
+        i = self.js.index("function petMouth(")
+        self.assertIn("PET.swap", self.js[i:i + 900])
+
+    def test_매_프레임_따라간다(self):
+        i = self.js.index("function placePet()")
+        self.assertIn("petMouth(", self.js[i:self.js.index("function petMouth(")])
+
+    def test_안_바뀌었으면_다시_안_쓴다(self):
+        """★60번/초 커스텀 속성을 다시 쓰면 그때마다 #pet 아래가 다시 계산된다."""
+        i = self.js.index("function petMouth(")
+        self.assertIn("PET.lm", self.js[i:i + 900])
+
+    def test_움직임_줄이기가_입을_안_끈다(self):
+        """★흔들림이 아니라 **말하고 있다는 표시**다. 끄면 멈춘 것처럼 보인다."""
+        i = self.css.index("prefers-reduced-motion")
+        blk = self.css[i:i + 400]
+        self.assertIn("#pet .jaw", blk, "입 흔들림은 같이 꺼야 한다")
+        self.assertNotIn("#pet .mouth", blk, "입까지 꺼 버린다")
+
+
+class 자리바꿈_인사(unittest.TestCase):
+    """자리를 바꿀 때 서윤이 한 마디 한다 — 나갈 때와 돌아올 때."""
+
+    def setUp(self):
+        self.js = _read(JS)
+
+    def test_두_대사가_있다(self):
+        self.assertIn("계약직에서 해고된", self.js)
+        self.assertIn("돌아왔어요", self.js)
+        self.assertIn("const PET_BYE", self.js)
+        self.assertIn("const PET_HI", self.js)
+
+    def test_자리를_바꿀_때_말한다(self):
+        i = self.js.index("function setSwap(")
+        blk = self.js[i:self.js.index("function onPetPointer(")]
+        self.assertIn("speak(on ? PET_BYE : PET_HI)", blk)
+
+    def test_조용히_복원할_때는_말_안_한다(self):
+        """★화면을 열자마자 작별 인사가 뜨면 안 된다."""
+        i = self.js.index("function setSwap(")
+        blk = self.js[i:self.js.index("function onPetPointer(")]
+        self.assertLess(blk.index("if(quiet) return;"), blk.index("speak(on ?"))
+
+    def test_나가는_인사에_서윤_이름이_붙는다(self):
+        """★speak() 가 대사창을 그리면서 이름표를 지금 페르소나(서햄터)로
+        덮는다 — 서햄터 이름을 달고 서윤이 작별하면 이상하다."""
+        i = self.js.index("function setSwap(")
+        blk = self.js[i:self.js.index("function onPetPointer(")]
+        self.assertIn("const leaving = agentName()", blk)
+        self.assertIn("paintAgentName(leaving)", blk)
+        self.assertLess(blk.index("const leaving"), blk.index("pe.value = PERSONA_HAMTER"),
+                        "페르소나를 바꾼 뒤에 이름을 읽는다 — 서햄터가 나온다")
 
 
 if __name__ == "__main__":

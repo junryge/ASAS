@@ -615,9 +615,9 @@ function josa(word, withBatchim, without){
   const has = (c >= 0xAC00 && c <= 0xD7A3) && ((c - 0xAC00) % 28) !== 0;
   return has ? withBatchim : without;
 }
-function paintAgentName(){
+function paintAgentName(name){
   const nm = document.getElementById('vnName');
-  if(nm) nm.textContent = '버추얼 에이전트 ' + agentName();
+  if(nm) nm.textContent = '버추얼 에이전트 ' + (name || agentName());
 }
 /* PET 은 아래 자리바꿈 블록에서 선언된다. 화면이 처음 뜰 때 setCostume() 이
    여기를 먼저 지나가므로, 아직 없으면 '자리바꿈 아님' 으로 본다. */
@@ -3188,7 +3188,25 @@ function placePet(){
     el.style.top    = T + 'px';
   }
   el.classList.add('on');
+  petMouth(el);
   if(PET.swap) petBackAvoidVn();
+}
+
+/* 입 — 서윤과 **같은 신호**(talkEnv)로 움직인다. 따로 흔들면 둘이 어긋난다.
+   talkEnv 는 음절 타이머(talkSyl)가 만드는 0~1 봉투다.
+   ★어깨 위일 때는 안 움직인다 — 그때 말하는 사람은 서윤이다.
+   ★'입 벌림 최대'(view.mouthMax) 도 같이 받는다. 서윤에게만 걸리면
+     슬라이더를 줄여도 서햄터만 크게 벌린다. */
+function petMouth(el){
+  const m = PET.swap
+    ? Math.max(0, Math.min(1, talkEnv * (view.mouthMax || 1)))
+    : 0;
+  /* ★값이 안 바뀌었으면 안 쓴다 — 60번/초 커스텀 속성을 다시 쓰면 그때마다
+     #pet 아래가 다시 계산된다. 다물 때는 반드시 0 까지 내린다. */
+  if(m === 0 ? PET.lm !== 0 : Math.abs(m - (PET.lm || 0)) > 0.02){
+    PET.lm = m;
+    el.style.setProperty('--talk', m.toFixed(2));
+  }
 }
 
 /* 되돌아가기 팝업이 대사창 위로 비켜서게 — 대사창은 글이 늘면 같이
@@ -3260,6 +3278,11 @@ const PERSONA_HAMTER = `[인물]
 "M14 요? 지금 70 이에요. 어제 CNV 때랑 같은 모양인데요."
 "히힛. 그건 서햄터도 몰라요. 위키에서 찾아볼게요."`;
 
+/* 자리를 바꿀 때 주고받는 인사. 나가는 인사는 **서윤의 대사**이고
+   돌아오는 인사도 서윤이 한다 — 그래서 이름표를 따로 챙긴다(아래 setSwap). */
+const PET_BYE = '저... 저 계약직에서 해고된 것 같아요. 서햄터, 잘 부탁해요. T.T';
+const PET_HI  = '저를 보고 싶어 하시는 분들이 많아서요. ...돌아왔어요!';
+
 /* 되돌아가기 팝업의 얼굴 — 지금 입은 의상 그림을 머리에 맞춰 잘라 넣는다.
    ★자를 자리를 CSS 에 박지 않는다. 의상마다 머리 위치·크기가 달라서
      (CFG.headC / headRad) 박아 두면 옷을 갈아입을 때 턱이나 어깨가 나온다. */
@@ -3294,6 +3317,7 @@ function petBackFace(){
 function setSwap(on, quiet){
   on = !!on;
   if(on === PET.swap) return;
+  const leaving = agentName();     /* 페르소나를 바꾸기 전 이름 — 나가는 인사용 */
   PET.swap = on;
   const el = PET.el || (PET.el = $('#pet'));
   if(el) el.classList.toggle('swap', on);
@@ -3324,7 +3348,7 @@ function setSwap(on, quiet){
       _personaBeforeSwap = null;
     }
   }
-  paintAgentName();
+  paintAgentName();                             /* 무대에 선 사람으로 */
   const pb = $('#petBack');
   if(pb) pb.classList.toggle('on', on);
   petBackFace();                                /* 켠 뒤에 잘라야 상자 크기를 잰다 */
@@ -3332,6 +3356,15 @@ function setSwap(on, quiet){
   placePet();
   saveSettings();                               /* 지금 상태 그대로 다음에도 */
   if(quiet) return;
+  if(typeof speak === 'function'){
+    speak(on ? PET_BYE : PET_HI);
+    /* ★나가는 인사는 **서윤의 대사**다. speak() 가 대사창을 그리면서
+       이름표를 지금 페르소나(서햄터)로 덮으므로, 나가는 사람 이름으로
+       다시 적어 준다 — 서햄터 이름을 달고 서윤이 작별하면 이상하다.
+       (돌아올 때는 페르소나가 이미 서윤이라 그대로 둔다.)
+       ★다음에 서햄터가 말하면 vnShow 가 이름표를 서햄터로 되돌린다. */
+    if(on) paintAgentName(leaving);
+  }
   if(typeof sys === 'function'){
     sys(on ? (PET_NAME + ' 만 남았습니다 — 페르소나도 ' + PET_NAME +
               ' 로 바뀝니다. 오른쪽 아래 서윤을 누르면 돌아옵니다.')

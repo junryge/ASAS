@@ -1847,9 +1847,10 @@ class 에이전트_이름(unittest.TestCase):
         """
         self.assertIn('<div id="vnName">버추얼 에이전트 서윤</div>', self.html)
         blk = self.js[self.js.index("function paintAgentName("):]
-        blk = blk[:blk.index("\nfunction ")]
-        self.assertIn("'버추얼 에이전트 ' + agentName()", blk,
+        blk = blk[:blk.index("\n}") + 2]
+        self.assertIn("'버추얼 에이전트 '", blk,
                       "이름표가 고정 문구라 페르소나를 바꿔도 안 따라온다")
+        self.assertIn("agentName()", blk, "지금 페르소나의 이름을 안 읽는다")
         self.assertIn("vnName", blk)
         vn = self.js[self.js.index("function vnShow("):]
         vn = vn[:vn.index("\nfunction vnGo(")]
