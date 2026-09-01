@@ -1607,6 +1607,81 @@ def page_raw(pid):
 
 
 # ---------------------------------------------------------------- 라우트: 소스 (업로드/인제스트)
+# ── MD 를 **페이지로** 등록 ────────────────────────────────────────────────
+# ★왜 필요한가. md 를 올리면 지금까지는 전부 **소스**로 들어갔다. 소스는
+#   원본 자료 자리라 화면 편집도, [[링크]]도, 린트도 안 된다. 무엇보다
+#   LLM(MCP)이 페이지와 소스를 **다른 도구로** 읽어서, 지식을 소스로 올려
+#   두면 "위키에 그런 내용이 없다" 는 답이 나온다 — 실제로 그렇게 겪었다.
+#   머리말(title/summary/tags)이 붙은 md 는 사람이 **페이지로 쓰라고** 쓴
+#   글이다. 그러면 페이지로 넣어 준다.
+MD_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.S)
+
+
+def parse_md_front(raw):
+    """--- 사이를 머리말로, 나머지를 본문으로. (YAML 파서를 안 쓴다 —
+    폐쇄망이라 의존성을 늘리지 않는다. 우리가 쓰는 모양만 읽으면 된다.)"""
+    meta, body = {}, raw
+    m = MD_FM_RE.match(raw or "")
+    if not m:
+        return {}, raw
+    body = m.group(2)
+    for line in m.group(1).splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        k, sep, v = line.partition(":")
+        if not sep:
+            continue
+        k, v = k.strip().lower(), v.strip()
+        if v.startswith("[") and v.endswith("]"):
+            v = ", ".join(x.strip().strip("'\"") for x in v[1:-1].split(",")
+                          if x.strip())
+        meta[k] = v.strip().strip("'\"")
+    return meta, body.strip()
+
+
+def upsert_md_page(db, domain_id, meta, body, actor):
+    """머리말 붙은 md → 페이지. 같은 제목이 있으면 **고친다**.
+
+    ★새로 만들기만 하면 두 번 올릴 때마다 쌍둥이가 생긴다.
+    ★페이지 하나를 만들면 위키는 여러 가지를 같이 한다 — slug·revisions·
+      data/wiki 파일·색인. 그 길을 그대로 탄다 (아래 write_page_file).
+    """
+    title = str(meta.get("title") or "").strip()
+    if not title:
+        return None, False
+    ptype = str(meta.get("type") or "concept").strip()
+    if ptype not in PTYPE_NAME:
+        ptype = "concept"
+    tags = str(meta.get("tags") or "").strip()
+    summary = str(meta.get("summary") or "").strip()
+    author = str(meta.get("author") or "").strip() or actor
+    now = now_str()
+    old = db.execute("SELECT id FROM pages WHERE domain_id=? AND title=?",
+                     (domain_id, title)).fetchone()
+    if old:
+        pid = old["id"]
+        slug = unique_page_slug(domain_id, title, exclude_id=pid)
+        db.execute(
+            "UPDATE pages SET slug=?,ptype=?,tags=?,summary=?,body_md=?,"
+            "author=?,updated_at=? WHERE id=?",
+            (slug, ptype, tags, summary, body, author, now, pid))
+        made = False
+    else:
+        slug = unique_page_slug(domain_id, title)
+        cur = db.execute(
+            "INSERT INTO pages(domain_id,title,slug,ptype,tags,summary,body_md,"
+            "author,source_ids,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (domain_id, title, slug, ptype, tags, summary, body, author, "",
+             now, now))
+        pid = cur.lastrowid
+        made = True
+    db.execute("INSERT INTO revisions(page_id,title,body_md,author,saved_at) "
+               "VALUES(?,?,?,?,?)", (pid, title, body, author, now))
+    db.commit()
+    write_page_file(pid)          # data/wiki 파일 + 청크·임베딩 색인까지
+    return pid, made
+
+
 @app.route("/upload", methods=["POST"])
 def upload():
     db = get_db()
@@ -1615,7 +1690,9 @@ def upload():
     if not d:
         abort(400)
     files = request.files.getlist("file")
-    ok, skip = 0, []
+    # ★머리말 붙은 md 는 **페이지**로 넣는다 (체크 해제하면 예전처럼 소스로).
+    as_page = request.form.get("md_as_page", "1") not in ("", "0", "off")
+    ok, skip, made, upd = 0, [], [], []
     for f in files:
         if not f or not f.filename:
             continue
@@ -1624,6 +1701,25 @@ def upload():
         if ext not in ALLOWED_EXT:
             skip.append(f"{orig} (지원 안 하는 형식)")
             continue
+        # ── md + 머리말 → 페이지 ────────────────────────────────────
+        if as_page and ext in (".md", ".markdown"):
+            try:
+                raw = f.read().decode("utf-8-sig", "replace")
+            except Exception:                              # noqa: BLE001
+                raw = ""
+            meta, body = parse_md_front(raw)
+            if meta.get("title"):
+                pid, is_new = upsert_md_page(
+                    db, domain_id, meta, body,
+                    request.form.get("uploader", "").strip())
+                if pid:
+                    (made if is_new else upd).append(meta["title"])
+                    continue
+            # 머리말이 없으면 페이지로 만들 수 없다 — 제목을 지어내지 않는다.
+            # 소스로 넣되 **왜 그랬는지** 말해 준다.
+            skip.append(f"{orig}: 머리말(--- title: … ---)이 없어 소스로 "
+                        f"넣었다. 페이지로 넣으려면 title 을 적어라")
+            f.stream.seek(0)
         safe = secure_filename(orig)
         if not Path(safe).stem:
             safe = "file" + ext
@@ -1646,6 +1742,19 @@ def upload():
         if warn:
             flash(f"{orig}: {warn}", "err")
         ok += 1
+    if made or upd:
+        # ★로그에 '페이지' 라고 적는다. 예전엔 무엇을 넣어도 '소스 N건' 이라
+        #   활동 로그만 봐서는 페이지로 들어갔는지 알 수가 없었다.
+        add_log("page-import",
+                f"{d['name']} 페이지 {len(made) + len(upd)}건",
+                "새로 {} · 수정 {}".format(len(made), len(upd)),
+                request.form.get("uploader", "").strip())
+        bits = []
+        if made:
+            bits.append("새 페이지 {}건({})".format(len(made), ", ".join(made)))
+        if upd:
+            bits.append("수정 {}건({})".format(len(upd), ", ".join(upd)))
+        flash("MD → " + " · ".join(bits) + " — 페이지로 등록했다", "ok")
     if ok:
         add_log("upload", f"{d['name']} 소스 {ok}건",
                 request.form.get("description", "").strip(),
@@ -2699,7 +2808,19 @@ TPL["domain.html"] = '''{% extends "layout.html" %}{% block content %}
     <input type="hidden" name="domain_id" value="{{ d.id }}">
     <label>파일 <span class="g">(MD/PDF/이미지/TXT/CSV, 복수 선택 가능)</span></label>
     <input type="file" name="file" multiple required>
-    <label>설명 <span class="g">(무슨 자료인지 한 줄)</span></label>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:9px;font-weight:600">
+     <input type="checkbox" name="md_as_page" value="1" checked style="width:auto">
+     MD 는 <b>페이지로</b> 등록 <span class="g">(머리말이 있을 때)</span></label>
+    <div class="g" style="margin:-3px 0 8px 24px;line-height:1.55">
+     <code>--- title: … ---</code> 머리말이 붙은 md 는 소스가 아니라
+     <b>페이지</b>로 들어간다. 같은 제목이 있으면 그 페이지를 고친다.<br>
+     ★소스로 두면 화면 편집도 <code>[[링크]]</code>도 린트도 안 되고,
+     <b>LLM 이 페이지와 다른 도구로 읽어서</b> 못 찾는 일이 생긴다.
+     머리말이 없으면 제목을 지어낼 수 없으니 소스로 넣고 그렇다고 알려 준다.
+    </div>
+    <label>설명 <span class="g">(무슨 자료인지 한 줄 — 소스로 들어갈 때 쓴다.
+     <b>이미지는 필수</b>: 그림은 텍스트 추출이 안 돼서 이 설명이 LLM 이 보는
+     전부다)</span></label>
     <input type="text" name="description">
     <label>업로더</label>
     <input type="text" name="uploader">
