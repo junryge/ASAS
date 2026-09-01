@@ -390,9 +390,9 @@ class 자리바꿈이_바꾸는_것(unittest.TestCase):
         """★사용자가 직접 고친 페르소나다. 기본값으로 되돌리면 안 되고,
         복원 중에 두 번 들어와도 덮어쓰면 안 된다."""
         b = self._swap()
-        self.assertIn("if(_personaBeforeSwap === null) _personaBeforeSwap = pe.value", b,
+        self.assertIn("if(_personaBeforeSwap === null) _personaBeforeSwap = readPersona()", b,
                       "이미 보관된 것을 덮어쓴다 — 서윤 페르소나가 사라진다")
-        self.assertIn("pe.value = _personaBeforeSwap", b, "돌아올 때 안 되돌린다")
+        self.assertIn("writePersona(_personaBeforeSwap)", b, "돌아올 때 안 되돌린다")
 
     def test_궁예와_보관함이_다르다(self):
         """★궁예 모드도 페르소나를 갈아 끼운다. 같은 변수를 쓰면 둘이 엉킨다."""
@@ -573,7 +573,7 @@ class 자리바꿈_인사(unittest.TestCase):
         blk = self.js[i:self.js.index("function onPetPointer(")]
         self.assertIn("const leaving = agentName()", blk)
         self.assertIn("paintAgentName(leaving)", blk)
-        self.assertLess(blk.index("const leaving"), blk.index("pe.value = PERSONA_HAMTER"),
+        self.assertLess(blk.index("const leaving"), blk.index("writePersona(PERSONA_HAMTER)"),
                         "페르소나를 바꾼 뒤에 이름을 읽는다 — 서햄터가 나온다")
 
 
@@ -715,6 +715,109 @@ class 되돌아가기_버튼_끄고_켜기(unittest.TestCase):
 
     def test_칩_불빛이_저장값과_맞는다(self):
         self.assertIn("$('#petBackChip').classList.toggle('on', PET.back)", self.js)
+
+
+class 궁예모드_서햄터(unittest.TestCase):
+    """궁예 모드면 서햄터도 안대를 쓰고, **성격도 햄터 궁예**가 된다.
+
+    ★서윤은 셰이더가 텍스처 좌표에 안대를 그린다. 서햄터는 그림 한 장이라
+      못 그리므로 CSS 로 덧그린다.
+    ★크기를 서윤 것에서 베끼면 안 된다 — 서윤 셰이더는 눈 반지름의
+      (1.92, 2.85) 배인데, 서햄터는 눈이 얼굴의 절반이라 그 비율이면
+      머리만 한 사탕이 된다 (실제로 그렇게 한 번 나왔다).
+    """
+
+    def setUp(self):
+        self.js = _read(JS)
+        self.css = _read(CSS)
+        self.h = _read(HTML)
+
+    def _patch_css(self):
+        b = self.css[self.css.index("#pet .patch{"):]
+        return b[:b.index("}")]
+
+    # ── 안대 ───────────────────────────────────────────────────────
+    def test_안대가_있다(self):
+        self.assertIn('<div class="patch">', self.h)
+        self.assertIn("#pet .patch{", self.css)
+        self.assertIn("#pet.gungye .patch{opacity:1}", self.css)
+
+    def test_평소에는_안_보인다(self):
+        self.assertIn("opacity:0", self._patch_css())
+
+    def test_머리와_같이_흔들린다(self):
+        i = self.h.index('class="jaw"')
+        blk = self.h[i:i + 400]
+        self.assertIn("patch", blk, "안대가 .jaw 밖에 있다 — 머리를 안 따라간다")
+
+    def test_크기가_서햄터_전용이다(self):
+        """★서햄터 오른쪽 눈은 3.6% × 4.1% 다 (그림에 눈금 대고 잰 값).
+        안대는 그 눈에 여유만 준 크기여야 한다."""
+        b = self._patch_css()
+        w = float(re.search(r"--patchW:\s*([\d.]+)%", b).group(1))
+        h = float(re.search(r"--patchH:\s*([\d.]+)%", b).group(1))
+        self.assertGreater(w, 3.6, "눈보다 작다 — 눈이 삐져나온다")
+        self.assertLess(w, 6.5, "너무 크다 — 뺨까지 덮는다")
+        self.assertGreater(h, 4.1, "눈보다 작다")
+        self.assertLess(h, 8.0, "너무 크다")
+
+    def test_자리를_중심에서_되짚는다(self):
+        """★크기를 바꿔도 눈에서 안 벗어나게 — 중심(54.9%, 17.35%) 기준."""
+        b = self._patch_css()
+        self.assertIn("54.9%", b)
+        self.assertIn("17.35%", b)
+        self.assertIn("var(--patchW)/2", b)
+
+    def test_끈이_안대_기준이다(self):
+        """★두건 밖으로 뻗으면 머리에 안 두른 것처럼 보인다."""
+        i = self.css.index("#pet .patch::before{")
+        blk = self.css[i:i + 300]
+        self.assertIn("width:110%", blk)
+        self.assertNotIn("px", blk)
+
+    def test_궁예를_켜면_같이_쓴다(self):
+        i = self.js.index("$('#patchChip').onclick")
+        self.assertIn("petPatch()", self.js[i:i + 400])
+        i2 = self.js.index("function applySettings(")
+        self.assertIn("petPatch()", self.js[i2:i2 + 3200], "설정 복원 때 안대가 안 따라온다")
+
+    # ── 성격 ───────────────────────────────────────────────────────
+    def test_햄터_궁예가_따로_있다(self):
+        """★얼굴은 서햄터인데 서윤의 궁예가 말하면 어긋난다."""
+        self.assertIn("const PERSONA_GUNGYE_HAM", self.js)
+        i = self.js.index("const PERSONA_GUNGYE_HAM")
+        head = self.js[i:i + 240]
+        self.assertIn("이름: 서햄터", head, "이름표가 서윤으로 남는다")
+        self.assertIn("미륵 햄스터", head)
+
+    def test_무대에_선_쪽의_궁예를_고른다(self):
+        i = self.js.index("function gungyePersona()")
+        self.assertIn("petSwapped()", self.js[i:i + 200])
+        j = self.js.index("$('#patchChip').onclick")
+        blk = self.js[j:j + 500]
+        self.assertIn("gungyePersona()", blk)
+        self.assertNotIn("value = PERSONA_GUNGYE;", blk, "서윤 궁예를 박아 쓴다")
+
+    def test_자리를_바꾸면_궁예도_바뀐다(self):
+        i = self.js.index("function setSwap(")
+        blk = self.js[i:self.js.index("function onPetPointer(")]
+        self.assertIn("PERSONA_GUNGYE_HAM : PERSONA_GUNGYE", blk)
+        self.assertIn("if(patchOn){", blk)
+
+    # ── 두 모드가 안 엉킨다 ─────────────────────────────────────────
+    def test_궁예_중에는_보관본을_바꾼다(self):
+        """★궁예 모드면 페르소나 상자에 궁예 글이 들어 있다. 자리바꿈이
+        그 상자를 건드리면, 궁예를 끌 때 엉뚱한 페르소나가 돌아온다
+        (서햄터로 바꾼 뒤 궁예를 껐는데 서윤이 나왔다)."""
+        i = self.js.index("function writePersona(")
+        blk = self.js[i:i + 300]
+        self.assertIn("patchOn", blk)
+        self.assertIn("personaBackup = v", blk)
+        j = self.js.index("function setSwap(")
+        sw = self.js[j:self.js.index("function onPetPointer(")]
+        self.assertIn("writePersona(PERSONA_HAMTER)", sw)
+        self.assertIn("readPersona()", sw)
+        self.assertNotIn("pe.value = PERSONA_HAMTER", sw, "상자를 직접 건드린다")
 
 
 if __name__ == "__main__":

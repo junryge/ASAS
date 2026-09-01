@@ -151,6 +151,37 @@
     90%{opacity:.2;transform:scale(.9)}
   }
 
+/* ── 궁예 모드 안대 ────────────────────────────────────────────────
+   서윤은 셰이더가 텍스처 좌표에 그린다(오른쪽 눈). 서햄터는 그림 한 장이라
+   못 그리므로 여기서 덧그린다.
+
+   ★크기를 서윤 것에서 베끼면 안 된다. 서윤 셰이더는 눈 반지름의
+     (1.92, 2.85) 배인데, 서햄터는 눈이 얼굴의 절반이라 그 비율을 그대로
+     쓰면 머리만 한 사탕처럼 된다 (그렇게 한 번 나왔다).
+   ★그림에 눈금을 대고 잰 값 — 오른쪽 눈 53.1~56.7% × 15.3~19.4%
+     (=3.6% × 4.1%, 중심 54.9% 17.35%). 안대는 그 눈에 여유만 준 크기다.
+   ★자리는 중심에서 되짚는다 — 크기를 바꿔도 눈에서 안 벗어난다. */
+#pet .patch{
+    --patchW:5.0%;  --patchH:6.1%;
+    position:absolute;
+    left:calc(54.9% - var(--patchW)/2); top:calc(17.35% - var(--patchH)/2);
+    width:var(--patchW); height:var(--patchH);
+    border-radius:32% / 28%;
+    background:
+      radial-gradient(ellipse 76% 68% at 30% 26%, #43414e 0%, rgba(67,65,78,0) 60%),
+      linear-gradient(#17151b 0%, #121014 55%, #0a090c 100%);
+    box-shadow:inset 0 0 0 .07em rgba(92,85,98,.6), 0 .05em .16em rgba(0,0,0,.5);
+    opacity:0;transition:opacity .2s ease;
+  }
+/* 끈 — 안대에서 머리 바깥(오른쪽)으로 위·아래 두 갈래.
+   ★길이는 안대 기준(%)이다. 두건 밖으로 뻗으면 머리에 안 두른 것처럼 보인다. */
+#pet .patch::before,#pet .patch::after{
+    content:"";position:absolute;background:#0e0d10;border-radius:1px;height:16%;
+  }
+#pet .patch::before{left:72%;top:10%;width:110%;transform-origin:0 50%;transform:rotate(-30deg)}
+#pet .patch::after {left:72%;top:76%;width:86%; transform-origin:0 50%;transform:rotate(26deg)}
+#pet.gungye .patch{opacity:1}
+
 /* ── 반응 동작 ─────────────────────────────────────────────────────
    서윤은 WebGL 메쉬라 setEmotion() 이 표정·몸짓을 만든다. 서햄터는 그림
    한 장이라 그럴 게 없다 — 알람이 울리면 **아무 반응이 없어 보였다.**

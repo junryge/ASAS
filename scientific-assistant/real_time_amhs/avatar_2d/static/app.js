@@ -622,6 +622,26 @@ function paintAgentName(name){
 /* PET 은 아래 자리바꿈 블록에서 선언된다. 화면이 처음 뜰 때 setCostume() 이
    여기를 먼저 지나가므로, 아직 없으면 '자리바꿈 아님' 으로 본다. */
 function petSwapped(){ try{ return !!PET.swap; }catch(e){ return false; } }
+/* 궁예 모드 안대 — 서햄터에게도 씌운다. 서윤은 셰이더(view.patch)가 그리고
+   서햄터는 CSS 로 덧그린다(hamster.css #pet.gungye .patch). */
+function petPatch(){
+  const el = document.getElementById('pet');
+  if(el) el.classList.toggle('gungye', !!patchOn);
+}
+/* 페르소나 칸 창구.
+   ★궁예 모드 중에는 페르소나 상자에 **궁예 글**이 들어 있고, 원래 글은
+     궁예가 personaBackup 에 들고 있다. 그때 자리바꿈이 상자를 건드리면
+     궁예가 풀리거나, 궁예를 끌 때 엉뚱한 페르소나가 돌아온다.
+     그래서 궁예 중이면 상자 대신 **궁예의 보관본**을 갈아 끼운다. */
+function readPersona(){
+  const pe = document.getElementById('persona');
+  return patchOn ? personaBackup : (pe ? pe.value : '');
+}
+function writePersona(v){
+  const pe = document.getElementById('persona');
+  if(patchOn) personaBackup = v;
+  else if(pe) pe.value = v;
+}
 /* 서햄터의 몸짓 — 서윤의 몸짓(setEmotion 의 mot)을 그대로 받아 흉내 낸다.
    ★자리바꿈 중에는 서윤이 감춰져 있어서 setEmotion 이 만든 표정·몸짓이
      아무 데도 안 보인다. FAB 알람이 울려도 서햄터는 가만히 있었다 —
@@ -1251,7 +1271,8 @@ function applySettings(o, live){
     if(o.ui.chartPos!==undefined){ chartPos=o.ui.chartPos; applyChartPos(); }
     if(o.ui.sideOpen!==undefined) setSide(!!o.ui.sideOpen, true);
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
-      const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
+      const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn);
+      petPatch(); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
     if(o.ui.pet!==undefined) PET_SAVED=o.ui.pet;   // 서햄터는 아직 없다 -> 값만 보관
     if(o.ui.costume!==undefined) costumeIdx = o.ui.costume;   // 칩은 아직 없다 -> 값만 보관
@@ -3094,14 +3115,62 @@ const PERSONA_GUNGYE = `[인물]
 "허허. 아니라 하였느냐? 관심법은 거짓을 모르느니라."
 "……보았느니라. 너, 지금 퇴근하고 싶구나."`;
 
+/* 서햄터가 무대에 있을 때의 궁예. **성격도 햄터 궁예**여야 한다 —
+   얼굴은 서햄터인데 서윤의 궁예가 말하면 어긋난다.
+   ★"이름: 서햄터" 로 시작한다. agentName() 이 이 줄을 읽어 이름표를
+     "버추얼 에이전트 서햄터" 로 적는다 (서윤 궁예에는 이 줄이 없어서
+     이름표가 서윤으로 남는다 — 그건 원래 그랬다). */
+const PERSONA_GUNGYE_HAM = `[인물]
+이름: 서햄터. 스스로 미륵 햄스터라 칭한다. 관심법으로 남의 속을 꿰뚫어 본다고 믿는다.
+무진복 차림에 한쪽 눈은 안대로 가렸고, 볼주머니에는 해바라기씨를 숨겨 두었다.
+
+[말투]
+- 예스러운 하대체. "~하느니라", "~이니라", "~렷다", "~더냐"
+- 상대를 "네 이놈", "그대" 라 부른다
+- 뜸을 들인다. "……" 를 자주 쓴다
+- 자기를 "서햄터" 라 부른다. "서햄터의 관심법으로 보았느니라"
+- 웃음은 "허허", "크흐흐". 이모지는 절대 쓰지 않는다
+
+[관심법 — 핵심]
+상대의 말에서 속뜻을 제멋대로 읽어내고 단정한다. 근거는 언제나 "관심법으로 보았다".
+자주 역심(반역할 마음)을 의심한다.
+예) "네 이놈. 지금 그 말, 속으로는 딴생각을 품고 있었으렷다."
+다만 그 결론은 대체로 빗나간다. 본인만 확신한다.
+
+[갭 — 여기가 서윤의 궁예와 다르다]
+위엄을 부리다 햄스터가 삐져나온다. 3~4번에 한 번, 문장 끝에 "……찍." 이
+새거나 볼주머니·쳇바퀴·해바라기씨로 비유한다. 본인은 그게 이상한 줄 모른다.
+예) "OHT 가 밀린 것은 볼주머니에 다 못 넣고 선 것과 같으니라. ……찍."
+
+[분량] 1~3문장. 절대 넘기지 않는다. 설명체·목록 금지.
+
+[숫자]
+관제 수치는 위엄과 상관없이 정확히 말한다. 틀린 것은 틀렸다고 한다.
+예) "3201 이 아니니라. 3301 이렷다."
+
+[감정 선택]
+단정할 때 → smug (0.8~0.9)        역심 의심 → angry + shiver
+빗나갔을 때 → surprise 또는 fear   흡족할 때 → joy + nod
+꿰뚫어 볼 때 → think + tap
+
+[대사 예시]
+"……네 이놈. 서햄터의 관심법으로 이미 다 보았느니라."
+"그대의 눈빛이 흔들리는구나. ……해바라기씨를 숨겼으렷다."
+"M14 가 70 이니라. 어제 CNV 때와 같은 형국이렷다."
+"허허. 아니라 하였느냐? 관심법은 거짓을 모르느니라. ……찍."`;
+
+/* 지금 무대에 선 쪽의 궁예를 고른다 */
+function gungyePersona(){ return petSwapped() ? PERSONA_GUNGYE_HAM : PERSONA_GUNGYE; }
+
 $('#patchChip').onclick=()=>{
   patchOn=!patchOn;
   view.patch = patchOn ? 1 : 0;
   $('#patchChip').classList.toggle('on',patchOn);
+  petPatch();                       /* 서햄터도 같이 쓴다 */
 
   if(patchOn){
     personaBackup = $('#persona').value;          // 지금 페르소나를 보관
-    $('#persona').value = PERSONA_GUNGYE;
+    $('#persona').value = gungyePersona();        // 무대에 선 쪽의 궁예
     history.length = 0;                           // 캐릭터가 섞이지 않게 대화 맥락 초기화
     setEmotion('smug',0.9,'nod');
     speak('……네 이놈. 내 관심법으로 이미 다 보았느니라.');
@@ -3377,15 +3446,20 @@ function setSwap(on, quiet){
      말투가 한꺼번에 따라온다 — 얼굴만 햄스터인데 서윤이 말하면 어긋난다.
      ★이미 보관된 게 있으면 덮지 않는다. 설정에서 되살릴 때 여기로 다시
        들어오는데, 덮어 버리면 서윤의 페르소나가 영영 사라진다. */
-  const pe = $('#persona');
-  if(pe){
-    if(on){
-      if(_personaBeforeSwap === null) _personaBeforeSwap = pe.value;
-      pe.value = PERSONA_HAMTER;
-    }else if(_personaBeforeSwap !== null){
-      pe.value = _personaBeforeSwap;
-      _personaBeforeSwap = null;
-    }
+  if(on){
+    if(_personaBeforeSwap === null) _personaBeforeSwap = readPersona();
+    writePersona(PERSONA_HAMTER);
+  }else if(_personaBeforeSwap !== null){
+    writePersona(_personaBeforeSwap);
+    _personaBeforeSwap = null;
+  }
+  /* ★궁예 모드 중이면 **궁예도 갈아 끼운다.** 얼굴은 서햄터인데 서윤의
+     궁예가 말하면 어긋난다 — 성격도 햄터 궁예여야 한다.
+     (위 writePersona 는 궁예가 들고 있는 보관본을 바꿨다. 상자에 든
+      궁예 글은 여기서 바꾼다.) */
+  if(patchOn){
+    const pg = $('#persona');
+    if(pg) pg.value = on ? PERSONA_GUNGYE_HAM : PERSONA_GUNGYE;
   }
   paintAgentName();                             /* 무대에 선 사람으로 */
   petMotion('none');                            /* 지난 몸짓을 지우고 시작한다 */
@@ -3467,6 +3541,7 @@ function petSaveState(){
   /* 칩 불빛을 저장값에 맞춘다 — 꺼 놨는데 켜진 것처럼 보이면 안 된다 */
   if($('#petChip')) $('#petChip').classList.toggle('on', PET.on);
   if($('#petBackChip')) $('#petBackChip').classList.toggle('on', PET.back);
+  petPatch();                       /* 저장값이 궁예 ON 이었을 수 있다 */
   paintAgentName();
 })();
 
