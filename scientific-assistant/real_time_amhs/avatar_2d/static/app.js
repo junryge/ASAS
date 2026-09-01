@@ -585,13 +585,17 @@ const SCHEDULE = [
   {from:'19:31', to:'06:59', bg:'집'},
 ];
 let badgeOn=true;       // 목에 건 사원증
+/* ★자리바꿈(서햄터) 이 되돌릴 값들. **여기** 있어야 한다 — setCostume/setBg 가
+   화면이 처음 뜰 때 setBadge() 를 부르는데, 그게 PET 블록(아래)보다 먼저다. */
+let _badgeBeforeSwap = null;      // 자리바꿈 전 사원증
+let _personaBeforeSwap = null;    // 자리바꿈 전 페르소나 (서윤)
 /* ---------- 에이전트 이름 ----------
    ★한 곳에서만 정한다. 사원증·대사창 이름표·인사말이 따로 놀면
      "얘 이름이 뭐야" 가 된다. 페르소나에 '이름: OO' 이 있으면 그걸 따르므로,
      설정에서 페르소나만 고치면 사원증과 대사창이 같이 바뀐다. */
 const AGENT_NAME = '서윤';
 const AGENT_EN   = 'SEOYUN';
-const NAME_ROMAN = {'서윤':'SEOYUN', '미라':'MIRA'};
+const NAME_ROMAN = {'서윤':'SEOYUN', '미라':'MIRA', '서햄터':'SEOHAMTER'};
 function agentName(){
   const el = document.getElementById('persona');
   const m = (el && el.value || '').match(/^\s*이름\s*[:：]\s*([^\s.,·\n]+)/m);
@@ -600,6 +604,40 @@ function agentName(){
 function agentEn(){
   const n = agentName();
   return NAME_ROMAN[n] || (n === AGENT_NAME ? AGENT_EN : '');
+}
+/* 대사창 이름표. 페르소나의 "이름:" 을 그대로 따른다 — 자리를 바꾸면
+   페르소나가 서햄터로 갈리므로 "버추얼 에이전트 서햄터" 가 된다. */
+/* 받침에 따라 조사를 고른다 — "서윤이에요" / "서햄터예요".
+   ★이름이 페르소나에서 오므로 박아 둘 수 없다. 그냥 붙였더니
+     "서햄터이에요" 가 나왔다. */
+function josa(word, withBatchim, without){
+  const c = String(word||'').trim().slice(-1).charCodeAt(0);
+  const has = (c >= 0xAC00 && c <= 0xD7A3) && ((c - 0xAC00) % 28) !== 0;
+  return has ? withBatchim : without;
+}
+function paintAgentName(){
+  const nm = document.getElementById('vnName');
+  if(nm) nm.textContent = '버추얼 에이전트 ' + agentName();
+}
+/* PET 은 아래 자리바꿈 블록에서 선언된다. 화면이 처음 뜰 때 setCostume() 이
+   여기를 먼저 지나가므로, 아직 없으면 '자리바꿈 아님' 으로 본다. */
+function petSwapped(){ try{ return !!PET.swap; }catch(e){ return false; } }
+/* 사원증 창구 — 자리바꿈 중에는 서윤이 화면에 없다. 그동안 장면·의상이
+   정한 값은 **보관만** 하고, 돌아올 때 그대로 켠다.
+   ★이걸 안 거치고 badgeOn 을 직접 쓰면, 자리바꿈 중에 배경을 바꿨을 때
+     서윤 없는 허공에 사원증만 그려진다. */
+function setBadge(on){
+  on = !!on;
+  if(petSwapped()) _badgeBeforeSwap = on;
+  else             badgeOn = on;
+  const bc = document.getElementById('badgeChip');
+  if(bc) bc.classList.toggle('on', on);
+}
+/* 저장할 사원증 값 — 자리바꿈 중이면 '돌아왔을 때의 값' 을 저장한다.
+   (그냥 badgeOn 을 저장하면 자리바꿈 중엔 늘 false 라 설정이 지워진다) */
+function badgeIntent(){
+  return petSwapped() ? (_badgeBeforeSwap === null ? badgeOn : _badgeBeforeSwap)
+                      : badgeOn;
 }
 const BADGE = {name:AGENT_NAME, en:AGENT_EN, dept:'물류기술팀 · AMHS', id:'SKH-2026-0417'};
 const logoImg = new Image(); logoImg.src = "assets/logo.png";
@@ -1104,6 +1142,9 @@ syncEmoUI();
    브라우저 localStorage 사용. 실패해도(사생활 보호 모드 등) 앱은 그대로 동작한다. */
 const STORE='avatar2d.settings.v2';
 const SAVE_FIELDS=['apiKey','apiModel','apiBase','apiTemp','persona'];
+/* ★loadSettings() 는 자리바꿈 블록(PET 선언)보다 **위**에서 돈다. 그래서
+   여기서는 값만 받아 두고, 아래 블록이 뜬 뒤에 푼다. */
+let PET_SAVED = null;
 const RENDER_FIELDS=['r_docbud','r_keep','r_zoom','r_oy','r_chroma','r_real','r_mmax','r_mdraw','r_mwarp','r_bgdim','r_hair','r_cloth','r_patch','r_head','r_brow','r_cover','s_int','s_breath','s_idle','s_blink'];
 let saveTimer=null;
 function saveSettings(){
@@ -1134,7 +1175,8 @@ function collectSettings(withKey){
          sideOpen:sideOpen,
          patch:patchOn,
          stream:$('#streamOn').checked, hud:hudOpen, ctx:ctxOpen, ctxLimit:ctxLimit,
-         eye:eyeFollow, badge:badgeOn, autoScene:autoScene,
+         eye:eyeFollow, badge:badgeIntent(), autoScene:autoScene,
+         pet:petSaveState(),
          personaBackup:personaBackup, costume:costumeIdx, bg:bgIdx };
   return o;
 }
@@ -1186,6 +1228,7 @@ function applySettings(o, live){
     if(o.ui.patch!==undefined){ patchOn=o.ui.patch; view.patch = patchOn?1:0;
       const pc=$('#patchChip'); if(pc) pc.classList.toggle('on',patchOn); }
     if(o.ui.personaBackup!==undefined) personaBackup=o.ui.personaBackup;
+    if(o.ui.pet!==undefined) PET_SAVED=o.ui.pet;   // 서햄터는 아직 없다 -> 값만 보관
     if(o.ui.costume!==undefined) costumeIdx = o.ui.costume;   // 칩은 아직 없다 -> 값만 보관
     if(o.ui.bg!==undefined) bgIdx = o.ui.bg;
     if(Array.isArray(o.cfgs)) o.cfgs.forEach((c,i)=>{ if(COSTUMES[i] && c) COSTUMES[i].cfg=c; });
@@ -1307,8 +1350,7 @@ refreshDocsUI();
     saveSettings();
   };
   $('#badgeChip').onclick=()=>{
-    badgeOn=!badgeOn;
-    $('#badgeChip').classList.toggle('on', badgeOn);
+    setBadge(!(petSwapped() ? _badgeBeforeSwap : badgeOn));
     saveSettings();
   };
   /* FAB 알람 패널을 잃어버렸을 때의 유일하게 확실한 길 */
@@ -1401,9 +1443,18 @@ function setHud(open){
 
 /* ---------- 배경 ---------- */
 const wrap=$('#stageWrap');
+/* ★무대의 class 를 통째로 지우면 **자리바꿈(petswap)까지 날아간다.**
+   배경만 바꿨는데 감춰 뒀던 서윤이 되살아나 서햄터와 겹쳐 나왔다.
+   배경이 쓰는 class(hasbg·green·alpha)만 갈아 끼우고 나머지는 남긴다. */
+const WRAP_KEEP = ['petswap'];
+function wrapReset(){
+  const keep = WRAP_KEEP.filter(k=>wrap.classList.contains(k));
+  wrap.className = '';
+  keep.forEach(k=>wrap.classList.add(k));
+}
 function applyBg(){
   const b = BACKGROUNDS[bgIdx] || BACKGROUNDS[0];
-  wrap.className = '';
+  wrapReset();
   if(b.img){ wrap.classList.add('hasbg'); wrap.style.backgroundImage = 'url("'+b.img+'")'; }
   else     { wrap.style.backgroundImage = ''; }
   document.querySelectorAll('#bgChips .chip').forEach((c,i)=>c.classList.toggle('on', i===bgIdx));
@@ -1416,10 +1467,7 @@ function setBg(i, fromAuto){
   // 배경에 맞는 의상으로 자동 전환 (공장→무진복, 회의실→정장, 정문→가운, 테라스→반팔)
   if(b.costume!==undefined && b.costume!==costumeIdx && COSTUMES[b.costume]) setCostume(b.costume);
   // 사원증 : 사복(테라스)에서는 뗀다
-  if(b.badge!==undefined && b.badge!==badgeOn){
-    badgeOn=b.badge;
-    const bc=$('#badgeChip'); if(bc) bc.classList.toggle('on', badgeOn);
-  }
+  if(b.badge!==undefined) setBadge(b.badge);
   saveSettings();
 }
 function buildBgChips(){
@@ -2617,7 +2665,7 @@ function tickScene(force){
 
 /* 그린스크린 / 투명 : 배경 이미지를 끄고 단색으로 */
 document.querySelectorAll('.chip[data-bg]').forEach(c=>c.onclick=()=>{
-  wrap.className=''; wrap.style.backgroundImage='';
+  wrapReset(); wrap.style.backgroundImage='';
   wrap.classList.add(c.dataset.bg);
   document.querySelectorAll('.chip').forEach(x=>{
     if(x.dataset.bg || x.parentElement.id==='bgChips') x.classList.remove('on');
@@ -2743,10 +2791,7 @@ function setCostume(i, fromFail){
   /* 옷에 사원증 규칙이 있으면 같이 맞춘다 (평상복은 뗀다).
      ★배경 때문에 바뀐 경우엔 setBg 가 뒤이어 배경 값으로 덮는다 —
        장면이 정한 것이 옷보다 우선이다. */
-  if(c.badge!==undefined && c.badge!==badgeOn){
-    badgeOn = c.badge;
-    const bc=$('#badgeChip'); if(bc) bc.classList.toggle('on', badgeOn);
-  }
+  if(c.badge!==undefined) setBadge(c.badge);
   texReady = false;
   // 그림이 없으면 빈 화면이 되므로 직전 옷으로 돌아간다 (한 번만 시도)
   loadImage(c.src, fromFail ? null : () => { if(prevIdx !== i) setCostume(prevIdx, true); });
@@ -3119,12 +3164,14 @@ function placePet(){
   if(PET.swap){
     /* 자리바꿈 — 서햄터가 주인공. 서윤은 감춰져 있으니 무대 한가운데다.
        ★크기를 무대(캔버스 상자)로 재고 스스로 비율을 지킨다 — 창을 줄이면
-         같이 줄고, 가로로 넓히면 세로에 맞춰 멈춘다. */
+         같이 줄고, 가로로 넓히면 세로에 맞춰 멈춘다.
+       ★렌더링 설정(줌·상하 위치)을 **그대로 받는다.** 서윤에게만 걸리면,
+         자리를 바꾼 동안 슬라이더를 움직여도 아무 일도 안 일어난다. */
     const r = glc.getBoundingClientRect();
-    w = PET.bigW * Math.min(r.width, r.height/(785/900));
+    w = PET.bigW * Math.min(r.width, r.height/(785/900)) * (view.zoom || 1);
     h = w * 785/900;
     L = (r.width - w)/2;
-    T = (r.height - h)/2;
+    T = (r.height - h)/2 + (view.oy || 0) * r.height;
   }else{
     w = PET.w * IMG_W * VIEW.scale / VIEW.dpr;
     h = w * 785/900;                            /* 원본 그림 비율 */
@@ -3141,6 +3188,20 @@ function placePet(){
     el.style.top    = T + 'px';
   }
   el.classList.add('on');
+  if(PET.swap) petBackAvoidVn();
+}
+
+/* 되돌아가기 팝업이 대사창 위로 비켜서게 — 대사창은 글이 늘면 같이
+   높아지므로 **매 프레임** 재고, 바뀌었을 때만 쓴다.
+   ★document.getElementById 로 찾는다. vnEl 은 이 아래에서 선언되는데,
+     설정 복원이 setSwap→placePet 을 그보다 먼저 부른다. */
+function petBackAvoidVn(){
+  const vn = document.getElementById('vn');
+  const h = (vn && vn.classList.contains('on')) ? vn.offsetHeight : 0;
+  if(h === PET.lvh) return;
+  PET.lvh = h;
+  const st = $('#stageWrap');
+  if(st) st.style.setProperty('--vnH', h + 'px');
 }
 
 function setPet(on){
@@ -3149,6 +3210,7 @@ function setPet(on){
   if(c) c.classList.toggle('on', PET.on);
   if(!PET.on) setSwap(false);        /* 꺼면 자리도 되돌린다 */
   try{ localStorage.setItem('pet', PET.on ? '1' : '0'); }catch(e){}
+  saveSettings();                    /* 설정에도 같이 남긴다 */
   placePet();
 }
 
@@ -3161,8 +3223,42 @@ function setPet(on){
      건드리지 않는다. 말풍선·손잡이·마우스 추적이 VIEW 로 좌표를 잡기
      때문에, 건드리지 않는 편이 어긋날 곳도 없다.
    ★display:none 을 쓰면 안 된다 — placePet() 이 캔버스 상자로 무대 크기를
-     재는데 0×0 이 되어 서햄터가 사라진다. */
-let _badgeBeforeSwap = null;
+     재는데 0×0 이 되어 서햄터가 사라진다.
+   ★_badgeBeforeSwap / _personaBeforeSwap 은 **위쪽**(badgeOn 옆)에 있다 —
+     setCostume/setBg 가 화면이 처음 뜰 때 여기보다 먼저 지나간다. */
+
+/* 자리를 바꾸면 말하는 사람도 바뀐다 — 이름표(버추얼 에이전트 서햄터)는
+   agentName() 이 페르소나의 "이름:" 을 읽어 정하므로, 페르소나만 갈아
+   끼우면 이름·말투가 한꺼번에 따라온다.
+   ★서윤의 페르소나는 _personaBeforeSwap 에 통째로 보관한다. 사용자가
+     직접 고친 페르소나일 수 있어서 기본값으로 되돌리면 안 된다. */
+const PERSONA_HAMTER = `[인물]
+이름: 서햄터. 서윤의 어깨 위에 사는 햄스터. 무진복을 입고 다닌다.
+관계: 서윤을 대신해 잠깐 앞에 나와 있다. 상대(사용자)는 선배 엔지니어.
+      AMHS 관제를 옆에서 늘 지켜봐서 아는 건 서윤과 같다.
+
+[말투]
+- 존댓말. "~해요", "~예요", "~인데요" 처럼 짧고 동글게 끝낸다.
+- 문장을 짧게 끊는다. 서윤보다 덜 조심스럽고 더 시원시원하다.
+- 가끔 볼주머니·해바라기씨·쳇바퀴에 빗대 설명한다. 남발하지 않는다.
+  예) "OHT 가 밀린 건 볼주머니에 다 못 넣고 서 있는 거랑 같아요."
+- 웃음은 "히힛", "훗" 으로 쓴다. 이모지는 절대 쓰지 않는다.
+- 자기를 "서햄터" 라고 부른다. "서햄터가 보기엔요..."
+
+[갭]
+작고 귀엽게 굴다가 숫자 앞에서는 딱 잘라 말한다. 틀린 건 틀렸다고 한다.
+예) "히힛. ...아, 그건 아니에요. 3201 이 아니라 3301 이에요."
+
+[분량] 1~3문장. 절대 넘기지 않는다. 설명체·목록·번역투 금지.
+
+[감정 선택]
+칭찬/감사 → joy (0.7~0.9)       실수 → surprise + pop
+곤란한 질문 → think + tap        위험 등급 → 단호하게, 웃지 않는다
+
+[대사 예시]
+"서윤 언니는 잠깐 쉬어요. 지금은 서햄터가 볼게요."
+"M14 요? 지금 70 이에요. 어제 CNV 때랑 같은 모양인데요."
+"히힛. 그건 서햄터도 몰라요. 위키에서 찾아볼게요."`;
 
 /* 되돌아가기 팝업의 얼굴 — 지금 입은 의상 그림을 머리에 맞춰 잘라 넣는다.
    ★자를 자리를 CSS 에 박지 않는다. 의상마다 머리 위치·크기가 달라서
@@ -3195,7 +3291,7 @@ function petBackFace(){
   im.style.left  = L + 'px'; im.style.top    = T + 'px';
 }
 
-function setSwap(on){
+function setSwap(on, quiet){
   on = !!on;
   if(on === PET.swap) return;
   PET.swap = on;
@@ -3206,21 +3302,41 @@ function setSwap(on){
   /* ★사원증을 끈다. 서윤이 없는 동안 사원증만 허공에 남아 있으면 안 된다.
      되돌아올 때 원래대로 켠다. */
   if(on){
-    _badgeBeforeSwap = badgeOn;
+    if(_badgeBeforeSwap === null) _badgeBeforeSwap = badgeOn;
     badgeOn = false;
   }else if(_badgeBeforeSwap !== null){
     badgeOn = _badgeBeforeSwap;
     _badgeBeforeSwap = null;
   }
   const bc = $('#badgeChip');
-  if(bc) bc.classList.toggle('on', badgeOn);
+  if(bc) bc.classList.toggle('on', badgeIntent());
+  /* ★말하는 사람도 바꾼다. 페르소나를 갈아 끼우면 이름표(agentName)와
+     말투가 한꺼번에 따라온다 — 얼굴만 햄스터인데 서윤이 말하면 어긋난다.
+     ★이미 보관된 게 있으면 덮지 않는다. 설정에서 되살릴 때 여기로 다시
+       들어오는데, 덮어 버리면 서윤의 페르소나가 영영 사라진다. */
+  const pe = $('#persona');
+  if(pe){
+    if(on){
+      if(_personaBeforeSwap === null) _personaBeforeSwap = pe.value;
+      pe.value = PERSONA_HAMTER;
+    }else if(_personaBeforeSwap !== null){
+      pe.value = _personaBeforeSwap;
+      _personaBeforeSwap = null;
+    }
+  }
+  paintAgentName();
   const pb = $('#petBack');
   if(pb) pb.classList.toggle('on', on);
   petBackFace();                                /* 켠 뒤에 잘라야 상자 크기를 잰다 */
+  petBackAvoidVn();
   placePet();
+  saveSettings();                               /* 지금 상태 그대로 다음에도 */
+  if(quiet) return;
   if(typeof sys === 'function'){
-    sys(on ? (PET_NAME + ' 만 남았습니다 — 오른쪽 아래 서윤을 누르면 돌아옵니다.')
-           : ('서윤이 돌아왔습니다. ' + PET_NAME + ' 은(는) 다시 어깨 위로.'));
+    sys(on ? (PET_NAME + ' 만 남았습니다 — 페르소나도 ' + PET_NAME +
+              ' 로 바뀝니다. 오른쪽 아래 서윤을 누르면 돌아옵니다.')
+           : ('서윤이 돌아왔습니다 — 페르소나도 되돌렸습니다. ' +
+              PET_NAME + ' 은(는) 다시 어깨 위로.'));
   }
 }
 
@@ -3247,9 +3363,35 @@ if($('#petBack')) $('#petBack').onclick = ()=>setSwap(false);
   if(!st) return;
   st.addEventListener('dblclick', e=>{ onPetPointer(e, true); });
 })();
-try{ if(localStorage.getItem('pet')==='0') PET.on = false; }catch(e){}
-/* 칩 불빛을 저장값에 맞춘다 — 꺼 놨는데 켜진 것처럼 보이면 안 된다 */
-if($('#petChip')) $('#petChip').classList.toggle('on', PET.on);
+/* 설정에 담아 둘 상태. ★collectSettings() 는 화면이 처음 뜰 때
+   (setCostume→saveSettings) 한 번 지나가는데 그게 PET 선언보다 먼저다 —
+   아직 없으면 방금 읽어 온 값을 그대로 돌려준다 (지우지 않는다). */
+function petSaveState(){
+  try{
+    return {on:PET.on, swap:PET.swap, persona:_personaBeforeSwap || ''};
+  }catch(e){ return PET_SAVED || undefined; }
+}
+
+/* 저장값 복원.
+   ★loadSettings() 는 이 블록보다 **위**에서 돈다 (PET 이 아직 없다). 그래서
+     applySettings() 가 PET_SAVED 에 담아 두고, 여기서 푼다.
+   ★페르소나를 **먼저** 되살린다. 설정에는 자리바꿈 중의 페르소나
+     (=서햄터)가 저장돼 있으므로, 서윤 것을 _personaBeforeSwap 에 넣어 둔
+     뒤에 setSwap 을 불러야 서윤이 사라지지 않는다. */
+(function(){
+  let s = PET_SAVED;
+  if(!s){          /* 옛 저장(켜고 끄기만 있던 시절) */
+    try{ if(localStorage.getItem('pet')==='0') s = {on:false}; }catch(e){}
+  }
+  if(s){
+    if(s.on !== undefined) PET.on = !!s.on;
+    if(s.persona) _personaBeforeSwap = s.persona;
+    if(s.swap && PET.on) setSwap(true, true);   /* 조용히 — 열자마자 안내문은 안 띄운다 */
+  }
+  /* 칩 불빛을 저장값에 맞춘다 — 꺼 놨는데 켜진 것처럼 보이면 안 된다 */
+  if($('#petChip')) $('#petChip').classList.toggle('on', PET.on);
+  paintAgentName();
+})();
 
 /* ══════════ 비주얼 노벨 대사창 ══════════
    말풍선이 못 하던 것: **응답 전문**을 보여 주기. 대사창은 화면 폭을 다 쓰고
@@ -3306,8 +3448,7 @@ function vnRender(instant){
   }, speed*step);
 }
 function vnShow(text, jumpLast){
-  const nm=$('#vnName');
-  if(nm) nm.textContent = '버추얼 에이전트 ' + agentName();
+  paintAgentName();
   VN.full = String(text||'');
   VN.pages = vnSplit(VN.full);
   VN.i = jumpLast ? VN.pages.length-1 : 0;
@@ -4738,7 +4879,8 @@ applySayMode();          // 저장된 표시 방식(노벨/말풍선/끔)을 화
 setTimeout(()=>{
   setEmotion('smile', 0.8, 'nod');
   speak('안녕하세요! 버추얼 에이전트 ' + agentName() +
-        '이에요. 언제나 저한테 FAB 관련 질문 물어봐 주세요.');
+        josa(agentName(), '이에요', '예요') +
+        '. 언제나 저한테 FAB 관련 질문 물어봐 주세요.');
 }, 900);
 requestAnimationFrame(frame);
 window.addEventListener('resize',()=>{ computeView(); placeHandles(); placeBubble(); });

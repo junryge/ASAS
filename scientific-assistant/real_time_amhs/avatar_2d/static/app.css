@@ -34,7 +34,11 @@
   #stageWrap.petswap #handles{visibility:hidden}
 
   /* 되돌아가기 팝업 — 자리바꿈 중에만 뜬다 */
-  #petBack{position:absolute;right:14px;bottom:14px;z-index:10;display:none;
+  /* ★대사창(#vn) 위로 비켜선다. 대사창은 무대 아래를 가로로 다 쓰고 쪽
+     넘김 단추(◀ ▶ ✕)가 **오른쪽 끝**에 있어서, 그냥 bottom:14px 로 두면
+     팝업이 그 단추를 덮는다. 높이는 app.js 가 --vnH 로 넣어 준다. */
+  #petBack{position:absolute;right:26px;bottom:calc(var(--vnH, 0px) + 14px);
+    z-index:10;display:none;
     align-items:center;gap:10px;padding:8px 14px 8px 8px;border-radius:44px;
     background:rgba(15,20,29,.86);border:1px solid rgba(255,255,255,.14);
     box-shadow:0 6px 22px rgba(0,0,0,.42);cursor:pointer;

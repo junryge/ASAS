@@ -1838,11 +1838,22 @@ class 에이전트_이름(unittest.TestCase):
         self.assertNotIn("fx.fillText(BADGE.name", blk)
 
     def test_대사창_이름표가_버추얼_에이전트_서윤(self):
+        """★이름표는 **페르소나를 따라간다.** 고정 문구면 이름을 바꿔도
+        대사창만 옛 이름이 남는다.
+
+        ★그리는 자리는 paintAgentName() 하나다. 예전엔 vnShow() 안에서
+          직접 그렸는데, 그러면 **말을 걸기 전에는** 이름표가 안 바뀐다
+          (서햄터로 자리를 바꿔도 서윤이라고 적혀 있었다).
+        """
         self.assertIn('<div id="vnName">버추얼 에이전트 서윤</div>', self.html)
-        blk = self.js[self.js.index("function vnShow("):]
-        blk = blk[:blk.index("\nfunction vnGo(")]
+        blk = self.js[self.js.index("function paintAgentName("):]
+        blk = blk[:blk.index("\nfunction ")]
         self.assertIn("'버추얼 에이전트 ' + agentName()", blk,
                       "이름표가 고정 문구라 페르소나를 바꿔도 안 따라온다")
+        self.assertIn("vnName", blk)
+        vn = self.js[self.js.index("function vnShow("):]
+        vn = vn[:vn.index("\nfunction vnGo(")]
+        self.assertIn("paintAgentName()", vn, "말할 때 이름표를 다시 안 그린다")
 
     def test_첫_인사에_이름이_들어간다(self):
         self.assertIn("'안녕하세요! 버추얼 에이전트 ' + agentName()", self.js)

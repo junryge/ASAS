@@ -322,5 +322,146 @@ class 자리바꿈(unittest.TestCase):
         self.assertIn("서햄터", self.h)
 
 
+class 자리바꿈이_바꾸는_것(unittest.TestCase):
+    """자리를 바꾸면 **말하는 사람이 바뀐다.** 얼굴만 햄스터인데 서윤이
+    말하면 어긋난다 — 이름표·페르소나·설정 저장이 같이 따라가야 한다.
+
+    ★"배경 변경하게 되면 겹치면서 나오는데" — applyBg() 가 무대의 class 를
+      통째로 지워서 자리바꿈(petswap)까지 날아갔다. 감춰 뒀던 서윤이
+      되살아나 서햄터와 겹쳤다. 여기서 그 자리를 못 박는다.
+    """
+
+    def setUp(self):
+        self.js = _read(JS)
+        self.css = _read(APPCSS)
+
+    def _swap(self):
+        i = self.js.index("function setSwap(")
+        return self.js[i:self.js.index("function onPetPointer(")]
+
+    # ── 배경을 바꿔도 자리바꿈이 살아 있다 ──────────────────────────
+    def test_배경을_바꿔도_서윤이_안_돌아온다(self):
+        """★applyBg() 의 wrap.className='' 이 petswap 을 지웠다."""
+        for fn in ("function applyBg()", "chip[data-bg]"):
+            i = self.js.index(fn)
+            blk = self.js[i:i + 500]
+            self.assertNotIn("wrap.className = ''", blk, fn + " 가 class 를 통째로 지운다")
+            self.assertNotIn("wrap.className=''", blk, fn + " 가 class 를 통째로 지운다")
+
+    def test_지울_때_남길_것을_적어_둔다(self):
+        i = self.js.index("function wrapReset()")
+        blk = self.js[i:i + 300]
+        self.assertIn("WRAP_KEEP", blk)
+        self.assertIn("'petswap'", self.js[self.js.index("const WRAP_KEEP"):][:80])
+
+    # ── 이름 ───────────────────────────────────────────────────────
+    def test_이름표가_서햄터가_된다(self):
+        """agentName() 이 페르소나의 "이름:" 을 읽는다 — 페르소나를 갈아
+        끼우면 "버추얼 에이전트 서햄터" 가 따라온다."""
+        i = self.js.index("const PERSONA_HAMTER")
+        head = self.js[i:i + 200]
+        self.assertIn("이름: 서햄터", head)
+        m = re.search(r"function agentName\(\)[\s\S]{0,300}?이름", self.js)
+        self.assertIsNotNone(m, "agentName 이 페르소나의 이름을 안 읽는다")
+        self.assertIn("paintAgentName()", self._swap(), "자리를 바꿔도 이름표가 그대로다")
+
+    def test_이름표를_한_곳에서_그린다(self):
+        """★두 군데서 그리면 한쪽만 고쳐서 어긋난다 — vnShow 가 따로
+        그리고 있어서, 말을 걸기 전에는 서윤 이름이 그대로 남았다."""
+        self.assertEqual(self.js.count("vnName"), 1,
+                         "이름표를 여러 곳에서 그린다 — paintAgentName() 하나여야 한다")
+        i = self.js.index("function paintAgentName()")
+        self.assertIn("vnName", self.js[i:i + 250])
+
+    def test_인사말_조사를_받침으로_고른다(self):
+        """★그냥 붙였더니 "서햄터이에요" 가 나왔다."""
+        i = self.js.index("안녕하세요! 버추얼 에이전트")
+        blk = self.js[i:i + 200]
+        self.assertIn("josa(", blk)
+        self.assertNotIn("'이에요.", blk, "조사가 박혀 있다")
+
+    # ── 페르소나 ───────────────────────────────────────────────────
+    def test_페르소나가_같이_바뀐다(self):
+        b = self._swap()
+        self.assertIn("PERSONA_HAMTER", b)
+        self.assertIn("_personaBeforeSwap", b)
+
+    def test_서윤_페르소나를_안_잃는다(self):
+        """★사용자가 직접 고친 페르소나다. 기본값으로 되돌리면 안 되고,
+        복원 중에 두 번 들어와도 덮어쓰면 안 된다."""
+        b = self._swap()
+        self.assertIn("if(_personaBeforeSwap === null) _personaBeforeSwap = pe.value", b,
+                      "이미 보관된 것을 덮어쓴다 — 서윤 페르소나가 사라진다")
+        self.assertIn("pe.value = _personaBeforeSwap", b, "돌아올 때 안 되돌린다")
+
+    def test_궁예와_보관함이_다르다(self):
+        """★궁예 모드도 페르소나를 갈아 끼운다. 같은 변수를 쓰면 둘이 엉킨다."""
+        i = self.js.index("$('#patchChip').onclick")
+        blk = self.js[i:i + 900]
+        self.assertIn("personaBackup", blk)
+        self.assertNotIn("_personaBeforeSwap", blk)
+
+    # ── 저장 ───────────────────────────────────────────────────────
+    def test_저장하면_서햄터가_유지된다(self):
+        i = self.js.index("function collectSettings(")
+        self.assertIn("pet:petSaveState()", self.js[i:i + 1800])
+        i2 = self.js.index("function applySettings(")
+        self.assertIn("PET_SAVED=o.ui.pet", self.js[i2:i2 + 3000])
+        self.assertIn("setSwap(true, true)", self.js, "다시 열 때 자리바꿈을 안 되살린다")
+
+    def test_저장값을_늦게_푼다(self):
+        """★loadSettings() 는 PET 선언보다 **위**에서 돈다. 거기서 PET 을
+        건드리면 TDZ 로 죽는다 — 값만 받아 두고 아래에서 푼다."""
+        self.assertLess(self.js.index("let PET_SAVED"), self.js.index("const PET ="))
+        self.assertLess(self.js.index("const RESTORED = loadSettings()"),
+                        self.js.index("const PET ="))
+
+    def test_저장할_때_사원증_뜻을_지킨다(self):
+        """★자리바꿈 중 badgeOn 은 늘 false 다. 그대로 저장하면 사원증
+        설정이 지워진다 — 돌아왔을 때의 값을 저장한다."""
+        i = self.js.index("function collectSettings(")
+        self.assertIn("badge:badgeIntent()", self.js[i:i + 1800])
+
+    def test_사원증을_창구로만_건드린다(self):
+        """★자리바꿈 중에 배경·의상이 사원증을 켜면 서윤 없는 허공에
+        사원증만 그려진다. setBadge() 가 그때는 보관만 한다."""
+        for fn in ("function setBg(", "function setCostume("):
+            i = self.js.index(fn)
+            blk = self.js[i:i + 1400]
+            self.assertNotIn("badgeOn=b.badge", blk, fn)
+            self.assertNotIn("badgeOn = c.badge", blk, fn)
+        i = self.js.index("function setBadge(")
+        self.assertIn("petSwapped()", self.js[i:i + 300])
+
+    def test_PET_이_없어도_안_죽는다(self):
+        """★setCostume() 은 화면이 처음 뜰 때 PET 선언보다 먼저 지나간다."""
+        i = self.js.index("function petSwapped()")
+        self.assertIn("catch", self.js[i:i + 150])
+        i2 = self.js.index("function petSaveState()")
+        self.assertIn("catch", self.js[i2:i2 + 250])
+
+    # ── 렌더링 ─────────────────────────────────────────────────────
+    def test_렌더링_설정이_서햄터에도_걸린다(self):
+        """★서윤에게만 걸리면, 자리를 바꾼 동안 줌·상하 위치를 움직여도
+        아무 일도 안 일어난다."""
+        i = self.js.index("function placePet()")
+        body = self.js[i:self.js.index("function petBackAvoidVn()")]
+        j = body.index("if(PET.swap){")
+        swap = body[j:body.index("}else{")]
+        self.assertIn("view.zoom", swap)
+        self.assertIn("view.oy", swap)
+
+    def test_팝업이_대사창을_안_덮는다(self):
+        """★대사창은 무대 아래를 가로로 다 쓰고 쪽 넘김 단추(◀ ▶ ✕)가
+        오른쪽 끝에 있다 — 그냥 bottom:14px 로 두면 그 단추를 덮는다."""
+        m = re.search(r"#petBack\{([^}]*)\}", self.css)
+        self.assertIsNotNone(m)
+        self.assertIn("--vnH", m.group(1))
+        i = self.js.index("function petBackAvoidVn()")
+        blk = self.js[i:i + 600]
+        self.assertIn("'--vnH'", blk)
+        self.assertIn("getElementById('vn')", blk)
+
+
 if __name__ == "__main__":
     unittest.main()
