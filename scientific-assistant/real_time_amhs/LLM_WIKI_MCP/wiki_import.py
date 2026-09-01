@@ -104,6 +104,16 @@ def files_of(folder):
 
 
 # ── 위키에 보내기 ─────────────────────────────────────────────────────────
+def get_json(base, path, timeout=20):
+    """웹앱에서 JSON 하나 — 사내 주소라 프록시를 타면 안 된다."""
+    import json as _json
+    op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    req = urllib.request.Request(base.rstrip("/") + path,
+                                 headers={"Accept": "application/json"})
+    with op.open(req, timeout=timeout) as r:
+        return _json.loads(r.read().decode("utf-8", "replace"))
+
+
 def post(base, path, fields, timeout=30):
     url = base.rstrip("/") + path
     data = urllib.parse.urlencode(fields, encoding="utf-8").encode("utf-8")
@@ -219,6 +229,39 @@ def main(argv=None):
     if ok < len(plan):
         print("★실패한 것이 있다. 위키 웹앱(app.py)이 떠 있나? ({})"
               .format(a.base))
+        return 1
+
+    # ── 진짜 들어갔나 — **웹앱에 다시 물어본다** ────────────────────────
+    # ★HTTP 302 는 "받았다" 지 "그 위키에 있다" 가 아니다. 실제로 겪었다:
+    #   등록은 다 성공했는데 서윤이 "위키에 그런 내용이 없어요" 라고 했다.
+    #   웹앱(app.py)과 MCP 서버가 **서로 다른 wiki.db** 를 보고 있으면
+    #   이런 일이 난다 — app.py 는 자기 폴더의 data/wiki.db 를 쓴다.
+    #   등록해 놓고 못 찾는 것만큼 헛수고가 없다. 넣었으면 확인한다.
+    try:
+        pages = (get_json(a.base, "/api/pages") or {}).get("pages") or []
+    except Exception as e:                              # noqa: BLE001
+        print("※ 확인은 못 했다 ({}). 위키 화면에서 페이지가 보이는지 직접 "
+              "봐라.".format(e))
+        return 0
+    live = {(str(x.get("domain") or ""), str(x.get("title") or ""))
+            for x in pages}
+    miss = [it for it in plan
+            if (it["domain"], it["meta"]["title"]) not in live]
+    if not miss:
+        print("확인: 웹앱에 {}건 다 있다.".format(len(plan)))
+    else:
+        print("")
+        print("★넣었다는데 웹앱에서 안 보인다 ({}건):".format(len(miss)))
+        for it in miss:
+            print("    {} / {}".format(it["domain"], it["meta"]["title"]))
+        print("")
+        print("  거의 언제나 **DB 가 두 개**여서 그렇다.")
+        print("    내가 읽은 DB : {}".format(db_path()))
+        print("    웹앱({})은 **자기 폴더의 data/wiki.db** 를 쓴다."
+              .format(a.base))
+        print("  둘이 다르면 담당 번호도 달라서 엉뚱한 곳에 들어간다.")
+        print("  · app.py 와 mcp_server.py 를 **같은 폴더**에서 띄우거나")
+        print("  · 환경변수로 한 곳을 가리켜라:  set LLM_WIKI_DATA=<...>\\data")
         return 1
     print("위키 화면에서 [린트] 를 한 번 돌려 고아 페이지·깨진 링크를 확인해라.")
     return 0

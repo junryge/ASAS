@@ -1566,6 +1566,49 @@ class 검색하고_본문까지_읽는다(_Wiki):
         self.assertIn("리프터", got)          # 조각이 아니라 본문에만 있다
         self.assertEqual(used, 3)             # 검색 1 + 본문 2
 
+    def test_소스도_읽는다(self):
+        """★페이지와 소스는 **읽는 도구가 다르다**(readPage · readSource).
+
+        실제로 겪었다. md 를 위키에 **소스로** 올려 놨더니(활동 로그가
+        'upload · 소스 1건' 이었다) 검색에는 걸리는데 본문을 못 읽어서
+        서윤이 "위키에 그런 내용이 없어요" 라고 했다. then 이 하나뿐이라
+        kind='source' 는 걸러지고 아무도 안 읽었다.
+        """
+        h = mcp_client.Hub([self.srv(calls=[{
+            "tool": "searchWiki", "pick": {"query": {"kind": "text"}},
+            "then": [
+                {"tool": "readPage", "label": "위키 본문", "arg": "pageId",
+                 "list": "results", "id": "id", "only": {"kind": "page"},
+                 "max": 2},
+                {"tool": "readSource", "label": "위키 소스", "arg": "sourceId",
+                 "list": "results", "id": "id", "only": {"kind": "source"},
+                 "max": 2},
+            ]}])])
+        self.addCleanup(h.close)
+        got, used = h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertIn("위키 본문", got)
+        self.assertIn("위키 소스", got, "소스는 읽으러 가지도 않았다")
+        self.assertEqual(used, 4)          # 검색 1 + 본문 2 + 소스 1
+
+    def test_설정에_둘_다_들어_있다(self):
+        """★실제 설정에서 빠지면 시험이 통과해도 소용없다."""
+        w = [x for x in config.MCP_SERVERS if x["key"] == "wiki"][0]
+        th = w["calls"][0]["then"]
+        self.assertIsInstance(th, list, "then 이 하나뿐이다 — 소스를 못 읽는다")
+        tools = {t["tool"] for t in th}
+        self.assertEqual(tools, {"readPage", "readSource"})
+        for t in th:
+            self.assertIn(t["only"]["kind"], ("page", "source"))
+            self.assertEqual(t["arg"],
+                             "pageId" if t["tool"] == "readPage" else "sourceId")
+
+    def test_then_이_하나여도_돈다(self):
+        """★옛 설정(then 이 dict 하나)을 그대로 두고도 돌아야 한다."""
+        h = mcp_client.Hub([self.srv()])
+        self.addCleanup(h.close)
+        _got, used = h.gather("LFT가 뭐야?", use_cache=False)
+        self.assertEqual(used, 3)
+
     def test_페이지가_아닌_것은_안_읽는다(self):
         """★kind='source' 를 readPage 에 넣으면 없는 페이지를 친다."""
         ids = mcp_client.Hub._ids_of(
@@ -2382,10 +2425,12 @@ class 위키_설정이_말이_된다(unittest.TestCase):
         """★검색 조각(500자)만 보고 답하면 앞머리만 안다. 본문 몫을 따로
         크게 준다 — 검색은 '어느 쪽인가' 만 알면 된다."""
         w = [x for x in config.MCP_SERVERS if x["key"] == "wiki"][0]
-        then = w["calls"][0]["then"]
-        self.assertGreaterEqual(then["max"], 3, "본문을 두 쪽만 읽는다")
-        self.assertGreater(then.get("budget", 0), w["budget"],
-                           "본문 몫이 검색 조각 몫보다 작다")
+        th = w["calls"][0]["then"]
+        page = [t for t in th if t["tool"] == "readPage"][0]
+        self.assertGreaterEqual(page["max"], 3, "본문을 두 쪽만 읽는다")
+        for t in th:
+            self.assertGreater(t.get("budget", 0), w["budget"],
+                               "{} 몫이 검색 조각 몫보다 작다".format(t["tool"]))
 
     def test_본문_예산이_검색_예산과_따로_논다(self):
         h = mcp_client.Hub([])
@@ -2413,7 +2458,10 @@ class 위키_설정이_말이_된다(unittest.TestCase):
         부르는 목록에 그런 게 섞이면 안 된다."""
         w = [s for s in config.MCP_SERVERS if s["key"] == "wiki"][0]
         names = [c["tool"] for c in w["calls"]]
-        names += [c["then"]["tool"] for c in w["calls"] if c.get("then")]
+        for c in w["calls"]:
+            th = c.get("then")
+            for one in (th if isinstance(th, list) else [th] if th else []):
+                names.append(one["tool"])
         for n in names:
             self.assertIn(n, ("searchWiki", "readPage", "listDomains",
                               "listSources", "readSource"), n)

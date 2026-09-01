@@ -258,9 +258,18 @@ MCP_SERVERS = [
              #   지식 질문 하나에 문서 두어 쪽이 걸리는 것이 보통이다 —
              #   "M14A 에서 M16WT 어떻게 가?" 는 연결 경로 + 장치 설명을
              #   같이 봐야 답이 된다. 두 쪽으로 자르면 늘 한쪽이 빈다.
-             "then": {"tool": "readPage", "label": "위키 본문",
-                      "arg": "pageId", "list": "results", "id": "id",
-                      "only": {"kind": "page"}, "max": 3, "budget": 4000}},
+             # ★페이지와 소스는 **읽는 도구가 다르다.** 하나만 두면 다른
+             #   쪽을 영영 못 읽는다 — 실제로 md 를 소스로 올려 놨더니
+             #   검색에는 걸리는데 본문을 못 읽어서 서윤이 "위키에 그런
+             #   내용이 없어요" 라고 했다.
+             "then": [
+                 {"tool": "readPage", "label": "위키 본문",
+                  "arg": "pageId", "list": "results", "id": "id",
+                  "only": {"kind": "page"}, "max": 3, "budget": 4000},
+                 {"tool": "readSource", "label": "위키 소스",
+                  "arg": "sourceId", "list": "results", "id": "id",
+                  "only": {"kind": "source"}, "max": 2, "budget": 4000},
+             ]},
         ],
     },
 ]

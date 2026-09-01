@@ -614,8 +614,15 @@ class Hub:
                     call.get("label") or call["tool"],
                     " (실패)" if bad else "", self._fit(s, txt)))
             if not bad and txt and call.get("then"):
-                used += self._run_then(s, c, call["then"], txt, lines)
-                c = self._live.get(s["key"], c)
+                # ★then 을 여러 개 둘 수 있다. 위키는 **페이지와 소스가 다른
+                #   도구**로 읽힌다(readPage · readSource). 하나만 두면
+                #   소스로 올린 자료를 영영 못 읽는다 — 실제로 그랬다:
+                #   md 를 소스로 올려 놨더니 검색에는 걸리는데 본문을 못 읽어
+                #   서윤이 "위키에 그런 내용이 없어요" 라고 했다.
+                th = call["then"]
+                for one in (th if isinstance(th, list) else [th]):
+                    used += self._run_then(s, c, one, txt, lines)
+                    c = self._live.get(s["key"], c)
         return used
 
     def _run_then(self, s, c, then, prev, lines):
