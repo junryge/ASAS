@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>2D Emotive Character × LLM</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="assets/hamster.css">
 </head>
 <body>
 <!-- 소형창 사이드바 서랍 (미니 모드에서만 보인다) -->
@@ -16,6 +17,21 @@
     <canvas id="gl"></canvas>
     <canvas id="fx"></canvas>
     <div id="handles"></div>
+    <!-- 서윤 오른쪽 어깨 위 햄스터. 자리는 app.js 가 어깨 좌표로 잡는다 —
+         캐릭터는 캔버스라 붙일 뼈가 없어서, 머리·팔 기준점으로 계산한다. -->
+    <div id="pet" aria-hidden="true">
+      <div class="scene">
+        <div class="layer body"></div>
+        <div class="head">
+          <div class="layer"></div>
+          <div class="eye l"></div>
+          <div class="eye r"></div>
+        </div>
+        <div class="die"></div>
+        <div class="trace"></div>
+        <div class="spark"></div>
+      </div>
+    </div>
     <div id="bubble"></div>
     <!-- 비주얼 노벨 대사창 — 말풍선과 달리 **응답 전문**을 페이지로 넘겨 본다 -->
     <div id="vn">
@@ -116,6 +132,7 @@
             <div class="chip" id="patchChip">궁예</div>
             <div class="chip" id="docChip" title="MD / TXT 자료 주입">자료</div>
             <div class="chip" id="mcpChip" title="외부 도구(MCP) — 요청이력·위키. 누르면 설정의 그 칸으로 갑니다">MCP</div>
+            <div class="chip on" id="petChip" title="서윤 어깨 위 햄스터 — 끄고 켜기">햄스터</div>
             <div class="chip on" id="eyeChip" title="마우스를 눈으로 따라봅니다">시선</div>
             <div class="chip on" id="badgeChip" title="목에 건 사원증">사원증</div>
             <div class="chip" id="alarmChip" title="FAB 알람 패널이 안 보이면 누르세요 — 우상단 제자리로 돌아옵니다">FAB알람</div>

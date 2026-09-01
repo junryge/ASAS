@@ -837,6 +837,7 @@ function cssToImg(x,y){
 
 function draw(){
   computeView();
+  placePet();          /* 캐릭터가 움직이고 창이 바뀐다 — 매 프레임 따라간다 */
   gl.viewport(0,0,VIEW.cw,VIEW.ch);
   gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
   if(!texReady) return;
@@ -3075,6 +3076,58 @@ function placeBubble(){
   if(y + bh > r.height-10) y = Math.max(10, r.height-bh-10);
   bubble.style.left=x+'px'; bubble.style.top=y+'px';
 }
+
+/* ══════════ 어깨 위 햄스터 ══════════════════════════════════════════
+   캐릭터는 WebGL 캔버스라 **붙일 뼈가 없다.** 그래서 말풍선과 같은 길을
+   쓴다 — imgToCss() 로 이미지 좌표를 화면 좌표로 옮겨서 얹는다.
+
+   어디에 얹나: 오른쪽 어깨. CFG 에 이미 기준점이 있다.
+       armB       [0.615, 0.835]  오른팔
+       clothTop    0.62           옷깃 = 대략 어깨선
+   팔보다 위, 옷깃 언저리가 어깨다. 머리(headRad)와 안 겹치게 바깥으로 민다.
+
+   ★크기는 **캐릭터에 비례**한다. px 로 박으면 창을 줄였을 때 햄스터만
+     그대로 남아 서윤보다 커진다.                                        */
+const PET = {on:true, w:0.22, el:null};   /* w = 캐릭터 폭 대비 — 작게 */
+
+function placePet(){
+  /* ★매 프레임 도는 자리다. querySelector 를 60번/초 부르지 않는다. */
+  const el = PET.el || (PET.el = $('#pet'));
+  if(!el) return;
+  if(!PET.on || !texReady){ el.classList.remove('on'); return; }
+  /* 어깨 = 오른팔 바깥쪽 x, 옷깃 높이 y. 머리 반지름만큼 비켜 앉힌다. */
+  const sx = (CFG.armB ? CFG.armB[0] : 0.615) + (CFG.headRad ? CFG.headRad[0]*0.12 : 0.03);
+  const sy = (CFG.clothTop || 0.62) - 0.045;
+  const [x, y] = imgToCss(sx, sy);
+  /* 캐릭터 폭에 비례 — 창을 줄이면 같이 줄어든다 */
+  const w = PET.w * IMG_W * VIEW.scale / VIEW.dpr;
+  const h = w * 785/900;                        /* 원본 그림 비율 */
+  /* 발이 어깨에 닿게 — 가로는 가운데, 세로는 아래끝을 기준점에 */
+  const L = x - w/2, T = y - h;
+  /* ★값이 안 바뀌었으면 style 을 건드리지 않는다. 60번/초 다시 쓰면
+     그때마다 레이아웃이 다시 잡힌다 — 캐릭터가 가만히 있을 때가 더 많다. */
+  if(w !== PET.lw || h !== PET.lh || L !== PET.lx || T !== PET.ly){
+    PET.lw = w; PET.lh = h; PET.lx = L; PET.ly = T;
+    el.style.width  = w + 'px';
+    el.style.height = h + 'px';
+    el.style.left   = L + 'px';
+    el.style.top    = T + 'px';
+  }
+  el.classList.add('on');
+}
+
+function setPet(on){
+  PET.on = !!on;
+  const c = $('#petChip');
+  if(c) c.classList.toggle('on', PET.on);
+  try{ localStorage.setItem('pet', PET.on ? '1' : '0'); }catch(e){}
+  placePet();
+}
+
+if($('#petChip')) $('#petChip').onclick = ()=>setPet(!PET.on);
+try{ if(localStorage.getItem('pet')==='0') PET.on = false; }catch(e){}
+/* 칩 불빛을 저장값에 맞춘다 — 꺼 놨는데 켜진 것처럼 보이면 안 된다 */
+if($('#petChip')) $('#petChip').classList.toggle('on', PET.on);
 
 /* ══════════ 비주얼 노벨 대사창 ══════════
    말풍선이 못 하던 것: **응답 전문**을 보여 주기. 대사창은 화면 폭을 다 쓰고
