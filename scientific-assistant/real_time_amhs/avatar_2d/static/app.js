@@ -63,7 +63,10 @@ const CFG_ANIME = {
   faceC:[0.490,0.320], faceRad:[0.130,0.105],
   hairRoot:0.10, hairTip:0.46, clothTop:0.62,
   armA:[0.390,0.835], armA_rad:[0.088,0.062], armA_piv:[0.100,0.790],
-  armB:[0.615,0.835], armB_rad:[0.088,0.062], armB_piv:[0.900,0.790]
+  armB:[0.615,0.835], armB_rad:[0.088,0.062], armB_piv:[0.900,0.790],
+  // ★어깨 위에 무언가를 얹을 자리 (오른쪽). 실제 그림에 찍어 보고 골랐다.
+  //   armB 는 어깨가 아니라 **손**이다 — 그걸로 계산하면 배 앞에 뜬다.
+  shoulderR:[0.760,0.515]
 };
 /* 실사 버전 : 얼굴이 더 작고 눈·입이 위쪽에 있다 */
 const CFG_REAL = {
@@ -77,7 +80,8 @@ const CFG_REAL = {
   faceC:[0.488,0.310], faceRad:[0.105,0.098],
   hairRoot:0.12, hairTip:0.44, clothTop:0.64,
   armA:[0.375,0.870], armA_rad:[0.080,0.058], armA_piv:[0.120,0.770],
-  armB:[0.625,0.870], armB_rad:[0.080,0.058], armB_piv:[0.880,0.770]
+  armB:[0.625,0.870], armB_rad:[0.080,0.058], armB_piv:[0.880,0.770],
+  shoulderR:[0.765,0.530]
 };
 const CFG = JSON.parse(JSON.stringify(CFG_ANIME));
 const CFG0 = JSON.parse(JSON.stringify(CFG));
@@ -3088,17 +3092,19 @@ function placeBubble(){
 
    ★크기는 **캐릭터에 비례**한다. px 로 박으면 창을 줄였을 때 햄스터만
      그대로 남아 서윤보다 커진다.                                        */
-const PET = {on:true, w:0.22, el:null};   /* w = 캐릭터 폭 대비 — 작게 */
+const PET = {on:true, w:0.17, el:null};   /* w = 캐릭터 폭 대비 — 작게 */
 
 function placePet(){
   /* ★매 프레임 도는 자리다. querySelector 를 60번/초 부르지 않는다. */
   const el = PET.el || (PET.el = $('#pet'));
   if(!el) return;
   if(!PET.on || !texReady){ el.classList.remove('on'); return; }
-  /* 어깨 = 오른팔 바깥쪽 x, 옷깃 높이 y. 머리 반지름만큼 비켜 앉힌다. */
-  const sx = (CFG.armB ? CFG.armB[0] : 0.615) + (CFG.headRad ? CFG.headRad[0]*0.12 : 0.03);
-  const sy = (CFG.clothTop || 0.62) - 0.045;
-  const [x, y] = imgToCss(sx, sy);
+  /* ★어깨 자리는 CFG.shoulderR 에 있다 — 실제 그림에 점을 찍어 보고 골랐다.
+     예전엔 armB(오른팔)와 clothTop(옷깃)으로 계산했는데, armB 는 어깨가
+     아니라 **손**이고 clothTop 은 가슴 한복판이라 배 앞에 떠 있었다.
+     의상마다 어깨선이 다르므로 COSTUMES 의 patch 로 덮을 수 있다. */
+  const sh = CFG.shoulderR || [0.760, 0.515];
+  const [x, y] = imgToCss(sh[0], sh[1]);
   /* 캐릭터 폭에 비례 — 창을 줄이면 같이 줄어든다 */
   const w = PET.w * IMG_W * VIEW.scale / VIEW.dpr;
   const h = w * 785/900;                        /* 원본 그림 비율 */

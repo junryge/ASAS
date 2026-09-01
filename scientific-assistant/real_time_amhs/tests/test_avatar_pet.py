@@ -108,21 +108,30 @@ class 자리와_크기(unittest.TestCase):
         self.assertLessEqual(float(m.group(1)), 0.25,
                              "캐릭터 폭의 1/4 을 넘는다 — 작게 해달라고 했다")
 
-    def test_오른쪽_어깨다(self):
-        """오른팔(armB) 바깥쪽 x · 옷깃(clothTop) 높이 y."""
-        self.assertIn("CFG.armB", self.body)
-        self.assertIn("CFG.clothTop", self.body)
-        # 계산이 실제로 어깨에 오나 — CFG 값으로 직접 재 본다
-        m = re.search(r"armB:\[([\d.]+),([\d.]+)\]", self.js)
-        h = re.search(r"headRad:\[([\d.]+),([\d.]+)\]", self.js)
-        c = re.search(r"clothTop:([\d.]+)", self.js)
-        hc = re.search(r"headC:\[([\d.]+),([\d.]+)\]", self.js)
-        sx = float(m.group(1)) + float(h.group(1)) * 0.12
-        sy = float(c.group(1)) - 0.045
-        self.assertGreater(sx, 0.5, "오른쪽이 아니다")
-        self.assertLess(sx, 0.85, "화면 밖으로 나간다")
-        self.assertGreater(sy, float(hc.group(2)), "머리보다 위다")
-        self.assertLess(sy, float(m.group(2)), "팔보다 아래다 — 어깨가 아니다")
+    def test_어깨_자리를_따로_잡아_둔다(self):
+        """★armB·clothTop 으로 계산하면 안 된다 — **가슴에 뜬다.**
+
+        실제 그림에 점을 찍어 보고 알았다:
+            armB     [0.615, 0.835]  어깨가 아니라 **손**이다
+            clothTop  0.62           옷깃이 아니라 **가슴 한복판**이다
+        그래서 어깨 기준점(shoulderR)을 따로 두고, 그림 위에서 눈으로
+        고른 값을 적어 뒀다. 의상마다 어깨선이 다르니 patch 로 덮는다.
+        """
+        self.assertIn("CFG.shoulderR", self.body)
+        self.assertNotIn("CFG.armB", self.body, "손으로 계산하고 있다")
+        self.assertNotIn("CFG.clothTop", self.body, "가슴으로 계산하고 있다")
+
+    def test_어깨_자리가_어깨에_있다(self):
+        """머리 아래 · 손보다 위 · 몸 오른쪽. 그림에서 잰 값과 맞는지 본다."""
+        for m in re.finditer(r"shoulderR:\[([\d.]+),\s*([\d.]+)\]", self.js):
+            sx, sy = float(m.group(1)), float(m.group(2))
+            self.assertGreater(sx, 0.60, "가운데다 — 어깨가 아니다")
+            self.assertLess(sx, 0.82, "너무 바깥이다 (팔 밖)")
+            self.assertGreater(sy, 0.42, "머리에 겹친다")
+            self.assertLess(sy, 0.56, "가슴이다 — 어깨가 아니다")
+        self.assertGreaterEqual(
+            len(re.findall(r"shoulderR:", self.js)), 2,
+            "CFG_ANIME·CFG_REAL 둘 다 있어야 한다")
 
     def test_캐릭터가_뜨기_전엔_안_보인다(self):
         """★서윤보다 햄스터가 먼저 뜨면 허공에 떠 있다."""
