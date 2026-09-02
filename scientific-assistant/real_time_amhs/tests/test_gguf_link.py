@@ -86,6 +86,44 @@ class 로컬_GGUF_로_붙는다(unittest.TestCase):
         self.assertIn("not args.upstream", self.run[i:i + 120])
 
 
+class 관제_없이도_돈다(unittest.TestCase):
+    """집에는 관제(real_time_amhs)가 없다.
+
+    ★끄지 않으면 10초마다 두드리면서 화면에 "관제 연결 끊김 —
+      real_time_amhs 폴더에서 python server.py 를 띄우세요" 가 영영 떠 있는다.
+      집에서는 띄울 게 없는데 고치라고 하는 셈이다.
+    """
+
+    def setUp(self):
+        self.run = _read(RUN)
+        self.sen = _read(os.path.join(util.BASE, "avatar_2d", "avatar",
+                                      "sentinel.py"))
+
+    def test_끄는_길이_있다(self):
+        i = self.run.index('ap.add_argument("--sentinel"')
+        self.assertIn("off", self.run[i:i + 300])
+
+    def test_끄면_상시감시도_멈춘다(self):
+        """★주소만 off 로 두고 감시를 켜 두면 10초마다 헛되이 두드린다."""
+        i = self.run.index("if args.sentinel:")
+        blk = self.run[i:i + 700]
+        self.assertIn('_cfg.SENTINEL["watch_sec"] = 0', blk)
+        self.assertIn('_cfg.SENTINEL["url"] = "off"', blk)
+
+    def test_끊긴_것과_안_보는_것을_구분한다(self):
+        """★같은 글로 말하면, 집에서는 고칠 수 없는 것을 고치라고 하게 된다."""
+        self.assertIn("def sentinel_off(", self.sen)
+        i = self.sen.index("def watch()")
+        blk = self.sen[i:i + 900]
+        self.assertIn("if sentinel_off():", blk)
+        self.assertIn('"why": "off"', blk)
+        self.assertNotIn("server.py 를 띄우세요", blk)
+
+    def test_그_판정을_한_곳에서_한다(self):
+        """★off 인지를 여러 곳에서 각자 재면 한쪽만 고쳐서 어긋난다."""
+        self.assertEqual(self.sen.count('in ("off", "none", "no", "0")'), 1)
+
+
 class 서버쪽_문이_있다(unittest.TestCase):
     """demos_v1 쪽(집 PC)에 OpenAI 호환 문이 있어야 아바타가 붙는다.
 

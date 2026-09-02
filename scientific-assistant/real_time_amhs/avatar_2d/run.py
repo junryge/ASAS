@@ -193,7 +193,8 @@ def main():
     ap.add_argument("--model", default="", help="모델 지정 시 선택 화면 생략")
     ap.add_argument("--no-browser", action="store_true", help="브라우저 자동 실행 안 함")
     ap.add_argument("--sentinel", default="",
-                    help="관제(real_time_amhs) 서버 주소 (기본 http://127.0.0.1:8989)")
+                    help="관제(real_time_amhs) 서버 주소 (기본 http://127.0.0.1:8989). "
+                         "--sentinel off 로 아예 끈다 (집에는 관제가 없다)")
     # ★요청관리(qa/app.py)가 다른 PC 에 있으면 이걸 줘야 한다. 기본이
     #   127.0.0.1 이라, 사내에서 10.139.x.x:10500 로 띄워 놓고도 "못 붙었다"
     #   가 나왔다 — 코드를 고치게 만들면 안 된다.
@@ -208,7 +209,15 @@ def main():
     args = ap.parse_args()
     if args.sentinel:
         from avatar import config as _cfg
-        _cfg.SENTINEL["url"] = args.sentinel.rstrip("/")
+        u = args.sentinel.strip().rstrip("/")
+        if u.lower() in ("off", "none", "no", "0"):
+            # ★집에는 관제(real_time_amhs)가 없다. 끄지 않으면 10초마다
+            #   두드리면서 "관제 연결 끊김 — server.py 를 띄우세요" 가 영영
+            #   떠 있는다. 집에서는 띄울 게 없는데 고치라고 하는 셈이다.
+            _cfg.SENTINEL["url"] = "off"
+            _cfg.SENTINEL["watch_sec"] = 0      # 상시 감시도 끈다
+        else:
+            _cfg.SENTINEL["url"] = u
     if args.qa:
         os.environ["QA_BASE"] = args.qa.rstrip("/")
     if args.wiki:

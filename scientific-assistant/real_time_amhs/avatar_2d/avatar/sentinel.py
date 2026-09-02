@@ -288,6 +288,18 @@ def base_url():
     return str(s.get("url") or "http://127.0.0.1:8989").rstrip("/")
 
 
+def sentinel_off():
+    """관제를 아예 안 보는 모드인가 (집).
+
+    ★집에는 real_time_amhs 가 없다. 그런데도 10초마다 두드리면 화면에
+      "관제 연결 끊김 — real_time_amhs 폴더에서 python server.py 를 띄우세요"
+      가 영영 떠 있는다. 집에서는 띄울 게 없는데 고치라고 하는 셈이다.
+      run.py --sentinel off 로 끈다.
+    """
+    s = getattr(config, "SENTINEL", {}) or {}
+    return str(s.get("url", "")).strip().lower() in ("off", "none", "no", "0")
+
+
 def _get(path):
     """관제 서버 HTTP GET. 실패하면 (None, 이유) — 예외를 밖으로 안 던진다."""
     url = base_url() + path
@@ -450,6 +462,12 @@ def watch():
     관제 서버가 죽어 있으면 ok=False — 화면은 '관제 연결 끊김' 을 보여야지
     '정상' 을 보여선 안 된다.
     """
+    if sentinel_off():
+        # ★끊긴 게 아니라 **안 보는 것**이다. 둘을 같은 글로 말하면,
+        #   집에서는 고칠 수 없는 것을 고치라고 하게 된다.
+        return {"ok": False, "alarms": [], "at": "", "stale": False,
+                "err": "", "why": "off",
+                "why_text": "관제 없이 도는 중입니다 — FAB 알람은 [테스트] 로만 뜹니다."}
     r = compare()
     if not r["ok"]:
         # ★무엇을 해야 하는지까지 같이 준다. "연결 끊김" 만 주면 사람이
