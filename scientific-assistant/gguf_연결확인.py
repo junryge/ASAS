@@ -76,6 +76,10 @@ for n, m in (("demos_v1", pkg), ("demos_v1.utils", utils),
 class Fake:
     last = None
     know = "json_object"          # 이 빌드가 아는 모양
+    ctx  = 32768                  # 이 모델의 n_ctx
+    def n_ctx(self): return Fake.ctx
+    def tokenize(self, b, add_bos=True):
+        return [0] * (len(b.decode("utf-8", "replace")) * 2)   # 글자당 2토큰
     def create_chat_completion(self, messages=None, **kw):
         rf = kw.get("response_format")
         if rf is not None:
@@ -228,6 +232,32 @@ r8, e8 = gw2.chat("Qwen3-14B-Q4_K_M", 0.7, [{"role":"user","content":"hi"}])
 print("     쓰인 response_format:", Fake.last.get("response_format"))
 assert e8 is None and r8["text"] == "로컬 GGUF 로 붙었어요.", (r8, e8)
 assert Fake.last.get("response_format") is None, Fake.last
+
+print("\n[9] 지금 올라온 모델이 목록 맨 앞이다 (갈아끼움 방지)")
+import urllib.request as _u
+utils.gguf_loaded_path = "/models/gemma-3-12b.gguf"
+ids = [m["id"] for m in json.loads(_u.urlopen(up + "/models").read())["data"]]
+print("     목록:", ids, " (올라온 것: gemma-3-12b)")
+assert ids[0] == "gemma-3-12b", ids
+utils.gguf_loaded_path = "/models/Qwen3-14B-Q4_K_M.gguf"
+ids = [m["id"] for m in json.loads(_u.urlopen(up + "/models").read())["data"]]
+print("     목록:", ids, " (올라온 것: Qwen3-14B-Q4_K_M)")
+assert ids[0] == "Qwen3-14B-Q4_K_M", ids
+
+print("\n[10] 컨텍스트에 맞춰 max_tokens 를 줄인다")
+Fake.ctx = 8192; Fake.last = None
+gw3 = avllm.Gateway(up, "", op, timeout=20)
+r10, e10 = gw3.chat("Qwen3-14B-Q4_K_M", 0.7, [{"role":"user","content":"가"*3000}])
+mt = Fake.last["max_tokens"]
+print("     n_ctx 8192 · 프롬프트 6000토큰 → max_tokens =", mt, "(예전엔 4096 고정)")
+assert e10 is None, e10
+assert mt < 4096 and mt <= 8192 - 6000, mt
+
+print("\n[11] 프롬프트가 컨텍스트를 넘으면 조용히 안 자른다")
+r11, e11 = gw3.chat("Qwen3-14B-Q4_K_M", 0.7, [{"role":"user","content":"가"*6000}])
+print("     오류:", str(e11)[:100])
+assert e11 and "400" in str(e11), e11
+Fake.ctx = 32768
 
 srv.shutdown()
 print("\n=== 전부 통과 ===")

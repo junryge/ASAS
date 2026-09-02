@@ -73,12 +73,74 @@ def _resolve(model_id):
 
 # ── 생성 ────────────────────────────────────────────────────────────────
 def _ensure_loaded(path):
-    """필요하면 갈아 끼운다. 이미 그 모델이면 load_gguf_model 이 알아서 넘긴다."""
+    """필요하면 갈아 끼운다. 이미 그 모델이면 load_gguf_model 이 알아서 넘긴다.
+
+    ★갈아 끼우는 것은 **공짜가 아니다.** GPU 가 한 장이라 지금 올라온 모델을
+      내려야 하는데, 26B 급이면 1분 넘게 걸린다. 그동안 데모스·UIO·코딩
+      어시스턴트도 다 멈추고, 그쪽이 다시 쓰려면 또 갈아 끼워야 한다
+      (실제로 아바타가 gemma-4-26B 를 고르는 바람에 데모스가 쓰던
+       gemma-4-12b 가 내려갔다).
+      막지는 않는다 — 사람이 골랐으면 그 모델이 맞다. 다만 **왜 멈췄는지**
+      로그에 남긴다. 안 남기면 그냥 먹통으로 보인다.
+    """
     from demos_v1.gguf import load_gguf_model
-    if getattr(_utils_mod, "gguf_loaded_path", None) == path \
-            and getattr(_utils_mod, "gguf_model", None) is not None:
+    cur = getattr(_utils_mod, "gguf_loaded_path", None)
+    if cur == path and getattr(_utils_mod, "gguf_model", None) is not None:
         return True
+    if cur:
+        print("  ⚠️  /v1 요청이 모델을 갈아 끼웁니다 — "
+              "{} → {}".format(os.path.basename(cur), os.path.basename(path)))
+        print("      GPU 한 장이라 지금 것을 내립니다. 로딩 동안 데모스·UIO·"
+              "코딩어시스턴트도 같이 멈춥니다.")
+        print("      매번 이러면, 붙는 쪽에서 지금 올라온 모델을 고르세요 "
+              "(/v1/models 목록의 맨 위가 그것입니다).")
     return bool(load_gguf_model(path))
+
+
+def _n_ctx():
+    """지금 올라온 모델의 컨텍스트 길이. 못 알아내면 0."""
+    m = getattr(_utils_mod, "gguf_model", None)
+    if m is None:
+        return 0
+    try:
+        v = getattr(m, "n_ctx", None)
+        v = v() if callable(v) else v
+        return int(v or 0)
+    except Exception:                                      # noqa: BLE001
+        return 0
+
+
+def _prompt_tokens(messages):
+    """프롬프트가 몇 토큰인지 **재 본다.** 못 재면 글자수로 어림한다.
+
+    ★한국어는 글자당 대략 1.5~2 토큰이다. 못 재는 상황에서 1 로 잡으면
+      한참 모자라게 세서, 결국 답이 잘린다. 넉넉히 2 로 잡는다.
+    """
+    m = getattr(_utils_mod, "gguf_model", None)
+    txt = "\n".join(str((x or {}).get("content") or "") for x in messages)
+    try:
+        return len(m.tokenize(txt.encode("utf-8"), add_bos=True))
+    except Exception:                                      # noqa: BLE001
+        return int(len(txt) * 2)
+
+
+def _fit_max_tokens(messages, want):
+    """컨텍스트에 **실제로 들어가는** 만큼으로 줄인다.
+
+    ★이걸 안 하면 답이 문장 한복판에서 끊긴다. 위키를 읽어 오면 프롬프트가
+      확 커지는데(페이지 3쪽 × 4000자), max_tokens 를 4096 으로 박아 두면
+      프롬프트 + 4096 이 n_ctx 를 넘어서 llama.cpp 가 생성을 잘라 버린다.
+      화면에는 그냥 "말을 다 안 하는" 것으로 보인다 — 실제로 그렇게 나왔다.
+    반환 (max_tokens, 모자란 정도). 모자라면 두 번째가 양수다.
+    """
+    n_ctx = _n_ctx()
+    if n_ctx <= 0:
+        return want, 0
+    used = _prompt_tokens(messages)
+    room = n_ctx - used - 256          # 여유 (특수토큰·템플릿)
+    if room < 256:
+        return 256, 256 - room
+    return max(256, min(want, room)), 0
 
 
 def _kwargs(body):
@@ -155,7 +217,11 @@ def register_openai_routes(app):
         cur = getattr(_utils_mod, "gguf_loaded_path", "") or ""
         now = int(time.time())
         data = []
-        for k in sorted(envs):
+        # ★지금 올라와 있는 것을 **맨 앞**에 둔다. 붙는 쪽(아바타 run.py)은
+        #   목록의 첫 번째를 기본값으로 고른다 — 그게 이미 VRAM 에 있는
+        #   모델이면 갈아 끼울 일이 없다. 이름순으로 두면 엉뚱한 것이
+        #   1번이 되어, 고르는 순간 데모스가 쓰던 모델이 내려간다.
+        for k in sorted(envs, key=lambda k: (envs[k]["_gguf_path"] != cur, k)):
             v = envs[k]
             data.append({
                 "id": v.get("model") or k,
@@ -192,6 +258,7 @@ def register_openai_routes(app):
         # ── 스트리밍 ────────────────────────────────────────────────
         if body.get("stream"):
             def gen():
+                fin = "stop"
                 # ★락을 제너레이터 **안에서** 잡는다. 밖에서 잡으면 응답이
                 #   끝나기 전에 함수가 반환돼 락이 풀린다.
                 with _GEN_LOCK:
@@ -206,9 +273,20 @@ def register_openai_routes(app):
                         msgs = _nt(messages, path)
                     except Exception:
                         msgs = messages
+                    kw["max_tokens"], short = _fit_max_tokens(msgs, kw["max_tokens"])
+                    if short:
+                        yield "data: " + json.dumps({"error": {
+                            "message": "프롬프트가 컨텍스트보다 {} 토큰 큽니다 "
+                                       "(n_ctx={}).".format(short, _n_ctx())},
+                        }, ensure_ascii=False) + "\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
                     try:
                         for ch in _call(msgs, dict(kw, stream=True)):
-                            d = (ch.get("choices") or [{}])[0].get("delta") or {}
+                            c0 = (ch.get("choices") or [{}])[0]
+                            if c0.get("finish_reason"):
+                                fin = c0["finish_reason"]
+                            d = c0.get("delta") or {}
                             txt = d.get("content") or ""
                             if not txt:
                                 continue
@@ -222,11 +300,14 @@ def register_openai_routes(app):
                     except Exception as e:                     # noqa: BLE001
                         yield "data: " + json.dumps({"error": {
                             "message": str(e)}}, ensure_ascii=False) + "\n\n"
+                    # ★잘렸으면 잘렸다고 말한다. "stop" 으로 박아 두면
+                    #   토큰 한도로 끊긴 답이 정상 종료처럼 보인다 —
+                    #   말을 다 안 하는데 아무도 이유를 모른다.
                     yield "data: " + json.dumps({
                         "id": cid, "object": "chat.completion.chunk",
                         "created": created, "model": name,
                         "choices": [{"index": 0, "delta": {},
-                                     "finish_reason": "stop"}],
+                                     "finish_reason": fin}],
                     }, ensure_ascii=False) + "\n\n"
                     yield "data: [DONE]\n\n"
 
@@ -245,6 +326,15 @@ def register_openai_routes(app):
                 msgs = _nt(messages, path)
             except Exception:
                 msgs = messages
+            kw["max_tokens"], short = _fit_max_tokens(msgs, kw["max_tokens"])
+            if short:
+                # ★조용히 자르지 않는다. 프롬프트가 컨텍스트를 넘으면 무엇을
+                #   줄여야 하는지 사람이 알아야 한다.
+                return jsonify({"error": {
+                    "message": "프롬프트가 컨텍스트보다 {} 토큰 큽니다 "
+                               "(n_ctx={}). 참고 자료를 줄이거나 n_ctx 를 "
+                               "키우세요.".format(short, _n_ctx()),
+                    "type": "context_length_exceeded"}}), 400
             try:
                 out = _call(msgs, kw)
             except Exception as e:                             # noqa: BLE001

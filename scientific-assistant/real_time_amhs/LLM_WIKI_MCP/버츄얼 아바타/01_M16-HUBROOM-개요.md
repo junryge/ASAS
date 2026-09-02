@@ -2,7 +2,7 @@
 title: M16 HUBROOM 개요
 type: concept
 domain: 버츄얼 아바타
-tags: [M16HUBROOM, M16Bridge, FAB, 층현황, 반송]
+tags: [M16HUBROOM, M16Bridge, 브릿지, 브리지, 허브룸, HUBROOM, FAB, 층현황, 반송]
 summary: M16 HUBROOM(M16 Bridge)은 M14와 M16 사이 물류 이동을 잇는 3층 공간이다. 이 위키의 모든 반송 지식은 이곳을 기준으로 쓰인다.
 sources: []
 author: 
@@ -13,6 +13,19 @@ updated:
 
 **M16 HUBROOM**(= M16 Bridge)은 **M14와 M16 간 물류 이동을 가능하게 하는 공간**이다.
 층은 **3F**.
+
+### 다른 이름
+
+현장에서 부르는 이름이 여럿이다. 어느 쪽으로 물어도 같은 곳이다.
+
+| 부르는 이름 |
+|---|
+| M16 HUBROOM · HUBROOM · 허브룸 |
+| M16 Bridge · M16Bridge · Bridge · **브릿지** · 브리지 |
+
+★검색은 **적힌 글자 그대로** 찾는다(BM25). "브릿지" 라고 물었는데 문서에
+`Bridge` 만 있으면 한 건도 안 나온다 — 실제로 그래서 빈손으로 돌아왔다.
+그래서 부르는 이름을 여기 다 적어 둔다.
 
 이 위키의 반송 지식은 전부 **M16 HUBROOM을 기준으로** 기술한다. 여기와
 연관된 FAB만 다루며, 무관한 건물은 적지 않는다.
