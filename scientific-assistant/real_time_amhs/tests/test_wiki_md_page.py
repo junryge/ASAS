@@ -43,6 +43,95 @@ def _load_pure():
     return ns
 
 
+WIKI_MD = os.path.join(util.BASE, "LLM_WIKI_MCP", "버츄얼 아바타")
+
+
+class 올릴_md_가_실제로_읽힌다(unittest.TestCase):
+    """저장소에 넣어 둔 md 를 **위키 파서로 직접** 돌려 본다.
+
+    ★머리말이 한 줄만 어긋나도 페이지가 아니라 소스로 들어간다. 그러면
+      서윤이 readPage 로 못 읽어 "위키에 그런 내용이 없어요" 가 된다 —
+      실제로 겪은 증상이다. 올리기 전에 여기서 잡는다.
+    """
+
+    def setUp(self):
+        if not os.path.isdir(WIKI_MD):
+            raise unittest.SkipTest("버츄얼 아바타 폴더가 없다")
+        self.f = _load_pure()["parse_md_front"]
+        self.files = sorted(n for n in os.listdir(WIKI_MD)
+                            if n.endswith(".md") and not n.startswith("00_"))
+
+    def test_올릴_문서가_있다(self):
+        self.assertGreaterEqual(len(self.files), 4)
+
+    def test_전부_머리말이_붙어_있다(self):
+        for n in self.files:
+            with open(os.path.join(WIKI_MD, n), encoding="utf-8") as fp:
+                meta, body = self.f(fp.read())
+            self.assertTrue(meta.get("title"), n + " : title 이 없다 → 소스로 들어간다")
+            self.assertIn(meta.get("type"), ("concept", "entity"),
+                          n + " : type 이 위키가 아는 값이 아니다")
+            self.assertTrue(meta.get("domain"), n + " : domain 이 없다")
+            self.assertTrue(meta.get("summary"), n + " : summary 가 없다")
+            self.assertGreater(len(body), 200, n + " : 본문이 너무 짧다")
+
+    def test_제목이_겹치지_않는다(self):
+        """★같은 제목이면 위키가 **덮어쓴다**(upsert). 딴 문서끼리 겹치면
+        하나가 사라진다."""
+        seen = {}
+        for n in self.files:
+            with open(os.path.join(WIKI_MD, n), encoding="utf-8") as fp:
+                t = self.f(fp.read())[0].get("title")
+            self.assertNotIn(t, seen, "제목이 겹친다: %s ↔ %s" % (n, seen.get(t)))
+            seen[t] = n
+
+    def test_AMOS_문서가_다_있다(self):
+        titles = set()
+        for n in self.files:
+            with open(os.path.join(WIKI_MD, n), encoding="utf-8") as fp:
+                titles.add(self.f(fp.read())[0].get("title"))
+        for t in ("AMOS 개요와 메뉴", "AMOS 모니터링 화면", "AMOS 이상 감지",
+                  "AMOS Alarm 과 연락처", "AMOS AI Agent Chatbot"):
+            self.assertIn(t, titles, t + " 문서가 없다")
+
+    def test_링크가_실제_제목을_가리킨다(self):
+        """★[[제목]] 이 없는 페이지를 가리키면 죽은 링크가 된다."""
+        titles, links = set(), []
+        for n in self.files:
+            with open(os.path.join(WIKI_MD, n), encoding="utf-8") as fp:
+                raw = fp.read()
+            titles.add(self.f(raw)[0].get("title"))
+            links += [(n, m) for m in re.findall(r"\[\[([^\]]+)\]\]", raw)]
+        for n, t in links:
+            self.assertIn(t, titles, "%s 안의 [[%s]] 가 없는 페이지다" % (n, t))
+
+    def test_담당은_화면에서_고른다고_적어_둔다(self):
+        """★upload() 는 폼의 domain_id 로 넣는다 — upsert_md_page 는
+        meta['domain'] 을 **읽지 않는다.** 프론트매터를 고치라고 적어 두면
+        사람이 헛수고를 한다 (전에 그렇게 적혀 있었다)."""
+        src = _src()
+        i = src.index("def upsert_md_page")
+        body = src[i:src.index("@app.route(\"/upload\"")]
+        self.assertNotIn("meta.get(\"domain\")", body)
+        self.assertNotIn("meta['domain']", body)
+        g = os.path.join(WIKI_MD, "00_등록방법.md")
+        if not os.path.isfile(g):
+            self.skipTest("등록방법이 없다")
+        with open(g, encoding="utf-8") as fp:
+            doc = fp.read()
+        self.assertIn("업로드 화면에서 고른 것이 정해진다", doc)
+
+    def test_지금_수치가_아니라고_적어_둔다(self):
+        """★AMOS 는 화면 설명이다. 서윤이 이걸 실시간 값으로 읽으면
+        "AMOS 가 Site 이상을 보여 준다" 를 "지금 이상이 있다" 로 답한다."""
+        p = os.path.join(WIKI_MD, "06_AMOS-개요와-메뉴.md")
+        if not os.path.isfile(p):
+            self.skipTest("개요 문서가 없다")
+        with open(p, encoding="utf-8") as fp:
+            raw = fp.read()
+        self.assertIn("지금 수치가 아니다", raw)
+
+
 class 머리말을_읽는다(unittest.TestCase):
 
     def setUp(self):

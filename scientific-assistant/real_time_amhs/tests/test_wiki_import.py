@@ -216,20 +216,27 @@ class 프론트매터를_제_칸에_넣는다(_Base):
 
 
 class 실제_파일로_돌려_본다(_Base):
-    """저장소에 들어 있는 '버츄얼 아바타' 네 장을 그대로 넣어 본다."""
+    """저장소에 들어 있는 '버츄얼 아바타' md 를 그대로 넣어 본다."""
 
     def setUp(self):
         super().setUp()
         if not os.path.isdir(MD_DIR):
             raise unittest.SkipTest("버츄얼 아바타 폴더가 없다")
 
-    def test_네_장이_다_들어간다(self):
+    def test_아홉_장이_다_들어간다(self):
+        """반송 지식 네 장 + AMOS 다섯 장.
+
+        ★한 장이라도 조용히 빠지면 여기서 걸린다 — 머리말이 어긋나면
+          페이지가 아니라 소스로 새고, 그러면 서윤이 못 읽는다.
+        """
         rc, out = self.run_it(MD_DIR, "--base", self.base, "--apply")
         self.assertEqual(rc, 0, out)
         titles = sorted(f["title"][0] for _p, f in 가짜_위키.posts)
         self.assertEqual(titles, sorted([
             "M16 HUBROOM 개요", "반송 장치 종류와 역할",
-            "FAB 간 연결 경로", "M16 HUBROOM 유의 지표"]))
+            "FAB 간 연결 경로", "M16 HUBROOM 유의 지표",
+            "AMOS 개요와 메뉴", "AMOS 모니터링 화면", "AMOS 이상 감지",
+            "AMOS Alarm 과 연락처", "AMOS AI Agent Chatbot"]))
 
     def test_호기명이_안_뭉개진다(self):
         """★`6ABL60~` 를 '6ABL 계열' 로 뭉개면 BM25 가 못 찾는다."""
