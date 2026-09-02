@@ -68,6 +68,17 @@ def mask(t):
     return (t[:6] + "..." + t[-4:]) if len(t) > 12 else (t or "(없음)")
 
 
+def _is_local(url):
+    """내 PC(또는 사설망)에 있는 주소인가 — 토큰을 요구할지 가른다.
+
+    ★사내 게이트웨이는 토큰이 있어야 하고, 로컬 GGUF 는 토큰이 없다.
+      주소로 가르는 게 제일 덜 틀린다.
+    """
+    u = str(url or "").lower()
+    return any(h in u for h in ("127.0.0.1", "localhost", "0.0.0.0",
+                                "://192.168.", "://10.", "://172."))
+
+
 def ask(prompt, default):
     try:
         v = input(prompt).strip()
@@ -105,10 +116,12 @@ def choose_endpoint(preset):
 def fetch_models(upstream, token, opener):
     print("")
     print("  모델 목록 조회 중 ...  {}".format(upstream + "/models"))
+    # ★토큰이 없으면 Authorization 을 안 붙인다 (로컬 GGUF 는 토큰이 없다)
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(
-        upstream.rstrip("/") + "/models",
-        headers={"Authorization": "Bearer " + token,
-                 "Content-Type": "application/json"})
+        upstream.rstrip("/") + "/models", headers=headers)
     try:
         with opener.open(req, timeout=30) as r:
             raw = json.loads(r.read().decode("utf-8"))
@@ -120,6 +133,9 @@ def fetch_models(upstream, token, opener):
             print("      토큰이 잘못됐거나 만료됐습니다. token.txt 를 확인하세요.")
         elif e.code == 404:
             print("      이 엔드포인트에 /v1/models 가 없습니다. 주소를 확인하세요.")
+            if ":10009" in upstream:
+                print("      로컬 GGUF 라면 app.py 가 떠 있는지 보세요 "
+                      "(python app.py → http://localhost:10009).")
         if body.strip():
             print("      " + body.replace("\n", " "))
         return []
@@ -168,6 +184,12 @@ def main():
     ap.add_argument("--token-file", default="",
                     help="토큰 파일 경로 (기본: 같은 폴더 token.txt)")
     ap.add_argument("--upstream", default="", help="엔드포인트 지정 시 선택 화면 생략")
+    # ★집에서 쓰는 길. demos_v1(app.py)이 올려 둔 GGUF 를 그대로 빌려 쓴다 —
+    #   아바타가 모델을 또 올리지 않는다 (GPU 한 장에 두 벌은 안 올라간다).
+    ap.add_argument("--gguf", nargs="?", const=cfgmod.GGUF_LOCAL, default="",
+                    metavar="URL",
+                    help="로컬 GGUF 로 붙는다 (기본 {}). 토큰 없이 뜬다"
+                         .format(cfgmod.GGUF_LOCAL))
     ap.add_argument("--model", default="", help="모델 지정 시 선택 화면 생략")
     ap.add_argument("--no-browser", action="store_true", help="브라우저 자동 실행 안 함")
     ap.add_argument("--sentinel", default="",
@@ -197,6 +219,12 @@ def main():
             # 주소만 주고 /mcp 를 빠뜨리기 쉽다 — 그러면 조용히 404 다
             os.environ["WIKI_MCP_URL"] = u if u.endswith("/mcp") else u + "/mcp"
 
+    # ★--gguf 는 --upstream 을 대신한다. 둘 다 주면 --upstream 이 이긴다
+    #   (사람이 주소를 직접 적은 쪽이 더 구체적인 뜻이다).
+    gguf_mode = bool(args.gguf) and not args.upstream
+    if gguf_mode:
+        args.upstream = args.gguf
+
     if not (BASE_DIR / "static" / "index.html").is_file():
         print("\n  [!] static/index.html 이 없습니다. 압축을 통째로 풀었는지 확인하세요.")
         print("      현재 폴더: {}\n".format(BASE_DIR))
@@ -207,12 +235,16 @@ def main():
     print("")
 
     token, src = read_token(args.token_file)
-    if not token:
+    # ★로컬 GGUF 는 토큰이 없다. 여기서 죽이면 집에서는 아예 못 띄운다.
+    #   주소를 보고 판단한다 — --gguf 로 왔거나 주소가 로컬이면 없어도 된다.
+    local = gguf_mode or _is_local(args.upstream)
+    if not token and not local:
         print("  [!] 토큰을 찾을 수 없습니다.")
         print("      이 폴더에 token.txt 를 두거나  --token-file <경로> 로 지정하세요.")
+        print("      로컬 GGUF 로 띄우려면:  python run.py --gguf")
         print("      폴더: {}\n".format(BASE_DIR))
         sys.exit(1)
-    print("  토큰   {}   ({})".format(mask(token), src))
+    print("  토큰   {}   ({})".format(mask(token), src or "필요 없음"))
     print("")
 
     upstream = choose_endpoint(args.upstream)
@@ -231,7 +263,8 @@ def main():
     if host not in ("127.0.0.1", "localhost"):
         for ip in lan_ips():
             print("  │  외부      http://{}:{}/".format(ip, args.port))
-    print("  │  엔드포인트 {}".format(upstream))
+    print("  │  엔드포인트 {}{}".format(
+        upstream, "   (로컬 GGUF)" if _is_local(upstream) else ""))
     print("  │  모델      {}".format(model))
     print("  │  토큰      {}".format(mask(token)))
     print("  │  저장소    {}".format(App.data_dir))

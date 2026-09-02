@@ -7,7 +7,14 @@
 """
 
 # ── LLM 엔드포인트 목록 (run.py 시작 메뉴) ──────────────────────────────
+# ★맨 앞이 집(로컬 GGUF)이다. 회사에서는 2~5번을 고른다.
+#   demos_v1(app.py)이 이미 올려 둔 GGUF 를 OpenAI 호환으로 내보내는 문이다
+#   (demos_v1/routes_openai.py). 아바타가 따로 모델을 올리지 않는다 —
+#   집은 GPU 한 장이라 두 벌 올리면 아무것도 안 뜬다.
+GGUF_LOCAL = "http://127.0.0.1:10009"
+
 ENDPOINTS = [
+    (GGUF_LOCAL,                       "로컬 GGUF (app.py · 토큰 불필요)"),
     ("http://hcp.llm.skhynix.com",     "HCP (운영)"),
     ("http://dev.hcp.llm.skhynix.com", "HCP (개발)"),
     ("http://common.llm.skhynix.com",  "Common"),

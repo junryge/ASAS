@@ -33,6 +33,15 @@ def create_app():
     register_ppt_routes(app)
     register_agent_routes(app)
 
+    # GGUF 를 OpenAI 호환으로 내보낸다 (/v1/*).
+    # ★아바타(avatar_2d) 같은 다른 앱이 **같은 모델 한 벌**을 나눠 쓰기 위한
+    #   문이다. 없으면 앱마다 llama-cpp 로 모델을 또 올려서 VRAM 이 터진다.
+    try:
+        from demos_v1.routes_openai import register_openai_routes
+        register_openai_routes(app)
+    except Exception as _oe:
+        print(f"  ⚠️  GGUF OpenAI 라우트 스킵: {_oe}")
+
     # 루프 엔지니어링(loop_engine) 라우트 — 실패해도 본체 정상 동작
     try:
         from demos_v1.routes_loop import register_loop_routes

@@ -439,12 +439,17 @@ class Gateway:
         self.timeout = timeout
 
     def _request(self, payload):
+        # ★토큰이 없으면 Authorization 을 **아예 안 보낸다.**
+        #   로컬 GGUF(app.py)는 토큰이 필요 없는데, 빈 Bearer 를 보내면
+        #   서버에 따라 401 로 잘라 버린다 — 붙을 수 있는 것을 못 붙는다.
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = "Bearer " + self.token
         req = urllib.request.Request(
             self.upstream + "/chat/completions",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             method="POST",
-            headers={"Content-Type": "application/json",
-                     "Authorization": "Bearer " + self.token},
+            headers=headers,
         )
         return self.opener.open(req, timeout=self.timeout)
 

@@ -2354,8 +2354,17 @@
       ensureTeam();
       if (on) teamSelected.add(k); else teamSelected.delete(k);
     }
+    // API 모델이 하나라도 있나 — 회사냐 집이냐를 가르는 물음이다.
+    function hasApiEnv(){
+      return Object.keys(availableEnvs).some(id => !String(id).startsWith('gguf-'));
+    }
     function apiEnvEntries(){
-      return Object.entries(availableEnvs).filter(([id]) => !String(id).startsWith('gguf-'));
+      const api = Object.entries(availableEnvs).filter(([id]) => !String(id).startsWith('gguf-'));
+      if (api.length) return api;                 // 회사: 지금까지와 똑같다
+      // ★집(로컬 GGUF 만): 여기서 빈 배열을 주면 에이전트가 전부 'auto' 로
+      //   떨어져서, 모델 고르는 칸이 통째로 죽은 것처럼 보인다. 그럴 땐
+      //   GGUF 를 쓴다 — 고를 게 그것뿐이면 그게 맞는 답이다.
+      return Object.entries(availableEnvs).filter(([id]) => String(id).startsWith('gguf-'));
     }
     // 에이전트 역할/스킬에 맞는 API 모델 자동 추천 (서버에 있는 모델 중 키워드 매칭)
     // ★usedEnvs 를 주면 이미 배정된 모델을 피한다. 예전엔 우선순위가 다들
@@ -2392,16 +2401,21 @@
       const used = new Set(Object.values(agentEnvMap).filter(v => v && v !== 'auto'));
       const order = ['ceo', ...Object.keys(agentBaseData).filter(k => k !== 'ceo')];
       for (const k of order){
-        if (!agentEnvMap[k] || String(agentEnvMap[k]).startsWith('gguf-')) {
+        // ★gguf 를 밀어내는 것은 **API 모델이 있을 때만**이다. 집에서는
+        //   밀어낼 곳이 없어서 전부 'auto' 가 됐다.
+        if (!agentEnvMap[k] || (hasApiEnv() && String(agentEnvMap[k]).startsWith('gguf-'))) {
           agentEnvMap[k] = recommendEnv(k, used);
           if (agentEnvMap[k] && agentEnvMap[k] !== 'auto') used.add(agentEnvMap[k]);
         }
       }
     }
-    // 에이전트의 실제 사용 모델 (항상 API, 절대 gguf 아님)
+    // 에이전트의 실제 사용 모델. API 모델이 있으면 API 만 쓰고,
+    // 집처럼 GGUF 밖에 없으면 GGUF 를 쓴다.
     function aEnv(key){
       let v = agentEnvMap[key];
-      if (!v || String(v).startsWith('gguf-')) { ensureAgentEnvs(); v = agentEnvMap[key]; }
+      if (!v || (hasApiEnv() && String(v).startsWith('gguf-'))) {
+        ensureAgentEnvs(); v = agentEnvMap[key];
+      }
       return v || 'auto';
     }
     function autoRecommendModels(){
@@ -3514,7 +3528,8 @@
           if(!allowed) continue;
         }
         // 에이전트 헤더 드롭다운: API 모델만 (gguf 제외 — 에이전트는 항상 API)
-        if(elId === 'envSelect' && id.startsWith('gguf-')) continue;
+        // ★집에서는 GGUF 말고 고를 게 없다 — 그때까지 빼면 목록이 빈다.
+        if(elId === 'envSelect' && id.startsWith('gguf-') && hasApiEnv()) continue;
         const type = id.startsWith('gguf-') ? 'gguf' : id.startsWith('vl-') ? 'vl' : 'mid';
         const icon = icons[type] || '🔗';
         const opt = document.createElement('option');
