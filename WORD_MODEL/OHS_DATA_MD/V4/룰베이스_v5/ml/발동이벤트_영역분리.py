@@ -78,7 +78,8 @@ SUBDIR = 'fab분리'      # 운영 출력 하위 폴더
 WATCH_LAG = 45          # 다른 기입기가 전부 쓴 뒤에 돌도록 늦추는 초
                         #   예측기 +5초 · LO_LOW_AMOS/MAXCAPA +25초 · PIO_DATA_MAKE +35초(+조회)
                         #   → 45초면 그 분의 12개 PIO 컬럼까지 채워진 뒤 분리된다 (20초였을 땐 한 분 늦게 들어갔다)
-PIO_MARK = '&PIOERROR'  # PIO 기입기 컬럼 표식 — 어느 영역 이름으로 시작하든 공통 컬럼으로 취급
+PIO_MARK = 'PIOERROR'   # PIO 기입기 컬럼 표식({경로}_PIOERROR_DEPOSITED, 예전 &PIOERROR 도 포함)
+                        #   — 어느 영역 이름으로 시작하든 공통 컬럼으로 취급
 
 
 def load_denoms(path, areas):

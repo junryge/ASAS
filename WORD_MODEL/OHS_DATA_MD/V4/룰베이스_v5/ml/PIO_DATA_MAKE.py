@@ -16,18 +16,18 @@
 #   GUBUN 판정은 고객이 준 CASE 식 그대로 (FAC_ID / FAB_ID / PORT_NM 앞글자)
 #
 # 추가 12컬럼 (같은 분끼리: 발동이벤트 datetime T == COMPLT_TM 의 분 T):
-#   M16HUB->MLUD&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16HUB->M14B&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16HUB<-M14B&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16HUB->M14A&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16HUB<-M14A&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16HUB->M16A&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16HUB<-M16A&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16A->M16B&DEPOSITED_FAIL_CNT&PIOERROR
-#   M16B->M16A&DEPOSITED_FAIL_CNT&PIOERROR
-#   M14A->M14B&DEPOSITED_FAIL_CNT&PIOERROR
-#   M14A<-M14B&DEPOSITED_FAIL_CNT&PIOERROR
-#   M14A->M10A&DEPOSITED_FAIL_CNT&PIOERROR
+#   M16HUB->MLUD_PIOERROR_DEPOSITED
+#   M16HUB->M14B_PIOERROR_DEPOSITED
+#   M16HUB<-M14B_PIOERROR_DEPOSITED
+#   M16HUB->M14A_PIOERROR_DEPOSITED
+#   M16HUB<-M14A_PIOERROR_DEPOSITED
+#   M16HUB->M16A_PIOERROR_DEPOSITED
+#   M16HUB<-M16A_PIOERROR_DEPOSITED
+#   M16A->M16B_PIOERROR_DEPOSITED
+#   M16B->M16A_PIOERROR_DEPOSITED
+#   M14A->M14B_PIOERROR_DEPOSITED
+#   M14A<-M14B_PIOERROR_DEPOSITED
+#   M14A->M10A_PIOERROR_DEPOSITED
 #   · 조회가 닿은 분인데 실패가 없으면 0, 아직 조회 안 된 분(조회 실패 등)은 공란
 #
 # 실행:
@@ -72,8 +72,11 @@ GUBUNS = [
     'M14A->M14B', 'M14A<-M14B',
     'M14A->M10A',
 ]
-SUFFIX = '&DEPOSITED_FAIL_CNT&PIOERROR'      # 컬럼명 = {GUBUN}&DEPOSITED_FAIL_CNT&PIOERROR
+SUFFIX = '_PIOERROR_DEPOSITED'      # 컬럼명 = {GUBUN}_PIOERROR_DEPOSITED  (고객 확정 이름)
 NEW_COLS = [g + SUFFIX for g in GUBUNS]
+# 예전 이름으로 이미 기입된 파일은 헤더만 새 이름으로 바꾸고 값은 그대로 둔다
+OLD_SUFFIXES = ['&DEPOSITED_FAIL_CNT&PIOERROR', '&DEPOSITED_FAIL_CNT']
+RENAME = {g + o: g + SUFFIX for g in GUBUNS for o in OLD_SUFFIXES}
 
 RECHECK_MIN = 10      # 최근 N분은 매 사이클 재기입 (COMPLT_TM 지연 적재 보정)
 FINISH_CYCLES = 6     # 자정 전환 후 전날 파일 마무리 사이클 수
@@ -366,6 +369,20 @@ def cycle(a, cache, fp=None, state={'seen': set()}):
         rows = list(rd)
     if 'datetime' not in header:
         print("  ❌ 'datetime' 컬럼 없음"); return None
+    # 예전 컬럼명 → 새 컬럼명 (값 보존). 새 이름이 이미 있으면 예전 것은 버린다.
+    old_in = [c for c in header if c in RENAME]
+    if old_in:
+        for c in old_in:
+            new = RENAME[c]
+            if new in header:
+                header.remove(c)
+                for r in rows:
+                    r.pop(c, None)
+            else:
+                header[header.index(c)] = new
+                for r in rows:
+                    r[new] = r.pop(c, None)
+        print(f'  🔁 예전 PIO 컬럼명 {len(old_in)}개 → 새 이름으로 변경 (값 유지)')
     times = [parse_dt(r.get('datetime')) for r in rows]
     valid = [t for t in times if t]
     if not valid:
