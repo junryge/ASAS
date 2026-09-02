@@ -4,6 +4,7 @@ M16A HUBROOM 수집 + 룰 예측 + 로그프레소 기입 + 영역분리 동시 
 - 수집기 스레드 (백그라운드 데몬)
 - 로그프레소 기입기 스레드 (백그라운드 데몬) — 발동이벤트.csv에 이상감지 4컬럼
 - MAXCAPA 기입기 스레드 (백그라운드 데몬) — 발동이벤트.csv에 조작내역 4컬럼
+- PIO 기입기 스레드 (백그라운드 데몬) — 발동이벤트.csv에 경로별 반송실패 12컬럼 (ORA_USER/ORA_PASS 필요)
 - 영역분리 스레드 (백그라운드 데몬) — 발동이벤트.csv를 predict_tobe/fab분리/ 로 분리
 - 룰 예측기 (메인 스레드)
 - Ctrl+C 한 번으로 같이 종료
@@ -41,6 +42,15 @@ try:
 except Exception as e:
     print(f'⚠ lo_mac_maxcapa 로드 실패 — MAXCAPA 기입 비활성: {e}')
     _MC_AVAILABLE = False
+
+# PIO 반송실패 기입기 (발동이벤트.csv에 {경로}&DEPOSITED_FAIL_CNT&PIOERROR 12컬럼)
+#   ICASTAR Oracle 직접 조회 — 환경변수 ORA_USER / ORA_PASS 필요 (ORA_DSN 은 기본값 있음)
+try:
+    import PIO_DATA_MAKE
+    _PIO_AVAILABLE = True
+except Exception as e:
+    print(f'⚠ PIO_DATA_MAKE 로드 실패 — PIO 기입 비활성: {e}')
+    _PIO_AVAILABLE = False
 
 # 영역(FAB)별 분리기 — predict_tobe/fab분리/ 에 영역별 발동이벤트 생성
 try:
@@ -83,8 +93,17 @@ if _MC_AVAILABLE:
                      kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
                      daemon=True).start()
 
+# PIO 반송실패 기입기 (백그라운드 데몬)
+#   매분 ICASTAR Oracle 에서 경로별 DEPOSITED_FAIL_CNT 를 조회해 같은 분 행에 12컬럼 기입
+#   수집기(00초)·MAXCAPA(+25초)와 접속이 겹치지 않게 기본 35초 늦게 시작
+#   ORA_USER / ORA_PASS 가 비어 있으면 접속 실패 로그만 남기고 다음 분에 재시도 (다른 스레드 영향 없음)
+if _PIO_AVAILABLE:
+    threading.Thread(target=PIO_DATA_MAKE.run_watch,
+                     kwargs={'event': str(predictor.DEFAULT_OUTPUT_DIR)},
+                     daemon=True).start()
+
 # ★★ 진짜 마지막: 영역(FAB)별 분리기 (백그라운드 데몬)
-#   위 두 기입기가 4컬럼씩 채운 뒤에 돌아야 분리 파일에도 그 값이 들어간다.
+#   위 세 기입기(로그프레소 4 · MAXCAPA 4 · PIO 12컬럼)가 채운 뒤에 돌아야 분리 파일에도 그 값이 들어간다.
 #   그래서 기본 20초 지연(lag)을 두고, 스레드도 제일 마지막에 시작한다.
 #   · 원본(YYYYMMDD_발동이벤트.csv)은 읽기만 한다 — 절대 수정·삭제하지 않음
 #   · 출력: predict_tobe/fab분리/YYYYMMDD_발동이벤트_{영역}.csv (5개)

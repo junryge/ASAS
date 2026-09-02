@@ -495,7 +495,15 @@ def run_watch(event='./predict_tobe', interval=60, lookback=15, offset=35,
     a = argparse.Namespace(event=event, out=None, interval=interval, lookback=lookback,
                            source='db', pio=None, force=False, offset=offset,
                            dsn=dsn, user=user, password=password)
-    _loop(a)
+    if not a.user or not a.password:
+        # 스레드 안에서 SystemExit 이 나면 소리 없이 죽는다 → 여기서 분명히 알리고 물러난다
+        print('⚠ [PIO_DATA_MAKE] ORA_USER / ORA_PASS 환경변수가 비어 있어 PIO 기입을 시작하지 않습니다 '
+              '(run_ml 재시작 전에 환경변수를 넣으세요). 다른 스레드에는 영향 없음.')
+        return
+    try:
+        _loop(a)
+    except SystemExit as e:
+        print(f'⚠ [PIO_DATA_MAKE] 중단: {e}')
 
 
 def backfill_alldays(a):
