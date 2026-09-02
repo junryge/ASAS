@@ -75,7 +75,10 @@ DEFAULT_DENOM = 70      # 분모 기본값 — 설정 파일이 없을 때
 DEFAULT_BANDS = {'경계': 60, '위험': 71, '초위험': 85}   # 영역 등급 구간
 SUMMARY_THS = [10, 15, 20, 25, 27, 30, 32, 35, 37, 40, 42, 45, 50]
 SUBDIR = 'fab분리'      # 운영 출력 하위 폴더
-WATCH_LAG = 20          # 다른 기입기(LO_LOW_AMOS·MAXCAPA)가 쓴 뒤에 돌도록 늦추는 초
+WATCH_LAG = 45          # 다른 기입기가 전부 쓴 뒤에 돌도록 늦추는 초
+                        #   예측기 +5초 · LO_LOW_AMOS/MAXCAPA +25초 · PIO_DATA_MAKE +35초(+조회)
+                        #   → 45초면 그 분의 12개 PIO 컬럼까지 채워진 뒤 분리된다 (20초였을 땐 한 분 늦게 들어갔다)
+PIO_MARK = '&PIOERROR'  # PIO 기입기 컬럼 표식 — 어느 영역 이름으로 시작하든 공통 컬럼으로 취급
 
 
 def load_denoms(path, areas):
@@ -111,6 +114,8 @@ def load_denoms(path, areas):
 
 
 def area_of(col):
+    if PIO_MARK in col:           # PIO 12컬럼(M16HUB->M14B&…&PIOERROR 등)은 항상 공통 → 5개 파일 전부에
+        return None
     for a in ALL_AREAS:
         if col.startswith(a + '_'):
             return a
@@ -118,6 +123,8 @@ def area_of(col):
 
 
 def suffix_area_of(col):
+    if PIO_MARK in col:
+        return None
     for a in ALL_AREAS:
         if col.endswith('_' + a):
             return a
@@ -203,13 +210,15 @@ def split_one(fp, out_dir, areas, use_suffix, strip_prefix, denoms, summary, ban
             a = suffix_area_of(c)
         owner[c] = a
     common = [c for c in header if owner[c] is None]
+    n_pio = sum(1 for c in common if PIO_MARK in c)
 
     hidx = {c: i for i, c in enumerate(header)}
 
     base = os.path.basename(fp)
     stem = base[:-4] if base.lower().endswith('.csv') else base
     made = []
-    print(f'  {base} — {len(header)}컬럼 · {len(body)}행 (공통 {len(common)})')
+    print(f'  {base} — {len(header)}컬럼 · {len(body)}행 (공통 {len(common)}'
+          + (f' · PIO {n_pio}' if n_pio else '') + ')')
 
     for a in areas:
         acols = [c for c in header if owner[c] == a]
