@@ -1199,17 +1199,71 @@ INCIDENT_FIELDS = [
 ]
 
 
+def _read_header(path):
+    """기존 파일의 헤더 한 줄만 읽는다 (없거나 못 읽으면 None)."""
+    try:
+        with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+            return next(csv.reader(f), None)
+    except (OSError, StopIteration):
+        return None
+
+
+def _migrate_header(path, fields, header):
+    """헤더에 없는 새 컬럼을 파일 전체에 추가한다 (기존 값·기입기 컬럼은 그대로).
+
+    새 컬럼은 fields 의 순서에 맞는 자리에 끼워 넣고, 기입기(PIO·로그프레소·MAXCAPA)가
+    붙인 컬럼은 뒤에 유지한다. 임시파일 → 원자 교체. 성공하면 새 헤더를 반환.
+    """
+    extra = [c for c in header if c not in fields]      # 예측기가 안 만드는 컬럼
+    want = list(fields) + extra
+    with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+        rd = csv.DictReader(f)
+        rows = list(rd)
+    tmp = path + '.hdrtmp'
+    with open(tmp, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=want, extrasaction='ignore')
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: (r.get(c) if r.get(c) is not None else '') for c in want})
+    os.replace(tmp, path)
+    return want
+
+
 def append_rows_csv(path, fields, rows):
-    new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+    """행 추가. ★ 헤더가 fields 와 다르면 자동으로 맞춘다.
+
+    예전에는 파일이 있으면 헤더를 보지 않고 그대로 이어 붙였다. 그래서 컬럼이 늘어난
+    새 버전으로 교체하면 그날 파일에서 열이 밀렸다(사람이 도구로 고쳐야 했다).
+    이제는 매번 헤더를 확인해서
+      · 같으면      그냥 이어 붙이고 (평소 경로)
+      · fields 가 헤더의 부분집합이면  헤더 순서에 맞춰 값을 배치해 붙이고
+      · 새 컬럼이 있으면  파일 전체에 그 컬럼을 추가한 뒤 붙인다 (컬럼당 1회)
+    """
     last_err = None
     for attempt in range(10):
         try:
+            new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+            header = None if new_file else _read_header(path)
+            if header is None:
+                new_file = True
+            if not new_file and header != list(fields):
+                missing = [c for c in fields if c not in header]
+                if missing:
+                    header = _migrate_header(path, fields, header)
+                    print(f'  ↔ 헤더에 새 컬럼 {len(missing)}개 추가: '
+                          f'{", ".join(missing[:6])}' + ('…' if len(missing) > 6 else ''))
             with open(path, 'a', encoding='utf-8-sig', newline='') as f:
                 w = csv.writer(f)
                 if new_file:
                     w.writerow(fields)
-                for r in rows:
-                    w.writerow(r)
+                    for r in rows:
+                        w.writerow(r)
+                else:
+                    # 헤더 순서대로 값을 배치 — 헤더에만 있는 칸(기입기용)은 빈칸으로 둔다
+                    pos = {c: i for i, c in enumerate(fields)}
+                    for r in rows:
+                        w.writerow([(r[pos[c]] if c in pos and pos[c] < len(r) else '')
+                                    for c in header])
             return
         except PermissionError as e:
             last_err = e
