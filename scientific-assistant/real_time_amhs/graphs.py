@@ -140,8 +140,66 @@ def parse_reason_metrics(reason: str) -> list[dict]:
             names = " · ".join(x["name"] for x in paths)
             out.append({"col": paths[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
                         "label": f"PIO 주 경로 ({names})", "unit": "개",
-                        "bar": True, "cols": paths})
+                        "bar": True, "cols": paths, "pio_stack": True})
     return out
+
+
+# ── PIO 주 경로는 reason 이 아니라 '데이터' 로 채운다 ──────────────────
+# reason 은 그 10분에 **가장 많이 실패한 한 구간**만 적어 온다. 그런데
+#   · 그 컬럼이 이 창에 안 오면  → 패널이 통째로 사라지고
+#   · 다른 경로에서 실패가 나도  → 이름이 안 적혔으니 안 그려진다
+# 실제로 화면에서 'PIO 주 경로가 안 뜬다' 던 게 이것이다. 그래서 창 안에서
+# 값이 온 경로를 전부 모아 쌓는다 — 막대 높이가 그 1분의 총 실패 개수다.
+_PIO_SUF = "_PIOERROR_DEPOSITED"
+_PIO_STACK_MAX = 6      # 한 패널에 쌓을 경로 수 (범례가 한 줄을 안 넘는 선)
+
+
+def _pio_paths_in(pts) -> list[str]:
+    """창 안에서 **실제로 실패가 온** PIO 경로 — 구간 합이 많은 순.
+
+    0 과 빈칸은 세지 않는다. 12경로 중 평소 값이 나오는 건 3개뿐이라,
+    0 인 경로까지 쌓으면 범례만 길어지고 막대는 그대로다.
+    """
+    tot: dict[str, float] = {}
+    for _t, r in pts:
+        for k, v in (r or {}).items():
+            if not isinstance(k, str) or not k.endswith(_PIO_SUF):
+                continue
+            f = _f(v)
+            if f:
+                name = k[:-len(_PIO_SUF)]
+                tot[name] = tot.get(name, 0.0) + f
+    return [p for p, _n in sorted(tot.items(), key=lambda x: (-x[1], x[0]))]
+
+
+def _pio_label(names: list[str]) -> str:
+    head = " · ".join(names[:3])
+    more = f" 외 {len(names) - 3}" if len(names) > 3 else ""
+    return f"PIO 주 경로 ({head}{more})"
+
+
+def _pio_fill(metrics: list[dict], pts) -> list[dict]:
+    """'PIO 주 경로' 패널을 창 안 데이터로 다시 만든다.
+
+    ★reason 에 PIO 가 없으면 손대지 않는다. PIO 컬럼이 실려 온다는 이유만으로
+      아무 그래프에나 패널을 하나 더 붙이면, 늘 보던 화면이 바뀐다.
+    """
+    idx = next((i for i, m in enumerate(metrics) if m.get("pio_stack")), -1)
+    has_pio = any(m.get("col") == "pio_10min_cnt" for m in metrics)
+    if idx < 0 and not has_pio:
+        return metrics
+    found = _pio_paths_in(pts)[:_PIO_STACK_MAX]
+    if not found:
+        return metrics          # 값이 온 경로가 없다 — 있는 그대로 둔다
+    cols = [{"col": p + _PIO_SUF, "name": p} for p in found]
+    md = {"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
+          "label": _pio_label(found), "unit": "개",
+          "bar": True, "cols": cols, "pio_stack": True}
+    if idx >= 0:
+        metrics[idx] = md
+    else:
+        metrics.append(md)
+    return metrics
 
 
 def _f(v):
@@ -250,6 +308,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
         ((t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts), key=lambda x: x[2])
     pts_sc = [(t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
     metrics = parse_reason_metrics(peak_r.get("reason") or "")
+    metrics = _pio_fill(metrics, pts)
     # ★값이 두 점도 안 되는 지표는 **패널을 만들지 않는다.** 예전엔 88px 짜리
     #   빈 칸을 그려 놓고 "데이터 없음" 만 적었다 — 그래프가 길어지기만 하고
     #   볼 것은 없다. 대신 어느 컬럼이 안 오는지 한 줄로 밝힌다 (그 사실도

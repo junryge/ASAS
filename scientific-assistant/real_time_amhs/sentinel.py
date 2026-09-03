@@ -235,10 +235,13 @@ def pio_band(total) -> str:
 def pio_text(reason: str) -> str:
     """사람이 읽을 한 줄. 없으면 빈 문자열.
 
-    ★경로 이름은 **안 적는다**. reason 칸은 이미 발동 룰로 꽉 차 있는데
-      "주 경로 M16HUB<-M16A 4개 · M14A<-M14B 1개" 까지 붙으면 줄이 넘어가
-      목록에서 밑으로 흘러내렸다. 경로별 개수는 더블클릭 그래프의
-      'PIO 주 경로' 막대에서 시각별로 본다 — 거기가 훨씬 잘 보인다.
+    예) 'PIO 반송실패 18개/10분(조금 많음) · 주 M14A<-M14B 4개'
+
+    ★경로는 **1개만** 적는다. 두 개를 적었더니 reason 칸(이미 발동 룰로 꽉
+      차 있다)이 넘쳐 목록에서 줄이 밑으로 흘러내렸다. 그렇다고 아예 빼면
+      '어디가 터졌나' 를 그래프까지 열어야 알 수 있어서, 가장 많이 실패한
+      한 구간만 남긴다. 나머지 경로는 더블클릭 그래프의 'PIO 주 경로'
+      막대에서 시각별로 본다.
     """
     p = pio_of(reason)
     if not p:
@@ -247,7 +250,11 @@ def pio_text(reason: str) -> str:
     if tot is None or tot < PIO_SHOW_MIN:
         return ""                       # 평소 수준 — 굳이 말하지 않는다
     band = pio_band(tot)
-    return "PIO 반송실패 {}개/10분{}".format(tot, f"({band})" if band else "")
+    out = "PIO 반송실패 {}개/10분{}".format(tot, f"({band})" if band else "")
+    top = sorted(p.get("paths") or [], key=lambda x: -x[1])[:1]
+    if top:
+        out += " · 주 {} {}개".format(top[0][0], top[0][1])
+    return out
 
 
 def summarize_reason(reason: str, area: str = "") -> str:
@@ -288,7 +295,7 @@ def summarize_reason(reason: str, area: str = "") -> str:
     return (out + " · " + pio) if pio else out
 
 
-def reason_metrics(reason: str, area: str = "") -> list[dict]:
+def reason_metrics(reason: str, area: str = "", row: dict | None = None) -> list[dict]:
     """발동한 룰 → **실제 raw 지표 컬럼명**. 화면 '실제지표' 칸에 쓴다.
 
     한글 요약("반송지연 지속 · 리프터 정체")만 보면 '무슨 숫자를 보고 그렇게
@@ -320,9 +327,37 @@ def reason_metrics(reason: str, area: str = "") -> list[dict]:
             pio = _PIO_RE.search(txt)
             txt = f"발동: {area}[{blk}]" + (f"; PIO({pio.group(1)})" if pio else "")
     try:
-        return parse_reason_metrics(txt)
+        mets = parse_reason_metrics(txt)
     except Exception:
         return []
+    return _pio_add_rowpaths(mets, row)
+
+
+# ★reason 은 그 10분에 **가장 많이 실패한 한 구간**만 적어 온다. 그래서
+#   같은 분에 다른 경로에서 실패가 나도 '실제지표' 에 이름이 안 떴다 —
+#   화면에서 'PIO 주 경로 개수가 안 보인다' 던 게 이것이다.
+#   행에 값이 실제로 온 경로를 뒤에 붙여 준다 (0 은 붙이지 않는다 —
+#   12경로를 다 적으면 실제지표 칸이 PIO 로만 찬다).
+_PIO_COL_SUF = "_PIOERROR_DEPOSITED"
+
+
+def _pio_add_rowpaths(mets: list, row) -> list:
+    if not row or not any(m.get("col") == "pio_10min_cnt" for m in mets):
+        return mets                     # PIO 가 발동한 행이 아니다 — 손대지 않는다
+    have = {m.get("col") for m in mets}
+    add = []
+    for k, v in row.items():
+        if not isinstance(k, str) or not k.endswith(_PIO_COL_SUF) or k in have:
+            continue
+        try:
+            if float(str(v).strip()) <= 0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        name = k[:-len(_PIO_COL_SUF)]
+        add.append({"col": k, "raw": f"PIO.DEPOSIT.{name}",
+                    "label": f"PIO 반송실패 {name}", "unit": "개"})
+    return mets + sorted(add, key=lambda m: m["col"])
 
 
 def hid_zones(tokens: str) -> list[str]:

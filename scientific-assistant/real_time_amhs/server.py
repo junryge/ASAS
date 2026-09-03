@@ -1504,7 +1504,7 @@ def api_feed():
             "reason_raw": raw_reason,
             # 한글 요약 옆 '실제지표' 칸 — 그 룰이 실제로 보는 raw 컬럼명
             "metrics": [{"raw": x["raw"], "label": x["label"]}
-                        for x in reason_metrics(raw_reason, area)],
+                        for x in reason_metrics(raw_reason, area, r)],
             "zones": hid_zones(bott), "items": items,
             # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)
             "bott_down": hid_zones(bd), "bott_up": hid_zones(bu),

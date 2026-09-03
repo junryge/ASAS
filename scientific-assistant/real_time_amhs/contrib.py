@@ -140,7 +140,7 @@ def explain(rows: list[dict], at, cfg: dict | None = None) -> dict:
 
     fired_raw = {m["raw"] for m in
                  reason_metrics(str(r0.get("reason") or ""),
-                                (r0.get("hot_area") or "").strip())}
+                                (r0.get("hot_area") or "").strip(), r0)}
 
     items = []
     for m in _metrics(cfg):

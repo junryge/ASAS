@@ -9,6 +9,10 @@
     --bg:#080A0F; --panel:#0D1119; --panel2:#131926; --line:#1C2431; --line2:#26303f;
     --tx:#E6EDF6; --tx2:#8FA0B6; --tx3:#5E6E85;
     --cy:#3DDBE8; --crit:#FF4D5E; --major:#FF9F2E; --minor:#F2D338; --ok:#2FD68A;
+    /* 여러 개가 한꺼번에 걸린 줄 — 등급색(빨강·주황·노랑·초록)과 겹치지
+       않게 파랑을 쓴다. 등급을 색으로 읽는 화면이라 같은 색을 쓰면
+       '더 위험해졌다' 로 잘못 읽힌다. */
+    --many:#6FA8FF;
     /* 상단 바 높이 — 표 머리글이 이 아래에 붙어 멈춘다. 탭이 줄바꿈되면
        바가 높아지므로 실제 값은 JS 가 재서 덮어쓴다(여기 값은 첫 그림용). */
     --topbar:63px;
@@ -26,6 +30,7 @@
     --bg:#F6F8FB; --panel:#FFFFFF; --panel2:#EEF2F8; --line:#D8DFE9; --line2:#C2CCDA;
     --tx:#111823; --tx2:#4A5A70; --tx3:#7A8798;
     --cy:#0E8C99; --crit:#D62436; --major:#C2670A; --minor:#8A6D00; --ok:#12885A;
+    --many:#1D5FD0;   /* 흰 배경에서 밝은 파랑은 안 읽힌다 — 진하게 */
   }
   :root[data-theme="light"] body{background:var(--bg)}
   /* 오프닝 화면은 색이 박혀 있다(background:#000 등) — 토큰을 안 쓰므로
@@ -289,6 +294,10 @@
      룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
   table.cases td.rcol{font-size:12px;line-height:1.5}
   table.cases td.rcol .rln{white-space:normal}
+  /* 4개 이상 걸린 줄은 파란 글자. 점수가 같아도 '여러 개가 한꺼번에'
+     걸린 줄은 성격이 다르다 — 훑을 때 눈에 걸리게 한다. */
+  table.cases td.rcol .many .rln{color:var(--many)}
+  table.cases td .mcell.many, table.cases td .mcell.many .dim{color:var(--many)}
   table.cases tr.morerow td{text-align:center;padding:14px;background:var(--panel)}
   /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
      범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
@@ -3209,7 +3218,9 @@ function metricCell(ms){
   if(!ms || !ms.length) return '<span class="dim">–</span>';
   const all = ms.map(m=>m.raw).join('\n');
   const show = ms.slice(0,4);
-  return `<div class="mono" style="font-size:10.5px;line-height:1.5" title="${esc(all)}">`
+  const many = ms.length >= MANY_MIN;   /* reason 과 같은 기준·같은 파랑 */
+  return `<div class="mono mcell${many?' many':''}" style="font-size:10.5px;line-height:1.5" `
+    + `title="${esc((many?`발동이 지목한 지표 ${ms.length}개\n`:'')+all)}">`
     + show.map(m=>`<div title="${esc(m.label||'')}">${esc(m.raw)}</div>`).join('')
     + (ms.length>4 ? `<div class="dim">외 ${ms.length-4}개</div>` : '')
     + '</div>';
@@ -3279,10 +3290,18 @@ function fabCells(r){
    ★원문에 진짜 개행이 들어오는 경우도 같이 처리한다 (줄바꿈·중점 둘 다).
    ★첫 조각에는 영역 이름이 붙어 있다 ('M16HUB 반송지연 지속') — 서버가
      그렇게 만든 것이라 떼지 않는다. 떼면 어느 영역인지 알 수 없다. */
+/* 파란 글자로 띄울 최소 개수 — reason 항목·실제지표에 같이 쓴다 */
+const MANY_MIN = 4;
+
 function reasonCell(r){
   const t = String(r.reason || (r.level==='정상' ? '정상 운영' : '–'));
   const parts = t.split(/\s*·\s*|\r?\n/).map(x=>x.trim()).filter(Boolean);
-  return `<td class="rcol"><div title="${esc(r.reason_raw||'')}">${
+  /* ★4개 이상 걸린 줄은 파랑. 한 가지가 크게 튄 줄과, 여러 가지가 동시에
+     걸린 줄은 봐야 할 것이 다르다 — 뒤쪽이 대개 전파 중이다. */
+  const many = parts.length >= MANY_MIN;
+  return `<td class="rcol"><div class="${many?'many':''}" title="${
+    esc(many ? `${parts.length}가지가 한꺼번에 걸렸습니다\n`+(r.reason_raw||'')
+             : (r.reason_raw||''))}">${
     (parts.length ? parts : [t]).map(p=>`<div class="rln">${esc(p)}</div>`).join('')
   }</div></td>`;
 }

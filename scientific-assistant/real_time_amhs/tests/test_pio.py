@@ -65,13 +65,13 @@ class reason_에서_읽는다(unittest.TestCase):
             self.assertEqual("PIO 반송실패" in sentinel.summarize_reason(r, "M16HUB"),
                              shown, tot)
 
-    def test_주_경로는_reason_에_안_적는다(self):
-        """경로 이름까지 붙이면 목록 칸을 넘어간다. 경로별 개수는
-           더블클릭 그래프의 'PIO 주 경로' 막대에서 본다."""
+    def test_주_경로는_하나만_적는다(self):
+        """두 개를 적으면 목록 칸을 넘어가고, 아예 빼면 '어디가 터졌나' 를
+           그래프까지 열어야 안다. 가장 많이 실패한 한 구간만 남긴다."""
         s = sentinel.pio_text(REASON_HI)
         self.assertIn("PIO 반송실패 17개/10분", s)
-        self.assertNotIn("M14A<-M14B", s)
-        self.assertNotIn("주 경로", s)
+        self.assertIn("주 M14A<-M14B 4개", s)
+        self.assertLessEqual(s.count("<-") + s.count("->"), 1)
 
     def test_요약이_룰_코드를_안_흘린다(self):
         s = sentinel.summarize_reason(REASON, "M16HUB")
@@ -332,6 +332,148 @@ class 더블클릭_그래프(unittest.TestCase):
         bars = _re.findall(r'<rect[^>]*fill="#(?:C58CFF|5FB8FF)"[^>]*/>', blk)
         # 값이 0 이 아닌 분은 5개뿐이다 (범례 사각형 2개는 rx 로 구분)
         self.assertEqual(len([b for b in bars if 'rx="1.5"' not in b]), 5)
+
+
+class 주경로가_안_보이던_것(unittest.TestCase):
+    """reason 은 그 10분에 **가장 많이 실패한 한 구간**만 적어 온다.
+
+    그래서 두 가지가 화면에서 사라졌다.
+      · reason 이 지목한 경로의 1분 컬럼이 이 창에 안 오면 → 패널이 통째로
+      · 같은 분에 다른 경로에서 실패가 나도 → 이름이 안 적혔으니 안 그려짐
+    경로는 reason 이 아니라 **데이터**에서 찾아야 한다.
+    """
+
+    R = "hot_area=M16HUB; 발동: M16HUB[R-A_sus]; PIO(M14A<-M14B=4건/10분,합18)"
+
+    def _pts(self, cols):
+        import datetime as dt
+        base = dt.datetime(2026, 9, 4, 7, 0)
+        out = []
+        for i in range(30):
+            r = {"reason": self.R, "pio_10min_cnt": 18}
+            r.update({k: v(i) for k, v in cols.items()})
+            out.append((base + dt.timedelta(minutes=i), r))
+        return out
+
+    def test_한_줄에_주_경로가_다시_붙는다(self):
+        """빼 봤더니 '어디가 터졌나' 를 그래프까지 열어야 알 수 있었다."""
+        t = sentinel.pio_text(self.R)
+        self.assertIn("18개/10분", t)
+        self.assertIn("주 M14A<-M14B 4개", t)
+
+    def test_경로는_하나만_적는다(self):
+        """두 개를 적었더니 reason 칸이 넘쳐 목록 줄이 밑으로 흘러내렸다."""
+        t = sentinel.pio_text(
+            "PIO(M14A<-M14B=9건/10분,M16HUB<-M16A=3건/10분,합45)")
+        self.assertIn("주 M14A<-M14B 9개", t)
+        self.assertNotIn("M16HUB<-M16A", t)
+
+    def test_평소_수준이면_경로도_안_적는다(self):
+        self.assertEqual(sentinel.pio_text("PIO(M14A<-M14B=4건/10분,합6)"), "")
+
+    def test_reason_이_지목한_컬럼이_없어도_패널이_산다(self):
+        import graphs
+        pts = self._pts({
+            "M16HUB<-M16A_PIOERROR_DEPOSITED": lambda i: 2 if i == 12 else 0,
+            "M16A->M16B_PIOERROR_DEPOSITED": lambda i: 1 if i % 7 == 0 else 0})
+        mets = graphs._pio_fill(graphs.parse_reason_metrics(self.R), pts)
+        stack = next(m for m in mets if m.get("pio_stack"))
+        names = [c["name"] for c in stack["cols"]]
+        # 값이 온 경로만 — reason 이 지목했지만 컬럼이 안 온 것은 빠진다
+        self.assertEqual(names, ["M16A->M16B", "M16HUB<-M16A"])
+        self.assertNotIn("M14A<-M14B", names)
+
+    def test_reason_에_경로_이름이_없어도_그린다(self):
+        """PIO(합18) 처럼 합만 오는 행이 있다 — 그래도 경로는 데이터에 있다."""
+        import graphs
+        R = "발동: M16HUB[R-A_sus]; PIO(합18)"
+        pts = self._pts({"M14A<-M14B_PIOERROR_DEPOSITED": lambda i: 3 if i == 5 else 0})
+        mets = graphs._pio_fill(graphs.parse_reason_metrics(R), pts)
+        stack = next(m for m in mets if m.get("pio_stack"))
+        self.assertEqual([c["name"] for c in stack["cols"]], ["M14A<-M14B"])
+
+    def test_reason_에_PIO_가_없으면_손대지_않는다(self):
+        """PIO 컬럼이 실려 온다는 이유만으로 아무 그래프에나 붙이면
+        늘 보던 화면 순서가 바뀐다."""
+        import graphs
+        R = "발동: M16HUB[R-A_sus]"
+        pts = self._pts({"M14A<-M14B_PIOERROR_DEPOSITED": lambda i: 3})
+        mets = graphs._pio_fill(graphs.parse_reason_metrics(R), pts)
+        self.assertFalse([m for m in mets if m.get("pio_stack")])
+
+    def test_많이_실패한_경로부터_쌓는다(self):
+        import graphs
+        pts = self._pts({
+            "M14A<-M14B_PIOERROR_DEPOSITED": lambda i: 1,        # 구간 합 30
+            "M16HUB<-M16A_PIOERROR_DEPOSITED": lambda i: 5 if i < 9 else 0})  # 45
+        mets = graphs._pio_fill(graphs.parse_reason_metrics(self.R), pts)
+        stack = next(m for m in mets if m.get("pio_stack"))
+        self.assertEqual([c["name"] for c in stack["cols"]],
+                         ["M16HUB<-M16A", "M14A<-M14B"])
+
+    def test_실제지표에도_그_분에_터진_경로가_붙는다(self):
+        """화면 '실제지표' 칸 — reason 이 안 적은 경로도 값이 있으면 보여준다."""
+        row = {"pio_10min_cnt": 18,
+               "M14A<-M14B_PIOERROR_DEPOSITED": 0,       # 지목됐지만 이 분엔 0
+               "M16HUB<-M16A_PIOERROR_DEPOSITED": 2,
+               "M16A->M16B_PIOERROR_DEPOSITED": 1}
+        raws = [m["raw"] for m in sentinel.reason_metrics(self.R, "M16HUB", row)]
+        self.assertIn("PIO.DEPOSIT.M16HUB<-M16A", raws)
+        self.assertIn("PIO.DEPOSIT.M16A->M16B", raws)
+
+    def test_행을_안_주면_예전_그대로다(self):
+        raws = [m["raw"] for m in sentinel.reason_metrics(self.R, "M16HUB")]
+        self.assertEqual([r for r in raws if r.startswith("PIO")],
+                         ["PIO.DEPOSIT.10MIN.CNT", "PIO.DEPOSIT.M14A<-M14B"])
+
+    def test_0_인_경로는_실제지표에_안_붙인다(self):
+        """12경로를 다 적으면 실제지표 칸이 PIO 로만 찬다."""
+        row = {"pio_10min_cnt": 18,
+               "M16B->M16A_PIOERROR_DEPOSITED": 0,
+               "M16HUB->MLUD_PIOERROR_DEPOSITED": ""}
+        raws = [m["raw"] for m in sentinel.reason_metrics(self.R, "M16HUB", row)]
+        self.assertNotIn("PIO.DEPOSIT.M16B->M16A", raws)
+        self.assertNotIn("PIO.DEPOSIT.M16HUB->MLUD", raws)
+
+
+class 여러_개_걸린_줄은_파랑(unittest.TestCase):
+    """점수가 같아도 '한 가지가 크게 튄 줄' 과 '여러 가지가 동시에 걸린 줄'
+    은 봐야 할 것이 다르다 (뒤쪽이 대개 전파 중이다). 4개 이상이면 파랑."""
+
+    @classmethod
+    def setUpClass(cls):
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(base, "static", "dashboard.html"),
+                  encoding="utf-8") as f:
+            cls.html = f.read()
+
+    def test_기준은_한_곳에만_적는다(self):
+        """reason 과 실제지표가 서로 다른 개수로 갈리면 화면이 어긋난다."""
+        self.assertIn("const MANY_MIN = 4;", self.html)
+        self.assertEqual(self.html.count("MANY_MIN"), 3)   # 정의 1 + 사용 2
+
+    def test_다크와_라이트_두_벌_다_있다(self):
+        """한 벌만 정의하면 다른 배경에서 글자가 안 읽힌다."""
+        self.assertIn("--many:#6FA8FF", self.html)         # 어두운 배경
+        self.assertIn("--many:#1D5FD0", self.html)         # 흰 배경
+
+    def test_등급색과_겹치지_않는다(self):
+        """빨강·주황·노랑·초록은 등급이다. 같은 색을 쓰면 '더 위험해졌다'
+        로 잘못 읽힌다."""
+        for grade in ("#FF4D5E", "#FF9F2E", "#F2D338", "#2FD68A",
+                      "#D62436", "#C2670A", "#8A6D00", "#12885A"):
+            self.assertNotIn(f"--many:{grade}", self.html)
+
+    def test_규칙이_실제_마크업과_맞는다(self):
+        """CSS 선택자와 JS 가 만드는 class 이름이 어긋나면 색이 안 먹는다."""
+        self.assertIn("table.cases td.rcol .many .rln{color:var(--many)}", self.html)
+        self.assertIn(".mcell.many", self.html)
+        self.assertIn('<div class="${many?\'many\':\'\'}"', self.html)
+        self.assertIn('class="mono mcell${many?\' many\':\'\'}"', self.html)
+
+    def test_외_N개_도_같이_파랗다(self):
+        """지표 5개 중 4개만 보이고 '외 1개' 만 회색이면 칸이 두 색이 된다."""
+        self.assertIn(".mcell.many .dim{color:var(--many)}", self.html)
 
 
 if __name__ == "__main__":
