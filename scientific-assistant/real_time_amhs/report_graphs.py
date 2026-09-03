@@ -76,6 +76,22 @@ def _parse_dt(s):
     return None
 
 
+def _pio_worth(inner: str) -> bool:
+    """PIO 10분 합이 '평소' 를 넘었나 — 넘을 때만 실제지표에 올린다.
+
+    ★평소(0~15)까지 다 올리면 어느 행을 눌러도 PIO 줄이 따라와서, 정작
+      실제로 터진 행에서 눈에 안 띈다. 기준은 sentinel 한 곳에서 가져온다.
+    """
+    m = re.search(r"합\s*(\d+)", inner or "")
+    if not m:
+        return False
+    try:
+        from sentinel import PIO_SHOW_MIN as _min
+    except Exception:
+        _min = 15
+    return int(m.group(1)) >= _min
+
+
 def parse_reason_metrics(reason):
     """peak reason → [{col, raw, label, unit}] (영역별, reason 등장 순서, 중복 제거).
     M16_PKT·M16_WT 는 제외(사용자 요청 — 발동이벤트 분석/그래프에서 불필요)."""
@@ -91,7 +107,7 @@ def parse_reason_metrics(reason):
     #   블록만 훑으면 통째로 빠져서, 화면 '실제지표' 에 PIO 가 안 떴다.
     #   설비 지표와 겹치지 않는 값이라(실측 상관 +0.22) 빠지면 아예 못 본다.
     _pio = re.search(r"PIO\(([^)]*)\)", reason or "")
-    if _pio:
+    if _pio and _pio_worth(_pio.group(1)):
         add("pio_10min_cnt", "PIO.DEPOSIT.10MIN.CNT",
             "PIO 반송실패 10분 합", "개")
         for _p in re.findall(

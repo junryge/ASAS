@@ -26,6 +26,12 @@ REASON = ("hot_area=M16HUB; S1조기경보; 발동: "
           "M16HUB[R-A'(AVGTOTALTIME1MIN=7.42분/기준9.0),R-A_sus]; "
           "M14[R-A_sus,Sorter(425LOT)]; PIO(M14A<-M14B=4건/10분,합6)")
 
+# 평소(0~15)를 넘어 **화면에 뜨는** 행. PIO_SHOW_MIN 위쪽이다.
+REASON_HI = REASON.replace("합6", "합17")
+# 더블클릭 그래프용 — 주 경로가 둘인 행
+GRAPH_REASON = ("hot_area=M16HUB; S2확정; 발동: M16HUB[R-A_sus]; "
+                "PIO(M14A<-M14B=4건/10분,M16HUB<-M16A=2건/10분,합17)")
+
 
 class reason_에서_읽는다(unittest.TestCase):
 
@@ -46,9 +52,26 @@ class reason_에서_읽는다(unittest.TestCase):
 
     def test_한글_요약에_들어간다(self):
         """★PIO 는 영역 블록 **밖**에 붙는다. 블록만 읽으면 통째로 사라진다."""
-        s = sentinel.summarize_reason(REASON, "M16HUB")
+        s = sentinel.summarize_reason(REASON_HI, "M16HUB")
         self.assertIn("PIO 반송실패", s)
-        self.assertIn("6개", s)   # 표기 단위는 "개" (사용자 요청)
+        self.assertIn("17개", s)   # 표기 단위는 "개" (사용자 요청)
+
+    def test_평소_수준은_말하지_않는다(self):
+        """★3일 중 88.9%가 0~15 다. 그것까지 다 적으면 reason 이 늘 PIO 로
+           차 있어서, 정작 터졌을 때 눈에 안 띈다 (줄도 넘어간다)."""
+        self.assertEqual(sentinel.PIO_SHOW_MIN, 15)
+        for tot, shown in ((6, False), (14, False), (15, True), (45, True)):
+            r = REASON.replace("합6", f"합{tot}")
+            self.assertEqual("PIO 반송실패" in sentinel.summarize_reason(r, "M16HUB"),
+                             shown, tot)
+
+    def test_주_경로는_reason_에_안_적는다(self):
+        """경로 이름까지 붙이면 목록 칸을 넘어간다. 경로별 개수는
+           더블클릭 그래프의 'PIO 주 경로' 막대에서 본다."""
+        s = sentinel.pio_text(REASON_HI)
+        self.assertIn("PIO 반송실패 17개/10분", s)
+        self.assertNotIn("M14A<-M14B", s)
+        self.assertNotIn("주 경로", s)
 
     def test_요약이_룰_코드를_안_흘린다(self):
         s = sentinel.summarize_reason(REASON, "M16HUB")
@@ -75,16 +98,21 @@ class 구간_판정(unittest.TestCase):
 class 실제지표에_뜬다(unittest.TestCase):
 
     def test_reason_이_컬럼을_짚는다(self):
-        cols = [m["col"] for m in parse_reason_metrics(REASON)]
+        cols = [m["col"] for m in parse_reason_metrics(REASON_HI)]
         self.assertIn("pio_10min_cnt", cols)
         self.assertIn("M14A<-M14B_PIOERROR_DEPOSITED", cols)
+
+    def test_평소_수준은_실제지표에도_안_올린다(self):
+        cols = [m["col"] for m in parse_reason_metrics(REASON)]     # 합6
+        self.assertNotIn("pio_10min_cnt", cols)
+        self.assertTrue([c for c in cols if c.endswith("_ra")])     # 설비 지표는 그대로
 
     def test_영역으로_걸러도_안_사라진다(self):
         """★PIO 는 12경로 지표라 FAB 하나에 속하지 않는다. 영역 필터에서
         같이 잘려서, 어느 영역을 보든 '발동이 지목한 지표' 에서 빠졌다 —
         기여도 추정에서 가중을 못 받아 순위가 밀렸다."""
         for area in ("M16HUB", "M14"):
-            cols = [m["col"] for m in sentinel.reason_metrics(REASON, area)]
+            cols = [m["col"] for m in sentinel.reason_metrics(REASON_HI, area)]
             self.assertIn("pio_10min_cnt", cols, area)
 
     def test_감시_컬럼에_들어_있다(self):
@@ -167,10 +195,13 @@ class LLM_이_해석할_수_있다(unittest.TestCase):
         for r in rs:
             self.assertEqual(r["unit"], "개", r["label"])
             self.assertNotIn("건", r["label"], r["label"])
-        for m in parse_reason_metrics(REASON):
+        seen = 0
+        for m in parse_reason_metrics(REASON_HI):
             if "PIO" in m["label"]:
+                seen += 1
                 self.assertEqual(m["unit"], "개", m["label"])
-        self.assertNotIn("건", sentinel.pio_text(REASON))
+        self.assertTrue(seen)
+        self.assertNotIn("건", sentinel.pio_text(REASON_HI))
 
     def test_원문은_건으로_와도_읽는다(self):
         """★예측기가 보내는 reason 은 아직 '…=4건' 이다. 표기만 바꾸고
@@ -214,6 +245,93 @@ class LLM_이_해석할_수_있다(unittest.TestCase):
         txt, _meta = analysis._overview(seq, cfg, "07:00~07:19")
         self.assertIn("pio_10min_cnt", txt)
         self.assertIn("PIO 반송실패 10분 합(개)", txt)
+
+
+class 더블클릭_그래프(unittest.TestCase):
+    """구간 그래프(더블클릭)에서 PIO 는 **막대**다.
+
+    ★1분 개수는 0/1/4 로 뚝뚝 끊긴다. 선으로 이으면 0 과 4 사이를 지나가는
+      중간값을 그린 셈이 되는데, 그런 분은 존재하지 않는다. 개수는 막대다.
+    """
+
+    @staticmethod
+    def _rows(n=40):
+        import datetime as dt
+        base = dt.datetime(2026, 9, 4, 7, 0)
+        a = {12: 4, 13: 3, 27: 5}
+        b = {30: 2, 31: 1}
+        rows = []
+        for i in range(n):
+            t = base + dt.timedelta(minutes=i)
+            rows.append({
+                "datetime": t.strftime("%Y-%m-%d %H:%M:%S"),
+                "unified_risk_score": 40 + (i % 11),
+                "hot_area": "M16HUB", "reason": GRAPH_REASON,
+                "M16HUB_ra": 5 + (i % 9) * 0.3,
+                "pio_10min_cnt": sum(a.get(j, 0) + b.get(j, 0)
+                                     for j in range(max(0, i - 9), i + 1)),
+                "M14A<-M14B_PIOERROR_DEPOSITED": a.get(i, 0),
+                "M16HUB<-M16A_PIOERROR_DEPOSITED": b.get(i, 0)})
+        return base, rows
+
+    def test_막대로_표시한다(self):
+        import graphs
+        mds = {m["label"]: m for m in graphs.parse_reason_metrics(GRAPH_REASON)}
+        tot = mds["PIO 반송실패 10분 합"]
+        self.assertTrue(tot["bar"])
+        self.assertTrue(tot["rolling"])      # 겹쳐 더한 값 — 구간 합 금지
+        self.assertEqual(tot["unit"], "개")
+
+    def test_주_경로는_한_패널에_쌓는다(self):
+        """경로마다 패널을 따로 만들면 그래프가 한 화면을 넘어가고, 정작
+           '이 분에 총 몇 개' 가 어디에도 안 남는다."""
+        import graphs
+        pan = [m for m in graphs.parse_reason_metrics(GRAPH_REASON) if m.get("cols")]
+        self.assertEqual(len(pan), 1)
+        self.assertEqual([c["name"] for c in pan[0]["cols"]],
+                         ["M14A<-M14B", "M16HUB<-M16A"])
+        self.assertTrue(pan[0]["bar"])
+
+    def test_설비_지표_뒤에_붙는다(self):
+        """★앞에 끼우면 늘 보던 패널 순서가 통째로 밀린다."""
+        import graphs
+        labels = [m["label"] for m in graphs.parse_reason_metrics(GRAPH_REASON)]
+        self.assertTrue(labels[0].startswith("M16HUB 반송시간"))
+        self.assertTrue(all("PIO" in x for x in labels[-2:]))
+
+    def test_그림에_막대가_실제로_그려진다(self):
+        import json
+        import graphs
+        import datetime as dt
+        with open(os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "config.json"), encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        base, rows = self._rows()
+        svg = graphs.render(rows, base + dt.timedelta(minutes=20), 40, cfg=cfg)
+        self.assertIn("PIO 반송실패 10분 합", svg)
+        self.assertIn("PIO 주 경로", svg)
+        # 범례 — 색만으로 경로를 구분하게 두지 않는다 (SVG 라 < 는 &lt;)
+        self.assertIn("M16HUB&lt;-M16A", svg)
+        # 10분 합은 겹쳐 더한 값이라 '구간 합' 을 내면 거짓이 된다
+        head = svg.split("PIO 반송실패 10분 합")[1].split("PIO 주 경로")[0]
+        self.assertNotIn("구간 합", head)
+        self.assertIn("최고", head)
+
+    def test_0_은_막대를_안_그린다(self):
+        """0 을 막대로 그리면 바닥에 실선이 깔려 '뭔가 있었다' 로 읽힌다."""
+        import json
+        import graphs
+        import datetime as dt
+        with open(os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "config.json"), encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        base, rows = self._rows()
+        svg = graphs.render(rows, base + dt.timedelta(minutes=20), 40, cfg=cfg)
+        blk = svg.split("PIO 주 경로")[1]
+        import re as _re
+        bars = _re.findall(r'<rect[^>]*fill="#(?:C58CFF|5FB8FF)"[^>]*/>', blk)
+        # 값이 0 이 아닌 분은 5개뿐이다 (범례 사각형 2개는 rx 로 구분)
+        self.assertEqual(len([b for b in bars if 'rx="1.5"' not in b]), 5)
 
 
 if __name__ == "__main__":

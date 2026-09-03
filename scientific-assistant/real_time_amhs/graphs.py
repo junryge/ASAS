@@ -50,7 +50,12 @@ _COLOR_BY_KIND = {
     "sla": "#3DDBE8",       # 4분초과율
     "sorter": "#5FB8FF",    # 분류기 대기
     "rd_oht": "#7C9CFF",    # OHT가동률
+    # PIO 반송실패 — 설비 지표(선)와 성격이 다른 '실패 개수' 라 색도 따로 준다
+    "pio_10min_cnt": "#C58CFF",         # 10분 합 (판정 기준)
+    "PIOERROR_DEPOSITED": "#8F7BFF",    # 경로별 1분 개수
 }
+# PIO 주 경로 막대 — 한 패널에 쌓으므로 경로마다 색이 달라야 한다
+_PATH_COLORS = ["#C58CFF", "#5FB8FF", "#3DDBE8", "#F2C94C", "#FF6FB5"]
 _SCORE_COLOR = "#3DDBE8"   # --cy
 _SEL_COLOR = "#E6EDF6"     # 더블클릭한 시각 표시색 (밝게)
 _EVT_COLOR = "#FF9F2E"     # --major
@@ -81,10 +86,11 @@ def parse_reason_metrics(reason: str) -> list[dict]:
     body = (reason or "").split("발동:", 1)[-1]
     body = re.split(r"흐름:|운영자조치:", body)[0]
 
-    def add(col, raw, label, unit):
+    def add(col, raw, label, unit, bar=False):
         if col and col not in seen and not any(x in col for x in ("M16_PKT", "M16_WT")):
             seen.add(col)
-            out.append({"col": col, "raw": raw, "label": label, "unit": unit})
+            out.append({"col": col, "raw": raw, "label": label, "unit": unit,
+                        "bar": bar})
 
     for m in re.finditer(r"(M16HUB|M14B|M16A|M16B|M14)\s*\[(.*?)\]", body):
         area, inner = m.group(1), m.group(2)
@@ -104,6 +110,37 @@ def parse_reason_metrics(reason: str) -> list[dict]:
             add(f"sla_{area}", f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO", f"{area} 4분초과율", "%")
         if "SORT(" in inner or "소터" in inner:
             add(f"sorter_{area}", f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER", f"{area} 분류기 대기", "건")
+
+    # ── PIO 반송실패 ────────────────────────────────────────────────
+    # ★PIO 는 영역 블록 **밖**에 붙는다 —
+    #     …발동: M16HUB[R-A_sus]; PIO(M14A<-M14B=4건/10분,합6)
+    #   위 영역 루프만 돌면 통째로 빠져서, 더블클릭 그래프에 PIO 가 안 떴다.
+    #   설비 지표와 실측 상관이 +0.22 라, 빠지면 대신 볼 것이 없다.
+    # ★선이 아니라 **막대**다. 1분 개수는 0/1/2 로 뚝뚝 끊기는 값이라 선으로
+    #   이으면 없는 중간값을 그린 것처럼 보인다 — 0 과 4 사이를 지나가는
+    #   선은 거짓이다. 개수는 막대가 맞다.
+    # ★설비 지표 **뒤**에 붙인다. 앞에 끼우면 늘 보던 패널 순서가 밀린다.
+    _pio = re.search(r"PIO\(([^)]*)\)", reason or "")
+    if _pio:
+        add("pio_10min_cnt", "PIO.DEPOSIT.10MIN.CNT",
+            "PIO 반송실패 10분 합", "개", bar=True)
+        out[-1]["rolling"] = True      # 겹쳐 더한 값 — 구간 합을 또 내면 거짓이다
+        # 주 경로는 **한 패널에 쌓아** 그린다. 경로마다 패널을 따로 만들면
+        # 그래프가 한 화면을 넘어가고, 정작 알고 싶은 '이 분에 총 몇 개'가
+        # 어디에도 안 남는다. 쌓으면 막대 높이가 곧 그 분의 총 개수다.
+        paths, pseen = [], set()
+        for _p in re.findall(
+                r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*\d+\s*[건개]",
+                _pio.group(1)):
+            _p = _p.replace(" ", "")
+            if _p not in pseen:
+                pseen.add(_p)
+                paths.append({"col": f"{_p}_PIOERROR_DEPOSITED", "name": _p})
+        if paths:
+            names = " · ".join(x["name"] for x in paths)
+            out.append({"col": paths[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
+                        "label": f"PIO 주 경로 ({names})", "unit": "개",
+                        "bar": True, "cols": paths})
     return out
 
 
@@ -218,11 +255,15 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
     #   볼 것은 없다. 대신 어느 컬럼이 안 오는지 한 줄로 밝힌다 (그 사실도
     #   정보다 — 수집이 빠진 것인지 확인해야 하니까).
     def _has_line(md):
+        # ★막대(개수)는 한 점이면 충분하다 — 1분에 4개 터진 그 한 점이
+        #   정확히 봐야 할 것이라, 선 그래프 기준(2점)으로 자르면 안 된다.
+        need = 1 if md.get("bar") else 2
+        cols = [x["col"] for x in (md.get("cols") or [])] or [md["col"]]
         n = 0
         for _t, r in pts:
-            if _f(r.get(md["col"])) is not None:
+            if any(_f(r.get(c)) is not None for c in cols):
                 n += 1
-                if n >= 2:
+                if n >= need:
                     return True
         return False
 
@@ -345,8 +386,23 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
     for i, md in enumerate(metrics):
         y = y_met0 + (MET_H + GAP) * i
         col = _kind_color(md["col"], i)
-        vals = [(t, _f(r.get(md["col"]))) for t, r in pts]
-        vals = [(t, v) for t, v in vals if v is not None]
+        stack = md.get("cols") or []
+        if stack:
+            # 경로별 값과 그 분의 합. 막대 높이 = 합 = 그 1분의 총 실패 개수.
+            rowsv = []
+            for t, r in pts:
+                raw = [(x["name"], _f(r.get(x["col"]))) for x in stack]
+                if all(v is None for _n, v in raw):
+                    continue            # 그 분에 PIO 컬럼이 통째로 안 온 것
+                per = [(n_, v or 0.0) for n_, v in raw]
+                rowsv.append((t, per, sum(v for _n, v in per)))
+            vals = [(t, tot) for t, _per, tot in rowsv]
+        else:
+            rowsv = []
+            vals = [(t, _f(r.get(md["col"]))) for t, r in pts]
+            vals = [(t, v) for t, v in vals if v is not None]
+        if not vals:
+            continue
 
         o.append(f'<rect x="{L-46}" y="{y}" width="4" height="{MET_H}" fill="{col}" rx="2"/>')
         o.append(f'<text x="{L-38}" y="{y+12}" font-size="11.5" font-weight="700" fill="{col}">'
@@ -354,11 +410,26 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
         o.append(f'<text x="{L-38}" y="{y+26}" font-size="9" fill="{_TX2}" '
                  f'font-family="ui-monospace,Menlo,Consolas,monospace">{_e(md["raw"])}</text>')
 
-        vmin = min(v for _, v in vals)
+        is_bar = bool(md.get("bar"))
+        # ★개수 막대는 **0 부터** 그린다. 최소값을 바닥으로 잡으면 3~4개가
+        #   0~4개처럼 보여서 두 배로 부풀어 읽힌다. 개수는 0 이 기준이다.
+        vmin = 0.0 if is_bar else min(v for _, v in vals)
         vmax = max(v for _, v in vals)
         rng = (vmax - vmin) or 1.0
+        # ★10분 합은 **이미 겹쳐 더한 값**이라 구간 합을 또 내면 안 된다.
+        #   1시간이면 같은 실패를 열 번씩 세어 250개 같은 거짓 숫자가 나온다.
+        #   더할 수 있는 건 1분 개수뿐이다.
+        if is_bar and not md.get("rolling"):
+            _rng_txt = (f'범위 0~{_fmt(vmax)}{_e(md["unit"])} · '
+                        f'구간 합 {_fmt(sum(v for _, v in vals))}{_e(md["unit"])}')
+        elif is_bar:
+            _pk = max(vals, key=lambda x: x[1])
+            _rng_txt = (f'범위 0~{_fmt(vmax)}{_e(md["unit"])} · '
+                        f'최고 {_fmt(_pk[1])}{_e(md["unit"])} @{_pk[0]:%H:%M}')
+        else:
+            _rng_txt = f'범위 {_fmt(vmin)}~{_fmt(vmax)}{_e(md["unit"])}'
         o.append(f'<text x="{L-38}" y="{y+39}" font-size="9" fill="{_TX3}">'
-                 f'범위 {_fmt(vmin)}~{_fmt(vmax)}{_e(md["unit"])}</text>')
+                 f'{_rng_txt}</text>')
 
         pt, pb = y + 6, y + MET_H - 10
 
@@ -366,13 +437,49 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
             return pb - (pb - pt) * ((v - vmin) / rng)
 
         o.append(f'<line x1="{L}" y1="{pb:.1f}" x2="{L+pw}" y2="{pb:.1f}" stroke="{_LINE}"/>')
-        area_d = (f"M{X(vals[0][0]):.1f},{pb:.1f} "
-                  + " ".join(f"L{X(t):.1f},{MY(v):.1f}" for t, v in vals)
-                  + f" L{X(vals[-1][0]):.1f},{pb:.1f} Z")
-        o.append(f'<path d="{area_d}" fill="{col}" opacity="0.20"/>')
-        d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{MY(v):.1f}"
-                     for k, (t, v) in enumerate(vals))
-        o.append(f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.4"/>')
+        if is_bar:
+            # 막대 폭은 1분 간격에 맞춘다. 구간이 길면 1px 밑으로 내려가므로
+            # 최소 폭을 둔다 — 안 그러면 급증이 화면에서 사라진다.
+            bw = max(1.6, min(9.0, pw / max(1, len(pts)) - 1.0))
+            if stack:
+                # 경로마다 색을 달리해 아래에서부터 쌓는다.
+                cmap = {x["name"]: _PATH_COLORS[k % len(_PATH_COLORS)]
+                        for k, x in enumerate(stack)}
+                for t, per, _tot in rowsv:
+                    base = pb
+                    for name, v in per:
+                        if v <= 0:
+                            continue
+                        h = max(1.0, (pb - MY(v)))
+                        o.append(f'<rect x="{X(t)-bw/2:.1f}" y="{base-h:.1f}" '
+                                 f'width="{bw:.1f}" height="{h:.1f}" '
+                                 f'fill="{cmap[name]}" opacity="0.95"/>')
+                        base -= h
+                # 범례 — 색만으로 경로를 구분하게 두지 않는다
+                lx = L + pw
+                for name, c in reversed(list(cmap.items())):
+                    tw = len(name) * 5.6 + 16
+                    lx -= tw
+                    o.append(f'<rect x="{lx:.1f}" y="{pt+1:.1f}" width="8" height="8" '
+                             f'rx="1.5" fill="{c}"/>')
+                    o.append(f'<text x="{lx+11:.1f}" y="{pt+8.5:.1f}" font-size="9" '
+                             f'fill="{c}" font-weight="700">{_e(name)}</text>')
+                    lx -= 6
+            else:
+                for t, v in vals:
+                    if v <= 0:
+                        continue                  # 0 은 막대를 안 그린다 (바닥선이 곧 0)
+                    h = max(1.0, pb - MY(v))
+                    o.append(f'<rect x="{X(t)-bw/2:.1f}" y="{pb-h:.1f}" width="{bw:.1f}" '
+                             f'height="{h:.1f}" fill="{col}" opacity="0.92" rx="0.8"/>')
+        else:
+            area_d = (f"M{X(vals[0][0]):.1f},{pb:.1f} "
+                      + " ".join(f"L{X(t):.1f},{MY(v):.1f}" for t, v in vals)
+                      + f" L{X(vals[-1][0]):.1f},{pb:.1f} Z")
+            o.append(f'<path d="{area_d}" fill="{col}" opacity="0.20"/>')
+            d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{MY(v):.1f}"
+                         for k, (t, v) in enumerate(vals))
+            o.append(f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.4"/>')
 
         # 사건 시각의 실제 값 표시
         vmap = dict(vals)

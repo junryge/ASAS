@@ -212,6 +212,13 @@ def pio_of(reason: str) -> dict:
 PIO_BANDS = [(81, "최고"), (61, "심각"), (41, "이상"),
              (26, "확실히 많음"), (16, "조금 많음")]
 
+# ★화면에 **띄울** 최소 개수. 3일 중 88.9%가 0~15 라, 이 아래는 평소다.
+#   평소 값까지 다 적으면 reason 과 실제지표가 PIO 로 늘 차 있어서 정작
+#   봐야 할 때 눈에 안 띈다 — 평소는 접어 두고 넘을 때만 말한다.
+#   (판정 임계 PIO_10MIN_THR=16 과 한 칸 차이는 의도한 것이다. 임계 직전
+#    15 까지는 '보이기만' 하고 점수에는 안 들어간다.)
+PIO_SHOW_MIN = 15
+
 
 def pio_band(total) -> str:
     """10분 총합 → 한글 수준. 15 이하는 평소(3일 중 88.9%)라 빈 문자열."""
@@ -226,19 +233,21 @@ def pio_band(total) -> str:
 
 
 def pio_text(reason: str) -> str:
-    """사람이 읽을 한 줄. 없으면 빈 문자열."""
+    """사람이 읽을 한 줄. 없으면 빈 문자열.
+
+    ★경로 이름은 **안 적는다**. reason 칸은 이미 발동 룰로 꽉 차 있는데
+      "주 경로 M16HUB<-M16A 4개 · M14A<-M14B 1개" 까지 붙으면 줄이 넘어가
+      목록에서 밑으로 흘러내렸다. 경로별 개수는 더블클릭 그래프의
+      'PIO 주 경로' 막대에서 시각별로 본다 — 거기가 훨씬 잘 보인다.
+    """
     p = pio_of(reason)
     if not p:
         return ""
     tot = p.get("total")
-    bits = []
-    if tot is not None:
-        band = pio_band(tot)
-        bits.append("PIO 반송실패 {}개/10분{}".format(tot, f"({band})" if band else ""))
-    if p.get("paths"):
-        bits.append("주 경로 " + " · ".join("{} {}개".format(a, n)
-                                           for a, n in p["paths"][:2]))
-    return " · ".join(bits)
+    if tot is None or tot < PIO_SHOW_MIN:
+        return ""                       # 평소 수준 — 굳이 말하지 않는다
+    band = pio_band(tot)
+    return "PIO 반송실패 {}개/10분{}".format(tot, f"({band})" if band else "")
 
 
 def summarize_reason(reason: str, area: str = "") -> str:
