@@ -152,6 +152,30 @@ def parse_reason_metrics(reason: str) -> list[dict]:
 # 값이 온 경로를 전부 모아 쌓는다 — 막대 높이가 그 1분의 총 실패 개수다.
 _PIO_SUF = "_PIOERROR_DEPOSITED"
 _PIO_STACK_MAX = 6      # 한 패널에 쌓을 경로 수 (범례가 한 줄을 안 넘는 선)
+_PIO_IN_RE = re.compile(r"PIO\(([^)]*)\)")
+_PIO_KV_RE = re.compile(
+    r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*(\d+)\s*[건개]")
+
+
+def _pio_reason_map(r) -> dict:
+    """그 분 reason 의 PIO(…) 에서 {경로: 개수}.
+
+    ★1분 컬럼이 CSV 에 0 으로만 들어오는 현장이 있다. 그때도 reason 에는
+      'M14A<-M14B=4개/10분' 처럼 경로별 숫자가 그대로 실려 온다 — 화면에
+      '범위 0~0개' 만 뜨던 게 이것이다. 마지막 수단으로 이 값을 쓴다.
+      단위가 다르다(1분 개수가 아니라 10분 누적) — 이름표에 적어 준다.
+    """
+    m = _PIO_IN_RE.search(str((r or {}).get("reason") or ""))
+    if not m:
+        return {}
+    return {p.replace(" ", ""): float(n) for p, n in _PIO_KV_RE.findall(m.group(1))}
+
+
+def _pio_val(r, x):
+    """스택 한 칸의 값 — CSV 컬럼이 원칙, reason 은 대체."""
+    if x.get("from_reason"):
+        return _pio_reason_map(r).get(x["name"])
+    return _f(r.get(x["col"]))
 
 
 def _pio_paths_in(pts) -> list[str]:
@@ -189,12 +213,29 @@ def _pio_fill(metrics: list[dict], pts) -> list[dict]:
     if idx < 0 and not has_pio:
         return metrics
     found = _pio_paths_in(pts)[:_PIO_STACK_MAX]
-    if not found:
-        return metrics          # 값이 온 경로가 없다 — 있는 그대로 둔다
-    cols = [{"col": p + _PIO_SUF, "name": p} for p in found]
-    md = {"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
-          "label": _pio_label(found), "unit": "개",
-          "bar": True, "cols": cols, "pio_stack": True}
+    if found:
+        cols = [{"col": p + _PIO_SUF, "name": p} for p in found]
+        md = {"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
+              "label": _pio_label(found), "unit": "개",
+              "bar": True, "cols": cols, "pio_stack": True}
+    else:
+        # ★1분 컬럼이 창 내내 0 이면 막대가 하나도 안 선다 — 화면에
+        #   'PIO 주 경로 (M14A<-M14B) · 범위 0~0개' 만 떴다. 정작 보려던
+        #   '어느 구간이 얼마나' 는 reason 에 숫자로 들어 있다. 그걸 쓴다.
+        tot: dict[str, float] = {}
+        for _t, r in pts:
+            for name, v in _pio_reason_map(r).items():
+                if v:
+                    tot[name] = max(tot.get(name, 0.0), v)
+        if not tot:
+            return metrics      # 어디에도 숫자가 없다 — 있는 그대로 둔다
+        names = [p for p, _n in sorted(tot.items(), key=lambda x: (-x[1], x[0]))
+                 ][:_PIO_STACK_MAX]
+        cols = [{"col": p + _PIO_SUF, "name": p, "from_reason": True} for p in names]
+        md = {"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로} (reason)",
+              "label": _pio_label(names) + " · 10분 누적", "unit": "개",
+              # 겹쳐 더한 값이라 '구간 합' 을 내면 같은 실패를 열 번 센다
+              "bar": True, "rolling": True, "cols": cols, "pio_stack": True}
     if idx >= 0:
         metrics[idx] = md
     else:
@@ -317,10 +358,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
         # ★막대(개수)는 한 점이면 충분하다 — 1분에 4개 터진 그 한 점이
         #   정확히 봐야 할 것이라, 선 그래프 기준(2점)으로 자르면 안 된다.
         need = 1 if md.get("bar") else 2
-        cols = [x["col"] for x in (md.get("cols") or [])] or [md["col"]]
+        cols = (md.get("cols") or []) or [{"col": md["col"]}]
         n = 0
         for _t, r in pts:
-            if any(_f(r.get(c)) is not None for c in cols):
+            if any(_pio_val(r, c) is not None for c in cols):
                 n += 1
                 if n >= need:
                     return True
@@ -450,7 +491,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
             # 경로별 값과 그 분의 합. 막대 높이 = 합 = 그 1분의 총 실패 개수.
             rowsv = []
             for t, r in pts:
-                raw = [(x["name"], _f(r.get(x["col"]))) for x in stack]
+                raw = [(x["name"], _pio_val(r, x)) for x in stack]
                 if all(v is None for _n, v in raw):
                     continue            # 그 분에 PIO 컬럼이 통째로 안 온 것
                 per = [(n_, v or 0.0) for n_, v in raw]

@@ -436,6 +436,74 @@ class 주경로가_안_보이던_것(unittest.TestCase):
         self.assertNotIn("PIO.DEPOSIT.M16HUB->MLUD", raws)
 
 
+class 컬럼이_0만_올_때(unittest.TestCase):
+    """현장에서 1분 컬럼이 창 내내 0 으로만 들어왔다. 그래서 화면에
+        PIO 주 경로 (M14A<-M14B) (개) · 범위 0~0개 · 구간 합 0개
+    만 뜨고 막대가 하나도 안 섰다 — 정작 보려던 '어느 구간이 얼마나' 다.
+    그 숫자는 reason 에 들어 있다: PIO(M14A<-M14B=4개/10분,합6).
+    """
+
+    def _rows(self, per_min, reason_paths=True):
+        import datetime as dt
+        base = dt.datetime(2026, 9, 4, 7, 0)
+        rows = []
+        for i in range(60):
+            a, b = 2 + (i % 6), (5 if 20 <= i <= 34 else 1)
+            inner = (f"M14A<-M14B={a}건/10분,M16HUB<-M16A={b}건/10분"
+                     if reason_paths else "")
+            rows.append({
+                "datetime": (base + dt.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:%S"),
+                "unified_risk_score": 34 + (24 if i == 27 else 0),
+                "hot_area": "M16HUB",
+                "reason": f"발동: M16HUB[R-A_sus]; PIO({inner},합{a + b})",
+                "M14A<-M14B_PIOERROR_DEPOSITED": per_min,
+                "pio_10min_cnt": a + b})
+        return base, rows
+
+    def _svg(self, rows, base):
+        import datetime as dt
+        import json
+        import graphs
+        with open(os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "config.json"), encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        return graphs.render(rows, base + dt.timedelta(minutes=30), 60, cfg=cfg)
+
+    def test_0_만_와도_막대가_선다(self):
+        import re
+        base, rows = self._rows(0)
+        svg = self._svg(rows, base)
+        self.assertIn("PIO 주 경로", svg)
+        self.assertNotIn("범위 0~0개", svg)
+        blk = svg.split("PIO 주 경로")[1]
+        bars = [b for b in re.findall(r'<rect[^>]*fill="#(?:C58CFF|5FB8FF)"[^>]*/>', blk)
+                if 'rx="1.5"' not in b]
+        self.assertGreater(len(bars), 60)      # 60분 × 2경로
+
+    def test_단위가_다르면_이름표에_적는다(self):
+        """1분 개수가 아니라 10분 누적이다. 안 적으면 열 배로 읽힌다."""
+        base, rows = self._rows(0)
+        svg = self._svg(rows, base)
+        self.assertIn("10분 누적", svg)
+        # 겹쳐 더한 값이라 '구간 합' 을 내면 같은 실패를 열 번 센다
+        blk = svg.split("PIO 주 경로")[1]
+        self.assertNotIn("구간 합", blk.split("PIO")[0] if "PIO" in blk else blk)
+
+    def test_1분_컬럼에_값이_있으면_그걸_쓴다(self):
+        """reason 대체는 **마지막 수단**이다. 진짜 1분 값이 우선이다."""
+        base, rows = self._rows(1)
+        svg = self._svg(rows, base)
+        self.assertIn("PIO 주 경로", svg)
+        self.assertNotIn("10분 누적", svg)
+
+    def test_어디에도_숫자가_없으면_손대지_않는다(self):
+        import graphs
+        base, rows = self._rows(0, reason_paths=False)
+        pts = [(None, r) for r in rows]
+        mets = graphs.parse_reason_metrics(rows[0]["reason"])
+        self.assertEqual(graphs._pio_fill(list(mets), pts), mets)
+
+
 class 여러_개_걸린_줄은_파랑(unittest.TestCase):
     """점수가 같아도 '한 가지가 크게 튄 줄' 과 '여러 가지가 동시에 걸린 줄'
     은 봐야 할 것이 다르다 (뒤쪽이 대개 전파 중이다). 4개 이상이면 파랑."""
