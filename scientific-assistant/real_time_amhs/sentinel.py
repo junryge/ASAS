@@ -179,16 +179,18 @@ def _rule_names(block: str) -> list[str]:
 # ★설비 지표(큐·반송시간)는 '밀리는 중' 을 보고, PIO 는 **이미 실패한 결과**다.
 #   실측 상관계수 +0.22 — 거의 안 겹친다. 그래서 따로 말해 줘야 한다.
 _PIO_RE = re.compile(r"PIO\(([^)]*)\)")
-_PIO_PATH_RE = re.compile(r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*(\d+)\s*건")
+# ★예측기가 써 보내는 원문은 아직 "…=4건" 이다. 읽을 때는 건/개 둘 다
+#   받고, 사람에게 보여 줄 때만 "개" 로 쓴다 (사용자 표기 요청).
+_PIO_PATH_RE = re.compile(r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*(\d+)\s*[건개]")
 _PIO_SUM_RE = re.compile(r"합\s*(\d+)")
 
 
 def pio_of(reason: str) -> dict:
     """reason 에서 PIO 부분만 떼어 읽는다.
 
-    반환 {"paths": [(경로, 건수)…], "total": 10분 총합} · 없으면 {}
+    반환 {"paths": [(경로, 개수)…], "total": 10분 총합} · 없으면 {}
     ★없는 것과 0 은 다르다. PIO 표기가 아예 없으면 {} 를 준다 —
-      '실패 0건' 이 아니라 '이 행에는 PIO 정보가 없다' 는 뜻이다.
+      '실패 0개' 가 아니라 '이 행에는 PIO 정보가 없다' 는 뜻이다.
     """
     m = _PIO_RE.search(reason or "")
     if not m:
@@ -232,9 +234,9 @@ def pio_text(reason: str) -> str:
     bits = []
     if tot is not None:
         band = pio_band(tot)
-        bits.append("PIO 반송실패 {}건/10분{}".format(tot, f"({band})" if band else ""))
+        bits.append("PIO 반송실패 {}개/10분{}".format(tot, f"({band})" if band else ""))
     if p.get("paths"):
-        bits.append("주 경로 " + " · ".join("{} {}건".format(a, n)
+        bits.append("주 경로 " + " · ".join("{} {}개".format(a, n)
                                            for a, n in p["paths"][:2]))
     return " · ".join(bits)
 

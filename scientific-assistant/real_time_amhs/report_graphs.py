@@ -93,13 +93,13 @@ def parse_reason_metrics(reason):
     _pio = re.search(r"PIO\(([^)]*)\)", reason or "")
     if _pio:
         add("pio_10min_cnt", "PIO.DEPOSIT.10MIN.CNT",
-            "PIO 반송실패 10분 합", "건")
+            "PIO 반송실패 10분 합", "개")
         for _p in re.findall(
-                r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*\d+\s*건",
+                r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*\d+\s*[건개]",
                 _pio.group(1)):
             _p = _p.replace(" ", "")
             add(f"{_p}_PIOERROR_DEPOSITED", f"PIO.DEPOSIT.{_p}",
-                f"PIO 반송실패 {_p}", "건")
+                f"PIO 반송실패 {_p}", "개")
 
     body = (reason or "").split("발동:", 1)[-1]
     body = re.split(r"흐름:|운영자조치:", body)[0]

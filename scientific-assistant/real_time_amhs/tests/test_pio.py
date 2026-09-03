@@ -35,7 +35,7 @@ class reason_에서_읽는다(unittest.TestCase):
         self.assertEqual(p["total"], 6)
 
     def test_없으면_빈_손이다(self):
-        """★없는 것과 0 은 다르다. PIO 표기가 아예 없는 행을 '실패 0건' 으로
+        """★없는 것과 0 은 다르다. PIO 표기가 아예 없는 행을 '실패 0개' 로
         읽으면, 조회가 안 된 분을 정상으로 말하게 된다."""
         self.assertEqual(sentinel.pio_of("발동: M14[R-A_sus]"), {})
 
@@ -48,7 +48,7 @@ class reason_에서_읽는다(unittest.TestCase):
         """★PIO 는 영역 블록 **밖**에 붙는다. 블록만 읽으면 통째로 사라진다."""
         s = sentinel.summarize_reason(REASON, "M16HUB")
         self.assertIn("PIO 반송실패", s)
-        self.assertIn("6건", s)
+        self.assertIn("6개", s)   # 표기 단위는 "개" (사용자 요청)
 
     def test_요약이_룰_코드를_안_흘린다(self):
         s = sentinel.summarize_reason(REASON, "M16HUB")
@@ -98,7 +98,7 @@ class 실제지표에_뜬다(unittest.TestCase):
 
     def test_1분_값으로는_판정_안_한다(self):
         """★1분 값은 대부분 0/1 이고 경로마다 평소 수준이 다르다.
-        M14A<-M14B 는 10분에 12건(p95)까지가 평소이고 M16HUB->MLUD 는 0 이다.
+        M14A<-M14B 는 10분에 12개(p95)까지가 평소이고 M16HUB->MLUD 는 0 이다.
         한 임계로 묶으면 거짓이 된다 — 값만 보여 주고 판정은 안 한다."""
         row = {"M14A<-M14B_PIOERROR_DEPOSITED": "9"}
         rs = {r["csv"]: r for r in fab_score.readings(row, "ALL")
@@ -158,6 +158,62 @@ class LLM_이_해석할_수_있다(unittest.TestCase):
                 for m in g["metrics"] if isinstance(m, dict)}
         self.assertIn("pio_10min_cnt", keys)
         self.assertIn("M14A<-M14B_PIOERROR_DEPOSITED", keys)
+
+    def test_단위는_개로_말한다(self):
+        """사용자 표기 요청 — 화면·문장에서는 '건' 이 아니라 '개' 로 쓴다."""
+        rs = [r for r in fab_score.readings({"pio_10min_cnt": 6}, "ALL")
+              if r["rule"] == "PIO" and r["csv"] != "pio_score"]
+        self.assertTrue(rs)
+        for r in rs:
+            self.assertEqual(r["unit"], "개", r["label"])
+            self.assertNotIn("건", r["label"], r["label"])
+        for m in parse_reason_metrics(REASON):
+            if "PIO" in m["label"]:
+                self.assertEqual(m["unit"], "개", m["label"])
+        self.assertNotIn("건", sentinel.pio_text(REASON))
+
+    def test_원문은_건으로_와도_읽는다(self):
+        """★예측기가 보내는 reason 은 아직 '…=4건' 이다. 표기만 바꾸고
+           파서는 건/개 둘 다 받아야 한다 — 안 그러면 PIO 가 통째로 사라진다."""
+        for u in ("건", "개"):
+            p = sentinel.pio_of(f"PIO(M14A<-M14B=4{u}/10분,합6)")
+            self.assertEqual(p.get("total"), 6, u)
+            self.assertEqual(p.get("paths"), [("M14A<-M14B", 4)], u)
+
+    def test_LLM_분석_지표에_PIO_가_남는다(self):
+        """★config 지표 목록에서 PIO 는 20번째다. _metrics 의 [:8] 에서
+           잘리면 LLM 이 PIO 를 한 글자도 못 본다 — 점수가 임계 아래인
+           구간은 발동사유 줄조차 안 붙기 때문이다(_chunks 의 floor)."""
+        import json
+        import analysis
+        p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "config.json")
+        with open(p, encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        keys = [m["key"] for m in analysis._metrics(cfg)]
+        self.assertIn("pio_10min_cnt", keys)
+        # 앞머리 8개는 그대로 두고 뒤에 붙였는지 (설비 지표를 밀어내면 안 된다)
+        self.assertEqual(len(keys), 9)
+        self.assertEqual(keys[-1], "pio_10min_cnt")
+
+    def test_LLM_이_보는_통계에_PIO_줄이_있다(self):
+        import datetime as dt
+        import json
+        import analysis
+        p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "config.json")
+        with open(p, encoding="utf-8-sig") as f:
+            cfg = json.load(f)
+        seq = []
+        for i in range(20):
+            d = dt.datetime(2026, 9, 4, 7, i)
+            seq.append((d, 20.0 + i, {
+                "datetime": d.strftime("%Y-%m-%d %H:%M"),
+                "unified_risk_score": 20.0 + i, "hot_area": "M16HUB",
+                "pio_10min_cnt": 2 + (i % 7), "reason": REASON}))
+        txt, _meta = analysis._overview(seq, cfg, "07:00~07:19")
+        self.assertIn("pio_10min_cnt", txt)
+        self.assertIn("PIO 반송실패 10분 합(개)", txt)
 
 
 if __name__ == "__main__":

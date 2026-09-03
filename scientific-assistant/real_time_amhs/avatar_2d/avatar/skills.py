@@ -525,7 +525,7 @@ def seed_pio(store, base_dir):
             body = f.read()
     except OSError:
         return False
-    desc = ("PIO 반송실패(DEPOSITED) 해석 — 12경로 실패건수를 어떻게 읽나. "
+    desc = ("PIO 반송실패(DEPOSITED) 해석 — 12경로 실패 개수를 어떻게 읽나. "
             "설비 지표와 무엇이 다른지, 10분 합 구간표, 경로별 평소 수준, "
             "빈칸과 0의 차이, 최대 10분 지연")
     ok, _e, _w = store.save("pio-error", compose("pio-error", desc,

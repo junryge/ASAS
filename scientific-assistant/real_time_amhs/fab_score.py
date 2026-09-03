@@ -272,7 +272,7 @@ def _pio_watch() -> list[dict]:
     """PIO 감시 컬럼 — 10분 합(판정) + 스코어 가산(기록) + 12경로(기록)."""
     out = [
         {"amos": "PIO.DEPOSIT.10MIN.CNT", "csv": "pio_10min_cnt",
-         "label": "PIO 반송실패 10분 합 (12경로)", "unit": "건",
+         "label": "PIO 반송실패 10분 합 (12경로)", "unit": "개",
          "op": ">=", "thr": PIO_10MIN_THR},
         # 스코어에 더해진 값. 구간표는 예측기 쪽이 갖고 있어 여기서 판정하지
         # 않는다 — 값은 보여 주되 '넘음' 표시는 안 붙인다.
@@ -281,14 +281,14 @@ def _pio_watch() -> list[dict]:
          "op": ">=", "thr": None, "record_only": True},
     ]
     for path, tot3d, p95 in PIO_PATHS:
-        # ★평소 수준이 경로마다 다르다. M14A<-M14B 는 10분에 12건(p95)까지가
+        # ★평소 수준이 경로마다 다르다. M14A<-M14B 는 10분에 12개(p95)까지가
         #   평소이고, M16HUB->MLUD 는 평소 0 이다. 한 임계로 묶으면 거짓이
         #   되므로 판정하지 않고, 그 값을 **이름표에 적어** 사람이 읽게 한다.
-        note = ("3일 0건 — 나오면 그 자체로 이상" if tot3d == 0
-                else f"3일 {tot3d:,}건 · 10분 p95 {p95}")
+        note = ("3일 0개 — 나오면 그 자체로 이상" if tot3d == 0
+                else f"3일 {tot3d:,}개 · 10분 p95 {p95}")
         out.append({"amos": f"PIO.DEPOSIT.{path}",
                     "csv": f"{path}_PIOERROR_DEPOSITED",
-                    "label": f"PIO {path} ({note})", "unit": "건",
+                    "label": f"PIO {path} ({note})", "unit": "개",
                     "op": ">=", "thr": None, "record_only": True})
     return out
 

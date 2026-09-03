@@ -585,22 +585,22 @@
           {
             "key": "pio_10min_cnt",
             "label": "PIO 반송실패 10분 합",
-            "unit": "건"
+            "unit": "개"
           },
           {
             "key": "M14A<-M14B_PIOERROR_DEPOSITED",
             "label": "PIO M14A<-M14B",
-            "unit": "건"
+            "unit": "개"
           },
           {
             "key": "M16HUB<-M16A_PIOERROR_DEPOSITED",
             "label": "PIO M16HUB<-M16A",
-            "unit": "건"
+            "unit": "개"
           },
           {
             "key": "M16A->M16B_PIOERROR_DEPOSITED",
             "label": "PIO M16A->M16B",
-            "unit": "건"
+            "unit": "개"
           }
         ]
       },
@@ -735,22 +735,22 @@
           {
             "key": "pio_10min_cnt",
             "label": "PIO 반송실패 10분 합",
-            "unit": "건"
+            "unit": "개"
           },
           {
             "key": "M14A<-M14B_PIOERROR_DEPOSITED",
             "label": "PIO M14A<-M14B",
-            "unit": "건"
+            "unit": "개"
           },
           {
             "key": "M16HUB<-M16A_PIOERROR_DEPOSITED",
             "label": "PIO M16HUB<-M16A",
-            "unit": "건"
+            "unit": "개"
           },
           {
             "key": "M16A->M16B_PIOERROR_DEPOSITED",
             "label": "PIO M16A->M16B",
-            "unit": "건"
+            "unit": "개"
           }
         ]
       }

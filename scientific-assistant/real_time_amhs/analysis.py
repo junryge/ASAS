@@ -106,15 +106,37 @@ def _num(v):
         return None
 
 
+# ★앞머리 8개 밖으로 밀려도 LLM 에게 **반드시** 줘야 하는 지표.
+#   PIO 반송실패는 설비 지표(큐·반송시간)와 실측 상관이 +0.22 밖에 안 된다 —
+#   설비가 조용해도 실패가 터진다. 그런데 config 의 지표 목록에서 PIO 는
+#   20번째라 _metrics 의 [:8] 에서 잘려 나갔고, 점수가 임계 아래인 구간은
+#   _chunks 의 발동사유 줄도 안 붙어서(floor) LLM 이 PIO 를 **한 글자도**
+#   못 보는 상태였다. 그래서 뒤에 따로 붙인다.
+PIN_KEYS = ("pio_10min_cnt",)
+
+
 def _metrics(cfg: dict) -> list[dict]:
     ui = cfg.get("ui") or {}
     for g in (ui.get("metric_groups") or []):
         ms = [m for m in (g.get("metrics") or [])
               if isinstance(m, dict) and m.get("key") and m["key"] != "unified_risk_score"]
         if ms:
-            return ms[:8]
-    return [m for m in (ui.get("strip_metrics") or [])
-            if isinstance(m, dict) and m.get("key") != "unified_risk_score"][:8]
+            return _pin(ms[:8], ms)
+    ms = [m for m in (ui.get("strip_metrics") or [])
+          if isinstance(m, dict) and m.get("key") != "unified_risk_score"]
+    return _pin(ms[:8], ms)
+
+
+def _pin(picked: list[dict], pool: list[dict]) -> list[dict]:
+    """잘려 나간 필수 지표를 목록 끝에 되살린다 (없으면 그냥 둔다)."""
+    have = {m.get("key") for m in picked}
+    for k in PIN_KEYS:
+        if k in have:
+            continue
+        m = next((x for x in pool if x.get("key") == k), None)
+        if m:
+            picked = picked + [m]
+    return picked
 
 
 def _window_seq(day: str, cfg: dict, start: str = "", end: str = ""):
