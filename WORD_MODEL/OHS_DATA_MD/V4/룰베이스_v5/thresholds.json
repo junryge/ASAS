@@ -48,6 +48,10 @@
   "TH_MLUD_JOB": 50,
   "TH_MLUD_MANUAL": 30,
   "TH_CNV_FULL_RATIO": 0.85,
+  "_comment_pio": "PIO 항 (2026-09) — PIO_DATA_MAKE 가 쓴 predict_tobe/pio_state.json 을 읽어 raw 에 더한다. [10분 건수 하한, raw 가산] 목록이며 raw 11 = 점수 +5 가 상한. 9/1~9/3 실측 3,375분에서 등급 바뀌는 분 16개(0.5%)·위험 이상 변화 없음. 상태파일이 없거나 PIO_STALE_MIN 분 넘게 안 바뀌면 0 이 되어 예전 점수와 같아진다.",
+  "PIO_BINS": [[16, 2], [26, 4], [41, 7], [61, 9], [81, 11]],
+  "PIO_WINDOW": 10,
+  "PIO_STALE_MIN": 5,
   "_comment_area_weight": "영역별 점수 가중 — unified_risk_score 합산에만 적용. hot_area/affected_areas/단계는 무영향. 미기재 영역은 1.0. M16B 0.5 가중은 취소되어 1.0 으로 명시함 — 코드 기본값이 예전(0.5)인 서버에서도 이 값이 덮어써서 확실히 꺼진다. 비워두면(=키 없음) 코드 기본값이 그대로 살아나므로 비우지 말 것",
   "AREA_WEIGHT": {
     "M16B": 1.0

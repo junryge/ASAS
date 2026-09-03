@@ -197,6 +197,100 @@ TH_FLOW_X1_5 = _T('TH_FLOW_X1_5', 1.5)
 TH_FLOW_X2_0 = _T('TH_FLOW_X2_0', 2.0)
 TH_FLOW_X3_0 = _T('TH_FLOW_X3_0', 3.0)
 
+# ============================================================
+# ★ PIO 항 (2026-09 신규) — PIO 반송실패(DEPOSITED)가 unified 점수를 밀어올린다
+# ------------------------------------------------------------
+#   PIO_DATA_MAKE(별도 스레드/프로세스)가 매분 ICASTAR 에서 12경로 실패 건수를 받아
+#   predict_tobe/pio_state.json 에 그날 전체를 남긴다. 예측기는 점수 낼 때 그걸 읽어
+#       10분 건수 = 그 분 포함 최근 PIO_WINDOW 분, 12경로 합계
+#       PIO 항   = 구간표(PIO_BINS)에 따른 raw 가산  (최대 11 = 점수 +5)
+#   을 raw 에 더한다 (흐름 항과 같은 자리 — 더하기만 하고 깎지 않는다).
+#
+#   · 상태파일이 없거나 PIO_STALE_MIN 분 넘게 안 바뀌면 PIO 항 0 → 예전과 동일한 점수
+#   · 9/1~9/3 실측 3,375분 검증: 등급 바뀌는 분 16개(0.5%), 위험·초위험 건수 변화 없음
+#   · 구간·배점은 thresholds.json 의 PIO_BINS 로 조정 (코드 수정 불필요)
+# ============================================================
+PIO_WINDOW = _T('PIO_WINDOW', 10)            # 몇 분 합으로 볼지
+PIO_STALE_MIN = _T('PIO_STALE_MIN', 5)       # 상태파일이 이 시간 넘게 안 바뀌면 무시
+PIO_STATE_FILE = _T('PIO_STATE_FILE', 'pio_state.json')
+#   [10분 건수 하한, raw 가산]  — 위에서부터 큰 값이 우선
+PIO_BINS = _T('PIO_BINS', [[16, 2], [26, 4], [41, 7], [61, 9], [81, 11]])
+
+
+def pio_term(cnt10):
+    """10분 건수 → raw 가산 (구간표)."""
+    add = 0
+    for row in PIO_BINS:
+        try:
+            th, pts = row[0], row[1]
+        except (TypeError, IndexError):
+            continue
+        if cnt10 >= th:
+            add = pts
+    return add
+
+
+class PioState:
+    """pio_state.json 을 읽어 그 분의 PIO 항을 계산한다. 파일이 바뀐 때만 다시 읽는다."""
+
+    def __init__(self, out_dir):
+        self.path = Path(out_dir) / PIO_STATE_FILE
+        self.sig = None
+        self.minutes = {}
+        self.updated = None
+        self.warned = False
+        self.announced = False
+
+    def _load(self):
+        try:
+            st = self.path.stat()
+        except OSError:
+            if not self.announced:
+                self.announced = True
+            self.minutes, self.updated = {}, None
+            return
+        sig = (st.st_mtime_ns, st.st_size)
+        if sig == self.sig:
+            return
+        try:
+            with open(self.path, encoding='utf-8') as f:
+                d = _json.load(f)
+            self.minutes = d.get('minutes') or {}
+            u = d.get('updated') or ''
+            self.updated = parse_time(u) if u else None
+            self.sig = sig
+            self.warned = False
+        except Exception as e:
+            if not self.warned:
+                print(f'⚠ {PIO_STATE_FILE} 읽기 실패 — PIO 항 0 으로 진행: {e}')
+                self.warned = True
+            self.minutes, self.updated = {}, None
+
+    def term(self, t):
+        """→ {'score': raw가산, 'cnt10': 10분 건수, 'hot_path': 최다 경로, 'hot_cnt': 그 건수}"""
+        z = {'score': 0, 'cnt10': 0, 'hot_path': '', 'hot_cnt': 0}
+        self._load()
+        if not self.minutes:
+            return z
+        # 실시간에서 기입기가 멈췄으면 옛 값으로 점수를 올리지 않는다.
+        #   (과거 일괄 처리는 t 가 한참 전이므로 이 검사를 건너뛴다)
+        if self.updated is not None:
+            now = datetime.now()
+            if (now - t) < timedelta(hours=1) and (now - self.updated) > timedelta(minutes=PIO_STALE_MIN):
+                return z
+        agg = {}
+        for k in range(int(PIO_WINDOW)):
+            e = self.minutes.get((t - timedelta(minutes=k)).strftime('%Y-%m-%d %H:%M'))
+            if e:
+                for g, c in e.items():
+                    agg[g] = agg.get(g, 0) + (c or 0)
+        cnt10 = int(sum(agg.values()))
+        if cnt10 <= 0:
+            return z
+        hot = max(agg, key=agg.get)
+        return {'score': pio_term(cnt10), 'cnt10': cnt10,
+                'hot_path': hot, 'hot_cnt': int(agg[hot])}
+
 LIFTER_IDS = [
     '6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
     '6ABL6031', '6ABL6032', '6ABL0111', '6ABL0112',
@@ -646,7 +740,9 @@ def eval_flow_rules(flow_history):
 # ============================================================
 # Layer 3 통합 융합
 # ============================================================
-def evaluate_unified(t, area_results, flow_result, propagation_history):
+def evaluate_unified(t, area_results, flow_result, propagation_history, pio=None):
+    # pio: PioState.term(t) 결과. 없으면 PIO 항 0 (상태파일 없음·백테스트)
+    pio = pio or {'score': 0, 'cnt10': 0, 'hot_path': '', 'hot_cnt': 0}
     # ★ AREA_WEIGHT: 점수 합산에만 영역 가중 적용 (아래 hot_area/affected_areas 는 원본 사용)
     layer1_total = round(sum(r.get('area_score', 0) * _aw(a)
                              for a, r in area_results.items()), 1)
@@ -674,7 +770,9 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
     mc_score = round(mc_score, 1)
 
     # ★ 점수 정규화 — raw 합산 → 0~100 척도 (raw 220 = 100점 발동)
-    raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score
+    #   PIO 항은 여섯 번째 항으로 더해진다 (최대 11 = 점수 +5). 0 이면 예전과 동일.
+    pio_score = pio.get('score', 0) or 0
+    raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score + pio_score
     unified_risk_score = min(100, round(raw_score * 100 / 220))
 
     # ★ 위험도 등급 60/71/85: 경계 60~70 / 위험 71~84 / 초위험 85~100.
@@ -743,6 +841,11 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
         'sla_score': sla_score,
         'sorter_score': sorter_score,
         'mc_score': mc_score,
+        # ★ PIO — pio_score 는 raw 에 더해진 값, pio_10min_cnt 는 그 근거(10분 건수)
+        'pio_score': pio_score,
+        'pio_10min_cnt': pio.get('cnt10', 0) or 0,
+        'pio_hot_path': pio.get('hot_path', '') or '',
+        'pio_hot_cnt': pio.get('hot_cnt', 0) or 0,
     }
 
 
@@ -1007,6 +1110,8 @@ EVENT_FIELDS = [
     'M16B_pts_RC', 'M16B_pts_RD', 'M16B_pts_SLA', 'M16B_pts_SORT', 'M16B_pts_MAXCAPA',
     # 통합 점수 분해 (5 컬럼)
     'layer1_total', 'flow_score', 'sla_score_total', 'sorter_score_total', 'mc_score_total',
+    # ★ PIO (2026-09) — pio_10min_cnt: 12경로 최근 10분 실패 합계 / pio_score: raw 에 더해진 값
+    'pio_10min_cnt', 'pio_score',
     # ─────────────────────────────────────────────────────────
     # ★ B 보강 — 룰 진단 키 (운영자 디버깅 + ML 피처)
     # RA 진단: 10분 중 임계 초과 횟수 (5 영역)
@@ -1178,6 +1283,13 @@ def _build_reason(ctx):
     mc = ctx.get('maxcapa_signals')
     if mc:
         parts.append(f"운영자조치:{mc}")
+    # ★ PIO — 어느 경로에서 몇 건 실패했는지 (조치 지점)
+    pc = ctx.get('pio_10min_cnt', 0) or 0
+    if pc:
+        hp, hc = ctx.get('pio_hot_path', ''), ctx.get('pio_hot_cnt', 0) or 0
+        ps = ctx.get('pio_score', 0) or 0
+        detail = f"{hp}={hc}건" if hp else f"{pc}건"
+        parts.append(f"PIO({detail}/10분,합{pc}" + (f",+{ps}" if ps else "") + ")")
     return '; '.join(parts)
 
 
@@ -1249,6 +1361,8 @@ def event_to_row(ev, file_name):
         ctx.get('sla_score', 0),
         ctx.get('sorter_score', 0),
         ctx.get('mc_score', 0),
+        ctx.get('pio_10min_cnt', 0),
+        ctx.get('pio_score', 0),
         # ─────────────────────────────────────────────────────────
         # ★ B 보강 — 룰 진단 키 (운영자 디버깅 + ML 피처)
         A('M16HUB','ra_count',0), A('M14','ra_count',0), A('M14B','ra_count',0),
@@ -1458,6 +1572,8 @@ class Predictor:
         self.flow_history = deque(maxlen=WINDOW_MIN)
         self.propagation_history = deque(maxlen=PREDICT_LOOKBACK_MIN * 2)
         self.tracker = IncidentTracker()
+        # ★ PIO 상태파일 — 출력 폴더(predict_tobe)에서 PIO_DATA_MAKE 가 쓴 것을 읽는다
+        self.pio = PioState(self.out_dir)
         self.last_t = None
         self.last_event_count = 0
         self.last_incident_count = 0
@@ -1504,7 +1620,8 @@ class Predictor:
 
                 area_results = {a: eval_area_rules(a, self.area_windows[a]) for a in AREAS_ALL}
                 flow_result = eval_flow_rules(self.flow_history)
-                unified = evaluate_unified(t, area_results, flow_result, self.propagation_history)
+                unified = evaluate_unified(t, area_results, flow_result, self.propagation_history,
+                                           pio=self.pio.term(t))
                 unified['area_results'] = area_results
                 unified['flow_result'] = flow_result
 

@@ -6,3 +6,7 @@ OHS/XSOHS_extracted/
 2차데이터/
 OHT_관련2_combined.zip
 spark_api.txt
+
+# ICASTAR / MCS 접속 설정 — 실계정이 들어가므로 커밋 금지 (예시는 star.json.example)
+star.json
+mcs_config.ini

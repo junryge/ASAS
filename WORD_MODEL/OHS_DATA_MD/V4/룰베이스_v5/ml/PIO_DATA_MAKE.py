@@ -75,11 +75,63 @@ def _is_event_csv(name):
     return EVENT_KEY in n and '_M1' not in n
 
 # ────────────────────────────────────────────────────────────
-# 접속 정보 — USER / PASSWORD 는 운영에서 기입 (여기 비워 둔다)
+# 접속 정보 — star.json 또는 환경변수
+#   ① star.json  (실행 폴더 → 스크립트 폴더 → 상위 폴더 순으로 탐색)
+#        {"user": "계정", "password": "암호", "dsn": "10.40.41.103:1521/ICASTARPP"}
+#   ② 환경변수 ORA_USER / ORA_PASS / ORA_DSN  ← 있으면 이쪽이 우선
+#   star.json 은 .gitignore 에 등록돼 있다. 예시는 star.json.example.
+#   (환경변수를 깜박해도 파일만 있으면 돌아가게 하려고 2026-09 추가)
 # ────────────────────────────────────────────────────────────
-ORACLE_USER     = os.getenv("ORA_USER", "")
-ORACLE_PASSWORD = os.getenv("ORA_PASS", "")
-ORACLE_DSN      = os.getenv("ORA_DSN",  "10.40.41.103:1521/ICASTARPP")
+STAR_NAME = 'star.json'
+DEFAULT_DSN = '10.40.41.103:1521/ICASTARPP'
+
+
+def find_star(name=STAR_NAME):
+    """star.json 경로 — 실행 폴더 → 스크립트 폴더 → 스크립트 상위 폴더."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.getcwd(), here, os.path.dirname(here)):
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def load_star(path=None, quiet=False):
+    """(user, password, dsn, 출처설명). 환경변수가 있으면 그것이 파일 값을 덮는다."""
+    import json
+    user = pw = ''
+    dsn = ''
+    src = []
+    fp = path or find_star()
+    if fp:
+        try:
+            with open(fp, encoding='utf-8') as f:
+                cfg = json.load(f)
+            user = str(cfg.get('user') or cfg.get('ORA_USER') or '').strip()
+            pw = str(cfg.get('password') or cfg.get('ORA_PASS') or '').strip()
+            dsn = str(cfg.get('dsn') or cfg.get('ORA_DSN') or '').strip()
+            if user or pw or dsn:
+                src.append(f'{os.path.basename(fp)}({os.path.dirname(fp)})')
+        except Exception as e:
+            print(f'  ⚠️ {fp} 읽기 실패 — 환경변수만 사용: {e}')
+    ev_u, ev_p, ev_d = os.getenv('ORA_USER', ''), os.getenv('ORA_PASS', ''), os.getenv('ORA_DSN', '')
+    if ev_u or ev_p or ev_d:
+        src.append('환경변수')
+    user = ev_u or user
+    pw = ev_p or pw
+    dsn = ev_d or dsn or DEFAULT_DSN
+    if not quiet:
+        where = ' + '.join(src) if src else '없음'
+        print(f'  [접속설정] {where} · user={user or "(비어 있음)"} · '
+              f'password={"설정됨" if pw else "(비어 있음)"} · dsn={dsn}')
+        if not fp and not (ev_u and ev_p):
+            here = os.path.dirname(os.path.abspath(__file__))
+            print(f'     ※ {STAR_NAME} 이 없습니다. {os.path.join(here, STAR_NAME)} 에 만들거나 '
+                  f'환경변수(ORA_USER/ORA_PASS)를 설정하세요. 예시: {STAR_NAME}.example')
+    return user, pw, dsn, (' + '.join(src) if src else '없음')
+
+
+ORACLE_USER, ORACLE_PASSWORD, ORACLE_DSN, _CRED_SRC = load_star(quiet=True)
 
 # 컬럼 순서 = 고객 요청 순서 그대로
 GUBUNS = [
@@ -108,6 +160,10 @@ LOG_NAME = 'pio_log.txt'
 # ★ 빈 구간 메우기 — 자동으로 돌지 않는다. 필요할 때 --heal 로만 실행한다.
 #   (암호·망 문제로 빠진 시간대를 그날 파일에서 찾아 그 구간만 다시 조회해 채움)
 SELFHEAL_MAX_RANGES = 20     # 한 번에 메우는 구간 수 (DB 부담 제한)
+# ★ 상태파일 — 예측기(hubroom_predictor)가 PIO 점수를 낼 때 읽는다.
+#   예측기는 매분 +5초에 도는데 PIO 는 +35초에 오므로, 파일로 넘긴다.
+#   그날 전체를 담아 두면 같은 날 다시 돌려도 같은 점수가 재현된다.
+STATE_NAME = 'pio_state.json'
 
 # 고객 쿼리를 분 구간 바인드로 바꾼 것. GUBUN 판정 CASE 는 그대로.
 #   · EQP 컬럼은 기입에 안 쓰므로 뺐다 (GUBUN × 분 만 집계)
@@ -173,7 +229,7 @@ def _fatal_reason(msg):
 
 def connect(a):
     if not a.user or not a.password:
-        raise SystemExit('❌ ORA_USER / ORA_PASS 환경변수(또는 --user/--password)가 비어 있습니다')
+        raise SystemExit(f'❌ 계정/암호가 비어 있습니다 — {STAR_NAME} 또는 환경변수(ORA_USER/ORA_PASS)를 설정하세요')
     drv = _driver()
     kw = dict(user=a.user, password=a.password, dsn=a.dsn)
     try:
@@ -619,6 +675,10 @@ def _loop(a):
                 if finishing[old] <= 0:
                     del finishing[old]
                     _log(a, f'✅ 전날 파일 마무리 완료: {os.path.basename(old)}')
+            # ★ 예측기가 읽을 상태파일 — 기입 성공/스킵과 무관하게 조회가 됐으면 갱신한다
+            #   (파일이 잠겨 CSV 를 못 써도 점수 계산은 되게)
+            write_state(a, cache, day=(now.strftime('%Y-%m-%d')))
+
             if n is not None:
                 _log(a, f'기입 {n}행 · {os.path.basename(fp) if fp else "-"} '
                         f'(실패 있는 분 {len(cache["hits"])}개)')
@@ -634,6 +694,31 @@ def _loop(a):
             _log(a, f'⚠️ 오류(계속): {e}'); time.sleep(a.interval)
 
 
+def write_state(a, cache, day=None):
+    """예측기가 읽을 pio_state.json 을 쓴다 (그날 전체, 원자 교체). 실패해도 기입은 계속."""
+    import json
+    try:
+        d = a.event if os.path.isdir(a.event) else os.path.dirname(os.path.abspath(a.event))
+        if not os.path.isdir(d):
+            return False
+        day = day or datetime.now().strftime('%Y-%m-%d')
+        minutes = {k: v for k, v in cache['hits'].items() if k.startswith(day) and v}
+        cov = [[f.strftime('%Y-%m-%d %H:%M'), t.strftime('%Y-%m-%d %H:%M')]
+               for f, t in cache['covered'] if t.strftime('%Y-%m-%d') >= day]
+        doc = {'updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+               'day': day, 'window_hint': 10, 'paths': GUBUNS,
+               'covered': cov, 'minutes': minutes}
+        fp = os.path.join(d, STATE_NAME)
+        tmp = fp + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
+        os.replace(tmp, fp)
+        return True
+    except Exception as e:
+        print(f'  ⚠️ {STATE_NAME} 쓰기 실패(무시하고 계속): {e}')
+        return False
+
+
 def _prune(cache, before):
     for k in list(cache['hits']):
         t = parse_dt(k)
@@ -643,17 +728,24 @@ def _prune(cache, before):
 
 
 def run_watch(event='./predict_tobe', interval=60, lookback=15, offset=35,
-              dsn=ORACLE_DSN, user=ORACLE_USER, password=ORACLE_PASSWORD):
-    """run_ml 등에서 스레드로 돌리는 진입점. offset=다른 기입기와 겹침 방지(초)."""
+              dsn=None, user=None, password=None, star=None):
+    """run_ml 등에서 스레드로 돌리는 진입점. offset=다른 기입기와 겹침 방지(초).
+
+    계정은 star.json → 환경변수 순으로 찾는다 (인자로 직접 줘도 됨).
+    run_ml 이 import 될 때가 아니라 스레드가 뜰 때 읽으므로, 파일을 나중에 만들어도
+    다음 재시작에서 잡힌다.
+    """
+    su, sp, sd, _ = load_star(star)
     a = argparse.Namespace(event=event, out=None, interval=interval, lookback=lookback,
                            source='db', pio=None, force=False, offset=offset,
-                           dsn=dsn, user=user, password=password)
+                           dsn=dsn or sd, user=user or su, password=password or sp)
     if not a.user or not a.password:
         # 스레드 안에서 SystemExit 이 나면 소리 없이 죽는다 → 여기서 분명히 알리고 물러난다
-        miss = ' / '.join(n for n, v in (('ORA_USER', a.user), ('ORA_PASS', a.password)) if not v)
+        miss = ' / '.join(n for n, v in (('계정(user)', a.user), ('암호(password)', a.password)) if not v)
+        star = find_star() or os.path.join(os.path.dirname(os.path.abspath(__file__)), STAR_NAME)
         _log(a, f'❌❌ {miss} 가 비어 있어 PIO 기입을 시작하지 않습니다 — '
-                'run_ml 을 띄우는 창(또는 서비스 계정)에 환경변수를 넣고 재시작하세요. '
-                '다른 스레드에는 영향 없음.')
+                f'{star} 에 계정을 넣거나 환경변수(ORA_USER/ORA_PASS)를 설정하고 재시작하세요. '
+                f'(예시 파일: {STAR_NAME}.example) 다른 스레드에는 영향 없음.')
         return
     try:
         _loop(a)
@@ -893,10 +985,16 @@ def main():
     ap.add_argument('--source', choices=['db', 'csv'], default='db',
                     help='db=Oracle 직접(기본) · csv=조회결과 파일')
     ap.add_argument('--pio', default=None, help='--source csv 일 때 조회결과 CSV(또는 폴더)')
-    ap.add_argument('--dsn', default=ORACLE_DSN, help=f'기본 {ORACLE_DSN} (환경변수 ORA_DSN)')
-    ap.add_argument('--user', default=ORACLE_USER, help='기본 환경변수 ORA_USER')
-    ap.add_argument('--password', default=ORACLE_PASSWORD, help='기본 환경변수 ORA_PASS')
+    ap.add_argument('--star', default=None, help=f'접속설정 파일 경로 (기본: {STAR_NAME} 자동 탐색)')
+    ap.add_argument('--dsn', default=None, help=f'DSN 직접 지정 (기본 {STAR_NAME} 또는 ORA_DSN)')
+    ap.add_argument('--user', default=None, help=f'계정 직접 지정 (기본 {STAR_NAME} 또는 ORA_USER)')
+    ap.add_argument('--password', default=None, help=f'암호 직접 지정 (기본 {STAR_NAME} 또는 ORA_PASS)')
     a = ap.parse_args()
+    # 접속설정 — star.json / 환경변수 (--user/--password/--dsn 이 있으면 그것이 최우선)
+    su, sp, sd, _ = load_star(a.star, quiet=(a.source == 'csv'))
+    a.user = a.user or su
+    a.password = a.password or sp
+    a.dsn = a.dsn or sd
 
     print('=' * 60)
     print('발동이벤트 ← PIO DEPOSITED_FAIL_CNT 12컬럼 기입'
