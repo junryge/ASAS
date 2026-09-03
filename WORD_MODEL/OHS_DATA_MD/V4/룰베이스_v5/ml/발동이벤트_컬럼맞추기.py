@@ -34,20 +34,33 @@ def is_event_csv(name):
     return EVENT_KEY in n and '_M1' not in n
 
 
-def load_fields():
+def load_fields(path=None):
     """예측기의 EVENT_FIELDS 를 그대로 가져온다 (한 곳에서만 정의되게)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    for d in (here, os.path.dirname(here), os.getcwd()):
-        fp = os.path.join(d, 'hubroom_predictor.py')
-        if os.path.exists(fp):
-            import importlib.util
-            spec = importlib.util.spec_from_file_location('hp', fp)
-            m = importlib.util.module_from_spec(spec)
-            sys.modules['hp'] = m
-            spec.loader.exec_module(m)
-            print(f'  [기준] {fp} · EVENT_FIELDS {len(m.EVENT_FIELDS)}컬럼')
-            return list(m.EVENT_FIELDS)
-    raise SystemExit('❌ hubroom_predictor.py 를 찾을 수 없습니다 (같은 폴더나 상위 폴더에 두세요)')
+    cands = [path] if path else [os.path.join(d, 'hubroom_predictor.py')
+                                 for d in (os.getcwd(), here, os.path.dirname(here))]
+    for fp in cands:
+        if not fp or not os.path.exists(fp):
+            continue
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('hp', fp)
+        m = importlib.util.module_from_spec(spec)
+        sys.modules['hp'] = m
+        spec.loader.exec_module(m)
+        fields = list(m.EVENT_FIELDS)
+        mtime = datetime.fromtimestamp(os.path.getmtime(fp)).strftime('%Y-%m-%d %H:%M')
+        print(f'  [기준] {os.path.abspath(fp)}')
+        print(f'         EVENT_FIELDS {len(fields)}컬럼 · 파일 수정 {mtime}')
+        # ★ 예측기가 구버전이면 여기서 잡는다 — 그러면 붙일 컬럼이 애초에 없다
+        if 'pio_10min_cnt' not in fields:
+            print()
+            print('  ❌ 이 hubroom_predictor.py 에는 PIO 컬럼(pio_10min_cnt·pio_score)이 없습니다.')
+            print('     = 아직 예전 버전입니다. 새 hubroom_predictor.py 로 먼저 교체한 뒤 다시 실행하세요.')
+            print('     (다른 폴더의 예측기를 보고 있다면 --predictor 로 경로를 직접 지정하세요)')
+            sys.exit(2)
+        return fields
+    raise SystemExit('❌ hubroom_predictor.py 를 찾을 수 없습니다 — '
+                     '같은 폴더/상위 폴더에 두거나 --predictor 로 경로를 주세요')
 
 
 def pick(event, days=None, since=None):
@@ -109,12 +122,14 @@ def main():
     ap.add_argument('--days', type=int, default=None, help='최근 N일만 (오늘 포함)')
     ap.add_argument('--since', default=None, metavar='YYYYMMDD')
     ap.add_argument('--check', action='store_true', help='바꾸지 않고 확인만')
+    ap.add_argument('--predictor', default=None,
+                    help='기준으로 삼을 hubroom_predictor.py 경로 (기본: 자동 탐색)')
     a = ap.parse_args()
 
     print('=' * 60)
     print('발동이벤트 컬럼 맞추기' + (' (확인만)' if a.check else ''))
     print('=' * 60)
-    fields = load_fields()
+    fields = load_fields(a.predictor)
     files = pick(a.event, a.days, a.since)
     if not files:
         sys.exit(2)
