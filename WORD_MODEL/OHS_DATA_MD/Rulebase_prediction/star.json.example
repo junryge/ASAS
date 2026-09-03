@@ -1,0 +1,9 @@
+{
+  "_설명": "ICASTAR Oracle 접속 설정. 이 파일을 star.json 으로 복사해서 계정을 채우세요.",
+  "_주의": "star.json 은 실계정이 들어가므로 git 에 올리지 않습니다 (.gitignore 등록됨).",
+  "_찾는순서": "star.json 은 ① 실행 폴더 ② 스크립트 폴더 ③ 상위 폴더 순으로 찾습니다. 환경변수(ORA_USER/ORA_PASS/ORA_DSN)가 있으면 그쪽이 우선입니다.",
+
+  "user": "",
+  "password": "",
+  "dsn": "10.40.41.103:1521/ICASTARPP"
+}

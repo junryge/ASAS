@@ -20,9 +20,58 @@ import oracledb
 # ==========================================================
 # 설정
 # ==========================================================
-ORACLE_USER     = os.getenv("ORA_USER", "STAREAD")
-ORACLE_PASSWORD = os.getenv("ORA_PASS", "Stareadadmin123!")
-ORACLE_DSN      = os.getenv("ORA_DSN",  "10.40.41.103:1521/ICASTARPP")
+# ----------------------------------------------------------
+# 접속 정보 — star.json 또는 환경변수 (소스에 계정을 넣지 않는다)
+#   ① star.json  (실행 폴더 → 스크립트 폴더 → 상위 폴더 순으로 탐색)
+#        {"user": "계정", "password": "암호", "dsn": "10.40.41.103:1521/ICASTARPP"}
+#   ② 환경변수 ORA_USER / ORA_PASS / ORA_DSN  ← 있으면 이쪽이 우선
+#   PIO_DATA_MAKE.py 와 같은 파일을 함께 쓴다. star.json 은 .gitignore 등록됨.
+#   (2026-09: 소스에 박혀 있던 암호를 걷어내고 파일로 옮김)
+# ----------------------------------------------------------
+STAR_NAME   = "star.json"
+DEFAULT_DSN = "10.40.41.103:1521/ICASTARPP"
+
+
+def find_star(name=STAR_NAME):
+    """star.json 경로 — 실행 폴더 → 스크립트 폴더 → 스크립트 상위 폴더."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.getcwd(), here, os.path.dirname(here)):
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def load_star(path=None, quiet=False):
+    """(user, password, dsn). 환경변수가 있으면 그것이 파일 값을 덮는다."""
+    import json
+    user = pw = dsn = ""
+    src = []
+    fp = path or find_star()
+    if fp:
+        try:
+            with open(fp, encoding="utf-8") as f:
+                cfg = json.load(f)
+            user = str(cfg.get("user") or cfg.get("ORA_USER") or "").strip()
+            pw   = str(cfg.get("password") or cfg.get("ORA_PASS") or "").strip()
+            dsn  = str(cfg.get("dsn") or cfg.get("ORA_DSN") or "").strip()
+            if user or pw or dsn:
+                src.append(os.path.basename(fp))
+        except Exception as e:
+            print(f"  ⚠️ {fp} 읽기 실패 — 환경변수만 사용: {e}")
+    ev_u, ev_p, ev_d = os.getenv("ORA_USER", ""), os.getenv("ORA_PASS", ""), os.getenv("ORA_DSN", "")
+    if ev_u or ev_p or ev_d:
+        src.append("환경변수")
+    user, pw = (ev_u or user), (ev_p or pw)
+    dsn = ev_d or dsn or DEFAULT_DSN
+    if not quiet and not (user and pw):
+        here = os.path.dirname(os.path.abspath(__file__))
+        print(f"  ❌ 계정/암호가 비어 있습니다 — {os.path.join(here, STAR_NAME)} 에 넣거나 "
+              f"환경변수(ORA_USER/ORA_PASS)를 설정하세요. 예시: {STAR_NAME}.example")
+    return user, pw, dsn
+
+
+ORACLE_USER, ORACLE_PASSWORD, ORACLE_DSN = load_star(quiet=True)
 
 WINDOW_MIN      = 90
 INTERVAL_SEC    = 60
@@ -192,7 +241,13 @@ def main():
     log.info("=" * 60)
     log.info("AWS_IDC_DATA_HIS v3 실시간 수집기 시작")
     log.info(f"  DSN     : {ORACLE_DSN}")
-    log.info(f"  USER    : {ORACLE_USER}")
+    log.info(f"  USER    : {ORACLE_USER or '(비어 있음)'}")
+    if not (ORACLE_USER and ORACLE_PASSWORD):
+        here = os.path.dirname(os.path.abspath(__file__))
+        log.error("계정/암호가 비어 있어 수집을 시작할 수 없습니다 — "
+                  f"{os.path.join(here, STAR_NAME)} 에 넣거나 환경변수(ORA_USER/ORA_PASS)를 "
+                  f"설정하고 다시 실행하세요. 예시 파일: {STAR_NAME}.example")
+        sys.exit(2)
     log.info(f"  WINDOW  : 과거 {WINDOW_MIN}분")
     log.info(f"  INTERVAL: {INTERVAL_SEC}초 (매분 00초 동기)")
     log.info(f"  OUTPUT  : {OUTPUT_FILE}")
