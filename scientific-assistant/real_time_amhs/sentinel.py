@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from datetime import datetime, timedelta
 
@@ -172,6 +173,72 @@ def _rule_names(block: str) -> list[str]:
     return names
 
 
+# ── PIO 반송실패 ────────────────────────────────────────────────────────
+# reason 끝에 이런 꼴로 붙어 온다:  PIO(M14A<-M14B=4건/10분,합6)
+#   경로 = 그 10분에 가장 많이 실패한 구간, 합 = 12경로 10분 총합
+# ★설비 지표(큐·반송시간)는 '밀리는 중' 을 보고, PIO 는 **이미 실패한 결과**다.
+#   실측 상관계수 +0.22 — 거의 안 겹친다. 그래서 따로 말해 줘야 한다.
+_PIO_RE = re.compile(r"PIO\(([^)]*)\)")
+_PIO_PATH_RE = re.compile(r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*(\d+)\s*건")
+_PIO_SUM_RE = re.compile(r"합\s*(\d+)")
+
+
+def pio_of(reason: str) -> dict:
+    """reason 에서 PIO 부분만 떼어 읽는다.
+
+    반환 {"paths": [(경로, 건수)…], "total": 10분 총합} · 없으면 {}
+    ★없는 것과 0 은 다르다. PIO 표기가 아예 없으면 {} 를 준다 —
+      '실패 0건' 이 아니라 '이 행에는 PIO 정보가 없다' 는 뜻이다.
+    """
+    m = _PIO_RE.search(reason or "")
+    if not m:
+        return {}
+    inner = m.group(1)
+    paths = [(p.replace(" ", ""), int(n)) for p, n in _PIO_PATH_RE.findall(inner)]
+    tot = _PIO_SUM_RE.search(inner)
+    out = {"paths": paths}
+    if tot:
+        out["total"] = int(tot.group(1))
+    elif paths:
+        out["total"] = sum(n for _p, n in paths)
+    return out
+
+
+# 10분 총합 구간 — PIO 명세의 3일 실측 분포. 기준선은 **고정**이다.
+#   최근 데이터로 평소치를 다시 계산하면 설비가 나빠질수록 기준선도 같이
+#   올라가서 악화를 못 잡는다 (명세가 특히 못 박은 것).
+PIO_BANDS = [(81, "최고"), (61, "심각"), (41, "이상"),
+             (26, "확실히 많음"), (16, "조금 많음")]
+
+
+def pio_band(total) -> str:
+    """10분 총합 → 한글 수준. 15 이하는 평소(3일 중 88.9%)라 빈 문자열."""
+    try:
+        n = int(total)
+    except (TypeError, ValueError):
+        return ""
+    for thr, name in PIO_BANDS:
+        if n >= thr:
+            return name
+    return ""
+
+
+def pio_text(reason: str) -> str:
+    """사람이 읽을 한 줄. 없으면 빈 문자열."""
+    p = pio_of(reason)
+    if not p:
+        return ""
+    tot = p.get("total")
+    bits = []
+    if tot is not None:
+        band = pio_band(tot)
+        bits.append("PIO 반송실패 {}건/10분{}".format(tot, f"({band})" if band else ""))
+    if p.get("paths"):
+        bits.append("주 경로 " + " · ".join("{} {}건".format(a, n)
+                                           for a, n in p["paths"][:2]))
+    return " · ".join(bits)
+
+
 def summarize_reason(reason: str, area: str = "") -> str:
     """reason 원문에서 발동 룰을 뽑아 한글 한 줄로. 룰 코드는 노출하지 않는다.
 
@@ -198,11 +265,16 @@ def summarize_reason(reason: str, area: str = "") -> str:
 
     names = _rule_names(block)
     head = f"{area} " if area else ""
+    # ★PIO 는 영역 블록 **밖**에 붙는다 (12경로 지표라 한 영역 것이 아니다).
+    #   블록만 읽으면 통째로 사라진다 — 실제로 화면에 안 나왔다.
+    pio = pio_text(reason)
     if not names:
         # 룰 코드를 하나도 못 알아봤다(새 룰이거나 형식이 바뀜).
         # 원문을 뱉지 말고 한글로만 알린다.
-        return (head + "이상 감지").strip()
-    return head + " · ".join(names)
+        base = (head + "이상 감지").strip()
+        return (base + " · " + pio) if pio else base
+    out = head + " · ".join(names)
+    return (out + " · " + pio) if pio else out
 
 
 def reason_metrics(reason: str, area: str = "") -> list[dict]:
@@ -230,7 +302,12 @@ def reason_metrics(reason: str, area: str = "") -> list[dict]:
     if area:
         blk = next((b for a, b in _reason_blocks(txt) if a.upper() == area.upper()), "")
         if blk:
-            txt = f"발동: {area}[{blk}]"
+            # ★PIO 는 **영역 것이 아니다** (12경로 지표라 FAB 하나에 속하지
+            #   않는다). 영역으로 거르면서 같이 잘려서, 어느 영역을 보든
+            #   PIO 가 '발동이 지목한 지표' 에서 빠졌다 — 기여도 추정에서
+            #   가중을 못 받아 순위가 밀렸다. 다시 붙여 준다.
+            pio = _PIO_RE.search(txt)
+            txt = f"발동: {area}[{blk}]" + (f"; PIO({pio.group(1)})" if pio else "")
     try:
         return parse_reason_metrics(txt)
     except Exception:

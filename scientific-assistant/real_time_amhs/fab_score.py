@@ -245,6 +245,54 @@ FLOW_COLS = [
     ("M16B", "M16B_10F_TO_HUB", "M16B.QUE.ALL.10F_TO_HUB_JOB"),
 ]
 
+# ── PIO 반송실패 (2026-09 추가) ─────────────────────────────────────────
+# ICASTAR STA_TRANS_TIMEOUT_FAIL_HIS · FAIL_TYP='DEPOSIT' · 경로×1분 실패건수.
+# ★설비 지표(큐·반송시간)는 '밀리는 중' 을 본다. PIO 는 **이미 실패한 결과**다.
+#   실측 상관 +0.22 로 거의 안 겹친다 — 서로 못 보는 것을 채운다.
+# ★1분 값은 대부분 0/1 이라 그대로 못 쓴다. 판정은 10분 합(pio_10min_cnt)으로
+#   하고, 경로별 1분 컬럼은 **기록만** 한다(record_only) — 어느 구간에서
+#   실패했는지가 조치 지점이라 값 자체는 보여 줘야 한다.
+# (경로, 3일 합계, 10분 p95) — 명세의 운영 실측 3,375분 기준
+PIO_PATHS = [
+    ("M14A<-M14B",   1483, 12), ("M16HUB<-M16A", 1034, 12),
+    ("M16A->M16B",    336,  3), ("M16HUB->MLUD",   36,  0),
+    ("M16B->M16A",     13,  0), ("M16HUB<-M14B",    8,  0),
+    ("M16HUB->M14B",    7,  0), ("M16HUB->M14A",    0,  0),
+    ("M16HUB<-M14A",    0,  0), ("M16HUB->M16A",    0,  0),
+    ("M14A->M14B",      0,  0), ("M14A->M10A",      0,  0),
+]
+
+# 10분 총합 임계 — 3일 중 88.9%가 0~15 라 16부터가 '평소보다 많다'.
+# ★기준선을 최근 데이터로 다시 계산하지 않는다. 설비가 나빠지면 실패가
+#   늘어나는데 평소치를 같이 올리면 악화를 못 잡는다 (명세가 못 박은 것).
+PIO_10MIN_THR = 16
+
+
+def _pio_watch() -> list[dict]:
+    """PIO 감시 컬럼 — 10분 합(판정) + 스코어 가산(기록) + 12경로(기록)."""
+    out = [
+        {"amos": "PIO.DEPOSIT.10MIN.CNT", "csv": "pio_10min_cnt",
+         "label": "PIO 반송실패 10분 합 (12경로)", "unit": "건",
+         "op": ">=", "thr": PIO_10MIN_THR},
+        # 스코어에 더해진 값. 구간표는 예측기 쪽이 갖고 있어 여기서 판정하지
+        # 않는다 — 값은 보여 주되 '넘음' 표시는 안 붙인다.
+        {"amos": "PIO.DEPOSIT.SCORE", "csv": "pio_score",
+         "label": "PIO 가산점 (기록용·판정 미사용)", "unit": "점",
+         "op": ">=", "thr": None, "record_only": True},
+    ]
+    for path, tot3d, p95 in PIO_PATHS:
+        # ★평소 수준이 경로마다 다르다. M14A<-M14B 는 10분에 12건(p95)까지가
+        #   평소이고, M16HUB->MLUD 는 평소 0 이다. 한 임계로 묶으면 거짓이
+        #   되므로 판정하지 않고, 그 값을 **이름표에 적어** 사람이 읽게 한다.
+        note = ("3일 0건 — 나오면 그 자체로 이상" if tot3d == 0
+                else f"3일 {tot3d:,}건 · 10분 p95 {p95}")
+        out.append({"amos": f"PIO.DEPOSIT.{path}",
+                    "csv": f"{path}_PIOERROR_DEPOSITED",
+                    "label": f"PIO {path} ({note})", "unit": "건",
+                    "op": ">=", "thr": None, "record_only": True})
+    return out
+
+
 WATCH_ALL = {
     # ★흐름 노드 10개는 **CSV 에 값 컬럼이 없다** — 무엇을 보는지 알려 주는
     #   정의일 뿐이라, 이것만 두면 화면에 빈 줄 열 개가 선다.
@@ -268,6 +316,7 @@ WATCH_ALL = {
                 {"amos": "(집계)", "csv": "maxcapa_signals",
                  "label": "어느 컬럼이 내려갔나", "unit": "", "op": "text",
                  "thr": None}],
+    "PIO": _pio_watch(),
     "FUSE": [{"amos": "(집계)", "csv": "flow_score", "label": "흐름 항 점수",
               "unit": "점", "op": "sum", "thr": None},
              {"amos": "(집계)", "csv": "layer1_total", "label": "1층 합계",
@@ -286,6 +335,8 @@ ALL_RULES = [
     {"code": "SORT", "pts": 3, "label": "Sorter — 걸린 영역 수만큼", "per": True},
     {"code": "MAXCAPA", "pts": 10, "label": "MAXCAPA — 내려간 컬럼 수만큼",
      "per": True},
+    {"code": "PIO", "pts": 5, "label": "PIO 반송실패 — 10분 합 구간별",
+     "when": "16↑ +1 · 26↑ +2 · 41↑ +3 · 61↑ +4 · 81↑ +5"},
     {"code": "FUSE", "pts": 0, "label": "융합 집계"},
     {"code": "SCORE", "pts": 0, "label": "판정 결과"},
 ]

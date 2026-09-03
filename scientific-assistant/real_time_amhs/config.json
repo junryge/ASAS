@@ -581,6 +581,26 @@
             "label": "M16B 분류기 대기",
             "unit": "건",
             "color": "#5FB8FF"
+          },
+          {
+            "key": "pio_10min_cnt",
+            "label": "PIO 반송실패 10분 합",
+            "unit": "건"
+          },
+          {
+            "key": "M14A<-M14B_PIOERROR_DEPOSITED",
+            "label": "PIO M14A<-M14B",
+            "unit": "건"
+          },
+          {
+            "key": "M16HUB<-M16A_PIOERROR_DEPOSITED",
+            "label": "PIO M16HUB<-M16A",
+            "unit": "건"
+          },
+          {
+            "key": "M16A->M16B_PIOERROR_DEPOSITED",
+            "label": "PIO M16A->M16B",
+            "unit": "건"
           }
         ]
       },
@@ -711,6 +731,26 @@
             "unit": "점",
             "color": "#FFB55C",
             "max": 100
+          },
+          {
+            "key": "pio_10min_cnt",
+            "label": "PIO 반송실패 10분 합",
+            "unit": "건"
+          },
+          {
+            "key": "M14A<-M14B_PIOERROR_DEPOSITED",
+            "label": "PIO M14A<-M14B",
+            "unit": "건"
+          },
+          {
+            "key": "M16HUB<-M16A_PIOERROR_DEPOSITED",
+            "label": "PIO M16HUB<-M16A",
+            "unit": "건"
+          },
+          {
+            "key": "M16A->M16B_PIOERROR_DEPOSITED",
+            "label": "PIO M16A->M16B",
+            "unit": "건"
           }
         ]
       }

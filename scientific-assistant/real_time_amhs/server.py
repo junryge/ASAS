@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory, Response
@@ -1958,6 +1959,60 @@ def api_analysis_get(aid):
     return jsonify(r)
 
 
+# ── 이어 묻기에 얹는 스킬 ──────────────────────────────────────────────
+# ★대화하다 보면 "이 문서 보고 답해" 가 필요해진다. 서버가 들고 있다가
+#   질문마다 프롬프트에 얹는다. 뺄 수도 있어야 한다 — 한 번 올린 문서가
+#   대화 끝까지 따라다니면, 다른 것을 물을 때 그게 방해가 된다.
+ASK_SKILLS = []                 # [{id, name, chars, body}]
+ASK_SKILL_MAX = 20000           # 한 파일 상한 (글자)
+ASK_SKILL_KEEP = 8              # 최대 개수
+
+
+@app.route("/api/analysis/skills", methods=["GET"])
+def api_ask_skills():
+    """지금 얹혀 있는 스킬 목록 (본문은 안 준다 — 목록에 다 보낼 이유가 없다)."""
+    return jsonify({"ok": True, "skills": [
+        {"id": s_["id"], "name": s_["name"], "chars": s_["chars"]}
+        for s_ in ASK_SKILLS]})
+
+
+@app.route("/api/analysis/skills", methods=["POST"])
+def api_ask_skill_add():
+    """md/txt 를 올려 이 대화에 얹는다. 같은 이름이면 바꿔 끼운다."""
+    f = (request.files or {}).get("file")
+    if f is None or not (f.filename or "").strip():
+        return jsonify({"ok": False, "error": "파일이 없습니다"}), 400
+    name = os.path.basename(f.filename).strip()
+    if os.path.splitext(name)[1].lower() not in (".md", ".markdown", ".txt"):
+        return jsonify({"ok": False, "error": "md 또는 txt 만 됩니다"}), 400
+    try:
+        body = f.read().decode("utf-8-sig", "replace").strip()
+    except Exception as e:                                  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"읽기 실패: {e}"}), 400
+    if not body:
+        return jsonify({"ok": False, "error": "내용이 비었습니다"}), 400
+    cut = len(body) > ASK_SKILL_MAX
+    body = body[:ASK_SKILL_MAX]
+    # 같은 이름은 바꿔 끼운다 — 고쳐서 다시 올리는 게 보통이다
+    global ASK_SKILLS
+    ASK_SKILLS = [s_ for s_ in ASK_SKILLS if s_["name"] != name]
+    ASK_SKILLS.append({"id": uuid.uuid4().hex[:12], "name": name,
+                       "chars": len(body), "body": body})
+    ASK_SKILLS = ASK_SKILLS[-ASK_SKILL_KEEP:]
+    return jsonify({"ok": True, "name": name, "chars": len(body),
+                    "cut": cut, "count": len(ASK_SKILLS)})
+
+
+@app.route("/api/analysis/skills/<sid>", methods=["DELETE"])
+def api_ask_skill_del(sid):
+    """하나 뺀다. sid 가 'all' 이면 전부."""
+    global ASK_SKILLS
+    before = len(ASK_SKILLS)
+    ASK_SKILLS = [] if sid == "all" else [s_ for s_ in ASK_SKILLS if s_["id"] != sid]
+    return jsonify({"ok": True, "removed": before - len(ASK_SKILLS),
+                    "count": len(ASK_SKILLS)})
+
+
 @app.route("/api/analysis/<aid>/ask", methods=["POST"])
 def api_analysis_ask(aid):
     """끝난 분석을 두고 이어서 묻는다.
@@ -1975,7 +2030,9 @@ def api_analysis_ask(aid):
         from analysis import ask
         r = ask(aid, q, b_.get("history") or [], C["cfg"],
                 str(b_.get("model") or "").strip(),
-                str(b_.get("prompt") or ""))
+                str(b_.get("prompt") or ""),
+                skills=list(ASK_SKILLS))
+        r["skills_used"] = [s_["name"] for s_ in ASK_SKILLS]
         return jsonify(r), (200 if r.get("ok") else 400)
     except Exception as e:
         import traceback; traceback.print_exc()

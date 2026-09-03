@@ -1144,6 +1144,31 @@ def _ask_evidence(rec: dict) -> str:
     return "\n\n".join(L)
 
 
+def _ask_skills_block(skills) -> str:
+    """[{name, body}…] → 프롬프트에 넣을 글. 상한을 넘으면 뒤를 자른다.
+
+    ★자른 것을 숨기지 않는다. 뒤가 잘린 줄 모르면 '문서에 없다' 를 사실로
+      말해 버린다 (위키에서 겪은 그대로다).
+    """
+    out, used = [], 0
+    for s_ in (skills or []):
+        if not isinstance(s_, dict):
+            continue
+        body = str(s_.get("body") or "").strip()
+        if not body:
+            continue
+        name = str(s_.get("name") or "스킬").strip()
+        room = ASK_SKILL_CHARS - used
+        if room <= 200:
+            out.append("### {} — (예산이 모자라 안 실었다)".format(name))
+            continue
+        if len(body) > room:
+            body = body[:room] + "\n…(뒤가 잘렸다)"
+        used += len(body)
+        out.append("### {}\n{}".format(name, body))
+    return "\n\n".join(out)
+
+
 def _ask_cuts(rec, cfg):
     """그 분석의 등급 컷. 옛 기록엔 안 적혀 있다 — 그때는 지금 설정에서 읽는다.
 
@@ -1198,8 +1223,12 @@ ASK_RULES = (
 )
 
 
+# 이어 묻기에 얹는 스킬 — 한 벌 상한. 근거(overview)를 밀어내면 안 된다.
+ASK_SKILL_CHARS = 12000
+
+
 def ask(aid: str, question: str, history=None, cfg: dict | None = None,
-        model: str = "", extra_prompt: str = "") -> dict:
+        model: str = "", extra_prompt: str = "", skills=None) -> dict:
     """끝난 분석을 두고 이어서 묻는다 → {ok, answer, error, model}.
 
     model        이 질문에 쓸 모델 (안 주면 config.llm.model)
@@ -1233,6 +1262,15 @@ def ask(aid: str, question: str, history=None, cfg: dict | None = None,
     if ap:
         # ★사용자 지시는 **규칙 뒤**에 온다. 앞에 두면 위 규칙을 덮어 쓴다.
         head += "\n\n[추가 지시 — 사용자가 적은 것]\n" + ap
+
+    # ★대화 중에 얹은 스킬. 판단 기준으로만 쓰고 **숫자는 근거에서만** 쓴다 —
+    #   스킬 문서에 적힌 예시 수치를 이 구간의 값으로 말하면 그게 제일 나쁘다.
+    sk = _ask_skills_block(skills)
+    if sk:
+        head += ("\n\n[스킬 — 이 대화에 얹은 문서]\n" + sk +
+                 "\n스킬은 **어떻게 볼지**를 알려 줄 뿐이다. 수치는 아래 "
+                 "근거에 있는 것만 쓴다 — 스킬에 적힌 예시 숫자를 이 구간의 "
+                 "값으로 말하지 마라.")
 
     msgs = [{"role": "system", "content": head + "\n\n" + ev}]
     for m in (history or [])[-ASK_KEEP:]:

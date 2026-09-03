@@ -13,6 +13,34 @@
        바가 높아지므로 실제 값은 JS 가 재서 덮어쓴다(여기 값은 첫 그림용). */
     --topbar:63px;
   }
+  /* ══ 밝은 배경 ══════════════════════════════════════════════════════
+     관제실은 어둡지만 사무실·회의실 화면에서는 검은 배경이 안 읽힌다.
+     상단 [배경] 단추로 고른다 (localStorage 에 남는다).
+
+     ★색 토큰만 바꾼다. 규칙마다 색을 박아 두면 두 벌이 되어 한쪽만
+       고치게 된다 — 이미 모든 규칙이 var(--…) 를 쓰고 있으니 여기만 덮는다.
+     ★등급색(위험·경계)은 **거의 그대로 둔다.** 흰 배경에서 노랑이 안
+       보여서 minor 만 진하게 내린다 — 등급을 색으로 읽는 화면이라
+       색이 달라지면 사람이 다시 배워야 한다. */
+  :root[data-theme="light"]{
+    --bg:#F6F8FB; --panel:#FFFFFF; --panel2:#EEF2F8; --line:#D8DFE9; --line2:#C2CCDA;
+    --tx:#111823; --tx2:#4A5A70; --tx3:#7A8798;
+    --cy:#0E8C99; --crit:#D62436; --major:#C2670A; --minor:#8A6D00; --ok:#12885A;
+  }
+  :root[data-theme="light"] body{background:var(--bg)}
+  /* 오프닝 화면은 색이 박혀 있다(background:#000 등) — 토큰을 안 쓰므로
+     따로 덮는다. 첫 화면이 검게 남으면 배경을 바꾼 것처럼 안 보인다. */
+  :root[data-theme="light"] .open{background:#F6F8FB;color:#111823}
+  :root[data-theme="light"] .open .sub,
+  :root[data-theme="light"] .open .note{color:#4A5A70}
+  :root[data-theme="light"] .sys:not(.hero){background:#FFFFFF;border-color:#D8DFE9}
+  /* ★FAB 카드 제목이 #E6EDF6(밝은 회색)로 박혀 있다 — 흰 배경에서는
+     거의 안 보인다. 첫 화면에서 고를 이름이 안 읽히면 안 된다. */
+  :root[data-theme="light"] .sys.fab .cd{color:#111823}
+  :root[data-theme="light"] .sys.fab .kd{color:#4A5A70}
+  :root[data-theme="light"] .sys .st{color:#4A5A70}
+  :root[data-theme="light"] .sys.fab:hover{background:#EEF2F8;border-color:#0E8C99}
+  :root[data-theme="light"] .open canvas{opacity:.35}
   *{box-sizing:border-box}
   /* ★body 는 height 가 아니라 min-height 다. height:100% 면 body 상자가
      화면 한 장 높이에서 끝나고, sticky 는 **자기 상자 안에서만** 멈춰
@@ -419,6 +447,34 @@
 </style>
 </head>
 <body>
+<script>
+/* 배경 검정/흰색.
+   ★<body> **맨 앞**에서 돌린다. 나중에 켜면 검은 화면이 한 번 번쩍인 뒤
+     흰색으로 바뀐다 — 어두운 방에서 눈이 아프다. */
+(function(){
+  var KEY = 'amhs.theme';
+  function apply(t){
+    if(t === 'light') document.documentElement.setAttribute('data-theme','light');
+    else              document.documentElement.removeAttribute('data-theme');
+    var c = document.getElementById('themechip-cd');
+    if(c) c.textContent = (t === 'light') ? '☀' : '🌙';
+  }
+  var cur = 'dark';
+  try{ cur = localStorage.getItem(KEY) || 'dark'; }catch(e){}
+  apply(cur);
+  window.__setTheme = function(t){
+    cur = t; apply(t);
+    try{ localStorage.setItem(KEY, t); }catch(e){}
+  };
+  window.__toggleTheme = function(){ window.__setTheme(cur === 'light' ? 'dark' : 'light'); };
+  /* 단추는 아직 없다 — 그려진 뒤에 붙인다 */
+  document.addEventListener('DOMContentLoaded', function(){
+    apply(cur);
+    var b = document.getElementById('themechip');
+    if(b) b.onclick = window.__toggleTheme;
+  });
+})();
+</script>
 
 <!-- ══════ 오프닝 — 시스템 선택 ══════
      고르기 전에는 수집을 시작하지 않는다. 안 고른 화면이 데이터로 차 버리면
@@ -449,6 +505,10 @@
   </div>
   <button class="syschip" id="syschip" title="다른 시스템으로 바꾸기">
     <span id="syschip-cd">–</span><u>바꾸기</u>
+  </button>
+  <!-- 배경 검정/흰색. 관제실은 어둡지만 회의실 화면에서는 검은 배경이 안 읽힌다 -->
+  <button class="syschip" id="themechip" title="배경 바꾸기 (검정 ↔ 흰색)">
+    <span id="themechip-cd">🌙</span><u>배경</u>
   </button>
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
@@ -1903,6 +1963,18 @@ function anChatBox(aid){
       </select>
       <button id="anchatp" class="btn" style="font-size:11.5px;padding:5px 9px"
               title="이 대화에만 얹을 지시를 적습니다">프롬프트</button>
+      <!-- 대화하다가 "이 문서 보고 답해" 가 필요할 때. 뺄 수도 있어야 한다 —
+           한 번 올린 문서가 끝까지 따라다니면 다른 걸 물을 때 방해가 된다. -->
+      <button id="anchatsk" class="btn" style="font-size:11.5px;padding:5px 9px"
+              title="md·txt 를 올려 이 대화에 얹습니다 (언제든 뺄 수 있습니다)">스킬</button>
+      <input id="anchatskf" type="file" accept=".md,.markdown,.txt" multiple
+             style="display:none">
+    </div>
+    <div id="anchatskbox" style="display:none;margin-bottom:6px">
+      <div id="anchatsklist" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+      <div class="note" style="font-size:10.5px;margin-top:4px">
+        얹은 문서는 <b>판단 기준</b>으로만 씁니다 — 수치는 분석 근거에 있는 것만 씁니다.
+      </div>
     </div>
     <div id="anchatpbox" style="display:none;margin-bottom:6px">
       <textarea id="anchatpt" rows="3" placeholder="예: 표로 정리해줘 / 조치 위주로 짧게 / 시간대별로 나눠서"
@@ -1981,9 +2053,52 @@ async function anChatAsk(q){
   }
 }
 
+/* ── 이어 묻기에 얹는 스킬 ────────────────────────────────────────── */
+async function anSkillPaint(){
+  const box = document.getElementById('anchatsklist');
+  if(!box) return;
+  let d = {skills:[]};
+  try{ d = await api('/api/analysis/skills'); }catch(e){}
+  const ss = d.skills || [];
+  box.innerHTML = ss.length
+    ? ss.map(s=>`<span class="chip" style="display:inline-flex;align-items:center;gap:6px;
+         border:1px solid var(--line2);border-radius:999px;padding:3px 8px;font-size:11px">
+         ${esc(s.name)} <span class="note" style="font-size:10px">${s.chars.toLocaleString()}자</span>
+         <a href="#" class="anskx" data-id="${esc(s.id)}" title="빼기"
+            style="color:var(--crit);text-decoration:none">✕</a></span>`).join('')
+      + `<a href="#" class="anskx" data-id="all" style="color:var(--tx3);font-size:11px;
+           align-self:center;margin-left:4px">전부 빼기</a>`
+    : `<span class="note" style="font-size:11px">얹은 문서가 없습니다 — [스킬] 을 눌러 md·txt 를 올리세요.</span>`;
+  const b = document.getElementById('anchatskbox');
+  if(b && ss.length) b.style.display = '';
+}
+async function anSkillUpload(files){
+  for(const f of files){
+    const fd = new FormData(); fd.append('file', f);
+    try{
+      const r = await fetch('/api/analysis/skills', {method:'POST', body:fd})
+                      .then(x=>x.json());
+      if(!r.ok) alert(f.name + ' — ' + (r.error||'실패'));
+      else if(r.cut) alert(f.name + ' — 너무 길어 앞부분만 얹었습니다.');
+    }catch(e){ alert(f.name + ' — ' + e); }
+  }
+  anSkillPaint();
+}
+
 /* 채팅 상자는 분석을 열 때마다 새로 그려지므로 이벤트를 위임으로 건다 */
 document.addEventListener('click', e=>{
-  if(e.target && e.target.id === 'anchatsend'){
+  if(e.target && e.target.id === 'anchatsk'){
+    const b = document.getElementById('anchatskbox');
+    if(b) b.style.display = '';
+    anSkillPaint();
+    const f = document.getElementById('anchatskf');
+    if(f) f.click();               /* 바로 파일 고르기 */
+  }else if(e.target && e.target.classList && e.target.classList.contains('anskx')){
+    e.preventDefault();
+    const id = e.target.dataset.id;
+    fetch('/api/analysis/skills/' + encodeURIComponent(id), {method:'DELETE'})
+      .then(()=>anSkillPaint());
+  }else if(e.target && e.target.id === 'anchatsend'){
     anChatAsk((document.getElementById('anchatq')||{}).value);
   }else if(e.target && e.target.id === 'anchatp'){
     const b = document.getElementById('anchatpbox');
@@ -1991,6 +2106,12 @@ document.addEventListener('click', e=>{
   }else if(e.target && e.target.classList && e.target.classList.contains('anq')){
     e.preventDefault();
     anChatAsk(e.target.textContent);
+  }
+});
+document.addEventListener('change', e=>{
+  if(e.target && e.target.id === 'anchatskf' && e.target.files && e.target.files.length){
+    anSkillUpload(Array.from(e.target.files));
+    e.target.value = '';          /* 같은 파일을 다시 올릴 수 있게 */
   }
 });
 document.addEventListener('keydown', e=>{

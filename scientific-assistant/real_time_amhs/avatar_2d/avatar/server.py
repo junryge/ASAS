@@ -145,6 +145,8 @@ class App:
             sys.stdout.write("  참고 자료 시드: {} (감시 컬럼 뜻·임계)\n".format(nm))
         for nm in skills.seed_analysis_skills(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: {} (데이터 분석)\n".format(nm))
+        if skills.seed_pio(cls.skill_store, base_dir):
+            sys.stdout.write("  스킬 시드: pio-error (PIO 반송실패 해석)\n")
         if skills.seed_fab_score(cls.skill_store, base_dir):
             sys.stdout.write("  스킬 시드: fab-score (FAB별 위험도 스코어)\n")
         cls.mcp_hub = cls._make_hub(base_dir)

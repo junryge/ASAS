@@ -505,6 +505,34 @@ def seed_analysis_skills(store, base_dir):
     return done
 
 
+def seed_pio(store, base_dir):
+    """PIO 반송실패 해석을 스킬로 심는다.
+
+    ★2026-09 에 발동이벤트 CSV 에 PIO 12경로 컬럼이 늘었다. 설비 지표
+      (큐·반송시간)와 **거의 안 겹치는**(실측 상관 +0.22) 값이라, 이걸 모르면
+      모델이 pio_10min_cnt 를 그냥 또 하나의 숫자로 읽고 만다.
+      설비 지표는 '밀리는 중' 이고 PIO 는 '이미 실패한 결과' 라는 것,
+      1분 값이 아니라 10분 합으로 봐야 한다는 것이 핵심이다.
+    """
+    if store.read("pio-error"):
+        return False
+    rt = os.path.dirname(str(base_dir))            # real_time_amhs
+    src = os.path.join(rt, "docs", "PIO_반송실패_연동명세.md")
+    if not os.path.isfile(src):
+        return False
+    try:
+        with open(src, encoding="utf-8") as f:
+            body = f.read()
+    except OSError:
+        return False
+    desc = ("PIO 반송실패(DEPOSITED) 해석 — 12경로 실패건수를 어떻게 읽나. "
+            "설비 지표와 무엇이 다른지, 10분 합 구간표, 경로별 평소 수준, "
+            "빈칸과 0의 차이, 최대 10분 지연")
+    ok, _e, _w = store.save("pio-error", compose("pio-error", desc,
+                                                 _strip_fm(body)))
+    return bool(ok)
+
+
 def seed_fab_score(store, base_dir):
     """real_time_amhs 의 FAB 스코어 md 를 fab-score 스킬로 심는다.
 

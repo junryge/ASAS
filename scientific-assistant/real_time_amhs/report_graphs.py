@@ -87,6 +87,20 @@ def parse_reason_metrics(reason):
             seen.add(col)
             out.append({"col": col, "raw": raw, "label": label, "unit": unit})
 
+    # ★PIO 는 영역 블록 **밖**에 붙는다 — PIO(M14A<-M14B=4건/10분,합6).
+    #   블록만 훑으면 통째로 빠져서, 화면 '실제지표' 에 PIO 가 안 떴다.
+    #   설비 지표와 겹치지 않는 값이라(실측 상관 +0.22) 빠지면 아예 못 본다.
+    _pio = re.search(r"PIO\(([^)]*)\)", reason or "")
+    if _pio:
+        add("pio_10min_cnt", "PIO.DEPOSIT.10MIN.CNT",
+            "PIO 반송실패 10분 합", "건")
+        for _p in re.findall(
+                r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*\d+\s*건",
+                _pio.group(1)):
+            _p = _p.replace(" ", "")
+            add(f"{_p}_PIOERROR_DEPOSITED", f"PIO.DEPOSIT.{_p}",
+                f"PIO 반송실패 {_p}", "건")
+
     body = (reason or "").split("발동:", 1)[-1]
     body = re.split(r"흐름:|운영자조치:", body)[0]
     # ★닫는 ']' 가 없어도 끝까지 읽는다 — reason 은 길어지면 잘려 들어온다.
