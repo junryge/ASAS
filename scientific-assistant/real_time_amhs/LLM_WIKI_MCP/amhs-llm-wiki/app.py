@@ -2403,15 +2403,51 @@ def domain_edit(did):
 
 @app.route("/settings/domain/<int:did>/delete", methods=["POST"])
 def domain_delete(did):
+    """담당 삭제 — 안에 든 페이지·소스까지 같이.
+
+    ★이름을 대조하고 나서 지운다. 화면에서 사람이 입력한 이름(confirm_name)이
+      DB 의 이름과 정확히 같아야 한다. 단추 위치만 믿으면 안 된다 — 실제로
+      줄이 밀려 **엉뚱한 담당이 지워졌다.** 눌린 자리가 어긋나도 이름이
+      다르면 아무 일도 안 일어난다.
+    ★예전엔 내용이 있으면 그냥 거절했다. 그러면 화면에서 지울 길이 없어
+      ("삭제가 안 된다") 페이지를 하나씩 지워야 했다. 이름을 확인했으면
+      같이 지운다 — 다만 파일까지 정리한다(page_delete·source_delete 와 같게).
+    """
     db = get_db()
-    cnt = db.execute("SELECT (SELECT COUNT(*) FROM pages WHERE domain_id=?) + "
-                     "(SELECT COUNT(*) FROM sources WHERE domain_id=?) c", (did, did)).fetchone()["c"]
-    if cnt:
-        flash("페이지/소스가 남아있는 담당은 삭제 불가. 먼저 옮기거나 삭제해라.", "err")
-    else:
-        db.execute("DELETE FROM domains WHERE id=?", (did,))
-        db.commit()
-        flash("담당 삭제됨", "ok")
+    d = db.execute("SELECT * FROM domains WHERE id=?", (did,)).fetchone()
+    if not d:
+        flash("없는 담당이다 (이미 지워졌을 수 있다)", "err")
+        return redirect(url_for("settings_view"))
+
+    got = (request.form.get("confirm_name") or "").strip()
+    if got != (d["name"] or "").strip():
+        flash("담당 이름 확인이 안 맞아 삭제하지 않았다 — 지우려는 담당의 "
+              "이름을 그대로 입력해라 (받은 값: '{}' · 담당: '{}')"
+              .format(got, d["name"]), "err")
+        return redirect(url_for("settings_view"))
+
+    pages = db.execute("SELECT id, slug, ptype FROM pages WHERE domain_id=?", (did,)).fetchall()
+    srcs = db.execute("SELECT id, stored_name FROM sources WHERE domain_id=?", (did,)).fetchall()
+    for pg in pages:
+        db.execute("DELETE FROM revisions WHERE page_id=?", (pg["id"],))
+        db.execute("DELETE FROM chunks WHERE kind='page' AND ref_id=?", (pg["id"],))
+        f = WIKI_DIR / d["slug"] / (pg["ptype"] or "concept") / f"{pg['slug']}.md"
+        if f.exists():
+            f.unlink()
+    for sc in srcs:
+        db.execute("DELETE FROM chunks WHERE kind='source' AND ref_id=?", (sc["id"],))
+        f = SRC_DIR / d["slug"] / (sc["stored_name"] or "")
+        if sc["stored_name"] and f.exists():
+            f.unlink()
+    db.execute("DELETE FROM pages WHERE domain_id=?", (did,))
+    db.execute("DELETE FROM sources WHERE domain_id=?", (did,))
+    db.execute("DELETE FROM templates WHERE domain_id=?", (did,))
+    db.execute("DELETE FROM domains WHERE id=?", (did,))
+    db.commit()
+    add_log("delete", "담당 {}".format(d["name"]),
+            "페이지 {}건 · 소스 {}건 같이 삭제".format(len(pages), len(srcs)))
+    flash("담당 '{}' 삭제됨 (페이지 {}건 · 소스 {}건 같이)".format(
+        d["name"], len(pages), len(srcs)), "ok")
     return redirect(url_for("settings_view"))
 
 
@@ -3441,16 +3477,46 @@ TPL["settings.html"] = '''{% extends "layout.html" %}{% block content %}
 <div class="card">
  <h2>👥 담당 관리</h2>
  {% for d in domains %}
+  {# ★삭제는 저장과 **같은 줄**에 둔다. 예전엔 별도 form 을 margin:-4px 로
+     끌어올려서, 내용이 있는 담당(단추 없음) 바로 밑에 다음 담당의 삭제
+     단추가 붙어 보였다 — 실제로 엉뚱한 담당을 지웠다.
+     그리고 못 지울 때는 이유를 적는다. 예전엔 단추가 아예 안 떠서
+     '삭제가 안 된다' 로만 보였다. #}
   <form action="/settings/domain/{{ d.id }}/edit" method="post" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
    <input type="text" name="name" value="{{ d.name }}" style="width:140px">
    <input type="text" name="description" value="{{ d.description }}">
    <span class="mut" style="white-space:nowrap">P{{ d.pcnt }}/S{{ d.scnt }}</span>
+   <input type="hidden" name="confirm_name" value="">
    <button class="btn sec sm">저장</button>
+   {% if d.pcnt==0 and d.scnt==0 %}
+   <button class="btn warn sm" formaction="/settings/domain/{{ d.id }}/delete" formnovalidate
+     data-dn="{{ d.name }}"
+     onclick="return wikiDelDomain(this, 0, 0)">삭제</button>
+   {% else %}
+   <button class="btn warn sm" formaction="/settings/domain/{{ d.id }}/delete" formnovalidate
+     data-dn="{{ d.name }}"
+     onclick="return wikiDelDomain(this, {{ d.pcnt }}, {{ d.scnt }})"
+     title="페이지 {{ d.pcnt }}건 · 소스 {{ d.scnt }}건이 같이 지워진다">내용째 삭제</button>
+   {% endif %}
   </form>
-  {% if d.pcnt==0 and d.scnt==0 %}
-  <form class="danger" action="/settings/domain/{{ d.id }}/delete" method="post" style="margin:-4px 0 8px"><button class="btn warn sm">삭제</button></form>
-  {% endif %}
  {% endfor %}
+ <script>
+/* ★어느 담당을 지우는지 **이름으로** 확인시킨다. 줄이 밀려 엉뚱한 담당을
+   지웠던 일이 있어서, 단추 위치만 믿지 않는다. 내용이 있으면 몇 건이
+   같이 지워지는지 먼저 말하고, 이름을 그대로 입력해야 넘어간다.
+   입력한 이름은 서버로도 보낸다 — 서버가 한 번 더 대조한다. */
+function wikiDelDomain(btn, pcnt, scnt){
+  var dn = btn.dataset.dn;
+  var msg = "담당 「" + dn + "」 을(를) 삭제합니다.\n";
+  if(pcnt || scnt) msg += "페이지 " + pcnt + "건 · 소스 " + scnt + "건이 **같이** 지워집니다.\n";
+  msg += "되돌릴 수 없습니다.\n\n지우려면 담당 이름을 그대로 입력하세요:";
+  var got = prompt(msg, "");
+  if(got === null) return false;
+  if(got.trim() !== dn){ alert("이름이 다릅니다 — 취소했습니다."); return false; }
+  btn.form.querySelector('input[name=confirm_name]').value = got.trim();
+  return true;
+}
+</script>
  <h3>담당 추가</h3>
  <form action="/settings/domain/add" method="post" style="display:flex;gap:8px">
   <input type="text" name="name" placeholder="담당 이름" style="width:160px" required>
