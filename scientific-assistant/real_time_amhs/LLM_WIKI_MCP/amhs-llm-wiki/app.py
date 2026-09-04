@@ -1660,6 +1660,34 @@ def parse_md_front(raw):
     return meta, body.strip()
 
 
+def md_desc(meta, body, limit=200):
+    """md 가 **스스로 말하는** 한 줄 설명 — 머리말 summary, 없으면 첫 문단.
+
+    ★화면의 '설명' 칸은 한 번에 올린 파일 **전부**에 같은 값이 붙는다.
+      md 9개를 올리면 아홉 개가 똑같은 설명을 갖게 되는데, 그건 설명이
+      아니다. md 는 자기 summary 를 갖고 있으니 그걸 쓴다 — 사람이 파일마다
+      다시 적을 이유가 없다.
+    """
+    s = str((meta or {}).get("summary") or "").strip()
+    if not s:
+        fence = False
+        for ln in str(body or "").splitlines():
+            t = ln.strip()
+            # ★코드 블록은 **줄만 걸러선 안 된다** — 안쪽 내용까지 건너뛴다.
+            #   여는 ``` 만 막으면 그 안의 첫 줄이 설명이 되어 버린다.
+            if t.startswith("```"):
+                fence = not fence
+                continue
+            if fence:
+                continue
+            t = t.lstrip("#").strip()
+            # 표·인용·구분선·이미지는 설명이 아니다
+            if t and not t.startswith(("---", "|", ">", "!\[")):
+                s = t
+                break
+    return " ".join(s.split())[:limit]
+
+
 def upsert_md_page(db, domain_id, meta, body, actor):
     """머리말 붙은 md → 페이지. 같은 제목이 있으면 **고친다**.
 
@@ -1722,25 +1750,31 @@ def upload():
         if ext not in ALLOWED_EXT:
             skip.append(f"{orig} (지원 안 하는 형식)")
             continue
+        fdesc = request.form.get("description", "").strip()
         # ── md + 머리말 → 페이지 ────────────────────────────────────
-        if as_page and ext in (".md", ".markdown"):
+        # ★as_page 와 상관없이 md 는 한 번 읽는다 — 소스로 들어가더라도
+        #   그 파일의 설명(summary)을 쓰기 위해서다.
+        if ext in (".md", ".markdown"):
             try:
                 raw = f.read().decode("utf-8-sig", "replace")
             except Exception:                              # noqa: BLE001
                 raw = ""
+            f.stream.seek(0)
             meta, body = parse_md_front(raw)
-            if meta.get("title"):
+            if as_page and meta.get("title"):
                 pid, is_new = upsert_md_page(
                     db, domain_id, meta, body,
                     request.form.get("uploader", "").strip())
                 if pid:
                     (made if is_new else upd).append(meta["title"])
                     continue
-            # 머리말이 없으면 페이지로 만들 수 없다 — 제목을 지어내지 않는다.
-            # 소스로 넣되 **왜 그랬는지** 말해 준다.
-            skip.append(f"{orig}: 머리말(--- title: … ---)이 없어 소스로 "
-                        f"넣었다. 페이지로 넣으려면 title 을 적어라")
-            f.stream.seek(0)
+            if as_page:
+                # 머리말이 없으면 페이지로 만들 수 없다 — 제목을 지어내지 않는다.
+                # 소스로 넣되 **왜 그랬는지** 말해 준다.
+                skip.append(f"{orig}: 머리말(--- title: … ---)이 없어 소스로 "
+                            f"넣었다. 페이지로 넣으려면 title 을 적어라")
+            # 화면 설명 칸이 비었으면 md 가 스스로 말하는 설명을 쓴다
+            fdesc = fdesc or md_desc(meta, body)
         safe = secure_filename(orig)
         if not Path(safe).stem:
             safe = "file" + ext
@@ -1749,7 +1783,7 @@ def upload():
         cur = db.execute(
             "INSERT INTO sources(domain_id,filename,stored_name,filetype,description,uploader,created_at) "
             "VALUES(?,?,?,?,?,?,?)",
-            (domain_id, orig, "", "", request.form.get("description", "").strip(),
+            (domain_id, orig, "", "", fdesc,
              request.form.get("uploader", "").strip(), now_str()))
         sid = cur.lastrowid
         stored = f"{sid}_{safe}"
@@ -2876,6 +2910,8 @@ TPL["domain.html"] = '''{% extends "layout.html" %}{% block content %}
      머리말이 없으면 제목을 지어낼 수 없으니 소스로 넣고 그렇다고 알려 준다.
     </div>
     <label>설명 <span class="g">(무슨 자료인지 한 줄 — 소스로 들어갈 때 쓴다.
+     <b>md 는 비워둬라</b>: 파일마다 자기 <code>summary</code>(없으면 첫 문단)를
+     쓴다. 여기 적으면 올린 파일 <b>전부</b>에 같은 설명이 붙는다.<br>
      <b>이미지는 필수</b>: 그림은 텍스트 추출이 안 돼서 이 설명이 LLM 이 보는
      전부다)</span></label>
     <input type="text" name="description">

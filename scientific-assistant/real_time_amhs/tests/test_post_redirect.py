@@ -136,3 +136,66 @@ class 위키도_같이_고쳤다(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class md_는_자기_설명을_쓴다(unittest.TestCase):
+    """화면의 '설명' 칸은 한 번에 올린 파일 **전부**에 같은 값이 붙는다.
+    md 9개를 올리면 아홉 개가 똑같은 설명을 갖게 되는데 그건 설명이 아니다.
+    md 는 자기 summary 를 갖고 있으니 그걸 쓴다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import re
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cls.wiki = os.path.join(base, "LLM_WIKI_MCP")
+        with open(os.path.join(cls.wiki, "amhs-llm-wiki", "app.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
+        cls.src = src
+        ns = {"re": re}
+        exec("import re\nMD_FM_RE = "
+             + re.search(r"MD_FM_RE = (re\.compile\(.*?\))\n", src, re.S).group(1), ns)
+        for name in ("parse_md_front", "md_desc"):
+            i = src.index("def %s(" % name)
+            exec(src[i:src.index("\ndef ", i + 1)], ns)
+        cls.ns = ns
+
+    def _desc(self, raw):
+        meta, body = self.ns["parse_md_front"](raw)
+        return self.ns["md_desc"](meta, body)
+
+    def test_머리말_summary_를_쓴다(self):
+        raw = ("---\ntitle: 개요\nsummary: M16 HUBROOM 은 M14 와 M16 을 잇는다.\n"
+               "---\n# 개요\n본문이다.")
+        self.assertEqual(self._desc(raw), "M16 HUBROOM 은 M14 와 M16 을 잇는다.")
+
+    def test_summary_가_없으면_첫_문단(self):
+        self.assertEqual(self._desc("# 등록 방법\n\n먼저 담당을 만든다."),
+                         "등록 방법")
+
+    def test_표_인용_코드_구분선은_설명이_아니다(self):
+        raw = "---\n\n> 인용\n\n| 표 | 머리 |\n\n```\n코드\n```\n\n진짜 설명이다."
+        self.assertEqual(self._desc(raw), "진짜 설명이다.")
+
+    def test_줄바꿈은_한_줄로_편다(self):
+        raw = "---\nsummary: 첫 줄이다.\n  이어지는 줄이다.\n---\n본문"
+        self.assertNotIn("\n", self._desc(raw))
+
+    def test_진짜_MD_들이_다_설명을_갖는다(self):
+        import glob
+        got = 0
+        for p in glob.glob(os.path.join(self.wiki, "버츄얼 아바타", "*.md")):
+            with open(p, encoding="utf-8-sig") as f:
+                d = self._desc(f.read())
+            self.assertTrue(d, os.path.basename(p) + " 에 설명이 없다")
+            got += 1
+        self.assertGreaterEqual(got, 9)
+
+    def test_화면_설명이_있으면_그것을_먼저_쓴다(self):
+        """사람이 적었으면 사람 말이 우선이다."""
+        self.assertIn("fdesc = fdesc or md_desc(meta, body)", self.src)
+
+    def test_소스로_갈_때도_읽는다(self):
+        """as_page 가 꺼져 있어도 md 는 자기 설명을 갖는다."""
+        self.assertIn('if ext in (".md", ".markdown"):', self.src)
+        self.assertNotIn('if as_page and ext in (".md", ".markdown"):', self.src)
