@@ -457,6 +457,23 @@ class 대화_조립(unittest.TestCase):
         self.assertTrue(allm.is_data_question("알람 왜 울려?"))
         self.assertFalse(allm.is_data_question("오늘 저녁 뭐 먹지"))
 
+    def test_뜻을_묻는_질문에는_관제_수치를_안_붙인다(self):
+        """"HUBROOM 지표가 무엇이 있어?" 에 그날 14:48 수치를 읊었다 —
+        물어본 적 없는 것이다. '지표'·'반송' 이 DATA_WORDS 에 걸린 탓이다.
+        뜻·종류·역할을 묻는 꼴이면 근거를 안 붙이고 위키로 답한다."""
+        for q in ("HUBROOM 지표가 무엇이 있어?",
+                  "반송 장치 종류와 역할 전부다 이야기 해봐",
+                  "리프터가 뭐야?", "저장율이 무슨 뜻이야?",
+                  "큐랑 정체 차이가 뭐지?"):
+            self.assertFalse(allm.is_data_question(q), q)
+
+    def test_값을_묻는_것은_뜻_낱말이_있어도_데이터다(self):
+        """"M16HUB 점수 뭐야?" 는 '뭐야' 가 있어도 지금 점수를 묻는 것이다 —
+        여기서 근거를 빼면 답을 못 한다."""
+        for q in ("M16HUB 점수 뭐야?", "지금 등급이 뭐지?",
+                  "알람 뭐야?", "M14 상태 어때?", "지금 현황 뭐야"):
+            self.assertTrue(allm.is_data_question(q), q)
+
     def test_근거가_스킬보다_앞(self):
         class _Sk:
             def context(self, q, b):

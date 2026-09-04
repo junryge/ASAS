@@ -775,9 +775,16 @@ class Hub:
         if len(history or []) - at_len > self.CARRY_TURNS:
             return ""
         # ★방금 조회한 것처럼 말하면 안 된다. 어디서 온 글인지 밝힌다.
-        return ("(아래는 **이 대화에서 조금 전에 조회해 둔** 요청이력이다. "
+        # ★어디서 온 것인지 **이름을 그대로** 적는다. 예전엔 무엇을 들고
+        #   왔든 "요청이력이다" 라고 적었다 — 위키를 들고 왔는데 요청이력
+        #   이라고 알려 주면, 서윤이 그 글을 엉뚱한 것으로 알고 답한다.
+        #   이름은 저장해 둔 글의 [머리]에 이미 붙어 있다.
+        names = list(dict.fromkeys(re.findall(r"^\[([^\]\n]+)\]", got, re.M)))
+        what = " · ".join(names) if names else "조회 결과"
+        return ("(아래는 **이 대화에서 조금 전에 조회해 둔** 자료다 — {}. "
                 "이번 질문으로 다시 조회하지는 않았다 — 이어지는 질문이라 "
-                "그대로 들고 왔다. 내용은 그때 받은 그대로다.)\n" + got)
+                "그대로 들고 왔다. 내용은 그때 받은 그대로다.)\n".format(what)
+                + got)
 
     def _remember(self, history, text, got):
         key = self._conv_key(history, text)
