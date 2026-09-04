@@ -906,9 +906,61 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
         "final", user, "## 종합 판정\n", int(a["final_max_tokens"]), cfg,
         want_json=False, cancel=cancel)
     _LAST_LOG.setdefault("final", []).extend(_log)
+
+    # ★리포트 대신 '검토 메모' 를 써 보내는 일이 있다 — 규칙을 하나하나
+    #   확인하다가 출력을 다 쓰고 정작 보고서는 안 쓴다. 조용한 짧은 구간
+    #   (사건 0건)에서 특히 그렇다: 쓸 사건이 없으니 정할 게 등급뿐인데,
+    #   거기서 기준을 따지기 시작한다. 그대로 화면에 내보내면 안 된다.
+    if txt and _looks_like_plan(str(txt)):
+        _LAST_LOG.setdefault("final", []).append(
+            "최종: 리포트 대신 검토 메모가 나와 다시 요청")
+        t2, n2, tk2, m2, lg2 = _call_stage(
+            "final", _FINAL_HARD + user, "## 종합 판정\n",
+            int(a["final_max_tokens"]), cfg, want_json=False, cancel=cancel)
+        _LAST_LOG.setdefault("final", []).extend(lg2)
+        took += tk2
+        if t2 and not _looks_like_plan(str(t2)):
+            txt, note, model = t2, n2, m2
+        else:
+            # 두 번 다 메모면 포기한다. 검토 메모를 리포트라고 내보내느니
+            # 숫자만 채운 골격이 낫다 (호출부가 _fallback_final 로 간다).
+            return "", "최종 리포트 실패 — 보고서 대신 검토 메모만 나옴 (2회 시도)", took, model
     if not txt:
         return "", note or "최종 리포트 생성 실패", took, model
     return scrub(str(txt)), note, took, model
+
+
+# 다시 물을 때 앞에 붙이는 한 마디 — 짧고 세게.
+_FINAL_HARD = (
+    "★앞선 시도는 보고서 대신 '무엇을 지켜야 하는지' 검토 메모를 써 보냈다. "
+    "규칙 확인·형식 점검·자기수정을 쓰지 마라. 기준이 서로 달라 보여도 "
+    "따지지 말고 시스템 등급 기준을 그냥 쓴다. 바로 '## 종합 판정' 부터 "
+    "**보고서 본문만** 쓴다. 네 섹션 모두 채운다.\n\n")
+
+# 리포트가 아니라 '작성 계획' 일 때 나오는 말들. 본문에는 나올 일이 없다.
+_PLAN_WORDS = (
+    "사용자의 요청", "제약 사항", "출력 언어", "추론 과정 출력", "작성 전략",
+    "용어 점검", "용어 교정", "형식 준수", "최종 점검", "최종 검토", "자기수정",
+    "페르소나 규칙", "확인 필요", "적용해야 할지", "상충", "지시사항",
+    "다시 한번 확인", "출력 규칙", "작성 방향",
+)
+_REPORT_HEADS = ("## 구역 상황", "## 조치", "## 주의")
+
+
+def _looks_like_plan(txt: str) -> bool:
+    """보고서인가, 보고서를 쓰기 전 '검토 메모' 인가.
+
+    두 가지를 같이 본다 — 하나만 보면 오판한다.
+      · 계획에서만 쓰는 말이 2개 이상 나온다
+        (하나는 본문에도 나올 수 있다: '용어 점검' 을 조치에 쓸 수도 있다)
+      · 요구한 네 섹션 중 뒤 세 개가 없다 (계획만 쓰다 끝났다)
+    """
+    t = str(txt or "")
+    if not t.strip():
+        return False
+    hit = sum(1 for w in _PLAN_WORDS if w in t)
+    missing = sum(1 for h in _REPORT_HEADS if h not in t)
+    return hit >= 2 and missing >= 2
 
 
 def _fail_kind(err) -> str:

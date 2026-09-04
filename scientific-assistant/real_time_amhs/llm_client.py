@@ -174,7 +174,34 @@ def build_system_prompt(cfg: dict | None = None) -> str:
         parts += ["", f"═══════ 스킬: {name} ═══════", body]
     if sk["missing"]:
         parts += ["", f"(경고: 다음 문서를 찾지 못함 — {', '.join(sk['missing'])})"]
+    parts += ["", _grade_rule(cfg)]
     return "\n".join(parts)
+
+
+def _grade_rule(cfg: dict) -> str:
+    """등급 컷을 **이 시스템 값**으로 못박는다.
+
+    ★페르소나에는 60/71/85 표가 박혀 있는데 컷은 정책 탭에서 시스템마다
+      다르게 잡는다. 두 기준이 다르면 모델이 답을 안 쓰고 **어느 쪽을 따를지
+      따지느라 출력을 다 써 버린다** — 실제로 30분 분석의 '종합 판정' 이
+      "페르소나 규칙과 제공된 판정 기준이 상충할 수 있음… *자기수정*…" 같은
+      검토 메모로 채워져 나왔다. 긴 구간에서는 쓸 사건이 많아 그냥 넘어가지만,
+      조용한 짧은 구간에서는 정할 게 '등급' 뿐이라 거기서 막힌다.
+      그래서 **비교하지 말라**고 미리 끝내 준다.
+    """
+    try:
+        from sentinel import alarm_floor, grade_cuts
+        w, d, c = grade_cuts(cfg)
+        floor = alarm_floor(cfg)
+    except Exception:                                   # noqa: BLE001
+        return ""
+    return ("═══════ 등급 기준 (이 시스템 값 — 최우선) ═══════\n"
+            f"정상 {w-1} 이하 · 🟠 경계 {w}~{d-1} · 🔴 위험 {d}~{c-1} · "
+            f"⛔ 초위험 {c}~100 · 알람 임계 {floor}점\n"
+            "★페르소나·스킬 문서에 적힌 60/71/85 표와 다르면 **이 줄을 따른다.** "
+            "이미 정해진 것이니 두 기준을 비교하거나 어느 쪽을 따를지 "
+            "따지지 마라 — 그 과정을 답에 쓰면 안 된다.\n"
+            "★보고서에 등급표를 넣을 때도 위 숫자로 넣는다.")
 
 
 def _api_key(cfg: dict) -> str:
