@@ -1609,7 +1609,11 @@ def api_graph():
     want = [f.strip().upper() for f in (request.args.get("fabs") or "").split(",")]
     picked = [f for f in known if f in want]
 
-    svg = render(rows, at, minutes, cfg=C["cfg"], fabs=picked)
+    # 화면 배경(검정/흰색)을 그대로 받아 같은 색으로 그린다. 안 넘어오면
+    # 검정 — 예전 주소로 부르던 곳이 그대로 돌아간다.
+    theme = (request.args.get("theme") or "dark").strip().lower()
+    svg = render(rows, at, minutes, cfg=C["cfg"], fabs=picked,
+                 theme=("light" if theme == "light" else "dark"))
     return app.response_class(svg, mimetype="image/svg+xml")
 
 

@@ -64,20 +64,54 @@ _CRIT_COLOR = "#FF4D5E"    # --crit
 # 설정(grade.by_sys)을 따르므로 그릴 때 cfg 로 계산한다.
 _BAND_COLORS = (_BG2, "#2B2612", "#33210F", "#331419")
 
+# ══ 흰 배경용 한 벌 ═══════════════════════════════════════════════════
+# 화면은 [배경] 단추로 검정↔흰색을 고르는데 그래프만 늘 검게 나왔다 —
+# 흰 화면 한가운데 검은 상자가 박혀서 거기만 눈이 아프다.
+# ★순백(#FFF)을 쓰지 않는다. 관제실 조명 아래서 눈이 부시다 —
+#   종이 톤(#F4F7FB)까지만 올린다.
+# ★선 색은 어두운 배경용을 그대로 못 쓴다. 노랑(#F2C94C)·청록(#3DDBE8)은
+#   흰 바탕에서 거의 안 보인다. 같은 '종류' 를 유지하되 채도를 내린다.
+_LIGHT = {
+    "bg": "#F4F7FB", "bg2": "#E8EDF4", "line": "#CCD6E2", "grid": "#AFBCCC",
+    "tx": "#0F1720", "tx2": "#46566B", "tx3": "#63718A",
+    "score": "#0B7A86", "sel": "#1B2430", "evt": "#B4610A", "crit": "#C81E30",
+    "bands": ("#E8EDF4", "#F7EFD2", "#F8E2C6", "#F7D4D8"),
+    "palette": ["#D0392A", "#B06200", "#8A6D00", "#BC2E79", "#0B7A86",
+                "#1F6FD0", "#4B5BD1"],
+    "kind": {"ra": "#D0392A", "rd_fab": "#B06200", "stb_util": "#8A6D00",
+             "rev_count": "#BC2E79", "sla": "#0B7A86", "sorter": "#1F6FD0",
+             "rd_oht": "#4B5BD1",
+             "pio_10min_cnt": "#7A3FD0", "PIOERROR_DEPOSITED": "#5B45C4"},
+    "path": ["#7A3FD0", "#1F6FD0", "#0B7A86", "#8A6D00", "#BC2E79"],
+}
+_DARK = {
+    "bg": _BG, "bg2": _BG2, "line": _LINE, "grid": _GRID,
+    "tx": _TX, "tx2": _TX2, "tx3": _TX3,
+    "score": _SCORE_COLOR, "sel": _SEL_COLOR, "evt": _EVT_COLOR,
+    "crit": _CRIT_COLOR, "bands": _BAND_COLORS,
+    "palette": _PALETTE, "kind": _COLOR_BY_KIND, "path": _PATH_COLORS,
+}
 
-def _bands_of(cfg) -> list:
+
+def _pal(theme) -> dict:
+    return _LIGHT if str(theme or "").lower() == "light" else _DARK
+
+
+def _bands_of(cfg, pal: dict | None = None) -> list:
     from sentinel import grade_cuts
     w, d, c = grade_cuts(cfg or {})
     edges = (0, w, d, c, 100)
-    return [(edges[i], edges[i + 1], _BAND_COLORS[i]) for i in range(4)]
+    band = (pal or _DARK)["bands"]
+    return [(edges[i], edges[i + 1], band[i]) for i in range(4)]
 
 
-def _kind_color(col: str, idx: int) -> str:
+def _kind_color(col: str, idx: int, pal: dict | None = None) -> str:
     """컬럼명으로 지표 종류를 알아 고정 색을 준다 (사진과 같은 색 배치)."""
-    for key, c in _COLOR_BY_KIND.items():
+    pal = pal or _DARK
+    for key, c in pal["kind"].items():
         if col.endswith("_" + key) or col.startswith(key + "_") or col.endswith(key):
             return c
-    return _PALETTE[idx % len(_PALETTE)]
+    return pal["palette"][idx % len(pal["palette"])]
 
 
 def parse_reason_metrics(reason: str) -> list[dict]:
@@ -324,13 +358,30 @@ def _fab_series(pts, fabs, cfg):
     return out
 
 
-def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
+def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
+           theme="dark") -> str:
     """구간 그래프.
 
     fabs 를 주면 그 FAB 의 영역점수(area_score)를 스코어 패널에 겹쳐 그린다.
     화면의 추이 그래프에서 체크한 것이 그대로 넘어온다 — 추이에서 켜 놓고
     더블클릭했는데 여기서 사라지면 같은 걸 두 번 골라야 한다.
+
+    theme="light" 면 흰 배경용 색으로 그린다. 화면 배경을 흰색으로 바꿔도
+    그래프만 검게 남으면 거기만 눈이 아프다.
     """
+    # ★모듈 상수를 **지역 이름으로 덮는다**. 아래 f-string 수십 군데가
+    #   그대로 지역값을 쓰게 되어, 색 한 벌을 더 넣는 데 그림 코드는
+    #   손대지 않는다 (두 벌로 갈라지면 한쪽만 고치게 된다).
+    P = _pal(theme)
+    _BG, _BG2, _LINE, _GRID = P["bg"], P["bg2"], P["line"], P["grid"]
+    _TX, _TX2, _TX3 = P["tx"], P["tx2"], P["tx3"]
+    _SCORE_COLOR, _SEL_COLOR = P["score"], P["sel"]
+    _EVT_COLOR, _CRIT_COLOR = P["evt"], P["crit"]
+    _PATH_COLORS = P["path"]
+
+    def _kc(col, idx):
+        return _kind_color(col, idx, P)
+
     cfg = cfg or load_config()
     pts = window_rows(rows, center, minutes, cfg)
     if not pts:
@@ -396,7 +447,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
     def SY(v):
         return top_score + SCORE_H * (1 - max(0.0, min(100.0, v)) / 100.0)
 
-    bands = _bands_of(cfg)
+    bands = _bands_of(cfg, P)
     for lo_, hi_, col in bands:
         y2, y1 = SY(lo_), SY(hi_)
         o.append(f'<rect x="{L}" y="{y1:.1f}" width="{pw}" height="{y2-y1:.1f}" fill="{col}"/>')
@@ -485,7 +536,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None) -> str:
 
     for i, md in enumerate(metrics):
         y = y_met0 + (MET_H + GAP) * i
-        col = _kind_color(md["col"], i)
+        col = _kc(md["col"], i)
         stack = md.get("cols") or []
         if stack:
             # 경로별 값과 그 분의 합. 막대 높이 = 합 = 그 1분의 총 실패 개수.

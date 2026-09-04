@@ -27,25 +27,32 @@
        보여서 minor 만 진하게 내린다 — 등급을 색으로 읽는 화면이라
        색이 달라지면 사람이 다시 배워야 한다. */
   :root[data-theme="light"]{
-    --bg:#F6F8FB; --panel:#FFFFFF; --panel2:#EEF2F8; --line:#D8DFE9; --line2:#C2CCDA;
-    --tx:#111823; --tx2:#4A5A70; --tx3:#7A8798;
-    --cy:#0E8C99; --crit:#D62436; --major:#C2670A; --minor:#8A6D00; --ok:#12885A;
+    /* ★순백(#FFF)을 쓰지 않는다. 관제실 조명 아래 흰 화면을 하루 종일
+       보면 눈이 아프다 — 종이 톤까지만 올린다. */
+    --bg:#E6EBF2; --panel:#F4F7FB; --panel2:#E3E9F1; --line:#CCD6E2; --line2:#B3C0D0;
+    --tx:#0F1720; --tx2:#46566B; --tx3:#63718A;
+    --cy:#0B7A86; --crit:#D62436; --major:#C2670A; --minor:#8A6D00; --ok:#12885A;
     --many:#1D5FD0;   /* 흰 배경에서 밝은 파랑은 안 읽힌다 — 진하게 */
   }
   :root[data-theme="light"] body{background:var(--bg)}
   /* 오프닝 화면은 색이 박혀 있다(background:#000 등) — 토큰을 안 쓰므로
      따로 덮는다. 첫 화면이 검게 남으면 배경을 바꾼 것처럼 안 보인다. */
-  :root[data-theme="light"] .open{background:#F6F8FB;color:#111823}
+  :root[data-theme="light"] .open{background:#E6EBF2;color:#0F1720}
   :root[data-theme="light"] .open .sub,
-  :root[data-theme="light"] .open .note{color:#4A5A70}
-  :root[data-theme="light"] .sys:not(.hero){background:#FFFFFF;border-color:#D8DFE9}
+  :root[data-theme="light"] .open .note{color:#46566B}
+  :root[data-theme="light"] .sys:not(.hero){background:#F4F7FB;border-color:#CCD6E2}
   /* ★FAB 카드 제목이 #E6EDF6(밝은 회색)로 박혀 있다 — 흰 배경에서는
      거의 안 보인다. 첫 화면에서 고를 이름이 안 읽히면 안 된다. */
-  :root[data-theme="light"] .sys.fab .cd{color:#111823}
-  :root[data-theme="light"] .sys.fab .kd{color:#4A5A70}
-  :root[data-theme="light"] .sys .st{color:#4A5A70}
-  :root[data-theme="light"] .sys.fab:hover{background:#EEF2F8;border-color:#0E8C99}
+  :root[data-theme="light"] .sys.fab .cd{color:#0F1720}
+  :root[data-theme="light"] .sys.fab .kd{color:#46566B}
+  :root[data-theme="light"] .sys .st{color:#46566B}
+  :root[data-theme="light"] .sys.fab:hover{background:#DCE3EC;border-color:#0B7A86}
   :root[data-theme="light"] .open canvas{opacity:.35}
+  /* ALL 카드는 어두운 배경에서 눈에 띄라고 형광 청록이다. 흰 배경에서는
+     그 채도가 그대로 눈을 찌른다 — 한 단계만 내린다(글자색은 그대로라
+     대비는 유지된다). */
+  :root[data-theme="light"] .sys.hero{background:#5FCBD6}
+  :root[data-theme="light"] .sys.hero:hover{background:#7BDCE5}
   *{box-sizing:border-box}
   /* ★body 는 height 가 아니라 min-height 다. height:100% 면 body 상자가
      화면 한 장 높이에서 끝나고, sticky 는 **자기 상자 안에서만** 멈춰
@@ -474,6 +481,11 @@
   window.__setTheme = function(t){
     cur = t; apply(t);
     try{ localStorage.setItem(KEY, t); }catch(e){}
+    /* 그래프는 서버가 그린 SVG 라 CSS 로 안 바뀐다 — 다시 받아야 한다 */
+    try{
+      var g = document.getElementById('gmask');
+      if(g && !g.classList.contains('hidden') && window.drawGraph) window.drawGraph();
+    }catch(e){}
   };
   window.__toggleTheme = function(){ window.__setTheme(cur === 'light' ? 'dark' : 'light'); };
   /* 단추는 아직 없다 — 그려진 뒤에 붙인다 */
@@ -3972,6 +3984,7 @@ async function openGraph(at){
   fillOht(r ? (r.datetime || at) : at, title);
   await drawGraph();
 }
+window.drawGraph = drawGraph;
 async function drawGraph(){
   if(!GAT) return;
   const m = $('#gmin').value;
@@ -3980,8 +3993,11 @@ async function drawGraph(){
     // 그래프 + 기여도 추정을 같이 띄운다 — '왜 이 점수인가' 가 그래프 옆에 있어야
     // 관제가 다음 행동을 정할 수 있다. 기여도는 실패해도 그래프는 나오게 따로 처리.
     const [svg, con] = await Promise.all([
+      /* ★배경을 같이 넘긴다. 안 넘기면 흰 화면 한가운데 검은 그래프가
+         박혀서 거기만 눈이 아프다. */
       fetch(withSys(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}${
-            graphFabs()}`)).then(r=>r.text()),
+            graphFabs()}&theme=${document.documentElement.getAttribute('data-theme')||'dark'}`
+            )).then(r=>r.text()),
       fetch(withSys(`/api/contrib?at=${encodeURIComponent(GAT)}`)).then(r=>r.text()).catch(()=>''),
     ]);
     $('#gbody').innerHTML = svg
