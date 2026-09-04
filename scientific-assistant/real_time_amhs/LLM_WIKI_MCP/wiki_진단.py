@@ -20,8 +20,10 @@
 """
 import json
 import os
+import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -108,8 +110,109 @@ def mcp_call(name, args, mid=2):
     return json.loads(raw)
 
 
+# ── ⓪ MD 가 왜 소스로 가나 ─────────────────────────────────────────────
+# 머리말 붙은 md 를 **페이지**로 넣는 기능은 나중에 들어갔다. 그 전 app.py 는
+# 올리는 것을 무엇이든 소스로 넣는다. 파일만 덮고 웹앱을 안 껐다 켜도 마찬가지다
+# — 파이썬이 옛 코드를 물고 있다. 이 둘이 눈으로 안 갈려서 한참 헤맸다.
+MD_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.S)
+
+
+def app_file_has_feature():
+    """디스크의 app.py 에 기능이 있나 (없으면 옛날 파일)."""
+    p = os.path.join(HERE, "amhs-llm-wiki", "app.py")
+    if not os.path.isfile(p):
+        return None, p
+    with open(p, "r", encoding="utf-8", errors="replace") as f:
+        return ("md_as_page" in f.read()), p
+
+
+def server_has_feature():
+    """**지금 도는** 웹앱이 그 기능을 내놓나 — 업로드 화면을 직접 받아 본다.
+    디스크 파일이 아니라 프로세스를 보는 것이라, 재시작을 안 했으면 여기서 갈린다."""
+    try:
+        with _open(urllib.request.Request(
+                WEB.rstrip("/") + "/api/domains",
+                headers={"Accept": "application/json"})) as r:
+            doms = (json.loads(r.read().decode("utf-8", "replace"))
+                    or {}).get("domains") or []
+    except Exception as e:                              # noqa: BLE001
+        return None, "웹앱에 못 붙었다: {}: {}".format(type(e).__name__, e)
+    if not doms:
+        return None, "담당이 하나도 없다 — 화면에서 먼저 담당을 만들어라"
+    slug = doms[0].get("slug") or ""
+    try:
+        with _open(urllib.request.Request(
+                WEB.rstrip("/") + "/domain/" + urllib.parse.quote(slug))) as r:
+            html = r.read().decode("utf-8", "replace")
+    except Exception as e:                              # noqa: BLE001
+        return None, "업로드 화면을 못 받았다: {}: {}".format(type(e).__name__, e)
+    return ("md_as_page" in html), "담당 '{}' 화면으로 확인".format(slug)
+
+
+def md_plan(folder):
+    """그 폴더의 md 가 페이지로 갈지 소스로 갈지 — 올리기 전에 미리 본다."""
+    out = []
+    if not os.path.isdir(folder):
+        return out
+    for n in sorted(os.listdir(folder)):
+        p = os.path.join(folder, n)
+        if not os.path.isfile(p):
+            continue
+        if os.path.splitext(n)[1].lower() not in (".md", ".markdown"):
+            out.append((n, "소스", "md 가 아니다"))
+            continue
+        with open(p, "r", encoding="utf-8-sig", errors="replace") as f:
+            raw = f.read()
+        m = MD_FM_RE.match(raw)
+        title = ""
+        if m:
+            for line in m.group(1).splitlines():
+                k, sep, v = line.partition(":")
+                if sep and k.strip().lower() == "title":
+                    title = v.strip().strip("'\"")
+        out.append((n, "페이지" if title else "소스",
+                    title or "머리말(--- title: … ---)이 없다"))
+    return out
+
+
 def main(argv):
     words = argv[1:] or WORDS
+    print("=" * 70)
+    print("⓪ MD 를 올리면 페이지로 가나, 소스로 가나")
+    print("=" * 70)
+    fileok, fpath = app_file_has_feature()
+    srvok, how = server_has_feature()
+    print("  디스크 app.py : {}  ({})".format(
+        "새 버전 (MD→페이지 있음)" if fileok else
+        ("옛날 버전 (MD→페이지 없음)" if fileok is False else "파일을 못 찾음"), fpath))
+    print("  도는 웹앱     : {}  ({})".format(
+        "새 버전" if srvok else ("옛날 버전" if srvok is False else "확인 못 함"), how))
+    if fileok and srvok is False:
+        print("")
+        print("  ★★ 파일은 새것인데 **도는 웹앱이 옛날 것**이다.")
+        print("     → 웹앱을 껐다 켜라 (Ctrl+C 후 python app.py).")
+        print("       파일만 덮으면 파이썬이 옛 코드를 계속 물고 있다.")
+    elif fileok is False:
+        print("")
+        print("  ★★ app.py 가 **옛날 파일**이다 — 올리는 것을 무엇이든 소스로 넣는다.")
+        print("     → 새 app.py 로 덮고 웹앱을 껐다 켜라.")
+        print("     (지금 당장은 업로드 화면 대신 wiki_import.py 를 써라 —")
+        print("      /page/new 로 직접 보내서 소스로 갈 길이 없다)")
+    elif fileok and srvok:
+        print("")
+        print("  여기는 정상이다. 그래도 소스로 갔다면 **그 파일에 머리말이 없는 것**이다 —")
+        print("  아래 목록을 봐라.")
+    for folder in ("버츄얼 아바타", "버추얼 아바타", "등록초안"):
+        rows = md_plan(os.path.join(HERE, folder))
+        if not rows:
+            continue
+        print("")
+        print("  [{}] 올리면 어디로 가나".format(folder))
+        for n, where, why in rows:
+            print("    {:<38} → {:<4} {}".format(
+                n[:38], where, "" if where == "페이지" else why))
+
+    print("")
     print("=" * 70)
     print("① 이 컴퓨터의 wiki.db")
     print("=" * 70)
