@@ -136,5 +136,41 @@ class 분석_프롬프트에_실린다(unittest.TestCase):
         self.assertNotIn("[FAB 대조]", txt)
 
 
+class 일차도_FAB_을_본다(unittest.TestCase):
+    """1차는 요약이 아니라 **분단위**를 보는 단계다. 그런데 ALL 점수만
+    실려 있어서 'ALL 44점 — 정상' 으로 관찰하고 넘어갔다. 그 밑에서
+    M16A 가 경계를 넘었어도 1차가 한 번도 못 보면, 2·3차가 이어받을
+    관찰 자체가 없다."""
+
+    def _chunk(self, rows):
+        return analysis._chunks(_seq(rows), _CFG)[0]["text"]
+
+    def test_경계를_넘은_FAB_이_줄에_붙는다(self):
+        txt = self._chunk([_row(44, hot=("M16A",))] * 5)
+        self.assertIn("FAB↑ M16A", txt)
+        self.assertIn("(60)", txt)          # 그 FAB 의 경계도 같이
+
+    def test_넘은_FAB_이_없으면_아무것도_안_붙인다(self):
+        """1440줄에 다섯 점수를 다 적으면 정작 봐야 할 줄이 안 보인다."""
+        txt = self._chunk([_row(30)] * 5)
+        self.assertNotIn("FAB↑", txt)
+
+    def test_있는_조각에만_읽는_법을_적는다(self):
+        hot = self._chunk([_row(44, hot=("M16A",))] * 5)
+        self.assertIn("ALL 점수가 낮아도 그냥 넘기지 마라", hot)
+        self.assertNotIn("ALL 점수가 낮아도", self._chunk([_row(30)] * 5))
+
+    def test_두_곳이_넘으면_둘_다_적는다(self):
+        txt = self._chunk([_row(41, hot=("M16A", "M14B"))] * 5)
+        line = next(x for x in txt.splitlines() if x.startswith("07:00"))
+        self.assertIn("M16A", line)
+        self.assertIn("M14B", line)
+
+    def test_FAB_하나를_볼_때는_안_붙는다(self):
+        cfg = sys_cfg(_CFG, "M16HUB")
+        seq = _seq([{"unified_risk_score": 55, "hot_area": "M16HUB", "reason": ""}] * 5)
+        self.assertNotIn("FAB↑", analysis._chunks(seq, cfg)[0]["text"])
+
+
 if __name__ == "__main__":
     unittest.main()

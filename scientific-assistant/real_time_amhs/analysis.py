@@ -175,6 +175,19 @@ _CROSS_RULES = (
 _CROSS_KINDS = ("전체물량", "단일FAB", "FAB전이")
 
 
+def _fab_hot(row: dict, cfg: dict) -> str:
+    """그 1분에 **자기 경계를 넘은 FAB** 만 'M16A 95(60)' 꼴로. 없으면 빈칸."""
+    try:
+        import fab_score
+        lu = fab_score.lineup(row, cfg)
+    except Exception:                                   # noqa: BLE001
+        return ""
+    if not lu or not lu["hot"]:
+        return ""
+    return " · ".join("{} {}({})".format(x["fab"], x["score"], x["cut"])
+                      for x in lu["hot"])
+
+
 def _fab_cross(seq, cfg: dict, peak_d) -> str:
     """[FAB 대조] — ALL 점수와 FAB 다섯 점수를 분마다 맞춰 본 것.
 
@@ -307,6 +320,13 @@ def _chunks(seq, cfg: dict) -> list[dict]:
 
     사건이 조각 경계에 걸려도 2차가 관찰을 취합하며 잇는다. 조각마다
     분단위 라인(점수·구역·발동사유)을 그대로 준다 — 1차는 원자료를 본다.
+
+    ★ALL 이면 그 분에 **자기 경계를 넘은 FAB** 을 뒤에 붙인다. 1차는 요약이
+      아니라 분단위를 보는 단계인데 ALL 점수만 실려 있어서, "ALL 44점 —
+      정상" 이라고 관찰하고 넘어갔다. 그 밑에서 M16A 가 95점이어도 1차가
+      한 번도 못 보면 2·3차가 이어받을 관찰 자체가 없다.
+      넘은 FAB 이 없으면 아무것도 안 붙인다 — 1440줄에 다섯 점수를 다
+      적으면 정작 봐야 할 줄이 안 보인다.
     """
     from sentinel import summarize_reason
     n = max(1, min(int(_acfg(cfg)["chunk_max"]), (len(seq) + 59) // 60))
@@ -318,11 +338,15 @@ def _chunks(seq, cfg: dict) -> list[dict]:
         if not part:
             continue
         lines = []
+        has_fab = False
         for d, s, r in part:
             why = summarize_reason(str(r.get("reason") or ""),
                                    r.get("hot_area") or "") if s >= floor else ""
+            fab = _fab_hot(r, cfg)
+            has_fab = has_fab or bool(fab)
             lines.append(f"{d:%H:%M} | {s:.0f} | {r.get('hot_area') or '-'}"
-                         + (f" | {why}" if why else ""))
+                         + (f" | {why}" if why else "")
+                         + (f" | FAB↑ {fab}" if fab else ""))
         # 조각 안 지표 스냅샷 (시작→끝 변화)
         mets = []
         for m in _metrics(cfg):
@@ -330,9 +354,13 @@ def _chunks(seq, cfg: dict) -> list[dict]:
             if vals:
                 mets.append(f"{m.get('label') or m['key']}: {vals[0]:.1f}→{vals[-1]:.1f}"
                             f" (최대 {max(vals):.1f}{m.get('unit','')})")
+        head = "[분단위: 시각 | 점수 | 구역 | 발동사유"
+        head += (" | FAB↑ = 그 분에 자기 경계를 넘은 FAB(점수/경계)]\n"
+                 "★'FAB↑' 가 있는 줄은 ALL 점수가 낮아도 그냥 넘기지 마라 — "
+                 "한 FAB 만 걸리면 ALL 이 구조적으로 못 따라온다.\n"
+                 if has_fab else "]\n")
         out.append({"span": f"{part[0][0]:%H:%M}~{part[-1][0]:%H:%M}",
-                    "text": ("[분단위: 시각 | 점수 | 구역 | 발동사유]\n"
-                             + "\n".join(lines[:90])
+                    "text": (head + "\n".join(lines[:90])
                              + "\n[지표 변화]\n" + "\n".join(mets))})
     return out
 
