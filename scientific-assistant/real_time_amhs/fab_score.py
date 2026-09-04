@@ -1275,29 +1275,17 @@ def files_sig(day: str, cfg: dict | None = None) -> tuple:
     return tuple(out)
 
 
-def divergence(row: dict, cfg: dict | None = None) -> dict | None:
-    """ALL 점수와 FAB 다섯 점수가 **엇갈릴 때** 그게 무슨 뜻인가.
+def lineup(row: dict, cfg: dict | None = None) -> dict | None:
+    """그 1분의 ALL 점수와 FAB 다섯 점수를 **한 줄에 세운 것**.
 
-    ★ALL 과 FAB 은 배점표가 겹치지 않는다. 그래서 한쪽만 올라가는 일이
-      구조적으로 생긴다 — 그걸 사람이 매번 눈으로 맞춰 보고 있었다.
-        ALL 에만  FLOW 30점 (30분 평균 대비 배수 · 10개 노드)
-        FAB 에만  RA 10 · RA_sus 5 · RB 10 · RB_fast 5 · RC 8 · RD 7 = 45점
-        공통      SLA 5 · SORT 3 · MAXCAPA 10 (걸린 영역 수만큼)
+    {"all", "all_cut", "hot":[{fab,score,cut}…], "quiet":[…], "known":n}
+    · hot  = 자기 경계 이상인 FAB (점수 높은 순)
+    · quiet= 경계 미만인 FAB
+    엇갈리든 아니든 항상 돌려준다 — divergence() 는 이걸 보고 갈래를 정하고,
+    분석 프롬프트는 '엇갈리지 않을 때도' 다섯 점수를 같이 실어야 한다.
 
-    돌려주는 네 갈래
-      전체물량   ALL 이 컷 이상인데 FAB 은 전부 정상
-                 → FAB 배점에 없는 것은 FLOW 뿐이다. 물량이 올라온 것이다.
-      단일FAB    ALL 은 컷 미만인데 FAB **한 곳**이 경계 이상
-                 → 한 FAB 만 걸려서는 ALL 이 구조적으로 못 따라온다
-                   (FAB 40점이 ALL 로는 최대 18점). 놓치기 쉬운 자리다.
-      FAB전이    ALL 은 컷 미만인데 FAB **두 곳 이상**이 경계 이상
-                 → ★전이라고 단정하지 않는다. propagation_chain 이 있으면
-                   그 방향을 그대로 쓰고, 없으면 '확정 못 함' 으로 둔다.
-                   없는 인과를 만들면 관제가 엉뚱한 FAB 을 본다.
-      None       엇갈리지 않는다 (둘 다 올랐거나 둘 다 조용하다) — 할 말 없음
-
-    row 에 {FAB}_pts_* 가 없으면(ALL 파일이 아니면) None. 남의 FAB 점수를
-    지어내지 않는다.
+    row 에 {FAB}_pts_* 도 {FAB}_score 도 없으면(ALL 파일이 아니면) None.
+    남의 FAB 점수를 지어내지 않는다.
     """
     from lp_client import load_config, sys_cfg
     from sentinel import grade_cuts
@@ -1326,8 +1314,39 @@ def divergence(row: dict, cfg: dict | None = None) -> dict | None:
         return None
 
     hot.sort(key=lambda x: -x["score"])
-    base = {"all": round(all_sc, 1), "all_cut": all_cut,
+    return {"all": round(all_sc, 1), "all_cut": all_cut,
             "hot": hot, "quiet": quiet, "known": known}
+
+
+def divergence(row: dict, cfg: dict | None = None) -> dict | None:
+    """ALL 점수와 FAB 다섯 점수가 **엇갈릴 때** 그게 무슨 뜻인가.
+
+    ★ALL 과 FAB 은 배점표가 겹치지 않는다. 그래서 한쪽만 올라가는 일이
+      구조적으로 생긴다 — 그걸 사람이 매번 눈으로 맞춰 보고 있었다.
+        ALL 에만  FLOW 30점 (30분 평균 대비 배수 · 10개 노드)
+        FAB 에만  RA 10 · RA_sus 5 · RB 10 · RB_fast 5 · RC 8 · RD 7 = 45점
+        공통      SLA 5 · SORT 3 · MAXCAPA 10 (걸린 영역 수만큼)
+
+    돌려주는 네 갈래
+      전체물량   ALL 이 컷 이상인데 FAB 은 전부 정상
+                 → FAB 배점에 없는 것은 FLOW 뿐이다. 물량이 올라온 것이다.
+      단일FAB    ALL 은 컷 미만인데 FAB **한 곳**이 경계 이상
+                 → 한 FAB 만 걸려서는 ALL 이 구조적으로 못 따라온다
+                   (FAB 40점이 ALL 로는 최대 18점). 놓치기 쉬운 자리다.
+      FAB전이    ALL 은 컷 미만인데 FAB **두 곳 이상**이 경계 이상
+                 → ★전이라고 단정하지 않는다. propagation_chain 이 있으면
+                   그 방향을 그대로 쓰고, 없으면 '확정 못 함' 으로 둔다.
+                   없는 인과를 만들면 관제가 엉뚱한 FAB 을 본다.
+      None       엇갈리지 않는다 (둘 다 올랐거나 둘 다 조용하다) — 할 말 없음
+
+    row 에 {FAB}_pts_* 가 없으면(ALL 파일이 아니면) None. 남의 FAB 점수를
+    지어내지 않는다.
+    """
+    base = lineup(row, cfg)
+    if not base:
+        return None
+    all_sc, all_cut = base["all"], base["all_cut"]
+    hot = base["hot"]
     chain = (row.get("propagation_chain") or "").strip()
 
     if all_sc >= all_cut and not hot:

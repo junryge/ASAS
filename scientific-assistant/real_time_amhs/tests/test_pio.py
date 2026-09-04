@@ -520,17 +520,34 @@ class 여러_개_걸린_줄은_파랑(unittest.TestCase):
         self.assertIn("const MANY_MIN = 4;", self.html)
         self.assertEqual(self.html.count("MANY_MIN"), 3)   # 정의 1 + 사용 2
 
+    def _many(self):
+        """정의된 --many 두 벌 (어두운 배경 · 흰 배경). 값은 안 박는다 —
+        색은 손보게 되어 있고, 지켜야 하는 건 값이 아니라 성질이다."""
+        import re
+        return re.findall(r"--many:(#[0-9A-Fa-f]{6})", self.html)
+
     def test_다크와_라이트_두_벌_다_있다(self):
         """한 벌만 정의하면 다른 배경에서 글자가 안 읽힌다."""
-        self.assertIn("--many:#6FA8FF", self.html)         # 어두운 배경
-        self.assertIn("--many:#1D5FD0", self.html)         # 흰 배경
+        many = self._many()
+        self.assertEqual(len(many), 2)
+        self.assertNotEqual(many[0].lower(), many[1].lower())
 
-    def test_등급색과_겹치지_않는다(self):
-        """빨강·주황·노랑·초록은 등급이다. 같은 색을 쓰면 '더 위험해졌다'
-        로 잘못 읽힌다."""
-        for grade in ("#FF4D5E", "#FF9F2E", "#F2D338", "#2FD68A",
-                      "#D62436", "#C2670A", "#8A6D00", "#12885A"):
-            self.assertNotIn(f"--many:{grade}", self.html)
+    def test_파랑이다(self):
+        """등급색(빨강·주황·노랑·초록)과 겹치면 '더 위험해졌다' 로 잘못
+        읽힌다. 파랑이면 등급으로 안 읽힌다."""
+        for c in self._many():
+            r, g, b = (int(c[i:i + 2], 16) for i in (1, 3, 5))
+            self.assertGreater(b, r + 40, f"{c} 는 파랑이 아니다")
+            self.assertGreater(b, g + 40, f"{c} 는 파랑이 아니다")
+
+    def test_등급색과_같은_값이_아니다(self):
+        import re
+        grades = set()
+        for name in ("crit", "major", "minor", "ok", "cy"):
+            grades.update(x.lower() for x in
+                          re.findall(rf"--{name}:(#[0-9A-Fa-f]{{6}})", self.html))
+        for c in self._many():
+            self.assertNotIn(c.lower(), grades)
 
     def test_규칙이_실제_마크업과_맞는다(self):
         """CSS 선택자와 JS 가 만드는 class 이름이 어긋나면 색이 안 먹는다."""

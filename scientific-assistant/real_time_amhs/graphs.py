@@ -72,17 +72,17 @@ _BAND_COLORS = (_BG2, "#2B2612", "#33210F", "#331419")
 # ★선 색은 어두운 배경용을 그대로 못 쓴다. 노랑(#F2C94C)·청록(#3DDBE8)은
 #   흰 바탕에서 거의 안 보인다. 같은 '종류' 를 유지하되 채도를 내린다.
 _LIGHT = {
-    "bg": "#F4F7FB", "bg2": "#E8EDF4", "line": "#CCD6E2", "grid": "#AFBCCC",
-    "tx": "#0F1720", "tx2": "#46566B", "tx3": "#63718A",
-    "score": "#0B7A86", "sel": "#1B2430", "evt": "#B4610A", "crit": "#C81E30",
-    "bands": ("#E8EDF4", "#F7EFD2", "#F8E2C6", "#F7D4D8"),
-    "palette": ["#D0392A", "#B06200", "#8A6D00", "#BC2E79", "#0B7A86",
-                "#1F6FD0", "#4B5BD1"],
-    "kind": {"ra": "#D0392A", "rd_fab": "#B06200", "stb_util": "#8A6D00",
-             "rev_count": "#BC2E79", "sla": "#0B7A86", "sorter": "#1F6FD0",
-             "rd_oht": "#4B5BD1",
-             "pio_10min_cnt": "#7A3FD0", "PIOERROR_DEPOSITED": "#5B45C4"},
-    "path": ["#7A3FD0", "#1F6FD0", "#0B7A86", "#8A6D00", "#BC2E79"],
+    "bg": "#E7ECF4", "bg2": "#DBE2EC", "line": "#BFC9D8", "grid": "#9FADC0",
+    "tx": "#0F1720", "tx2": "#42526A", "tx3": "#5C6B82",
+    "score": "#0A6B75", "sel": "#1B2430", "evt": "#96500A", "crit": "#BE1B2C",
+    "bands": ("#DBE2EC", "#EDE6CB", "#EFDCC0", "#EFCFD3"),
+    "palette": ["#C43426", "#944F00", "#7A6000", "#AC2A6E", "#0A6B75",
+                "#1B63BC", "#4350C0"],
+    "kind": {"ra": "#C43426", "rd_fab": "#944F00", "stb_util": "#7A6000",
+             "rev_count": "#AC2A6E", "sla": "#0A6B75", "sorter": "#1B63BC",
+             "rd_oht": "#4350C0",
+             "pio_10min_cnt": "#6E37BD", "PIOERROR_DEPOSITED": "#4F3BAF"},
+    "path": ["#6E37BD", "#1B63BC", "#0A6B75", "#7A6000", "#AC2A6E"],
 }
 _DARK = {
     "bg": _BG, "bg2": _BG2, "line": _LINE, "grid": _GRID,

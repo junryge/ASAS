@@ -29,30 +29,30 @@
   :root[data-theme="light"]{
     /* ★순백(#FFF)을 쓰지 않는다. 관제실 조명 아래 흰 화면을 하루 종일
        보면 눈이 아프다 — 종이 톤까지만 올린다. */
-    --bg:#E6EBF2; --panel:#F4F7FB; --panel2:#E3E9F1; --line:#CCD6E2; --line2:#B3C0D0;
-    --tx:#0F1720; --tx2:#46566B; --tx3:#63718A;
-    --cy:#0B7A86; --crit:#D62436; --major:#C2670A; --minor:#8A6D00; --ok:#12885A;
-    --many:#1D5FD0;   /* 흰 배경에서 밝은 파랑은 안 읽힌다 — 진하게 */
+    --bg:#D8DEE8; --panel:#E7ECF4; --panel2:#D6DDE7; --line:#BFC9D8; --line2:#A6B3C6;
+    --tx:#0F1720; --tx2:#42526A; --tx3:#5C6B82;
+    --cy:#0A6B75; --crit:#BE1B2C; --major:#96500A; --minor:#7A6000; --ok:#0F7A50;
+    --many:#1A56BE;   /* 흰 배경에서 밝은 파랑은 안 읽힌다 — 진하게 */
   }
   :root[data-theme="light"] body{background:var(--bg)}
   /* 오프닝 화면은 색이 박혀 있다(background:#000 등) — 토큰을 안 쓰므로
      따로 덮는다. 첫 화면이 검게 남으면 배경을 바꾼 것처럼 안 보인다. */
-  :root[data-theme="light"] .open{background:#E6EBF2;color:#0F1720}
+  :root[data-theme="light"] .open{background:#D8DEE8;color:#0F1720}
   :root[data-theme="light"] .open .sub,
-  :root[data-theme="light"] .open .note{color:#46566B}
-  :root[data-theme="light"] .sys:not(.hero){background:#F4F7FB;border-color:#CCD6E2}
+  :root[data-theme="light"] .open .note{color:#42526A}
+  :root[data-theme="light"] .sys:not(.hero){background:#E7ECF4;border-color:#BFC9D8}
   /* ★FAB 카드 제목이 #E6EDF6(밝은 회색)로 박혀 있다 — 흰 배경에서는
      거의 안 보인다. 첫 화면에서 고를 이름이 안 읽히면 안 된다. */
   :root[data-theme="light"] .sys.fab .cd{color:#0F1720}
-  :root[data-theme="light"] .sys.fab .kd{color:#46566B}
-  :root[data-theme="light"] .sys .st{color:#46566B}
-  :root[data-theme="light"] .sys.fab:hover{background:#DCE3EC;border-color:#0B7A86}
+  :root[data-theme="light"] .sys.fab .kd{color:#42526A}
+  :root[data-theme="light"] .sys .st{color:#42526A}
+  :root[data-theme="light"] .sys.fab:hover{background:#CFD7E3;border-color:#0A6B75}
   :root[data-theme="light"] .open canvas{opacity:.35}
   /* ALL 카드는 어두운 배경에서 눈에 띄라고 형광 청록이다. 흰 배경에서는
      그 채도가 그대로 눈을 찌른다 — 한 단계만 내린다(글자색은 그대로라
      대비는 유지된다). */
-  :root[data-theme="light"] .sys.hero{background:#5FCBD6}
-  :root[data-theme="light"] .sys.hero:hover{background:#7BDCE5}
+  :root[data-theme="light"] .sys.hero{background:#57BCC7}
+  :root[data-theme="light"] .sys.hero:hover{background:#72CFD9}
   *{box-sizing:border-box}
   /* ★body 는 height 가 아니라 min-height 다. height:100% 면 body 상자가
      화면 한 장 높이에서 끝나고, sticky 는 **자기 상자 안에서만** 멈춰

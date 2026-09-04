@@ -157,6 +157,75 @@ def _window_seq(day: str, cfg: dict, start: str = "", end: str = ""):
     return seq
 
 
+# ── ALL 분석은 FAB 다섯을 같이 봐야 한다 ───────────────────────────────
+# ALL 과 FAB 은 배점표가 겹치지 않는다 (ALL 에만 흐름 30점, FAB 에만
+# RA/RB/RC/RD 45점). 그래서 한쪽만 올라가는 일이 **구조적으로** 생기는데,
+# 분석이 ALL 점수만 읽고 "전 구간 정상" 이라고 썼다. ALL 전체 분석은
+# 그런 게 아니다 — 다섯 점수를 맞춰 봐야 무슨 일인지 알 수 있다.
+_CROSS_RULES = (
+    "1) ALL 이 경계 이상인데 FAB 이 전부 자기 경계 미만 → 특정 FAB 고장이 "
+    "아니라 **전체적으로 FAB 들이 같이 올라온 것**(물량)으로 읽어라.",
+    "2) ALL 이 경계 미만인데 FAB 한 곳이 경계 이상 → 한 FAB 만 걸려서는 ALL 이 "
+    "구조적으로 못 따라온다. **그 FAB 에서 문제가 발생·진행 중일 수 있다** — "
+    "ALL 이 조용하다고 정상으로 쓰지 마라.",
+    "3) ALL 이 경계 미만인데 FAB 두 곳 이상이 경계 이상 → **한 FAB 이 다른 FAB "
+    "에 영향을 주고 있을 수 있다.** 전이 경로가 비어 있으면 방향을 단정하지 "
+    "말고 둘 다 짚어라.",
+)
+_CROSS_KINDS = ("전체물량", "단일FAB", "FAB전이")
+
+
+def _fab_cross(seq, cfg: dict, peak_d) -> str:
+    """[FAB 대조] — ALL 점수와 FAB 다섯 점수를 분마다 맞춰 본 것.
+
+    FAB 하나를 분석할 때는 빈 문자열이다 (그 CSV 에 남의 FAB 점수가 없다).
+    없는 점수를 0 으로 채우면 "FAB 전부 정상" 이라는 거짓이 나온다.
+    """
+    try:
+        import fab_score
+    except Exception:                                   # noqa: BLE001
+        return ""
+    cnt = {k: 0 for k in _CROSS_KINDS}
+    first: dict = {}
+    peak_line = ""
+    for d, _s, r in seq:
+        try:
+            dv = fab_score.divergence(r, cfg)
+        except Exception:                               # noqa: BLE001
+            dv = None
+        if dv and dv["kind"] in cnt:
+            cnt[dv["kind"]] += 1
+            first.setdefault(dv["kind"], (d, dv))
+        if d == peak_d and not peak_line:
+            try:
+                lu = fab_score.lineup(r, cfg)
+            except Exception:                           # noqa: BLE001
+                lu = None
+            if lu:
+                peak_line = " · ".join(
+                    ["ALL {:.0f}점(경계 {})".format(lu["all"], lu["all_cut"])]
+                    + ["{} {}점(경계 {}){}".format(x["fab"], x["score"], x["cut"],
+                                                   "◀경계이상" if x in lu["hot"] else "")
+                       for x in lu["hot"] + lu["quiet"]])
+    if not peak_line and not any(cnt.values()):
+        return ""                       # ALL 파일이 아니다 — 아무 말도 하지 않는다
+
+    L = ["\n[FAB 대조] (ALL 점수와 FAB 다섯 점수를 분마다 맞춰 본 것)"]
+    if peak_line:
+        L.append(f"- 최고점 시각 {peak_d:%H:%M}: {peak_line}")
+    L.append("- 이 구간 {}분 중 — {} · 엇갈림 없음 {}분".format(
+        len(seq), " · ".join(f"{k} {cnt[k]}분" for k in _CROSS_KINDS),
+        len(seq) - sum(cnt.values())))
+    for k in _CROSS_KINDS:
+        if k in first:
+            d, dv = first[k]
+            L.append(f"- 처음 나온 {k} {d:%H:%M}: {dv['text']}")
+    L.append("★ALL 분석은 FAB 다섯을 **같이** 봐야 한다. ALL 점수만 보고 "
+             "'전 구간 정상' 이라고 쓰지 마라. 위 숫자를 이렇게 읽는다:")
+    L.extend("  " + r for r in _CROSS_RULES)
+    return "\n".join(L)
+
+
 def _overview(seq, cfg: dict, span: str) -> tuple[str, dict]:
     """전체 통계 요약 (2차·3차·최종에 공통으로 주는 머리) + 메타.
 
@@ -187,6 +256,11 @@ def _overview(seq, cfg: dict, span: str) -> tuple[str, dict]:
          f"- 최고 {g['emoji']} {g['level']} {peak_s:.0f}점 ({peak_d:%H:%M}, "
          f"{peak_r.get('hot_area') or '-'}) · 평균 {sum(scores)/len(scores):.0f}점 "
          f"· 최저 {min(scores):.0f}점 · 임계 이상 {sum(1 for s in scores if s >= floor)}분"]
+
+    # ALL 이면 FAB 다섯을 맞춰 본 표를 바로 뒤에 붙인다 (FAB 분석이면 빈칸)
+    cross = _fab_cross(seq, cfg, peak_d)
+    if cross:
+        L.append(cross)
 
     # ★임계를 하드코딩하지 마라 — 50 으로 박혀 있어서, 임계를 60 으로 올린
     #   뒤에도 LLM 에게 "50점 이상이 사건" 이라고 알려주고 있었다.
