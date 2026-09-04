@@ -78,12 +78,24 @@ def call(base, model, key, timeout=30):
     if key:
         h["Authorization"] = "Bearer " + key
     req = urllib.request.Request(url, data=body, headers=h)
-    op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    # ★리다이렉트를 **따라가지 않고** 그대로 보여 준다. 따라가면 urllib 이
+    #   POST 를 GET 으로 바꿔서 본문이 사라지고, 서버는 404 를 준다 —
+    #   주소가 틀린 것처럼 보이는데 사실은 http→https 넘김일 뿐이다.
+    class _NoRedir(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    op = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedir)
     try:
         with op.open(req, timeout=timeout) as r:
             json.loads(r.read().decode("utf-8"))
         return True, "OK"
     except urllib.error.HTTPError as e:
+        if e.code in (301, 302, 303, 307, 308):
+            loc = e.headers.get("Location") or "(Location 없음)"
+            return False, ("HTTP {} 넘김 → {}\n"
+                           "        ★이 주소로 넘기고 있다. 설정에 **이 주소**를 적어라 "
+                           "(대개 http→https). 그냥 따라가면 POST 가 GET 이 되어 "
+                           "404 가 난다.").format(e.code, loc)
         return False, "HTTP {} · {}".format(
             e.code, e.read().decode("utf-8", "replace")[:200].replace("\n", " "))
     except Exception as e:      # noqa: BLE001

@@ -236,6 +236,24 @@ def _api_key(cfg: dict) -> str:
     return os.getenv(lc.get("api_key_env", "GAIA_API_KEY"), "").strip()
 
 
+# ── POST 는 리다이렉트에서 깨진다 ──────────────────────────────────────
+# 게이트웨이가 http→https 로 302 를 주면, urllib 은 그걸 따라가면서
+# **POST 를 GET 으로 바꾼다.** 본문이 사라지니 서버는 그런 GET 경로가
+# 없다며 404 {"detail":"Not Found"} 를 준다 — 주소가 틀린 것처럼 보이는데
+# 사실은 맞았다. /v1/models 는 GET 이라 잘 되니 더 헷갈린다 (실제로 겪었다).
+# 30x 를 우리가 받아 **POST 그대로** 새 주소로 다시 보낸다.
+class _KeepPost(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if code not in (301, 302, 303, 307, 308):
+            return None
+        return urllib.request.Request(
+            newurl, data=req.data, headers=dict(req.header_items()),
+            method=req.get_method())
+
+
+_POST_OPENER = urllib.request.build_opener(_KeepPost)
+
+
 def chat(messages: list[dict], cfg: dict | None = None,
          max_tokens: int | None = None, temperature: float | None = None,
          json_prefill: bool = False, prefill: str | None = None,
@@ -306,7 +324,7 @@ def chat(messages: list[dict], cfg: dict | None = None,
         lc.get("url"), method="POST", headers=headers,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     try:
-        with urllib.request.urlopen(req, timeout=lc.get("timeout_s", 90)) as r:
+        with _POST_OPENER.open(req, timeout=lc.get("timeout_s", 90)) as r:
             data = json.loads(r.read().decode("utf-8", errors="replace"))
         choices = data.get("choices") or []
         if not choices:

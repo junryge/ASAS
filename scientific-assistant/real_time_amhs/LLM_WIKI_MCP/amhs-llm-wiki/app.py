@@ -495,11 +495,10 @@ def embed_texts(texts):
         out = []
         for i in range(0, len(texts), 16):          # 배치 16
             batch = [t[:8000] for t in texts[i:i + 16]]
-            body = json.dumps({"model": c["model"], "input": batch}).encode()
-            req = urllib.request.Request(url, data=body, headers=headers)
             try:
-                with urllib.request.urlopen(req, timeout=180) as r:
-                    data = json.loads(r.read().decode("utf-8"))
+                # POST 유지 — 리다이렉트에서 GET 으로 바뀌면 본문이 사라진다
+                data = post_json(url, {"model": c["model"], "input": batch},
+                                 headers, timeout=180)
             except urllib.error.HTTPError as e:
                 raise RuntimeError(f"임베딩 API HTTP {e.code}: {e.read()[:200]!r}")
             except urllib.error.URLError as e:
@@ -759,11 +758,9 @@ def _rerank_api(query, passages):
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
-    req = urllib.request.Request(api_base(base) + "/rerank", data=body,
-                                 headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.loads(r.read().decode("utf-8"))
+        data = post_json(api_base(base) + "/rerank", json.loads(body.decode()),
+                         headers, timeout=120)
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         raise RuntimeError(f"rerank API 실패: {e}")
     return [x["index"] for x in data.get("results", [])]
@@ -1132,6 +1129,33 @@ def llm_ready():
 _API_TAILS = ("/chat/completions", "/completions", "/embeddings", "/rerank")
 
 
+# ── POST 는 리다이렉트에서 깨진다 ──────────────────────────────────────
+# 게이트웨이가 http→https 로 302 를 주는 경우가 있다. urllib 은 302 를
+# 따라가면서 **POST 를 GET 으로 바꿔 버려서** 본문이 사라진다. 그러면
+# 서버는 그런 GET 경로가 없다며 404 {"detail":"Not Found"} 를 준다 —
+# 주소가 틀린 것처럼 보이는데 사실은 맞았다. 실제로 이걸로 헤맸다
+# (/v1/models 는 GET 이라 잘 되니 더 헷갈린다).
+# 그래서 30x 를 우리가 받아서, **POST 그대로** 새 주소로 다시 보낸다.
+class _KeepPost(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if code not in (301, 302, 303, 307, 308):
+            return None
+        return urllib.request.Request(
+            newurl, data=req.data, headers=dict(req.header_items()),
+            method=req.get_method())
+
+
+_POST_OPENER = urllib.request.build_opener(_KeepPost)
+
+
+def post_json(url, payload, headers, timeout=300):
+    """JSON POST — 리다이렉트를 따라가도 POST 를 유지한다."""
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers=headers)
+    with _POST_OPENER.open(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 def api_base(url):
     """설정에 적힌 주소에서 **base 만** 남긴다. 끝에 붙은 손잡이는 뗀다."""
     b = str(url or "").strip().rstrip("/")
@@ -1206,11 +1230,8 @@ def llm_chat(messages, max_tokens=2500, temperature=0.3):
         payload = {"model": model, "messages": send,
                    "max_tokens": max_tokens, "temperature": temperature}
         payload.update(extra)
-        req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                     headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=300) as r:
-                return _pick_text(json.loads(r.read().decode("utf-8")))
+            return _pick_text(post_json(url, payload, headers, timeout=300))
         except urllib.error.HTTPError as e:
             detail = e.read()[:300]
             last = RuntimeError(f"LLM API HTTP {e.code}: {detail!r}")

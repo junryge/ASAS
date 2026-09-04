@@ -110,9 +110,18 @@ class ApiEmbedder(_Base):
 
     def embed(self, texts):
         import requests
-        r = requests.post(self.url, headers=self.headers,
+        # ★allow_redirects=False. 게이트웨이가 http→https 로 302 를 주면
+        #   requests 도 따라가며 POST 를 GET 으로 바꿔 본문을 버린다 —
+        #   404 {"detail":"Not Found"} 가 나서 주소가 틀린 줄 안다.
+        #   30x 면 Location 으로 **POST 그대로** 다시 보낸다.
+        r = requests.post(self.url, headers=self.headers, allow_redirects=False,
                           json={"model": self.model, "input": list(texts)},
                           timeout=self.timeout)
+        if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("Location"):
+            r = requests.post(r.headers["Location"], headers=self.headers,
+                              allow_redirects=False,
+                              json={"model": self.model, "input": list(texts)},
+                              timeout=self.timeout)
         r.raise_for_status()
         data = r.json().get("data", [])
         return [_l2norm(d["embedding"]) for d in data]
