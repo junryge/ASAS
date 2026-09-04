@@ -41,6 +41,10 @@ _FORBIDDEN = [
     ("역증가", "정체"),
     ("역류", "밀림"),
     ("광역정체", "정체"),
+    # ★'국지적' 은 쓰지 않는다 (사용자 지정). 긴 것부터 지워야 "국지적인
+    #   부하" 가 "인 부하" 로 남지 않는다.
+    ("국지적인 ", ""), ("국지적으로 ", ""), ("국지적 ", ""),
+    ("국지적이", ""), ("국지적", ""),
     # 정체 표현
     ("물류 정체", "반송 정체"),
     ("물류 이동", "반송"),
@@ -235,8 +239,14 @@ def _api_key(cfg: dict) -> str:
 def chat(messages: list[dict], cfg: dict | None = None,
          max_tokens: int | None = None, temperature: float | None = None,
          json_prefill: bool = False, prefill: str | None = None,
-         extra: dict | None = None):
+         extra: dict | None = None, meta: dict | None = None):
     """OpenAI 호환 호출 → (text, None) 또는 (None, error).
+
+    meta 를 주면 그 dict 에 {"finish_reason", "usage"} 를 담아 준다.
+    ★본문이 나왔는데 finish_reason 이 "length" 면 **말하다 잘린 것**이다 —
+      실제로 리포트가 "추" 에서 끊긴 채로 화면에 나갔다. 반환값만으로는
+      알 수 없어서(성공과 구분이 안 된다) 호출부가 볼 수 있게 담아 준다.
+      안 주면 예전 그대로 — 부르는 쪽을 하나도 안 고쳐도 된다.
 
     json_prefill=True 면 assistant 턴을 '{' 로 미리 채워 JSON 만 나오게 유도한다
     (사고 모델이 평문 추론을 먼저 쓰는 것을 막는다).
@@ -303,6 +313,9 @@ def chat(messages: list[dict], cfg: dict | None = None,
             return None, f"빈 응답: {str(data)[:200]}"
         msg = choices[0].get("message") or {}
         fin = choices[0].get("finish_reason")
+        if meta is not None:
+            meta["finish_reason"] = fin
+            meta["usage"] = data.get("usage") or {}
         txt = _strip_think(msg.get("content") or "")
         if not txt:
             # 사고만 하고 본문을 못 낸 경우 — reasoning 필드에서라도 건져본다

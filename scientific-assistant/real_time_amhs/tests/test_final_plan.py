@@ -114,5 +114,82 @@ class 등급_기준을_시스템_값으로_못박는다(unittest.TestCase):
         self.assertEqual(_grade_rule({"grade": "망가진 값"}), "")
 
 
+class 말하다_잘린_리포트(unittest.TestCase):
+    """'## 주의' 항목이 "…경계를 초과하는 패턴이 이어질 경우, 추" 에서
+    끊긴 채로 화면에 나갔다. 본문이 나왔으므로 반환값만으로는 성공과
+    구분이 안 된다 — finish_reason="length" 가 그 신호다."""
+
+    FULL = ("최고 36점(🟢 정상)입니다.\n## 구역 상황\nM14 가 올라왔습니다.\n"
+            "## 조치\n- 모니터링\n## 주의\n- 추이를 지켜봅니다.")
+    CUT = ("최고 36점(🟢 정상)입니다.\n## 구역 상황\nM14 가 올라왔습니다.\n"
+           "## 조치\n- 모니터링\n## 주의\n- 반복되는 패턴이 이어질 경우, 추")
+
+    def _run(self, calls):
+        """calls = [(돌려줄 본문, finish_reason), …] — 부른 순서대로."""
+        import llm_client
+        seen = []
+        it = iter(calls)
+
+        def fake(messages, cfg=None, max_tokens=None, meta=None, **kw):
+            body, fin = next(it)
+            seen.append({"max_tokens": max_tokens,
+                         "user": messages[-1]["content"]})
+            if meta is not None:
+                meta["finish_reason"] = fin
+            return body, None
+
+        old = llm_client.chat
+        llm_client.chat = fake
+        try:
+            out = analysis._stage_final("[전체 통계] …", [], None, None,
+                                        load_config())
+        finally:
+            llm_client.chat = old
+        return out, seen
+
+    def test_안_잘렸으면_한_번만_부른다(self):
+        (body, note, _t, _m), seen = self._run([(self.FULL, "stop")])
+        self.assertEqual(len(seen), 1)
+        self.assertIn("## 주의", body)
+        self.assertNotIn("잘렸", str(note or ""))
+
+    def test_잘리면_토큰을_올려_다시_묻는다(self):
+        (body, _n, _t, _m), seen = self._run(
+            [(self.CUT, "length"), (self.FULL, "stop")])
+        self.assertEqual(len(seen), 2)
+        self.assertGreater(seen[1]["max_tokens"], seen[0]["max_tokens"])
+        self.assertIn("짧게", seen[1]["user"])          # 짧게 쓰라고 같이 부탁
+        self.assertIn("추이를 지켜봅니다", body)         # 두 번째(완성본)를 쓴다
+
+    def test_두_번_다_잘리면_긴_쪽을_쓰고_밝힌다(self):
+        short = "최고 36점입니다.\n## 구역 상황\nM14"
+        (body, note, _t, _m), seen = self._run(
+            [(self.CUT, "length"), (short, "length")])
+        self.assertEqual(len(seen), 2)
+        self.assertIn("반복되는 패턴", body)            # 더 많이 쓴 쪽
+        self.assertIn("잘렸을 수 있습니다", str(note))   # 숨기지 않는다
+
+    def test_애초에_분량을_정해_준다(self):
+        _out, seen = self._run([(self.FULL, "stop")])
+        self.assertIn("'## 주의' 까지 다 쓰고 끝내라", seen[0]["user"])
+
+
+class 안_쓰는_말(unittest.TestCase):
+
+    def test_국지적을_지운다(self):
+        from llm_client import scrub
+        for a, b in (("M14 에서 국지적인 부하 상승이 발생", "M14 에서 부하 상승이 발생"),
+                     ("M14 국지적 부하: 정상", "M14 부하: 정상"),
+                     ("국지적으로 점수가 올랐습니다", "점수가 올랐습니다"),
+                     ("구역의 국지적 부하 상승", "구역의 부하 상승")):
+            self.assertEqual(scrub(a), b)
+
+    def test_지우고_나서_이상한_말이_안_남는다(self):
+        from llm_client import scrub
+        for t in ("국지적인 부하", "국지적 부하", "국지적으로 상승"):
+            self.assertNotIn("국지", scrub(t))
+            self.assertFalse(scrub(t).startswith(("인 ", "으로 ", "이 ")))
+
+
 if __name__ == "__main__":
     unittest.main()

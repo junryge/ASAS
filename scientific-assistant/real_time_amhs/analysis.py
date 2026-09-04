@@ -590,7 +590,8 @@ def _opt_rejected(err: str) -> bool:
 
 def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
                 want_json: bool = True, required: tuple = (),
-                cancel=None) -> tuple[object, str, float, str, list[str]]:
+                cancel=None, meta: dict | None = None
+                ) -> tuple[object, str, float, str, list[str]]:
     """단계 1회 호출. (결과, 안내/오류, 초, 모델, 로그)
 
     ★속도 우선. '느린 실패' 는 기본 1번만 더 해본다 — 재시도마다 LLM 한 번을
@@ -632,7 +633,7 @@ def _call_stage(sid: str, user: str, prefill: str, max_tokens: int, cfg: dict,
         c["llm"] = lc
         try:
             return chat([sys_msg, {"role": "user", "content": u}], c,
-                        max_tokens=mt, prefill=pre, extra=extra)
+                        max_tokens=mt, prefill=pre, extra=extra, meta=meta)
         except Exception as e:
             return None, f"{type(e).__name__}: {e}"
 
@@ -901,11 +902,35 @@ def _stage_final(overview: str, obs: list[dict], p2: dict | None, p3: dict | Non
             "## 구역 상황\n(핫구역과 전파 양상 — 검증된 것 위주)\n"
             "## 조치\n(우선순위대로 불릿)\n"
             "## 주의\n(다음 구간에서 지켜볼 것 + 의심으로 남은 부분)\n"
+            "★분량: 섹션마다 3~5줄. **'## 주의' 까지 다 쓰고 끝내라** — "
+            "중간에서 끊기면 안 된다. 길게 쓰지 말고 네 섹션을 다 채우는 것이 먼저다.\n"
             "'## 종합 판정' 부터 바로 시작하라.")
+    fm: dict = {}
     txt, note, took, model, _log = _call_stage(
         "final", user, "## 종합 판정\n", int(a["final_max_tokens"]), cfg,
-        want_json=False, cancel=cancel)
+        want_json=False, cancel=cancel, meta=fm)
     _LAST_LOG.setdefault("final", []).extend(_log)
+
+    # ★말하다 잘린 리포트를 그대로 내보내지 않는다. 실제로 '## 주의' 항목이
+    #   "추" 에서 끊긴 채 화면에 나갔다. finish_reason="length" 가 그 신호다
+    #   — 본문이 나왔으므로 반환값만으로는 성공과 구분이 안 된다.
+    if txt and str(fm.get("finish_reason") or "") == "length":
+        big = min(int(a.get("max_tokens_cap", 4096)),
+                  max(int(a["final_max_tokens"]) * 2, 3000))
+        _LAST_LOG.setdefault("final", []).append(
+            f"최종: 길이에 걸려 잘림 — {a['final_max_tokens']}→{big} 토큰으로 다시 요청")
+        fm2: dict = {}
+        t2, n2, tk2, m2, lg2 = _call_stage(
+            "final", _FINAL_SHORT + user, "## 종합 판정\n", big, cfg,
+            want_json=False, cancel=cancel, meta=fm2)
+        _LAST_LOG.setdefault("final", []).extend(lg2)
+        took += tk2
+        # 두 번째도 잘렸으면 **긴 쪽**을 쓴다 — 더 많이 쓴 것이 덜 잘린 것이다
+        if t2 and (str(fm2.get("finish_reason") or "") != "length"
+                   or len(str(t2)) > len(str(txt))):
+            txt, note, model = t2, n2, m2
+        if str(fm2.get("finish_reason") or "") == "length":
+            note = (note or "") + " (분량 초과로 뒷부분이 잘렸을 수 있습니다)"
 
     # ★리포트 대신 '검토 메모' 를 써 보내는 일이 있다 — 규칙을 하나하나
     #   확인하다가 출력을 다 쓰고 정작 보고서는 안 쓴다. 조용한 짧은 구간
@@ -936,6 +961,12 @@ _FINAL_HARD = (
     "규칙 확인·형식 점검·자기수정을 쓰지 마라. 기준이 서로 달라 보여도 "
     "따지지 말고 시스템 등급 기준을 그냥 쓴다. 바로 '## 종합 판정' 부터 "
     "**보고서 본문만** 쓴다. 네 섹션 모두 채운다.\n\n")
+
+# 잘렸을 때 다시 물으며 앞에 붙이는 한 마디.
+_FINAL_SHORT = (
+    "★앞선 시도는 분량이 넘쳐 문장 중간에서 끊겼다. 이번에는 **짧게** 쓰고 "
+    "네 섹션(종합 판정·구역 상황·조치·주의)을 **끝까지** 채워라. "
+    "섹션마다 3줄이면 충분하다.\n\n")
 
 # 리포트가 아니라 '작성 계획' 일 때 나오는 말들. 본문에는 나올 일이 없다.
 _PLAN_WORDS = (
