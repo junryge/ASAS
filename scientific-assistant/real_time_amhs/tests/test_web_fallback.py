@@ -292,3 +292,64 @@ class 못_나갈_때_이유를_말한다(unittest.TestCase):
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
         self.assertFalse(m.USE_PROXY)
+
+
+class 링크를_제대로_편다(unittest.TestCase):
+    """DuckDuckGo 는 결과 링크를 두 겹으로 준다:
+        //duckduckgo.com/l/?uddg=https%3A%2F%2Fsbs.co.kr&rut=…
+    앞이 '//' 라 http 로 시작하지 않아 예전엔 다 버렸다 — **0건**이 나왔다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "web_mcp", os.path.join(BASE, "WEB_MCP", "web_mcp.py"))
+        cls.m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.m)
+
+    def test_uddg_안의_진짜_주소를_꺼낸다(self):
+        u = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.sbs.co.kr%2F&amp;rut=x"
+        self.assertEqual(self.m._real_url(u), "https://www.sbs.co.kr/")
+
+    def test_앞이_슬래시_둘이면_https_를_붙인다(self):
+        self.assertEqual(self.m._real_url("//example.com/a"),
+                         "https://example.com/a")
+
+    def test_진짜_응답에서_결과를_줍는다(self):
+        raw = ('<a class="result__a" href="//duckduckgo.com/l/?uddg='
+               'https%3A%2F%2Fwww.sbs.co.kr%2F&amp;rut=x">SBS 공식 홈페이지</a>'
+               '<a class="result__a" href="//duckduckgo.com/l/?uddg='
+               'https%3A%2F%2Fko.wikipedia.org%2Fwiki%2FSBS">SBS - 위키백과</a>')
+        got = self.m._from_html(raw, 5)
+        self.assertEqual([r["url"] for r in got],
+                         ["https://www.sbs.co.kr/",
+                          "https://ko.wikipedia.org/wiki/SBS"])
+
+    def test_설정_로고_같은_링크는_버린다(self):
+        raw = ('<a href="https://duckduckgo.com/settings">설정 링크다</a>'
+               '<a href="https://spreadprivacy.com/x">블로그 글이다</a>')
+        self.assertEqual(self.m._from_html(raw, 5), [])
+
+
+class 조사를_떼고_찾는다(unittest.TestCase):
+    """위키(BM25)는 조사가 붙어도 되지만, 웹 검색은 "SBS가" 로 물으면
+    결과가 나빠진다 — 실제로 그렇게 나갔다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "web_mcp", os.path.join(BASE, "WEB_MCP", "web_mcp.py"))
+        cls.m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.m)
+
+    def test_흔한_조사를_뗀다(self):
+        for a, b in (("SBS가", "SBS"), ("손흥민이", "손흥민"),
+                     ("리센느의", "리센느"), ("GDDR7은", "GDDR7"),
+                     ("반송에서", "반송")):
+            self.assertEqual(self.m._clean_query(a), b)
+
+    def test_짧은_말은_안_건드린다(self):
+        """'이가' 를 떼면 남는 게 없다."""
+        for w in ("AI", "이", "가", "SBS"):
+            self.assertEqual(self.m._clean_query(w), w)

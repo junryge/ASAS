@@ -116,6 +116,30 @@ def strip_html(raw):
 
 
 _HREF = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.S | re.I)
+# 우리 것이 아닌 링크(로고·설정·다음페이지)를 걸러 낸다
+_SKIP = ("duckduckgo.com/settings", "duckduckgo.com/about", "/y.js",
+         "spreadprivacy", "help.duckduckgo", "twitter.com/duckduckgo",
+         "duckduckgo.com/traffic", "apps.apple.com", "play.google.com")
+
+
+def _real_url(u):
+    """진짜 주소로 편다.
+
+    ★DuckDuckGo 는 결과 링크를 두 겹으로 준다:
+        //duckduckgo.com/l/?uddg=https%3A%2F%2Fsbs.co.kr&rut=…
+      ① 앞이 '//' 라 http 로 시작하지 않는다 → 예전엔 여기서 다 버려서
+         **0건**이 나왔다.
+      ② 진짜 주소는 uddg= 안에 들어 있다.
+    """
+    u = _html.unescape(str(u or "")).strip()
+    if u.startswith("//"):
+        u = "https:" + u
+    if "uddg=" in u:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(u).query)
+        real = (q.get("uddg") or [""])[0]
+        if real.startswith("http"):
+            return real
+    return u
 
 
 def _from_html(raw, k):
@@ -126,8 +150,10 @@ def _from_html(raw, k):
     """
     out, seen = [], set()
     for href, inner in _HREF.findall(raw):
-        u = _html.unescape(href)
+        u = _real_url(href)
         if not u.startswith("http") or u in seen:
+            continue
+        if any(x in u for x in _SKIP):
             continue
         title = strip_html(inner)
         if len(title) < 4:
@@ -137,6 +163,25 @@ def _from_html(raw, k):
         if len(out) >= k:
             break
     return out
+
+
+# ★조사를 떼고 찾는다. 위키(BM25)는 조사가 붙어도 되지만 웹 검색은
+#   "SBS가" 로 물으면 결과가 나빠진다 — 실제로 그렇게 나갔다.
+_JOSA = ("이라는", "라는", "이란", "에서는", "에서", "에게", "으로", "라고",
+         "이가", "께서", "부터", "까지", "처럼", "보다", "이나", "하고",
+         "은", "는", "이", "가", "을", "를", "의", "에", "도", "만", "과",
+         "와", "로", "랑")
+
+
+def _clean_query(q):
+    out = []
+    for w in str(q or "").split():
+        for j in _JOSA:                 # 긴 것부터 (위 목록 순서)
+            if w.endswith(j) and len(w) - len(j) >= 2:
+                w = w[: -len(j)]
+                break
+        out.append(w)
+    return " ".join(out).strip()
 
 
 def _from_mediawiki(raw, k, base):
@@ -180,6 +225,7 @@ def t_search(a):
         raise RuntimeError(
             "검색 주소가 없다 (WEB_SEARCH_URL). 어디로 나갈지 정해지지 "
             "않아서 아무것도 안 했다 — 잘못된 데로 나가느니 안 나간다.")
+    q = _clean_query(q) or q
     k = max(1, min(10, int(a.get("topK") or 5)))
     if KIND == "mediawiki":
         # 주소는 api.php 까지만 주면 된다 — 질의는 우리가 붙인다
