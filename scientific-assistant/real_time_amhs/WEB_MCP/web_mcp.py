@@ -39,10 +39,24 @@
 
     ★주소를 안 주면 **아무것도 안 한다.** 잘못된 데로 나가느니 안 나간다.
 
+설정을 어디서 읽나 — 두 군데를 본다
+    ① 환경변수 (아바타가 띄울 때 config.py 의 env 를 이렇게 넣어 준다)
+    ② 없으면 avatar_2d/avatar/config.py 의 web 칸을 **직접 읽는다**
+
+    ★②가 왜 있나. config.py 의 env 는 **아바타가 이 파일을 띄울 때만**
+      쓰인다. 그래서 사람이 손으로 --check 를 하면 환경변수가 비어
+      "검색 주소: (안 정해짐)" 만 나왔다. 실제로 그랬다. 이제 손으로 해도
+      아바타와 **같은 자리**를 보므로 똑같이 나온다.
+    ★config.py 를 import 하지 않는다. ast 로 글만 읽는다 — avatar 꾸러미가
+      없어도 되고, 남의 코드를 실행하지도 않는다.
+
 실행
     python WEB_MCP/web_mcp.py            # stdio 로 대기 (아바타가 띄운다)
     python WEB_MCP/web_mcp.py --check    # 주소·검색이 되는지만 본다
+                                         #   (어느 폴더에서 해도 된다 —
+                                         #    config.py 를 제 발로 찾는다)
 """
+import ast
 import html as _html
 import json
 import os
@@ -55,33 +69,114 @@ import urllib.request
 PROTO = "2025-06-18"
 NAME, VERSION = "web-search", "1.0.0"
 
-URL = (os.environ.get("WEB_SEARCH_URL") or "").strip()
-KIND = (os.environ.get("WEB_SEARCH_KIND") or "json").strip().lower()
-J_LIST = os.environ.get("WEB_JSON_LIST", "results")
-J_TITLE = os.environ.get("WEB_JSON_TITLE", "title")
-J_URL = os.environ.get("WEB_JSON_URL", "url")
-J_TEXT = os.environ.get("WEB_JSON_TEXT", "snippet")
-TIMEOUT = float(os.environ.get("WEB_TIMEOUT", "10"))
-MAX_CHARS = int(os.environ.get("WEB_MAX_CHARS", "6000"))
+# ─────────────────────────────────────────────────────────────────────
+# 설정 읽기 — 환경변수 → config.py 순서
+# ─────────────────────────────────────────────────────────────────────
+def _config_path():
+    """avatar_2d/avatar/config.py 를 제 발로 찾는다.
+
+    ★어느 폴더에서 실행하든 되게 __file__ 기준으로 올라간다.
+      WEB_MCP/web_mcp.py → 한 칸 위가 real_time_amhs → avatar_2d/avatar.
+    """
+    p = (os.environ.get("WEB_CONFIG") or "").strip()
+    if p:
+        return p if os.path.isfile(p) else ""
+    here = os.path.dirname(os.path.abspath(__file__))
+    up = here
+    for _ in range(4):
+        c = os.path.join(up, "avatar_2d", "avatar", "config.py")
+        if os.path.isfile(c):
+            return c
+        nxt = os.path.dirname(up)
+        if nxt == up:
+            break
+        up = nxt
+    return ""
+
+
+_CFG_CACHE = {}
+
+
+def _config_env():
+    """config.py 의 web 칸 env 를 (dict, 파일경로) 로 돌려준다.
+
+    ★ast 로 읽는다. MCP_SERVERS 안에서 "key": "web" 인 표를 찾아
+      그 표의 env 만 꺼낸다. 못 찾으면 빈 dict — 조용히 넘어간다.
+    """
+    if "v" in _CFG_CACHE:
+        return _CFG_CACHE["v"]
+    out, path = {}, _config_path()
+    try:
+        if path:
+            with open(path, encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Dict):
+                    continue
+                d = {}
+                for kn, vn in zip(node.keys, node.values):
+                    if isinstance(kn, ast.Constant) and kn.value in ("key", "env"):
+                        try:
+                            d[kn.value] = ast.literal_eval(vn)
+                        except Exception:               # noqa: BLE001
+                            pass
+                if d.get("key") == "web" and isinstance(d.get("env"), dict):
+                    out = {str(k): str(v) for k, v in d["env"].items()}
+                    break
+    except Exception:                                   # noqa: BLE001
+        out = {}                    # config.py 가 깨져도 서버는 뜬다
+    _CFG_CACHE["v"] = (out, path)
+    return _CFG_CACHE["v"]
+
+
+def _setting(name, default=""):
+    """환경변수가 있으면 그것, 없으면 config.py, 그것도 없으면 기본값."""
+    v = (os.environ.get(name) or "").strip()
+    if v:
+        return v
+    v = (_config_env()[0].get(name) or "").strip()
+    return v or default
+
+
+def _num(name, default, cast):
+    try:
+        return cast(_setting(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+URL = _setting("WEB_SEARCH_URL")
+KIND = _setting("WEB_SEARCH_KIND", "json").lower()
+J_LIST = _setting("WEB_JSON_LIST", "results")
+J_TITLE = _setting("WEB_JSON_TITLE", "title")
+J_URL = _setting("WEB_JSON_URL", "url")
+J_TEXT = _setting("WEB_JSON_TEXT", "snippet")
+TIMEOUT = _num("WEB_TIMEOUT", 10.0, float)
+MAX_CHARS = _num("WEB_MAX_CHARS", 6000, int)
 
 
 # 키를 어느 머리에 실을지 — API 마다 다르다.
 #   OpenAI 계열   Authorization: Bearer <키>      (기본값)
 #   Brave         X-Subscription-Token: <키>      HEADER=X-Subscription-Token PREFIX=
 #   그 밖         쓰는 API 문서대로
-KEY_HEADER = os.environ.get("WEB_KEY_HEADER", "Authorization")
-KEY_PREFIX = os.environ.get("WEB_KEY_PREFIX", "Bearer ")
+KEY_HEADER = _setting("WEB_KEY_HEADER", "Authorization")
+
+# ★PREFIX 만 다르게 읽는다 — **빈칸이 뜻을 가진다** (Brave 는 접두어가
+#   없다). 그래서 '비었으면 다음 자리' 가 아니라 '있으면 그대로' 다.
+KEY_PREFIX = os.environ.get("WEB_KEY_PREFIX")
+if KEY_PREFIX is None:
+    KEY_PREFIX = _config_env()[0].get("WEB_KEY_PREFIX", "Bearer ")
 
 
 # ★UA 를 안 보내면 403 을 주는 데가 있다 (DuckDuckGo html 이 그렇다).
 #   기본은 우리라고 밝히고, 필요하면 WEB_USER_AGENT 로 바꾼다 —
 #   403 이 나면 여기부터 의심한다.
-UA = os.environ.get("WEB_USER_AGENT") or "amhs-avatar-web/{}".format(VERSION)
+UA = _setting("WEB_USER_AGENT") or "amhs-avatar-web/{}".format(VERSION)
 
 # ★사내에서 바깥으로 나가려면 대개 프록시를 타야 한다. 그런데 기본은
 #   **안 탄다** — 사내 검색을 쓸 때 프록시로 나가면 엉뚱한 데로 간다.
 #   바깥(DuckDuckGo·위키백과)을 쓸 때만 켠다: WEB_USE_PROXY=1
-USE_PROXY = (os.environ.get("WEB_USE_PROXY") or "").strip() not in ("", "0", "off")
+USE_PROXY = _setting("WEB_USE_PROXY").lower() not in ("", "0", "off", "false")
 
 
 def _headers():
@@ -342,14 +437,32 @@ def serve(stdin=None, stdout=None):
 
 
 def selfcheck(q="테스트"):
+    cfg, path = _config_env()
+    if (os.environ.get("WEB_SEARCH_URL") or "").strip():
+        src = "환경변수"
+    elif (cfg.get("WEB_SEARCH_URL") or "").strip():
+        src = "config.py"
+    else:
+        src = "(없음)"
     print("검색 주소: {}".format(URL or "(안 정해짐)"))
     print("방식     : {}".format(KIND))
+    print("설정 출처: {}".format(src))
+    print("설정 파일: {}".format(path or "★config.py 를 못 찾았다"))
     if not URL:
         print("")
-        print("  WEB_SEARCH_URL 을 정해야 한다. {q} 자리에 질문이 들어간다.")
-        print("    사내:  set WEB_SEARCH_URL=http://portal.내부/search?q={q}&fmt=json")
-        print("    집  :  set WEB_SEARCH_URL=https://duckduckgo.com/html/?q={q}")
-        print("           set WEB_SEARCH_KIND=html")
+        if path:
+            # 파일은 찾았는데 비었다 = config.py 가 옛것이다. 이게 대부분이다.
+            print("  config.py 는 찾았는데 web 칸의 WEB_SEARCH_URL 이 비어 있다.")
+            print("  → config.py 가 옛것이다. 새 config.py 로 덮고 아바타를 다시 띄워라.")
+        else:
+            print("  avatar_2d/avatar/config.py 를 못 찾았다.")
+            print("  → WEB_MCP 가 real_time_amhs 안에 있어야 한다. 아니면 자리를 직접 준다:")
+            print("       set WEB_CONFIG=C:\\...\\real_time_amhs\\avatar_2d\\avatar\\config.py")
+        print("")
+        print("  급하면 이 창에서만 직접 줘도 된다 ({q} 자리에 질문이 들어간다):")
+        print("    set WEB_SEARCH_URL=https://duckduckgo.com/html/?q={q}")
+        print("    set WEB_SEARCH_KIND=html")
+        print("    set WEB_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
         return 1
     try:
         out = json.loads(t_search({"query": q, "topK": 3}))

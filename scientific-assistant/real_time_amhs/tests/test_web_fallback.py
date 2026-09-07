@@ -165,9 +165,12 @@ class 웹_서버_자체(unittest.TestCase):
         self.assertEqual(names, {"webSearch", "readUrl"})
 
     def test_주소가_없으면_아무것도_안_한다(self):
-        """잘못된 데로 나가느니 안 나간다."""
+        """잘못된 데로 나가느니 안 나간다.
+
+        ★WEB_CONFIG 도 막는다. 이제 환경변수가 비면 config.py 를 보기
+          때문에, 그것까지 막아야 '아무 데도 주소가 없다' 가 된다."""
         r = self._call("webSearch", {"query": "테스트"},
-                       {"WEB_SEARCH_URL": ""})
+                       {"WEB_SEARCH_URL": "", "WEB_CONFIG": "/없는/파일.py"})
         self.assertTrue(r["isError"])
         self.assertIn("WEB_SEARCH_URL", r["content"][0]["text"])
 
@@ -189,6 +192,99 @@ class 웹_서버_자체(unittest.TestCase):
         self.assertEqual(out, "진짜 글이다")
         self.assertNotIn("alert", out)
         self.assertNotIn("color", out)
+
+
+class 설정을_스스로_찾는다(unittest.TestCase):
+    """config.py 의 env 는 **아바타가 띄울 때만** 쓰인다. 그래서 사람이 손으로
+    `python web_mcp.py --check` 를 하면 환경변수가 비어 "검색 주소:
+    (안 정해짐)" 만 나왔다. 실제로 그랬다 — 아바타는 되는데 손으로는
+    안 되니 뭐가 문제인지 알 수가 없었다.
+    이제 환경변수가 비면 **아바타와 같은 자리**(config.py)를 직접 읽는다."""
+
+    PY = os.path.join(BASE, "WEB_MCP", "web_mcp.py")
+
+    def _fresh(self, env):
+        """모듈을 새로 읽는다 — 상수가 import 때 정해지기 때문이다."""
+        import importlib.util
+        keep = {k: os.environ.get(k) for k in
+                ("WEB_SEARCH_URL", "WEB_SEARCH_KIND", "WEB_CONFIG",
+                 "WEB_USER_AGENT", "WEB_USE_PROXY")}
+        try:
+            for k, v in env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            for k in keep:
+                if k not in env:
+                    os.environ.pop(k, None)
+            spec = importlib.util.spec_from_file_location("web_mcp_x", self.PY)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            return m
+        finally:
+            for k, v in keep.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_환경변수가_비면_config_를_읽는다(self):
+        want = [s for s in C.MCP_SERVERS if s["key"] == "web"][0]["env"]
+        m = self._fresh({})
+        self.assertEqual(m.URL, want["WEB_SEARCH_URL"])
+        self.assertEqual(m.KIND, want["WEB_SEARCH_KIND"])
+        self.assertIn("{q}", m.URL)
+
+    def test_UA_도_config_에서_온다(self):
+        """UA 를 놓치면 DuckDuckGo 가 403 을 준다 — 실제로 그랬다."""
+        m = self._fresh({})
+        self.assertIn("Mozilla", m.UA)
+
+    def test_환경변수가_이긴다(self):
+        """아바타가 넣어 준 값이 config.py 보다 앞선다."""
+        m = self._fresh({"WEB_SEARCH_URL": "http://사내/s?q={q}",
+                         "WEB_SEARCH_KIND": "json"})
+        self.assertEqual(m.URL, "http://사내/s?q={q}")
+        self.assertEqual(m.KIND, "json")
+
+    def test_config_가_없어도_뜬다(self):
+        """config.py 를 못 찾아도 서버는 떠야 한다 — 주소만 비는 것이다."""
+        m = self._fresh({"WEB_CONFIG": "/없는/파일.py"})
+        self.assertEqual(m.URL, "")
+        self.assertEqual(m._config_env()[1], "")
+
+    def test_config_가_깨져도_안_죽는다(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False,
+                                         encoding="utf-8") as f:
+            f.write("MCP_SERVERS = [  # 여기서 끊긴다\n")
+            bad = f.name
+        try:
+            m = self._fresh({"WEB_CONFIG": bad})
+            self.assertEqual(m.URL, "")
+        finally:
+            os.unlink(bad)
+
+    def test_어느_폴더에서_해도_찾는다(self):
+        """사람은 WEB_MCP 안에서 실행한다 — 실제로 그렇게 했다."""
+        r = subprocess.run([sys.executable, "web_mcp.py", "--check", "x"],
+                           cwd=os.path.join(BASE, "WEB_MCP"),
+                           capture_output=True, text=True, timeout=40,
+                           env={k: v for k, v in os.environ.items()
+                                if not k.startswith("WEB_")})
+        self.assertIn("설정 출처: config.py", r.stdout)
+        self.assertNotIn("(안 정해짐)", r.stdout)
+
+    def test_어디서_읽었는지_말해_준다(self):
+        """'안 정해짐' 만 나오면 어디를 고쳐야 할지 모른다."""
+        r = subprocess.run([sys.executable, self.PY, "--check", "x"],
+                           capture_output=True, text=True, timeout=40,
+                           env={**os.environ, "WEB_SEARCH_URL": "",
+                                "WEB_CONFIG": "/없는/파일.py"})
+        self.assertIn("설정 출처", r.stdout)
+        self.assertIn("설정 파일", r.stdout)
+        self.assertIn("config.py", r.stdout)
 
 
 if __name__ == "__main__":
@@ -271,7 +367,7 @@ class 못_나갈_때_이유를_말한다(unittest.TestCase):
         return r.stdout
 
     def test_주소가_없으면_무엇을_채울지_알려준다(self):
-        out = self._check({"WEB_SEARCH_URL": ""})
+        out = self._check({"WEB_SEARCH_URL": "", "WEB_CONFIG": "/없는/파일.py"})
         self.assertIn("WEB_SEARCH_URL", out)
 
     def test_UA_와_프록시를_바꿀_수_있다(self):

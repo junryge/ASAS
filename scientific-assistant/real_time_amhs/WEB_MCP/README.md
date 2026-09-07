@@ -44,8 +44,28 @@ JSON 응답의 키 이름이 다르면 같이 준다 —
 python WEB_MCP/web_mcp.py --check "반송 시스템"
 ```
 
-주소가 없으면 무엇을 채워야 하는지 알려 준다. 있으면 실제로 검색해 3건을
-찍는다.
+어느 폴더에서 해도 된다 — `config.py` 를 제 발로 찾는다.
+
+```
+검색 주소: https://duckduckgo.com/html/?q={q}
+방식     : html
+설정 출처: config.py
+설정 파일: ...\real_time_amhs\avatar_2d\avatar\config.py
+'반송 시스템' → 3건
+```
+
+**설정 출처** 가 답을 준다.
+
+| 나온 말 | 뜻 | 할 일 |
+|---|---|---|
+| `config.py` | `config.py` 에서 읽었다 | 됐다 |
+| `환경변수` | 이 창의 `set` 이 이겼다 | 됐다 (아바타는 `config.py` 를 본다) |
+| `(없음)` + 파일 경로가 나옴 | `config.py` 가 **옛것**이다 | 새 `config.py` 로 덮는다 |
+| `(없음)` + `config.py 를 못 찾았다` | `WEB_MCP` 가 딴 데 있다 | `real_time_amhs` 안으로 옮기거나 `set WEB_CONFIG=...\config.py` |
+
+★`config.py` 의 `env` 는 원래 **아바타가 이 파일을 띄울 때만** 쓰였다.
+그래서 손으로 `--check` 를 하면 늘 「검색 주소: (안 정해짐)」 이 나왔다.
+이제는 손으로 해도 아바타와 **같은 자리**를 본다.
 
 ## 켜고 끄기
 
