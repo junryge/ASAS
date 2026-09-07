@@ -494,6 +494,7 @@ class Hub:
         #   서윤은 방금 자기가 읽은 내용을 못 보는 상태로 답해야 했다.
         #   {대화열쇠: (그때 history 길이, 잰 시각, 글)}
         self._carry = {}
+        self._dyn = {}        # 서버가 알려준 낱말 (key → (때, [낱말]))
         # {서버열쇠: (못 붙은 시각, 이유)} — RETRY_S 동안 다시 안 붙는다
         self._down = {}
         # ★서버마다 자물쇠 하나. 아바타 서버는 스레드로 도는데, 화면의
@@ -531,10 +532,47 @@ class Hub:
                 return s
         return None
 
+    # ★위키를 뒤질 낱말을 **코드에 박아 두지 않는다.** 박아 두면 문서를
+    #   넣을 때마다 아바타 코드를 고쳐야 한다 — "리센느" 를 위키에 넣고도
+    #   아바타가 아예 안 뒤져서 "왜 안 되냐" 가 됐다. 서버가 제목·태그를
+    #   알려 주면(when_dyn) 그것도 같이 본다. 문서를 넣으면 낱말도 는다.
+    DYN_S = 300.0        # 5분마다 다시 물어본다 (그 사이 넣은 문서는 조금 뒤에)
+
+    def _dyn_words(self, s):
+        """서버가 알려주는 낱말 (없거나 실패하면 빈 목록 — 조용히 넘어간다)."""
+        tool = s.get("when_dyn")
+        if not tool:
+            return []
+        key = s["key"]
+        now = time.time()
+        with self._lock:
+            hit = self._dyn.get(key)
+        if hit and now - hit[0] < self.DYN_S:
+            return hit[1]
+        words = []
+        try:
+            with self._srv_lock(key):
+                c = self._client(s)
+                txt = c.call(tool, {})
+            words = [w.strip() for w in str(txt or "").splitlines()
+                     if w.strip() and not w.startswith("(")]
+        except Exception:                               # noqa: BLE001
+            # ★못 물어봐도 그냥 넘어간다. 여기서 터지면 질문 하나가
+            #   통째로 죽는다 — 박아 둔 낱말만으로도 돌아야 한다.
+            words = hit[1] if hit else []
+        with self._lock:
+            self._dyn[key] = (now, words)
+        return words
+
     def matched(self, text):
         """이 질문에 걸리는 서버 목록 (화면 계측·시험용)."""
-        return [s for s in self.on()
-                if _hits(text, s.get("when"), s.get("when_re"))]
+        out = []
+        for s in self.on():
+            if _hits(text, s.get("when"), s.get("when_re")):
+                out.append(s)
+            elif s.get("when_dyn") and _hits(text, self._dyn_words(s)):
+                out.append(s)
+        return out
 
     # ── 화면에서 켜고 끄기 ───────────────────────────────────────────────
     def set_enabled(self, key, on):
@@ -577,6 +615,7 @@ class Hub:
             # ★들고 다니던 직전 결과도 버린다. 안 버리면, 껐는데도 서윤이
             #   15분 동안 그 내용을 계속 말한다 — 틀려서 껐는데 계속 나온다.
             self._carry.clear()
+            self._dyn.clear()
             self._cache.clear()
         if c is not None:
             try:

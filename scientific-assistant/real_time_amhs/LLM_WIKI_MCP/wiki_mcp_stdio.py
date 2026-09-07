@@ -177,6 +177,11 @@ TOOLS = [
      "description": "업로드된 소스(원본 자료) 목록.",
      "inputSchema": {"type": "object", "properties": {
          "domainSlug": {"type": "string"}}}},
+    {"name": "wikiWords",
+     "description": ("이 위키에 무엇이 들어 있는지 **낱말로** 알려준다 "
+                     "(페이지 제목·태그). 아바타가 '어떤 질문에 위키를 뒤질까' "
+                     "를 정할 때 쓴다 — 문서를 새로 넣으면 낱말도 같이 는다."),
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "readSource",
      "description": "소스의 추출 텍스트 (이미지는 설명만).",
      "inputSchema": {"type": "object", "required": ["sourceId"], "properties": {
@@ -292,7 +297,47 @@ def t_source(a):
     return head + "\n\n" + _cut(txt, n)
 
 
+# ★위키를 뒤질 낱말은 **위키가 안다** — 코드에 박아 두면 문서를 넣을 때마다
+#   아바타 코드를 고쳐야 한다. 실제로 "리센느" 를 넣고도 아바타가 위키를
+#   아예 안 뒤져서 "왜 안 되냐" 가 됐다. 제목·태그를 그대로 준다.
+# ★관제 낱말은 빼고 준다. 'M14'·'점수'·'알람' 이 낱말로 넘어가면 상태 질문
+#   마다 위키를 뒤진다 (그래서 원래 목록도 그걸 일부러 피해 놨다).
+#   제목은 **구절 통째로** 주므로 "반송 장치 종류와 역할" 은 남고
+#   "M14 반송시간 알려줘" 는 안 걸린다.
+WORD_DENY = {
+    "all", "m14", "m14b", "m16", "m16a", "m16b", "m16hub", "hub",
+    "반송", "관제", "상태", "현황", "데이터", "지표", "컬럼", "점수", "스코어",
+    "등급", "알람", "경계", "위험", "초위험", "임계", "정체", "큐", "queue",
+    "oht", "모니터링", "이상", "서버", "ai", "mcp", "amhs", "fab", "sla",
+}
+WORD_MIN = 2            # 한 글자는 아무 데나 걸린다
+WORD_MAX = 400          # 너무 많으면 낱말 검사만 오래 걸린다
+
+
+def t_words(_a):
+    """페이지 제목·태그 → 아바타가 쓸 낱말 목록."""
+    with _connect() as c:
+        rows = c.execute("SELECT title, tags FROM pages").fetchall()
+    out, seen = [], set()
+    for r in rows:
+        cand = [str(r["title"] or "")]
+        cand += [t for t in re.split(r"[,\s]+", str(r["tags"] or "")) if t]
+        for w in cand:
+            w = w.strip()
+            k = w.lower()
+            if (len(w) < WORD_MIN or k in WORD_DENY or k in seen):
+                continue
+            seen.add(k)
+            out.append(w)
+            if len(out) >= WORD_MAX:
+                break
+    if not out:
+        return "(위키에 페이지가 없다)"
+    return "\n".join(out)
+
+
 HANDLERS = {"listDomains": t_domains, "searchWiki": t_search,
+            "wikiWords": t_words,
             "readPage": t_page, "listSources": t_sources,
             "readSource": t_source}
 

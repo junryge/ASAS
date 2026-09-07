@@ -54,6 +54,52 @@ def listDomains() -> dict[str, Any]:
         conn.close()
 
 
+# ★위키를 뒤질 낱말은 **위키가 안다** — 아바타 코드에 박아 두면 문서를 넣을
+#   때마다 코드를 고쳐야 한다. 실제로 새 문서를 넣고도 아바타가 위키를 아예
+#   안 뒤져서 "넣었는데 왜 안 되냐" 가 됐다. 제목·태그를 그대로 준다.
+# ★관제 낱말은 빼고 준다. 'M14'·'점수'·'알람' 이 넘어가면 상태 질문마다
+#   위키를 뒤진다. 제목은 **구절 통째로** 주므로 "반송 장치 종류와 역할" 은
+#   남고 "M14 반송시간 알려줘" 는 안 걸린다.
+WORD_DENY = {
+    "all", "m14", "m14b", "m16", "m16a", "m16b", "m16hub", "hub",
+    "반송", "관제", "상태", "현황", "데이터", "지표", "컬럼", "점수", "스코어",
+    "등급", "알람", "경계", "위험", "초위험", "임계", "정체", "큐", "queue",
+    "oht", "모니터링", "이상", "서버", "ai", "mcp", "amhs", "fab", "sla",
+}
+WORD_MIN = 2
+WORD_MAX = 400
+
+
+@mcp.tool()
+def wikiWords() -> dict[str, Any]:
+    """이 위키에 무엇이 들어 있는지 낱말로 알려준다 (페이지 제목·태그).
+
+    아바타가 '어떤 질문에 위키를 뒤질까' 를 정할 때 쓴다 — 문서를 새로
+    넣으면 낱말도 같이 는다.
+    """
+    import re as _re
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT title, tags FROM pages").fetchall()
+    finally:
+        conn.close()
+    out: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        cand = [str(r["title"] or "")]
+        cand += [t for t in _re.split(r"[,\s]+", str(r["tags"] or "")) if t]
+        for w in cand:
+            w = w.strip()
+            k = w.lower()
+            if len(w) < WORD_MIN or k in WORD_DENY or k in seen:
+                continue
+            seen.add(k)
+            out.append(w)
+            if len(out) >= WORD_MAX:
+                break
+    return {"words": out, "count": len(out)}
+
+
 @mcp.tool()
 def searchWiki(query: str, topK: int = 5, domainSlug: str = "") -> dict[str, Any]:
     """위키 페이지·소스를 검색한다 (BM25, 설정에 따라 하이브리드+리랭커).

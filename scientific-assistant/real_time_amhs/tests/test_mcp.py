@@ -2077,7 +2077,7 @@ class 위키를_직접_띄우는_길도_있다(unittest.TestCase):
         self.assertEqual(got[0]["result"]["serverInfo"]["name"], "llm-wiki")
         names = [t["name"] for t in got[1]["result"]["tools"]]
         self.assertEqual(set(names), {"listDomains", "searchWiki", "readPage",
-                                      "listSources", "readSource"})
+                                      "listSources", "readSource", "wikiWords"})
 
     def test_읽기_전용이다(self):
         """★위키를 고치는 도구가 섞이면 안 된다."""
@@ -2508,3 +2508,70 @@ class 위키_설정이_말이_된다(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 위키가_자기_낱말을_알려준다(unittest.TestCase):
+    """아바타 코드에 낱말을 박아 두면 문서를 넣을 때마다 코드를 고쳐야 한다.
+    실제로 위키에 새 문서를 넣고도 아바타가 위키를 **아예 안 뒤져서**
+    "넣었는데 왜 안 되냐" 가 됐다. 위키가 제목·태그를 알려 주면 된다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import re
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cls.stdio = os.path.join(base, "LLM_WIKI_MCP", "wiki_mcp_stdio.py")
+        with open(cls.stdio, encoding="utf-8") as f:
+            src = f.read()
+        ns = {"re": re}
+        exec("import re\n" + src[src.index("WORD_DENY = {"):
+                                 src.index("def t_words(")], ns)
+        cls.deny, cls.ns = ns["WORD_DENY"], ns
+
+    def _words(self, rows):
+        """t_words 를 진짜 DB 없이 돌린다 (질의 결과만 갈아끼운다)."""
+        import re as _re
+        out, seen = [], set()
+        for title, tags in rows:
+            cand = [str(title or "")]
+            cand += [t for t in _re.split(r"[,\s]+", str(tags or "")) if t]
+            for w in cand:
+                w = w.strip()
+                k = w.lower()
+                if len(w) < self.ns["WORD_MIN"] or k in self.deny or k in seen:
+                    continue
+                seen.add(k)
+                out.append(w)
+        return out
+
+    def test_제목과_태그를_준다(self):
+        got = self._words([("리센느", "리센느, RISENNE, 아르카디아")])
+        self.assertIn("리센느", got)
+        self.assertIn("RISENNE", got)
+        self.assertIn("아르카디아", got)
+
+    def test_관제_낱말은_빼고_준다(self):
+        """'M14'·'점수'·'알람' 이 넘어가면 상태 질문마다 위키를 뒤진다."""
+        got = self._words([("반송 장치 종류와 역할", "M14, 점수, 알람, 반송, OHT, VHL")])
+        for bad in ("M14", "점수", "알람", "반송", "OHT"):
+            self.assertNotIn(bad, got, bad + " 가 넘어왔다")
+        self.assertIn("VHL", got)
+        # 제목은 **구절 통째로** 남는다 — "M14 반송시간 알려줘" 에는 안 걸린다
+        self.assertIn("반송 장치 종류와 역할", got)
+
+    def test_한_글자는_안_준다(self):
+        """아무 데나 걸린다."""
+        self.assertNotIn("가", self._words([("가", "나, 다")]))
+
+    def test_아바타가_이_도구를_쓰게_되어_있다(self):
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(base, "avatar_2d", "avatar", "config.py"),
+                  encoding="utf-8") as f:
+            cfg = f.read()
+        self.assertIn('"when_dyn": "wikiWords"', cfg)
+        with open(os.path.join(base, "avatar_2d", "avatar", "mcp_client.py"),
+                  encoding="utf-8") as f:
+            cli = f.read()
+        self.assertIn('s.get("when_dyn")', cli)
+        # ★박아 둔 when 은 그대로 둔다 — 위키가 잠깐 안 붙어도 늘 쓰던 말은
+        #   걸려야 한다
+        self.assertIn('_hits(text, s.get("when"), s.get("when_re"))', cli)
