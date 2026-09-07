@@ -118,8 +118,13 @@ def alarm_config(settings=None):
         keep = int(s.get("alarmKeep") or ALOG_MAX)
     except (TypeError, ValueError):
         keep = ALOG_MAX
+    # ★울릴지 말지. 기본은 켜짐 — 관제 화면에서 알람이 기본으로 꺼져 있으면
+    #   그게 더 위험하다. 사람이 끈 것만 꺼진다 (없으면 True).
+    on = s.get("alarmOn")
+    on = True if on is None else bool(on)
     return {"hold_min": max(0, min(24 * 60, hold)),
             "keep": max(10, min(5000, keep)),
+            "on": on,
             "csv": _acsv_path or ""}
 
 

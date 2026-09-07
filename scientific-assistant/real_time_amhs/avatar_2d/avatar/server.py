@@ -432,7 +432,8 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path in ("/api/config", "/__config"):
             return self._json(200, config.public_config(
-                App.model, App.models, App.upstream))
+                App.model, App.models, App.upstream,
+                sentinel.alarm_config(App.settings.all())))
 
         if path == "/api/settings":
             d = App.settings.all()
@@ -636,13 +637,18 @@ class Handler(SimpleHTTPRequestHandler):
                                ("alarmKeep", "keep")):
                     if b.get(src) is not None:
                         st[k] = b.get(src)
+                # ★on 은 False 가 뜻을 가진다 — 위처럼 'None 이 아니면' 으로
+                #   받되, bool 로 못 박아 둔다 (화면에서 체크박스로 온다).
+                if b.get("on") is not None:
+                    st["alarmOn"] = bool(b.get("on"))
                 if st:
                     App.settings.update(st)
                 cfg = sentinel.alarm_config(App.settings.all())
                 sentinel.HOLD_MIN = cfg["hold_min"]     # 감시 로직이 바로 따른다
                 sentinel.ALOG_MAX = cfg["keep"]
-                self._say("     ↳ 알람 설정: 관찰 {}분 · 보관 {}건"
-                          .format(cfg["hold_min"], cfg["keep"]))
+                self._say("     ↳ 알람 설정: {} · 관찰 {}분 · 보관 {}건"
+                          .format("울림" if cfg["on"] else "★안 울림",
+                                  cfg["hold_min"], cfg["keep"]))
                 return self._json(200, {"ok": True, "config": cfg,
                                         "hold_min": cfg["hold_min"]})
             return self._err(400, "op 는 note/clear")

@@ -13,6 +13,11 @@ class Settings:
     # ★코드에만 있으면 "왜 60분이나 안 꺼지냐" 를 아무도 못 고친다.
     KEYS = ("docBudget", "ctxLimit", "keepMsgs", "temperature",
             "alarmHoldMin", "alarmKeep")
+    # ★참/거짓 설정은 KEYS(숫자) 에 섞으면 안 된다. 실제로 겪었다 —
+    #   alarmOn 을 KEYS 에 안 넣어서 '끄기' 가 통째로 버려졌다 (계속 울렸다).
+    #   숫자로 넣어도 False 가 0 이 되어 뜻은 맞지만, 저장된 파일이
+    #   "alarmOn": 0 이 되어 사람이 열어 봤을 때 뜻을 못 읽는다.
+    BOOL_KEYS = ("alarmOn",)
     # ★문자열 설정은 숫자 변환을 타면 안 된다 (agentRules 는 프롬프트 본문)
     TEXT_KEYS = ("agentRules",)
     # MCP 서버별 켜기/끄기·주소 — {서버열쇠: {"enabled": bool, "url": str}}
@@ -29,7 +34,8 @@ class Settings:
         try:
             if self.path.is_file():
                 saved = json.loads(self.path.read_text(encoding="utf-8")) or {}
-                for k in self.KEYS + self.TEXT_KEYS + self.DICT_KEYS:
+                for k in (self.KEYS + self.BOOL_KEYS + self.TEXT_KEYS
+                          + self.DICT_KEYS):
                     if k in saved:
                         self.data[k] = saved[k]
         except Exception:
@@ -54,6 +60,9 @@ class Settings:
                             if k == "temperature" else int(patch[k])
                     except (TypeError, ValueError):
                         pass
+            for k in self.BOOL_KEYS:
+                if k in patch:
+                    self.data[k] = bool(patch[k])
             for k in self.TEXT_KEYS:
                 if k in patch:
                     # 빈 문자열 = 기본값으로 되돌리기 (llm.agent_rules 가 판단)

@@ -140,6 +140,19 @@
     color:var(--txt);font-size:11.5px}
   #alogCfg button:hover{border-color:var(--accent2)}
   #alogCfg .hint{margin:0;flex:1;min-width:120px}
+  /* ★켜기/끄기는 숫자칸이 아니다 — 위 규칙(width:74px)이 그대로 먹으면
+     네모가 74px 짜리 판때기가 된다. 여기서 되돌린다. */
+  #cfgOn{appearance:auto;-webkit-appearance:checkbox;
+    width:15px;height:15px;flex:none;padding:0;margin:0;
+    border:0;background:none;accent-color:var(--accent2);cursor:pointer}
+  #cfgOnLab{cursor:pointer;padding:3px 9px;border-radius:7px;
+    border:1px solid var(--line);background:rgba(255,255,255,.05)}
+  #cfgOnLab.off{border-color:rgba(255,120,120,.5);color:#ff9b9b}
+  #cfgOnLab.off b::after{content:' — 꺼짐'}
+  /* 꺼져 있으면 알람 패널 제목에 티가 나야 한다. 안 그러면 왜 조용한지
+     모르고 "알람이 고장 났다" 가 된다. */
+  #alarmBox.muted #alarmTitle::after{content:' (알람 꺼짐)';
+    color:#ff9b9b;font-weight:400}
   #alogBody{overflow:auto;padding:8px 12px 12px}
   #alogBody table{width:100%;border-collapse:collapse;font-size:11.5px}
   #alogBody th,#alogBody td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.07);

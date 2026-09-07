@@ -564,7 +564,7 @@ let sayMode='novel';    // novel|bubble|off
 let sayModeSet=false;   // 사용자가 칩을 눌러 직접 골랐나 (자동 저장과 구분)
 let alarmPos=null;      // FAB 알람 패널을 옮겨 둔 자리 {l,t} (null = 기본 우상단)
 let alogPos=null;       // 알람 기록 창을 옮겨 둔 자리 {l,t} (null = 가운데)
-let ALOG_CFG={hold_min:60, keep:500};   // 알람 동작 설정 (서버가 기억)
+let ALOG_CFG={hold_min:60, keep:500, on:true}; // 알람 동작 설정 (서버가 기억)
 let chartPos=null;      // 현재 상태 그래프를 옮겨 둔 자리 (null = 좌상단)
 let sideOpen=true;      // 오른쪽 사이드바 펼침 여부
 let bubbleOn=false;     // sayMode==='bubble' 의 별칭 — 옛 코드가 이걸 본다
@@ -1543,6 +1543,12 @@ let FABS = [
 function applyAlarmConfig(c){
   if(Array.isArray(c.fabs)   && c.fabs.length)   FABS   = c.fabs;
   if(Array.isArray(c.levels) && c.levels.length) LEVELS = c.levels;
+  /* ★울릴지 말지를 **여기서** 받아야 한다. 알람 기록 창을 열 때 받으면,
+     창을 안 열어 본 사람은 껐는데도 계속 울린다 — 실제로 그랬다. */
+  if(c.alarm && typeof c.alarm==='object'){
+    ALOG_CFG = Object.assign({}, ALOG_CFG, c.alarm);
+    paintAlarmMuted();
+  }
 }
 /* 등급 : 경계 → 위험 → 초위험. 색·속도·경고음·대사가 전부 달라진다 */
 let LEVELS = [
@@ -1574,6 +1580,7 @@ let alarm = null;          // {fab, lv, t0, nag, tick, line}
 let panicT = 0;            // 좌우로 뛰어다니는 위상
 let audioCtx = null;
 function beep(tones, vol){
+  if(!alarmOn()) return;          // 꺼 뒀으면 소리도 없다
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     if(audioCtx.state==='suspended') audioCtx.resume();
@@ -1592,6 +1599,7 @@ function beep(tones, vol){
 }
 function alarmSay(){
   if(!alarm) return;
+  if(!alarmOn()) return;          // 꺼 뒀으면 재촉하지 않는다
   const L=alarm.lv;
   /* 서버 config 의 대사는 '{n}' 자리표 문자열, 로컬 폴백은 함수 — 둘 다 받는다 */
   const raw = L.lines[alarm.line % L.lines.length];
@@ -1610,6 +1618,20 @@ function paintAlarmTime(){
   if(el) el.textContent = String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
 }
 const LV_CSS = {lv1:'232,193,74', lv2:'255,122,61', lv3:'255,43,61'};
+/* ★알람을 울릴까 — 한 자리에서만 판단한다.
+   끄면 소리·재촉·아바타 대사·화면 번쩍임이 전부 없다. 기록은 그대로 쌓인다
+   (무슨 일이 있었는지는 나중에 봐야 하니까).
+   기본은 켜짐 — 관제 화면에서 알람이 기본으로 꺼져 있으면 그게 더 위험하다. */
+function alarmOn(){ return ALOG_CFG.on !== false; }
+/* 꺼져 있다는 것을 화면에 보여 준다. 안 보이면 "알람이 고장 났다" 가 된다 */
+function paintAlarmMuted(){
+  const box=$('#alarmBox'); if(box) box.classList.toggle('muted', !alarmOn());
+  const lab=$('#cfgOnLab'); if(lab) lab.classList.toggle('off', !alarmOn());
+  const chip=$('#alarmChip');
+  if(chip) chip.title = alarmOn()
+    ? 'FAB 알람 패널이 안 보이면 누르세요 — 우상단 제자리로 돌아옵니다'
+    : 'FAB 알람이 꺼져 있습니다 (기록 창 → 설정에서 켭니다)';
+}
 /* 알람을 대사 없이 조용히 내린다 — 등급/구역 '교체' 때 쓴다.
    교체마다 "해제됐어요!" 를 말하면 실제로는 상황이 나빠지는 중인데
    좋아진 것처럼 들린다. */
@@ -1632,8 +1654,10 @@ function fireAlarm(fab, lv, src){
       if(alarm.quiet){
         alarm.quiet=false;
         sys('알람 재발 — '+f.name+' '+L.name);
-        alarmSay();
-        alarm.nag = setInterval(alarmSay, L.nag);
+        if(alarmOn()){
+          alarmSay();
+          alarm.nag = setInterval(alarmSay, L.nag);
+        }
       }
       return;
     }
@@ -1647,13 +1671,19 @@ function fireAlarm(fab, lv, src){
   $('#alarmLv').textContent = L.name;
   $('#alarmFab').textContent = f.name;
   const im=$('#alarmImg'); im.src=f.img; im.alt=f.name;
-  $('#alarmMsg').textContent = f.name + ' FAB · ' + L.name + ' 단계 — 해제할 때까지 계속 울립니다';
+  $('#alarmMsg').textContent = f.name + ' FAB · ' + L.name + ' 단계 — '
+    + (alarmOn() ? '해제할 때까지 계속 울립니다' : '알람이 꺼져 있어 조용히 표시만 합니다');
   document.documentElement.style.setProperty('--bubbleAccent', 'rgb('+LV_CSS[L.key]+')');
-  sys('■ 알람 발생 — ' + f.name + ' FAB · ' + L.name);
+  sys('■ 알람 발생 — ' + f.name + ' FAB · ' + L.name
+      + (alarmOn() ? '' : ' (알람 꺼짐 — 조용히)'));
+  paintAlarmMuted();
   paintAlarmTime();
+  alarm.tick = setInterval(paintAlarmTime, 1000);
+  /* ★꺼 뒀으면 재촉 타이머 자체를 안 건다. alarmSay 안에서 막아도 되지만,
+     안 쓸 타이머를 등급마다 4~8초로 돌려 둘 이유가 없다. */
+  if(!alarmOn()) return;
   alarmSay();
   alarm.nag  = setInterval(alarmSay, L.nag);
-  alarm.tick = setInterval(paintAlarmTime, 1000);
 }
 function clearAlarm(){
   if(!alarm) return;
@@ -1667,6 +1697,7 @@ function clearAlarm(){
   $('#alarmTime').textContent = '';
   document.documentElement.style.setProperty('--bubbleAccent', '#d94a5a');
   sys('□ 알람 해제 — ' + n + ' FAB · ' + lvn);
+  if(!alarmOn()) return;          // 꺼 뒀으면 해제도 조용히
   setEmotion('smile', 0.8, 'nod');
   speak(n + ' FAB ' + lvn + ' 알람 해제됐어요. 휴… 살았다.');
 }
@@ -1727,9 +1758,11 @@ async function openAlog(){
   renderAlog();
 }
 function loadAlogCfg(){
-  const h=$('#cfgHold'), k=$('#cfgKeep'), m=$('#cfgMsg');
+  const h=$('#cfgHold'), k=$('#cfgKeep'), m=$('#cfgMsg'), o=$('#cfgOn');
+  if(o) o.checked = alarmOn();
   if(h) h.value = ALOG_CFG.hold_min;
   if(k) k.value = ALOG_CFG.keep;
+  paintAlarmMuted();
   if(m) m.textContent = window.SERVER
     ? '기록 CSV: data/alarms.csv (사건마다 바로 쌓입니다)'
     : 'run.py 서버로 실행해야 저장됩니다.';
@@ -1738,16 +1771,27 @@ async function saveAlogCfg(){
   const m=$('#cfgMsg');
   if(!window.SERVER){ if(m) m.textContent='run.py 서버로 실행해야 저장됩니다.'; return; }
   const hold=parseInt($('#cfgHold').value,10), keep=parseInt($('#cfgKeep').value,10);
+  const on = $('#cfgOn') ? !!$('#cfgOn').checked : true;
   try{
     const r=await fetch('/api/alarms',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({op:'config', hold_min:hold, keep:keep})});
+      body: JSON.stringify({op:'config', hold_min:hold, keep:keep, on:on})});
     if(!r.ok) throw new Error('HTTP '+r.status);
     const j=await r.json();
     ALOG_CFG=j.config||ALOG_CFG;
     loadAlogCfg();
+    /* ★끄면 지금 울리고 있는 것부터 멈춘다. 다음 알람부터 조용해지면
+       "껐는데 계속 울린다" 가 된다 — 실제로 그게 문제였다. */
+    if(!alarmOn() && alarm){
+      clearInterval(alarm.nag); alarm.nag=null;
+      $('#alarmMsg').textContent =
+        alarm.fab.name+' FAB · '+alarm.lv.name+' 단계 — 알람이 꺼져 있어 조용히 표시만 합니다';
+    }else if(alarmOn() && alarm && !alarm.nag && !alarm.quiet){
+      alarm.nag = setInterval(alarmSay, alarm.lv.nag);
+    }
     if(m) m.textContent='저장했습니다.';
-    sys('알람 설정 — 정상 복귀 후 관찰 '+ALOG_CFG.hold_min+'분 · 기록 보관 '
+    sys('알람 설정 — '+(alarmOn()?'울림':'★안 울림')
+        +' · 정상 복귀 후 관찰 '+ALOG_CFG.hold_min+'분 · 기록 보관 '
         +ALOG_CFG.keep+'건');
   }catch(e){ if(m) m.textContent='저장 실패: '+e.message; }
 }

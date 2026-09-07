@@ -850,6 +850,89 @@ class 자료가_없을_때(unittest.TestCase):
         self.assertIn("자료에 없는 **관제 수치**는 아는 척하지 않는다", src)
 
 
+class FAB_알람_켜기_끄기(unittest.TestCase):
+    """★"알람이 내가 원할 때만 울려야 하는데 정신 사납다" — 끄는 자리가
+    아예 없었다. 만들면서 두 번 물렸다:
+      ① Settings.KEYS 에 안 넣어서 '끄기' 가 통째로 버려졌다 (계속 울렸다)
+      ② 알람 기록 창을 열어야 설정을 읽어서, 창을 안 연 사람은 껐는데도 울렸다
+    둘 다 여기서 잡는다."""
+
+    def setUp(self):
+        from avatar import settings as aset
+        self.dir = tempfile.mkdtemp()
+        self.st = aset.Settings(Path(self.dir) / "settings.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_기본은_켜짐(self):
+        """관제 화면에서 알람이 기본으로 꺼져 있으면 그게 더 위험하다."""
+        self.assertTrue(sentinel.alarm_config({})["on"])
+        self.assertTrue(sentinel.alarm_config(self.st.all())["on"])
+
+    def test_끄면_꺼진_채로_저장된다(self):
+        """①에서 물린 자리 — KEYS 에 없으면 update 가 조용히 버린다."""
+        self.st.update({"alarmOn": False})
+        self.assertIs(self.st.all()["alarmOn"], False)
+        self.assertFalse(sentinel.alarm_config(self.st.all())["on"])
+
+    def test_다시_띄워도_꺼진_채다(self):
+        from avatar import settings as aset
+        self.st.update({"alarmOn": False})
+        again = aset.Settings(Path(self.dir) / "settings.json")
+        self.assertFalse(sentinel.alarm_config(again.all())["on"])
+
+    def test_참거짓으로_저장한다(self):
+        """숫자로 저장하면 파일이 "alarmOn": 0 이 되어 사람이 못 읽는다."""
+        self.st.update({"alarmOn": False})
+        saved = json.loads((Path(self.dir) / "settings.json").read_text("utf-8"))
+        self.assertIs(saved["alarmOn"], False)
+
+    def test_다른_설정을_저장해도_꺼진_채다(self):
+        """관찰 시간만 바꿨는데 알람이 도로 켜지면 안 된다."""
+        self.st.update({"alarmOn": False})
+        self.st.update({"alarmHoldMin": 30, "alarmKeep": 300})
+        self.assertFalse(sentinel.alarm_config(self.st.all())["on"])
+
+    def test_화면이_열기_전에_알_수_있다(self):
+        """②에서 물린 자리 — /api/config 에 실려야 한다. /api/settings 로
+        따로 받으면 그 사이에 pollSentinel 이 먼저 돌아 한 번 울린다."""
+        self.st.update({"alarmOn": False})
+        c = acfg.public_config("m", [], "", sentinel.alarm_config(self.st.all()))
+        self.assertIn("alarm", c)
+        self.assertFalse(c["alarm"]["on"])
+
+    def test_화면에_끄는_자리가_있다(self):
+        html = (Path(util.BASE) / "avatar_2d" / "static"
+                / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="cfgOn"', html)
+        self.assertIn("FAB 알람 울리기", html)
+        css = (Path(util.BASE) / "avatar_2d" / "static"
+               / "app.css").read_text(encoding="utf-8")
+        # ★위쪽 #alogCfg input{width:74px;padding:4px 6px;border;background}
+        #   이 그대로 먹으면 체크네모가 74px 짜리 판때기가 된다. 되돌려야 한다.
+        i = css.index("#cfgOn{")
+        rule = css[i:css.index("}", i)]
+        self.assertIn("appearance", rule, "네모 그리기를 되돌리지 않았다")
+        self.assertIn("border:0", rule)
+        self.assertIn("background:none", rule)
+        self.assertNotIn("74px", rule)
+        # 꺼짐이 눈에 보여야 한다 — 안 보이면 "알람이 고장 났다" 가 된다
+        self.assertIn("#cfgOnLab.off", css)
+        self.assertIn("#alarmBox.muted #alarmTitle", css)
+
+    def test_JS_문지기(self):
+        """app.js 원본을 잘라 얇은 DOM 위에서 돌린다 (node 없으면 건너뜀)."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 가 없다")
+        r = subprocess.run([node, str(Path(util.BASE) / "tests" / "alarm_gate.js")],
+                           capture_output=True, text=True, timeout=60,
+                           cwd=str(util.BASE))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("전부 통과", r.stdout)
+
+
 class 바깥으로는_안_나간다(unittest.TestCase):
     """웹 검색을 걷어냈다 — 폐쇄망이라 회사 게이트웨이가 가로챈다."""
 

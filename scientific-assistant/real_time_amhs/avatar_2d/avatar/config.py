@@ -354,6 +354,9 @@ DEFAULT_SETTINGS = {
     "temperature": 0.8,
     "alarmHoldMin": 60,     # 정상 복귀 뒤 알람을 내리기까지 관찰하는 시간(분)
     "alarmKeep": 500,       # 알람 기록 보관 건수 (CSV 파일은 계속 쌓인다)
+    "alarmOn": True,        # FAB 알람을 울릴까 (기록 창 → 설정에서 끈다)
+                            # ★기본은 켜짐 — 관제 화면에서 알람이 기본으로
+                            #   꺼져 있으면 그게 더 위험하다.
     # MCP 서버별 켜기/끄기·주소 — 화면(설정 → 외부 도구)에서 고친다.
     # {"wiki": {"enabled": false}} 처럼 **고친 것만** 들어간다.
     "mcp": {},
@@ -367,8 +370,13 @@ SESS_BYTES = 1_200_000  # 총 1.2MB
 DOCS_BYTES = 300_000    # 총 300KB
 
 
-def public_config(model="", models=None, upstream=""):
-    """브라우저가 /api/config 로 받아가는 것."""
+def public_config(model="", models=None, upstream="", alarm=None):
+    """브라우저가 /api/config 로 받아가는 것.
+
+    ★alarm 은 sentinel.alarm_config(설정) 이다. **여기에 실어야** 한다 —
+      /api/settings 로 따로 받으면 그 사이에 pollSentinel 이 먼저 돌아서,
+      꺼 놨는데도 켤 때마다 한 번 울린다.
+    """
     return {
         "baseUrl": "/v1",
         "model": model,
@@ -383,4 +391,5 @@ def public_config(model="", models=None, upstream=""):
         "levels": LEVELS,
         "sessMax": SESS_MAX,
         "sentinel": {"pollMs": int(SENTINEL.get("poll_ms", 5000))},
+        "alarm": alarm or {},
     }
