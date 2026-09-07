@@ -207,6 +207,10 @@ MCP_SERVERS = [
         #   프로세스로 띄우는 게 아니라 **떠 있는 서버에 붙는다** —
         #   위키 쪽에서 python mcp_server.py 를 따로 띄워 둬야 한다.
         "key": "wiki", "name": "AMHS 위키", "enabled": True,
+        # ★이것이 **지식베이스**다. 여기서 못 찾았을 때만 바깥(fallback)으로
+        #   간다 — 요청이력은 성격이 달라서(우리 업무 기록) 못 찾았다고
+        #   바깥을 뒤지면 안 된다.
+        "knowledge": True,
         "transport": "http",
         # ★★위키는 프로세스가 **둘**이다. 여기서 한 번 헛짚었다.
         #       app.py         Flask 웹앱      기본 :8100   ← 사람이 보는 화면
@@ -306,10 +310,10 @@ MCP_SERVERS = [
         #      WEB_SEARCH_URL 을 안 주면 서버가 아무것도 안 한다.
         #   ② 바깥 글은 우리가 쓴 글이 아니다. 켜는 것은 사람이 정한다.
         #   화면: 설정 → 외부 도구 에서 켜고 끈다 (지금 있는 그 목록이다).
-        "key": "web", "name": "웹 검색", "enabled": False,
+        "key": "web", "name": "웹 검색", "enabled": True,
         "fallback": True,          # ← 이 표가 '마지막 수단' 을 뜻한다
         "command": None,
-        "args": ["qa/web_mcp.py"],
+        "args": ["WEB_MCP/web_mcp.py"],
         "cwd": None,
         "env": {
             # {q} 자리에 질문이 들어간다. 비우면 서버가 아무것도 안 한다.

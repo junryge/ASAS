@@ -28,8 +28,8 @@
     ★주소를 안 주면 **아무것도 안 한다.** 잘못된 데로 나가느니 안 나간다.
 
 실행
-    python qa/web_mcp.py            # stdio 로 대기 (아바타가 띄운다)
-    python qa/web_mcp.py --check    # 주소·검색이 되는지만 본다
+    python WEB_MCP/web_mcp.py            # stdio 로 대기 (아바타가 띄운다)
+    python WEB_MCP/web_mcp.py --check    # 주소·검색이 되는지만 본다
 """
 import html as _html
 import json

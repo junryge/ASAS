@@ -935,6 +935,12 @@ class Hub:
     def _fallback(self, text, use_cache=True):
         if not self._web_ok(text):
             return "", 0
+        # ★**지식베이스(위키)** 에서 못 찾았을 때만 바깥으로 간다.
+        #   요청이력은 우리 업무 기록이라, 거기 없다고 바깥을 뒤지면 안 된다
+        #   ("7번 요청 뭐야?" 의 답이 인터넷에 있을 리 없다).
+        for s in self.matched(text):
+            if not s.get("fallback") and not s.get("knowledge"):
+                return "", 0
         # ★꺼져 있으면 **아무 말도 하지 않는다.** 켜라고 조르지 않는다 —
         #   껐다는 것은 사람이 정한 것이고, 물어볼 때마다 권하면 잔소리다.
         #   근거가 없으면 서윤은 원래대로 "확인이 안 됩니다" 라고 한다.
@@ -950,7 +956,9 @@ class Hub:
                 except Exception as e:                  # noqa: BLE001
                     continue                            # 조용히 넘어간다
                 used += self._run_calls(s, c, text, lines)
-            if lines:
+            # ★다 실패면 안 싣는다. 주소를 아직 안 정한 상태에서 켜 두면
+            #   질문마다 "웹 검색 (실패)" 가 근거에 붙는다 — 없는 것만 못하다.
+            if lines and not all("(실패)" in x for x in lines):
                 out.append("[{}]\n".format(s.get("name") or s["key"])
                            + "\n".join(lines))
         if not out:
