@@ -1,0 +1,141 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>정합성 검사 서류 — AMHS Sentinel (real_time_amhs)</title>
+<style>
+:root{--ink:#111827;--dim:#6b7280;--line:#e5e7eb;--acc:#4f46e5;--bad:#b91c1c;
+ --ok:#047857;--warn:#b45309;--bg:#f8fafc}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);line-height:1.7;
+ font-family:"Malgun Gothic","맑은 고딕",-apple-system,system-ui,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:36px 24px 80px}
+h1{font-size:26px;margin:0 0 6px}
+.sub{color:var(--dim);font-size:13px;margin:0 0 28px}
+h2{font-size:18px;margin:34px 0 10px;padding-top:16px;border-top:2px solid var(--ink)}
+h3{font-size:14.5px;margin:20px 0 8px;color:#374151}
+p,li{font-size:13.5px}
+table{border-collapse:collapse;width:100%;margin:10px 0 6px;font-size:13px}
+th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;
+ vertical-align:top}
+th{background:var(--bg);font-weight:700;white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+code,.mono{font-family:Consolas,"D2Coding",monospace;font-size:12.5px;
+ background:var(--bg);padding:1px 5px;border-radius:4px}
+.note{background:var(--bg);border-left:4px solid var(--acc);padding:10px 14px;
+ margin:12px 0;font-size:13px}
+.miss{background:#fef2f2;border-left-color:var(--bad)}
+.miss b{color:var(--bad)}
+.flow{font-family:Consolas,"D2Coding",monospace;font-size:12.5px;
+ background:var(--bg);border:1px solid var(--line);border-radius:8px;
+ padding:14px 16px;white-space:pre;overflow-x:auto;line-height:1.6}
+.big{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.dim{color:var(--dim)}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;
+ background:var(--bg);border:1px solid var(--line);color:var(--dim)}
+@media print{.wrap{max-width:none;padding:0} h2{page-break-after:avoid}}
+</style></head><body><div class=wrap>
+<h1>정합성 검사 서류 — AMHS Sentinel</h1>
+<p class="sub">real_time_amhs · 작성 2026-09-07 22:59 · <span class="tag">이 문서의 숫자는 코드와 저장된 데이터에서 자동으로 뽑았습니다</span></p>
+<h2>0. 요약</h2>
+<table><tr><th>항목</th><th>값</th><th>출처</th></tr>
+<tr><td>평가 데이터 기간</td><td><b class="dim">데이터 없음</b></td><td>data/ 의 날짜 CSV (오늘 제외 — 검증 창 미충족)</td></tr>
+<tr><td>평가 일수</td><td>0일</td><td>같음</td></tr>
+<tr><td>ALL Precision / Recall / F1</td><td><span class=big>— / — / —</span> <span class=dim>(표본 0건)</span></td><td>{날짜}_LLM.CSV 의 판정 컬럼</td></tr>
+<tr><td>점수 재현 일치율</td><td><span class=big>—</span> <span class=dim>(0/0 지점)</span></td><td>fab_score.compare() — 예측 잡이 준 점수와 대조</td></tr>
+</table>
+<div class="note miss"><b>저장된 데이터가 없습니다.</b> data/ 에 날짜 CSV 가 있어야 3·4·5 장의 숫자가 채워집니다. 이 문서는 지금 <b>방법과 기준만</b> 담고 있습니다.</div>
+<h2>1. 시스템 구성과 데이터 흐름</h2>
+<p><b>이 시스템은 룰을 만들지 않습니다.</b> 룰은 룰베이스 예측기가 만들고, 이 시스템은 그 결과를 받아 <b>읽고 · 재현하고 · 판단하고 · 사후에 채점</b>합니다. 책임 경계를 먼저 밝힙니다.</p>
+<div class="flow">[룰베이스 예측기]  M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)
+   │  8영역 룰(R-A'·R-B·R-C'·R-D + SLA·소터·MAXCAPA)로 점수를 만든다
+   │  단계 판정 S1 / S2 / S3
+   ↓  {날짜}_발동이벤트.csv
+   │     ALL : unified_risk_score
+   │     FAB : area_score
+[real_time_amhs]
+   ├─ 읽기      store_csv → data/{시스템}/{날짜}_TOTAL.CSV
+   ├─ 재현 검산  fab_score.compare()  ← ★정합성 검사
+   ├─ 등급 판정  sentinel.grade()     경계 60 / 위험 71 / 초위험 85
+   ├─ LLM 판단   1분마다 '지금 대응이 필요한 진짜 이상인가' (예/아니오)
+   └─ 사후 채점  accuracy.py → {날짜}_LLM.CSV 의 판정 컬럼
+                 ← ③평가 데이터 기간 · ④성능은 이쪽 소관</div>
+<h2>2. 판단 기준</h2>
+<h3>2-1. 어느 값을 보는가</h3>
+<table><tr><th>대상</th><th>보는 컬럼</th><th>뜻</th></tr><tr><td><b>ALL</b></td><td><code>unified_risk_score</code></td><td>전체 통합 위험도</td></tr><tr><td><b>FAB</b> (M14·M14B·M16A·M16B·M16HUB)</td><td><code>area_score</code></td><td>그 FAB 영역의 위험도. FAB 분리 파일을 읽는 순간 <code>unified_risk_score</code> 자리로 정규화됩니다 (<code>jupyter_csv.py</code>)</td></tr></table>
+<div class="note">두 값 모두 <b>예측 잡이 계산해 CSV 에 적어 준 값</b>입니다. 이 시스템이 다시 만들지 않습니다 — 다만 같은 룰로 되계산해 <b>맞는지 확인</b>합니다(4장).</div>
+<h3>2-2. 등급 컷</h3>
+<table><tr><th>등급</th><th class=n>점수</th><th>처리</th></tr><tr><td>정상</td><td class=n>0 ~ 59</td><td>알람 없음</td></tr><tr><td>경계</td><td class=n>60 ~ 70</td><td>확인 필요</td></tr><tr><td>위험</td><td class=n>71 ~ 84</td><td>모니터링</td></tr><tr><td>초위험</td><td class=n>85 ~ 100</td><td>조치</td></tr></table>
+<p class="dim">출처: <code>config.grade.bands</code> → <code>sentinel.grade_cuts()</code>. 시스템별로 다르게 두면 <code>grade.by_sys</code> 가 덮습니다.</p>
+<h2>3. 룰 — 버전 · 제작 데이터 · 검증</h2>
+<h3>3-1. 룰베이스 예측기</h3>
+<table><tr><th>항목</th><th>값</th></tr>
+<tr><td><b>버전</b></td><td><b>M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)</b></td></tr>
+<tr><td>대상 영역</td><td>M16HUB, M14, M14B, M16A, M16B, M16, M16_PKT, M16_WT</td></tr>
+<tr><td><b>룰 제작(학습) 데이터 기간</b></td><td><b>2026-03-24 14:39 ~ 2026-04-30 정상분포 (p95/p99) 기반</b></td></tr>
+<tr><td>예측기 자체 테스트 구간</td><td>2026-05-01 ~ (사용자가 5월로 검증 예정)</td></tr>
+<tr><td>출처</td><td><code>/home/user/ASAS/scientific-assistant/rool_skill_test/hubroom_predictor.py</code></td></tr>
+</table>
+<h3>3-2. 임계 개정 (thresholds.json)</h3>
+<div class="note"><b>개정 근거·검증 결과</b><br>2026-06-04 정상가동일(1440분) 분포 p99+마진 기반 추천 임계. 검증결과 S3 49.9%→1.0%, 무발동 0%→88.9%.</div>
+<table><tr><th>임계</th><th>바뀐 내용</th></tr>
+<tr><td><code>TH_RA</code></td><td>M16HUB 9→12, M14 3.3→3.6, M16A 3.2→3.4, M16B 3.5→6.0 (정상 p99 흡수)</td></tr>
+<tr><td><code>TH_RA_SUSTAINED</code></td><td>ratio 0.67→0.90, count 3→4 (지속 RA_sus 가 100% 발동 → 강화)</td></tr>
+<tr><td><code>TH_RC_REVERSE</code></td><td>2→12 (리프터 역증가 정상 p99=10)</td></tr>
+<tr><td><code>TH_RD_FABSTORAGE</code></td><td>25→30, TH_RD_HUB_STB_UTIL 99→101 (STB 정상 98~100% 포화 → 사실상 해제, FAB 만 사용)</td></tr>
+<tr><td><code>TH_SLA_RATIO</code></td><td>M14 25→28, M16A 13→20, M16B 18→45 (정상 p99 흡수)</td></tr>
+<tr><td><code>TH_SORTER_WAIT</code></td><td>M14 100→420, M14B 75→300 (정상 p50 이미 243/169)</td></tr>
+<tr><td><code>TH_RB_30</code></td><td>M16A 80→110, M16B 30→40</td></tr>
+<tr><td><code>TH_RB_10</code></td><td>명시값으로 상향 (기존 30분의 30% 자동값이 너무 낮음)</td></tr>
+</table>
+<p class="dim">적용하려면 이 파일 내용을 thresholds.json 으로 복사 후 predictor 재시작. 여러 날 데이터로 추가 검증 권장(단일 정상일 기반이라 실제 사건 억제 위험 점검).</p>
+<p class="dim">출처: <code>/home/user/ASAS/scientific-assistant/M16_BR_개인지식/스크립트/thresholds.json</code></p>
+<div class="note"><b>중요.</b> 룰이나 임계가 바뀐 날 이전의 판정은 <b>지금 룰의 성능이 아닙니다.</b> 성능표(5장)를 낼 때는 <b>최종 변경일 다음날부터</b>로 기간을 자르거나 버전별로 표를 나눠야 합니다. 섞으면 그 수치는 어느 룰의 것도 아닙니다.</div>
+<h3>3-3. 이 시스템 (판정에 영향을 주는 코드)</h3>
+<p class="dim">아래는 점수를 읽고·재현하고·채점하는 파일(<code>fab_score.py · sentinel.py · accuracy.py · config.json · store_csv.py · jupyter_csv.py</code>)의 변경 이력입니다.</p>
+<table><tr><th>날짜</th><th>변경</th><th>커밋</th></tr>
+<tr><td>2026-09-04</td><td>ALL 분석이 FAB 다섯을 안 보던 것 + 흰 배경을 더 낮춘다</td><td><code>893fc63</code></td></tr>
+<tr><td>2026-09-03</td><td>PIO 주 경로를 다시 보이게 하고, 여러 개 걸린 줄은 파랑으로</td><td><code>dd0af88</code></td></tr>
+<tr><td>2026-09-03</td><td>PIO: 더블클릭 그래프에 막대·주 경로를 넣고, reason 은 10분 합만 남긴다</td><td><code>9adef00</code></td></tr>
+<tr><td>2026-09-03</td><td>PIO: 표기 단위를 &#x27;개&#x27; 로 통일하고 LLM 분석 지표에 PIO 를 되살린다</td><td><code>80d092e</code></td></tr>
+<tr><td>2026-09-03</td><td>PIO 반송실패를 관제·LLM 이 읽는다 + 배경 색 + 대화 중 스킬 얹기</td><td><code>2b61be9</code></td></tr>
+<tr><td>2026-08-31</td><td>등급 매기는 것을 원래대로 되돌린다 — 안 틀린 것을 고쳤다</td><td><code>cdc083e</code></td></tr>
+<tr><td>2026-08-31</td><td>용량변경을 &#x27;멀쩡하다&#x27; 로 읽던 것 — CNV 고장이 그걸 뒤집었다</td><td><code>1f3290a</code></td></tr>
+<tr><td>2026-08-31</td><td>왜 이 점수가 나왔나 — 무엇이 몇 점씩 더해졌는지 편다</td><td><code>82e3578</code></td></tr>
+<tr><td>2026-08-31</td><td>FAB 등급은 정책이 정한다 — 70점이 &#x27;정상&#x27; 으로 남던 것</td><td><code>b4f8d15</code></td></tr>
+<tr><td>2026-08-31</td><td>1분 판단 — ALL 과 FAB 이 엇갈릴 때 그 뜻을 알려 준다</td><td><code>d69bcc5</code></td></tr>
+<tr><td>2026-08-27</td><td>구간 그래프에도 켠 FAB 을 같이 그린다</td><td><code>eab786e</code></td></tr>
+<tr><td>2026-08-27</td><td>관제 목록에 HI_FAB · FAB 다섯 점수 컬럼 추가</td><td><code>1b185d0</code></td></tr>
+<tr><td>2026-08-27</td><td>시스템별 등급 정책이 안 먹히던 것 + 분석 뒤 이어 묻기</td><td><code>ee5feca</code></td></tr>
+<tr><td>2026-08-26</td><td>ALL 지표가 안 뜨던 것 수정 — 글자 컬럼을 숫자로 읽고 있었다</td><td><code>3737ff6</code></td></tr>
+<tr><td>2026-08-26</td><td>2026-08 룰베이스 변경 반영 — STB 판정 제외 · M16_PKT 제거 · 가중 1.0 · 경계 60</td><td><code>d55a330</code></td></tr>
+<tr><td>2026-08-26</td><td>area_score 를 예측기 정의대로 — 분모 70, FAB 분리 파일 우선</td><td><code>e44407f</code></td></tr>
+<tr><td>2026-08-25</td><td>현재 상태가 7월 28일을 보던 원인 수정 (최신순 목록의 [-1])</td><td><code>dac8957</code></td></tr>
+<tr><td>2026-08-24</td><td>avatar_2d: 룰 코드 3중 차단 · 현장 스킬 도입 · 말풍선은 점수만 · 복사 수정</td><td><code>6009644</code></td></tr>
+<tr><td>2026-08-24</td><td>avatar_2d: 룰 코드 제거 · 말풍선 요약 · 소형창 서랍 · 기본 프롬프트 편집</td><td><code>c8046de</code></td></tr>
+<tr><td>2026-08-24</td><td>ALL 의 감시 컬럼과 area_score 이름을 바로잡는다</td><td><code>3015841</code></td></tr>
+<tr><td>2026-08-24</td><td>FAB 비교에 ALL 을 넣는다 + 상한 50 과 경계 컷 60 을 갈라 적는다</td><td><code>022bc0f</code></td></tr>
+<tr><td>2026-08-24</td><td>FAB별 위험도 스코어 — 컬럼 정의 · 비교 · 설명 문서</td><td><code>6612f02</code></td></tr>
+<tr><td>2026-08-21</td><td>관제 시스템 고르기 화면 — M16HUB 오른쪽에 AVATAR_2D 카드</td><td><code>76b15f1</code></td></tr>
+<tr><td>2026-08-20</td><td>기억 — 지난 세션을 바로 훑어 요약해 준다 (뽑기를 안 기다린다)</td><td><code>958a1ab</code></td></tr>
+</table>
+<h2>4. 정합성 검사 — 받은 점수를 다시 계산해 맞춰 본다</h2>
+<p>예측 잡이 준 점수를 그대로 믿지 않고, <b>같은 룰로 되계산해 대조</b>합니다. 여기서 어긋나면 그 뒤의 판단과 채점이 모두 헛것이 되므로 성능보다 먼저 봅니다.</p>
+<table><tr><th>항목</th><th>값</th></tr><tr><td>방법</td><td><code>fab_score.compare()</code> — 저장된 <code>unified_risk_score</code>/<code>area_score</code> 와 룰 배점 합을 대조 (±1 이내를 일치로 봅니다)</td></tr><tr><td>검사한 날</td><td class=n>0일</td></tr><tr><td>검사 지점</td><td class=n>0</td></tr><tr><td>일치</td><td class=n>0</td></tr><tr><td>불일치</td><td class=n>0</td></tr><tr><td><b>일치율</b></td><td><span class=big>—</span></td></tr></table>
+<h2>5. 성능 평가</h2>
+<div class="note"><b>무엇을 채점한 값인가.</b> 이 표는 <b>룰 자체의 성능이 아니라</b>, 그 분의 상태를 두고 LLM 이 내린 판단(“지금 대응이 필요한 진짜 이상인가 — 예/아니오”)이 이후 데이터와 맞았는지를 잰 값입니다. 룰의 성능은 예측 잡 쪽에서 냅니다. 두 값을 같은 표에 섞지 마십시오.</div>
+<h3>5-1. 판정 정의</h3>
+<table><tr><th>판정</th><th>뜻</th><th>계산에서</th></tr><tr><td>적중</td><td>이상이라 했고 실제로 이상이었다</td><td>TP</td></tr><tr><td>과다탐지</td><td>이상이라 했는데 아니었다</td><td>FP</td></tr><tr><td>누락</td><td>아니라 했는데 이상이었다</td><td>FN</td></tr><tr><td>조치효과</td><td>맞게 잡았는데 운영자 조치로 회복됐다</td><td><b>분모에서 제외</b></td></tr><tr><td>정탐 / 오탐</td><td>사람이 화면에서 직접 누른 판정</td><td>자동 채점과 따로 셉니다</td></tr></table>
+<p class="dim">조치효과를 오탐으로 세면 <b>조치를 잘할수록 성능이 나빠 보입니다.</b> 그래서 분모에서 뺍니다 (<code>accuracy.py</code> 와 같은 규칙).</p>
+<h3>5-2. 계산식</h3>
+<div class="flow">Precision = 적중 / (적중 + 과다탐지)
+Recall    = 적중 / (적중 + 누락)
+F1        = 2 · Precision · Recall / (Precision + Recall)
+
+· 분모가 0 이면 '—' 로 둡니다. 0.000 으로 적지 않습니다
+  (표본이 없는 것과 성능이 0 인 것은 다릅니다)</div>
+<h3>5-3. 결과 <span class=dim>(데이터 없음)</span></h3>
+<table><tr><th>시스템</th><th class="n">적중(TP)</th><th class="n">과다탐지(FP)</th><th class="n">누락(FN)</th><th class="n">표본 N</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th><th class="n">조치효과<br><span class="dim">(분모 제외)</span></th><th class="n">채점 대기</th></tr><tr><td><b>ALL</b></td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">0</td><td class="n">0</td></tr><tr><td><b>M14</b></td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">0</td><td class="n">0</td></tr><tr><td><b>M14B</b></td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">0</td><td class="n">0</td></tr><tr><td><b>M16A</b></td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">0</td><td class="n">0</td></tr><tr><td><b>M16B</b></td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">0</td><td class="n">0</td></tr><tr><td><b>M16HUB</b></td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">0</td><td class="n">0</td></tr></table>
+<p class="dim">‘채점 대기’ 는 LLM 이 판단은 했으나 검증 창이 아직 차지 않아 판정이 비어 있는 행입니다. 오늘 날짜를 넣으면 이 값이 커지고 성능이 실제보다 나쁘게 보이므로, 이 문서는 <b>어제까지</b>만 봅니다.</p>
+<h2>6. 이 문서가 말하지 않는 것</h2>
+<ul><li><b>룰 자체의 성능이 아닙니다.</b> LLM 판단의 성능입니다 (5장 머리말).</li><li><b>룰 제작 데이터 기간은 이 시스템이 모릅니다.</b> 예측 잡에서 받아야 합니다 (3-1).</li><li><b>판정에 룰 버전 도장이 없습니다.</b> 지금은 날짜로만 구분할 수 있습니다 — 룰 변경일을 받아 기간을 자르십시오.</li><li><b>표본 수를 반드시 함께 보십시오.</b> 표본이 적으면 소수 몇 건에 값이 크게 흔들립니다.</li><li>재현 검산은 하루 전체가 아니라 <b>고르게 뽑은 표본 지점</b>입니다 (4장에 지점 수를 적었습니다).</li></ul>
+<p class="sub">이 문서는 <code>python 정합성_문서.py</code> 로 다시 만들 수 있습니다. 값이 바뀌면 문서도 같이 바뀝니다 — 손으로 고치지 마십시오.</p>
+</div></body></html>
