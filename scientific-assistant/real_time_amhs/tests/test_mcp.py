@@ -2535,7 +2535,7 @@ class 위키가_자기_낱말을_알려준다(unittest.TestCase):
             cand = [str(title or "")]
             cand += [t for t in _re.split(r"[,\s]+", str(tags or "")) if t]
             for w in cand:
-                w = w.strip()
+                w = w.strip().strip("[]()'\"`,.")
                 k = w.lower()
                 if len(w) < self.ns["WORD_MIN"] or k in self.deny or k in seen:
                     continue
@@ -2557,6 +2557,16 @@ class 위키가_자기_낱말을_알려준다(unittest.TestCase):
         self.assertIn("VHL", got)
         # 제목은 **구절 통째로** 남는다 — "M14 반송시간 알려줘" 에는 안 걸린다
         self.assertIn("반송 장치 종류와 역할", got)
+
+    def test_괄호_따옴표를_뗀다(self):
+        """tags 가 "[VHL, LFT]" 꼴로 든 페이지가 있다. 그대로 두면
+        "[VHL" 은 어떤 글에도 안 걸리고, "반송]" 은 걸러야 할 낱말인데
+        목록을 그냥 통과한다."""
+        got = self._words([("개요", "[VHL, LFT, 반송]")])
+        self.assertIn("VHL", got)
+        self.assertIn("LFT", got)
+        self.assertNotIn("반송", got)
+        self.assertFalse([w for w in got if any(c in w for c in "[]'\"")])
 
     def test_한_글자는_안_준다(self):
         """아무 데나 걸린다."""

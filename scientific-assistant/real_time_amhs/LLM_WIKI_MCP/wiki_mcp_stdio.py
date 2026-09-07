@@ -323,7 +323,10 @@ def t_words(_a):
         cand = [str(r["title"] or "")]
         cand += [t for t in re.split(r"[,\s]+", str(r["tags"] or "")) if t]
         for w in cand:
-            w = w.strip()
+            # ★따옴표·괄호를 떼고 본다. tags 가 "[VHL, LFT]" 꼴로 들어 있는
+            #   페이지가 있는데, 그대로 두면 "[VHL" 은 어떤 글에도 안 걸리고
+            #   "반송]" 은 걸러야 할 낱말인데 목록을 그냥 통과한다.
+            w = w.strip().strip("[]()'\"`,.")
             k = w.lower()
             if (len(w) < WORD_MIN or k in WORD_DENY or k in seen):
                 continue
