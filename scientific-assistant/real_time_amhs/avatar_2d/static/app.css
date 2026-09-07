@@ -149,10 +149,12 @@
     border:1px solid var(--line);background:rgba(255,255,255,.05)}
   #cfgOnLab.off{border-color:rgba(255,120,120,.5);color:#ff9b9b}
   #cfgOnLab.off b::after{content:' — 꺼짐'}
-  /* 꺼져 있으면 알람 패널 제목에 티가 나야 한다. 안 그러면 왜 조용한지
-     모르고 "알람이 고장 났다" 가 된다. */
-  #alarmBox.muted #alarmTitle::after{content:' (알람 꺼짐)';
-    color:#ff9b9b;font-weight:400}
+  /* 꺼 두면 알람 패널 자체가 안 뜬다. 그래서 **꺼져 있다는 것**을 아래
+     FAB알람 표에서 보여 준다 — 안 그러면 왜 조용한지 모르고 "알람이 고장
+     났다" 가 된다. */
+  .chip#alarmChip.off{border-color:rgba(255,120,120,.45);color:#ff9b9b;
+    opacity:.85}
+  .chip#alarmChip.off::after{content:' 꺼짐';font-size:.92em;opacity:.9}
   #alogBody{overflow:auto;padding:8px 12px 12px}
   #alogBody table{width:100%;border-collapse:collapse;font-size:11.5px}
   #alogBody th,#alogBody td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.07);

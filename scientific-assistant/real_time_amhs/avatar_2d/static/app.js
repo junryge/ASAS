@@ -1623,27 +1623,37 @@ const LV_CSS = {lv1:'232,193,74', lv2:'255,122,61', lv3:'255,43,61'};
    (무슨 일이 있었는지는 나중에 봐야 하니까).
    기본은 켜짐 — 관제 화면에서 알람이 기본으로 꺼져 있으면 그게 더 위험하다. */
 function alarmOn(){ return ALOG_CFG.on !== false; }
-/* 꺼져 있다는 것을 화면에 보여 준다. 안 보이면 "알람이 고장 났다" 가 된다 */
+/* 꺼져 있다는 것을 어디엔가는 보여 준다. 패널은 안 뜨니까 — 안 그러면
+   "알람이 고장 났다" 가 된다. 설정의 표와 아래 FAB알람 표에 티를 낸다. */
 function paintAlarmMuted(){
-  const box=$('#alarmBox'); if(box) box.classList.toggle('muted', !alarmOn());
-  const lab=$('#cfgOnLab'); if(lab) lab.classList.toggle('off', !alarmOn());
+  const off = !alarmOn();
+  const lab=$('#cfgOnLab');  if(lab)  lab.classList.toggle('off', off);
   const chip=$('#alarmChip');
-  if(chip) chip.title = alarmOn()
-    ? 'FAB 알람 패널이 안 보이면 누르세요 — 우상단 제자리로 돌아옵니다'
-    : 'FAB 알람이 꺼져 있습니다 (기록 창 → 설정에서 켭니다)';
+  if(chip){
+    chip.classList.toggle('off', off);
+    chip.title = off
+      ? 'FAB 알람이 꺼져 있습니다 — 알람 기록 창(FAB 정상 두 번 클릭) → 설정에서 켭니다'
+      : 'FAB 알람 패널이 안 보이면 누르세요 — 우상단 제자리로 돌아옵니다';
+  }
 }
 /* 알람을 대사 없이 조용히 내린다 — 등급/구역 '교체' 때 쓴다.
    교체마다 "해제됐어요!" 를 말하면 실제로는 상황이 나빠지는 중인데
    좋아진 것처럼 들린다. */
 function silentClear(){
-  if(!alarm) return;
-  clearInterval(alarm.nag); clearInterval(alarm.tick);
-  alarm = null;
+  if(alarm){ clearInterval(alarm.nag); clearInterval(alarm.tick); alarm = null; }
+  /* ★화면 정리는 alarm 이 있든 없든 **항상** 한다. 예전엔 위에서 바로
+     돌아갔는데, 그러면 alarm 은 비었는데 패널만 떠 있는 상태를 못 지운다.
+     알람을 꺼서 패널을 내릴 때 그 자리에 걸린다. */
   const box=$('#alarmBox'), fl=$('#alarmFlash');
   box.classList.remove('on','lv1','lv2','lv3');
   fl.classList.remove('on','lv1','lv2','lv3');
 }
 function fireAlarm(fab, lv, src){
+  /* ★꺼 뒀으면 **아무것도 안 한다.** 패널도 안 띄운다.
+     처음엔 조용히 띄우기만 했는데, 그것도 눈에 걸린다고 했다 —
+     "비활성화면 팝업창 없어지고 알람 아예 안 울리게".
+     기록은 관제 서버가 계속 쌓는다 (브라우저와 상관없다). */
+  if(!alarmOn()){ silentClear(); return; }
   const f = fab || FABS[Math.floor(Math.random()*FABS.length)];
   const L = lv  || LEVELS[Math.floor(Math.random()*LEVELS.length)];
   if(alarm){
@@ -1671,19 +1681,13 @@ function fireAlarm(fab, lv, src){
   $('#alarmLv').textContent = L.name;
   $('#alarmFab').textContent = f.name;
   const im=$('#alarmImg'); im.src=f.img; im.alt=f.name;
-  $('#alarmMsg').textContent = f.name + ' FAB · ' + L.name + ' 단계 — '
-    + (alarmOn() ? '해제할 때까지 계속 울립니다' : '알람이 꺼져 있어 조용히 표시만 합니다');
+  $('#alarmMsg').textContent = f.name + ' FAB · ' + L.name + ' 단계 — 해제할 때까지 계속 울립니다';
   document.documentElement.style.setProperty('--bubbleAccent', 'rgb('+LV_CSS[L.key]+')');
-  sys('■ 알람 발생 — ' + f.name + ' FAB · ' + L.name
-      + (alarmOn() ? '' : ' (알람 꺼짐 — 조용히)'));
-  paintAlarmMuted();
+  sys('■ 알람 발생 — ' + f.name + ' FAB · ' + L.name);
   paintAlarmTime();
-  alarm.tick = setInterval(paintAlarmTime, 1000);
-  /* ★꺼 뒀으면 재촉 타이머 자체를 안 건다. alarmSay 안에서 막아도 되지만,
-     안 쓸 타이머를 등급마다 4~8초로 돌려 둘 이유가 없다. */
-  if(!alarmOn()) return;
   alarmSay();
   alarm.nag  = setInterval(alarmSay, L.nag);
+  alarm.tick = setInterval(paintAlarmTime, 1000);
 }
 function clearAlarm(){
   if(!alarm) return;
@@ -1780,15 +1784,11 @@ async function saveAlogCfg(){
     const j=await r.json();
     ALOG_CFG=j.config||ALOG_CFG;
     loadAlogCfg();
-    /* ★끄면 지금 울리고 있는 것부터 멈춘다. 다음 알람부터 조용해지면
-       "껐는데 계속 울린다" 가 된다 — 실제로 그게 문제였다. */
-    if(!alarmOn() && alarm){
-      clearInterval(alarm.nag); alarm.nag=null;
-      $('#alarmMsg').textContent =
-        alarm.fab.name+' FAB · '+alarm.lv.name+' 단계 — 알람이 꺼져 있어 조용히 표시만 합니다';
-    }else if(alarmOn() && alarm && !alarm.nag && !alarm.quiet){
-      alarm.nag = setInterval(alarmSay, alarm.lv.nag);
-    }
+    /* ★끄면 지금 떠 있는 것부터 내린다. 다음 알람부터 조용해지면
+       "껐는데 계속 울린다" 가 된다 — 실제로 그게 문제였다.
+       대사 없이 내린다 (silentClear) — 끈 것이지 해제한 것이 아니다. */
+    if(!alarmOn()) silentClear();
+    paintAlarmMuted();
     if(m) m.textContent='저장했습니다.';
     sys('알람 설정 — '+(alarmOn()?'울림':'★안 울림')
         +' · 정상 복귀 후 관찰 '+ALOG_CFG.hold_min+'분 · 기록 보관 '

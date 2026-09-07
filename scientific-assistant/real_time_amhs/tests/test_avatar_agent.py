@@ -917,9 +917,21 @@ class FAB_알람_켜기_끄기(unittest.TestCase):
         self.assertIn("border:0", rule)
         self.assertIn("background:none", rule)
         self.assertNotIn("74px", rule)
-        # 꺼짐이 눈에 보여야 한다 — 안 보이면 "알람이 고장 났다" 가 된다
+        # 꺼짐이 눈에 보여야 한다 — 팝업창이 아예 안 뜨므로, 안 보이면
+        # 왜 조용한지 모르고 "알람이 고장 났다" 가 된다
         self.assertIn("#cfgOnLab.off", css)
-        self.assertIn("#alarmBox.muted #alarmTitle", css)
+        self.assertIn("#alarmChip.off", css)
+
+    def test_꺼_두면_팝업창이_아예_안_뜬다(self):
+        """조용히 띄우기만 해도 눈에 걸린다고 했다 —
+        "비활성화면 팝업창 없어지고 알람 아예 안 울리게"."""
+        js = (Path(util.BASE) / "avatar_2d" / "static"
+              / "app.js").read_text(encoding="utf-8")
+        i = js.index("function fireAlarm(")
+        head = js[i:i + 700]
+        self.assertIn("if(!alarmOn())", head,
+                      "fireAlarm 이 꺼짐을 맨 앞에서 안 본다")
+        self.assertIn("silentClear()", head)
 
     def test_JS_문지기(self):
         """app.js 원본을 잘라 얇은 DOM 위에서 돌린다 (node 없으면 건너뜀)."""

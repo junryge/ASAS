@@ -22,7 +22,8 @@ block += `
 ;globalThis.__A = {
   get FABS(){return FABS}, get LEVELS(){return LEVELS},
   get alarm(){return alarm}, set alarm(v){alarm=v},
-  fireAlarm, clearAlarm, alarmSay, alarmOn, beep, paintAlarmMuted};`;
+  fireAlarm, clearAlarm, silentClear, alarmSay, alarmOn, beep,
+  paintAlarmMuted};`;
 
 /* ── 아주 얇은 DOM ── */
 const els = {};
@@ -67,33 +68,36 @@ ok(said.length === 1, '대사가 한 번 나온다 — ' + JSON.stringify(said[0
 ok(!el('alarmBox').classList.contains('muted'), '꺼짐 표시가 없다');
 ok(el('alarmMsg').textContent.includes('계속 울립니다'), '안내: 계속 울립니다');
 
-console.log('② 꺼짐');
+console.log('② 꺼짐 — 팝업창도 안 뜬다');
 ctx.ALOG_CFG.on = false; said.length = 0;
 fire();
-ok(G.alarm !== null, '알람은 그대로 잡힌다 (상태는 봐야 한다)');
-ok(!G.alarm.nag, '★재촉 타이머를 안 건다');
-ok(!!G.alarm.tick, '경과 시간은 계속 센다');
+ok(G.alarm === null, '★알람이 아예 안 잡힌다');
 ok(said.length === 0, '★대사가 없다');
-ok(el('alarmBox').classList.contains('muted'), '패널에 꺼짐 표시가 붙는다');
-ok(el('alarmMsg').textContent.includes('조용히 표시만'), '왜 조용한지 적혀 있다');
+ok(!el('alarmBox').classList.contains('on'), '★알람 팝업창이 안 뜬다');
+ok(!el('alarmFlash').classList.contains('on'), '★화면 번쩍임도 없다');
 
 console.log('③ 꺼진 채로 재촉 함수를 억지로 불러도');
 said.length = 0;
 G.alarmSay(); G.alarmSay();
 ok(said.length === 0, '★아무 말도 안 한다');
 
-console.log('④ 꺼진 채로 해제');
-said.length = 0;
-G.clearAlarm();
-ok(said.length === 0, '★해제 대사도 없다');
-ok(G.alarm === null, '알람은 내려간다');
+console.log('④ 켜진 채 떠 있다가 끄면');
+ctx.ALOG_CFG.on = true; fire();
+ok(el('alarmBox').classList.contains('on'), '먼저 떠 있고');
+ctx.ALOG_CFG.on = false; said.length = 0;
+G.silentClear();                       // saveAlogCfg 가 하는 일
+ok(G.alarm === null, '★그 자리에서 내려간다');
+ok(!el('alarmBox').classList.contains('on'), '★팝업창이 사라진다');
+ok(said.length === 0, '★내려가면서 대사도 없다 (끈 것이지 해제가 아니다)');
 
 console.log('⑤ 다시 켜면');
 ctx.ALOG_CFG.on = true; said.length = 0;
 fire();
+ok(G.alarm !== null, '알람이 다시 잡힌다');
 ok(!!G.alarm.nag, '재촉이 다시 돈다');
 ok(said.length === 1, '대사가 다시 나온다');
-ok(!el('alarmBox').classList.contains('muted'), '꺼짐 표시가 사라진다');
+ok(el('alarmBox').classList.contains('on'), '팝업창이 다시 뜬다');
+ok(el('alarmMsg').textContent.includes('계속 울립니다'), '안내가 원래대로');
 
 console.log('⑥ alarmOn() 판단');
 ctx.ALOG_CFG.on = undefined;  ok(G.alarmOn() === true,  '값이 없으면 켜짐 (관제라 기본이 켜짐)');

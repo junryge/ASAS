@@ -361,6 +361,44 @@ def set_setting(key, value):
 
 
 # ---------------------------------------------------------------- 유틸
+# ── 내려받기 이름 ────────────────────────────────────────────────────────
+# ★한글 제목이면 MD 다운로드가 통째로 안 됐다. 까닭은 이렇다:
+#     slugify 가 한글을 살려 둔다 → 파일 이름이 '리센느.md'
+#     → Content-Disposition 을 손으로 f-string 으로 만들었다
+#     → 응답 머리는 latin-1 로만 실린다 (WSGI 규칙, PEP 3333)
+#     → UnicodeEncodeError → 500. 눌러도 아무 일도 안 일어난다.
+#   RFC 6266/5987 이 이걸 위해 있다: 옛 브라우저용 ASCII 이름(filename=)과
+#   진짜 이름(filename*=UTF-8'') 을 **둘 다** 준다.
+_ASCII_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _ascii_part(s):
+    """ASCII 로만 남긴다. '..' 은 받는 쪽에서 경로로 읽힐 수 있어 줄인다."""
+    out = _ASCII_NAME.sub("_", str(s or ""))
+    return re.sub(r"\.{2,}", ".", out).strip("._")
+
+
+def attach(name, fallback="download"):
+    """내려받기 머리 한 줄 — 한글 이름도 안전하게.
+
+    ★확장자를 따로 떼어 다룬다. 통째로 깎으면 '리센느.md' 가 'md' 가 되어,
+      옛 브라우저에서 확장자 없는 파일로 떨어진다.
+    """
+    name = str(name or "").strip() or fallback
+    base, dot, ext = name.rpartition(".")
+    if not dot:
+        base, ext = name, ""
+    a_base = _ascii_part(base)
+    a_ext = _ASCII_NAME.sub("", ext)[:12]
+    if not a_base:                       # 제목이 통째로 한글일 때
+        a_base = _ascii_part(fallback.rpartition(".")[0] or fallback) or "download"
+        a_ext = a_ext or _ASCII_NAME.sub("", fallback.rpartition(".")[2])[:12]
+    ascii_name = a_base + ("." + a_ext if a_ext else "")
+    return {"Content-Disposition":
+            "attachment; filename=\"{}\"; filename*=UTF-8''{}".format(
+                ascii_name, urllib.parse.quote(name, safe=""))}
+
+
 def slugify(s):
     s = re.sub(r"[^\w가-힣\- ]", "", (s or "").strip())
     s = re.sub(r"[\s_]+", "-", s).strip("-").lower()
@@ -1623,8 +1661,11 @@ def page_raw(pid):
     if not p:
         abort(404)
     content = page_frontmatter(p, p["dname"]) + (p["body_md"] or "")
+    # ★파일 이름은 slug 가 아니라 **제목**으로 준다. slug 는 주소용으로
+    #   깎인 말이라("rtx-pro-6000-…") 받아 놓고 보면 뭔지 모른다.
+    name = "{}.md".format(p["title"] or p["slug"] or "page")
     return Response(content, mimetype="text/markdown; charset=utf-8",
-                    headers={"Content-Disposition": f"attachment; filename={p['slug']}.md"})
+                    headers=attach(name, "page.md"))
 
 
 # ---------------------------------------------------------------- 라우트: 소스 (업로드/인제스트)
@@ -1841,7 +1882,10 @@ def source_file(sid):
     path = SRC_DIR / s["dslug"] / s["stored_name"]
     if not path.exists():
         abort(404)
-    return send_file(str(path), download_name=s["filename"])
+    # ★as_attachment 를 안 주면 Content-Disposition 이 inline 이 된다 —
+    #   단추에는 '원본 다운로드' 라고 써 있는데 브라우저는 화면에 띄운다.
+    #   (send_file 은 한글 이름을 RFC 5987 로 알아서 실어 준다.)
+    return send_file(str(path), download_name=s["filename"], as_attachment=True)
 
 
 @app.route("/source/<int:sid>/desc", methods=["POST"])
@@ -2037,7 +2081,10 @@ def catalog():
 
 @app.route("/catalog/index.md")
 def catalog_md():
-    return Response(build_index_md(), mimetype="text/markdown; charset=utf-8")
+    # ?dl=1 이면 내려받는다. 그냥 열면 화면에 뜬다 (지금까지 하던 대로)
+    h = attach("index.md") if request.args.get("dl") else {}
+    return Response(build_index_md(), mimetype="text/markdown; charset=utf-8",
+                    headers=h)
 
 
 @app.route("/log")
@@ -2594,8 +2641,8 @@ def _combined_md():
 @app.route("/export/combined")
 def export_combined():
     return Response(_combined_md(), mimetype="text/markdown; charset=utf-8",
-                    headers={"Content-Disposition":
-                             f"attachment; filename=llm-wiki-combined-{datetime.now():%Y%m%d}.md"})
+                    headers=attach("llm-wiki-combined-{:%Y%m%d}.md".format(
+                        datetime.now()), "llm-wiki-combined.md"))
 
 
 # ---------------------------------------------------------------- JSON API (MCP 연동용)
