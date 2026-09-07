@@ -440,6 +440,97 @@ class 어디서_걸렀는지_센다(unittest.TestCase):
         self.assertEqual(len(rows), 1)
 
 
+class 누가_가로챘는지_알아본다(unittest.TestCase):
+    """실제로 겪은 일 — DuckDuckGo·위키백과가 **전부 같은 6KB 페이지**를 줬다.
+    sv_role 이라는, 두 곳 다 안 쓰는 표시가 들어 있었다. 사내 게이트웨이가
+    바깥 요청을 통째로 가로챈 것이다. 이걸 '0건' 으로만 보여 주면 사람이
+    영영 모른다."""
+
+    PAGE = ('<!DOCTYPE html><html sv_role="main"><head><script>'
+            'navigator.serviceWorker.getRegistrations().then(function(r){})'
+            '</script></head><body><h1>정보보호 정책에 따라 차단되었습니다'
+            '</h1><p>허용되지 않은 사이트입니다</p></body></html>')
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading
+        page = cls.PAGE
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _p(self):
+                b = page.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+            def do_GET(self):
+                self._p()
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                self.rfile.read(n)
+                self._p()
+
+        cls.srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def _mod(self):
+        m = _web_mcp()
+        m.URL = ("html+post=http://127.0.0.1:{p}/html/"
+                 "|mediawiki=http://127.0.0.1:{p}/w/api.php").format(p=self.port)
+        m.KIND, m.USE_PROXY = "html", False
+        return m
+
+    def test_0건이_아니라_가로챘다고_말한다(self):
+        out = json.loads(self._mod().t_search({"query": "SBS"}))
+        self.assertEqual(out["count"], 0)
+        self.assertTrue(any("가로챘다" in w for w in out["why"]),
+                        "그냥 0건이라고만 하면 사람이 뭘 고칠지 모른다")
+
+    def test_JSON_이_와야_할_곳에_HTML_이_오면_그렇게_말한다(self):
+        """위키백과 API 가 JSONDecodeError 만 뱉으면 까닭을 알 수 없다."""
+        m = self._mod()
+        be = {"kind": "mediawiki", "post": False,
+              "url": "http://127.0.0.1:{}/w/api.php".format(self.port)}
+        with self.assertRaises(RuntimeError) as e:
+            m._one(be, "SBS", 3)
+        self.assertIn("HTML", str(e.exception))
+        self.assertIn("가로챈", str(e.exception))
+
+    def test_raw_가_차단_글을_읽을_수_있게_찍는다(self):
+        """태그째로 찍으면 스크립트만 보이고 정작 안내문이 안 보인다."""
+        import contextlib
+        import io as _io
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self._mod().rawcheck("SBS")
+        out = buf.getvalue()
+        self.assertIn("가로챘다", out)
+        self.assertIn("정보보호 정책에 따라 차단되었습니다", out)
+        self.assertIn("사내 검색 포털", out)      # 다음에 할 것을 알려 준다
+
+    def test_프록시를_켜고_한_번_더_해_본다(self):
+        """회사 PC 는 대개 프록시를 타야 바깥에 나간다 — 그걸 눌러 본다."""
+        import contextlib
+        import io as _io
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self._mod().rawcheck("SBS")
+        self.assertIn("프록시를 켜고 한 번 더", buf.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
 

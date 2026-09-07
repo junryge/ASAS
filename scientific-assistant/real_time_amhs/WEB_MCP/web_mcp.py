@@ -192,14 +192,15 @@ def _headers():
     return h
 
 
-def _open(url, timeout=None, form=None):
+def _open(url, timeout=None, form=None, proxy=None):
     """주소를 연다. form 을 주면 POST 로 보낸다.
 
     ★POST 가 왜 필요한가. DuckDuckGo html 은 GET 으로 부르면 결과 대신
       '봇 같다' 는 페이지를 200 으로 주는 때가 있다. 사람이 쓰는 창은
       POST 로 보낸다 — 그래서 POST 자리를 만들어 둔다.
     """
-    op = (urllib.request.build_opener() if USE_PROXY
+    use = USE_PROXY if proxy is None else proxy
+    op = (urllib.request.build_opener() if use
           else urllib.request.build_opener(urllib.request.ProxyHandler({})))
     data, h = None, _headers()
     if form:
@@ -229,6 +230,13 @@ _HREF = re.compile(r"""<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""",
 _WALL = ("anomaly-modal", "bots use DuckDuckGo", "challenge-platform",
          "cf-browser-verification", "Just a moment", "captcha",
          "Enable JavaScript and cookies")
+
+# ★사내 게이트웨이가 가로챈 표시. 실제로 겪었다 — DuckDuckGo·위키백과가
+#   전부 같은 6KB 짜리 페이지를 줬고, 위키백과 API 는 JSON 대신 이게 왔다.
+#   sv_role 은 DuckDuckGo 도 위키백과도 안 쓰는 표시다.
+_GATE = ("sv_role", "serviceWorker.getRegistrations", "차단", "유해",
+         "정보보호", "보안정책", "허용되지 않", "Access Denied",
+         "blocked by", "webfilter", "websense", "bluecoat")
 # 우리 것이 아닌 링크(로고·설정·다음페이지)를 걸러 낸다
 _SKIP = ("duckduckgo.com/settings", "duckduckgo.com/about", "/y.js",
          "spreadprivacy", "help.duckduckgo", "twitter.com/duckduckgo",
@@ -384,18 +392,26 @@ _MW_Q = ("action=query&list=search&format=json&utf8=1"
          "&srlimit={k}&srsearch={q}")
 
 
-def _one(be, q, k, stats=None):
+def _one(be, q, k, stats=None, proxy=None):
     """한 곳에서 찾는다. (결과목록, 받은 글) 을 돌려준다."""
     kind, u = be["kind"], be["url"]
     if kind == "mediawiki":
         # 주소는 api.php 까지만 주면 된다 — 질의는 우리가 붙인다
         base = u.split("?")[0].rstrip("/")
-        raw = _open(base + "?" + _MW_Q.format(k=k, q=urllib.parse.quote(q)))
-        return _from_mediawiki(raw, k, base), raw
+        raw = _open(base + "?" + _MW_Q.format(k=k, q=urllib.parse.quote(q)),
+                    proxy=proxy)
+        try:
+            return _from_mediawiki(raw, k, base), raw
+        except ValueError:
+            # ★JSON 을 줘야 할 API 가 HTML 을 줬다 = 누가 가로챘다.
+            #   그냥 JSONDecodeError 로 두면 사람이 뭘 고칠지 모른다.
+            raise RuntimeError(
+                "JSON 이 와야 하는데 HTML 이 왔다 — 누가 중간에서 가로챈다"
+                "(사내 게이트웨이/차단 페이지). 받은 글 {}자".format(len(raw)))
     if be["post"]:
-        raw = _open(u.replace("{q}", ""), form={"q": q})
+        raw = _open(u.replace("{q}", ""), form={"q": q}, proxy=proxy)
     else:
-        raw = _open(u.replace("{q}", urllib.parse.quote(q)))
+        raw = _open(u.replace("{q}", urllib.parse.quote(q)), proxy=proxy)
     if kind == "html":
         return _from_html(raw, k, stats), raw
     d = json.loads(raw)
@@ -428,9 +444,13 @@ def t_search(a):
         if rows:
             break
         # 0건이면 왜인지 남긴다 — 막힌 페이지인지 진짜 없는 건지 다르다
-        why.append("{}: {}".format(
-            be["url"][:40],
-            "막힌 페이지" if any(w in raw for w in _WALL) else "0건"))
+        if any(w in raw for w in _WALL):
+            what = "막힌 페이지"
+        elif any(w in raw for w in _GATE):
+            what = "누가 가로챘다 (사내 게이트웨이/차단 페이지)"
+        else:
+            what = "0건"
+        why.append("{}: {}".format(be["url"][:40], what))
     if not rows and why:
         # ★조용히 0건을 주면 사람이 뭘 고칠지 모른다. 까닭을 실어 준다.
         return json.dumps({"query": q, "count": 0, "results": [],
@@ -595,11 +615,52 @@ def selfcheck(q="테스트"):
     return 0
 
 
+def _probe(bes, q, tag, proxy=None):
+    """곳마다 한 번씩 해 보고 몇 곳에서 결과가 났는지 돌려준다."""
+    hit = 0
+    for i, be in enumerate(bes, 1):
+        print("")
+        print("  [{}] {}  ({}{})".format(i, be["url"][:66], be["kind"],
+                                         "+post" if be["post"] else ""))
+        st = {}
+        try:
+            rows, raw = _one(be, q, 50, st, proxy=proxy)
+        except Exception as e:                          # noqa: BLE001
+            print("      실패: {}: {}".format(type(e).__name__, e))
+            continue
+        print("      받은 글 : {}자".format(len(raw)))
+        wall = [w for w in _WALL if w in raw]
+        gate = [w for w in _GATE if w in raw]
+        if wall:
+            print("      ★막힌 페이지다 ('{}') — 그 검색터가 우리를 막았다"
+                  .format(wall[0]))
+        elif gate:
+            print("      ★누가 가로챘다 ('{}') — 검색터 글이 아니다"
+                  .format(gate[0]))
+        if st:
+            print("      링크 {링크}개 · 주소아님 {주소아님} · 걸러냄 {걸러냄}"
+                  " · 제목없음 {제목없음} → 남음 {남음}".format(**st))
+        for r in rows[:5]:
+            print("        · {}  {}".format(r["title"][:44], r["url"][:56]))
+        if rows:
+            hit += 1
+        else:
+            # ★태그를 걷어 **사람이 읽을 수 있게** 찍는다. 차단 페이지면
+            #   여기에 누가 막았는지 적혀 있다.
+            txt = strip_html(raw)[:500]
+            print("      받은 글(글자만):")
+            print("        " + (txt or "(빈 글)"))
+    print("")
+    print("  → {} 결과가 나온 곳: {}곳".format(tag, hit))
+    return hit
+
+
 def rawcheck(q="테스트"):
     """0건일 때 **어디서 막혔는지** 본다.
 
-    ★0건은 까닭이 여럿이다 — 막힌 페이지를 200 으로 받았거나, 링크는
-      왔는데 우리 체가 다 걸러 냈거나, 진짜로 없거나. 셋을 갈라 준다.
+    ★0건은 까닭이 여럿이다 — 그 검색터가 막았거나, 중간에서 누가
+      가로챘거나, 링크는 왔는데 우리 체가 다 걸렀거나, 진짜로 없거나.
+      넷을 갈라 준다.
     """
     bes = _backends()
     if not bes:
@@ -608,35 +669,43 @@ def rawcheck(q="테스트"):
     print("찾는 말  : {!r} → {!r}".format(q, q2))
     print("나가는 UA: {}".format(UA[:70]))
     print("프록시   : {}".format("탄다" if USE_PROXY else "안 탄다"))
-    hit = 0
-    for i, be in enumerate(bes, 1):
-        print("")
-        print("[{}] {}  ({}{})".format(i, be["url"][:70], be["kind"],
-                                       "+post" if be["post"] else ""))
-        st = {}
-        try:
-            rows, raw = _one(be, q2, 50, st)
-        except Exception as e:                          # noqa: BLE001
-            print("    실패: {}: {}".format(type(e).__name__, e))
-            continue
-        print("    받은 글 : {}자".format(len(raw)))
-        wall = [w for w in _WALL if w in raw]
-        if wall:
-            print("    ★막힌 페이지다 ('{}')".format(wall[0]))
-            print("      → 여기는 못 쓴다. 다음 곳으로 넘어가야 한다.")
-        if st:
-            print("    링크 {링크}개 · 주소아님 {주소아님} · 걸러냄 {걸러냄}"
-                  " · 제목없음 {제목없음} → 남음 {남음}".format(**st))
-        for r in rows[:5]:
-            print("      · {}  {}".format(r["title"][:44], r["url"][:56]))
-        if rows:
-            hit += 1
-        elif not wall:
-            print("    받은 글 앞부분:")
-            print("      " + raw[:400].replace("\n", " ").replace("\r", ""))
+    # http/https 만 본다 — no_proxy 목록까지 찍으면 화면이 안 보인다
+    sysp = {k: v for k, v in urllib.request.getproxies().items()
+            if k in ("http", "https")}
+    print("이 PC 프록시 설정: {}".format(
+        " · ".join("{}={}".format(k, v) for k, v in sorted(sysp.items()))
+        or "(없음)"))
     print("")
-    print("→ 결과가 나온 곳: {}곳".format(hit))
-    return 0 if hit else 1
+    print("── 지금 설정 그대로 ──")
+    hit = _probe(bes, q2, "지금 설정")
+    if hit:
+        return 0
+
+    # ★한 곳도 안 되면 프록시를 켜고 한 번 더 해 본다. 회사 PC 는 대개
+    #   프록시를 타야 바깥에 나간다 — 안 타면 게이트웨이가 가로챈다.
+    if not USE_PROXY:
+        print("")
+        print("── 프록시를 켜고 한 번 더 ──")
+        if not sysp:
+            print("  이 PC 에 프록시 설정이 없다 — 켜도 같은 데로 나간다.")
+            print("  회사 프록시 주소를 안다면 이렇게 준다:")
+            print("    set HTTPS_PROXY=http://<프록시>:<포트>")
+            print("    set HTTP_PROXY=http://<프록시>:<포트>")
+        if _probe(bes, q2, "프록시", proxy=True):
+            print("")
+            print("★프록시를 켜니 된다. config.py 의 web 칸을 고쳐라:")
+            print('    "WEB_USE_PROXY": "1",')
+            return 0
+
+    print("")
+    print("★어느 쪽으로도 바깥 검색이 안 된다. 이 PC 는 바깥이 막혀 있다.")
+    print("  할 수 있는 것:")
+    print("   ① 사내 검색 포털이 있으면 그 주소를 준다 (이게 제일 낫다)")
+    print('        "WEB_SEARCH_URL": "http://portal.내부/search?q={q}&fmt=json"')
+    print('        "WEB_SEARCH_KIND": "json"')
+    print("   ② 위키 지식(LLM_WIKI_MCP)에 MD 를 올려서 쓴다 — 바깥이 필요 없다")
+    print("   ③ 웹 검색을 끈다: config.py 의 web 칸 enabled=False")
+    return 1
 
 
 if __name__ == "__main__":
