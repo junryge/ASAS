@@ -5003,15 +5003,37 @@ function applyServerConfig(c){
   tickScene(false);
 }
 
+/* 서버 설정을 못 받았을 때 — 화면 위에 띄운다. 콘솔은 아무도 안 본다. */
+function bootFail(why){
+  try{
+    const d=document.createElement('div');
+    d.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;'
+      +'background:#3a1218;border-bottom:1px solid #d94a5a;color:#ffd8dd;'
+      +'padding:10px 14px;font:13px/1.6 system-ui,"Malgun Gothic",sans-serif';
+    d.innerHTML='<b>서버 설정(/api/config)을 못 받았습니다 — '
+      +String(why).replace(/[<>]/g,'')+'</b><br>'
+      +'그래서 아바타·MCP·에이전트 규칙·FAB 알람이 모두 멎습니다. '
+      +'주소창에 <code>/api/config</code> 를 직접 열어 보세요. '
+      +'500 이면 run.py 를 띄운 창에 오류가 찍혀 있습니다 '
+      +'(avatar 폴더의 .py 를 일부만 덮으면 이렇게 됩니다 — 다 같이 덮으세요).';
+    document.body.appendChild(d);
+  }catch(e){}
+}
+
 (async ()=>{
   let c=null;
   if(location.protocol === 'file:') return;   // HTML 단독 실행 -> 서버가 없다
+  /* ★여기서 조용히 돌아가면 안 된다.
+     /api/config 가 한 번 실패하면 window.SERVER 가 안 켜지고, 그러면
+     아바타·MCP·에이전트 규칙·FAB 알람 표시가 **한꺼번에** 멎는다. 그런데
+     화면에는 아무 말도 안 나와서 "다 안 되잖아" 만 남는다 — 실제로 그렇게
+     겪었다. 무엇이 왜 안 되는지 화면에 적어 준다. */
   try{
     const r = await fetch('/api/config', {cache:'no-store'});
-    if(!r.ok) return;
+    if(!r.ok) throw new Error('HTTP ' + r.status + ' ' + (r.statusText||''));
     c = await r.json();
-  }catch(e){ return; }               // 서버 없이 열린 경우 -> 조용히 무시
-  if(!c) return;
+  }catch(e){ bootFail(e && e.message || e); return; }
+  if(!c){ bootFail('빈 응답'); return; }
   window.SERVER = true;
 
   applyServerConfig(c);

@@ -376,6 +376,8 @@ def public_config(model="", models=None, upstream="", alarm=None):
     ★alarm 은 sentinel.alarm_config(설정) 이다. **여기에 실어야** 한다 —
       /api/settings 로 따로 받으면 그 사이에 pollSentinel 이 먼저 돌아서,
       꺼 놨는데도 켤 때마다 한 번 울린다.
+    ★안 줘도 된다. server.py 가 부르고 나서 얹기도 한다 — 파일을 하나씩
+      덮는 배포라 어느 쪽이 새것이든 돌아가야 한다.
     """
     return {
         "baseUrl": "/v1",

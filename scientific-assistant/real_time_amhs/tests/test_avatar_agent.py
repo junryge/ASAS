@@ -894,6 +894,42 @@ class FAB_알람_켜기_끄기(unittest.TestCase):
         self.st.update({"alarmHoldMin": 30, "alarmKeep": 300})
         self.assertFalse(sentinel.alarm_config(self.st.all())["on"])
 
+    def test_파일을_하나만_덮어도_안_죽는다(self):
+        """★실제로 겪었다. server.py 만 새것이고 config.py 가 옛것이면
+
+            TypeError: public_config() takes from 0 to 3 positional
+                       arguments but 4 were given
+
+        → /api/config 가 500 → window.SERVER 가 안 켜진다
+        → 아바타·MCP·에이전트 규칙·FAB 알람이 **한꺼번에** 죽는다.
+        파일을 하나씩 덮는 배포라, 열쇠를 늘릴 때 인자를 늘리면 안 된다."""
+        src = (Path(util.BASE) / "avatar_2d" / "avatar"
+               / "server.py").read_text(encoding="utf-8")
+        i = src.index("config.public_config(")
+        call = src[i:src.index(")", i) + 1]
+        self.assertEqual(call.count(","), 2,
+                         "public_config 에 인자를 늘렸다 — 옛 config.py 에서 "
+                         "TypeError 가 난다: " + call)
+
+    def test_옛_config_py_로도_알람이_실린다(self):
+        """server.py 가 하는 그대로 — 부르고 나서 열쇠만 얹는다."""
+        def old_public_config(model="", models=None, upstream=""):
+            return {"model": model}
+        pub = old_public_config("m", [], "")
+        pub["alarm"] = sentinel.alarm_config(self.st.all())
+        self.assertIn("on", pub["alarm"])
+
+    def test_설정을_못_받으면_화면에_말한다(self):
+        """조용히 돌아가면 화면에 아무 말도 없이 전부 멎는다 —
+        "다 안 되잖아" 만 남는다."""
+        js = (Path(util.BASE) / "avatar_2d" / "static"
+              / "app.js").read_text(encoding="utf-8")
+        self.assertIn("function bootFail(", js)
+        i = js.index("await fetch('/api/config'")
+        blk = js[i - 400:i + 400]
+        self.assertIn("bootFail(", blk, "실패해도 조용히 돌아간다")
+        self.assertNotIn("if(!r.ok) return;", blk)
+
     def test_화면이_열기_전에_알_수_있다(self):
         """②에서 물린 자리 — /api/config 에 실려야 한다. /api/settings 로
         따로 받으면 그 사이에 pollSentinel 이 먼저 돌아 한 번 울린다."""

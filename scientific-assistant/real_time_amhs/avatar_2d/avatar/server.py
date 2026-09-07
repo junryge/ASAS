@@ -431,9 +431,14 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path in ("/api/config", "/__config"):
-            return self._json(200, config.public_config(
-                App.model, App.models, App.upstream,
-                sentinel.alarm_config(App.settings.all())))
+            # ★인자를 늘리지 않는다. 파일을 하나씩 덮는 배포라
+            #   server.py 만 새것이고 config.py 가 옛것이면
+            #   TypeError → /api/config 500 → 아바타·MCP·에이전트 규칙·
+            #   알람이 **한꺼번에** 죽는다. 실제로 그렇게 겪었다.
+            #   그래서 부르고 나서 열쇠만 얹는다.
+            pub = config.public_config(App.model, App.models, App.upstream)
+            pub["alarm"] = sentinel.alarm_config(App.settings.all())
+            return self._json(200, pub)
 
         if path == "/api/settings":
             d = App.settings.all()
@@ -647,7 +652,7 @@ class Handler(SimpleHTTPRequestHandler):
                 sentinel.HOLD_MIN = cfg["hold_min"]     # 감시 로직이 바로 따른다
                 sentinel.ALOG_MAX = cfg["keep"]
                 self._say("     ↳ 알람 설정: {} · 관찰 {}분 · 보관 {}건"
-                          .format("울림" if cfg["on"] else "★안 울림",
+                          .format("울림" if cfg.get("on", True) else "★안 울림",
                                   cfg["hold_min"], cfg["keep"]))
                 return self._json(200, {"ok": True, "config": cfg,
                                         "hold_min": cfg["hold_min"]})
