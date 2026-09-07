@@ -553,9 +553,21 @@ class Hub:
         try:
             with self._srv_lock(key):
                 c = self._client(s)
-                txt = c.call(tool, {})
-            words = [w.strip() for w in str(txt or "").splitlines()
-                     if w.strip() and not w.startswith("(")]
+                # ★call 은 (글, 실패인가) **둘**을 준다. 하나로 받으면 튜플이
+                #   통째로 글이 되고 "('…', False)" 가 되어 한 개도 못 읽는다.
+                txt, bad = c.call(tool, {})
+            if bad:
+                raise McpError(str(txt)[:200])
+            t = str(txt or "").strip()
+            if t.startswith("{"):
+                # 공식 SDK(FastMCP)는 dict 를 structuredContent 로 준다 —
+                # {"words": [...]} 한 덩어리로 온다
+                words = [str(w).strip() for w in
+                         (json.loads(t).get("words") or [])]
+            else:
+                # 우리 stdio 서버는 줄로 준다
+                words = [w.strip() for w in t.splitlines()]
+            words = [w for w in words if w and not w.startswith("(")]
         except Exception:                               # noqa: BLE001
             # ★못 물어봐도 그냥 넘어간다. 여기서 터지면 질문 하나가
             #   통째로 죽는다 — 박아 둔 낱말만으로도 돌아야 한다.
