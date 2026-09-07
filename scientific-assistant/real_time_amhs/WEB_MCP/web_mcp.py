@@ -21,7 +21,10 @@
     WEB_JSON_TITLE   제목 키   (기본 title)
     WEB_JSON_URL     주소 키   (기본 url)
     WEB_JSON_TEXT    요약 키   (기본 snippet)
-    WEB_KEY_FILE     토큰 파일 (있으면 Authorization: Bearer)
+    WEB_KEY_FILE     토큰 파일
+    WEB_KEY_HEADER   토큰을 실을 머리 (기본 Authorization)
+    WEB_KEY_PREFIX   토큰 앞에 붙일 말 (기본 "Bearer ")
+                     예) Brave: HEADER=X-Subscription-Token · PREFIX=(빈칸)
     WEB_TIMEOUT      초 (기본 10)
     WEB_MAX_CHARS    readUrl 이 돌려줄 최대 글자 (기본 6000)
 
@@ -53,6 +56,14 @@ TIMEOUT = float(os.environ.get("WEB_TIMEOUT", "10"))
 MAX_CHARS = int(os.environ.get("WEB_MAX_CHARS", "6000"))
 
 
+# 키를 어느 머리에 실을지 — API 마다 다르다.
+#   OpenAI 계열   Authorization: Bearer <키>      (기본값)
+#   Brave         X-Subscription-Token: <키>      HEADER=X-Subscription-Token PREFIX=
+#   그 밖         쓰는 API 문서대로
+KEY_HEADER = os.environ.get("WEB_KEY_HEADER", "Authorization")
+KEY_PREFIX = os.environ.get("WEB_KEY_PREFIX", "Bearer ")
+
+
 def _headers():
     h = {"Accept": "application/json, text/html;q=0.8",
          # ★사람이 쓰는 브라우저인 척하지 않는다. 그냥 우리라고 밝힌다.
@@ -62,7 +73,7 @@ def _headers():
         with open(p, encoding="utf-8-sig") as f:
             k = f.read().strip()
         if k:
-            h["Authorization"] = "Bearer " + k
+            h[KEY_HEADER] = KEY_PREFIX + k
     return h
 
 
