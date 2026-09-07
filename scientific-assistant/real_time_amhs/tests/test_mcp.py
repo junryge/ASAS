@@ -510,6 +510,60 @@ class 조회한_것을_대화_안에서_기억한다(_Fake):
                          "실패한 조회를 들고 다닌다")
 
 
+class 대소문자를_안_가린다(unittest.TestCase):
+    """★실제로 겪었다. "M16HUB" 로 물으면 걸리는데 "m16hub" 로 물으면
+    아무 서버도 안 걸렸다 — 사람은 소문자로 친다. 위키 검색(BM25)은
+    안에서 소문자로 바꿔 보는데, **부르기 전 관문**이 대소문자를 가렸다.
+
+    그렇다고 통째로 소문자로 견주면 짧은 영문이 아무 데나 걸린다
+    ('MES' 가 'times' 안에 있다). 그래서 영문 앞뒤에는 벽을 세운다.
+    \b 는 못 쓴다 — 'M16EUV는' 처럼 조사가 붙으면 경계가 안 생긴다."""
+
+    W = ["M16HUB", "HUB ROOM", "MES", "ZT", "대기Q", "M16EUV",
+         "리프터", "RTX PRO 6000", "AI Agent"]
+
+    def _h(self, q):
+        return mcp_client._hits(q, self.W)
+
+    def test_소문자로_물어도_걸린다(self):
+        for q in ("m16hub 점수 뭐야?", "M16euv 알려줘", "hub room 이 뭐죠",
+                  "rtx pro 6000 뭐야", "ai agent 뭐야"):
+            self.assertTrue(self._h(q), "안 걸렸다: " + q)
+
+    def test_조사가_붙어도_걸린다(self):
+        """'M16EUV는' — \b 를 쓰면 V 와 는 사이에 경계가 없어 못 찾는다."""
+        self.assertEqual(self._h("m16euv는 뭐야"), ["M16EUV"])
+        self.assertEqual(self._h("대기Q가 뭐야"), ["대기Q"])
+
+    def test_영문_한복판에는_안_걸린다(self):
+        """'MES' 가 'sometimes' 에, 'ZT' 가 아무 데나 걸리면 안 된다."""
+        for q in ("sometimes 그렇다", "그 zone 은", "themes 를 봤다",
+                  "zztop 노래"):
+            self.assertEqual(self._h(q), [], "잘못 걸렸다: " + q)
+
+    def test_한글은_그대로_붙어_걸린다(self):
+        self.assertEqual(self._h("리프터가 정체됐어"), ["리프터"])
+
+    def test_코드_규칙은_대문자만_본다(self):
+        """when_re 는 대문자 코드 이름을 잡는 규칙이다. 소문자까지 받으면
+        'e.g' 같은 흔한 말이 걸려서 질문마다 요청이력을 뒤진다."""
+        qa = next(s for s in config.MCP_SERVERS if s["key"] == "qa")
+        rex = qa["when_re"]
+        self.assertTrue(mcp_client._hits("AVGTOTALTIME1MIN 왜 썼어?", [], rex))
+        self.assertFalse(mcp_client._hits("예를 들면 e.g 이런 것", [], rex))
+
+    def test_위키가_알려준_낱말도_같은_규칙이다(self):
+        """when_dyn 으로 받은 제목·태그가 제일 아쉬운 자리다 —
+        위키에 'RTX PRO 6000' 페이지를 올려 두고 소문자로 물으면
+        "그런 내용 없다" 가 나왔다."""
+        hub = mcp_client.Hub([])
+        srv = {"key": "x", "name": "x", "enabled": True, "when": [],
+               "when_dyn": "words"}
+        hub.servers = [srv]
+        hub._dyn = {"x": (time.time(), ["RTX PRO 6000", "리센느"])}
+        self.assertTrue(hub.matched("rtx pro 6000 뭐야"), "소문자로 안 걸린다")
+
+
 class 필요할_때만_띄운다(_Fake):
 
     def _hub(self, **over):
@@ -654,14 +708,17 @@ class 서윤에게_전달된다(unittest.TestCase):
         self.assertIn("총 2건", s)
 
     def test_없으면_칸도_안_생긴다(self):
-        self.assertNotIn("[외부 도구", self._sys(mcp_text=""))
+        # ★규칙 본문에도 "[외부 도구 — MCP]" 라는 말이 나온다 (블록을 먼저
+        #   읽으라는 규칙). 그러니 **줄 맨 앞에 오는 머리말**로 봐야 한다.
+        self.assertNotIn("\n[외부 도구 — MCP]\n", self._sys(mcp_text=""))
 
     def test_관제_근거_안에_섞이지_않는다(self):
         """★[관제 근거] 에는 '대답 첫머리에 데이터 시각을 말하라' 가 붙어 있다.
         요청이력을 거기 넣으면 "2026-08-26 04:20 데이터 기준으로 개선요청이…"
         라고 시작한다 — 첨부에서 이미 겪은 사고와 같은 자리다."""
         s = self._sys(evidence_text="M16HUB 72점 위험")
-        i_ev, i_mcp = s.index("[관제 근거"), s.index("[외부 도구")
+        # ★규칙 본문에도 두 이름이 나온다 — 줄 맨 앞 머리말만 센다
+        i_ev, i_mcp = s.index("\n[관제 근거"), s.index("\n[외부 도구 — MCP]\n")
         self.assertLess(i_ev, i_mcp, "MCP 가 근거보다 앞에 있다")
         block = s[i_ev:i_mcp]
         self.assertIn("72점", block)

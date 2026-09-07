@@ -816,22 +816,59 @@ class 자료가_없을_때(unittest.TestCase):
     때가 더 많았다. 그래서 아는 것은 아는 대로 말하고, 모르면 모른다고
     하고, 애매하면 되묻는 쪽으로 갔다."""
 
+    def test_근거_블록을_먼저_본다(self):
+        """★제일 아픈 자리. 위키에 리센느를 올려 뒀는데 "모른다" 고 답했다.
+        '모르면 모른다고 해라' 만 적어 두면 블록을 안 읽고 그리로 간다."""
+        r = allm.AGENT_RULES
+        i = r.index("1-0.")
+        blk = r[i:r.index("1-1.")]
+        # 순서가 있어야 하고, 블록 읽기가 **맨 앞**이어야 한다
+        self.assertLess(blk.index("블록을 읽는다"), blk.index("지어내지 마라"),
+                        "블록 읽기가 맨 앞이 아니다")
+        self.assertIn("처음 보는 이름이라도", blk)
+        self.assertIn("그것이 답이다", blk)
+
     def test_관제_밖에서는_아는_대로_답한다(self):
         r = allm.AGENT_RULES
         self.assertIn("1-0.", r)
-        self.assertIn("관제 이야기에만", r)
         self.assertIn("아는 대로 답한다", r)
+        self.assertIn("확인이 안 돼요", r)
+
+    def test_되묻기보다_블록이_먼저다(self):
+        """되묻기를 열어 주면 블록을 안 보고 되묻는다."""
+        r = allm.AGENT_RULES
+        i = r.index("1-0-1.")
+        blk = r[i:r.index("1-1.")]
+        self.assertIn("되묻기 전에", blk)
+        # 예시에 위키에 있는 이름을 쓰면 안 된다 — 그걸 되물으라고 가르친다
+        self.assertNotIn("리센느", blk)
+
+    def test_MCP_블록에도_같은_말을_붙인다(self):
+        """규칙에만 적으면 블록이 길 때 묻힌다 — 블록 바로 밑에도 붙인다."""
+        src = (Path(util.BASE) / "avatar_2d" / "avatar"
+               / "llm.py").read_text(encoding="utf-8")
+        i = src.index('"[외부 도구 — MCP]')
+        self.assertIn("처음 보는 이름이라도", src[i:i + 900])
 
     def test_그래도_관제_수치는_안_지어낸다(self):
         """이 문이 열리면서 숫자까지 새면 안 된다 — 여기가 제일 위험하다."""
         r = allm.AGENT_RULES
-        self.assertIn("절대 지어내지 않으며", r)
+        self.assertIn("절대 지어내지 않는다", r)
         # 원래 규칙(관제 근거 안에서만)이 그대로 살아 있어야 한다
         self.assertIn("[관제 근거] 블록에 있는 것만", r)
         self.assertIn("지금은 확인이 안 돼요", r)
 
-    def test_모르면_모른다고_한다(self):
-        self.assertIn("모르면 모른다고 말한다", allm.AGENT_RULES)
+    def test_모르는_이름은_지어내지_않는다(self):
+        """★실제로 겪었다. MCP 가 안 붙은 사이 "리센느는 누구야?" 에
+        "서윤과 서햄터가 만든 가상의 인물이에요" 라고 **지어냈다.**
+        '아는 대로 답해라' 만 적어 두면 그럴듯하게 채운다."""
+        r = allm.AGENT_RULES
+        self.assertIn("모르는 이름은 절대 지어내지 마라", r)
+        self.assertIn("추측으로 채우지 마라", r)
+        # 실제로 나온 지어낸 말투를 그대로 금지어로 박아 둔다
+        for bad in ("가상의 인물이에요", "~인 것 같아요"):
+            self.assertIn(bad, r, "겪은 말투를 안 막고 있다: " + bad)
+        self.assertIn("저도 모르는 이름이에요", r)
 
     def test_되물을_수_있다(self):
         """지어내는 대신 물어보는 길을 열어 준다."""

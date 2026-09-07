@@ -325,6 +325,15 @@
     color:#12161d;background:rgb(var(--fabC))}
   #alarmBox.on #alarmLv{display:inline-block}
   #alarmTime{margin-left:auto;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+  /* 알람 켜기/끄기 — 늘 보이는 자리. 꺼 두면 팝업이 아예 안 뜨므로,
+     여기가 '왜 조용한지' 를 알 수 있는 유일한 표시다. */
+  #alarmBell{flex:0 0 auto;margin-left:auto;padding:1px 6px;border-radius:7px;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);
+    color:#e6ebf2;font-size:12px;line-height:1.55;cursor:pointer}
+  #alarmTime + #alarmBell{margin-left:6px}
+  #alarmBell:hover{border-color:var(--accent2)}
+  #alarmBell.off{border-color:rgba(255,120,120,.65);
+    background:rgba(217,74,90,.18);color:#ff9b9b}
   #alarmBody{display:none;flex-direction:column;gap:6px}
   #alarmBox.on #alarmBody{display:flex}
   #alarmImg{width:100%;border-radius:8px;background:rgba(255,255,255,.05);

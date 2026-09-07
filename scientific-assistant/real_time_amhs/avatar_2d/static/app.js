@@ -1611,6 +1611,24 @@ function alarmSay(){
   speak(f);
   beep(L.tones, L.key==='lv3' ? 0.16 : 0.11);
 }
+/* 켜고 끄기 — 종 단추와 설정 창의 네모가 **같은 길**을 쓴다.
+   두 벌로 두면 한쪽만 고쳐서 어긋난다. */
+async function setAlarmOn(on){
+  ALOG_CFG.on = !!on;
+  if(!alarmOn()) silentClear();      // 떠 있던 팝업을 그 자리에서 내린다
+  paintAlarmMuted();
+  sys(alarmOn() ? 'FAB 알람을 켰습니다.'
+                : 'FAB 알람을 껐습니다 — 소리도 팝업도 없습니다 (기록은 계속 쌓입니다).');
+  if(!window.SERVER) return;
+  try{
+    const r = await fetch('/api/alarms', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({op:'config', on: alarmOn()})});
+    if(r.ok){ const j=await r.json(); if(j.config) ALOG_CFG=j.config; }
+  }catch(e){}
+  paintAlarmMuted();
+}
+
 function paintAlarmTime(){
   if(!alarm) return;
   const s=Math.floor((Date.now()-alarm.t0)/1000);
@@ -1627,6 +1645,14 @@ function alarmOn(){ return ALOG_CFG.on !== false; }
    "알람이 고장 났다" 가 된다. 설정의 표와 아래 FAB알람 표에 티를 낸다. */
 function paintAlarmMuted(){
   const off = !alarmOn();
+  const bell=$('#alarmBell');
+  if(bell){
+    bell.classList.toggle('off', off);
+    bell.textContent = off ? '\uD83D\uDD15' : '\uD83D\uDD14';   // 🔕 / 🔔
+    bell.title = off ? 'FAB 알람 꺼짐 — 누르면 켭니다 (지금은 소리도 팝업도 없습니다)'
+                     : 'FAB 알람 켜짐 — 누르면 끕니다';
+  }
+  const o=$('#cfgOn'); if(o) o.checked = !off;
   const lab=$('#cfgOnLab');  if(lab)  lab.classList.toggle('off', off);
   const chip=$('#alarmChip');
   if(chip){
@@ -1707,6 +1733,13 @@ function clearAlarm(){
 }
 (function initAlarm(){
   $('#alarmTest').onclick = ()=>{ if(alarm) clearAlarm(); fireAlarm(); };
+  /* 종 단추 — 한 번 누르면 켜고 끈다 */
+  const bell=$('#alarmBell');
+  if(bell) bell.onclick = (e)=>{
+    e.stopPropagation();               // 제목줄 끌기·두 번 누르기와 안 겹치게
+    setAlarmOn(!alarmOn());
+  };
+  paintAlarmMuted();                   // 처음 그림
   /* ★해제는 기록의 끝이다 — 무엇을 했는지 한 줄이라도 남아야 다음에 쓴다.
      비워 두고 저장해도 된다 (강제하면 대충 아무거나 적게 된다). */
   $('#alarmClear').onclick = ()=>{
@@ -1788,7 +1821,7 @@ async function saveAlogCfg(){
        "껐는데 계속 울린다" 가 된다 — 실제로 그게 문제였다.
        대사 없이 내린다 (silentClear) — 끈 것이지 해제한 것이 아니다. */
     if(!alarmOn()) silentClear();
-    paintAlarmMuted();
+    paintAlarmMuted();               // 종 단추도 같이 바뀐다
     if(m) m.textContent='저장했습니다.';
     sys('알람 설정 — '+(alarmOn()?'울림':'★안 울림')
         +' · 정상 복귀 후 관찰 '+ALOG_CFG.hold_min+'분 · 기록 보관 '
@@ -2024,6 +2057,9 @@ function applyAlogPos(tries){
   }
   function down(e){
     if(e.button!==undefined && e.button!==0) return;
+    /* 종 단추 위에서 시작한 것은 끌기가 아니다 — 안 그러면 누를 때마다
+       패널이 따라 움직인다. */
+    if(e.target && e.target.closest && e.target.closest('#alarmBell')) return;
     const b=box.getBoundingClientRect(), w=wrap.getBoundingClientRect();
     dx = e.clientX - b.left; dy = e.clientY - b.top;
     place(b.left - w.left, b.top - w.top);       // right/top 기준을 left/top 으로

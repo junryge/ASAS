@@ -350,15 +350,40 @@ class HttpClient(_Tools):
 
 
 # ── 여러 서버를 묶어 근거 글로 ────────────────────────────────────────────
+# ── 낱말 맞추기 ─────────────────────────────────────────────────────────
+# ★대소문자를 가리면 안 된다. 실제로 겪었다 — "M16HUB" 로 물으면 걸리는데
+#   "m16hub" 로 물으면 아무 서버도 안 걸렸다. 사람은 소문자로 친다.
+# ★그렇다고 그냥 소문자로 바꿔 넣으면 짧은 영문 낱말이 아무 데나 걸린다:
+#   'MES' 가 'times' 안에 들어 있다. 그래서 **영문 앞뒤에는 벽을 세운다** —
+#   앞뒤가 영문·숫자면 안 걸린다.
+# ★\b 를 쓰면 안 된다. 'M16EUV는' 처럼 한글 조사가 붙으면 V 와 는 사이에
+#   경계가 없어서 못 찾는다. 그래서 '영문·숫자가 아니면 된다' 로 본다.
+_WRE = {}
+
+
+def _word_re(w):
+    r = _WRE.get(w)
+    if r is None:
+        pre = r"(?<![A-Za-z0-9])" if w[:1].isascii() and w[:1].isalnum() else ""
+        post = r"(?![A-Za-z0-9])" if w[-1:].isascii() and w[-1:].isalnum() else ""
+        r = re.compile(pre + re.escape(w) + post, re.I)
+        if len(_WRE) > 4000:                # 위키 낱말이 늘어도 안 붇게
+            _WRE.clear()
+        _WRE[w] = r
+    return r
+
+
 def _hits(text, words, when_re=None):
-    """질문에 이 서버를 부를 말이 들어 있나.
+    """질문에 이 서버를 부를 말이 들어 있나. **대소문자를 안 가린다.**
 
     ★when_re 도 본다. "AVGTOTALTIME1MIN 왜 썼어?" 처럼 **컬럼·룰 이름만**
       나오는 질문이 있다 — 그 답이 요청이력(보류 건)에 그대로 있는데,
       '요청' 이라는 낱말이 없다고 안 걸려서 못 찾아 줬다.
+      ★이쪽은 대소문자를 가린다. 대문자 코드 이름을 잡는 규칙이라
+        소문자까지 받으면 'e.g' 같은 흔한 말이 걸린다.
     """
     t = str(text or "")
-    got = [w for w in (words or []) if w and w in t]
+    got = [w for w in (words or []) if w and _word_re(w).search(t)]
     if not got and when_re:
         m = re.search(when_re, t)
         if m:
