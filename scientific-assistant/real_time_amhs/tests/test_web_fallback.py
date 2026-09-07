@@ -256,3 +256,39 @@ class 나무위키는_안_쓴다(unittest.TestCase):
                 if "나무위키" in ln:
                     self.assertTrue(ln.strip().startswith("#") or "안 쓴다" in ln,
                                     "나무위키가 주석 밖에 있다: " + ln.strip()[:60])
+
+
+class 못_나갈_때_이유를_말한다(unittest.TestCase):
+    """403 을 그냥 던지면 사람이 뭘 고쳐야 할지 모른다. 실제로 DuckDuckGo 가
+    UA 를 안 보내면 403 을 준다 — 그걸 알려 준다."""
+
+    PY_ = os.path.join(BASE, "WEB_MCP", "web_mcp.py")
+
+    def _check(self, env):
+        r = subprocess.run([sys.executable, self.PY_, "--check", "x"],
+                           capture_output=True, text=True, timeout=40,
+                           env={**os.environ, **env})
+        return r.stdout
+
+    def test_주소가_없으면_무엇을_채울지_알려준다(self):
+        out = self._check({"WEB_SEARCH_URL": ""})
+        self.assertIn("WEB_SEARCH_URL", out)
+
+    def test_UA_와_프록시를_바꿀_수_있다(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("web_mcp", self.PY_)
+        m = importlib.util.module_from_spec(spec)
+        os.environ["WEB_USER_AGENT"] = "테스트-UA"
+        try:
+            spec.loader.exec_module(m)
+            self.assertEqual(m._headers()["User-Agent"], "테스트-UA")
+        finally:
+            os.environ.pop("WEB_USER_AGENT", None)
+
+    def test_기본은_프록시를_안_탄다(self):
+        """사내 검색을 쓸 때 프록시로 나가면 엉뚱한 데로 간다."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("web_mcp", self.PY_)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        self.assertFalse(m.USE_PROXY)

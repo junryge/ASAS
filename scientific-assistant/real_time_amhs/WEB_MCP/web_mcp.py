@@ -28,6 +28,12 @@
     WEB_KEY_HEADER   토큰을 실을 머리 (기본 Authorization)
     WEB_KEY_PREFIX   토큰 앞에 붙일 말 (기본 "Bearer ")
                      예) Brave: HEADER=X-Subscription-Token · PREFIX=(빈칸)
+    WEB_USER_AGENT   보낼 UA. **403 이 나면 여기부터 의심한다** —
+                     UA 를 안 보내면 막는 데가 있다 (DuckDuckGo html).
+                       set WEB_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+    WEB_USE_PROXY    1 이면 시스템 프록시를 탄다 (기본 안 탐).
+                     사내에서 **바깥**으로 나갈 때 대개 필요하다.
+                     사내 검색을 쓸 때는 켜지 마라 — 엉뚱한 데로 나간다.
     WEB_TIMEOUT      초 (기본 10)
     WEB_MAX_CHARS    readUrl 이 돌려줄 최대 글자 (기본 6000)
 
@@ -67,10 +73,20 @@ KEY_HEADER = os.environ.get("WEB_KEY_HEADER", "Authorization")
 KEY_PREFIX = os.environ.get("WEB_KEY_PREFIX", "Bearer ")
 
 
+# ★UA 를 안 보내면 403 을 주는 데가 있다 (DuckDuckGo html 이 그렇다).
+#   기본은 우리라고 밝히고, 필요하면 WEB_USER_AGENT 로 바꾼다 —
+#   403 이 나면 여기부터 의심한다.
+UA = os.environ.get("WEB_USER_AGENT") or "amhs-avatar-web/{}".format(VERSION)
+
+# ★사내에서 바깥으로 나가려면 대개 프록시를 타야 한다. 그런데 기본은
+#   **안 탄다** — 사내 검색을 쓸 때 프록시로 나가면 엉뚱한 데로 간다.
+#   바깥(DuckDuckGo·위키백과)을 쓸 때만 켠다: WEB_USE_PROXY=1
+USE_PROXY = (os.environ.get("WEB_USE_PROXY") or "").strip() not in ("", "0", "off")
+
+
 def _headers():
     h = {"Accept": "application/json, text/html;q=0.8",
-         # ★사람이 쓰는 브라우저인 척하지 않는다. 그냥 우리라고 밝힌다.
-         "User-Agent": "amhs-avatar-web/{}".format(VERSION)}
+         "User-Agent": UA}
     p = (os.environ.get("WEB_KEY_FILE") or "").strip()
     if p and os.path.isfile(p):
         with open(p, encoding="utf-8-sig") as f:
@@ -81,8 +97,8 @@ def _headers():
 
 
 def _open(url, timeout=None):
-    # ★프록시 설정을 타지 않는다 (사내에서 엉뚱한 데로 나간다)
-    op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    op = (urllib.request.build_opener() if USE_PROXY
+          else urllib.request.build_opener(urllib.request.ProxyHandler({})))
     req = urllib.request.Request(url, headers=_headers())
     with op.open(req, timeout=timeout or TIMEOUT) as r:
         return r.read().decode("utf-8", "replace")
@@ -293,6 +309,22 @@ def selfcheck(q="테스트"):
         out = json.loads(t_search({"query": q, "topK": 3}))
     except Exception as e:                              # noqa: BLE001
         print("검색 실패: {}: {}".format(type(e).__name__, e))
+        msg = str(e)
+        if "403" in msg or "401" in msg:
+            print("")
+            print("  403/401 은 대개 둘 중 하나다.")
+            print("   ① UA 를 막는 곳이다 (DuckDuckGo html 이 그렇다)")
+            print("      set WEB_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+            print("   ② 사내 프록시를 타야 한다")
+            print("      set WEB_USE_PROXY=1")
+        elif "407" in msg or "Proxy" in msg:
+            print("")
+            print("  프록시 인증이 필요하다 — set WEB_USE_PROXY=1 과 함께")
+            print("  HTTPS_PROXY=http://<아이디>:<비번>@<프록시>:<포트> 를 준다.")
+        elif "URLError" in type(e).__name__ or "getaddrinfo" in msg:
+            print("")
+            print("  주소 자체를 못 찾았다 — 이 PC 에서 그 도메인이 열리나?")
+            print("  사내면 프록시가 필요할 수 있다: set WEB_USE_PROXY=1")
         return 1
     print("'{}' → {}건".format(q, out["count"]))
     for r in out["results"]:

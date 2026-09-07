@@ -17,6 +17,7 @@
 
 표준 라이브러리만 쓴다 (폐쇄망).
 """
+import json
 import os
 import sys
 
@@ -120,6 +121,59 @@ def main(argv):
             print("    " + ln[:100])
     else:
         print("    (빈 글 — 아바타는 근거 없이 답하게 된다)")
+
+    print("")
+    print("=" * 70)
+    print("⑤ 웹 검색 (등록된 자료에 없을 때 나가는 길)")
+    print("=" * 70)
+    web = next((s for s in srv if s.get("fallback")), None)
+    if not web:
+        print("  등록돼 있지 않다 — 새 config.py 가 아니다.")
+    else:
+        print("  [{}] {}".format("켜짐" if web.get("enabled") else "★꺼짐",
+                                 web.get("name") or web["key"]))
+        a = web.get("args") or []
+        raw = a[0] if a else ""
+        path = raw if os.path.isabs(raw) else os.path.join(
+            os.path.dirname(HERE), raw)
+        exists = bool(raw) and os.path.isfile(path)
+        print("  파일  : {}  {}".format(path or "(없음)",
+                                        "있음" if exists else "★없음"))
+        if not exists:
+            print("     → WEB_MCP 폴더가 real_time_amhs **바로 밑**에 와야 한다.")
+            print("       avatar_2d 안에 풀면 못 찾는다.")
+        env = web.get("env") or {}
+        url, kind = env.get("WEB_SEARCH_URL", ""), env.get("WEB_SEARCH_KIND", "")
+        print("  검색  : {}  (방식 {})".format(url or "★안 정해짐", kind or "-"))
+        if not web.get("enabled"):
+            print("     → 화면(설정 → 외부 도구)에서 껐다. 켜야 나간다.")
+        elif exists and url:
+            try:
+                with hub._srv_lock(web["key"]):
+                    c = hub._client(web)
+                    txt, bad_ = c.call("webSearch", {"query": "테스트", "topK": 3})
+                if bad_:
+                    print("  검색 시험: ★실패 — {}".format(str(txt)[:160]))
+                    print("     → 그 주소가 이 PC 에서 열리나? 프록시를 타야 하나?")
+                else:
+                    print("  검색 시험: OK — {}건".format(
+                        json.loads(txt).get("count", "?")))
+            except Exception as e:                      # noqa: BLE001
+                print("  검색 시험: ★못 붙었다 — {}: {}".format(type(e).__name__, e))
+
+        print("")
+        print("  질문이 웹으로 나가나")
+        for q, _w in qs:
+            ok_ = hub._web_ok(q)
+            hit = [x for x in hub.matched(q)
+                   if not x.get("fallback") and not x.get("knowledge")]
+            if not ok_:
+                why = "안 나감 (관제·잡담)"
+            elif hit:
+                why = "안 나감 ({} 가 받는다)".format(hit[0].get("name"))
+            else:
+                why = "나간다 — 등록 자료에 없으면"
+            print("    {:<26} {}".format(q[:26], why))
 
     print("")
     print("=" * 70)

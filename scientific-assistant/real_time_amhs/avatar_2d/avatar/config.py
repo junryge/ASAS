@@ -323,6 +323,14 @@ MCP_SERVERS = [
             #     (비영리)라 회사 업무에 쓰면 걸린다.
             "WEB_SEARCH_URL": "https://duckduckgo.com/html/?q={q}",
             "WEB_SEARCH_KIND": "html",
+            # ★DuckDuckGo html 은 UA 를 안 보내면 403 을 준다. 실제로 그랬다.
+            "WEB_USER_AGENT": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/120.0 Safari/537.36"),
+            # ★사내에서 **바깥**으로 나가려면 대개 프록시를 타야 한다.
+            #   403/407 이 나면 "1" 로 바꿔 본다. 사내 검색을 쓸 때는 끈다 —
+            #   프록시로 나가면 엉뚱한 데로 간다.
+            "WEB_USE_PROXY": "",
         },
         "timeout": 20,
         "budget": 1500,
