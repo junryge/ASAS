@@ -28,7 +28,26 @@
 | 어디 | 주소 | KIND |
 |---|---|---|
 | 사내 검색·포털 | `http://portal.내부/search?q={q}&fmt=json` | json |
-| 집 (DuckDuckGo) | `https://duckduckgo.com/html/?q={q}` | html |
+| DuckDuckGo | `https://html.duckduckgo.com/html/` | html+post |
+| 위키백과 | `https://ko.wikipedia.org/w/api.php` | mediawiki |
+
+### 여러 곳을 줄 수 있다
+
+`|` 로 나눠 적으면 **앞에서부터 해 보고 결과가 나오면 멈춘다.**
+한 곳이 막혀도 다음 곳이 답한다.
+
+```
+"WEB_SEARCH_URL": ("html+post=https://html.duckduckgo.com/html/"
+                   "|html=https://lite.duckduckgo.com/lite/?q={q}"
+                   "|mediawiki=https://ko.wikipedia.org/w/api.php"),
+```
+
+칸마다 방식을 앞에 붙인다 (안 붙이면 `WEB_SEARCH_KIND` 를 쓴다).
+`+post` 는 사람이 쓰는 창처럼 POST 로 보낸다는 뜻이다.
+
+★DuckDuckGo 는 **200 을 주면서** 결과 대신 「봇 같다」 페이지를 줄 때가
+있다. 오류가 아니라 0건이라 무엇이 문제인지 알기 어렵다 — 그래서 뒤에
+막히지 않는 곳(위키백과)을 둔다.
 
 JSON 응답의 키 이름이 다르면 같이 준다 —
 `WEB_JSON_LIST`(기본 results) · `WEB_JSON_TITLE`(title) ·
@@ -37,6 +56,22 @@ JSON 응답의 키 이름이 다르면 같이 준다 —
 토큰이 필요하면 `WEB_KEY_FILE` 에 파일 경로를 준다 (Bearer 로 붙는다).
 
 ★구글은 그냥 못 긁는다. Custom Search API 를 써야 하고 키가 든다.
+
+## 0건이 나올 때
+
+```
+python WEB_MCP/web_mcp.py --raw "SBS가 뭐야"
+```
+
+곳마다 **받은 글이 몇 자인지 · 막힌 페이지인지 · 링크가 몇 개고 어느 체에서
+몇 개가 걸렸는지** 를 찍는다. 0건의 까닭 셋을 갈라 준다.
+
+| 나온 말 | 뜻 |
+|---|---|
+| `★막힌 페이지다` | 그 곳이 우리를 막았다 → 다음 곳이 받는다 |
+| `링크 40개 … → 남음 0` | 링크는 왔는데 우리 체가 다 걸렀다 → 고칠 것은 우리 쪽 |
+| `링크 0개` + 짧은 글 | 진짜로 결과가 없다 |
+
 
 ## 확인
 

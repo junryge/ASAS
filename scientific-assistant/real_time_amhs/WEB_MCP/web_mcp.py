@@ -53,6 +53,7 @@
 실행
     python WEB_MCP/web_mcp.py            # stdio 로 대기 (아바타가 띄운다)
     python WEB_MCP/web_mcp.py --check    # 주소·검색이 되는지만 본다
+    python WEB_MCP/web_mcp.py --raw      # 0건일 때 어디서 막혔는지 본다
                                          #   (어느 폴더에서 해도 된다 —
                                          #    config.py 를 제 발로 찾는다)
 """
@@ -191,10 +192,20 @@ def _headers():
     return h
 
 
-def _open(url, timeout=None):
+def _open(url, timeout=None, form=None):
+    """주소를 연다. form 을 주면 POST 로 보낸다.
+
+    ★POST 가 왜 필요한가. DuckDuckGo html 은 GET 으로 부르면 결과 대신
+      '봇 같다' 는 페이지를 200 으로 주는 때가 있다. 사람이 쓰는 창은
+      POST 로 보낸다 — 그래서 POST 자리를 만들어 둔다.
+    """
     op = (urllib.request.build_opener() if USE_PROXY
           else urllib.request.build_opener(urllib.request.ProxyHandler({})))
-    req = urllib.request.Request(url, headers=_headers())
+    data, h = None, _headers()
+    if form:
+        data = urllib.parse.urlencode(form).encode()
+        h["Content-Type"] = "application/x-www-form-urlencoded"
+    req = urllib.request.Request(url, data=data, headers=h)
     with op.open(req, timeout=timeout or TIMEOUT) as r:
         return r.read().decode("utf-8", "replace")
 
@@ -210,7 +221,14 @@ def strip_html(raw):
     return re.sub(r"\s+", " ", _html.unescape(t)).strip()
 
 
-_HREF = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.S | re.I)
+# href 는 홑따옴표로 쓰는 데도 있다
+_HREF = re.compile(r"""<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>""",
+                   re.S | re.I)
+
+# ★막힌 페이지. 200 을 주면서 결과 대신 이런 걸 준다 — 0건의 흔한 까닭이다.
+_WALL = ("anomaly-modal", "bots use DuckDuckGo", "challenge-platform",
+         "cf-browser-verification", "Just a moment", "captcha",
+         "Enable JavaScript and cookies")
 # 우리 것이 아닌 링크(로고·설정·다음페이지)를 걸러 낸다
 _SKIP = ("duckduckgo.com/settings", "duckduckgo.com/about", "/y.js",
          "spreadprivacy", "help.duckduckgo", "twitter.com/duckduckgo",
@@ -237,26 +255,39 @@ def _real_url(u):
     return u
 
 
-def _from_html(raw, k):
+def _from_html(raw, k, stats=None):
     """검색 결과 HTML 에서 링크를 줍는다 (JSON 을 안 주는 곳용).
 
     ★거친 방법이다. 사내 검색이 JSON 을 주면 그쪽(kind=json)을 써라 —
       HTML 은 화면이 바뀌면 같이 깨진다.
+    ★stats 를 주면 **어디서 몇 개를 버렸는지** 적어 준다. 0건이 나올 때
+      어느 체에서 걸렸는지 이걸로 안다 (--raw).
     """
+    tot = d_scheme = d_skip = d_short = 0
     out, seen = [], set()
     for href, inner in _HREF.findall(raw):
+        tot += 1
         u = _real_url(href)
-        if not u.startswith("http") or u in seen:
+        if not u.startswith("http"):
+            d_scheme += 1
+            continue
+        if u in seen:
             continue
         if any(x in u for x in _SKIP):
+            d_skip += 1
             continue
         title = strip_html(inner)
-        if len(title) < 4:
+        # ★2 글자. 예전엔 4 였는데 'SBS' 같은 제목이 통째로 날아갔다.
+        if len(title) < 2:
+            d_short += 1
             continue
         seen.add(u)
         out.append({"title": title[:200], "url": u, "snippet": ""})
         if len(out) >= k:
             break
+    if stats is not None:
+        stats.update({"링크": tot, "주소아님": d_scheme, "걸러냄": d_skip,
+                      "제목없음": d_short, "남음": len(out)})
     return out
 
 
@@ -268,15 +299,29 @@ _JOSA = ("이라는", "라는", "이란", "에서는", "에서", "에게", "으�
          "와", "로", "랑")
 
 
+# ★묻는 말 자체는 검색에 넣지 않는다. "SBS 뭐야" 로 찾으면 'SBS' 로
+#   찾는 것보다 나쁘다 — 검색창에 사람이 치는 꼴로 만든다.
+_STOP = ("뭐야", "뭐지", "뭔지", "무엇이야", "무엇인가", "무엇", "누구야",
+         "누구", "알려줘", "알려", "설명해줘", "설명해", "설명", "찾아줘",
+         "찾아", "가르쳐줘", "가르쳐", "궁금해", "궁금", "말해줘", "해줘",
+         "인가요", "인가", "이야", "예요", "에요", "입니까", "습니까",
+         "?", "??")
+
+
 def _clean_query(q):
     out = []
     for w in str(q or "").split():
+        w = w.strip("?!.,·")
+        if not w:
+            continue
         for j in _JOSA:                 # 긴 것부터 (위 목록 순서)
             if w.endswith(j) and len(w) - len(j) >= 2:
                 w = w[: -len(j)]
                 break
         out.append(w)
-    return " ".join(out).strip()
+    # 묻는 말을 뺀다 — 다 빼서 아무것도 안 남으면 그대로 둔다
+    keep = [w for w in out if w not in _STOP]
+    return " ".join(keep or out).strip()
 
 
 def _from_mediawiki(raw, k, base):
@@ -307,37 +352,89 @@ def _from_mediawiki(raw, k, base):
     return out
 
 
+# ─────────────────────────────────────────────────────────────────────
+# 검색할 곳이 여러 곳일 수 있다
+#   WEB_SEARCH_URL 에 '|' 로 여러 개를 준다. 앞에서부터 해 보고 **결과가
+#   나오면 거기서 멈춘다.** 한 곳이 막혀도 다음 곳이 답한다.
+#
+#   각 칸 앞에 방식을 붙일 수 있다 (안 붙이면 WEB_SEARCH_KIND 를 쓴다):
+#       html=https://…            GET
+#       html+post=https://…       POST 로 q 를 보낸다
+#       mediawiki=https://ko.wikipedia.org/w/api.php
+# ─────────────────────────────────────────────────────────────────────
+_PREFIX = re.compile(r"^(json|html|mediawiki)(\+post)?=(.+)$", re.I | re.S)
+
+
+def _backends():
+    out = []
+    for item in str(URL or "").split("|"):
+        item = item.strip()
+        if not item:
+            continue
+        kind, post = KIND, False
+        m = _PREFIX.match(item)
+        if m:
+            kind, post, item = m.group(1).lower(), bool(m.group(2)), m.group(3).strip()
+        out.append({"kind": kind, "url": item, "post": post})
+    return out
+
+
 # 위키백과 검색에 붙일 것들 (사람이 주소에 안 적어도 되게)
 _MW_Q = ("action=query&list=search&format=json&utf8=1"
          "&srlimit={k}&srsearch={q}")
+
+
+def _one(be, q, k, stats=None):
+    """한 곳에서 찾는다. (결과목록, 받은 글) 을 돌려준다."""
+    kind, u = be["kind"], be["url"]
+    if kind == "mediawiki":
+        # 주소는 api.php 까지만 주면 된다 — 질의는 우리가 붙인다
+        base = u.split("?")[0].rstrip("/")
+        raw = _open(base + "?" + _MW_Q.format(k=k, q=urllib.parse.quote(q)))
+        return _from_mediawiki(raw, k, base), raw
+    if be["post"]:
+        raw = _open(u.replace("{q}", ""), form={"q": q})
+    else:
+        raw = _open(u.replace("{q}", urllib.parse.quote(q)))
+    if kind == "html":
+        return _from_html(raw, k, stats), raw
+    d = json.loads(raw)
+    rows = (d.get(J_LIST) if isinstance(d, dict) else d) or []
+    return ([{"title": str(r.get(J_TITLE) or "")[:200],
+              "url": str(r.get(J_URL) or ""),
+              "snippet": strip_html(r.get(J_TEXT) or "")[:400]}
+             for r in rows[:k] if isinstance(r, dict)], raw)
 
 
 def t_search(a):
     q = str(a.get("query") or "").strip()
     if not q:
         raise ValueError("query 가 비었다")
-    if not URL:
+    bes = _backends()
+    if not bes:
         raise RuntimeError(
             "검색 주소가 없다 (WEB_SEARCH_URL). 어디로 나갈지 정해지지 "
             "않아서 아무것도 안 했다 — 잘못된 데로 나가느니 안 나간다.")
     q = _clean_query(q) or q
     k = max(1, min(10, int(a.get("topK") or 5)))
-    if KIND == "mediawiki":
-        # 주소는 api.php 까지만 주면 된다 — 질의는 우리가 붙인다
-        u = URL.split("?")[0].rstrip("/")
-        raw = _open(u + "?" + _MW_Q.format(k=k, q=urllib.parse.quote(q)))
-        rows = _from_mediawiki(raw, k, u)
-    elif KIND == "html":
-        raw = _open(URL.replace("{q}", urllib.parse.quote(q)))
-        rows = _from_html(raw, k)
-    else:
-        raw = _open(URL.replace("{q}", urllib.parse.quote(q)))
-        d = json.loads(raw)
-        rows = (d.get(J_LIST) if isinstance(d, dict) else d) or []
-        rows = [{"title": str(r.get(J_TITLE) or "")[:200],
-                 "url": str(r.get(J_URL) or ""),
-                 "snippet": strip_html(r.get(J_TEXT) or "")[:400]}
-                for r in rows[:k] if isinstance(r, dict)]
+    rows, why = [], []
+    for be in bes:
+        try:
+            rows, raw = _one(be, q, k)
+        except Exception as e:                          # noqa: BLE001
+            why.append("{}: {}".format(be["url"][:40], type(e).__name__))
+            rows = []
+            continue
+        if rows:
+            break
+        # 0건이면 왜인지 남긴다 — 막힌 페이지인지 진짜 없는 건지 다르다
+        why.append("{}: {}".format(
+            be["url"][:40],
+            "막힌 페이지" if any(w in raw for w in _WALL) else "0건"))
+    if not rows and why:
+        # ★조용히 0건을 주면 사람이 뭘 고칠지 모른다. 까닭을 실어 준다.
+        return json.dumps({"query": q, "count": 0, "results": [],
+                           "why": why}, ensure_ascii=False, indent=1)
     # ★JSON 으로 준다. 아바타가 이걸 읽어 본문(readUrl)까지 이어 읽는다.
     return json.dumps({"query": q, "count": len(rows), "results": rows},
                       ensure_ascii=False, indent=1)
@@ -485,14 +582,67 @@ def selfcheck(q="테스트"):
             print("  주소 자체를 못 찾았다 — 이 PC 에서 그 도메인이 열리나?")
             print("  사내면 프록시가 필요할 수 있다: set WEB_USE_PROXY=1")
         return 1
-    print("'{}' → {}건".format(q, out["count"]))
+    print("'{}' → {}건".format(out.get("query", q), out["count"]))
     for r in out["results"]:
         print("  · {}  {}".format(r["title"][:50], r["url"][:60]))
+    if not out["count"]:
+        print("")
+        for w in out.get("why") or []:
+            print("  못 찾은 까닭: {}".format(w))
+        print("  더 보려면 --raw 로 한다 (받은 글·링크 수까지 찍는다):")
+        print("    python web_mcp.py --raw \"{}\"".format(q))
+        return 1
     return 0
 
 
+def rawcheck(q="테스트"):
+    """0건일 때 **어디서 막혔는지** 본다.
+
+    ★0건은 까닭이 여럿이다 — 막힌 페이지를 200 으로 받았거나, 링크는
+      왔는데 우리 체가 다 걸러 냈거나, 진짜로 없거나. 셋을 갈라 준다.
+    """
+    bes = _backends()
+    if not bes:
+        return selfcheck(q)
+    q2 = _clean_query(q) or q
+    print("찾는 말  : {!r} → {!r}".format(q, q2))
+    print("나가는 UA: {}".format(UA[:70]))
+    print("프록시   : {}".format("탄다" if USE_PROXY else "안 탄다"))
+    hit = 0
+    for i, be in enumerate(bes, 1):
+        print("")
+        print("[{}] {}  ({}{})".format(i, be["url"][:70], be["kind"],
+                                       "+post" if be["post"] else ""))
+        st = {}
+        try:
+            rows, raw = _one(be, q2, 50, st)
+        except Exception as e:                          # noqa: BLE001
+            print("    실패: {}: {}".format(type(e).__name__, e))
+            continue
+        print("    받은 글 : {}자".format(len(raw)))
+        wall = [w for w in _WALL if w in raw]
+        if wall:
+            print("    ★막힌 페이지다 ('{}')".format(wall[0]))
+            print("      → 여기는 못 쓴다. 다음 곳으로 넘어가야 한다.")
+        if st:
+            print("    링크 {링크}개 · 주소아님 {주소아님} · 걸러냄 {걸러냄}"
+                  " · 제목없음 {제목없음} → 남음 {남음}".format(**st))
+        for r in rows[:5]:
+            print("      · {}  {}".format(r["title"][:44], r["url"][:56]))
+        if rows:
+            hit += 1
+        elif not wall:
+            print("    받은 글 앞부분:")
+            print("      " + raw[:400].replace("\n", " ").replace("\r", ""))
+    print("")
+    print("→ 결과가 나온 곳: {}곳".format(hit))
+    return 0 if hit else 1
+
+
 if __name__ == "__main__":
-    if "--check" in sys.argv:
-        i = sys.argv.index("--check")
-        sys.exit(selfcheck(sys.argv[i + 1] if len(sys.argv) > i + 1 else "테스트"))
+    for flag, fn in (("--check", selfcheck), ("--raw", rawcheck)):
+        if flag in sys.argv:
+            _force_utf8()
+            i = sys.argv.index(flag)
+            sys.exit(fn(sys.argv[i + 1] if len(sys.argv) > i + 1 else "테스트"))
     serve()

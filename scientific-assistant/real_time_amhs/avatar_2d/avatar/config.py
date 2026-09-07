@@ -321,7 +321,16 @@ MCP_SERVERS = [
             #   위키백과 : "https://ko.wikipedia.org/w/api.php"        KIND=mediawiki
             #   ★나무위키는 안 쓴다 — Cloudflare 로 막혀 있고 CC BY-NC-SA
             #     (비영리)라 회사 업무에 쓰면 걸린다.
-            "WEB_SEARCH_URL": "https://duckduckgo.com/html/?q={q}",
+            # ★한 곳만 두면 그 곳이 막힐 때 통째로 0건이 된다. 실제로
+            #   그랬다 — DuckDuckGo 가 200 을 주면서 결과 대신 '봇 같다'
+            #   페이지를 줬다. 그래서 '|' 로 여러 곳을 둔다. 앞에서부터
+            #   해 보고 결과가 나오면 거기서 멈춘다.
+            #     html+post= : POST 로 보낸다 (사람이 쓰는 창과 같은 꼴)
+            #     mediawiki= : 위키백과 API — 막히지 않고 글도 제대로다
+            "WEB_SEARCH_URL": (
+                "html+post=https://html.duckduckgo.com/html/"
+                "|html=https://lite.duckduckgo.com/lite/?q={q}"
+                "|mediawiki=https://ko.wikipedia.org/w/api.php"),
             "WEB_SEARCH_KIND": "html",
             # ★DuckDuckGo html 은 UA 를 안 보내면 403 을 준다. 실제로 그랬다.
             "WEB_USER_AGENT": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

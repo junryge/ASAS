@@ -26,6 +26,22 @@ from avatar import mcp_client                           # noqa: E402
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _web_mcp():
+    """web_mcp.py 를 꾸러미 없이 읽어 온다."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "web_mcp_t", os.path.join(BASE, "WEB_MCP", "web_mcp.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def _backends(url, kind):
+    m = _web_mcp()
+    m.URL, m.KIND = url, kind
+    return m._backends()
+
+
 def _hub(web_on=False, others_on=False):
     srv = []
     for s in C.MCP_SERVERS:
@@ -131,10 +147,24 @@ class 설정이_안전한가(unittest.TestCase):
         web = next(s for s in C.MCP_SERVERS if s["key"] == "web")
         url, kind = web["env"]["WEB_SEARCH_URL"], web["env"]["WEB_SEARCH_KIND"]
         self.assertIn(kind, ("json", "html", "mediawiki"))
-        if kind == "mediawiki":
-            self.assertIn("api.php", url)
-        elif url:
-            self.assertIn("{q}", url, "{q} 자리가 없으면 질문이 안 들어간다")
+        for be in _backends(url, kind):
+            if be["kind"] == "mediawiki":
+                self.assertIn("api.php", be["url"])
+            elif be["post"]:
+                pass                     # POST 는 몸통으로 보낸다 — {q} 가 없다
+            else:
+                self.assertIn("{q}", be["url"],
+                              "{q} 자리가 없으면 질문이 안 들어간다: " + be["url"])
+
+    def test_한_곳이_막혀도_다음_곳이_있다(self):
+        """DuckDuckGo 가 200 을 주면서 '봇 같다' 페이지를 준 적이 있다.
+        그때 통째로 0건이 됐다 — 그래서 뒤에 위키백과를 둔다."""
+        web = next(s for s in C.MCP_SERVERS if s["key"] == "web")
+        bes = _backends(web["env"]["WEB_SEARCH_URL"],
+                        web["env"]["WEB_SEARCH_KIND"])
+        self.assertGreater(len(bes), 1, "검색할 곳이 한 곳뿐이다")
+        self.assertTrue(any(b["kind"] == "mediawiki" for b in bes),
+                        "막히지 않는 곳(위키백과)이 하나는 있어야 한다")
 
 
 class 웹_서버_자체(unittest.TestCase):
@@ -285,6 +315,129 @@ class 설정을_스스로_찾는다(unittest.TestCase):
         self.assertIn("설정 출처", r.stdout)
         self.assertIn("설정 파일", r.stdout)
         self.assertIn("config.py", r.stdout)
+
+
+class 한_곳이_막히면_다음_곳으로(unittest.TestCase):
+    """실제로 겪은 일 — DuckDuckGo 가 **200 을 주면서** 결과 대신 '봇 같다'
+    페이지를 줬다. 오류가 아니라 0건이라 뭐가 문제인지 알 수가 없었다.
+    진짜 서버 셋을 띄워 막힌 곳 → 빈 곳 → 위키백과 로 넘어가는지 본다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading
+        import urllib.parse
+        cls.hits = []
+        hits = cls.hits
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _send(self, body, ct="text/html; charset=utf-8"):
+                b = body.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", ct)
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                f = urllib.parse.parse_qs(self.rfile.read(n).decode())
+                hits.append(("POST", self.path, (f.get("q") or [""])[0]))
+                self._send('<html><div class="anomaly-modal__mask">'
+                           'Unfortunately, bots use DuckDuckGo too.</div></html>')
+
+            def do_GET(self):
+                u = urllib.parse.urlparse(self.path)
+                qs = urllib.parse.parse_qs(u.query)
+                hits.append(("GET", u.path,
+                             (qs.get("q") or qs.get("srsearch") or [""])[0]))
+                if u.path.startswith("/lite"):
+                    return self._send("<html><body>No results.</body></html>")
+                return self._send(json.dumps({"query": {"search": [
+                    {"title": "SBS",
+                     "snippet": '한국의 <span class="searchmatch">SBS</span> 방송사'},
+                    {"title": "SBS 뉴스", "snippet": "보도 채널"}]}}),
+                    "application/json")
+
+        cls.srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def _mod(self):
+        m = _web_mcp()
+        m.URL = ("html+post=http://127.0.0.1:{p}/html/"
+                 "|html=http://127.0.0.1:{p}/lite/?q={{q}}"
+                 "|mediawiki=http://127.0.0.1:{p}/w/api.php").format(p=self.port)
+        m.KIND, m.USE_PROXY = "html", False
+        return m
+
+    def test_막힌_곳을_지나_위키백과가_답한다(self):
+        del self.hits[:]
+        out = json.loads(self._mod().t_search({"query": "SBS가 뭐야", "topK": 3}))
+        self.assertEqual(out["count"], 2)
+        self.assertEqual(out["results"][0]["title"], "SBS")
+        # 세 곳을 순서대로 들렀다
+        self.assertEqual([h[1] for h in self.hits],
+                         ["/html/", "/lite/", "/w/api.php"])
+
+    def test_첫_곳에는_POST_로_보낸다(self):
+        del self.hits[:]
+        self._mod().t_search({"query": "SBS가 뭐야", "topK": 3})
+        self.assertEqual(self.hits[0][0], "POST")
+
+    def test_묻는_말은_빼고_찾는다(self):
+        """'SBS 뭐야' 로 찾으면 'SBS' 로 찾는 것보다 나쁘다."""
+        del self.hits[:]
+        self._mod().t_search({"query": "SBS가 뭐야", "topK": 3})
+        for h in self.hits:
+            self.assertEqual(h[2], "SBS")
+
+    def test_다_0건이면_까닭을_같이_준다(self):
+        """조용히 0건을 주면 사람이 뭘 고칠지 모른다 — 실제로 그랬다."""
+        m = self._mod()
+        m.URL = "html+post=http://127.0.0.1:{}/html/".format(self.port)
+        out = json.loads(m.t_search({"query": "SBS가 뭐야"}))
+        self.assertEqual(out["count"], 0)
+        self.assertTrue(any("막힌 페이지" in w for w in out["why"]))
+
+
+class 어디서_걸렀는지_센다(unittest.TestCase):
+    """0건은 까닭이 여럿이다 — 막혔거나, 우리 체가 다 걸렀거나, 진짜 없거나."""
+
+    def test_체마다_몇_개를_버렸는지_적는다(self):
+        m = _web_mcp()
+        raw = ('<a href="//duckduckgo.com/settings">설정</a>'
+               '<a href="/relative/x">상대주소</a>'
+               '<a href="https://a.co/1">SBS</a>'        # 짧아도 살아야 한다
+               '<a href="https://b.co/2"> </a>'
+               '<a href="https://c.co/3">진짜 제목</a>')
+        st = {}
+        rows = m._from_html(raw, 10, st)
+        self.assertEqual(st["링크"], 5)
+        self.assertEqual(st["주소아님"], 1)     # /relative/x
+        self.assertEqual(st["걸러냄"], 1)       # settings
+        self.assertEqual(st["제목없음"], 1)     # 빈칸
+        self.assertEqual(st["남음"], 2)
+        self.assertEqual([r["title"] for r in rows], ["SBS", "진짜 제목"])
+
+    def test_짧은_제목을_안_버린다(self):
+        """예전엔 4 글자 미만을 버려서 'SBS' 가 통째로 날아갔다."""
+        m = _web_mcp()
+        rows = m._from_html('<a href="https://sbs.co.kr">SBS</a>', 5)
+        self.assertEqual(len(rows), 1)
+
+    def test_홑따옴표_href_도_읽는다(self):
+        m = _web_mcp()
+        rows = m._from_html("<a href='https://sbs.co.kr'>SBS 홈</a>", 5)
+        self.assertEqual(len(rows), 1)
 
 
 if __name__ == "__main__":
