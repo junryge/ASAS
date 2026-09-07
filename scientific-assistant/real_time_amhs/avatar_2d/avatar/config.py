@@ -297,6 +297,39 @@ MCP_SERVERS = [
              ]},
         ],
     },
+    {
+        # ── 바깥 검색 (기본 꺼짐) ─────────────────────────────────────
+        # ★"마지막 수단" 이다. 위키·요청이력에서 못 찾았을 때만 불린다
+        #   (mcp_client.Hub._fallback). 우리 자료가 있으면 그걸 쓴다.
+        # ★기본이 꺼짐인 이유가 둘이다.
+        #   ① 어디로 나갈지 정해야 한다 — 사내 검색인지 인터넷인지.
+        #      WEB_SEARCH_URL 을 안 주면 서버가 아무것도 안 한다.
+        #   ② 바깥 글은 우리가 쓴 글이 아니다. 켜는 것은 사람이 정한다.
+        #   화면: 설정 → 외부 도구 에서 켜고 끈다 (지금 있는 그 목록이다).
+        "key": "web", "name": "웹 검색", "enabled": False,
+        "fallback": True,          # ← 이 표가 '마지막 수단' 을 뜻한다
+        "command": None,
+        "args": ["qa/web_mcp.py"],
+        "cwd": None,
+        "env": {
+            # {q} 자리에 질문이 들어간다. 비우면 서버가 아무것도 안 한다.
+            #   사내: "http://portal.내부/search?q={q}&fmt=json"
+            #   집  : "https://duckduckgo.com/html/?q={q}"  + KIND=html
+            "WEB_SEARCH_URL": "",
+            "WEB_SEARCH_KIND": "json",
+        },
+        "timeout": 20,
+        "budget": 1500,
+        # ★when 이 없다. 낱말로 부르지 않는다 — 못 찾았을 때만 불린다.
+        "calls": [
+            {"tool": "webSearch", "label": "웹 검색",
+             "args": {"topK": 5},
+             "pick": {"query": {"kind": "text", "max": 160}},
+             "then": [{"tool": "readUrl", "label": "웹 본문",
+                       "arg": "url", "list": "results", "id": "url",
+                       "max": 2, "budget": 3000}]},
+        ],
+    },
 ]
 
 # ── FAB 알람 ──────────────────────────────────────────────────────────────

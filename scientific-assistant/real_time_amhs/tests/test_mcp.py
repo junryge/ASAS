@@ -1053,7 +1053,10 @@ class 설정이_말이_된다(unittest.TestCase):
     def test_서버_정의에_필요한_것이_다_있다(self):
         for s in config.MCP_SERVERS:
             self.assertTrue(s.get("key"))
-            self.assertTrue(s.get("when"), s["key"] + ": 걸릴 말이 없다")
+            # ★fallback 서버는 낱말로 부르지 않는다 — 다른 데서 못 찾았을
+            #   때만 불린다. 그래서 when 이 없는 것이 맞다.
+            if not s.get("fallback"):
+                self.assertTrue(s.get("when"), s["key"] + ": 걸릴 말이 없다")
             self.assertTrue(s.get("calls"), s["key"] + ": 부를 도구가 없다")
             for c in s["calls"]:
                 self.assertTrue(c.get("tool"))
