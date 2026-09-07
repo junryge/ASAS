@@ -126,10 +126,15 @@ class 설정이_안전한가(unittest.TestCase):
         for q in ("보류된 개선요청 뭐가 있어?", "요청이력 뭐 있는지 알려줘"):
             self.assertEqual(hub._fallback(q), ("", 0), q)
 
-    def test_주소가_비어_있다(self):
-        """어디로 나갈지 사람이 정한다. 기본값으로 아무 데나 나가면 안 된다."""
+    def test_주소와_방식이_짝이_맞는다(self):
+        """html 인데 api.php 를 주거나, mediawiki 인데 ?q= 를 주면 안 된다."""
         web = next(s for s in C.MCP_SERVERS if s["key"] == "web")
-        self.assertEqual(web["env"]["WEB_SEARCH_URL"], "")
+        url, kind = web["env"]["WEB_SEARCH_URL"], web["env"]["WEB_SEARCH_KIND"]
+        self.assertIn(kind, ("json", "html", "mediawiki"))
+        if kind == "mediawiki":
+            self.assertIn("api.php", url)
+        elif url:
+            self.assertIn("{q}", url, "{q} 자리가 없으면 질문이 안 들어간다")
 
 
 class 웹_서버_자체(unittest.TestCase):
@@ -199,3 +204,55 @@ class 두_목록이_안_갈린다(unittest.TestCase):
         for w in mcp_client.Hub.DATA_WORDS:
             self.assertIn(w, allm.DATA_WORDS,
                           "'{}' 가 llm.DATA_WORDS 에 없다 — 갈라졌다".format(w))
+
+
+class 위키백과도_읽는다(unittest.TestCase):
+    """★나무위키는 안 쓴다 — Cloudflare 로 막혀 있고 CC BY-NC-SA(비영리)라
+    회사 업무에 쓰면 걸린다. 위키백과는 공식 API 가 있고 CC BY-SA 다."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "web_mcp", os.path.join(BASE, "WEB_MCP", "web_mcp.py"))
+        cls.m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.m)
+
+    def test_query_search_아래를_읽는다(self):
+        """이 API 는 결과가 query.search 아래에 있다 — 일반 JSON 규칙으로는
+        못 읽어서 자리를 따로 뒀다."""
+        raw = json.dumps({"query": {"search": [
+            {"title": "그래픽 처리 장치",
+             "snippet": '<span class="searchmatch">GPU</span> 는 계산 장치다'}]}})
+        got = self.m._from_mediawiki(raw, 5, "https://ko.wikipedia.org/w/api.php")
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["title"], "그래픽 처리 장치")
+
+    def test_주소를_제목으로_만든다(self):
+        """이 API 는 주소를 안 준다."""
+        raw = json.dumps({"query": {"search": [{"title": "GDDR", "snippet": ""}]}})
+        got = self.m._from_mediawiki(raw, 5, "https://ko.wikipedia.org/w/api.php")
+        self.assertEqual(got[0]["url"], "https://ko.wikipedia.org/wiki/GDDR")
+
+    def test_snippet_의_태그를_지운다(self):
+        raw = json.dumps({"query": {"search": [
+            {"title": "x", "snippet": '<span class="searchmatch">GPU</span> 다'}]}})
+        got = self.m._from_mediawiki(raw, 5, "https://ko.wikipedia.org/w/api.php")
+        self.assertEqual(got[0]["snippet"], "GPU 다")
+        self.assertNotIn("<", got[0]["snippet"])
+
+
+class 나무위키는_안_쓴다(unittest.TestCase):
+
+    def test_어디에도_안_적혀_있다(self):
+        """Cloudflare 로 막혀 있고 CC BY-NC-SA(비영리)다. 회사 업무에 쓰면
+        걸린다 — 기본값으로 들어가면 안 된다."""
+        for f in ("WEB_MCP/web_mcp.py", "avatar_2d/avatar/config.py"):
+            with open(os.path.join(BASE, f), encoding="utf-8") as fh:
+                src = fh.read()
+            self.assertNotIn("namu.wiki", src)
+            # 주석으로 '안 쓴다' 고 적어 두는 것은 괜찮다
+            for ln in src.splitlines():
+                if "나무위키" in ln:
+                    self.assertTrue(ln.strip().startswith("#") or "안 쓴다" in ln,
+                                    "나무위키가 주석 밖에 있다: " + ln.strip()[:60])

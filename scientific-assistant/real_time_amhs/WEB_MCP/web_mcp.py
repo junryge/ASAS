@@ -16,7 +16,10 @@
     WEB_SEARCH_URL   검색 주소. {q} 자리에 질문이 들어간다.
                      예) 사내:  http://portal.내부/search?q={q}&fmt=json
                          집:    https://duckduckgo.com/html/?q={q}
-    WEB_SEARCH_KIND  json | html   (기본 json)
+    WEB_SEARCH_KIND  json | html | mediawiki   (기본 json)
+                     mediawiki = 위키백과 API. 주소는 api.php 까지만 준다:
+                       WEB_SEARCH_URL=https://ko.wikipedia.org/w/api.php
+                       WEB_SEARCH_KIND=mediawiki
     WEB_JSON_LIST    JSON 응답에서 결과 배열의 키 (기본 results)
     WEB_JSON_TITLE   제목 키   (기본 title)
     WEB_JSON_URL     주소 키   (기본 url)
@@ -120,6 +123,39 @@ def _from_html(raw, k):
     return out
 
 
+def _from_mediawiki(raw, k, base):
+    """위키백과(MediaWiki) API 응답 → 결과 목록.
+
+    ★왜 따로 두나. 이 API 는 결과가 query.search 아래에 있고 **주소를 안 준다**
+      (제목으로 만들어야 한다). 그래서 일반 JSON 규칙으로는 못 읽는다.
+      한국어 위키백과가 폐쇄망 밖에서 제일 쓸 만한 자료라 자리를 만들어 둔다.
+    ★나무위키는 안 쓴다 — Cloudflare 로 막혀 있고, CC BY-NC-SA(비영리)라
+      회사 업무에 쓰면 걸린다.
+    """
+    d = json.loads(raw)
+    rows = ((d.get("query") or {}).get("search")) or []
+    out = []
+    for r in rows[:k]:
+        t = str(r.get("title") or "")
+        if not t:
+            continue
+        out.append({
+            "title": t,
+            # /w/api.php → /wiki/<제목>
+            "url": "{}/wiki/{}".format(
+                base.split("/w/api.php")[0].rstrip("/"),
+                urllib.parse.quote(t.replace(" ", "_"))),
+            # snippet 에 <span class="searchmatch"> 가 섞여 온다
+            "snippet": strip_html(r.get("snippet") or "")[:400],
+        })
+    return out
+
+
+# 위키백과 검색에 붙일 것들 (사람이 주소에 안 적어도 되게)
+_MW_Q = ("action=query&list=search&format=json&utf8=1"
+         "&srlimit={k}&srsearch={q}")
+
+
 def t_search(a):
     q = str(a.get("query") or "").strip()
     if not q:
@@ -129,10 +165,16 @@ def t_search(a):
             "검색 주소가 없다 (WEB_SEARCH_URL). 어디로 나갈지 정해지지 "
             "않아서 아무것도 안 했다 — 잘못된 데로 나가느니 안 나간다.")
     k = max(1, min(10, int(a.get("topK") or 5)))
-    raw = _open(URL.replace("{q}", urllib.parse.quote(q)))
-    if KIND == "html":
+    if KIND == "mediawiki":
+        # 주소는 api.php 까지만 주면 된다 — 질의는 우리가 붙인다
+        u = URL.split("?")[0].rstrip("/")
+        raw = _open(u + "?" + _MW_Q.format(k=k, q=urllib.parse.quote(q)))
+        rows = _from_mediawiki(raw, k, u)
+    elif KIND == "html":
+        raw = _open(URL.replace("{q}", urllib.parse.quote(q)))
         rows = _from_html(raw, k)
     else:
+        raw = _open(URL.replace("{q}", urllib.parse.quote(q)))
         d = json.loads(raw)
         rows = (d.get(J_LIST) if isinstance(d, dict) else d) or []
         rows = [{"title": str(r.get(J_TITLE) or "")[:200],

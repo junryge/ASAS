@@ -317,10 +317,12 @@ MCP_SERVERS = [
         "cwd": None,
         "env": {
             # {q} 자리에 질문이 들어간다. 비우면 서버가 아무것도 안 한다.
-            #   사내: "http://portal.내부/search?q={q}&fmt=json"
-            #   집  : "https://duckduckgo.com/html/?q={q}"  + KIND=html
-            "WEB_SEARCH_URL": "",
-            "WEB_SEARCH_KIND": "json",
+            #   사내 검색: "http://portal.내부/search?q={q}&fmt=json"  KIND=json
+            #   위키백과 : "https://ko.wikipedia.org/w/api.php"        KIND=mediawiki
+            #   ★나무위키는 안 쓴다 — Cloudflare 로 막혀 있고 CC BY-NC-SA
+            #     (비영리)라 회사 업무에 쓰면 걸린다.
+            "WEB_SEARCH_URL": "https://duckduckgo.com/html/?q={q}",
+            "WEB_SEARCH_KIND": "html",
         },
         "timeout": 20,
         "budget": 1500,
