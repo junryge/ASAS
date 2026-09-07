@@ -202,7 +202,15 @@ def main(argv):
         print("")
         print("  여기는 정상이다. 그래도 소스로 갔다면 **그 파일에 머리말이 없는 것**이다 —")
         print("  아래 목록을 봐라.")
-    for folder in ("버츄얼 아바타", "버추얼 아바타", "등록초안"):
+    # ★폴더 이름을 박아 두지 않는다. '검색시험' 처럼 새로 만든 폴더가
+    #   목록에 안 떠서 "넣었는데 왜 안 보이냐" 가 됐다. md 가 든 폴더는 다 본다.
+    folders = sorted(n for n in os.listdir(HERE)
+                     if os.path.isdir(os.path.join(HERE, n))
+                     and not n.startswith((".", "_"))
+                     and n not in ("amhs-llm-wiki", "tests", "data")
+                     and any(x.lower().endswith((".md", ".markdown", ".txt"))
+                             for x in os.listdir(os.path.join(HERE, n))))
+    for folder in folders:
         rows = md_plan(os.path.join(HERE, folder))
         if not rows:
             continue
