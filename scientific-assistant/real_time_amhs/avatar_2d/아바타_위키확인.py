@@ -64,16 +64,33 @@ def main(argv):
     elif not wiki.get("when_dyn"):
         print("  when_dyn 이 없다 — 건너뛴다.")
     else:
-        words = hub._dyn_words(wiki)
-        if not words:
-            print("  ★한 개도 못 받았다. 아래 중 하나다:")
-            print("    · MCP 서버(:8020)가 안 떠 있다")
-            print("    · MCP 서버가 **옛날 것**이라 wikiWords 도구가 없다"
-                  " (mcp_server.py 를 새 것으로 덮고 재시작)")
-            print("    · 위키에 페이지가 없다")
+        # ★"셋 중 하나다" 로 끝내면 안 된다 — 서버에 **직접 물어보면** 어느
+        #   것인지 바로 안다. 도구 목록에 wikiWords 가 있나부터 본다.
+        names, err = [], ""
+        try:
+            names = [t.get("name") for t in hub._client(wiki).tools()]
+        except Exception as e:                          # noqa: BLE001
+            err = "{}: {}".format(type(e).__name__, e)
+        if err:
+            print("  ★서버에 못 붙었다 — {}".format(err))
+            print("     주소: {}".format(wiki.get("url")))
+            print("     → mcp_server.py 를 띄웠나? 주소·포트가 맞나?")
+        elif "wikiWords" not in names:
+            print("  ★붙긴 했는데 **wikiWords 도구가 없다.** 서버가 옛날 것이다.")
+            print("     지금 있는 도구: {}".format(" · ".join(n for n in names if n)))
+            print("     → LLM_WIKI_MCP/amhs-llm-wiki/mcp_server.py 를 새 것으로")
+            print("       덮고 **:8020 을 껐다 켜라**. 파일만 덮으면 파이썬이")
+            print("       옛 코드를 계속 물고 있다.")
+            print("     ※ wiki_mcp_stdio.py 만 덮은 것 아닌가? 지금 붙는 쪽은")
+            print("       http({}) — mcp_server.py 다.".format(wiki.get("url")))
         else:
-            print("  {}개 받음. 앞 20개:".format(len(words)))
-            print("    " + " · ".join(words[:20]))
+            words = hub._dyn_words(wiki)
+            if not words:
+                print("  ★도구는 있는데 낱말이 0개다 — 위키에 페이지가 없다.")
+                print("     (wiki_진단.py ② 로 페이지가 있는지 봐라)")
+            else:
+                print("  {}개 받음. 앞 20개:".format(len(words)))
+                print("    " + " · ".join(words[:20]))
 
     print("")
     print("=" * 70)
