@@ -210,7 +210,6 @@ MCP_SERVERS = [
         # ★이것이 **지식베이스**다. 여기서 못 찾았을 때만 바깥(fallback)으로
         #   간다 — 요청이력은 성격이 달라서(우리 업무 기록) 못 찾았다고
         #   바깥을 뒤지면 안 된다.
-        "knowledge": True,
         "transport": "http",
         # ★★위키는 프로세스가 **둘**이다. 여기서 한 번 헛짚었다.
         #       app.py         Flask 웹앱      기본 :8100   ← 사람이 보는 화면
@@ -299,58 +298,6 @@ MCP_SERVERS = [
                   "arg": "sourceId", "list": "results", "id": "id",
                   "only": {"kind": "source"}, "max": 2, "budget": 4000},
              ]},
-        ],
-    },
-    {
-        # ── 바깥 검색 (기본 꺼짐) ─────────────────────────────────────
-        # ★"마지막 수단" 이다. 위키·요청이력에서 못 찾았을 때만 불린다
-        #   (mcp_client.Hub._fallback). 우리 자료가 있으면 그걸 쓴다.
-        # ★기본이 꺼짐인 이유가 둘이다.
-        #   ① 어디로 나갈지 정해야 한다 — 사내 검색인지 인터넷인지.
-        #      WEB_SEARCH_URL 을 안 주면 서버가 아무것도 안 한다.
-        #   ② 바깥 글은 우리가 쓴 글이 아니다. 켜는 것은 사람이 정한다.
-        #   화면: 설정 → 외부 도구 에서 켜고 끈다 (지금 있는 그 목록이다).
-        "key": "web", "name": "웹 검색", "enabled": True,
-        "fallback": True,          # ← 이 표가 '마지막 수단' 을 뜻한다
-        "command": None,
-        "args": ["WEB_MCP/web_mcp.py"],
-        "cwd": None,
-        "env": {
-            # {q} 자리에 질문이 들어간다. 비우면 서버가 아무것도 안 한다.
-            #   사내 검색: "http://portal.내부/search?q={q}&fmt=json"  KIND=json
-            #   위키백과 : "https://ko.wikipedia.org/w/api.php"        KIND=mediawiki
-            #   ★나무위키는 안 쓴다 — Cloudflare 로 막혀 있고 CC BY-NC-SA
-            #     (비영리)라 회사 업무에 쓰면 걸린다.
-            # ★한 곳만 두면 그 곳이 막힐 때 통째로 0건이 된다. 실제로
-            #   그랬다 — DuckDuckGo 가 200 을 주면서 결과 대신 '봇 같다'
-            #   페이지를 줬다. 그래서 '|' 로 여러 곳을 둔다. 앞에서부터
-            #   해 보고 결과가 나오면 거기서 멈춘다.
-            #     html+post= : POST 로 보낸다 (사람이 쓰는 창과 같은 꼴)
-            #     mediawiki= : 위키백과 API — 막히지 않고 글도 제대로다
-            "WEB_SEARCH_URL": (
-                "html+post=https://html.duckduckgo.com/html/"
-                "|html=https://lite.duckduckgo.com/lite/?q={q}"
-                "|mediawiki=https://ko.wikipedia.org/w/api.php"),
-            "WEB_SEARCH_KIND": "html",
-            # ★DuckDuckGo html 은 UA 를 안 보내면 403 을 준다. 실제로 그랬다.
-            "WEB_USER_AGENT": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                               "AppleWebKit/537.36 (KHTML, like Gecko) "
-                               "Chrome/120.0 Safari/537.36"),
-            # ★사내에서 **바깥**으로 나가려면 대개 프록시를 타야 한다.
-            #   403/407 이 나면 "1" 로 바꿔 본다. 사내 검색을 쓸 때는 끈다 —
-            #   프록시로 나가면 엉뚱한 데로 간다.
-            "WEB_USE_PROXY": "",
-        },
-        "timeout": 20,
-        "budget": 1500,
-        # ★when 이 없다. 낱말로 부르지 않는다 — 못 찾았을 때만 불린다.
-        "calls": [
-            {"tool": "webSearch", "label": "웹 검색",
-             "args": {"topK": 5},
-             "pick": {"query": {"kind": "text", "max": 160}},
-             "then": [{"tool": "readUrl", "label": "웹 본문",
-                       "arg": "url", "list": "results", "id": "url",
-                       "max": 2, "budget": 3000}]},
         ],
     },
 ]

@@ -809,6 +809,65 @@ class 룰을_실제_컬럼으로_말한다(_Sentinel):
         self.assertIn("HUBROOM", allm.AGENT_RULES)
 
 
+class 자료가_없을_때(unittest.TestCase):
+    """★'근거가 없으면 확인이 안 돼요' 를 관제 밖에까지 쓰니, 위키에 없는
+    일반 질문("리센느 누구야?")마다 아무 말도 못 했다. 바깥 검색으로
+    메우려 했지만 폐쇄망이라 게이트웨이가 가로챈다 — 될 때도 있고 안 될
+    때가 더 많았다. 그래서 아는 것은 아는 대로 말하고, 모르면 모른다고
+    하고, 애매하면 되묻는 쪽으로 갔다."""
+
+    def test_관제_밖에서는_아는_대로_답한다(self):
+        r = allm.AGENT_RULES
+        self.assertIn("1-0.", r)
+        self.assertIn("관제 이야기에만", r)
+        self.assertIn("아는 대로 답한다", r)
+
+    def test_그래도_관제_수치는_안_지어낸다(self):
+        """이 문이 열리면서 숫자까지 새면 안 된다 — 여기가 제일 위험하다."""
+        r = allm.AGENT_RULES
+        self.assertIn("절대 지어내지 않으며", r)
+        # 원래 규칙(관제 근거 안에서만)이 그대로 살아 있어야 한다
+        self.assertIn("[관제 근거] 블록에 있는 것만", r)
+        self.assertIn("지금은 확인이 안 돼요", r)
+
+    def test_모르면_모른다고_한다(self):
+        self.assertIn("모르면 모른다고 말한다", allm.AGENT_RULES)
+
+    def test_되물을_수_있다(self):
+        """지어내는 대신 물어보는 길을 열어 준다."""
+        r = allm.AGENT_RULES
+        self.assertIn("1-0-1.", r)
+        self.assertIn("되물어라", r)
+        self.assertIn("한 번에 하나만", r)
+
+    def test_참고자료_문구도_같이_바뀌었다(self):
+        """[참고 자료] 쪽에 '자료에 없는 것은 모른다고' 가 그대로 남아 있으면
+        규칙 1-0 과 서로 반대 말을 하게 된다."""
+        src = (Path(util.BASE) / "avatar_2d" / "avatar" / "llm.py").read_text(
+            encoding="utf-8")
+        self.assertNotIn("자료에 없는 것은 아는 척하지 않고 모른다고 말한다",
+                         src)
+        self.assertIn("자료에 없는 **관제 수치**는 아는 척하지 않는다", src)
+
+
+class 바깥으로는_안_나간다(unittest.TestCase):
+    """웹 검색을 걷어냈다 — 폐쇄망이라 회사 게이트웨이가 가로챈다."""
+
+    def test_바깥으로_나가는_서버가_없다(self):
+        for s in acfg.MCP_SERVERS:
+            self.assertFalse(s.get("fallback"),
+                             "바깥으로 나가는 서버가 남아 있다: " + s["key"])
+
+    def test_MCP_는_사내_것만_본다(self):
+        for s in acfg.MCP_SERVERS:
+            addr = " ".join([str(s.get("url") or "")]
+                            + [str(v) for v in (s.get("env") or {}).values()]
+                            + [str(x) for x in (s.get("args") or [])])
+            for out in ("duckduckgo", "wikipedia.org", "google.", "http://portal"):
+                self.assertNotIn(out, addr,
+                                 "{} 가 바깥을 본다".format(s["key"]))
+
+
 class 줄바꿈(unittest.TestCase):
     """응답이 한 덩어리로 붙어 나오던 문제 — 프롬프트와 파싱 양쪽."""
 
