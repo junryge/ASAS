@@ -743,7 +743,8 @@ class Handler(SimpleHTTPRequestHandler):
         seg = llm.measure(persona, q, hist, App.doc_store, st,
                           skill_store=App.skill_store,
                           evidence_text=ev_text, attach=attach,
-                          mcp_text=self._mcp_text(q, hist),
+                          mcp_text=self._mcp_text(q, hist,
+                                                  str(b.get("sid") or "")),
                           evidence_down=llm.is_data_question(q) and not ev_text)
         seg["limit"] = int(st.get("ctxLimit", 32768))
         seg["pct"] = min(999, round(seg["total"] / max(1, seg["limit"]) * 100))
@@ -838,7 +839,7 @@ class Handler(SimpleHTTPRequestHandler):
         #   관제 상태를 물었는데 엉뚱한 걸 답하는 셈이다 (실제 증상).
         #   그래서 '지금 관제를 못 본다' 를 MCP 칸에도 박아 준다.
         down = llm.is_data_question(text) and not ev.get("ok")
-        mcp = self._mcp_text(text, history)
+        mcp = self._mcp_text(text, history, str(b.get("sid") or ""))
         # ★MCP 로 받아온 글의 숫자도 **근거다.** 안 넣으면 나가기 직전 숫자
         #   가드가 그걸 '지어낸 수' 로 보고 **답을 통째로 버린다.**
         #   실제 증상: 위키의 연결 경로를 물었더니 호기명(4AFC3201·6ABL60)과
@@ -848,11 +849,17 @@ class Handler(SimpleHTTPRequestHandler):
         if mcp:
             ev["numbers"] = (set(ev.get("numbers") or set())
                              | sentinel.numbers_of(mcp))
-        msgs = llm.build_messages(persona, text, history, App.doc_store, st,
-                                  skill_store=App.skill_store,
-                                  evidence_text=ev["text"], attach=attach,
-                                  mcp_text=mcp,
-                                  evidence_down=down)
+        # ★한도를 넘으면 줄여서 보낸다. 예전엔 ctxLimit 이 화면 게이지
+        #   숫자로만 쓰여서, 넘어도 그대로 보내고 모델이 실패하거나 조용히
+        #   뒤를 잘라 먹었다. 줄였으면 반드시 사람에게 알린다.
+        msgs, ctx_note = llm.fit_messages(
+            persona, text, history, App.doc_store, st,
+            limit=int(st.get("ctxLimit", 0) or 0),
+            skill_store=App.skill_store,
+            evidence_text=ev["text"], attach=attach, mcp_text=mcp,
+            evidence_down=down)
+        if ctx_note:
+            self._say("     ↳ {}".format(ctx_note))
         t0 = time.time()
 
         if not b.get("stream"):
@@ -869,7 +876,10 @@ class Handler(SimpleHTTPRequestHandler):
                                         ev=ev)
             reply = self._guard(reply, ev)
             self._say("200  /api/chat  {}  {}ms".format(model, ms))
-            return self._json(200, {"reply": reply})
+            out = {"reply": reply}
+            if ctx_note:
+                out["ctx_note"] = ctx_note
+            return self._json(200, out)
 
         # ── SSE : 파싱된 이벤트를 그대로 흘려보낸다 ──────────────────────
         self.send_response(200)
@@ -886,6 +896,11 @@ class Handler(SimpleHTTPRequestHandler):
                 .encode("utf-8")
             self.wfile.write(b"%X\r\n" % len(data) + data + b"\r\n")
             self.wfile.flush()
+
+        # ★줄였으면 스트리밍에서도 먼저 알린다. 화면에만 답이 흘러가면
+        #   사람은 무엇이 빠졌는지 모른 채 그 답을 믿는다.
+        if ctx_note:
+            chunk({"type": "note", "text": ctx_note})
 
         n = 0
         try:
@@ -907,7 +922,7 @@ class Handler(SimpleHTTPRequestHandler):
         self._say("200  /api/chat  {}  {}ms  (stream, {}이벤트)".format(
             model, int((time.time() - t0) * 1000), n))
 
-    def _mcp_text(self, text, history=None):
+    def _mcp_text(self, text, history=None, sid=""):
         """질문에 걸리는 MCP 서버를 불러 근거 글을 만든다 (없으면 빈 글).
 
         ★MCP 가 죽어도 대화는 계속돼야 한다. 여기서 예외가 새면 질문 하나가
@@ -922,7 +937,7 @@ class Handler(SimpleHTTPRequestHandler):
         if hub is None or not text:
             return ""
         try:
-            out, used = hub.gather(text, history=history)
+            out, used = hub.gather(text, history=history, sid=sid)
         except Exception as e:  # noqa: BLE001
             self._say("     ↳ MCP 실패: {}".format(str(e)[:120]))
             return ""

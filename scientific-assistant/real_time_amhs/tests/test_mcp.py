@@ -2148,12 +2148,18 @@ class 위키를_직접_띄우는_길도_있다(unittest.TestCase):
                 self.assertNotIn(bad, t["name"].lower(), t["name"])
 
     def test_검색하고_본문을_읽는다(self):
+        """★검색은 **JSON** 으로 준다. 사람이 읽는 글로 주면 아바타가 본문까지
+        이어 읽는 길(config 의 then)이 아예 안 돈다 — 그 길은 앞 도구가 준
+        JSON 에서 id 를 뽑기 때문이다. 예전에 글로 줘서, 글 안에
+        "★readPage 로 본문을 읽어라" 라고 적어 뒀는데도 소용이 없었다."""
         got = self.talk(("searchWiki", {"query": "LFT 가 뭐야"}),
                         ("readPage", {"pageId": 12}))
         s1 = got[1]["result"]["content"][0]["text"]
-        self.assertIn("#12", s1)
-        self.assertIn("반송 장치", s1)
         self.assertFalse(got[1]["result"]["isError"])
+        d = json.loads(s1)                   # 글이면 여기서 깨진다
+        self.assertEqual(d["results"][0]["id"], 12)
+        self.assertEqual(d["results"][0]["kind"], "page")
+        self.assertIn("반송 장치", d["results"][0]["title"])
         s2 = got[2]["result"]["content"][0]["text"]
         self.assertIn("리프터", s2)          # 조각이 아니라 본문
 
@@ -2252,7 +2258,7 @@ class 가드가_위키_답을_먹지_않는다(unittest.TestCase):
         p = os.path.join(util.BASE, "avatar_2d", "avatar", "server.py")
         with open(p, encoding="utf-8") as f:
             src = f.read()
-        i = src.index("mcp = self._mcp_text(text, history)")
+        i = src.index("mcp = self._mcp_text(text, history")
         blk = src[i:i + 900]
         self.assertIn("numbers_of(mcp)", blk)
         self.assertIn('ev["numbers"]', blk)

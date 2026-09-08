@@ -4037,6 +4037,12 @@ function chatPayload(userText, stream){
   return JSON.stringify({
     text: userText,
     persona: $('#persona').value.trim(),
+    /* ★세션 id 를 같이 보낸다.
+       예전엔 서버가 '첫 발화' 로 대화를 짚었는데, 여기서 history 를
+       최근 keepMsgs 개만 보내므로 대화가 길어지면 첫 발화가 매 턴 바뀐다.
+       그러면 조회해 둔 자료를 이어지는 질문에 못 들고 간다 —
+       12개를 넘는 순간(=7턴쯤)부터 기억이 매번 끊겼다. */
+    sid: (curSession && curSession.id) || '',
     history: history.slice(-keepMsgs),
     model: $('#apiModel').value.trim(),
     temperature: parseFloat($('#apiTemp').value),
@@ -4165,6 +4171,9 @@ async function askLLMStream(userText, onEvent){
       try{
         const j = JSON.parse(line.slice(5).trim());
         if(j.error){ errMsg = j.error; continue; }
+        /* 컨텍스트를 줄였다는 알림 — 답보다 먼저 온다.
+           화면에만 답이 흘러가면 사람은 무엇이 빠졌는지 모른 채 믿는다. */
+        if(j.type === 'note'){ sys(j.text || ''); continue; }
         if(j.final){ final = j.final; continue; }
         onEvent(j);
       }catch(_){ /* 조각 — 무시 */ }
@@ -4326,7 +4335,8 @@ function scheduleCtxFetch(){
         /* ★첨부도 같이 보낸다 — 대화는 첨부를 싣는데 계측만 빼면
            화면이 실제보다 작게 나온다 */
         body:JSON.stringify({q:$('#say').value, attach:pendingAttach||'',
-          persona:$('#persona').value, history:history.slice(-keepMsgs)})});
+          persona:$('#persona').value, sid:(curSession&&curSession.id)||'',
+          history:history.slice(-keepMsgs)})});
       if(r.ok) SRV_CTX=await r.json();
     }catch(e){}
   }, 500);

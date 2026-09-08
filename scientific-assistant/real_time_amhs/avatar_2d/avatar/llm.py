@@ -376,6 +376,63 @@ CTX_KEYS = ("persona", "rules", "evidence", "mcp", "attach", "skills", "docs",
             "history", "input")
 
 
+# ─────────────────────────────────────────────────────────────────────
+# 한도 안에 들어가게 줄이기
+#
+# ★ctxLimit 은 지금까지 **화면 게이지 숫자**로만 쓰였다. 넘어도 아무것도
+#   안 잘랐다 — 긴 대화 + 첨부 + MCP 근거가 겹치면 그대로 보내서 모델이
+#   실패하거나 조용히 뒤를 잘라 먹었다. 어느 쪽이든 사람은 "왜 이상하게
+#   답하지" 만 겪는다.
+# ★줄이는 순서가 중요하다. **지금 질문과 근거는 마지막까지 지킨다** —
+#   그게 없으면 답 자체가 성립하지 않는다.
+#       ① 지난 대화 (오래된 것부터)
+#       ② 참고 자료 예산 (docBudget)
+#   그래도 넘으면 줄였다는 사실을 그대로 알린다. 조용히 자르면 안 된다.
+# ─────────────────────────────────────────────────────────────────────
+FIT_KEEPS = (12, 8, 6, 4, 2, 0)     # 지난 대화를 이만큼씩 줄여 본다
+FIT_BUDGETS = (1.0, 0.6, 0.35, 0.15, 0.0)   # 자료 예산 배수
+
+
+def fit_messages(persona, user_text, history, doc_store, settings,
+                 limit=0, **kw):
+    """한도 안에 들어가게 줄여서 프롬프트를 만든다 → (msgs, 알림글).
+
+    limit 이 0 이면 줄이지 않는다 (예전과 같다).
+    알림글이 비어 있지 않으면 **사람에게 보여 줘야 한다.**
+    """
+    st = dict(settings or {})
+    keep0 = int(st.get("keepMsgs", 12) or 12)
+    bud0 = int(st.get("docBudget", 6000) or 6000)
+
+    def make(keep, bud):
+        c = dict(st, keepMsgs=keep, docBudget=bud)
+        parts = {}
+        msgs = build_messages(persona, user_text, history, doc_store, c,
+                              parts=parts, **kw)
+        seg = {k: int(parts.get(k, 0)) for k in CTX_KEYS}
+        return msgs, sum(seg.values()) + 40
+
+    msgs, total = make(keep0, bud0)
+    if limit <= 0 or total <= limit:
+        return msgs, ""
+
+    for keep in [k for k in FIT_KEEPS if k < keep0] or [0]:
+        msgs, total = make(keep, bud0)
+        if total <= limit:
+            return msgs, ("컨텍스트가 한도({:,})를 넘어 지난 대화를 {}개로 "
+                          "줄였습니다.".format(limit, keep))
+    for r in FIT_BUDGETS[1:]:
+        bud = int(bud0 * r)
+        msgs, total = make(0, bud)
+        if total <= limit:
+            return msgs, ("컨텍스트가 한도({:,})를 넘어 지난 대화를 빼고 "
+                          "참고 자료를 {:,}자로 줄였습니다.".format(limit, bud))
+    return msgs, ("★컨텍스트가 한도({:,})를 넘습니다 (약 {:,}). 지난 대화와 "
+                  "참고 자료를 다 빼도 줄지 않습니다 — 첨부 파일이나 근거가 "
+                  "너무 큽니다. 한도를 올리거나 첨부를 떼고 다시 물어 "
+                  "주세요.".format(limit, total))
+
+
 def measure(persona, user_text, history, doc_store, settings,
             skill_store=None, evidence_text="", attach=None, mcp_text="",
             evidence_down=False):

@@ -214,6 +214,16 @@ def _domain_id(c, slug):
 
 
 def t_search(a):
+    """검색 결과를 **JSON 으로** 준다 (http 쪽 searchWiki 와 같은 꼴).
+
+    ★예전에는 사람이 읽는 글로 줬다. 그러면 아바타가 본문까지 이어 읽는
+      길(config 의 then)이 **아예 안 돈다** — 그 길은 앞 도구가 준 JSON 을
+      읽어 id 를 뽑기 때문이다(mcp_client._ids_of). 결과가 글이면 파싱에
+      실패하고 조용히 빈 목록이 되어, 조각(요약·발췌)만 보고 답하게 된다.
+      "★readPage 로 본문을 읽어라" 라고 글에 적어 둬도 소용이 없었다.
+    ★http(FastMCP) 쪽과 열쇠 이름을 맞춘다 — kind · id · title · snippet.
+      두 경로가 다른 이름을 주면 config 를 두 벌로 관리하게 된다.
+    """
     q = str(a.get("query") or "").strip()
     if not q:
         raise ValueError("query 가 비었다")
@@ -221,23 +231,24 @@ def t_search(a):
     with _connect() as c:
         docs = _docs(c, _domain_id(c, str(a.get("domainSlug") or "").strip()))
     hits = bm25_search(q, docs, k)
-    if not hits:
-        return "'{}' 로 찾은 것이 없다 (페이지·소스 {}건 중).".format(q, len(docs))
-    out = ["'{}' 검색 — {}건 (BM25)".format(q, len(hits))]
-    for s, d in hits:
-        head = "· [{}] #{} {} · {}".format(
-            "페이지" if d["kind"] == "page" else "소스", d["id"], d["title"],
-            d["domain"])
-        out.append("{}  (점수 {:.1f})".format(head, s))
-        if d.get("summary"):
-            out.append("   요약: {}".format(_cut(d["summary"], 200)))
+    rows = []
+    for sc, d in hits:
         body = re.sub(r"\s+", " ", d.get("text") or "").strip()
-        if body:
-            out.append("   {}".format(_cut(body, SNIPPET)))
-    out.append("")
-    out.append("★조각만 보고 답하지 마라. 페이지면 readPage(pageId=#) 로 "
-               "본문을 읽는다.")
-    return "\n".join(out)
+        rows.append({
+            "score": round(float(sc), 3),
+            "kind": d["kind"],                  # page | source
+            "id": d["id"],
+            "title": d.get("title") or "",
+            "domain": d.get("domain") or "",
+            "summary": _cut(d.get("summary") or "", 200),
+            "snippet": _cut(body, SNIPPET),
+        })
+    return json.dumps({
+        "query": q, "retrieval": "BM25", "count": len(rows),
+        "scanned": len(docs), "results": rows,
+        "_hint": ("조각만 보고 답하지 마라. kind 가 page 면 "
+                  "readPage(pageId=id) 로 본문을 읽는다."),
+    }, ensure_ascii=False, indent=1)
 
 
 def t_page(a):

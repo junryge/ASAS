@@ -815,14 +815,21 @@ class Hub:
             return c
 
     @staticmethod
-    def _conv_key(history, text):
-        """이 대화를 가리키는 열쇠 — **첫 사람 발화**.
+    def _conv_key(history, text, sid=""):
+        """이 대화를 가리키는 열쇠.
 
-        /api/chat 에 세션 id 가 안 넘어와서 history 로 짚는다. 첫 발화는
-        대화가 이어져도 안 바뀌므로, 두 번째 질문부터도 같은 열쇠가 나온다.
-        (첫 질문이면 history 가 비어 있으니 지금 질문이 곧 첫 발화다.)
+        ★세션 id 가 오면 그것을 쓴다. 대화가 길어져도 안 바뀐다.
+        ★없으면 **첫 사람 발화**로 짚는다 (옛 화면 호환).
+          이 방법에는 한계가 있다 — 화면이 history 를 최근 keepMsgs 개만
+          보내므로, 대화가 그보다 길어지면 '첫 발화' 가 매 턴 바뀐다.
+          실제로 12개(=7턴쯤)를 넘는 순간부터 열쇠가 매번 달라져서
+          조회해 둔 자료를 이어지는 질문에 못 들고 갔다. 그래서 화면이
+          세션 id 를 보내게 고쳤다.
         """
         import hashlib
+        sid = str(sid or "").strip()
+        if sid:
+            return "sid:" + sid
         first = ""
         for m in history or []:
             if isinstance(m, dict) and m.get("role") == "user":
@@ -836,9 +843,9 @@ class Hub:
             return ""
         return hashlib.sha1(first.encode("utf-8", "replace")).hexdigest()[:16]
 
-    def _recall(self, history, text):
+    def _recall(self, history, text, sid=""):
         """조회가 안 걸렸을 때 들고 갈 직전 결과 (없으면 빈 글)."""
-        key = self._conv_key(history, text)
+        key = self._conv_key(history, text, sid)
         if not key:
             return ""
         with self._lock:
@@ -848,8 +855,15 @@ class Hub:
         at_len, when, got = hit
         if time.time() - when > self.CARRY_S:
             return ""
-        if len(history or []) - at_len > self.CARRY_TURNS:
-            return ""
+        # ★턱 수로 낡음을 재는 것은 **세션 id 가 없을 때만** 쓴다.
+        #   화면이 history 를 최근 keepMsgs 개만 보내므로 len(history) 가
+        #   그 수에서 멈춘다 — 대화가 길어지면 len - at_len 이 실제 턱 수와
+        #   상관없는 값이 되어, 이어지는 질문인데도 여기서 막혔다.
+        #   세션 id 가 오면 대화가 바뀌면 열쇠 자체가 바뀌므로, 낡음은
+        #   시간(CARRY_S)만으로 본다.
+        if not str(sid or "").strip():
+            if len(history or []) - at_len > self.CARRY_TURNS:
+                return ""
         # ★방금 조회한 것처럼 말하면 안 된다. 어디서 온 글인지 밝힌다.
         # ★어디서 온 것인지 **이름을 그대로** 적는다. 예전엔 무엇을 들고
         #   왔든 "요청이력이다" 라고 적었다 — 위키를 들고 왔는데 요청이력
@@ -862,8 +876,8 @@ class Hub:
                 "그대로 들고 왔다. 내용은 그때 받은 그대로다.)\n".format(what)
                 + got)
 
-    def _remember(self, history, text, got):
-        key = self._conv_key(history, text)
+    def _remember(self, history, text, got, sid=""):
+        key = self._conv_key(history, text, sid)
         if not key or not got:
             return
         with self._lock:
@@ -873,7 +887,7 @@ class Hub:
                                 key=lambda k: self._carry[k][1])[:16]:
                     self._carry.pop(k, None)
 
-    def gather(self, text, use_cache=True, history=None):
+    def gather(self, text, use_cache=True, history=None, sid=""):
         """질문에 걸리는 서버들을 불러 근거 글을 만든다 → (글, 부른 도구 수).
 
         ★같은 글이면 CACHE_S 안에서는 다시 안 조회한다 (계측 + 대화가
@@ -886,7 +900,7 @@ class Hub:
             with self._lock:
                 hit = self._cache.get(key)
                 if hit and now - hit[0] < self.CACHE_S:
-                    self._remember(history, text, hit[1])
+                    self._remember(history, text, hit[1], sid)
                     return hit[1], 0
         out, used = [], 0
         for s in self.matched(text):
@@ -917,12 +931,12 @@ class Hub:
             #   서윤이 계속 "요청이력을 확인할 수 없다" 고 말한다.
             #   판정 기준은 llm.py 의 mcp_failed 와 같은 것을 쓴다.
             if used and not ("실패" in got or "못 붙었다" in got):
-                self._remember(history, text, got)
+                self._remember(history, text, got, sid)
             return got, used
         # ★조회가 안 걸렸다. 여기서 빈 글을 주면 서윤은 **방금 자기가 읽은
         #   내용을 못 보는 채로** 답한다 ("그럼 언제 적용돼?" 처럼 이어지는
         #   질문에는 '요청'·'이력' 같은 낱말이 없어서 늘 안 걸린다).
-        carried = self._recall(history, text)
+        carried = self._recall(history, text, sid)
         if carried:
             return carried, 0
         # ★여기서 끝이다. 바깥(웹 검색)으로는 안 나간다 — 폐쇄망이라
