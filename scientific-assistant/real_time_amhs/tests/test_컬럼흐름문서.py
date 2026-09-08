@@ -313,5 +313,107 @@ class 문서가_나온다(unittest.TestCase):
         self.assertIn("같은 자로 비교하지 마십시오", h)
 
 
+class 위키에_올릴_MD(unittest.TestCase):
+    """MCP 지식베이스에 넣을 MD. 두 관문을 다 통과해야 한다:
+      ① 위키의 머리말 파서 — 제목·타입·태그·설명이 있어야 페이지가 된다
+      ② 아바타의 낱말 관문 — 태그에 없는 말로 물으면 위키를 아예 안 뒤진다
+    둘 중 하나만 통과하면 '올렸는데 아바타가 모른다' 가 된다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.m = _mod()
+        cls.d = cls.m.build()
+        if not cls.d["ok"]:
+            raise unittest.SkipTest("예측기 소스를 못 찾았다")
+        cls.pages = cls.m.wiki_pages(cls.d)
+        app = os.path.join(util.BASE, "LLM_WIKI_MCP", "amhs-llm-wiki", "app.py")
+        if not os.path.isfile(app):
+            raise unittest.SkipTest("위키 app.py 가 없다")
+        src = io.open(app, encoding="utf-8").read()
+        i = src.index("MD_FM_RE = re.compile")
+        j = src.index("def upsert_md_page")
+        ns = {"re": re}
+        exec(compile(src[i:j], app, "exec"), ns)          # noqa: S102
+        # ★클래스에 함수를 그대로 붙이면 self.fn["parse"](raw) 가 바운드 메서드가
+        #   되어 self 가 첫 인자로 끼어든다. dict 에 담아 피한다.
+        cls.fn = {"parse": ns["parse_md_front"], "desc": ns["md_desc"]}
+
+    def test_장수가_넉넉하다(self):
+        """한 장에 다 넣으면 검색이 그 큰 문서만 물어 온다."""
+        self.assertGreaterEqual(len(self.pages), 10)
+        names = [n for n, _ in self.pages]
+        for ar in (self.d["C"].get("AREAS_ALL") or []):
+            self.assertTrue(any(n.endswith("영역-{}.md".format(ar))
+                                for n in names),
+                            "{} 페이지가 없다".format(ar))
+
+    def test_위키_파서를_통과한다(self):
+        for name, raw in self.pages:
+            meta, body = self.fn["parse"](raw)
+            self.assertTrue(meta.get("title"), name + " 제목 없음")
+            self.assertIn(meta.get("type"), ("concept", "entity"),
+                          name + " 타입 이상")
+            self.assertTrue(meta.get("tags"), name + " 태그 없음")
+            self.assertTrue(body.strip(), name + " 본문 없음")
+
+    def test_설명이_페이지마다_다르다(self):
+        """한 번에 여러 개를 올리면 화면 '설명' 칸은 전부 같은 값이 붙는다.
+        md 가 자기 summary 를 갖고 있어야 각자 제 설명을 갖는다."""
+        got = [self.fn["desc"](*self.fn["parse"](raw)) for _, raw in self.pages]
+        for g in got:
+            self.assertTrue(g)
+        self.assertEqual(len(set(got)), len(got), "설명이 겹친다")
+
+    def _words(self):
+        words, seen = [], set()
+        for _, raw in self.pages:
+            meta, _b = self.fn["parse"](raw)
+            cand = [meta.get("title") or ""]
+            cand += re.split(r"[,]+", meta.get("tags") or "")
+            for w in cand:
+                w = w.strip().strip("[]()'\"`,.")
+                if len(w) >= 2 and w not in seen:
+                    seen.add(w)
+                    words.append(w)
+        return words
+
+    def test_아바타가_이_문서를_뒤진다(self):
+        """태그에 없는 말로 물으면 위키를 아예 안 뒤진다 — 올려 봐야 소용없다."""
+        import sys as _s
+        _s.path.insert(0, os.path.join(util.BASE, "avatar_2d"))
+        from avatar.mcp_client import _hits
+        words = self._words()
+        for q in ("M14는 어느 컬럼을 봐?", "unified_risk_score 어떻게 계산해?",
+                  "area_score 가 뭐야?", "m16hub 임계값 알려줘",
+                  "발동이벤트 컬럼 뭐가 있어?", "영역분리 하면 뭐가 바뀌어?",
+                  "M16_PKT 는 왜 점수가 낮아?", "hot_area 가 뭐지?"):
+            self.assertTrue(_hits(q, words), "안 걸린다: " + q)
+
+    def test_띄어_쓴_말도_걸린다(self):
+        """태그를 '리프터정체' 로만 두면 '리프터 정체' 로 물을 때 안 걸린다.
+        낱말 관문은 글자 그대로 견준다 — 실제로 놓쳤던 자리다."""
+        import sys as _s
+        _s.path.insert(0, os.path.join(util.BASE, "avatar_2d"))
+        from avatar.mcp_client import _hits
+        words = self._words()
+        for q in ("리프터 정체가 무슨 뜻이야?", "Queue 누적이 뭐야?",
+                  "Storage FULL 이 뭐지?", "4분 초과 알려줘"):
+            self.assertTrue(_hits(q, words), "안 걸린다: " + q)
+
+    def test_잡담에는_안_걸린다(self):
+        import sys as _s
+        _s.path.insert(0, os.path.join(util.BASE, "avatar_2d"))
+        from avatar.mcp_client import _hits
+        words = self._words()
+        for q in ("오늘 점심 뭐 먹지?", "배고파", "날씨 어때"):
+            self.assertEqual(_hits(q, words), [], "잘못 걸린다: " + q)
+
+    def test_HTML_꼬리표가_안_섞인다(self):
+        """설명을 HTML 에서 그대로 옮기면 <b> 가 md 에 남는다."""
+        for name, raw in self.pages:
+            for bad in ("<b>", "</b>", "<span", "&lt;"):
+                self.assertNotIn(bad, raw, "{} 에 {} 가 남았다".format(name, bad))
+
+
 if __name__ == "__main__":
     unittest.main()

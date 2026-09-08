@@ -1438,10 +1438,356 @@ def render(d):
     return "\n".join(o)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# MCP 위키에 넣을 MD
+#
+# ★왜 여러 장으로 쪼개나. 위키 검색(BM25)은 **초점이 좁은 페이지**에서
+#   잘 맞는다. 한 장에 다 넣으면 "M14 는 어느 컬럼 봐?" 에 그 큰 문서가
+#   통째로 걸려 아바타가 필요 없는 데까지 읽는다.
+# ★tags 가 중요하다. 아바타는 wikiWords(제목·태그)로 '이 질문에 위키를
+#   뒤질까' 를 정한다 — 태그에 없는 말로 물으면 아예 안 뒤진다. 그래서
+#   사람이 실제로 칠 말(M14 · area_score · 반송지연 · 리프터 정체…)을
+#   전부 넣는다.
+# ★summary 는 페이지마다 다르게 쓴다. 한 번에 여러 개를 올리면 화면의
+#   '설명' 칸은 전부 같은 값이 붙는데, md 가 자기 summary 를 갖고 있으면
+#   그걸 쓴다 (app.md_desc).
+# ─────────────────────────────────────────────────────────────────────
+WIKI_DOMAIN = "관제"
+
+# 현장 이름 ↔ 코드 — 태그에 둘 다 넣는다. 사람은 한글로 묻고 코드는
+# 영문으로 적혀 있다.
+# ★붙여 쓴 말과 띄어 쓴 말을 **둘 다** 넣는다. 태그를 '리프터정체' 로만
+#   두면 "리프터 정체가 뭐야?" 라고 물었을 때 아예 안 걸린다 (실제로
+#   시험에서 놓쳤다). 낱말 관문은 글자 그대로 견주기 때문이다.
+RULE_TAGS = ["반송지연", "Queue누적", "Queue 누적", "리프터정체", "리프터 정체",
+             "리프터", "StorageFULL", "Storage FULL", "저장포화",
+             "4분초과", "4분 초과", "운영자용량변경", "용량변경", "소터", "분류기",
+             "RA", "RB", "RC", "RD", "SLA", "SORT", "MAXCAPA"]
+
+
+def _fm(title, summary, tags, ptype="concept"):
+    # ★겹치는 태그를 지운다 (M16 은 밑줄을 떼도 M16 이라 두 번 들어간다).
+    #   순서는 지킨다 — 앞쪽이 그 페이지를 가장 잘 나타내는 말이다.
+    seen, uniq = set(), []
+    for t in tags:
+        t = str(t).strip()
+        if t and t not in seen:
+            seen.add(t)
+            uniq.append(t)
+    tags = uniq
+    return ("---\n"
+            "title: {}\n"
+            "type: {}\n"
+            "domain: {}\n"
+            "tags: [{}]\n"
+            "summary: {}\n"
+            "sources: []\n"
+            "author: \n"
+            "updated: \n"
+            "---\n\n".format(title, ptype, WIKI_DOMAIN,
+                             ", ".join(tags), summary))
+
+
+def _md_table(head, rows):
+    o = ["| " + " | ".join(head) + " |",
+         "|" + "|".join(["---"] * len(head)) + "|"]
+    for r in rows:
+        o.append("| " + " | ".join(str(x) for x in r) + " |")
+    return "\n".join(o)
+
+
+def wiki_pages(d):
+    """위키에 올릴 MD 여러 장 — [(파일이름, 글), …]"""
+    C, pts, uni, fl = d["C"], d["pts"], d["uni"], d["flow_th"]
+    cap = pts.get("_cap") or 50
+    ucap = uni.get("cap") or 500
+    areas = C.get("AREAS_ALL") or AREA_ORDER
+    ver = d["version"] or "룰베이스 예측기"
+    w, dg, cr = _grade_cuts()
+    out = []
+
+    # ── 00 개요 ──────────────────────────────────────────────────────
+    b = [_fm("관제 점수 개요 — ALL 과 FAB 은 다른 자다",
+             "관제가 보는 두 점수. ALL 은 unified_risk_score(0~{}), FAB 은 "
+             "area_score(0~{}). 자가 달라서 그대로 비교하면 안 된다."
+             .format(ucap, cap),
+             ["관제", "점수", "unified_risk_score", "area_score", "ALL", "FAB",
+              "위험도", "스코어", "판단기준"])]
+    b.append("## 관제는 무엇을 보고 판단하나\n")
+    b.append(_md_table(["대상", "보는 값", "자", "무엇인가"], [
+        ["**ALL**", "`unified_risk_score`", "0~{}".format(ucap),
+         "8영역 점수 합 + 전체 관점 가산"],
+        ["**FAB**", "`area_score`", "0~{}".format(cap),
+         "그 영역의 룰 배점 합"],
+    ]))
+    b.append("\n> ★**두 값을 같은 자로 비교하면 안 된다.** ALL 이 137 이고 "
+             "M14 가 28 이라고 해서 ALL 이 다섯 배 나쁜 것이 아니다. "
+             "재는 대상과 눈금이 다르다.\n")
+    b.append("\n## 점수는 어디서 오나\n")
+    b.append("```\n"
+             "룰베이스 예측기 ({ver})\n"
+             "   │  M16A_HUBROOM_PR.CSV (원시 265 컬럼) 를 읽어\n"
+             "   │  8영역 룰로 점수를 만든다\n"
+             "   ↓  {{날짜}}_발동이벤트.csv\n"
+             "관제 (real_time_amhs)\n"
+             "   │  읽고 · 재현 검산하고 · 등급 매기고 · LLM 이 판단하고\n"
+             "   ↓  사후에 채점한다\n"
+             "```\n".format(ver=ver))
+    b.append("\n**관제는 룰을 만들지 않는다.** 룰은 예측기가 만들고, 관제는 "
+             "받아서 읽는다. 룰 개정 이력·룰 제작 데이터 기간을 물으면 "
+             "예측기 쪽 소관이다.\n")
+    b.append("\n## 등급\n")
+    b.append("등급 경계는 **실시간 관제 화면(정책 탭)에서 정한다.** "
+             "코드에 박힌 값이 아니다. 시스템별로 다르게 둘 수도 있다.\n")
+    b.append("\n" + _md_table(["등급", "점수", "처리"], [
+        ["정상", "0 ~ {}".format(w - 1) if isinstance(w, int) else "—", "알람 없음"],
+        ["경계", "{} ~ {}".format(w, dg - 1) if isinstance(w, int) else "—", "확인 필요"],
+        ["위험", "{} ~ {}".format(dg, cr - 1) if isinstance(dg, int) else "—", "모니터링"],
+        ["초위험", "{} ~ 100".format(cr), "조치"],
+    ]) + "\n")
+    b.append("\n> 위 값은 이 문서를 만든 시점의 설정이다. 화면에서 바꾸면 "
+             "달라진다.\n")
+    out.append(("00_관제-점수-개요.md", "".join(b)))
+
+    # ── 01 ALL ──────────────────────────────────────────────────────
+    b = [_fm("ALL 점수 unified_risk_score 계산 방법",
+             "8영역 area_score 합에 흐름·SLA·소터·MAXCAPA 가산을 더해 "
+             "min({}) 로 자른다. SLA·소터·MAXCAPA 는 두 번 세므로 FAB 합과 "
+             "안 맞는다.".format(ucap),
+             ["unified_risk_score", "ALL", "전체점수", "융합", "layer1_total",
+              "flow_score", "흐름", "위험도등급"])]
+    b.append("## 계산\n\n```\n"
+             "layer1_total = Σ area_score            (8영역 전부)\n"
+             "flow_score   = 흐름 노드마다  심각 +{s} / 위험 +{dd} / 주의 +{ww}\n"
+             "sla_score    = SLA 켜진 영역 수 × {sla}\n"
+             "sorter_score = 소터 켜진 영역 수 × {so}\n"
+             "mc_score     = Σ (영역별 MAXCAPA 바뀐 컬럼 수 × {mc})\n\n"
+             "unified_risk_score = min({cap}, 위 다섯의 합)\n```\n".format(
+                 s=uni["flow"].get("심각", "?"), dd=uni["flow"].get("위험", "?"),
+                 ww=uni["flow"].get("주의", "?"), sla=uni["sla"], so=uni["sorter"],
+                 mc=uni["mc"], cap=ucap))
+    b.append("\n> ★**SLA·소터·MAXCAPA 는 두 번 센다.** area_score 안에서 한 번"
+             "(그 영역의 문제로), 융합에서 또 한 번(전체로 번질 신호로). "
+             "일부러 그렇게 둔 것이라, **ALL 점수를 FAB 점수 합으로 되계산하면 "
+             "맞지 않는다.**\n")
+    b.append("\n## 흐름 룰\n\n노드마다 **지금 값 ÷ 최근 {}분 평균** 배수를 "
+             "본다. 절대값이 아니라 평소 대비라, 노드마다 크기가 달라도 같은 "
+             "자로 잰다.\n\n".format(fl.get("_avg", "?")))
+    b.append(_md_table(["배수", "등급", "가산"],
+                       [["≥ {}×".format(fl.get(lv, "?")), lv,
+                         "+{}".format(uni["flow"].get(lv, "?"))]
+                        for lv in ("심각", "위험", "주의")]) + "\n")
+    if isinstance(C.get("FLOW_NODES"), dict):
+        b.append("\n### 흐름 노드 {}개\n\n".format(len(C["FLOW_NODES"])))
+        b.append(_md_table(["노드", "영역", "컬럼"], [
+            [k, (v[0] if isinstance(v, (list, tuple)) else ""),
+             "`{}`".format(v[1] if isinstance(v, (list, tuple)) else v)]
+            for k, v in C["FLOW_NODES"].items()]) + "\n")
+    b.append("\n## 예측기 자체 등급 (관제 등급과 다르다)\n\n")
+    if uni["levels"]:
+        lv = sorted(uni["levels"], key=lambda x: -x[0])
+        b.append(_md_table(["점수", "등급"], [
+            ["{} 이상".format(mn) if i == 0 else "{} ~ {}".format(mn, lv[i-1][0]-1),
+             nm] for i, (mn, nm) in enumerate(lv)]) + "\n")
+    b.append("\n> 이름이 같아도 관제 등급과 **다른 값**이다. 예측기는 0~{} "
+             "자, 관제는 0~100 자다.\n".format(ucap))
+    out.append(("01_ALL-점수-unified_risk_score.md", "".join(b)))
+
+    # ── 02 FAB ──────────────────────────────────────────────────────
+    b = [_fm("FAB 점수 area_score 계산 방법",
+             "룰 8종의 배점을 더해 min({}) 로 자른다. 영역마다 붙는 룰이 "
+             "달라서 받을 수 있는 최대 점수가 다르다.".format(cap),
+             ["area_score", "FAB", "영역점수", "배점", "룰", "min50",
+              "area_score_raw", "캡"])]
+    b.append("## 배점\n\n")
+    rows = [("R-A′ 반송지연", "ra_pts"), ("R-A′ 지속", "ra_sus_pts"),
+            ("R-B 반입급증(30분)", "rb_pts"), ("R-B 반입급증(10분)", "rb_fast_pts"),
+            ("R-C′ 역증가·쏠림", "rc_pts"), ("R-D 저장/가동 포화", "rd_pts"),
+            ("SLA 4분초과", "sla_pts"), ("소터 대기/실패", "sort_pts")]
+    b.append(_md_table(["룰", "배점"],
+                       [[n, "+{}".format((pts.get(v) or {}).get("pts", "?"))]
+                        for n, v in rows]
+                       + [["MAXCAPA 축소",
+                           "+{} × 바뀐 컬럼 수".format(
+                               (pts.get("mc_pts") or {}).get("pts", "?"))]]) + "\n")
+    b.append("\n```\narea_score = min({}, 켜진 룰 배점의 합)\n```\n".format(cap))
+    b.append("\n자르기 전 값은 `{{영역}}_score_raw` 로 따로 남는다 — "
+             "캡에 걸렸는지 확인용이다.\n")
+    b.append("\n> 배점의 근거(왜 R-A′ 가 {} 점인가)는 예측기 소스에 적혀 있지 "
+             "않다. 룰을 만든 쪽에 확인이 필요하다.\n".format(
+                 (pts.get("ra_pts") or {}).get("pts", "?")))
+    b.append("\n## 영역마다 붙는 룰이 다르다\n\n")
+    rr_rows = []
+    for ar in areas:
+        rr = area_rules(d, ar)
+        names = [x[0] for x in rr]
+        has = lambda pre: "O" if any(n.startswith(pre) for n in names) else "·"
+        run = sum((pts.get(v) or {}).get("pts", 0) for _, _, _, v in rr
+                  if v != "mc_pts")
+        mc = any(v == "mc_pts" for _, _, _, v in rr)
+        rr_rows.append([ar, has("R-A"), has("R-B"), has("R-C"), has("R-D"),
+                        has("SLA"), has("소터"), "O" if mc else "·",
+                        "**{}**".format(cap if mc else min(cap, run))])
+    b.append(_md_table(["영역", "R-A′", "R-B", "R-C′", "R-D", "SLA", "소터",
+                        "MAXCAPA", "최대 점수"], rr_rows) + "\n")
+    b.append("\n> **M16 은 R-B 만, M16_PKT·M16_WT 는 R-A′ 만 붙는다.** "
+             "그래서 최대 15 점이다. 점수가 낮다고 그 영역이 안전한 것이 "
+             "아니라, 그 영역에서 볼 수 있는 컬럼이 적은 것이다.\n")
+    b.append("\n> M16_PKT·M16_WT 는 OHT 가동률을 **읽기는 하는데** R-D 판정 "
+             "대상이 아니어서 그 값이 점수로 가지 않는다. 의도한 것인지 "
+             "예측기 쪽 확인이 필요하다.\n")
+    out.append(("02_FAB-점수-area_score.md", "".join(b)))
+
+    # ── 03 룰 설명 ──────────────────────────────────────────────────
+    b = [_fm("관제 룰 8종 — 무엇을 잡고 왜 그렇게 보나",
+             "R-A′ 반송지연 · R-B Queue 누적 · R-C′ 리프터 정체 · "
+             "R-D Storage FULL · SLA 4분초과 · 소터 · MAXCAPA. "
+             "현장 이름과 코드 이름을 같이 적는다.",
+             RULE_TAGS + ["룰", "판정", "임계", "R-A", "R-B", "R-C", "R-D"])]
+    b.append("## 답변할 때는 한글 이름을 쓴다\n\n")
+    b.append(_md_table(["코드", "현장 이름", "뜻"],
+                       [[c, ko, mean] for c, ko, mean, _, _ in WHY_RULES]) + "\n")
+    b.append("\n> '역증가'·'역류' 라는 말은 쓰지 않는다. **리프터 정체**, "
+             "**Queue 밀림** 으로 말한다.\n")
+    b.append("\n## 무엇을 잡나 · 왜 그렇게 봤나\n")
+    import re as _re
+    for code, ko, mean, what, why in WHY_RULES:
+        strip = lambda t: _re.sub(r"<[^>]+>", "", t)
+        b.append("\n### {} — {}\n\n".format(code, ko))
+        b.append("- **무엇을 잡나**: {}\n".format(strip(what)))
+        b.append("- **왜 그렇게 봤나**: {}\n".format(strip(why)))
+    b.append("\n## 읽는 순서\n\n"
+             "**시간이 는다(R-A′) → 물량이 쌓인다(R-B) → 자리가 없다"
+             "(R-C′·R-D) → 고객이 아프다(SLA).**\n\n"
+             "단계 판정 S3 가 이 셋을 모두 요구하는 것도 같은 까닭이다. "
+             "시간도 늘고, 자리도 없고, 물량도 몰릴 때가 진짜 막히는 때다.\n")
+    out.append(("03_관제-룰-8종.md", "".join(b)))
+
+    # ── 04 영역별 ───────────────────────────────────────────────────
+    for i, ar in enumerate(areas, 1):
+        rr = area_rules(d, ar)
+        if not rr:
+            continue
+        run = sum((pts.get(v) or {}).get("pts", 0) for _, _, _, v in rr
+                  if v != "mc_pts")
+        mc = any(v == "mc_pts" for _, _, _, v in rr)
+        reach = cap if mc else min(cap, run)
+        # ★이 영역에 **실제로 붙는 룰**만 태그로 단다. 없는 룰을 달면
+        #   "리프터 정체" 를 물었을 때 리프터가 없는 M16 페이지까지 딸려 온다.
+        mine = []
+        for n, _c, _t, _v in rr:
+            for code, ko, _m, _w, _y in WHY_RULES:
+                if n.startswith(code) or (code == "소터" and n.startswith("소터")):
+                    mine += [ko.split(" / ")[0], code]
+                    for extra in RULE_TAGS:
+                        if extra.replace(" ", "") in ko.replace(" ", ""):
+                            mine.append(extra)
+        b = [_fm("{} 영역이 보는 컬럼과 임계".format(ar),
+                 "{} 는 룰 {}종이 붙고 최대 {}점까지 간다. 어느 컬럼을 "
+                 "어느 임계로 보는지.".format(ar, len(rr), reach),
+                 [ar, ar.replace("_", ""), "area_score", "컬럼", "임계",
+                  "{} 점수".format(ar), "{} 컬럼".format(ar)] + mine,
+                 "entity")]
+        b.append("## {} 가 보는 것\n\n".format(ar))
+        b.append(_md_table(["룰", "읽는 컬럼", "임계", "배점"], [
+            [n, "<br>".join("`{}`".format(c) for c in (cols or ["—"])),
+             th, "+{}{}".format((pts.get(v) or {}).get("pts", "?"),
+                                " × n" if v == "mc_pts" else "")]
+            for n, cols, th, v in rr]) + "\n")
+        b.append("\n```\narea_score = min({}, 켜진 룰 배점의 합)\n"
+                 "{} 가 받을 수 있는 최대: {}점\n```\n".format(cap, ar, reach))
+        if not mc:
+            b.append("\n> 붙는 룰이 {}종이라 {}점을 다 못 채운다. 점수가 낮다고 "
+                     "안전한 것이 아니라 볼 수 있는 컬럼이 적은 것이다.\n"
+                     .format(len(rr), cap))
+        ra_c = (C.get("RA_COL") or {}).get(ar)
+        if ra_c and "AVGLOADTIME" in ra_c:
+            b.append("\n> ★{} 의 반송지연은 `AVGLOADTIME1MIN`(적재시간) 을 "
+                     "본다. M16HUB·M14B 처럼 `AVGTOTALTIME1MIN` 이 아니다.\n"
+                     .format(ar))
+        out.append(("04_{}_영역-{}.md".format(i, ar), "".join(b)))
+
+    # ── 05 컬럼 사전 ────────────────────────────────────────────────
+    ef = C.get("EVENT_FIELDS") or []
+    if ef:
+        b = [_fm("발동이벤트 CSV 컬럼 사전",
+                 "예측기가 매분 만드는 {}개 컬럼의 뜻. 매분 1행이고 "
+                 "이벤트가 없는 분도 기록한다.".format(len(ef)),
+                 ["발동이벤트", "컬럼", "CSV", "EVENT_FIELDS", "reason",
+                  "hot_area", "stage", "propagation_chain", "컬럼사전"])]
+        b.append("## 매분 1행 · {}개 컬럼\n\n"
+                 "**이벤트가 없는 분도 기록한다.** 없는 분을 빼면 나중에 "
+                 "분모를 못 센다.\n\n".format(len(ef)))
+        cols = explain_cols(ef, cap)
+        seen_shape, rows2 = set(), []
+        for c in cols:
+            n = c["col"]
+            ar = ""
+            for a2 in sorted(AREA_ORDER, key=len, reverse=True):
+                if n.startswith(a2 + "_") or n.endswith("_" + a2):
+                    ar = a2
+                    break
+            shape = n.replace(ar, "{영역}") if ar else n
+            if shape in seen_shape:
+                continue
+            seen_shape.add(shape)
+            t = c["title"].replace(ar, "{영역}") if ar else c["title"]
+            rows2.append(["`{}`".format(shape), t,
+                          _re.sub(r"<[^>]+>", "", c["desc"])])
+        b.append(_md_table(["컬럼", "뜻", "설명"], rows2) + "\n")
+        b.append("\n> `{영역}` 자리에 M16HUB · M14 · M14B · M16A · M16B · "
+                 "M16 · M16_PKT · M16_WT 가 들어간다.\n")
+        out.append(("05_발동이벤트-컬럼사전.md", "".join(b)))
+
+    # ── 06 영역분리 ─────────────────────────────────────────────────
+    b = [_fm("영역분리 — FAB 파일에서 area_score 가 자리를 옮긴다",
+             "FAB 파일에는 전체 점수와 그 FAB 점수가 같이 들어 있다. "
+             "관제가 받는 순간 area_score 를 unified_risk_score 자리로 "
+             "옮기고 원본은 all_* 로 남긴다.",
+             ["영역분리", "area_score", "all_score", "정규화", "FAB파일",
+              "jupyter_csv", "hot_area", "all_hot_area"])]
+    b.append("## 왜 자리를 바꾸나\n\n"
+             "FAB 파일에는 **전체 점수와 그 FAB 점수가 같이** 들어 있다. "
+             "관제가 그대로 읽으면 M14 화면이 전체 점수로 등급을 매기고 "
+             "케이스 영역이 M16HUB 로 찍힌다 — 화면 전체가 남의 데이터를 "
+             "보게 된다.\n\n")
+    b.append(_md_table(["받은 그대로", "정규화 후", "값"], [
+        ["`unified_risk_score` (전체)", "`all_score`", "137"],
+        ["`area_score` (M14)", "**`unified_risk_score`**", "28"],
+        ["`unified_risk_level` (전체)", "`all_level`", "주의"],
+        ["`area_level` (M14)", "**`unified_risk_level`**", "관심"],
+        ["`hot_area` (전체 기준)", "`all_hot_area`", "M16HUB"],
+        ["—", "**`hot_area`**", "M14"],
+    ]) + "\n")
+    b.append("\n**한 자리에서 한 번만 바꾼다.** 그래프·예보·기여도·리포트·"
+             "정확도가 모두 `unified_risk_score` 와 `hot_area` 를 읽으므로, "
+             "받는 자리에서 바꿔 두면 하위 모듈을 하나도 안 고치고 FAB 화면이 "
+             "자기 데이터를 본다. 원본은 `all_*` 로 남겨 전체와 비교할 수 "
+             "있게 둔다.\n")
+    out.append(("06_영역분리와-정규화.md", "".join(b)))
+    return out
+
+
 def main(argv=None):
     argv = list(argv if argv is not None else sys.argv[1:])
+    wiki_dir = ""
+    if "--wiki" in argv:
+        i = argv.index("--wiki")
+        argv.pop(i)
+        wiki_dir = (argv.pop(i) if i < len(argv) and not argv[i].startswith("-")
+                    else os.path.join(DOC_DIR, "위키_MD"))
     out = argv[0] if argv else OUT
     d = build()
+    if wiki_dir:
+        os.makedirs(wiki_dir, exist_ok=True)
+        pages = wiki_pages(d)
+        for name, body in pages:
+            with open(os.path.join(wiki_dir, name), "w", encoding="utf-8") as f:
+                f.write(body)
+        print("위키 MD {}장: {}".format(len(pages), wiki_dir))
+        for name, _ in pages:
+            print("   {}".format(name))
+        return 0
     os.makedirs(DOC_DIR, exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.write(render(d))
