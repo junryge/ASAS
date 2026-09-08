@@ -37,10 +37,11 @@
 #
 # --split 을 같이 주면 대상별로 파일을 따로 낸다 (고객이 ALL·FAB 분리 요청 시)
 #   {접두사}_{대상}.csv           날짜별 성능 + 그날 사건 시각 + 선행 중앙값, 맨 아래 '전체' 행
+#   {접두사}_요약_{대상}.csv       그 대상 요약만 (통합 요약과 같은 컬럼)
 #   {접두사}_{대상}_사건목록.csv   그 대상 사건만
 #   {접두사}_{대상}_분단위.csv     그 대상 점수·등급·경보·실제정체만
 #   {접두사}_{대상}_날짜별_가로.csv  날짜 × 시각 — 그 대상 정체분·경보분·점수최고
-#   대상 6개 × 4 = 24개
+#   대상 6개 × 5 = 30개
 #
 # 운영 등급 컷 (2026-09 확인)
 #   ALL 48/60/80 · M16HUB 40/55/75 · M14·M14B·M16A·M16B 36/52/72
@@ -554,6 +555,8 @@ def main():
                 r['사건시각'] = f'{len(ee)}건'
             else:
                 r['사건시각'] = ' / '.join(f"{x['시작시각']}~{x['종료시각']}" for x in ee)
+            r['첫사건시각'] = ee[0]['시작시각'] if ee and r['날짜'] != '전체' else ''
+            r['마지막사건시각'] = ee[-1]['종료시각'] if ee and r['날짜'] != '전체' else ''
             ld = [x['선행분'] for x in ee if x['경보'] == 1 and x['선행분'] != '']
             r['선행_중앙분'] = round(_st.median(ld)) if ld else ''
             r['최장지속_분'] = max((x['지속분'] for x in ee), default=0)
@@ -618,6 +621,16 @@ def main():
                     w.writeheader()
                     w.writerows(recs)
                 made = [f'{t}.csv']
+
+                # 요약 — 그 대상만 (통합 요약과 같은 컬럼)
+                sm = [r for r in summary if r['대상'] == t]
+                if sm:
+                    fps = f'{a.csv}_요약_{t}.csv'
+                    with open(fps, 'w', newline='', encoding='utf-8-sig') as f:
+                        w = csv.DictWriter(f, fieldnames=list(sm[0].keys()))
+                        w.writeheader()
+                        w.writerows(sm)
+                    made.append(f'요약({len(sm)})')
 
                 # 사건목록 — 그 대상만
                 ee = [x for x in events if x['대상'] == t]
