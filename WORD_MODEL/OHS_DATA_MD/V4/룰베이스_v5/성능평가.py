@@ -398,6 +398,9 @@ def main():
                 events.append({
                     '날짜': str(d), '대상': name,
                     '사건번호': k,
+                    '시작일시': (base + timedelta(minutes=s0)).strftime('%Y-%m-%d %H:%M'),
+                    '종료일시': (base + timedelta(minutes=e0)).strftime('%Y-%m-%d %H:%M'),
+                    '첫경보일시': ft.strftime('%Y-%m-%d %H:%M') if ft else '',
                     '시작시각': (base + timedelta(minutes=s0)).strftime('%H:%M'),
                     '종료시각': (base + timedelta(minutes=e0)).strftime('%H:%M'),
                     '시작시': (base + timedelta(minutes=s0)).hour,
@@ -555,8 +558,11 @@ def main():
                 r['사건시각'] = f'{len(ee)}건'
             else:
                 r['사건시각'] = ' / '.join(f"{x['시작시각']}~{x['종료시각']}" for x in ee)
-            r['첫사건시각'] = ee[0]['시작시각'] if ee and r['날짜'] != '전체' else ''
-            r['마지막사건시각'] = ee[-1]['종료시각'] if ee and r['날짜'] != '전체' else ''
+            one = r['날짜'] != '전체'
+            al = [x for x in ee if x['경보'] == 1 and x['첫경보일시']]
+            r['첫사건일시'] = ee[0]['시작일시'] if (ee and one) else ''
+            r['마지막사건일시'] = ee[-1]['종료일시'] if (ee and one) else ''
+            r['첫경보일시'] = al[0]['첫경보일시'] if (al and one) else ''
             ld = [x['선행분'] for x in ee if x['경보'] == 1 and x['선행분'] != '']
             r['선행_중앙분'] = round(_st.median(ld)) if ld else ''
             r['최장지속_분'] = max((x['지속분'] for x in ee), default=0)
