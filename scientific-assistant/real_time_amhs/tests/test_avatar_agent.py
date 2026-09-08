@@ -3285,7 +3285,7 @@ class 분석_답이_루프를_탄다(unittest.TestCase):
     def test_가드보다_먼저_돈다(self):
         """루프가 만든 답도 숫자 가드를 통과해야 한다."""
         i = self.src.index("reply = self._analysis_loop(")
-        j = self.src.index("reply = self._guard(reply, ev)", i)
+        j = self.src.index("reply = self._guard(reply, ev", i)
         self.assertLess(i, j)
 
 

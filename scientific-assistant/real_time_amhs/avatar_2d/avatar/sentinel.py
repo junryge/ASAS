@@ -1052,10 +1052,22 @@ def _evidence_from(d, head):
     return {"ok": True, "text": text, "numbers": _numbers(text), "err": ""}
 
 
+# ★영문에 붙은 숫자는 **값이 아니라 이름**이다 — M16HUB · M14B · 6ABL0111 ·
+#   3F_LFT_MAXCAPA. 이걸 값으로 세면 "M16HUB 72점" 이 16 을 지어낸 수로
+#   보인다. 근거가 넉넉할 때는 근거 글에도 M16 이 있어 가려졌지만, 근거가
+#   없을 때는 FAB 이름을 말할 때마다 가드가 터진다.
+# 앞뒤가 글자·숫자·밑줄이면 이름의 일부다 (6ABL0111 의 111, M16_PKT 의 6,
+# 48GB 의 4 — 전부 값이 아니다). 온전한 낱말일 때만 값으로 센다.
+_NUM_RE = re.compile(r"(?<![A-Za-z0-9_.])-?\d+(?:\.\d+)?(?![A-Za-z0-9_])")
+
+
 def _numbers(text):
-    """텍스트 속 숫자 집합 — 정규화해서 (12.0 == 12) 비교가 되게."""
+    """텍스트 속 숫자 집합 — 정규화해서 (12.0 == 12) 비교가 되게.
+
+    이름에 박힌 숫자(M16HUB·6ABL0111)는 빼고 **값만** 센다.
+    """
     out = set()
-    for m in re.findall(r"-?\d+(?:\.\d+)?", text or ""):
+    for m in _NUM_RE.findall(text or ""):
         try:
             out.add(round(float(m), 2))
         except ValueError:

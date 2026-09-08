@@ -211,5 +211,85 @@ class stdio_위키가_본문까지_읽는다(unittest.TestCase):
             self.assertIn(k, blk, "열쇠가 없다: " + k)
 
 
+class 숫자_하네스(unittest.TestCase):
+    """나가기 직전 결정적 검사 — 근거에 없는 수를 막는다.
+
+    ★예전에는 **근거가 있을 때만** 돌았다. 관제가 안 떠 있는 동안 모델이
+      "M16HUB 72점" 을 지어내도 아무도 안 막았다 — 그때가 제일 위험한데.
+    ★이름에 박힌 수(M16HUB 의 16, 6ABL0111 의 111)를 값으로 세던 것도
+      고쳤다. 근거가 넉넉할 때는 근거 글에도 M16 이 있어 가려졌지만,
+      근거가 없으면 FAB 이름을 말할 때마다 가드가 터진다.
+    """
+
+    def _guard(self, text, ev, data_q, mcpn=None):
+        from avatar import server as S
+
+        class F:
+            def _say(self, m):
+                pass
+
+        r = S.Handler._guard(F(), {"text": text, "emotion": "neutral",
+                                   "intensity": 0.5, "motion": "none"},
+                             ev, data_q, mcpn)
+        return r["text"]
+
+    def test_근거가_있으면_그_안의_수만(self):
+        ev = {"ok": True, "numbers": {72.0}, "fallback": "계산값"}
+        self.assertIn("72점", self._guard("M16HUB 72점 위험이에요.", ev, True))
+        out = self._guard("M16HUB 88점 초위험이에요.", ev, True)
+        self.assertIn("근거에 없는 숫자", out)
+
+    def test_근거가_없어도_관제_질문이면_막는다(self):
+        """★여기가 예전에 뚫려 있던 자리다."""
+        out = self._guard("M16HUB 는 지금 72점이에요.", {"ok": False}, True)
+        self.assertIn("근거 없는 숫자", out)
+        self.assertIn("관제 데이터를 못 읽고", out)
+        self.assertNotIn("72", out)
+
+    def test_근거가_없고_수를_안_쓰면_통과(self):
+        t = "지금은 확인이 안 돼요."
+        self.assertEqual(self._guard(t, {"ok": False}, True), t)
+
+    def test_관제_질문이_아니면_숫자를_안_본다(self):
+        """일반 지식 답에는 수가 있어도 된다 (규칙 1-0 ③).
+        여기까지 막으면 아무 말도 못 하게 된다."""
+        t = "RTX 6000 은 메모리가 48GB 예요."
+        self.assertEqual(self._guard(t, {"ok": False}, False), t)
+
+    def test_MCP_로_받은_수는_쓸_수_있다(self):
+        from avatar import sentinel
+        t = "요청 7번은 2026-08-26 에 올라왔어요."
+        got = self._guard(t, {"ok": False}, True,
+                          sentinel.numbers_of("요청 7번 2026-08-26 접수"))
+        self.assertEqual(got, t)
+
+    def test_이름에_박힌_수는_값이_아니다(self):
+        from avatar import sentinel
+        for name in ("M16HUB", "M14B", "6ABL0111", "3F_LFT_MAXCAPA",
+                     "AVGTOTALTIME1MIN", "v4.1"):
+            self.assertEqual(sentinel.numbers_of(name), set(), name)
+        # 값은 그대로 센다
+        self.assertEqual(sentinel.numbers_of("72점 15.98분 31.2%"),
+                         {72.0, 15.98, 31.2})
+
+    def test_FAB_이름만_말해도_안_걸린다(self):
+        """근거가 없을 때 이 오탐이 나면 아바타가 말을 못 한다."""
+        t = "M16HUB 와 M14B 는 3F 로 이어져요."
+        self.assertEqual(self._guard(t, {"ok": False}, True), t)
+
+    def test_지어낸_수는_여전히_잡는다(self):
+        """가드를 헐겁게 만들면 안 된다."""
+        out = self._guard("M16HUB 는 9999 점이에요.", {"ok": False}, True)
+        self.assertIn("근거 없는 숫자", out)
+
+    def test_두_경로에_다_걸린다(self):
+        """스트리밍이 평소 경로다 — 거기 안 걸리면 사실상 없는 가드다."""
+        src = open(os.path.join(util.BASE, "avatar_2d", "avatar", "server.py"),
+                   encoding="utf-8").read()
+        self.assertEqual(src.count("self._guard("), 2, "호출이 둘이 아니다")
+        i = src.index("SSE : 파싱된 이벤트")
+        self.assertIn("self._guard(", src[i:i + 1500], "스트리밍에 가드가 없다")
+
+
 if __name__ == "__main__":
     unittest.main()

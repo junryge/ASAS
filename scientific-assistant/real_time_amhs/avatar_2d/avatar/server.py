@@ -874,7 +874,9 @@ class Handler(SimpleHTTPRequestHandler):
             #   한 번 더 시킨다 (검사는 결정적 규칙 — LLM 을 또 부르지 않는다).
             reply = self._analysis_loop(reply, aname, text, msgs, model, temp,
                                         ev=ev)
-            reply = self._guard(reply, ev)
+            reply = self._guard(reply, ev, data_q=llm.is_data_question(text),
+                                mcp_numbers=sentinel.numbers_of(mcp) if mcp
+                                else None)
             self._say("200  /api/chat  {}  {}ms".format(model, ms))
             out = {"reply": reply}
             if ctx_note:
@@ -912,7 +914,9 @@ class Handler(SimpleHTTPRequestHandler):
                     #   최종본이니 여기서 루프·가드를 같은 순서로 태운다.
                     payload = self._analysis_loop(payload, aname, text, msgs,
                                                   model, temp, ev=ev)
-                    payload = self._guard(payload, ev)
+                    payload = self._guard(
+                        payload, ev, data_q=llm.is_data_question(text),
+                        mcp_numbers=sentinel.numbers_of(mcp) if mcp else None)
                 chunk({kind: payload})
                 n += 1
             self.wfile.write(b"0\r\n\r\n")
@@ -1081,24 +1085,47 @@ class Handler(SimpleHTTPRequestHandler):
         # 낫다 (두 번째가 더 나빠질 수도 있다)
         return tried[-1] if (res["ok"] and len(tried) > 1) else tried[0]
 
-    def _guard(self, reply, ev):
+    def _guard(self, reply, ev, data_q=False, mcp_numbers=None):
         """나가기 직전 검사 — ① 룰 코드·용어 ② 근거에 없는 숫자.
 
         ①은 근거·스킬을 이미 소독했는데도 필요하다. 모델은 **예전 대화**를
         보고 코드를 다시 꺼낸다 (대화 기록은 우리가 못 지운다). 마지막 자리에서
         한 번 더 바꾼다 — 사용자는 'R-D' 가 아니라 실제 컬럼을 봐야 한다.
-        ②는 그럴듯한 거짓 숫자가 제일 위험하기 때문. 폴백은 질문 맥락을 따른다.
+        ②는 그럴듯한 거짓 숫자가 제일 위험하기 때문.
+
+        ★근거가 **없을 때가 더 위험하다.** 예전에는 ev['ok'] 가 아니면 여기서
+          바로 돌아갔다 — 관제가 안 떠 있는 동안 모델이 "M16HUB 72점" 을
+          지어내도 아무도 안 막았다. 관제를 물었는데 근거가 없으면, 쓸 수 있는
+          숫자는 MCP 로 받아온 것뿐이다. 그것도 없으면 아무 수도 못 쓴다.
+        ★관제 질문이 아니면 숫자를 안 본다. 일반 지식 답에는 숫자가 있어도
+          된다 (규칙 1-0 ③) — 거기까지 막으면 아무 말도 못 하게 된다.
         """
         if isinstance(reply, dict) and reply.get("text"):
             reply = dict(reply, text=terms.clean(reply["text"]))
-        if not ev.get("ok") or not isinstance(reply, dict):
+        if not isinstance(reply, dict):
             return reply
-        ok, bad = sentinel.check_numbers(str(reply.get("text", "")),
-                                         ev["numbers"])
+        ev = ev or {}
+        if ev.get("ok"):
+            allowed = ev.get("numbers") or set()
+            no_base = False
+        elif data_q:
+            # 관제를 물었는데 근거가 없다 — MCP 숫자만 쓸 수 있다
+            allowed = set(mcp_numbers or set())
+            no_base = True
+        else:
+            return reply                      # 관제 질문이 아니다
+        ok, bad = sentinel.check_numbers(str(reply.get("text", "")), allowed)
         if ok:
             return reply
-        self._say("     ↳ 숫자 가드: 근거에 없는 수 {} — 결정적 요약으로 대체"
-                  .format(bad[:5]))
+        self._say("     ↳ 숫자 가드: 근거에 없는 수 {}{}".format(
+            bad[:5], " (근거 없음)" if no_base else " — 결정적 요약으로 대체"))
+        if no_base:
+            # 대체할 계산값이 없다. 지어낸 수를 지우고 왜인지 말한다.
+            return {"text": ("방금 답에 근거 없는 숫자가 섞여서 지웠어요. "
+                             "지금은 관제 데이터를 못 읽고 있어서 점수·등급은 "
+                             "확인이 안 돼요. 관제 서버가 떠 있는지 봐 "
+                             "주세요."),
+                    "emotion": "shy", "intensity": 0.6, "motion": "shake"}
         fb = ev.get("fallback") or sentinel.plain_status()
         return {"text": ("방금 답에 근거에 없는 숫자가 섞여서 지웠어요. "
                          "계산된 값만 다시 말할게요 —\n" + fb),

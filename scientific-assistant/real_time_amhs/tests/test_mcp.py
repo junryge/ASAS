@@ -2233,12 +2233,15 @@ class 가드가_위키_답을_먹지_않는다(unittest.TestCase):
               "북측 4AFC3301 이고요. M16A(6F) 는 6ABL60~ 리프터로, "
               "M16B(10F) 는 6ALF 로 이어져요.")
 
-    def test_관제_숫자만으로는_통째로_걸린다(self):
-        """무엇이 문제였는지 못 박아 둔다 — 되돌아가면 이게 다시 난다."""
+    def test_호기명은_애초에_수가_아니다(self):
+        """★뿌리를 고쳤다. 예전에는 4AFC3201 의 '3201', 6ABL60 의 '60' 을
+        값으로 세서, 위키 답이 '지어낸 수' 로 보여 통째로 버려졌다.
+        그때는 MCP 숫자를 근거에 보태 막았는데(아래 시험), 그건 우회였다.
+        영문·숫자에 붙은 수는 **이름**이지 값이 아니다."""
         ok, bad = sentinel.check_numbers(self.ANSWER, {17.0, 2.61})
-        self.assertFalse(ok)
-        for n in (3201.0, 3301.0, 60.0):
-            self.assertIn(n, bad, n)
+        self.assertTrue(ok, "호기명이 지어낸 수로 걸린다: {}".format(bad))
+        for name in ("4AFC3201", "6ABL60", "6ALF"):
+            self.assertEqual(sentinel.numbers_of(name), set(), name)
 
     def test_MCP_숫자를_보태면_통과한다(self):
         allowed = {17.0, 2.61} | sentinel.numbers_of(self.WIKI)
@@ -2266,9 +2269,12 @@ class 가드가_위키_답을_먹지_않는다(unittest.TestCase):
         self.assertLess(i, src.index("def _guard"))
 
     def test_numbers_of_가_공개되어_있다(self):
+        """이름에 박힌 수(3F · 6ABL60)는 빼고 **값만** 준다."""
         self.assertTrue(hasattr(sentinel, "numbers_of"))
-        self.assertEqual(sentinel.numbers_of("3F 6ABL60 10.5"),
-                         {3.0, 6.0, 60.0, 10.5})
+        self.assertEqual(sentinel.numbers_of("3F 6ABL60 10.5"), {10.5})
+        # 값은 그대로 센다
+        self.assertEqual(sentinel.numbers_of("72점 15.98분 31.2%"),
+                         {72.0, 15.98, 31.2})
 
 
 class 검색어에서_군말을_뺀다(unittest.TestCase):
