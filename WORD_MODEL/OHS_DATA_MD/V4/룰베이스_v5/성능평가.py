@@ -31,7 +31,8 @@
 #
 # --csv 를 주면 파일 네 개가 나온다
 #   {접두사}_요약.csv    날짜 × 대상(ALL·FAB5) × 사건/경보/P/R/F1 + 그날 사건 시각 ← PPT 용
-#   {접두사}_사건목록.csv 사건 하나마다 시작·종료 시각, 지속, 첫 경보 시각, 선행시간 ← 시간 분석용
+#   {접두사}_사건목록.csv 사건 하나마다 시작·종료 일시, 지속, 첫 경보 일시, 선행시간
+#   {접두사}_경보목록.csv 경보 하나마다 시작·종료 일시, 지속, 적중 여부 (헛방까지 전부)
 #   {접두사}_날짜별_가로.csv  날짜 × 시각(0~23시) 가로형 — 대상마다 정체분·경보분·점수최고
 #   {접두사}_분단위.csv  분마다 unified_risk_score · area_score · 등급 · 경보 · 실제정체 ← 검토용
 #
@@ -41,7 +42,8 @@
 #   {접두사}_{대상}_사건목록.csv   그 대상 사건만
 #   {접두사}_{대상}_분단위.csv     그 대상 점수·등급·경보·실제정체만
 #   {접두사}_{대상}_날짜별_가로.csv  날짜 × 시각 — 그 대상 정체분·경보분·점수최고
-#   대상 6개 × 5 = 30개
+#   {접두사}_{대상}_경보목록.csv   그 대상 경보만
+#   대상 6개 × 6 = 36개
 #
 # 운영 등급 컷 (2026-09 확인)
 #   ALL 48/60/80 · M16HUB 40/55/75 · M14·M14B·M16A·M16B 36/52/72
@@ -343,6 +345,7 @@ def main():
     summary = []          # 요약 CSV 행
     detail = []           # 분단위 CSV 행
     events = []           # 사건목록 CSV 행
+    alarms = []           # 경보목록 CSV 행 — 경보가 언제부터 언제까지 떠 있었나
     hourly = []           # 시간별 가로 CSV 행
     tot = defaultdict(lambda: [0, 0, 0, 0])   # 대상 → [사건, 경보, 적중경보, 적중사건]
 
@@ -417,6 +420,26 @@ def main():
                                 실제사건=nR, 경보=nA, 적중경보=tpA, 적중사건=tpR,
                                 Precision=round(p, 3), Recall=round(r, 3), F1=round(f1, 3),
                                 실제정체_분=sum(real), 경보_분=sum(kept)))
+            # ── 경보 하나하나도 남긴다 (헛방까지 전부)
+            for k2, (s1, e1) in enumerate(
+                    [(x, y) for x, y in merge(episodes(alarm), a.gap) if y - x + 1 >= a.mindur], 1):
+                real_in = any(real[s1:min(len(real), e1 + 1 + a.lead)])
+                pv = None
+                if score:
+                    vv = [v for v in score[s1:e1 + 1] if v is not None]
+                    pv = max(vv) if vv else None
+                alarms.append({
+                    '날짜': str(d), '대상': name, '경보번호': k2,
+                    '시작일시': (base + timedelta(minutes=s1)).strftime('%Y-%m-%d %H:%M'),
+                    '종료일시': (base + timedelta(minutes=e1)).strftime('%Y-%m-%d %H:%M'),
+                    '시작시각': (base + timedelta(minutes=s1)).strftime('%H:%M'),
+                    '종료시각': (base + timedelta(minutes=e1)).strftime('%H:%M'),
+                    '시작시': (base + timedelta(minutes=s1)).hour,
+                    '지속분': e1 - s1 + 1,
+                    '최고점수': '' if pv is None else pv,
+                    '경보컷': cut,
+                    '적중': 1 if real_in else 0,
+                })
             return kept
 
         all_kept = add('ALL', all_real, all_alarm, a.cut, uni)
@@ -556,8 +579,13 @@ def main():
             if r['날짜'] == '전체':
                 ee = [x for x in events if x['대상'] == r['대상']]
                 r['사건시각'] = f'{len(ee)}건'
+                r['사건일시_전체'] = f'{len(ee)}건'
+                r['경보일시_전체'] = f"{sum(1 for x in alarms if x['대상'] == r['대상'])}건"
             else:
                 r['사건시각'] = ' / '.join(f"{x['시작시각']}~{x['종료시각']}" for x in ee)
+            r['사건일시_전체'] = ' / '.join(f"{x['시작일시']}~{x['종료시각']}" for x in ee)
+            aa = [x for x in alarms if x['대상'] == r['대상'] and x['날짜'] == r['날짜']]
+            r['경보일시_전체'] = ' / '.join(f"{x['시작일시']}~{x['종료시각']}" for x in aa)
             one = r['날짜'] != '전체'
             al = [x for x in ee if x['경보'] == 1 and x['첫경보일시']]
             r['첫사건일시'] = ee[0]['시작일시'] if (ee and one) else ''
@@ -578,6 +606,13 @@ def main():
                 w.writeheader()
                 w.writerows(hourly)
             o(f'  📄 {os.path.abspath(hp)}   ({len(hourly)}행 — 날짜 × 시간대 가로형)')
+        ap2 = a.csv + '_경보목록.csv'
+        if alarms:
+            with open(ap2, 'w', newline='', encoding='utf-8-sig') as f:
+                w = csv.DictWriter(f, fieldnames=list(alarms[0].keys()))
+                w.writeheader()
+                w.writerows(alarms)
+            o(f'  📄 {os.path.abspath(ap2)}   ({len(alarms)}행 — 경보 전부, 헛방 포함)')
         ep = a.csv + '_사건목록.csv'
         if events:
             with open(ep, 'w', newline='', encoding='utf-8-sig') as f:
@@ -647,6 +682,16 @@ def main():
                         w.writeheader()
                         w.writerows(ee)
                     made.append(f'사건목록({len(ee)})')
+
+                # 경보목록 — 그 대상만
+                aa = [x for x in alarms if x['대상'] == t]
+                if aa:
+                    fpa = f'{a.csv}_{t}_경보목록.csv'
+                    with open(fpa, 'w', newline='', encoding='utf-8-sig') as f:
+                        w = csv.DictWriter(f, fieldnames=list(aa[0].keys()))
+                        w.writeheader()
+                        w.writerows(aa)
+                    made.append(f'경보목록({len(aa)})')
 
                 # 분단위 — 그 대상 칸만
                 keep = ['datetime', 'date', 'time', '시']
