@@ -27,6 +27,9 @@ code,.mono{font-family:Consolas,"D2Coding",monospace;font-size:12px;
  border:1px solid var(--line);border-radius:8px;padding:14px 16px;white-space:pre;
  overflow-x:auto;line-height:1.65}
 .dim{color:var(--dim)}
+.fig{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+ margin:14px 0;background:#fff;overflow-x:auto}
+.fig svg{display:block;min-width:760px}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;
  background:var(--bg);border:1px solid var(--line);color:var(--dim)}
 .big{font-size:19px;font-weight:800}
@@ -238,7 +241,25 @@ ol.steps{padding-left:20px} ol.steps>li{margin:8px 0}
 <tr><td><code>M16A.QUE.LFT.6F_LFT_MAXCAPA</code></td><td class=n>149</td><td class=n>100</td></tr>
 </table>
 <h2>3. FAB 점수 <code>area_score</code> 가 만들어지는 과정</h2>
-<p>영역 하나에 대해 <code>eval_area_rules(area, window)</code> 가 룰 8종을 각각 판정하고, <b>켜진 룰의 배점을 더합니다.</b></p>
+<p>영역 하나에 대해 <code>eval_area_rules(area, window)</code> 가 룰 8종을 각각 판정하고, <b>켜진 룰의 배점을 더합니다.</b> 아래 그림이 <b>어느 컬럼이 어느 룰로 들어가는지</b> 그대로 보여 줍니다 — 룰을 다 가진 M16HUB 를 예로 들었습니다.</p>
+<div class="fig"><svg viewBox="0 0 1040 735" width="100%" role="img" aria-label="M16HUB 영역에서 컬럼이 룰을 거쳐 area_score 가 되는 과정"><style>
+.d-bg{fill:#fff;stroke:#e5e7eb}
+.d-box{fill:#f8fafc;stroke:#cbd5e1;rx:6}
+.d-col{fill:#fff;stroke:#cbd5e1;rx:4}
+.d-rule{fill:#eef2ff;stroke:#a5b4fc;rx:6}
+.d-out{fill:#ecfdf5;stroke:#6ee7b7;rx:6}
+.d-sum{fill:#fff7ed;stroke:#fdba74;rx:6}
+.d-cap{fill:#fef2f2;stroke:#fca5a5;rx:6}
+.d-t{font:600 12px "Malgun Gothic",system-ui;fill:#111827}
+.d-s{font:11px "Malgun Gothic",system-ui;fill:#4b5563}
+.d-m{font:10.5px Consolas,"D2Coding",monospace;fill:#1f2937}
+.d-n{font:700 12.5px system-ui;fill:#111827}
+.d-h{font:700 12.5px "Malgun Gothic",system-ui;fill:#4338ca}
+.d-dim{font:10.5px "Malgun Gothic",system-ui;fill:#6b7280}
+.d-ln{stroke:#94a3b8;fill:none;stroke-width:1.2}
+.d-ln2{stroke:#6366f1;fill:none;stroke-width:1.6}
+</style><text x="24" y="24" class="d-h">그림 A — M16HUB 영역: 어느 컬럼이 어느 룰로 들어가 점수가 되나</text><text x="24" y="44" class="d-dim">원시 컬럼 (M16A_HUBROOM_PR.CSV)</text><text x="470" y="44" class="d-dim">룰 · 임계</text><text x="790" y="44" class="d-dim">배점</text><text x="900" y="44" class="d-dim">누적</text><rect x="24" y="62" width="412" height="46" class="d-col"/><text x="33" y="79" class="d-m">M16HUB.QUE.TIME.AVGTOTALTIME1MIN</text><path d="M440 85.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="62" width="286" height="46" class="d-rule"/><text x="480" y="80" class="d-t">R-A′ 반송지연</text><text x="480" y="96" class="d-s">≥ 9.0 분이 10분 중 1회+</text><path d="M760 85.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="72.0" width="76" height="26" class="d-out"/><text x="828" y="90.0" class="d-n" text-anchor="middle">+10</text><text x="882" y="90.0" class="d-dim">누적 10</text><rect x="24" y="114" width="412" height="46" class="d-col"/><text x="33" y="131" class="d-m">(위와 같은 컬럼)</text><path d="M440 137.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="114" width="286" height="46" class="d-rule"/><text x="480" y="132" class="d-t">R-A′ 지속</text><text x="480" y="148" class="d-s">≥ 9.0×0.67 가 5분 중 3회+</text><path d="M760 137.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="124.0" width="76" height="26" class="d-out"/><text x="828" y="142.0" class="d-n" text-anchor="middle">+5</text><text x="882" y="142.0" class="d-dim">누적 15</text><rect x="24" y="166" width="412" height="46" class="d-col"/><text x="33" y="183" class="d-m">M16HUB.QUE.M14TOM16.MESCURRENTQCNT</text><path d="M440 189.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="166" width="286" height="46" class="d-rule"/><text x="480" y="184" class="d-t">R-B 반입급증(30분)</text><text x="480" y="200" class="d-s">30분 전 대비 +100 이상</text><path d="M760 189.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="176.0" width="76" height="26" class="d-out"/><text x="828" y="194.0" class="d-n" text-anchor="middle">+10</text><text x="882" y="194.0" class="d-dim">누적 25</text><rect x="24" y="218" width="412" height="46" class="d-col"/><text x="33" y="235" class="d-m">(위와 같은 컬럼)</text><path d="M440 241.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="218" width="286" height="46" class="d-rule"/><text x="480" y="236" class="d-t">R-B 반입급증(10분)</text><text x="480" y="252" class="d-s">10분 전 대비 +30 이상  (30분 임계의 30%)</text><path d="M760 241.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="228.0" width="76" height="26" class="d-out"/><text x="828" y="246.0" class="d-n" text-anchor="middle">+5</text><text x="882" y="246.0" class="d-dim">누적 30</text><rect x="24" y="270" width="412" height="46" class="d-col"/><text x="33" y="287" class="d-m">M16HUB.LFT.{호기}.TOTAL_CURRENTQCNT  ×10대</text><path d="M440 293.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="270" width="286" height="46" class="d-rule"/><text x="480" y="288" class="d-t">R-C′ 리프터 역증가</text><text x="480" y="304" class="d-s">합은 감소 + 개별 증가 2대 이상</text><path d="M760 293.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="280.0" width="76" height="26" class="d-out"/><text x="828" y="298.0" class="d-n" text-anchor="middle">+8</text><text x="882" y="298.0" class="d-dim">누적 38</text><rect x="24" y="322" width="412" height="50" class="d-col"/><text x="33" y="339" class="d-m">M16HUB.STRATE.ALL.FABSTORAGERATIO</text><text x="33" y="354" class="d-m">M16HUB.STRATE.STB.3F_STORAGE_UTIL</text><path d="M440 347.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="322" width="286" height="50" class="d-rule"/><text x="480" y="340" class="d-t">R-D 저장 포화</text><text x="480" y="356" class="d-s">FAB ≥ 25.0%  또는  STB ≥ 99.0%</text><path d="M760 347.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="334.0" width="76" height="26" class="d-out"/><text x="828" y="352.0" class="d-n" text-anchor="middle">+7</text><text x="882" y="352.0" class="d-dim">누적 45</text><rect x="24" y="378" width="412" height="50" class="d-col"/><text x="33" y="395" class="d-m">M16HUB.QUE.ALL.TRANSPORT4MINOVERRATIO</text><text x="33" y="410" class="d-m">M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT</text><path d="M440 403.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="378" width="286" height="50" class="d-rule"/><text x="480" y="396" class="d-t">SLA 4분초과</text><text x="480" y="412" class="d-s">비율 ≥ 5.0%  또는  건수 10분 +20</text><path d="M760 403.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="390.0" width="76" height="26" class="d-out"/><text x="828" y="408.0" class="d-n" text-anchor="middle">+5</text><text x="882" y="408.0" class="d-dim">누적 50</text><rect x="24" y="434" width="412" height="46" class="d-col"/><text x="33" y="451" class="d-m">M16HUB.SORTER.ABN.SORTERWAITCOUNTOVER</text><path d="M440 457.0 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="434" width="286" height="46" class="d-rule"/><text x="480" y="452" class="d-t">소터 대기/실패</text><text x="480" y="468" class="d-s">대기 ≥ 30  또는  실패 ≥ 1</text><path d="M760 457.0 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="444.0" width="76" height="26" class="d-out"/><text x="828" y="462.0" class="d-n" text-anchor="middle">+3</text><text x="882" y="462.0" class="d-dim">누적 53</text><rect x="24" y="486" width="412" height="65" class="d-col"/><text x="33" y="503" class="d-m">M16HUB.QUE.CNV.3F_CNV_MAXCAPA</text><text x="33" y="518" class="d-m">M16HUB.QUE.LFT.3F_LFT_MAXCAPA</text><text x="33" y="533" class="d-m">M16HUB.QUE.LFT.3F_M14BLFT_MAXCAPA</text><path d="M440 518.5 H464" class="d-ln" marker-end="url(#ah)"/><rect x="470" y="486" width="286" height="65" class="d-rule"/><text x="480" y="504" class="d-t">MAXCAPA 축소</text><text x="480" y="520" class="d-s">정상값보다 줄어든 컬럼 1개마다</text><path d="M760 518.5 H784" class="d-ln" marker-end="url(#ah)"/><rect x="790" y="505.5" width="76" height="26" class="d-out"/><text x="828" y="523.5" class="d-n" text-anchor="middle">+10 × n</text><text x="882" y="523.5" class="d-dim">…</text><rect x="470" y="567" width="400" height="34" class="d-sum"/><text x="482" y="589" class="d-t">합계 = 최대 53 + MAXCAPA 10×n</text><rect x="470" y="609" width="400" height="38" class="d-cap"/><text x="482" y="633" class="d-t">area_score = min(50, 합계)   ← 50 점에서 자른다</text><text x="470" y="665" class="d-dim">MAXCAPA 가 컬럼 수만큼 곱해져 한 영역이 전체를 삼키는 것을 막는다. 자르기 전 값은 M16HUB_score_raw 로 남는다.</text><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/></marker></defs></svg></div>
+<p class="dim">다른 영역은 컬럼과 임계만 다르고 구조는 같습니다 (1-1 · 2장 표 참조). M16·M16_PKT·M16_WT 는 가진 룰이 더 적습니다.</p>
 <table><tr><th>룰</th><th>무엇을 보나</th><th class="n">배점</th><th>코드</th></tr><tr><td><b>R-A′ 반송지연</b></td><td>1분 평균 반송/적재 시간이 임계 이상인 분이 최근 10분에 1회 이상</td><td class="n">10</td><td><code>ra_pts</code></td></tr><tr><td><b>R-A′ 지속</b></td><td>최근 5분 중 정해진 횟수 이상이 임계×비율을 넘음 — 짧게 튄 것과 구분한다</td><td class="n">5</td><td><code>ra_sus_pts</code></td></tr><tr><td><b>R-B 반입 급증(30분)</b></td><td>허브로 보내는 대기 수가 30분 전보다 임계만큼 늘었다</td><td class="n">10</td><td><code>rb_pts</code></td></tr><tr><td><b>R-B 반입 급증(10분)</b></td><td>같은 것을 10분 창으로 — 빠르게 차오르는 경우</td><td class="n">5</td><td><code>rb_fast_pts</code></td></tr><tr><td><b>R-C′ 리프터 역증가 / CNV 쏠림</b></td><td>M16HUB: 리프터 합은 줄었는데 개별로 늘어난 호기가 임계 이상. M14: 북/남 CNV 한쪽 쏠림 비율</td><td class="n">8</td><td><code>rc_pts</code></td></tr><tr><td><b>R-D 저장 포화</b></td><td>M16HUB: FAB 저장율 또는 STB 3F 저장율. 그 밖: OHT 가동률</td><td class="n">7</td><td><code>rd_pts</code></td></tr><tr><td><b>SLA 4분 초과</b></td><td>4분 초과 비율이 임계 이상이거나, 초과 건수가 10분 만에 20건 이상 늘었다</td><td class="n">5</td><td><code>sla_pts</code></td></tr><tr><td><b>소터 대기/실패</b></td><td>소터 대기 초과 수가 임계 이상, 또는 반송 실패가 1건 이상</td><td class="n">3</td><td><code>sort_pts</code></td></tr><tr><td><b>MAXCAPA 축소</b></td><td>운영자가 용량을 줄였다 — 바뀐 컬럼 <b>1개마다</b> 가산</td><td class="n">10 × n</td><td><code>mc_pts</code></td></tr></table>
 <div class="flow">area_score = RA + RA_sus + RB + RB_fast + RC + RD + SLA + SORT + MAXCAPA×n
 area_score = min(50, 위 합)        ← 50 점에서 자른다
@@ -251,6 +272,23 @@ area_score = min(50, 위 합)        ← 50 점에서 자른다
 <p class="dim">그래서 창(<code>WINDOW_MIN=90</code>분)이 채워지기 전에는 일부 룰이 판정되지 않습니다 — 재시작 직후 점수가 낮게 나오는 이유입니다.</p>
 <h2>4. ALL 점수 <code>unified_risk_score</code> 가 만들어지는 과정</h2>
 <p><code>evaluate_unified()</code> 가 <b>영역 점수 합에 전체 관점의 가산을 더합니다.</b> ALL 은 영역이 아니라 <b>전체를 본 값</b>이라, FAB 점수와 자·단위가 다릅니다.</p>
+<div class="fig"><svg viewBox="0 0 1040 470" width="100%" role="img" aria-label="8영역 점수와 전체 가산이 합쳐져 unified_risk_score 가 되는 과정"><style>
+.d-bg{fill:#fff;stroke:#e5e7eb}
+.d-box{fill:#f8fafc;stroke:#cbd5e1;rx:6}
+.d-col{fill:#fff;stroke:#cbd5e1;rx:4}
+.d-rule{fill:#eef2ff;stroke:#a5b4fc;rx:6}
+.d-out{fill:#ecfdf5;stroke:#6ee7b7;rx:6}
+.d-sum{fill:#fff7ed;stroke:#fdba74;rx:6}
+.d-cap{fill:#fef2f2;stroke:#fca5a5;rx:6}
+.d-t{font:600 12px "Malgun Gothic",system-ui;fill:#111827}
+.d-s{font:11px "Malgun Gothic",system-ui;fill:#4b5563}
+.d-m{font:10.5px Consolas,"D2Coding",monospace;fill:#1f2937}
+.d-n{font:700 12.5px system-ui;fill:#111827}
+.d-h{font:700 12.5px "Malgun Gothic",system-ui;fill:#4338ca}
+.d-dim{font:10.5px "Malgun Gothic",system-ui;fill:#6b7280}
+.d-ln{stroke:#94a3b8;fill:none;stroke-width:1.2}
+.d-ln2{stroke:#6366f1;fill:none;stroke-width:1.6}
+</style><text x="24" y="24" class="d-h">그림 B — ALL 점수 unified_risk_score 가 만들어지는 과정</text><text x="24" y="52" class="d-dim">① 영역 점수 (각 0~50)</text><rect x="24" y="60" width="112" height="40" class="d-box"/><text x="80" y="78" class="d-t" text-anchor="middle">M16HUB</text><text x="80" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M80 100 V126" class="d-ln"/><rect x="144" y="60" width="112" height="40" class="d-box"/><text x="200" y="78" class="d-t" text-anchor="middle">M14</text><text x="200" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M200 100 V126" class="d-ln"/><rect x="264" y="60" width="112" height="40" class="d-box"/><text x="320" y="78" class="d-t" text-anchor="middle">M14B</text><text x="320" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M320 100 V126" class="d-ln"/><rect x="384" y="60" width="112" height="40" class="d-box"/><text x="440" y="78" class="d-t" text-anchor="middle">M16A</text><text x="440" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M440 100 V126" class="d-ln"/><rect x="504" y="60" width="112" height="40" class="d-box"/><text x="560" y="78" class="d-t" text-anchor="middle">M16B</text><text x="560" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M560 100 V126" class="d-ln"/><rect x="624" y="60" width="112" height="40" class="d-box"/><text x="680" y="78" class="d-t" text-anchor="middle">M16</text><text x="680" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M680 100 V126" class="d-ln"/><rect x="744" y="60" width="112" height="40" class="d-box"/><text x="800" y="78" class="d-t" text-anchor="middle">M16_PKT</text><text x="800" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M800 100 V126" class="d-ln"/><rect x="864" y="60" width="112" height="40" class="d-box"/><text x="920" y="78" class="d-t" text-anchor="middle">M16_WT</text><text x="920" y="93" class="d-dim" text-anchor="middle">area_score</text><path d="M920 100 V126" class="d-ln"/><path d="M80 126 H920" class="d-ln"/><path d="M520 126 V150" class="d-ln2" marker-end="url(#ah2)"/><rect x="330" y="156" width="380" height="34" class="d-sum"/><text x="520" y="178" class="d-t" text-anchor="middle">layer1_total = Σ area_score  (8영역 전부)</text><text x="24" y="222" class="d-dim">② 전체 관점 가산 — 영역 밖에서 한 번 더 본다</text><rect x="24" y="232" width="300" height="66" class="d-rule"/><text x="34" y="252" class="d-t">흐름 (flow)</text><text x="34" y="269" class="d-s">10개 노드 · 지금값 ÷ 30분평균</text><text x="34" y="286" class="d-m">심각 ≥3.0× → +30   위험 ≥2.0× → +15   주의 ≥1.5× → +5</text><path d="M174.0 298 V322" class="d-ln"/><rect x="338" y="232" width="220" height="66" class="d-rule"/><text x="348" y="252" class="d-t">SLA</text><text x="348" y="269" class="d-s">SLA 켜진 영역 수</text><text x="348" y="286" class="d-m">× 5</text><path d="M448.0 298 V322" class="d-ln"/><rect x="572" y="232" width="220" height="66" class="d-rule"/><text x="582" y="252" class="d-t">소터</text><text x="582" y="269" class="d-s">소터 켜진 영역 수</text><text x="582" y="286" class="d-m">× 3</text><path d="M682.0 298 V322" class="d-ln"/><rect x="806" y="232" width="220" height="66" class="d-rule"/><text x="816" y="252" class="d-t">MAXCAPA</text><text x="816" y="269" class="d-s">영역별 바뀐 컬럼 수</text><text x="816" y="286" class="d-m">× 10</text><path d="M916.0 298 V322" class="d-ln"/><path d="M174 322 H668" class="d-ln"/><path d="M520 322 V346" class="d-ln2" marker-end="url(#ah2)"/><rect x="250" y="352" width="540" height="38" class="d-cap"/><text x="520" y="376" class="d-t" text-anchor="middle">unified_risk_score = min(500, layer1_total + 흐름 + SLA + 소터 + MAXCAPA)</text><text x="520" y="412" class="d-dim" text-anchor="middle">★SLA·소터·MAXCAPA 는 두 번 센다 — area_score 안에서 한 번(그 영역의 문제로), 여기서 또 한 번(전체로 번질 신호로).</text><text x="520" y="430" class="d-dim" text-anchor="middle">일부러 그렇게 둔 것이라, ALL 점수를 FAB 점수 합으로 되계산하면 맞지 않는다.</text><text x="520" y="452" class="d-dim" text-anchor="middle">ALL 은 0~500, FAB 은 0~50 — 자가 다르다.</text><defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/></marker></defs></svg></div>
 <div class="flow">layer1_total = Σ area_score            (8영역 전부 더한다)
 flow_score   = 흐름 노드마다  심각 +30 / 위험 +15 / 주의 +5
 sla_score    = SLA 켜진 영역 수 × 5
@@ -298,19 +336,111 @@ S3 = (R-A′ 계열) AND (R-D 또는 SLA, 또는 M16HUB 의 R-C′)
 stage      = 3 if S3 else 2 if S2 else 1 if S1 else 0
 hot_area   = area_score 가 가장 큰 영역
 전파 사슬  = area_score ≥ 15 인 영역을 시간 순으로 (최근 60분)</div>
-<h2>5. 예측기가 새로 만드는 컬럼</h2>
-<p><code>{날짜}_발동이벤트.csv</code> — 매분 1행, <b>이벤트가 없는 분도 기록</b>합니다 (없는 분을 빼면 나중에 분모를 못 셉니다). 전체 <b>131개</b> 컬럼.</p>
-<table><tr><th>묶음</th><th>컬럼</th></tr>
-<tr><td><b>식별</b></td><td><code>file</code> · <code>datetime</code> · <code>date</code> · <code>time</code></td></tr>
-<tr><td><b>단계</b></td><td><code>stage</code> · <code>stage_name</code> · <code>prev_stage</code> · <code>transition</code></td></tr>
-<tr><td><b>ALL 점수</b></td><td><code>unified_risk_score</code> · <code>unified_risk_level</code> · <code>hot_area</code> · <code>hot_score</code> · <code>affected_areas</code> · <code>propagation_chain</code> · <code>flow_signals</code> · <code>maxcapa_signals</code></td></tr>
-<tr><td><b>FAB 점수</b></td><td><code>M16HUB_score</code> · <code>M14_score</code> · <code>M14B_score</code> · <code>M16A_score</code> · <code>M16B_score</code> · <code>M16_score</code> · <code>M16_PKT_score</code> · <code>M16_WT_score</code> · <code>flow_score</code></td></tr>
-<tr><td><b>FAB 신호</b></td><td><code>M16HUB_signals</code> · <code>M14_signals</code> · <code>M14B_signals</code> · <code>M16A_signals</code> · <code>M16B_signals</code></td></tr>
-<tr><td><b>근거 값</b></td><td><code>M16HUB_ra</code> · <code>M14_ra</code> · <code>M14B_ra</code> · <code>M16A_ra</code> · <code>M16B_ra</code> · <code>M16HUB_rb_diff30</code> · <code>M14_rb_diff30</code> · <code>M14B_rb_diff30</code> · <code>M16A_rb_diff30</code> · <code>M16B_rb_diff30</code> · <code>M16HUB_rd_fab</code> · <code>M16HUB_stb_util</code> · <code>M16HUB_rev_count</code> · <code>M16HUB_rev_lids</code></td></tr>
-<tr><td><b>SLA·소터</b></td><td><code>sla_M14</code> · <code>sla_M14B</code> · <code>sla_M16A</code> · <code>sla_M16B</code> · <code>sla_M16HUB</code> · <code>sorter_M14</code> · <code>sorter_M14B</code> · <code>sorter_M16A</code> · <code>sorter_M16B</code> · <code>sorter_M16HUB</code> · <code>sla_score_total</code> · <code>sorter_score_total</code></td></tr>
-<tr><td><b>그 밖</b></td><td><code>reason</code> · <code>M16HUB_pts_RA</code> · <code>M16HUB_pts_RA_sus</code> · <code>M16HUB_pts_RB</code> · <code>M16HUB_pts_RB_fast</code> · <code>M16HUB_pts_RC</code> · <code>M16HUB_pts_RD</code> · <code>M16HUB_pts_SLA</code> · <code>M16HUB_pts_SORT</code> · <code>M16HUB_pts_MAXCAPA</code> · <code>M14_pts_RA</code> · <code>M14_pts_RA_sus</code> · <code>M14_pts_RB</code> · <code>M14_pts_RB_fast</code> · <code>M14_pts_RC</code> · <code>M14_pts_RD</code> · <code>M14_pts_SLA</code> · <code>M14_pts_SORT</code> · <code>M14_pts_MAXCAPA</code> · <code>M14B_pts_RA</code> · <code>M14B_pts_RA_sus</code> · <code>M14B_pts_RB</code> · <code>M14B_pts_RB_fast</code> · <code>M14B_pts_RC</code> · <code>M14B_pts_RD</code> · <code>M14B_pts_SLA</code> · <code>M14B_pts_SORT</code> · <code>M14B_pts_MAXCAPA</code> · <code>M16A_pts_RA</code> · <code>M16A_pts_RA_sus</code> · <code>M16A_pts_RB</code> · <code>M16A_pts_RB_fast</code> · <code>M16A_pts_RC</code> · <code>M16A_pts_RD</code> · <code>M16A_pts_SLA</code> · <code>M16A_pts_SORT</code> · <code>M16A_pts_MAXCAPA</code> · <code>M16B_pts_RA</code> · <code>M16B_pts_RA_sus</code> · <code>M16B_pts_RB</code> · <code>M16B_pts_RB_fast</code> · <code>M16B_pts_RC</code> · <code>M16B_pts_RD</code> · <code>M16B_pts_SLA</code> · <code>M16B_pts_SORT</code> · <code>M16B_pts_MAXCAPA</code> · <code>layer1_total</code> · <code>mc_score_total</code> · <code>M16HUB_ra_count</code> · <code>M14_ra_count</code> · <code>M14B_ra_count</code> · <code>M16A_ra_count</code> · <code>M16B_ra_count</code> · <code>M16HUB_rb_diff10</code> · <code>M14_rb_diff10</code> · <code>M14B_rb_diff10</code> · <code>M16A_rb_diff10</code> · <code>M16B_rb_diff10</code> · <code>M16HUB_rc_trend</code> · <code>M14_cnv_skew</code> · <code>M14_rd_oht</code> · <code>M14B_rd_oht</code> · <code>M16A_rd_oht</code> · <code>M16B_rd_oht</code> · <code>M16HUB_sla_cnt</code> · <code>M14_sla_cnt</code> · <code>M16A_sla_cnt</code> · <code>M16B_sla_cnt</code> · <code>M16A_sorter_fail</code> · <code>M16B_sorter_fail</code> · <code>M16HUB_score_raw</code> · <code>M14_score_raw</code> · <code>M14B_score_raw</code> · <code>M16A_score_raw</code> · <code>M16B_score_raw</code></td></tr>
+<h2>5. 예측기가 새로 만드는 컬럼 — 하나씩</h2>
+<p><code>{날짜}_발동이벤트.csv</code> — 매분 1행, <b>이벤트가 없는 분도 기록</b>합니다 (없는 분을 빼면 나중에 분모를 못 셉니다). 전체 <b>131개</b> 컬럼을 묶음별로 하나씩 적었습니다.</p>
+<h3>① 식별 — 언제·어디서 나온 행인가 <span class=tag>4개</span></h3>
+<table><tr><th>컬럼</th><th>뜻</th><th>설명</th><th>예</th></tr>
+<tr><td><code>file</code></td><td><b>입력 파일 이름</b></td><td>어느 원본에서 나온 행인지</td><td class=mono>M16A_HUBROOM_PR.csv</td></tr>
+<tr><td><code>datetime</code></td><td><b>그 분의 시각</b></td><td>TOTAL.CSV·LLM.CSV 와 조인하는 열쇠</td><td class=mono>2026-08-26 14:07</td></tr>
+<tr><td><code>date</code></td><td><b>날짜만</b></td><td>일 단위로 묶을 때</td><td class=mono>2026-08-26</td></tr>
+<tr><td><code>time</code></td><td><b>시각만</b></td><td>하루 안의 시간대를 볼 때</td><td class=mono>14:07</td></tr>
 </table>
-<div class="note"><b>{FAB}_score 가 그 FAB 의 점수입니다.</b> 통합 파일에는 8영역 점수가 나란히 들어 있고, ALL 점수는 <code>unified_risk_score</code> 입니다.</div>
+<h3>② 단계 — 지금 몇 단계인가 <span class=tag>4개</span></h3>
+<p class="dim">단계는 S1/S2/S3 판정 결과입니다 (4-3 참조). <code>transition</code> 은 <b>바뀐 분에만</b> 채워지므로, '언제 올라갔나' 를 셀 때 이 컬럼만 보면 됩니다.</p>
+<table><tr><th>컬럼</th><th>뜻</th><th>설명</th><th>예</th></tr>
+<tr><td><code>stage</code></td><td><b>단계 0~3</b></td><td>0 이벤트없음 · 1 조기경보 · 2 주의보 · 3 확정</td><td class=mono>2</td></tr>
+<tr><td><code>stage_name</code></td><td><b>단계 이름</b></td><td>stage 를 사람 말로</td><td class=mono>2단계 주의보</td></tr>
+<tr><td><code>prev_stage</code></td><td><b>직전 분의 단계</b></td><td>올라갔는지 내려갔는지 보려고</td><td class=mono>1</td></tr>
+<tr><td><code>transition</code></td><td><b>단계가 바뀐 표시</b></td><td>바뀐 분에만 채워진다 (0 이면 비움)</td><td class=mono>1→2</td></tr>
+</table>
+<h3>③ ALL 점수와 그 근거 <span class=tag>9개</span></h3>
+<p class="dim"><b>관제 ALL 화면이 보는 값이 <code>unified_risk_score</code></b> 입니다. <code>reason</code> 한 줄에 어느 영역의 어느 룰이 어떤 값으로 켜졌는지가 다 들어 있어, 사람이 읽는 첫 컬럼입니다.</p>
+<table><tr><th>컬럼</th><th>뜻</th><th>설명</th><th>예</th></tr>
+<tr><td><code>unified_risk_score</code></td><td><b>★ALL 점수 0~500</b></td><td>8영역 합 + 흐름·SLA·소터·MAXCAPA 가산. 관제 ALL 화면이 이 값을 본다</td><td class=mono>137</td></tr>
+<tr><td><code>unified_risk_level</code></td><td><b>ALL 등급</b></td><td>예측기 자체 6단계 (관제 등급과 다르다)</td><td class=mono>주의</td></tr>
+<tr><td><code>hot_area</code></td><td><b>가장 높은 영역</b></td><td>area_score 가 제일 큰 영역</td><td class=mono>M16HUB</td></tr>
+<tr><td><code>hot_score</code></td><td><b>그 영역의 점수</b></td><td>hot_area 의 area_score</td><td class=mono>35</td></tr>
+<tr><td><code>affected_areas</code></td><td><b>걸린 영역 목록</b></td><td>area_score 가 전파 기준 이상인 영역을 ';' 로</td><td class=mono>M16HUB;M14</td></tr>
+<tr><td><code>propagation_chain</code></td><td><b>전파 사슬</b></td><td>최근 되돌아보기 구간 안에서 영역이 걸린 순서. 어디서 시작해 어디로 번졌는지</td><td class=mono>M14(14:02,RA) → M16HUB(14:05,RA+RD)</td></tr>
+<tr><td><code>flow_signals</code></td><td><b>흐름 신호</b></td><td>평소 대비 배수가 임계를 넘은 노드를 ';' 로</td><td class=mono>M14_TO_HUB_JOB=2.3x(위험)</td></tr>
+<tr><td><code>maxcapa_signals</code></td><td><b>운영자 조치 신호</b></td><td>정상값보다 줄어든 MAXCAPA 컬럼</td><td class=mono>M16HUB:3F_LFT_MAXCAPA=80(&lt;=100)</td></tr>
+<tr><td><code>reason</code></td><td><b>판정 근거 한 줄</b></td><td>어느 영역의 어느 룰이 어떤 값으로 켜졌는지. stage 0 이면 비어 있다</td><td class=mono>발동: M16HUB[R-A′(12.5분/기준9),R-D(FAB저장=31.2%,STB=99.4%)]</td></tr>
+</table>
+<h3>④ ALL 점수 분해 — 무엇이 얼마를 보탰나 <span class=tag>5개</span></h3>
+<p class="dim">이 다섯을 더하면 <code>unified_risk_score</code> 가 됩니다 (캡 전). <b>점수가 왜 그렇게 나왔는지</b> 를 따질 때 여기부터 봅니다.</p>
+<table><tr><th>컬럼</th><th>뜻</th><th>설명</th><th>예</th></tr>
+<tr><td><code>layer1_total</code></td><td><b>영역 점수 합</b></td><td>8영역 area_score 를 그냥 더한 값</td><td class=mono>62</td></tr>
+<tr><td><code>flow_score</code></td><td><b>흐름 가산</b></td><td>흐름 노드 등급별 가산의 합</td><td class=mono>45</td></tr>
+<tr><td><code>sla_score_total</code></td><td><b>SLA 가산</b></td><td>SLA 켜진 영역 수 × 배점</td><td class=mono>10</td></tr>
+<tr><td><code>sorter_score_total</code></td><td><b>소터 가산</b></td><td>소터 켜진 영역 수 × 배점</td><td class=mono>3</td></tr>
+<tr><td><code>mc_score_total</code></td><td><b>MAXCAPA 가산</b></td><td>영역별 바뀐 컬럼 수 × 배점의 합</td><td class=mono>10</td></tr>
+</table>
+<h3>⑤ FAB 점수 — 영역분리 뒤 area_score 가 되는 값 <span class=tag>8개</span></h3>
+<p class="dim"><b>관제 FAB 화면이 보는 값</b>입니다. 영역분리에서 그 FAB 의 것만 <code>area_score</code> 로 나갑니다 (6장).</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_score</code></td><td><b>{영역} 영역 점수 0~50</b><br><span class="dim">그 영역의 룰 배점 합. <b>FAB 화면이 보는 값</b>이고 영역분리 뒤 area_score 가 된다</span></td><td class="mono">35</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code> · <code>M16</code> · <code>M16_PKT</code> · <code>M16_WT</code></p>
+<h3>⑥ FAB 점수 원본 — 자르기 전 <span class=tag>5개</span></h3>
+<p class="dim">50 점 캡에 걸렸는지 확인용입니다. <code>_score_raw</code> 가 <code>_score</code> 보다 크면 잘린 것입니다.</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_score_raw</code></td><td><b>{영역} 영역 점수 (자르기 전)</b><br><span class="dim">50 점에서 잘리기 전 원본. 캡에 걸렸는지 확인용</span></td><td class="mono">58</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
+<h3>⑦ 켜진 룰 이름 <span class=tag>5개</span></h3>
+<p class="dim">'+' 로 이어 붙입니다. 점수만 보면 <b>왜</b> 가 없으므로 이 컬럼을 같이 봅니다.</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_signals</code></td><td><b>{영역} 켜진 룰 이름</b><br><span class="dim">'+' 로 이어 붙인다 — 어느 룰이 켜져서 그 점수가 나왔는지</span></td><td class="mono">RA+RD+SLA</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
+<h3>⑧ 룰별 분해 점수 (5영역 × 9룰) <span class=tag>45개</span></h3>
+<p class="dim">룰 하나가 준 점수를 따로 남깁니다. <b>어떤 룰 조합이 실제 사건과 이어졌나</b> 를 뒤에서 분석하려고 둔 자리입니다 — 성능을 룰 단위로 볼 수 있습니다.</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_pts_RA</code></td><td><b>{영역} · R-A′ 반송지연 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_RA_sus</code></td><td><b>{영역} · R-A′ 지속 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_RB</code></td><td><b>{영역} · R-B 반입급증(30분) 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_RB_fast</code></td><td><b>{영역} · R-B 반입급증(10분) 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_RC</code></td><td><b>{영역} · R-C′ 역증가·쏠림 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_RD</code></td><td><b>{영역} · R-D 저장/가동 포화 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_SLA</code></td><td><b>{영역} · SLA 4분초과 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_SORT</code></td><td><b>{영역} · 소터 대기/실패 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+<tr><td><code>{영역}_pts_MAXCAPA</code></td><td><b>{영역} · MAXCAPA 축소 배점</b><br><span class="dim">이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다</span></td><td class="mono">10</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
+<h3>⑨ 룰이 본 실측값 — R-A′ <span class=tag>10개</span></h3>
+<p class="dim">임계와 나란히 놓고 봐야 '왜 켜졌나/왜 안 켜졌나' 를 말할 수 있습니다.</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_ra</code></td><td><b>{영역} 반송/적재 시간 (분)</b><br><span class="dim">R-A′ 가 보는 실측값 — 그 분의 값</span></td><td class="mono">12.5</td></tr>
+<tr><td><code>{영역}_ra_count</code></td><td><b>{영역} R-A′ 초과 횟수</b><br><span class="dim">최근 10분 중 임계를 넘은 분의 수</span></td><td class="mono">3</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
+<h3>⑩ 룰이 본 실측값 — R-B <span class=tag>10개</span></h3>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_rb_diff30</code></td><td><b>{영역} 30분 증가량</b><br><span class="dim">허브행 대기 수가 30분 전보다 얼마나 늘었나</span></td><td class="mono">118</td></tr>
+<tr><td><code>{영역}_rb_diff10</code></td><td><b>{영역} 10분 증가량</b><br><span class="dim">같은 것을 10분 창으로 — 빠르게 차오르는지</span></td><td class="mono">42</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
+<h3>⑪ 룰이 본 실측값 — R-C′ · R-D <span class=tag>10개</span></h3>
+<p class="dim">R-C′ 는 <b>합은 줄었는데 개별은 늘어난</b> 경우를 잡습니다 — 그래서 <code>rc_trend</code>(합 변화)와 <code>rev_count</code>(늘어난 호기 수)를 같이 남깁니다.</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>{영역}_rd_fab</code></td><td><b>{영역} FAB 저장율(%)</b><br><span class="dim">R-D 가 보는 값</span></td><td class="mono">31.2</td></tr>
+<tr><td><code>{영역}_stb_util</code></td><td><b>{영역} STB 3F 저장율(%)</b><br><span class="dim">R-D 가 보는 또 하나</span></td><td class="mono">99.4</td></tr>
+<tr><td><code>{영역}_rev_count</code></td><td><b>역증가 호기 수</b><br><span class="dim">합은 줄었는데 늘어난 리프터 개수</span></td><td class="mono">3</td></tr>
+<tr><td><code>{영역}_rev_lids</code></td><td><b>역증가 호기 이름</b><br><span class="dim">어느 리프터인지</span></td><td class="mono">6ABL0111,6ABL6012</td></tr>
+<tr><td><code>{영역}_rc_trend</code></td><td><b>리프터 합 변화</b><br><span class="dim">20분 전 대비 합계 증감 (음수여야 R-C′)</span></td><td class="mono">-14</td></tr>
+<tr><td><code>{영역}_cnv_skew</code></td><td><b>{영역} CNV 쏠림 비율</b><br><span class="dim">북/남 중 큰 쪽 ÷ 합</span></td><td class="mono">0.78</td></tr>
+<tr><td><code>{영역}_rd_oht</code></td><td><b>{영역} OHT 가동률 (%)</b><br><span class="dim">M16HUB 밖의 영역에서 R-D 가 보는 값</span></td><td class="mono">96.1</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
+<h3>⑫ 룰이 본 실측값 — SLA · 소터 <span class=tag>16개</span></h3>
+<p class="dim">SLA 는 <b>비율</b>과 <b>건수</b> 둘 다 봅니다. 비율이 낮아도 건수가 10분 만에 20건 이상 늘면 켜집니다.</p>
+<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>
+<tr><td><code>sla_{영역}</code></td><td><b>{영역} 4분 초과 비율 (%)</b><br><span class="dim">SLA 가 보는 실측값</span></td><td class="mono">21.4</td></tr>
+<tr><td><code>sorter_{영역}</code></td><td><b>{영역} 소터 대기 초과 수</b><br><span class="dim">소터 룰이 보는 실측값</span></td><td class="mono">412</td></tr>
+<tr><td><code>{영역}_sla_cnt</code></td><td><b>{영역} 4분 초과 건수</b><br><span class="dim">비율이 아니라 <b>건수</b>. 10분 만에 20건 이상 늘면 SLA 가 켜진다</span></td><td class="mono">134</td></tr>
+<tr><td><code>{영역}_sorter_fail</code></td><td><b>{영역} 소터 반송 실패</b><br><span class="dim">1건만 있어도 소터 신호가 켜진다</span></td><td class="mono">2</td></tr>
+</table>
+<p class="dim">해당 영역: <code>M16HUB</code> · <code>M14</code> · <code>M14B</code> · <code>M16A</code> · <code>M16B</code></p>
 <h2>6. 영역분리 — FAB 파일에서 <code>area_score</code> 가 되는 과정</h2>
 <p>영역분리는 통합 파일을 FAB 별 파일로 나눕니다. 그 파일에서 <b>그 FAB 의 점수가 <code>area_score</code> 라는 이름</b>으로 들어갑니다 (통합 파일의 <code>{FAB}_score</code> 와 같은 값입니다).</p>
 <div class="flow">통합 파일  {날짜}_발동이벤트.csv
@@ -323,6 +453,23 @@ FAB 파일  {날짜}_발동이벤트_M14.csv
    unified_risk_score = 전체 점수 (그대로 실려 온다)
    area_score         = M14 영역 점수     ← 이 FAB 의 값
    area_level         = M14 영역 등급</div>
+<div class="fig"><svg viewBox="0 0 1040 326" width="100%" role="img" aria-label="영역분리 뒤 area_score 가 unified_risk_score 자리로 옮겨지는 과정"><style>
+.d-bg{fill:#fff;stroke:#e5e7eb}
+.d-box{fill:#f8fafc;stroke:#cbd5e1;rx:6}
+.d-col{fill:#fff;stroke:#cbd5e1;rx:4}
+.d-rule{fill:#eef2ff;stroke:#a5b4fc;rx:6}
+.d-out{fill:#ecfdf5;stroke:#6ee7b7;rx:6}
+.d-sum{fill:#fff7ed;stroke:#fdba74;rx:6}
+.d-cap{fill:#fef2f2;stroke:#fca5a5;rx:6}
+.d-t{font:600 12px "Malgun Gothic",system-ui;fill:#111827}
+.d-s{font:11px "Malgun Gothic",system-ui;fill:#4b5563}
+.d-m{font:10.5px Consolas,"D2Coding",monospace;fill:#1f2937}
+.d-n{font:700 12.5px system-ui;fill:#111827}
+.d-h{font:700 12.5px "Malgun Gothic",system-ui;fill:#4338ca}
+.d-dim{font:10.5px "Malgun Gothic",system-ui;fill:#6b7280}
+.d-ln{stroke:#94a3b8;fill:none;stroke-width:1.2}
+.d-ln2{stroke:#6366f1;fill:none;stroke-width:1.6}
+</style><text x="24" y="24" class="d-h">그림 C — 영역분리 뒤 자리 이동 (M14 파일을 예로)</text><text x="24" y="52" class="d-dim">받은 그대로 — FAB 파일</text><text x="580" y="52" class="d-dim">관제가 읽는 순간 정규화 (jupyter_csv._fab_rows)</text><rect x="24" y="60" width="440" height="36" class="d-col"/><text x="34" y="76" class="d-m">unified_risk_score</text><text x="34" y="90" class="d-dim">전체 점수</text><text x="452" y="83" class="d-n" text-anchor="end">137</text><path d="M474 78 H566" class="d-ln" marker-end="url(#ah3)"/><rect x="580" y="60" width="440" height="36" class="d-col"/><text x="590" y="76" class="d-m">all_score</text><text x="590" y="90" class="d-dim">전체 점수 (원본 보존)</text><text x="1008" y="83" class="d-n" text-anchor="end">137</text><rect x="24" y="104" width="440" height="36" class="d-col"/><text x="34" y="120" class="d-m">area_score</text><text x="34" y="134" class="d-dim">M14 점수</text><text x="452" y="127" class="d-n" text-anchor="end">28</text><path d="M474 122 H566" class="d-ln2" marker-end="url(#ah3)"/><rect x="580" y="104" width="440" height="36" class="d-out"/><text x="590" y="120" class="d-m">unified_risk_score</text><text x="590" y="134" class="d-dim">★M14 점수가 이 자리로</text><text x="1008" y="127" class="d-n" text-anchor="end">28</text><rect x="24" y="148" width="440" height="36" class="d-col"/><text x="34" y="164" class="d-m">unified_risk_level</text><text x="34" y="178" class="d-dim">전체 등급</text><text x="452" y="171" class="d-n" text-anchor="end">주의</text><path d="M474 166 H566" class="d-ln" marker-end="url(#ah3)"/><rect x="580" y="148" width="440" height="36" class="d-col"/><text x="590" y="164" class="d-m">all_level</text><text x="590" y="178" class="d-dim">전체 등급 (원본 보존)</text><text x="1008" y="171" class="d-n" text-anchor="end">주의</text><rect x="24" y="192" width="440" height="36" class="d-col"/><text x="34" y="208" class="d-m">area_level</text><text x="34" y="222" class="d-dim">M14 등급</text><text x="452" y="215" class="d-n" text-anchor="end">관심</text><path d="M474 210 H566" class="d-ln2" marker-end="url(#ah3)"/><rect x="580" y="192" width="440" height="36" class="d-out"/><text x="590" y="208" class="d-m">unified_risk_level</text><text x="590" y="222" class="d-dim">★M14 등급</text><text x="1008" y="215" class="d-n" text-anchor="end">관심</text><rect x="24" y="236" width="440" height="36" class="d-col"/><text x="34" y="252" class="d-m">hot_area</text><text x="34" y="266" class="d-dim">전체 기준</text><text x="452" y="259" class="d-n" text-anchor="end">M16HUB</text><path d="M474 254 H566" class="d-ln2" marker-end="url(#ah3)"/><rect x="580" y="236" width="440" height="36" class="d-out"/><text x="590" y="252" class="d-m">hot_area</text><text x="590" y="266" class="d-dim">★자기 영역으로</text><text x="1008" y="259" class="d-n" text-anchor="end">M14</text><text x="24" y="298" class="d-dim">한 자리에서 한 번만 바꾼다. 그래프·예보·기여도·리포트·정확도가 모두 unified_risk_score 와 hot_area 를 읽으므로, 여기서 바꿔 두면 하위 모듈을 하나도 안 고치고 FAB 화면이 자기 데이터를 본다.</text><defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/></marker></defs></svg></div>
 <h3>6-1. 관제가 받는 순간 자리를 바꾼다</h3>
 <p>FAB 파일에는 <b>전체 점수와 그 FAB 점수가 같이</b> 들어 있습니다. 관제가 그대로 읽으면 M14 화면이 <b>전체 점수로</b> 등급을 매기고 케이스 영역이 M16HUB 로 찍힙니다. 그래서 <code>jupyter_csv._fab_rows()</code> 가 <b>받는 순간 한 번만</b> 자리를 바꿉니다.</p>
 <div class="flow">받은 그대로                     →  정규화 후

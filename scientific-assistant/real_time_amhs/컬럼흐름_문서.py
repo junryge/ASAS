@@ -84,7 +84,14 @@ def _lit(node):
 
 
 def read_consts(src):
-    """모듈 최상위 대입에서 dict/list 상수를 꺼낸다."""
+    """모듈 최상위 대입에서 dict/list 상수를 꺼낸다.
+
+    ★TH_RB_10 만 예외다. 코드에서 dict 컴프리헨션으로 만든다:
+        TH_RB_10 = _TD('TH_RB_10', {k: max(10, int(v*0.3)) for k,v in TH_RB_30…})
+      literal 이 아니라 ast 로는 못 읽는다. 그냥 비워 두면 그림에 '—' 가
+      찍혀서 '임계가 없다' 로 보인다 — 같은 규칙으로 만들어 주고 문서에
+      '자동 산출' 이라고 밝힌다.
+    """
     out = {}
     try:
         tree = ast.parse(src)
@@ -105,6 +112,11 @@ def read_consts(src):
             got = _lit(v)
         if got is not None:
             out[tgt.id] = got
+    if "TH_RB_10" not in out and isinstance(out.get("TH_RB_30"), dict):
+        m = re.search(r"TH_RB_10\s*=\s*_TD\([^)]*?int\(v\s*\*\s*([\d.]+)\)", src)
+        r = float(m.group(1)) if m else 0.3
+        out["TH_RB_10"] = {k: max(10, int(v * r)) for k, v in out["TH_RB_30"].items()}
+        out["_TH_RB_10_derived"] = r
     return out
 
 
@@ -186,6 +198,126 @@ def _kind(node):
     if seg.startswith("{"):
         return "묶음"
     return ""
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 출력 컬럼 설명
+#
+# ★131개를 하나씩 손으로 적으면 컬럼이 늘 때 빠진다. 그래서 **꼴(패턴)로**
+#   적는다. 영역 이름만 갈아 끼우면 되는 것이 대부분이다.
+# ★설명이 없는 컬럼이 생기면 시험이 잡는다 (test_컬럼흐름문서).
+# ─────────────────────────────────────────────────────────────────────
+RULE_KO = {
+    "RA": "R-A′ 반송지연", "RA_sus": "R-A′ 지속", "RB": "R-B 반입급증(30분)",
+    "RB_fast": "R-B 반입급증(10분)", "RC": "R-C′ 역증가·쏠림",
+    "RD": "R-D 저장/가동 포화", "SLA": "SLA 4분초과",
+    "SORT": "소터 대기/실패", "MAXCAPA": "MAXCAPA 축소",
+}
+
+# 정확히 이 이름인 컬럼
+COL_EXACT = {
+    "file": ("입력 파일 이름", "어느 원본에서 나온 행인지", "M16A_HUBROOM_PR.csv"),
+    "datetime": ("그 분의 시각", "TOTAL.CSV·LLM.CSV 와 조인하는 열쇠",
+                 "2026-08-26 14:07"),
+    "date": ("날짜만", "일 단위로 묶을 때", "2026-08-26"),
+    "time": ("시각만", "하루 안의 시간대를 볼 때", "14:07"),
+    "stage": ("단계 0~3", "0 이벤트없음 · 1 조기경보 · 2 주의보 · 3 확정", "2"),
+    "stage_name": ("단계 이름", "stage 를 사람 말로", "2단계 주의보"),
+    "prev_stage": ("직전 분의 단계", "올라갔는지 내려갔는지 보려고", "1"),
+    "transition": ("단계가 바뀐 표시", "바뀐 분에만 채워진다 (0 이면 비움)", "1→2"),
+    "unified_risk_score": ("★ALL 점수 0~500",
+                           "8영역 합 + 흐름·SLA·소터·MAXCAPA 가산. "
+                           "관제 ALL 화면이 이 값을 본다", "137"),
+    "unified_risk_level": ("ALL 등급", "예측기 자체 6단계 (관제 등급과 다르다)",
+                           "주의"),
+    "hot_area": ("가장 높은 영역", "area_score 가 제일 큰 영역", "M16HUB"),
+    "hot_score": ("그 영역의 점수", "hot_area 의 area_score", "35"),
+    "affected_areas": ("걸린 영역 목록",
+                       "area_score 가 전파 기준 이상인 영역을 ';' 로", "M16HUB;M14"),
+    "propagation_chain": ("전파 사슬",
+                          "최근 되돌아보기 구간 안에서 영역이 걸린 순서. "
+                          "어디서 시작해 어디로 번졌는지",
+                          "M14(14:02,RA) → M16HUB(14:05,RA+RD)"),
+    "flow_signals": ("흐름 신호",
+                     "평소 대비 배수가 임계를 넘은 노드를 ';' 로",
+                     "M14_TO_HUB_JOB=2.3x(위험)"),
+    "maxcapa_signals": ("운영자 조치 신호",
+                        "정상값보다 줄어든 MAXCAPA 컬럼", "M16HUB:3F_LFT_MAXCAPA=80(<=100)"),
+    "reason": ("판정 근거 한 줄",
+               "어느 영역의 어느 룰이 어떤 값으로 켜졌는지. "
+               "stage 0 이면 비어 있다",
+               "발동: M16HUB[R-A′(12.5분/기준9),R-D(FAB저장=31.2%,STB=99.4%)]"),
+    "layer1_total": ("영역 점수 합", "8영역 area_score 를 그냥 더한 값", "62"),
+    "flow_score": ("흐름 가산", "흐름 노드 등급별 가산의 합", "45"),
+    "sla_score_total": ("SLA 가산", "SLA 켜진 영역 수 × 배점", "10"),
+    "sorter_score_total": ("소터 가산", "소터 켜진 영역 수 × 배점", "3"),
+    "mc_score_total": ("MAXCAPA 가산", "영역별 바뀐 컬럼 수 × 배점의 합", "10"),
+    "M16HUB_rd_fab": ("M16HUB FAB 저장율(%)", "R-D 가 보는 값", "31.2"),
+    "M16HUB_stb_util": ("M16HUB STB 3F 저장율(%)", "R-D 가 보는 또 하나", "99.4"),
+    "M16HUB_rev_count": ("역증가 호기 수", "합은 줄었는데 늘어난 리프터 개수", "3"),
+    "M16HUB_rev_lids": ("역증가 호기 이름", "어느 리프터인지", "6ABL0111,6ABL6012"),
+    "M16HUB_rc_trend": ("리프터 합 변화",
+                        "20분 전 대비 합계 증감 (음수여야 R-C′)",
+                        "-14"),
+    "M14_cnv_skew": ("M14 CNV 쏠림 비율", "북/남 중 큰 쪽 ÷ 합", "0.78"),
+}
+
+# {영역}_ 또는 _{영역} 꼴 — 영역 이름만 갈아 끼우면 되는 것
+COL_PAT = [
+    (r"^(?P<a>\w+)_score$", "{a} 영역 점수 0~{cap}",
+     "그 영역의 룰 배점 합. <b>FAB 화면이 보는 값</b>이고 영역분리 뒤 "
+     "area_score 가 된다", "35"),
+    (r"^(?P<a>\w+)_score_raw$", "{a} 영역 점수 (자르기 전)",
+     "{cap} 점에서 잘리기 전 원본. 캡에 걸렸는지 확인용", "58"),
+    (r"^(?P<a>\w+)_signals$", "{a} 켜진 룰 이름",
+     "'+' 로 이어 붙인다 — 어느 룰이 켜져서 그 점수가 나왔는지", "RA+RD+SLA"),
+    (r"^(?P<a>\w+)_pts_(?P<r>\w+)$", "{a} · {rk} 배점",
+     "이 룰 하나가 준 점수. 룰 조합을 분석하려고 따로 남긴다", "10"),
+    (r"^(?P<a>\w+)_ra$", "{a} 반송/적재 시간 (분)",
+     "R-A′ 가 보는 실측값 — 그 분의 값", "12.5"),
+    (r"^(?P<a>\w+)_ra_count$", "{a} R-A′ 초과 횟수",
+     "최근 10분 중 임계를 넘은 분의 수", "3"),
+    (r"^(?P<a>\w+)_rb_diff30$", "{a} 30분 증가량",
+     "허브행 대기 수가 30분 전보다 얼마나 늘었나", "118"),
+    (r"^(?P<a>\w+)_rb_diff10$", "{a} 10분 증가량",
+     "같은 것을 10분 창으로 — 빠르게 차오르는지", "42"),
+    (r"^(?P<a>\w+)_rd_oht$", "{a} OHT 가동률 (%)",
+     "M16HUB 밖의 영역에서 R-D 가 보는 값", "96.1"),
+    (r"^(?P<a>\w+)_sla_cnt$", "{a} 4분 초과 건수",
+     "비율이 아니라 <b>건수</b>. 10분 만에 20건 이상 늘면 SLA 가 켜진다",
+     "134"),
+    (r"^(?P<a>\w+)_sorter_fail$", "{a} 소터 반송 실패",
+     "1건만 있어도 소터 신호가 켜진다", "2"),
+    (r"^sla_(?P<a>\w+)$", "{a} 4분 초과 비율 (%)",
+     "SLA 가 보는 실측값", "21.4"),
+    (r"^sorter_(?P<a>\w+)$", "{a} 소터 대기 초과 수",
+     "소터 룰이 보는 실측값", "412"),
+]
+
+
+def explain_cols(fields, cap):
+    """EVENT_FIELDS 를 설명이 붙은 목록으로."""
+    import re as _re
+    out = []
+    for c in fields:
+        if c in COL_EXACT:
+            t, d, ex = COL_EXACT[c]
+            out.append({"col": c, "title": t, "desc": d, "ex": ex, "ok": True})
+            continue
+        got = None
+        for pat, t, d, ex in COL_PAT:
+            m = _re.match(pat, c)
+            if not m:
+                continue
+            g = m.groupdict()
+            rk = RULE_KO.get(g.get("r") or "", g.get("r") or "")
+            f = dict(g, cap=cap or "?", rk=rk)
+            got = {"col": c, "title": t.format(**f), "desc": d.format(**f),
+                   "ex": ex, "ok": True}
+            break
+        out.append(got or {"col": c, "title": "", "desc": "", "ex": "",
+                           "ok": False})
+    return out
 
 
 def read_points(src):
@@ -297,6 +429,307 @@ def points_table(pts):
     return "".join(h)
 
 
+# ─────────────────────────────────────────────────────────────────────
+# 그림 (SVG)
+#
+# ★그림도 **소스에서 읽은 값**으로 그린다. 임계·배점이 바뀌면 그림의
+#   숫자도 같이 바뀐다. 그림만 옛날 값으로 남으면 표보다 더 나쁘다 —
+#   사람은 그림을 먼저 믿는다.
+# ★바깥 그림 라이브러리를 안 쓴다. 사내망에는 CDN 이 없고, 이 문서는
+#   파일 하나로 열려야 한다.
+# ─────────────────────────────────────────────────────────────────────
+SVG_CSS = """
+.d-bg{fill:#fff;stroke:#e5e7eb}
+.d-box{fill:#f8fafc;stroke:#cbd5e1;rx:6}
+.d-col{fill:#fff;stroke:#cbd5e1;rx:4}
+.d-rule{fill:#eef2ff;stroke:#a5b4fc;rx:6}
+.d-out{fill:#ecfdf5;stroke:#6ee7b7;rx:6}
+.d-sum{fill:#fff7ed;stroke:#fdba74;rx:6}
+.d-cap{fill:#fef2f2;stroke:#fca5a5;rx:6}
+.d-t{font:600 12px "Malgun Gothic",system-ui;fill:#111827}
+.d-s{font:11px "Malgun Gothic",system-ui;fill:#4b5563}
+.d-m{font:10.5px Consolas,"D2Coding",monospace;fill:#1f2937}
+.d-n{font:700 12.5px system-ui;fill:#111827}
+.d-h{font:700 12.5px "Malgun Gothic",system-ui;fill:#4338ca}
+.d-dim{font:10.5px "Malgun Gothic",system-ui;fill:#6b7280}
+.d-ln{stroke:#94a3b8;fill:none;stroke-width:1.2}
+.d-ln2{stroke:#6366f1;fill:none;stroke-width:1.6}
+"""
+
+
+def _esc(t):
+    return html.escape(str(t))
+
+
+def _wrapcol(c, n=44):
+    """긴 컬럼 이름을 두 줄로 — 한 줄로 두면 그림 밖으로 나간다."""
+    c = str(c)
+    return [c] if len(c) <= n else [c[:n], c[n:]]
+
+
+def svg_area(d, area="M16HUB"):
+    """한 영역에서 컬럼 → 룰 → 배점 → area_score 까지."""
+    C, pts = d["C"], d["pts"]
+    cap = pts.get("_cap") or 50
+
+    def th(name, default="—"):
+        m = C.get(name)
+        if isinstance(m, dict):
+            return m.get(area, default)
+        return m if m is not None else default
+
+    # (룰 이름, 보는 컬럼들, 임계 글, 배점변수)
+    rows = [
+        ("R-A′ 반송지연",
+         [(C.get("RA_COL") or {}).get(area, "—")],
+         "≥ {} 분이 10분 중 1회+".format(th("TH_RA")), "ra_pts"),
+        ("R-A′ 지속", ["(위와 같은 컬럼)"],
+         "≥ {}×{} 가 5분 중 {}회+".format(
+             th("TH_RA"), C.get("TH_RA_SUSTAINED_RATIO", "?"),
+             C.get("TH_RA_SUSTAINED_COUNT", "?")), "ra_sus_pts"),
+        ("R-B 반입급증(30분)",
+         [(C.get("RB_COL") or {}).get(area, "—")],
+         "30분 전 대비 +{} 이상".format(th("TH_RB_30")), "rb_pts"),
+        ("R-B 반입급증(10분)", ["(위와 같은 컬럼)"],
+         "10분 전 대비 +{} 이상{}".format(
+             th("TH_RB_10"),
+             "  (30분 임계의 {:.0%})".format(C["_TH_RB_10_derived"])
+             if C.get("_TH_RB_10_derived") else ""), "rb_fast_pts"),
+        ("R-C′ 리프터 역증가",
+         ["M16HUB.LFT.{{호기}}.TOTAL_CURRENTQCNT  ×{}대".format(
+             len(C.get("LIFTER_IDS") or []))],
+         "합은 감소 + 개별 증가 {}대 이상".format(C.get("TH_RC_REVERSE", "?")),
+         "rc_pts"),
+        ("R-D 저장 포화",
+         ["M16HUB.STRATE.ALL.FABSTORAGERATIO",
+          "M16HUB.STRATE.STB.3F_STORAGE_UTIL"],
+         "FAB ≥ {}%  또는  STB ≥ {}%".format(
+             C.get("TH_RD_FABSTORAGE", "?"), C.get("TH_RD_HUB_STB_UTIL", "?")),
+         "rd_pts"),
+        ("SLA 4분초과",
+         [(C.get("SLA_COL") or {}).get(area, "—"),
+          "M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT"],
+         "비율 ≥ {}%  또는  건수 10분 +20".format(
+             (C.get("TH_SLA_RATIO") or {}).get(area, "?")), "sla_pts"),
+        ("소터 대기/실패",
+         [(C.get("SORTER_COL") or {}).get(area, "—")],
+         "대기 ≥ {}  또는  실패 ≥ {}".format(
+             (C.get("TH_SORTER_WAIT") or {}).get(area, "?"),
+             C.get("TH_SORTER_TRANSFER_FAIL", "?")), "sort_pts"),
+        ("MAXCAPA 축소",
+         sorted(k for k in (C.get("MAXCAPA_NORMAL") or {}) if k.startswith(area)),
+         "정상값보다 줄어든 컬럼 1개마다", "mc_pts"),
+    ]
+
+    L, CX, RX = 24, 470, 790          # 컬럼 / 룰 / 배점 x
+    y, o = 62, []
+    a = o.append
+    heights = []
+    for name, cols, thtxt, var in rows:
+        n = max(1, sum(len(_wrapcol(c)) for c in (cols or ["—"])))
+        heights.append(max(46, 20 + n * 15))
+    H = y + sum(heights) + len(rows) * 6 + 178
+
+    a('<svg viewBox="0 0 1040 {}" width="100%" role="img" '
+      'aria-label="{} 영역에서 컬럼이 룰을 거쳐 area_score 가 되는 과정">'
+      .format(H, _esc(area)))
+    a("<style>{}</style>".format(SVG_CSS))
+    a('<text x="24" y="24" class="d-h">그림 A — {} 영역: 어느 컬럼이 '
+      '어느 룰로 들어가 점수가 되나</text>'.format(_esc(area)))
+    a('<text x="24" y="44" class="d-dim">원시 컬럼 (M16A_HUBROOM_PR.CSV)'
+      '</text>')
+    a('<text x="{}" y="44" class="d-dim">룰 · 임계</text>'.format(CX))
+    a('<text x="{}" y="44" class="d-dim">배점</text>'.format(RX))
+    a('<text x="{}" y="44" class="d-dim">누적</text>'.format(RX + 110))
+
+    run = 0
+    for (name, cols, thtxt, var), h in zip(rows, heights):
+        p = (pts.get(var) or {}).get("pts", 0)
+        per = (pts.get(var) or {}).get("per")
+        # 컬럼 상자
+        a('<rect x="{}" y="{}" width="{}" height="{}" class="d-col"/>'
+          .format(L, y, CX - L - 34, h))
+        ty = y + 17
+        for c in (cols or ["—"]):
+            for ln in _wrapcol(c):
+                a('<text x="{}" y="{}" class="d-m">{}</text>'.format(
+                    L + 9, ty, _esc(ln)))
+                ty += 15
+        # 화살표
+        a('<path d="M{} {} H{}" class="d-ln" marker-end="url(#ah)"/>'.format(
+            CX - 30, y + h / 2, CX - 6))
+        # 룰 상자
+        a('<rect x="{}" y="{}" width="{}" height="{}" class="d-rule"/>'
+          .format(CX, y, RX - CX - 34, h))
+        a('<text x="{}" y="{}" class="d-t">{}</text>'.format(
+            CX + 10, y + 18, _esc(name)))
+        a('<text x="{}" y="{}" class="d-s">{}</text>'.format(
+            CX + 10, y + 34, _esc(thtxt)))
+        # 배점
+        a('<path d="M{} {} H{}" class="d-ln" marker-end="url(#ah)"/>'.format(
+            RX - 30, y + h / 2, RX - 6))
+        a('<rect x="{}" y="{}" width="76" height="26" class="d-out"/>'.format(
+            RX, y + h / 2 - 13))
+        a('<text x="{}" y="{}" class="d-n" text-anchor="middle">+{}{}</text>'
+          .format(RX + 38, y + h / 2 + 5, p, " × n" if per else ""))
+        run += p if not per else 0
+        a('<text x="{}" y="{}" class="d-dim">{}</text>'.format(
+            RX + 92, y + h / 2 + 5,
+            "…" if per else "누적 {}".format(run)))
+        y += h + 6
+
+    # 합 · 캡
+    y += 10
+    a('<rect x="{}" y="{}" width="{}" height="34" class="d-sum"/>'.format(
+        CX, y, 400))
+    a('<text x="{}" y="{}" class="d-t">합계 = 최대 {} + MAXCAPA {}×n</text>'
+      .format(CX + 12, y + 22, run, (pts.get("mc_pts") or {}).get("pts", "?")))
+    y += 42
+    a('<rect x="{}" y="{}" width="{}" height="38" class="d-cap"/>'.format(
+        CX, y, 400))
+    a('<text x="{}" y="{}" class="d-t">area_score = min({}, 합계)   '
+      '← {} 점에서 자른다</text>'.format(CX + 12, y + 24, cap, cap))
+    a('<text x="{}" y="{}" class="d-dim">MAXCAPA 가 컬럼 수만큼 곱해져 '
+      '한 영역이 전체를 삼키는 것을 막는다. 자르기 전 값은 '
+      '{}_score_raw 로 남는다.</text>'.format(CX, y + 56, _esc(area)))
+    a('<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" '
+      'markerWidth="7" markerHeight="7" orient="auto">'
+      '<path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/></marker></defs>')
+    a("</svg>")
+    return "".join(o)
+
+
+def svg_unified(d):
+    """8영역 + 전체 가산 → unified_risk_score."""
+    C, pts, uni, fl = d["C"], d["pts"], d["uni"], d["flow_th"]
+    cap = pts.get("_cap") or 50
+    areas = C.get("AREAS_ALL") or AREA_ORDER
+    o = []
+    a = o.append
+    a('<svg viewBox="0 0 1040 470" width="100%" role="img" '
+      'aria-label="8영역 점수와 전체 가산이 합쳐져 unified_risk_score 가 '
+      '되는 과정">')
+    a("<style>{}</style>".format(SVG_CSS))
+    a('<text x="24" y="24" class="d-h">그림 B — ALL 점수 '
+      'unified_risk_score 가 만들어지는 과정</text>')
+
+    # 8영역
+    a('<text x="24" y="52" class="d-dim">① 영역 점수 (각 0~{})</text>'.format(cap))
+    x = 24
+    for ar in areas[:8]:
+        a('<rect x="{}" y="60" width="112" height="40" class="d-box"/>'.format(x))
+        a('<text x="{}" y="78" class="d-t" text-anchor="middle">{}</text>'
+          .format(x + 56, _esc(ar)))
+        a('<text x="{}" y="93" class="d-dim" text-anchor="middle">area_score'
+          '</text>'.format(x + 56))
+        a('<path d="M{} 100 V126" class="d-ln"/>'.format(x + 56))
+        x += 120
+    a('<path d="M80 126 H{}" class="d-ln"/>'.format(24 + 7 * 120 + 56))
+    a('<path d="M520 126 V150" class="d-ln2" marker-end="url(#ah2)"/>')
+    a('<rect x="330" y="156" width="380" height="34" class="d-sum"/>')
+    a('<text x="520" y="178" class="d-t" text-anchor="middle">'
+      'layer1_total = Σ area_score  (8영역 전부)</text>')
+
+    # 가산 4개
+    a('<text x="24" y="222" class="d-dim">② 전체 관점 가산 — 영역 밖에서 '
+      '한 번 더 본다</text>')
+    adds = [
+        ("흐름 (flow)", "{}개 노드 · 지금값 ÷ 30분평균".format(
+            len(C.get("FLOW_NODES") or {})),
+         "심각 ≥{}× → +{}   위험 ≥{}× → +{}   주의 ≥{}× → +{}".format(
+             fl.get("심각", "?"), uni["flow"].get("심각", "?"),
+             fl.get("위험", "?"), uni["flow"].get("위험", "?"),
+             fl.get("주의", "?"), uni["flow"].get("주의", "?"))),
+        ("SLA", "SLA 켜진 영역 수", "× {}".format(uni["sla"] or "?")),
+        ("소터", "소터 켜진 영역 수", "× {}".format(uni["sorter"] or "?")),
+        ("MAXCAPA", "영역별 바뀐 컬럼 수", "× {}".format(uni["mc"] or "?")),
+    ]
+    x = 24
+    for name, what, how in adds:
+        w = 300 if name.startswith("흐름") else 220
+        a('<rect x="{}" y="232" width="{}" height="66" class="d-rule"/>'
+          .format(x, w))
+        a('<text x="{}" y="252" class="d-t">{}</text>'.format(x + 10, _esc(name)))
+        a('<text x="{}" y="269" class="d-s">{}</text>'.format(x + 10, _esc(what)))
+        a('<text x="{}" y="286" class="d-m">{}</text>'.format(x + 10, _esc(how)))
+        a('<path d="M{} 298 V322" class="d-ln"/>'.format(x + w / 2))
+        x += w + 14
+    a('<path d="M174 322 H{}" class="d-ln"/>'.format(24 + 300 + 14 + 220 + 110))
+    a('<path d="M520 322 V346" class="d-ln2" marker-end="url(#ah2)"/>')
+
+    a('<rect x="250" y="352" width="540" height="38" class="d-cap"/>')
+    a('<text x="520" y="376" class="d-t" text-anchor="middle">'
+      'unified_risk_score = min({}, layer1_total + 흐름 + SLA + 소터 + MAXCAPA)'
+      '</text>'.format(uni["cap"] or "?"))
+    a('<text x="520" y="412" class="d-dim" text-anchor="middle">'
+      '★SLA·소터·MAXCAPA 는 두 번 센다 — area_score 안에서 한 번(그 영역의 '
+      '문제로), 여기서 또 한 번(전체로 번질 신호로).</text>')
+    a('<text x="520" y="430" class="d-dim" text-anchor="middle">'
+      '일부러 그렇게 둔 것이라, ALL 점수를 FAB 점수 합으로 되계산하면 '
+      '맞지 않는다.</text>')
+    a('<text x="520" y="452" class="d-dim" text-anchor="middle">'
+      'ALL 은 0~{}, FAB 은 0~{} — 자가 다르다.</text>'.format(
+          uni["cap"] or "?", cap))
+    a('<defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" '
+      'markerWidth="8" markerHeight="8" orient="auto">'
+      '<path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/></marker></defs>')
+    a("</svg>")
+    return "".join(o)
+
+
+def svg_split(d):
+    """영역분리 — 자리 이동."""
+    o = []
+    a = o.append
+    # ★높이는 줄 수에서 계산한다. 손으로 300 이라고 적어 뒀더니 마지막
+    #   설명 줄이 밖으로 나가 잘렸다 (시험이 잡았다).
+    a('<svg viewBox="0 0 1040 {}" width="100%" role="img" '
+      'aria-label="영역분리 뒤 area_score 가 unified_risk_score 자리로 '
+      '옮겨지는 과정">'.format(60 + 5 * 44 + 46))
+    a("<style>{}</style>".format(SVG_CSS))
+    a('<text x="24" y="24" class="d-h">그림 C — 영역분리 뒤 자리 이동 '
+      '(M14 파일을 예로)</text>')
+    left = [("unified_risk_score", "137", "전체 점수"),
+            ("area_score", "28", "M14 점수"),
+            ("unified_risk_level", "주의", "전체 등급"),
+            ("area_level", "관심", "M14 등급"),
+            ("hot_area", "M16HUB", "전체 기준")]
+    right = [("all_score", "137", "전체 점수 (원본 보존)"),
+             ("unified_risk_score", "28", "★M14 점수가 이 자리로"),
+             ("all_level", "주의", "전체 등급 (원본 보존)"),
+             ("unified_risk_level", "관심", "★M14 등급"),
+             ("hot_area", "M14", "★자기 영역으로")]
+    a('<text x="24" y="52" class="d-dim">받은 그대로 — FAB 파일</text>')
+    a('<text x="580" y="52" class="d-dim">관제가 읽는 순간 정규화 '
+      '(jupyter_csv._fab_rows)</text>')
+    y = 60
+    for (lc, lv, ln), (rc, rv, rn) in zip(left, right):
+        star = rn.startswith("★")
+        a('<rect x="24" y="{}" width="440" height="36" class="d-col"/>'.format(y))
+        a('<text x="34" y="{}" class="d-m">{}</text>'.format(y + 16, _esc(lc)))
+        a('<text x="34" y="{}" class="d-dim">{}</text>'.format(y + 30, _esc(ln)))
+        a('<text x="452" y="{}" class="d-n" text-anchor="end">{}</text>'.format(
+            y + 23, _esc(lv)))
+        a('<path d="M474 {} H566" class="d-ln{}" marker-end="url(#ah3)"/>'
+          .format(y + 18, "2" if star else ""))
+        a('<rect x="580" y="{}" width="440" height="36" class="{}"/>'.format(
+            y, "d-out" if star else "d-col"))
+        a('<text x="590" y="{}" class="d-m">{}</text>'.format(y + 16, _esc(rc)))
+        a('<text x="590" y="{}" class="d-dim">{}</text>'.format(y + 30, _esc(rn)))
+        a('<text x="1008" y="{}" class="d-n" text-anchor="end">{}</text>'.format(
+            y + 23, _esc(rv)))
+        y += 44
+    a('<text x="24" y="{}" class="d-dim">한 자리에서 한 번만 바꾼다. '
+      '그래프·예보·기여도·리포트·정확도가 모두 unified_risk_score 와 '
+      'hot_area 를 읽으므로, 여기서 바꿔 두면 하위 모듈을 하나도 안 고치고 '
+      'FAB 화면이 자기 데이터를 본다.</text>'.format(y + 18))
+    a('<defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" '
+      'markerWidth="7" markerHeight="7" orient="auto">'
+      '<path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/></marker></defs>')
+    a("</svg>")
+    return "".join(o)
+
+
 def build():
     src_path = find_rule_src()
     src = ""
@@ -343,6 +776,9 @@ code,.mono{font-family:Consolas,"D2Coding",monospace;font-size:12px;
  border:1px solid var(--line);border-radius:8px;padding:14px 16px;white-space:pre;
  overflow-x:auto;line-height:1.65}
 .dim{color:var(--dim)}
+.fig{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+ margin:14px 0;background:#fff;overflow-x:auto}
+.fig svg{display:block;min-width:760px}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;
  background:var(--bg);border:1px solid var(--line);color:var(--dim)}
 .big{font-size:19px;font-weight:800}
@@ -505,7 +941,12 @@ def render(d):
     # ── 3. area_score ───────────────────────────────────────────────
     a("<h2>3. FAB 점수 <code>area_score</code> 가 만들어지는 과정</h2>")
     a("<p>영역 하나에 대해 <code>eval_area_rules(area, window)</code> 가 룰 "
-      "8종을 각각 판정하고, <b>켜진 룰의 배점을 더합니다.</b></p>")
+      "8종을 각각 판정하고, <b>켜진 룰의 배점을 더합니다.</b> 아래 그림이 "
+      "<b>어느 컬럼이 어느 룰로 들어가는지</b> 그대로 보여 줍니다 — "
+      "룰을 다 가진 M16HUB 를 예로 들었습니다.</p>")
+    a('<div class="fig">{}</div>'.format(svg_area(d, "M16HUB")))
+    a('<p class="dim">다른 영역은 컬럼과 임계만 다르고 구조는 같습니다 '
+      '(1-1 · 2장 표 참조). M16·M16_PKT·M16_WT 는 가진 룰이 더 적습니다.</p>')
     a(points_table(pts))
     cap = pts.get("_cap")
     a('<div class="flow">'
@@ -540,6 +981,7 @@ def render(d):
     a("<p><code>evaluate_unified()</code> 가 <b>영역 점수 합에 전체 관점의 "
       "가산을 더합니다.</b> ALL 은 영역이 아니라 <b>전체를 본 값</b>이라, "
       "FAB 점수와 자·단위가 다릅니다.</p>")
+    a('<div class="fig">{}</div>'.format(svg_unified(d)))
     a('<div class="flow">'
       "layer1_total = Σ area_score            (8영역 전부 더한다)\n"
       "flow_score   = 흐름 노드마다  심각 +{s} / 위험 +{d} / 주의 +{w}\n"
@@ -605,48 +1047,144 @@ def render(d):
                       lb=C.get("PREDICT_LOOKBACK_MIN", "?")))
 
     # ── 5. 새로 만들어지는 컬럼 ─────────────────────────────────────
-    a("<h2>5. 예측기가 새로 만드는 컬럼</h2>")
+    a("<h2>5. 예측기가 새로 만드는 컬럼 — 하나씩</h2>")
     ef = C.get("EVENT_FIELDS")
-    if isinstance(ef, list):
+    if not isinstance(ef, list):
+        a('<div class="note miss">EVENT_FIELDS 를 읽지 못했습니다.</div>')
+    else:
         a("<p><code>{{날짜}}_발동이벤트.csv</code> — 매분 1행, "
           "<b>이벤트가 없는 분도 기록</b>합니다 (없는 분을 빼면 나중에 "
-          "분모를 못 셉니다). 전체 <b>{}개</b> 컬럼.</p>".format(len(ef)))
+          "분모를 못 셉니다). 전체 <b>{}개</b> 컬럼을 묶음별로 "
+          "하나씩 적었습니다.</p>".format(len(ef)))
+        cols = explain_cols(ef, cap)
+        by = {c["col"]: c for c in cols}
+
+        def area_of(name):
+            for ar in sorted(AREA_ORDER, key=len, reverse=True):
+                if name.startswith(ar + "_") or name.endswith("_" + ar):
+                    return ar
+            return ""
+
         groups = [
-            ("식별", ["file", "datetime", "date", "time"]),
-            ("단계", ["stage", "stage_name", "prev_stage", "transition"]),
-            ("ALL 점수", ["unified_risk_score", "unified_risk_level",
-                          "hot_area", "hot_score", "affected_areas",
-                          "propagation_chain", "flow_signals",
-                          "maxcapa_signals"]),
-            ("FAB 점수", [c for c in ef if c.endswith("_score")
-                          and c != "hot_score"]),
-            ("FAB 신호", [c for c in ef if c.endswith("_signals")
-                          and not c.startswith(("flow", "maxcapa"))]),
-            ("근거 값", [c for c in ef if c.endswith(("_ra", "_rb_diff30",
-                                                     "_rd_fab", "_stb_util",
-                                                     "_rev_count", "_rev_lids"))]),
-            ("SLA·소터", [c for c in ef if c.startswith(("sla_", "sorter_"))]),
+            ("① 식별 — 언제·어디서 나온 행인가",
+             ["file", "datetime", "date", "time"], None),
+            ("② 단계 — 지금 몇 단계인가",
+             ["stage", "stage_name", "prev_stage", "transition"],
+             "단계는 S1/S2/S3 판정 결과입니다 (4-3 참조). "
+             "<code>transition</code> 은 <b>바뀐 분에만</b> 채워지므로, "
+             "'언제 올라갔나' 를 셀 때 이 컬럼만 보면 됩니다."),
+            ("③ ALL 점수와 그 근거",
+             ["unified_risk_score", "unified_risk_level", "hot_area",
+              "hot_score", "affected_areas", "propagation_chain",
+              "flow_signals", "maxcapa_signals", "reason"],
+             "<b>관제 ALL 화면이 보는 값이 <code>unified_risk_score</code></b> "
+             "입니다. <code>reason</code> 한 줄에 어느 영역의 어느 룰이 어떤 "
+             "값으로 켜졌는지가 다 들어 있어, 사람이 읽는 첫 컬럼입니다."),
+            ("④ ALL 점수 분해 — 무엇이 얼마를 보탰나",
+             ["layer1_total", "flow_score", "sla_score_total",
+              "sorter_score_total", "mc_score_total"],
+             "이 다섯을 더하면 <code>unified_risk_score</code> 가 됩니다 "
+             "(캡 전). <b>점수가 왜 그렇게 나왔는지</b> 를 따질 때 여기부터 "
+             "봅니다."),
+            ("⑤ FAB 점수 — 영역분리 뒤 area_score 가 되는 값",
+             [c for c in ef if c.endswith("_score") and c != "hot_score"],
+             "<b>관제 FAB 화면이 보는 값</b>입니다. 영역분리에서 그 FAB 의 "
+             "것만 <code>area_score</code> 로 나갑니다 (6장)."),
+            ("⑥ FAB 점수 원본 — 자르기 전",
+             [c for c in ef if c.endswith("_score_raw")],
+             "{} 점 캡에 걸렸는지 확인용입니다. "
+             "<code>_score_raw</code> 가 <code>_score</code> 보다 크면 "
+             "잘린 것입니다.".format(cap)),
+            ("⑦ 켜진 룰 이름",
+             [c for c in ef if c.endswith("_signals")
+              and not c.startswith(("flow", "maxcapa"))],
+             "'+' 로 이어 붙입니다. 점수만 보면 <b>왜</b> 가 없으므로 "
+             "이 컬럼을 같이 봅니다."),
+            ("⑧ 룰별 분해 점수 (5영역 × 9룰)",
+             [c for c in ef if "_pts_" in c],
+             "룰 하나가 준 점수를 따로 남깁니다. <b>어떤 룰 조합이 실제 "
+             "사건과 이어졌나</b> 를 뒤에서 분석하려고 둔 자리입니다 "
+             "— 성능을 룰 단위로 볼 수 있습니다."),
+            ("⑨ 룰이 본 실측값 — R-A′",
+             [c for c in ef if c.endswith("_ra") or c.endswith("_ra_count")],
+             "임계와 나란히 놓고 봐야 '왜 켜졌나/왜 안 켜졌나' 를 말할 수 "
+             "있습니다."),
+            ("⑩ 룰이 본 실측값 — R-B",
+             [c for c in ef if "_rb_diff" in c], None),
+            ("⑪ 룰이 본 실측값 — R-C′ · R-D",
+             [c for c in ef if c in ("M16HUB_rd_fab", "M16HUB_stb_util",
+                                     "M16HUB_rev_count", "M16HUB_rev_lids",
+                                     "M16HUB_rc_trend", "M14_cnv_skew")
+              or c.endswith("_rd_oht")],
+             "R-C′ 는 <b>합은 줄었는데 개별은 늘어난</b> 경우를 잡습니다 — "
+             "그래서 <code>rc_trend</code>(합 변화)와 "
+             "<code>rev_count</code>(늘어난 호기 수)를 같이 남깁니다."),
+            ("⑫ 룰이 본 실측값 — SLA · 소터",
+             [c for c in ef if c.startswith(("sla_", "sorter_"))
+              or c.endswith(("_sla_cnt", "_sorter_fail"))],
+             "SLA 는 <b>비율</b>과 <b>건수</b> 둘 다 봅니다. 비율이 낮아도 "
+             "건수가 10분 만에 20건 이상 늘면 켜집니다."),
         ]
         used = set()
-        a("<table><tr><th>묶음</th><th>컬럼</th></tr>")
-        for name, cols in groups:
-            cols = [c for c in cols if c in ef and c not in used]
-            if not cols:
+        for title, names, note in groups:
+            names = [n for n in names if n in by and n not in used]
+            if not names:
                 continue
-            used.update(cols)
-            a("<tr><td><b>{}</b></td><td>{}</td></tr>".format(
-                e(name), " · ".join("<code>{}</code>".format(e(c))
-                                    for c in cols)))
+            used.update(names)
+            a("<h3>{} <span class=tag>{}개</span></h3>".format(
+                e(title), len(names)))
+            if note:
+                a('<p class="dim">{}</p>'.format(note))
+            # ★같은 꼴이 반복되면 묶는다. 영역만 다른 설명을 8번 되풀이하면
+            #   사람이 안 읽는다 — 꼴 하나와 '해당 영역' 목록이 낫다.
+            shapes = {(area_of(n) and n.replace(area_of(n), "{영역}")) or n
+                      for n in names}
+            if len(shapes) < len(names):
+                a('<table><tr><th>컬럼 꼴</th><th>뜻</th><th>예</th></tr>')
+                seen_shape = set()
+                for n in names:
+                    ar = area_of(n)
+                    shape = n.replace(ar, "{영역}") if ar else n
+                    if shape in seen_shape:
+                        continue
+                    seen_shape.add(shape)
+                    c = by[n]
+                    a("<tr><td><code>{}</code></td><td><b>{}</b><br>"
+                      '<span class="dim">{}</span></td>'
+                      '<td class="mono">{}</td></tr>'.format(
+                          e(shape),
+                          e(c["title"].replace(ar, "{영역}") if ar else c["title"]),
+                          c["desc"], e(c["ex"])))
+                a("</table>")
+                a('<p class="dim">해당 영역: {}</p>'.format(
+                    " · ".join("<code>{}</code>".format(e(x)) for x in
+                               sorted({area_of(n) for n in names if area_of(n)},
+                                      key=AREA_ORDER.index))))
+            else:
+                a('<table><tr><th>컬럼</th><th>뜻</th><th>설명</th>'
+                  '<th>예</th></tr>')
+                for n in names:
+                    c = by[n]
+                    a("<tr><td><code>{}</code></td><td><b>{}</b></td>"
+                      "<td>{}</td><td class=mono>{}</td></tr>".format(
+                          e(n), e(c["title"]), c["desc"], e(c["ex"])))
+                a("</table>")
         rest = [c for c in ef if c not in used]
         if rest:
-            a("<tr><td><b>그 밖</b></td><td>{}</td></tr>".format(
-                " · ".join("<code>{}</code>".format(e(c)) for c in rest)))
-        a("</table>")
-        a('<div class="note"><b>{FAB}_score 가 그 FAB 의 점수입니다.</b> '
-          '통합 파일에는 8영역 점수가 나란히 들어 있고, ALL 점수는 '
-          '<code>unified_risk_score</code> 입니다.</div>')
-    else:
-        a('<div class="note miss">EVENT_FIELDS 를 읽지 못했습니다.</div>')
+            a("<h3>그 밖 <span class=tag>{}개</span></h3>".format(len(rest)))
+            a("<table><tr><th>컬럼</th><th>뜻</th></tr>")
+            for n in rest:
+                c = by[n]
+                a("<tr><td><code>{}</code></td><td>{}</td></tr>".format(
+                    e(n), e(c["title"]) or '<span class=dim>설명 없음</span>'))
+            a("</table>")
+        miss = [c["col"] for c in cols if not c["ok"]]
+        if miss:
+            a('<div class="note miss"><b>설명이 없는 컬럼 {}개</b>: {}<br>'
+              '컬럼흐름_문서.py 의 <code>COL_EXACT</code>/<code>COL_PAT</code> '
+              '에 적어 주십시오.</div>'.format(
+                  len(miss), " · ".join("<code>{}</code>".format(e(m))
+                                        for m in miss[:20])))
 
     # ── 6. 영역분리 ─────────────────────────────────────────────────
     a("<h2>6. 영역분리 — FAB 파일에서 <code>area_score</code> 가 되는 과정</h2>")
@@ -665,6 +1203,7 @@ def render(d):
       "   area_score         = M14 영역 점수     ← 이 FAB 의 값\n"
       "   area_level         = M14 영역 등급"
       "</div>")
+    a('<div class="fig">{}</div>'.format(svg_split(d)))
     a("<h3>6-1. 관제가 받는 순간 자리를 바꾼다</h3>")
     a("<p>FAB 파일에는 <b>전체 점수와 그 FAB 점수가 같이</b> 들어 있습니다. "
       "관제가 그대로 읽으면 M14 화면이 <b>전체 점수로</b> 등급을 매기고 "

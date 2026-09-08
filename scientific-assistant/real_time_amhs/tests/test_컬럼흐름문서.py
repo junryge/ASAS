@@ -148,6 +148,97 @@ class 예측기를_돌리지_않는다(unittest.TestCase):
         self.assertIn("ast.parse", src)
 
 
+class 컬럼마다_설명이_있다(unittest.TestCase):
+    """131개를 손으로 적으면 컬럼이 늘 때 빠진다. 꼴(패턴)로 적고, 빠진 것이
+    생기면 여기서 잡는다 — 고객 문서에 빈 칸이 나가면 안 된다."""
+
+    def test_모든_출력_컬럼에_설명이_있다(self):
+        m = _mod()
+        d = m.build()
+        if not d["ok"]:
+            self.skipTest("예측기 소스를 못 찾았다")
+        ef = d["C"].get("EVENT_FIELDS") or []
+        self.assertGreater(len(ef), 100, "출력 컬럼을 못 읽었다")
+        miss = [c["col"] for c in m.explain_cols(ef, 50) if not c["ok"]]
+        self.assertEqual(miss, [], "설명 없는 컬럼: {}".format(miss[:10]))
+
+    def test_영역_이름만_갈아_끼운다(self):
+        m = _mod()
+        got = {c["col"]: c for c in m.explain_cols(
+            ["M14_score", "M16A_pts_RB_fast", "sla_M16B", "M14B_ra_count"], 50)}
+        self.assertIn("M14", got["M14_score"]["title"])
+        self.assertIn("R-B 반입급증(10분)", got["M16A_pts_RB_fast"]["title"])
+        self.assertIn("M16B", got["sla_M16B"]["title"])
+        self.assertIn("M14B", got["M14B_ra_count"]["title"])
+
+    def test_모르는_컬럼은_모른다고_한다(self):
+        """설명을 지어내면 고객이 그걸 근거로 쓴다."""
+        m = _mod()
+        got = m.explain_cols(["듣도보도못한컬럼"], 50)[0]
+        self.assertFalse(got["ok"])
+        self.assertEqual(got["title"], "")
+
+
+class 그림이_있다(unittest.TestCase):
+    """표만 있으면 안 읽는다. 그림도 **소스에서 읽은 값**으로 그려서
+    임계가 바뀌면 그림도 같이 바뀌게 둔다 — 사람은 그림을 먼저 믿는다."""
+
+    def setUp(self):
+        self.m = _mod()
+        self.d = self.m.build()
+        if not self.d["ok"]:
+            self.skipTest("예측기 소스를 못 찾았다")
+
+    def test_세_장이_다_들어간다(self):
+        h = self.m.render(self.d)
+        for t in ("그림 A", "그림 B", "그림 C"):
+            self.assertIn(t, h, "빠졌다: " + t)
+        self.assertGreaterEqual(h.count("<svg"), 3)
+
+    def test_그림_숫자가_소스에서_온다(self):
+        """그림에 손으로 적은 숫자가 있으면 임계가 바뀔 때 그림만 옛날 값이
+        된다. 표보다 더 나쁘다."""
+        g = self.m.svg_area(self.d, "M16HUB")
+        ra = (self.d["C"].get("TH_RA") or {}).get("M16HUB")
+        self.assertIn(str(ra), g, "R-A′ 임계가 그림에 없다")
+        self.assertIn("min({}".format(self.d["pts"]["_cap"]), g)
+        u = self.m.svg_unified(self.d)
+        self.assertIn("min({}".format(self.d["uni"]["cap"]), u)
+        self.assertIn(str(self.d["uni"]["flow"]["심각"]), u)
+
+    def test_계산식_임계도_채운다(self):
+        """TH_RB_10 은 dict 컴프리헨션이라 ast 로 못 읽는다. 비워 두면
+        그림에 '—' 가 찍혀 '임계가 없다' 로 보인다."""
+        C = self.d["C"]
+        self.assertIsInstance(C.get("TH_RB_10"), dict)
+        for k, v in (C.get("TH_RB_30") or {}).items():
+            self.assertGreaterEqual(C["TH_RB_10"].get(k, 0), 10)
+        g = self.m.svg_area(self.d, "M16HUB")
+        # 자동으로 만든 값이라는 것을 그림에 밝혀야 한다
+        self.assertIn("30분 임계의", g)
+        th10 = C["TH_RB_10"]["M16HUB"]
+        self.assertIn("+{} 이상".format(th10), g)
+
+    def test_그림이_잘리지_않는다(self):
+        """viewBox 높이가 내용보다 작으면 아래가 잘려 나간다."""
+        import re as _re
+        for g in (self.m.svg_area(self.d, "M16HUB"),
+                  self.m.svg_unified(self.d), self.m.svg_split(self.d)):
+            vb = _re.search(r'viewBox="0 0 \d+ (\d+)"', g)
+            self.assertTrue(vb)
+            H = int(vb.group(1))
+            ys = [float(y) for y in _re.findall(r'\sy="([\d.]+)"', g)]
+            self.assertLessEqual(max(ys), H - 8,
+                                 "내용이 viewBox({}) 밖으로 나간다".format(H))
+
+    def test_바깥_그림_라이브러리를_안_쓴다(self):
+        """사내망에는 CDN 이 없고, 이 문서는 파일 하나로 열려야 한다."""
+        src = io.open(DOC, encoding="utf-8").read()
+        for bad in ("http://", "https://", "<script"):
+            self.assertNotIn(bad, self.m.render(self.d),
+                             "문서가 바깥을 본다: " + bad)
+
+
 class 문서가_나온다(unittest.TestCase):
 
     def test_실제_소스로_만들어진다(self):
