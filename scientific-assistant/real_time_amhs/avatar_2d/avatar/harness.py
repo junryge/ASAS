@@ -177,3 +177,61 @@ def mentions_any(words, name, why, critical=True):
         ok = any(w in str(art or "") for w in words)
         return ok, why
     return Check(name, fn, critical)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 재료를 줬는데 "모른다" 고 답하는 것
+#
+# ★실제로 겪었다. 위키에 리센느를 올려 두고 MCP 가 그 글을 프롬프트에
+#   넣었는데도 서윤이 "지금은 확인이 안 돼요" 라고 답했다. 지금까지 이걸
+#   막는 것은 프롬프트 규칙뿐이었다 — 그건 **부탁**이지 하네스가 아니다.
+# ★거짓 실패를 조심한다. 검색이 엉뚱한 글을 물어 왔을 수도 있다. 그래서
+#   **질문의 낱말이 재료 안에 실제로 있을 때만** 검사한다. 없으면 재료에
+#   답이 없는 것이고, 그때 "모른다" 는 맞는 답이다.
+# ─────────────────────────────────────────────────────────────────────
+DONT_KNOW = ("모르", "모릅", "확인이 안", "확인할 수 없", "확인이 불가",
+             "찾을 수 없", "찾지 못", "정보가 없", "자료가 없", "알 수 없")
+
+
+def question_keys(question, material, min_len=2, max_keys=8):
+    """질문 낱말 중 **재료 안에 실제로 있는** 것만. 없으면 빈 목록."""
+    mat = str(material or "")
+    if not mat.strip():
+        return []
+    out, seen = [], set()
+    for w in re.split(r"[\s,·]+", str(question or "")):
+        w = re.sub(r"[^0-9A-Za-z가-힣_.~]", "", w)
+        if len(w) < min_len or w in seen:
+            continue
+        # 조사가 붙어 있으면 떼고도 본다 ("리센느는" → "리센느")
+        cands = [w] + ([w[:-1]] if len(w) > min_len else [])
+        for c in cands:
+            if len(c) >= min_len and c in mat:
+                seen.add(w)
+                out.append(c)
+                break
+        if len(out) >= max_keys:
+            break
+    return out
+
+
+def used_material(material, question, deny=DONT_KNOW):
+    """재료에 답이 있는데 '모른다' 고 하면 실패.
+
+    재료가 없거나, 질문 낱말이 재료에 없으면 **검사하지 않는다**
+    (통과) — 그때 '모른다' 는 맞는 답이다.
+    """
+    keys = question_keys(question, material)
+
+    def fn(art, _m):
+        if not keys:
+            return True, ""
+        t = str(art or "")
+        if not any(d in t for d in deny):
+            return True, ""
+        return False, ("'{}' 에 대한 내용이 [외부 도구 — MCP] 블록에 "
+                       "있습니다. 그 블록을 읽고 그 내용으로 답하세요. "
+                       "블록을 안 읽고 모른다고 하면 안 됩니다."
+                       .format(" · ".join(keys[:3])))
+
+    return Check("재료를 읽었나", fn, critical=True)

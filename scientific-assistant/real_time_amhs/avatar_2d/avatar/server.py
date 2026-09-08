@@ -873,7 +873,7 @@ class Handler(SimpleHTTPRequestHandler):
             #   기간·행 수·분포·구간이 답에 있어야 한다. 없으면 그 지적을 붙여
             #   한 번 더 시킨다 (검사는 결정적 규칙 — LLM 을 또 부르지 않는다).
             reply = self._analysis_loop(reply, aname, text, msgs, model, temp,
-                                        ev=ev)
+                                        ev=ev, mcp=mcp)
             reply = self._guard(reply, ev, data_q=llm.is_data_question(text),
                                 mcp_numbers=sentinel.numbers_of(mcp) if mcp
                                 else None)
@@ -913,7 +913,7 @@ class Handler(SimpleHTTPRequestHandler):
                     #   한 번도 안 돈다 — 실제로 그랬다. final 은 화면의
                     #   최종본이니 여기서 루프·가드를 같은 순서로 태운다.
                     payload = self._analysis_loop(payload, aname, text, msgs,
-                                                  model, temp, ev=ev)
+                                                  model, temp, ev=ev, mcp=mcp)
                     payload = self._guard(
                         payload, ev, data_q=llm.is_data_question(text),
                         mcp_numbers=sentinel.numbers_of(mcp) if mcp else None)
@@ -1006,6 +1006,24 @@ class Handler(SimpleHTTPRequestHandler):
 
     ANALYSIS_ASK = re.compile(r"분석|요약|어때|살펴|봐\s*줘|정리|추이|현황")
 
+    def _material_checks(self, mcp, question, ev):
+        """재료를 줬으면 그 재료를 읽었나 — 분석 질문이 아니어도 본다.
+
+        ★MCP 로 재료를 줬는데 "모른다" 고 답하는 것 — 실제로 겪었다.
+        위키에 올려 둔 글이 프롬프트에 들어갔는데도 "확인이 안 돼요" 라고
+        했다. 지금까지 이걸 막는 것은 프롬프트 규칙뿐이었다 — 그건 부탁이지
+        검사가 아니다.
+
+        단, **관제가 죽은 데이터 질문**에서 "확인이 안 돼요" 는 맞는 답이다.
+        그건 재료를 안 읽은 게 아니라 볼 재료가 없는 것 — 여기서 벌주면
+        옳은 답을 놓고 LLM 을 한 번 더 부르게 된다.
+        """
+        if not mcp:
+            return []
+        if llm.is_data_question(question) and not (ev or {}).get("ok"):
+            return []
+        return [harness.used_material(mcp, question)]
+
     def _analysis_checks(self, aname, ev):
         """이 답에 무엇이 들어 있어야 하나 — 재료에 따라 다르다.
 
@@ -1013,10 +1031,11 @@ class Handler(SimpleHTTPRequestHandler):
         있으면 '언제 · 몇 점 · 무슨 등급' 을 요구한다. 재료가 아예 없으면
         검사할 것도 없다 (지어내라고 다그치는 꼴이 된다).
         """
+        base = []
         if aname:
             up = self._upload_of(aname)
             if up is not None and (up.get("rows") or []):
-                return [
+                return base + [
                     harness.mentions_any(
                         ["기간", "~", "부터"], "기간",
                         "자료의 **기간**(시작~끝)을 첫머리에 말해 주세요."),
@@ -1031,11 +1050,11 @@ class Handler(SimpleHTTPRequestHandler):
                         ["최고", "최대", "peak", "가장"], "최고점",
                         "최고점과 그 시각을 말해 주세요."),
                 ]
-            return []
+            return base
         # 첨부 없이 "지금 어때?" — 근거가 살아 있을 때만 검사한다
         if not (ev or {}).get("ok") or not (ev or {}).get("text"):
-            return []
-        return [
+            return base
+        return base + [
             harness.mentions_any(
                 [":"], "데이터 시각",
                 "몇 시 몇 분 데이터인지 먼저 말해 주세요."),
@@ -1047,7 +1066,8 @@ class Handler(SimpleHTTPRequestHandler):
                 "점수를 숫자로 말해 주세요."),
         ]
 
-    def _analysis_loop(self, reply, aname, question, msgs, model, temp, ev=None):
+    def _analysis_loop(self, reply, aname, question, msgs, model, temp,
+                       ev=None, mcp=""):
         """분석 답이 부실하면 이유를 붙여 한 번 더 — harness.run_loop.
 
         스트리밍·비스트리밍 **양쪽**에서 부른다. 검사는 결정적 규칙이라
@@ -1055,9 +1075,16 @@ class Handler(SimpleHTTPRequestHandler):
         """
         if not isinstance(reply, dict):
             return reply
-        if not self.ANALYSIS_ASK.search(str(question or "")):
-            return reply
-        checks = self._analysis_checks(aname, ev)
+        # ★검사는 두 종류고 문지기도 둘이다.
+        #   ㉠ 재료를 읽었나 — MCP 가 글을 줬으면 분석 질문이 아니어도 본다.
+        #      "리센느 누구야?" 는 분석이 아니지만, 재료에 있는데 모른다고
+        #      하면 그건 실패다. 통과하면 LLM 을 다시 안 부르니 공짜다.
+        #   ㉡ 분석 요건(기간·행수·등급·최고점) — 예전처럼 **분석을 물었을
+        #      때만.** 첨부를 열어 둔 채 "고마워" 라고 한 것까지 다그치면
+        #      잡담마다 LLM 을 한 번 더 부르게 된다.
+        checks = self._material_checks(mcp, question, ev)
+        if self.ANALYSIS_ASK.search(str(question or "")):
+            checks = checks + self._analysis_checks(aname, ev)
         if not checks:
             return reply
         tried = [reply]

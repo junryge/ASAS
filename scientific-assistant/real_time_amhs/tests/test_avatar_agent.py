@@ -3407,6 +3407,46 @@ class 루프가_실제로_도는가(_Sentinel):
         self._ask("고마워", gw)
         self.assertEqual(gw.calls, 0)
 
+    # ── 재료를 읽었나 ────────────────────────────────────────────────
+    MCP = "리센느는 아르카디아의 리더예요. 세 번째 원정대를 이끕니다."
+
+    def _ask_mcp(self, text, gw, mcp):
+        """MCP 가 글을 줬을 때의 스트리밍 경로 — 브라우저가 쓰는 그 길."""
+        self.asrv.App.gateway = gw
+        h = self._h()
+        h._mcp_text = lambda *a, **k: mcp
+        h._api_chat({"text": text, "stream": True})
+        return self._final(h)
+
+    def test_재료에_있는데_모른다고_하면_다시_시킨다(self):
+        """★실제로 겪은 것 — 위키 글이 프롬프트에 들어갔는데 "확인이 안
+        돼요" 라고 했다. 분석 질문이 아니라 예전 문지기는 못 잡았다."""
+        poor = dict(self.POOR, text="지금은 확인이 안 돼요.")
+        good = dict(self.POOR, text="리센느는 아르카디아의 리더예요.")
+        gw = self._GW(poor, good)
+        final = self._ask_mcp("리센느 누구야?", gw, self.MCP)
+        self.assertEqual(gw.calls, 1, "재료를 안 읽었는데 그냥 나갔다")
+        self.assertIn("아르카디아", final["text"])
+
+    def test_재료를_읽었으면_다시_안_부른다(self):
+        gw = self._GW(dict(self.POOR, text="리센느는 아르카디아 리더예요."),
+                      self.GOOD)
+        self._ask_mcp("리센느 누구야?", gw, self.MCP)
+        self.assertEqual(gw.calls, 0)
+
+    def test_재료에_없으면_모른다고_해도_된다(self):
+        """이게 무너지면 '모르면 모른다' 가 깨진다 — 지어내게 된다."""
+        gw = self._GW(dict(self.POOR, text="지금은 확인이 안 돼요."),
+                      self.GOOD)
+        self._ask_mcp("슬로아 누구야?", gw, self.MCP)
+        self.assertEqual(gw.calls, 0)
+
+    def test_MCP_가_비면_검사도_없다(self):
+        gw = self._GW(dict(self.POOR, text="지금은 확인이 안 돼요."),
+                      self.GOOD)
+        self._ask_mcp("리센느 누구야?", gw, "")
+        self.assertEqual(gw.calls, 0)
+
     def test_고쳐도_미달이면_첫_답을_쓴다(self):
         """두 번째가 더 나빠질 수도 있다 — 통과했을 때만 바꾼다."""
         gw = self._GW(self.POOR, {"text": "여전히 몰라요", "emotion": "shy",

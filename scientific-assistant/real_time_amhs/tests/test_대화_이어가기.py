@@ -291,5 +291,107 @@ class 숫자_하네스(unittest.TestCase):
         self.assertIn("self._guard(", src[i:i + 1500], "스트리밍에 가드가 없다")
 
 
+class 재료를_읽었나(unittest.TestCase):
+    """MCP 가 답을 줬는데 "모른다" 고 하면 그건 실패다.
+
+    실제로 겪은 것 — 위키에 올려 둔 글이 프롬프트에 들어갔는데도
+    "지금은 확인이 안 돼요" 라고 답했다. 지금까지 이걸 막는 것은 프롬프트
+    규칙뿐이었다. 규칙은 부탁이지 검사가 아니다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from avatar import harness
+        cls.h = harness
+
+    def _run(self, mcp, question, answer):
+        c = self.h.used_material(mcp, question)
+        return c.fn(answer, "")
+
+    # ── 열쇠 뽑기 ────────────────────────────────────────────────
+    def test_재료에_있는_낱말만_열쇠다(self):
+        ks = self.h.question_keys("리센느 누구야?", "리센느는 아르카디아 리더")
+        self.assertIn("리센느", ks)
+
+    def test_재료에_없는_낱말은_열쇠가_아니다(self):
+        self.assertEqual(
+            self.h.question_keys("슬로아 누구야?", "리센느는 아르카디아 리더"),
+            [])
+
+    def test_조사가_붙어도_찾는다(self):
+        """'리센느는' 으로 물어도 재료의 '리센느' 를 찾아야 한다."""
+        ks = self.h.question_keys("리센느는 누구지", "아르카디아의 리더는 리센느.")
+        self.assertIn("리센느", ks)
+
+    def test_재료가_비면_열쇠도_없다(self):
+        self.assertEqual(self.h.question_keys("리센느 누구야?", ""), [])
+
+    # ── 검사 ────────────────────────────────────────────────────
+    def test_재료에_있는데_모른다면_실패(self):
+        ok, why = self._run("리센느는 아르카디아의 리더예요.",
+                            "리센느 누구야?", "지금은 확인이 안 돼요.")
+        self.assertFalse(ok)
+        self.assertIn("리센느", why)
+
+    def test_재료를_읽고_답하면_통과(self):
+        ok, _ = self._run("리센느는 아르카디아의 리더예요.",
+                          "리센느 누구야?", "리센느는 아르카디아의 리더예요.")
+        self.assertTrue(ok)
+
+    def test_재료에_없으면_모른다고_해도_된다(self):
+        """이게 무너지면 '모르면 모른다' 가 깨진다 — 지어내게 된다."""
+        ok, _ = self._run("리센느는 아르카디아의 리더예요.",
+                          "슬로아 누구야?", "지금은 확인이 안 돼요.")
+        self.assertTrue(ok)
+
+    def test_재료가_아예_없으면_검사_안_한다(self):
+        ok, _ = self._run("", "리센느 누구야?", "지금은 확인이 안 돼요.")
+        self.assertTrue(ok)
+
+
+class 재료_검사가_실제로_걸리나(unittest.TestCase):
+    """붙여 놓기만 하고 안 부르면 없는 것과 같다 — 실제로 그랬다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = open(
+            os.path.join(util.BASE, "avatar_2d", "avatar", "server.py"),
+            encoding="utf-8").read()
+
+    def test_두_경로에_다_재료를_넘긴다(self):
+        """스트리밍이 평소 경로다. 한쪽만 넘기면 브라우저에선 안 돈다."""
+        self.assertEqual(self.src.count("mcp=mcp"), 2,
+                         "_analysis_loop 에 재료를 넘기는 자리가 둘이 아니다")
+
+    def test_스트리밍_쪽에도_넘긴다(self):
+        i = self.src.index("SSE : 파싱된 이벤트")
+        self.assertIn("mcp=mcp", self.src[i:i + 1500],
+                      "스트리밍에서 재료를 안 넘긴다")
+
+    def test_재료_검사는_분석_질문이_아니어도_돈다(self):
+        """"리센느 누구야?" 는 분석이 아니다 — 그래도 재료는 읽어야 한다."""
+        i = self.src.index("def _analysis_loop")
+        seg = self.src[i:i + 1500]
+        self.assertIn("self._material_checks(mcp, question, ev)", seg)
+        # 분석 요건은 예전처럼 '분석을 물었을 때만'
+        j = seg.index("_material_checks")
+        self.assertIn("ANALYSIS_ASK.search", seg[j:],
+                      "분석 요건이 잡담에도 걸린다")
+
+    def test_잡담에는_분석_요건을_안_건다(self):
+        """첨부를 열어 둔 채 "고마워" 까지 다그치면 잡담마다 LLM 을 또 부른다."""
+        i = self.src.index("def _analysis_loop")
+        seg = self.src[i:i + 1500]
+        j = seg.index("ANALYSIS_ASK.search")
+        self.assertIn("self._analysis_checks(aname, ev)", seg[j:j + 200])
+
+    def test_관제가_죽으면_모른다고_해도_안_걸린다(self):
+        """관제 down 인 데이터 질문에서 '확인이 안 돼요' 는 맞는 답이다."""
+        i = self.src.index("def _material_checks")
+        seg = self.src[i:self.src.index("def _analysis_checks", i)]
+        self.assertIn("is_data_question(question)", seg)
+        self.assertIn("return []", seg)
+
+
 if __name__ == "__main__":
     unittest.main()
