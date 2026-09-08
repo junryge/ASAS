@@ -29,8 +29,9 @@
 #   python 성능평가.py --event .\predict_tobe --csv 성능평가
 #   python 성능평가.py --event .\predict_tobe --days 30 --out 결과.txt
 #
-# --csv 를 주면 파일 두 개가 나온다
+# --csv 를 주면 파일 세 개가 나온다
 #   {접두사}_요약.csv    날짜 × 대상(ALL·FAB5) × 사건/경보/Precision/Recall/F1   ← PPT 용
+#   {접두사}_사건목록.csv 사건 하나마다 시작·종료 시각, 지속, 첫 경보 시각, 선행시간 ← 시간 분석용
 #   {접두사}_분단위.csv  분마다 unified_risk_score · area_score · 등급 · 경보 · 실제정체 ← 검토용
 #
 # 운영 등급 컷 (2026-09 확인)
@@ -59,6 +60,7 @@ from datetime import datetime, timedelta
 
 csv.field_size_limit(10 ** 7)
 
+WEEKDAY = ['월', '화', '수', '목', '금', '토', '일']
 EVENT_KEY = '발동이벤트'
 AREAS = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B']
 TH_RA_DEFAULT = {'M16HUB': 9.0, 'M14': 3.3, 'M14B': 5.0, 'M16A': 3.2, 'M16B': 3.5}
@@ -330,6 +332,7 @@ def main():
 
     summary = []          # 요약 CSV 행
     detail = []           # 분단위 CSV 행
+    events = []           # 사건목록 CSV 행
     tot = defaultdict(lambda: [0, 0, 0, 0])   # 대상 → [사건, 경보, 적중경보, 적중사건]
 
     for d in sorted(by_date):
@@ -367,19 +370,43 @@ def main():
         all_alarm = [v is not None and v >= a.cut for v in uni]
 
         # 지표
-        def add(name, real, alarm, cut):
+        def add(name, real, alarm, cut, score=None):
             nR, nA, tpA, tpR, kept = counts(real, alarm, a.gap, a.mindur, a.lead)
+            # ── 사건 하나마다 시각을 남긴다 (시간대 분석용)
+            for k, (s0, e0) in enumerate(merge(episodes(real), a.gap), 1):
+                first = None
+                for m in range(max(0, s0 - a.lead), e0 + 1):
+                    if kept[m]:
+                        first = m
+                        break
+                peak = None
+                if score:
+                    vals = [v for v in score[s0:e0 + 1] if v is not None]
+                    peak = max(vals) if vals else None
+                ft = (base + timedelta(minutes=first)) if first is not None else None
+                events.append({
+                    '날짜': str(d), '요일': WEEKDAY[d.weekday()], '대상': name,
+                    '사건번호': k,
+                    '시작시각': (base + timedelta(minutes=s0)).strftime('%H:%M'),
+                    '종료시각': (base + timedelta(minutes=e0)).strftime('%H:%M'),
+                    '시작시': (base + timedelta(minutes=s0)).hour,
+                    '지속분': e0 - s0 + 1,
+                    '최고점수': '' if peak is None else peak,
+                    '경보': 1 if first is not None else 0,
+                    '첫경보시각': ft.strftime('%H:%M') if ft else '',
+                    '선행분': (s0 - first) if first is not None else '',
+                })
             p, r, f1 = prf(nR, nA, tpA, tpR)
             t = tot[name]
             t[0] += nR; t[1] += nA; t[2] += tpA; t[3] += tpR
-            summary.append(dict(날짜=str(d), 대상=name, 경보컷=f'{cut:g}',
+            summary.append(dict(날짜=str(d), 요일=WEEKDAY[d.weekday()], 대상=name, 경보컷=f'{cut:g}',
                                 실제사건=nR, 경보=nA, 적중경보=tpA, 적중사건=tpR,
                                 Precision=round(p, 3), Recall=round(r, 3), F1=round(f1, 3),
                                 실제정체_분=sum(real), 경보_분=sum(kept)))
             return kept
 
-        all_kept = add('ALL', all_real, all_alarm, a.cut)
-        fab_kept = {x: add(x, area_real[x], area_alarm[x], fabcut[x]) for x in AREAS}
+        all_kept = add('ALL', all_real, all_alarm, a.cut, uni)
+        fab_kept = {x: add(x, area_real[x], area_alarm[x], fabcut[x], area_sc[x]) for x in AREAS}
 
         # 분단위 CSV
         for m in range(n):
@@ -387,7 +414,8 @@ def main():
                 continue
             t = base + timedelta(minutes=m)
             row = {'datetime': t.strftime('%Y-%m-%d %H:%M'),
-                   'date': str(d), 'time': t.strftime('%H:%M'),
+                   'date': str(d), '요일': WEEKDAY[d.weekday()],
+                   'time': t.strftime('%H:%M'), '시': t.hour,
                    'unified_risk_score': '' if uni[m] is None else uni[m],
                    'ALL_level': level_of(uni[m], ALL_BANDS),
                    'ALL_경보': 1 if all_kept[m] else 0,
@@ -423,7 +451,7 @@ def main():
         p, r, f1 = prf(nR, nA, tpA, tpR)
         cut = a.cut if name == 'ALL' else fabcut[name]
         o(f'{name:<9}{cut:>4.0f}{nR:>6}{nA:>6}{p:>11.2f}{r:>9.2f}{f1:>7.2f}')
-        summary.append(dict(날짜='전체', 대상=name, 경보컷=f'{cut:g}',
+        summary.append(dict(날짜='전체', 요일='', 대상=name, 경보컷=f'{cut:g}',
                             실제사건=nR, 경보=nA, 적중경보=tpA, 적중사건=tpR,
                             Precision=round(p, 3), Recall=round(r, 3), F1=round(f1, 3),
                             실제정체_분='', 경보_분=''))
@@ -467,6 +495,27 @@ def main():
         o('')
         o(f'  ※ 시각 중복 {dup_total}행은 제거하고 계산했습니다.')
 
+    # ── 3-b) 시간대 분포
+    if events:
+        o('')
+        o('─' * 74)
+        o('[4] 사건이 언제 나는가 — 시작 시각 분포 (ALL 기준)')
+        o('─' * 74)
+        hh = [0] * 24
+        for e in events:
+            if e['대상'] == 'ALL':
+                hh[e['시작시']] += 1
+        mx = max(hh) or 1
+        for blk in range(0, 24, 12):
+            o('  ' + ' '.join(f'{h:>2}' for h in range(blk, blk + 12)) + '   시')
+            o('  ' + ' '.join(('■' * min(2, hh[h]) or ' ·').rjust(2) for h in range(blk, blk + 12)))
+            o('  ' + ' '.join(f'{hh[h]:>2}' for h in range(blk, blk + 12)) + '   건')
+            o('')
+        lead = [e['선행분'] for e in events if e['대상'] == 'ALL' and e['경보'] == 1]
+        if lead:
+            o(f'  경보가 붙은 사건 {len(lead)}건 · 평균 선행 {sum(lead)/len(lead):.1f}분 '
+              f'· 최대 {max(lead)}분  (0 = 사건 시작과 동시)')
+
     # ── 4) CSV 저장
     if a.csv:
         sp = a.csv + '_요약.csv'
@@ -474,6 +523,13 @@ def main():
             w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
             w.writeheader()
             w.writerows(summary)
+        ep = a.csv + '_사건목록.csv'
+        if events:
+            with open(ep, 'w', newline='', encoding='utf-8-sig') as f:
+                w = csv.DictWriter(f, fieldnames=list(events[0].keys()))
+                w.writeheader()
+                w.writerows(events)
+            o(f'  📄 {os.path.abspath(ep)}   ({len(events)}행 — 시각·선행시간)')
         dp = a.csv + '_분단위.csv'
         with open(dp, 'w', newline='', encoding='utf-8-sig') as f:
             w = csv.DictWriter(f, fieldnames=list(detail[0].keys()))
