@@ -32,7 +32,7 @@
 # --csv 를 주면 파일 네 개가 나온다
 #   {접두사}_요약.csv    날짜 × 대상(ALL·FAB5) × 사건/경보/Precision/Recall/F1   ← PPT 용
 #   {접두사}_사건목록.csv 사건 하나마다 시작·종료 시각, 지속, 첫 경보 시각, 선행시간 ← 시간 분석용
-#   {접두사}_시간별.csv  날짜 × 시(0~23) 가로형 — 대상마다 정체분·경보분·점수최고  ← 시간대 분석용
+#   {접두사}_날짜별_가로.csv  날짜 × 시각(0~23시) 가로형 — 대상마다 정체분·경보분·점수최고
 #   {접두사}_분단위.csv  분마다 unified_risk_score · area_score · 등급 · 경보 · 실제정체 ← 검토용
 #
 # 운영 등급 컷 (2026-09 확인)
@@ -61,7 +61,6 @@ from datetime import datetime, timedelta
 
 csv.field_size_limit(10 ** 7)
 
-WEEKDAY = ['월', '화', '수', '목', '금', '토', '일']
 EVENT_KEY = '발동이벤트'
 AREAS = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B']
 TH_RA_DEFAULT = {'M16HUB': 9.0, 'M14': 3.3, 'M14B': 5.0, 'M16A': 3.2, 'M16B': 3.5}
@@ -387,7 +386,7 @@ def main():
                     peak = max(vals) if vals else None
                 ft = (base + timedelta(minutes=first)) if first is not None else None
                 events.append({
-                    '날짜': str(d), '요일': WEEKDAY[d.weekday()], '대상': name,
+                    '날짜': str(d), '대상': name,
                     '사건번호': k,
                     '시작시각': (base + timedelta(minutes=s0)).strftime('%H:%M'),
                     '종료시각': (base + timedelta(minutes=e0)).strftime('%H:%M'),
@@ -401,7 +400,7 @@ def main():
             p, r, f1 = prf(nR, nA, tpA, tpR)
             t = tot[name]
             t[0] += nR; t[1] += nA; t[2] += tpA; t[3] += tpR
-            summary.append(dict(날짜=str(d), 요일=WEEKDAY[d.weekday()], 대상=name, 경보컷=f'{cut:g}',
+            summary.append(dict(날짜=str(d), 대상=name, 경보컷=f'{cut:g}',
                                 실제사건=nR, 경보=nA, 적중경보=tpA, 적중사건=tpR,
                                 Precision=round(p, 3), Recall=round(r, 3), F1=round(f1, 3),
                                 실제정체_분=sum(real), 경보_분=sum(kept)))
@@ -416,8 +415,7 @@ def main():
                 continue
             t = base + timedelta(minutes=m)
             row = {'datetime': t.strftime('%Y-%m-%d %H:%M'),
-                   'date': str(d), '요일': WEEKDAY[d.weekday()],
-                   'time': t.strftime('%H:%M'), '시': t.hour,
+                   'date': str(d), 'time': t.strftime('%H:%M'), '시': t.hour,
                    'unified_risk_score': '' if uni[m] is None else uni[m],
                    'ALL_level': level_of(uni[m], ALL_BANDS),
                    'ALL_경보': 1 if all_kept[m] else 0,
@@ -471,7 +469,7 @@ def main():
         p, r, f1 = prf(nR, nA, tpA, tpR)
         cut = a.cut if name == 'ALL' else fabcut[name]
         o(f'{name:<9}{cut:>4.0f}{nR:>6}{nA:>6}{p:>11.2f}{r:>9.2f}{f1:>7.2f}')
-        summary.append(dict(날짜='전체', 요일='', 대상=name, 경보컷=f'{cut:g}',
+        summary.append(dict(날짜='전체', 대상=name, 경보컷=f'{cut:g}',
                             실제사건=nR, 경보=nA, 적중경보=tpA, 적중사건=tpR,
                             Precision=round(p, 3), Recall=round(r, 3), F1=round(f1, 3),
                             실제정체_분='', 경보_분=''))
@@ -543,7 +541,7 @@ def main():
             w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
             w.writeheader()
             w.writerows(summary)
-        hp = a.csv + '_시간별.csv'
+        hp = a.csv + '_날짜별_가로.csv'
         if hourly:
             with open(hp, 'w', newline='', encoding='utf-8-sig') as f:
                 w = csv.DictWriter(f, fieldnames=list(hourly[0].keys()))
