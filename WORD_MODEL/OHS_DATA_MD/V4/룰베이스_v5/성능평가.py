@@ -29,9 +29,10 @@
 #   python 성능평가.py --event .\predict_tobe --csv 성능평가
 #   python 성능평가.py --event .\predict_tobe --days 30 --out 결과.txt
 #
-# --csv 를 주면 파일 세 개가 나온다
+# --csv 를 주면 파일 네 개가 나온다
 #   {접두사}_요약.csv    날짜 × 대상(ALL·FAB5) × 사건/경보/Precision/Recall/F1   ← PPT 용
 #   {접두사}_사건목록.csv 사건 하나마다 시작·종료 시각, 지속, 첫 경보 시각, 선행시간 ← 시간 분석용
+#   {접두사}_시간별.csv  날짜 × 시(0~23) 가로형 — 대상마다 정체분·경보분·점수최고  ← 시간대 분석용
 #   {접두사}_분단위.csv  분마다 unified_risk_score · area_score · 등급 · 경보 · 실제정체 ← 검토용
 #
 # 운영 등급 컷 (2026-09 확인)
@@ -333,6 +334,7 @@ def main():
     summary = []          # 요약 CSV 행
     detail = []           # 분단위 CSV 행
     events = []           # 사건목록 CSV 행
+    hourly = []           # 시간별 가로 CSV 행
     tot = defaultdict(lambda: [0, 0, 0, 0])   # 대상 → [사건, 경보, 적중경보, 적중사건]
 
     for d in sorted(by_date):
@@ -429,6 +431,24 @@ def main():
                 row[f'{x}_ra'] = '' if area_ra[x][m] is None else area_ra[x][m]
             detail.append(row)
 
+        # ── 시간별 가로 (날짜 × 시)
+        for hh in range(24):
+            lo, hi = hh * 60, hh * 60 + 60
+            if not any(m in idx for m in range(lo, hi)):
+                continue
+            row = {'날짜': str(d), '시': hh, '시각': f'{hh:02d}:00',
+                   '데이터분': sum(1 for m in range(lo, hi) if m in idx)}
+            row['ALL_정체분'] = sum(1 for m in range(lo, hi) if all_real[m])
+            row['ALL_경보분'] = sum(1 for m in range(lo, hi) if all_kept[m])
+            uv = [uni[m] for m in range(lo, hi) if uni[m] is not None]
+            row['ALL_점수최고'] = max(uv) if uv else ''
+            for x in AREAS:
+                row[f'{x}_정체분'] = sum(1 for m in range(lo, hi) if area_real[x][m])
+                row[f'{x}_경보분'] = sum(1 for m in range(lo, hi) if fab_kept[x][m])
+                sv = [area_sc[x][m] for m in range(lo, hi) if area_sc[x][m] is not None]
+                row[f'{x}_점수최고'] = max(sv) if sv else ''
+            hourly.append(row)
+
     # ── 3) 화면 출력
     o('')
     o('─' * 74)
@@ -523,6 +543,13 @@ def main():
             w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
             w.writeheader()
             w.writerows(summary)
+        hp = a.csv + '_시간별.csv'
+        if hourly:
+            with open(hp, 'w', newline='', encoding='utf-8-sig') as f:
+                w = csv.DictWriter(f, fieldnames=list(hourly[0].keys()))
+                w.writeheader()
+                w.writerows(hourly)
+            o(f'  📄 {os.path.abspath(hp)}   ({len(hourly)}행 — 날짜 × 시간대 가로형)')
         ep = a.csv + '_사건목록.csv'
         if events:
             with open(ep, 'w', newline='', encoding='utf-8-sig') as f:
