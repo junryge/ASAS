@@ -189,16 +189,51 @@ class 그림이_있다(unittest.TestCase):
         if not self.d["ok"]:
             self.skipTest("예측기 소스를 못 찾았다")
 
-    def test_세_장이_다_들어간다(self):
+    def test_영역마다_한_장씩_있다(self):
+        """HUBROOM 한 장만 있으면 다른 FAB 은 자기 그림이 없다."""
         h = self.m.render(self.d)
-        for t in ("그림 A", "그림 B", "그림 C"):
+        areas = self.d["C"].get("AREAS_ALL") or []
+        self.assertGreaterEqual(len(areas), 8)
+        for i, ar in enumerate(areas, 1):
+            self.assertIn("그림 A-{} · {}".format(i, ar), h,
+                          "{} 그림이 없다".format(ar))
+        for t in ("그림 B", "그림 C"):
             self.assertIn(t, h, "빠졌다: " + t)
-        self.assertGreaterEqual(h.count("<svg"), 3)
+        self.assertGreaterEqual(h.count("<svg"), len(areas) + 2)
+
+    def test_영역마다_붙는_룰이_다르다(self):
+        """M16 은 R-B 만, M16_PKT·M16_WT 는 R-A′ 만 붙는다 —
+        모든 영역에 같은 그림을 그리면 거짓말이 된다."""
+        names = lambda ar: [x[0] for x in self.m.area_rules(self.d, ar)]
+        hub = names("M16HUB")
+        self.assertTrue(any(n.startswith("R-C") for n in hub))
+        self.assertTrue(any(n.startswith("MAXCAPA") for n in hub))
+        m16 = names("M16")
+        self.assertTrue(all(n.startswith("R-B") for n in m16), m16)
+        for ar in ("M16_PKT", "M16_WT"):
+            self.assertTrue(all(n.startswith("R-A") for n in names(ar)),
+                            names(ar))
+        # M14 의 R-C′ 는 리프터가 아니라 CNV 쏠림이다
+        self.assertIn("R-C′ CNV 쏠림", names("M14"))
+
+    def test_M16_이_M16A_컬럼을_안_가져간다(self):
+        """area 로 startswith 만 하면 'M16' 이 'M16A.…' 까지 집어삼킨다."""
+        rows = self.m.area_rules(self.d, "M16")
+        for _, cols, _, _ in rows:
+            for c in cols:
+                self.assertFalse(c.startswith(("M16A.", "M16B.", "M16HUB.")),
+                                 "M16 이 남의 컬럼을 가져갔다: " + c)
+
+    def test_받을_수_있는_최대를_적는다(self):
+        """안 적으면 '왜 M16 은 점수가 낮냐' 를 매번 다시 설명해야 한다."""
+        g = self.m.svg_area(self.d, "M16", 6)
+        self.assertIn("받을 수 있는 최대", g)
+        self.assertIn("다 못 채운다", g)
 
     def test_그림_숫자가_소스에서_온다(self):
         """그림에 손으로 적은 숫자가 있으면 임계가 바뀔 때 그림만 옛날 값이
         된다. 표보다 더 나쁘다."""
-        g = self.m.svg_area(self.d, "M16HUB")
+        g = self.m.svg_area(self.d, "M16HUB", 1)
         ra = (self.d["C"].get("TH_RA") or {}).get("M16HUB")
         self.assertIn(str(ra), g, "R-A′ 임계가 그림에 없다")
         self.assertIn("min({}".format(self.d["pts"]["_cap"]), g)
@@ -223,6 +258,8 @@ class 그림이_있다(unittest.TestCase):
         """viewBox 높이가 내용보다 작으면 아래가 잘려 나간다."""
         import re as _re
         for g in (self.m.svg_area(self.d, "M16HUB"),
+                  self.m.svg_area(self.d, "M16"),
+                  self.m.svg_area(self.d, "M16_WT"),
                   self.m.svg_unified(self.d), self.m.svg_split(self.d)):
             vb = _re.search(r'viewBox="0 0 \d+ (\d+)"', g)
             self.assertTrue(vb)

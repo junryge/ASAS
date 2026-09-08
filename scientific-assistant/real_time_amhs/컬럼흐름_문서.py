@@ -50,6 +50,21 @@ def e(s) -> str:
     return html.escape("" if s is None else str(s))
 
 
+def _grade_cuts():
+    """관제 쪽 등급 컷 — **화면(정책 탭)에서 정한 값**을 그대로 읽는다.
+
+    ★코드에 60/71/85 를 적어 두면 안 된다. 사람이 화면에서 바꾸는 값이라
+      문서만 옛날 값으로 남는다. 못 읽으면 '읽지 못함' 으로 둔다.
+    """
+    try:
+        sys.path.insert(0, BASE_DIR)
+        import sentinel
+        from lp_client import load_config
+        return sentinel.grade_cuts(load_config())
+    except Exception:                                   # noqa: BLE001
+        return ("?", "?", "?")
+
+
 def find_rule_src():
     env = (os.environ.get("RULE_SRC") or "").strip()
     if env and os.path.isfile(env):
@@ -405,6 +420,62 @@ RULE_NAME = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# 왜 이런 룰인가 — 현장에서 무엇을 잡으려는 것인가
+#
+# ★한글 룰 이름과 뜻은 **고객 답변용 스킬 문서**에서 그대로 가져왔다
+#   (m16_hub_skills/…결과해석_도메인_고객인용). 여기서 새로 지어내지
+#   않는다 — 같은 것을 두 이름으로 부르면 현장에서 못 알아듣는다.
+# ★'왜 그 배점인가' 는 코드에도 스킬 문서에도 없다. 모른다고 적는다.
+# ─────────────────────────────────────────────────────────────────────
+WHY_RULES = [
+    ("R-A′", "반송지연 / 반송지연 지속",
+     "반송시간이 기준보다 길어짐",
+     "물량이 안 빠지고 있다는 <b>가장 이른 신호</b>입니다. 아직 쌓이기 "
+     "전에도 시간부터 늘어납니다.",
+     "짧게 튄 것과 진짜를 갈라야 해서 <b>지속</b>을 따로 둡니다 — 한 번 "
+     "튄 값으로 알람을 울리면 사람이 알람을 꺼 버립니다. "
+     "그래서 10분 중 1회(민감) 와 5분 중 여러 회(확실) 를 나눠 둡니다."),
+    ("R-B", "Queue 누적 / Queue 상승",
+     "대기 물량이 쌓임",
+     "허브로 <b>들어오는 쪽</b>을 봅니다. 나가는 속도보다 들어오는 속도가 "
+     "빠르면 결국 막힙니다.",
+     "절대량이 아니라 <b>증가량</b>을 봅니다. 영역마다 평소 물량이 달라서 "
+     "'몇 개 이상' 으로는 같은 자로 못 잽니다. 30분(추세)과 10분(급증)을 "
+     "둘 다 보는 것은, 천천히 차오르는 것과 갑자기 몰리는 것이 다른 "
+     "일이기 때문입니다."),
+    ("R-C′", "리프터 정체",
+     "Storage 가 꽉 차 리프터가 Carrier 를 못 내려놓고 막혀 쌓임",
+     "리프터에 물건이 걸려 있는 상태입니다. 내려놓을 자리가 없으면 "
+     "리프터가 들고 서 있게 됩니다.",
+     "<b>합은 줄었는데 개별로 늘어난</b> 경우를 잡습니다. 전체가 늘면 "
+     "그냥 물량이 많은 것이지만, 전체는 빠지는데 특정 호기만 늘면 "
+     "<b>그 호기가 막힌 것</b>입니다. 합만 보면 이걸 놓칩니다."),
+    ("R-D", "Storage FULL",
+     "STB / FAB Storage 가 FULL",
+     "받을 자리가 없다는 뜻입니다. 자리가 없으면 그 앞이 전부 밀립니다.",
+     "M16HUB 는 FAB 저장율과 STB 저장율을, 다른 영역은 OHT 가동률을 "
+     "봅니다 — 영역마다 '포화' 가 드러나는 자리가 다릅니다."),
+    ("SLA", "4분초과 (반송지연율)",
+     "4분 넘는 반송 비율이 오름",
+     "<b>고객이 체감하는 지표</b>입니다. 앞의 룰들이 '왜' 라면 이건 "
+     "'얼마나 아픈가' 입니다.",
+     "비율과 건수를 <b>둘 다</b> 봅니다. 물량이 적을 때는 비율이 쉽게 "
+     "튀고, 물량이 많을 때는 비율이 안 움직여도 건수가 확 늡니다."),
+    ("소터", "분류기 대기 / 반송 실패",
+     "분류기에서 대기가 쌓이거나 반송이 실패함",
+     "분류기에서 막히면 그 뒤가 전부 밀립니다.",
+     "반송 <b>실패</b>는 1건만 있어도 켭니다 — 실패는 '조금 느림' 이 "
+     "아니라 안 된 것입니다."),
+    ("MAXCAPA", "운영자 용량변경",
+     "운영자가 설비 한계치를 줄임",
+     "사람이 손을 댄 흔적입니다. <b>신호이자 원인</b>입니다 — 뭔가 "
+     "이상해서 줄였거나, 줄여서 막히기 시작했거나.",
+     "다른 룰과 달리 <b>바뀐 컬럼 수만큼 곱합니다.</b> 여러 곳을 동시에 "
+     "줄였다면 그만큼 크게 손댄 것이라고 봅니다."),
+]
+
+
 def points_table(pts):
     rows = [("ra_pts", "ra_trig"), ("ra_sus_pts", "ra_sustained"),
             ("rb_pts", "rb_trig"), ("rb_fast_pts", "rb_fast"),
@@ -467,77 +538,120 @@ def _wrapcol(c, n=44):
     return [c] if len(c) <= n else [c[:n], c[n:]]
 
 
-def svg_area(d, area="M16HUB"):
+def area_rules(d, area):
+    """이 영역에 **실제로 붙는 룰**만 골라 준다.
+
+    ★eval_area_rules() 의 조건을 그대로 옮긴다. 영역마다 붙는 룰이 다르다:
+        R-A′  : TH_RA 에 있는 영역만        (M16 은 없다)
+        R-B   : TH_RB_30 에 있는 영역만     (M16_PKT·M16_WT 는 없다)
+        R-C′  : M16HUB(리프터) · M14(CNV 쏠림) 둘뿐
+        R-D   : M16HUB(FAB·STB) · RD_OHT_COL 에 있는 영역(OHT)
+        SLA   : SLA_COL 에 있는 영역만
+        소터  : TH_SORTER_WAIT 에 있는 영역만
+        MAXCAPA: MAXCAPA_NORMAL 에 그 영역 컬럼이 있는 영역만
+    ★그래서 **어떤 영역은 아예 받을 수 없는 점수가 있다.** 그림마다 그
+      영역이 받을 수 있는 최대 점수를 같이 적는다 — 안 적으면 "왜 M16 은
+      점수가 낮냐" 를 매번 다시 설명해야 한다.
+    """
+    C = d["C"]
+    ra_c = (C.get("RA_COL") or {}).get(area)
+    rb_c = (C.get("RB_COL") or {}).get(area)
+    sla_c = (C.get("SLA_COL") or {}).get(area)
+    so_c = (C.get("SORTER_COL") or {}).get(area)
+    sf_c = (C.get("SORTER_FAIL_COL") or {}).get(area)
+    oht_c = (C.get("RD_OHT_COL") or {}).get(area)
+    # ★area 뒤에 점을 붙여야 한다. 'M16' 로만 보면 M16A·M16HUB 컬럼까지
+    #   딸려 온다 (실제로 그랬다).
+    mc_cols = sorted(k for k in (C.get("MAXCAPA_NORMAL") or {})
+                     if k.startswith(area + "."))
+
+    def th(name, dflt="—"):
+        m = C.get(name)
+        if isinstance(m, dict):
+            return m.get(area, dflt)
+        return m if m is not None else dflt
+
+    rows = []
+    if area in (C.get("TH_RA") or {}):
+        rows.append(("R-A′ 반송지연", [ra_c or "—"],
+                     "≥ {} 분이 10분 중 1회+".format(th("TH_RA")), "ra_pts"))
+        rows.append(("R-A′ 지속", ["(위와 같은 컬럼)"],
+                     "≥ {}×{} 가 5분 중 {}회+".format(
+                         th("TH_RA"), C.get("TH_RA_SUSTAINED_RATIO", "?"),
+                         C.get("TH_RA_SUSTAINED_COUNT", "?")), "ra_sus_pts"))
+    if area in (C.get("TH_RB_30") or {}):
+        rows.append(("R-B 반입급증(30분)", [rb_c or "—"],
+                     "30분 전 대비 +{} 이상".format(th("TH_RB_30")), "rb_pts"))
+        rows.append(("R-B 반입급증(10분)", ["(위와 같은 컬럼)"],
+                     "10분 전 대비 +{} 이상{}".format(
+                         th("TH_RB_10"),
+                         "  (30분 임계의 {:.0%})".format(C["_TH_RB_10_derived"])
+                         if C.get("_TH_RB_10_derived") else ""), "rb_fast_pts"))
+    if area == "M16HUB":
+        rows.append(("R-C′ 리프터 역증가",
+                     ["M16HUB.LFT.{{호기}}.TOTAL_CURRENTQCNT  ×{}대".format(
+                         len(C.get("LIFTER_IDS") or []))],
+                     "합은 감소 + 개별 증가 {}대 이상".format(
+                         C.get("TH_RC_REVERSE", "?")), "rc_pts"))
+    elif area == "M14":
+        rows.append(("R-C′ CNV 쏠림",
+                     ["M14.QUE.CNV.M14ATONORTHCURRENTQCNT",
+                      "M14.QUE.CNV.M14ATOSOUTHCURRENTQCNT"],
+                     "북·남 중 큰 쪽 ÷ 합 ≥ 0.70", "rc_pts"))
+    if area == "M16HUB":
+        rows.append(("R-D 저장 포화",
+                     ["M16HUB.STRATE.ALL.FABSTORAGERATIO",
+                      "M16HUB.STRATE.STB.3F_STORAGE_UTIL"],
+                     "FAB ≥ {}%  또는  STB ≥ {}%".format(
+                         C.get("TH_RD_FABSTORAGE", "?"),
+                         C.get("TH_RD_HUB_STB_UTIL", "?")), "rd_pts"))
+    elif oht_c:
+        rows.append(("R-D OHT 포화", [oht_c],
+                     "OHT 가동률 ≥ {}%".format(C.get("TH_RD_OHT_UTIL", "?")),
+                     "rd_pts"))
+    if sla_c:
+        rows.append(("SLA 4분초과",
+                     [sla_c, sla_c.replace("OVERRATIO", "OVERCNT")],
+                     "비율 ≥ {}%  또는  건수 10분 +20".format(
+                         (C.get("TH_SLA_RATIO") or {}).get(area, "?")),
+                     "sla_pts"))
+    if area in (C.get("TH_SORTER_WAIT") or {}):
+        cols = [so_c or "—"] + ([sf_c] if sf_c else [])
+        rows.append(("소터 대기{}".format("/실패" if sf_c else ""), cols,
+                     "대기 ≥ {}{}".format(
+                         (C.get("TH_SORTER_WAIT") or {}).get(area, "?"),
+                         "  또는  실패 ≥ {}".format(
+                             C.get("TH_SORTER_TRANSFER_FAIL", "?")) if sf_c
+                         else ""), "sort_pts"))
+    if mc_cols:
+        rows.append(("MAXCAPA 축소", mc_cols,
+                     "정상값보다 줄어든 컬럼 1개마다", "mc_pts"))
+    return rows
+
+
+def svg_area(d, area="M16HUB", idx=None):
     """한 영역에서 컬럼 → 룰 → 배점 → area_score 까지."""
     C, pts = d["C"], d["pts"]
     cap = pts.get("_cap") or 50
-
-    def th(name, default="—"):
-        m = C.get(name)
-        if isinstance(m, dict):
-            return m.get(area, default)
-        return m if m is not None else default
-
-    # (룰 이름, 보는 컬럼들, 임계 글, 배점변수)
-    rows = [
-        ("R-A′ 반송지연",
-         [(C.get("RA_COL") or {}).get(area, "—")],
-         "≥ {} 분이 10분 중 1회+".format(th("TH_RA")), "ra_pts"),
-        ("R-A′ 지속", ["(위와 같은 컬럼)"],
-         "≥ {}×{} 가 5분 중 {}회+".format(
-             th("TH_RA"), C.get("TH_RA_SUSTAINED_RATIO", "?"),
-             C.get("TH_RA_SUSTAINED_COUNT", "?")), "ra_sus_pts"),
-        ("R-B 반입급증(30분)",
-         [(C.get("RB_COL") or {}).get(area, "—")],
-         "30분 전 대비 +{} 이상".format(th("TH_RB_30")), "rb_pts"),
-        ("R-B 반입급증(10분)", ["(위와 같은 컬럼)"],
-         "10분 전 대비 +{} 이상{}".format(
-             th("TH_RB_10"),
-             "  (30분 임계의 {:.0%})".format(C["_TH_RB_10_derived"])
-             if C.get("_TH_RB_10_derived") else ""), "rb_fast_pts"),
-        ("R-C′ 리프터 역증가",
-         ["M16HUB.LFT.{{호기}}.TOTAL_CURRENTQCNT  ×{}대".format(
-             len(C.get("LIFTER_IDS") or []))],
-         "합은 감소 + 개별 증가 {}대 이상".format(C.get("TH_RC_REVERSE", "?")),
-         "rc_pts"),
-        ("R-D 저장 포화",
-         ["M16HUB.STRATE.ALL.FABSTORAGERATIO",
-          "M16HUB.STRATE.STB.3F_STORAGE_UTIL"],
-         "FAB ≥ {}%  또는  STB ≥ {}%".format(
-             C.get("TH_RD_FABSTORAGE", "?"), C.get("TH_RD_HUB_STB_UTIL", "?")),
-         "rd_pts"),
-        ("SLA 4분초과",
-         [(C.get("SLA_COL") or {}).get(area, "—"),
-          "M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT"],
-         "비율 ≥ {}%  또는  건수 10분 +20".format(
-             (C.get("TH_SLA_RATIO") or {}).get(area, "?")), "sla_pts"),
-        ("소터 대기/실패",
-         [(C.get("SORTER_COL") or {}).get(area, "—")],
-         "대기 ≥ {}  또는  실패 ≥ {}".format(
-             (C.get("TH_SORTER_WAIT") or {}).get(area, "?"),
-             C.get("TH_SORTER_TRANSFER_FAIL", "?")), "sort_pts"),
-        ("MAXCAPA 축소",
-         sorted(k for k in (C.get("MAXCAPA_NORMAL") or {}) if k.startswith(area)),
-         "정상값보다 줄어든 컬럼 1개마다", "mc_pts"),
-    ]
+    rows = area_rules(d, area)
+    if not rows:
+        return ""
 
     L, CX, RX = 24, 470, 790          # 컬럼 / 룰 / 배점 x
     y, o = 62, []
     a = o.append
-    heights = []
-    for name, cols, thtxt, var in rows:
-        n = max(1, sum(len(_wrapcol(c)) for c in (cols or ["—"])))
-        heights.append(max(46, 20 + n * 15))
+    heights = [max(46, 20 + max(1, sum(len(_wrapcol(c)) for c in (cols or ["—"])))
+                   * 15) for _, cols, _, _ in rows]
     H = y + sum(heights) + len(rows) * 6 + 178
 
     a('<svg viewBox="0 0 1040 {}" width="100%" role="img" '
       'aria-label="{} 영역에서 컬럼이 룰을 거쳐 area_score 가 되는 과정">'
       .format(H, _esc(area)))
     a("<style>{}</style>".format(SVG_CSS))
-    a('<text x="24" y="24" class="d-h">그림 A — {} 영역: 어느 컬럼이 '
-      '어느 룰로 들어가 점수가 되나</text>'.format(_esc(area)))
-    a('<text x="24" y="44" class="d-dim">원시 컬럼 (M16A_HUBROOM_PR.CSV)'
-      '</text>')
+    a('<text x="24" y="24" class="d-h">{}{} — 어느 컬럼이 어느 룰로 들어가 '
+      '점수가 되나</text>'.format(
+          "그림 A-{} · ".format(idx) if idx else "", _esc(area)))
+    a('<text x="24" y="44" class="d-dim">원시 컬럼 (M16A_HUBROOM_PR.CSV)</text>')
     a('<text x="{}" y="44" class="d-dim">룰 · 임계</text>'.format(CX))
     a('<text x="{}" y="44" class="d-dim">배점</text>'.format(RX))
     a('<text x="{}" y="44" class="d-dim">누적</text>'.format(RX + 110))
@@ -546,7 +660,6 @@ def svg_area(d, area="M16HUB"):
     for (name, cols, thtxt, var), h in zip(rows, heights):
         p = (pts.get(var) or {}).get("pts", 0)
         per = (pts.get(var) or {}).get("per")
-        # 컬럼 상자
         a('<rect x="{}" y="{}" width="{}" height="{}" class="d-col"/>'
           .format(L, y, CX - L - 34, h))
         ty = y + 17
@@ -555,17 +668,14 @@ def svg_area(d, area="M16HUB"):
                 a('<text x="{}" y="{}" class="d-m">{}</text>'.format(
                     L + 9, ty, _esc(ln)))
                 ty += 15
-        # 화살표
         a('<path d="M{} {} H{}" class="d-ln" marker-end="url(#ah)"/>'.format(
             CX - 30, y + h / 2, CX - 6))
-        # 룰 상자
         a('<rect x="{}" y="{}" width="{}" height="{}" class="d-rule"/>'
           .format(CX, y, RX - CX - 34, h))
         a('<text x="{}" y="{}" class="d-t">{}</text>'.format(
             CX + 10, y + 18, _esc(name)))
         a('<text x="{}" y="{}" class="d-s">{}</text>'.format(
             CX + 10, y + 34, _esc(thtxt)))
-        # 배점
         a('<path d="M{} {} H{}" class="d-ln" marker-end="url(#ah)"/>'.format(
             RX - 30, y + h / 2, RX - 6))
         a('<rect x="{}" y="{}" width="76" height="26" class="d-out"/>'.format(
@@ -574,24 +684,27 @@ def svg_area(d, area="M16HUB"):
           .format(RX + 38, y + h / 2 + 5, p, " × n" if per else ""))
         run += p if not per else 0
         a('<text x="{}" y="{}" class="d-dim">{}</text>'.format(
-            RX + 92, y + h / 2 + 5,
-            "…" if per else "누적 {}".format(run)))
+            RX + 92, y + h / 2 + 5, "…" if per else "누적 {}".format(run)))
         y += h + 6
 
-    # 합 · 캡
+    has_mc = any(v == "mc_pts" for _, _, _, v in rows)
     y += 10
-    a('<rect x="{}" y="{}" width="{}" height="34" class="d-sum"/>'.format(
-        CX, y, 400))
-    a('<text x="{}" y="{}" class="d-t">합계 = 최대 {} + MAXCAPA {}×n</text>'
-      .format(CX + 12, y + 22, run, (pts.get("mc_pts") or {}).get("pts", "?")))
+    a('<rect x="{}" y="{}" width="400" height="34" class="d-sum"/>'.format(CX, y))
+    a('<text x="{}" y="{}" class="d-t">합계 = 최대 {}{}</text>'.format(
+        CX + 12, y + 22, run,
+        " + MAXCAPA {}×n".format((pts.get("mc_pts") or {}).get("pts", "?"))
+        if has_mc else ""))
     y += 42
-    a('<rect x="{}" y="{}" width="{}" height="38" class="d-cap"/>'.format(
-        CX, y, 400))
-    a('<text x="{}" y="{}" class="d-t">area_score = min({}, 합계)   '
-      '← {} 점에서 자른다</text>'.format(CX + 12, y + 24, cap, cap))
-    a('<text x="{}" y="{}" class="d-dim">MAXCAPA 가 컬럼 수만큼 곱해져 '
-      '한 영역이 전체를 삼키는 것을 막는다. 자르기 전 값은 '
-      '{}_score_raw 로 남는다.</text>'.format(CX, y + 56, _esc(area)))
+    a('<rect x="{}" y="{}" width="400" height="38" class="d-cap"/>'.format(CX, y))
+    a('<text x="{}" y="{}" class="d-t">area_score = min({}, 합계)</text>'.format(
+        CX + 12, y + 24, cap))
+    # ★이 영역이 실제로 받을 수 있는 최대 — 안 적으면 "왜 낮냐" 를 또 묻는다
+    reach = cap if has_mc else min(cap, run)
+    a('<text x="{}" y="{}" class="d-dim">이 영역이 받을 수 있는 최대: '
+      '<tspan class="d-n">{}</tspan>점{}</text>'.format(
+          CX, y + 58, reach,
+          "  (MAXCAPA 가 있어 캡까지 간다)" if has_mc
+          else "  — 붙는 룰이 {}개라 {}점을 다 못 채운다".format(len(rows), cap)))
     a('<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" '
       'markerWidth="7" markerHeight="7" orient="auto">'
       '<path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/></marker></defs>')
@@ -789,6 +902,7 @@ ol.steps{padding-left:20px} ol.steps>li{margin:8px 0}
 
 def render(d):
     C, pts, uni, fl = d["C"], d["pts"], d["uni"], d["flow_th"]
+    cap = pts.get("_cap") or 50
     o = []
     a = o.append
     a('<!doctype html><html lang="ko"><head><meta charset="utf-8">')
@@ -944,11 +1058,74 @@ def render(d):
       "8종을 각각 판정하고, <b>켜진 룰의 배점을 더합니다.</b> 아래 그림이 "
       "<b>어느 컬럼이 어느 룰로 들어가는지</b> 그대로 보여 줍니다 — "
       "룰을 다 가진 M16HUB 를 예로 들었습니다.</p>")
-    a('<div class="fig">{}</div>'.format(svg_area(d, "M16HUB")))
-    a('<p class="dim">다른 영역은 컬럼과 임계만 다르고 구조는 같습니다 '
-      '(1-1 · 2장 표 참조). M16·M16_PKT·M16_WT 는 가진 룰이 더 적습니다.</p>')
+    a("<h3>3-0. 왜 이런 룰인가 — 무엇을 잡으려는 것인가</h3>")
+    a("<p>룰 이름과 뜻은 <b>고객 답변용 스킬 문서</b>에서 그대로 가져왔습니다 "
+      "(<code>m16_hub_skills/</code>). 같은 것을 두 이름으로 부르면 현장에서 "
+      "못 알아듣습니다.</p>")
+    a("<table><tr><th>룰</th><th>현장 이름</th><th>무엇을 잡나</th>"
+      "<th>왜 이렇게 봤나</th></tr>")
+    for code, ko, mean, what, why in WHY_RULES:
+        a("<tr><td><b>{}</b></td><td><b>{}</b><br>"
+          '<span class="dim">{}</span></td><td>{}</td><td>{}</td></tr>'
+          .format(e(code), e(ko), e(mean), what, why))
+    a("</table>")
+    a('<div class="note">읽는 순서가 있습니다 — '
+      '<b>R-A′(시간이 는다) → R-B(물량이 쌓인다) → R-C′·R-D(자리가 없다) '
+      '→ SLA(고객이 아프다).</b> 단계 판정 S3 이 이 셋을 모두 요구하는 것도 '
+      '같은 까닭입니다 (4-3): 시간도 늘고, 자리도 없고, 물량도 몰릴 때가 '
+      '진짜 막히는 때입니다.</div>')
+
+    a("<h3>3-0-1. 배점</h3>")
     a(points_table(pts))
-    cap = pts.get("_cap")
+    a('<div class="note"><b>배점의 근거는 코드에 적혀 있지 않습니다.</b> '
+      '왜 R-A′ 가 10점이고 소터가 3점인지는 예측기 소스에 이유가 없습니다 — '
+      '룰을 만든 쪽에 확인해서 이 문서에 채워야 합니다. 지금은 '
+      '<b>값만</b> 옮겨 적었습니다.</div>')
+
+    a("<h3>3-1. 영역마다 붙는 룰이 다릅니다</h3>")
+    a("<p>모든 영역이 룰 8종을 다 갖지는 않습니다. <b>그 영역에서 읽을 수 "
+      "있는 컬럼이 있어야</b> 룰이 붙습니다. 그래서 <b>영역마다 받을 수 있는 "
+      "최대 점수가 다릅니다</b> — 점수를 영역끼리 그대로 비교하면 안 되는 "
+      "까닭입니다.</p>")
+    rule_cols = [("R-A′", "TH_RA"), ("R-B", "TH_RB_30"), ("R-C′", None),
+                 ("R-D", None), ("SLA", "SLA_COL"),
+                 ("소터", "TH_SORTER_WAIT"), ("MAXCAPA", None)]
+    a("<table><tr><th>영역</th>"
+      + "".join("<th class=n>{}</th>".format(e(n)) for n, _ in rule_cols)
+      + "<th class=n>붙는 룰</th><th class=n>최대 점수</th></tr>")
+    for ar in (C.get("AREAS_ALL") or AREA_ORDER):
+        rr = area_rules(d, ar)
+        names = [x[0] for x in rr]
+        has = {
+            "R-A′": any(n.startswith("R-A") for n in names),
+            "R-B": any(n.startswith("R-B") for n in names),
+            "R-C′": any(n.startswith("R-C") for n in names),
+            "R-D": any(n.startswith("R-D") for n in names),
+            "SLA": any(n.startswith("SLA") for n in names),
+            "소터": any(n.startswith("소터") for n in names),
+            "MAXCAPA": any(n.startswith("MAXCAPA") for n in names),
+        }
+        run = sum((pts.get(v) or {}).get("pts", 0) for _, _, _, v in rr
+                  if v != "mc_pts")
+        reach = cap if has["MAXCAPA"] else min(cap, run)
+        a("<tr><td><b>{}</b></td>".format(e(ar))
+          + "".join('<td class="n">{}</td>'.format("O" if has[n] else "·")
+                    for n, _ in rule_cols)
+          + '<td class="n">{}</td><td class="n"><b>{}</b></td></tr>'.format(
+              len(rr), reach))
+    a("</table>")
+    a('<div class="note miss"><b>M16 · M16_PKT · M16_WT 를 보십시오.</b> '
+      'M16 은 R-B 만, M16_PKT·M16_WT 는 R-A′ 만 붙습니다. '
+      'M16_PKT·M16_WT 는 OHT 가동률(<code>rd_oht</code>)을 <b>읽기는 하는데</b> '
+      'R-D 판정 대상(<code>RD_OHT_COL</code>)에 없어서 그 값이 점수로 가지 '
+      '않습니다. 의도한 것인지 예측기 쪽에 확인이 필요합니다.</div>')
+
+    a("<h3>3-2. 영역별 그림 — 어느 컬럼이 어느 룰로 들어가나</h3>")
+    for i, ar in enumerate(C.get("AREAS_ALL") or AREA_ORDER, 1):
+        g = svg_area(d, ar, i)
+        if not g:
+            continue
+        a('<div class="fig">{}</div>'.format(g))
     a('<div class="flow">'
       "area_score = RA + RA_sus + RB + RB_fast + RC + RD + SLA + SORT + MAXCAPA×n\n"
       "area_score = min({cap}, 위 합)        ← {cap} 점에서 자른다\n\n"
@@ -958,7 +1135,7 @@ def render(d):
     a('<div class="note"><b>왜 {}점에서 자르나.</b> MAXCAPA 는 바뀐 컬럼 '
       '수만큼 곱해지므로 한 영역이 무한정 커질 수 있습니다. 한 영역이 전체를 '
       '삼키지 않게 상한을 둡니다.</div>'.format(cap or "?"))
-    a("<h3>3-1. 판정에 창(window)이 왜 필요한가</h3>")
+    a("<h3>3-3. 판정에 창(window)이 왜 필요한가</h3>")
     a("<table><tr><th>룰</th><th>보는 구간</th><th>판정</th></tr>"
       "<tr><td>R-A′</td><td>최근 10분</td><td>임계 이상인 분이 1회 이상</td></tr>"
       "<tr><td>R-A′ 지속</td><td>최근 5분</td>"
@@ -1029,9 +1206,25 @@ def render(d):
                 mn, hi if i else " 이상", e(name)))
         a("</table>")
     a('<div class="note"><b>관제 화면의 등급과 다릅니다.</b> 위 표는 '
-      '예측기가 0~{} 자로 매긴 등급이고, 관제(real_time_amhs)는 받은 점수를 '
-      '<b>0~100 자</b>로 다시 봅니다 (경계 60 / 위험 71 / 초위험 85). '
-      '두 등급 이름이 같아도 같은 값이 아닙니다.</div>'.format(uni["cap"] or "?"))
+      '예측기가 0~{} 자로 매긴 등급입니다. 관제(real_time_amhs)는 받은 점수를 '
+      '<b>0~100 자</b>로 다시 보고, <b>등급 경계는 실시간 관제 화면에서 '
+      '설정합니다</b> — 코드에 박힌 값이 아닙니다.</div>'.format(
+          uni["cap"] or "?"))
+    a("<h4>관제 쪽 등급은 화면에서 정한다</h4>")
+    a("<table><tr><th>어디서</th><th>무엇을</th><th>어떻게 읽히나</th></tr>"
+      "<tr><td>관제 화면 <b>정책</b> 탭</td>"
+      "<td>경계 · 위험 · 초위험 시작점</td>"
+      "<td><code>config.grade.bands</code> 에 저장 → "
+      "<code>sentinel.grade_cuts()</code></td></tr>"
+      "<tr><td>같은 화면, <b>시스템별</b></td>"
+      "<td>ALL · FAB 다섯을 각각 다르게</td>"
+      "<td><code>config.grade.by_sys[시스템]</code> 이 위를 덮는다</td></tr>"
+      "</table>")
+    a('<p class="dim">지금 설정된 값은 <b>경계 {} / 위험 {} / 초위험 {}</b> '
+      '입니다 (이 문서를 만든 시점). FAB 마다 점수 분포가 달라 시스템별로 '
+      '다르게 둘 수 있으므로, <b>고객에게 낼 때는 그 시점의 설정값을 같이 '
+      '적어야 합니다</b> — 나중에 바꾸면 예전 알람의 등급을 설명할 수 없게 '
+      '됩니다.</p>'.format(*_grade_cuts()))
 
     a("<h3>4-3. 단계(S1/S2/S3)와 hot_area</h3>")
     a('<div class="flow">'
