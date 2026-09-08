@@ -35,6 +35,10 @@
 #   {접두사}_날짜별_가로.csv  날짜 × 시각(0~23시) 가로형 — 대상마다 정체분·경보분·점수최고
 #   {접두사}_분단위.csv  분마다 unified_risk_score · area_score · 등급 · 경보 · 실제정체 ← 검토용
 #
+# --split 을 같이 주면 대상별로 파일을 따로 낸다 (고객이 ALL·FAB 분리 요청 시)
+#   {접두사}_ALL.csv · {접두사}_M16HUB.csv · {접두사}_M14.csv · … 6개
+#   각 파일 = 날짜별 성능 + 그날 사건 시각 + 선행 중앙값, 맨 아래 '전체' 행
+#
 # 운영 등급 컷 (2026-09 확인)
 #   ALL 48/60/80 · M16HUB 40/55/75 · M14·M14B·M16A·M16B 36/52/72
 #
@@ -261,7 +265,9 @@ def main():
     ap.add_argument('--event', required=True, help='발동이벤트 CSV 또는 폴더')
     ap.add_argument('--fab', default=None, help='FAB별 영역분리 CSV 또는 폴더 (선택)')
     ap.add_argument('--csv', default=None, metavar='접두사',
-                    help='결과 CSV 저장 — {접두사}_요약.csv · {접두사}_분단위.csv')
+                    help='결과 CSV 저장 — 요약 · 사건목록 · 날짜별_가로 · 분단위')
+    ap.add_argument('--split', action='store_true',
+                    help='대상(ALL·FAB5)별로 CSV 를 따로 낸다')
     ap.add_argument('--out', default=None, help='화면 내용을 텍스트로도 저장')
     ap.add_argument('--days', type=int, default=None)
     ap.add_argument('--since', default=None, metavar='YYYYMMDD')
@@ -555,6 +561,48 @@ def main():
                 w.writeheader()
                 w.writerows(events)
             o(f'  📄 {os.path.abspath(ep)}   ({len(events)}행 — 시각·선행시간)')
+        # ── 대상별 분리 (고객 요청 형식)
+        if a.split:
+            import statistics as _st
+            for t in ['ALL'] + AREAS:
+                rows = [r for r in summary if r['대상'] == t and r['날짜'] != '전체']
+                if not rows:
+                    continue
+                recs = []
+                for r in rows:
+                    ee = [x for x in events if x['대상'] == t and x['날짜'] == r['날짜']]
+                    ld = [x['선행분'] for x in ee if x['경보'] == 1 and x['선행분'] != '']
+                    recs.append({
+                        '날짜': r['날짜'], '대상': t, '경보컷': r['경보컷'],
+                        '실제사건': r['실제사건'], '경보': r['경보'],
+                        '적중경보': r['적중경보'], '적중사건': r['적중사건'],
+                        'Precision': r['Precision'], 'Recall': r['Recall'], 'F1': r['F1'],
+                        '정체시간_분': r['실제정체_분'], '경보시간_분': r['경보_분'],
+                        '사건시각': ' / '.join(f"{x['시작시각']}~{x['종료시각']}" for x in ee),
+                        '선행_중앙분': round(_st.median(ld)) if ld else '',
+                        '최장지속_분': max((x['지속분'] for x in ee), default=0),
+                    })
+                tot = next((r for r in summary if r['대상'] == t and r['날짜'] == '전체'), None)
+                if tot:
+                    al = [x['선행분'] for x in events
+                          if x['대상'] == t and x['경보'] == 1 and x['선행분'] != '']
+                    recs.append({
+                        '날짜': '전체', '대상': t, '경보컷': tot['경보컷'],
+                        '실제사건': tot['실제사건'], '경보': tot['경보'],
+                        '적중경보': tot['적중경보'], '적중사건': tot['적중사건'],
+                        'Precision': tot['Precision'], 'Recall': tot['Recall'], 'F1': tot['F1'],
+                        '정체시간_분': sum(x['정체시간_분'] for x in recs),
+                        '경보시간_분': sum(x['경보시간_분'] for x in recs),
+                        '사건시각': f"{sum(1 for x in events if x['대상'] == t)}건",
+                        '선행_중앙분': round(_st.median(al)) if al else '',
+                        '최장지속_분': max((x['최장지속_분'] for x in recs), default=0),
+                    })
+                fp2 = f'{a.csv}_{t}.csv'
+                with open(fp2, 'w', newline='', encoding='utf-8-sig') as f:
+                    w = csv.DictWriter(f, fieldnames=list(recs[0].keys()))
+                    w.writeheader()
+                    w.writerows(recs)
+                o(f'  📄 {os.path.abspath(fp2)}   ({len(recs)}행)')
         dp = a.csv + '_분단위.csv'
         with open(dp, 'w', newline='', encoding='utf-8-sig') as f:
             w = csv.DictWriter(f, fieldnames=list(detail[0].keys()))
