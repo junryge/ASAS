@@ -629,32 +629,6 @@
   .llmnow .jt.err{color:var(--crit)}
   .llmnow .basis{margin:7px 0 0;font-size:12.5px;line-height:1.6;color:var(--tx2);text-wrap:pretty}
   .llmnow .basis .dim{white-space:normal}
-  /* ── KPI 4개 — 카드 오른쪽 스탯 행(시안엔 큰 타일이 없다). 기본 .kpis 는 ML 탭이 쓰므로
-     여기서만 덮는다: 라벨 11px 대문자 · 값 mono 17px · 부제 한 줄 말줄임(전문은 title 에) */
-  .llmcard .kpis{flex:0 1 auto;display:flex;align-items:stretch;border:0;border-left:1px solid var(--line);
-                 background:transparent;border-radius:0 20px 20px 0}
-  .llmcard .kpi{padding:14px 18px;border-right:0;min-width:0;display:flex;flex-direction:column;gap:3px;
-                justify-content:center}
-  .llmcard .kpi+.kpi{border-left:1px solid var(--line)}
-  .llmcard .kpi:last-child{border-radius:0 20px 20px 0}   /* #kpi-acc 호버 배경이 카드 모서리를 안 넘게 */
-  /* ★라벨(활성 케이스…)은 늘 참조하는 글자라 --tx3 면 다크에서 3.2:1 밖에 안 나온다 */
-  .llmcard .kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx2);white-space:nowrap}
-  .llmcard .kpi .l .note{font-size:10px;letter-spacing:0;text-transform:none}
-  .llmcard .kpi .v{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
-                   font-size:17px;font-weight:700;line-height:1.2;letter-spacing:0;white-space:nowrap}
-  .llmcard .kpi .v u{font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;font-size:11px;
-                     margin-left:2px}
-  /* ★max-width:170px 를 뺐다 — 칸은 180~200px 인데 부제만 그보다 좁게 잘라 두어
-     '재발률(1H)'·'LLM 판단 일치' 두 칸이 1700px 에서도 늘 말줄임으로 끝났다.
-     .kpi 의 min-width:0 이 이미 있어 칸 폭까지 쓰고 거기서만 자른다. */
-  .llmcard .kpi .s{font-size:10.5px;color:var(--tx3);min-width:0;overflow:hidden;
-                   text-overflow:ellipsis;white-space:nowrap}
-  /* 1400px 아래에선 KPI 행이 카드 아래 줄로 내려간다 — 왼쪽 선 대신 위 선 */
-  @media (max-width:1400px){
-    .llmcard .kpis{flex:1 1 100%;border-left:0;border-top:1px solid var(--line);border-radius:0 0 20px 20px}
-    .llmcard .kpi{flex:1}
-    .llmcard .kpi:last-child{border-radius:0 0 20px 0}
-  }
   /* ── 실시간·과거 탭 본문 — 다른 탭의 .page 와 같은 폭·여백(시안). 추이 카드와
      표 카드가 세로로 24px 떨어져 쌓인다. .hidden 은 !important 라 display:flex 를 이긴다. */
   #tab-live,#tab-past{padding:28px 36px 56px;max-width:2400px;margin:0 auto;
@@ -689,9 +663,6 @@
   /* 지표 select(시안 입력 모양) — 과거 탭 내려받기 #pdl 도 같은 클래스라 같이 바뀐다 */
   .msel{padding:6px 10px;font-size:12px;border-radius:10px;max-width:340px;background:var(--panel2);
         border:1px solid var(--line2);color:var(--tx)}
-  #kpi-acc{cursor:pointer}
-  #kpi-acc:hover{background:var(--panel2)}
-  #kpi-acc:hover .v{color:var(--cy)}
   /* 지표 묶음 — 작은 알약 세그먼트(테마 세그먼트와 같은 문법). 하드코딩 #12303a → --tabbg */
   .mgrp{display:inline-flex;gap:4px;padding:3px;border-radius:99px;border:1px solid var(--line)}
   .mgrp button{background:transparent;border:0;color:var(--tx3);border-radius:99px;padding:5px 11px;
@@ -1022,17 +993,6 @@
 <div class="livehead">
   <div class="llmcard">
     <div id="llmnow" class="llmnow hidden"></div>
-    <div class="kpis">
-      <div class="kpi"><div class="l">활성 케이스</div>
-        <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
-      <div class="kpi"><div class="l">감지 지연</div>
-        <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
-      <div class="kpi" id="kpi-recur"><div class="l">재발률 (1h)</div>
-        <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
-      <div class="kpi" id="kpi-acc" title="1분마다 LLM 이 판단한 것을 이후 실제 데이터 흐름과 대조한 값입니다. 검증된 정탐률이 아닙니다.">
-        <div class="l">LLM 판단 일치 <span class="note" style="font-size:10px">· 클릭 상세</span></div>
-        <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">1분 추론 누적 시 산출</div></div>
-    </div>
   </div>
 
   <div id="warnbox"></div>
@@ -2889,27 +2849,11 @@ async function pollStatus(){
       `<div class="warn">${jup?'주피터 CSV':'로그프레소'} — ${esc(st.error)}</div>`;
   }catch(e){ $('#dot').className='dot off'; $('#streamtx').textContent='서버 응답 없음'; }
 
+  /* ★KPI 네 칸(활성 케이스·감지 지연·재발률·LLM 판단 일치)은 화면에서 뺐다.
+     그래도 /api/kpi 는 계속 부른다 — 여기 실린 llm_match 가 헤더 LLM 램프와
+     LLM 최근 판단 카드를 굴린다. 이 호출까지 지우면 램프가 늘 초록이 된다. */
   try{
     const k = await api('/api/kpi');
-    $('#k-active').innerHTML   = `${k.active}<u>건</u>`;
-    $('#k-active-s').textContent = `최근 30분 신규 ${k.active_new_30m}건`;
-    $('#k-lat').innerHTML      = `${k.detect_latency_ms??'–'}<u>ms</u>`;
-    $('#k-lat-s').textContent  = `폴링 주기 ${POLL}초`;
-    // 재발률 — 임계(60점) 이상이 가라앉았다 다시 올라온 비율. 표본이 없으면 '–'
-    if(k.recur_rate_1h == null){
-      $('#k-recur').innerHTML     = `–<u>%</u>`;
-      $('#k-recur-s').textContent = `최근 1시간 ${k.recur_floor??60}점 이상 없음`;
-    }else{
-      $('#k-recur').innerHTML     = `${k.recur_rate_1h}<u>%</u>`;
-      $('#k-recur-s').textContent = `최근 1시간 정체 ${k.recur_base}구간 · 재발 ${k.recur_events}회`
-        + ` (${k.recur_minutes}분)`;
-    }
-    $('#kpi-recur').title =
-      `${k.recur_floor??60}점 이상 구간이 임계 아래로 내려갔다가 다시 올라온 비율입니다.`
-      + `\n· 분모 = 최근 1시간 ${k.recur_floor??60}점 이상 구간 수`
-      + `\n· 분자 = 그중 다시 올라온 횟수 (구간 수 − 1)`
-      + `\n· 예) 3구간이면 재발 2회 → 67%`
-      + `\n기준 시각(데이터 최신) ${(k.recur_ref||'').replace('T',' ').slice(0,16)}`;
     renderAcc(k.llm_match);
   }catch(e){}
 }
@@ -2947,43 +2891,32 @@ function llmLamp(a){
 }
 
 function renderAcc(a){
+  /* ★KPI 칸(#k-acc)은 화면에서 뺐다. 그래도 이 함수는 남는다 — 헤더 LLM
+     램프와 LLM 최근 판단 카드를 여기서 굴린다. 지우면 램프가 늘 초록이 되고
+     (예전에 하루 통째로 그랬다) 카드가 안 갱신된다. */
   ACC = a || null;
   llmLamp(a);              // ★어떤 경로로 빠져나가든 램프는 항상 갱신한다
   if(!a || a.error){
-    $('#k-acc').textContent = '–';
-    $('#k-acc-s').textContent = a && a.error ? '집계 실패' : '1분 추론 누적 시 산출';
     return;
   }
   // ★꺼져 있으면 꺼져 있다고 말한다. 예전엔 '1분 추론 0건 · 20분 뒤 채점'
   //   이라고 띄워서 곧 채워질 것처럼 보였는데, 만드는 쪽이 꺼져 있으니
   //   영영 0 이었다. 하루를 그렇게 날렸다.
+  //   ★KPI 칸이 없어졌으니 이 말은 LLM 카드에 적는다 — 어딘가엔 있어야 한다.
   if(a.enabled === false){
-    $('#k-acc').innerHTML = `<span style="font-size:15px;color:var(--wn)">중지됨</span>`;
-    $('#k-acc-s').innerHTML = `1분 추론이 꺼져 있어 데이터가 쌓이지 않습니다 · `
-      + `<a href="#" onclick="goPolicyTab();return false" style="color:var(--cy)">정책 탭에서 켜기</a>`;
+    const box = $('#llmnow');
+    if(box){
+      box.classList.remove('hidden');
+      box.innerHTML = `<div class="r1"><span class="r1l">LLM 최근 판단</span>`
+        + `<span class="chip" style="color:var(--wn);background:color-mix(in srgb, var(--wn) 16%, transparent)">중지됨</span></div>`
+        + `<p class="jt">1분 추론이 꺼져 있어 판단이 쌓이지 않습니다.</p>`
+        + `<p class="basis"><a href="#" onclick="goPolicyTab();return false" style="color:var(--cy)">정책 탭에서 켜기</a></p>`;
+      box.onclick = null;
+    }
     return;
   }
   // 과거 탭을 보는 중이면 그 날짜 표시를 실시간 값으로 덮지 않는다
   if($('#tab-past').classList.contains('hidden')) renderLlmNow(a);
-  const cnt = `적중 ${a.hit} · 과다 ${a.fp} · 누락 ${a.fn}`
-            + (a.effect ? ` · 조치효과 ${a.effect}` : '');
-  // 확신도 평균을 카드 밑줄에 항상 붙인다
-  const cf = a.conf_avg!=null ? `확신도 평균 ${a.conf_avg}% (${a.conf_n}건) · ` : '';
-  if(a.human_rate != null){
-    $('#k-acc').innerHTML = `${a.human_rate}<u>%</u>`;
-    $('#k-acc-s').textContent = `${cf}확인 ${a.human_ok+a.human_ng}건 기준 · 자동 ${cnt}`;
-  }else if(a.match_rate != null){
-    $('#k-acc').innerHTML = `${a.match_rate}<u>%</u>`;
-    $('#k-acc-s').textContent = `${cf}${cnt} · 대기 ${a.waiting}`;
-  }else{
-    // 표본 부족 — 퍼센트 대신 건수
-    $('#k-acc').innerHTML = a.base
-      ? `<span style="font-size:15px">${cnt}</span>`
-      : '–';
-    $('#k-acc-s').textContent = a.base
-      ? `${cf}표본 ${a.base}/${a.min_sample}건 · 대기 ${a.waiting}`
-      : `${cf}1분 추론 ${a.rows||0}건 · 대기 ${a.waiting} · ${a.window_min}분 뒤 채점`;
-  }
 }
 
 // 실시간 탭이면 오늘, 과거 탭을 보고 있으면 그 날짜의 LLM CSV 를 연다
@@ -3070,8 +3003,9 @@ async function loadPastLlm(day){
   }catch(e){ $('#pllm').textContent = ''; }
 }
 
-$('#kpi-acc').onclick = () => openAcc(
-  $('#tab-past').classList.contains('hidden') ? null : (PDAY || null));
+/* ★예전엔 KPI 의 'LLM 판단 일치' 칸을 눌러 이 창을 열었다. 그 칸을 뺐으니
+   길은 LLM 카드의 [과거 LLM 판단 보기] 단추 하나뿐이다 — openAcc 는 남긴다
+   (없애면 그 단추가 죽는다). */
 
 let ACCDAY = null;
 async function openAcc(day){
