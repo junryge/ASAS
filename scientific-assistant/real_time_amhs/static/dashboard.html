@@ -29,6 +29,10 @@
     --opcv:1;
     /* 드롭다운·툴팁·모달 그림자 — 한 군데서만 정한다 */
     --shadow:0 18px 44px rgba(0,0,0,.45);
+    /* ★모달 뒤 마스크 — 테마를 따라가지 않는 유일한 색이다. 밝은 테마에서도
+       뒤 화면을 눌러 줘야 상자가 떠 보여서, 테마 블록에서 덮지 않는다.
+       (규칙 안에 rgba 를 박아 두던 것을 여기로 모았다.) */
+    --mask:rgba(4,7,12,.72);
     /* 상단 바 높이 — 표 머리글이 이 아래에 붙어 멈춘다. 탭이 줄바꿈되면
        바가 높아지므로 실제 값은 JS 가 재서 덮어쓴다(여기 값은 첫 그림용). */
     --topbar:63px;
@@ -301,7 +305,8 @@
   .kpi .v{font-size:23px;font-weight:700;line-height:1.25;letter-spacing:-.5px}
   .kpi .v u{font-size:11.5px;font-weight:500;color:var(--tx3);text-decoration:none;margin-left:3px}
   .kpi .s{font-size:11px;color:var(--tx3)}
-  .c-cy{color:var(--cy)} .c-cr{color:var(--crit)} .c-mj{color:var(--major)} .c-ok{color:var(--ok)}
+  /* KPI 값 색 유틸 — 마크업이 실제로 붙이는 셋만 남긴다(.c-cr 은 쓰는 곳이 없었다) */
+  .c-cy{color:var(--cy)} .c-mj{color:var(--major)} .c-ok{color:var(--ok)}
 
   /* ── 레이아웃 ── */
   .main{display:block}
@@ -335,7 +340,14 @@
   @keyframes p{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 
   /* ── 케이스 목록 ── */
-  table.cases{width:100%;border-collapse:collapse}
+  /* ★table-layout:fixed — 열이 열세 개다. 자동 폭이면 '실제지표'·AMOS 칸의
+     raw 컬럼명(띄어쓰기 없는 40자)이 자기 칸을 밀고 나가, 폭을 안 준 '발동 룰'
+     칸이 한 글자 폭까지 짜부라졌다. 폭은 머리글 th 의 width 가 정하고 남는
+     자리는 발동 룰이 가져간다 — 창이 좁아져도 열이 흔들리지 않는다. */
+  /* ★min-width — 고정 폭 합(약 1266px)이 창보다 넓어지면 폭을 안 준 '발동 룰'
+     칸이 0 으로 눌려 글자가 옆 칸 위에 겹쳐 찍혔다(1100px). 표에 최소 폭을 줘서
+     그 칸이 항상 250px 는 갖게 하고, 모자라면 그때 가로로 밀리게 한다. */
+  table.cases{width:100%;min-width:1520px;border-collapse:collapse;table-layout:fixed}
   /* ★머리글 고정 — 하루치 1440행을 내리다 보면 지금 보는 숫자가 M14 인지
      M16B 인지 알 수 없어진다. 머리글이 상단 바 바로 아래에 붙어 멈춘다.
      · sticky 는 thead 가 아니라 **th** 에 건다. border-collapse:collapse 인
@@ -348,10 +360,10 @@
      머리글만 페이지 바탕색이라 붙어 멈출 때 카드에 띠가 하나 생겨 보였다. */
   table.cases th{font-size:11px;color:var(--tx3);font-weight:600;text-align:left;
                  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
-                 height:44px;padding:0 14px;border-bottom:1px solid var(--line);
+                 height:44px;padding:0 10px;border-bottom:1px solid var(--line);
                  position:sticky;top:var(--topbar);z-index:12;
                  background:var(--panel);box-shadow:inset 0 -1px 0 var(--line)}
-  table.cases td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.cases td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
   /* 행 높이 54px(시안). 표에서 td 의 height 는 '최소' 로 읽혀 reason 이 두 줄이면 늘어난다 */
   table.cases tr.crow td{height:54px}
   /* 양 끝 칸은 카드 안 여백(.hd 의 30px)에 맞춘다 — 제목과 첫 컬럼의 세로줄이 맞는다 */
@@ -367,7 +379,6 @@
   @keyframes flash{from{background:color-mix(in srgb, var(--cy) 24%, transparent)}
                      to{background:var(--cybg)}}
   table.cases tr.crow:hover{background:var(--panel2)}
-  table.cases tr.crow.sel{background:var(--panel2);box-shadow:inset 3px 0 0 var(--cy)}
   /* 위험 이상 행은 왼쪽에 등급색 3px(시안) — 1440행을 훑을 때 볼 줄이 먼저 걸린다 */
   table.cases tr.hot위험{box-shadow:inset 3px 0 0 var(--major)}
   table.cases tr.hot초위험{box-shadow:inset 3px 0 0 var(--crit)}
@@ -381,7 +392,8 @@
      정작 올라간 FAB 이 안 보인다. 눈이 가야 하는 건 경계 이상뿐이다. */
   /* 머리글(M14…)과 그 아래 숫자를 같이 가운데로. tabular-nums 라 자릿수가
      달라도(7 / 36 / 100) 세로줄이 흐트러지지 않는다. */
-  table.cases th.fcol{text-align:center}
+  /* 자간 .08em 을 빼는 유일한 머리글 — 'M16HUB' 여섯 글자가 64px 칸을 넘긴다 */
+  table.cases th.fcol{text-align:center;letter-spacing:0}
   table.cases td.fcol{text-align:center;white-space:nowrap;
     font-variant-numeric:tabular-nums}
   /* 시안: mono 13.5px · 위험 이상만 굵게(색은 fabCells 가 인라인으로 준다) */
@@ -402,7 +414,9 @@
   /* reason — 발동 룰을 한 줄에 하나씩. 칸이 좁아져서 한 줄로 흘리면
      룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
   table.cases td.rcol{font-size:13.5px;line-height:1.5;color:var(--txb)}
-  table.cases td.rcol .rln{white-space:normal}
+  /* ★word-break:keep-all — 한글은 기본이 '어디서나 줄바꿈' 이라 칸이 좁아지면
+     룰 이름 가운데가 갈라졌다 ('역방향 증 / 가 4개'). 띄어쓰기에서만 접는다. */
+  table.cases td.rcol .rln{white-space:normal;word-break:keep-all;text-wrap:pretty}
   /* 4개 이상 걸린 줄은 파란 글자. 점수가 같아도 '여러 개가 한꺼번에'
      걸린 줄은 성격이 다르다 — 훑을 때 눈에 걸리게 한다. */
   table.cases td.rcol .many .rln{color:var(--many)}
@@ -411,9 +425,17 @@
      (10.5px 는 raw 컬럼명이 길어 줄이던 값인데, 시안 행 높이 54px 면 12.5px 가 들어간다) */
   table.cases td .mcell{font-size:12.5px;line-height:1.45;color:var(--txb)}
   table.cases td .mcell .dim{font-size:11px}
-  /* AMOS HID·QUEUE 두 칸 — 칸이 좁아 칩 라벨을 한 단계 줄인다 */
-  table.cases td .dirline b{width:66px;font-size:10px}
-  table.cases td .zchip{padding:1px 7px;font-size:11px}
+  /* ★raw 컬럼명(M16HUB.QUE.TIME.AVGTOTALTIME1MIN)은 띄어쓰기가 없어 줄바꿈 지점이
+     없다 — 그대로 두면 이 칸이 230px 를 밀고 나가 발동 룰 칸을 한 글자 폭까지
+     짜부라뜨렸다. 한 줄로 자르고 전문은 이미 title 에 있다(호버). */
+  table.cases td .mcell>div{max-width:100%;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  /* AMOS HID·QUEUE 두 칸 — ▼/▲ 라벨과 칩을 한 줄에. 라벨을 74px 로 고정해 두면
+     칩이 늘 다음 줄로 밀려 한 행이 네 줄이 됐다. */
+  table.cases td .dirline{min-width:0}
+  table.cases td .dirline b{width:auto;font-size:10px}
+  table.cases td .zchip{padding:1px 7px;font-size:11px;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   table.cases tr.morerow td{text-align:center;padding:18px;background:var(--panel)}
   /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
      범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
@@ -430,7 +452,7 @@
   .fabsel input:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
   /* CASE — 시안엔 없는 칸이다. 지우지 않되 훑는 데 방해되지 않게 작게·mono 로 */
   .cid{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx3);white-space:nowrap;
-       font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+       min-width:0;overflow:hidden;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
   /* 스코어 숫자 — mono 13.5px(표에서 제일 큰 글자. 본문보다 크면 행이 높아진다) */
   .ttl{font-weight:600;font-size:13.5px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -448,53 +470,23 @@
   .tag,.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
   .dim{color:var(--tx3);font-size:12px;white-space:nowrap}
-  .stt{font-size:12px;font-weight:600}
-  .stt.활성{color:var(--crit)} .stt.확인{color:var(--major)} .stt.종결{color:var(--tx3)}
 
-  /* ── 상세 ── */
-  .side .sec{padding:14px 16px;border-bottom:1px solid var(--line)}
-  .side h3{margin:0 0 8px;font-size:11.5px;color:var(--tx3);font-weight:650}
-  .dt-hd{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-  .dt-hd .id{font-size:12.5px;color:var(--tx2)}
-  .dt-ttl{font-size:17px;font-weight:700;margin:9px 0 12px;line-height:1.35}
-  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-  .grid4 .l{font-size:10.5px;color:var(--tx3)}
-  .grid4 .v{font-size:13px;font-weight:600;margin-top:2px}
-  .step{display:flex;align-items:center;margin:15px 0 4px}
-  .step .n{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;width:56px}
-  .step .n i{width:9px;height:9px;border-radius:50%;background:#26303f}
-  .step .n.on i{background:var(--cy)}
-  .step .n.cur i{background:var(--crit);box-shadow:0 0 0 4px rgba(255,77,94,.18)}
-  .step .n span{font-size:10.5px;color:var(--tx3)}
-  .step .n.on span,.step .n.cur span{color:var(--tx2)}
-  .step .ln{height:1px;background:#26303f;flex:1;margin-bottom:19px}
-  .llmbox{background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:12px}
-  .llmbox .tag{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--cy);
-               font-weight:650;margin-bottom:7px}
-  .llmbox .tag i{width:7px;height:7px;border-radius:50%;background:var(--cy)}
-  ol.act{margin:10px 0 0;padding:0;list-style:none;counter-reset:a}
-  ol.act li{counter-increment:a;font-size:12.5px;padding:4px 0 4px 26px;position:relative;color:var(--tx2)}
-  ol.act li::before{content:counter(a,decimal-leading-zero);position:absolute;left:0;
-                    color:var(--cy);font-size:11px;font-weight:700;top:5px}
+  /* ── 케이스 상세 조각 ──
+     ★여기 있던 옆 패널(.side/.dt-hd/.dt-ttl/.grid4/.step/.llmbox/ol.act/
+       table.mx/.chips/ul.tl/.stt)은 화면에서 사라진 기능이다. 마크업에도
+       JS 문자열에도 그 클래스를 만드는 곳이 한 군데도 없어 통째로 지웠다
+       — 규칙이 남아 있으면 다음 사람이 '쓰는 줄 알고' 색을 맞추려 든다.
+     남긴 셋은 지금도 쓴다: pre.snap(ML 진단 원문) · .zchip(칩) · .dirline
+       (표의 AMOS 방향 줄). */
   pre.snap{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
            padding:11px;margin:0;overflow:auto;font:11.5px/1.6 ui-monospace,Menlo,Consolas,monospace;
-           color:#8ecfdc;white-space:pre-wrap;word-break:break-all}
-  table.mx{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:9px}
-  table.mx td{padding:7px 10px;border-bottom:1px solid var(--line)}
-  table.mx td:nth-child(2){text-align:right;font-weight:700}
-  table.mx td:nth-child(3){text-align:right;color:var(--tx3);font-size:11.5px;width:88px}
-  .chips{display:flex;flex-wrap:wrap;gap:5px}
+           color:var(--cy);white-space:pre-wrap;word-break:break-all}
   .zchip{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;
          padding:2px 8px;font-size:11.5px;color:var(--tx2)}
+  .zchip.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px}
   .dirline{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:4px}
   .dirline:last-child{margin-bottom:0}
   .dirline b{font-size:10.5px;flex:none;width:74px;letter-spacing:.2px}
-  .zchip.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px}
-  ul.tl{list-style:none;margin:0;padding:0;font-size:12.5px}
-  ul.tl li{padding:5px 0 5px 15px;border-left:1px solid var(--line2);position:relative;color:var(--tx2)}
-  ul.tl li::before{content:"";position:absolute;left:-3.5px;top:12px;width:6px;height:6px;
-                   border-radius:50%;background:var(--cy)}
-  ul.tl .k{color:var(--tx3);margin-right:7px;font-variant-numeric:tabular-nums}
 
   /* 버튼(시안) — 필터 버튼과 같은 모양. .pri 는 청록 면, .danger(중지 등)는 --crit 테두리 */
   button.act,a.act,.btn{background:transparent;border:1px solid var(--line);color:var(--tx2);
@@ -527,8 +519,13 @@
   .warn{background:color-mix(in srgb, var(--crit) 9%, transparent);
         border:1px solid color-mix(in srgb, var(--crit) 35%, transparent);color:var(--crit);
         padding:9px 14px;border-radius:12px;font-size:12.5px;margin:0}
+  /* 끝난 일 알림 줄(리포트 생성 완료) — 실패는 위 .warn 띠인데 성공은 클래스
+     (.ok-line)만 붙고 규칙이 없어 맨 글자로 떨어져 있었다. ★여기에 --ok(초록)를
+     쓰지 않는다: 이 화면에서 초록은 '정상 등급' 이라는 뜻이라, '작업 완료' 에
+     쓰면 두 뜻이 섞인다. 화면의 강조색(청록)으로 맞춘다. */
+  .ok-line{background:var(--cybg);border:1px solid var(--cyline);color:var(--tx);
+           padding:9px 14px;border-radius:12px;font-size:12.5px}
   .empty{color:var(--tx3);text-align:center;padding:44px 16px;font-size:13px}
-  pre.md{white-space:pre-wrap;font:inherit;margin:0}
   /* 페이지 폭(시안): 28px 36px 56px · 최대 2400px 가운데 · 섹션 사이 24px.
      ★body 에 min-width 를 박지 않는다 — 좁으면 표 컨테이너 안에서만 가로 스크롤. */
   .page{padding:28px 36px 56px;max-width:2400px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
@@ -537,10 +534,21 @@
            border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .card>h2 .note{font-size:12.5px;font-weight:400}
   .card .bd{padding:22px 30px}
+  /* ML 탭처럼 덩어리가 여러 개인 카드 — 사이 간격을 한 값(14px)으로 맞춘다 */
+  #tab-ml .bd{display:flex;flex-direction:column;gap:14px}
+  #tab-ml .bd>h3{margin-bottom:0}
+  #tab-analysis .bd{display:flex;flex-direction:column;gap:10px}
+  /* 표(정책·ML·분석 공용) — 시안 표 규칙: 머리글 40px·11px 대문자 --tx3,
+     행 아래 1px --line. ★table.cases 와 같은 언어로 맞춘다: 탭을 옮길 때
+     글자 크기가 튀면 다른 화면처럼 보인다.
+     ★한 블록에 모아 둔다 — 예전엔 이 규칙이 파일 두 곳에 갈라져 있어
+       padding·font-size 가 서로를 덮고 있었다. */
   table.pol{width:100%;border-collapse:collapse;font-size:12.5px}
-  table.pol th{text-align:left;color:var(--tx3);font-weight:600;font-size:11.5px;
-               padding:7px 9px;border-bottom:1px solid var(--line)}
-  table.pol td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.pol th{height:40px;padding:0 10px;text-align:left;color:var(--tx3);font-weight:600;
+               font-size:11px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
+               vertical-align:middle;border-bottom:1px solid var(--line)}
+  table.pol td{padding:11px 10px;font-size:12.5px;color:var(--txb);vertical-align:middle;
+               border-bottom:1px solid var(--line)}
   .hidden{display:none!important}
 
   /* ── 실시간 탭 위 영역(시안): 선행 감지 배너 · LLM 최근 판단 카드 · 경보 배너 ──
@@ -548,9 +556,14 @@
      아래 여백은 0 — 다음 .page/.main 의 위 여백이 카드 사이 간격이 된다. */
   .livehead{padding:28px 36px 0;max-width:2400px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
   .livehead:empty{display:none}
+  /* ★비어 있는 #warnbox 도 flex 항목이라 경보가 없는 평상시에 카드 아래로
+     gap 16px 가 한 칸 더 벌어져 있었다(높이는 0 인데 자리는 차지한다). */
+  .livehead>div:empty{display:none}
   /* LLM 카드: 왼쪽 판단(#llmnow) + 오른쪽 KPI 스탯 4개. 좁으면 KPI 가 아래 줄로 내려간다 */
+  /* ★모서리 20px — 아래 추이(.strip)·표(.pane) 카드와 같은 값이다. 16px 로
+     두었더니 같은 폭으로 쌓인 세 카드 중 맨 위만 각져 보였다. */
   .llmcard{display:flex;align-items:stretch;flex-wrap:wrap;background:var(--panel);
-           border:1px solid var(--line);border-radius:16px}
+           border:1px solid var(--line);border-radius:20px}
   .llmcard .llmnow{flex:1 1 560px;min-width:0}
   /* ── LLM 최근 판단 (시안 카드) ──
      1행 라벨·등급 배지·시각·모델·칩·[과거 LLM 판단 보기] / 2행 판단 문장 / 3행 근거.
@@ -569,7 +582,7 @@
               padding:4px 10px;border-radius:99px;background:var(--panel2)}
   .llmnow .bar{width:48px;height:4px;border-radius:2px;background:var(--line2);flex:none;overflow:hidden}
   .llmnow .bar i{display:block;height:4px;border-radius:2px}
-  .llmnow .llmacc{margin-left:auto;flex:none;padding:7px 13px;border-radius:9px;border:1px solid var(--cyline);
+  .llmnow .llmacc{margin-left:auto;flex:none;padding:7px 13px;border-radius:10px;border:1px solid var(--cyline);
                   background:var(--cybg);color:var(--cy);font:600 12px/1 inherit;cursor:pointer;white-space:nowrap}
   .llmnow .llmacc:hover{border-color:var(--cy)}
   .llmnow .jt{margin:10px 0 0;font-size:16px;line-height:1.5;font-weight:600;color:var(--tx);text-wrap:pretty}
@@ -579,11 +592,11 @@
   /* ── KPI 4개 — 카드 오른쪽 스탯 행(시안엔 큰 타일이 없다). 기본 .kpis 는 ML 탭이 쓰므로
      여기서만 덮는다: 라벨 11px 대문자 · 값 mono 17px · 부제 한 줄 말줄임(전문은 title 에) */
   .llmcard .kpis{flex:0 1 auto;display:flex;align-items:stretch;border:0;border-left:1px solid var(--line);
-                 background:transparent;border-radius:0 16px 16px 0}
+                 background:transparent;border-radius:0 20px 20px 0}
   .llmcard .kpi{padding:14px 18px;border-right:0;min-width:0;display:flex;flex-direction:column;gap:3px;
                 justify-content:center}
   .llmcard .kpi+.kpi{border-left:1px solid var(--line)}
-  .llmcard .kpi:last-child{border-radius:0 16px 16px 0}   /* #kpi-acc 호버 배경이 카드 모서리를 안 넘게 */
+  .llmcard .kpi:last-child{border-radius:0 20px 20px 0}   /* #kpi-acc 호버 배경이 카드 모서리를 안 넘게 */
   .llmcard .kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);white-space:nowrap}
   .llmcard .kpi .l .note{font-size:10px;letter-spacing:0;text-transform:none}
   .llmcard .kpi .v{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
@@ -594,9 +607,9 @@
                    text-overflow:ellipsis;white-space:nowrap}
   /* 1400px 아래에선 KPI 행이 카드 아래 줄로 내려간다 — 왼쪽 선 대신 위 선 */
   @media (max-width:1400px){
-    .llmcard .kpis{flex:1 1 100%;border-left:0;border-top:1px solid var(--line);border-radius:0 0 16px 16px}
+    .llmcard .kpis{flex:1 1 100%;border-left:0;border-top:1px solid var(--line);border-radius:0 0 20px 20px}
     .llmcard .kpi{flex:1}
-    .llmcard .kpi:last-child{border-radius:0 0 16px 0}
+    .llmcard .kpi:last-child{border-radius:0 0 20px 0}
   }
   /* ── 선행 감지 배너(카드 위 슬림 띠): 경보면 --major 테두리·글자, 조용하면 --tx3 ── */
   .fcbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 16px;border-radius:12px;
@@ -622,7 +635,9 @@
   /* ── 추이 스트립(시안 카드): 제목 17px · 정보 12.5px · 오른쪽에 겹쳐 보기/리미트선/범례 ──
      ★.strip 은 .pane 밖의 독립 카드다 — 표 카드와 같은 20px 모서리·--panel·--line.
      ★overflow 를 숨기지 않는다 — 호버 툴팁이 카드 위로 튀어나온다(시안). */
-  .strip{position:relative;padding:26px 30px 22px;border-radius:20px;background:var(--panel);
+  /* ★안 여백을 22px 30px 로 — 표 카드의 .hd·다른 탭의 .card .bd 와 같은 값이다.
+     이 카드만 26/22 라 제목 줄이 옆 카드보다 4px 내려와 있었다. */
+  .strip{position:relative;padding:22px 30px;border-radius:20px;background:var(--panel);
          border:1px solid var(--line)}
   .striphd{display:flex;align-items:center;gap:18px;flex-wrap:wrap;white-space:nowrap;font-size:12.5px}
   .striphd .sttl{font-size:17px;font-weight:700;letter-spacing:.02em}
@@ -708,29 +723,148 @@
 
   /* ── 더블클릭 그래프 ── */
   /* 구간 그래프 안의 OHT 재생 줄 — 그 1분을 월드모델로 열어 본다 */
-  .ohtbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
-          padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .ohtbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+          padding:11px 22px;border-bottom:1px solid var(--line2);background:transparent}
   .ohtbtns{display:inline-flex;gap:5px;flex-wrap:wrap}
-  .ohtbtns button{background:var(--panel2);border:1px solid var(--line2);
-    color:var(--tx);border-radius:6px;padding:4px 11px;font:inherit;
+  /* 알약 버튼(시안). ★호버 배경 #16304a 를 뺐다 — 다크에만 맞는 남색이라
+     화이트 테마에서 버튼 하나만 남색 알약이 됐다. */
+  .ohtbtns button{background:var(--panel);border:1px solid var(--line2);
+    color:var(--tx);border-radius:99px;padding:5px 13px;font:inherit;
     font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
-  .ohtbtns button:hover{background:#16304a;border-color:var(--cy);color:var(--cy)}
+  .ohtbtns button:hover{background:var(--cybg);border-color:var(--cy);color:var(--cy)}
   .ohtbtns button:disabled{opacity:.4;cursor:not-allowed}
   .ohtbar .down{color:var(--major)}
   /* 모달(시안): --panel2 · 20px · 그림자. 마스크는 테마와 무관하게 어둡다 —
      밝은 테마에서도 뒤 화면을 눌러 줘야 상자가 떠 보인다. */
-  .gmask{position:fixed;inset:0;background:rgba(4,7,12,.72);z-index:50;
+  .gmask{position:fixed;inset:0;background:var(--mask);z-index:50;
          display:flex;align-items:center;justify-content:center;padding:24px}
   .gbox{background:var(--panel2);border:1px solid var(--line2);border-radius:20px;
         max-width:1120px;width:100%;max-height:92vh;overflow:auto;
         box-shadow:var(--shadow)}
-  .gbox.wide{max-width:1280px;
-        box-shadow:0 18px 60px rgba(0,0,0,.6)}
-  .ghd{display:flex;align-items:center;gap:10px;padding:12px 16px;
-       border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
-  .ghd b{font-size:13.5px}
-  .gbody{padding:14px 16px}
+  /* ★넓은 모달은 폭만 다르다 — 그림자를 다시 적어 두니(하드코딩 rgba) 같은
+     층의 모달 둘이 서로 다른 깊이로 떠 보였다. .gbox 의 --shadow 를 쓴다. */
+  .gbox.wide{max-width:1280px}
+  /* 헤더는 sticky — 긴 결과를 내려도 제목과 닫기 버튼이 남아 있어야 한다.
+     ★배경을 상자와 같은 --panel2 로 맞췄다: --panel 이면 상자 안에 띠가 하나 더 생겨
+       모달이 두 겹으로 보였다. */
+  .ghd{display:flex;align-items:center;gap:12px;padding:16px 22px;
+       border-bottom:1px solid var(--line2);position:sticky;top:0;z-index:2;
+       background:var(--panel2)}
+  .ghd b{font-size:15px;font-weight:700;letter-spacing:.01em}
+  .gbody{padding:18px 22px}
   .gbody svg{width:100%;height:auto;display:block;border-radius:8px}
+
+  /* ══════ 나머지 탭 5개(과거·ML·분석·리포트·정책) ══════
+     공통 규칙(.page/.card/.act/input…)이 대부분 그대로 먹는다. 여기 모은 것은
+     탭 고유 클래스와, 마크업에 인라인으로 남아 있던 잔여를 시안 값으로 옮긴 것뿐이다.
+     ★id·onclick·data-* 는 하나도 건드리지 않았다 — 모양만 바꾼다. */
+
+  /* 탭 머리 — eyebrow(탭 이름 12px/.14em) + 한 줄 설명 15px(시안).
+     ★margin 을 주지 않는다: .page/#tab-past 가 이미 gap:24px 라 두 번 벌어진다. */
+  .tabhead{display:flex;flex-direction:column;gap:8px}
+  .tabhead p{margin:0;max-width:1100px;font-size:15px;line-height:1.65;color:var(--tx2);
+             text-wrap:pretty}
+  .tabhead p b{color:var(--txb);font-weight:600}
+
+  /* 카드 안 소제목 — 시안 섹션 라벨(11px · .08em · 대문자 · --tx3).
+     ★13px 굵은 글씨는 카드 제목(17px)과 구분이 안 돼 어디서 덩어리가 나뉘는지
+       보이지 않았다. 라벨로 내리니 표와 표 사이가 읽힌다. */
+  .card .sech{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:24px 0 9px;
+              font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+              color:var(--tx3)}
+  .card .sech .note{font-size:11.5px;font-weight:400;letter-spacing:0;text-transform:none}
+  .card .bd>.sech:first-child{margin-top:0}
+  /* 카드 첫 설명 문단 — 제목 바로 아래 한 줄 */
+  .card .bd>p.note{margin:0 0 12px}
+  .card .bd>p.note:last-child{margin-bottom:0}
+
+  /* 행 안의 버튼은 내용 폭 그대로(시안). 인라인 flex:0 0 auto 를 여기로 모았다 */
+  .row>button.act,.row>a.act,.row>.btn{flex:0 0 auto}
+
+  /* 컨트롤 묶음 상자(ML 기간 · 진단 줄) — --panel2 면에 카드보다 한 단계 작은 모서리 */
+  .ctlbox{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:10px 14px;
+          border:1px solid var(--line);border-radius:14px;background:var(--panel2)}
+  .ctlbox.note{font-size:12.5px;line-height:1.6;display:block}
+
+  /* (table.pol 의 th/td 본체는 위 공통 블록에 한 번만 적는다) */
+  table.pol td .note{font-size:11.5px}
+  table.pol tbody tr:last-child td{border-bottom:0}
+  table.pol tbody tr:hover td{background:var(--panel2)}
+  .tw{overflow:auto}
+
+  /* ── ML 조기예측 ── */
+  /* 현재 상태 4칸(#mlnow) — .kpis 마크업은 그대로 두고 시안 스탯 타일로 바꾼다.
+     ★#mlnow 로만 좁힌다: 기본 .kpis/.kpi 는 실시간 탭 KPI 도 쓰는 클래스라,
+       .kpis .kpi 로 쓰면 LLM 카드 오른쪽 스탯까지 같이 바뀐다. */
+  #mlnow{gap:10px;background:transparent;border-bottom:0;margin:0}
+  #mlnow .kpi{padding:14px 16px;border:1px solid var(--line);border-radius:14px;
+              background:var(--panel2)}
+  #mlnow .kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
+  #mlnow .kpi .v{margin-top:7px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+                 font-variant-numeric:tabular-nums;font-size:24px;line-height:1.15;letter-spacing:0}
+  #mlnow .kpi .v u{font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
+                   font-size:11.5px;margin-left:3px}
+  #mlnow .kpi .s{margin-top:6px;font-size:11px;line-height:1.5;color:var(--tx3)}
+  /* 1200px 아래에선 네 칸이 한 줄에 안 들어간다 — 부제('임계 … · 순간값 …')가 접히며
+     타일 높이가 제각각이 됐다. 두 칸씩 두 줄로 내린다. */
+  @media (max-width:1200px){ #mlnow{grid-template-columns:repeat(2,1fr)} }
+  /* 임계까지 남은 여유 막대 — 알약(시안). 칠하는 색은 JS 가 등급 뜻으로 고른다 */
+  #mlgauge .gauge{position:relative;height:18px;border-radius:99px;overflow:hidden;
+                  background:var(--panel2);border:1px solid var(--line2)}
+  #mlgauge .gauge>i{display:block;height:100%;border-radius:99px}
+  #mlgauge .gauge>span{position:absolute;right:10px;top:0;line-height:16px;font-size:10.5px;
+                       color:var(--tx2)}
+  /* 오늘 단계별 시간 — 알약 칩 줄(예전엔 글자만 나열돼 어디까지가 한 단계인지 흐렸다) */
+  #mlstages{display:flex;flex-wrap:wrap;gap:8px}
+  /* ★inline-flex + gap 으로 만들었더니 칩 안의 글자마다 flex 항목이 돼
+     '정상 87 분' 처럼 숫자와 단위 사이가 벌어졌다 — inline-block 으로 되돌린다 */
+  #mlstages .mlst{display:inline-block;padding:6px 12px;border-radius:99px;
+                  border:1px solid var(--line);background:var(--panel2);
+                  font-size:12px;color:var(--tx2);white-space:nowrap}
+  #mlstages .mlst i{display:inline-block;width:8px;height:8px;border-radius:99px;
+                    margin-right:6px;vertical-align:middle}
+  #mlstages .mlst b{color:var(--tx);font-variant-numeric:tabular-nums}
+
+  /* ── LLM 모델 분석 ── */
+  /* 단계별 모델 고르기 — 라벨 11px + 시안 select. 네 칸이 나란히, 좁으면 접힌다 */
+  #anpick{display:flex;gap:10px;flex-wrap:wrap;flex:1}
+  #anpick .l{margin-bottom:5px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+             color:var(--tx3)}
+  #anroles{grid-template-columns:repeat(4,1fr);gap:14px;margin:12px 0}
+  /* 이어 묻기 — 결과 카드 안의 작은 카드. 입력은 공통 규칙(--panel2/10px)에 맡긴다 */
+  .anchat{margin-top:14px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;
+          background:var(--panel)}
+  .anchat .hdl{margin-bottom:9px;font-size:12.5px;font-weight:700}
+  .anchat .hdl .note{font-weight:400}
+  .anchat .mrow{display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap}
+  .anchat .qrow{display:flex;gap:7px}
+  .anchat .anq{color:var(--cy);margin-right:10px;text-decoration:none}
+  .anchat .anq:hover{text-decoration:underline}
+  #anchatlog{max-height:320px;overflow-y:auto;margin-bottom:9px}
+  #anchatm{max-width:260px;padding:6px 10px;font-size:12px}
+  #anchatq{flex:1;min-width:0}
+  #anchatpt{min-height:0;font-size:12px}
+
+  /* ── 정책 ── */
+  /* 컷 입력칸 — 세 칸이 세로로 줄 맞게 고정 폭 + mono(숫자를 위아래로 비교하는 표다) */
+  #sprows input{width:96px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+                font-variant-numeric:tabular-nums}
+  /* 변경 로그 — mono 12px --tx2(시안). 이유 칸만 본문 글꼴로 되돌린다(한글이라) */
+  #sp-log td{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12px;
+             color:var(--tx2)}
+  #sp-log td:last-child{font-family:inherit;color:var(--txb)}
+  /* 접기 상자(프롬프트) — 기본 삼각형 대신 직접 그린다: 브라우저마다 크기가 달라
+     제목 줄 높이가 흔들렸다 */
+  .fold{padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel2)}
+  .fold>summary{cursor:pointer;font-size:12.5px;color:var(--tx2);list-style:none}
+  .fold>summary::-webkit-details-marker{display:none}
+  .fold>summary::before{content:'▸ ';color:var(--tx3)}
+  .fold[open]>summary::before{content:'▾ '}
+  #sp-prompt{height:190px;font:12px/1.6 ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+  /* 체크 라벨 — 라벨 + 점(시안 토글 느낌). accent-color 는 공통 규칙이 --cy 로 준다 */
+  .swlbl{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;cursor:pointer;
+         user-select:none}
+  .swlbl:hover{color:var(--tx2)}
 </style>
 </head>
 <body>
@@ -951,13 +1085,13 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:104px">시각</th>
-        <th style="width:128px">CASE</th>
-        <th class="scol" style="width:96px"><span class="scth">스코어</span></th>
+        <th style="width:96px">시각</th>
+        <th style="width:116px">CASE</th>
+        <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th>발동 룰</th>
-        <th class="mcol" style="width:230px">실제지표</th>
-        <th style="width:190px">AMOS HID 구역</th>
-        <th style="width:240px">AMOS QUEUE 지표</th>
+        <th class="mcol" style="width:190px">실제지표</th>
+        <th style="width:150px">AMOS HID 구역</th>
+        <th style="width:170px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="7" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -966,6 +1100,10 @@
 
 <!-- ── 과거 데이터 조회 (실시간 관제와 동일 · 보는 날짜만 다름) ── -->
 <div class="main hidden" id="tab-past">
+  <div class="tabhead">
+    <div class="eyebrow">과거 데이터 조회</div>
+    <p>날짜를 골라 실시간 관제와 <b>똑같은 화면</b>으로 봅니다 — 추이·표·LLM 판단이 그날 것으로 바뀝니다.</p>
+  </div>
   <div class="strip">
     <div class="striphd"><b class="sttl">추이</b>
       <span class="note" id="pstripinfo">—</span>
@@ -1021,13 +1159,13 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:104px">시각</th>
-        <th style="width:128px">CASE</th>
-        <th class="scol" style="width:96px"><span class="scth">스코어</span></th>
+        <th style="width:96px">시각</th>
+        <th style="width:116px">CASE</th>
+        <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th>발동 룰</th>
-        <th class="mcol" style="width:230px">실제지표</th>
-        <th style="width:190px">AMOS HID 구역</th>
-        <th style="width:240px">AMOS QUEUE 지표</th>
+        <th class="mcol" style="width:190px">실제지표</th>
+        <th style="width:150px">AMOS HID 구역</th>
+        <th style="width:170px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="7" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
@@ -1039,9 +1177,14 @@
        (우리 0~100점 / ML 은 분 단위 반송시간). 그래서 실시간 화면에
        섞지 않고 여기 따로 둔다. -->
 <div class="page hidden" id="tab-ml">
+  <div class="tabhead">
+    <div class="eyebrow">ML 조기예측</div>
+    <p>임계를 넘기 전에 미리 띄우는 <b>별도 예보</b>입니다 — 우리 점수(0~100)와 눈금이 달라 실시간 추이에 겹치지 않고 여기서 따로 봅니다.</p>
+  </div>
   <div class="card">
     <h2>ML 조기예측 <span class="note" id="mlnote"></span></h2>
-    <p class="note" style="margin:2px 0 12px">
+    <div class="bd">
+    <p class="note">
       반송시간 <b style="color:var(--tx2)">10분 평균</b>이 임계를 넘을 확률을 1분마다 냅니다
       (Amazon <span class="mono">chronos-2</span>, 재학습 없음).
       <b style="color:var(--tx2)">룰베이스와 독립</b>입니다 — 서로의 판정을 입력으로 쓰지 않아
@@ -1049,59 +1192,61 @@
       <span class="note dim">※ 우리 점수(0~100)와 눈금이 달라 추이 그래프에 겹쳐 그리지 않습니다.</span>
     </p>
 
-    <div class="row" style="margin:0 0 8px;gap:8px;align-items:center;flex-wrap:wrap">
+    <div class="row">
       <label class="note">보는 날짜
         <input type="date" id="mlday" style="margin-left:5px"></label>
       <button id="mltoday" class="btn">오늘</button>
       <button id="mlfetch" class="btn">지금 받기</button>
       <span class="note dim" id="mllive">· 20초마다 자동 갱신</span>
     </div>
-    <div class="row" style="margin:0 0 10px;gap:8px;align-items:center;flex-wrap:wrap;
-         padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--panel2)">
+    <div class="ctlbox">
       <span class="note">기간</span>
       <input type="date" id="mlfrom"> <span class="note dim">~</span> <input type="date" id="mlto">
-      <button id="mlrange7" class="btn" style="font-size:11px">최근 7일</button>
-      <button id="mlrange30" class="btn" style="font-size:11px">최근 30일</button>
+      <button id="mlrange7" class="btn">최근 7일</button>
+      <button id="mlrange30" class="btn">최근 30일</button>
       <button id="mlbackfill" class="btn">기간 받아오기</button>
       <button id="mlexport" class="btn">기간 CSV 내려받기</button>
       <span class="note dim">한 달치를 하루씩 누를 수는 없으니 기간으로 받습니다</span>
     </div>
-    <div id="mldiag" class="note" style="display:none;margin:0 0 12px;padding:9px 11px;
-         border:1px solid var(--line2);border-radius:8px;background:var(--panel2)"></div>
+    <div id="mldiag" class="note ctlbox" style="display:none"></div>
 
-    <div id="mlnow" class="kpis" style="border:1px solid var(--line);border-radius:9px;
-         grid-template-columns:repeat(4,1fr);margin:0 0 14px"></div>
+    <div id="mlnow" class="kpis"></div>
 
-    <div id="mlgauge" style="margin:0 0 16px"></div>
+    <div id="mlgauge"></div>
 
-    <h3 style="font-size:13px;margin:18px 0 6px">오늘 단계별 시간</h3>
+    <h3 class="sech">오늘 단계별 시간</h3>
     <div id="mlstages" class="note">–</div>
 
-    <h3 style="font-size:13px;margin:18px 0 6px">선제경보·진행 구간</h3>
+    <h3 class="sech">선제경보·진행 구간</h3>
     <div class="tw"><table class="pol"><thead><tr>
       <th style="width:150px">시작</th><th style="width:150px">끝</th>
       <th style="width:100px">단계</th><th>예고(분)</th></tr></thead>
       <tbody id="mlspans"></tbody></table></div>
 
-    <h3 style="font-size:13px;margin:18px 0 6px">최근 기록
+    <h3 class="sech">최근 기록
       <span class="note">· 1분에 한 줄</span></h3>
-    <div class="tw" style="max-height:420px;overflow:auto"><table class="pol"><thead><tr>
+    <div class="tw" style="max-height:420px"><table class="pol"><thead><tr>
       <th style="width:130px">시각</th><th style="width:90px">10분 확률</th>
       <th style="width:90px">30분 확률</th><th style="width:100px">단계</th>
       <th style="width:100px">10분평균</th><th style="width:80px">순간값</th>
       <th>사유</th></tr></thead>
       <tbody id="mlrows"></tbody></table></div>
+    </div>
   </div>
 </div>
 
 <!-- ── 리포트 · 피드백 ── -->
 <!-- ── 🧪 분석 (4-LLM 병렬) ── -->
 <div class="page hidden" id="tab-analysis">
+  <div class="tabhead">
+    <div class="eyebrow">LLM 모델 분석</div>
+    <p>같은 구간을 네 단계로 다시 물어 <b>모델별 판단이 어디서 갈리는지</b> 봅니다 — 결과를 열어 두고 이어서 물을 수도 있습니다.</p>
+  </div>
   <div class="card">
     <h2>4-LLM 파이프라인 분석
       <span class="note">— 1차(구간 병렬) → 2차 해석 → 3차 원자료 대조 검증 → 최종 판정</span></h2>
     <div class="bd">
-      <div class="row" style="margin-bottom:8px">
+      <div class="row">
         <label>날짜</label>
         <select id="anday" title="저장된 날짜 (data/YYYYMMDD_TOTAL.CSV)"></select>
         <input type="date" id="andate" title="목록에 없는 날짜 직접 지정">
@@ -1115,23 +1260,23 @@
           <span class="note">~</span>
           <input type="time" id="anend" value="10:00">
         </span>
-        <button class="act pri" id="btnan" style="flex:0 0 auto">🧪 분석 실행</button>
-        <button class="act" id="btnanstop" style="flex:0 0 auto;display:none;color:var(--crit);border-color:#5a2530"
+        <button class="act pri" id="btnan">🧪 분석 실행</button>
+        <button class="act danger" id="btnanstop" style="display:none"
                 title="진행 중인 LLM 호출이 끝나는 대로 멈춥니다 (그때까지 결과는 저장)">■ 분석 중지</button>
         <button class="act" onclick="checkAnModels()" title="게이트웨이가 이 키에 허용한 모델 확인 (/v1/models)">모델 확인</button>
         <span class="note" id="anmsg"></span>
       </div>
-      <div class="row" style="margin-top:6px;align-items:flex-start">
+      <div class="row" style="align-items:flex-start">
         <label style="align-self:center">모델</label>
-        <div id="anpick" style="display:flex;gap:8px;flex-wrap:wrap;flex:1"></div>
-        <button class="act" onclick="anResetModels()" style="flex:0 0 auto;padding:3px 10px;font-size:11.5px"
+        <div id="anpick"></div>
+        <button class="act" onclick="anResetModels()" style="padding:6px 12px;font-size:11.5px"
                 title="네 단계를 모두 config.json 기본값으로">기본값으로</button>
       </div>
-      <div class="note" style="margin:2px 0 4px">
+      <div class="note">
         비워두면 config.json 의 기본 모델을 씁니다. 여기서 고른 값은 <b>이번 실행에만</b> 적용되고
         config.json 은 바뀌지 않습니다. 목록은 게이트웨이가 이 키에 허용한 모델입니다.
       </div>
-      <div id="anroles" style="display:none;grid-template-columns:repeat(4,1fr);gap:14px;margin:10px 0"></div>
+      <div id="anroles" style="display:none"></div>
       <div id="anout"></div>
     </div>
   </div>
@@ -1143,14 +1288,18 @@
 </div>
 
 <div class="page hidden" id="tab-report">
+  <div class="tabhead">
+    <div class="eyebrow">리포트 · 피드백</div>
+    <p>하루치 사건을 LLM 이 <b>5섹션 보고서</b>로 정리합니다 — 로그프레소에서 그날을 직접 조회해 실시간 관제와 별개로 돕니다.</p>
+  </div>
   <div class="card">
     <h2>LLM 리포트</h2>
     <div class="bd">
-      <h3 class="note" style="margin:0 0 7px">날짜 검색 — 로그프레소에서 직접 조회 (실시간 관제와 별개)</h3>
-      <div class="row" style="margin-bottom:8px">
+      <h3 class="sech">날짜 검색 — 로그프레소에서 직접 조회 (실시간 관제와 별개)</h3>
+      <div class="row">
         <label>날짜</label>
         <input type="date" id="rdate">
-        <button class="act pri" id="btnday" style="flex:0 0 auto">사건 보고서 생성</button>
+        <button class="act pri" id="btnday">사건 보고서 생성</button>
         <button class="act" id="btndayhtml"
           title="데모스 개인 에이전트 '사건발생 보고서' 와 같은 화면 — 체크박스 표·수동 기입·저장 포함">HTML 열기</button>
         <span class="note">하루 사건(점수 60↑) 기준 5섹션 보고서 — 데모스 개인 에이전트와 같은 형식</span>
@@ -1162,13 +1311,17 @@
 
 <!-- ── 정책 ── -->
 <div class="page hidden" id="tab-policy">
+  <div class="tabhead">
+    <div class="eyebrow">정책</div>
+    <p>선행 감지 조건 · 등급 컷 · 1분 추론을 <b>시스템 단위</b>로 조정합니다 — 여기서 바꾼 값이 알람·케이스·등급 색·그래프 밴드에 그대로 쓰입니다.</p>
+  </div>
   <div class="card">
     <h2>선행 감지 <span class="note" id="fcstat"></span></h2>
     <div class="bd">
       <p class="note" style="margin:0 0 10px">점수가 임계를 <b style="color:var(--tx2)">넘기 전에</b> 추세로 미리 띄웁니다.
         조건(상승 기울기 · 지속 · 도달 예상 시간)을 모두 만족할 때만 화면 위에 경보 줄이 나타납니다.</p>
       <div id="fcnowbox" class="note">불러오는 중… <span class="dim">(이 줄이 계속 그대로면 서버가 구버전입니다)</span></div>
-      <div class="row" style="margin-top:10px">
+      <div class="row">
         <button class="act" onclick="openLeading()">선행 지표 분석 열기</button>
         <span class="note">과거 사건에서 어느 지표가 점수보다 먼저 움직였는지 — 조치 우선순위를 정하는 근거</span>
       </div>
@@ -1200,13 +1353,12 @@
       </tr></thead><tbody id="sprows">
         <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
       </tbody></table>
-      <div class="row" style="margin-top:10px;align-items:center;flex-wrap:wrap">
-        <button class="act pri" id="sp-save" style="flex:0 0 auto">수동 변경</button>
-        <button class="act" id="sp-llm" style="flex:0 0 auto"
+      <div class="row" style="margin-top:14px">
+        <button class="act pri" id="sp-save">수동 변경</button>
+        <button class="act" id="sp-llm"
           title="최근 8시간 점수 분포를 LLM 이 보고 지금 컷이 맞는지 판단합니다">
           🤖 LLM 스코어 변경</button>
-        <label class="note" style="display:flex;align-items:center;gap:5px;
-               cursor:pointer;flex:0 0 auto">
+        <label class="note swlbl">
           <input type="checkbox" id="sp-auto"> 2시간마다 자동</label>
         <span class="note" id="sp-next">—</span>
       </div>
@@ -1220,34 +1372,29 @@
         안 맞으면 바꿉니다. 한 번에 최대 <b style="color:var(--tx2)">10점</b>까지만
         옮기고, <b style="color:var(--tx2)">이유(숫자 근거)를 못 대면 안 바꿉니다</b>.
         자동은 <b style="color:var(--tx2)">2시간마다</b>(OHT 한 사이클) 돕니다.</p>
-      <details id="sp-pbox" style="margin-top:12px;border:1px solid var(--line);
-               border-radius:9px;padding:8px 12px;background:var(--panel)">
-        <summary style="cursor:pointer;font-size:12.5px;color:var(--tx2)">
+      <details id="sp-pbox" class="fold" style="margin-top:14px">
+        <summary>
           🧾 프롬프트 — 모델에게 무엇을 물어보는가
           <span class="note" id="sp-pinfo"></span></summary>
         <p class="note" style="margin:8px 0 6px">
           <b style="color:var(--tx2)">지시문</b> — 고쳐서 저장할 수 있습니다.
           비우고 저장하면 기본 지시문으로 돌아갑니다.</p>
-        <textarea id="sp-prompt" spellcheck="false"
-          style="width:100%;height:190px;background:var(--panel2);
-                 border:1px solid var(--line2);color:var(--tx);border-radius:7px;
-                 padding:8px 10px;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;
-                 resize:vertical"></textarea>
-        <div class="row" style="margin-top:6px;align-items:center">
-          <button class="act" id="sp-psave" style="flex:0 0 auto;padding:4px 12px">
+        <textarea id="sp-prompt" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="act" id="sp-psave">
             지시문 저장</button>
-          <button class="act" id="sp-pdef" style="flex:0 0 auto;padding:4px 12px">
+          <button class="act" id="sp-pdef">
             기본으로</button>
-          <button class="act" id="sp-pview" style="flex:0 0 auto;padding:4px 12px"
+          <button class="act" id="sp-pview"
             title="지금 누르면 실제로 무엇이 모델에게 가는지">
             지금 보낼 내용 보기</button>
         </div>
         <div id="sp-pdata"></div>
       </details>
       <div id="sp-out" style="margin-top:12px"></div>
-      <h4 style="margin:20px 0 6px;font-size:13px">변경 로그
+      <h4 class="sech" style="margin-top:26px">변경 로그
         <span class="note" id="sp-loginfo"></span></h4>
-      <div class="tw" style="max-height:340px;overflow:auto">
+      <div class="tw" style="max-height:340px">
         <table class="pol"><thead><tr>
           <th style="width:132px">시각</th><th style="width:96px">누가</th>
           <th style="width:78px">시스템</th><th style="width:64px">판정</th>
@@ -1267,21 +1414,21 @@
         LLM 에 물어 기록하고 30분 뒤 실제 데이터로 채점합니다.
         <b style="color:var(--tx2)">느리면 그 시스템의 추론 주기를 늘리거나, 주기당 건수를
         줄이거나, 판단을 '보는 화면만'으로</b> 바꾸세요. 채점(검증) 자체는 LLM 을 안 써서 무료입니다.</p>
-      <div class="row" style="margin:0 0 8px">
+      <div class="row" style="margin-bottom:10px">
         <label class="note">1분 추론 전체
           <select id="lp-en"><option value="1">사용</option><option value="0">중지</option></select></label>
         <span class="note dim">중지하면 여섯 시스템 모두 새 판단을 만들지 않습니다 (기록·채점은 유지)</span>
       </div>
-      <div id="lp-offwarn" class="note" style="display:none;color:var(--wn);
-           border:1px solid var(--wn);border-radius:8px;padding:8px 10px;margin:0 0 8px"></div>
+      <div id="lp-offwarn" class="note ctlbox" style="display:none;color:var(--wn);
+           border-color:var(--wn)"></div>
       <table class="pol"><thead><tr>
         <th style="width:110px">시스템</th><th style="width:170px">판단</th>
         <th style="width:140px">추론 주기</th><th style="width:130px">주기당 메움</th><th></th>
       </tr></thead><tbody id="lprows">
         <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
       </tbody></table>
-      <div class="row" style="margin-top:10px;align-items:center">
-        <button class="act pri" id="lp-save" style="flex:0 0 auto">저장 · 적용</button>
+      <div class="row" style="margin-top:14px">
+        <button class="act pri" id="lp-save">저장 · 적용</button>
         <span class="note">저장하면 <b style="color:var(--tx2)">바로 반영</b>되고(다음 수집 주기부터)
           config.json 에도 적혀 재시작해도 유지됩니다.</span>
       </div>
@@ -1351,7 +1498,7 @@ let FABS = [], FCUTS = {};
      뜻이라, 그냥 FAB 선인데 경보로 읽힌다. */
 const FAB_COLOR = {M14:'#3f93f7', M14B:'#3d8f40', M16A:'#824df9',
                    M16B:'#b973c6', M16HUB:'#d7038b'};
-const fabColor = f => FAB_COLOR[f] || '#8FA0B6';
+const fabColor = f => FAB_COLOR[f] || 'var(--tx2)';
 let FABSEL = new Set(), PFABSEL = new Set();      // 실시간·과거 따로 고른다
 
 const fabLv = (v, c) => !c ? '정상'
@@ -1710,12 +1857,10 @@ function renderMlNow(d){
   $('#mlgauge').innerHTML = `
     <div class="note" style="margin-bottom:5px">지금 10분 평균이 임계에서 어디쯤인가
       <span class="dim">— 확률이 0 이어도 이 막대로 여유를 볼 수 있습니다</span></div>
-    <div style="position:relative;height:16px;background:var(--panel2);
-                border:1px solid var(--line2);border-radius:8px;overflow:hidden">
-      <div style="width:${pct.toFixed(1)}%;height:100%;
-                  background:${pct>=95?'var(--crit)':pct>=80?'var(--major)':'var(--ok)'}"></div>
-      <div style="position:absolute;right:6px;top:0;line-height:16px;font-size:10.5px;
-                  color:var(--tx2)">임계 ${L.threshold==null?'–':L.threshold}분</div>
+    <div class="gauge">
+      <i style="width:${pct.toFixed(1)}%;
+                background:${pct>=95?'var(--crit)':pct>=80?'var(--major)':'var(--ok)'}"></i>
+      <span>임계 ${L.threshold==null?'–':L.threshold}분</span>
     </div>
     <div class="note dim" style="margin-top:4px">
       ${L.smoothed==null?'':L.smoothed.toFixed(2)}분 / ${L.threshold}분
@@ -1728,10 +1873,9 @@ function renderMlStages(d){
   const tot = Object.values(b).reduce((a,c)=>a+c,0) || 1;
   $('#mlstages').innerHTML = Object.keys(lab).map(k => {
     const n = b[k]||0;
-    return `<span style="display:inline-block;margin-right:14px">
-      <i style="display:inline-block;width:9px;height:9px;border-radius:50%;
-                background:${ML_STAGE_COLOR[k]};margin-right:5px"></i>
-      ${esc(lab[k])} <b style="color:var(--tx)">${n}</b>분
+    return `<span class="mlst">
+      <i style="background:${ML_STAGE_COLOR[k]}"></i>
+      ${esc(lab[k])} <b>${n}</b>분
       <span class="dim">(${(n/tot*100).toFixed(0)}%)</span></span>`;
   }).join('');
 }
@@ -2224,7 +2368,7 @@ function anVal(v){
 /* 3차 검증 표 — 확인/의심/반박을 색으로 구분해서 한눈에 보이게 */
 function anVerify(rows){
   if(!Array.isArray(rows) || !rows.length) return '<span class="dim">검증 항목 없음</span>';
-  const chip = v => v==='확인' ? '<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">확인</span>'
+  const chip = v => v==='확인' ? '<span class="chip lv정상">확인</span>'
                   : v==='반박' ? '<span class="chip lv초위험">반박</span>'
                   : '<span class="chip lv위험">의심</span>';
   return `<table class="pol" style="margin:4px 0"><thead><tr>
@@ -2275,8 +2419,9 @@ async function loadAnalysis(aid){
         const filled = !o.ok && res && Object.keys(res).length;   // LLM 실패 → 통계로 채운 결과
         // 실패 사유를 카드에 바로 보여준다 — 툴팁에만 있으면 원인을 못 찾는다
         const failBox = (!o.ok && (o.error || (o.log||[]).length))
-          ? `<div style="border:1px solid #5a2530;border-radius:8px;padding:7px 9px;margin:4px 0;
-                 background:rgba(255,77,94,.07)">
+          ? `<div style="border:1px solid color-mix(in srgb, var(--crit) 45%, transparent);
+                 border-radius:10px;padding:7px 9px;margin:4px 0;
+                 background:color-mix(in srgb, var(--crit) 8%, transparent)">
                <div style="color:var(--crit);font-size:11.5px;font-weight:650">실패 사유</div>
                <div style="font-size:11.5px;color:var(--tx2);margin-top:2px;word-break:break-all">${esc(o.error||'')}</div>
                ${(o.log||[]).length ? `<div class="mono" style="font-size:10.5px;color:var(--tx3);margin-top:4px">
@@ -2326,26 +2471,22 @@ let AN_CHAT = [], AN_CHAT_BUSY = false;
 
 function anChatBox(aid){
   return `
-  <div id="anchat" data-aid="${esc(aid)}"
-       style="margin-top:12px;border:1px solid var(--line);border-radius:10px;
-              background:var(--panel);padding:10px 12px">
-    <div style="font-weight:650;font-size:12.5px;margin-bottom:6px">
+  <div id="anchat" class="anchat" data-aid="${esc(aid)}">
+    <div class="hdl">
       이 분석에 대해 더 묻기
       <span class="note" style="font-size:10.5px">— 위 분석이 본 자료 안에서만 답합니다</span>
     </div>
-    <div id="anchatlog" style="max-height:320px;overflow-y:auto;margin-bottom:8px"></div>
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+    <div id="anchatlog"></div>
+    <div class="mrow">
       <span class="note" style="font-size:11px;white-space:nowrap">모델</span>
-      <select id="anchatm" style="background:var(--bg);border:1px solid var(--line);
-              border-radius:8px;padding:5px 8px;color:var(--tx);font-family:inherit;
-              font-size:11.5px;max-width:260px">
+      <select id="anchatm">
         <option value="">기본 (config.llm.model)</option>
       </select>
-      <button id="anchatp" class="btn" style="font-size:11.5px;padding:5px 9px"
+      <button id="anchatp" class="btn" style="font-size:11.5px;padding:6px 11px"
               title="이 대화에만 얹을 지시를 적습니다">프롬프트</button>
       <!-- 대화하다가 "이 문서 보고 답해" 가 필요할 때. 뺄 수도 있어야 한다 —
            한 번 올린 문서가 끝까지 따라다니면 다른 걸 물을 때 방해가 된다. -->
-      <button id="anchatsk" class="btn" style="font-size:11.5px;padding:5px 9px"
+      <button id="anchatsk" class="btn" style="font-size:11.5px;padding:6px 11px"
               title="md·txt 를 올려 이 대화에 얹습니다 (언제든 뺄 수 있습니다)">스킬</button>
       <input id="anchatskf" type="file" accept=".md,.markdown,.txt" multiple
              style="display:none">
@@ -2357,21 +2498,17 @@ function anChatBox(aid){
       </div>
     </div>
     <div id="anchatpbox" style="display:none;margin-bottom:6px">
-      <textarea id="anchatpt" rows="3" placeholder="예: 표로 정리해줘 / 조치 위주로 짧게 / 시간대별로 나눠서"
-        style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);
-               border-radius:8px;padding:7px 10px;color:var(--tx);font-family:inherit;font-size:12px"></textarea>
+      <textarea id="anchatpt" rows="3" placeholder="예: 표로 정리해줘 / 조치 위주로 짧게 / 시간대별로 나눠서"></textarea>
       <div class="note" style="font-size:10.5px">이 지시는 규칙(한국어·근거 밖 숫자 금지) 뒤에 붙습니다.</div>
     </div>
-    <div style="display:flex;gap:6px">
-      <input id="anchatq" placeholder="예: 14시엔 몇 점이었어? / 어느 구역이 제일 오래 걸렸어?"
-             style="flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);
-                    border-radius:8px;padding:7px 10px;color:var(--tx);font-family:inherit;font-size:12.5px">
+    <div class="qrow">
+      <input id="anchatq" placeholder="예: 14시엔 몇 점이었어? / 어느 구역이 제일 오래 걸렸어?">
       <button id="anchatsend" class="btn" style="white-space:nowrap">묻기</button>
     </div>
     <div class="note" style="font-size:10.5px;margin-top:5px">
       ${['이 구간 제일 큰 원인이 뭐야?','임계 넘은 시간대만 알려줘',
          '다음에 뭘 확인하면 돼?'].map(x=>
-        `<a href="#" class="anq" style="color:var(--cy);margin-right:10px">${esc(x)}</a>`).join('')}
+        `<a href="#" class="anq">${esc(x)}</a>`).join('')}
     </div>
   </div>`;
 }
@@ -2535,7 +2672,7 @@ async function anLoadPickers(){
       ? list.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')
       : '';
     return `<div style="min-width:210px;flex:1">
-      <div class="note" style="font-size:11px;margin-bottom:2px">${esc(label)}</div>
+      <div class="l">${esc(label)}</div>
       <select id="anm-${k}" style="width:100%" title="${esc(def||'config 기본값')}">
         <option value="">기본값${def?` — ${esc(def)}`:''}</option>${opts}
       </select></div>`;
@@ -2591,8 +2728,8 @@ async function loadAnalysisList(){
       `<div class="row" style="margin-bottom:6px">
          <label class="note" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer">
            <input type="checkbox" id="anallchk" onchange="anToggleAll(this.checked)"> 전체 선택</label>
-         <button class="act" id="anbulkdel" onclick="anDeleteSelected()" disabled
-                 style="padding:3px 10px;font-size:11.5px;color:var(--crit);border-color:#5a2530">
+         <button class="act danger" id="anbulkdel" onclick="anDeleteSelected()" disabled
+                 style="padding:6px 12px;font-size:11.5px">
            선택 삭제 <span id="anselN">0</span></button>
          <span class="note" style="margin-left:auto">${items.length}건</span>
        </div>
@@ -2915,7 +3052,7 @@ async function fcCompare(){
     const curKey = !cur.enabled ? 'off' : (cur.require_for_warn ? 'strict' : 'on');
     const row = (key, nm, sub, v) => {
       const isCur = key===curKey, isBest = key===d.best;
-      return `<tr${isBest?' style="background:rgba(34,197,94,.10)"':''}>
+      return `<tr${isBest?' style="background:color-mix(in srgb, var(--ok) 12%, transparent)"':''}>
       <td><b style="color:var(--tx)">${nm}</b>${isCur?' <span class="note">(지금 설정)</span>':''}
         ${isBest&&!isCur?' <span class="chip lv경계" style="font-size:9.5px">이 데이터 최선</span>':''}
         <div class="note" style="font-size:10.5px">${sub}</div></td>
@@ -2978,7 +3115,7 @@ async function fcTune(){
         <th>놓침</th><th>정밀도</th><th>재현율</th><th>F1</th><th>중앙 선행</th></tr></thead><tbody>
         ${g.map(r=>{
           const cur = r.min_slope==d.current.min_slope && r.sustain_min==d.current.sustain_min;
-          return `<tr${cur?' style="background:rgba(56,189,248,.08)"':''}>
+          return `<tr${cur?' style="background:var(--cybg)"':''}>
             <td class="mono">${r.min_slope}${cur?' <span class="note">(현재)</span>':''}</td>
             <td class="mono">${r.sustain_min}분</td><td>${r.hit}</td><td>${r.false}</td>
             <td>${r.miss}</td><td>${pct(r.precision)}</td><td>${pct(r.recall)}</td>
@@ -3155,11 +3292,11 @@ async function openAcc(day){
       const g = gradeOf(s);
       return `<b style="color:${g.c}" title="${g.n}">${esc(v)}점</b>`;
     };
-    const vchip = (v, r) => v==='적중' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">적중</span>`
+    const vchip = (v, r) => v==='적중' ? `<span class="chip lv정상">적중</span>`
                     : v==='과다탐지' ? `<span class="chip lv위험">과다탐지</span>`
                     : v==='누락' ? `<span class="chip lv초위험">누락</span>`
                     : v==='조치효과' ? `<span class="chip lv경계">조치효과</span>`
-                    : v==='정탐' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">정탐(확인)</span>`
+                    : v==='정탐' ? `<span class="chip lv정상">정탐(확인)</span>`
                     : v==='오탐' ? `<span class="chip lv위험">오탐(확인)</span>`
                     : v==='판정불가' ? `<span class="dim">판정불가</span>`
                     : (r && r.대기분!=null
@@ -3364,7 +3501,8 @@ function spShow(d){
   const box = $('#sp-out');
   if(d.error){
     box.innerHTML = `<div class="note" style="border-left:3px solid var(--crit);
-      background:#2a1216;padding:10px 12px;border-radius:0 8px 8px 0">
+      background:color-mix(in srgb, var(--crit) 12%, transparent);
+      padding:10px 12px;border-radius:0 10px 10px 0">
       <b style="color:var(--crit)">${esc(d.error)}</b>
       <div style="margin-top:4px">현재 컷은 그대로입니다.</div></div>`;
     return;
@@ -3642,8 +3780,8 @@ function syncFabCols(){
        이름표 때문에 그대로 찾아 두고, .mcol 이 없는 표에서만 옛 자리로 물러선다. */
     let at = tr.querySelector('th.mcol') || sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
-    add('<th class="hcol" style="width:104px">HI_FAB</th>');
-    FABS.forEach(f => add(`<th class="fcol" style="width:60px">${esc(f)}</th>`));
+    add('<th class="hcol" style="width:112px">HI_FAB</th>');
+    FABS.forEach(f => add(`<th class="fcol" style="width:64px">${esc(f)}</th>`));
   });
 }
 
@@ -3751,7 +3889,8 @@ function rowsHtml(list, byId, newAt, cap){
       <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
           r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
-          <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
+          <div class="sub"><span class="chip lv${esc(r.level)}" title="${esc(r.severity)}">${
+            esc(r.level)}</span></div></td>
       ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
       ${hiCell(r)}${fabCells(r)}
@@ -3811,7 +3950,7 @@ function dayStartOf(rows){
 /* 지표 묶음 — /api/feed 가 준다 (config.ui.metric_groups 기반, 값 있는 것만) */
 const SCORE_KEY = 'unified_risk_score';
 const FALLBACK_M = {key:SCORE_KEY, raw:SCORE_KEY, label:'스코어', unit:'점',
-                    color:'#3DDBE8', max:100, bands:true};
+                    color:'var(--cy)', max:100, bands:true};
 let GROUPS = [];
 let STRIPG = null,  STRIPK  = SCORE_KEY;    // 실시간 탭 (묶음, 지표)
 let PSTRIPG = null, PSTRIPK = SCORE_KEY;    // 과거 탭 — 서로 독립
@@ -4544,7 +4683,8 @@ function dirCell(down, up, mono){
   const cls = mono ? 'zchip mono' : 'zchip';
   const line = (mark, name, arr, color) => arr.length
     ? `<div class="dirline"><b style="color:${color}">${mark} ${name}</b>`
-      + arr.map(v=>`<span class="${cls}">${esc(v)}</span>`).join('') + `</div>`
+      /* 칸이 좁아 칩이 말줄임된다 — 전문은 title 로 남긴다 */
+      + arr.map(v=>`<span class="${cls}" title="${esc(v)}">${esc(v)}</span>`).join('') + `</div>`
     : '';
   return line('▼', 'downward', down, 'var(--cy)')
        + line('▲', 'upward',   up,   'var(--major)');
