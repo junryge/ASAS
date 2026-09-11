@@ -36,6 +36,8 @@
     /* 상단 바 높이 — 표 머리글이 이 아래에 붙어 멈춘다. 탭이 줄바꿈되면
        바가 높아지므로 실제 값은 JS 가 재서 덮어쓴다(여기 값은 첫 그림용). */
     --topbar:63px;
+    /* ★UA 위젯(스크롤바·select 팝업·날짜 선택기)은 토큰을 안 본다 — color-scheme 으로만 바뀐다 */
+    color-scheme:dark;
   }
   /* ══ 테마 4벌 ══ 다크(기본·속성 없음) · 화이트 · 네이비 · 고대비.
      상단 세그먼트로 고른다(localStorage 'amhs.theme').
@@ -51,6 +53,8 @@
     --app:#5B3FC4;
     --opcv:.35;
     --shadow:0 18px 44px rgba(30,40,60,.22);
+    /* ★밝은 테마만 UA 위젯도 밝게 — 네이비·고대비는 위 dark 를 그대로 쓴다 */
+    color-scheme:light;
   }
   :root[data-theme="navy"]{
     --bg:#08131F; --panel:#0E1E30; --panel2:#16293F; --line:#1B3049; --line2:#27405C;
@@ -290,8 +294,9 @@
   .mlrow:hover td{background:var(--panel2)}
   /* 시계는 시각 아래 날짜를 작게 쌓는다 — 한 줄로 늘어놓으면 1700px 에서 바가
      두 줄로 접힌다(toLocaleTimeString 이 '2시 39분 8초' 처럼 길게 나오는 환경). */
-  .clk{order:2;display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap;
-       font-variant-numeric:tabular-nums}
+  /* ★접혀서 둘째 줄로 내려가면 그 줄엔 auto 여백이 없어 시계가 가운데에 떴다 */
+  .clk{order:2;margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px;
+       white-space:nowrap;font-variant-numeric:tabular-nums}
   .clk b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:15px;font-weight:600;
          line-height:1;color:var(--tx);letter-spacing:.04em}
   .clk span{font-size:10.5px;color:var(--tx3)}
@@ -330,8 +335,11 @@
   .filters button:hover{color:var(--tx);border-color:var(--line2)}
   .filters button.on{border-color:var(--cyline);background:var(--cybg);color:var(--tx)}
   .filters button.on b{color:var(--cy)}
-  /* 필터 바로 뒤(오른쪽 끝). margin-left 는 .filters 가 이미 밀어 놨다 */
-  .stream{font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  /* 필터 바로 뒤(오른쪽 끝).
+     ★margin-left:auto 를 여기에도 준다 — .filters 만 갖고 있으면 머리가 두 줄로 접힐 때
+       둘째 줄에 auto 여백이 없어 수집 상태 줄이 왼쪽 끝에 홀로 붙었다(위 줄 필터와 안 맞는다). */
+  .stream{margin-left:auto;font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:9px;
+          flex-wrap:wrap}
   /* ★맥박점 색을 토큰으로 바꿨다 — rgba(47,214,138,…) 는 다크 --ok 를 박아 둔 값이라
      화이트 테마에서 점만 초록이고 번지는 빛은 옛 초록이었다. */
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none;
@@ -344,23 +352,30 @@
      raw 컬럼명(띄어쓰기 없는 40자)이 자기 칸을 밀고 나가, 폭을 안 준 '발동 룰'
      칸이 한 글자 폭까지 짜부라졌다. 폭은 머리글 th 의 width 가 정하고 남는
      자리는 발동 룰이 가져간다 — 창이 좁아져도 열이 흔들리지 않는다. */
-  /* ★min-width — 고정 폭 합(약 1266px)이 창보다 넓어지면 폭을 안 준 '발동 룰'
-     칸이 0 으로 눌려 글자가 옆 칸 위에 겹쳐 찍혔다(1100px). 표에 최소 폭을 줘서
-     그 칸이 항상 250px 는 갖게 하고, 모자라면 그때 가로로 밀리게 한다. */
-  table.cases{width:100%;min-width:1520px;border-collapse:collapse;table-layout:fixed}
+  /* ★min-width — 고정 폭 합이 창보다 넓어지면 폭을 안 준 '발동 룰' 칸이 0 으로 눌려
+     글자가 옆 칸 위에 겹쳐 찍혔다(1100px). 그래서 최소 폭은 남긴다.
+     ★단 1520px 은 너무 높았다 — 좌우 36px 여백까지 더하면 1592px 미만 창에서
+       **페이지 전체**가 가로로 밀려, 1366px 노트북에서 'AMOS QUEUE 지표' 열이 화면
+       밖으로 나가고 sticky 상단 바 배경이 오른쪽에서 끊겼다. 고정 폭 th 를 모두
+       한 단계씩 줄여 합을 1122px 로 내리고 최소 폭도 1280px 로 낮췄다 —
+       '발동 룰' 은 그래도 158px 를 갖고, 1366px 창에서 가로 스크롤이 사라진다. */
+  table.cases{width:100%;min-width:1280px;border-collapse:collapse;table-layout:fixed}
   /* ★머리글 고정 — 하루치 1440행을 내리다 보면 지금 보는 숫자가 M14 인지
      M16B 인지 알 수 없어진다. 머리글이 상단 바 바로 아래에 붙어 멈춘다.
      · sticky 는 thead 가 아니라 **th** 에 건다. border-collapse:collapse 인
        표는 칸 테두리를 표가 대신 그려서, 붙어 있는 동안 border-bottom 이
        같이 안 따라온다 — 그래서 아래 줄은 box-shadow 로 그린다.
+     · 밑줄은 box-shadow **하나로만** 그린다. border-bottom 을 같이 주면 표가 행
+       경계에, box-shadow 가 셀 안쪽에 각각 그려 열 폭 반올림에 따라 1px/2px 가
+       들쭉날쭉한 톱니 밑줄이 됐다(고대비에서 제일 잘 보였다).
      · 배경을 반드시 불투명하게 준다. 안 그러면 밑으로 지나가는 행이
        머리글 글자에 비쳐 겹쳐 보인다.
      · z-index 는 상단 바(30)보다 낮고 행보다 높게. 모달은 50 이라 안 가린다. */
   /* ★배경을 --bg 에서 --panel 로 바꿨다 — 표는 카드(.pane · --panel) 안에 있는데
      머리글만 페이지 바탕색이라 붙어 멈출 때 카드에 띠가 하나 생겨 보였다. */
-  table.cases th{font-size:11px;color:var(--tx3);font-weight:600;text-align:left;
+  table.cases th{font-size:11px;color:var(--tx2);font-weight:600;text-align:left;
                  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
-                 height:44px;padding:0 10px;border-bottom:1px solid var(--line);
+                 height:44px;padding:0 10px;
                  position:sticky;top:var(--topbar);z-index:12;
                  background:var(--panel);box-shadow:inset 0 -1px 0 var(--line)}
   table.cases td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -393,8 +408,10 @@
   /* 머리글(M14…)과 그 아래 숫자를 같이 가운데로. tabular-nums 라 자릿수가
      달라도(7 / 36 / 100) 세로줄이 흐트러지지 않는다. */
   /* 자간 .08em 을 빼는 유일한 머리글 — 'M16HUB' 여섯 글자가 64px 칸을 넘긴다 */
-  table.cases th.fcol{text-align:center;letter-spacing:0}
-  table.cases td.fcol{text-align:center;white-space:nowrap;
+  /* ★여백도 같이 줄인다 — 칸을 56px 로 좁히면서 좌우 10px 을 그대로 두니
+     'M16HUB' 여섯 글자가 옆 칸으로 잘려 나갔다. */
+  table.cases th.fcol{text-align:center;letter-spacing:0;padding:0 4px}
+  table.cases td.fcol{text-align:center;white-space:nowrap;padding-left:4px;padding-right:4px;
     font-variant-numeric:tabular-nums}
   /* 시안: mono 13.5px · 위험 이상만 굵게(색은 fabCells 가 인라인으로 준다) */
   table.cases td.fcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -449,9 +466,13 @@
   .fabsel input{appearance:none;-webkit-appearance:none;margin:0;cursor:pointer;
     width:10px;height:10px;border-radius:3px;border:1.5px solid var(--line2);background:none}
   .fabsel input:checked{background:var(--fc);border-color:var(--fc)}
+  /* 화이트에선 FAB 색 10px 네모가 밝은 바탕에 묻힌다 — 얇은 테두리로 떼어 놓는다 */
+  :root[data-theme="light"] .fabsel input:checked{outline:1px solid var(--line2)}
   .fabsel input:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
   /* CASE — 시안엔 없는 칸이다. 지우지 않되 훑는 데 방해되지 않게 작게·mono 로 */
-  .cid{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx3);white-space:nowrap;
+  /* ★--tx3 는 '한 번 읽고 마는 보조 설명' 자리다. CASE 번호는 1440행을 훑는 내내
+     참조하는 글자인데 .fresh(--cybg) 행 위에서 대비가 2.5:1 까지 떨어졌다 → --tx2. */
+  .cid{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx2);white-space:nowrap;
        min-width:0;overflow:hidden;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
   /* 스코어 숫자 — mono 13.5px(표에서 제일 큰 글자. 본문보다 크면 행이 높아진다) */
@@ -462,13 +483,24 @@
      테마마다 따로 값을 둘 필요가 없다). */
   .chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:99px;font-size:11.5px;
         line-height:1.4;font-weight:700;letter-spacing:.02em;margin-right:6px;white-space:nowrap}
-  .lv초위험{background:color-mix(in srgb, var(--crit) 16%, transparent);color:var(--crit)}
-  .lv위험{background:color-mix(in srgb, var(--major) 16%, transparent);color:var(--major)}
-  .lv경계{background:color-mix(in srgb, var(--minor) 16%, transparent);color:var(--minor)}
-  .lv정상{background:color-mix(in srgb, var(--ok) 16%, transparent);color:var(--ok)}
+  /* ★두 번째 인자를 transparent 가 아니라 --panel 로 섞는다. 투명하게 두면 .fresh
+     (--cybg)·호버(--panel2) 행에서 아래 색이 비쳐 같은 '위험' 배지가 행마다 다른
+     색으로 보였고, 화이트 테마에선 대비가 4.1 → 3.2:1 까지 내려갔다.
+     --panel 도 테마 토큰이라 '테마마다 값을 안 둔다' 는 뜻은 그대로다. */
+  .lv초위험{background:color-mix(in srgb, var(--crit) 16%, var(--panel));color:var(--crit)}
+  .lv위험{background:color-mix(in srgb, var(--major) 16%, var(--panel));color:var(--major)}
+  .lv경계{background:color-mix(in srgb, var(--minor) 16%, var(--panel));color:var(--minor)}
+  .lv정상{background:color-mix(in srgb, var(--ok) 16%, var(--panel));color:var(--ok)}
   /* 섹션 라벨(시안): 11px · 자간 .08em · 대문자 · --tx3. 탭 머리의 eyebrow 는 12px/.14em */
   .tag,.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
+  /* ★등급 마커를 이모지(🟠🔴⛔)로 찍었더니 색이 토큰과 어긋났다 — 경계는 노랑인데
+     주황, 위험과 초위험은 둘 다 빨강이었다. 이모지는 테마도 안 따라온다.
+     범례(.lgd i)와 같은 색 네모로 바꿔 한 화면 안 등급-색 대응을 한 벌로 맞춘다. */
+  .gdot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;
+        vertical-align:baseline}
+  .gdot.minor{background:var(--minor)} .gdot.major{background:var(--major)}
+  .gdot.crit{background:var(--crit)}
   .dim{color:var(--tx3);font-size:12px;white-space:nowrap}
 
   /* ── 케이스 상세 조각 ──
@@ -498,6 +530,8 @@
                                     font-weight:700}
   button.act.pri:hover,.btn.pri:hover{border-color:var(--cy);background:var(--cybg)}
   button.act.danger,.btn.danger{border-color:var(--crit);color:var(--crit)}
+  /* 표 안에 들어가는 작은 버튼 — 행 높이를 안 늘리게 한 단계 줄인 것뿐이다 */
+  button.act.sm,a.act.sm,.btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
   button.act.danger:hover,.btn.danger:hover{background:color-mix(in srgb, var(--crit) 10%, transparent);
                                             border-color:var(--crit)}
   button.act:disabled,.btn:disabled{opacity:.4;cursor:not-allowed}
@@ -580,6 +614,12 @@
   .llmnow .chip{margin:0}
   .llmnow .cf{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:12px;
               padding:4px 10px;border-radius:99px;background:var(--panel2)}
+  /* ★'사람 확인 필요'·'이상 예/아니오' 는 등급이 아니다 — 등급색 알약(.lv*)으로 찍으면
+     한 줄에 가짜 초위험·위험이 두 개 더 떠서 '초위험이 떴다' 로 읽힌다.
+     중립 칩(.cf 와 같은 면)으로 내리고, 등급색은 배지 하나만 갖는다. */
+  .llmnow .flag{background:var(--panel2);color:var(--tx2)}
+  /* 테두리는 box-shadow 로 — border 를 쓰면 이 칩만 2px 넓어져 1행이 한 줄 더 접혔다 */
+  .llmnow .flag.warn{box-shadow:inset 0 0 0 1px var(--major)}
   .llmnow .bar{width:48px;height:4px;border-radius:2px;background:var(--line2);flex:none;overflow:hidden}
   .llmnow .bar i{display:block;height:4px;border-radius:2px}
   .llmnow .llmacc{margin-left:auto;flex:none;padding:7px 13px;border-radius:10px;border:1px solid var(--cyline);
@@ -597,13 +637,17 @@
                 justify-content:center}
   .llmcard .kpi+.kpi{border-left:1px solid var(--line)}
   .llmcard .kpi:last-child{border-radius:0 20px 20px 0}   /* #kpi-acc 호버 배경이 카드 모서리를 안 넘게 */
-  .llmcard .kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);white-space:nowrap}
+  /* ★라벨(활성 케이스…)은 늘 참조하는 글자라 --tx3 면 다크에서 3.2:1 밖에 안 나온다 */
+  .llmcard .kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx2);white-space:nowrap}
   .llmcard .kpi .l .note{font-size:10px;letter-spacing:0;text-transform:none}
   .llmcard .kpi .v{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
                    font-size:17px;font-weight:700;line-height:1.2;letter-spacing:0;white-space:nowrap}
   .llmcard .kpi .v u{font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;font-size:11px;
                      margin-left:2px}
-  .llmcard .kpi .s{font-size:10.5px;color:var(--tx3);max-width:170px;overflow:hidden;
+  /* ★max-width:170px 를 뺐다 — 칸은 180~200px 인데 부제만 그보다 좁게 잘라 두어
+     '재발률(1H)'·'LLM 판단 일치' 두 칸이 1700px 에서도 늘 말줄임으로 끝났다.
+     .kpi 의 min-width:0 이 이미 있어 칸 폭까지 쓰고 거기서만 자른다. */
+  .llmcard .kpi .s{font-size:10.5px;color:var(--tx3);min-width:0;overflow:hidden;
                    text-overflow:ellipsis;white-space:nowrap}
   /* 1400px 아래에선 KPI 행이 카드 아래 줄로 내려간다 — 왼쪽 선 대신 위 선 */
   @media (max-width:1400px){
@@ -616,13 +660,16 @@
          border:1px solid var(--line);background:var(--panel);color:var(--tx3);font-size:12.5px;cursor:pointer}
   .fcbar .tag{color:inherit;font-weight:600;display:inline-flex;align-items:center;gap:7px}
   .fcbar .tag i{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
-  .fcbar .dim{color:inherit;opacity:.85}
+  /* ★투명도로 흐리게 하면 밝은 테마에서만 사라진다 — 위계는 토큰으로.
+     화이트의 --major 위에 opacity .7/.85 를 더 곱해 2.6:1 까지 내려갔었다. */
+  .fcbar .dim{color:var(--tx2)}
   .fcbar .chip{margin:0}
   .fcbar .cf{font-weight:700;white-space:nowrap}
-  .fcbar .hint{margin-left:auto;font-size:11.5px;opacity:.7}
+  .fcbar .hint{margin-left:auto;font-size:11.5px;color:var(--tx3)}
   .fcbar.alarm{color:var(--major);border-color:color-mix(in srgb, var(--major) 45%, transparent);
                background:color-mix(in srgb, var(--major) 8%, transparent)}
   .fcbar.alarm b{color:var(--major);font-size:13.5px}
+  .fcbar.alarm .dim,.fcbar.alarm .hint{color:var(--major)}
   .fcbar.alarm .tag i{animation:pulse 2.4s infinite}
   .fcbar:hover{border-color:var(--line2)}
   .fcbar.alarm:hover{border-color:var(--major)}
@@ -646,7 +693,9 @@
   .striprt{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-left:auto}
   .lgd{display:flex;gap:14px;font-size:11.5px;color:var(--tx2)}
   .lgd span{display:inline-flex;align-items:center;gap:6px}
-  .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block}
+  /* ★화이트 테마는 경계↔위험 색 거리가 가장 좁다(ΔE 22.7). 토큰 값은 시안 것이라
+     못 바꾸니, 색에만 기대지 않게 네모를 키우고 이름을 항상 붙여 둔다. */
+  .lgd i{width:10px;height:10px;border-radius:2px;display:inline-block;flex:none}
   /* 리미트선 토글 — 점선 조각 + 이름. 켜지면 글자 --tx, 점선은 그 등급색(--lc) */
   .limsel{display:inline-flex;align-items:center;gap:12px}
   .limsel>b{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tx3)}
@@ -680,16 +729,25 @@
   .stripbox .shr{stroke:var(--line);stroke-width:.6}
   .stripbox .stk{fill:var(--tx3);font-size:8.5px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
   .stripbox .snow{stroke:var(--tx);stroke-width:1;opacity:.55}
-  /* 등급 밴드 — 등급색 8~10% 만. 예전 하드코딩 밴드색은 다크에서만 맞는 값이었다 */
-  .stripbox .sband.경계{fill:color-mix(in srgb, var(--minor) 8%, transparent)}
-  .stripbox .sband.위험{fill:color-mix(in srgb, var(--major) 9%, transparent)}
-  .stripbox .sband.초위험{fill:color-mix(in srgb, var(--crit) 10%, transparent)}
-  /* 분 단위 막대(스코어) — 등급색으로 칠한다. 정상은 살짝 눌러(.8) 색 있는 막대가 튀게 */
-  .stripbox .sbar{opacity:1;transition:opacity .12s}
+  /* ★등급 밴드(배경 띠)를 뺐다 — 시안 플롯 바닥은 --panel 단색이고 등급 경계는
+     리미트 점선 셋이 이미 말한다. 밴드가 막대와 같은 등급색이라 정상 막대 위에
+     빨간 띠가 깔려 '이미 위험 구간' 으로 잘못 읽혔다(화이트에서 제일 심했다). */
+  /* 분 단위 막대(스코어) — 등급색으로 칠한다. 정상은 살짝 눌러(.8) 색 있는 막대가 튀게.
+     ★.sbar 자체에 중립 fill 을 준다: 서버가 네 이름 밖의 등급을 보내면 클래스가 안 맞아
+       SVG 기본 fill(검정)로 찍혀 '데이터 없는 칸' 과 구분이 안 됐다. */
+  .stripbox .sbar{opacity:1;transition:opacity .12s;fill:var(--tx3)}
   .stripbox .sbar.정상{fill:var(--ok);opacity:.8} .stripbox .sbar.경계{fill:var(--minor)}
   .stripbox .sbar.위험{fill:var(--major)}          .stripbox .sbar.초위험{fill:var(--crit)}
-  .stripbox .sbar.on{opacity:1}
+  /* ★호버 강조가 opacity:1 이었는데 기본도 1 이라 화면이 하나도 안 바뀌었다 —
+     테두리를 둘러 어느 분을 짚고 있는지 눈에 보이게 한다. */
+  .stripbox .sbar.on{stroke:var(--tx);stroke-width:.35;paint-order:stroke}
   .stripbox .shov{fill:var(--panel2)}               /* 호버한 분 칸의 밑판 */
+  /* ★FAB 선 색(FAB_COLOR)은 fab_score.py 와 같아야 하는 계약이라 값을 못 바꾼다.
+     화이트 테마 --panel 위에서 M14(2.6:1)·M16B(2.8:1) 가 흐릿해 보이는 것만
+     그 테마에서 밝기·채도로 보정한다 — 색 자체는 그대로다. */
+  :root[data-theme="light"] .stripbox .fabline{filter:brightness(.75) saturate(1.15)}
+  /* 화이트에서 정상 막대를 한 단계 더 눌러 세 등급의 명도 계단을 넓힌다 */
+  :root[data-theme="light"] .stripbox .sbar.정상{opacity:.7}
   .stripbox .slim{stroke-width:1;stroke-dasharray:4 3;opacity:.65}
   /* 리미트선 오른쪽 끝 라벨 '경계 60' — 선 바로 위에, --panel 패치로 막대를 가린다 */
   .stripbox .slbl{position:absolute;right:0;transform:translateY(calc(-100% - 3px));
@@ -752,7 +810,10 @@
        background:var(--panel2)}
   .ghd b{font-size:15px;font-weight:700;letter-spacing:.01em}
   .gbody{padding:18px 22px}
-  .gbody svg{width:100%;height:auto;display:block;border-radius:8px}
+  /* ★서버 그래프는 light 만 밝게 그린다(theme 전달 문자열이 계약) — 네이비·고대비에선
+     다크 팔레트 SVG 가 --panel2 위에 얹혀 색이 다른 상자로 떠 보였다. 경계선을
+     그어 '다른 판' 이 아니라 '액자에 든 그림' 으로 읽히게 한다. */
+  .gbody svg{width:100%;height:auto;display:block;border-radius:8px;border:1px solid var(--line2)}
 
   /* ══════ 나머지 탭 5개(과거·ML·분석·리포트·정책) ══════
      공통 규칙(.page/.card/.act/input…)이 대부분 그대로 먹는다. 여기 모은 것은
@@ -963,8 +1024,8 @@
     <button data-tab="ml" id="tabbtn-ml">ML 조기예측</button>
     <button data-tab="past">과거 데이터 조회</button>
     <button data-tab="analysis">LLM 모델 분석</button>
-    <button data-tab="report">리포트 · 피드백</button>
     <button data-tab="policy">정책</button>
+    <button data-tab="report">리포트·피드백</button>
   </div>
   <div class="chan">
     <span><i id="ch-lp"></i><span id="ch-lp-tx">로그프레소</span></span>
@@ -1086,12 +1147,12 @@
     <table class="cases">
       <thead><tr>
         <th style="width:96px">시각</th>
-        <th style="width:116px">CASE</th>
+        <th style="width:96px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th>발동 룰</th>
-        <th class="mcol" style="width:190px">실제지표</th>
-        <th style="width:150px">AMOS HID 구역</th>
-        <th style="width:170px">AMOS QUEUE 지표</th>
+        <th class="mcol" style="width:168px">실제지표</th>
+        <th style="width:132px">AMOS HID 구역</th>
+        <th style="width:150px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="7" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -1160,12 +1221,12 @@
     <table class="cases">
       <thead><tr>
         <th style="width:96px">시각</th>
-        <th style="width:116px">CASE</th>
+        <th style="width:96px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th>발동 룰</th>
-        <th class="mcol" style="width:190px">실제지표</th>
-        <th style="width:150px">AMOS HID 구역</th>
-        <th style="width:170px">AMOS QUEUE 지표</th>
+        <th class="mcol" style="width:168px">실제지표</th>
+        <th style="width:132px">AMOS HID 구역</th>
+        <th style="width:150px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="7" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
@@ -1346,9 +1407,9 @@
         못 간다</b>는 구조를 실제 배점으로 펼쳐 놓았습니다.</p>
       <table class="pol"><thead><tr>
         <th style="width:110px">시스템</th>
-        <th style="width:150px">🟠 경계 시작</th>
-        <th style="width:150px">🔴 위험 시작</th>
-        <th style="width:150px">⛔ 초위험 시작</th>
+        <th style="width:150px"><i class="gdot minor"></i>경계 시작</th>
+        <th style="width:150px"><i class="gdot major"></i>위험 시작</th>
+        <th style="width:150px"><i class="gdot crit"></i>초위험 시작</th>
         <th></th>
       </tr></thead><tbody id="sprows">
         <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
@@ -2734,7 +2795,7 @@ async function loadAnalysisList(){
          <span class="note" style="margin-left:auto">${items.length}건</span>
        </div>
        <table class="pol"><thead><tr><th style="width:34px"></th><th>날짜</th><th>범위</th><th>분</th>
-         <th>최고</th><th>역할 성공</th><th>생성</th><th style="width:96px"></th></tr></thead><tbody>`
+         <th>최고</th><th>역할 성공</th><th>생성</th><th style="width:146px"></th></tr></thead><tbody>`
       + items.map(x=>{
           const pk=x.peak||{};
           const ck = AN_SEL.has(x.id) ? 'checked' : '';
@@ -2742,8 +2803,8 @@ async function loadAnalysisList(){
             <td>${esc(x.day)}</td><td>${esc(x.span)}</td><td>${x.minutes}</td>
             <td>${pk.emoji||''} ${pk.score||''}점</td><td>${x.roles_ok}/${x.roles_n||4}</td>
             <td class="mono" style="font-size:11px">${esc((x.generated_at||'').replace('T',' ').slice(5,16))}</td>
-            <td><a href="#" style="color:var(--cy)" onclick="loadAnalysis('${esc(x.id)}');return false;">열기</a>
-              &nbsp;<a href="#" style="color:var(--crit)" onclick="anDelete('${esc(x.id)}');return false;">삭제</a></td></tr>`;
+            <td><button class="act sm" onclick="loadAnalysis('${esc(x.id)}')">열기</button>
+              <button class="act sm danger" onclick="anDelete('${esc(x.id)}')">삭제</button></td></tr>`;
         }).join('')+`</tbody></table>`;
     anSyncSel();
   }catch(e){ $('#anlist').textContent='목록 조회 실패'; }
@@ -2785,9 +2846,13 @@ function anDeleteSelected(){
 /* ══════════ /분석 탭 ══════════ */
 
 /* 시계 */
+/* ★toLocaleTimeString('ko-KR') 은 '6시 30분 45초' 로 나온다 — 한글 '시/분/초' 는
+   mono 글꼴에 없어 폴백으로 떨어지고, 자릿수가 바뀔 때마다 오른쪽 끝 폭이 흔들려
+   상단 바가 미세하게 밀렸다. 시안처럼 02:09:16 로 직접 조립한다(로케일에 안 기댄다). */
 function tickClock(){
   const d = new Date();
-  $('#clk').textContent  = d.toLocaleTimeString('ko-KR',{hour12:false});
+  const p = n => String(n).padStart(2,'0');
+  $('#clk').textContent  = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   $('#clkd').textContent = d.toLocaleDateString('ko-KR')+' KST';
 }
 tickClock(); setInterval(tickClock,1000);
@@ -2821,21 +2886,30 @@ async function pollStatus(){
     /* ★원본 CSV 의 최신 시각과 지금의 차이 — 화면이 뒤처져 보일 때
        원인이 어디인지 여기서 갈린다. 예측 잡이 아직 안 쓴 것이면 우리가
        할 수 있는 게 없고, 이 값이 최신인데 표가 옛날이면 우리 문제다. */
-    let lagTxt = '';
+    let lagTxt = '', lagPlain = '', lagLate = false;
     if(st.source_latest){
       const lag = Math.floor((Date.now() - new Date(st.source_latest)) / 60000);
       const t = String(st.source_latest).slice(11,16);
-      lagTxt = lag >= 3
-        ? ` · <b style="color:var(--major)">원본 최신 ${t} (${lag}분 전)</b>`
-        : ` · 원본 최신 ${t}`;
+      lagLate = lag >= 3;
+      lagPlain = ` · 원본 최신 ${t}` + (lagLate ? ` (${lag}분 전)` : '');
+      lagTxt = lagLate
+        ? ` · <b style="color:var(--major)">원본 최신 ${esc(t)} (${lag}분 전)</b>`
+        : ` · 원본 최신 ${esc(t)}`;
     }
-    $('#streamtx').innerHTML = st.connected
+    /* ★여섯 토막을 한 줄에 늘어놓으니 카드 머리가 두 줄로 접혔다(시안은 한 줄 머리).
+       화면엔 '수집 중 · 주기' 만 두고 전문은 title 로 옮긴다 — 뒤처졌을 때만
+       '원본 최신' 한 마디를 같이 띄운다. 그 한 줄이 지금 볼 이유가 있는 유일한 값이다. */
+    const full = st.connected
       ? `STREAMING · ${jup?'주피터 CSV':'로그프레소'} · ${st.latency_ms??'–'}ms · ${pollLabel(POLL)}마다 수집`
-        + lagTxt
+        + lagPlain
         + (st.gap_min > 5 ? ` · ${st.gap_min}분 구간 보충` : '')
-        + (sv.files?.length ? ` → ${esc(sv.files[0])}` : '')
+        + (sv.files?.length ? ` → ${sv.files[0]}` : '')
         + ` · 임계 ${s.alarm_floor}점`
+      : `연결 끊김 — ${st.error||'대기'}`;
+    $('#streamtx').innerHTML = st.connected
+      ? `수집 중 · ${esc(pollLabel(POLL))}` + (lagLate ? lagTxt : '')
       : `연결 끊김 — ${esc(st.error||'대기')}`;
+    $('#streamtx').title = full;
     if(s.cuts && s.cuts.warn) CUTS = s.cuts;   // 이 시스템의 등급 컷
     $('#ch-lp').className  = st.connected?'':'off';
     $('#ch-lp').title = st.connected ? '수집 정상'
@@ -3223,8 +3297,10 @@ function renderLlmNow(a, past){
   }
   const c = (r.확신도==='' || r.확신도==null) ? null : Math.max(0, Math.min(100, +r.확신도||0));
   const col = c==null ? 'var(--tx3)' : c>=80 ? 'var(--ok)' : c>=60 ? 'var(--minor)' : 'var(--major)';
-  const yn = r.실제이상==='예' ? `<span class="chip lv위험">이상 예</span>`
-           : r.실제이상==='아니오' ? `<span class="chip lv정상">이상 아니오</span>`
+  /* ★'이상 예/아니오' 는 등급이 아니다 — .lv위험/.lv정상 으로 찍으면 1행에 가짜
+     등급색이 더 붙어 실제 등급 배지와 섞인다. 중립 칩(.flag)으로 내린다. */
+  const yn = r.실제이상==='예' ? `<span class="chip flag warn">이상 예</span>`
+           : r.실제이상==='아니오' ? `<span class="chip flag">이상 아니오</span>`
            : '';
   // 등급 배지 — 스코어로 다시 계산한다(컷은 시스템마다 다르다). 스코어가 없으면 CSV 의 등급 글자로
   const sc = parseFloat(r.스코어), g = isFinite(sc) ? gradeOf(sc) : null;
@@ -3243,7 +3319,7 @@ function renderLlmNow(a, past){
     + `<span class="t">${esc((r.datetime||'').slice(11,16)) || '–'}</span>`
     + (isFinite(sc) ? `<span class="t" style="color:${g.c}">${esc(r.스코어)}점</span>` : '')
     + meta
-    + (g && g.chk ? `<span class="chip lv초위험">사람 확인 필요</span>` : '')
+    + (g && g.chk ? `<span class="chip flag warn">사람 확인 필요</span>` : '')
     + yn
     + (c==null ? `<span class="meta">확신도 –</span>`
        : `<span class="cf" style="color:${col}">확신도 ${c}%`
@@ -3780,8 +3856,8 @@ function syncFabCols(){
        이름표 때문에 그대로 찾아 두고, .mcol 이 없는 표에서만 옛 자리로 물러선다. */
     let at = tr.querySelector('th.mcol') || sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
-    add('<th class="hcol" style="width:112px">HI_FAB</th>');
-    FABS.forEach(f => add(`<th class="fcol" style="width:64px">${esc(f)}</th>`));
+    add('<th class="hcol" style="width:92px">HI_FAB</th>');
+    FABS.forEach(f => add(`<th class="fcol" style="width:56px">${esc(f)}</th>`));
   });
 }
 
@@ -3923,10 +3999,8 @@ function bindGraph(tbodySel){
 
 /* ── 스코어 추이 스트립 — 하루치를 항상 띄워두고 폴링마다 갱신 ──
    스코어는 분 단위 막대(등급색) + 리미트 점선(시안), 다른 지표는 자동 눈금 선. 순수 SVG.
-   ★밴드는 등급 이름만 넘기고 색은 CSS(.sband.등급 → color-mix 토큰)가 정한다 —
-     hex 를 여기 박으면 테마 4벌 중 다크에서만 맞는다. 정상 구간은 밴드 없음(맨 바탕). */
-const stripBands = () => [[CUTS.warn,CUTS.danger,'경계'],
-  [CUTS.danger,CUTS.critical,'위험'],[CUTS.critical,100,'초위험']];
+   ★등급 밴드(배경 띠)는 뺐다 — 리미트 점선 셋이 이미 같은 말을 하는데, 밴드가 막대와
+     같은 등급색이라 정상 막대 위에 빨간 띠가 깔려 '이미 위험 구간' 으로 읽혔다. */
 /* 아래 시간축 글자를 SVG 밖(HTML)으로 뺐으니 아래 여백은 거의 없다 */
 const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 6, STRIP_B = 4;
 /* 여백 — 스코어(막대)일 땐 왼쪽 눈금 숫자가 없어 막대를 양 끝까지 채운다(시안).
@@ -3941,6 +4015,10 @@ const LIMIT_ON = {live:{warn:true, danger:true, critical:true},
                   past:{warn:true, danger:true, critical:true}};
 const LIMITS = [['warn','경계','var(--minor)'], ['danger','위험','var(--major)'],
                 ['critical','초위험','var(--crit)']];
+/* 마지막으로 짚고 있던 분(실시간·과거 따로). ★폴링 재그리기가 스트립을 innerHTML 로
+   갈아치우면 툴팁 노드째 사라져, 마우스를 움직이기 전까지 읽던 카드가 그냥 없어졌다.
+   그 분이 새 데이터에도 남아 있으면 같은 코드로 한 번 복원한다. */
+const STRIP_HOVER = {live:null, past:null};
 
 function dayStartOf(rows){
   const s = (rows[0]?.at || '').slice(0,10);
@@ -3989,7 +4067,7 @@ function fabPaths(rows, mt, sel, X, Y){
       .filter(q=>q.v!==null && q.v!==undefined && !isNaN(q.v));
     if(p.length < 2) return '';
     const d = p.map((q,i)=>`${i?'L':'M'}${q.x.toFixed(1)},${Y(q.v).toFixed(1)}`).join(' ');
-    return `<path d="${d}" fill="none" stroke="${fabColor(f)}" stroke-width="1.1" opacity=".95"/>`;
+    return `<path class="fabline" d="${d}" fill="none" stroke="${fabColor(f)}" stroke-width="1.1" opacity=".95"/>`;
   }).join('');
 }
 
@@ -4015,12 +4093,7 @@ function stripSvg(rows, mt, sel, lim){
 
   const o = [`<svg viewBox="0 0 ${STRIP_W} ${STRIP_H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">`,
              `<rect class="sbg" width="${STRIP_W}" height="${STRIP_H}"/>`];
-  if(isScore){
-    stripBands().forEach(([bl,bh,nm]) =>
-      o.push(`<rect class="sband ${nm}" x="${L}" y="${f1(Y(bh))}" width="${iw}" height="${f1(Y(bl)-Y(bh))}"/>`));
-    // 호버한 분 칸의 밑판 — drawStrip 이 x/width 를 옮긴다(처음엔 폭 0)
-    o.push(`<rect class="shov" x="${L}" y="${T}" width="0" height="${ih}" rx="1"/>`);
-  }else{
+  if(!isScore){
     // 비스코어: 자동 눈금 3개 + 왼쪽 숫자
     [lo, lo+(hi-lo)/2, hi].forEach(v => {
       o.push(`<line class="sgrid" x1="${L}" y1="${f1(Y(v))}" x2="${L+iw}" y2="${f1(Y(v))}"/>`);
@@ -4028,6 +4101,10 @@ function stripSvg(rows, mt, sel, lim){
         Math.abs(v)>=10 ? v.toFixed(0) : v.toFixed(1)}</text>`);
     });
   }
+  /* 호버한 분 칸의 밑판 — drawStrip 이 x/width 를 옮긴다(처음엔 폭 0).
+     ★막대 모드 전용이었다: 선 그래프로 바꾸면 막대도 밑판도 없어 툴팁만 뜨고
+       '지금 어느 분을 짚고 있나' 를 그림에서 확인할 길이 없었다. 두 모드 다 그린다. */
+  o.push(`<rect class="shov" x="${L}" y="${T}" width="0" height="${ih}" rx="1"/>`);
   // 2시간 간격 세로 실선 — 시각 글자는 SVG 밖 .stripax 가 맡는다
   for(let hh=2; hh<24; hh+=2){
     const x = f1(X(t0 + hh*3600000));
@@ -4240,31 +4317,48 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
   const tip = box.querySelector('.striptip'), hov = svg.querySelector('.shov');
   const bars = new Map();
   svg.querySelectorAll('.sbar').forEach(el => bars.set(el.dataset.at, el));
+  const hkey = live ? 'live' : 'past';
   let cur = null;
   const leave = () => {
     if(cur){ const pb = bars.get(cur.at); if(pb) pb.classList.remove('on'); }
-    cur = null;
+    cur = null; STRIP_HOVER[hkey] = null;
     if(hov) hov.setAttribute('width', '0');
     if(tip) tip.classList.add('hidden');
+  };
+  /* 한 분을 짚어 보여 준다 — 호버와 '다시 그린 뒤 복원' 이 같은 코드를 쓴다 */
+  const show = best => {
+    if(cur){ const pb = bars.get(cur.at); if(pb) pb.classList.remove('on'); }
+    cur = best; STRIP_HOVER[hkey] = best.at;
+    const sw = g.iw / 1440;
+    const x = g.L + g.iw * ((new Date(best.at).getTime() - d0) / 86400000);
+    /* 선 모드는 한 칸이 0.7px 라 밑판이 막대 뒤로 숨는다 — 커서 세로선을 2px 로 넓힌다 */
+    const hw = isScore ? sw : 2;
+    if(hov){ hov.setAttribute('x', (x - (hw - sw) / 2).toFixed(2)); hov.setAttribute('width', hw.toFixed(2)); }
+    const bar = bars.get(best.at); if(bar) bar.classList.add('on');
+    if(!tip) return;
+    tip.innerHTML = stripTip(best, mt, isScore);
+    tip.style.left = Math.min(83, Math.max(17, (x + sw/2) / STRIP_W * 100)).toFixed(1) + '%';
+    tip.classList.remove('hidden');
+    /* ★'아래로' 판정을 뷰포트(화면 위 320px)로 했더니, 스크롤 없는 기본 화면에서
+       툴팁이 자기 카드 머리(.striphd)를 66px 덮었다 — 지금 무슨 지표를 보는지가
+       호버하는 동안 안 보인다. 툴팁이 실제로 피해야 하는 건 22px 위의 그 머리다.
+       hidden 을 뗀 뒤 재야 offsetHeight 가 0 이 아니다. */
+    const hd = box.closest('.strip')?.querySelector('.striphd');
+    const room = hd ? box.getBoundingClientRect().top - hd.getBoundingClientRect().bottom : 0;
+    tip.classList.toggle('below', room < tip.offsetHeight + 14);
   };
   svg.onmousemove = ev => {
     const best = rowAt(ev, 3);
     if(!best){ leave(); return; }
     if(best === cur) return;
-    if(cur){ const pb = bars.get(cur.at); if(pb) pb.classList.remove('on'); }
-    cur = best;
-    const sw = g.iw / 1440;
-    const x = g.L + g.iw * ((new Date(best.at).getTime() - d0) / 86400000);
-    if(hov){ hov.setAttribute('x', x.toFixed(2)); hov.setAttribute('width', sw.toFixed(2)); }
-    const bar = bars.get(best.at); if(bar) bar.classList.add('on');
-    if(!tip) return;
-    tip.innerHTML = stripTip(best, mt, isScore);
-    tip.style.left = Math.min(83, Math.max(17, (x + sw/2) / STRIP_W * 100)).toFixed(1) + '%';
-    // 카드가 화면 위쪽에 붙어 있으면 위로 띄운 툴팁이 상단 바 뒤로 들어간다 → 아래로
-    tip.classList.toggle('below', box.getBoundingClientRect().top < 320);
-    tip.classList.remove('hidden');
+    show(best);
   };
   svg.onmouseleave = leave;
+  // 재그리기 직후 — 짚고 있던 분이 새 데이터에도 있으면 그대로 되살린다
+  if(STRIP_HOVER[hkey]){
+    const keep = rows.find(r => r.at === STRIP_HOVER[hkey]);
+    if(keep) show(keep); else STRIP_HOVER[hkey] = null;
+  }
 }
 
 async function pollCases(){
