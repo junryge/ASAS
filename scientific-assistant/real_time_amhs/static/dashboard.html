@@ -306,12 +306,16 @@
   /* ── 레이아웃 ── */
   .main{display:block}
   /* 카드 한 장 — 실시간/과거 표 묶음. 둥근 20px + --panel + --line (시안) */
-  .pane{min-height:calc(100vh - 118px);background:var(--panel);border:1px solid var(--line);
-        border-radius:20px}
+  .pane{background:var(--panel);border:1px solid var(--line);border-radius:20px}
 
-  .hd{display:flex;align-items:center;gap:9px;padding:10px 16px;border-bottom:1px solid var(--line)}
-  .hd h2{margin:0;font-size:13px;font-weight:650}
-  .filters{display:flex;gap:5px;margin-left:4px}
+  /* 표 머리 — 제목 · 정보줄 · 필터 다섯 · 수집 상태 한 줄(시안 padding 22/30 · gap 20).
+     ★flex-wrap 을 준다 — 과거 탭 .hd 에는 날짜 컨트롤이 여섯 개 더 들어가서
+       1100px 폭에서 한 줄에 안 들어간다. 접히게 두면 가로 스크롤이 안 생긴다. */
+  .hd{display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+      padding:22px 30px;border-bottom:1px solid var(--line)}
+  .hd h2{margin:0;font-size:17px;font-weight:700;letter-spacing:.01em;white-space:nowrap}
+  /* 필터 다섯을 오른쪽으로 민다 — 제목 옆 정보줄(#feedinfo)이 길어져도 자리가 안 밀린다 */
+  .filters{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
   /* 필터 버튼(시안): 10px 모서리 · 켜지면 청록 면 · 개수는 <b> 로 고정폭 */
   .filters button{background:transparent;border:1px solid var(--line);color:var(--tx2);
                   border-radius:10px;padding:8px 14px;font:inherit;font-size:13px;line-height:1;
@@ -321,11 +325,14 @@
   .filters button:hover{color:var(--tx);border-color:var(--line2)}
   .filters button.on{border-color:var(--cyline);background:var(--cybg);color:var(--tx)}
   .filters button.on b{color:var(--cy)}
-  .stream{margin-left:auto;font-size:11.5px;color:var(--tx3);display:flex;align-items:center;gap:7px}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
-       box-shadow:0 0 0 0 rgba(47,214,138,.6);animation:p 2s infinite}
+  /* 필터 바로 뒤(오른쪽 끝). margin-left 는 .filters 가 이미 밀어 놨다 */
+  .stream{font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  /* ★맥박점 색을 토큰으로 바꿨다 — rgba(47,214,138,…) 는 다크 --ok 를 박아 둔 값이라
+     화이트 테마에서 점만 초록이고 번지는 빛은 옛 초록이었다. */
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none;
+       box-shadow:0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent);animation:p 2s infinite}
   .dot.off{background:var(--crit);animation:none}
-  @keyframes p{70%{box-shadow:0 0 0 7px rgba(47,214,138,0)}100%{box-shadow:0 0 0 0 rgba(47,214,138,0)}}
+  @keyframes p{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 
   /* ── 케이스 목록 ── */
   table.cases{width:100%;border-collapse:collapse}
@@ -337,17 +344,38 @@
      · 배경을 반드시 불투명하게 준다. 안 그러면 밑으로 지나가는 행이
        머리글 글자에 비쳐 겹쳐 보인다.
      · z-index 는 상단 바(30)보다 낮고 행보다 높게. 모달은 50 이라 안 가린다. */
+  /* ★배경을 --bg 에서 --panel 로 바꿨다 — 표는 카드(.pane · --panel) 안에 있는데
+     머리글만 페이지 바탕색이라 붙어 멈출 때 카드에 띠가 하나 생겨 보였다. */
   table.cases th{font-size:11px;color:var(--tx3);font-weight:600;text-align:left;
-                 padding:8px 14px;border-bottom:1px solid var(--line);
+                 letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
+                 height:44px;padding:0 14px;border-bottom:1px solid var(--line);
                  position:sticky;top:var(--topbar);z-index:12;
-                 background:var(--bg);box-shadow:inset 0 -1px 0 var(--line)}
-  table.cases td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+                 background:var(--panel);box-shadow:inset 0 -1px 0 var(--line)}
+  table.cases td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  /* 행 높이 54px(시안). 표에서 td 의 height 는 '최소' 로 읽혀 reason 이 두 줄이면 늘어난다 */
+  table.cases tr.crow td{height:54px}
+  /* 양 끝 칸은 카드 안 여백(.hd 의 30px)에 맞춘다 — 제목과 첫 컬럼의 세로줄이 맞는다 */
+  table.cases th:first-child,table.cases td:first-child{padding-left:30px}
+  table.cases th:last-child,table.cases td:last-child{padding-right:30px}
+  /* 마지막 줄의 아래 선을 지운다 — 카드 모서리(20px)를 가로질러 각지게 보였다 */
+  table.cases tbody tr:last-child td{border-bottom:0}
   table.cases tr.crow{cursor:pointer}
-  table.cases tr.fresh{background:rgba(61,219,232,.07);
-        box-shadow:inset 3px 0 0 var(--cy);animation:flash 1.6s ease-out}
-  @keyframes flash{from{background:rgba(61,219,232,.22)}to{background:rgba(61,219,232,.07)}}
+  /* 새로 들어온 행 — 청록 면(--cybg)이 잠깐 떴다 가라앉는다.
+     ★왼쪽 청록 3px 은 뺐다. 위험 이상 행의 등급색 3px 과 같은 자리라 방금 들어온
+       초위험 행이 청록으로 보였다 — 등급이 먼저다. */
+  table.cases tr.fresh{background:var(--cybg);animation:flash 1.6s ease-out}
+  @keyframes flash{from{background:color-mix(in srgb, var(--cy) 24%, transparent)}
+                     to{background:var(--cybg)}}
   table.cases tr.crow:hover{background:var(--panel2)}
-  table.cases tr.crow.sel{background:#101a24;box-shadow:inset 3px 0 0 var(--cy)}
+  table.cases tr.crow.sel{background:var(--panel2);box-shadow:inset 3px 0 0 var(--cy)}
+  /* 위험 이상 행은 왼쪽에 등급색 3px(시안) — 1440행을 훑을 때 볼 줄이 먼저 걸린다 */
+  table.cases tr.hot위험{box-shadow:inset 3px 0 0 var(--major)}
+  table.cases tr.hot초위험{box-shadow:inset 3px 0 0 var(--crit)}
+  /* 시각 — mono 13.5px --tx2, 날짜는 그 아래 작게(하루가 넘어가는 화면이라 남긴다) */
+  table.cases td.tcol{white-space:nowrap}
+  table.cases td.tcol .t{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    font-size:13.5px;line-height:1.3;color:var(--tx2);font-variant-numeric:tabular-nums}
+  table.cases td.tcol .dim{font-size:10.5px}
   /* FAB 다섯 점수 — 늘 떠 있는 컬럼이라 **정상은 흰색**으로 둔다.
      정상까지 등급색(초록)으로 칠하면 하루 1440행이 색으로 가득 차서
      정작 올라간 FAB 이 안 보인다. 눈이 가야 하는 건 경계 이상뿐이다. */
@@ -356,9 +384,14 @@
   table.cases th.fcol{text-align:center}
   table.cases td.fcol{text-align:center;white-space:nowrap;
     font-variant-numeric:tabular-nums}
-  table.cases td.fcol b{font-size:12px;font-weight:700}
-  table.cases th.hcol,table.cases td.hcol{white-space:nowrap}
-  table.cases td.hcol b{font-size:11.5px;font-weight:700}
+  /* 시안: mono 13.5px · 위험 이상만 굵게(색은 fabCells 가 인라인으로 준다) */
+  table.cases td.fcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    font-size:13.5px;font-weight:400}
+  table.cases td.fcol b.hot{font-weight:700}
+  table.cases th.hcol,table.cases td.hcol{white-space:nowrap;text-align:right}
+  table.cases td.hcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    font-size:12.5px;font-weight:600}
+  table.cases td.hcol .dim{font-size:11.5px}
   /* ★제일 높은 FAB 에 네모를 두르던 것을 뗐다. 등급을 글자색이 이미 말해
      주는데 칸마다 상자가 생기니 표가 시끄러웠다. 어느 FAB 이 제일 높은지는
      바로 왼쪽 HI_FAB 칸이 이름으로 말해 준다 — 두 번 말할 이유가 없다.
@@ -368,13 +401,20 @@
   table.cases td.fcol.hifab b{font-weight:800}
   /* reason — 발동 룰을 한 줄에 하나씩. 칸이 좁아져서 한 줄로 흘리면
      룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
-  table.cases td.rcol{font-size:12px;line-height:1.5}
+  table.cases td.rcol{font-size:13.5px;line-height:1.5;color:var(--txb)}
   table.cases td.rcol .rln{white-space:normal}
   /* 4개 이상 걸린 줄은 파란 글자. 점수가 같아도 '여러 개가 한꺼번에'
      걸린 줄은 성격이 다르다 — 훑을 때 눈에 걸리게 한다. */
   table.cases td.rcol .many .rln{color:var(--many)}
   table.cases td .mcell.many, table.cases td .mcell.many .dim{color:var(--many)}
-  table.cases tr.morerow td{text-align:center;padding:14px;background:var(--panel)}
+  /* 실제지표 — 시안 mono 12.5px --txb. 크기를 metricCell 인라인에서 여기로 옮겼다
+     (10.5px 는 raw 컬럼명이 길어 줄이던 값인데, 시안 행 높이 54px 면 12.5px 가 들어간다) */
+  table.cases td .mcell{font-size:12.5px;line-height:1.45;color:var(--txb)}
+  table.cases td .mcell .dim{font-size:11px}
+  /* AMOS HID·QUEUE 두 칸 — 칸이 좁아 칩 라벨을 한 단계 줄인다 */
+  table.cases td .dirline b{width:66px;font-size:10px}
+  table.cases td .zchip{padding:1px 7px;font-size:11px}
+  table.cases tr.morerow td{text-align:center;padding:18px;background:var(--panel)}
   /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
      범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
   .fabsel{display:inline-flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -388,9 +428,13 @@
     width:10px;height:10px;border-radius:3px;border:1.5px solid var(--line2);background:none}
   .fabsel input:checked{background:var(--fc);border-color:var(--fc)}
   .fabsel input:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
-  .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
+  /* CASE — 시안엔 없는 칸이다. 지우지 않되 훑는 데 방해되지 않게 작게·mono 로 */
+  .cid{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx3);white-space:nowrap;
+       font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
-  .ttl{font-weight:600;font-size:12.5px}
+  /* 스코어 숫자 — mono 13.5px(표에서 제일 큰 글자. 본문보다 크면 행이 높아진다) */
+  .ttl{font-weight:600;font-size:13.5px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+       font-variant-numeric:tabular-nums}
   .sub{font-size:11.5px;color:var(--tx3);margin-top:3px}
   /* 칩/배지 — 알약. 등급 배지 = 등급색 글자 + 그 색 16% 면(color-mix 라
      테마마다 따로 값을 둘 필요가 없다). */
@@ -889,7 +933,9 @@
   </div>
   <div class="pane">
     <div class="hd">
-      <h2>실시간 데이터 <span class="note" id="feedinfo"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
+      <h2>실시간 데이터</h2>
+      <span class="note" id="feedinfo"></span>
+      <span class="note">행 더블클릭 → 구간 그래프</span>
       <div class="filters">
         <button data-f="all" class="on">전체 <b id="n-all">0</b></button>
         <button data-f="정상">정상 <b id="n-정상">0</b></button>
@@ -905,13 +951,13 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:132px">시간</th>
-        <th style="width:150px">CASE</th>
-        <th class="scol" style="width:104px"><span class="scth">스코어</span></th>
-        <th>reason</th>
-        <th style="width:250px">실제지표</th>
-        <th style="width:210px">AMOS HID구역</th>
-        <th style="width:270px">AMOS QUEUE지표</th>
+        <th style="width:104px">시각</th>
+        <th style="width:128px">CASE</th>
+        <th class="scol" style="width:96px"><span class="scth">스코어</span></th>
+        <th>발동 룰</th>
+        <th class="mcol" style="width:230px">실제지표</th>
+        <th style="width:190px">AMOS HID 구역</th>
+        <th style="width:240px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="7" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -940,7 +986,10 @@
   </div>
   <div class="pane">
     <div class="hd">
-      <h2>과거 데이터 <span class="note" id="pinfo"></span><span class="note" id="pllm" style="margin-left:6px"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
+      <h2>과거 데이터</h2>
+      <span class="note" id="pinfo"></span>
+      <span class="note" id="pllm"></span>
+      <span class="note">행 더블클릭 → 구간 그래프</span>
       <div class="filters" id="pfilters">
         <button data-f="all" class="on">전체 <b id="pn-all">0</b></button>
         <button data-f="정상">정상 <b id="pn-정상">0</b></button>
@@ -972,13 +1021,13 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:132px">시간</th>
-        <th style="width:150px">CASE</th>
-        <th class="scol" style="width:104px"><span class="scth">스코어</span></th>
-        <th>reason</th>
-        <th style="width:250px">실제지표</th>
-        <th style="width:210px">AMOS HID구역</th>
-        <th style="width:270px">AMOS QUEUE지표</th>
+        <th style="width:104px">시각</th>
+        <th style="width:128px">CASE</th>
+        <th class="scol" style="width:96px"><span class="scth">스코어</span></th>
+        <th>발동 룰</th>
+        <th class="mcol" style="width:230px">실제지표</th>
+        <th style="width:190px">AMOS HID 구역</th>
+        <th style="width:240px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="7" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
@@ -3568,7 +3617,7 @@ function metricCell(ms){
   const all = ms.map(m=>m.raw).join('\n');
   const show = ms.slice(0,4);
   const many = ms.length >= MANY_MIN;   /* reason 과 같은 기준·같은 파랑 */
-  return `<div class="mono mcell${many?' many':''}" style="font-size:10.5px;line-height:1.5" `
+  return `<div class="mono mcell${many?' many':''}" `
     + `title="${esc((many?`발동이 지목한 지표 ${ms.length}개\n`:'')+all)}">`
     + show.map(m=>`<div title="${esc(m.label||'')}">${esc(m.raw)}</div>`).join('')
     + (ms.length>4 ? `<div class="dim">외 ${ms.length-4}개</div>` : '')
@@ -3588,10 +3637,13 @@ function syncFabCols(){
     const sp = sc.querySelector('.scth');
     if(sp) sp.textContent = (SYS === 'ALL') ? '종합점수' : '스코어';
     if(!FABS.length) return;
-    let at = sc;
+    /* ★끼우는 자리를 스코어 뒤에서 실제지표 뒤(th.mcol)로 옮겼다 — 시안 열 순서가
+       시각·CASE·스코어·발동 룰·실제지표 다음에 FAB 묶음이다. th.scol 은 위 .scth
+       이름표 때문에 그대로 찾아 두고, .mcol 이 없는 표에서만 옛 자리로 물러선다. */
+    let at = tr.querySelector('th.mcol') || sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
-    add('<th class="hcol" style="width:86px">HI_FAB</th>');
-    FABS.forEach(f => add(`<th class="fcol" style="width:56px">${esc(f)}</th>`));
+    add('<th class="hcol" style="width:104px">HI_FAB</th>');
+    FABS.forEach(f => add(`<th class="fcol" style="width:60px">${esc(f)}</th>`));
   });
 }
 
@@ -3628,7 +3680,11 @@ function fabCells(r){
     const c = FCUTS[f];
     const t = c ? `${f} ${v}점 · ${lv} (경계 ${c.warn} · 위험 ${c.danger} · 초위험 ${c.critical})`
                 : `${f} ${v}점`;
-    return `<td class="fcol${top}"><b style="color:${lvTx(lv)}" title="${esc(t)}">${v}</b></td>`;
+    /* ★시안: 위험 이상만 등급색 + 굵게, 나머지는 --txb. 경계까지 칠하면 하루
+       1440행이 노랑으로 가득 차서 정작 올라간 FAB 이 안 보인다. */
+    const up = (lv === '위험' || lv === '초위험');
+    return `<td class="fcol${top}"><b class="${up?'hot':''}" style="color:${
+      up ? lvTx(lv) : 'var(--txb)'}" title="${esc(t)}">${v}</b></td>`;
   }).join('');
 }
 
@@ -3665,9 +3721,13 @@ function hiCell(r){
   const lv = (r.fab_lv && r.fab_lv[f]) || fabLv(v, FCUTS[f]);
   const hot = (r.area && r.area !== 'UNKNOWN') ? r.area : '';
   const dif = hot && hot !== f;
-  return `<td class="hcol"><b style="color:${lvTx(lv)}" title="${
+  /* 색은 FAB 칸과 같은 규칙(위험 이상만 등급색) — 같은 수를 두 칸에서 다르게
+     칠하면 어느 쪽이 맞는지 묻게 된다. 점수는 시안처럼 이름 옆에 붙인다. */
+  const up = (lv === '위험' || lv === '초위험');
+  return `<td class="hcol"><b style="color:${up ? lvTx(lv) : 'var(--txb)'}" title="${
     esc(dif ? `최고점은 ${f}(${v}점) 인데 예측기 hot_area 는 ${hot} 입니다`
-            : `${f} ${v}점 — 이 분에 제일 높은 FAB`)}">${esc(f)}</b>${
+            : `${f} ${v}점 — 이 분에 제일 높은 FAB`)}">${esc(f)}</b><span class="dim"> · ${
+    (v===undefined || v===null) ? '–' : v}</span>${
     dif ? `<span class="dim" title="${esc('예측기 hot_area: '+hot)}"> ≠${esc(hot)}</span>` : ''}</td>`;
 }
 
@@ -3683,16 +3743,18 @@ function rowsHtml(list, byId, newAt, cap){
         rest > ROW_STEP ? ` · 남은 ${rest}행` : ''}</span></td></tr>` : '';
   return (rest ? list.slice(0, cap) : list).map(r=>{
     const isNew = newAt && r.datetime===newAt;
-    return `<tr class="crow${isNew?' fresh':''}" data-at="${esc(r.at)}">
-      <td><div>${esc((r.datetime||'').slice(11) || r.time)}</div>
+    /* 위험 이상 행은 왼쪽에 등급색 3px(CSS tr.hot위험) — 시안 규칙 */
+    const hot = (r.level==='위험' || r.level==='초위험') ? ' hot'+r.level : '';
+    return `<tr class="crow${isNew?' fresh':''}${hot}" data-at="${esc(r.at)}">
+      <td class="tcol"><div class="t">${esc((r.datetime||'').slice(11) || r.time)}</div>
           <div class="dim">${esc((r.datetime||'').slice(0,10))}</div></td>
       <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
           r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}">${esc(r.severity)}</span></div></td>
-      ${hiCell(r)}${fabCells(r)}
       ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
+      ${hiCell(r)}${fabCells(r)}
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
       <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
     </tr>`;}).join('') + more;
