@@ -5,54 +5,61 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AMHS SENTINEL_M16BR — LLM 실시간 이상감지 · 관제</title>
 <style>
+  /* ══ 색 토큰 — 시안(sample/markup.html) 그대로 ══
+     ★규칙마다 색을 박지 않는다. 테마 4벌이 이 블록만 덮어쓴다 — 어느 규칙에
+       hex 를 박는 순간 그 테마에서만 안 보이는 구석이 생긴다(실제로 밝은
+       테마에서 추이 SVG 배경이 검은 상자로 남았던 이유가 그것이다).
+     ★등급색 4개는 뜻이 있는 색이다 — 정상 ok · 경계 minor · 위험 major ·
+       초위험 crit. 다른 용도(강조·버튼)에 쓰지 않는다. */
   :root{
-    --bg:#080A0F; --panel:#0D1119; --panel2:#131926; --line:#1C2431; --line2:#26303f;
-    --tx:#E6EDF6; --tx2:#8FA0B6; --tx3:#5E6E85;
-    --cy:#3DDBE8; --crit:#FF4D5E; --major:#FF9F2E; --minor:#F2D338; --ok:#2FD68A;
+    --bg:#07090D; --panel:#0D1119; --panel2:#131C27; --line:#161D28; --line2:#232D3C;
+    --tx:#E6EDF6; --tx2:#8FA0B6; --tx3:#5E6E85; --txb:#C9D6E6;
+    --cy:#3DDBE8; --cybg:#122029; --cyline:#2C5F6B; --tabbg:#152430;
+    --ok:#2FD68A; --minor:#F2D338; --major:#FF9F2E; --crit:#FF4D5E;
     /* 여러 개가 한꺼번에 걸린 줄 — 등급색(빨강·주황·노랑·초록)과 겹치지
        않게 파랑을 쓴다. 등급을 색으로 읽는 화면이라 같은 색을 쓰면
        '더 위험해졌다' 로 잘못 읽힌다. */
     --many:#6FA8FF;
+    /* 중지·경고 안내 글자(정책 탭 lp-offwarn · KPI '중지됨') — 뜻이 '주의' 라
+       위험 등급색을 그대로 따른다. 예전엔 정의가 없어 기본색으로 떨어졌다. */
+    --wn:var(--major);
+    /* 따로 뜨는 앱(AVATAR_2D) 카드의 보라 — 관제 화면(청록)과 구분용 */
+    --app:#A78BFA;
+    /* 오프닝 배경 입자 캔버스 밝기 — 밝은 테마에선 종이 위 얼룩처럼 보여 낮춘다 */
+    --opcv:1;
+    /* 드롭다운·툴팁·모달 그림자 — 한 군데서만 정한다 */
+    --shadow:0 18px 44px rgba(0,0,0,.45);
     /* 상단 바 높이 — 표 머리글이 이 아래에 붙어 멈춘다. 탭이 줄바꿈되면
        바가 높아지므로 실제 값은 JS 가 재서 덮어쓴다(여기 값은 첫 그림용). */
     --topbar:63px;
   }
-  /* ══ 밝은 배경 ══════════════════════════════════════════════════════
-     관제실은 어둡지만 사무실·회의실 화면에서는 검은 배경이 안 읽힌다.
-     상단 [배경] 단추로 고른다 (localStorage 에 남는다).
-
-     ★색 토큰만 바꾼다. 규칙마다 색을 박아 두면 두 벌이 되어 한쪽만
-       고치게 된다 — 이미 모든 규칙이 var(--…) 를 쓰고 있으니 여기만 덮는다.
-     ★등급색(위험·경계)은 **거의 그대로 둔다.** 흰 배경에서 노랑이 안
-       보여서 minor 만 진하게 내린다 — 등급을 색으로 읽는 화면이라
-       색이 달라지면 사람이 다시 배워야 한다. */
+  /* ══ 테마 4벌 ══ 다크(기본·속성 없음) · 화이트 · 네이비 · 고대비.
+     상단 세그먼트로 고른다(localStorage 'amhs.theme').
+     ★화이트는 순백(#FFF)을 쓰지 않는다 — 관제실 조명 아래 흰 화면을 하루
+       종일 보면 눈이 아프다. 종이 톤까지만 올린다.
+     ★등급색은 밝은 배경에서 채도를 내려 '같은 색으로 읽히되' 보이게 한다. */
   :root[data-theme="light"]{
-    /* ★순백(#FFF)을 쓰지 않는다. 관제실 조명 아래 흰 화면을 하루 종일
-       보면 눈이 아프다 — 종이 톤까지만 올린다. */
-    --bg:#D8DEE8; --panel:#E7ECF4; --panel2:#D6DDE7; --line:#BFC9D8; --line2:#A6B3C6;
-    --tx:#0F1720; --tx2:#42526A; --tx3:#5C6B82;
-    --cy:#0A6B75; --crit:#BE1B2C; --major:#96500A; --minor:#7A6000; --ok:#0F7A50;
+    --bg:#D8DEE8; --panel:#E7ECF4; --panel2:#D6DDE7; --line:#C4CDDB; --line2:#A6B3C6;
+    --tx:#0F1720; --tx2:#42526A; --tx3:#5C6B82; --txb:#1C2836;
+    --cy:#0A6B75; --cybg:#C6DDE0; --cyline:#0A6B75; --tabbg:#C6DDE0;
+    --ok:#0F7A50; --minor:#7A6000; --major:#96500A; --crit:#BE1B2C;
     --many:#1A56BE;   /* 흰 배경에서 밝은 파랑은 안 읽힌다 — 진하게 */
+    --app:#5B3FC4;
+    --opcv:.35;
+    --shadow:0 18px 44px rgba(30,40,60,.22);
   }
-  :root[data-theme="light"] body{background:var(--bg)}
-  /* 오프닝 화면은 색이 박혀 있다(background:#000 등) — 토큰을 안 쓰므로
-     따로 덮는다. 첫 화면이 검게 남으면 배경을 바꾼 것처럼 안 보인다. */
-  :root[data-theme="light"] .open{background:#D8DEE8;color:#0F1720}
-  :root[data-theme="light"] .open .sub,
-  :root[data-theme="light"] .open .note{color:#42526A}
-  :root[data-theme="light"] .sys:not(.hero){background:#E7ECF4;border-color:#BFC9D8}
-  /* ★FAB 카드 제목이 #E6EDF6(밝은 회색)로 박혀 있다 — 흰 배경에서는
-     거의 안 보인다. 첫 화면에서 고를 이름이 안 읽히면 안 된다. */
-  :root[data-theme="light"] .sys.fab .cd{color:#0F1720}
-  :root[data-theme="light"] .sys.fab .kd{color:#42526A}
-  :root[data-theme="light"] .sys .st{color:#42526A}
-  :root[data-theme="light"] .sys.fab:hover{background:#CFD7E3;border-color:#0A6B75}
-  :root[data-theme="light"] .open canvas{opacity:.35}
-  /* ALL 카드는 어두운 배경에서 눈에 띄라고 형광 청록이다. 흰 배경에서는
-     그 채도가 그대로 눈을 찌른다 — 한 단계만 내린다(글자색은 그대로라
-     대비는 유지된다). */
-  :root[data-theme="light"] .sys.hero{background:#57BCC7}
-  :root[data-theme="light"] .sys.hero:hover{background:#72CFD9}
+  :root[data-theme="navy"]{
+    --bg:#08131F; --panel:#0E1E30; --panel2:#16293F; --line:#1B3049; --line2:#27405C;
+    --tx:#E4EDF8; --tx2:#93A8C2; --tx3:#647894; --txb:#C6D6EA;
+    --cy:#54D2E0; --cybg:#123241; --cyline:#2F6B7F; --tabbg:#143548;
+    --ok:#3BDB94; --minor:#F5D44A; --major:#FFA63F; --crit:#FF5C6B;
+  }
+  :root[data-theme="contrast"]{
+    --bg:#000000; --panel:#0A0A0A; --panel2:#1A1A1A; --line:#33383F; --line2:#4A515B;
+    --tx:#FFFFFF; --tx2:#B9C4D2; --tx3:#8B97A6; --txb:#F0F4F9;
+    --cy:#5BE9F5; --cybg:#0E2A30; --cyline:#3E8794; --tabbg:#14313A;
+    --ok:#4AF5A6; --minor:#FFE64D; --major:#FFB454; --crit:#FF6B79;
+  }
   *{box-sizing:border-box}
   /* ★body 는 height 가 아니라 min-height 다. height:100% 면 body 상자가
      화면 한 장 높이에서 끝나고, sticky 는 **자기 상자 안에서만** 멈춰
@@ -62,7 +69,10 @@
   html{height:100%}
   body{min-height:100%}
   body{margin:0;background:var(--bg);color:var(--tx);
-       font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif}
+       font:14px/1.55 'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  /* 숫자·컬럼명·시각은 고정폭 + tabular-nums — 자릿수가 달라도 세로줄이 안 흔들린다 */
+  .mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
 
   /* ══ 오프닝: 관제할 시스템 선택 ══
      받은 디자인(Claude Design "Organic")을 그대로 옮겼다. 대시보드 본체는
@@ -77,28 +87,30 @@
   @font-face{font-family:Figtree;font-style:normal;font-weight:300 900;font-display:swap;
     src:url(data:font/woff2;base64,d09GMgABAAAAAE68ABQAAAAAnJQAAE5KAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGoI0G6hGHIY4P0hWQVKFZAZgP1NUQVSBHCcqAIUEL2oRCAr5BN8eC4QUADDgIgE2AiQDiCQEIAWHQgeIaAwHG0CMB2Ruzj+i9Gb12Xunc3hhwo2h9zgYGdxnFNJpPSqa/f9/TG6MoT2g2X9gpAglMo1quFjbo3Y3vLua3qiN5u7gXYeNmV0Hh0HYYxGWsrICCUaXbQcyilFkrKowNteGqyLIQK7Y5SA4KLFTTmMcfNlhKjB3OnPjZ/W9r+FnEi98XGRkRUFX99sH+lCCofinZEqmZMoLHnTG9R8OzxVvega4k6MRcsITj3P1Zn6SpmmqmGyxrohxJsqeen6xE1HO1VhYJT/w2+x9WkriQ0uVfEAMEBliIRZiFHONte2UVVuX5VXtct0XrltX4fJc6FSooFUtsvqG95OPkiiMwPEbhdFohBHoJaoffuuZd5eFDYCRKcikvsNSXxFS+ZQlhdAUxiDUSbvD09z+WT/AmIQSOZZ5t4ttt9t2q2RrxihxkhZoAwYqVgJ2gwFGYvzqGPzO+mCSgVofBGWO/HoUu3deshw017eV32SVbFVOYsaaUTxMQszQhw2DD6OV8yFn9X/a+/ef3i1/bkIq95CasOJCXTITyKw42/Jc4Df8Vl2mfzf/O8Frck3bJ+Ksif3tl0mgz0S20ytWp4pZIWgESYgohJAgYe+L++XdLYWkL/CpA2BLbsJOGLpa29AaqUKXEkiNLp5e3JG3vQO2wcbVQv6vpta1vjr9JGXImjzP9HIHtNsaVAbuiXb5BHwjfPdSVSut6rLGbdpIsp3IdkAOtmQnT3ZI1lA77CxlsuQB4grMvI6Hetge9ALQDRjfffZwuBFcDqfl4f+XObtvb6r81FlFk6tyIhwIhdAYM8ynTR6ld9W6R3MiUaIpThxFxRqEhv/nOZnu4gQHYp0X/USj4kAgTTj/aW3VnX288sEnId7KxIjZxyTEpYpFEvHEWrx4qRyUk7TM6ns3JohDKM1p/Q9ZsxqQ0M8t1rOch5HGCCGGaRxCwBSpZb1/P4v9fv8zu4Lac5WMU0hGSt7X54Vgdl0eytx7m1IE8dznq02tO4Kh4IVdzuT3wFENwf93naICQhUehBpyCC1MECZJhjCbA8JcWRDWkQthA0UQNlMLYVcNELpMhXCwGRCOMgvCMRZC+MYVCEOGGJZZzrDaCCOIIuKKiyAI4CO4DFlmudVGCHAwPDAJ0A6ohAcUQYmdhyG5j7nzOAEC9+Ae2wgnkAJB1hiWl+rqqqYb7U63Z1wqyoqq6SGeQAgqKCqllzFYHIFUgWK4RmcwBqsLEAx08gJK205CsvsuQMAYQbi1P+uPgLnka1sAEwcgjp096ryun00B12JyIH7a9VAPKNfo0hveGTjuO1eXfFQ8cviCevdInHNuLToRVO76L+edNQz35GXYJXj6230Fdg2Cs2haHFhtijvrLryC8xk6B+04n/nK7Z8ZFWGciQ6cNj9kN2g+ZT4A2wr7i4M/ZM6ZA/jJ+BALEvLiU4rN+OP4cbyD1KHsdabS1MP4U6Z/TTv5a9b5mN7QE4zfhQvjQizIQi8uBXcx/CB8nIObYBp6CN2ALrBjbH83tFGeS0x923stbDqskczYAow8O1e2FPEjMeQPl+A5sydR5Q3ArLfU2cXpp/FftB929wXA7Mz77Q7Bfb7J+5KWTWxu9UPdLhXmX9vtj58yfzj9bqex1cksmpnEGKZvSrGcUr/5Ddln1bo3uyDuH6tTp3N/0NfexLJ6nAK7IuQz7KEf+kb1ktadfDzVU5CGK+fHdz8udQe1NqX84w2fnN+/kid/QL9f+esS8Py6FGnfNJWL0y8I6jnYpKBv/QfDWCLZvH18arMuHzNu1PygPtCImpulU79hPpkuXy5OCPu072uO0oPr11bQhVU9CR4ak1Etd8N4JDhEOMawJS1ca98/DzT3F5WsUHVXwqQDn9c6Ht/rRJ5l5wlaXXrmKpuFjHhW5hm3p1Oj822mKJ5yRsGj5bOIxXPL/mCEalvbEIHqG5Zn+U+xPyme4jHvzdSdaDb10bD+CD3ReE7rgdICMiOPV7B3umZXJMr7R2dfy6QdXqKUxsdnnMijM6rXbfeNR4eMHVJsHU51R09dspVjnqo7G51FbI/7GuqVEYqJmdujySJKrcXE1BPDGR9OESjYOHYloYURQeB0XMKikqqy/oRg+sG4s8R7gY1jQUyIxr6avHgDmRz+HLRtcMOpJ1heCyb7i8A7TjJ3FB95v5VhbaAcN5afKwN+hefCST4c5KL5/DMvLnvEuzKxFDX1z0340MzoKL/IBvJcPjF4vGwrXpnXpnjoodun4dWxzbq+IP5EkrKLf7KUtk4GfEgLi1j58GvtaOltO6eEG0JJk/ndNkZUpnBgS+Ui4uYjWe2ndIKvJd7ouWZjNME0L+0y0zxpgAlvAfA/I31LqWTjFo5ZHHTKAnfPA6Hz38eO/x1RbPf+wNe5CEeaBc/RPZF+XukfUCHwUCHwWCHwYiHwciHwakt5w+HygdNnlOxMcWngWt3DM1VyO/D38azF9y+ozlohszskSY0goPyvCQh7ywZMBMgf+bmOffbNiWOJHWQVSbQGvXK9czf/7NzWrX0t6OhbuG9dI/J8eXfCnYrgq7cIbiE46JDTzrjghtuohnNjlwy+F6++qtLoDHe9xO+5PD4sEIrEEh1Z88sdGhmbeO+bXwiy2fDrkRBcPeDY92nKtBmz5swj51+2A7x6u2gMhMURiCQyhUqjM5jjFkiW2Zx0vfTgwwKhSJxJQprdkpmUKrVGz2SB0PRX+AA1b4Hwy+ldHYLMUf3VD8A/1nE7wO3lrtAYCIsjEElkCpVGZzC5PD4sEIrE0tpg4xzoRjPhxCMVNAbC4ghEEplCpdEZzHFrWM9nc9L10oMPC4QicSYJaXZLZlKq1Bq9Uy2IZh9DI+MyGXb+GTvDml3tojEQFkcgksgUKo3OYHJ5fFggFIml4y1wHX1DI+OTNxGPP3BH7AwigV3QGAiLIxBJZAqVRmcwxy2gA2xOusbjw4IMEYkzSUizWzKTUqXW6HXmG2eccca15KT7V4DKtyADERPOXy4AOR/qjDNYxZHoypQqtUbPpEO4zBcvG84NHUFjICyOQCSRKVQanTE0W5oJ61CFk66XHnxYIBSJM0lIs1syk1Kl1uiNt0ACfUMj41OTQfQwIBFIMKA8h1qYMJ8xZ1cMjYyXAlIRCLHGoLJ7HImuTKlSa/RMngTq3gJhk3q4HXjdKKUZlqXRzK97GnQZoBkdqZ+GRsYtg6bO8zVAgio0BsLiCEQSmUKl0RnMsFY6bE64KwMeHxYIReJMEtLslsykVKk1eh+zMqu1RLa1MI1C8KNKR4blAECLG+7zRTtjeGsXNAbC4ghEEplCpdEZzEvPgBxQaklPfFggFImlnaEGDBgw0PmGqHi6xULMsueQzvznQnmaArxlbQj69b7y02a+MrP2WqExEBZHIJLIFCqNzmByeXxYIBSJpRsAjUBCldxbOGo6+Co34vRTwPbMdUTv7xx0wQ1rXnL9soAF2BWwG2B/QBfgEMChgMMAhwOOABwPEEyQeR6hgaZ/odFoNBqNRqPRaDQajUYbNKLRaDQajTY83LUAAAD4aKoRqnmoJf0t2M3+uixxiEMd5nBHOL79u7uCsMipBAEZBAABWgE5CEPCVMgD8Xmz6/91mnSUFwuPRF7ji3CW0F30aApl333woNA99KLqoc7XWzbBg0KbBxqdnpQfXLqLR4Ik/uOjd/xm2iSnfD8R3g2Cvb7nFcx+XJQ5RLaNh6H+SYkzGL+SQj3Kn/XzBgIvXG/wvxo0BWS/ybhHTWsOoMCzKykpJSQHTFdDipA0ywNyd4R8TrW0rtrz5cykzwV/W+9Hv7A4n50G0VMKN6Ayn7sXqxSh30eAB4tujwcoJVQMQgHCJDHPFA+d52vCh8apC6ErLAXpf6MmXstP+cQxKqHCBpplNz/JG1Dw4tCNcDQJIYWEgLcDIgJejdBMYStnSfm5qWoNyc3bkZlwNRKeHvAMxOZH4PghYZS+4rDSztLO/V3o3OU6t8jzSY86w02aKmK5ZdAJ/lMrW6hWJpWk71ZCxwEqJeetOjFU8kfjbfgkj4pHJ7vvMQjk2Vl6SwoVtkpgwhW/gcl5U3jmyaaRjMpamCSyk1u74ueiiGFmRIAS6f61SKKUXrYLxigj5OSIrDaKg97PZ9yWG2VKLYqCMFfamhHuO1eVNpU3l0izWFqopYhnJmeRiCVrUhMhiiMOjwhbPH0VGk15JtFWvXguowwjq1QoU4Uyb7KS0VKQwVEkEERkFhSFSs4wi6vBYBmf7w2dkAcdULTi60oJiRX07R/mObQ4fKSCyKwjSQ3wnm/JoOfhk0eHhkoEOoPeVp6lHE7Nb3Cz+WsCSs6SIsyX1VXL1R0LPk70AST+AJS9p8tW/zrtnB63kiMEELj4nDiaRNASw/KCHFebLaPd6SHOlaNr0Q3Tx+agPL7gh2d5u+BLSuksDpcvEIokcghGUFxLGimz1WZ3+IOhcKQikayq+dfwzkjLrLZ59ej11aXrd7SQGRH09FUDNkrbZFf2Unly6AjsBzgQ+ZVo3iGwG6P1rdl4ozDv6wFcAEAGdTugCI/4EooGULbXDnfM76QlAP6tuCDBZzluz8wpW1CtRtoMed1gihWVc4E6nT9XQhnM9s7o9s6ceO/CUbRWnk6vGVapASlZp/1nDACB4PbrfVte2KGI5NO4E6W6mdtMn45WEwqDVyogaYigh368zaNAoB6DyVIttlxUJlMrW/cu7NJBjGP84ptifbG52FosFecV1y7e0UJvOa9lc2tGa1UcQ5oiG5cfrZSTS0NgzMTXxdpiY+y5f1b/ATYBALHcjgHsyMKRy0cuG9Y6eofHZgHgm+evPHrlxSu/utK3d773N70rev4rxvK9gABzAFu7pB8g50teCOnrHZ+ud1jvlG2u+d/HTvvXf7a6bbXdVtlujbUeuK/PRmcgBKRIk6USD5+AlIycgpJaPIyFlU3CBOF1pdlnh/2eeD4IC6YLIXfygGJBJaqba42ZMsw2mjyZH/ehFjPZbP/Pa75uPfZ67E4bXHHDVTf1Oh/gMwsc88jFkPjSQ39ZFhz/+cTmkLnVQsf97jd/2ISE4uDjkiBJSAUWNg4JIRExJq30NLSMdO4ySGaXKImL2Wu8RvHIlC5DFp+iCc/tVylTroLfOOFJT1bfwj3hDBHTTDdXExlv0uAIPzA9HHkQAuS6CpXIBD0ImcmSOvYCBPHZB0lSAnauRKYkBBmcn5YM9OtMVnIPeCIyHweYYqgiFHrMqkqK4p7nEAUgqIWf6QyQvQZU/QEcBV0FgKKYOCHsq5C0CeXwFjQc6xh5sjbkKZ8d6gtJKhG67q/6qu/QuBocucNSSoQVtVJqiAxizCvqpZlRgBJJTKNmdzvCiWFaygQ69PJQklDt0MJU8+YuDgxjMQ2OUZAKjbwOkDsaJUcvnPIg1LpmcJPKAjrTxXBkqYBNasGIzjVOVLfqFgUNzGdNqSlAcgkicgULMiQMZ2Q1bCg792WUx9o7FQXLAYa+w1McTcNpaPvOefRSWpiBLnu84dOiUx/ud/p22yLD4igIcfnats5OohwYpiSJldKyINXjtLv7rLs4ujBYPAZBJs3Y7rCJoDA0jlNTrZsss5O+/LNx23f380nMYYwa2JE9CkrTD3TGfucVENUNpTwmD5nznGizHnM6MKlZSdRd6lEf+L38Lpp/tEDVRhwbWAUdbXt/5JQLZ95miyABlMm7IWAyLKTQZxFB8/N5+hOrfOk/JTEzPSn9Pv5S//+6V7pmxZmZhn34JKL4Mfe1auU56hUYZc2vMfvSnhFNtojwN4JVkz4Z2/hP0tCnffTGrOhCTBCJu56GbSLAZtBIZmAp6HHh/O1zlOTllKyIGA7Yn2vLSb+6cT0UFivJmDAaSvYdw9AwjzgEVG8MawTYGvKqZBv6zXljABA1ylTyjmTNjpSI9fJkxe/4RUX/fvwMjGewYdot6RYcIt5dUPpbdS3XFRtRul0OuFO3qbA8ewCj0iWcKHubDoqNdtH+5kFoOYJkK6vUleoozWQsufA9mTUulLq7w2KaKBg5gnY/dOSPAIc04TbtjdgQxyh60N37fBu6uKcL2kNUIxJlL2Kb2fYNUDxIE8WoLaRfBxMGLPiULzvbm1ekgToF6xQnqSQcRIQG1QH8hn34bD6ctQqcUlw8EhAWoetn24CHtetVtfTU8Mmz9yinNc9VOmy5dT5rx2PULDnjwoPrlp4DAas4E4jSvMOX/tbc7MGlTuXqLyrvMWpxK1bcPtwRr/N8mEywVd4sqKaspigQAO5xC17MqDu2VhhMp4DrxilcnaenFm98lmOw+WpOaMosrE1vD1xdN1/zh7+uO2ye+8JCIAGSIYrrXbS+Bkf0bnzmUlN9zcWVfjjpRdna2KNvfY5UfzoziGFIihukpVQXkCOzxUrD3f2MjIWxiX7zqG7ZRaAmGRPiYopNS7epq/3Qz2b8Fi2aqa9nL9nToU+378KGx+g+MepuePUBTBG76MjRCDjbcHIBDrtbifDDqemiGsLojHRGHLIG/Yy+0DuLvb5DK8im6aIc6VuFjdbsp7nie9F1KnkGigXJFkO20GrP6wT7zKxlZ/vOhiZpxg1iq2Iq8msKOj0vNSufeuO6jU3nzboFTKn3xzIEQEn9YZt7Mr/ofdnce7PU3nLWCqcqK9KcviaVho/h8wQy+t4HKK5xOvm+ZgmGQ9gUpBgMCGYAJpSWynDYIET9KsWLtC2CW58ER4SGj822tHNPb6QMXQRvxnFKjb5Ja/mNqXIzHqYOlLyXVaefNZFk8RoS0faWbQ2zkGaq2edc7DB5gMTDKUG24OMldFfFOoaoyRaORVm5DWjkXKfFuzazYHiU6ss6AtCLkvLdMveoTMnIdQlmLdoZv2w4YdLsbGK2raEmCN21h5Zvd5u3OSm9OMbETTPJM/Xg71LjnFnLzJbX9RPrVt0RqYliZsKY393JW368NN1zu9MWuRDcCqdxq6/JaDXWw7cu25a0e7M2kDP2Zua3R6TWSYkDEYVaL4x4ZIsF28lML9tNpXpK/rqR093T2SHG13RXGv7vJphWTd/1Cf4eJI7O5vdeKYlTchyj8uRGuodTs85I1ofHumpO5ZowHNFgg0339Dndpda2UfoyNxqwQJRojIlmim/bKGup/QcuJiVvVd87Q0n5JlLuaREJ12KqTTqr3Jb8bZ0sVnCKM3c1di+6BrImpvdF8HrJv/FHP/+FsV3GlIkhM1VIU6N8oLx1Pu55wCbJo72WebhfP1yfTfkX7VP0EuJS8Glbjfrdgy8d2g0mEzrQbWUMZiG+A1GqvS/LqNcxRFfjr47YLnznHNL2Z3IsBHthvGTCWIIuY/LeGNOp2aTbdChIGWKNv8FCs6TWAc633TPhrV/No2nIIycnPt/TgEYE2WxThfNuuGmXht2lPra5J/uHnuvzSCtklD11IrvQoxY0O8eCc03Ev55rlPm+QhiRsRiDML+HIPpP/v7d8hO4z3HlzWHDQnVJVdX+INR2PaGtS/+whn6zSVnjLePNM0I7fi50mfq0tNWsU+CcrtY0KL+6dWJLmeVlRhEJ+ZLVWSjiETfvZ2Ww2Wjxe/YHk09FDao7VCrvsphTzuspx2KMNmF0hTNuWwiocyr/oA7olE6n2+EOJD2VCsvouvBaVYrXNXzIRJaex/oXNb6fXWm8NtUQHIczFmM+EsXY48vqHCFbDIRrgSAlEzEhzIp1k7PbIwBMYmmL2DKNUROGerLxjogi/poajED3GhwJD/d1xjqyPl3c6RHCZ31B4NLgAPWLWLiu3icODHUoE4bk0AQx6FsnZpzg2BfSea+O830o2RwiJWdhl/Iq5iEa1Ij0+9htS6AxcHGfBUMYe1VBalZufOUhem1H+B7ikU7dzRZku1c3WO2FdWB2rOFIrR4JOoNZH968uILs7c6Woh8UTApX7OMHhMS3nZ8WEsmn3pOZVZnKyJlFcl/iJ8476nnnjiRr+FbMp2FXYtEIIG/thBYVbx3w6PeCrVBQmTOwb61uVnPUtZP2UemgAmuXYzf/uXkL6bZ3g7TiIXJUDKE3zKfTnJHXE8z9ZVG3z20rX9IG0ga2PUR9/2AoluFDN79ZuOKN45w/D0FBePh1UzVf6cNgsWswhPhRTO6r5BvPoectHj1OJsyB7dh5gtLjGj/p2A6WpVfviAX2p1Ll+7fHqrAWXtTeQVitRJQhcc13GLvDEeOqhQ63NMqxmhzEloi3VQjCwy8mNoa8/dPqgtvGcGIDshGKC0xu9nQcB444fZlCG4FLi2LoB9pCM2uGN5tQYYNfN1LPu6VLUakafJueOhCL7Z8+I+DoLaWcXhbSHB3rNSsDhYLgCoe9OxIipuegpVVNNJnPYt9hIVf3WgeoGSagoxDhs/aj9g0+fJ+Kqy4Zn1lCa6NNnns6Zd1k2rTVWRZcKNnzbXwprdj1mPXabS8hFrGsDEm5+RHxBcL26SBXHggP4+VWv1OE4ksdOQFCn6k22+lDX1Sw4P8FRJEXLP5/oXur7Zq/nJgaygOYq9HAgdQMT9ui1dXbY/79qZT/wNZoEnG1OwxQwsbueQR/mmEe1ft/p04fWNgWWdEGhNVDrpqhiYczJzmG28GGhvKD22LV8XV+14E5c4Jrjz+K2GdRuu6aGrJ7DmWXvNO4OhLhcSx0erhN+fN/nayFVElCK0uGYPR8mvE8ZgtSpkjQtB1Ug2Fi/nbRE254vNwJZjS2vo6OAV7OLVkWTsxXWOMfDruwY10k6uaIXPlPNTVfaWz+g16vhU51f4YrVDG10VNLZJ/mU0eKKic+uVoWPsohmGyST0a8pu1Ak46Fcv7uPTU4sZoyx2opVBUnrRnU5LedArFRXtFWP8tYLcINmw4HqnDKGjCpYT3USNGm57Q0aJTK0AwleNh5A30K/aQTEpPsc0lyjn2EGMFk0YgcxQKODJufKbt+Tjspcun+fe6i8iWLgIQ5RD45Z3DVs4bAR68Pea+GB8LEufD13ss7Q75T7vNukPa79yJc+ALreZY94iQOPCt6TgRIjL8vsb3g16RNlmUAO/qC6Tm0kH7KgdvpoSq32VrlCW0Z49K5DMI7yqDeoZvC0QeV/Bne8fBYY52NF5AYWGU2VcFa8ycSESEHnReeDCbyvfOkEgPTGByXUGhrk+0LQi/cqKhlGL6430cKanY3hqFZqdV8cxOpmeNwqOc0kJSpyiBvd20ZW1FT70HdqoYixgNP8WdKh5hN6dkioYMtMQEoHQlDz4+OIMN42fMPAULWksgchx2Z60UOpcKlEMbVakEcnQqJVcE947DYogCq9ENgdTOZGjWvYymvRAl5FaLY5yHFMZ8CgnyQ2/ZOkxFMTK9OnWt3IHN2TiIR6EYZPoyMjtyIQPckFteAj4psUoVLIYjv3KIw7qp8hEm1+S2+8TElON6p41dmPfqmRrCeYK+SrFI25nY517s0khQEeQ4siYxakGqO0uPxMbXoWgJO4A6j1UQbeuzdyU1nJaT4TnjnNfD0y0JbJrTFMziWmFim8HBFYRN8PaJEyFodMttmQ1prCRKJyK8H8ftBYmYjLHnKuMIojnEjFnkTKRdEMFwY/dOkYBjPXu0RwmhIJKsFvqk4KGOVk0U8k6u+YhRw/YL/wvE5PrE+fc6uJ9za9gPx1BhX0RHvTiTNnpTjcrvRBlivbRFtQ1z99Efn5jvPiR3Hx3oCp3O/H8PA9otqtKnezJNi5SqeyY2h3qpm0FqEgzJ6+W6mlqqvGJXRoqfvWOMRqkBXarS4Suoj3DgXZcXgz/ZNPw+WOk/FI8POMZEWa5Jt+Y0qO/Bjuz0r80eWucuKz985UnYjQvu6MOkwDe//6L5rUM/+KRb8goeeS/AUsMBdJDdrc0A/EE8ps8831irgKy18DiPuGE9ONhv4xog9xjfkTLhR+dv7MuUz3Clp44/TDAJLmVBIOEtBwZOIIhCT4HhUIi9XqcX+gQASwFG5u5JvlGASi0eHEm7KJDKNNdiK3+JiTotG47JhT4L/ITjMenUYDvfhfXvgPWrOO9zxdRVdZ1QAgIREsjrLjdMXcU3cruLVHhG4/NLPmounLpzSxlJw8djPeE/f2r4ut2vNLnx299Rrent6Qdol3PHH5o6bnbvNR3+8OMqy9sV1x0HVy53FjqQVuobYlfs+4jQXTlw8of1lLVGqCcgUSDcKr5aiazQwuLOe0AuPPyvI/fk6n/Qlrk5noQ6sf0K5ly/Yq6znB42y7M8LGLtZPy1Sm8GlbqGBzaJEIhYVOwV6f9DY9tCzBzk5QiHH8CRSAU+6qz1m2J9KeXx2urJSJ4LHHPLucFiwOPHgPyfwUW2rm8dBM099MB8fBjhKb36Hv6f9QNKYy6ogmUKhvnRwHTHh6ihrXIjoq+RQSCWHKhfvmH2Ob2KnUEBOF9vyU4zfnyLbOLZwQCeH9bWlhjQkLd6qxUphslRYWNyXOWCuNWTz8LhY6ZEpUDv1wBjVa9B4rRzMHCSlule0j7enbR+U/vB/ACXpbG+2VXz4/voavsReEbPZozErx1ka7i9saERlWT8/q8+i62tVaC1JYjX1KmBMt1TCqsSUhcY4a62xIiFG5bUlCxt+s4kYzS2Xn7hybHGjxWqo34xqAmitSI9IbVyeTSrlWQX7pF3BmrTJqIGiyo4OdARNdABZurlZogmgGmP8yGeQF1LB5dViQlclVpWroNz67EhJrEG1gSaJGfHUOTTaUOKBPPTvedzvW5EyagzqYXXQZjTQUsPpDIFxI9YEuKdovfxkUi/TyK5WmSkL8UTIuYIuZAHyVmONSs3dUbpX7jZ9IH34NfbqwAci7TB4TJPaIV6S0PEqbZBUZoWioiN4ScFTYjRMmbCwWISAifqPBnRP7XLDB3eIVJmz6usz9DwwiXw1c+rUSgfi/Cq7cEUZfXnd3zNarrF0diPECGNW+KveoS+kn32iAutoCr3g2brzUwuYx0qmLh3FmCyaJHMWvs5hBb4NvSScLE4U5VaXZpN3jYcJWiHrZGkJ45YtVwiCPW8Nc6s+psv8XLgnvsSgOwiGaHktL74RmDKQw/qWyXyPme05tTD7g0+R9wOavI+6fnBlFaosFkTjcYCrNISECqKwIsvf/wKn+Cc7XvhOBoxVjE4+fOlNLvdlIQdz235lfMtkfscYcT+MbwE29dbcj4emJ1NIkbQN3KGZvFoF7DWYJG2AFel9RCnYrOKSHA4np6R4Cvsu/UJB0QCdPlBUcCGHsKqlMquWIKxamdSmBl/Tij/qoAuezVChuiJffoPL+VjE9qRDdXBBBJZn+ftvFb7C/J7B+I45RjGY/3H8g6GCA0BiQubxzM8VCGZBD03Gh2DWTs4AWu/ufs2vN5ZPKHpurTf/Jl4VP1dk0+ck2++qC4MXBKaIW68tdxtkNuHtzYl1pJVIyuEIhsrDMcWd+cV3s3ZmPbeCUixMBgIlu6unPQ1MHir9/Ur+1ZP5+Sev0HyYen8E8J74mgV1yx4wx0zrahjcK+T2I7+7R9wHAendfmcOqG0cUqDr8pGwLHxvJAu2PdwJmOibrNeSk8u0IOwz3LdFAmw8IkAAA2FRZK9yIhtEV6vfsa3j7wkE+buj13eI920b+X0+L7/ftkFIgNZqQkRYN2SW11ewWzd+T3xjXVdjBQO1OI4WwLwMzuE0ODChWfulFK3cRktGjXk2quDOYMKX2gnNATjtsIFB5i55VipCq9pWCXRenalg9ZyM0UnJw5XonTXurZ35w5OqIlQVXnPoKtwxqK5e1o2aaWYUnK3+vaUbbLMsH1ptDjZeZXB56h8TaX5lwt73cIj3kKmvx4HnEoSU77QB4suxH2pOrmDUK3XH9AsW6o/V1emPLliQPNbFd+lbF6iP1jlFbT4DRFtluRZXYu/sODLDSCHT42josbjiephckLsks6y8MK4OKzYnGrpQV2gjmmpAN4fD6BZ42YiFuInM4utbmnN9hYa47ykdrsK41yB3CAUupULg4WcTIExEI0K5VykuM11hW+V3wtJi/iYhq5ZV7Lk9d93fUu9Hk1tWWghvIZ9LUmyB2Mbk60Vsrl6PpiyypV+8yoHtBlwVYxkoRhIlKjyb1nnBx0+jIViW1BKyZAhC0fMlcRpBkwUvra+iOAqwMOotZfbfO5ctkWnwnuMw3+P3N9r1qDnuDsko+r217E88PL44yWV+Huq3Z3i9Em08WPmPzES/vI62bPZWhup7FvNdwe56iRQqbKW/nHnxFT1PqtgH9NmDHRkenxD0ptk64eoquNNmo1VdnZgt37WqOlBVVWrfD/lk4hCKyl32yiBpUK565L/3aKMCNjo0asoJl2z9Zmvno0gIFqamANRV4YhjVS4QWOmIViQsmC5AdQZOcs1mbhJWcSuBE6ZZyaqVKpibxCKYpU1AUFJLQJViaolaSWih5HuYYWbUCTq5BX9fbpytVM9QNuxAsx9lT3krVwmCK9c8q9Ee1Hc/XLmfPKghfNoZXYgB6ZoBBm4xLqoZDPR8CNxGR6S+CxWdKSk+UVR4orjkDKh++yf0J6rjl9HLCOIuSmDssGN4avLjjMukYcws4Jn5PB5l4Qk0zeNTo8U3L93u5dVR1HLXU+LpUnGdWMSPc+l0yxUTNc1s+lDaO7dX9+XyTLINMKeYKll7bs/5I+gm3CG1TOLFiEnf7/JxuYTY31BRrwlxm9atEAWVasKqVkg3fkVMrMiuqVVJJK6EpHbRLGwWmJvuXhAznuHcrPkxlyTKM9t17r9UBMVg4HGHAjdbsarCrmEa2SrqX3e2xRsRbpqgOKU42XV+7wI7WpD9ct4JF+Y6hkgDIQmCBMTSEPElZragqMWGHRvBRvqwSUEUaNji+0tMeSNuwv3wlsKv8NUi9+itPbmFPCj7cChbSyHXfBu5/e8dpFfBnPHIQtuBBo9nmtcWsOo83rb8xtf2XKZsTONs9ACNLcgGZP3I7WsBn6c0T3SQFmutfSR49cvsAcePILeRW4j8tvyf03cgO0AHD6lHVMlepBdUfJPjGHlv/q8T815PQvTHZfRSt/Ldkoz8N9yw/K0xoGf2PkrfRy3YRZH9FBiV7kk2g9ZFo91RYbbXrGANDePHR9NEI2OiO/BfqPlhyPnzUM8koYHLsoglLHM0hYFqlohZltJ7XLVYrOZyHKc32mFO7IFwsLuCWWu+zT33rzx/BOlBPvj93Cz/GMwSD73gR7KVtp7czf/IH/cDQPSD3pRjBgA2d0cgU92xuLx9MfhI/TlF6R9Llywc5W9bZBwt/6jnSMB+ldhS0svC6buEwtV0nLXGXALelufMnTs1oJxcXc7Uul1vFyabw2Rx2MCP5TNnKMdngCw4e35vfu6vJ1RMzBhNh6V/Y3hP+lH5YsZlwPt9ES3ju5yC1IoCw7NHxzyXx1xW3dHasjt7sB70s9tNjVFwJUAAErziD/6iVlMPPvlz/n3yl5Q++RB7HmqHKTe0wCO6iKKxQ8PHjMUKxiINgp+D8beyL+MzILUD1KhyTHhD1UNHL9V4RbW+rVYG7zIBu5mAS0zAZE0dM4jG3fO0+RwUZ3AH5/lRzkvjDB0uwy5yJGojzxlYHRs8oQHoxRe48rJjWKrIi3Wbrf2IN0EfGHw9YF/GRw1rKg6MxrbkN2P8iwEpscFTGjDwTWj801jSw+MBmtg82YSWFwODxAYPb6jBB6EWvxFzXgx8wfz50StZNCxLxklru7TXSkezdE6U13X/RjPgEgBnI78+mm/NL/xOv/f4g/5Y60+wGTLA6/0b5uhU/MFov0YMSHBVngYeO/aarOH3nOgNzJQU64c/cZV3dT2CVTUGu0ntMZLWDFmU2flNBIc7YDoS9zwE90yR1ieSJ6zpe2ogbk73vAd/uxy6v4q1WLmj04t8eMTgdzgccf8/jh8BGPX10M2VzsbR3+ELW07g8X9pud03j3PHUX4FgGFAAHrmqf/mdEbYMHk78rt9Ju337RMGMhxti5Fkw+1Bv+R5cVN+r++Q4sYoZt9woQPZ3eBOdLW+GWFDjVJoqjelDSOtFvpr6hSbwbZsu7iP3dzx3BupTuqlgg5lOMQhMxT4ABfX4G02gDS3nwHJGR6Qkx9iu/0Wl6TpCiqo+XtY08f/lvfJ3f12SHPWDVhg1VsnJO+Tu3FUpcZX9iQB9pCxblmRdj9QKOPWUGOsxqayBcR2hYC28MDmhux39axoRsthgJeyFA/I3JaxmvRDfcrhs/AK9CsVisgtZNpYxoP3wJ5m/LZ/a2PlYoi69g8sC3UvhTC5Uo/e2jKrdD7y7PPfmGwqGK7laQGSZOfU3Z4pAchZsDnTMpXQPOX8bmc3PofqZ0HuudJD7J3dzHUDXeRId0B6dQ5bIVU3rHj7wI8srdaCrp15i/7PYXy1f5EQQFDQMcUA6AQA5OlYOWXIV6bWAkvtd9yDMKW55Dz5K2l87/ZNS1vbti53awQNtWXYvAuuZrP31X7e8m3YmfVSZ6bjtvjP4mfhvzA/mc+an1kEhKOEywk3ED5FqCA0E1qdM87Djm3FEYUEiQeIU8QriJvW+zYGjZCcpMWkA7YTtgu267b7dqo4ijyO3ECOkOeSWxNPJV5KvJX4237H/tiBk1SpF+UblCrKZMp0ynxKh3/ef8p/yX/LjzleOF3Ws4t/4Chz4pAQoSjFKCmSJ7vJydInj8kbEhRctEZrb21a622zrdIaMGMSulDGQ3gS7+L/OIMlbCKEBLLAQUFAE1GlatrVpB5t0gE9q7iNmcpKzNpD9rS9Yu/aJ3bK5s1jXvNa3ii3+7GbPNN38F4/6QuecCEsLGV1lpylZ9lZLlZmClOdcF7P+zkdT7zJhS/EBnthy9hWdho7p4GG+mf5c3D+b9VJL9xrro2bxh33n77vVU7QTAqoIcxMvuBdTrNOEmKjPAnPyZu2zr0wzxIrrjZd8C/42RbZ5DTn2eaDfugJz7mi0XvDQLeNBHxqAeHqXw/29rjoT/N/Oah61wO/+GsNmw3HaQ34tABynYPFkf3CQBdMa36f6jDkfZ4qouJul8xL5GL/HvuK2GvEdvxVqGN+Jo1ogoTp8x2y+mHpDnQw6mjgcn7izVV/QUkHz7wr43f/GbZfApuunAskkb+E9hjS4akqUZSYNk7LJVsnPfr+Fe1Of2Hh6Xe73NfFSTDW9vSlWTOPw+HzGDMr30jFb8Bl0fUKUwh/nEAIvPk2u86SdONUb0Kj0y27LyZ7B/Lr4LVAMqxEZ/+Y0qpYQLWn7f4/Hzyz7OUnoPk/BlSzp3cPF3mNUuqMEiBnIq2o4r0sWO11MUQimmSN1hClbz0hE55zaU+CTKVQwLpB9KS2m1ET03lw3/Pau7olkFNIUwwRhLnVvkJbZ7Rb8F22f2XZi4+nX/x4RS8X9Ftzb1rTW5qDCMU2Jbzjuw0a218y9C3lwP8MkrxNhDRp8rG32GGHHXYi5d5lvRYGbHnwygbssGuIQMvoT7T7y8vHUE5zeDQa/xnXwhxiBDyXJDsmsekSUomoVa/M/A8WoCIbDeU0RdKNotkufNl64tKzWXbEV4d7ms16EnwmI26PF/mfXiBJPM2Ac3AHQHrqhlR58W70c5CytJlfJD/hfOZy04hUnzE6961lrZb13SCkZxv/EIhBLvYdwGX9OeD6km1Pa98OFtbU3Sd2/+8y5MrTNC5ZaEqyPzRXCQ1UfEqlpRk5XWUpaaNX8a5fnUFFzR7BMx2/Jp2Ghj2M34/S7p2MKNGN/FQMJ6mW+S21JTlKkqCjN8MLneZwAwSt7hh7vJMmz5uCz7U2kQE7npUEHbfDVWNQBUrkCL9XcXk4dPKBe/jGYA0AsSPrAlMtiDL47BM4TYgBHJPE3UKZoZWIVSBOlP4E+R1j41prHfhpRCzI37cjJ53dn47t8RUeiJHAIlVR8JOVr12iX+l9/5/rK25vjCwz8KFVPQmQ4u2fzQCcgRAjJGBBgBAZajUpIb3dcPC0rq5YK2pNw2y3F8eyVc9lRVkEpF4mBgAVAZLgnTEC534/78wRtealSUMOBBBt+pd9LvxUF5Jb2yLHNZoDiFSA/cMZuIteakeqBVJrbJDt+Ug6OkcSOwPdUOdPouRcfX3AeTKn1ZIsfuEoEdSniSQpIXqQj51yaYHT6wOXTF6XuPLslUPJPeuWZ3D7Dc3C1PdPxE68+sYUdGvDcrhUA9u/rtIz1mNT2UEP5Vsl+IexThNHWypTiXiBwwbffPJjYJeBEJVxNXJ/aS8bVyQYP57xMmc3FLAkwo81KkVQpK2v3r+ZoOreTPiXlwCNx/7T1hToUb1dhGkZMhr10afrg7fCp6EJyJouUPc2KdYCj6lNiJYDQZSPnKiP8qBemh6JVKbHfnd+WBe99/+evRDtFX0R31OT5gtzU7bsoEaPrQv+Xc4J4nSFMlAM3gytfgkIWbc1TeN4LgHHfv4MAsCqSl7iSx9z9xyNyTOptt3cYCd/M1o9stwtGq/2XziaFlJSpWDI71+NGC0roFpRRxxpNDwFPILbJnA23Y9lNdSFR8U9j29FYkWWU60Co68mMfcNdrRZ6ddhaoOCi2+7O6IFXCfO7Qkl9qyJ+biP+Mhykd1GjcvkEaJvaVycocryb+iIRsIAL6wTTYwGbX4De+1sq9b+XGgaMK2C6eBaiwa540+Fbk6S9SWOSwyhZP/9pD8afqqp+PdaXw5xh0B+6AyDLrfVP18Mg7GHN+zq44NsyMxfnQOWqz/i7r6r5GzjRkDvVhyyTu67vbFjSPQZxSJLw2CnTBz+NKxjuM1dQiZ6YWPkZJv9HyBbmiygWH7CEIl3ii5tGE7o9Lpf+UNzM1RVICKa35800FYnwUSQFsgfrDMan+ywl/Vl0PdFT9Pud8/DpvNHHeWEClBQ3okAdAJiCFhrMmPrJBtOy3QDbwbkBlNfpWoEJAbMbLxJsYo+zFZRdanVLVCDgtlhDjwXgbwNQXCngouWur1koTTeAo6+Fk5/ltGiIHV0jL1RId0r5XBEMVTp/qsPmK4iSMhA1NG/Evk90BupmvJPELgAY3Y4CwirEQi/LzjlK1GqpS5gsLRQArnr2SnVEE9FW9S5HeZWfwswnfV/7os5rs64ORKuLkxixaQSgo38rnyh6+IHpYqUtXBNlkeibSOZhmOyhlpRSKcnTalCJU3FsAku3CrjKEanzMoVLYnSxcLrL20tITxTdU3M/GOrKd6mtsKQDeIyHgvALYWJcZe6jn64EAU6AoQrCuLFi/BlQTkfxMvlsXSIjMIYC0uYZrawDQ/FmfRDkQTZoYrcwusFTYVaHwmM8wvbjvnGUejgPvb7jyrgLhbzYXRiGCNhDsfvZ90IfPy1TUxUPxPz7eUf+KsQlg1/2qC8FjzxO3Y0H6hwLpw91AdzGiFxtLF4IR4v0y4C54hY1Tglm50shcipYiEGYPuHUwtoTHX9CjK3VofhBM5hSpa/axgTIWxLK6kqv7ag3G1LTrLZkpLp23P0BYI2KS/CSFtBe0CobYDI1r2XlX4uO0qFvKhYArQKo37VU1VIVhA2j/kypDy/YlrHAZotA6S38CC9sPRRaD4uAtWcGcdRmSpjDLoPzQ4gHOXb6CgiSiTdSwSZXVvcfmPS36tb+YGnwQvJfiEoqfpgA4cZ1AOfWYujA5JrSdTQUXGZBZFDi/lPRu/NfYhFn6BAOcsjmzPGzKFqrnbX8Wzmox8/XPaun165jimOGRfQojxqxzA0RYy8nBkvWthT37wtBnPrVOxjw3W4bfoFVUxuLOLtQGc851aueD5cqnd6WomTWaIspzpgSlcuped0djw7dpNlZjvrv3LkTulwUHmUvG62Na324V81atcSVevFXq+e1EAiE2waNPzQL3EKCHtnQLo93aXyKnJXIO3XvdCVY5vbbPX1FlzNd16j5RJ+tfWDLcoiL5gIU5l1Ar0nhX4DgjJW+qG8b6L2CkJ/E0guqMsl1CRxE2iqnAxUm5jkC5llMFAIMIugl2+Hh6oaGlXuvHn3x5nlALzUrY6muDGjAUmppB10SvxD2S2ZHijcW4XAPHm3aLyJnFfJJa8JPWAJzZg+o8YCClYz0tXa/Q319XXQlBlJhkPoldFzEd4S2WQVzPGY7t/mhnT40twn6DZXMutCc80FLFeTX/4powLpmamYxbJRjep+e+33GPJYGQrTXZoF5LL304sfPP5ksq/T5FAR8Bljcs0v1C/HA1UulIrLWCnXGIWnJzjEpjjya+crta/IgEIaRnyKqcQe/WcdU4iaClHB1jOoQtP5Jino+v0AQGf9/SA1l9OVsCqKriuM1jFw9mgs7P+JviTSQiJLPXdToNJtBcFIJfBem03dHJmGBc426SAxERSrcyQ2YWN79YFR/RewgUSU/o74cejFP2e1POgcvwaYZy0wxoLbMHLlyRnEiLgJcAL+ZGnh+t3qmsri0sLC4qLsQFZ29iFTCTPPUozOqtywIjV0oyBhZUillkq+GBe4btuUNZID2xJlpVUFo7yOeLN5vbWHNdNWHnJeQz8lrK4GQsT5GSf97JmEOo7riPF/ftdYf/xQs+F0+9Xi40s+QKJ6D4LOStvK+w7aODWhlk1Q9dLpEBFx9HyzQiPzotRe4/Vx0cgrDeN90RW6YhVUYyDm8V4dcCSZ9qQHC699tzKY5tHn2NzlIdLeAm03ZJYrUZq5W0dQw388OFQihBwBgvLOgfZPn1zPdese256Nm5Jp9VgnjtVVfUljQ2NQD0pWOyOHdp3Oc0Fle7Y7RbkSej+ZGZd7ZsaJrDG1ob6qqmEhsR1bh53T/c8ulmZ8rlwj7yQczyUvI11p4lLVqKk1KwVnhBAQciLhVVqW1VnQWAQYphaJOCS3HXvVtuuTPPCgje1gSBqpShlXxXBLK/jX4T3DN/1CLpdmkSThxMRnbY1nP5cuhYvvQl1Jo2hZqPNsg0xxMCmp1hpocuw2zIyJlRQgYnZssNk9bs5HLzP7FZZJ7ZSrtQ2p9dT6GZbERXtSJJZIzk127NBQgyYUELxdZPB8kxs3LVysUX5vhsMRj0eiIIPd7qLjO4oWtVV6BohFpn+5XlkRXNom4rD5XLrZqmyEkq+L/oeuVmUIF3mrcWPH+cGWq9PqFC01GZRfjjcYPI3PNBuMYk+mFFKZNZtNfrru3n6kv7FThMea0SQR9LbcrTTGEv1WzZfHUMsFN6f8u+oJ0YM1IZ6xvL4N06dFsBduqWqiz7ATSxhbGENosMC6af9f46+mnh9NAr+1nKzsA+Nquw0PeWDWzE/7mI13TYe2FbZbJ/3doBMyqEWRCMBLj4wBcpqMN3kvAr7OuE/aKjSp5nugkDQ6ueUBs31cMMeXmoAxGv9N7/93JvTSxbu6F2ZZ1mcGItMi9nmPr6K2dbLGmobYuH6ymoMjdNb/IudMACGI4G0A15zRmc41MG01asn7DazfwcpDsevo+6Uyb/BMUflAUCG1kYUe8ILKZTKD8e4CooKixWIVMG3Ul6hmknBBq3LSJZ69PT8C8CNAZJWJo5lFVcGwUQgtSgUIYzi/rQgRpU5oY6pXDba7DMy4/Zy3fSTQnhL4qZ85xoRAgjBCmsSrSJvpwFnSmNFK9uveDMVn9xxtnpC5W2+GdjCCYGm8eKcbUBY541lex1VvjmgKPXUDFVZzjWltWvu5SDTtxg5Kk2siM58r+ogqKb8cw3Zas2A9f7Ccr830EhCx6Ljfm1dTy6I0Kmjgg4+hfXN+GympcEcOh/vWvXstlY2NZqE6F6Y1IuS2Y98pSJah988yijiUGOXTJ666JY2IzuErO/JV1saXWVKhJKcm2rapEYOU2SOxt9dNqDuzyCcw6c1zRBPqi1xw9ps788brzzw1z7ioPF1Zo6gKrcZbKGaTPrQfWbpKd5GNr8UVpfccopytB+F7jfPcdLCwTWxmo4XfZHIG42+Ye7SObZ4T1X0iX252Rq7DqIZYyoJYa0fZ8c7kYCOyKawbk7A3FiRg2rXzR+kOkSphCfeyEsK2qdAK07x4q5S0cJxK+0zt9mVMnlRYkKTXqpTQSGNNRSt/alZIU1xOyJ4TB0pmbdXCcikcpVxqBPw68CJV+kqLEnWhmSBGYPzuhVqaHF7AEmFZ1RaOH0UD//a5Db/8wV4R74V9EYhnEXTlXBhsBoK8DW0tHJkuE7FOshjiyBT4H/4Wd1Eild7JFeiOKVNo1WqRSMoefvmKzoHxuZLldxwtLla8cimm4ikjUgFamSUOwcXcnqKxpIcfPrQpAexrq28mURgTbVhuj5FuBUMT4tXCK2d37qQ43e2Vg8QJuWviXGgmuuSE/LZr3gJKNjnKE3mJNMEqiEId4TvuUq/yTsZQxqXuddud3jWPn8rUjYRsLJXArGdO/TC5SqJWgDIzkVZAvoK7LfUcgjGxqJlga1/IdfLjhtY3tTk6lZziHyCadpMyIBdkx55bGUSQAS73lln9XE75cw7s/bDzof1C4UaOKpC0jI21PNbSWOkpVgCufw8YaXja49SMqRGZLJFPOWSJHg/8DInYn1PwMXuKONlUAF3k9mMEBSQodl1QNDax919v0grT945/L6BFRwD3pLZP1MfKpbUxigaGbQR6XeQ/HEQMH8RCqlCRiI4eL5omtvBehTYhoLckOweahi22sQE2Ed/jdSeteJnS6YBhW/kahcZsoZgTIuajJl9mZQfacUYs4WVbjGIATa8kA6BRNJ2oGfQoHw+VxRlN2VjP1SGybFqy8KgfHRm5Ck3UsKInXdYhQQ+KmGrTAWLtRezEBJcdqpDcKOWRHqVpht4BT5KKyxPhryni9xUalsfdlCRINW6cwzWTn23ll7siuYjMHZEDGTvyhqA3N0TXboHbN1Ao7PAaVYy8XIyouJeecMUdF15lrESXuQSlWQGtiU2FEIMha0cpu6QSQxIUCUXOl5aqEkv/6Otm4wrlTYJHsi66BVTmx3tg8H+5WQKviXTdSDY7UFyCRaUSsGKHoEheLabUOgGjOwcY1lptWapS9RONJ6JBZBsRgUYRgRABWzcJSS5wtkzFNsNAeHuD4LvxwP/KOGcXHBaZP/kC7IOR214hSmlqbjzdy7Ajz/E2hU8rDEm+8T2mZjdB2uslRkymWC2KQL/qHr5kSMZGpbWwUMqyXem9Cq4XTmbjm+QO2cSXIVDlOeshno3wOHQ+hzJsy+u4a4ij9AkxNTI5ynpVVgyfxh2hBoatiFZNFCWqZJqSE170bm+1VSAPGfUEtF4LOkMnozgFqRuqjguf/f0r7RMBFSiXFhnPDijrA7mnMgZCBYZBepT3z9OL6IM7GJDl0pOFz03Za/U1inxQYVXOW1TF0zC72KmM4o2YN4D7o7jYCn6L8SA3ngfJpTJX1V6pSg1OFyXoUIwoRx2ByFYC0GKj7505u5l/FeQ3Z9+DYEtXyQzOKnGpEc2gy+WH6IlU2noq5rhVPLLXpsJka5459SMPomMw4vnoLU2cDruXtxOWRk7eQ8FQkL8d+p6PXYtN0f2G/FUNoGK4WDgAyGCHYsTtqWeNqTh8u5AukQdMa7652jdgyt3tuQ+sZW67iBwU20p5+aGHmxRyg9pAWV95R+PrrNA6fYECAVJUIAEWFGPAZ+kmIpV+EPO8BE//X0wwLu5LGqOUhHg4yltVgWloDThVng0F7ZT6ehhXVlBoZqqh7astcUxLnIGWSAYjZpFbEeE5v5gDLNZ+pZJHLLJRYaglmfHcERcbT8an9Rn3e/EXW3PvY8bcVt5OQLlE/QQwLTfc6OSKi6EN0YSKlILpLrgOHINj88tcm7JkBiySsUhtrihYfrerstqoJRY1wgSirr2kLxYyzA0twGLh+x/TuQsX2Ww8bHtMwITchCQdvW4/zPzficMyoIegj73F0W8lxgHRdpsf3JR81Q3L7KgTRDkk1qwKQ409jWIYGUfbZSZUDYF8+QKQTsGl3eChkZ+zUYAzKKmyphPXXBpb/Wb+RllPuCNdYinHUMEvVonAcwFZkIhIuQ3+ccj3Oi+ES0B5gXFlrQOxIBzXYcixCL07nrNSE5k5LRMdkli1T5Ybk6FgsPSNe5dnwDkYPyIYBAdsrAyOiEhZOg8IyKMQjN6LI5RaT22QPVepWOywyqBGr/bP7p1zWdqBP4/yNs654KpNOvZ9y3DarfLQvpY7FpwLrvna8AtyDUhviWw/KQNeAD875c1VKeDlDZjc38r7HMTdYrN3TV+DLHgB/AeqWRE5uQuTyS9B69LRoSaw+5Teb4C/nHhvySLYIw97YeR7aYK9ATB8bhtU22NFx4ydq7KgWvpXzx2c3e0wrtp7AYhukXvwk4y0ZZwXnjOVpJZkwHNgV7S79nEPdRPmD6P8T17o0PWQsGcx6kXiiOdFdWf4lbKLyv3JJiB4FZh5NwuadhxDFhxJgEATVp7WHXCGQgEmIYIhR+88rRjhmMR0FTfPuDteIftQOZ/SbRPxeEkKPimse1b78TYBj0gZi+VyMV5HE93sNBze3vIfGDdnIgkh5NQYpJWlezf3uFEJsiY2mxoOruUBc3RWVo4PZX6vwsp9Ev9wN0gHwFCrjUVxvkpQu7OxLCUxqNIypUkCkzTRsHqpd2m3HxHZBhElZWowxrgyKzRcA45Bkun0bakGCoixNXgzlTVXoKsXC+BhOTQLYYRgOtpjuPWv76TUIs1qHl0aJJrPeE9uWEnW/YljsLTfgK/XtZ6DIOngdAhw5D5IXQfIVldZXGmRFzp1bCBE3BeptMC+GeQvxcBq4eLvAqtnt7Y1NPjJx1RP+s+sOilc3faGEfS5H/w7JRVqOc3jaXEgHFk9vckCBn7wzX4FdT6+tGle7N19NBLP4K/9tp4ku1A5TC1Gh5EAXfbuKJeE2kjnSElWchGOEmSuST80Ql5MvZz1JHqjKo1UJmD2+F+8lND7WRIV7EyoupAuYC+laVeBZE6WEj5eC8r20jnqEHV5v4PetbO4qISXSRaW8RLJsPSjF80ydLVK079ZtcrZvrRzGaF7RXWJlmY9nqV7PMOTGc8pvI3XsmRDlxAPSBgNcARus3lGGxA9bHmYEjC0suNy3DYgOFYHrgse//714hwD0F5000piAVVASh8DCx5/4kc3RASsdilfYEH7gpTCf22jpMYrKR0QE6IlYHBYVQSNkmxqRk+7Ms3zEFnT+Dj0mqyZ9nvOKDR4yEOYch8jSFasa3Vdk0ZaisiSBKalG5IoMBTdGEGsaWhNtdmUBYFj7zmSbCIqKaGa0/WDcZSqOgcCHE61GXLXo1ITDQuhhcpuh0Qmdz7sABnd+Hn2eWEkOGeu4PsgHb2R5Odn4ATLWrhKk0kZrdxj4DNjKUyEiCNiKcclfwPAX4l52EVaGAa6zcrkojYcktDWnC8C6WeuLV4fZV2fesz70FgbE7tLhnnTdOpbcyZGoif59A9unmaT0ZXG1oxS7xkZfW0Wpt84Mldx8565UGM7dm/FGMDvkQ5XOx/ux7Yu/H8X4WIdFx6huEEBcNtsDUc/vZDz/7809Dn6HCYKp1YZ1Tj5vSLp0ObT1ES0WCyREZI8w7XIV7fktAbZULWxV/Fxw7bF7e2DUrgPxyOQoPgMadWVFUnigUwknSnxvMqhSfk1mYW/rjFEOlQ6qVzGIXSgIRdK8uPb8gYZuhlRU2aorv5le0Rrctc0YajQKKOONaD+LhzyPlenNcsdQaE9e+R5KbWy9tW/THablLMikcgEX4qcRwFD9eKhqoVQGEJ+vN6kEvoiVkSBOsXrPfizHE6sZV1d3am01OsFAYsGtrGopflBxd2ezyq7+BGdF2KfSeIX/Mb607QPjs6rjHdIjxxSndDhInRwwaD+KeigTdKA5HhdQWsEFlqcUut1dyq3n5pbbyTtb86c6uh7f8u1A1JAHfSB8nO9fwOgIUJ/8vKzYHxB+EsQM4S78jQB/vc4+Td7sUHXx18CKEvkVg5Lrx2U3XT/tR/9o8hGEKZYxE+mqDTdz4+P51NrNX7vTCY+yjGf3qzKIrm2uqk30KWl6cSDACAByGBBMUwrfdmQIAjN439HXBi/xksNgDLvz2vh+DXai25Bepp9NOv7WLL/Lkd7k17ITjtZf9XsG3fMDQF6/waU9APmJNkoPQAa6jGjvB087Kaem3ai0pGyBnt4O7OmpDg0utCfV/hcGUj0TymAbXzP13w9sW+9x294TD+XwfrIyWewdOkNZ0JIvGoaimXHMmuVMpNKfI5cFH2yfMPIYF5ySP1mMOgAyp4nkLCoIWrOy/tUOev3y58x48/mv1/I1PJsEGUStZotjqsvedvMmYB6ECACNRgiQYAS6ruJ+UDwSPhSnsdlsbuyAhifjwXq6wPIsNTo2NiPMxnRbzSy0zsKCKQ3VasZt2vgHg00A3qKdJslS/cgBa+3AAkmnO9NehcPGOcO6j8oYj69DIoseufLS9qde+ix82duuKxAmxE8c13b14xPh3nN6iR4cwqUzaEXFIzGIuXHOf2ebrVMLvQ8s2s4uojHXIeztUyXacmBLrpYF7xmXd1XDse4QVIqCzTtXit3+VyJLu9QX7srTpt0i3F0fLbDg35u5uILO3U3fTD0uYHznNWMv8wEoT3ZzmY3NFODtqG8A5bVGWKa4owQceb7CUDQ0fEdENtBY3jnmzmJ5Apgt4GXf1T+2kxjmBpNkbv7RAS1IUFVLYaCUKhAjdGSmKIrzAqGgun08v8eUhuhWSmFmqr8lUJ5QxUKUR6b2jfcjXXUXkgeWUSQpnZaPsZQSfYvFZ2ifBK55+rljqCWrUh1UrVYiIs2z7BHpUJlNOK24xRrG7318zJJGGkpkBVkEkE6lCm06us16uxTLjEh1u97DbE3GjsgHRpdohvb4HsfDfEp8m839Rs8lx32JufJUShXtcVJWqbwDP5eWabAwet15pCSGFYeZ5JZMPcy430EHyhQuv8eOH/uTHT/l/DmFwBf/FLWA/DDiZl225a3uis8HwE8FACBb+ZhOUeuBLOegXckX8KS1BeE24W6DJjvD6Z7CvcoO1uWzvsTNm+JMAEJi66jxw2hELRuIMaDFCc0pR9PoxsLFwmuPJn01AlMyzKYGAZ2ZtbVVQ8uRiFM/kI3cVSKqi8KheqfqOahoG4ib/zK6mHPMyYGVsvB6lNQCQx8UPRo5B1pJBMVmhS4xEcoRrbAvGxCzXcnixOHGSQaOa7AicAq2K2mp5UFMxUkuM40FwjCQe6IZCrICRYfz2sEWhN3qMkgga4KygtTroz+l2nJI09zXRcn8dcyqierRFYb82DdIhtbObA2cDNezkxlDNAFfmiAJKiBAITAY3enizriPSiFvExkzZt5ZhpLmlyVUvK8xbReeEU0zo3CNZrlhK3WPsXbDWJ5t3R7wDPszsDc4/PExHrZoxG+8dxPWw5BDdk8T7g4PXydiSrwxY6InQHEN7SUuzrgbAzkEWjKuTHRnsXcIbdwYdB/sPDWaoxkV78ppTAtrlAFVUhaYCP3ulRC7e3lkrl53XLkQ02HrSCyHMQeHHsvR1Q+rGLBOjj6NrSp7KUS6BJqQAXMTc1LoRm6Uu/ye7eXzV2JoN17LTLTukooXADin0jY+YTvZWAaHAVMfnd+Y3cYCBHZAVUq2JMjqhMAbxFIXx8EJMk2SOyLjBByw2br41mv4CSBW3IpY1KS/w4rGXkgbJiSTqcjZq7Ik8GTg+EMsyKelEeV3P4EQnGcfsCTcjrhgU6dhFM0uxUOCfksnKbRznCGnJXhLEUfhHMo9IXzhJrDBRy14QoqrnAlKlPCVcT4rJpyMPIaVGBLLV4zQbM8M00wVZNJfJo05D2nq1MHkykwwTFlXVncnGMuwyaQtbRrCOcqFjd4R0iUL1PnNTGIwR6RolAE4WPM8lpWuQiUYuWzzMBLqCKENba1hWuyxD4yYgYXK2tJnXWa1StrLlKUaI7NmJilsMXpGrSUq2KVeWi6GUS2UMHOwjY47evoNAHFAnKOqJK+wCsVmVLBs+CyecVEjmrUtWUUygXqKsqyoGRaTE58UuHmDLOQ4C3At6xgQKW5QZOw6ywTWUxyJmYVonP+FGFTEILmcw+bx6qedhjhSF5QfCW7D7MkgXb7g+NlE60wyUof0dIJ07vLoM4+BxxkZBLP7JDDjjgKC/5bQt3+enbHHNfgpI+tslqiB5Ikf7OozCmn9brPSOWSxu2+UbI1BWxye92v+VEOnxa57vGLYFE77RvQu50102xzQuAoRSGK8U2mPrxzlZpngYXm+8kia5R5qFyFSm+rUm2xVm2WqBEyWq0+W43xne9xv9WV/o2i/jeWkIYsviQlkJSEkpaMZCUXO07c0HjxEyRMlDhJ0uKSJU+RMlXqNLbrt9RQtOnSw8uYjNhiaSKzDIHrqfzsH29i4FGQHlPxWNZaJxONkF2N5+H1r/+st8FGm/zpLzvtQiSgTQynesO73vGeDuPc0WkHskzwuq5gmPztsUcoKMl9aqkJMmJBkcnZSsheYkkll5IjZ6m5fCDL+8657LwLepL2dVLkN+EgXOgXHYpaQdQytUh2bmclzh490OY4LUvL6wJpzZz75duK2mi2LMKX+naYW/H5htbJaM79dI3Ehs7gaM9eZ0QreiGBNudCwp5Fp+DkW+TLUHNemogEvl8qJ6WZSq8QKVR9oeqniBRd8vEogSYCRYdKoZlCIdBJh6pDodDM58rTxG5GeWnMcjdE7eMeHK7tJYUbuqEFPgEcenRii3T0wpyuQZncn720tLj6HI4H85qmHPYrkjTxQndbl6kNBq6THdjIh7jM/fVm3G9NIC+l1oZzQWTbyYJ5zErL0vqRHnCVsg8QpwmPbg/SNlHWUotv4ssVuggAAAA=) format('woff2')}
 
-  .open{position:fixed;inset:0;z-index:100;overflow:auto;background:#000;color:#E6EDF6;
+  .open{position:fixed;inset:0;z-index:100;overflow:auto;background:var(--bg);color:var(--tx);
         display:flex;justify-content:center;padding:56px 40px;
-        font:15px/1.55 Figtree,-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif}
+        font:15px/1.55 Figtree,'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif}
   .open.hidden{display:none}
+  /* 입자 색은 JS 가 토큰(--cy·--ok·--line2)에서 읽는다(opBgStart) — 여기선 밝기만 */
   .open canvas{position:absolute;inset:0;width:100%;height:100%;display:block;
-               pointer-events:none}
+               pointer-events:none;opacity:var(--opcv)}
   .open .box{position:relative;width:100%;max-width:1180px}
   .dsp{font-family:Caprasimo,Georgia,"Times New Roman",serif;font-weight:400}
 
   .ohead{display:flex;align-items:center;justify-content:space-between;gap:32px}
   .ohead .lf{display:flex;align-items:center;gap:16px}
   .ohead .mk{position:relative;display:inline-flex;align-items:center;justify-content:center;
-             width:46px;height:46px;border-radius:999px;background:#10333B;flex:0 0 auto}
-  .ohead .mk i{display:block;width:11px;height:11px;border-radius:999px;background:#2FD68A;
+             width:46px;height:46px;border-radius:999px;background:var(--cybg);
+             border:1px solid var(--cyline);flex:0 0 auto}
+  .ohead .mk i{display:block;width:11px;height:11px;border-radius:999px;background:var(--ok);
                animation:opPulse 2.4s ease-in-out infinite}
   @keyframes opPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.3}}
-  .ohead h1{margin:0;font-size:26px;line-height:1.2;letter-spacing:.03em;white-space:nowrap}
-  .ohead .sub{font-size:14px;color:#8FA0B6}
+  .ohead h1{margin:0;font-size:26px;line-height:1.2;letter-spacing:.14em;white-space:nowrap}
+  .ohead .sub{font-size:14px;color:var(--tx2)}
   .ohead .cnt{display:flex;align-items:center;gap:10px;padding:9px 18px;border-radius:999px;
-              border:1px solid #26303F;font-size:13px;font-weight:700;letter-spacing:.1em;
-              text-transform:uppercase;color:#2FD68A;white-space:nowrap}
-  .ohead .cnt i{display:block;width:8px;height:8px;border-radius:999px;background:#2FD68A}
+              border:1px solid var(--line2);background:var(--panel);font-size:13px;font-weight:700;
+              letter-spacing:.1em;text-transform:uppercase;color:var(--ok);white-space:nowrap}
+  .ohead .cnt i{display:block;width:8px;height:8px;border-radius:999px;background:var(--ok)}
 
   /* 한글 표제는 Caprasimo 에 글리프가 없다. 시스템 한글 글꼴을 굵게 써서
      옆의 라틴 표제와 무게를 맞춘다 — 안 그러면 혼자 가늘어 보인다. */
@@ -116,69 +128,75 @@
   .sysgrid .lead.solo{grid-template-columns:1fr}     /* 아바타를 껐을 때 */
   .sysgrid .rest{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
   .sys{font:inherit;color:inherit;text-align:left;border:0;background:none;cursor:pointer}
-  .sys:focus-visible{outline:2px solid #3DDBE8;outline-offset:3px}
+  .sys:focus-visible{outline:2px solid var(--cy);outline-offset:3px}
 
-  /* ALL — 운영 중인 통합 관제. 유일하게 눌린다 */
+  /* ALL — 운영 중인 통합 관제. 유일하게 눌린다.
+     ★시안 언어: 청록 면(--cybg)에 청록 테두리·글자. 예전의 꽉 찬 청록 카드는
+       밝은 테마에서 글자가 안 읽혀 테마마다 덮어써야 했다 — 토큰으로 끝낸다. */
   .sys.hero{display:flex;flex-direction:column;justify-content:space-between;min-height:236px;
-            padding:30px;border-radius:28px;background:#3DDBE8;color:#04141A;
-            transition:background .16s,transform .16s}
-  .sys.hero:hover{background:#6EE9F3;transform:translateY(-2px)}
+            padding:30px;border-radius:20px;background:var(--cybg);color:var(--tx);
+            border:1px solid var(--cyline);
+            transition:border-color .16s,background .16s,transform .16s}
+  .sys.hero:hover{border-color:var(--cy);transform:translateY(-2px)}
   .sys.hero .pill{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
                   padding:6px 14px 6px 11px;border-radius:999px;
-                  background:rgba(4,20,26,.17);font-size:13px;font-weight:700}
-  .sys.hero .pill i{display:block;width:8px;height:8px;border-radius:999px;background:#04141A}
-  .sys.hero .cd{display:block;font-size:56px;line-height:.95}
-  .sys.hero .nm{display:block;margin-top:8px;font-size:17px;color:#0B3A46}
+                  background:color-mix(in srgb, var(--cy) 16%, transparent);color:var(--cy);
+                  font-size:11.5px;font-weight:700;letter-spacing:.08em}
+  .sys.hero .pill i{display:block;width:8px;height:8px;border-radius:999px;background:var(--cy)}
+  .sys.hero .cd{display:block;font-size:56px;line-height:.95;color:var(--cy);letter-spacing:.02em}
+  .sys.hero .nm{display:block;margin-top:8px;font-size:17px;color:var(--txb)}
 
   /* FAB 작은 타일 — 전부 실시간이라 눌린다. 아래 줄에 다섯이 나란히 서므로
      타일 하나가 좁다.
      ★코드와 종류를 가로로 붙이면 M16HUB + HUBROOM 이 서로 밀어내 줄이
        깨진다. 그래서 세로로 쌓는다.
-     wip 는 수집이 아직 안 붙은 시스템에만 붙는 예외 표시(점선·비활성)다. */
+     wip 는 수집이 아직 안 붙은 시스템에만 붙는 예약 자리 — 눌리지 않는다. */
   .sys.fab{display:flex;flex-direction:column;justify-content:space-between;min-height:88px;
-           padding:15px 17px;border-radius:16px;background:#0D1119;border:1px solid #1C2431;
+           padding:15px 17px;border-radius:16px;background:var(--panel);border:1px solid var(--line);
            transition:border-color .14s,background .14s,transform .14s}
-  .sys.fab:hover{border-color:#2c5f6b;background:#0e1d26;transform:translateY(-2px)}
+  .sys.fab:hover{border-color:var(--cyline);background:var(--panel2);transform:translateY(-2px)}
   .sys.fab .tp{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-  .sys.fab .cd{font-size:20px;line-height:1;color:#E6EDF6}
+  .sys.fab .cd{font-size:20px;line-height:1;color:var(--tx)}
   .sys.fab .kind{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-                 color:#5E6E85}
+                 color:var(--tx3)}
   /* ★상태 줄은 아바타 카드(.sys.app)와 같이 쓰는 규칙이라 여기서만 줄인다.
      .sys .st 를 건드리면 위 줄의 큰 카드까지 같이 작아진다. */
   .sys.fab .st{margin-top:9px;font-size:11px;gap:6px}
   .sys.fab .st i{width:7px;height:7px}
   /* 상태 줄은 FAB 타일과 아바타 카드가 같이 쓴다 */
   .sys .st{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;
-           color:#7C8DA3}
-  .sys .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid #5E6E85}
-  .sys .st.live{color:#2FD68A}
-  .sys .st.live i{border:0;background:#2FD68A;animation:blip 1.9s ease-in-out infinite}
+           color:var(--tx2)}
+  .sys .st i{display:block;width:8px;height:8px;border-radius:999px;border:1.5px solid var(--tx3)}
+  .sys .st.live{color:var(--ok)}
+  .sys .st.live i{border:0;background:var(--ok);animation:blip 1.9s ease-in-out infinite}
   @keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
 
   /* 2D 감정캐릭터 — ★관제 시스템이 아니라 따로 뜨는 앱이다. 눌러도 관제
      화면이 바뀌지 않고 새 탭이 열린다. ALL 과 같은 줄에 같은 크기로 세우되
-     색을 갈라 구분한다(청록 = 관제 화면 / 보라 = 새 탭으로 뜨는 앱). */
+     색을 갈라 구분한다(청록 = 관제 화면 / 보라(--app) = 새 탭으로 뜨는 앱). */
   .sys.app{display:flex;flex-direction:column;justify-content:space-between;min-height:236px;
-           padding:30px;border-radius:28px;background:#120E1E;border:1px solid #2A2340;
+           padding:30px;border-radius:20px;
+           background:color-mix(in srgb, var(--app) 8%, var(--panel));
+           border:1px solid color-mix(in srgb, var(--app) 35%, var(--line));
            transition:border-color .16s,background .16s,transform .16s}
-  .sys.app:hover{border-color:#6A4FBF;background:#191233;transform:translateY(-2px)}
+  .sys.app:hover{border-color:var(--app);transform:translateY(-2px)}
   .sys.app .pill{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
                  padding:6px 14px 6px 11px;border-radius:999px;
-                 background:rgba(167,139,250,.15);font-size:11px;font-weight:700;
-                 letter-spacing:.12em;color:#A78BFA}
-  .sys.app .pill i{display:block;width:8px;height:8px;border-radius:999px;background:#A78BFA}
-  .sys.app .cd{display:block;font-size:40px;line-height:.98;color:#D9CEFF}
-  .sys.app .nm{display:block;margin-top:8px;font-size:15px;color:#8A78C4}
-  .sys.app .st.off{color:#C77B7B}
+                 background:color-mix(in srgb, var(--app) 16%, transparent);font-size:11px;font-weight:700;
+                 letter-spacing:.12em;color:var(--app)}
+  .sys.app .pill i{display:block;width:8px;height:8px;border-radius:999px;background:var(--app)}
+  .sys.app .cd{display:block;font-size:40px;line-height:.98;color:var(--app)}
+  .sys.app .nm{display:block;margin-top:8px;font-size:15px;color:var(--tx2)}
+  .sys.app .st.off{color:var(--crit)}
   .sys.fab.wip{cursor:not-allowed;border-style:dashed}
-  .sys.fab.wip:hover{transform:none;border-color:#1C2431;background:#0D1119}
-  .sys.fab.wip .cd{color:#A9BACD}
+  .sys.fab.wip:hover{transform:none;border-color:var(--line);background:var(--panel)}
+  .sys.fab.wip .cd{color:var(--tx3)}
 
   .open .note{display:flex;flex-direction:column;gap:5px;padding-top:44px;font-size:14px;
-              color:#8FA0B6}
-  .open .note b{color:#3DDBE8}
-  .open .note kbd{border:1px solid #26303F;border-radius:6px;padding:1px 6px;font:inherit;
-                  font-size:12px;color:#A9BACD}
+              color:var(--tx2)}
+  .open .note b{color:var(--cy)}
+  .open .note kbd{border:1px solid var(--line2);border-radius:6px;padding:1px 6px;font:inherit;
+                  font-size:12px;color:var(--txb)}
 
   /* 한 줄에 다섯은 970px 언저리까지 글자가 안 깨진다(브라우저로 재 봤다).
      그 아래 — 위 줄이 어차피 세로로 쌓이는 지점 — 부터 접는다. */
@@ -200,36 +218,79 @@
     .sysgrid .rest{grid-template-columns:1fr}
   }
 
-  /* ── 상단 바 ── */
-  .top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
-       border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
-  .logo{display:flex;align-items:center;gap:9px}
-  .logo .mk{width:26px;height:26px;border-radius:7px;border:2px solid var(--cy);
-            display:grid;place-items:center}
-  .logo .mk i{width:8px;height:8px;border-radius:50%;background:var(--cy);display:block}
-  .logo b{font-size:14px;letter-spacing:1.4px;font-weight:700}
-  .logo span{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.2px}
-  /* 지금 어느 시스템을 보고 있는지 — 누르면 오프닝으로 돌아가 바꾼다 */
-  .syschip{display:flex;align-items:center;gap:7px;background:#12303a;border:1px solid #1d4b57;
-           color:var(--cy);border-radius:8px;padding:5px 11px;font:inherit;font-size:12.5px;
-           font-weight:700;letter-spacing:.5px;cursor:pointer;white-space:nowrap}
-  .syschip:hover{background:#164050}
-  .syschip u{text-decoration:none;color:var(--tx3);font-weight:400;font-size:10.5px;letter-spacing:0}
-  .tabs{display:flex;gap:4px;margin-left:10px}
-  .tabs button{background:transparent;border:1px solid transparent;color:var(--tx2);
-               padding:6px 14px;border-radius:7px;cursor:pointer;font:inherit;font-size:12.5px}
-  .tabs button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:600}
-  .chan{margin-left:auto;display:flex;gap:14px;font-size:11.5px;color:var(--tx2)}
-  .chan i{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:5px}
+  /* ── 상단 바 ── 시안: sticky · padding 18px 36px · gap 28px.
+     왼쪽 맥박점 + 제목 · 시스템 칩(드롭다운) · 탭 · 오른쪽 채널 점 두 개 +
+     테마 세그먼트 + 시계.
+     ★마크업 순서는 그대로 둔다(다른 코드가 id·순서로 찾는다). 테마 세그먼트만
+       flex order 로 시계 앞에 보낸다 — 시안 자리가 거기다.
+     ★z-index 30: 표 머리글(12)보다 위, 모달(50)·오프닝(100)보다 아래. */
+  .top{display:flex;align-items:center;gap:12px 24px;flex-wrap:wrap;padding:18px 36px;
+       background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .logo{display:flex;align-items:center;gap:12px;white-space:nowrap}
+  .logo>span{display:block}
+  .logo .mk{display:block;width:9px;height:9px;border-radius:99px;background:var(--ok);flex:none;
+            animation:pulse 2.4s ease-in-out infinite}
+  .logo .mk i{display:none}
+  .logo b{display:block;font-size:16px;letter-spacing:.14em;font-weight:700;line-height:1.1}
+  .logo span span{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.02em}
+  /* 지금 어느 시스템을 보고 있는지 — 누르면 드롭다운(ALL + FAB 5)이 열린다.
+     오프닝(전체 화면)은 드롭다운 맨 아래 항목으로. */
+  .syswrap{position:relative;display:flex;align-items:center}
+  .syschip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;
+           border:1px solid var(--cyline);background:var(--cybg);color:var(--cy);
+           font:inherit;font-size:12px;font-weight:600;line-height:1;letter-spacing:.06em;
+           cursor:pointer;white-space:nowrap}
+  .syschip:hover,.syschip[aria-expanded="true"]{border-color:var(--cy)}
+  .syschip u{text-decoration:none;color:var(--tx3);font-weight:400;letter-spacing:0}
+  .syschip[aria-expanded="true"] u{color:var(--cy)}
+  /* 드롭다운 — 시안의 그림자·둥근 패널. ★id 에 'open' 이 안 들어가는 이름
+     (#sysdd)을 쓴다: 오프닝 숨김 검사가 '#open' 문자열로 잡는다. */
+  .sysdd{position:absolute;top:calc(100% + 12px);left:0;z-index:40;min-width:210px;padding:8px;
+         border-radius:14px;background:var(--panel2);border:1px solid var(--line2);
+         box-shadow:var(--shadow);display:flex;flex-direction:column;gap:2px}
+  .sysdd button{display:flex;align-items:center;justify-content:space-between;gap:16px;
+                padding:9px 12px;border:0;border-radius:9px;background:transparent;color:var(--tx2);
+                cursor:pointer;white-space:nowrap;text-align:left;
+                font:inherit;font-size:12.5px;line-height:1;font-weight:500}
+  .sysdd button:hover{background:var(--panel);color:var(--tx)}
+  .sysdd button.on{background:var(--tabbg);color:var(--cy);font-weight:700}
+  .sysdd button:disabled{opacity:.45;cursor:not-allowed}
+  .sysdd button small{font-size:11px;color:var(--tx3);font-weight:400}
+  .sysdd hr{border:0;border-top:1px solid var(--line2);margin:4px 2px}
+  .sysdd button.all{color:var(--tx3);font-size:12px}
+  /* 테마 세그먼트 4칸 — 켜진 칸은 탭과 같은 --tabbg/--cy. #themechip-cd 는
+     옛 아이콘 자리(id 만 남기고 숨김). */
+  .themeseg{order:1;display:flex;gap:3px;padding:3px;border-radius:99px;
+            border:1px solid var(--line2);background:var(--panel)}
+  .themeseg button{padding:5px 11px;border:0;border-radius:99px;cursor:pointer;white-space:nowrap;
+                   background:transparent;color:var(--tx3);
+                   font:inherit;font-size:11.5px;line-height:1;font-weight:500}
+  .themeseg button:hover{color:var(--tx)}
+  .themeseg button.on{background:var(--tabbg);color:var(--cy);font-weight:700}
+  #themechip-cd{display:none}
+  .tabs{display:flex;gap:2px;margin-left:8px;flex-wrap:wrap}
+  .tabs button{background:transparent;border:0;color:var(--tx2);padding:9px 16px;border-radius:10px;
+               cursor:pointer;white-space:nowrap;font:inherit;font-size:13.5px;line-height:1;font-weight:500}
+  .tabs button:hover{color:var(--tx)}
+  .tabs button.on{background:var(--tabbg);color:var(--cy);font-weight:700}
+  .chan{margin-left:auto;display:flex;align-items:center;gap:20px;font-size:12px;color:var(--tx2);
+        white-space:nowrap}
+  .chan>span{display:flex;align-items:center;gap:7px}
+  .chan i{width:7px;height:7px;border-radius:99px;background:var(--ok);display:block}
   .chan i.off{background:var(--crit)}
   /* 꺼둔 것과 고장난 것은 다른 색이어야 한다 — 빨강은 '고쳐야 한다' 는 뜻이다 */
   .chan i.idle{background:var(--tx3)}
   .chan i.warn{background:var(--major)}
   .mlrow{cursor:pointer}
   .mlrow:hover td{background:var(--panel2)}
-  .clk{text-align:right;font-variant-numeric:tabular-nums}
-  .clk b{font-size:17px;font-weight:600;letter-spacing:.5px}
-  .clk span{display:block;font-size:10.5px;color:var(--tx3)}
+  /* 시계는 시각 아래 날짜를 작게 쌓는다 — 한 줄로 늘어놓으면 1700px 에서 바가
+     두 줄로 접힌다(toLocaleTimeString 이 '2시 39분 8초' 처럼 길게 나오는 환경). */
+  .clk{order:2;display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap;
+       font-variant-numeric:tabular-nums}
+  .clk b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:15px;font-weight:600;
+         line-height:1;color:var(--tx);letter-spacing:.04em}
+  .clk span{font-size:10.5px;color:var(--tx3)}
 
   /* ── KPI ── */
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);
@@ -244,14 +305,22 @@
 
   /* ── 레이아웃 ── */
   .main{display:block}
-  .pane{min-height:calc(100vh - 118px)}
+  /* 카드 한 장 — 실시간/과거 표 묶음. 둥근 20px + --panel + --line (시안) */
+  .pane{min-height:calc(100vh - 118px);background:var(--panel);border:1px solid var(--line);
+        border-radius:20px}
 
   .hd{display:flex;align-items:center;gap:9px;padding:10px 16px;border-bottom:1px solid var(--line)}
   .hd h2{margin:0;font-size:13px;font-weight:650}
   .filters{display:flex;gap:5px;margin-left:4px}
-  .filters button{background:transparent;border:1px solid var(--line2);color:var(--tx2);
-                  border-radius:20px;padding:3px 11px;font:inherit;font-size:11.5px;cursor:pointer}
-  .filters button.on{background:#12303a;border-color:#1d4b57;color:var(--cy)}
+  /* 필터 버튼(시안): 10px 모서리 · 켜지면 청록 면 · 개수는 <b> 로 고정폭 */
+  .filters button{background:transparent;border:1px solid var(--line);color:var(--tx2);
+                  border-radius:10px;padding:8px 14px;font:inherit;font-size:13px;line-height:1;
+                  cursor:pointer;white-space:nowrap}
+  .filters button b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+                    font-variant-numeric:tabular-nums;font-weight:600;color:var(--tx3);margin-left:5px}
+  .filters button:hover{color:var(--tx);border-color:var(--line2)}
+  .filters button.on{border-color:var(--cyline);background:var(--cybg);color:var(--tx)}
+  .filters button.on b{color:var(--cy)}
   .stream{margin-left:auto;font-size:11.5px;color:var(--tx3);display:flex;align-items:center;gap:7px}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);
        box-shadow:0 0 0 0 rgba(47,214,138,.6);animation:p 2s infinite}
@@ -308,25 +377,32 @@
   table.cases tr.morerow td{text-align:center;padding:14px;background:var(--panel)}
   /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
      범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
-  .fabsel{display:inline-flex;align-items:center;gap:9px;flex-wrap:wrap}
-  .fabsel>b{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--tx3)}
-  .fabsel label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;
-    font-size:11px;color:var(--tx3);user-select:none}
+  .fabsel{display:inline-flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .fabsel>b{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tx3)}
+  .fabsel label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    font-size:11.5px;color:var(--tx3);user-select:none}
   .fabsel label:hover{color:var(--tx2)}
   .fabsel label.on{color:var(--tx)}
+  /* 빈 네모 테두리도 토큰(--line2) — 예전 #46536B 는 밝은 테마에서 안 보였다 */
   .fabsel input{appearance:none;-webkit-appearance:none;margin:0;cursor:pointer;
-    width:11px;height:11px;border-radius:3px;border:1.5px solid #46536B;background:none}
+    width:10px;height:10px;border-radius:3px;border:1.5px solid var(--line2);background:none}
   .fabsel input:checked{background:var(--fc);border-color:var(--fc)}
   .fabsel input:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
   .cid{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);white-space:nowrap}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
   .ttl{font-weight:600;font-size:12.5px}
   .sub{font-size:11.5px;color:var(--tx3);margin-top:3px}
-  .chip{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10.5px;
-        font-weight:700;letter-spacing:.3px;margin-right:6px}
-  .lv초위험{background:rgba(255,77,94,.15);color:var(--crit)}
-  .lv위험{background:rgba(255,159,46,.15);color:var(--major)}
-  .lv경계{background:rgba(242,211,56,.15);color:var(--minor)}
+  /* 칩/배지 — 알약. 등급 배지 = 등급색 글자 + 그 색 16% 면(color-mix 라
+     테마마다 따로 값을 둘 필요가 없다). */
+  .chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:99px;font-size:11.5px;
+        line-height:1.4;font-weight:700;letter-spacing:.02em;margin-right:6px;white-space:nowrap}
+  .lv초위험{background:color-mix(in srgb, var(--crit) 16%, transparent);color:var(--crit)}
+  .lv위험{background:color-mix(in srgb, var(--major) 16%, transparent);color:var(--major)}
+  .lv경계{background:color-mix(in srgb, var(--minor) 16%, transparent);color:var(--minor)}
+  .lv정상{background:color-mix(in srgb, var(--ok) 16%, transparent);color:var(--ok)}
+  /* 섹션 라벨(시안): 11px · 자간 .08em · 대문자 · --tx3. 탭 머리의 eyebrow 는 12px/.14em */
+  .tag,.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
   .dim{color:var(--tx3);font-size:12px;white-space:nowrap}
   .stt{font-size:12px;font-weight:600}
   .stt.활성{color:var(--crit)} .stt.확인{color:var(--major)} .stt.종결{color:var(--tx3)}
@@ -376,66 +452,215 @@
                    border-radius:50%;background:var(--cy)}
   ul.tl .k{color:var(--tx3);margin-right:7px;font-variant-numeric:tabular-nums}
 
-  button.act,a.act{background:var(--panel2);border:1px solid var(--line2);color:var(--tx);
-             border-radius:8px;padding:10px 14px;cursor:pointer;font:inherit;font-size:12.5px}
+  /* 버튼(시안) — 필터 버튼과 같은 모양. .pri 는 청록 면, .danger(중지 등)는 --crit 테두리 */
+  button.act,a.act,.btn{background:transparent;border:1px solid var(--line);color:var(--tx2);
+             border-radius:10px;padding:8px 14px;cursor:pointer;font:inherit;font-size:13px;
+             line-height:1.2;white-space:nowrap}
   a.act{text-decoration:none;display:inline-block}
-  button.act:hover,a.act:hover{background:#1a2331;border-color:#324459}
-  button.act.pri{background:#123039;border-color:#1d4b57;color:var(--cy);font-weight:650;flex:1}
-  button.act:disabled{opacity:.4;cursor:not-allowed}
+  button.act:hover,a.act:hover,.btn:hover{background:var(--panel2);border-color:var(--line2);color:var(--tx)}
+  button.act.pri,a.act.pri,.btn.pri{background:var(--cybg);border-color:var(--cyline);color:var(--cy);
+                                    font-weight:700}
+  button.act.pri:hover,.btn.pri:hover{border-color:var(--cy);background:var(--cybg)}
+  button.act.danger,.btn.danger{border-color:var(--crit);color:var(--crit)}
+  button.act.danger:hover,.btn.danger:hover{background:color-mix(in srgb, var(--crit) 10%, transparent);
+                                            border-color:var(--crit)}
+  button.act:disabled,.btn:disabled{opacity:.4;cursor:not-allowed}
   a.act.off{opacity:.4;pointer-events:none}
   /* 헤더 줄에 들어가는 컨트롤은 표 헤더 높이에 맞춰 작게 */
-  .stream button.act,.stream a.act{padding:5px 11px;font-size:11.5px;border-radius:6px}
-  .stream input,.stream select{padding:4px 7px;font-size:11.5px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .stream button.act,.stream a.act{padding:6px 11px;font-size:12px;border-radius:8px}
+  .stream input,.stream select{padding:5px 8px;font-size:12px;border-radius:8px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 
-  input,select,textarea{background:var(--bg);color:var(--tx);border:1px solid var(--line2);
-        border-radius:7px;padding:7px 10px;font:inherit;font-size:12.5px}
+  /* 입력(시안): --panel2 면 · --line2 테두리 · 10px 모서리. 포커스는 청록 링 */
+  input,select,textarea{background:var(--panel2);color:var(--tx);border:1px solid var(--line2);
+        border-radius:10px;padding:8px 12px;font:inherit;font-size:13px}
+  input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;border-color:var(--cyline);
+        box-shadow:0 0 0 3px color-mix(in srgb, var(--cy) 18%, transparent)}
+  input[type=checkbox],input[type=radio]{accent-color:var(--cy);padding:0}
   textarea{width:100%;resize:vertical;min-height:60px}
-  .note{color:var(--tx3);font-size:11.5px;line-height:1.65}
-  .warn{background:rgba(255,159,46,.09);border:1px solid rgba(255,159,46,.3);color:var(--major);
-        padding:9px 12px;border-radius:8px;font-size:12px;margin:12px 16px}
+  .note{color:var(--tx3);font-size:12.5px;line-height:1.6}
+  /* 경보 배너 — 초위험 계열 얇은 띠(pollStatus 가 #warnbox 에 만든다) */
+  .warn{background:color-mix(in srgb, var(--crit) 9%, transparent);
+        border:1px solid color-mix(in srgb, var(--crit) 35%, transparent);color:var(--crit);
+        padding:9px 14px;border-radius:12px;font-size:12.5px;margin:0}
   .empty{color:var(--tx3);text-align:center;padding:44px 16px;font-size:13px}
   pre.md{white-space:pre-wrap;font:inherit;margin:0}
-  .page{padding:16px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
-  .card>h2{margin:0;padding:11px 15px;font-size:13px;border-bottom:1px solid var(--line)}
-  .card .bd{padding:14px 15px}
+  /* 페이지 폭(시안): 28px 36px 56px · 최대 2400px 가운데 · 섹션 사이 24px.
+     ★body 에 min-width 를 박지 않는다 — 좁으면 표 컨테이너 안에서만 가로 스크롤. */
+  .page{padding:28px 36px 56px;max-width:2400px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;margin:0}
+  .card>h2{margin:0;padding:18px 30px;font-size:17px;font-weight:700;letter-spacing:.02em;
+           border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .card>h2 .note{font-size:12.5px;font-weight:400}
+  .card .bd{padding:22px 30px}
   table.pol{width:100%;border-collapse:collapse;font-size:12.5px}
   table.pol th{text-align:left;color:var(--tx3);font-weight:600;font-size:11.5px;
                padding:7px 9px;border-bottom:1px solid var(--line)}
   table.pol td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
   .hidden{display:none!important}
 
-  /* ── LLM 최근 판단 한 줄 (KPI 아래) ──
-     관제실에서 멀찍이 서서도 읽히게 본문을 키웠다 (현장 요청). */
-  .llmnow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-          padding:11px 16px;background:var(--panel);border-bottom:1px solid var(--line);
-          font-size:15px;line-height:1.5;cursor:pointer}
-  .llmnow:hover{background:var(--panel2)}
-  .llmnow .tag{display:inline-flex;align-items:center;gap:7px;color:var(--cy);
-               font-weight:700;font-size:13.5px;white-space:nowrap}
-  .llmnow .tag i{width:8px;height:8px;border-radius:50%;background:var(--cy);flex:none}
-  .llmnow .jt{color:var(--tx);flex:1;min-width:240px;font-size:15.5px;font-weight:500}
-  .llmnow .cf{font-weight:700;white-space:nowrap;font-size:15px}
-  .llmnow .bar{width:64px;height:5px;border-radius:3px;background:var(--line2);flex:none}
-  .llmnow .bar i{display:block;height:5px;border-radius:3px}
-  .llmnow .chip{font-size:12.5px}
+  /* ── 실시간 탭 위 영역(시안): 선행 감지 배너 · LLM 최근 판단 카드 · 경보 배너 ──
+     페이지와 같은 폭(36px 여백 · 2400px)으로 맞춰 아래 카드들과 세로줄이 맞는다.
+     아래 여백은 0 — 다음 .page/.main 의 위 여백이 카드 사이 간격이 된다. */
+  .livehead{padding:28px 36px 0;max-width:2400px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  .livehead:empty{display:none}
+  /* LLM 카드: 왼쪽 판단(#llmnow) + 오른쪽 KPI 스탯 4개. 좁으면 KPI 가 아래 줄로 내려간다 */
+  .llmcard{display:flex;align-items:stretch;flex-wrap:wrap;background:var(--panel);
+           border:1px solid var(--line);border-radius:16px}
+  .llmcard .llmnow{flex:1 1 560px;min-width:0}
+  /* ── LLM 최근 판단 (시안 카드) ──
+     1행 라벨·등급 배지·시각·모델·칩·[과거 LLM 판단 보기] / 2행 판단 문장 / 3행 근거.
+     관제실에서 멀찍이 서서도 읽히게 판단 문장은 16px 600 (현장 요청). */
+  .llmnow{padding:18px 22px;font-size:13px;line-height:1.5;cursor:pointer}
+  /* 1행: 왼쪽 묶음(.r1l)만 줄바꿈되고 버튼은 첫 줄 오른쪽에 고정 — 묶음째 wrap 시키면
+     버튼이 혼자 둘째 줄로 떨어져 카드가 세로로 늘어났다 */
+  .llmnow .r1{display:flex;align-items:flex-start;gap:12px;white-space:nowrap}
+  .llmnow .r1l{display:flex;align-items:center;gap:10px 12px;flex-wrap:wrap;flex:1;min-width:0}
+  .llmnow .tag{font-size:12px;letter-spacing:.12em;color:var(--tx3);font-weight:400}
+  .llmnow .t{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
+             font-size:13px;color:var(--tx2)}
+  .llmnow .meta{font-size:12.5px;color:var(--tx3)}
+  .llmnow .chip{margin:0}
+  .llmnow .cf{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:12px;
+              padding:4px 10px;border-radius:99px;background:var(--panel2)}
+  .llmnow .bar{width:48px;height:4px;border-radius:2px;background:var(--line2);flex:none;overflow:hidden}
+  .llmnow .bar i{display:block;height:4px;border-radius:2px}
+  .llmnow .llmacc{margin-left:auto;flex:none;padding:7px 13px;border-radius:9px;border:1px solid var(--cyline);
+                  background:var(--cybg);color:var(--cy);font:600 12px/1 inherit;cursor:pointer;white-space:nowrap}
+  .llmnow .llmacc:hover{border-color:var(--cy)}
+  .llmnow .jt{margin:10px 0 0;font-size:16px;line-height:1.5;font-weight:600;color:var(--tx);text-wrap:pretty}
+  .llmnow .jt.err{color:var(--crit)}
+  .llmnow .basis{margin:7px 0 0;font-size:12.5px;line-height:1.6;color:var(--tx2);text-wrap:pretty}
+  .llmnow .basis .dim{white-space:normal}
+  /* ── KPI 4개 — 카드 오른쪽 스탯 행(시안엔 큰 타일이 없다). 기본 .kpis 는 ML 탭이 쓰므로
+     여기서만 덮는다: 라벨 11px 대문자 · 값 mono 17px · 부제 한 줄 말줄임(전문은 title 에) */
+  .llmcard .kpis{flex:0 1 auto;display:flex;align-items:stretch;border:0;border-left:1px solid var(--line);
+                 background:transparent;border-radius:0 16px 16px 0}
+  .llmcard .kpi{padding:14px 18px;border-right:0;min-width:0;display:flex;flex-direction:column;gap:3px;
+                justify-content:center}
+  .llmcard .kpi+.kpi{border-left:1px solid var(--line)}
+  .llmcard .kpi:last-child{border-radius:0 16px 16px 0}   /* #kpi-acc 호버 배경이 카드 모서리를 안 넘게 */
+  .llmcard .kpi .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);white-space:nowrap}
+  .llmcard .kpi .l .note{font-size:10px;letter-spacing:0;text-transform:none}
+  .llmcard .kpi .v{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
+                   font-size:17px;font-weight:700;line-height:1.2;letter-spacing:0;white-space:nowrap}
+  .llmcard .kpi .v u{font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;font-size:11px;
+                     margin-left:2px}
+  .llmcard .kpi .s{font-size:10.5px;color:var(--tx3);max-width:170px;overflow:hidden;
+                   text-overflow:ellipsis;white-space:nowrap}
+  /* 1400px 아래에선 KPI 행이 카드 아래 줄로 내려간다 — 왼쪽 선 대신 위 선 */
+  @media (max-width:1400px){
+    .llmcard .kpis{flex:1 1 100%;border-left:0;border-top:1px solid var(--line);border-radius:0 0 16px 16px}
+    .llmcard .kpi{flex:1}
+    .llmcard .kpi:last-child{border-radius:0 0 16px 0}
+  }
+  /* ── 선행 감지 배너(카드 위 슬림 띠): 경보면 --major 테두리·글자, 조용하면 --tx3 ── */
+  .fcbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 16px;border-radius:12px;
+         border:1px solid var(--line);background:var(--panel);color:var(--tx3);font-size:12.5px;cursor:pointer}
+  .fcbar .tag{color:inherit;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .fcbar .tag i{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+  .fcbar .dim{color:inherit;opacity:.85}
+  .fcbar .chip{margin:0}
+  .fcbar .cf{font-weight:700;white-space:nowrap}
+  .fcbar .hint{margin-left:auto;font-size:11.5px;opacity:.7}
+  .fcbar.alarm{color:var(--major);border-color:color-mix(in srgb, var(--major) 45%, transparent);
+               background:color-mix(in srgb, var(--major) 8%, transparent)}
+  .fcbar.alarm b{color:var(--major);font-size:13.5px}
+  .fcbar.alarm .tag i{animation:pulse 2.4s infinite}
+  .fcbar:hover{border-color:var(--line2)}
+  .fcbar.alarm:hover{border-color:var(--major)}
 
-  /* ── 스코어 추이 스트립 (항상 보이는 실시간 그래프) ── */
-  .strip{border-bottom:1px solid var(--line);background:var(--panel)}
-  .striphd{display:flex;align-items:center;gap:8px;padding:9px 16px 0;font-size:12px}
-  .striphd b{font-size:12px;font-weight:650}
-  .stripbox{padding:5px 16px 9px}
-  .stripbox svg{width:100%;height:auto;display:block;cursor:crosshair;border-radius:6px}
-  .lgd{display:flex;gap:9px;margin-left:auto;font-size:10.5px;color:var(--tx3)}
-  .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
-  .msel{padding:3px 7px;font-size:11.5px;border-radius:6px;max-width:340px}
+  /* ── 실시간·과거 탭 본문 — 다른 탭의 .page 와 같은 폭·여백(시안). 추이 카드와
+     표 카드가 세로로 24px 떨어져 쌓인다. .hidden 은 !important 라 display:flex 를 이긴다. */
+  #tab-live,#tab-past{padding:28px 36px 56px;max-width:2400px;margin:0 auto;
+                      display:flex;flex-direction:column;gap:24px}
+
+  /* ── 추이 스트립(시안 카드): 제목 17px · 정보 12.5px · 오른쪽에 겹쳐 보기/리미트선/범례 ──
+     ★.strip 은 .pane 밖의 독립 카드다 — 표 카드와 같은 20px 모서리·--panel·--line.
+     ★overflow 를 숨기지 않는다 — 호버 툴팁이 카드 위로 튀어나온다(시안). */
+  .strip{position:relative;padding:26px 30px 22px;border-radius:20px;background:var(--panel);
+         border:1px solid var(--line)}
+  .striphd{display:flex;align-items:center;gap:18px;flex-wrap:wrap;white-space:nowrap;font-size:12.5px}
+  .striphd .sttl{font-size:17px;font-weight:700;letter-spacing:.02em}
+  .striphd .note{font-size:12.5px;color:var(--tx3)}
+  /* 오른쪽 묶음 — 겹쳐 보기 · 리미트선 · 등급 범례. 좁으면 묶음째 다음 줄로 내려간다 */
+  .striprt{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-left:auto}
+  .lgd{display:flex;gap:14px;font-size:11.5px;color:var(--tx2)}
+  .lgd span{display:inline-flex;align-items:center;gap:6px}
+  .lgd i{width:8px;height:8px;border-radius:2px;display:inline-block}
+  /* 리미트선 토글 — 점선 조각 + 이름. 켜지면 글자 --tx, 점선은 그 등급색(--lc) */
+  .limsel{display:inline-flex;align-items:center;gap:12px}
+  .limsel>b{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tx3)}
+  .limsel label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
+                font-size:11.5px;color:var(--tx3)}
+  .limsel label:hover{color:var(--tx2)}
+  .limsel label.on{color:var(--tx)}
+  .limsel label i{width:14px;height:0;display:block;border-top:2px dashed var(--line2)}
+  .limsel label.on i{border-top-color:var(--lc)}
+  /* 지표 select(시안 입력 모양) — 과거 탭 내려받기 #pdl 도 같은 클래스라 같이 바뀐다 */
+  .msel{padding:6px 10px;font-size:12px;border-radius:10px;max-width:340px;background:var(--panel2);
+        border:1px solid var(--line2);color:var(--tx)}
   #kpi-acc{cursor:pointer}
   #kpi-acc:hover{background:var(--panel2)}
-  .mgrp{display:inline-flex;gap:3px}
-  .mgrp button{background:transparent;border:1px solid var(--line2);color:var(--tx3);
-               border-radius:6px;padding:3px 9px;font:inherit;font-size:11px;cursor:pointer}
-  .mgrp button.on{background:#12303a;border-color:#1d4b57;color:var(--cy);font-weight:650}
+  #kpi-acc:hover .v{color:var(--cy)}
+  /* 지표 묶음 — 작은 알약 세그먼트(테마 세그먼트와 같은 문법). 하드코딩 #12303a → --tabbg */
+  .mgrp{display:inline-flex;gap:4px;padding:3px;border-radius:99px;border:1px solid var(--line)}
+  .mgrp button{background:transparent;border:0;color:var(--tx3);border-radius:99px;padding:5px 11px;
+               font:inherit;font-size:11.5px;line-height:1;cursor:pointer;white-space:nowrap}
+  .mgrp button:hover{color:var(--tx2)}
+  .mgrp button.on{background:var(--tabbg);color:var(--cy);font-weight:700}
+
+  /* 그래프 본체 — SVG(하루 축) + 리미트 라벨(HTML) + 툴팁(HTML) + 아래 시간축(HTML).
+     ★SVG 안 색은 전부 class → 토큰이다. fill="#0D1119" 를 박았더니 밝은 테마에서
+       검은 상자로 남았다 — 그 뒤로 SVG 에도 hex 를 쓰지 않는다. */
+  .stripbox{margin-top:22px}
+  .stripsvg{position:relative}
+  .stripbox svg{width:100%;height:auto;display:block;cursor:crosshair}
+  .stripbox .sbg{fill:var(--panel)}
+  .stripbox .sgrid{stroke:var(--line2);stroke-width:.7;stroke-dasharray:3 3}
+  .stripbox .shr{stroke:var(--line);stroke-width:.6}
+  .stripbox .stk{fill:var(--tx3);font-size:8.5px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+  .stripbox .snow{stroke:var(--tx);stroke-width:1;opacity:.55}
+  /* 등급 밴드 — 등급색 8~10% 만. 예전 하드코딩 밴드색은 다크에서만 맞는 값이었다 */
+  .stripbox .sband.경계{fill:color-mix(in srgb, var(--minor) 8%, transparent)}
+  .stripbox .sband.위험{fill:color-mix(in srgb, var(--major) 9%, transparent)}
+  .stripbox .sband.초위험{fill:color-mix(in srgb, var(--crit) 10%, transparent)}
+  /* 분 단위 막대(스코어) — 등급색으로 칠한다. 정상은 살짝 눌러(.8) 색 있는 막대가 튀게 */
+  .stripbox .sbar{opacity:1;transition:opacity .12s}
+  .stripbox .sbar.정상{fill:var(--ok);opacity:.8} .stripbox .sbar.경계{fill:var(--minor)}
+  .stripbox .sbar.위험{fill:var(--major)}          .stripbox .sbar.초위험{fill:var(--crit)}
+  .stripbox .sbar.on{opacity:1}
+  .stripbox .shov{fill:var(--panel2)}               /* 호버한 분 칸의 밑판 */
+  .stripbox .slim{stroke-width:1;stroke-dasharray:4 3;opacity:.65}
+  /* 리미트선 오른쪽 끝 라벨 '경계 60' — 선 바로 위에, --panel 패치로 막대를 가린다 */
+  .stripbox .slbl{position:absolute;right:0;transform:translateY(calc(-100% - 3px));
+                  font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.04em;
+                  background:var(--panel);padding:0 5px;pointer-events:none;white-space:nowrap}
+  .stripax{margin-top:10px;display:flex;justify-content:space-between;font-size:11.5px;line-height:1;
+           color:var(--tx3)}
+  /* 호버 툴팁(시안) — --panel2 카드, 막대 위 14px, 좌우 17~83% 클램프(JS).
+     pointer-events:none 이라 툴팁이 마우스를 가로채 깜빡이지 않는다.
+     .below 는 카드가 화면 맨 위에 붙어 위쪽 자리가 없을 때(상단 바에 가린다) 아래로 */
+  .striptip{position:absolute;bottom:calc(100% + 14px);transform:translateX(-50%);width:400px;
+            max-width:calc(100vw - 80px);padding:16px 18px;border-radius:14px;background:var(--panel2);
+            border:1px solid var(--line2);box-shadow:var(--shadow);pointer-events:none;z-index:20;
+            text-align:left;white-space:normal;font-size:12px;line-height:1.5;color:var(--tx)}
+  /* ↑z-index 20: 표 머리글(sticky · 12)보다 위, 상단 바(30)보다 아래. 5 로 두니 아래로
+     띄운 툴팁의 실제지표 줄이 머리글에 가려 안 보였다. */
+  .striptip.below{bottom:auto;top:calc(100% + 14px)}
+  .striptip .r1{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .striptip .tm{font:600 14px/1 ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .striptip .chip{margin:0;padding:3px 9px;font-size:11px}
+  .striptip .sc{margin-left:auto;display:inline-flex;align-items:baseline;gap:6px}
+  .striptip .sc b{font:700 22px/1 ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .striptip .fabs{margin-top:12px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px;text-align:center}
+  .striptip .fabs .n{font-size:10px;letter-spacing:.06em;color:var(--tx3)}
+  .striptip .fabs .v{margin-top:4px;font:700 15px/1 ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+                     font-variant-numeric:tabular-nums;color:var(--txb)}
+  .striptip .met{margin-top:12px;padding-top:11px;border-top:1px solid var(--line2);display:grid;gap:5px;
+                 font:12px/1.5 ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:var(--tx2)}
+  .striptip .rs{margin-top:9px;font-size:12px;color:var(--txb);text-wrap:pretty}
+  .striptip .hint{margin-top:8px;font-size:11px;color:var(--tx3)}
 
   /* ── 더블클릭 그래프 ── */
   /* 구간 그래프 안의 OHT 재생 줄 — 그 1분을 월드모델로 열어 본다 */
@@ -448,11 +673,13 @@
   .ohtbtns button:hover{background:#16304a;border-color:var(--cy);color:var(--cy)}
   .ohtbtns button:disabled{opacity:.4;cursor:not-allowed}
   .ohtbar .down{color:var(--major)}
-  .gmask{position:fixed;inset:0;background:rgba(4,7,12,.78);z-index:50;
+  /* 모달(시안): --panel2 · 20px · 그림자. 마스크는 테마와 무관하게 어둡다 —
+     밝은 테마에서도 뒤 화면을 눌러 줘야 상자가 떠 보인다. */
+  .gmask{position:fixed;inset:0;background:rgba(4,7,12,.72);z-index:50;
          display:flex;align-items:center;justify-content:center;padding:24px}
-  .gbox{background:var(--panel);border:1px solid var(--line2);border-radius:12px;
+  .gbox{background:var(--panel2);border:1px solid var(--line2);border-radius:20px;
         max-width:1120px;width:100%;max-height:92vh;overflow:auto;
-        }
+        box-shadow:var(--shadow)}
   .gbox.wide{max-width:1280px;
         box-shadow:0 18px 60px rgba(0,0,0,.6)}
   .ghd{display:flex;align-items:center;gap:10px;padding:12px 16px;
@@ -464,35 +691,48 @@
 </head>
 <body>
 <script>
-/* 배경 검정/흰색.
+/* 배경 4종: dark · light · navy · contrast.
    ★<body> **맨 앞**에서 돌린다. 나중에 켜면 검은 화면이 한 번 번쩍인 뒤
-     흰색으로 바뀐다 — 어두운 방에서 눈이 아프다. */
+     바뀐다 — 어두운 방에서 눈이 아프다.
+   ★dark 는 data-theme 속성을 뗀다 — :root 기본값이 곧 dark 라서. 서버 그래프는
+     'light' 만 밝게 그리고 나머지는 어둡게 그린다(navy·contrast 도 어두운 배경). */
 (function(){
   var KEY = 'amhs.theme';
+  var THEMES = ['dark','light','navy','contrast'];
+  function norm(t){ return THEMES.indexOf(t) >= 0 ? t : 'dark'; }
   function apply(t){
-    if(t === 'light') document.documentElement.setAttribute('data-theme','light');
-    else              document.documentElement.removeAttribute('data-theme');
+    t = norm(t);
+    if(t === 'dark') document.documentElement.removeAttribute('data-theme');
+    else             document.documentElement.setAttribute('data-theme', t);
     var c = document.getElementById('themechip-cd');
-    if(c) c.textContent = (t === 'light') ? '☀' : '🌙';
+    if(c) c.textContent = t;
+    var seg = document.getElementById('themechip');
+    if(seg) Array.prototype.forEach.call(seg.querySelectorAll('button[data-theme]'), function(b){
+      b.classList.toggle('on', b.getAttribute('data-theme') === t);
+    });
   }
   var cur = 'dark';
-  try{ cur = localStorage.getItem(KEY) || 'dark'; }catch(e){}
+  try{ cur = norm(localStorage.getItem(KEY) || 'dark'); }catch(e){}
   apply(cur);
   window.__setTheme = function(t){
-    cur = t; apply(t);
-    try{ localStorage.setItem(KEY, t); }catch(e){}
+    cur = norm(t); apply(cur);
+    try{ localStorage.setItem(KEY, cur); }catch(e){}
     /* 그래프는 서버가 그린 SVG 라 CSS 로 안 바뀐다 — 다시 받아야 한다 */
     try{
       var g = document.getElementById('gmask');
       if(g && !g.classList.contains('hidden') && window.drawGraph) window.drawGraph();
     }catch(e){}
   };
-  window.__toggleTheme = function(){ window.__setTheme(cur === 'light' ? 'dark' : 'light'); };
-  /* 단추는 아직 없다 — 그려진 뒤에 붙인다 */
+  /* 순환 전환 — 단축키·옛 호출부용으로 남긴다 */
+  window.__toggleTheme = function(){ window.__setTheme(THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length]); };
+  /* 세그먼트는 아직 없다 — 그려진 뒤에 붙인다 */
   document.addEventListener('DOMContentLoaded', function(){
     apply(cur);
-    var b = document.getElementById('themechip');
-    if(b) b.onclick = window.__toggleTheme;
+    var seg = document.getElementById('themechip');
+    if(seg) seg.addEventListener('click', function(e){
+      var b = e.target.closest ? e.target.closest('button[data-theme]') : null;
+      if(b) window.__setTheme(b.getAttribute('data-theme'));
+    });
   });
 })();
 </script>
@@ -524,13 +764,22 @@
     <span class="mk"><i></i></span>
     <span><b>AMHS SENTINEL</b><span>LLM 실시간 이상감지 · 관제</span></span>
   </div>
-  <button class="syschip" id="syschip" title="다른 시스템으로 바꾸기">
-    <span id="syschip-cd">–</span><u>바꾸기</u>
-  </button>
-  <!-- 배경 검정/흰색. 관제실은 어둡지만 회의실 화면에서는 검은 배경이 안 읽힌다 -->
-  <button class="syschip" id="themechip" title="배경 바꾸기 (검정 ↔ 흰색)">
-    <span id="themechip-cd">🌙</span><u>배경</u>
-  </button>
+  <!-- 지금 보는 시스템 — 누르면 드롭다운(ALL + FAB 5). 맨 아래 '전체 화면에서 고르기' 가 오프닝을 연다 -->
+  <div class="syswrap">
+    <button class="syschip" id="syschip" title="다른 시스템으로 바꾸기" aria-haspopup="menu" aria-expanded="false">
+      <span id="syschip-cd">–</span><u>바꾸기</u>
+    </button>
+    <div class="sysdd hidden" id="sysdd" role="menu"></div>
+  </div>
+  <!-- 배경 4종 세그먼트: 다크·화이트·네이비·고대비. 관제실은 어둡지만 회의실 화면에서는
+       검은 배경이 안 읽힌다. #themechip-cd 는 옛 아이콘 자리(id 만 남김·숨김) -->
+  <div class="themeseg" id="themechip" title="배경 바꾸기" role="group">
+    <span id="themechip-cd" class="hidden">dark</span>
+    <button type="button" data-theme="dark">다크</button>
+    <button type="button" data-theme="light">화이트</button>
+    <button type="button" data-theme="navy">네이비</button>
+    <button type="button" data-theme="contrast">고대비</button>
+  </div>
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
     <button data-tab="ml" id="tabbtn-ml">ML 조기예측</button>
@@ -546,23 +795,30 @@
   <div class="clk"><b id="clk">–</b><span id="clkd">KST</span></div>
 </div>
 
-<div class="kpis">
-  <div class="kpi"><div class="l">활성 케이스</div>
-    <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
-  <div class="kpi"><div class="l">감지 지연</div>
-    <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
-  <div class="kpi" id="kpi-recur"><div class="l">재발률 (1h)</div>
-    <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
-  <div class="kpi" id="kpi-acc" title="1분마다 LLM 이 판단한 것을 이후 실제 데이터 흐름과 대조한 값입니다. 검증된 정탐률이 아닙니다.">
-    <div class="l">LLM 판단 일치 <span class="note" style="font-size:10px">· 클릭 상세</span></div>
-    <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">1분 추론 누적 시 산출</div></div>
+<!-- ── 실시간 탭 위 영역: 선행 감지 배너 → LLM 최근 판단 카드(+KPI 스탯 행) → 경보 배너.
+     ★탭 바깥에 둔다 — 과거 탭이 그 날짜의 LLM 판단을 같은 카드에 띄우고(loadPastLlm),
+       KPI 는 어느 탭에서든 보여야 한다. 시안엔 큰 KPI 타일이 없어 LLM 카드 오른쪽에
+       작은 스탯 4개로 접었다(id 와 .kpis 마크업은 그대로). -->
+<div class="livehead">
+  <div id="fcnow" class="fcbar hidden" title="최근 추세로 계산한 임계 돌파 예보 — 클릭하면 선행 지표 분석"></div>
+
+  <div class="llmcard">
+    <div id="llmnow" class="llmnow hidden"></div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">활성 케이스</div>
+        <div class="v c-cy" id="k-active">–<u>건</u></div><div class="s" id="k-active-s">–</div></div>
+      <div class="kpi"><div class="l">감지 지연</div>
+        <div class="v" id="k-lat">–<u>ms</u></div><div class="s" id="k-lat-s">폴링 주기 –</div></div>
+      <div class="kpi" id="kpi-recur"><div class="l">재발률 (1h)</div>
+        <div class="v c-mj" id="k-recur">–<u>%</u></div><div class="s" id="k-recur-s">–</div></div>
+      <div class="kpi" id="kpi-acc" title="1분마다 LLM 이 판단한 것을 이후 실제 데이터 흐름과 대조한 값입니다. 검증된 정탐률이 아닙니다.">
+        <div class="l">LLM 판단 일치 <span class="note" style="font-size:10px">· 클릭 상세</span></div>
+        <div class="v c-ok" id="k-acc">–</div><div class="s" id="k-acc-s">1분 추론 누적 시 산출</div></div>
+    </div>
+  </div>
+
+  <div id="warnbox"></div>
 </div>
-
-<div id="fcnow" class="llmnow hidden" title="최근 추세로 계산한 임계 돌파 예보 — 클릭하면 선행 지표 분석"></div>
-
-<div id="llmnow" class="llmnow hidden"></div>
-
-<div id="warnbox"></div>
 
 <!-- 더블클릭 그래프 -->
 <div id="gmask" class="gmask hidden">
@@ -612,23 +868,26 @@
 
 <!-- ── 실시간 관제 ── -->
 <div class="main" id="tab-live">
-  <div class="pane">
-    <div class="strip">
-      <div class="striphd"><b>추이</b>
-        <span class="mgrp" id="stripgrp"></span>
-        <select id="stripsel" class="msel" title="볼 지표 선택"></select>
-        <span class="note" id="stripinfo">—</span>
-        <span class="note">· 클릭 → 그 시각 구간 그래프</span>
+  <!-- 추이 카드 — 헤더: 제목 · 정보 · 지표 묶음 · 지표 select | 겹쳐 보기 · 리미트선 · 등급 범례 -->
+  <div class="strip">
+    <div class="striphd"><b class="sttl">추이</b>
+      <span class="note" id="stripinfo">—</span>
+      <span class="mgrp" id="stripgrp"></span>
+      <select id="stripsel" class="msel" title="볼 지표 선택"></select>
+      <span class="striprt">
         <span class="fabsel" id="stripfab"></span>
+        <span class="limsel" id="striplim"></span>
         <span class="lgd gradelgd">
-          <span><i style="background:#2FD68A"></i>정상</span>
-          <span><i style="background:#F2D338"></i>경계</span>
-          <span><i style="background:#FF9F2E"></i>위험</span>
-          <span><i style="background:#FF4D5E"></i>초위험</span>
+          <span><i style="background:var(--ok)"></i>정상</span>
+          <span><i style="background:var(--minor)"></i>경계</span>
+          <span><i style="background:var(--major)"></i>위험</span>
+          <span><i style="background:var(--crit)"></i>초위험</span>
         </span>
-      </div>
-      <div class="stripbox" id="strip"></div>
+      </span>
     </div>
+    <div class="stripbox" id="strip"></div>
+  </div>
+  <div class="pane">
     <div class="hd">
       <h2>실시간 데이터 <span class="note" id="feedinfo"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
       <div class="filters">
@@ -661,23 +920,25 @@
 
 <!-- ── 과거 데이터 조회 (실시간 관제와 동일 · 보는 날짜만 다름) ── -->
 <div class="main hidden" id="tab-past">
-  <div class="pane">
-    <div class="strip">
-      <div class="striphd"><b>추이</b>
-        <span class="mgrp" id="pstripgrp"></span>
-        <select id="pstripsel" class="msel" title="볼 지표 선택"></select>
-        <span class="note" id="pstripinfo">—</span>
-        <span class="note">· 클릭 → 그 시각 구간 그래프</span>
+  <div class="strip">
+    <div class="striphd"><b class="sttl">추이</b>
+      <span class="note" id="pstripinfo">—</span>
+      <span class="mgrp" id="pstripgrp"></span>
+      <select id="pstripsel" class="msel" title="볼 지표 선택"></select>
+      <span class="striprt">
         <span class="fabsel" id="pstripfab"></span>
+        <span class="limsel" id="pstriplim"></span>
         <span class="lgd gradelgd">
-          <span><i style="background:#2FD68A"></i>정상</span>
-          <span><i style="background:#F2D338"></i>경계</span>
-          <span><i style="background:#FF9F2E"></i>위험</span>
-          <span><i style="background:#FF4D5E"></i>초위험</span>
+          <span><i style="background:var(--ok)"></i>정상</span>
+          <span><i style="background:var(--minor)"></i>경계</span>
+          <span><i style="background:var(--major)"></i>위험</span>
+          <span><i style="background:var(--crit)"></i>초위험</span>
         </span>
-      </div>
-      <div class="stripbox" id="pstrip"></div>
+      </span>
     </div>
+    <div class="stripbox" id="pstrip"></div>
+  </div>
+  <div class="pane">
     <div class="hd">
       <h2>과거 데이터 <span class="note" id="pinfo"></span><span class="note" id="pllm" style="margin-left:6px"></span><span class="note" style="margin-left:6px;color:var(--tx3)">— 행 더블클릭 시 구간 그래프</span></h2>
       <div class="filters" id="pfilters">
@@ -1174,6 +1435,15 @@ function opBgStart(){
   const ctx = cv.getContext('2d');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   let w = 0, h = 0, parts = [];
+  /* 입자 색은 테마 토큰에서 읽는다(getComputedStyle) — 밝은 테마에선 청록·초록도
+     진한 값으로 따라온다. 토큰이 hex 6자리가 아니면 다크 기본값으로. */
+  const tok = (name, fb) => {
+    const v = (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim();
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(v);
+    return m ? [m[1], m[2], m[3]].map(x => parseInt(x, 16)).join(',') : fb;
+  };
+  const C_CY = tok('--cy', '61,219,232'), C_OK = tok('--ok', '47,214,138'),
+        C_LN = tok('--line2', '35,45,60');
 
   const resize = () => {
     const r = cv.getBoundingClientRect();
@@ -1209,7 +1479,8 @@ function opBgStart(){
     for(let i=0;i<parts.length;i++) for(let j=i+1;j<parts.length;j++){
       const a=parts[i], b=parts[j], dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy;
       if(d2 < 20000){
-        ctx.strokeStyle = `rgba(61,219,232,${(0.13*(1-d2/20000)).toFixed(3)})`;
+        /* 이음선은 --line2 — 입자보다 한 톤 뒤로 물러나 배경 그물처럼 깔린다 */
+        ctx.strokeStyle = `rgba(${C_LN},${(0.9*(1-d2/20000)).toFixed(3)})`;
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
       }
@@ -1218,7 +1489,7 @@ function opBgStart(){
       /* 청록(--cy) 과 초록(--ok) — 대시보드 본체와 같은 색.
          원본은 주황이었는데, 입자·선이 화면 전체에 깔려서 검정 배경이
          갈색으로 물들어 보였다. 알파도 낮췄다(.62→.5). */
-      const col = p.alt ? '47,214,138' : '61,219,232', s = p.s;
+      const col = p.alt ? C_OK : C_CY, s = p.s;
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
       ctx.strokeStyle = `rgba(${col},.5)`; ctx.fillStyle = `rgba(${col},.10)`;
       ctx.lineWidth = 1.3;
@@ -1288,9 +1559,48 @@ function pickSystem(code){
   startLive();
 }
 
-$('#syschip').onclick = () => openShow();
-document.addEventListener('keydown', e => {          // 이미 고른 상태면 Esc 로 닫기
-  if(e.key==='Escape' && SYS && !$('#open').classList.contains('hidden')) openHide();
+/* 시스템 칩 드롭다운 — ALL + FAB 5 를 그 자리에서 고른다. 오프닝(전체 화면)은
+   맨 아래 '전체 화면에서 고르기' 로 연다.
+   ★항목은 SYSTEMS 로 만든다 — 준비 안 된 FAB 은 눌리지 않게(pickSystem 이
+     한 번 더 거른다). 다른 시스템으로 바꾸면 pickSystem 이 ?sys= 로 새로 연다. */
+function sysDdRender(){
+  const dd = $('#sysdd');
+  if(!dd) return;
+  dd.innerHTML = SYSTEMS.map(s => `
+    <button type="button" role="menuitem" data-code="${esc(s.code)}" class="${s.code===SYS?'on':''}"
+            ${s.ready?'':'disabled'} title="${esc(s.name)}">
+      <span>${esc(s.code)}</span><small>${s.ready ? (s.code==='ALL' ? '전체 통합' : 'FAB 단독') : '준비 중'}</small>
+    </button>`).join('')
+    + `<hr><button type="button" role="menuitem" class="all" data-code="">전체 화면에서 고르기</button>`;
+}
+function sysDdOpen(){
+  sysDdRender();
+  $('#sysdd').classList.remove('hidden');
+  $('#syschip').setAttribute('aria-expanded', 'true');
+}
+function sysDdClose(){
+  const dd = $('#sysdd');
+  if(!dd || dd.classList.contains('hidden')) return;
+  dd.classList.add('hidden');
+  $('#syschip').setAttribute('aria-expanded', 'false');
+}
+function sysDdToggle(){ $('#sysdd').classList.contains('hidden') ? sysDdOpen() : sysDdClose(); }
+$('#syschip').onclick = e => { e.stopPropagation(); sysDdToggle(); };
+$('#sysdd').onclick = e => {
+  const b = e.target.closest('button[data-code]');
+  if(!b) return;
+  e.stopPropagation();
+  sysDdClose();
+  if(b.dataset.code === '') openShow();          // 전체 화면(오프닝)에서 고르기
+  else pickSystem(b.dataset.code);
+};
+document.addEventListener('click', e => {           // 바깥을 누르면 닫힌다
+  if(!e.target.closest || !e.target.closest('.syswrap')) sysDdClose();
+});
+document.addEventListener('keydown', e => {          // Esc: 드롭다운이 열려 있으면 그것만, 아니면 오프닝
+  if(e.key !== 'Escape') return;
+  if(!$('#sysdd').classList.contains('hidden')){ sysDdClose(); return; }
+  if(SYS && !$('#open').classList.contains('hidden')) openHide();   // 이미 고른 상태면 Esc 로 닫기
 });
 
 /* ══════════ ML 조기예측 탭 ══════════
@@ -2321,6 +2631,7 @@ async function pollStatus(){
     //   채워져서, 한 번 실패하면 '로그프레소' 로 잘못 표시됐다.
     const jup = (st.source || s.source_mode) === 'jupyter';
     SRC = st.source || SRC;
+    if(s.model) LLM_MODEL = String(s.model);
     /* ★원본 CSV 의 최신 시각과 지금의 차이 — 화면이 뒤처져 보일 때
        원인이 어디인지 여기서 갈린다. 예측 잡이 아직 안 쓴 것이면 우리가
        할 수 있는 게 없고, 이 값이 최신인데 표가 옛날이면 우리 문제다. */
@@ -2410,17 +2721,19 @@ function renderForecast(fc){
   if(!fc){ box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
   box.onclick = openLeading;
+  // 색은 클래스로 — 경보면 .alarm(--major 테두리·글자), 조용하면 기본(--tx3). 안쪽 인라인 색 없음
+  box.classList.toggle('alarm', !!fc.warn);
 
   // ── 경보 조건 미달 = 조용한 상태. 줄을 숨기면 기능이 도는지 알 수가 없어
   //    한 줄로 '지금 왜 조용한지' 를 항상 보여준다. 눈에 띄지 않게 흐린 색으로.
   if(!fc.warn){
     box.innerHTML =
-        `<span class="tag" style="color:var(--tx3)"><i style="background:var(--tx3)"></i>선행 감지</span>`
+        `<span class="tag"><i></i>선행 감지</span>`
       + `<span class="dim">감시 중 — ${esc(fc.reason || '조건 미달')}</span>`
       + (fc.current!=null ? `<span class="dim">현재 ${fc.current}점 · 분당 ${fc.slope>0?'+':''}${fc.slope}점`
           + ` · 표본 ${fc.points}분 · 임계 ${fc.floor}점</span>` : '')
       + (fc.lead_n ? `<span class="dim" title="${esc((fc.lead_names||[]).join(', '))}">선행 지표 ${fc.lead_n}개 상승 중</span>` : '')
-      + `<span class="dim" style="margin-left:auto">클릭 → 선행 지표 분석</span>`;
+      + `<span class="hint">클릭 → 선행 지표 분석</span>`;
     return;
   }
   const dr = (fc.drivers||[]).slice(0,3).map(d =>
@@ -2430,13 +2743,13 @@ function renderForecast(fc){
     ? `<span class="chip lv위험" title="선행 지표가 같이 올라 기준을 완화해 더 일찍 띄운 경보입니다: ${
         esc((fc.lead_names||[]).join(', '))}">선행 지표 ${fc.lead_n}개 동반</span>` : '';
   box.innerHTML =
-      `<span class="tag" style="color:var(--major)"><i style="background:var(--major)"></i>선행 감지</span>`
-    + `<b style="color:var(--major)">${fc.eta_min}분 뒤 임계(${fc.floor}점) 돌파 예상</b>` + lead
+      `<span class="tag"><i></i>선행 감지</span>`
+    + `<b>${fc.eta_min}분 뒤 임계(${fc.floor}점) 돌파 예상</b>` + lead
     + `<span class="dim">현재 ${fc.current}점 · 분당 ${fc.slope>0?'+':''}${fc.slope}점`
     + ` · ${fc.horizon||15}분 뒤 ${fc.projected}점 ${fc.emoji} ${esc(fc.level)}</span>`
-    + `<span class="cf" style="color:${fc.confidence>=70?'var(--major)':'var(--tx2)'}">확신 ${fc.confidence}%</span>`
+    + `<span class="cf" style="${fc.confidence>=70?'':'color:var(--tx2)'}">확신 ${fc.confidence}%</span>`
     + (dr ? `<span class="dim">함께 오르는 지표</span>${dr}` : '')
-    + `<span class="dim" style="margin-left:auto">클릭 → 선행 지표 분석</span>`;
+    + `<span class="hint">클릭 → 선행 지표 분석</span>`;
   box.onclick = openLeading;
 }
 
@@ -2444,6 +2757,7 @@ function renderForecast(fc){
    ★ 검증된 '정탐률'이 아니라 '이후 데이터와 일치했나' 다. 표본이 차기 전엔
    퍼센트를 내지 않고 건수만 보여준다 — 그게 튜닝에도 더 쓸모 있다. */
 let ACC = null, FC = null, SRC = null;   // SRC = 데이터 출처(logpresso/jupyter)
+let LLM_MODEL = '';   // /api/status 의 model — LLM 카드 1행에 '· 모델명 · 1분 추론' 으로 쓴다
 
 /* ── 선행 지표 분석 — '어느 지표가 점수보다 몇 분 먼저 움직였나' ──
    과거 저장분에서 임계 돌파 시점을 찾아 지표별 선행 시간의 중앙값을 낸다.
@@ -2692,46 +3006,69 @@ function renderAcc(a){
 }
 
 // 실시간 탭이면 오늘, 과거 탭을 보고 있으면 그 날짜의 LLM CSV 를 연다
-/* LLM 이 방금 뭐라고 판단했는지 — 모달 안 열고도 보이게 (200자 요약이라 한 줄에 들어간다) */
+/* LLM 이 방금 뭐라고 판단했는지 — 모달 안 열고도 보이게. 시안 카드 3행:
+   1행 `LLM 최근 판단` 라벨 · 등급 배지 · 시각 · `· 모델 · 1분 추론` · 작은 칩들 · [과거 LLM 판단 보기]
+   2행 판단 문장(16px 600) / 3행 `근거 — …`(12.5px --tx2).
+   ★기록이 없어도 같은 카드 모양을 유지한다 — 빈 줄이 되면 카드가 사라진 것처럼 보인다. */
 function renderLlmNow(a, past){
   const box = $('#llmnow');
   const r = a && a.latest;
-  if(!r || (!r.판단 && !r.오류)){
-    box.classList.remove('hidden');
-    box.innerHTML = `<span class="tag"><i style="background:var(--tx3)"></i>LLM 판단</span>`
-      + `<span class="dim">${past
-          ? esc(fmtDay((a&&a.day)||past)) + ' — 이 날짜에는 LLM 판단 기록이 없습니다 (상세에서 빈 구간 메움 가능)'
-          : '아직 LLM 판단 기록이 없습니다 — 1분마다 쌓입니다'}</span>`;
+  box.classList.remove('hidden');
+  // 1행 오른쪽 버튼 — 카드 전체 클릭과 같은 곳으로 간다. 버튼은 stopPropagation 으로 두 번 열리는 걸 막는다
+  const accBtn = `<button class="llmacc" type="button">과거 LLM 판단 보기</button>`;
+  const wireAcc = () => {
     box.onclick = () => openAcc(past || null);
+    const b = box.querySelector('.llmacc');
+    if(b) b.onclick = e => { e.stopPropagation(); openAcc(past || null); };
+  };
+  const dayTag = past ? `<span class="t">${esc(fmtDay((a&&a.day)||past))}</span>` : '';
+  if(!r || (!r.판단 && !r.오류)){
+    box.innerHTML =
+        `<div class="r1"><div class="r1l"><span class="tag">LLM ${past ? '판단' : '최근 판단'}</span>`
+      + `<span class="chip" style="background:var(--panel2);color:var(--tx3)">기록 없음</span>`
+      + dayTag + `<span class="t">–</span></div>` + accBtn + `</div>`
+      + `<p class="jt" style="color:var(--tx2)">${past
+          ? '이 날짜에는 LLM 판단 기록이 없습니다'
+          : '아직 LLM 판단 기록이 없습니다 — 1분마다 쌓입니다'}</p>`
+      + `<p class="basis">${past ? '상세에서 빈 구간 메움 가능' : '첫 판단이 들어오면 여기에 문장과 근거가 뜹니다'}</p>`;
     box.title = '';
+    wireAcc();
     return;
   }
-  box.classList.remove('hidden');
   const c = (r.확신도==='' || r.확신도==null) ? null : Math.max(0, Math.min(100, +r.확신도||0));
   const col = c==null ? 'var(--tx3)' : c>=80 ? 'var(--ok)' : c>=60 ? 'var(--minor)' : 'var(--major)';
   const yn = r.실제이상==='예' ? `<span class="chip lv위험">이상 예</span>`
-           : r.실제이상==='아니오' ? `<span class="chip lv경계" style="background:rgba(47,214,138,.15);color:var(--ok)">이상 아니오</span>`
+           : r.실제이상==='아니오' ? `<span class="chip lv정상">이상 아니오</span>`
            : '';
+  // 등급 배지 — 스코어로 다시 계산한다(컷은 시스템마다 다르다). 스코어가 없으면 CSV 의 등급 글자로
+  const sc = parseFloat(r.스코어), g = isFinite(sc) ? gradeOf(sc) : null;
+  const lvName = g ? g.n : (r.등급 || '');
+  const badge = lvName
+    ? `<span class="chip lv${esc(lvName)}" title="${isFinite(sc) ? esc(r.스코어)+'점' : ''}">${esc(lvName)}</span>`
+    : `<span class="chip" style="background:var(--panel2);color:var(--tx3)">–</span>`;
+  const model = String(r.모델 || LLM_MODEL || '').trim();
+  const meta = `<span class="meta">· ${model ? esc(model) + ' · ' : ''}1분 추론</span>`;
+  const verdict = r.판정 ? `<span class="meta">판정 ${esc(r.판정)}</span>` : `<span class="meta">채점 대기</span>`;
+  const basisTx = [r.근거 ? '근거 — ' + esc(r.근거) : '', r.조치 ? '조치 — ' + esc(r.조치) : '']
+                  .filter(Boolean).join(' <span class="dim">·</span> ');
   box.innerHTML =
-      `<span class="tag"><i></i>LLM ${past ? '판단' : '최근 판단'}</span>`
-    + (past ? `<span class="dim">${esc(fmtDay(a.day||past))}</span>` : '')
-    + `<span class="dim">${esc((r.datetime||'').slice(11,16))}</span>`
-    + (()=>{ const s=parseFloat(r.스코어), g=gradeOf(s);
-             return isFinite(s)
-               ? `<span style="color:${g.c}">${esc(r.스코어)}점 ${g.n}</span>`
-                 + (g.chk ? `<span class="chip lv초위험">사람 확인 필요</span>` : '')
-               : `<span class="dim">–</span>`; })()
+      `<div class="r1"><div class="r1l"><span class="tag">LLM ${past ? '판단' : '최근 판단'}</span>`
+    + badge + dayTag
+    + `<span class="t">${esc((r.datetime||'').slice(11,16)) || '–'}</span>`
+    + (isFinite(sc) ? `<span class="t" style="color:${g.c}">${esc(r.스코어)}점</span>` : '')
+    + meta
+    + (g && g.chk ? `<span class="chip lv초위험">사람 확인 필요</span>` : '')
     + yn
-    + (c==null ? `<span class="dim">확신도 –</span>`
-       : `<span class="cf" style="color:${col}">확신도 ${c}%</span>`
-         + `<span class="bar"><i style="width:${c}%;background:${col}"></i></span>`)
-    + `<span class="jt">${r.판단 ? esc(r.판단)
-         : `<span style="color:var(--crit)">${esc(r.오류||'')}</span>`}</span>`
-    + (r.판정 ? `<span class="dim">판정 ${esc(r.판정)}</span>`
-              : `<span class="dim">채점 대기</span>`);
-  box.title = [r.근거 ? '근거 · ' + r.근거 : '', r.조치 ? '조치 · ' + r.조치 : '']
-              .filter(Boolean).join('\n') || '클릭하면 전체 내역이 열립니다';
-  box.onclick = () => openAcc(past || null);
+    + (c==null ? `<span class="meta">확신도 –</span>`
+       : `<span class="cf" style="color:${col}">확신도 ${c}%`
+         + `<span class="bar"><i style="width:${c}%;background:${col}"></i></span></span>`)
+    + verdict + `</div>`
+    + accBtn + `</div>`
+    + (r.판단 ? `<p class="jt">${esc(r.판단)}</p>`
+              : `<p class="jt err">${esc(r.오류||'')}</p>`)
+    + `<p class="basis">${basisTx || '<span class="dim">근거 없음 — 클릭하면 전체 내역이 열립니다</span>'}</p>`;
+  box.title = '클릭하면 전체 내역이 열립니다';
+  wireAcc();
 }
 
 /* 과거 탭 — 그 날짜의 LLM 판단을 같은 줄에 보여준다 */
@@ -3384,10 +3721,25 @@ function bindGraph(tbodySel){
 }
 
 /* ── 스코어 추이 스트립 — 하루치를 항상 띄워두고 폴링마다 갱신 ──
-   graphs.py 와 같은 색 체계(다크 밴드 + --cy 선)로 그린다. 순수 SVG. */
-const stripBands = () => [[0,CUTS.warn,'#0F1622'],[CUTS.warn,CUTS.danger,'#2B2612'],
-  [CUTS.danger,CUTS.critical,'#33210F'],[CUTS.critical,100,'#331419']];
-const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 9, STRIP_B = 17;
+   스코어는 분 단위 막대(등급색) + 리미트 점선(시안), 다른 지표는 자동 눈금 선. 순수 SVG.
+   ★밴드는 등급 이름만 넘기고 색은 CSS(.sband.등급 → color-mix 토큰)가 정한다 —
+     hex 를 여기 박으면 테마 4벌 중 다크에서만 맞는다. 정상 구간은 밴드 없음(맨 바탕). */
+const stripBands = () => [[CUTS.warn,CUTS.danger,'경계'],
+  [CUTS.danger,CUTS.critical,'위험'],[CUTS.critical,100,'초위험']];
+/* 아래 시간축 글자를 SVG 밖(HTML)으로 뺐으니 아래 여백은 거의 없다 */
+const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 6, STRIP_B = 4;
+/* 여백 — 스코어(막대)일 땐 왼쪽 눈금 숫자가 없어 막대를 양 끝까지 채운다(시안).
+   비스코어 지표는 자동 눈금 숫자 자리(STRIP_L)를 남긴다. 클릭·호버 좌표 환산도 이걸 쓴다. */
+function stripGeom(isScore){
+  const L = isScore ? 0 : STRIP_L, R = isScore ? 0 : STRIP_R;
+  return {L, R, T:STRIP_T, B:STRIP_B, iw:STRIP_W - L - R, ih:STRIP_H - STRIP_T - STRIP_B};
+}
+/* 리미트선(경계·위험·초위험 점선) 켜고 끄기 — 실시간·과거 따로, 기본 전부 켬.
+   ★끄는 건 '선이 막대를 가려서' 다 — 값은 CUTS 그대로라 막대 등급색은 안 바뀐다. */
+const LIMIT_ON = {live:{warn:true, danger:true, critical:true},
+                  past:{warn:true, danger:true, critical:true}};
+const LIMITS = [['warn','경계','var(--minor)'], ['danger','위험','var(--major)'],
+                ['critical','초위험','var(--crit)']];
 
 function dayStartOf(rows){
   const s = (rows[0]?.at || '').slice(0,10);
@@ -3440,13 +3792,13 @@ function fabPaths(rows, mt, sel, X, Y){
   }).join('');
 }
 
-function stripSvg(rows, mt, sel){
-  const iw = STRIP_W - STRIP_L - STRIP_R, ih = STRIP_H - STRIP_T - STRIP_B;
+function stripSvg(rows, mt, sel, lim){
+  const isScore = !!mt.bands;
+  const g = stripGeom(isScore), {L, T, iw, ih} = g;
   const d0 = dayStartOf(rows), t0 = d0.getTime(), t1 = t0 + 86400000;
-  const X = t => STRIP_L + iw * ((t - t0) / (t1 - t0));
+  const X = t => L + iw * ((t - t0) / (t1 - t0));
 
   const vals = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
-  const isScore = !!mt.bands;
   // 스코어는 0~100 고정 + 등급 밴드, 나머지는 값 범위에 맞춰 자동 스케일
   let lo = 0, hi = mt.max || 100;
   if(!isScore){
@@ -3457,63 +3809,84 @@ function stripSvg(rows, mt, sel){
     if(mt.max) hi = Math.min(hi, mt.max);
     if(hi <= lo) hi = lo + 1;
   }
-  const Y = v => STRIP_T + ih * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo));
+  const Y = v => T + ih * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo));
+  const f1 = n => n.toFixed(1);
 
   const o = [`<svg viewBox="0 0 ${STRIP_W} ${STRIP_H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">`,
-             `<rect width="${STRIP_W}" height="${STRIP_H}" fill="#0D1119"/>`];
+             `<rect class="sbg" width="${STRIP_W}" height="${STRIP_H}"/>`];
   if(isScore){
-    stripBands().forEach(([bl,bh,c]) =>
-      o.push(`<rect x="${STRIP_L}" y="${Y(bh).toFixed(1)}" width="${iw}" height="${(Y(bl)-Y(bh)).toFixed(1)}" fill="${c}"/>`));
+    stripBands().forEach(([bl,bh,nm]) =>
+      o.push(`<rect class="sband ${nm}" x="${L}" y="${f1(Y(bh))}" width="${iw}" height="${f1(Y(bl)-Y(bh))}"/>`));
+    // 호버한 분 칸의 밑판 — drawStrip 이 x/width 를 옮긴다(처음엔 폭 0)
+    o.push(`<rect class="shov" x="${L}" y="${T}" width="0" height="${ih}" rx="1"/>`);
+  }else{
+    // 비스코어: 자동 눈금 3개 + 왼쪽 숫자
+    [lo, lo+(hi-lo)/2, hi].forEach(v => {
+      o.push(`<line class="sgrid" x1="${L}" y1="${f1(Y(v))}" x2="${L+iw}" y2="${f1(Y(v))}"/>`);
+      o.push(`<text class="stk" x="${L-4}" y="${f1(Y(v)+3.4)}" text-anchor="end">${
+        Math.abs(v)>=10 ? v.toFixed(0) : v.toFixed(1)}</text>`);
+    });
   }
-  const ticks = isScore ? [CUTS.warn,CUTS.danger,CUTS.critical,100] : [lo, lo+(hi-lo)/2, hi];
-  ticks.forEach(v => {
-    o.push(`<line x1="${STRIP_L}" y1="${Y(v).toFixed(1)}" x2="${STRIP_L+iw}" y2="${Y(v).toFixed(1)}" stroke="#2E3A4C" stroke-width=".7" stroke-dasharray="3 3"/>`);
-    o.push(`<text x="${STRIP_L-4}" y="${(Y(v)+3.4).toFixed(1)}" font-size="8.5" fill="#8FA0B6" text-anchor="end">${
-      isScore ? v : (Math.abs(v)>=10 ? v.toFixed(0) : v.toFixed(1))}</text>`);
-  });
-  for(let h=0; h<=24; h+=2){
-    const x = X(t0 + h*3600000);
-    o.push(`<line x1="${x.toFixed(1)}" y1="${STRIP_T}" x2="${x.toFixed(1)}" y2="${STRIP_T+ih}" stroke="#1C2431" stroke-width=".6"/>`);
-    o.push(`<text x="${x.toFixed(1)}" y="${STRIP_H-5}" font-size="8.5" fill="#5E6E85" text-anchor="middle">${String(h).padStart(2,'0')}:00</text>`);
+  // 2시간 간격 세로 실선 — 시각 글자는 SVG 밖 .stripax 가 맡는다
+  for(let hh=2; hh<24; hh+=2){
+    const x = f1(X(t0 + hh*3600000));
+    o.push(`<line class="shr" x1="${x}" y1="${T}" x2="${x}" y2="${T+ih}"/>`);
   }
   const pts = rows.slice().sort((a,b)=> a.at < b.at ? -1 : 1)
     .map(r=>({x:X(new Date(r.at).getTime()), v:mval(r, mt.key), at:r.at, lv:r.level}))
     .filter(p=>p.v!==null && !isNaN(p.v))
     .map(p=>({...p, y:Y(p.v)}));
-  if(pts.length > 1){
+  if(isScore){
+    /* 분 단위 막대 — 하루 1440칸이라 한 칸이 화면에서 1px 남짓이다. 칸의 72% 만
+       칠해 막대 사이가 살짝 비게 하고, 0점도 얇은 밑동은 남긴다(값이 있다는 표시).
+       ★등급은 서버가 매긴 r.level 을 쓴다 — 점수로 다시 매기면 정책 탭에서 바꾼
+         컷이 화면에 안 나타난다(fabCells 와 같은 이유). 없을 때만 gradeOf. */
+    const sw = iw / 1440, bw = Math.max(0.3, sw * 0.72), rx = Math.min(1.2, bw / 2);
+    pts.forEach(p => {
+      const lv = p.lv || gradeOf(p.v).n;
+      const hgt = Math.max(0.8, T + ih - p.y);
+      o.push(`<rect class="sbar ${esc(lv)}" data-at="${esc(p.at)}" x="${(p.x + (sw-bw)/2).toFixed(2)}" y="${
+        f1(T + ih - hgt)}" width="${bw.toFixed(2)}" height="${f1(hgt)}" rx="${rx.toFixed(2)}"/>`);
+    });
+    o.push(fabPaths(rows, mt, sel, X, Y));      // FAB 얇은 선은 막대 위에
+    // 리미트 점선 — 등급색, 끈 것은 안 그린다. 라벨은 HTML(.slbl)로 SVG 밖에 붙인다
+    LIMITS.forEach(([k]) => {
+      if(lim && lim[k] === false) return;
+      const y = f1(Y(CUTS[k]));
+      o.push(`<line class="slim lim${k}" x1="${L}" y1="${y}" x2="${L+iw}" y2="${y}" style="stroke:${
+        k==='critical' ? 'var(--crit)' : k==='danger' ? 'var(--major)' : 'var(--minor)'}"/>`);
+    });
+  }else if(pts.length > 1){
     const line = pts.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-    o.push(`<path d="M${pts[0].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(STRIP_T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
+    o.push(`<path d="M${pts[0].x.toFixed(1)},${(T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
     /* ★FAB 선을 본선보다 **먼저** 그린다. 본선의 면채움(opacity .13)이
-       나중에 덮이면 FAB 색이 그만큼 물든다. 순서: 면채움 → FAB → 본선. */
+       나중에 덮이면 FAB 색이 그만큼 물든다. 순서: 면채움 → FAB → 본선.
+       (fabPaths 는 스코어가 아니면 빈 문자열이지만 순서 규칙은 여기 남긴다) */
     o.push(fabPaths(rows, mt, sel, X, Y));
     o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
   }else{
     o.push(fabPaths(rows, mt, sel, X, Y));      // 본선 값이 없어도 FAB 은 그린다
   }
-  // 스코어는 경계 이상만 등급 색 점으로 (경계=노랑 / 위험=주황 / 초위험=빨강).
-  // ★점수 숫자(>=50)로 거르면 안 된다 — 임계를 60으로 올렸는데 50점대
-  //   (이제 정상)에 노란 점이 계속 찍혔다. 등급(lv)은 서버가 config 임계로
-  //   매기므로, 등급으로 거르면 임계가 또 바뀌어도 여기는 손댈 필요가 없다.
-  if(isScore){
-    pts.filter(p=>p.lv && p.lv!=='정상').forEach(p =>
-      o.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.2" fill="${
-        p.lv==='초위험'?'#FF4D5E':p.lv==='위험'?'#FF9F2E':'#F2D338'}"/>`));
-  }
-  // 최고점
-  if(pts.length){
+  // 최고점 표시 — 선 그래프일 때만(막대는 색이 곧 등급이라 표시가 겹친다)
+  if(!isScore && pts.length){
     const pk = pts.reduce((a,b)=> b.v>a.v?b:a);
-    const c = isScore ? '#FF4D5E' : mt.color;
+    const c = mt.color;
     o.push(`<circle cx="${pk.x.toFixed(1)}" cy="${pk.y.toFixed(1)}" r="3.6" fill="none" stroke="${c}" stroke-width="1.5"/>`);
-    o.push(`<text x="${Math.min(STRIP_L+iw-52, Math.max(STRIP_L+2, pk.x-22)).toFixed(1)}" y="${Math.max(STRIP_T+9, pk.y-6).toFixed(1)}" font-size="9" fill="${c}" font-weight="700">▲${fmtV(pk.v, mt.unit)}</text>`);
+    o.push(`<text x="${Math.min(L+iw-52, Math.max(L+2, pk.x-22)).toFixed(1)}" y="${Math.max(T+9, pk.y-6).toFixed(1)}" font-size="9" fill="${c}" font-weight="700">▲${fmtV(pk.v, mt.unit)}</text>`);
   }
   // 현재 시각 (오늘일 때만)
   const now = new Date();
   if(now.getTime() >= t0 && now.getTime() < t1){
-    const nx = X(now.getTime());
-    o.push(`<line x1="${nx.toFixed(1)}" y1="${STRIP_T}" x2="${nx.toFixed(1)}" y2="${STRIP_T+ih}" stroke="#E6EDF6" stroke-width="1" opacity=".55"/>`);
+    const nx = f1(X(now.getTime()));
+    o.push(`<line class="snow" x1="${nx}" y1="${T}" x2="${nx}" y2="${T+ih}"/>`);
   }
   o.push('</svg>');
-  return o.join('');
+  // 리미트 라벨 '경계 60' — 선 오른쪽 끝, 선 위 3px. SVG 글자는 폭 따라 늘어나서 HTML 로
+  const lbl = isScore ? LIMITS.filter(([k]) => !(lim && lim[k] === false)).map(([k,nm,col]) =>
+    `<span class="slbl" style="top:${(Y(CUTS[k]) / STRIP_H * 100).toFixed(2)}%;color:${col}">${nm} ${CUTS[k]}</span>`).join('') : '';
+  const hm = n => String(n).padStart(2,'0') + ':00';
+  return `<div class="stripsvg">${o.join('')}${lbl}<div class="striptip hidden"></div></div>`
+    + `<div class="stripax mono"><span>${hm(0)}</span><span>${hm(12)}</span><span>${hm(24)}</span></div>`;
 }
 
 /* 묶음 버튼 + 지표 선택 상자 채우기 (실시간·과거 각각) */
@@ -3567,13 +3940,53 @@ function fillFabSel(elSel, chosen, isScore){
   const sig = FABS.join(',') + '|' + [...chosen].sort().join(',');
   if(el.dataset.sig === sig) return;
   el.dataset.sig = sig;
-  el.innerHTML = '<b>FAB 겹쳐보기</b>' + FABS.map(f => `<label class="${
+  el.innerHTML = '<b>겹쳐 보기</b>' + FABS.map(f => `<label class="${
       chosen.has(f) ? 'on' : ''}" style="--fc:${fabColor(f)}" title="${
       esc(f)} 영역점수(area_score)를 이 그래프에 겹쳐 그립니다"><input type="checkbox" data-fab="${
       esc(f)}"${chosen.has(f) ? ' checked' : ''}>${esc(f)}</label>`).join('');
 }
 
-/* 스트립 클릭 → 가장 가까운 데이터 시각의 구간 그래프 */
+/* 리미트선 토글 채우기 — 스코어일 때만 뜻이 있다(비스코어 축엔 컷이 없다).
+   서명에 CUTS 값을 넣어 정책 탭에서 컷을 바꾸면 title 의 숫자도 따라온다. */
+function fillLimitSel(elSel, on, isScore){
+  const el = $(elSel);
+  if(!el) return;
+  el.classList.toggle('hidden', !isScore);
+  if(!isScore){ el.innerHTML = ''; el.dataset.sig = ''; return; }
+  const sig = LIMITS.map(([k]) => (on[k] === false ? 0 : 1) + ':' + CUTS[k]).join(',');
+  if(el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  el.innerHTML = '<b>리미트선</b>' + LIMITS.map(([k,nm,col]) => `<label class="${
+      on[k] === false ? '' : 'on'}" data-lim="${k}" style="--lc:${col}" title="${
+      esc(nm)} 컷 ${CUTS[k]} 점선 켜고 끄기"><i></i>${esc(nm)}</label>`).join('');
+}
+
+/* 호버 툴팁 본문(시안) — 시각 · 등급 배지 · 점수 · FAB 5칸 · 실제지표 · 발동 룰 · 힌트.
+   ★FAB 칸 색은 표(fabCells)와 같은 규칙 — 그 FAB 의 컷(FCUTS)으로 위험 이상만 칠한다.
+     ALL 컷으로 칠하면 표와 툴팁이 서로 다른 색을 낸다. */
+function stripTip(r, mt, isScore){
+  const lv = r.level || gradeOf(+r.score || 0).n;
+  const v = mval(r, mt.key);
+  const sys = SYS || 'ALL';
+  const fabs = (isScore && FABS.length) ? `<div class="fabs">${FABS.map(f => {
+      const x = (r.fab||{})[f], has = x !== null && x !== undefined && !isNaN(x);
+      const flv = has ? ((r.fab_lv && r.fab_lv[f]) || fabLv(+x, FCUTS[f])) : '정상';
+      const hot = flv === '위험' || flv === '초위험';
+      return `<div><div class="n">${esc(f)}</div><div class="v"${hot ? ` style="color:${lvTx(flv)}"` : ''}>${
+        has ? Math.round(+x) : '–'}</div></div>`;
+    }).join('')}</div>` : '';
+  const ms = (r.metrics || []).slice(0, 3);
+  const met = ms.length ? `<div class="met">${ms.map(m => `<div>${esc(m.raw)}</div>`).join('')}</div>` : '';
+  const rs = r.reason ? `<div class="rs">${esc(r.reason)}</div>` : '';
+  const val = v === null ? '–' : (isScore ? String(Math.round(v)) : fmtV(v, mt.unit));
+  return `<div class="r1"><b class="tm">${esc((r.datetime||'').slice(11,16) || r.time || '')}</b>`
+    + `<span class="chip lv${esc(lv)}">${esc(sys)} ${esc(lv)}</span>`
+    + `<span class="sc"><span class="tag">${esc(isScore ? sys + ' 점수' : mt.label)}</span>`
+    + `<b style="color:${isScore ? lvColor(lv) : esc(mt.color)}">${esc(val)}</b></span></div>`
+    + fabs + met + rs + '<div class="hint">클릭 → 그 시각 구간 그래프</div>';
+}
+
+/* 스트립 클릭 → 가장 가까운 데이터 시각의 구간 그래프 · 호버 → 툴팁 */
 function drawStrip(boxSel, infoSel, rows, gid, key){
   const box = $(boxSel);
   if(!box) return;
@@ -3586,12 +3999,14 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
   if(lgd) lgd.classList.toggle('hidden', !isScore);
   const fsel = live ? FABSEL : PFABSEL;
   fillFabSel(live ? '#stripfab' : '#pstripfab', fsel, isScore);
+  const lim = LIMIT_ON[live ? 'live' : 'past'];
+  fillLimitSel(live ? '#striplim' : '#pstriplim', lim, isScore);
   if(!rows.length){
     box.innerHTML = '<div class="empty" style="padding:26px 0">데이터 없음</div>';
     $(infoSel).textContent = '—';
     return;
   }
-  box.innerHTML = stripSvg(rows, mt, fsel);
+  box.innerHTML = stripSvg(rows, mt, fsel, lim);
   const vs = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
   const raw = `<span class="zchip mono" style="padding:0 5px">${esc(mt.raw || mt.key)}</span>`;
   if(!vs.length){
@@ -3607,17 +4022,48 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
   }
   const svg = box.querySelector('svg');
   if(!svg) return;
-  svg.onclick = ev => {
+  const g = stripGeom(isScore), d0 = dayStartOf(rows).getTime();
+  /* 마우스 x → 그 시각에 가장 가까운 행. tol(분)을 주면 그보다 멀면 null —
+     호버는 빈 시간대에서 엉뚱한 행을 띄우면 안 되고, 클릭은 예전처럼 무조건 가장 가까운 행 */
+  const rowAt = (ev, tol) => {
     const b = svg.getBoundingClientRect();
-    const frac = (ev.clientX - b.left) / b.width;               // viewBox 좌표로 환산
-    const vx = frac * STRIP_W;
-    const iw = STRIP_W - STRIP_L - STRIP_R;
-    const d0 = dayStartOf(rows).getTime();
-    const tms = d0 + 86400000 * Math.max(0, Math.min(1, (vx - STRIP_L) / iw));
+    const vx = (ev.clientX - b.left) / b.width * STRIP_W;        // viewBox 좌표로 환산
+    const tms = d0 + 86400000 * Math.max(0, Math.min(1, (vx - g.L) / g.iw));
     let best = null, bd = Infinity;
     rows.forEach(r=>{ const d = Math.abs(new Date(r.at).getTime() - tms); if(d < bd){ bd = d; best = r; } });
-    if(best) openGraph(best.at);
+    return (tol && bd > tol * 60000) ? null : best;
   };
+  svg.onclick = ev => { const best = rowAt(ev); if(best) openGraph(best.at); };
+
+  // 호버 — 막대 밑판(.shov)을 그 분 칸으로 옮기고, 툴팁을 17~83% 사이에 띄운다
+  const tip = box.querySelector('.striptip'), hov = svg.querySelector('.shov');
+  const bars = new Map();
+  svg.querySelectorAll('.sbar').forEach(el => bars.set(el.dataset.at, el));
+  let cur = null;
+  const leave = () => {
+    if(cur){ const pb = bars.get(cur.at); if(pb) pb.classList.remove('on'); }
+    cur = null;
+    if(hov) hov.setAttribute('width', '0');
+    if(tip) tip.classList.add('hidden');
+  };
+  svg.onmousemove = ev => {
+    const best = rowAt(ev, 3);
+    if(!best){ leave(); return; }
+    if(best === cur) return;
+    if(cur){ const pb = bars.get(cur.at); if(pb) pb.classList.remove('on'); }
+    cur = best;
+    const sw = g.iw / 1440;
+    const x = g.L + g.iw * ((new Date(best.at).getTime() - d0) / 86400000);
+    if(hov){ hov.setAttribute('x', x.toFixed(2)); hov.setAttribute('width', sw.toFixed(2)); }
+    const bar = bars.get(best.at); if(bar) bar.classList.add('on');
+    if(!tip) return;
+    tip.innerHTML = stripTip(best, mt, isScore);
+    tip.style.left = Math.min(83, Math.max(17, (x + sw/2) / STRIP_W * 100)).toFixed(1) + '%';
+    // 카드가 화면 위쪽에 붙어 있으면 위로 띄운 툴팁이 상단 바 뒤로 들어간다 → 아래로
+    tip.classList.toggle('below', box.getBoundingClientRect().top < 320);
+    tip.classList.remove('hidden');
+  };
+  svg.onmouseleave = leave;
 }
 
 async function pollCases(){
@@ -3886,6 +4332,20 @@ function wireFabSel(elSel, set, redraw){
 }
 wireFabSel('#stripfab',  FABSEL,  () => redrawLive());
 wireFabSel('#pstripfab', PFABSEL, () => redrawPast());
+
+/* 리미트선 토글 — 컨테이너에 한 번만(라벨은 컷이 바뀌면 다시 만들어진다) */
+function wireLimitSel(elSel, on, redraw){
+  const el = $(elSel);
+  if(!el) return;
+  el.onclick = e => {
+    const l = e.target.closest('label[data-lim]');
+    if(!l) return;
+    on[l.dataset.lim] = on[l.dataset.lim] === false;   // 꺼져 있었으면 켠다
+    redraw();
+  };
+}
+wireLimitSel('#striplim',  LIMIT_ON.live, () => redrawLive());
+wireLimitSel('#pstriplim', LIMIT_ON.past, () => redrawPast());
 
 $('#stripsel').onchange  = () => { STRIPK  = $('#stripsel').value;  redrawLive(); };
 $('#pstripsel').onchange = () => { PSTRIPK = $('#pstripsel').value; redrawPast(); };
