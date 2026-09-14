@@ -3674,6 +3674,10 @@ function stripGeom(isScore){
    ★끄는 건 '선이 막대를 가려서' 다 — 값은 CUTS 그대로라 막대 등급색은 안 바뀐다. */
 const LIMIT_ON = {live:{warn:true, danger:true, critical:true},
                   past:{warn:true, danger:true, critical:true}};
+/* 본선(ALL 종합점수 막대) 켜고 끄기 — FAB 겹쳐보기와 같은 줄의 첫 칸.
+   ★끄면 FAB 선만 남는다. 다섯 FAB 을 서로 비교할 때 막대가 배경을 다 채워
+     선이 묻혔다 — 그때 본선을 잠깐 내리고 보라는 것이다. 값은 그대로다. */
+const ALL_ON = {live:true, past:true};
 const LIMITS = [['warn','경계','var(--minor)'], ['danger','위험','var(--major)'],
                 ['critical','초위험','var(--crit)']];
 /* 마지막으로 짚고 있던 분(실시간·과거 따로). ★폴링 재그리기가 스트립을 innerHTML 로
@@ -3732,7 +3736,7 @@ function fabPaths(rows, mt, sel, X, Y){
   }).join('');
 }
 
-function stripSvg(rows, mt, sel, lim){
+function stripSvg(rows, mt, sel, lim, allOn){
   const isScore = !!mt.bands;
   const g = stripGeom(isScore), {L, T, iw, ih} = g;
   const d0 = dayStartOf(rows), t0 = d0.getTime(), t1 = t0 + 86400000;
@@ -3781,7 +3785,7 @@ function stripSvg(rows, mt, sel, lim){
        ★등급은 서버가 매긴 r.level 을 쓴다 — 점수로 다시 매기면 정책 탭에서 바꾼
          컷이 화면에 안 나타난다(fabCells 와 같은 이유). 없을 때만 gradeOf. */
     const sw = iw / 1440, bw = Math.max(0.3, sw * 0.72), rx = Math.min(1.2, bw / 2);
-    pts.forEach(p => {
+    if(allOn !== false) pts.forEach(p => {
       const lv = p.lv || gradeOf(p.v).n;
       const hgt = Math.max(0.8, T + ih - p.y);
       o.push(`<rect class="sbar ${esc(lv)}" data-at="${esc(p.at)}" x="${(p.x + (sw-bw)/2).toFixed(2)}" y="${
@@ -3797,17 +3801,19 @@ function stripSvg(rows, mt, sel, lim){
     });
   }else if(pts.length > 1){
     const line = pts.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-    o.push(`<path d="M${pts[0].x.toFixed(1)},${(T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
+    if(allOn !== false)
+      o.push(`<path d="M${pts[0].x.toFixed(1)},${(T+ih).toFixed(1)} ${line.slice(1)} L${pts[pts.length-1].x.toFixed(1)},${(T+ih).toFixed(1)} Z" fill="${mt.color}" opacity=".13"/>`);
     /* ★FAB 선을 본선보다 **먼저** 그린다. 본선의 면채움(opacity .13)이
        나중에 덮이면 FAB 색이 그만큼 물든다. 순서: 면채움 → FAB → 본선.
        (fabPaths 는 스코어가 아니면 빈 문자열이지만 순서 규칙은 여기 남긴다) */
     o.push(fabPaths(rows, mt, sel, X, Y));
-    o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
+    if(allOn !== false)
+      o.push(`<path d="${line}" fill="none" stroke="${mt.color}" stroke-width="1.4"/>`);
   }else{
     o.push(fabPaths(rows, mt, sel, X, Y));      // 본선 값이 없어도 FAB 은 그린다
   }
   // 최고점 표시 — 선 그래프일 때만(막대는 색이 곧 등급이라 표시가 겹친다)
-  if(!isScore && pts.length){
+  if(!isScore && pts.length && allOn !== false){
     const pk = pts.reduce((a,b)=> b.v>a.v?b:a);
     const c = mt.color;
     o.push(`<circle cx="${pk.x.toFixed(1)}" cy="${pk.y.toFixed(1)}" r="3.6" fill="none" stroke="${c}" stroke-width="1.5"/>`);
@@ -3868,7 +3874,7 @@ function fabInfo(rows, mt, sel){
 
 /* FAB 겹쳐보기 체크박스 — 서버가 준 FAB 목록으로 만든다. 체크한 네모가
    그 FAB 선 색으로 차서 범례를 겸한다 (색만으로 구분하지 않게 이름을 같이). */
-function fillFabSel(elSel, chosen, isScore){
+function fillFabSel(elSel, chosen, isScore, allOn){
   const el = $(elSel);
   if(!el) return;
   /* 스코어가 아닌 지표(분·건·%)를 보고 있으면 숨긴다 — 눈금이 다른 축에
@@ -3876,10 +3882,18 @@ function fillFabSel(elSel, chosen, isScore){
   const show = isScore && FABS.length > 0;
   el.classList.toggle('hidden', !show);
   if(!show){ el.innerHTML = ''; el.dataset.sig = ''; return; }
-  const sig = FABS.join(',') + '|' + [...chosen].sort().join(',');
+  const sig = FABS.join(',') + '|' + [...chosen].sort().join(',') + '|' + (allOn!==false) + '|' + SYS;
   if(el.dataset.sig === sig) return;
   el.dataset.sig = sig;
-  el.innerHTML = '<b>겹쳐 보기</b>' + FABS.map(f => `<label class="${
+  /* ★첫 칸은 본선(ALL 종합점수 막대)이다. FAB 과 같은 네모로 둔다 — 끄고 켜는
+     방법이 둘이면 사람이 하나를 못 찾는다. 색은 시안(--cy): 막대는 등급색이라
+     한 색으로 못 대표하고, 등급색 중 하나를 쓰면 '그 등급' 으로 잘못 읽힌다. */
+  const allLbl = esc(SYS || 'ALL');
+  el.innerHTML = '<b>겹쳐 보기</b>'
+    + `<label class="${allOn===false ? '' : 'on'}" style="--fc:var(--cy)" title="${
+        allLbl} 본선(막대) 켜고 끄기 — 끄면 FAB 선만 남습니다"><input type="checkbox" data-all="1"${
+        allOn===false ? '' : ' checked'}>${allLbl}</label>`
+    + FABS.map(f => `<label class="${
       chosen.has(f) ? 'on' : ''}" style="--fc:${fabColor(f)}" title="${
       esc(f)} 영역점수(area_score)를 이 그래프에 겹쳐 그립니다"><input type="checkbox" data-fab="${
       esc(f)}"${chosen.has(f) ? ' checked' : ''}>${esc(f)}</label>`).join('');
@@ -3937,7 +3951,8 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
   const lgd = box.closest('.strip')?.querySelector('.gradelgd');
   if(lgd) lgd.classList.toggle('hidden', !isScore);
   const fsel = live ? FABSEL : PFABSEL;
-  fillFabSel(live ? '#stripfab' : '#pstripfab', fsel, isScore);
+  const allOn = ALL_ON[live ? 'live' : 'past'];
+  fillFabSel(live ? '#stripfab' : '#pstripfab', fsel, isScore, allOn);
   const lim = LIMIT_ON[live ? 'live' : 'past'];
   fillLimitSel(live ? '#striplim' : '#pstriplim', lim, isScore);
   if(!rows.length){
@@ -3945,7 +3960,7 @@ function drawStrip(boxSel, infoSel, rows, gid, key){
     $(infoSel).textContent = '—';
     return;
   }
-  box.innerHTML = stripSvg(rows, mt, fsel, lim);
+  box.innerHTML = stripSvg(rows, mt, fsel, lim, allOn);
   const vs = rows.map(r=>mval(r, mt.key)).filter(v=>v!==null && !isNaN(v));
   const raw = `<span class="zchip mono" style="padding:0 5px">${esc(mt.raw || mt.key)}</span>`;
   if(!vs.length){
@@ -4275,19 +4290,24 @@ function redrawPast(){ drawStrip('#pstrip','#pstripinfo',PFEED,PSTRIPG,PSTRIPK);
 
 /* 체크 → 그 FAB 선을 켜고 끈다. 컨테이너에 한 번만 걸어 둔다 (체크박스는
    FAB 목록이 바뀔 때마다 다시 만들어지므로 개별로 걸면 사라진다). */
-function wireFabSel(elSel, set, redraw){
+function wireFabSel(elSel, set, redraw, which){
   const el = $(elSel);
   if(!el) return;
   el.onchange = e => {
-    const f = e.target && e.target.dataset ? e.target.dataset.fab : null;
-    if(!f) return;
-    e.target.checked ? set.add(f) : set.delete(f);
+    const d = e.target && e.target.dataset;
+    if(!d) return;
+    /* ★첫 칸은 본선(ALL) 이다 — FAB 집합이 아니라 ALL_ON 을 건드린다.
+       같은 onchange 로 받는 이유: 체크박스가 한 줄에 있으니 핸들러도 하나여야
+       나중에 칸을 더해도 한 군데만 고치면 된다. */
+    if(d.all){ ALL_ON[which] = e.target.checked; }
+    else if(d.fab){ e.target.checked ? set.add(d.fab) : set.delete(d.fab); }
+    else return;
     el.dataset.sig = '';                 // 라벨 on/off 를 다시 칠하게
     redraw();
   };
 }
-wireFabSel('#stripfab',  FABSEL,  () => redrawLive());
-wireFabSel('#pstripfab', PFABSEL, () => redrawPast());
+wireFabSel('#stripfab',  FABSEL,  () => redrawLive(), 'live');
+wireFabSel('#pstripfab', PFABSEL, () => redrawPast(), 'past');
 
 /* 리미트선 토글 — 컨테이너에 한 번만(라벨은 컷이 바뀌면 다시 만들어진다) */
 function wireLimitSel(elSel, on, redraw){
