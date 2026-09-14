@@ -352,7 +352,11 @@
      raw 컬럼명(띄어쓰기 없는 40자)이 자기 칸을 밀고 나가, 폭을 안 준 '발동 룰'
      칸이 한 글자 폭까지 짜부라졌다. 폭은 머리글 th 의 width 가 정하고 남는
      자리는 발동 룰이 가져간다 — 창이 좁아져도 열이 흔들리지 않는다. */
-  /* ★min-width — 고정 폭 합이 창보다 넓어지면 폭을 안 준 '발동 룰' 칸이 0 으로 눌려
+  /* ★폭을 안 주는(남는 자리를 갖는) 칸을 '발동 룰' 에서 **'실제지표'** 로 바꿨다.
+     발동 룰은 짧은 한글 몇 줄이라 210px 면 되는데, 실제지표는 띄어쓰기 없는
+     raw 컬럼명(M16HUB.QUE.TIME.AVGTOTALTIME1MIN · 32자 ≈ 230px)이라 좁으면
+     계속 접힌다. 넓은 화면에서 한 줄로 떨어지게 이쪽에 남는 자리를 준다.
+     ★min-width — 고정 폭 합이 창보다 넓어지면 폭을 안 준 칸이 0 으로 눌려
      글자가 옆 칸 위에 겹쳐 찍혔다(1100px). 그래서 최소 폭은 남긴다.
      ★단 1520px 은 너무 높았다 — 좌우 36px 여백까지 더하면 1592px 미만 창에서
        **페이지 전체**가 가로로 밀려, 1366px 노트북에서 'AMOS QUEUE 지표' 열이 화면
@@ -443,10 +447,11 @@
   table.cases td .mcell{font-size:12.5px;line-height:1.45;color:var(--txb)}
   table.cases td .mcell .dim{font-size:11px}
   /* ★raw 컬럼명(M16HUB.QUE.TIME.AVGTOTALTIME1MIN)은 띄어쓰기가 없어 줄바꿈 지점이
-     없다 — 그대로 두면 이 칸이 230px 를 밀고 나가 발동 룰 칸을 한 글자 폭까지
-     짜부라뜨렸다. 한 줄로 자르고 전문은 이미 title 에 있다(호버). */
-  table.cases td .mcell>div{max-width:100%;white-space:nowrap;overflow:hidden;
-    text-overflow:ellipsis}
+     없다. 예전엔 한 줄로 자르고 전문은 title(호버)에만 뒀는데, 이 칸은 판단 근거라
+     호버해야 보이면 안 된다 — overflow-wrap:anywhere 로 아무 데서나 접어서 **전부**
+     보인다. 칸 폭은 그대로 두었다(넓히면 고정 폭 합이 늘어 1366px 노트북에서
+     가로 스크롤이 생긴다) — 대신 행이 두 줄로 높아진다. */
+  table.cases td .mcell>div{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
   /* AMOS HID·QUEUE 두 칸 — ▼/▲ 라벨과 칩을 한 줄에. 라벨을 74px 로 고정해 두면
      칩이 늘 다음 줄로 밀려 한 행이 네 줄이 됐다. */
   table.cases td .dirline{min-width:0}
@@ -1088,8 +1093,8 @@
         <th style="width:96px">시각</th>
         <th style="width:96px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
-        <th>발동 룰</th>
-        <th class="mcol" style="width:168px">실제지표</th>
+        <th class="rhcol" style="width:210px">발동 룰</th>
+        <th class="mcol">실제지표</th>
         <th style="width:132px">AMOS HID 구역</th>
         <th style="width:150px">AMOS QUEUE 지표</th>
       </tr></thead>
@@ -1162,8 +1167,8 @@
         <th style="width:96px">시각</th>
         <th style="width:96px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
-        <th>발동 룰</th>
-        <th class="mcol" style="width:168px">실제지표</th>
+        <th class="rhcol" style="width:210px">발동 룰</th>
+        <th class="mcol">실제지표</th>
         <th style="width:132px">AMOS HID 구역</th>
         <th style="width:150px">AMOS QUEUE 지표</th>
       </tr></thead>
@@ -3484,12 +3489,13 @@ function applyFilter(rows, filter, byId){
 function metricCell(ms){
   if(!ms || !ms.length) return '<span class="dim">–</span>';
   const all = ms.map(m=>m.raw).join('\n');
-  const show = ms.slice(0,4);
   const many = ms.length >= MANY_MIN;   /* reason 과 같은 기준·같은 파랑 */
+  /* ★예전엔 4개만 보이고 '외 N개' 로 접었다. 접힌 것은 호버해야 보이는데,
+     이 칸은 '무슨 숫자를 보고 그렇게 판단했나' 를 대는 자리다 — 근거를 숨기면
+     안 된다. 전부 적고, 긴 컬럼명도 자르지 않고 줄바꿈한다(아래 CSS). */
   return `<div class="mono mcell${many?' many':''}" `
     + `title="${esc((many?`발동이 지목한 지표 ${ms.length}개\n`:'')+all)}">`
-    + show.map(m=>`<div title="${esc(m.label||'')}">${esc(m.raw)}</div>`).join('')
-    + (ms.length>4 ? `<div class="dim">외 ${ms.length-4}개</div>` : '')
+    + ms.map(m=>`<div title="${esc(m.label||'')}">${esc(m.raw)}</div>`).join('')
     + '</div>';
 }
 
@@ -3506,10 +3512,10 @@ function syncFabCols(){
     const sp = sc.querySelector('.scth');
     if(sp) sp.textContent = (SYS === 'ALL') ? '종합점수' : '스코어';
     if(!FABS.length) return;
-    /* ★끼우는 자리를 스코어 뒤에서 실제지표 뒤(th.mcol)로 옮겼다 — 시안 열 순서가
-       시각·CASE·스코어·발동 룰·실제지표 다음에 FAB 묶음이다. th.scol 은 위 .scth
-       이름표 때문에 그대로 찾아 두고, .mcol 이 없는 표에서만 옛 자리로 물러선다. */
-    let at = tr.querySelector('th.mcol') || sc;
+    /* ★끼우는 자리는 **스코어 바로 뒤**다 — 요청받은 열 순서가
+       시각·CASE·종합점수·HI_FAB·FAB5·발동 룰·실제지표·AMOS 둘이다.
+       점수와 그 점수를 만든 FAB 들이 붙어 있어야 눈이 옆으로 안 튄다. */
+    let at = sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
     add('<th class="hcol" style="width:92px">HI_FAB</th>');
     FABS.forEach(f => add(`<th class="fcol" style="width:56px">${esc(f)}</th>`));
@@ -3622,9 +3628,9 @@ function rowsHtml(list, byId, newAt, cap){
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}" title="${esc(r.severity)}">${
             esc(r.level)}</span></div></td>
+      ${hiCell(r)}${fabCells(r)}
       ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
-      ${hiCell(r)}${fabCells(r)}
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
       <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
     </tr>`;}).join('') + more;
