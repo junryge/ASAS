@@ -94,17 +94,36 @@ class Normalize(unittest.TestCase):
         self.assertEqual(r["all_hot_area"], "M16HUB")
         self.assertEqual(r["all_level"], "경계")
 
-    def test_area_score_가_없으면_전체_점수를_그대로_둔다(self):
-        """파일이 이상해도 0점으로 뭉개지 않는다."""
+    def test_area_score_컬럼이_없으면_그_파일을_안_쓴다(self):
+        """★고쳤다(2026-09). 예전엔 전체 점수를 그대로 뒀다.
+
+        그때 적힌 이유는 "파일이 이상해도 0점으로 뭉개지 않는다" 였고 그 뜻은
+        옳다. 그런데 방법이 틀렸다 — 전체 점수를 그대로 두면 **M14 화면에
+        M16HUB 점수**가 뜬다. 이 함수의 설명이 바로 그 사고를 막으려고 있는
+        것이다("화면 전체가 남의 데이터를 보게 된다"). 0 으로 뭉개지도 말고
+        남의 점수를 보여 주지도 말아야 하니, 그 파일은 안 쓴다 —
+        fetch_day 가 '컬럼이 없다' 고 알린다.
+        """
         row = {"datetime": "2026-08-14 00:01", "unified_risk_score": "44",
                "hot_area": "M16HUB"}
-        r = J._fab_rows([dict(row)], "M14")[0]
-        self.assertEqual(r["unified_risk_score"], "44")
-        self.assertEqual(r["hot_area"], "M14")
+        self.assertEqual(J._fab_rows([dict(row)], "M14"), [])
 
-    def test_빈_area_score_는_0(self):
-        r = J._fab_rows([{"area_score": "", "unified_risk_score": "44"}], "M14")[0]
-        self.assertEqual(r["unified_risk_score"], "0")
+    def test_빈_area_score_를_0으로_채우지_않는다(self):
+        """★고쳤다(2026-09). "실시간에 일부가 0으로 나온다" 의 원인이었다.
+
+        빈 값을 "0" 으로 채우면 **모르는 분이 화면에 '0점 정상' 으로 뜬다**.
+        모르는 것과 괜찮은 것은 다르다 — fab_score 도 같은 이유로 근거 없는
+        FAB 은 아예 안 넣는다. 그 행은 버리고, 버린 수를 세어 알린다.
+        """
+        got = J._fab_rows([{"area_score": "", "unified_risk_score": "44"}], "M14")
+        self.assertEqual(got, [])
+        self.assertEqual(J._fab_rows.dropped, 1, "버린 수를 안 세면 조용히 사라진다")
+
+    def test_진짜_0_은_남긴다(self):
+        """빈 값과 0 은 다르다 — 0 은 '근거가 있고 0점' 이다."""
+        got = J._fab_rows([{"area_score": "0", "unified_risk_score": "44"}], "M14")
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["unified_risk_score"], "0")
 
 
 def _up(port, timeout=8.0):

@@ -524,3 +524,72 @@ class 세션을_나눠_써도_제_파일을_받는다(unittest.TestCase):
         posts = [h for h in self.hits if h[0] == "POST"]
         self.assertEqual(len(posts), 1,
                          "세 번 받는데 로그인을 %d번 했다" % len(posts))
+
+
+class 모르는_것을_0으로_채우지_않는다(unittest.TestCase):
+    """★"실시간에 일부가 0으로 나온다" 의 원인.
+
+    FAB 파일을 정규화할 때 area_score 가 비면 "0" 으로 채우고 있었다.
+    그러면 **모르는 분이 화면에 '0점 정상' 으로 뜬다**. 모르는 것과 괜찮은
+    것은 다르다 — fab_score 도 같은 이유로 근거 없는 FAB 은 아예 안 넣는다.
+    더 나쁜 쪽은 area_score 컬럼이 아예 없을 때였다: 전체 점수가 그대로
+    남아 M14 화면에 M16HUB 점수가 떴다.
+    """
+
+    def setUp(self):
+        import jupyter_csv as J
+        self.J = J
+
+    def _one(self, **kw):
+        r = {"hot_area": "M16HUB", "unified_risk_score": "55"}
+        r.update(kw)
+        return self.J._fab_rows([r], "M14")
+
+    def test_값이_있으면_그_FAB_점수로_바꾼다(self):
+        got = self._one(area_score="33")
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["unified_risk_score"], "33")
+        self.assertEqual(got[0]["hot_area"], "M14")
+        self.assertEqual(got[0]["all_score"], "55", "전체 점수를 잃으면 안 된다")
+        self.assertEqual(got[0]["all_hot_area"], "M16HUB")
+
+    def test_빈_값을_0으로_채우지_않는다(self):
+        for v in ("", "   ", None):
+            got = self._one(area_score=v)
+            self.assertEqual(got, [], "area_score=%r 을 0 으로 채웠다" % v)
+
+    def test_버린_수를_센다(self):
+        """조용히 사라지면 그게 더 나쁘다."""
+        rows = [{"hot_area": "M16HUB", "unified_risk_score": "55", "area_score": v}
+                for v in ("10", "", "20", "", "")]
+        got = self.J._fab_rows(rows, "M14")
+        self.assertEqual(len(got), 2)
+        self.assertEqual(self.J._fab_rows.dropped, 3)
+
+    def test_0_은_진짜_0_이니_남긴다(self):
+        """빈 값과 0 은 다르다 — 0 은 '근거가 있고 0점' 이다."""
+        got = self._one(area_score="0")
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["unified_risk_score"], "0")
+
+    def test_컬럼이_없으면_그_파일을_안_쓴다(self):
+        """남의 FAB 점수를 보여 주느니 안 보여 주는 게 낫다.
+
+        ★'컬럼이 없다' 와 '값이 전부 비었다' 는 둘 다 행 0개가 되지만 뜻이
+          다르다. 앞은 파일이 틀린 것이고 뒤는 그 시간에 근거가 없는 것이다.
+          fetch_day 가 그 둘을 dropped 로 가른다(오류 vs 경고).
+        """
+        self.J._fab_rows.dropped = 999
+        self.assertEqual(self._one(), [])
+        self.assertEqual(self.J._fab_rows.dropped, 999,
+                         "컬럼이 없는데 '버렸다' 로 세면 경고 문구가 틀려진다")
+
+    def test_값이_전부_비면_버린_수로_센다(self):
+        self.assertEqual(self._one(area_score=""), [])
+        self.assertEqual(self.J._fab_rows.dropped, 1)
+
+    def test_전체_시스템은_안_건드린다(self):
+        """_fab_rows 는 FAB 파일에만 쓴다 — ALL 은 이 길을 안 탄다."""
+        import inspect
+        src = inspect.getsource(self.J.fetch_day)
+        self.assertIn('fab != "ALL"', src)

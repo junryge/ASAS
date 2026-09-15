@@ -332,17 +332,34 @@ def _fab_rows(rows: list[dict], sys: str) -> list[dict]:
     hot_area=sys 라 FAB 파일의 자기 컬럼과 정확히 맞아떨어진다).
 
     원본은 all_* 로 남긴다 — 전체 대비 얼마나 다른지 비교할 수 있게.
+
+    ★area_score 가 **비어 있으면 그 행을 버린다**. 예전엔 "0" 으로 채웠는데,
+      그러면 모르는 분이 화면에 **0점 정상**으로 뜬다 — 모르는 것과 괜찮은
+      것은 다르다(fab_score 도 같은 이유로 근거 없는 FAB 은 아예 안 넣는다).
+      버린 수는 세어서 돌려준다 — 조용히 사라지면 그게 더 나쁘다.
+    ★area_score **컬럼 자체가 없으면** 전체 점수가 그대로 남아 M14 화면에
+      M16HUB 점수가 뜬다. 그건 0 보다 나쁘다 — 그 파일은 통째로 안 쓴다.
     """
+    if rows and "area_score" not in rows[0]:
+        return []                      # 부른 쪽이 '행 0개' 로 알아채고 알린다
+    kept, dropped = [], 0
     for r in rows:
+        if str(r.get("area_score") or "").strip() == "":
+            dropped += 1
+            continue
         r["all_hot_area"] = r.get("hot_area") or ""
         r["hot_area"] = sys
-        if "area_score" in r:
-            r["all_score"] = r.get("unified_risk_score") or ""
-            r["unified_risk_score"] = str(r.get("area_score") or "0").strip() or "0"
+        r["all_score"] = r.get("unified_risk_score") or ""
+        r["unified_risk_score"] = str(r["area_score"]).strip()
         if "area_level" in r:
             r["all_level"] = r.get("unified_risk_level") or ""
             r["unified_risk_level"] = r.get("area_level") or ""
-    return rows
+        kept.append(r)
+    _fab_rows.dropped = dropped        # fetch_day 가 읽어 경고로 올린다
+    return kept
+
+
+_fab_rows.dropped = 0
 
 
 def _save_raw(day: str, raw: bytes, cfg: dict) -> str:
@@ -378,8 +395,24 @@ def fetch_day(day: str = "", cfg: dict | None = None,
     raw_path = _save_raw(day, raw, cfg) if c.get("save_raw", True) else ""
     rows = parse_csv(raw, c)
     fab = str(cfg.get("_sys") or "").strip().upper()
+    warn = ""
     if fab and fab != "ALL":
+        n0 = len(rows)
+        _fab_rows.dropped = 0
         rows = _fab_rows(rows, fab)        # ★FAB 파일은 여기서 정규화된다
+        if n0 and not rows and not _fab_rows.dropped:
+            msg = (f"{fab} 파일에 area_score 컬럼이 없습니다 — 그대로 쓰면 "
+                   f"{fab} 화면에 **전체 점수**가 뜹니다. 예측기 쪽 컬럼을 "
+                   f"확인해 주세요")
+            if verbose:
+                print(f"  ❌ {msg}")
+            return {"ok": False, "day": day, "error": msg,
+                    "rows": 0, "written": 0, "raw_path": raw_path}
+        if _fab_rows.dropped:
+            warn = (f"{fab} area_score 가 빈 {_fab_rows.dropped}행을 건너뛰었습니다 "
+                    f"(0 으로 채우면 화면에 '0점 정상' 으로 뜹니다)")
+            if verbose:
+                print(f"  ⚠️ {warn}")
     if len(rows) < int(c.get("verify_min_rows", 1)):
         msg = f"내려받았지만 행이 {len(rows)}개뿐입니다 ({len(raw)}바이트)"
         if verbose:
@@ -390,6 +423,7 @@ def fetch_day(day: str = "", cfg: dict | None = None,
     from store_csv import append_rows
     saved = append_rows(rows, cfg)
     out = {"ok": True, "day": day, "bytes": len(raw), "rows": len(rows),
+           "warn": warn or None,
            "written": saved["written"], "skipped": saved["skipped"],
            "files": saved.get("files") or [], "raw_path": raw_path,
            # 파싱한 행을 그대로 넘긴다 — 호출부가 CSV 를 다시 읽을 필요가 없고,
