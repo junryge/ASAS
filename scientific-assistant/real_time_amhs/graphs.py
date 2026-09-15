@@ -36,7 +36,10 @@ _LINE = "#1C2431"    # --line
 _GRID = "#2E3A4C"    # 눈금선
 _TX = "#E6EDF6"      # --tx
 _TX2 = "#8FA0B6"     # --tx2
-_TX3 = "#5E6E85"     # --tx3
+# ★--tx3(#5E6E85)를 그대로 쓰면 이 배경 위에서 3.64:1 이라 기준(3.9)에
+#   못 미친다. 화면 글자는 확대·선택이 되지만 그래프는 박힌 그림이라
+#   더 필요하다 — 한 톤만 올린다(범위·눈금 같은 작은 글자에 쓰인다).
+_TX3 = "#6B7C94"     # --tx3 를 그래프용으로 한 톤 올린 값
 
 # 지표 패널 색 — 반송시간(빨강) → 저장율(주황/호박) → 리프터(자홍) → 4분초과율(청록/파랑)
 # 어두운 배경에서 읽히도록 밝기를 올린 값
@@ -92,9 +95,49 @@ _DARK = {
     "palette": _PALETTE, "kind": _COLOR_BY_KIND, "path": _PATH_COLORS,
 }
 
+# ══ 네이비 · 고대비 한 벌씩 ═══════════════════════════════════════════
+# 화면 테마가 넷(다크·화이트·네이비·고대비)인데 그래프는 둘뿐이라, 네이비를
+# 골라도 그래프만 다크(#0D1119)로 나왔다 — 남색 화면 한가운데 다른 검정
+# 상자가 박혀 거기만 튀어 보였다.
+# ★색은 눈으로 고르지 않았다. 각 배경 위에서 글자·선이 3.9:1 이상 나오는지
+#   재서 골랐다 (tests/test_theme.py 가 네 벌 모두 같은 기준으로 지킨다).
+#   네이비 tx3 는 화면 토큰(#647894)을 그대로 쓰면 3.73 이라 한 톤 올렸다 —
+#   화면에서는 작은 보조 글자지만 그래프에서는 눈금 숫자에 쓰인다.
+_NAVY = {
+    "bg": "#0E1E30", "bg2": "#122A42", "line": "#1B3049", "grid": "#2E4A68",
+    "tx": "#E4EDF8", "tx2": "#93A8C2", "tx3": "#7086A4",
+    "score": "#54D2E0", "sel": "#F2F8FF", "evt": "#FFA63F", "crit": "#FF5C6B",
+    "bands": ("#122A42", "#33301A", "#3A2A16", "#38202A"),
+    "palette": ["#FF7E72", "#FFB25A", "#F7D45E", "#FF85C2", "#54D2E0",
+                "#77C4FF", "#93AEFF"],
+    "kind": {"ra": "#FF7E72", "rd_fab": "#FFB25A", "stb_util": "#F7D45E",
+             "rev_count": "#FF85C2", "sla": "#54D2E0", "sorter": "#77C4FF",
+             "rd_oht": "#93AEFF",
+             "pio_10min_cnt": "#CE9CFF", "PIOERROR_DEPOSITED": "#A78BFF"},
+    "path": ["#CE9CFF", "#77C4FF", "#54D2E0", "#F7D45E", "#FF85C2"],
+}
+_CONTRAST = {
+    "bg": "#0A0A0A", "bg2": "#141414", "line": "#33383F", "grid": "#4A515B",
+    "tx": "#FFFFFF", "tx2": "#B9C4D2", "tx3": "#8B97A6",
+    "score": "#5BE9F5", "sel": "#FFFFFF", "evt": "#FFB454", "crit": "#FF6B79",
+    "bands": ("#141414", "#3A3410", "#3A2A0E", "#3A1418"),
+    "palette": ["#FF8B80", "#FFC06A", "#FFE64D", "#FF95CC", "#5BE9F5",
+                "#8FD0FF", "#A8BEFF"],
+    "kind": {"ra": "#FF8B80", "rd_fab": "#FFC06A", "stb_util": "#FFE64D",
+             "rev_count": "#FF95CC", "sla": "#5BE9F5", "sorter": "#8FD0FF",
+             "rd_oht": "#A8BEFF",
+             "pio_10min_cnt": "#D9AFFF", "PIOERROR_DEPOSITED": "#BCA0FF"},
+    "path": ["#D9AFFF", "#8FD0FF", "#5BE9F5", "#FFE64D", "#FF95CC"],
+}
+_PALS = {"light": _LIGHT, "dark": _DARK, "navy": _NAVY, "contrast": _CONTRAST}
+# 밖에서 "고를 수 있는 테마" 를 물을 때 쓴다 (server.py 가 검사에 쓴다).
+THEMES = frozenset(_PALS)
+
 
 def _pal(theme) -> dict:
-    return _LIGHT if str(theme or "").lower() == "light" else _DARK
+    """테마 이름 → 색 한 벌. 모르는 값은 다크 — 예전 주소(?theme= 없음)가
+    그대로 돌아간다."""
+    return _PALS.get(str(theme or "").lower(), _DARK)
 
 
 def _bands_of(cfg, pal: dict | None = None) -> list:
@@ -284,6 +327,18 @@ def _f(v):
         return None
 
 
+def _text_w(t, size=9.5):
+    """글자 폭 어림 — 한글/한자는 라틴의 약 1.7배다.
+
+    ★len(t)*6.2 로 재던 자리가 있는데, 한글이 섞이면 실제 폭의 60% 로 나온다.
+      그 값으로 딱지 폭을 잡으면 글자가 배경 밖으로 삐져나온다.
+    """
+    w = 0.0
+    for ch in str(t):
+        w += size * (1.0 if ord(ch) > 0x1100 and ord(ch) not in (0x00b7,) else 0.58)
+    return w
+
+
 def _e(s):
     return html.escape(str(s), quote=True)
 
@@ -424,8 +479,70 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
 
     L, R = 62, 22
     pw = width - L - R
-    SCORE_H, MET_H, GAP = 150, 88, 12
-    head = 50                       # 제목 + 최고점 라벨 + 사건 라벨 3줄 공간
+    # ★MET_H 를 88 → 116 으로 키웠다. 지표 이름표를 왼쪽 여백(46px)에 두었는데
+    #   '(PIO 반송실패 10분 합(개)' 같은 한글 이름은 150px 라 막대 위로 흘러
+    #   나와 둘 다 안 읽혔다. 이름표를 패널 **위 두 줄**로 올리고, 그림 높이
+    #   (72px)는 예전 그대로 지키려고 그 두 줄만큼 더 준다.
+    SCORE_H, MET_H, GAP = 150, 116, 12
+
+    # ── 사건·최고점 딱지 자리를 **먼저** 잡는다 ──────────────────────
+    # ★예전엔 head 를 50 으로 박아 두고 딱지를 text-anchor="middle" 로 그냥
+    #   찍었다. 그래서 (a) 구간 끝의 사건은 그림 밖으로 잘리고
+    #   ('사건3 76점 @0' 에서 끊김) (b) 사건이 가까우면 글자끼리 포개지고
+    #   (c) 최고점이 사건과 같은 분이면 셋이 겹쳤다.
+    #   이제 겹치지 않는 줄을 먼저 찾아 두고, 쓴 줄 수만큼 머리 공간을 늘린다.
+    def _cx(t):
+        return L + pw * ((t - t0).total_seconds() / span)
+
+    _warn, _danger, _crit = grade_cuts(cfg)
+
+    def _tip(head, t, r, sc):
+        """마우스 올렸을 때 나오는 글 — SVG <title> 은 브라우저가 그려 준다.
+
+        ★딱지에는 '사건2 119점 @07:35' 만 들어간다(좁아서). 무엇 때문에
+          걸린 사건인지는 reason 에 있는데 그림에는 자리가 없다 — 올리면
+          보이게 한다. JS 없이 되는 방법이라 서버가 그린 SVG 그대로 쓴다.
+        """
+        # ★sentinel.grade 를 쓰면 안 된다 — 밴드 최대가 100 이라 그 위(예: 119)는
+        #   어느 밴드에도 안 걸려 '정상' 으로 떨어진다. 컷으로 직접 가른다.
+        lv = ('\ucd08\uc704\ud5d8' if sc >= _crit else
+              '\uc704\ud5d8' if sc >= _danger else
+              '\uacbd\uacc4' if sc >= _warn else '\uc815\uc0c1')
+        ln = [f'{head} \u00b7 {t:%H:%M}',
+              f'\uc810\uc218 {sc:.0f}' + (f' \u00b7 {lv}' if lv else '')]
+        a = (r.get("hot_area") or "").strip()
+        if a:
+            ln.append(f'\uc601\uc5ed {a}')
+        rs = str(r.get("reason") or "").strip()
+        if rs:
+            # reason 은 한 줄로 길다 — 룰 단위로 끊어 읽기 좋게
+            for part in [x.strip() for x in re.split(r"\s*;\s*", rs) if x.strip()]:
+                ln.append(part)
+        return _e("\n".join(ln))
+
+    _chips, _rows_used = [], []       # _rows_used: [(줄, 왼쪽x, 오른쪽x)]
+
+    def _plan(t, text, color, tip=""):
+        w = _text_w(text) + 12
+        x1 = max(L + 1, min(L + pw - w - 1, _cx(t) - w / 2))   # 패널 밖으로 못 나간다
+        row = 0
+        while any(r == row and not (x1 + w + 4 < a or x1 > b + 4)
+                  for r, a, b in _rows_used):
+            row += 1
+        _rows_used.append((row, x1, x1 + w))
+        _chips.append((row, x1, w, text, color, tip))
+
+    # 최고점을 먼저 — 제일 중요한 딱지라 맨 아랫줄(그래프에 가장 가까운 줄)을
+    # 갖고, 사건 딱지가 그 위로 비켜 간다.
+    _plan(peak_t, f'\u25b2 \ucd5c\uace0 {peak_sc:.0f}\uc810 \u00b7 {peak_t:%H:%M}'
+                  + (f' \u00b7 {_e(area)}' if area else ''), _CRIT_COLOR,
+          _tip('\ucd5c\uace0\uc810', peak_t, peak_r, peak_sc))
+    for _i, (_it, _ir, _isc) in enumerate(incs, 1):
+        _plan(_it, f'\uc0ac\uac74{_i} {_isc:.0f}\uc810 @{_it:%H:%M}', _EVT_COLOR,
+              _tip('\uc0ac\uac74%d' % _i, _it, _ir, _isc))
+
+    _chip_rows = max((r for r, *_ in _chips), default=0) + 1
+    head = 24 + _chip_rows * 15     # 제목 한 줄 + 딱지 줄 수만큼
     sec_head = 30 if metrics else 0
     top_score = head
     y_met0 = top_score + SCORE_H + 18 + sec_head
@@ -474,21 +591,27 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{SY(v):.1f}" for k, (t, v) in enumerate(sv))
     o.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.6"/>')
 
-    # 사건 표시
-    for i, (it, ir, isc) in enumerate(incs, 1):
-        x = X(it)
+    # ── 사건·최고점 딱지 그리기 (자리는 위에서 이미 잡았다) ──────────
+    for _i, (_it, _ir, _isc) in enumerate(incs, 1):
+        x = _cx(_it)
         o.append(f'<line x1="{x:.1f}" y1="{top_score}" x2="{x:.1f}" y2="{top_score+SCORE_H}" '
                  f'stroke="{_EVT_COLOR}" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>')
-        o.append(f'<circle cx="{x:.1f}" cy="{SY(isc):.1f}" r="3.4" fill="{_EVT_COLOR}"/>')
-        o.append(f'<text x="{x:.1f}" y="{SY(isc)-7:.1f}" font-size="9.5" fill="{_EVT_COLOR}" '
-                 f'font-weight="700" text-anchor="middle">{isc:.0f}점</text>')
-        o.append(f'<text x="{x:.1f}" y="{top_score-5:.1f}" font-size="9" fill="{_EVT_COLOR}" '
-                 f'text-anchor="middle">사건{i} {isc:.0f}점 @{it:%H:%M}</text>')
-
-    # 최고점 라벨은 사건 라벨보다 한 줄 위 (겹침 방지)
-    o.append(f'<text x="{X(peak_t):.1f}" y="{top_score-19:.1f}" font-size="10.5" '
-             f'fill="{_CRIT_COLOR}" font-weight="700" text-anchor="middle">'
-             f'▲ 최고 {peak_sc:.0f}점 · {peak_t:%H:%M}{" · " + _e(area) if area else ""}</text>')
+        o.append(f'<circle cx="{x:.1f}" cy="{SY(_isc):.1f}" r="3.4" fill="{_EVT_COLOR}"/>')
+        # ★마우스 판을 따로 깐다 — 점선은 1px 이라 마우스로 맞히기가 어렵다.
+        #   투명한 14px 띠를 얹어 그 구간 어디에 올려도 말풍선이 뜨게 한다.
+        _etip = _tip('\uc0ac\uac74%d' % _i, _it, _ir, _isc)
+        o.append(f'<rect x="{x-7:.1f}" y="{top_score}" width="14" height="{SCORE_H}" '
+                 f'fill="transparent" style="cursor:help">'
+                 f'<title>{_etip}</title></rect>')
+    # ★칩(배경 깔린 알약)으로 그린다 — 등급 밴드(붉은·주황 띠) 위에 맨 글자를
+    #   얹으면 같은 계열 색이라 읽히지 않는다.
+    for row, x1, w, text, color, tip in _chips:
+        y = top_score - 7 - row * 15
+        o.append(f'<g style="cursor:help"><title>{tip}</title>'
+                 f'<rect x="{x1:.1f}" y="{y-10:.1f}" width="{w:.1f}" height="14" rx="3.5" '
+                 f'fill="{_BG}" stroke="{color}" stroke-width="0.9" opacity="0.97"/>'
+                 f'<text x="{x1+w/2:.1f}" y="{y:.1f}" font-size="9.5" fill="{color}" '
+                 f'font-weight="700" text-anchor="middle">{text}</text></g>')
 
     # ── 더블클릭한 시각 표시 (선택 시각 + 그 시각 스코어) ──
     sel_t, sel_r, sel_sc = min(pts_sc, key=lambda x: abs((x[0] - center).total_seconds()))
@@ -556,9 +679,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
             continue
 
         o.append(f'<rect x="{L-46}" y="{y}" width="4" height="{MET_H}" fill="{col}" rx="2"/>')
-        o.append(f'<text x="{L-38}" y="{y+12}" font-size="11.5" font-weight="700" fill="{col}">'
+        # 이름표 두 줄 — 그림 위에 둔다(왼쪽 여백은 46px 뿐이라 글자가 막대를 덮었다)
+        o.append(f'<text x="{L-38}" y="{y+13}" font-size="11.5" font-weight="700" fill="{col}">'
                  f'{_e(md["label"])} ({_e(md["unit"])})</text>')
-        o.append(f'<text x="{L-38}" y="{y+26}" font-size="9" fill="{_TX2}" '
+        o.append(f'<text x="{L-38}" y="{y+27}" font-size="9" fill="{_TX2}" '
                  f'font-family="ui-monospace,Menlo,Consolas,monospace">{_e(md["raw"])}</text>')
 
         is_bar = bool(md.get("bar"))
@@ -579,10 +703,13 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
                         f'최고 {_fmt(_pk[1])}{_e(md["unit"])} @{_pk[0]:%H:%M}')
         else:
             _rng_txt = f'범위 {_fmt(vmin)}~{_fmt(vmax)}{_e(md["unit"])}'
-        o.append(f'<text x="{L-38}" y="{y+39}" font-size="9" fill="{_TX3}">'
-                 f'{_rng_txt}</text>')
+        # 범위·합계는 이름표 둘째 줄의 **오른쪽 끝**에 — 왼쪽은 raw 컬럼명이
+        # 쓰고 있어 같은 자리에 두면 긴 이름과 겹친다.
+        o.append(f'<text x="{L+pw}" y="{y+27}" font-size="9" fill="{_TX3}" '
+                 f'text-anchor="end">{_rng_txt}</text>')
 
-        pt, pb = y + 6, y + MET_H - 10
+        # 그림은 이름표 두 줄 아래에서 시작한다 (높이는 예전과 같은 72px)
+        pt, pb = y + 36, y + MET_H - 8
 
         def MY(v):
             return pb - (pb - pt) * ((v - vmin) / rng)
@@ -606,14 +733,16 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
                                  f'width="{bw:.1f}" height="{h:.1f}" '
                                  f'fill="{cmap[name]}" opacity="0.95"/>')
                         base -= h
-                # 범례 — 색만으로 경로를 구분하게 두지 않는다
+                # 범례 — 색만으로 경로를 구분하게 두지 않는다.
+                # ★그림 안 오른쪽 위(pt+1)에 두었더니 그 자리의 막대·사건 값
+                #   딱지와 겹쳐 둘 다 안 읽혔다. 이름표 첫 줄 오른쪽으로 올린다.
                 lx = L + pw
                 for name, c in reversed(list(cmap.items())):
-                    tw = len(name) * 5.6 + 16
+                    tw = _text_w(name, 9) + 16
                     lx -= tw
-                    o.append(f'<rect x="{lx:.1f}" y="{pt+1:.1f}" width="8" height="8" '
+                    o.append(f'<rect x="{lx:.1f}" y="{y+5:.1f}" width="8" height="8" '
                              f'rx="1.5" fill="{c}"/>')
-                    o.append(f'<text x="{lx+11:.1f}" y="{pt+8.5:.1f}" font-size="9" '
+                    o.append(f'<text x="{lx+11:.1f}" y="{y+12.5:.1f}" font-size="9" '
                              f'fill="{c}" font-weight="700">{_e(name)}</text>')
                     lx -= 6
             else:
@@ -642,8 +771,17 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
             if v is None:
                 continue
             o.append(f'<circle cx="{x:.1f}" cy="{MY(v):.1f}" r="2.8" fill="{_EVT_COLOR}"/>')
-            o.append(f'<text x="{x+4:.1f}" y="{MY(v)-5:.1f}" font-size="9" fill="{_EVT_COLOR}" '
-                     f'font-weight="700">{_fmt(v)}{_e(md["unit"])}</text>')
+            # ★구간 끝의 사건은 값 딱지가 그림 밖으로 잘렸다. 오른쪽에 자리가
+            #   없으면 점 **왼쪽**에 적는다(끝 사건은 늘 마지막 분이라 흔하다).
+            _vt = f'{_fmt(v)}{_e(md["unit"])}'
+            _vw = _text_w(_vt, 9)
+            _right = x + 4 + _vw <= L + pw
+            # ★값이 최고점이면 MY(v)=pt 라 딱지가 그림 **위로** 튀어나가
+            #   이름표 줄(범위·합계)과 겹쳤다. 그림 안으로 물린다.
+            _vy = max(pt + 9, MY(v) - 5)
+            o.append(f'<text x="{(x+4) if _right else (x-4):.1f}" y="{_vy:.1f}" '
+                     f'font-size="9" fill="{_EVT_COLOR}" font-weight="700" '
+                     f'text-anchor="{"start" if _right else "end"}">{_vt}</text>')
 
         # 선택 시각 — 지표 패널에도 세로선 + 그 시각 실제 값
         o.append(f'<line x1="{sx:.1f}" y1="{pt:.1f}" x2="{sx:.1f}" y2="{pb:.1f}" '

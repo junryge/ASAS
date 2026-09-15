@@ -74,22 +74,32 @@ class 그래프도_배경을_따라간다(unittest.TestCase):
         self.assertNotIn(graphs._LIGHT["bg"].upper(), ("#FFFFFF", "#FFF"))
         self.assertLess(_lum(graphs._LIGHT["bg"]), 0.95)
 
-    def test_흰_배경에서_글자와_선이_읽힌다(self):
-        """어두운 배경용 노랑·청록을 그대로 쓰면 흰 바탕에서 사라진다."""
-        P = graphs._LIGHT
-        bg = P["bg"]
-        for key in ("tx", "tx2", "tx3", "score", "evt", "crit"):
-            self.assertGreaterEqual(round(_ratio(P[key], bg), 2), 3.9,
-                                    f"{key}={P[key]} 가 흰 배경에서 안 읽힌다")
-        for c in list(P["palette"]) + list(P["path"]) + list(P["kind"].values()):
-            self.assertGreaterEqual(round(_ratio(c, bg), 2), 3.9,
-                                    f"{c} 가 흰 배경에서 안 읽힌다")
+    def test_네_벌_모두_배경_위에서_읽힌다(self):
+        """어두운 배경용 노랑·청록을 그대로 쓰면 흰 바탕에서 사라진다.
 
-    def test_두_벌의_칸이_같다(self):
-        """한쪽에만 키가 있으면 그 색만 검은 값으로 새어 나온다."""
-        self.assertEqual(set(graphs._LIGHT), set(graphs._DARK))
-        self.assertEqual(len(graphs._LIGHT["bands"]), len(graphs._DARK["bands"]))
-        self.assertEqual(set(graphs._LIGHT["kind"]), set(graphs._DARK["kind"]))
+        ★화이트만 재던 시험이다. 네이비·고대비를 넣으면서 같은 잣대로 넓혔다 —
+          안 그러면 새 한 벌은 아무도 안 재고 들어간다. (네이비 tx3 는 화면
+          토큰 #647894 를 그대로 쓰면 3.73 이라 그 자리에서 걸렸다.)
+        """
+        for name in ("light", "dark", "navy", "contrast"):
+            P = graphs._PALS[name]
+            bg = P["bg"]
+            for key in ("tx", "tx2", "tx3", "score", "sel", "evt", "crit"):
+                self.assertGreaterEqual(
+                    round(_ratio(P[key], bg), 2), 3.9,
+                    f"[{name}] {key}={P[key]} 가 배경 {bg} 위에서 안 읽힌다")
+            for c in list(P["palette"]) + list(P["path"]) + list(P["kind"].values()):
+                self.assertGreaterEqual(
+                    round(_ratio(c, bg), 2), 3.9,
+                    f"[{name}] {c} 가 배경 {bg} 위에서 안 읽힌다")
+
+    def test_네_벌의_칸이_같다(self):
+        """한쪽에만 키가 있으면 그 색만 다크 값으로 새어 나온다."""
+        base = graphs._DARK
+        for name, P in graphs._PALS.items():
+            self.assertEqual(set(P), set(base), f"[{name}] 칸이 다르다")
+            self.assertEqual(len(P["bands"]), len(base["bands"]), f"[{name}] 밴드 수")
+            self.assertEqual(set(P["kind"]), set(base["kind"]), f"[{name}] kind 키")
 
 
 class 화면이_그래프에_배경을_넘긴다(unittest.TestCase):
@@ -102,13 +112,31 @@ class 화면이_그래프에_배경을_넘긴다(unittest.TestCase):
         with open(os.path.join(_BASE, "server.py"), encoding="utf-8") as f:
             cls.server = f.read()
 
+    def test_고를_수_있는_테마가_화면과_같다(self):
+        """화면 테마 세그먼트와 그래프 팔레트가 어긋나면, 고를 수는 있는데
+        그래프만 다크로 나온다 — 정확히 그 증상으로 이 작업이 시작됐다."""
+        self.assertEqual(graphs.THEMES, frozenset(graphs._PALS))
+        seg = re.findall(r'data-theme="(\w+)"', self.html)
+        self.assertTrue(seg, "상단바 테마 세그먼트를 못 찾았다")
+        self.assertEqual(set(seg), set(graphs.THEMES),
+                         "화면에서 고를 수 있는 테마와 그래프 팔레트가 다르다")
+
     def test_요청에_붙여_보낸다(self):
         self.assertIn("&theme=${document.documentElement.getAttribute('data-theme')||'dark'}",
                       self.html)
 
     def test_서버가_받아_넘긴다(self):
         self.assertIn('request.args.get("theme")', self.server)
-        self.assertIn('theme=("light" if theme == "light" else "dark")', self.server)
+        # ★예전엔 light/dark 로만 좁혀 보냈다 — 네이비·고대비를 골라도 그래프만
+        #   다크로 나왔다. 이제 넷을 그대로 넘기고, 고를 수 있는 값은
+        #   graphs.THEMES 한 곳이 쥔다(양쪽에 적으면 또 어긋난다).
+        self.assertIn("theme in GRAPH_THEMES", self.server)
+        self.assertIn("from graphs import render, THEMES as GRAPH_THEMES",
+                      self.server)
+
+    def test_모르는_값은_다크로_떨어진다(self):
+        """예전 주소(?theme= 없음)나 오타가 와도 그림은 나와야 한다."""
+        self.assertIn('else "dark"', self.server)
 
     def test_배경을_바꾸면_열린_그래프도_다시_그린다(self):
         """SVG 는 서버가 그린 그림이라 CSS 로 안 바뀐다 — 다시 받아야 한다."""

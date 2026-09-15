@@ -1586,7 +1586,7 @@ def api_graph():
     /api/graph?at=2026-07-28T08:11:00&minutes=60
     """
     C = rctx()
-    from graphs import render
+    from graphs import render, THEMES as GRAPH_THEMES
     from store_csv import read_day
 
     at = parse_dt(request.args.get("at")) or datetime.now()
@@ -1609,11 +1609,15 @@ def api_graph():
     want = [f.strip().upper() for f in (request.args.get("fabs") or "").split(",")]
     picked = [f for f in known if f in want]
 
-    # 화면 배경(검정/흰색)을 그대로 받아 같은 색으로 그린다. 안 넘어오면
-    # 검정 — 예전 주소로 부르던 곳이 그대로 돌아간다.
+    # 화면 테마를 그대로 받아 같은 색으로 그린다. 모르는 값이면 다크 —
+    # 예전 주소로 부르던 곳이 그대로 돌아간다.
+    # ★넷 다 넘긴다(다크·화이트·네이비·고대비). 예전엔 light/dark 로만 좁혀
+    #   보내서, 네이비·고대비를 골라도 그래프만 다크로 나왔다 — 남색 화면
+    #   한가운데 다른 검정 상자가 박혔다. 고를 수 있는 값은 graphs.THEMES 가
+    #   쥐고 있다(한쪽만 늘리면 또 어긋난다).
     theme = (request.args.get("theme") or "dark").strip().lower()
     svg = render(rows, at, minutes, cfg=C["cfg"], fabs=picked,
-                 theme=("light" if theme == "light" else "dark"))
+                 theme=(theme if theme in GRAPH_THEMES else "dark"))
     return app.response_class(svg, mimetype="image/svg+xml")
 
 
