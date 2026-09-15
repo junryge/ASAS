@@ -382,3 +382,58 @@ class ListDays(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 로그인_세션을_재사용한다(unittest.TestCase):
+    """★파일 하나 받을 때마다 로그인을 다시 하고 있었다.
+
+    기동 한 번에 일곱 개(ALL + FAB 다섯 + ML)를 받는데, login() 은 왕복 두 번
+    (GET /login 으로 _xsrf, POST /login)이다. 내려받기 전에 왕복 열네 번을
+    먼저 하고 있었다. 쿠키는 한 번 받으면 그대로 쓸 수 있다.
+    """
+
+    def setUp(self):
+        import jupyter_csv as J
+        self.J = J
+        J._SESS.clear()
+        self.c = {"base_url": "http://x", "password": "pw", "timeout_s": 5}
+        self.calls = []
+
+        def fake(c):
+            self.calls.append(1)
+            return object(), ""
+        self._orig = J._login_fresh
+        J._login_fresh = fake
+
+    def tearDown(self):
+        self.J._login_fresh = self._orig
+        self.J._SESS.clear()
+
+    def test_두_번째부터는_다시_로그인_안_한다(self):
+        for _ in range(7):
+            self.J.login(self.c)
+        self.assertEqual(len(self.calls), 1,
+                         "일곱 번 받는데 로그인을 %d번 했다" % len(self.calls))
+
+    def test_비밀번호가_바뀌면_새로_로그인한다(self):
+        """★주소만으로 묶었더니 비밀번호를 고쳐도 옛 세션을 썼다."""
+        self.J.login(self.c)
+        self.J.login(dict(self.c, password="다른것"))
+        self.assertEqual(len(self.calls), 2)
+
+    def test_비밀번호를_열쇠에_그대로_안_넣는다(self):
+        self.J.login(self.c)
+        for k in self.J._SESS:
+            self.assertNotIn("pw", k, "열쇠에 비밀번호가 그대로 들어 있다")
+
+    def test_버리면_다시_로그인한다(self):
+        """쿠키는 만료된다 — 캐시만 두고 갱신을 안 두면 그때부터 영영 실패한다."""
+        self.J.login(self.c)
+        self.J._drop_session(self.c)
+        self.J.login(self.c)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_fresh_면_캐시를_무시한다(self):
+        self.J.login(self.c)
+        self.J.login(self.c, fresh=True)
+        self.assertEqual(len(self.calls), 2)

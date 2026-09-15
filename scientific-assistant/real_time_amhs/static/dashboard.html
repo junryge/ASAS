@@ -4490,6 +4490,13 @@ function bindGraphPin(){
       const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
       if(!r){ box.innerHTML = ''; return; }
       const g = gradeOf(+r.score||0);
+      /* 발동 룰은 요약(한글 한 줄)을 룰 단위로 끊어 칩으로 — 원문(reason_raw)은
+         안 넣는다. 기계 글자를 통째로 뿌리면 읽을 것이 아니라 덮는 것이 된다. */
+      const rules = String(r.reason||'').split(/\s*·\s*|\r?\n/)
+          .map(x=>x.trim()).filter(Boolean);
+      const rchip = rules.length
+        ? rules.map(x=>`<span class="zchip">${esc(x)}</span>`).join(' ')
+        : '<span class="dim">—</span>';
       const met = (r.metrics||[]).map(m=>`<span class="zchip mono" title="${
           esc(m.label||'')}">${esc(m.raw)}</span>`).join(' ') || '<span class="dim">—</span>';
       const fab = FABS.map(f=>{
@@ -4508,11 +4515,9 @@ function bindGraphPin(){
           <button class="act" id="gpinx" style="margin-left:auto">닫기</button>
         </div>
         <table style="width:100%;font-size:12px">
-          <tr><td class="dim" style="width:88px">발동 룰</td><td>${esc(r.reason||'—')}</td></tr>
+          <tr><td class="dim" style="width:88px">발동 룰</td><td>${rchip}</td></tr>
           <tr><td class="dim">실제지표</td><td>${met}</td></tr>
           <tr><td class="dim">FAB 점수</td><td>${fab}</td></tr>
-          <tr><td class="dim">원문</td><td class="mono dim" style="font-size:11px;
-              overflow-wrap:anywhere">${esc(r.reason_raw||'—')}</td></tr>
         </table></div>`;
       const x = $('#gpinx'); if(x) x.onclick = () => { box.innerHTML = ''; };
     };

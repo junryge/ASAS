@@ -197,6 +197,34 @@ class 칸마다_임계를_적는다(unittest.TestCase):
 
 
 
+class 원문을_뿌리지_않는다(unittest.TestCase):
+    """★호버 말풍선이 CSV 의 reason 을 통째로 뿌리고 있었다.
+
+    "hot_area=M16HUB; S3확정; 발동: M16HUB[R-A'(AVGTOTALTIME1MIN=22.5분/…)]"
+    같은 기계 글자다. 읽을 것이 아니라 덮는 것이 된다. 화면 목록이 쓰는
+    summarize_reason 과 같은 한글 요약을 쓴다.
+    """
+
+    def setUp(self):
+        self.cfg = load_config()
+        base, rows = _rows(M16HUB_ra=22.5, M16HUB_rd_fab=14.2)
+        for r in rows:
+            r["reason"] = ("hot_area=M16HUB; S3확정; 발동: "
+                           "M16HUB[R-A'(AVGTOTALTIME1MIN=22.5분/기준9.0),"
+                           "R-D(FAB저장=14.2%)]; M14[R-A_sus]")
+        self.svg = graphs.render(rows, base + dt.timedelta(minutes=20),
+                                 40, cfg=self.cfg)
+
+    def test_룰_코드가_안_보인다(self):
+        for bad in ("R-A'", "R-A_sus", "R-D(", "hot_area=", "S3확정"):
+            self.assertNotIn(bad, self.svg, "원문이 새어 나왔다: %s" % bad)
+
+    def test_한글_요약은_들어간다(self):
+        """빼기만 하고 대신 아무것도 안 주면 말풍선이 쓸모없어진다."""
+        self.assertIn("반송지연", self.svg)
+        self.assertIn("Storage FULL", self.svg)
+
+
 class 한_화면에_들어간다(unittest.TestCase):
     def setUp(self):
         self.cfg = load_config()

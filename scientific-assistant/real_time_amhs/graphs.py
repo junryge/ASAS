@@ -650,7 +650,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     ★2026-09 전면 개편 — 무엇이 달라졌는지는 위 블록 주석에.
       바뀌지 않은 것: 함수 서명, 분마다 호버, 사건 딱지, FAB 겹쳐보기.
     """
-    from sentinel import grade_cuts, load_config
+    from sentinel import grade_cuts, load_config, summarize_reason
     cfg = cfg or load_config()
     P = _pal(theme)
     pts = window_rows(rows, center, minutes, cfg)
@@ -816,9 +816,13 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         ft = (r.get("predicted_fault_type") or "").strip()
         if ft:
             ln.append(f"예측 {ft}")
-        rs = str(r.get("reason") or "").strip()
+        # ★발동 룰은 **한글 요약**으로 준다. CSV 의 reason 은
+        #   "hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,...]" 같은 기계
+        #   글자다. 그걸 통째로 뿌리면 읽을 것이 아니라 덮는 것이 된다 —
+        #   화면 목록이 쓰는 summarize_reason 과 같은 글을 쓴다.
+        rs = summarize_reason(str(r.get("reason") or "").strip(), ho)
         if rs:
-            ln += [x.strip() for x in re.split(r"\s*;\s*", rs) if x.strip()]
+            ln += [x.strip() for x in rs.split(" · ") if x.strip()]
         o.append(f'<rect class="ghit" data-at="{_e(t.isoformat())}" '
                  f'x="{X(i) - hw / 2:.1f}" y="{top_s}" width="{hw:.1f}" '
                  f'height="{SCORE_H}" fill="{P["tx"]}" fill-opacity="0" '

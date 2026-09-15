@@ -40,6 +40,8 @@ import io
 import json
 import os
 import re
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -162,8 +164,60 @@ class _Session:
         return ""
 
 
-def login(c: dict) -> tuple[_Session | None, str]:
-    """주피터 로그인 → (세션, 오류). 비밀번호가 없으면 익명 세션으로 진행."""
+# ── 로그인 세션 재사용 ────────────────────────────────────────────────
+# ★기동 한 번에 파일을 일곱 개 받는다(ALL + FAB 다섯 + ML). 그때마다 login()
+#   을 다시 부르면 **왕복 두 번**(GET /login 으로 _xsrf, POST /login)이 파일마다
+#   붙어서, 내려받기 전에 왕복 열네 번을 먼저 한다. 쿠키는 한 번 받으면 그대로
+#   쓸 수 있으니 세션을 들고 있는다.
+# ★쿠키는 만료되고 서버가 재시작되기도 한다. 그래서 '캐시가 있으면 끝' 이 아니라
+#   **쓰다가 막히면 버리고 다시 로그인**한다(_drop_session). 캐시만 두고 갱신을
+#   안 두면, 만료된 순간부터 영영 실패한다.
+_SESS: dict = {}
+_SESS_TTL = 600          # 10분. 주피터 쿠키보다 짧게 잡아 먼저 갈아 끼운다
+_SESS_LOCK = threading.Lock()
+
+
+def _sess_key(c: dict) -> str:
+    """서버 주소 + 자격증명까지 열쇠에 넣는다.
+
+    ★주소만으로 묶었더니, 비밀번호를 고친 뒤에도 **틀린 비밀번호로 만든 세션**
+      을 그대로 썼다(거꾸로도 마찬가지 — 틀린 비밀번호인데 예전 세션으로
+      받아졌다). 자격증명이 바뀌면 다른 세션이어야 한다.
+    ★비밀번호를 그대로 열쇠에 넣지 않는다 — 어딘가 찍히면 그대로 샌다.
+    """
+    import hashlib
+    base = str(c.get("base_url") or "").rstrip("/")
+    if not base:
+        return ""
+    cred = (_password(c) or "") + "\x00" + str(c.get("token") or "")
+    return base + "#" + hashlib.sha256(cred.encode()).hexdigest()[:16]
+
+
+def _drop_session(c: dict) -> None:
+    """이 서버의 세션을 버린다 — 다음 호출이 새로 로그인한다."""
+    with _SESS_LOCK:
+        _SESS.pop(_sess_key(c), None)
+
+
+def login(c: dict, fresh: bool = False) -> tuple["_Session | None", str]:
+    """주피터 로그인 → (세션, 오류). 비밀번호가 없으면 익명 세션으로 진행.
+
+    fresh=True 면 캐시를 무시하고 새로 로그인한다.
+    """
+    key = _sess_key(c)
+    if not fresh and key:
+        with _SESS_LOCK:
+            hit = _SESS.get(key)
+        if hit and (time.time() - hit[1]) < _SESS_TTL:
+            return hit[0], ""
+    s, err = _login_fresh(c)
+    if not err and s is not None and key:
+        with _SESS_LOCK:
+            _SESS[key] = (s, time.time())
+    return s, err
+
+
+def _login_fresh(c: dict) -> tuple["_Session | None", str]:
     s = _Session(int(c.get("timeout_s", 60)))
     base = str(c.get("base_url") or "").rstrip("/")
     if not base:
@@ -205,10 +259,18 @@ def login(c: dict) -> tuple[_Session | None, str]:
 
 # ────────────────────────────── 내려받기 ──────────────────────────────
 def download(day: str, cfg: dict | None = None) -> tuple[bytes | None, str]:
-    """그 날짜 CSV 원문 → (bytes, 오류)."""
+    """그 날짜 CSV 원문 → (bytes, 오류).
+
+    ★세션은 재사용한다(login 캐시). 쿠키가 만료되면 403 이 오거나 CSV 대신
+      로그인 HTML 이 오는데, 그때는 **버리고 한 번 다시 로그인**해서 재시도한다.
+    """
     cfg = cfg or load_config()
     c = cfg_of(cfg)
-    s, err = login(c)
+    return _download_once(day, c, fresh=False)
+
+
+def _download_once(day: str, c: dict, fresh: bool) -> tuple[bytes | None, str]:
+    s, err = login(c, fresh=fresh)
     if err:
         return None, err
     url = file_url(day, c)
@@ -219,6 +281,9 @@ def download(day: str, cfg: dict | None = None) -> tuple[bytes | None, str]:
         body = e.read(300).decode("utf-8", "replace")
         hint = ""
         if e.code in (403, 302):
+            if not fresh:                  # 쿠키가 만료됐을 수 있다 — 한 번만
+                _drop_session(c)
+                return _download_once(day, c, fresh=True)
             hint = " — 로그인이 안 됐을 수 있습니다 (비밀번호 파일 확인)"
         elif e.code == 404:
             hint = " — 그 날짜 파일이 아직 없을 수 있습니다"
@@ -229,6 +294,9 @@ def download(day: str, cfg: dict | None = None) -> tuple[bytes | None, str]:
     # 로그인 실패면 CSV 대신 HTML 로그인 페이지가 온다 — 조용히 넘기면 안 된다
     head = raw[:400].lstrip().lower()
     if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+        if not fresh:                      # 쿠키 만료 → 로그인 폼이 온 것
+            _drop_session(c)
+            return _download_once(day, c, fresh=True)
         return None, "CSV 가 아니라 HTML 이 왔습니다 — 로그인 실패로 보입니다"
     return raw, ""
 
