@@ -413,454 +413,493 @@ def _fab_series(pts, fabs, cfg):
     return out
 
 
+# ══ 구간 그래프 — 임계 대비로 읽는 격자 ══════════════════════════
+# ★2026-09 전면 개편. 그 전에는 지표를 세로로 쌓고 패널마다 자기
+#   min~max 로 정규화했다. 그러면 임계의 0.9배(정상)인 값이 2.5배
+#   (심각)인 값과 똑같이 꽉 차 보여서, 그래프를 봐도 어디를 봐야
+#   할지 알 수 없었다. 색은 '넘었다' 는 뜻으로만 쓰고, 안 넘은 것은
+#   회색으로 죽이고, 배수 큰 순으로 깐다.
+#   높이도 1054px(지표 6개)에서 680px 로 줄었다 — 모달이 92vh 라
+#   전에는 늘 스크롤이었다.
+
+def thresholds() -> dict:
+    """{csv컬럼: (임계, 부등호, 이름, 단위)} — 룰 원본에서 읽는다.
+
+    ★한 컬럼에 임계가 둘인 경우가 있다 (반송시간 9.0 / 지속 6.3). 룰 정의
+      순서가 앞선 쪽(본 임계)을 쓴다 — 낮은 쪽을 쓰면 늘 '넘음' 으로 뜬다.
+    """
+    try:
+        import fab_score as F
+    except Exception:
+        return {}
+    order = {r["code"]: i for i, r in enumerate(F.RULES)}
+    best: dict = {}
+    for src in (F.WATCH, {"_ALL": F.WATCH_ALL}):
+        for _fab, rules in (src or {}).items():
+            for code, specs in (rules or {}).items():
+                for sp in specs or []:
+                    c = sp.get("csv")
+                    if not c or sp.get("thr") is None or sp.get("record_only"):
+                        continue
+                    k = order.get(code, 99)
+                    if c not in best or k < best[c][0]:
+                        best[c] = (k, sp["thr"], sp.get("op", ">="),
+                                   sp.get("label"), sp.get("unit"))
+    return {c: v[1:] for c, v in best.items()}
+
+
+def _ratio(v, thr, op):
+    """임계 대비 배수. 작을수록 나쁜 지표(<=)는 뒤집어 잰다."""
+    if v is None or not thr:
+        return None
+    try:
+        v, thr = float(v), float(thr)
+    except (TypeError, ValueError):
+        return None
+    if thr == 0:
+        return None
+    return (thr / v) if (op in ("<=", "<") and v) else (v / thr)
+
+
+
+HEAD_H = 30          # 제목 줄
+LBL_H = 18           # 섹션 라벨 줄 — 제목과 겹치지 않게 자리를 따로 준다
+SCORE_H = 170        # 스코어 패널
+AXIS_H = 16          # 시간축 글자 줄
+CELL_H = 124
+COLS = 3
+PAD = 16
+GAP = 10
+
+
+def _badge(o, x, y, ratio, color, dim):
+    """배수 배지 — 넘은 것만 색. '몇 배' 는 한 칸에서 제일 먼저 읽혀야 한다."""
+    if ratio is None:
+        return
+    over = ratio >= 1.0
+    txt = ("▲%.1f배" % ratio) if over else ("%.1f배" % ratio)
+    w = _text_w(txt, 10.5) + 12
+    o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="17" rx="8.5" '
+             f'fill="{color}" opacity="{0.16 if over else 0.10}"/>')
+    o.append(f'<text x="{x + w / 2:.1f}" y="{y + 12.3:.1f}" font-size="10.5" '
+             f'font-weight="700" text-anchor="middle" '
+             f'fill="{color if over else dim}">{_e(txt)}</text>')
+    return w
+
+
+def _cell(o, x, y, w, h, m, pts, P, X0):
+    """지표 한 칸 — 배지 · 이름 · 값/임계 · 스파크라인 + 임계선."""
+    col, thr, op = m["col"], m.get("thr"), m.get("op", ">=")
+    _PATH_COLORS = P["path"]
+    unit = m.get("unit") or ""
+    stk = m.get("cols") if m.get("pio_stack") else None
+    cols = m.get("sumcols") or [col]
+    def _v(r):
+        got = ([_pio_val(r, x) for x in stk] if stk
+               else [_f(r.get(c)) for c in cols])
+        got = [g for g in got if g is not None]
+        return sum(got) if got else None
+    vals = [(t, _v(r)) for t, r in pts]
+    vals = [(t, v) for t, v in vals if v is not None]
+    if not vals:
+        return
+    # ★배지(배수)는 구간 최악값으로 재는데 값만 마지막 것을 적으면 서로
+    #   어긋난다 ("7.7배 / 20개"). 같은 값을 보여 준다 — 최악값과 그 시각.
+    ratio = m.get("ratio")
+    cur = m.get("worst", vals[-1][1])
+    at = next((t for t, v in vals if v == cur), None)
+    over = ratio is not None and ratio >= 1.0
+    # ★색은 '넘었다' 는 뜻으로만. 안 넘은 칸은 회색으로 죽인다 —
+    #   지금 화면이 전부 빨간 이유가 이걸 안 해서다.
+    color = (P["crit"] if (ratio or 0) >= 2 else P["evt"]) if over else P["tx3"]
+    o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="10" '
+             f'fill="{P["bg2"]}" stroke="{P["line"]}"/>')
+    if over:
+        o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="3" height="{h:.1f}" '
+                 f'rx="1.5" fill="{color}"/>')
+    bw = _badge(o, x + 12, y + 11, ratio, color, P["tx3"]) or 0
+    lb = str(m.get("label") or "")
+    stk0 = m.get("cols") if m.get("pio_stack") else None
+    if stk0:
+        # 경로 목록은 범례가 맡는다 — 괄호만 떼고 뒤는 남긴다.
+        # ★split(" (")[0] 로 자르면 뒤에 붙은 '· 10분 누적' 까지 날아간다.
+        #   그건 단위 표시라 없으면 1분 개수로 읽혀 열 배로 잘못 본다.
+        lb = re.sub(r"\s*\([^)]*\)", "", lb)
+    lbx = x + 12 + bw + 8
+    full = lb
+    # ★범례 자리를 미리 빼 두면 경로가 넷일 때 이름표가 통째로 잘린다.
+    #   이름표를 먼저 온전히 두고, 범례가 들어갈 만큼만 들어가게 한다
+    #   (아래 범례 루프가 이름표를 만나면 멈춘다).
+    room = (x + w - 12) - lbx
+    while lb and _text_w(lb, 11.5) > room:
+        lb = lb[:-1]
+    # ★<title> 은 **잘렸을 때만** 붙인다. 늘 붙이면 안 잘린 칸에도 말풍선이
+    #   하나 더 생겨, 글자를 찾는 쪽(시험·검색)이 본문 대신 말풍선을 집는다.
+    tip = f'<title>{_e(m.get("label") or "")}</title>' if lb != full else ""
+    o.append(f'<text x="{lbx:.1f}" y="{y + 23.5:.1f}" font-size="11.5" '
+             f'font-weight="700" fill="{P["tx"] if over else P["tx2"]}">'
+             f'{_e(lb)}{tip}</text>')
+    # ★실제 AMOS 컬럼명 — 현장에서 이걸 보고 원 지표를 찾아간다. 이름표만
+    #   있으면 "그게 어느 컬럼이냐" 를 다시 물어야 한다. 칸이 좁으면 앞을
+    #   자르고 뒤(컬럼 이름)를 남긴다 — 뒤쪽이 무엇을 재는지를 말한다.
+    raw = str(m.get("raw") or "")
+    if raw:
+        avail = w - 24
+        shown = raw
+        while shown and _text_w(shown, 9) > avail:
+            shown = shown[1:]
+        if shown != raw:
+            shown = "…" + shown[1:]
+        o.append(f'<text x="{x + 12:.1f}" y="{y + 37:.1f}" font-size="9" '
+                 f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
+                 f'{_e(shown)}{"<title>" + _e(raw) + "</title>" if shown != raw else ""}</text>')
+    o.append(f'<text x="{x + 12:.1f}" y="{y + 56:.1f}" font-size="14" '
+             f'font-weight="800" fill="{color if over else P["tx2"]}" '
+             f'font-family="Consolas,monospace">{_e(_fmt(cur))}{_e(unit)}</text>')
+    if at is not None:
+        o.append(f'<text x="{x + 12 + _text_w(_fmt(cur) + unit, 14) + 7:.1f}" '
+                 f'y="{y + 56:.1f}" font-size="9.5" fill="{P["tx3"]}" '
+                 f'font-family="Consolas,monospace">최고 @{at:%H:%M}</text>')
+    if thr:
+        o.append(f'<text x="{x + w - 12:.1f}" y="{y + 56:.1f}" font-size="10" '
+                 f'text-anchor="end" fill="{P["tx3"]}" '
+                 f'font-family="Consolas,monospace">임계 {_e(_fmt(thr))}{_e(unit)}</text>')
+
+    # 스파크라인 — 0 과 임계×2 사이로 **모든 칸이 같은 자로** 잰다.
+    # ★여기가 현행과 갈리는 자리다. 칸마다 자기 min~max 로 재면 정상인 값도
+    #   꽉 차 보인다. 임계를 기준으로 재야 칸끼리 비교가 된다.
+    pt, pb = y + 66, y + h - 12
+    lo, hi = 0.0, (float(thr) * 2 if thr else max(v for _t, v in vals) or 1.0)
+    hi = max(hi, max(v for _t, v in vals) * 1.05, 1e-9)
+    Y = lambda v: pb - (pb - pt) * ((min(max(v, lo), hi) - lo) / (hi - lo))
+    n = len(vals)
+    X = lambda i: x + 12 + (w - 24) * (i / max(1, n - 1))
+    if m.get("bar"):
+        bwd = max(1.4, min(7.0, (w - 24) / max(1, n) - 0.8))
+        stack = m.get("cols") if m.get("pio_stack") else None
+        if stack:
+            # ★경로마다 색을 달리해 쌓는다. 합쳐 한 색으로 그리면 **어느
+            #   경로에서 실패했는지**가 사라지는데, 그게 조치 지점이다.
+            cmap = {x["name"]: _PATH_COLORS[k % len(_PATH_COLORS)]
+                    for k, x in enumerate(stack)}
+            for i, (t, _tot) in enumerate(vals):
+                r = pts[i][1] if i < len(pts) else {}
+                base = pb
+                for sp in stack:          # ★x 로 쓰면 칸 좌표를 덮는다
+                    # CSV 가 원칙, reason 은 대체 — _pio_val 이 그 규칙이다
+                    v = _pio_val(r, sp) or 0
+                    if v <= 0:
+                        continue
+                    hh = max(1.0, pb - Y(v))
+                    o.append(f'<rect x="{X(i) - bwd / 2:.1f}" y="{base - hh:.1f}" '
+                             f'width="{bwd:.1f}" height="{hh:.1f}" '
+                             f'fill="{cmap[sp["name"]]}" opacity="0.95"/>')
+                    base -= hh
+            # 색만으로 경로를 구분하게 두지 않는다 — 이름을 같이 적는다
+            lx = x + w - 12
+            for name, cc in reversed(list(cmap.items())):
+                tw = _text_w(name, 8.5) + 13
+                if lx - tw < lbx + _text_w(lb, 11.5) + 8:
+                    break               # 이름표를 침범하느니 범례를 줄인다
+                lx -= tw
+                o.append(f'<rect x="{lx:.1f}" y="{y + 16:.1f}" width="7" height="7" '
+                         f'rx="1.5" fill="{cc}"/>')
+                o.append(f'<text x="{lx + 10:.1f}" y="{y + 22.5:.1f}" font-size="8.5" '
+                         f'fill="{cc}" font-weight="700">{_e(name)}</text>')
+                lx -= 4
+        else:
+            for i, (_t, v) in enumerate(vals):
+                if v <= 0:
+                    continue
+                hh = max(1.0, pb - Y(v))
+                o.append(f'<rect x="{X(i) - bwd / 2:.1f}" y="{pb - hh:.1f}" '
+                         f'width="{bwd:.1f}" height="{hh:.1f}" rx="1.2" fill="{color}" '
+                         f'opacity="{0.95 if over else 0.5}"/>')
+    else:
+        d = " ".join(f"{'M' if i == 0 else 'L'}{X(i):.1f},{Y(v):.1f}"
+                     for i, (_t, v) in enumerate(vals))
+        # 면적은 10% 워시 — 현행 20% 는 칸을 덩어리로 만들어 선이 안 보인다
+        o.append(f'<path d="{d} L{X(n - 1):.1f},{pb:.1f} L{X(0):.1f},{pb:.1f} Z" '
+                 f'fill="{color}" opacity="{0.10 if over else 0.06}"/>')
+        o.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" '
+                 f'stroke-linejoin="round" stroke-linecap="round" '
+                 f'opacity="{1 if over else 0.65}"/>')
+        o.append(f'<circle cx="{X(n - 1):.1f}" cy="{Y(vals[-1][1]):.1f}" r="4" '
+                 f'fill="{color}" stroke="{P["bg2"]}" stroke-width="2"/>')
+    if thr and lo <= float(thr) <= hi:
+        ty = Y(float(thr))
+        o.append(f'<line x1="{x + 12:.1f}" y1="{ty:.1f}" x2="{x + w - 12:.1f}" '
+                 f'y2="{ty:.1f}" stroke="{P["crit"]}" stroke-width="1" opacity=".55"/>')
+    o.append(f'<line x1="{x + 12:.1f}" y1="{pb:.1f}" x2="{x + w - 12:.1f}" '
+             f'y2="{pb:.1f}" stroke="{P["line"]}" stroke-width="1"/>')
+
+
+
+
 def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
            theme="dark") -> str:
-    """구간 그래프.
+    """구간 그래프 — 스코어 패널 + 지표 격자.
 
-    fabs 를 주면 그 FAB 의 영역점수(area_score)를 스코어 패널에 겹쳐 그린다.
-    화면의 추이 그래프에서 체크한 것이 그대로 넘어온다 — 추이에서 켜 놓고
-    더블클릭했는데 여기서 사라지면 같은 걸 두 번 골라야 한다.
+    fabs 를 주면 그 FAB 의 영역점수를 스코어 패널에 겹쳐 그린다. 화면의 추이
+    그래프에서 체크한 것이 그대로 넘어온다 — 추이에서 켜 놓고 더블클릭했는데
+    여기서 사라지면 같은 걸 두 번 골라야 한다.
 
-    theme="light" 면 흰 배경용 색으로 그린다. 화면 배경을 흰색으로 바꿔도
-    그래프만 검게 남으면 거기만 눈이 아프다.
+    theme 은 dark/light/navy/contrast. 화면 배경을 바꿔도 그래프만 검게 남으면
+    거기만 눈이 아프다.
+
+    ★2026-09 전면 개편 — 무엇이 달라졌는지는 위 블록 주석에.
+      바뀌지 않은 것: 함수 서명, 분마다 호버, 사건 딱지, FAB 겹쳐보기.
     """
-    # ★모듈 상수를 **지역 이름으로 덮는다**. 아래 f-string 수십 군데가
-    #   그대로 지역값을 쓰게 되어, 색 한 벌을 더 넣는 데 그림 코드는
-    #   손대지 않는다 (두 벌로 갈라지면 한쪽만 고치게 된다).
-    P = _pal(theme)
-    _BG, _BG2, _LINE, _GRID = P["bg"], P["bg2"], P["line"], P["grid"]
-    _TX, _TX2, _TX3 = P["tx"], P["tx2"], P["tx3"]
-    _SCORE_COLOR, _SEL_COLOR = P["score"], P["sel"]
-    _EVT_COLOR, _CRIT_COLOR = P["evt"], P["crit"]
-    _PATH_COLORS = P["path"]
-
-    def _kc(col, idx):
-        return _kind_color(col, idx, P)
-
+    from sentinel import grade_cuts, load_config
     cfg = cfg or load_config()
+    P = _pal(theme)
     pts = window_rows(rows, center, minutes, cfg)
     if not pts:
-        return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="110">'
-                '<rect width="100%%" height="100%%" fill="%s"/>'
-                '<text x="%d" y="60" fill="%s" font-size="14" text-anchor="middle">'
-                '해당 구간에 데이터가 없습니다</text></svg>'
-                % (width, _BG, width // 2, _TX2))
+        return (f'<div style="padding:28px;color:{P["tx2"]};font-size:13px">'
+                f'이 구간에 자료가 없습니다</div>')
 
-    from sentinel import grade_cuts
-    floor = grade_cuts(cfg)[0]
-    t0, t1 = pts[0][0], pts[-1][0]
-    span = max(1.0, (t1 - t0).total_seconds())
-    incs = _incidents(pts, floor)
-    peak_t, peak_r, peak_sc = max(
-        ((t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts), key=lambda x: x[2])
-    pts_sc = [(t, r, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
-    metrics = parse_reason_metrics(peak_r.get("reason") or "")
-    metrics = _pio_fill(metrics, pts)
-    # ★값이 두 점도 안 되는 지표는 **패널을 만들지 않는다.** 예전엔 88px 짜리
-    #   빈 칸을 그려 놓고 "데이터 없음" 만 적었다 — 그래프가 길어지기만 하고
-    #   볼 것은 없다. 대신 어느 컬럼이 안 오는지 한 줄로 밝힌다 (그 사실도
-    #   정보다 — 수집이 빠진 것인지 확인해야 하니까).
-    def _has_line(md):
-        # ★막대(개수)는 한 점이면 충분하다 — 1분에 4개 터진 그 한 점이
-        #   정확히 봐야 할 것이라, 선 그래프 기준(2점)으로 자르면 안 된다.
-        need = 1 if md.get("bar") else 2
-        cols = (md.get("cols") or []) or [{"col": md["col"]}]
-        n = 0
+    # ── 지표 모으기 + 배수 재기 ───────────────────────────────────────
+    TH = thresholds()
+    sel = min(pts, key=lambda tr: abs((tr[0] - center).total_seconds()))
+    seen, metrics, empty = set(), [], []
+    # ★reason 은 그 10분에 **가장 많이 실패한 한 경로**만 적어 온다. 데이터로
+    #   나머지를 채우는 _pio_fill 을 **버리기 전에** 부른다 — 뒤에 부르면
+    #   판단 근거(pio_10min_cnt)가 이미 버려져 칸이 통째로 사라진다.
+    for m in _pio_fill(parse_reason_metrics(sel[1].get("reason") or ""), pts):
+        c = m["col"]
+        if c in seen:
+            continue
+        seen.add(c)
+        # ★PIO 주 경로는 raw 가 'PIO.DEPOSIT.{경로}' 라는 자리표다. 현장에서
+        #   찾아갈 수 없는 이름이라 실제 컬럼명으로 바꿔 적고, 값도 그 컬럼들의
+        #   합으로 잰다 (첫 경로만 그리면 나머지가 화면에서 사라진다).
+        sub = [x["col"] for x in (m.get("cols") or [])] if m.get("pio_stack") else None
+        if sub:
+            # ★raw 는 **실제로 읽은 곳**이어야 한다. reason 에서 읽은 칸에
+            #   CSV 컬럼명을 적으면 현장에서 찾아가도 그 컬럼이 없다.
+            from_reason = any(x.get("from_reason") for x in (m.get("cols") or []))
+            m = dict(m, sumcols=sub,
+                     raw=m.get("raw") if from_reason else " + ".join(sub))
+            c = sub[0]
+        cs = m.get("sumcols") or [c]
+        vs = []
         for _t, r in pts:
-            if any(_pio_val(r, c) is not None for c in cols):
-                n += 1
-                if n >= need:
-                    return True
-        return False
+            # ★경로 묶음은 _pio_val 로 읽는다 — 1분 컬럼이 창 내내 0 이면
+            #   _pio_fill 이 reason 에서 읽는 칸으로 바꿔 끼우는데,
+            #   CSV 만 보면 그 칸이 통째로 0 이 되어 버려진다.
+            got = ([_pio_val(r, x) for x in m["cols"]] if sub
+                   else [_f(r.get(k)) for k in cs])
+            got = [x for x in got if x is not None]
+            if got:
+                vs.append(sum(got))
+        # ★값이 하나도 없거나 딱 한 점뿐이면 칸을 안 만든다. 빈 칸을 그리면
+        #   높이만 먹고 아무 말도 안 한다. 대신 **왜 안 보이는지**는 아래에
+        #   한 줄로 남긴다 — 그냥 지우기만 하면 "왜 안 뜨나" 에 답이 없다.
+        if len(vs) < 2:
+            empty.append(m.get("label") or c)
+            continue
+        thr, op, _lb, _un = TH.get(c, (None, ">=", None, None))
+        m = dict(m, thr=thr, op=op)
+        # ★배수는 **구간 최악값**으로 잰다. 마지막 값으로 재면 이미 지나간
+        #   급증이 회색으로 죽어서, 방금 무슨 일이 있었는지가 안 보인다.
+        worst = max(vs) if op in (">=", ">") else min(vs)
+        m["ratio"] = _ratio(worst, thr, op)
+        m["worst"] = worst
+        metrics.append(m)
+    metrics.sort(key=lambda m: (-(m["ratio"] or 0)))
 
-    empty = [m for m in metrics if not _has_line(m)]
-    metrics = [m for m in metrics if _has_line(m)]
-    area = (peak_r.get("hot_area") or "").strip()
+    # ── 자리 잡기 ─────────────────────────────────────────────────────
+    incs = _incidents(pts, floor=grade_cuts(cfg)[1])
+    # ★지표가 한둘인데 3열로 깔면 오른쪽 3분의 2 가 빈 자리로 남는다.
+    #   열 수를 지표 수에 맞춰 줄여 칸을 넓게 쓴다.
+    ncol = max(1, min(COLS, len(metrics) or 1))
+    rowsn = (len(metrics) + ncol - 1) // ncol
+    cw = (width - PAD * 2 - GAP * (ncol - 1)) / ncol
+    chip_h = 17 if incs else 0
+    y_slbl = HEAD_H + LBL_H
+    top_s = y_slbl + 6 + chip_h
+    y_axis = top_s + SCORE_H + AXIS_H
+    y_mlbl = y_axis + 22
+    y_grid = y_mlbl + 10
+    height = y_grid + rowsn * (CELL_H + GAP) - (GAP if rowsn else 0) + PAD
 
-    L, R = 62, 22
-    pw = width - L - R
-    # ★MET_H 를 88 → 116 으로 키웠다. 지표 이름표를 왼쪽 여백(46px)에 두었는데
-    #   '(PIO 반송실패 10분 합(개)' 같은 한글 이름은 150px 라 막대 위로 흘러
-    #   나와 둘 다 안 읽혔다. 이름표를 패널 **위 두 줄**로 올리고, 그림 높이
-    #   (72px)는 예전 그대로 지키려고 그 두 줄만큼 더 준다.
-    SCORE_H, MET_H, GAP = 150, 116, 12
+    o = [f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
+         f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
+         '<style>.ghit:hover{fill-opacity:.07}</style>',
+         f'<rect width="100%" height="100%" fill="{P["bg"]}"/>']
 
-    # ── 사건·최고점 딱지 자리를 **먼저** 잡는다 ──────────────────────
-    # ★예전엔 head 를 50 으로 박아 두고 딱지를 text-anchor="middle" 로 그냥
-    #   찍었다. 그래서 (a) 구간 끝의 사건은 그림 밖으로 잘리고
-    #   ('사건3 76점 @0' 에서 끊김) (b) 사건이 가까우면 글자끼리 포개지고
-    #   (c) 최고점이 사건과 같은 분이면 셋이 겹쳤다.
-    #   이제 겹치지 않는 줄을 먼저 찾아 두고, 쓴 줄 수만큼 머리 공간을 늘린다.
-    def _cx(t):
-        return L + pw * ((t - t0).total_seconds() / span)
+    # ── 제목 ─────────────────────────────────────────────────────────
+    r0 = sel[1]
+    sc = _f(r0.get("unified_risk_score"))
+    bands = [(lo, hi, nm, c) for (lo, hi, c), nm
+             in zip(_bands_of(cfg, P), ("정상", "경계", "위험", "초위험"))]
+    lvl, lvc = "정상", P["tx2"]
+    for lo, hi, nm, c in bands:
+        if sc is not None and lo <= sc <= hi:
+            lvl, lvc = nm, c
+    o.append(f'<text x="{PAD}" y="21" font-size="13.5" font-weight="700" '
+             f'fill="{P["tx"]}">{_e(sel[0].strftime("%Y-%m-%d %H:%M"))}'
+             f'<tspan fill="{P["tx3"]}" font-weight="400"> · </tspan>'
+             f'<tspan fill="{P["tx2"]}">{_e(r0.get("hot_area") or "")}</tspan>'
+             f'<tspan fill="{P["tx3"]}" font-weight="400" font-size="11">'
+             f'  {_e(pts[0][0].strftime("%H:%M"))}~{_e(pts[-1][0].strftime("%H:%M"))}'
+             f'</tspan></text>')
+    if sc is not None:
+        # ★정상일 때 lvc 는 흐린 회색이라, 그대로 쓰면 제일 큰 글자가 제일
+        #   안 읽힌다. 알약만 등급색으로 깔고 숫자는 본문색으로 쓴다.
+        txt, sub2 = f"{sc:.0f}", f" {lvl}"
+        bw2 = _text_w(txt, 20) + _text_w(sub2, 12) + 24
+        o.append(f'<rect x="{width - PAD - bw2:.1f}" y="3" width="{bw2:.1f}" '
+                 f'height="25" rx="12.5" fill="{lvc}" opacity="0.18" '
+                 f'stroke="{lvc}" stroke-opacity="0.45"/>')
+        o.append(f'<text x="{width - PAD - 12:.1f}" y="21.5" font-size="20" '
+                 f'font-weight="800" text-anchor="end" fill="{P["tx"]}" '
+                 f'font-family="Consolas,monospace">{txt}'
+                 f'<tspan font-size="12" font-weight="700" fill="{P["tx2"]}">'
+                 f'{_e(sub2)}</tspan></text>')
 
-    _warn, _danger, _crit = grade_cuts(cfg)
+    # ── 스코어 패널 ───────────────────────────────────────────────────
+    L, R = PAD + 30, width - PAD
+    pw = R - L
+    SY = lambda v: top_s + SCORE_H * (1 - max(0.0, min(100.0, v)) / 100.0)
+    n = len(pts)
+    X = lambda i: L + pw * (i / max(1, n - 1))
+    at = {t: i for i, (t, _r) in enumerate(pts)}
+    o.append(f'<text x="{PAD}" y="{y_slbl + chip_h:.1f}" font-size="10.5" '
+             f'font-weight="700" fill="{P["tx2"]}">스코어'
+             f'<tspan fill="{P["tx3"]}" font-weight="400" font-size="9.5" '
+             f'font-family="Consolas,monospace">  unified_risk_score</tspan></text>')
+    for lo, hi, nm, c in bands:
+        y1, y2 = SY(min(hi, 100)), SY(lo)
+        o.append(f'<rect x="{L}" y="{y1:.1f}" width="{pw:.1f}" height="{y2 - y1:.1f}" '
+                 f'fill="{c}" opacity="0.10"/>')
+        if lo:
+            o.append(f'<line x1="{L}" y1="{y2:.1f}" x2="{R}" y2="{y2:.1f}" '
+                     f'stroke="{c}" stroke-width="1" opacity="0.30"/>')
+            o.append(f'<text x="{L - 5}" y="{y2 + 3.5:.1f}" font-size="9.5" '
+                     f'text-anchor="end" fill="{P["tx3"]}" '
+                     f'font-family="Consolas,monospace">{lo:g}</text>')
+    o.append(f'<line x1="{L}" y1="{top_s + SCORE_H:.1f}" x2="{R}" '
+             f'y2="{top_s + SCORE_H:.1f}" stroke="{P["line"]}"/>')
 
-    def _tip(head, t, r, sc):
-        """마우스 올렸을 때 나오는 글 — SVG <title> 은 브라우저가 그려 준다.
-
-        ★딱지에는 '사건2 119점 @07:35' 만 들어간다(좁아서). 무엇 때문에
-          걸린 사건인지는 reason 에 있는데 그림에는 자리가 없다 — 올리면
-          보이게 한다. JS 없이 되는 방법이라 서버가 그린 SVG 그대로 쓴다.
-        """
-        # ★sentinel.grade 를 쓰면 안 된다 — 밴드 최대가 100 이라 그 위(예: 119)는
-        #   어느 밴드에도 안 걸려 '정상' 으로 떨어진다. 컷으로 직접 가른다.
-        lv = ('\ucd08\uc704\ud5d8' if sc >= _crit else
-              '\uc704\ud5d8' if sc >= _danger else
-              '\uacbd\uacc4' if sc >= _warn else '\uc815\uc0c1')
-        ln = [f'{head} \u00b7 {t:%H:%M}',
-              f'\uc810\uc218 {sc:.0f}' + (f' \u00b7 {lv}' if lv else '')]
-        a = (r.get("hot_area") or "").strip()
-        if a:
-            ln.append(f'\uc601\uc5ed {a}')
-        rs = str(r.get("reason") or "").strip()
-        if rs:
-            # reason 은 한 줄로 길다 — 룰 단위로 끊어 읽기 좋게
-            for part in [x.strip() for x in re.split(r"\s*;\s*", rs) if x.strip()]:
-                ln.append(part)
-        return _e("\n".join(ln))
-
-    _chips, _rows_used = [], []       # _rows_used: [(줄, 왼쪽x, 오른쪽x)]
-
-    def _plan(t, text, color, tip=""):
-        w = _text_w(text) + 12
-        x1 = max(L + 1, min(L + pw - w - 1, _cx(t) - w / 2))   # 패널 밖으로 못 나간다
-        row = 0
-        while any(r == row and not (x1 + w + 4 < a or x1 > b + 4)
-                  for r, a, b in _rows_used):
-            row += 1
-        _rows_used.append((row, x1, x1 + w))
-        _chips.append((row, x1, w, text, color, tip))
-
-    # 최고점을 먼저 — 제일 중요한 딱지라 맨 아랫줄(그래프에 가장 가까운 줄)을
-    # 갖고, 사건 딱지가 그 위로 비켜 간다.
-    _plan(peak_t, f'\u25b2 \ucd5c\uace0 {peak_sc:.0f}\uc810 \u00b7 {peak_t:%H:%M}'
-                  + (f' \u00b7 {_e(area)}' if area else ''), _CRIT_COLOR,
-          _tip('\ucd5c\uace0\uc810', peak_t, peak_r, peak_sc))
-    for _i, (_it, _ir, _isc) in enumerate(incs, 1):
-        _plan(_it, f'\uc0ac\uac74{_i} {_isc:.0f}\uc810 @{_it:%H:%M}', _EVT_COLOR,
-              _tip('\uc0ac\uac74%d' % _i, _it, _ir, _isc))
-
-    _chip_rows = max((r for r, *_ in _chips), default=0) + 1
-    head = 24 + _chip_rows * 15     # 제목 한 줄 + 딱지 줄 수만큼
-    sec_head = 30 if metrics else 0
-    top_score = head
-    y_met0 = top_score + SCORE_H + 18 + sec_head
-    height = y_met0 + (MET_H + GAP) * len(metrics) + 34 + (16 if empty else 0)
-
-    def X(t):
-        return L + pw * ((t - t0).total_seconds() / span)
-
-    o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-         f'viewBox="0 0 {width} {height}" '
-         f'font-family="-apple-system,Segoe UI,Malgun Gothic,sans-serif">',
-         f'<rect width="100%" height="100%" fill="{_BG}"/>']
-
-    # ── 제목 ──
-    o.append(f'<text x="{L-46}" y="21" font-size="14" font-weight="700" fill="{_TX}">'
-             f'📅 {t0:%Y-%m-%d} M16 BR 구간 ({len(incs)}건) · {t0:%H:%M}~{t1:%H:%M}</text>')
-
-    # ── 스코어 패널 ──
-    def SY(v):
-        return top_score + SCORE_H * (1 - max(0.0, min(100.0, v)) / 100.0)
-
-    bands = _bands_of(cfg, P)
-    for lo_, hi_, col in bands:
-        y2, y1 = SY(lo_), SY(hi_)
-        o.append(f'<rect x="{L}" y="{y1:.1f}" width="{pw}" height="{y2-y1:.1f}" fill="{col}"/>')
-    for v in [b[0] for b in bands[1:]] + [100]:
-        y = SY(v)
-        o.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L+pw}" y2="{y:.1f}" stroke="{_GRID}" '
-                 f'stroke-width="0.8" stroke-dasharray="3 3"/>')
-        o.append(f'<text x="{L-7}" y="{y+4:.1f}" font-size="10" fill="{_TX2}" '
-                 f'text-anchor="end">{v}</text>')
-
-    # ── 체크한 FAB 의 영역점수를 같은 축에 겹쳐 그린다 ──
-    # ★본선보다 **먼저** 긋는다. 전체 점수가 위에 있어야 무엇이 기준선인지
-    #   흐려지지 않는다. 굵기도 본선(1.6)보다 가늘게(1.15) 한다.
+    # 체크한 FAB 의 영역점수 — 본선보다 먼저, 더 가늘게
     fab_lines = _fab_series(pts, fabs, cfg)
     for code, series in fab_lines:
         if len(series) < 2:
             continue
-        fd = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{SY(v):.1f}"
-                      for k, (t, v) in enumerate(series))
+        fd = " ".join(f"{'M' if k == 0 else 'L'}{X(at[t]):.1f},{SY(v):.1f}"
+                      for k, (t, v) in enumerate(series) if t in at)
         o.append(f'<path d="{fd}" fill="none" stroke="{_fab_color(code)}" '
-                 f'stroke-width="1.15" opacity="0.95"/>')
+                 f'stroke-width="1.2" opacity="0.9"/>')
 
-    sv = [(t, _f(r.get("unified_risk_score")) or 0) for t, r in pts]
-    d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{SY(v):.1f}" for k, (t, v) in enumerate(sv))
-    o.append(f'<path d="{d}" fill="none" stroke="{_SCORE_COLOR}" stroke-width="1.6"/>')
+    sv = [(i, _f(r.get("unified_risk_score"))) for i, (_t, r) in enumerate(pts)]
+    sv = [(i, v) for i, v in sv if v is not None]
+    if sv:
+        d = " ".join(f"{'M' if k == 0 else 'L'}{X(i):.1f},{SY(v):.1f}"
+                     for k, (i, v) in enumerate(sv))
+        o.append(f'<path d="{d}" fill="none" stroke="{P["score"]}" stroke-width="2" '
+                 f'stroke-linejoin="round" stroke-linecap="round"/>')
 
-    # ── 사건·최고점 딱지 그리기 (자리는 위에서 이미 잡았다) ──────────
-    for _i, (_it, _ir, _isc) in enumerate(incs, 1):
-        x = _cx(_it)
-        o.append(f'<line x1="{x:.1f}" y1="{top_score}" x2="{x:.1f}" y2="{top_score+SCORE_H}" '
-                 f'stroke="{_EVT_COLOR}" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>')
-        o.append(f'<circle cx="{x:.1f}" cy="{SY(_isc):.1f}" r="3.4" fill="{_EVT_COLOR}"/>')
-        # ★마우스 판을 따로 깐다 — 점선은 1px 이라 마우스로 맞히기가 어렵다.
-        #   투명한 14px 띠를 얹어 그 구간 어디에 올려도 말풍선이 뜨게 한다.
-        _etip = _tip('\uc0ac\uac74%d' % _i, _it, _ir, _isc)
-        o.append(f'<rect x="{x-7:.1f}" y="{top_score}" width="14" height="{SCORE_H}" '
-                 f'fill="transparent" style="cursor:help">'
-                 f'<title>{_etip}</title></rect>')
-    # ★칩(배경 깔린 알약)으로 그린다 — 등급 밴드(붉은·주황 띠) 위에 맨 글자를
-    #   얹으면 같은 계열 색이라 읽히지 않는다.
-    for row, x1, w, text, color, tip in _chips:
-        y = top_score - 7 - row * 15
-        o.append(f'<g style="cursor:help"><title>{tip}</title>'
-                 f'<rect x="{x1:.1f}" y="{y-10:.1f}" width="{w:.1f}" height="14" rx="3.5" '
-                 f'fill="{_BG}" stroke="{color}" stroke-width="0.9" opacity="0.97"/>'
-                 f'<text x="{x1+w/2:.1f}" y="{y:.1f}" font-size="9.5" fill="{color}" '
-                 f'font-weight="700" text-anchor="middle">{text}</text></g>')
+    # ── 분마다 호버 ───────────────────────────────────────────────────
+    # ★서버가 그린 SVG 라 <title> 이 곧 툴팁이다(JS 없이 뜬다). 선이 1px 라도
+    #   손이 닿게 히트 영역을 칸 폭만큼 넓게 깐다. data-at 은 화면이 클릭으로
+    #   그 분을 집을 때 쓴다.
+    hw = max(3.0, pw / max(1, n))
+    for i, (t, r) in enumerate(pts):
+        v = _f(r.get("unified_risk_score"))
+        lv2 = next((nm for lo, hi, nm, _c in bands
+                    if v is not None and lo <= v <= hi), "")
+        ln = [f"{t:%H:%M}  {'' if v is None else f'{v:.0f}점'} {lv2}".rstrip()]
+        ho = (r.get("hot_area") or "").strip()
+        if ho:
+            ln.append(f"주 영역 {ho}")
+        ft = (r.get("predicted_fault_type") or "").strip()
+        if ft:
+            ln.append(f"예측 {ft}")
+        rs = str(r.get("reason") or "").strip()
+        if rs:
+            ln += [x.strip() for x in re.split(r"\s*;\s*", rs) if x.strip()]
+        o.append(f'<rect class="ghit" data-at="{_e(t.isoformat())}" '
+                 f'x="{X(i) - hw / 2:.1f}" y="{top_s}" width="{hw:.1f}" '
+                 f'height="{SCORE_H}" fill="{P["tx"]}" fill-opacity="0" '
+                 f'style="cursor:pointer"><title>{_e(chr(10).join(ln))}</title></rect>')
 
-    # ── 더블클릭한 시각 표시 (선택 시각 + 그 시각 스코어) ──
-    sel_t, sel_r, sel_sc = min(pts_sc, key=lambda x: abs((x[0] - center).total_seconds()))
-    sx = X(sel_t)
-    o.append(f'<line x1="{sx:.1f}" y1="{top_score}" x2="{sx:.1f}" y2="{top_score+SCORE_H}" '
-             f'stroke="{_SEL_COLOR}" stroke-width="1.4" opacity="0.8"/>')
-    o.append(f'<circle cx="{sx:.1f}" cy="{SY(sel_sc):.1f}" r="4.6" fill="{_BG}" '
-             f'stroke="{_SEL_COLOR}" stroke-width="2.2"/>')
-    _lb = f'선택 {sel_t:%H:%M} · {sel_sc:.0f}점'
-    _lw = len(_lb) * 6.2 + 12
-    _lx = max(L + 2, min(L + pw - _lw - 2, sx - _lw / 2))
-    _ly = SY(sel_sc) + (16 if sel_sc > 60 else -30)
-    o.append(f'<rect x="{_lx:.1f}" y="{_ly:.1f}" width="{_lw:.1f}" height="19" rx="4" '
-             f'fill="{_SEL_COLOR}"/>')
-    o.append(f'<text x="{_lx+_lw/2:.1f}" y="{_ly+13.5:.1f}" font-size="10.5" fill="{_BG}" '
-             f'font-weight="700" text-anchor="middle">{_e(_lb)}</text>')
-
-    # 스코어 = 실제 컬럼명 명시
-    o.append(f'<text x="{L}" y="{top_score+SCORE_H+14:.1f}" font-size="10.5" '
-             f'fill="{_SCORE_COLOR}" font-weight="700">스코어</text>')
-    o.append(f'<text x="{L+44}" y="{top_score+SCORE_H+14:.1f}" font-size="9.5" fill="{_TX2}" '
-             f'font-family="ui-monospace,Menlo,Consolas,monospace">unified_risk_score</text>')
-
-    # ── FAB 범례 — 색만으로 구분하지 않게 이름을 같이 적는다 ──
-    if fab_lines:
-        lx = L + 190
-        for code, series in fab_lines:
-            c = _fab_color(code)
-            o.append(f'<line x1="{lx}" y1="{top_score+SCORE_H+10.5:.1f}" x2="{lx+13}" '
-                     f'y2="{top_score+SCORE_H+10.5:.1f}" stroke="{c}" stroke-width="2.4"/>')
-            top = max((v for _t, v in series), default=0)
-            txt = f'{code} 최고 {top:.0f}' if series else f'{code} 값 없음'
-            o.append(f'<text x="{lx+17}" y="{top_score+SCORE_H+14:.1f}" font-size="9.5" '
-                     f'fill="{c}" font-weight="700">{_e(txt)}</text>')
-            lx += 22 + len(txt) * 6.0
-        o.append(f'<text x="{L}" y="{top_score+SCORE_H+27:.1f}" font-size="9" fill="{_TX2}">'
-                 f'가는 선 = 각 FAB 영역점수(area_score) · 굵은 청록 = 전체 점수</text>')
-
-    # ── 지표 섹션 ──
-    if metrics:
-        o.append(f'<text x="{L-46}" y="{top_score+SCORE_H+40:.1f}" font-size="11" '
-                 f'fill="{_TX}" font-weight="700">'
-                 f'최고점({peak_t:%H:%M} · {peak_sc:.0f}점{" · " + _e(area) if area else ""}) '
-                 f'발동 지표 — 실제 raw 컬럼 {minutes}분 추이</text>')
-
-    for i, md in enumerate(metrics):
-        y = y_met0 + (MET_H + GAP) * i
-        col = _kc(md["col"], i)
-        stack = md.get("cols") or []
-        if stack:
-            # 경로별 값과 그 분의 합. 막대 높이 = 합 = 그 1분의 총 실패 개수.
-            rowsv = []
-            for t, r in pts:
-                raw = [(x["name"], _pio_val(r, x)) for x in stack]
-                if all(v is None for _n, v in raw):
-                    continue            # 그 분에 PIO 컬럼이 통째로 안 온 것
-                per = [(n_, v or 0.0) for n_, v in raw]
-                rowsv.append((t, per, sum(v for _n, v in per)))
-            vals = [(t, tot) for t, _per, tot in rowsv]
-        else:
-            rowsv = []
-            vals = [(t, _f(r.get(md["col"]))) for t, r in pts]
-            vals = [(t, v) for t, v in vals if v is not None]
-        if not vals:
+    # ── 사건 표시 ─────────────────────────────────────────────────────
+    # ★딱지는 스코어 패널 **위** 줄에 둔다. 밴드(붉은 띠) 위에 맨 글자를 얹으면
+    #   같은 계열이라 안 읽혀서, 배경 깔린 알약으로 그린다.
+    used = []
+    for k, (it, ir, isc) in enumerate(incs, 1):
+        if it not in at:
             continue
+        x = X(at[it])
+        o.append(f'<line x1="{x:.1f}" y1="{top_s}" x2="{x:.1f}" '
+                 f'y2="{top_s + SCORE_H:.1f}" stroke="{P["evt"]}" stroke-width="1" '
+                 f'stroke-dasharray="4 3" opacity="0.8"/>')
+        o.append(f'<circle cx="{x:.1f}" cy="{SY(isc):.1f}" r="3.4" fill="{P["evt"]}"/>')
+        lb = f'사건{k} {isc:.0f}점 @{it:%H:%M}'
+        lw = _text_w(lb, 9.5) + 12
+        x1 = max(L, min(R - lw, x - lw / 2))
+        # 앞 딱지와 겹치면 오른쪽으로 민다 — 줄을 늘리면 그림이 다시 길어진다
+        for ux1, ux2 in used:
+            if x1 < ux2 + 4 and x1 + lw > ux1 - 4:
+                x1 = min(R - lw, ux2 + 5)
+        used.append((x1, x1 + lw))
+        ty = y_slbl + chip_h - 4
+        o.append(f'<g style="cursor:help"><title>{_e(f"사건{k} · {it:%H:%M} · {isc:.0f}점")}'
+                 f'</title><rect x="{x1:.1f}" y="{ty - 12:.1f}" width="{lw:.1f}" '
+                 f'height="15" rx="4" fill="{P["bg"]}" stroke="{P["evt"]}" '
+                 f'stroke-width="0.9"/><text x="{x1 + lw / 2:.1f}" y="{ty - 1:.1f}" '
+                 f'font-size="9.5" font-weight="700" text-anchor="middle" '
+                 f'fill="{P["evt"]}">{_e(lb)}</text></g>')
 
-        o.append(f'<rect x="{L-46}" y="{y}" width="4" height="{MET_H}" fill="{col}" rx="2"/>')
-        # 이름표 두 줄 — 그림 위에 둔다(왼쪽 여백은 46px 뿐이라 글자가 막대를 덮었다)
-        o.append(f'<text x="{L-38}" y="{y+13}" font-size="11.5" font-weight="700" fill="{col}">'
-                 f'{_e(md["label"])} ({_e(md["unit"])})</text>')
-        o.append(f'<text x="{L-38}" y="{y+27}" font-size="9" fill="{_TX2}" '
-                 f'font-family="ui-monospace,Menlo,Consolas,monospace">{_e(md["raw"])}</text>')
+    # ── 고른 시각 ─────────────────────────────────────────────────────
+    si = at[sel[0]]
+    o.append(f'<line x1="{X(si):.1f}" y1="{top_s}" x2="{X(si):.1f}" '
+             f'y2="{top_s + SCORE_H:.1f}" stroke="{P["sel"]}" stroke-width="1.4"/>')
+    if sc is not None:
+        o.append(f'<circle cx="{X(si):.1f}" cy="{SY(sc):.1f}" r="5" fill="{P["bg"]}" '
+                 f'stroke="{P["sel"]}" stroke-width="2.4"/>')
+    o.append(f'<text x="{L}" y="{y_axis:.1f}" font-size="9.5" fill="{P["tx3"]}" '
+             f'font-family="Consolas,monospace">{_e(pts[0][0].strftime("%H:%M"))}</text>')
+    o.append(f'<text x="{X(si):.1f}" y="{y_axis:.1f}" font-size="9.5" '
+             f'text-anchor="middle" fill="{P["sel"]}" font-weight="700" '
+             f'font-family="Consolas,monospace">{_e(sel[0].strftime("%H:%M"))}</text>')
+    o.append(f'<text x="{R}" y="{y_axis:.1f}" font-size="9.5" text-anchor="end" '
+             f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
+             f'{_e(pts[-1][0].strftime("%H:%M"))}</text>')
 
-        is_bar = bool(md.get("bar"))
-        # ★개수 막대는 **0 부터** 그린다. 최소값을 바닥으로 잡으면 3~4개가
-        #   0~4개처럼 보여서 두 배로 부풀어 읽힌다. 개수는 0 이 기준이다.
-        vmin = 0.0 if is_bar else min(v for _, v in vals)
-        vmax = max(v for _, v in vals)
-        rng = (vmax - vmin) or 1.0
-        # ★10분 합은 **이미 겹쳐 더한 값**이라 구간 합을 또 내면 안 된다.
-        #   1시간이면 같은 실패를 열 번씩 세어 250개 같은 거짓 숫자가 나온다.
-        #   더할 수 있는 건 1분 개수뿐이다.
-        if is_bar and not md.get("rolling"):
-            _rng_txt = (f'범위 0~{_fmt(vmax)}{_e(md["unit"])} · '
-                        f'구간 합 {_fmt(sum(v for _, v in vals))}{_e(md["unit"])}')
-        elif is_bar:
-            _pk = max(vals, key=lambda x: x[1])
-            _rng_txt = (f'범위 0~{_fmt(vmax)}{_e(md["unit"])} · '
-                        f'최고 {_fmt(_pk[1])}{_e(md["unit"])} @{_pk[0]:%H:%M}')
-        else:
-            _rng_txt = f'범위 {_fmt(vmin)}~{_fmt(vmax)}{_e(md["unit"])}'
-        # 범위·합계는 이름표 둘째 줄의 **오른쪽 끝**에 — 왼쪽은 raw 컬럼명이
-        # 쓰고 있어 같은 자리에 두면 긴 이름과 겹친다.
-        o.append(f'<text x="{L+pw}" y="{y+27}" font-size="9" fill="{_TX3}" '
-                 f'text-anchor="end">{_rng_txt}</text>')
+    # FAB 범례 — 색만으로 구분하게 두지 않는다
+    if fab_lines:
+        # ★시간축 줄에 두면 가운데 시각(선택한 분)과 겹친다. 스코어 패널
+        #   안 왼쪽 위 빈자리로 옮긴다 — 선 색을 바로 옆에서 대조하게 된다.
+        lx = L + 6
+        ly = top_s + 13
+        for code, _s in fab_lines:
+            c = _fab_color(code)
+            o.append(f'<rect x="{lx:.1f}" y="{ly - 4:.1f}" width="10" height="3" '
+                     f'rx="1.5" fill="{c}"/>')
+            o.append(f'<text x="{lx + 14:.1f}" y="{ly:.1f}" font-size="9.5" '
+                     f'fill="{c}" font-weight="700">{_e(code)}</text>')
+            lx += 24 + _text_w(code, 9.5)
+        # 무슨 값을 그린 선인지 — 색과 이름만으로는 'M16HUB 의 무엇' 인지 모른다
+        o.append(f'<text x="{lx + 2:.1f}" y="{ly:.1f}" font-size="9" '
+                 f'fill="{P["tx3"]}" font-family="Consolas,monospace">area_score</text>')
 
-        # 그림은 이름표 두 줄 아래에서 시작한다 (높이는 예전과 같은 72px)
-        pt, pb = y + 36, y + MET_H - 8
-
-        def MY(v):
-            return pb - (pb - pt) * ((v - vmin) / rng)
-
-        o.append(f'<line x1="{L}" y1="{pb:.1f}" x2="{L+pw}" y2="{pb:.1f}" stroke="{_LINE}"/>')
-        if is_bar:
-            # 막대 폭은 1분 간격에 맞춘다. 구간이 길면 1px 밑으로 내려가므로
-            # 최소 폭을 둔다 — 안 그러면 급증이 화면에서 사라진다.
-            bw = max(1.6, min(9.0, pw / max(1, len(pts)) - 1.0))
-            if stack:
-                # 경로마다 색을 달리해 아래에서부터 쌓는다.
-                cmap = {x["name"]: _PATH_COLORS[k % len(_PATH_COLORS)]
-                        for k, x in enumerate(stack)}
-                for t, per, _tot in rowsv:
-                    base = pb
-                    for name, v in per:
-                        if v <= 0:
-                            continue
-                        h = max(1.0, (pb - MY(v)))
-                        o.append(f'<rect x="{X(t)-bw/2:.1f}" y="{base-h:.1f}" '
-                                 f'width="{bw:.1f}" height="{h:.1f}" '
-                                 f'fill="{cmap[name]}" opacity="0.95"/>')
-                        base -= h
-                # 범례 — 색만으로 경로를 구분하게 두지 않는다.
-                # ★그림 안 오른쪽 위(pt+1)에 두었더니 그 자리의 막대·사건 값
-                #   딱지와 겹쳐 둘 다 안 읽혔다. 이름표 첫 줄 오른쪽으로 올린다.
-                lx = L + pw
-                for name, c in reversed(list(cmap.items())):
-                    tw = _text_w(name, 9) + 16
-                    lx -= tw
-                    o.append(f'<rect x="{lx:.1f}" y="{y+5:.1f}" width="8" height="8" '
-                             f'rx="1.5" fill="{c}"/>')
-                    o.append(f'<text x="{lx+11:.1f}" y="{y+12.5:.1f}" font-size="9" '
-                             f'fill="{c}" font-weight="700">{_e(name)}</text>')
-                    lx -= 6
-            else:
-                for t, v in vals:
-                    if v <= 0:
-                        continue                  # 0 은 막대를 안 그린다 (바닥선이 곧 0)
-                    h = max(1.0, pb - MY(v))
-                    o.append(f'<rect x="{X(t)-bw/2:.1f}" y="{pb-h:.1f}" width="{bw:.1f}" '
-                             f'height="{h:.1f}" fill="{col}" opacity="0.92" rx="0.8"/>')
-        else:
-            area_d = (f"M{X(vals[0][0]):.1f},{pb:.1f} "
-                      + " ".join(f"L{X(t):.1f},{MY(v):.1f}" for t, v in vals)
-                      + f" L{X(vals[-1][0]):.1f},{pb:.1f} Z")
-            o.append(f'<path d="{area_d}" fill="{col}" opacity="0.20"/>')
-            d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{MY(v):.1f}"
-                         for k, (t, v) in enumerate(vals))
-            o.append(f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.4"/>')
-
-        # 사건 시각의 실제 값 표시
-        vmap = dict(vals)
-        for it, _ir, _isc in incs:
-            x = X(it)
-            o.append(f'<line x1="{x:.1f}" y1="{pt:.1f}" x2="{x:.1f}" y2="{pb:.1f}" '
-                     f'stroke="{_EVT_COLOR}" stroke-width="0.9" stroke-dasharray="4 3" opacity="0.8"/>')
-            v = vmap.get(it)
-            if v is None:
-                continue
-            o.append(f'<circle cx="{x:.1f}" cy="{MY(v):.1f}" r="2.8" fill="{_EVT_COLOR}"/>')
-            # ★구간 끝의 사건은 값 딱지가 그림 밖으로 잘렸다. 오른쪽에 자리가
-            #   없으면 점 **왼쪽**에 적는다(끝 사건은 늘 마지막 분이라 흔하다).
-            _vt = f'{_fmt(v)}{_e(md["unit"])}'
-            _vw = _text_w(_vt, 9)
-            _right = x + 4 + _vw <= L + pw
-            # ★값이 최고점이면 MY(v)=pt 라 딱지가 그림 **위로** 튀어나가
-            #   이름표 줄(범위·합계)과 겹쳤다. 그림 안으로 물린다.
-            _vy = max(pt + 9, MY(v) - 5)
-            o.append(f'<text x="{(x+4) if _right else (x-4):.1f}" y="{_vy:.1f}" '
-                     f'font-size="9" fill="{_EVT_COLOR}" font-weight="700" '
-                     f'text-anchor="{"start" if _right else "end"}">{_vt}</text>')
-
-        # 선택 시각 — 지표 패널에도 세로선 + 그 시각 실제 값
-        o.append(f'<line x1="{sx:.1f}" y1="{pt:.1f}" x2="{sx:.1f}" y2="{pb:.1f}" '
-                 f'stroke="{_SEL_COLOR}" stroke-width="1.2" opacity="0.55"/>')
-        sv_ = vmap.get(sel_t)
-        if sv_ is not None:
-            o.append(f'<circle cx="{sx:.1f}" cy="{MY(sv_):.1f}" r="3.4" fill="{_BG}" '
-                     f'stroke="{_SEL_COLOR}" stroke-width="1.8"/>')
-            _t = f'{_fmt(sv_)}{md["unit"]}'
-            _tw = len(_t) * 6.0
-            _tx = max(L + _tw / 2, min(L + pw - _tw / 2, sx))
-            o.append(f'<text x="{_tx:.1f}" y="{pt+9:.1f}" font-size="9" fill="{_SEL_COLOR}" '
-                     f'font-weight="700" text-anchor="middle">{_e(_t)}</text>')
-
-    # ── X 축 ──
-    ybase = height - 20
-    step = max(1, int(minutes // 8))
-    tick = t0
-    while tick <= t1:
-        x = X(tick)
-        o.append(f'<text x="{x:.1f}" y="{ybase}" font-size="9.5" fill="{_TX2}" '
-                 f'text-anchor="middle">{tick:%H:%M}</text>')
-        tick += timedelta(minutes=step)
-
-    # ★값이 안 오는 컬럼은 패널 대신 한 줄로 — 빈 칸을 그리지 않으면서도
-    #   "이건 왜 안 보이나" 에 답이 된다 (수집이 빠진 것인지 확인해야 한다).
+    # ── 지표 격자 ─────────────────────────────────────────────────────
+    nover = sum(1 for m in metrics if (m["ratio"] or 0) >= 1)
+    o.append(f'<text x="{PAD}" y="{y_mlbl:.1f}" font-size="10.5" font-weight="700" '
+             f'fill="{P["tx2"]}">발동 지표 '
+             f'<tspan fill="{P["tx3"]}" font-weight="400">— 임계 넘은 것부터 · '
+             f'{nover}/{len(metrics)}개 넘음</tspan></text>')
+    if not metrics:
+        o.append(f'<text x="{PAD}" y="{y_grid + 22:.1f}" font-size="12" '
+                 f'fill="{P["tx3"]}">이 분에 발동한 지표가 없습니다</text>')
+    for k, m in enumerate(metrics):
+        cx = PAD + (k % ncol) * (cw + GAP)
+        cy = y_grid + (k // ncol) * (CELL_H + GAP)
+        _cell(o, cx, cy, cw, CELL_H, m, pts, P, X)
     if empty:
-        names = " · ".join(_e(m["label"]) for m in empty[:6])
-        more = f" 외 {len(empty)-6}개" if len(empty) > 6 else ""
-        o.append(f'<text x="{L-46}" y="{ybase+14:.1f}" font-size="9.5" '
-                 f'fill="{_TX3}">이 구간에 값이 안 온 컬럼: {names}{more}</text>')
-
-    # ── 마우스 판 — 어느 분에 올려도 그 분 데이터가 뜬다 ──────────────
-    # ★사건 자리에만 말풍선을 달았더니, 사건이 없는 구간(전부 정상)에서는
-    #   올릴 데가 없었다. 조용한 구간이야말로 '그때 값이 얼마였나' 를 보려고
-    #   더블클릭하는 자리다. 그래서 **모든 분**에 투명 띠를 깐다.
-    # ★맨 끝에 그린다 — 위에 있어야 마우스를 받는다. 투명이라 그림은 안 가린다.
-    _bot = (y_met0 + (MET_H + GAP) * len(metrics) - GAP) if metrics \
-        else (top_score + SCORE_H)
-    _evt_at = {t: i for i, (t, _r, _sc) in enumerate(incs, 1)}
-    _hw = max(2.0, pw / max(1, len(pts)))
-
-    def _mval_of(r, md):
-        """그 분의 지표 값 — PIO 처럼 여러 컬럼을 쌓는 것은 합으로."""
-        cols = md.get("cols") or []
-        if cols:
-            vs = [_pio_val(r, c) for c in cols]
-            vs = [v for v in vs if v is not None]
-            return sum(vs) if vs else None
-        return _f(r.get(md["col"]))
-
-    o.append('<style>.ghit{fill:transparent;cursor:crosshair}'
-             f'.ghit:hover{{fill:{_TX};fill-opacity:.07}}</style>')
-    for _t, _r in pts:
-        _sc = _f(_r.get("unified_risk_score"))
-        _lv = ('\ucd08\uc704\ud5d8' if (_sc or 0) >= _crit else
-               '\uc704\ud5d8' if (_sc or 0) >= _danger else
-               '\uacbd\uacc4' if (_sc or 0) >= _warn else '\uc815\uc0c1')
-        ln = []
-        _n = _evt_at.get(_t)
-        if _t == peak_t:
-            ln.append('\u25b2 \ucd5c\uace0\uc810')
-        elif _n:
-            ln.append('\uc0ac\uac74%d' % _n)
-        ln.append(f'{_t:%H:%M}')
-        ln.append('\uc810\uc218 ' + (f'{_sc:.0f} \u00b7 {_lv}' if _sc is not None else '-'))
-        _a = (_r.get("hot_area") or "").strip()
-        if _a:
-            ln.append(f'\uc601\uc5ed {_a}')
-        for _md in metrics:
-            _v = _mval_of(_r, _md)
-            if _v is not None:
-                ln.append(f'{_md["label"]} {_fmt(_v)}{_md["unit"]}')
-        _rs = str(_r.get("reason") or "").strip()
-        if _rs:
-            ln += [x.strip() for x in re.split(r"\s*;\s*", _rs) if x.strip()]
-        o.append(f'<rect class="ghit" x="{_cx(_t)-_hw/2:.1f}" y="{top_score}" '
-                 f'width="{_hw:.1f}" height="{_bot-top_score:.1f}">'
-                 f'<title>{_e(chr(10).join(ln))}</title></rect>')
-
+        o.append(f'<text x="{PAD}" y="{height - 6:.1f}" font-size="9.5" '
+                 f'fill="{P["tx3"]}">값이 안 온 컬럼 — {_e(" · ".join(empty))}</text>')
     o.append("</svg>")
     return "".join(o)

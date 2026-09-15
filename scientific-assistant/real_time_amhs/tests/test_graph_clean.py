@@ -47,7 +47,13 @@ def _panels(svg):
 
 
 def _height(svg):
-    return int(re.search(r'height="(\d+)"', svg).group(1))
+    """그림 높이 — viewBox 에서 읽는다.
+
+    ★예전엔 `height="(\d+)"` 첫 매치를 썼는데, 2026-09 개편으로 뿌리 <svg> 가
+      높이 속성 대신 viewBox 만 갖게 되면서 **안쪽 사각형의 높이**(25 같은 값)를
+      집어 오게 됐다. 시험이 통과하는데 재는 대상이 달라지는 사고다.
+    """
+    return float(re.search(r'viewBox="0 0 [\d.]+ ([\d.]+)"', svg).group(1))
 
 
 class 값이_없는_지표는_칸을_안_만든다(unittest.TestCase):
@@ -63,11 +69,32 @@ class 값이_없는_지표는_칸을_안_만든다(unittest.TestCase):
         self.assertEqual(_panels(svg), 2)
 
     def test_한쪽이_비면_칸이_하나_준다(self):
-        """★예전엔 '데이터 없음' 칸을 그려서 높이가 그대로였다."""
+        """★예전엔 '데이터 없음' 칸을 그려서 높이가 그대로였다.
+
+        ★2026-09 개편으로 지표가 **격자**가 됐다. 세로로 쌓던 때는 칸이 하나
+          줄면 높이도 줄었는데, 격자는 한 줄에 셋까지 들어가서 둘→하나는
+          높이가 같다. 지키려던 것은 '빈 칸이 자리를 먹지 않는다' 이므로
+          칸 수로 본다. 높이는 **줄 수가 줄 때** 준다 — 아래 시험에서 본다.
+        """
         full = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=7))
         half = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=None))
+        self.assertEqual(_panels(full), 2)
         self.assertEqual(_panels(half), 1)
-        self.assertLess(_height(half), _height(full), "높이가 안 줄었다 — 빈 칸이 남아 있다")
+        self.assertLessEqual(_height(half), _height(full), "높이가 되레 늘었다")
+
+    def test_줄이_줄면_높이가_준다(self):
+        """격자에서 높이를 먹는 것은 칸 수가 아니라 **줄 수** 다."""
+        one = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=7))
+        self.assertEqual(_panels(one), 2)          # 한 줄(3열까지)
+        # 네 칸이면 두 줄이 되어 높이가 늘어야 한다
+        rows = _rows(M16HUB_ra=15.9, M16HUB_rev_count=7)
+        for r in rows:
+            r["reason"] = ("발동: M16HUB[R-A'(x),R-C'(역증가5개),R-D(FAB저장=9%)]; "
+                           "M14[R-A_sus]; M16A[R-A_sus]")
+            r["M16HUB_rd_fab"], r["M14_ra"], r["M16A_ra"] = "9", "3.1", "3.0"
+        four = self._svg(rows)
+        self.assertGreater(_panels(four), 3, "네 칸 이상이어야 두 줄이 된다")
+        self.assertGreater(_height(four), _height(one), "줄이 늘었는데 높이가 그대로다")
 
     def test_빈_칸_문구가_사라졌다(self):
         svg = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=None))

@@ -4470,9 +4470,55 @@ async function drawGraph(){
       fetch(withSys(`/api/contrib?at=${encodeURIComponent(GAT)}`)).then(r=>r.text()).catch(()=>''),
     ]);
     $('#gbody').innerHTML = svg
+      + `<div id="gpin"></div>`
       + (con ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">${con}</div>` : '');
+    bindGraphPin();
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">그래프를 불러오지 못했습니다</div>'; }
 }
+/* ── 그래프를 눌러 그 분을 **고정**한다 ────────────────────────────────
+   ★마우스만 올려 보는 말풍선(SVG <title>)은 관제에서 약하다 — 1초쯤 늦게
+     뜨고, 손을 떼면 사라지고, 여러 명이 같이 못 본다. 교대 인계 때 "여기
+     봐" 가 안 된다. 그래서 누르면 표로 **남게** 한다.
+   ★서버가 그린 SVG 의 히트 영역에 data-at 이 실려 온다. 그 시각의 행은
+     이미 FEED/PFEED 에 있으니 다시 받지 않는다. */
+function bindGraphPin(){
+  const box = $('#gpin');
+  if(!box) return;
+  document.querySelectorAll('#gbody svg .ghit').forEach(el => {
+    el.onclick = () => {
+      const at = el.dataset.at;
+      const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
+      if(!r){ box.innerHTML = ''; return; }
+      const g = gradeOf(+r.score||0);
+      const met = (r.metrics||[]).map(m=>`<span class="zchip mono" title="${
+          esc(m.label||'')}">${esc(m.raw)}</span>`).join(' ') || '<span class="dim">—</span>';
+      const fab = FABS.map(f=>{
+        const v = (r.fab||{})[f];
+        if(v===undefined || v===null) return '';
+        const lv = fabLv(v, FCUTS[f]);
+        return `<span class="zchip" style="color:${fabTx(lv)}">${esc(f)} ${v}</span>`;
+      }).join(' ') || '<span class="dim">—</span>';
+      box.innerHTML = `<div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line2);
+          border-radius:10px;background:var(--panel)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <b class="mono">${esc((r.datetime||at).slice(0,16))}</b>
+          <span class="chip lv${esc(r.level)}">${esc(r.level)}</span>
+          <b class="mono" style="font-size:15px;color:${g.c}">${Math.round(r.score)}점</b>
+          <span class="dim">주 영역 ${esc(r.area||'—')}</span>
+          <button class="act" id="gpinx" style="margin-left:auto">닫기</button>
+        </div>
+        <table style="width:100%;font-size:12px">
+          <tr><td class="dim" style="width:88px">발동 룰</td><td>${esc(r.reason||'—')}</td></tr>
+          <tr><td class="dim">실제지표</td><td>${met}</td></tr>
+          <tr><td class="dim">FAB 점수</td><td>${fab}</td></tr>
+          <tr><td class="dim">원문</td><td class="mono dim" style="font-size:11px;
+              overflow-wrap:anywhere">${esc(r.reason_raw||'—')}</td></tr>
+        </table></div>`;
+      const x = $('#gpinx'); if(x) x.onclick = () => { box.innerHTML = ''; };
+    };
+  });
+}
+
 $('#gmin').onchange = drawGraph;
 $('#gclose').onclick = () => $('#gmask').classList.add('hidden');
 $('#gmask').onclick = e => { if(e.target.id==='gmask') $('#gmask').classList.add('hidden'); };

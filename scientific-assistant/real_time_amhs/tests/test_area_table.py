@@ -510,8 +510,14 @@ class GraphOverlay(unittest.TestCase):
         return graphs.render(self.rows, self.center, minutes=40,
                              cfg=self.cfg, fabs=fabs)
 
+    # ★굵기 값을 시험에 박아 두었더니, 2026-09 그래프 개편에서 본선 1.6→2 ·
+    #   FAB 1.15→1.2 로 바뀌자 뜻은 그대로인데 시험만 깨졌다. 값이 아니라
+    #   **관계**(FAB 이 본선보다 가늘다)를 본다.
+    SCORE_W = 2.0
+    FAB_W = 1.2
+
     def _fab_lines(self, svg):
-        return svg.count('stroke-width="1.15"')
+        return svg.count('stroke-width="%g"' % self.FAB_W)
 
     def test_체크한_수만큼_선이_늘어난다(self):
         self.assertEqual(self._fab_lines(self._svg(None)), 0)
@@ -530,8 +536,10 @@ class GraphOverlay(unittest.TestCase):
     def test_FAB_선이_전체_점수선보다_가늘다(self):
         """전체 점수가 기준선이라는 게 굵기로도 보여야 한다."""
         svg = self._svg(["M16HUB"])
-        self.assertIn('stroke-width="1.6"', svg)          # 전체 점수
-        self.assertIn('stroke-width="1.15"', svg)         # FAB
+        self.assertIn('stroke-width="%g"' % self.SCORE_W, svg)   # 전체 점수
+        self.assertIn('stroke-width="%g"' % self.FAB_W, svg)     # FAB
+        self.assertLess(self.FAB_W, self.SCORE_W,
+                        "FAB 선이 본선보다 굵으면 기준선이 뒤바뀐다")
 
     def test_범례에_이름을_적는다(self):
         """색만으로 구분하면 색약·흑백 인쇄에서 어느 FAB 인지 모른다."""
