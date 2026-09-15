@@ -576,53 +576,105 @@ def render(d):
       "이 문서의 1)2)가 모두 이 한 장에서 나온다.</div>")
 
     # ── 두 자료를 잇는 자 ───────────────────────────────────────────
-    # ★검토하다 나왔다. 나는 등급 컷을 코드 기본값으로, 환산 배수를 상수로
-    #   가정하고 있었다. 자료를 세어 보니 둘 다 달랐다. 문서에 쓰는 숫자는
-    #   가정이 아니라 **센 것** 이어야 한다.
-    if d["map_rows"] or d["grade_obs"]:
-        a("<h3>먼저 — 두 자료의 점수는 같은 자가 아니다</h3>")
-        a("<p>발동이벤트의 <code>%s_score</code>(영역 점수)와 화면의 "
-          "<b>종합점수</b>는 값이 다르다. 그날 자료에서 <b>실제로 짝지어진 "
-          "값</b>을 전부 세어 보면 이렇다.</p>" % e(fab))
+    # ★두 번 틀리고 세 번째에 맞춘 자리다.
+    #     1판 — 등급 컷을 코드 기본값(60/71/85)으로 가정
+    #     2판 — 자료의 관측 최소·최대를 컷인 양 적음
+    #     3판 — 컷은 돌고 있는 설정값(밖에서 받는다), 자료로 확인만
+    #   환산도 "×1.43, 상한에 닿으면 ×1.58" 이라고 썼는데 틀렸다. 배수가
+    #   둘인 게 아니라 **재는 대상이 둘** 이다. 아래에 그대로 적는다.
+    a("<h3>먼저 — 두 자료의 점수는 같은 자가 아니다</h3>")
+    if d["denom"]:
+        a("<p>같은 순간을 두 자료가 다른 수로 적는다. 배수가 다른 게 아니라 "
+          "<b>재는 대상이 다르다</b>.</p>")
+        a("<div class=flow>발동이벤트  %s_score   = min(%g, Σ켜진 룰 배점)"
+          "      ← ALL 융합에 넣으려고 <b>자른</b> 값"
+          "\n화면        종합점수      = round(Σ켜진 룰 배점 ÷ %g × 100)"
+          "  ← <b>안 자른</b> 값</div>"
+          % (e(fab), d["cap"] or 50, d["denom"]))
+        if d["scale_n"]:
+            a("<p>이 식으로 그날 <b>%d분</b>을 다시 계산해 봤다 — "
+              "화면 값과 <b>어긋난 분 %d</b>.</p>"
+              % (d["scale_n"], d["scale_bad"]))
+    if d["split_rows"]:
+        a("<p>둘이 갈라지는 건 <b>룰 합이 상한을 넘은 분</b>뿐이다. "
+          "그날은 <b>%d분</b>이 그랬다.</p>" % len(d["split_rows"]))
+        a("<table><tr><th>시각</th><th class=n>Σ룰(안 자른 값)</th>"
+          "<th class=n>%s_score(자른 값)</th><th class=n>화면에 뜬 값</th>"
+          "<th class=n>잘랐다면</th></tr>" % e(fab))
+        for t, rw, a_, sc_, sc_cap in d["split_rows"]:
+            a("<tr class=hi><td>%s</td><td class=n><b>%g</b></td>"
+              "<td class=n>%g</td><td class=n><b>%g</b></td>"
+              "<td class=n>%s</td></tr>"
+              % (e(t), rw, a_, sc_, ("%g" % sc_cap) if sc_cap is not None else "—"))
+        a("</table>")
+        a('<div class="note"><b>화면은 상한을 적용하지 않는다 — 이건 버그가 '
+          "아니다.</b> 상한 %g 은 <b>ALL 융합에 들어갈 때</b> 자르는 값이지 "
+          "점수 분모가 아니다(룰 원본 <code>fab_score.risk_of()</code> 주석에 "
+          "같은 경고가 적혀 있다). 두 자료를 겹쳐 볼 때 <b>이 분들만 두 수가 "
+          "다르다</b>는 것만 알고 있으면 된다.</div>" % (d["cap"] or 50))
     if d["map_rows"]:
-        a("<table><tr><th class=n>영역 점수</th><th class=n>화면 종합점수</th>"
-          "<th class=n>배수</th></tr>")
-        for a_, b_, rt in d["map_rows"]:
-            odd = d["cap"] and a_ >= d["cap"]
-            a("<tr%s><td class=n>%g</td><td class=n>%g</td>"
-              "<td class=n>%s×%.2f%s</td></tr>"
-              % (" class=hi" if odd else "", a_, b_,
-                 "<b>" if odd else "", rt, "</b>" if odd else ""))
+        a("<h3>그날 실제로 짝지어진 값 전부</h3>")
+        a("<table><tr><th class=n>Σ룰</th><th class=n>화면 종합점수</th>"
+          "<th>등급</th></tr>")
+        _lv = {g: (lo_c, hi_c) for g, lo_c, hi_c, _a, _b, _c in d["grade_rows"]}
+        for rw, b_ in d["map_rows"]:
+            g = LV[0]
+            for c, nm in zip(d["cuts"], LV[1:]):
+                if b_ >= c:
+                    g = nm
+            a('<tr%s><td class=n>%g</td><td class=n>%g</td>'
+              '<td><b class="%s">%s</b></td></tr>'
+              % (" class=hi" if g == LV[-1] else "", rw, b_,
+                 "bad" if g in ("위험", "초위험") else "dim", e(g)))
         a("</table>")
-        if d["r_norm"] and d["r_cap"]:
-            a('<div class="note miss"><b>상한에 닿은 값만 배수가 다르다.</b> '
-              "상한(<b>%g</b>) 아래 값은 평균 <b>×%.2f</b> 인데, 상한에 닿은 "
-              "값은 <b>×%.2f</b> 로 <b>오히려 커진다</b>. 잘렸는데 커지는 "
-              "것이라 <b>상한에 닿는 순간 화면 점수가 한 번 더 뛴다</b> — "
-              "영역 점수 <b>%g→%g</b> 한 칸 사이에 화면은 <b>%g→%g</b>, "
-              "<b>%g점</b>이 뛴다. 08:00 이 바로 이 칸이다."
-              "<br><br>이건 '영역 점수를 자른다' 는 설계 의도와 어긋난다. "
-              "<b>점검이 필요한 자리로 적어 둔다</b>(이 문서가 고칠 범위는 "
-              "아니다).</div>"
-              % (d["cap"] or 0, d["r_norm"], d["r_cap"],
-                 d["map_rows"][-2][0], d["map_rows"][-1][0],
-                 d["map_rows"][-2][1], d["map_rows"][-1][1],
-                 d["map_rows"][-1][1] - d["map_rows"][-2][1]))
-    if d["grade_obs"]:
-        a("<h3>등급 경계도 자료에서 읽는다</h3>")
-        a("<p>등급 컷을 코드 기본값으로 짐작하지 않고, 그날 화면에 실제로 "
-          "뜬 값의 <b>최소~최대</b>를 세었다.</p>")
-        a("<table><tr><th>등급</th><th class=n>관측 최소</th>"
-          "<th class=n>관측 최대</th><th class=n>분</th></tr>")
-        for g, mn, mx, n in d["grade_obs"]:
-            a('<tr><td><b class="%s">%s</b></td><td class=n>%g</td>'
-              "<td class=n>%g</td><td class=n>%d</td></tr>"
-              % ("bad" if g in ("위험", "초위험") else "", e(g), mn, mx, n))
+
+    # ── 등급 컷 ────────────────────────────────────────────────────
+    if d["grade_rows"]:
+        a("<h3>등급 컷 — 돌고 있는 값을 받아서, 자료로 확인만 한다</h3>")
+        a("<p>컷을 코드 기본값으로 짐작하거나 자료의 최소·최대로 지어내지 "
+          "않는다. <b>%s</b> 를 받아 그날 <b>%d분</b>을 다시 매겨 봤다 — "
+          "<b>어긋난 분 %d</b>.</p>"
+          % (e(" / ".join(str(c) for c in d["cuts"])), d["cut_n"], d["cut_bad"]))
+        a("<table><tr><th>등급</th><th class=n>컷</th>"
+          "<th class=n>그날 관측</th><th class=n>분</th></tr>")
+        for g, lo_c, hi_c, mn, mx, n in d["grade_rows"]:
+            a('<tr><td><b class="%s">%s</b></td><td class=n>%g ~ %g</td>'
+              "<td class=n>%s</td><td class=n>%d</td></tr>"
+              % ("bad" if g in ("위험", "초위험") else "", e(g), lo_c, hi_c,
+                 ("%g ~ %g" % (mn, mx)) if mn is not None else "—", n))
         a("</table>")
-        _top = d["grade_obs"][-1]
-        a("<p class=dim>가장 높은 등급 <b>%s</b>%s 하루 <b>%d분</b>뿐이고 "
-          "값이 <b>%g</b> 하나다 — 이 자리가 얼마나 드물게 열리는지 알 수 "
-          "있다.</p>" % (e(_top[0]), josa(_top[0]), _top[3], _top[1]))
+
+    # ── 그래서 몇 개가 켜져야 하나 — 3)의 답이 여기서 나온다 ────────
+    if d["need_rows"] and d["rule_pts"]:
+        _tot = sum(p for _, _, p in d["rule_pts"])
+        a("<h3>그래서 이 FAB 은 룰이 <b>몇 개</b> 켜져야 등급이 오르나"
+          "<span class=tag>3)의 뿌리</span></h3>")
+        a("<p>%s 에 걸린 룰은 <b>%d개</b>, 배점을 다 더하면 <b>%g</b> 다. "
+          "화면 점수로는 최대 <b>%s점</b> — <b>%s 는 아무리 나빠도 100점이 "
+          "안 나온다</b>.</p>"
+          % (e(fab), len(d["rule_pts"]), _tot,
+             ("%g" % d["screen_max"]) if d["screen_max"] is not None else "—",
+             e(fab)))
+        a("<table><tr><th>등급</th><th class=n>화면 컷</th>"
+          "<th class=n>필요한 Σ룰</th><th class=n>최소 몇 개가 동시에</th></tr>")
+        for nm, c, need, k in d["need_rows"]:
+            a('<tr%s><td><b class="%s">%s</b></td><td class=n>%g~</td>'
+              "<td class=n>%s / %g</td><td class=n><b>%s개</b> / %d개</td></tr>"
+              % (" class=hi" if nm == LV[-1] else "",
+                 "bad" if nm in ("위험", "초위험") else "", e(nm), c,
+                 ("%g" % need) if need is not None else "—", _tot,
+                 ("%d" % k) if k else "—", len(d["rule_pts"])))
+        a("</table>")
+        _crit = d["need_rows"][-1]
+        a('<div class="note miss"><b>%s 이 뜨려면 룰 %d개 중 %s개가 '
+          "<u>동시에</u> 켜져야 한다.</b> 그리고 배점이 0 아니면 만점이라 "
+          "<b>한 지표가 아무리 심해도 혼자서는 화면 %s점</b>이 끝이다 — "
+          "임계의 3배를 넘든 10배를 넘든 같다.<br><br>"
+          "고객이 말한 <b>\u0027특정 한 개 지표가 심각해도 고점이 안 나온다\u0027</b> "
+          "가 바로 이 표다. 3)의 제안들은 전부 이 표를 바꾸려는 것이다.</div>"
+          % (e(_crit[0]), len(d["rule_pts"]),
+             ("%d" % _crit[3]) if _crit[3] else "—",
+             ("%g" % d["solo_max"]) if d["solo_max"] is not None else "—"))
 
     # ── 1) ──
     a("<h2>1) 08:00 즈음 별일 없었는데 초위험이 울린 원인</h2>")
@@ -633,10 +685,12 @@ def render(d):
           "한꺼번에 켜졌다.</p>"
           % (e(hhmm(r.get("datetime"))), e(hi.get("level") or "—"),
              e(hi.get("screen") or "—"), len(fr)))
-        a("<div class=flow>%s\n= %s%s</div>"
+        a("<div class=flow>%s\n= %s   ÷ %s × 100 = <b>화면 %s</b>%s</div>"
           % (e(" + ".join("%s(%g)" % (n, v) for n, v in fr)),
-             e(r.get("%s_score_raw" % fab) or "?"),
-             ("   →   상한에 걸려 %s" % e(r.get("%s_score" % fab)))
+             e(r.get("%s_score_raw" % fab) or "?"), e(d["denom"] or 70),
+             e(hi.get("screen") or "?"),
+             ("\n  (ALL 융합에 넣을 때만 상한 %s 로 잘린다 — 화면 점수는 안 자른다)"
+              % e(r.get("%s_score" % fab)))
              if (f(r.get("%s_score_raw" % fab)) or 0) > (f(r.get("%s_score" % fab)) or 0) else ""))
         rt = [x for x in ratios(r, fab, C) if x[3] >= 1.0]
         if rt:
@@ -686,24 +740,27 @@ def render(d):
                 tot, mc, wo, sc_wo, g_wo, nmin = d["hi_nomc"]
                 a("<h3>그리고 이 10점이 <b>초위험을 만든 마지막 한 걸음</b>이다"
                   "<span class=tag>핵심</span></h3>")
-                a("<div class=flow>켜진 룰 합계 %g"
-                  "\n  − 용량 축소 %g"
-                  "\n  = %g%s</div>"
-                  % (tot, mc, tot - mc,
-                     ("   →   상한 %g 안이라 그대로 %g" % (d["cap"], wo))
-                     if d["cap"] and (tot - mc) <= d["cap"] else ""))
-                _lv = hi.get("level") or "초위험"
+                _lv = hi.get("level") or LV[-1]
+                a("<div class=flow>켜진 룰 합계  %g   ÷ %g × 100 = 화면 %s   "
+                  "→ <b>%s</b>"
+                  "\n  − 용량 축소  %g"
+                  "\n  =            %g   ÷ %g × 100 = 화면 %s   → <b>%s</b></div>"
+                  % (tot, d["denom"] or 70, e(hi.get("screen") or "?"), e(_lv),
+                     mc, wo, d["denom"] or 70,
+                     ("%g" % sc_wo) if sc_wo is not None else "?",
+                     e(g_wo or "—")))
                 if sc_wo is not None:
-                    a("<p>자료 안에서 <b>%g점</b>은 화면 <b>%g점</b>으로 뜬다"
-                      "(그날 %d분). 즉 용량 축소가 없었다면 이 시각은 "
-                      "<b class=bad>%s</b>%s 아니라 <b>%s</b> 에서 멈췄다.</p>"
-                      % (wo, sc_wo, nmin, e(_lv), josa(_lv, "이가"),
-                         e(g_wo or "—")))
+                    a("<p>용량 축소 <b>%g점</b>이 없었다면 이 시각은 "
+                      "<b class=bad>%s</b>%s 아니라 <b>%s</b> 에서 멈췄다 "
+                      "(%s 컷 <b>%g</b>, 이 계산은 <b>%g</b>). 같은 값이 "
+                      "그날 화면에 <b>%d분</b> 떠 있었다.</p>"
+                      % (mc, e(_lv), josa(_lv, "이가"), e(g_wo or "—"),
+                         e(LV[-1]), d["cuts"][-1], sc_wo, nmin))
                 a('<div class="note miss"><b>그래서 08:00 초위험은 '
                   "\u0027설비가 멀쩡한데 울린 것\u0027 이 아니다.</b> "
                   "<b>설비 상한이 내려가 있었고</b>, 그 부담으로 다른 룰들이 "
                   "같이 임계를 넘었고, 용량 축소 배점이 마지막으로 얹혀 "
-                  "상한을 넘겼다.<br><br>"
+                  "초위험 컷을 넘겼다.<br><br>"
                   "<b>다만 이 룰은 \u0027사람이 손댔다\u0027 는 신호지 "
                   "\u0027멀쩡하다\u0027 는 신호가 아니다.</b> 자료에 적힌 것은 "
                   "<b>값이 얼마였는지</b>뿐이고, 누가 왜 내렸는지는 적혀 있지 "
@@ -937,7 +994,11 @@ def render(d):
 
 
 # ────────────────────────────── 실행 ──────────────────────────────
-def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
+CUTS = (36, 52, 72)        # 경계·위험·초위험 시작점 — 돌고 있는 값
+
+
+def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None,
+          cuts=CUTS):
     C, meta = read_th()
     rows, dropped = load(src)
     scr = load_screen(screen)
@@ -1087,30 +1148,108 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
                      g, sc))
 
     # ── 검토에서 나온 것들 ─────────────────────────────────────────
-    # ★내 분석을 내가 깨 보다가 셋이 나왔다. 셋 다 '자료에 적힌 것' 이 아니라
-    #   '내가 가정한 것' 이었다. 가정은 문서에 쓰기 전에 자료로 확인한다.
+    # ★내 분석을 내가 깨 보다가 나왔고, 한 번은 고객이 잡아 줬다.
+    #   전부 '자료에 적힌 것' 이 아니라 '내가 가정한 것' 이었다.
 
-    # (1) 등급 컷을 코드 기본값(60/71/85)으로 가정했는데 화면은 다르게 매긴다.
-    #     자료에서 **관측된 경계**를 그대로 읽는다.
+    # (1) 등급 컷. 처음엔 코드 기본값(60/71/85)으로 가정했고, 다음엔 자료에서
+    #     관측된 최소·최대를 컷인 양 적었다 — 둘 다 아니다. 컷은 돌고 있는
+    #     시스템 설정값이라 **밖에서 받아** 쓰고, 자료로 맞는지 확인만 한다.
     obs = {}
     for t, (g, sc) in scr.items():
         v = f(sc)
         if g and v is not None:
             obs.setdefault(g, []).append(v)
-    grade_obs = [(g, min(obs[g]), max(obs[g]), len(obs[g])) for g in LV if g in obs]
 
-    # (2) 화면 점수 = area_score × 1.43 인데 **상한(50)에 닿은 값만 ×1.58** 이다.
-    #     잘린 뒤 오히려 부풀려진다 — 이게 초위험까지 간 마지막 한 걸음이다.
-    mapping, ratios_ = {}, []
+    def _lv_of(v):
+        out = LV[0]
+        for c, nm in zip(cuts, LV[1:]):
+            if v >= c:
+                out = nm
+        return out
+
+    cut_bad, cut_n = 0, 0
+    for t, (g, sc) in scr.items():
+        v = f(sc)
+        if g and v is not None:
+            cut_n += 1
+            cut_bad += (_lv_of(v) != g)
+    _hi_cut = list(cuts) + [101]
+    grade_rows = []
+    for i, g in enumerate(LV):
+        lo_c = 0 if i == 0 else cuts[i - 1]
+        hi_c = _hi_cut[i] - 1
+        vs = obs.get(g) or []
+        grade_rows.append((g, lo_c, hi_c,
+                           min(vs) if vs else None, max(vs) if vs else None, len(vs)))
+
+    # (2) 두 자료의 점수. "화면 = 영역 × 1.43 인데 상한에 닿으면 ×1.58" 이라고
+    #     썼는데 **틀렸다**. 배수가 둘인 게 아니라 **재는 대상이 다르다**.
+    #       발동이벤트 {fab}_score = min(상한, Σ룰)   ← ALL 융합에 넣으려고 자른 값
+    #       화면 종합점수          = round(Σ룰 ÷ 분모 × 100)  ← 자르지 않은 값
+    #     fab_score.py 의 risk_of() 주석이 이미 같은 경고를 해 두고 있었다
+    #     ("상한은 점수 분모가 아니다"). 읽고도 가정으로 덮었다.
+    denom = None
+    try:
+        import fab_score as _FS
+        import sentinel as _SN
+        denom = _FS.area_denoms(_SN.load_config()).get(fab, float(_FS.AREA_DENOM))
+    except Exception:                      # 룰 원본이 없어도 문서는 나온다
+        pass
+
+    def _screen_of(raw):
+        if not denom or denom <= 0 or raw is None:
+            return None
+        return int(min(100, round(float(raw) * 100.0 / denom)))
+
+    mapping, scale_n, scale_bad, split_rows = {}, 0, 0, []
     for r in rows:
         t = hhmm(r.get("datetime"))
-        a_, b_ = f(r.get("%s_score" % fab)), f(scr.get(t, ("", ""))[1])
-        if a_ and b_:
-            mapping.setdefault(a_, set()).add(b_)
-            ratios_.append((a_, b_ / a_))
-    norm = [x for a_, x in ratios_ if a_ < (cap or 50)]
-    capped = [x for a_, x in ratios_ if cap and a_ >= cap]
-    map_rows = [(a_, sorted(v)[0], sorted(v)[0] / a_) for a_, v in sorted(mapping.items())]
+        a_ = f(r.get("%s_score" % fab))
+        rw_ = f(r.get("%s_score_raw" % fab))
+        b_ = f(scr.get(t, ("", ""))[1])
+        if rw_ is None:
+            rw_ = a_
+        if b_ is None or rw_ is None:
+            continue
+        mapping.setdefault(rw_, set()).add(b_)
+        got = _screen_of(rw_)
+        if got is not None:
+            scale_n += 1
+            scale_bad += (got != b_)
+        if a_ is not None and rw_ != a_:
+            split_rows.append((t, rw_, a_, b_, _screen_of(a_)))
+    map_rows = [(rw_, sorted(v)[0]) for rw_, v in sorted(mapping.items())]
+
+    # (3) 그래서 이 FAB 은 룰이 몇 개나 켜져야 초위험에 닿나 — 고객이 물은
+    #     "한 지표가 심해도 점수가 안 오른다" 를 **수로** 적는다.
+    rule_pts, need_rows, solo_max, screen_max = [], [], None, None
+    try:
+        import itertools as _it
+        import fab_score as _FS
+        _W = _FS.WATCH.get(fab) or {}
+        for _r in _FS.RULES:
+            _sp = _W.get(_r["code"])
+            if not _sp:
+                continue
+            rule_pts.append((_r["code"], _r["label"],
+                             _r["pts"] * (len(_sp) if _r.get("per") else 1)))
+        _tot = sum(p for _, _, p in rule_pts)
+        screen_max = _screen_of(_tot)
+        solo_max = _screen_of(max((p for _, _, p in rule_pts), default=0))
+        for _c, _nm in zip(cuts, LV[1:]):
+            _need = next((v for v in range(_tot + 1)
+                          if (_screen_of(v) or 0) >= _c), None)
+            _k = None
+            if _need is not None:
+                for _n in range(1, len(rule_pts) + 1):
+                    if max((sum(x[2] for x in _cb)
+                            for _cb in _it.combinations(rule_pts, _n)),
+                           default=0) >= _need:
+                        _k = _n
+                        break
+            need_rows.append((_nm, _c, _need, _k))
+    except Exception:
+        pass
 
     # (3) 컨베이어 상한이 얼마나 내려가 있었나 — 값과 정상치를 나란히.
     #     ★"컨베이어 용량 축소?" 라는 물음을 받고 넣었다. 그때까지 문서는
@@ -1140,16 +1279,10 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
         _mc = sum(v for n, v in _fr if "용량" in n)
         if _mc:
             _tot = sum(v for _, v in _fr)
-            _wo = min(_tot - _mc, cap) if cap else (_tot - _mc)
-            _seen = sorted(mapping.get(_wo, []))
-            _sc = _seen[0] if _seen else None
-            _g = None
-            if _sc is not None:
-                for _g2, _s2 in scr.values():
-                    if f(_s2) == _sc and _g2:
-                        _g = _g2
-                        break
-            hi_nomc = (_tot, _mc, _wo, _sc, _g,
+            _wo = _tot - _mc
+            _sc = _screen_of(_wo)
+            hi_nomc = (_tot, _mc, _wo, _sc,
+                       _lv_of(_sc) if _sc is not None else None,
                        sum(1 for _g2, _s2 in scr.values() if f(_s2) == _sc))
 
     # (5) stage_name 에는 FAB 접두어가 없다 — **전체 시스템** 값이다.
@@ -1214,11 +1347,14 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
             "stages": stages, "dead": dead, "hits": hits, "ev_hits": ev_hits,
             "alerts": alerts, "maxcapa": maxcapa, "caps": caps,
             "blocks": blocks, "cmp2": cmp2,
-            "grade_obs": grade_obs, "map_rows": map_rows,
+            "grade_rows": grade_rows, "cuts": tuple(cuts),
+            "cut_bad": cut_bad, "cut_n": cut_n,
+            "map_rows": map_rows, "denom": denom,
+            "scale_n": scale_n, "scale_bad": scale_bad, "split_rows": split_rows,
+            "rule_pts": rule_pts, "need_rows": need_rows,
+            "solo_max": solo_max, "screen_max": screen_max,
             "capa_rows": capa_rows, "capa_norm": capa_norm,
             "capa_thr": capa_thr, "hi_nomc": hi_nomc, "cap": cap,
-            "r_norm": (sum(norm) / len(norm)) if norm else None,
-            "r_cap": (sum(capped) / len(capped)) if capped else None,
             "hot_near": hot_near, "lead_rows": lead_rows, "fab_first": fab_first}
 
 
@@ -1229,6 +1365,7 @@ def main(argv=None):
         return 1
     src = argv.pop(0)
     fab, ev, title, out, screen = "M14", "11:38-14:30", "", None, None
+    cuts = CUTS
     while argv:
         k = argv.pop(0)
         if k == "--fab":
@@ -1237,6 +1374,9 @@ def main(argv=None):
             ev = argv.pop(0)
         elif k == "--screen":
             screen = argv.pop(0)
+        elif k == "--cut":
+            # 등급 컷은 돌고 있는 시스템 값이다 — 코드에 박지 않는다
+            cuts = tuple(int(x) for x in argv.pop(0).replace("/", ",").split(","))
         elif k == "--title":
             title = argv.pop(0)
         elif k == "--out":
@@ -1244,7 +1384,8 @@ def main(argv=None):
         else:
             out = k
     lo, hi = (ev.split("-") + [""])[:2]
-    d = build(src, fab, lo, hi, title or ("%s 장애 분석" % fab), screen=screen)
+    d = build(src, fab, lo, hi, title or ("%s 장애 분석" % fab),
+              screen=screen, cuts=cuts)
     os.makedirs(DOC_DIR, exist_ok=True)
     out = out or os.path.join(DOC_DIR, "%s_%s_장애분석.html" % (fab, d["day"].replace("-", "")))
     io.open(out, "w", encoding="utf-8").write(render(d))
