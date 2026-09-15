@@ -103,6 +103,22 @@ class 화면_다시_그리기(unittest.TestCase):
     def setUp(self):
         self.html = _read("static", "dashboard.html")
 
+    def test_컷을_바꾸는_길_둘이_같이_다시_그린다(self):
+        # 수동 변경과 LLM 자동 조정 — 한쪽만 고치면 또 같은 증상이 난다
+        self.assertEqual(self.html.count("repaintGrades()"), 3,
+                         "선언 1 + 부르는 곳 2 여야 한다")
+        m = re.search(r"function repaintGrades\(\)\{(.*?)\n\}", self.html, re.S)
+        self.assertIsNotNone(m)
+        body = m.group(1)
+        for need in ("pollStatus()", "pollCases()", "loadPast("):
+            self.assertIn(need, body, need + " 가 빠졌다")
+
+    def test_컷_변경이_수집을_돌리지는_않는다(self):
+        # 과거 탭을 다시 받되, 없는 날을 새로 확보하면 안 된다
+        m = re.search(r"function repaintGrades\(\)\{(.*?)\n\}", self.html, re.S)
+        self.assertIn("autoFetch:false", m.group(1).replace(" ", ""),
+                      "컷을 바꿨다고 그 날짜 수집이 돌면 안 된다")
+
     def test_cutSig_가_있다(self):
         self.assertIn("function cutSig()", self.html)
         m = re.search(r"function cutSig\(\)\{(.*?)\n\}", self.html, re.S)

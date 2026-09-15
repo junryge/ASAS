@@ -3197,6 +3197,13 @@ async function initScorePolicy(){
     });
     if(SP_INIT) return;
     SP_INIT = true;
+    /* 컷이 바뀌면 등급을 보여주는 화면을 **전부** 새 컷으로 다시 그린다.
+       ★수동 변경과 LLM 자동 조정이 같은 길을 타야 한다 — 한쪽만 고치면
+         '정책을 바꿨는데 색이 그대로' 가 또 난다 (서버 _apply_cuts 주석과
+         같은 뜻이다).
+       ★과거 탭은 이미 받아 둔 행에 옛 등급이 박혀 있어 다시 받아야 한다.
+         날짜를 안 고른 상태면 건드리지 않고, 없는 날을 새로 확보하지도
+         않는다(autoFetch:false) — 컷을 바꿨다고 수집이 돌면 안 된다. */
     $('#sp-save').onclick = async () => {
       const by = {};
       SP_SYS.forEach(s => by[s] = SP_RESET.has(s) ? null : {
@@ -3211,7 +3218,7 @@ async function initScorePolicy(){
         if(r.error){ alert(r.error); $('#spnote').textContent = '— 저장 실패'; return; }
         $('#spnote').textContent = '— 저장됨 · 바로 반영';
         initScorePolicy();                       // 표를 서버 확정값으로
-        pollStatus(); pollCases();               // 지금 화면 등급도 새 컷으로
+        repaintGrades();                         // 지금 화면 등급도 새 컷으로
       } finally { btn.disabled = false; btn.textContent = '수동 변경'; }
     };
   }catch(e){ policyFail('sprows', 'spnote', initScorePolicy); }
@@ -3334,7 +3341,7 @@ function initScoreTune(){
       spShow(d);
       // 바뀌었으면 위 표와 지금 화면 등급도 새 컷으로
       if(Object.keys(d.applied||{}).length){
-        initScorePolicy(); pollStatus(); pollCases();
+        initScorePolicy(); repaintGrades();
       }
       spLoadLog();
     }catch(e){
@@ -4186,6 +4193,13 @@ async function loadPast(day, opt){
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
     $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">조회 실패</td></tr>';
   }finally{ pastBusy(false); }
+}
+
+/* 컷이 바뀌었을 때 등급이 보이는 화면을 전부 다시 그린다 (정책 탭에서 부른다).
+   함수 선언이라 위쪽 click 핸들러에서도 부를 수 있다. */
+function repaintGrades(){
+  pollStatus(); pollCases();
+  if(PDAY) loadPast(PDAY, {autoFetch:false});
 }
 
 /* 과거 N일 한꺼번에 채우기 — 이미 저장된 날도 다시 받는다.
