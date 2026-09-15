@@ -82,6 +82,25 @@ def hhmm(s):
     return str(s or "")[11:16]
 
 
+def _mins(t):
+    try:
+        return int(t[:2]) * 60 + int(t[3:5])
+    except (ValueError, IndexError):
+        return None
+
+
+def _shift(t, dm):
+    m = (_mins(t) or 0) + dm
+    m = max(0, min(24 * 60 - 1, m))
+    return "%02d:%02d" % (m // 60, m % 60)
+
+
+def d_lead(t, ref):
+    """ref 보다 몇 분 빠른가 — 양수면 앞섰다. 못 읽으면 None."""
+    a, b = _mins(t), _mins(ref)
+    return None if (a is None or b is None) else (b - a)
+
+
 _DT = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
 
 
@@ -441,8 +460,64 @@ def render(d):
 
     # ── 2) 사건인데 점수가 낮았던 이유 ──
     a("<h2>2) 사건 발생 때 점수가 낮았던 원인</h2>")
-    a("<p>무언정지로 OHT 가 줄줄이 대기했을 텐데 점수는 낮았다. "
-      "사건 전(<b>%s~%s</b>)과 사건 중(<b>%s~%s</b>)의 지표 평균이다.</p>"
+    a('<div class="note good"><b>먼저 바로잡습니다 — 못 잡은 것이 아닙니다.</b><br>'
+      "전조는 계속 떴고, 시스템은 <b>고장 유형까지 맞혔습니다</b>. "
+      "문제는 그것이 <b>점수로 이어지지 않은 것</b>입니다.</div>")
+
+    # ㉠ 전조가 떴다
+    a("<h3>㉠ 전조는 떴다 — 경계 %d분</h3>" % len(d["alerts"]))
+    if d["alerts"]:
+        a("<table><tr><th>시각</th><th>등급</th><th class=n>점수</th>"
+          "<th class=n>사건 대비</th></tr>")
+        for t, g, sc in d["alerts"][:14]:
+            lead = d_lead(t, d["ev_lo"])
+            a('<tr><td>%s</td><td class="%s">%s</td><td class=n>%s</td>'
+              "<td class=n>%s</td></tr>"
+              % (e(t), "warn" if g == "경계" else "bad", e(g), e(sc),
+                 ("<b>%d분 전</b>" % lead) if lead and lead > 0 else
+                 ("%d분 후" % -lead if lead else "사건 시작")))
+        a("</table>")
+
+    # ㉡ 고장 유형을 맞혔다 — 이 문서의 핵심
+    hit = [h for h in d["hits"] if 0 < (d_lead(h[0], d["ev_lo"]) or -1) <= 60]
+    if hit:
+        t0, ft0, st0, g0, sc0 = hit[-1]
+        a("<h3>㉡ 고장 유형까지 맞혔다 <span class=tag>핵심</span></h3>")
+        a('<div class="flow">%s   predicted_fault_type = <b>%s</b>\n'
+          "%s   단계 = %s\n"
+          "%s   그런데 화면은 = <b>%s %s점</b></div>"
+          % (e(t0), e(ft0), " " * len(t0), e(st0), " " * len(t0), e(g0), e(sc0)))
+        a('<div class="note miss"><b>최초 공유(%s)보다 %d분 빨랐습니다.</b> '
+          "예측기는 <code>%s</code> 를 집어냈는데, 운전원 화면에는 "
+          "<b>%s %s점</b>으로 떴습니다 — <b>예측 결과가 점수에 들어가지 "
+          "않습니다.</b></div>"
+          % (e(d["ev_lo"]), d_lead(t0, d["ev_lo"]), e(ft0), e(g0), e(sc0)))
+
+    # ㉢ 장치가 죽어 있다
+    a("<h3>㉢ 사건 추적 장치가 값을 채우지 않는다</h3>")
+    a("<table><tr><th>칸</th><th>하루 %d분 동안</th><th>뜻</th></tr>" % len(rows))
+    for c, nm, why in (("incident_state", "사건 상태", "사건으로 묶인 적이 한 번도 없다"),
+                       ("continuity_min", "연속 분", "얼마나 계속됐는지 안 센다"),
+                       ("refire_count", "재발 횟수", "몇 번 되살아났는지 안 센다")):
+        v = d["dead"].get(c)
+        a('<tr><td><code>%s</code></td><td class="%s">%s</td><td>%s</td></tr>'
+          % (e(c), "bad" if v else "dim",
+             ("계속 <b>%s</b>" % e(v)) if v else "값이 바뀜", e(why)))
+    a("</table>")
+    a("<h3>㉣ 단계가 늘 켜져 있어 뜻이 없다</h3>")
+    a("<table><tr><th>단계</th><th class=n>분</th><th class=n>비율</th></tr>")
+    tot = sum(d["stages"].values()) or 1
+    for k, v in sorted(d["stages"].items(), key=lambda x: -x[1]):
+        a("<tr><td>%s</td><td class=n>%d</td><td class=n>%.0f%%</td></tr>"
+          % (e(k), v, 100.0 * v / tot))
+    a("</table>")
+    a('<div class="note miss"><b>「3단계 확정」이 하루의 절반입니다.</b> '
+      "정상(0단계)인 분이 <b>한 분도 없습니다</b>. 늘 켜져 있는 경보는 "
+      "경보가 아닙니다 — 그래서 아무도 안 봅니다.</div>")
+
+    # ㉤ 13시 이후 — 지표가 거꾸로
+    a("<h3>㉤ 13시 이후엔 지표까지 거꾸로 갔다</h3>")
+    a("<p>사건 전(<b>%s~%s</b>)과 사건 중(<b>%s~%s</b>)의 지표 평균이다.</p>"
       % (e(d["bf_lo"]), e(d["bf_hi"]), e(d["ev_lo"]), e(d["ev_hi"])))
     a("<table><tr><th>지표</th><th class=n>사건 전</th><th class=n>사건 중</th>"
       "<th>방향</th><th class=n>임계</th><th>룰이 켜지나</th></tr>")
@@ -456,15 +531,13 @@ def render(d):
              "bad" if on else "dim", "켜짐" if on else "안 켜짐"))
     a("</table>")
     if d.get("series"):
-        a("<h3>그림 2 — 점수가 눌려 있는 동안 지표도 <b>같이 내려갔다</b></h3>")
+        a("<h3>그림 2 — 점수가 눌려 있는 동안 지표도 같이 내려갔다</h3>")
         a(series_svg(d["series"], label="사건 구간 점수와 지표"))
-    a('<div class="note miss"><b>감시 지표가 전부 "좋아지는" 쪽으로 움직였다.</b> '
-      "그래서 켜질 룰이 없었다.<br><br>"
-      "㉠ <b>평균의 함정</b> — 반송시간 평균은 <b>끝난 반송</b>만 센다. 차가 "
-      "멈추면 그 화물은 평균에 안 들어간다. <b>정체가 심할수록 평균이 "
-      "내려간다.</b><br>"
-      "㉡ <b>룰이 한쪽만 본다</b> — 여덟 룰이 전부 <b>올라가는 것</b>만 잡는다. "
-      "무언정지는 <b>내려가는 것</b>(가동률 급락)으로 나타난다.</div>")
+    a('<div class="note miss"><b>평균의 함정</b> — 반송시간 평균은 '
+      "<b>끝난 반송</b>만 셉니다. 차가 멈추면 그 화물은 평균에 안 들어갑니다. "
+      "<b>정체가 심할수록 평균이 내려갑니다.</b><br>"
+      "게다가 여덟 룰이 전부 <b>올라가는 것</b>만 잡습니다. 무언정지는 "
+      "<b>내려가는 것</b>(가동률 93%%→76%%)으로 나타납니다.</div>")
 
     # ── 3) 점수 재산정 ──
     a("<h2>3) 점수 산정 방식 재설계</h2>")
@@ -506,16 +579,48 @@ def render(d):
       % (e(hhmm(lo["r"].get("datetime"))) if lo else "—",
          ("%.2f" % lo["mul"]) if lo else "—",
          e(lo.get("level") or "—") if lo else "—"))
-    a("<h3>㉰ 상한 재조정</h3>")
+
+    # ── 예측 시스템다운 개선 ─────────────────────────────────────
+    a("<h3>㉰ 예측 결과를 점수에 넣는다 <span class=tag>예측 시스템의 핵심</span></h3>")
+    a('<div class="note"><b>우리는 예측 시스템입니다.</b> 그런데 지금은 '
+      "예측 결과(<code>predicted_fault_type</code>·단계)와 점수가 "
+      "<b>따로 돕니다</b>. 2)㉡ 에서 본 대로, 고장 유형을 맞힌 그 분의 화면은 "
+      "<b>정상</b>이었습니다.</div>")
+    a("<table><tr><th>지금</th><th>제안</th></tr>"
+      "<tr><td>예측 유형은 <code>reason</code> 에만 적힌다</td>"
+      "<td><b>그 FAB 의 고장 유형을 맞히면 가산점</b> — 예측이 점수를 올린다</td></tr>"
+      "<tr><td>3단계 확정이 하루의 55%%, 0단계가 0분</td>"
+      "<td><b>단계를 올리는 조건을 조인다</b> — 늘 켜진 경보는 경보가 아니다</td></tr>"
+      "</table>")
+
+    a("<h3>㉱ 전조를 이어 붙인다 — 사건 추적을 되살린다</h3>")
+    a('<div class="note miss"><b>%s 분 내내 '
+      "<code>incident_state=IDLE · continuity_min=0 · refire_count=0</code> "
+      "입니다.</b> 칸은 있는데 아무도 채우지 않습니다 — 그래서 "
+      "<b>전조가 아무리 계속돼도 점수가 안 쌓입니다.</b></div>" % len(rows))
+    a("<table><tr><th>칸</th><th>되살리면</th></tr>"
+      "<tr><td><code>continuity_min</code></td>"
+      "<td>같은 룰이 <b>N분 이어지면</b> 가산 — 3시간 계속된 것과 1분짜리가 "
+      "같은 점수일 수 없다</td></tr>"
+      "<tr><td><code>refire_count</code></td>"
+      "<td>10분 안에 <b>다시 뜨면</b> 같은 사건으로 묶고 점수 유지 — 지금은 "
+      "한 분만 정상이면 리셋된다</td></tr>"
+      "<tr><td><code>incident_state</code></td>"
+      "<td>IDLE → <b>감시 → 진행 → 종료</b> 로 상태를 갖는다. 사건이 "
+      "이어지는 동안 등급이 안 떨어진다</td></tr></table>")
+    if d["alerts"]:
+        a("<p>이 규칙이면 %s 흩어진 경계 <b>%d분</b>이 <b>한 사건</b>으로 "
+          "묶입니다 — 운전원 눈에 들어옵니다.</p>"
+          % (e("%s~%s" % (d["alerts"][0][0], d["alerts"][-1][0])), len(d["alerts"])))
+
+    a("<h3>㉲ 상한 재조정</h3>")
     a("<p>지금 영역점수 상한은 <b>%s</b> 다. 위 %s 의 원점수 %s 가 이미 잘렸다 — "
-      "가중을 넣으면 더 자주 잘려 <b>변별력이 사라진다</b>. 상한을 올리거나 "
+      "가중·가산을 넣으면 더 자주 잘려 <b>변별력이 사라진다</b>. 상한을 올리거나 "
       "정규화 방식을 바꿔야 한다.</p>"
       % (e(d["cap"]), e(hhmm(hi["r"].get("datetime"))) if hi else "—",
          e(hi["r"].get("%s_score_raw" % fab)) if hi else "—"))
-    a('<div class="note miss"><b>㉮㉯㉰ 로는 2)가 안 고쳐진다.</b> 사건 중에는 '
-      "임계를 넘은 지표가 <b>하나도 없었다</b> — 배율을 곱할 대상이 없다. "
-      "2)는 <b>새 신호</b>가 있어야 한다.</div>")
-    a("<h3>2)를 고치려면 — 필요한 신호</h3>")
+
+    a("<h3>그리고 — 내려가는 것도 봐야 한다</h3>")
     a("<table><tr><th>신호</th><th>지금</th><th>제안</th><th>자료</th></tr>"
       "<tr><td>OHT 가동률 <b>급락</b></td><td>≥95%% 일 때만 켜짐</td>"
       "<td>평소 대비 −10%%p 급락도 이상으로</td><td class=okc>이미 있음 "
@@ -649,7 +754,34 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
            for r in ev]
     evs = [(t, v if v is not None else 0) for t, v in evs][::max(1, len(ev) // 12)][:12]
 
+    # ── 예측 장치가 무엇을 하고 있었나 ─────────────────────────────
+    # ★"전조는 계속 있었다" 는 지적을 받고 넣었다. 처음엔 점수만 보고
+    #   '못 잡았다' 고 썼는데, 단계·예측유형 칸을 보니 시스템은 보고 있었다.
+    #   점수에 반영이 안 됐을 뿐이다 — 진단이 통째로 달라진다.
+    from collections import Counter
+    stages = Counter(r.get("stage_name") or "(빈값)" for r in rows)
+    dead = {c: (len(set(str(r.get(c, "")) for r in rows)) == 1 and
+                str(rows[0].get(c, "")))
+            for c in ("incident_state", "continuity_min", "refire_count")}
+    # 사건 구간 언저리에서 '그 고장'을 맞힌 분
+    kinds = ("OHT정체", "큐누적", "반송지연")
+    hits = []
+    for r in rows:
+        t = hhmm(r.get("datetime"))
+        ft = r.get("predicted_fault_type") or ""
+        if ft.startswith(fab + "-") and any(k in ft for k in kinds):
+            g, sc = scr.get(t, ("", ""))
+            hits.append((t, ft, r.get("stage_name") or "-", g or "-", sc or "-"))
+    ev_hits = [h for h in hits if d_lead(h[0], ev_lo) is not None]
+
     # 지금 vs 제안 — 그날의 두 분에 실제로 돌려 본다
+    # 사건 언저리에서 경계 이상이 뜬 분 — '전조가 떴다' 의 증거
+    alerts = []
+    for t, (g, sc) in sorted(scr.items()):
+        if g and g != "정상" and d_lead(t, ev_hi) is not None and t <= ev_hi:
+            if d_lead(t, ev_lo) is None or t >= _shift(ev_lo, -30):
+                alerts.append((t, g, sc))
+
     cmp_rows = []
     for x, tag in ((lo, "심했는데 낮았다"), (hi, "턱걸이인데 높았다")):
         if not x:
@@ -663,8 +795,9 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
             "dropped": dropped,
             "dirs": direction(rows, fab, C, bf, ev), "hi": hi, "lo": lo,
             "cap": cap, "warn_cut": warn_cut, "ev_scores": evs, "title": title,
-            "screen": bool(scr), "series": series,
-            "cmp": cmp_rows}
+            "screen": bool(scr), "series": series, "cmp": cmp_rows,
+            "stages": stages, "dead": dead, "hits": hits, "ev_hits": ev_hits,
+            "alerts": alerts}
 
 
 def main(argv=None):
