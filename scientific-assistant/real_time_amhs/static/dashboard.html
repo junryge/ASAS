@@ -1500,6 +1500,14 @@ const fabLv = (v, c) => !c ? '정상'
    정상까지 칠하면 색이 정보를 잃는다. */
 const lvTx = l => l==='초위험'?'var(--crit)':l==='위험'?'var(--major)'
                 : l==='경계'?'var(--minor)':'var(--tx)';
+/* FAB 칸(표·HI_FAB·툴팁) 색과 굵기 — 세 곳이 여기 하나를 본다. 따로 적으면
+   같은 수가 자리마다 다른 색으로 난다.
+   ★2026-09 고객 요청으로 **경계부터 칠한다**. 그 전에는 위험 이상만 칠했다
+     ("경계까지 칠하면 1440행이 노랑으로 가득 차서 정작 올라간 FAB 이 안
+     보인다"). 굵게는 그대로 위험 이상만 둔다 — 색과 굵기가 같이 올라가면
+     경계가 위험처럼 읽혀서, 칠하기로 한 뜻이 오히려 흐려진다. */
+const fabTx   = l => l==='정상' ? 'var(--txb)' : lvTx(l);
+const fabBold = l => l==='위험' || l==='초위험';
 
 let CASES=[], SEL=null, FILTER='all', POLL=30;
 let LAST_LATEST=null, NEW_AT=null;
@@ -3471,9 +3479,15 @@ let ROW_CAP = ROW_STEP, PROW_CAP = ROW_STEP;
    ★서명에 든 것이 표를 바꾸는 전부다 — 하나라도 빠지면 화면이 옛것에
      머문다. 행 내용 자체는 서버가 만들고, 서버 응답이 바뀌면 latest/total 이
      같이 바뀐다 (피드 캐시가 파일 mtime 으로 걸려 있다). */
+/* ★등급 컷이 빠져 있었다. 정책 탭에서 컷을 바꾸면 CUTS·FCUTS 는 갱신되는데
+     이 서명이 그대로라 표를 다시 안 그렸다 — 글자색이 정책을 안 따라간다.
+     특히 FAB 칸 색(FCUTS)은 행 등급을 안 바꾸니 counts 로도 안 걸린다. */
+function cutSig(){
+  return JSON.stringify(CUTS) + '~' + JSON.stringify(FCUTS || {});
+}
 function feedSig(fd, filter, cap, newAt){
   return [fd.day, fd.latest, fd.earliest, fd.total, fd.shown, filter, cap, newAt,
-          JSON.stringify(fd.counts || {}),
+          JSON.stringify(fd.counts || {}), cutSig(),
           CASES.map(c => c.id + '@' + (c.last_seen || '')).join(',')].join('|');
 }
 let RENDER_SIG = null, STRIP_SIG = null;
@@ -3550,16 +3564,20 @@ function fabCells(r){
     const top = (r.hi_fab === f) ? ' hifab' : '';
     if(v===undefined || v===null)
       return `<td class="fcol${top}"><span class="dim">–</span></td>`;
-    // 예측기가 적어 준 등급이 컷 판정과 다르면 서버가 fab_lv 로 알려 준다
-    const lv = (r.fab_lv && r.fab_lv[f]) || fabLv(v, FCUTS[f]);
+    /* ★색은 **정책 컷**이 정한다 (FCUTS — 정책 탭에서 FAB 마다 설정).
+         예전엔 예측기가 CSV 에 적어 둔 등급(fab_lv)을 먼저 썼는데, 그 값은
+         정책을 바꿔도 안 변한다 — 그래서 "정책을 바꿨는데 색이 그대로" 가
+         났다. 예측기가 다르게 적어 뒀다는 사실은 버리지 않고 툴팁에 남긴다.
+         두 값이 갈릴 때 화면이 따라야 할 쪽은 지금 운영 중인 정책이다. */
+    const lv = fabLv(v, FCUTS[f]);
+    const plv = (r.fab_lv || {})[f];
     const c = FCUTS[f];
-    const t = c ? `${f} ${v}점 · ${lv} (경계 ${c.warn} · 위험 ${c.danger} · 초위험 ${c.critical})`
-                : `${f} ${v}점`;
-    /* ★시안: 위험 이상만 등급색 + 굵게, 나머지는 --txb. 경계까지 칠하면 하루
-       1440행이 노랑으로 가득 차서 정작 올라간 FAB 이 안 보인다. */
-    const up = (lv === '위험' || lv === '초위험');
-    return `<td class="fcol${top}"><b class="${up?'hot':''}" style="color:${
-      up ? lvTx(lv) : 'var(--txb)'}" title="${esc(t)}">${v}</b></td>`;
+    const t = (c ? `${f} ${v}점 · ${lv} (경계 ${c.warn} · 위험 ${c.danger} · 초위험 ${c.critical})`
+                 : `${f} ${v}점`)
+            + (plv && plv !== lv ? `\n예측기 표기: ${plv} (정책 컷과 다름)` : '');
+    /* 색·굵기 규칙은 fabTx/fabBold 한 군데서 정한다 (위 선언 참고) */
+    return `<td class="fcol${top}"><b class="${fabBold(lv)?'hot':''}" style="color:${
+      fabTx(lv)}" title="${esc(t)}">${v}</b></td>`;
   }).join('');
 }
 
@@ -3593,15 +3611,16 @@ function hiCell(r){
   const f = r.hi_fab;
   if(!f) return '<td class="hcol"><span class="dim">–</span></td>';
   const v = (r.fab || {})[f];
-  const lv = (r.fab_lv && r.fab_lv[f]) || fabLv(v, FCUTS[f]);
+  const lv = fabLv(v, FCUTS[f]);          // 색은 정책 컷 (fabCells 와 같은 규칙)
+  const plv = (r.fab_lv || {})[f];
   const hot = (r.area && r.area !== 'UNKNOWN') ? r.area : '';
   const dif = hot && hot !== f;
   /* 색은 FAB 칸과 같은 규칙(위험 이상만 등급색) — 같은 수를 두 칸에서 다르게
      칠하면 어느 쪽이 맞는지 묻게 된다. 점수는 시안처럼 이름 옆에 붙인다. */
-  const up = (lv === '위험' || lv === '초위험');
-  return `<td class="hcol"><b style="color:${up ? lvTx(lv) : 'var(--txb)'}" title="${
-    esc(dif ? `최고점은 ${f}(${v}점) 인데 예측기 hot_area 는 ${hot} 입니다`
-            : `${f} ${v}점 — 이 분에 제일 높은 FAB`)}">${esc(f)}</b><span class="dim"> · ${
+  return `<td class="hcol"><b style="color:${fabTx(lv)}" title="${
+    esc((dif ? `최고점은 ${f}(${v}점) 인데 예측기 hot_area 는 ${hot} 입니다`
+             : `${f} ${v}점 — 이 분에 제일 높은 FAB`)
+        + (plv && plv !== lv ? `\n예측기 표기: ${plv} (정책 컷과 다름)` : ''))}">${esc(f)}</b><span class="dim"> · ${
     (v===undefined || v===null) ? '–' : v}</span>${
     dif ? `<span class="dim" title="${esc('예측기 hot_area: '+hot)}"> ≠${esc(hot)}</span>` : ''}</td>`;
 }
@@ -3915,7 +3934,7 @@ function fillLimitSel(elSel, on, isScore){
 }
 
 /* 호버 툴팁 본문(시안) — 시각 · 등급 배지 · 점수 · FAB 5칸 · 실제지표 · 발동 룰 · 힌트.
-   ★FAB 칸 색은 표(fabCells)와 같은 규칙 — 그 FAB 의 컷(FCUTS)으로 위험 이상만 칠한다.
+   ★FAB 칸 색은 표(fabCells)와 같은 규칙 — 그 FAB 의 컷(FCUTS)으로 fabTx 가 정한다.
      ALL 컷으로 칠하면 표와 툴팁이 서로 다른 색을 낸다. */
 function stripTip(r, mt, isScore){
   const lv = r.level || gradeOf(+r.score || 0).n;
@@ -3923,9 +3942,8 @@ function stripTip(r, mt, isScore){
   const sys = SYS || 'ALL';
   const fabs = (isScore && FABS.length) ? `<div class="fabs">${FABS.map(f => {
       const x = (r.fab||{})[f], has = x !== null && x !== undefined && !isNaN(x);
-      const flv = has ? ((r.fab_lv && r.fab_lv[f]) || fabLv(+x, FCUTS[f])) : '정상';
-      const hot = flv === '위험' || flv === '초위험';
-      return `<div><div class="n">${esc(f)}</div><div class="v"${hot ? ` style="color:${lvTx(flv)}"` : ''}>${
+      const flv = has ? fabLv(+x, FCUTS[f]) : '정상';   // 색은 정책 컷
+      return `<div><div class="n">${esc(f)}</div><div class="v" style="color:${fabTx(flv)}">${
         has ? Math.round(+x) : '–'}</div></div>`;
     }).join('')}</div>` : '';
   const ms = (r.metrics || []).slice(0, 3);
@@ -4073,7 +4091,8 @@ async function pollCases(){
     // 스코어 추이도 같은 이유로 — 필터와는 무관하지만 그리는 지표·겹쳐보기가
     // 바뀌면 다시 그려야 한다 (그쪽은 각자 redraw 를 부른다)
     if(fd.groups){ GROUPS = fd.groups; if(!STRIPG) STRIPG = GROUPS[0]?.id; }
-    const ssig = [fd.day, fd.latest, fd.total, STRIPG, STRIPK].join('|');
+    // 막대 등급색·리미트 점선이 컷을 따라가야 한다 (위 cutSig 와 같은 이유)
+    const ssig = [fd.day, fd.latest, fd.total, STRIPG, STRIPK, cutSig()].join('|');
     if(ssig !== STRIP_SIG){
       STRIP_SIG = ssig;
       drawStrip('#strip', '#stripinfo', FEED, STRIPG, STRIPK);

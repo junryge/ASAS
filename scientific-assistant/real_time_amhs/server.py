@@ -1428,6 +1428,13 @@ def api_feed():
         _st = os.stat(_p)
         _sig = (_st.st_mtime_ns, _st.st_size, len(C["store"].cases),
                 request.args.get("limit"), C["sys"], shown_day,
+                # ★등급 컷이 빠져 있었다. 정책 탭에서 컷을 바꾸면 메모리
+                #   CFG 는 바로 바뀌는데 원본 파일은 그대로라 이 키가 같고,
+                #   그래서 **옛 컷으로 계산한 응답**이 캐시에서 그대로 나갔다.
+                #   컷은 level·counts·fab_cuts 를 전부 바꾸므로 —
+                #   화면 글자색이 정책을 안 따라가는 게 여기서 났다.
+                json.dumps(C["cfg"].get("grade") or {}, sort_keys=True,
+                           ensure_ascii=False),
                 # ★FAB 다섯 점수는 **분리 파일**에서 읽는다. 그 파일이 바뀌면
                 #   지금 보는 파일이 그대로여도 다시 계산해야 한다 — 빼먹으면
                 #   FAB 컬럼만 옛 값에 얼어붙는다 (수집이 파일마다 따로 떨어질
