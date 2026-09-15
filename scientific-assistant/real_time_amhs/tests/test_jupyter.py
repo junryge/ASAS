@@ -437,3 +437,90 @@ class 로그인_세션을_재사용한다(unittest.TestCase):
         self.J.login(self.c)
         self.J.login(self.c, fresh=True)
         self.assertEqual(len(self.calls), 2)
+
+
+class 세션을_나눠_써도_제_파일을_받는다(unittest.TestCase):
+    """★로그인 세션을 재사용하게 고친 뒤, 시스템끼리 파일이 섞이지 않는지.
+
+    ALL 과 FAB 다섯이 같은 서버·같은 비밀번호라 세션을 하나로 쓴다. 파일을
+    가르는 것은 세션이 아니라 경로(sys_cfg 가 fab_path 로 갈아끼운다)인데,
+    그 둘을 헷갈리면 모든 화면이 같은 파일을 보게 된다 — 값이 0 이나 남의
+    FAB 점수로 보이는 사고다. 가짜 주피터를 띄워 끝까지 확인한다.
+    """
+
+    def setUp(self):
+        import http.server
+        import socketserver
+        import threading
+        import urllib.parse
+        self.hits = []
+        hits = self.hits
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                p = urllib.parse.unquote(self.path)
+                hits.append(("GET", p))
+                if p.startswith("/login"):
+                    self.send_response(200)
+                    self.send_header("Set-Cookie", "_xsrf=tok")
+                    self.end_headers()
+                    self.wfile.write(b"<html>login</html>")
+                    return
+                name = p.rsplit("/", 1)[-1]
+                body = ("file,datetime,date,time,unified_risk_score,hot_area,reason\n"
+                        f"{name},2026-09-12 00:00,2026-09-12,00:00,42,M16HUB,"
+                        "발동: M16HUB[R-A_sus]\n").encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                hits.append(("POST", self.path))
+                n = int(self.headers.get("Content-Length") or 0)
+                self.rfile.read(n)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+        self.srv = socketserver.TCPServer(("127.0.0.1", 0), H)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        import jupyter_csv as J
+        self.J = J
+        J._SESS.clear()
+        self.cfg = {"source": {"jupyter": {
+            "enabled": True, "base_url": f"http://127.0.0.1:{self.port}",
+            "path": "/files/x/{day}_발동이벤트.csv",
+            "fab_path": "/files/x/fab분리/{day}_발동이벤트_{fab}.csv",
+            "fabs": {"M14": "M14", "M16HUB": "M16HUB"},
+            "password": "pw", "timeout_s": 5, "save_raw": False}}}
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.J._SESS.clear()
+
+    def _get(self, s):
+        from lp_client import sys_cfg
+        c = self.cfg if s == "ALL" else sys_cfg(self.cfg, s)
+        raw, err = self.J.download("20260912", c)
+        self.assertFalse(err, f"{s}: {err}")
+        return raw.decode().splitlines()[1].split(",")[0]
+
+    def test_시스템마다_다른_파일을_받는다(self):
+        got = {s: self._get(s) for s in ("ALL", "M14", "M16HUB")}
+        self.assertTrue(got["ALL"].endswith("발동이벤트.csv"), got)
+        self.assertIn("M14", got["M14"])
+        self.assertIn("M16HUB", got["M16HUB"])
+        self.assertNotEqual(got["M14"], got["M16HUB"], "FAB 파일이 섞였다")
+        self.assertNotEqual(got["ALL"], got["M14"], "ALL 과 FAB 이 섞였다")
+
+    def test_로그인은_한_번만_한다(self):
+        for s in ("ALL", "M14", "M16HUB"):
+            self._get(s)
+        posts = [h for h in self.hits if h[0] == "POST"]
+        self.assertEqual(len(posts), 1,
+                         "세 번 받는데 로그인을 %d번 했다" % len(posts))
