@@ -45,6 +45,9 @@ METRICS = [
 ]
 
 
+LV = ["정상", "경계", "위험", "초위험"]
+
+
 def e(s):
     return html.escape(str(s))
 
@@ -390,6 +393,95 @@ def compare_svg(rows, w=660, label=""):
     return '<div style="margin:12px 0">%s</div>' % "".join(o)
 
 
+LVC = {"정상": "#d1d5db", "경계": "#fbbf24", "위험": "#f97316", "초위험": "#dc2626"}
+
+
+def day_svg(cmp2, marks=(), w=920, label=""):
+    """하루 24시간을 **두 줄**로 — 위는 예측기, 아래는 운전원 화면.
+
+    ★이 문서의 핵심 그림이다. 두 줄이 어긋나는 자리가 곧 문제다:
+      위는 '3단계 확정' 인데 아래는 회색(정상) 인 구간이 하루의 절반이다.
+      표로 적으면 1440줄이라 아무도 안 읽는다 — 한 장에 겹쳐 놓아야 보인다.
+    """
+    if not cmp2:
+        return ""
+    L, R, T = 92, 16, 22
+    iw = w - L - R
+    h = T + 104
+    X = lambda t: L + iw * ((_mins(t) or 0) / 1440.0)
+    bw = max(0.6, iw / 1440.0)
+    o = ['<svg viewBox="0 0 %d %d" width="100%%" role="img" aria-label="%s">' % (w, h, e(label)),
+         '<style>.r{font:11px "Malgun Gothic",sans-serif;fill:#374151}'
+         '.x{font:9.5px Consolas,monospace;fill:#9ca3af}'
+         '.m{stroke:#111827;stroke-width:1}.mt{font:9.5px "Malgun Gothic",sans-serif;fill:#111827}'
+         '.k{font:10px "Malgun Gothic",sans-serif;fill:#6b7280}</style>']
+    rowy = {"stage": T + 6, "fault": T + 34, "screen": T + 62}
+    o.append('<text class="r" x="0" y="%d">예측기 단계</text>' % (rowy["stage"] + 12))
+    o.append('<text class="r" x="0" y="%d">고장 유형 예측</text>' % (rowy["fault"] + 12))
+    o.append('<text class="r" x="0" y="%d">운전원 화면</text>' % (rowy["screen"] + 12))
+    for k in rowy:
+        o.append('<rect x="%d" y="%d" width="%d" height="16" fill="#f3f4f6"/>'
+                 % (L, rowy[k], iw))
+    for t, st, ft, g, _sc in cmp2:
+        x = X(t)
+        if st:
+            c = "#dc2626" if "3단계" in st else "#fbbf24"
+            o.append('<rect x="%.2f" y="%d" width="%.2f" height="16" fill="%s"/>'
+                     % (x, rowy["stage"], bw, c))
+        if ft:
+            c = "#7c3aed" if "OHT" in ft else "#a78bfa"
+            o.append('<rect x="%.2f" y="%d" width="%.2f" height="16" fill="%s"/>'
+                     % (x, rowy["fault"], bw, c))
+        if g and g != "정상":
+            o.append('<rect x="%.2f" y="%d" width="%.2f" height="16" fill="%s"/>'
+                     % (x, rowy["screen"], bw, LVC.get(g, "#9ca3af")))
+    for hh in range(0, 25, 2):
+        x = L + iw * (hh * 60 / 1440.0)
+        o.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#e5e7eb"/>'
+                 % (x, T, x, rowy["screen"] + 16))
+        o.append('<text class="x" x="%.1f" y="%d" text-anchor="middle">%02d</text>'
+                 % (x, h - 16, hh))
+    for mt, mlab in marks:
+        x = X(mt)
+        o.append('<line class="m" x1="%.1f" y1="%d" x2="%.1f" y2="%d"/>'
+                 % (x, T - 8, x, rowy["screen"] + 18))
+        o.append('<text class="mt" x="%.1f" y="%d" text-anchor="middle">%s</text>'
+                 % (min(w - 40, max(40, x)), T - 11, e(mlab)))
+    o.append('<text class="k" x="%d" y="%d">'
+             '단계: 빨강=3단계확정 · 노랑=1단계조기경보   |   '
+             '유형: 진보라=OHT정체   |   화면: 노랑=경계 주황=위험 빨강=초위험</text>'
+             % (L, h - 3))
+    o.append("</svg>")
+    return '<div style="margin:12px 0;overflow-x:auto">%s</div>' % "".join(o)
+
+
+def runs_svg(runs, w=920, color="#dc2626", label="", total=1440):
+    """구간 막대 — '몇 분 계속됐나' 를 눈으로 보이게."""
+    if not runs:
+        return ""
+    L, R, T = 92, 16, 18
+    iw = w - L - R
+    h = T + 52
+    X = lambda t: L + iw * ((_mins(t) or 0) / float(total))
+    o = ['<svg viewBox="0 0 %d %d" width="100%%" role="img" aria-label="%s">' % (w, h, e(label)),
+         '<style>.x{font:9.5px Consolas,monospace;fill:#9ca3af}'
+         '.n{font:700 10px Consolas,monospace;fill:#111827}</style>',
+         '<rect x="%d" y="%d" width="%d" height="18" fill="#f3f4f6"/>' % (L, T, iw)]
+    for a, b, m in runs:
+        x0, x1 = X(a), X(b)
+        o.append('<rect x="%.1f" y="%d" width="%.1f" height="18" rx="2" fill="%s"/>'
+                 % (x0, T, max(1.5, x1 - x0), color))
+        if m >= 40:
+            o.append('<text class="n" x="%.1f" y="%d" text-anchor="middle" fill="#fff">'
+                     "%d분</text>" % ((x0 + x1) / 2, T + 13, m))
+    for hh in range(0, 25, 2):
+        x = L + iw * (hh * 60 / float(total))
+        o.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#e5e7eb"/>' % (x, T, x, T + 18))
+        o.append('<text class="x" x="%.1f" y="%d" text-anchor="middle">%02d</text>' % (x, T + 32, hh))
+    o.append("</svg>")
+    return '<div style="margin:10px 0;overflow-x:auto">%s</div>' % "".join(o)
+
+
 def _num(v):
     if v is None:
         return "—"
@@ -413,10 +505,33 @@ def render(d):
     # ── 0. 한 줄 요약 ──
     hi, lo = d["hi"], d["lo"]
     a("<h2>0. 한 줄로</h2>")
+    a('<div class="note"><b>하루에 사건이 둘이었습니다. 둘 다 예측기는 봤고, '
+      "둘 다 화면에서는 약하게 보였습니다.</b></div>")
+    a("<table><tr><th>언제</th><th>무슨 일</th><th>예측기는</th><th>화면은</th></tr>")
+    _am = [b for b in d["blocks"] if b[1] <= "09:00"]
+    if d["maxcapa"]:
+        _long = max(d["maxcapa"], key=lambda x: x[2])
+        a("<tr><td><b>오전</b><br><span class=dim>%s~%s</span></td>"
+          "<td>컨베이어 <b>용량 축소</b>가 <b>%d분</b> 이어짐</td>"
+          "<td class=okc>계속 감지 (%d조각으로 쪼개짐)</td>"
+          '<td class="bad">마지막 %d분 덩어리에서야 초위험</td></tr>'
+          % (e(_long[0]), e(_long[1]), _long[2], len(_am),
+             _am[-1][3] if _am else 0))
+    _h = [x for x in d["hits"] if 0 < (d_lead(x[0], d["ev_lo"]) or -1) <= 60]
+    if _h:
+        a("<tr><td><b>점심</b><br><span class=dim>%s~%s</span></td>"
+          "<td>OHT <b>무언정지</b></td>"
+          "<td class=okc><b>%s 에 유형 적중</b><br>"
+          "<code>%s</code> (%d분 전)</td>"
+          '<td class="bad">같은 시각 <b>%s %s점</b></td></tr>'
+          % (e(d["ev_lo"]), e(d["ev_hi"]), e(_h[-1][0]), e(_h[-1][1]),
+             d_lead(_h[-1][0], d["ev_lo"]), e(_h[-1][3]), e(_h[-1][4])))
+    a("</table>")
+    a("<h3>그리고 점수 만드는 방식에 한계가 있다</h3>")
     a('<table><tr><th>시각</th><th class=n>반송시간</th><th class=n>임계 대비</th>'
       "<th class=n>켜진 룰</th><th class=n>영역 원점수</th>"
       "<th>화면 등급</th><th class=n>화면 점수</th></tr>")
-    for r, cls, note in ((lo, "lo", "심한데 낮았다"), (hi, "hi", "턱걸이인데 높았다")):
+    for r, cls, note in ((lo, "lo", "심한데 낮았다"), (hi, "hi", "여럿이 걸쳐 높았다")):
         if not r:
             continue
         a('<tr class="%s"><td><b>%s</b> <span class=dim>%s</span></td>'
@@ -429,11 +544,23 @@ def render(d):
              "bad" if r.get("level") in ("초위험", "위험") else "dim",
              e(r.get("level") or "—"), e(r.get("screen") or "—")))
     a("</table>")
-    a('<div class="note miss"><b>배점이 0 아니면 만점이라 "얼마나 넘었는지" 를 '
-      "안 본다.</b> 임계를 1% 넘으나 300% 넘으나 같은 점수다. 그래서 살짝 넘은 "
-      "지표 여럿이 모인 분이, 하나가 크게 터진 분보다 높게 나온다.</div>")
+    a('<div class="note miss"><b>배점이 0 아니면 만점이라 두 가지를 못 본다.</b><br>'
+      "① <b>얼마나 넘었나</b> — 1% 넘으나 300% 넘으나 같은 점수<br>"
+      "② <b>얼마나 계속됐나</b> — 6시간 이어진 것과 1분짜리가 같은 점수</div>")
 
-    # ── 1) 조용한데 초위험이 울린 이유 ──
+    # ── 두 자료를 나란히 ──────────────────────────────────────────
+    a("<h2>두 자료를 나란히 놓으면</h2>")
+    a("<p><b>발동이벤트 데이터</b>(예측기가 계산한 것)와 <b>분석 이벤트 "
+      "데이터</b>(운전원 화면에 뜬 것)를 같은 시간축에 겹쳤다.</p>")
+    a(day_svg(d["cmp2"], marks=[(d["ev_lo"], "사건 %s" % d["ev_lo"])] +
+              ([(hhmm(hi["r"].get("datetime")), "초위험")] if hi else []),
+              label="하루 24시간 — 예측기 vs 화면"))
+    a('<div class="note miss"><b>위 두 줄은 거의 종일 켜져 있는데, 아래 줄은 '
+      "대부분 비어 있다.</b> 예측기는 계속 무언가를 보고 있었는데 화면은 "
+      "정상이었다는 뜻이다 — <b>예측 결과가 점수·등급으로 이어지지 않는다.</b> "
+      "이 문서의 1)2)가 모두 이 한 장에서 나온다.</div>")
+
+    # ── 1) ──
     a("<h2>1) 08:00 즈음 별일 없었는데 초위험이 울린 원인</h2>")
     if hi:
         r = hi["r"]
@@ -449,27 +576,55 @@ def render(d):
              if (f(r.get("%s_score_raw" % fab)) or 0) > (f(r.get("%s_score" % fab)) or 0) else ""))
         rt = [x for x in ratios(r, fab, C) if x[3] >= 1.0]
         if rt:
-            a("<h3>그림 1 — 켜진 값은 전부 임계 <b>턱걸이</b>였다</h3>")
-            a(ratio_svg(sorted(rt, key=lambda x: -x[3]), label="07:58 룰별 임계 대비 배율"))
-            a('<div class="note"><b>막대가 전부 1배 선에 붙어 있다.</b> '
-              "심해서 높은 점수가 난 게 아니라, <b>여럿이 동시에 선을 살짝 "
-              "넘어서</b> 높아진 것이다. 배점이 0 아니면 만점이라 1% 넘으나 "
-              "300% 넘으나 같은 점수를 준다.</div>")
-    else:
-        a("<p class=dim>이 자료에서 높은 점수 구간을 못 찾았다.</p>")
+            a("<h3>그림 1 — 켜진 값은 하나하나 보면 전부 임계 턱걸이다</h3>")
+            a(ratio_svg(sorted(rt, key=lambda x: -x[3]), label="룰별 임계 대비 배율"))
 
-    # ── 2) 사건인데 점수가 낮았던 이유 ──
+        # ★여기가 처음 판에서 틀렸던 자리
+        a("<h3>그런데 이것이 <b>헛알람이 아니다</b> — 6시간 쌓인 것이다</h3>")
+        if d["maxcapa"]:
+            a("<p>같은 시각 <code>reason</code> 원문에 이렇게 적혀 있다:</p>")
+            a("<div class=flow>%s</div>"
+              % e((r.get("maxcapa_signals") or "").strip() or "—"))
+            a("<p><b>컨베이어 용량이 정상값보다 줄어 있었다.</b> 그 상태가 "
+              "하루 중 이만큼 이어졌다:</p>")
+            a(runs_svg(d["maxcapa"], color="#b45309", label="용량 축소 지속 구간"))
+            a("<table><tr><th>구간</th><th class=n>지속</th></tr>")
+            for aa, bb, mm in d["maxcapa"]:
+                a("<tr><td>%s ~ %s</td><td class=n><b>%d분</b></td></tr>" % (e(aa), e(bb), mm))
+            a("</table>")
+            if d["caps"]:
+                worst = min(d["caps"], key=lambda k: f(re.search(r"=(\d+)", k).group(1))
+                            if re.search(r"=(\d+)", k) else 1e9)
+                a("<p>가장 낮았을 때는 <code>%s</code> 였다.</p>" % e(worst))
+        if d["blocks"]:
+            am = [b for b in d["blocks"] if b[1] <= "09:00"]
+            if am:
+                a("<h3>그림 2 — 아침 내내 켰다 껐다를 반복했다</h3>")
+                a(runs_svg([(x[0], x[1], x[3]) for x in am], color="#f97316",
+                           label="오전 경계 이상 덩어리"))
+                a("<p>09시 전까지 <b>%d조각</b>으로 쪼개져 떴고, 마지막 "
+                  "<b>%s~%s (%d분)</b> 덩어리에서 초위험이 나왔다.</p>"
+                  % (len(am), e(am[-1][0]), e(am[-1][1]), am[-1][3]))
+        a('<div class="note miss"><b>답:</b> "별일 없었는데" 가 아니다. '
+          "<b>설비 용량이 줄어든 채로 몇 시간 돌고 있었고</b>, 그 부담이 여러 "
+          "지표를 동시에 임계선 위로 밀어 올린 순간이 %s 다.<br><br>"
+          "다만 <b>점수 만드는 방식은 문제가 맞다</b> — 배점이 0 아니면 "
+          "만점이라 <b>1%% 넘으나 300%% 넘으나 같은 점수</b>고, "
+          "<b>6시간 계속된 것과 1분짜리가 같은 점수</b>다. "
+          "그래서 여러 개가 겹친 순간에만 갑자기 튄다.</div>"
+          % e(hhmm(r.get("datetime"))))
+
+    # ── 2) ──
     a("<h2>2) 사건 발생 때 점수가 낮았던 원인</h2>")
-    a('<div class="note good"><b>먼저 바로잡습니다 — 못 잡은 것이 아닙니다.</b><br>'
-      "전조는 계속 떴고, 시스템은 <b>고장 유형까지 맞혔습니다</b>. "
-      "문제는 그것이 <b>점수로 이어지지 않은 것</b>입니다.</div>")
-
-    # ㉠ 전조가 떴다
-    a("<h3>㉠ 전조는 떴다 — 경계 %d분</h3>" % len(d["alerts"]))
+    a('<div class="note good"><b>이쪽도 못 잡은 것이 아닙니다.</b> '
+      "예측기는 <b>고장 유형까지 맞혔습니다</b>. 화면에 안 떴을 뿐입니다.</div>")
+    a("<h3>㉠ 전조는 떴다 — 경계 %d분, 최초 공유 %s분 전부터</h3>"
+      % (len(d["alerts"]),
+         max([d_lead(t, d["ev_lo"]) or 0 for t, _g, _s in d["alerts"]] or [0])))
     if d["alerts"]:
         a("<table><tr><th>시각</th><th>등급</th><th class=n>점수</th>"
           "<th class=n>사건 대비</th></tr>")
-        for t, g, sc in d["alerts"][:14]:
+        for t, g, sc in d["alerts"][:10]:
             lead = d_lead(t, d["ev_lo"])
             a('<tr><td>%s</td><td class="%s">%s</td><td class=n>%s</td>'
               "<td class=n>%s</td></tr>"
@@ -477,23 +632,18 @@ def render(d):
                  ("<b>%d분 전</b>" % lead) if lead and lead > 0 else
                  ("%d분 후" % -lead if lead else "사건 시작")))
         a("</table>")
-
-    # ㉡ 고장 유형을 맞혔다 — 이 문서의 핵심
     hit = [h for h in d["hits"] if 0 < (d_lead(h[0], d["ev_lo"]) or -1) <= 60]
     if hit:
         t0, ft0, st0, g0, sc0 = hit[-1]
         a("<h3>㉡ 고장 유형까지 맞혔다 <span class=tag>핵심</span></h3>")
-        a('<div class="flow">%s   predicted_fault_type = <b>%s</b>\n'
-          "%s   단계 = %s\n"
-          "%s   그런데 화면은 = <b>%s %s점</b></div>"
-          % (e(t0), e(ft0), " " * len(t0), e(st0), " " * len(t0), e(g0), e(sc0)))
+        a('<div class="flow">발동이벤트 데이터  %s  predicted_fault_type = <b>%s</b>\n'
+          "                   %s  stage = %s\n\n"
+          "분석 이벤트 데이터  %s  <b>%s %s점</b></div>"
+          % (e(t0), e(ft0), " " * len(t0), e(st0), e(t0), e(g0), e(sc0)))
         a('<div class="note miss"><b>최초 공유(%s)보다 %d분 빨랐습니다.</b> '
-          "예측기는 <code>%s</code> 를 집어냈는데, 운전원 화면에는 "
-          "<b>%s %s점</b>으로 떴습니다 — <b>예측 결과가 점수에 들어가지 "
-          "않습니다.</b></div>"
+          "예측기는 <code>%s</code> 를 집어냈는데 운전원 화면에는 "
+          "<b>%s %s점</b>으로 떴습니다.</div>"
           % (e(d["ev_lo"]), d_lead(t0, d["ev_lo"]), e(ft0), e(g0), e(sc0)))
-
-    # ㉢ 장치가 죽어 있다
     a("<h3>㉢ 사건 추적 장치가 값을 채우지 않는다</h3>")
     a("<table><tr><th>칸</th><th>하루 %d분 동안</th><th>뜻</th></tr>" % len(rows))
     for c, nm, why in (("incident_state", "사건 상태", "사건으로 묶인 적이 한 번도 없다"),
@@ -511,14 +661,10 @@ def render(d):
         a("<tr><td>%s</td><td class=n>%d</td><td class=n>%.0f%%</td></tr>"
           % (e(k), v, 100.0 * v / tot))
     a("</table>")
-    a('<div class="note miss"><b>「3단계 확정」이 하루의 절반입니다.</b> '
-      "정상(0단계)인 분이 <b>한 분도 없습니다</b>. 늘 켜져 있는 경보는 "
-      "경보가 아닙니다 — 그래서 아무도 안 봅니다.</div>")
-
-    # ㉤ 13시 이후 — 지표가 거꾸로
+    a('<div class="note miss">「3단계 확정」이 하루의 절반입니다. '
+      "정상(0단계)인 분이 <b>한 분도 없습니다</b>. 늘 켜진 경보는 경보가 "
+      "아닙니다.</div>")
     a("<h3>㉤ 13시 이후엔 지표까지 거꾸로 갔다</h3>")
-    a("<p>사건 전(<b>%s~%s</b>)과 사건 중(<b>%s~%s</b>)의 지표 평균이다.</p>"
-      % (e(d["bf_lo"]), e(d["bf_hi"]), e(d["ev_lo"]), e(d["ev_hi"])))
     a("<table><tr><th>지표</th><th class=n>사건 전</th><th class=n>사건 중</th>"
       "<th>방향</th><th class=n>임계</th><th>룰이 켜지나</th></tr>")
     for nm, bef, dur, th in d["dirs"]:
@@ -531,12 +677,14 @@ def render(d):
              "bad" if on else "dim", "켜짐" if on else "안 켜짐"))
     a("</table>")
     if d.get("series"):
-        a("<h3>그림 2 — 점수가 눌려 있는 동안 지표도 같이 내려갔다</h3>")
+        a("<h3>그림 3 — 점수가 눌려 있는 동안 지표도 같이 내려갔다</h3>")
         a(series_svg(d["series"], label="사건 구간 점수와 지표"))
-    a('<div class="note miss"><b>평균의 함정</b> — 반송시간 평균은 '
-      "<b>끝난 반송</b>만 셉니다. 차가 멈추면 그 화물은 평균에 안 들어갑니다. "
-      "<b>정체가 심할수록 평균이 내려갑니다.</b><br>"
-      "게다가 여덟 룰이 전부 <b>올라가는 것</b>만 잡습니다. 무언정지는 "
+    a('<div class="note miss"><b>답:</b> 무언정지로 OHT 가 줄줄이 대기했는데 '
+      "점수가 안 오른 이유는 <b>지표가 오히려 좋아 보였기 때문</b>입니다.<br>"
+      "㉠ <b>평균의 함정</b> — 반송시간 평균은 <b>끝난 반송</b>만 셉니다. 차가 "
+      "멈추면 그 화물은 평균에 안 들어가 <b>정체가 심할수록 평균이 "
+      "내려갑니다</b>.<br>"
+      "㉡ 여덟 룰이 전부 <b>올라가는 것</b>만 잡습니다. 무언정지는 "
       "<b>내려가는 것</b>(가동률 93%%→76%%)으로 나타납니다.</div>")
 
     # ── 3) 점수 재산정 ──
@@ -754,6 +902,58 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
            for r in ev]
     evs = [(t, v if v is not None else 0) for t, v in evs][::max(1, len(ev) // 12)][:12]
 
+    # ── 룰이 켜진 '구간' — 점점이 아니라 덩어리로 봐야 보인다 ─────────
+    # ★07:58 을 '전부 턱걸이라 헛알람' 이라고 썼다가 지적을 받았다.
+    #   배율만 보면 1.01배지만, **같은 것이 몇 시간 계속되는 것**이 신호다.
+    #   구간으로 묶어 보면 아침 내내 용량이 줄어 있었다는 게 드러난다.
+    def rule_runs(key):
+        out, cur = [], None
+        for r in rows:
+            t = hhmm(r.get("datetime"))
+            on = (f(r.get("{}_pts_{}".format(fab, key))) or 0) > 0
+            if on and cur is None:
+                cur = [t, t]
+            elif on:
+                cur[1] = t
+            elif cur:
+                out.append(tuple(cur)); cur = None
+        if cur:
+            out.append(tuple(cur))
+        return [(a, b, (_mins(b) - _mins(a) + 1)) for a, b in out]
+
+    maxcapa = rule_runs("MAXCAPA")
+    # 어떤 설비가 얼마나 줄었나
+    caps = {}
+    for r in rows:
+        sig = (r.get("maxcapa_signals") or "").strip()
+        if sig:
+            caps[sig] = caps.get(sig, 0) + 1
+
+    # 화면 등급이 '정상이 아닌' 덩어리 — 몇 조각으로 쪼개졌나
+    blocks, cur = [], None
+    for t in sorted(scr):
+        g = scr[t][0]
+        on = g and g != "정상"
+        if on and cur is None:
+            cur = [t, t, g]
+        elif on:
+            cur[1] = t
+            cur[2] = max(cur[2], g, key=lambda x: LV.index(x) if x in LV else 0)
+        elif cur:
+            blocks.append(tuple(cur)); cur = None
+    if cur:
+        blocks.append(tuple(cur))
+    blocks = [(a, b, g, _mins(b) - _mins(a) + 1) for a, b, g in blocks]
+
+    # ── 두 자료를 나란히 — 이 문서의 핵심 ───────────────────────────
+    # 발동이벤트(예측기가 본 것) vs 화면 표(운전원이 본 것)
+    cmp2 = []
+    for r in rows:
+        t = hhmm(r.get("datetime"))
+        g, sc = scr.get(t, ("", ""))
+        cmp2.append((t, r.get("stage_name") or "", r.get("predicted_fault_type") or "",
+                     g, sc))
+
     # ── 예측 장치가 무엇을 하고 있었나 ─────────────────────────────
     # ★"전조는 계속 있었다" 는 지적을 받고 넣었다. 처음엔 점수만 보고
     #   '못 잡았다' 고 썼는데, 단계·예측유형 칸을 보니 시스템은 보고 있었다.
@@ -797,7 +997,8 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
             "cap": cap, "warn_cut": warn_cut, "ev_scores": evs, "title": title,
             "screen": bool(scr), "series": series, "cmp": cmp_rows,
             "stages": stages, "dead": dead, "hits": hits, "ev_hits": ev_hits,
-            "alerts": alerts}
+            "alerts": alerts, "maxcapa": maxcapa, "caps": caps,
+            "blocks": blocks, "cmp2": cmp2}
 
 
 def main(argv=None):
