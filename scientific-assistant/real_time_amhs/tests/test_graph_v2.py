@@ -20,6 +20,8 @@ import sys
 import unittest
 
 from . import util  # noqa: F401
+
+_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import graphs
 from lp_client import load_config
 
@@ -266,6 +268,26 @@ class 클릭할_수_있게_시각을_실어_보낸다(unittest.TestCase):
         self.assertIn("bindGraphPin", html)
         self.assertIn("el.dataset.at", html, "실어 보낸 시각을 받아 써야 한다")
         self.assertIn("#gpin", html, "고정한 내용을 놓을 자리가 있어야 한다")
+
+
+class 추이_시간축(unittest.TestCase):
+    """★고객 지적: "표기 시간이 00:00, 12:00, 24:00 이러면 안 되지."
+
+    글자는 12시간마다인데 세로 실선은 2시간마다라 어느 선이 몇 시인지 셀 수가
+    없었다. 그리고 '24:00' 은 없는 시각이다 — 하루의 마지막 분은 23:59.
+    선과 글자가 **같은 상수**로 같은 자리에 오는지를 node 로 돌려 본다.
+    """
+
+    def test_선과_글자가_같은_자리다(self):
+        import shutil
+        import subprocess
+        node = shutil.which("node") or "/opt/node22/bin/node"
+        if not os.path.exists(node):
+            self.skipTest("node 가 없다")
+        r = subprocess.run([node, os.path.join(_BASE, "tests", "strip_axis.js")],
+                           capture_output=True, text=True, timeout=60, cwd=_BASE)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
 
 
 if __name__ == "__main__":

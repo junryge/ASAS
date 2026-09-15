@@ -710,8 +710,13 @@
   .stripbox .slbl{position:absolute;right:0;transform:translateY(calc(-100% - 3px));
                   font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.04em;
                   background:var(--panel);padding:0 5px;pointer-events:none;white-space:nowrap}
-  .stripax{margin-top:10px;display:flex;justify-content:space-between;font-size:11.5px;line-height:1;
+  /* 시간축 — 글자를 선과 같은 자리에 놓으려고 절대 배치한다(flex 로 흘리면
+     상자가 균등 분배될 뿐이라 선과 어긋난다). 높이는 글자 한 줄만큼 준다. */
+  .stripax{position:relative;margin-top:10px;height:13px;font-size:11.5px;line-height:1;
            color:var(--tx3)}
+  .stripax .sxt{position:absolute;top:0;white-space:nowrap}
+  /* 좁은 화면에서는 한 칸 걸러 하나만 — 글자가 겹치느니 덜 적는 게 낫다 */
+  @media (max-width:900px){ .stripax .sxt:nth-child(even){display:none} }
   /* 호버 툴팁(시안) — --panel2 카드, 막대 위 14px, 좌우 17~83% 클램프(JS).
      pointer-events:none 이라 툴팁이 마우스를 가로채 깜빡이지 않는다.
      .below 는 카드가 화면 맨 위에 붙어 위쪽 자리가 없을 때(상단 바에 가린다) 아래로 */
@@ -3690,6 +3695,9 @@ function bindGraph(tbodySel){
      같은 등급색이라 정상 막대 위에 빨간 띠가 깔려 '이미 위험 구간' 으로 읽혔다. */
 /* 아래 시간축 글자를 SVG 밖(HTML)으로 뺐으니 아래 여백은 거의 없다 */
 const STRIP_W = 1000, STRIP_H = 132, STRIP_L = 30, STRIP_R = 10, STRIP_T = 6, STRIP_B = 4;
+/* 시간축 눈금 간격(시간). 세로 실선과 글자가 이 값을 같이 쓴다 — 따로 두면
+   선은 2시간, 글자는 12시간처럼 어긋난다(실제로 그랬다). */
+const STRIP_TICK_H = 3;
 /* 여백 — 스코어(막대)일 땐 왼쪽 눈금 숫자가 없어 막대를 양 끝까지 채운다(시안).
    비스코어 지표는 자동 눈금 숫자 자리(STRIP_L)를 남긴다. 클릭·호버 좌표 환산도 이걸 쓴다. */
 function stripGeom(isScore){
@@ -3796,8 +3804,8 @@ function stripSvg(rows, mt, sel, lim, allOn){
      ★막대 모드 전용이었다: 선 그래프로 바꾸면 막대도 밑판도 없어 툴팁만 뜨고
        '지금 어느 분을 짚고 있나' 를 그림에서 확인할 길이 없었다. 두 모드 다 그린다. */
   o.push(`<rect class="shov" x="${L}" y="${T}" width="0" height="${ih}" rx="1"/>`);
-  // 2시간 간격 세로 실선 — 시각 글자는 SVG 밖 .stripax 가 맡는다
-  for(let hh=2; hh<24; hh+=2){
+  // 세로 실선 — 시각 글자(.stripax)와 **같은 간격**이어야 어느 선이 몇 시인지 안다
+  for(let hh=STRIP_TICK_H; hh<24; hh+=STRIP_TICK_H){
     const x = f1(X(t0 + hh*3600000));
     o.push(`<line class="shr" x1="${x}" y1="${T}" x2="${x}" y2="${T+ih}"/>`);
   }
@@ -3855,9 +3863,23 @@ function stripSvg(rows, mt, sel, lim, allOn){
   // 리미트 라벨 '경계 60' — 선 오른쪽 끝, 선 위 3px. SVG 글자는 폭 따라 늘어나서 HTML 로
   const lbl = isScore ? LIMITS.filter(([k]) => !(lim && lim[k] === false)).map(([k,nm,col]) =>
     `<span class="slbl" style="top:${(Y(CUTS[k]) / STRIP_H * 100).toFixed(2)}%;color:${col}">${nm} ${CUTS[k]}</span>`).join('') : '';
+  /* 시간축 — 세로 실선과 **같은 자리**에 같은 간격으로 적는다.
+     ★예전엔 00:00 · 12:00 · 24:00 셋뿐이었다. 격자선은 2시간마다 그어 놓고
+       글자는 12시간마다라, 어느 선이 몇 시인지 셀 수가 없었다. 그리고
+       '24:00' 은 없는 시각이다 — 하루의 마지막 분은 23:59 다.
+     ★flex(space-between)로 흘리면 글자 상자가 균등 분배될 뿐이라 선과 조금씩
+       어긋난다. 선과 같은 식(hh/24)으로 자리를 잡아 정확히 맞춘다. */
   const hm = n => String(n).padStart(2,'0') + ':00';
+  const ticks = [];
+  for(let hh=0; hh<24; hh+=STRIP_TICK_H){
+    const pct = (hh / 24 * 100).toFixed(4);
+    const edge = hh === 0 ? 'left:0;transform:none'
+                          : `left:${pct}%;transform:translateX(-50%)`;
+    ticks.push(`<span class="sxt" style="${edge}">${hm(hh)}</span>`);
+  }
+  ticks.push('<span class="sxt" style="right:0;transform:none">23:59</span>');
   return `<div class="stripsvg">${o.join('')}${lbl}<div class="striptip hidden"></div></div>`
-    + `<div class="stripax mono"><span>${hm(0)}</span><span>${hm(12)}</span><span>${hm(24)}</span></div>`;
+    + `<div class="stripax mono">${ticks.join('')}</div>`;
 }
 
 /* 묶음 버튼 + 지표 선택 상자 채우기 (실시간·과거 각각) */
