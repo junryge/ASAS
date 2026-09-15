@@ -78,6 +78,38 @@ class Reason_에서_PIO를_읽는다(unittest.TestCase):
         self.assertEqual(int(hub._PIO.search(s).group(1)), 17)
 
 
+class 예측_지표로_잰다(unittest.TestCase):
+    """자를 한 번 잘못 골랐다 — 그 자가 되돌아오면 안 된다.
+
+    처음엔 '장애 구간 중 몇 분이 경계 이상인가' 로 쟀다. 그건 **감시** 를 재는
+    자다. 이건 예측 시스템이라 물어야 할 것은 **장애보다 먼저 떴는가** 다.
+    같은 자료가 자를 바꾸니 5%(감시)가 91분 선행(예측)이 됐다.
+    """
+
+    def setUp(self):
+        with open(os.path.join(_BASE, "M16HUB분석_문서.py"), encoding="utf-8") as fh:
+            self.src = fh.read()
+
+    def test_선행_시간을_먼저_묻는다(self):
+        i5 = self.src.index("5-1.")
+        i6 = self.src.index("5-2.")
+        self.assertLess(i5, i6, "선행(예측)이 감시보다 앞에 와야 한다")
+        self.assertIn("장애보다 먼저 떴는가", self.src[i5:i5 + 200])
+        self.assertIn("계속 떠 있었는가", self.src[i6:i6 + 200])
+
+    def test_감시_지표를_지우지_않는다(self):
+        # 자를 바꿨다고 끊김을 숨기면 안 된다 — continuity 근거가 그거다
+        self.assertIn("gap_max", self.src)
+        self.assertIn("chips", self.src)
+
+    def test_고객_방식도_같이_잰다(self):
+        # 예측기 구간표(+2…+11)와 고객이 쓰신 방식(+10) 둘 다
+        self.assertIn("PIO_FLAT", self.src)
+        self.assertEqual(hub.PIO_FLAT, 10)
+        self.assertIn('"flat"', self.src)
+        self.assertIn('"band"', self.src)
+
+
 class 결론을_손으로_쓰지_않는다(unittest.TestCase):
     """render 가 등급 판정을 lv_of 로 하는지 — 글자로 박으면 자료와 어긋난다."""
 

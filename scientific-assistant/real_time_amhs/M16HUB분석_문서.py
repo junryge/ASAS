@@ -47,6 +47,9 @@ PIO_BAND = [(81, 11), (63, 9), (41, 7), (26, 4), (16, 2)]
 PIO_THR = 16
 
 
+PIO_FLAT = 10               # 고객이 손으로 쓰신 방식 — 임계 넘으면 화면점수 +10
+
+
 def pio_pts(cnt):
     for lo, p in PIO_BAND:
         if cnt >= lo:
@@ -281,6 +284,51 @@ def build(screen_path, ev_paths, wins, cuts, title):
             grades[r["등급"]] = grades.get(r["등급"], 0) + 1
         pio_hi = max([(r["_pio"] or 0, t) for t, r in rows] or [(0, "")])
         sc_hi = max([(r["_score"] or 0, t) for t, r in rows] or [(0, "")])
+        # ── 선행 시간 ──────────────────────────────────────────────
+        # ★한 번 틀렸다. 처음엔 '장애 구간 중 몇 분이 경계 이상인가' 로 쟀다.
+        #   그건 **감시** 를 재는 자다. 이건 예측 시스템이라 물어야 할 것은
+        #   **장애보다 먼저 떴는가** 다. 같은 자료가 자를 바꾸면 결론이
+        #   뒤집힌다 — 5%(감시)가 91분 선행(예측)이 된다.
+        ev = evs.get(day) or {}
+        lo_m = _mins(lo) or 0
+        lead = {"now": None, "band": None, "flat": None}
+        seen = {"now": [], "band": [], "flat": []}
+        for t in sorted(ev):
+            m = _mins(t)
+            if m is None or not (lo_m - 180 <= m <= lo_m):
+                continue
+            raw = f(ev[t].get("%s_score_raw" % FAB)) or 0
+            cnt = int(f(ev[t].get("pio_10min_cnt")) or 0)
+            now = scr_of(raw)
+            vals = {"now": now,
+                    "band": scr_of(raw + pio_pts(cnt)),
+                    "flat": (now or 0) + (PIO_FLAT if cnt >= PIO_THR else 0)}
+            for k, v in vals.items():
+                if v is not None and v >= cuts[0]:
+                    seen[k].append(t)
+                    if lead[k] is None:
+                        lead[k] = t
+        w_lead = {k: ((lo_m - (_mins(v) or 0)) if v else None) for k, v in lead.items()}
+        # 첫 경보부터 장애까지 — 경보가 몇 조각으로 쪼개졌나(continuity 의 근거)
+        chips, gap_max = [], 0
+        base = lead["flat"] or lead["band"]
+        if base:
+            on = set(seen["flat"]) | set(seen["band"])
+            span = [t for t in sorted(ev) if base <= t and (_mins(t) or 0) <= lo_m]
+            cur = None
+            for t in span:
+                if t in on:
+                    cur = [t, t] if cur is None else [cur[0], t]
+                elif cur:
+                    chips.append(tuple(cur)); cur = None
+            if cur:
+                chips.append(tuple(cur))
+            for x, y in zip(chips, chips[1:]):
+                gap_max = max(gap_max, (_mins(y[0]) or 0) - (_mins(x[1]) or 0) - 1)
+            on_n = sum((_mins(b) or 0) - (_mins(a) or 0) + 1 for a, b in chips)
+        else:
+            on_n = 0
+
         # PIO 를 FAB 점수에 넣으면
         wif, up = [], 0
         for t, r in rows:
@@ -294,7 +342,11 @@ def build(screen_path, ev_paths, wins, cuts, title):
                 up += 1
             wif.append((t, v, nv, add, r["_pio"]))
         best = max(wif, key=lambda x: (x[2] or 0)) if wif else None
-        windows.append({"day": day, "lo": lo, "hi": hi, "label": label,
+        windows.append({"first": lead, "lead": w_lead,
+                        "chips": chips, "gap_max": gap_max, "on_n": on_n,
+                        "span_n": len(span) if base else 0,
+                        "pre_n": {k: len(v) for k, v in seen.items()},
+                        "day": day, "lo": lo, "hi": hi, "label": label,
                         "pts": pts, "grades": grades, "n": len(rows),
                         "pio_hi": pio_hi, "sc_hi": sc_hi,
                         "wif": wif, "up": up, "best": best,
@@ -409,11 +461,29 @@ def render(d):
     # ── 0 ──
     a("<h2>0. 한 줄로</h2>")
     miss = [w for w in d["windows"] if not w["ev"]]
-    a('<div class="note miss"><b>못 잡은 게 아니라, 잡은 것을 점수로 못 옮겼다.</b> '
-      "세 사건 모두 <b>PIO 반송실패</b>가 임계(%d개/10분)의 <b>여섯~여덟 배</b>로 "
-      "치솟는 동안 화면 점수는 정상~경계에 붙어 있었다. PIO 는 "
-      "<b>이미 세고 있고 점수까지 매겨 두었는데</b>, 그 점수가 "
-      "<b>FAB 점수에 더해지지 않는다</b>.</div>" % PIO_THR)
+    won = [w for w in d["windows"] if (w["lead"]["flat"] or 0) > 0]
+    gain = [w for w in d["windows"]
+            if (w["lead"]["flat"] or 0) > (w["lead"]["now"] or 0)]
+    a('<div class="note good"><b>PIO 를 FAB 점수에 넣으면 세 사건 중 '
+      "<b>%d건</b>이 장애보다 <b>먼저</b> 뜬다 — 선행 <b>%s</b>. "
+      "PIO 는 <b>이미 세고 있고 점수까지 매겨 두었는데</b> 그 점수가 "
+      "<b>FAB 점수에 더해지지 않을 뿐이다</b>.</div>"
+      % (len(won), e(" · ".join("%s %d분" % (w["label"].split(" (")[0],
+                                             w["lead"]["flat"]) for w in won))))
+    if gain:
+        a('<div class="note"><b>특히 %s</b> — 지금은 %s 에 처음 뜨는데 PIO 를 '
+          "넣으면 <b>%s</b> 로 <b>%d분 앞당겨진다</b>.</div>"
+          % (e(gain[0]["label"].split(" (")[0]), e(gain[0]["first"]["now"] or "—"),
+             e(gain[0]["first"]["flat"] or "—"),
+             (gain[0]["lead"]["flat"] or 0) - (gain[0]["lead"]["now"] or 0)))
+    a('<div class="note miss"><b>다만 경보가 이어지지 않는다.</b> '
+      "PIO 는 10분 창이 지나가면 가산이 사라져서, 첫 경보부터 장애까지가 "
+      "<b>%s</b> 조각으로 쪼개지고 최장 <b>%d분</b>씩 끊긴다. 한 번 끊기면 "
+      "운전원에게는 '지나갔다' 로 읽힌다 — <b>PIO 가 첫 경보를 앞당기고, "
+      "이어짐(continuity)이 그 사이를 메워야</b> 비로소 '계속 떠 있었다' 가 "
+      "된다.</div>"
+      % (e(" · ".join("%d" % len(w["chips"]) for w in d["windows"] if w["chips"])),
+         max([w["gap_max"] for w in d["windows"]] or [0])))
 
     # ── 1. 받은 자료 ──
     a("<h2>1. 받은 자료 — 무엇이 있고 무엇이 없나</h2>")
@@ -571,6 +641,58 @@ def render(d):
 
     # ── 5. PIO 를 더하면 ──
     a("<h2>5. 그래서 — PIO 를 FAB 점수에 더하면</h2>")
+
+    # ★자를 한 번 잘못 골랐다. 처음엔 '장애 구간 중 몇 분이 경계 이상인가' 로
+    #   쟀는데 그건 **감시** 를 재는 자다. 이건 예측 시스템이라 물어야 할 것은
+    #   **장애보다 먼저 떴는가** 다. 같은 자료가 자를 바꾸니 5% 가 91분 선행이
+    #   됐다. 감시 지표는 아래 5-2 에 따로 둔다 — 지우지 않는다.
+    a("<h3>5-1. 먼저 물을 것 — <b>장애보다 먼저 떴는가</b>"
+      "<span class=tag>예측 지표</span></h3>")
+    a("<p>예측 시스템이니 <b>선행 시간</b>으로 잰다. 장애 3시간 전부터 "
+      "경계 컷(<b>%g</b>)을 처음 넘은 시각이다.</p>" % cuts[0])
+    a("<table><tr><th>사건</th><th class=n>장애</th><th class=n>지금</th>"
+      "<th class=n>PIO 넣으면</th><th class=n>선행</th>"
+      "<th class=n>앞당김</th></tr>")
+    for w in d["windows"]:
+        ln, lf = w["lead"]["now"], w["lead"]["flat"]
+        gain = (lf or 0) - (ln or 0)
+        a("<tr%s><td><b>%s</b></td><td class=n>%s</td><td class=n>%s</td>"
+          "<td class=n><b>%s</b></td><td class=n><b class=%s>%s</b></td>"
+          "<td class=n>%s</td></tr>"
+          % (" class=hi" if gain > 0 else "", e(w["label"].split(" (")[0]),
+             e(w["lo"]), e(w["first"]["now"] or "—"), e(w["first"]["flat"] or "—"),
+             "okc" if (lf or 0) > 0 else "bad",
+             ("%d분 전" % lf) if lf else "동시(0분)",
+             ("<b class=okc>+%d분</b>" % gain) if gain > 0 else "–"))
+    a("</table>")
+    a('<div class="note good"><b>이 자로 보면 잡았다.</b> '
+      "선행이 <b>0분</b>인 한 건은 그 시각 전까지 점수가 낮아 "
+      "<b>PIO 를 더해도 컷에 못 미친</b> 경우다 — 그 건은 "
+      "<b>이어짐·재발</b> 쪽이 답이지 PIO 가 답이 아니다.</div>")
+
+    a("<h3>5-2. 그다음 물을 것 — <b>계속 떠 있었는가</b>"
+      "<span class=tag>감시 지표</span></h3>")
+    a("<table><tr><th>사건</th><th class=n>첫 경보~장애</th>"
+      "<th class=n>경보 켜진 분</th><th class=n>조각</th>"
+      "<th class=n>최장 끊김</th></tr>")
+    for w in d["windows"]:
+        if not w["chips"]:
+            continue
+        a("<tr%s><td><b>%s</b></td><td class=n>%d분</td>"
+          "<td class=n>%d분 (%d%%)</td><td class=n><b>%d조각</b></td>"
+          "<td class=n><b class=%s>%d분</b></td></tr>"
+          % (" class=hi" if w["gap_max"] >= 10 else "",
+             e(w["label"].split(" (")[0]), w["span_n"], w["on_n"],
+             (w["on_n"] * 100 // w["span_n"]) if w["span_n"] else 0,
+             len(w["chips"]), "bad" if w["gap_max"] >= 10 else "", w["gap_max"]))
+    a("</table>")
+    a('<div class="note miss"><b>여기가 PIO 만으로 안 되는 자리다.</b> '
+      "10분 창이 지나가면 가산이 사라져 경보가 조각난다. <b>한 번 끊기면 "
+      "운전원에게는 '지나갔다' 로 읽힌다.</b> continuity_min 이 이미 "
+      "101분까지 세고 있으니(4장 ㉢) <b>그 값을 점수에 얹으면 조각이 "
+      "이어진다</b>.</div>")
+
+    a("<h3>5-3. 두 가지 더하는 방식을 나란히</h3>")
     a("<p>지어낸 배점이 아니라 <b>예측기가 이미 쓰고 있는 구간표</b>를 그대로 "
       "쓴다(<code>pio_10min_cnt</code>→<code>pio_score</code> 를 자료에서 읽었다): "
       "<b>%s</b>.</p>"
@@ -588,8 +710,9 @@ def render(d):
                           sorted(w["grades"].items(),
                                  key=lambda kv: LV.index(kv[0]) if kv[0] in LV else 9))),
              w["up"], w["n"],
-             ("%g → <b class=bad>%g</b> (%s, PIO %s개)"
-              % (b[1], b[2], e(b[0]), b[4]) if b and b[2] else "—")))
+             ("%g → <b class=bad>%g</b> (%s%s)"
+              % (b[1], b[2], e(b[0]),
+                 (", PIO %d개" % b[4]) if b[4] else "") if b and b[2] else "—")))
     a("</table>")
     rows = [(w["label"], w["sc_hi"][0],
              max([x[2] or 0 for x in w["wif"]] or [0])) for w in d["windows"]]
