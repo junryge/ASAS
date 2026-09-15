@@ -81,6 +81,21 @@ def th_of(C, spec, fab):
     return f((v or {}).get(sub.format(f=fab)))
 
 
+def josa(word, pair="은는"):
+    """받침에 맞는 조사 — "초위험 가 아니라" 같은 글이 나오면 안 읽힌다.
+
+    fab_score._josa 와 같은 규칙이다. 이 파일은 룰 원본이 없어도 돌아야
+    해서(위쪽 import 를 try 로 감쌌다) 여기에 따로 둔다.
+    """
+    w = str(word or "").rstrip()
+    if not w:
+        return pair[1]
+    ch = w[-1]
+    if "가" <= ch <= "힣":
+        return pair[0] if (ord(ch) - 0xAC00) % 28 else pair[1]
+    return pair[1]
+
+
 def hhmm(s):
     return str(s or "")[11:16]
 
@@ -560,6 +575,55 @@ def render(d):
       "정상이었다는 뜻이다 — <b>예측 결과가 점수·등급으로 이어지지 않는다.</b> "
       "이 문서의 1)2)가 모두 이 한 장에서 나온다.</div>")
 
+    # ── 두 자료를 잇는 자 ───────────────────────────────────────────
+    # ★검토하다 나왔다. 나는 등급 컷을 코드 기본값으로, 환산 배수를 상수로
+    #   가정하고 있었다. 자료를 세어 보니 둘 다 달랐다. 문서에 쓰는 숫자는
+    #   가정이 아니라 **센 것** 이어야 한다.
+    if d["map_rows"] or d["grade_obs"]:
+        a("<h3>먼저 — 두 자료의 점수는 같은 자가 아니다</h3>")
+        a("<p>발동이벤트의 <code>%s_score</code>(영역 점수)와 화면의 "
+          "<b>종합점수</b>는 값이 다르다. 그날 자료에서 <b>실제로 짝지어진 "
+          "값</b>을 전부 세어 보면 이렇다.</p>" % e(fab))
+    if d["map_rows"]:
+        a("<table><tr><th class=n>영역 점수</th><th class=n>화면 종합점수</th>"
+          "<th class=n>배수</th></tr>")
+        for a_, b_, rt in d["map_rows"]:
+            odd = d["cap"] and a_ >= d["cap"]
+            a("<tr%s><td class=n>%g</td><td class=n>%g</td>"
+              "<td class=n>%s×%.2f%s</td></tr>"
+              % (" class=hi" if odd else "", a_, b_,
+                 "<b>" if odd else "", rt, "</b>" if odd else ""))
+        a("</table>")
+        if d["r_norm"] and d["r_cap"]:
+            a('<div class="note miss"><b>상한에 닿은 값만 배수가 다르다.</b> '
+              "상한(<b>%g</b>) 아래 값은 평균 <b>×%.2f</b> 인데, 상한에 닿은 "
+              "값은 <b>×%.2f</b> 로 <b>오히려 커진다</b>. 잘렸는데 커지는 "
+              "것이라 <b>상한에 닿는 순간 화면 점수가 한 번 더 뛴다</b> — "
+              "영역 점수 <b>%g→%g</b> 한 칸 사이에 화면은 <b>%g→%g</b>, "
+              "<b>%g점</b>이 뛴다. 08:00 이 바로 이 칸이다."
+              "<br><br>이건 '영역 점수를 자른다' 는 설계 의도와 어긋난다. "
+              "<b>점검이 필요한 자리로 적어 둔다</b>(이 문서가 고칠 범위는 "
+              "아니다).</div>"
+              % (d["cap"] or 0, d["r_norm"], d["r_cap"],
+                 d["map_rows"][-2][0], d["map_rows"][-1][0],
+                 d["map_rows"][-2][1], d["map_rows"][-1][1],
+                 d["map_rows"][-1][1] - d["map_rows"][-2][1]))
+    if d["grade_obs"]:
+        a("<h3>등급 경계도 자료에서 읽는다</h3>")
+        a("<p>등급 컷을 코드 기본값으로 짐작하지 않고, 그날 화면에 실제로 "
+          "뜬 값의 <b>최소~최대</b>를 세었다.</p>")
+        a("<table><tr><th>등급</th><th class=n>관측 최소</th>"
+          "<th class=n>관측 최대</th><th class=n>분</th></tr>")
+        for g, mn, mx, n in d["grade_obs"]:
+            a('<tr><td><b class="%s">%s</b></td><td class=n>%g</td>'
+              "<td class=n>%g</td><td class=n>%d</td></tr>"
+              % ("bad" if g in ("위험", "초위험") else "", e(g), mn, mx, n))
+        a("</table>")
+        _top = d["grade_obs"][-1]
+        a("<p class=dim>가장 높은 등급 <b>%s</b>%s 하루 <b>%d분</b>뿐이고 "
+          "값이 <b>%g</b> 하나다 — 이 자리가 얼마나 드물게 열리는지 알 수 "
+          "있다.</p>" % (e(_top[0]), josa(_top[0]), _top[3], _top[1]))
+
     # ── 1) ──
     a("<h2>1) 08:00 즈음 별일 없었는데 초위험이 울린 원인</h2>")
     if hi:
@@ -585,17 +649,68 @@ def render(d):
             a("<p>같은 시각 <code>reason</code> 원문에 이렇게 적혀 있다:</p>")
             a("<div class=flow>%s</div>"
               % e((r.get("maxcapa_signals") or "").strip() or "—"))
-            a("<p><b>컨베이어 용량이 정상값보다 줄어 있었다.</b> 그 상태가 "
-              "하루 중 이만큼 이어졌다:</p>")
+            a("<p><b>컨베이어 반입 상한이 정상값보다 내려가 있었다.</b> "
+              "그 상태가 하루 중 이만큼 이어졌다:</p>")
             a(runs_svg(d["maxcapa"], color="#b45309", label="용량 축소 지속 구간"))
             a("<table><tr><th>구간</th><th class=n>지속</th></tr>")
             for aa, bb, mm in d["maxcapa"]:
                 a("<tr><td>%s ~ %s</td><td class=n><b>%d분</b></td></tr>" % (e(aa), e(bb), mm))
+            a("<tr><td><b>합계</b></td><td class=n><b>%d분</b> / 1440분</td></tr>"
+              % sum(x[2] for x in d["maxcapa"]))
             a("</table>")
-            if d["caps"]:
-                worst = min(d["caps"], key=lambda k: f(re.search(r"=(\d+)", k).group(1))
-                            if re.search(r"=(\d+)", k) else 1e9)
-                a("<p>가장 낮았을 때는 <code>%s</code> 였다.</p>" % e(worst))
+
+            # ★"컨베이어 용량 축소?" — 얼마나 내려갔는지를 값으로 적는다.
+            if d["capa_rows"]:
+                a("<h3>얼마나 내려갔나 — 정상치와 나란히</h3>")
+                a("<p>정상값 <b>%s</b>, 룰 임계 <b>%s 이하</b>. "
+                  "임계 밑으로 내려간 분에만 값이 기록된다.</p>"
+                  % (e(d["capa_norm"] or "—"), e(d["capa_thr"] or "—")))
+                a("<table><tr><th>기록된 값</th><th class=n>정상 대비</th>"
+                  "<th class=n>분</th></tr>")
+                for sig, v, n, pct in d["capa_rows"]:
+                    hit = (hhmm(r.get("datetime")) and
+                           sig == (r.get("maxcapa_signals") or "").strip())
+                    a("<tr%s><td><code>%s</code>%s</td>"
+                      "<td class=n>%s</td><td class=n>%d</td></tr>"
+                      % (" class=hi" if hit else "", e(sig),
+                         (" <b>← %s</b>" % e(hhmm(r.get("datetime")))) if hit else "",
+                         ("%.0f%%" % (pct * 100)) if pct else "—", n))
+                a("</table>")
+                lowv = min((x for x in d["capa_rows"] if x[1]), key=lambda x: x[1], default=None)
+                if lowv:
+                    a("<p>가장 낮았을 때는 <b>%g</b> — 정상의 <b>%s</b> 였다.</p>"
+                      % (lowv[1], ("%.0f%%" % (lowv[3] * 100)) if lowv[3] else "—"))
+
+            # ★초위험을 만든 마지막 한 걸음이 이것이었다.
+            if d["hi_nomc"]:
+                tot, mc, wo, sc_wo, g_wo, nmin = d["hi_nomc"]
+                a("<h3>그리고 이 10점이 <b>초위험을 만든 마지막 한 걸음</b>이다"
+                  "<span class=tag>핵심</span></h3>")
+                a("<div class=flow>켜진 룰 합계 %g"
+                  "\n  − 용량 축소 %g"
+                  "\n  = %g%s</div>"
+                  % (tot, mc, tot - mc,
+                     ("   →   상한 %g 안이라 그대로 %g" % (d["cap"], wo))
+                     if d["cap"] and (tot - mc) <= d["cap"] else ""))
+                _lv = hi.get("level") or "초위험"
+                if sc_wo is not None:
+                    a("<p>자료 안에서 <b>%g점</b>은 화면 <b>%g점</b>으로 뜬다"
+                      "(그날 %d분). 즉 용량 축소가 없었다면 이 시각은 "
+                      "<b class=bad>%s</b>%s 아니라 <b>%s</b> 에서 멈췄다.</p>"
+                      % (wo, sc_wo, nmin, e(_lv), josa(_lv, "이가"),
+                         e(g_wo or "—")))
+                a('<div class="note miss"><b>그래서 08:00 초위험은 '
+                  "\u0027설비가 멀쩡한데 울린 것\u0027 이 아니다.</b> "
+                  "<b>설비 상한이 내려가 있었고</b>, 그 부담으로 다른 룰들이 "
+                  "같이 임계를 넘었고, 용량 축소 배점이 마지막으로 얹혀 "
+                  "상한을 넘겼다.<br><br>"
+                  "<b>다만 이 룰은 \u0027사람이 손댔다\u0027 는 신호지 "
+                  "\u0027멀쩡하다\u0027 는 신호가 아니다.</b> 자료에 적힌 것은 "
+                  "<b>값이 얼마였는지</b>뿐이고, 누가 왜 내렸는지는 적혀 있지 "
+                  "않다. 계획 정비일 수도, 방금 난 고장에 대응하는 중일 수도 "
+                  "있다. 이 시각에는 반송지연·반입급증·역증가·저장FULL·"
+                  "SLA 가 <b>같이</b> 켜져 있었으니 <b>고장 대응 쪽</b>으로 "
+                  "읽는 것이 맞다.</div>")
         if d["blocks"]:
             am = [b for b in d["blocks"] if b[1] <= "09:00"]
             if am:
@@ -618,20 +733,31 @@ def render(d):
     a("<h2>2) 사건 발생 때 점수가 낮았던 원인</h2>")
     a('<div class="note good"><b>이쪽도 못 잡은 것이 아닙니다.</b> '
       "예측기는 <b>고장 유형까지 맞혔습니다</b>. 화면에 안 떴을 뿐입니다.</div>")
-    a("<h3>㉠ 전조는 떴다 — 경계 %d분, 최초 공유 %s분 전부터</h3>"
-      % (len(d["alerts"]),
-         max([d_lead(t, d["ev_lo"]) or 0 for t, _g, _s in d["alerts"]] or [0])))
-    if d["alerts"]:
-        a("<table><tr><th>시각</th><th>등급</th><th class=n>점수</th>"
-          "<th class=n>사건 대비</th></tr>")
-        for t, g, sc in d["alerts"][:10]:
-            lead = d_lead(t, d["ev_lo"])
-            a('<tr><td>%s</td><td class="%s">%s</td><td class=n>%s</td>'
-              "<td class=n>%s</td></tr>"
-              % (e(t), "warn" if g == "경계" else "bad", e(g), e(sc),
-                 ("<b>%d분 전</b>" % lead) if lead and lead > 0 else
-                 ("%d분 후" % -lead if lead else "사건 시작")))
+    a("<h3>㉠ 최초가 아니라 <b>최종</b> 공유 시각이다 — 그 전 1시간을 보면</h3>")
+    a("<p><b>%s</b> 는 <b>최종 공유</b> 시각이다. 그 앞 한 시간 동안 예측기가 "
+      "무엇을 가리키고 있었는지가 이 사건의 핵심이다.</p>" % e(d["ev_lo"]))
+    if d["lead_rows"]:
+        a("<table><tr><th>시각</th><th>예측 고장 유형</th><th>단계</th>"
+          "<th>hot_area</th><th>화면 등급</th><th class=n>화면 점수</th></tr>")
+        prev = None
+        for t, ft, st, hot, g, sc in d["lead_rows"]:
+            key = (ft, g)
+            if key == prev and t[3:] not in ("00", "15", "30", "45"):
+                continue
+            prev = key
+            a('<tr><td>%s</td><td class="%s">%s</td><td>%s</td><td>%s</td>'
+              '<td class="%s">%s</td><td class=n>%s</td></tr>'
+              % (e(t), "bad" if "OHT" in ft else "dim", e(ft or "—"), e(st or "—"),
+                 e(hot or "—"), "warn" if g and g != "정상" else "dim",
+                 e(g or "—"), e(sc or "—")))
         a("</table>")
+    if d["fab_first"]:
+        _lead = d_lead(d["fab_first"], d["ev_lo"])
+        a('<div class="note miss"><b>%s 부터 — 공유 %d분 전부터</b> 예측기는 '
+          "줄곧 <code>%s</code> 를 가리켰습니다. 그 %d분 동안 화면은 "
+          "<b>대부분 정상</b>이었고, 경계는 %s 에 처음 떴습니다.</div>"
+          % (e(d["fab_first"]), _lead, e(fab), _lead,
+             e(d["alerts"][0][0]) if d["alerts"] else "—"))
     hit = [h for h in d["hits"] if 0 < (d_lead(h[0], d["ev_lo"]) or -1) <= 60]
     if hit:
         t0, ft0, st0, g0, sc0 = hit[-1]
@@ -640,10 +766,11 @@ def render(d):
           "                   %s  stage = %s\n\n"
           "분석 이벤트 데이터  %s  <b>%s %s점</b></div>"
           % (e(t0), e(ft0), " " * len(t0), e(st0), e(t0), e(g0), e(sc0)))
-        a('<div class="note miss"><b>최초 공유(%s)보다 %d분 빨랐습니다.</b> '
-          "예측기는 <code>%s</code> 를 집어냈는데 운전원 화면에는 "
-          "<b>%s %s점</b>으로 떴습니다.</div>"
+        a('<div class="note miss"><b>공유(%s)보다 %d분 빨랐습니다.</b> '
+          "예측기는 <code>%s</code> — 실제로 일어난 그 고장을 집어냈는데, "
+          "운전원 화면에는 <b>%s %s점</b>으로 떴습니다.</div>"
           % (e(d["ev_lo"]), d_lead(t0, d["ev_lo"]), e(ft0), e(g0), e(sc0)))
+
     a("<h3>㉢ 사건 추적 장치가 값을 채우지 않는다</h3>")
     a("<table><tr><th>칸</th><th>하루 %d분 동안</th><th>뜻</th></tr>" % len(rows))
     for c, nm, why in (("incident_state", "사건 상태", "사건으로 묶인 적이 한 번도 없다"),
@@ -663,7 +790,12 @@ def render(d):
     a("</table>")
     a('<div class="note miss">「3단계 확정」이 하루의 절반입니다. '
       "정상(0단계)인 분이 <b>한 분도 없습니다</b>. 늘 켜진 경보는 경보가 "
-      "아닙니다.</div>")
+      "아닙니다.<br><br>"
+      "<b>다만 범위를 분명히 합니다</b> — <code>stage_name</code> 에는 FAB "
+      "접두어가 없어 <b>전체 시스템</b> 값입니다(%s 전용이 아닙니다). "
+      "그래도 사건 앞 한 시간은 <code>hot_area</code> 가 %d분 중 <b>%d분</b>이 "
+      "%s 라, 이 구간에 한해서는 %s 얘기로 읽어도 됩니다.</div>"
+      % (e(fab), min(60, len(d["lead_rows"])), len(d["hot_near"]), e(fab), e(fab)))
     a("<h3>㉤ 13시 이후엔 지표까지 거꾸로 갔다</h3>")
     a("<table><tr><th>지표</th><th class=n>사건 전</th><th class=n>사건 중</th>"
       "<th>방향</th><th class=n>임계</th><th>룰이 켜지나</th></tr>")
@@ -954,6 +1086,89 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
         cmp2.append((t, r.get("stage_name") or "", r.get("predicted_fault_type") or "",
                      g, sc))
 
+    # ── 검토에서 나온 것들 ─────────────────────────────────────────
+    # ★내 분석을 내가 깨 보다가 셋이 나왔다. 셋 다 '자료에 적힌 것' 이 아니라
+    #   '내가 가정한 것' 이었다. 가정은 문서에 쓰기 전에 자료로 확인한다.
+
+    # (1) 등급 컷을 코드 기본값(60/71/85)으로 가정했는데 화면은 다르게 매긴다.
+    #     자료에서 **관측된 경계**를 그대로 읽는다.
+    obs = {}
+    for t, (g, sc) in scr.items():
+        v = f(sc)
+        if g and v is not None:
+            obs.setdefault(g, []).append(v)
+    grade_obs = [(g, min(obs[g]), max(obs[g]), len(obs[g])) for g in LV if g in obs]
+
+    # (2) 화면 점수 = area_score × 1.43 인데 **상한(50)에 닿은 값만 ×1.58** 이다.
+    #     잘린 뒤 오히려 부풀려진다 — 이게 초위험까지 간 마지막 한 걸음이다.
+    mapping, ratios_ = {}, []
+    for r in rows:
+        t = hhmm(r.get("datetime"))
+        a_, b_ = f(r.get("%s_score" % fab)), f(scr.get(t, ("", ""))[1])
+        if a_ and b_:
+            mapping.setdefault(a_, set()).add(b_)
+            ratios_.append((a_, b_ / a_))
+    norm = [x for a_, x in ratios_ if a_ < (cap or 50)]
+    capped = [x for a_, x in ratios_ if cap and a_ >= cap]
+    map_rows = [(a_, sorted(v)[0], sorted(v)[0] / a_) for a_, v in sorted(mapping.items())]
+
+    # (3) 컨베이어 상한이 얼마나 내려가 있었나 — 값과 정상치를 나란히.
+    #     ★"컨베이어 용량 축소?" 라는 물음을 받고 넣었다. 그때까지 문서는
+    #       "줄어 있었다" 고만 썼지 **얼마나** 를 안 적었다. 정상치는 룰
+    #       원본(fab_score.WATCH)에 적혀 있으니 손으로 옮기지 않는다.
+    capa_rows, capa_norm, capa_thr = [], None, None
+    try:
+        import fab_score as _FS
+        for _sp in (_FS.WATCH.get(fab) or {}).get("MAXCAPA") or []:
+            capa_norm, capa_thr = _sp.get("normal"), _sp.get("thr")
+            break
+    except Exception:                      # 룰 원본이 없어도 문서는 나온다
+        pass
+    _V = re.compile(r"=(\d+)")
+    for _sig, _n in caps.items():
+        _m = _V.search(_sig)
+        _v = f(_m.group(1)) if _m else None
+        capa_rows.append((_sig, _v, _n,
+                          (_v / capa_norm) if (_v and capa_norm) else None))
+    capa_rows.sort(key=lambda x: (-(x[1] or 0)))
+
+    # (4) 초위험에서 '용량 축소' 배점을 빼면 어떻게 되나 — 자료에 있는
+    #     같은 점수의 화면값을 그대로 가져다 쓴다(지어내지 않는다).
+    hi_nomc = None
+    if hi:
+        _fr = fired(hi["r"], fab)
+        _mc = sum(v for n, v in _fr if "용량" in n)
+        if _mc:
+            _tot = sum(v for _, v in _fr)
+            _wo = min(_tot - _mc, cap) if cap else (_tot - _mc)
+            _seen = sorted(mapping.get(_wo, []))
+            _sc = _seen[0] if _seen else None
+            _g = None
+            if _sc is not None:
+                for _g2, _s2 in scr.values():
+                    if f(_s2) == _sc and _g2:
+                        _g = _g2
+                        break
+            hi_nomc = (_tot, _mc, _wo, _sc, _g,
+                       sum(1 for _g2, _s2 in scr.values() if f(_s2) == _sc))
+
+    # (5) stage_name 에는 FAB 접두어가 없다 — **전체 시스템** 값이다.
+    #     다만 사건 앞 한 시간은 hot_area 가 거의 이 FAB 이라 그 구간은 유효하다.
+    hot_near = [hhmm(r.get("datetime")) for r in rows
+                if r.get("hot_area") == fab and
+                _shift(ev_lo, -60) <= hhmm(r.get("datetime")) <= ev_lo]
+
+    # (6) 이 FAB 을 가리킨 예측이 언제부터였나 — 선행 시간의 진짜 값
+    lead_rows = []
+    for r in rows:
+        t = hhmm(r.get("datetime"))
+        if not (_shift(ev_lo, -60) <= t <= _shift(ev_lo, 5)):
+            continue
+        ft = r.get("predicted_fault_type") or ""
+        g, sc = scr.get(t, ("", ""))
+        lead_rows.append((t, ft, r.get("stage_name") or "", r.get("hot_area") or "", g, sc))
+    fab_first = next((x[0] for x in lead_rows if x[1].startswith(fab + "-")), None)
+
     # ── 예측 장치가 무엇을 하고 있었나 ─────────────────────────────
     # ★"전조는 계속 있었다" 는 지적을 받고 넣었다. 처음엔 점수만 보고
     #   '못 잡았다' 고 썼는데, 단계·예측유형 칸을 보니 시스템은 보고 있었다.
@@ -998,7 +1213,13 @@ def build(src, fab, ev_lo, ev_hi, title, before_min=38, screen=None):
             "screen": bool(scr), "series": series, "cmp": cmp_rows,
             "stages": stages, "dead": dead, "hits": hits, "ev_hits": ev_hits,
             "alerts": alerts, "maxcapa": maxcapa, "caps": caps,
-            "blocks": blocks, "cmp2": cmp2}
+            "blocks": blocks, "cmp2": cmp2,
+            "grade_obs": grade_obs, "map_rows": map_rows,
+            "capa_rows": capa_rows, "capa_norm": capa_norm,
+            "capa_thr": capa_thr, "hi_nomc": hi_nomc, "cap": cap,
+            "r_norm": (sum(norm) / len(norm)) if norm else None,
+            "r_cap": (sum(capped) / len(capped)) if capped else None,
+            "hot_near": hot_near, "lead_rows": lead_rows, "fab_first": fab_first}
 
 
 def main(argv=None):
