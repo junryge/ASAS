@@ -814,5 +814,53 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         o.append(f'<text x="{L-46}" y="{ybase+14:.1f}" font-size="9.5" '
                  f'fill="{_TX3}">이 구간에 값이 안 온 컬럼: {names}{more}</text>')
 
+    # ── 마우스 판 — 어느 분에 올려도 그 분 데이터가 뜬다 ──────────────
+    # ★사건 자리에만 말풍선을 달았더니, 사건이 없는 구간(전부 정상)에서는
+    #   올릴 데가 없었다. 조용한 구간이야말로 '그때 값이 얼마였나' 를 보려고
+    #   더블클릭하는 자리다. 그래서 **모든 분**에 투명 띠를 깐다.
+    # ★맨 끝에 그린다 — 위에 있어야 마우스를 받는다. 투명이라 그림은 안 가린다.
+    _bot = (y_met0 + (MET_H + GAP) * len(metrics) - GAP) if metrics \
+        else (top_score + SCORE_H)
+    _evt_at = {t: i for i, (t, _r, _sc) in enumerate(incs, 1)}
+    _hw = max(2.0, pw / max(1, len(pts)))
+
+    def _mval_of(r, md):
+        """그 분의 지표 값 — PIO 처럼 여러 컬럼을 쌓는 것은 합으로."""
+        cols = md.get("cols") or []
+        if cols:
+            vs = [_pio_val(r, c) for c in cols]
+            vs = [v for v in vs if v is not None]
+            return sum(vs) if vs else None
+        return _f(r.get(md["col"]))
+
+    o.append('<style>.ghit{fill:transparent;cursor:crosshair}'
+             f'.ghit:hover{{fill:{_TX};fill-opacity:.07}}</style>')
+    for _t, _r in pts:
+        _sc = _f(_r.get("unified_risk_score"))
+        _lv = ('\ucd08\uc704\ud5d8' if (_sc or 0) >= _crit else
+               '\uc704\ud5d8' if (_sc or 0) >= _danger else
+               '\uacbd\uacc4' if (_sc or 0) >= _warn else '\uc815\uc0c1')
+        ln = []
+        _n = _evt_at.get(_t)
+        if _t == peak_t:
+            ln.append('\u25b2 \ucd5c\uace0\uc810')
+        elif _n:
+            ln.append('\uc0ac\uac74%d' % _n)
+        ln.append(f'{_t:%H:%M}')
+        ln.append('\uc810\uc218 ' + (f'{_sc:.0f} \u00b7 {_lv}' if _sc is not None else '-'))
+        _a = (_r.get("hot_area") or "").strip()
+        if _a:
+            ln.append(f'\uc601\uc5ed {_a}')
+        for _md in metrics:
+            _v = _mval_of(_r, _md)
+            if _v is not None:
+                ln.append(f'{_md["label"]} {_fmt(_v)}{_md["unit"]}')
+        _rs = str(_r.get("reason") or "").strip()
+        if _rs:
+            ln += [x.strip() for x in re.split(r"\s*;\s*", _rs) if x.strip()]
+        o.append(f'<rect class="ghit" x="{_cx(_t)-_hw/2:.1f}" y="{top_score}" '
+                 f'width="{_hw:.1f}" height="{_bot-top_score:.1f}">'
+                 f'<title>{_e(chr(10).join(ln))}</title></rect>')
+
     o.append("</svg>")
     return "".join(o)
