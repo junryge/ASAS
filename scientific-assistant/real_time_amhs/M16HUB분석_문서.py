@@ -31,6 +31,7 @@ INC = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(INC)
 
 e, f, josa, hhmm, _mins = INC.e, INC.f, INC.josa, INC.hhmm, INC._mins
+_shift = INC._shift
 LV, LVC, CSS = INC.LV, INC.LVC, INC.CSS
 day_svg, runs_svg, compare_svg = INC.day_svg, INC.runs_svg, INC.compare_svg
 
@@ -87,7 +88,7 @@ def load_ev(path):
 
 
 # ── 그림 ──────────────────────────────────────────────────────────────
-def pio_svg(pts, cuts, w=920, label=""):
+def pio_svg(pts, cuts, w=920, label="", mark=None):
     """점수(등급색 막대) + PIO 10분 합(선) 한 장.
 
     ★이 문서의 핵심 그림이다. PIO 가 임계의 여덟 배로 치솟는 동안 막대는
@@ -96,8 +97,8 @@ def pio_svg(pts, cuts, w=920, label=""):
     """
     if not pts:
         return ""
-    L, R, T, B = 40, 44, 24, 26
-    h = 210
+    L, R, T, B = 40, 44, 34, 26
+    h = 220
     iw, ih = w - L - R, h - T - B
     n = len(pts)
     X = lambda i: L + iw * (i / max(1, n - 1))
@@ -145,6 +146,15 @@ def pio_svg(pts, cuts, w=920, label=""):
     o.append('<text class="ax" x="%d" y="%d">%s</text>' % (L, h - 8, e(pts[0][0])))
     o.append('<text class="ax" x="%d" y="%d" text-anchor="end">%s</text>'
              % (L + iw, h - 8, e(pts[-1][0])))
+    if mark:
+        for i, (t, _s, _p, _g) in enumerate(pts):
+            if t == mark:
+                x = X(i)
+                o.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#111827" '
+                         'stroke-width="1.2" stroke-dasharray="5 3"/>' % (x, T, x, T + ih))
+                o.append('<text class="lg" x="%.1f" y="%d" text-anchor="middle" '
+                         'fill="#111827">장애 %s</text>' % (x, T - 6, e(t)))
+                break
     o.append('<text class="lg" x="%d" y="%d" fill="#6b7280">화면 점수(막대)</text>' % (L + 4, T + 12))
     o.append('<text class="lg" x="%d" y="%d" text-anchor="end" fill="#b91c1c">'
              'PIO 10분 합(선) · 임계 %d</text>' % (L + iw - 4, T + 12, PIO_THR))
@@ -279,6 +289,13 @@ def build(screen_path, ev_paths, wins, cuts, title):
         rows = [(t, r) for t, r in sorted((screen.get(day) or {}).items())
                 if lo <= t <= hi]
         pts = [(t, r["_score"], r["_pio"], r["등급"]) for t, r in rows]
+        # ★그림은 장애 60분 전부터 그린다 — 장애 직전에 PIO 가 어떻게 올라오는지가
+        #   이 문서의 핵심인데, 장애 구간만 자르면 그게 화면 밖으로 나간다.
+        #   숫자(5-2 감시 지표)는 장애 구간 그대로 센다 — 그림만 넓힌다.
+        lo_ctx = _shift(lo, -60) or lo
+        pts_ctx = [(t, r["_score"], r["_pio"], r["등급"])
+                   for t, r in sorted((screen.get(day) or {}).items())
+                   if lo_ctx <= t <= hi]
         grades = {}
         for _t, r in rows:
             grades[r["등급"]] = grades.get(r["등급"], 0) + 1
@@ -342,7 +359,8 @@ def build(screen_path, ev_paths, wins, cuts, title):
                 up += 1
             wif.append((t, v, nv, add, r["_pio"]))
         best = max(wif, key=lambda x: (x[2] or 0)) if wif else None
-        windows.append({"first": lead, "lead": w_lead,
+        windows.append({"pts_ctx": pts_ctx, "lo_ctx": lo_ctx,
+                        "first": lead, "lead": w_lead,
                         "chips": chips, "gap_max": gap_max, "on_n": on_n,
                         "span_n": len(span) if base else 0,
                         "pre_n": {k: len(v) for k, v in seen.items()},
@@ -541,7 +559,8 @@ def render(d):
           "PIO 최대 <b class=bad>%d개/10분</b>(%s · 임계의 <b>%.1f배</b>).</p>"
           % (w["n"], e(g), w["sc_hi"][0], e(w["sc_hi"][1]),
              w["pio_hi"][0], e(w["pio_hi"][1]), w["pio_hi"][0] / float(PIO_THR)))
-        a(pio_svg(w["pts"], cuts, label="%s — 점수와 PIO" % w["label"]))
+        a(pio_svg(w["pts_ctx"], cuts, mark=w["lo"],
+                  label="%s — 점수와 PIO (장애 60분 전부터)" % w["label"]))
         if w["ev"]:
             bits = []
             if w["hub_first"]:
