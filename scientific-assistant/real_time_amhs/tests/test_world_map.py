@@ -94,6 +94,32 @@ class 월드모델_HMI_맵(unittest.TestCase):
         # 등각은 기본 **끔** — 지금보다 못하면 하지 말라는 것이 결정이었다
         self.assertIn("let showIso = false;", src)
 
+    def test_레일컷_표시는_줌에_정비례하지_않는다(self):
+        """확대하면 ⛔ 가 66px 이 되어 레일 한 칸을 가렸다 — 차량과 같은 실수."""
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        self.assertNotIn("Math.max(2.5, 3 * mapZoom)", src)
+        self.assertNotIn("Math.max(1, 1.2 * mapZoom)", src)
+        self.assertIn("Math.min(12, 3 + 0.7 * mapZoom)", src)
+
+    def test_확대해도_표시가_레일을_안_덮는다(self):
+        """확대했을 때 무엇이 레일을 덮느냐 — 고객이 '레인 중간 초록'을 묻다가
+        같이 나왔다. 줌에 정비례하는 굵기는 9배에서 18px 덩어리가 된다.
+        차량·레일차단·HID 존 레인 셋 다 같은 실수였다."""
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        for old in ("Math.max(1.5, 2*mapZoom)",          # 존 레인 굵기
+                    "Math.max(2.5, 3 * mapZoom)",        # 레일차단 마커
+                    "Math.max(1, 1.2 * mapZoom)",        # 레일차단 점선
+                    "mapSettings.vehicleRadius*mapZoom"): # 차량
+            self.assertNotIn(old, src, old)
+        self.assertIn("Math.min(9, 2 + sc * 2.2)", src)   # 존 레인 — 화면 배율로, 상한 9px
+        self.assertIn("function vehicleRadiusPx(", src)
+
+    def test_존_레인은_레일_밑에_깔린다(self):
+        """위에 덧그리면 레일을 덮어 어느 선인지 안 보인다 (찍어 보고 알았다)."""
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        body = src.split("if (railGraph) {", 1)[1]
+        self.assertLess(body.index("lanesOf(z, 'inLanes')"), body.index("drawRailLayer("))
+
     def test_옛_노드번호_블록이_안_남아_있다(self):
         """캐시 밖에서 매 프레임 9,403개를 다시 훑던 자리 — 레이어로 옮겼다."""
         src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
