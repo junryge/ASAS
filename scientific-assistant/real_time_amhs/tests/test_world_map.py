@@ -76,6 +76,21 @@ class 월드모델_HMI_맵(unittest.TestCase):
         for k in keys:
             self.assertIn(f'id="ms-{k}"', src, k)
 
+    def test_투영은_한_벌이다(self):
+        """등각(◈) 토글이 들어오면서 투영을 한 함수로 모았다. 예전엔 같은 공식이
+        그리기·클릭·차량 이동·존 이동·핫스팟 다섯 곳에 복사돼 있어서, 투영을
+        바꾸면 클릭이 엉뚱한 차량을 집었다. 옛 공식이 한 줄이라도 남으면 걸린다."""
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        for old in ("(cw-20-dataW*sc)/2", "(w-20-dataW*sc)/2", "ox+(x-b.min_x)*sc",
+                    "ox + (v.dx - b.min_x) * sc"):
+            self.assertNotIn(old, src, old)
+        self.assertEqual(src.count("mapCenterOn("), 4)          # 정의 1 + 차량·존·핫스팟 3
+        self.assertGreaterEqual(src.count("mapProj(b, w, h)"), 2)  # drawMap + 클릭
+        self.assertIn('id="btn-iso"', src)
+        self.assertIn("if (layer==='iso')", src)
+        # 등각은 기본 **끔** — 지금보다 못하면 하지 말라는 것이 결정이었다
+        self.assertIn("let showIso = false;", src)
+
     def test_옛_노드번호_블록이_안_남아_있다(self):
         """캐시 밖에서 매 프레임 9,403개를 다시 훑던 자리 — 레이어로 옮겼다."""
         src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()

@@ -48,8 +48,8 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
   line-height:1.4;                    /* ★ 글자 위아래 짤림 방지 */
 }
 #topbar input[type=text] { cursor:text; font-family:Consolas,'D2Coding',monospace; font-size:13px; }
-#topbar .tb-query input { width:150px; }
-#topbar .tb-query #lp-table { width:220px; }
+#topbar .tb-query input { width:138px; }
+#topbar .tb-query #lp-table { width:200px; }
 #topbar label { font-size:12px; font-weight:700; color:var(--fg2); }
 #topbar button:hover { background:var(--ctl-hover); }
 #topbar .tb-primary { background:var(--primary) !important; border-color:var(--primary) !important; color:#fff !important; font-weight:700; }
@@ -63,9 +63,9 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
 .tb-seg > button:last-of-type { border-radius:0 6px 6px 0 !important; }
 .tb-seg > .tb-cap { margin-right:6px; }
 .speed-btn.selected { background:#f59e0b !important; color:#000 !important; border-color:#d97706 !important; }
-#time-display { font-size:18px; font-weight:800; color:var(--time); min-width:88px; text-align:center; font-family:Consolas,'D2Coding',monospace; }
+#time-display { font-size:18px; font-weight:800; color:var(--time); min-width:82px; text-align:center; font-family:Consolas,'D2Coding',monospace; }
 #frame-display { font-size:11px; color:var(--muted); font-family:Consolas,monospace; }
-#slider-container { flex:1; display:flex; align-items:center; min-width:220px; }
+#slider-container { flex:1; display:flex; align-items:center; min-width:150px; }
 #time-slider { flex:1; accent-color:var(--primary); height:24px; cursor:pointer; }
 #time-slider::-webkit-slider-thumb { background:var(--primary); }
 #time-slider::-moz-range-thumb     { background:var(--primary); }
@@ -74,7 +74,7 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
 .badge-playing { background:#16a34a; }
 .badge-paused { background:#f59e0b; color:#000; }
 #loading-msg { color:#d97706; display:none; font-size:13px; font-weight:700; }
-.toggle-btn { font-size:12px !important; padding:5px 9px !important; }
+.toggle-btn { font-size:12px !important; padding:5px 8px !important; }
 .toggle-btn.on { background:var(--accent) !important; color:#fff !important; border-color:var(--accent-line) !important; }
 
 #main { display:flex; flex:1; min-height:0; }   /* ★ topbar가 wrap 되어도 자동 맞춤 */
@@ -322,6 +322,7 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
     <span id="status-badge" class="badge badge-stopped">정지</span>
     <span id="loading-msg">로딩중...</span>
     <button onclick="resetMapView()" class="tb-fit" title="맵을 전체가 보이게 되돌린다">⤢ 전체보기</button>
+    <button id="btn-iso" class="toggle-btn" onclick="toggleLayer('iso')" title="등각(유사 3D)으로 눕혀 본다 — 정보는 같다. 기본은 평면">◈ 등각</button>
     <div class="tb-group tb-seg" title="맵에 무엇을 보일지">
       <span class="tb-cap">표시</span>
       <button id="btn-zone" class="toggle-btn on" onclick="toggleLayer('zone')" title="HID Zone 진입/진출 레인">Zone</button>
@@ -1017,6 +1018,10 @@ function scheduleDrawMap() {
 //   축소돼 있을 땐 자동으로 숨긴다(겹쳐서 읽히지 않는다). 포트·라벨도 같다.
 let showZone = true, showRailCut = true, showId = false, showName = true, showHotspot = true;
 let showStation = true, showLabel = true, showSensor = false, showJunction = true;
+// ★등각(유사 3D) 보기 — 기본은 **끔**. 켜도 정보는 같고 눕혀 보이기만 한다.
+//   M14 레일은 단층(cad-z 7,242개 = 0)이라 3D 로 올려도 보여줄 높이가 없다 —
+//   그래서 기본 화면으로 두지 않고, 보고 싶을 때만 위 단추로 켠다.
+let showIso = false;
 function toggleLayer(layer) {
   if (layer==='zone') showZone = !showZone;
   if (layer==='railcut') showRailCut = !showRailCut;
@@ -1027,11 +1032,12 @@ function toggleLayer(layer) {
   if (layer==='label') showLabel = !showLabel;
   if (layer==='sensor') showSensor = !showSensor;
   if (layer==='junction') showJunction = !showJunction;
+  if (layer==='iso') { showIso = !showIso; mapZoom = 1; mapPanX = 0; mapPanY = 0; }   // 투영이 바뀌면 팬 뜻도 바뀐다 — 전체보기로
   const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
   on('btn-zone', showZone); on('btn-railcut', showRailCut); on('btn-id', showId);
   on('btn-name', showName); on('btn-hotspot', showHotspot);
   on('btn-station', showStation); on('btn-label', showLabel); on('btn-sensor', showSensor);
-  on('btn-junction', showJunction);
+  on('btn-junction', showJunction); on('btn-iso', showIso);
   railCacheCanvas = null;
   drawMap();
 }
@@ -1075,6 +1081,41 @@ async function loadRailGraph() {
 }
 
 let railGeom = null;
+
+// ===== 맵 투영 (시작) =====
+// ★한 벌이다. 예전엔 같은 공식이 다섯 군데(그리기·클릭·차량 이동·존 이동·핫스팟)에
+//   복사돼 있어서, 투영을 바꾸면 클릭이 엉뚱한 차량을 집었다. 여기 하나만 바꾼다.
+//   등각(showIso): u = (x − y)·cos30°, v = (x + y)·sin30°. 평면이면 그대로.
+const ISO_C = Math.cos(Math.PI / 6), ISO_S = Math.sin(Math.PI / 6);
+function mapProjPoint(x, y) {
+  return showIso ? [(x - y) * ISO_C, (x + y) * ISO_S] : [x, y];
+}
+function mapExtent(b) {                     // 투영 평면에서의 범위 — 전체보기가 이걸 채운다
+  if (!showIso) return { minU: b.min_x, minV: b.min_y, W: (b.max_x - b.min_x) || 1, H: (b.max_y - b.min_y) || 1 };
+  const cs = [[b.min_x, b.min_y], [b.max_x, b.min_y], [b.min_x, b.max_y], [b.max_x, b.max_y]].map(c => mapProjPoint(c[0], c[1]));
+  const us = cs.map(c => c[0]), vs = cs.map(c => c[1]);
+  const minU = Math.min(...us), minV = Math.min(...vs);
+  return { minU, minV, W: (Math.max(...us) - minU) || 1, H: (Math.max(...vs) - minV) || 1 };
+}
+function mapProj(b, w, h) {                 // → { sc, ox, oy, toS }  (현재 줌·팬 기준)
+  const E = mapExtent(b);
+  const sc = Math.min((w - 20) / E.W, (h - 20) / E.H) * mapZoom;
+  const ox = 10 + mapPanX + (w - 20 - E.W * sc) / 2 - E.minU * sc;
+  const oy = 10 + mapPanY + (h - 20 - E.H * sc) / 2 - E.minV * sc;
+  const toS = (x, y) => { const p = mapProjPoint(x, y); return [ox + p[0] * sc, oy + p[1] * sc]; };
+  return { sc, ox, oy, toS, E };
+}
+function mapCenterOn(x, y, cw, ch) {        // 그 도면 점이 화면 가운데 오게 팬을 잡는다 (현재 줌 기준)
+  const b = mapData.bounds || (railGraph && railGraph.bounds);
+  if (!b) return;
+  const E = mapExtent(b);
+  const sc = Math.min((cw - 20) / E.W, (ch - 20) / E.H) * mapZoom;
+  const p = mapProjPoint(x, y);
+  mapPanX = cw / 2 - 10 - (cw - 20 - E.W * sc) / 2 - (p[0] - E.minU) * sc;
+  mapPanY = ch / 2 - 10 - (ch - 20 - E.H * sc) / 2 - (p[1] - E.minV) * sc;
+}
+// ===== 맵 투영 (끝) =====
+
 // ===== HMI 맵 레이어 (시작) =====
 // 현장 HMI 캡처처럼 그린다. 전부 layout.xml 에 있던 것이다 — 그리지 않았을 뿐이다.
 //   레일        모서리를 둥글린다. 캡처의 곡선은 대각선 '모서리 노드' 를 지나는
@@ -1179,13 +1220,14 @@ function drawRailLayer(rc, g, geom, toS, sc, w, h, PAD, o) {
     rc.strokeStyle = P.stationLine;
     const showNo = sc >= HMI_SC.stno;
     if (showNo) { rc.font = `${clamp(6 + sc*2, 8, 11)}px Consolas, monospace`; rc.textAlign = 'center'; rc.textBaseline = 'top'; }
+    const gapU = gap / sc;                    // 도면 단위 — 투영이 눕혀도 레일에 수직으로 붙는다
     for (const s of geom.st) {
       const [x, y] = toS(s[0], s[1]);
       if (!vis(x, y)) continue;
       const t = s[4];
       let cx = x, cy = y;
-      if (t === 9) { cx += s[2]*gap; cy += s[3]*gap; }
-      else if (t === 8) { cx -= s[2]*gap; cy -= s[3]*gap; }
+      if (t === 9)      { [cx, cy] = toS(s[0] + s[2]*gapU, s[1] + s[3]*gapU); }
+      else if (t === 8) { [cx, cy] = toS(s[0] - s[2]*gapU, s[1] - s[3]*gapU); }
       rc.fillStyle = (t === 9 || t === 8) ? P.station : P.stationOn;
       rc.beginPath(); rc.rect(cx - ss/2, cy - ss/2, ss, ss); rc.fill(); rc.stroke();
       if (showNo && t !== 9 && t !== 8) { rc.fillStyle = P.text2; rc.fillText(String(s[5]), cx, cy + ss/2 + 2); }
@@ -1280,10 +1322,11 @@ function vehicleRadiusPx(base, zoom) {
 }
 
 // 차량 진행 방향 — 현재 노드 → 다음 노드. 모르면 마지막으로 움직인 쪽, 그것도 없으면 위.
-function vehicleHeading(v, g) {
+function vehicleHeading(v, g, toS) {
   let ang = null;
   if (g && g.nodes && v.currentNode != null && v.nextNode != null) {
-    const A = g.nodes[String(v.currentNode)], B = g.nodes[String(v.nextNode)];
+    let A = g.nodes[String(v.currentNode)], B = g.nodes[String(v.nextNode)];
+    if (A && B && toS) { A = toS(A[0], A[1]); B = toS(B[0], B[1]); }   // 등각이면 화면 각도가 다르다
     if (A && B && (A[0] !== B[0] || A[1] !== B[1])) ang = Math.atan2(B[1]-A[1], B[0]-A[0]);
   }
   if (ang == null && v._px != null) {
@@ -1338,16 +1381,13 @@ function drawMap() {
   mapCtx.fillStyle = mapPal().bg;
   mapCtx.fillRect(0, 0, w, h);
 
-  const dataW = b.max_x-b.min_x||1, dataH = b.max_y-b.min_y||1;
-  const sc = Math.min((w-20)/dataW, (h-20)/dataH) * mapZoom;
-  const ox = 10 + mapPanX + (w-20-dataW*sc)/2;
-  const oy = 10 + mapPanY + (h-20-dataH*sc)/2;
-  const toS = (x,y) => [ox+(x-b.min_x)*sc, oy+(y-b.min_y)*sc];
+  const PJ = mapProj(b, w, h);
+  const sc = PJ.sc, toS = PJ.toS;
 
   // 1. 레일 배경 (캐시) — pan 은 캐시 key 에서 제외. 드래그 중에도 캐시 재사용.
   //    캐시 빌드 시 pan offset 만큼 여유 viewport 를 렌더 (드래그 여유)
   const CACHE_PAD = 800;
-  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${showZone?1:0}_${showStation?1:0}_${showLabel?1:0}_${showSensor?1:0}_${showJunction?1:0}_${showName?1:0}_${mapSettings.mapTheme}_${mapSettings.stationSize}`;
+  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${showIso?1:0}_${showZone?1:0}_${showStation?1:0}_${showLabel?1:0}_${showSensor?1:0}_${showJunction?1:0}_${showName?1:0}_${mapSettings.mapTheme}_${mapSettings.stationSize}`;
   // pan 이 캐시 빌드 시점에서 많이 벗어나면 캐시 범위 밖이 비어 보이므로 재빌드
   const panDrift = railCacheCanvas
     ? Math.max(Math.abs(mapPanX - railCachePanX), Math.abs(mapPanY - railCachePanY))
@@ -1364,6 +1404,17 @@ function drawMap() {
     // 이후 그리기 좌표는 viewport 기준 → (+CACHE_PAD) 만큼 이동.
     rc.translate(CACHE_PAD, CACHE_PAD);
 
+    if (showIso) {
+      // 등각 바닥판 — 눕힌 마름모. 이게 있어야 '눕혔다' 가 읽힌다.
+      const pl = mapPal();
+      rc.fillStyle = mapSettings.mapTheme === 'dark' ? 'rgba(255,255,255,0.05)' : '#dfe3ea';
+      rc.strokeStyle = pl.line || '#b8c0cc'; rc.lineWidth = 1;
+      rc.beginPath();
+      [[b.min_x, b.min_y], [b.max_x, b.min_y], [b.max_x, b.max_y], [b.min_x, b.max_y]].forEach((c, i) => {
+        const q = toS(c[0], c[1]); i ? rc.lineTo(q[0], q[1]) : rc.moveTo(q[0], q[1]);
+      });
+      rc.closePath(); rc.fill(); rc.stroke();
+    }
     if (railGraph) {
       // ★HMI 레이어 — 레일(모서리 둥글게)·포트·센서·합류/분기·노드 번호·라벨.
       //   전부 한 번 그려 캐시에 두고, 매 프레임엔 차량만 그 위에 얹는다.
@@ -1512,7 +1563,11 @@ function drawMap() {
     else if (v.isFull)                                       { color = mapSettings.colorLoaded; shape = mapSettings.shapeLoaded; }
     else                                                     { color = mapSettings.colorEmpty;  shape = mapSettings.shapeEmpty;  }
 
-    drawVehicleShape(mapCtx, sx, sy, r, shape || 'triangle', vehicleHeading(v, railGraph), color, pal.vehicleStroke);
+    if (showIso) {   // 바닥 그림자 — 떠 있는 느낌
+      mapCtx.fillStyle = 'rgba(0,0,0,0.18)';
+      mapCtx.beginPath(); mapCtx.ellipse(sx + 2, sy + 3, r * 1.1, r * 0.6, 0, 0, 6.283); mapCtx.fill();
+    }
+    drawVehicleShape(mapCtx, sx, showIso ? sy - 2 : sy, r, shape || 'triangle', vehicleHeading(v, railGraph, toS), color, pal.vehicleStroke);
   }
 
   // 2.4. 선택된 OHT 강조 (노란 링 + 라벨)
@@ -1554,15 +1609,18 @@ function drawMap() {
       }
       if (minX < Infinity) {
         const pad = 15;
-        const [sx1,sy1] = toS(minX-pad, minY-pad);
-        const [sx2,sy2] = toS(maxX+pad, maxY+pad);
+        // 네 꼭짓점을 각각 투영한다 — 등각이면 사각형이 마름모로 눕는다
+        const cs = [[minX-pad, minY-pad], [maxX+pad, minY-pad], [maxX+pad, maxY+pad], [minX-pad, maxY+pad]].map(c => toS(c[0], c[1]));
+        const sx1 = Math.min(...cs.map(c => c[0])), sx2 = Math.max(...cs.map(c => c[0]));
+        const sy1 = Math.min(...cs.map(c => c[1])), sy2 = Math.max(...cs.map(c => c[1]));
         mapCtx.strokeStyle = '#ffff00';
         mapCtx.lineWidth = 2.5;
         mapCtx.setLineDash([8, 4]);
-        mapCtx.strokeRect(sx1, sy1, sx2-sx1, sy2-sy1);
+        mapCtx.beginPath(); cs.forEach((c, i) => i ? mapCtx.lineTo(c[0], c[1]) : mapCtx.moveTo(c[0], c[1])); mapCtx.closePath();
+        mapCtx.stroke();
         mapCtx.setLineDash([]);
         mapCtx.fillStyle = 'rgba(255,255,0,0.06)';
-        mapCtx.fillRect(sx1, sy1, sx2-sx1, sy2-sy1);
+        mapCtx.fill();
         const cx = (sx1+sx2)/2, cy2 = sy1 - 5;
         const labelFS = Math.max(12, 14*mapZoom);
         mapCtx.font = `bold ${labelFS}px sans-serif`;
@@ -1679,17 +1737,13 @@ mapCanvas.addEventListener('click', e => {
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
   const w = mapCanvas.width, h = mapCanvas.height;
-  const dataW = b.max_x-b.min_x||1, dataH = b.max_y-b.min_y||1;
-  const sc = Math.min((w-20)/dataW, (h-20)/dataH) * mapZoom;
-  const ox = 10 + mapPanX + (w-20-dataW*sc)/2;
-  const oy = 10 + mapPanY + (h-20-dataH*sc)/2;
+  const { toS } = mapProj(b, w, h);      // 그리는 것과 같은 투영으로 잰다
 
   let nearest = null, minDist = 18;  // 18px 이내
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
     if (typeof v.dx !== 'number') continue;
-    const sx = ox + (v.dx - b.min_x) * sc;
-    const sy = oy + (v.dy - b.min_y) * sc;
+    const [sx, sy] = toS(v.dx, v.dy);
     const d = Math.hypot(sx - clickX, sy - clickY);
     if (d < minDist) { minDist = d; nearest = { vid, v }; }
   }
@@ -2432,12 +2486,8 @@ function selectOHT(vid) {
     const rect = mapCanvas.parentElement.getBoundingClientRect();
     const cw = Math.max(100, Math.floor(rect.width));
     const ch = Math.max(100, Math.floor(rect.height));
-    const dataW = b.max_x - b.min_x, dataH = b.max_y - b.min_y;
-    const baseScale = Math.min((cw-20)/dataW, (ch-20)/dataH);
     mapZoom = 8;  // 차량 클로즈업
-    const sc = baseScale * mapZoom;
-    mapPanX = (cw/2) - 10 - (cw-20-dataW*sc)/2 - (v.tx - b.min_x)*sc;
-    mapPanY = (ch/2) - 10 - (ch-20-dataH*sc)/2 - (v.ty - b.min_y)*sc;
+    mapCenterOn(v.tx, v.ty, cw, ch);
   }
   railCacheCanvas = null;
   drawMap();
@@ -2471,12 +2521,10 @@ function selectZone(zoneId) {
     const zoneCx = (minX + maxX) / 2, zoneCy = (minY + maxY) / 2;
     const zoneW = Math.max(maxX - minX, 50) + 100;
     const zoneH = Math.max(maxY - minY, 50) + 100;
-    const dataW = b.max_x - b.min_x, dataH = b.max_y - b.min_y;
-    const baseScale = Math.min((cw-20)/dataW, (ch-20)/dataH);
+    const E = mapExtent(b);
+    const baseScale = Math.min((cw-20)/E.W, (ch-20)/E.H);
     mapZoom = Math.max(2, Math.min(12, Math.min(cw*0.6/zoneW, ch*0.6/zoneH) / baseScale));
-    const sc = baseScale * mapZoom;
-    mapPanX = (cw/2) - 10 - (cw-20-dataW*sc)/2 - (zoneCx - b.min_x)*sc;
-    mapPanY = (ch/2) - 10 - (ch-20-dataH*sc)/2 - (zoneCy - b.min_y)*sc;
+    mapCenterOn(zoneCx, zoneCy, cw, ch);
   }
   railCacheCanvas = null;
   drawMap();
@@ -2789,12 +2837,8 @@ function jumpToHotspot(x, y) {
   const rect = mapCanvas.parentElement.getBoundingClientRect();
   const cw = Math.max(100, Math.floor(rect.width));
   const ch = Math.max(100, Math.floor(rect.height));
-  const dataW = b.max_x - b.min_x, dataH = b.max_y - b.min_y;
-  const baseScale = Math.min((cw-20)/dataW, (ch-20)/dataH);
   mapZoom = 6;
-  const sc = baseScale * mapZoom;
-  mapPanX = cw/2 - 10 - (x - b.min_x) * sc - (cw-20-dataW*sc)/2;
-  mapPanY = ch/2 - 10 - (y - b.min_y) * sc - (ch-20-dataH*sc)/2;
+  mapCenterOn(x, y, cw, ch);
   railCacheCanvas = null;
   drawMap();
 }

@@ -12,6 +12,8 @@ const ok = (c, m) => { if (!c) { console.log('FAIL ' + m); bad++; } };
 const grab = re => { const m = H.match(re); ok(m, '못 찾음: ' + re); return m ? m[0] : ''; };
 const src = grab(/const DEFAULT_MAP_SETTINGS = \{[\s\S]*?\n\};/) + '\nlet mapSettings = { ...DEFAULT_MAP_SETTINGS };\n'
   + grab(/const MAP_THEMES = \{[\s\S]*?\n\};\nfunction mapPal\(\) \{[\s\S]*?\n\}/) + '\n'
+  + 'var showIso=false, mapZoom=1, mapPanX=0, mapPanY=0, mapData={bounds:null}, railGraph=null;\n'
+  + grab(/\/\/ ===== 맵 투영 \(시작\) =====[\s\S]*?\/\/ ===== 맵 투영 \(끝\) =====/) + '\n'
   + grab(/\/\/ ===== HMI 맵 레이어 \(시작\) =====[\s\S]*?\/\/ ===== HMI 맵 레이어 \(끝\) =====/);
 // eval 안의 const/let 은 밖으로 안 나온다 (function 만 나온다) — var 로 바꿔 넣는다
 eval(src.replace(/\bconst (DEFAULT_MAP_SETTINGS|MAP_THEMES|HMI_SC)\b/g, 'var $1').replace(/\blet mapSettings\b/, 'var mapSettings'));
@@ -91,6 +93,50 @@ const v3 = { dx: 10, dy: 10 }; vehicleHeading(v3, G); v3.dx = 10; v3.dy = 0;
 ok(Math.abs(vehicleHeading(v3, G) + Math.PI/2) < 1e-9, '노드를 모르면 움직인 쪽(위)');
 const c3 = rec(); drawVehicleShape(c3, 50, 50, 4, 'triangle', 0, '#0f0', '#000');
 ok(c3.calls.some(c => c[0] === 'rotate') && c3.calls.some(c => c[0] === 'stroke'), '삼각형은 회전하고 테두리를 두른다');
+
+// ── 투영 한 벌 ──────────────────────────────────────────────────────
+const B = { min_x: 100, max_x: 1100, min_y: 100, max_y: 600 };
+mapData.bounds = B; railGraph = { bounds: B };
+{ // 평면 = 예전 공식 그대로 (ox = 10 + pan + 여백/2, toS = ox + (x-min)·sc)
+  showIso = false; mapZoom = 2; mapPanX = 7; mapPanY = -3;
+  const w = 800, h = 500, P = mapProj(B, w, h);
+  const sc = Math.min((w-20)/1000, (h-20)/500) * 2;
+  const ox = 10 + 7 + (w-20-1000*sc)/2, oy = 10 - 3 + (h-20-500*sc)/2;
+  const [x, y] = P.toS(350, 260);
+  ok(Math.abs(P.sc - sc) < 1e-9 && Math.abs(x - (ox + 250*sc)) < 1e-9 && Math.abs(y - (oy + 160*sc)) < 1e-9, '평면 투영이 예전 공식과 다르다');
+  mapCenterOn(350, 260, w, h);
+  const [cx, cy] = mapProj(B, w, h).toS(350, 260);
+  ok(Math.abs(cx - w/2) < 1e-9 && Math.abs(cy - h/2) < 1e-9, '평면 가운데 맞추기: ' + [cx, cy]);
+}
+{ // 등각 — 같은 API 로 가운데 맞추기가 된다, 전체보기가 마름모 전체를 채운다
+  showIso = true; mapZoom = 3; mapPanX = 0; mapPanY = 0;
+  const w = 800, h = 500;
+  mapCenterOn(350, 260, w, h);
+  const [cx, cy] = mapProj(B, w, h).toS(350, 260);
+  ok(Math.abs(cx - w/2) < 1e-9 && Math.abs(cy - h/2) < 1e-9, '등각 가운데 맞추기: ' + [cx, cy]);
+  mapZoom = 1; mapPanX = 0; mapPanY = 0;
+  const P = mapProj(B, w, h);
+  const cs = [[B.min_x,B.min_y],[B.max_x,B.min_y],[B.min_x,B.max_y],[B.max_x,B.max_y]].map(c => P.toS(c[0], c[1]));
+  ok(cs.every(c => c[0] >= 9.9 && c[0] <= w-9.9 && c[1] >= 9.9 && c[1] <= h-9.9), '등각 전체보기가 마름모 네 꼭짓점을 화면 안에 둬야 한다: ' + JSON.stringify(cs.map(c=>c.map(Math.round))));
+  // 진행 방향 — 도면에서 아래(+y)로 가는 차량은 등각에서 **왼쪽 아래**로 보인다
+  //   (u = (x−y)cos30 이라 +y 는 u 가 줄고 v 가 는다). 처음엔 오른쪽 아래로 잘못
+  //   기대했다가 걸렸다 — 미리보기 그림의 세로 레일이 오른쪽 위→왼쪽 아래인 그것.
+  const v = { dx: 100, dy: 130, currentNode: 1, nextNode: 2 };
+  const a = vehicleHeading(v, G, P.toS);
+  ok(a > Math.PI/2 && a < Math.PI, '등각에서 아래로 가는 차량의 화면 각도는 90~180°: ' + a);
+  ok(Math.abs(a - (Math.PI - Math.PI/6)) < 1e-9, '정확히 150°: ' + a);
+  // 포트 — 레일(1→2, 세로)에 수직이던 오른쪽 포트가 등각에서도 레일에 수직으로 붙는다:
+  //   레일 방향 벡터와 (포트−레일점) 벡터의 도면 내적이 0 → 투영해도 같은 점을 찍어야 한다
+  const c2 = rec(); const geom2 = buildRailGeom(G);
+  drawRailLayer(c2, G, geom2, P.toS, 1.6, w, h, 0, { pal: mapPal(), showStation: true, showLabel: false, showSensor: false, showJunction: false, showName: false, stationSize: 1 });
+  const rects2 = c2.calls.filter(c => c[0] === 'rect');
+  const st = geom2.st.find(x => x[5] === 17001);
+  const gap = Math.max(3, Math.min(10, 4.5*1.6)), gapU = gap / 1.6;
+  const want = P.toS(st[0] + st[2]*gapU, st[1] + st[3]*gapU);
+  ok(rects2.some(r => Math.abs(r[1] + r[3]/2 - want[0]) < 0.6 && Math.abs(r[2] + r[4]/2 - want[1]) < 0.6),
+     '등각에서 포트가 도면 기준 수직 자리에 투영돼야 한다: ' + JSON.stringify(want.map(Math.round)) + ' vs ' + JSON.stringify(rects2.slice(0,3).map(r => [Math.round(r[1]+r[3]/2), Math.round(r[2]+r[4]/2)])));
+  showIso = false;
+}
 
 // 기본값이 현장 HMI
 ok(DEFAULT_MAP_SETTINGS.mapTheme === 'hmi' && DEFAULT_MAP_SETTINGS.shapeEmpty === 'triangle', '기본 = HMI 테마 · 삼각형');
