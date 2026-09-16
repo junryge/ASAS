@@ -496,6 +496,12 @@
   .lv위험{background:color-mix(in srgb, var(--major) 16%, var(--panel));color:var(--major)}
   .lv경계{background:color-mix(in srgb, var(--minor) 16%, var(--panel));color:var(--minor)}
   .lv정상{background:color-mix(in srgb, var(--ok) 16%, var(--panel));color:var(--ok)}
+  /* 등급 카운터 배지 — 등급 알약과 같은 색을 쓰되 **테두리**로 구분한다.
+     '지금 이 1분의 등급'(채운 알약)과 '최근 N분에 몇 번'(테두리)은 다른 말이다. */
+  /* ★칸이 108px 고정이라(table-layout:fixed) 등급 알약과 줄이 갈린다 —
+       그건 그대로 두되, 배지 **안**에서 '위험중 / 1회' 로 쪼개지진 않게 한다. */
+  .chip.alm{background:transparent;border:1px solid currentColor;
+            padding:3px 8px;margin-right:0;letter-spacing:-.2px;white-space:nowrap}
   /* 섹션 라벨(시안): 11px · 자간 .08em · 대문자 · --tx3. 탭 머리의 eyebrow 는 12px/.14em */
   .tag,.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
@@ -1369,6 +1375,47 @@
         안 맞으면 바꿉니다. 한 번에 최대 <b style="color:var(--tx2)">10점</b>까지만
         옮기고, <b style="color:var(--tx2)">이유(숫자 근거)를 못 대면 안 바꿉니다</b>.
         자동은 <b style="color:var(--tx2)">2시간마다</b>(OHT 한 사이클) 돕니다.</p>
+    </div>
+  </div>
+
+  <!-- ── 등급 카운터(알람) ──────────────────────────────────────────
+       점수는 1분마다 오르내린다. 62점 한 번은 스쳐 지나간 것일 수 있지만
+       10분에 네 번이면 계속되고 있는 것이다. 그 '몇 번' 을 세어 종합점수
+       옆에 '경계중·위험중·초위험중' 으로 띄운다. -->
+  <div class="card">
+    <h2>등급 카운터 — 알람 표시 <span class="note" id="almnote"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">
+        최근 <b style="color:var(--tx2)">N분</b> 안에 등급이 <b style="color:var(--tx2)">몇 번</b>
+        떴는지 세어, 실시간 관제 표의 <b style="color:var(--tx2)">종합점수 옆</b>에
+        <span class="chip alm lv경계">경계중</span>
+        <span class="chip alm lv위험">위험중</span>
+        <span class="chip alm lv초위험">초위험중</span> 으로 표시합니다.
+        <b style="color:var(--tx2)">점수와 등급 컷은 바뀌지 않습니다</b> — 이미 매겨진 등급을
+        세기만 합니다.</p>
+      <p class="note" style="margin:0 0 10px">
+        위 등급은 아래 등급을 포함해 셉니다 — <b style="color:var(--tx2)">위험인 1분은 경계값도
+        넘은 1분</b>이라 경계 카운트에도 들어갑니다. 안 그러면 점수가 위험에 눌러앉은 동안
+        경계 카운트가 0이 되어 제일 나쁜 구간에서 알람이 꺼집니다.
+        기준을 <b style="color:var(--tx2)">0</b> 으로 두면 그 단계는 쓰지 않습니다.</p>
+      <table class="pol"><thead><tr>
+        <th style="width:150px">되돌아볼 시간</th>
+        <th style="width:170px"><i class="gdot minor"></i>경계 이상 횟수</th>
+        <th style="width:170px"><i class="gdot major"></i>위험 이상 횟수</th>
+        <th style="width:170px"><i class="gdot crit"></i>초위험 횟수</th>
+        <th></th>
+      </tr></thead><tbody id="almrow"><tr><td colspan="5" class="empty">불러오는 중…</td></tr></tbody></table>
+      <div class="row" style="margin-top:14px">
+        <button class="act pri" id="alm-save">저장</button>
+        <label class="note swlbl">
+          <input type="checkbox" id="alm-on"> 적용 (끄면 표시하지 않습니다)</label>
+        <button class="act" id="alm-reset" title="10분 · 경계 3회 · 위험 1회 · 초위험 1회">기본값</button>
+        <span class="note" id="alm-now">—</span>
+      </div>
+      <p class="note" style="margin:8px 0 0">
+        현장 기준(기본값) — 10분에 <b style="color:var(--tx2)">경계 3회</b> 모니터링 ·
+        <b style="color:var(--tx2)">위험 1회</b> 확인 필요 ·
+        <b style="color:var(--tx2)">초위험 1회</b> 확인 필요.</p>
       <details id="sp-pbox" class="fold" style="margin-top:14px">
         <summary>
           🧾 프롬프트 — 모델에게 무엇을 물어보는가
@@ -2855,6 +2902,7 @@ async function pollStatus(){
       : `연결 끊김 — ${esc(st.error||'대기')}`;
     $('#streamtx').title = full;
     if(s.cuts && s.cuts.warn) CUTS = s.cuts;   // 이 시스템의 등급 컷
+    if(s.alarm) ALARM = s.alarm;               // 등급 카운터 설정
     $('#ch-lp').className  = st.connected?'':'off';
     $('#ch-lp').title = st.connected ? '수집 정상'
       : ('마지막 수집 실패 — ' + (st.error || '사유 미상'));
@@ -3190,12 +3238,69 @@ function spRow(s){
   </tr>`;
 }
 
+/* ── 등급 카운터(알람) 정책 ──────────────────────────────────────
+   ★저장은 등급 컷과 **같은 엔드포인트**(/api/score_policy)를 쓴다. 길이 둘이면
+     한쪽만 저장되는 사고가 난다 (서버 _apply_cuts 주석과 같은 뜻).
+   ★저장 뒤 repaintGrades() 로 지금 화면을 다시 그린다 — 컷과 같은 길이다. */
+let ALM_INIT = false, ALM_DEF = null;
+function almNum(id, v, max){
+  return `<input type="number" id="${id}" value="${v}" min="0" max="${max||999}"
+     style="width:86px;background:var(--panel2);border:1px solid var(--line2);
+            color:var(--tx);border-radius:7px;padding:5px 8px;font:inherit">`;
+}
+function almFill(d){
+  const a = d.alarm || {};
+  ALM_DEF = d.alarm_default || ALM_DEF;
+  ALARM = a;                                     // 표 배지도 같은 설정을 본다
+  $('#almrow').innerHTML = `<tr>
+    <td>${almNum('alm-win', a.window_min, 180)} <span class="note">분</span></td>
+    <td>${almNum('alm-w', a.warn)} <span class="note">회</span></td>
+    <td>${almNum('alm-d', a.danger)} <span class="note">회</span></td>
+    <td>${almNum('alm-c', a.critical)} <span class="note">회</span></td>
+    <td><span class="note">0 = 이 단계 안 씀</span></td></tr>`;
+  $('#alm-on').checked = !!a.enabled;
+  $('#alm-now').textContent = a.enabled
+    ? `· 적용 중 — 최근 ${a.window_min}분 · 경계 ${a.warn}회 / 위험 ${a.danger}회 / 초위험 ${a.critical}회`
+    : '· 미적용 — 표에 알람을 표시하지 않습니다';
+}
+async function almSave(body){
+  const btn = $('#alm-save');
+  btn.disabled = true;
+  try{
+    const r = await post('/api/score_policy', Object.assign({save: true}, body));
+    if(r.error){ alert(r.error); $('#almnote').textContent = '— 저장 실패'; return; }
+    $('#almnote').textContent = '— 저장됨 · 바로 반영';
+    almFill(r);
+    repaintGrades();            // 컷과 같은 길 — 지금 화면을 새 설정으로
+  } finally { btn.disabled = false; }
+}
+function initAlarmPolicy(d){
+  almFill(d);
+  if(ALM_INIT) return;
+  ALM_INIT = true;
+  $('#alm-save').onclick = () => almSave({alarm: {
+    enabled: $('#alm-on').checked,
+    window_min: parseInt($('#alm-win').value),
+    warn: parseInt($('#alm-w').value),
+    danger: parseInt($('#alm-d').value),
+    critical: parseInt($('#alm-c').value),
+  }});
+  /* 적용 스위치는 **누르는 즉시** 반영한다 — 켜고 끄는 것은 값을 고치는 것과
+     달라서, 저장을 또 눌러야 하면 "껐는데 왜 그대로냐" 가 된다. */
+  $('#alm-on').onchange = () => almSave({alarm: {enabled: $('#alm-on').checked}});
+  $('#alm-reset').onclick = () => {
+    if(!ALM_DEF) return;
+    almSave({alarm: Object.assign({}, ALM_DEF, {enabled: $('#alm-on').checked})});
+  };
+}
+
 async function initScorePolicy(){
   try{
     const d = await apiRetry('/api/score_policy');
     SP_SYS = d.systems.map(s=>s.sys);
     SP_RESET.clear();
     $('#sprows').innerHTML = d.systems.map(spRow).join('');
+    initAlarmPolicy(d);                       // 같은 응답에 알람 설정이 같이 온다
     document.querySelectorAll('[data-spreset]').forEach(b => b.onclick = () => {
       SP_RESET.add(b.dataset.spreset);          // 저장 때 이 시스템은 기본으로
       $(`#spst-${b.dataset.spreset}`).textContent = '저장하면 기본값으로';
@@ -3494,8 +3599,13 @@ let ROW_CAP = ROW_STEP, PROW_CAP = ROW_STEP;
 /* ★등급 컷이 빠져 있었다. 정책 탭에서 컷을 바꾸면 CUTS·FCUTS 는 갱신되는데
      이 서명이 그대로라 표를 다시 안 그렸다 — 글자색이 정책을 안 따라간다.
      특히 FAB 칸 색(FCUTS)은 행 등급을 안 바꾸니 counts 로도 안 걸린다. */
+/* 등급 카운터(알람) 설정 — 서버가 /api/status · /api/feed 로 같이 준다.
+   ★서명에 넣는다. 안 넣으면 '정책을 바꿨는데 화면이 그대로' 가 난다 —
+     등급 컷에서 이미 똑같이 당했다 (server.py `_sig` 주석). */
+let ALARM = {enabled:true, window_min:10, warn:3, danger:1, critical:1};
+function almSig(){ return JSON.stringify(ALARM); }
 function cutSig(){
-  return JSON.stringify(CUTS) + '~' + JSON.stringify(FCUTS || {});
+  return JSON.stringify(CUTS) + '~' + JSON.stringify(FCUTS || {}) + '~' + almSig();
 }
 function feedSig(fd, filter, cap, newAt){
   return [fd.day, fd.latest, fd.earliest, fd.total, fd.shown, filter, cap, newAt,
@@ -3637,6 +3747,20 @@ function hiCell(r){
     dif ? `<span class="dim" title="${esc('예측기 hot_area: '+hot)}"> ≠${esc(hot)}</span>` : ''}</td>`;
 }
 
+/* 등급 카운터 배지 — '경계중 3회'. 종합점수 **옆**에 붙는다.
+   ★표 칸을 새로 만들지 않는다. colspan="7" 이 세 군데(실시간·과거·빈 표)에
+     박혀 있고 내려받기 컬럼도 거기 맞춰져 있다 — 칸을 늘리면 그 넷이 전부
+     어긋난다. 점수와 같은 칸에서 등급 알약 오른쪽에 선다.
+   ★서버가 label 을 넣어 준 행에만 붙는다 (미적용이면 아예 안 온다). */
+function almChip(r){
+  const a = r.alm;
+  if(!a || !a.lv) return '';
+  const lv = a.lv.replace('중','');                 // 경계중 → 경계 (색 클래스용)
+  const n = lv === '초위험' ? a.c : lv === '위험' ? a.d : a.w;
+  return `<span class="chip alm lv${esc(lv)}" title="${esc(a.why||'')}">${
+    esc(a.lv)} ${n}회</span>`;
+}
+
 function rowsHtml(list, byId, newAt, cap){
   // 기본 7칸 + (HI_FAB 1 + FAB 다섯)
   const ncol = 7 + (FABS.length ? FABS.length + 1 : 0);
@@ -3658,7 +3782,7 @@ function rowsHtml(list, byId, newAt, cap){
           r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}" title="${esc(r.severity)}">${
-            esc(r.level)}</span></div></td>
+            esc(r.level)}</span>${almChip(r)}</div></td>
       ${hiCell(r)}${fabCells(r)}
       ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
@@ -4090,6 +4214,7 @@ async function pollCases(){
     const [cs, fd] = await Promise.all([api('/api/cases?all=1'), api('/api/feed')]);
     CASES = cs.cases||[];
     FEED  = fd.rows||[];
+    if(fd.alarm) ALARM = fd.alarm;
     setFabs(fd);                       // FAB 컬럼 (머리글은 바뀔 때만 재생성)
     const cnt = fd.counts||{};
     $('#n-all').textContent = fd.total||0;
@@ -4202,6 +4327,7 @@ async function loadPast(day, opt){
     }
     PFEED = fd.rows || [];
     PROW_CAP = ROW_STEP;               // 날짜가 바뀌었으니 처음부터
+    if(fd.alarm) ALARM = fd.alarm;
     setFabs(fd);                       // 과거 탭도 같은 표 — 같은 컬럼
     if(fd.groups){ GROUPS = fd.groups; if(!PSTRIPG) PSTRIPG = GROUPS[0]?.id; }
     const cnt = fd.counts || {};
@@ -4257,13 +4383,14 @@ function saveText(name, text){
 /* 화면의 표 → CSV. 컬럼 순서를 표와 똑같이 두고, 표에서 색·모양으로만
    말하던 것(등급·원문 reason)은 글자 컬럼으로 풀어 준다. */
 function viewCsv(list){
-  const head = ['시간', 'CASE', '등급', '종합점수', 'HI_FAB', ...FABS,
+  const head = ['시간', 'CASE', '등급', '종합점수', '알람', '알람근거', 'HI_FAB', ...FABS,
                 'reason', 'reason 원문', '실제지표',
                 'AMOS HID구역', 'AMOS QUEUE지표'];
   const dirs = (d, u) => [...(d || []).map(x => '▼' + x),
                           ...(u || []).map(x => '▲' + x)].join(' ');
   const rows = list.map(r => [
     r.datetime || '', r.case_id || '', r.level || '', Math.round(r.score),
+    (r.alm || {}).lv || '', (r.alm || {}).why || '',
     r.hi_fab || '',
     ...FABS.map(f => { const v = (r.fab || {})[f]; return v == null ? '' : v; }),
     r.reason || '', r.reason_raw || '',

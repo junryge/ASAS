@@ -22,15 +22,19 @@ const parts = [
   grab(/function fabCells\(r\)\{[\s\S]*?\n\}/, 'fabCells'),
   grab(/function hiCell\(r\)\{[\s\S]*?\n\}/, 'hiCell'),
   grab(/function cutSig\(\)\{[\s\S]*?\n\}/, 'cutSig'),
+  /* cutSig 가 등급 카운터 지문까지 묶는다 — 같이 떼어 와야 돈다 */
+  grab(/function almSig\(\)\{[^\n]*\}/, 'almSig'),
 ];
 const esc = s => String(s).replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const M = new Function('esc', `
   let FABS = ['M14'], FCUTS = {}, CUTS = {warn:60, danger:71, critical:85};
+  let ALARM = {enabled:true, window_min:10, warn:3, danger:1, critical:1};
   ${parts.join('\n')}
   return {lvTx, fabTx, fabBold, fabLv, fabCells, hiCell, cutSig,
-          setF: v => { FCUTS = v; }, setC: v => { CUTS = v; }};
+          setF: v => { FCUTS = v; }, setC: v => { CUTS = v; },
+          setA: v => { ALARM = v; }};
 `)(esc);
 
 let bad = 0;
@@ -75,6 +79,11 @@ ok(M.cutSig() !== s1, 'FAB 컷을 바꿔도 서명이 그대로다 — 표를 �
 const s2 = M.cutSig();
 M.setC({warn:36, danger:52, critical:72});
 ok(M.cutSig() !== s2, '시스템 컷을 바꿔도 서명이 그대로다');
+
+/* ⑤-2 등급 카운터 설정도 같은 서명에 묶인다 (컷과 같은 이유다) */
+const s3 = M.cutSig();
+M.setA({enabled:true, window_min:30, warn:3, danger:1, critical:1});
+ok(M.cutSig() !== s3, '알람 설정을 바꿔도 서명이 그대로다 — 표를 다시 안 그린다');
 
 /* ⑥ 컷이 없으면 칠하지 않는다 — 모르는 것과 정상은 다르다 */
 M.setF({});

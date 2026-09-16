@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory, Response
 
+import alarm_count
 from lp_client import fab_codes, load_config, parse_dt, ping, sys_cfg
 from lp_query import build, query
 from report import build_report, feedback_status, save_feedback
@@ -811,6 +812,8 @@ def api_status():
         "source_mode": __import__("sentinel").source_mode(C["cfg"]),
         # 이 시스템의 등급 컷 — 화면(gradeOf·추이 밴드·범례)이 이 값으로 그린다
         "cuts": dict(zip(("warn", "danger", "critical"), grade_cuts(C["cfg"]))),
+        # 등급 카운터(알람) 설정 — 화면이 배지와 말풍선을 이 값으로 그린다
+        "alarm": alarm_count.policy(C["cfg"]),
     })
 
 
@@ -857,6 +860,13 @@ def _persist_score_policy() -> str:
             g["by_sys"] = mem
         else:
             g.pop("by_sys", None)
+        # 등급 카운터(알람) — 컷과 같은 파일·같은 길로 적는다. 따로 두면
+        # 한쪽만 저장되는 사고가 난다 (_apply_cuts 주석과 같은 뜻).
+        alm = (CFG.get("grade", {}) or {}).get("alarm")
+        if alm:
+            g["alarm"] = alm
+        else:
+            g.pop("alarm", None)
         tmp = CONFIG_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(disk, f, ensure_ascii=False, indent=2)
@@ -910,6 +920,27 @@ def api_score_policy():
             by.update(sets)
             if not by:
                 g.pop("by_sys", None)
+        if "alarm" in b:
+            row = b["alarm"]
+            if not isinstance(row, dict):
+                return jsonify({"error": "alarm 은 객체"}), 400
+            cur = alarm_count.policy(CFG)
+            new = dict(cur)
+            if "enabled" in row:
+                new["enabled"] = bool(row["enabled"])
+            for k in ("window_min", *alarm_count.KEYS):
+                if k not in row:
+                    continue
+                try:
+                    n = int(row[k])
+                except (TypeError, ValueError):
+                    return jsonify({"error": f"alarm.{k} 는 정수"}), 400
+                lo, hi = alarm_count.LIMITS[k]
+                if not (lo <= n <= hi):
+                    return jsonify({"error": f"alarm.{k} 는 {lo}~{hi}"}), 400
+                new[k] = n
+            # ★객체 갈아끼우기 금지 — sys_cfg 뷰들이 grade 블록을 공유한다
+            g.setdefault("alarm", {}).update(new)
         if b.get("save"):
             err = _persist_score_policy()
             saved = not err
@@ -918,14 +949,20 @@ def api_score_policy():
                                          f"(메모리에는 적용됨)", "applied": True}), 500
         rows = " · ".join(f"{s_}={'/'.join(map(str, grade_cuts(sys_cfg(CFG, s_))))}"
                           for s_ in systems())
+        _ap = alarm_count.policy(CFG)
         print(f"[정책] 스코어 컷 → {rows}" + (" · 저장됨" if saved else ""))
+        print(f"[정책] 등급 카운터 → {'적용' if _ap['enabled'] else '미적용'} · "
+              f"{_ap['window_min']}분 · 경계 {_ap['warn']}회 / 위험 {_ap['danger']}회 / "
+              f"초위험 {_ap['critical']}회")
     by = g.get("by_sys") or {}
     out = []
     for s_ in systems():
         w, d_, c = grade_cuts(sys_cfg(CFG, s_))
         out.append({"sys": s_, "warn": w, "danger": d_, "critical": c,
                     "custom": s_ in by})
-    return jsonify({"systems": out, "saved": saved})
+    return jsonify({"systems": out, "saved": saved,
+                    "alarm": alarm_count.policy(CFG),
+                    "alarm_default": dict(alarm_count.DEFAULTS)})
 
 
 def _apply_cuts(sets: dict) -> str:
@@ -1485,6 +1522,10 @@ def api_feed():
                 #   화면 글자색이 정책을 안 따라가는 게 여기서 났다.
                 json.dumps(C["cfg"].get("grade") or {}, sort_keys=True,
                            ensure_ascii=False),
+                # ★등급 카운터도 같은 이유로 키에 넣는다. grade 블록 안에
+                #   있어 위 json.dumps 에 이미 섞이지만, 알람만 따로 들고
+                #   있게 되는 날(예: by_sys 분리)을 대비해 지문을 박아 둔다.
+                alarm_count.sig(C["cfg"]),
                 # ★FAB 다섯 점수는 **분리 파일**에서 읽는다. 그 파일이 바뀌면
                 #   지금 보는 파일이 그대로여도 다시 계산해야 한다 — 빼먹으면
                 #   FAB 컬럼만 옛 값에 얼어붙는다 (수집이 파일마다 따로 떨어질
@@ -1571,15 +1612,33 @@ def api_feed():
             **fx,
         })
 
+    # ── 등급 카운터 — 최근 N분에 경계·위험·초위험이 몇 번 떴나 ──────────
+    # ★**정렬 전**에 센다. out 은 아래에서 최신순으로 뒤집히는데, 창을 굴리려면
+    #   시간 오름차순이어야 한다 (뒤집힌 뒤에 세면 창이 거꾸로 간다).
+    # ★점수·등급을 만들지 않는다. 이미 매겨진 level 을 세기만 한다.
+    # at 은 우리가 dt.isoformat() 으로 만든 글자라 fromisoformat 이 정확하다
+    #   (parse_dt 는 사람이 친 글자를 너그럽게 읽는 함수다 — 여기 쓸 자리가 아니다)
+    _alm = alarm_count.scan(
+        [(datetime.fromisoformat(x["at"]), x["level"]) for x in out], C["cfg"])
+    _apol = alarm_count.policy(C["cfg"])
+    for _x, _a in zip(out, _alm):
+        if _a.get("label"):
+            _x["alm"] = {"lv": _a["label"], "w": _a["warn"], "d": _a["danger"],
+                         "c": _a["critical"], "why": alarm_count.why(_a, _apol)}
+
     out.sort(key=lambda x: x["at"], reverse=True)
     counts = {lv: sum(1 for x in out if x["level"] == lv)
               for lv in ("정상", "경계", "위험", "초위험")}
+    # 지금(제일 최근 행)의 알람 상태 — 화면 머리에 한 줄로 띄운다
+    alm_now = (out[0].get("alm") if out else None) or None
     # 기본은 하루치 전부 (1분 1행 = 1440행). 00:00 부터 다 보여야 한다.
     try:
         limit = max(1, min(5000, int(request.args.get("limit", 1500))))
     except ValueError:
         limit = 1500
     payload = {"rows": out[:limit], "counts": counts, "total": len(out),
+               # 등급 카운터 — 설정과 '지금' 상태. 화면이 배지를 이걸로 그린다
+               "alarm": _apol, "alarm_now": alm_now,
                     "shown": min(limit, len(out)),
                     # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
                     "groups": [dict(g, metrics=[m for m in g["metrics"] if m["key"] in seen_keys])

@@ -104,9 +104,24 @@ class 화면_다시_그리기(unittest.TestCase):
         self.html = _read("static", "dashboard.html")
 
     def test_컷을_바꾸는_길_둘이_같이_다시_그린다(self):
-        # 수동 변경과 LLM 자동 조정 — 한쪽만 고치면 또 같은 증상이 난다
-        self.assertEqual(self.html.count("repaintGrades()"), 3,
-                         "선언 1 + 부르는 곳 2 여야 한다")
+        # 수동 변경과 LLM 자동 조정 — 한쪽만 고치면 또 같은 증상이 난다.
+        # ★개수를 세지 않는다. 정책을 바꾸는 길이 하나 늘 때마다(등급 카운터가
+        #   그랬다) 숫자만 틀리고, 정작 '새 길이 다시 그리나' 는 안 보게 된다.
+        self.assertEqual(self.html.count("function repaintGrades()"), 1,
+                         "다시 그리는 길은 하나여야 한다")
+        for path, need in (("수동 변경", "initScorePolicy();                       "
+                                        "// 표를 서버 확정값으로"),
+                           ("LLM 자동 조정", "initScorePolicy(); repaintGrades();")):
+            self.assertIn(need, self.html, path + " 길이 사라졌다")
+        # 정책을 바꾸는 모든 저장 자리가 repaintGrades 를 부른다
+        for blk, path in ((r"const r = await post\('/api/score_policy', "
+                           r"\{by_sys: by, save: true\}\);[\s\S]{0,400}", "수동 변경"),
+                          (r"async function almSave\(body\)\{[\s\S]*?\n\}",
+                           "등급 카운터")):
+            m = re.search(blk, self.html)
+            self.assertIsNotNone(m, path + " 저장 자리를 못 찾았다")
+            self.assertIn("repaintGrades()", m.group(0),
+                          path + " 은 저장해도 화면을 다시 안 그린다")
         m = re.search(r"function repaintGrades\(\)\{(.*?)\n\}", self.html, re.S)
         self.assertIsNotNone(m)
         body = m.group(1)
