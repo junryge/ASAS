@@ -70,9 +70,12 @@ class 배점표(unittest.TestCase):
 
 class 임계값(unittest.TestCase):
     def test_다섯_FAB_전부_아홉룰_칸이_있다(self):
+        """아홉 룰 + PIO(2026-09-16 FAB별 추가). rule_order 와 같아야 한다 —
+        WATCH 에만 있고 순서에 없으면 화면 '실제지표' 에서 통째로 빠진다."""
         for f in F.fabs():
             w = F.watch(f)
-            self.assertEqual(set(w), set(F.RULE_ORDER), f)
+            self.assertEqual(set(w), set(F.rule_order(f)), f)
+            self.assertTrue(set(F.RULE_ORDER) <= set(w), f)
 
     def test_RA_sus_는_RA_의_70퍼센트(self):
         """문서가 '임계는 R-A 의 70%' 라고 적어 둔 관계. 어긋나면 둘 중
@@ -108,13 +111,57 @@ class 임계값(unittest.TestCase):
                 self.assertIn("QUE.LOAD.AVGLOADTIME1MIN", amos, f)
 
     def test_가리키는_CSV_컬럼이_실물_스키마에_전부_있다(self):
-        """WATCH 가 없는 컬럼을 가리키면 화면의 '실제지표' 칸이 영원히 빈다."""
+        """WATCH 가 없는 컬럼을 가리키면 화면의 '실제지표' 칸이 영원히 빈다.
+
+        ★since 가 달린 항목은 샘플(2026-08 스키마)보다 **뒤에 생긴** 컬럼이라
+          여기엔 없는 게 맞다. 그냥 빼면 오타가 영영 안 걸리므로, 아래
+          test_FAB별_PIO_컬럼이_명세와_같다 가 이름을 따로 못 박는다.
+        """
         hdr = header()
         for f in F.fabs():
             for rule, items in F.watch(f).items():
                 for it in items:
-                    if it.get("csv"):
+                    if it.get("csv") and not it.get("since"):
                         self.assertIn(it["csv"], hdr, f"{f}.{rule}")
+
+    def test_FAB별_PIO_컬럼이_명세와_같다(self):
+        """'PIO_ERROR FAB별 연동 명세'(2026-09-16) 4장·3장 그대로인가.
+
+        옛 샘플에 없는 컬럼이라 스키마 대조로는 못 잡는다. 이름이 한 글자만
+        달라도 화면이 영원히 '값 없음' 이 되므로 여기서 못 박는다.
+        """
+        for f in F.fabs():
+            pio = F.watch(f)["PIO"]
+            self.assertEqual(pio[0]["csv"], "area_pio_score", f)
+            self.assertEqual(pio[0]["csv_all"], f"{f}_PIO_SCORE", f)
+            self.assertEqual(pio[1]["csv"], "area_pio_wsum10", f)
+            self.assertEqual(pio[1]["csv_all"], f"{f}_PIO_WSUM10", f)
+            # 경로 칸은 12경로 컬럼 이름 그대로여야 한다
+            for it in pio[2:]:
+                self.assertTrue(it["csv"].endswith("_PIOERROR_DEPOSITED"), f)
+                self.assertIn(it["pio_path"] + "_PIOERROR_DEPOSITED", it["csv"])
+
+    def test_PIO_경로는_그_FAB_것만_건다(self):
+        """M16B 화면에 M14A<-M14B 실패가 뜨면 현장이 남의 구간을 뒤진다."""
+        got = {f: {it["pio_path"] for it in F.watch(f)["PIO"] if it.get("pio_path")}
+               for f in F.fabs()}
+        self.assertEqual(got["M16B"], {"M16B->M16A", "M16A->M16B"})
+        self.assertEqual(got["M14B"],
+                         {"M14A<-M14B", "M16HUB<-M14B", "M16HUB->M14B"})
+        # 12경로 전부는 ALL 만 본다
+        allp = {it["csv"] for it in F.WATCH_ALL["PIO"]
+                if it["csv"].endswith("_PIOERROR_DEPOSITED")}
+        self.assertEqual(len(allp), 12)
+        for f, paths in got.items():
+            self.assertLess(len(paths), 12, f)
+
+    def test_모든_경로가_어느_FAB엔가_배정돼_있다(self):
+        """배정표에서 빠진 경로가 있으면 그 실패는 FAB 화면에 영영 안 뜬다."""
+        assigned = set()
+        for f in F.fabs():
+            for kind in ("직접", "간접"):
+                assigned |= set(F.PIO_FAB_PATHS[f][kind])
+        self.assertEqual(assigned, {p for p, _t, _p in F.PIO_PATHS})
 
     def test_pts_컬럼이_실물_스키마에_전부_있다(self):
         hdr = header()

@@ -94,8 +94,13 @@ def _fab_strip(sys: str) -> list[dict]:
         # 점수 — 받는 순간 area_score 가 unified_risk_score 로 정규화돼 있다
         {"key": "unified_risk_score", "raw": "area_score", "label": "스코어",
          "unit": "점", "color": "#3DDBE8", "max": 100, "bands": True},
-        {"key": f"{s}_score_raw", "raw": f"{s}_score_raw", "label": "구역점수(raw)",
-         "unit": "점", "color": "#6EE9F3"},
+        {"key": f"{s}_score_raw", "raw": f"{s}_score_raw",
+         "label": "구역점수(raw · PIO 제외)", "unit": "점", "color": "#6EE9F3"},
+        # ★스코어의 **실제 분자**다 — area_score_raw = {S}_score_raw +
+        #   area_pio_score. 명세 4장이 "{FAB}_score_raw 를 읽어 직접 계산하던
+        #   화면은 area_score_raw 로 바꿔야 값이 맞는다" 고 한 자리다.
+        {"key": "area_score_raw", "raw": "area_score_raw",
+         "label": "구역점수(raw · PIO 포함)", "unit": "점", "color": "#9BF0F7"},
         # 반송시간 (R-A) — raw 는 구역별 실제 컬럼
         {"key": f"{s}_ra", "raw": _RA_RAW.get(s, f"{s}.QUE.TIME.AVGTOTALTIME1MIN"),
          "label": f"{s} 반송시간", "unit": "분", "color": "#FF6B5E"},
@@ -138,6 +143,42 @@ def _fab_strip(sys: str) -> list[dict]:
         out.append(
             {"key": "M14_cnv_skew", "raw": "M14_cnv_skew", "label": "컨베이어 편중",
              "unit": "", "color": "#7FDBCA"})
+    # PIO 는 설비 지표를 **전부 지나서** 맨 뒤다 — 늘 보던 순서가 안 밀린다.
+    return out + _fab_pio(s)
+
+
+def _fab_pio(s: str) -> list[dict]:
+    """그 FAB 의 PIO 반송실패 지표 (2026-09-16 'PIO_ERROR FAB별 연동 명세').
+
+    ★설비 지표(큐·반송시간)는 '밀리는 중' 을 보고, PIO 는 **이미 실패한
+      결과**다. 그래서 설비 지표 **뒤**에 붙인다 — 앞에 끼우면 늘 보던
+      순서가 밀린다.
+    ★경로는 **그 FAB 에 배정된 것만** 건다. 12경로를 다 걸면 M16B 화면에
+      M14A<-M14B 실패가 떠서, 현장이 남의 구간을 뒤진다.
+    ★그 날 CSV 에 없는 컬럼은 feed 가 자동으로 걸러 준다 — 2026-09-16 이전
+      날짜를 보면 이 칸들은 아예 안 나온다 (고장이 아니다).
+    """
+    try:
+        import fab_score as F
+    except Exception:                                   # noqa: BLE001
+        return []
+    out = [
+        {"key": "area_pio_score", "raw": "area_pio_score",
+         "label": "PIO 점수", "unit": "점", "color": "#E4705A",
+         "max": F.PIO_SCORE_MAX},
+        {"key": "area_pio_wsum10", "raw": "area_pio_wsum10",
+         "label": "PIO 10분 가중합", "unit": "", "color": "#F3A98F"},
+    ]
+    # 직접(나가는 실패)은 진하게, 간접(들어오는 실패)은 연하게 — 색만 봐도
+    # '우리가 못 보낸 것' 인지 '옆에서 못 보낸 것' 인지 갈린다.
+    col = {"직접": ("#FBD9A5", "#F6C97F"), "간접": ("#DBE9F7", "#BCD6F2")}
+    n = {"직접": 0, "간접": 0}
+    for it in F.pio_paths_of(s):
+        k = it["kind"]
+        out.append({"key": it["csv"], "raw": f"PIO.DEPOSIT.{it['path']}",
+                    "label": f"PIO {it['path']} ({k})", "unit": "개",
+                    "color": col[k][n[k] % 2]})
+        n[k] += 1
     return out
 
 

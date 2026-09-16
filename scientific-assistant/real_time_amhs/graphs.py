@@ -157,8 +157,13 @@ def _kind_color(col: str, idx: int, pal: dict | None = None) -> str:
     return pal["palette"][idx % len(pal["palette"])]
 
 
-def parse_reason_metrics(reason: str) -> list[dict]:
-    """reason → [{col, raw, label, unit}] (등장 순서, 중복 제거, M16_PKT/M16_WT 제외)."""
+def parse_reason_metrics(reason: str, fab: str = "") -> list[dict]:
+    """reason → [{col, raw, label, unit}] (등장 순서, 중복 제거, M16_PKT/M16_WT 제외).
+
+    fab 을 주면 그 FAB 화면용이다 — PIO 는 **그 FAB 것만** 남긴다
+    (2026-09-16 'PIO_ERROR FAB별 연동 명세'). 안 주면 지금까지와 똑같다.
+    """
+
     out, seen = [], set()
     body = (reason or "").split("발동:", 1)[-1]
     body = re.split(r"흐름:|운영자조치:", body)[0]
@@ -199,8 +204,15 @@ def parse_reason_metrics(reason: str) -> list[dict]:
     # ★설비 지표 **뒤**에 붙인다. 앞에 끼우면 늘 보던 패널 순서가 밀린다.
     _pio = re.search(r"PIO\(([^)]*)\)", reason or "")
     if _pio:
-        add("pio_10min_cnt", "PIO.DEPOSIT.10MIN.CNT",
-            "PIO 반송실패 10분 합", "개", bar=True)
+        # ★pio_10min_cnt 는 **12경로 전부의 합(ALL)** 이다. FAB 화면에 그대로
+        #   올리면 M16B 칸에 M14 의 실패까지 더해진 수가 뜬다 — 남의 데이터다.
+        #   FAB 은 예측기가 그 FAB 몫으로 적어 준 가중합을 쓴다.
+        if _fab_ok(fab):
+            add("area_pio_wsum10", "PIO.DEPOSIT.WSUM10",
+                "PIO 10분 가중합 (직접×2 + 간접×1)", "", bar=True)
+        else:
+            add("pio_10min_cnt", "PIO.DEPOSIT.10MIN.CNT",
+                "PIO 반송실패 10분 합", "개", bar=True)
         out[-1]["rolling"] = True      # 겹쳐 더한 값 — 구간 합을 또 내면 거짓이다
         # 주 경로는 **한 패널에 쌓아** 그린다. 경로마다 패널을 따로 만들면
         # 그래프가 한 화면을 넘어가고, 정작 알고 싶은 '이 분에 총 몇 개'가
@@ -213,10 +225,11 @@ def parse_reason_metrics(reason: str) -> list[dict]:
             if _p not in pseen:
                 pseen.add(_p)
                 paths.append({"col": f"{_p}_PIOERROR_DEPOSITED", "name": _p})
+        paths = _pio_keep(paths, fab)
         if paths:
-            names = " · ".join(x["name"] for x in paths)
             out.append({"col": paths[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
-                        "label": f"PIO 주 경로 ({names})", "unit": "개",
+                        "label": _pio_label([x["name"] for x in paths], fab),
+                        "unit": "개",
                         "bar": True, "cols": paths, "pio_stack": True})
     return out
 
@@ -232,6 +245,65 @@ _PIO_STACK_MAX = 6      # 한 패널에 쌓을 경로 수 (범례가 한 줄을 
 _PIO_IN_RE = re.compile(r"PIO\(([^)]*)\)")
 _PIO_KV_RE = re.compile(
     r"([A-Za-z0-9_]+\s*(?:<-|->)\s*[A-Za-z0-9_]+)\s*=\s*(\d+)\s*[건개]")
+
+
+def _fab_ok(fab: str) -> str:
+    """FAB 코드로 쓸 수 있는 값인가 — 아니면 "" (= ALL 로 본다)."""
+    f = str(fab or "").strip().upper()
+    try:
+        import fab_score as F
+        return f if f in F.PIO_FAB_PATHS else ""
+    except Exception:                                   # noqa: BLE001
+        return ""
+
+
+def row_fab(r) -> str:
+    """이 행이 **어느 FAB 의 분리 파일 행**인가 — 통합(ALL) 행이면 "".
+
+    ★render() 서명은 못 바꾼다 (배포가 파일 단위다). 그래서 '지금 어느 FAB
+      화면인가' 를 인자로 못 받고 **행 자체**에서 읽는다.
+      jupyter_csv._fab_rows 가 정규화하면서 all_score 를 남기고 hot_area 를
+      그 FAB 코드로 바꿔 둔 것이 유일하고 확실한 표식이다.
+    """
+    r = r or {}
+    if not str(r.get("all_score") or "").strip():
+        return ""
+    return _fab_ok(r.get("hot_area"))
+
+
+def _pio_kinds(fab: str) -> dict:
+    """{경로: (직접/간접, 가중)} — 그 FAB 것만. ALL 이면 빈 dict."""
+    f = _fab_ok(fab)
+    if not f:
+        return {}
+    try:
+        import fab_score as F
+    except Exception:                                   # noqa: BLE001
+        return {}
+    return {x["path"]: (x["kind"], x["w"]) for x in F.pio_paths_of(f)}
+
+
+def _pio_keep(paths: list[dict], fab: str) -> list[dict]:
+    """그 FAB 에 배정된 경로만 남기고, 직접(×2) 을 앞으로 · 이름에 가중을 적는다.
+
+    ★M16B 화면에 M14A<-M14B 가 뜨면 현장은 자기 FAB 을 뒤진다 — 남의 구간이다.
+    ★가중을 이름에 적는 이유: 같은 8건이라도 보낸 쪽은 16.0, 받은 쪽은 8.0 이
+      된다. 막대 높이만 보면 왜 점수가 다른지 알 수가 없다.
+    """
+    k = _pio_kinds(fab)
+    if not k:
+        return paths
+    out = []
+    for x in paths:
+        kw = k.get(x["name"])
+        if not kw:
+            continue
+        # ★name 은 **경로 원래 이름 그대로** 둔다 — _pio_val 이 reason 에서
+        #   값을 찾을 때 이 이름으로 맞춰 본다. 꾸민 이름은 legend 로 따로.
+        out.append(dict(x, kind=kw[0], w=kw[1],
+                        legend=f"{x['name']} ×{kw[1]:g}"))
+    out.sort(key=lambda x: (x["kind"] != "직접",))
+    return out
 
 
 def _pio_reason_map(r) -> dict:
@@ -255,45 +327,55 @@ def _pio_val(r, x):
     return _f(r.get(x["col"]))
 
 
-def _pio_paths_in(pts) -> list[str]:
+def _pio_paths_in(pts, fab: str = "") -> list[str]:
     """창 안에서 **실제로 실패가 온** PIO 경로 — 구간 합이 많은 순.
 
     0 과 빈칸은 세지 않는다. 12경로 중 평소 값이 나오는 건 3개뿐이라,
     0 인 경로까지 쌓으면 범례만 길어지고 막대는 그대로다.
+
+    fab 을 주면 **그 FAB 에 배정된 경로만** 본다. FAB 분리 파일에도 12경로가
+    다 실려 오므로, 안 거르면 M16B 화면에 M14 의 실패가 쌓인다.
     """
+    keep = set(_pio_kinds(fab))
     tot: dict[str, float] = {}
     for _t, r in pts:
         for k, v in (r or {}).items():
             if not isinstance(k, str) or not k.endswith(_PIO_SUF):
                 continue
+            name = k[:-len(_PIO_SUF)]
+            if keep and name not in keep:
+                continue
             f = _f(v)
             if f:
-                name = k[:-len(_PIO_SUF)]
                 tot[name] = tot.get(name, 0.0) + f
     return [p for p, _n in sorted(tot.items(), key=lambda x: (-x[1], x[0]))]
 
 
-def _pio_label(names: list[str]) -> str:
+def _pio_label(names: list[str], fab: str = "") -> str:
     head = " · ".join(names[:3])
     more = f" 외 {len(names) - 3}" if len(names) > 3 else ""
-    return f"PIO 주 경로 ({head}{more})"
+    who = f" {_fab_ok(fab)}" if _fab_ok(fab) else ""
+    return f"PIO{who} 주 경로 ({head}{more})"
 
 
-def _pio_fill(metrics: list[dict], pts) -> list[dict]:
+def _pio_fill(metrics: list[dict], pts, fab: str = "") -> list[dict]:
     """'PIO 주 경로' 패널을 창 안 데이터로 다시 만든다.
 
     ★reason 에 PIO 가 없으면 손대지 않는다. PIO 컬럼이 실려 온다는 이유만으로
       아무 그래프에나 패널을 하나 더 붙이면, 늘 보던 화면이 바뀐다.
     """
     idx = next((i for i, m in enumerate(metrics) if m.get("pio_stack")), -1)
-    has_pio = any(m.get("col") == "pio_10min_cnt" for m in metrics)
+    has_pio = any(m.get("col") in ("pio_10min_cnt", "area_pio_wsum10")
+                  for m in metrics)
     if idx < 0 and not has_pio:
         return metrics
-    found = _pio_paths_in(pts)[:_PIO_STACK_MAX]
+    found = _pio_paths_in(pts, fab)[:_PIO_STACK_MAX]
     if found:
-        cols = [{"col": p + _PIO_SUF, "name": p} for p in found]
+        cols = _pio_keep([{"col": p + _PIO_SUF, "name": p} for p in found], fab)
+        if not cols:
+            return metrics          # 이 FAB 경로에서는 실패가 안 왔다
         md = {"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
-              "label": _pio_label(found), "unit": "개",
+              "label": _pio_label([x["name"] for x in cols], fab), "unit": "개",
               "bar": True, "cols": cols, "pio_stack": True}
     else:
         # ★1분 컬럼이 창 내내 0 이면 막대가 하나도 안 선다 — 화면에
@@ -308,15 +390,73 @@ def _pio_fill(metrics: list[dict], pts) -> list[dict]:
             return metrics      # 어디에도 숫자가 없다 — 있는 그대로 둔다
         names = [p for p, _n in sorted(tot.items(), key=lambda x: (-x[1], x[0]))
                  ][:_PIO_STACK_MAX]
-        cols = [{"col": p + _PIO_SUF, "name": p, "from_reason": True} for p in names]
+        cols = _pio_keep([{"col": p + _PIO_SUF, "name": p, "from_reason": True}
+                          for p in names], fab)
+        if not cols:
+            return metrics
         md = {"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로} (reason)",
-              "label": _pio_label(names) + " · 10분 누적", "unit": "개",
+              "label": _pio_label([x["name"] for x in cols], fab) + " · 10분 누적",
+              "unit": "개",
               # 겹쳐 더한 값이라 '구간 합' 을 내면 같은 실패를 열 번 센다
               "bar": True, "rolling": True, "cols": cols, "pio_stack": True}
     if idx >= 0:
         metrics[idx] = md
     else:
         metrics.append(md)
+    return metrics
+
+
+# 명세 6장 '권장 색상 단계' — 점수는 0·1·3·5·8·10 여섯 칸뿐이고, 각 칸이
+# 실측 분포의 어디인지가 정해져 있다. 그대로 옮긴다 (우리가 정한 값이 아니다).
+PIO_BAND_NAME = {0: "평상", 1: "중간값↑ p50", 3: "상위 25% p75",
+                 5: "상위 10% p90", 8: "상위 5% p95", 10: "상위 1% p99"}
+
+
+def _pio_band(v):
+    """점수 → (이름, 몇 번째 칸인가 0~5). 사이 값은 아래 칸으로 읽는다."""
+    lad = [0, 1, 3, 5, 8, 10]
+    i = 0
+    for k, b in enumerate(lad):
+        if v is not None and v >= b:
+            i = k
+    return PIO_BAND_NAME.get(lad[i], ""), i
+
+
+def _pio_score_cell(metrics: list[dict], pts, fab: str) -> list[dict]:
+    """그 FAB 의 PIO **점수** 칸을 만든다 (2026-09-16 명세).
+
+    ★reason 에 PIO 가 안 적혔어도 점수는 붙을 수 있다 — reason 은 ALL 기준으로
+      쓰이고, FAB 점수는 예측기가 따로 계산한다. reason 에만 기대면 "점수는
+      올랐는데 그래프에는 아무것도 없다" 가 된다.
+    ★임계는 안 만든다. 구간표가 잠정이라(명세 8장) 우리가 선을 그으면 예측기와
+      갈라진다. 대신 명세가 준 여섯 칸(0·1·3·5·8·10)을 그대로 색으로 쓴다.
+    """
+    f = _fab_ok(fab)
+    if not f or any(m.get("pio_score") for m in metrics):
+        return metrics
+    try:
+        import fab_score as F
+    except Exception:                                   # noqa: BLE001
+        return metrics
+    sc, wc = F.PIO_AREA_COLS
+    a1, a2 = F.PIO_FAB_COLS
+    col = next((c for c in (sc, f"{f}_{a1}")
+                if any(_f((r or {}).get(c)) is not None for _t, r in pts)), "")
+    if not col:
+        return metrics                  # 그 날 파일에 PIO 컬럼이 아직 없다
+    if not any((_f((r or {}).get(col)) or 0) > 0 for _t, r in pts):
+        return metrics                  # 창 내내 0 — 빈 칸을 세우지 않는다
+    metrics.append({"col": col, "raw": f"PIO.DEPOSIT.{f}.SCORE",
+                    "label": f"PIO 반송실패 점수 ({f})", "unit": "점",
+                    "bar": True, "pio_score": True})
+    # 가중합 칸이 아직 없으면 같이 세운다 — 점수만 있으면 '왜 그 점수냐' 가
+    # 화면에 안 남는다 (명세 6장 드릴다운 ①②③ 중 ②).
+    wcol = next((c for c in (wc, f"{f}_{a2}")
+                 if any(_f((r or {}).get(c)) is not None for _t, r in pts)), "")
+    if wcol and not any(m.get("col") == wcol for m in metrics):
+        metrics.append({"col": wcol, "raw": f"PIO.DEPOSIT.{f}.WSUM10",
+                        "label": "PIO 10분 가중합 (직접×2 + 간접×1)",
+                        "unit": "", "bar": True, "rolling": True})
     return metrics
 
 
@@ -512,12 +652,29 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
     # ★색은 '넘었다' 는 뜻으로만. 안 넘은 칸은 회색으로 죽인다 —
     #   지금 화면이 전부 빨간 이유가 이걸 안 해서다.
     color = (P["crit"] if (ratio or 0) >= 2 else P["evt"]) if over else P["tx3"]
+    band = ""
+    if m.get("pio_score"):
+        # PIO 점수는 임계가 없다 (구간표가 잠정이라 선을 안 긋는다). 대신
+        # 명세 6장의 여섯 칸을 색으로 쓴다 — 0 회색 → 10 빨강.
+        band, bi = _pio_band(cur)
+        color = (P["tx3"], P["tx2"], P["palette"][2], P["evt"], P["evt"],
+                 P["crit"])[bi]
+        over = bi >= 3          # 5점(상위 10%) 부터는 눈에 띄어야 한다
     o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="10" '
              f'fill="{P["bg2"]}" stroke="{P["line"]}"/>')
     if over:
         o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="3" height="{h:.1f}" '
                  f'rx="1.5" fill="{color}"/>')
-    bw = _badge(o, x + 12, y + 11, ratio, color, P["tx3"]) or 0
+    if band:
+        bw = _text_w(band, 9) + 12
+        o.append(f'<rect x="{x + 12:.1f}" y="{y + 11:.1f}" width="{bw:.1f}" '
+                 f'height="15" rx="7.5" fill="{color}" '
+                 f'opacity="{0.20 if over else 0.13}"/>')
+        o.append(f'<text x="{x + 12 + bw / 2:.1f}" y="{y + 22:.1f}" font-size="9" '
+                 f'text-anchor="middle" font-weight="700" fill="{color}">'
+                 f'{_e(band)}</text>')
+    else:
+        bw = _badge(o, x + 12, y + 11, ratio, color, P["tx3"]) or 0
     lb = str(m.get("label") or "")
     stk0 = m.get("cols") if m.get("pio_stack") else None
     if stk0:
@@ -582,6 +739,8 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
             #   경로에서 실패했는지**가 사라지는데, 그게 조치 지점이다.
             cmap = {x["name"]: _PATH_COLORS[k % len(_PATH_COLORS)]
                     for k, x in enumerate(stack)}
+            # 범례 글자는 꾸민 이름(×2/×1)이 있으면 그걸 쓴다
+            lmap = {x["name"]: (x.get("legend") or x["name"]) for x in stack}
             for i, (t, _tot) in enumerate(vals):
                 r = pts[i][1] if i < len(pts) else {}
                 base = pb
@@ -598,6 +757,7 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
             # 색만으로 경로를 구분하게 두지 않는다 — 이름을 같이 적는다
             lx = x + w - 12
             for name, cc in reversed(list(cmap.items())):
+                name = lmap.get(name, name)
                 tw = _text_w(name, 8.5) + 13
                 if lx - tw < lbx + _text_w(lb, 11.5) + 8:
                     break               # 이름표를 침범하느니 범례를 줄인다
@@ -665,7 +825,13 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     # ★reason 은 그 10분에 **가장 많이 실패한 한 경로**만 적어 온다. 데이터로
     #   나머지를 채우는 _pio_fill 을 **버리기 전에** 부른다 — 뒤에 부르면
     #   판단 근거(pio_10min_cnt)가 이미 버려져 칸이 통째로 사라진다.
-    for m in _pio_fill(parse_reason_metrics(sel[1].get("reason") or ""), pts):
+    # ★어느 FAB 화면인지는 **행에서** 읽는다 (서명을 못 바꾼다 — row_fab 주석).
+    #   ALL 이면 "" 이고, 그때는 지금까지와 한 글자도 다르지 않게 돈다.
+    fabc = row_fab(sel[1])
+    mets = _pio_fill(parse_reason_metrics(sel[1].get("reason") or "", fabc),
+                     pts, fabc)
+    mets = _pio_score_cell(mets, pts, fabc)
+    for m in mets:
         c = m["col"]
         if c in seen:
             continue
@@ -705,8 +871,14 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         worst = max(vs) if op in (">=", ">") else min(vs)
         m["ratio"] = _ratio(worst, thr, op)
         m["worst"] = worst
+        if m.get("pio_score"):
+            # ★임계가 없으니 배수도 없다. 그대로 두면 정렬에서 맨 뒤로 밀려
+            #   '10점(상위 1%)' 인데 화면 맨 아래에 처박힌다. 명세가 준 여섯
+            #   칸을 자리값으로 쓴다 — 8점부터 걸린 지표들 사이로 올라온다.
+            m["sort"] = _pio_band(worst)[1] / 5.0 * 1.5
         metrics.append(m)
-    metrics.sort(key=lambda m: (-(m["ratio"] or 0)))
+    metrics.sort(key=lambda m: -(m["sort"] if m.get("sort") is not None
+                                 else (m["ratio"] or 0)))
 
     # ── 자리 잡기 ─────────────────────────────────────────────────────
     incs = _incidents(pts, floor=grade_cuts(cfg)[1])

@@ -563,3 +563,257 @@ class 여러_개_걸린_줄은_파랑(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 2026-09-16  PIO_ERROR **FAB별** 연동 명세
+#   그동안 PIO 는 ALL 것 하나뿐이었다 — 12경로를 한 덩어리로 더해 전체
+#   점수에만 넣었으니 "어느 FAB 때문인가" 를 화면에서 못 봤다. 예측기가
+#   FAB 단위로 쪼개 주기 시작했고, 화면도 FAB 별로 갈라져야 한다.
+#
+#   여기서 지키는 것
+#     · FAB 화면에는 **그 FAB 에 배정된 경로만** 뜬다 (남의 구간을 안 뒤진다)
+#     · ALL 화면은 지금까지와 똑같이 12경로 전부
+#     · FAB 점수(area_pio_score)가 area_score 의 분자에 들어간다
+#     · 구간표(WSUM10→점수)는 **우리가 계산하지 않는다** — 잠정이라 갈라진다
+# ─────────────────────────────────────────────────────────────────────
+import datetime as _dt                                       # noqa: E402
+import re                                                    # noqa: E402
+
+import graphs as _G                                          # noqa: E402
+
+
+def _rows(fab="", n=60):
+    """같은 데이터를 ALL 행 / FAB 분리 행 두 모양으로 만든다."""
+    out, base = [], _dt.datetime(2026, 9, 16, 14, 0)
+    for i in range(n):
+        r = {"datetime": (base + _dt.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:%S"),
+             "unified_risk_score": str(30 + i % 20), "hot_area": fab or "M14",
+             "reason": ("발동: M14[R-A(AVGLOADTIME1MIN=9분)]; "
+                        "PIO(M14A<-M14B=4개/10분,합22)"),
+             "M14_ra": str(8 + i % 5), "pio_10min_cnt": str(20 + i % 10),
+             "M14A<-M14B_PIOERROR_DEPOSITED": str(i % 4),      # M14 간접
+             "M16HUB<-M14A_PIOERROR_DEPOSITED": str(i % 3),    # M14 직접
+             "M16HUB<-M16A_PIOERROR_DEPOSITED": str(i % 5),    # M14 것이 아니다
+             "M16A->M16B_PIOERROR_DEPOSITED": str(i % 2)}      # M14 것이 아니다
+        if fab:
+            r.update({"all_score": "55", "area_score": str(30 + i % 20),
+                      "area_pio_score": str([0, 1, 3, 5, 8, 10][i % 6]),
+                      "area_pio_wsum10": str(4.0 * (i % 9)),
+                      "area_score_raw": str(20 + i % 9)})
+        out.append(r)
+    return out
+
+
+class FAB별_PIO_배정(unittest.TestCase):
+    def test_열두_경로가_빠짐없이_배정돼_있다(self):
+        got = set()
+        for f in fab_score.fabs():
+            for k in ("직접", "간접"):
+                got |= set(fab_score.PIO_FAB_PATHS[f][k])
+        self.assertEqual(got, {p for p, _t, _p in fab_score.PIO_PATHS})
+
+    def test_직접은_두_배_간접은_한_배(self):
+        """같은 8건이라도 보낸 쪽은 16.0, 받은 쪽은 8.0 이다 (명세 5장)."""
+        w = {x["path"]: (x["kind"], x["w"]) for x in fab_score.pio_paths_of("M14")}
+        self.assertEqual(w["M14A->M14B"], ("직접", 2.0))
+        self.assertEqual(w["M14A<-M14B"], ("간접", 1.0))
+
+    def test_ALL_은_열두_경로_전부(self):
+        self.assertEqual(len(fab_score.pio_paths_of("ALL")), 12)
+
+    def test_구간표를_우리가_들고_있지_않다(self):
+        """명세 8장: M14·M16B 구간표는 잠정이라 UI 가 하드코딩하면 갈라진다.
+        점수는 예측기가 적어 준 컬럼에서 **읽기만** 한다."""
+        src = open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "fab_score.py"), encoding="utf-8").read()
+        for band in ("[8, 14, 28, 37, 61]", "[10, 20, 38, 52, 94]",
+                     "[1, 10, 26, 44, 80]"):
+            self.assertNotIn(band, src)
+
+
+class FAB별_PIO_점수(unittest.TestCase):
+    def _row(self, **kw):
+        r = {f"M14_pts_{c}": "0" for c in fab_score.RULE_ORDER}
+        r.update({"M14_pts_RA": "10", "M14_pts_RB": "10"})
+        r.update(kw)
+        return r
+
+    def test_통합파일은_FAB_PIO_SCORE_를_읽는다(self):
+        a = fab_score.area_score(self._row(M14_PIO_SCORE="8", M14_PIO_WSUM10="48"),
+                                 "M14")
+        self.assertEqual(a["raw"], 20)          # 룰 배점 합 — PIO 없다
+        self.assertEqual(a["pio"], 8)
+        self.assertEqual(a["raw_pio"], 28)      # area_score 의 실제 분자
+
+    def test_분리파일은_area_pio_score_를_읽는다(self):
+        r = self._row(all_score="55", hot_area="M14", area_score="40",
+                      area_pio_score="8", area_pio_wsum10="48")
+        a = fab_score.area_score(r, "M14")
+        self.assertEqual(a["pio"], 8)
+        self.assertEqual(a["pio_col"], "area_pio_score")
+
+    def test_남의_FAB_점수를_집지_않는다(self):
+        """M14 분리 파일 행에서 M16A 를 물으면 area_pio_score 는 M14 것이다."""
+        r = self._row(all_score="55", hot_area="M14", area_pio_score="10")
+        self.assertIsNone(fab_score.area_score(r, "M16A")["pio"])
+
+    def test_예측기가_적어_준_area_score_raw_가_원본이다(self):
+        """우리 합과 다르면 예측기를 따른다 — 두 벌로 갈라지면 안 된다."""
+        r = self._row(all_score="55", hot_area="M14", area_pio_score="8",
+                      area_score_raw="33")
+        self.assertEqual(fab_score.area_score(r, "M14")["raw_pio"], 33)
+
+    def test_융합에는_안_더한다(self):
+        """명세 7장 — 전체 점수는 ALL pio_score 만 반영한다. 여기서 더하면
+        같은 실패를 전체 점수에 두 번 넣는다."""
+        a = fab_score.area_score(self._row(M14_PIO_SCORE="10"), "M14")
+        self.assertEqual(a["area"], 20)         # 룰 배점 합 그대로
+
+    def test_PIO_가_없는_옛_파일은_지금까지와_같다(self):
+        a = fab_score.area_score(self._row(), "M14")
+        self.assertFalse(a["pio_has"])
+        self.assertEqual(a["raw_pio"], a["raw"])
+
+    def test_화면_점수에_PIO_가_들어간다(self):
+        e = fab_score.explain(self._row(M14_PIO_SCORE="8"), "M14")
+        self.assertEqual(e["score"], round(28 * 100 / 70))
+        self.assertIn("PIO 반송실패 (FAB별)", [p["label"] for p in e["parts"]])
+
+
+class 더블클릭_그래프(unittest.TestCase):
+    C = _dt.datetime(2026, 9, 16, 14, 30)
+
+    def _labels(self, svg):
+        return re.findall(r'font-size="11.5" font-weight="700"[^>]*>([^<]*)', svg)
+
+    def _legend(self, svg):
+        return set(re.findall(r'font-size="8.5"[^>]*>([^<]*)', svg))
+
+    def test_행에서_FAB_을_알아낸다(self):
+        """render() 서명을 못 바꾸니(배포가 파일 단위다) 행에서 읽어야 한다."""
+        self.assertEqual(_G.row_fab(_rows("M14")[0]), "M14")
+        self.assertEqual(_G.row_fab(_rows()[0]), "")
+
+    def _stack(self, rows):
+        """그래프가 실제로 쌓기로 정한 경로 목록.
+
+        ★범례(그린 글자)로 재면 안 된다 — 이름표를 침범하면 범례를 줄이므로,
+          안 걸러도 화면에서는 안 보일 수 있다. 실제로 그 함정에 빠졌다.
+          거르는 자리 자체를 본다.
+        """
+        pts = _G.window_rows(rows, self.C, 60)
+        fab = _G.row_fab(rows[0])
+        mets = _G._pio_fill(_G.parse_reason_metrics(rows[0]["reason"], fab),
+                            pts, fab)
+        st = next((m for m in mets if m.get("pio_stack")), None)
+        return [x["name"] for x in (st or {}).get("cols") or []]
+
+    def test_FAB_화면에는_그_FAB_경로만_뜬다(self):
+        got = self._stack(_rows("M14"))
+        self.assertIn("M14A<-M14B", got)
+        self.assertIn("M16HUB<-M14A", got)
+        self.assertNotIn("M16A->M16B", got)
+        self.assertNotIn("M16HUB<-M16A", got)
+        # 그려진 것에도 안 남아야 한다 (범례가 줄어 안 보이는 것과는 다르다)
+        svg = _G.render(_rows("M14"), self.C, minutes=60)
+        self.assertNotIn("M16A-&gt;M16B", svg)
+
+    def test_ALL_화면은_열두_경로_전부_본다(self):
+        got = self._stack(_rows())
+        for p in ("M14A<-M14B", "M16HUB<-M14A", "M16A->M16B", "M16HUB<-M16A"):
+            self.assertIn(p, got)
+
+    def test_데이터에서_경로를_모을_때도_거른다(self):
+        """거르는 자리가 둘이다 — 데이터에서 모으는 쪽(_pio_paths_in)과
+        reason 에서 읽는 쪽(_pio_keep). 하나만 시험하면 나머지를 지워도
+        안 걸린다. 실제로 그랬다."""
+        pts = _G.window_rows(_rows("M14"), self.C, 60)
+        self.assertNotIn("M16A->M16B", _G._pio_paths_in(pts, "M14"))
+        self.assertIn("M16A->M16B", _G._pio_paths_in(pts))
+
+    def test_직접이_간접보다_앞에_쌓인다(self):
+        """×2 로 세는 쪽이 그 FAB 사정이다 — 먼저 읽혀야 한다."""
+        got = self._stack(_rows("M14"))
+        self.assertLess(got.index("M16HUB<-M14A"), got.index("M14A<-M14B"))
+
+    def test_가중을_범례에_적는다(self):
+        """막대 높이만 보면 왜 점수가 다른지 알 수가 없다."""
+        leg = self._legend(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertIn("M16HUB&lt;-M14A ×2", leg)
+        self.assertIn("M14A&lt;-M14B ×1", leg)
+
+    def test_FAB_화면에_PIO_점수_칸이_선다(self):
+        lb = self._labels(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertIn("PIO 반송실패 점수 (M14)", lb)
+        self.assertIn("PIO 10분 가중합 (직접×2 + 간접×1)", lb)
+
+    def test_FAB_화면은_ALL_십분합을_안_쓴다(self):
+        """pio_10min_cnt 는 12경로 합이라 그 FAB 것이 아니다."""
+        lb = self._labels(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertNotIn("PIO 반송실패 10분 합", lb)
+        self.assertIn("PIO 반송실패 10분 합",
+                      self._labels(_G.render(_rows(), self.C, minutes=60)))
+
+    def test_PIO_점수는_임계선을_안_긋는다(self):
+        """구간표가 잠정이다 — 우리가 선을 그으면 예측기와 갈라진다."""
+        self.assertNotIn("area_pio_score", _G.thresholds())
+
+    def test_PIO_점수_칸이_맨_아래로_안_밀린다(self):
+        """배수가 없다고 정렬에서 뒤로 보내면 10점(상위 1%)이 화면 밑에 처박힌다."""
+        lb = self._labels(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertLess(lb.index("PIO 반송실패 점수 (M14)"), len(lb) - 1)
+
+    def test_PIO_가_없는_날은_칸을_안_세운다(self):
+        rs = [{k: v for k, v in r.items()
+               if k not in ("area_pio_score", "area_pio_wsum10")}
+              for r in _rows("M14")]
+        lb = self._labels(_G.render(rs, self.C, minutes=60))
+        self.assertNotIn("PIO 반송실패 점수 (M14)", lb)
+
+
+class 실제지표_칸(unittest.TestCase):
+    R = ("발동: M14[R-A(AVGLOADTIME1MIN=9분)]; PIO(M14A<-M14B=4개/10분,합22)")
+    ROW = {"M14A<-M14B_PIOERROR_DEPOSITED": "4",
+           "M16HUB<-M16A_PIOERROR_DEPOSITED": "3", "hot_area": "M14"}
+
+    def test_ALL_행은_남의_경로도_보여_준다(self):
+        raw = [m["raw"] for m in sentinel.reason_metrics(self.R, "M14", self.ROW)]
+        self.assertIn("PIO.DEPOSIT.M16HUB<-M16A", raw)
+
+    def test_FAB_행은_그_FAB_경로만(self):
+        row = dict(self.ROW, all_score="55", area_pio_score="8",
+                   area_pio_wsum10="48")
+        raw = [m["raw"] for m in sentinel.reason_metrics(self.R, "M14", row)]
+        self.assertIn("PIO.DEPOSIT.M14A<-M14B", raw)
+        self.assertNotIn("PIO.DEPOSIT.M16HUB<-M16A", raw)
+        self.assertIn("PIO.DEPOSIT.M14.SCORE", raw)
+
+    def test_ALL_합계는_지우지_않고_이름에_적는다(self):
+        """FAB 가중합과 숫자가 달라 '뭐가 맞나' 가 되는 것을 막는다."""
+        row = dict(self.ROW, all_score="55", area_pio_score="8")
+        lb = {m["raw"]: m["label"]
+              for m in sentinel.reason_metrics(self.R, "M14", row)}
+        self.assertIn("전체 12경로", lb["PIO.DEPOSIT.10MIN.CNT"])
+
+
+class 추이_지표_목록(unittest.TestCase):
+    def test_FAB_마다_자기_경로만_고를_수_있다(self):
+        from lp_client import _fab_strip
+        keys = {m["key"] for m in _fab_strip("M16B")}
+        self.assertIn("area_pio_score", keys)
+        self.assertIn("M16B->M16A_PIOERROR_DEPOSITED", keys)
+        self.assertNotIn("M14A<-M14B_PIOERROR_DEPOSITED", keys)
+
+    def test_PIO_포함_raw_를_고를_수_있다(self):
+        """명세 4장 — {FAB}_score_raw 만 읽으면 PIO 가 빠진 값을 본다."""
+        from lp_client import _fab_strip
+        keys = {m["key"] for m in _fab_strip("M14")}
+        self.assertIn("area_score_raw", keys)
+        self.assertIn("M14_score_raw", keys)
+
+    def test_PIO_는_설비_지표_뒤에_붙는다(self):
+        """앞에 끼우면 늘 보던 순서가 밀린다."""
+        from lp_client import _fab_strip
+        lb = [m["key"] for m in _fab_strip("M14")]
+        self.assertLess(lb.index("M14_rd_oht"), lb.index("area_pio_score"))

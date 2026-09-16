@@ -333,6 +333,24 @@ def reason_metrics(reason: str, area: str = "", row: dict | None = None) -> list
     return _pio_add_rowpaths(mets, row)
 
 
+def _row_fab(row) -> str:
+    """이 행이 **어느 FAB 의 분리 파일 행**인가 — 통합(ALL) 행이면 "".
+
+    ★area(hot_area)로 판단하면 안 된다. ALL 행의 hot_area 는 '그 분 제일
+      높은 FAB' 이라, 그걸로 PIO 경로를 거르면 ALL 화면에서 나머지 경로가
+      통째로 사라진다. 실제로 제일 많이 실패하는 M14A<-M14B 가 M16HUB 행에서
+      빠진다. 분리 파일 행인지는 all_score 로만 안다 (jupyter_csv._fab_rows).
+    """
+    if not row or not str(row.get("all_score") or "").strip():
+        return ""
+    f = str(row.get("hot_area") or "").strip().upper()
+    try:
+        import fab_score as F
+        return f if f in F.PIO_FAB_PATHS else ""
+    except Exception:                                   # noqa: BLE001
+        return ""
+
+
 # ★reason 은 그 10분에 **가장 많이 실패한 한 구간**만 적어 온다. 그래서
 #   같은 분에 다른 경로에서 실패가 나도 '실제지표' 에 이름이 안 떴다 —
 #   화면에서 'PIO 주 경로 개수가 안 보인다' 던 게 이것이다.
@@ -342,19 +360,59 @@ _PIO_COL_SUF = "_PIOERROR_DEPOSITED"
 
 
 def _pio_add_rowpaths(mets: list, row) -> list:
-    if not row or not any(m.get("col") == "pio_10min_cnt" for m in mets):
+    """행에 값이 실제로 온 PIO 경로를 붙인다. FAB 행이면 **그 FAB 것만**.
+
+    ★2026-09-16 'PIO_ERROR FAB별 연동 명세' — FAB 분리 파일에도 12경로가 다
+      실려 오므로, 안 거르면 M16B 화면 '실제지표' 에 M14A<-M14B 가 뜬다.
+      현장은 그걸 보고 자기 FAB 을 뒤진다 (남의 구간이다).
+    ★여기는 **화면 표시** 자리다 — 점수를 계산하거나 바꾸지 않는다.
+    """
+    fab = _row_fab(row)
+    if not row or not any(m.get("col") in ("pio_10min_cnt", "area_pio_wsum10")
+                          for m in mets) and not fab:
         return mets                     # PIO 가 발동한 행이 아니다 — 손대지 않는다
     have = {m.get("col") for m in mets}
+    keep = set()
+    if fab:
+        try:
+            import fab_score as F
+            keep = {x["path"] for x in F.pio_paths_of(fab)}
+        except Exception:                               # noqa: BLE001
+            keep = set()
     add = []
+    if fab:
+        # ★pio_10min_cnt 는 **12경로 전부의 합** 이다. FAB 화면에서 그냥 두면
+        #   그 FAB 가중합과 숫자가 달라 "둘 중 뭐가 맞나" 가 된다. 지우지 않고
+        #   무엇인지 이름에 적는다 — 전체 맥락도 봐야 할 수가 있다.
+        for m in mets:
+            if m.get("col") == "pio_10min_cnt" and "전체" not in (m.get("label") or ""):
+                m["label"] = "PIO 반송실패 10분 합 (전체 12경로)"
+        # 그 FAB 의 점수·가중합을 맨 앞에 — '왜 그 점수냐' 의 ①②다.
+        for col, raw, lb, un in (
+                ("area_pio_score", f"PIO.DEPOSIT.{fab}.SCORE",
+                 f"PIO 반송실패 점수 ({fab})", "점"),
+                ("area_pio_wsum10", f"PIO.DEPOSIT.{fab}.WSUM10",
+                 "PIO 10분 가중합 (직접×2 + 간접×1)", "")):
+            if col in have:
+                continue
+            try:
+                if float(str(row.get(col) or "").strip()) <= 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            have.add(col)
+            mets = mets + [{"col": col, "raw": raw, "label": lb, "unit": un}]
     for k, v in row.items():
         if not isinstance(k, str) or not k.endswith(_PIO_COL_SUF) or k in have:
+            continue
+        name = k[:-len(_PIO_COL_SUF)]
+        if keep and name not in keep:
             continue
         try:
             if float(str(v).strip()) <= 0:
                 continue
         except (TypeError, ValueError):
             continue
-        name = k[:-len(_PIO_COL_SUF)]
         add.append({"col": k, "raw": f"PIO.DEPOSIT.{name}",
                     "label": f"PIO 반송실패 {name}", "unit": "개"})
     return mets + sorted(add, key=lambda m: m["col"])

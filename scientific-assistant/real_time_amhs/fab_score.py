@@ -267,6 +267,154 @@ PIO_PATHS = [
 #   늘어나는데 평소치를 같이 올리면 악화를 못 잡는다 (명세가 못 박은 것).
 PIO_10MIN_THR = 16
 
+# ── PIO 를 FAB 별로 나눈다 (2026-09-16 'PIO_ERROR FAB별 연동 명세') ────────
+# 그동안 PIO 는 **ALL 것**이었다. 12경로를 한 덩어리로 더해 전체 점수에만
+# 넣었으니, "어느 FAB 때문에 올랐나" 를 화면에서 못 봤다. 예측기가 이걸
+# FAB 단위로 쪼개 주기 시작했다.
+#
+# 한 경로는 **출발 FAB 과 도착 FAB 양쪽**에 들어간다.
+#   직접 — 그 FAB 에서 **나가는** 실패. 그 FAB 사정일 가능성이 크다 → ×2.0
+#   간접 — 그 FAB 으로 **들어오는** 실패. 옆 FAB 사정이다      → ×1.0
+# 같은 8건이라도 보낸 쪽은 16.0, 받은 쪽은 8.0 이 된다.
+#
+# ★구간표(WSUM10 → 0·1·3·5·8·10)는 **여기 안 적는다.** 명세가 못 박았다 —
+#   "M14·M16B 구간표는 잠정이다. UI 는 구간표를 하드코딩하지 말고 점수만
+#   받아 표시하라." 재산정되면 우리가 계산한 값과 예측기 값이 갈라진다.
+#   우리는 예측기가 적어 준 컬럼(area_pio_score / {FAB}_PIO_SCORE)을 읽기만
+#   한다. 이 배정표는 '그 점수가 어느 경로에서 왔나' 를 보여주기 위한 것이다.
+PIO_W = {"직접": 2.0, "간접": 1.0}
+PIO_FAB_PATHS: dict[str, dict[str, list[str]]] = {
+    "M16HUB": {"직접": ["M16HUB->MLUD", "M16HUB->M14B", "M16HUB->M14A",
+                        "M16HUB->M16A"],
+               "간접": ["M16HUB<-M16A", "M16HUB<-M14A", "M16HUB<-M14B"]},
+    # ★FAB 이름은 M14 인데 경로 이름은 M14A 다 (명세 그대로). 여기서 맞춰 둔다.
+    "M14":    {"직접": ["M16HUB<-M14A", "M14A->M14B", "M14A->M10A"],
+               "간접": ["M16HUB->M14A", "M14A<-M14B"]},
+    "M14B":   {"직접": ["M14A<-M14B", "M16HUB<-M14B"],
+               "간접": ["M16HUB->M14B"]},
+    "M16A":   {"직접": ["M16HUB<-M16A", "M16A->M16B"],
+               "간접": ["M16HUB->M16A", "M16B->M16A"]},
+    "M16B":   {"직접": ["M16B->M16A"],
+               "간접": ["M16A->M16B"]},
+}
+PIO_SCORE_MAX = 10          # 구간표의 마지막 칸. 0·1·3·5·8·10 중 최대
+PIO_COL_SUF = "_PIOERROR_DEPOSITED"     # 경로별 **1분** 실패 건수 컬럼
+# 예측기가 적어 주는 FAB PIO 컬럼 — 파일마다 이름이 다르다.
+#   통합   {날짜}_발동이벤트.csv        {FAB}_PIO_SCORE · {FAB}_PIO_WSUM10
+#   FAB분리 fab분리/…_{FAB}.csv          area_pio_score · area_pio_wsum10
+PIO_FAB_COLS = ("PIO_SCORE", "PIO_WSUM10")
+PIO_AREA_COLS = ("area_pio_score", "area_pio_wsum10")
+# area_score 의 입력. {FAB}_score_raw 에 PIO 를 더한 값으로, 예측기가 직접
+# 적어 준다. ★기존 화면이 {FAB}_score_raw 를 읽어 계산하고 있었다면 PIO 가
+# 빠진 값을 보게 된다 — 명세 4장이 "area_score_raw 를 읽도록 바꾸라" 고 한 게
+# 이것이다.
+PIO_RAW_COL = "area_score_raw"
+# 이 컬럼들이 파일에 생긴 날. 그 전 파일에는 **없다** — 옛 날짜를 다시 볼 때
+# '값 없음' 이 뜨는 게 정상이라는 표시다 (화면이 고장 난 게 아니다).
+PIO_FAB_SINCE = "2026-09-16"
+
+
+def pio_paths_of(fab: str) -> list[dict]:
+    """그 FAB 의 PIO 경로 — [{path, kind, w, csv}] · 직접 먼저.
+
+    ALL 이면 12경로 전부를 준다 (직접/간접 구분이 없다 — 전체 합이니까).
+    """
+    f = str(fab or "").upper()
+    if f in ("", "ALL"):
+        return [{"path": p, "kind": "", "w": 1.0, "csv": p + PIO_COL_SUF}
+                for p, _t, _p95 in PIO_PATHS]
+    out = []
+    for kind in ("직접", "간접"):
+        for p in (PIO_FAB_PATHS.get(f) or {}).get(kind) or []:
+            out.append({"path": p, "kind": kind, "w": PIO_W[kind],
+                        "csv": p + PIO_COL_SUF})
+    return out
+
+
+def pio_of_fab(row: dict, fab: str) -> dict:
+    """그 1분 · 그 FAB 의 PIO — 점수·가중합·어느 컬럼에서 읽었나.
+
+    ★남의 FAB 점수를 집지 않는다. area_pio_score 는 **그 파일 주인 FAB** 의
+      값이라, M14 분리 파일 행에서 M16A 를 물으면 M14 값이 나와 버린다
+      (_stored_area 가 area_score 로 같은 실수를 할 뻔한 자리다). 그래서
+      area_* 로 물러서는 것은 '이 행이 그 FAB 의 행일 때' 만이다.
+    """
+    f = str(fab or "").upper()
+    sc, ws, src = None, None, ""
+    for suf, where in ((PIO_FAB_COLS, "통합"),):
+        a, b = suf
+        v = _num(row.get(f"{f}_{a}"))
+        if v is not None:
+            sc, ws, src = v, _num(row.get(f"{f}_{b}")), f"{f}_{a}"
+            break
+    if sc is None and _is_fab_row(row) and             str(row.get("hot_area") or "").strip().upper() == f:
+        a, b = PIO_AREA_COLS
+        v = _num(row.get(a))
+        if v is not None:
+            sc, ws, src = v, _num(row.get(b)), a
+    paths = []
+    for it in pio_paths_of(f):
+        v = _num(row.get(it["csv"]))
+        if v:                       # 0 과 빈칸은 안 싣는다 (경로 12개 중 3개만 산다)
+            paths.append(dict(it, value=v, weighted=round(v * it["w"], 1)))
+    paths.sort(key=lambda x: -x["weighted"])
+    return {"fab": f, "score": sc, "wsum10": ws, "col": src,
+            "has": sc is not None, "paths": paths}
+
+
+
+def _fab_pio_watch(fab: str) -> list[dict]:
+    """그 FAB 화면이 볼 PIO 컬럼 — 점수 · 10분 가중합 · **그 FAB 경로만**.
+
+    ★ALL 처럼 12경로를 다 걸면, M16B 화면에 M14A<-M14B 실패가 뜬다. 현장은
+      그걸 보고 자기 FAB 을 뒤진다 — 남의 구간이다. 그 FAB 에 배정된 경로만
+      건다 (명세 5장 '경로 → FAB 배정').
+    ★판정(thr)은 안 붙인다. 구간표가 잠정이라 예측기가 준 점수만 쓴다.
+    """
+    f = str(fab or "").upper()
+    sc, ws = PIO_AREA_COLS
+    a1, a2 = PIO_FAB_COLS
+    out = [
+        # ★csv 는 FAB 분리 파일 이름, csv_all 은 통합 파일 이름이다. 같은 값이
+        #   파일마다 다른 이름으로 온다 (명세 7장: 두 파일 값은 동일).
+        #   readings() 가 그 행에 있는 쪽을 골라 읽는다 — 한쪽만 적어 두면
+        #   다른 파일을 볼 때 '값 없음' 으로 빈다.
+        {"amos": f"PIO.DEPOSIT.{f}.SCORE", "csv": sc, "csv_all": f"{f}_{a1}",
+         "label": "PIO 반송실패 점수", "unit": "점",
+         "op": ">=", "thr": None, "record_only": True, "since": PIO_FAB_SINCE,
+         "normal": f"0~{PIO_SCORE_MAX} · area_score 에 그대로 더해짐"},
+        {"amos": f"PIO.DEPOSIT.{f}.WSUM10", "csv": ws, "csv_all": f"{f}_{a2}",
+         "label": "PIO 10분 가중합 (직접×2 + 간접×1)", "unit": "",
+         "op": ">=", "thr": None, "record_only": True, "since": PIO_FAB_SINCE},
+    ]
+    for it in pio_paths_of(f):
+        out.append({"amos": f"PIO.DEPOSIT.{it['path']}", "csv": it["csv"],
+                    "label": f"PIO {it['path']} ({it['kind']}×{it['w']:g})",
+                    "unit": "개", "op": ">=", "thr": None, "record_only": True,
+                    "since": PIO_FAB_SINCE,
+                    "pio_kind": it["kind"], "pio_path": it["path"],
+                    "pio_w": it["w"]})
+    return out
+
+
+# WATCH 는 이 파일 위쪽(PIO_FAB_PATHS 보다 먼저)에 있어서, 만들어 둔 뒤에
+# 여기서 PIO 칸을 끼운다. 정의를 위로 올리면 표가 두 곳으로 갈라진다.
+for _f in WATCH:
+    WATCH[_f]["PIO"] = _fab_pio_watch(_f)
+del _f
+
+# ★PIO 는 {FAB}_pts_* 로 **안 온다.** 예측기가 area_pio_score 라는 따로 된
+#   컬럼에 적어 주고, area_score_raw = {FAB}_score_raw + area_pio_score 로
+#   더한다. 그래서 RULES(=pts 컬럼이 오는 룰) 와 섞지 않는다 — 섞으면
+#   area_score() 가 있지도 않은 {FAB}_pts_PIO 를 찾아 늘 0점으로 읽는다.
+PIO_RULE = {
+    "code": "PIO", "pts": PIO_SCORE_MAX, "label": "PIO 반송실패 (FAB별)",
+    "when": "10분 가중합(직접×2 + 간접×1) 구간별 0·1·3·5·8·10",
+    "col": PIO_AREA_COLS[0], "no_pts": True,
+}
+FAB_RULES = RULES + [PIO_RULE]
+FAB_RULE_ORDER = [r["code"] for r in FAB_RULES]
+
 
 def _pio_watch() -> list[dict]:
     """PIO 감시 컬럼 — 10분 합(판정) + 스코어 가산(기록) + 12경로(기록)."""
@@ -497,12 +645,17 @@ def _over(val, op, thr) -> bool | None:
 
 
 def rule_order(sys: str) -> list[str]:
-    """그 시스템의 룰 순서. ALL 은 영역 룰이 아니라 융합 항을 쓴다."""
-    return ALL_RULE_ORDER if str(sys or "").upper() == "ALL" else RULE_ORDER
+    """그 시스템의 룰 순서. ALL 은 영역 룰이 아니라 융합 항을 쓴다.
+
+    ★FAB 은 RULE_ORDER 가 아니라 FAB_RULE_ORDER(끝에 PIO)를 쓴다.
+      {FAB}_pts_* 를 훑는 자리(area_score·explain)는 **RULE_ORDER 그대로**
+      두어야 한다 — PIO 는 pts 컬럼으로 안 오기 때문이다.
+    """
+    return ALL_RULE_ORDER if str(sys or "").upper() == "ALL" else FAB_RULE_ORDER
 
 
 def rules_of(sys: str) -> list[dict]:
-    return ALL_RULES if str(sys or "").upper() == "ALL" else RULES
+    return ALL_RULES if str(sys or "").upper() == "ALL" else FAB_RULES
 
 
 def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
@@ -519,14 +672,21 @@ def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
             #   예전엔 이것도 _num() 으로 읽어서 'M16HUB' 가 None 이 됐다 —
             #   값이 멀쩡히 있는데 화면에는 늘 '값 없음' 으로 떴다.
             is_text = (it.get("op") or "") == "text"
-            if not it.get("csv"):
+            # ★같은 값이 파일마다 다른 이름으로 온다 (FAB분리 area_pio_score /
+            #   통합 M14_PIO_SCORE). 그 행에 **실제로 있는** 이름을 골라 읽고,
+            #   화면에도 읽은 이름을 그대로 적는다 — 없는 컬럼명을 보여 주면
+            #   현장에서 찾아갔다가 못 찾는다.
+            col = it.get("csv") or ""
+            if col and col not in row and it.get("csv_all") in row:
+                col = it["csv_all"]
+            if not col:
                 v = None
             elif is_text:
-                v = str(row.get(it["csv"]) or "").strip() or None
+                v = str(row.get(col) or "").strip() or None
             else:
-                v = _num(row.get(it["csv"]))
+                v = _num(row.get(col))
             out.append({
-                "rule": rule, "amos": it["amos"], "csv": it.get("csv") or "",
+                "rule": rule, "amos": it["amos"], "csv": col,
                 "label": it["label"], "unit": it.get("unit") or "",
                 "op": it.get("op") or ">=", "thr": it.get("thr"),
                 "normal": it.get("normal"),
@@ -541,6 +701,9 @@ def readings(row: dict, fab: str, cfg: dict | None = None) -> list[dict]:
                 #   화면은 이걸 한 줄로 묶어야 한다 — 빈 줄 열 개는 화면이
                 #   아니라 소음이다.
                 "no_csv": bool(it.get("no_csv")) or not it.get("csv"),
+                # 이 컬럼이 파일에 생긴 날 — 그 전 날짜를 보면 값이 없는 게
+                # 정상이다. 화면이 "왜 안 뜨나" 에 답할 근거다.
+                "since": it.get("since") or "",
             })
     return out
 
@@ -630,6 +793,24 @@ def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
     if has_pts and stored is not None and abs(capped - stored) > 0.51:
         mismatch = (f"룰 배점 합 {capped:g} ≠ 저장된 {stored_col} {stored:g} — "
                     f"예측기 배점이 바뀌었을 수 있습니다")
+
+    # ── PIO (2026-09-16 명세) ────────────────────────────────────────
+    # ★area(융합에 들어갈 값)에는 **안 더한다.** 명세 7장이 못 박았다 —
+    #   전체 점수(unified_risk_score)는 ALL pio_score 하나만 반영하고,
+    #   FAB PIO 는 그 FAB 의 area_score 에만 들어간다. 여기서 더하면 같은
+    #   실패를 전체 점수에 두 번 넣게 된다.
+    # ★그래서 화면 점수의 입력은 raw 가 아니라 raw_pio 다:
+    #       area_score_raw = {FAB}_score_raw + area_pio_score
+    pio = pio_of_fab(row, f)
+    pio_pts = float(pio["score"] or 0.0)
+    raw_pio = total + pio_pts
+    # 예측기가 area_score_raw 를 직접 적어 줬으면 그게 원본이다 — 우리 합과
+    # 다르면 우리 쪽이 틀린 것이니 조용히 예측기 값을 따른다.
+    stored_rp = _num(row.get(PIO_RAW_COL))
+    if stored_rp is not None and _is_fab_row(row) and \
+            str(row.get("hot_area") or "").strip().upper() == f:
+        raw_pio = stored_rp
+
     return {
         "fab": f, "area": round(capped, 1), "raw": round(total, 1),
         "capped": total > AREA_CAP, "pts": pts, "fired": fired,
@@ -638,6 +819,12 @@ def area_score(row: dict, fab: str, cfg: dict | None = None) -> dict:
         "mismatch": mismatch,
         "has_pts": has_pts, "weight": area_weight(f, cfg),
         "maxcapa": _maxcapa_hits(row, f),
+        # PIO — 없으면 pio_has=False 다. 0점과 구분해야 한다(옛 파일엔 컬럼이
+        # 아예 없다). raw_pio 는 PIO 가 없을 때 raw 와 같은 값이라, 옛 파일에서
+        # 이 키를 써도 지금까지와 똑같이 동작한다.
+        "pio": pio["score"], "pio_wsum10": pio["wsum10"],
+        "pio_col": pio["col"], "pio_has": pio["has"], "pio_paths": pio["paths"],
+        "raw_pio": round(raw_pio, 1),
     }
 
 
@@ -710,7 +897,9 @@ def explain(row: dict, fab: str, cfg: dict | None = None) -> dict:
     f = str(fab or "").upper()
     a = area_score(row, f, cfg)
     denom = area_denoms(cfg).get(f, AREA_DENOM)
-    sc = area_score_100(a["raw"], f, cfg)
+    # ★분자는 raw 가 아니라 raw_pio(= {FAB}_score_raw + area_pio_score) 다.
+    #   PIO 가 없는 파일에서는 둘이 같은 값이라 옛 화면과 달라지지 않는다.
+    sc = area_score_100(a["raw_pio"], f, cfg)
     fcfg = _fab_cfg(cfg, f)
     reads = readings(row, f, cfg)
     by_rule = {}
@@ -743,6 +932,30 @@ def explain(row: dict, fab: str, cfg: dict | None = None) -> dict:
             fuse.append("{}{} 전체(ALL) 융합에서 {}점이 **한 번 더** "
                         "더해집니다 — 실질 가중치가 두 배입니다."
                         .format(lb, _josa(lb), FUSE_AGAIN[code]))
+    # ★PIO 는 {FAB}_pts_* 로 안 오므로 위 루프에 안 걸린다. 여기서 따로 넣는다
+    #   — 안 넣으면 '왜 이 점수인가' 표에서 PIO 점수만큼이 설명 없이 뜬다.
+    if (a.get("pio") or 0) > 0:
+        pp = a.get("pio_paths") or []
+        parts.append({
+            "label": PIO_RULE["label"], "pts": round(float(a["pio"]), 1),
+            "when": PIO_RULE["when"], "kind": "결과",
+            "how": ("설비 지표는 '밀리는 중' 을 보고, PIO 는 **이미 실패한 "
+                    "결과**입니다. 이 점수가 올랐다면 반송이 이미 깨진 뒤입니다."),
+            "fuse_again": 0,
+            "values": ([{"amos": "PIO.DEPOSIT.WSUM10",
+                         "value": a.get("pio_wsum10"), "op": ">=",
+                         "thr": None, "unit": ""}] if a.get("pio_wsum10")
+                       is not None else []) +
+                      [{"amos": f"PIO.DEPOSIT.{x['path']}", "value": x["value"],
+                        "op": ">=", "thr": None, "unit": f"개 ({x['kind']}×{x['w']:g})"}
+                       for x in pp[:4]],
+        })
+        if pp:
+            notes.append((3, "PIO {:g}점 — 주로 {} 입니다 ({})".format(
+                float(a["pio"]),
+                " · ".join(f"{x['path']}" for x in pp[:2]),
+                "그 FAB 에서 나가는 실패" if pp[0]["kind"] == "직접"
+                else "옆 FAB 에서 들어오는 실패")))
     parts.sort(key=lambda x: -x["pts"])
     notes = [t for _k, t in sorted(notes, key=lambda x: x[0])] + fuse
     if a["capped"]:
@@ -864,9 +1077,16 @@ def max_area(fab: str, cfg: dict | None = None) -> dict:
             lost[r["code"]] = ("임계 미정의", r["pts"])
             continue
         gain += r["pts"]
+    # ★PIO 는 융합 상한(50)을 거치지 않는다 — area_score 의 분자에 그대로
+    #   더해진다. 그래서 '융합에 얼마나 실리나'(area_max)는 그대로지만
+    #   '화면에 몇 점까지 뜨나'(screen_max)는 PIO 만큼 올라간다. 이 둘을
+    #   같은 수로 말하면 "M14B 는 초위험에 못 간다" 같은 결론이 틀어진다.
+    pio = PIO_SCORE_MAX if (w.get("PIO") and PIO_FAB_PATHS.get(f)) else 0
     return {"fab": f, "possible": gain, "area_max": min(AREA_CAP, gain),
             "risk_max": risk(min(AREA_CAP, gain)), "lost": lost,
-            "capped": gain >= AREA_CAP}
+            "capped": gain >= AREA_CAP,
+            "pio": pio, "possible_raw": gain + pio,
+            "screen_max": area_score_100(gain + pio, f, cfg)}
 
 
 # ────────────────────────────── 단독 상한 ──────────────────────────────
@@ -1487,7 +1707,10 @@ def area_table(rows: list[dict], day: str | list | None = None,
                 #   M14 자기 점수라 남의 점수를 M16A 것으로 집어온다.
                 a = area_score(r, f, cfg)
                 if a["has_pts"] or _num(r.get(f"{f}_score")) is not None:
-                    s[f] = area_score_100(a.get("raw", a["area"]), f, cfg)
+                    # ★raw_pio 다. 통합 파일에는 {FAB}_PIO_SCORE 가 실려 오므로
+                    #   분리 파일이 없는 날도 PIO 가 빠지지 않는다 — raw 로
+                    #   되계산하면 그 날만 점수가 최대 10점 낮게 나온다.
+                    s[f] = area_score_100(a.get("raw_pio", a["area"]), f, cfg)
                 # 근거가 없으면 **넣지 않는다**. 0 으로 채우면 화면이 그
                 # FAB 을 '정상' 으로 읽는다 — 모르는 것과 괜찮은 것은 다르다.
         hi, hs = "", -1
