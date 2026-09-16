@@ -35,6 +35,47 @@ class 월드모델_HMI_맵(unittest.TestCase):
         for k in ('"stations"', '"labels"', '"meta"', '"schema"'):
             self.assertIn(k, src, k)
 
+    def test_화면_테마가_맵_테마를_따라간다(self):
+        """맵만 밝게 바꾸고 상단·패널·설정창은 어두운 채로 두면 따로 논다
+        (고객 지적). body[data-theme] 하나로 전부 바뀌어야 한다."""
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        self.assertIn("function applyPageTheme()", src)
+        self.assertIn("loadMapSettings();\napplyPageTheme();", src)          # 첫 화면부터
+        for fn in ("function applyMapSettings", "function resetMapSettings"):
+            body = src.split(fn, 1)[1].split("\n}\n", 1)[0]
+            self.assertIn("applyPageTheme();", body, fn)
+        self.assertIn('body[data-theme="hmi"] {', src)
+        # 옛 모달의 인라인 어두운 색을 밝은 테마가 눌러 준다
+        self.assertIn('body[data-theme="hmi"] [style*="background:#222"]', src)
+
+    def test_상단은_두_줄이고_단추_id_와_속도_글자는_그대로(self):
+        """setSpeed 는 단추 **글자**(x1·MAX)로 선택 표시를 맞춘다 — 글자가
+        바뀌면 표시가 안 된다. toggleLayer 는 id 로 찾는다."""
+        import re
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        top = src.split('<div id="topbar">', 1)[1].split("<!-- 데드락 알람 배너 -->", 1)[0]
+        self.assertEqual(top.count('class="tb-row"'), 2)
+        self.assertEqual(re.findall(r'class="speed-btn"[^>]*>([^<]+)<', top),
+                         ["x1", "x2", "x5", "x10", "MAX"])
+        for i in ("btn-zone", "btn-railcut", "btn-id", "btn-name", "btn-station",
+                  "btn-label", "btn-junction", "btn-sensor", "btn-hotspot",
+                  "fab-select", "layout-select", "lp-from", "lp-to", "lp-table",
+                  "lp-btn", "lp-status", "time-display", "frame-display",
+                  "time-slider", "status-badge", "loading-msg"):
+            self.assertIn(f'id="{i}"', top, i)
+        # 손잡이가 툴바 위에 얹히지 않게 맵 줄 기준으로 잡는다
+        self.assertIn("#rsidebar-toggle, #sidebar-toggle { top:10px; }", src)
+
+    def test_설정창_입력_id_는_전부_그대로(self):
+        """openMapSettings/applyMapSettings 가 'ms-'+키 로 찾는다 — 하나라도
+        빠지면 그 설정은 저장이 안 된다."""
+        import re
+        src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()
+        keys = re.findall(r"^\s+(\w+):\s", src.split("const DEFAULT_MAP_SETTINGS = {", 1)[1].split("\n};", 1)[0], re.M)
+        self.assertGreater(len(keys), 15)
+        for k in keys:
+            self.assertIn(f'id="ms-{k}"', src, k)
+
     def test_옛_노드번호_블록이_안_남아_있다(self):
         """캐시 밖에서 매 프레임 9,403개를 다시 훑던 자리 — 레이어로 옮겼다."""
         src = open(os.path.join(_WM, "dashboard.html"), encoding="utf-8").read()

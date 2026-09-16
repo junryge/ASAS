@@ -5,36 +5,77 @@
 <title>OHT 월드모델 시뮬레이션</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; color:#e0e0e0; overflow:hidden; height:100vh; display:flex; flex-direction:column; }
-
-#topbar {
-  display:flex; align-items:center; gap:8px; padding:8px 12px;
-  background:#111827; border-bottom:1px solid #1f2937;
-  flex-wrap:wrap; row-gap:8px;        /* ★ 항목이 많아지면 자동 줄바꿈 */
-  flex-shrink:0;
-  min-height:52px;
+/* ★화면 테마 — 맵 테마(⚙ 설정)가 화면 전체를 같이 바꾼다.
+   맵만 밝게 바꿨더니 상단·패널·설정창이 예전 어두운 채로 남아 따로 놀았다
+   (고객 지적). 색은 전부 여기 변수 한 벌에서 나온다. 어두운 값은 예전
+   값 그대로라, 어두운 테마를 고르면 화면이 예전과 똑같다. */
+body {
+  --bg:#0a0e17; --bar:#111827; --panel:#111827; --card:#0a0e17; --box:#1a1a2e; --item:#1a1a2e; --item-hover:#252550;
+  --line:#1f2937; --line2:#374151; --fg:#e0e0e0; --fg2:#9ca3af; --muted:#6b7280;
+  --ctl:#1f2937; --ctl-fg:#e0e0e0; --ctl-line:#374151; --ctl-hover:#374151;
+  --chip:#333; --chip-fg:#fff; --accent:#0891b2; --accent-line:#06b6d4; --primary:#0d6efd; --time:#60a5fa; --link:#60a5fa;
+  --head:#60a5fa; --overlay:rgba(0,0,0,0.72); --shadow:0 10px 30px rgba(0,0,0,.45);
 }
+body[data-theme="hmi"] {
+  --bg:#e9ecf1; --bar:#ffffff; --panel:#f7f8fa; --card:#ffffff; --box:#f1f4f8; --item:#ffffff; --item-hover:#eef2f7;
+  --line:#d5dae2; --line2:#c9d1dc; --fg:#111827; --fg2:#4b5563; --muted:#6b7280;
+  --ctl:#ffffff; --ctl-fg:#1f2937; --ctl-line:#c9d1dc; --ctl-hover:#eef2f7;
+  --chip:#e5e9ef; --chip-fg:#374151; --accent:#0e7490; --accent-line:#0e7490; --primary:#1d4ed8; --time:#1d4ed8; --link:#1d4ed8;
+  --head:#1d4ed8; --overlay:rgba(17,24,39,0.45); --shadow:0 10px 30px rgba(17,24,39,.18);
+}
+body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); color:var(--fg); overflow:hidden; height:100vh; display:flex; flex-direction:column; }
+
+/* ── 상단 — 두 줄로 묶는다. 예전엔 한 줄에 스물몇 개를 늘어놓고 줄바꿈에
+   맡겨서, 창이 좁으면 단추가 사이드바 손잡이에 가려 잘렸다.
+     1줄  데이터: FAB·레이아웃 | 조회 구간·테이블·조회 | ⚙ 설정
+     2줄  재생: 재생·속도 | 시각·슬라이더·상태 | 전체보기 | 표시 레이어 */
+#topbar {
+  display:flex; flex-direction:column; align-items:stretch; gap:6px; padding:8px 12px;
+  background:var(--bar); border-bottom:1px solid var(--line);
+  flex-shrink:0;
+}
+.tb-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-height:34px; }
+.tb-group { display:inline-flex; align-items:center; gap:6px; }
+.tb-group + .tb-group, .tb-group + #time-display { margin-left:6px; padding-left:12px; border-left:1px solid var(--line); }
+.tb-brand { font-size:14px; font-weight:800; letter-spacing:-.2px; color:var(--fg); margin-right:6px; white-space:nowrap; }
+.tb-brand small { font-weight:400; color:var(--muted); font-size:11px; margin-left:6px; }
+.tb-spacer { flex:1; }
+.tb-cap { font-size:11px; color:var(--muted); font-weight:700; margin-right:2px; white-space:nowrap; }
+.tb-tilde { color:var(--muted); }
 #topbar select, #topbar button, #topbar input {
-  font-size:14px; padding:6px 12px; border:1px solid #374151; border-radius:4px;
-  background:#1f2937; color:#e0e0e0; cursor:pointer;
+  font-size:13px; padding:6px 10px; border:1px solid var(--ctl-line); border-radius:6px;
+  background:var(--ctl); color:var(--ctl-fg); cursor:pointer;
   line-height:1.4;                    /* ★ 글자 위아래 짤림 방지 */
 }
-#topbar label { font-size:13px; }
-#topbar button:hover { background:#374151; }
-.speed-btn.selected { background:#f59e0b !important; color:#000 !important; }
-#time-display { font-size:20px; font-weight:bold; color:#60a5fa; min-width:90px; text-align:center; }
-#frame-display { font-size:12px; color:#6b7280; }
-#slider-container { flex:1; display:flex; align-items:center; min-width:300px; }
-#time-slider { flex:1; accent-color:#3b82f6; height:24px; cursor:pointer; }
-#time-slider::-webkit-slider-thumb { background:#3b82f6; }
-#time-slider::-moz-range-thumb     { background:#3b82f6; }
-.badge { padding:4px 10px; border-radius:12px; font-size:12px; font-weight:bold; }
+#topbar input[type=text] { cursor:text; font-family:Consolas,'D2Coding',monospace; font-size:13px; }
+#topbar .tb-query input { width:150px; }
+#topbar .tb-query #lp-table { width:220px; }
+#topbar label { font-size:12px; font-weight:700; color:var(--fg2); }
+#topbar button:hover { background:var(--ctl-hover); }
+#topbar .tb-primary { background:var(--primary) !important; border-color:var(--primary) !important; color:#fff !important; font-weight:700; }
+#topbar .tb-primary:hover { filter:brightness(1.08); }
+#topbar .tb-fit { font-weight:700; }
+#lp-status { font-size:12px; color:var(--fg2); }
+/* 붙어 있는 단추 묶음 — 속도·표시 레이어 */
+.tb-seg { display:inline-flex; align-items:center; }
+.tb-seg > button { border-radius:0 !important; margin-left:-1px; }
+.tb-seg > button:first-of-type { border-radius:6px 0 0 6px !important; margin-left:0; }
+.tb-seg > button:last-of-type { border-radius:0 6px 6px 0 !important; }
+.tb-seg > .tb-cap { margin-right:6px; }
+.speed-btn.selected { background:#f59e0b !important; color:#000 !important; border-color:#d97706 !important; }
+#time-display { font-size:18px; font-weight:800; color:var(--time); min-width:88px; text-align:center; font-family:Consolas,'D2Coding',monospace; }
+#frame-display { font-size:11px; color:var(--muted); font-family:Consolas,monospace; }
+#slider-container { flex:1; display:flex; align-items:center; min-width:220px; }
+#time-slider { flex:1; accent-color:var(--primary); height:24px; cursor:pointer; }
+#time-slider::-webkit-slider-thumb { background:var(--primary); }
+#time-slider::-moz-range-thumb     { background:var(--primary); }
+.badge { padding:4px 10px; border-radius:12px; font-size:12px; font-weight:bold; color:#fff; }
 .badge-stopped { background:#dc2626; }
 .badge-playing { background:#16a34a; }
 .badge-paused { background:#f59e0b; color:#000; }
-#loading-msg { color:#f59e0b; display:none; font-size:13px; }
-.toggle-btn { font-size:12px !important; padding:5px 10px !important; }
-.toggle-btn.on { background:#0891b2 !important; color:#fff !important; border-color:#06b6d4 !important; }
+#loading-msg { color:#d97706; display:none; font-size:13px; font-weight:700; }
+.toggle-btn { font-size:12px !important; padding:5px 9px !important; }
+.toggle-btn.on { background:var(--accent) !important; color:#fff !important; border-color:var(--accent-line) !important; }
 
 #main { display:flex; flex:1; min-height:0; }   /* ★ topbar가 wrap 되어도 자동 맞춤 */
 /* ===== 스크롤바 숨김 처리 (기능은 유지, 외관만 숨김) ===== */
@@ -50,17 +91,17 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 }
 
 /* ===== 왼쪽 사이드바 (오른쪽 사이드바와 동일 스타일) ===== */
-#sidebar { width:260px; background:#111827; border-right:1px solid #1f2937; overflow-y:auto; padding:6px; flex-shrink:0; transition:margin-left 0.3s; }
+#sidebar { width:260px; background:var(--panel); border-right:1px solid var(--line); overflow-y:auto; padding:6px; flex-shrink:0; transition:margin-left 0.3s; }
 #sidebar.collapsed { margin-left:-260px; }
-#sidebar-toggle { position:absolute; top:60px; left:0; z-index:100; width:22px; height:44px; background:#111827; border:1px solid #1f2937; border-left:none; border-radius:0 6px 6px 0; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#06b6d4; font-size:12px; transition:left 0.3s; }
+#sidebar-toggle { position:absolute; top:60px; left:0; z-index:100; width:22px; height:44px; background:var(--bar); border:1px solid var(--line); border-left:none; border-radius:0 6px 6px 0; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#06b6d4; font-size:12px; transition:left 0.3s; }
 #sidebar-toggle.open { left:260px; }
 
-.panel { background:#1a2234; border:1px solid #1f2937; border-radius:6px; padding:8px; margin-bottom:6px; }
-.panel h3 { font-size:11px; color:#9ca3af; letter-spacing:1px; margin-bottom:6px; border-bottom:1px solid #1f2937; padding-bottom:3px; }
+.panel { background:var(--item); border:1px solid var(--line); border-radius:6px; padding:8px; margin-bottom:6px; }
+.panel h3 { font-size:11px; color:var(--fg2); letter-spacing:1px; margin-bottom:6px; border-bottom:1px solid var(--line); padding-bottom:3px; }
 .sr { display:flex; justify-content:space-between; padding:1px 0; font-size:12px; }
-.sl { color:#9ca3af; }
+.sl { color:var(--muted); }
 .sv { font-weight:bold; }
-.sv.b { color:#60a5fa; } .sv.g { color:#10b981; } .sv.y { color:#f59e0b; } .sv.r { color:#ef4444; }
+.sv.b { color:var(--link); } .sv.g { color:#10b981; } .sv.y { color:#f59e0b; } .sv.r { color:#ef4444; }
 
 .risk { display:inline-block; padding:1px 6px; border-radius:3px; font-size:11px; font-weight:bold; }
 .risk-NORMAL { background:#065f46; color:#6ee7b7; }
@@ -69,7 +110,7 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 .risk-CRITICAL { background:#ef4444; color:#fff; animation:blink .5s infinite; }
 
 /* 3단계 데드락 경보 */
-.ew-box { margin-top:10px; padding:8px; border:1px solid #334155; border-radius:4px; background:#0f172a; cursor:pointer; transition:border-color .2s; }
+.ew-box { margin-top:10px; padding:8px; border:1px solid var(--line2); border-radius:4px; background:var(--box); cursor:pointer; transition:border-color .2s; }
 .ew-box:hover { border-color:#60a5fa; }
 .ew-badge { display:inline-block; padding:2px 10px; border-radius:4px; font-size:11px; font-weight:bold; }
 .ew-NORMAL { background:#065f46; color:#6ee7b7; }
@@ -85,8 +126,8 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 .ew-guide { font-size:11px; color:#fbbf24; margin-top:6px; font-weight:bold; display:none; line-height:1.4; }
 
 /* Early warning 모달 */
-.ew-modal-content { max-width:700px; width:90%; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:16px; max-height:85vh; overflow-y:auto; color:#cbd5e1; }
-.ew-modal-section { margin-bottom:14px; padding:8px; background:#1e293b; border-radius:4px; }
+.ew-modal-content { max-width:700px; width:90%; background:var(--card); border:1px solid var(--line2); border-radius:10px; padding:16px; max-height:85vh; overflow-y:auto; color:var(--fg2); box-shadow:var(--shadow); }
+.ew-modal-section { margin-bottom:14px; padding:8px; background:var(--box); border-radius:4px; }
 .ew-modal-section h4 { margin:0 0 6px 0; color:#fbbf24; font-size:13px; }
 .ew-tl-row { display:grid; grid-template-columns:55px 135px 1fr; gap:8px; padding:4px 6px; font-size:11px; border-bottom:1px solid #334155; }
 .ew-tl-row:last-child { border:none; }
@@ -100,7 +141,7 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 @keyframes alarmWarn { 0%,100%{background:#f59e0b;} 50%{background:#92400e;} }
 
 #content { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-#map-container { flex:1; position:relative; background:#0a0e17; overflow:hidden; min-height:200px; }
+#map-container { flex:1; position:relative; background:var(--bg); overflow:hidden; min-height:200px; }
 #map-canvas { width:100%; height:100%; }
 
 /* 상단 통계 배지 */
@@ -134,35 +175,35 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:#0a0e17; co
 canvas.chart { width:100%; flex:1; }
 
 /* 오른쪽 사이드바 */
-#rsidebar { width:260px; background:#111827; border-left:1px solid #1f2937; overflow-y:auto; flex-shrink:0; padding:6px; transition:margin-right 0.3s; }
+#rsidebar { width:260px; background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; flex-shrink:0; padding:6px; transition:margin-right 0.3s; }
 #rsidebar.collapsed { margin-right:-260px; }
-#rsidebar-toggle { position:absolute; top:60px; right:0; z-index:100; width:22px; height:44px; background:#111827; border:1px solid #1f2937; border-right:none; border-radius:6px 0 0 6px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#06b6d4; font-size:12px; transition:right 0.3s; }
+#rsidebar-toggle { position:absolute; top:60px; right:0; z-index:100; width:22px; height:44px; background:var(--bar); border:1px solid var(--line); border-right:none; border-radius:6px 0 0 6px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#06b6d4; font-size:12px; transition:right 0.3s; }
 #rsidebar-toggle.open { right:260px; }
 .rtabs { display:flex; gap:4px; margin-bottom:8px; }
-.rtab { flex:1; padding:7px 4px; font-size:12px; font-weight:bold; background:#1a1a2e; color:#888; border:1px solid #333; border-radius:6px; cursor:pointer; }
-.rtab:hover { background:#252550; }
-.rtab.active { background:#0891b2; color:#fff; border-color:#06b6d4; }
+.rtab { flex:1; padding:7px 4px; font-size:12px; font-weight:bold; background:var(--ctl); color:var(--fg2); border:1px solid var(--ctl-line); border-radius:6px; cursor:pointer; }
+.rtab:hover { background:var(--item-hover); }
+.rtab.active { background:var(--accent); color:#fff; border-color:var(--accent-line); }
 .rfilter { display:flex; gap:3px; flex-wrap:wrap; margin-bottom:6px; }
-.rfilter button { padding:3px 7px; font-size:10px; background:#333; color:#fff; border:none; border-radius:3px; cursor:pointer; }
-.rfilter button.active { background:#0891b2; color:#fff; }
-.rfilter button:hover { background:#444; }
-.rsearch { width:100%; padding:5px 8px; background:#1a1a3e; color:#fff; border:1px solid #444; border-radius:4px; font-size:11px; margin-bottom:6px; }
+.rfilter button { padding:3px 7px; font-size:10px; background:var(--chip); color:var(--chip-fg); border:none; border-radius:3px; cursor:pointer; }
+.rfilter button.active { background:var(--accent); color:#fff; }
+.rfilter button:hover { background:var(--ctl-hover); }
+.rsearch { width:100%; padding:5px 8px; background:var(--ctl); color:var(--ctl-fg); border:1px solid var(--ctl-line); border-radius:4px; font-size:11px; margin-bottom:6px; }
 .rlist { max-height:calc(100vh - 200px); overflow-y:auto; }
-.ritem { background:#1a1a2e; padding:6px 8px; border-radius:5px; margin-bottom:4px; border-left:3px solid #444; font-size:11px; cursor:pointer; }
-.ritem:hover { background:#252550; }
+.ritem { background:var(--item); padding:6px 8px; border-radius:5px; margin-bottom:4px; border-left:3px solid var(--line2); font-size:11px; cursor:pointer; border-top:1px solid var(--line); border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+.ritem:hover { background:var(--item-hover); }
 .ritem.running { border-left-color:#22c55e; }
 .ritem.loaded { border-left-color:#f59e0b; }
 .ritem.stopped { border-left-color:#6b7280; }
 .ritem.jam { border-left-color:#ef4444; }
 .ritem.obs { border-left-color:#f59e0b; }
 .ritem .rh { display:flex; justify-content:space-between; align-items:center; }
-.ritem .rid { font-weight:bold; color:#06b6d4; }
-.ritem .rst { font-size:9px; padding:1px 5px; border-radius:3px; background:#333; color:#fff; }
+.ritem .rid { font-weight:bold; color:var(--accent-line); }
+.ritem .rst { font-size:9px; padding:1px 5px; border-radius:3px; background:var(--chip); color:var(--chip-fg); }
 .ritem .rv { font-size:10px; margin-top:3px; font-weight:bold; }
-.ritem .rdetail { font-size:10px; margin-top:5px; padding:5px 6px; background:#0d1a2e; border-radius:3px; color:#cbd5e1; line-height:1.6; }
+.ritem .rdetail { font-size:10px; margin-top:5px; padding:5px 6px; background:var(--box); border-radius:3px; color:var(--fg2); line-height:1.6; }
 .ritem .rdetail div { margin-bottom:1px; }
 .jam-entry { padding:3px 4px; border-radius:3px; cursor:help; transition:background 0.15s; }
-.jam-entry:hover { background:#252550; }
+.jam-entry:hover { background:var(--item-hover); }
 .zone-bar { height:3px; background:#333; border-radius:2px; margin-top:4px; }
 .zone-bar-fill { height:100%; border-radius:2px; }
 .zone-normal .zone-bar-fill { background:#22c55e; }
@@ -170,62 +211,130 @@ canvas.chart { width:100%; flex:1; }
 .zone-full .zone-bar-fill { background:#ef4444; }
 
 .event-log { max-height:120px; overflow-y:auto; font-size:11px; }
-.ev-item { padding:2px 0; border-bottom:1px solid #1f2937; }
-.corr-item { font-size:11px; padding:2px 0; border-bottom:1px solid #1f2937; }
+.ev-item { padding:2px 0; border-bottom:1px solid var(--line); }
+.corr-item { font-size:11px; padding:2px 0; border-bottom:1px solid var(--line); }
+
+/* ── 설정창 (⚙) — 묶어서 보인다: 화면 / 차량 색·모양 / 어두운 맵 전용 ── */
+#map-settings-modal { background:var(--overlay); }
+.ms-card { background:var(--card); color:var(--fg); border:1px solid var(--line2); border-radius:12px; padding:14px 18px; width:540px; max-width:94%; max-height:90vh; overflow-y:auto; font-size:13px; box-shadow:var(--shadow); }
+.ms-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.ms-head h3 { margin:0; font-size:15px; color:var(--head); }
+.ms-x { background:none; border:1px solid var(--ctl-line); color:var(--fg2); padding:4px 10px; border-radius:6px; cursor:pointer; }
+.ms-sec { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:8px; background:var(--panel); }
+.ms-sec h4 { margin:0 0 8px; font-size:12px; color:var(--fg2); letter-spacing:.5px; }
+.ms-sec h4 small { font-weight:400; color:var(--muted); margin-left:6px; }
+.ms-row { display:grid; grid-template-columns:118px 1fr; gap:4px 10px; align-items:center; padding:2px 0; }
+.ms-row label { color:var(--fg2); font-size:12px; }
+.ms-row small { color:var(--muted); font-size:11px; margin-left:8px; }
+.ms-row input[type=number], .ms-row input[type=text], .ms-row select { background:var(--ctl); color:var(--ctl-fg); border:1px solid var(--ctl-line); border-radius:6px; padding:5px 8px; font-size:13px; }
+.ms-row input[type=number] { width:84px; }
+.ms-row input[type=color] { width:44px; height:28px; padding:0 2px; border:1px solid var(--ctl-line); border-radius:6px; background:var(--ctl); }
+.ms-veh { display:inline-flex; gap:8px; align-items:center; }
+.ms-sec.dim { opacity:.45; }
+.ms-foot { display:flex; justify-content:flex-end; gap:8px; margin-top:6px; border-top:1px solid var(--line); padding-top:12px; }
+.ms-foot button { background:var(--ctl); color:var(--ctl-fg); border:1px solid var(--ctl-line); padding:6px 14px; border-radius:6px; cursor:pointer; }
+.ms-foot button.ms-primary { background:var(--primary); color:#fff; border-color:var(--primary); font-weight:700; }
+.ms-note { margin-top:8px; color:var(--muted); font-size:11px; }
+
+/* ── 밝은 테마 — 옛 모달·툴팁에 박힌 인라인 어두운 색을 눌러 준다.
+   (마크업 236곳을 손대지 않는다. 화면이 밝을 때만 이 규칙이 산다.) ── */
+body[data-theme="hmi"] [id$="-modal"] > div[style*="background:#0a0e17"] { background:var(--card) !important; color:var(--fg) !important; box-shadow:var(--shadow); border-color:var(--line2) !important; }
+body[data-theme="hmi"] [id$="-modal"] [style*="background:#1a1a2e"],
+body[data-theme="hmi"] [style*="background:#0f172a"],
+body[data-theme="hmi"] [style*="background:#1a3a5e"] { background:var(--box) !important; }
+body[data-theme="hmi"] [id$="-modal"] input, body[data-theme="hmi"] [id$="-modal"] select,
+body[data-theme="hmi"] [style*="background:#222"] { background:var(--ctl) !important; color:var(--ctl-fg) !important; border-color:var(--ctl-line) !important; }
+body[data-theme="hmi"] [id$="-modal"] button[style*="background:#333"] { background:var(--ctl) !important; color:var(--ctl-fg) !important; border-color:var(--ctl-line) !important; }
+body[data-theme="hmi"] [id$="-modal"] button[style*="background:none"] { border-color:var(--ctl-line) !important; color:var(--fg2) !important; }
+body[data-theme="hmi"] [style*="color:#eee"], body[data-theme="hmi"] [style*="color:#ddd"],
+body[data-theme="hmi"] [style*="color:#cbd5e1"], body[data-theme="hmi"] [style*="color:#e0e0e0"] { color:var(--fg) !important; }
+body[data-theme="hmi"] [style*="font-size:18px"][style*="color:#fff"] { color:var(--fg) !important; }
+body[data-theme="hmi"] [style*="color:#888"], body[data-theme="hmi"] [style*="color:#666"] { color:var(--muted) !important; }
+body[data-theme="hmi"] [style*="color:#9ad"] { color:#1e40af !important; }
+body[data-theme="hmi"] h3[style*="color:#60a5fa"], body[data-theme="hmi"] [style*="color:#60a5fa"] { color:#1d4ed8 !important; }
+body[data-theme="hmi"] [style*="color:#06b6d4"] { color:#0e7490 !important; }
+body[data-theme="hmi"] [style*="color:#a78bfa"] { color:#6d28d9 !important; }
+body[data-theme="hmi"] [style*="color:#fbbf24"] { color:#b45309 !important; }
+body[data-theme="hmi"] [style*="color:#f59e0b"] { color:#c2410c !important; }
+body[data-theme="hmi"] [style*="color:#22c55e"] { color:#15803d !important; }
+body[data-theme="hmi"] [style*="color:#ffff00"] { color:#a16207 !important; }
+body[data-theme="hmi"] [style*="border-bottom:1px solid #333"], body[data-theme="hmi"] [style*="border-top:1px solid #333"] { border-color:var(--line) !important; }
+body[data-theme="hmi"] #oht-tooltip { background:rgba(255,255,255,0.97) !important; color:var(--fg) !important; border-color:var(--accent-line) !important; box-shadow:0 6px 18px rgba(17,24,39,.22) !important; }
+body[data-theme="hmi"] .stat-badge { background:rgba(255,255,255,0.9); border-color:var(--line); }
+body[data-theme="hmi"] .stat-badge .val { color:var(--fg); }
+body[data-theme="hmi"] .ew-modal-section h4 { color:#b45309; }
+body[data-theme="hmi"] .ew-rule.active .ew-val { color:#b45309; }
+body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { background:var(--panel); border-color:var(--line); }
+/* 사이드바 손잡이는 **맵 줄** 기준으로 잡는다. 화면 꼭대기 기준(top:60px)이면
+   상단이 두 줄이 될 때 툴바 위에 얹혀 단추를 가린다 — 찍어 보고 알았다. */
+#content > div:first-child { position:relative; }
+#rsidebar-toggle, #sidebar-toggle { top:10px; }
 </style>
 </head>
 <body>
 
 <div id="topbar">
-  <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
-  <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
-  <span style="margin-left:8px;border-left:1px solid #444;padding-left:10px;display:inline-flex;align-items:center;gap:8px;">
-    <label style="color:#9ad;font-size:13px;font-weight:bold;">시작</label>
-    <input type="text" id="lp-from" placeholder="yyyyMMddHHmmss" title="시작 시각 (14자리, 예: 20260621000000)" maxlength="14" style="background:#222;color:#eee;border:1px solid #444;border-radius:4px;padding:6px 10px;width:190px;font-family:monospace;font-size:14px;line-height:1.4;">
-    <span style="color:#666;">~</span>
-    <label style="color:#9ad;font-size:13px;font-weight:bold;">끝</label>
-    <input type="text" id="lp-to"   placeholder="yyyyMMddHHmmss" title="끝 시각 (14자리, 예: 20260621010000)"   maxlength="14" style="background:#222;color:#eee;border:1px solid #444;border-radius:4px;padding:6px 10px;width:190px;font-family:monospace;font-size:14px;line-height:1.4;">
-    <label style="color:#9ad;font-size:13px;font-weight:bold;margin-left:6px;">테이블</label>
-    <input type="text" id="lp-table" placeholder="(FAB 선택 시 자동)" title="로그프레소 테이블명 — FAB 변경 시 자동 갱신, 직접 수정 가능" style="background:#222;color:#eee;border:1px solid #444;border-radius:4px;padding:6px 10px;width:260px;font-family:monospace;font-size:14px;line-height:1.4;">
-    <button onclick="logpressoLoad()" id="lp-btn" title="로그프레소 조회 후 리플레이 로드" style="padding:6px 14px;font-size:13px;font-weight:bold;background:#0d6efd;border-color:#0d6efd;">📡 조회 로드</button>
-    <span id="lp-status" style="color:#9ad;font-size:12px;"></span>
-  </span>
-  <button onclick="sendCmd('play')">&#9654; 재생</button>
-  <button onclick="sendCmd('pause')">&#9208; 일시정지</button>
-  <button onclick="sendCmd('stop')">&#9632; 정지</button>
-  <span>|</span>
-  <button class="speed-btn" onclick="setSpeed(1)">x1</button>
-  <button class="speed-btn" onclick="setSpeed(2)">x2</button>
-  <button class="speed-btn" onclick="setSpeed(5)">x5</button>
-  <button class="speed-btn" onclick="setSpeed(10)">x10</button>
-  <button class="speed-btn" onclick="setSpeed(0)">MAX</button>
-  <span>|</span>
-  <button onclick="openMapSettings()" title="맵 표시 설정">⚙ 설정</button>
-  <span>|</span>
-  <span id="time-display">--:--:--</span>
-  <span id="frame-display"></span>
-  <div id="slider-container">
-    <input type="range" id="time-slider" min="0" max="100" value="0"
-           oninput="onSliderInput(this.value)"
-           onchange="onSliderChange(this.value)"
-           onmousedown="userSliderDragging=true"
-           onmouseup="userSliderDragging=false"
-           ontouchstart="userSliderDragging=true"
-           ontouchend="userSliderDragging=false">
+  <div class="tb-row">
+    <span class="tb-brand">OHT 월드모델<small>재생 · 예측</small></span>
+    <div class="tb-group">
+      <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
+      <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
+    </div>
+    <div class="tb-group tb-query">
+      <label>시작</label>
+      <input type="text" id="lp-from" placeholder="yyyyMMddHHmmss" title="시작 시각 (14자리, 예: 20260621000000)" maxlength="14">
+      <span class="tb-tilde">~</span>
+      <label>끝</label>
+      <input type="text" id="lp-to" placeholder="yyyyMMddHHmmss" title="끝 시각 (14자리, 예: 20260621010000)" maxlength="14">
+      <label>테이블</label>
+      <input type="text" id="lp-table" placeholder="(FAB 선택 시 자동)" title="로그프레소 테이블명 — FAB 변경 시 자동 갱신, 직접 수정 가능">
+      <button onclick="logpressoLoad()" id="lp-btn" class="tb-primary" title="로그프레소 조회 후 리플레이 로드">📡 조회 로드</button>
+      <span id="lp-status"></span>
+    </div>
+    <span class="tb-spacer"></span>
+    <button onclick="openMapSettings()" title="맵·화면 표시 설정">⚙ 설정</button>
   </div>
-  <span id="status-badge" class="badge badge-stopped">정지</span>
-  <span id="loading-msg">로딩중...</span>
-  <span>|</span>
-  <button onclick="resetMapView()" style="background:#065f46 !important;">전체보기</button>
-  <button id="btn-zone" class="toggle-btn on" onclick="toggleLayer('zone')">Zone 표시</button>
-  <button id="btn-railcut" class="toggle-btn on" onclick="toggleLayer('railcut')">차단 표시</button>
-  <button id="btn-id" class="toggle-btn" onclick="toggleLayer('id')">ID 표시</button>
-  <button id="btn-name" class="toggle-btn on" onclick="toggleLayer('name')" title="노드 번호 — 확대하면 보인다">주소 표시</button>
-  <button id="btn-station" class="toggle-btn on" onclick="toggleLayer('station')" title="레일 옆 포트(스테이션) 네모">포트 표시</button>
-  <button id="btn-label" class="toggle-btn on" onclick="toggleLayer('label')" title="ZC · HID · 베이 · 열 · MTL 라벨">라벨 표시</button>
-  <button id="btn-junction" class="toggle-btn on" onclick="toggleLayer('junction')" title="합류(✕)·분기(○) 노드">합류 표시</button>
-  <button id="btn-sensor" class="toggle-btn" onclick="toggleLayer('sensor')" title="ZCU 센서 위치">센서 표시</button>
-  <button id="btn-hotspot" class="toggle-btn on" onclick="toggleLayer('hotspot')" title="데드락 체인/클러스터 마커 ON/OFF">체인 표시</button>
+  <div class="tb-row">
+    <div class="tb-group">
+      <button onclick="sendCmd('play')">&#9654; 재생</button>
+      <button onclick="sendCmd('pause')">&#9208; 일시정지</button>
+      <button onclick="sendCmd('stop')">&#9632; 정지</button>
+    </div>
+    <div class="tb-group tb-seg" title="재생 속도">
+      <span class="tb-cap">속도</span>
+      <button class="speed-btn" onclick="setSpeed(1)">x1</button>
+      <button class="speed-btn" onclick="setSpeed(2)">x2</button>
+      <button class="speed-btn" onclick="setSpeed(5)">x5</button>
+      <button class="speed-btn" onclick="setSpeed(10)">x10</button>
+      <button class="speed-btn" onclick="setSpeed(0)">MAX</button>
+    </div>
+    <span id="time-display">--:--:--</span>
+    <span id="frame-display"></span>
+    <div id="slider-container">
+      <input type="range" id="time-slider" min="0" max="100" value="0"
+             oninput="onSliderInput(this.value)"
+             onchange="onSliderChange(this.value)"
+             onmousedown="userSliderDragging=true"
+             onmouseup="userSliderDragging=false"
+             ontouchstart="userSliderDragging=true"
+             ontouchend="userSliderDragging=false">
+    </div>
+    <span id="status-badge" class="badge badge-stopped">정지</span>
+    <span id="loading-msg">로딩중...</span>
+    <button onclick="resetMapView()" class="tb-fit" title="맵을 전체가 보이게 되돌린다">⤢ 전체보기</button>
+    <div class="tb-group tb-seg" title="맵에 무엇을 보일지">
+      <span class="tb-cap">표시</span>
+      <button id="btn-zone" class="toggle-btn on" onclick="toggleLayer('zone')" title="HID Zone 진입/진출 레인">Zone</button>
+      <button id="btn-railcut" class="toggle-btn on" onclick="toggleLayer('railcut')" title="레일 차단 이벤트">차단</button>
+      <button id="btn-id" class="toggle-btn" onclick="toggleLayer('id')" title="차량 ID">ID</button>
+      <button id="btn-name" class="toggle-btn on" onclick="toggleLayer('name')" title="노드 번호 — 확대하면 보인다">주소</button>
+      <button id="btn-station" class="toggle-btn on" onclick="toggleLayer('station')" title="레일 옆 포트(스테이션) 네모">포트</button>
+      <button id="btn-label" class="toggle-btn on" onclick="toggleLayer('label')" title="ZC · HID · 베이 · 열 · MTL 라벨">라벨</button>
+      <button id="btn-junction" class="toggle-btn on" onclick="toggleLayer('junction')" title="합류(✕)·분기(○) 노드">합류</button>
+      <button id="btn-sensor" class="toggle-btn" onclick="toggleLayer('sensor')" title="ZCU 센서 위치">센서</button>
+      <button id="btn-hotspot" class="toggle-btn on" onclick="toggleLayer('hotspot')" title="데드락 체인/클러스터 마커 ON/OFF">체인</button>
+    </div>
+  </div>
 </div>
 
 <!-- 데드락 알람 배너 -->
@@ -461,12 +570,24 @@ function saveMapSettings() {
   try { localStorage.setItem(MAP_SETTINGS_KEY, JSON.stringify(mapSettings)); }
   catch(e) { console.warn('mapSettings 저장 실패:', e); }
 }
+// 맵 테마 = 화면 테마. body[data-theme] 하나로 상단·패널·설정창·툴팁이 같이 바뀐다.
+function applyPageTheme() {
+  document.body.dataset.theme = (mapSettings.mapTheme === 'dark') ? 'dark' : 'hmi';
+}
+// 설정창에서 테마를 고르면 '어두운 화면 전용' 묶음을 흐리게 — 안 쓰는 설정을
+// 만지게 두면 "바꿨는데 왜 안 바뀌나" 가 된다.
+function syncMsTheme() {
+  const sel = document.getElementById('ms-mapTheme');
+  const box = document.getElementById('ms-dark-only');
+  if (sel && box) box.classList.toggle('dim', sel.value !== 'dark');
+}
 function openMapSettings() {
   // 현재 값으로 입력 채우기
   for (const k of Object.keys(DEFAULT_MAP_SETTINGS)) {
     const el = document.getElementById('ms-' + k);
     if (el) el.value = mapSettings[k];
   }
+  syncMsTheme();
   document.getElementById('map-settings-modal').style.display = 'flex';
 }
 function closeMapSettings() {
@@ -484,6 +605,7 @@ function applyMapSettings() {
     }
   }
   saveMapSettings();
+  applyPageTheme();
   railCacheCanvas = null;   // 캐시 무효화하여 새 색상/굵기로 재렌더
   drawMap();
   closeMapSettings();
@@ -492,11 +614,13 @@ function resetMapSettings() {
   if (!confirm('맵 표시 설정을 기본값으로 되돌릴까요?')) return;
   mapSettings = { ...DEFAULT_MAP_SETTINGS };
   saveMapSettings();
+  applyPageTheme();
   railCacheCanvas = null;
   drawMap();
   closeMapSettings();
 }
 loadMapSettings();
+applyPageTheme();
 
 // ============================================================
 // 시간 슬라이더 마우스 드래그 제어
@@ -2793,113 +2917,106 @@ async function bootFabs() {
 bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:', e));
 </script>
 <!-- 맵 표시 설정 모달 -->
-<div id="map-settings-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='map-settings-modal')closeMapSettings()">
-  <div style="background:#0a0e17;border:1px solid #3b82f6;border-radius:8px;padding:18px;width:480px;max-width:92%;max-height:90vh;overflow-y:auto;color:#eee;font-size:13px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h3 style="margin:0;color:#60a5fa;">⚙ 맵 표시 설정</h3>
-      <button onclick="closeMapSettings()" style="background:none;border:1px solid #444;color:#888;padding:4px 10px;border-radius:4px;cursor:pointer;">✕</button>
+<div id="map-settings-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='map-settings-modal')closeMapSettings()">
+  <div class="ms-card">
+    <div class="ms-head">
+      <h3>⚙ 맵 · 화면 표시 설정</h3>
+      <button onclick="closeMapSettings()" class="ms-x">✕</button>
     </div>
 
-    <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;">
-      <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1f2937;">
-      <label style="display:inline-block;width:120px;">맵 테마</label>
-      <select id="ms-mapTheme" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
-        <option value="hmi">현장 HMI (밝은 바탕)</option>
-        <option value="dark">어두운 맵 (예전)</option>
-      </select>
-      <span style="color:#6b7280;font-size:11px;margin-left:8px;">아래 색 설정은 어두운 맵에서만 쓴다</span>
+    <section class="ms-sec">
+      <h4>화면</h4>
+      <div class="ms-row"><label>테마</label>
+        <span>
+          <select id="ms-mapTheme" onchange="syncMsTheme()">
+            <option value="hmi">현장 HMI (밝은 바탕)</option>
+            <option value="dark">어두운 화면 (예전)</option>
+          </select>
+          <small>화면 전체가 같이 바뀝니다</small>
+        </span>
+      </div>
+      <div class="ms-row"><label>포트 네모 크기</label>
+        <span><input type="number" id="ms-stationSize" step="0.1" min="0.3" max="3"><small>배수 (1 = 기본)</small></span>
+      </div>
+      <div class="ms-row"><label>차량 크기</label>
+        <span><input type="number" id="ms-vehicleRadius" step="0.5" min="1" max="10" title="전체 화면에서 4px 쯤, 확대해도 10px 를 넘지 않게 천천히 커진다"><small>배수 (3 = 기본)</small></span>
+      </div>
+    </section>
+
+    <section class="ms-sec">
+      <h4>차량 색 · 모양 <small>▲ 세모는 진행 방향(현재 → 다음 노드)을 가리킵니다</small></h4>
+      <div class="ms-row"><label>공차운행</label>
+        <span class="ms-veh">
+          <input type="color" id="ms-colorEmpty">
+          <select id="ms-shapeEmpty">
+            <option value="triangle">▲ 세모 (진행 방향)</option>
+            <option value="circle">● 원</option>
+            <option value="square">■ 사각형</option>
+            <option value="diamond">◆ 마름모</option>
+          </select>
+        </span>
+      </div>
+      <div class="ms-row"><label>적재</label>
+        <span class="ms-veh">
+          <input type="color" id="ms-colorLoaded">
+          <select id="ms-shapeLoaded">
+            <option value="triangle">▲ 세모 (진행 방향)</option>
+            <option value="circle">● 원</option>
+            <option value="square">■ 사각형</option>
+            <option value="diamond">◆ 마름모</option>
+          </select>
+        </span>
+      </div>
+      <div class="ms-row"><label>OBS</label>
+        <span class="ms-veh">
+          <input type="color" id="ms-colorObs">
+          <select id="ms-shapeObs">
+            <option value="triangle">▲ 세모 (진행 방향)</option>
+            <option value="circle">● 원</option>
+            <option value="square">■ 사각형</option>
+            <option value="diamond">◆ 마름모</option>
+          </select>
+        </span>
+      </div>
+      <div class="ms-row"><label>정지</label>
+        <span class="ms-veh">
+          <input type="color" id="ms-colorStop">
+          <select id="ms-shapeStop">
+            <option value="triangle">▲ 세모 (진행 방향)</option>
+            <option value="circle">● 원</option>
+            <option value="square">■ 사각형</option>
+            <option value="diamond">◆ 마름모</option>
+          </select>
+        </span>
+      </div>
+      <div class="ms-row"><label>JAM</label>
+        <span class="ms-veh">
+          <input type="color" id="ms-colorJam">
+          <select id="ms-shapeJam">
+            <option value="triangle">▲ 세모 (진행 방향)</option>
+            <option value="circle">● 원</option>
+            <option value="square">■ 사각형</option>
+            <option value="diamond">◆ 마름모</option>
+          </select>
+        </span>
+      </div>
+    </section>
+
+    <section class="ms-sec" id="ms-dark-only">
+      <h4>어두운 화면 전용 <small>현장 HMI 테마에서는 쓰지 않습니다</small></h4>
+      <div class="ms-row"><label>맵 배경색</label><span><input type="color" id="ms-bgColor"></span></div>
+      <div class="ms-row"><label>레일 색상</label><span><input type="text" id="ms-edgeColor" placeholder="rgba(255,255,255,0.75)" style="font-family:monospace;width:200px;"></span></div>
+      <div class="ms-row"><label>레일 굵기</label><span><input type="number" id="ms-edgeWidth" step="0.1" min="0.1" max="10"><small>배수</small></span></div>
+      <div class="ms-row"><label>노드 색상</label><span><input type="color" id="ms-nodeColor"></span></div>
+      <div class="ms-row"><label>노드 크기</label><span><input type="number" id="ms-nodeSize" step="0.5" min="0.5" max="20"><small>px</small></span></div>
+    </section>
+
+    <div class="ms-foot">
+      <button onclick="resetMapSettings()">기본값 복원</button>
+      <button onclick="closeMapSettings()">취소</button>
+      <button onclick="applyMapSettings()" class="ms-primary">저장 + 적용</button>
     </div>
-    <div style="margin-bottom:10px;">
-      <label style="display:inline-block;width:120px;">포트 네모 크기</label>
-      <input type="number" id="ms-stationSize" step="0.1" min="0.3" max="3" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
-      <span style="color:#6b7280;font-size:11px;margin-left:8px;">배수 (1 = 기본)</span>
-    </div>
-    <div style="grid-column:1/-1;color:#9ad;margin-top:4px;border-bottom:1px solid #333;padding-bottom:4px;">맵 배경 / 레일</div>
-
-      <label>맵 배경색</label>
-      <input type="color" id="ms-bgColor" style="width:60px;height:28px;background:#222;border:1px solid #444;">
-
-      <label>레일 색상</label>
-      <input type="text" id="ms-edgeColor" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;font-family:monospace;" placeholder="rgba(255,255,255,0.75)">
-
-      <label>레일 굵기 (배수)</label>
-      <input type="number" id="ms-edgeWidth" step="0.1" min="0.1" max="10" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
-
-      <div style="grid-column:1/-1;color:#9ad;margin-top:8px;border-bottom:1px solid #333;padding-bottom:4px;">노드 (정적 점)</div>
-
-      <label>노드 색상</label>
-      <input type="color" id="ms-nodeColor" style="width:60px;height:28px;background:#222;border:1px solid #444;">
-
-      <label>노드 크기 (px)</label>
-      <input type="number" id="ms-nodeSize" step="0.5" min="0.5" max="20" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
-
-      <div style="grid-column:1/-1;color:#9ad;margin-top:8px;border-bottom:1px solid #333;padding-bottom:4px;">차량 (움직이는 점)</div>
-
-      <label>차량 반경 (배수)</label>
-      <input type="number" id="ms-vehicleRadius" step="0.1" min="0.1" max="10" title="실제 px = (배수) × (현재 줌). 최종 0.5~30px 로 클램프됨." style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
-
-      <label>공차운행</label>
-      <span style="display:inline-flex;gap:8px;align-items:center;">
-        <input type="color" id="ms-colorEmpty" style="width:50px;height:28px;background:#222;border:1px solid #444;">
-        <select id="ms-shapeEmpty" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
-          <option value="circle">● 원</option>
-          <option value="triangle">▲ 세모</option>
-          <option value="square">■ 사각형</option>
-          <option value="diamond">◆ 마름모</option>
-        </select>
-      </span>
-
-      <label>적재</label>
-      <span style="display:inline-flex;gap:8px;align-items:center;">
-        <input type="color" id="ms-colorLoaded" style="width:50px;height:28px;background:#222;border:1px solid #444;">
-        <select id="ms-shapeLoaded" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
-          <option value="circle">● 원</option>
-          <option value="triangle">▲ 세모</option>
-          <option value="square">■ 사각형</option>
-          <option value="diamond">◆ 마름모</option>
-        </select>
-      </span>
-
-      <label>OBS</label>
-      <span style="display:inline-flex;gap:8px;align-items:center;">
-        <input type="color" id="ms-colorObs" style="width:50px;height:28px;background:#222;border:1px solid #444;">
-        <select id="ms-shapeObs" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
-          <option value="circle">● 원</option>
-          <option value="triangle">▲ 세모</option>
-          <option value="square">■ 사각형</option>
-          <option value="diamond">◆ 마름모</option>
-        </select>
-      </span>
-
-      <label>정지</label>
-      <span style="display:inline-flex;gap:8px;align-items:center;">
-        <input type="color" id="ms-colorStop" style="width:50px;height:28px;background:#222;border:1px solid #444;">
-        <select id="ms-shapeStop" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
-          <option value="circle">● 원</option>
-          <option value="triangle">▲ 세모</option>
-          <option value="square">■ 사각형</option>
-          <option value="diamond">◆ 마름모</option>
-        </select>
-      </span>
-
-      <label>JAM</label>
-      <span style="display:inline-flex;gap:8px;align-items:center;">
-        <input type="color" id="ms-colorJam" style="width:50px;height:28px;background:#222;border:1px solid #444;">
-        <select id="ms-shapeJam" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
-          <option value="circle">● 원</option>
-          <option value="triangle">▲ 세모</option>
-          <option value="square">■ 사각형</option>
-          <option value="diamond">◆ 마름모</option>
-        </select>
-      </span>
-    </div>
-
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;border-top:1px solid #333;padding-top:12px;">
-      <button onclick="resetMapSettings()" style="background:#333;color:#ddd;border:1px solid #555;padding:6px 14px;border-radius:4px;cursor:pointer;">기본값 복원</button>
-      <button onclick="closeMapSettings()" style="background:#333;color:#ddd;border:1px solid #555;padding:6px 14px;border-radius:4px;cursor:pointer;">취소</button>
-      <button onclick="applyMapSettings()" style="background:#3b82f6;color:#fff;border:1px solid #3b82f6;padding:6px 14px;border-radius:4px;cursor:pointer;font-weight:bold;">저장 + 적용</button>
-    </div>
-    <div style="margin-top:8px;color:#666;font-size:11px;">설정은 브라우저(localStorage)에 저장됩니다.</div>
+    <div class="ms-note">설정은 이 브라우저(localStorage)에 저장됩니다.</div>
   </div>
 </div>
 
