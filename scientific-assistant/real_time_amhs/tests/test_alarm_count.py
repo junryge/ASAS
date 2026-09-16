@@ -206,6 +206,75 @@ class 정책(unittest.TestCase):
                          "키 순서가 달라졌다고 캐시가 깨지면 매 폴링이 재계산이다")
 
 
+class 시스템별(unittest.TestCase):
+    """ALL·FAB 다섯이 각각 자기 설정을 갖는다 (등급 컷 by_sys 와 같은 모양)."""
+
+    CFG = {"grade": {
+        "alarm": {"window_min": 10, "warn": 3, "danger": 1, "critical": 1},
+        "alarm_by_sys": {"M14": {"warn": 5, "enabled": False},
+                         "M16B": {"window_min": 30}}}}
+
+    def test_칸이_없는_시스템은_공통값(self):
+        p = alarm_count.policy(self.CFG, "M16A")
+        self.assertEqual((p["window_min"], p["warn"]), (10, 3))
+        self.assertTrue(p["enabled"])
+
+    def test_칸이_있으면_그게_이긴다(self):
+        p = alarm_count.policy(self.CFG, "M14")
+        self.assertEqual(p["warn"], 5)
+        self.assertFalse(p["enabled"], "적용/미적용도 시스템마다 따로다")
+        self.assertEqual(p["danger"], 1, "안 준 값은 공통값 그대로")
+
+    def test_한_시스템만_꺼도_다른_시스템은_돈다(self):
+        """고객 요구: '각각 적용,미적용이 있어야 하고'."""
+        off = alarm_count.scan(seq((0, "위험"),), self.CFG, "M14")
+        on = alarm_count.scan(seq((0, "위험"),), self.CFG, "M16A")
+        self.assertEqual(off[-1]["label"], "")
+        self.assertEqual(on[-1]["label"], "위험중")
+
+    def test_시스템마다_창이_다르다(self):
+        s_ = seq((0, "위험"), (20, "정상"))
+        self.assertEqual(alarm_count.scan(s_, self.CFG, "M16B")[-1]["danger"], 1,
+                         "M16B 는 30분 창")
+        self.assertEqual(alarm_count.scan(s_, self.CFG, "M16A")[-1]["danger"], 0,
+                         "M16A 는 10분 창")
+
+    def test_sys_cfg_뷰가_주면_알아서_고른다(self):
+        """★server.py 가 시스템을 따로 안 들고 다녀도 되게 — 함수 서명이 안 바뀐다."""
+        view = dict(self.CFG, _sys="M14")     # lp_client.sys_cfg 가 만드는 모양
+        self.assertEqual(alarm_count.policy(view)["warn"], 5)
+        self.assertEqual(alarm_count.sys_of(view), "M14")
+
+    def test_ALL_은__sys_가_없다(self):
+        # sys_cfg(cfg, "ALL") 은 cfg 를 그대로 돌려준다 — _sys 가 안 붙는다
+        self.assertEqual(alarm_count.sys_of(self.CFG), "ALL")
+        self.assertEqual(alarm_count.policy(self.CFG)["warn"], 3)
+
+    def test_지문에_시스템_이름이_들어간다(self):
+        # 값이 같아도 화면이 다르면 캐시가 섞이면 안 된다
+        cfg = {"grade": {"alarm": {"warn": 3}}}
+        self.assertNotEqual(alarm_count.sig(cfg, "M14"), alarm_count.sig(cfg, "M16A"))
+        self.assertTrue(alarm_count.sig(cfg, "M14").startswith("M14:"))
+
+    def test_개별_설정인지_알려준다(self):
+        self.assertTrue(alarm_count.is_custom(self.CFG, "M14"))
+        self.assertFalse(alarm_count.is_custom(self.CFG, "M16A"))
+
+    def test_표는_화면이_그대로_그릴_모양(self):
+        rows = alarm_count.table(self.CFG, ["ALL", "M14", "M16B"])
+        self.assertEqual([r["sys"] for r in rows], ["ALL", "M14", "M16B"])
+        self.assertEqual([r["custom"] for r in rows], [False, True, True])
+        for r in rows:
+            for k in ("enabled", "window_min", *alarm_count.KEYS):
+                self.assertIn(k, r, k + " 가 표에서 빠졌다")
+
+    def test_이상한_시스템_칸은_무시(self):
+        cfg = {"grade": {"alarm_by_sys": {"M14": "이상한값",
+                                          "_doc": "설명글은 시스템이 아니다"}}}
+        self.assertEqual(alarm_count.policy(cfg, "M14")["warn"], 3, "기본으로 떨어진다")
+        self.assertFalse(alarm_count.is_custom(cfg, "M14"))
+
+
 class 근거글(unittest.TestCase):
     def test_등급마다_다른_문장(self):
         pol = alarm_count.policy({})
@@ -271,16 +340,30 @@ class 서버배선(unittest.TestCase):
         for need in ('_x["alm"] = {"lv"', '"why": alarm_count.why('):
             self.assertIn(need, self.src, need + " 가 없다")
 
-    def test_정책_저장이_grade_alarm_을_쓴다(self):
-        self.assertIn('g["alarm"] = alm', self.src, "config.json 에 안 적힌다")
+    def test_정책_저장이_두_블록을_다_쓴다(self):
+        # 공통값(alarm)과 시스템별(alarm_by_sys) 둘 다 config.json 에 남아야 한다
+        self.assertIn('for _k in ("alarm", "alarm_by_sys"):', self.src,
+                      "한쪽만 적으면 재시작 때 되돌아간다")
 
     def test_정책_객체를_갈아끼우지_않는다(self):
         # ★sys_cfg 뷰들이 grade 블록을 공유한다 — 통째로 바꾸면 끊긴다
-        self.assertIn('g.setdefault("alarm", {}).update(new)', self.src)
+        self.assertIn('by_a = g.setdefault("alarm_by_sys", {})', self.src)
+        self.assertIn('by_a.setdefault(s_, {}).update(v)', self.src)
 
-    def test_정책_조회가_설정과_기본값을_준다(self):
-        self.assertIn('"alarm": alarm_count.policy(CFG)', self.src)
+    def test_모르는_시스템은_막는다(self):
+        m = re.search(r'if "alarm_by_sys" in b:[\s\S]*?g\.pop\("alarm_by_sys", None\)',
+                      self.src)
+        self.assertIsNotNone(m, "알람 저장 자리를 못 찾았다")
+        self.assertIn("known = set(systems())", m.group(0))
+        self.assertIn("if row is None:", m.group(0), "null 로 기본 되돌리기가 돼야 한다")
+
+    def test_정책_조회가_시스템_여섯과_기본값을_준다(self):
+        self.assertIn('"alarm_systems": alarm_count.table(CFG, systems())', self.src)
         self.assertIn('"alarm_default": dict(alarm_count.DEFAULTS)', self.src)
+
+    def test_status_feed_는_지금_시스템_설정을_준다(self):
+        # C["cfg"] 는 sys_cfg 뷰라 _sys 가 박혀 있다 — policy 가 알아서 고른다
+        self.assertIn('alarm_count.policy(C["cfg"])', self.src)
 
     def test_들어온_값을_범위로_막는다(self):
         self.assertIn("alarm_count.LIMITS[k]", self.src,
@@ -309,18 +392,35 @@ class 화면배선(unittest.TestCase):
         self.assertEqual(self.src.count("if(fd.alarm) ALARM = fd.alarm;"), 2,
                          "실시간·과거 **두 곳** 다 받아야 한다")
 
-    def test_배지가_점수_칸에_붙는다(self):
+    def test_배지는_점수_칸이_아니라_자기_칸(self):
+        # 점수 칸(108px) 안에 넣었더니 등급 알약 밑으로 접혀 점수의 부속처럼
+        # 보였다 — 고객 지적. 칸을 따로 뺐다.
         m = re.search(r"<td><div class=\"ttl\">\$\{Math\.round\(r\.score\)\}[\s\S]*?</td>",
                       self.src)
         self.assertIsNotNone(m, "종합점수 칸을 못 찾았다")
-        self.assertIn("almChip(r)", m.group(0), "고객 요청은 '종합점수 옆' 이다")
+        self.assertNotIn("almChip(r)", m.group(0), "아직 점수 칸 안에 있다")
+        self.assertIn("${almCell(r)}${hiCell(r)}", self.src,
+                      "알람 칸은 종합점수 **바로 옆**(HI_FAB 앞)이다")
 
-    def test_칸을_새로_만들지_않았다(self):
-        # ★colspan 이 세 군데 박혀 있고 내려받기 컬럼도 거기 맞춰져 있다
-        self.assertEqual(self.src.count('colspan="7"'),
-                         len(re.findall(r'colspan="7"', self.src)))
-        self.assertIn("const ncol = 7 + (FABS.length ? FABS.length + 1 : 0);", self.src,
-                      "표 칸 수가 바뀌었다 — 머리글·빈 표·내려받기가 어긋난다")
+    def test_칸_수가_여덟로_늘었다(self):
+        # ★머리글·빈 표·'더 보기' 줄이 다 같이 움직여야 한다
+        self.assertIn("const ncol = 8 + (FABS.length ? FABS.length + 1 : 0);", self.src)
+        self.assertEqual(self.src.count('<th class="acol"'), 2,
+                         "실시간·과거 두 표 다 머리글이 있어야 한다")
+        for t in ('<tbody id="cases"><tr><td colspan="8"',
+                  '<tbody id="pcases"><tr><td colspan="8"'):
+            self.assertIn(t, self.src, t)
+        self.assertEqual(
+            self.src.count("""$('#pcases').innerHTML = '<tr><td colspan="8" class="empty">"""), 5,
+            "과거 탭의 안내 줄 다섯 개가 다 여덟 칸이어야 한다")
+
+    def test_FAB_칸은_알람_뒤에_끼운다(self):
+        # 스코어 뒤에 끼우면 HI_FAB 이 종합점수와 알람 사이로 파고든다
+        self.assertIn("let at = tr.querySelector('th.acol') || sc;", self.src)
+
+    def test_표_최소폭도_같이_올렸다(self):
+        # 칸이 하나 늘었는데 min-width 가 그대로면 마지막 칸이 0으로 눌린다
+        self.assertIn("min-width:1300px", self.src)
 
     def test_내려받기에도_들어간다(self):
         m = re.search(r"function viewCsv\(list\)\{[\s\S]*?\n\}", self.src)
@@ -335,31 +435,44 @@ class 화면배선(unittest.TestCase):
                          "머리글과 행의 FAB 자리가 어긋났다")
 
     def test_정책_탭에_카드가_있다(self):
-        for need in ('id="almrow"', 'id="alm-save"', 'id="alm-on"',
-                     'id="alm-reset"', 'id="alm-now"', 'id="almnote"'):
+        for need in ('id="almrow"', 'id="alm-save"', 'id="alm-now"', 'id="almnote"'):
             self.assertTrue(need in self.src, need + " 가 없다")
 
-    def test_네_칸을_다_그린다(self):
-        # 입력 칸은 almFill 이 만든다 — 분·경계·위험·초위험 네 개
+    def test_줄마다_네_칸과_적용_스위치(self):
+        m = re.search(r"function almRow\(a\)\{[\s\S]*?\n\}", self.src)
+        self.assertTrue(m, "almRow 를 못 찾았다")
+        blk = m.group(0)
+        for need in ("almNum(`almw-${a.sys}`, a.window_min, 180)",
+                     "almNum(`alm1-${a.sys}`, a.warn)",
+                     "almNum(`alm2-${a.sys}`, a.danger)",
+                     "almNum(`alm3-${a.sys}`, a.critical)",
+                     'id="almon-${a.sys}"', 'data-almreset="${a.sys}"'):
+            self.assertTrue(need in blk, need + " 가 없다")
+
+    def test_지금_보는_시스템_설정이_표_배지로_간다(self):
         m = re.search(r"function almFill\(d\)\{[\s\S]*?\n\}", self.src)
         self.assertTrue(m, "almFill 을 못 찾았다")
-        blk = m.group(0)
-        for need in ("almNum('alm-win', a.window_min, 180)", "almNum('alm-w', a.warn)",
-                     "almNum('alm-d', a.danger)", "almNum('alm-c', a.critical)"):
-            self.assertTrue(need in blk, need + " 가 없다")
-        self.assertTrue("ALARM = a;" in blk, "표 배지도 같은 설정을 봐야 한다")
+        self.assertIn("const mine = list.find(a => a.sys === SYS);", m.group(0))
+        self.assertIn("if(mine) ALARM = mine;", m.group(0))
 
-    def test_저장이_네_값을_다_보낸다(self):
-        m = re.search(r"\$\('#alm-save'\)\.onclick = \(\) => almSave\(\{alarm: \{"
-                      r"[\s\S]*?\}\}\);", self.src)
+    def test_저장이_여섯_줄을_다_보낸다(self):
+        m = re.search(r"\$\('#alm-save'\)\.onclick = \(\) => \{[\s\S]*?almSave"
+                      r"\(\{alarm_by_sys: by\}\);", self.src)
         self.assertTrue(m, "저장 버튼 배선을 못 찾았다")
+        blk = m.group(0)
+        self.assertIn("ALM_SYS.forEach(a =>", blk, "여섯 줄을 다 훑어야 한다")
         for need in ("window_min:", "warn:", "danger:", "critical:", "enabled:"):
-            self.assertTrue(need in m.group(0), need + " 가 저장에서 빠졌다")
+            self.assertTrue(need in blk, need + " 가 저장에서 빠졌다")
+        self.assertIn("if(ALM_RESET.has(a.sys)){ by[a.sys] = null; return; }", blk,
+                      "'기본' 을 누른 시스템은 null 로 보내 되돌려야 한다")
 
-    def test_적용_스위치는_누르는_즉시_반영(self):
-        self.assertIn("$('#alm-on').onchange = () => almSave({alarm: "
-                      "{enabled: $('#alm-on').checked}});", self.src,
-                      "저장을 또 눌러야 하면 '껐는데 왜 그대로냐' 가 된다")
+    def test_적용_스위치는_줄마다_있고_누르는_즉시_반영(self):
+        m = re.search(r"document\.querySelectorAll\('\[data-almon\]'\)"
+                      r"\.forEach\(c => c\.onchange = \(\) => \{[\s\S]*?\}\);",
+                      self.src)
+        self.assertIsNotNone(m, "줄마다 걸리는 적용 스위치를 못 찾았다")
+        self.assertIn("almSave({alarm_by_sys: {[c.dataset.almon]: {enabled: c.checked}}});",
+                      m.group(0), "저장을 또 눌러야 하면 '껐는데 왜 그대로냐' 가 된다")
 
     def test_저장은_등급_컷과_같은_길(self):
         m = re.search(r"async function almSave\(body\)\{[\s\S]*?\n\}", self.src)

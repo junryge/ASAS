@@ -249,10 +249,24 @@ class DashboardFabCols(unittest.TestCase):
                          "실시간·과거 두 탭에서 각각 한 번씩 받아야 한다")
 
     def test_빈_목록_colspan_이_컬럼_수를_따라간다(self):
-        """7 로 박아 두면 FAB 컬럼이 붙는 순간 '데이터 없음' 칸이 어긋난다."""
+        """숫자를 박아 두면 FAB 컬럼이 붙는 순간 '데이터 없음' 칸이 어긋난다.
+
+        ★기대값을 여기 적어 두지 않는다. 표 칸이 하나 늘 때마다(등급 카운터가
+          그랬다) 이 시험만 틀리고, 정작 '머리글과 같은 수인가' 는 안 보게 된다.
+          머리글 th 를 세어 거기서 뽑는다.
+        """
         m = re.search(r"function rowsHtml\(.*?\n\}", self.h, re.S).group(0)
-        self.assertIn("const ncol = 7 +", m)
         self.assertIn('colspan="${ncol}"', m)
+        head = re.search(r'<table class="cases">\s*<thead><tr>(.*?)</tr></thead>',
+                         self.h, re.S)
+        self.assertIsNotNone(head, "실시간 표 머리글을 못 찾았다")
+        nth = len(re.findall(r"<th[ >]", head.group(1)))
+        self.assertIn(f"const ncol = {nth} + (FABS.length ? FABS.length + 1 : 0);", m,
+                      f"머리글은 {nth}칸인데 ncol 이 다르다 — 빈 표·'더 보기' 줄이 어긋난다")
+        # 빈 표 안내 줄도 같은 수여야 한다
+        for tb in ('cases', 'pcases'):
+            self.assertIn(f'<tbody id="{tb}"><tr><td colspan="{nth}"', self.h,
+                          f"{tb} 의 빈 줄 colspan 이 머리글과 다르다")
 
     # ── 추이 그래프에 FAB 겹쳐보기 ──────────────────────────────────
     def test_겹쳐보기_체크박스가_실시간과_과거_모두_있다(self):

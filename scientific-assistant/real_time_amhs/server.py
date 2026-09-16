@@ -862,11 +862,12 @@ def _persist_score_policy() -> str:
             g.pop("by_sys", None)
         # 등급 카운터(알람) — 컷과 같은 파일·같은 길로 적는다. 따로 두면
         # 한쪽만 저장되는 사고가 난다 (_apply_cuts 주석과 같은 뜻).
-        alm = (CFG.get("grade", {}) or {}).get("alarm")
-        if alm:
-            g["alarm"] = alm
-        else:
-            g.pop("alarm", None)
+        for _k in ("alarm", "alarm_by_sys"):
+            _v = (CFG.get("grade", {}) or {}).get(_k)
+            if _v:
+                g[_k] = _v
+            else:
+                g.pop(_k, None)
         tmp = CONFIG_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(disk, f, ensure_ascii=False, indent=2)
@@ -920,27 +921,46 @@ def api_score_policy():
             by.update(sets)
             if not by:
                 g.pop("by_sys", None)
-        if "alarm" in b:
-            row = b["alarm"]
-            if not isinstance(row, dict):
-                return jsonify({"error": "alarm 은 객체"}), 400
-            cur = alarm_count.policy(CFG)
-            new = dict(cur)
-            if "enabled" in row:
-                new["enabled"] = bool(row["enabled"])
-            for k in ("window_min", *alarm_count.KEYS):
-                if k not in row:
+        # ── 등급 카운터(알람) — **시스템 6개 각각**. 등급 컷의 by_sys 와 같은 모양
+        #    {"alarm_by_sys": {"M14": {...} | null(기본으로 되돌리기), …}}
+        if "alarm_by_sys" in b:
+            rows_ = b["alarm_by_sys"]
+            if not isinstance(rows_, dict):
+                return jsonify({"error": "alarm_by_sys 는 {시스템: 설정|null} 객체"}), 400
+            known = set(systems())
+            sets_, resets_ = {}, []
+            for s_, row in rows_.items():
+                s_ = str(s_).upper()
+                if s_ not in known:
+                    return jsonify({"error": f"모르는 시스템 {s_} (가능: {sorted(known)})"}), 400
+                if row is None:
+                    resets_.append(s_)
                     continue
-                try:
-                    n = int(row[k])
-                except (TypeError, ValueError):
-                    return jsonify({"error": f"alarm.{k} 는 정수"}), 400
-                lo, hi = alarm_count.LIMITS[k]
-                if not (lo <= n <= hi):
-                    return jsonify({"error": f"alarm.{k} 는 {lo}~{hi}"}), 400
-                new[k] = n
+                if not isinstance(row, dict):
+                    return jsonify({"error": f"{s_}: 알람 설정은 객체"}), 400
+                new_ = dict(alarm_count.policy(CFG, s_))
+                if "enabled" in row:
+                    new_["enabled"] = bool(row["enabled"])
+                for k in ("window_min", *alarm_count.KEYS):
+                    if k not in row:
+                        continue
+                    try:
+                        n = int(row[k])
+                    except (TypeError, ValueError):
+                        return jsonify({"error": f"{s_}: 알람 {k} 는 정수"}), 400
+                    lo, hi = alarm_count.LIMITS[k]
+                    if not (lo <= n <= hi):
+                        return jsonify({"error": f"{s_}: 알람 {k} 는 {lo}~{hi}"}), 400
+                    new_[k] = n
+                sets_[s_] = new_
             # ★객체 갈아끼우기 금지 — sys_cfg 뷰들이 grade 블록을 공유한다
-            g.setdefault("alarm", {}).update(new)
+            by_a = g.setdefault("alarm_by_sys", {})
+            for s_ in resets_:
+                by_a.pop(s_, None)
+            for s_, v in sets_.items():
+                by_a.setdefault(s_, {}).update(v)
+            if not by_a:
+                g.pop("alarm_by_sys", None)
         if b.get("save"):
             err = _persist_score_policy()
             saved = not err
@@ -949,11 +969,12 @@ def api_score_policy():
                                          f"(메모리에는 적용됨)", "applied": True}), 500
         rows = " · ".join(f"{s_}={'/'.join(map(str, grade_cuts(sys_cfg(CFG, s_))))}"
                           for s_ in systems())
-        _ap = alarm_count.policy(CFG)
         print(f"[정책] 스코어 컷 → {rows}" + (" · 저장됨" if saved else ""))
-        print(f"[정책] 등급 카운터 → {'적용' if _ap['enabled'] else '미적용'} · "
-              f"{_ap['window_min']}분 · 경계 {_ap['warn']}회 / 위험 {_ap['danger']}회 / "
-              f"초위험 {_ap['critical']}회")
+        _al = " · ".join(
+            f"{a['sys']}={'' if a['enabled'] else '끔/'}"
+            f"{a['window_min']}분:{a['warn']}/{a['danger']}/{a['critical']}"
+            for a in alarm_count.table(CFG, systems()))
+        print(f"[정책] 등급 카운터 → {_al}")
     by = g.get("by_sys") or {}
     out = []
     for s_ in systems():
@@ -961,7 +982,8 @@ def api_score_policy():
         out.append({"sys": s_, "warn": w, "danger": d_, "critical": c,
                     "custom": s_ in by})
     return jsonify({"systems": out, "saved": saved,
-                    "alarm": alarm_count.policy(CFG),
+                    # 등급 카운터 — 시스템 6개 각각 (컷의 systems 와 같은 모양)
+                    "alarm_systems": alarm_count.table(CFG, systems()),
                     "alarm_default": dict(alarm_count.DEFAULTS)})
 
 

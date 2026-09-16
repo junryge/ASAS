@@ -40,22 +40,30 @@ ok('없으면 안 붙는다', almChip({}) === '', almChip({}));
 ok('lv 가 비면 안 붙는다', almChip({alm: {lv: '', w: 9}}) === '', almChip({alm: {lv: ''}}));
 
 const w = almChip({alm: {lv: '경계중', w: 4, d: 0, c: 0, why: '최근 10분에 경계 이상 4회 (기준 3회)'}});
-ok('경계 배지 글자', w.includes('경계중 4회'), w);
+ok('경계 배지 글자', w.includes('경계중<b>4</b>'), w);
 ok('경계 색 클래스는 lv경계', /class="chip alm lv경계"/.test(w), w);
 ok('근거는 title 에', w.includes('title="최근 10분에 경계 이상 4회 (기준 3회)"'), w);
 
 const d = almChip({alm: {lv: '위험중', w: 5, d: 2, c: 0}});
-ok('위험 배지는 위험 카운트를 쓴다', d.includes('위험중 2회'), d);
+ok('위험 배지는 위험 카운트를 쓴다', d.includes('위험중<b>2</b>'), d);
 ok('위험 색 클래스는 lv위험', /class="chip alm lv위험"/.test(d), d);
 
 const c = almChip({alm: {lv: '초위험중', w: 6, d: 3, c: 1}});
-ok('초위험 배지는 초위험 카운트를 쓴다', c.includes('초위험중 1회'), c);
+ok('초위험 배지는 초위험 카운트를 쓴다', c.includes('초위험중<b>1</b>'), c);
 /* ★'초위험' 은 '위험' 을 품는다 — 글자 포함으로 색을 고르면 lv위험 이 된다 */
 ok('초위험 색 클래스는 lv초위험', /class="chip alm lv초위험"/.test(c), c);
 
 /* 근거 글이 따옴표를 물고 와도 속성을 깨면 안 된다 */
 const x = almChip({alm: {lv: '위험중', d: 1, why: '앞"뒤<b>'}});
 ok('근거를 escape 한다', !/title="앞"/.test(x) && x.includes('&quot;'), x);
+
+/* ── 알람 칸 ── */
+const cellSrc = cut(/function almCell\(r\)\{[\s\S]*?\n\}/, 'almCell');
+eval(cellSrc);
+ok('빈 행은 —', almCell({}) === '<td class="acol"><span class="dim">—</span></td>', almCell({}));
+ok('있는 행은 배지', almCell({alm:{lv:'위험중', d:2}}).includes('위험중<b>2</b>'),
+   almCell({alm:{lv:'위험중', d:2}}));
+ok('알람 칸 클래스', almCell({}).startsWith('<td class="acol">'), almCell({}));
 
 /* ── 서명 ── */
 const s0 = cutSig();

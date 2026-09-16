@@ -363,7 +363,10 @@
        밖으로 나가고 sticky 상단 바 배경이 오른쪽에서 끊겼다. 고정 폭 th 를 모두
        한 단계씩 줄여 합을 1122px 로 내리고 최소 폭도 1280px 로 낮췄다 —
        '발동 룰' 은 그래도 158px 를 갖고, 1366px 창에서 가로 스크롤이 사라진다. */
-  table.cases{width:100%;min-width:1280px;border-collapse:collapse;table-layout:fixed}
+    /* ★'알람' 칸(100px)이 늘면서 최소 폭을 1300px 로 올렸다. 대신 시각·CASE·
+     발동 룰·AMOS 둘·HI_FAB 를 조금씩 깎아(합 −60px) 1366px 노트북에서
+     가로 스크롤이 안 생기는 성질은 그대로 지켰다. */
+  table.cases{width:100%;min-width:1300px;border-collapse:collapse;table-layout:fixed}
   /* ★머리글 고정 — 하루치 1440행을 내리다 보면 지금 보는 숫자가 M14 인지
      M16B 인지 알 수 없어진다. 머리글이 상단 바 바로 아래에 붙어 멈춘다.
      · sticky 는 thead 가 아니라 **th** 에 건다. border-collapse:collapse 인
@@ -498,10 +501,12 @@
   .lv정상{background:color-mix(in srgb, var(--ok) 16%, var(--panel));color:var(--ok)}
   /* 등급 카운터 배지 — 등급 알약과 같은 색을 쓰되 **테두리**로 구분한다.
      '지금 이 1분의 등급'(채운 알약)과 '최근 N분에 몇 번'(테두리)은 다른 말이다. */
-  /* ★칸이 108px 고정이라(table-layout:fixed) 등급 알약과 줄이 갈린다 —
-       그건 그대로 두되, 배지 **안**에서 '위험중 / 1회' 로 쪼개지진 않게 한다. */
   .chip.alm{background:transparent;border:1px solid currentColor;
-            padding:3px 8px;margin-right:0;letter-spacing:-.2px;white-space:nowrap}
+            padding:3px 7px;margin-right:0;letter-spacing:-.2px;white-space:nowrap}
+  /* 횟수는 한 단계 작게 — 눈이 먼저 읽어야 하는 건 '위험중' 이지 숫자가 아니다 */
+  .chip.alm b{font-weight:700;margin-left:4px;font-variant-numeric:tabular-nums}
+  table.cases th.acol{letter-spacing:.04em}
+  table.cases td.acol{white-space:nowrap}
   /* 섹션 라벨(시안): 11px · 자간 .08em · 대문자 · --tx3. 탭 머리의 eyebrow 는 12px/.14em */
   .tag,.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
@@ -1101,15 +1106,16 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:96px">시각</th>
-        <th style="width:96px">CASE</th>
+        <th style="width:90px">시각</th>
+        <th style="width:88px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
-        <th class="rhcol" style="width:210px">발동 룰</th>
+        <th class="acol" style="width:100px">알람</th>
+        <th class="rhcol" style="width:190px">발동 룰</th>
         <th class="mcol">실제지표</th>
-        <th style="width:132px">AMOS HID 구역</th>
-        <th style="width:150px">AMOS QUEUE 지표</th>
+        <th style="width:124px">AMOS HID 구역</th>
+        <th style="width:138px">AMOS QUEUE 지표</th>
       </tr></thead>
-      <tbody id="cases"><tr><td colspan="7" class="empty">불러오는 중…</td></tr></tbody>
+      <tbody id="cases"><tr><td colspan="8" class="empty">불러오는 중…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1175,15 +1181,16 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:96px">시각</th>
-        <th style="width:96px">CASE</th>
+        <th style="width:90px">시각</th>
+        <th style="width:88px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
-        <th class="rhcol" style="width:210px">발동 룰</th>
+        <th class="acol" style="width:100px">알람</th>
+        <th class="rhcol" style="width:190px">발동 룰</th>
         <th class="mcol">실제지표</th>
-        <th style="width:132px">AMOS HID 구역</th>
-        <th style="width:150px">AMOS QUEUE 지표</th>
+        <th style="width:124px">AMOS HID 구역</th>
+        <th style="width:138px">AMOS QUEUE 지표</th>
       </tr></thead>
-      <tbody id="pcases"><tr><td colspan="7" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
+      <tbody id="pcases"><tr><td colspan="8" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1387,7 +1394,8 @@
     <div class="bd">
       <p class="note" style="margin:0 0 10px">
         최근 <b style="color:var(--tx2)">N분</b> 안에 등급이 <b style="color:var(--tx2)">몇 번</b>
-        떴는지 세어, 실시간 관제 표의 <b style="color:var(--tx2)">종합점수 옆</b>에
+        떴는지 세어, 실시간 관제·과거 데이터 조회 표의
+        <b style="color:var(--tx2)">종합점수 바로 옆 칸</b>에
         <span class="chip alm lv경계">경계중</span>
         <span class="chip alm lv위험">위험중</span>
         <span class="chip alm lv초위험">초위험중</span> 으로 표시합니다.
@@ -1398,24 +1406,29 @@
         넘은 1분</b>이라 경계 카운트에도 들어갑니다. 안 그러면 점수가 위험에 눌러앉은 동안
         경계 카운트가 0이 되어 제일 나쁜 구간에서 알람이 꺼집니다.
         기준을 <b style="color:var(--tx2)">0</b> 으로 두면 그 단계는 쓰지 않습니다.</p>
+      <p class="note" style="margin:0 0 10px">
+        <b style="color:var(--tx2)">시스템마다 따로</b>입니다 — FAB 마다 등급 컷이 달라
+        등급이 뜨는 빈도도 다릅니다. 컷은 시스템별인데 세는 기준만 공통이면 어느 FAB 은
+        하루 종일 &apos;위험중&apos; 이고 어느 FAB 은 영영 안 뜹니다.
+        <b style="color:var(--tx2)">적용/미적용도 각각</b>입니다.</p>
       <table class="pol"><thead><tr>
-        <th style="width:150px">되돌아볼 시간</th>
-        <th style="width:170px"><i class="gdot minor"></i>경계 이상 횟수</th>
-        <th style="width:170px"><i class="gdot major"></i>위험 이상 횟수</th>
-        <th style="width:170px"><i class="gdot crit"></i>초위험 횟수</th>
+        <th style="width:104px">시스템</th>
+        <th style="width:124px">되돌아볼 시간</th>
+        <th style="width:140px"><i class="gdot minor"></i>경계 이상 횟수</th>
+        <th style="width:140px"><i class="gdot major"></i>위험 이상 횟수</th>
+        <th style="width:140px"><i class="gdot crit"></i>초위험 횟수</th>
+        <th style="width:96px">적용</th>
         <th></th>
-      </tr></thead><tbody id="almrow"><tr><td colspan="5" class="empty">불러오는 중…</td></tr></tbody></table>
+      </tr></thead><tbody id="almrow"><tr><td colspan="7" class="empty">불러오는 중…</td></tr></tbody></table>
       <div class="row" style="margin-top:14px">
         <button class="act pri" id="alm-save">저장</button>
-        <label class="note swlbl">
-          <input type="checkbox" id="alm-on"> 적용 (끄면 표시하지 않습니다)</label>
-        <button class="act" id="alm-reset" title="10분 · 경계 3회 · 위험 1회 · 초위험 1회">기본값</button>
         <span class="note" id="alm-now">—</span>
       </div>
       <p class="note" style="margin:8px 0 0">
         현장 기준(기본값) — 10분에 <b style="color:var(--tx2)">경계 3회</b> 모니터링 ·
         <b style="color:var(--tx2)">위험 1회</b> 확인 필요 ·
-        <b style="color:var(--tx2)">초위험 1회</b> 확인 필요.</p>
+        <b style="color:var(--tx2)">초위험 1회</b> 확인 필요.
+        <b style="color:var(--tx2)">0</b> 을 넣으면 그 단계는 쓰지 않습니다.</p>
       <details id="sp-pbox" class="fold" style="margin-top:14px">
         <summary>
           🧾 프롬프트 — 모델에게 무엇을 물어보는가
@@ -3238,30 +3251,61 @@ function spRow(s){
   </tr>`;
 }
 
-/* ── 등급 카운터(알람) 정책 ──────────────────────────────────────
+/* ── 등급 카운터(알람) 정책 — **시스템 6개 각각** ──────────────────
    ★저장은 등급 컷과 **같은 엔드포인트**(/api/score_policy)를 쓴다. 길이 둘이면
      한쪽만 저장되는 사고가 난다 (서버 _apply_cuts 주석과 같은 뜻).
-   ★저장 뒤 repaintGrades() 로 지금 화면을 다시 그린다 — 컷과 같은 길이다. */
-let ALM_INIT = false, ALM_DEF = null;
+   ★저장 뒤 repaintGrades() 로 지금 화면을 다시 그린다 — 컷과 같은 길이다.
+   ★적용 스위치는 **줄마다** 있다. M14 만 끄고 나머지는 켜 둘 수 있어야 한다. */
+let ALM_INIT = false, ALM_DEF = null, ALM_SYS = [], ALM_RESET = new Set();
 function almNum(id, v, max){
   return `<input type="number" id="${id}" value="${v}" min="0" max="${max||999}"
-     style="width:86px;background:var(--panel2);border:1px solid var(--line2);
+     style="width:76px;background:var(--panel2);border:1px solid var(--line2);
             color:var(--tx);border-radius:7px;padding:5px 8px;font:inherit">`;
 }
+function almRow(a){
+  return `<tr>
+    <td><b style="color:${a.sys==='ALL'?'var(--cy)':'var(--tx)'}">${esc(a.sys)}</b></td>
+    <td>${almNum(`almw-${a.sys}`, a.window_min, 180)} <span class="note">분</span></td>
+    <td>${almNum(`alm1-${a.sys}`, a.warn)} <span class="note">회</span></td>
+    <td>${almNum(`alm2-${a.sys}`, a.danger)} <span class="note">회</span></td>
+    <td>${almNum(`alm3-${a.sys}`, a.critical)} <span class="note">회</span></td>
+    <td><label class="note swlbl" style="margin:0">
+        <input type="checkbox" id="almon-${a.sys}" data-almon="${a.sys}"${
+          a.enabled ? ' checked' : ''}> ${a.enabled ? '적용' : '미적용'}</label></td>
+    <td><button class="act" data-almreset="${a.sys}" style="padding:4px 10px"
+          title="${esc(ALM_DEF ? `${ALM_DEF.window_min}분 · 경계 ${ALM_DEF.warn}회 / 위험 ${
+            ALM_DEF.danger}회 / 초위험 ${ALM_DEF.critical}회` : '공통 기본값')}">기본</button>
+        <span class="note" id="almst-${a.sys}">${a.custom?'개별 설정':'기본값'}</span></td>
+  </tr>`;
+}
 function almFill(d){
-  const a = d.alarm || {};
+  const list = d.alarm_systems || ALM_SYS;
   ALM_DEF = d.alarm_default || ALM_DEF;
-  ALARM = a;                                     // 표 배지도 같은 설정을 본다
-  $('#almrow').innerHTML = `<tr>
-    <td>${almNum('alm-win', a.window_min, 180)} <span class="note">분</span></td>
-    <td>${almNum('alm-w', a.warn)} <span class="note">회</span></td>
-    <td>${almNum('alm-d', a.danger)} <span class="note">회</span></td>
-    <td>${almNum('alm-c', a.critical)} <span class="note">회</span></td>
-    <td><span class="note">0 = 이 단계 안 씀</span></td></tr>`;
-  $('#alm-on').checked = !!a.enabled;
-  $('#alm-now').textContent = a.enabled
-    ? `· 적용 중 — 최근 ${a.window_min}분 · 경계 ${a.warn}회 / 위험 ${a.danger}회 / 초위험 ${a.critical}회`
-    : '· 미적용 — 표에 알람을 표시하지 않습니다';
+  ALM_SYS = list;
+  ALM_RESET.clear();
+  /* 지금 보고 있는 시스템의 설정을 표 배지가 쓴다 — 서버도 같은 것을 준다 */
+  const mine = list.find(a => a.sys === SYS);
+  if(mine) ALARM = mine;
+  $('#almrow').innerHTML = list.map(almRow).join('')
+    || '<tr><td colspan="7" class="empty">시스템이 없습니다</td></tr>';
+  almBind();
+  const on = list.filter(a => a.enabled).map(a => a.sys);
+  $('#alm-now').textContent = on.length
+    ? `· 적용 중 — ${on.join(' · ')}${on.length < list.length
+        ? ` (${list.filter(a=>!a.enabled).map(a=>a.sys).join(' · ')} 는 미적용)` : ''}`
+    : '· 전부 미적용 — 표에 알람을 표시하지 않습니다';
+}
+/* 줄이 다시 그려질 때마다 버튼을 새로 걸어야 한다 (innerHTML 로 갈아끼운다) */
+function almBind(){
+  document.querySelectorAll('[data-almon]').forEach(c => c.onchange = () => {
+    /* 적용 스위치는 **누르는 즉시** 반영한다 — 켜고 끄는 것은 값을 고치는 것과
+       달라서, 저장을 또 눌러야 하면 "껐는데 왜 그대로냐" 가 된다. */
+    almSave({alarm_by_sys: {[c.dataset.almon]: {enabled: c.checked}}});
+  });
+  document.querySelectorAll('[data-almreset]').forEach(b => b.onclick = () => {
+    ALM_RESET.add(b.dataset.almreset);          // 저장 때 이 시스템은 기본으로
+    $(`#almst-${b.dataset.almreset}`).textContent = '저장하면 기본값으로';
+  });
 }
 async function almSave(body){
   const btn = $('#alm-save');
@@ -3278,19 +3322,18 @@ function initAlarmPolicy(d){
   almFill(d);
   if(ALM_INIT) return;
   ALM_INIT = true;
-  $('#alm-save').onclick = () => almSave({alarm: {
-    enabled: $('#alm-on').checked,
-    window_min: parseInt($('#alm-win').value),
-    warn: parseInt($('#alm-w').value),
-    danger: parseInt($('#alm-d').value),
-    critical: parseInt($('#alm-c').value),
-  }});
-  /* 적용 스위치는 **누르는 즉시** 반영한다 — 켜고 끄는 것은 값을 고치는 것과
-     달라서, 저장을 또 눌러야 하면 "껐는데 왜 그대로냐" 가 된다. */
-  $('#alm-on').onchange = () => almSave({alarm: {enabled: $('#alm-on').checked}});
-  $('#alm-reset').onclick = () => {
-    if(!ALM_DEF) return;
-    almSave({alarm: Object.assign({}, ALM_DEF, {enabled: $('#alm-on').checked})});
+  $('#alm-save').onclick = () => {
+    const by = {};
+    ALM_SYS.forEach(a => {
+      if(ALM_RESET.has(a.sys)){ by[a.sys] = null; return; }   // 기본으로 되돌리기
+      const g = id => parseInt(($(`#${id}-${a.sys}`)||{}).value);
+      by[a.sys] = {
+        enabled: ($(`#almon-${a.sys}`)||{}).checked,
+        window_min: g('almw'), warn: g('alm1'),
+        danger: g('alm2'), critical: g('alm3'),
+      };
+    });
+    almSave({alarm_by_sys: by});
   };
 }
 
@@ -3651,9 +3694,11 @@ function syncFabCols(){
     /* ★끼우는 자리는 **스코어 바로 뒤**다 — 요청받은 열 순서가
        시각·CASE·종합점수·HI_FAB·FAB5·발동 룰·실제지표·AMOS 둘이다.
        점수와 그 점수를 만든 FAB 들이 붙어 있어야 눈이 옆으로 안 튄다. */
-    let at = sc;
+    /* ★끼우기 시작점은 스코어가 아니라 **알람 칸 뒤**다. 스코어 뒤에 끼우면
+       HI_FAB 이 종합점수와 알람 사이로 파고들어 머리글과 내용이 어긋난다. */
+    let at = tr.querySelector('th.acol') || sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
-    add('<th class="hcol" style="width:92px">HI_FAB</th>');
+    add('<th class="hcol" style="width:86px">HI_FAB</th>');
     FABS.forEach(f => add(`<th class="fcol" style="width:56px">${esc(f)}</th>`));
   });
 }
@@ -3747,10 +3792,10 @@ function hiCell(r){
     dif ? `<span class="dim" title="${esc('예측기 hot_area: '+hot)}"> ≠${esc(hot)}</span>` : ''}</td>`;
 }
 
-/* 등급 카운터 배지 — '경계중 3회'. 종합점수 **옆**에 붙는다.
-   ★표 칸을 새로 만들지 않는다. colspan="7" 이 세 군데(실시간·과거·빈 표)에
-     박혀 있고 내려받기 컬럼도 거기 맞춰져 있다 — 칸을 늘리면 그 넷이 전부
-     어긋난다. 점수와 같은 칸에서 등급 알약 오른쪽에 선다.
+/* 등급 카운터 — 종합점수 **바로 옆 칸**. 점수 칸에 같이 넣었더니 좁은 칸
+   (108px) 안에서 등급 알약 밑으로 접혀, 점수의 부속처럼 보였다. 이건 다른
+   말이다 — '지금 이 1분이 몇 점인가' 가 아니라 '최근 N분에 몇 번 떴나' 다.
+   그래서 칸을 따로 뒀다 (표 칸 수 7 → 8).
    ★서버가 label 을 넣어 준 행에만 붙는다 (미적용이면 아예 안 온다). */
 function almChip(r){
   const a = r.alm;
@@ -3758,12 +3803,17 @@ function almChip(r){
   const lv = a.lv.replace('중','');                 // 경계중 → 경계 (색 클래스용)
   const n = lv === '초위험' ? a.c : lv === '위험' ? a.d : a.w;
   return `<span class="chip alm lv${esc(lv)}" title="${esc(a.why||'')}">${
-    esc(a.lv)} ${n}회</span>`;
+    esc(a.lv)}<b>${n}</b></span>`;
+}
+/* 알람 칸 한 개. 값이 없으면 '—' — 다른 칸(HI_FAB·CASE)과 같은 표기다.
+   ★빈 칸으로 두면 '데이터가 안 왔나' 로 읽힌다. 안 떴다는 것도 정보다. */
+function almCell(r){
+  return `<td class="acol">${almChip(r) || '<span class="dim">—</span>'}</td>`;
 }
 
 function rowsHtml(list, byId, newAt, cap){
-  // 기본 7칸 + (HI_FAB 1 + FAB 다섯)
-  const ncol = 7 + (FABS.length ? FABS.length + 1 : 0);
+  // 기본 8칸(시각·CASE·스코어·알람·발동 룰·실제지표·AMOS 둘) + (HI_FAB 1 + FAB 다섯)
+  const ncol = 8 + (FABS.length ? FABS.length + 1 : 0);
   if(!list.length) return `<tr><td colspan="${ncol}" class="empty">해당 등급 데이터 없음</td></tr>`;
   // 최신이 위다 — 상한을 걸어도 방금 들어온 행은 항상 보인다
   const rest = (cap && list.length > cap) ? list.length - cap : 0;
@@ -3782,8 +3832,8 @@ function rowsHtml(list, byId, newAt, cap){
           r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}" title="${esc(r.severity)}">${
-            esc(r.level)}</span>${almChip(r)}</div></td>
-      ${hiCell(r)}${fabCells(r)}
+            esc(r.level)}</span></div></td>
+      ${almCell(r)}${hiCell(r)}${fabCells(r)}
       ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
@@ -4316,7 +4366,7 @@ async function loadPast(day, opt){
   if(PBUSY) return;
   PDAY = day;
   pastBusy(true);
-  $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">불러오는 중…</td></tr>';
+  $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">불러오는 중…</td></tr>';
   try{
     if(opt.force && !await fetchDay(day)) return;    // '다시 확보'
     let fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
@@ -4348,7 +4398,7 @@ async function loadPast(day, opt){
   }catch(e){
     console.error('과거 조회 실패', e);
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
-    $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">조회 실패</td></tr>';
+    $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">조회 실패</td></tr>';
   }finally{ pastBusy(false); }
 }
 
@@ -4458,19 +4508,19 @@ async function fetchDay(day){
   const jup = SRC === 'jupyter';
   $('#pinfo').innerHTML = `${esc(fmtDay(day))} 서버에서 가져오는 중… `
     + `<span class="dim">${jup ? '주피터 CSV 를 받습니다' : '로그프레소 하루치는 몇 분 걸릴 수 있습니다'}</span>`;
-  $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">서버 조회 중…</td></tr>';
+  $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">서버 조회 중…</td></tr>';
   try{
     const r = await post('/api/collect', {date: day});
     if(!r.ok){
       $('#pinfo').innerHTML = `<span style="color:var(--crit)">${esc(fmtDay(day))} 확보 실패 — ${esc(r.error||'')}</span>`;
-      $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">확보 실패</td></tr>';
+      $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">확보 실패</td></tr>';
       return false;
     }
     await loadPastDays(day);
     return true;
   }catch(e){
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">확보 실패 — 서버 응답 없음</span>';
-    $('#pcases').innerHTML = '<tr><td colspan="7" class="empty">확보 실패</td></tr>';
+    $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">확보 실패</td></tr>';
     return false;
   }
 }
