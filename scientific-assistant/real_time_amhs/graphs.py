@@ -792,6 +792,62 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
                  f'y2="{ty:.1f}" stroke="{P["crit"]}" stroke-width="1" opacity=".55"/>')
     o.append(f'<line x1="{x + 12:.1f}" y1="{pb:.1f}" x2="{x + w - 12:.1f}" '
              f'y2="{pb:.1f}" stroke="{P["line"]}" stroke-width="1"/>')
+    _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P)
+
+
+# 한 띠가 이보다 좁으면 마우스로 집을 수가 없다 — 분을 묶는다.
+HIT_MIN_W = 6.0
+
+
+def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P):
+    """칸 위에 분마다 투명한 띠를 깔고 그 분의 값을 말풍선으로 붙인다.
+
+    ★칸에는 '구간 최고값' 만 적혀 있었다. 그래서 아래 작은 그래프를 보고
+      "그럼 지금 이 시각엔 얼마였나" 를 물으면 화면에 답이 없었다.
+    ★자바스크립트를 안 쓴다. 서버가 그려 보내는 SVG 라 <title> 하나로 끝나고,
+      과거 조회·리포트에 그대로 붙어 나가도 똑같이 동작한다.
+    ★분이 많으면 띠를 묶는다. 180분 창이면 1.8px 짜리 띠가 180개 생겨서
+      집을 수가 없고 파일만 세 배가 된다. 묶은 띠는 그 구간의 **최고값**을
+      말한다 (칸의 배지가 최고값으로 재는 것과 같은 자다).
+    """
+    n = len(vals)
+    if n < 2:
+        return
+    stk = m.get("cols") if m.get("pio_stack") else None
+    rowof = {t: r for t, r in pts}
+    op = m.get("op", ">=")
+    thr = m.get("thr")
+    hi = op in (">=", ">")
+    step = max(1, int(round(n / max(1.0, (w - 24) / HIT_MIN_W))))
+    x0, x1 = x + 12, x + w - 12
+    for i in range(0, n, step):
+        grp = vals[i:i + step]
+        if not grp:
+            continue
+        best = max(grp, key=lambda tv: tv[1]) if hi else min(grp, key=lambda tv: tv[1])
+        lx = x0 if i == 0 else (X(i) + X(i - 1)) / 2
+        rx = x1 if i + step >= n else (X(i + step - 1) + X(min(i + step, n - 1))) / 2
+        when = (f"{grp[0][0]:%H:%M}" if len(grp) == 1
+                else f"{grp[0][0]:%H:%M}~{grp[-1][0]:%H:%M} 최고")
+        # ★임계값을 말풍선마다 다시 적지 않는다 — 칸에 이미 적혀 있고,
+        #   띠가 수백 개라 같은 글자를 수백 번 실어 보내게 된다. 넘었는지만
+        #   ▲ 한 글자로 남긴다.
+        over = thr and ((best[1] >= float(thr)) if hi else (best[1] <= float(thr)))
+        tip = f"{when} · {_fmt(best[1])}{unit}{' ▲' if over else ''}"
+        if stk:
+            # 쌓은 칸은 합만 보여 주면 '어느 경로냐' 가 안 남는다 — 조치 지점이다
+            r = rowof.get(best[0]) or {}
+            part = [(sp.get("legend") or sp["name"], _pio_val(r, sp) or 0)
+                    for sp in stk]
+            part = [f"{nm} {_fmt(v)}" for nm, v in part if v]
+            if part:
+                tip += "\n  " + " · ".join(part)
+        # data-at 을 같이 실어 **누르면 그 분이 고정**되게 한다 — 스코어
+        # 패널과 같은 동작이다. 묶인 띠는 그 구간 최고값이 난 분을 가리킨다.
+        o.append(f'<rect class="ghit" data-at="{_e(best[0].isoformat())}" '
+                 f'x="{lx:.0f}" y="{y + 60:.0f}" '
+                 f'width="{max(1.0, rx - lx):.0f}" height="{h - 66:.0f}">'
+                 f'<title>{_e(tip)}</title></rect>')
 
 
 
@@ -897,7 +953,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
 
     o = [f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
          f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
-         '<style>.ghit:hover{fill-opacity:.07}</style>',
+         # ★fill/커서를 인라인으로 적으면 히트 영역 하나당 50자가 더 붙는다.
+         #   칸마다 분 단위 히트를 깔면서 수백 개가 됐다 — 규칙으로 뺀다.
+         f'<style>.ghit{{fill:{P["tx"]};fill-opacity:0;cursor:pointer}}'
+         f'.ghit:hover{{fill-opacity:.07}}</style>',
          f'<rect width="100%" height="100%" fill="{P["bg"]}"/>']
 
     # ── 제목 ─────────────────────────────────────────────────────────
@@ -997,8 +1056,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
             ln += [x.strip() for x in rs.split(" · ") if x.strip()]
         o.append(f'<rect class="ghit" data-at="{_e(t.isoformat())}" '
                  f'x="{X(i) - hw / 2:.1f}" y="{top_s}" width="{hw:.1f}" '
-                 f'height="{SCORE_H}" fill="{P["tx"]}" fill-opacity="0" '
-                 f'style="cursor:pointer"><title>{_e(chr(10).join(ln))}</title></rect>')
+                 f'height="{SCORE_H}"><title>{_e(chr(10).join(ln))}</title></rect>')
 
     # ── 사건 표시 ─────────────────────────────────────────────────────
     # ★딱지는 스코어 패널 **위** 줄에 둔다. 밴드(붉은 띠) 위에 맨 글자를 얹으면

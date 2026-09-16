@@ -772,6 +772,46 @@ class 더블클릭_그래프(unittest.TestCase):
         self.assertNotIn("PIO 반송실패 점수 (M14)", lb)
 
 
+class 작은_그래프_호버(unittest.TestCase):
+    """칸에는 '구간 최고값' 만 적혀 있어서, 아래 작은 그래프를 보고 '그럼 이
+    시각엔 얼마였나' 를 물으면 화면에 답이 없었다."""
+    C = _dt.datetime(2026, 9, 16, 14, 30)
+
+    def _tips(self, svg):
+        return [x for x in re.findall(r"<title>([^<]*)</title>", svg)]
+
+    def test_분마다_값이_말풍선으로_뜬다(self):
+        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertIn("14:10 · 8분 ▲", tips)
+
+    def test_임계를_안_넘은_분에는_표가_안_붙는다(self):
+        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertTrue(any(re.fullmatch(r"\d\d:\d\d · [\d.]+개", t) for t in tips),
+                        [t for t in tips if "개" in t][:5])
+
+    def test_쌓은_칸은_경로별로_나눠_말한다(self):
+        """합만 보여 주면 '어느 경로냐' 가 안 남는다 — 그게 조치 지점이다."""
+        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertTrue(any("M16HUB&lt;-M14A ×2" in t and "·" in t for t in tips),
+                        [t for t in tips if "×2" in t][:3])
+
+    def test_창이_길면_띠를_묶는다(self):
+        """180분이면 1.8px 짜리 띠가 180개 — 마우스로 집을 수가 없다."""
+        svg = _G.render(_rows("M14", n=200), self.C, minutes=180, width=1040)
+        self.assertTrue(any("최고" in t for t in self._tips(svg)))
+
+    def test_눌러서_고정할_수_있다(self):
+        """스코어 패널과 같은 동작 — 작은 그래프에서 튄 곳을 바로 집는다."""
+        svg = _G.render(_rows("M14"), self.C, minutes=60)
+        hits = re.findall(r'<rect class="ghit" data-at="([^"]+)" x="\d+" ', svg)
+        self.assertTrue(hits, "칸 히트에도 data-at 이 있어야 한다")
+
+    def test_말풍선이_이름표를_되풀이하지_않는다(self):
+        """띠가 수백 개다 — 같은 글자를 수백 번 실어 보내면 파일만 커진다."""
+        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertFalse([t for t in tips if t.startswith("M14 반송시간\n")])
+
+
 class 실제지표_칸(unittest.TestCase):
     R = ("발동: M14[R-A(AVGLOADTIME1MIN=9분)]; PIO(M14A<-M14B=4개/10분,합22)")
     ROW = {"M14A<-M14B_PIOERROR_DEPOSITED": "4",
