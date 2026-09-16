@@ -4139,10 +4139,19 @@ async function initPast(){
   if(PINIT) return;
   PINIT = true;
   await loadPastDays();
-  // 저장된 날짜가 있으면 최신 날짜, 없으면 오늘을 기본으로 잡아 바로 조회한다
+  /* ★날짜만 채워 두고 **읽지는 않는다.**
+     예전엔 여기서 최신 날짜(대개 오늘)를 바로 조회했다 — 탭을 열기만 해도
+     하루치(최대 5000행)를 받아 표·스트립·그날 LLM 판단까지 그렸다. 그게
+     실시간 화면과 같은 데이터라, 볼 날짜를 고르기도 전에 같은 일을 두 번
+     하고 있었다. 과거 조회는 '어느 날을 볼지' 를 정한 뒤에 시작해야 한다.
+     날짜를 고르거나(#pdate·#pday onchange) [조회] 를 누르면 그때 읽는다. */
   const day = $('#pday').value || new Date().toLocaleDateString('sv-SE').replace(/-/g,'');
   $('#pdate').value = `${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)}`;
-  await loadPast(day);
+  $('#pinfo').innerHTML = '<span style="color:var(--tx3)">날짜를 고르면 그 날을 불러옵니다</span>';
+  $('#pstripinfo').textContent = '';
+  $('#pstrip').innerHTML =
+    '<div class="empty" style="padding:22px 0">날짜를 고르면 그 날 추이가 그려집니다</div>';
+  $('#pdl').disabled = true;
 }
 
 async function loadPastDays(keep){

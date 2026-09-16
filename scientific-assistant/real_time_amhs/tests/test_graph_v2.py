@@ -251,7 +251,22 @@ class 클릭할_수_있게_시각을_실어_보낸다(unittest.TestCase):
                                  40, cfg=self.cfg)
 
     def test_분마다_히트_영역이_있다(self):
-        self.assertEqual(self.svg.count('class="ghit"'), 40)
+        """스코어 패널 기준 — 높이가 SCORE_H 인 띠가 분마다 하나씩.
+
+        ★전체 개수로 세면 안 된다. 2026-09 에 **작은 그래프 칸에도** 분 단위
+          히트를 깔았다 (마우스를 대면 그 분 값이 뜬다). 전체를 세면 칸이
+          몇 개냐에 따라 숫자가 흔들려, 정작 스코어 패널이 비어도 안 걸린다.
+        """
+        import re
+        panel = re.findall(rf'class="ghit"[^>]*height="{graphs.SCORE_H}"', self.svg)
+        self.assertEqual(len(panel), 40)
+
+    def test_작은_그래프_칸에도_히트가_깔린다(self):
+        """칸에는 구간 최고값만 적혀 있다 — 그 분 값을 물을 데가 있어야 한다."""
+        import re
+        cells = [x for x in re.findall(r'class="ghit"[^>]*height="(\d+)"', self.svg)
+                 if x != str(graphs.SCORE_H)]
+        self.assertTrue(cells, "칸 히트가 하나도 없다")
 
     def test_히트_영역에_시각이_실려_있다(self):
         self.assertIn('data-at="2026-09-12T15:20:00"', self.svg)
