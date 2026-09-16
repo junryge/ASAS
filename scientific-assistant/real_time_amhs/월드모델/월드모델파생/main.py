@@ -436,7 +436,11 @@ async def get_layout_bounds():
 
 @app.get("/api/layout-graph")
 async def get_layout_graph():
-    """레이아웃 노드/엣지 전체 (맵 배경용) - 초기 1회만 로드"""
+    """레이아웃 노드/엣지 전체 (맵 배경용) - 초기 1회만 로드.
+
+    2026-09 부터 스테이션·라벨(ZC/HID/베이/열/MTL)·센서·노드 메타(글자방향·
+    합류·분기)도 같이 준다 — 현장 HMI 캡처와 같은 맵을 그리기 위해서다.
+    """
     nodes = {str(nid): [round(c[0], 1), round(c[1], 1)] for nid, c in layout.nodes.items()}
     edges = [[e[0], e[1]] for e in layout.edge_dist.keys()]
 
@@ -482,7 +486,15 @@ async def get_layout_graph():
             'cy': round(sum(ys)/len(ys), 1),
         })
 
-    return {"nodes": nodes, "edges": edges, "bounds": layout.bounds, "zones": zone_list}
+    # ★HMI 맵 재료 (스키마 2). 전부 layout.xml 에 있던 것을 캐시에 실어 둔 것이다.
+    #   옛 캐시(스키마 1)면 빈 목록이 간다 — 화면은 레일만 그리고, 왜 그런지는
+    #   schema 로 알 수 있다 (캐시를 지우고 다시 띄우면 된다).
+    return {"nodes": nodes, "edges": edges, "bounds": layout.bounds, "zones": zone_list,
+            "schema": getattr(layout, "schema", 1),
+            "meta": {str(k): v for k, v in getattr(layout, "meta", {}).items()},
+            "stations": getattr(layout, "stations", []),
+            "labels": getattr(layout, "labels", []),
+            "sensors": getattr(layout, "sensors", [])}
 
 
 # ============================================================

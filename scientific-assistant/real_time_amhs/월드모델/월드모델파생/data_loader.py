@@ -34,6 +34,17 @@ from config import (
 # ============================================================
 # FAB별 layout_cache.json 생성/확인
 # ============================================================
+def _cache_schema_ok(cache_path) -> bool:
+    """캐시 JSON 앞머리만 읽어 스키마 번호를 본다 (전체 파싱은 MB 단위다)."""
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            head = f.read(64)
+    except OSError:
+        return False
+    m = re.search(r'"schema":\s*(\d+)', head)
+    return bool(m) and int(m.group(1)) >= LAYOUT_SCHEMA
+
+
 def ensure_layout_cache(fab: str, prefix: str) -> str:
     """
     FAB/prefix에 해당하는 layout_cache.json이 존재하고 최신인지 확인.
@@ -55,6 +66,11 @@ def ensure_layout_cache(fab: str, prefix: str) -> str:
         # 빈 파일(파싱 실패 흔적)이면 재빌드
         if cache_path.stat().st_mtime >= zip_path.stat().st_mtime:
             need_build = False
+    # ★스키마가 옛것이면 zip 이 그대로여도 다시 만든다. 캐시에 stations/labels
+    #   가 없으면 맵이 예전 그대로 나오는데, 왜 안 바뀌는지 아무도 모른다.
+    if not need_build and not _cache_schema_ok(cache_path):
+        print(f"[레이아웃] {fab}/{prefix} 캐시 스키마가 옛것 — 다시 만든다")
+        need_build = True
 
     if not need_build:
         return str(cache_path)
@@ -86,91 +102,142 @@ def ensure_layout_cache(fab: str, prefix: str) -> str:
     return str(cache_path)
 
 
+# 캐시 JSON 의 스키마 번호. 올리면 있던 캐시를 전부 다시 만든다.
+#   1: nodes / adj / edges 만 (예전)
+#   2: + meta(글자방향·합류·분기) · stations · labels · sensors  (2026-09 HMI 맵)
+LAYOUT_SCHEMA = 2
+
+_G_OPEN = re.compile(r'<group\b')
+_G_CLOSE = re.compile(r'</group>')
+_G_CLS = re.compile(r'class="[^"]*\.([A-Za-z]+\.[A-Za-z]+)"')   # …layout.address.Addr → address.Addr
+_P_KEY = re.compile(r'\bkey="([^"]+)"')
+_P_VAL = re.compile(r'\bvalue="([^"]*)"')
+
+
+def _label_kind(text: str) -> str:
+    """라벨 글자로 종류를 가른다 — 그리는 모양이 다르다.
+
+    현장 HMI 화면(고객이 준 캡처)에서 ZC/HID 는 초록 상자, 베이(B44)·열(C1)은
+    맨 글자, MTL 은 상자다. 종류를 모르면 전부 같은 글자로 찍혀서 아무것도
+    안 읽힌다.
+    """
+    t = str(text or "").strip()
+    if re.fullmatch(r"ZC\d+[A-Z]?", t):
+        return "zc"
+    if t.startswith("HID"):
+        return "hid"
+    if t.startswith("MTL"):
+        return "mtl"
+    if re.fullmatch(r"B\d{1,3}", t):
+        return "bay"
+    if re.fullmatch(r"[A-Z]{1,2}\d{0,2}", t):
+        return "col"
+    return "eq"
+
+
 def _parse_layout_xml_to_json(xml_content: str, output_path: str):
     """
-    layout.xml 파싱 → {nodes, adj, edges} JSON 저장.
-    속성 순서 무관 (M14A/M14B/M16A 등 다양한 변형 지원).
+    layout.xml 파싱 → JSON 저장.  반환 (노드 수, 엣지 수).
+
+    nodes / adj / edges 는 **예전과 똑같이** 만든다 (재생 엔진이 그대로 쓴다).
+    거기에 HMI 맵을 그리는 데 필요한 것을 더 싣는다 — 전부 layout.xml 에
+    이미 있던 것이다. 그리지 않았을 뿐이다.
+
+      meta     {노드: [글자방향 0~3, 합류(junction), 분기(branch)]}
+               글자방향은 현장 캡처와 대조해 정했다: 2=오른쪽 3=왼쪽 (세로 레일),
+               0·1=위 (가로 레일). 합류 노드가 캡처의 ✕ 표시다.
+      stations [[노드, 다음노드, 비율, 종류, 번호, 포트ID], …]
+               스테이션은 좌표가 없다. 그 노드의 기본 진행 방향(basic-direction)
+               엣지 위에서 offset ÷ distance-puls 만큼 간 자리다 — 캡처의 레일
+               옆 작은 네모 줄이 이것이다. 종류 9=오른쪽(ZFS_R) 8=왼쪽(ZFS_L)
+               1=레일 위(범용·PSA, 번호를 같이 찍는다).
+      labels   [[글자, 앵커노드, dx, dy, 종류], …]  위치 = 노드 + (dx, dy)
+      sensors  [[x, y, 방향], …]
+
+    속성 순서 무관. 그룹을 스택으로 따라가므로 Addr 안에 든 Station 도 놓치지
+    않는다 (예전 줄 단위 파서는 Addr/NextAddr 만 봤다).
     """
     import math
 
-    # class="...address.Addr" 매칭 (끝이 .Addr로 끝나는 class만)
-    addr_class_re = re.compile(r'class="[^"]*\.address\.Addr"')
-    next_addr_class_re = re.compile(r'class="[^"]*\.NextAddr"')
-    group_open_re = re.compile(r'<group\b')
-    group_close_re = re.compile(r'</group>')
-    # param은 key/value 순서 무관하게 개별 추출
-    param_tag_re = re.compile(r'<param\b')
-    key_re = re.compile(r'\bkey="([^"]+)"')
-    value_re = re.compile(r'\bvalue="([^"]*)"')
-
     node_xy = {}
-    connections = []
+    connections = []          # 문서 순서 그대로 (예전과 같은 adj 를 만들기 위해)
+    meta = {}
+    stations = []
+    labels = []
+    sensors = []
+    stack = []                # [class, params, children-lite]
 
-    current_addr_params = None
-    in_next_addr = False
-    next_addr_params = None
+    def _f(v, d=0.0):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return d
+
+    def _i(v, d=0):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return d
 
     for line in xml_content.split('\n'):
         line = line.strip()
-
-        # Addr 그룹 시작 (속성 순서 무관)
-        if group_open_re.search(line) and addr_class_re.search(line):
-            # 이전 Addr 커밋
-            if current_addr_params is not None and 'address' in current_addr_params:
-                try:
-                    addr_no = int(current_addr_params['address'])
-                    if addr_no > 0:
-                        x = float(current_addr_params.get('draw-x', 0))
-                        y = float(current_addr_params.get('draw-y', 0))
-                        node_xy[addr_no] = (x, y)
-                except (ValueError, TypeError):
-                    pass
-            current_addr_params = {}
-            in_next_addr = False
+        if _G_OPEN.search(line):
+            m = _G_CLS.search(line)
+            stack.append([m.group(1) if m else "", {}, []])
             continue
-
-        # NextAddr 그룹 시작
-        if group_open_re.search(line) and next_addr_class_re.search(line):
-            in_next_addr = True
-            next_addr_params = {}
+        if _G_CLOSE.search(line):
+            if not stack:
+                continue
+            cls, p, kids = stack.pop()
+            if cls == "address.Addr":
+                addr_no = _i(p.get("address"))
+                if addr_no > 0:
+                    node_xy[addr_no] = (_f(p.get("draw-x")), _f(p.get("draw-y")))
+                    meta[addr_no] = [_i(p.get("draw-text-direction")),
+                                     1 if p.get("junction") == "true" else 0,
+                                     1 if p.get("branch") == "true" else 0]
+                    basic_next, basic_puls = 0, 0
+                    for kc, kp in kids:
+                        if kc != "address.NextAddr":
+                            continue
+                        to = _i(kp.get("next-address"))
+                        if to > 0:
+                            connections.append((addr_no, to))
+                            if kp.get("basic-direction") == "true" and not basic_next:
+                                basic_next, basic_puls = to, _i(kp.get("distance-puls"))
+                    for kc, kp in kids:
+                        if kc != "address.Station":
+                            continue
+                        no = _i(kp.get("no"))
+                        if no <= 0:
+                            continue
+                        off = _i(kp.get("offset"))
+                        ratio = (off / basic_puls) if (basic_puls > 0 and off > 0) else 0.0
+                        ratio = min(1.0, max(0.0, ratio))
+                        stations.append([addr_no, basic_next, round(ratio, 4),
+                                         _i(kp.get("type")), no,
+                                         str(kp.get("port-id") or "")])
+            elif cls == "label.Label":
+                a = _i(p.get("address"))
+                txt = str(p.get("machine-id") or "").strip()
+                if a > 0 and txt:
+                    labels.append([txt, a, _f(p.get("draw-x")), _f(p.get("draw-y")),
+                                   _label_kind(txt)])
+            elif cls == "zcu.Sensor":
+                sensors.append([round(_f(p.get("draw-x")), 1), round(_f(p.get("draw-y")), 1),
+                                _i(p.get("draw-direction"))])
+            # 부모가 있으면 자식으로 올린다 (Addr 이 NextAddr·Station 을 본다).
+            # 파라미터만 넘긴다 — 손자까지 다 들고 있으면 220MB 파일에서 메모리가 샌다.
+            if stack and cls in ("address.NextAddr", "address.Station"):
+                stack[-1][2].append((cls, p))
             continue
-
-        # NextAddr 그룹 종료 → 연결 커밋
-        if in_next_addr and group_close_re.search(line):
-            if current_addr_params and 'address' in current_addr_params and next_addr_params and 'next-address' in next_addr_params:
-                try:
-                    fr = int(current_addr_params['address'])
-                    to = int(next_addr_params['next-address'])
-                    if fr > 0 and to > 0:
-                        connections.append((fr, to))
-                except (ValueError, TypeError):
-                    pass
-            in_next_addr = False
-            continue
-
-        # param 값 추출 (key/value 순서 무관)
-        if param_tag_re.search(line):
-            km = key_re.search(line)
-            vm = value_re.search(line)
+        if stack and line.startswith('<param') and 'key=' in line:
+            km = _P_KEY.search(line)
+            vm = _P_VAL.search(line)
             if km and vm:
-                key, value = km.group(1), vm.group(1)
-                if in_next_addr and next_addr_params is not None:
-                    next_addr_params[key] = value
-                elif current_addr_params is not None:
-                    current_addr_params[key] = value
+                stack[-1][1][km.group(1)] = vm.group(1)
 
-    # 마지막 Addr 커밋
-    if current_addr_params is not None and 'address' in current_addr_params:
-        try:
-            addr_no = int(current_addr_params['address'])
-            if addr_no > 0:
-                x = float(current_addr_params.get('draw-x', 0))
-                y = float(current_addr_params.get('draw-y', 0))
-                node_xy[addr_no] = (x, y)
-        except (ValueError, TypeError):
-            pass
-
-    # 인접 + 거리
+    # 인접 + 거리 (예전과 같은 정의)
     adj = {}
     edge_dist = {}
     for fr, to in connections:
@@ -178,13 +245,18 @@ def _parse_layout_xml_to_json(xml_content: str, output_path: str):
         if fr in node_xy and to in node_xy:
             x1, y1 = node_xy[fr]
             x2, y2 = node_xy[to]
-            d = int(math.sqrt((x2-x1)**2 + (y2-y1)**2) * 10)
+            d = int(math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) * 10)
             edge_dist[(fr, to)] = max(d, 10)
 
     data = {
+        "schema": LAYOUT_SCHEMA,          # ★맨 앞 — ensure_layout_cache 가 앞머리만 읽는다
         "nodes": {str(k): list(v) for k, v in node_xy.items()},
         "adj": {str(k): v for k, v in adj.items()},
         "edges": {f"{k[0]},{k[1]}": v for k, v in edge_dist.items()},
+        "meta": {str(k): v for k, v in meta.items()},
+        "stations": stations,
+        "labels": labels,
+        "sensors": sensors,
     }
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(data, f)
@@ -205,11 +277,22 @@ class LayoutData:
         self.edge_dist: Dict[Tuple[int, int], float] = {}
         self.node_ids: List[int] = []
         self.bounds = {"min_x": 0, "min_y": 0, "max_x": 0, "max_y": 0}
+        # HMI 맵용 (스키마 2). 옛 캐시면 비어 있다 — 그래도 재생은 돈다.
+        self.meta: Dict[int, list] = {}          # 노드 → [글자방향, 합류, 분기]
+        self.stations: List[list] = []           # [노드, 다음노드, 비율, 종류, 번호, 포트]
+        self.labels: List[list] = []             # [글자, 앵커노드, dx, dy, 종류]
+        self.sensors: List[list] = []            # [x, y, 방향]
+        self.schema: int = 1
 
     def load(self, path: str = None):
         path = path or str(LAYOUT_CACHE_JSON)
         with open(path, 'r', encoding='utf-8') as f:
             cache = json.load(f)
+        self.schema = int(cache.get('schema') or 1)
+        self.meta = {int(k): v for k, v in (cache.get('meta') or {}).items()}
+        self.stations = list(cache.get('stations') or [])
+        self.labels = list(cache.get('labels') or [])
+        self.sensors = list(cache.get('sensors') or [])
 
         # 노드 좌표
         for nid_str, coords in cache.get('nodes', {}).items():

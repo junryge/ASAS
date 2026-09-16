@@ -220,7 +220,11 @@ canvas.chart { width:100%; flex:1; }
   <button id="btn-zone" class="toggle-btn on" onclick="toggleLayer('zone')">Zone 표시</button>
   <button id="btn-railcut" class="toggle-btn on" onclick="toggleLayer('railcut')">차단 표시</button>
   <button id="btn-id" class="toggle-btn" onclick="toggleLayer('id')">ID 표시</button>
-  <button id="btn-name" class="toggle-btn" onclick="toggleLayer('name')">주소 표시</button>
+  <button id="btn-name" class="toggle-btn on" onclick="toggleLayer('name')" title="노드 번호 — 확대하면 보인다">주소 표시</button>
+  <button id="btn-station" class="toggle-btn on" onclick="toggleLayer('station')" title="레일 옆 포트(스테이션) 네모">포트 표시</button>
+  <button id="btn-label" class="toggle-btn on" onclick="toggleLayer('label')" title="ZC · HID · 베이 · 열 · MTL 라벨">라벨 표시</button>
+  <button id="btn-junction" class="toggle-btn on" onclick="toggleLayer('junction')" title="합류(✕)·분기(○) 노드">합류 표시</button>
+  <button id="btn-sensor" class="toggle-btn" onclick="toggleLayer('sensor')" title="ZCU 센서 위치">센서 표시</button>
   <button id="btn-hotspot" class="toggle-btn on" onclick="toggleLayer('hotspot')" title="데드락 체인/클러스터 마커 ON/OFF">체인 표시</button>
 </div>
 
@@ -399,24 +403,53 @@ function jumpFrame(val) { sendCmd('jump_frame', { frame: parseInt(val) }); }
 // ============================================================
 const MAP_SETTINGS_KEY = 'oht_world_map_settings_v1';
 const DEFAULT_MAP_SETTINGS = {
-  bgColor:        '#0a0e17',
+  // ★2026-09 현장 요청 — "월드모델 맵을 현장 HMI 화면처럼". 밝은 바탕에 검은
+  //   레일, 레일 옆 포트 네모 줄, ZC/HID 초록 상자, 베이·열 글자, 진행 방향을
+  //   가리키는 삼각형 차량. 전부 layout.xml 에 있던 것을 그리지 않았을 뿐이다.
+  mapTheme:       'hmi',          // 'hmi' = 현장 HMI 처럼 밝게 | 'dark' = 예전 어두운 맵
+  bgColor:        '#0a0e17',      // (dark 테마에서만 쓴다)
   edgeColor:      'rgba(255,255,255,0.75)',
   edgeWidth:      1.0,            // mapZoom 에 곱해짐
   nodeColor:      '#2a4a6a',
   nodeSize:       1,              // 정사각 한 변(px)
-  vehicleRadius:  1.5,            // mapZoom 에 곱해짐
-  colorEmpty:     '#22c55e',      // 공차
-  colorLoaded:    '#3b82f6',      // 적재
+  vehicleRadius:  3,              // mapZoom 에 곱해짐 (삼각형이 보이려면 3 은 돼야 한다)
+  stationSize:    1.0,            // 포트 네모 크기 배수
+  colorEmpty:     '#22c55e',      // 공차 (초록)
+  colorLoaded:    '#22d3ee',      // 적재 (하늘) — 현장 캡처의 색
   colorObs:       '#f59e0b',      // OBS
-  colorStop:      '#6b7280',      // 정지
+  colorStop:      '#9ca3af',      // 정지
   colorJam:       '#ef4444',      // JAM
   // 카테고리별 도형: 'circle' | 'triangle' | 'square' | 'diamond'
-  shapeEmpty:     'circle',
-  shapeLoaded:    'circle',
-  shapeObs:       'circle',
-  shapeStop:      'circle',
-  shapeJam:       'circle',
+  // 삼각형은 **진행 방향을 가리킨다** (현재 노드 → 다음 노드). 원은 방향이 없다.
+  shapeEmpty:     'triangle',
+  shapeLoaded:    'triangle',
+  shapeObs:       'triangle',
+  shapeStop:      'triangle',
+  shapeJam:       'triangle',
 };
+// 테마 팔레트 — hmi 는 현장 캡처(밝은 회색 바탕·검은 레일·초록 ZC 상자)를 그대로 옮긴 것
+const MAP_THEMES = {
+  hmi:  { bg:'#eceef2', rail:'#23272e', railW:1.15, node:'#6b7280',
+          station:'#c9d2dc', stationLine:'#3f4a58', stationOn:'#ffffff',
+          text:'#111827', text2:'#374151', textBg:'rgba(236,238,242,0.88)',
+          zc:'#3ddc5a', zcText:'#062b10', hid:'#3ddc5a', hidText:'#062b10',
+          mtl:'#1d4ed8', mtlText:'#ffffff', eq:'#cbd5e1', eqText:'#1f2937',
+          junction:'#d62828', branch:'#6b7280', sensor:'#0284c7',
+          zone:'#059669', vehicleStroke:'#0b0f14', cutX:'#111' },
+  dark: { bg:'#0a0e17', rail:'rgba(255,255,255,0.75)', railW:1.0, node:'#2a4a6a',
+          station:'#334155', stationLine:'#94a3b8', stationOn:'#e2e8f0',
+          text:'#fde68a', text2:'#cbd5e1', textBg:'rgba(10,14,23,0.82)',
+          zc:'#16a34a', zcText:'#ecfdf5', hid:'#16a34a', hidText:'#ecfdf5',
+          mtl:'#2563eb', mtlText:'#fff', eq:'#475569', eqText:'#e2e8f0',
+          junction:'#f87171', branch:'#94a3b8', sensor:'#38bdf8',
+          zone:'#00ff88', vehicleStroke:'#0a0e17', cutX:'#fff' },
+};
+function mapPal() {
+  const t = MAP_THEMES[mapSettings.mapTheme] ? mapSettings.mapTheme : 'hmi';
+  const p = { ...MAP_THEMES[t] };
+  if (t === 'dark') { p.bg = mapSettings.bgColor; p.rail = mapSettings.edgeColor; p.railW = mapSettings.edgeWidth; p.node = mapSettings.nodeColor; }
+  return p;
+}
 let mapSettings = { ...DEFAULT_MAP_SETTINGS };
 function loadMapSettings() {
   try {
@@ -856,18 +889,25 @@ function scheduleDrawMap() {
 }
 
 // 표시 레이어 토글
-let showZone = true, showRailCut = true, showId = false, showName = false, showHotspot = true;
+// ★주소(노드 번호)는 기본 ON — 현장 캡처처럼 확대하면 번호가 보인다.
+//   축소돼 있을 땐 자동으로 숨긴다(겹쳐서 읽히지 않는다). 포트·라벨도 같다.
+let showZone = true, showRailCut = true, showId = false, showName = true, showHotspot = true;
+let showStation = true, showLabel = true, showSensor = false, showJunction = true;
 function toggleLayer(layer) {
   if (layer==='zone') showZone = !showZone;
   if (layer==='railcut') showRailCut = !showRailCut;
   if (layer==='id') showId = !showId;
   if (layer==='name') showName = !showName;
   if (layer==='hotspot') showHotspot = !showHotspot;
-  document.getElementById('btn-zone').classList.toggle('on', showZone);
-  document.getElementById('btn-railcut').classList.toggle('on', showRailCut);
-  document.getElementById('btn-id').classList.toggle('on', showId);
-  document.getElementById('btn-name').classList.toggle('on', showName);
-  document.getElementById('btn-hotspot').classList.toggle('on', showHotspot);
+  if (layer==='station') showStation = !showStation;
+  if (layer==='label') showLabel = !showLabel;
+  if (layer==='sensor') showSensor = !showSensor;
+  if (layer==='junction') showJunction = !showJunction;
+  const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
+  on('btn-zone', showZone); on('btn-railcut', showRailCut); on('btn-id', showId);
+  on('btn-name', showName); on('btn-hotspot', showHotspot);
+  on('btn-station', showStation); on('btn-label', showLabel); on('btn-sensor', showSensor);
+  on('btn-junction', showJunction);
   railCacheCanvas = null;
   drawMap();
 }
@@ -902,11 +942,256 @@ async function loadRailGraph() {
     const resp = await fetch('/api/layout-graph');
     railGraph = await resp.json();
     mapData.bounds = railGraph.bounds;
+    railGeom = buildRailGeom(railGraph);   // 둥근 모서리·포트 자리 — 한 번만 계산
     railCacheCanvas = null;
+    if ((railGraph.schema || 1) < 2) console.warn('레이아웃 캐시가 옛 스키마 — 포트/라벨이 없다. 서버 cache/*.json 을 지우고 다시 띄우면 된다.');
     console.log('레일 그래프 로드:', Object.keys(railGraph.nodes).length, '노드,', railGraph.edges.length, '엣지');
     drawMap();
   } catch(e) { console.error('레일 그래프 로드 실패:', e); }
 }
+
+let railGeom = null;
+// ===== HMI 맵 레이어 (시작) =====
+// 현장 HMI 캡처처럼 그린다. 전부 layout.xml 에 있던 것이다 — 그리지 않았을 뿐이다.
+//   레일        모서리를 둥글린다. 캡처의 곡선은 대각선 '모서리 노드' 를 지나는
+//               호(弧)다. 이웃이 둘뿐이고 방향이 꺾이는 노드에서 양쪽 중점을
+//               노드를 제어점 삼아 잇는다 (2차 베지어).
+//   포트        스테이션은 좌표가 없다. 그 노드의 기본 진행 엣지 위 offset 비율
+//               자리에, 진행 방향의 오른쪽(종류 9)/왼쪽(8)으로 띄워 네모로 찍는다.
+//               레일 위 종류(1·PSA)는 흰 네모 + 번호.
+//   ✕ / ○       합류(junction) / 분기(branch) 노드 — 캡처의 ✕ 가 합류다.
+//   번호        노드 번호는 draw-text-direction 대로 (2=오른쪽 3=왼쪽 0·1=위).
+//   라벨        ZC·HID 초록 상자, MTL 파란 상자, 베이(B44)·열(C1) 맨 글자.
+// 무엇을 언제 보이나는 **화면 1px 당 도면 단위(sc)** 로 정한다. 줌 배수로 정하면
+// 창 크기마다 달라진다. 축소해서 전체를 보면 레일·베이·열·MTL 만, 확대할수록
+// 포트 → ZC/HID 상자 → 합류 → 번호 순으로 살아난다 (캡처 두 장이 딱 그 둘이다).
+const HMI_SC = { station: 0.28, box: 0.45, junction: 0.55, node: 0.6, addr: 0.85, stno: 1.2, sensor: 1.0 };
+
+function buildRailGeom(g) {
+  const nodes = g.nodes || {}, nbr = {}, und = [], seen = new Set();
+  for (const e of (g.edges || [])) {
+    const a = String(e[0]), b = String(e[1]);
+    if (!nodes[a] || !nodes[b] || a === b) continue;
+    const k = a < b ? a + ',' + b : b + ',' + a;      // 양방향 레일은 한 줄
+    if (seen.has(k)) continue;
+    seen.add(k);
+    und.push([a, b]);
+    (nbr[a] = nbr[a] || []).push(b);
+    (nbr[b] = nbr[b] || []).push(a);
+  }
+  // 둥글릴 노드 — 이웃이 딱 둘이고, 일직선이 아닌 곳
+  const smooth = {};
+  for (const n in nbr) {
+    const ns = nbr[n];
+    if (ns.length !== 2) continue;
+    const P = nodes[n], A = nodes[ns[0]], B = nodes[ns[1]];
+    const ux = A[0]-P[0], uy = A[1]-P[1], vx = B[0]-P[0], vy = B[1]-P[1];
+    const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+    if (!lu || !lv) continue;
+    const cos = (ux*vx + uy*vy) / (lu*lv);           // -1 일직선 · +1 되돌아감
+    if (cos < -0.99) continue;                         // 8° 미만 꺾임은 직선으로 둔다
+    smooth[n] = ns;
+  }
+  // 포트 자리 (도면 단위) — [x, y, 법선x, 법선y, 종류, 번호]. 법선은 진행 방향의 오른쪽.
+  const st = [];
+  for (const s of (g.stations || [])) {
+    const a = nodes[String(s[0])];
+    if (!a) continue;
+    let b = nodes[String(s[1])];
+    let tx = 0, ty = -1;
+    if (b && (b[0] !== a[0] || b[1] !== a[1])) {
+      const dx = b[0]-a[0], dy = b[1]-a[1], l = Math.hypot(dx, dy);
+      tx = dx/l; ty = dy/l;
+    } else {
+      // 다음 노드가 없으면(막다른 레일) 이웃 하나로 방향만 잡는다
+      const ns = nbr[String(s[0])];
+      if (ns && ns.length) { const c = nodes[ns[0]]; const dx = c[0]-a[0], dy = c[1]-a[1], l = Math.hypot(dx, dy) || 1; tx = dx/l; ty = dy/l; }
+      b = null;
+    }
+    const r = b ? Math.min(1, Math.max(0, +s[2] || 0)) : 0;
+    st.push([a[0] + (b ? (b[0]-a[0])*r : 0), a[1] + (b ? (b[1]-a[1])*r : 0), -ty, tx, +s[3], s[4]]);
+  }
+  return { und, nbr, smooth, st };
+}
+
+function drawRailLayer(rc, g, geom, toS, sc, w, h, PAD, o) {
+  const P = o.pal, nodes = g.nodes || {};
+  if (!geom) geom = buildRailGeom(g);
+  const vis = (x, y) => x >= -PAD && x <= w+PAD && y >= -PAD && y <= h+PAD;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // 1) 레일 — 직선 조각 + 둥근 모서리
+  rc.strokeStyle = P.rail;
+  rc.lineWidth = clamp(0.9 + sc*0.8, 0.8, 2.4) * (P.railW || 1);
+  rc.lineCap = 'round'; rc.lineJoin = 'round';
+  rc.beginPath();
+  for (const [a, b] of geom.und) {
+    const A = nodes[a], B = nodes[b];
+    const [ax, ay] = toS(A[0], A[1]), [bx, by] = toS(B[0], B[1]);
+    if ((ax<-PAD&&bx<-PAD)||(ax>w+PAD&&bx>w+PAD)||(ay<-PAD&&by<-PAD)||(ay>h+PAD&&by>h+PAD)) continue;
+    const mx = (ax+bx)/2, my = (ay+by)/2;
+    const sa = geom.smooth[a], sb = geom.smooth[b];
+    rc.moveTo(sa ? mx : ax, sa ? my : ay);
+    rc.lineTo(sb ? mx : bx, sb ? my : by);
+  }
+  rc.stroke();
+  rc.beginPath();
+  for (const n in geom.smooth) {
+    const [p, q] = geom.smooth[n];
+    const N = nodes[n], Pp = nodes[p], Q = nodes[q];
+    const [nx, ny] = toS(N[0], N[1]);
+    if (!vis(nx, ny)) continue;
+    const [px, py] = toS(Pp[0], Pp[1]), [qx, qy] = toS(Q[0], Q[1]);
+    rc.moveTo((nx+px)/2, (ny+py)/2);
+    rc.quadraticCurveTo(nx, ny, (nx+qx)/2, (ny+qy)/2);
+  }
+  rc.stroke();
+
+  // 2) 포트 (스테이션) — 레일 옆 작은 네모 줄
+  if (o.showStation && sc >= HMI_SC.station) {
+    const ss = clamp(3.2*sc, 2.2, 7) * (o.stationSize || 1);
+    const gap = clamp(4.5*sc, 3, 10);
+    rc.lineWidth = clamp(sc*0.8, 0.6, 1.2);
+    rc.strokeStyle = P.stationLine;
+    const showNo = sc >= HMI_SC.stno;
+    if (showNo) { rc.font = `${clamp(6 + sc*2, 8, 11)}px Consolas, monospace`; rc.textAlign = 'center'; rc.textBaseline = 'top'; }
+    for (const s of geom.st) {
+      const [x, y] = toS(s[0], s[1]);
+      if (!vis(x, y)) continue;
+      const t = s[4];
+      let cx = x, cy = y;
+      if (t === 9) { cx += s[2]*gap; cy += s[3]*gap; }
+      else if (t === 8) { cx -= s[2]*gap; cy -= s[3]*gap; }
+      rc.fillStyle = (t === 9 || t === 8) ? P.station : P.stationOn;
+      rc.beginPath(); rc.rect(cx - ss/2, cy - ss/2, ss, ss); rc.fill(); rc.stroke();
+      if (showNo && t !== 9 && t !== 8) { rc.fillStyle = P.text2; rc.fillText(String(s[5]), cx, cy + ss/2 + 2); }
+    }
+    rc.textBaseline = 'alphabetic';
+  }
+
+  // 3) 센서 (ZCU) — 켠 사람만 본다
+  if (o.showSensor && sc >= HMI_SC.sensor && g.sensors) {
+    rc.fillStyle = P.sensor;
+    const r = clamp(sc*1.2, 1.5, 3);
+    for (const s of g.sensors) {
+      const [x, y] = toS(s[0], s[1]);
+      if (!vis(x, y)) continue;
+      rc.beginPath(); rc.arc(x, y, r, 0, 6.283); rc.fill();
+    }
+  }
+
+  // 4) 노드 점 · 합류 ✕ · 분기 ○
+  const meta = g.meta || {};
+  const doNode = sc >= HMI_SC.node, doJ = o.showJunction && sc >= HMI_SC.junction;
+  if (doNode || doJ) {
+    const nr = clamp(sc*1.3, 1.2, 2.5), xs = clamp(sc*2.6, 3, 6);
+    for (const n in nodes) {
+      const [x, y] = toS(nodes[n][0], nodes[n][1]);
+      if (!vis(x, y)) continue;
+      const m = meta[n];
+      if (doJ && m && m[1]) {
+        rc.strokeStyle = P.junction; rc.lineWidth = clamp(sc, 1, 1.8);
+        rc.beginPath(); rc.moveTo(x-xs, y-xs); rc.lineTo(x+xs, y+xs); rc.moveTo(x+xs, y-xs); rc.lineTo(x-xs, y+xs); rc.stroke();
+      } else if (doJ && m && m[2]) {
+        rc.strokeStyle = P.branch; rc.lineWidth = 1;
+        rc.beginPath(); rc.arc(x, y, xs*0.8, 0, 6.283); rc.stroke();
+      } else if (doNode) {
+        rc.fillStyle = P.node;
+        rc.beginPath(); rc.arc(x, y, nr, 0, 6.283); rc.fill();
+      }
+    }
+  }
+
+  // 5) 노드 번호 — draw-text-direction 대로. 현장 캡처와 대조해 정한 표다.
+  if (o.showName && sc >= HMI_SC.addr) {
+    const fs = clamp(6 + sc*3, 9, 13), d = clamp(sc*3, 4, 8);
+    rc.font = `bold ${fs}px Consolas, monospace`;
+    rc.fillStyle = P.text;
+    for (const n in nodes) {
+      const [x, y] = toS(nodes[n][0], nodes[n][1]);
+      if (x < -20 || x > w+20 || y < -20 || y > h+20) continue;
+      const td = (meta[n] || [0])[0];
+      if (td === 2)      { rc.textAlign = 'left';  rc.textBaseline = 'middle'; rc.fillText(n, x + d + 1, y); }
+      else if (td === 3) { rc.textAlign = 'right'; rc.textBaseline = 'middle'; rc.fillText(n, x - d - 1, y); }
+      else               { rc.textAlign = 'center'; rc.textBaseline = 'bottom'; rc.fillText(n, x, y - d); }
+    }
+    rc.textBaseline = 'alphabetic';
+  }
+
+  // 6) 라벨 — 베이·열은 늘, 상자(ZC/HID/설비)는 확대했을 때, MTL 은 늘
+  if (o.showLabel && g.labels) {
+    const fsT = clamp(8 + sc*4, 10, 15), fsB = clamp(6 + sc*3, 8, 12);
+    const doBox = sc >= HMI_SC.box;
+    for (const l of g.labels) {
+      const N = nodes[String(l[1])];
+      if (!N) continue;
+      const kind = l[4];
+      const [x, y] = toS(N[0] + (+l[2] || 0), N[1] + (+l[3] || 0));
+      if (!vis(x, y)) continue;
+      if (kind === 'bay' || kind === 'col') {
+        // ★열(C1·E8)과 베이(B61)는 같은 오프셋(0,±30)으로 같은 줄에 앉는다 —
+        //   그대로 찍으면 겹쳐서 둘 다 안 읽힌다 (실물로 찍어 보고 알았다).
+        //   현장 캡처는 열 글자가 베이 줄 **한 줄 바깥**에 있다. 열 라벨을 제
+        //   오프셋 방향(위면 더 위, 아래면 더 아래)으로 한 줄 밀어낸다.
+        const yy = kind === 'col' ? y + Math.sign(+l[3] || -1) * fsT * 1.15 : y;
+        rc.font = `bold ${fsT}px sans-serif`; rc.textAlign = 'center'; rc.textBaseline = 'middle';
+        rc.fillStyle = P.text; rc.fillText(l[0], x, yy);
+        continue;
+      }
+      if (!(doBox || kind === 'mtl')) continue;
+      const bg = kind === 'zc' ? P.zc : kind === 'hid' ? P.hid : kind === 'mtl' ? P.mtl : P.eq;
+      const fg = kind === 'zc' ? P.zcText : kind === 'hid' ? P.hidText : kind === 'mtl' ? P.mtlText : P.eqText;
+      rc.font = `bold ${fsB}px sans-serif`; rc.textAlign = 'left'; rc.textBaseline = 'middle';
+      const tw = rc.measureText(l[0]).width;
+      rc.fillStyle = bg; rc.fillRect(x, y - fsB/2 - 2, tw + 6, fsB + 4);
+      rc.fillStyle = fg; rc.fillText(l[0], x + 3, y + 0.5);
+    }
+    rc.textBaseline = 'alphabetic';
+  }
+}
+
+// 차량 반지름(px) — 줌에 정비례하지 않는다. 전체 화면 4px, 열 배 확대 ~9px.
+function vehicleRadiusPx(base, zoom) {
+  return Math.max(2.5, Math.min(10, (base || 3) * (1.2 + 0.18 * Math.max(0, zoom || 1))));
+}
+
+// 차량 진행 방향 — 현재 노드 → 다음 노드. 모르면 마지막으로 움직인 쪽, 그것도 없으면 위.
+function vehicleHeading(v, g) {
+  let ang = null;
+  if (g && g.nodes && v.currentNode != null && v.nextNode != null) {
+    const A = g.nodes[String(v.currentNode)], B = g.nodes[String(v.nextNode)];
+    if (A && B && (A[0] !== B[0] || A[1] !== B[1])) ang = Math.atan2(B[1]-A[1], B[0]-A[0]);
+  }
+  if (ang == null && v._px != null) {
+    const dx = v.dx - v._px, dy = v.dy - v._py;
+    if (dx*dx + dy*dy > 1e-6) ang = Math.atan2(dy, dx);
+  }
+  if (ang == null) ang = (v._ang != null) ? v._ang : -Math.PI/2;
+  v._ang = ang; v._px = v.dx; v._py = v.dy;
+  return ang;
+}
+
+// 차량 도형 — 삼각형은 꼭짓점이 진행 방향을 가리킨다. 밝은 바탕에서는 테두리가 있어야 보인다.
+function drawVehicleShape(ctx, sx, sy, rr, shape, ang, color, stroke) {
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.beginPath();
+  if (shape === 'triangle') {
+    ctx.rotate(ang);
+    const tr = rr * 1.56;
+    ctx.moveTo(tr, 0); ctx.lineTo(-tr*0.7, tr*0.78); ctx.lineTo(-tr*0.7, -tr*0.78); ctx.closePath();
+  } else if (shape === 'square') {
+    const s = rr * 1.77; ctx.rect(-s/2, -s/2, s, s);
+  } else if (shape === 'diamond') {
+    const d = rr * 1.25; ctx.moveTo(0, -d); ctx.lineTo(d, 0); ctx.lineTo(0, d); ctx.lineTo(-d, 0); ctx.closePath();
+  } else {
+    ctx.arc(0, 0, rr, 0, 6.283);
+  }
+  ctx.fillStyle = color; ctx.fill();
+  if (rr >= 3 && stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(0.6, Math.min(1.2, rr*0.18)); ctx.stroke(); }
+  ctx.restore();
+}
+// ===== HMI 맵 레이어 (끝) =====
 
 function drawMap() {
   const rect = mapCanvas.parentElement.getBoundingClientRect();
@@ -926,7 +1211,7 @@ function drawMap() {
   }
 
   // 매 프레임 메인 캔버스 초기화 — pan 으로 drawImage 가 캔버스 전체를 덮지 못할 때 잔상(HID 라벨 고스트) 발생 방지.
-  mapCtx.fillStyle = '#0a0e17';
+  mapCtx.fillStyle = mapPal().bg;
   mapCtx.fillRect(0, 0, w, h);
 
   const dataW = b.max_x-b.min_x||1, dataH = b.max_y-b.min_y||1;
@@ -938,7 +1223,7 @@ function drawMap() {
   // 1. 레일 배경 (캐시) — pan 은 캐시 key 에서 제외. 드래그 중에도 캐시 재사용.
   //    캐시 빌드 시 pan offset 만큼 여유 viewport 를 렌더 (드래그 여유)
   const CACHE_PAD = 800;
-  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${showZone?1:0}`;
+  const cacheKey = `${w}_${h}_${mapZoom.toFixed(3)}_${showZone?1:0}_${showStation?1:0}_${showLabel?1:0}_${showSensor?1:0}_${showJunction?1:0}_${showName?1:0}_${mapSettings.mapTheme}_${mapSettings.stationSize}`;
   // pan 이 캐시 빌드 시점에서 많이 벗어나면 캐시 범위 밖이 비어 보이므로 재빌드
   const panDrift = railCacheCanvas
     ? Math.max(Math.abs(mapPanX - railCachePanX), Math.abs(mapPanY - railCachePanY))
@@ -951,39 +1236,21 @@ function drawMap() {
     railCachePanX = mapPanX;
     railCachePanY = mapPanY;
     const rc = railCacheCanvas.getContext('2d');
-    rc.fillStyle = mapSettings.bgColor; rc.fillRect(0, 0, railCacheCanvas.width, railCacheCanvas.height);
+    rc.fillStyle = mapPal().bg; rc.fillRect(0, 0, railCacheCanvas.width, railCacheCanvas.height);
     // 이후 그리기 좌표는 viewport 기준 → (+CACHE_PAD) 만큼 이동.
     rc.translate(CACHE_PAD, CACHE_PAD);
 
     if (railGraph) {
-      const nodes = railGraph.nodes, edges = railGraph.edges;
-      rc.strokeStyle = mapSettings.edgeColor;
-      rc.lineWidth = Math.max(0.8, mapSettings.edgeWidth*mapZoom);
-      rc.lineCap = 'round';
-      rc.beginPath();
-      for (let i=0; i<edges.length; i++) {
-        const from=nodes[edges[i][0]], to=nodes[edges[i][1]];
-        if (!from||!to) continue;
-        const [fx,fy]=toS(from[0],from[1]), [tx,ty]=toS(to[0],to[1]);
-        // 드래그 여유를 위해 컬링 범위를 CACHE_PAD 만큼 넓힘
-        if ((fx<-CACHE_PAD&&tx<-CACHE_PAD)||(fx>w+CACHE_PAD&&tx>w+CACHE_PAD)||(fy<-CACHE_PAD&&ty<-CACHE_PAD)||(fy>h+CACHE_PAD&&ty>h+CACHE_PAD)) continue;
-        rc.moveTo(fx,fy); rc.lineTo(tx,ty);
-      }
-      rc.stroke();
-
-      if (mapZoom >= 3) {
-        rc.fillStyle = mapSettings.nodeColor;
-        const ns = Math.max(0.5, mapSettings.nodeSize);
-        const half = ns / 2;
-        for (const [nid, c] of Object.entries(nodes)) {
-          const [sx,sy]=toS(c[0],c[1]);
-          if (sx<-CACHE_PAD||sx>w+CACHE_PAD||sy<-CACHE_PAD||sy>h+CACHE_PAD) continue;
-          rc.fillRect(sx-half, sy-half, ns, ns);
-        }
-      }
+      // ★HMI 레이어 — 레일(모서리 둥글게)·포트·센서·합류/분기·노드 번호·라벨.
+      //   전부 한 번 그려 캐시에 두고, 매 프레임엔 차량만 그 위에 얹는다.
+      drawRailLayer(rc, railGraph, railGeom, toS, sc, w, h, CACHE_PAD, {
+        pal: mapPal(), showStation, showLabel, showSensor, showJunction, showName,
+        stationSize: mapSettings.stationSize,
+      });
 
       if (showZone && railGraph.zones) {
         const nodes = railGraph.nodes;
+        const pal = mapPal();
         const zoneLineW = Math.max(1.5, 2*mapZoom);
 
         const visibleZones = [];
@@ -996,7 +1263,7 @@ function drawMap() {
 
         if (mapZoom >= 2) {
           for (const z of visibleZones) {
-            rc.strokeStyle = '#00ff88';
+            rc.strokeStyle = pal.zone;
             rc.lineWidth = zoneLineW;
             rc.globalAlpha = 0.4;
             rc.setLineDash([]);
@@ -1018,17 +1285,21 @@ function drawMap() {
           rc.globalAlpha = 1.0;
         }
 
-        const fontSize = Math.max(7, Math.min(11, 5*mapZoom));
-        rc.font = `bold ${fontSize}px sans-serif`;
-        rc.textAlign = 'center';
-        for (const z of visibleZones) {
-          const cx = z._sx, cy = z._sy;
-          const label = `HID ${z.id}`;
-          const tw = rc.measureText(label).width;
-          rc.fillStyle = 'rgba(0,0,0,0.7)';
-          rc.fillRect(cx-tw/2-2, cy-fontSize/2-1, tw+4, fontSize+2);
-          rc.fillStyle = '#00ffcc';
-          rc.fillText(label, cx, cy + fontSize*0.3);
+        // ★HID 존 이름표는 layout.xml 의 HID 라벨(초록 상자)이 이미 맡는다.
+        //   라벨을 껐을 때만 예전 방식으로 찍는다 — 둘 다 찍으면 같은 자리에 겹친다.
+        if (!showLabel) {
+          const fontSize = Math.max(7, Math.min(11, 5*mapZoom));
+          rc.font = `bold ${fontSize}px sans-serif`;
+          rc.textAlign = 'center';
+          for (const z of visibleZones) {
+            const cx = z._sx, cy = z._sy;
+            const label = `HID ${z.id}`;
+            const tw = rc.measureText(label).width;
+            rc.fillStyle = pal.textBg;
+            rc.fillRect(cx-tw/2-2, cy-fontSize/2-1, tw+4, fontSize+2);
+            rc.fillStyle = pal.zone;
+            rc.fillText(label, cx, cy + fontSize*0.3);
+          }
         }
       }
     }
@@ -1097,32 +1368,14 @@ function drawMap() {
     mapCtx.globalAlpha = 1.0;
   }
 
-  // 2. 차량 (보간된 위치) — 카테고리별 색상 + 카테고리별 도형 (설정 가능: ⚙ 설정)
-  // 반경 = vehicleRadius × mapZoom. 최소 0.5px, 최대 30px.
-  const r = Math.max(0.5, Math.min(30, mapSettings.vehicleRadius*mapZoom));
-  // 모든 도형의 시각 면적이 원과 비슷해지도록 도형별 보정 계수 적용.
-  function _drawShape(sx, sy, rr, shape) {
-    mapCtx.beginPath();
-    if (shape === 'triangle') {
-      const tr = rr * 1.56;
-      mapCtx.moveTo(sx,            sy - tr);
-      mapCtx.lineTo(sx + tr*0.866, sy + tr*0.5);
-      mapCtx.lineTo(sx - tr*0.866, sy + tr*0.5);
-      mapCtx.closePath();
-    } else if (shape === 'square') {
-      const s = rr * 1.77;
-      mapCtx.rect(sx - s/2, sy - s/2, s, s);
-    } else if (shape === 'diamond') {
-      const dr = rr * 1.25;
-      mapCtx.moveTo(sx,      sy - dr);
-      mapCtx.lineTo(sx + dr, sy);
-      mapCtx.lineTo(sx,      sy + dr);
-      mapCtx.lineTo(sx - dr, sy);
-      mapCtx.closePath();
-    } else {
-      mapCtx.arc(sx, sy, rr, 0, 6.283);  // circle (기본)
-    }
-  }
+  // 2. 차량 (보간된 위치) — 카테고리별 색상 + 도형 (설정 가능: ⚙ 설정)
+  // ★삼각형은 **진행 방향**을 가리킨다 (현재 노드 → 다음 노드). 현장 캡처의
+  //   ▲▼◀▶ 가 이것이다. 방향을 모르면 마지막으로 움직인 쪽, 그것도 없으면 위.
+  // 크기는 vehicleRadius × (줌에 따라 천천히) — 줌에 정비례하면 확대했을 때
+  //   차량이 레일 한 칸을 덮는다 (실물로 찍어 보고 알았다). 캡처에서는 전체
+  //   화면에서 8px, 열 배 확대해도 14px 쯤이다.
+  const pal = mapPal();
+  const r = vehicleRadiusPx(mapSettings.vehicleRadius, mapZoom);
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
     const [sx,sy] = toS(v.dx, v.dy);
@@ -1135,9 +1388,7 @@ function drawMap() {
     else if (v.isFull)                                       { color = mapSettings.colorLoaded; shape = mapSettings.shapeLoaded; }
     else                                                     { color = mapSettings.colorEmpty;  shape = mapSettings.shapeEmpty;  }
 
-    _drawShape(sx, sy, r, shape || 'circle');
-    mapCtx.fillStyle = color;
-    mapCtx.fill();
+    drawVehicleShape(mapCtx, sx, sy, r, shape || 'triangle', vehicleHeading(v, railGraph), color, pal.vehicleStroke);
   }
 
   // 2.4. 선택된 OHT 강조 (노란 링 + 라벨)
@@ -1257,42 +1508,14 @@ function drawMap() {
     }
   }
 
-  // 2.7. 레일 노드 주소(addr) 표시 — showName ON 일 때 항상. 줌/밀도에 따라 간격 필터.
-  if (showName && railGraph && railGraph.nodes) {
-    const fs = Math.max(8, Math.min(14, 6 + 2*mapZoom));
-    mapCtx.font = `bold ${fs}px sans-serif`;
-    mapCtx.textAlign = 'center';
-    mapCtx.textBaseline = 'bottom';
-    // 픽셀 그리드 밀도 필터 — 같은 셀에 여러 노드 겹치면 하나만
-    const cellPx = Math.max(18, fs * 3);
-    const occupied = new Set();
-    let drawn = 0;
-    const maxDraw = 800;
-    for (const nid in railGraph.nodes) {
-      const c = railGraph.nodes[nid];
-      const [sx,sy] = toS(c[0], c[1]);
-      if (sx < 0 || sx > w || sy < 0 || sy > h) continue;
-      const cx = Math.floor(sx / cellPx);
-      const cy = Math.floor(sy / cellPx);
-      const key = cx + ',' + cy;
-      if (occupied.has(key)) continue;
-      occupied.add(key);
-      const tw = mapCtx.measureText(nid).width;
-      mapCtx.fillStyle = 'rgba(10,14,23,0.82)';
-      mapCtx.fillRect(sx - tw/2 - 3, sy - fs - 4, tw + 6, fs + 3);
-      mapCtx.fillStyle = '#fde68a';
-      mapCtx.fillText(nid, sx, sy - 3);
-      if (++drawn >= maxDraw) break;
-    }
-    mapCtx.textBaseline = 'alphabetic';
-  }
+  // (2.7 노드 번호는 drawRailLayer 로 옮겼다 — 확대하면 캐시에 한 번만 그린다)
 
   // 3. 정보 표시 (범례는 상단 배지로 이동됨)
   mapCtx.font = '11px sans-serif';
-  mapCtx.fillStyle='rgba(10,14,23,0.85)'; mapCtx.fillRect(w-150,4,130,18);
-  mapCtx.fillStyle='#60a5fa'; mapCtx.textAlign='right'; mapCtx.fillText(`OHT ${Object.keys(vehicleDisplay).length}대`, w-24, 16);
-  mapCtx.fillStyle='rgba(10,14,23,0.85)'; mapCtx.fillRect(w-200,24,180,16);
-  mapCtx.fillStyle='#4b5563'; mapCtx.fillText('스크롤:줌 | 드래그:이동', w-24, 36);
+  mapCtx.fillStyle=pal.textBg; mapCtx.fillRect(w-150,4,130,18);
+  mapCtx.fillStyle='#2563eb'; mapCtx.textAlign='right'; mapCtx.fillText(`OHT ${Object.keys(vehicleDisplay).length}대`, w-24, 16);
+  mapCtx.fillStyle=pal.textBg; mapCtx.fillRect(w-200,24,180,16);
+  mapCtx.fillStyle=pal.text2; mapCtx.fillText('스크롤:줌 | 드래그:이동', w-24, 36);
 }
 
 // 줌/팬
@@ -2578,7 +2801,20 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
     </div>
 
     <div style="display:grid;grid-template-columns:140px 1fr;gap:8px 12px;align-items:center;">
-      <div style="grid-column:1/-1;color:#9ad;margin-top:4px;border-bottom:1px solid #333;padding-bottom:4px;">맵 배경 / 레일</div>
+      <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1f2937;">
+      <label style="display:inline-block;width:120px;">맵 테마</label>
+      <select id="ms-mapTheme" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;">
+        <option value="hmi">현장 HMI (밝은 바탕)</option>
+        <option value="dark">어두운 맵 (예전)</option>
+      </select>
+      <span style="color:#6b7280;font-size:11px;margin-left:8px;">아래 색 설정은 어두운 맵에서만 쓴다</span>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="display:inline-block;width:120px;">포트 네모 크기</label>
+      <input type="number" id="ms-stationSize" step="0.1" min="0.3" max="3" style="background:#222;color:#eee;border:1px solid #444;padding:4px 6px;width:80px;">
+      <span style="color:#6b7280;font-size:11px;margin-left:8px;">배수 (1 = 기본)</span>
+    </div>
+    <div style="grid-column:1/-1;color:#9ad;margin-top:4px;border-bottom:1px solid #333;padding-bottom:4px;">맵 배경 / 레일</div>
 
       <label>맵 배경색</label>
       <input type="color" id="ms-bgColor" style="width:60px;height:28px;background:#222;border:1px solid #444;">
