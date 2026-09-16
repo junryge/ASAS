@@ -376,6 +376,63 @@ class 서버배선(unittest.TestCase):
                              f"{f} 에 카운터가 들어갔다 — 점수 계산은 손대지 않는다")
 
 
+class ALL화면의_FAB_카운터(unittest.TestCase):
+    """ALL 화면에서 '어느 FAB 이 계속 나쁜가' 를 말한다.
+
+    고객 지적: "실시간에 알람에서 ALL에서 ALL,FAB인지 그런 알람 내용이 없는것
+    같은데" — ALL 종합점수만 세면 화면에 FAB 다섯 점수 칸이 있어도 그 중
+    무엇이 눌러앉아 있는지가 안 보였다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = _read("server.py")
+        cls.blk = re.search(r'    _apol_fab = \{\}[\s\S]*?_apol_fab\[_f\] = _fp',
+                            cls.src)
+
+    def test_FAB_별로_센다(self):
+        self.assertIsNotNone(self.blk, "FAB 카운터 자리를 못 찾았다")
+        self.assertIn("alarm_count.scan(_seq, CFG, _f)", self.blk.group(0),
+                      "FAB 마다 **자기 정책**으로 세야 한다")
+
+    def test_FAB_자기_컷으로_등급을_매긴다(self):
+        # 컷이 FAB 별(grade.by_sys)인데 ALL 컷으로 매기면 서버와 화면 색이 갈린다
+        self.assertIn("_fcfg = sys_cfg(CFG, _f)", self.blk.group(0))
+        self.assertIn('grade(_v, _fcfg)["level"]', self.blk.group(0))
+
+    def test_ALL_화면에서만_돈다(self):
+        # FAB 화면은 그 FAB 이 곧 자기 줄이라 두 번 말하게 된다
+        self.assertIn('if C["sys"] == "ALL" and ftab:', self.blk.group(0))
+
+    def test_미적용_FAB_은_세지도_않는다(self):
+        m = re.search(r'_fp = alarm_count\.policy\(CFG, _f\)\s*\n'
+                      r'\s*if not _fp\["enabled"\]:\s*\n\s*continue', self.src)
+        self.assertIsNotNone(m, "미적용인데 계속 세면 하루치를 헛돈다")
+
+    def test_값을_모르는_분은_정상으로_안_센다(self):
+        # 0/정상으로 세면 '없는 것' 을 '괜찮다' 고 말하게 된다
+        self.assertIn('if _v is not None else ""', self.blk.group(0))
+
+    def test_말풍선_글은_행마다_안_싣는다(self):
+        # 1440행 × FAB 다섯 × 30자면 그것만 200KB 다. 정책을 한 번만 싣는다.
+        self.assertNotIn("alarm_count.why(_a, _fp)", self.blk.group(0))
+        self.assertIn('"alarm_fab": _apol_fab,', self.src,
+                      "정책을 payload 에 한 번 실어야 화면이 글을 만든다")
+
+    def test_이름표에_맞는_카운트를_싣는다(self):
+        self.assertIn('_LVKEY = {"경계중": "warn", "위험중": "danger", '
+                      '"초위험중": "critical"}', self.src)
+        self.assertIn('_a[_LVKEY[_a["label"]]]', self.blk.group(0))
+
+    def test_이름표_표가_모듈과_어긋나지_않는다(self):
+        """★server 의 _LVKEY 와 alarm_count.LABEL 이 따로 놀면 엉뚱한 수가 뜬다."""
+        m = re.search(r'_LVKEY = \{([^}]*)\}', self.src)
+        keys = set(re.findall(r'"([^"]+)": "', m.group(1)))
+        self.assertEqual(keys, set(alarm_count.LABEL.values()))
+        vals = set(re.findall(r': "([^"]+)"', m.group(1)))
+        self.assertEqual(vals, set(alarm_count.KEYS))
+
+
 class 화면배선(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -391,6 +448,25 @@ class 화면배선(unittest.TestCase):
         self.assertIn("if(s.alarm) ALARM = s.alarm;", self.src, "/api/status")
         self.assertEqual(self.src.count("if(fd.alarm) ALARM = fd.alarm;"), 2,
                          "실시간·과거 **두 곳** 다 받아야 한다")
+
+    def test_줄마다_어느_시스템인지_적는다(self):
+        m = re.search(r"function almLine\(sys, lv, n, why\)\{[\s\S]*?\n\}", self.src)
+        self.assertIsNotNone(m, "almLine 을 못 찾았다")
+        self.assertIn("${esc(sys)}", m.group(0),
+                      "이름이 없으면 ALL 인지 M14B 인지 말할 수 없다")
+
+    def test_FAB_줄은_ALL_화면에서만(self):
+        m = re.search(r"function almCell\(r\)\{[\s\S]*?\n\}", self.src)
+        self.assertIsNotNone(m)
+        self.assertIn("if(SYS === 'ALL' && r.alm_fab){", m.group(0))
+        self.assertIn("FABS.forEach(f =>", m.group(0),
+                      "차례는 오른쪽 점수 칸과 같은 FABS 순서다")
+
+    def test_FAB_정책도_서명에_묶인다(self):
+        self.assertIn("function almSig(){ return JSON.stringify(ALARM) + '~' + "
+                      "JSON.stringify(ALARM_FAB); }", self.src)
+        self.assertEqual(self.src.count("ALARM_FAB = fd.alarm_fab || {};"), 2,
+                         "실시간·과거 두 곳 다 받아야 한다")
 
     def test_배지는_점수_칸이_아니라_자기_칸(self):
         # 점수 칸(108px) 안에 넣었더니 등급 알약 밑으로 접혀 점수의 부속처럼

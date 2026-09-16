@@ -506,7 +506,15 @@
   /* 횟수는 한 단계 작게 — 눈이 먼저 읽어야 하는 건 '위험중' 이지 숫자가 아니다 */
   .chip.alm b{font-weight:700;margin-left:4px;font-variant-numeric:tabular-nums}
   table.cases th.acol{letter-spacing:.04em}
-  table.cases td.acol{white-space:nowrap}
+  /* ★ALL 화면에서는 ALL + FAB 다섯이 **줄로 쌓인다**. 걸린 것만 나오므로
+     대개 한두 줄이고, 다 걸린 날에만 여섯 줄이다. */
+  table.cases td.acol{white-space:nowrap;line-height:1.5}
+  .almln{display:flex;align-items:center;gap:5px}
+  .almln + .almln{margin-top:3px}
+  /* 어느 시스템 것인가 — 오른쪽 FAB 점수 칸과 같은 이름이라 눈이 바로 잇는다 */
+  .almln i{font-style:normal;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+           font-size:10.5px;font-weight:700;color:var(--tx3);width:44px;flex:none}
+  .almln i.all{color:var(--cy)}
   /* 섹션 라벨(시안): 11px · 자간 .08em · 대문자 · --tx3. 탭 머리의 eyebrow 는 12px/.14em */
   .tag,.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3)}
   .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3)}
@@ -1106,14 +1114,14 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:90px">시각</th>
-        <th style="width:88px">CASE</th>
+        <th style="width:86px">시각</th>
+        <th style="width:84px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
-        <th class="acol" style="width:100px">알람</th>
-        <th class="rhcol" style="width:190px">발동 룰</th>
+        <th class="acol" style="width:150px">알람</th>
+        <th class="rhcol" style="width:170px">발동 룰</th>
         <th class="mcol">실제지표</th>
-        <th style="width:124px">AMOS HID 구역</th>
-        <th style="width:138px">AMOS QUEUE 지표</th>
+        <th style="width:118px">AMOS HID 구역</th>
+        <th style="width:130px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="8" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -1181,14 +1189,14 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:90px">시각</th>
-        <th style="width:88px">CASE</th>
+        <th style="width:86px">시각</th>
+        <th style="width:84px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
-        <th class="acol" style="width:100px">알람</th>
-        <th class="rhcol" style="width:190px">발동 룰</th>
+        <th class="acol" style="width:150px">알람</th>
+        <th class="rhcol" style="width:170px">발동 룰</th>
         <th class="mcol">실제지표</th>
-        <th style="width:124px">AMOS HID 구역</th>
-        <th style="width:138px">AMOS QUEUE 지표</th>
+        <th style="width:118px">AMOS HID 구역</th>
+        <th style="width:130px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="8" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
@@ -3646,7 +3654,9 @@ let ROW_CAP = ROW_STEP, PROW_CAP = ROW_STEP;
    ★서명에 넣는다. 안 넣으면 '정책을 바꿨는데 화면이 그대로' 가 난다 —
      등급 컷에서 이미 똑같이 당했다 (server.py `_sig` 주석). */
 let ALARM = {enabled:true, window_min:10, warn:3, danger:1, critical:1};
-function almSig(){ return JSON.stringify(ALARM); }
+/* FAB 카운터가 걸린 FAB 의 정책 — 말풍선 글을 이걸로 만든다 (ALL 화면) */
+let ALARM_FAB = {};
+function almSig(){ return JSON.stringify(ALARM) + '~' + JSON.stringify(ALARM_FAB); }
 function cutSig(){
   return JSON.stringify(CUTS) + '~' + JSON.stringify(FCUTS || {}) + '~' + almSig();
 }
@@ -3698,7 +3708,7 @@ function syncFabCols(){
        HI_FAB 이 종합점수와 알람 사이로 파고들어 머리글과 내용이 어긋난다. */
     let at = tr.querySelector('th.acol') || sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
-    add('<th class="hcol" style="width:86px">HI_FAB</th>');
+    add('<th class="hcol" style="width:80px">HI_FAB</th>');
     FABS.forEach(f => add(`<th class="fcol" style="width:56px">${esc(f)}</th>`));
   });
 }
@@ -3805,10 +3815,45 @@ function almChip(r){
   return `<span class="chip alm lv${esc(lv)}" title="${esc(a.why||'')}">${
     esc(a.lv)}<b>${n}</b></span>`;
 }
-/* 알람 칸 한 개. 값이 없으면 '—' — 다른 칸(HI_FAB·CASE)과 같은 표기다.
-   ★빈 칸으로 두면 '데이터가 안 왔나' 로 읽힌다. 안 떴다는 것도 정보다. */
+/* 한 줄 — '어느 시스템' + 배지. 시스템 이름을 붙여야 ALL 화면에서
+   'ALL 이 위험중인가 M14B 가 위험중인가' 를 말할 수 있다 (고객 지적). */
+function almLine(sys, lv, n, why){
+  const c = lv.replace('중','');                      // 경계중 → 경계 (색 클래스용)
+  return `<div class="almln" title="${esc(why||'')}"><i class="${
+    sys==='ALL'?'all':''}">${esc(sys)}</i><span class="chip alm lv${esc(c)}">${
+    esc(lv)}<b>${n}</b></span></div>`;
+}
+/* FAB 줄의 말풍선 — 정책은 payload 에 **한 번만** 실려 온다(행마다 실으면
+   하루치 1440행이 그만큼 무겁다). 글은 여기서 만든다. 서버 alarm_count.why
+   와 같은 문장이어야 한다. */
+function almWhyFab(fab, a){
+  const p = (ALARM_FAB || {})[fab];
+  if(!p) return '';
+  const what = a.lv === '초위험중' ? '초위험'
+             : a.lv === '위험중'   ? '위험 이상' : '경계 이상';
+  const base = a.lv === '초위험중' ? p.critical : a.lv === '위험중' ? p.danger : p.warn;
+  return `${fab} — 최근 ${p.window_min}분에 ${what} ${a.n}회 (기준 ${base}회)`;
+}
+/* 알람 칸. 걸린 것만 **줄로 쌓는다**. 아무것도 안 걸렸으면 '—' —
+   다른 칸(HI_FAB·CASE)과 같은 표기다.
+   ★빈 칸으로 두면 '데이터가 안 왔나' 로 읽힌다. 안 떴다는 것도 정보다.
+   ★차례는 ALL 먼저, 그다음 FAB 은 **오른쪽 점수 칸과 같은 순서**다.
+     제일 센 것을 위로 올리면 행마다 줄이 뒤바뀌어 눈이 따라가지 못한다. */
 function almCell(r){
-  return `<td class="acol">${almChip(r) || '<span class="dim">—</span>'}</td>`;
+  const out = [];
+  const a = r.alm;
+  if(a && a.lv){
+    const n = a.lv === '초위험중' ? a.c : a.lv === '위험중' ? a.d : a.w;
+    out.push(almLine(SYS, a.lv, n, a.why));
+  }
+  /* FAB 줄은 ALL 화면에서만. FAB 화면은 그 FAB 이 곧 위 줄이라 두 번 말하게 된다 */
+  if(SYS === 'ALL' && r.alm_fab){
+    FABS.forEach(f => {
+      const x = r.alm_fab[f];
+      if(x && x.lv) out.push(almLine(f, x.lv, x.n, almWhyFab(f, x)));
+    });
+  }
+  return `<td class="acol">${out.join('') || '<span class="dim">—</span>'}</td>`;
 }
 
 function rowsHtml(list, byId, newAt, cap){
@@ -4265,6 +4310,7 @@ async function pollCases(){
     CASES = cs.cases||[];
     FEED  = fd.rows||[];
     if(fd.alarm) ALARM = fd.alarm;
+    ALARM_FAB = fd.alarm_fab || {};
     setFabs(fd);                       // FAB 컬럼 (머리글은 바뀔 때만 재생성)
     const cnt = fd.counts||{};
     $('#n-all').textContent = fd.total||0;
@@ -4378,6 +4424,7 @@ async function loadPast(day, opt){
     PFEED = fd.rows || [];
     PROW_CAP = ROW_STEP;               // 날짜가 바뀌었으니 처음부터
     if(fd.alarm) ALARM = fd.alarm;
+    ALARM_FAB = fd.alarm_fab || {};
     setFabs(fd);                       // 과거 탭도 같은 표 — 같은 컬럼
     if(fd.groups){ GROUPS = fd.groups; if(!PSTRIPG) PSTRIPG = GROUPS[0]?.id; }
     const cnt = fd.counts || {};

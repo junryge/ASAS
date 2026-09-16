@@ -1499,6 +1499,10 @@ def api_window():
 FEED_CACHE: dict = {}
 
 
+# 이름표 → 그 이름표를 띄운 카운트의 키 (화면 almChip 과 같은 규칙)
+_LVKEY = {"경계중": "warn", "위험중": "danger", "초위험중": "critical"}
+
+
 @app.route("/api/feed")
 def api_feed():
     """수집한 전체 데이터 — 정상 포함 4등급으로 분류해서 내려준다.
@@ -1640,13 +1644,44 @@ def api_feed():
     # ★점수·등급을 만들지 않는다. 이미 매겨진 level 을 세기만 한다.
     # at 은 우리가 dt.isoformat() 으로 만든 글자라 fromisoformat 이 정확하다
     #   (parse_dt 는 사람이 친 글자를 너그럽게 읽는 함수다 — 여기 쓸 자리가 아니다)
-    _alm = alarm_count.scan(
-        [(datetime.fromisoformat(x["at"]), x["level"]) for x in out], C["cfg"])
+    _ats = [datetime.fromisoformat(x["at"]) for x in out]
+    _alm = alarm_count.scan(list(zip(_ats, (x["level"] for x in out))), C["cfg"])
     _apol = alarm_count.policy(C["cfg"])
     for _x, _a in zip(out, _alm):
         if _a.get("label"):
             _x["alm"] = {"lv": _a["label"], "w": _a["warn"], "d": _a["danger"],
                          "c": _a["critical"], "why": alarm_count.why(_a, _apol)}
+
+    # ── ALL 화면에서는 FAB 다섯도 **각각** 센다 ──────────────────────────
+    # ★ALL 의 종합점수만 세면 '어느 FAB 이 계속 나쁜가' 를 말하지 못한다.
+    #   화면에 FAB 다섯 점수 칸이 이미 있는데, 그 중 무엇이 눌러앉아 있는지가
+    #   안 보였다 (고객 지적: "ALL에서 ALL,FAB인지 그런 알람 내용이 없다").
+    # ★FAB 마다 **자기 컷**으로 등급을 매기고 **자기 정책**으로 센다.
+    #   컷은 FAB 별(grade.by_sys)이고 카운터도 FAB 별(grade.alarm_by_sys)이다.
+    # ★점수·등급을 새로 만들지 않는다. area_table 이 이미 낸 FAB 점수를
+    #   컷에 대보는 것뿐이다 (화면의 fabLv 와 같은 규칙 — 정책이 이긴다).
+    _apol_fab = {}
+    if C["sys"] == "ALL" and ftab:
+        for _f in (ftab.get("fabs") or []):
+            _fp = alarm_count.policy(CFG, _f)
+            if not _fp["enabled"]:
+                continue            # 그 FAB 은 미적용 — 세지도 않는다
+            _fcfg = sys_cfg(CFG, _f)
+            _seq = []
+            for _t, _x in zip(_ats, out):
+                _v = (_x.get("fab") or {}).get(_f)
+                # 값을 모르는 분은 '' — 정상으로 세면 없는 것을 괜찮다고 말하게 된다
+                _seq.append((_t, grade(_v, _fcfg)["level"] if _v is not None else ""))
+            _fa = alarm_count.scan(_seq, CFG, _f)
+            _hit = False
+            for _x, _a in zip(out, _fa):
+                if _a.get("label"):
+                    _x.setdefault("alm_fab", {})[_f] = {"lv": _a["label"],
+                                                        "n": _a[_LVKEY[_a["label"]]]}
+                    _hit = True
+            if _hit:
+                # 말풍선 글은 화면이 만든다 — 행마다 실으면 하루치가 그만큼 무겁다
+                _apol_fab[_f] = _fp
 
     out.sort(key=lambda x: x["at"], reverse=True)
     counts = {lv: sum(1 for x in out if x["level"] == lv)
@@ -1661,6 +1696,8 @@ def api_feed():
     payload = {"rows": out[:limit], "counts": counts, "total": len(out),
                # 등급 카운터 — 설정과 '지금' 상태. 화면이 배지를 이걸로 그린다
                "alarm": _apol, "alarm_now": alm_now,
+               # FAB 카운터가 걸린 FAB 의 정책 — 화면이 말풍선을 이걸로 만든다
+               "alarm_fab": _apol_fab,
                     "shown": min(limit, len(out)),
                     # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
                     "groups": [dict(g, metrics=[m for m in g["metrics"] if m["key"] in seen_keys])
