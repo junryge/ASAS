@@ -292,6 +292,11 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <span id="lp-status"></span>
     </div>
     <span class="tb-spacer"></span>
+    <div class="tb-group tb-seg" title="보기 — 2D 평면(기본) / 유사 3D(눕혀 보기). 정보는 같다">
+      <span class="tb-cap">보기</span>
+      <button id="btn-2d"  class="toggle-btn on" onclick="setMapView('2d')">▭ 2D</button>
+      <button id="btn-iso" class="toggle-btn"    onclick="setMapView('iso')">◈ 유사 3D</button>
+    </div>
     <button onclick="openMapSettings()" title="맵·화면 표시 설정">⚙ 설정</button>
   </div>
   <div class="tb-row">
@@ -322,11 +327,6 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
     <span id="status-badge" class="badge badge-stopped">정지</span>
     <span id="loading-msg">로딩중...</span>
     <button onclick="resetMapView()" class="tb-fit" title="맵을 전체가 보이게 되돌린다">⤢ 전체보기</button>
-    <div class="tb-group tb-seg" title="보기 — 2D 평면(기본) / 유사 3D(눕혀 보기). 정보는 같다">
-      <span class="tb-cap">보기</span>
-      <button id="btn-2d"  class="toggle-btn on" onclick="setMapView('2d')">▭ 2D</button>
-      <button id="btn-iso" class="toggle-btn"    onclick="setMapView('iso')">◈ 유사 3D</button>
-    </div>
     <div class="tb-group tb-seg" title="맵에 무엇을 보일지">
       <span class="tb-cap">표시</span>
       <button id="btn-zone" class="toggle-btn on" onclick="toggleLayer('zone')" title="HID Zone 진입/진출 레인">Zone</button>
